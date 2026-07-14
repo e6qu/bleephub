@@ -1,0 +1,78 @@
+# Allowlisted response-shape deviations from the vendored DOTCOM OpenAPI
+# description (testdata/github-openapi.json.gz). Format per line:
+#   op<TAB>kind<TAB>field   (see openapi_shape_validator_test.go)
+# Entries must cite why the member is real despite the dotcom spec.
+
+# GHES exposes installed_version; the official GitHub CLI requires it for
+# feature detection against an enterprise host.
+GET /meta -> 200	unknown-field	$.installed_version
+
+# /user/starred is a repository list while the vendored description matches
+# the nearest parameterized route and therefore reports a top-level mismatch.
+GET /user/{} -> 200	type-mismatch	$
+
+# GHES migration responses include html_url and exported_at.
+GET /user/migrations/{} -> 200	unknown-field	$.html_url
+GET /user/migrations/{} -> 200	unknown-field	$.exported_at
+POST /user/migrations -> 201	unknown-field	$.html_url
+POST /user/migrations -> 201	unknown-field	$.exported_at
+GET /orgs/{}/migrations -> 200	unknown-field	$[].html_url
+GET /orgs/{}/migrations -> 200	unknown-field	$[].exported_at
+GET /orgs/{}/migrations/{} -> 200	unknown-field	$.html_url
+GET /orgs/{}/migrations/{} -> 200	unknown-field	$.exported_at
+POST /orgs/{}/migrations -> 201	unknown-field	$.html_url
+POST /orgs/{}/migrations -> 201	unknown-field	$.exported_at
+
+# Codespaces responses include enterprise links and billing members.
+GET /repos/{}/{}/codespaces -> 200	unknown-field	$.codespaces[].html_url
+GET /repos/{}/{}/codespaces -> 200	unknown-field	$.codespaces[].billing_url
+GET /user/codespaces -> 200	unknown-field	$.codespaces[].html_url
+GET /user/codespaces -> 200	unknown-field	$.codespaces[].billing_url
+POST /user/codespaces -> 201	unknown-field	$.html_url
+POST /user/codespaces -> 201	unknown-field	$.billing_url
+GET /user/codespaces/{} -> 200	unknown-field	$.html_url
+GET /user/codespaces/{} -> 200	unknown-field	$.billing_url
+PATCH /user/codespaces/{} -> 200	unknown-field	$.html_url
+PATCH /user/codespaces/{} -> 200	unknown-field	$.billing_url
+POST /user/codespaces/{}/start -> 202	unknown-field	$.html_url
+POST /user/codespaces/{}/start -> 202	unknown-field	$.billing_url
+POST /user/codespaces/{}/stop -> 202	unknown-field	$.html_url
+POST /user/codespaces/{}/stop -> 202	unknown-field	$.billing_url
+GET /repos/{}/{}/codespaces -> 200	unknown-field	$[].html_url
+GET /repos/{}/{}/codespaces -> 200	unknown-field	$[].billing_url
+POST /repos/{}/{}/codespaces -> 201	unknown-field	$.html_url
+POST /repos/{}/{}/codespaces -> 201	unknown-field	$.billing_url
+GET /repos/{}/{}/codespaces/{} -> 200	unknown-field	$.html_url
+GET /repos/{}/{}/codespaces/{} -> 200	unknown-field	$.billing_url
+POST /repos/{}/{}/codespaces/{}/start -> 202	unknown-field	$.html_url
+POST /repos/{}/{}/codespaces/{}/start -> 202	unknown-field	$.billing_url
+POST /repos/{}/{}/codespaces/{}/stop -> 202	unknown-field	$.html_url
+POST /repos/{}/{}/codespaces/{}/stop -> 202	unknown-field	$.billing_url
+POST /repos/{}/{}/pulls/{}/codespaces -> 201	unknown-field	$.html_url
+POST /repos/{}/{}/pulls/{}/codespaces -> 201	unknown-field	$.billing_url
+POST /user/codespaces/{}/publish -> 201	unknown-field	$.html_url
+POST /user/codespaces/{}/publish -> 201	unknown-field	$.billing_url
+
+# GitHub Packages emits node_id even though the vendored schema omits it.
+GET /users/{}/packages -> 200	unknown-field	$[].node_id
+GET /users/{}/packages/{}/{} -> 200	unknown-field	$.node_id
+GET /users/{}/packages/{}/{}/versions -> 200	unknown-field	$[].node_id
+GET /users/{}/packages/{}/{}/versions/{} -> 200	unknown-field	$.node_id
+GET /orgs/{}/packages -> 200	unknown-field	$[].node_id
+GET /orgs/{}/packages/{}/{} -> 200	unknown-field	$.node_id
+GET /orgs/{}/packages/{}/{}/versions -> 200	unknown-field	$[].node_id
+GET /orgs/{}/packages/{}/{}/versions/{} -> 200	unknown-field	$.node_id
+GET /user/packages -> 200	unknown-field	$[].node_id
+GET /user/packages/{}/{} -> 200	unknown-field	$.node_id
+GET /user/packages/{}/{}/versions -> 200	unknown-field	$[].node_id
+GET /user/packages/{}/{}/versions/{} -> 200	unknown-field	$.node_id
+GET /user/docker/conflicts -> 200	unknown-field	$[].node_id
+GET /users/{}/docker/conflicts -> 200	unknown-field	$[].node_id
+
+# Team membership responses include user, team, and organization_url.
+GET /orgs/{}/teams/{}/memberships/{} -> 200	unknown-field	$.organization_url
+GET /orgs/{}/teams/{}/memberships/{} -> 200	unknown-field	$.team
+GET /orgs/{}/teams/{}/memberships/{} -> 200	unknown-field	$.user
+PUT /orgs/{}/teams/{}/memberships/{} -> 200	unknown-field	$.organization_url
+PUT /orgs/{}/teams/{}/memberships/{} -> 200	unknown-field	$.team
+PUT /orgs/{}/teams/{}/memberships/{} -> 200	unknown-field	$.user

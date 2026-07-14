@@ -1,0 +1,14 @@
+.git
+.build
+.local
+bleephub-server
+bleephub-dqlite-node
+web/node_modules
+web/core/node_modules
+web/dist
+web/core/dist
+web/.auth
+web/test-results
+web/playwright-report
+web/core/e2e
+web/core/src/__tests__

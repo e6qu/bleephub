@@ -1,0 +1,13 @@
+.build/
+.local/
+.terraform/
+bleephub-server
+bleephub-dqlite-node
+web/node_modules/
+web/core/node_modules/
+web/dist/
+web/core/dist/
+web/.auth/
+web/test-results/
+web/playwright-report/
+*.tsbuildinfo

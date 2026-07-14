@@ -1,0 +1,1 @@
+import{t as a}from"./vendor-crypto-BYZJj3JG.js";async function o(e,s){await a.ready;const t=a.crypto_box_seal(e,a.from_base64(s,a.base64_variants.ORIGINAL));return a.to_base64(t,a.base64_variants.ORIGINAL)}export{o as s};

@@ -1,0 +1,1 @@
+import{j as e}from"./vendor-react-CqCGSmqz.js";import{o as r}from"./index-DfeHSU5o.js";import{R as t}from"./RepoListPage-BXiYdRnE.js";import"./vendor-tanstack-CUfn_WtV.js";import"./InlineError-CLd-VC_P.js";function m(){return e.jsx(t,{title:"Repositories",fetchPage:r,queryKey:["user-repos"],allowCreate:!0,createTarget:"user"})}export{m as ReposPage};

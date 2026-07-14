@@ -1,0 +1,79 @@
+name: Bleephub CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  server:
+    name: Go server
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v7.0.0
+      - uses: actions/setup-go@v6.5.0
+        with:
+          go-version-file: go.mod
+          cache: true
+      - name: Run the complete server suite against MinIO S3
+        run: go test -tags noui -count=1 -timeout 8m ./...
+
+  web:
+    name: Web application
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v7.0.0
+      - uses: oven-sh/setup-bun@v2.2.0
+        with:
+          bun-version: '1.3'
+      - name: Install locked web dependencies
+        run: cd web && bun install --frozen-lockfile
+      - name: Type-check and test the web application
+        run: cd web && bun run typecheck && bun run test
+      - name: Build the embedded web application
+        run: cd web && bun run build
+
+  gh-cli:
+    name: GitHub CLI compatibility
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v7.0.0
+      - name: Exercise the official GitHub CLI against Bleephub
+        run: make gh-test
+
+  browser:
+    name: Browser end-to-end
+    runs-on: ubuntu-latest
+    timeout-minutes: 18
+    steps:
+      - uses: actions/checkout@v7.0.0
+      - uses: actions/setup-go@v6.5.0
+        with:
+          go-version-file: go.mod
+          cache: true
+      - uses: oven-sh/setup-bun@v2.2.0
+        with:
+          bun-version: '1.3'
+      - name: Build server and web application
+        run: make build
+      - name: Install Chromium and run the real browser suite
+        run: cd web && npx playwright install --with-deps chromium && SERVER_BIN=../bleephub-server bun run test:e2e
+
+  runner-sockerless:
+    name: Runner against Sockerless
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v7.0.0
+      - uses: actions/checkout@v7.0.0
+        with:
+          repository: e6qu/sockerless
+          path: sockerless
+      - name: Exercise the official runner against the real simulator and backend
+        run: SOCKERLESS_ROOT="$GITHUB_WORKSPACE/sockerless" make runner-sockerless-test
