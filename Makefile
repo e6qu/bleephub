@@ -1,4 +1,4 @@
-.PHONY: build run test web-build gh-test runner-sockerless-test
+.PHONY: build run test web-build gh-test runner-sockerless-test runner-image
 
 build: web-build
 	CGO_ENABLED=0 go build -o bleephub-server ./cmd/bleephub
@@ -25,3 +25,6 @@ runner-sockerless-test:
 	rm -rf /tmp/bleephub-runner-sockerless-data
 	mkdir -p /tmp/bleephub-runner-sockerless-data
 	docker run --rm --security-opt label=disable -v /var/run/docker.sock:/var/run/docker.sock -v /tmp/bleephub-runner-sockerless-data:/tmp/bleephub-runner-sockerless-data -e SOCKERLESS_HARNESS_DATA_DIR=/tmp/bleephub-runner-sockerless-data -e BLEEPHUB_BACKEND=ecs -p 80:80 -p 3375:3375 -p 5000:4566 bleephub-runner-sockerless:local
+
+runner-image:
+	docker buildx build --load -f Dockerfile.runner -t bleephub-runner:local .

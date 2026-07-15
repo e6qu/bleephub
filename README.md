@@ -338,6 +338,26 @@ Env vars:
 - `BLEEPHUB_MAX_WORKFLOWS=N` — concurrency cap (default 10).
 - `OTEL_EXPORTER_OTLP_ENDPOINT` — when set, emits traces + metrics + logs via OTLP (off by default; preserves the components-decoupled invariant).
 
+## Container images
+
+Every merge to `main` publishes immutable twelve-character commit-SHA tags to GitHub Container Registry. Each generic tag is a multi-architecture manifest; its direct native manifests are suffixed with `-amd64` and `-arm64`. Select the generic manifest for an architecture-aware orchestrator such as Kubernetes, or select a suffixed manifest when a service requires an explicit platform image.
+
+| Image | Multi-architecture manifest | Direct native manifests |
+|---|---|---|
+| Server | `ghcr.io/e6qu/bleephub:<tag>` | `ghcr.io/e6qu/bleephub:<tag>-amd64`, `ghcr.io/e6qu/bleephub:<tag>-arm64` |
+| GitHub Actions runner | `ghcr.io/e6qu/bleephub-runner:<tag>` | `ghcr.io/e6qu/bleephub-runner:<tag>-amd64`, `ghcr.io/e6qu/bleephub-runner:<tag>-arm64` |
+
+The runner image packages the official GitHub Actions runner. It configures itself from a real Bleephub registration URL and token, then starts the official runner process:
+
+```bash
+docker run --rm \
+  -e RUNNER_URL=https://bleephub.example/owner/repository \
+  -e RUNNER_TOKEN=<registration-token> \
+  ghcr.io/e6qu/bleephub-runner:<tag>
+```
+
+`RUNNER_NAME`, `RUNNER_LABELS`, `RUNNER_GROUP`, `RUNNER_WORKDIR`, and `RUNNER_EPHEMERAL` optionally refine that registration. The newest 20 releases of each package are retained; no mutable `latest` or `main` tag is published.
+
 ## Integration tests
 
 ```bash

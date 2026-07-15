@@ -14,6 +14,7 @@ concurrency:
 
 env:
   IMAGE: ghcr.io/e6qu/bleephub
+  RUNNER_IMAGE: ghcr.io/e6qu/bleephub-runner
 
 jobs:
   metadata:
@@ -33,7 +34,7 @@ jobs:
         run: echo "value=$(date -u +%Y-%m-%dT%H:%M:%SZ)" >> "$GITHUB_OUTPUT"
 
   build:
-    name: Bleephub (${{ matrix.arch.suffix }})
+    name: Bleephub images (${{ matrix.arch.suffix }})
     needs: metadata
     runs-on: ${{ matrix.arch.runner }}
     timeout-minutes: 30
@@ -70,9 +71,24 @@ jobs:
             BLEEPHUB_PUBLISHED_AT=${{ needs.metadata.outputs.published_at }}
           cache-from: type=gha,scope=bleephub-${{ matrix.arch.suffix }}
           cache-to: type=gha,scope=bleephub-${{ matrix.arch.suffix }},mode=max
+      - name: Build and publish native architecture runner image
+        uses: docker/build-push-action@v7.3.0
+        with:
+          context: .
+          file: Dockerfile.runner
+          platforms: ${{ matrix.arch.platform }}
+          push: true
+          provenance: false
+          tags: ${{ env.RUNNER_IMAGE }}:${{ needs.metadata.outputs.tag }}-${{ matrix.arch.suffix }}
+          labels: |
+            org.opencontainers.image.source=https://github.com/${{ github.repository }}
+            org.opencontainers.image.revision=${{ github.sha }}
+            org.opencontainers.image.created=${{ needs.metadata.outputs.published_at }}
+          cache-from: type=gha,scope=bleephub-runner-${{ matrix.arch.suffix }}
+          cache-to: type=gha,scope=bleephub-runner-${{ matrix.arch.suffix }},mode=max
 
   manifest:
-    name: Bleephub multi-architecture manifest
+    name: Bleephub multi-architecture manifests
     needs: [metadata, build]
     runs-on: ubuntu-latest
     timeout-minutes: 10
@@ -93,6 +109,10 @@ jobs:
             --tag "$IMAGE:$TAG" \
             "$IMAGE:$TAG-amd64" \
             "$IMAGE:$TAG-arm64"
+          docker buildx imagetools create \
+            --tag "$RUNNER_IMAGE:$TAG" \
+            "$RUNNER_IMAGE:$TAG-amd64" \
+            "$RUNNER_IMAGE:$TAG-arm64"
 
   startup-bundle:
     name: Bleephub startup bundle
@@ -179,4 +199,5 @@ jobs:
           }
 
           retain_releases bleephub true
+          retain_releases bleephub-runner true
           retain_releases bleephub-startup false
