@@ -1,0 +1,26 @@
+FROM ubuntu:24.04
+
+ARG TARGETARCH
+ARG RUNNER_VERSION=2.321.0
+
+RUN case "$TARGETARCH" in \
+        amd64) runner_arch=x64 ;; \
+        arm64) runner_arch=arm64 ;; \
+        *) echo "Unsupported target architecture: $TARGETARCH" >&2; exit 1 ;; \
+    esac && \
+    apt-get update && \
+    DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends ca-certificates curl && \
+    rm -rf /var/lib/apt/lists/* && \
+    useradd --create-home --home-dir /opt/actions-runner --shell /bin/bash runner && \
+    curl --fail --location --silent --show-error \
+      "https://github.com/actions/runner/releases/download/v${RUNNER_VERSION}/actions-runner-linux-${runner_arch}-${RUNNER_VERSION}.tar.gz" \
+      | tar --extract --gzip --directory /opt/actions-runner && \
+    /opt/actions-runner/bin/installdependencies.sh && \
+    chown -R runner:runner /opt/actions-runner
+
+COPY --chown=runner:runner docker/bleephub-runner-entrypoint.sh /usr/local/bin/bleephub-runner
+RUN chmod 0755 /usr/local/bin/bleephub-runner
+
+USER runner:runner
+WORKDIR /opt/actions-runner
+ENTRYPOINT ["/usr/local/bin/bleephub-runner"]
