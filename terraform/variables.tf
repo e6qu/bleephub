@@ -79,6 +79,24 @@ variable "github_oauth_client_secret_arn" {
   default     = ""
 }
 
+variable "shauth_oidc_issuer" {
+  description = "Shauth HTTPS OpenID Connect issuer used for Bleephub browser sign-in. Leave empty only when every Shauth coordinate is empty."
+  type        = string
+  default     = ""
+}
+
+variable "shauth_oidc_client_id" {
+  description = "Shauth confidential OpenID Connect client ID for Bleephub browser sign-in."
+  type        = string
+  default     = ""
+}
+
+variable "shauth_oidc_client_secret_arn" {
+  description = "Existing AWS Secrets Manager ARN holding Bleephub's Shauth confidential-client secret. Terraform never reads or stores its value."
+  type        = string
+  default     = ""
+}
+
 variable "idle_shutdown_minutes" {
   description = "Number of inactive minutes before the ECS service is scaled to zero."
   type        = number
