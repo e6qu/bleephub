@@ -51,7 +51,7 @@ variable "availability_zones" {
 
   validation {
     condition     = length(var.availability_zones) >= 2
-    error_message = "Bleephub requires at least two Availability Zones for the Application Load Balancer and EFS."
+    error_message = "Bleephub requires at least two Availability Zones for Amazon ECS VPC-link availability and Amazon Elastic File System."
   }
 }
 

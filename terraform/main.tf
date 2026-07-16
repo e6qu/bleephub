@@ -248,16 +248,16 @@ resource "aws_security_group" "task" {
   name_prefix = "${var.name}-task-"
   vpc_id      = local.vpc_id
   ingress {
-    protocol    = "tcp"
-    from_port   = 5555
-    to_port     = 5555
-    cidr_blocks = [var.vpc_cidr]
+    protocol        = "tcp"
+    from_port       = 5555
+    to_port         = 5555
+    security_groups = [aws_security_group.api_link.id]
   }
   ingress {
-    protocol    = "tcp"
-    from_port   = 2222
-    to_port     = 2222
-    cidr_blocks = [var.vpc_cidr]
+    protocol        = "tcp"
+    from_port       = 2222
+    to_port         = 2222
+    security_groups = [aws_security_group.ssh_gateway.id]
   }
   egress {
     protocol    = "-1"
@@ -320,10 +320,16 @@ resource "aws_security_group" "dqlite" {
   name_prefix = "${var.name}-dqlite-"
   vpc_id      = local.vpc_id
   ingress {
-    protocol    = "tcp"
-    from_port   = 9000
-    to_port     = 9000
-    cidr_blocks = [var.vpc_cidr]
+    protocol        = "tcp"
+    from_port       = 9000
+    to_port         = 9000
+    security_groups = [aws_security_group.task.id]
+  }
+  ingress {
+    protocol  = "tcp"
+    from_port = 9000
+    to_port   = 9000
+    self      = true
   }
   egress {
     protocol    = "-1"
@@ -483,7 +489,6 @@ resource "aws_iam_role_policy" "wake_service" {
     Statement = [
       { Effect = "Allow", Action = ["ecs:DescribeServices", "ecs:UpdateService"], Resource = concat([aws_ecs_service.this.id], [for service in aws_ecs_service.dqlite : service.id]) },
       { Effect = "Allow", Action = ["ecs:ListTasks", "ecs:DescribeTasks", "ecs:StopTask"], Resource = "*" },
-      { Effect = "Allow", Action = ["elasticloadbalancing:DescribeTargetHealth"], Resource = "*" },
       { Effect = "Allow", Action = ["secretsmanager:GetSecretValue"], Resource = aws_secretsmanager_secret.admin_token.arn },
       { Effect = "Allow", Action = ["apigateway:GET", "apigateway:PATCH"], Resource = "arn:aws:apigateway:${var.region}::/apis/${aws_apigatewayv2_api.this.id}/*" },
       { Effect = "Allow", Action = ["cloudwatch:SetAlarmState", "cloudwatch:DisableAlarmActions", "cloudwatch:EnableAlarmActions"], Resource = aws_cloudwatch_metric_alarm.idle_shutdown.arn },
@@ -525,16 +530,45 @@ resource "aws_acm_certificate_validation" "this" {
   validation_record_fqdns = [for record in aws_route53_record.certificate : record.fqdn]
 }
 
-resource "aws_lb" "this" {
-  name               = "${var.name}-private"
-  internal           = true
-  load_balancer_type = "network"
-  # API Gateway's VPC link creates network interfaces in every private subnet,
-  # while the scale-to-zero application service intentionally runs one task.
-  # Cross-zone forwarding keeps either link interface able to reach that task.
-  enable_cross_zone_load_balancing = true
-  subnets                          = local.private_subnet_ids
-  tags                             = local.common_tags
+resource "aws_service_discovery_private_dns_namespace" "this" {
+  name = "${var.name}.internal"
+  vpc  = local.vpc_id
+  tags = local.common_tags
+}
+
+# Amazon API Gateway resolves this SRV record through its VPC link. The
+# application task registers and deregisters its actual ENI address directly,
+# eliminating the private Network Load Balancer hop.
+resource "aws_service_discovery_service" "app" {
+  name = "app"
+  dns_config {
+    namespace_id   = aws_service_discovery_private_dns_namespace.this.id
+    routing_policy = "MULTIVALUE"
+    dns_records {
+      ttl  = 10
+      type = "SRV"
+    }
+  }
+  health_check_custom_config {}
+  tags = local.common_tags
+}
+
+# Every durable dqlite voter has a separate stable discovery name. It resolves
+# directly to that voter's ECS task IP, allowing voters to form a quorum without
+# a Network Load Balancer and without routing through an unhealthy-leader gate.
+resource "aws_service_discovery_service" "dqlite" {
+  for_each = local.dqlite_nodes
+  name     = "dqlite-${each.key}"
+  dns_config {
+    namespace_id   = aws_service_discovery_private_dns_namespace.this.id
+    routing_policy = "MULTIVALUE"
+    dns_records {
+      ttl  = 10
+      type = "A"
+    }
+  }
+  health_check_custom_config {}
+  tags = merge(local.common_tags, { Name = "${var.name}-dqlite-${each.key}" })
 }
 
 resource "aws_lb" "ssh" {
@@ -559,16 +593,6 @@ resource "aws_lb_target_group" "ssh" {
   tags = local.common_tags
 }
 
-resource "aws_lb_target_group" "app_ssh" {
-  name        = "${var.name}-app-ssh"
-  port        = 2222
-  protocol    = "TCP"
-  target_type = "ip"
-  vpc_id      = local.vpc_id
-  health_check { protocol = "TCP" }
-  tags = local.common_tags
-}
-
 resource "aws_lb_listener" "ssh" {
   load_balancer_arn = aws_lb.ssh.arn
   port              = 22
@@ -576,85 +600,6 @@ resource "aws_lb_listener" "ssh" {
   default_action {
     type             = "forward"
     target_group_arn = aws_lb_target_group.ssh.arn
-  }
-}
-
-resource "aws_lb_target_group" "this" {
-  name        = var.name
-  port        = 5555
-  protocol    = "HTTP"
-  target_type = "ip"
-  vpc_id      = local.vpc_id
-  health_check {
-    path    = "/health"
-    matcher = "200"
-  }
-  tags = local.common_tags
-}
-
-resource "aws_lb_target_group" "private" {
-  name        = "${var.name}-private"
-  port        = 5555
-  protocol    = "TCP"
-  target_type = "ip"
-  vpc_id      = local.vpc_id
-  health_check { protocol = "TCP" }
-  tags = local.common_tags
-}
-
-resource "aws_lb_listener" "private_http" {
-  load_balancer_arn = aws_lb.this.arn
-  port              = 5555
-  protocol          = "TCP"
-  default_action {
-    type             = "forward"
-    target_group_arn = aws_lb_target_group.private.arn
-  }
-}
-
-resource "aws_lb_listener" "private_ssh" {
-  load_balancer_arn = aws_lb.this.arn
-  port              = 2222
-  protocol          = "TCP"
-  default_action {
-    type             = "forward"
-    target_group_arn = aws_lb_target_group.app_ssh.arn
-  }
-}
-
-resource "aws_lb_target_group" "dqlite" {
-  for_each    = local.dqlite_nodes
-  name        = "${var.name}-dqlite-${each.key}"
-  port        = 9000
-  protocol    = "TCP"
-  target_type = "ip"
-  vpc_id      = local.vpc_id
-  # The dqlite transport must be reachable before a joining voter can form a
-  # quorum. An HTTP readiness probe would keep a bootstrap voter out of the
-  # Network Load Balancer until quorum existed, creating a circular startup
-  # dependency after an idle shutdown. Application traffic still waits for
-  # dqlite's own quorum check before it is accepted.
-  deregistration_delay = 5
-  health_check {
-    protocol            = "TCP"
-    # Explicitly clear the HTTP matcher retained in existing target-group
-    # state; the AWS provider rejects that attribute for TCP probes.
-    matcher             = null
-    interval            = 5
-    healthy_threshold   = 2
-    unhealthy_threshold = 2
-  }
-  tags = merge(local.common_tags, { Name = "${var.name}-dqlite-${each.key}" })
-}
-
-resource "aws_lb_listener" "dqlite" {
-  for_each          = local.dqlite_nodes
-  load_balancer_arn = aws_lb.this.arn
-  port              = each.value
-  protocol          = "TCP"
-  default_action {
-    type             = "forward"
-    target_group_arn = aws_lb_target_group.dqlite[each.key].arn
   }
 }
 
@@ -674,7 +619,7 @@ resource "aws_apigatewayv2_api" "this" {
 resource "aws_apigatewayv2_integration" "service" {
   api_id                 = aws_apigatewayv2_api.this.id
   integration_type       = "HTTP_PROXY"
-  integration_uri        = aws_lb_listener.private_http.arn
+  integration_uri        = aws_service_discovery_service.app.arn
   integration_method     = "ANY"
   connection_type        = "VPC_LINK"
   connection_id          = aws_apigatewayv2_vpc_link.this.id
@@ -820,7 +765,7 @@ resource "aws_ecs_task_definition" "this" {
       }
     }
   }
-  container_definitions = jsonencode([{ name = "bleephub", image = var.container_image, essential = true, portMappings = [{ containerPort = 5555, protocol = "tcp" }, { containerPort = 2222, protocol = "tcp" }], mountPoints = [{ sourceVolume = "sqlite", containerPath = "/var/lib/bleephub", readOnly = false }], environment = concat([{ name = "BLEEPHUB_PERSIST", value = "true" }, { name = "BLEEPHUB_DATA_DIR", value = "/var/lib/bleephub" }, { name = "BLEEPHUB_DQLITE_SERVERS", value = join(",", [for node, port in local.dqlite_nodes : "${aws_lb.this.dns_name}:${port}"]) }, { name = "BLEEPHUB_S3_BUCKET", value = aws_s3_bucket.git.bucket }, { name = "BLEEPHUB_S3_PREFIX", value = "git" }, { name = "BLEEPHUB_OBJECT_S3_BUCKET", value = aws_s3_bucket.objects.bucket }, { name = "BLEEPHUB_OBJECT_S3_PREFIX", value = "objects" }, { name = "BLEEPHUB_S3_REGION", value = var.region }, { name = "BLEEPHUB_EXTERNAL_URL", value = "https://${var.domain_name}" }, { name = "BLEEPHUB_ADMIN_HOST", value = "admin.${var.domain_name}" }, { name = "BLEEPHUB_SSH_ADDR", value = ":2222" }, { name = "BLEEPHUB_SSH_HOST", value = "ssh.${var.domain_name}" }], var.github_oauth_client_id == "" ? [] : [{ name = "BLEEPHUB_GITHUB_OAUTH_CLIENT_ID", value = var.github_oauth_client_id }], var.shauth_oidc_issuer == "" ? [] : [{ name = "BLEEPHUB_SHAUTH_ISSUER", value = var.shauth_oidc_issuer }, { name = "BLEEPHUB_SHAUTH_CLIENT_ID", value = var.shauth_oidc_client_id }]), secrets = concat([{ name = "BLEEPHUB_ADMIN_TOKEN", valueFrom = aws_secretsmanager_secret.admin_token.arn }, { name = "BLEEPHUB_SSH_HOST_KEY", valueFrom = aws_secretsmanager_secret.ssh_host_key.arn }], var.github_oauth_client_secret_arn == "" ? [] : [{ name = "BLEEPHUB_GITHUB_OAUTH_CLIENT_SECRET", valueFrom = var.github_oauth_client_secret_arn }], var.shauth_oidc_client_secret_arn == "" ? [] : [{ name = "BLEEPHUB_SHAUTH_CLIENT_SECRET", valueFrom = var.shauth_oidc_client_secret_arn }]), logConfiguration = { logDriver = "awslogs", options = { awslogs-group = aws_cloudwatch_log_group.this.name, awslogs-region = var.region, awslogs-stream-prefix = "service" } } }])
+  container_definitions = jsonencode([{ name = "bleephub", image = var.container_image, essential = true, portMappings = [{ containerPort = 5555, protocol = "tcp" }, { containerPort = 2222, protocol = "tcp" }], mountPoints = [{ sourceVolume = "sqlite", containerPath = "/var/lib/bleephub", readOnly = false }], environment = concat([{ name = "BLEEPHUB_PERSIST", value = "true" }, { name = "BLEEPHUB_DATA_DIR", value = "/var/lib/bleephub" }, { name = "BLEEPHUB_DQLITE_SERVERS", value = join(",", [for node in sort(keys(local.dqlite_nodes)) : "${aws_service_discovery_service.dqlite[node].name}.${aws_service_discovery_private_dns_namespace.this.name}:9000"]) }, { name = "BLEEPHUB_S3_BUCKET", value = aws_s3_bucket.git.bucket }, { name = "BLEEPHUB_S3_PREFIX", value = "git" }, { name = "BLEEPHUB_OBJECT_S3_BUCKET", value = aws_s3_bucket.objects.bucket }, { name = "BLEEPHUB_OBJECT_S3_PREFIX", value = "objects" }, { name = "BLEEPHUB_S3_REGION", value = var.region }, { name = "BLEEPHUB_EXTERNAL_URL", value = "https://${var.domain_name}" }, { name = "BLEEPHUB_ADMIN_HOST", value = "admin.${var.domain_name}" }, { name = "BLEEPHUB_SSH_ADDR", value = ":2222" }, { name = "BLEEPHUB_SSH_HOST", value = "ssh.${var.domain_name}" }], var.github_oauth_client_id == "" ? [] : [{ name = "BLEEPHUB_GITHUB_OAUTH_CLIENT_ID", value = var.github_oauth_client_id }], var.shauth_oidc_issuer == "" ? [] : [{ name = "BLEEPHUB_SHAUTH_ISSUER", value = var.shauth_oidc_issuer }, { name = "BLEEPHUB_SHAUTH_CLIENT_ID", value = var.shauth_oidc_client_id }]), secrets = concat([{ name = "BLEEPHUB_ADMIN_TOKEN", valueFrom = aws_secretsmanager_secret.admin_token.arn }, { name = "BLEEPHUB_SSH_HOST_KEY", valueFrom = aws_secretsmanager_secret.ssh_host_key.arn }], var.github_oauth_client_secret_arn == "" ? [] : [{ name = "BLEEPHUB_GITHUB_OAUTH_CLIENT_SECRET", valueFrom = var.github_oauth_client_secret_arn }], var.shauth_oidc_client_secret_arn == "" ? [] : [{ name = "BLEEPHUB_SHAUTH_CLIENT_SECRET", valueFrom = var.shauth_oidc_client_secret_arn }]), logConfiguration = { logDriver = "awslogs", options = { awslogs-group = aws_cloudwatch_log_group.this.name, awslogs-region = var.region, awslogs-stream-prefix = "service" } } }])
   tags                  = local.common_tags
 
   lifecycle {
@@ -858,7 +803,7 @@ resource "aws_ecs_task_definition" "ssh_gateway" {
     portMappings = [{ containerPort = 2222, protocol = "tcp" }]
     environment = [
       { name = "BLEEPHUB_WAKE_URL", value = "https://${var.domain_name}/health" },
-      { name = "BLEEPHUB_INTERNAL_SSH_TARGET", value = "${aws_lb.this.dns_name}:2222" }
+      { name = "BLEEPHUB_INTERNAL_SSH_TARGET", value = "${aws_service_discovery_service.app.name}.${aws_service_discovery_private_dns_namespace.this.name}:2222" }
     ]
     logConfiguration = { logDriver = "awslogs", options = { awslogs-group = aws_cloudwatch_log_group.this.name, awslogs-region = var.region, awslogs-stream-prefix = "ssh-gateway" } }
   }])
@@ -898,8 +843,8 @@ resource "aws_ecs_task_definition" "dqlite" {
     mountPoints  = [{ sourceVolume = "dqlite", containerPath = "/var/lib/dqlite", readOnly = false }]
     environment = concat([
       { name = "BLEEPHUB_DQLITE_DATA_DIR", value = "/var/lib/dqlite" },
-      { name = "BLEEPHUB_DQLITE_ADVERTISE_ADDR", value = "${aws_lb.this.dns_name}:${each.value}" }
-    ], each.key == "0" ? [] : [{ name = "BLEEPHUB_DQLITE_JOIN", value = "${aws_lb.this.dns_name}:${local.dqlite_nodes["0"]}" }])
+      { name = "BLEEPHUB_DQLITE_ADVERTISE_ADDR", value = "${aws_service_discovery_service.dqlite[each.key].name}.${aws_service_discovery_private_dns_namespace.this.name}:9000" }
+    ], each.key == "0" ? [] : [{ name = "BLEEPHUB_DQLITE_JOIN", value = "${aws_service_discovery_service.dqlite["0"].name}.${aws_service_discovery_private_dns_namespace.this.name}:9000" }])
     logConfiguration = { logDriver = "awslogs", options = { awslogs-group = aws_cloudwatch_log_group.this.name, awslogs-region = var.region, awslogs-stream-prefix = "dqlite-${each.key}" } }
   }])
   tags = merge(local.common_tags, { Name = "${var.name}-dqlite-${each.key}" })
@@ -923,31 +868,22 @@ resource "aws_ecs_service" "this" {
     security_groups  = [aws_security_group.task.id]
     assign_public_ip = false
   }
-  load_balancer {
-    target_group_arn = aws_lb_target_group.private.arn
-    container_name   = "bleephub"
-    container_port   = 5555
+  service_registries {
+    registry_arn   = aws_service_discovery_service.app.arn
+    container_name = "bleephub"
+    container_port = 5555
   }
-  load_balancer {
-    target_group_arn = aws_lb_target_group.app_ssh.arn
-    container_name   = "bleephub"
-    container_port   = 2222
-  }
-  depends_on = [aws_lb_listener.private_http, aws_efs_mount_target.sqlite]
+  depends_on = [aws_efs_mount_target.sqlite]
   tags       = local.common_tags
 }
 
 resource "aws_ecs_service" "dqlite" {
-  for_each        = local.dqlite_nodes
-  name            = "${var.name}-dqlite-${each.key}"
-  cluster         = local.ecs_cluster_arn
-  task_definition = aws_ecs_task_definition.dqlite[each.key].arn
-  desired_count   = var.idle_shutdown_enabled ? 0 : 1
-  launch_type     = "FARGATE"
-  # A voter cannot report /health until it has joined the durable Raft quorum.
-  # Give that real recovery work time to complete before ECS reacts to the
-  # Network Load Balancer's intentionally strict readiness probe.
-  health_check_grace_period_seconds  = 300
+  for_each                           = local.dqlite_nodes
+  name                               = "${var.name}-dqlite-${each.key}"
+  cluster                            = local.ecs_cluster_arn
+  task_definition                    = aws_ecs_task_definition.dqlite[each.key].arn
+  desired_count                      = var.idle_shutdown_enabled ? 0 : 1
+  launch_type                        = "FARGATE"
   deployment_minimum_healthy_percent = 0
   deployment_maximum_percent         = 100
   availability_zone_rebalancing      = "DISABLED"
@@ -956,12 +892,12 @@ resource "aws_ecs_service" "dqlite" {
     security_groups  = [aws_security_group.dqlite.id]
     assign_public_ip = false
   }
-  load_balancer {
-    target_group_arn = aws_lb_target_group.dqlite[each.key].arn
-    container_name   = "dqlite"
-    container_port   = 9000
+  service_registries {
+    registry_arn   = aws_service_discovery_service.dqlite[each.key].arn
+    container_name = "dqlite"
+    container_port = 9000
   }
-  depends_on = [aws_lb_listener.dqlite, aws_efs_mount_target.sqlite]
+  depends_on = [aws_efs_mount_target.sqlite]
   tags       = merge(local.common_tags, { Name = "${var.name}-dqlite-${each.key}" })
 }
 
@@ -1001,9 +937,7 @@ resource "aws_lambda_function" "wake" {
       ECS_SERVICE                 = aws_ecs_service.this.name
       API_ID                      = aws_apigatewayv2_api.this.id
       SERVICE_INTEGRATION_ID      = aws_apigatewayv2_integration.service.id
-      SERVICE_TARGET_GROUP_ARN    = aws_lb_target_group.private.arn
       DQLITE_SERVICES             = join(",", [for node in sort(keys(local.dqlite_nodes)) : aws_ecs_service.dqlite[node].name])
-      DQLITE_TARGET_GROUP_ARNS    = join(",", [for node in sort(keys(local.dqlite_nodes)) : aws_lb_target_group.dqlite[node].arn])
       IDLE_ALARM_NAME             = aws_cloudwatch_metric_alarm.idle_shutdown.alarm_name
       IDLE_ARM_FUNCTION_ARN       = aws_lambda_function.idle_arm.arn
       IDLE_ARM_SCHEDULER_ROLE_ARN = aws_iam_role.idle_arm_scheduler.arn
@@ -1057,15 +991,13 @@ resource "aws_lambda_function" "idle_shutdown" {
 
   environment {
     variables = {
-      ECS_CLUSTER              = local.ecs_cluster_name
-      ECS_SERVICE              = aws_ecs_service.this.name
-      IDLE_SHUTDOWN            = "true"
-      IDLE_ALARM_NAME          = "${var.name}-five-minute-idle"
-      API_ID                   = aws_apigatewayv2_api.this.id
-      SERVICE_INTEGRATION_ID   = aws_apigatewayv2_integration.service.id
-      SERVICE_TARGET_GROUP_ARN = aws_lb_target_group.private.arn
-      DQLITE_SERVICES          = join(",", [for node in sort(keys(local.dqlite_nodes)) : aws_ecs_service.dqlite[node].name])
-      DQLITE_TARGET_GROUP_ARNS = join(",", [for node in sort(keys(local.dqlite_nodes)) : aws_lb_target_group.dqlite[node].arn])
+      ECS_CLUSTER            = local.ecs_cluster_name
+      ECS_SERVICE            = aws_ecs_service.this.name
+      IDLE_SHUTDOWN          = "true"
+      IDLE_ALARM_NAME        = "${var.name}-five-minute-idle"
+      API_ID                 = aws_apigatewayv2_api.this.id
+      SERVICE_INTEGRATION_ID = aws_apigatewayv2_integration.service.id
+      DQLITE_SERVICES        = join(",", [for node in sort(keys(local.dqlite_nodes)) : aws_ecs_service.dqlite[node].name])
     }
   }
 

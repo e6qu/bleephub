@@ -23,8 +23,6 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/cloudwatch"
 	cloudwatchtypes "github.com/aws/aws-sdk-go-v2/service/cloudwatch/types"
 	"github.com/aws/aws-sdk-go-v2/service/ecs"
-	"github.com/aws/aws-sdk-go-v2/service/elasticloadbalancingv2"
-	elbtypes "github.com/aws/aws-sdk-go-v2/service/elasticloadbalancingv2/types"
 	awslambda "github.com/aws/aws-sdk-go-v2/service/lambda"
 	"github.com/aws/aws-sdk-go-v2/service/scheduler"
 	schedulertypes "github.com/aws/aws-sdk-go-v2/service/scheduler/types"
@@ -34,10 +32,10 @@ import (
 func main() { lambda.Start(wake) }
 
 func wake(ctx context.Context, request events.APIGatewayV2HTTPRequest) (events.APIGatewayV2HTTPResponse, error) {
-	cluster, service, apiID, serviceIntegrationID, targetGroupARN := os.Getenv("ECS_CLUSTER"), os.Getenv("ECS_SERVICE"), os.Getenv("API_ID"), os.Getenv("SERVICE_INTEGRATION_ID"), os.Getenv("SERVICE_TARGET_GROUP_ARN")
-	dqliteServices, dqliteTargetGroups := csvEnv("DQLITE_SERVICES"), csvEnv("DQLITE_TARGET_GROUP_ARNS")
-	if os.Getenv("IDLE_ARM") != "true" && (cluster == "" || service == "" || apiID == "" || serviceIntegrationID == "" || targetGroupARN == "" || len(dqliteServices) != 3 || len(dqliteTargetGroups) != 3) {
-		return events.APIGatewayV2HTTPResponse{}, fmt.Errorf("ECS_CLUSTER, ECS_SERVICE, API_ID, SERVICE_INTEGRATION_ID, SERVICE_TARGET_GROUP_ARN, DQLITE_SERVICES, and DQLITE_TARGET_GROUP_ARNS are required")
+	cluster, service, apiID, serviceIntegrationID := os.Getenv("ECS_CLUSTER"), os.Getenv("ECS_SERVICE"), os.Getenv("API_ID"), os.Getenv("SERVICE_INTEGRATION_ID")
+	dqliteServices := csvEnv("DQLITE_SERVICES")
+	if os.Getenv("IDLE_ARM") != "true" && (cluster == "" || service == "" || apiID == "" || serviceIntegrationID == "" || len(dqliteServices) != 3) {
+		return events.APIGatewayV2HTTPResponse{}, fmt.Errorf("ECS_CLUSTER, ECS_SERVICE, API_ID, SERVICE_INTEGRATION_ID, and DQLITE_SERVICES are required")
 	}
 	cfg, err := config.LoadDefaultConfig(ctx)
 	if err != nil {
@@ -101,8 +99,7 @@ func wake(ctx context.Context, request events.APIGatewayV2HTTPRequest) (events.A
 		}
 		return response(http.StatusAccepted, "Bleephub stopped after five minutes without requests."), nil
 	}
-	loadBalancerClient := elasticloadbalancingv2.NewFromConfig(cfg)
-	ready, err := ensureDqlite(ctx, ecsClient, loadBalancerClient, cluster, dqliteServices, dqliteTargetGroups)
+	ready, err := ensureDqlite(ctx, ecsClient, cluster, dqliteServices)
 	if err != nil {
 		return events.APIGatewayV2HTTPResponse{}, err
 	}
@@ -116,23 +113,17 @@ func wake(ctx context.Context, request events.APIGatewayV2HTTPRequest) (events.A
 		return startupResponse(request, "Application is starting"), nil
 	}
 
-	health, err := loadBalancerClient.DescribeTargetHealth(ctx, &elasticloadbalancingv2.DescribeTargetHealthInput{TargetGroupArn: aws.String(targetGroupARN)})
-	if err != nil {
-		return events.APIGatewayV2HTTPResponse{}, fmt.Errorf("describe Bleephub task health: %w", err)
-	}
-	for _, target := range health.TargetHealthDescriptions {
-		if target.TargetHealth != nil && target.TargetHealth.State == elbtypes.TargetHealthStateEnumHealthy {
-			if err := routeTo(ctx, apiClient, apiID, "integrations/"+serviceIntegrationID); err != nil {
-				return events.APIGatewayV2HTTPResponse{}, err
-			}
-			location := "https://" + request.RequestContext.DomainName + request.RawPath
-			if request.RawQueryString != "" {
-				location += "?" + request.RawQueryString
-			}
-			return events.APIGatewayV2HTTPResponse{StatusCode: http.StatusTemporaryRedirect, Headers: map[string]string{"location": location, "retry-after": "1"}, Body: "Bleephub is ready."}, nil
+	if services.Services[0].RunningCount > 0 && services.Services[0].PendingCount == 0 {
+		if err := routeTo(ctx, apiClient, apiID, "integrations/"+serviceIntegrationID); err != nil {
+			return events.APIGatewayV2HTTPResponse{}, err
 		}
+		location := "https://" + request.RequestContext.DomainName + request.RawPath
+		if request.RawQueryString != "" {
+			location += "?" + request.RawQueryString
+		}
+		return events.APIGatewayV2HTTPResponse{StatusCode: http.StatusTemporaryRedirect, Headers: map[string]string{"location": location, "retry-after": "1"}, Body: "Bleephub is ready."}, nil
 	}
-	return startupResponse(request, "Application health checks are running"), nil
+	return startupResponse(request, "Application is starting"), nil
 }
 
 func quiesceIdleAlarm(ctx context.Context, client *cloudwatch.Client, alarmName string) error {
@@ -256,7 +247,7 @@ func setDesiredCount(ctx context.Context, ecsClient *ecs.Client, cluster string,
 	return nil
 }
 
-func ensureDqlite(ctx context.Context, ecsClient *ecs.Client, loadBalancerClient *elasticloadbalancingv2.Client, cluster string, services, targetGroups []string) (bool, error) {
+func ensureDqlite(ctx context.Context, ecsClient *ecs.Client, cluster string, services []string) (bool, error) {
 	described, err := ecsClient.DescribeServices(ctx, &ecs.DescribeServicesInput{Cluster: aws.String(cluster), Services: services})
 	if err != nil {
 		return false, fmt.Errorf("describe dqlite ECS services: %w", err)
@@ -272,27 +263,17 @@ func ensureDqlite(ctx context.Context, ecsClient *ecs.Client, loadBalancerClient
 			return false, nil
 		}
 	}
-	healthyVoters := 0
-	for _, targetGroup := range targetGroups {
-		health, err := loadBalancerClient.DescribeTargetHealth(ctx, &elasticloadbalancingv2.DescribeTargetHealthInput{TargetGroupArn: aws.String(targetGroup)})
-		if err != nil {
-			return false, fmt.Errorf("describe dqlite target health: %w", err)
+	runningVoters := 0
+	for _, service := range described.Services {
+		if service.RunningCount > 0 && service.PendingCount == 0 {
+			runningVoters++
 		}
-		healthy := false
-		for _, target := range health.TargetHealthDescriptions {
-			if target.TargetHealth != nil && target.TargetHealth.State == elbtypes.TargetHealthStateEnumHealthy {
-				healthy = true
-				break
-			}
-		}
-		if !healthy {
-			continue
-		}
-		healthyVoters++
 	}
-	// dqlite commits with a majority of its configured voters. Requiring every
-	// voter here turns a recoverable single-voter restart into a full outage.
-	return healthyVoters >= len(targetGroups)/2+1, nil
+	// Dqlite itself establishes a leader after the voters have registered in
+	// AWS Cloud Map. The application retries its real dqlite connection until
+	// that leader is available; the wake controller only waits for a majority
+	// of transport-ready voter tasks before starting the application task.
+	return runningVoters >= len(services)/2+1, nil
 }
 
 func routeToWake(ctx context.Context, client *apigatewayv2.Client, apiID string) error {

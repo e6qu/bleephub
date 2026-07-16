@@ -14,7 +14,6 @@ import (
 	"os/signal"
 	"strings"
 	"sync"
-	"sync/atomic"
 	"syscall"
 
 	"github.com/canonical/go-dqlite/v3/app"
@@ -36,8 +35,7 @@ func main() {
 	defer listener.Close()
 
 	accepted := make(chan net.Conn)
-	var ready atomic.Bool
-	server := &http.Server{Handler: dqliteHandler(accepted, &ready)}
+	server := &http.Server{Handler: dqliteHandler(accepted)}
 	go func() {
 		if err := server.Serve(listener); err != nil && err != http.ErrServerClosed {
 			log.Printf("dqlite transport server: %v", err)
@@ -74,10 +72,8 @@ func main() {
 		}
 		log.Fatalf("wait for dqlite quorum: %v", err)
 	}
-	ready.Store(true)
 	log.Printf("dqlite quorum ready address=%s", address)
 	<-ctx.Done()
-	ready.Store(false)
 	// The wake coordinator intentionally stops every voter together during an
 	// idle transition. A handover needs another live voter, so direct closure
 	// is the correct dqlite shutdown operation for that complete-quorum case.
@@ -102,14 +98,13 @@ func csvEnv(name string) []string {
 	return values
 }
 
-func dqliteHandler(accepted chan<- net.Conn, ready *atomic.Bool) http.Handler {
+func dqliteHandler(accepted chan<- net.Conn) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.Method == http.MethodGet && r.URL.Path == "/health" {
-			if ready.Load() {
-				w.WriteHeader(http.StatusOK)
-				return
-			}
-			http.Error(w, "dqlite quorum is not ready", http.StatusServiceUnavailable)
+	if r.Method == http.MethodGet && r.URL.Path == "/health" {
+			// This reports only transport reachability. AWS Cloud Map can then
+			// publish the voter address so joining voters can form a quorum;
+			// Bleephub waits for a real dqlite leader before serving requests.
+			w.WriteHeader(http.StatusOK)
 			return
 		}
 		if r.Method != http.MethodGet || r.URL.Path != "/dqlite" || !strings.EqualFold(r.Header.Get("Upgrade"), "dqlite") {

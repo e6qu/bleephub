@@ -92,7 +92,7 @@ func cleanupSockerlessRepository() {
 }
 
 func TestBleephubECSApplyDestroy(t *testing.T) {
-	moduleDir, err := filepath.Abs("..")
+	moduleDir, err := filepath.Abs("../../terraform")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -126,6 +126,7 @@ provider "aws" {
     lambda = "%[1]s"
     route53 = "%[1]s"
     scheduler = "%[1]s"
+    servicediscovery = "%[1]s"
     s3 = "%[1]s"
     secretsmanager = "%[1]s"
     ssm = "%[1]s"
@@ -173,6 +174,10 @@ module "bleephub" {
 	dqlite := runTerraformOutput(t, dir, "state", "show", `module.bleephub.aws_ecs_service.dqlite["0"]`)
 	if !strings.Contains(dqlite, "desired_count") || !strings.Contains(dqlite, "= 1") {
 		t.Fatalf("always-on Bleephub dqlite service did not start with one task:\n%s", dqlite)
+	}
+	discovery := runTerraformOutput(t, dir, "state", "show", "module.bleephub.aws_service_discovery_service.app")
+	if !strings.Contains(discovery, `name                            = "app"`) || !strings.Contains(discovery, `type = "SRV"`) {
+		t.Fatalf("Bleephub application did not register its direct Amazon ECS discovery endpoint:\n%s", discovery)
 	}
 	setServiceDesiredCount(t, "bleephub-test", 0)
 	if output, exitCode := runTerraformWithExitCode(t, dir, "plan", "-detailed-exitcode"); exitCode != 2 || !strings.Contains(output, "desired_count") {
