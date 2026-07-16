@@ -15,6 +15,7 @@ concurrency:
 env:
   IMAGE: ghcr.io/e6qu/bleephub
   RUNNER_IMAGE: ghcr.io/e6qu/bleephub-runner
+  WAKE_IMAGE: ghcr.io/e6qu/bleephub-wake
 
 jobs:
   metadata:
@@ -145,9 +146,37 @@ jobs:
             org.opencontainers.image.revision=${{ github.sha }}
             org.opencontainers.image.created=${{ needs.metadata.outputs.published_at }}
 
+  wake-bundle:
+    name: Bleephub wake-listener bundle
+    needs: metadata
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7.0.0
+      - uses: docker/setup-buildx-action@v4.2.0
+      - name: Build the Linux ARM64 wake-listener ZIP
+        run: scripts/build-bleephub-wake.sh .build/bleephub-wake
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v4.4.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Publish the wake-listener ZIP as an OCI GitHub Package
+        uses: docker/build-push-action@v7.3.0
+        with:
+          context: .build/bleephub-wake
+          file: terraform/wake/Dockerfile
+          push: true
+          tags: ${{ env.WAKE_IMAGE }}:${{ needs.metadata.outputs.tag }}
+          labels: |
+            org.opencontainers.image.source=https://github.com/${{ github.repository }}
+            org.opencontainers.image.revision=${{ github.sha }}
+            org.opencontainers.image.created=${{ needs.metadata.outputs.published_at }}
+
   prune:
     name: Retain 20 Bleephub releases
-    needs: [metadata, manifest, startup-bundle]
+    needs: [metadata, manifest, startup-bundle, wake-bundle]
     runs-on: ubuntu-latest
     timeout-minutes: 10
     permissions:
@@ -201,3 +230,4 @@ jobs:
           retain_releases bleephub true
           retain_releases bleephub-runner true
           retain_releases bleephub-startup false
+          retain_releases bleephub-wake false

@@ -60,8 +60,10 @@ scripts/build-bleephub-wake.sh
 scripts/build-bleephub-startup.sh
 ```
 
-The post-merge release workflow publishes the startup ZIP as the immutable
-`ghcr.io/e6qu/bleephub-startup:<short-sha>` GitHub Container
-Registry package and retains its newest 20 versions. Terragrunt consumes the
-extracted `index.html`, so the public and administrator origins can show a
-dehydrated startup view before any Amazon Elastic Container Service task runs.
+The post-merge release workflow publishes the startup ZIP and Linux ARM64
+wake-listener ZIP as immutable
+`ghcr.io/e6qu/bleephub-startup:<short-sha>` and
+`ghcr.io/e6qu/bleephub-wake:<short-sha>` GitHub Container Registry packages. It
+retains the newest 20 versions of each. Terragrunt consumes the extracted
+artifacts, so the public and administrator origins can show a dehydrated startup
+view and wake the service without compiling source during deployment.
