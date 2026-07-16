@@ -215,10 +215,11 @@ jobs:
               .[]
               | . as $version
               | ($version.metadata.container.tags // []) as $tags
-              | select(
-                  ($tags | length == 0)
-                  or ([ $tags[] | select(. as $tag | $keep | index($tag) != null) ] | length == 0)
-                )
+              # OCI image indexes reference untagged child manifests. Deleting
+              # those children leaves a surviving release tag that cannot be
+              # pulled, so retention deletes only obsolete tagged release roots.
+              | select(($tags | length) > 0)
+              | select([ $tags[] | select(. as $tag | $keep | index($tag) != null) ] | length == 0)
               | $version.id
             ' "$versions_file" \
               | while IFS= read -r version_id; do
