@@ -637,6 +637,9 @@ resource "aws_lb_target_group" "dqlite" {
   deregistration_delay = 5
   health_check {
     protocol            = "TCP"
+    # Explicitly clear the HTTP matcher retained in existing target-group
+    # state; the AWS provider rejects that attribute for TCP probes.
+    matcher             = null
     interval            = 5
     healthy_threshold   = 2
     unhealthy_threshold = 2
