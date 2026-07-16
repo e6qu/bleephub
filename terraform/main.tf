@@ -933,12 +933,6 @@ resource "aws_ecs_service" "this" {
   }
   depends_on = [aws_lb_listener.private_http, aws_efs_mount_target.sqlite]
   tags       = local.common_tags
-  lifecycle {
-    # The wake and idle Lambdas own runtime capacity in scale-to-zero mode;
-    # Terraform must not interrupt live work after establishing the selected
-    # initial capacity.
-    ignore_changes = [desired_count]
-  }
 }
 
 resource "aws_ecs_service" "dqlite" {
@@ -967,10 +961,6 @@ resource "aws_ecs_service" "dqlite" {
   }
   depends_on = [aws_lb_listener.dqlite, aws_efs_mount_target.sqlite]
   tags       = merge(local.common_tags, { Name = "${var.name}-dqlite-${each.key}" })
-  lifecycle {
-    # Each voter is started and stopped with the application by the wake path.
-    ignore_changes = [desired_count]
-  }
 }
 
 resource "aws_ecs_service" "ssh_gateway" {
