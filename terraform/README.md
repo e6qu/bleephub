@@ -1,11 +1,14 @@
 # Bleephub Amazon Elastic Container Service on AWS Fargate Module
 
-This Terraform module provisions Bleephub in its own AWS network and account
-scope. It creates the private Amazon Elastic Container Service on AWS Fargate
-services, native dqlite storage, Amazon Simple Storage Service git/object
-storage, an Amazon Simple Storage Service startup document, Amazon API Gateway
-wake routing, private administrator origin, SSH Git gateway, Route 53 records,
-certificate, fck-nat, and Amazon Simple Storage Service gateway endpoint.
+This Terraform module provisions Bleephub either with its own Amazon Web
+Services network or inside an existing environment VPC and Amazon Elastic
+Container Service cluster. It creates the private Amazon Elastic Container
+Service on AWS Fargate services, native dqlite storage, Amazon Simple Storage
+Service git/object storage, an Amazon Simple Storage Service startup document,
+Amazon API Gateway wake routing, private administrator origin, SSH Git gateway,
+Route 53 records, and certificate. Standalone mode also creates fck-nat and an
+Amazon Simple Storage Service gateway endpoint; shared-network mode reuses the
+environment's equivalents.
 
 The module deliberately contains no backend or environment-specific values.
 Use it through Terragrunt from the private `e6qu/infra` repository. The
@@ -22,6 +25,13 @@ origin and `admin.bleephub.e6qu.dev` as the administrator origin.
   Terragrunt environment rather than committing it.
 - `wake_listener_zip_path` — pre-built Linux Amazon Lambda wake-listener ZIP.
 - `startup_page_path` — extracted `index.html` from the versioned startup ZIP.
+
+To use a shared VPC, set `existing_vpc_id`,
+`existing_private_subnet_ids`, `existing_public_subnet_ids`, and
+`existing_ecs_cluster_arn` together. The module then creates no VPC, subnets,
+route tables, fck-nat instance, Amazon Simple Storage Service endpoint, or ECS
+cluster. It continues to create Bleephub-scoped security groups, EFS mount
+targets, Network Load Balancers, and services in the supplied network.
 
 `github_oauth_client_id` and `github_oauth_client_secret_arn` enable the
 registered GitHub OAuth App. The secret ARN references an existing AWS Secrets

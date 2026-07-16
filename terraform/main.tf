@@ -4,21 +4,34 @@ locals {
     managed-by = "terraform"
     service    = var.name
   })
-  git_bucket     = "${var.name}-git"
-  object_bucket  = "${var.name}-objects"
-  startup_bucket = "${var.name}-startup"
-  azs            = { for index, az in var.availability_zones : tostring(index) => az }
-  dqlite_nodes   = { for index in range(3) : tostring(index) => 9000 + index }
+  git_bucket            = "${var.name}-git"
+  object_bucket         = "${var.name}-objects"
+  startup_bucket        = "${var.name}-startup"
+  azs                   = { for index, az in var.availability_zones : tostring(index) => az }
+  uses_existing_network = var.existing_vpc_id != ""
+  dqlite_nodes          = { for index in range(3) : tostring(index) => 9000 + index }
   dqlite_data_paths = {
     "0" = "/dqlite/0"
     "1" = "/dqlite/1"
     "2" = "/dqlite/2"
   }
+  vpc_id             = local.uses_existing_network ? var.existing_vpc_id : aws_vpc.this[0].id
+  private_subnet_ids = local.uses_existing_network ? var.existing_private_subnet_ids : [for subnet in aws_subnet.private : subnet.id]
+  public_subnet_ids  = local.uses_existing_network ? var.existing_public_subnet_ids : [for subnet in aws_subnet.public : subnet.id]
+  private_subnet_map = { for index, subnet_id in local.private_subnet_ids : tostring(index) => subnet_id }
+  ecs_cluster_arn    = local.uses_existing_network ? var.existing_ecs_cluster_arn : aws_ecs_cluster.this[0].arn
+  ecs_cluster_name   = local.uses_existing_network ? data.aws_ecs_cluster.existing[0].cluster_name : aws_ecs_cluster.this[0].name
 }
 
 data "aws_caller_identity" "current" {}
 
+data "aws_ecs_cluster" "existing" {
+  count        = local.uses_existing_network ? 1 : 0
+  cluster_name = element(reverse(split("/", var.existing_ecs_cluster_arn)), 0)
+}
+
 resource "aws_vpc" "this" {
+  count                = local.uses_existing_network ? 0 : 1
   cidr_block           = var.vpc_cidr
   enable_dns_hostnames = true
   enable_dns_support   = true
@@ -26,13 +39,14 @@ resource "aws_vpc" "this" {
 }
 
 resource "aws_internet_gateway" "this" {
-  vpc_id = aws_vpc.this.id
+  count  = local.uses_existing_network ? 0 : 1
+  vpc_id = aws_vpc.this[0].id
   tags   = merge(local.common_tags, { Name = "${var.name}-igw" })
 }
 
 resource "aws_subnet" "public" {
-  for_each                = local.azs
-  vpc_id                  = aws_vpc.this.id
+  for_each                = local.uses_existing_network ? {} : local.azs
+  vpc_id                  = aws_vpc.this[0].id
   availability_zone       = each.value
   cidr_block              = cidrsubnet(var.vpc_cidr, 8, tonumber(each.key))
   map_public_ip_on_launch = true
@@ -40,18 +54,19 @@ resource "aws_subnet" "public" {
 }
 
 resource "aws_subnet" "private" {
-  for_each          = local.azs
-  vpc_id            = aws_vpc.this.id
+  for_each          = local.uses_existing_network ? {} : local.azs
+  vpc_id            = aws_vpc.this[0].id
   availability_zone = each.value
   cidr_block        = cidrsubnet(var.vpc_cidr, 8, 128 + tonumber(each.key))
   tags              = merge(local.common_tags, { Name = "${var.name}-private-${each.value}" })
 }
 
 resource "aws_route_table" "public" {
-  vpc_id = aws_vpc.this.id
+  count  = local.uses_existing_network ? 0 : 1
+  vpc_id = aws_vpc.this[0].id
   route {
     cidr_block = "0.0.0.0/0"
-    gateway_id = aws_internet_gateway.this.id
+    gateway_id = aws_internet_gateway.this[0].id
   }
   tags = merge(local.common_tags, { Name = "${var.name}-public" })
 }
@@ -59,12 +74,12 @@ resource "aws_route_table" "public" {
 resource "aws_route_table_association" "public" {
   for_each       = aws_subnet.public
   subnet_id      = each.value.id
-  route_table_id = aws_route_table.public.id
+  route_table_id = aws_route_table.public[0].id
 }
 
 resource "aws_route_table" "private" {
-  for_each = local.azs
-  vpc_id   = aws_vpc.this.id
+  for_each = local.uses_existing_network ? {} : local.azs
+  vpc_id   = aws_vpc.this[0].id
   tags     = merge(local.common_tags, { Name = "${var.name}-private-${each.value}" })
 }
 
@@ -78,11 +93,12 @@ resource "aws_route_table_association" "private" {
 # default routes of every private subnet; this module never provisions an AWS
 # managed NAT Gateway.
 module "fck_nat" {
+  count   = local.uses_existing_network ? 0 : 1
   source  = "RaJiska/fck-nat/aws"
   version = "1.6.0"
 
   name                 = "${var.name}-fck-nat"
-  vpc_id               = aws_vpc.this.id
+  vpc_id               = aws_vpc.this[0].id
   subnet_id            = aws_subnet.public["0"].id
   update_route_tables  = true
   route_tables_ids     = { for key, route_table in aws_route_table.private : key => route_table.id }
@@ -92,7 +108,8 @@ module "fck_nat" {
 }
 
 resource "aws_vpc_endpoint" "s3" {
-  vpc_id            = aws_vpc.this.id
+  count             = local.uses_existing_network ? 0 : 1
+  vpc_id            = aws_vpc.this[0].id
   service_name      = "com.amazonaws.${var.region}.s3"
   vpc_endpoint_type = "Gateway"
   route_table_ids   = [for route_table in aws_route_table.private : route_table.id]
@@ -217,7 +234,7 @@ resource "aws_cloudwatch_log_group" "this" {
 
 resource "aws_security_group" "api_link" {
   name_prefix = "${var.name}-api-link-"
-  vpc_id      = aws_vpc.this.id
+  vpc_id      = local.vpc_id
   egress {
     protocol    = "-1"
     from_port   = 0
@@ -229,7 +246,7 @@ resource "aws_security_group" "api_link" {
 
 resource "aws_security_group" "task" {
   name_prefix = "${var.name}-task-"
-  vpc_id      = aws_vpc.this.id
+  vpc_id      = local.vpc_id
   ingress {
     protocol    = "tcp"
     from_port   = 5555
@@ -253,7 +270,7 @@ resource "aws_security_group" "task" {
 
 resource "aws_security_group" "ssh" {
   name_prefix = "${var.name}-ssh-"
-  vpc_id      = aws_vpc.this.id
+  vpc_id      = local.vpc_id
   ingress {
     protocol    = "tcp"
     from_port   = 22
@@ -271,7 +288,7 @@ resource "aws_security_group" "ssh" {
 
 resource "aws_security_group" "ssh_gateway" {
   name_prefix = "${var.name}-ssh-gateway-"
-  vpc_id      = aws_vpc.this.id
+  vpc_id      = local.vpc_id
   ingress {
     protocol        = "tcp"
     from_port       = 2222
@@ -289,7 +306,7 @@ resource "aws_security_group" "ssh_gateway" {
 
 resource "aws_security_group" "efs" {
   name_prefix = "${var.name}-efs-"
-  vpc_id      = aws_vpc.this.id
+  vpc_id      = local.vpc_id
   ingress {
     protocol        = "tcp"
     from_port       = 2049
@@ -301,7 +318,7 @@ resource "aws_security_group" "efs" {
 
 resource "aws_security_group" "dqlite" {
   name_prefix = "${var.name}-dqlite-"
-  vpc_id      = aws_vpc.this.id
+  vpc_id      = local.vpc_id
   ingress {
     protocol    = "tcp"
     from_port   = 9000
@@ -358,9 +375,9 @@ resource "aws_efs_access_point" "dqlite" {
 }
 
 resource "aws_efs_mount_target" "sqlite" {
-  for_each        = aws_subnet.private
+  for_each        = local.private_subnet_map
   file_system_id  = aws_efs_file_system.sqlite.id
-  subnet_id       = each.value.id
+  subnet_id       = each.value
   security_groups = [aws_security_group.efs.id]
 }
 
@@ -479,8 +496,9 @@ resource "aws_iam_role_policy" "wake_service" {
 }
 
 resource "aws_ecs_cluster" "this" {
-  name = var.name
-  tags = local.common_tags
+  count = local.uses_existing_network ? 0 : 1
+  name  = var.name
+  tags  = local.common_tags
 }
 
 resource "aws_acm_certificate" "this" {
@@ -515,7 +533,7 @@ resource "aws_lb" "this" {
   # while the scale-to-zero application service intentionally runs one task.
   # Cross-zone forwarding keeps either link interface able to reach that task.
   enable_cross_zone_load_balancing = true
-  subnets                          = [for subnet in aws_subnet.private : subnet.id]
+  subnets                          = local.private_subnet_ids
   tags                             = local.common_tags
 }
 
@@ -524,7 +542,7 @@ resource "aws_lb" "ssh" {
   internal           = false
   load_balancer_type = "network"
   security_groups    = [aws_security_group.ssh.id]
-  subnets            = [for subnet in aws_subnet.public : subnet.id]
+  subnets            = local.public_subnet_ids
   tags               = local.common_tags
 }
 
@@ -533,7 +551,7 @@ resource "aws_lb_target_group" "ssh" {
   port        = 2222
   protocol    = "TCP"
   target_type = "ip"
-  vpc_id      = aws_vpc.this.id
+  vpc_id      = local.vpc_id
   health_check {
     protocol = "TCP"
     matcher  = null
@@ -546,7 +564,7 @@ resource "aws_lb_target_group" "app_ssh" {
   port        = 2222
   protocol    = "TCP"
   target_type = "ip"
-  vpc_id      = aws_vpc.this.id
+  vpc_id      = local.vpc_id
   health_check { protocol = "TCP" }
   tags = local.common_tags
 }
@@ -566,7 +584,7 @@ resource "aws_lb_target_group" "this" {
   port        = 5555
   protocol    = "HTTP"
   target_type = "ip"
-  vpc_id      = aws_vpc.this.id
+  vpc_id      = local.vpc_id
   health_check {
     path    = "/health"
     matcher = "200"
@@ -579,7 +597,7 @@ resource "aws_lb_target_group" "private" {
   port        = 5555
   protocol    = "TCP"
   target_type = "ip"
-  vpc_id      = aws_vpc.this.id
+  vpc_id      = local.vpc_id
   health_check { protocol = "TCP" }
   tags = local.common_tags
 }
@@ -610,7 +628,7 @@ resource "aws_lb_target_group" "dqlite" {
   port        = 9000
   protocol    = "TCP"
   target_type = "ip"
-  vpc_id      = aws_vpc.this.id
+  vpc_id      = local.vpc_id
   # The idle controller has already drained the Bleephub application before
   # stopping a voter. Keeping a Raft voter registered for five more minutes
   # leaves its exclusive durable-directory lock behind during the next wake.
@@ -641,7 +659,7 @@ resource "aws_lb_listener" "dqlite" {
 resource "aws_apigatewayv2_vpc_link" "this" {
   name               = var.name
   security_group_ids = [aws_security_group.api_link.id]
-  subnet_ids         = [for subnet in aws_subnet.private : subnet.id]
+  subnet_ids         = local.private_subnet_ids
   tags               = local.common_tags
 }
 
@@ -805,6 +823,13 @@ resource "aws_ecs_task_definition" "this" {
 
   lifecycle {
     precondition {
+      condition = (
+        (var.existing_vpc_id == "" && length(var.existing_private_subnet_ids) == 0 && length(var.existing_public_subnet_ids) == 0 && var.existing_ecs_cluster_arn == "") ||
+        (var.existing_vpc_id != "" && length(var.existing_private_subnet_ids) >= 2 && length(var.existing_public_subnet_ids) >= 2 && var.existing_ecs_cluster_arn != "")
+      )
+      error_message = "Configure all existing-network inputs together: VPC ID, at least two private subnets, at least two public subnets, and an ECS cluster ARN."
+    }
+    precondition {
       condition     = (var.shauth_oidc_issuer == "" && var.shauth_oidc_client_id == "" && var.shauth_oidc_client_secret_arn == "") || (var.shauth_oidc_issuer != "" && var.shauth_oidc_client_id != "" && var.shauth_oidc_client_secret_arn != "")
       error_message = "shauth_oidc_issuer, shauth_oidc_client_id, and shauth_oidc_client_secret_arn must be configured together."
     }
@@ -880,7 +905,7 @@ resource "aws_ecs_task_definition" "dqlite" {
 
 resource "aws_ecs_service" "this" {
   name            = var.name
-  cluster         = aws_ecs_cluster.this.arn
+  cluster         = local.ecs_cluster_arn
   task_definition = aws_ecs_task_definition.this.arn
   desired_count   = 0
   launch_type     = "FARGATE"
@@ -892,7 +917,7 @@ resource "aws_ecs_service" "this" {
   availability_zone_rebalancing      = "DISABLED"
 
   network_configuration {
-    subnets          = [for subnet in aws_subnet.private : subnet.id]
+    subnets          = local.private_subnet_ids
     security_groups  = [aws_security_group.task.id]
     assign_public_ip = false
   }
@@ -906,7 +931,7 @@ resource "aws_ecs_service" "this" {
     container_name   = "bleephub"
     container_port   = 2222
   }
-  depends_on = [aws_lb_listener.private_http, aws_efs_mount_target.sqlite, module.fck_nat]
+  depends_on = [aws_lb_listener.private_http, aws_efs_mount_target.sqlite]
   tags       = local.common_tags
   lifecycle {
     # The wake and idle Lambdas own runtime capacity; Terraform establishes
@@ -918,7 +943,7 @@ resource "aws_ecs_service" "this" {
 resource "aws_ecs_service" "dqlite" {
   for_each        = local.dqlite_nodes
   name            = "${var.name}-dqlite-${each.key}"
-  cluster         = aws_ecs_cluster.this.arn
+  cluster         = local.ecs_cluster_arn
   task_definition = aws_ecs_task_definition.dqlite[each.key].arn
   desired_count   = 0
   launch_type     = "FARGATE"
@@ -930,7 +955,7 @@ resource "aws_ecs_service" "dqlite" {
   deployment_maximum_percent         = 100
   availability_zone_rebalancing      = "DISABLED"
   network_configuration {
-    subnets          = [for subnet in aws_subnet.private : subnet.id]
+    subnets          = local.private_subnet_ids
     security_groups  = [aws_security_group.dqlite.id]
     assign_public_ip = false
   }
@@ -939,7 +964,7 @@ resource "aws_ecs_service" "dqlite" {
     container_name   = "dqlite"
     container_port   = 9000
   }
-  depends_on = [aws_lb_listener.dqlite, aws_efs_mount_target.sqlite, module.fck_nat]
+  depends_on = [aws_lb_listener.dqlite, aws_efs_mount_target.sqlite]
   tags       = merge(local.common_tags, { Name = "${var.name}-dqlite-${each.key}" })
   lifecycle {
     # Each voter is started and stopped with the application by the wake path.
@@ -949,12 +974,12 @@ resource "aws_ecs_service" "dqlite" {
 
 resource "aws_ecs_service" "ssh_gateway" {
   name            = "${var.name}-ssh-gateway"
-  cluster         = aws_ecs_cluster.this.arn
+  cluster         = local.ecs_cluster_arn
   task_definition = aws_ecs_task_definition.ssh_gateway.arn
   desired_count   = 1
   launch_type     = "FARGATE"
   network_configuration {
-    subnets          = [for subnet in aws_subnet.private : subnet.id]
+    subnets          = local.private_subnet_ids
     security_groups  = [aws_security_group.ssh_gateway.id]
     assign_public_ip = false
   }
@@ -963,7 +988,7 @@ resource "aws_ecs_service" "ssh_gateway" {
     container_name   = "ssh-gateway"
     container_port   = 2222
   }
-  depends_on = [aws_lb_listener.ssh, module.fck_nat]
+  depends_on = [aws_lb_listener.ssh]
   tags       = local.common_tags
 }
 
@@ -979,7 +1004,7 @@ resource "aws_lambda_function" "wake" {
 
   environment {
     variables = {
-      ECS_CLUSTER                 = aws_ecs_cluster.this.name
+      ECS_CLUSTER                 = local.ecs_cluster_name
       ECS_SERVICE                 = aws_ecs_service.this.name
       API_ID                      = aws_apigatewayv2_api.this.id
       SERVICE_INTEGRATION_ID      = aws_apigatewayv2_integration.service.id
@@ -1037,7 +1062,7 @@ resource "aws_lambda_function" "idle_shutdown" {
 
   environment {
     variables = {
-      ECS_CLUSTER              = aws_ecs_cluster.this.name
+      ECS_CLUSTER              = local.ecs_cluster_name
       ECS_SERVICE              = aws_ecs_service.this.name
       IDLE_SHUTDOWN            = "true"
       IDLE_ALARM_NAME          = "${var.name}-five-minute-idle"
