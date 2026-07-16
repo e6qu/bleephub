@@ -1,6 +1,8 @@
 package test
 
 import (
+	"context"
+	"errors"
 	"fmt"
 	"io"
 	"net"
@@ -11,6 +13,10 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/aws/aws-sdk-go-v2/aws"
+	"github.com/aws/aws-sdk-go-v2/credentials"
+	"github.com/aws/aws-sdk-go-v2/service/ecs"
 )
 
 var simulatorURL string
@@ -168,8 +174,30 @@ module "bleephub" {
 	if !strings.Contains(dqlite, "desired_count") || !strings.Contains(dqlite, "= 1") {
 		t.Fatalf("always-on Bleephub dqlite service did not start with one task:\n%s", dqlite)
 	}
+	setServiceDesiredCount(t, "bleephub-test", 0)
+	if output, exitCode := runTerraformWithExitCode(t, dir, "plan", "-detailed-exitcode"); exitCode != 2 || !strings.Contains(output, "desired_count") {
+		t.Fatalf("Terraform did not reconcile always-on application capacity after ECS drift (exit %d):\n%s", exitCode, output)
+	}
+	runTerraform(t, dir, "apply", "-auto-approve")
 	runTerraform(t, dir, "plan", "-detailed-exitcode")
 	runTerraform(t, dir, "destroy", "-auto-approve")
+}
+
+func setServiceDesiredCount(t *testing.T, service string, desiredCount int32) {
+	t.Helper()
+	client := ecs.New(ecs.Options{
+		Region:       "eu-west-1",
+		Credentials:  credentials.NewStaticCredentialsProvider("test", "test", ""),
+		BaseEndpoint: aws.String(simulatorURL),
+	})
+	_, err := client.UpdateService(context.Background(), &ecs.UpdateServiceInput{
+		Cluster:      aws.String("bleephub-test"),
+		Service:      aws.String(service),
+		DesiredCount: aws.Int32(desiredCount),
+	})
+	if err != nil {
+		t.Fatalf("set ECS service desired count: %v", err)
+	}
 }
 
 func buildStartupPage(t *testing.T, destination string) {
@@ -219,4 +247,20 @@ func runTerraformOutput(t *testing.T, directory string, arguments ...string) str
 		t.Fatalf("terraform %s: %v\n%s", strings.Join(arguments, " "), err, output)
 	}
 	return string(output)
+}
+
+func runTerraformWithExitCode(t *testing.T, directory string, arguments ...string) (string, int) {
+	t.Helper()
+	command := exec.Command("terraform", arguments...)
+	command.Dir = directory
+	command.Env = append(os.Environ(), "AWS_ENDPOINT_URL="+simulatorURL, "AWS_ACCESS_KEY_ID=test", "AWS_SECRET_ACCESS_KEY=test", "AWS_DEFAULT_REGION=eu-west-1", "TF_LOG=")
+	output, err := command.CombinedOutput()
+	if err == nil {
+		return string(output), 0
+	}
+	var exitError *exec.ExitError
+	if !errors.As(err, &exitError) {
+		t.Fatalf("terraform %s: %v\n%s", strings.Join(arguments, " "), err, output)
+	}
+	return string(output), exitError.ExitCode()
 }
