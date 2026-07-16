@@ -44,6 +44,10 @@ redirect URI is `https://<domain_name>/auth/shauth/callback`. Bleephub uses
 OpenID Connect discovery, PKCE, nonce binding, and signed ID-token validation;
 the secret remains only in AWS Secrets Manager.
 
+`idle_shutdown_enabled` defaults to `true`. Set it to `false` for an always-on
+environment; the wake controller then leaves the application and dqlite services
+running while the rest of the deployment stays unchanged.
+
 ## Outputs
 
 The module returns the public Bleephub URL, administrator URL, SSH host,

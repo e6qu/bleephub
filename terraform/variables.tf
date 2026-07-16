@@ -132,6 +132,12 @@ variable "idle_shutdown_minutes" {
   }
 }
 
+variable "idle_shutdown_enabled" {
+  description = "Whether the wake controller stops Bleephub after idle_shutdown_minutes without Amazon API Gateway requests. Disable for always-on environments."
+  type        = bool
+  default     = true
+}
+
 variable "task_cpu" {
   description = "Fargate CPU units for the single Bleephub task."
   type        = number

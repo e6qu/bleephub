@@ -1015,6 +1015,8 @@ resource "aws_lambda_function" "wake" {
       IDLE_ARM_FUNCTION_ARN       = aws_lambda_function.idle_arm.arn
       IDLE_ARM_SCHEDULER_ROLE_ARN = aws_iam_role.idle_arm_scheduler.arn
       IDLE_ARM_SCHEDULE_NAME      = "${var.name}-idle-arm"
+      IDLE_SHUTDOWN_ENABLED       = tostring(var.idle_shutdown_enabled)
+      IDLE_SHUTDOWN_MINUTES       = tostring(var.idle_shutdown_minutes)
       ADMIN_TOKEN_SECRET_ARN      = aws_secretsmanager_secret.admin_token.arn
     }
   }
@@ -1024,7 +1026,7 @@ resource "aws_lambda_function" "wake" {
 
 resource "aws_cloudwatch_metric_alarm" "idle_shutdown" {
   alarm_name          = "${var.name}-five-minute-idle"
-  alarm_description   = "Stops Bleephub after five minutes without Amazon API Gateway requests."
+  alarm_description   = var.idle_shutdown_enabled ? "Stops Bleephub after ${var.idle_shutdown_minutes} minutes without Amazon API Gateway requests." : "Automatic Bleephub idle shutdown is disabled."
   comparison_operator = "LessThanOrEqualToThreshold"
   evaluation_periods  = var.idle_shutdown_minutes
   metric_name         = "Count"

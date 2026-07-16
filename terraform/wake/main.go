@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"strconv"
 	"strings"
 	"time"
 
@@ -72,8 +73,12 @@ func wake(ctx context.Context, request events.APIGatewayV2HTTPRequest) (events.A
 		}
 		return response(http.StatusNoContent, ""), nil
 	}
-	if os.Getenv("IDLE_SHUTDOWN") != "true" {
-		if err := deferIdleAlarm(ctx, cloudwatch.NewFromConfig(cfg), scheduler.NewFromConfig(cfg), os.Getenv("IDLE_ALARM_NAME"), os.Getenv("IDLE_ARM_FUNCTION_ARN"), os.Getenv("IDLE_ARM_SCHEDULER_ROLE_ARN"), os.Getenv("IDLE_ARM_SCHEDULE_NAME")); err != nil {
+	if os.Getenv("IDLE_SHUTDOWN") != "true" && idleShutdownEnabled() {
+		idleDelay, err := idleShutdownDelay()
+		if err != nil {
+			return events.APIGatewayV2HTTPResponse{}, err
+		}
+		if err := deferIdleAlarm(ctx, cloudwatch.NewFromConfig(cfg), scheduler.NewFromConfig(cfg), os.Getenv("IDLE_ALARM_NAME"), os.Getenv("IDLE_ARM_FUNCTION_ARN"), os.Getenv("IDLE_ARM_SCHEDULER_ROLE_ARN"), os.Getenv("IDLE_ARM_SCHEDULE_NAME"), idleDelay); err != nil {
 			return events.APIGatewayV2HTTPResponse{}, err
 		}
 	}
@@ -151,7 +156,17 @@ func quiesceIdleAlarm(ctx context.Context, client *cloudwatch.Client, alarmName 
 // to enable its actions after the full idle window. This leaves the actual
 // inactivity decision to Amazon API Gateway's native request metric while
 // preventing an old zero-value window from stopping a newly awakened stack.
-func deferIdleAlarm(ctx context.Context, cloudWatchClient *cloudwatch.Client, schedulerClient *scheduler.Client, alarmName, armFunctionARN, schedulerRoleARN, scheduleName string) error {
+func idleShutdownEnabled() bool { return os.Getenv("IDLE_SHUTDOWN_ENABLED") == "true" }
+
+func idleShutdownDelay() (time.Duration, error) {
+	minutes, err := strconv.Atoi(os.Getenv("IDLE_SHUTDOWN_MINUTES"))
+	if err != nil || minutes < 5 {
+		return 0, fmt.Errorf("IDLE_SHUTDOWN_MINUTES must be an integer of at least five")
+	}
+	return time.Duration(minutes) * time.Minute, nil
+}
+
+func deferIdleAlarm(ctx context.Context, cloudWatchClient *cloudwatch.Client, schedulerClient *scheduler.Client, alarmName, armFunctionARN, schedulerRoleARN, scheduleName string, idleDelay time.Duration) error {
 	if alarmName == "" || armFunctionARN == "" || schedulerRoleARN == "" || scheduleName == "" {
 		return fmt.Errorf("IDLE_ALARM_NAME, IDLE_ARM_FUNCTION_ARN, IDLE_ARM_SCHEDULER_ROLE_ARN, and IDLE_ARM_SCHEDULE_NAME are required")
 	}
@@ -165,7 +180,7 @@ func deferIdleAlarm(ctx context.Context, cloudWatchClient *cloudwatch.Client, sc
 	}); err != nil {
 		return fmt.Errorf("clear idle alarm after Bleephub request: %w", err)
 	}
-	when := time.Now().UTC().Add(5 * time.Minute).Format("2006-01-02T15:04:05")
+	when := time.Now().UTC().Add(idleDelay).Format("2006-01-02T15:04:05")
 	input := &scheduler.CreateScheduleInput{
 		Name:                       aws.String(scheduleName),
 		ActionAfterCompletion:      schedulertypes.ActionAfterCompletionDelete,
