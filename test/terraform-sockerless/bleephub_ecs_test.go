@@ -15,12 +15,15 @@ import (
 
 var simulatorURL string
 var simulator *exec.Cmd
+var sockerlessRepository string
 
 func TestMain(m *testing.M) {
-	simDir, err := filepath.Abs("../../../simulators/aws")
+	var err error
+	sockerlessRepository, err = resolveSockerlessRepository()
 	if err != nil {
-		panic(err)
+		panic(fmt.Sprintf("locate sockerless repository: %v", err))
 	}
+	simDir := filepath.Join(sockerlessRepository, "simulators", "aws")
 	binary := filepath.Join(os.TempDir(), "simulator-aws-bleephub-ecs-test")
 	build := exec.Command("go", "build", "-tags", "noui", "-o", binary, ".")
 	build.Dir = simDir
@@ -55,7 +58,31 @@ func TestMain(m *testing.M) {
 	_ = simulator.Process.Kill()
 	_, _ = simulator.Process.Wait()
 	_ = os.Remove(binary)
+	cleanupSockerlessRepository()
 	os.Exit(code)
+}
+
+func resolveSockerlessRepository() (string, error) {
+	if configured := os.Getenv("SOCKERLESS_REPOSITORY"); configured != "" {
+		return configured, nil
+	}
+	parent, err := os.MkdirTemp("", "bleephub-sockerless-")
+	if err != nil {
+		return "", err
+	}
+	checkout := filepath.Join(parent, "sockerless")
+	command := exec.Command("git", "clone", "--depth=1", "https://github.com/e6qu/sockerless.git", checkout)
+	if output, err := command.CombinedOutput(); err != nil {
+		_ = os.RemoveAll(parent)
+		return "", fmt.Errorf("clone sockerless simulator source: %w\\n%s", err, output)
+	}
+	return checkout, nil
+}
+
+func cleanupSockerlessRepository() {
+	if os.Getenv("SOCKERLESS_REPOSITORY") == "" && sockerlessRepository != "" {
+		_ = os.RemoveAll(filepath.Dir(sockerlessRepository))
+	}
 }
 
 func TestBleephubECSApplyDestroy(t *testing.T) {
@@ -111,6 +138,7 @@ module "bleephub" {
   domain_name = "bleephub.example.test"
   container_image = "public.ecr.aws/docker/library/alpine:3.20"
   admin_token = "test-administrator-token"
+  idle_shutdown_enabled = false
   wake_listener_zip_path = %q
   startup_page_path = %q
 }
@@ -132,13 +160,21 @@ module "bleephub" {
 	if !strings.Contains(startup, "startup/index.html") || !strings.Contains(startup, "text/html; charset=utf-8") {
 		t.Fatalf("S3 startup document was not uploaded with its explicit browser content type:\n%s", startup)
 	}
+	service := runTerraformOutput(t, dir, "state", "show", "module.bleephub.aws_ecs_service.this")
+	if !strings.Contains(service, "desired_count") || !strings.Contains(service, "= 1") {
+		t.Fatalf("always-on Bleephub application service did not start with one task:\n%s", service)
+	}
+	dqlite := runTerraformOutput(t, dir, "state", "show", `module.bleephub.aws_ecs_service.dqlite["0"]`)
+	if !strings.Contains(dqlite, "desired_count") || !strings.Contains(dqlite, "= 1") {
+		t.Fatalf("always-on Bleephub dqlite service did not start with one task:\n%s", dqlite)
+	}
 	runTerraform(t, dir, "plan", "-detailed-exitcode")
 	runTerraform(t, dir, "destroy", "-auto-approve")
 }
 
 func buildStartupPage(t *testing.T, destination string) {
 	t.Helper()
-	repo, err := filepath.Abs("../../..")
+	repo, err := filepath.Abs("../..")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -154,7 +190,7 @@ func buildStartupPage(t *testing.T, destination string) {
 
 func buildWake(t *testing.T, destination string) {
 	t.Helper()
-	repo, err := filepath.Abs("../../..")
+	repo, err := filepath.Abs("../..")
 	if err != nil {
 		t.Fatal(err)
 	}
