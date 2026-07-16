@@ -629,16 +629,15 @@ resource "aws_lb_target_group" "dqlite" {
   protocol    = "TCP"
   target_type = "ip"
   vpc_id      = local.vpc_id
-  # The idle controller has already drained the Bleephub application before
-  # stopping a voter. Keeping a Raft voter registered for five more minutes
-  # leaves its exclusive durable-directory lock behind during the next wake.
+  # The dqlite transport must be reachable before a joining voter can form a
+  # quorum. An HTTP readiness probe would keep a bootstrap voter out of the
+  # Network Load Balancer until quorum existed, creating a circular startup
+  # dependency after an idle shutdown. Application traffic still waits for
+  # dqlite's own quorum check before it is accepted.
   deregistration_delay = 5
   health_check {
-    protocol            = "HTTP"
-    path                = "/health"
-    matcher             = "200"
+    protocol            = "TCP"
     interval            = 5
-    timeout             = 2
     healthy_threshold   = 2
     unhealthy_threshold = 2
   }
