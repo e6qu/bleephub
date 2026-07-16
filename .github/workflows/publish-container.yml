@@ -139,12 +139,15 @@ jobs:
           IMAGE: ghcr.io/e6qu/bleephub-startup:${{ needs.metadata.outputs.tag }}
         run: |
           set -euo pipefail
-          oras push "$IMAGE" \
-            --artifact-type application/vnd.e6qu.bleephub.startup.v1+zip \
-            --annotation org.opencontainers.image.source=https://github.com/${{ github.repository }} \
-            --annotation org.opencontainers.image.revision=${{ github.sha }} \
-            --annotation org.opencontainers.image.created=${{ needs.metadata.outputs.published_at }} \
-            .build/bleephub-ecs/bleephub-startup.zip:application/zip
+          (
+            cd .build/bleephub-ecs
+            oras push "$IMAGE" \
+              --artifact-type application/vnd.e6qu.bleephub.startup.v1+zip \
+              --annotation org.opencontainers.image.source=https://github.com/${{ github.repository }} \
+              --annotation org.opencontainers.image.revision=${{ github.sha }} \
+              --annotation org.opencontainers.image.created=${{ needs.metadata.outputs.published_at }} \
+              bleephub-startup.zip:application/zip
+          )
           mkdir verified
           oras pull "$IMAGE" --output verified
           test -s verified/bleephub-startup.zip
@@ -170,12 +173,15 @@ jobs:
           IMAGE: ${{ env.WAKE_IMAGE }}:${{ needs.metadata.outputs.tag }}
         run: |
           set -euo pipefail
-          oras push "$IMAGE" \
-            --artifact-type application/vnd.e6qu.bleephub.wake.v1+zip \
-            --annotation org.opencontainers.image.source=https://github.com/${{ github.repository }} \
-            --annotation org.opencontainers.image.revision=${{ github.sha }} \
-            --annotation org.opencontainers.image.created=${{ needs.metadata.outputs.published_at }} \
-            .build/bleephub-wake/bleephub-wake.zip:application/zip
+          (
+            cd .build/bleephub-wake
+            oras push "$IMAGE" \
+              --artifact-type application/vnd.e6qu.bleephub.wake.v1+zip \
+              --annotation org.opencontainers.image.source=https://github.com/${{ github.repository }} \
+              --annotation org.opencontainers.image.revision=${{ github.sha }} \
+              --annotation org.opencontainers.image.created=${{ needs.metadata.outputs.published_at }} \
+              bleephub-wake.zip:application/zip
+          )
           mkdir verified
           oras pull "$IMAGE" --output verified
           test -s verified/bleephub-wake.zip
