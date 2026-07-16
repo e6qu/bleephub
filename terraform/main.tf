@@ -907,7 +907,7 @@ resource "aws_ecs_service" "this" {
   name            = var.name
   cluster         = local.ecs_cluster_arn
   task_definition = aws_ecs_task_definition.this.arn
-  desired_count   = 0
+  desired_count   = var.idle_shutdown_enabled ? 0 : 1
   launch_type     = "FARGATE"
 
   # Artifact/package files retain one mounted writer while metadata is served
@@ -934,8 +934,9 @@ resource "aws_ecs_service" "this" {
   depends_on = [aws_lb_listener.private_http, aws_efs_mount_target.sqlite]
   tags       = local.common_tags
   lifecycle {
-    # The wake and idle Lambdas own runtime capacity; Terraform establishes
-    # zero only when creating the service and must not interrupt live work.
+    # The wake and idle Lambdas own runtime capacity in scale-to-zero mode;
+    # Terraform must not interrupt live work after establishing the selected
+    # initial capacity.
     ignore_changes = [desired_count]
   }
 }
@@ -945,7 +946,7 @@ resource "aws_ecs_service" "dqlite" {
   name            = "${var.name}-dqlite-${each.key}"
   cluster         = local.ecs_cluster_arn
   task_definition = aws_ecs_task_definition.dqlite[each.key].arn
-  desired_count   = 0
+  desired_count   = var.idle_shutdown_enabled ? 0 : 1
   launch_type     = "FARGATE"
   # A voter cannot report /health until it has joined the durable Raft quorum.
   # Give that real recovery work time to complete before ECS reacts to the
