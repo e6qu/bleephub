@@ -15,9 +15,33 @@ variable "region" {
 }
 
 variable "vpc_cidr" {
-  description = "Dedicated IPv4 CIDR block for the Bleephub VPC. It is never shared with another stack."
+  description = "IPv4 CIDR allowed by Bleephub task and dqlite security groups. It is the module-created VPC CIDR unless existing_vpc_id is supplied."
   type        = string
   default     = "10.86.0.0/16"
+}
+
+variable "existing_vpc_id" {
+  description = "Existing VPC ID. Set it together with existing private/public subnets to place Bleephub in a shared network instead of creating a VPC."
+  type        = string
+  default     = ""
+}
+
+variable "existing_private_subnet_ids" {
+  description = "Private subnet IDs for Bleephub tasks, dqlite EFS mount targets, and the Amazon API Gateway VPC link when existing_vpc_id is set."
+  type        = list(string)
+  default     = []
+}
+
+variable "existing_public_subnet_ids" {
+  description = "Public subnet IDs for the public SSH Network Load Balancer when existing_vpc_id is set."
+  type        = list(string)
+  default     = []
+}
+
+variable "existing_ecs_cluster_arn" {
+  description = "Existing Amazon Elastic Container Service cluster ARN. Set it with existing_vpc_id to share an environment cluster instead of creating one."
+  type        = string
+  default     = ""
 }
 
 variable "availability_zones" {
