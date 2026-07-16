@@ -27,6 +27,13 @@ origin and `admin.bleephub.e6qu.dev` as the administrator origin.
 registered GitHub OAuth App. The secret ARN references an existing AWS Secrets
 Manager secret so Terraform never receives the OAuth client secret value.
 
+`shauth_oidc_issuer`, `shauth_oidc_client_id`, and
+`shauth_oidc_client_secret_arn` enroll Bleephub with Shauth without changing
+its GitHub-compatible OAuth endpoints. Set all three together; the client
+redirect URI is `https://<domain_name>/auth/shauth/callback`. Bleephub uses
+OpenID Connect discovery, PKCE, nonce binding, and signed ID-token validation;
+the secret remains only in AWS Secrets Manager.
+
 ## Outputs
 
 The module returns the public Bleephub URL, administrator URL, SSH host,

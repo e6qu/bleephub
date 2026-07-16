@@ -2,6 +2,7 @@ package bleephub
 
 import (
 	"crypto/rand"
+	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
@@ -10,6 +11,9 @@ import (
 	"os"
 	"strings"
 	"time"
+
+	"github.com/coreos/go-oidc/v3/oidc"
+	"golang.org/x/oauth2"
 )
 
 const (
@@ -20,11 +24,16 @@ const (
 type identityConfig struct {
 	githubClientID     string
 	githubClientSecret string
+	shauthIssuer       string
+	shauthClientID     string
+	shauthClientSecret string
 }
 
 type identityState struct {
 	provider  string
 	returnTo  string
+	nonce     string
+	pkce      string
 	expiresAt time.Time
 }
 
@@ -32,6 +41,9 @@ func identityConfigFromEnv() identityConfig {
 	return identityConfig{
 		githubClientID:     strings.TrimSpace(os.Getenv("BLEEPHUB_GITHUB_OAUTH_CLIENT_ID")),
 		githubClientSecret: strings.TrimSpace(os.Getenv("BLEEPHUB_GITHUB_OAUTH_CLIENT_SECRET")),
+		shauthIssuer:       strings.TrimRight(strings.TrimSpace(os.Getenv("BLEEPHUB_SHAUTH_ISSUER")), "/"),
+		shauthClientID:     strings.TrimSpace(os.Getenv("BLEEPHUB_SHAUTH_CLIENT_ID")),
+		shauthClientSecret: strings.TrimSpace(os.Getenv("BLEEPHUB_SHAUTH_CLIENT_SECRET")),
 	}
 }
 
@@ -40,6 +52,8 @@ func (s *Server) registerExternalIdentityRoutes() {
 	s.route("GET /auth/session", s.handleIdentitySession)
 	s.route("GET /auth/github", s.handleGitHubLogin)
 	s.route("GET /auth/github/callback", s.handleGitHubCallback)
+	s.route("GET /auth/shauth", s.handleShauthLogin)
+	s.route("GET /auth/shauth/callback", s.handleShauthCallback)
 	s.route("POST /auth/local", s.handleLocalLogin)
 	s.route("POST /auth/logout", s.handleIdentityLogout)
 	s.route("GET /control", s.handlePrivateControl)
@@ -48,9 +62,128 @@ func (s *Server) registerExternalIdentityRoutes() {
 func (s *Server) handleIdentityProviders(w http.ResponseWriter, _ *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]bool{
 		"github": s.identity.githubClientID != "" && s.identity.githubClientSecret != "",
+		"shauth": s.identity.shauthConfigured(),
 		"entra":  false,
 		"local":  true,
 	})
+}
+
+func (c identityConfig) shauthConfigured() bool {
+	return c.shauthIssuer != "" && c.shauthClientID != "" && c.shauthClientSecret != ""
+}
+
+func (c identityConfig) validate() error {
+	shauthValues := []string{c.shauthIssuer, c.shauthClientID, c.shauthClientSecret}
+	set := 0
+	for _, value := range shauthValues {
+		if value != "" {
+			set++
+		}
+	}
+	if set != 0 && set != len(shauthValues) {
+		return fmt.Errorf("BLEEPHUB_SHAUTH_ISSUER, BLEEPHUB_SHAUTH_CLIENT_ID, and BLEEPHUB_SHAUTH_CLIENT_SECRET must be configured together")
+	}
+	if c.shauthIssuer != "" {
+		issuer, err := url.Parse(c.shauthIssuer)
+		if err != nil || issuer.Scheme != "https" || issuer.Host == "" {
+			return fmt.Errorf("BLEEPHUB_SHAUTH_ISSUER must be an HTTPS issuer URL")
+		}
+	}
+	return nil
+}
+
+func (s *Server) handleShauthLogin(w http.ResponseWriter, r *http.Request) {
+	if !s.identity.shauthConfigured() {
+		writeGHError(w, http.StatusServiceUnavailable, "Shauth sign-in is not configured")
+		return
+	}
+	provider, err := oidc.NewProvider(r.Context(), s.identity.shauthIssuer)
+	if err != nil {
+		s.logger.Warn().Err(err).Msg("Shauth discovery failed")
+		writeGHError(w, http.StatusBadGateway, "Shauth discovery failed")
+		return
+	}
+	state, err := randomIdentityState()
+	if err != nil {
+		writeGHError(w, http.StatusInternalServerError, "could not start Shauth sign-in")
+		return
+	}
+	nonce, err := randomIdentityState()
+	if err != nil {
+		writeGHError(w, http.StatusInternalServerError, "could not start Shauth sign-in")
+		return
+	}
+	pkce, err := randomIdentityState()
+	if err != nil {
+		writeGHError(w, http.StatusInternalServerError, "could not start Shauth sign-in")
+		return
+	}
+	returnTo := r.URL.Query().Get("return_to")
+	if !strings.HasPrefix(returnTo, "/") || strings.HasPrefix(returnTo, "//") {
+		returnTo = "/ui/"
+	}
+	s.identityStatesMu.Lock()
+	s.identityStates[state] = identityState{provider: "shauth", returnTo: returnTo, nonce: nonce, pkce: pkce, expiresAt: time.Now().Add(10 * time.Minute)}
+	s.identityStatesMu.Unlock()
+	config := oauth2.Config{ClientID: s.identity.shauthClientID, ClientSecret: s.identity.shauthClientSecret, Endpoint: provider.Endpoint(), RedirectURL: s.externalAuthCallback("shauth"), Scopes: []string{oidc.ScopeOpenID, "profile", "email", "offline_access"}}
+	http.Redirect(w, r, config.AuthCodeURL(state, oidc.Nonce(nonce), oauth2.S256ChallengeOption(pkce)), http.StatusFound)
+}
+
+func (s *Server) handleShauthCallback(w http.ResponseWriter, r *http.Request) {
+	state := r.URL.Query().Get("state")
+	s.identityStatesMu.Lock()
+	pending, ok := s.identityStates[state]
+	delete(s.identityStates, state)
+	s.identityStatesMu.Unlock()
+	if !ok || pending.provider != "shauth" || time.Now().After(pending.expiresAt) || r.URL.Query().Get("code") == "" {
+		writeGHError(w, http.StatusBadRequest, "invalid or expired Shauth sign-in state")
+		return
+	}
+	provider, err := oidc.NewProvider(r.Context(), s.identity.shauthIssuer)
+	if err != nil {
+		writeGHError(w, http.StatusBadGateway, "Shauth discovery failed")
+		return
+	}
+	config := oauth2.Config{ClientID: s.identity.shauthClientID, ClientSecret: s.identity.shauthClientSecret, Endpoint: provider.Endpoint(), RedirectURL: s.externalAuthCallback("shauth")}
+	tokens, err := config.Exchange(r.Context(), r.URL.Query().Get("code"), oauth2.VerifierOption(pending.pkce))
+	if err != nil {
+		writeGHError(w, http.StatusUnauthorized, "Shauth authorization-code exchange failed")
+		return
+	}
+	rawIDToken, ok := tokens.Extra("id_token").(string)
+	if !ok || rawIDToken == "" {
+		writeGHError(w, http.StatusUnauthorized, "Shauth did not return an ID token")
+		return
+	}
+	idToken, err := provider.Verifier(&oidc.Config{ClientID: s.identity.shauthClientID}).Verify(r.Context(), rawIDToken)
+	if err != nil {
+		writeGHError(w, http.StatusUnauthorized, "Shauth ID token verification failed")
+		return
+	}
+	var claims struct {
+		Nonce             string `json:"nonce"`
+		Email             string `json:"email"`
+		PreferredUsername string `json:"preferred_username"`
+		Name              string `json:"name"`
+		Picture           string `json:"picture"`
+		Role              string `json:"role"`
+	}
+	if err := idToken.Claims(&claims); err != nil || claims.Nonce != pending.nonce || (claims.Role != "admin" && claims.Role != "developer") {
+		writeGHError(w, http.StatusUnauthorized, "Shauth ID token claims were invalid")
+		return
+	}
+	login := strings.TrimSpace(claims.PreferredUsername)
+	if login == "" {
+		login = "shauth-" + sha256Hex(idToken.Subject)[:16]
+	}
+	user := s.upsertExternalUser(login, strings.TrimSpace(claims.Name), strings.TrimSpace(claims.Email), strings.TrimSpace(claims.Picture), claims.Role == "admin")
+	s.createBrowserSession(w, r, user)
+	http.Redirect(w, r, pending.returnTo, http.StatusFound)
+}
+
+func sha256Hex(value string) string {
+	digest := sha256.Sum256([]byte(value))
+	return hex.EncodeToString(digest[:])
 }
 
 func (s *Server) handleIdentitySession(w http.ResponseWriter, r *http.Request) {
