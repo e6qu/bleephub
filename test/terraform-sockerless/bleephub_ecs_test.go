@@ -146,6 +146,11 @@ module "bleephub" {
   container_image = "public.ecr.aws/docker/library/alpine:3.20"
   admin_token = "test-administrator-token"
   idle_shutdown_enabled = false
+  dqlite_advertise_addresses = {
+    "0" = "legacy-dqlite.example.test:9000"
+    "1" = "legacy-dqlite.example.test:9001"
+    "2" = "legacy-dqlite.example.test:9002"
+  }
   wake_listener_zip_path = %q
   startup_page_path = %q
 }
@@ -177,6 +182,10 @@ module "bleephub" {
 	}
 	if strings.Contains(dqlite, "container_port") {
 		t.Fatalf("Bleephub dqlite A-record discovery service must not set an Amazon ECS service-registry port:\n%s", dqlite)
+	}
+	dqliteTask := runTerraformOutput(t, dir, "state", "show", `module.bleephub.aws_ecs_task_definition.dqlite["0"]`)
+	if !strings.Contains(dqliteTask, "legacy-dqlite.example.test:9000") || !strings.Contains(dqliteTask, "BLEEPHUB_DQLITE_ADDRESS_MAP") || !strings.Contains(dqliteTask, "dqlite-0.bleephub-test.internal:9000") {
+		t.Fatalf("DQLite durable-address migration did not preserve the legacy identity and translate it to Cloud Map:\n%s", dqliteTask)
 	}
 	discovery := runTerraformOutput(t, dir, "state", "show", "module.bleephub.aws_service_discovery_service.app")
 	if !strings.Contains(discovery, `name                            = "app"`) || !strings.Contains(discovery, `type = "SRV"`) {
