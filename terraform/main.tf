@@ -809,7 +809,7 @@ resource "aws_ecs_task_definition" "ssh_gateway" {
     portMappings = [{ containerPort = 2222, protocol = "tcp" }]
     environment = [
       { name = "BLEEPHUB_WAKE_URL", value = "https://${var.domain_name}/health" },
-      { name = "BLEEPHUB_INTERNAL_SSH_TARGET", value = "${aws_service_discovery_service.app.name}.${aws_service_discovery_private_dns_namespace.this.name}:2222" }
+      { name = "BLEEPHUB_INTERNAL_SSH_TARGET", value = "${aws_service_discovery_service.app.name}.${aws_service_discovery_private_dns_namespace.this.name}" }
     ]
     logConfiguration = { logDriver = "awslogs", options = { awslogs-group = aws_cloudwatch_log_group.this.name, awslogs-region = var.region, awslogs-stream-prefix = "ssh-gateway" } }
   }])
