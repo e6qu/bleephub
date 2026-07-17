@@ -462,15 +462,9 @@ export function AppHeader() {
                   <MenuButton icon={isDark ? <SunIcon size={16} /> : <MoonIcon size={16} />} onClick={() => { toggle(); close(); }}>
                     {isDark ? "Light theme" : "Dark theme"}
                   </MenuButton>
-                  <MenuButton
-                    icon={<SignOutIcon size={16} />}
-                    onClick={() => {
-                      clearToken();
-                      window.location.href = "/ui/login";
-                    }}
-                  >
-                    Sign out
-                  </MenuButton>
+                  <form method="post" action="/auth/logout">
+                    <MenuButton icon={<SignOutIcon size={16} />} onClick={clearToken}>Sign out</MenuButton>
+                  </form>
                 </>
               )}
             </HeaderMenu>

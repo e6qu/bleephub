@@ -6,6 +6,7 @@ import (
 	"net/http/httptest"
 	"net/url"
 	"testing"
+	"time"
 
 	"github.com/rs/zerolog"
 )
@@ -26,6 +27,34 @@ func TestShauthIdentityConfigRejectsPartialCoordinates(t *testing.T) {
 	if err := (identityConfig{shauthIssuer: "https://auth.example.test", shauthClientID: "bleephub", shauthClientSecret: "secret"}).validate(); err != nil {
 		t.Fatalf("complete Shauth configuration: %v", err)
 	}
+}
+
+func TestShauthLogoutClearsLocalSessionAndStartsIssuerLogout(t *testing.T) {
+	s := NewServer("127.0.0.1:0", zerolog.Nop())
+	s.externalURL = "https://bleephub.example.test"
+	s.identity = identityConfig{shauthIssuer: "https://auth.example.test", shauthClientID: "bleephub", shauthClientSecret: "secret"}
+	s.store.LoginSessions["browser-session"] = &LoginSession{UserID: 1, ExpiresAt: time.Now().Add(time.Hour)}
+	request := httptest.NewRequest(http.MethodPost, "/auth/logout", nil)
+	request.AddCookie(&http.Cookie{Name: "_gh_sess", Value: "browser-session"})
+	response := httptest.NewRecorder()
+
+	s.handleIdentityLogout(response, request)
+
+	if response.Code != http.StatusSeeOther {
+		t.Fatalf("logout status = %d, want %d", response.Code, http.StatusSeeOther)
+	}
+	if got, want := response.Header().Get("Location"), "https://auth.example.test/oauth2/sessions/logout"; got != want {
+		t.Fatalf("logout location = %q, want %q", got, want)
+	}
+	if _, ok := s.store.LoginSessions["browser-session"]; ok {
+		t.Fatal("local browser session remained after logout")
+	}
+	for _, cookie := range response.Result().Cookies() {
+		if cookie.Name == "_gh_sess" && cookie.MaxAge < 0 {
+			return
+		}
+	}
+	t.Fatal("logout did not expire the local browser cookie")
 }
 
 func TestShauthLoginUsesDiscoveredAuthorizationEndpointAndPKCE(t *testing.T) {
