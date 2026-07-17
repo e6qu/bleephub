@@ -435,8 +435,12 @@ func (s *Server) handleIdentityLogout(w http.ResponseWriter, r *http.Request) {
 		delete(s.store.LoginSessions, cookie.Value)
 		s.store.mu.Unlock()
 	}
-	http.SetCookie(w, &http.Cookie{Name: "_gh_sess", Value: "", Path: "/", MaxAge: -1, HttpOnly: true})
-	w.WriteHeader(http.StatusNoContent)
+	http.SetCookie(w, &http.Cookie{Name: "_gh_sess", Value: "", Path: "/", MaxAge: -1, HttpOnly: true, Secure: strings.HasPrefix(s.externalURL, "https://"), SameSite: http.SameSiteLaxMode})
+	if s.identity.shauthConfigured() {
+		http.Redirect(w, r, s.identity.shauthIssuer+"/oauth2/sessions/logout", http.StatusSeeOther)
+		return
+	}
+	http.Redirect(w, r, "/ui/login", http.StatusSeeOther)
 }
 func (s *Server) handlePrivateControl(w http.ResponseWriter, r *http.Request) {
 	if adminHost := strings.TrimSpace(os.Getenv("BLEEPHUB_ADMIN_HOST")); adminHost != "" && !strings.EqualFold(strings.Split(r.Host, ":")[0], adminHost) {
