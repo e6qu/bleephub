@@ -175,6 +175,9 @@ module "bleephub" {
 	if !strings.Contains(dqlite, "desired_count") || !strings.Contains(dqlite, "= 1") {
 		t.Fatalf("always-on Bleephub dqlite service did not start with one task:\n%s", dqlite)
 	}
+	if strings.Contains(dqlite, "container_port") {
+		t.Fatalf("Bleephub dqlite A-record discovery service must not set an Amazon ECS service-registry port:\n%s", dqlite)
+	}
 	discovery := runTerraformOutput(t, dir, "state", "show", "module.bleephub.aws_service_discovery_service.app")
 	if !strings.Contains(discovery, `name                            = "app"`) || !strings.Contains(discovery, `type = "SRV"`) {
 		t.Fatalf("Bleephub application did not register its direct Amazon ECS discovery endpoint:\n%s", discovery)
