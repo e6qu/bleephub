@@ -549,7 +549,6 @@ resource "aws_service_discovery_service" "app" {
       type = "SRV"
     }
   }
-  health_check_custom_config {}
   tags = local.common_tags
 }
 
@@ -567,7 +566,6 @@ resource "aws_service_discovery_service" "dqlite" {
       type = "A"
     }
   }
-  health_check_custom_config {}
   tags = merge(local.common_tags, { Name = "${var.name}-dqlite-${each.key}" })
 }
 
