@@ -32,6 +32,17 @@ variable "existing_private_subnet_ids" {
   default     = []
 }
 
+variable "dqlite_advertise_addresses" {
+  description = "Optional durable dqlite member addresses keyed by voter index. Set only when preserving a pre-existing quorum that advertised different addresses; live transport is translated to the module's Cloud Map records."
+  type        = map(string)
+  default     = {}
+
+  validation {
+    condition     = alltrue([for index, address in var.dqlite_advertise_addresses : contains(["0", "1", "2"], index) && can(regex("^[^[:space:]]+:[0-9]+$", address))])
+    error_message = "dqlite_advertise_addresses keys must be 0, 1, or 2 and values must be host:port coordinates."
+  }
+}
+
 variable "existing_public_subnet_ids" {
   description = "Public subnet IDs for the public SSH Network Load Balancer when existing_vpc_id is set."
   type        = list(string)

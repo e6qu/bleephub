@@ -18,12 +18,17 @@ import (
 
 	"github.com/canonical/go-dqlite/v3/app"
 	"github.com/canonical/go-dqlite/v3/client"
+	"github.com/e6qu/bleephub/internal/dqliteaddr"
 )
 
 func main() {
 	dataDir := requiredEnv("BLEEPHUB_DQLITE_DATA_DIR")
 	address := requiredEnv("BLEEPHUB_DQLITE_ADVERTISE_ADDR")
 	join := csvEnv("BLEEPHUB_DQLITE_JOIN")
+	addresses, err := dqliteaddr.FromEnvironment(os.Getenv(dqliteaddr.Environment))
+	if err != nil {
+		log.Fatalf("parse dqlite address map: %v", err)
+	}
 	if err := os.MkdirAll(dataDir, 0o700); err != nil {
 		log.Fatalf("create dqlite data directory %s: %v", dataDir, err)
 	}
@@ -48,7 +53,9 @@ func main() {
 		dataDir,
 		app.WithAddress(address),
 		app.WithCluster(join),
-		app.WithExternalConn(dqliteHTTPDial, accepted),
+		app.WithExternalConn(func(ctx context.Context, address string) (net.Conn, error) {
+			return dqliteHTTPDial(ctx, addresses.Resolve(address))
+		}, accepted),
 		app.WithVoters(3),
 	)
 	if err != nil {
@@ -100,7 +107,7 @@ func csvEnv(name string) []string {
 
 func dqliteHandler(accepted chan<- net.Conn) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-	if r.Method == http.MethodGet && r.URL.Path == "/health" {
+		if r.Method == http.MethodGet && r.URL.Path == "/health" {
 			// This reports only transport reachability. AWS Cloud Map can then
 			// publish the voter address so joining voters can form a quorum;
 			// Bleephub waits for a real dqlite leader before serving requests.

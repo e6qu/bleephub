@@ -18,6 +18,7 @@ import (
 
 	"github.com/canonical/go-dqlite/v3/client"
 	"github.com/canonical/go-dqlite/v3/driver"
+	"github.com/e6qu/bleephub/internal/dqliteaddr"
 	_ "modernc.org/sqlite" // SQLite driver — pure Go, no CGO
 )
 
@@ -137,6 +138,10 @@ func openSQLite(dataDir string) (*sql.DB, error) {
 // addresses. The dqlite driver discovers the current leader from this seed
 // set and refreshes its membership knowledge from the quorum itself.
 func openDqlite(addresses string) (*sql.DB, error) {
+	addressMap, err := dqliteaddr.FromEnvironment(os.Getenv(dqliteaddr.Environment))
+	if err != nil {
+		return nil, fmt.Errorf("parse dqlite address map: %w", err)
+	}
 	store := client.NewInmemNodeStore()
 	servers := make([]client.NodeInfo, 0, 3)
 	for _, address := range strings.Split(addresses, ",") {
@@ -154,7 +159,9 @@ func openDqlite(addresses string) (*sql.DB, error) {
 	}
 
 	dqliteDriver, err := driver.New(store,
-		driver.WithDialFunc(dqliteHTTPDial),
+		driver.WithDialFunc(func(ctx context.Context, address string) (net.Conn, error) {
+			return dqliteHTTPDial(ctx, addressMap.Resolve(address))
+		}),
 		driver.WithAttemptTimeout(5*time.Second),
 		driver.WithConnectionBackoffFactor(100*time.Millisecond),
 		driver.WithConnectionBackoffCap(time.Second),
@@ -176,9 +183,9 @@ func openDqlite(addresses string) (*sql.DB, error) {
 }
 
 // dqliteHTTPDial opens the dqlite HTTP-upgrade transport exposed by each
-// stable network-load-balancer endpoint. The upgrade keeps the dqlite wire
-// protocol private while allowing Amazon ECS tasks to retain stable advertised
-// member addresses across replacement and scale-to-zero restarts.
+// private Cloud Map member address. The upgrade keeps the dqlite wire protocol
+// private while allowing Amazon ECS tasks to retain stable advertised member
+// identities across replacement and scale-to-zero restarts.
 func dqliteHTTPDial(ctx context.Context, address string) (net.Conn, error) {
 	dialer := &net.Dialer{}
 	conn, err := dialer.DialContext(ctx, "tcp", address)

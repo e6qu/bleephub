@@ -15,6 +15,14 @@ locals {
     "1" = "/dqlite/1"
     "2" = "/dqlite/2"
   }
+  dqlite_live_addresses = {
+    for node in keys(local.dqlite_nodes) : node => "${aws_service_discovery_service.dqlite[node].name}.${aws_service_discovery_private_dns_namespace.this.name}:9000"
+  }
+  dqlite_advertise_addresses = merge(local.dqlite_live_addresses, var.dqlite_advertise_addresses)
+  dqlite_address_map = join(",", [
+    for node in sort(keys(local.dqlite_nodes)) : "${local.dqlite_advertise_addresses[node]}=${local.dqlite_live_addresses[node]}"
+    if local.dqlite_advertise_addresses[node] != local.dqlite_live_addresses[node]
+  ])
   vpc_id             = local.uses_existing_network ? var.existing_vpc_id : aws_vpc.this[0].id
   private_subnet_ids = local.uses_existing_network ? var.existing_private_subnet_ids : [for subnet in aws_subnet.private : subnet.id]
   public_subnet_ids  = local.uses_existing_network ? var.existing_public_subnet_ids : [for subnet in aws_subnet.public : subnet.id]
@@ -763,7 +771,7 @@ resource "aws_ecs_task_definition" "this" {
       }
     }
   }
-  container_definitions = jsonencode([{ name = "bleephub", image = var.container_image, essential = true, portMappings = [{ containerPort = 5555, protocol = "tcp" }, { containerPort = 2222, protocol = "tcp" }], mountPoints = [{ sourceVolume = "sqlite", containerPath = "/var/lib/bleephub", readOnly = false }], environment = concat([{ name = "BLEEPHUB_PERSIST", value = "true" }, { name = "BLEEPHUB_DATA_DIR", value = "/var/lib/bleephub" }, { name = "BLEEPHUB_DQLITE_SERVERS", value = join(",", [for node in sort(keys(local.dqlite_nodes)) : "${aws_service_discovery_service.dqlite[node].name}.${aws_service_discovery_private_dns_namespace.this.name}:9000"]) }, { name = "BLEEPHUB_S3_BUCKET", value = aws_s3_bucket.git.bucket }, { name = "BLEEPHUB_S3_PREFIX", value = "git" }, { name = "BLEEPHUB_OBJECT_S3_BUCKET", value = aws_s3_bucket.objects.bucket }, { name = "BLEEPHUB_OBJECT_S3_PREFIX", value = "objects" }, { name = "BLEEPHUB_S3_REGION", value = var.region }, { name = "BLEEPHUB_EXTERNAL_URL", value = "https://${var.domain_name}" }, { name = "BLEEPHUB_ADMIN_HOST", value = "admin.${var.domain_name}" }, { name = "BLEEPHUB_SSH_ADDR", value = ":2222" }, { name = "BLEEPHUB_SSH_HOST", value = "ssh.${var.domain_name}" }], var.github_oauth_client_id == "" ? [] : [{ name = "BLEEPHUB_GITHUB_OAUTH_CLIENT_ID", value = var.github_oauth_client_id }], var.shauth_oidc_issuer == "" ? [] : [{ name = "BLEEPHUB_SHAUTH_ISSUER", value = var.shauth_oidc_issuer }, { name = "BLEEPHUB_SHAUTH_CLIENT_ID", value = var.shauth_oidc_client_id }]), secrets = concat([{ name = "BLEEPHUB_ADMIN_TOKEN", valueFrom = aws_secretsmanager_secret.admin_token.arn }, { name = "BLEEPHUB_SSH_HOST_KEY", valueFrom = aws_secretsmanager_secret.ssh_host_key.arn }], var.github_oauth_client_secret_arn == "" ? [] : [{ name = "BLEEPHUB_GITHUB_OAUTH_CLIENT_SECRET", valueFrom = var.github_oauth_client_secret_arn }], var.shauth_oidc_client_secret_arn == "" ? [] : [{ name = "BLEEPHUB_SHAUTH_CLIENT_SECRET", valueFrom = var.shauth_oidc_client_secret_arn }]), logConfiguration = { logDriver = "awslogs", options = { awslogs-group = aws_cloudwatch_log_group.this.name, awslogs-region = var.region, awslogs-stream-prefix = "service" } } }])
+  container_definitions = jsonencode([{ name = "bleephub", image = var.container_image, essential = true, portMappings = [{ containerPort = 5555, protocol = "tcp" }, { containerPort = 2222, protocol = "tcp" }], mountPoints = [{ sourceVolume = "sqlite", containerPath = "/var/lib/bleephub", readOnly = false }], environment = concat([{ name = "BLEEPHUB_PERSIST", value = "true" }, { name = "BLEEPHUB_DATA_DIR", value = "/var/lib/bleephub" }, { name = "BLEEPHUB_DQLITE_SERVERS", value = join(",", [for node in sort(keys(local.dqlite_nodes)) : local.dqlite_live_addresses[node]]) }, { name = "BLEEPHUB_S3_BUCKET", value = aws_s3_bucket.git.bucket }, { name = "BLEEPHUB_S3_PREFIX", value = "git" }, { name = "BLEEPHUB_OBJECT_S3_BUCKET", value = aws_s3_bucket.objects.bucket }, { name = "BLEEPHUB_OBJECT_S3_PREFIX", value = "objects" }, { name = "BLEEPHUB_S3_REGION", value = var.region }, { name = "BLEEPHUB_EXTERNAL_URL", value = "https://${var.domain_name}" }, { name = "BLEEPHUB_ADMIN_HOST", value = "admin.${var.domain_name}" }, { name = "BLEEPHUB_SSH_ADDR", value = ":2222" }, { name = "BLEEPHUB_SSH_HOST", value = "ssh.${var.domain_name}" }], local.dqlite_address_map == "" ? [] : [{ name = "BLEEPHUB_DQLITE_ADDRESS_MAP", value = local.dqlite_address_map }], var.github_oauth_client_id == "" ? [] : [{ name = "BLEEPHUB_GITHUB_OAUTH_CLIENT_ID", value = var.github_oauth_client_id }], var.shauth_oidc_issuer == "" ? [] : [{ name = "BLEEPHUB_SHAUTH_ISSUER", value = var.shauth_oidc_issuer }, { name = "BLEEPHUB_SHAUTH_CLIENT_ID", value = var.shauth_oidc_client_id }]), secrets = concat([{ name = "BLEEPHUB_ADMIN_TOKEN", valueFrom = aws_secretsmanager_secret.admin_token.arn }, { name = "BLEEPHUB_SSH_HOST_KEY", valueFrom = aws_secretsmanager_secret.ssh_host_key.arn }], var.github_oauth_client_secret_arn == "" ? [] : [{ name = "BLEEPHUB_GITHUB_OAUTH_CLIENT_SECRET", valueFrom = var.github_oauth_client_secret_arn }], var.shauth_oidc_client_secret_arn == "" ? [] : [{ name = "BLEEPHUB_SHAUTH_CLIENT_SECRET", valueFrom = var.shauth_oidc_client_secret_arn }]), logConfiguration = { logDriver = "awslogs", options = { awslogs-group = aws_cloudwatch_log_group.this.name, awslogs-region = var.region, awslogs-stream-prefix = "service" } } }])
   tags                  = local.common_tags
 
   lifecycle {
@@ -841,8 +849,8 @@ resource "aws_ecs_task_definition" "dqlite" {
     mountPoints  = [{ sourceVolume = "dqlite", containerPath = "/var/lib/dqlite", readOnly = false }]
     environment = concat([
       { name = "BLEEPHUB_DQLITE_DATA_DIR", value = "/var/lib/dqlite" },
-      { name = "BLEEPHUB_DQLITE_ADVERTISE_ADDR", value = "${aws_service_discovery_service.dqlite[each.key].name}.${aws_service_discovery_private_dns_namespace.this.name}:9000" }
-    ], each.key == "0" ? [] : [{ name = "BLEEPHUB_DQLITE_JOIN", value = "${aws_service_discovery_service.dqlite["0"].name}.${aws_service_discovery_private_dns_namespace.this.name}:9000" }])
+      { name = "BLEEPHUB_DQLITE_ADVERTISE_ADDR", value = local.dqlite_advertise_addresses[each.key] }
+    ], local.dqlite_address_map == "" ? [] : [{ name = "BLEEPHUB_DQLITE_ADDRESS_MAP", value = local.dqlite_address_map }], each.key == "0" ? [] : [{ name = "BLEEPHUB_DQLITE_JOIN", value = local.dqlite_live_addresses["0"] }])
     logConfiguration = { logDriver = "awslogs", options = { awslogs-group = aws_cloudwatch_log_group.this.name, awslogs-region = var.region, awslogs-stream-prefix = "dqlite-${each.key}" } }
   }])
   tags = merge(local.common_tags, { Name = "${var.name}-dqlite-${each.key}" })
