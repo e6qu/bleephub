@@ -9,6 +9,7 @@ import (
 	"net"
 	"net/http"
 	"os"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -108,8 +109,8 @@ func handle(client net.Conn) {
 
 func wakeAndConnect(ctx context.Context) (net.Conn, error) {
 	wakeURL := os.Getenv("BLEEPHUB_WAKE_URL")
-	target := os.Getenv("BLEEPHUB_INTERNAL_SSH_TARGET")
-	if wakeURL == "" || target == "" {
+	service := os.Getenv("BLEEPHUB_INTERNAL_SSH_TARGET")
+	if wakeURL == "" || service == "" {
 		return nil, fmt.Errorf("BLEEPHUB_WAKE_URL and BLEEPHUB_INTERNAL_SSH_TARGET are required")
 	}
 
@@ -123,13 +124,46 @@ func wakeAndConnect(ctx context.Context) (net.Conn, error) {
 		if err == nil {
 			_ = response.Body.Close()
 		}
-		connection, err := net.DialTimeout("tcp", target, 5*time.Second)
-		if err == nil {
-			return connection, nil
+		for _, target := range sshTargetsFromSRV(service) {
+			connection, err := net.DialTimeout("tcp", target, 5*time.Second)
+			if err == nil {
+				return connection, nil
+			}
 		}
 		time.Sleep(2 * time.Second)
 	}
 	return nil, fmt.Errorf("bleephub SSH service did not become reachable within %s", startupTimeout)
+}
+
+// sshTargetsFromSRV resolves the Amazon Cloud Map SRV record that Amazon ECS
+// registers for the application task. The SRV record advertises HTTP on 5555,
+// while the same task's SSH transport listens on 2222, so this deliberately
+// preserves the registered task hostname and replaces only the port.
+func sshTargetsFromSRV(service string) []string {
+	_, records, err := net.LookupSRV("", "", service)
+	if err != nil {
+		return nil
+	}
+	return sshTargetsFromRecords(records)
+}
+
+func sshTargetsFromRecords(records []*net.SRV) []string {
+	const sshPort = 2222
+	targets := make([]string, 0, len(records))
+	seen := make(map[string]struct{}, len(records))
+	for _, record := range records {
+		host := strings.TrimSuffix(record.Target, ".")
+		if host == "" {
+			continue
+		}
+		target := net.JoinHostPort(host, strconv.Itoa(sshPort))
+		if _, exists := seen[target]; exists {
+			continue
+		}
+		seen[target] = struct{}{}
+		targets = append(targets, target)
+	}
+	return targets
 }
 
 func valueOr(key, fallback string) string {
