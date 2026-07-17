@@ -891,9 +891,9 @@ resource "aws_ecs_service" "dqlite" {
     assign_public_ip = false
   }
   service_registries {
-    registry_arn   = aws_service_discovery_service.dqlite[each.key].arn
-    container_name = "dqlite"
-    container_port = 9000
+    # An awsvpc Amazon ECS service backed by an A record registers its task
+    # ENI address; Amazon ECS only accepts a port coordinate for SRV records.
+    registry_arn = aws_service_discovery_service.dqlite[each.key].arn
   }
   depends_on = [aws_efs_mount_target.sqlite]
   tags       = merge(local.common_tags, { Name = "${var.name}-dqlite-${each.key}" })
