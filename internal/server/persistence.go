@@ -249,11 +249,17 @@ func NewPersistence() (*Persistence, error) {
 }
 
 func MustNewPersistence() *Persistence {
-	p, err := NewPersistence()
-	if err != nil {
-		log.Fatalf("bleephub persistence configuration failed: %v", err)
+	for {
+		p, err := NewPersistence()
+		if err == nil {
+			return p
+		}
+		if strings.TrimSpace(os.Getenv("BLEEPHUB_DQLITE_SERVERS")) == "" {
+			log.Fatalf("bleephub persistence configuration failed: %v", err)
+		}
+		log.Printf("bleephub is waiting for dqlite quorum: %v", err)
+		time.Sleep(time.Second)
 	}
-	return p
 }
 
 func (p *Persistence) MustPut(bucket, key string, v interface{}) {

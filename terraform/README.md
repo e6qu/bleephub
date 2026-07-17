@@ -31,7 +31,10 @@ To use a shared VPC, set `existing_vpc_id`,
 `existing_ecs_cluster_arn` together. The module then creates no VPC, subnets,
 route tables, fck-nat instance, Amazon Simple Storage Service endpoint, or ECS
 cluster. It continues to create Bleephub-scoped security groups, EFS mount
-targets, Network Load Balancers, and services in the supplied network.
+targets, AWS Cloud Map discovery services, and Amazon ECS services in the
+supplied network. HTTP traffic uses Amazon API Gateway directly through a VPC
+link to AWS Cloud Map; the only Network Load Balancer is the public raw-SSH
+endpoint because Amazon API Gateway does not proxy SSH/TCP.
 
 `github_oauth_client_id` and `github_oauth_client_secret_arn` enable the
 registered GitHub OAuth App. The secret ARN references an existing AWS Secrets
