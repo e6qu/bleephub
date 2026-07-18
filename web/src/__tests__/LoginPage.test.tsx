@@ -32,6 +32,15 @@ function submitToken(token: string) {
 }
 
 describe("LoginPage", () => {
+  it("redirects configured Shauth instances before rendering legacy credentials", async () => {
+    mockFetch.mockResolvedValueOnce(new Response(JSON.stringify({ shauth: true }), { status: 200 }));
+    render(<LoginPage />);
+    await waitFor(() => {
+      expect(window.location.href).toBe("/auth/shauth?return_to=%2Fui%2F");
+    });
+    expect(screen.queryByLabelText(/access token/i)).not.toBeInTheDocument();
+  });
+
   it("verifies against GitHub REST identity and signs in on success", async () => {
     mockFetch
       .mockResolvedValueOnce(new Response(JSON.stringify({ github: true }), { status: 200 }))

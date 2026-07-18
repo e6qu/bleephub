@@ -98,6 +98,57 @@ func TestShauthLoginUsesDiscoveredAuthorizationEndpointAndPKCE(t *testing.T) {
 	}
 }
 
+func TestShauthCallbackUsesClientSecretPost(t *testing.T) {
+	var issuer string
+	var tokenForm url.Values
+	var tokenAuthorization string
+	idp := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/.well-known/openid-configuration":
+			_ = json.NewEncoder(w).Encode(map[string]any{
+				"issuer":                 issuer,
+				"authorization_endpoint": issuer + "/oauth2/auth",
+				"token_endpoint":         issuer + "/oauth2/token",
+				"jwks_uri":               issuer + "/.well-known/jwks.json",
+			})
+		case "/oauth2/token":
+			if err := r.ParseForm(); err != nil {
+				http.Error(w, err.Error(), http.StatusBadRequest)
+				return
+			}
+			tokenForm = r.PostForm
+			tokenAuthorization = r.Header.Get("Authorization")
+			_, _ = w.Write([]byte(`{"access_token":"token","token_type":"Bearer"}`))
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer idp.Close()
+	issuer = idp.URL
+
+	s := NewServer("127.0.0.1:0", zerolog.Nop())
+	s.externalURL = "https://bleephub.example.test"
+	s.identity = identityConfig{shauthIssuer: issuer, shauthClientID: "bleephub", shauthClientSecret: "secret"}
+	loginResponse := httptest.NewRecorder()
+	s.handleShauthLogin(loginResponse, httptest.NewRequest(http.MethodGet, "/auth/shauth", nil))
+	redirect, err := url.Parse(loginResponse.Header().Get("Location"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	callback := httptest.NewRequest(http.MethodGet, "/auth/shauth/callback?state="+url.QueryEscape(redirect.Query().Get("state"))+"&code=code", nil)
+	s.handleShauthCallback(httptest.NewRecorder(), callback)
+
+	if got, want := tokenForm.Get("client_id"), "bleephub"; got != want {
+		t.Fatalf("token client_id = %q, want %q", got, want)
+	}
+	if got, want := tokenForm.Get("client_secret"), "secret"; got != want {
+		t.Fatalf("token client_secret = %q, want %q", got, want)
+	}
+	if tokenAuthorization != "" {
+		t.Fatalf("token request used HTTP Basic authentication: %q", tokenAuthorization)
+	}
+}
+
 func TestLoginPageUsesShauthInsteadOfPersonalAccessTokenForm(t *testing.T) {
 	s := NewServer("127.0.0.1:0", zerolog.Nop())
 	s.identity = identityConfig{shauthIssuer: "https://auth.example.test", shauthClientID: "bleephub", shauthClientSecret: "secret"}
