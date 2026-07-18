@@ -76,4 +76,4 @@ jobs:
           repository: e6qu/sockerless
           path: sockerless
       - name: Exercise the official runner against the real simulator and backend
-        run: SOCKERLESS_ROOT="$GITHUB_WORKSPACE/sockerless" make runner-sockerless-test
+        run: timeout --foreground --kill-after=1m 25m env SOCKERLESS_ROOT="$GITHUB_WORKSPACE/sockerless" make runner-sockerless-test
