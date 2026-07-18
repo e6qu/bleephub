@@ -97,3 +97,17 @@ func TestShauthLoginUsesDiscoveredAuthorizationEndpointAndPKCE(t *testing.T) {
 		t.Fatalf("redirect URI = %q", redirect.Query().Get("redirect_uri"))
 	}
 }
+
+func TestLoginPageUsesShauthInsteadOfPersonalAccessTokenForm(t *testing.T) {
+	s := NewServer("127.0.0.1:0", zerolog.Nop())
+	s.identity = identityConfig{shauthIssuer: "https://auth.example.test", shauthClientID: "bleephub", shauthClientSecret: "secret"}
+	request := httptest.NewRequest(http.MethodGet, "/login?return_to=%2Fui%2Frepositories", nil)
+	response := httptest.NewRecorder()
+	s.handleLoginPage(response, request)
+	if response.Code != http.StatusFound {
+		t.Fatalf("Shauth login page status = %d, body=%s", response.Code, response.Body.String())
+	}
+	if location := response.Header().Get("Location"); location != "/auth/shauth?return_to=%2Fui%2Frepositories" {
+		t.Fatalf("Shauth login location = %q", location)
+	}
+}
