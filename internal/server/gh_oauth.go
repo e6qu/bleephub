@@ -65,10 +65,24 @@ type authCode struct {
 	ExpiresAt   time.Time
 }
 
-// handleLoginPage renders a simple login form. Real GitHub also has this page;
-// the authorize step redirects here when no session cookie is present.
+// handleLoginPage starts Shauth sign-in when it is configured. The legacy
+// personal-access-token form remains available only when no external identity
+// provider has been configured, so an interactive deployment never asks a
+// Shauth user for a Bleephub API credential.
 func (s *Server) handleLoginPage(w http.ResponseWriter, r *http.Request) {
 	returnTo := r.URL.Query().Get("return_to")
+	if s.identity.shauthConfigured() {
+		query := url.Values{}
+		if returnTo != "" {
+			query.Set("return_to", returnTo)
+		}
+		location := "/auth/shauth"
+		if encoded := query.Encode(); encoded != "" {
+			location += "?" + encoded
+		}
+		http.Redirect(w, r, location, http.StatusFound)
+		return
+	}
 	page := fmt.Sprintf(`<!DOCTYPE html><html><head><title>Sign in</title></head>
 <body style="font-family:system-ui,sans-serif;max-width:340px;margin:48px auto">
 <h1>Sign in to bleephub</h1>
