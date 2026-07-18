@@ -125,7 +125,9 @@ func (s *Server) handleShauthLogin(w http.ResponseWriter, r *http.Request) {
 	s.identityStatesMu.Lock()
 	s.identityStates[state] = identityState{provider: "shauth", returnTo: returnTo, nonce: nonce, pkce: pkce, expiresAt: time.Now().Add(10 * time.Minute)}
 	s.identityStatesMu.Unlock()
-	config := oauth2.Config{ClientID: s.identity.shauthClientID, ClientSecret: s.identity.shauthClientSecret, Endpoint: provider.Endpoint(), RedirectURL: s.externalAuthCallback("shauth"), Scopes: []string{oidc.ScopeOpenID, "profile", "email", "offline_access"}}
+	endpoint := provider.Endpoint()
+	endpoint.AuthStyle = oauth2.AuthStyleInParams
+	config := oauth2.Config{ClientID: s.identity.shauthClientID, ClientSecret: s.identity.shauthClientSecret, Endpoint: endpoint, RedirectURL: s.externalAuthCallback("shauth"), Scopes: []string{oidc.ScopeOpenID, "profile", "email", "offline_access"}}
 	http.Redirect(w, r, config.AuthCodeURL(state, oidc.Nonce(nonce), oauth2.S256ChallengeOption(pkce)), http.StatusFound)
 }
 
@@ -144,7 +146,9 @@ func (s *Server) handleShauthCallback(w http.ResponseWriter, r *http.Request) {
 		writeGHError(w, http.StatusBadGateway, "Shauth discovery failed")
 		return
 	}
-	config := oauth2.Config{ClientID: s.identity.shauthClientID, ClientSecret: s.identity.shauthClientSecret, Endpoint: provider.Endpoint(), RedirectURL: s.externalAuthCallback("shauth")}
+	endpoint := provider.Endpoint()
+	endpoint.AuthStyle = oauth2.AuthStyleInParams
+	config := oauth2.Config{ClientID: s.identity.shauthClientID, ClientSecret: s.identity.shauthClientSecret, Endpoint: endpoint, RedirectURL: s.externalAuthCallback("shauth")}
 	tokens, err := config.Exchange(r.Context(), r.URL.Query().Get("code"), oauth2.VerifierOption(pending.pkce))
 	if err != nil {
 		writeGHError(w, http.StatusUnauthorized, "Shauth authorization-code exchange failed")

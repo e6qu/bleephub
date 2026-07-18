@@ -25,18 +25,27 @@ afterEach(() => {
   });
 });
 
-function submitToken(token: string) {
+async function submitToken(token: string) {
   render(<LoginPage />);
-  fireEvent.change(screen.getByLabelText(/access token/i), { target: { value: token } });
+  fireEvent.change(await screen.findByLabelText(/access token/i), { target: { value: token } });
   fireEvent.click(screen.getByRole("button", { name: /sign in/i }));
 }
 
 describe("LoginPage", () => {
+  it("redirects configured Shauth instances before rendering legacy credentials", async () => {
+    mockFetch.mockResolvedValueOnce(new Response(JSON.stringify({ shauth: true }), { status: 200 }));
+    render(<LoginPage />);
+    await waitFor(() => {
+      expect(window.location.href).toBe("/auth/shauth?return_to=%2Fui%2F");
+    });
+    expect(screen.queryByLabelText(/access token/i)).not.toBeInTheDocument();
+  });
+
   it("verifies against GitHub REST identity and signs in on success", async () => {
     mockFetch
       .mockResolvedValueOnce(new Response(JSON.stringify({ github: true }), { status: 200 }))
       .mockResolvedValue(new Response(JSON.stringify({ login: "octocat" }), { status: 200 }));
-    submitToken("ghp_validpat");
+    await submitToken("ghp_validpat");
     await waitFor(() => {
       expect(window.location.href).toBe("/ui/");
     });
@@ -50,7 +59,7 @@ describe("LoginPage", () => {
     mockFetch
       .mockResolvedValueOnce(new Response(JSON.stringify({ github: true }), { status: 200 }))
       .mockResolvedValue(new Response(JSON.stringify({ login: "octocat" }), { status: 200 }));
-    submitToken("gho_oauthtoken");
+    await submitToken("gho_oauthtoken");
     await waitFor(() => {
       expect(window.location.href).toBe("/ui/");
     });
@@ -62,7 +71,7 @@ describe("LoginPage", () => {
     mockFetch
       .mockResolvedValueOnce(new Response(JSON.stringify({ github: true }), { status: 200 }))
       .mockResolvedValue(new Response(JSON.stringify({ message: "Requires authentication" }), { status: 401 }));
-    submitToken("bad-token");
+    await submitToken("bad-token");
     await waitFor(() => {
       expect(screen.getByText(/GitHub REST user endpoint/i)).toBeInTheDocument();
     });

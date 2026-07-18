@@ -8,18 +8,18 @@ export function LoginPage() {
   const [token, setTokenValue] = useState(getToken() ?? "");
   const [error, setError] = useState("");
   const [verifying, setVerifying] = useState(false);
-  const [githubAvailable, setGithubAvailable] = useState(false);
+  const [providers, setProviders] = useState<{ github?: boolean; shauth?: boolean } | null>(null);
   const [login, setLogin] = useState("");
   const [password, setPassword] = useState("");
   const [localSigningIn, setLocalSigningIn] = useState(false);
 
   useEffect(() => {
     void fetch("/auth/providers")
-      .then(async (response): Promise<{ github?: boolean }> =>
+      .then(async (response): Promise<{ github?: boolean; shauth?: boolean }> =>
         response.ok ? response.json() : {},
       )
-      .then((providers) => setGithubAvailable(providers.github === true))
-      .catch(() => setGithubAvailable(false));
+      .then(setProviders)
+      .catch(() => setProviders({}));
   }, []);
 
   async function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
@@ -59,6 +59,42 @@ export function LoginPage() {
   const githubHref = `/auth/github?return_to=${encodeURIComponent(
     returnTo?.startsWith("/") && !returnTo.startsWith("//") ? returnTo : "/ui/",
   )}`;
+  const shauthHref = `/auth/shauth?return_to=${encodeURIComponent(
+    returnTo?.startsWith("/") && !returnTo.startsWith("//") ? returnTo : "/ui/",
+  )}`;
+
+  useEffect(() => {
+    if (providers?.shauth) {
+      window.location.href = shauthHref;
+    }
+  }, [providers, shauthHref]);
+
+  if (providers === null || providers.shauth) {
+    return (
+      <div
+        className="flex min-h-screen flex-col items-center justify-center px-4"
+        style={{ background: "var(--color-bg-subtle)" }}
+      >
+        <div
+          className="w-full max-w-sm"
+          style={{
+            border: "1px solid var(--color-border)",
+            borderRadius: "var(--radius-md)",
+            background: "var(--color-surface)",
+            padding: "1.25rem",
+            textAlign: "center",
+          }}
+          aria-live="polite"
+        >
+          <Mark size={42} />
+          <h1 style={{ fontSize: "1.4rem", fontWeight: 600, color: "var(--color-fg)" }}>
+            {providers?.shauth ? "Continuing with Shauth…" : "Preparing sign-in…"}
+          </h1>
+          {providers?.shauth && <a href={shauthHref}>Continue with Shauth</a>}
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div
@@ -81,7 +117,7 @@ export function LoginPage() {
             padding: "1.25rem",
           }}
         >
-        {githubAvailable && (
+        {providers.github && (
           <a
             href={githubHref}
             className="mb-3 flex w-full items-center justify-center"
