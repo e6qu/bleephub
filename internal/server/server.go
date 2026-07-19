@@ -128,6 +128,9 @@ func NewServer(addr string, logger zerolog.Logger) *Server {
 	if err := s.identity.validate(); err != nil {
 		logger.Fatal().Err(err).Msg("invalid Bleephub external identity configuration")
 	}
+	if err := validateShauthExternalURL(s.identity, s.externalURL); err != nil {
+		logger.Fatal().Err(err).Msg("invalid Bleephub external identity configuration")
+	}
 	s.store.ObjectByteStore = byteStore
 	s.store.Releases.byteStore = byteStore
 	if dataDir != "" {

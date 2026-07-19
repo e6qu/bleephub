@@ -132,6 +132,12 @@ variable "shauth_oidc_client_secret_arn" {
   default     = ""
 }
 
+variable "shauth_oidc_post_logout_url" {
+  description = "Exact Bleephub-origin HTTPS signed-out landing URI registered for Bleephub in Shauth. It must be https://<domain_name>/auth/signed-out. Leave empty only when every Shauth coordinate is empty."
+  type        = string
+  default     = ""
+}
+
 variable "idle_shutdown_minutes" {
   description = "Number of inactive minutes before the ECS service is scaled to zero."
   type        = number

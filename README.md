@@ -122,7 +122,45 @@ For an end-to-end smoke that wraps all five steps inside Docker (Transport Layer
 The Go binary embeds the React single-page application at `/ui/` via `go embed` (build tag `!noui`, on by default). After step 3 above, open:
 
 - `https://localhost:8443/ui/` (or `https://localhost/ui/` on the `:443` variant) — the Bleephub dashboard, styled to feel like GitHub without copying it verbatim: a top header bar carries the primary navigation and a light/dark toggle (light by default, as on github.com). Pages: **Overview**, **Repos** (GitHub-style repo list → per-repo **Code** / **Issues** / **Pull requests** tabs, plus Commits / Releases / Webhooks / Secrets / Environments), **Workflows** (files + runs, with a per-run detail page showing the job table and the per-job log viewer), **Runners**, **Apps** (GitHub Apps registry + installations + permissions form + Privacy Enhanced Mail key viewer), **OAuth** (OAuth Apps registry + tokens), **Metrics**.
-- Auth: the user interface presents a login form on first visit — paste a GitHub-compatible token accepted by this Bleephub instance. The token is verified against `GET /api/v3/user`, kept in browser localStorage, and sent on every user-interface request. The `/internal/*` operator endpoints still require a token accepted by the operator surface, including the admin token; `/health` stays open for liveness probes.
+- Auth: a deployment configured with Shauth sends an unauthenticated direct or
+  app-catalog launch through Shauth automatically. It never displays or asks
+  for a Bleephub application programming interface token. Standalone
+  development without Shauth retains the local and GitHub-compatible token
+  paths. The `/internal/*` operator endpoints require the authenticated browser
+  session or an accepted operator token; `/health` stays open for liveness
+  probes.
+
+### Shauth single sign-on
+
+Configure all four values together:
+
+```text
+BLEEPHUB_SHAUTH_ISSUER=https://auth.dev.e6qu.dev
+BLEEPHUB_SHAUTH_CLIENT_ID=bleephub
+BLEEPHUB_SHAUTH_CLIENT_SECRET=...
+BLEEPHUB_SHAUTH_POST_LOGOUT_URL=https://bleephub.dev.e6qu.dev/auth/signed-out
+```
+
+Register these exact Shauth client coordinates for the deployment host:
+
+```text
+redirect_uri:                    https://bleephub.dev.e6qu.dev/auth/shauth/callback
+post_logout_redirect_uri:        https://bleephub.dev.e6qu.dev/auth/signed-out
+backchannel_logout_uri:          https://bleephub.dev.e6qu.dev/auth/shauth/backchannel-logout
+backchannel_logout_session_required: true
+```
+
+Bleephub verifies discovery metadata, authorization code + PKCE, state, nonce,
+issuer, audience, expiry, role, subject, and the OpenID Connect `sid`. Durable
+browser-session records retain verified issuer, subject, `sid`, and the ID
+token server-side; the browser receives only the opaque, HttpOnly Bleephub
+session identifier. The visible user menu is populated from the authenticated
+identity and its sign-out control uses the provider's discovered RP-Initiated
+Logout endpoint with an ID-token hint. Signed OpenID Connect Back-Channel
+Logout revokes matching sessions by `sid`, or every subject session when the
+provider sends `sub` without `sid`. The registered post-logout URI is a
+Bleephub-origin landing page that clears any remaining local browser session
+and waits for an explicit user action before starting another sign-in.
 
 For user-interface hacking without rebuilding the Go binary on every change:
 
