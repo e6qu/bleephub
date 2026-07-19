@@ -136,9 +136,11 @@ func (s *Server) handleLoginPost(w http.ResponseWriter, r *http.Request) {
 		CSRFToken: csrf,
 		ExpiresAt: time.Now().Add(time.Hour),
 	}
-	s.store.mu.Lock()
-	s.store.LoginSessions[sessionID] = sess
-	s.store.mu.Unlock()
+	if err := s.store.PutLoginSession(sessionID, sess); err != nil {
+		s.logger.Error().Err(err).Msg("persist browser session")
+		writeGHError(w, http.StatusServiceUnavailable, "browser session is unavailable")
+		return
+	}
 
 	http.SetCookie(w, &http.Cookie{
 		Name:     "_gh_sess",
@@ -605,8 +607,12 @@ func (s *Server) sessionFromRequest(r *http.Request) *LoginSession {
 	if err != nil {
 		return nil
 	}
+	sess, err := s.store.GetLoginSession(cookie.Value)
+	if err != nil {
+		s.logger.Error().Err(err).Msg("read browser session")
+		return nil
+	}
 	s.store.mu.RLock()
-	sess := s.store.LoginSessions[cookie.Value]
 	var user *User
 	if sess != nil {
 		user = s.store.Users[sess.UserID]

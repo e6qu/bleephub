@@ -902,8 +902,9 @@ func (st *Store) SetPersistence(p *Persistence) error {
 // The loadBucket registrations below are the authoritative durable-state
 // inventory.
 //
-// Other state (sessions, agents, ephemeral codes) deliberately stays
-// in-memory only.
+// Agent connections and ephemeral service codes deliberately stay in memory.
+// Browser sessions are durable because browser authentication must survive
+// service replacement and requests may reach any replica.
 func (st *Store) loadFromPersistence() error {
 	if st.persist == nil {
 		return nil
@@ -921,6 +922,19 @@ func (st *Store) loadFromPersistence() error {
 		return nil
 	}); err != nil {
 		return err
+	}
+	loginSessions, err := st.persist.List(loginSessionsBucket)
+	if err != nil {
+		return fmt.Errorf("load %s: %w", loginSessionsBucket, err)
+	}
+	for id, raw := range loginSessions {
+		var session LoginSession
+		if err := loadJSON(raw, &session); err != nil {
+			return fmt.Errorf("decode %s row: %w", loginSessionsBucket, err)
+		}
+		if session.ExpiresAt.After(time.Now()) && st.Users[session.UserID] != nil {
+			st.LoginSessions[id] = &session
+		}
 	}
 	if err := st.loadBucket("tokens", func(raw []byte) error {
 		var t Token

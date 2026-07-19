@@ -112,7 +112,7 @@ function PackagesList({
     error,
   } = useQuery({
     queryKey: listKey,
-    queryFn: () => fetchPackages(scope),
+    queryFn: () => fetchPackages(scope, packageType),
   });
 
   const deletePkgMut = useMutation({

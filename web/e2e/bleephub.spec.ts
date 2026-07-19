@@ -21,9 +21,8 @@ test.beforeEach(({ page }, testInfo) => {
   });
 });
 
-// Screenshots land in temp/screenshots/ (gitignored). Created lazily.
-// process.cwd() is the standalone Bleephub web workspace when Playwright runs.
-const SCREENSHOT_DIR = path.resolve(process.cwd(), "../../../temp/screenshots");
+// Screenshots stay with Playwright's other ignored test artifacts. Created lazily.
+const SCREENSHOT_DIR = path.resolve(process.cwd(), "test-results/screenshots");
 
 function ensureScreenshotDir(): void {
   fs.mkdirSync(SCREENSHOT_DIR, { recursive: true });
@@ -41,6 +40,7 @@ async function shot(page: Page, name: string): Promise<void> {
 
 const TOKEN = "bleephub-admin-token-00000000000000000000";
 const BASE = "http://localhost:15555";
+const WEBHOOK_BASE = "http://127.0.0.1:15557";
 
 async function apiPost(page: Page, path: string, body: unknown) {
   return page.evaluate(
@@ -181,6 +181,41 @@ test.describe("Global navigation", () => {
     await drawer.getByRole("link", { name: "Dashboard" }).click();
     await expect(page).toHaveURL(/\/ui\/$/);
     await shot(page, "09-back-dashboard");
+  });
+});
+
+test.describe("User menu and packages", () => {
+  test("labels personal destinations consistently and submits sign-out", async ({ page }) => {
+    await page.goto("/ui/");
+    await page.getByRole("button", { name: "Open user menu" }).click();
+    const menu = page.getByRole("menu");
+    for (const label of ["My profile", "My repositories", "My gists", "My packages", "My codespaces"]) {
+      await expect(menu.getByRole("menuitem", { name: label })).toBeVisible();
+    }
+
+    const logoutRequest = page.waitForRequest((request) => request.method() === "POST" && new URL(request.url()).pathname === "/auth/logout");
+    await menu.getByRole("menuitem", { name: "Sign out" }).click();
+    await logoutRequest;
+    await expect(page).toHaveURL(/\/ui\/login/);
+  });
+
+  test("loads each package tab with GitHub's required package type", async ({ page }) => {
+    const containerResponse = page.waitForResponse((response) => {
+      const requestURL = new URL(response.url());
+      return requestURL.pathname.endsWith("/users/admin/packages") && requestURL.searchParams.get("package_type") === "container";
+    });
+    await page.goto("/ui/packages");
+    expect((await containerResponse).status()).toBe(200);
+    await expect(page.getByText("No packages yet.")).toBeVisible();
+    await expect(page.getByText("Failed to load packages")).toHaveCount(0);
+
+    const npmResponse = page.waitForResponse((response) => {
+      const requestURL = new URL(response.url());
+      return requestURL.pathname.endsWith("/users/admin/packages") && requestURL.searchParams.get("package_type") === "npm";
+    });
+    await page.getByRole("button", { name: "npm" }).click();
+    expect((await npmResponse).status()).toBe(200);
+    await expect(page.getByText("No packages yet.")).toBeVisible();
   });
 });
 
@@ -689,7 +724,7 @@ test.describe("GitHub Marketplace", () => {
     await page.getByLabel("Short description").fill("Colorful automation with GitHub-native installation and billing");
     await page.getByLabel("Full description").fill("A polished GitHub Marketplace integration that keeps setup, plans, billing changes, and webhook delivery together.");
     await page.getByLabel("Setup URL").fill("https://example.test/marketplace/setup");
-    await page.getByLabel("Payload URL").fill(`${BASE}/health`);
+    await page.getByLabel("Payload URL").fill(`${WEBHOOK_BASE}/marketplace`);
     await page.getByLabel("Secret").fill("playwright-marketplace-secret");
     await page.getByRole("button", { name: "Create draft listing" }).click();
     await expect(page.getByRole("heading", { name: "Manage Marketplace listing" })).toBeVisible();
@@ -724,6 +759,11 @@ test.describe("GitHub Marketplace", () => {
     await page.getByRole("button", { name: "Complete order and begin installation" }).click();
     expect((await purchaseResponse).status()).toBe(201);
     await expect(page.getByRole("link", { name: /Continue to Marketplace Polish App setup/ })).toBeVisible();
+    await expect.poll(async () => {
+      const response = await page.request.get(`${WEBHOOK_BASE}/events`);
+      const events = await response.json() as Array<{ event: string; body: { action?: string } }>;
+      return events.some((event) => event.event === "marketplace_purchase" && event.body.action === "purchased");
+    }).toBe(true);
     const installations = await apiGet(page, "/api/v3/user/installations") as { installations: Array<{ app_slug: string }> };
     expect(installations.installations.some((installation) => installation.app_slug === "marketplace-polish-app")).toBe(true);
 

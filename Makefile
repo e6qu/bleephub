@@ -8,6 +8,7 @@ run: build
 
 web-build:
 	cd web && bun install --frozen-lockfile && bun run build
+	rm -rf internal/server/dist/*
 	cp -R web/dist/. internal/server/dist/
 
 test:
