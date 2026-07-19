@@ -40,12 +40,17 @@ endpoint because Amazon API Gateway does not proxy SSH/TCP.
 registered GitHub OAuth App. The secret ARN references an existing AWS Secrets
 Manager secret so Terraform never receives the OAuth client secret value.
 
-`shauth_oidc_issuer`, `shauth_oidc_client_id`, and
-`shauth_oidc_client_secret_arn` enroll Bleephub with Shauth without changing
-its GitHub-compatible OAuth endpoints. Set all three together; the client
-redirect URI is `https://<domain_name>/auth/shauth/callback`. Bleephub uses
-OpenID Connect discovery, PKCE, nonce binding, and signed ID-token validation;
-the secret remains only in AWS Secrets Manager.
+`shauth_oidc_issuer`, `shauth_oidc_client_id`,
+`shauth_oidc_client_secret_arn`, and `shauth_oidc_post_logout_url` enroll
+Bleephub with Shauth without changing its GitHub-compatible OAuth endpoints.
+Set all four together. Register the exact redirect URI
+`https://<domain_name>/auth/shauth/callback`, post-logout redirect URI
+`https://<domain_name>/auth/signed-out` through
+`shauth_oidc_post_logout_url`, and Back-Channel Logout URI
+`https://<domain_name>/auth/shauth/backchannel-logout`. Bleephub uses OpenID
+Connect discovery, PKCE, nonce binding, signed ID-token validation,
+RP-Initiated Logout, and signed Back-Channel Logout; the client secret remains
+only in AWS Secrets Manager.
 
 `idle_shutdown_enabled` defaults to `true`. Set it to `false` for an always-on
 environment; the wake controller then leaves the application and dqlite services

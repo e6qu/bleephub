@@ -121,12 +121,138 @@ func (p *Persistence) DeleteBatch(entries ...persistencePut) error {
 	return tx.Commit()
 }
 
+// ClaimOIDCLogoutAndDeleteSessions stores a replay marker and deletes the
+// selected browser sessions in one SQLite/dqlite transaction. The kv primary
+// key makes token claiming exclusive across processes and replicas.
+func (p *Persistence) ClaimOIDCLogoutAndDeleteSessions(replayKey string, expiresAt, now time.Time, provider, issuer, sid, subject string) (bool, error) {
+	marker, err := json.Marshal(oidcLogoutReplayMarker{ExpiresAt: expiresAt})
+	if err != nil {
+		return false, fmt.Errorf("marshal OpenID Connect logout replay marker: %w", err)
+	}
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	tx, err := p.db.Begin()
+	if err != nil {
+		return false, err
+	}
+	defer func() { _ = tx.Rollback() }()
+
+	result, err := tx.Exec(`INSERT INTO kv (bucket, key, value) VALUES (?, ?, ?) ON CONFLICT(bucket, key) DO NOTHING`, oidcLogoutClaimsBucket, replayKey, marker)
+	if err != nil {
+		return false, err
+	}
+	inserted, err := result.RowsAffected()
+	if err != nil {
+		return false, err
+	}
+	if inserted == 0 {
+		var raw []byte
+		if err := tx.QueryRow(p.dialect.valueSQL, oidcLogoutClaimsBucket, replayKey).Scan(&raw); err != nil {
+			return false, err
+		}
+		var persisted oidcLogoutReplayMarker
+		if err := json.Unmarshal(raw, &persisted); err != nil {
+			return false, fmt.Errorf("decode OpenID Connect logout replay marker %s: %w", replayKey, err)
+		}
+		if persisted.ExpiresAt.After(now) {
+			return false, nil
+		}
+		if _, err := tx.Exec(p.dialect.deleteSQL, oidcLogoutClaimsBucket, replayKey); err != nil {
+			return false, err
+		}
+		result, err = tx.Exec(`INSERT INTO kv (bucket, key, value) VALUES (?, ?, ?) ON CONFLICT(bucket, key) DO NOTHING`, oidcLogoutClaimsBucket, replayKey, marker)
+		if err != nil {
+			return false, err
+		}
+		inserted, err = result.RowsAffected()
+		if err != nil {
+			return false, err
+		}
+		if inserted == 0 {
+			return false, nil
+		}
+	}
+
+	rows, err := tx.Query(p.dialect.listSQL, oidcLogoutClaimsBucket)
+	if err != nil {
+		return false, err
+	}
+	type expiredMarker struct{ key string }
+	expired := make([]expiredMarker, 0)
+	for rows.Next() {
+		var key string
+		var raw []byte
+		if err := rows.Scan(&key, &raw); err != nil {
+			_ = rows.Close()
+			return false, err
+		}
+		var persisted oidcLogoutReplayMarker
+		if err := json.Unmarshal(raw, &persisted); err != nil {
+			_ = rows.Close()
+			return false, fmt.Errorf("decode OpenID Connect logout replay marker %s: %w", key, err)
+		}
+		if !persisted.ExpiresAt.After(now) {
+			expired = append(expired, expiredMarker{key: key})
+		}
+	}
+	if err := rows.Err(); err != nil {
+		_ = rows.Close()
+		return false, err
+	}
+	if err := rows.Close(); err != nil {
+		return false, err
+	}
+	for _, entry := range expired {
+		if _, err := tx.Exec(p.dialect.deleteSQL, oidcLogoutClaimsBucket, entry.key); err != nil {
+			return false, err
+		}
+	}
+
+	rows, err = tx.Query(p.dialect.listSQL, loginSessionsBucket)
+	if err != nil {
+		return false, err
+	}
+	ids := make([]string, 0)
+	for rows.Next() {
+		var id string
+		var raw []byte
+		if err := rows.Scan(&id, &raw); err != nil {
+			_ = rows.Close()
+			return false, err
+		}
+		var session LoginSession
+		if err := json.Unmarshal(raw, &session); err != nil {
+			_ = rows.Close()
+			return false, fmt.Errorf("decode OpenID Connect login session %s: %w", id, err)
+		}
+		if oidcLoginSessionMatches(&session, provider, issuer, sid, subject) {
+			ids = append(ids, id)
+		}
+	}
+	if err := rows.Err(); err != nil {
+		_ = rows.Close()
+		return false, err
+	}
+	if err := rows.Close(); err != nil {
+		return false, err
+	}
+	for _, id := range ids {
+		if _, err := tx.Exec(p.dialect.deleteSQL, loginSessionsBucket, id); err != nil {
+			return false, err
+		}
+	}
+	if err := tx.Commit(); err != nil {
+		return false, err
+	}
+	return true, nil
+}
+
 func openSQLite(dataDir string) (*sql.DB, error) {
 	if err := os.MkdirAll(dataDir, 0o755); err != nil {
 		return nil, fmt.Errorf("mkdir %s: %w", dataDir, err)
 	}
 	dbPath := filepath.Join(dataDir, "bleephub.db")
-	db, err := sql.Open("sqlite", "file:"+dbPath+"?_pragma=journal_mode(WAL)&_pragma=synchronous(NORMAL)&_pragma=foreign_keys(1)")
+	db, err := sql.Open("sqlite", "file:"+dbPath+"?_pragma=journal_mode(WAL)&_pragma=synchronous(NORMAL)&_pragma=foreign_keys(1)&_pragma=busy_timeout(5000)")
 	if err != nil {
 		return nil, fmt.Errorf("open sqlite %s: %w", dbPath, err)
 	}

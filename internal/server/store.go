@@ -145,9 +145,14 @@ type RepoInvitation struct {
 // It binds a session cookie to a user and carries the CSRF token
 // embedded in the OAuth authorize consent form.
 type LoginSession struct {
-	UserID    int
-	CSRFToken string
-	ExpiresAt time.Time
+	UserID       int
+	CSRFToken    string
+	ExpiresAt    time.Time
+	OIDCProvider string
+	OIDCIssuer   string
+	OIDCSubject  string
+	OIDCSID      string
+	OIDCIDToken  string
 }
 
 // GistFile is a single file inside a gist.
@@ -220,6 +225,7 @@ type Store struct {
 	DeviceCodes                  map[string]*DeviceCode
 	AuthCodes                    map[string]*authCode     // OAuth web-flow codes
 	LoginSessions                map[string]*LoginSession // _gh_sess cookie value → session
+	OIDCLogoutClaims             map[string]time.Time     // replay key → expiry (ephemeral stores only)
 	Repos                        map[int]*Repo
 	ReposByName                  map[string]*Repo                       // "owner/name" → repo
 	GitStorages                  map[string]gitStorage.Storer           // "owner/name" → go-git storage (memory or filesystem)
@@ -600,6 +606,7 @@ func NewStore() *Store {
 		DeviceCodes:                  make(map[string]*DeviceCode),
 		AuthCodes:                    make(map[string]*authCode),
 		LoginSessions:                make(map[string]*LoginSession),
+		OIDCLogoutClaims:             make(map[string]time.Time),
 		Repos:                        make(map[int]*Repo),
 		ReposByName:                  make(map[string]*Repo),
 		GitStorages:                  make(map[string]gitStorage.Storer),
