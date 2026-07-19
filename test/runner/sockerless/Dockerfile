@@ -6,6 +6,7 @@ WORKDIR /src
 # One image serves multiple backends; run-integration.sh picks via
 # BLEEPHUB_BACKEND (ecs → AWS sim, aca → Azure sim, …).
 COPY --from=sockerless simulators/realexec/ /realexec/
+COPY --from=sockerless simulators/ui-auth/ /ui-auth/
 COPY --from=sockerless simulators/aws/ /sim-aws/
 RUN cd /sim-aws && GOWORK=off go build -tags noui -o /out/simulator-aws .
 COPY --from=sockerless simulators/azure/ /sim-azure/
