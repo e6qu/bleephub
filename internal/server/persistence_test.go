@@ -55,6 +55,10 @@ func persistRoundTrip(t *testing.T, open func() (*Persistence, error)) {
 	if err != nil {
 		t.Fatalf("create fine-grained personal access token: %v", err)
 	}
+	loginSession := &LoginSession{UserID: user.ID, CSRFToken: "persisted-csrf", ExpiresAt: time.Now().UTC().Add(time.Hour)}
+	if err := st1.PutLoginSession("persisted-browser-session", loginSession); err != nil {
+		t.Fatalf("persist login session: %v", err)
+	}
 	st1.UpdateRepo(user.Login, repo.Name, func(r *Repo) {
 		r.HasDiscussions = boolPointer(false)
 	})
@@ -74,6 +78,13 @@ func persistRoundTrip(t *testing.T, open func() (*Persistence, error)) {
 
 	if got := st2.UsersByLogin["admin"]; got == nil {
 		t.Fatal("admin user did not persist")
+	}
+	gotLoginSession, err := st2.GetLoginSession("persisted-browser-session")
+	if err != nil {
+		t.Fatalf("read persisted login session: %v", err)
+	}
+	if gotLoginSession == nil || gotLoginSession.UserID != user.ID || gotLoginSession.CSRFToken != "persisted-csrf" {
+		t.Fatalf("login session did not round-trip: %+v", gotLoginSession)
 	}
 	gotFineGrained, gotFineGrainedUser := st2.LookupToken(fineGrained.Value)
 	if gotFineGrained == nil || gotFineGrainedUser == nil || !gotFineGrained.FineGrained || gotFineGrained.Name != "persist fine-grained" || gotFineGrained.ResourceOwner != user.Login || gotFineGrained.RepositorySelection != "subset" || len(gotFineGrained.RepositoryIDs) != 1 || gotFineGrained.RepositoryIDs[0] != repo.ID || gotFineGrained.Permissions.Repository["contents"] != "read" || gotFineGrained.ExpiresAt == nil {

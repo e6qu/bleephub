@@ -1,10 +1,14 @@
 package bleephub
 
 import (
+	"crypto/hmac"
 	"crypto/rand"
 	"crypto/sha256"
+	"crypto/subtle"
+	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/url"
@@ -17,8 +21,9 @@ import (
 )
 
 const (
-	githubAdminTeam     = "e6qu-org-admins"
-	githubDeveloperTeam = "e6qu-org-members"
+	githubAdminTeam           = "e6qu-org-admins"
+	githubDeveloperTeam       = "e6qu-org-members"
+	identityStateCookiePrefix = "_bleephub_identity_state_"
 )
 
 type identityConfig struct {
@@ -30,11 +35,12 @@ type identityConfig struct {
 }
 
 type identityState struct {
-	provider  string
-	returnTo  string
-	nonce     string
-	pkce      string
-	expiresAt time.Time
+	Provider  string    `json:"provider"`
+	State     string    `json:"state"`
+	ReturnTo  string    `json:"return_to"`
+	Nonce     string    `json:"nonce,omitempty"`
+	PKCE      string    `json:"pkce,omitempty"`
+	ExpiresAt time.Time `json:"expires_at"`
 }
 
 func identityConfigFromEnv() identityConfig {
@@ -122,9 +128,10 @@ func (s *Server) handleShauthLogin(w http.ResponseWriter, r *http.Request) {
 	if !strings.HasPrefix(returnTo, "/") || strings.HasPrefix(returnTo, "//") {
 		returnTo = "/ui/"
 	}
-	s.identityStatesMu.Lock()
-	s.identityStates[state] = identityState{provider: "shauth", returnTo: returnTo, nonce: nonce, pkce: pkce, expiresAt: time.Now().Add(10 * time.Minute)}
-	s.identityStatesMu.Unlock()
+	if err := s.setIdentityState(w, identityState{Provider: "shauth", State: state, ReturnTo: returnTo, Nonce: nonce, PKCE: pkce, ExpiresAt: time.Now().Add(10 * time.Minute)}); err != nil {
+		writeGHError(w, http.StatusInternalServerError, "could not start Shauth sign-in")
+		return
+	}
 	endpoint := provider.Endpoint()
 	endpoint.AuthStyle = oauth2.AuthStyleInParams
 	config := oauth2.Config{ClientID: s.identity.shauthClientID, ClientSecret: s.identity.shauthClientSecret, Endpoint: endpoint, RedirectURL: s.externalAuthCallback("shauth"), Scopes: []string{oidc.ScopeOpenID, "profile", "email", "offline_access"}}
@@ -133,11 +140,8 @@ func (s *Server) handleShauthLogin(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) handleShauthCallback(w http.ResponseWriter, r *http.Request) {
 	state := r.URL.Query().Get("state")
-	s.identityStatesMu.Lock()
-	pending, ok := s.identityStates[state]
-	delete(s.identityStates, state)
-	s.identityStatesMu.Unlock()
-	if !ok || pending.provider != "shauth" || time.Now().After(pending.expiresAt) || r.URL.Query().Get("code") == "" {
+	pending, err := s.consumeIdentityState(w, r, "shauth", state)
+	if err != nil || r.URL.Query().Get("code") == "" {
 		writeGHError(w, http.StatusBadRequest, "invalid or expired Shauth sign-in state")
 		return
 	}
@@ -149,7 +153,7 @@ func (s *Server) handleShauthCallback(w http.ResponseWriter, r *http.Request) {
 	endpoint := provider.Endpoint()
 	endpoint.AuthStyle = oauth2.AuthStyleInParams
 	config := oauth2.Config{ClientID: s.identity.shauthClientID, ClientSecret: s.identity.shauthClientSecret, Endpoint: endpoint, RedirectURL: s.externalAuthCallback("shauth")}
-	tokens, err := config.Exchange(r.Context(), r.URL.Query().Get("code"), oauth2.VerifierOption(pending.pkce))
+	tokens, err := config.Exchange(r.Context(), r.URL.Query().Get("code"), oauth2.VerifierOption(pending.PKCE))
 	if err != nil {
 		writeGHError(w, http.StatusUnauthorized, "Shauth authorization-code exchange failed")
 		return
@@ -172,7 +176,7 @@ func (s *Server) handleShauthCallback(w http.ResponseWriter, r *http.Request) {
 		Picture           string `json:"picture"`
 		Role              string `json:"role"`
 	}
-	if err := idToken.Claims(&claims); err != nil || claims.Nonce != pending.nonce || (claims.Role != "admin" && claims.Role != "developer") {
+	if err := idToken.Claims(&claims); err != nil || claims.Nonce != pending.Nonce || (claims.Role != "admin" && claims.Role != "developer") {
 		writeGHError(w, http.StatusUnauthorized, "Shauth ID token claims were invalid")
 		return
 	}
@@ -181,8 +185,12 @@ func (s *Server) handleShauthCallback(w http.ResponseWriter, r *http.Request) {
 		login = "shauth-" + sha256Hex(idToken.Subject)[:16]
 	}
 	user := s.upsertExternalUser(login, strings.TrimSpace(claims.Name), strings.TrimSpace(claims.Email), strings.TrimSpace(claims.Picture), claims.Role == "admin")
-	s.createBrowserSession(w, r, user)
-	http.Redirect(w, r, pending.returnTo, http.StatusFound)
+	if err := s.createBrowserSession(w, user); err != nil {
+		s.logger.Error().Err(err).Msg("create browser session")
+		writeGHError(w, http.StatusServiceUnavailable, "browser session is unavailable")
+		return
+	}
+	http.Redirect(w, r, pending.ReturnTo, http.StatusFound)
 }
 
 func sha256Hex(value string) string {
@@ -193,15 +201,18 @@ func sha256Hex(value string) string {
 func (s *Server) handleIdentitySession(w http.ResponseWriter, r *http.Request) {
 	session := s.sessionFromRequest(r)
 	if session == nil {
-		writeGHError(w, http.StatusUnauthorized, "browser session is required")
+		writeJSON(w, http.StatusOK, map[string]any{"authenticated": false})
 		return
 	}
 	user := s.store.GetUserByID(session.UserID)
 	if user == nil {
-		writeGHError(w, http.StatusUnauthorized, "browser session user is unavailable")
+		writeJSON(w, http.StatusOK, map[string]any{"authenticated": false})
 		return
 	}
-	writeJSON(w, http.StatusOK, s.fullUserJSON(user))
+	writeJSON(w, http.StatusOK, map[string]any{
+		"authenticated": true,
+		"user":          s.fullUserJSON(user),
+	})
 }
 
 func (s *Server) handleGitHubLogin(w http.ResponseWriter, r *http.Request) {
@@ -218,9 +229,10 @@ func (s *Server) handleGitHubLogin(w http.ResponseWriter, r *http.Request) {
 	if !strings.HasPrefix(returnTo, "/") || strings.HasPrefix(returnTo, "//") {
 		returnTo = "/ui/"
 	}
-	s.identityStatesMu.Lock()
-	s.identityStates[state] = identityState{provider: "github", returnTo: returnTo, expiresAt: time.Now().Add(10 * time.Minute)}
-	s.identityStatesMu.Unlock()
+	if err := s.setIdentityState(w, identityState{Provider: "github", State: state, ReturnTo: returnTo, ExpiresAt: time.Now().Add(10 * time.Minute)}); err != nil {
+		writeGHError(w, http.StatusInternalServerError, "could not start GitHub sign-in")
+		return
+	}
 
 	redirect := url.URL{Scheme: "https", Host: "github.com", Path: "/login/oauth/authorize"}
 	q := redirect.Query()
@@ -234,11 +246,8 @@ func (s *Server) handleGitHubLogin(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) handleGitHubCallback(w http.ResponseWriter, r *http.Request) {
 	state := r.URL.Query().Get("state")
-	s.identityStatesMu.Lock()
-	pending, ok := s.identityStates[state]
-	delete(s.identityStates, state)
-	s.identityStatesMu.Unlock()
-	if !ok || pending.provider != "github" || time.Now().After(pending.expiresAt) || r.URL.Query().Get("code") == "" {
+	pending, err := s.consumeIdentityState(w, r, "github", state)
+	if err != nil || r.URL.Query().Get("code") == "" {
 		writeGHError(w, http.StatusBadRequest, "invalid or expired GitHub sign-in state")
 		return
 	}
@@ -270,8 +279,73 @@ func (s *Server) handleGitHubCallback(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	user := s.upsertExternalUser(profile.Login, profile.Name, profile.Email, profile.AvatarURL, admin)
-	s.createBrowserSession(w, r, user)
-	http.Redirect(w, r, pending.returnTo, http.StatusFound)
+	if err := s.createBrowserSession(w, user); err != nil {
+		s.logger.Error().Err(err).Msg("create browser session")
+		writeGHError(w, http.StatusServiceUnavailable, "browser session is unavailable")
+		return
+	}
+	http.Redirect(w, r, pending.ReturnTo, http.StatusFound)
+}
+
+func (s *Server) setIdentityState(w http.ResponseWriter, pending identityState) error {
+	payload, err := json.Marshal(pending)
+	if err != nil {
+		return err
+	}
+	mac := hmac.New(sha256.New, []byte(s.identityStateSecret(pending.Provider)))
+	_, _ = mac.Write(payload)
+	value := base64.RawURLEncoding.EncodeToString(payload) + "." + base64.RawURLEncoding.EncodeToString(mac.Sum(nil))
+	http.SetCookie(w, &http.Cookie{Name: identityStateCookiePrefix + pending.State, Value: value, Path: "/auth/", MaxAge: 600, Expires: pending.ExpiresAt, HttpOnly: true, Secure: strings.HasPrefix(s.externalURL, "https://"), SameSite: http.SameSiteLaxMode})
+	return nil
+}
+
+func (s *Server) consumeIdentityState(w http.ResponseWriter, r *http.Request, provider, state string) (identityState, error) {
+	if len(state) != 64 {
+		return identityState{}, errors.New("invalid identity state")
+	}
+	for _, char := range state {
+		if !strings.ContainsRune("0123456789abcdef", char) {
+			return identityState{}, errors.New("invalid identity state")
+		}
+	}
+	cookieName := identityStateCookiePrefix + state
+	http.SetCookie(w, &http.Cookie{Name: cookieName, Value: "", Path: "/auth/", MaxAge: -1, HttpOnly: true, Secure: strings.HasPrefix(s.externalURL, "https://"), SameSite: http.SameSiteLaxMode})
+	cookie, err := r.Cookie(cookieName)
+	if err != nil {
+		return identityState{}, err
+	}
+	parts := strings.Split(cookie.Value, ".")
+	if len(parts) != 2 {
+		return identityState{}, errors.New("invalid identity state encoding")
+	}
+	payload, err := base64.RawURLEncoding.DecodeString(parts[0])
+	if err != nil {
+		return identityState{}, err
+	}
+	signature, err := base64.RawURLEncoding.DecodeString(parts[1])
+	if err != nil {
+		return identityState{}, err
+	}
+	mac := hmac.New(sha256.New, []byte(s.identityStateSecret(provider)))
+	_, _ = mac.Write(payload)
+	if subtle.ConstantTimeCompare(signature, mac.Sum(nil)) != 1 {
+		return identityState{}, errors.New("invalid identity state signature")
+	}
+	var pending identityState
+	if err := json.Unmarshal(payload, &pending); err != nil {
+		return identityState{}, err
+	}
+	if pending.Provider != provider || pending.State == "" || pending.State != state || time.Now().After(pending.ExpiresAt) {
+		return identityState{}, errors.New("invalid or expired identity state")
+	}
+	return pending, nil
+}
+
+func (s *Server) identityStateSecret(provider string) string {
+	if provider == "shauth" {
+		return s.identity.shauthClientSecret
+	}
+	return s.identity.githubClientSecret
 }
 
 type githubIdentity struct{ Login, Name, Email, AvatarURL string }
@@ -398,7 +472,11 @@ func (s *Server) handleLocalLogin(w http.ResponseWriter, r *http.Request) {
 		writeGHError(w, http.StatusUnauthorized, "invalid local credentials")
 		return
 	}
-	s.createBrowserSession(w, r, user)
+	if err := s.createBrowserSession(w, user); err != nil {
+		s.logger.Error().Err(err).Msg("create browser session")
+		writeGHError(w, http.StatusServiceUnavailable, "browser session is unavailable")
+		return
+	}
 	writeJSON(w, http.StatusOK, s.fullUserJSON(user))
 }
 
@@ -422,12 +500,17 @@ func (s *Server) upsertExternalUser(login, name, email, avatarURL string, siteAd
 	return user
 }
 
-func (s *Server) createBrowserSession(w http.ResponseWriter, r *http.Request, user *User) {
-	id, _ := randomIdentityState()
-	s.store.mu.Lock()
-	s.store.LoginSessions[id] = &LoginSession{UserID: user.ID, CSRFToken: id, ExpiresAt: time.Now().Add(12 * time.Hour)}
-	s.store.mu.Unlock()
-	http.SetCookie(w, &http.Cookie{Name: "_gh_sess", Value: id, Path: "/", HttpOnly: true, Secure: strings.HasPrefix(s.externalURL, "https://"), SameSite: http.SameSiteLaxMode, Expires: time.Now().Add(12 * time.Hour)})
+func (s *Server) createBrowserSession(w http.ResponseWriter, user *User) error {
+	id, err := randomIdentityState()
+	if err != nil {
+		return err
+	}
+	session := &LoginSession{UserID: user.ID, CSRFToken: id, ExpiresAt: time.Now().Add(12 * time.Hour)}
+	if err := s.store.PutLoginSession(id, session); err != nil {
+		return err
+	}
+	http.SetCookie(w, &http.Cookie{Name: "_gh_sess", Value: id, Path: "/", HttpOnly: true, Secure: strings.HasPrefix(s.externalURL, "https://"), SameSite: http.SameSiteLaxMode, Expires: session.ExpiresAt})
+	return nil
 }
 
 func (s *Server) externalAuthCallback(provider string) string {
@@ -435,9 +518,11 @@ func (s *Server) externalAuthCallback(provider string) string {
 }
 func (s *Server) handleIdentityLogout(w http.ResponseWriter, r *http.Request) {
 	if cookie, err := r.Cookie("_gh_sess"); err == nil {
-		s.store.mu.Lock()
-		delete(s.store.LoginSessions, cookie.Value)
-		s.store.mu.Unlock()
+		if err := s.store.DeleteLoginSession(cookie.Value); err != nil {
+			s.logger.Error().Err(err).Msg("delete browser session")
+			writeGHError(w, http.StatusServiceUnavailable, "browser session could not be revoked")
+			return
+		}
 	}
 	http.SetCookie(w, &http.Cookie{Name: "_gh_sess", Value: "", Path: "/", MaxAge: -1, HttpOnly: true, Secure: strings.HasPrefix(s.externalURL, "https://"), SameSite: http.SameSiteLaxMode})
 	if s.identity.shauthConfigured() {

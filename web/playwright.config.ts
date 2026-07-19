@@ -2,12 +2,16 @@
 import { defineConfig } from "@playwright/test";
 
 const PORT = 15555;
+const executablePath = process.env.PLAYWRIGHT_EXECUTABLE_PATH;
 
 export default defineConfig({
   testDir: "./e2e",
   testMatch: "**/*.spec.ts",
   timeout: 30_000,
   retries: 0,
+  use: {
+    launchOptions: executablePath ? { executablePath } : undefined,
+  },
   projects: [
     {
       name: "setup",

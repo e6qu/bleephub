@@ -167,15 +167,15 @@ func (s *Server) handleAdminDeleteUser(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 	}
-	for cookie, sess := range s.store.LoginSessions {
-		if sess.UserID == u.ID {
-			delete(s.store.LoginSessions, cookie)
-		}
-	}
 	if s.store.persist != nil {
 		s.store.persist.MustDelete("users", strconv.Itoa(u.ID))
 	}
 	s.store.mu.Unlock()
+	if err := s.store.DeleteLoginSessionsForUser(u.ID); err != nil {
+		s.logger.Error().Err(err).Msg("delete user browser sessions")
+		writeGHError(w, http.StatusServiceUnavailable, "browser sessions could not be revoked")
+		return
+	}
 	w.WriteHeader(http.StatusNoContent)
 }
 

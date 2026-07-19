@@ -73,7 +73,14 @@ export function App() {
       return;
     }
     void fetch("/auth/session")
-      .then((response) => setBrowserSession(response.ok))
+      .then(async (response) => {
+        if (!response.ok) {
+          setBrowserSession(false);
+          return;
+        }
+        const session = (await response.json()) as { authenticated?: boolean };
+        setBrowserSession(session.authenticated === true);
+      })
       .catch(() => setBrowserSession(false));
   }, []);
 

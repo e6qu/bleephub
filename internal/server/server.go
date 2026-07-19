@@ -39,8 +39,6 @@ type Server struct {
 	externalURL            string     // BLEEPHUB_EXTERNAL_URL; when set, overrides request-Host URL derivation (job messages, action URLs) — the GHES "external URL" knob
 	pagesJekyllExecutable  string
 	identity               identityConfig
-	identityStatesMu       sync.Mutex
-	identityStates         map[string]identityState
 	// responseObserver, when set before ListenAndServe, sees every
 	// request/response pair in the handler chain. The test harness
 	// assigns it (same package) to validate /api/v3 response shapes
@@ -95,10 +93,10 @@ func (s *Server) route(pattern string, handler http.HandlerFunc) {
 //
 // Workflow run history is persisted; in-flight runs are marked terminal
 // cancelled on reload because the runner dispatch state is process-local.
-// Intentionally NOT persisted: session/agent state and the OIDC signing key
-// (gh_misc_endpoints.go oidcKey), which rotates on restart — consumers
-// must re-fetch the JWKS, exactly as they must against real GitHub key
-// rotation.
+// Browser sessions are persisted so sign-in survives replacement and remains
+// consistent across replicas. Agent connections and the OIDC signing key
+// (gh_misc_endpoints.go oidcKey) remain process-local; consumers must re-fetch
+// the JWKS after key rotation, as they do against real GitHub.
 func NewServer(addr string, logger zerolog.Logger) *Server {
 	maxWF := 10
 	if v := os.Getenv("BLEEPHUB_MAX_WORKFLOWS"); v != "" {
@@ -126,7 +124,6 @@ func NewServer(addr string, logger zerolog.Logger) *Server {
 		externalURL:            strings.TrimRight(os.Getenv("BLEEPHUB_EXTERNAL_URL"), "/"),
 		pagesJekyllExecutable:  coalesceStr(os.Getenv("BLEEPHUB_PAGES_JEKYLL_EXECUTABLE"), "bleephub-pages-jekyll"),
 		identity:               identityConfigFromEnv(),
-		identityStates:         map[string]identityState{},
 	}
 	if err := s.identity.validate(); err != nil {
 		logger.Fatal().Err(err).Msg("invalid Bleephub external identity configuration")

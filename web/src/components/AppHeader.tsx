@@ -138,10 +138,10 @@ function MenuLink({ to, icon, children, onClick }: { to: string; icon?: ReactNod
   );
 }
 
-function MenuButton({ icon, children, onClick }: { icon?: ReactNode; children: ReactNode; onClick: () => void }) {
+function MenuButton({ icon, children, onClick, type = "button" }: { icon?: ReactNode; children: ReactNode; onClick?: () => void; type?: "button" | "submit" }) {
   return (
     <button
-      type="button"
+      type={type}
       role="menuitem"
       onClick={onClick}
       className="flex w-full items-center gap-2"
@@ -450,11 +450,11 @@ export function AppHeader() {
                     Signed in as <strong style={{ color: "var(--color-fg)" }}>{login || "…"}</strong>
                   </div>
                   <MenuSeparator />
-                  {login && <MenuLink to={`/ui/${login}`} icon={<PeopleIcon size={16} />} onClick={close}>Your profile</MenuLink>}
-                  <MenuLink to="/ui/repos" icon={<RepoIcon size={16} />} onClick={close}>Your repositories</MenuLink>
-                  <MenuLink to="/ui/gists" icon={<GistIcon size={16} />} onClick={close}>Your gists</MenuLink>
-                  <MenuLink to="/ui/packages" icon={<PackageIcon size={16} />} onClick={close}>Your packages</MenuLink>
-                  <MenuLink to="/ui/codespaces" icon={<CodespaceIcon size={16} />} onClick={close}>Your codespaces</MenuLink>
+                  {login && <MenuLink to={`/ui/${login}`} icon={<PeopleIcon size={16} />} onClick={close}>My profile</MenuLink>}
+                  <MenuLink to="/ui/repos" icon={<RepoIcon size={16} />} onClick={close}>My repositories</MenuLink>
+                  <MenuLink to="/ui/gists" icon={<GistIcon size={16} />} onClick={close}>My gists</MenuLink>
+                  <MenuLink to="/ui/packages" icon={<PackageIcon size={16} />} onClick={close}>My packages</MenuLink>
+                  <MenuLink to="/ui/codespaces" icon={<CodespaceIcon size={16} />} onClick={close}>My codespaces</MenuLink>
                   <MenuSeparator />
                   <MenuLink to="/ui/account" icon={<KeyIcon size={16} />} onClick={close}>Settings</MenuLink>
                   <MenuLink to="/ui/admin" icon={<GraphIcon size={16} />} onClick={close}>Operations</MenuLink>
@@ -462,8 +462,8 @@ export function AppHeader() {
                   <MenuButton icon={isDark ? <SunIcon size={16} /> : <MoonIcon size={16} />} onClick={() => { toggle(); close(); }}>
                     {isDark ? "Light theme" : "Dark theme"}
                   </MenuButton>
-                  <form method="post" action="/auth/logout">
-                    <MenuButton icon={<SignOutIcon size={16} />} onClick={clearToken}>Sign out</MenuButton>
+                  <form method="post" action="/auth/logout" onSubmit={clearToken}>
+                    <MenuButton type="submit" icon={<SignOutIcon size={16} />}>Sign out</MenuButton>
                   </form>
                 </>
               )}

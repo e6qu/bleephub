@@ -28,6 +28,7 @@ type dbDialect struct {
 	putSQL    string // INSERT … ON CONFLICT upsert
 	deleteSQL string
 	listSQL   string
+	valueSQL  string
 	getSQL    string
 	setSQL    string
 }
@@ -49,6 +50,7 @@ CREATE TABLE IF NOT EXISTS counters (
 		putSQL:    `INSERT INTO kv (bucket, key, value) VALUES (?, ?, ?) ON CONFLICT(bucket, key) DO UPDATE SET value = excluded.value`,
 		deleteSQL: `DELETE FROM kv WHERE bucket = ? AND key = ?`,
 		listSQL:   `SELECT key, value FROM kv WHERE bucket = ?`,
+		valueSQL:  `SELECT value FROM kv WHERE bucket = ? AND key = ?`,
 		getSQL:    `SELECT value FROM counters WHERE name = ?`,
 		setSQL:    `INSERT INTO counters (name, value) VALUES (?, ?) ON CONFLICT(name) DO UPDATE SET value = excluded.value`,
 	}
@@ -326,6 +328,23 @@ func (p *Persistence) List(bucket string) (map[string][]byte, error) {
 		out[k] = v
 	}
 	return out, rows.Err()
+}
+
+func (p *Persistence) Get(bucket, key string) ([]byte, error) {
+	if p == nil {
+		return nil, nil
+	}
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	var raw []byte
+	err := p.db.QueryRow(p.dialect.valueSQL, bucket, key).Scan(&raw)
+	if err == sql.ErrNoRows {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	return raw, nil
 }
 
 func (p *Persistence) GetCounter(name string) (int64, error) {

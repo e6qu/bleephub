@@ -29,6 +29,44 @@ func TestShauthIdentityConfigRejectsPartialCoordinates(t *testing.T) {
 	}
 }
 
+func TestIdentitySessionReportsAuthenticationWithoutExpectedNetworkErrors(t *testing.T) {
+	s := NewServer("127.0.0.1:0", zerolog.Nop())
+	request := httptest.NewRequest(http.MethodGet, "/auth/session", nil)
+	response := httptest.NewRecorder()
+
+	s.handleIdentitySession(response, request)
+
+	if response.Code != http.StatusOK {
+		t.Fatalf("anonymous session status = %d, want %d", response.Code, http.StatusOK)
+	}
+	var anonymous map[string]any
+	if err := json.Unmarshal(response.Body.Bytes(), &anonymous); err != nil {
+		t.Fatal(err)
+	}
+	if authenticated, _ := anonymous["authenticated"].(bool); authenticated {
+		t.Fatal("anonymous session reported authenticated")
+	}
+
+	s.store.LoginSessions["browser-session"] = &LoginSession{UserID: 1, ExpiresAt: time.Now().Add(time.Hour)}
+	request = httptest.NewRequest(http.MethodGet, "/auth/session", nil)
+	request.AddCookie(&http.Cookie{Name: "_gh_sess", Value: "browser-session"})
+	response = httptest.NewRecorder()
+	s.handleIdentitySession(response, request)
+	if response.Code != http.StatusOK {
+		t.Fatalf("authenticated session status = %d, want %d", response.Code, http.StatusOK)
+	}
+	var authenticated map[string]any
+	if err := json.Unmarshal(response.Body.Bytes(), &authenticated); err != nil {
+		t.Fatal(err)
+	}
+	if valid, _ := authenticated["authenticated"].(bool); !valid {
+		t.Fatalf("authenticated session response = %s", response.Body.String())
+	}
+	if authenticated["user"] == nil {
+		t.Fatalf("authenticated session omitted user: %s", response.Body.String())
+	}
+}
+
 func TestShauthLogoutClearsLocalSessionAndStartsIssuerLogout(t *testing.T) {
 	s := NewServer("127.0.0.1:0", zerolog.Nop())
 	s.externalURL = "https://bleephub.example.test"
@@ -136,7 +174,13 @@ func TestShauthCallbackUsesClientSecretPost(t *testing.T) {
 		t.Fatal(err)
 	}
 	callback := httptest.NewRequest(http.MethodGet, "/auth/shauth/callback?state="+url.QueryEscape(redirect.Query().Get("state"))+"&code=code", nil)
-	s.handleShauthCallback(httptest.NewRecorder(), callback)
+	for _, cookie := range loginResponse.Result().Cookies() {
+		callback.AddCookie(cookie)
+	}
+	callbackServer := NewServer("127.0.0.1:0", zerolog.Nop())
+	callbackServer.externalURL = s.externalURL
+	callbackServer.identity = s.identity
+	callbackServer.handleShauthCallback(httptest.NewRecorder(), callback)
 
 	if got, want := tokenForm.Get("client_id"), "bleephub"; got != want {
 		t.Fatalf("token client_id = %q, want %q", got, want)
@@ -146,6 +190,69 @@ func TestShauthCallbackUsesClientSecretPost(t *testing.T) {
 	}
 	if tokenAuthorization != "" {
 		t.Fatalf("token request used HTTP Basic authentication: %q", tokenAuthorization)
+	}
+}
+
+func TestIdentityStateIsBrowserBoundAndTamperEvident(t *testing.T) {
+	s := NewServer("127.0.0.1:0", zerolog.Nop())
+	s.externalURL = "https://bleephub.example.test"
+	s.identity = identityConfig{shauthIssuer: "https://auth.example.test", shauthClientID: "bleephub", shauthClientSecret: "0123456789abcdef0123456789abcdef"}
+	response := httptest.NewRecorder()
+	state, err := randomIdentityState()
+	if err != nil {
+		t.Fatal(err)
+	}
+	pending := identityState{Provider: "shauth", State: state, ReturnTo: "/ui/", ExpiresAt: time.Now().Add(time.Minute)}
+	if err := s.setIdentityState(response, pending); err != nil {
+		t.Fatal(err)
+	}
+	cookies := response.Result().Cookies()
+	if len(cookies) != 1 {
+		t.Fatalf("identity cookies = %d, want 1", len(cookies))
+	}
+	cookie := cookies[0]
+	last := "A"
+	if cookie.Value[len(cookie.Value)-1:] == last {
+		last = "B"
+	}
+	cookie.Value = cookie.Value[:len(cookie.Value)-1] + last
+	request := httptest.NewRequest(http.MethodGet, "/auth/shauth/callback?state="+state, nil)
+	request.AddCookie(cookie)
+	if _, err := s.consumeIdentityState(httptest.NewRecorder(), request, "shauth", state); err == nil {
+		t.Fatal("tampered identity state was accepted")
+	}
+}
+
+func TestIdentityStateSupportsConcurrentBrowserFlows(t *testing.T) {
+	s := NewServer("127.0.0.1:0", zerolog.Nop())
+	s.identity = identityConfig{shauthClientSecret: "0123456789abcdef0123456789abcdef"}
+	states := make([]string, 2)
+	cookies := make([]*http.Cookie, 2)
+	for index := range states {
+		state, err := randomIdentityState()
+		if err != nil {
+			t.Fatal(err)
+		}
+		states[index] = state
+		response := httptest.NewRecorder()
+		if err := s.setIdentityState(response, identityState{Provider: "shauth", State: state, ReturnTo: "/ui/", ExpiresAt: time.Now().Add(time.Minute)}); err != nil {
+			t.Fatal(err)
+		}
+		cookies[index] = response.Result().Cookies()[0]
+	}
+	if cookies[0].Name == cookies[1].Name {
+		t.Fatalf("concurrent identity flows reused cookie %q", cookies[0].Name)
+	}
+	for index, state := range states {
+		request := httptest.NewRequest(http.MethodGet, "/auth/shauth/callback?state="+state, nil)
+		request.AddCookie(cookies[index])
+		pending, err := s.consumeIdentityState(httptest.NewRecorder(), request, "shauth", state)
+		if err != nil {
+			t.Fatalf("consume concurrent state %d: %v", index, err)
+		}
+		if pending.State != state {
+			t.Fatalf("concurrent state %d = %q, want %q", index, pending.State, state)
+		}
 	}
 }
 

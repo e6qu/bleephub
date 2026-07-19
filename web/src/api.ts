@@ -2013,19 +2013,20 @@ function packageBasePath(scope: PackageScope, pkgType: string, pkgName: string):
   }
 }
 
-export function packageListPath(scope: PackageScope): string {
+export function packageListPath(scope: PackageScope, pkgType?: string): string {
+  const query = pkgType ? `?package_type=${encodeURIComponent(pkgType)}` : "";
   switch (scope.kind) {
     case "user":
-      return `/api/v3/users/${scope.username}/packages`;
+      return `/api/v3/users/${scope.username}/packages${query}`;
     case "org":
-      return `/api/v3/orgs/${scope.org}/packages`;
+      return `/api/v3/orgs/${scope.org}/packages${query}`;
     case "repo":
-      return `/api/v3/repos/${scope.owner}/${scope.repo}/packages`;
+      return `/api/v3/repos/${scope.owner}/${scope.repo}/packages${query}`;
   }
 }
 
-export const fetchPackages = (scope: PackageScope) =>
-  ghFetch<GithubPackage[]>(packageListPath(scope));
+export const fetchPackages = (scope: PackageScope, pkgType?: string) =>
+  ghFetch<GithubPackage[]>(packageListPath(scope, pkgType));
 
 export const fetchPackageVersions = (scope: PackageScope, pkgType: string, pkgName: string) =>
   ghFetch<GithubPackageVersion[]>(`${packageBasePath(scope, pkgType, pkgName)}/versions`);
