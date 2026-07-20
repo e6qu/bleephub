@@ -23,15 +23,28 @@ locals {
     for node in sort(keys(local.dqlite_nodes)) : "${local.dqlite_advertise_addresses[node]}=${local.dqlite_live_addresses[node]}"
     if local.dqlite_advertise_addresses[node] != local.dqlite_live_addresses[node]
   ])
-  vpc_id             = local.uses_existing_network ? var.existing_vpc_id : aws_vpc.this[0].id
-  private_subnet_ids = local.uses_existing_network ? var.existing_private_subnet_ids : [for subnet in aws_subnet.private : subnet.id]
-  public_subnet_ids  = local.uses_existing_network ? var.existing_public_subnet_ids : [for subnet in aws_subnet.public : subnet.id]
-  private_subnet_map = { for index, subnet_id in local.private_subnet_ids : tostring(index) => subnet_id }
-  ecs_cluster_arn    = local.uses_existing_network ? var.existing_ecs_cluster_arn : aws_ecs_cluster.this[0].arn
-  ecs_cluster_name   = local.uses_existing_network ? data.aws_ecs_cluster.existing[0].cluster_name : aws_ecs_cluster.this[0].name
+  vpc_id                                 = local.uses_existing_network ? var.existing_vpc_id : aws_vpc.this[0].id
+  private_subnet_ids                     = local.uses_existing_network ? var.existing_private_subnet_ids : [for subnet in aws_subnet.private : subnet.id]
+  public_subnet_ids                      = local.uses_existing_network ? var.existing_public_subnet_ids : [for subnet in aws_subnet.public : subnet.id]
+  private_subnet_map                     = { for index, subnet_id in local.private_subnet_ids : tostring(index) => subnet_id }
+  ecs_cluster_arn                        = local.uses_existing_network ? var.existing_ecs_cluster_arn : aws_ecs_cluster.this[0].arn
+  ecs_cluster_name                       = local.uses_existing_network ? data.aws_ecs_cluster.existing[0].cluster_name : aws_ecs_cluster.this[0].name
+  uses_shared_api_gateway_vpc_link       = !var.create_api_gateway_vpc_link
+  api_gateway_vpc_link_id                = local.uses_shared_api_gateway_vpc_link ? var.api_gateway_vpc_link_id : aws_apigatewayv2_vpc_link.this[0].id
+  api_gateway_vpc_link_security_group_id = local.uses_shared_api_gateway_vpc_link ? var.api_gateway_vpc_link_security_group_id : aws_security_group.api_link[0].id
 }
 
 data "aws_caller_identity" "current" {}
+
+moved {
+  from = aws_security_group.api_link
+  to   = aws_security_group.api_link[0]
+}
+
+moved {
+  from = aws_apigatewayv2_vpc_link.this
+  to   = aws_apigatewayv2_vpc_link.this[0]
+}
 
 data "aws_ecs_cluster" "existing" {
   count        = local.uses_existing_network ? 1 : 0
@@ -241,6 +254,7 @@ resource "aws_cloudwatch_log_group" "this" {
 }
 
 resource "aws_security_group" "api_link" {
+  count       = local.uses_shared_api_gateway_vpc_link ? 0 : 1
   name_prefix = "${var.name}-api-link-"
   vpc_id      = local.vpc_id
   egress {
@@ -259,7 +273,7 @@ resource "aws_security_group" "task" {
     protocol        = "tcp"
     from_port       = 5555
     to_port         = 5555
-    security_groups = [aws_security_group.api_link.id]
+    security_groups = [local.api_gateway_vpc_link_security_group_id]
   }
   ingress {
     protocol        = "tcp"
@@ -610,8 +624,9 @@ resource "aws_lb_listener" "ssh" {
 }
 
 resource "aws_apigatewayv2_vpc_link" "this" {
+  count              = local.uses_shared_api_gateway_vpc_link ? 0 : 1
   name               = var.name
-  security_group_ids = [aws_security_group.api_link.id]
+  security_group_ids = [aws_security_group.api_link[0].id]
   subnet_ids         = local.private_subnet_ids
   tags               = local.common_tags
 }
@@ -628,7 +643,7 @@ resource "aws_apigatewayv2_integration" "service" {
   integration_uri        = aws_service_discovery_service.app.arn
   integration_method     = "ANY"
   connection_type        = "VPC_LINK"
-  connection_id          = aws_apigatewayv2_vpc_link.this.id
+  connection_id          = local.api_gateway_vpc_link_id
   payload_format_version = "1.0"
 }
 

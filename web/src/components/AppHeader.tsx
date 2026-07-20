@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, type ReactNode, type CSSProperties, type FormEvent } from "react";
 import { Link, NavLink, useNavigate } from "react-router";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useTheme } from "@bleephub/ui-core/hooks";
 import {
   Mark,
@@ -331,6 +331,7 @@ function Avatar({ login, url, size = 24 }: { login: string; url?: string; size?:
 
 export function AppHeader() {
   const navigate = useNavigate();
+  const queryClient = useQueryClient();
   const { theme, toggle } = useTheme("light");
   const isDark = theme === "dark";
   const [drawer, setDrawer] = useState(false);
@@ -349,6 +350,15 @@ export function AppHeader() {
     e.preventDefault();
     const term = q.trim();
     navigate(term ? `/ui/search?q=${encodeURIComponent(term)}` : "/ui/search");
+  };
+
+  const submitLogout = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    const form = event.currentTarget;
+    await queryClient.cancelQueries();
+    queryClient.clear();
+    clearToken();
+    form.submit();
   };
 
   return (
@@ -462,7 +472,7 @@ export function AppHeader() {
                   <MenuButton icon={isDark ? <SunIcon size={16} /> : <MoonIcon size={16} />} onClick={() => { toggle(); close(); }}>
                     {isDark ? "Light theme" : "Dark theme"}
                   </MenuButton>
-                  <form method="post" action="/auth/logout" onSubmit={clearToken}>
+                  <form method="post" action="/auth/logout" onSubmit={(event) => void submitLogout(event)}>
                     <MenuButton type="submit" icon={<SignOutIcon size={16} />}>Sign out</MenuButton>
                   </form>
                 </>

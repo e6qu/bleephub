@@ -36,6 +36,17 @@ supplied network. HTTP traffic uses Amazon API Gateway directly through a VPC
 link to AWS Cloud Map; the only Network Load Balancer is the public raw-SSH
 endpoint because Amazon API Gateway does not proxy SSH/TCP.
 
+By default, Bleephub creates a dedicated Amazon API Gateway VPC Link and its
+ingress security group. Set `create_api_gateway_vpc_link = false`,
+`api_gateway_vpc_link_id`, and `api_gateway_vpc_link_security_group_id` together
+to reuse an environment-wide VPC Link instead. The explicit Boolean keeps
+resource ownership known during planning even when the supplied IDs come from
+resources created in the same Terraform plan. Shared-link mode creates neither
+dedicated resource, connects the Bleephub API integration through the supplied
+link, and permits application traffic only from the supplied link security
+group. Supplying incomplete coordinates, or supplying shared coordinates while
+dedicated mode is enabled, is invalid.
+
 `github_oauth_client_id` and `github_oauth_client_secret_arn` enable the
 registered GitHub OAuth App. The secret ARN references an existing AWS Secrets
 Manager secret so Terraform never receives the OAuth client secret value.
@@ -60,12 +71,14 @@ running while the rest of the deployment stays unchanged.
 ## Outputs
 
 The module returns the public Bleephub URL, administrator URL, SSH host,
-service and Amazon API Gateway identifiers, durable object-store names, and
-the AWS Secrets Manager ARN holding the administrator token.
+service and Amazon API Gateway identifiers, the effective Amazon API Gateway
+VPC Link and security-group identifiers, durable object-store names, and the
+AWS Secrets Manager ARN holding the administrator token.
 
 ## Validation
 
-The module's Amazon Web Services simulator apply/destroy test lives in `test/`.
+The module's Terraform contract tests live under `terraform/tests/`; its Amazon
+Web Services simulator apply/destroy test lives in `test/`.
 Build the wake-listener artifact with:
 
 ```bash

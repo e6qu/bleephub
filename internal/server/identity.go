@@ -388,9 +388,15 @@ func (s *Server) consumeIdentityState(w http.ResponseWriter, r *http.Request, pr
 	if err != nil {
 		return identityState{}, err
 	}
+	if base64.RawURLEncoding.EncodeToString(payload) != parts[0] {
+		return identityState{}, errors.New("invalid identity state encoding")
+	}
 	signature, err := base64.RawURLEncoding.DecodeString(parts[1])
 	if err != nil {
 		return identityState{}, err
+	}
+	if base64.RawURLEncoding.EncodeToString(signature) != parts[1] {
+		return identityState{}, errors.New("invalid identity state encoding")
 	}
 	mac := hmac.New(sha256.New, []byte(s.identityStateSecret(provider)))
 	_, _ = mac.Write(payload)

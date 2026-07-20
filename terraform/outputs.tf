@@ -11,3 +11,5 @@ output "efs_access_point_id" { value = aws_efs_access_point.sqlite.id }
 output "s3_gateway_endpoint_id" { value = try(aws_vpc_endpoint.s3[0].id, null) }
 output "vpc_id" { value = local.vpc_id }
 output "api_gateway_id" { value = aws_apigatewayv2_api.this.id }
+output "api_gateway_vpc_link_id" { value = local.api_gateway_vpc_link_id }
+output "api_gateway_vpc_link_security_group_id" { value = local.api_gateway_vpc_link_security_group_id }

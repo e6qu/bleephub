@@ -38,6 +38,22 @@ jobs:
       - name: Build the embedded web application
         run: cd web && bun run build
 
+  terraform:
+    name: Terraform module
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v7.0.0
+      - uses: hashicorp/setup-terraform@v4.0.1
+        with:
+          terraform_version: 1.13.5
+      - name: Initialize the module
+        run: terraform -chdir=terraform init -backend=false -input=false
+      - name: Check formatting and configuration
+        run: terraform fmt -check -recursive terraform && terraform -chdir=terraform validate
+      - name: Exercise dedicated, shared, and invalid VPC Link contracts
+        run: terraform -chdir=terraform test
+
   gh-cli:
     name: GitHub CLI compatibility
     runs-on: ubuntu-latest

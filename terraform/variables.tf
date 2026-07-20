@@ -55,6 +55,34 @@ variable "existing_ecs_cluster_arn" {
   default     = ""
 }
 
+variable "create_api_gateway_vpc_link" {
+  description = "Whether Bleephub creates its own Amazon API Gateway VPC Link and security group. Set false when supplying environment-owned coordinates."
+  type        = bool
+  default     = true
+}
+
+variable "api_gateway_vpc_link_id" {
+  description = "Existing Amazon API Gateway VPC Link ID shared by this deployment when create_api_gateway_vpc_link is false."
+  type        = string
+  default     = null
+  nullable    = true
+
+  validation {
+    condition = (
+      (var.create_api_gateway_vpc_link && var.api_gateway_vpc_link_id == null && var.api_gateway_vpc_link_security_group_id == null) ||
+      (!var.create_api_gateway_vpc_link && var.api_gateway_vpc_link_id != null && trimspace(var.api_gateway_vpc_link_id) != "" && var.api_gateway_vpc_link_security_group_id != null && trimspace(var.api_gateway_vpc_link_security_group_id) != "")
+    )
+    error_message = "Leave both shared VPC Link coordinates null when create_api_gateway_vpc_link is true, or set both to non-empty values when it is false."
+  }
+}
+
+variable "api_gateway_vpc_link_security_group_id" {
+  description = "Security-group ID attached to api_gateway_vpc_link_id when create_api_gateway_vpc_link is false."
+  type        = string
+  default     = null
+  nullable    = true
+}
+
 variable "availability_zones" {
   description = "At least two Availability Zones in region used for Bleephub public, private, and EFS subnets."
   type        = list(string)
