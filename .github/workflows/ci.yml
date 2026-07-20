@@ -65,6 +65,29 @@ jobs:
       - name: Install Chromium and run the real browser suite
         run: cd web && npx playwright install --with-deps chromium && SERVER_BIN=../bleephub-server bun run test:e2e
 
+  shauth-sso:
+    name: Shauth SSO browser contract
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v7.0.0
+      - uses: actions/checkout@v7.0.0
+        with:
+          repository: e6qu/shauth
+          ref: a77159518aafe8135898e50e3bf1f0dc0808aed7
+          path: .test-deps/shauth
+      - uses: actions/setup-go@v6.5.0
+        with:
+          go-version-file: go.mod
+          cache: true
+      - uses: oven-sh/setup-bun@v2.2.0
+        with:
+          bun-version: '1.3.14'
+      - name: Install locked browser dependencies and Chromium
+        run: cd web && bun install --frozen-lockfile && npx playwright install --with-deps chromium
+      - name: Exercise direct, catalog, identity, packages, SSO, and global logout flows
+        run: SHAUTH_SOURCE_DIR="$GITHUB_WORKSPACE/.test-deps/shauth" make shauth-sso-test
+
   runner-sockerless:
     name: Runner against Sockerless
     runs-on: ubuntu-latest

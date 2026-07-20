@@ -138,17 +138,22 @@ Configure all four values together:
 BLEEPHUB_SHAUTH_ISSUER=https://auth.dev.e6qu.dev
 BLEEPHUB_SHAUTH_CLIENT_ID=bleephub
 BLEEPHUB_SHAUTH_CLIENT_SECRET=...
-BLEEPHUB_SHAUTH_POST_LOGOUT_URL=https://bleephub.dev.e6qu.dev/auth/signed-out
+BLEEPHUB_SHAUTH_POST_LOGOUT_URL=https://bleephub.dev.e6qu.dev/ui/signed-out
 ```
 
 Register these exact Shauth client coordinates for the deployment host:
 
 ```text
 redirect_uri:                    https://bleephub.dev.e6qu.dev/auth/shauth/callback
-post_logout_redirect_uri:        https://bleephub.dev.e6qu.dev/auth/signed-out
+post_logout_redirect_uri:        https://bleephub.dev.e6qu.dev/ui/signed-out
+frontchannel_logout_uri:         https://bleephub.dev.e6qu.dev/auth/shauth/frontchannel-logout
 backchannel_logout_uri:          https://bleephub.dev.e6qu.dev/auth/shauth/backchannel-logout
 backchannel_logout_session_required: true
 ```
+
+Production OpenID Connect coordinates must use HTTPS. The
+`BLEEPHUB_ALLOW_INSECURE_OIDC=true` switch exists only for local integration
+tests whose Shauth and Bleephub processes listen on loopback HTTP addresses.
 
 Bleephub verifies discovery metadata, authorization code + PKCE, state, nonce,
 issuer, audience, expiry, role, subject, and the OpenID Connect `sid`. Durable
@@ -404,6 +409,9 @@ make test
 
 # Real gh command-line interface inside Docker (real Bleephub + real gh binary + self-signed TLS)
 make gh-test
+
+# Real two-relying-party single sign-on and global logout contract
+SHAUTH_SOURCE_DIR=../shauth make shauth-sso-test
 ```
 
 The `gh` harness builds `Dockerfile.gh-test` and runs `test/run-gh-test.sh`. It exercises:
@@ -413,6 +421,15 @@ The `gh` harness builds `Dockerfile.gh-test` and runs `test/run-gh-test.sh`. It 
 - The parity probes for endpoints with no native `gh` verb (apps/{slug}, /applications/{cid}/token, suspend, OAuth Apps management)
 
 Runs in continuous integration as the Bleephub gh command-line interface job (must be green to merge).
+
+The Shauth harness starts the checked-out Shauth service with Ory Hydra and
+PostgreSQL, registers two independent Bleephub clients, and drives both real
+Bleephub processes through Chromium. It proves direct and catalog launches,
+one credential prompt, identity presentation, package loading, RP-Initiated
+Logout back to the initiating Bleephub origin, cross-client session
+revocation, fail-closed re-entry, and zero browser or external-runtime request
+errors. `SHAUTH_SOURCE_DIR` is required so the contract always tests explicit
+Shauth source rather than an implicit network image.
 
 ### OpenAPI fidelity gates (hermetic)
 

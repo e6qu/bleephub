@@ -202,7 +202,7 @@ test.describe("User menu and packages", () => {
   test("loads each package tab with GitHub's required package type", async ({ page }) => {
     const containerResponse = page.waitForResponse((response) => {
       const requestURL = new URL(response.url());
-      return requestURL.pathname.endsWith("/users/admin/packages") && requestURL.searchParams.get("package_type") === "container";
+      return requestURL.pathname.endsWith("/user/packages") && requestURL.searchParams.get("package_type") === "container";
     });
     await page.goto("/ui/packages");
     expect((await containerResponse).status()).toBe(200);
@@ -211,7 +211,7 @@ test.describe("User menu and packages", () => {
 
     const npmResponse = page.waitForResponse((response) => {
       const requestURL = new URL(response.url());
-      return requestURL.pathname.endsWith("/users/admin/packages") && requestURL.searchParams.get("package_type") === "npm";
+      return requestURL.pathname.endsWith("/user/packages") && requestURL.searchParams.get("package_type") === "npm";
     });
     await page.getByRole("button", { name: "npm" }).click();
     expect((await npmResponse).status()).toBe(200);

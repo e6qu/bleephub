@@ -50,6 +50,7 @@ import {
   fetchAuditLogOrgs,
   buildAuditLogPhrase,
   fetchEnterpriseSlug,
+  packageListPath,
 } from "../api.js";
 
 const mockFetch = vi.fn();
@@ -174,6 +175,23 @@ describe("repository API helpers", () => {
     mockFetch.mockResolvedValue(jsonResponse({ message: "Git object unavailable" }, 500));
 
     await expect(fetchRepoCommits("admin", "blocked")).rejects.toMatchObject({ status: 500 });
+  });
+});
+
+describe("package API helpers", () => {
+  it("uses GitHub's authenticated-user package endpoint", () => {
+    expect(packageListPath({ kind: "user", username: "ignored" }, "container")).toBe(
+      "/api/v3/user/packages?package_type=container",
+    );
+  });
+
+  it("keeps organization and repository package coordinates scoped", () => {
+    expect(packageListPath({ kind: "org", org: "e6qu" }, "npm")).toBe(
+      "/api/v3/orgs/e6qu/packages?package_type=npm",
+    );
+    expect(packageListPath({ kind: "repo", owner: "e6qu", repo: "bleephub" })).toBe(
+      "/api/v3/repos/e6qu/bleephub/packages",
+    );
   });
 });
 

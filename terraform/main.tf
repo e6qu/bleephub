@@ -787,8 +787,8 @@ resource "aws_ecs_task_definition" "this" {
       error_message = "shauth_oidc_issuer, shauth_oidc_client_id, shauth_oidc_client_secret_arn, and shauth_oidc_post_logout_url must be configured together."
     }
     precondition {
-      condition     = var.shauth_oidc_post_logout_url == "" || var.shauth_oidc_post_logout_url == "https://${var.domain_name}/auth/signed-out"
-      error_message = "shauth_oidc_post_logout_url must be the Bleephub-origin signed-out landing https://<domain_name>/auth/signed-out."
+      condition     = var.shauth_oidc_post_logout_url == "" || var.shauth_oidc_post_logout_url == "https://${var.domain_name}/ui/signed-out"
+      error_message = "shauth_oidc_post_logout_url must be the Bleephub-origin signed-out landing https://<domain_name>/ui/signed-out."
     }
   }
 }

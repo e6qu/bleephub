@@ -223,14 +223,18 @@ jobs:
                     if [ "$include_architectures" = true ]; then printf '%s\n' "$tag-amd64" "$tag-arm64"; fi
                   done
             } | jq -R . | jq -s 'unique')"
-            jq -r --argjson keep "$keep_tags" '
+            jq -r \
+              --argjson include_architectures "$include_architectures" \
+              --argjson keep "$keep_tags" '
               .[]
               | . as $version
               | ($version.metadata.container.tags // []) as $tags
               # OCI image indexes reference untagged child manifests. Deleting
               # those children leaves a surviving release tag that cannot be
-              # pulled, so retention deletes only obsolete tagged release roots.
-              | select(($tags | length) > 0)
+              # pulled, so multi-architecture packages retain untagged children.
+              # Bundle packages contain no image indexes and can delete untagged
+              # versions left by superseded ORAS publication layouts.
+              | select(($tags | length) > 0 or $include_architectures == false)
               | select([ $tags[] | select(. as $tag | $keep | index($tag) != null) ] | length == 0)
               | $version.id
             ' "$versions_file" \
