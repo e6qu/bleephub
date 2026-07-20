@@ -45,12 +45,13 @@ Manager secret so Terraform never receives the OAuth client secret value.
 Bleephub with Shauth without changing its GitHub-compatible OAuth endpoints.
 Set all four together. Register the exact redirect URI
 `https://<domain_name>/auth/shauth/callback`, post-logout redirect URI
-`https://<domain_name>/auth/signed-out` through
-`shauth_oidc_post_logout_url`, and Back-Channel Logout URI
-`https://<domain_name>/auth/shauth/backchannel-logout`. Bleephub uses OpenID
-Connect discovery, PKCE, nonce binding, signed ID-token validation,
-RP-Initiated Logout, and signed Back-Channel Logout; the client secret remains
-only in AWS Secrets Manager.
+`https://<domain_name>/ui/signed-out` through
+`shauth_oidc_post_logout_url`, Front-Channel Logout URI
+`https://<domain_name>/auth/shauth/frontchannel-logout`, and Back-Channel
+Logout URI `https://<domain_name>/auth/shauth/backchannel-logout`. Bleephub
+uses OpenID Connect discovery, PKCE, nonce binding, signed ID-token validation,
+RP-Initiated Logout, Front-Channel Logout, and signed Back-Channel Logout; the
+client secret remains only in AWS Secrets Manager.
 
 `idle_shutdown_enabled` defaults to `true`. Set it to `false` for an always-on
 environment; the wake controller then leaves the application and dqlite services

@@ -48,6 +48,7 @@ type identityConfig struct {
 	shauthClientID      string
 	shauthClientSecret  string
 	shauthPostLogoutURL string
+	allowInsecureOIDC   bool
 }
 
 type identityState struct {
@@ -67,6 +68,7 @@ func identityConfigFromEnv() identityConfig {
 		shauthClientID:      strings.TrimSpace(os.Getenv("BLEEPHUB_SHAUTH_CLIENT_ID")),
 		shauthClientSecret:  strings.TrimSpace(os.Getenv("BLEEPHUB_SHAUTH_CLIENT_SECRET")),
 		shauthPostLogoutURL: strings.TrimSpace(os.Getenv("BLEEPHUB_SHAUTH_POST_LOGOUT_URL")),
+		allowInsecureOIDC:   strings.EqualFold(strings.TrimSpace(os.Getenv("BLEEPHUB_ALLOW_INSECURE_OIDC")), "true"),
 	}
 }
 
@@ -78,7 +80,8 @@ func (s *Server) registerExternalIdentityRoutes() {
 	s.route("GET /auth/shauth", s.handleShauthLogin)
 	s.route("GET /auth/shauth/callback", s.handleShauthCallback)
 	s.route("POST /auth/shauth/backchannel-logout", s.handleShauthBackChannelLogout)
-	s.route("GET /auth/signed-out", s.handleIdentitySignedOut)
+	s.route("GET /auth/shauth/frontchannel-logout", s.handleShauthFrontChannelLogout)
+	s.route("GET /ui/signed-out", s.handleIdentitySignedOut)
 	s.route("POST /auth/local", s.handleLocalLogin)
 	s.route("POST /auth/logout", s.handleIdentityLogout)
 	s.route("GET /control", s.handlePrivateControl)
@@ -110,17 +113,22 @@ func (c identityConfig) validate() error {
 	}
 	if c.shauthIssuer != "" {
 		issuer, err := url.Parse(c.shauthIssuer)
-		if err != nil || issuer.Scheme != "https" || issuer.Host == "" {
+		if err != nil || !validIdentityURL(issuer, c.allowInsecureOIDC) {
 			return fmt.Errorf("BLEEPHUB_SHAUTH_ISSUER must be an HTTPS issuer URL")
 		}
 	}
 	if c.shauthPostLogoutURL != "" {
 		postLogoutURL, err := url.Parse(c.shauthPostLogoutURL)
-		if err != nil || postLogoutURL.Scheme != "https" || postLogoutURL.Host == "" || postLogoutURL.User != nil {
+		if err != nil || !validIdentityURL(postLogoutURL, c.allowInsecureOIDC) {
 			return fmt.Errorf("BLEEPHUB_SHAUTH_POST_LOGOUT_URL must be an absolute HTTPS URL")
 		}
 	}
 	return nil
+}
+
+func validIdentityURL(value *url.URL, allowInsecure bool) bool {
+	return value != nil && value.Host != "" && value.User == nil &&
+		(value.Scheme == "https" || (allowInsecure && value.Scheme == "http"))
 }
 
 func validateShauthExternalURL(config identityConfig, externalURL string) error {
@@ -128,12 +136,12 @@ func validateShauthExternalURL(config identityConfig, externalURL string) error 
 		return nil
 	}
 	parsed, err := url.Parse(externalURL)
-	if err != nil || parsed.Scheme != "https" || parsed.Host == "" || parsed.User != nil || (parsed.Path != "" && parsed.Path != "/") || parsed.RawQuery != "" || parsed.Fragment != "" {
+	if err != nil || !validIdentityURL(parsed, config.allowInsecureOIDC) || (parsed.Path != "" && parsed.Path != "/") || parsed.RawQuery != "" || parsed.Fragment != "" {
 		return fmt.Errorf("BLEEPHUB_EXTERNAL_URL must be an absolute HTTPS origin when Shauth is configured")
 	}
 	postLogoutURL, err := url.Parse(config.shauthPostLogoutURL)
-	if err != nil || !sameURLOrigin(parsed, postLogoutURL) || postLogoutURL.Path != "/auth/signed-out" || postLogoutURL.RawQuery != "" || postLogoutURL.Fragment != "" {
-		return fmt.Errorf("BLEEPHUB_SHAUTH_POST_LOGOUT_URL must be %s/auth/signed-out", strings.TrimRight(externalURL, "/"))
+	if err != nil || !sameURLOrigin(parsed, postLogoutURL) || postLogoutURL.Path != "/ui/signed-out" || postLogoutURL.RawQuery != "" || postLogoutURL.Fragment != "" {
+		return fmt.Errorf("BLEEPHUB_SHAUTH_POST_LOGOUT_URL must be %s/ui/signed-out", strings.TrimRight(externalURL, "/"))
 	}
 	return nil
 }
@@ -588,6 +596,14 @@ func (s *Server) handleIdentityLogout(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	session := s.sessionFromRequest(r)
+	if cookie, err := r.Cookie("_gh_sess"); err == nil {
+		if err := s.store.DeleteLoginSession(cookie.Value); err != nil {
+			s.logger.Error().Err(err).Msg("delete browser session")
+			writeGHError(w, http.StatusServiceUnavailable, "browser session could not be revoked")
+			return
+		}
+	}
+	http.SetCookie(w, &http.Cookie{Name: "_gh_sess", Value: "", Path: "/", MaxAge: -1, HttpOnly: true, Secure: strings.HasPrefix(s.externalURL, "https://"), SameSite: http.SameSiteLaxMode})
 	logoutTarget := ""
 	if s.identity.shauthConfigured() {
 		provider, err := oidc.NewProvider(r.Context(), s.identity.shauthIssuer)
@@ -601,7 +617,7 @@ func (s *Server) handleIdentityLogout(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		endpoint, err := url.Parse(metadata.EndSessionEndpoint)
-		if err != nil || endpoint.Scheme != "https" || endpoint.Host == "" || endpoint.User != nil {
+		if err != nil || !validIdentityURL(endpoint, s.identity.allowInsecureOIDC) {
 			writeGHError(w, http.StatusBadGateway, "Shauth advertised an invalid logout endpoint")
 			return
 		}
@@ -615,14 +631,6 @@ func (s *Server) handleIdentityLogout(w http.ResponseWriter, r *http.Request) {
 		endpoint.RawQuery = query.Encode()
 		logoutTarget = endpoint.String()
 	}
-	if cookie, err := r.Cookie("_gh_sess"); err == nil {
-		if err := s.store.DeleteLoginSession(cookie.Value); err != nil {
-			s.logger.Error().Err(err).Msg("delete browser session")
-			writeGHError(w, http.StatusServiceUnavailable, "browser session could not be revoked")
-			return
-		}
-	}
-	http.SetCookie(w, &http.Cookie{Name: "_gh_sess", Value: "", Path: "/", MaxAge: -1, HttpOnly: true, Secure: strings.HasPrefix(s.externalURL, "https://"), SameSite: http.SameSiteLaxMode})
 	if logoutTarget != "" {
 		http.Redirect(w, r, logoutTarget, http.StatusSeeOther)
 		return
@@ -642,7 +650,22 @@ func (s *Server) handleIdentitySignedOut(w http.ResponseWriter, r *http.Request)
 	w.Header().Set("Cache-Control", "no-store")
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	w.WriteHeader(http.StatusOK)
-	_, _ = w.Write([]byte(`<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="color-scheme" content="light dark"><title>Signed out · Bleephub</title><style>:root{font:16px system-ui,sans-serif;color-scheme:light dark}body{min-height:100vh;margin:0;display:grid;place-items:center;background:#f6f8fa;color:#1f2328}main{width:min(28rem,calc(100% - 3rem));padding:2rem;border:1px solid #d0d7de;border-radius:1rem;background:#fff;box-shadow:0 1rem 3rem #1f23281f}h1{margin-top:0}a{display:inline-block;padding:.7rem 1rem;border-radius:.5rem;background:#1f883d;color:#fff;font-weight:700;text-decoration:none}a:focus-visible{outline:3px solid #0969da;outline-offset:3px}@media(prefers-color-scheme:dark){body{background:#0d1117;color:#e6edf3}main{background:#161b22;border-color:#30363d}a{background:#238636}}</style></head><body><main><h1>You are signed out</h1><p>Your Bleephub browser session and shared Shauth session have ended.</p><a href="/ui/login">Sign in again</a></main></body></html>`))
+	_, _ = w.Write([]byte(`<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="color-scheme" content="light dark"><title>Signed out · Bleephub</title><style>:root{font:16px system-ui,sans-serif;color-scheme:light dark}body{min-height:100vh;margin:0;display:grid;place-items:center;background:#f6f8fa;color:#1f2328}main{width:min(28rem,calc(100% - 3rem));padding:2rem;border:1px solid #d0d7de;border-radius:1rem;background:#fff;box-shadow:0 1rem 3rem #1f23281f}h1{margin-top:0}a{display:inline-block;padding:.7rem 1rem;border-radius:.5rem;background:#1f883d;color:#fff;font-weight:700;text-decoration:none}a:focus-visible{outline:3px solid #0969da;outline-offset:3px}@media(prefers-color-scheme:dark){body{background:#0d1117;color:#e6edf3}main{background:#161b22;border-color:#30363d}a{background:#238636}}</style></head><body><main><h1>You are signed out</h1><p>Your Bleephub browser session and shared Shauth session have ended.</p><a href="/ui/">Sign in again</a></main></body></html>`))
+}
+
+func (s *Server) handleShauthFrontChannelLogout(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Cache-Control", "no-store")
+	w.Header().Set("Content-Security-Policy", "default-src 'none'; frame-ancestors *")
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	if s.identity.shauthConfigured() && r.URL.Query().Get("iss") == s.identity.shauthIssuer && r.URL.Query().Get("sid") != "" {
+		if err := s.store.DeleteLoginSessionsForOIDC("shauth", s.identity.shauthIssuer, r.URL.Query().Get("sid"), ""); err != nil {
+			s.logger.Error().Err(err).Msg("revoke browser sessions from Shauth front-channel logout")
+			writeGHError(w, http.StatusServiceUnavailable, "browser sessions could not be revoked")
+			return
+		}
+	}
+	w.WriteHeader(http.StatusOK)
+	_, _ = w.Write([]byte(`<!doctype html><html lang="en"><head><meta charset="utf-8"><title>Signed out</title></head><body></body></html>`))
 }
 
 func (s *Server) handleShauthBackChannelLogout(w http.ResponseWriter, r *http.Request) {
@@ -677,7 +700,7 @@ func (s *Server) handleShauthBackChannelLogout(w http.ResponseWriter, r *http.Re
 		return
 	}
 	var eventClaims map[string]json.RawMessage
-	if err := json.Unmarshal(claims.Events[backChannelLogoutEvent], &eventClaims); err != nil || eventClaims == nil {
+	if err := json.Unmarshal(claims.Events[backChannelLogoutEvent], &eventClaims); err != nil || eventClaims == nil || len(eventClaims) != 0 {
 		writeGHError(w, http.StatusBadRequest, "logout token event is invalid")
 		return
 	}

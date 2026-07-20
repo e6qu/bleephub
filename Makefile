@@ -1,4 +1,4 @@
-.PHONY: build run test web-build gh-test runner-sockerless-test runner-image
+.PHONY: build run test web-build gh-test shauth-sso-test runner-sockerless-test runner-image
 
 build: web-build
 	CGO_ENABLED=0 go build -o bleephub-server ./cmd/bleephub
@@ -17,6 +17,11 @@ test:
 gh-test:
 	docker buildx build --load -f Dockerfile.gh-test -t bleephub-gh-test:local .
 	docker run --rm bleephub-gh-test:local
+
+shauth-sso-test: build
+	@test -n "$(SHAUTH_SOURCE_DIR)" || { echo "SHAUTH_SOURCE_DIR must point to a Shauth checkout"; exit 1; }
+	@test -f "$(SHAUTH_SOURCE_DIR)/compose.yaml" || { echo "SHAUTH_SOURCE_DIR is not a Shauth checkout"; exit 1; }
+	SHAUTH_SOURCE_DIR="$(SHAUTH_SOURCE_DIR)" bash scripts/test-shauth-sso.sh
 
 runner-sockerless-test:
 	@test -n "$(SOCKERLESS_ROOT)" || { echo "SOCKERLESS_ROOT must point to a Sockerless checkout"; exit 1; }

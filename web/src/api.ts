@@ -2017,7 +2017,7 @@ export function packageListPath(scope: PackageScope, pkgType?: string): string {
   const query = pkgType ? `?package_type=${encodeURIComponent(pkgType)}` : "";
   switch (scope.kind) {
     case "user":
-      return `/api/v3/users/${scope.username}/packages${query}`;
+      return `/api/v3/user/packages${query}`;
     case "org":
       return `/api/v3/orgs/${scope.org}/packages${query}`;
     case "repo":
