@@ -5,11 +5,15 @@ const password = process.env.SHAUTH_BOOTSTRAP_ADMIN_PASSWORD;
 assert.ok(password, "SHAUTH_BOOTSTRAP_ADMIN_PASSWORD is required");
 const validatorUsername = process.env.SHAUTH_VALIDATOR_USERNAME;
 assert.ok(validatorUsername, "SHAUTH_VALIDATOR_USERNAME is required");
+const nonAuthenticCredentialSentinel = process.env.BLEEPHUB_NON_AUTHENTIC_CREDENTIAL_SENTINEL;
+assert.ok(nonAuthenticCredentialSentinel, "BLEEPHUB_NON_AUTHENTIC_CREDENTIAL_SENTINEL is required");
+assert.notEqual(nonAuthenticCredentialSentinel, password, "negative-probe sentinel must differ from the Shauth password");
 const primaryPort = requiredPort("BLEEPHUB_SSO_PRIMARY_PORT");
 const secondaryPort = requiredPort("BLEEPHUB_SSO_SECONDARY_PORT");
 assert.notEqual(primaryPort, secondaryPort, "Bleephub SSO ports must be distinct");
 const primaryOrigin = `http://localhost:${primaryPort}`;
 const secondaryOrigin = `http://127.0.0.1:${secondaryPort}`;
+const shauthOrigin = "http://localhost:8080";
 
 const browser = await chromium.launch({
   headless: true,
@@ -17,8 +21,11 @@ const browser = await chromium.launch({
 });
 const errors = [];
 try {
+  await assertCredentialBoundary(browser);
+
   const context = await browser.newContext();
   const page = await context.newPage();
+  const credentialBoundary = await installCredentialBoundary(context, page);
   page.on("console", (message) => {
     if (message.type() === "error") errors.push(message.text());
   });
@@ -31,21 +38,20 @@ try {
     }
   });
 
-  // Validator credentials belong only to Shauth. Bleephub must reject the
-  // same values through every app-local password and token authentication
-  // surface and must not create an app browser session from any attempt.
+  // Bleephub rejects non-authentic values through every app-local password
+  // and token authentication surface without creating a browser session.
   const localCredentialAttempt = await context.request.post(`${primaryOrigin}/auth/local`, {
-    data: { login: validatorUsername, password },
+    data: { login: validatorUsername, password: nonAuthenticCredentialSentinel },
   });
   assert.equal(localCredentialAttempt.status(), 401);
   const legacyLocalCredentialAttempt = await context.request.post(`${primaryOrigin}/login`, {
-    form: { login: validatorUsername, password },
+    form: { login: validatorUsername, password: nonAuthenticCredentialSentinel },
   });
   assert.equal(legacyLocalCredentialAttempt.status(), 401);
   for (const authorization of [
-    `Bearer ${password}`,
-    `token ${password}`,
-    `Basic ${Buffer.from(`${validatorUsername}:${password}`).toString("base64")}`,
+    `Bearer ${nonAuthenticCredentialSentinel}`,
+    `token ${nonAuthenticCredentialSentinel}`,
+    `Basic ${Buffer.from(`${validatorUsername}:${nonAuthenticCredentialSentinel}`).toString("base64")}`,
   ]) {
     const tokenCredentialAttempt = await context.request.get(`${primaryOrigin}/api/v3/user`, {
       headers: { Authorization: authorization },
@@ -97,7 +103,7 @@ try {
 
   // Catalog entry uses the already authenticated Shauth session. It must not
   // render another credential form or expose Bleephub's legacy token form.
-  await page.goto("http://localhost:8080/apps");
+  await page.goto(`${shauthOrigin}/apps`);
   await page.locator(`a[href="${secondaryOrigin}/ui/"]`).click();
   await page.waitForURL(`${secondaryOrigin}/ui/`);
   await page.getByRole("button", { name: "Open user menu" }).waitFor();
@@ -148,7 +154,7 @@ try {
   // logout, and returns to a fully authenticated Bleephub UI without exposing
   // the legacy access-token form.
   await signInControl.click();
-  await page.waitForURL((url) => url.origin === "http://localhost:8080" && url.pathname === "/login");
+  await page.waitForURL((url) => url.origin === shauthOrigin && url.pathname === "/login");
   await page.locator("#username").fill(validatorUsername);
   await page.locator("#password").fill(password);
   await page.getByRole("button", { name: "Sign in with password" }).click();
@@ -168,19 +174,144 @@ try {
   // Provider-initiated logout is the complementary global-revocation path.
   // It invalidates both relying-party sessions, and a direct application visit
   // then fails closed at Shauth's real credential form.
-  await page.goto("http://localhost:8080/logout");
+  await page.goto(`${shauthOrigin}/logout`);
   await page.getByRole("heading", { name: "Sign out everywhere?" }).waitFor();
   await page.getByRole("button", { name: "Sign out everywhere" }).click();
   await waitForAuthenticationState(context, primaryOrigin, false);
   await waitForAuthenticationState(context, secondaryOrigin, false);
 
   await page.goto(`${primaryOrigin}/ui/`);
-  await page.waitForURL((url) => url.origin === "http://localhost:8080" && url.pathname === "/login");
+  await page.waitForURL((url) => url.origin === shauthOrigin && url.pathname === "/login");
   await page.locator("#username").waitFor();
   await page.waitForLoadState("networkidle");
+  assert.deepEqual(credentialBoundary.handlerErrors, [], "Shauth credential boundary failed internally");
+  assert.deepEqual(credentialBoundary.violations, [], "Shauth password crossed the identity-provider boundary");
   assert.deepEqual(errors, []);
 } finally {
   await browser.close();
+}
+
+async function assertCredentialBoundary(browser) {
+  const headerContext = await browser.newContext({
+    extraHTTPHeaders: {
+      Authorization: `Basic ${Buffer.from(`${validatorUsername}:${password}`).toString("base64")}`,
+    },
+  });
+  try {
+    const page = await headerContext.newPage();
+    const boundary = await installCredentialBoundary(headerContext, page);
+    await assert.rejects(page.goto(`${primaryOrigin}/api/v3/user`), /ERR_BLOCKED_BY_CLIENT/);
+    assert.deepEqual(boundary.handlerErrors, []);
+    assert.deepEqual(boundary.violations, [{ method: "GET", url: `${primaryOrigin}/api/v3/user` }]);
+  } finally {
+    await headerContext.close();
+  }
+
+  const mutatedTargetContext = await browser.newContext();
+  try {
+    const page = await mutatedTargetContext.newPage();
+    const boundary = await installCredentialBoundary(mutatedTargetContext, page);
+    await page.setContent(`
+      <form method="post" action="${shauthOrigin}/login"
+        onsubmit="this.action='${primaryOrigin}/auth/local'">
+        <input name="username">
+        <input name="password" type="password">
+        <button type="submit">Submit</button>
+      </form>
+    `);
+    await page.locator('[name="username"]').fill(validatorUsername);
+    await page.locator('[name="password"]').fill(password);
+    const failedRequest = page.waitForEvent("requestfailed");
+    await page.getByRole("button", { name: "Submit" }).click();
+    await failedRequest;
+    assert.deepEqual(boundary.handlerErrors, []);
+    assert.deepEqual(boundary.violations, [{ method: "POST", url: `${primaryOrigin}/auth/local` }]);
+  } finally {
+    await mutatedTargetContext.close();
+  }
+
+  const redirectContext = await browser.newContext();
+  try {
+    const redirectTarget = `${primaryOrigin}/credential-sink?password=${encodeURIComponent(password)}`;
+    const page = await redirectContext.newPage();
+    const boundary = await installCredentialBoundary(redirectContext, page, {
+      redirectLoginTo: redirectTarget,
+    });
+    await page.setContent(`
+      <form method="post" action="${shauthOrigin}/login">
+        <input name="username">
+        <input name="password" type="password">
+        <button type="submit">Submit</button>
+      </form>
+    `);
+    await page.locator('[name="username"]').fill(validatorUsername);
+    await page.locator('[name="password"]').fill(password);
+    const failedRequest = page.waitForEvent("requestfailed");
+    await page.getByRole("button", { name: "Submit" }).click();
+    await failedRequest;
+    assert.deepEqual(boundary.handlerErrors, []);
+    assert.deepEqual(boundary.violations, [{ method: "POST", url: redirectTarget }]);
+  } finally {
+    await redirectContext.close();
+  }
+}
+
+async function installCredentialBoundary(context, page, { redirectLoginTo } = {}) {
+  const violations = [];
+  const handlerErrors = [];
+  let redirectedLogin = false;
+  const session = await context.newCDPSession(page);
+  await session.send("Fetch.enable", { patterns: [{ urlPattern: "*", requestStage: "Request" }] });
+  session.on("Fetch.requestPaused", async (event) => {
+    try {
+      const request = event.request;
+      if (!requestContainsCredential(request)) {
+        await session.send("Fetch.continueRequest", { requestId: event.requestId });
+        return;
+      }
+
+      const target = new URL(request.url);
+      const isShauthLogin =
+        request.method === "POST" &&
+        target.origin === shauthOrigin &&
+        target.pathname === "/login" &&
+        target.search === "" &&
+        target.hash === "";
+      if (!isShauthLogin) {
+        violations.push({ method: request.method, url: request.url });
+        await session.send("Fetch.failRequest", { requestId: event.requestId, errorReason: "BlockedByClient" });
+        return;
+      }
+
+      if (redirectLoginTo && !redirectedLogin) {
+        redirectedLogin = true;
+        await session.send("Fetch.fulfillRequest", {
+          requestId: event.requestId,
+          responseCode: 307,
+          responseHeaders: [{ name: "Location", value: redirectLoginTo }],
+        });
+        return;
+      }
+      await session.send("Fetch.continueRequest", { requestId: event.requestId });
+    } catch (error) {
+      handlerErrors.push(error instanceof Error ? error.message : String(error));
+    }
+  });
+  return { handlerErrors, violations };
+}
+
+function requestContainsCredential(request) {
+  const basicCredential = Buffer.from(`${validatorUsername}:${password}`).toString("base64");
+  const encodedPassword = encodeURIComponent(password);
+  const encodedCredential = Buffer.from(password).toString("base64");
+  const payloads = [request.url, request.postData ?? "", ...Object.entries(request.headers).flat()];
+  return payloads.some(
+    (payload) =>
+      payload.includes(password) ||
+      payload.includes(encodedPassword) ||
+      payload.includes(encodedCredential) ||
+      payload.includes(basicCredential),
+  );
 }
 
 async function assertAuthenticated(context, origin, expected) {
