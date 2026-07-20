@@ -72,26 +72,54 @@ export function LoginPage() {
   if (providers === null || providers.shauth) {
     return (
       <div
-        className="flex min-h-screen flex-col items-center justify-center px-4"
-        style={{ background: "var(--color-bg-subtle)" }}
+        className="flex min-h-screen flex-col px-4"
+        style={{
+          background:
+            "radial-gradient(circle at 8% 0, color-mix(in srgb, var(--color-brand-blue) 22%, transparent), transparent 35%), radial-gradient(circle at 92% 0, color-mix(in srgb, var(--color-brand-pink) 18%, transparent), transparent 34%), var(--color-bg-subtle)",
+        }}
       >
-        <div
-          className="w-full max-w-sm"
-          style={{
-            border: "1px solid var(--color-border)",
-            borderRadius: "var(--radius-md)",
-            background: "var(--color-surface)",
-            padding: "1.25rem",
-            textAlign: "center",
-          }}
-          aria-live="polite"
-        >
-          <Mark size={42} />
-          <h1 style={{ fontSize: "1.4rem", fontWeight: 600, color: "var(--color-fg)" }}>
-            {providers?.shauth ? "Continuing with Shauth…" : "Preparing sign-in…"}
-          </h1>
-          {providers?.shauth && <a href={shauthHref}>Continue with Shauth</a>}
+        <div className="flex w-full flex-1 items-center justify-center">
+          <main
+            className="w-full max-w-sm"
+            style={{
+              border: "1px solid color-mix(in srgb, var(--color-brand-purple) 45%, var(--color-border))",
+              borderRadius: "1rem",
+              background: "var(--color-surface)",
+              padding: "1.5rem",
+              textAlign: "center",
+              boxShadow: "var(--shadow-floating)",
+            }}
+            aria-labelledby="bleephub-sign-in-title"
+            aria-live="polite"
+          >
+            <Mark size={42} />
+            <h1 id="bleephub-sign-in-title" style={{ marginTop: ".7rem", fontSize: "1.4rem", fontWeight: 650, color: "var(--color-fg)" }}>
+              {providers?.shauth ? "Sign in to Bleephub" : "Preparing sign-in…"}
+            </h1>
+            {providers?.shauth && (
+              <>
+                <p style={{ margin: ".65rem 0 1rem", color: "var(--color-fg-muted)", fontSize: ".88rem" }}>
+                  Use your shared e6qu identity to continue.
+                </p>
+                <a
+                  href={shauthHref}
+                  className="inline-flex min-h-11 w-full items-center justify-center"
+                  style={{
+                    border: "1px solid color-mix(in srgb, var(--color-brand-purple) 48%, var(--color-brand-blue))",
+                    borderRadius: "var(--radius-md)",
+                    background: "linear-gradient(110deg, var(--color-brand-blue), var(--color-brand-purple) 58%, var(--color-brand-pink))",
+                    color: "var(--color-accent-fg)",
+                    fontWeight: 700,
+                    textDecoration: "none",
+                  }}
+                >
+                  Sign in with Shauth
+                </a>
+              </>
+            )}
+          </main>
         </div>
+        <BleephubBuildFooter />
       </div>
     );
   }

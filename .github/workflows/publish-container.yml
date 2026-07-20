@@ -69,6 +69,7 @@ jobs:
           tags: ${{ env.IMAGE }}:${{ needs.metadata.outputs.tag }}-${{ matrix.arch.suffix }}
           build-args: |
             BLEEPHUB_VERSION=${{ needs.metadata.outputs.tag }}
+            BLEEPHUB_COMMIT=${{ github.sha }}
             BLEEPHUB_PUBLISHED_AT=${{ needs.metadata.outputs.published_at }}
           cache-from: type=gha,scope=bleephub-${{ matrix.arch.suffix }}
           cache-to: type=gha,scope=bleephub-${{ matrix.arch.suffix }},mode=max

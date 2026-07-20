@@ -1,6 +1,7 @@
 .git
 .build
 .local
+**/.terraform
 bleephub-server
 bleephub-dqlite-node
 web/node_modules

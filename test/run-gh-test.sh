@@ -73,7 +73,7 @@ bleephub -addr :443 --log-level debug > /tmp/bleephub.log 2>&1 &
 BPH_PID=$!
 
 # Wait for server
-for i in $(seq 1 30); do
+for _ in $(seq 1 30); do
     if curl -sSk https://localhost/health >/dev/null 2>&1; then
         break
     fi

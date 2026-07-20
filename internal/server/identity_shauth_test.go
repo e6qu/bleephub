@@ -18,11 +18,12 @@ import (
 )
 
 type shaAuthTestProvider struct {
-	server *httptest.Server
-	signer jose.Signer
-	key    jose.JSONWebKey
-	nonce  string
-	issuer string
+	server      *httptest.Server
+	signer      jose.Signer
+	key         jose.JSONWebKey
+	nonce       string
+	issuer      string
+	tokenIssuer string
 }
 
 func newShaAuthTestProvider(t *testing.T) *shaAuthTestProvider {
@@ -55,8 +56,12 @@ func newShaAuthTestProviderWithIssuerSuffix(t *testing.T, suffix string) *shaAut
 				http.Error(w, "invalid token request", http.StatusBadRequest)
 				return
 			}
+			tokenIssuer := provider.tokenIssuer
+			if tokenIssuer == "" {
+				tokenIssuer = provider.issuer
+			}
 			rawIDToken := provider.sign(t, map[string]any{
-				"iss": provider.issuer, "aud": "bleephub", "sub": "subject-1", "sid": "sid-1",
+				"iss": tokenIssuer, "aud": "bleephub", "sub": "subject-1", "sid": "sid-1",
 				"iat": time.Now().Unix(), "exp": time.Now().Add(time.Hour).Unix(), "nonce": provider.nonce,
 				"preferred_username": "octocat", "name": "Octo Cat", "email": "octocat@example.com",
 				"picture": "https://avatars.example.com/octocat.png", "role": "developer",
@@ -187,6 +192,42 @@ func TestIdentitySessionReportsAuthenticationWithoutExpectedNetworkErrors(t *tes
 	}
 	if authenticated["user"] == nil {
 		t.Fatalf("authenticated session omitted user: %s", response.Body.String())
+	}
+}
+
+func TestIdentityValidationRequiresAuthenticationAndExposesSignOut(t *testing.T) {
+	s := NewServer("127.0.0.1:0", zerolog.Nop())
+	s.identity = completeShauthIdentityConfig("https://auth.example.test")
+
+	request := httptest.NewRequest(http.MethodGet, "/auth/validation", nil)
+	response := httptest.NewRecorder()
+	s.handleIdentityValidation(response, request)
+	if response.Code != http.StatusFound || response.Header().Get("Location") != "/auth/shauth?return_to=%2Fauth%2Fvalidation" {
+		t.Fatalf("anonymous validation = %d location %q", response.Code, response.Header().Get("Location"))
+	}
+
+	if err := s.store.PutLoginSession("browser-session", &LoginSession{UserID: 1, ExpiresAt: time.Now().Add(time.Hour)}); err != nil {
+		t.Fatal(err)
+	}
+	request = httptest.NewRequest(http.MethodGet, "/auth/validation", nil)
+	request.AddCookie(&http.Cookie{Name: "_gh_sess", Value: "browser-session"})
+	response = httptest.NewRecorder()
+	s.handleIdentityValidation(response, request)
+	if response.Code != http.StatusOK {
+		t.Fatalf("authenticated validation = %d, want 200", response.Code)
+	}
+	body := response.Body.String()
+	for _, expected := range []string{
+		`<h1 id="authenticated-title">Bleephub is authenticated</h1>`,
+		`<form method="post" action="/auth/logout"><button type="submit">Sign out</button></form>`,
+		`@media(prefers-color-scheme:dark)`,
+	} {
+		if !strings.Contains(body, expected) {
+			t.Fatalf("validation body omitted %q: %s", expected, body)
+		}
+	}
+	if response.Header().Get("Cache-Control") != "no-store" || !strings.Contains(response.Header().Get("Content-Security-Policy"), "frame-ancestors 'none'") {
+		t.Fatalf("validation security headers = %#v", response.Header())
 	}
 }
 
@@ -390,6 +431,41 @@ func TestShauthCallbackPersistsVerifiedOIDCSession(t *testing.T) {
 	}
 	if session == nil || session.OIDCProvider != "shauth" || session.OIDCIssuer != provider.server.URL || session.OIDCSubject != "subject-1" || session.OIDCSID != "sid-1" || session.OIDCIDToken == "" {
 		t.Fatalf("verified OpenID Connect session = %#v", session)
+	}
+}
+
+func TestShauthCallbackRejectsOIDCArtifactFromAnotherIssuer(t *testing.T) {
+	provider := newShaAuthTestProvider(t)
+	provider.tokenIssuer = "https://attacker.example.test"
+	s := NewServer("127.0.0.1:0", zerolog.Nop())
+	s.externalURL = "https://bleephub.example.test"
+	s.identity = completeShauthIdentityConfig(provider.server.URL)
+
+	login := httptest.NewRecorder()
+	s.handleShauthLogin(login, provider.withClient(httptest.NewRequest(http.MethodGet, "/auth/shauth", nil)))
+	redirect, err := url.Parse(login.Header().Get("Location"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	callback := httptest.NewRequest(http.MethodGet, "/auth/shauth/callback?state="+url.QueryEscape(redirect.Query().Get("state"))+"&code=code", nil)
+	for _, cookie := range login.Result().Cookies() {
+		callback.AddCookie(cookie)
+	}
+	response := httptest.NewRecorder()
+	s.handleShauthCallback(response, provider.withClient(callback))
+	if response.Code != http.StatusUnauthorized {
+		t.Fatalf("foreign-issuer callback = %d, want 401: %s", response.Code, response.Body.String())
+	}
+	s.store.mu.RLock()
+	sessions := len(s.store.LoginSessions)
+	s.store.mu.RUnlock()
+	if sessions != 0 {
+		t.Fatalf("foreign-issuer callback created %d browser sessions", sessions)
+	}
+	for _, cookie := range response.Result().Cookies() {
+		if cookie.Name == "_gh_sess" && cookie.Value != "" && cookie.MaxAge >= 0 {
+			t.Fatalf("foreign-issuer callback set browser session cookie %#v", cookie)
+		}
 	}
 }
 
@@ -696,11 +772,32 @@ func TestSignedOutLandingRevokesLocalSessionWithoutStartingLogin(t *testing.T) {
 	if session, err := s.store.GetLoginSession("browser-session"); err != nil || session != nil {
 		t.Fatalf("signed-out landing retained session %#v: %v", session, err)
 	}
-	if !strings.Contains(response.Body.String(), "You are signed out") || strings.Contains(response.Body.String(), "window.location") {
+	body := response.Body.String()
+	for _, expected := range []string{
+		`<span>Bleephub</span>`,
+		`<h1 id="signed-out-title">You are signed out</h1>`,
+		`<a href="/auth/shauth?return_to=%2Fui%2F">Sign in with Shauth</a>`,
+		`<form method="post" action="/auth/logout"><button type="submit">Sign out</button></form>`,
+		`@media(prefers-color-scheme:dark)`,
+	} {
+		if !strings.Contains(body, expected) {
+			t.Fatalf("signed-out body omitted %q: %s", expected, body)
+		}
+	}
+	if strings.Contains(body, "window.location") || strings.Contains(strings.ToLower(body), "access token") {
 		t.Fatalf("signed-out body unexpectedly starts sign-in: %s", response.Body.String())
+	}
+	if response.Header().Get("Cache-Control") != "no-store" || !strings.Contains(response.Header().Get("Content-Security-Policy"), "frame-ancestors 'none'") {
+		t.Fatalf("signed-out security headers = %#v", response.Header())
 	}
 	if cookies := response.Result().Cookies(); len(cookies) != 1 || cookies[0].Name != "_gh_sess" || cookies[0].MaxAge >= 0 {
 		t.Fatalf("signed-out cookies = %#v", cookies)
+	}
+
+	reload := httptest.NewRecorder()
+	s.handleIdentitySignedOut(reload, httptest.NewRequest(http.MethodGet, "/ui/signed-out", nil))
+	if reload.Code != http.StatusOK || reload.Header().Get("Location") != "" || reload.Body.String() != body {
+		t.Fatalf("signed-out reload was not stable: status=%d location=%q", reload.Code, reload.Header().Get("Location"))
 	}
 }
 

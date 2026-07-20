@@ -13,10 +13,13 @@ RUN --mount=type=cache,target=/root/.bun/install/cache \
     bun install --frozen-lockfile && bun run build
 
 FROM golang:1.25-alpine AS builder
+ARG BLEEPHUB_VERSION=development
+ARG BLEEPHUB_COMMIT=none
+ARG BLEEPHUB_PUBLISHED_AT=not-yet-published
 WORKDIR /src
 COPY . .
 COPY --from=ui-builder /src/web/dist/ ./internal/server/dist/
-RUN CGO_ENABLED=0 go build -ldflags="-s -w" -o /bleephub ./cmd/bleephub && \
+RUN CGO_ENABLED=0 go build -ldflags="-s -w -X main.version=${BLEEPHUB_VERSION} -X main.commit=${BLEEPHUB_COMMIT} -X main.publishedAt=${BLEEPHUB_PUBLISHED_AT}" -o /bleephub ./cmd/bleephub && \
     CGO_ENABLED=0 go build -ldflags="-s -w" -o /bleephub-ssh-gateway ./ssh-gateway
 
 FROM golang:1.25-bookworm AS go-toolchain

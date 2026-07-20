@@ -685,7 +685,7 @@ log "Runner configured"
 log "Starting runner (DOCKER_HOST → sockerless-backend-ecs)..."
 DOCKER_HOST=tcp://127.0.0.1:3375 ./run.sh 2>&1 &
 RUNNER_PID=$!
-PIDS+=($RUNNER_PID)
+PIDS+=("$RUNNER_PID")
 
 # Wait for runner to register a session
 log "Waiting for runner to connect..."
@@ -889,6 +889,7 @@ fi
 
 # ===== TEST 4: Matrix strategy (2x2 matrix) =====
 if run_test 4; then
+# shellcheck disable=SC2016
 submit_and_wait_workflow 4 "Matrix strategy 2x2" '
 name: matrix-test
 jobs:
@@ -907,6 +908,7 @@ fi
 
 # ===== TEST 5: Job output propagation =====
 if run_test 5; then
+# shellcheck disable=SC2016
 submit_and_wait_workflow 5 "Job output propagation" '
 name: output-test
 jobs:
@@ -956,6 +958,7 @@ curl -sf -X PUT "http://$BLEEPHUB_ADDR/api/v3/repos/admin/test/actions/secrets/T
 log "Secret created (sealed box)"
 
 # The job asserts the decrypted secret VALUE reaches the secrets context.
+# shellcheck disable=SC2016
 submit_and_wait_workflow 7 "Secrets injection" '
 name: secrets-test
 jobs:
@@ -971,6 +974,7 @@ fi
 
 # ===== TEST 8: Workflow dispatch with inputs =====
 if run_test 8; then
+# shellcheck disable=SC2016
 submit_and_wait_workflow 8 "Workflow dispatch with inputs" '
 name: inputs-test
 on:
@@ -1107,6 +1111,7 @@ fi
 if run_test 12; then
 log "===== TEST 12: Container-mode job ====="
 
+# shellcheck disable=SC2016
 submit_and_wait_workflow 12 "Container-mode job" '
 name: container-test
 jobs:
@@ -1134,6 +1139,7 @@ fi
 if run_test 13; then
 log "===== TEST 13: Service container (nginx) reachable by alias ====="
 
+# shellcheck disable=SC2016
 submit_and_wait_workflow 13 "Service container" '
 name: services-test
 jobs:
@@ -1172,6 +1178,7 @@ docker_host = "unix:///var/run/docker.sock"
 image       = "bleephub-spawn-runner:local"
 EOF
 
+# shellcheck disable=SC2016
 WF14_YAML='name: dispatched-test
 jobs:
   hello:
