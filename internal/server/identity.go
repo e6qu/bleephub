@@ -232,9 +232,15 @@ func (s *Server) handleShauthCallback(w http.ResponseWriter, r *http.Request) {
 		writeGHError(w, http.StatusUnauthorized, "Shauth ID token claims were invalid")
 		return
 	}
+	// The login is the identity the provider asserted, never one we invent.
+	// Deriving it from the subject would create an account under a username
+	// Shauth never issued, and would publish that username to anything reading
+	// the signed-in identity. A provider that omits it is a broken
+	// registration, so reject it here instead of papering over it.
 	login := strings.TrimSpace(claims.PreferredUsername)
 	if login == "" {
-		login = "shauth-" + sha256Hex(idToken.Subject)[:16]
+		writeGHError(w, http.StatusUnauthorized, "Shauth ID token did not carry a preferred_username")
+		return
 	}
 	user := s.upsertExternalUser(login, strings.TrimSpace(claims.Name), strings.TrimSpace(claims.Email), strings.TrimSpace(claims.Picture), claims.Role == "admin")
 	expiresAt := idToken.Expiry
@@ -254,11 +260,6 @@ func (s *Server) handleShauthCallback(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	http.Redirect(w, r, pending.ReturnTo, http.StatusFound)
-}
-
-func sha256Hex(value string) string {
-	digest := sha256.Sum256([]byte(value))
-	return hex.EncodeToString(digest[:])
 }
 
 func safeIdentityReturnTo(value string) string {

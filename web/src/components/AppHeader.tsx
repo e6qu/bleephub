@@ -64,11 +64,16 @@ function HeaderMenu({
   label,
   trigger,
   align = "right",
+  shauthUser,
   children,
 }: {
   label: string;
   trigger: ReactNode;
   align?: "left" | "right";
+  /** The signed-in username, published on the always-visible trigger so
+   * post-deployment qualification can find the identity and open this menu to
+   * reach the real sign-out control inside it. */
+  shauthUser?: string;
   children: (close: () => void) => ReactNode;
 }) {
   const [open, setOpen] = useState(false);
@@ -81,6 +86,7 @@ function HeaderMenu({
         aria-label={label}
         aria-haspopup="menu"
         aria-expanded={open}
+        data-shauth-user={shauthUser}
         onClick={() => setOpen((v) => !v)}
         className="app-header-control inline-flex items-center gap-1"
         style={{
@@ -138,12 +144,13 @@ function MenuLink({ to, icon, children, onClick }: { to: string; icon?: ReactNod
   );
 }
 
-function MenuButton({ icon, children, onClick, type = "button" }: { icon?: ReactNode; children: ReactNode; onClick?: () => void; type?: "button" | "submit" }) {
+function MenuButton({ icon, children, onClick, type = "button", shauthSignOut }: { icon?: ReactNode; children: ReactNode; onClick?: () => void; type?: "button" | "submit"; shauthSignOut?: boolean }) {
   return (
     <button
       type={type}
       role="menuitem"
       onClick={onClick}
+      data-shauth-sign-out={shauthSignOut ? "" : undefined}
       className="flex w-full items-center gap-2"
       style={{
         background: "transparent",
@@ -453,7 +460,7 @@ export function AppHeader() {
             </Link>
 
             {/* avatar menu */}
-            <HeaderMenu label="Open user menu" align="right" trigger={<><Avatar login={login} url={user?.avatar_url} /><TriangleDownIcon size={12} /></>}>
+            <HeaderMenu label="Open user menu" align="right" shauthUser={login || undefined} trigger={<><Avatar login={login} url={user?.avatar_url} /><TriangleDownIcon size={12} /></>}>
               {(close) => (
                 <>
                   <div style={{ padding: "0.35rem 0.5rem", fontSize: "0.8rem", color: "var(--color-fg-muted)" }}>
@@ -473,7 +480,7 @@ export function AppHeader() {
                     {isDark ? "Light theme" : "Dark theme"}
                   </MenuButton>
                   <form method="post" action="/auth/logout" onSubmit={(event) => void submitLogout(event)}>
-                    <MenuButton type="submit" icon={<SignOutIcon size={16} />}>Sign out</MenuButton>
+                    <MenuButton type="submit" icon={<SignOutIcon size={16} />} shauthSignOut>Sign out</MenuButton>
                   </form>
                 </>
               )}
