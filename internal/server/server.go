@@ -39,11 +39,31 @@ type Server struct {
 	externalURL            string     // BLEEPHUB_EXTERNAL_URL; when set, overrides request-Host URL derivation (job messages, action URLs) — the GHES "external URL" knob
 	pagesJekyllExecutable  string
 	identity               identityConfig
+	build                  BuildInfo
 	// responseObserver, when set before ListenAndServe, sees every
 	// request/response pair in the handler chain. The test harness
 	// assigns it (same package) to validate /api/v3 response shapes
 	// against the vendored GitHub OpenAPI description; nil costs nothing.
 	responseObserver func(req *http.Request, status int, header http.Header, body []byte)
+}
+
+// BuildInfo identifies the immutable application artifact serving a request.
+// Identity and deployment validators can use it without knowing how or where
+// Bleephub is deployed.
+type BuildInfo struct {
+	Version     string
+	Commit      string
+	PublishedAt string
+}
+
+// ServerOption configures immutable server construction state.
+type ServerOption func(*Server)
+
+// WithBuildInfo records the versioned artifact metadata for this server.
+func WithBuildInfo(info BuildInfo) ServerOption {
+	return func(server *Server) {
+		server.build = info
+	}
 }
 
 // route registers a handler AND records its "METHOD /path" pattern so the
@@ -97,7 +117,7 @@ func (s *Server) route(pattern string, handler http.HandlerFunc) {
 // consistent across replicas. Agent connections and the OIDC signing key
 // (gh_misc_endpoints.go oidcKey) remain process-local; consumers must re-fetch
 // the JWKS after key rotation, as they do against real GitHub.
-func NewServer(addr string, logger zerolog.Logger) *Server {
+func NewServer(addr string, logger zerolog.Logger, options ...ServerOption) *Server {
 	maxWF := 10
 	if v := os.Getenv("BLEEPHUB_MAX_WORKFLOWS"); v != "" {
 		if n, err := strconv.Atoi(v); err == nil && n > 0 {
@@ -124,6 +144,10 @@ func NewServer(addr string, logger zerolog.Logger) *Server {
 		externalURL:            strings.TrimRight(os.Getenv("BLEEPHUB_EXTERNAL_URL"), "/"),
 		pagesJekyllExecutable:  coalesceStr(os.Getenv("BLEEPHUB_PAGES_JEKYLL_EXECUTABLE"), "bleephub-pages-jekyll"),
 		identity:               identityConfigFromEnv(),
+		build:                  BuildInfo{Version: "development", Commit: "none", PublishedAt: "not-yet-published"},
+	}
+	for _, option := range options {
+		option(s)
 	}
 	if err := s.identity.validate(); err != nil {
 		logger.Fatal().Err(err).Msg("invalid Bleephub external identity configuration")
@@ -423,6 +447,9 @@ func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
 		"status":          "ok",
 		"service":         "bleephub",
 		"enterprise_slug": s.enterpriseSlug(),
+		"version":         s.build.Version,
+		"commit":          s.build.Commit,
+		"published_at":    s.build.PublishedAt,
 	})
 }
 

@@ -1,0 +1,55 @@
+services:
+  hydra:
+    ports:
+      - "127.0.0.1:8080:8080"
+      - "127.0.0.1:${BLEEPHUB_SSO_PRIMARY_PORT:?set BLEEPHUB_SSO_PRIMARY_PORT}:${BLEEPHUB_SSO_PRIMARY_PORT}"
+      - "127.0.0.1:${BLEEPHUB_SSO_SECONDARY_PORT:?set BLEEPHUB_SSO_SECONDARY_PORT}:${BLEEPHUB_SSO_SECONDARY_PORT}"
+
+  shauth:
+    network_mode: service:hydra
+    ports: !reset []
+    environment:
+      HYDRA_ADMIN_URL: http://localhost:4445
+      HYDRA_PUBLIC_INTERNAL_URL: http://localhost:4444
+
+  bleephub-primary:
+    image: bleephub-shauth-sso-local
+    build:
+      context: ${BLEEPHUB_SOURCE_DIR:?set BLEEPHUB_SOURCE_DIR}
+      dockerfile: test/shauth/Dockerfile
+    network_mode: service:hydra
+    command: ["-addr", "0.0.0.0:${BLEEPHUB_SSO_PRIMARY_PORT}"]
+    environment:
+      BLEEPHUB_ADMIN_TOKEN: ${BLEEPHUB_SSO_ADMIN_TOKEN:?set BLEEPHUB_SSO_ADMIN_TOKEN}
+      BLEEPHUB_EXTERNAL_URL: http://localhost:${BLEEPHUB_SSO_PRIMARY_PORT}
+      BLEEPHUB_ALLOW_INSECURE_OIDC: "true"
+      BLEEPHUB_SHAUTH_ISSUER: http://localhost:4444
+      BLEEPHUB_SHAUTH_CLIENT_ID: bleephub-primary
+      BLEEPHUB_SHAUTH_CLIENT_SECRET: ${BLEEPHUB_SSO_PRIMARY_CLIENT_SECRET:?set BLEEPHUB_SSO_PRIMARY_CLIENT_SECRET}
+      BLEEPHUB_SHAUTH_POST_LOGOUT_URL: http://localhost:${BLEEPHUB_SSO_PRIMARY_PORT}/ui/signed-out
+      BLEEPHUB_DATA_DIR: /var/lib/bleephub
+      BLEEPHUB_GIT_DIR: /var/lib/bleephub/git
+    depends_on:
+      hydra:
+        condition: service_started
+
+  bleephub-secondary:
+    image: bleephub-shauth-sso-local
+    build:
+      context: ${BLEEPHUB_SOURCE_DIR:?set BLEEPHUB_SOURCE_DIR}
+      dockerfile: test/shauth/Dockerfile
+    network_mode: service:hydra
+    command: ["-addr", "0.0.0.0:${BLEEPHUB_SSO_SECONDARY_PORT}"]
+    environment:
+      BLEEPHUB_ADMIN_TOKEN: ${BLEEPHUB_SSO_ADMIN_TOKEN:?set BLEEPHUB_SSO_ADMIN_TOKEN}
+      BLEEPHUB_EXTERNAL_URL: http://127.0.0.1:${BLEEPHUB_SSO_SECONDARY_PORT}
+      BLEEPHUB_ALLOW_INSECURE_OIDC: "true"
+      BLEEPHUB_SHAUTH_ISSUER: http://localhost:4444
+      BLEEPHUB_SHAUTH_CLIENT_ID: bleephub-secondary
+      BLEEPHUB_SHAUTH_CLIENT_SECRET: ${BLEEPHUB_SSO_SECONDARY_CLIENT_SECRET:?set BLEEPHUB_SSO_SECONDARY_CLIENT_SECRET}
+      BLEEPHUB_SHAUTH_POST_LOGOUT_URL: http://127.0.0.1:${BLEEPHUB_SSO_SECONDARY_PORT}/ui/signed-out
+      BLEEPHUB_DATA_DIR: /var/lib/bleephub
+      BLEEPHUB_GIT_DIR: /var/lib/bleephub/git
+    depends_on:
+      hydra:
+        condition: service_started

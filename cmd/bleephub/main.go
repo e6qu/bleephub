@@ -5,13 +5,14 @@ import (
 	"flag"
 	"os"
 
-	"github.com/rs/zerolog"
 	"github.com/e6qu/bleephub/internal/server"
+	"github.com/rs/zerolog"
 )
 
 var (
-	version = "dev"
-	commit  = "none"
+	version     = "development"
+	commit      = "none"
+	publishedAt = "not-yet-published"
 )
 
 func main() {
@@ -44,7 +45,9 @@ func main() {
 
 	logger.Info().Str("version", version).Str("commit", commit).Msg("starting")
 
-	srv := bleephub.NewServer(*addr, logger)
+	srv := bleephub.NewServer(*addr, logger, bleephub.WithBuildInfo(bleephub.BuildInfo{
+		Version: version, Commit: commit, PublishedAt: publishedAt,
+	}))
 	if err := srv.ListenAndServe(); err != nil {
 		logger.Fatal().Err(err).Msg("server exited")
 	}

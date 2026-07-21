@@ -79,6 +79,7 @@ func (s *Server) registerExternalIdentityRoutes() {
 	s.route("GET /auth/github/callback", s.handleGitHubCallback)
 	s.route("GET /auth/shauth", s.handleShauthLogin)
 	s.route("GET /auth/shauth/callback", s.handleShauthCallback)
+	s.route("GET /auth/validation", s.handleIdentityValidation)
 	s.route("POST /auth/shauth/backchannel-logout", s.handleShauthBackChannelLogout)
 	s.route("GET /auth/shauth/frontchannel-logout", s.handleShauthFrontChannelLogout)
 	s.route("GET /ui/signed-out", s.handleIdentitySignedOut)
@@ -283,6 +284,46 @@ func (s *Server) handleIdentitySession(w http.ResponseWriter, r *http.Request) {
 		"user":          s.fullUserJSON(user),
 	})
 }
+
+func (s *Server) handleIdentityValidation(w http.ResponseWriter, r *http.Request) {
+	session := s.sessionFromRequest(r)
+	if session == nil || s.store.GetUserByID(session.UserID) == nil {
+		if s.identity.shauthConfigured() {
+			http.Redirect(w, r, "/auth/shauth?return_to=%2Fauth%2Fvalidation", http.StatusFound)
+			return
+		}
+		http.Redirect(w, r, "/ui/login?return_to=%2Fauth%2Fvalidation", http.StatusFound)
+		return
+	}
+	w.Header().Set("Cache-Control", "no-store")
+	w.Header().Set("Content-Security-Policy", "default-src 'none'; style-src 'unsafe-inline'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'")
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	w.Header().Set("Referrer-Policy", "no-referrer")
+	w.Header().Set("X-Content-Type-Options", "nosniff")
+	w.WriteHeader(http.StatusOK)
+	_, _ = w.Write([]byte(identityValidationPage))
+}
+
+const identityValidationPage = `<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="color-scheme" content="light dark">
+<title>Authenticated · Bleephub</title>
+<style>
+:root{color-scheme:light dark;font:16px/1.5 -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;--canvas:#f6f8fa;--surface:#fff;--fg:#1f2328;--muted:#59636e;--border:#c6d0da;--blue:#006eff;--purple:#8250df;--pink:#d1248f;--focus:#0550ae;--button-fg:#fff;--shadow:rgba(9,105,218,.18)}
+*{box-sizing:border-box}body{min-height:100vh;margin:0;display:grid;place-items:center;padding:1.5rem;background:radial-gradient(circle at 5% 5%,color-mix(in srgb,var(--blue) 22%,transparent),transparent 36%),radial-gradient(circle at 95% 0,color-mix(in srgb,var(--pink) 20%,transparent),transparent 34%),linear-gradient(145deg,var(--canvas),color-mix(in srgb,var(--purple) 10%,var(--canvas)));color:var(--fg)}main{width:min(31rem,100%);padding:2rem 1.35rem 1.5rem;border:1px solid color-mix(in srgb,var(--purple) 45%,var(--border));border-radius:1rem;background:var(--surface);box-shadow:0 1.5rem 4rem var(--shadow)}h1{margin:0;font-size:clamp(1.75rem,7vw,2.45rem);line-height:1.12;letter-spacing:-.035em}p{margin:.9rem 0 1.4rem;color:var(--muted)}button{display:inline-flex;min-height:2.75rem;align-items:center;justify-content:center;padding:.65rem 1rem;border:1px solid color-mix(in srgb,var(--purple) 42%,var(--blue));border-radius:.55rem;background:linear-gradient(110deg,var(--blue),var(--purple) 55%,var(--pink));box-shadow:0 .5rem 1.2rem color-mix(in srgb,var(--purple) 28%,transparent);color:var(--button-fg);font:inherit;font-weight:750;cursor:pointer}button:hover{filter:saturate(1.18) brightness(1.04)}button:focus-visible{outline:3px solid var(--focus);outline-offset:3px}@media(prefers-color-scheme:dark){:root{--canvas:#0d1117;--surface:#161b22;--fg:#f0f6fc;--muted:#a8b3c1;--border:#3d4754;--blue:#58a6ff;--purple:#bc8cff;--pink:#ff7bda;--focus:#79c0ff;--button-fg:#0d1117;--shadow:rgba(0,0,0,.55)}}
+</style>
+</head>
+<body>
+<main aria-labelledby="authenticated-title">
+<h1 id="authenticated-title">Bleephub is authenticated</h1>
+<p>Your Bleephub browser session is active.</p>
+<form method="post" action="/auth/logout"><button type="submit">Sign out</button></form>
+</main>
+</body>
+</html>`
 
 func (s *Server) handleGitHubLogin(w http.ResponseWriter, r *http.Request) {
 	if s.identity.githubClientID == "" || s.identity.githubClientSecret == "" {
@@ -654,10 +695,47 @@ func (s *Server) handleIdentitySignedOut(w http.ResponseWriter, r *http.Request)
 	}
 	http.SetCookie(w, &http.Cookie{Name: "_gh_sess", Value: "", Path: "/", MaxAge: -1, HttpOnly: true, Secure: strings.HasPrefix(s.externalURL, "https://"), SameSite: http.SameSiteLaxMode})
 	w.Header().Set("Cache-Control", "no-store")
+	w.Header().Set("Content-Security-Policy", "default-src 'none'; style-src 'unsafe-inline'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'")
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	w.Header().Set("Referrer-Policy", "no-referrer")
+	w.Header().Set("X-Content-Type-Options", "nosniff")
 	w.WriteHeader(http.StatusOK)
-	_, _ = w.Write([]byte(`<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="color-scheme" content="light dark"><title>Signed out · Bleephub</title><style>:root{font:16px system-ui,sans-serif;color-scheme:light dark}body{min-height:100vh;margin:0;display:grid;place-items:center;background:#f6f8fa;color:#1f2328}main{width:min(28rem,calc(100% - 3rem));padding:2rem;border:1px solid #d0d7de;border-radius:1rem;background:#fff;box-shadow:0 1rem 3rem #1f23281f}h1{margin-top:0}a{display:inline-block;padding:.7rem 1rem;border-radius:.5rem;background:#1f883d;color:#fff;font-weight:700;text-decoration:none}a:focus-visible{outline:3px solid #0969da;outline-offset:3px}@media(prefers-color-scheme:dark){body{background:#0d1117;color:#e6edf3}main{background:#161b22;border-color:#30363d}a{background:#238636}}</style></head><body><main><h1>You are signed out</h1><p>Your Bleephub browser session and shared Shauth session have ended.</p><a href="/ui/">Sign in again</a></main></body></html>`))
+	_, _ = w.Write([]byte(identitySignedOutPage))
 }
+
+const identitySignedOutPage = `<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="color-scheme" content="light dark">
+<title>Signed out · Bleephub</title>
+<style>
+:root{color-scheme:light dark;font:16px/1.5 -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;--canvas:#f6f8fa;--surface:#fff;--fg:#1f2328;--muted:#59636e;--border:#c6d0da;--blue:#006eff;--purple:#8250df;--pink:#d1248f;--cyan:#006b7a;--focus:#0550ae;--button-fg:#fff;--shadow:rgba(9,105,218,.18)}
+*{box-sizing:border-box}
+body{min-height:100vh;margin:0;display:grid;place-items:center;padding:1.5rem;background:radial-gradient(circle at 5% 5%,color-mix(in srgb,var(--blue) 22%,transparent),transparent 36%),radial-gradient(circle at 95% 0,color-mix(in srgb,var(--pink) 20%,transparent),transparent 34%),linear-gradient(145deg,var(--canvas),color-mix(in srgb,var(--purple) 10%,var(--canvas)));color:var(--fg)}
+main{width:min(31rem,100%);overflow:hidden;border:1px solid color-mix(in srgb,var(--purple) 45%,var(--border));border-radius:1rem;background:var(--surface);box-shadow:0 1.5rem 4rem var(--shadow)}
+.brand{display:flex;align-items:center;gap:.75rem;padding:1.1rem 1.35rem;border-bottom:1px solid var(--border);font-size:1.05rem;font-weight:750}.mark{display:grid;width:2.25rem;height:2.25rem;place-items:center;border-radius:.7rem;background:linear-gradient(145deg,var(--blue),var(--purple) 58%,var(--pink));box-shadow:0 .45rem 1.2rem color-mix(in srgb,var(--purple) 36%,transparent);color:var(--button-fg);font-weight:850}.content{padding:2rem 1.35rem 1.5rem}.eyebrow{margin:0 0 .4rem;color:var(--cyan);font-size:.75rem;font-weight:800;letter-spacing:.12em;text-transform:uppercase}h1{margin:0;font-size:clamp(1.75rem,7vw,2.45rem);line-height:1.12;letter-spacing:-.035em}p{margin:.9rem 0 1.4rem;color:var(--muted)}.actions{display:flex;flex-wrap:wrap;gap:.75rem}.actions form{margin:0}.actions a,.actions button{display:inline-flex;min-height:2.75rem;align-items:center;justify-content:center;padding:.65rem 1rem;border:1px solid color-mix(in srgb,var(--purple) 42%,var(--blue));border-radius:.55rem;font:inherit;font-weight:750;cursor:pointer}.actions a{background:linear-gradient(110deg,var(--blue),var(--purple) 55%,var(--pink));box-shadow:0 .5rem 1.2rem color-mix(in srgb,var(--purple) 28%,transparent);color:var(--button-fg);text-decoration:none}.actions button{background:var(--surface);color:var(--fg)}.actions a:hover,.actions button:hover{filter:saturate(1.18) brightness(1.04)}.actions a:focus-visible,.actions button:focus-visible{outline:3px solid var(--focus);outline-offset:3px}.privacy{margin:1.25rem 0 0;font-size:.78rem}
+@media(prefers-color-scheme:dark){:root{--canvas:#0d1117;--surface:#161b22;--fg:#f0f6fc;--muted:#a8b3c1;--border:#3d4754;--blue:#58a6ff;--purple:#bc8cff;--pink:#ff7bda;--cyan:#39d0e8;--focus:#79c0ff;--button-fg:#0d1117;--shadow:rgba(0,0,0,.55)}body{background:radial-gradient(circle at 5% 5%,color-mix(in srgb,var(--blue) 18%,transparent),transparent 36%),radial-gradient(circle at 95% 0,color-mix(in srgb,var(--pink) 16%,transparent),transparent 34%),linear-gradient(145deg,var(--canvas),color-mix(in srgb,var(--purple) 10%,var(--canvas)))}}
+@media(prefers-reduced-motion:reduce){*{scroll-behavior:auto!important}}
+</style>
+</head>
+<body>
+<main id="main-content" aria-labelledby="signed-out-title">
+<header class="brand"><span class="mark" aria-hidden="true">B</span><span>Bleephub</span></header>
+<section class="content">
+<p class="eyebrow">Session ended</p>
+<h1 id="signed-out-title">You are signed out</h1>
+<p>Your Bleephub browser session has ended. Continue when you are ready to start a new Shauth sign-in.</p>
+<div class="actions">
+<a href="/auth/shauth?return_to=%2Fui%2F">Sign in with Shauth</a>
+<form method="post" action="/auth/logout"><button type="submit">Sign out</button></form>
+</div>
+<p class="privacy">Reloading this page will not start a new sign-in session.</p>
+</section>
+</main>
+</body>
+</html>`
 
 func (s *Server) handleShauthFrontChannelLogout(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Cache-Control", "no-store")

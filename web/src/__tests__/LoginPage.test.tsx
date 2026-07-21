@@ -32,12 +32,17 @@ async function submitToken(token: string) {
 }
 
 describe("LoginPage", () => {
-  it("redirects configured Shauth instances before rendering legacy credentials", async () => {
+  it("exposes the same-origin Shauth starter without rendering legacy credentials", async () => {
     mockFetch.mockResolvedValueOnce(new Response(JSON.stringify({ shauth: true }), { status: 200 }));
     render(<LoginPage />);
     await waitFor(() => {
       expect(window.location.href).toBe("/auth/shauth?return_to=%2Fui%2F");
     });
+    expect(screen.getByRole("heading", { name: "Sign in to Bleephub" })).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "Sign in with Shauth" })).toHaveAttribute(
+      "href",
+      "/auth/shauth?return_to=%2Fui%2F",
+    );
     expect(screen.queryByLabelText(/access token/i)).not.toBeInTheDocument();
   });
 
