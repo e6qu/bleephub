@@ -833,7 +833,7 @@ func TestActionsRunners_ExtraFields(t *testing.T) {
 	}
 }
 
-func TestStableJobID_DeterministicAndPositive(t *testing.T) {
+func TestStableJobID_DeterministicPositiveAndJSONSafe(t *testing.T) {
 	// The cleanup join + the GitHub-int-shape contract both rely on a
 	// stable, positive int64 derived from the WorkflowJob UUID.
 	a := stableJobID("d3b07384-d113-440a-9b46-2c2eb6c0e1d2")
@@ -847,6 +847,20 @@ func TestStableJobID_DeterministicAndPositive(t *testing.T) {
 	}
 	if a == c {
 		t.Errorf("collision on distinct UUIDs")
+	}
+	if uint64(a) > maxJSONSafeInteger || uint64(c) > maxJSONSafeInteger {
+		t.Fatalf("IDs exceed exact JSON integer range: a=%d c=%d", a, c)
+	}
+	encoded, err := json.Marshal(map[string]int64{"id": a})
+	if err != nil {
+		t.Fatalf("marshal job ID: %v", err)
+	}
+	var decoded map[string]any
+	if err := json.Unmarshal(encoded, &decoded); err != nil {
+		t.Fatalf("decode job ID through generic JSON consumer: %v", err)
+	}
+	if got := int64(decoded["id"].(float64)); got != a {
+		t.Fatalf("generic JSON round trip changed ID: got %d, want %d", got, a)
 	}
 }
 

@@ -50,6 +50,22 @@ func (st *Store) ReserveRunID() int {
 	return id
 }
 
+// ReserveLogID returns an object-store-safe log identifier. The counter is
+// durable so a service replacement cannot reuse an existing logs/{id} key and
+// overwrite a completed job's bytes.
+func (st *Store) ReserveLogID() int {
+	st.mu.Lock()
+	defer st.mu.Unlock()
+	id := st.NextLog
+	st.NextLog++
+	if st.persist != nil {
+		if err := st.persist.SetCounter("next_log_id", int64(st.NextLog)); err != nil {
+			log.Fatalf("bleephub persistence counter next_log_id failed: %v", err)
+		}
+	}
+	return id
+}
+
 // User represents a GitHub user account.
 type User struct {
 	ID           int             `json:"id"`
@@ -1527,6 +1543,14 @@ func (st *Store) loadFromPersistence() error {
 			}
 			return nil
 		}},
+		{"timeline_records", func(planID string, raw []byte) error {
+			var records []*TimelineRecord
+			if err := loadJSON(raw, &records); err != nil {
+				return err
+			}
+			st.TimelineRecords[planID] = records
+			return nil
+		}},
 		{"workflows", func(_ string, raw []byte) error {
 			var wf Workflow
 			if err := loadJSON(raw, &wf); err != nil {
@@ -2361,6 +2385,11 @@ func (st *Store) loadFromPersistence() error {
 		return fmt.Errorf("load counter next_run_id: %w", err)
 	} else if int(v) > st.NextRunID {
 		st.NextRunID = int(v)
+	}
+	if v, err := st.persist.GetCounter("next_log_id"); err != nil {
+		return fmt.Errorf("load counter next_log_id: %w", err)
+	} else if int(v) > st.NextLog {
+		st.NextLog = int(v)
 	}
 
 	// enterprises

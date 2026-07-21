@@ -137,6 +137,9 @@ func (s *Server) upsertTimelineRecords(planID string, records []*TimelineRecord)
 		cp := *stored
 		out = append(out, &cp)
 	}
+	if s.store.persist != nil && planID != "" {
+		s.store.persist.MustPut("timeline_records", planID, s.store.TimelineRecords[planID])
+	}
 	return out
 }
 

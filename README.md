@@ -138,14 +138,14 @@ Configure all four values together:
 BLEEPHUB_SHAUTH_ISSUER=https://auth.dev.e6qu.dev
 BLEEPHUB_SHAUTH_CLIENT_ID=bleephub
 BLEEPHUB_SHAUTH_CLIENT_SECRET=...
-BLEEPHUB_SHAUTH_POST_LOGOUT_URL=https://bleephub.dev.e6qu.dev/ui/signed-out
+BLEEPHUB_SHAUTH_POST_LOGOUT_URL=https://bleephub.dev.e6qu.dev/auth/shauth/logout/complete
 ```
 
 Register these exact Shauth client coordinates for the deployment host:
 
 ```text
 redirect_uri:                    https://bleephub.dev.e6qu.dev/auth/shauth/callback
-post_logout_redirect_uri:        https://bleephub.dev.e6qu.dev/ui/signed-out
+post_logout_redirect_uri:        https://bleephub.dev.e6qu.dev/auth/shauth/logout/complete
 frontchannel_logout_uri:         https://bleephub.dev.e6qu.dev/auth/shauth/frontchannel-logout
 backchannel_logout_uri:          https://bleephub.dev.e6qu.dev/auth/shauth/backchannel-logout
 backchannel_logout_session_required: true
@@ -154,6 +154,10 @@ backchannel_logout_session_required: true
 Production OpenID Connect coordinates must use HTTPS. The
 `BLEEPHUB_ALLOW_INSECURE_OIDC=true` switch exists only for local integration
 tests whose Shauth and Bleephub processes listen on loopback HTTP addresses.
+The application-owned logout bridge ignores request-supplied destinations and
+redirects only to Shauth's fixed `/oauth/logout/complete` endpoint. Shauth then
+consumes its one-time logout correlation and returns the browser to Bleephub's
+persistent `/ui/signed-out` page.
 
 Bleephub verifies discovery metadata, authorization code + PKCE, state, nonce,
 issuer, audience, expiry, role, subject, and the OpenID Connect `sid`. Durable

@@ -459,7 +459,7 @@ func TestRepositoryDispatchPayload_IncludesBranch(t *testing.T) {
 	}
 }
 
-func TestStableWorkflowFileID_Deterministic(t *testing.T) {
+func TestStableWorkflowFileID_DeterministicPositiveAndJSONSafe(t *testing.T) {
 	a := stableWorkflowFileID("octo/repo", ".github/workflows/ci.yml")
 	b := stableWorkflowFileID("octo/repo", ".github/workflows/ci.yml")
 	c := stableWorkflowFileID("octo/repo", ".github/workflows/release.yml")
@@ -469,8 +469,11 @@ func TestStableWorkflowFileID_Deterministic(t *testing.T) {
 	if a == c {
 		t.Errorf("collision on distinct paths")
 	}
-	if a < 0 || c < 0 {
-		t.Errorf("negative IDs returned")
+	if a <= 0 || c <= 0 {
+		t.Errorf("non-positive IDs returned")
+	}
+	if uint64(a) > maxJSONSafeInteger || uint64(c) > maxJSONSafeInteger {
+		t.Fatalf("IDs exceed exact JSON integer range: a=%d c=%d", a, c)
 	}
 }
 

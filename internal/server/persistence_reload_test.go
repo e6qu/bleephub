@@ -1144,6 +1144,56 @@ func TestPersistenceReload_WorkflowRunsAndAttempts(t *testing.T) {
 	}
 }
 
+func TestPersistenceReload_WorkflowTimelineMetadataAndLogCounter(t *testing.T) {
+	const (
+		jobID  = "01098f3b-0f5c-4428-b8f9-038d6597ac43"
+		planID = "48a7f786-b1f4-4f88-b538-ec3de02e5256"
+	)
+	st2 := reloadedStore(t, func(p *Persistence, st *Store) {
+		st.SeedDefaultUser()
+		wf := &Workflow{
+			ID:           "durable-job-log-run",
+			Name:         "ci",
+			RunID:        st.ReserveRunID(),
+			Status:       WorkflowStatusCompleted,
+			Result:       ResultSuccess,
+			RepoFullName: "admin/test",
+			Jobs: map[string]*WorkflowJob{
+				"deploy": {
+					Key: "deploy", JobID: jobID, PlanID: planID,
+					Status: JobStatusCompleted, Result: ResultSuccess,
+				},
+			},
+		}
+		st.Workflows[wf.ID] = wf
+		st.persistWorkflowRecord(wf)
+		st.TimelineRecords[planID] = []*TimelineRecord{{
+			ID: "step-deploy", Type: "Task", Name: "deploy", Order: 1,
+			State: "completed", Result: "succeeded", Log: &TimelineLogRef{ID: 41},
+		}}
+		p.MustPut("timeline_records", planID, st.TimelineRecords[planID])
+		st.NextLog = 42
+		if got := st.ReserveLogID(); got != 42 {
+			t.Fatalf("reserved log ID = %d, want 42", got)
+		}
+	})
+
+	wf := st2.Workflows["durable-job-log-run"]
+	if wf == nil || wf.Jobs["deploy"] == nil || wf.Jobs["deploy"].PlanID != planID {
+		t.Fatalf("reloaded workflow job = %#v, want plan %s", wf, planID)
+	}
+	s := &Server{store: st2}
+	st2.mu.RLock()
+	refs := s.jobLogRefsLocked(jobID)
+	st2.mu.RUnlock()
+	if len(refs) != 1 || refs[0].ID != 41 || refs[0].Name != "deploy" {
+		t.Fatalf("reloaded log references = %#v, want deploy log 41", refs)
+	}
+	if got := st2.ReserveLogID(); got != 43 {
+		t.Fatalf("first post-reload log ID = %d, want 43", got)
+	}
+}
+
 // G9: installation selected-repo lists and token repo scoping survive reload,
 // including the state left by add/remove mutations.
 func TestPersistenceReload_InstallationSelectedRepos(t *testing.T) {

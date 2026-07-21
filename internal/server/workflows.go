@@ -120,6 +120,7 @@ type Workflow struct {
 type WorkflowJob struct {
 	Key             string                 `json:"key"`   // YAML key
 	JobID           string                 `json:"jobId"` // UUID, used as Job.ID
+	PlanID          string                 `json:"planId,omitempty"`
 	DisplayName     string                 `json:"displayName"`
 	Needs           []string               `json:"needs,omitempty"`
 	Status          JobStatus              `json:"status"` // "pending", "queued", "running", "completed", "skipped"
@@ -707,6 +708,8 @@ func (s *Server) dispatchWorkflowJob(ctx context.Context, wf *Workflow, wfJob *W
 
 	s.store.mu.Lock()
 	s.store.Jobs[wfJob.JobID] = job
+	wfJob.PlanID = planID
+	s.store.persistWorkflowRecord(wf)
 	s.store.mu.Unlock()
 
 	envelope := &TaskAgentMessage{

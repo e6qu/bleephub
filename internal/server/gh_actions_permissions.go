@@ -1221,10 +1221,16 @@ func (s *Server) handleDeleteRunLogs(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var logIDs []int
+	var planIDs []string
 	s.store.mu.RLock()
 	for _, j := range wf.Jobs {
+		planID := j.PlanID
 		if job := s.store.Jobs[j.JobID]; job != nil && job.PlanID != "" {
-			if recs, ok := s.store.TimelineRecords[job.PlanID]; ok {
+			planID = job.PlanID
+		}
+		if planID != "" {
+			planIDs = append(planIDs, planID)
+			if recs, ok := s.store.TimelineRecords[planID]; ok {
 				for _, rec := range recs {
 					if rec.Log != nil {
 						logIDs = append(logIDs, rec.Log.ID)
@@ -1243,15 +1249,18 @@ func (s *Server) handleDeleteRunLogs(w http.ResponseWriter, r *http.Request) {
 	s.store.mu.Lock()
 	for _, j := range wf.Jobs {
 		delete(s.store.LogLines, j.JobID)
-		if job := s.store.Jobs[j.JobID]; job != nil && job.PlanID != "" {
-			if recs, ok := s.store.TimelineRecords[job.PlanID]; ok {
-				for _, rec := range recs {
-					if rec.Log != nil {
-						delete(s.store.LogFiles, rec.Log.ID)
-					}
+	}
+	for _, planID := range planIDs {
+		if recs, ok := s.store.TimelineRecords[planID]; ok {
+			for _, rec := range recs {
+				if rec.Log != nil {
+					delete(s.store.LogFiles, rec.Log.ID)
 				}
-				delete(s.store.TimelineRecords, job.PlanID)
 			}
+		}
+		delete(s.store.TimelineRecords, planID)
+		if s.store.persist != nil {
+			s.store.persist.MustDelete("timeline_records", planID)
 		}
 	}
 	s.store.mu.Unlock()

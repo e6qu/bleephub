@@ -82,6 +82,7 @@ func (s *Server) registerExternalIdentityRoutes() {
 	s.route("GET /auth/validation", s.handleIdentityValidation)
 	s.route("POST /auth/shauth/backchannel-logout", s.handleShauthBackChannelLogout)
 	s.route("GET /auth/shauth/frontchannel-logout", s.handleShauthFrontChannelLogout)
+	s.route("GET /auth/shauth/logout/complete", s.handleShauthLogoutComplete)
 	s.route("GET /ui/signed-out", s.handleIdentitySignedOut)
 	s.route("POST /auth/local", s.handleLocalLogin)
 	s.route("POST /auth/logout", s.handleIdentityLogout)
@@ -141,8 +142,8 @@ func validateShauthExternalURL(config identityConfig, externalURL string) error 
 		return fmt.Errorf("BLEEPHUB_EXTERNAL_URL must be an absolute HTTPS origin when Shauth is configured")
 	}
 	postLogoutURL, err := url.Parse(config.shauthPostLogoutURL)
-	if err != nil || !sameURLOrigin(parsed, postLogoutURL) || postLogoutURL.Path != "/ui/signed-out" || postLogoutURL.RawQuery != "" || postLogoutURL.Fragment != "" {
-		return fmt.Errorf("BLEEPHUB_SHAUTH_POST_LOGOUT_URL must be %s/ui/signed-out", strings.TrimRight(externalURL, "/"))
+	if err != nil || !sameURLOrigin(parsed, postLogoutURL) || postLogoutURL.Path != "/auth/shauth/logout/complete" || postLogoutURL.RawQuery != "" || postLogoutURL.Fragment != "" {
+		return fmt.Errorf("BLEEPHUB_SHAUTH_POST_LOGOUT_URL must be %s/auth/shauth/logout/complete", strings.TrimRight(externalURL, "/"))
 	}
 	return nil
 }
@@ -701,6 +702,23 @@ func (s *Server) handleIdentitySignedOut(w http.ResponseWriter, r *http.Request)
 	w.Header().Set("X-Content-Type-Options", "nosniff")
 	w.WriteHeader(http.StatusOK)
 	_, _ = w.Write([]byte(identitySignedOutPage))
+}
+
+func (s *Server) handleShauthLogoutComplete(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Cache-Control", "no-store")
+	w.Header().Set("Pragma", "no-cache")
+	w.Header().Set("Referrer-Policy", "no-referrer")
+	if !s.identity.shauthConfigured() {
+		http.NotFound(w, r)
+		return
+	}
+	issuer, err := url.Parse(s.identity.shauthIssuer)
+	if err != nil || !validIdentityURL(issuer, s.identity.allowInsecureOIDC) {
+		writeGHError(w, http.StatusServiceUnavailable, "Shauth logout completion is unavailable")
+		return
+	}
+	target := issuer.ResolveReference(&url.URL{Path: "/oauth/logout/complete"})
+	http.Redirect(w, r, target.String(), http.StatusSeeOther)
 }
 
 const identitySignedOutPage = `<!doctype html>

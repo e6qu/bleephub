@@ -492,11 +492,7 @@ func TestOutputPropagationEndToEnd(t *testing.T) {
 
 	// Simulate build completion with outputs
 	buildJob := workflow.Jobs["build"]
-	outputVars := map[string]string{"ver.version": "1.0"}
-	resolved := resolveJobOutputs(outputVars, buildJob.Def.Outputs)
-	for k, v := range resolved {
-		buildJob.Outputs[k] = v
-	}
+	buildJob.Outputs["version"] = "1.0"
 	s.onJobCompleted(context.Background(), buildJob.JobID, "Succeeded")
 
 	// Verify outputs were stored

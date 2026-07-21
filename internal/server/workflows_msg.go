@@ -139,6 +139,13 @@ func (s *Server) buildJobMessageFromDef(serverURL string, wf *Workflow, wfJob *W
 	// Build needs context
 	needsCtx := buildNeedsContext(wf, wfJob)
 
+	// Job outputs are evaluated by the official runner after all steps have
+	// finished. The request wire field is a mapping TemplateToken, not an
+	// unevaluated server-side expression map: JobRunner evaluates this token
+	// against its final steps context and returns the resolved VariableValue
+	// map in the JobCompleted plan event.
+	jobOutputs := jobOutputsToken(jd.Outputs)
+
 	// Build matrix context
 	var matrixCtx interface{}
 	if len(wfJob.MatrixValues) > 0 {
@@ -245,7 +252,7 @@ func (s *Server) buildJobMessageFromDef(serverURL string, wf *Workflow, wfJob *W
 		"lockedUntil":          "0001-01-01T00:00:00",
 		"jobContainer":         jobContainer,
 		"jobServiceContainers": buildServiceContainers(jd.Services),
-		"jobOutputs":           nil,
+		"jobOutputs":           jobOutputs,
 		"resources": map[string]interface{}{
 			"endpoints": []map[string]interface{}{
 				{
@@ -294,6 +301,20 @@ func (s *Server) buildJobMessageFromDef(serverURL string, wf *Workflow, wfJob *W
 		"actionsEnvironment":   nil,
 		"fileTable":            []string{".github/workflows/ci.yml"},
 	}, nil
+}
+
+// jobOutputsToken encodes a workflow job's declared outputs in the exact
+// TemplateToken mapping consumed by actions/runner. A job without outputs
+// omits the optional wire value by returning nil.
+func jobOutputsToken(outputs map[string]string) interface{} {
+	if len(outputs) == 0 {
+		return nil
+	}
+	entries := make([]interface{}, 0, len(outputs))
+	for _, name := range sortedKeys(outputs) {
+		entries = append(entries, mappingEntry(name, templateToken(outputs[name])))
+	}
+	return mappingToken(entries)
 }
 
 // templateToken converts a workflow string into the runner's template

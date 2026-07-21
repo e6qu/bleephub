@@ -45,13 +45,13 @@ type WorkflowFile struct {
 }
 
 // stableWorkflowFileID returns the GitHub-shape int64 ID derived from
-// (repo, path). FNV-1a 64-bit, sign-bit masked. Same shape as
+// (repo, path). FNV-1a 64-bit, JSON-safe-integer masked. Same shape as
 // stableJobID (gh_actions_rest.go) so the two ID schemes don't trip
 // over each other in tests.
 func stableWorkflowFileID(repoFullName, path string) int64 {
 	h := fnv.New64a()
 	_, _ = h.Write([]byte(repoFullName + "\x00" + path))
-	return int64(h.Sum64() & 0x7fffffffffffffff)
+	return jsonSafePositiveID(h.Sum64())
 }
 
 // RegisterWorkflowFile creates-or-updates the WorkflowFile row keyed
