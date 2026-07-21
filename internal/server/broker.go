@@ -342,11 +342,7 @@ func (s *Server) nextRequestID() int64 {
 }
 
 func (s *Server) nextLogID() int {
-	s.store.mu.Lock()
-	id := s.store.NextLog
-	s.store.NextLog++
-	s.store.mu.Unlock()
-	return id
+	return s.store.ReserveLogID()
 }
 
 func (s *Server) lookupJobByRequestID(reqID int64) *Job {

@@ -94,7 +94,7 @@ export BLEEPHUB_ADMIN_TOKEN="bleephub-admin-token-00000000000000000000"
 # so one URL serves both (the GitHub Enterprise Server external-URL model).
 export BLEEPHUB_EXTERNAL_URL="http://host.docker.internal"
 echo "127.0.0.1 host.docker.internal" >> /etc/hosts
-bleephub --addr ":80" --log-level info &
+bleephub --addr ":80" --log-level "${BLEEPHUB_LOG_LEVEL:-info}" &
 PIDS+=($!)
 wait_for_url "http://$BLEEPHUB_ADDR/health"
 log "bleephub ready"
@@ -925,6 +925,33 @@ jobs:
     steps:
       - run: echo "Deploying version ${{ needs.build.outputs.version }}"
 '
+
+deploy_job_id=$(api_get "/api/v3/repos/admin/test/actions/runs/$LAST_WORKFLOW_RUN_ID/jobs" \
+    | jq -r '[.jobs[] | select(.name == "deploy")][0].id // empty')
+[ -n "$deploy_job_id" ] || fail "output propagation run did not expose the deploy job"
+deploy_log_file=$(mktemp)
+deploy_log_status=$(curl -sS -o "$deploy_log_file" -w '%{http_code}' \
+    -H "Authorization: token $BLEEPHUB_ADMIN_TOKEN" \
+    "http://$BLEEPHUB_ADDR/api/v3/repos/admin/test/actions/jobs/$deploy_job_id/logs") \
+    || fail "output propagation deploy log request failed"
+if [ "$deploy_log_status" != "200" ]; then
+    echo "deploy log HTTP $deploy_log_status: $(cat "$deploy_log_file")" >&2
+    rm -f "$deploy_log_file"
+    fail "output propagation deploy log was unavailable"
+fi
+deploy_log=$(cat "$deploy_log_file")
+rm -f "$deploy_log_file"
+# The official runner's durable task-log wire format prefixes every payload
+# line with its UTC timestamp. Remove that one transport column for the exact
+# payload assertion; the REST response itself remains byte-for-byte authentic.
+printf '%s\n' "$deploy_log" | sed -E 's/^[^ ]+Z //' \
+    | grep -Fx 'Deploying version 1.2.3' >/dev/null \
+    || {
+        echo "=== deploy job durable log ===" >&2
+        printf '%s\n' "$deploy_log" >&2
+        fail "deploy log did not contain exactly: Deploying version 1.2.3"
+    }
+log "Job output verified from the durable downstream job log"
 
 sleep 3
 fi

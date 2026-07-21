@@ -2,9 +2,11 @@ package bleephub
 
 import (
 	"encoding/json"
+	"fmt"
 	"io"
 	"net/http"
 	"strconv"
+	"strings"
 	"time"
 )
 
@@ -147,13 +149,24 @@ func (s *Server) handleCompleteRequest(w http.ResponseWriter, r *http.Request) {
 func (s *Server) handleFinishJob(w http.ResponseWriter, r *http.Request) {
 	planID := r.PathValue("planId")
 
-	var body map[string]interface{}
+	// FinishJob is the service-location route used by the official runner's
+	// JobServer RaisePlanEventAsync call. Its body is the JobCompletedEvent
+	// wire contract, including runner-evaluated job outputs.
+	var body runnerJobEvent
 	if !decodeJSONBody(w, r, &body) {
 		return
 	}
+	if body.Name != "JobCompleted" {
+		http.Error(w, "FinishJob requires a JobCompleted event", http.StatusBadRequest)
+		return
+	}
 
-	result, _ := body["result"].(string)
-	jobID, _ := body["jobId"].(string)
+	result, err := runnerJobResult(body.Result)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	jobID := body.JobID
 
 	s.logger.Info().
 		Str("planId", planID).
@@ -169,13 +182,19 @@ func (s *Server) handleFinishJob(w http.ResponseWriter, r *http.Request) {
 		s.store.mu.RUnlock()
 	}
 	if job != nil {
+		if jobID != "" && jobID != job.ID {
+			http.Error(w, "JobCompleted event jobId does not match plan", http.StatusBadRequest)
+			return
+		}
+		jobID = job.ID
+		// Store the official runner's evaluated outputs before completing the
+		// workflow job. Completion can synchronously dispatch a downstream
+		// job whose needs context must already contain these values.
+		s.captureResolvedJobOutputs(jobID, body.Outputs)
+
 		s.store.mu.Lock()
 		job.Status = "completed"
-		if result != "" {
-			job.Result = result
-		} else {
-			job.Result = "Succeeded"
-		}
+		job.Result = result
 		// Snapshot under the lock: the broker concurrently mutates these
 		// fields (recordJobAgentLocked writes AgentID), so every read after
 		// the unlock must come from a local, not the shared *Job.
@@ -184,9 +203,6 @@ func (s *Server) handleFinishJob(w http.ResponseWriter, r *http.Request) {
 		jobAgentSnap := job.AgentID
 		s.store.mu.Unlock()
 		s.logger.Info().Str("jobId", jobIDSnap).Str("result", jobResultSnap).Msg("job status updated")
-
-		// Capture output variables from the runner
-		s.captureJobOutputs(jobIDSnap, body)
 
 		// Notify workflow engine of job completion
 		s.onJobCompleted(r.Context(), jobIDSnap, jobResultSnap)
@@ -203,44 +219,42 @@ func (s *Server) handleFinishJob(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]interface{}{"status": "ok"})
 }
 
-// captureJobOutputs resolves output variables from a runner body and stores
-// them on the corresponding WorkflowJob.
-func (s *Server) captureJobOutputs(jobID string, body map[string]interface{}) {
-	outputVars := extractOutputVariables(body)
-	if len(outputVars) == 0 {
+// captureResolvedJobOutputs stores the output names and values evaluated by
+// actions/runner. The JobCompleted event already contains the declared output
+// names (for example, "version"), so resolving step expressions a second time
+// on the server would discard the official runner result.
+func (s *Server) captureResolvedJobOutputs(jobID string, outputs map[string]runnerVariableValue) {
+	if len(outputs) == 0 {
 		return
+	}
+
+	resolved := make(map[string]string, len(outputs))
+	for name, output := range outputs {
+		resolved[name] = output.Value
 	}
 
 	s.store.mu.Lock()
 	var wfJob *WorkflowJob
+	var workflow *Workflow
 	for _, wf := range s.store.Workflows {
-		if j, ok := wf.Jobs[""]; ok && j.JobID == jobID {
-			wfJob = j
-			break
-		}
-		for _, j := range wf.Jobs {
-			if j.JobID == jobID {
-				wfJob = j
-				break
-			}
-		}
-		if wfJob != nil {
+		if job, ok := findWorkflowJobByID(wf, jobID); ok {
+			wfJob = job
+			workflow = wf
 			break
 		}
 	}
-
-	if wfJob == nil || wfJob.Def == nil {
-		s.store.mu.Unlock()
-		return
-	}
-
-	resolved := resolveJobOutputs(outputVars, wfJob.Def.Outputs)
-	for k, v := range resolved {
-		wfJob.Outputs[k] = v
+	if wfJob != nil {
+		if wfJob.Outputs == nil {
+			wfJob.Outputs = make(map[string]string, len(resolved))
+		}
+		for name, value := range resolved {
+			wfJob.Outputs[name] = value
+		}
+		s.store.persistWorkflowRecord(workflow)
 	}
 	s.store.mu.Unlock()
 
-	if len(resolved) > 0 {
+	if wfJob != nil {
 		s.logger.Info().
 			Str("jobId", jobID).
 			Interface("outputs", resolved).
@@ -262,16 +276,104 @@ func findWorkflowJobByID(wf *Workflow, jobID string) (*WorkflowJob, bool) {
 func (s *Server) handleJobEvents(w http.ResponseWriter, r *http.Request) {
 	planID := r.PathValue("planId")
 
-	var body map[string]interface{}
+	var body runnerJobEvent
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 		http.Error(w, "invalid job event body: "+err.Error(), http.StatusBadRequest)
 		return
 	}
 
-	eventName, _ := body["name"].(string)
-	s.logger.Debug().Str("planId", planID).Str("event", eventName).Msg("job event")
+	s.logger.Debug().Str("planId", planID).Str("event", body.Name).Msg("job event")
+	if body.Name == "JobCompleted" {
+		job := s.lookupJobByPlanID(planID)
+		jobID := body.JobID
+		if job != nil {
+			if jobID != "" && jobID != job.ID {
+				http.Error(w, "JobCompleted event jobId does not match plan", http.StatusBadRequest)
+				return
+			}
+			jobID = job.ID
+		}
+		if jobID == "" {
+			http.Error(w, "JobCompleted event is missing jobId", http.StatusBadRequest)
+			return
+		}
+
+		s.captureResolvedJobOutputs(jobID, body.Outputs)
+		result, err := runnerJobResult(body.Result)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		if job != nil {
+			s.store.mu.Lock()
+			job.Status = "completed"
+			job.Result = result
+			s.store.mu.Unlock()
+		}
+		s.onJobCompleted(r.Context(), jobID, result)
+	}
 
 	w.WriteHeader(http.StatusOK)
+}
+
+type runnerVariableValue struct {
+	Value    string `json:"value"`
+	IsSecret bool   `json:"isSecret"`
+}
+
+type runnerJobEvent struct {
+	Name      string                         `json:"name"`
+	JobID     string                         `json:"jobId"`
+	RequestID int64                          `json:"requestId"`
+	Result    json.RawMessage                `json:"result"`
+	Outputs   map[string]runnerVariableValue `json:"outputs"`
+}
+
+// runnerJobResult maps the official actions/runner TaskResult JSON value onto
+// the completion strings already consumed by Bleephub's workflow engine.
+func runnerJobResult(raw json.RawMessage) (string, error) {
+	if len(raw) == 0 || string(raw) == "null" {
+		return "", fmt.Errorf("JobCompleted event is missing result")
+	}
+	var numeric int
+	if err := json.Unmarshal(raw, &numeric); err == nil {
+		switch numeric {
+		case 0:
+			return "Succeeded", nil
+		case 1:
+			return "SucceededWithIssues", nil
+		case 2:
+			return "Failed", nil
+		case 3:
+			return "Cancelled", nil
+		case 4:
+			return "Skipped", nil
+		case 5:
+			return "Abandoned", nil
+		default:
+			return "", fmt.Errorf("JobCompleted event has invalid result %d", numeric)
+		}
+	}
+	var text string
+	if err := json.Unmarshal(raw, &text); err != nil || text == "" {
+		return "", fmt.Errorf("JobCompleted event has invalid result")
+	}
+	switch strings.ToLower(text) {
+	case "succeeded":
+		return "Succeeded", nil
+	case "succeededwithissues", "succeeded_with_issues":
+		return "SucceededWithIssues", nil
+	case "failed":
+		return "Failed", nil
+	case "canceled", "cancelled":
+		return "Cancelled", nil
+	case "skipped":
+		return "Skipped", nil
+	case "abandoned":
+		return "Abandoned", nil
+	default:
+		return "", fmt.Errorf("JobCompleted event has invalid result %q", text)
+	}
 }
 
 func (s *Server) handleTelemetry(w http.ResponseWriter, r *http.Request) {

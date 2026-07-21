@@ -35,6 +35,7 @@ func linkJobToPlan(t *testing.T, s *Server, wfJob *WorkflowJob) (planID, timelin
 		TimelineID: timelineID,
 		Status:     "running",
 	}
+	wfJob.PlanID = planID
 	s.store.mu.Unlock()
 	return planID, timelineID
 }
@@ -486,6 +487,57 @@ func TestJobLogs_ReadsUploadedLogFilesFromObjectStore(t *testing.T) {
 	}
 	if got := w.Body.String(); got != "object-store job log\n" {
 		t.Fatalf("job log body = %q, want object-store bytes", got)
+	}
+}
+
+func TestJobLogs_SurviveServiceReloadWithObjectStore(t *testing.T) {
+	fs := newS3FSForTest(t)
+	objectFS := &s3FS{client: fs.client, bucket: fs.bucket, prefix: "objects"}
+	byteStore := &s3ActionsByteStore{fs: objectFS}
+	t.Setenv("BLEEPHUB_PERSIST", "true")
+	t.Setenv("BLEEPHUB_DATA_DIR", t.TempDir())
+
+	p1, err := NewPersistence()
+	if err != nil {
+		t.Fatalf("open first persistence: %v", err)
+	}
+	s1 := newTimelineTestServer()
+	if err := s1.store.SetPersistence(p1); err != nil {
+		t.Fatalf("attach first persistence: %v", err)
+	}
+	s1.artifactStore = NewArtifactStoreWithByteStore("", byteStore)
+	wf, wfJob := seedRun(t, s1, "octo/repo", "completed", "success")
+	planID, timelineID := linkJobToPlan(t, s1, wfJob)
+	s1.store.persistWorkflowRecord(wf)
+
+	logID := createLogFile(t, s1, planID)
+	uploadLogBlock(t, s1, planID, logID, []byte("Deploying version 1.2.3\n"))
+	patchTimelineRecords(t, s1, planID, timelineID, true, []map[string]any{
+		{"id": uuid.New().String(), "type": "Task", "name": "deploy", "order": 1,
+			"state": "completed", "result": "succeeded", "log": map[string]any{"id": logID}},
+	})
+	if err := p1.Close(); err != nil {
+		t.Fatalf("close first persistence: %v", err)
+	}
+
+	p2, err := NewPersistence()
+	if err != nil {
+		t.Fatalf("open reloaded persistence: %v", err)
+	}
+	t.Cleanup(func() { _ = p2.Close() })
+	s2 := newTimelineTestServer()
+	s2.store = NewStore()
+	if err := s2.store.SetPersistence(p2); err != nil {
+		t.Fatalf("reload persistence: %v", err)
+	}
+	s2.artifactStore = NewArtifactStoreWithByteStore("", byteStore)
+
+	w := runRequest(s2, "GET", fmt.Sprintf("/api/v3/repos/octo/repo/actions/jobs/%d/logs", stableJobID(wfJob.JobID)))
+	if w.Code != http.StatusOK {
+		t.Fatalf("reloaded job log status = %d, body = %s", w.Code, w.Body.String())
+	}
+	if got := w.Body.String(); got != "Deploying version 1.2.3\n" {
+		t.Fatalf("reloaded job log = %q, want exact downstream output", got)
 	}
 }
 

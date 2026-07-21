@@ -1,7 +1,7 @@
 .PHONY: build run test web-build gh-test shauth-sso-test runner-sockerless-test runner-image
 
 build: web-build
-	CGO_ENABLED=0 go build -o bleephub-server ./cmd/bleephub
+	CGO_ENABLED=0 GOWORK=off go build -o bleephub-server ./cmd/bleephub
 
 run: build
 	./bleephub-server
@@ -12,7 +12,7 @@ web-build:
 	cp -R web/dist/. internal/server/dist/
 
 test:
-	go test -tags noui -count=1 -timeout 8m ./...
+	GOWORK=off go test -tags noui -count=1 -timeout 8m ./...
 
 gh-test:
 	docker buildx build --load -f Dockerfile.gh-test -t bleephub-gh-test:local .
@@ -30,7 +30,7 @@ runner-sockerless-test:
 	docker buildx build --load --build-context sockerless="$(SOCKERLESS_ROOT)" -f test/runner/sockerless/Dockerfile -t bleephub-runner-sockerless:local .
 	rm -rf /tmp/bleephub-runner-sockerless-data
 	mkdir -p /tmp/bleephub-runner-sockerless-data
-	docker run --rm --security-opt label=disable -v /var/run/docker.sock:/var/run/docker.sock -v /tmp/bleephub-runner-sockerless-data:/tmp/bleephub-runner-sockerless-data -e SOCKERLESS_HARNESS_DATA_DIR=/tmp/bleephub-runner-sockerless-data -e BLEEPHUB_BACKEND=ecs -p 80:80 -p 3375:3375 -p 5000:4566 bleephub-runner-sockerless:local
+	docker run --rm --security-opt label=disable -v /var/run/docker.sock:/var/run/docker.sock -v /tmp/bleephub-runner-sockerless-data:/tmp/bleephub-runner-sockerless-data -e SOCKERLESS_HARNESS_DATA_DIR=/tmp/bleephub-runner-sockerless-data -e BLEEPHUB_BACKEND=ecs -e BLEEPHUB_TEST_FROM -e BLEEPHUB_HOLD -e BLEEPHUB_LOG_LEVEL -p 80:80 -p 3375:3375 -p 5000:4566 bleephub-runner-sockerless:local
 
 runner-image:
 	docker buildx build --load -f Dockerfile.runner -t bleephub-runner:local .

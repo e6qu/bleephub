@@ -14,6 +14,7 @@ assert.notEqual(primaryPort, secondaryPort, "Bleephub SSO ports must be distinct
 const primaryOrigin = `http://localhost:${primaryPort}`;
 const secondaryOrigin = `http://127.0.0.1:${secondaryPort}`;
 const shauthOrigin = "http://localhost:8080";
+const primaryLogoutBridge = `${primaryOrigin}/auth/shauth/logout/complete`;
 
 const browser = await chromium.launch({
   headless: true,
@@ -26,6 +27,7 @@ try {
   const context = await browser.newContext();
   const page = await context.newPage();
   const credentialBoundary = await installCredentialBoundary(context, page);
+  const logoutBridgeURLs = [];
   page.on("console", (message) => {
     if (message.type() === "error") errors.push(message.text());
   });
@@ -33,6 +35,9 @@ try {
   page.on("requestfailed", (request) => errors.push(`${request.url()}: ${request.failure()?.errorText ?? "request failed"}`));
   page.on("request", (request) => {
     const target = new URL(request.url());
+    if (target.origin === primaryOrigin && target.pathname === "/auth/shauth/logout/complete") {
+      logoutBridgeURLs.push(target.toString());
+    }
     if (target.hostname !== "localhost" && target.hostname !== "127.0.0.1" && !target.hostname.endsWith(".localhost")) {
       errors.push(`external runtime dependency: ${target.origin}${target.pathname}`);
     }
@@ -117,11 +122,19 @@ try {
   // application-local recovery control.
   await page.goto(`${primaryOrigin}/ui/`);
   await page.getByRole("button", { name: "Open user menu" }).click();
+  const logoutBridgeCount = logoutBridgeURLs.length;
+  const logoutBridgeNavigation = page.waitForResponse(
+    (response) => response.url() === primaryLogoutBridge && response.request().isNavigationRequest(),
+  );
   const signedOutNavigation = page.waitForResponse(
     (response) => response.url() === `${primaryOrigin}/ui/signed-out` && response.request().isNavigationRequest(),
   );
   await page.getByRole("menuitem", { name: "Sign out" }).click();
   await page.waitForURL(`${primaryOrigin}/ui/signed-out`);
+  const logoutBridgeResponse = await logoutBridgeNavigation;
+  assert.equal(logoutBridgeResponse.status(), 303);
+  assert.equal(logoutBridgeResponse.headers().location, `${shauthOrigin}/oauth/logout/complete`);
+  assert.deepEqual(logoutBridgeURLs.slice(logoutBridgeCount), [primaryLogoutBridge]);
   assert.equal((await signedOutNavigation).status(), 200);
   await page.getByRole("heading", { name: "You are signed out" }).waitFor();
   await page.getByText("Bleephub", { exact: true }).waitFor();
@@ -150,6 +163,23 @@ try {
   assert.equal(await signOutForm.getAttribute("action"), "/auth/logout");
   assert.equal(await signOutForm.getAttribute("method"), "post");
 
+  const injectedBridge = await context.request.get(
+    `${primaryLogoutBridge}?next=https%3A%2F%2Fattacker.example%2F&redirect_uri=https%3A%2F%2Fattacker.example%2F&code=secret`,
+    { maxRedirects: 0 },
+  );
+  assert.equal(injectedBridge.status(), 303);
+  assert.equal(injectedBridge.headers().location, `${shauthOrigin}/oauth/logout/complete`);
+  assert.equal(injectedBridge.headers()["cache-control"], "no-store");
+  assert.equal(injectedBridge.headers().pragma, "no-cache");
+  assert.equal(injectedBridge.headers()["referrer-policy"], "no-referrer");
+
+  const replayCompletion = await context.request.get(
+    `${shauthOrigin}/oauth/logout/complete?next=https%3A%2F%2Fattacker.example%2F`,
+    { maxRedirects: 0 },
+  );
+  assert.equal(replayCompletion.status(), 303);
+  assert.equal(new URL(replayCompletion.headers().location, shauthOrigin).toString(), `${shauthOrigin}/signed-out`);
+
   // Recovery traverses Bleephub's own starter, prompts at Shauth after global
   // logout, and returns to a fully authenticated Bleephub UI without exposing
   // the legacy access-token form.
@@ -175,8 +205,12 @@ try {
   // It invalidates both relying-party sessions, and a direct application visit
   // then fails closed at Shauth's real credential form.
   await page.goto(`${shauthOrigin}/logout`);
-  await page.getByRole("heading", { name: "Sign out everywhere?" }).waitFor();
-  await page.getByRole("button", { name: "Sign out everywhere" }).click();
+  await page.getByRole("heading", { name: "Sign out of all apps?" }).waitFor();
+  await page.getByRole("button", { name: "Sign out of all apps" }).click();
+  await page.waitForURL(`${shauthOrigin}/signed-out`);
+  await page.getByRole("link", { name: "Sign in to Shauth" }).waitFor();
+  await page.reload();
+  await page.getByRole("link", { name: "Sign in to Shauth" }).waitFor();
   await waitForAuthenticationState(context, primaryOrigin, false);
   await waitForAuthenticationState(context, secondaryOrigin, false);
 

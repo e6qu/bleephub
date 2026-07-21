@@ -103,16 +103,23 @@ func sortRunsNewestFirst(runs []*Workflow) {
 	sort.Slice(runs, func(i, j int) bool { return runs[i].RunID > runs[j].RunID })
 }
 
-// stableJobID maps a WorkflowJob's UUID to a stable int64 GitHub-shape
-// `id`. GitHub uses int64 IDs for jobs everywhere; bleephub uses UUIDs
-// internally. FNV-1a 64-bit gives a stable, collision-resistant int
-// per UUID without modifying the existing WorkflowJob struct.
+const maxJSONSafeInteger = uint64(1<<53 - 1)
+
+// stableJobID maps a WorkflowJob's UUID to a stable positive GitHub-shape
+// `id`. IDs stay within JavaScript's exact integer range because GitHub API
+// consumers commonly parse and return them through JSON number values.
 func stableJobID(uuid string) int64 {
 	h := fnv.New64a()
 	_, _ = h.Write([]byte(uuid))
-	// Mask sign bit so the result is a positive int64 the way GitHub
-	// IDs are.
-	return int64(h.Sum64() & 0x7fffffffffffffff)
+	return jsonSafePositiveID(h.Sum64())
+}
+
+func jsonSafePositiveID(hash uint64) int64 {
+	id := hash & maxJSONSafeInteger
+	if id == 0 {
+		id = 1
+	}
+	return int64(id)
 }
 
 // runStatus maps a Workflow → GitHub's run statuses (`queued`,
@@ -382,12 +389,23 @@ func (s *Server) jobStepsJSONLocked(wfJob *WorkflowJob) []map[string]any {
 // taskRecordsForJobLocked returns the job's "Task" (step) timeline records
 // sorted by Order. Caller must hold store.mu.
 func (s *Server) taskRecordsForJobLocked(jobUUID string) []*TimelineRecord {
-	job := s.store.Jobs[jobUUID]
-	if job == nil {
+	planID := ""
+	if job := s.store.Jobs[jobUUID]; job != nil {
+		planID = job.PlanID
+	}
+	if planID == "" {
+		for _, wf := range s.store.Workflows {
+			if wfJob, ok := findWorkflowJobByID(wf, jobUUID); ok {
+				planID = wfJob.PlanID
+				break
+			}
+		}
+	}
+	if planID == "" {
 		return nil
 	}
 	var tasks []*TimelineRecord
-	for _, rec := range s.store.TimelineRecords[job.PlanID] {
+	for _, rec := range s.store.TimelineRecords[planID] {
 		if rec.Type == "Task" {
 			tasks = append(tasks, rec)
 		}

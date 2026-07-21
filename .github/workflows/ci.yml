@@ -66,7 +66,7 @@ jobs:
   browser:
     name: Browser end-to-end
     runs-on: ubuntu-latest
-    timeout-minutes: 18
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v7.0.0
       - uses: actions/setup-go@v6.5.0
@@ -84,13 +84,13 @@ jobs:
   shauth-sso:
     name: Shauth SSO browser contract
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v7.0.0
       - uses: actions/checkout@v7.0.0
         with:
           repository: e6qu/shauth
-          ref: 6d06480e2ec26250c12b88af3e36ab83787f6cf3
+          ref: 08f5a78fb8b159fcbfe8317f24f430dbdfd3ed56
           path: .test-deps/shauth
       - uses: actions/setup-go@v6.5.0
         with:
@@ -107,7 +107,7 @@ jobs:
   runner-sockerless:
     name: Runner against Sockerless
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v7.0.0
       - uses: actions/checkout@v7.0.0
@@ -115,4 +115,4 @@ jobs:
           repository: e6qu/sockerless
           path: sockerless
       - name: Exercise the official runner against the real simulator and backend
-        run: timeout --foreground --kill-after=1m 25m env SOCKERLESS_ROOT="$GITHUB_WORKSPACE/sockerless" make runner-sockerless-test
+        run: timeout --foreground --kill-after=1m 14m env SOCKERLESS_ROOT="$GITHUB_WORKSPACE/sockerless" make runner-sockerless-test

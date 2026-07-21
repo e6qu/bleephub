@@ -92,13 +92,13 @@ func (provider *shaAuthTestProvider) withClient(request *http.Request) *http.Req
 func completeShauthIdentityConfig(issuer string) identityConfig {
 	return identityConfig{
 		shauthIssuer: issuer, shauthClientID: "bleephub", shauthClientSecret: "secret",
-		shauthPostLogoutURL: "https://bleephub.example.test/ui/signed-out",
+		shauthPostLogoutURL: "https://bleephub.example.test/auth/shauth/logout/complete",
 	}
 }
 
 func TestShauthIdentityConfigAllowsHTTPOnlyWhenExplicitlyEnabled(t *testing.T) {
 	config := completeShauthIdentityConfig("http://localhost:4444")
-	config.shauthPostLogoutURL = "http://localhost:15555/ui/signed-out"
+	config.shauthPostLogoutURL = "http://localhost:15555/auth/shauth/logout/complete"
 	if err := config.validate(); err == nil {
 		t.Fatal("HTTP OpenID Connect coordinates were accepted without the explicit local-test switch")
 	}
@@ -151,9 +151,9 @@ func TestShauthRequiresHTTPSExternalOrigin(t *testing.T) {
 	if err := validateShauthExternalURL(config, "https://bleephub.example.test"); err == nil {
 		t.Fatal("cross-origin post-logout redirect was accepted")
 	}
-	config.shauthPostLogoutURL = "https://bleephub.example.test/ui/login"
+	config.shauthPostLogoutURL = "https://bleephub.example.test/ui/signed-out"
 	if err := validateShauthExternalURL(config, "https://bleephub.example.test"); err == nil {
-		t.Fatal("auto-login post-logout redirect was accepted")
+		t.Fatal("direct signed-out landing post-logout redirect was accepted")
 	}
 }
 
@@ -252,7 +252,7 @@ func TestShauthLogoutClearsLocalSessionAndStartsIssuerLogout(t *testing.T) {
 	if err != nil || location.Path != "/oauth2/sessions/logout" {
 		t.Fatalf("logout location = %q (%v)", response.Header().Get("Location"), err)
 	}
-	if location.Query().Get("id_token_hint") != "signed.id.token" || location.Query().Get("post_logout_redirect_uri") != "https://bleephub.example.test/ui/signed-out" {
+	if location.Query().Get("id_token_hint") != "signed.id.token" || location.Query().Get("post_logout_redirect_uri") != "https://bleephub.example.test/auth/shauth/logout/complete" {
 		t.Fatalf("logout query = %v", location.Query())
 	}
 	if _, ok := s.store.LoginSessions["browser-session"]; ok {
@@ -264,6 +264,34 @@ func TestShauthLogoutClearsLocalSessionAndStartsIssuerLogout(t *testing.T) {
 		}
 	}
 	t.Fatal("logout did not expire the local browser cookie")
+}
+
+func TestShauthLogoutCompletionBridgeUsesOnlyIssuerCompletionEndpoint(t *testing.T) {
+	s := NewServer("127.0.0.1:0", zerolog.Nop())
+	s.identity = completeShauthIdentityConfig("https://auth.example.test/issuer/path")
+	request := httptest.NewRequest(http.MethodGet, "https://bleephub.example.test/auth/shauth/logout/complete?next=https%3A%2F%2Fattacker.example&redirect_uri=https%3A%2F%2Fattacker.example&code=secret", nil)
+	response := httptest.NewRecorder()
+
+	s.handleShauthLogoutComplete(response, request)
+
+	if response.Code != http.StatusSeeOther {
+		t.Fatalf("logout completion status = %d, want %d", response.Code, http.StatusSeeOther)
+	}
+	if location := response.Header().Get("Location"); location != "https://auth.example.test/oauth/logout/complete" {
+		t.Fatalf("logout completion location = %q", location)
+	}
+	if response.Header().Get("Cache-Control") != "no-store" || response.Header().Get("Pragma") != "no-cache" || response.Header().Get("Referrer-Policy") != "no-referrer" {
+		t.Fatalf("logout completion security headers = %v", response.Header())
+	}
+}
+
+func TestShauthLogoutCompletionBridgeFailsClosedWhenShauthIsDisabled(t *testing.T) {
+	s := NewServer("127.0.0.1:0", zerolog.Nop())
+	response := httptest.NewRecorder()
+	s.handleShauthLogoutComplete(response, httptest.NewRequest(http.MethodGet, "/auth/shauth/logout/complete?next=https%3A%2F%2Fattacker.example", nil))
+	if response.Code != http.StatusNotFound || response.Header().Get("Location") != "" || response.Header().Get("Cache-Control") != "no-store" {
+		t.Fatalf("disabled logout completion = %d location=%q headers=%v", response.Code, response.Header().Get("Location"), response.Header())
+	}
 }
 
 func TestShauthLogoutRevokesLocalSessionBeforeDiscoveryFailure(t *testing.T) {
