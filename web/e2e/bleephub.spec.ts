@@ -187,7 +187,13 @@ test.describe("Global navigation", () => {
 test.describe("User menu and packages", () => {
   test("labels personal destinations consistently and submits sign-out", async ({ page }) => {
     await page.goto("/ui/");
+    // Post-deployment qualification finds the signed-in user on the always
+    // visible trigger, opens this menu, and clicks the real sign-out control.
+    const identity = page.locator("[data-shauth-user]");
+    await expect(identity).toBeVisible();
+    expect((await identity.getAttribute("data-shauth-user")) ?? "").not.toBe("");
     await page.getByRole("button", { name: "Open user menu" }).click();
+    await expect(page.locator("[data-shauth-sign-out]")).toBeVisible();
     const menu = page.getByRole("menu");
     for (const label of ["My profile", "My repositories", "My gists", "My packages", "My codespaces"]) {
       await expect(menu.getByRole("menuitem", { name: label })).toBeVisible();
