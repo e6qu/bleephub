@@ -138,8 +138,9 @@ resource "aws_vpc_endpoint" "s3" {
 }
 
 resource "aws_s3_bucket" "git" {
-  bucket = local.git_bucket
-  tags   = local.common_tags
+  bucket        = local.git_bucket
+  force_destroy = var.force_destroy_storage
+  tags          = local.common_tags
 }
 
 resource "aws_s3_bucket_versioning" "git" {
@@ -157,8 +158,9 @@ resource "aws_s3_bucket_server_side_encryption_configuration" "git" {
 }
 
 resource "aws_s3_bucket" "objects" {
-  bucket = local.object_bucket
-  tags   = local.common_tags
+  bucket        = local.object_bucket
+  force_destroy = var.force_destroy_storage
+  tags          = local.common_tags
 }
 
 resource "aws_s3_bucket_versioning" "objects" {
@@ -180,8 +182,9 @@ resource "aws_s3_bucket_server_side_encryption_configuration" "objects" {
 # render a loading screen; no application, Git, object, or status data is
 # readable from this bucket.
 resource "aws_s3_bucket" "startup" {
-  bucket = local.startup_bucket
-  tags   = local.common_tags
+  bucket        = local.startup_bucket
+  force_destroy = var.force_destroy_storage
+  tags          = local.common_tags
 }
 
 resource "aws_s3_bucket_public_access_block" "startup" {
