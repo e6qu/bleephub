@@ -206,3 +206,13 @@ variable "tags" {
   type        = map(string)
   default     = {}
 }
+
+# Storage that a destroy must be able to remove. A disposable environment sets
+# this so `terraform destroy` completes without an operator emptying versioned
+# buckets by hand; a long-lived one leaves it unset so a destroy stops rather
+# than discarding data.
+variable "force_destroy_storage" {
+  description = "Delete the Git, object, and startup buckets together with their contents."
+  type        = bool
+  default     = false
+}
