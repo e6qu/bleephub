@@ -1,6 +1,9 @@
 package bleephub
 
-import "strings"
+import (
+	"crypto/subtle"
+	"strings"
+)
 
 // canAdminOrg checks if a user is an active admin of the given organization.
 // A pending (invited) admin has not accepted yet and holds no rights.
@@ -209,4 +212,15 @@ func hasTeamAccessLocked(st *Store, orgLogin string, userID int, repoFullName st
 func permissionAtLeast(perm, minPerm TeamPermission) bool {
 	levels := map[TeamPermission]int{TeamPermissionPull: 1, TeamPermissionPush: 2, TeamPermissionAdmin: 3}
 	return levels[perm] >= levels[minPerm]
+}
+
+// secretEqual compares two credential strings in constant time.
+//
+// The comparison must not short-circuit on the first differing byte: several of
+// these are reachable unauthenticated and unthrottled — the OAuth token
+// endpoint accepts a client secret from any caller — which is exactly the shape
+// a byte-at-a-time timing oracle needs. Use this for every comparison of secret
+// material: client secrets, CSRF tokens, webhook signatures, download tokens.
+func secretEqual(a, b string) bool {
+	return subtle.ConstantTimeCompare([]byte(a), []byte(b)) == 1
 }

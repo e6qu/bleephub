@@ -26,7 +26,7 @@ source or comments. The reasoning behind a fix belongs in its commit message.
 | AUTH-011 | B | identity.go:622-636, gh_oauth.go:488 | The CSRF token is set equal to the session cookie value and printed into the OAuth consent page HTML, defeating HttpOnly | open |
 | AUTH-012 | B | git_http.go:292, git_ssh.go:170, gh_branch_protection.go:1225 | Branch protection is never consulted by either git transport; `branchProtectionForRepo` has no caller outside its own file | open |
 | AUTH-013 | B | gh_oauth.go:568-599 | `redirect_uri` is taken verbatim and never compared to the app's registered callback — authorization-code interception and open redirect | open |
-| AUTH-014 | B | gh_apps_store.go:481,492 | Client secrets compared with `!=`, reachable unauthenticated and unrate-limited — byte-at-a-time timing oracle | open |
+| AUTH-014 | B | gh_apps_store.go:481,492 | Client secrets compared with `!=`, reachable unauthenticated and unrate-limited — byte-at-a-time timing oracle | fixed |
 | AUTH-015 | B | gh_middleware.go:172-175 | Every JWT verification failure is discarded and the request continues as anonymous; invalid `ghp_`/`gho_` tokens likewise | open |
 | AUTH-016 | M | gh_oauth.go:165, identity.go:577 | `browserLoginUser` accepts any PAT as a password with no scope check, laundering a restricted credential into an unrestricted session | open |
 | AUTH-017 | M | gh_apps_perms.go:135,217 | Public repo + GET bypasses scope, resource-owner and repository-selection checks — a PAT scoped to org A reads org B's Actions variable values | open |
@@ -45,7 +45,7 @@ source or comments. The reasoning behind a fix belongs in its commit message.
 | AUTH-030 | m | identity.go:459 | The OAuth client secret is reused as the HMAC key for the state cookie | open |
 | AUTH-031 | m | identity.go:642,690 | Logout Origin check is conditional on Shauth being configured, and `/ui/signed-out` destroys the session on a plain GET | open |
 | AUTH-032 | m | identity.go:635 | `Secure` inferred from a string prefix, copy-pasted at five sites, no `__Host-` prefix | open |
-| AUTH-033 | m | gh_oauth.go:538 | CSRF token compared with `!=` while `identity.go:446` correctly uses `subtle.ConstantTimeCompare` | open |
+| AUTH-033 | m | gh_oauth.go:538 | CSRF token compared with `!=` while `identity.go:446` correctly uses `subtle.ConstantTimeCompare` | fixed |
 | AUTH-034 | m | git_ssh.go:74-96 | `mustAtoi` cannot fail; discards both `Sscanf` returns and yields 0 — a latent fail-open in the SSH auth path | open |
 | AUTH-035 | m | store.go:3222 | SSH key lookup re-parses every registered key per attempt under RLock; unparseable keys silently skipped; no `MaxAuthTries` | open |
 | AUTH-036 | m | secrets.go:295 | Repo secret delete discards the existence result, returns 204 for a secret that never existed, and writes a forged audit event | open |
@@ -87,7 +87,7 @@ source or comments. The reasoning behind a fix belongs in its commit message.
 | REST-027 | B | gh_projects_classic.go:659-681 | `col` guarded on one line and dereferenced twice on the next | open |
 | REST-028 | B | gh_campaigns.go:244, gh_network_configurations.go:173, gh_code_security_configurations.go:733 | Mutators return nil on concurrent delete and the caller dereferences unconditionally | open |
 | REST-029 | B | gh_issues_rest.go:130,189 | Pull requests are invisible in the issues list and in `GET /issues/{number}`; `issueToJSON` has no `pull_request` key | open |
-| REST-030 | B | gh_request_decode.go:85 | `&json.UnmarshalTypeError{Type: nil}` — confirmed by execution to panic the moment anything formats it | open |
+| REST-030 | B | gh_request_decode.go:85 | `&json.UnmarshalTypeError{Type: nil}` — confirmed by execution to panic the moment anything formats it | fixed |
 | REST-031 | M | whole lane | One `ETag` in 117 files and it is never honored; no `If-None-Match`, no 304, no `X-Poll-Interval`, no `X-GitHub-Media-Type` | open |
 | REST-032 | M | gh_middleware.go:234, gh_api_insights.go:111 | `ghResponseWriter` erases `Flusher`/`Hijacker`, so the downstream `Flush()` is a silent no-op | open |
 | REST-033 | M | gh_pagination.go:19-35 | `page=abc`, `page=0`, `per_page=-1` silently become defaults | open |
@@ -355,8 +355,8 @@ source or comments. The reasoning behind a fix belongs in its commit message.
 |---|---|---|---|---|
 | CORE-001 | B | cmd/bleephub/main.go:51, server.go:518 | No signal handling anywhere in the server binary and `srv.Shutdown` is never called; as PID 1 the process dies instantly mid-request | open |
 | CORE-002 | B | cmd/bleephub/main.go:33 | `defer obs.Shutdown` is unreachable because every exit path goes through `os.Exit`; telemetry is never flushed | open |
-| CORE-003 | B | server.go:524 | No panic-recovery middleware; a panic yields no 500, no log, no span, and can leave the store mutex held | open |
-| CORE-004 | B | server.go:549 | `BPH_TLS_CERT` without `BPH_TLS_KEY` silently serves plaintext HTTP on the port the operator believes is TLS | open |
+| CORE-003 | B | server.go:524 | No panic-recovery middleware; a panic yields no 500, no log, no span, and can leave the store mutex held | fixed |
+| CORE-004 | B | server.go:549 | `BPH_TLS_CERT` without `BPH_TLS_KEY` silently serves plaintext HTTP on the port the operator believes is TLS | fixed |
 | CORE-005 | B | workflow_schedule.go:21, git_ssh.go:52 + 10 | Fifteen-plus goroutines with no owner; the cron dispatcher is an unstoppable `for { time.Sleep }` and the SSH listener is never closed | open |
 | CORE-006 | M | server.go:655 | The response wrapper implements neither `Flusher` nor `Hijacker`, so `Flush()` is a silent no-op server-wide | open |
 | CORE-007 | M | otel.go:128 | Log records emitted with `context.Background()`, so logs and traces can never be correlated | open |
@@ -372,12 +372,12 @@ source or comments. The reasoning behind a fix belongs in its commit message.
 | CORE-017 | M | workflows.go:809 | Job duration measured from the workflow's creation time, inflating every job in a multi-job run | open |
 | CORE-018 | M | metrics.go:14 | Job durations ring-buffered under a mutex and read by nothing | open |
 | CORE-019 | M | workflows.go:238 + 3 | Zero `RecordError`/`SetStatus` calls repo-wide, so traces cannot distinguish success from failure | open |
-| CORE-020 | M | server.go:433 | Raw query strings logged at WARN on a server that implements OAuth — codes, client secrets and tokens reach logs and telemetry | open |
+| CORE-020 | M | server.go:433 | Raw query strings logged at WARN on a server that implements OAuth — codes, client secrets and tokens reach logs and telemetry | fixed |
 | CORE-021 | M | otel.go:41, terraform/main.tf:792 | No `OTEL_*` variable in the task definition, so the whole telemetry stack is inert in the shipped deployment | open |
 | CORE-022 | M | otel.go:41 | Per-signal OTLP endpoint variables are honoured by the exporters but not by the enable gate | open |
 | CORE-023 | M | main.go:23, server.go:122 | Invalid `--log-level` and `BLEEPHUB_MAX_WORKFLOWS` silently replaced with defaults; 40+ scattered `os.Getenv` calls across 12 files | open |
 | CORE-024 | M | actions_test.go:276 | The test helper hand-builds a partial `*Server`, producing eight nil-guards in production code and leaving `NewServer` untested | open |
-| CORE-025 | M | main.go:36, persistence.go:395 | ANSI console logging in production plus 29 stdlib `log` calls that bypass zerolog, the level filter and the telemetry bridge | open |
+| CORE-025 | M | main.go:36, persistence.go:395 | ANSI console logging in production plus 29 stdlib `log` calls that bypass zerolog, the level filter and the telemetry bridge | partial — net/http ErrorLog now routed through zerolog; console-vs-JSON and the 29 stdlib log calls still open |
 | CORE-026 | M | internal/emojigen/main.go:42 | A third-party tarball downloaded by mutable tag with no checksum, no pinned commit and no client timeout, then committed | open |
 | CORE-027 | m | server.go:665 | `writeJSON` discards the encode error, shipping a truncated body with a success status | open |
 | CORE-028 | m | server.go:530 | Every HTTP span is named `bleephub` with no route attribute | open |
