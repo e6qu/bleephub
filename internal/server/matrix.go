@@ -18,8 +18,13 @@ func ExpandMatrix(m *MatrixDef) []map[string]interface{} {
 	}
 
 	combos := expandCartesian(m.Values)
-	combos = applyIncludes(combos, m.Include)
+	// Exclude first, then include. GitHub documents this order precisely so
+	// that an include entry can add back a combination exclude removed;
+	// running them the other way round lets the exclude delete what the
+	// include just restored, which is the opposite of what the workflow asked
+	// for and silently produces a smaller matrix.
 	combos = applyExcludes(combos, m.Exclude)
+	combos = applyIncludes(combos, m.Include)
 	return combos
 }
 

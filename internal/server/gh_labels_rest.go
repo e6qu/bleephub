@@ -125,11 +125,8 @@ func (s *Server) handleCreateLabel(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleListLabels(w http.ResponseWriter, r *http.Request) {
-	owner := r.PathValue("owner")
-	name := r.PathValue("repo")
-	repo := s.store.GetRepo(owner, name)
+	repo := s.lookupReadableRepoFromPath(w, r)
 	if repo == nil {
-		writeGHError(w, http.StatusNotFound, "Not Found")
 		return
 	}
 
@@ -283,11 +280,8 @@ func (s *Server) handleCreateMilestone(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleListMilestones(w http.ResponseWriter, r *http.Request) {
-	owner := r.PathValue("owner")
-	name := r.PathValue("repo")
-	repo := s.store.GetRepo(owner, name)
+	repo := s.lookupReadableRepoFromPath(w, r)
 	if repo == nil {
-		writeGHError(w, http.StatusNotFound, "Not Found")
 		return
 	}
 

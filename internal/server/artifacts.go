@@ -963,7 +963,7 @@ func (s *Server) handleCacheDownload(w http.ResponseWriter, r *http.Request) {
 		writeGHError(w, http.StatusNotFound, "Cache not found")
 		return
 	}
-	if sig := r.URL.Query().Get("sig"); entry.DownloadToken == "" || sig != entry.DownloadToken {
+	if sig := r.URL.Query().Get("sig"); entry.DownloadToken == "" || !secretEqual(sig, entry.DownloadToken) {
 		writeGHError(w, http.StatusNotFound, "Cache not found")
 		return
 	}

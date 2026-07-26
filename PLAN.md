@@ -95,10 +95,10 @@ correctness and durability fixes.
 
 | Phase | State |
 |---|---|
-| 1 — Authorization | pending |
+| 1 — Authorization | landed (resource gate + route-inventory test); classic-PAT scope enforcement still open |
 | 2 — Runner control plane | pending |
 | 3 — GraphQL | pending |
-| 4 — Crash classes | pending |
+| 4 — Crash classes | partial (map-write-under-read-lock, 9 unsynchronized reads, panic recovery) |
 | 5 — Lifecycle | pending |
 | 6 — Persistence | pending |
 | 7 — Actions engine | pending |

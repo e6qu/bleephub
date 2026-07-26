@@ -169,4 +169,22 @@ func TestPrivateRepoReadsRejectAnUnrelatedUser(t *testing.T) {
 			t.Errorf("  GET %s", path)
 		}
 	}
+
+	// Positive control. Without it a 404 above could just mean the fixture is
+	// empty — an endpoint that always 404s would look perfectly gated. The
+	// owner must be served, so the anonymous 404 is a denial and not an
+	// artifact of the repository having no content.
+	ownerToken := store.CreateToken(owner.ID, "repo")
+	for _, path := range []string{
+		"/api/v3/repos/" + ownerLogin + "/" + repoName + "/labels",
+		"/api/v3/repos/" + ownerLogin + "/" + repoName + "/branches",
+	} {
+		req := httptest.NewRequest(http.MethodGet, path, nil)
+		req.Header.Set("Authorization", "token "+ownerToken.Value)
+		w := httptest.NewRecorder()
+		handler.ServeHTTP(w, req)
+		if w.Code < 200 || w.Code >= 300 {
+			t.Errorf("owner GET %s = %d, want 2xx — the gate is refusing the owner too", path, w.Code)
+		}
+	}
 }

@@ -58,9 +58,9 @@ source or comments. The reasoning behind a fix belongs in its commit message.
 
 | ID | S | Location | Finding | Status |
 |---|---|---|---|---|
-| REST-001 | B | gh_repos_objects.go:23-26,572 | Private repo contents, commits and README readable by an anonymous caller; `lookupReadableRepoFromPath` exists and is not used | open |
-| REST-002 | B | gh_repos_refs.go:16-20,236,287 | Branch, tag and ref listings for private repos likewise anonymous | open |
-| REST-003 | B | gh_labels_rest.go:127-477 | Labels and milestones for private repos anonymous — roadmap and security leakage | open |
+| REST-001 | B | gh_repos_objects.go:23-26,572 | Private repo contents, commits and README readable by an anonymous caller; `lookupReadableRepoFromPath` exists and is not used | fixed |
+| REST-002 | B | gh_repos_refs.go:16-20,236,287 | Branch, tag and ref listings for private repos likewise anonymous | fixed |
+| REST-003 | B | gh_labels_rest.go:127-477 | Labels and milestones for private repos anonymous — roadmap and security leakage | fixed |
 | REST-004 | B | gh_branch_protection.go:243 | All 14 protection GETs anonymous | open |
 | REST-005 | B | gh_actions_extras.go:104, gh_workflows_rest.go:92 | Private build logs, artifact bytes and workflow inventory anonymous | open |
 | REST-006 | B | gh_checks_rest.go:229 | Private CI results anonymous | open |
@@ -234,9 +234,9 @@ source or comments. The reasoning behind a fix belongs in its commit message.
 | ACT-001 | B | artifacts.go:890 | `Content-Range` end is unbounded — a 1-byte body can allocate a terabyte | open |
 | ACT-002 | B | artifacts.go:305,632, timeline.go:38 | Artifact and log endpoints unauthenticated with sequential IDs; omitting the run ID returns every artifact across every repository | open |
 | ACT-003 | B | actions.go:52,180 | Unauthenticated action-tarball endpoint returns a gzip of any private repository at HEAD | open |
-| ACT-004 | B | jobs.go:353-369 | Matrix expansion shares one env map across combinations, so every job gets the last combination's values — but only when the job declares `env:`, which the existing test does not | open |
-| ACT-005 | B | jobs.go:341,374 | The `needs` rewrite depends on map iteration order and fails nondeterministically about half the time | open |
-| ACT-006 | B | jobs.go:342 | `include:`-only matrices are silently dropped; `ExpandMatrix` handles them and is never reached | open |
+| ACT-004 | B | jobs.go:353-369 | Matrix expansion shares one env map across combinations, so every job gets the last combination's values — but only when the job declares `env:`, which the existing test does not | fixed |
+| ACT-005 | B | jobs.go:341,374 | The `needs` rewrite depends on map iteration order and fails nondeterministically about half the time | fixed |
+| ACT-006 | B | jobs.go:342 | `include:`-only matrices are silently dropped; `ExpandMatrix` handles them and is never reached | fixed |
 | ACT-007 | B | webhooks.go:265 | Fork PRs never trigger any workflow; the whole fork-approval machinery is unreachable | open |
 | ACT-008 | B | webhooks.go:260,465 | Workflow files are read from repository HEAD, not the triggering ref | open |
 | ACT-009 | B | workflow_triggers.go:308 | A package-global regex cache written with no mutex from concurrent trigger evaluation — `fatal error: concurrent map writes` | open |
@@ -248,10 +248,10 @@ source or comments. The reasoning behind a fix belongs in its commit message.
 | ACT-015 | M | workflow.go:103-112 | `steps.*.env` and `steps.*.shell` are parsed with zero read sites; `working-directory`, `continue-on-error` and `timeout-minutes` are not even fields | open |
 | ACT-016 | M | jobs.go:368 | Matrix values round-trip through `map[string]string`, so `matrix.version == 3` is false where GitHub says true | open |
 | ACT-017 | M | workflows_msg.go:127 | Internal `__matrix_*` keys leak into every matrix job's shell environment | open |
-| ACT-018 | M | matrix.go:20 | `include` applied before `exclude`, reversing GitHub's documented order | open |
+| ACT-018 | M | matrix.go:20 | `include` applied before `exclude`, reversing GitHub's documented order | fixed |
 | ACT-019 | M | workflows.go:315 | Matrix group membership reverse-engineered from the job key's textual shape, so unrelated jobs named `build_1`/`build_2` share fail-fast | open |
 | ACT-020 | M | workflows.go:80,323 | `max-parallel` stored per run rather than per matrix group, last writer wins | open |
-| ACT-021 | M | workflows.go:834,1037 | `continue-on-error` does not prevent the run from failing — its entire documented purpose | open |
+| ACT-021 | M | workflows.go:834,1037 | `continue-on-error` does not prevent the run from failing — its entire documented purpose | fixed |
 | ACT-022 | M | workflows.go:1230 | A completion arriving with no result is silently recorded as successful | open |
 | ACT-023 | M | workflow_call.go:374,461 | Broken `with:`, output and secret templates are logged and skipped, so a called workflow runs with empty inputs or unauthenticated | open |
 | ACT-024 | M | workflow_call.go:398 | `"yes"` coerces to false for a boolean input and `"12abc"` to 12 for a number; `choice` options unvalidated | open |
@@ -282,7 +282,7 @@ source or comments. The reasoning behind a fix belongs in its commit message.
 | ACT-049 | m | workflow_schedule.go:35 | The dispatcher re-reads and re-parses every workflow file of every repository every minute; parse errors swallowed | open |
 | ACT-050 | m | dependabot_ingest.go:148 | Any non-numeric version segment is silently treated as not vulnerable | open |
 | ACT-051 | m | workflows_msg.go:280 | `runner.os`, `arch` and `name` are constants; the github context omits `workflow_ref` and `job_workflow_sha`, which are load-bearing for OIDC claims | open |
-| ACT-052 | m | artifacts.go:966 | The cache download token — documented as the sole access control — is compared with `!=`; no eviction, and `LastAccessedAt` is faked | open |
+| ACT-052 | m | artifacts.go:966 | The cache download token — documented as the sole access control — is compared with `!=`; no eviction, and `LastAccessedAt` is faked | partial — constant-time compare landed; eviction and LastAccessedAt still open |
 
 ## STORE — persistence, storage, dqlite, S3
 
@@ -369,8 +369,8 @@ source or comments. The reasoning behind a fix belongs in its commit message.
 | CORE-014 | M | persistence.go:400 | `MustPut` calls `log.Fatalf` from inside a request handler; with one task and no minimum healthy percent that is a full outage on one transient write error | open |
 | CORE-015 | M | persistence.go:386 | Unbounded startup retry before any listener exists and before signal handling, invisible to health checks | open |
 | CORE-016 | M | server.go:445 | `/health` returns a hardcoded `ok`, touches no dependency, and leaks version and enterprise slug unauthenticated; no readiness endpoint exists | open |
-| CORE-017 | M | workflows.go:809 | Job duration measured from the workflow's creation time, inflating every job in a multi-job run | open |
-| CORE-018 | M | metrics.go:14 | Job durations ring-buffered under a mutex and read by nothing | open |
+| CORE-017 | M | workflows.go:809 | Job duration measured from the workflow's creation time, inflating every job in a multi-job run | fixed |
+| CORE-018 | M | metrics.go:14 | Job durations ring-buffered under a mutex and read by nothing | fixed |
 | CORE-019 | M | workflows.go:238 + 3 | Zero `RecordError`/`SetStatus` calls repo-wide, so traces cannot distinguish success from failure | open |
 | CORE-020 | M | server.go:433 | Raw query strings logged at WARN on a server that implements OAuth — codes, client secrets and tokens reach logs and telemetry | fixed |
 | CORE-021 | M | otel.go:41, terraform/main.tf:792 | No `OTEL_*` variable in the task definition, so the whole telemetry stack is inert in the shipped deployment | open |
@@ -381,7 +381,7 @@ source or comments. The reasoning behind a fix belongs in its commit message.
 | CORE-026 | M | internal/emojigen/main.go:42 | A third-party tarball downloaded by mutable tag with no checksum, no pinned commit and no client timeout, then committed | open |
 | CORE-027 | m | server.go:665 | `writeJSON` discards the encode error, shipping a truncated body with a success status | open |
 | CORE-028 | m | server.go:530 | Every HTTP span is named `bleephub` with no route attribute | open |
-| CORE-029 | m | metrics.go:76 | `ReadMemStats` stops the world while holding the metrics mutex | open |
+| CORE-029 | m | metrics.go:76 | `ReadMemStats` stops the world while holding the metrics mutex | fixed |
 | CORE-030 | m | metrics.go:9 | JSON tags on a struct that is never marshalled, implying a contract that does not exist | open |
 | CORE-031 | m | emojiart.go:94 | Byte-index slicing on names that may be multibyte | open |
 | CORE-032 | m | ui_embed.go:21 | `/ui/` bypasses the route registry, weakening the enumerable-surface invariant to an undocumented exception | open |

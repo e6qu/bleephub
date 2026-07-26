@@ -123,8 +123,9 @@ func (s *Server) requirePerm(scope permScope, level permLevel, next http.Handler
 					return
 				}
 			}
-			if !s.principalMayAccessTarget(r, user, resourceCapabilityFor(scope, level)) {
-				denyResourceAccess(w, resourceCapabilityFor(scope, level))
+			need := resourceCapabilityFor(scope, level, r.Method)
+			if !s.principalMayAccessTarget(r, user, need) {
+				denyResourceAccess(w, need)
 				return
 			}
 		default:
@@ -136,16 +137,31 @@ func (s *Server) requirePerm(scope permScope, level permLevel, next http.Handler
 	}
 }
 
-// resourceCapabilityFor maps a permission scope and level onto the capability
-// the caller must hold on the resource named in the path. Scopes that
-// administer a resource demand admin whatever level they were declared with:
-// on GitHub, writing a secret or a protection rule is an administrative act,
-// not a write to repository contents.
-func resourceCapabilityFor(scope permScope, level permLevel) permLevel {
+// resourceCapabilityFor maps a permission scope, level and request method onto
+// the capability the caller must hold on the resource named in the path.
+//
+// Two adjustments to the declared level, both matching GitHub:
+//
+// Scopes that administer a resource demand admin whatever level they were
+// declared with — writing a secret or a branch-protection rule is an
+// administrative act, not a write to repository contents.
+//
+// And "write" on the collaborative scopes does not mean repository write.
+// Anyone who can read a repository may open an issue on it, propose a pull
+// request from a fork, or submit a review; those are how outside contributors
+// participate, and demanding push access for them would wall off the normal
+// contribution path. Creating is therefore gated on read. Editing and deleting
+// still require push, which is what keeps a stranger from deleting labels or
+// closing other people's issues.
+func resourceCapabilityFor(scope permScope, level permLevel, method string) permLevel {
 	switch scope {
 	case scopeAdministration, scopeOrgAdministration, scopeSecrets,
 		scopeDependabotSecrets, scopePATs, scopePATRequests:
 		return permAdmin
+	case scopeIssues, scopePullRequests, scopeReactions, scopeProjects:
+		if method == http.MethodPost {
+			return permRead
+		}
 	}
 	return level
 }

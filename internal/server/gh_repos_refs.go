@@ -23,9 +23,8 @@ func (s *Server) handleListTags(w http.ResponseWriter, r *http.Request) {
 	owner := r.PathValue("owner")
 	repoName := r.PathValue("repo")
 
-	repo := s.store.GetRepo(owner, repoName)
+	repo := s.lookupReadableRepoFromPath(w, r)
 	if repo == nil {
-		writeGHError(w, http.StatusNotFound, "Not Found")
 		return
 	}
 
@@ -104,9 +103,8 @@ func (s *Server) handleGetRefs(w http.ResponseWriter, r *http.Request) {
 	repoName := r.PathValue("repo")
 	refPath := r.PathValue("ref")
 
-	repo := s.store.GetRepo(owner, repoName)
+	repo := s.lookupReadableRepoFromPath(w, r)
 	if repo == nil {
-		writeGHError(w, http.StatusNotFound, "Not Found")
 		return
 	}
 
@@ -236,9 +234,8 @@ func encodeNodeID(typ string, id int, suffix string) string {
 func (s *Server) handleListBranches(w http.ResponseWriter, r *http.Request) {
 	owner := r.PathValue("owner")
 	repoName := r.PathValue("repo")
-	repo := s.store.GetRepo(owner, repoName)
+	repo := s.lookupReadableRepoFromPath(w, r)
 	if repo == nil {
-		writeGHError(w, http.StatusNotFound, "Not Found")
 		return
 	}
 
@@ -289,9 +286,8 @@ func (s *Server) handleGetBranch(w http.ResponseWriter, r *http.Request) {
 	repoName := r.PathValue("repo")
 	branch := r.PathValue("branch")
 
-	repo := s.store.GetRepo(owner, repoName)
+	repo := s.lookupReadableRepoFromPath(w, r)
 	if repo == nil {
-		writeGHError(w, http.StatusNotFound, "Not Found")
 		return
 	}
 
@@ -327,9 +323,8 @@ func (s *Server) handleDeleteRef(w http.ResponseWriter, r *http.Request) {
 	repoName := r.PathValue("repo")
 	refPath := r.PathValue("ref")
 
-	repo := s.store.GetRepo(owner, repoName)
+	repo := s.lookupReadableRepoFromPath(w, r)
 	if repo == nil {
-		writeGHError(w, http.StatusNotFound, "Not Found")
 		return
 	}
 

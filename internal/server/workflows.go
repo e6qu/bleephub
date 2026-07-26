@@ -299,12 +299,16 @@ func (s *Server) submitWorkflow(ctx context.Context, serverURL string, wf *Workf
 			wfJob.DisplayName = jd.Name
 		}
 
-		// Extract matrix values from __matrix_ env prefix (set by expandMatrixJobs)
+		// Extract matrix values from the prefix expandMatrixJobs stashed them
+		// under. Smuggling them through the environment map is the reason the
+		// keys have to be filtered back out again before the job message is
+		// built, and the reason matrix values lose their type on the way; both
+		// are recorded as open.
 		if jd.Env != nil {
 			matrixVals := make(map[string]interface{})
 			for k, v := range jd.Env {
-				if len(k) > 9 && k[:9] == "__matrix_" {
-					matrixVals[k[9:]] = v
+				if name, ok := strings.CutPrefix(k, matrixEnvPrefix); ok {
+					matrixVals[name] = v
 				}
 			}
 			if len(matrixVals) > 0 {
@@ -807,8 +811,7 @@ func (s *Server) onJobCompleted(ctx context.Context, jobID, result string) {
 	s.store.mu.Unlock()
 
 	if s.metrics != nil {
-		duration := time.Since(foundWf.CreatedAt)
-		s.metrics.RecordJobCompletion(string(foundJob.Result), duration)
+		s.metrics.RecordJobCompletion(foundJob)
 	}
 
 	s.logger.Info().
@@ -829,16 +832,7 @@ func (s *Server) onJobCompleted(ctx context.Context, jobID, result string) {
 
 	// Check if all jobs are done (after dispatch, which may skip dependents)
 	s.store.mu.Lock()
-	allDone := true
-	anyFailed := false
-	for _, wfJob := range foundWf.Jobs {
-		if wfJob.Status != JobStatusCompleted && wfJob.Status != JobStatusSkipped {
-			allDone = false
-		}
-		if wfJob.Result == ResultFailure || wfJob.Result == ResultCancelled {
-			anyFailed = true
-		}
-	}
+	allDone, anyFailed := workflowRollupLocked(foundWf)
 
 	// dispatchReadyJobs may already have finalized the run (a server-
 	// completed collector can be the last node); don't double-complete.
@@ -1032,16 +1026,7 @@ func (s *Server) applyDeploymentReview(ctx context.Context, wf *Workflow, envIDs
 // completion event.
 func (s *Server) finalizeWorkflowIfDone(wf *Workflow) {
 	s.store.mu.Lock()
-	allDone := true
-	anyFailed := false
-	for _, wfJob := range wf.Jobs {
-		if wfJob.Status != JobStatusCompleted && wfJob.Status != JobStatusSkipped {
-			allDone = false
-		}
-		if wfJob.Result == ResultFailure || wfJob.Result == ResultCancelled {
-			anyFailed = true
-		}
-	}
+	allDone, anyFailed := workflowRollupLocked(wf)
 	if allDone && wf.Status != WorkflowStatusCompleted {
 		wf.Status = WorkflowStatusCompleted
 		switch {
@@ -1492,4 +1477,35 @@ func validateJobGraph(wf *WorkflowDef) error {
 		}
 	}
 	return nil
+}
+
+// workflowRollupLocked reports whether every job in a run has reached a
+// terminal state, and whether any of them should make the run fail.
+//
+// A job marked continue-on-error is excluded from the failure roll-up. That is
+// the documented purpose of the key — it "prevents a workflow run from failing
+// when a job fails" — and the dependency-skip logic already honoured it; only
+// the conclusion did not, so a run whose one failure was explicitly tolerated
+// still went red. Cancellation is not tolerated: continue-on-error speaks to
+// failure, not to a run the operator stopped.
+//
+// This existed as two byte-identical copies, one in onJobCompleted and one in
+// finalizeWorkflowIfDone. Both are now this function, so the run conclusion
+// cannot depend on which path finalized it.
+//
+// The caller must hold the store lock.
+func workflowRollupLocked(wf *Workflow) (allDone, anyFailed bool) {
+	allDone = true
+	for _, wfJob := range wf.Jobs {
+		if wfJob.Status != JobStatusCompleted && wfJob.Status != JobStatusSkipped {
+			allDone = false
+		}
+		switch {
+		case wfJob.Result == ResultCancelled:
+			anyFailed = true
+		case wfJob.Result == ResultFailure && !wfJob.ContinueOnError:
+			anyFailed = true
+		}
+	}
+	return allDone, anyFailed
 }

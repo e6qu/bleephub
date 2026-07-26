@@ -21,16 +21,29 @@ func TestMetricsSubmitIncrement(t *testing.T) {
 
 func TestMetricsCompletionByResult(t *testing.T) {
 	m := NewMetrics()
-	m.RecordJobCompletion("success", 100*time.Millisecond)
-	m.RecordJobCompletion("success", 200*time.Millisecond)
-	m.RecordJobCompletion("failure", 50*time.Millisecond)
+	completed := func(result Result, d time.Duration) *WorkflowJob {
+		start := time.Now().Add(-d)
+		return &WorkflowJob{Result: result, StartedAt: start, CompletedAt: start.Add(d)}
+	}
+	m.RecordJobCompletion(completed(ResultSuccess, 100*time.Millisecond))
+	m.RecordJobCompletion(completed(ResultSuccess, 200*time.Millisecond))
+	m.RecordJobCompletion(completed(ResultFailure, 50*time.Millisecond))
 
 	snap := m.Snapshot()
-	if snap.JobCompletions["success"] != 2 {
-		t.Errorf("success = %d, want 2", snap.JobCompletions["success"])
+	if snap.JobCompletions[string(ResultSuccess)] != 2 {
+		t.Errorf("success = %d, want 2", snap.JobCompletions[string(ResultSuccess)])
 	}
-	if snap.JobCompletions["failure"] != 1 {
-		t.Errorf("failure = %d, want 1", snap.JobCompletions["failure"])
+	if snap.JobCompletions[string(ResultFailure)] != 1 {
+		t.Errorf("failure = %d, want 1", snap.JobCompletions[string(ResultFailure)])
+	}
+	// The durations were accumulated and then read by nothing before; assert
+	// they now reach the snapshot, so the field cannot quietly go write-only
+	// again.
+	if snap.JobDurationP50Sec <= 0 {
+		t.Errorf("p50 job duration = %v, want a positive value", snap.JobDurationP50Sec)
+	}
+	if snap.JobDurationP99Sec < snap.JobDurationP50Sec {
+		t.Errorf("p99 %v < p50 %v", snap.JobDurationP99Sec, snap.JobDurationP50Sec)
 	}
 }
 
