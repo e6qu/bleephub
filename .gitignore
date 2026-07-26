@@ -11,3 +11,25 @@ web/.auth/
 web/test-results/
 web/playwright-report/
 *.tsbuildinfo
+
+# Terraform state holds the SSH host private key and the admin token in
+# cleartext. The module declares no backend, so a bare `terraform apply` in
+# this directory writes them here — these must never be committable.
+*.tfstate
+*.tfstate.*
+.terraform.tfstate.lock.info
+*.tfvars
+*.auto.tfvars
+!terraform.tfvars.example
+
+# Test and coverage output.
+coverage.out
+coverage.html
+*.test
+
+# Local credentials.
+.env
+.env.*
+
+# macOS.
+.DS_Store

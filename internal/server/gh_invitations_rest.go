@@ -383,9 +383,5 @@ func invitationMatchesUser(inv *RepoInvitation, user *User) bool {
 	return false
 }
 
-// GetRepoByFullName returns a repo by its "owner/name" key, or nil.
-func (st *Store) GetRepoByFullName(fullName string) *Repo {
-	st.mu.RLock()
-	defer st.mu.RUnlock()
-	return st.ReposByName[fullName]
-}
+// GetRepoByFullName lives with the other repository accessors in
+// store_repos.go.

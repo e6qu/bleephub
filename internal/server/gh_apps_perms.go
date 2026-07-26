@@ -82,6 +82,10 @@ func parsePermLevel(s string) permLevel {
 
 // requirePerm returns a wrapper that enforces (scope, level) on the request's auth.
 //
+// Every branch reaches exactly one of: an explicit denial, or the resource
+// check below. There is deliberately no path that admits a caller without
+// deciding anything — a credential shape is not an authorization.
+//
 // Usage:
 //
 //	s.route("PATCH /api/v3/repos/{owner}/{repo}", s.requirePerm(scopeContents, permWrite, s.handleUpdateRepo))
@@ -119,6 +123,10 @@ func (s *Server) requirePerm(scope permScope, level permLevel, next http.Handler
 					return
 				}
 			}
+			if !s.principalMayAccessTarget(r, user, resourceCapabilityFor(scope, level)) {
+				denyResourceAccess(w, resourceCapabilityFor(scope, level))
+				return
+			}
 		default:
 			writeGHError(w, http.StatusUnauthorized, "Bad credentials")
 			return
@@ -126,6 +134,65 @@ func (s *Server) requirePerm(scope permScope, level permLevel, next http.Handler
 
 		next(w, r)
 	}
+}
+
+// resourceCapabilityFor maps a permission scope and level onto the capability
+// the caller must hold on the resource named in the path. Scopes that
+// administer a resource demand admin whatever level they were declared with:
+// on GitHub, writing a secret or a protection rule is an administrative act,
+// not a write to repository contents.
+func resourceCapabilityFor(scope permScope, level permLevel) permLevel {
+	switch scope {
+	case scopeAdministration, scopeOrgAdministration, scopeSecrets,
+		scopeDependabotSecrets, scopePATs, scopePATRequests:
+		return permAdmin
+	}
+	return level
+}
+
+// principalMayAccessTarget resolves the repository or organization named in the
+// request path and reports whether the user holds the required capability on
+// it. A request naming no resource carries no resource decision to make and is
+// admitted — the handler's own checks then apply.
+func (s *Server) principalMayAccessTarget(r *http.Request, user *User, need permLevel) bool {
+	if user == nil {
+		return false
+	}
+	if user.SiteAdmin {
+		return true
+	}
+	if repo := s.repoFromPATRequest(r); repo != nil {
+		switch {
+		case need >= permAdmin:
+			return canAdminRepo(s.store, user, repo)
+		case need >= permWrite:
+			return canPushRepo(s.store, user, repo)
+		default:
+			return canReadRepo(s.store, user, repo)
+		}
+	}
+	// Organization scopes are only gated at admin here. Read and write access
+	// to org-scoped collections varies per endpoint on GitHub, so tightening
+	// those belongs with the per-family resolvers rather than in this wrapper.
+	if need >= permAdmin {
+		if orgLogin := r.PathValue("org"); orgLogin != "" {
+			if org := s.store.GetOrg(orgLogin); org != nil {
+				return canAdminOrg(s.store, user, org)
+			}
+		}
+	}
+	return true
+}
+
+// denyResourceAccess answers a failed resource check. A denied read is
+// answered 404 so the response cannot be used to prove a private resource
+// exists; write and admin denials are 403, as on GitHub.
+func denyResourceAccess(w http.ResponseWriter, need permLevel) {
+	if need >= permWrite {
+		writeGHError(w, http.StatusForbidden, "Must have admin rights to Repository.")
+		return
+	}
+	writeGHError(w, http.StatusNotFound, "Not Found")
 }
 
 func (s *Server) fineGrainedPATAllows(r *http.Request, token *Token, scope permScope, level permLevel) bool {

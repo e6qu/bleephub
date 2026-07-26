@@ -8,19 +8,31 @@ on:
 permissions:
   contents: read
 
+# Without this, a force-push leaves the superseded run executing all seven jobs
+# to completion — roughly ninety runner-minutes spent on a commit nobody is
+# waiting for, while the run that matters queues behind it.
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   server:
     name: Go server
     runs-on: ubuntu-latest
-    timeout-minutes: 12
+    timeout-minutes: 25
     steps:
       - uses: actions/checkout@v7.0.0
       - uses: actions/setup-go@v6.5.0
         with:
           go-version-file: go.mod
           cache: true
+      # The suite takes a little over seven minutes on a warm developer
+      # machine. The previous 8m budget left about nine percent of headroom, so
+      # a slower runner turned a slow suite into a timeout — which surfaces as a
+      # hung test rather than a slow one, and sends whoever is on the PR looking
+      # for a deadlock that isn't there.
       - name: Run the complete server suite against MinIO S3
-        run: go test -tags noui -count=1 -timeout 8m ./...
+        run: go test -tags noui -count=1 -timeout 20m ./...
 
   web:
     name: Web application

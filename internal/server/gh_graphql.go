@@ -140,7 +140,20 @@ func (s *Server) registerGHGraphQLRoutes() {
 }
 
 // handleGraphQL executes a GraphQL query.
+//
+// The endpoint requires authentication. GitHub's /graphql rejects every
+// anonymous request with 401 and has no public read surface at all, which
+// matters here for more than parity: resolvers reach the store directly, so an
+// anonymous caller admitted at this door is a caller inside every connection
+// the schema exposes.
 func (s *Server) handleGraphQL(w http.ResponseWriter, r *http.Request) {
+	if ghUserFromContext(r.Context()) == nil &&
+		ghInstallationTokenFromContext(r.Context()) == nil &&
+		ghUserToServerTokenFromContext(r.Context()) == nil {
+		writeGHError(w, http.StatusUnauthorized, "This endpoint requires you to be authenticated.")
+		return
+	}
+
 	var req struct {
 		Query         string                 `json:"query"`
 		Variables     map[string]interface{} `json:"variables"`

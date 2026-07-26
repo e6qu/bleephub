@@ -120,6 +120,23 @@ func defaultRepoActionsPermissions() *RepoActionsPermissions {
 	}
 }
 
+// lookupOrgActionsPermissionsLocked returns an org's stored Actions settings
+// without creating or amending them, and is therefore safe to call while
+// holding only a read lock. It returns nil when the org has never been
+// configured; callers that need a value should fall back to
+// defaultOrgActionsPermissions rather than materializing one here.
+func (st *Store) lookupOrgActionsPermissionsLocked(orgLogin string) *OrgActionsPermissions {
+	if st.OrgActionsPermissions == nil {
+		return nil
+	}
+	return st.OrgActionsPermissions[orgLogin]
+}
+
+// getOrgActionsPermissionsLocked materializes an org's Actions settings,
+// creating the entry and filling in defaults for fields whose zero value is not
+// a valid configuration. It writes to the store, so the caller must hold the
+// WRITE lock — a read lock here is a concurrent map write, which is fatal and
+// unrecoverable rather than a recoverable panic.
 func (st *Store) getOrgActionsPermissionsLocked(orgLogin string) *OrgActionsPermissions {
 	if st.OrgActionsPermissions == nil {
 		st.OrgActionsPermissions = map[string]*OrgActionsPermissions{}
@@ -234,7 +251,10 @@ func (st *Store) RemoveOrgSelectedRepo(orgLogin string, repoID int) {
 	st.mu.Lock()
 	defer st.mu.Unlock()
 	p := st.getOrgActionsPermissionsLocked(orgLogin)
-	kept := p.SelectedRepositoryIDs[:0]
+	// A fresh slice rather than the in-place s[:0] idiom: the old backing
+	// array is still referenced by any list a reader was handed earlier, and
+	// rewriting it in place mutates their copy retroactively.
+	kept := make([]int, 0, len(p.SelectedRepositoryIDs))
 	for _, id := range p.SelectedRepositoryIDs {
 		if id != repoID {
 			kept = append(kept, id)
@@ -249,15 +269,21 @@ func (st *Store) SetOrgSelectedRepos(orgLogin string, repoIDs []int) {
 	st.mu.Lock()
 	defer st.mu.Unlock()
 	p := st.getOrgActionsPermissionsLocked(orgLogin)
-	p.SelectedRepositoryIDs = repoIDs
+	p.SelectedRepositoryIDs = append([]int(nil), repoIDs...)
 	st.persistOrgActionsPermissionsLocked(orgLogin)
 }
 
-// ListOrgSelectedRepos returns the org's selected repository IDs.
+// ListOrgSelectedRepos returns the org's selected repository IDs. An org that
+// has never been configured has no selected list; reporting that as empty is
+// correct and, unlike materializing a default here, does not write to the
+// store from underneath a read lock.
 func (st *Store) ListOrgSelectedRepos(orgLogin string) []int {
 	st.mu.RLock()
 	defer st.mu.RUnlock()
-	p := st.getOrgActionsPermissionsLocked(orgLogin)
+	p := st.lookupOrgActionsPermissionsLocked(orgLogin)
+	if p == nil {
+		return nil
+	}
 	out := make([]int, len(p.SelectedRepositoryIDs))
 	copy(out, p.SelectedRepositoryIDs)
 	return out

@@ -13,7 +13,7 @@ source or comments. The reasoning behind a fix belongs in its commit message.
 
 | ID | S | Location | Finding | Status |
 |---|---|---|---|---|
-| AUTH-001 | B | gh_apps_perms.go:100-128 | `requirePerm` is a credential-shape gate, not an authorization gate: for a classic PAT or any browser session it evaluates no predicate and falls through to the handler | open |
+| AUTH-001 | B | gh_apps_perms.go:100-128 | `requirePerm` is a credential-shape gate, not an authorization gate: for a classic PAT or any browser session it evaluates no predicate and falls through to the handler | partial — resource check now enforced; classic-PAT scope enforcement still open |
 | AUTH-002 | B | gh_apps_perms.go:113 | `token.Scopes` is stored, persisted and emitted as `X-OAuth-Scopes` but enforced nowhere — a PAT scoped `read:org` can delete organizations | open |
 | AUTH-003 | B | auth.go:19-29, agents.go:33,180, broker.go:112 | The entire `/_apis/` runner protocol has no authentication; `ghHeadersMiddleware` does not even run on it | open |
 | AUTH-004 | B | secrets_vars_inject.go:39 | Job messages carry every org/repo/environment secret in plaintext to any caller who can poll the broker | open |
@@ -70,8 +70,8 @@ source or comments. The reasoning behind a fix belongs in its commit message.
 | REST-010 | B | gh_branch_protection.go:141 | All 41 branch-protection routes unauthorized — privilege escalation against the merge gate in the same file | open |
 | REST-011 | B | gh_dependabot.go:22,242,259 | 13 Dependabot secret handlers with no collaborator or admin check | open |
 | REST-012 | B | gh_apps_rest.go:916-973 | Installation repository allowlist mutable by any user on an arbitrary installation ID; `user` is resolved and never used | open |
-| REST-013 | B | gh_actions_permissions.go:257-263 | Map write performed under a read lock — `fatal error: concurrent map writes`, unrecoverable | open |
-| REST-014 | B | gh_notifications.go:89, gh_rulesets.go:135, gh_migrations.go:414, gh_apps_oauth_mgmt.go:323 | Eight unsynchronized reads of maps written under the write lock — `fatal error: concurrent map read and map write` | open |
+| REST-013 | B | gh_actions_permissions.go:257-263 | Map write performed under a read lock — `fatal error: concurrent map writes`, unrecoverable | fixed |
+| REST-014 | B | gh_notifications.go:89, gh_rulesets.go:135, gh_migrations.go:414, gh_apps_oauth_mgmt.go:323 | Eight unsynchronized reads of maps written under the write lock — `fatal error: concurrent map read and map write` | partial — 9 verified sites converted; 6 more sit inside a held lock and need per-site work |
 | REST-015 | B | gh_codespaces.go:139, gh_gists_rest.go:436, +9 more | Live store pointers rendered outside the lock; `populateGistURLs` writes a request-derived base URL into the shared object on every GET | open |
 | REST-016 | B | gh_search.go:94-149 | Every unrecognized search qualifier is silently discarded, returning the unfiltered universe with `incomplete_results: false` | open |
 | REST-017 | B | gh_search.go:189,339 | Search results gathered by ranging a Go map and never ordered before slicing — pages overlap and omit nondeterministically | open |
@@ -175,7 +175,7 @@ source or comments. The reasoning behind a fix belongs in its commit message.
 
 | ID | S | Location | Finding | Status |
 |---|---|---|---|---|
-| GQL-001 | B | gh_graphql.go:138-143 | `POST /api/graphql` serves anonymous requests; real GitHub 401s every unauthenticated request | open |
+| GQL-001 | B | gh_graphql.go:138-143 | `POST /api/graphql` serves anonymous requests; real GitHub 401s every unauthenticated request | fixed |
 | GQL-002 | B | gh_repos_graphql.go:693, store_repos.go:1249 | `user(login:).repositories` has no visibility filter and each leaked node is a live handle into issues, PRs, discussions and releases | open |
 | GQL-003 | B | gh_repos_graphql.go:901 + 22 siblings | No mutation in the lane calls any permission helper — any authenticated user can delete any repository | open |
 | GQL-004 | B | gh_discussions_graphql.go:934,959 | Two discussion answer mutations skip authentication entirely | open |
@@ -332,7 +332,7 @@ source or comments. The reasoning behind a fix belongs in its commit message.
 | STORE-042 | M | store_packages.go:275 | Missing the "persistence implies object store" guard its sibling has, so metadata replicates while bytes stay on one node | open |
 | STORE-043 | M | store_projects_v2.go:782 | Field update re-mints every option ID, dangling every item's stored value | open |
 | STORE-044 | M | store_issues.go:718 + 3 | Caller slices and maps adopted by reference across the store boundary | open |
-| STORE-045 | M | store_repos.go:1029 + 2 | In-place `s[:0]` filtering rewrites the backing array readers already hold | open |
+| STORE-045 | M | store_repos.go:1029 + 2 | In-place `s[:0]` filtering rewrites the backing array readers already hold | partial — fixed in gh_actions_permissions.go |
 | STORE-046 | M | store_pulls.go:521 | Full scans where an index exists, giving path-dependent answers between sibling endpoints | open |
 | STORE-047 | m | persistence.go:416 | One process-wide mutex guards every operation and covers marshalling, unlike `PutBatch` | open |
 | STORE-048 | m | s3fs.go:426 | One delete per object with no paginator under a fixed wall-clock budget covering all pages | open |
@@ -463,7 +463,7 @@ source or comments. The reasoning behind a fix belongs in its commit message.
 | TEST-022 | M | ci.yml, vitest configs | No coverage measurement in either language | open |
 | TEST-023 | M | run-integration.sh:946 | The expected-conclusion parameter is never overridden at any of 11 call sites, so no workflow step is ever made to fail | open |
 | TEST-024 | M | bleephub_ecs_test.go:80, Dockerfile:83 | Test dependencies cloned from a branch tip and downloaded without checksums | open |
-| TEST-025 | M | README.md:301,443,14 | Three documented claims about the test architecture contradict the code | open |
+| TEST-025 | M | README.md:301,443,14 | Three documented claims about the test architecture contradict the code | fixed |
 | TEST-026 | M | bleephub.spec.ts:322 | Five e2e setup calls with fixed names and an unconditional catch, plus an empty-state assertion depending on file ordering | open |
 | TEST-027 | M | core/e2e, e2e/shauth-sso.mjs | Orphaned e2e suites unreachable from any config or script | open |
 | TEST-028 | M | hooks.test.tsx:56 | A test named for interval refetching has no fake timers and would pass if the interval were deleted | open |
@@ -493,8 +493,8 @@ source or comments. The reasoning behind a fix belongs in its commit message.
 | PAR-012 | M | openapi_shape_validator_test.go:20 | Three stated invariants — citation, bug ID, only-shrinks — are enforced by nothing and are all currently false | open |
 | PAR-013 | M | openapi_shape_validator_test.go:134 | Requests, parameters, headers, error responses, empty bodies and non-JSON responses are all unvalidated | open |
 | PAR-014 | M | spec `/copilot-spaces*` | 28 real operations with no route — the only wholly unimplemented family | open |
-| PAR-015 | M | README.md:444 | Claims one allowlist entry where there are 60, claims the list only shrinks, and links the dead copy | open |
-| PAR-016 | M | README.md:443 | Claims paths cannot be invented, omitting an 80-entry escape hatch that is in active use | open |
+| PAR-015 | M | README.md:444 | Claims one allowlist entry where there are 60, claims the list only shrinks, and links the dead copy | fixed |
+| PAR-016 | M | README.md:443 | Claims paths cannot be invented, omitting an 80-entry escape hatch that is in active use | fixed |
 | PAR-017 | M | BLEEPHUB_GITHUB_API_PARITY.md:22 | Claims the surface covers the description (measured 93.0%) and credits a test that admits inventions | open |
 | PAR-018 | M | specs/simulator-surfaces/ | 19 cited handlers do not exist, and the status legend cannot express "not implemented" | open |
 | PAR-019 | M | BLEEPHUB_GH_CLI.md:115,146 | Two cross-references point at spec content that does not exist | open |
@@ -528,7 +528,7 @@ source or comments. The reasoning behind a fix belongs in its commit message.
 | CI-014 | B | dqlite-node/main.go:1 | The storage quorum binary is behind a build tag CI never enables and first compiles after merge | open |
 | CI-015 | B | publish-container.yml:3 | The release Dockerfiles are never built on pull requests | open |
 | CI-016 | M | publish-container.yml:11 | `cancel-in-progress` on a publishing workflow can orphan architecture tags with no manifest | open |
-| CI-017 | M | ci.yml:3 | No concurrency group; superseded runs burn ~90 runner-minutes per force-push | open |
+| CI-017 | M | ci.yml:3 | No concurrency group; superseded runs burn ~90 runner-minutes per force-push | fixed |
 | CI-018 | M | both workflows | Every action pinned by mutable tag, one by floating major, in a workflow holding `packages: write` | open |
 | CI-019 | M | ci.yml:16-116 | Checkout duplicated eight times and the Bun version hardcoded in four places | open |
 | CI-020 | M | ci.yml:33 vs Dockerfile.release:1 | CI validates the UI with Bun 1.3.14; the shipped image builds it with 1.2.19 | open |
@@ -541,7 +541,7 @@ source or comments. The reasoning behind a fix belongs in its commit message.
 | CI-027 | M | 6 Dockerfiles | Every base image referenced by mutable tag | open |
 | CI-028 | M | Dockerfile.release:33 | The production runtime links against a development PPA with no version pin, and the Jekyll gem tree has no lock | open |
 | CI-029 | M | Dockerfile.release:43 | The server image runs as root with no health check while the sibling runner image drops privileges correctly | open |
-| CI-030 | M | .github/ | No dependency update automation for five ecosystems | open |
+| CI-030 | M | .github/ | No dependency update automation for five ecosystems | fixed |
 | CI-031 | M | README.md | 22 of 46 environment variables undocumented, including every dqlite coordinate and the SSH host key | open |
 | CI-032 | M | gemoji_catalog.txt | A vendored dataset with no provenance metadata of any kind | open |
 | CI-033 | M | publish-container.yml:190 | Unguarded deletes against four public packages on every merge; an empty keep-set selects everything | open |
@@ -553,7 +553,7 @@ source or comments. The reasoning behind a fix belongs in its commit message.
 | CI-039 | M | ci.yml:84-118 | A third of CI cannot run without two other repositories being structurally intact | open |
 | CI-040 | M | repo root | No CODEOWNERS, CONTRIBUTING, templates or documented required checks | open |
 | CI-041 | m | Dockerfile.release:22 | No `-trimpath`, and two of three shipped binaries carry no version stamp | open |
-| CI-042 | m | .gitignore | Missing state files, tfvars, coverage output, env files and OS junk | open |
+| CI-042 | m | .gitignore | Missing state files, tfvars, coverage output, env files and OS junk | fixed |
 | CI-043 | m | .terraform.lock.hcl | One platform hash while CI runs another, and a locked provider declared nowhere | open |
 | CI-044 | m | terraform/versions.tf:2 | Version constraints admit releases CI never tests | open |
 | CI-045 | m | terraform/*/Dockerfile | Two unreferenced, non-functional Dockerfiles | open |
@@ -568,7 +568,7 @@ source or comments. The reasoning behind a fix belongs in its commit message.
 | CI-054 | m | scripts/knip.sh:7 | The gate ignores the exit code and decides pass/fail by grepping free text | open |
 | CI-055 | m | scripts/jscpd.sh:10 | Disables errexit and matches console wording that upstream is free to change | open |
 | CI-056 | m | ci.yml:31-103 | Three jobs perform a cold dependency install while the Go jobs and the Dockerfile cache correctly | open |
-| CI-057 | m | Makefile:15, ci.yml:23 | The server suite runs 437s against an 8m timeout — 9% headroom, and a slower runner turns it into a failure that reads as a hang | open |
+| CI-057 | m | Makefile:15, ci.yml:23 | The server suite runs 437s against an 8m timeout — 9% headroom, and a slower runner turns it into a failure that reads as a hang | fixed |
 
 ## ARCH — recorded, deliberately not attempted on this branch
 

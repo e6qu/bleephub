@@ -235,20 +235,19 @@ func TestGHGraphQLIntrospection(t *testing.T) {
 	}
 }
 
-// TestGHGraphQLNoAuth verifies viewer returns null without auth.
+// TestGHGraphQLNoAuth verifies the endpoint rejects an anonymous caller.
+//
+// GitHub's /graphql has no anonymous surface: every unauthenticated request is
+// answered 401, including introspection. Returning 200 with a null viewer
+// instead would let a caller with no credential reach every resolver in the
+// schema and read whatever those resolvers do not separately gate.
 func TestGHGraphQLNoAuth(t *testing.T) {
 	resp := ghPost(t, "/api/graphql", "", map[string]string{
 		"query": "{viewer{login}}",
 	})
-	if resp.StatusCode != 200 {
-		resp.Body.Close()
-		t.Fatalf("expected 200, got %d", resp.StatusCode)
-	}
-	data := decodeJSON(t, resp)
-
-	d, _ := data["data"].(map[string]interface{})
-	if d["viewer"] != nil {
-		t.Fatalf("expected null viewer without auth, got %v", d["viewer"])
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusUnauthorized {
+		t.Fatalf("anonymous GraphQL request = %d, want 401", resp.StatusCode)
 	}
 }
 

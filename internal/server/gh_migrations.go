@@ -411,7 +411,7 @@ func (s *Server) validateUserMigrationRepos(user *User, names []string) ([]strin
 		return nil, "missing_field"
 	}
 	for _, name := range names {
-		repo := s.store.ReposByName[name]
+		repo := s.store.GetRepoByFullName(name)
 		if repo == nil {
 			return nil, "invalid"
 		}
@@ -428,7 +428,7 @@ func (s *Server) validateOrgMigrationRepos(org *Org, names []string) ([]string, 
 	}
 	prefix := org.Login + "/"
 	for _, name := range names {
-		repo := s.store.ReposByName[name]
+		repo := s.store.GetRepoByFullName(name)
 		if repo == nil {
 			return nil, "invalid"
 		}
@@ -493,7 +493,7 @@ func (s *Server) migrationToJSON(m MigrationCommon, owner map[string]interface{}
 	if !excludeRepos {
 		repos := make([]map[string]interface{}, 0, len(m.Repositories))
 		for _, name := range m.Repositories {
-			repo := s.store.ReposByName[name]
+			repo := s.store.GetRepoByFullName(name)
 			if repo != nil {
 				repos = append(repos, migrationRepoJSON(repo, s.store, baseURL))
 			}
@@ -639,7 +639,7 @@ func (s *Server) generateMigrationArchive(m MigrationCommon, scope, scopeLogin s
 
 	repoData := map[string]interface{}{}
 	for _, name := range m.Repositories {
-		repo := s.store.ReposByName[name]
+		repo := s.store.GetRepoByFullName(name)
 		if repo == nil {
 			continue
 		}
