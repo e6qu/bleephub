@@ -1,6 +1,5 @@
-import { useState } from "react";
 import { Link, useParams } from "react-router";
-import { useQuery } from "@tanstack/react-query";
+import { useInfiniteQuery, useQuery } from "@tanstack/react-query";
 import { Spinner, InlineError } from "@bleephub/ui-core/components";
 import {
   fetchRepoForksPage,
@@ -86,51 +85,36 @@ function PagedUserList({
   firstPage: () => Promise<Page<GithubAccount>>;
   fetchNext: (pageUrl: string) => Promise<Page<GithubAccount>>;
 }) {
-  const [extra, setExtra] = useState<GithubAccount[]>([]);
-  const [nextUrl, setNextUrl] = useState<string | null>(null);
-  const [loadingMore, setLoadingMore] = useState(false);
-  const [moreError, setMoreError] = useState<string | null>(null);
-
-  const { data, isLoading, isError, error } = useQuery({
+  const {
+    data,
+    isLoading,
+    isError,
+    error,
+    fetchNextPage,
+    hasNextPage,
+    isFetchingNextPage,
+  } = useInfiniteQuery({
     queryKey: ["repo-social-page", label],
-    queryFn: async () => {
-      const page = await firstPage();
-      setExtra([]);
-      setNextUrl(page.nextUrl);
-      return page;
-    },
+    initialPageParam: null as string | null,
+    queryFn: ({ pageParam }) => pageParam ? fetchNext(pageParam) : firstPage(),
+    getNextPageParam: (lastPage) => lastPage.nextUrl ?? undefined,
   });
 
   if (isLoading) return <Spinner label={`loading ${label}`} />;
-  if (isError || !data)
+  if (isError && !data)
     return <InlineError title={`Failed to load ${label}`} detail={String(error)} />;
 
-  const users = [...data.items, ...extra];
+  const users = data?.pages.flatMap((page) => page.items) ?? [];
   if (users.length === 0) return <Blankslate title={emptyTitle} />;
-
-  const loadMore = async () => {
-    if (!nextUrl) return;
-    setLoadingMore(true);
-    setMoreError(null);
-    try {
-      const page = await fetchNext(nextUrl);
-      setExtra((prev) => [...prev, ...page.items]);
-      setNextUrl(page.nextUrl);
-    } catch (err) {
-      setMoreError(String(err));
-    } finally {
-      setLoadingMore(false);
-    }
-  };
 
   return (
     <div>
-      {moreError && <InlineError title={`Failed to load more ${label}`} detail={moreError} />}
+      {isError && <InlineError title={`Failed to load more ${label}`} detail={String(error)} />}
       <UserRows users={users} />
-      {nextUrl && (
+      {hasNextPage && (
         <div className="mt-3 flex justify-center">
-          <Button size="sm" variant="secondary" onClick={loadMore} disabled={loadingMore}>
-            {loadingMore ? "Loading…" : "Load more"}
+          <Button size="sm" variant="secondary" onClick={() => void fetchNextPage()} disabled={isFetchingNextPage}>
+            {isFetchingNextPage ? "Loading…" : "Load more"}
           </Button>
         </div>
       )}
@@ -150,26 +134,26 @@ function WatchersList({ owner, repo }: { owner: string; repo: string }) {
 }
 
 function ForksList({ owner, repo }: { owner: string; repo: string }) {
-  const [extra, setExtra] = useState<BleephubRepo[]>([]);
-  const [nextUrl, setNextUrl] = useState<string | null>(null);
-  const [loadingMore, setLoadingMore] = useState(false);
-  const [moreError, setMoreError] = useState<string | null>(null);
-
-  const { data, isLoading, isError, error } = useQuery({
+  const {
+    data,
+    isLoading,
+    isError,
+    error,
+    fetchNextPage,
+    hasNextPage,
+    isFetchingNextPage,
+  } = useInfiniteQuery({
     queryKey: ["repo-forks", owner, repo],
-    queryFn: async () => {
-      const page = await fetchRepoForksPage(owner, repo);
-      setExtra([]);
-      setNextUrl(page.nextUrl);
-      return page;
-    },
+    initialPageParam: null as string | null,
+    queryFn: ({ pageParam }) => fetchRepoForksPage(owner, repo, pageParam ?? undefined),
+    getNextPageParam: (lastPage) => lastPage.nextUrl ?? undefined,
     enabled: !!owner && !!repo,
   });
 
   if (isLoading) return <Spinner label="loading forks" />;
-  if (isError || !data) return <InlineError title="Failed to load forks" detail={String(error)} />;
+  if (isError && !data) return <InlineError title="Failed to load forks" detail={String(error)} />;
 
-  const forks = [...data.items, ...extra];
+  const forks = data?.pages.flatMap((page) => page.items) ?? [];
   if (forks.length === 0)
     return (
       <Blankslate icon={<RepoIcon size={26} />} title="No forks yet">
@@ -177,24 +161,9 @@ function ForksList({ owner, repo }: { owner: string; repo: string }) {
       </Blankslate>
     );
 
-  const loadMore = async () => {
-    if (!nextUrl) return;
-    setLoadingMore(true);
-    setMoreError(null);
-    try {
-      const page = await fetchRepoForksPage(owner, repo, nextUrl);
-      setExtra((prev) => [...prev, ...page.items]);
-      setNextUrl(page.nextUrl);
-    } catch (err) {
-      setMoreError(String(err));
-    } finally {
-      setLoadingMore(false);
-    }
-  };
-
   return (
     <div>
-      {moreError && <InlineError title="Failed to load more forks" detail={moreError} />}
+      {isError && <InlineError title="Failed to load more forks" detail={String(error)} />}
       <Box>
         {forks.map((f, i) => (
           <div
@@ -219,10 +188,10 @@ function ForksList({ owner, repo }: { owner: string; repo: string }) {
           </div>
         ))}
       </Box>
-      {nextUrl && (
+      {hasNextPage && (
         <div className="mt-3 flex justify-center">
-          <Button size="sm" variant="secondary" onClick={loadMore} disabled={loadingMore}>
-            {loadingMore ? "Loading…" : "Load more"}
+          <Button size="sm" variant="secondary" onClick={() => void fetchNextPage()} disabled={isFetchingNextPage}>
+            {isFetchingNextPage ? "Loading…" : "Load more"}
           </Button>
         </div>
       )}

@@ -1,12 +1,13 @@
-import { useMemo, useState } from "react";
+import { useMemo, useState, type ReactNode } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useParams } from "react-router";
+import { Link, useNavigate, useParams } from "react-router";
 import { DataTable, InlineError, Spinner } from "@bleephub/ui-core/components";
 import { createColumnHelper } from "@tanstack/react-table";
 import {
   createRepoCodespace,
   createUserCodespace,
   deleteCodespace,
+  fetchCodespace,
   fetchCodespaceMachines,
   fetchRepoCodespaces,
   fetchRepos,
@@ -44,7 +45,12 @@ function stateLabel(state: GithubCodespaceState): { state: "open" | "closed" | "
 }
 
 export function CodespacesPage() {
-  const { owner, repo } = useParams<{ owner?: string; repo?: string }>();
+  const { owner, repo, codespaceName } = useParams<{
+    owner?: string;
+    repo?: string;
+    codespaceName?: string;
+  }>();
+  if (codespaceName) return <CodespaceDetail name={codespaceName} />;
   const repoScope = owner && repo ? `${owner}/${repo}` : null;
   const [showCreate, setShowCreate] = useState(false);
 
@@ -106,7 +112,13 @@ function CodespacesList({ repoScope }: { repoScope: string | null }) {
       col.accessor("name", {
         header: "Name",
         cell: (info) => (
-          <span className="font-medium">{info.getValue()}</span>
+          <Link
+            to={`/ui/codespaces/${encodeURIComponent(info.getValue())}`}
+            className="font-medium"
+            style={{ color: "var(--color-accent)", textDecoration: "none" }}
+          >
+            {info.getValue()}
+          </Link>
         ),
       }),
       col.accessor("display_name", {
@@ -122,14 +134,6 @@ function CodespacesList({ repoScope }: { repoScope: string | null }) {
       col.accessor("machine", {
         header: "Machine",
         cell: (info) => info.getValue<GithubCodespace["machine"]>().display_name,
-      }),
-      col.accessor("image", {
-        header: "Image",
-        cell: (info) => (
-          <span className="truncate" style={{ maxWidth: 240, color: "var(--color-fg-muted)" }}>
-            {info.getValue()}
-          </span>
-        ),
       }),
       col.accessor("last_used_at", {
         header: "Last used",
@@ -191,6 +195,102 @@ function CodespacesList({ repoScope }: { repoScope: string | null }) {
       {stopMut.error && <ErrorBanner>{String(stopMut.error)}</ErrorBanner>}
       {deleteMut.error && <ErrorBanner>{String(deleteMut.error)}</ErrorBanner>}
     </Box>
+  );
+}
+
+function CodespaceDetail({ name }: { name: string }) {
+  const navigate = useNavigate();
+  const client = useQueryClient();
+  const queryKey = ["codespaces", "detail", name] as const;
+  const query = useQuery({ queryKey, queryFn: () => fetchCodespace(name), refetchInterval: 10_000 });
+  const start = useMutation({
+    mutationFn: () => startCodespace(name),
+    onSuccess: (codespace) => client.setQueryData(queryKey, codespace),
+  });
+  const stop = useMutation({
+    mutationFn: () => stopCodespace(name),
+    onSuccess: (codespace) => client.setQueryData(queryKey, codespace),
+  });
+  const remove = useMutation({
+    mutationFn: () => deleteCodespace(name),
+    onSuccess: () => navigate("/ui/codespaces"),
+  });
+
+  if (query.isLoading) return <Spinner label={`Loading ${name}`} />;
+  if (query.isError || !query.data) {
+    return <InlineError title="Failed to load codespace" detail={String(query.error)} />;
+  }
+
+  const cs = query.data;
+  const label = stateLabel(cs.state);
+  return (
+    <div>
+      <div className="mb-4">
+        <Link to="/ui/codespaces" style={{ color: "var(--color-accent)", textDecoration: "none" }}>
+          ← Codespaces
+        </Link>
+      </div>
+      <PageTitle
+        icon={<CodespaceIcon size={20} />}
+        title={cs.display_name || cs.name}
+        meta={cs.name}
+        actions={
+          <>
+            {cs.state === "Available" ? (
+              <Button onClick={() => stop.mutate()} disabled={stop.isPending}>
+                <SquareIcon size={14} /> Stop
+              </Button>
+            ) : (
+              <Button onClick={() => start.mutate()} disabled={start.isPending}>
+                <PlayIcon size={14} /> Start
+              </Button>
+            )}
+            <Button
+              variant="danger"
+              disabled={remove.isPending}
+              onClick={() => {
+                if (confirm(`Delete codespace ${cs.name}?`)) remove.mutate();
+              }}
+            >
+              <TrashIcon size={14} /> Delete
+            </Button>
+          </>
+        }
+      />
+      {(start.error || stop.error || remove.error) && (
+        <ErrorBanner>{String(start.error || stop.error || remove.error)}</ErrorBanner>
+      )}
+      <Box>
+        <dl className="grid gap-4 sm:grid-cols-2" style={{ padding: "1rem" }}>
+          <CodespaceFact label="State">
+            <StateLabel state={label.state}>{label.label}</StateLabel>
+          </CodespaceFact>
+          <CodespaceFact label="Repository">
+            {cs.repository ? (
+              <Link
+                to={`/ui/repos/${cs.repository.full_name}`}
+                style={{ color: "var(--color-accent)", textDecoration: "none" }}
+              >
+                {cs.repository.full_name}
+              </Link>
+            ) : "Unpublished"}
+          </CodespaceFact>
+          <CodespaceFact label="Machine">{cs.machine.display_name}</CodespaceFact>
+          <CodespaceFact label="Git ref">{cs.git_status.ref || "Default branch"}</CodespaceFact>
+          <CodespaceFact label="Created">{new Date(cs.created_at).toLocaleString()}</CodespaceFact>
+          <CodespaceFact label="Last used">{new Date(cs.last_used_at).toLocaleString()}</CodespaceFact>
+        </dl>
+      </Box>
+    </div>
+  );
+}
+
+function CodespaceFact({ label, children }: { label: string; children: ReactNode }) {
+  return (
+    <div>
+      <dt style={{ color: "var(--color-fg-muted)", fontSize: ".76rem" }}>{label}</dt>
+      <dd className="mt-1" style={{ fontSize: ".88rem" }}>{children}</dd>
+    </div>
   );
 }
 

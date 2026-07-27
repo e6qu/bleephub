@@ -2,7 +2,7 @@ import { describe, it, expect, vi, afterEach } from "vitest";
 import { render, cleanup, screen, waitFor, fireEvent, within } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { MemoryRouter, Routes, Route } from "react-router";
-import { RepoDetailPage } from "../pages/RepoDetailPage.js";
+import { RepoCommitPage, RepoDetailPage, RepoFilePage } from "../pages/RepoDetailPage.js";
 
 const mockFetch = vi.fn();
 globalThis.fetch = mockFetch;
@@ -19,15 +19,18 @@ afterEach(() => {
   mockFetch.mockReset();
 });
 
-function renderPage() {
+function renderPage(path = "/ui/repos/admin/test") {
   const queryClient = new QueryClient({
     defaultOptions: { queries: { retry: false } },
   });
   return render(
     <QueryClientProvider client={queryClient}>
-      <MemoryRouter initialEntries={["/ui/repos/admin/test"]}>
+      <MemoryRouter initialEntries={[path]}>
         <Routes>
           <Route path="/ui/repos/:owner/:repo" element={<RepoDetailPage />} />
+          <Route path="/ui/repos/:owner/:repo/commits" element={<RepoDetailPage initialTab="commits" />} />
+          <Route path="/ui/repos/:owner/:repo/commits/:sha" element={<RepoCommitPage />} />
+          <Route path="/ui/repos/:owner/:repo/blob/:ref/*" element={<RepoFilePage />} />
         </Routes>
       </MemoryRouter>
     </QueryClientProvider>,
@@ -48,6 +51,7 @@ const repoData = {
   stargazers_count: 5,
   subscribers_count: 2,
   forks_count: 1,
+  ssh_url: "git@bleephub.example:admin/test.git",
 };
 
 const topicsData = { names: ["cli", "tooling"] };
@@ -102,6 +106,21 @@ const readmeData = {
 
 function routedFetch(url: RequestInfo | URL): Promise<Response> {
   const u = url.toString();
+  if (u.endsWith("/commits/abc123")) {
+    return Promise.resolve(jsonResponse({
+      ...commitsData[0],
+      stats: { additions: 2, deletions: 0, total: 2 },
+      files: [{
+        sha: "r1",
+        filename: "README.md",
+        status: "added",
+        additions: 2,
+        deletions: 0,
+        changes: 2,
+        patch: "@@ -0,0 +1,2 @@\n+# test\n+extra detail",
+      }],
+    }));
+  }
   if (u.includes("/releases")) return Promise.resolve(jsonResponse(releasesData));
   if (u.endsWith("/topics")) return Promise.resolve(jsonResponse(topicsData));
   if (u.endsWith("/packages")) return Promise.resolve(jsonResponse([]));
@@ -109,6 +128,7 @@ function routedFetch(url: RequestInfo | URL): Promise<Response> {
   if (u.endsWith("/branches")) return Promise.resolve(jsonResponse(branchesData));
   if (u.endsWith("/commits")) return Promise.resolve(jsonResponse(commitsData));
   if (u.includes("/readme")) return Promise.resolve(jsonResponse(readmeData));
+  if (u.includes("/contents/README.md")) return Promise.resolve(jsonResponse(readmeData));
   if (u.includes("/contents/")) return Promise.resolve(jsonResponse(contentsData));
   return Promise.resolve(jsonResponse([]));
 }
@@ -150,7 +170,9 @@ describe("RepoDetailPage code", () => {
   it("shows only supported empty-repository transport setup", async () => {
     mockFetch.mockImplementation((url: RequestInfo | URL) => {
       const u = url.toString();
-      if (u.endsWith("/repos/admin/test")) return Promise.resolve(jsonResponse(repoData));
+      if (u.endsWith("/repos/admin/test")) {
+        return Promise.resolve(jsonResponse({ ...repoData, ssh_url: "" }));
+      }
       if (u.endsWith("/branches")) return Promise.resolve(jsonResponse([]));
       if (u.endsWith("/commits")) return Promise.resolve(jsonResponse([]));
       return Promise.resolve(jsonResponse([]));
@@ -162,8 +184,10 @@ describe("RepoDetailPage code", () => {
       expect(screen.getByText("This repository is empty")).toBeInTheDocument();
     });
     expect(screen.getByRole("button", { name: "HTTPS" })).toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: "SSH" })).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "SSH" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "GitHub CLI" })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "SSH" }));
+    expect(screen.getByRole("note")).toHaveTextContent(/SSH cloning is not enabled/i);
   });
 
   it("renders the latest-commit banner above the file table", async () => {
@@ -174,7 +198,14 @@ describe("RepoDetailPage code", () => {
     });
     // short sha + commit count
     expect(screen.getByText("abc123".slice(0, 7))).toBeInTheDocument();
-    expect(screen.getByText(/1 commit\b/)).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: /1 commit\b/ })).toHaveAttribute(
+      "href",
+      "/ui/repos/admin/test/commits",
+    );
+    expect(screen.getByRole("link", { name: "abc123" })).toHaveAttribute(
+      "href",
+      "/ui/repos/admin/test/commits/abc123",
+    );
   });
 
   it("exposes a Code clone dropdown with the HTTPS clone URL and a copy button", async () => {
@@ -190,6 +221,27 @@ describe("RepoDetailPage code", () => {
     const field = screen.getByLabelText("HTTPS clone URL") as HTMLInputElement;
     expect(field.value).toMatch(/\/admin\/test\.git$/);
     expect(screen.getByRole("button", { name: "Copy clone URL" })).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "SSH" }));
+    expect(screen.getByLabelText("SSH clone URL")).toHaveValue(
+      "git@bleephub.example:admin/test.git",
+    );
+  });
+
+  it("links files and commits to navigable detail journeys", async () => {
+    mockFetch.mockImplementation((url: RequestInfo | URL) => routedFetch(url));
+    renderPage();
+    await screen.findAllByText("README.md");
+
+    expect(screen.getAllByRole("link", { name: "README.md" })[0]).toHaveAttribute(
+      "href",
+      "/ui/repos/admin/test/blob/main/README.md",
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Commits" }));
+    expect(await screen.findByRole("link", { name: "Initial commit" })).toHaveAttribute(
+      "href",
+      "/ui/repos/admin/test/commits/abc123",
+    );
   });
 
   it("drives Watch, Fork, and Star through the public GitHub repository APIs", async () => {
@@ -296,5 +348,24 @@ describe("RepoDetailPage About sidebar", () => {
       expect(heading).not.toBeNull();
       expect(heading?.textContent).toBe("test");
     });
+  });
+});
+
+describe("repository detail journeys", () => {
+  it("renders a commit with its summary and patch", async () => {
+    mockFetch.mockImplementation((url: RequestInfo | URL) => routedFetch(url));
+    renderPage("/ui/repos/admin/test/commits/abc123");
+
+    expect(await screen.findByRole("heading", { name: "Initial commit" })).toBeInTheDocument();
+    expect(screen.getByText("2 changes")).toBeInTheDocument();
+    expect(screen.getByText(/extra detail/)).toBeInTheDocument();
+  });
+
+  it("renders a repository file at its durable URL", async () => {
+    mockFetch.mockImplementation((url: RequestInfo | URL) => routedFetch(url));
+    renderPage("/ui/repos/admin/test/blob/main/README.md");
+
+    expect(await screen.findByText("admin/test")).toBeInTheDocument();
+    expect(screen.getByText(/extra detail/)).toBeInTheDocument();
   });
 });

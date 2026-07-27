@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { cleanup, render, screen, waitFor } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { MemoryRouter, Route, Routes } from "react-router";
 import { ClassroomPage } from "../pages/ClassroomPage.js";
@@ -34,6 +34,74 @@ const classroom = {
 };
 
 describe("ClassroomPage", () => {
+  it("accepts a typed classroom name and creates it in the selected organization", async () => {
+    const requests: Array<{ url: string; method: string; body?: unknown }> = [];
+    mockFetch.mockImplementation((input: RequestInfo | URL, init?: RequestInit) => {
+      const url = input.toString();
+      const method = init?.method ?? "GET";
+      requests.push({
+        url,
+        method,
+        body: typeof init?.body === "string" ? JSON.parse(init.body) : undefined,
+      });
+      if (method === "POST" && url === "/classroom-data/classrooms") {
+        return Promise.resolve(jsonResponse({ ...classroom, id: 52, name: "Operating Systems" }, 201));
+      }
+      return Promise.resolve(jsonResponse({
+        classrooms: [],
+        organizations: [classroom.organization],
+        can_create_organization: true,
+      }));
+    });
+
+    renderAt("/ui/classrooms");
+    fireEvent.click(await screen.findByRole("button", { name: "New classroom" }));
+    const name = screen.getByLabelText("Classroom name") as HTMLInputElement;
+    fireEvent.change(name, { target: { value: "Operating Systems" } });
+    expect(name.value).toBe("Operating Systems");
+    fireEvent.click(screen.getByRole("button", { name: "Create classroom" }));
+
+    await waitFor(() => {
+      expect(requests).toContainEqual({
+        url: "/classroom-data/classrooms",
+        method: "POST",
+        body: { name: "Operating Systems", organization: "octo-school" },
+      });
+    });
+  });
+
+  it("lets a site administrator create the required organization without leaving Classroom", async () => {
+    let organizationCreated = false;
+    mockFetch.mockImplementation((input: RequestInfo | URL, init?: RequestInit) => {
+      const url = input.toString();
+      const method = init?.method ?? "GET";
+      if (url === "/api/v3/user") {
+        return Promise.resolve(jsonResponse({ id: 1, login: "admin", site_admin: true }));
+      }
+      if (url === "/api/v3/admin/organizations" && method === "POST") {
+        organizationCreated = true;
+        return Promise.resolve(jsonResponse({ ...classroom.organization, login: "new-school" }, 201));
+      }
+      return Promise.resolve(jsonResponse({
+        classrooms: [],
+        organizations: organizationCreated
+          ? [{ ...classroom.organization, login: "new-school" }]
+          : [],
+        can_create_organization: true,
+      }));
+    });
+
+    renderAt("/ui/classrooms");
+    fireEvent.click(await screen.findByRole("button", { name: "New classroom" }));
+    fireEvent.change(screen.getByLabelText("Organization login"), {
+      target: { value: "new-school" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Create organization" }));
+
+    expect(await screen.findByLabelText("Classroom name")).toBeInTheDocument();
+    expect(screen.getByRole("option", { name: /new-school/ })).toBeInTheDocument();
+  });
+
   it("renders the retained Classroom dashboard and real coursework counters", async () => {
     mockFetch.mockResolvedValue(jsonResponse({ classrooms: [classroom], organizations: [classroom.organization] }));
     renderAt("/ui/classrooms");
@@ -51,6 +119,59 @@ describe("ClassroomPage", () => {
     expect(screen.getByText("3 accepted")).toBeInTheDocument();
     expect(screen.getByText("1 passing")).toBeInTheDocument();
     expect(screen.getByText("10 autograding points")).toBeInTheDocument();
+  });
+
+  it("renames classrooms and edits or deletes assignments through their management dialogs", async () => {
+    const requests: Array<{ url: string; method: string; body?: unknown }> = [];
+    mockFetch.mockImplementation((input: RequestInfo | URL, init?: RequestInit) => {
+      const url = input.toString();
+      const method = init?.method ?? "GET";
+      requests.push({
+        url,
+        method,
+        body: typeof init?.body === "string" ? JSON.parse(init.body) : undefined,
+      });
+      if (method === "DELETE") return Promise.resolve(new Response(null, { status: 204 }));
+      if (method === "PATCH" && url.includes("/assignments/")) {
+        return Promise.resolve(jsonResponse({ ...classroom.assignments[0], ...JSON.parse(init!.body as string) }));
+      }
+      if (method === "PATCH") {
+        return Promise.resolve(jsonResponse({ ...classroom, ...JSON.parse(init!.body as string) }));
+      }
+      return Promise.resolve(jsonResponse({
+        classrooms: [classroom],
+        organizations: [classroom.organization],
+        can_create_organization: true,
+      }));
+    });
+
+    renderAt("/ui/classrooms/41");
+    fireEvent.click(await screen.findByRole("button", { name: "Classroom settings" }));
+    fireEvent.change(screen.getByLabelText("Classroom name"), { target: { value: "Advanced Systems" } });
+    fireEvent.click(screen.getByRole("button", { name: "Save changes" }));
+    await waitFor(() => expect(requests).toContainEqual({
+      url: "/classroom-data/classrooms/41",
+      method: "PATCH",
+      body: { name: "Advanced Systems" },
+    }));
+
+    fireEvent.click(await screen.findByRole("button", { name: "Edit assignment" }));
+    fireEvent.change(screen.getByLabelText("Assignment title"), { target: { value: "Processes II" } });
+    fireEvent.click(screen.getByRole("button", { name: "Save assignment" }));
+    await waitFor(() => expect(requests.some((request) =>
+      request.url === "/classroom-data/assignments/51"
+      && request.method === "PATCH"
+      && (request.body as { title?: string }).title === "Processes II",
+    )).toBe(true));
+
+    fireEvent.click(await screen.findByRole("button", { name: "Edit assignment" }));
+    fireEvent.click(screen.getByRole("button", { name: "Delete assignment" }));
+    fireEvent.click(screen.getByRole("button", { name: "Delete permanently" }));
+    await waitFor(() => expect(requests).toContainEqual({
+      url: "/classroom-data/assignments/51",
+      method: "DELETE",
+      body: {},
+    }));
   });
 
   it("accepts an invite and hands off to the generated repository", async () => {

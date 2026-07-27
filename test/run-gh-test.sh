@@ -505,8 +505,30 @@ assert_not_empty "GitHub App manifest conversion code" "$MANIFEST_CODE"
 APP=$(curl -sSk -X POST "$BASE/api/v3/app-manifests/$MANIFEST_CODE/conversions")
 APP_ID=$(echo "$APP" | jq -r '.id')
 APP_SLUG=$(echo "$APP" | jq -r '.slug')
+APP_PEM=$(echo "$APP" | jq -r '.pem')
 assert_not_empty "app id"   "$APP_ID"
 assert_not_empty "app slug" "$APP_SLUG"
+assert_not_empty "app private key" "$APP_PEM"
+
+# Installation discovery is an app endpoint and accepts the app JWT, not a
+# user or personal-access token. Sign the same RS256 shape a real GitHub App
+# sends, using the one-time private key returned by manifest conversion.
+printf '%s\n' "$APP_PEM" > /tmp/parity-app.pem
+base64url() {
+    openssl base64 -A | tr '+/' '-_' | tr -d '='
+}
+JWT_NOW=$(date +%s)
+JWT_HEADER=$(printf '%s' '{"alg":"RS256","typ":"JWT"}' | base64url)
+JWT_PAYLOAD=$(jq -nc \
+    --argjson iat "$((JWT_NOW - 60))" \
+    --argjson exp "$((JWT_NOW + 540))" \
+    --arg iss "$APP_ID" \
+    '{iat: $iat, exp: $exp, iss: $iss}' | base64url)
+JWT_UNSIGNED="$JWT_HEADER.$JWT_PAYLOAD"
+JWT_SIGNATURE=$(printf '%s' "$JWT_UNSIGNED" |
+    openssl dgst -sha256 -sign /tmp/parity-app.pem -binary |
+    base64url)
+APP_JWT="$JWT_UNSIGNED.$JWT_SIGNATURE"
 
 # Public app lookup (anonymous)
 APP_BY_SLUG=$(curl -sSk "$BASE/api/v3/apps/$APP_SLUG")
@@ -541,8 +563,8 @@ UNSUSP_CODE=$(curl -sSk -X POST -H "Authorization: token $TOKEN" \
     "$BASE/settings/installations/$INST_ID/unsuspend" -w "%{http_code}" -o /dev/null)
 assert_eq "unsuspend installation 204" "204" "$UNSUSP_CODE"
 
-# Installation lookup by user
-USR_INST=$(curl -sSk -H "Authorization: token $TOKEN" "$BASE/api/v3/users/admin/installation")
+# Installation lookup by user, as the authenticated app.
+USR_INST=$(curl -sSk -H "Authorization: Bearer $APP_JWT" "$BASE/api/v3/users/admin/installation")
 USR_INST_ID=$(echo "$USR_INST" | jq -r '.id // 0')
 assert_eq "GET /users/{login}/installation id matches" "$INST_ID" "$USR_INST_ID"
 

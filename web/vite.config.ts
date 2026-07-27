@@ -33,6 +33,10 @@ export default defineConfig({
       "/health": "http://localhost:5555",
       "/api": "http://localhost:5555",
       "/login": "http://localhost:5555",
+      "/auth": "http://localhost:5555",
+      "/settings": "http://localhost:5555",
+      "/classroom-data": "http://localhost:5555",
+      "/a": "http://localhost:5555",
     },
   },
 });

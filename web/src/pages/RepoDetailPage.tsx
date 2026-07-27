@@ -7,8 +7,10 @@ import remarkGfm from "remark-gfm";
 import {
   fetchRepoDetail,
   fetchRepoBranches,
+  fetchRepoCommit,
   fetchRepoCommits,
   fetchRepoContents,
+  fetchRepoFile,
   fetchRepoLanguages,
   fetchRepoReadme,
   fetchRepoSocialCounts,
@@ -27,6 +29,7 @@ import type {
   BleephubRepo,
   GithubBranch,
   GithubCommit,
+  GithubContentFile,
   GithubContentItem,
   GithubTag,
   GithubWebhook,
@@ -71,9 +74,9 @@ const SUB_TABS: { key: SubTab; label: string }[] = [
 const CONTENT_TABS = SUB_TABS.slice(0, 5);
 const ADMIN_TABS = SUB_TABS.slice(5);
 
-export function RepoDetailPage() {
+export function RepoDetailPage({ initialTab = "code" }: { initialTab?: SubTab }) {
   const { owner = "", repo = "" } = useParams<{ owner: string; repo: string }>();
-  const [tab, setTab] = useState<SubTab>("code");
+  const [tab, setTab] = useState<SubTab>(initialTab);
 
   const { data: repoData, isLoading, isError, error } = useQuery({
     queryKey: ["repo", owner, repo],
@@ -221,7 +224,7 @@ export function RepoDetailPage() {
         (commitsError ? (
           <InlineError title="Failed to load commits" detail={String(commitsErr)} />
         ) : (
-          <CommitsList commits={commits} loading={commitsLoading} />
+          <CommitsList owner={owner} repo={repo} commits={commits} loading={commitsLoading} />
         ))}
       {tab === "branches" && (
         <BranchesList branches={branches} defaultBranch={repoData.default_branch} />
@@ -373,6 +376,10 @@ function CodeView({
               key={item.sha}
               item={item}
               isLast={i === fileList.length - 1}
+              fileHref={`/ui/repos/${owner}/${repo}/blob/${encodeURIComponent(branch)}/${item.path
+                .split("/")
+                .map(encodeURIComponent)
+                .join("/")}`}
               onClick={() => {
                 if (item.type === "dir") {
                   setPath(path ? `${path}/${item.name}` : item.name);
@@ -419,23 +426,27 @@ function LatestCommitBanner({
 }) {
   return (
     <div className="flex w-full min-w-0 items-center gap-2">
-      <span
+      <Link
+        to={`/ui/repos/${owner}/${repo}/commits/${commit.sha}`}
         className="min-w-0 flex-1 truncate"
-        style={{ color: "var(--color-fg)" }}
+        style={{ color: "var(--color-fg)", textDecoration: "none" }}
         title={commit.commit.message}
       >
         <span style={{ fontWeight: 600 }}>{commit.commit.author.name}</span>{" "}
         {commit.commit.message.split("\n")[0]}
-      </span>
-      <span className="font-mono" style={{ color: "var(--color-fg-muted)" }}>
+      </Link>
+      <Link
+        to={`/ui/repos/${owner}/${repo}/commits/${commit.sha}`}
+        className="font-mono"
+        style={{ color: "var(--color-fg-muted)", textDecoration: "none" }}
+      >
         {commit.sha.slice(0, 7)}
-      </span>
+      </Link>
       <span style={{ color: "var(--color-fg-muted)" }}>
         · {relativeTimeFromNow(commit.commit.author.date)}
       </span>
       <Link
-        to={`/ui/repos/${owner}/${repo}`}
-        onClick={(e) => e.preventDefault()}
+        to={`/ui/repos/${owner}/${repo}/commits`}
         className="inline-flex items-center gap-1"
         style={{ color: "var(--color-fg-muted)", textDecoration: "none", whiteSpace: "nowrap" }}
       >
@@ -445,15 +456,16 @@ function LatestCommitBanner({
   );
 }
 
-/** GitHub's green "Code" clone dropdown — HTTPS clone URL with a copy button. */
+/** GitHub's green "Code" clone dropdown — HTTPS and configured SSH URLs. */
 function CloneButton({ owner, repo, sshUrl }: { owner: string; repo: string; sshUrl?: string }) {
   const [open, setOpen] = useState(false);
   const [copied, setCopied] = useState(false);
+  const [copyError, setCopyError] = useState(false);
   const wrapRef = useRef<HTMLDivElement>(null);
   const origin = typeof window !== "undefined" ? window.location.origin : "";
   const httpsUrl = `${origin}/${owner}/${repo}.git`;
   const [transport, setTransport] = useState<"https" | "ssh">("https");
-  const cloneUrl = transport === "ssh" && sshUrl ? sshUrl : httpsUrl;
+  const cloneUrl = transport === "ssh" ? (sshUrl ?? "") : httpsUrl;
 
   useEffect(() => {
     if (!open) return;
@@ -468,11 +480,11 @@ function CloneButton({ owner, repo, sshUrl }: { owner: string; repo: string; ssh
     try {
       await navigator.clipboard.writeText(cloneUrl);
       setCopied(true);
+      setCopyError(false);
       window.setTimeout(() => setCopied(false), 1500);
     } catch {
-      // Clipboard is unavailable (insecure context / denied permission). The
-      // URL stays selectable in the field so the user can copy manually.
       setCopied(false);
+      setCopyError(true);
     }
   };
 
@@ -516,8 +528,14 @@ function CloneButton({ owner, repo, sshUrl }: { owner: string; repo: string; ssh
           <div style={{ fontSize: "0.82rem", fontWeight: 600, marginBottom: "0.4rem" }}>Clone</div>
           <div className="flex gap-2" style={{ fontSize: "0.72rem", marginBottom: "0.5rem" }}>
             <button type="button" onClick={() => setTransport("https")} style={{ border: 0, background: "transparent", color: transport === "https" ? "var(--color-accent)" : "var(--color-fg-muted)", fontWeight: 600 }}>HTTPS</button>
-            {sshUrl && <button type="button" onClick={() => setTransport("ssh")} style={{ border: 0, background: "transparent", color: transport === "ssh" ? "var(--color-accent)" : "var(--color-fg-muted)", fontWeight: 600 }}>SSH</button>}
+            <button type="button" onClick={() => setTransport("ssh")} style={{ border: 0, background: "transparent", color: transport === "ssh" ? "var(--color-accent)" : "var(--color-fg-muted)", fontWeight: 600 }}>SSH</button>
           </div>
+          {transport === "ssh" && !sshUrl ? (
+            <p role="note" style={{ color: "var(--color-fg-muted)", fontSize: "0.78rem", margin: 0 }}>
+              SSH cloning is not enabled on this server. An operator can configure
+              <code> BLEEPHUB_SSH_ADDR</code>, a host key, and <code>BLEEPHUB_SSH_HOST</code>.
+            </p>
+          ) : (
           <div className="flex items-center gap-1.5">
             <input
               type="text"
@@ -557,6 +575,12 @@ function CloneButton({ owner, repo, sshUrl }: { owner: string; repo: string; ssh
               {copied ? <CheckIcon size={15} /> : <CopyIcon size={15} />}
             </button>
           </div>
+          )}
+          {copyError && (
+            <p role="alert" className="mt-2" style={{ color: "var(--color-danger-fg)", fontSize: "0.75rem" }}>
+              Clipboard access failed. Select the URL above and copy it manually.
+            </p>
+          )}
         </div>
       )}
     </div>
@@ -670,7 +694,11 @@ function AboutSidebar({
           <InlineError title="Failed to load releases" />
         ) : releases && releases.length > 0 ? (
           <div className="flex flex-col gap-1">
-            <span className="inline-flex items-center gap-1.5" style={{ fontWeight: 600 }}>
+            <Link
+              to={`${base}/releases/${releases[0].id}`}
+              className="inline-flex items-center gap-1.5"
+              style={{ fontWeight: 600, color: "var(--color-fg)", textDecoration: "none" }}
+            >
               <TagIcon size={15} style={{ color: "var(--color-status-ok)" }} />
               {releases[0].name || releases[0].tag_name}
               <span
@@ -685,9 +713,9 @@ function AboutSidebar({
               >
                 Latest
               </span>
-            </span>
+            </Link>
             {releases.length > 1 && (
-              <Link to={base} onClick={(e) => e.preventDefault()} style={mutedLink}>
+              <Link to={`${base}/releases`} style={mutedLink}>
                 + {releases.length - 1} {releases.length - 1 === 1 ? "release" : "releases"}
               </Link>
             )}
@@ -731,30 +759,48 @@ function AboutSidebar({
 function FileRow({
   item,
   isLast,
+  fileHref,
   onClick,
 }: {
   item: GithubContentItem;
   isLast: boolean;
+  fileHref: string;
   onClick: () => void;
 }) {
   const isDir = item.type === "dir";
-  return (
-    <div
-      role={isDir ? "button" : undefined}
-      onClick={isDir ? onClick : undefined}
-      className="flex items-center gap-2"
-      style={{
-        padding: "0.55rem 1rem",
-        borderBottom: isLast ? "none" : "1px solid var(--color-border)",
-        cursor: isDir ? "pointer" : "default",
-        fontSize: "0.85rem",
-      }}
-    >
+  const content = (
+    <>
       <span style={{ color: isDir ? "var(--color-accent)" : "var(--color-fg-muted)", display: "flex" }}>
         {isDir ? <DirectoryIcon size={16} /> : <FileIcon size={16} />}
       </span>
-      <span style={{ color: "var(--color-fg)", fontWeight: 400, flex: 1 }}>{item.name}</span>
-    </div>
+      <span style={{ color: "var(--color-fg)", fontWeight: 400, flex: 1, textAlign: "left" }}>
+        {item.name}
+      </span>
+    </>
+  );
+  const style = {
+    width: "100%",
+    padding: "0.55rem 1rem",
+    border: "none",
+    borderBottom: isLast ? "none" : "1px solid var(--color-border)",
+    cursor: "pointer",
+    fontSize: "0.85rem",
+    background: "transparent",
+    textDecoration: "none",
+  } as const;
+  return isDir ? (
+    <button
+      type="button"
+      onClick={onClick}
+      className="flex items-center gap-2"
+      style={style}
+    >
+      {content}
+    </button>
+  ) : (
+    <Link to={fileHref} className="flex items-center gap-2" style={style}>
+      {content}
+    </Link>
   );
 }
 
@@ -773,7 +819,7 @@ function EmptyRepoSetup({
   const [activeTab, setActiveTab] = useState<"https" | "ssh" | "gh">("https");
   const tabs: { key: "https" | "ssh" | "gh"; label: string }[] = [
     { key: "https", label: "HTTPS" },
-    ...(sshUrl ? [{ key: "ssh" as const, label: "SSH" }] : []),
+    { key: "ssh", label: "SSH" },
     { key: "gh", label: "GitHub CLI" },
   ];
 
@@ -811,12 +857,29 @@ function EmptyRepoSetup({
           </button>
         ))}
       </div>
-      <CodeBlock>{snippets[activeTab]}</CodeBlock>
+      {activeTab === "ssh" && !sshUrl ? (
+        <p role="note" style={{ color: "var(--color-fg-muted)" }}>
+          SSH cloning is not enabled on this server. Configure the SSH listener and advertised
+          host to publish an SSH clone URL.
+        </p>
+      ) : (
+        <CodeBlock>{snippets[activeTab]}</CodeBlock>
+      )}
     </Blankslate>
   );
 }
 
-function CommitsList({ commits, loading }: { commits: GithubCommit[]; loading: boolean }) {
+function CommitsList({
+  owner,
+  repo,
+  commits,
+  loading,
+}: {
+  owner: string;
+  repo: string;
+  commits: GithubCommit[];
+  loading: boolean;
+}) {
   if (loading) return <Spinner label="loading commits" />;
   if (commits.length === 0) return <Blankslate title="No commits yet" />;
   return (
@@ -831,22 +894,25 @@ function CommitsList({ commits, loading }: { commits: GithubCommit[]; loading: b
           }}
         >
           <div className="min-w-0 flex-1">
-            <div
+            <Link
+              to={`/ui/repos/${owner}/${repo}/commits/${c.sha}`}
               style={{
                 fontSize: "0.88rem",
                 color: "var(--color-fg)",
                 overflow: "hidden",
                 textOverflow: "ellipsis",
                 whiteSpace: "nowrap",
+                textDecoration: "none",
               }}
             >
               {c.commit.message.split("\n")[0]}
-            </div>
+            </Link>
             <div className="mt-0.5" style={{ fontSize: "0.76rem", color: "var(--color-fg-muted)" }}>
               {c.commit.author.name} · {new Date(c.commit.author.date).toLocaleDateString()}
             </div>
           </div>
-          <span
+          <Link
+            to={`/ui/repos/${owner}/${repo}/commits/${c.sha}`}
             className="font-mono"
             style={{
               fontSize: "0.74rem",
@@ -855,10 +921,11 @@ function CommitsList({ commits, loading }: { commits: GithubCommit[]; loading: b
               border: "1px solid var(--color-border)",
               padding: "0.1rem 0.4rem",
               borderRadius: "var(--radius-sm)",
+              textDecoration: "none",
             }}
           >
             {c.sha.slice(0, 7)}
-          </span>
+          </Link>
         </div>
       ))}
     </Box>
@@ -1006,6 +1073,180 @@ function ReleasesList({ owner, repo, releases }: { owner: string; repo: string; 
           </Link>
         </div>
       ))}</Box>
+    </div>
+  );
+}
+
+export function RepoCommitPage() {
+  const { owner = "", repo = "", sha = "" } = useParams<{
+    owner: string;
+    repo: string;
+    sha: string;
+  }>();
+  const counts = useOpenCounts(owner, repo);
+  const query = useQuery({
+    queryKey: ["commit", owner, repo, sha],
+    queryFn: () => fetchRepoCommit(owner, repo, sha),
+    enabled: !!owner && !!repo && !!sha,
+  });
+
+  if (query.isLoading) return <Spinner label="loading commit" />;
+  if (query.isError || !query.data) {
+    return <InlineError title="Failed to load commit" detail={String(query.error)} />;
+  }
+
+  const commit = query.data;
+  return (
+    <div>
+      <RepoHeader owner={owner} repo={repo} active="code" {...counts} />
+      <div className="mb-4">
+        <Link
+          to={`/ui/repos/${owner}/${repo}/commits`}
+          style={{ color: "var(--color-accent)", textDecoration: "none" }}
+        >
+          ← Commit history
+        </Link>
+      </div>
+      <Box
+        header={
+          <div>
+            <h1 style={{ fontSize: "1rem", fontWeight: 650 }}>
+              {commit.commit.message.split("\n")[0]}
+            </h1>
+            <div className="mt-1" style={{ color: "var(--color-fg-muted)", fontSize: ".78rem" }}>
+              {commit.commit.author.name} committed {relativeTimeFromNow(commit.commit.author.date)}
+            </div>
+          </div>
+        }
+      >
+        <div style={{ padding: "1rem" }}>
+          <div className="font-mono" style={{ fontSize: ".8rem", wordBreak: "break-all" }}>
+            {commit.sha}
+          </div>
+          {commit.commit.message.includes("\n") && (
+            <p className="mt-4 whitespace-pre-wrap" style={{ color: "var(--color-fg-muted)" }}>
+              {commit.commit.message.split("\n").slice(1).join("\n").trim()}
+            </p>
+          )}
+          {commit.stats && (
+            <div className="mt-4" style={{ fontSize: ".82rem" }}>
+              <b>{commit.stats.total} changes</b>{" "}
+              <span style={{ color: "var(--color-status-ok)" }}>+{commit.stats.additions}</span>{" "}
+              <span style={{ color: "var(--color-status-error)" }}>−{commit.stats.deletions}</span>
+            </div>
+          )}
+        </div>
+      </Box>
+      {commit.files && commit.files.length > 0 && (
+        <div className="mt-4 flex flex-col gap-3">
+          {commit.files.map((file) => (
+            <Box
+              key={file.filename}
+              header={
+                <div className="flex w-full items-center gap-2">
+                  <span className="font-mono min-w-0 flex-1 truncate">{file.filename}</span>
+                  <span style={{ color: "var(--color-status-ok)" }}>+{file.additions}</span>
+                  <span style={{ color: "var(--color-status-error)" }}>−{file.deletions}</span>
+                </div>
+              }
+            >
+              {file.patch ? (
+                <pre
+                  className="font-mono"
+                  style={{
+                    margin: 0,
+                    padding: "1rem",
+                    overflowX: "auto",
+                    fontSize: ".76rem",
+                    whiteSpace: "pre",
+                    background: "var(--color-bg-subtle)",
+                  }}
+                >
+                  {file.patch}
+                </pre>
+              ) : (
+                <div style={{ padding: "1rem", color: "var(--color-fg-muted)" }}>
+                  Binary file or patch unavailable.
+                </div>
+              )}
+            </Box>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+export function RepoFilePage() {
+  const params = useParams<{
+    owner: string;
+    repo: string;
+    ref: string;
+    "*": string;
+  }>();
+  const owner = params.owner ?? "";
+  const repo = params.repo ?? "";
+  const ref = params.ref ?? "";
+  const path = params["*"] ?? "";
+  const counts = useOpenCounts(owner, repo);
+  const query = useQuery<GithubContentFile>({
+    queryKey: ["file", owner, repo, ref, path],
+    queryFn: () => fetchRepoFile(owner, repo, path, ref),
+    enabled: !!owner && !!repo && !!ref && !!path,
+  });
+
+  if (query.isLoading) return <Spinner label={`loading ${path}`} />;
+  if (query.isError || !query.data) {
+    return <InlineError title={`Failed to load ${path}`} detail={String(query.error)} />;
+  }
+
+  let content: string;
+  try {
+    content = decodeContentsBase64(query.data.content);
+  } catch (error) {
+    return <InlineError title={`Could not decode ${path}`} detail={String(error)} />;
+  }
+
+  return (
+    <div>
+      <RepoHeader owner={owner} repo={repo} active="code" {...counts} />
+      <div className="mb-4 flex flex-wrap items-center gap-2" style={{ fontSize: ".84rem" }}>
+        <Link
+          to={`/ui/repos/${owner}/${repo}`}
+          style={{ color: "var(--color-accent)", textDecoration: "none" }}
+        >
+          {owner}/{repo}
+        </Link>
+        <span style={{ color: "var(--color-fg-muted)" }}>/</span>
+        <span className="font-mono">{path}</span>
+        <span style={{ color: "var(--color-fg-muted)" }}>on {ref}</span>
+      </div>
+      <Box
+        header={
+          <div className="flex w-full items-center gap-2">
+            <FileIcon size={15} />
+            <span className="font-mono min-w-0 flex-1 truncate">{path}</span>
+            <span style={{ color: "var(--color-fg-muted)", fontSize: ".76rem" }}>
+              {query.data.sha.slice(0, 7)}
+            </span>
+          </div>
+        }
+      >
+        <pre
+          className="font-mono"
+          style={{
+            margin: 0,
+            padding: "1rem",
+            overflowX: "auto",
+            fontSize: ".8rem",
+            lineHeight: 1.55,
+            whiteSpace: "pre",
+            background: "var(--color-surface)",
+          }}
+        >
+          {content}
+        </pre>
+      </Box>
     </div>
   );
 }

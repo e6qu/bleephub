@@ -28,6 +28,7 @@ function renderPage(path = "/ui/codespaces") {
       <MemoryRouter initialEntries={[path]}>
         <Routes>
           <Route path="/ui/codespaces" element={<CodespacesPage />} />
+          <Route path="/ui/codespaces/:codespaceName" element={<CodespacesPage />} />
           <Route path="/ui/repos/:owner/:repo/codespaces" element={<CodespacesPage />} />
         </Routes>
       </MemoryRouter>
@@ -59,12 +60,9 @@ const codespace = {
   last_used_at: "2026-01-01T00:00:00Z",
   state: "Available",
   url: "/api/v3/user/codespaces/crimson-spoon-abc123",
-  html_url: "/ui/codespaces/crimson-spoon-abc123",
   web_url: "http://x",
-  billing_url: "http://x/billing",
   git_status: { ahead: 0, behind: 0, has_uncommitted_changes: false, ref: "main" },
   devcontainer_path: ".devcontainer/devcontainer.json",
-  image: "mcr.microsoft.com/devcontainers/base",
   retention_period_minutes: 10080,
 };
 
@@ -135,6 +133,20 @@ describe("CodespacesPage", () => {
     await waitFor(() => {
       expect(screen.getByText("my codespace")).toBeInTheDocument();
     });
+    expect(screen.getByRole("link", { name: codespace.name })).toHaveAttribute(
+      "href",
+      `/ui/codespaces/${codespace.name}`,
+    );
+  });
+
+  it("renders a navigable codespace lifecycle detail", async () => {
+    mockFetch.mockResolvedValue(jsonResponse(codespace));
+    renderPage(`/ui/codespaces/${codespace.name}`);
+
+    expect(await screen.findByRole("heading", { name: "my codespace" })).toBeInTheDocument();
+    expect(screen.getByText("Basic Linux")).toBeInTheDocument();
+    expect(screen.getByText("main")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /Stop/ })).toBeInTheDocument();
   });
 
   it("loads the create dialog repository selector from GitHub REST user repositories", async () => {
