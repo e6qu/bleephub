@@ -31,6 +31,7 @@ type ghuFixture struct {
 	org         *Org
 
 	// outsideApp holds no permissions and has no installation anywhere.
+	outsideApp *App
 	outsideGhu string
 	outsideGhs string
 
@@ -87,6 +88,7 @@ func newGhuFixture(t *testing.T, tag string) *ghuFixture {
 	if insts := store.ListAppInstallations(outside.ID); len(insts) != 0 {
 		t.Fatalf("the fixture app must have no installations, got %d", len(insts))
 	}
+	f.outsideApp = outside
 	outsideGhu, _ := store.CreateUserToServerToken(f.bearer.ID, outside.ID, "", "", time.Hour, false)
 	if outsideGhu == nil {
 		t.Fatalf("could not mint the outside ghu_ token")
@@ -350,6 +352,10 @@ var fabricatedRepoRoutesStillServed = map[string]bool{}
 
 func TestNoRegisteredRouteServesAFabricatedRepository(t *testing.T) {
 	f := newGhuFixture(t, "sweep")
+	appJWT, err := signAppJWT(f.outsideApp.PEMPrivateKey, f.outsideApp.ID, time.Now())
+	if err != nil {
+		t.Fatalf("signing app JWT for credential-specific route: %v", err)
+	}
 	swept := 0
 	for _, pattern := range fuzzRoutePatterns {
 		method, path, ok := strings.Cut(pattern, " ")
@@ -367,7 +373,11 @@ func TestNoRegisteredRouteServesAFabricatedRepository(t *testing.T) {
 		if method != http.MethodGet && method != http.MethodHead && method != http.MethodDelete {
 			body = "{}"
 		}
-		status, text := ghuRequest(t, method, filled, f.bearerToken, body)
+		token := f.bearerToken
+		if pattern == "GET /api/v3/repos/{owner}/{repo}/installation" {
+			token = appJWT
+		}
+		status, text := ghuRequest(t, method, filled, token, body)
 		if status != http.StatusNotFound {
 			t.Errorf("%s %s: status = %d, want 404 for a repository that does not exist: %s", method, filled, status, text)
 		}

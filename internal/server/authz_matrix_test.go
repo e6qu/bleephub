@@ -209,6 +209,7 @@ func TestPrivateRepoReadsRejectAnUnrelatedUser(t *testing.T) {
 	if store.CreateRepo(owner, repoName, "private fixture", true) == nil {
 		t.Fatalf("could not create the private fixture repository")
 	}
+	_, strangerToken := authflowStranger(t, testServer, authflowName("authzread-stranger"))
 
 	handler := testServer.ghHeadersMiddleware(testServer.mux)
 
@@ -235,6 +236,9 @@ func TestPrivateRepoReadsRejectAnUnrelatedUser(t *testing.T) {
 		base + "/actions/runs",
 		base + "/actions/secrets",
 		base + "/actions/variables",
+		base + "/private-vulnerability-reporting",
+		base + "/stargazers",
+		base + "/packages",
 		base + "/import",
 		base + "/check-suites/1",
 		base + "/code-scanning/alerts",
@@ -243,19 +247,30 @@ func TestPrivateRepoReadsRejectAnUnrelatedUser(t *testing.T) {
 	}
 
 	var disclosed []string
-	for _, path := range paths {
-		req := httptest.NewRequest(http.MethodGet, path, nil)
-		w := httptest.NewRecorder()
-		handler.ServeHTTP(w, req)
-		if w.Code >= 200 && w.Code < 300 {
-			disclosed = append(disclosed, path)
+	for _, credential := range []struct {
+		name  string
+		token string
+	}{
+		{name: "anonymous"},
+		{name: "unrelated classic PAT", token: strangerToken},
+	} {
+		for _, path := range paths {
+			req := httptest.NewRequest(http.MethodGet, path, nil)
+			if credential.token != "" {
+				req.Header.Set("Authorization", "token "+credential.token)
+			}
+			w := httptest.NewRecorder()
+			handler.ServeHTTP(w, req)
+			if w.Code >= 200 && w.Code < 300 {
+				disclosed = append(disclosed, credential.name+" GET "+path)
+			}
 		}
 	}
 
 	if len(disclosed) > 0 {
-		t.Errorf("%d private-repository reads answered an anonymous caller:", len(disclosed))
-		for _, path := range disclosed {
-			t.Errorf("  GET %s", path)
+		t.Errorf("%d private-repository reads answered a caller with no access:", len(disclosed))
+		for _, entry := range disclosed {
+			t.Errorf("  %s", entry)
 		}
 	}
 
@@ -267,6 +282,9 @@ func TestPrivateRepoReadsRejectAnUnrelatedUser(t *testing.T) {
 	for _, path := range []string{
 		"/api/v3/repos/" + ownerLogin + "/" + repoName + "/labels",
 		"/api/v3/repos/" + ownerLogin + "/" + repoName + "/branches",
+		"/api/v3/repos/" + ownerLogin + "/" + repoName + "/private-vulnerability-reporting",
+		"/api/v3/repos/" + ownerLogin + "/" + repoName + "/stargazers",
+		"/api/v3/repos/" + ownerLogin + "/" + repoName + "/packages",
 	} {
 		req := httptest.NewRequest(http.MethodGet, path, nil)
 		req.Header.Set("Authorization", "token "+ownerToken.Value)

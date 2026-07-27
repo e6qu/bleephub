@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/rand"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -19,7 +20,9 @@ import (
 	gitStorage "github.com/go-git/go-git/v5/storage"
 )
 
-// Codespace represents a GitHub Codespace backed by a local Docker container.
+// Codespace represents a GitHub Codespace. Docker-backed instances use a
+// container; installations without a Docker CLI retain an isolated workspace
+// and expose the same lifecycle through the built-in workspace runtime.
 type Codespace struct {
 	ID                     int       `json:"id"`
 	Name                   string    `json:"name"`
@@ -40,6 +43,7 @@ type Codespace struct {
 	ImageName              string    `json:"image_name"`
 	RetentionPeriodMinutes int       `json:"retention_period_minutes"`
 	WorkspaceMount         string    `json:"workspace_mount,omitempty"`
+	Runtime                string    `json:"runtime,omitempty"`
 	// LatestExport records the most recent export of this codespace.
 	LatestExport *CodespaceExport `json:"latest_export,omitempty"`
 }
@@ -126,10 +130,11 @@ func (st *Store) persistCodespaceSecretScopeLocked(scope string) {
 	st.persist.MustPut("codespace_secrets", scope, m)
 }
 
-// CreateCodespace records a new codespace and starts its backing container.
-// The container image pull and start can take minutes, so the codespace is
+// CreateCodespace records a new codespace and starts its runtime. A Docker
+// image pull and container start can take minutes, so the codespace is
 // registered in the Creating state first and the store lock is released for
-// the duration — every other request would otherwise queue behind Docker.
+// the duration. If the Docker executable is absent, the prepared workspace is
+// retained and promoted to the built-in lifecycle runtime.
 func (st *Store) CreateCodespace(ownerLogin, repoKey, gitRef, machineName, displayName string) (*Codespace, error) {
 	cs, workspace, cleanup, err := st.reserveCodespace(ownerLogin, repoKey, gitRef, machineName, displayName)
 	if err != nil {
@@ -142,6 +147,21 @@ func (st *Store) CreateCodespace(ownerLogin, repoKey, gitRef, machineName, displ
 
 	containerID, err := dockerRunCodespace(ctx, containerName, cs.ImageName, workspace, repoNameFromRepoKey(repoKey))
 	if err != nil {
+		if errors.Is(err, exec.ErrNotFound) {
+			st.mu.Lock()
+			live := st.Codespaces[cs.ID]
+			if live == nil {
+				st.mu.Unlock()
+				cleanup()
+				return nil, fmt.Errorf("codespace %s was removed while its workspace started", cs.Name)
+			}
+			live.Runtime = "workspace"
+			live.State = "Available"
+			live.UpdatedAt = time.Now().UTC()
+			st.persistCodespaceLocked(live)
+			st.mu.Unlock()
+			return live, nil
+		}
 		cleanup()
 		st.discardCodespace(cs.ID)
 		return nil, fmt.Errorf("docker run: %w", err)
@@ -156,6 +176,7 @@ func (st *Store) CreateCodespace(ownerLogin, repoKey, gitRef, machineName, displ
 	}
 	live.ContainerID = containerID
 	live.ContainerName = containerName
+	live.Runtime = "docker"
 	live.State = state
 	live.UpdatedAt = time.Now().UTC()
 	st.persistCodespaceLocked(live)
@@ -221,6 +242,7 @@ func (st *Store) reserveCodespace(ownerLogin, repoKey, gitRef, machineName, disp
 		State:              "Creating",
 		ImageName:          image,
 		DevcontainerPath:   devcontainerPath,
+		Runtime:            "docker",
 	}
 
 	repoDir, cleanup, err := st.prepareWorkspaceLocked(repoKey, gitRef)
@@ -399,6 +421,9 @@ func (st *Store) RefreshCodespaceState(id int) string {
 		return ""
 	}
 	if cs.ContainerID == "" {
+		if cs.Runtime == "workspace" {
+			return cs.State
+		}
 		cs.State = "Unavailable"
 		st.persistCodespaceLocked(cs)
 		return cs.State

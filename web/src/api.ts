@@ -809,6 +809,19 @@ export const fetchRepoContents = (
   return ghFetch<GithubContentItem[]>(`/api/v3/repos/${owner}/${repo}/contents/${path}${qs}`);
 };
 
+export const fetchRepoFile = (
+  owner: string,
+  repo: string,
+  path: string,
+  ref?: string,
+): Promise<GithubContentFile> => {
+  const qs = ref ? `?ref=${encodeURIComponent(ref)}` : "";
+  const encodedPath = path.split("/").map(encodeURIComponent).join("/");
+  return ghFetch<GithubContentFile>(
+    `/api/v3/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/contents/${encodedPath}${qs}`,
+  );
+};
+
 export const fetchRepoReadme = (owner: string, repo: string, ref?: string): Promise<GithubContentFile> => {
   const qs = ref ? `?ref=${encodeURIComponent(ref)}` : "";
   return ghFetch<GithubContentFile>(`/api/v3/repos/${owner}/${repo}/readme${qs}`);
@@ -919,6 +932,7 @@ export interface Classroom {
 export interface ClassroomDashboard {
   classrooms: Classroom[];
   organizations: ClassroomOrganization[];
+  can_create_organization: boolean;
 }
 
 export const fetchClassroomDashboard = () => ghFetch<ClassroomDashboard>("/classroom-data");
@@ -926,6 +940,8 @@ export const createClassroom = (body: { name: string; organization: string }) =>
   ghPostJSON<Classroom>("/classroom-data/classrooms", body);
 export const updateClassroom = (id: number, body: { name?: string; archived?: boolean }) =>
   ghPatchJSON<Classroom>(`/classroom-data/classrooms/${id}`, body);
+export const deleteClassroom = (id: number) =>
+  ghDeleteJSON<void>(`/classroom-data/classrooms/${id}`, {});
 export const replaceClassroomRoster = (
   id: number,
   students: Array<{ login: string; roster_identifier: string }>,
@@ -945,6 +961,18 @@ export const createClassroomAssignment = (
     autograding_tests: ClassroomAutogradingTest[];
   },
 ) => ghPostJSON<ClassroomAssignment>(`/classroom-data/classrooms/${classroomID}/assignments`, body);
+export const updateClassroomAssignment = (
+  assignmentID: number,
+  body: {
+    title?: string;
+    type?: "individual" | "group";
+    invitations_enabled?: boolean;
+    deadline?: string;
+    autograding_tests?: ClassroomAutogradingTest[];
+  },
+) => ghPatchJSON<ClassroomAssignment>(`/classroom-data/assignments/${assignmentID}`, body);
+export const deleteClassroomAssignment = (assignmentID: number) =>
+  ghDeleteJSON<void>(`/classroom-data/assignments/${assignmentID}`, {});
 export const fetchClassroomInvitation = (code: string) =>
   ghFetch<ClassroomAssignment>(`/classroom-data/invitations/${encodeURIComponent(code)}`);
 export const acceptClassroomInvitation = (code: string, groupName?: string, rosterIdentifier?: string) =>
@@ -1080,6 +1108,11 @@ export async function fetchRepoCommits(owner: string, repo: string): Promise<Git
   }
   return res.json() as Promise<GithubCommit[]>;
 }
+
+export const fetchRepoCommit = (owner: string, repo: string, ref: string) =>
+  ghFetch<GithubCommit>(
+    `/api/v3/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/commits/${encodeURIComponent(ref)}`,
+  );
 
 export async function createIssue(
   owner: string,
@@ -2032,6 +2065,9 @@ export const fetchUserCodespaces = () =>
 
 export const fetchRepoCodespaces = (owner: string, repo: string) =>
   ghFetchEnvelope<GithubCodespace>(`/api/v3/repos/${owner}/${repo}/codespaces`, "codespaces");
+
+export const fetchCodespace = (name: string) =>
+  ghFetch<GithubCodespace>(`/api/v3/user/codespaces/${encodeURIComponent(name)}`);
 
 export const createUserCodespace = (payload: CodespaceCreatePayload) =>
   ghPostJSON<GithubCodespace>("/api/v3/user/codespaces", payload);

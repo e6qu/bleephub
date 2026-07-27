@@ -559,11 +559,15 @@ func TestGetRepoInstallationHTTP(t *testing.T) {
 
 	appData := createGitHubAppViaManifest(t, "Repo Inst App", nil, nil)
 	appID := int(appData["id"].(float64))
+	appJWT, err := signAppJWT(appData["pem"].(string), appID, time.Now())
+	if err != nil {
+		t.Fatalf("sign app JWT: %v", err)
+	}
 
 	installGitHubAppViaBrowser(t, appData["slug"].(string), "repo-inst-owner", "all")
 
 	// GET /repos/{owner}/{repo}/installation
-	resp2 := ghGet(t, "/api/v3/repos/repo-inst-owner/somerepo/installation", defaultToken)
+	resp2 := ghGet(t, "/api/v3/repos/repo-inst-owner/somerepo/installation", appJWT)
 	if resp2.StatusCode != 200 {
 		resp2.Body.Close()
 		t.Fatalf("expected 200, got %d", resp2.StatusCode)
@@ -574,7 +578,7 @@ func TestGetRepoInstallationHTTP(t *testing.T) {
 	}
 
 	// Repo that doesn't exist under a covered owner → 404.
-	respNoRepo := ghGet(t, "/api/v3/repos/repo-inst-owner/no-such-repo/installation", defaultToken)
+	respNoRepo := ghGet(t, "/api/v3/repos/repo-inst-owner/no-such-repo/installation", appJWT)
 	if respNoRepo.StatusCode != 404 {
 		respNoRepo.Body.Close()
 		t.Fatalf("expected 404 for nonexistent repo, got %d", respNoRepo.StatusCode)
@@ -582,12 +586,31 @@ func TestGetRepoInstallationHTTP(t *testing.T) {
 	respNoRepo.Body.Close()
 
 	// Not found
-	resp3 := ghGet(t, "/api/v3/repos/nonexistent-owner/somerepo/installation", defaultToken)
+	resp3 := ghGet(t, "/api/v3/repos/nonexistent-owner/somerepo/installation", appJWT)
 	if resp3.StatusCode != 404 {
 		resp3.Body.Close()
 		t.Fatalf("expected 404 for nonexistent owner, got %d", resp3.StatusCode)
 	}
 	resp3.Body.Close()
+
+	patResp := ghGet(t, "/api/v3/repos/repo-inst-owner/somerepo/installation", defaultToken)
+	if patResp.StatusCode != http.StatusUnauthorized {
+		patResp.Body.Close()
+		t.Fatalf("classic PAT status = %d, want 401", patResp.StatusCode)
+	}
+	patResp.Body.Close()
+
+	otherApp := createGitHubAppViaManifest(t, "Other Repo Inst App", nil, nil)
+	otherJWT, err := signAppJWT(otherApp["pem"].(string), int(otherApp["id"].(float64)), time.Now())
+	if err != nil {
+		t.Fatalf("sign other app JWT: %v", err)
+	}
+	otherResp := ghGet(t, "/api/v3/repos/repo-inst-owner/somerepo/installation", otherJWT)
+	if otherResp.StatusCode != http.StatusNotFound {
+		otherResp.Body.Close()
+		t.Fatalf("uninstalled app status = %d, want 404", otherResp.StatusCode)
+	}
+	otherResp.Body.Close()
 }
 
 func TestDeleteInstallationHTTP(t *testing.T) {

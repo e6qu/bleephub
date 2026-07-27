@@ -41,6 +41,55 @@ func createTestCodespaceRepo(t *testing.T, name string) *Repo {
 	return repo
 }
 
+func TestCodespaces_WorkspaceRuntimeWithoutDockerCLI(t *testing.T) {
+	repo := createTestCodespaceRepo(t, "cs-workspace-runtime")
+	t.Setenv("PATH", t.TempDir())
+
+	resp := ghPost(t, "/api/v3/user/codespaces", defaultToken, map[string]any{
+		"repository_id": repo.ID,
+		"machine":       "basicLinux32",
+		"display_name":  "Workspace Codespace",
+	})
+	if resp.StatusCode != http.StatusCreated {
+		body, _ := io.ReadAll(resp.Body)
+		resp.Body.Close()
+		t.Fatalf("create without Docker = %d %s, want 201", resp.StatusCode, body)
+	}
+	created := decodeJSON(t, resp)
+	name := created["name"].(string)
+	cs := testServer.store.GetCodespaceByName(name)
+	t.Cleanup(func() {
+		if live := testServer.store.GetCodespaceByName(name); live != nil {
+			_, _ = testServer.store.DeleteCodespace(live.ID)
+		}
+	})
+	if created["state"] != "Available" || cs == nil || cs.Runtime != "workspace" || cs.ContainerID != "" {
+		t.Fatalf("workspace codespace = %+v", cs)
+	}
+
+	resp = ghPost(t, "/api/v3/user/codespaces/"+name+"/stop", defaultToken, map[string]any{})
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		resp.Body.Close()
+		t.Fatalf("stop workspace codespace = %d %s, want 200", resp.StatusCode, body)
+	}
+	_ = decodeJSON(t, resp)
+	if state := testServer.store.RefreshCodespaceState(cs.ID); state != "Shutdown" {
+		t.Fatalf("state after stop = %q, want Shutdown", state)
+	}
+
+	resp = ghPost(t, "/api/v3/user/codespaces/"+name+"/start", defaultToken, map[string]any{})
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		resp.Body.Close()
+		t.Fatalf("start workspace codespace = %d %s, want 200", resp.StatusCode, body)
+	}
+	_ = decodeJSON(t, resp)
+	if state := testServer.store.RefreshCodespaceState(cs.ID); state != "Available" {
+		t.Fatalf("state after start = %q, want Available", state)
+	}
+}
+
 func TestCodespaces_UserCreateListGetDelete(t *testing.T) {
 	repo := createTestCodespaceRepo(t, "cs-user-repo")
 

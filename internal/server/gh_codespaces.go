@@ -223,7 +223,7 @@ func (s *Server) handleStartUserCodespace(w http.ResponseWriter, r *http.Request
 		writeGHError(w, http.StatusInternalServerError, "codespace start failed: "+err.Error())
 		return
 	}
-	writeJSON(w, http.StatusAccepted, s.codespaceToJSON(cs, s.baseURL(r)))
+	writeJSON(w, http.StatusOK, s.codespaceToJSON(cs, s.baseURL(r)))
 }
 
 func (s *Server) handleStopUserCodespace(w http.ResponseWriter, r *http.Request) {
@@ -236,7 +236,7 @@ func (s *Server) handleStopUserCodespace(w http.ResponseWriter, r *http.Request)
 		writeGHError(w, http.StatusInternalServerError, "codespace stop failed: "+err.Error())
 		return
 	}
-	writeJSON(w, http.StatusAccepted, s.codespaceToJSON(cs, s.baseURL(r)))
+	writeJSON(w, http.StatusOK, s.codespaceToJSON(cs, s.baseURL(r)))
 }
 
 // --- repo codespace handlers ---
@@ -895,6 +895,10 @@ func (s *Server) readSealedCodespaceSecret(w http.ResponseWriter, r *http.Reques
 
 func (s *Server) startCodespace(cs *Codespace) error {
 	if cs.ContainerID == "" {
+		if cs.Runtime == "workspace" {
+			s.store.SetCodespaceState(cs.ID, "Available", true)
+			return nil
+		}
 		return fmt.Errorf("no container")
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
@@ -908,6 +912,10 @@ func (s *Server) startCodespace(cs *Codespace) error {
 
 func (s *Server) stopCodespace(cs *Codespace) error {
 	if cs.ContainerID == "" {
+		if cs.Runtime == "workspace" {
+			s.store.SetCodespaceState(cs.ID, "Shutdown", false)
+			return nil
+		}
 		return fmt.Errorf("no container")
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
@@ -1018,7 +1026,7 @@ func (s *Server) codespaceToJSON(live *Codespace, baseURL string) map[string]int
 		"last_used_at":             cs.LastUsedAt.UTC().Format(time.RFC3339),
 		"state":                    cs.State,
 		"url":                      url,
-		"web_url":                  fmt.Sprintf("%s/codespaces/%s/web", baseURL, cs.Name),
+		"web_url":                  fmt.Sprintf("%s/ui/codespaces/%s", baseURL, cs.Name),
 		"git_status":               map[string]interface{}{"ahead": 0, "behind": 0, "has_uncommitted_changes": false, "ref": cs.GitRef},
 		"devcontainer_path":        cs.DevcontainerPath,
 		"retention_period_minutes": cs.RetentionPeriodMinutes,

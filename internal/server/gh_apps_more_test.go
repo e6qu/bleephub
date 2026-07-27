@@ -110,11 +110,9 @@ func TestGetOrgUserInstallation(t *testing.T) {
 	s.store.CreateInstallation(app.ID, "Organization", 100, "octo-org", nil, nil)
 	s.store.CreateInstallation(app.ID, "User", 200, "octocat", nil, nil)
 
-	user := s.store.UsersByLogin["admin"]
-
 	// Org installation
 	req := httptest.NewRequest("GET", "/api/v3/orgs/octo-org/installation", nil)
-	req = req.WithContext(context.WithValue(req.Context(), ctxUser, user))
+	req = req.WithContext(context.WithValue(req.Context(), ctxApp, app))
 	w := httptest.NewRecorder()
 	s.mux.ServeHTTP(w, req)
 	if w.Code != http.StatusOK {
@@ -123,7 +121,7 @@ func TestGetOrgUserInstallation(t *testing.T) {
 
 	// User installation
 	req = httptest.NewRequest("GET", "/api/v3/users/octocat/installation", nil)
-	req = req.WithContext(context.WithValue(req.Context(), ctxUser, user))
+	req = req.WithContext(context.WithValue(req.Context(), ctxApp, app))
 	w = httptest.NewRecorder()
 	s.mux.ServeHTTP(w, req)
 	if w.Code != http.StatusOK {
@@ -132,7 +130,7 @@ func TestGetOrgUserInstallation(t *testing.T) {
 
 	// Wrong target type
 	req = httptest.NewRequest("GET", "/api/v3/orgs/octocat/installation", nil)
-	req = req.WithContext(context.WithValue(req.Context(), ctxUser, user))
+	req = req.WithContext(context.WithValue(req.Context(), ctxApp, app))
 	w = httptest.NewRecorder()
 	s.mux.ServeHTTP(w, req)
 	if w.Code != http.StatusNotFound {
@@ -145,6 +143,15 @@ func TestGetOrgUserInstallation(t *testing.T) {
 	s.mux.ServeHTTP(w, req)
 	if w.Code != http.StatusUnauthorized {
 		t.Errorf("anon status = %d, want 401", w.Code)
+	}
+
+	otherApp := s.store.CreateApp(1, "Other Inst App", "", nil, nil)
+	req = httptest.NewRequest("GET", "/api/v3/orgs/octo-org/installation", nil)
+	req = req.WithContext(context.WithValue(req.Context(), ctxApp, otherApp))
+	w = httptest.NewRecorder()
+	s.mux.ServeHTTP(w, req)
+	if w.Code != http.StatusNotFound {
+		t.Errorf("other app status = %d, want 404", w.Code)
 	}
 }
 

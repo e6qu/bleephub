@@ -74,7 +74,11 @@ func (s *Server) handleClassroomDashboard(w http.ResponseWriter, r *http.Request
 			orgs = append(orgs, map[string]interface{}{"id": org.ID, "login": org.Login, "name": org.Name, "avatar_url": org.AvatarURL})
 		}
 	}
-	writeJSON(w, http.StatusOK, map[string]interface{}{"classrooms": classrooms, "organizations": orgs})
+	writeJSON(w, http.StatusOK, map[string]interface{}{
+		"classrooms":              classrooms,
+		"organizations":           orgs,
+		"can_create_organization": user.SiteAdmin,
+	})
 }
 
 func (s *Server) classroomsAdministeredBy(ctx context.Context, user *User) []*Classroom {

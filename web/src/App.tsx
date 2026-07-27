@@ -1,6 +1,6 @@
 import { lazy, Suspense, useCallback, useEffect, useState } from "react";
 import { BrowserRouter, Routes, Route, Navigate, useLocation } from "react-router";
-import { ErrorBoundary, InlineError, ToastProvider } from "@bleephub/ui-core/components";
+import { ErrorBoundary, InlineError, Spinner, ToastProvider } from "@bleephub/ui-core/components";
 import { fetchBrowserSession, isLoggedIn } from "./api.js";
 import { BleephubShell } from "./components/Shell.js";
 import { Button } from "./components/ui.js";
@@ -13,6 +13,8 @@ const RunnersPage = lazy(() => import("./pages/RunnersPage.js").then(({ RunnersP
 const ReposPage = lazy(() => import("./pages/ReposPage.js").then(({ ReposPage }) => ({ default: ReposPage })));
 const OrgReposPage = lazy(() => import("./pages/OrgReposPage.js").then(({ OrgReposPage }) => ({ default: OrgReposPage })));
 const RepoDetailPage = lazy(() => import("./pages/RepoDetailPage.js").then(({ RepoDetailPage }) => ({ default: RepoDetailPage })));
+const RepoCommitPage = lazy(() => import("./pages/RepoDetailPage.js").then(({ RepoCommitPage }) => ({ default: RepoCommitPage })));
+const RepoFilePage = lazy(() => import("./pages/RepoDetailPage.js").then(({ RepoFilePage }) => ({ default: RepoFilePage })));
 const ReleasesPage = lazy(() => import("./pages/ReleasesPage.js").then(({ ReleasesPage }) => ({ default: ReleasesPage })));
 const IssuesPage = lazy(() => import("./pages/IssuesPage.js").then(({ IssuesPage }) => ({ default: IssuesPage })));
 const PullsPage = lazy(() => import("./pages/PullsPage.js").then(({ PullsPage }) => ({ default: PullsPage })));
@@ -150,7 +152,7 @@ export function App() {
     return (
       <ErrorBoundary>
         <BrowserRouter>
-          <Suspense fallback={null}>
+          <Suspense fallback={<Spinner label="Loading sign-in" />}>
             <Routes>
               <Route path="/ui/login" element={<LoginPage />} />
               <Route path="/ui/*" element={<LoginRedirect />} />
@@ -166,7 +168,7 @@ export function App() {
       <ToastProvider>
         <BrowserRouter>
           <BleephubShell>
-            <Suspense fallback={null}>
+            <Suspense fallback={<Spinner label="Loading page" />}>
               <Routes>
                 <Route path="/ui/" element={<DashboardPage />} />
               <Route path="/ui/workflows" element={<WorkflowsPage />} />
@@ -178,6 +180,9 @@ export function App() {
               <Route path="/ui/orgs/:org/governance" element={<OrgGovernancePage />} />
               <Route path="/ui/orgs/:org/copilot" element={<CopilotPage />} />
               <Route path="/ui/repos/:owner/:repo" element={<RepoDetailPage />} />
+              <Route path="/ui/repos/:owner/:repo/commits" element={<RepoDetailPage initialTab="commits" />} />
+              <Route path="/ui/repos/:owner/:repo/commits/:sha" element={<RepoCommitPage />} />
+              <Route path="/ui/repos/:owner/:repo/blob/:ref/*" element={<RepoFilePage />} />
               <Route path="/ui/repos/:owner/:repo/releases" element={<ReleasesPage />} />
               <Route path="/ui/repos/:owner/:repo/releases/new" element={<ReleasesPage />} />
               <Route path="/ui/repos/:owner/:repo/releases/:releaseId" element={<ReleasesPage />} />
@@ -211,6 +216,7 @@ export function App() {
               <Route path="/ui/repos/:owner/:repo/packages" element={<PackagesPage />} />
               <Route path="/ui/migrations" element={<MigrationsPage />} />
               <Route path="/ui/codespaces" element={<CodespacesPage />} />
+              <Route path="/ui/codespaces/:codespaceName" element={<CodespacesPage />} />
               <Route path="/ui/repos/:owner/:repo/codespaces" element={<CodespacesPage />} />
               <Route path="/ui/classrooms" element={<ClassroomPage />} />
               <Route path="/ui/classrooms/:classroomId" element={<ClassroomPage />} />

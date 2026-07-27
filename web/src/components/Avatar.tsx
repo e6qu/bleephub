@@ -15,14 +15,18 @@ export function Avatar({
   size?: number;
   square?: boolean;
 }) {
+  const [failedSource, setFailedSource] = useState<string | null>(null);
   const radius = square ? "var(--radius-md)" : "50%";
-  if (src) {
+  if (src && src !== failedSource) {
     return (
       <img
         src={src}
         alt=""
         width={size}
         height={size}
+        loading="lazy"
+        referrerPolicy="no-referrer"
+        onError={() => setFailedSource(src)}
         style={{
           width: size,
           height: size,
@@ -56,3 +60,4 @@ export function Avatar({
     </span>
   );
 }
+import { useState } from "react";

@@ -304,6 +304,18 @@ export interface GithubCommit {
     message: string;
     author: { name: string; email: string; date: string };
   };
+  author?: { login: string; avatar_url?: string } | null;
+  committer?: { login: string; avatar_url?: string } | null;
+  stats?: { additions: number; deletions: number; total: number };
+  files?: Array<{
+    sha: string;
+    filename: string;
+    status: "added" | "modified" | "removed" | "renamed";
+    additions: number;
+    deletions: number;
+    changes: number;
+    patch?: string;
+  }>;
 }
 
 /** Git branch. */
@@ -1109,12 +1121,9 @@ export interface GithubCodespace {
   last_used_at: string;
   state: GithubCodespaceState;
   url: string;
-  html_url: string;
   web_url: string;
-  billing_url: string;
   git_status: { ahead: number; behind: number; has_uncommitted_changes: boolean; ref: string };
   devcontainer_path: string;
-  image: string;
   retention_period_minutes: number;
 }
 

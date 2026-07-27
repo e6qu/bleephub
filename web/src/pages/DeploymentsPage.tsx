@@ -76,6 +76,7 @@ function DeploymentsTab({ owner, repo }: { owner: string; repo: string }) {
   const [extra, setExtra] = useState<GithubDeployment[]>([]);
   const [nextUrl, setNextUrl] = useState<string | null>(null);
   const [pageError, setPageError] = useState<string | null>(null);
+  const [loadingMore, setLoadingMore] = useState(false);
 
   const firstPage = useQuery({
     queryKey: ["deployments", owner, repo],
@@ -94,7 +95,8 @@ function DeploymentsTab({ owner, repo }: { owner: string; repo: string }) {
     return <Blankslate title="No deployments">Deployments created via POST /deployments appear here.</Blankslate>;
 
   const loadMore = async () => {
-    if (!followUrl) return;
+    if (!followUrl || loadingMore) return;
+    setLoadingMore(true);
     try {
       const page = await fetchDeploymentsPage(owner, repo, followUrl);
       setExtra((prev) => [...prev, ...page.items]);
@@ -102,6 +104,8 @@ function DeploymentsTab({ owner, repo }: { owner: string; repo: string }) {
       setPageError(null);
     } catch (err) {
       setPageError(String(err));
+    } finally {
+      setLoadingMore(false);
     }
   };
 
@@ -121,8 +125,8 @@ function DeploymentsTab({ owner, repo }: { owner: string; repo: string }) {
       </Box>
       {followUrl && (
         <div className="flex justify-center">
-          <Button variant="secondary" size="sm" onClick={() => void loadMore()}>
-            Load more
+          <Button variant="secondary" size="sm" disabled={loadingMore} onClick={() => void loadMore()}>
+            {loadingMore ? "Loading…" : "Load more"}
           </Button>
         </div>
       )}

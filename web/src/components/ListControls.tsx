@@ -248,7 +248,7 @@ export function ListControls<T>({
             value={query}
             onChange={(e) => setQueryDraft(e.target.value)}
             className="min-w-0 flex-1"
-            style={{ background: "transparent", border: "none", fontSize: "0.85rem", outline: "none" }}
+            style={{ background: "transparent", border: "none", fontSize: "0.85rem" }}
           />
         </form>
         {actions}
