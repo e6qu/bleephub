@@ -122,7 +122,7 @@ func (s *Server) handleInternalCreatePackageVersion(w http.ResponseWriter, r *ht
 		}
 		resolvedOwnerKey = org.Login
 	case "repository":
-		repo := s.store.ReposByName[owner]
+		repo := s.store.GetRepoByFullName(owner)
 		if repo == nil {
 			writeGHError(w, http.StatusNotFound, "Not Found")
 			return
@@ -792,7 +792,7 @@ func (s *Server) handleGetRepoPackage(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	if !s.viewerCanReadRepo(r.Context(), s.store.ReposByName[p.OwnerKey]) {
+	if !s.viewerCanReadRepo(r.Context(), s.store.GetRepoByFullName(p.OwnerKey)) {
 		writeGHError(w, http.StatusNotFound, "Not Found")
 		return
 	}
@@ -808,7 +808,7 @@ func (s *Server) handleDeleteRepoPackage(w http.ResponseWriter, r *http.Request)
 	if !ok {
 		return
 	}
-	if !s.viewerCanAdminRepo(r.Context(), s.store.ReposByName[p.OwnerKey]) {
+	if !s.viewerCanAdminRepo(r.Context(), s.store.GetRepoByFullName(p.OwnerKey)) {
 		writeGHError(w, http.StatusForbidden, "Forbidden")
 		return
 	}
@@ -828,7 +828,7 @@ func (s *Server) handleListRepoPackageVersions(w http.ResponseWriter, r *http.Re
 	if !ok {
 		return
 	}
-	if !s.viewerCanReadRepo(r.Context(), s.store.ReposByName[p.OwnerKey]) {
+	if !s.viewerCanReadRepo(r.Context(), s.store.GetRepoByFullName(p.OwnerKey)) {
 		writeGHError(w, http.StatusNotFound, "Not Found")
 		return
 	}
@@ -844,7 +844,7 @@ func (s *Server) handleGetRepoPackageVersion(w http.ResponseWriter, r *http.Requ
 	if !ok {
 		return
 	}
-	if !s.viewerCanReadRepo(r.Context(), s.store.ReposByName[p.OwnerKey]) {
+	if !s.viewerCanReadRepo(r.Context(), s.store.GetRepoByFullName(p.OwnerKey)) {
 		writeGHError(w, http.StatusNotFound, "Not Found")
 		return
 	}
@@ -860,7 +860,7 @@ func (s *Server) handleDeleteRepoPackageVersion(w http.ResponseWriter, r *http.R
 	if !ok {
 		return
 	}
-	if !s.viewerCanAdminRepo(r.Context(), s.store.ReposByName[p.OwnerKey]) {
+	if !s.viewerCanAdminRepo(r.Context(), s.store.GetRepoByFullName(p.OwnerKey)) {
 		writeGHError(w, http.StatusForbidden, "Forbidden")
 		return
 	}
@@ -881,7 +881,7 @@ func (s *Server) handleListRepoPackageFiles(w http.ResponseWriter, r *http.Reque
 	if !ok {
 		return
 	}
-	if !s.viewerCanReadRepo(r.Context(), s.store.ReposByName[p.OwnerKey]) {
+	if !s.viewerCanReadRepo(r.Context(), s.store.GetRepoByFullName(p.OwnerKey)) {
 		writeGHError(w, http.StatusNotFound, "Not Found")
 		return
 	}
@@ -897,7 +897,7 @@ func (s *Server) handleDownloadRepoPackageFile(w http.ResponseWriter, r *http.Re
 	if !ok {
 		return
 	}
-	if !s.viewerCanReadRepo(r.Context(), s.store.ReposByName[p.OwnerKey]) {
+	if !s.viewerCanReadRepo(r.Context(), s.store.GetRepoByFullName(p.OwnerKey)) {
 		writeGHError(w, http.StatusNotFound, "Not Found")
 		return
 	}
@@ -1017,7 +1017,7 @@ func (s *Server) resolveRepoPackage(w http.ResponseWriter, r *http.Request) (*Pa
 		return nil, false
 	}
 	repoKey := owner + "/" + name
-	if s.store.ReposByName[repoKey] == nil {
+	if s.store.GetRepoByFullName(repoKey) == nil {
 		writeGHError(w, http.StatusNotFound, "Not Found")
 		return nil, false
 	}
@@ -1114,7 +1114,7 @@ func (s *Server) canAdminPackage(ctx context.Context, user *User, p *Package) bo
 		}
 		return false
 	case "Repository":
-		if repo := s.store.ReposByName[p.OwnerKey]; repo != nil {
+		if repo := s.store.GetRepoByFullName(p.OwnerKey); repo != nil {
 			return s.viewerCanAdminRepo(ctx, repo)
 		}
 		return false
@@ -1154,7 +1154,7 @@ func (s *Server) packageToJSON(p *Package, baseURL string) map[string]interface{
 		out["repository"] = nil
 	case "Repository":
 		out["owner"] = nil
-		if repo := s.store.ReposByName[p.OwnerKey]; repo != nil {
+		if repo := s.store.GetRepoByFullName(p.OwnerKey); repo != nil {
 			out["repository"] = minimalRepoJSON(repo, s.store, baseURL)
 		} else {
 			out["repository"] = nil

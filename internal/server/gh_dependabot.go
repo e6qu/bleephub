@@ -635,7 +635,7 @@ func (s *Server) handleListDependabotOrgAlerts(w http.ResponseWriter, r *http.Re
 	baseURL := s.baseURL(r)
 	out := make([]map[string]interface{}, 0, len(page))
 	for _, a := range page {
-		repo := s.store.ReposByName[a.RepoKey]
+		repo := s.store.GetRepoByFullName(a.RepoKey)
 		if repo == nil {
 			continue
 		}

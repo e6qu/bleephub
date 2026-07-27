@@ -252,9 +252,7 @@ func refShortName(ref string) string {
 // ── Webhook payload emission ────────────────────────────────────────
 
 func (s *Server) actionsRepoPayload(repoKey string) (map[string]interface{}, *Repo) {
-	s.store.mu.RLock()
-	repo := s.store.ReposByName[repoKey]
-	s.store.mu.RUnlock()
+	repo := s.store.GetRepoByFullName(repoKey)
 	if repo == nil {
 		return nil, nil
 	}

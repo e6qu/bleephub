@@ -629,7 +629,7 @@ func (s *Server) dispatchReadyJobs(ctx context.Context, wf *Workflow, serverURL 
 			// with required reviewers waits for a deployment review
 			// (approve via POST .../runs/{id}/pending_deployments).
 			if envName := jobEnvironmentName(wfJob); envName != "" && !envApproved(wf, envName) {
-				if env := s.protectedEnvironment(wf, envName); env != nil {
+				if env := s.protectedEnvironmentLocked(wf, envName); env != nil {
 					wfJob.Status = JobStatusWaiting
 					addPendingDeployment(wf, env)
 					if wf.Status == WorkflowStatusRunning {
@@ -920,11 +920,12 @@ func envApproved(wf *Workflow, envName string) bool {
 	return false
 }
 
-// protectedEnvironment returns the run repo's environment when it exists
+// protectedEnvironmentLocked returns the run repo's environment when it exists
 // and carries required reviewers; environments without reviewers (or
 // runs without a repo) don't gate dispatch. Referencing an environment
 // auto-creates it, matching real GitHub.
-func (s *Server) protectedEnvironment(wf *Workflow, envName string) *Environment {
+// The caller holds s.store.mu.
+func (s *Server) protectedEnvironmentLocked(wf *Workflow, envName string) *Environment {
 	if wf.RepoFullName == "" {
 		return nil
 	}

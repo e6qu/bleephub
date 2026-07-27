@@ -198,9 +198,7 @@ func jobConclusion(status, result string) any {
 // responses (required `repository` / `head_repository` members). Runs
 // reference repos by full name; a run whose repo is gone renders null.
 func (s *Server) runRepoJSON(fullName, baseURL string) map[string]interface{} {
-	s.store.mu.RLock()
-	repo := s.store.ReposByName[fullName]
-	s.store.mu.RUnlock()
+	repo := s.store.GetRepoByFullName(fullName)
 	if repo == nil {
 		return nil
 	}
