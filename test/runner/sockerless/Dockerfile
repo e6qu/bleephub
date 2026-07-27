@@ -68,7 +68,7 @@ FROM ubuntu:26.04
 # simulator service-account JSON (token_uri -> simulator /token) the backend's
 # Google clients sign.
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    curl ca-certificates jq git libicu70 libssl3 openssl python3 python3-nacl docker.io && \
+    curl ca-certificates jq git libicu78 libssl3 openssl python3 python3-nacl docker.io && \
     rm -rf /var/lib/apt/lists/*
 
 # Download official GitHub Actions runner (auto-detect architecture)
