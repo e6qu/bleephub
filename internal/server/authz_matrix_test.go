@@ -252,3 +252,84 @@ func TestGraphQLDeleteRepositoryRejectsANonAdmin(t *testing.T) {
 		t.Fatalf("repository was deleted by a user with no admin rights")
 	}
 }
+
+// TestInstallationTokenCannotReachAnotherAccountsRepo closes the hole an
+// adversarial review of this branch demonstrated.
+//
+// requirePerm originally ran its resource check only for the classic-PAT and
+// session branch. An installation token was checked against its own permission
+// map — which is self-declared and says nothing about which repository the
+// request names — and then admitted. An app installed on the attacker's own
+// account therefore reached 30 mutating routes on a stranger's private
+// repository, including PUT .../collaborators/{username}, which is persistent
+// access, and the runner registration-token endpoint.
+//
+// The mirror image mattered too: the read gate asked canReadRepo about the
+// synthetic bot user standing in for the installation, and that bot is a
+// collaborator on nothing, so apps lost reads they were entitled to.
+func TestInstallationTokenCannotReachAnotherAccountsRepo(t *testing.T) {
+	store := testServer.store
+
+	now := time.Now().UTC()
+	store.mu.Lock()
+	attacker := &User{ID: store.NextUser, Login: "instscope-attacker", Type: "User", CreatedAt: now, UpdatedAt: now}
+	store.Users[attacker.ID] = attacker
+	store.UsersByLogin[attacker.Login] = attacker
+	store.NextUser++
+	victim := &User{ID: store.NextUser, Login: "instscope-victim", Type: "User", CreatedAt: now, UpdatedAt: now}
+	store.Users[victim.ID] = victim
+	store.UsersByLogin[victim.Login] = victim
+	store.NextUser++
+	store.mu.Unlock()
+
+	victimRepo := store.CreateRepo(victim, "instscope-private", "", true)
+	attackerRepo := store.CreateRepo(attacker, "instscope-own", "", true)
+	if victimRepo == nil || attackerRepo == nil {
+		t.Fatalf("could not create the fixture repositories")
+	}
+
+	// An app installed on the attacker's own account, with broad permissions.
+	perms := map[string]string{
+		"administration": "write", "contents": "write", "issues": "write",
+		"metadata": "read", "secrets": "write",
+	}
+	app := store.CreateApp(attacker.ID, "instscope-app", "", perms, nil)
+	inst := store.CreateInstallation(app.ID, "User", attacker.ID, attacker.Login, perms, nil)
+	tok := store.CreateInstallationToken(inst.ID, app.ID, perms, nil)
+	if tok == nil {
+		t.Fatalf("could not mint an installation token")
+	}
+
+	handler := testServer.ghHeadersMiddleware(testServer.mux)
+
+	do := func(method, path string) int {
+		req := httptest.NewRequest(method, path, bytes.NewReader([]byte("{}")))
+		req.Header.Set("Authorization", "token "+tok.Token)
+		req.Header.Set("Content-Type", "application/json")
+		w := httptest.NewRecorder()
+		handler.ServeHTTP(w, req)
+		return w.Code
+	}
+
+	// Against the victim's repository: never a success.
+	victimBase := "/api/v3/repos/" + victim.Login + "/" + victimRepo.Name
+	for _, probe := range []struct{ method, path string }{
+		{http.MethodPut, victimBase + "/collaborators/instscope-attacker"},
+		{http.MethodPost, victimBase + "/actions/runners/registration-token"},
+		{http.MethodPut, victimBase + "/branches/main/protection"},
+		{http.MethodPost, victimBase + "/labels"},
+		{http.MethodGet, victimBase + "/labels"},
+	} {
+		if code := do(probe.method, probe.path); code >= 200 && code < 300 {
+			t.Errorf("%s %s = %d: an installation on another account reached this repository",
+				probe.method, probe.path, code)
+		}
+	}
+
+	// Against its own account's repository the installation must still work,
+	// or the fix has simply broken GitHub Apps instead of scoping them.
+	ownBase := "/api/v3/repos/" + attacker.Login + "/" + attackerRepo.Name
+	if code := do(http.MethodGet, ownBase+"/labels"); code < 200 || code >= 300 {
+		t.Errorf("GET %s/labels = %d, want 2xx — the installation is entitled to its own account's repository", ownBase, code)
+	}
+}

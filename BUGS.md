@@ -13,7 +13,7 @@ source or comments. The reasoning behind a fix belongs in its commit message.
 
 | ID | S | Location | Finding | Status |
 |---|---|---|---|---|
-| AUTH-001 | B | gh_apps_perms.go:100-128 | `requirePerm` is a credential-shape gate, not an authorization gate: for a classic PAT or any browser session it evaluates no predicate and falls through to the handler | partial — resource check now enforced; classic-PAT scope enforcement still open |
+| AUTH-001 | B | gh_apps_perms.go:100-128 | `requirePerm` is a credential-shape gate, not an authorization gate: for a classic PAT or any browser session it evaluates no predicate and falls through to the handler | fixed — resource check now runs for every credential shape; classic-PAT scope enforcement still open |
 | AUTH-002 | B | gh_apps_perms.go:113 | `token.Scopes` is stored, persisted and emitted as `X-OAuth-Scopes` but enforced nowhere — a PAT scoped `read:org` can delete organizations | open |
 | AUTH-003 | B | auth.go:19-29, agents.go:33,180, broker.go:112 | The entire `/_apis/` runner protocol has no authentication; `ghHeadersMiddleware` does not even run on it | open |
 | AUTH-004 | B | secrets_vars_inject.go:39 | Job messages carry every org/repo/environment secret in plaintext to any caller who can poll the broker | open |
@@ -69,7 +69,7 @@ source or comments. The reasoning behind a fix belongs in its commit message.
 | REST-009 | B | gh_hooks_rest.go:69-82 | Any authenticated user installs a webhook on any private repo and exfiltrates every subsequent payload | open |
 | REST-010 | B | gh_branch_protection.go:141 | All 41 branch-protection routes unauthorized — privilege escalation against the merge gate in the same file | open |
 | REST-011 | B | gh_dependabot.go:22,242,259 | 13 Dependabot secret handlers with no collaborator or admin check | open |
-| REST-012 | B | gh_apps_rest.go:916-973 | Installation repository allowlist mutable by any user on an arbitrary installation ID; `user` is resolved and never used | open |
+| REST-012 | B | gh_apps_rest.go:916-973 | Installation repository allowlist mutable by any user on an arbitrary installation ID; `user` is resolved and never used | partial — installation tokens are now scoped to their installation at the wrapper; the per-handler installation checks are still open |
 | REST-013 | B | gh_actions_permissions.go:257-263 | Map write performed under a read lock — `fatal error: concurrent map writes`, unrecoverable | fixed |
 | REST-014 | B | gh_notifications.go:89, gh_rulesets.go:135, gh_migrations.go:414, gh_apps_oauth_mgmt.go:323 | Eight unsynchronized reads of maps written under the write lock — `fatal error: concurrent map read and map write` | partial — 9 verified sites converted; 6 more sit inside a held lock and need per-site work |
 | REST-015 | B | gh_codespaces.go:139, gh_gists_rest.go:436, +9 more | Live store pointers rendered outside the lock; `populateGistURLs` writes a request-derived base URL into the shared object on every GET | open |
@@ -251,7 +251,7 @@ source or comments. The reasoning behind a fix belongs in its commit message.
 | ACT-018 | M | matrix.go:20 | `include` applied before `exclude`, reversing GitHub's documented order | fixed |
 | ACT-019 | M | workflows.go:315 | Matrix group membership reverse-engineered from the job key's textual shape, so unrelated jobs named `build_1`/`build_2` share fail-fast | open |
 | ACT-020 | M | workflows.go:80,323 | `max-parallel` stored per run rather than per matrix group, last writer wins | open |
-| ACT-021 | M | workflows.go:834,1037 | `continue-on-error` does not prevent the run from failing — its entire documented purpose | fixed |
+| ACT-021 | M | workflows.go:834,1037 | `continue-on-error` does not prevent the run from failing — its entire documented purpose | fixed — including the fail-fast interaction |
 | ACT-022 | M | workflows.go:1230 | A completion arriving with no result is silently recorded as successful | open |
 | ACT-023 | M | workflow_call.go:374,461 | Broken `with:`, output and secret templates are logged and skipped, so a called workflow runs with empty inputs or unauthenticated | open |
 | ACT-024 | M | workflow_call.go:398 | `"yes"` coerces to false for a boolean input and `"12abc"` to 12 for a number; `choice` options unvalidated | open |

@@ -565,7 +565,7 @@ func (s *Server) lookupReadableRepoFromPath(w http.ResponseWriter, r *http.Reque
 		writeGHError(w, http.StatusNotFound, "Not Found")
 		return nil
 	}
-	if repo.Private && !canReadRepo(s.store, ghUserFromContext(r.Context()), repo) {
+	if repo.Private && !s.viewerCanReadRepo(r, repo) {
 		writeGHError(w, http.StatusNotFound, "Not Found")
 		return nil
 	}

@@ -632,6 +632,21 @@ func (s *Server) internalAuthMiddleware(next http.Handler) http.Handler {
 			writeJSON(w, http.StatusUnauthorized, map[string]string{"message": "Requires authentication"})
 			return
 		}
+		// Site admin, for the whole /internal/ prefix rather than per route
+		// table. Ten routes are registered outside registerMgmtRoutes —
+		// /internal/exec/*, /internal/metrics, /internal/status,
+		// /internal/storage, POST /internal/orgs — and gating one table left
+		// those open to any account holding any token. handleSubmitJob does no
+		// authorization of its own and dispatches a container to the runner
+		// fleet, so that gap was arbitrary code execution for the
+		// lowest-privileged account on the instance.
+		//
+		// The prefix is an operator surface, not a naming convention, so the
+		// check belongs here where nothing can be registered around it.
+		if !user.SiteAdmin {
+			writeJSON(w, http.StatusForbidden, map[string]string{"message": "Must be a site admin"})
+			return
+		}
 		next.ServeHTTP(w, r.WithContext(context.WithValue(r.Context(), ctxUser, user)))
 	})
 }

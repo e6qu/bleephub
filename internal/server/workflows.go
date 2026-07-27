@@ -784,8 +784,16 @@ func (s *Server) onJobCompleted(ctx context.Context, jobID, result string) {
 	foundJob.CompletedAt = time.Now()
 	s.queueActionsEvent(evJobCompleted, foundWf, foundJob)
 
-	// Matrix fail-fast: if this job failed and it's in a matrix group, cancel siblings
-	if foundJob.Result == ResultFailure && foundJob.MatrixGroup != "" {
+	// Matrix fail-fast: if this job failed and it's in a matrix group, cancel
+	// siblings.
+	//
+	// A job marked continue-on-error does not trigger it. Its failure is
+	// tolerated by definition, and cancelling the siblings would put the run
+	// back on the failing path through the back door: the roll-up excludes the
+	// tolerated failure but counts a cancellation, so the same tolerated
+	// failure turned a matrix run red while an identical plain job stayed
+	// green.
+	if foundJob.Result == ResultFailure && foundJob.MatrixGroup != "" && !foundJob.ContinueOnError {
 		if foundJob.Def.FailFast() {
 			for _, sibling := range foundWf.Jobs {
 				if sibling.Key == foundJob.Key {
