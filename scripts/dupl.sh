@@ -18,12 +18,24 @@ if [[ ! -x "$DUPL" ]]; then
 fi
 
 ROOT=$(git rev-parse --show-toplevel)
-if [[ -z "$(find "$ROOT" -maxdepth 1 -name "*.go" ! -name "*_test.go" -type f)" ]]; then
+
+# Every Go file in the tree lives under a subdirectory, so a depth-1 scan finds
+# nothing at all. Generated code and vendored fixtures are excluded because a
+# clone report against them is not actionable.
+sources() {
+  find "$ROOT" -name "*.go" ! -name "*_test.go" ! -name "*_gen.go" -type f \
+    -not -path "$ROOT/.git/*" \
+    -not -path "$ROOT/web/*" \
+    -not -path "*/testdata/*" \
+    -not -path "*/vendor/*" | sort
+}
+
+if [[ -z "$(sources)" ]]; then
   echo "bleephub-dupl: no Go files found" >&2
   exit 1
 fi
 
-out=$(find "$ROOT" -maxdepth 1 -name "*.go" ! -name "*_test.go" -type f | sort | "$DUPL" -t 200 -files 2>&1)
+out=$(sources | "$DUPL" -t 200 -files 2>&1)
 count=$(echo "$out" | grep -c "^found" || true)
 if [[ "$count" -gt 0 ]]; then
   echo "FAIL: bleephub dupl found $count clone group(s) above threshold (200 tokens):" >&2

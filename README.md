@@ -498,6 +498,21 @@ Two unit-test gates validate bleephub against the vendored GitHub OpenAPI descri
 - [specs/BLEEPHUB_GITHUB_API_PARITY.md](specs/BLEEPHUB_GITHUB_API_PARITY.md) — per-endpoint parity audit + acceptance criteria.
 - The repository source and tests — standalone server, user interface, and infrastructure module.
 
+## Releasing
+
+Push a semver tag; everything else is automatic. See [RELEASING.md](RELEASING.md).
+
+## Licence
+
+GNU Affero General Public License v3.0 or later — see [LICENSE](LICENSE).
+
+Because the server is normally reached over a network, AGPL section 13 applies:
+anyone you let use a modified instance is entitled to that instance's source.
+
+Third-party material redistributed inside the published images is inventoried in
+[THIRD-PARTY-NOTICES.md](THIRD-PARTY-NOTICES.md); all of it (MIT, CC-BY 4.0) is
+one-way compatible with AGPLv3, so inbound dependencies must stay that way.
+
 ## Prior art
 
 [ChristopherHX/runner.server](https://github.com/ChristopherHX/runner.server) (C#, 25 controllers) proved this approach works. bleephub is a from-scratch Go implementation informed by studying the runner source + runner.server's protocol handling, but shares no code with either.

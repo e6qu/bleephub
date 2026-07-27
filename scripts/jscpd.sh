@@ -8,7 +8,7 @@ cd "$(dirname "${BASH_SOURCE[0]}")/../web"
 # Run jscpd on src/ only (min 200 tokens — eliminates pure structural
 # React boilerplate from DataTable column definitions and tab panel setup).
 set +e
-out=$(npx --yes jscpd \
+out=$(npx --yes jscpd@5.0.12 \
   --min-tokens 200 \
   --ignore-pattern "src/__tests__/**" \
   --reporters "console" \

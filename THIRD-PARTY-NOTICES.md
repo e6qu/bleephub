@@ -4,6 +4,9 @@ Bleephub vendors and redistributes the following third-party material. Anything
 that ships inside a published container image is marked as such, because that is
 where redistribution obligations attach.
 
+Bleephub itself is AGPL-3.0-or-later ([LICENSE](LICENSE)). Every entry below is
+one-way compatible with that, and inbound dependencies have to stay that way.
+
 ## Twemoji — CC-BY 4.0 — **redistributed in the server image**
 
 Emoji raster images backing `GET /emojis` and `/images/icons/emoji/`.

@@ -37,7 +37,7 @@ jobs:
   quality:
     name: Go static analysis
     runs-on: ubuntu-latest
-    timeout-minutes: 12
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v7.0.0
       - uses: actions/setup-go@v6.5.0
@@ -79,6 +79,35 @@ jobs:
           go test -race -tags noui -count=1 -timeout 15m \
             -run 'Stress|Race|Concurren|PrivateRepo|RequirePerm|AuthHardening|GraphQLDelete|Workflow' \
             ./internal/server/
+      # scripts/deadcode.sh and scripts/dupl.sh were written, made executable
+      # and then referenced by nothing — no workflow, no Makefile target, no
+      # documentation. dupl.sh in particular scanned the repository root at
+      # depth 1, where this tree keeps no Go files at all, so it exited 1 on
+      # "no Go files found" every time it was run and had never once reported
+      # on the 203 files it was written for.
+      #
+      # Tool versions are pinned rather than @latest so a gate cannot change
+      # its verdict on an unrelated pull request. deadcode tracks the x/tools
+      # version the module already depends on.
+      - name: Install the pinned analysis tools
+        run: |
+          go install github.com/mibk/dupl@v1.1.0
+          go install golang.org/x/tools/cmd/deadcode@v0.47.0
+      - name: Check for unreachable functions
+        run: ./scripts/deadcode.sh
+      - name: Check for copy-pasted Go code
+        run: ./scripts/dupl.sh
+      # The workflows and the shell scripts they call had no linting of their
+      # own, so the class of mistake that only shows up on a runner — a bad
+      # expression, an unquoted expansion, a step referring to a script that
+      # was renamed — could only be found by pushing. Both tools report clean
+      # on this tree today.
+      - name: Install the pinned workflow linter
+        run: go install github.com/rhysd/actionlint/cmd/actionlint@v1.7.12
+      - name: Lint the workflows
+        run: actionlint .github/workflows/*.yml
+      - name: Lint the shell scripts
+        run: shellcheck scripts/*.sh web/e2e/*.sh
 
   modules:
     name: Nested Go modules
@@ -124,10 +153,68 @@ jobs:
             exit 1
           fi
 
+  images:
+    name: Release images
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v7.0.0
+      - uses: docker/setup-buildx-action@v4.2.0
+      # Both release Dockerfiles were built for the first time on push to main,
+      # after review had already happened — so a Dockerfile change could only
+      # be discovered broken once it was unreviewable and the publish had
+      # already failed.
+      #
+      # This also compiles dqlite-node, which is the only build of it anywhere.
+      # It sits behind `//go:build dqlite` and needs libdqlite headers, so
+      # `go build ./...` and `go vet ./...` both skip the file silently; the
+      # release image's dqlite-builder stage installs the headers and is the
+      # one place it is type-checked at all.
+      #
+      # Reads the publish workflow's cache and writes its own, so a pull request
+      # gets warm layers without being able to poison what main publishes.
+      - name: Build the release image
+        uses: docker/build-push-action@v7.3.0
+        with:
+          context: .
+          file: Dockerfile.release
+          platforms: linux/amd64
+          push: false
+          cache-from: |
+            type=gha,scope=bleephub-ci-amd64
+            type=gha,scope=bleephub-amd64
+          cache-to: type=gha,scope=bleephub-ci-amd64,mode=max
+      - name: Build the runner image
+        uses: docker/build-push-action@v7.3.0
+        with:
+          context: .
+          file: Dockerfile.runner
+          platforms: linux/amd64
+          push: false
+          cache-from: |
+            type=gha,scope=bleephub-runner-ci-amd64
+            type=gha,scope=bleephub-runner-amd64
+          cache-to: type=gha,scope=bleephub-runner-ci-amd64,mode=max
+      # The two release bundles are shell scripts run only by the publish
+      # workflow, so a syntax error or a broken cross-compile in either reached
+      # main unbuilt as well.
+      - uses: actions/setup-go@v6.5.0
+        with:
+          go-version-file: go.mod
+          cache: true
+      - name: Build the startup and wake bundles
+        run: |
+          set -euo pipefail
+          BLEEPHUB_VERSION=ci BLEEPHUB_PUBLISHED_AT=1970-01-01T00:00:00Z \
+            scripts/build-bleephub-startup.sh .build/bleephub-ecs
+          scripts/build-bleephub-wake.sh .build/bleephub-wake
+          test -s .build/bleephub-ecs/bleephub-startup.zip
+          test -s .build/bleephub-wake/bleephub-wake.zip
+
   web:
     name: Web application
     runs-on: ubuntu-latest
-    timeout-minutes: 12
+    timeout-minutes: 16
     steps:
       - uses: actions/checkout@v7.0.0
       - uses: oven-sh/setup-bun@v2.2.0
@@ -139,6 +226,15 @@ jobs:
         run: cd web && bun run typecheck && bun run test
       - name: Build the embedded web application
         run: cd web && bun run build
+      # The web counterparts of the same two orphaned gates. knip reported
+      # e2e/shauth-sso.mjs as an unused file because it is launched by
+      # scripts/test-shauth-sso.sh rather than imported; it is declared as an
+      # entry point alongside the webhook receiver, which had the same shape
+      # and was already declared.
+      - name: Check for dead TypeScript exports
+        run: ./scripts/knip.sh
+      - name: Check for copy-pasted TypeScript
+        run: ./scripts/jscpd.sh
 
   terraform:
     name: Terraform module
@@ -212,9 +308,14 @@ jobs:
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@v7.0.0
+      # Pinned to a commit for the same reason the shauth checkout above is:
+      # an unpinned default branch makes this job's verdict depend on a push to
+      # a different repository, so a green pull request can turn red without
+      # anyone touching it — and the reverse, which is worse.
       - uses: actions/checkout@v7.0.0
         with:
           repository: e6qu/sockerless
+          ref: 2e6966f7982e6d908a4beb1e59e0973ac892b6b1
           path: sockerless
       - name: Exercise the official runner against the real simulator and backend
         run: timeout --foreground --kill-after=1m 14m env SOCKERLESS_ROOT="$GITHUB_WORKSPACE/sockerless" make runner-sockerless-test

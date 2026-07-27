@@ -516,12 +516,12 @@ source or comments. The reasoning behind a fix belongs in its commit message.
 
 | ID | S | Location | Finding | Status |
 |---|---|---|---|---|
-| CI-001 | B | repo root | No LICENSE file, while every published image embeds a CC-BY-4.0 asset archive | open |
-| CI-002 | B | publish-container.yml | No release workflow, no semver, no tag, no GitHub Release, no changelog — zero git tags exist | open |
-| CI-003 | B | ci.yml:23,37 | Zero static analysis: no vet, lint, gofmt check, race, coverage, govulncheck, module verification or ESLint | partial — gofmt and go vet (both tag sets) now gate; golangci-lint, -race, coverage and govulncheck need real defects fixed first |
-| CI-004 | B | scripts/*.sh | Four written quality gates referenced by nothing | open |
-| CI-005 | B | scripts/dupl.sh:20 | Scans repo root at depth 1 where no Go files live — it would fail 100% of the time if wired, and has never detected a clone | open |
-| CI-006 | B | ci.yml:113 | The sockerless checkout is unpinned while shauth beside it is pinned to a SHA | open |
+| CI-001 | B | repo root | No LICENSE file, while every published image embeds a CC-BY-4.0 asset archive | fixed — AGPL-3.0-or-later, verbatim from gnu.org (sha256 `0d96a4ff…9abcb0`), declared in `web/package.json` and README; **assumed**, not confirmed by the owner |
+| CI-002 | B | publish-container.yml | No release workflow, no semver, no tag, no GitHub Release, no changelog — zero git tags exist | fixed — semver tags enter the existing publish pipeline as a second trigger; version+`latest` manifests, a `release` job attaching both bundles, generated notes as the changelog, prerelease on a hyphen, semver exempt from pruning, RELEASING.md |
+| CI-003 | B | ci.yml:23,37 | Zero static analysis: no vet, lint, gofmt check, race, coverage, govulncheck, module verification or ESLint | partial — gofmt, go vet (both tag sets), a race subset, deadcode, dupl, knip, jscpd, actionlint and shellcheck now gate; golangci-lint, coverage and govulncheck still need real defects fixed first |
+| CI-004 | B | scripts/*.sh | Four written quality gates referenced by nothing | fixed — all four gate CI with pinned tool versions; three duplicate scripts removed, one of which pointed at a directory that does not exist |
+| CI-005 | B | scripts/dupl.sh:20 | Scans repo root at depth 1 where no Go files live — it would fail 100% of the time if wired, and has never detected a clone | fixed — scans all 203 non-generated Go files; verified it detects (268 groups at t=60) and that the tree genuinely passes at t=200 |
+| CI-006 | B | ci.yml:113 | The sockerless checkout is unpinned while shauth beside it is pinned to a SHA | fixed — pinned to 2e6966f7982e6d908a4beb1e59e0973ac892b6b1 |
 | CI-007 | B | terraform/versions.tf | No state backend declared, and state contains the SSH host private key and admin token in cleartext, not gitignored | open |
 | CI-008 | B | terraform/main.tf:890 | Zero minimum healthy percent, no container health check and no circuit breaker — every deploy is a hard outage with no rollback | open |
 | CI-009 | B | terraform/main.tf:885 | `desired_count` has two writers and no `ignore_changes`, so applying while awake terminates the live service | open |
@@ -529,8 +529,8 @@ source or comments. The reasoning behind a fix belongs in its commit message.
 | CI-011 | B | 5 fetches | Five network fetches into shipped images and vendored files with no checksum, including the runner tarball and the gh signing keyring | open |
 | CI-012 | B | publish-container.yml:63 | Four public images with no SBOM, signing, provenance or vulnerability scanning | open |
 | CI-013 | B | 3 modules | Three Go modules never built or tested, including the only test for the Lambda gating production traffic | fixed |
-| CI-014 | B | dqlite-node/main.go:1 | The storage quorum binary is behind a build tag CI never enables and first compiles after merge | open |
-| CI-015 | B | publish-container.yml:3 | The release Dockerfiles are never built on pull requests | open |
+| CI-014 | B | dqlite-node/main.go:1 | The storage quorum binary is behind a build tag CI never enables and first compiles after merge | fixed — the new `images` job builds Dockerfile.release on pull requests, whose dqlite-builder stage installs libdqlite-dev and compiles it |
+| CI-015 | B | publish-container.yml:3 | The release Dockerfiles are never built on pull requests | fixed — new `images` job builds both release Dockerfiles and both release bundles on every pull request, reading the publish cache and writing its own |
 | CI-016 | M | publish-container.yml:11 | `cancel-in-progress` on a publishing workflow can orphan architecture tags with no manifest | open |
 | CI-017 | M | ci.yml:3 | No concurrency group; superseded runs burn ~90 runner-minutes per force-push | fixed |
 | CI-018 | M | both workflows | Every action pinned by mutable tag, one by floating major, in a workflow holding `packages: write` | open |
