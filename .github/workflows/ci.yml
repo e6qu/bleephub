@@ -62,6 +62,23 @@ jobs:
         run: go vet ./...
       - name: Vet without the UI
         run: go vet -tags noui ./...
+      # The race detector was absent entirely, while five tests name it as
+      # their assertion mechanism in their own doc comments — without it,
+      # TestStressPRSerializerRace and its siblings cannot fail for any reason
+      # short of a panic. That matters here because a concurrent map write in
+      # Go is a fatal error that kills the process, not a recoverable panic a
+      # handler could turn into a 500.
+      #
+      # This is a subset, not the whole suite: -race is several times slower,
+      # and the Docker-backed tests would push the job past its budget. It
+      # covers the tests written for the detector plus the authorization and
+      # workflow paths, and reports zero races today. Widening it to the full
+      # suite is worth doing once the runtime is measured on a real runner.
+      - name: Race detector over the concurrency and authorization paths
+        run: |
+          go test -race -tags noui -count=1 -timeout 15m \
+            -run 'Stress|Race|Concurren|PrivateRepo|RequirePerm|AuthHardening|GraphQLDelete|Workflow' \
+            ./internal/server/
 
   modules:
     name: Nested Go modules

@@ -439,8 +439,8 @@ source or comments. The reasoning behind a fix belongs in its commit message.
 
 | ID | S | Location | Finding | Status |
 |---|---|---|---|---|
-| TEST-001 | B | ci.yml:23 | `-race` appears nowhere in the repository, while five tests name the race detector as their assertion mechanism | open |
-| TEST-002 | B | webhook_lastresp_race_test.go:13 | Zero assertions — the only such file of 210; cannot fail without the race detector | open |
+| TEST-001 | B | ci.yml:23 | `-race` appears nowhere in the repository, while five tests name the race detector as their assertion mechanism | partial — a race job now gates the concurrency and authorization paths and reports zero races; the Docker-backed tests are not yet covered |
+| TEST-002 | B | webhook_lastresp_race_test.go:13 | Zero assertions — the only such file of 210; cannot fail without the race detector | partial — the detector now runs in CI, so these tests can fail; they still assert nothing themselves |
 | TEST-003 | B | dqlite_integration_test.go:1 | Its build tag appears exactly once in the repository: on its own first line; the harness it references does not exist | open |
 | TEST-004 | B | sdk-tests, terraform/wake, test/terraform-sockerless | Three modules and ~2,676 lines of tests never executed by CI, any Makefile target, any script or any Dockerfile | open |
 | TEST-005 | B | 28 targets | `-fuzz` is never invoked and the corpus covers 3 of 28 targets, so the route fuzzer is a 24-case table test | open |
