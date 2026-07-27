@@ -70,7 +70,7 @@ jobs:
 	testServer.store.PendingMessages = kept
 	testServer.store.mu.Unlock()
 
-	msg := testServer.pullPendingMessage(sess)
+	msg := testServer.pullPendingMessage(sess, runnerScope{Repo: repoKey})
 	if msg == nil || msg.JobID != slowJobID {
 		t.Fatalf("runner did not pull the slow job: %v", msg)
 	}
@@ -337,17 +337,13 @@ runs:
 		"README.md": "composite test action",
 	})
 
-	resp, err := http.Get("http://" + testServer.addr + "/_apis/v1/actions/tarball/actowner/hello-action/main")
-	if err != nil {
-		t.Fatal(err)
-	}
+	// The runner fetches an action tarball with the job's runtime token.
+	jobToken, _ := testJobToken(t, testServer, "actowner/hello-action")
+	resp := runnerDo(t, "GET", "http://"+testServer.addr+"/_apis/v1/actions/tarball/actowner/hello-action/main", jobToken, "")
 	defer resp.Body.Close()
 	if resp.StatusCode == http.StatusBadGateway {
 		// Default branch may be master in the test storage.
-		resp2, err2 := http.Get("http://" + testServer.addr + "/_apis/v1/actions/tarball/actowner/hello-action/master")
-		if err2 != nil {
-			t.Fatal(err2)
-		}
+		resp2 := runnerDo(t, "GET", "http://"+testServer.addr+"/_apis/v1/actions/tarball/actowner/hello-action/master", jobToken, "")
 		defer resp2.Body.Close()
 		resp = resp2
 	}

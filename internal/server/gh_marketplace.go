@@ -1,6 +1,7 @@
 package bleephub
 
 import (
+	"context"
 	"encoding/base64"
 	"net/http"
 	"net/url"
@@ -64,7 +65,7 @@ func (s *Server) handleListMarketplaceBuyerAccounts(w http.ResponseWriter, r *ht
 	}
 	rows := []map[string]interface{}{{"id": user.ID, "login": user.Login, "type": "User", "avatar_url": user.AvatarURL}}
 	for _, org := range s.store.ListOrgsByUser(user.ID) {
-		if canAdminOrg(s.store, user, org) {
+		if s.viewerCanAdminOrg(r.Context(), org.Login) {
 			rows = append(rows, map[string]interface{}{"id": org.ID, "login": org.Login, "type": "Organization", "avatar_url": org.AvatarURL})
 		}
 	}
@@ -494,12 +495,12 @@ type marketplaceBuyerAccount struct {
 	accountType string
 }
 
-func (s *Server) marketplaceBuyerAccount(w http.ResponseWriter, user *User, login string) (marketplaceBuyerAccount, bool) {
+func (s *Server) marketplaceBuyerAccount(ctx context.Context, w http.ResponseWriter, user *User, login string) (marketplaceBuyerAccount, bool) {
 	if login == "" || strings.EqualFold(login, user.Login) {
 		return marketplaceBuyerAccount{id: user.ID, login: user.Login, accountType: "User"}, true
 	}
 	org := s.store.GetOrg(login)
-	if org == nil || !canAdminOrg(s.store, user, org) {
+	if org == nil || !s.viewerCanAdminOrg(ctx, org.Login) {
 		writeGHError(w, http.StatusNotFound, "Not Found")
 		return marketplaceBuyerAccount{}, false
 	}
@@ -542,7 +543,7 @@ func (s *Server) handlePurchaseMarketplaceBrowser(w http.ResponseWriter, r *http
 	if !decodeJSONBody(w, r, &req) {
 		return
 	}
-	account, ok := s.marketplaceBuyerAccount(w, user, req.Account)
+	account, ok := s.marketplaceBuyerAccount(r.Context(), w, user, req.Account)
 	if !ok {
 		return
 	}
@@ -625,7 +626,7 @@ func (s *Server) handleListMarketplaceSubscriptionsBrowser(w http.ResponseWriter
 	}
 	accounts := []accountRef{{typeName: "User", id: user.ID, login: user.Login}}
 	for _, org := range s.store.ListOrgsByUser(user.ID) {
-		if canAdminOrg(s.store, user, org) {
+		if s.viewerCanAdminOrg(r.Context(), org.Login) {
 			accounts = append(accounts, accountRef{typeName: "Organization", id: org.ID, login: org.Login})
 		}
 	}
@@ -666,7 +667,7 @@ func (s *Server) handleChangeMarketplaceSubscriptionBrowser(w http.ResponseWrite
 	if !decodeJSONBody(w, r, &req) {
 		return
 	}
-	account, ok := s.marketplaceBuyerAccount(w, user, req.Account)
+	account, ok := s.marketplaceBuyerAccount(r.Context(), w, user, req.Account)
 	if !ok {
 		return
 	}
@@ -732,7 +733,7 @@ func (s *Server) handleCancelMarketplaceSubscriptionBrowser(w http.ResponseWrite
 		return
 	}
 	s.reconcileMarketplacePurchasesLocked(listing.Slug)
-	account, ok := s.marketplaceBuyerAccount(w, user, r.URL.Query().Get("account"))
+	account, ok := s.marketplaceBuyerAccount(r.Context(), w, user, r.URL.Query().Get("account"))
 	if !ok {
 		return
 	}
@@ -821,10 +822,10 @@ func (s *Server) emitMarketplaceWebhook(listing *MarketplaceListing, event, acti
 	}
 	hook := &Webhook{ID: listing.WebhookID, URL: listing.WebhookURL, Secret: listing.WebhookSecret,
 		ContentType: listing.WebhookContentType, Active: true, MarketplaceSlug: listing.Slug}
-	go func() {
+	s.enqueueWebhookJob(webhookQueueKey(hook), func() {
 		delivery := s.doDeliverAttempt(hook, event, action, uuid.New().String(), mustMarshal(payload), false)
 		s.store.AddMarketplaceDelivery(listing.Slug, delivery)
-	}()
+	})
 }
 
 func (s *Server) baseURLFromConfig() string {

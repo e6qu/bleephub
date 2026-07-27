@@ -317,7 +317,7 @@ func (s *Server) handleSetRepoSubscription(w http.ResponseWriter, r *http.Reques
 	if repo == nil {
 		return
 	}
-	if repo.Private && !canReadRepo(s.store, user, repo) {
+	if repo.Private && !s.viewerCanReadRepo(r.Context(), repo) {
 		writeGHError(w, http.StatusNotFound, "Not Found")
 		return
 	}
@@ -641,7 +641,7 @@ func (s *Server) handleGetRepo(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	user := ghUserFromContext(r.Context())
-	if repo.Private && !canReadRepo(s.store, user, repo) {
+	if repo.Private && !s.viewerCanReadRepo(r.Context(), repo) {
 		writeGHError(w, http.StatusNotFound, "Not Found")
 		return
 	}
@@ -819,8 +819,7 @@ func (s *Server) handleGetRepoTopics(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	user := ghUserFromContext(r.Context())
-	if repo.Private && !canReadRepo(s.store, user, repo) {
+	if repo.Private && !s.viewerCanReadRepo(r.Context(), repo) {
 		writeGHError(w, http.StatusNotFound, "Not Found")
 		return
 	}
@@ -1114,14 +1113,6 @@ func repoToJSONForViewer(repo *Repo, st *Store, baseURL string, viewer *User) ma
 		"created_at":        repo.CreatedAt.Format(time.RFC3339),
 		"updated_at":        repo.UpdatedAt.Format(time.RFC3339),
 		"pushed_at":         nullableTimestamp(repo.PushedAt),
-	}
-}
-
-func repoPermissionsJSON(st *Store, viewer *User, repo *Repo) map[string]bool {
-	return map[string]bool{
-		"admin": canAdminRepo(st, viewer, repo),
-		"push":  canPushRepo(st, viewer, repo),
-		"pull":  canReadRepo(st, viewer, repo),
 	}
 }
 

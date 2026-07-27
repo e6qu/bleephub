@@ -125,6 +125,12 @@ func (s *Server) initGraphQLSchema() {
 	// Add Projects v2 mutations (createProjectV2, addProjectV2ItemById).
 	s.addProjectV2MutationsToSchema(mutationType)
 
+	// Every mutation is now registered. Authorization coverage is asserted over
+	// the assembled type rather than trusted to each family above, so a
+	// mutation that reaches the store without a policy row stops the process
+	// here instead of shipping open to any signed-in account.
+	assertMutationsAuthorized(mutationType)
+
 	schema, err := graphql.NewSchema(graphql.SchemaConfig{
 		Query:    queryType,
 		Mutation: mutationType,

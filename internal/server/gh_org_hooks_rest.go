@@ -41,7 +41,7 @@ func (s *Server) orgHookGate(w http.ResponseWriter, r *http.Request) *Org {
 		writeGHError(w, http.StatusNotFound, "Not Found")
 		return nil
 	}
-	if !canAdminOrg(s.store, user, org) {
+	if !s.viewerCanAdminOrg(r.Context(), org.Login) {
 		writeGHError(w, http.StatusNotFound, "Not Found")
 		return nil
 	}
@@ -76,6 +76,9 @@ func (s *Server) handleCreateOrgHook(w http.ResponseWriter, r *http.Request) {
 		writeGHValidationError(w, "Hook", "url", "missing_field")
 		return
 	}
+	if s.rejectUndeliverableHookURL(w, req.Config.URL) {
+		return
+	}
 	events := req.Events
 	if len(events) == 0 {
 		events = []string{"push"}
@@ -90,7 +93,7 @@ func (s *Server) handleCreateOrgHook(w http.ResponseWriter, r *http.Request) {
 
 	// Real GitHub fires a `ping` event automatically on active-hook creation.
 	if hook.Active {
-		go s.deliverWebhook(hook, "ping", "", mustMarshal(s.orgPingPayload(org, hook, r)))
+		s.enqueueWebhookDelivery(hook, "ping", "", mustMarshal(s.orgPingPayload(org, hook, r)))
 	}
 
 	writeJSON(w, http.StatusCreated, orgHookToJSON(hook, org, s.baseURL(r)))
@@ -158,6 +161,9 @@ func (s *Server) handleUpdateOrgHook(w http.ResponseWriter, r *http.Request) {
 		Active *flexBool `json:"active"`
 	}
 	if !decodeJSONBody(w, r, &req) {
+		return
+	}
+	if req.Config != nil && req.Config.URL != "" && s.rejectUndeliverableHookURL(w, req.Config.URL) {
 		return
 	}
 	s.store.UpdateOrgHook(org.Login, hook.ID, func(h *Webhook) {
@@ -247,6 +253,9 @@ func (s *Server) handleUpdateOrgHookConfig(w http.ResponseWriter, r *http.Reques
 		InsecureSSL interface{} `json:"insecure_ssl"`
 	}
 	if !decodeJSONBody(w, r, &req) {
+		return
+	}
+	if req.URL != "" && s.rejectUndeliverableHookURL(w, req.URL) {
 		return
 	}
 	s.store.UpdateOrgHook(org.Login, hook.ID, func(h *Webhook) {
@@ -347,11 +356,9 @@ func (s *Server) handleRedeliverOrgHookDelivery(w http.ResponseWriter, r *http.R
 		return
 	}
 	payloadBytes := mustMarshal(original.Request.Payload)
-	go func() {
-		delivery := s.doDeliverAttempt(hook, original.Event, original.Action, original.GUID, payloadBytes, true)
-		s.store.AddDelivery(delivery)
-		s.store.SetOrgHookLastResponse(hook.OrgLogin, hook.ID, deliveryLastResponse(delivery))
-	}()
+	s.enqueueWebhookJob(webhookQueueKey(hook), func() {
+		s.redeliverWebhook(hook, original.Event, original.Action, original.GUID, payloadBytes)
+	})
 	w.WriteHeader(http.StatusAccepted)
 }
 
@@ -364,7 +371,7 @@ func (s *Server) handlePingOrgHook(w http.ResponseWriter, r *http.Request) {
 	if hook == nil {
 		return
 	}
-	go s.deliverWebhook(hook, "ping", "", mustMarshal(s.orgPingPayload(org, hook, r)))
+	s.enqueueWebhookDelivery(hook, "ping", "", mustMarshal(s.orgPingPayload(org, hook, r)))
 	w.WriteHeader(http.StatusNoContent)
 }
 
@@ -415,7 +422,7 @@ func (s *Server) emitOrgWebhookEvent(orgLogin, eventType, action string, payload
 		if !hook.Active || !hookMatchesEvent(hook, eventType) {
 			continue
 		}
-		go s.deliverWebhook(hook, eventType, action, payloadBytes)
+		s.enqueueWebhookDelivery(hook, eventType, action, payloadBytes)
 	}
 }
 

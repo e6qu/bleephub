@@ -246,7 +246,7 @@ func (s *Server) resolveIssueForFieldValues(w http.ResponseWriter, r *http.Reque
 		writeGHError(w, http.StatusNotFound, "Not Found")
 		return nil, nil, false
 	}
-	if !s.viewerCanReadRepo(r, repo) {
+	if !s.viewerCanReadRepo(r.Context(), repo) {
 		writeGHError(w, http.StatusNotFound, "Not Found")
 		return nil, nil, false
 	}

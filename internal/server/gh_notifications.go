@@ -87,7 +87,7 @@ func (s *Server) handleListRepoNotifications(w http.ResponseWriter, r *http.Requ
 
 	owner, repoName := r.PathValue("owner"), r.PathValue("repo")
 	repo := s.store.GetRepoByFullName(owner + "/" + repoName)
-	if repo == nil || !canReadRepo(s.store, user, repo) {
+	if repo == nil || !s.viewerCanReadRepo(r.Context(), repo) {
 		writeGHError(w, http.StatusNotFound, "Not Found")
 		return
 	}
@@ -113,7 +113,7 @@ func (s *Server) handleMarkRepoNotificationsRead(w http.ResponseWriter, r *http.
 
 	owner, repoName := r.PathValue("owner"), r.PathValue("repo")
 	repo := s.store.GetRepoByFullName(owner + "/" + repoName)
-	if repo == nil || !canReadRepo(s.store, user, repo) {
+	if repo == nil || !s.viewerCanReadRepo(r.Context(), repo) {
 		writeGHError(w, http.StatusNotFound, "Not Found")
 		return
 	}

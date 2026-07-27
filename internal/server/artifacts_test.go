@@ -15,10 +15,12 @@ import (
 
 func TestArtifactCreateUploadFinalize(t *testing.T) {
 	s := newTestServer()
+	token := seedRunJobToken(t, s, "octo/repo", "run-1")
 
 	// Create artifact
-	body := `{"name":"test-artifact","version":4}`
+	body := `{"name":"test-artifact","version":4,"workflow_run_backend_id":"run-1"}`
 	req := httptest.NewRequest("POST", "/twirp/github.actions.results.api.v1.ArtifactService/CreateArtifact", bytes.NewBufferString(body))
+	req.Header.Set("Authorization", "Bearer "+token)
 	w := httptest.NewRecorder()
 	s.handleCreateArtifact(w, req)
 
@@ -39,16 +41,18 @@ func TestArtifactCreateUploadFinalize(t *testing.T) {
 	// Upload data
 	uploadReq := httptest.NewRequest("PUT", "/_apis/v1/artifacts/1/upload", bytes.NewBufferString("hello world"))
 	uploadReq.SetPathValue("artifactId", "1")
+	uploadReq.Header.Set("Authorization", "Bearer "+token)
 	uploadW := httptest.NewRecorder()
 	s.handleUploadArtifact(uploadW, uploadReq)
 
 	if uploadW.Code != http.StatusOK {
-		t.Fatalf("upload status = %d, want 200", uploadW.Code)
+		t.Fatalf("upload status = %d, want 200; body=%s", uploadW.Code, uploadW.Body.String())
 	}
 
 	// Finalize
-	finBody := `{"name":"test-artifact","size":11}`
+	finBody := `{"name":"test-artifact","size":11,"workflow_run_backend_id":"run-1"}`
 	finReq := httptest.NewRequest("POST", "/twirp/github.actions.results.api.v1.ArtifactService/FinalizeArtifact", bytes.NewBufferString(finBody))
+	finReq.Header.Set("Authorization", "Bearer "+token)
 	finW := httptest.NewRecorder()
 	s.handleFinalizeArtifact(finW, finReq)
 
@@ -68,8 +72,10 @@ func TestArtifactUploadWritesObjectStore(t *testing.T) {
 	objectFS := &s3FS{client: fs.client, bucket: fs.bucket, prefix: "objects"}
 	s := newTestServer()
 	s.artifactStore = NewArtifactStoreWithByteStore("", &s3ActionsByteStore{fs: objectFS})
+	token := seedRunJobToken(t, s, "octo/repo", "run-1")
 
-	req := httptest.NewRequest("POST", "/twirp/github.actions.results.api.v1.ArtifactService/CreateArtifact", bytes.NewBufferString(`{"name":"object-artifact","version":4}`))
+	req := httptest.NewRequest("POST", "/twirp/github.actions.results.api.v1.ArtifactService/CreateArtifact", bytes.NewBufferString(`{"name":"object-artifact","version":4,"workflow_run_backend_id":"run-1"}`))
+	req.Header.Set("Authorization", "Bearer "+token)
 	w := httptest.NewRecorder()
 	s.handleCreateArtifact(w, req)
 	if w.Code != http.StatusOK {
@@ -78,6 +84,7 @@ func TestArtifactUploadWritesObjectStore(t *testing.T) {
 
 	uploadReq := httptest.NewRequest("PUT", "/_apis/v1/artifacts/1/upload", bytes.NewBufferString("object-backed artifact"))
 	uploadReq.SetPathValue("artifactId", "1")
+	uploadReq.Header.Set("Authorization", "Bearer "+token)
 	uploadW := httptest.NewRecorder()
 	s.handleUploadArtifact(uploadW, uploadReq)
 	if uploadW.Code != http.StatusOK {
@@ -92,14 +99,16 @@ func TestArtifactUploadWritesObjectStore(t *testing.T) {
 
 func TestArtifactListReturnsFinalized(t *testing.T) {
 	s := newTestServer()
+	token := seedRunJobToken(t, s, "octo/repo", "run-1")
 
 	// Create and finalize an artifact
 	s.artifactStore.mu.Lock()
-	s.artifactStore.artifacts[1] = &Artifact{ID: 1, Name: "my-artifact", Size: 100, Finalized: true}
-	s.artifactStore.artifacts[2] = &Artifact{ID: 2, Name: "unfinished", Size: 50, Finalized: false}
+	s.artifactStore.artifacts[1] = &Artifact{ID: 1, Name: "my-artifact", Size: 100, Finalized: true, WorkflowRunBackendID: "run-1"}
+	s.artifactStore.artifacts[2] = &Artifact{ID: 2, Name: "unfinished", Size: 50, Finalized: false, WorkflowRunBackendID: "run-1"}
 	s.artifactStore.mu.Unlock()
 
-	req := httptest.NewRequest("POST", "/twirp/github.actions.results.api.v1.ArtifactService/ListArtifacts", bytes.NewBufferString("{}"))
+	req := httptest.NewRequest("POST", "/twirp/github.actions.results.api.v1.ArtifactService/ListArtifacts", bytes.NewBufferString(`{"workflow_run_backend_id":"run-1"}`))
+	req.Header.Set("Authorization", "Bearer "+token)
 	w := httptest.NewRecorder()
 	s.handleListArtifacts(w, req)
 
@@ -117,6 +126,8 @@ func TestArtifactListReturnsFinalized(t *testing.T) {
 
 func TestArtifactFinalizeScopesByWorkflowRunBackendID(t *testing.T) {
 	s := newTestServer()
+	seedRunJobToken(t, s, "octo/repo", "run-a")
+	token := seedRunJobToken(t, s, "octo/repo", "run-b")
 
 	s.artifactStore.mu.Lock()
 	s.artifactStore.artifacts[1] = &Artifact{ID: 1, Name: "shared", WorkflowRunBackendID: "run-a"}
@@ -126,6 +137,7 @@ func TestArtifactFinalizeScopesByWorkflowRunBackendID(t *testing.T) {
 	req := httptest.NewRequest("POST",
 		"/twirp/github.actions.results.api.v1.ArtifactService/FinalizeArtifact",
 		bytes.NewBufferString(`{"name":"shared","size":0,"workflow_run_backend_id":"run-b"}`))
+	req.Header.Set("Authorization", "Bearer "+token)
 	w := httptest.NewRecorder()
 	s.handleFinalizeArtifact(w, req)
 	if w.Code != http.StatusOK {
@@ -152,6 +164,8 @@ func TestArtifactFinalizeScopesByWorkflowRunBackendID(t *testing.T) {
 
 func TestGetSignedArtifactURLScopesByWorkflowRunBackendID(t *testing.T) {
 	s := newTestServer()
+	seedRunJobToken(t, s, "octo/repo", "run-a")
+	token := seedRunJobToken(t, s, "octo/repo", "run-b")
 
 	s.artifactStore.mu.Lock()
 	s.artifactStore.artifacts[1] = &Artifact{ID: 1, Name: "shared", WorkflowRunBackendID: "run-a", Finalized: true}
@@ -161,6 +175,7 @@ func TestGetSignedArtifactURLScopesByWorkflowRunBackendID(t *testing.T) {
 	req := httptest.NewRequest("POST",
 		"/twirp/github.actions.results.api.v1.ArtifactService/GetSignedArtifactURL",
 		bytes.NewBufferString(`{"name":"shared","workflowRunBackendId":"run-b"}`))
+	req.Header.Set("Authorization", "Bearer "+token)
 	w := httptest.NewRecorder()
 	s.handleGetSignedArtifactURL(w, req)
 	if w.Code != http.StatusOK {
@@ -199,21 +214,24 @@ func TestArtifactDownload(t *testing.T) {
 	// Create finalized artifact with data
 	s.artifactStore.mu.Lock()
 	s.artifactStore.artifacts[1] = &Artifact{
-		ID:        1,
-		Name:      "my-artifact",
-		Data:      []byte("artifact-data"),
-		Size:      13,
-		Finalized: true,
+		ID:           1,
+		Name:         "my-artifact",
+		Data:         []byte("artifact-data"),
+		Size:         13,
+		Finalized:    true,
+		RepoFullName: "octo/repo",
 	}
 	s.artifactStore.mu.Unlock()
+	token := seedRunJobToken(t, s, "octo/repo", "run-1")
 
 	req := httptest.NewRequest("GET", "/_apis/v1/artifacts/1/download", nil)
 	req.SetPathValue("artifactId", "1")
+	req.Header.Set("Authorization", "Bearer "+token)
 	w := httptest.NewRecorder()
 	s.handleDownloadArtifact(w, req)
 
 	if w.Code != http.StatusOK {
-		t.Fatalf("download status = %d, want 200", w.Code)
+		t.Fatalf("download status = %d, want 200; body=%s", w.Code, w.Body.String())
 	}
 	if w.Body.String() != "artifact-data" {
 		t.Errorf("body = %q, want artifact-data", w.Body.String())
@@ -343,6 +361,7 @@ func cacheLookup(t *testing.T, s *Server, token, keys, version string) *httptest
 }
 
 func seedFinalizedCache(s *Server, id int64, repo, key, version string, size int64) {
+	ensureSeededRepo(s, repo)
 	s.artifactStore.mu.Lock()
 	entry := &CacheEntry{
 		ID: id, Repo: repo, Key: key, Version: version,
@@ -722,17 +741,20 @@ func TestCacheRepoIsolation(t *testing.T) {
 
 func TestGetSignedArtifactURL(t *testing.T) {
 	s := newTestServer()
+	token := seedRunJobToken(t, s, "octo/repo", "run-1")
 
 	s.artifactStore.mu.Lock()
 	s.artifactStore.artifacts[1] = &Artifact{
-		ID:        1,
-		Name:      "my-artifact",
-		Finalized: true,
+		ID:                   1,
+		Name:                 "my-artifact",
+		Finalized:            true,
+		WorkflowRunBackendID: "run-1",
 	}
 	s.artifactStore.mu.Unlock()
 
-	body := `{"name":"my-artifact"}`
+	body := `{"name":"my-artifact","workflow_run_backend_id":"run-1"}`
 	req := httptest.NewRequest("POST", "/twirp/github.actions.results.api.v1.ArtifactService/GetSignedArtifactURL", bytes.NewBufferString(body))
+	req.Header.Set("Authorization", "Bearer "+token)
 	w := httptest.NewRecorder()
 	s.handleGetSignedArtifactURL(w, req)
 

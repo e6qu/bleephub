@@ -1,6 +1,7 @@
 package bleephub
 
 import (
+	"context"
 	"net/http"
 	"strings"
 	"time"
@@ -61,7 +62,7 @@ func (s *Server) handleCreateTeam(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if !canAdminOrg(s.store, user, org) {
+	if !s.viewerCanAdminOrg(r.Context(), org.Login) {
 		writeGHError(w, http.StatusForbidden, "Must be an organization owner.")
 		return
 	}
@@ -156,7 +157,7 @@ func (s *Server) handleListTeams(w http.ResponseWriter, r *http.Request) {
 		writeGHError(w, http.StatusNotFound, "Not Found")
 		return
 	}
-	if !isActiveOrgMember(s.store, user, orgLogin) {
+	if !s.viewerIsOrgMember(r.Context(), orgLogin) {
 		writeGHError(w, http.StatusNotFound, "Not Found")
 		return
 	}
@@ -183,7 +184,7 @@ func (s *Server) handleGetTeam(w http.ResponseWriter, r *http.Request) {
 		writeGHError(w, http.StatusNotFound, "Not Found")
 		return
 	}
-	if !isActiveOrgMember(s.store, user, orgLogin) {
+	if !s.viewerIsOrgMember(r.Context(), orgLogin) {
 		writeGHError(w, http.StatusNotFound, "Not Found")
 		return
 	}
@@ -212,7 +213,7 @@ func (s *Server) handleUpdateTeam(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if !canAdminOrg(s.store, user, org) {
+	if !s.viewerCanAdminOrg(r.Context(), org.Login) {
 		writeGHError(w, http.StatusForbidden, "Must be an organization owner.")
 		return
 	}
@@ -345,7 +346,7 @@ func (s *Server) handleDeleteTeam(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if !canAdminOrg(s.store, user, org) {
+	if !s.viewerCanAdminOrg(r.Context(), org.Login) {
 		writeGHError(w, http.StatusForbidden, "Must be an organization owner.")
 		return
 	}
@@ -387,8 +388,8 @@ func (s *Server) handleListAuthUserTeams(w http.ResponseWriter, r *http.Request)
 // canManageTeam reports whether a user may mutate team membership or repo
 // grants. Organization owners always can; team maintainers can too, except
 // only owners may promote another user to maintainer.
-func (s *Server) canManageTeam(user *User, org *Org, team *Team, addingMaintainer bool) bool {
-	if canAdminOrg(s.store, user, org) {
+func (s *Server) canManageTeam(ctx context.Context, user *User, org *Org, team *Team, addingMaintainer bool) bool {
+	if s.viewerCanAdminOrg(ctx, org.Login) {
 		return true
 	}
 	role, isMember := team.roleOf(user.ID)
@@ -407,7 +408,7 @@ func (s *Server) handleListTeamMembers(w http.ResponseWriter, r *http.Request) {
 		writeGHError(w, http.StatusNotFound, "Not Found")
 		return
 	}
-	if !isActiveOrgMember(s.store, user, orgLogin) {
+	if !s.viewerIsOrgMember(r.Context(), orgLogin) {
 		writeGHError(w, http.StatusNotFound, "Not Found")
 		return
 	}
@@ -470,7 +471,7 @@ func (s *Server) handleAddTeamMember(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if !s.canManageTeam(user, org, team, role == TeamRoleMaintainer) {
+	if !s.canManageTeam(r.Context(), user, org, team, role == TeamRoleMaintainer) {
 		writeGHError(w, http.StatusForbidden, "Must be an organization owner or team maintainer.")
 		return
 	}
@@ -501,7 +502,7 @@ func (s *Server) handleGetTeamMembership(w http.ResponseWriter, r *http.Request)
 		writeGHError(w, http.StatusNotFound, "Not Found")
 		return
 	}
-	if !isActiveOrgMember(s.store, user, orgLogin) {
+	if !s.viewerIsOrgMember(r.Context(), orgLogin) {
 		writeGHError(w, http.StatusNotFound, "Not Found")
 		return
 	}
@@ -562,7 +563,7 @@ func (s *Server) handleRemoveTeamMember(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	if !s.canManageTeam(user, org, team, false) {
+	if !s.canManageTeam(r.Context(), user, org, team, false) {
 		writeGHError(w, http.StatusForbidden, "Must be an organization owner or team maintainer.")
 		return
 	}
@@ -593,7 +594,7 @@ func (s *Server) handleListTeamRepos(w http.ResponseWriter, r *http.Request) {
 		writeGHError(w, http.StatusNotFound, "Not Found")
 		return
 	}
-	if !isActiveOrgMember(s.store, user, orgLogin) {
+	if !s.viewerIsOrgMember(r.Context(), orgLogin) {
 		writeGHError(w, http.StatusNotFound, "Not Found")
 		return
 	}
@@ -632,7 +633,7 @@ func (s *Server) handleCheckTeamRepo(w http.ResponseWriter, r *http.Request) {
 		writeGHError(w, http.StatusNotFound, "Not Found")
 		return
 	}
-	if !isActiveOrgMember(s.store, user, orgLogin) {
+	if !s.viewerIsOrgMember(r.Context(), orgLogin) {
 		writeGHError(w, http.StatusNotFound, "Not Found")
 		return
 	}
@@ -697,7 +698,7 @@ func (s *Server) handleAddTeamRepo(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if !s.canManageTeam(user, org, team, false) {
+	if !s.canManageTeam(r.Context(), user, org, team, false) {
 		writeGHError(w, http.StatusForbidden, "Must be an organization owner or team maintainer.")
 		return
 	}
@@ -748,7 +749,7 @@ func (s *Server) handleRemoveTeamRepo(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if !s.canManageTeam(user, org, team, false) {
+	if !s.canManageTeam(r.Context(), user, org, team, false) {
 		writeGHError(w, http.StatusForbidden, "Must be an organization owner or team maintainer.")
 		return
 	}

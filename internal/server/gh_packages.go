@@ -2,6 +2,7 @@ package bleephub
 
 import (
 	"bytes"
+	"context"
 	"io"
 	"net/http"
 	"net/url"
@@ -198,7 +199,7 @@ func (s *Server) handleGetUserPackage(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	p, ok := s.resolveUserPackage(w, r)
-	if !ok || !s.canViewPackage(user, p) {
+	if !ok || !s.canViewPackage(r.Context(), user, p) {
 		return
 	}
 	writeJSON(w, http.StatusOK, s.packageToJSON(p, s.baseURL(r)))
@@ -213,7 +214,7 @@ func (s *Server) handleDeleteUserPackage(w http.ResponseWriter, r *http.Request)
 	if !ok {
 		return
 	}
-	if !s.canAdminPackage(user, p) {
+	if !s.canAdminPackage(r.Context(), user, p) {
 		writeGHError(w, http.StatusForbidden, "Forbidden")
 		return
 	}
@@ -230,7 +231,7 @@ func (s *Server) handleListUserPackageVersions(w http.ResponseWriter, r *http.Re
 		return
 	}
 	p, ok := s.resolveUserPackage(w, r)
-	if !ok || !s.canViewPackage(user, p) {
+	if !ok || !s.canViewPackage(r.Context(), user, p) {
 		return
 	}
 	writeJSON(w, http.StatusOK, s.listVersionsJSON(p, r))
@@ -242,7 +243,7 @@ func (s *Server) handleGetUserPackageVersion(w http.ResponseWriter, r *http.Requ
 		return
 	}
 	p, v, ok := s.resolveUserPackageVersion(w, r)
-	if !ok || !s.canViewPackage(user, p) {
+	if !ok || !s.canViewPackage(r.Context(), user, p) {
 		return
 	}
 	writeJSON(w, http.StatusOK, s.packageVersionToJSON(v, p, s.baseURL(r), packageScopePath(p.OwnerType, p.OwnerKey)))
@@ -257,7 +258,7 @@ func (s *Server) handleDeleteUserPackageVersion(w http.ResponseWriter, r *http.R
 	if !ok {
 		return
 	}
-	if !s.canAdminPackage(user, p) {
+	if !s.canAdminPackage(r.Context(), user, p) {
 		writeGHError(w, http.StatusForbidden, "Forbidden")
 		return
 	}
@@ -278,7 +279,7 @@ func (s *Server) handleRestoreUserPackageVersion(w http.ResponseWriter, r *http.
 	if !ok {
 		return
 	}
-	if !s.canAdminPackage(user, p) {
+	if !s.canAdminPackage(r.Context(), user, p) {
 		writeGHError(w, http.StatusForbidden, "Forbidden")
 		return
 	}
@@ -296,7 +297,7 @@ func (s *Server) handleListUserPackageFiles(w http.ResponseWriter, r *http.Reque
 		return
 	}
 	p, v, ok := s.resolveUserPackageVersion(w, r)
-	if !ok || !s.canViewPackage(user, p) {
+	if !ok || !s.canViewPackage(r.Context(), user, p) {
 		return
 	}
 	writeJSON(w, http.StatusOK, s.listFilesJSON(v, p, r))
@@ -308,7 +309,7 @@ func (s *Server) handleDownloadUserPackageFile(w http.ResponseWriter, r *http.Re
 		return
 	}
 	p, _, f, ok := s.resolveUserPackageFile(w, r)
-	if !ok || !s.canViewPackage(user, p) {
+	if !ok || !s.canViewPackage(r.Context(), user, p) {
 		return
 	}
 	s.servePackageFile(w, r, f)
@@ -344,7 +345,7 @@ func (s *Server) listOwnerPackagesJSON(r *http.Request, user *User, ownerKey, pk
 		if visibility != "" && p.Visibility != visibility {
 			continue
 		}
-		if !s.canViewPackage(user, p) {
+		if !s.canViewPackage(r.Context(), user, p) {
 			continue
 		}
 		out = append(out, s.packageToJSON(p, baseURL))
@@ -501,7 +502,7 @@ func (s *Server) restorePackageForOwner(w http.ResponseWriter, r *http.Request, 
 		writeGHError(w, http.StatusNotFound, "Not Found")
 		return
 	}
-	if !s.canAdminPackage(user, p) {
+	if !s.canAdminPackage(r.Context(), user, p) {
 		writeGHError(w, http.StatusForbidden, "Forbidden")
 		return
 	}
@@ -605,7 +606,7 @@ func (s *Server) handleGetOrgPackage(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	p, ok := s.resolveOrgPackage(w, r)
-	if !ok || !s.canViewPackage(user, p) {
+	if !ok || !s.canViewPackage(r.Context(), user, p) {
 		return
 	}
 	writeJSON(w, http.StatusOK, s.packageToJSON(p, s.baseURL(r)))
@@ -620,7 +621,7 @@ func (s *Server) handleDeleteOrgPackage(w http.ResponseWriter, r *http.Request) 
 	if !ok {
 		return
 	}
-	if !s.canAdminPackage(user, p) {
+	if !s.canAdminPackage(r.Context(), user, p) {
 		writeGHError(w, http.StatusForbidden, "Forbidden")
 		return
 	}
@@ -659,7 +660,7 @@ func (s *Server) handleListOrgDockerConflicts(w http.ResponseWriter, r *http.Req
 		if p.PackageType != "docker" || !containerNames[p.Name] {
 			continue
 		}
-		if !s.canViewPackage(user, p) {
+		if !s.canViewPackage(r.Context(), user, p) {
 			continue
 		}
 		row := s.packageToJSON(p, baseURL)
@@ -678,7 +679,7 @@ func (s *Server) handleListOrgPackageVersions(w http.ResponseWriter, r *http.Req
 		return
 	}
 	p, ok := s.resolveOrgPackage(w, r)
-	if !ok || !s.canViewPackage(user, p) {
+	if !ok || !s.canViewPackage(r.Context(), user, p) {
 		return
 	}
 	writeJSON(w, http.StatusOK, s.listVersionsJSON(p, r))
@@ -690,7 +691,7 @@ func (s *Server) handleGetOrgPackageVersion(w http.ResponseWriter, r *http.Reque
 		return
 	}
 	p, v, ok := s.resolveOrgPackageVersion(w, r)
-	if !ok || !s.canViewPackage(user, p) {
+	if !ok || !s.canViewPackage(r.Context(), user, p) {
 		return
 	}
 	writeJSON(w, http.StatusOK, s.packageVersionToJSON(v, p, s.baseURL(r), packageScopePath(p.OwnerType, p.OwnerKey)))
@@ -705,7 +706,7 @@ func (s *Server) handleDeleteOrgPackageVersion(w http.ResponseWriter, r *http.Re
 	if !ok {
 		return
 	}
-	if !s.canAdminPackage(user, p) {
+	if !s.canAdminPackage(r.Context(), user, p) {
 		writeGHError(w, http.StatusForbidden, "Forbidden")
 		return
 	}
@@ -726,7 +727,7 @@ func (s *Server) handleRestoreOrgPackageVersion(w http.ResponseWriter, r *http.R
 	if !ok {
 		return
 	}
-	if !s.canAdminPackage(user, p) {
+	if !s.canAdminPackage(r.Context(), user, p) {
 		writeGHError(w, http.StatusForbidden, "Forbidden")
 		return
 	}
@@ -744,7 +745,7 @@ func (s *Server) handleListOrgPackageFiles(w http.ResponseWriter, r *http.Reques
 		return
 	}
 	p, v, ok := s.resolveOrgPackageVersion(w, r)
-	if !ok || !s.canViewPackage(user, p) {
+	if !ok || !s.canViewPackage(r.Context(), user, p) {
 		return
 	}
 	writeJSON(w, http.StatusOK, s.listFilesJSON(v, p, r))
@@ -756,7 +757,7 @@ func (s *Server) handleDownloadOrgPackageFile(w http.ResponseWriter, r *http.Req
 		return
 	}
 	p, _, f, ok := s.resolveOrgPackageFile(w, r)
-	if !ok || !s.canViewPackage(user, p) {
+	if !ok || !s.canViewPackage(r.Context(), user, p) {
 		return
 	}
 	s.servePackageFile(w, r, f)
@@ -770,7 +771,7 @@ func (s *Server) handleListRepoPackages(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 	repo, ok := s.resolveRepoForPackages(w, r)
-	if !ok || !canReadRepo(s.store, user, repo) {
+	if !ok || !s.viewerCanReadRepo(r.Context(), repo) {
 		return
 	}
 	pkgs := s.store.ListPackages(repo.FullName)
@@ -791,7 +792,7 @@ func (s *Server) handleGetRepoPackage(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	if !canReadRepo(s.store, user, s.store.ReposByName[p.OwnerKey]) {
+	if !s.viewerCanReadRepo(r.Context(), s.store.ReposByName[p.OwnerKey]) {
 		writeGHError(w, http.StatusNotFound, "Not Found")
 		return
 	}
@@ -827,7 +828,7 @@ func (s *Server) handleListRepoPackageVersions(w http.ResponseWriter, r *http.Re
 	if !ok {
 		return
 	}
-	if !canReadRepo(s.store, user, s.store.ReposByName[p.OwnerKey]) {
+	if !s.viewerCanReadRepo(r.Context(), s.store.ReposByName[p.OwnerKey]) {
 		writeGHError(w, http.StatusNotFound, "Not Found")
 		return
 	}
@@ -843,7 +844,7 @@ func (s *Server) handleGetRepoPackageVersion(w http.ResponseWriter, r *http.Requ
 	if !ok {
 		return
 	}
-	if !canReadRepo(s.store, user, s.store.ReposByName[p.OwnerKey]) {
+	if !s.viewerCanReadRepo(r.Context(), s.store.ReposByName[p.OwnerKey]) {
 		writeGHError(w, http.StatusNotFound, "Not Found")
 		return
 	}
@@ -880,7 +881,7 @@ func (s *Server) handleListRepoPackageFiles(w http.ResponseWriter, r *http.Reque
 	if !ok {
 		return
 	}
-	if !canReadRepo(s.store, user, s.store.ReposByName[p.OwnerKey]) {
+	if !s.viewerCanReadRepo(r.Context(), s.store.ReposByName[p.OwnerKey]) {
 		writeGHError(w, http.StatusNotFound, "Not Found")
 		return
 	}
@@ -896,7 +897,7 @@ func (s *Server) handleDownloadRepoPackageFile(w http.ResponseWriter, r *http.Re
 	if !ok {
 		return
 	}
-	if !canReadRepo(s.store, user, s.store.ReposByName[p.OwnerKey]) {
+	if !s.viewerCanReadRepo(r.Context(), s.store.ReposByName[p.OwnerKey]) {
 		writeGHError(w, http.StatusNotFound, "Not Found")
 		return
 	}
@@ -1091,14 +1092,14 @@ func (s *Server) requireUser(w http.ResponseWriter, r *http.Request) *User {
 	return user
 }
 
-func (s *Server) canViewPackage(user *User, p *Package) bool {
+func (s *Server) canViewPackage(ctx context.Context, user *User, p *Package) bool {
 	if p.Visibility == "public" {
 		return true
 	}
-	return s.canAdminPackage(user, p)
+	return s.canAdminPackage(ctx, user, p)
 }
 
-func (s *Server) canAdminPackage(user *User, p *Package) bool {
+func (s *Server) canAdminPackage(ctx context.Context, user *User, p *Package) bool {
 	if user == nil {
 		return false
 	}
@@ -1107,7 +1108,7 @@ func (s *Server) canAdminPackage(user *User, p *Package) bool {
 		return p.OwnerKey == user.Login
 	case "Organization":
 		if org := s.store.GetOrg(p.OwnerKey); org != nil {
-			return canAdminOrg(s.store, user, org)
+			return s.viewerCanAdminOrg(ctx, org.Login)
 		}
 		return false
 	case "Repository":

@@ -1,22 +1,42 @@
 package bleephub
 
 import (
+	"context"
 	"crypto/subtle"
+	"net/http"
 	"strings"
 )
 
-// canAdminOrg checks if a user is an active admin of the given organization.
+// requireRepoOwns binds a sub-resource addressed by its own id — a check run, a
+// deployment status, a comment — to the repository named in the URL path.
+// ownerRepoID is the repo reached by walking the sub-resource's parent chain; a
+// broken chain yields 0, which never matches a stored repo.
+//
+// The mismatch answer is 404 rather than 403 so the id cannot be probed for
+// existence in another tenant.
+func requireRepoOwns(w http.ResponseWriter, repo *Repo, ownerRepoID int) bool {
+	if repo == nil || ownerRepoID != repo.ID {
+		writeGHError(w, http.StatusNotFound, "Not Found")
+		return false
+	}
+	return true
+}
+
+// canAdminOrgAsUser checks if a user is an active admin of the given organization.
 // A pending (invited) admin has not accepted yet and holds no rights.
-func canAdminOrg(st *Store, user *User, org *Org) bool {
+func canAdminOrgAsUser(st *Store, user *User, org *Org) bool {
+	if user == nil || org == nil {
+		return false
+	}
 	m := st.GetMembership(org.Login, user.ID)
 	return m != nil && m.Role == OrgRoleAdmin && m.State == MembershipStateActive
 }
 
-// isActiveOrgMember reports whether user holds an active membership in the
+// isActiveOrgMemberAsUser reports whether user holds an active membership in the
 // org. Org teams (their names, members, and repo grants) are visible only to
 // org members on real GitHub — a non-member authenticated caller gets 404, the
 // same as an unknown org, so the org's internal structure never leaks.
-func isActiveOrgMember(st *Store, user *User, orgLogin string) bool {
+func isActiveOrgMemberAsUser(st *Store, user *User, orgLogin string) bool {
 	if user == nil {
 		return false
 	}
@@ -24,11 +44,20 @@ func isActiveOrgMember(st *Store, user *User, orgLogin string) bool {
 	return m != nil && m.State == MembershipStateActive
 }
 
-// canReadRepo checks if a user can read a repository.
+// namedUserIsActiveOrgMember asks the membership question about somebody other
+// than the caller: a login supplied in a request body, a collaborator being
+// added to a resource. There is no credential to intersect for a third party,
+// which is why this is not (*Server).viewerIsOrgMember and why call sites are
+// not required to route through the credential-aware predicate.
+func namedUserIsActiveOrgMember(st *Store, subject *User, orgLogin string) bool {
+	return isActiveOrgMemberAsUser(st, subject, orgLogin)
+}
+
+// canReadRepoAsUser checks if a user can read a repository.
 // Public repos are readable by all. Private repos require ownership, org
 // membership, team access, or collaborator pull access.
 // Must not be called with st.mu held; it takes the read lock itself.
-func canReadRepo(st *Store, user *User, repo *Repo) bool {
+func canReadRepoAsUser(st *Store, user *User, repo *Repo) bool {
 	if !repo.Private {
 		return true
 	}
@@ -40,7 +69,7 @@ func canReadRepo(st *Store, user *User, repo *Repo) bool {
 	return canPullRepoLocked(st, user, repo)
 }
 
-// canReadRepoLocked is canReadRepo for callers that already hold st.mu
+// canReadRepoLocked is canReadRepoAsUser for callers that already hold st.mu
 // (read or write); it never acquires the lock itself.
 func canReadRepoLocked(st *Store, user *User, repo *Repo) bool {
 	if !repo.Private {
@@ -67,7 +96,7 @@ func canAdminRepo(st *Store, user *User, repo *Repo) bool {
 	}
 	orgLogin := parts[0]
 	org := st.GetOrg(orgLogin)
-	if org != nil && canAdminOrg(st, user, org) {
+	if org != nil && canAdminOrgAsUser(st, user, org) {
 		return true
 	}
 	return repoCollaboratorPermissionAtLeast(st, repo.FullName, user.Login, "admin")
@@ -225,23 +254,36 @@ func secretEqual(a, b string) bool {
 	return subtle.ConstantTimeCompare([]byte(a), []byte(b)) == 1
 }
 
-// visibleRepos filters a repository list down to what a viewer may see.
+// visibleRepos filters a repository list down to what the request's credential
+// may see.
 //
 // Several list paths reach the repository index directly and return whatever
 // the prefix match found. Public repositories are visible to everyone
 // including an anonymous viewer; a private one requires read access. Doing
 // this in one place means a new listing gets the rule by calling a function
 // rather than by its author remembering the rule exists.
-func visibleRepos(st *Store, viewer *User, repos []*Repo) []*Repo {
+func (s *Server) visibleRepos(ctx context.Context, repos []*Repo) []*Repo {
 	out := make([]*Repo, 0, len(repos))
 	for _, repo := range repos {
 		if repo == nil {
 			continue
 		}
-		if repo.Private && !canReadRepo(st, viewer, repo) {
+		if repo.Private && !s.viewerCanReadRepo(ctx, repo) {
 			continue
 		}
 		out = append(out, repo)
 	}
 	return out
+}
+
+// repoPermissionsJSON is the `permissions` block of a serialized repository:
+// the viewer's own capabilities on it. It lives beside the predicates it
+// projects rather than in the serializer, so the RBAC vocabulary stays in one
+// file.
+func repoPermissionsJSON(st *Store, viewer *User, repo *Repo) map[string]bool {
+	return map[string]bool{
+		"admin": canAdminRepo(st, viewer, repo),
+		"push":  canPushRepo(st, viewer, repo),
+		"pull":  canReadRepoAsUser(st, viewer, repo),
+	}
 }

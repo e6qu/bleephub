@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strconv"
+	"strings"
 	"testing"
 	"time"
 
@@ -18,8 +19,40 @@ import (
 // seedRun installs a Workflow + WorkflowJob in the store and returns
 // the full URL the GitHub-shape /actions/runs/{run_id} is keyed off.
 // All fields needed by workflowRunJSON / workflowJobJSON are populated.
+
+// ensureSeededRepo materializes the repository a fixture claims its seeded
+// runs, caches or artifacts belong to. Handlers refuse a repository that does
+// not exist, so a fixture that seeds against a bare "owner/name" string has to
+// create it rather than rely on the gate letting an unresolved path through.
+func ensureSeededRepo(s *Server, fullName string) *Repo {
+	owner, name, ok := strings.Cut(fullName, "/")
+	if !ok {
+		return nil
+	}
+	if repo := s.store.GetRepo(owner, name); repo != nil {
+		return repo
+	}
+	user := s.store.LookupUserByLogin(owner)
+	if user == nil {
+		s.store.mu.Lock()
+		user = &User{ID: s.store.NextUser, Login: owner, Type: "User", CreatedAt: time.Now().UTC()}
+		s.store.Users[user.ID] = user
+		s.store.UsersByLogin[owner] = user
+		s.store.NextUser++
+		// Persist the owner too: a repository row referencing a user that was
+		// never written cannot be reloaded, and the reload fixtures do exactly
+		// that round trip.
+		if s.store.persist != nil {
+			s.store.persist.MustPut("users", strconv.Itoa(user.ID), user)
+		}
+		s.store.mu.Unlock()
+	}
+	return s.store.CreateRepo(user, name, "", false)
+}
+
 func seedRun(t *testing.T, s *Server, repo string, status, result string) (*Workflow, *WorkflowJob) {
 	t.Helper()
+	ensureSeededRepo(s, repo)
 	s.store.mu.Lock()
 	runID := s.store.NextRunID
 	s.store.NextRunID++
@@ -595,6 +628,7 @@ func TestActionsRuns_Delete(t *testing.T) {
 func TestActionsRunners_List(t *testing.T) {
 	s := newTestServer()
 	s.registerGHActionsRoutes()
+	ensureSeededRepo(s, "octo/repo")
 	s.store.mu.Lock()
 	s.store.Agents[1] = &Agent{
 		ID: 1, Name: "runner-a", OSDescription: "Linux", Status: "online",
@@ -653,6 +687,7 @@ func TestActionsRunners_List(t *testing.T) {
 func TestActionsRunners_Delete(t *testing.T) {
 	s := newTestServer()
 	s.registerGHActionsRoutes()
+	ensureSeededRepo(s, "octo/repo")
 	s.store.mu.Lock()
 	s.store.Agents[42] = &Agent{ID: 42, Name: "to-delete", Status: "online"}
 	s.store.mu.Unlock()
@@ -672,6 +707,7 @@ func TestActionsRunners_Delete(t *testing.T) {
 func TestActionsRunners_Delete_NotFound(t *testing.T) {
 	s := newTestServer()
 	s.registerGHActionsRoutes()
+	ensureSeededRepo(s, "octo/repo")
 	w := runAuthedRequest(s, "DELETE", "/api/v3/repos/octo/repo/actions/runners/9999")
 	if w.Code != http.StatusNotFound {
 		t.Errorf("status = %d, want 404", w.Code)
@@ -805,6 +841,7 @@ func TestActionsJob_StepsAndCompletedAt(t *testing.T) {
 func TestActionsRunners_ExtraFields(t *testing.T) {
 	s := newTestServer()
 	s.registerGHActionsRoutes()
+	ensureSeededRepo(s, "octo/repo")
 	s.store.mu.Lock()
 	s.store.Agents[7] = &Agent{ID: 7, Name: "r", OSDescription: "Linux", Status: "online", Version: "2.300.0"}
 	s.store.mu.Unlock()

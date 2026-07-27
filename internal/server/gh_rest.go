@@ -165,12 +165,34 @@ func writeGHValidationError(w http.ResponseWriter, resource, field, code string)
 	})
 }
 
+// mutated guards the gap between resolving a resource and mutating it: a
+// store mutator returns nil when the target was deleted in between, and the
+// request is then a 404 rather than a render of a nil pointer.
+func mutated[T any](w http.ResponseWriter, v *T) bool {
+	if v == nil {
+		writeGHError(w, http.StatusNotFound, "Not Found")
+		return false
+	}
+	return true
+}
+
+// ghostUser is GitHub's `ghost` account, the stand-in for a user that has
+// been deleted. Its login, id and node_id are the ones github.com serves.
+func ghostUser() *User {
+	return &User{Login: "ghost", ID: 10137, NodeID: "MDQ6VXNlcjEwMTM3", Type: "User"}
+}
+
 // userToJSON converts a User to the GitHub `simple-user` shape — the
 // user object nested inside repos, issues, pulls, comments, reviews,
 // memberships, and installations. The full public/private-user shape
 // (bio, counters, timestamps) belongs only on GET /user and
 // GET /users/{username}; see fullUserJSON.
+// A nil user is GitHub's deleted account: it renders as the `ghost` user
+// rather than JSON null, so no caller has to resolve absence itself.
 func userToJSON(u *User) map[string]interface{} {
+	if u == nil {
+		u = ghostUser()
+	}
 	api := "/api/v3/users/" + u.Login
 	return map[string]interface{}{
 		"login":               u.Login,
@@ -206,6 +228,9 @@ func userToJSON(u *User) map[string]interface{} {
 // and repository counts are derived live from the store; gists are not a
 // bleephub feature so public_gists is 0.
 func (s *Server) fullUserJSON(u *User) map[string]interface{} {
+	if u == nil {
+		u = ghostUser()
+	}
 	out := userToJSON(u)
 	out["bio"] = u.Bio
 	out["blog"] = u.Blog

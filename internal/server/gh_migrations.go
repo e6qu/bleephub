@@ -211,7 +211,7 @@ func (s *Server) handleStartOrgMigration(w http.ResponseWriter, r *http.Request)
 		writeGHError(w, http.StatusNotFound, "Not Found")
 		return
 	}
-	if !canAdminOrg(s.store, user, org) {
+	if !s.viewerCanAdminOrg(r.Context(), org.Login) {
 		writeGHError(w, http.StatusNotFound, "Not Found")
 		return
 	}
@@ -240,7 +240,7 @@ func (s *Server) handleListOrgMigrations(w http.ResponseWriter, r *http.Request)
 		writeGHError(w, http.StatusNotFound, "Not Found")
 		return
 	}
-	if !canAdminOrg(s.store, user, org) {
+	if !s.viewerCanAdminOrg(r.Context(), org.Login) {
 		writeGHError(w, http.StatusNotFound, "Not Found")
 		return
 	}
@@ -387,7 +387,7 @@ func (s *Server) resolveOrgMigration(w http.ResponseWriter, r *http.Request, use
 		writeGHError(w, http.StatusNotFound, "Not Found")
 		return nil, nil, false
 	}
-	if !canAdminOrg(s.store, user, org) {
+	if !s.viewerCanAdminOrg(r.Context(), org.Login) {
 		writeGHError(w, http.StatusNotFound, "Not Found")
 		return nil, nil, false
 	}

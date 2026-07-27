@@ -6,6 +6,7 @@ package bleephub
 // management, and attached resources.
 
 import (
+	"context"
 	"fmt"
 	"net/http"
 	"reflect"
@@ -60,7 +61,7 @@ func (s *Server) copilotSpaceOwner(w http.ResponseWriter, r *http.Request) (owne
 // admins; collaborator grants (directly or via team membership) and the
 // space's base role fill in the rest. An empty role means the space is
 // invisible to the caller.
-func (s *Server) copilotSpaceRole(user *User, space *CopilotSpace) string {
+func (s *Server) copilotSpaceRole(ctx context.Context, user *User, space *CopilotSpace) string {
 	if user == nil {
 		return ""
 	}
@@ -78,10 +79,10 @@ func (s *Server) copilotSpaceRole(user *User, space *CopilotSpace) string {
 	}
 	if space.OwnerType == "Organization" {
 		if org := s.store.GetOrg(space.OwnerLogin); org != nil {
-			if canAdminOrg(s.store, user, org) {
+			if s.viewerCanAdminOrg(ctx, org.Login) {
 				return "admin"
 			}
-			if isActiveOrgMember(s.store, user, space.OwnerLogin) && space.BaseRole != "" && space.BaseRole != "no_access" {
+			if s.viewerIsOrgMember(ctx, space.OwnerLogin) && space.BaseRole != "" && space.BaseRole != "no_access" {
 				upgrade(space.BaseRole)
 			}
 		}
@@ -128,7 +129,7 @@ func (s *Server) lookupCopilotSpace(w http.ResponseWriter, r *http.Request, minR
 		writeGHError(w, http.StatusNotFound, "Not Found")
 		return nil, nil
 	}
-	role := s.copilotSpaceRole(user, space)
+	role := s.copilotSpaceRole(r.Context(), user, space)
 	if role == "" {
 		// Spaces the caller has no access to stay hidden, like private repos.
 		writeGHError(w, http.StatusNotFound, "Not Found")
@@ -275,7 +276,7 @@ func (s *Server) handleListCopilotSpaces(w http.ResponseWriter, r *http.Request)
 	}
 	var visible []*CopilotSpace
 	for _, space := range s.store.ListCopilotSpaces(ownerType, ownerLogin) {
-		if s.copilotSpaceRole(user, space) != "" {
+		if s.copilotSpaceRole(r.Context(), user, space) != "" {
 			visible = append(visible, space)
 		}
 	}
@@ -346,7 +347,7 @@ func (s *Server) handleCreateCopilotSpace(w http.ResponseWriter, r *http.Request
 	}
 	if ownerType == "Organization" {
 		// Organizations hide their internal structure from non-members.
-		if !isActiveOrgMember(s.store, user, ownerLogin) {
+		if !s.viewerIsOrgMember(r.Context(), ownerLogin) {
 			writeGHError(w, http.StatusNotFound, "Not Found")
 			return
 		}
@@ -527,7 +528,7 @@ func (s *Server) handleAddCopilotSpaceCollaborator(w http.ResponseWriter, r *htt
 		return
 	}
 	if req.ActorType == "User" && space.OwnerType == "Organization" {
-		if u := s.store.GetUserByID(userID); u == nil || !isActiveOrgMember(s.store, u, space.OwnerLogin) {
+		if u := s.store.GetUserByID(userID); u == nil || !namedUserIsActiveOrgMember(s.store, u, space.OwnerLogin) {
 			writeGHValidationError(w, "CopilotSpaceCollaborator", "actor_identifier", "invalid")
 			return
 		}

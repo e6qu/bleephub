@@ -115,13 +115,12 @@ func (s *Server) handleOrgRulesetThreeSegDispatch(method string) http.HandlerFun
 // verifies the caller is an admin of the target organization.
 func (s *Server) requireOrgAdmin(scope permScope, level permLevel, next http.HandlerFunc) http.HandlerFunc {
 	return s.requirePerm(scope, level, func(w http.ResponseWriter, r *http.Request) {
-		user := ghUserFromContext(r.Context())
 		org := s.store.GetOrg(r.PathValue("org"))
 		if org == nil {
 			writeGHError(w, http.StatusNotFound, "Not Found")
 			return
 		}
-		if !canAdminOrg(s.store, user, org) {
+		if !s.viewerCanAdminOrg(r.Context(), org.Login) {
 			writeGHError(w, http.StatusForbidden, "Must have admin rights to Organization.")
 			return
 		}
@@ -149,7 +148,7 @@ func (s *Server) handleListRulesets(w http.ResponseWriter, r *http.Request) {
 	if repo == nil {
 		return
 	}
-	if !canReadRepo(s.store, user, repo) {
+	if !s.viewerCanReadRepo(r.Context(), repo) {
 		writeGHError(w, http.StatusNotFound, "Not Found")
 		return
 	}
@@ -199,7 +198,7 @@ func (s *Server) handleGetRuleset(w http.ResponseWriter, r *http.Request) {
 	if repo == nil {
 		return
 	}
-	if !canReadRepo(s.store, user, repo) {
+	if !s.viewerCanReadRepo(r.Context(), repo) {
 		writeGHError(w, http.StatusNotFound, "Not Found")
 		return
 	}
@@ -271,7 +270,7 @@ func (s *Server) handleListBranchRules(w http.ResponseWriter, r *http.Request) {
 	if repo == nil {
 		return
 	}
-	if !canReadRepo(s.store, user, repo) {
+	if !s.viewerCanReadRepo(r.Context(), repo) {
 		writeGHError(w, http.StatusNotFound, "Not Found")
 		return
 	}
@@ -291,7 +290,7 @@ func (s *Server) handleListRulesetHistory(w http.ResponseWriter, r *http.Request
 	if repo == nil {
 		return
 	}
-	if !canReadRepo(s.store, user, repo) {
+	if !s.viewerCanReadRepo(r.Context(), repo) {
 		writeGHError(w, http.StatusNotFound, "Not Found")
 		return
 	}
@@ -337,7 +336,7 @@ func (s *Server) handleGetRulesetVersion(w http.ResponseWriter, r *http.Request)
 	if repo == nil {
 		return
 	}
-	if !canReadRepo(s.store, user, repo) {
+	if !s.viewerCanReadRepo(r.Context(), repo) {
 		writeGHError(w, http.StatusNotFound, "Not Found")
 		return
 	}

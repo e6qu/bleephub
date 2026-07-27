@@ -94,16 +94,13 @@ func (s *Server) addModerationMutationsToSchema(mutationType *graphql.Object) {
 		},
 	})
 
-	mutationType.AddFieldConfig("minimizeComment", &graphql.Field{
+	s.registerMutation(mutationType, "minimizeComment", &graphql.Field{
 		Type: minimizePayloadType,
 		Args: graphql.FieldConfigArgument{
 			"input": &graphql.ArgumentConfig{Type: graphql.NewNonNull(minimizeInputType)},
 		},
 		Resolve: func(p graphql.ResolveParams) (interface{}, error) {
 			user := ghUserFromContext(p.Context)
-			if user == nil {
-				return nil, fmt.Errorf("authentication required")
-			}
 			input, _ := p.Args["input"].(map[string]interface{})
 			nodeID, _ := input["subjectId"].(string)
 			classifier, _ := input["classifier"].(string)
@@ -112,6 +109,9 @@ func (s *Server) addModerationMutationsToSchema(mutationType *graphql.Object) {
 				return nil, fmt.Errorf("could not resolve to a node with the global id of '%s'", nodeID)
 			}
 			updated := s.store.SetCommentMinimization(c.ID, user.ID, classifier)
+			if updated == nil {
+				return nil, fmt.Errorf("could not resolve to a node with the global id of '%s'", nodeID)
+			}
 			return map[string]interface{}{
 				"minimizedComment": map[string]interface{}{
 					"nodeID":          updated.NodeID,
@@ -122,16 +122,13 @@ func (s *Server) addModerationMutationsToSchema(mutationType *graphql.Object) {
 		},
 	})
 
-	mutationType.AddFieldConfig("unminimizeComment", &graphql.Field{
+	s.registerMutation(mutationType, "unminimizeComment", &graphql.Field{
 		Type: unminimizePayloadType,
 		Args: graphql.FieldConfigArgument{
 			"input": &graphql.ArgumentConfig{Type: graphql.NewNonNull(unminimizeInputType)},
 		},
 		Resolve: func(p graphql.ResolveParams) (interface{}, error) {
 			user := ghUserFromContext(p.Context)
-			if user == nil {
-				return nil, fmt.Errorf("authentication required")
-			}
 			input, _ := p.Args["input"].(map[string]interface{})
 			nodeID, _ := input["subjectId"].(string)
 			c := s.store.LookupCommentByNodeID(nodeID)
@@ -139,6 +136,9 @@ func (s *Server) addModerationMutationsToSchema(mutationType *graphql.Object) {
 				return nil, fmt.Errorf("could not resolve to a node with the global id of '%s'", nodeID)
 			}
 			updated := s.store.SetCommentMinimization(c.ID, user.ID, "")
+			if updated == nil {
+				return nil, fmt.Errorf("could not resolve to a node with the global id of '%s'", nodeID)
+			}
 			return map[string]interface{}{
 				"unminimizedComment": map[string]interface{}{
 					"nodeID":          updated.NodeID,
@@ -214,16 +214,12 @@ func (s *Server) addModerationMutationsToSchema(mutationType *graphql.Object) {
 		},
 	})
 
-	mutationType.AddFieldConfig("lockLockable", &graphql.Field{
+	s.registerMutation(mutationType, "lockLockable", &graphql.Field{
 		Type: lockPayloadType,
 		Args: graphql.FieldConfigArgument{
 			"input": &graphql.ArgumentConfig{Type: graphql.NewNonNull(lockInputType)},
 		},
 		Resolve: func(p graphql.ResolveParams) (interface{}, error) {
-			user := ghUserFromContext(p.Context)
-			if user == nil {
-				return nil, fmt.Errorf("authentication required")
-			}
 			input, _ := p.Args["input"].(map[string]interface{})
 			nodeID, _ := input["lockableId"].(string)
 			reasonEnum, _ := input["lockReason"].(string)
@@ -236,16 +232,12 @@ func (s *Server) addModerationMutationsToSchema(mutationType *graphql.Object) {
 		},
 	})
 
-	mutationType.AddFieldConfig("unlockLockable", &graphql.Field{
+	s.registerMutation(mutationType, "unlockLockable", &graphql.Field{
 		Type: unlockPayloadType,
 		Args: graphql.FieldConfigArgument{
 			"input": &graphql.ArgumentConfig{Type: graphql.NewNonNull(unlockInputType)},
 		},
 		Resolve: func(p graphql.ResolveParams) (interface{}, error) {
-			user := ghUserFromContext(p.Context)
-			if user == nil {
-				return nil, fmt.Errorf("authentication required")
-			}
 			input, _ := p.Args["input"].(map[string]interface{})
 			nodeID, _ := input["lockableId"].(string)
 			unlocked, ok := s.lockByNodeID(nodeID, false, "")

@@ -44,7 +44,7 @@ func (st *Store) ReserveRunID() int {
 	st.NextRunID++
 	if st.persist != nil {
 		if err := st.persist.SetCounter("next_run_id", int64(st.NextRunID)); err != nil {
-			log.Fatalf("bleephub persistence counter next_run_id failed: %v", err)
+			panic(&persistenceFailure{op: "counter", bucket: "counters", key: "next_run_id", err: err})
 		}
 	}
 	return id
@@ -60,7 +60,7 @@ func (st *Store) ReserveLogID() int {
 	st.NextLog++
 	if st.persist != nil {
 		if err := st.persist.SetCounter("next_log_id", int64(st.NextLog)); err != nil {
-			log.Fatalf("bleephub persistence counter next_log_id failed: %v", err)
+			panic(&persistenceFailure{op: "counter", bucket: "counters", key: "next_log_id", err: err})
 		}
 	}
 	return id
@@ -405,7 +405,7 @@ type Store struct {
 	// a goroutine that re-acquires mu while already holding it deadlocks.
 	// The invariants that keep that impossible:
 	//   - Public Store methods and JSON serializers (repoToJSON, issueToJSON,
-	//     canReadRepo, …) acquire mu themselves and must never be called with
+	//     canReadRepoAsUser, …) acquire mu themselves and must never be called with
 	//     mu held.
 	//   - Helpers named xxxLocked (and helpers documented "callers hold
 	//     st.mu") never acquire mu; they run under the caller's lock.
@@ -917,6 +917,12 @@ func (st *Store) SetPersistence(p *Persistence) error {
 	st.CommitStatuses.persist = p
 	st.CommitComments.persist = p
 	st.mu.Unlock()
+	// Object-store git bytes have no advisory locking of their own; the durable
+	// store is what every replica already shares, so it is what arbitrates
+	// concurrent ref updates.
+	if IsS3GitStorage() {
+		setGitObjectLocker(p)
+	}
 	return st.loadFromPersistence()
 }
 
@@ -932,6 +938,15 @@ func (st *Store) loadFromPersistence() error {
 	if st.persist == nil {
 		return nil
 	}
+	// Deletion intents are read first: they explain rows that would otherwise
+	// look like corruption, and they are what lets an interrupted cascade be
+	// finished rather than left as a permanent boot failure.
+	pendingDeletions, err := st.listPendingDeletions()
+	if err != nil {
+		return err
+	}
+	orphanedRepoRows := newPersistBatch(st.persist)
+	var orphanedRepoNames []string
 	if err := st.loadBucket("users", func(raw []byte) error {
 		var u User
 		if err := loadJSON(raw, &u); err != nil {
@@ -1146,6 +1161,15 @@ func (st *Store) loadFromPersistence() error {
 		case "Organization":
 			org := st.Orgs[r.OwnerID]
 			if org == nil {
+				// An organization delete that was interrupted after the
+				// organization row went away leaves its repositories behind.
+				// Without the recorded intent this is indistinguishable from
+				// corruption and every later boot fails on the same row.
+				if _, deleting := pendingDeletions[pendingOrgDeletionKey(ownerLogin)]; deleting {
+					orphanedRepoRows.Delete("repos", strconv.Itoa(r.ID))
+					orphanedRepoNames = append(orphanedRepoNames, r.FullName)
+					return nil
+				}
 				return fmt.Errorf("repo %s: organization owner id=%d not found in loaded organizations", r.FullName, r.OwnerID)
 			}
 			if !strings.EqualFold(ownerLogin, org.Login) {
@@ -1174,6 +1198,14 @@ func (st *Store) loadFromPersistence() error {
 		return nil
 	}); err != nil {
 		return err
+	}
+	for _, fullName := range orphanedRepoNames {
+		if err := deleteRepoGitStorage(fullName); err != nil {
+			return fmt.Errorf("purge git storage of deleted organization repository %s: %w", fullName, err)
+		}
+	}
+	if err := orphanedRepoRows.Commit(); err != nil {
+		return fmt.Errorf("purge repositories of a deleted organization: %w", err)
 	}
 	// Load teams and memberships.
 	if err := st.loadBucket("teams", func(raw []byte) error {
@@ -1297,6 +1329,13 @@ func (st *Store) loadFromPersistence() error {
 	}); err != nil {
 		return err
 	}
+
+	// Runs that were mid-flight at shutdown are only this replica's to cancel
+	// when this replica owns the database outright. Against a shared quorum the
+	// run may still be executing on a live peer, and cancelling it here would
+	// kill another replica's work every time this one starts.
+	adoptRuns := st.persist.OwnedExclusively()
+	cancelledRuns := newPersistBatch(st.persist)
 
 	for _, loadFn := range []struct {
 		name string
@@ -1556,13 +1595,13 @@ func (st *Store) loadFromPersistence() error {
 			if err := loadJSON(raw, &wf); err != nil {
 				return err
 			}
-			normalizeReloadedWorkflow(&wf)
+			if adoptRuns && wf.Status != WorkflowStatusCompleted {
+				normalizeReloadedWorkflow(&wf)
+				cancelledRuns.Put("workflows", wf.ID, &wf)
+			}
 			st.Workflows[wf.ID] = &wf
 			if wf.RunID >= st.NextRunID {
 				st.NextRunID = wf.RunID + 1
-			}
-			if st.persist != nil {
-				st.persist.MustPut("workflows", wf.ID, &wf)
 			}
 			return nil
 		}},
@@ -1575,15 +1614,19 @@ func (st *Store) loadFromPersistence() error {
 			if err := loadJSON(raw, &attempts); err != nil {
 				return err
 			}
+			changed := false
 			for _, wf := range attempts {
-				normalizeReloadedWorkflow(wf)
+				if adoptRuns && wf.Status != WorkflowStatusCompleted {
+					normalizeReloadedWorkflow(wf)
+					changed = true
+				}
 				if wf.RunID >= st.NextRunID {
 					st.NextRunID = wf.RunID + 1
 				}
 			}
 			st.WorkflowAttempts[runID] = attempts
-			if st.persist != nil {
-				st.persist.MustPut("workflow_attempts", key, attempts)
+			if changed {
+				cancelledRuns.Put("workflow_attempts", key, attempts)
 			}
 			return nil
 		}},
@@ -1767,6 +1810,9 @@ func (st *Store) loadFromPersistence() error {
 				return fmt.Errorf("decode %s row: %w", loadFn.name, err)
 			}
 		}
+	}
+	if err := cancelledRuns.Commit(); err != nil {
+		return fmt.Errorf("record interrupted workflow runs as cancelled: %w", err)
 	}
 
 	// Deployment statuses were relinked in map-iteration order; restore
@@ -3132,6 +3178,188 @@ func (st *Store) loadFromPersistence() error {
 		st.CodespaceSecrets[scope] = m
 	}
 
+	if err := st.applyDurableIDCounters(); err != nil {
+		return err
+	}
+	if err := st.finishInterruptedDeletions(); err != nil {
+		return err
+	}
+
+	return nil
+}
+
+// pendingDeletionsBucket records that a cascading delete has started. The
+// intent is committed before any bytes are destroyed and removed in the same
+// transaction as the last metadata row, so a delete interrupted anywhere in
+// between is finished on the next start instead of leaving a repository or
+// organization half-removed.
+const pendingDeletionsBucket = "pending_deletions"
+
+type pendingDeletion struct {
+	Kind      string    `json:"kind"`
+	Name      string    `json:"name"`
+	StartedAt time.Time `json:"started_at"`
+}
+
+func pendingRepoDeletionKey(fullName string) string { return "repo:" + fullName }
+
+func pendingOrgDeletionKey(login string) string { return "org:" + login }
+
+func (st *Store) listPendingDeletions() (map[string]pendingDeletion, error) {
+	rows, err := st.persist.List(pendingDeletionsBucket)
+	if err != nil {
+		return nil, fmt.Errorf("load %s: %w", pendingDeletionsBucket, err)
+	}
+	out := make(map[string]pendingDeletion, len(rows))
+	for key, raw := range rows {
+		var record pendingDeletion
+		if err := loadJSON(raw, &record); err != nil {
+			return nil, fmt.Errorf("decode %s row %s: %w", pendingDeletionsBucket, key, err)
+		}
+		out[key] = record
+	}
+	return out, nil
+}
+
+// finishInterruptedDeletions completes every cascade that a previous process
+// started but did not finish. It runs after loading, without the store lock,
+// so it can reuse the same delete paths a request would take.
+func (st *Store) finishInterruptedDeletions() error {
+	pending, err := st.listPendingDeletions()
+	if err != nil {
+		return err
+	}
+	keys := make([]string, 0, len(pending))
+	for key := range pending {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+	for _, key := range keys {
+		record := pending[key]
+		switch record.Kind {
+		case "repo":
+			owner, name, ok := splitRepoFullName(record.Name)
+			if !ok {
+				return fmt.Errorf("resume repository delete %q: not an owner/name pair", record.Name)
+			}
+			existed, err := st.DeleteRepo(owner, name)
+			if err != nil {
+				return fmt.Errorf("resume repository delete %s: %w", record.Name, err)
+			}
+			if existed {
+				continue
+			}
+			if err := deleteRepoGitStorage(record.Name); err != nil {
+				return fmt.Errorf("resume repository delete %s: %w", record.Name, err)
+			}
+			if err := st.persist.Delete(pendingDeletionsBucket, key); err != nil {
+				return fmt.Errorf("resume repository delete %s: clear intent: %w", record.Name, err)
+			}
+		case "org":
+			existed, err := st.DeleteOrgWithError(record.Name)
+			if err != nil {
+				return fmt.Errorf("resume organization delete %s: %w", record.Name, err)
+			}
+			if existed {
+				continue
+			}
+			if err := st.persist.Delete(pendingDeletionsBucket, key); err != nil {
+				return fmt.Errorf("resume organization delete %s: clear intent: %w", record.Name, err)
+			}
+		default:
+			return fmt.Errorf("%s row %s has unknown kind %q", pendingDeletionsBucket, key, record.Kind)
+		}
+	}
+	return nil
+}
+
+// idCounterBuckets maps each record bucket whose keys are allocated
+// identifiers to the counter that hands out the next one. Rebuilding a counter
+// from the surviving rows alone re-issues a deleted entity's identifier, and
+// for attestations, package files and artifact records that identifier is also
+// the object-store key — the new entity would inherit the deleted one's bytes.
+func (st *Store) idCounterBuckets() map[string]*int {
+	return map[string]*int{
+		"apps":                             &st.NextAppID,
+		"artifact_deployment_records":      &st.NextArtifactDeploymentRecordID,
+		"artifact_storage_records":         &st.NextArtifactStorageRecordID,
+		"attestations":                     &st.NextAttestationID,
+		"classroom_accepted_assignments":   &st.NextClassroomAcceptedID,
+		"classroom_assignments":            &st.NextClassroomAssignmentID,
+		"classrooms":                       &st.NextClassroomID,
+		"code_scanning_alerts":             &st.NextCodeScanningAlertID,
+		"code_scanning_analyses":           &st.NextCodeScanningAnalysisID,
+		"codeql_databases":                 &st.NextCodeQLDatabaseID,
+		"codeql_variant_analyses":          &st.NextCodeQLVariantAnalysisID,
+		"codespaces":                       &st.NextCodespaceID,
+		"comments":                         &st.NextComment,
+		"dependabot_alerts":                &st.NextDependabotAlertID,
+		"discussion_categories":            &st.NextDiscussionCategoryID,
+		"discussion_comments":              &st.NextDiscussionCommentID,
+		"discussions":                      &st.NextDiscussionID,
+		"enterprise_code_security_configs": &st.NextEnterpriseCodeSecurityConfigID,
+		"enterprise_teams":                 &st.NextEnterpriseTeamID,
+		"gist_comments":                    &st.NextGistCommentID,
+		"hosted_runner_custom_images":      &st.NextHostedRunnerImageID,
+		"hosted_runners":                   &st.NextHostedRunnerID,
+		"issue_events":                     &st.NextIssueEventID,
+		"issues":                           &st.NextIssue,
+		"labels":                           &st.NextLabel,
+		"milestones":                       &st.NextMilestone,
+		"org_invitations":                  &st.NextOrgInvitationID,
+		"org_migrations":                   &st.NextOrgMigrationID,
+		"orgs":                             &st.NextOrg,
+		"package_files":                    &st.NextPackageFileID,
+		"package_versions":                 &st.NextPackageVersionID,
+		"packages":                         &st.NextPackageID,
+		"pr_reviews":                       &st.NextPRReview,
+		"project_cards":                    &st.NextProjectCardID,
+		"project_columns":                  &st.NextProjectColumnID,
+		"projects_classic":                 &st.NextProjectClassicID,
+		"pull_requests":                    &st.NextPR,
+		"repo_activity":                    &st.NextRepoActivity,
+		"repo_rulesets":                    &st.NextRulesetID,
+		"repos":                            &st.NextRepo,
+		"runner_groups":                    &st.NextRunnerGroupID,
+		"secret_scanning_alerts":           &st.NextSecretScanningAlertID,
+		"security_advisories":              &st.NextSecurityAdvisoryID,
+		"security_advisory_reports":        &st.NextSecurityAdvisoryReportID,
+		"teams":                            &st.NextTeam,
+		"user_migrations":                  &st.NextUserMigrationID,
+		"users":                            &st.NextUser,
+		"workflow_attempts":                &st.NextRunID,
+	}
+}
+
+// idCounterBuckets64 is idCounterBuckets for the counters stored as int64.
+func (st *Store) idCounterBuckets64() map[string]*int64 {
+	return map[string]*int64{
+		"api_insights_requests": &st.NextAPIRequestID,
+		"check_runs":            &st.NextCheckRunID,
+		"check_suites":          &st.NextCheckSuiteID,
+		"copilot_spaces":        &st.NextCopilotSpaceID,
+	}
+}
+
+func (st *Store) applyDurableIDCounters() error {
+	for bucket, next := range st.idCounterBuckets() {
+		stored, err := st.persist.KeyHighWater(bucket)
+		if err != nil {
+			return fmt.Errorf("load identifier counter for %s: %w", bucket, err)
+		}
+		if int(stored) > *next {
+			*next = int(stored)
+		}
+	}
+	for bucket, next := range st.idCounterBuckets64() {
+		stored, err := st.persist.KeyHighWater(bucket)
+		if err != nil {
+			return fmt.Errorf("load identifier counter for %s: %w", bucket, err)
+		}
+		if stored > *next {
+			*next = stored
+		}
+	}
 	return nil
 }
 

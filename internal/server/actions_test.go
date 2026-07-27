@@ -192,6 +192,9 @@ func TestActionTarballFailsLoudForExternalAction(t *testing.T) {
 
 func TestActionTarballServesFromCache(t *testing.T) {
 	s := newTestServer()
+	// The tarball route resolves the action repository's visibility before it
+	// serves anything, cache hit included.
+	testRepo(t, s, "actions", "checkout", false)
 	cachedTarball := testActionTarball(t)
 
 	s.actionCache.Put("actions/checkout@v4", &ActionCacheEntry{
@@ -282,6 +285,9 @@ func newTestServer() *Server {
 		store:         NewStore(),
 		actionCache:   NewActionCache(),
 		artifactStore: NewArtifactStoreWithByteStore("", nil),
+		// Unit-test hook receivers are loopback httptest servers; the SSRF
+		// tests build their own server with this left at the secure default.
+		allowPrivateOutboundTargets: true,
 	}
 	s.store.SeedDefaultUser()
 	return s

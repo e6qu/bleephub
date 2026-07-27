@@ -137,14 +137,14 @@ type bpRequest struct {
 
 func (s *Server) registerGHBranchProtectionRoutes() {
 	// Top-level branch protection
-	s.route("GET /api/v3/repos/{owner}/{repo}/branches/{branch}/protection", s.handleBranchProtectionGet)
+	s.route("GET /api/v3/repos/{owner}/{repo}/branches/{branch}/protection", s.requirePerm(scopeAdministration, permRead, s.handleBranchProtectionGet))
 	s.route("PUT /api/v3/repos/{owner}/{repo}/branches/{branch}/protection",
 		s.requirePerm(scopeAdministration, permWrite, s.handleBranchProtectionPut))
 	s.route("DELETE /api/v3/repos/{owner}/{repo}/branches/{branch}/protection",
 		s.requirePerm(scopeAdministration, permWrite, s.handleBranchProtectionDelete))
 
 	// Required status checks
-	s.route("GET /api/v3/repos/{owner}/{repo}/branches/{branch}/protection/required_status_checks", s.handleBPStatusChecksGet)
+	s.route("GET /api/v3/repos/{owner}/{repo}/branches/{branch}/protection/required_status_checks", s.requirePerm(scopeAdministration, permRead, s.handleBPStatusChecksGet))
 	s.route("PUT /api/v3/repos/{owner}/{repo}/branches/{branch}/protection/required_status_checks",
 		s.requirePerm(scopeAdministration, permWrite, s.handleBPStatusChecksPut))
 	s.route("PATCH /api/v3/repos/{owner}/{repo}/branches/{branch}/protection/required_status_checks",
@@ -153,14 +153,14 @@ func (s *Server) registerGHBranchProtectionRoutes() {
 		s.requirePerm(scopeAdministration, permWrite, s.handleBPStatusChecksDelete))
 
 	// Required commit signatures
-	s.route("GET /api/v3/repos/{owner}/{repo}/branches/{branch}/protection/required_signatures", s.handleBPRequiredSignaturesGet)
+	s.route("GET /api/v3/repos/{owner}/{repo}/branches/{branch}/protection/required_signatures", s.requirePerm(scopeAdministration, permRead, s.handleBPRequiredSignaturesGet))
 	s.route("POST /api/v3/repos/{owner}/{repo}/branches/{branch}/protection/required_signatures",
 		s.requirePerm(scopeAdministration, permWrite, s.handleBPRequiredSignaturesPost))
 	s.route("DELETE /api/v3/repos/{owner}/{repo}/branches/{branch}/protection/required_signatures",
 		s.requirePerm(scopeAdministration, permWrite, s.handleBPRequiredSignaturesDelete))
 
 	// Restrictions apps
-	s.route("GET /api/v3/repos/{owner}/{repo}/branches/{branch}/protection/restrictions/apps", s.handleBPRestrictionsAppsGet)
+	s.route("GET /api/v3/repos/{owner}/{repo}/branches/{branch}/protection/restrictions/apps", s.requirePerm(scopeAdministration, permRead, s.handleBPRestrictionsAppsGet))
 	s.route("POST /api/v3/repos/{owner}/{repo}/branches/{branch}/protection/restrictions/apps",
 		s.requirePerm(scopeAdministration, permWrite, s.handleBPRestrictionsAppsPost))
 	s.route("PUT /api/v3/repos/{owner}/{repo}/branches/{branch}/protection/restrictions/apps",
@@ -169,7 +169,7 @@ func (s *Server) registerGHBranchProtectionRoutes() {
 		s.requirePerm(scopeAdministration, permWrite, s.handleBPRestrictionsAppsDelete))
 
 	// Required status checks contexts
-	s.route("GET /api/v3/repos/{owner}/{repo}/branches/{branch}/protection/required_status_checks/contexts", s.handleBPContextsGet)
+	s.route("GET /api/v3/repos/{owner}/{repo}/branches/{branch}/protection/required_status_checks/contexts", s.requirePerm(scopeAdministration, permRead, s.handleBPContextsGet))
 	s.route("POST /api/v3/repos/{owner}/{repo}/branches/{branch}/protection/required_status_checks/contexts",
 		s.requirePerm(scopeAdministration, permWrite, s.handleBPContextsPost))
 	s.route("PUT /api/v3/repos/{owner}/{repo}/branches/{branch}/protection/required_status_checks/contexts",
@@ -178,21 +178,21 @@ func (s *Server) registerGHBranchProtectionRoutes() {
 		s.requirePerm(scopeAdministration, permWrite, s.handleBPContextsDelete))
 
 	// Required pull request reviews
-	s.route("GET /api/v3/repos/{owner}/{repo}/branches/{branch}/protection/required_pull_request_reviews", s.handleBPReviewsGet)
+	s.route("GET /api/v3/repos/{owner}/{repo}/branches/{branch}/protection/required_pull_request_reviews", s.requirePerm(scopeAdministration, permRead, s.handleBPReviewsGet))
 	s.route("PATCH /api/v3/repos/{owner}/{repo}/branches/{branch}/protection/required_pull_request_reviews",
 		s.requirePerm(scopeAdministration, permWrite, s.handleBPReviewsPatch))
 	s.route("DELETE /api/v3/repos/{owner}/{repo}/branches/{branch}/protection/required_pull_request_reviews",
 		s.requirePerm(scopeAdministration, permWrite, s.handleBPReviewsDelete))
 
 	// Restrictions
-	s.route("GET /api/v3/repos/{owner}/{repo}/branches/{branch}/protection/restrictions", s.handleBPRestrictionsGet)
+	s.route("GET /api/v3/repos/{owner}/{repo}/branches/{branch}/protection/restrictions", s.requirePerm(scopeAdministration, permRead, s.handleBPRestrictionsGet))
 	s.route("PUT /api/v3/repos/{owner}/{repo}/branches/{branch}/protection/restrictions",
 		s.requirePerm(scopeAdministration, permWrite, s.handleBPRestrictionsPut))
 	s.route("DELETE /api/v3/repos/{owner}/{repo}/branches/{branch}/protection/restrictions",
 		s.requirePerm(scopeAdministration, permWrite, s.handleBPRestrictionsDelete))
 
 	// Restrictions users
-	s.route("GET /api/v3/repos/{owner}/{repo}/branches/{branch}/protection/restrictions/users", s.handleBPRestrictionsUsersGet)
+	s.route("GET /api/v3/repos/{owner}/{repo}/branches/{branch}/protection/restrictions/users", s.requirePerm(scopeAdministration, permRead, s.handleBPRestrictionsUsersGet))
 	s.route("POST /api/v3/repos/{owner}/{repo}/branches/{branch}/protection/restrictions/users",
 		s.requirePerm(scopeAdministration, permWrite, s.handleBPRestrictionsUsersPost))
 	s.route("PUT /api/v3/repos/{owner}/{repo}/branches/{branch}/protection/restrictions/users",
@@ -201,7 +201,7 @@ func (s *Server) registerGHBranchProtectionRoutes() {
 		s.requirePerm(scopeAdministration, permWrite, s.handleBPRestrictionsUsersDelete))
 
 	// Restrictions teams
-	s.route("GET /api/v3/repos/{owner}/{repo}/branches/{branch}/protection/restrictions/teams", s.handleBPRestrictionsTeamsGet)
+	s.route("GET /api/v3/repos/{owner}/{repo}/branches/{branch}/protection/restrictions/teams", s.requirePerm(scopeAdministration, permRead, s.handleBPRestrictionsTeamsGet))
 	s.route("POST /api/v3/repos/{owner}/{repo}/branches/{branch}/protection/restrictions/teams",
 		s.requirePerm(scopeAdministration, permWrite, s.handleBPRestrictionsTeamsPost))
 	s.route("PUT /api/v3/repos/{owner}/{repo}/branches/{branch}/protection/restrictions/teams",
@@ -210,21 +210,21 @@ func (s *Server) registerGHBranchProtectionRoutes() {
 		s.requirePerm(scopeAdministration, permWrite, s.handleBPRestrictionsTeamsDelete))
 
 	// Enforce admins
-	s.route("GET /api/v3/repos/{owner}/{repo}/branches/{branch}/protection/enforce_admins", s.handleBPEnforceAdminsGet)
+	s.route("GET /api/v3/repos/{owner}/{repo}/branches/{branch}/protection/enforce_admins", s.requirePerm(scopeAdministration, permRead, s.handleBPEnforceAdminsGet))
 	s.route("POST /api/v3/repos/{owner}/{repo}/branches/{branch}/protection/enforce_admins",
 		s.requirePerm(scopeAdministration, permWrite, s.handleBPEnforceAdminsPost))
 	s.route("DELETE /api/v3/repos/{owner}/{repo}/branches/{branch}/protection/enforce_admins",
 		s.requirePerm(scopeAdministration, permWrite, s.handleBPEnforceAdminsDelete))
 
 	// Allow force pushes
-	s.route("GET /api/v3/repos/{owner}/{repo}/branches/{branch}/protection/allow_force_pushes", s.handleBPAllowForcePushesGet)
+	s.route("GET /api/v3/repos/{owner}/{repo}/branches/{branch}/protection/allow_force_pushes", s.requirePerm(scopeAdministration, permRead, s.handleBPAllowForcePushesGet))
 	s.route("PUT /api/v3/repos/{owner}/{repo}/branches/{branch}/protection/allow_force_pushes",
 		s.requirePerm(scopeAdministration, permWrite, s.handleBPAllowForcePushesPut))
 	s.route("DELETE /api/v3/repos/{owner}/{repo}/branches/{branch}/protection/allow_force_pushes",
 		s.requirePerm(scopeAdministration, permWrite, s.handleBPAllowForcePushesDelete))
 
 	// Allow deletions
-	s.route("GET /api/v3/repos/{owner}/{repo}/branches/{branch}/protection/allow_deletions", s.handleBPAllowDeletionsGet)
+	s.route("GET /api/v3/repos/{owner}/{repo}/branches/{branch}/protection/allow_deletions", s.requirePerm(scopeAdministration, permRead, s.handleBPAllowDeletionsGet))
 	s.route("PUT /api/v3/repos/{owner}/{repo}/branches/{branch}/protection/allow_deletions",
 		s.requirePerm(scopeAdministration, permWrite, s.handleBPAllowDeletionsPut))
 	s.route("DELETE /api/v3/repos/{owner}/{repo}/branches/{branch}/protection/allow_deletions",
@@ -240,16 +240,22 @@ func (s *Server) branchProtectionSubURL(baseURL, fullName, branch, sub string) s
 	return s.branchProtectionURL(baseURL, fullName, branch) + "/" + sub
 }
 
+// branchProtectionFor is the single read path into the protection table; the
+// map is written under Misc.mu and an unsynchronized read racing a write is a
+// fatal error rather than a recoverable panic.
+func (s *Server) branchProtectionFor(repoID int, branch string) *BranchProtection {
+	s.store.Misc.mu.RLock()
+	defer s.store.Misc.mu.RUnlock()
+	return s.store.Misc.branchProtection[bpKey(repoID, branch)]
+}
+
 func (s *Server) getBranchProtection(r *http.Request) (*Repo, string, *BranchProtection) {
 	repo := s.lookupRepoFromPath(r)
 	if repo == nil {
 		return nil, "", nil
 	}
 	branch := r.PathValue("branch")
-	s.store.Misc.mu.RLock()
-	bp := s.store.Misc.branchProtection[bpKey(repo.ID, branch)]
-	s.store.Misc.mu.RUnlock()
-	return repo, branch, bp
+	return repo, branch, s.branchProtectionFor(repo.ID, branch)
 }
 
 func (s *Server) setBranchProtection(repo *Repo, branch string, bp *BranchProtection) {

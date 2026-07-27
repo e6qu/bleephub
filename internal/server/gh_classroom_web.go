@@ -1,6 +1,7 @@
 package bleephub
 
 import (
+	"context"
 	"fmt"
 	"net/http"
 	"strconv"
@@ -64,19 +65,19 @@ func (s *Server) handleClassroomDashboard(w http.ResponseWriter, r *http.Request
 		return
 	}
 	classrooms := make([]map[string]interface{}, 0)
-	for _, c := range s.classroomsAdministeredBy(user) {
+	for _, c := range s.classroomsAdministeredBy(r.Context(), user) {
 		classrooms = append(classrooms, s.classroomWebJSON(c, s.baseURL(r)))
 	}
 	orgs := make([]map[string]interface{}, 0)
 	for _, org := range s.store.ListOrgsAll(0) {
-		if user.SiteAdmin || canAdminOrg(s.store, user, org) {
+		if user.SiteAdmin || s.viewerCanAdminOrg(r.Context(), org.Login) {
 			orgs = append(orgs, map[string]interface{}{"id": org.ID, "login": org.Login, "name": org.Name, "avatar_url": org.AvatarURL})
 		}
 	}
 	writeJSON(w, http.StatusOK, map[string]interface{}{"classrooms": classrooms, "organizations": orgs})
 }
 
-func (s *Server) classroomsAdministeredBy(user *User) []*Classroom {
+func (s *Server) classroomsAdministeredBy(ctx context.Context, user *User) []*Classroom {
 	s.store.mu.RLock()
 	all := make([]*Classroom, 0, len(s.store.Classrooms))
 	for _, c := range s.store.Classrooms {
@@ -87,7 +88,7 @@ func (s *Server) classroomsAdministeredBy(user *User) []*Classroom {
 	out := all[:0]
 	for _, c := range all {
 		org := s.store.GetOrgByID(c.OrgID)
-		if org != nil && (user.SiteAdmin || canAdminOrg(s.store, user, org)) {
+		if org != nil && (user.SiteAdmin || s.viewerCanAdminOrg(ctx, org.Login)) {
 			out = append(out, c)
 		}
 	}
@@ -152,7 +153,7 @@ func (s *Server) handleCreateClassroom(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	org := s.store.GetOrg(req.Org)
-	if org == nil || (!user.SiteAdmin && !canAdminOrg(s.store, user, org)) {
+	if org == nil || (!user.SiteAdmin && !s.viewerCanAdminOrg(r.Context(), org.Login)) {
 		writeGHError(w, http.StatusForbidden, "You must administer the organization to create its classroom.")
 		return
 	}
@@ -280,7 +281,7 @@ func (s *Server) handleCreateClassroomAssignment(w http.ResponseWriter, r *http.
 	}
 	owner, name, found := strings.Cut(*req.StarterCodeRepository, "/")
 	starter := s.store.GetRepo(owner, name)
-	if !found || starter == nil || !s.viewerCanReadRepo(r, starter) {
+	if !found || starter == nil || !s.viewerCanReadRepo(r.Context(), starter) {
 		writeGHError(w, http.StatusUnprocessableEntity, "Starter code repository not found")
 		return
 	}
@@ -681,7 +682,7 @@ type classroomTransitionAccepted struct {
 func (s *Server) handleExportClassrooms(w http.ResponseWriter, r *http.Request) {
 	user := ghUserFromContext(r.Context())
 	bundle := classroomTransitionBundle{Format: "bleephub-classroom-transition-v1", ExportedAt: time.Now().UTC()}
-	for _, classroom := range s.classroomsAdministeredBy(user) {
+	for _, classroom := range s.classroomsAdministeredBy(r.Context(), user) {
 		org := s.store.GetOrgByID(classroom.OrgID)
 		course := classroomTransitionCourse{Name: classroom.Name, Archived: classroom.Archived, Organization: org.Login}
 		for _, roster := range classroom.Roster {
@@ -749,7 +750,7 @@ func (s *Server) handleImportClassrooms(w http.ResponseWriter, r *http.Request) 
 	inviteCodes := make([][]string, len(bundle.Classrooms))
 	for courseIndex, course := range bundle.Classrooms {
 		org := s.store.GetOrg(course.Organization)
-		if org == nil || (!user.SiteAdmin && !canAdminOrg(s.store, user, org)) {
+		if org == nil || (!user.SiteAdmin && !s.viewerCanAdminOrg(r.Context(), org.Login)) {
 			writeGHError(w, http.StatusForbidden, "You must create and administer every destination organization before importing Classroom data.")
 			return
 		}

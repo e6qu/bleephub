@@ -10,8 +10,6 @@ import (
 	"strconv"
 	"strings"
 	"time"
-
-	"github.com/google/uuid"
 )
 
 func (s *Server) registerAgentRoutes() {
@@ -26,22 +24,25 @@ func (s *Server) registerAgentRoutes() {
 	s.route("POST /api/v3/repos/{owner}/{repo}/actions/runners/generate-jitconfig",
 		s.requirePerm(scopeAdministration, permWrite, s.handleGenerateJITConfig))
 
-	// Agent pools
-	s.route("GET /_apis/v1/AgentPools", s.handleListPools)
+	// Agent pools. config.sh reads the pool list with its registration token,
+	// before it has a session.
+	s.route("GET /_apis/v1/AgentPools", s.requireRunnerSetupCredential(s.handleListPools))
 
-	// Agent CRUD — order matters: more specific patterns first
+	// Agent CRUD — order matters: more specific patterns first.
+	// Registration is the one runner-protocol route reached before an agent
+	// session exists; it carries the registration token instead.
 	s.route("POST /_apis/v1/Agent/{poolId}", s.handleRegisterAgent)
-	s.route("GET /_apis/v1/Agent/{poolId}/{agentId}", s.handleGetAgent)
-	s.route("PUT /_apis/v1/Agent/{poolId}/{agentId}", s.handleUpdateAgent)
-	s.route("DELETE /_apis/v1/Agent/{poolId}/{agentId}", s.handleDeleteAgent)
-	s.route("GET /_apis/v1/Agent/{poolId}", s.handleListAgents)
+	s.route("GET /_apis/v1/Agent/{poolId}/{agentId}", s.requireAgentSession(s.handleGetAgent))
+	s.route("PUT /_apis/v1/Agent/{poolId}/{agentId}", s.requireAgentSession(s.handleUpdateAgent))
+	s.route("DELETE /_apis/v1/Agent/{poolId}/{agentId}", s.requireAgentSession(s.handleDeleteAgent))
+	s.route("GET /_apis/v1/Agent/{poolId}", s.requireAgentSession(s.handleListAgents))
 }
 
-// randomRunnerToken mints an opaque registration/removal token in the
-// shape real GitHub returns ("A" + base64-ish blob). The token is never
-// recognized later — the runner echoes it during config.sh setup but
-// bleephub gates agent registration on the PAT/installation auth, exactly
-// as real GitHub treats the opaque token as a one-shot setup credential.
+// randomRunnerToken mints the unguessable component of a runner
+// registration/removal token, in the shape real GitHub's opaque token has
+// ("A" + base64-ish blob). newRunnerRegistrationToken binds it to a scope and
+// signs the pair, so two tokens for the same scope are never equal and a
+// leaked one cannot be replayed past its expiry.
 func randomRunnerToken() (string, error) {
 	return randomRunnerTokenFromReader(rand.Reader)
 }
@@ -54,33 +55,39 @@ func randomRunnerTokenFromReader(random io.Reader) (string, error) {
 	return "A" + base64.RawURLEncoding.EncodeToString(b), nil
 }
 
-func (s *Server) handleRegistrationToken(w http.ResponseWriter, r *http.Request) {
-	s.logger.Info().Msg("registration token requested")
-	token, err := randomRunnerToken()
+// mintRunnerToken issues the opaque registration/removal token in the shape
+// real GitHub returns ("A" + base64-ish blob), scoped to the repository or
+// organization the request addresses. The token is signed, so the scope it
+// carries survives the round-trip through config.sh without a server-side
+// registry, and a forged one cannot register a runner.
+func (s *Server) mintRunnerToken(w http.ResponseWriter, r *http.Request, purpose string) {
+	scope, err := s.runnerScopeFromRequest(r)
+	if err != nil {
+		writeGHError(w, http.StatusNotFound, "Not Found")
+		return
+	}
+	token, err := newRunnerRegistrationToken(scope, purpose)
 	if err != nil {
 		writeGHError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
-	// Real GitHub: 201 Created, random token, ~1h TTL.
+	s.logger.Info().Str("scope", scope.String()).Str("purpose", purpose).Msg("runner token issued")
+	// Real GitHub: 201 Created, opaque token, ~1h TTL.
 	writeJSON(w, http.StatusCreated, map[string]interface{}{
 		"token":      token,
-		"expires_at": time.Now().Add(time.Hour).UTC().Format(time.RFC3339),
+		"expires_at": time.Now().Add(runnerRegistrationTTL).UTC().Format(time.RFC3339),
 	})
 }
 
+func (s *Server) handleRegistrationToken(w http.ResponseWriter, r *http.Request) {
+	s.mintRunnerToken(w, r, runnerPurposeRegistration)
+}
+
 // handleRemoveToken mints a runner removal token (config.sh remove --token).
-// Same opaque-token shape and ~1h TTL as the registration token.
+// Same opaque-token shape and TTL as the registration token, with a purpose
+// that cannot register a runner.
 func (s *Server) handleRemoveToken(w http.ResponseWriter, r *http.Request) {
-	s.logger.Info().Msg("removal token requested")
-	token, err := randomRunnerToken()
-	if err != nil {
-		writeGHError(w, http.StatusInternalServerError, err.Error())
-		return
-	}
-	writeJSON(w, http.StatusCreated, map[string]interface{}{
-		"token":      token,
-		"expires_at": time.Now().Add(time.Hour).UTC().Format(time.RFC3339),
-	})
+	s.mintRunnerToken(w, r, runnerPurposeRemoval)
 }
 
 // handleGenerateJITConfig mints a just-in-time runner config for an
@@ -89,6 +96,14 @@ func (s *Server) handleRemoveToken(w http.ResponseWriter, r *http.Request) {
 // consumes via `Runner.Listener --jitconfig <blob>`. 422 when name /
 // runner_group_id / labels are missing.
 func (s *Server) handleGenerateJITConfig(w http.ResponseWriter, r *http.Request) {
+	// The target has to exist before the body is worth validating: a
+	// fabricated repository answers 404, not 422.
+	scope, err := s.runnerScopeFromRequest(r)
+	if err != nil {
+		writeGHError(w, http.StatusNotFound, "Not Found")
+		return
+	}
+
 	var req struct {
 		Name          string   `json:"name"`
 		RunnerGroupID *int     `json:"runner_group_id"`
@@ -118,6 +133,13 @@ func (s *Server) handleGenerateJITConfig(w http.ResponseWriter, r *http.Request)
 		agent.Labels = append(agent.Labels, Label{Name: l, Type: "custom"})
 	}
 
+	jitScope := coalesceStr(scope.Repo, scope.Org)
+	clientID, err := newAgentClientID(scope)
+	if err != nil {
+		writeGHError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+
 	s.store.mu.Lock()
 	agent.ID = s.store.NextAgent
 	s.store.NextAgent++
@@ -126,7 +148,7 @@ func (s *Server) handleGenerateJITConfig(w http.ResponseWriter, r *http.Request)
 	agent.CreatedOn = time.Now()
 	agent.Authorization = &AgentAuthorization{
 		AuthorizationURL: s.baseURL(r) + "/_apis/v1/auth/",
-		ClientID:         uuid.New().String(),
+		ClientID:         clientID,
 	}
 	s.store.Agents[agent.ID] = &agent
 	s.store.mu.Unlock()
@@ -141,7 +163,7 @@ func (s *Server) handleGenerateJITConfig(w http.ResponseWriter, r *http.Request)
 			"poolId":     1,
 			"poolName":   "Default",
 			"serverUrl":  s.baseURL(r),
-			"gitHubUrl":  s.baseURL(r) + "/" + repoFullName(r),
+			"gitHubUrl":  s.baseURL(r) + "/" + jitScope,
 			"workFolder": workFolder,
 			"ephemeral":  true,
 		},
@@ -177,7 +199,18 @@ func (s *Server) handleListPools(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+// handleRegisterAgent adds a runner to the pool. This is the one runner
+// protocol route reached before an agent session exists, so it authenticates
+// on the registration token config.sh was given rather than on a bearer
+// session token; the scope that token carries becomes the agent's.
 func (s *Server) handleRegisterAgent(w http.ResponseWriter, r *http.Request) {
+	scope, err := s.runnerRegistrationCredential(r)
+	if err != nil {
+		s.logger.Warn().Err(err).Msg("agent registration rejected")
+		writeGHError(w, http.StatusUnauthorized, "Invalid runner registration token")
+		return
+	}
+
 	// Parse as generic JSON (runner sends extra fields not in our Agent struct)
 	var raw map[string]interface{}
 	if err := json.NewDecoder(r.Body).Decode(&raw); err != nil {
@@ -231,6 +264,12 @@ func (s *Server) handleRegisterAgent(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	clientID, err := newAgentClientID(scope)
+	if err != nil {
+		writeGHError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+
 	s.store.mu.Lock()
 	agent.ID = s.store.NextAgent
 	s.store.NextAgent++
@@ -242,12 +281,12 @@ func (s *Server) handleRegisterAgent(w http.ResponseWriter, r *http.Request) {
 		agent.Authorization = &AgentAuthorization{}
 	}
 	agent.Authorization.AuthorizationURL = s.baseURL(r) + "/_apis/v1/auth/"
-	agent.Authorization.ClientID = uuid.New().String()
+	agent.Authorization.ClientID = clientID
 
 	s.store.Agents[agent.ID] = &agent
 	s.store.mu.Unlock()
 
-	s.logger.Info().Int("id", agent.ID).Str("name", agent.Name).Msg("agent registered")
+	s.logger.Info().Int("id", agent.ID).Str("name", agent.Name).Str("scope", scope.String()).Msg("agent registered")
 	writeJSON(w, http.StatusOK, &agent)
 }
 
@@ -270,11 +309,15 @@ func (st *Store) LookupAgentByClientID(clientID string) *Agent {
 
 func (s *Server) handleListAgents(w http.ResponseWriter, r *http.Request) {
 	nameFilter := r.URL.Query().Get("agentName")
+	caller, _ := s.callerRunner(r)
 
 	s.store.mu.RLock()
 	agents := make([]*Agent, 0)
 	for _, a := range s.store.Agents {
 		if nameFilter != "" && !strings.EqualFold(a.Name, nameFilter) {
+			continue
+		}
+		if !callerSeesAgent(caller, a) {
 			continue
 		}
 		agents = append(agents, a)
@@ -287,18 +330,41 @@ func (s *Server) handleListAgents(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+// callerSeesAgent reports whether a runner credential may address an agent
+// record. A runner manages its own registration; the fleet-wide view lives on
+// the administration:write-gated REST runners API, not here. Agents outside
+// the caller's scope are invisible rather than forbidden so an agent id cannot
+// be probed for existence across tenants.
+func callerSeesAgent(caller *runnerPrincipal, agent *Agent) bool {
+	if caller == nil || caller.Agent == nil || agent == nil {
+		return false
+	}
+	if caller.Agent.ID == agent.ID {
+		return true
+	}
+	if agent.Authorization == nil {
+		return false
+	}
+	scope, err := agentClientIDScope(agent.Authorization.ClientID)
+	if err != nil {
+		return false
+	}
+	return scope == caller.Scope
+}
+
 func (s *Server) handleGetAgent(w http.ResponseWriter, r *http.Request) {
 	agentID, err := strconv.Atoi(r.PathValue("agentId"))
 	if err != nil {
 		http.Error(w, "invalid agent ID", http.StatusBadRequest)
 		return
 	}
+	caller, _ := s.callerRunner(r)
 
 	s.store.mu.RLock()
 	agent, ok := s.store.Agents[agentID]
 	s.store.mu.RUnlock()
 
-	if !ok {
+	if !ok || !callerSeesAgent(caller, agent) {
 		http.Error(w, "agent not found", http.StatusNotFound)
 		return
 	}
@@ -311,6 +377,7 @@ func (s *Server) handleUpdateAgent(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "invalid agent ID", http.StatusBadRequest)
 		return
 	}
+	caller, _ := s.callerRunner(r)
 
 	var update Agent
 	if !decodeJSONBody(w, r, &update) {
@@ -319,15 +386,15 @@ func (s *Server) handleUpdateAgent(w http.ResponseWriter, r *http.Request) {
 
 	s.store.mu.Lock()
 	agent, ok := s.store.Agents[agentID]
-	if !ok {
+	if !ok || !callerSeesAgent(caller, agent) {
 		s.store.mu.Unlock()
 		http.Error(w, "agent not found", http.StatusNotFound)
 		return
 	}
 	update.ID = agent.ID
-	if update.Authorization == nil {
-		update.Authorization = agent.Authorization
-	}
+	// The registration-time authorization is server state: its clientId is the
+	// agent's identity and carries its scope, so an update never restates it.
+	update.Authorization = agent.Authorization
 	update.CreatedOn = agent.CreatedOn
 	s.store.Agents[agentID] = &update
 	s.store.mu.Unlock()
@@ -342,8 +409,11 @@ func (s *Server) handleDeleteAgent(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	caller, _ := s.callerRunner(r)
+
 	s.store.mu.Lock()
-	_, ok := s.store.Agents[agentID]
+	agent, ok := s.store.Agents[agentID]
+	ok = ok && callerSeesAgent(caller, agent)
 	if ok {
 		delete(s.store.Agents, agentID)
 	}

@@ -34,7 +34,7 @@ func (s *Server) handleGenerateRepoFromTemplate(w http.ResponseWriter, r *http.R
 		writeGHError(w, http.StatusNotFound, "Not Found")
 		return
 	}
-	if template.Private && !canReadRepo(s.store, user, template) {
+	if template.Private && !s.viewerCanReadRepo(r.Context(), template) {
 		writeGHError(w, http.StatusNotFound, "Not Found")
 		return
 	}
@@ -70,7 +70,7 @@ func (s *Server) handleGenerateRepoFromTemplate(w http.ResponseWriter, r *http.R
 			writeGHError(w, http.StatusForbidden, "You may only generate repositories for your own account or an organization you are a member of.")
 			return
 		}
-		if !isActiveOrgMember(s.store, user, org.Login) {
+		if !s.viewerIsOrgMember(r.Context(), org.Login) {
 			writeGHError(w, http.StatusForbidden, "You must be a member of the organization to create a repository in it.")
 			return
 		}

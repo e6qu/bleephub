@@ -27,7 +27,7 @@ import (
 // everywhere else. Unresolvable ids are fine — the handler is expected to
 // refuse on authorization before it ever looks the id up, and a 404 from a
 // missing id is an accepted outcome.
-func authzMatrixSubstitute(pattern, owner, repo string) (method, path string, ok bool) {
+func authzMatrixSubstitute(pattern, owner, repo, org string) (method, path string, ok bool) {
 	method, rest, found := strings.Cut(pattern, " ")
 	if !found {
 		return "", "", false
@@ -40,7 +40,13 @@ func authzMatrixSubstitute(pattern, owner, repo string) (method, path string, ok
 		name := strings.Trim(seg, "{}")
 		name = strings.TrimSuffix(name, "...")
 		switch name {
-		case "owner", "org", "username", "enterprise":
+		case "org":
+			// A real organization, not the owner's user login: a path naming an
+			// organization that does not exist is refused before any handler
+			// runs, so substituting a non-org here would make every org-scoped
+			// route a guaranteed 404 and prove nothing.
+			segments[i] = org
+		case "owner", "username", "enterprise":
 			segments[i] = owner
 		case "repo":
 			segments[i] = repo
@@ -82,6 +88,11 @@ func TestPrivateRepoMutationsRejectAnUnrelatedUser(t *testing.T) {
 		t.Fatalf("could not mint a token for the unrelated user")
 	}
 
+	const orgLogin = "authzmatrix-org"
+	if store.GetOrg(orgLogin) == nil && store.CreateOrg(owner, orgLogin, "Authz Matrix Org", "") == nil {
+		t.Fatalf("could not create the fixture organization")
+	}
+
 	handler := testServer.ghHeadersMiddleware(testServer.mux)
 
 	var admitted []string
@@ -89,7 +100,7 @@ func TestPrivateRepoMutationsRejectAnUnrelatedUser(t *testing.T) {
 		if !strings.Contains(pattern, "/api/v3/repos/{owner}/{repo}") {
 			continue
 		}
-		method, path, ok := authzMatrixSubstitute(pattern, ownerLogin, repoName)
+		method, path, ok := authzMatrixSubstitute(pattern, ownerLogin, repoName, orgLogin)
 		if !ok {
 			continue
 		}
@@ -140,7 +151,7 @@ func TestPrivateRepoMutationsRejectAnUnrelatedUser(t *testing.T) {
 		if !strings.Contains(pattern, "/api/v3/repos/{owner}/{repo}") {
 			continue
 		}
-		method, path, ok := authzMatrixSubstitute(pattern, ownerLogin, ownerRepo)
+		method, path, ok := authzMatrixSubstitute(pattern, ownerLogin, ownerRepo, orgLogin)
 		if !ok {
 			continue
 		}
@@ -148,6 +159,12 @@ func TestPrivateRepoMutationsRejectAnUnrelatedUser(t *testing.T) {
 		case http.MethodPost, http.MethodPut, http.MethodPatch, http.MethodDelete:
 		default:
 			continue
+		}
+		// The sweep is destructive: `DELETE /repos/{owner}/{repo}` succeeds
+		// like any other owner-authorized mutation, and every later iteration
+		// would then be measuring a repository that no longer exists.
+		if store.GetRepo(ownerLogin, ownerRepo) == nil && store.CreateRepo(owner, ownerRepo, "public fixture", false) == nil {
+			t.Fatalf("could not restore the owner's fixture repository")
 		}
 		req := httptest.NewRequest(method, path, bytes.NewReader([]byte("{}")))
 		req.Header.Set("Authorization", "token "+ownerToken.Value)
@@ -317,7 +334,7 @@ func TestGraphQLDeleteRepositoryRejectsANonAdmin(t *testing.T) {
 // repository, including PUT .../collaborators/{username}, which is persistent
 // access, and the runner registration-token endpoint.
 //
-// The mirror image mattered too: the read gate asked canReadRepo about the
+// The mirror image mattered too: the read gate asked canReadRepoAsUser about the
 // synthetic bot user standing in for the installation, and that bot is a
 // collaborator on nothing, so apps lost reads they were entitled to.
 func TestInstallationTokenCannotReachAnotherAccountsRepo(t *testing.T) {
@@ -520,7 +537,17 @@ func TestPublicRepositoryBypassIsKeyedOnTheScope(t *testing.T) {
 	handler := testServer.ghHeadersMiddleware(testServer.mux)
 	base := "/api/v3/repos/" + owner.Login + "/" + repo.Name
 
+	// The first three are the discriminating probes: scopeActions is neither
+	// allowed by publicReadAllowed nor promoted to admin by
+	// resourceCapabilityFor, so the PAT carve-out is the only gate standing
+	// between this caller and a 200. The secrets and variables listings the
+	// original exploit used are asserted too, but they cannot fail this test
+	// on their own — scopeSecrets is admin-promoted, so the resource gate
+	// refuses the outsider before the carve-out is ever consulted.
 	for _, path := range []string{
+		base + "/actions/permissions",
+		base + "/actions/permissions/workflow",
+		base + "/actions/permissions/access",
 		base + "/actions/variables",
 		base + "/actions/secrets",
 	} {

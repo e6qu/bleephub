@@ -55,7 +55,7 @@ func (s *Server) copilotOrgAdmin(w http.ResponseWriter, r *http.Request) *Org {
 		writeGHError(w, http.StatusNotFound, "Not Found")
 		return nil
 	}
-	if !canAdminOrg(s.store, user, org) {
+	if !s.viewerCanAdminOrg(r.Context(), org.Login) {
 		writeGHError(w, http.StatusForbidden, "Must be an organization owner.")
 		return nil
 	}
@@ -328,7 +328,7 @@ func (s *Server) handleGetCopilotSeatDetailsForUser(w http.ResponseWriter, r *ht
 		return
 	}
 	username := r.PathValue("username")
-	if !canAdminOrg(s.store, caller, org) && !strings.EqualFold(caller.Login, username) {
+	if !s.viewerCanAdminOrg(r.Context(), org.Login) && !strings.EqualFold(caller.Login, username) {
 		writeGHError(w, http.StatusForbidden, "Must be an organization owner.")
 		return
 	}

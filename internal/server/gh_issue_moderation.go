@@ -41,6 +41,14 @@ func (s *Server) handleUpdateIssueComment(w http.ResponseWriter, r *http.Request
 		writeGHError(w, http.StatusNotFound, "Not Found")
 		return
 	}
+	existing := s.store.GetComment(id)
+	if existing == nil {
+		writeGHError(w, http.StatusNotFound, "Not Found")
+		return
+	}
+	if !requireRepoOwns(w, repo, s.store.CommentRepoID(existing)) {
+		return
+	}
 
 	var req struct {
 		Body string `json:"body"`
@@ -70,9 +78,22 @@ func (s *Server) handleDeleteIssueComment(w http.ResponseWriter, r *http.Request
 		writeGHError(w, http.StatusUnauthorized, "Bad credentials")
 		return
 	}
+	repo := s.store.GetRepo(r.PathValue("owner"), r.PathValue("repo"))
+	if repo == nil {
+		writeGHError(w, http.StatusNotFound, "Not Found")
+		return
+	}
 	id, err := strconv.Atoi(idStr)
 	if err != nil {
 		writeGHError(w, http.StatusNotFound, "Not Found")
+		return
+	}
+	c := s.store.GetComment(id)
+	if c == nil {
+		writeGHError(w, http.StatusNotFound, "Not Found")
+		return
+	}
+	if !requireRepoOwns(w, repo, s.store.CommentRepoID(c)) {
 		return
 	}
 	if !s.store.DeleteComment(id) {

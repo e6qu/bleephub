@@ -416,6 +416,10 @@ func (s *Server) registerGHDeploymentsRoutes() {
 
 func (s *Server) handleCreateDeployment(w http.ResponseWriter, r *http.Request) {
 	user := ghUserFromContext(r.Context())
+	if user == nil {
+		writeGHError(w, http.StatusUnauthorized, "Bad credentials")
+		return
+	}
 	repo := s.lookupRepoFromPath(r)
 	if repo == nil {
 		writeGHError(w, http.StatusNotFound, "Not Found")
@@ -501,6 +505,10 @@ func (s *Server) handleDeleteDeployment(w http.ResponseWriter, r *http.Request) 
 
 func (s *Server) handleCreateDeploymentStatus(w http.ResponseWriter, r *http.Request) {
 	user := ghUserFromContext(r.Context())
+	if user == nil {
+		writeGHError(w, http.StatusUnauthorized, "Bad credentials")
+		return
+	}
 	repo := s.lookupRepoFromPath(r)
 	if repo == nil {
 		writeGHError(w, http.StatusNotFound, "Not Found")
@@ -566,13 +574,26 @@ func (s *Server) handleGetDeploymentStatus(w http.ResponseWriter, r *http.Reques
 	if repo == nil {
 		return
 	}
+	id, err := strconv.Atoi(r.PathValue("deployment_id"))
+	if err != nil {
+		writeGHError(w, http.StatusNotFound, "Not Found")
+		return
+	}
+	d := s.store.Deployments.GetDeployment(id)
+	if d == nil {
+		writeGHError(w, http.StatusNotFound, "Not Found")
+		return
+	}
+	if !requireRepoOwns(w, repo, d.RepoID) {
+		return
+	}
 	statusID, err := strconv.Atoi(r.PathValue("status_id"))
 	if err != nil {
 		writeGHError(w, http.StatusNotFound, "Not Found")
 		return
 	}
 	status := s.store.Deployments.GetStatus(statusID)
-	if status == nil {
+	if status == nil || status.DeploymentID != d.ID {
 		writeGHError(w, http.StatusNotFound, "Not Found")
 		return
 	}
@@ -711,7 +732,6 @@ func deploymentStatusToJSON(st *DeploymentStatus, store *Store, baseURL string, 
 		"target_url":      st.TargetURL,
 		"log_url":         st.LogURL,
 		"environment_url": st.EnvironmentURL,
-		"auto_inactive":   st.AutoInactive,
 		"created_at":      st.CreatedAt.UTC().Format(time.RFC3339),
 		"updated_at":      st.UpdatedAt.UTC().Format(time.RFC3339),
 		"url":             fmt.Sprintf("%s/api/v3/repos/%s/deployments/%d/statuses/%d", baseURL, repo.FullName, st.DeploymentID, st.ID),

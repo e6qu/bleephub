@@ -332,7 +332,7 @@ func installationRequestCanAccessRepo(r *http.Request, repo *Repo) bool {
 }
 
 func (s *Server) codeScanningRequestCanReadRepo(r *http.Request, repo *Repo) bool {
-	return s.viewerCanReadRepo(r, repo) || installationRequestCanAccessRepo(r, repo)
+	return s.viewerCanReadRepo(r.Context(), repo) || installationRequestCanAccessRepo(r, repo)
 }
 
 func (s *Server) validateCodeScanningCoordinate(repo *Repo, commitSHA, ref string) error {

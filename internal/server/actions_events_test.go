@@ -111,20 +111,29 @@ jobs:
 	waitUntil(t, "check_run created", func() bool { return rec.has("check_run/created") })
 	waitUntil(t, "check_suite requested", func() bool { return rec.has("check_suite/requested") })
 
-	// Runner pickup: renew the request → in_progress.
-	testServer.store.mu.RLock()
+	// Runner pickup: renew the request → in_progress. The renew route belongs
+	// to the runner the broker dispatched to, so stand one up and assign it.
+	runnerToken, runnerAgent := testAgentSession(t, testServer, runnerScope{Repo: repoKey})
+	testServer.store.mu.Lock()
 	job := testServer.store.Jobs[wf.Jobs["build"].JobID]
-	testServer.store.mu.RUnlock()
+	if job != nil {
+		job.AgentID = runnerAgent.ID
+	}
+	testServer.store.mu.Unlock()
 	if job == nil {
 		t.Fatal("engine job missing")
 	}
 	req, _ := http.NewRequest("PATCH",
 		fmt.Sprintf("http://%s/_apis/v1/AgentRequest/1/%d", testServer.addr, job.RequestID), nil)
+	req.Header.Set("Authorization", "Bearer "+runnerToken)
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
 		t.Fatal(err)
 	}
 	resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("runner renew status = %d, want 200", resp.StatusCode)
+	}
 	waitUntil(t, "check run in_progress", func() bool {
 		return testServer.store.GetCheckRun(checkRun.ID).Status == "in_progress"
 	})

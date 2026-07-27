@@ -144,6 +144,15 @@ run "the_application_container_reports_its_own_health" {
     }
   }
 
+  override_resource {
+    target          = aws_secretsmanager_secret.dqlite_secret
+    override_during = plan
+    values = {
+      arn = "arn:aws:secretsmanager:eu-west-1:123456789012:secret:bleephub-test/dqlite-secret"
+      id  = "arn:aws:secretsmanager:eu-west-1:123456789012:secret:bleephub-test/dqlite-secret"
+    }
+  }
+
   assert {
     condition     = can(jsondecode(aws_ecs_task_definition.this.container_definitions)[0].healthCheck.command)
     error_message = "the application container must declare a health check"
@@ -157,6 +166,90 @@ run "the_application_container_reports_its_own_health" {
   assert {
     condition     = jsondecode(aws_ecs_task_definition.this.container_definitions)[0].healthCheck.retries >= 2
     error_message = "the container health check must tolerate a single lost probe"
+  }
+}
+
+# Both ends of the dqlite transport refuse to start without this secret, and a
+# mismatch is only visible at boot, so every leg is asserted separately.
+run "the_dqlite_cluster_secret_reaches_both_ends" {
+  command = plan
+
+  override_resource {
+    target          = aws_secretsmanager_secret.admin_token
+    override_during = plan
+    values = {
+      arn = "arn:aws:secretsmanager:eu-west-1:123456789012:secret:bleephub-test/admin-token"
+      id  = "arn:aws:secretsmanager:eu-west-1:123456789012:secret:bleephub-test/admin-token"
+    }
+  }
+
+  override_resource {
+    target          = aws_secretsmanager_secret.ssh_host_key
+    override_during = plan
+    values = {
+      arn = "arn:aws:secretsmanager:eu-west-1:123456789012:secret:bleephub-test/ssh-host-key"
+      id  = "arn:aws:secretsmanager:eu-west-1:123456789012:secret:bleephub-test/ssh-host-key"
+    }
+  }
+
+  override_resource {
+    target          = aws_secretsmanager_secret.dqlite_secret
+    override_during = plan
+    values = {
+      arn = "arn:aws:secretsmanager:eu-west-1:123456789012:secret:bleephub-test/dqlite-secret"
+      id  = "arn:aws:secretsmanager:eu-west-1:123456789012:secret:bleephub-test/dqlite-secret"
+    }
+  }
+
+  assert {
+    condition     = aws_secretsmanager_secret.dqlite_secret.name == "bleephub-test/dqlite-secret" && aws_secretsmanager_secret.dqlite_secret.kms_key_id == aws_kms_key.this.arn
+    error_message = "the dqlite cluster secret must live in Secrets Manager under the module's own key"
+  }
+
+  assert {
+    condition     = aws_secretsmanager_secret_version.dqlite_secret.secret_id == aws_secretsmanager_secret.dqlite_secret.id
+    error_message = "the generated dqlite cluster secret must be stored as a version of its own secret"
+  }
+
+  # A plaintext environment entry would leak the cluster credential into every
+  # DescribeTaskDefinition call.
+  assert {
+    condition = alltrue(concat(
+      [for entry in jsondecode(aws_ecs_task_definition.this.container_definitions)[0].environment : entry.name != "BLEEPHUB_DQLITE_SECRET"],
+      flatten([for definition in aws_ecs_task_definition.dqlite : [for entry in jsondecode(definition.container_definitions)[0].environment : entry.name != "BLEEPHUB_DQLITE_SECRET"]]),
+    ))
+    error_message = "the dqlite cluster secret must never appear as a plaintext task environment entry"
+  }
+
+  assert {
+    condition     = one([for entry in jsondecode(aws_ecs_task_definition.this.container_definitions)[0].secrets : entry.valueFrom if entry.name == "BLEEPHUB_DQLITE_SECRET"]) == aws_secretsmanager_secret.dqlite_secret.arn
+    error_message = "the application task must receive the dqlite cluster secret"
+  }
+
+  assert {
+    condition = alltrue([
+      for definition in aws_ecs_task_definition.dqlite :
+      one([for entry in jsondecode(definition.container_definitions)[0].secrets : entry.valueFrom if entry.name == "BLEEPHUB_DQLITE_SECRET"]) == aws_secretsmanager_secret.dqlite_secret.arn
+    ])
+    error_message = "every dqlite voter task must receive the same dqlite cluster secret"
+  }
+
+  assert {
+    condition = anytrue([
+      for statement in jsondecode(aws_iam_role_policy.execution_secret.policy).Statement :
+      contains(statement.Resource, aws_secretsmanager_secret.dqlite_secret.arn)
+      if contains(statement.Action, "secretsmanager:GetSecretValue")
+    ])
+    error_message = "the execution role must be able to read the dqlite cluster secret"
+  }
+
+  assert {
+    condition = anytrue([
+      for statement in jsondecode(aws_iam_role_policy.execution_secret.policy).Statement :
+      statement.Resource == aws_kms_key.this.arn
+      if contains(statement.Action, "kms:Decrypt")
+    ])
+    error_message = "the execution role must be able to decrypt the secret under the module's key"
   }
 }
 

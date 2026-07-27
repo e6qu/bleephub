@@ -245,6 +245,48 @@ func (s *Server) handleGetReadme(w http.ResponseWriter, r *http.Request) {
 	writeGHError(w, http.StatusNotFound, "Not Found")
 }
 
+// contentBlobSHA reports the blob sha at path on branch, and whether the path
+// holds a file there at all.
+func contentBlobSHA(stor gitStorage.Storer, branch, path string) (string, bool) {
+	ref, err := stor.Reference(plumbing.NewBranchReferenceName(branch))
+	if err != nil || ref == nil {
+		return "", false
+	}
+	commit, err := object.GetCommit(stor, ref.Hash())
+	if err != nil {
+		return "", false
+	}
+	tree, err := commit.Tree()
+	if err != nil {
+		return "", false
+	}
+	entry, err := tree.FindEntry(path)
+	if err != nil {
+		return "", false
+	}
+	return entry.Hash.String(), true
+}
+
+// contentSHAPreconditionMet enforces the contents API's optimistic-concurrency
+// contract and writes the refusal itself, reporting whether the caller may
+// proceed. `sha` names the blob the write replaces: without it every write is
+// an unconditional overwrite and two concurrent editors silently lose one
+// edit. Creation carries no sha, since there is no blob to name.
+func contentSHAPreconditionMet(w http.ResponseWriter, stor gitStorage.Storer, branch, path, given string) bool {
+	current, exists := contentBlobSHA(stor, branch, path)
+	switch {
+	case exists && given == "":
+		writeGHValidationError(w, "Commit", "sha", "missing_field")
+	case exists && given != current:
+		writeGHError(w, http.StatusConflict, path+" does not match "+given)
+	case !exists && given != "":
+		writeGHValidationError(w, "Commit", "sha", "invalid")
+	default:
+		return true
+	}
+	return false
+}
+
 func (s *Server) handlePutContents(w http.ResponseWriter, r *http.Request) {
 	owner := r.PathValue("owner")
 	repoName := r.PathValue("repo")
@@ -256,7 +298,7 @@ func (s *Server) handlePutContents(w http.ResponseWriter, r *http.Request) {
 	}
 
 	user := ghUserFromContext(r.Context())
-	if repo.Private && !canReadRepo(s.store, user, repo) {
+	if repo.Private && !s.viewerCanReadRepo(r.Context(), repo) {
 		writeGHError(w, http.StatusNotFound, "Not Found")
 		return
 	}
@@ -334,6 +376,11 @@ func (s *Server) handlePutContents(w http.ResponseWriter, r *http.Request) {
 		beforeHash = ref.Hash().String()
 	}
 
+	_, replacing := contentBlobSHA(stor, branch, path)
+	if !contentSHAPreconditionMet(w, stor, branch, path, req.SHA) {
+		return
+	}
+
 	if isInitial {
 		files := map[string]string{path: string(decoded)}
 		if ph := s.createSecretScanningPushProtectionPlaceholder(repo, secretScanningContentMatches(string(decoded))); ph != nil {
@@ -386,7 +433,13 @@ func (s *Server) handlePutContents(w http.ResponseWriter, r *http.Request) {
 	s.afterCommittedRefUpdate(repo, user, branchRef.String(), beforeHash, commitHash.String(), base)
 	contentOut := contentFileJSON(base, repo, branch, path, entry.Hash.String(), blob.Size)
 
-	writeJSON(w, http.StatusCreated, map[string]interface{}{
+	// 201 created, 200 updated — as on GitHub, and now answerable because the
+	// precondition above already established which one this was.
+	status := http.StatusCreated
+	if replacing {
+		status = http.StatusOK
+	}
+	writeJSON(w, status, map[string]interface{}{
 		"content": contentOut,
 		"commit": map[string]interface{}{
 			"sha":     commitHash.String(),
@@ -419,7 +472,7 @@ func (s *Server) handleDeleteContents(w http.ResponseWriter, r *http.Request) {
 	}
 
 	user := ghUserFromContext(r.Context())
-	if repo.Private && !canReadRepo(s.store, user, repo) {
+	if repo.Private && !s.viewerCanReadRepo(r.Context(), repo) {
 		writeGHError(w, http.StatusNotFound, "Not Found")
 		return
 	}
@@ -464,32 +517,23 @@ func (s *Server) handleDeleteContents(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Resolve the file to verify the SHA matches.
 	branchRef := plumbing.NewBranchReferenceName(branch)
 	ref, err := stor.Reference(branchRef)
 	if err != nil {
 		writeGHError(w, http.StatusUnprocessableEntity, err.Error())
 		return
 	}
-	commit, err := object.GetCommit(stor, ref.Hash())
-	if err != nil {
-		writeGHError(w, http.StatusUnprocessableEntity, err.Error())
-		return
-	}
-	tree, err := commit.Tree()
-	if err != nil {
-		writeGHError(w, http.StatusUnprocessableEntity, err.Error())
-		return
-	}
-	entry, err := tree.FindEntry(path)
-	if err != nil {
+	if _, exists := contentBlobSHA(stor, branch, path); !exists {
 		writeGHError(w, http.StatusUnprocessableEntity, fmt.Sprintf("path %s does not exist", path))
 		return
 	}
-	if entry.Hash.String() != req.SHA {
-		writeGHError(w, http.StatusUnprocessableEntity, fmt.Sprintf("sha mismatch: expected %s, got %s", entry.Hash.String(), req.SHA))
+	// The same precondition a write carries: a delete naming the wrong blob is
+	// a delete of something the caller has not seen.
+	if !contentSHAPreconditionMet(w, stor, branch, path, req.SHA) {
 		return
 	}
+
+	var commit *object.Commit
 
 	sig := repoSignature(user.Login, "bleephub@local")
 	if req.Committer != nil {

@@ -289,5 +289,5 @@ func senderPayload(user *User) map[string]interface{} {
 // ghostSenderPayload returns GitHub's "ghost" deleted-user actor, used as the
 // sender for events that have no originating user account.
 func ghostSenderPayload() map[string]interface{} {
-	return userToJSON(&User{Login: "ghost", ID: 10137, NodeID: "MDQ6VXNlcjEwMTM3", Type: "User"})
+	return userToJSON(nil)
 }

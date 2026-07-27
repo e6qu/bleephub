@@ -415,6 +415,7 @@ jobs:
 func TestWorkflows_Dispatch_NoYAMLCached(t *testing.T) {
 	s := newTestServer()
 	s.registerGHWorkflowsRoutes()
+	ensureSeededRepo(s, "octo/repo")
 	// Register a WorkflowFile with empty YAML (mimics a discovery
 	// edge case where the file was indexed without contents).
 	wf := s.store.RegisterWorkflowFile("octo/repo", ".github/workflows/ci.yml", "ci", "", "discovered")

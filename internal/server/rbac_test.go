@@ -33,7 +33,7 @@ func TestSiteAdministratorCanAccessOrganizationRepository(t *testing.T) {
 	store.UsersByLogin[siteAdmin.Login] = siteAdmin
 	store.mu.Unlock()
 
-	if !canReadRepo(store, siteAdmin, repo) {
+	if !canReadRepoAsUser(store, siteAdmin, repo) {
 		t.Fatal("site administrator could not read organization repository")
 	}
 	if !canPushRepo(store, siteAdmin, repo) {

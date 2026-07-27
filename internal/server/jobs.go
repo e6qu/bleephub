@@ -26,11 +26,16 @@ func (s *Server) registerJobRoutes() {
 	// Workflow cancellation
 	s.route("POST /internal/exec/workflows/{workflowId}/cancel", s.handleCancelWorkflow)
 
-	// ActionDownloadInfo — runner requests download URLs for actions (handler in actions.go)
-	s.route("POST /_apis/v1/ActionDownloadInfo/{scopeId}/{hubName}/{planId}", s.handleActionDownloadInfo)
+	// ActionDownloadInfo — the worker resolves an action reference to the
+	// commit it downloads (handler in actions.go). The answer names the sha a
+	// ref resolves to in bleephub git storage, private repositories included,
+	// so it is bound to the runtime token of the job whose plan the path
+	// carries.
+	s.route("POST /_apis/v1/ActionDownloadInfo/{scopeId}/{hubName}/{planId}", s.requirePlanJob(s.handleActionDownloadInfo))
 
-	// Tasks endpoint (runner may request task definitions)
-	s.route("GET /_apis/v1/tasks/{taskId}/{versionString}", s.handleGetTask)
+	// Task definitions. Nothing in the path names a job, so the gate is a
+	// verified runner credential of either audience.
+	s.route("GET /_apis/v1/tasks/{taskId}/{versionString}", s.requireRunnerAuth(s.handleGetTask))
 }
 
 // SubmitRequest is the simplified job submission format. HostMode runs

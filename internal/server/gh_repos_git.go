@@ -276,18 +276,131 @@ func renderReadme(repoName, description string) string {
 
 func (s *Server) registerGHGitDataRoutes() {
 	s.route("GET /api/v3/repos/{owner}/{repo}/git/blobs/{sha}", s.requirePerm(scopeContents, permRead, s.handleGetBlob))
-	s.route("POST /api/v3/repos/{owner}/{repo}/git/blobs", s.requirePerm(scopeContents, permWrite, s.handleCreateBlob))
+	s.route("POST /api/v3/repos/{owner}/{repo}/git/blobs", s.requirePerm(scopeContents, permWrite, s.requireRepoPush(s.handleCreateBlob)))
 	s.route("GET /api/v3/repos/{owner}/{repo}/git/trees/{sha}", s.requirePerm(scopeContents, permRead, s.handleGetTree))
-	s.route("POST /api/v3/repos/{owner}/{repo}/git/trees", s.requirePerm(scopeContents, permWrite, s.handleCreateTree))
+	s.route("POST /api/v3/repos/{owner}/{repo}/git/trees", s.requirePerm(scopeContents, permWrite, s.requireRepoPush(s.handleCreateTree)))
 	s.route("GET /api/v3/repos/{owner}/{repo}/git/commits/{sha}", s.requirePerm(scopeContents, permRead, s.handleGetCommit))
-	s.route("POST /api/v3/repos/{owner}/{repo}/git/commits", s.requirePerm(scopeContents, permWrite, s.handleCreateCommit))
+	s.route("POST /api/v3/repos/{owner}/{repo}/git/commits", s.requirePerm(scopeContents, permWrite, s.requireRepoPush(s.handleCreateCommit)))
 	s.route("GET /api/v3/repos/{owner}/{repo}/git/tags/{sha}", s.requirePerm(scopeContents, permRead, s.handleGetTag))
-	s.route("POST /api/v3/repos/{owner}/{repo}/git/tags", s.requirePerm(scopeContents, permWrite, s.handleCreateTag))
+	s.route("POST /api/v3/repos/{owner}/{repo}/git/tags", s.requirePerm(scopeContents, permWrite, s.requireRepoPush(s.handleCreateTag)))
 	s.route("GET /api/v3/repos/{owner}/{repo}/git/refs", s.requirePerm(scopeContents, permRead, s.handleListRefs))
 	s.route("GET /api/v3/repos/{owner}/{repo}/git/refs/{ref...}", s.requirePerm(scopeContents, permRead, s.handleGetRefs))
-	s.route("POST /api/v3/repos/{owner}/{repo}/git/refs", s.requirePerm(scopeContents, permWrite, s.handleCreateRef))
-	s.route("PATCH /api/v3/repos/{owner}/{repo}/git/refs/{ref...}", s.requirePerm(scopeContents, permWrite, s.handleUpdateRef))
-	s.route("DELETE /api/v3/repos/{owner}/{repo}/git/refs/{ref...}", s.requirePerm(scopeContents, permWrite, s.handleDeleteRef))
+	s.route("POST /api/v3/repos/{owner}/{repo}/git/refs", s.requirePerm(scopeContents, permWrite, s.requireRepoPush(s.handleCreateRef)))
+	s.route("PATCH /api/v3/repos/{owner}/{repo}/git/refs/{ref...}", s.requirePerm(scopeContents, permWrite, s.requireRepoPush(s.handleUpdateRef)))
+	s.route("DELETE /api/v3/repos/{owner}/{repo}/git/refs/{ref...}",
+		s.requirePerm(scopeContents, permWrite, s.requireRepoPush(s.requireRefDeletionAllowed(s.handleDeleteRef))))
+}
+
+// viewerAdminsRepo is the credential-aware form of canAdminRepo, mirroring
+// viewerCanPushRepo: an installation token's principal is the installation, and
+// a user-to-server token is the intersection of its bearer and the app's
+// installations.
+func (s *Server) viewerAdminsRepo(ctx context.Context, repo *Repo) bool {
+	if repo == nil {
+		return false
+	}
+	if tok := ghInstallationTokenFromContext(ctx); tok != nil {
+		return s.installationReachesRepo(tok, repo)
+	}
+	if uts := ghUserToServerTokenFromContext(ctx); uts != nil && uts.AppID != 0 {
+		if !s.userToServerReachesRepo(uts, repo) {
+			return false
+		}
+	}
+	return canAdminRepo(s.store, ghUserFromContext(ctx), repo)
+}
+
+// requireRepoAdmin resolves the repository named in the path and admits only a
+// credential that administers it. A repository the caller cannot read — or one
+// that does not exist, which includes a case-variant spelling of a real one —
+// is 404, so the answer never confirms what is there.
+//
+// Handlers must take the returned *Repo as the scope key rather than
+// re-deriving one from the path values: a path-derived key addresses a scope no
+// other code path reads.
+func (s *Server) requireRepoAdmin(w http.ResponseWriter, r *http.Request) (*Repo, bool) {
+	repo := s.store.GetRepo(r.PathValue("owner"), r.PathValue("repo"))
+	if repo == nil || !s.viewerCanReadRepo(r.Context(), repo) {
+		writeGHError(w, http.StatusNotFound, "Not Found")
+		return nil, false
+	}
+	if !s.viewerAdminsRepo(r.Context(), repo) {
+		writeGHError(w, http.StatusForbidden, "Must have admin rights to Repository.")
+		return nil, false
+	}
+	return repo, true
+}
+
+// requireRepoPush is the write half of requireRepoAdmin as a route decorator.
+func (s *Server) requireRepoPush(next http.HandlerFunc) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		repo := s.store.GetRepo(r.PathValue("owner"), r.PathValue("repo"))
+		if repo == nil || !s.viewerCanReadRepo(r.Context(), repo) {
+			writeGHError(w, http.StatusNotFound, "Not Found")
+			return
+		}
+		if !s.viewerCanPushRepo(r.Context(), repo) {
+			writeGHError(w, http.StatusForbidden, "Must have push access to repository.")
+			return
+		}
+		next(w, r)
+	}
+}
+
+// refWriteKind names the two destructive ref updates branch protection governs
+// with separate allowances.
+type refWriteKind int
+
+const (
+	refForcePush refWriteKind = iota
+	refDeletion
+)
+
+// destructiveRefWriteAllowed decides a force update or a deletion against the
+// branch's protection rule. Push access — required by the route gate — is
+// enough for an unprotected ref; a protected one needs the matching allowance,
+// or repository admin when the rule does not enforce against admins.
+func (s *Server) destructiveRefWriteAllowed(r *http.Request, repo *Repo, ref plumbing.ReferenceName, kind refWriteKind) bool {
+	if !ref.IsBranch() {
+		return true
+	}
+	bp := s.branchProtectionFor(repo.ID, ref.Short())
+	if bp == nil {
+		return true
+	}
+	switch kind {
+	case refForcePush:
+		if bp.AllowForcePushes != nil && bp.AllowForcePushes.Enabled {
+			return true
+		}
+	case refDeletion:
+		if bp.AllowDeletions != nil && bp.AllowDeletions.Enabled {
+			return true
+		}
+	}
+	if bp.EnforceAdmins != nil && bp.EnforceAdmins.Enabled {
+		return false
+	}
+	return s.viewerAdminsRepo(r.Context(), repo)
+}
+
+// requireRefDeletionAllowed guards the delete-ref route, whose handler lives
+// with the other ref readers. Deleting a protected branch is the one ref write
+// with no body to inspect, so it is decided here rather than in the handler.
+func (s *Server) requireRefDeletionAllowed(next http.HandlerFunc) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		repo := s.store.GetRepo(r.PathValue("owner"), r.PathValue("repo"))
+		if repo == nil {
+			writeGHError(w, http.StatusNotFound, "Not Found")
+			return
+		}
+		ref := plumbing.ReferenceName("refs/" + r.PathValue("ref"))
+		if !s.destructiveRefWriteAllowed(r, repo, ref, refDeletion) {
+			writeGHError(w, http.StatusForbidden, "Cannot delete protected branch "+ref.Short()+".")
+			return
+		}
+		next(w, r)
+	}
 }
 
 func (s *Server) gitDataContext(w http.ResponseWriter, r *http.Request) (owner, repoName string, repo *Repo, stor gitStorage.Storer) {
@@ -685,6 +798,10 @@ func (s *Server) handleUpdateRef(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	fullRef := plumbing.ReferenceName("refs/" + refPath)
+	if req.Force && !s.destructiveRefWriteAllowed(r, repo, fullRef, refForcePush) {
+		writeGHError(w, http.StatusForbidden, "Cannot force-push to protected branch "+fullRef.Short()+".")
+		return
+	}
 	oldRef, err := stor.Reference(fullRef)
 	if err != nil {
 		writeGHError(w, http.StatusUnprocessableEntity, "Reference does not exist")

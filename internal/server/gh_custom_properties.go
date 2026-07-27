@@ -273,7 +273,7 @@ func (s *Server) handleGetRepoCustomPropertyValues(w http.ResponseWriter, r *htt
 		writeGHError(w, http.StatusNotFound, "Not Found")
 		return
 	}
-	if !s.viewerCanReadRepo(r, repo) {
+	if !s.viewerCanReadRepo(r.Context(), repo) {
 		writeGHError(w, http.StatusNotFound, "Not Found")
 		return
 	}

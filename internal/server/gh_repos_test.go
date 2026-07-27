@@ -609,7 +609,7 @@ func TestGitDeleteCleanup(t *testing.T) {
 	}
 }
 
-func TestDeleteRepoS3GitCleanupFailurePreservesRepo(t *testing.T) {
+func TestDeleteRepoReportsS3GitCleanupFailure(t *testing.T) {
 	resetS3FSCacheForTest(t)
 	t.Setenv("BLEEPHUB_GIT_DIR", "")
 	t.Setenv("BLEEPHUB_S3_BUCKET", "")
@@ -633,11 +633,15 @@ func TestDeleteRepoS3GitCleanupFailurePreservesRepo(t *testing.T) {
 	if !deleted {
 		t.Fatal("DeleteRepo returned false for an existing repo")
 	}
-	if st.ReposByName[repo.FullName] == nil {
-		t.Fatal("repo metadata was deleted even though required S3 git cleanup failed")
+	// The metadata delete commits before the bytes are purged, so an
+	// unreachable object store reports a failure without making the repository
+	// permanently undeletable. The recorded deletion intent is what finishes
+	// the purge on the next start.
+	if st.ReposByName[repo.FullName] != nil {
+		t.Fatal("repo metadata survived a delete that already committed")
 	}
-	if st.GitStorages[repo.FullName] == nil {
-		t.Fatal("git storage index was deleted even though required S3 git cleanup failed")
+	if st.GitStorages[repo.FullName] != nil {
+		t.Fatal("git storage index survived a delete that already committed")
 	}
 }
 
@@ -981,9 +985,10 @@ func TestPutContentsUpdateFile(t *testing.T) {
 		"content": encoded2,
 		"sha":     sha1,
 	})
-	if resp2.StatusCode != 201 {
+	// GitHub answers 201 for a file it created and 200 for one it replaced.
+	if resp2.StatusCode != 200 {
 		resp2.Body.Close()
-		t.Fatalf("expected 201, got %d", resp2.StatusCode)
+		t.Fatalf("expected 200, got %d", resp2.StatusCode)
 	}
 	data2 := decodeJSON(t, resp2)
 	content2, _ := data2["content"].(map[string]interface{})

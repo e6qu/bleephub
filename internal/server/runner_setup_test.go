@@ -10,6 +10,7 @@ import (
 // random per-request opaque value (not the old hardcoded constant) with a
 // near-term expiry, and that an authenticated caller gets 201.
 func TestRegistrationTokenRandom(t *testing.T) {
+	ensureSeededRepo(testServer, "admin/regtok")
 	mint := func() (string, string) {
 		resp := ghPost(t, "/api/v3/repos/admin/regtok/actions/runners/registration-token", defaultToken, map[string]interface{}{})
 		if resp.StatusCode != 201 {
@@ -76,6 +77,7 @@ func TestAgentRSAPublicKeyRequiresProtocolStandardBase64(t *testing.T) {
 // TestRemoveToken verifies the repo removal token endpoint returns the
 // {token, expires_at} shape with 201 for an authenticated caller.
 func TestRemoveToken(t *testing.T) {
+	ensureSeededRepo(testServer, "admin/rmtok")
 	resp := ghPost(t, "/api/v3/repos/admin/rmtok/actions/runners/remove-token", defaultToken, map[string]interface{}{})
 	if resp.StatusCode != 201 {
 		resp.Body.Close()
@@ -99,6 +101,7 @@ func TestRemoveToken(t *testing.T) {
 // a runner + a decodable base64 JIT config, validates required fields, and
 // registers the runner so it appears in the runners list.
 func TestGenerateJITConfig(t *testing.T) {
+	ensureSeededRepo(testServer, "admin/jit")
 	// Missing required fields → 422.
 	bad := ghPost(t, "/api/v3/repos/admin/jit/actions/runners/generate-jitconfig", defaultToken,
 		map[string]interface{}{"name": "jit-runner"})

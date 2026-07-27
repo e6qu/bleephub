@@ -223,43 +223,94 @@ func (st *Store) UpdateOrg(login string, fn func(*Org)) bool {
 	return true
 }
 
-// DeleteOrg removes an organization and all associated memberships and teams.
+// DeleteOrg removes an organization and everything scoped to it.
 func (st *Store) DeleteOrg(login string) bool {
+	deleted, err := st.DeleteOrgWithError(login)
+	if err != nil {
+		panic(&persistenceFailure{op: "delete", bucket: "orgs", key: login, err: err})
+	}
+	return deleted
+}
+
+// DeleteOrgWithError removes an organization, its memberships, its teams and
+// its repositories. The repositories are part of the cascade because an
+// organization row that goes away while its repositories stay behind leaves
+// every later start rejecting those rows as an unknown owner.
+func (st *Store) DeleteOrgWithError(login string) (bool, error) {
+	repoNames, deleted, err := st.deleteOrgMetadata(login)
+	if err != nil || !deleted {
+		return deleted, err
+	}
+	for _, fullName := range repoNames {
+		if err := st.purgeDeletedRepoBytes(fullName); err != nil {
+			return true, fmt.Errorf("delete organization %s: %w", login, err)
+		}
+	}
+	if err := st.persist.Delete(pendingDeletionsBucket, pendingOrgDeletionKey(login)); err != nil {
+		return true, fmt.Errorf("delete organization %s: clear deletion intent: %w", login, err)
+	}
+	return true, nil
+}
+
+// deleteOrgMetadata purges the organization from memory and, in one
+// transaction, from the database. It returns the repositories whose bytes the
+// caller must still destroy.
+func (st *Store) deleteOrgMetadata(login string) ([]string, bool, error) {
 	st.mu.Lock()
 	defer st.mu.Unlock()
 
 	org, ok := st.OrgsByLogin[login]
 	if !ok {
-		return false
+		return nil, false, nil
 	}
 
-	// Remove all memberships for this org
-	for k, m := range st.Memberships {
-		if m.OrgID == org.ID {
-			delete(st.Memberships, k)
-			if st.persist != nil {
-				st.persist.MustDelete("memberships", k)
-			}
+	if err := st.persist.Put(pendingDeletionsBucket, pendingOrgDeletionKey(login), pendingDeletion{
+		Kind:      "org",
+		Name:      login,
+		StartedAt: time.Now().UTC(),
+	}); err != nil {
+		return nil, true, fmt.Errorf("delete organization %s: record deletion intent: %w", login, err)
+	}
+
+	var repoNames []string
+	for fullName, repo := range st.ReposByName {
+		if repo.OwnerType == "Organization" && repo.OwnerID == org.ID {
+			repoNames = append(repoNames, fullName)
+		}
+	}
+	sort.Strings(repoNames)
+	for _, fullName := range repoNames {
+		owner, name, ok := splitRepoFullName(fullName)
+		if !ok {
+			return nil, true, fmt.Errorf("delete organization %s: repository key %q is not an owner/name pair", login, fullName)
+		}
+		if _, err := st.deleteRepoLocked(owner, name); err != nil {
+			return nil, true, fmt.Errorf("delete organization %s: %w", login, err)
 		}
 	}
 
-	// Remove all teams for this org
+	batch := newPersistBatch(st.persist)
+	for k, m := range st.Memberships {
+		if m.OrgID == org.ID {
+			delete(st.Memberships, k)
+			batch.Delete("memberships", k)
+		}
+	}
 	for k, t := range st.TeamsBySlug {
 		if t.OrgID == org.ID {
 			delete(st.Teams, t.ID)
 			delete(st.TeamsBySlug, k)
-			if st.persist != nil {
-				st.persist.MustDelete("teams", strconv.Itoa(t.ID))
-			}
+			batch.Delete("teams", strconv.Itoa(t.ID))
 		}
 	}
 
 	delete(st.Orgs, org.ID)
 	delete(st.OrgsByLogin, login)
-	if st.persist != nil {
-		st.persist.MustDelete("orgs", strconv.Itoa(org.ID))
+	batch.Delete("orgs", strconv.Itoa(org.ID))
+	if err := batch.Commit(); err != nil {
+		return nil, true, fmt.Errorf("delete organization %s: %w", login, err)
 	}
-	return true
+	return repoNames, true, nil
 }
 
 // ListOrgsByUser returns all organizations the user belongs to, in

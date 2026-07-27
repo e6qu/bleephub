@@ -27,6 +27,103 @@ type s3FS struct {
 	prefix   string
 	activeMu sync.Mutex
 	active   *s3ActiveFiles
+	locks    *s3KeyLocks
+}
+
+// gitObjectLocker grants exclusive use of one object-store key across every
+// replica. Amazon S3 has no advisory locking, so go-git's compare-and-set on
+// refs and its packed-refs rewrite borrow the same durable store that already
+// serializes the rest of the shared state.
+type gitObjectLocker interface {
+	AcquireLock(name, owner string, ttl time.Duration) (bool, error)
+	ReleaseLock(name, owner string) error
+}
+
+var (
+	gitObjectLockerMu sync.RWMutex
+	gitObjectLockerV  gitObjectLocker
+)
+
+// setGitObjectLocker installs the durable lock manager. Until one is
+// installed there is no shared durable state, so no other replica can be
+// writing the same objects and the process-local lock is the whole lock.
+func setGitObjectLocker(l gitObjectLocker) {
+	gitObjectLockerMu.Lock()
+	defer gitObjectLockerMu.Unlock()
+	gitObjectLockerV = l
+}
+
+func currentGitObjectLocker() gitObjectLocker {
+	gitObjectLockerMu.RLock()
+	defer gitObjectLockerMu.RUnlock()
+	return gitObjectLockerV
+}
+
+const (
+	gitObjectLockTTL  = 2 * time.Minute
+	gitObjectLockWait = 30 * time.Second
+	gitObjectLockPoll = 50 * time.Millisecond
+)
+
+// s3KeyLocks serializes writers of one bucket-absolute object key inside this
+// process. Entries are reference counted so an idle key costs nothing.
+type s3KeyLocks struct {
+	mu    sync.Mutex
+	slots map[string]*s3KeySlot
+}
+
+type s3KeySlot struct {
+	ch   chan struct{}
+	refs int
+}
+
+func newS3KeyLocks() *s3KeyLocks {
+	return &s3KeyLocks{slots: map[string]*s3KeySlot{}}
+}
+
+func (l *s3KeyLocks) acquire(key string, wait time.Duration) error {
+	l.mu.Lock()
+	slot := l.slots[key]
+	if slot == nil {
+		slot = &s3KeySlot{ch: make(chan struct{}, 1)}
+		l.slots[key] = slot
+	}
+	slot.refs++
+	l.mu.Unlock()
+
+	timer := time.NewTimer(wait)
+	defer timer.Stop()
+	select {
+	case slot.ch <- struct{}{}:
+		return nil
+	case <-timer.C:
+		l.drop(key)
+		return fmt.Errorf("lock %s: another writer in this process still holds it after %s", key, wait)
+	}
+}
+
+func (l *s3KeyLocks) release(key string) {
+	l.mu.Lock()
+	slot := l.slots[key]
+	l.mu.Unlock()
+	if slot == nil {
+		return
+	}
+	<-slot.ch
+	l.drop(key)
+}
+
+func (l *s3KeyLocks) drop(key string) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	slot := l.slots[key]
+	if slot == nil {
+		return
+	}
+	slot.refs--
+	if slot.refs <= 0 {
+		delete(l.slots, key)
+	}
 }
 
 func newS3FS(ctx context.Context, endpoint, bucket, prefix string) (*s3FS, error) {
@@ -53,7 +150,13 @@ func newS3FS(ctx context.Context, endpoint, bucket, prefix string) (*s3FS, error
 	}
 	client := s3.NewFromConfig(cfg, clientOpts...)
 
-	return &s3FS{client: client, bucket: bucket, prefix: prefix, active: &s3ActiveFiles{files: map[string]*s3FileState{}}}, nil
+	return &s3FS{
+		client: client,
+		bucket: bucket,
+		prefix: prefix,
+		active: &s3ActiveFiles{files: map[string]*s3FileState{}},
+		locks:  newS3KeyLocks(),
+	}, nil
 }
 
 // bleephubS3Region selects the real AWS region for durable Git and service
@@ -143,27 +246,32 @@ func (f *s3FS) OpenFile(filename string, flag int, perm os.FileMode) (billy.File
 	return sf, nil
 }
 
+// The staging map is shared by a filesystem and every chroot derived from it,
+// so entries are keyed by the bucket-absolute object key. A chroot-relative
+// key such as "config" names a different object in every repository, and one
+// repository's reader would otherwise be handed another repository's bytes.
 func (f *s3FS) activeFile(filename string) *s3FileState {
 	active := f.activeFiles()
 	active.mu.Lock()
 	defer active.mu.Unlock()
-	return active.files[filename]
+	return active.files[f.key(filename)]
 }
 
 func (f *s3FS) newActiveFile(filename string, data []byte) *s3File {
 	state := &s3FileState{data: data, dirty: true}
 	active := f.activeFiles()
 	active.mu.Lock()
-	active.files[filename] = state
+	active.files[f.key(filename)] = state
 	active.mu.Unlock()
 	return &s3File{fs: f, name: filename, state: state, writer: true}
 }
 
 func (f *s3FS) removeActiveFile(filename string, state *s3FileState) {
 	active := f.activeFiles()
+	key := f.key(filename)
 	active.mu.Lock()
-	if active.files[filename] == state {
-		delete(active.files, filename)
+	if active.files[key] == state {
+		delete(active.files, key)
 	}
 	active.mu.Unlock()
 }
@@ -359,7 +467,17 @@ func (f *s3FS) Chroot(path string) (billy.Filesystem, error) {
 		bucket: f.bucket,
 		prefix: f.key(path),
 		active: f.activeFiles(),
+		locks:  f.keyLocks(),
 	}, nil
+}
+
+func (f *s3FS) keyLocks() *s3KeyLocks {
+	f.activeMu.Lock()
+	defer f.activeMu.Unlock()
+	if f.locks == nil {
+		f.locks = newS3KeyLocks()
+	}
+	return f.locks
 }
 
 func (f *s3FS) Root() string {
@@ -440,13 +558,15 @@ func (f *s3FS) deleteRepoPrefix(fullName string) error {
 }
 
 type s3File struct {
-	fs     *s3FS
-	name   string
-	state  *s3FileState
-	pos    int
-	closed bool
-	writer bool
-	mu     sync.Mutex
+	fs        *s3FS
+	name      string
+	state     *s3FileState
+	pos       int
+	closed    bool
+	writer    bool
+	mu        sync.Mutex
+	lockMu    sync.Mutex
+	lockOwner string
 }
 
 // s3FileState is a request-lifetime staging buffer for one active object
@@ -541,21 +661,34 @@ func (sf *s3File) Seek(offset int64, whence int) (int64, error) {
 	return int64(sf.pos), nil
 }
 
+// Close flushes and then releases any lock this handle holds. go-git relies on
+// that ordering: it takes the lock, writes, and lets the deferred Close both
+// commit the bytes and drop the lock, so the next writer cannot observe a
+// half-written object.
 func (sf *s3File) Close() error {
 	sf.mu.Lock()
-	defer sf.mu.Unlock()
 	if sf.closed {
+		sf.mu.Unlock()
 		return nil
 	}
 	sf.closed = true
-	if !sf.writer {
-		return nil
-	}
-	err := sf.flush()
-	if err == nil {
+	var err error
+	if sf.writer {
+		// The staging entry is dropped even when the flush fails: leaving it
+		// behind would serve the bytes of a write that never landed to every
+		// later reader of the same key.
+		err = sf.flush()
 		sf.fs.removeActiveFile(sf.name, sf.state)
 	}
-	return err
+	sf.mu.Unlock()
+
+	sf.lockMu.Lock()
+	unlockErr := sf.unlockLocked()
+	sf.lockMu.Unlock()
+	if err != nil {
+		return err
+	}
+	return unlockErr
 }
 
 func (sf *s3File) flush() error {
@@ -581,11 +714,70 @@ func (sf *s3File) flush() error {
 	return nil
 }
 
+// Lock takes exclusive ownership of this object key. go-git relies on it for
+// the compare-and-set behind every ref update and for the packed-refs rewrite;
+// two concurrent pushes that both believed they held it would lose refs.
 func (sf *s3File) Lock() error {
+	sf.lockMu.Lock()
+	defer sf.lockMu.Unlock()
+	if sf.lockOwner != "" {
+		return fmt.Errorf("lock %s: already locked by this file handle", sf.name)
+	}
+	key := sf.fs.key(sf.name)
+	if err := sf.fs.keyLocks().acquire(key, gitObjectLockWait); err != nil {
+		return err
+	}
+	owner := uuid.New().String()
+	if err := sf.acquireDurable(key, owner); err != nil {
+		sf.fs.keyLocks().release(key)
+		return err
+	}
+	sf.lockOwner = owner
 	return nil
 }
 
+func (sf *s3File) acquireDurable(key, owner string) error {
+	locker := currentGitObjectLocker()
+	if locker == nil {
+		return nil
+	}
+	deadline := time.Now().Add(gitObjectLockWait)
+	for {
+		acquired, err := locker.AcquireLock(gitObjectLockName(key), owner, gitObjectLockTTL)
+		if err != nil {
+			return fmt.Errorf("lock %s: %w", key, err)
+		}
+		if acquired {
+			return nil
+		}
+		if !time.Now().Before(deadline) {
+			return fmt.Errorf("lock %s: another replica still holds it after %s", key, gitObjectLockWait)
+		}
+		time.Sleep(gitObjectLockPoll)
+	}
+}
+
+func gitObjectLockName(key string) string { return "git-object:" + key }
+
 func (sf *s3File) Unlock() error {
+	sf.lockMu.Lock()
+	defer sf.lockMu.Unlock()
+	return sf.unlockLocked()
+}
+
+func (sf *s3File) unlockLocked() error {
+	if sf.lockOwner == "" {
+		return nil
+	}
+	owner := sf.lockOwner
+	sf.lockOwner = ""
+	key := sf.fs.key(sf.name)
+	defer sf.fs.keyLocks().release(key)
+	if locker := currentGitObjectLocker(); locker != nil {
+		if err := locker.ReleaseLock(gitObjectLockName(key), owner); err != nil {
+			return fmt.Errorf("unlock %s: %w", key, err)
+		}
+	}
 	return nil
 }
 

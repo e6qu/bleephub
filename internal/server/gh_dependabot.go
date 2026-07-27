@@ -256,7 +256,15 @@ func (s *Server) handleListDependabotRepoSecrets(w http.ResponseWriter, r *http.
 	})
 }
 
-func (s *Server) handleGetDependabotRepoSecretsPublicKey(w http.ResponseWriter, _ *http.Request) {
+// handleGetDependabotRepoSecretsPublicKey resolves the repository before
+// answering. The route's admin gate compares the caller against the repository
+// the path resolves to, so a path naming one that does not exist leaves it
+// with nothing to check.
+func (s *Server) handleGetDependabotRepoSecretsPublicKey(w http.ResponseWriter, r *http.Request) {
+	if s.lookupRepoFromPath(r) == nil {
+		writeGHError(w, http.StatusNotFound, "Not Found")
+		return
+	}
 	s.writeActionsPublicKey(w)
 }
 
@@ -377,7 +385,10 @@ func (s *Server) handleListDependabotOrgSecrets(w http.ResponseWriter, r *http.R
 	})
 }
 
-func (s *Server) handleGetDependabotOrgSecretsPublicKey(w http.ResponseWriter, _ *http.Request) {
+func (s *Server) handleGetDependabotOrgSecretsPublicKey(w http.ResponseWriter, r *http.Request) {
+	if _, ok := s.resolveOrgForDependabot(w, r); !ok {
+		return
+	}
 	s.writeActionsPublicKey(w)
 }
 

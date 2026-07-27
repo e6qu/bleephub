@@ -630,7 +630,7 @@ func (s *Server) addIssueFieldsToSchema(userType, repoType, mutationType, queryT
 				return "ADMIN", nil
 			case canPushRepo(s.store, viewer, repo):
 				return "WRITE", nil
-			case canReadRepo(s.store, viewer, repo):
+			case s.viewerCanReadRepo(p.Context, repo):
 				return "READ", nil
 			default:
 				return nil, nil
@@ -999,16 +999,13 @@ func (s *Server) addIssueFieldsToSchema(userType, repoType, mutationType, queryT
 		},
 	})
 
-	mutationType.AddFieldConfig("createIssue", &graphql.Field{
+	s.registerMutation(mutationType, "createIssue", &graphql.Field{
 		Type: createIssuePayloadType,
 		Args: graphql.FieldConfigArgument{
 			"input": &graphql.ArgumentConfig{Type: graphql.NewNonNull(createIssueInputType)},
 		},
 		Resolve: func(p graphql.ResolveParams) (interface{}, error) {
 			user := ghUserFromContext(p.Context)
-			if user == nil {
-				return nil, fmt.Errorf("authentication required")
-			}
 
 			input, _ := p.Args["input"].(map[string]interface{})
 			repoNodeID, _ := input["repositoryId"].(string)
@@ -1020,34 +1017,28 @@ func (s *Server) addIssueFieldsToSchema(userType, repoType, mutationType, queryT
 				return nil, fmt.Errorf("could not resolve to a Repository with the global id of '%s'", repoNodeID)
 			}
 
-			// Resolve label node IDs to store IDs
-			var labelIDs []int
-			if rawLabels, ok := input["labelIds"].([]interface{}); ok {
-				for _, raw := range rawLabels {
-					nodeID := fmt.Sprintf("%v", raw)
-					if l := findLabelByNodeID(s.store, nodeID); l != nil {
-						labelIDs = append(labelIDs, l.ID)
-					}
-				}
+			labelIDPtr, err := resolveGQLLabelIDs(s.store, repo.ID, input["labelIds"])
+			if err != nil {
+				return nil, err
 			}
-
-			// Resolve assignee node IDs to store IDs
-			var assigneeIDs []int
-			if rawAssignees, ok := input["assigneeIds"].([]interface{}); ok {
-				for _, raw := range rawAssignees {
-					nodeID := fmt.Sprintf("%v", raw)
-					if u := findUserByNodeID(s.store, nodeID); u != nil {
-						assigneeIDs = append(assigneeIDs, u.ID)
-					}
-				}
+			assigneeIDPtr, err := resolveGQLAssigneeIDs(s.store, input["assigneeIds"])
+			if err != nil {
+				return nil, err
 			}
-
-			// Resolve milestone node ID
-			var milestoneID int
-			if msNodeID, ok := input["milestoneId"].(string); ok && msNodeID != "" {
-				if ms := findMilestoneByNodeID(s.store, msNodeID); ms != nil {
-					milestoneID = ms.ID
-				}
+			milestoneIDPtr, err := resolveGQLMilestoneID(s.store, repo.ID, input, "milestoneId")
+			if err != nil {
+				return nil, err
+			}
+			var labelIDs, assigneeIDs []int
+			if labelIDPtr != nil {
+				labelIDs = *labelIDPtr
+			}
+			if assigneeIDPtr != nil {
+				assigneeIDs = *assigneeIDPtr
+			}
+			milestoneID := 0
+			if milestoneIDPtr != nil {
+				milestoneID = *milestoneIDPtr
 			}
 			var issueTypeID int
 			if itNodeID, ok := input["issueTypeId"].(string); ok && itNodeID != "" {
@@ -1090,17 +1081,12 @@ func (s *Server) addIssueFieldsToSchema(userType, repoType, mutationType, queryT
 		},
 	})
 
-	mutationType.AddFieldConfig("closeIssue", &graphql.Field{
+	s.registerMutation(mutationType, "closeIssue", &graphql.Field{
 		Type: closeIssuePayloadType,
 		Args: graphql.FieldConfigArgument{
 			"input": &graphql.ArgumentConfig{Type: graphql.NewNonNull(closeIssueInputType)},
 		},
 		Resolve: func(p graphql.ResolveParams) (interface{}, error) {
-			user := ghUserFromContext(p.Context)
-			if user == nil {
-				return nil, fmt.Errorf("authentication required")
-			}
-
 			input, _ := p.Args["input"].(map[string]interface{})
 			issueNodeID, _ := input["issueId"].(string)
 			stateReason, _ := input["stateReason"].(string)
@@ -1141,17 +1127,12 @@ func (s *Server) addIssueFieldsToSchema(userType, repoType, mutationType, queryT
 		},
 	})
 
-	mutationType.AddFieldConfig("reopenIssue", &graphql.Field{
+	s.registerMutation(mutationType, "reopenIssue", &graphql.Field{
 		Type: reopenIssuePayloadType,
 		Args: graphql.FieldConfigArgument{
 			"input": &graphql.ArgumentConfig{Type: graphql.NewNonNull(reopenIssueInputType)},
 		},
 		Resolve: func(p graphql.ResolveParams) (interface{}, error) {
-			user := ghUserFromContext(p.Context)
-			if user == nil {
-				return nil, fmt.Errorf("authentication required")
-			}
-
 			input, _ := p.Args["input"].(map[string]interface{})
 			issueNodeID, _ := input["issueId"].(string)
 
@@ -1196,16 +1177,13 @@ func (s *Server) addIssueFieldsToSchema(userType, repoType, mutationType, queryT
 		},
 	})
 
-	mutationType.AddFieldConfig("addComment", &graphql.Field{
+	s.registerMutation(mutationType, "addComment", &graphql.Field{
 		Type: addCommentPayloadType,
 		Args: graphql.FieldConfigArgument{
 			"input": &graphql.ArgumentConfig{Type: graphql.NewNonNull(addCommentInputType)},
 		},
 		Resolve: func(p graphql.ResolveParams) (interface{}, error) {
 			user := ghUserFromContext(p.Context)
-			if user == nil {
-				return nil, fmt.Errorf("authentication required")
-			}
 
 			input, _ := p.Args["input"].(map[string]interface{})
 			subjectNodeID, _ := input["subjectId"].(string)
@@ -1242,10 +1220,13 @@ func (s *Server) addIssueFieldsToSchema(userType, repoType, mutationType, queryT
 	updateIssueInputType := graphql.NewInputObject(graphql.InputObjectConfig{
 		Name: "UpdateIssueInput",
 		Fields: graphql.InputObjectConfigFieldMap{
-			"id":          &graphql.InputObjectFieldConfig{Type: graphql.NewNonNull(graphql.ID)},
-			"title":       &graphql.InputObjectFieldConfig{Type: graphql.String},
-			"body":        &graphql.InputObjectFieldConfig{Type: graphql.String},
-			"state":       &graphql.InputObjectFieldConfig{Type: graphql.String},
+			"id":    &graphql.InputObjectFieldConfig{Type: graphql.NewNonNull(graphql.ID)},
+			"title": &graphql.InputObjectFieldConfig{Type: graphql.String},
+			"body":  &graphql.InputObjectFieldConfig{Type: graphql.String},
+			// IssueState, not String: real GitHub types this field with the
+			// enum, and a free-form string was being written into the store
+			// verbatim, so `state: "banana"` became the issue's state.
+			"state":       &graphql.InputObjectFieldConfig{Type: issueStateEnum},
 			"milestoneId": &graphql.InputObjectFieldConfig{Type: graphql.ID},
 			"labelIds":    &graphql.InputObjectFieldConfig{Type: graphql.NewList(graphql.ID)},
 			"assigneeIds": &graphql.InputObjectFieldConfig{Type: graphql.NewList(graphql.ID)},
@@ -1260,17 +1241,12 @@ func (s *Server) addIssueFieldsToSchema(userType, repoType, mutationType, queryT
 		},
 	})
 
-	mutationType.AddFieldConfig("updateIssue", &graphql.Field{
+	s.registerMutation(mutationType, "updateIssue", &graphql.Field{
 		Type: updateIssuePayloadType,
 		Args: graphql.FieldConfigArgument{
 			"input": &graphql.ArgumentConfig{Type: graphql.NewNonNull(updateIssueInputType)},
 		},
 		Resolve: func(p graphql.ResolveParams) (interface{}, error) {
-			user := ghUserFromContext(p.Context)
-			if user == nil {
-				return nil, fmt.Errorf("authentication required")
-			}
-
 			input, _ := p.Args["input"].(map[string]interface{})
 			issueNodeID, _ := input["id"].(string)
 
@@ -1278,10 +1254,13 @@ func (s *Server) addIssueFieldsToSchema(userType, repoType, mutationType, queryT
 			if issue == nil {
 				return nil, fmt.Errorf("could not resolve to an Issue")
 			}
+			repo := s.store.GetRepoByID(issue.RepoID)
+			if repo == nil {
+				return nil, fmt.Errorf("could not resolve to a Repository")
+			}
 			var issueTypeID *int
 			if raw, present := input["issueTypeId"]; present {
 				if itNodeID, ok := raw.(string); ok && itNodeID != "" {
-					repo := s.store.GetRepoByID(issue.RepoID)
 					it := findIssueTypeByNodeID(s.store, itNodeID)
 					if it == nil || s.store.GetAssignableIssueTypeForRepo(repo, it.ID) == nil {
 						return nil, fmt.Errorf("could not resolve to an IssueType with the global id of '%s'", itNodeID)
@@ -1293,6 +1272,41 @@ func (s *Server) addIssueFieldsToSchema(userType, repoType, mutationType, queryT
 					issueTypeID = &cleared
 				}
 			}
+			// Triage — labels, assignees, milestone — is a push-level act even
+			// for the issue's own author, who reaches this mutation to edit
+			// their title and body.
+			triage := false
+			for _, key := range []string{"labelIds", "assigneeIds", "milestoneId"} {
+				if _, present := input[key]; present {
+					triage = true
+				}
+			}
+			if triage && !canPushRepo(s.store, ghUserFromContext(p.Context), repo) {
+				return nil, fmt.Errorf("must have push access to Repository")
+			}
+			// The schema types this as IssueState; the second check catches a
+			// caller that reached the resolver another way rather than letting
+			// an unknown word become the issue's state.
+			newState := ""
+			if raw, present := input["state"]; present && raw != nil {
+				v, ok := raw.(string)
+				if !ok || (v != "OPEN" && v != "CLOSED") {
+					return nil, fmt.Errorf("state must be OPEN or CLOSED, got %v", raw)
+				}
+				newState = v
+			}
+			labelIDs, err := resolveGQLLabelIDs(s.store, repo.ID, input["labelIds"])
+			if err != nil {
+				return nil, err
+			}
+			assigneeIDs, err := resolveGQLAssigneeIDs(s.store, input["assigneeIds"])
+			if err != nil {
+				return nil, err
+			}
+			milestoneID, err := resolveGQLMilestoneID(s.store, repo.ID, input, "milestoneId")
+			if err != nil {
+				return nil, err
+			}
 
 			s.store.UpdateIssue(issue.ID, func(i *Issue) {
 				if v, ok := input["title"].(string); ok {
@@ -1301,8 +1315,17 @@ func (s *Server) addIssueFieldsToSchema(userType, repoType, mutationType, queryT
 				if v, ok := input["body"].(string); ok {
 					i.Body = v
 				}
-				if v, ok := input["state"].(string); ok {
-					i.State = strings.ToUpper(v)
+				if newState != "" {
+					applyIssueState(i, newState)
+				}
+				if labelIDs != nil {
+					i.LabelIDs = *labelIDs
+				}
+				if assigneeIDs != nil {
+					i.AssigneeIDs = *assigneeIDs
+				}
+				if milestoneID != nil {
+					i.MilestoneID = *milestoneID
 				}
 				if issueTypeID != nil {
 					i.IssueTypeID = *issueTypeID
@@ -1980,6 +2003,84 @@ func findMilestoneByNodeID(st *Store, nodeID string) *Milestone {
 		}
 	}
 	return nil
+}
+
+// resolveGQLLabelIDs maps a mutation's labelIds onto store ids. A nil argument
+// — absent, or an explicit null — means "leave the labels alone" and yields a
+// nil result; an id that names no label of repoID is refused rather than
+// dropped, because dropping it reported success for a label never applied.
+func resolveGQLLabelIDs(st *Store, repoID int, raw interface{}) (*[]int, error) {
+	entries, ok := raw.([]interface{})
+	if !ok {
+		return nil, nil
+	}
+	ids := make([]int, 0, len(entries))
+	for _, entry := range entries {
+		nodeID := fmt.Sprintf("%v", entry)
+		l := findLabelByNodeID(st, nodeID)
+		if l == nil || l.RepoID != repoID {
+			return nil, gqlMissingNode("Label", nodeID)
+		}
+		ids = append(ids, l.ID)
+	}
+	return &ids, nil
+}
+
+// resolveGQLAssigneeIDs is resolveGQLLabelIDs for assigneeIds.
+func resolveGQLAssigneeIDs(st *Store, raw interface{}) (*[]int, error) {
+	entries, ok := raw.([]interface{})
+	if !ok {
+		return nil, nil
+	}
+	ids := make([]int, 0, len(entries))
+	for _, entry := range entries {
+		nodeID := fmt.Sprintf("%v", entry)
+		u := findUserByNodeID(st, nodeID)
+		if u == nil {
+			return nil, gqlMissingNode("User", nodeID)
+		}
+		ids = append(ids, u.ID)
+	}
+	return &ids, nil
+}
+
+// resolveGQLMilestoneID maps a mutation's milestone argument onto a store id.
+// An absent member leaves the milestone alone; an explicit null clears it.
+func resolveGQLMilestoneID(st *Store, repoID int, input map[string]interface{}, key string) (*int, error) {
+	raw, present := input[key]
+	if !present {
+		return nil, nil
+	}
+	nodeID, ok := raw.(string)
+	if !ok || nodeID == "" {
+		cleared := 0
+		return &cleared, nil
+	}
+	ms := findMilestoneByNodeID(st, nodeID)
+	if ms == nil || ms.RepoID != repoID {
+		return nil, gqlMissingNode("Milestone", nodeID)
+	}
+	id := ms.ID
+	return &id, nil
+}
+
+// applyIssueState moves an issue between OPEN and CLOSED, keeping ClosedAt and
+// StateReason consistent with the transition the way the REST handler does.
+func applyIssueState(i *Issue, state string) {
+	if state == "CLOSED" {
+		i.State = "CLOSED"
+		if i.ClosedAt == nil {
+			now := time.Now()
+			i.ClosedAt = &now
+		}
+		if i.StateReason == "" {
+			i.StateReason = "COMPLETED"
+		}
+		return
+	}
+	i.State = "OPEN"
+	i.ClosedAt = nil
+	i.StateReason = ""
 }
 
 func findUserByNodeID(st *Store, nodeID string) *User {

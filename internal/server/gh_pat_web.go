@@ -88,7 +88,7 @@ func (s *Server) handleListPersonalAccessTokensWeb(w http.ResponseWriter, r *htt
 	for _, org := range s.store.ListOrgsByUser(user.ID) {
 		owners = append(owners, map[string]interface{}{"login": org.Login, "type": "Organization"})
 		repositories[org.Login] = s.personalAccessTokenRepositories(org.Login)
-		if canAdminOrg(s.store, user, org) {
+		if s.viewerCanAdminOrg(r.Context(), org.Login) {
 			s.store.mu.RLock()
 			requests := make([]*OrgPATGrantRequest, 0, len(s.store.OrgPATGrantRequests[org.Login]))
 			for _, request := range s.store.OrgPATGrantRequests[org.Login] {
@@ -172,7 +172,7 @@ func (s *Server) handleCreatePersonalAccessTokenWeb(w http.ResponseWriter, r *ht
 		return
 	}
 	org := s.store.GetOrg(body.ResourceOwner)
-	if body.ResourceOwner != user.Login && (org == nil || !isActiveOrgMember(s.store, user, org.Login)) {
+	if body.ResourceOwner != user.Login && (org == nil || !s.viewerIsOrgMember(r.Context(), org.Login)) {
 		writeGHValidationError(w, "FineGrainedPersonalAccessToken", "resource_owner", "invalid")
 		return
 	}
@@ -182,7 +182,7 @@ func (s *Server) handleCreatePersonalAccessTokenWeb(w http.ResponseWriter, r *ht
 	}
 	for _, id := range body.RepositoryIDs {
 		repo := s.store.GetRepoByID(id)
-		if repo == nil || !strings.HasPrefix(repo.FullName, body.ResourceOwner+"/") || !canReadRepo(s.store, user, repo) {
+		if repo == nil || !strings.HasPrefix(repo.FullName, body.ResourceOwner+"/") || !s.viewerCanReadRepo(r.Context(), repo) {
 			writeGHValidationError(w, "FineGrainedPersonalAccessToken", "repository_ids", "invalid")
 			return
 		}
@@ -306,7 +306,7 @@ func (s *Server) handleReviewPersonalAccessTokenWeb(w http.ResponseWriter, r *ht
 	if user == nil {
 		return
 	}
-	if org == nil || !canAdminOrg(s.store, user, org) {
+	if org == nil || !s.viewerCanAdminOrg(r.Context(), org.Login) {
 		writeGHError(w, http.StatusNotFound, "Not Found")
 		return
 	}

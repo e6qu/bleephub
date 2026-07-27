@@ -332,6 +332,9 @@ func (s *Server) handleRunArtifacts(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleRepoArtifacts(w http.ResponseWriter, r *http.Request) {
+	if !s.enforceRepoReadable(w, r) {
+		return
+	}
 	repo := repoFullName(r)
 	matching := s.filterArtifacts(r, func(art *Artifact) bool {
 		return s.artifactBelongsToRepo(art, repo)

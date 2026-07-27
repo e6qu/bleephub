@@ -105,7 +105,7 @@ func (s *Server) handleListPullRequests(w http.ResponseWriter, r *http.Request) 
 		writeGHError(w, http.StatusNotFound, "Not Found")
 		return
 	}
-	if repo.Private && !s.viewerCanReadRepo(r, repo) {
+	if repo.Private && !s.viewerCanReadRepo(r.Context(), repo) {
 		writeGHError(w, http.StatusNotFound, "Not Found")
 		return
 	}
@@ -182,7 +182,7 @@ func (s *Server) handleGetPullRequest(w http.ResponseWriter, r *http.Request) {
 		writeGHError(w, http.StatusNotFound, "Not Found")
 		return
 	}
-	if repo.Private && !s.viewerCanReadRepo(r, repo) {
+	if repo.Private && !s.viewerCanReadRepo(r.Context(), repo) {
 		writeGHError(w, http.StatusNotFound, "Not Found")
 		return
 	}
@@ -1664,7 +1664,7 @@ func (s *Server) handleListPullRequestFiles(w http.ResponseWriter, r *http.Reque
 		writeGHError(w, http.StatusNotFound, "Not Found")
 		return
 	}
-	if repo.Private && !s.viewerCanReadRepo(r, repo) {
+	if repo.Private && !s.viewerCanReadRepo(r.Context(), repo) {
 		writeGHError(w, http.StatusNotFound, "Not Found")
 		return
 	}

@@ -9,6 +9,14 @@ import (
 
 const Environment = "BLEEPHUB_DQLITE_ADDRESS_MAP"
 
+// SecretEnvironment names the shared cluster credential and SecretHeader the
+// request header that carries it. The dqlite wire protocol authenticates
+// nothing itself, so the transport upgrade is where membership is proven.
+const (
+	SecretEnvironment = "BLEEPHUB_DQLITE_SECRET"
+	SecretHeader      = "X-Bleephub-Dqlite-Secret"
+)
+
 // Map parses the comma-separated old-address=new-address mapping stored in
 // Environment. Member identities remain durable in dqlite's state while the
 // destination can move from a retired transport to a stable private address.

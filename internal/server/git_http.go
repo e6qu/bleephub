@@ -2,6 +2,7 @@ package bleephub
 
 import (
 	"bufio"
+	"context"
 	"fmt"
 	"net"
 	"net/http"
@@ -15,9 +16,14 @@ import (
 	gitserver "github.com/go-git/go-git/v5/plumbing/transport/server"
 )
 
-func (s *Server) authenticateGitRequest(r *http.Request) *User {
+// authenticateGitRequest resolves the credential on a git smart-HTTP request.
+// It returns the context rather than only the user because the git routes sit
+// outside the /api middleware and the credential shape — installation token,
+// user-to-server token, PAT, session — lives on that context and decides what
+// the caller may read.
+func (s *Server) authenticateGitRequest(r *http.Request) (context.Context, *User) {
 	ctx := s.authenticateRequest(r)
-	return ghUserFromContext(ctx)
+	return ctx, ghUserFromContext(ctx)
 }
 
 // storeLoader implements transport.Loader to look up go-git storages from the Store.
@@ -114,17 +120,17 @@ func (s *Server) handleGitInfoRefs(w http.ResponseWriter, r *http.Request, owner
 		return
 	}
 
-	user := s.authenticateGitRequest(r)
+	ctx, user := s.authenticateGitRequest(r)
 
 	switch service {
 	case "git-upload-pack":
-		if !canReadRepo(s.store, user, repo) {
+		if !s.viewerCanReadRepo(ctx, repo) {
 			w.Header().Set("WWW-Authenticate", `Basic realm="GitHub"`)
 			http.Error(w, "401 Authorization Required", http.StatusUnauthorized)
 			return
 		}
 	case "git-receive-pack":
-		if !canPushRepo(s.store, user, repo) {
+		if !s.viewerCanPushRepo(ctx, repo) {
 			w.Header().Set("WWW-Authenticate", `Basic realm="GitHub"`)
 			if user == nil {
 				http.Error(w, "401 Authorization Required", http.StatusUnauthorized)
@@ -221,8 +227,8 @@ func (s *Server) handleGitUploadPack(w http.ResponseWriter, r *http.Request, own
 		return
 	}
 
-	user := s.authenticateGitRequest(r)
-	if !canReadRepo(s.store, user, repo) {
+	ctx, user := s.authenticateGitRequest(r)
+	if !s.viewerCanReadRepo(ctx, repo) {
 		w.Header().Set("WWW-Authenticate", `Basic realm="GitHub"`)
 		http.Error(w, "401 Authorization Required", http.StatusUnauthorized)
 		return
@@ -302,8 +308,8 @@ func (s *Server) handleGitReceivePack(w http.ResponseWriter, r *http.Request, ow
 		return
 	}
 
-	user := s.authenticateGitRequest(r)
-	if !canPushRepo(s.store, user, repo) {
+	ctx, user := s.authenticateGitRequest(r)
+	if !s.viewerCanPushRepo(ctx, repo) {
 		w.Header().Set("WWW-Authenticate", `Basic realm="GitHub"`)
 		if user == nil {
 			http.Error(w, "401 Authorization Required", http.StatusUnauthorized)

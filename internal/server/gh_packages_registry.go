@@ -189,7 +189,7 @@ func (s *Server) handleContainerRegistryPutManifest(w http.ResponseWriter, r *ht
 	if !ok {
 		return
 	}
-	if !s.canPublishContainerRegistryPackage(user, ownerType, ownerKey) {
+	if !s.canPublishContainerRegistryPackage(r.Context(), user, ownerType, ownerKey) {
 		s.writeRegistryError(w, http.StatusForbidden, "DENIED", "requested access to the resource is denied")
 		return
 	}
@@ -327,13 +327,13 @@ func (s *Server) resolveContainerRegistryOwner(w http.ResponseWriter, name strin
 	return "", "", false
 }
 
-func (s *Server) canPublishContainerRegistryPackage(user *User, ownerType, ownerKey string) bool {
+func (s *Server) canPublishContainerRegistryPackage(ctx context.Context, user *User, ownerType, ownerKey string) bool {
 	switch ownerType {
 	case "User":
 		return user.Login == ownerKey
 	case "Organization":
 		if org := s.store.GetOrg(ownerKey); org != nil {
-			return canAdminOrg(s.store, user, org)
+			return s.viewerCanAdminOrg(ctx, org.Login)
 		}
 	}
 	return false

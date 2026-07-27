@@ -84,6 +84,7 @@ func (s *Server) handleManifestSubmission(w http.ResponseWriter, r *http.Request
 			URL    string `json:"url"`
 			Active *bool  `json:"active"`
 		} `json:"hook_attributes"`
+		CallbackURLs       []string          `json:"callback_urls"`
 		DefaultEvents      []string          `json:"default_events"`
 		DefaultPermissions map[string]string `json:"default_permissions"`
 	}
@@ -115,28 +116,43 @@ func (s *Server) handleManifestSubmission(w http.ResponseWriter, r *http.Request
 			return
 		}
 	}
+	// bleephub records one callback per client, the same shape OAuth Apps
+	// carry, so the authorize gate has a single destination to compare
+	// against. A manifest offering several is refused rather than quietly
+	// reduced to its first entry.
+	callbackURL := ""
+	if len(manifest.CallbackURLs) > 1 {
+		writeGHValidationError(w, "AppManifest", "callback_urls", "invalid")
+		return
+	}
+	if len(manifest.CallbackURLs) == 1 {
+		callbackURL = strings.TrimSpace(manifest.CallbackURLs[0])
+		if err := validateClientCallbackURL(callbackURL); err != nil {
+			writeGHValidationError(w, "AppManifest", "callback_urls", "invalid")
+			return
+		}
+	}
 
 	app, err := s.store.CreateAppE(user.ID, manifest.Name, manifest.Description, manifest.DefaultPermissions, manifest.DefaultEvents)
 	if err != nil {
 		writeGHError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
-	if manifest.URL != "" || manifest.HookAttributes.URL != "" {
-		s.store.UpdateAppHookConfig(app.ID, func(a *App) {
-			if manifest.URL != "" {
-				// The manifest's `url` is the app homepage, served back
-				// as external_url.
-				a.ExternalURL = manifest.URL
+	s.store.UpdateApp(app.ID, func(a *App) {
+		if manifest.URL != "" {
+			// The manifest's `url` is the app homepage, served back
+			// as external_url.
+			a.ExternalURL = manifest.URL
+		}
+		a.CallbackURL = callbackURL
+		if manifest.HookAttributes.URL != "" {
+			a.WebhookURL = manifest.HookAttributes.URL
+			if manifest.HookAttributes.Active != nil {
+				a.WebhookActive = *manifest.HookAttributes.Active
 			}
-			if manifest.HookAttributes.URL != "" {
-				a.WebhookURL = manifest.HookAttributes.URL
-				if manifest.HookAttributes.Active != nil {
-					a.WebhookActive = *manifest.HookAttributes.Active
-				}
-				a.WebhookEvents = manifest.DefaultEvents
-			}
-		})
-	}
+			a.WebhookEvents = manifest.DefaultEvents
+		}
+	})
 
 	q := redirect.Query()
 	q.Set("code", s.store.RegisterManifestCode(app.ID))
@@ -870,7 +886,7 @@ func (s *Server) handleListOrgInstallations(w http.ResponseWriter, r *http.Reque
 		writeGHError(w, http.StatusNotFound, "Not Found")
 		return
 	}
-	if !canAdminOrg(s.store, user, org) {
+	if !s.viewerCanAdminOrg(r.Context(), org.Login) {
 		writeGHError(w, http.StatusForbidden, "Must be an organization owner.")
 		return
 	}
@@ -1085,7 +1101,9 @@ func (s *Server) emitInstallationEvent(app *App, action string, inst *Installati
 	}
 	sender := s.store.LookupUserByLogin(inst.TargetLogin)
 	payload := buildInstallationEventPayload(app, action, inst, sender)
-	go s.deliverAppWebhook(app, "installation", action, inst.ID, mustMarshal(payload))
+	s.enqueueWebhookJob(appWebhookQueueKey(app), func() {
+		s.deliverAppWebhook(app, "installation", action, inst.ID, mustMarshal(payload))
+	})
 }
 
 // emitInstallationRepositoriesEvent fires an `installation_repositories`
@@ -1096,19 +1114,15 @@ func (s *Server) emitInstallationRepositoriesEvent(app *App, action string, inst
 	}
 	sender := s.store.LookupUserByLogin(inst.TargetLogin)
 	payload := buildInstallationRepositoriesEventPayload(app, action, inst, repoIDsChanged, sender)
-	go s.deliverAppWebhook(app, "installation_repositories", action, inst.ID, mustMarshal(payload))
+	s.enqueueWebhookJob(appWebhookQueueKey(app), func() {
+		s.deliverAppWebhook(app, "installation_repositories", action, inst.ID, mustMarshal(payload))
+	})
 }
 
 // deliverAppWebhook is the app-level analogue of deliverWebhook: same
 // retry shape, but records to AppHookDeliveries.
 func (s *Server) deliverAppWebhook(app *App, event, action string, installationID int, payloadBytes []byte) {
-	hook := &Webhook{
-		ID:     -app.ID, // negative ID flags an app-level hook (middleware reads ID < 0)
-		URL:    app.WebhookURL,
-		Secret: app.WebhookSecret,
-		Events: app.WebhookEvents,
-		Active: app.WebhookActive,
-	}
+	hook := appWebhookPseudoHook(app)
 	guid := uuid.New().String()
 	backoffs := []time.Duration{0, 1 * time.Second, 5 * time.Second}
 	for attempt, backoff := range backoffs {

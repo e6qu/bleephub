@@ -1,6 +1,7 @@
 package bleephub
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"net/http"
@@ -77,6 +78,17 @@ type PorterLargeFile struct {
 
 const porterLargeFileThreshold = 100 * 1024 * 1024
 
+const (
+	// importFetchTimeout caps a single import fetch. Without it a remote that
+	// accepts the connection and then stalls holds the worker forever.
+	importFetchTimeout = 5 * time.Minute
+	// importSyncWait is how long the request waits for the fetch before
+	// answering "importing" and leaving it running. A local source finishes
+	// well inside this; an unresponsive one no longer pins the request
+	// goroutine to the remote's timeline.
+	importSyncWait = 20 * time.Second
+)
+
 func (s *Server) registerGHImportRoutes() {
 	s.route("GET /api/v3/repos/{owner}/{repo}/import", s.handleGetImport)
 	s.route("PUT /api/v3/repos/{owner}/{repo}/import",
@@ -104,6 +116,23 @@ func (st *Store) PutRepoImport(imp *RepoImport) {
 	if st.persist != nil {
 		st.persist.MustPut("repo_imports", strconv.Itoa(imp.RepoID), imp)
 	}
+}
+
+// ReplaceRepoImportIfCurrent publishes the outcome of a fetch only while the
+// record it started from is still the one on file. A cancel or a restart
+// replaces that record, and a finishing fetch must not put it back.
+func (st *Store) ReplaceRepoImportIfCurrent(previous, next *RepoImport) bool {
+	st.mu.Lock()
+	defer st.mu.Unlock()
+	if st.RepoImports[previous.RepoID] != previous {
+		return false
+	}
+	next.UpdatedAt = time.Now().UTC()
+	st.RepoImports[next.RepoID] = next
+	if st.persist != nil {
+		st.persist.MustPut("repo_imports", strconv.Itoa(next.RepoID), next)
+	}
+	return true
 }
 
 // GetRepoImport returns the repo's import record, or nil.
@@ -218,6 +247,9 @@ func (s *Server) handleStartImport(w http.ResponseWriter, r *http.Request) {
 		writeGHValidationError(w, "Import", "vcs_url", "missing_field")
 		return
 	}
+	if !s.acceptImportSource(w, req.VCSURL) {
+		return
+	}
 	imp := &RepoImport{
 		RepoID:       repo.ID,
 		VCS:          req.VCS,
@@ -228,9 +260,29 @@ func (s *Server) handleStartImport(w http.ResponseWriter, r *http.Request) {
 		NextAuthorID: 1,
 		CreatedAt:    time.Now().UTC(),
 	}
-	s.runRepoImport(imp, repo)
-	s.store.PutRepoImport(imp)
-	writeJSON(w, http.StatusCreated, s.importToJSON(imp, repo, s.baseURL(r)))
+	writeJSON(w, http.StatusCreated, s.importToJSON(s.startRepoImport(imp, repo), repo, s.baseURL(r)))
+}
+
+// acceptImportSource refuses a source URL the server must not fetch.
+//
+// The import dials whatever the caller names, so it gets the same address gate
+// as webhook delivery rather than a second one of its own: two SSRF filters
+// drift, and the one that drifts is the one nobody is looking at.
+//
+// Unlike webhook delivery, this is the ONLY gate on this path — there is no
+// second check against the address actually dialed, so a name that resolves
+// publicly here and privately a moment later is still reachable. The fetch runs
+// through go-git, which picks its transport out of a process-global registry
+// (transport/client) with no per-fetch hook, so a net.Dialer.Control cannot be
+// installed for this call alone; doing it globally would silently re-dial every
+// other go-git consumer in the process through it. Do not read the presence of
+// this call as meaning the delivery-time check exists here too.
+func (s *Server) acceptImportSource(w http.ResponseWriter, rawURL string) bool {
+	if err := validateWebhookTargetURL(rawURL, s.allowPrivateOutboundTargets); err != nil {
+		writeGHValidationError(w, "Import", "vcs_url", "invalid")
+		return false
+	}
+	return true
 }
 
 func (s *Server) handleUpdateImport(w http.ResponseWriter, r *http.Request) {
@@ -265,10 +317,11 @@ func (s *Server) handleUpdateImport(w http.ResponseWriter, r *http.Request) {
 	if req.TFVCProject != "" {
 		imp.TFVCProject = req.TFVCProject
 	}
+	if !s.acceptImportSource(w, imp.VCSURL) {
+		return
+	}
 	// PATCH restarts a stalled import with the updated parameters.
-	s.runRepoImport(imp, repo)
-	s.store.PutRepoImport(imp)
-	writeJSON(w, http.StatusOK, s.importToJSON(imp, repo, s.baseURL(r)))
+	writeJSON(w, http.StatusOK, s.importToJSON(s.startRepoImport(imp, repo), repo, s.baseURL(r)))
 }
 
 func (s *Server) handleCancelImport(w http.ResponseWriter, r *http.Request) {
@@ -399,9 +452,37 @@ func (s *Server) handleListImportLargeFiles(w http.ResponseWriter, r *http.Reque
 
 // --- Import execution ---
 
-// runRepoImport performs the import synchronously and records the honest
-// outcome on imp. Only git sources can really be imported; other VCS types
-// end in status "error" saying so.
+// startRepoImport runs the fetch on its own goroutine and returns the record to
+// serve. The request waits importSyncWait for the outcome — long enough that a
+// reachable source still answers "complete" on the same call — and otherwise
+// answers "importing", leaving the fetch to finish and publish on its own.
+//
+// The goroutine works on a copy: the record the handler renders and the record
+// the fetch mutates must not be the same struct.
+func (s *Server) startRepoImport(imp *RepoImport, repo *Repo) *RepoImport {
+	pending := *imp
+	pending.Status = "importing"
+	s.store.PutRepoImport(&pending)
+
+	running := *imp
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		s.runRepoImport(&running, repo)
+		s.store.ReplaceRepoImportIfCurrent(&pending, &running)
+	}()
+
+	select {
+	case <-done:
+		return &running
+	case <-time.After(importSyncWait):
+		return &pending
+	}
+}
+
+// runRepoImport performs the import and records the honest outcome on imp.
+// Only git sources can really be imported; other VCS types end in status
+// "error" saying so.
 func (s *Server) runRepoImport(imp *RepoImport, repo *Repo) {
 	imp.StatusText = ""
 	imp.FailedStep = ""
@@ -440,7 +521,9 @@ func (s *Server) runRepoImport(imp *RepoImport, repo *Repo) {
 			"+refs/tags/*:refs/tags/*",
 		},
 	})
-	err := remote.Fetch(&git.FetchOptions{
+	ctx, cancel := context.WithTimeout(context.Background(), importFetchTimeout)
+	defer cancel()
+	err := remote.FetchContext(ctx, &git.FetchOptions{
 		Auth:  auth,
 		Force: true,
 		Tags:  git.AllTags,

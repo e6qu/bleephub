@@ -101,7 +101,8 @@ terraform -chdir=terraform state rm \
   aws_kms_key.this \
   aws_s3_bucket.git aws_s3_bucket.objects \
   aws_efs_file_system.sqlite \
-  aws_secretsmanager_secret.admin_token aws_secretsmanager_secret.ssh_host_key
+  aws_secretsmanager_secret.admin_token aws_secretsmanager_secret.ssh_host_key \
+  aws_secretsmanager_secret.dqlite_secret
 terraform -chdir=terraform destroy
 ```
 
@@ -120,6 +121,29 @@ rather than overlap and rely on the circuit breaker alone.
 services: the wake controller owns capacity at runtime, and reconciling it from
 Terraform would stop a live service mid-request. The value in the configuration
 is only the count the service is created with.
+
+## dqlite cluster secret
+
+The dqlite wire protocol authenticates nothing, so the HTTP transport upgrade
+carries a shared credential in an `X-Bleephub-Dqlite-Secret` header. Both ends
+require it: the application refuses to open the database without
+`BLEEPHUB_DQLITE_SECRET`, and each voter refuses connections that do not present
+it. A partial wiring is worse than none — it looks configured and then fails at
+boot.
+
+The module generates the value itself (`random_password`, 64 alphanumeric
+characters) and stores it in AWS Secrets Manager as `<name>/dqlite-secret`,
+encrypted with the module's KMS key, alongside the administrator token and the
+SSH host key. There is no input variable: nothing outside the cluster needs the
+value, and asking an operator to invent one only adds a way to get it wrong. It
+reaches the application task and all three voter tasks as an Amazon ECS
+`secrets` entry, never as a plaintext task environment variable, so it does not
+appear in `DescribeTaskDefinition` output.
+
+It carries `prevent_destroy` like the other two secrets. Replacing it splits the
+quorum, because members that restart with the new value cannot speak to members
+still holding the old one — rotating it means restarting the application and all
+three voters together.
 
 To use a shared VPC, set `existing_vpc_id`,
 `existing_private_subnet_ids`, `existing_public_subnet_ids`, and

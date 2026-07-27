@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"regexp"
 	"strings"
+	"sync"
 
 	"github.com/go-git/go-git/v5/plumbing"
 	"github.com/go-git/go-git/v5/plumbing/object"
@@ -305,9 +306,11 @@ func filterPatternsMatch(patterns []string, value string) bool {
 	return matched
 }
 
-var filterPatternCache = struct {
-	m map[string]*regexp.Regexp
-}{m: map[string]*regexp.Regexp{}}
+// filterPatternCache memoizes compiled filter patterns. Trigger evaluation
+// runs concurrently for every pushed ref, and a plain map written from more
+// than one goroutine is an unrecoverable runtime fatal error, not a panic a
+// handler could survive.
+var filterPatternCache sync.Map // pattern string → *regexp.Regexp
 
 // filterPatternMatch matches one GitHub filter pattern: `*` (any except
 // '/'), `**` (any), `?` / `+` (zero-or-one / one-or-more of the
@@ -321,8 +324,8 @@ func filterPatternMatch(pattern, value string) bool {
 }
 
 func compileFilterPattern(pattern string) (*regexp.Regexp, error) {
-	if re, ok := filterPatternCache.m[pattern]; ok {
-		return re, nil
+	if cached, ok := filterPatternCache.Load(pattern); ok {
+		return cached.(*regexp.Regexp), nil
 	}
 	var sb strings.Builder
 	sb.WriteString("^(?:")
@@ -371,8 +374,8 @@ func compileFilterPattern(pattern string) (*regexp.Regexp, error) {
 	if err != nil {
 		return nil, err
 	}
-	filterPatternCache.m[pattern] = re
-	return re, nil
+	actual, _ := filterPatternCache.LoadOrStore(pattern, re)
+	return actual.(*regexp.Regexp), nil
 }
 
 // changedFilesBetween computes the paths touched between two commits in

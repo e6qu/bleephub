@@ -104,7 +104,7 @@ func (s *Server) handleListIssues(w http.ResponseWriter, r *http.Request) {
 		writeGHError(w, http.StatusNotFound, "Not Found")
 		return
 	}
-	if repo.Private && !s.viewerCanReadRepo(r, repo) {
+	if repo.Private && !s.viewerCanReadRepo(r.Context(), repo) {
 		writeGHError(w, http.StatusNotFound, "Not Found")
 		return
 	}
@@ -127,41 +127,68 @@ func (s *Server) handleListIssues(w http.ResponseWriter, r *http.Request) {
 		stateFilter = "OPEN"
 	}
 
-	issues := s.store.ListIssues(repo.ID, stateFilter)
-
-	// Filter by labels
+	var labelNames []string
 	if labelsParam := r.URL.Query().Get("labels"); labelsParam != "" {
-		labelNames := strings.Split(labelsParam, ",")
-		var filtered []*Issue
-		for _, issue := range issues {
-			if issueHasAllLabels(s.store, issue, labelNames, repo.ID) {
-				filtered = append(filtered, issue)
-			}
-		}
-		issues = filtered
+		labelNames = strings.Split(labelsParam, ",")
 	}
-
-	// Filter by assignee
+	var assigneeID int
 	if assignee := r.URL.Query().Get("assignee"); assignee != "" {
-		u := s.store.LookupUserByLogin(assignee)
-		if u != nil {
-			var filtered []*Issue
-			for _, issue := range issues {
-				for _, aid := range issue.AssigneeIDs {
-					if aid == u.ID {
-						filtered = append(filtered, issue)
-						break
-					}
-				}
-			}
-			issues = filtered
+		if u := s.store.LookupUserByLogin(assignee); u != nil {
+			assigneeID = u.ID
 		}
 	}
+	selected := func(labelIDs, assigneeIDs []int) bool {
+		if !labelIDsCoverNames(s.store, labelIDs, labelNames) {
+			return false
+		}
+		if assigneeID == 0 {
+			return true
+		}
+		for _, aid := range assigneeIDs {
+			if aid == assigneeID {
+				return true
+			}
+		}
+		return false
+	}
 
+	// Every pull request is also an issue on GitHub, so this listing returns
+	// both and the `pull_request` member is what tells them apart. Omitting
+	// them made pull requests invisible to any client that reaches for
+	// issues — `gh issue list` among them.
 	base := s.baseURL(r)
-	result := make([]map[string]interface{}, 0, len(issues))
-	for _, issue := range issues {
-		result = append(result, issueToJSON(issue, s.store, base, repo.FullName))
+	type issueRow struct {
+		number    int
+		createdAt time.Time
+		json      map[string]interface{}
+	}
+	var rows []issueRow
+	for _, issue := range s.store.ListIssues(repo.ID, stateFilter) {
+		if !selected(issue.LabelIDs, issue.AssigneeIDs) {
+			continue
+		}
+		rows = append(rows, issueRow{issue.Number, issue.CreatedAt, issueToJSON(issue, s.store, base, repo.FullName)})
+	}
+	for _, pr := range s.store.ListPullRequests(repo.ID, stateFilter) {
+		if !selected(pr.LabelIDs, pr.AssigneeIDs) {
+			continue
+		}
+		rows = append(rows, issueRow{pr.Number, pr.CreatedAt, issueToJSONForPR(pr, s.store, base, repo.FullName)})
+	}
+
+	// Newest first, GitHub's default sort. Both stores iterate a map, so
+	// without this the page a caller gets back is a different subset each
+	// time they ask.
+	sort.Slice(rows, func(i, j int) bool {
+		if !rows[i].createdAt.Equal(rows[j].createdAt) {
+			return rows[i].createdAt.After(rows[j].createdAt)
+		}
+		return rows[i].number > rows[j].number
+	})
+
+	result := make([]map[string]interface{}, 0, len(rows))
+	for _, row := range rows {
+		result = append(result, row.json)
 	}
 	writeJSON(w, http.StatusOK, paginateAndLink(w, r, result))
 }
@@ -175,7 +202,7 @@ func (s *Server) handleGetIssue(w http.ResponseWriter, r *http.Request) {
 		writeGHError(w, http.StatusNotFound, "Not Found")
 		return
 	}
-	if repo.Private && !s.viewerCanReadRepo(r, repo) {
+	if repo.Private && !s.viewerCanReadRepo(r.Context(), repo) {
 		writeGHError(w, http.StatusNotFound, "Not Found")
 		return
 	}
@@ -188,6 +215,13 @@ func (s *Server) handleGetIssue(w http.ResponseWriter, r *http.Request) {
 
 	issue := s.store.GetIssueByNumber(repo.ID, num)
 	if issue == nil {
+		// Issues and pull requests share one number sequence, and a pull
+		// request is reachable through the issues endpoint on GitHub. 404 here
+		// hid every pull request from clients that address it as an issue.
+		if pr := s.store.GetPullRequestByNumber(repo.ID, num); pr != nil {
+			writeJSON(w, http.StatusOK, issueToJSONForPR(pr, s.store, s.baseURL(r), repo.FullName))
+			return
+		}
 		writeGHError(w, http.StatusNotFound, "Not Found")
 		return
 	}
@@ -446,7 +480,7 @@ func (s *Server) handleListIssueComments(w http.ResponseWriter, r *http.Request)
 		writeGHError(w, http.StatusNotFound, "Not Found")
 		return
 	}
-	if repo.Private && !s.viewerCanReadRepo(r, repo) {
+	if repo.Private && !s.viewerCanReadRepo(r.Context(), repo) {
 		writeGHError(w, http.StatusNotFound, "Not Found")
 		return
 	}
@@ -633,7 +667,7 @@ func (s *Server) handleListRepoIssueComments(w http.ResponseWriter, r *http.Requ
 		writeGHError(w, http.StatusNotFound, "Not Found")
 		return
 	}
-	if repo.Private && !s.viewerCanReadRepo(r, repo) {
+	if repo.Private && !s.viewerCanReadRepo(r.Context(), repo) {
 		writeGHError(w, http.StatusNotFound, "Not Found")
 		return
 	}
@@ -660,7 +694,7 @@ func (s *Server) handleGetIssueComment(w http.ResponseWriter, r *http.Request) {
 		writeGHError(w, http.StatusNotFound, "Not Found")
 		return
 	}
-	if repo.Private && !s.viewerCanReadRepo(r, repo) {
+	if repo.Private && !s.viewerCanReadRepo(r.Context(), repo) {
 		writeGHError(w, http.StatusNotFound, "Not Found")
 		return
 	}
@@ -920,7 +954,7 @@ func (s *Server) handleListIssueTimeline(w http.ResponseWriter, r *http.Request)
 		writeGHError(w, http.StatusNotFound, "Not Found")
 		return
 	}
-	if repo.Private && !s.viewerCanReadRepo(r, repo) {
+	if repo.Private && !s.viewerCanReadRepo(r.Context(), repo) {
 		writeGHError(w, http.StatusNotFound, "Not Found")
 		return
 	}
@@ -960,7 +994,7 @@ func (s *Server) handleListIssueEvents(w http.ResponseWriter, r *http.Request) {
 		writeGHError(w, http.StatusNotFound, "Not Found")
 		return
 	}
-	if repo.Private && !s.viewerCanReadRepo(r, repo) {
+	if repo.Private && !s.viewerCanReadRepo(r.Context(), repo) {
 		writeGHError(w, http.StatusNotFound, "Not Found")
 		return
 	}
@@ -999,7 +1033,7 @@ func (s *Server) handleListRepoIssueEvents(w http.ResponseWriter, r *http.Reques
 		writeGHError(w, http.StatusNotFound, "Not Found")
 		return
 	}
-	if repo.Private && !s.viewerCanReadRepo(r, repo) {
+	if repo.Private && !s.viewerCanReadRepo(r.Context(), repo) {
 		writeGHError(w, http.StatusNotFound, "Not Found")
 		return
 	}
@@ -1022,7 +1056,7 @@ func (s *Server) handleGetIssueEvent(w http.ResponseWriter, r *http.Request) {
 		writeGHError(w, http.StatusNotFound, "Not Found")
 		return
 	}
-	if repo.Private && !s.viewerCanReadRepo(r, repo) {
+	if repo.Private && !s.viewerCanReadRepo(r.Context(), repo) {
 		writeGHError(w, http.StatusNotFound, "Not Found")
 		return
 	}
@@ -1406,9 +1440,15 @@ func issueEventForTimelineToJSON(e *IssueEvent, st *Store, baseURL, repoFullName
 
 // issueHasAllLabels checks if an issue has all the given label names.
 func issueHasAllLabels(st *Store, issue *Issue, labelNames []string, repoID int) bool {
+	return labelIDsCoverNames(st, issue.LabelIDs, labelNames)
+}
+
+// labelIDsCoverNames is the label filter itself: it asks about label ids, not
+// about issues, so pull requests can be filtered by the same predicate.
+func labelIDsCoverNames(st *Store, labelIDs []int, labelNames []string) bool {
 	for _, name := range labelNames {
 		found := false
-		for _, lid := range issue.LabelIDs {
+		for _, lid := range labelIDs {
 			l := st.GetLabel(lid)
 			if l != nil && l.Name == strings.TrimSpace(name) {
 				found = true
@@ -1545,7 +1585,7 @@ func (s *Server) handleListOrgIssues(w http.ResponseWriter, r *http.Request) {
 	// Private repos the caller cannot read never surface.
 	readable := rows[:0]
 	for _, row := range rows {
-		if canReadRepo(s.store, user, row.repo) {
+		if s.viewerCanReadRepo(r.Context(), row.repo) {
 			readable = append(readable, row)
 		}
 	}

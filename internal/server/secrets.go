@@ -228,10 +228,13 @@ func (s *Server) deleteSecret(table map[string]map[string]*Secret, bucket, key, 
 // --- repository secrets ---
 
 func (s *Server) handleListSecrets(w http.ResponseWriter, r *http.Request) {
-	repoKey := r.PathValue("owner") + "/" + r.PathValue("repo")
+	repo, ok := s.requireRepoAdmin(w, r)
+	if !ok {
+		return
+	}
 
 	s.store.mu.RLock()
-	list := sortedSecretsJSON(s.store.RepoSecrets[repoKey])
+	list := sortedSecretsJSON(s.store.RepoSecrets[repo.FullName])
 	s.store.mu.RUnlock()
 
 	writeJSON(w, http.StatusOK, map[string]interface{}{
@@ -240,16 +243,22 @@ func (s *Server) handleListSecrets(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-func (s *Server) handleGetRepoSecretsPublicKey(w http.ResponseWriter, _ *http.Request) {
+func (s *Server) handleGetRepoSecretsPublicKey(w http.ResponseWriter, r *http.Request) {
+	if _, ok := s.requireRepoAdmin(w, r); !ok {
+		return
+	}
 	s.writeActionsPublicKey(w)
 }
 
 func (s *Server) handleGetSecret(w http.ResponseWriter, r *http.Request) {
-	repoKey := r.PathValue("owner") + "/" + r.PathValue("repo")
+	repo, ok := s.requireRepoAdmin(w, r)
+	if !ok {
+		return
+	}
 	name := strings.ToUpper(r.PathValue("secret_name"))
 
 	s.store.mu.RLock()
-	sec := s.store.RepoSecrets[repoKey][name]
+	sec := s.store.RepoSecrets[repo.FullName][name]
 	var body map[string]interface{}
 	if sec != nil {
 		body = secretJSON(sec)
@@ -264,7 +273,10 @@ func (s *Server) handleGetSecret(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handlePutSecret(w http.ResponseWriter, r *http.Request) {
-	repoKey := r.PathValue("owner") + "/" + r.PathValue("repo")
+	repo, ok := s.requireRepoAdmin(w, r)
+	if !ok {
+		return
+	}
 	rawName := r.PathValue("secret_name")
 	if msg := actionsItemNameError("Secret", rawName); msg != "" {
 		writeGHError(w, http.StatusUnprocessableEntity, msg)
@@ -281,9 +293,9 @@ func (s *Server) handlePutSecret(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	created := s.upsertSecret(s.store.RepoSecrets, "repo_secrets", repoKey, name, plain)
+	created := s.upsertSecret(s.store.RepoSecrets, "repo_secrets", repo.FullName, name, plain)
 	s.recordAuditEvent("secret.create", auditActor(r), "", map[string]interface{}{
-		"scope": "repository", "repo": repoKey, "secret_name": name,
+		"scope": "repository", "repo": repo.FullName, "secret_name": name,
 	})
 	if created {
 		writeJSON(w, http.StatusCreated, map[string]interface{}{})
@@ -293,12 +305,15 @@ func (s *Server) handlePutSecret(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleDeleteSecret(w http.ResponseWriter, r *http.Request) {
-	repoKey := r.PathValue("owner") + "/" + r.PathValue("repo")
+	repo, ok := s.requireRepoAdmin(w, r)
+	if !ok {
+		return
+	}
 	name := strings.ToUpper(r.PathValue("secret_name"))
 
-	s.deleteSecret(s.store.RepoSecrets, "repo_secrets", repoKey, name)
+	s.deleteSecret(s.store.RepoSecrets, "repo_secrets", repo.FullName, name)
 	s.recordAuditEvent("secret.destroy", auditActor(r), "", map[string]interface{}{
-		"scope": "repository", "repo": repoKey, "secret_name": name,
+		"scope": "repository", "repo": repo.FullName, "secret_name": name,
 	})
 	w.WriteHeader(http.StatusNoContent)
 }
@@ -308,9 +323,8 @@ func (s *Server) handleDeleteSecret(w http.ResponseWriter, r *http.Request) {
 // The documented item shape is the plain actions-secret — visibility
 // metadata stays on the org endpoints.
 func (s *Server) handleListRepoOrgSecrets(w http.ResponseWriter, r *http.Request) {
-	repo := s.store.GetRepo(r.PathValue("owner"), r.PathValue("repo"))
-	if repo == nil {
-		writeGHError(w, http.StatusNotFound, "Not Found")
+	repo, ok := s.requireRepoAdmin(w, r)
+	if !ok {
 		return
 	}
 
@@ -340,10 +354,12 @@ func (s *Server) handleListRepoOrgSecrets(w http.ResponseWriter, r *http.Request
 // the environment does not exist. Real GitHub never auto-creates an
 // environment through this surface — a PUT against a missing environment
 // is a 404, so the sim must hold that line too.
+//
+// The environment surface carries the same secrets as the repository one, so
+// it demands the same repository admin rights.
 func (s *Server) resolveEnvScope(w http.ResponseWriter, r *http.Request) (repoKey, scopeKey, envName string, ok bool) {
-	repo := s.store.GetRepo(r.PathValue("owner"), r.PathValue("repo"))
-	if repo == nil {
-		writeGHError(w, http.StatusNotFound, "Not Found")
+	repo, ok := s.requireRepoAdmin(w, r)
+	if !ok {
 		return "", "", "", false
 	}
 	envName = r.PathValue("env_name")

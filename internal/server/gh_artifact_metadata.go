@@ -31,7 +31,7 @@ func (s *Server) requireOrgArtifactMetadataWrite(w http.ResponseWriter, r *http.
 		writeGHError(w, http.StatusUnauthorized, "Bad credentials")
 		return nil, false
 	}
-	if !user.SiteAdmin && !canAdminOrg(s.store, user, org) {
+	if !user.SiteAdmin && !s.viewerCanAdminOrg(r.Context(), org.Login) {
 		writeGHError(w, http.StatusForbidden, "Must be an organization admin.")
 		return nil, false
 	}
@@ -48,7 +48,7 @@ func (s *Server) requireOrgArtifactMetadataRead(w http.ResponseWriter, r *http.R
 		return nil, false
 	}
 	user := ghUserFromContext(r.Context())
-	if user == nil || (!user.SiteAdmin && !isActiveOrgMember(s.store, user, org.Login)) {
+	if user == nil || (!user.SiteAdmin && !s.viewerIsOrgMember(r.Context(), org.Login)) {
 		writeGHError(w, http.StatusNotFound, "Not Found")
 		return nil, false
 	}

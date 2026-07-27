@@ -2,6 +2,7 @@ package bleephub
 
 import (
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -11,8 +12,8 @@ import (
 // FuzzSearchQueryParser drives the qualifier tokenizer (repo:/user:/org:/is:/
 // in:/label:/language:/author:/hash:, quoted phrases, bare terms) with raw
 // attacker-controlled `q` strings. The parser must never panic or hang and
-// must always yield a searchQuery whose slice fields are non-nil-safe to
-// iterate.
+// must always yield either a searchQuery whose slice fields are non-nil-safe
+// to iterate or a named unsupported-qualifier rejection.
 func FuzzSearchQueryParser(f *testing.F) {
 	seeds := []string{
 		`repo:octo/cat is:issue is:open label:bug "needs triage" author:alice`,
@@ -28,7 +29,14 @@ func FuzzSearchQueryParser(f *testing.F) {
 	}
 	f.Fuzz(func(t *testing.T, q string) {
 		req := httptest.NewRequest(http.MethodGet, "/search/issues?"+url.Values{"q": {q}}.Encode(), nil)
-		parsed := parseSearchQuery(req)
+		parsed, err := parseSearchQuery(req)
+		if err != nil {
+			var unsupported unsupportedQualifierError
+			if !errors.As(err, &unsupported) {
+				t.Fatalf("q=%q rejected with a non-qualifier error: %v", q, err)
+			}
+			return
+		}
 		// Every field must be safe to consume: iterate the term slice, read the
 		// pointer bools. A panic here fails the fuzz.
 		for range parsed.Terms {

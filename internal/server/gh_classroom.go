@@ -464,7 +464,7 @@ func (s *Server) handleListClassrooms(w http.ResponseWriter, r *http.Request) {
 	classrooms := make([]*Classroom, 0, len(all))
 	for _, c := range all {
 		org := s.store.GetOrgByID(c.OrgID)
-		if org != nil && (user.SiteAdmin || canAdminOrg(s.store, user, org)) {
+		if org != nil && (user.SiteAdmin || s.viewerCanAdminOrg(r.Context(), org.Login)) {
 			classrooms = append(classrooms, c)
 		}
 	}
@@ -495,7 +495,7 @@ func (s *Server) classroomForAdmin(w http.ResponseWriter, r *http.Request, id in
 		return nil
 	}
 	org := s.store.GetOrgByID(c.OrgID)
-	if org == nil || (!user.SiteAdmin && !canAdminOrg(s.store, user, org)) {
+	if org == nil || (!user.SiteAdmin && !s.viewerCanAdminOrg(r.Context(), org.Login)) {
 		writeGHError(w, http.StatusNotFound, "Not Found")
 		return nil
 	}

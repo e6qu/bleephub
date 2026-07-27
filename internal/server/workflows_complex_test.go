@@ -242,15 +242,15 @@ func TestQueuedJobsSpreadAcrossPollingRunners(t *testing.T) {
 	s.queueJobMessage(&TaskAgentMessage{MessageID: 1, JobID: "j1"})
 	s.queueJobMessage(&TaskAgentMessage{MessageID: 2, JobID: "j2"})
 
-	first := s.pullPendingMessage(s1)
+	first := s.pullPendingMessage(s1, runnerScope{Org: "octo"})
 	if first == nil || first.MessageID != 1 {
 		t.Fatalf("first poll pulled %v, want message 1", first)
 	}
 	// s1 is now busy with j1 — its next poll gets nothing.
-	if again := s.pullPendingMessage(s1); again != nil {
+	if again := s.pullPendingMessage(s1, runnerScope{Org: "octo"}); again != nil {
 		t.Fatalf("busy runner pulled a second job: %v", again)
 	}
-	second := s.pullPendingMessage(s2)
+	second := s.pullPendingMessage(s2, runnerScope{Org: "octo"})
 	if second == nil || second.MessageID != 2 {
 		t.Fatalf("second runner pulled %v, want message 2", second)
 	}
@@ -276,7 +276,7 @@ func TestQueuedMessagePulledByFirstPollAfterConnect(t *testing.T) {
 	s.store.Sessions["new-sess"] = sess
 	s.store.mu.Unlock()
 
-	got := s.pullPendingMessage(sess)
+	got := s.pullPendingMessage(sess, runnerScope{Org: "octo"})
 	if got == nil || got.MessageID != 42 {
 		t.Fatalf("first poll pulled %v, want message 42", got)
 	}

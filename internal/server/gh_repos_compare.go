@@ -290,8 +290,7 @@ func (s *Server) handleCompareRefs(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	user := ghUserFromContext(r.Context())
-	if repo.Private && !canReadRepo(s.store, user, repo) {
+	if repo.Private && !s.viewerCanReadRepo(r.Context(), repo) {
 		writeGHError(w, http.StatusNotFound, "Not Found")
 		return
 	}

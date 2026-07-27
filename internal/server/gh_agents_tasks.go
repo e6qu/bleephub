@@ -335,7 +335,7 @@ func (s *Server) handleGetAgentTask(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	repo := s.store.GetRepoByID(task.RepoID)
-	if repo == nil || !canReadRepo(s.store, user, repo) {
+	if repo == nil || !s.viewerCanReadRepo(r.Context(), repo) {
 		writeGHError(w, http.StatusNotFound, "Not Found")
 		return
 	}
@@ -349,7 +349,7 @@ func (s *Server) handleListAgentTasksForRepo(w http.ResponseWriter, r *http.Requ
 		return
 	}
 	repo := s.store.GetRepo(r.PathValue("owner"), r.PathValue("repo"))
-	if repo == nil || !canReadRepo(s.store, user, repo) {
+	if repo == nil || !s.viewerCanReadRepo(r.Context(), repo) {
 		writeGHError(w, http.StatusNotFound, "Not Found")
 		return
 	}
@@ -400,7 +400,7 @@ func (s *Server) handleGetAgentTaskInRepo(w http.ResponseWriter, r *http.Request
 		return
 	}
 	repo := s.store.GetRepo(r.PathValue("owner"), r.PathValue("repo"))
-	if repo == nil || !canReadRepo(s.store, user, repo) {
+	if repo == nil || !s.viewerCanReadRepo(r.Context(), repo) {
 		writeGHError(w, http.StatusNotFound, "Not Found")
 		return
 	}

@@ -1,6 +1,7 @@
 package bleephub
 
 import (
+	"context"
 	"fmt"
 	"net/http"
 	"sort"
@@ -95,7 +96,7 @@ func (s *Server) projectV2UserOwnerByID(w http.ResponseWriter, r *http.Request) 
 // canReadProjectV2: public projects are visible to any caller; private
 // projects only to the owning user, active members of the owning org,
 // or a site admin.
-func (s *Server) canReadProjectV2(user *User, owner *projectV2Owner, p *ProjectV2) bool {
+func (s *Server) canReadProjectV2(ctx context.Context, user *User, owner *projectV2Owner, p *ProjectV2) bool {
 	if p.Public {
 		return true
 	}
@@ -108,12 +109,12 @@ func (s *Server) canReadProjectV2(user *User, owner *projectV2Owner, p *ProjectV
 	if owner.ownerType == "User" {
 		return user.ID == owner.id
 	}
-	return isActiveOrgMember(s.store, user, owner.login)
+	return s.viewerIsOrgMember(ctx, owner.login)
 }
 
 // canWriteProjectV2: the owning user, active members of the owning org,
 // or a site admin.
-func (s *Server) canWriteProjectV2(user *User, owner *projectV2Owner) bool {
+func (s *Server) canWriteProjectV2(ctx context.Context, user *User, owner *projectV2Owner) bool {
 	if user == nil {
 		return false
 	}
@@ -123,7 +124,7 @@ func (s *Server) canWriteProjectV2(user *User, owner *projectV2Owner) bool {
 	if owner.ownerType == "User" {
 		return user.ID == owner.id
 	}
-	return isActiveOrgMember(s.store, user, owner.login)
+	return s.viewerIsOrgMember(ctx, owner.login)
 }
 
 // projectV2FromRequest resolves {project_number} for the owner and
@@ -136,7 +137,7 @@ func (s *Server) projectV2FromRequest(w http.ResponseWriter, r *http.Request, ow
 		return nil, false
 	}
 	p := s.store.ProjectsV2.GetProjectByOwnerNumber(owner.id, owner.ownerType, number)
-	if p == nil || !s.canReadProjectV2(ghUserFromContext(r.Context()), owner, p) {
+	if p == nil || !s.canReadProjectV2(r.Context(), ghUserFromContext(r.Context()), owner, p) {
 		writeGHError(w, http.StatusNotFound, "Not Found")
 		return nil, false
 	}
@@ -146,7 +147,7 @@ func (s *Server) projectV2FromRequest(w http.ResponseWriter, r *http.Request, ow
 // requireProjectV2Write enforces write access, writing 403 on denial.
 func (s *Server) requireProjectV2Write(w http.ResponseWriter, r *http.Request, owner *projectV2Owner) (*User, bool) {
 	user := ghUserFromContext(r.Context())
-	if !s.canWriteProjectV2(user, owner) {
+	if !s.canWriteProjectV2(r.Context(), user, owner) {
 		writeGHError(w, http.StatusForbidden, "Must have write access to the project.")
 		return nil, false
 	}
@@ -265,31 +266,7 @@ func (s *Server) projectV2APIURL(r *http.Request, owner *projectV2Owner, number 
 // projectV2CreatorJSON renders the creating user; a creator that no
 // longer resolves renders as GitHub's "ghost" placeholder account.
 func (s *Server) projectV2CreatorJSON(creatorID int) map[string]interface{} {
-	if u := s.store.GetUserByID(creatorID); u != nil {
-		return userToJSON(u)
-	}
-	api := "/api/v3/users/ghost"
-	return map[string]interface{}{
-		"login":               "ghost",
-		"id":                  0,
-		"node_id":             "U_kgDOghost0",
-		"avatar_url":          "",
-		"gravatar_id":         "",
-		"url":                 api,
-		"html_url":            "/ghost",
-		"followers_url":       api + "/followers",
-		"following_url":       api + "/following{/other_user}",
-		"gists_url":           api + "/gists{/gist_id}",
-		"starred_url":         api + "/starred{/owner}{/repo}",
-		"subscriptions_url":   api + "/subscriptions",
-		"organizations_url":   api + "/orgs",
-		"repos_url":           api + "/repos",
-		"events_url":          api + "/events{/privacy}",
-		"received_events_url": api + "/received_events",
-		"type":                "User",
-		"site_admin":          false,
-		"user_view_type":      "public",
-	}
+	return userToJSON(s.store.GetUserByID(creatorID))
 }
 
 func (s *Server) projectV2JSON(p *ProjectV2, owner *projectV2Owner) map[string]interface{} {
@@ -703,7 +680,7 @@ func (s *Server) serveProjectsV2List(w http.ResponseWriter, r *http.Request, own
 	all := s.store.ProjectsV2.ListProjectsForOwner(owner.id, owner.ownerType)
 	visible := make([]*ProjectV2, 0, len(all))
 	for _, p := range all {
-		if !s.canReadProjectV2(user, owner, p) {
+		if !s.canReadProjectV2(r.Context(), user, owner, p) {
 			continue
 		}
 		if q != "" && !projectV2MatchesQuery(p, q) {
@@ -992,6 +969,13 @@ func (s *Server) serveProjectV2AddItem(w http.ResponseWriter, r *http.Request, o
 			return
 		}
 	} else if s.store.GetPullRequest(contentID) == nil {
+		writeGHValidationError(w, "ProjectV2Item", "id", "invalid")
+		return
+	}
+	// Write on the project is not read on what goes into it. Adding content
+	// republishes its title and state to everyone who can see the project, so
+	// the same gate the GraphQL twin applies runs here.
+	if !s.viewerCanReadProjectContent(r.Context(), req.Type, contentID) {
 		writeGHValidationError(w, "ProjectV2Item", "id", "invalid")
 		return
 	}

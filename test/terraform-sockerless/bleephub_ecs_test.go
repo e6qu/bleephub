@@ -212,6 +212,7 @@ module "bleephub" {
 		"module.bleephub.aws_efs_file_system.sqlite",
 		"module.bleephub.aws_secretsmanager_secret.admin_token",
 		"module.bleephub.aws_secretsmanager_secret.ssh_host_key",
+		"module.bleephub.aws_secretsmanager_secret.dqlite_secret",
 	}
 	output, exitCode := runTerraformWithExitCode(t, dir, "plan", "-destroy")
 	if exitCode == 0 || !strings.Contains(output, "prevent_destroy") {

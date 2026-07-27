@@ -7,6 +7,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/go-git/go-git/v5/plumbing"
@@ -705,7 +706,7 @@ func (s *Server) addRepoFieldsToSchema(userType, queryType *graphql.Object) (*gr
 			// private repositories, and each node returned here is a live
 			// handle into that repository's issues, pull requests, discussions
 			// and releases, none of which re-check.
-			repos = visibleRepos(s.store, ghUserFromContext(p.Context), repos)
+			repos = s.visibleRepos(p.Context, repos)
 
 			// Filter by privacy
 			if privacy, ok := p.Args["privacy"].(string); ok {
@@ -765,8 +766,8 @@ func (s *Server) addRepoFieldsToSchema(userType, queryType *graphql.Object) (*gr
 			// A private repo the viewer can't read must look identical to a
 			// missing one: real GitHub returns null data + a NOT_FOUND error
 			// rather than leaking the repo's existence or contents. This
-			// mirrors the REST handler's canReadRepo gate.
-			if repo == nil || (repo.Private && !canReadRepo(s.store, ghUserFromContext(p.Context), repo)) {
+			// mirrors the REST handler's read gate.
+			if repo == nil || (repo.Private && !s.viewerCanReadRepo(p.Context, repo)) {
 				// Real GitHub pairs the null with a typed NOT_FOUND error —
 				// gh CLI keys on errors[].type to report "repository not
 				// found" instead of decoding an empty object.
@@ -840,118 +841,462 @@ func (s *Server) addRepoFieldsToSchema(userType, queryType *graphql.Object) (*gr
 	})
 
 	mutationType := graphql.NewObject(graphql.ObjectConfig{
-		Name: "Mutation",
-		Fields: graphql.Fields{
-			"createRepository": &graphql.Field{
-				Type: createRepoPayloadType,
-				Args: graphql.FieldConfigArgument{
-					"input": &graphql.ArgumentConfig{Type: graphql.NewNonNull(createRepoInputType)},
-				},
-				Resolve: func(p graphql.ResolveParams) (interface{}, error) {
-					user := ghUserFromContext(p.Context)
-					if user == nil {
-						return nil, fmt.Errorf("authentication required")
-					}
+		Name:   "Mutation",
+		Fields: graphql.Fields{},
+	})
 
-					input, _ := p.Args["input"].(map[string]interface{})
-					name, _ := input["name"].(string)
-					description, _ := input["description"].(string)
-					visibility, _ := input["visibility"].(string)
+	s.registerMutation(mutationType, "createRepository", &graphql.Field{
+		Type: createRepoPayloadType,
+		Args: graphql.FieldConfigArgument{
+			"input": &graphql.ArgumentConfig{Type: graphql.NewNonNull(createRepoInputType)},
+		},
+		Resolve: func(p graphql.ResolveParams) (interface{}, error) {
+			user := ghUserFromContext(p.Context)
 
-					private := strings.ToUpper(visibility) == "PRIVATE"
-					ownerLogin := user.Login
-					var repo *Repo
-					if ownerID, _ := input["ownerId"].(string); ownerID != "" && ownerID != user.NodeID {
-						var owner *Org
-						s.store.mu.RLock()
-						for _, candidate := range s.store.Orgs {
-							if candidate.NodeID == ownerID {
-								owner = candidate
-								break
-							}
-						}
-						s.store.mu.RUnlock()
-						if owner == nil || !isActiveOrgMember(s.store, user, owner.Login) {
-							return nil, fmt.Errorf("repository creation for another owner is not authorized")
-						}
-						ownerLogin = owner.Login
-						repo = s.store.CreateOrgRepo(owner, user, name, description, private)
-					} else {
-						repo = s.store.CreateRepo(user, name, description, private)
-					}
-					if repo == nil {
-						return nil, fmt.Errorf("repository creation failed")
-					}
-					if !s.store.UpdateRepo(ownerLogin, name, func(r *Repo) {
-						if v, ok := graphQLInputBool(input, "hasIssuesEnabled"); ok {
-							r.HasIssues = v
-						}
-						if v, ok := graphQLInputBool(input, "hasWikiEnabled"); ok {
-							r.HasWiki = v
-						}
-					}) {
-						return nil, fmt.Errorf("repository %s/%s not found after creation", ownerLogin, name)
-					}
-					repo = s.store.GetRepo(ownerLogin, name)
-					if repo == nil {
-						return nil, fmt.Errorf("repository %s/%s not found after update", ownerLogin, name)
-					}
+			input, _ := p.Args["input"].(map[string]interface{})
+			name, _ := input["name"].(string)
+			description, _ := input["description"].(string)
+			visibility, _ := input["visibility"].(string)
 
-					return map[string]interface{}{
-						"repository": repoToGraphQL(s.store, s.store.snapRepo(repo)),
-					}, nil
-				},
-			},
-			"deleteRepository": &graphql.Field{
-				Type: deleteRepoPayloadType,
-				Args: graphql.FieldConfigArgument{
-					"input": &graphql.ArgumentConfig{Type: graphql.NewNonNull(deleteRepoInputType)},
-				},
-				Resolve: func(p graphql.ResolveParams) (interface{}, error) {
-					user := ghUserFromContext(p.Context)
-					if user == nil {
-						return nil, fmt.Errorf("authentication required")
+			private := strings.ToUpper(visibility) == "PRIVATE"
+			ownerLogin := user.Login
+			var repo *Repo
+			if ownerID, _ := input["ownerId"].(string); ownerID != "" && ownerID != user.NodeID {
+				var owner *Org
+				s.store.mu.RLock()
+				for _, candidate := range s.store.Orgs {
+					if candidate.NodeID == ownerID {
+						owner = candidate
+						break
 					}
+				}
+				s.store.mu.RUnlock()
+				if owner == nil || !s.viewerIsOrgMember(p.Context, owner.Login) {
+					return nil, fmt.Errorf("repository creation for another owner is not authorized")
+				}
+				ownerLogin = owner.Login
+				repo = s.store.CreateOrgRepo(owner, user, name, description, private)
+			} else {
+				repo = s.store.CreateRepo(user, name, description, private)
+			}
+			if repo == nil {
+				return nil, fmt.Errorf("repository creation failed")
+			}
+			if !s.store.UpdateRepo(ownerLogin, name, func(r *Repo) {
+				if v, ok := graphQLInputBool(input, "hasIssuesEnabled"); ok {
+					r.HasIssues = v
+				}
+				if v, ok := graphQLInputBool(input, "hasWikiEnabled"); ok {
+					r.HasWiki = v
+				}
+			}) {
+				return nil, fmt.Errorf("repository %s/%s not found after creation", ownerLogin, name)
+			}
+			repo = s.store.GetRepo(ownerLogin, name)
+			if repo == nil {
+				return nil, fmt.Errorf("repository %s/%s not found after update", ownerLogin, name)
+			}
 
-					input, _ := p.Args["input"].(map[string]interface{})
-					repoID, _ := input["repositoryId"].(string)
+			return map[string]interface{}{
+				"repository": repoToGraphQL(s.store, s.store.snapRepo(repo)),
+			}, nil
+		},
+	})
 
-					// Find repo by node ID
-					s.store.mu.RLock()
-					var found *Repo
-					for _, r := range s.store.Repos {
-						if r.NodeID == repoID {
-							found = r
-							break
-						}
-					}
-					s.store.mu.RUnlock()
+	s.registerMutation(mutationType, "deleteRepository", &graphql.Field{
+		Type: deleteRepoPayloadType,
+		Args: graphql.FieldConfigArgument{
+			"input": &graphql.ArgumentConfig{Type: graphql.NewNonNull(deleteRepoInputType)},
+		},
+		Resolve: func(p graphql.ResolveParams) (interface{}, error) {
+			input, _ := p.Args["input"].(map[string]interface{})
+			repoID, _ := input["repositoryId"].(string)
 
-					if found == nil {
-						return nil, fmt.Errorf("could not resolve to a Repository with the global id of '%s'", repoID)
-					}
+			found := findRepoByNodeID(s.store, repoID)
+			if found == nil {
+				return nil, fmt.Errorf("could not resolve to a Repository with the global id of '%s'", repoID)
+			}
 
-					// Authenticating the caller is not authorizing them. The
-					// REST twin of this mutation checks canAdminRepo; without
-					// the same check here, any signed-in user could delete any
-					// repository on the instance by node id.
-					if !canAdminRepo(s.store, user, found) {
-						return nil, fmt.Errorf("must have admin rights to Repository")
-					}
+			if _, err := s.store.DeleteRepo(found.Owner.Login, found.Name); err != nil {
+				return nil, err
+			}
 
-					if _, err := s.store.DeleteRepo(found.Owner.Login, found.Name); err != nil {
-						return nil, err
-					}
-
-					return map[string]interface{}{
-						"clientMutationId": nil,
-					}, nil
-				},
-			},
+			return map[string]interface{}{
+				"clientMutationId": nil,
+			}, nil
 		},
 	})
 
 	return repoType, mutationType
+}
+
+// --- Mutation authorization ---
+//
+// Every mutation reaches the schema through registerMutation, which refuses a
+// name graphqlMutationAuthz does not cover. Authorization therefore lives in
+// one table rather than in twenty-odd hand-written checks, and a mutation added
+// without deciding who may call it fails at schema build instead of shipping
+// open to any signed-in account.
+
+// mutationRule decides whether the credential behind a request may perform one
+// mutation on whatever its input names. There is an implementation per resource
+// class rather than one universal shape: a repository and a project have
+// different owners and different questions to ask, and bending the repository
+// lookups over a project would answer the wrong one.
+type mutationRule interface {
+	// check reports a malformed policy row. It runs once, while the schema is
+	// being assembled, so a row missing its lookup is a build failure rather
+	// than a mutation that quietly authorizes nothing.
+	check() error
+	authorize(s *Server, p graphql.ResolveParams, input map[string]interface{}) error
+}
+
+// mutationLevel is the entitlement a mutation demands on the repository its
+// input names.
+type mutationLevel int
+
+const (
+	mutationReadRepo mutationLevel = iota
+	mutationPushRepo
+	mutationAdminRepo
+)
+
+// mutationTarget is the repository a mutation acts on.
+type mutationTarget struct {
+	repo     *Repo
+	authorID int
+	// missing answers both "no such node" and "you may not reach it". They have
+	// to be the same answer, or a mutation becomes an existence oracle for
+	// private repositories.
+	missing error
+}
+
+// viewerOnly demands nothing beyond an authenticated viewer, because the
+// mutation names no existing resource: createRepository decides for itself
+// which owner it may create under.
+type viewerOnly struct{}
+
+func (viewerOnly) check() error { return nil }
+
+func (viewerOnly) authorize(*Server, graphql.ResolveParams, map[string]interface{}) error {
+	return nil
+}
+
+// repoRule is the policy for a mutation whose subject belongs to a repository.
+type repoRule struct {
+	level mutationLevel
+	// authorMayAct admits the author of the targeted content whatever their
+	// repository access: editing your own issue or hiding your own comment
+	// never required push.
+	authorMayAct bool
+	target       func(s *Server, input map[string]interface{}) mutationTarget
+}
+
+func (r repoRule) check() error {
+	if r.target == nil {
+		return fmt.Errorf("no repository target lookup")
+	}
+	return nil
+}
+
+func (r repoRule) authorize(s *Server, p graphql.ResolveParams, input map[string]interface{}) error {
+	target := r.target(s, input)
+	if target.repo == nil || !s.viewerCanReadRepo(p.Context, target.repo) {
+		return target.missing
+	}
+	user := ghUserFromContext(p.Context)
+	if r.authorMayAct && target.authorID != 0 && target.authorID == user.ID {
+		return nil
+	}
+	switch r.level {
+	case mutationPushRepo:
+		if !canPushRepo(s.store, user, target.repo) {
+			return fmt.Errorf("must have push access to Repository")
+		}
+	case mutationAdminRepo:
+		if !canAdminRepo(s.store, user, target.repo) {
+			return fmt.Errorf("must have admin rights to Repository")
+		}
+	}
+	return nil
+}
+
+// graphqlMutationAuthz is the whole authorization policy of the mutation
+// surface. Repository levels follow the same reasoning resourceCapabilityFor
+// applies to the REST routes: opening an issue, commenting, proposing a pull
+// request and reviewing one are how outside contributors participate and need
+// only read, while editing, closing, merging, moderating and deleting need
+// push, and destroying a repository or somebody else's discussion needs admin.
+var graphqlMutationAuthz = map[string]mutationRule{
+	"createRepository": viewerOnly{},
+	"deleteRepository": repoRule{level: mutationAdminRepo, target: mutationTargetRepo("repositoryId")},
+
+	"createIssue": repoRule{level: mutationReadRepo, target: mutationTargetRepo("repositoryId")},
+	"addComment":  repoRule{level: mutationReadRepo, target: mutationTargetIssueOrPullRequest("subjectId")},
+	"closeIssue":  repoRule{level: mutationPushRepo, authorMayAct: true, target: mutationTargetIssue("issueId")},
+	"reopenIssue": repoRule{level: mutationPushRepo, authorMayAct: true, target: mutationTargetIssue("issueId")},
+	"updateIssue": repoRule{level: mutationPushRepo, authorMayAct: true, target: mutationTargetIssue("id")},
+
+	"createDiscussion":                repoRule{level: mutationReadRepo, target: mutationTargetRepo("repositoryId")},
+	"addDiscussionComment":            repoRule{level: mutationReadRepo, target: mutationTargetDiscussion("discussionId")},
+	"updateDiscussion":                repoRule{level: mutationAdminRepo, authorMayAct: true, target: mutationTargetDiscussion("discussionId")},
+	"deleteDiscussion":                repoRule{level: mutationAdminRepo, authorMayAct: true, target: mutationTargetDiscussion("discussionId")},
+	"updateDiscussionComment":         repoRule{level: mutationAdminRepo, authorMayAct: true, target: mutationTargetDiscussionComment("commentId")},
+	"deleteDiscussionComment":         repoRule{level: mutationAdminRepo, authorMayAct: true, target: mutationTargetDiscussionComment("commentId")},
+	"markDiscussionCommentAsAnswer":   repoRule{level: mutationPushRepo, authorMayAct: true, target: mutationTargetAnsweredDiscussion("commentId")},
+	"unmarkDiscussionCommentAsAnswer": repoRule{level: mutationPushRepo, authorMayAct: true, target: mutationTargetAnsweredDiscussion("commentId")},
+
+	"minimizeComment":   repoRule{level: mutationPushRepo, authorMayAct: true, target: mutationTargetIssueComment("subjectId")},
+	"unminimizeComment": repoRule{level: mutationPushRepo, authorMayAct: true, target: mutationTargetIssueComment("subjectId")},
+	"lockLockable":      repoRule{level: mutationPushRepo, target: mutationTargetIssueOrPullRequest("lockableId")},
+	"unlockLockable":    repoRule{level: mutationPushRepo, target: mutationTargetIssueOrPullRequest("lockableId")},
+
+	"createPullRequest":     repoRule{level: mutationReadRepo, target: mutationTargetRepo("repositoryId")},
+	"addPullRequestReview":  repoRule{level: mutationReadRepo, target: mutationTargetPullRequest("pullRequestId")},
+	"closePullRequest":      repoRule{level: mutationPushRepo, authorMayAct: true, target: mutationTargetPullRequest("pullRequestId")},
+	"reopenPullRequest":     repoRule{level: mutationPushRepo, authorMayAct: true, target: mutationTargetPullRequest("pullRequestId")},
+	"updatePullRequest":     repoRule{level: mutationPushRepo, authorMayAct: true, target: mutationTargetPullRequest("pullRequestId")},
+	"mergePullRequest":      repoRule{level: mutationPushRepo, target: mutationTargetPullRequest("pullRequestId")},
+	"resolveReviewThread":   repoRule{level: mutationPushRepo, authorMayAct: true, target: mutationTargetReviewThread("threadId")},
+	"unresolveReviewThread": repoRule{level: mutationPushRepo, authorMayAct: true, target: mutationTargetReviewThread("threadId")},
+
+	// Projects v2. A project belongs to a user or an organization, not to a
+	// repository, so write is the owner-scoped predicate the REST surface uses:
+	// the owning user themself, or an active member of the owning org.
+	"createProjectV2":               projectRule{target: projectTargetOwner("ownerId")},
+	"addProjectV2ItemById":          projectRule{target: projectTargetProject("projectId")},
+	"createProjectV2Field":          projectRule{target: projectTargetProject("projectId")},
+	"updateProjectV2ItemFieldValue": projectRule{target: projectTargetProject("projectId")},
+}
+
+// guardedMutations records which names reached a mutation type through
+// registerMutation. assertMutationsAuthorized consumes and clears the entry, so
+// a schema's worth of names is held only while that schema is being assembled.
+var guardedMutations = struct {
+	mu     sync.Mutex
+	byType map[*graphql.Object]map[string]bool
+}{byType: map[*graphql.Object]map[string]bool{}}
+
+// registerMutation installs a mutation behind the entitlement its policy row
+// declares. It is the only way a mutation should reach the schema;
+// assertMutationsAuthorized is the backstop for one that arrives another way.
+func (s *Server) registerMutation(mutationType *graphql.Object, name string, field *graphql.Field) {
+	rule, ok := graphqlMutationAuthz[name]
+	if !ok {
+		panic(fmt.Sprintf("graphql mutation %q has no row in graphqlMutationAuthz", name))
+	}
+	if err := rule.check(); err != nil {
+		panic(fmt.Sprintf("graphql mutation %q has a malformed policy row: %v", name, err))
+	}
+	if field.Resolve == nil {
+		panic(fmt.Sprintf("graphql mutation %q has no resolver", name))
+	}
+	resolve := field.Resolve
+	field.Resolve = func(p graphql.ResolveParams) (interface{}, error) {
+		// Authentication is common to every rule and is asked here so no rule
+		// can forget it; resolvers may then assume a non-nil viewer.
+		if ghUserFromContext(p.Context) == nil {
+			return nil, fmt.Errorf("authentication required")
+		}
+		input, _ := p.Args["input"].(map[string]interface{})
+		if err := rule.authorize(s, p, input); err != nil {
+			return nil, err
+		}
+		return resolve(p)
+	}
+	mutationType.AddFieldConfig(name, field)
+
+	guardedMutations.mu.Lock()
+	defer guardedMutations.mu.Unlock()
+	if guardedMutations.byType[mutationType] == nil {
+		guardedMutations.byType[mutationType] = map[string]bool{}
+	}
+	guardedMutations.byType[mutationType][name] = true
+}
+
+// assertMutationsAuthorized fails schema construction unless every field on the
+// mutation type went through registerMutation and carries a policy row.
+//
+// The registrar prevents the omission and this catches it, and they fail at
+// different moments: a family that adds a mutation without a row cannot start,
+// and a family that bypasses the registrar entirely — a new file, a merge that
+// resurrects an AddFieldConfig call — cannot either. Coverage stops depending
+// on each author remembering the convention.
+func assertMutationsAuthorized(mutationType *graphql.Object) {
+	guardedMutations.mu.Lock()
+	guarded := guardedMutations.byType[mutationType]
+	delete(guardedMutations.byType, mutationType)
+	guardedMutations.mu.Unlock()
+
+	var offenders []string
+	for name := range mutationType.Fields() {
+		if _, ok := graphqlMutationAuthz[name]; !ok {
+			offenders = append(offenders, name+" (no row in graphqlMutationAuthz)")
+			continue
+		}
+		if !guarded[name] {
+			offenders = append(offenders, name+" (not registered through registerMutation)")
+		}
+	}
+	if len(offenders) == 0 {
+		return
+	}
+	sort.Strings(offenders)
+	panic("graphql mutations reach the store unauthorized: " + strings.Join(offenders, ", "))
+}
+
+// gqlMissingNode is the answer a mutation gives for a node it cannot reach,
+// shaped like the NOT_FOUND errors[] entry real GitHub returns so gh CLI
+// reports "not found" instead of decoding an empty payload.
+func gqlMissingNode(typeName, nodeID string) error {
+	return &ghNotFoundError{
+		message: fmt.Sprintf("Could not resolve to a %s with the global id of '%s'.", typeName, nodeID),
+	}
+}
+
+func mutationTargetRepo(key string) func(*Server, map[string]interface{}) mutationTarget {
+	return func(s *Server, input map[string]interface{}) mutationTarget {
+		nodeID, _ := input[key].(string)
+		return mutationTarget{
+			repo:    findRepoByNodeID(s.store, nodeID),
+			missing: gqlMissingNode("Repository", nodeID),
+		}
+	}
+}
+
+func mutationTargetIssue(key string) func(*Server, map[string]interface{}) mutationTarget {
+	return func(s *Server, input map[string]interface{}) mutationTarget {
+		nodeID, _ := input[key].(string)
+		target := mutationTarget{missing: gqlMissingNode("Issue", nodeID)}
+		if issue := findIssueByNodeID(s.store, nodeID); issue != nil {
+			target.repo = s.store.GetRepoByID(issue.RepoID)
+			target.authorID = issue.AuthorID
+		}
+		return target
+	}
+}
+
+func mutationTargetPullRequest(key string) func(*Server, map[string]interface{}) mutationTarget {
+	return func(s *Server, input map[string]interface{}) mutationTarget {
+		nodeID, _ := input[key].(string)
+		target := mutationTarget{missing: gqlMissingNode("PullRequest", nodeID)}
+		if pr := findPullRequestByNodeID(s.store, nodeID); pr != nil {
+			target.repo = s.store.GetRepoByID(pr.RepoID)
+			target.authorID = pr.AuthorID
+		}
+		return target
+	}
+}
+
+// mutationTargetIssueOrPullRequest covers the mutations whose subject is either
+// — GitHub stores pull requests as issues, so addComment and the lock
+// mutations take both node kinds.
+func mutationTargetIssueOrPullRequest(key string) func(*Server, map[string]interface{}) mutationTarget {
+	return func(s *Server, input map[string]interface{}) mutationTarget {
+		nodeID, _ := input[key].(string)
+		target := mutationTarget{missing: gqlMissingNode("node", nodeID)}
+		if issue := findIssueByNodeID(s.store, nodeID); issue != nil {
+			target.repo = s.store.GetRepoByID(issue.RepoID)
+			target.authorID = issue.AuthorID
+			return target
+		}
+		if pr := findPullRequestByNodeID(s.store, nodeID); pr != nil {
+			target.repo = s.store.GetRepoByID(pr.RepoID)
+			target.authorID = pr.AuthorID
+		}
+		return target
+	}
+}
+
+func mutationTargetIssueComment(key string) func(*Server, map[string]interface{}) mutationTarget {
+	return func(s *Server, input map[string]interface{}) mutationTarget {
+		nodeID, _ := input[key].(string)
+		target := mutationTarget{missing: gqlMissingNode("node", nodeID)}
+		c := s.store.LookupCommentByNodeID(nodeID)
+		if c == nil {
+			return target
+		}
+		target.authorID = c.AuthorID
+		if c.ParentType == "pull_request" {
+			if pr := s.store.GetPullRequest(c.IssueID); pr != nil {
+				target.repo = s.store.GetRepoByID(pr.RepoID)
+			}
+			return target
+		}
+		if issue := s.store.GetIssue(c.IssueID); issue != nil {
+			target.repo = s.store.GetRepoByID(issue.RepoID)
+		}
+		return target
+	}
+}
+
+func mutationTargetDiscussion(key string) func(*Server, map[string]interface{}) mutationTarget {
+	return func(s *Server, input map[string]interface{}) mutationTarget {
+		nodeID, _ := input[key].(string)
+		target := mutationTarget{missing: gqlMissingNode("Discussion", nodeID)}
+		if d := findDiscussionByNodeID(s.store, nodeID); d != nil {
+			target.repo = s.store.GetRepoByID(d.RepoID)
+			target.authorID = d.AuthorID
+		}
+		return target
+	}
+}
+
+func mutationTargetDiscussionComment(key string) func(*Server, map[string]interface{}) mutationTarget {
+	return func(s *Server, input map[string]interface{}) mutationTarget {
+		nodeID, _ := input[key].(string)
+		target := mutationTarget{missing: gqlMissingNode("DiscussionComment", nodeID)}
+		c := findDiscussionCommentByNodeID(s.store, nodeID)
+		if c == nil {
+			return target
+		}
+		target.authorID = c.AuthorID
+		if d := s.store.GetDiscussion(c.DiscussionID); d != nil {
+			target.repo = s.store.GetRepoByID(d.RepoID)
+		}
+		return target
+	}
+}
+
+// mutationTargetAnsweredDiscussion addresses a comment but hands back the
+// discussion's author: marking an answer is the asker's call, not the
+// answerer's.
+func mutationTargetAnsweredDiscussion(key string) func(*Server, map[string]interface{}) mutationTarget {
+	return func(s *Server, input map[string]interface{}) mutationTarget {
+		nodeID, _ := input[key].(string)
+		target := mutationTarget{missing: gqlMissingNode("DiscussionComment", nodeID)}
+		c := findDiscussionCommentByNodeID(s.store, nodeID)
+		if c == nil {
+			return target
+		}
+		if d := s.store.GetDiscussion(c.DiscussionID); d != nil {
+			target.repo = s.store.GetRepoByID(d.RepoID)
+			target.authorID = d.AuthorID
+		}
+		return target
+	}
+}
+
+func mutationTargetReviewThread(key string) func(*Server, map[string]interface{}) mutationTarget {
+	return func(s *Server, input map[string]interface{}) mutationTarget {
+		nodeID, _ := input[key].(string)
+		target := mutationTarget{missing: gqlMissingNode("PullRequestReviewThread", nodeID)}
+		threadID, ok := parsePRReviewThreadNodeID(nodeID)
+		if !ok {
+			return target
+		}
+		thread := s.store.PRReviewComments.GetThread(threadID)
+		if thread == nil || len(thread.Comments) == 0 {
+			return target
+		}
+		pr := s.store.GetPullRequest(thread.Comments[0].PullRequestID)
+		if pr == nil {
+			return target
+		}
+		target.repo = s.store.GetRepoByID(pr.RepoID)
+		target.authorID = pr.AuthorID
+		return target
+	}
 }
 
 // repoToGraphQL converts a Repo to a map for GraphQL resolvers. It reads the

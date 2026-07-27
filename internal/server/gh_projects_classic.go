@@ -108,7 +108,7 @@ func (s *Server) handleListProjectsClassic(w http.ResponseWriter, r *http.Reques
 	if repo == nil {
 		return
 	}
-	if !canReadRepo(s.store, user, repo) {
+	if !s.viewerCanReadRepo(r.Context(), repo) {
 		writeGHError(w, http.StatusNotFound, "Not Found")
 		return
 	}
@@ -167,7 +167,7 @@ func (s *Server) handleGetProjectClassic(w http.ResponseWriter, r *http.Request)
 	if proj == nil {
 		return
 	}
-	if !canReadRepo(s.store, user, repo) {
+	if !s.viewerCanReadRepo(r.Context(), repo) {
 		writeGHError(w, http.StatusNotFound, "Not Found")
 		return
 	}
@@ -231,7 +231,7 @@ func (s *Server) handleListProjectColumns(w http.ResponseWriter, r *http.Request
 	if proj == nil {
 		return
 	}
-	if !canReadRepo(s.store, user, repo) {
+	if !s.viewerCanReadRepo(r.Context(), repo) {
 		writeGHError(w, http.StatusNotFound, "Not Found")
 		return
 	}
@@ -283,7 +283,7 @@ func (s *Server) handleGetProjectColumn(w http.ResponseWriter, r *http.Request) 
 	if col == nil {
 		return
 	}
-	if !canReadRepo(s.store, user, repo) {
+	if !s.viewerCanReadRepo(r.Context(), repo) {
 		writeGHError(w, http.StatusNotFound, "Not Found")
 		return
 	}
@@ -376,15 +376,19 @@ func (s *Server) handleListProjectCards(w http.ResponseWriter, r *http.Request) 
 	if col == nil {
 		return
 	}
-	if !canReadRepo(s.store, user, repo) {
+	if !s.viewerCanReadRepo(r.Context(), repo) {
 		writeGHError(w, http.StatusNotFound, "Not Found")
 		return
 	}
 
 	cards := s.store.ListProjectCards(col.ID)
-	out := make([]map[string]interface{}, len(cards))
-	for i, c := range cards {
-		out[i] = projectCardToJSON(c, s.store, s.baseURL(r))
+	out := make([]map[string]interface{}, 0, len(cards))
+	for _, c := range cards {
+		item, ok := projectCardToJSON(c, s.store, s.baseURL(r))
+		if !ok {
+			continue
+		}
+		out = append(out, item)
 	}
 	writeJSON(w, http.StatusOK, out)
 }
@@ -433,7 +437,12 @@ func (s *Server) handleCreateProjectCard(w http.ResponseWriter, r *http.Request)
 	}
 
 	card := s.store.CreateProjectCard(col.ID, user.ID, body.Note, issueID)
-	writeJSON(w, http.StatusCreated, projectCardToJSON(card, s.store, s.baseURL(r)))
+	item, ok := projectCardToJSON(card, s.store, s.baseURL(r))
+	if !ok {
+		writeGHError(w, http.StatusNotFound, "Not Found")
+		return
+	}
+	writeJSON(w, http.StatusCreated, item)
 }
 
 func (s *Server) handleGetProjectCard(w http.ResponseWriter, r *http.Request) {
@@ -446,11 +455,16 @@ func (s *Server) handleGetProjectCard(w http.ResponseWriter, r *http.Request) {
 	if card == nil {
 		return
 	}
-	if !canReadRepo(s.store, user, repo) {
+	if !s.viewerCanReadRepo(r.Context(), repo) {
 		writeGHError(w, http.StatusNotFound, "Not Found")
 		return
 	}
-	writeJSON(w, http.StatusOK, projectCardToJSON(card, s.store, s.baseURL(r)))
+	item, ok := projectCardToJSON(card, s.store, s.baseURL(r))
+	if !ok {
+		writeGHError(w, http.StatusNotFound, "Not Found")
+		return
+	}
+	writeJSON(w, http.StatusOK, item)
 }
 
 func (s *Server) handleUpdateProjectCard(w http.ResponseWriter, r *http.Request) {
@@ -475,7 +489,12 @@ func (s *Server) handleUpdateProjectCard(w http.ResponseWriter, r *http.Request)
 		return
 	}
 	updated := s.store.UpdateProjectCard(card, body.Note)
-	writeJSON(w, http.StatusOK, projectCardToJSON(updated, s.store, s.baseURL(r)))
+	item, ok := projectCardToJSON(updated, s.store, s.baseURL(r))
+	if !ok {
+		writeGHError(w, http.StatusNotFound, "Not Found")
+		return
+	}
+	writeJSON(w, http.StatusOK, item)
 }
 
 func (s *Server) handleDeleteProjectCard(w http.ResponseWriter, r *http.Request) {
@@ -649,7 +668,11 @@ func projectColumnURL(c *ProjectColumn, baseURL string) string {
 	return baseURL + "/api/v3/projects/columns/" + strconv.Itoa(c.ID)
 }
 
-func projectCardToJSON(c *ProjectCard, st *Store, baseURL string) map[string]interface{} {
+// projectCardToJSON renders a classic project card. It reports false when the
+// card's column has been deleted concurrently: deleting a column cascades to
+// its cards, so such a card has left the URL space and has no column_url or
+// project_url to report.
+func projectCardToJSON(c *ProjectCard, st *Store, baseURL string) (map[string]interface{}, bool) {
 	var creator map[string]interface{}
 	var contentURL interface{}
 	st.mu.RLock()
@@ -668,6 +691,10 @@ func projectCardToJSON(c *ProjectCard, st *Store, baseURL string) map[string]int
 	}
 	st.mu.RUnlock()
 
+	if col == nil {
+		return nil, false
+	}
+
 	api := projectCardURL(c, baseURL)
 	return map[string]interface{}{
 		"id":          c.ID,
@@ -680,7 +707,7 @@ func projectCardToJSON(c *ProjectCard, st *Store, baseURL string) map[string]int
 		"column_url":  projectColumnURL(col, baseURL),
 		"project_url": baseURL + "/api/v3/projects/" + strconv.Itoa(col.ProjectID),
 		"content_url": contentURL,
-	}
+	}, true
 }
 
 func projectCardURL(c *ProjectCard, baseURL string) string {

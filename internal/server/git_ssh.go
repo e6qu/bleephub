@@ -164,7 +164,12 @@ func (s *Server) runGitSSHService(channel ssh.Channel, service, owner, repoName 
 	if repo == nil || s.resolveGitRepo(owner, repoName) == nil {
 		return transport.ErrRepositoryNotFound
 	}
-	if service == "git-upload-pack" && !canReadRepo(s.store, user, repo) {
+	// SSH authenticates by public key, so the only credential the session can
+	// carry is the user itself — there is no installation or user-to-server
+	// token to intersect. The read decision still goes through the one choke
+	// point, so a new arm added there cannot be missed here.
+	ctx := contextWithUser(context.Background(), user)
+	if service == "git-upload-pack" && !s.viewerCanReadRepo(ctx, repo) {
 		return errors.New("repository access denied")
 	}
 	if service == "git-receive-pack" && !canPushRepo(s.store, user, repo) {

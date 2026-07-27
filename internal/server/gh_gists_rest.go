@@ -1,6 +1,7 @@
 package bleephub
 
 import (
+	"context"
 	"net/http"
 	"sort"
 	"strconv"
@@ -30,7 +31,40 @@ func (s *Server) registerGHGistRoutes() {
 	s.route("GET /api/v3/gists/{gist_id}/{sha}", s.handleGetGistAtRevision)
 }
 
+// visibleGist resolves {gist_id} for the request's viewer, or answers 404.
+//
+// Every route addressing a gist by id goes through here. The sub-resources —
+// revisions, forks, commits, comments, stars — were each deciding visibility
+// for themselves, which meant each new one started out deciding nothing, and
+// `GET /gists/{id}/{sha}` handed a non-public gist's file contents to an
+// anonymous caller.
+func (s *Server) visibleGist(w http.ResponseWriter, r *http.Request) *Gist {
+	g := s.store.GetGist(r.PathValue("gist_id"))
+	if g == nil || !s.viewerCanSeeGist(r.Context(), g) {
+		writeGHError(w, http.StatusNotFound, "Not Found")
+		return nil
+	}
+	return g
+}
+
+// viewerCanSeeGist is the visibility rule itself: a public gist is everyone's,
+// a non-public one is its owner's.
+func (s *Server) viewerCanSeeGist(ctx context.Context, g *Gist) bool {
+	if g == nil {
+		return false
+	}
+	if g.Public {
+		return true
+	}
+	user := ghUserFromContext(ctx)
+	return user != nil && user.ID == g.OwnerID
+}
+
 func (s *Server) handleListGistCommits(w http.ResponseWriter, r *http.Request) {
+	gist := s.visibleGist(w, r)
+	if gist == nil {
+		return
+	}
 	id := r.PathValue("gist_id")
 	commits := s.store.ListGistCommits(id)
 	if commits == nil {
@@ -38,12 +72,9 @@ func (s *Server) handleListGistCommits(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	base := s.baseURL(r)
-	gist := s.store.GetGist(id)
 	var ownerJSON interface{}
-	if gist != nil {
-		if owner := s.store.GetUserByID(gist.OwnerID); owner != nil {
-			ownerJSON = userToJSON(owner)
-		}
+	if owner := s.store.GetUserByID(gist.OwnerID); owner != nil {
+		ownerJSON = userToJSON(owner)
 	}
 	items := make([]map[string]interface{}, len(commits))
 	for i, h := range commits {
@@ -59,6 +90,9 @@ func (s *Server) handleListGistCommits(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleGetGistAtRevision(w http.ResponseWriter, r *http.Request) {
+	if s.visibleGist(w, r) == nil {
+		return
+	}
 	id, sha := r.PathValue("gist_id"), r.PathValue("sha")
 	g := s.store.GetGistAtRevision(id, sha)
 	if g == nil {
@@ -137,15 +171,8 @@ func (s *Server) handleCreateGist(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleGetGist(w http.ResponseWriter, r *http.Request) {
-	id := r.PathValue("gist_id")
-	g := s.store.GetGist(id)
+	g := s.visibleGist(w, r)
 	if g == nil {
-		writeGHError(w, http.StatusNotFound, "Not Found")
-		return
-	}
-	user := ghUserFromContext(r.Context())
-	if !g.Public && (user == nil || user.ID != g.OwnerID) {
-		writeGHError(w, http.StatusNotFound, "Not Found")
 		return
 	}
 	s.populateGistURLs(g, r)
@@ -159,9 +186,8 @@ func (s *Server) handleUpdateGist(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	id := r.PathValue("gist_id")
-	g := s.store.GetGist(id)
+	g := s.visibleGist(w, r)
 	if g == nil {
-		writeGHError(w, http.StatusNotFound, "Not Found")
 		return
 	}
 	if user.ID != g.OwnerID {
@@ -221,9 +247,8 @@ func (s *Server) handleDeleteGist(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	id := r.PathValue("gist_id")
-	g := s.store.GetGist(id)
+	g := s.visibleGist(w, r)
 	if g == nil {
-		writeGHError(w, http.StatusNotFound, "Not Found")
 		return
 	}
 	if user.ID != g.OwnerID {
@@ -240,6 +265,9 @@ func (s *Server) handleStarGist(w http.ResponseWriter, r *http.Request) {
 		writeGHError(w, http.StatusUnauthorized, "Bad credentials")
 		return
 	}
+	if s.visibleGist(w, r) == nil {
+		return
+	}
 	id := r.PathValue("gist_id")
 	if !s.store.StarGist(user.ID, id) {
 		writeGHError(w, http.StatusNotFound, "Not Found")
@@ -252,6 +280,9 @@ func (s *Server) handleUnstarGist(w http.ResponseWriter, r *http.Request) {
 	user := ghUserFromContext(r.Context())
 	if user == nil {
 		writeGHError(w, http.StatusUnauthorized, "Bad credentials")
+		return
+	}
+	if s.visibleGist(w, r) == nil {
 		return
 	}
 	id := r.PathValue("gist_id")
@@ -268,6 +299,9 @@ func (s *Server) handleCheckStarredGist(w http.ResponseWriter, r *http.Request) 
 		writeGHError(w, http.StatusUnauthorized, "Bad credentials")
 		return
 	}
+	if s.visibleGist(w, r) == nil {
+		return
+	}
 	id := r.PathValue("gist_id")
 	if !s.store.IsGistStarred(user.ID, id) {
 		writeGHError(w, http.StatusNotFound, "Not Found")
@@ -280,6 +314,9 @@ func (s *Server) handleForkGist(w http.ResponseWriter, r *http.Request) {
 	user := ghUserFromContext(r.Context())
 	if user == nil {
 		writeGHError(w, http.StatusUnauthorized, "Bad credentials")
+		return
+	}
+	if s.visibleGist(w, r) == nil {
 		return
 	}
 	id := r.PathValue("gist_id")
@@ -297,12 +334,12 @@ func (s *Server) handleForkGist(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleListGistForks(w http.ResponseWriter, r *http.Request) {
-	id := r.PathValue("gist_id")
-	forks := s.store.ListGistForks(id)
-	if forks == nil {
-		writeGHError(w, http.StatusNotFound, "Not Found")
+	if s.visibleGist(w, r) == nil {
 		return
 	}
+	// A gist with no forks has an empty fork list, not a missing one; the
+	// resolver above is what decides whether the gist is there.
+	forks := s.store.ListGistForks(r.PathValue("gist_id"))
 	items := make([]map[string]interface{}, len(forks))
 	for i, f := range forks {
 		s.populateGistURLs(f, r)
@@ -312,12 +349,10 @@ func (s *Server) handleListGistForks(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleListGistComments(w http.ResponseWriter, r *http.Request) {
-	id := r.PathValue("gist_id")
-	if s.store.GetGist(id) == nil {
-		writeGHError(w, http.StatusNotFound, "Not Found")
+	if s.visibleGist(w, r) == nil {
 		return
 	}
-	comments := s.store.ListGistComments(id)
+	comments := s.store.ListGistComments(r.PathValue("gist_id"))
 	items := make([]map[string]interface{}, len(comments))
 	for i, c := range comments {
 		items[i] = s.gistCommentToJSON(c, r)
@@ -329,6 +364,9 @@ func (s *Server) handleCreateGistComment(w http.ResponseWriter, r *http.Request)
 	user := ghUserFromContext(r.Context())
 	if user == nil {
 		writeGHError(w, http.StatusUnauthorized, "Bad credentials")
+		return
+	}
+	if s.visibleGist(w, r) == nil {
 		return
 	}
 	id := r.PathValue("gist_id")
@@ -351,6 +389,9 @@ func (s *Server) handleCreateGistComment(w http.ResponseWriter, r *http.Request)
 }
 
 func (s *Server) handleGetGistComment(w http.ResponseWriter, r *http.Request) {
+	if s.visibleGist(w, r) == nil {
+		return
+	}
 	id, err := strconv.Atoi(r.PathValue("comment_id"))
 	if err != nil {
 		writeGHError(w, http.StatusNotFound, "Not Found")
@@ -368,6 +409,9 @@ func (s *Server) handleUpdateGistComment(w http.ResponseWriter, r *http.Request)
 	user := ghUserFromContext(r.Context())
 	if user == nil {
 		writeGHError(w, http.StatusUnauthorized, "Bad credentials")
+		return
+	}
+	if s.visibleGist(w, r) == nil {
 		return
 	}
 	gistID := r.PathValue("gist_id")
@@ -403,6 +447,9 @@ func (s *Server) handleDeleteGistComment(w http.ResponseWriter, r *http.Request)
 	user := ghUserFromContext(r.Context())
 	if user == nil {
 		writeGHError(w, http.StatusUnauthorized, "Bad credentials")
+		return
+	}
+	if s.visibleGist(w, r) == nil {
 		return
 	}
 	gistID := r.PathValue("gist_id")
