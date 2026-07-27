@@ -24,7 +24,7 @@ RUN CGO_ENABLED=0 go build -ldflags="-s -w -X main.version=${BLEEPHUB_VERSION} -
 
 FROM golang:1.25-bookworm AS go-toolchain
 
-FROM ubuntu:24.04 AS dqlite-builder
+FROM ubuntu:26.04 AS dqlite-builder
 COPY --from=go-toolchain /usr/local/go /usr/local/go
 ENV PATH=/usr/local/go/bin:$PATH
 RUN apt_transaction() { rm -rf /var/lib/apt/lists/*; apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends "$@"; }; \
@@ -40,7 +40,7 @@ COPY dqlite-node ./dqlite-node
 COPY internal/dqliteaddr ./internal/dqliteaddr
 RUN CGO_ENABLED=1 go build -tags 'nosqlite3,dqlite' -ldflags="-s -w" -o /bleephub-dqlite-node ./dqlite-node
 
-FROM ubuntu:24.04
+FROM ubuntu:26.04
 RUN apt_transaction() { rm -rf /var/lib/apt/lists/*; apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends "$@"; }; \
     retry_apt_transaction() { apt_transaction "$@" || apt_transaction "$@"; }; \
     retry_apt_transaction ca-certificates ruby-full ruby-bundler software-properties-common && \
