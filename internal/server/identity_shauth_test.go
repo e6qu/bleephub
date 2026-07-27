@@ -202,7 +202,10 @@ func TestIdentityValidationRequiresAuthenticationAndExposesSignOut(t *testing.T)
 	request := httptest.NewRequest(http.MethodGet, "/auth/validation", nil)
 	response := httptest.NewRecorder()
 	s.handleIdentityValidation(response, request)
-	if response.Code != http.StatusFound || response.Header().Get("Location") != "/auth/shauth?return_to=%2Fauth%2Fvalidation" {
+	// Anonymous validation must fail closed to the registered signed_out_url, not
+	// re-enter authorization: the Shauth validator requires the post-provider-logout
+	// reload of validation_url to come to rest exactly at signed_out_url.
+	if response.Code != http.StatusFound || response.Header().Get("Location") != "/ui/signed-out" {
 		t.Fatalf("anonymous validation = %d location %q", response.Code, response.Header().Get("Location"))
 	}
 
