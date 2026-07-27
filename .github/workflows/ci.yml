@@ -115,6 +115,24 @@ jobs:
       - name: Check the findings ledger
         run: ./scripts/check-bugs-ledger.sh
 
+  fuzz:
+    name: Go fuzz burst
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v7.0.0
+      - uses: actions/setup-go@v6.5.0
+        with:
+          go-version-file: go.mod
+          cache: true
+      # An ordinary `go test` only replays the seed corpus; it never asks the
+      # fuzz engine to mutate an input. Run every discovered target separately
+      # because Go permits one -fuzz match per process. At 28 targets × 15s the
+      # mutation budget is seven minutes, with the remaining job time reserved
+      # for compilation and worker startup.
+      - name: Mutate every fuzz target
+        run: ./scripts/fuzz.sh
+
   modules:
     name: Nested Go modules
     runs-on: ubuntu-latest

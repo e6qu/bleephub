@@ -23,6 +23,7 @@ import (
 	"archive/tar"
 	"bytes"
 	"compress/gzip"
+	"crypto/sha256"
 	"flag"
 	"fmt"
 	"io"
@@ -37,16 +38,26 @@ import (
 	"github.com/e6qu/bleephub/internal/emojiart"
 )
 
-// twemojiVersion is the jdecked/twemoji release tag the unicode assets are
-// vendored from.
-const twemojiVersion = "17.0.3"
+// The unicode assets come from one immutable jdecked/twemoji commit — the one
+// release tag v17.0.3 pointed at when it was vendored — and the tarball's
+// SHA-256 is checked before anything reads it. A tag can be moved; a commit
+// cannot, and the digest catches a rewritten archive either way. Bumping the
+// pin means changing all three constants together and regenerating.
+const (
+	twemojiVersion       = "17.0.3"
+	twemojiCommit        = "b6b55fef1e8636b540a6d016a4729ca8cdf2e60b"
+	twemojiTarballSHA256 = "705d79de1460e5e775f362f0d0f01fbe3ef8d65bf4648c490e4649704584f747"
+)
 
-const twemojiTarballURL = "https://github.com/jdecked/twemoji/archive/refs/tags/v" + twemojiVersion + ".tar.gz"
+const twemojiTarballURL = "https://codeload.github.com/jdecked/twemoji/tar.gz/" + twemojiCommit
+
+// twemojiHTTPTimeout bounds the whole download; the archive is a few megabytes.
+const twemojiHTTPTimeout = 5 * time.Minute
 
 func main() {
 	catalogPath := flag.String("catalog", "gemoji_catalog.txt", "path to the gemoji name→path catalog")
 	outPath := flag.String("out", "emoji_assets.tar.gz", "output archive path")
-	tarballPath := flag.String("twemoji-tarball", "", "local twemoji source tarball; downloaded from GitHub when empty")
+	tarballPath := flag.String("twemoji-tarball", "", "local copy of the pinned twemoji source tarball; downloaded from GitHub when empty. Must match twemojiTarballSHA256 either way")
 	flag.Parse()
 
 	catalog, err := os.ReadFile(*catalogPath)
@@ -62,7 +73,8 @@ func main() {
 	if err != nil {
 		log.Fatalf("extract twemoji assets: %v", err)
 	}
-	log.Printf("twemoji v%s: %d 72x72 rasters", twemojiVersion, len(rasters))
+	log.Printf("twemoji v%s (%s), sha256 %s: %d 72x72 rasters",
+		twemojiVersion, twemojiCommit, twemojiTarballSHA256, len(rasters))
 
 	normalized, err := normalizedIndex(rasters)
 	if err != nil {
@@ -131,11 +143,33 @@ func main() {
 		*outPath, unicodeCount, customCount, len(archive))
 }
 
+// readTwemojiTarball returns the pinned twemoji source tarball, from disk when
+// -twemoji-tarball names one and from the pinned commit otherwise. Either way
+// the bytes are rejected unless they hash to twemojiTarballSHA256, before any
+// caller extracts them.
 func readTwemojiTarball(localPath string) ([]byte, error) {
+	tarball, err := fetchTwemojiTarball(localPath)
+	if err != nil {
+		return nil, err
+	}
+	got := fmt.Sprintf("%x", sha256.Sum256(tarball))
+	if got != twemojiTarballSHA256 {
+		source := twemojiTarballURL
+		if localPath != "" {
+			source = localPath
+		}
+		return nil, fmt.Errorf("%s hashes to %s, want %s for twemoji commit %s: refusing to vendor unverified bytes",
+			source, got, twemojiTarballSHA256, twemojiCommit)
+	}
+	return tarball, nil
+}
+
+func fetchTwemojiTarball(localPath string) ([]byte, error) {
 	if localPath != "" {
 		return os.ReadFile(localPath)
 	}
-	resp, err := http.Get(twemojiTarballURL)
+	client := &http.Client{Timeout: twemojiHTTPTimeout}
+	resp, err := client.Get(twemojiTarballURL)
 	if err != nil {
 		return nil, err
 	}

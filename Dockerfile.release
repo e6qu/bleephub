@@ -19,18 +19,22 @@ ARG BLEEPHUB_PUBLISHED_AT=not-yet-published
 WORKDIR /src
 COPY . .
 COPY --from=ui-builder /src/web/dist/ ./internal/server/dist/
-RUN CGO_ENABLED=0 go build -ldflags="-s -w -X main.version=${BLEEPHUB_VERSION} -X main.commit=${BLEEPHUB_COMMIT} -X main.publishedAt=${BLEEPHUB_PUBLISHED_AT}" -o /bleephub ./cmd/bleephub && \
-    CGO_ENABLED=0 go build -ldflags="-s -w" -o /bleephub-ssh-gateway ./ssh-gateway
+RUN CGO_ENABLED=0 go build -trimpath -ldflags="-s -w -X main.version=${BLEEPHUB_VERSION} -X main.commit=${BLEEPHUB_COMMIT} -X main.publishedAt=${BLEEPHUB_PUBLISHED_AT}" -o /bleephub ./cmd/bleephub && \
+    CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" -o /bleephub-ssh-gateway ./ssh-gateway
 
 FROM golang:1.25-bookworm AS go-toolchain
 
 FROM ubuntu:24.04 AS dqlite-builder
 COPY --from=go-toolchain /usr/local/go /usr/local/go
+# add-apt-repository would fetch the PPA's signing key from Launchpad at build
+# time and trust whatever came back. The key is vendored instead, so the only
+# trust root for these packages is a committed, reviewable file.
+COPY docker/dqlite-ppa.asc /etc/apt/keyrings/dqlite-ppa.asc
 ENV PATH=/usr/local/go/bin:$PATH
 RUN apt_transaction() { rm -rf /var/lib/apt/lists/*; apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends "$@"; }; \
     retry_apt_transaction() { apt_transaction "$@" || apt_transaction "$@"; }; \
-    retry_apt_transaction ca-certificates software-properties-common && \
-    add-apt-repository -y ppa:dqlite/dev && \
+    retry_apt_transaction ca-certificates && \
+    echo 'deb [signed-by=/etc/apt/keyrings/dqlite-ppa.asc] https://ppa.launchpadcontent.net/dqlite/dev/ubuntu noble main' > /etc/apt/sources.list.d/dqlite-ppa.list && \
     retry_apt_transaction build-essential libdqlite-dev && \
     rm -rf /var/lib/apt/lists/*
 WORKDIR /src
@@ -38,19 +42,28 @@ COPY go.mod go.sum ./
 RUN go mod download
 COPY dqlite-node ./dqlite-node
 COPY internal/dqliteaddr ./internal/dqliteaddr
-RUN CGO_ENABLED=1 go build -tags 'nosqlite3,dqlite' -ldflags="-s -w" -o /bleephub-dqlite-node ./dqlite-node
+RUN CGO_ENABLED=1 go build -trimpath -tags 'nosqlite3,dqlite' -ldflags="-s -w" -o /bleephub-dqlite-node ./dqlite-node
 
 FROM ubuntu:24.04
+COPY docker/dqlite-ppa.asc /etc/apt/keyrings/dqlite-ppa.asc
+COPY docker/pages-gems/Gemfile docker/pages-gems/pinned-gems.sha256 /opt/bleephub-pages/
+# Every gem in the github-pages closure is fetched by exact version, checked
+# against its recorded SHA-256, and only then installed; --local keeps bundler
+# from reaching past the verified cache for anything the pins missed.
 RUN apt_transaction() { rm -rf /var/lib/apt/lists/*; apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends "$@"; }; \
     retry_apt_transaction() { apt_transaction "$@" || apt_transaction "$@"; }; \
-    retry_apt_transaction ca-certificates ruby-full ruby-bundler software-properties-common && \
-    add-apt-repository -y ppa:dqlite/dev && \
-    retry_apt_transaction build-essential git libdqlite0 && \
-    mkdir -p /opt/bleephub-pages && \
-    printf '%s\n' 'source "https://rubygems.org"' 'gem "github-pages", "= 232"' > /opt/bleephub-pages/Gemfile && \
-    BUNDLE_GEMFILE=/opt/bleephub-pages/Gemfile bundle install && \
-    apt-get purge -y --auto-remove build-essential software-properties-common && \
-    rm -rf /var/lib/apt/lists/* /root/.bundle/cache /usr/local/bundle/cache
+    retry_apt_transaction ca-certificates curl && \
+    echo 'deb [signed-by=/etc/apt/keyrings/dqlite-ppa.asc] https://ppa.launchpadcontent.net/dqlite/dev/ubuntu noble main' > /etc/apt/sources.list.d/dqlite-ppa.list && \
+    retry_apt_transaction ruby-full ruby-bundler build-essential git libdqlite0 && \
+    mkdir -p /opt/bleephub-pages/vendor/cache && \
+    cd /opt/bleephub-pages/vendor/cache && \
+    while read -r digest gem; do \
+        curl --fail --location --silent --show-error --remote-name "https://rubygems.org/downloads/$gem" || exit 1; \
+    done < /opt/bleephub-pages/pinned-gems.sha256 && \
+    sha256sum --check --strict /opt/bleephub-pages/pinned-gems.sha256 && \
+    BUNDLE_GEMFILE=/opt/bleephub-pages/Gemfile bundle install --local && \
+    apt-get purge -y --auto-remove build-essential curl && \
+    rm -rf /var/lib/apt/lists/* /root/.bundle/cache /usr/local/bundle/cache /opt/bleephub-pages/vendor/cache
 COPY --from=builder /bleephub /usr/local/bin/bleephub
 COPY --from=builder /bleephub-ssh-gateway /usr/local/bin/bleephub-ssh-gateway
 COPY --from=dqlite-builder /bleephub-dqlite-node /usr/local/bin/bleephub-dqlite-node

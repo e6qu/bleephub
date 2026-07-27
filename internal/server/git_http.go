@@ -3,14 +3,18 @@ package bleephub
 import (
 	"bufio"
 	"context"
+	"errors"
 	"fmt"
+	"io"
 	"net"
 	"net/http"
 	"strings"
 
 	"github.com/go-git/go-git/v5/plumbing"
+	"github.com/go-git/go-git/v5/plumbing/format/packfile"
 	"github.com/go-git/go-git/v5/plumbing/format/pktline"
 	"github.com/go-git/go-git/v5/plumbing/protocol/packp"
+	"github.com/go-git/go-git/v5/plumbing/protocol/packp/capability"
 	"github.com/go-git/go-git/v5/plumbing/storer"
 	"github.com/go-git/go-git/v5/plumbing/transport"
 	gitserver "github.com/go-git/go-git/v5/plumbing/transport/server"
@@ -340,16 +344,19 @@ func (s *Server) handleGitReceivePack(w http.ResponseWriter, r *http.Request, ow
 		return
 	}
 
-	result, err := sess.ReceivePack(r.Context(), req)
+	result, err := s.applyReceivePack(ctx, repo, stor, sess, req)
 	if err != nil {
-		if !strings.Contains(err.Error(), "EOF") {
-			s.logger.Error().Err(err).Str("repo", owner+"/"+repoName).Msg("git HTTP receive-pack failed")
-			http.Error(w, err.Error(), http.StatusInternalServerError)
+		var refused *refusedPushError
+		if errors.As(err, &refused) {
+			http.Error(w, refused.reason, http.StatusForbidden)
 			return
 		}
+		s.logger.Error().Err(err).Str("repo", owner+"/"+repoName).Msg("git HTTP receive-pack failed")
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
 	}
 
-	s.afterGitReceivePack(repo, user, req, s.baseURL(r))
+	s.afterGitReceivePack(repo, user, appliedPushCommands(req, result), s.baseURL(r))
 
 	w.Header().Set("Content-Type", "application/x-git-receive-pack-result")
 	if result != nil {
@@ -359,7 +366,149 @@ func (s *Server) handleGitReceivePack(w http.ResponseWriter, r *http.Request, ow
 	}
 }
 
-func (s *Server) afterGitReceivePack(repo *Repo, user *User, request *packp.ReferenceUpdateRequest, baseURL string) {
+// refusedPushError is a push branch protection refused on a connection with no
+// report-status channel to carry the per-ref refusal. The whole push fails
+// rather than reporting a success for a ref that did not move.
+type refusedPushError struct{ reason string }
+
+func (e *refusedPushError) Error() string { return e.reason }
+
+// applyReceivePack is the write half of both git transports: it ingests the
+// pushed objects, decides every command against branch protection before any of
+// them is applied, applies the ones the rule allows, and returns the report the
+// client reads each ref's verdict from.
+//
+// The objects are ingested first because whether an update discards commits —
+// the question force-push protection turns on — is only answerable once the
+// commits the push carries are readable.
+func (s *Server) applyReceivePack(ctx context.Context, repo *Repo, stor storer.Storer, session transport.ReceivePackSession, request *packp.ReferenceUpdateRequest) (*packp.ReportStatus, error) {
+	if err := ingestPushedObjects(stor, request); err != nil {
+		return nil, err
+	}
+	refusals, err := s.refusedPushCommands(ctx, repo, stor, request.Commands)
+	if err != nil {
+		return nil, err
+	}
+	requested := request.Commands
+	if len(refusals) > 0 {
+		if !request.Capabilities.Supports(capability.ReportStatus) {
+			for _, command := range requested {
+				if refusal, refused := refusals[command.Name]; refused {
+					return nil, &refusedPushError{reason: refusal}
+				}
+			}
+		}
+		allowed := make([]*packp.Command, 0, len(requested))
+		for _, command := range requested {
+			if _, refused := refusals[command.Name]; !refused {
+				allowed = append(allowed, command)
+			}
+		}
+		request.Commands = allowed
+	}
+	report, err := session.ReceivePack(ctx, request)
+	if err != nil && report == nil {
+		return nil, err
+	}
+	if err != nil {
+		s.logger.Debug().Err(err).Str("repo", repo.FullName).Msg("git receive-pack reported a per-ref failure")
+	}
+	for _, command := range requested {
+		if refusal, refused := refusals[command.Name]; refused {
+			report.CommandStatuses = append(report.CommandStatuses, &packp.CommandStatus{ReferenceName: command.Name, Status: refusal})
+		}
+	}
+	return report, nil
+}
+
+// refusedPushCommands maps each command branch protection refuses to its
+// reason. The commands it does not name are the ones the rule allows.
+func (s *Server) refusedPushCommands(ctx context.Context, repo *Repo, stor storer.Storer, commands []*packp.Command) (map[plumbing.ReferenceName]string, error) {
+	refusals := map[plumbing.ReferenceName]string{}
+	for _, command := range commands {
+		kind, err := classifyPushedRefWrite(stor, command)
+		if err != nil {
+			return nil, err
+		}
+		if refusal := s.protectedRefWriteRefusal(ctx, repo, stor, command.Name, kind, command.New); refusal != "" {
+			refusals[command.Name] = refusal
+		}
+	}
+	return refusals, nil
+}
+
+// classifyPushedRefWrite names the allowance one pushed command needs. The
+// comparison is against the ref as the server holds it, not against the old
+// value the client asserted.
+func classifyPushedRefWrite(stor storer.Storer, command *packp.Command) (refWriteKind, error) {
+	if command.New.IsZero() {
+		return refDeletion, nil
+	}
+	current, err := stor.Reference(command.Name)
+	if errors.Is(err, plumbing.ErrReferenceNotFound) {
+		return refCreation, nil
+	}
+	if err != nil {
+		return refForcePush, fmt.Errorf("read ref %s: %w", command.Name, err)
+	}
+	fastForward, err := refUpdateIsFastForward(stor, current.Hash(), command.New)
+	if err != nil {
+		return refForcePush, err
+	}
+	if fastForward {
+		return refFastForward, nil
+	}
+	return refForcePush, nil
+}
+
+// ingestPushedObjects stores the objects a receive-pack request carries and
+// leaves the request without a packfile, so the session that applies the
+// surviving commands does not read the stream a second time. A push that only
+// deletes refs carries no objects at all.
+func ingestPushedObjects(stor storer.Storer, request *packp.ReferenceUpdateRequest) error {
+	pack := request.Packfile
+	request.Packfile = nil
+	if pack == nil {
+		return nil
+	}
+	defer func() { _ = pack.Close() }()
+	buffered := bufio.NewReader(pack)
+	if _, err := buffered.Peek(1); err != nil {
+		if errors.Is(err, io.EOF) {
+			return nil
+		}
+		return fmt.Errorf("read pushed packfile: %w", err)
+	}
+	if err := packfile.UpdateObjectStorage(stor, buffered); err != nil {
+		return fmt.Errorf("store pushed objects: %w", err)
+	}
+	return nil
+}
+
+// appliedPushCommands are the commands whose ref update the session actually
+// performed. A command the report marks failed moved nothing, so it must not
+// raise a push event.
+func appliedPushCommands(request *packp.ReferenceUpdateRequest, report *packp.ReportStatus) []*packp.Command {
+	if report == nil {
+		return request.Commands
+	}
+	applied := make([]*packp.Command, 0, len(request.Commands))
+	for _, command := range request.Commands {
+		ok := true
+		for _, status := range report.CommandStatuses {
+			if status.ReferenceName == command.Name && status.Status != "ok" {
+				ok = false
+				break
+			}
+		}
+		if ok {
+			applied = append(applied, command)
+		}
+	}
+	return applied
+}
+
+func (s *Server) afterGitReceivePack(repo *Repo, user *User, applied []*packp.Command, baseURL string) {
 	owner, _ := splitRepoPath("/" + repo.FullName)
 	stor := s.resolveGitRepo(owner, repo.Name)
 	s.store.UpdateRepo(owner, repo.Name, func(updated *Repo) {
@@ -385,7 +534,7 @@ func (s *Server) afterGitReceivePack(repo *Repo, user *User, request *packp.Refe
 			}
 		}
 	}
-	for _, command := range request.Commands {
+	for _, command := range applied {
 		s.afterCommittedRefUpdate(repo, user, command.Name.String(), command.Old.String(), command.New.String(), baseURL)
 	}
 }

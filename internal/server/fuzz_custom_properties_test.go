@@ -2,25 +2,18 @@ package bleephub
 
 import (
 	"encoding/json"
-	"fmt"
 	"net/http"
 	"net/url"
-	"sync/atomic"
 	"testing"
 )
-
-var fuzzPropOrgSeq int64
 
 // FuzzCustomPropertyDefinition fuzzes the definition-write body decoded by
 // toCustomProperty (value_type string/single_select/multi_select/true_false/
 // url plus allowed_values / default_value / required / values_editable_by /
-// property_name). Each iteration targets a fresh org so the run is
+// property_name). Each execution targets a fresh server and org so the run is
 // deterministic and reproducible. Invariant: never a 5xx/panic; an accepted
 // (200) definition round-trips through GET; a rejected one is 422.
 func FuzzCustomPropertyDefinition(f *testing.F) {
-	s := fuzzRoutedServer(f)
-	admin := s.store.UsersByLogin["admin"]
-
 	f.Add(`{"properties":[{"property_name":"team","value_type":"string"}]}`)
 	f.Add(`{"properties":[{"property_name":"env","value_type":"single_select","allowed_values":["dev","prod"]}]}`)
 	f.Add(`{"properties":[{"property_name":"envs","value_type":"multi_select","allowed_values":["a","b"],"default_value":["a"]}]}`)
@@ -41,7 +34,9 @@ func FuzzCustomPropertyDefinition(f *testing.F) {
 	f.Add(`not json`)
 
 	f.Fuzz(func(t *testing.T, body string) {
-		org := fmt.Sprintf("propsorg%d", atomic.AddInt64(&fuzzPropOrgSeq, 1))
+		s := fuzzRoutedServer(t)
+		admin := s.store.UsersByLogin["admin"]
+		const org = "propsorg"
 		s.store.CreateOrg(admin, org, "Props Org", "")
 
 		w := fuzzServe(s, http.MethodPatch, "/api/v3/orgs/"+org+"/properties/schema", []byte(body))
@@ -72,12 +67,9 @@ func FuzzCustomPropertyDefinition(f *testing.F) {
 
 // FuzzCustomPropertyValues fuzzes the values-set body (properties[].value)
 // against a repo with a real org schema covering all value types. Each
-// iteration targets a fresh org+repo so the run is deterministic. Invariant:
-// never a 5xx/panic; only the documented statuses occur.
+// execution targets a fresh server, org and repo so the run is deterministic.
+// Invariant: never a 5xx/panic; only the documented statuses occur.
 func FuzzCustomPropertyValues(f *testing.F) {
-	s := fuzzRoutedServer(f)
-	admin := s.store.UsersByLogin["admin"]
-
 	f.Add(`{"properties":[{"property_name":"team","value":"backend"}]}`)
 	f.Add(`{"properties":[{"property_name":"flag","value":"true"}]}`)
 	f.Add(`{"properties":[{"property_name":"flag","value":"maybe"}]}`)
@@ -97,8 +89,9 @@ func FuzzCustomPropertyValues(f *testing.F) {
 	f.Add(`not json`)
 
 	f.Fuzz(func(t *testing.T, body string) {
-		n := atomic.AddInt64(&fuzzPropOrgSeq, 1)
-		orgLogin := fmt.Sprintf("valsorg%d", n)
+		s := fuzzRoutedServer(t)
+		admin := s.store.UsersByLogin["admin"]
+		const orgLogin = "valsorg"
 		org := s.store.CreateOrg(admin, orgLogin, "Vals Org", "")
 		repo := s.store.CreateOrgRepo(org, admin, "valsrepo", "", false)
 		if repo == nil {

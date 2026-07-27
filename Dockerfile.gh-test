@@ -5,7 +5,16 @@ RUN CGO_ENABLED=0 go build -tags noui -o /out/bleephub ./cmd/bleephub
 
 FROM ubuntu:24.04
 RUN apt-get update && apt-get install -y --no-install-recommends curl ca-certificates jq git openssl zip && rm -rf /var/lib/apt/lists/*
-RUN curl -fsSL https://cli.github.com/packages/githubcli-archive-keyring.gpg | dd of=/usr/share/keyrings/githubcli-archive-keyring.gpg && \
+# The keyring is the trust root for everything apt then pulls from
+# cli.github.com, so it is checked against a recorded digest before apt sees it.
+# GitHub rotates this file; a rotation fails the build here rather than silently
+# widening what the repository may be signed by. Recorded in
+# THIRD-PARTY-NOTICES.md with the key fingerprints it currently carries.
+ARG GH_KEYRING_SHA256=6084d5d7bd8e288441e0e94fc6275570895da18e6751f70f057485dc2d1a811b
+RUN curl -fsSL -o /tmp/githubcli-archive-keyring.gpg https://cli.github.com/packages/githubcli-archive-keyring.gpg && \
+    printf '%s  %s\n' "$GH_KEYRING_SHA256" /tmp/githubcli-archive-keyring.gpg | sha256sum --check --strict - && \
+    install -m 0644 /tmp/githubcli-archive-keyring.gpg /usr/share/keyrings/githubcli-archive-keyring.gpg && \
+    rm /tmp/githubcli-archive-keyring.gpg && \
     echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/githubcli-archive-keyring.gpg] https://cli.github.com/packages stable main" > /etc/apt/sources.list.d/github-cli.list && \
     apt-get update && apt-get install -y gh && rm -rf /var/lib/apt/lists/*
 COPY --from=builder /out/bleephub /usr/local/bin/

@@ -4,54 +4,49 @@ import (
 	"bytes"
 	"encoding/base64"
 	"encoding/json"
-	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"strings"
-	"sync/atomic"
 	"testing"
 
 	xhtml "golang.org/x/net/html"
 	"golang.org/x/net/html/atom"
 )
 
-var fuzzGitRepoSeq int64
-
 // FuzzGitRefUpdate fuzzes the PATCH .../git/refs/{ref...} body (sha/force)
-// and the {ref...} path against a git-backed repo. A fresh repo per iteration
-// keeps the run deterministic (a force-update mutates the ref target, so a
-// shared repo would couple iterations). Invariant: never a 5xx or panic; a
-// 200 response is a well-formed ref object with an object.sha.
+// and the {ref...} path against a git-backed repo.
+//
+// useHead asks the execution to substitute the real head SHA of the repository
+// it just created. A SHA captured once at seeding time cannot serve here: git
+// hashes the commit timestamps, so a SHA taken from a seeding repository never
+// matches the head of the repository an execution builds, and the
+// "update a ref to an existing commit" path is never reached.
+//
+// Invariant: never a 5xx or panic; a 200 response is a well-formed ref object
+// with an object.sha, and a request that named the real head must succeed.
 func FuzzGitRefUpdate(f *testing.F) {
-	s := fuzzRoutedServer(f)
-	admin := s.store.UsersByLogin["admin"]
+	f.Add("heads/main", "", false, true)
+	f.Add("heads/main", "", true, true)
+	f.Add("heads/main", "deadbeef", false, false)
+	f.Add("heads/main", "", false, false)
+	f.Add("heads/nonexistent", "", false, true)
+	f.Add("", "", false, true)
+	f.Add("heads/main", strings.Repeat("f", 200), true, false)
+	f.Add("tags/../../etc", "", false, true)
+	f.Add("heads/main", "0000000000000000000000000000000000000000", true, false)
 
-	// A representative real base SHA for the seeds; each iteration re-seeds.
-	seedRepo := s.store.CreateRepo(admin, "ref-fuzz-seed", "", false)
-	_ = seedRepo
-	seedStor := s.store.GetGitStorage(admin.Login, "ref-fuzz-seed")
-	seedBase, err := initRepoWithFiles(seedStor, "main", "init", map[string]string{"f": "x"}, repoSignature(admin.Login, "a@b.c"))
-	if err != nil {
-		f.Fatalf("seed init: %v", err)
-	}
-	realSHA := seedBase.String()
-
-	f.Add("heads/main", realSHA, false)
-	f.Add("heads/main", realSHA, true)
-	f.Add("heads/main", "deadbeef", false)
-	f.Add("heads/main", "", false)
-	f.Add("heads/nonexistent", realSHA, false)
-	f.Add("", realSHA, false)
-	f.Add("heads/main", strings.Repeat("f", 200), true)
-	f.Add("tags/../../etc", realSHA, false)
-	f.Add("heads/main", "0000000000000000000000000000000000000000", true)
-
-	f.Fuzz(func(t *testing.T, ref, sha string, force bool) {
-		name := fmt.Sprintf("ref-fuzz-%d", atomic.AddInt64(&fuzzGitRepoSeq, 1))
+	f.Fuzz(func(t *testing.T, ref, sha string, force, useHead bool) {
+		s := fuzzRoutedServer(t)
+		admin := s.store.UsersByLogin["admin"]
+		const name = "ref-fuzz"
 		s.store.CreateRepo(admin, name, "", false)
 		stor := s.store.GetGitStorage(admin.Login, name)
-		if _, err := initRepoWithFiles(stor, "main", "init", map[string]string{"f": "x"}, repoSignature(admin.Login, "a@b.c")); err != nil {
+		head, err := initRepoWithFiles(stor, "main", "init", map[string]string{"f": "x"}, repoSignature(admin.Login, "a@b.c"))
+		if err != nil {
 			t.Fatalf("init: %v", err)
+		}
+		if useHead {
+			sha = head.String()
 		}
 
 		body, _ := json.Marshal(map[string]interface{}{"sha": sha, "force": force})
@@ -66,6 +61,9 @@ func FuzzGitRefUpdate(f *testing.F) {
 
 		if w.Code >= 500 {
 			t.Fatalf("ref update ref=%q sha=%q force=%v -> %d: %s", ref, sha, force, w.Code, w.Body.String())
+		}
+		if useHead && ref == "heads/main" && w.Code != http.StatusOK {
+			t.Fatalf("ref update to the real head %s -> %d, want 200: %s", sha, w.Code, w.Body.String())
 		}
 		if w.Code == http.StatusOK {
 			var res map[string]interface{}
@@ -82,13 +80,10 @@ func FuzzGitRefUpdate(f *testing.F) {
 
 // FuzzContentPut fuzzes the PUT .../contents/{path...} body (content base64,
 // branch, message) and the {path...} segment against a git-backed repo. A
-// fresh repo per iteration keeps the run deterministic (a commit mutates the
-// tree, so a shared repo would couple iterations). Invariant: never a 5xx or
-// panic; a 201 carries a resolvable commit sha.
+// fresh server and repo per execution keeps the run deterministic (a commit
+// mutates the tree, so a shared repo would couple executions). Invariant:
+// never a 5xx or panic; a 201 carries a resolvable commit sha.
 func FuzzContentPut(f *testing.F) {
-	s := fuzzRoutedServer(f)
-	admin := s.store.UsersByLogin["admin"]
-
 	b64 := func(s string) string { return base64.StdEncoding.EncodeToString([]byte(s)) }
 	f.Add("docs/readme.md", b64("hello"), "main", "add readme")
 	f.Add("nested/deep/file.txt", b64("x"), "main", "msg")
@@ -104,7 +99,9 @@ func FuzzContentPut(f *testing.F) {
 	f.Add("/abs", b64("x"), "main", "msg")
 
 	f.Fuzz(func(t *testing.T, path, content, branch, message string) {
-		name := fmt.Sprintf("content-fuzz-%d", atomic.AddInt64(&fuzzGitRepoSeq, 1))
+		s := fuzzRoutedServer(t)
+		admin := s.store.UsersByLogin["admin"]
+		const name = "content-fuzz"
 		s.store.CreateRepo(admin, name, "", false)
 		stor := s.store.GetGitStorage(admin.Login, name)
 		if _, err := initRepoWithFiles(stor, "main", "init", map[string]string{"seed": "x"}, repoSignature(admin.Login, "a@b.c")); err != nil {
@@ -144,11 +141,6 @@ func FuzzContentPut(f *testing.F) {
 // panic/hang; a 200 body is well-formed HTML (parses as a fragment); an
 // invalid mode is 422.
 func FuzzMarkdownRender(f *testing.F) {
-	s := fuzzRoutedServer(f)
-	admin := s.store.UsersByLogin["admin"]
-	repo := s.store.CreateRepo(admin, "md-fuzz", "", false)
-	s.store.CreateIssue(repo.ID, admin.ID, "an issue", "b", nil, nil, 0)
-
 	f.Add("# Hello\n\n@admin see #1", "gfm", "admin/md-fuzz")
 	f.Add("plain **text** with `code`", "markdown", "")
 	f.Add("| a | b |\n|---|---|\n| 1 | 2 |", "gfm", "admin/md-fuzz")
@@ -163,6 +155,11 @@ func FuzzMarkdownRender(f *testing.F) {
 	f.Add("\x00\x01\x02 control", "gfm", "admin/md-fuzz")
 
 	f.Fuzz(func(t *testing.T, text, mode, context string) {
+		s := fuzzRoutedServer(t)
+		admin := s.store.UsersByLogin["admin"]
+		repo := s.store.CreateRepo(admin, "md-fuzz", "", false)
+		s.store.CreateIssue(repo.ID, admin.ID, "an issue", "b", nil, nil, 0)
+
 		body, _ := json.Marshal(map[string]interface{}{"text": text, "mode": mode, "context": context})
 		w := fuzzServe(s, http.MethodPost, "/api/v3/markdown", body)
 

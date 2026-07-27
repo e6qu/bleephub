@@ -15,28 +15,33 @@ import (
 //   - never a 5xx/panic, and a created reaction never carries a content the
 //     caller did not send (no cross-content leak).
 func FuzzReactionCreate(f *testing.F) {
-	s := fuzzRoutedServer(f)
-	admin := s.store.UsersByLogin["admin"]
-	repo := s.store.CreateRepo(admin, "react-fuzz", "", false)
-	issue := s.store.CreateIssue(repo.ID, admin.ID, "reactable", "body", nil, nil, 0)
-	if issue == nil {
-		f.Fatal("CreateIssue returned nil")
-	}
-	realNumber := issue.Number
-
-	f.Add("+1", realNumber)
-	f.Add("heart", realNumber)
-	f.Add("rocket", realNumber)
-	f.Add("thumbsup", realNumber)
-	f.Add("", realNumber)
-	f.Add("LAUGH", realNumber)
+	// A fresh server per execution: reactions accumulate on the parent, so a
+	// shared one makes the 200-versus-201 outcome depend on execution order.
+	// The first issue in a fresh repository is always number 1, which is what
+	// the seeds name as the real parent.
+	const seedNumber = 1
+	f.Add("+1", seedNumber)
+	f.Add("heart", seedNumber)
+	f.Add("rocket", seedNumber)
+	f.Add("thumbsup", seedNumber)
+	f.Add("", seedNumber)
+	f.Add("LAUGH", seedNumber)
 	f.Add("+1", 999999)
 	f.Add("heart", 0)
 	f.Add("heart", -1)
-	f.Add("💩", realNumber)
+	f.Add("💩", seedNumber)
 	f.Add("eyes", 2147483647)
 
 	f.Fuzz(func(t *testing.T, content string, number int) {
+		s := fuzzRoutedServer(t)
+		admin := s.store.UsersByLogin["admin"]
+		repo := s.store.CreateRepo(admin, "react-fuzz", "", false)
+		issue := s.store.CreateIssue(repo.ID, admin.ID, "reactable", "body", nil, nil, 0)
+		if issue == nil {
+			t.Fatal("CreateIssue returned nil")
+		}
+		realNumber := issue.Number
+
 		body, _ := json.Marshal(map[string]interface{}{"content": content})
 		path := fmt.Sprintf("/api/v3/repos/admin/react-fuzz/issues/%d/reactions", number)
 		w := fuzzServe(s, http.MethodPost, path, body)

@@ -31,26 +31,30 @@ type fuzzFixture struct {
 	segVocab []string
 }
 
-// newFuzzFixture builds and seeds the fuzz server exactly once per fuzz target.
-func newFuzzFixture(tb testing.TB) *fuzzFixture {
-	tb.Helper()
+// newFuzzFixture builds and seeds a fuzz server. It takes *testing.T rather
+// than testing.TB so that passing a *testing.F does not compile: a fixture
+// built once per target and captured by the f.Fuzz closure is shared across
+// every execution, and one execution that deletes the seed silently collapses
+// the coverage of all the rest.
+func newFuzzFixture(t *testing.T) *fuzzFixture {
+	t.Helper()
 	s := newTestServer()
 	s.registerRoutes()
 
 	admin := s.store.UsersByLogin["admin"]
 	if admin == nil {
-		tb.Fatalf("seed: no admin user")
+		t.Fatalf("seed: no admin user")
 		return nil
 	}
 
 	// Org + team.
 	if s.store.CreateOrg(admin, "fuzz-org", "Fuzz Org", "") == nil {
-		tb.Fatalf("seed: create org")
+		t.Fatalf("seed: create org")
 		return nil
 	}
 	team := s.store.CreateTeam("fuzz-org", "Fuzz Team", TeamOptions{Description: "t"})
 	if team == nil {
-		tb.Fatalf("seed: create team")
+		t.Fatalf("seed: create team")
 		return nil
 	}
 
@@ -58,24 +62,24 @@ func newFuzzFixture(tb testing.TB) *fuzzFixture {
 	// objects, not an empty repository.
 	repo := s.store.CreateRepo(admin, "fuzz-repo", "Fuzz repo", false)
 	if repo == nil {
-		tb.Fatalf("seed: create repo")
+		t.Fatalf("seed: create repo")
 		return nil
 	}
-	seedGitContent(tb, s, "admin/fuzz-repo", map[string]string{
+	seedGitContent(t, s, "admin/fuzz-repo", map[string]string{
 		"README.md":         "# fuzz\n",
 		".github/wf/ci.yml": "name: ci\non: push\n",
 	})
-	seedPullRequestBranches(tb, s, repo, "feature")
+	seedPullRequestBranches(t, s, repo, "feature")
 
 	// Issue + PR.
 	issue := s.store.CreateIssue(repo.ID, admin.ID, "Fuzz issue", "body", nil, nil, 0)
 	if issue == nil {
-		tb.Fatalf("seed: create issue")
+		t.Fatalf("seed: create issue")
 		return nil
 	}
 	pr := s.store.CreatePullRequest(repo.ID, admin.ID, "Fuzz PR", "body", "feature", "main", false, nil, nil, 0)
 	if pr == nil {
-		tb.Fatalf("seed: create pull request")
+		t.Fatalf("seed: create pull request")
 		return nil
 	}
 

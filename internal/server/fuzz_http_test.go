@@ -10,9 +10,13 @@ import "testing"
 // string and body, and an auth-header variant. Invariants (serveAndCheck): the
 // handler must never panic, never emit HTTP 500, and any application/json body
 // must parse as JSON. A 4xx for bad input is fine.
+//
+// The fixture is built inside the fuzz closure, so every execution gets a
+// freshly seeded server. The route vocabulary reaches DELETE handlers for the
+// seed repo, org and team, so a fixture shared across executions would let one
+// input delete the data every later input depends on — after which the target
+// keeps reporting green while exercising nothing but 404 paths.
 func FuzzHTTPRequest(f *testing.F) {
-	fx := newFuzzFixture(f)
-
 	// Seeds spanning diverse route families. Each byte string decodes through
 	// decodeFuzzRequest; these were chosen to land on repos, issues, pulls,
 	// reactions, search, orgs, teams, actions, git-data, webhooks, projects,
@@ -48,6 +52,7 @@ func FuzzHTTPRequest(f *testing.F) {
 	}
 
 	f.Fuzz(func(t *testing.T, data []byte) {
+		fx := newFuzzFixture(t)
 		req := fx.decodeFuzzRequest(data)
 		serveAndCheck(t, fx.handler, req)
 	})

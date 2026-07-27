@@ -12,10 +12,6 @@ import "testing"
 // permanently poison the shared seed for later inputs (which would turn one real
 // bug into a flood of derived failures and destroy corpus determinism).
 func FuzzHTTPSequence(f *testing.F) {
-	// Build one fixture up front only to validate seeding; each execution gets
-	// its own via newFuzzFixture(t).
-	_ = newFuzzFixture(f)
-
 	seeds := [][]byte{
 		{2, 0, 1, 2, 3},
 		{3, 40, 1, 80, 2, 120, 0},

@@ -1,11 +1,17 @@
 FROM ubuntu:24.04
 
 ARG TARGETARCH
+# Pinned release, with the SHA-256 that actions/runner publishes for each linux
+# tarball in the release notes. Bumping the version means bumping both digests.
 ARG RUNNER_VERSION=2.321.0
+ARG RUNNER_SHA256_AMD64=ba46ba7ce3a4d7236b16fbe44419fb453bc08f866b24f04d549ec89f1722a29e
+ARG RUNNER_SHA256_ARM64=62cc5735d63057d8d07441507c3d6974e90c1854bdb33e9c8b26c0da086336e1
 
+# The tarball lands on disk and is checked before anything reads it: piping curl
+# into tar spends the bytes before they can be hashed.
 RUN case "$TARGETARCH" in \
-        amd64) runner_arch=x64 ;; \
-        arm64) runner_arch=arm64 ;; \
+        amd64) runner_arch=x64; runner_sha256="$RUNNER_SHA256_AMD64" ;; \
+        arm64) runner_arch=arm64; runner_sha256="$RUNNER_SHA256_ARM64" ;; \
         *) echo "Unsupported target architecture: $TARGETARCH" >&2; exit 1 ;; \
     esac && \
     apt-get update && \
@@ -13,8 +19,11 @@ RUN case "$TARGETARCH" in \
     rm -rf /var/lib/apt/lists/* && \
     useradd --create-home --home-dir /opt/actions-runner --shell /bin/bash runner && \
     curl --fail --location --silent --show-error \
-      "https://github.com/actions/runner/releases/download/v${RUNNER_VERSION}/actions-runner-linux-${runner_arch}-${RUNNER_VERSION}.tar.gz" \
-      | tar --extract --gzip --directory /opt/actions-runner && \
+      --output /tmp/actions-runner.tar.gz \
+      "https://github.com/actions/runner/releases/download/v${RUNNER_VERSION}/actions-runner-linux-${runner_arch}-${RUNNER_VERSION}.tar.gz" && \
+    printf '%s  %s\n' "$runner_sha256" /tmp/actions-runner.tar.gz | sha256sum --check --strict - && \
+    tar --extract --gzip --file /tmp/actions-runner.tar.gz --directory /opt/actions-runner && \
+    rm /tmp/actions-runner.tar.gz && \
     /opt/actions-runner/bin/installdependencies.sh && \
     chown -R runner:runner /opt/actions-runner
 

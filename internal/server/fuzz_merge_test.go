@@ -17,8 +17,14 @@ import (
 // chain — the same wiring doMiscReq uses, but with every route mounted. Fuzz
 // targets drive it via fuzzServe. The seeded admin token (defaultToken)
 // authenticates as the site-admin user.
-func fuzzRoutedServer(tb testing.TB) *Server {
-	tb.Helper()
+//
+// It takes *testing.T rather than testing.TB so that passing a *testing.F does
+// not compile: a server built once per target and captured by the f.Fuzz
+// closure accumulates every execution's mutations, which makes replay
+// order-dependent and lets one destructive input collapse the coverage of all
+// later ones.
+func fuzzRoutedServer(t *testing.T) *Server {
+	t.Helper()
 	s := newTestServer()
 	s.initGraphQLSchema()
 	s.registerRoutes()
@@ -48,13 +54,13 @@ var fuzzMergeRepoSeq int64
 // feat into main. The returned repo path can be merged for real; the merge
 // produces a resolvable merge commit. Each call uses a fresh repository name so
 // the destructive merge in one fuzz iteration never bleeds into the next.
-func seedGitBackedPR(tb testing.TB, s *Server) (repoPath string, headSHA string) {
-	tb.Helper()
+func seedGitBackedPR(t *testing.T, s *Server) (repoPath string, headSHA string) {
+	t.Helper()
 	admin := s.store.UsersByLogin["admin"]
 	name := fmt.Sprintf("merge-fuzz-%d", atomic.AddInt64(&fuzzMergeRepoSeq, 1))
 	repo := s.store.CreateRepo(admin, name, "", false)
 	if repo == nil {
-		tb.Fatalf("CreateRepo returned nil")
+		t.Fatalf("CreateRepo returned nil")
 		return "", ""
 	}
 	stor := s.store.GetGitStorage(admin.Login, name)
@@ -62,20 +68,20 @@ func seedGitBackedPR(tb testing.TB, s *Server) (repoPath string, headSHA string)
 
 	baseHash, err := initRepoWithFiles(stor, "main", "init", map[string]string{"README.md": "base"}, sig)
 	if err != nil {
-		tb.Fatalf("initRepoWithFiles: %v", err)
+		t.Fatalf("initRepoWithFiles: %v", err)
 	}
 	// Branch feat off main, then add a commit so the PR has a real diff.
 	if err := stor.SetReference(plumbing.NewHashReference(plumbing.NewBranchReferenceName("feat"), baseHash)); err != nil {
-		tb.Fatalf("SetReference feat: %v", err)
+		t.Fatalf("SetReference feat: %v", err)
 	}
 	head, err := createFileCommit(stor, "feat", "feature.txt", "hello", "add feature", sig)
 	if err != nil {
-		tb.Fatalf("createFileCommit: %v", err)
+		t.Fatalf("createFileCommit: %v", err)
 	}
 
 	pr := s.store.CreatePullRequest(repo.ID, admin.ID, "Fuzz merge", "body", "feat", "main", false, nil, nil, 0)
 	if pr == nil {
-		tb.Fatalf("CreatePullRequest returned nil")
+		t.Fatalf("CreatePullRequest returned nil")
 	}
 	return "/api/v3/repos/" + repo.FullName, head.String()
 }
@@ -89,8 +95,6 @@ func seedGitBackedPR(tb testing.TB, s *Server) (repoPath string, headSHA string)
 //   - a successful (200) merge reports merged=true with a merge_commit_sha
 //     that resolves through the git data API.
 func FuzzMergePullRequestBody(f *testing.F) {
-	s := fuzzRoutedServer(f)
-
 	f.Add(`{"merge_method":"merge"}`)
 	f.Add(`{"merge_method":"squash","commit_title":"t","commit_message":"m"}`)
 	f.Add(`{"merge_method":"rebase"}`)
@@ -108,6 +112,7 @@ func FuzzMergePullRequestBody(f *testing.F) {
 	f.Add(`{"merge_method":"squash","commit_message":"trailing"}`)
 
 	f.Fuzz(func(t *testing.T, body string) {
+		s := fuzzRoutedServer(t)
 		repoPath, headSHA := seedGitBackedPR(t, s)
 
 		w := fuzzServe(s, http.MethodPut, repoPath+"/pulls/1/merge", []byte(body))

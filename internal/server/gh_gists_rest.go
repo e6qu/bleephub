@@ -99,7 +99,6 @@ func (s *Server) handleGetGistAtRevision(w http.ResponseWriter, r *http.Request)
 		writeGHError(w, http.StatusNotFound, "Not Found")
 		return
 	}
-	s.populateGistURLs(g, r)
 	writeJSON(w, http.StatusOK, s.gistToJSON(g, r, true))
 }
 
@@ -166,7 +165,6 @@ func (s *Server) handleCreateGist(w http.ResponseWriter, r *http.Request) {
 		writeGHError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
-	s.populateGistURLs(g, r)
 	writeJSON(w, http.StatusCreated, s.gistToJSON(g, r, true))
 }
 
@@ -175,7 +173,6 @@ func (s *Server) handleGetGist(w http.ResponseWriter, r *http.Request) {
 	if g == nil {
 		return
 	}
-	s.populateGistURLs(g, r)
 	writeJSON(w, http.StatusOK, s.gistToJSON(g, r, true))
 }
 
@@ -236,7 +233,6 @@ func (s *Server) handleUpdateGist(w http.ResponseWriter, r *http.Request) {
 		writeGHError(w, http.StatusNotFound, "Not Found")
 		return
 	}
-	s.populateGistURLs(updated, r)
 	writeJSON(w, http.StatusOK, s.gistToJSON(updated, r, true))
 }
 
@@ -329,7 +325,6 @@ func (s *Server) handleForkGist(w http.ResponseWriter, r *http.Request) {
 		writeGHError(w, http.StatusNotFound, "Not Found")
 		return
 	}
-	s.populateGistURLs(fork, r)
 	writeJSON(w, http.StatusCreated, s.gistToJSON(fork, r, false))
 }
 
@@ -342,7 +337,6 @@ func (s *Server) handleListGistForks(w http.ResponseWriter, r *http.Request) {
 	forks := s.store.ListGistForks(r.PathValue("gist_id"))
 	items := make([]map[string]interface{}, len(forks))
 	for i, f := range forks {
-		s.populateGistURLs(f, r)
 		items[i] = s.gistToJSON(f, r, false)
 	}
 	writeJSON(w, http.StatusOK, paginateAndLink(w, r, items))
@@ -474,26 +468,37 @@ func (s *Server) handleDeleteGistComment(w http.ResponseWriter, r *http.Request)
 func writeGistList(w http.ResponseWriter, r *http.Request, s *Server, gists []*Gist, includeContent bool) {
 	items := make([]map[string]interface{}, len(gists))
 	for i, g := range gists {
-		s.populateGistURLs(g, r)
 		items[i] = s.gistToJSON(g, r, includeContent)
 	}
 	writeJSON(w, http.StatusOK, paginateAndLink(w, r, items))
 }
 
-func (s *Server) populateGistURLs(g *Gist, r *http.Request) {
-	base := s.baseURL(r)
-	g.URL = base + "/api/v3/gists/" + g.ID
-	g.ForksURL = g.URL + "/forks"
-	g.CommitsURL = g.URL + "/commits"
-	g.CommentsURL = g.URL + "/comments"
-	g.GitPullURL = base + "/gist/" + s.gistOwnerLogin(g) + "/" + g.ID + ".git"
-	g.GitPushURL = g.GitPullURL
-	owner := s.store.GetUserByID(g.OwnerID)
-	if owner != nil {
-		g.HTMLURL = base + "/" + owner.Login + "/" + g.ID
+// gistView is the copy a response is rendered from: the stored gist snapshotted
+// under the store lock, with this request's URLs derived onto the copy.
+//
+// The URLs are request-derived — they carry the Host the caller asked through —
+// so writing them into the stored gist would publish one caller's host to every
+// other reader, and rendering the stored gist directly would let a concurrent
+// edit be serialized half-applied.
+func (s *Server) gistView(g *Gist, r *http.Request) *Gist {
+	view := s.snapshotGist(g)
+	if view == nil {
+		return nil
 	}
-	for name, f := range g.Files {
-		f.RawURL = base + "/raw/" + g.ID + "/" + name
+	base := s.baseURL(r)
+	view.URL = base + "/api/v3/gists/" + view.ID
+	view.ForksURL = view.URL + "/forks"
+	view.CommitsURL = view.URL + "/commits"
+	view.CommentsURL = view.URL + "/comments"
+	ownerLogin := ""
+	if owner := s.store.GetUserByID(view.OwnerID); owner != nil {
+		ownerLogin = owner.Login
+		view.HTMLURL = base + "/" + owner.Login + "/" + view.ID
+	}
+	view.GitPullURL = base + "/gist/" + ownerLogin + "/" + view.ID + ".git"
+	view.GitPushURL = view.GitPullURL
+	for name, f := range view.Files {
+		f.RawURL = base + "/raw/" + view.ID + "/" + name
 		if f.Filename == "" {
 			f.Filename = name
 		}
@@ -505,18 +510,39 @@ func (s *Server) populateGistURLs(g *Gist, r *http.Request) {
 		}
 		f.Size = len(f.Content)
 	}
-	sortHistory(g.History)
+	sortHistory(view.History)
+	return view
 }
 
-func (s *Server) gistOwnerLogin(g *Gist) string {
-	owner := s.store.GetUserByID(g.OwnerID)
-	if owner == nil {
-		return ""
+// snapshotGist copies a stored gist, its files and its history under the store
+// lock, so nothing a writer holds is shared with the copy.
+func (s *Server) snapshotGist(g *Gist) *Gist {
+	if g == nil {
+		return nil
 	}
-	return owner.Login
+	s.store.mu.RLock()
+	defer s.store.mu.RUnlock()
+	view := *g
+	view.Files = make(map[string]*GistFile, len(g.Files))
+	for name, f := range g.Files {
+		file := *f
+		view.Files[name] = &file
+	}
+	view.History = make([]*GistHistory, len(g.History))
+	for i, h := range g.History {
+		entry := *h
+		entry.ChangeStatus = make(map[string]int, len(h.ChangeStatus))
+		for k, v := range h.ChangeStatus {
+			entry.ChangeStatus[k] = v
+		}
+		view.History[i] = &entry
+	}
+	view.ForkIDs = append([]string(nil), g.ForkIDs...)
+	return &view
 }
 
 func (s *Server) gistToJSON(g *Gist, r *http.Request, includeContent bool) map[string]interface{} {
+	g = s.gistView(g, r)
 	base := s.baseURL(r)
 	files := make(map[string]interface{}, len(g.Files))
 	for name, f := range g.Files {

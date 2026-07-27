@@ -243,11 +243,11 @@ func (s *Server) runGitSSHService(channel ssh.Channel, service, owner, repoName 
 	if err := request.Decode(sshChannelReader{Reader: channel}); err != nil {
 		return err
 	}
-	result, err := session.ReceivePack(context.Background(), request)
-	if err != nil && !strings.Contains(err.Error(), "EOF") {
+	result, err := s.applyReceivePack(ctx, repo, s.resolveGitRepo(owner, repoName), session, request)
+	if err != nil {
 		return err
 	}
-	s.afterGitReceivePack(repo, user, request, s.externalURL)
+	s.afterGitReceivePack(repo, user, appliedPushCommands(request, result), s.externalURL)
 	if result != nil {
 		return result.Encode(channel)
 	}
