@@ -1,4 +1,4 @@
-FROM oven/bun:1.2.19-alpine AS ui-builder
+FROM oven/bun:1.3.14-alpine AS ui-builder
 ARG BLEEPHUB_VERSION=development
 ARG BLEEPHUB_PUBLISHED_AT=not-yet-published
 ENV VITE_BLEEPHUB_VERSION=$BLEEPHUB_VERSION \
@@ -12,7 +12,7 @@ COPY web/index.html web/knip.ts web/tsconfig.json web/vite.config.ts ./
 RUN --mount=type=cache,target=/root/.bun/install/cache \
     bun install --frozen-lockfile && bun run build
 
-FROM golang:1.25-alpine AS builder
+FROM golang:1.26-alpine AS builder
 ARG BLEEPHUB_VERSION=development
 ARG BLEEPHUB_COMMIT=none
 ARG BLEEPHUB_PUBLISHED_AT=not-yet-published
@@ -22,20 +22,14 @@ COPY --from=ui-builder /src/web/dist/ ./internal/server/dist/
 RUN CGO_ENABLED=0 go build -trimpath -ldflags="-s -w -X main.version=${BLEEPHUB_VERSION} -X main.commit=${BLEEPHUB_COMMIT} -X main.publishedAt=${BLEEPHUB_PUBLISHED_AT}" -o /bleephub ./cmd/bleephub && \
     CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" -o /bleephub-ssh-gateway ./ssh-gateway
 
-FROM golang:1.25-bookworm AS go-toolchain
+FROM golang:1.26-bookworm AS go-toolchain
 
-FROM ubuntu:24.04 AS dqlite-builder
+FROM ubuntu:26.04 AS dqlite-builder
 COPY --from=go-toolchain /usr/local/go /usr/local/go
-# add-apt-repository would fetch the PPA's signing key from Launchpad at build
-# time and trust whatever came back. The key is vendored instead, so the only
-# trust root for these packages is a committed, reviewable file.
-COPY docker/dqlite-ppa.asc /etc/apt/keyrings/dqlite-ppa.asc
 ENV PATH=/usr/local/go/bin:$PATH
 RUN apt_transaction() { rm -rf /var/lib/apt/lists/*; apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends "$@"; }; \
     retry_apt_transaction() { apt_transaction "$@" || apt_transaction "$@"; }; \
-    retry_apt_transaction ca-certificates && \
-    echo 'deb [signed-by=/etc/apt/keyrings/dqlite-ppa.asc] https://ppa.launchpadcontent.net/dqlite/dev/ubuntu noble main' > /etc/apt/sources.list.d/dqlite-ppa.list && \
-    retry_apt_transaction build-essential libdqlite-dev && \
+    retry_apt_transaction ca-certificates build-essential libdqlite-dev && \
     rm -rf /var/lib/apt/lists/*
 WORKDIR /src
 COPY go.mod go.sum ./
@@ -44,8 +38,7 @@ COPY dqlite-node ./dqlite-node
 COPY internal/dqliteaddr ./internal/dqliteaddr
 RUN CGO_ENABLED=1 go build -trimpath -tags 'nosqlite3,dqlite' -ldflags="-s -w" -o /bleephub-dqlite-node ./dqlite-node
 
-FROM ubuntu:24.04
-COPY docker/dqlite-ppa.asc /etc/apt/keyrings/dqlite-ppa.asc
+FROM ubuntu:26.04
 COPY docker/pages-gems/Gemfile docker/pages-gems/pinned-gems.sha256 /opt/bleephub-pages/
 # Every gem in the github-pages closure is fetched by exact version, checked
 # against its recorded SHA-256, and only then installed; --local keeps bundler
@@ -53,7 +46,6 @@ COPY docker/pages-gems/Gemfile docker/pages-gems/pinned-gems.sha256 /opt/bleephu
 RUN apt_transaction() { rm -rf /var/lib/apt/lists/*; apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends "$@"; }; \
     retry_apt_transaction() { apt_transaction "$@" || apt_transaction "$@"; }; \
     retry_apt_transaction ca-certificates curl && \
-    echo 'deb [signed-by=/etc/apt/keyrings/dqlite-ppa.asc] https://ppa.launchpadcontent.net/dqlite/dev/ubuntu noble main' > /etc/apt/sources.list.d/dqlite-ppa.list && \
     retry_apt_transaction ruby-full ruby-bundler build-essential git libdqlite0 && \
     mkdir -p /opt/bleephub-pages/vendor/cache && \
     cd /opt/bleephub-pages/vendor/cache && \

@@ -1,9 +1,9 @@
-FROM golang:1.25 AS builder
+FROM golang:1.26 AS builder
 WORKDIR /src
 COPY . .
 RUN CGO_ENABLED=0 go build -tags noui -o /out/bleephub ./cmd/bleephub
 
-FROM ubuntu:24.04
+FROM ubuntu:26.04
 RUN apt-get update && apt-get install -y --no-install-recommends curl ca-certificates jq git openssl zip && rm -rf /var/lib/apt/lists/*
 # The keyring is the trust root for everything apt then pulls from
 # cli.github.com, so it is checked against a recorded digest before apt sees it.

@@ -49,7 +49,7 @@ describe("MarketplacePage", () => {
     });
     renderAt("/ui/marketplace/spark-app");
     expect(await screen.findByRole("heading", { name: "Spark App" })).toBeInTheDocument();
-    fireEvent.click(screen.getByRole("button", { name: /Team Private projects/ }));
+    fireEvent.click(screen.getByRole("button", { name: /Team\s*Private projects/ }));
     fireEvent.click(screen.getByRole("checkbox", { name: /14-day free trial/ }));
     fireEvent.click(screen.getByRole("button", { name: "Complete order and begin installation" }));
     await waitFor(() => expect(mockFetch).toHaveBeenCalledWith("/ui-data/marketplace/listings/spark-app/purchase", expect.objectContaining({ method: "POST" })));
