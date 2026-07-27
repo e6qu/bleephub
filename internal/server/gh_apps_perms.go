@@ -322,6 +322,18 @@ func (s *Server) viewerCanReadRepo(r *http.Request, repo *Repo) bool {
 		// installation to actually cover them.
 		return (repo != nil && !repo.Private) || s.installationReachesRepo(tok, repo)
 	}
+	// A ghu_ token has to be intersected here as well, not only in
+	// credentialMayAccessTarget. That covers requirePerm routes; handlers that
+	// gate themselves land here, and without this arm a user-to-server token is
+	// indistinguishable from a session, borrows the bearer's own collaborator
+	// access, and ends up reading private repositories the app was never
+	// installed on — strictly broader than the ghs_ token of the same app,
+	// which is refused.
+	if uts := ghUserToServerTokenFromContext(r.Context()); uts != nil && uts.AppID != 0 {
+		if repo != nil && repo.Private && !s.userToServerReachesRepo(uts, repo) {
+			return false
+		}
+	}
 	return canReadRepo(s.store, ghUserFromContext(r.Context()), repo)
 }
 

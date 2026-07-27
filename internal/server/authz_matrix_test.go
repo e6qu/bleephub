@@ -477,3 +477,70 @@ func TestOrgMutationsRejectAnUnrelatedUser(t *testing.T) {
 		}
 	}
 }
+
+// TestPublicRepositoryBypassIsKeyedOnTheScope pins the fix for the bypass an
+// adversarial pass demonstrated twice.
+//
+// A public repository does not make every scope on it public: the Actions
+// secrets and variables listings are registered under scopeSecrets at read
+// level and return secret names and variable *values*. A bypass keyed only on
+// "the repository is public" handed those to any credential holding
+// secrets:read, for every public repository on the instance. The exploit used a
+// fine-grained PAT belonging to a different owner, with no repository ids and
+// no permissions at all.
+//
+// Nothing tested this, which is why it was marked fixed once while still live.
+func TestPublicRepositoryBypassIsKeyedOnTheScope(t *testing.T) {
+	store := testServer.store
+
+	now := time.Now().UTC()
+	store.mu.Lock()
+	owner := &User{ID: store.NextUser, Login: "scopebypass-owner", Type: "User", CreatedAt: now, UpdatedAt: now}
+	store.Users[owner.ID] = owner
+	store.UsersByLogin[owner.Login] = owner
+	store.NextUser++
+	outsider := &User{ID: store.NextUser, Login: "scopebypass-outsider", Type: "User", CreatedAt: now, UpdatedAt: now}
+	store.Users[outsider.ID] = outsider
+	store.UsersByLogin[outsider.Login] = outsider
+	store.NextUser++
+	store.mu.Unlock()
+
+	repo := store.CreateRepo(owner, "scopebypass-public", "", false)
+	if repo == nil {
+		t.Fatalf("could not create the public fixture repository")
+	}
+	// A fine-grained PAT for a different owner, scoped to nothing at all.
+	tok := store.CreateToken(outsider.ID, "")
+	store.mu.Lock()
+	tok.FineGrained = true
+	tok.ResourceOwner = outsider.Login
+	tok.RepositorySelection = "subset"
+	store.mu.Unlock()
+
+	handler := testServer.ghHeadersMiddleware(testServer.mux)
+	base := "/api/v3/repos/" + owner.Login + "/" + repo.Name
+
+	for _, path := range []string{
+		base + "/actions/variables",
+		base + "/actions/secrets",
+	} {
+		req := httptest.NewRequest(http.MethodGet, path, nil)
+		req.Header.Set("Authorization", "token "+tok.Value)
+		w := httptest.NewRecorder()
+		handler.ServeHTTP(w, req)
+		if w.Code >= 200 && w.Code < 300 {
+			t.Errorf("GET %s = %d for a PAT scoped to another owner with no permissions; body=%s",
+				path, w.Code, w.Body.String())
+		}
+	}
+
+	// Control: a scope that genuinely is public on a public repository must
+	// still be served, or the bypass has simply been deleted rather than keyed.
+	req := httptest.NewRequest(http.MethodGet, base+"/labels", nil)
+	req.Header.Set("Authorization", "token "+tok.Value)
+	w := httptest.NewRecorder()
+	handler.ServeHTTP(w, req)
+	if w.Code < 200 || w.Code >= 300 {
+		t.Errorf("GET %s/labels = %d, want 2xx — issues are public on a public repository", base, w.Code)
+	}
+}

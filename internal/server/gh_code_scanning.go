@@ -309,13 +309,26 @@ func (s *Server) codeScanningRequestCanWriteRepo(r *http.Request, repo *Repo) bo
 	return installationRequestCanAccessRepo(r, repo)
 }
 
+// installationRequestCanAccessRepo reports whether the request's installation
+// covers this repository.
+//
+// It used to hand the repository to filterReposBySelection, which is written
+// for a different job: listing an installation's own repositories, where the
+// input set is already scoped and so it needs no owner check and can treat a
+// non-"selected" installation as "everything I was handed". Passing it a single
+// caller-chosen repository turned that into "everything on the instance" — an
+// installation created on the attacker's own account downloaded any private
+// repository's CodeQL database, which is source-code-equivalent.
+//
+// There is one predicate for "does this installation cover this repository" and
+// it is installationCovers. This uses it.
 func installationRequestCanAccessRepo(r *http.Request, repo *Repo) bool {
 	inst := ghInstallationFromContext(r.Context())
 	token := ghInstallationTokenFromContext(r.Context())
 	if inst == nil || token == nil || repo == nil {
 		return false
 	}
-	return len(filterReposBySelection([]*Repo{repo}, inst, token)) == 1
+	return installationCovers(inst, token.RepositoryIDs, repo)
 }
 
 func (s *Server) codeScanningRequestCanReadRepo(r *http.Request, repo *Repo) bool {

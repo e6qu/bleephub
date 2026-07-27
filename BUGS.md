@@ -52,6 +52,10 @@ source or comments. The reasoning behind a fix belongs in its commit message.
 | AUTH-037 | m | identity.go:250 | Login never invalidates the presented session; no rotation on privilege change, so a demoted admin keeps admin for 12h | open |
 | AUTH-038 | m | identity.go:759 | Front-channel logout page sets `frame-ancestors *` on a GET with a session-destroying side effect | open |
 | AUTH-039 | m | identity.go:235-244 | Five-line comment defending a one-line assignment, arguing which provider string becomes the account key instead of not using one | open |
+| AUTH-041 | B | gh_code_scanning.go:312, gh_apps_rest.go:1049 | `installationRequestCanAccessRepo` fed one caller-chosen repo to `filterReposBySelection`, which is written for listing an installation's own repos and so has no owner check and treats non-`selected` as "allow everything handed to it" — an installation on the attacker's own account downloaded any private repository's CodeQL database | fixed — routed through `installationCovers` |
+| AUTH-042 | B | gh_apps_perms.go:319 | `viewerCanReadRepo` had no user-to-server arm, so a `ghu_` token was indistinguishable from a session on handler-gated routes and borrowed the bearer's collaborator access to repositories the app was never installed on — strictly broader than the `ghs_` token of the same app | fixed |
+| AUTH-043 | M | internal/server | 17 handler-side `ReposByName` map reads remain unlocked; a concurrent map read/write is a fatal error the recovery middleware cannot catch, so this is a remote denial of service | open |
+| AUTH-044 | M | webhooks.go:210, gh_org_hooks_rest.go:254 | Org hook delivery reads `hook.URL` on a delivery goroutine while `UpdateOrgHook` writes it; reproduces under `-race` on main and is missed by the CI race job's `-run` subset | open |
 | AUTH-040 | M | persistence.go:290, dqlite-node/main.go:108 | dqlite inter-node transport has no authentication and no TLS, contradicting the "keeps the wire protocol private" claim | open |
 
 ## REST — the `/api/v3` surface
