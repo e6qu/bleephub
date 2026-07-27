@@ -124,13 +124,13 @@ func (s *Server) handleGitInfoRefs(w http.ResponseWriter, r *http.Request, owner
 
 	switch service {
 	case "git-upload-pack":
-		if !s.viewerCanReadRepo(ctx, repo) {
+		if !s.viewerHasRepoPermission(ctx, repo, scopeContents, permRead) {
 			w.Header().Set("WWW-Authenticate", `Basic realm="GitHub"`)
 			http.Error(w, "401 Authorization Required", http.StatusUnauthorized)
 			return
 		}
 	case "git-receive-pack":
-		if !s.viewerCanPushRepo(ctx, repo) {
+		if !s.viewerHasRepoPermission(ctx, repo, scopeContents, permWrite) {
 			w.Header().Set("WWW-Authenticate", `Basic realm="GitHub"`)
 			if user == nil {
 				http.Error(w, "401 Authorization Required", http.StatusUnauthorized)
@@ -228,7 +228,7 @@ func (s *Server) handleGitUploadPack(w http.ResponseWriter, r *http.Request, own
 	}
 
 	ctx, user := s.authenticateGitRequest(r)
-	if !s.viewerCanReadRepo(ctx, repo) {
+	if !s.viewerHasRepoPermission(ctx, repo, scopeContents, permRead) {
 		w.Header().Set("WWW-Authenticate", `Basic realm="GitHub"`)
 		http.Error(w, "401 Authorization Required", http.StatusUnauthorized)
 		return
@@ -309,7 +309,7 @@ func (s *Server) handleGitReceivePack(w http.ResponseWriter, r *http.Request, ow
 	}
 
 	ctx, user := s.authenticateGitRequest(r)
-	if !s.viewerCanPushRepo(ctx, repo) {
+	if !s.viewerHasRepoPermission(ctx, repo, scopeContents, permWrite) {
 		w.Header().Set("WWW-Authenticate", `Basic realm="GitHub"`)
 		if user == nil {
 			http.Error(w, "401 Authorization Required", http.StatusUnauthorized)

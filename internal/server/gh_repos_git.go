@@ -291,25 +291,6 @@ func (s *Server) registerGHGitDataRoutes() {
 		s.requirePerm(scopeContents, permWrite, s.requireRepoPush(s.requireRefDeletionAllowed(s.handleDeleteRef))))
 }
 
-// viewerAdminsRepo is the credential-aware form of canAdminRepo, mirroring
-// viewerCanPushRepo: an installation token's principal is the installation, and
-// a user-to-server token is the intersection of its bearer and the app's
-// installations.
-func (s *Server) viewerAdminsRepo(ctx context.Context, repo *Repo) bool {
-	if repo == nil {
-		return false
-	}
-	if tok := ghInstallationTokenFromContext(ctx); tok != nil {
-		return s.installationReachesRepo(tok, repo)
-	}
-	if uts := ghUserToServerTokenFromContext(ctx); uts != nil && uts.AppID != 0 {
-		if !s.userToServerReachesRepo(uts, repo) {
-			return false
-		}
-	}
-	return canAdminRepo(s.store, ghUserFromContext(ctx), repo)
-}
-
 // requireRepoAdmin resolves the repository named in the path and admits only a
 // credential that administers it. A repository the caller cannot read — or one
 // that does not exist, which includes a case-variant spelling of a real one —
@@ -324,7 +305,11 @@ func (s *Server) requireRepoAdmin(w http.ResponseWriter, r *http.Request) (*Repo
 		writeGHError(w, http.StatusNotFound, "Not Found")
 		return nil, false
 	}
-	if !s.viewerAdminsRepo(r.Context(), repo) {
+	// The scope is secrets, not administration: every caller of this is a
+	// repository-secret handler, and GitHub grants those at secrets:write while
+	// still demanding repository admin of a human. Naming administration here
+	// would refuse an app GitHub allows.
+	if !s.viewerMayActOnRepo(r.Context(), repo, scopeSecrets, permWrite, permAdmin) {
 		writeGHError(w, http.StatusForbidden, "Must have admin rights to Repository.")
 		return nil, false
 	}
@@ -381,7 +366,7 @@ func (s *Server) destructiveRefWriteAllowed(r *http.Request, repo *Repo, ref plu
 	if bp.EnforceAdmins != nil && bp.EnforceAdmins.Enabled {
 		return false
 	}
-	return s.viewerAdminsRepo(r.Context(), repo)
+	return s.viewerCanAdminRepo(r.Context(), repo)
 }
 
 // requireRefDeletionAllowed guards the delete-ref route, whose handler lives

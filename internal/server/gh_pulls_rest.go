@@ -384,7 +384,7 @@ func (s *Server) handleMergePullRequest(w http.ResponseWriter, r *http.Request) 
 		}
 	}
 
-	if ok, msg := s.canMergePullRequest(repo, pr, user); !ok {
+	if ok, msg := s.canMergePullRequest(r.Context(), repo, pr); !ok {
 		status := http.StatusMethodNotAllowed
 		if msg == "" {
 			msg = "Pull Request is not mergeable"

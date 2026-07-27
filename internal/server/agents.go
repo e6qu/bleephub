@@ -26,16 +26,22 @@ func (s *Server) registerAgentRoutes() {
 
 	// Agent pools. config.sh reads the pool list with its registration token,
 	// before it has a session.
-	s.route("GET /_apis/v1/AgentPools", s.requireRunnerSetupCredential(s.handleListPools))
+	s.route("GET /_apis/v1/AgentPools", s.requireRunnerSetupCredential(runnerPurposesRegister, s.handleListPools))
 
 	// Agent CRUD — order matters: more specific patterns first.
-	// Registration is the one runner-protocol route reached before an agent
-	// session exists; it carries the registration token instead.
+	//
+	// Most of this surface is reached before an agent session exists, because
+	// it is how a runner configures itself. `config.sh` looks its own name up
+	// in the pool, then adds a registration or, with --replace, rewrites the
+	// one it found; `config.sh remove` looks the name up and deletes it. Each
+	// of those carries the token config.sh was given, so each names the
+	// purposes that token must have. Only reading one agent's record is
+	// session-only: nothing in configuration does it.
 	s.route("POST /_apis/v1/Agent/{poolId}", s.handleRegisterAgent)
 	s.route("GET /_apis/v1/Agent/{poolId}/{agentId}", s.requireAgentSession(s.handleGetAgent))
-	s.route("PUT /_apis/v1/Agent/{poolId}/{agentId}", s.requireAgentSession(s.handleUpdateAgent))
-	s.route("DELETE /_apis/v1/Agent/{poolId}/{agentId}", s.requireAgentSession(s.handleDeleteAgent))
-	s.route("GET /_apis/v1/Agent/{poolId}", s.requireAgentSession(s.handleListAgents))
+	s.route("PUT /_apis/v1/Agent/{poolId}/{agentId}", s.requireRunnerSetupCredential(runnerPurposesRegister, s.handleUpdateAgent))
+	s.route("DELETE /_apis/v1/Agent/{poolId}/{agentId}", s.requireRunnerSetupCredential(runnerPurposesRemove, s.handleDeleteAgent))
+	s.route("GET /_apis/v1/Agent/{poolId}", s.requireRunnerSetupCredential(runnerPurposesConfig, s.handleListAgents))
 }
 
 // randomRunnerToken mints the unguessable component of a runner
@@ -204,12 +210,13 @@ func (s *Server) handleListPools(w http.ResponseWriter, r *http.Request) {
 // on the registration token config.sh was given rather than on a bearer
 // session token; the scope that token carries becomes the agent's.
 func (s *Server) handleRegisterAgent(w http.ResponseWriter, r *http.Request) {
-	scope, err := s.runnerRegistrationCredential(r)
+	claims, err := runnerSetupCredential(r, runnerPurposesRegister)
 	if err != nil {
 		s.logger.Warn().Err(err).Msg("agent registration rejected")
 		writeGHError(w, http.StatusUnauthorized, "Invalid runner registration token")
 		return
 	}
+	scope := claims.Scope
 
 	// Parse as generic JSON (runner sends extra fields not in our Agent struct)
 	var raw map[string]interface{}
@@ -331,19 +338,23 @@ func (s *Server) handleListAgents(w http.ResponseWriter, r *http.Request) {
 }
 
 // callerSeesAgent reports whether a runner credential may address an agent
-// record. A runner manages its own registration; the fleet-wide view lives on
-// the administration:write-gated REST runners API, not here. Agents outside
-// the caller's scope are invisible rather than forbidden so an agent id cannot
-// be probed for existence across tenants.
+// record. A runner manages its own registration, and so does the config-time
+// token that created it — config.sh looks its own name up in the pool before
+// any session exists. A per-job runtime token is neither, and sees nothing.
+// The fleet-wide view lives on the administration:write-gated REST runners
+// API, not here. Agents outside the caller's scope are invisible rather than
+// forbidden so an agent id cannot be probed for existence across tenants.
+// An agent record without an authorization has no clientId, so it has no
+// identity and no scope to compare against; it is addressable by nobody.
 func callerSeesAgent(caller *runnerPrincipal, agent *Agent) bool {
-	if caller == nil || caller.Agent == nil || agent == nil {
+	if caller == nil || agent == nil || agent.Authorization == nil {
 		return false
 	}
-	if caller.Agent.ID == agent.ID {
+	if caller.Agent == nil && !caller.Setup {
+		return false
+	}
+	if caller.Agent != nil && caller.Agent.ID == agent.ID {
 		return true
-	}
-	if agent.Authorization == nil {
-		return false
 	}
 	scope, err := agentClientIDScope(agent.Authorization.ClientID)
 	if err != nil {
@@ -392,9 +403,16 @@ func (s *Server) handleUpdateAgent(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	update.ID = agent.ID
-	// The registration-time authorization is server state: its clientId is the
-	// agent's identity and carries its scope, so an update never restates it.
-	update.Authorization = agent.Authorization
+	// The clientId is the agent's identity and carries its scope, so an update
+	// never restates it. The public key is the runner's half and it does
+	// change: `config.sh --replace` generates a fresh key pair and signs its
+	// next client_assertion with it, so keeping the old key would leave the
+	// re-registered runner unable to obtain a session.
+	authorization := *agent.Authorization
+	if update.Authorization != nil && update.Authorization.PublicKey != nil {
+		authorization.PublicKey = update.Authorization.PublicKey
+	}
+	update.Authorization = &authorization
 	update.CreatedOn = agent.CreatedOn
 	s.store.Agents[agentID] = &update
 	s.store.mu.Unlock()

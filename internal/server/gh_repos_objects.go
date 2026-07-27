@@ -302,7 +302,7 @@ func (s *Server) handlePutContents(w http.ResponseWriter, r *http.Request) {
 		writeGHError(w, http.StatusNotFound, "Not Found")
 		return
 	}
-	if !canPushRepo(s.store, user, repo) {
+	if !s.viewerCanPushRepo(r.Context(), repo) {
 		writeGHError(w, http.StatusForbidden, "Must have push access to Repository.")
 		return
 	}
@@ -476,7 +476,7 @@ func (s *Server) handleDeleteContents(w http.ResponseWriter, r *http.Request) {
 		writeGHError(w, http.StatusNotFound, "Not Found")
 		return
 	}
-	if !canPushRepo(s.store, user, repo) {
+	if !s.viewerCanPushRepo(r.Context(), repo) {
 		writeGHError(w, http.StatusForbidden, "Must have push access to Repository.")
 		return
 	}

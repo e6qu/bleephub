@@ -304,7 +304,7 @@ func (s *Server) applyIssueFieldValues(w http.ResponseWriter, r *http.Request, r
 	if !ok {
 		return
 	}
-	if !canPushRepo(s.store, ghUserFromContext(r.Context()), repo) {
+	if !s.viewerHasRepoPermission(r.Context(), repo, scopeIssues, permWrite) {
 		writeGHError(w, http.StatusForbidden, "Must have push access to the repository.")
 		return
 	}

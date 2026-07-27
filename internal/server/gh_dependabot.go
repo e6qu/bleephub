@@ -108,7 +108,7 @@ func (s *Server) handleUpdateDependabotAlert(w http.ResponseWriter, r *http.Requ
 		return
 	}
 	user := ghUserFromContext(r.Context())
-	if !canAdminRepo(s.store, user, repo) {
+	if !s.viewerMayActOnRepo(r.Context(), repo, scopeSecurityEvents, permWrite, permAdmin) {
 		writeGHError(w, http.StatusNotFound, "Not Found")
 		return
 	}

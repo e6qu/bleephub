@@ -126,7 +126,7 @@ func (s *Server) handleUpdateCodeScanningAlert(w http.ResponseWriter, r *http.Re
 		writeGHError(w, http.StatusNotFound, "Not Found")
 		return
 	}
-	if !canAdminRepo(s.store, user, repo) {
+	if !s.viewerMayActOnRepo(r.Context(), repo, scopeSecurityEvents, permWrite, permAdmin) {
 		writeGHError(w, http.StatusNotFound, "Not Found")
 		return
 	}
@@ -237,7 +237,7 @@ func (s *Server) handleDeleteCodeScanningAnalysis(w http.ResponseWriter, r *http
 		writeGHError(w, http.StatusNotFound, "Not Found")
 		return
 	}
-	if !canAdminRepo(s.store, user, repo) {
+	if !s.viewerMayActOnRepo(r.Context(), repo, scopeSecurityEvents, permWrite, permAdmin) {
 		writeGHError(w, http.StatusNotFound, "Not Found")
 		return
 	}
@@ -297,42 +297,22 @@ func (s *Server) handleCreateSARIFUpload(w http.ResponseWriter, r *http.Request)
 	})
 }
 
-// codeScanningRequestCanWriteRepo accepts both user credentials with push
-// access and a repository-selected GitHub App installation token. GitHub
-// Actions' built-in token is installation-shaped rather than a human
-// collaborator, so reducing authorization to canPushRepo would reject the
-// official CodeQL producer even when its permission gate passed.
+// codeScanningRequestCanWriteRepo accepts a human collaborator with push access
+// and an installation token entitled to security events over the repository —
+// GitHub Actions' built-in token is installation-shaped rather than a human
+// collaborator, and asking only the user-scoped predicate would reject the
+// official CodeQL producer.
+//
+// The installation arm used to be reachability alone, beside the user arm
+// rather than intersected with a grant, which is how an installation created on
+// the attacker's own account downloaded any private repository's CodeQL
+// database — source-code-equivalent.
 func (s *Server) codeScanningRequestCanWriteRepo(r *http.Request, repo *Repo) bool {
-	if canPushRepo(s.store, ghUserFromContext(r.Context()), repo) {
-		return true
-	}
-	return installationRequestCanAccessRepo(r, repo)
-}
-
-// installationRequestCanAccessRepo reports whether the request's installation
-// covers this repository.
-//
-// It used to hand the repository to filterReposBySelection, which is written
-// for a different job: listing an installation's own repositories, where the
-// input set is already scoped and so it needs no owner check and can treat a
-// non-"selected" installation as "everything I was handed". Passing it a single
-// caller-chosen repository turned that into "everything on the instance" — an
-// installation created on the attacker's own account downloaded any private
-// repository's CodeQL database, which is source-code-equivalent.
-//
-// There is one predicate for "does this installation cover this repository" and
-// it is installationCovers. This uses it.
-func installationRequestCanAccessRepo(r *http.Request, repo *Repo) bool {
-	inst := ghInstallationFromContext(r.Context())
-	token := ghInstallationTokenFromContext(r.Context())
-	if inst == nil || token == nil || repo == nil {
-		return false
-	}
-	return installationCovers(inst, token.RepositoryIDs, repo)
+	return s.viewerHasRepoPermission(r.Context(), repo, scopeSecurityEvents, permWrite)
 }
 
 func (s *Server) codeScanningRequestCanReadRepo(r *http.Request, repo *Repo) bool {
-	return s.viewerCanReadRepo(r.Context(), repo) || installationRequestCanAccessRepo(r, repo)
+	return s.viewerCanReadRepo(r.Context(), repo)
 }
 
 func (s *Server) validateCodeScanningCoordinate(repo *Repo, commitSHA, ref string) error {
@@ -462,7 +442,7 @@ func (s *Server) handleUpdateCodeScanningDefaultSetup(w http.ResponseWriter, r *
 		writeGHError(w, http.StatusNotFound, "Not Found")
 		return
 	}
-	if !canAdminRepo(s.store, user, repo) {
+	if !s.viewerCanAdminRepo(r.Context(), repo) {
 		writeGHError(w, http.StatusNotFound, "Not Found")
 		return
 	}
@@ -711,7 +691,7 @@ func (s *Server) handleCreateCodeScanningAutofix(w http.ResponseWriter, r *http.
 		writeGHError(w, http.StatusNotFound, "Not Found")
 		return
 	}
-	if !canPushRepo(s.store, user, repo) {
+	if !s.viewerHasRepoPermission(r.Context(), repo, scopeSecurityEvents, permWrite) {
 		writeGHError(w, http.StatusForbidden, "Must have push access to Repository.")
 		return
 	}
@@ -747,7 +727,7 @@ func (s *Server) handleCommitCodeScanningAutofix(w http.ResponseWriter, r *http.
 		writeGHError(w, http.StatusNotFound, "Not Found")
 		return
 	}
-	if !canPushRepo(s.store, user, repo) {
+	if !s.viewerHasRepoPermission(r.Context(), repo, scopeSecurityEvents, permWrite) {
 		writeGHError(w, http.StatusForbidden, "Must have push access to Repository.")
 		return
 	}
@@ -1227,7 +1207,7 @@ func (s *Server) handleCreateCodeQLVariantAnalysis(w http.ResponseWriter, r *htt
 		writeGHError(w, http.StatusNotFound, "Not Found")
 		return
 	}
-	if !canPushRepo(s.store, user, repo) {
+	if !s.viewerHasRepoPermission(r.Context(), repo, scopeSecurityEvents, permWrite) {
 		writeGHError(w, http.StatusNotFound, "Not Found")
 		return
 	}

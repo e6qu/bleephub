@@ -278,12 +278,9 @@ func (s *Server) handleCreateOrgRepo(w http.ResponseWriter, r *http.Request) {
 			writeGHError(w, http.StatusForbidden, "Resource not accessible by integration")
 			return
 		}
-	} else {
-		m := s.store.GetMembership(orgLogin, user.ID)
-		if m == nil {
-			writeGHError(w, http.StatusForbidden, "Must be a member of the organization.")
-			return
-		}
+	} else if !s.viewerIsOrgMember(r.Context(), orgLogin) {
+		writeGHError(w, http.StatusForbidden, "Must be a member of the organization.")
+		return
 	}
 
 	var req struct {

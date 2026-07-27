@@ -44,7 +44,7 @@ func (s *Server) handleRepoCreateAttestation(w http.ResponseWriter, r *http.Requ
 		writeGHError(w, http.StatusUnauthorized, "Bad credentials")
 		return
 	}
-	if !canPushRepo(s.store, user, repo) {
+	if !s.viewerCanPushRepo(r.Context(), repo) {
 		writeGHError(w, http.StatusForbidden, "Must have write access to the repository.")
 		return
 	}

@@ -1745,7 +1745,7 @@ func (s *Server) addPullRequestFieldsToSchema(userType, issueType, repoType, mut
 				}
 			}
 
-			if ok, msg := s.canMergePullRequest(repo, pr, user); !ok {
+			if ok, msg := s.canMergePullRequest(p.Context, repo, pr); !ok {
 				if msg == "" {
 					msg = "Pull Request is not mergeable"
 				}

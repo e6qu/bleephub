@@ -251,7 +251,7 @@ func (s *Server) handleRevokeOAuthGrant(w http.ResponseWriter, r *http.Request) 
 }
 
 func (s *Server) handleCreateBrowserOAuthApp(w http.ResponseWriter, r *http.Request) {
-	user := ghUserFromContext(s.authenticateRequest(r))
+	r, user := s.authenticatedBrowserRequest(r)
 	if user == nil {
 		writeGHError(w, http.StatusUnauthorized, "Bad credentials")
 		return
@@ -269,7 +269,7 @@ func (s *Server) handleCreateBrowserOAuthApp(w http.ResponseWriter, r *http.Requ
 }
 
 func (s *Server) handleListBrowserOAuthApps(w http.ResponseWriter, r *http.Request) {
-	user := ghUserFromContext(s.authenticateRequest(r))
+	r, user := s.authenticatedBrowserRequest(r)
 	if user == nil {
 		writeGHError(w, http.StatusUnauthorized, "Bad credentials")
 		return

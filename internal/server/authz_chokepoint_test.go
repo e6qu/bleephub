@@ -19,6 +19,13 @@ import (
 // viewerCanReadRepo asks the right question, and every request-scoped caller
 // has to go through it.
 //
+// canPushRepo and canAdminRepo are the write half of the same question and were
+// left out of this list, which is why the ratchet stayed green while the write
+// half regressed: an installation token that merely reached a repository was
+// admitted to every push and admin mutation on the GraphQL lane, and to both
+// git transports, without anyone asking what the app had been granted. Watching
+// only the read predicate watches only the damage that reads can do.
+//
 // canAdminOrgAsUser and isActiveOrgMemberAsUser are the organization half of
 // exactly the same mistake: an app with no installation anywhere created org
 // webhooks, and listed an org's installations, because the gate asked only
@@ -44,6 +51,8 @@ var userScopedPredicateCallers = map[string]bool{
 // predicate that replaces it.
 var userScopedPredicates = map[string]string{
 	"canReadRepoAsUser":       "(*Server).viewerCanReadRepo",
+	"canPushRepo":             "(*Server).viewerCanPushRepo or (*Server).viewerHasRepoPermission",
+	"canAdminRepo":            "(*Server).viewerCanAdminRepo or (*Server).viewerHasRepoPermission",
 	"canAdminOrgAsUser":       "(*Server).viewerCanAdminOrg",
 	"isActiveOrgMemberAsUser": "(*Server).viewerIsOrgMember",
 }

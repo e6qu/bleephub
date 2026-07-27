@@ -83,7 +83,7 @@ func (s *Server) handleUpdateSecretScanningAlert(w http.ResponseWriter, r *http.
 		writeGHError(w, http.StatusNotFound, "Not Found")
 		return
 	}
-	if !canAdminRepo(s.store, user, repo) {
+	if !s.viewerMayActOnRepo(r.Context(), repo, scopeSecurityEvents, permWrite, permAdmin) {
 		writeGHError(w, http.StatusNotFound, "Not Found")
 		return
 	}
@@ -123,7 +123,7 @@ func (s *Server) handleBulkUpdateSecretScanningAlerts(w http.ResponseWriter, r *
 		writeGHError(w, http.StatusNotFound, "Not Found")
 		return
 	}
-	if !canAdminRepo(s.store, user, repo) {
+	if !s.viewerMayActOnRepo(r.Context(), repo, scopeSecurityEvents, permWrite, permAdmin) {
 		writeGHError(w, http.StatusNotFound, "Not Found")
 		return
 	}
@@ -281,7 +281,7 @@ func (s *Server) handleCreateSecretScanningPushProtectionBypass(w http.ResponseW
 		writeGHError(w, http.StatusNotFound, "Not Found")
 		return
 	}
-	if !canPushRepo(s.store, user, repo) {
+	if !s.viewerHasRepoPermission(r.Context(), repo, scopeSecurityEvents, permWrite) {
 		writeGHError(w, http.StatusForbidden, "User does not have enough permissions to perform this action.")
 		return
 	}

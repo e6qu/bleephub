@@ -135,7 +135,7 @@ func (s *Server) handleCreateProjectClassic(w http.ResponseWriter, r *http.Reque
 	if repo == nil {
 		return
 	}
-	if !canPushRepo(s.store, user, repo) {
+	if !s.viewerHasRepoPermission(r.Context(), repo, scopeProjects, permWrite) {
 		writeGHError(w, http.StatusNotFound, "Not Found")
 		return
 	}
@@ -184,7 +184,7 @@ func (s *Server) handleUpdateProjectClassic(w http.ResponseWriter, r *http.Reque
 	if proj == nil {
 		return
 	}
-	if !canPushRepo(s.store, user, repo) {
+	if !s.viewerHasRepoPermission(r.Context(), repo, scopeProjects, permWrite) {
 		writeGHError(w, http.StatusNotFound, "Not Found")
 		return
 	}
@@ -211,7 +211,7 @@ func (s *Server) handleDeleteProjectClassic(w http.ResponseWriter, r *http.Reque
 	if proj == nil {
 		return
 	}
-	if !canPushRepo(s.store, user, repo) {
+	if !s.viewerHasRepoPermission(r.Context(), repo, scopeProjects, permWrite) {
 		writeGHError(w, http.StatusNotFound, "Not Found")
 		return
 	}
@@ -254,7 +254,7 @@ func (s *Server) handleCreateProjectColumn(w http.ResponseWriter, r *http.Reques
 	if proj == nil {
 		return
 	}
-	if !canPushRepo(s.store, user, repo) {
+	if !s.viewerHasRepoPermission(r.Context(), repo, scopeProjects, permWrite) {
 		writeGHError(w, http.StatusNotFound, "Not Found")
 		return
 	}
@@ -300,7 +300,7 @@ func (s *Server) handleUpdateProjectColumn(w http.ResponseWriter, r *http.Reques
 	if col == nil {
 		return
 	}
-	if !canPushRepo(s.store, user, repo) {
+	if !s.viewerHasRepoPermission(r.Context(), repo, scopeProjects, permWrite) {
 		writeGHError(w, http.StatusNotFound, "Not Found")
 		return
 	}
@@ -329,7 +329,7 @@ func (s *Server) handleDeleteProjectColumn(w http.ResponseWriter, r *http.Reques
 	if col == nil {
 		return
 	}
-	if !canPushRepo(s.store, user, repo) {
+	if !s.viewerHasRepoPermission(r.Context(), repo, scopeProjects, permWrite) {
 		writeGHError(w, http.StatusNotFound, "Not Found")
 		return
 	}
@@ -348,7 +348,7 @@ func (s *Server) handleMoveProjectColumn(w http.ResponseWriter, r *http.Request)
 	if col == nil {
 		return
 	}
-	if !canPushRepo(s.store, user, repo) {
+	if !s.viewerHasRepoPermission(r.Context(), repo, scopeProjects, permWrite) {
 		writeGHError(w, http.StatusNotFound, "Not Found")
 		return
 	}
@@ -403,7 +403,7 @@ func (s *Server) handleCreateProjectCard(w http.ResponseWriter, r *http.Request)
 	if col == nil {
 		return
 	}
-	if !canPushRepo(s.store, user, repo) {
+	if !s.viewerHasRepoPermission(r.Context(), repo, scopeProjects, permWrite) {
 		writeGHError(w, http.StatusNotFound, "Not Found")
 		return
 	}
@@ -477,7 +477,7 @@ func (s *Server) handleUpdateProjectCard(w http.ResponseWriter, r *http.Request)
 	if card == nil {
 		return
 	}
-	if !canPushRepo(s.store, user, repo) {
+	if !s.viewerHasRepoPermission(r.Context(), repo, scopeProjects, permWrite) {
 		writeGHError(w, http.StatusNotFound, "Not Found")
 		return
 	}
@@ -507,7 +507,7 @@ func (s *Server) handleDeleteProjectCard(w http.ResponseWriter, r *http.Request)
 	if card == nil {
 		return
 	}
-	if !canPushRepo(s.store, user, repo) {
+	if !s.viewerHasRepoPermission(r.Context(), repo, scopeProjects, permWrite) {
 		writeGHError(w, http.StatusNotFound, "Not Found")
 		return
 	}
@@ -526,7 +526,7 @@ func (s *Server) handleMoveProjectCard(w http.ResponseWriter, r *http.Request) {
 	if card == nil {
 		return
 	}
-	if !canPushRepo(s.store, user, repo) {
+	if !s.viewerHasRepoPermission(r.Context(), repo, scopeProjects, permWrite) {
 		writeGHError(w, http.StatusNotFound, "Not Found")
 		return
 	}

@@ -78,6 +78,7 @@ func (s *Server) handleClassroomDashboard(w http.ResponseWriter, r *http.Request
 }
 
 func (s *Server) classroomsAdministeredBy(ctx context.Context, user *User) []*Classroom {
+	ctx = contextWithUser(ctx, user)
 	s.store.mu.RLock()
 	all := make([]*Classroom, 0, len(s.store.Classrooms))
 	for _, c := range s.store.Classrooms {

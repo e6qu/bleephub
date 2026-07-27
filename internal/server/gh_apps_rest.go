@@ -1,6 +1,7 @@
 package bleephub
 
 import (
+	"context"
 	"encoding/json"
 	"io"
 	"net/http"
@@ -66,7 +67,7 @@ func (s *Server) registerGHAppsUserAndOperatorRoutes() {
 // to the manifest's redirect_url with a one-time `code` (echoing the optional
 // `state`). The conversion endpoint below redeems the code for credentials.
 func (s *Server) handleManifestSubmission(w http.ResponseWriter, r *http.Request) {
-	user := ghUserFromContext(s.authenticateRequest(r))
+	r, user := s.authenticatedBrowserRequest(r)
 	if user == nil {
 		writeGHError(w, http.StatusUnauthorized, "Bad credentials")
 		return
@@ -166,7 +167,7 @@ func (s *Server) handleManifestSubmission(w http.ResponseWriter, r *http.Request
 // handleListBrowserGitHubApps exposes the signed-in user's GitHub Apps through
 // the same settings surface that owns the browser manifest flow.
 func (s *Server) handleListBrowserGitHubApps(w http.ResponseWriter, r *http.Request) {
-	user := ghUserFromContext(s.authenticateRequest(r))
+	r, user := s.authenticatedBrowserRequest(r)
 	if user == nil {
 		writeGHError(w, http.StatusUnauthorized, "Bad credentials")
 		return
@@ -186,7 +187,7 @@ func (s *Server) handleListBrowserGitHubApps(w http.ResponseWriter, r *http.Requ
 // permissions/events are the installation grant; the form only chooses the
 // target account and all-vs-selected repository access.
 func (s *Server) handleBrowserInstallApp(w http.ResponseWriter, r *http.Request) {
-	user := ghUserFromContext(s.authenticateRequest(r))
+	r, user := s.authenticatedBrowserRequest(r)
 	if user == nil {
 		writeGHError(w, http.StatusUnauthorized, "Bad credentials")
 		return
@@ -204,7 +205,7 @@ func (s *Server) handleBrowserInstallApp(w http.ResponseWriter, r *http.Request)
 	if targetLogin == "" {
 		targetLogin = user.Login
 	}
-	targetType, targetID, ok := s.resolveInstallTarget(user, targetLogin)
+	targetType, targetID, ok := s.resolveInstallTarget(r.Context(), user, targetLogin)
 	if !ok {
 		writeGHError(w, http.StatusForbidden, "Must be able to install GitHub Apps on this account")
 		return
@@ -251,7 +252,7 @@ func (s *Server) handleBrowserUnsuspendInstallation(w http.ResponseWriter, r *ht
 }
 
 func (s *Server) handleBrowserInstallationState(w http.ResponseWriter, r *http.Request, suspend bool) {
-	user := ghUserFromContext(s.authenticateRequest(r))
+	r, user := s.authenticatedBrowserRequest(r)
 	if user == nil {
 		writeGHError(w, http.StatusUnauthorized, "Bad credentials")
 		return
@@ -281,7 +282,7 @@ func (s *Server) handleBrowserInstallationState(w http.ResponseWriter, r *http.R
 }
 
 func (s *Server) handleBrowserDeleteInstallation(w http.ResponseWriter, r *http.Request) {
-	user := ghUserFromContext(s.authenticateRequest(r))
+	r, user := s.authenticatedBrowserRequest(r)
 	if user == nil {
 		writeGHError(w, http.StatusUnauthorized, "Bad credentials")
 		return
@@ -311,22 +312,19 @@ func (s *Server) browserManageableInstallation(w http.ResponseWriter, r *http.Re
 	if inst.TargetLogin == user.Login {
 		return inst, true
 	}
-	if inst.TargetType == "Organization" {
-		if m := s.store.GetMembership(inst.TargetLogin, user.ID); m != nil && m.State == MembershipStateActive && m.Role == OrgRoleAdmin {
-			return inst, true
-		}
+	if inst.TargetType == "Organization" && s.viewerCanAdminOrg(r.Context(), inst.TargetLogin) {
+		return inst, true
 	}
 	writeGHError(w, http.StatusForbidden, "Must be able to manage GitHub Apps on this account")
 	return nil, false
 }
 
-func (s *Server) resolveInstallTarget(user *User, targetLogin string) (string, int, bool) {
+func (s *Server) resolveInstallTarget(ctx context.Context, user *User, targetLogin string) (string, int, bool) {
 	if targetLogin == user.Login {
 		return "User", user.ID, true
 	}
 	if org := s.store.GetOrg(targetLogin); org != nil {
-		m := s.store.GetMembership(targetLogin, user.ID)
-		return "Organization", org.ID, m != nil && m.State == MembershipStateActive && m.Role == OrgRoleAdmin
+		return "Organization", org.ID, s.viewerCanAdminOrg(ctx, targetLogin)
 	}
 	return "", 0, false
 }
@@ -730,10 +728,8 @@ func (s *Server) handleListUserInstallations(w http.ResponseWriter, r *http.Requ
 			all = append(all, inst)
 			continue
 		}
-		if inst.TargetType == "Organization" {
-			if m := s.store.GetMembership(inst.TargetLogin, user.ID); m != nil && m.State == MembershipStateActive {
-				all = append(all, inst)
-			}
+		if inst.TargetType == "Organization" && s.viewerIsOrgMember(r.Context(), inst.TargetLogin) {
+			all = append(all, inst)
 		}
 	}
 

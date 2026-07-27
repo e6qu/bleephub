@@ -808,7 +808,7 @@ func (s *Server) handleDeleteRepoPackage(w http.ResponseWriter, r *http.Request)
 	if !ok {
 		return
 	}
-	if !canAdminRepo(s.store, user, s.store.ReposByName[p.OwnerKey]) {
+	if !s.viewerCanAdminRepo(r.Context(), s.store.ReposByName[p.OwnerKey]) {
 		writeGHError(w, http.StatusForbidden, "Forbidden")
 		return
 	}
@@ -860,7 +860,7 @@ func (s *Server) handleDeleteRepoPackageVersion(w http.ResponseWriter, r *http.R
 	if !ok {
 		return
 	}
-	if !canAdminRepo(s.store, user, s.store.ReposByName[p.OwnerKey]) {
+	if !s.viewerCanAdminRepo(r.Context(), s.store.ReposByName[p.OwnerKey]) {
 		writeGHError(w, http.StatusForbidden, "Forbidden")
 		return
 	}
@@ -1093,6 +1093,7 @@ func (s *Server) requireUser(w http.ResponseWriter, r *http.Request) *User {
 }
 
 func (s *Server) canViewPackage(ctx context.Context, user *User, p *Package) bool {
+	ctx = contextWithUser(ctx, user)
 	if p.Visibility == "public" {
 		return true
 	}
@@ -1100,6 +1101,7 @@ func (s *Server) canViewPackage(ctx context.Context, user *User, p *Package) boo
 }
 
 func (s *Server) canAdminPackage(ctx context.Context, user *User, p *Package) bool {
+	ctx = contextWithUser(ctx, user)
 	if user == nil {
 		return false
 	}
@@ -1113,7 +1115,7 @@ func (s *Server) canAdminPackage(ctx context.Context, user *User, p *Package) bo
 		return false
 	case "Repository":
 		if repo := s.store.ReposByName[p.OwnerKey]; repo != nil {
-			return canAdminRepo(s.store, user, repo)
+			return s.viewerCanAdminRepo(ctx, repo)
 		}
 		return false
 	}

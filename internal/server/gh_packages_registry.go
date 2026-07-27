@@ -333,7 +333,12 @@ func (s *Server) canPublishContainerRegistryPackage(ctx context.Context, user *U
 		return user.Login == ownerKey
 	case "Organization":
 		if org := s.store.GetOrg(ownerKey); org != nil {
-			return s.viewerCanAdminOrg(ctx, org.Login)
+			// The registry routes sit outside the API middleware and
+			// authenticate themselves, so the caller arrives as an argument
+			// rather than on the context the org predicate reads. Putting it
+			// there is what lets one predicate answer for every surface —
+			// without it the check silently refuses everyone.
+			return s.viewerCanAdminOrg(contextWithUser(ctx, user), org.Login)
 		}
 	}
 	return false

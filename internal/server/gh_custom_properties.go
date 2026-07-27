@@ -288,7 +288,7 @@ func (s *Server) handleSetRepoCustomPropertyValues(w http.ResponseWriter, r *htt
 		writeGHError(w, http.StatusNotFound, "Not Found")
 		return
 	}
-	if !canAdminRepo(s.store, ghUserFromContext(r.Context()), repo) {
+	if !s.viewerCanAdminRepo(r.Context(), repo) {
 		writeGHError(w, http.StatusForbidden, "Must have admin rights to Repository.")
 		return
 	}

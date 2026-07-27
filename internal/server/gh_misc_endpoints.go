@@ -867,7 +867,7 @@ func (s *Server) mintOIDCToken(r *http.Request, audience string) (string, error)
 	}
 	// The actor is the authenticated user who triggered the run. /token sits
 	// outside the /api middleware, so resolve the caller's token directly.
-	user := ghUserFromContext(s.authenticateRequest(r))
+	r, user := s.authenticatedBrowserRequest(r)
 	if user == nil {
 		return "", fmt.Errorf("oidc: unauthenticated — no actor for the token")
 	}

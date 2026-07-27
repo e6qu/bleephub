@@ -1,0 +1,676 @@
+package bleephub
+
+import (
+	"crypto/rand"
+	"crypto/rsa"
+	"encoding/base64"
+	"encoding/json"
+	"fmt"
+	"io"
+	"math/big"
+	"net/http"
+	"net/url"
+	"strings"
+	"testing"
+	"time"
+)
+
+// The configuration handshake of the official actions/runner, step for step,
+// against the live test server.
+//
+// Every gate on the runner control plane was verified to reject a caller with
+// no credential. What that cannot show is the other half — that a runner
+// holding exactly the credentials `config.sh` has at each point still gets
+// through. A gate one credential too tight fails identically to a missing
+// route: 401, before the runner has configured itself at all. So each step
+// here asserts both directions, and the sequence is the one the runner
+// actually performs:
+//
+//	operator  POST /api/v3/repos/{owner}/{repo}/actions/runners/registration-token
+//	           (or the {org} form) — administration:write mints the token
+//	           config.sh is invoked with
+//	runner    POST /api/v3/actions/runner-registration   RemoteAuth <token>
+//	           exchanges it for the tenant URL and tenant token
+//	runner    GET  /_apis/connectionData                 no credential
+//	runner    GET  /_apis/v1/AgentPools                  tenant token
+//	runner    GET  /_apis/v1/Agent/{poolId}?agentName=   tenant token
+//	           GetAgentsAsync: config.sh looks its own name up before it
+//	           decides between adding and replacing
+//	runner    POST /_apis/v1/Agent/{poolId}              tenant token
+//	           AddAgentAsync, carrying the RSA public key it just generated
+//	           (or PUT /_apis/v1/Agent/{poolId}/{agentId} for --replace)
+//	runner    POST /_apis/v1/auth/                       RSA client_assertion
+//	           exchanged for the agent session bearer
+//	runner    GET  /_apis/connectionData                 session bearer
+//	           the runner re-connects to test the credential it was issued
+//	runner    POST /_apis/v1/AgentSession/{poolId}       session bearer
+//	runner    GET  /_apis/v1/Message/{poolId}?sessionId= session bearer
+
+// handshakeRunner carries the state one runner accumulates while configuring
+// itself: the key pair it generates, the tenant token it exchanges its
+// registration token for, and the session bearer it ends up holding.
+type handshakeRunner struct {
+	t          *testing.T
+	name       string
+	scopePath  string // "/owner/repo" or "/org", the --url path config.sh is given
+	key        *rsa.PrivateKey
+	setupToken string
+	agentID    int
+	clientID   string
+	session    string
+	sessionID  string
+}
+
+// handshakeCall issues one request against the live test server and returns
+// its status and body. authorization is sent verbatim, so a step can present
+// the RemoteAuth scheme the runner uses.
+func handshakeCall(t *testing.T, method, path, authorization, contentType, body string) (int, []byte) {
+	t.Helper()
+	var reader io.Reader
+	if body != "" {
+		reader = strings.NewReader(body)
+	}
+	req, err := http.NewRequest(method, testBaseURL+path, reader)
+	if err != nil {
+		t.Fatalf("build %s %s: %v", method, path, err)
+	}
+	if authorization != "" {
+		req.Header.Set("Authorization", authorization)
+	}
+	if contentType != "" {
+		req.Header.Set("Content-Type", contentType)
+	}
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatalf("%s %s: %v", method, path, err)
+	}
+	defer resp.Body.Close()
+	payload, err := io.ReadAll(resp.Body)
+	if err != nil {
+		t.Fatalf("read %s %s: %v", method, path, err)
+	}
+	return resp.StatusCode, payload
+}
+
+// handshakeStep runs one step of the handshake and fails with the step's name
+// when it does not succeed, so an over-tight gate names itself.
+func handshakeStep(t *testing.T, step, method, path, authorization, contentType, body string, want int) []byte {
+	t.Helper()
+	status, payload := handshakeCall(t, method, path, authorization, contentType, body)
+	if status != want {
+		t.Fatalf("%s: %s %s = %d, want %d; body=%s", step, method, path, status, want, payload)
+	}
+	return payload
+}
+
+// refuseAnonymous asserts the same route is unreachable without a credential.
+// Every step of the handshake is paired with one of these: the point of the
+// test is that widening a gate for the runner did not open it to everyone.
+func refuseAnonymous(t *testing.T, step, method, path, contentType, body string) {
+	t.Helper()
+	status, payload := handshakeCall(t, method, path, "", contentType, body)
+	if status != http.StatusUnauthorized {
+		t.Errorf("%s: anonymous %s %s = %d, want 401; body=%s", step, method, path, status, payload)
+	}
+}
+
+func newHandshakeRunner(t *testing.T, name, scopePath string) *handshakeRunner {
+	t.Helper()
+	key, err := rsa.GenerateKey(rand.Reader, 2048)
+	if err != nil {
+		t.Fatalf("generate runner key: %v", err)
+	}
+	return &handshakeRunner{t: t, name: name, scopePath: scopePath, key: key}
+}
+
+// publicKeyJSON encodes the runner's RSA public key the way the agent protocol
+// carries it: standard-base64 modulus and exponent.
+func (h *handshakeRunner) publicKeyJSON() string {
+	return fmt.Sprintf(`{"exponent":%q,"modulus":%q}`,
+		base64.StdEncoding.EncodeToString(big.NewInt(int64(h.key.E)).Bytes()),
+		base64.StdEncoding.EncodeToString(h.key.N.Bytes()))
+}
+
+// mintRegistrationToken is the operator's half: an administration:write
+// caller mints the token `config.sh --token` is invoked with.
+func (h *handshakeRunner) mintRegistrationToken(path string) string {
+	h.t.Helper()
+	refuseAnonymous(h.t, "mint registration token", "POST", path, "application/json", "{}")
+	payload := handshakeStep(h.t, "mint registration token", "POST", path,
+		"token "+defaultToken, "application/json", "{}", http.StatusCreated)
+	var minted struct {
+		Token string `json:"token"`
+	}
+	if err := json.Unmarshal(payload, &minted); err != nil {
+		h.t.Fatalf("decode registration token: %v", err)
+	}
+	if minted.Token == "" {
+		h.t.Fatal("registration token response carried no token")
+	}
+	return minted.Token
+}
+
+// exchangeTenantCredential is GetTenantCredential: config.sh trades the
+// registration token for the tenant URL and the credential it uses for the
+// rest of configuration.
+func (h *handshakeRunner) exchangeTenantCredential(registrationToken, runnerEvent string) {
+	h.t.Helper()
+	const path = "/api/v3/actions/runner-registration"
+	body := fmt.Sprintf(`{"url":%q,"runner_event":%q}`, testBaseURL+h.scopePath, runnerEvent)
+	refuseAnonymous(h.t, "tenant credential", "POST", path, "application/json", body)
+
+	payload := handshakeStep(h.t, "tenant credential", "POST", path,
+		"RemoteAuth "+registrationToken, "application/json", body, http.StatusOK)
+	var tenant struct {
+		URL         string `json:"url"`
+		TokenSchema string `json:"token_schema"`
+		Token       string `json:"token"`
+	}
+	if err := json.Unmarshal(payload, &tenant); err != nil {
+		h.t.Fatalf("decode tenant credential: %v", err)
+	}
+	if tenant.Token == "" {
+		h.t.Fatal("tenant credential response carried no token")
+	}
+	if tenant.TokenSchema != "OAuthAccessToken" {
+		h.t.Fatalf("token_schema = %q, want OAuthAccessToken", tenant.TokenSchema)
+	}
+	if !strings.HasSuffix(tenant.URL, h.scopePath) {
+		h.t.Fatalf("tenant url = %q, want the configured scope path %q preserved", tenant.URL, h.scopePath)
+	}
+	h.setupToken = tenant.Token
+}
+
+func (h *handshakeRunner) connectionData(authorization string) {
+	h.t.Helper()
+	// Service discovery is read before the runner holds any credential and
+	// again with the session bearer once it has one; both must answer.
+	handshakeStep(h.t, "connectionData", "GET", "/_apis/connectionData", authorization, "", "", http.StatusOK)
+}
+
+func (h *handshakeRunner) listPools() {
+	h.t.Helper()
+	refuseAnonymous(h.t, "list pools", "GET", "/_apis/v1/AgentPools", "", "")
+	handshakeStep(h.t, "list pools", "GET", "/_apis/v1/AgentPools",
+		"Bearer "+h.setupToken, "", "", http.StatusOK)
+}
+
+// lookUpOwnName is GetAgentsAsync — the call config.sh makes to decide
+// between adding a registration and replacing one. It runs on the tenant
+// token, long before any agent session exists.
+func (h *handshakeRunner) lookUpOwnName() []Agent {
+	h.t.Helper()
+	path := "/_apis/v1/Agent/1?agentName=" + url.QueryEscape(h.name)
+	refuseAnonymous(h.t, "look up own name", "GET", path, "", "")
+	payload := handshakeStep(h.t, "look up own name", "GET", path,
+		"Bearer "+h.setupToken, "", "", http.StatusOK)
+	var listing struct {
+		Count int     `json:"count"`
+		Value []Agent `json:"value"`
+	}
+	if err := json.Unmarshal(payload, &listing); err != nil {
+		h.t.Fatalf("decode agent listing: %v", err)
+	}
+	if listing.Count != len(listing.Value) {
+		h.t.Fatalf("agent listing count = %d but carried %d agents", listing.Count, len(listing.Value))
+	}
+	return listing.Value
+}
+
+func (h *handshakeRunner) agentBody() string {
+	return fmt.Sprintf(
+		`{"name":%q,"version":"2.330.0","osDescription":"Linux","ephemeral":false,`+
+			`"labels":[{"name":"self-hosted","type":"custom"}],"authorization":{"publicKey":%s}}`,
+		h.name, h.publicKeyJSON())
+}
+
+// addAgent is AddAgentAsync.
+func (h *handshakeRunner) addAgent() {
+	h.t.Helper()
+	const path = "/_apis/v1/Agent/1"
+	body := h.agentBody()
+	refuseAnonymous(h.t, "add agent", "POST", path, "application/json", body)
+	payload := handshakeStep(h.t, "add agent", "POST", path,
+		"Bearer "+h.setupToken, "application/json", body, http.StatusOK)
+	h.readAgent("add agent", payload)
+}
+
+// replaceAgent is ReplaceAgentAsync — what `config.sh --replace` does when the
+// pool already carries the runner's name. The runner presents a freshly
+// generated key pair here, and signs its next client_assertion with it.
+func (h *handshakeRunner) replaceAgent(agentID int) {
+	h.t.Helper()
+	key, err := rsa.GenerateKey(rand.Reader, 2048)
+	if err != nil {
+		h.t.Fatalf("generate replacement key: %v", err)
+	}
+	h.key = key
+	path := fmt.Sprintf("/_apis/v1/Agent/1/%d", agentID)
+	body := h.agentBody()
+	refuseAnonymous(h.t, "replace agent", "PUT", path, "application/json", body)
+	payload := handshakeStep(h.t, "replace agent", "PUT", path,
+		"Bearer "+h.setupToken, "application/json", body, http.StatusOK)
+	h.readAgent("replace agent", payload)
+}
+
+func (h *handshakeRunner) readAgent(step string, payload []byte) {
+	h.t.Helper()
+	var agent Agent
+	if err := json.Unmarshal(payload, &agent); err != nil {
+		h.t.Fatalf("%s: decode agent: %v", step, err)
+	}
+	if agent.ID == 0 {
+		h.t.Fatalf("%s: agent record carries no id", step)
+	}
+	if agent.Authorization == nil || agent.Authorization.ClientID == "" {
+		h.t.Fatalf("%s: agent record carries no clientId", step)
+	}
+	if agent.Authorization.AuthorizationURL == "" {
+		h.t.Fatalf("%s: agent record carries no authorizationUrl", step)
+	}
+	h.agentID = agent.ID
+	h.clientID = agent.Authorization.ClientID
+}
+
+// exchangeSessionToken is the OAuth2 jwt-bearer exchange: the runner signs a
+// client_assertion with the key it registered and receives the session bearer.
+func (h *handshakeRunner) exchangeSessionToken() {
+	h.t.Helper()
+	form := url.Values{}
+	form.Set("grant_type", "urn:ietf:params:oauth:grant-type:jwt-bearer")
+	form.Set("client_assertion_type", "urn:ietf:params:oauth:client-assertion-type:jwt-bearer")
+	form.Set("client_assertion", signTestAssertion(h.t, h.key, h.clientID))
+	payload := handshakeStep(h.t, "session token", "POST", "/_apis/v1/auth/", "",
+		"application/x-www-form-urlencoded", form.Encode(), http.StatusOK)
+	var issued struct {
+		AccessToken string `json:"access_token"`
+	}
+	if err := json.Unmarshal(payload, &issued); err != nil {
+		h.t.Fatalf("decode session token: %v", err)
+	}
+	if issued.AccessToken == "" {
+		h.t.Fatal("token exchange returned no access_token")
+	}
+	h.session = issued.AccessToken
+}
+
+func (h *handshakeRunner) createSession() {
+	h.t.Helper()
+	const path = "/_apis/v1/AgentSession/1"
+	body := fmt.Sprintf(`{"ownerName":%q,"agent":{"id":%d}}`, h.name, h.agentID)
+	refuseAnonymous(h.t, "create session", "POST", path, "application/json", body)
+	payload := handshakeStep(h.t, "create session", "POST", path,
+		"Bearer "+h.session, "application/json", body, http.StatusOK)
+	var created struct {
+		SessionID string `json:"sessionId"`
+	}
+	if err := json.Unmarshal(payload, &created); err != nil {
+		h.t.Fatalf("decode session: %v", err)
+	}
+	if created.SessionID == "" {
+		h.t.Fatal("session response carried no sessionId")
+	}
+	h.sessionID = created.SessionID
+}
+
+func (h *handshakeRunner) messagePath() string {
+	return "/_apis/v1/Message/1?sessionId=" + url.QueryEscape(h.sessionID) + "&lastMessageId=0"
+}
+
+// pollForMessage takes the job waiting for this runner. It is only called
+// where one has been queued: an empty queue makes the listener's long poll
+// block for its full timeout, which is correct behaviour and a useless wait.
+func (h *handshakeRunner) pollForMessage() []byte {
+	h.t.Helper()
+	return handshakeStep(h.t, "poll for messages", "GET", h.messagePath(),
+		"Bearer "+h.session, "", "", http.StatusOK)
+}
+
+func (h *handshakeRunner) deleteSession() {
+	h.t.Helper()
+	path := fmt.Sprintf("/_apis/v1/AgentSession/1/%s", url.PathEscape(h.sessionID))
+	refuseAnonymous(h.t, "delete session", "DELETE", path, "", "")
+	handshakeStep(h.t, "delete session", "DELETE", path, "Bearer "+h.session, "", "", http.StatusOK)
+}
+
+// configure runs the whole `config.sh` sequence and leaves the runner holding
+// a session bearer, exactly as the runner does before `run.sh` starts.
+func (h *handshakeRunner) configure(registrationTokenPath string) {
+	h.t.Helper()
+	h.exchangeTenantCredential(h.mintRegistrationToken(registrationTokenPath), "register")
+	h.connectionData("")
+	h.listPools()
+	if existing := h.lookUpOwnName(); len(existing) > 0 {
+		h.replaceAgent(existing[0].ID)
+	} else {
+		h.addAgent()
+	}
+	h.exchangeSessionToken()
+	h.connectionData("Bearer " + h.session)
+}
+
+// TestRunnerConfigurationHandshakeSucceedsForARepositoryRunner is the
+// regression this file exists for: a runner registering against a repository
+// must complete configuration and open a listening session.
+func TestRunnerConfigurationHandshakeSucceedsForARepositoryRunner(t *testing.T) {
+	testRepo(t, testServer, "admin", "handshake-repo", false)
+
+	runner := newHandshakeRunner(t, "handshake-repo-runner", "/admin/handshake-repo")
+	runner.configure("/api/v3/repos/admin/handshake-repo/actions/runners/registration-token")
+	runner.createSession()
+	refuseAnonymous(t, "poll for messages", "GET", runner.messagePath(), "", "")
+	runner.deleteSession()
+}
+
+// TestRunnerConfigurationHandshakeSucceedsForAnOrganizationRunner is the same
+// sequence at the other scope the harness exercises. The credential carries an
+// organization rather than a repository, and every gate has to read it.
+func TestRunnerConfigurationHandshakeSucceedsForAnOrganizationRunner(t *testing.T) {
+	store := testServer.store
+	admin := store.LookupUserByLogin("admin")
+	if admin == nil {
+		t.Fatal("the seeded admin user is missing")
+	}
+	const orgLogin = "handshake-org"
+	if store.GetOrg(orgLogin) == nil && store.CreateOrg(admin, orgLogin, "Handshake Org", "") == nil {
+		t.Fatalf("could not create the fixture organization")
+	}
+
+	runner := newHandshakeRunner(t, "handshake-org-runner", "/"+orgLogin)
+	runner.configure("/api/v3/orgs/" + orgLogin + "/actions/runners/registration-token")
+	runner.createSession()
+	refuseAnonymous(t, "poll for messages", "GET", runner.messagePath(), "", "")
+	runner.deleteSession()
+
+	scope, err := agentClientIDScope(runner.clientID)
+	if err != nil {
+		t.Fatalf("agentClientIDScope: %v", err)
+	}
+	if scope.Org != orgLogin {
+		t.Fatalf("agent scope = %+v, want org %s", scope, orgLogin)
+	}
+}
+
+// TestRunnerReconfigurationReplacesItsRegistration covers `config.sh
+// --replace` against a pool that already carries the runner's name: the
+// lookup finds the old registration, the replacement carries a new key pair,
+// and the session exchange has to accept that new key.
+func TestRunnerReconfigurationReplacesItsRegistration(t *testing.T) {
+	testRepo(t, testServer, "admin", "handshake-replace", false)
+	const tokenPath = "/api/v3/repos/admin/handshake-replace/actions/runners/registration-token"
+
+	first := newHandshakeRunner(t, "handshake-replace-runner", "/admin/handshake-replace")
+	first.configure(tokenPath)
+
+	second := newHandshakeRunner(t, "handshake-replace-runner", "/admin/handshake-replace")
+	second.exchangeTenantCredential(second.mintRegistrationToken(tokenPath), "register")
+	existing := second.lookUpOwnName()
+	if len(existing) != 1 {
+		t.Fatalf("pool lookup found %d registrations for %q, want the one just configured", len(existing), second.name)
+	}
+	if existing[0].ID != first.agentID {
+		t.Fatalf("pool lookup found agent %d, want %d", existing[0].ID, first.agentID)
+	}
+	second.replaceAgent(existing[0].ID)
+	if second.agentID != first.agentID {
+		t.Fatalf("replacement created agent %d instead of rewriting %d", second.agentID, first.agentID)
+	}
+	// The session exchange is the assertion that matters: it verifies the
+	// client_assertion against the key the replacement carried.
+	second.exchangeSessionToken()
+	second.createSession()
+	second.deleteSession()
+}
+
+// TestRunnerRemovalHandshakeSucceeds covers `config.sh remove --token`: a
+// removal token is exchanged for a tenant credential, which looks the runner
+// up and deletes its registration.
+func TestRunnerRemovalHandshakeSucceeds(t *testing.T) {
+	testRepo(t, testServer, "admin", "handshake-remove", false)
+
+	runner := newHandshakeRunner(t, "handshake-remove-runner", "/admin/handshake-remove")
+	runner.configure("/api/v3/repos/admin/handshake-remove/actions/runners/registration-token")
+
+	removalToken := runner.mintRegistrationToken("/api/v3/repos/admin/handshake-remove/actions/runners/remove-token")
+	runner.exchangeTenantCredential(removalToken, "remove")
+
+	found := runner.lookUpOwnName()
+	if len(found) != 1 || found[0].ID != runner.agentID {
+		t.Fatalf("removal lookup found %d registrations, want agent %d", len(found), runner.agentID)
+	}
+
+	path := fmt.Sprintf("/_apis/v1/Agent/1/%d", runner.agentID)
+	refuseAnonymous(t, "delete agent", "DELETE", path, "", "")
+	handshakeStep(t, "delete agent", "DELETE", path, "Bearer "+runner.setupToken, "", "", http.StatusOK)
+
+	if remaining := runner.lookUpOwnName(); len(remaining) != 0 {
+		t.Fatalf("registration survived removal: %d agents still named %q", len(remaining), runner.name)
+	}
+}
+
+// TestRunnerSetupCredentialsDoNotCrossPurposes pins the separation the config
+// routes depend on. A registration token registers; a removal token removes;
+// neither does the other's job, and neither is a substitute for the session
+// bearer a configured runner holds.
+func TestRunnerSetupCredentialsDoNotCrossPurposes(t *testing.T) {
+	testRepo(t, testServer, "admin", "handshake-purposes", false)
+	base := "/api/v3/repos/admin/handshake-purposes/actions/runners/"
+
+	runner := newHandshakeRunner(t, "handshake-purposes-runner", "/admin/handshake-purposes")
+	registration := runner.mintRegistrationToken(base + "registration-token")
+	removal := runner.mintRegistrationToken(base + "remove-token")
+
+	// A removal token cannot be exchanged for a registration tenant credential,
+	// and a registration token cannot be exchanged for a removal one.
+	for _, tc := range []struct{ event, token, name string }{
+		{"register", removal, "removal token registering"},
+		{"remove", registration, "registration token removing"},
+	} {
+		body := fmt.Sprintf(`{"url":%q,"runner_event":%q}`, testBaseURL+runner.scopePath, tc.event)
+		status, payload := handshakeCall(t, "POST", "/api/v3/actions/runner-registration",
+			"RemoteAuth "+tc.token, "application/json", body)
+		if status != http.StatusUnauthorized {
+			t.Errorf("%s: status = %d, want 401; body=%s", tc.name, status, payload)
+		}
+	}
+
+	// An unrecognized runner_event names no operation, so it cannot select one.
+	body := fmt.Sprintf(`{"url":%q,"runner_event":"sideways"}`, testBaseURL+runner.scopePath)
+	if status, payload := handshakeCall(t, "POST", "/api/v3/actions/runner-registration",
+		"RemoteAuth "+registration, "application/json", body); status != http.StatusBadRequest {
+		t.Errorf("unknown runner_event: status = %d, want 400; body=%s", status, payload)
+	}
+
+	// Configure for real, then check the config-time routes against the wrong
+	// purpose. The tenant token here is a registration credential.
+	runner.exchangeTenantCredential(registration, "register")
+	runner.listPools()
+	runner.addAgent()
+
+	removalTenant := newHandshakeRunner(t, runner.name, runner.scopePath)
+	removalTenant.exchangeTenantCredential(removal, "remove")
+
+	// A removal credential may look a runner up — `config.sh remove` does —
+	// but it may not mint a registration or rewrite one, and a registration
+	// credential may not delete one. A setup token offered for the wrong
+	// purpose is not a credential the route knows, so it is refused exactly
+	// like none at all.
+	if status, payload := handshakeCall(t, "POST", "/_apis/v1/Agent/1",
+		"Bearer "+removalTenant.setupToken, "application/json", runner.agentBody()); status != http.StatusUnauthorized {
+		t.Errorf("removal token adding an agent: status = %d, want 401; body=%s", status, payload)
+	}
+	replacePath := fmt.Sprintf("/_apis/v1/Agent/1/%d", runner.agentID)
+	if status, payload := handshakeCall(t, "PUT", replacePath,
+		"Bearer "+removalTenant.setupToken, "application/json", runner.agentBody()); status != http.StatusUnauthorized {
+		t.Errorf("removal token replacing an agent: status = %d, want 401; body=%s", status, payload)
+	}
+	if status, payload := handshakeCall(t, "DELETE", replacePath,
+		"Bearer "+runner.setupToken, "", ""); status != http.StatusUnauthorized {
+		t.Errorf("registration token deleting an agent: status = %d, want 401; body=%s", status, payload)
+	}
+	// The pool listing is not a fleet-wide view: a credential for another
+	// repository sees nothing of this one's runners.
+	outsider := newHandshakeRunner(t, runner.name, "/admin/handshake-purposes-other")
+	testRepo(t, testServer, "admin", "handshake-purposes-other", false)
+	outsider.exchangeTenantCredential(
+		outsider.mintRegistrationToken("/api/v3/repos/admin/handshake-purposes-other/actions/runners/registration-token"),
+		"register")
+	if seen := outsider.lookUpOwnName(); len(seen) != 0 {
+		t.Errorf("a credential for another repository saw %d of this repository's runners", len(seen))
+	}
+}
+
+// TestRunnerJobTokenIsNotAConfigurationCredential keeps the widening honest in
+// the other direction: the per-job runtime token a worker holds is a verified
+// runner credential, but it is not a runner registering itself.
+func TestRunnerJobTokenIsNotAConfigurationCredential(t *testing.T) {
+	testRepo(t, testServer, "admin", "handshake-jobtoken", false)
+	jobToken, _ := testJobToken(t, testServer, "admin/handshake-jobtoken")
+
+	for _, tc := range []struct{ method, path, body string }{
+		{"GET", "/_apis/v1/AgentPools", ""},
+		{"GET", "/_apis/v1/Agent/1", ""},
+		{"PUT", "/_apis/v1/Agent/1/1", "{}"},
+		{"DELETE", "/_apis/v1/Agent/1/1", ""},
+	} {
+		contentType := ""
+		if tc.body != "" {
+			contentType = "application/json"
+		}
+		status, payload := handshakeCall(t, tc.method, tc.path, "Bearer "+jobToken, contentType, tc.body)
+		if status != http.StatusForbidden {
+			t.Errorf("job token on %s %s: status = %d, want 403; body=%s", tc.method, tc.path, status, payload)
+		}
+	}
+}
+
+// TestEphemeralRunnerTeardownStaysAuthenticated walks an ephemeral runner
+// through the whole of its life: configure, take one job, report it finished,
+// close the job request and delete the session. Deregistration happens on the
+// last of those, so every call before it must still authenticate — a
+// registration removed any earlier takes the runner's credential with it.
+func TestEphemeralRunnerTeardownStaysAuthenticated(t *testing.T) {
+	testRepo(t, testServer, "admin", "handshake-ephemeral", false)
+
+	runner := newHandshakeRunner(t, "handshake-ephemeral-runner", "/admin/handshake-ephemeral")
+	runner.exchangeTenantCredential(
+		runner.mintRegistrationToken("/api/v3/repos/admin/handshake-ephemeral/actions/runners/registration-token"),
+		"register")
+	runner.listPools()
+	if existing := runner.lookUpOwnName(); len(existing) > 0 {
+		t.Fatalf("the pool already carries %q", runner.name)
+	}
+
+	// The ephemeral flag has to survive registration: config.sh --ephemeral
+	// aborts when the response drops it.
+	body := fmt.Sprintf(
+		`{"name":%q,"version":"2.330.0","ephemeral":true,`+
+			`"labels":[{"name":"self-hosted","type":"custom"}],"authorization":{"publicKey":%s}}`,
+		runner.name, runner.publicKeyJSON())
+	payload := handshakeStep(t, "add ephemeral agent", "POST", "/_apis/v1/Agent/1",
+		"Bearer "+runner.setupToken, "application/json", body, http.StatusOK)
+	var registered Agent
+	if err := json.Unmarshal(payload, &registered); err != nil {
+		t.Fatalf("decode agent: %v", err)
+	}
+	if !registered.Ephemeral {
+		t.Fatal("registration response dropped the ephemeral flag")
+	}
+	runner.readAgent("add ephemeral agent", payload)
+	runner.exchangeSessionToken()
+	runner.createSession()
+
+	// Queue one job for it, the way the workflow engine does.
+	planID := fmt.Sprintf("handshake-ephemeral-plan-%d", runner.agentID)
+	jobID := "handshake-ephemeral-job-" + planID
+	requestID := testServer.nextRequestID()
+	message := fmt.Sprintf(
+		`{"plan":{"scopeIdentifier":%q,"planId":%q},"requestId":%d,`+
+			`"contextData":{"github":{"t":2,"d":[{"k":"repository","v":"admin/handshake-ephemeral"}]}}}`,
+		planID, planID, requestID)
+	testServer.store.mu.Lock()
+	testServer.store.Jobs[jobID] = &Job{
+		ID: jobID, RequestID: requestID, PlanID: planID, Status: "queued", Message: message,
+		LockedUntil: time.Now().Add(time.Hour),
+	}
+	testServer.store.mu.Unlock()
+	testServer.queueJobMessage(&TaskAgentMessage{
+		MessageID:   testServer.nextMessageID(),
+		MessageType: "PipelineAgentJobRequest",
+		Body:        message,
+		JobID:       jobID,
+		Labels:      []string{"self-hosted"},
+	})
+
+	delivered := runner.pollForMessage()
+	if !strings.Contains(string(delivered), "PipelineAgentJobRequest") {
+		t.Fatalf("ephemeral runner did not receive its job: %s", delivered)
+	}
+
+	// The listener renews the job request while the worker runs.
+	requestPath := fmt.Sprintf("/_apis/v1/AgentRequest/1/%d", requestID)
+	refuseAnonymous(t, "renew job request", "PATCH", requestPath, "application/json", "{}")
+	handshakeStep(t, "renew job request", "PATCH", requestPath,
+		"Bearer "+runner.session, "application/json", "{}", http.StatusOK)
+
+	// The worker reports completion on the job's runtime token.
+	jobRuntimeToken := makeJWT(planID, runnerAudJob)
+	finishPath := fmt.Sprintf("/_apis/v1/FinishJob/%s/build/%s", planID, planID)
+	finishBody := fmt.Sprintf(`{"name":"JobCompleted","jobId":%q,"result":0}`, jobID)
+	refuseAnonymous(t, "finish job", "POST", finishPath, "application/json", finishBody)
+	handshakeStep(t, "finish job", "POST", finishPath,
+		"Bearer "+jobRuntimeToken, "application/json", finishBody, http.StatusOK)
+
+	// Then the listener closes the request and the session — both on the agent
+	// session bearer, so the registration must still exist for both.
+	handshakeStep(t, "complete job request", "DELETE", requestPath+"?result=succeeded",
+		"Bearer "+runner.session, "", "", http.StatusOK)
+	runner.deleteSession()
+
+	testServer.store.mu.RLock()
+	_, stillRegistered := testServer.store.Agents[runner.agentID]
+	testServer.store.mu.RUnlock()
+	if stillRegistered {
+		t.Fatalf("ephemeral agent %d survived its teardown", runner.agentID)
+	}
+
+	// And with the registration gone, its session bearer is dead.
+	if status, payload := handshakeCall(t, "GET", "/_apis/v1/AgentPools",
+		"Bearer "+runner.session, "", ""); status != http.StatusUnauthorized {
+		t.Errorf("deregistered runner's session token: status = %d, want 401; body=%s", status, payload)
+	}
+}
+
+// TestRunnerHandshakeRoutesAreRegistered keeps the sequence above honest
+// against the route table rather than against a remembered list of paths: a
+// step exercising a path that no longer exists would otherwise pass by
+// reaching the catch-all.
+func TestRunnerHandshakeRoutesAreRegistered(t *testing.T) {
+	registered := make(map[string]bool, len(testServer.routePatterns))
+	for _, pattern := range testServer.routePatterns {
+		registered[pattern] = true
+	}
+	for _, pattern := range []string{
+		"POST /api/v3/repos/{owner}/{repo}/actions/runners/registration-token",
+		"POST /api/v3/repos/{owner}/{repo}/actions/runners/remove-token",
+		"POST /api/v3/orgs/{org}/actions/runners/registration-token",
+		"POST /api/v3/actions/runner-registration",
+		"GET /_apis/connectionData",
+		"GET /_apis/v1/AgentPools",
+		"GET /_apis/v1/Agent/{poolId}",
+		"POST /_apis/v1/Agent/{poolId}",
+		"PUT /_apis/v1/Agent/{poolId}/{agentId}",
+		"DELETE /_apis/v1/Agent/{poolId}/{agentId}",
+		"POST /_apis/v1/auth/",
+		"POST /_apis/v1/AgentSession/{poolId}",
+		"DELETE /_apis/v1/AgentSession/{poolId}/{sessionId}",
+		"GET /_apis/v1/Message/{poolId}",
+		"PATCH /_apis/v1/AgentRequest/{poolId}/{requestId}",
+		"DELETE /_apis/v1/AgentRequest/{poolId}/{requestId}",
+		"POST /_apis/v1/FinishJob/{scopeId}/{hubName}/{planId}",
+	} {
+		if !registered[pattern] {
+			t.Errorf("the runner handshake exercises %q, which is not a registered route", pattern)
+		}
+	}
+}

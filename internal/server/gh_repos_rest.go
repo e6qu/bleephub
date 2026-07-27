@@ -173,7 +173,7 @@ func (s *Server) handleTransferRepo(w http.ResponseWriter, r *http.Request) {
 	if repo == nil {
 		return
 	}
-	if !canAdminRepo(s.store, user, repo) {
+	if !s.viewerCanAdminRepo(r.Context(), repo) {
 		writeGHError(w, http.StatusForbidden, "Must have admin rights to Repository.")
 		return
 	}
@@ -662,7 +662,7 @@ func (s *Server) handleUpdateRepo(w http.ResponseWriter, r *http.Request) {
 		writeGHError(w, http.StatusNotFound, "Not Found")
 		return
 	}
-	if !canAdminRepo(s.store, user, repo) {
+	if !s.viewerCanAdminRepo(r.Context(), repo) {
 		writeGHError(w, http.StatusForbidden, "Must have admin rights to Repository.")
 		return
 	}
@@ -796,7 +796,7 @@ func (s *Server) handleDeleteRepo(w http.ResponseWriter, r *http.Request) {
 		writeGHError(w, http.StatusNotFound, "Not Found")
 		return
 	}
-	if !canAdminRepo(s.store, user, repo) {
+	if !s.viewerCanAdminRepo(r.Context(), repo) {
 		writeGHError(w, http.StatusForbidden, "Must have admin rights to Repository.")
 		return
 	}
@@ -844,8 +844,7 @@ func (s *Server) handlePutRepoTopics(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	user := ghUserFromContext(r.Context())
-	if !canPushRepo(s.store, user, repo) {
+	if !s.viewerCanPushRepo(r.Context(), repo) {
 		writeGHError(w, http.StatusForbidden, "Must have push access to Repository.")
 		return
 	}

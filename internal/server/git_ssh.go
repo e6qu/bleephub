@@ -172,7 +172,7 @@ func (s *Server) runGitSSHService(channel ssh.Channel, service, owner, repoName 
 	if service == "git-upload-pack" && !s.viewerCanReadRepo(ctx, repo) {
 		return errors.New("repository access denied")
 	}
-	if service == "git-receive-pack" && !canPushRepo(s.store, user, repo) {
+	if service == "git-receive-pack" && !s.viewerCanPushRepo(ctx, repo) {
 		return errors.New("repository write access denied")
 	}
 	ep, err := transport.NewEndpoint(fmt.Sprintf("/%s/%s", owner, repoName))

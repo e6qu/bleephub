@@ -389,6 +389,7 @@ func (s *Server) handleListAuthUserTeams(w http.ResponseWriter, r *http.Request)
 // grants. Organization owners always can; team maintainers can too, except
 // only owners may promote another user to maintainer.
 func (s *Server) canManageTeam(ctx context.Context, user *User, org *Org, team *Team, addingMaintainer bool) bool {
+	ctx = contextWithUser(ctx, user)
 	if s.viewerCanAdminOrg(ctx, org.Login) {
 		return true
 	}

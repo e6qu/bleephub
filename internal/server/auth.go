@@ -15,6 +15,7 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"slices"
 	"strings"
 	"sync"
 	"time"
@@ -49,14 +50,15 @@ func (s *Server) registerAuthRoutes() {
 }
 
 // handleRunnerRegistration returns the tenant URL and the credential the
-// runner presents when it adds its agent. The runner calls this during
-// `config.sh --url <url> --token <token>`, sending the administration:write
-// registration token as its Authorization credential — real GitHub uses the
-// RemoteAuth scheme, and octokit-shaped clients send it as a bearer token.
+// runner presents when it adds or removes its agent. The runner calls this
+// during `config.sh --url <url> --token <token>` and `config.sh remove
+// --token <token>`, sending the administration:write registration or removal
+// token as its Authorization credential — real GitHub uses the RemoteAuth
+// scheme, and octokit-shaped clients send it as a bearer token.
 func (s *Server) handleRunnerRegistration(w http.ResponseWriter, r *http.Request) {
 	s.logger.Info().Msg("runner registration request")
 
-	scope, err := s.runnerRegistrationCredential(r)
+	claims, err := runnerSetupCredential(r, runnerPurposesConfig)
 	if err != nil {
 		s.logger.Warn().Err(err).Msg("runner registration rejected")
 		writeGHError(w, http.StatusUnauthorized, "Invalid runner registration token")
@@ -71,7 +73,22 @@ func (s *Server) handleRunnerRegistration(w http.ResponseWriter, r *http.Request
 		return
 	}
 
-	token, err := newRunnerRegistrationToken(scope, runnerPurposeRegistration)
+	// The tenant credential handed back may only carry the operation the
+	// presented token was minted for: exchanging a removal token for one that
+	// registers a runner would make the two indistinguishable.
+	purpose, err := runnerPurposeForEvent(req.RunnerEvent)
+	if err != nil {
+		writeGHError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	if claims.Purpose != purpose {
+		s.logger.Warn().Str("event", req.RunnerEvent).Str("purpose", claims.Purpose).
+			Msg("runner registration rejected: token purpose does not match runner_event")
+		writeGHError(w, http.StatusUnauthorized, "Invalid runner registration token")
+		return
+	}
+
+	token, err := newRunnerRegistrationToken(claims.Scope, purpose)
 	if err != nil {
 		writeGHError(w, http.StatusInternalServerError, err.Error())
 		return
@@ -96,20 +113,36 @@ func (s *Server) handleRunnerRegistration(w http.ResponseWriter, r *http.Request
 	})
 }
 
-// runnerRegistrationCredential verifies the registration token on a request,
+// runnerSetupCredential verifies the config-time token on a request — the
+// credential config.sh holds before it has exchanged its client_assertion —
 // accepting the RemoteAuth scheme real GitHub's runner uses alongside the
-// bearer and token schemes.
-func (s *Server) runnerRegistrationCredential(r *http.Request) (runnerScope, error) {
+// bearer and token schemes. A token whose purpose is not among the ones the
+// caller accepts is an error, never a decoded credential.
+func runnerSetupCredential(r *http.Request, purposes []string) (runnerRegistrationClaims, error) {
 	scheme, cred := authScheme(r.Header.Get("Authorization"))
 	switch scheme {
 	case "remoteauth", "bearer", "token":
 	default:
-		return runnerScope{}, fmt.Errorf("missing runner registration token")
+		return runnerRegistrationClaims{}, fmt.Errorf("missing runner setup token")
 	}
 	if cred == "" {
-		return runnerScope{}, fmt.Errorf("missing runner registration token")
+		return runnerRegistrationClaims{}, fmt.Errorf("missing runner setup token")
 	}
-	return parseRunnerRegistrationToken(cred, runnerPurposeRegistration)
+	return parseRunnerRegistrationToken(cred, purposes)
+}
+
+// runnerPurposeForEvent maps the runner_event config.sh sends to the credential
+// purpose that operation needs. An unrecognized event is refused rather than
+// defaulted: defaulting would decide, for a caller that named nothing, which of
+// the two operations its token authorizes.
+func runnerPurposeForEvent(event string) (string, error) {
+	switch event {
+	case "register":
+		return runnerPurposeRegistration, nil
+	case "remove":
+		return runnerPurposeRemoval, nil
+	}
+	return "", fmt.Errorf("unsupported runner_event %q", event)
 }
 
 // serviceDefinition matches the internal ServiceDefinition format
@@ -366,6 +399,17 @@ const (
 	runnerPurposeRemoval      = "removal"
 )
 
+// The config-time purposes a route accepts. `config.sh` holds a registration
+// token and `config.sh remove` a removal token; the one call both make — the
+// pool lookup of the runner's own name — accepts either. Naming the set at the
+// route keeps a registration token from deleting a runner and a removal token
+// from adding one.
+var (
+	runnerPurposesRegister = []string{runnerPurposeRegistration}
+	runnerPurposesRemove   = []string{runnerPurposeRemoval}
+	runnerPurposesConfig   = []string{runnerPurposeRegistration, runnerPurposeRemoval}
+)
+
 // runnerSigningKey resolves the HMAC key backing every runner credential.
 // BLEEPHUB_RUNNER_TOKEN_KEY (base64, at least 32 bytes) pins it; without it
 // the key is generated once per process. Process-local is correct here for
@@ -529,21 +573,24 @@ func newRunnerRegistrationToken(scope runnerScope, purpose string) (string, erro
 	})
 }
 
-func parseRunnerRegistrationToken(token, purpose string) (runnerScope, error) {
+// parseRunnerRegistrationToken verifies a config-time token and returns its
+// claims, provided its purpose is one the caller named. An empty purpose list
+// accepts nothing.
+func parseRunnerRegistrationToken(token string, purposes []string) (runnerRegistrationClaims, error) {
 	var claims runnerRegistrationClaims
 	if err := parseSignedBlob("A", token, &claims); err != nil {
-		return runnerScope{}, err
+		return runnerRegistrationClaims{}, err
 	}
-	if claims.Purpose != purpose {
-		return runnerScope{}, fmt.Errorf("runner token purpose %q cannot be used for %q", claims.Purpose, purpose)
+	if !slices.Contains(purposes, claims.Purpose) {
+		return runnerRegistrationClaims{}, fmt.Errorf("runner token purpose %q is not one of %v", claims.Purpose, purposes)
 	}
 	if claims.Scope.empty() {
-		return runnerScope{}, fmt.Errorf("runner registration token carries no scope")
+		return runnerRegistrationClaims{}, fmt.Errorf("runner registration token carries no scope")
 	}
 	if time.Now().After(time.Unix(claims.Exp, 0).Add(runnerClockSkew)) {
-		return runnerScope{}, fmt.Errorf("runner registration token expired")
+		return runnerRegistrationClaims{}, fmt.Errorf("runner registration token expired")
 	}
-	return claims.Scope, nil
+	return claims, nil
 }
 
 // agentClientClaims is the payload of an agent's clientId. The runner treats
@@ -655,14 +702,17 @@ func parseRunnerToken(token string) (*runnerTokenClaims, error) {
 
 // runnerPrincipal is the verified identity behind a runner protocol call.
 type runnerPrincipal struct {
-	Claims *runnerTokenClaims
-	Agent  *Agent      // set for an agent session token
-	Scope  runnerScope // repository/organization the credential may act for
+	Claims *runnerTokenClaims // nil for a config-time setup credential
+	Agent  *Agent             // set for an agent session token
+	Scope  runnerScope        // repository/organization the credential may act for
+	Setup  bool               // the registration/removal token config.sh holds
 }
 
 // IsJobToken reports whether the caller presented a per-job runtime token
 // rather than an agent session token.
-func (p *runnerPrincipal) IsJobToken() bool { return p != nil && p.Claims.Aud == runnerAudJob }
+func (p *runnerPrincipal) IsJobToken() bool {
+	return p != nil && p.Claims != nil && p.Claims.Aud == runnerAudJob
+}
 
 const ctxRunner contextKey = "runner-principal"
 
@@ -756,16 +806,20 @@ func (s *Server) requireJobToken(next http.HandlerFunc) http.HandlerFunc {
 }
 
 // requireRunnerSetupCredential gates a route the runner reaches during
-// `config.sh`, before it has exchanged its client_assertion: the registration
-// token is accepted alongside the bearer credentials a configured runner
-// holds.
-func (s *Server) requireRunnerSetupCredential(next http.HandlerFunc) http.HandlerFunc {
+// `config.sh`, before it has exchanged its client_assertion: the token
+// config.sh was given is accepted for the named purposes, alongside the agent
+// session a configured runner holds. Either way the handler is handed a
+// principal carrying the verified scope, so the tenant confinement downstream
+// is the same on both paths.
+func (s *Server) requireRunnerSetupCredential(purposes []string, next http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		if _, err := s.runnerRegistrationCredential(r); err == nil {
-			next(w, r)
+		claims, err := runnerSetupCredential(r, purposes)
+		if err == nil {
+			principal := &runnerPrincipal{Scope: claims.Scope, Setup: true}
+			next(w, r.WithContext(context.WithValue(r.Context(), ctxRunner, principal)))
 			return
 		}
-		s.requireRunnerAuth(next)(w, r)
+		s.requireAgentSession(next)(w, r)
 	}
 }
 

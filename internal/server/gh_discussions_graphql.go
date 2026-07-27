@@ -360,7 +360,7 @@ func (s *Server) addDiscussionFieldsToSchema(userType, repoType, mutationType *g
 					}
 					repoID, _ := d["repoID"].(int)
 					repo := s.store.GetRepoByID(repoID)
-					return repo != nil && canAdminRepo(s.store, viewer, repo), nil
+					return s.viewerMayActOnRepo(p.Context, repo, scopeDiscussions, permWrite, permAdmin), nil
 				},
 			},
 			"viewerCanUpdate": &graphql.Field{
@@ -380,7 +380,7 @@ func (s *Server) addDiscussionFieldsToSchema(userType, repoType, mutationType *g
 					}
 					repoID, _ := d["repoID"].(int)
 					repo := s.store.GetRepoByID(repoID)
-					return repo != nil && canAdminRepo(s.store, viewer, repo), nil
+					return s.viewerMayActOnRepo(p.Context, repo, scopeDiscussions, permWrite, permAdmin), nil
 				},
 			},
 			"viewerCanReact": &graphql.Field{

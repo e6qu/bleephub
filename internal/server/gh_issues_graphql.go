@@ -624,11 +624,10 @@ func (s *Server) addIssueFieldsToSchema(userType, repoType, mutationType, queryT
 			if repo == nil {
 				return nil, nil
 			}
-			viewer := ghUserFromContext(p.Context)
 			switch {
-			case canAdminRepo(s.store, viewer, repo):
+			case s.viewerCanAdminRepo(p.Context, repo):
 				return "ADMIN", nil
-			case canPushRepo(s.store, viewer, repo):
+			case s.viewerCanPushRepo(p.Context, repo):
 				return "WRITE", nil
 			case s.viewerCanReadRepo(p.Context, repo):
 				return "READ", nil
@@ -1281,7 +1280,7 @@ func (s *Server) addIssueFieldsToSchema(userType, repoType, mutationType, queryT
 					triage = true
 				}
 			}
-			if triage && !canPushRepo(s.store, ghUserFromContext(p.Context), repo) {
+			if triage && !s.viewerHasRepoPermission(p.Context, repo, scopeIssues, permWrite) {
 				return nil, fmt.Errorf("must have push access to Repository")
 			}
 			// The schema types this as IssueState; the second check catches a

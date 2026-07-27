@@ -662,9 +662,11 @@ func TestGraphQLEveryMutationIsCoveredByThePolicyTable(t *testing.T) {
 			t.Errorf("graphqlMutationAuthz has a row for %s, which the schema does not expose", name)
 		}
 	}
-	// Every row that names a resource must be exercised by a refusal case in
-	// one of the two tables above, so a mutation cannot be authorized on paper
-	// and untested in practice.
+	// Every row whose subject is an existing repository or project must be
+	// exercised by a refusal case in one of the two tables above, so a mutation
+	// cannot be authorized on paper and untested in practice. createRepository
+	// has no such subject — its entitlement is over an account — and is covered
+	// by the account-scoped cases instead.
 	inCases := map[string]bool{}
 	for _, tc := range gqlMutationCases {
 		inCases[tc.name] = true
@@ -673,7 +675,7 @@ func TestGraphQLEveryMutationIsCoveredByThePolicyTable(t *testing.T) {
 		inCases[tc.name] = true
 	}
 	for name, rule := range graphqlMutationAuthz {
-		if _, namesNothing := rule.(viewerOnly); namesNothing || inCases[name] {
+		if _, accountScoped := rule.(repoCreationRule); accountScoped || inCases[name] {
 			continue
 		}
 		t.Errorf("mutation %s is authorized but no refusal case exercises it", name)

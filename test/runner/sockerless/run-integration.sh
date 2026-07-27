@@ -833,6 +833,21 @@ case "${BLEEPHUB_BACKEND:-ecs}" in
     *) fail "unsupported BLEEPHUB_BACKEND: ${BLEEPHUB_BACKEND} (ecs|aca|azf|cloudrun|gcf)" ;;
 esac
 
+api_get() {
+    local path="$1"
+    curl -sf -H "Authorization: token $BLEEPHUB_ADMIN_TOKEN" "http://$BLEEPHUB_ADDR$path"
+}
+
+api_post() {
+    local path="$1" body="${2:-}"
+    if [ -z "$body" ]; then
+        body='{}'
+    fi
+    curl -sf -X POST -H "Authorization: token $BLEEPHUB_ADMIN_TOKEN" \
+        -H "Content-Type: application/json" \
+        -d "$body" "http://$BLEEPHUB_ADDR$path"
+}
+
 # --- 4. Configure the runner ---
 log "Configuring runner..."
 cd /runner
@@ -842,9 +857,15 @@ export RUNNER_ALLOW_RUNASROOT=1
 export GITHUB_ACTIONS_RUNNER_TLS_NO_VERIFY=1
 # export GITHUB_ACTIONS_RUNNER_TRACE=1  # Uncomment for debug logging
 
+# config.sh --token takes the registration token an administration:write
+# caller mints, exactly as against real GitHub; the runner control plane
+# verifies it, so a placeholder string is refused at the first request.
+REG_TOKEN=$(api_post "/api/v3/repos/admin/test/actions/runners/registration-token" | jq -r '.token // empty')
+[ -n "$REG_TOKEN" ] || fail "mint runner registration token"
+
 ./config.sh \
     --url "$BLEEPHUB_EXTERNAL_URL/admin/test" \
-    --token BLEEPHUB_REG_TOKEN \
+    --token "$REG_TOKEN" \
     --name test-runner \
     --work "$WORK_DIR" \
     --unattended \
@@ -861,35 +882,23 @@ DOCKER_HOST=tcp://127.0.0.1:3375 ./run.sh 2>&1 &
 RUNNER_PID=$!
 PIDS+=("$RUNNER_PID")
 
-# Wait for runner to register a session
+# Wait for runner to register a session. The runner pool is read through the
+# administration:read REST listing rather than the runner control plane: the
+# harness is an operator here, not a runner, and it holds no runner credential.
 log "Waiting for runner to connect..."
+COUNT=0
 for i in $(seq 1 30); do
-    AGENTS=$(curl -sf "http://$BLEEPHUB_ADDR/_apis/v1/Agent/1" 2>/dev/null || echo '{"count":0}')
-    COUNT=$(echo "$AGENTS" | jq -r '.count // 0')
+    COUNT=$(api_get "/api/v3/repos/admin/test/actions/runners" | jq -r '.total_count // 0')
     if [ "$COUNT" -gt 0 ]; then
         log "Runner connected (agent count: $COUNT)"
         break
     fi
     sleep 1
 done
+[ "$COUNT" -gt 0 ] || fail "runner never registered with bleephub"
 
 # Give the runner a moment to establish its session
 sleep 5
-
-api_get() {
-    local path="$1"
-    curl -sf -H "Authorization: token $BLEEPHUB_ADMIN_TOKEN" "http://$BLEEPHUB_ADDR$path"
-}
-
-api_post() {
-    local path="$1" body="${2:-}"
-    if [ -z "$body" ]; then
-        body='{}'
-    fi
-    curl -sf -X POST -H "Authorization: token $BLEEPHUB_ADMIN_TOKEN" \
-        -H "Content-Type: application/json" \
-        -d "$body" "http://$BLEEPHUB_ADDR$path"
-}
 
 put_workflow_file() {
     local filename="$1" yaml="$2" encoded

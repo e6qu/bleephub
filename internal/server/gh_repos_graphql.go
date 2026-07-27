@@ -859,22 +859,16 @@ func (s *Server) addRepoFieldsToSchema(userType, queryType *graphql.Object) (*gr
 			visibility, _ := input["visibility"].(string)
 
 			private := strings.ToUpper(visibility) == "PRIVATE"
-			ownerLogin := user.Login
+			kind, ownerLogin, err := s.createRepositoryOwner(p, input)
+			if err != nil {
+				return nil, err
+			}
 			var repo *Repo
-			if ownerID, _ := input["ownerId"].(string); ownerID != "" && ownerID != user.NodeID {
-				var owner *Org
-				s.store.mu.RLock()
-				for _, candidate := range s.store.Orgs {
-					if candidate.NodeID == ownerID {
-						owner = candidate
-						break
-					}
-				}
-				s.store.mu.RUnlock()
-				if owner == nil || !s.viewerIsOrgMember(p.Context, owner.Login) {
+			if kind == organizationAccount {
+				owner := s.store.GetOrg(ownerLogin)
+				if owner == nil {
 					return nil, fmt.Errorf("repository creation for another owner is not authorized")
 				}
-				ownerLogin = owner.Login
 				repo = s.store.CreateOrgRepo(owner, user, name, description, private)
 			} else {
 				repo = s.store.CreateRepo(user, name, description, private)
@@ -971,19 +965,60 @@ type mutationTarget struct {
 	missing error
 }
 
-// viewerOnly demands nothing beyond an authenticated viewer, because the
-// mutation names no existing resource: createRepository decides for itself
-// which owner it may create under.
-type viewerOnly struct{}
+// repoCreationRule is the policy for createRepository, the one mutation that
+// names no existing repository: the entitlement is over the account the
+// repository would belong to.
+//
+// An authenticated viewer used to be the whole test, on the reasoning that the
+// resolver decided the owner for itself. It did — but it decided it from the
+// bearer, so a user-to-server token of an app installed nowhere created
+// repositories on its bearer's account where the same app's installation token
+// was refused.
+type repoCreationRule struct{}
 
-func (viewerOnly) check() error { return nil }
+func (repoCreationRule) check() error { return nil }
 
-func (viewerOnly) authorize(*Server, graphql.ResolveParams, map[string]interface{}) error {
+func (repoCreationRule) authorize(s *Server, p graphql.ResolveParams, input map[string]interface{}) error {
+	kind, login, err := s.createRepositoryOwner(p, input)
+	if err != nil {
+		return err
+	}
+	if !s.credentialGrantsAccount(p.Context, kind, login, scopeAdministration, permWrite) {
+		return fmt.Errorf("resource not accessible by integration")
+	}
+	if kind == organizationAccount && !s.viewerIsOrgMember(p.Context, login) {
+		return fmt.Errorf("repository creation for another owner is not authorized")
+	}
 	return nil
+}
+
+// createRepositoryOwner resolves the account a createRepository input names. The
+// policy row and the resolver both call it, so the owner the entitlement is
+// checked against is by construction the owner the repository is created under.
+func (s *Server) createRepositoryOwner(p graphql.ResolveParams, input map[string]interface{}) (accountKind, string, error) {
+	user := ghUserFromContext(p.Context)
+	ownerID, _ := input["ownerId"].(string)
+	if ownerID == "" || ownerID == user.NodeID {
+		return anyAccount, user.Login, nil
+	}
+	s.store.mu.RLock()
+	defer s.store.mu.RUnlock()
+	for _, candidate := range s.store.Orgs {
+		if candidate.NodeID == ownerID {
+			return organizationAccount, candidate.Login, nil
+		}
+	}
+	return anyAccount, "", fmt.Errorf("repository creation for another owner is not authorized")
 }
 
 // repoRule is the policy for a mutation whose subject belongs to a repository.
 type repoRule struct {
+	// scope is the fine-grained permission an app must have been granted to
+	// perform this mutation at all, and it is per-row because GitHub grants
+	// issue triage at issues:write and pull-request triage at
+	// pull_requests:write. One scope for the whole table would refuse apps
+	// GitHub allows.
+	scope permScope
 	level mutationLevel
 	// authorMayAct admits the author of the targeted content whatever their
 	// repository access: editing your own issue or hiding your own comment
@@ -996,6 +1031,9 @@ func (r repoRule) check() error {
 	if r.target == nil {
 		return fmt.Errorf("no repository target lookup")
 	}
+	if r.scope == "" {
+		return fmt.Errorf("no permission scope")
+	}
 	return nil
 }
 
@@ -1004,22 +1042,27 @@ func (r repoRule) authorize(s *Server, p graphql.ResolveParams, input map[string
 	if target.repo == nil || !s.viewerCanReadRepo(p.Context, target.repo) {
 		return target.missing
 	}
+	// The credential half is asked first and is never relaxed by authorship.
+	// Every mutation here is a write on its scope, whatever standing on the
+	// repository it then needs, so an app that was not granted that scope may
+	// not perform it — the author exemption speaks to who the bearer is, and an
+	// app's grant is not a fact about the bearer. Ordering these the other way
+	// round let a bearer who had merely filed the issue retitle it through an
+	// app installed nowhere.
+	if !s.credentialGrantsRepo(p.Context, target.repo, r.scope, permWrite) {
+		return fmt.Errorf("resource not accessible by integration")
+	}
 	user := ghUserFromContext(p.Context)
 	if r.authorMayAct && target.authorID != 0 && target.authorID == user.ID {
 		return nil
 	}
-	// Credential-aware on the write half too. Reading through the choke point
-	// and then writing through the user-scoped predicate made a ghu_ token
-	// broader than the ghs_ token of the same app on every push and admin
-	// mutation here — the asymmetry this lane exists to prevent, reintroduced
-	// one level down.
 	switch r.level {
 	case mutationPushRepo:
-		if !s.viewerCanPushRepo(p.Context, target.repo) {
+		if !s.principalHoldsRepoCapability(p.Context, target.repo, permWrite) {
 			return fmt.Errorf("must have push access to Repository")
 		}
 	case mutationAdminRepo:
-		if !s.viewerCanAdminRepo(p.Context, target.repo) {
+		if !s.principalHoldsRepoCapability(p.Context, target.repo, permAdmin) {
 			return fmt.Errorf("must have admin rights to Repository")
 		}
 	}
@@ -1027,43 +1070,54 @@ func (r repoRule) authorize(s *Server, p graphql.ResolveParams, input map[string
 }
 
 // graphqlMutationAuthz is the whole authorization policy of the mutation
-// surface. Repository levels follow the same reasoning resourceCapabilityFor
-// applies to the REST routes: opening an issue, commenting, proposing a pull
-// request and reviewing one are how outside contributors participate and need
-// only read, while editing, closing, merging, moderating and deleting need
-// push, and destroying a repository or somebody else's discussion needs admin.
+// surface.
+//
+// Each row names two independent things. The scope is the permission an app
+// must hold to perform the mutation at all, and it follows GitHub's grouping —
+// issues, pull requests, discussions and repository administration are separate
+// grants, and an app given one of them has not been given the others. The level
+// is the standing the bearer needs on the repository, which follows the same
+// reasoning resourceCapabilityFor applies to the REST routes: opening an issue,
+// commenting, proposing a pull request and reviewing one are how outside
+// contributors participate and need only read, while editing, closing, merging,
+// moderating and deleting need push, and destroying a repository or somebody
+// else's discussion needs admin.
 var graphqlMutationAuthz = map[string]mutationRule{
-	"createRepository": viewerOnly{},
-	"deleteRepository": repoRule{level: mutationAdminRepo, target: mutationTargetRepo("repositoryId")},
+	"createRepository": repoCreationRule{},
+	"deleteRepository": repoRule{scope: scopeAdministration, level: mutationAdminRepo, target: mutationTargetRepo("repositoryId")},
 
-	"createIssue": repoRule{level: mutationReadRepo, target: mutationTargetRepo("repositoryId")},
-	"addComment":  repoRule{level: mutationReadRepo, target: mutationTargetIssueOrPullRequest("subjectId")},
-	"closeIssue":  repoRule{level: mutationPushRepo, authorMayAct: true, target: mutationTargetIssue("issueId")},
-	"reopenIssue": repoRule{level: mutationPushRepo, authorMayAct: true, target: mutationTargetIssue("issueId")},
-	"updateIssue": repoRule{level: mutationPushRepo, authorMayAct: true, target: mutationTargetIssue("id")},
+	// Comments on a pull request are stored and served as issue comments, and
+	// GitHub gates the issue-comment endpoints on Issues however the subject was
+	// opened, so addComment and the comment moderation mutations are scopeIssues
+	// even where the subject resolves to a pull request.
+	"createIssue": repoRule{scope: scopeIssues, level: mutationReadRepo, target: mutationTargetRepo("repositoryId")},
+	"addComment":  repoRule{scope: scopeIssues, level: mutationReadRepo, target: mutationTargetIssueOrPullRequest("subjectId")},
+	"closeIssue":  repoRule{scope: scopeIssues, level: mutationPushRepo, authorMayAct: true, target: mutationTargetIssue("issueId")},
+	"reopenIssue": repoRule{scope: scopeIssues, level: mutationPushRepo, authorMayAct: true, target: mutationTargetIssue("issueId")},
+	"updateIssue": repoRule{scope: scopeIssues, level: mutationPushRepo, authorMayAct: true, target: mutationTargetIssue("id")},
 
-	"createDiscussion":                repoRule{level: mutationReadRepo, target: mutationTargetRepo("repositoryId")},
-	"addDiscussionComment":            repoRule{level: mutationReadRepo, target: mutationTargetDiscussion("discussionId")},
-	"updateDiscussion":                repoRule{level: mutationAdminRepo, authorMayAct: true, target: mutationTargetDiscussion("discussionId")},
-	"deleteDiscussion":                repoRule{level: mutationAdminRepo, authorMayAct: true, target: mutationTargetDiscussion("discussionId")},
-	"updateDiscussionComment":         repoRule{level: mutationAdminRepo, authorMayAct: true, target: mutationTargetDiscussionComment("commentId")},
-	"deleteDiscussionComment":         repoRule{level: mutationAdminRepo, authorMayAct: true, target: mutationTargetDiscussionComment("commentId")},
-	"markDiscussionCommentAsAnswer":   repoRule{level: mutationPushRepo, authorMayAct: true, target: mutationTargetAnsweredDiscussion("commentId")},
-	"unmarkDiscussionCommentAsAnswer": repoRule{level: mutationPushRepo, authorMayAct: true, target: mutationTargetAnsweredDiscussion("commentId")},
+	"createDiscussion":                repoRule{scope: scopeDiscussions, level: mutationReadRepo, target: mutationTargetRepo("repositoryId")},
+	"addDiscussionComment":            repoRule{scope: scopeDiscussions, level: mutationReadRepo, target: mutationTargetDiscussion("discussionId")},
+	"updateDiscussion":                repoRule{scope: scopeDiscussions, level: mutationAdminRepo, authorMayAct: true, target: mutationTargetDiscussion("discussionId")},
+	"deleteDiscussion":                repoRule{scope: scopeDiscussions, level: mutationAdminRepo, authorMayAct: true, target: mutationTargetDiscussion("discussionId")},
+	"updateDiscussionComment":         repoRule{scope: scopeDiscussions, level: mutationAdminRepo, authorMayAct: true, target: mutationTargetDiscussionComment("commentId")},
+	"deleteDiscussionComment":         repoRule{scope: scopeDiscussions, level: mutationAdminRepo, authorMayAct: true, target: mutationTargetDiscussionComment("commentId")},
+	"markDiscussionCommentAsAnswer":   repoRule{scope: scopeDiscussions, level: mutationPushRepo, authorMayAct: true, target: mutationTargetAnsweredDiscussion("commentId")},
+	"unmarkDiscussionCommentAsAnswer": repoRule{scope: scopeDiscussions, level: mutationPushRepo, authorMayAct: true, target: mutationTargetAnsweredDiscussion("commentId")},
 
-	"minimizeComment":   repoRule{level: mutationPushRepo, authorMayAct: true, target: mutationTargetIssueComment("subjectId")},
-	"unminimizeComment": repoRule{level: mutationPushRepo, authorMayAct: true, target: mutationTargetIssueComment("subjectId")},
-	"lockLockable":      repoRule{level: mutationPushRepo, target: mutationTargetIssueOrPullRequest("lockableId")},
-	"unlockLockable":    repoRule{level: mutationPushRepo, target: mutationTargetIssueOrPullRequest("lockableId")},
+	"minimizeComment":   repoRule{scope: scopeIssues, level: mutationPushRepo, authorMayAct: true, target: mutationTargetIssueComment("subjectId")},
+	"unminimizeComment": repoRule{scope: scopeIssues, level: mutationPushRepo, authorMayAct: true, target: mutationTargetIssueComment("subjectId")},
+	"lockLockable":      repoRule{scope: scopeIssues, level: mutationPushRepo, target: mutationTargetIssueOrPullRequest("lockableId")},
+	"unlockLockable":    repoRule{scope: scopeIssues, level: mutationPushRepo, target: mutationTargetIssueOrPullRequest("lockableId")},
 
-	"createPullRequest":     repoRule{level: mutationReadRepo, target: mutationTargetRepo("repositoryId")},
-	"addPullRequestReview":  repoRule{level: mutationReadRepo, target: mutationTargetPullRequest("pullRequestId")},
-	"closePullRequest":      repoRule{level: mutationPushRepo, authorMayAct: true, target: mutationTargetPullRequest("pullRequestId")},
-	"reopenPullRequest":     repoRule{level: mutationPushRepo, authorMayAct: true, target: mutationTargetPullRequest("pullRequestId")},
-	"updatePullRequest":     repoRule{level: mutationPushRepo, authorMayAct: true, target: mutationTargetPullRequest("pullRequestId")},
-	"mergePullRequest":      repoRule{level: mutationPushRepo, target: mutationTargetPullRequest("pullRequestId")},
-	"resolveReviewThread":   repoRule{level: mutationPushRepo, authorMayAct: true, target: mutationTargetReviewThread("threadId")},
-	"unresolveReviewThread": repoRule{level: mutationPushRepo, authorMayAct: true, target: mutationTargetReviewThread("threadId")},
+	"createPullRequest":     repoRule{scope: scopePullRequests, level: mutationReadRepo, target: mutationTargetRepo("repositoryId")},
+	"addPullRequestReview":  repoRule{scope: scopePullRequests, level: mutationReadRepo, target: mutationTargetPullRequest("pullRequestId")},
+	"closePullRequest":      repoRule{scope: scopePullRequests, level: mutationPushRepo, authorMayAct: true, target: mutationTargetPullRequest("pullRequestId")},
+	"reopenPullRequest":     repoRule{scope: scopePullRequests, level: mutationPushRepo, authorMayAct: true, target: mutationTargetPullRequest("pullRequestId")},
+	"updatePullRequest":     repoRule{scope: scopePullRequests, level: mutationPushRepo, authorMayAct: true, target: mutationTargetPullRequest("pullRequestId")},
+	"mergePullRequest":      repoRule{scope: scopePullRequests, level: mutationPushRepo, target: mutationTargetPullRequest("pullRequestId")},
+	"resolveReviewThread":   repoRule{scope: scopePullRequests, level: mutationPushRepo, authorMayAct: true, target: mutationTargetReviewThread("threadId")},
+	"unresolveReviewThread": repoRule{scope: scopePullRequests, level: mutationPushRepo, authorMayAct: true, target: mutationTargetReviewThread("threadId")},
 
 	// Projects v2. A project belongs to a user or an organization, not to a
 	// repository, so write is the owner-scoped predicate the REST surface uses:

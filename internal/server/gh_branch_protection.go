@@ -1,6 +1,7 @@
 package bleephub
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -1237,13 +1238,13 @@ func (s *Server) branchProtectionForRepo(repoID int, branch string) *BranchProte
 // canMergePullRequest checks branch protection rules for a PR merge.
 // It returns (ok, errorMessage). ok==false with empty message means the caller
 // should fall back to the existing required-status-check message.
-func (s *Server) canMergePullRequest(repo *Repo, pr *PullRequest, user *User) (bool, string) {
+func (s *Server) canMergePullRequest(ctx context.Context, repo *Repo, pr *PullRequest) (bool, string) {
 	bp := s.branchProtectionForRepo(repo.ID, pr.BaseRefName)
 	if bp == nil {
 		return true, ""
 	}
 
-	isAdmin := canAdminRepo(s.store, user, repo)
+	isAdmin := s.viewerCanAdminRepo(ctx, repo)
 
 	// Admin bypass only when enforce_admins is not enabled.
 	if isAdmin && (bp.EnforceAdmins == nil || !bp.EnforceAdmins.Enabled) {

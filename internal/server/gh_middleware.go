@@ -246,7 +246,7 @@ func (s *Server) authenticateRequest(r *http.Request) context.Context {
 		// Runner protocol credentials authenticate a runner rather than a
 		// user, so they resolve to no principal here — but they are real
 		// credentials this server minted and verifies, not rejects.
-		if !credentialResolved && tokenStr != "" && runnerCredentialVerifies(tokenStr) {
+		if !credentialResolved && runnerCredentialVerifies(runnerCredentialOffered(scheme, cred)) {
 			credentialResolved = true
 		}
 		if !credentialResolved {
@@ -268,10 +268,26 @@ func (s *Server) authenticateRequest(r *http.Request) context.Context {
 	return ctx
 }
 
+// runnerCredentialOffered returns the credential a request offers to the
+// runner protocol, or "" when it offers none. Alongside bearer and token,
+// actions/runner presents its registration and removal tokens under the
+// RemoteAuth scheme — a scheme that names no user credential, so the
+// user-facing resolution above never looks at it.
+func runnerCredentialOffered(scheme, credential string) string {
+	switch scheme {
+	case "token", "bearer", "remoteauth":
+		return credential
+	}
+	return ""
+}
+
 // runnerCredentialVerifies reports whether a bearer credential is one of the
 // runner-protocol credentials this server signs: an agent session or job
 // token, or a registration/removal token.
 func runnerCredentialVerifies(token string) bool {
+	if token == "" {
+		return false
+	}
 	if _, err := parseRunnerToken(token); err == nil {
 		return true
 	}

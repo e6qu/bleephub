@@ -95,27 +95,33 @@ func (s *Server) projectV2UserOwnerByID(w http.ResponseWriter, r *http.Request) 
 
 // canReadProjectV2: public projects are visible to any caller; private
 // projects only to the owning user, active members of the owning org,
-// or a site admin.
+// or a site admin — and, for an app credential, only where the app was granted
+// projects over that account.
 func (s *Server) canReadProjectV2(ctx context.Context, user *User, owner *projectV2Owner, p *ProjectV2) bool {
 	if p.Public {
 		return true
 	}
-	if user == nil {
-		return false
-	}
-	if user.SiteAdmin {
-		return true
-	}
-	if owner.ownerType == "User" {
-		return user.ID == owner.id
-	}
-	return s.viewerIsOrgMember(ctx, owner.login)
+	return s.projectV2OwnerReachable(ctx, user, owner, permRead)
 }
 
 // canWriteProjectV2: the owning user, active members of the owning org,
-// or a site admin.
+// or a site admin, intersected with the app's grant as above.
 func (s *Server) canWriteProjectV2(ctx context.Context, user *User, owner *projectV2Owner) bool {
-	if user == nil {
+	return s.projectV2OwnerReachable(ctx, user, owner, permWrite)
+}
+
+// projectV2OwnerReachable is the shared body: the credential's grant over the
+// owning account, then the caller's own standing on it.
+//
+// The owning-user arm used to be `user.ID == owner.id` alone, which is a fact
+// about the bearer and says nothing about the app speaking for them — a
+// user-to-server token of an app installed nowhere created projects under its
+// bearer's account where the same app's installation token was refused.
+func (s *Server) projectV2OwnerReachable(ctx context.Context, user *User, owner *projectV2Owner, level permLevel) bool {
+	if user == nil || owner == nil {
+		return false
+	}
+	if !s.credentialGrantsAccount(ctx, anyAccount, owner.login, scopeProjects, level) {
 		return false
 	}
 	if user.SiteAdmin {

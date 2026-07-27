@@ -62,6 +62,7 @@ func (s *Server) copilotSpaceOwner(w http.ResponseWriter, r *http.Request) (owne
 // space's base role fill in the rest. An empty role means the space is
 // invisible to the caller.
 func (s *Server) copilotSpaceRole(ctx context.Context, user *User, space *CopilotSpace) string {
+	ctx = contextWithUser(ctx, user)
 	if user == nil {
 		return ""
 	}
