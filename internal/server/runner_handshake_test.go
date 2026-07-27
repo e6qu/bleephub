@@ -6,6 +6,7 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
+	"github.com/google/uuid"
 	"io"
 	"math/big"
 	"net/http"
@@ -382,12 +383,18 @@ func TestRunnerConfigurationHandshakeSucceedsForAnOrganizationRunner(t *testing.
 	refuseAnonymous(t, "poll for messages", "GET", runner.messagePath(), "", "")
 	runner.deleteSession()
 
-	scope, err := agentClientIDScope(runner.clientID)
-	if err != nil {
-		t.Fatalf("agentClientIDScope: %v", err)
+	// The clientId the runner stores is a bare GUID — it deserializes the
+	// field into one and refuses anything else — so the scope is read from the
+	// agent record it names.
+	if _, err := uuid.Parse(runner.clientID); err != nil {
+		t.Fatalf("clientId %q is not a GUID, which the runner will refuse: %v", runner.clientID, err)
 	}
-	if scope.Org != orgLogin {
-		t.Fatalf("agent scope = %+v, want org %s", scope, orgLogin)
+	agent := testServer.store.LookupAgentByClientID(runner.clientID)
+	if agent == nil {
+		t.Fatalf("no agent registered with clientId %q", runner.clientID)
+	}
+	if agent.Scope.Org != orgLogin {
+		t.Fatalf("agent scope = %+v, want org %s", agent.Scope, orgLogin)
 	}
 }
 

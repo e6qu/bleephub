@@ -602,22 +602,23 @@ type agentClientClaims struct {
 	Nonce string      `json:"nonce"`
 }
 
+// newAgentClientID mints the clientId the runner stores in its credentials and
+// echoes back as the client_assertion issuer.
+//
+// It is a bare GUID because that is what the runner deserializes it into —
+// anything else fails at configuration with a type conversion error, whatever
+// the server thinks the field means. The agent's scope therefore lives on its
+// record rather than inside this value.
+//
+// A GUID is guessable in a way a signed blob is not, and that is fine here:
+// the clientId only names which agent's public key to verify against. What
+// authenticates is the RSA signature over the assertion, which an attacker
+// cannot produce without the runner's private key.
 func newAgentClientID(scope runnerScope) (string, error) {
 	if scope.empty() {
 		return "", fmt.Errorf("agent clientId needs a repository or organization scope")
 	}
-	return signedBlob("", agentClientClaims{Scope: scope, Nonce: uuid.New().String()})
-}
-
-func agentClientIDScope(clientID string) (runnerScope, error) {
-	var claims agentClientClaims
-	if err := parseSignedBlob("", clientID, &claims); err != nil {
-		return runnerScope{}, err
-	}
-	if claims.Scope.empty() {
-		return runnerScope{}, fmt.Errorf("agent clientId carries no scope")
-	}
-	return claims.Scope, nil
+	return uuid.New().String(), nil
 }
 
 // runnerTokenClaims is the payload of a bearer credential (agent session or
@@ -760,11 +761,10 @@ func (s *Server) authenticateRunner(r *http.Request) (*runnerPrincipal, error) {
 		if agent == nil {
 			return nil, fmt.Errorf("no agent registered with clientId %q", claims.Sub)
 		}
-		scope, err := agentClientIDScope(claims.Sub)
-		if err != nil {
-			return nil, err
+		if agent.Scope.empty() {
+			return nil, fmt.Errorf("agent %d carries no scope", agent.ID)
 		}
-		return &runnerPrincipal{Claims: claims, Agent: agent, Scope: scope}, nil
+		return &runnerPrincipal{Claims: claims, Agent: agent, Scope: agent.Scope}, nil
 	case runnerAudJob:
 		repo, err := s.repoForJobScope(claims.Sub)
 		if err != nil {

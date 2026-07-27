@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"github.com/google/uuid"
 	"net/http"
 	"net/http/httptest"
 	"runtime"
@@ -112,6 +113,7 @@ func testAgentSession(t *testing.T, s *Server, scope runnerScope, labels ...stri
 		t.Fatalf("newAgentClientID: %v", err)
 	}
 	agent := &Agent{Enabled: true, Status: "online", CreatedOn: time.Now(),
+		Scope:         scope,
 		Authorization: &AgentAuthorization{ClientID: clientID}}
 	for _, l := range labels {
 		agent.Labels = append(agent.Labels, Label{Name: l, Type: "custom"})
@@ -335,12 +337,19 @@ func TestAgentRegistrationRequiresRegistrationToken(t *testing.T) {
 	if agent.Authorization == nil || agent.Authorization.ClientID == "" {
 		t.Fatal("registered agent has no clientId")
 	}
-	scope, err := agentClientIDScope(agent.Authorization.ClientID)
-	if err != nil {
-		t.Fatalf("agentClientIDScope: %v", err)
+	// The clientId is a bare GUID: the runner deserializes it into one and
+	// rejects anything else at configuration time. The scope it used to carry
+	// lives on the agent record instead.
+	if _, err := uuid.Parse(agent.Authorization.ClientID); err != nil {
+		t.Fatalf("clientId %q is not a GUID, which the runner will refuse: %v",
+			agent.Authorization.ClientID, err)
 	}
-	if scope.Repo != "octo/repo" {
-		t.Fatalf("agent scope = %+v, want repo octo/repo", scope)
+	stored := s.store.LookupAgentByClientID(agent.Authorization.ClientID)
+	if stored == nil {
+		t.Fatal("the registered agent cannot be found by its clientId")
+	}
+	if stored.Scope.Repo != "octo/repo" {
+		t.Fatalf("agent scope = %+v, want repo octo/repo", stored.Scope)
 	}
 }
 

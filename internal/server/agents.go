@@ -152,6 +152,7 @@ func (s *Server) handleGenerateJITConfig(w http.ResponseWriter, r *http.Request)
 	agent.Enabled = true
 	agent.Status = "online"
 	agent.CreatedOn = time.Now()
+	agent.Scope = scope
 	agent.Authorization = &AgentAuthorization{
 		AuthorizationURL: s.baseURL(r) + "/_apis/v1/auth/",
 		ClientID:         clientID,
@@ -287,6 +288,7 @@ func (s *Server) handleRegisterAgent(w http.ResponseWriter, r *http.Request) {
 	if agent.Authorization == nil {
 		agent.Authorization = &AgentAuthorization{}
 	}
+	agent.Scope = scope
 	agent.Authorization.AuthorizationURL = s.baseURL(r) + "/_apis/v1/auth/"
 	agent.Authorization.ClientID = clientID
 
@@ -356,11 +358,10 @@ func callerSeesAgent(caller *runnerPrincipal, agent *Agent) bool {
 	if caller.Agent != nil && caller.Agent.ID == agent.ID {
 		return true
 	}
-	scope, err := agentClientIDScope(agent.Authorization.ClientID)
-	if err != nil {
+	if agent.Scope.empty() {
 		return false
 	}
-	return scope == caller.Scope
+	return agent.Scope == caller.Scope
 }
 
 func (s *Server) handleGetAgent(w http.ResponseWriter, r *http.Request) {
@@ -403,11 +404,13 @@ func (s *Server) handleUpdateAgent(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	update.ID = agent.ID
-	// The clientId is the agent's identity and carries its scope, so an update
-	// never restates it. The public key is the runner's half and it does
-	// change: `config.sh --replace` generates a fresh key pair and signs its
-	// next client_assertion with it, so keeping the old key would leave the
+	// The clientId is the agent's identity, and its scope is what the runner
+	// was registered against — neither is the caller's to restate, so both are
+	// carried over. The public key is the runner's half and it does change:
+	// `config.sh --replace` generates a fresh key pair and signs its next
+	// client_assertion with it, so keeping the old key would leave the
 	// re-registered runner unable to obtain a session.
+	update.Scope = agent.Scope
 	authorization := *agent.Authorization
 	if update.Authorization != nil && update.Authorization.PublicKey != nil {
 		authorization.PublicKey = update.Authorization.PublicKey
