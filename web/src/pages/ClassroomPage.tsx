@@ -16,6 +16,7 @@ import {
   type ClassroomAutogradingTest,
 } from "../api.js";
 import { Blankslate, Box, Button, DialogActions, ErrorBanner, FormLabel, Modal, StateLabel } from "../components/ui.js";
+import { MutationError } from "../components/MutationError.js";
 import { OrganizationIcon, PeopleIcon, PlusIcon, RepoIcon } from "../components/octicons.js";
 
 export function ClassroomPage() {
@@ -111,6 +112,7 @@ function ClassroomDetail({ classroom }: { classroom: Classroom }) {
   return (
     <div>
       <div className="mb-5"><Link to="/ui/classrooms" style={{ color: "var(--color-accent)", fontSize: ".82rem" }}>← Classrooms</Link></div>
+      <MutationError of={archive} />
       <section className="mb-5 flex flex-wrap items-start justify-between gap-4" style={{ paddingBottom: "1rem", borderBottom: "1px solid var(--color-border)" }}>
         <div><div className="flex items-center gap-2"><OrganizationIcon size={24} /><h1 style={{ fontSize: "1.55rem", fontWeight: 700 }}>{classroom.name}</h1><StateLabel state={classroom.archived ? "draft" : "open"}>{classroom.archived ? "Archived" : "Active"}</StateLabel></div><p className="mt-1" style={{ color: "var(--color-fg-muted)", fontSize: ".86rem" }}>Owned by {classroom.organization.login}</p></div>
         <div className="flex gap-2"><Button onClick={() => setShowRoster(true)}><PeopleIcon size={15} /> Roster</Button><Button variant="primary" disabled={classroom.archived} onClick={() => setShowAssignment(true)}><PlusIcon size={15} /> New assignment</Button><Button variant="ghost" onClick={() => archive.mutate()}>{classroom.archived ? "Restore" : "Archive"}</Button></div>

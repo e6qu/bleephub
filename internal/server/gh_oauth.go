@@ -539,7 +539,7 @@ func (s *Server) handleOAuthAuthorizeApprove(w http.ResponseWriter, r *http.Requ
 	user := s.store.Users[sess.UserID]
 	s.store.mu.RUnlock()
 
-	if provided == "" || provided != expected {
+	if provided == "" || !secretEqual(provided, expected) {
 		writeGHError(w, http.StatusUnprocessableEntity, "Invalid authenticity_token")
 		return
 	}

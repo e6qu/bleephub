@@ -1,0 +1,32 @@
+# Default owner for everything not matched below.
+*                                   @e6qu
+
+# Authorization and identity. Changes here decide who can read and write what,
+# and the audit in BUGS.md found the gate admitting callers it never checked —
+# review these with that history in mind.
+/internal/server/gh_apps_perms.go   @e6qu
+/internal/server/rbac.go            @e6qu
+/internal/server/auth.go            @e6qu
+/internal/server/identity.go        @e6qu
+/internal/server/gh_oauth.go        @e6qu
+/internal/server/git_http.go        @e6qu
+/internal/server/git_ssh.go         @e6qu
+/ssh-gateway/                       @e6qu
+
+# Durable state. A partial write here can leave the instance unable to boot.
+/internal/server/persistence.go     @e6qu
+/internal/server/store.go           @e6qu
+/internal/server/s3fs.go            @e6qu
+/dqlite-node/                       @e6qu
+
+# Deployment and supply chain.
+/terraform/                         @e6qu
+/.github/workflows/                 @e6qu
+/Dockerfile.release                 @e6qu
+/Dockerfile.runner                  @e6qu
+
+# Fidelity gates and their allowlists. Growing an allowlist is a parity
+# regression, so it should be a deliberate, reviewed act.
+/openapi-violation-allowlist.txt                        @e6qu
+/internal/server/openapi-violation-allowlist.txt        @e6qu
+/internal/server/gh_api_definition_test.go              @e6qu

@@ -131,7 +131,7 @@ func (s *Server) requireOrgAdmin(scope permScope, level permLevel, next http.Han
 
 func (s *Server) resolveRepo(w http.ResponseWriter, r *http.Request) *Repo {
 	owner, repoName := r.PathValue("owner"), r.PathValue("repo")
-	repo := s.store.ReposByName[owner+"/"+repoName]
+	repo := s.store.GetRepoByFullName(owner + "/" + repoName)
 	if repo == nil {
 		writeGHError(w, http.StatusNotFound, "Not Found")
 		return nil

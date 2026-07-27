@@ -4,6 +4,7 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Spinner, InlineError } from "@bleephub/ui-core/components";
 import { RepoHeader } from "../components/Shell.js";
 import { PageTitle, Button, Box } from "../components/ui.js";
+import { MutationError } from "../components/MutationError.js";
 import { useOpenCounts } from "../hooks/useOpenCounts.js";
 import {
   fetchProjectsClassic,
@@ -156,11 +157,7 @@ function ProjectList({
                 Cancel
               </Button>
             </div>
-            {create.isError && (
-              <div style={{ color: "var(--color-danger-fg)", fontSize: "0.85rem" }}>
-                {create.error instanceof Error ? create.error.message : String(create.error)}
-              </div>
-            )}
+            <MutationError of={create} />
           </form>
         ) : (
           <Button variant="secondary" size="sm" onClick={() => setIsCreating(true)}>
@@ -209,6 +206,7 @@ function ProjectBoard({
 
   return (
     <div>
+      <MutationError of={[update, remove]} />
       {isEditing ? (
         <Box header={<span style={{ fontWeight: 600 }}>Edit project</span>} className="mb-4">
           <form
@@ -331,6 +329,7 @@ function ColumnsBoard({
           <Button type="submit" variant="secondary" size="sm" disabled={createCol.isPending}>
             {createCol.isPending ? "Adding..." : "Add"}
           </Button>
+          <MutationError of={createCol} />
         </form>
       </Box>
     </div>
@@ -463,6 +462,7 @@ function ColumnCard({
       style={{ minWidth: 260, maxWidth: 260 }}
     >
       <div style={{ padding: "0.75rem", display: "flex", flexDirection: "column", gap: "0.75rem" }}>
+        <MutationError of={[update, remove, move, createCard]} />
         {isLoading ? (
           <Spinner label="loading cards" />
         ) : (
@@ -551,6 +551,7 @@ function ProjectCardItem({
         background: "var(--color-bg-subtle)",
       }}
     >
+      <MutationError of={[update, remove, move]} />
       {isEditing ? (
         <form
           onSubmit={(e) => {
@@ -634,11 +635,6 @@ function ProjectCardItem({
               Delete
             </button>
           </div>
-          {move.isError && (
-            <div style={{ fontSize: "0.75rem", color: "var(--color-danger-fg)" }}>
-              {move.error instanceof Error ? move.error.message : String(move.error)}
-            </div>
-          )}
         </div>
       )}
     </div>

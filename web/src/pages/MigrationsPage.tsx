@@ -26,6 +26,7 @@ import {
   StateLabel,
   Tabs,
 } from "../components/ui.js";
+import { MutationError } from "../components/MutationError.js";
 import { DownloadIcon, MigrationIcon } from "../components/octicons.js";
 
 type Scope = { kind: "user" } | { kind: "org"; org: string };
@@ -228,6 +229,7 @@ function MigrationsList({ scope }: { scope: Scope }) {
 
   return (
     <>
+      <MutationError of={deleteMut} />
       <DataTable
         data={data}
         columns={columns}

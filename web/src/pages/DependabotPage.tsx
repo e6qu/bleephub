@@ -14,6 +14,7 @@ import { useOpenCounts } from "../hooks/useOpenCounts.js";
 import { RepoHeader } from "../components/Shell.js";
 import { Spinner, InlineError } from "@bleephub/ui-core/components";
 import { Box, Button, FormLabel, ErrorBanner } from "../components/ui.js";
+import { MutationError } from "../components/MutationError.js";
 import { LockIcon } from "../components/octicons.js";
 import { sealSecret } from "../utils/sealedBox.js";
 import type {
@@ -89,6 +90,8 @@ export function DependabotPage() {
   return (
     <div>
       <RepoHeader owner={owner} repo={repo} active="security" {...counts} />
+
+      <MutationError of={updateMutation} />
 
       <div className="mb-4 flex flex-wrap items-center gap-2">
         <label style={{ fontSize: "0.85rem", color: "var(--color-fg-muted)" }}>State:</label>

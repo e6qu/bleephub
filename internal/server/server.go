@@ -2,11 +2,16 @@ package bleephub
 
 import (
 	"context"
+	"crypto/tls"
 	"encoding/json"
 	"errors"
+	"fmt"
+	stdlog "log"
 	"net"
 	"net/http"
+	"net/url"
 	"os"
+	"runtime/debug"
 	"strconv"
 	"strings"
 	"sync"
@@ -15,6 +20,8 @@ import (
 	"github.com/graphql-go/graphql"
 	"github.com/rs/zerolog"
 	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
+	"go.opentelemetry.io/otel/codes"
+	"go.opentelemetry.io/otel/trace"
 )
 
 // Server is the bleephub HTTP server implementing the GitHub Actions
@@ -433,7 +440,7 @@ func (s *Server) handleCatchAll(w http.ResponseWriter, r *http.Request) {
 	s.logger.Warn().
 		Str("method", r.Method).
 		Str("path", r.URL.Path).
-		Str("query", r.URL.RawQuery).
+		Str("query", redactedQuery(r.URL)).
 		Msg("UNHANDLED REQUEST")
 	if strings.HasPrefix(r.URL.Path, "/api/") || r.URL.Path == "/api" {
 		writeGHError(w, http.StatusNotFound, "Not Found")
@@ -527,7 +534,7 @@ func (s *Server) ListenAndServe() error {
 	if s.responseObserver != nil {
 		observed = s.observeMiddleware(ghWrapped)
 	}
-	handler := otelhttp.NewHandler(s.loggingMiddleware(s.adminHostMiddleware(observed)), "bleephub")
+	handler := otelhttp.NewHandler(s.recoverMiddleware(s.loggingMiddleware(s.adminHostMiddleware(observed))), "bleephub")
 
 	srv := &http.Server{
 		Addr:    s.addr,
@@ -537,6 +544,10 @@ func (s *Server) ListenAndServe() error {
 		// git push/pull + artifact uploads/downloads under load.
 		ReadHeaderTimeout: 30 * time.Second,
 		IdleTimeout:       120 * time.Second,
+		// net/http logs connection-level errors to the standard logger by
+		// default, which bypasses zerolog's level filter and the telemetry
+		// bridge entirely. Route them through the server's own logger.
+		ErrorLog: newStdLogBridge(s.logger),
 	}
 
 	// Resolve addr for log output
@@ -545,16 +556,38 @@ func (s *Server) ListenAndServe() error {
 		host = "localhost"
 	}
 
-	// TLS support via environment variables
+	// TLS support via environment variables.
+	//
+	// The pair is all-or-nothing. Treating a half-configured pair as "no TLS"
+	// silently serves plaintext on the port the operator believes is encrypted
+	// — a typo, an unmounted secret or a half-finished rotation becomes a
+	// downgrade nobody is told about. Refuse to start instead.
 	certFile := os.Getenv("BPH_TLS_CERT")
 	keyFile := os.Getenv("BPH_TLS_KEY")
-	if certFile != "" && keyFile != "" {
+	if (certFile == "") != (keyFile == "") {
+		return fmt.Errorf("BPH_TLS_CERT and BPH_TLS_KEY must be set together (cert %s, key %s)",
+			presenceLabel(certFile), presenceLabel(keyFile))
+	}
+	if certFile != "" {
+		// Fail on an unreadable cert here rather than at the first handshake,
+		// so a bad path is a startup error and not an outage discovered by a
+		// client.
+		if _, err := tls.LoadX509KeyPair(certFile, keyFile); err != nil {
+			return fmt.Errorf("load TLS keypair: %w", err)
+		}
 		s.logger.Info().Msgf("bleephub listening on https://%s:%s", host, port)
 		return srv.ListenAndServeTLS(certFile, keyFile)
 	}
 
 	s.logger.Info().Msgf("bleephub listening on http://%s:%s", host, port)
 	return srv.ListenAndServe()
+}
+
+func presenceLabel(v string) string {
+	if v == "" {
+		return "unset"
+	}
+	return "set"
 }
 
 func (s *Server) adminHostMiddleware(next http.Handler) http.Handler {
@@ -597,6 +630,21 @@ func (s *Server) internalAuthMiddleware(next http.Handler) http.Handler {
 		}
 		if user == nil {
 			writeJSON(w, http.StatusUnauthorized, map[string]string{"message": "Requires authentication"})
+			return
+		}
+		// Site admin, for the whole /internal/ prefix rather than per route
+		// table. Ten routes are registered outside registerMgmtRoutes —
+		// /internal/exec/*, /internal/metrics, /internal/status,
+		// /internal/storage, POST /internal/orgs — and gating one table left
+		// those open to any account holding any token. handleSubmitJob does no
+		// authorization of its own and dispatches a container to the runner
+		// fleet, so that gap was arbitrary code execution for the
+		// lowest-privileged account on the instance.
+		//
+		// The prefix is an operator surface, not a naming convention, so the
+		// check belongs here where nothing can be registered around it.
+		if !user.SiteAdmin {
+			writeJSON(w, http.StatusForbidden, map[string]string{"message": "Must be a site admin"})
 			return
 		}
 		next.ServeHTTP(w, r.WithContext(context.WithValue(r.Context(), ctxUser, user)))
@@ -663,8 +711,114 @@ func (rw *responseWriter) WriteHeader(code int) {
 }
 
 // writeJSON marshals v as JSON and writes it to w.
+// writeJSON is the response choke point for essentially every handler.
+//
+// The body is marshalled before the status is written, so a value that cannot
+// be encoded — an unsupported type, a NaN, a cycle — becomes a 500 instead of a
+// 200 with a truncated body and no record of what happened. Previously the
+// encoder wrote straight to the ResponseWriter and its error was discarded, so
+// the status line had already been committed by the time anything could fail.
+//
+// Content-Length is deliberately left to net/http: a handful of handlers write
+// further bytes after calling this, and declaring a length here would make
+// those responses malformed.
 func writeJSON(w http.ResponseWriter, status int, v interface{}) {
+	body, err := json.Marshal(v)
+	if err != nil {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusInternalServerError)
+		_, _ = w.Write([]byte(`{"message":"Internal Server Error","documentation_url":"https://docs.github.com/rest"}` + "\n"))
+		return
+	}
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
-	json.NewEncoder(w).Encode(v)
+	_, _ = w.Write(append(body, '\n'))
+}
+
+// recoverMiddleware turns a panicking handler into a 500 instead of a silently
+// aborted connection.
+//
+// Without it, net/http's per-connection recover catches the panic, writes
+// nothing, and closes the connection: the client sees a truncated read, and
+// there is no zerolog record, no span error and no metric. It sits inside the
+// otelhttp handler so the span is still open and can record the error, and
+// outside everything else so a panic anywhere below is caught.
+//
+// This bounds the blast radius of a panic; it does not make one harmless. A
+// handler that panics while holding the store lock still leaves it held, and
+// the recovery cannot release it — the fix for that is the lock discipline
+// itself, not this middleware.
+func (s *Server) recoverMiddleware(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		defer func() {
+			recovered := recover()
+			if recovered == nil {
+				return
+			}
+			// A client that hung up mid-write is not a server fault; the
+			// standard library uses this sentinel for exactly that.
+			if recovered == http.ErrAbortHandler {
+				panic(recovered)
+			}
+
+			span := trace.SpanFromContext(r.Context())
+			err := fmt.Errorf("panic: %v", recovered)
+			span.RecordError(err)
+			span.SetStatus(codes.Error, "handler panicked")
+
+			s.logger.Error().
+				Str("method", r.Method).
+				Str("path", r.URL.Path).
+				Interface("panic", recovered).
+				Bytes("stack", debug.Stack()).
+				Msg("handler panicked")
+
+			writeGHError(w, http.StatusInternalServerError, "Internal Server Error")
+		}()
+		next.ServeHTTP(w, r)
+	})
+}
+
+// newStdLogBridge adapts zerolog to the *log.Logger net/http wants for
+// ErrorLog, so connection-level errors reach the same sink as everything else.
+func newStdLogBridge(logger zerolog.Logger) *stdlog.Logger {
+	return stdlog.New(stdLogWriter{logger: logger}, "", 0)
+}
+
+type stdLogWriter struct{ logger zerolog.Logger }
+
+func (w stdLogWriter) Write(p []byte) (int, error) {
+	w.logger.Error().Msg(strings.TrimSpace(string(p)))
+	return len(p), nil
+}
+
+// redactedQuery renders a query string with every value replaced unless the
+// parameter is on a small allowlist of names known to carry no secret.
+//
+// The allowlist is deliberately the inverted default. This server implements
+// OAuth and the device flow, so an unhandled or mistyped request can carry
+// `code`, `client_secret`, `access_token` or `device_code` in the query — and
+// anything logged here also reaches the telemetry backend through the log
+// bridge. Redacting a known-secret denylist would mean every parameter added
+// later is disclosed until someone remembers to add it.
+func redactedQuery(u *url.URL) string {
+	values := u.Query()
+	if len(values) == 0 {
+		return ""
+	}
+	safe := map[string]bool{
+		"page": true, "per_page": true, "state": true, "sort": true,
+		"direction": true, "since": true, "before": true, "after": true,
+		"ref": true, "sha": true, "path": true, "filter": true, "type": true,
+		"scope": true, "q": true, "service": true, "visibility": true,
+	}
+	out := url.Values{}
+	for key, vals := range values {
+		if safe[key] {
+			out[key] = vals
+			continue
+		}
+		out.Set(key, "<redacted>")
+	}
+	return out.Encode()
 }

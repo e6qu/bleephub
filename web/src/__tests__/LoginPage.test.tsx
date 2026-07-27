@@ -72,6 +72,35 @@ describe("LoginPage", () => {
     expect(getToken()).toBe("gho_oauthtoken");
   });
 
+  it("an instance with no providers configured shows the token form and no error", async () => {
+    mockFetch.mockResolvedValueOnce(new Response(JSON.stringify({}), { status: 200 }));
+    render(<LoginPage />);
+    expect(await screen.findByLabelText(/access token/i)).toBeInTheDocument();
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+    expect(screen.queryByRole("link", { name: /Continue with GitHub/i })).not.toBeInTheDocument();
+  });
+
+  it("an unreachable provider list is distinguished from having no providers", async () => {
+    mockFetch.mockRejectedValueOnce(new TypeError("Failed to fetch"));
+    render(<LoginPage />);
+
+    // Token sign-in must still be offered — but the reason the other methods
+    // are absent has to be stated, not left looking like "none configured".
+    expect(await screen.findByLabelText(/access token/i)).toBeInTheDocument();
+    const alert = await screen.findByRole("alert");
+    expect(alert).toHaveTextContent(/Could not load the available sign-in methods/i);
+    expect(alert).toHaveTextContent(/Failed to fetch/);
+  });
+
+  it("a provider list that answers non-2xx is also reported, not treated as empty", async () => {
+    mockFetch.mockResolvedValueOnce(
+      new Response("nope", { status: 503, statusText: "Service Unavailable" }),
+    );
+    render(<LoginPage />);
+    const alert = await screen.findByRole("alert");
+    expect(alert).toHaveTextContent(/503/);
+  });
+
   it("rejects a token when GitHub REST identity rejects it", async () => {
     mockFetch
       .mockResolvedValueOnce(new Response(JSON.stringify({ github: true }), { status: 200 }))

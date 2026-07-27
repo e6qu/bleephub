@@ -32,9 +32,77 @@ locals {
   uses_shared_api_gateway_vpc_link       = !var.create_api_gateway_vpc_link
   api_gateway_vpc_link_id                = local.uses_shared_api_gateway_vpc_link ? var.api_gateway_vpc_link_id : aws_apigatewayv2_vpc_link.this[0].id
   api_gateway_vpc_link_security_group_id = local.uses_shared_api_gateway_vpc_link ? var.api_gateway_vpc_link_security_group_id : aws_security_group.api_link[0].id
+
+  # The release image carries no HTTP client, so the probe speaks HTTP over a
+  # bash TCP redirection. Without it Amazon ECS calls a task healthy the moment
+  # its process starts and a rolling deployment cannot tell a broken release
+  # from a working one. The start period covers a cold wake, where the listener
+  # only opens once the dqlite quorum has formed.
+  app_health_check = {
+    command     = ["CMD", "bash", "-c", "exec 3<>/dev/tcp/127.0.0.1/5555 && printf 'GET /health HTTP/1.0\\r\\n\\r\\n' >&3 && grep -q '^HTTP/1.[01] 200' <&3"]
+    interval    = 15
+    timeout     = 5
+    retries     = 5
+    startPeriod = 180
+  }
 }
 
 data "aws_caller_identity" "current" {}
+
+data "aws_region" "current" {}
+
+# Every durable store and every secret is encrypted with this one customer-managed
+# key: annual rotation and a key policy give the operator revocation and audit
+# control that the AWS-managed keys do not offer, and the deletion window plus the
+# guard below keep a mistaken destroy from making Git history unreadable.
+resource "aws_kms_key" "this" {
+  description             = "Bleephub durable storage, secrets, and logs"
+  enable_key_rotation     = true
+  rotation_period_in_days = 365
+  deletion_window_in_days = 30
+  policy                  = data.aws_iam_policy_document.kms.json
+  tags                    = local.common_tags
+
+  lifecycle {
+    prevent_destroy = true
+  }
+}
+
+resource "aws_kms_alias" "this" {
+  name          = "alias/${var.name}"
+  target_key_id = aws_kms_key.this.key_id
+}
+
+data "aws_iam_policy_document" "kms" {
+  statement {
+    sid       = "AccountKeyAdministration"
+    effect    = "Allow"
+    actions   = ["kms:*"]
+    resources = ["*"]
+    principals {
+      type        = "AWS"
+      identifiers = ["arn:aws:iam::${data.aws_caller_identity.current.account_id}:root"]
+    }
+  }
+
+  # CloudWatch Logs encrypts through the service principal rather than the
+  # task's own credentials, and only for this log group.
+  statement {
+    sid       = "CloudWatchLogsEncryption"
+    effect    = "Allow"
+    actions   = ["kms:Encrypt", "kms:Decrypt", "kms:ReEncryptFrom", "kms:ReEncryptTo", "kms:GenerateDataKey", "kms:GenerateDataKeyWithoutPlaintext", "kms:DescribeKey"]
+    resources = ["*"]
+    principals {
+      type        = "Service"
+      identifiers = ["logs.${var.region}.amazonaws.com"]
+    }
+    condition {
+      test     = "ArnEquals"
+      variable = "kms:EncryptionContext:aws:logs:arn"
+      values   = ["arn:aws:logs:${var.region}:${data.aws_caller_identity.current.account_id}:log-group:/bleephub/${var.name}"]
+    }
+  }
+}
 
 moved {
   from = aws_security_group.api_link
@@ -44,6 +112,11 @@ moved {
 moved {
   from = aws_apigatewayv2_vpc_link.this
   to   = aws_apigatewayv2_vpc_link.this[0]
+}
+
+moved {
+  from = aws_s3_bucket_policy.startup_public_read
+  to   = aws_s3_bucket_policy.startup_origin_read
 }
 
 data "aws_ecs_cluster" "existing" {
@@ -141,19 +214,69 @@ resource "aws_s3_bucket" "git" {
   bucket        = local.git_bucket
   force_destroy = var.force_destroy_storage
   tags          = local.common_tags
+
+  lifecycle {
+    prevent_destroy = true
+  }
 }
 
+# Every Git ref and pack lives here and nowhere else, so an overwrite or a
+# delete needs a previous version to restore from.
 resource "aws_s3_bucket_versioning" "git" {
   bucket = aws_s3_bucket.git.id
-  versioning_configuration { status = "Suspended" }
+  versioning_configuration { status = "Enabled" }
 }
 
 resource "aws_s3_bucket_server_side_encryption_configuration" "git" {
   bucket = aws_s3_bucket.git.id
   rule {
     apply_server_side_encryption_by_default {
-      sse_algorithm = "AES256"
+      sse_algorithm     = "aws:kms"
+      kms_master_key_id = aws_kms_key.this.arn
     }
+    bucket_key_enabled = true
+  }
+}
+
+resource "aws_s3_bucket_public_access_block" "git" {
+  bucket                  = aws_s3_bucket.git.id
+  block_public_acls       = true
+  ignore_public_acls      = true
+  block_public_policy     = true
+  restrict_public_buckets = true
+}
+
+resource "aws_s3_bucket_policy" "git" {
+  bucket     = aws_s3_bucket.git.id
+  policy     = data.aws_iam_policy_document.git_transport.json
+  depends_on = [aws_s3_bucket_public_access_block.git]
+}
+
+data "aws_iam_policy_document" "git_transport" {
+  statement {
+    sid       = "DenyInsecureTransport"
+    effect    = "Deny"
+    actions   = ["s3:*"]
+    resources = [aws_s3_bucket.git.arn, "${aws_s3_bucket.git.arn}/*"]
+    principals {
+      type        = "*"
+      identifiers = ["*"]
+    }
+    condition {
+      test     = "Bool"
+      variable = "aws:SecureTransport"
+      values   = ["false"]
+    }
+  }
+}
+
+resource "aws_s3_bucket_lifecycle_configuration" "git" {
+  bucket = aws_s3_bucket.git.id
+  rule {
+    id     = "abort-incomplete-uploads"
+    status = "Enabled"
+    filter {}
+    abort_incomplete_multipart_upload { days_after_initiation = 7 }
   }
 }
 
@@ -161,6 +284,10 @@ resource "aws_s3_bucket" "objects" {
   bucket        = local.object_bucket
   force_destroy = var.force_destroy_storage
   tags          = local.common_tags
+
+  lifecycle {
+    prevent_destroy = true
+  }
 }
 
 resource "aws_s3_bucket_versioning" "objects" {
@@ -172,45 +299,163 @@ resource "aws_s3_bucket_server_side_encryption_configuration" "objects" {
   bucket = aws_s3_bucket.objects.id
   rule {
     apply_server_side_encryption_by_default {
-      sse_algorithm = "AES256"
+      sse_algorithm     = "aws:kms"
+      kms_master_key_id = aws_kms_key.this.arn
+    }
+    bucket_key_enabled = true
+  }
+}
+
+resource "aws_s3_bucket_public_access_block" "objects" {
+  bucket                  = aws_s3_bucket.objects.id
+  block_public_acls       = true
+  ignore_public_acls      = true
+  block_public_policy     = true
+  restrict_public_buckets = true
+}
+
+resource "aws_s3_bucket_policy" "objects" {
+  bucket     = aws_s3_bucket.objects.id
+  policy     = data.aws_iam_policy_document.objects_transport.json
+  depends_on = [aws_s3_bucket_public_access_block.objects]
+}
+
+data "aws_iam_policy_document" "objects_transport" {
+  statement {
+    sid       = "DenyInsecureTransport"
+    effect    = "Deny"
+    actions   = ["s3:*"]
+    resources = [aws_s3_bucket.objects.arn, "${aws_s3_bucket.objects.arn}/*"]
+    principals {
+      type        = "*"
+      identifiers = ["*"]
+    }
+    condition {
+      test     = "Bool"
+      variable = "aws:SecureTransport"
+      values   = ["false"]
     }
   }
 }
 
-# This contains exactly one public, non-sensitive document. It makes the
-# scale-to-zero transition visible without starting an ECS task merely to
-# render a loading screen; no application, Git, object, or status data is
-# readable from this bucket.
+resource "aws_s3_bucket_lifecycle_configuration" "objects" {
+  bucket = aws_s3_bucket.objects.id
+  rule {
+    id     = "abort-incomplete-uploads"
+    status = "Enabled"
+    filter {}
+    abort_incomplete_multipart_upload { days_after_initiation = 7 }
+  }
+}
+
+# This contains exactly one non-sensitive document. It makes the scale-to-zero
+# transition visible without starting an ECS task merely to render a loading
+# screen; no application, Git, object, or status data is readable from it.
 resource "aws_s3_bucket" "startup" {
   bucket        = local.startup_bucket
   force_destroy = var.force_destroy_storage
   tags          = local.common_tags
 }
 
-resource "aws_s3_bucket_public_access_block" "startup" {
-  bucket                  = aws_s3_bucket.startup.id
-  block_public_acls       = true
-  ignore_public_acls      = true
-  block_public_policy     = false
-  restrict_public_buckets = false
-}
-
-data "aws_iam_policy_document" "startup_public_read" {
-  statement {
-    sid       = "ReadStartupDocumentOnly"
-    effect    = "Allow"
-    actions   = ["s3:GetObject"]
-    resources = ["${aws_s3_bucket.startup.arn}/startup/index.html"]
-    principals {
-      type        = "*"
-      identifiers = ["*"]
+resource "aws_s3_bucket_server_side_encryption_configuration" "startup" {
+  bucket = aws_s3_bucket.startup.id
+  rule {
+    apply_server_side_encryption_by_default {
+      sse_algorithm = "AES256"
     }
   }
 }
 
-resource "aws_s3_bucket_policy" "startup_public_read" {
+resource "aws_s3_bucket_public_access_block" "startup" {
+  bucket                  = aws_s3_bucket.startup.id
+  block_public_acls       = true
+  ignore_public_acls      = true
+  block_public_policy     = true
+  restrict_public_buckets = true
+}
+
+# Amazon API Gateway cannot sign an S3 origin request, so the startup document
+# reaches the browser through CloudFront: origin access control signs the fetch
+# and the bucket itself stays entirely private.
+resource "aws_cloudfront_origin_access_control" "startup" {
+  name                              = "${var.name}-startup"
+  description                       = "Signs Bleephub startup-document reads"
+  origin_access_control_origin_type = "s3"
+  signing_behavior                  = "always"
+  signing_protocol                  = "sigv4"
+}
+
+data "aws_cloudfront_cache_policy" "caching_disabled" {
+  name = "Managed-CachingDisabled"
+}
+
+resource "aws_cloudfront_distribution" "startup" {
+  enabled = true
+  comment = "${var.name} startup document"
+
+  origin {
+    domain_name              = aws_s3_bucket.startup.bucket_regional_domain_name
+    origin_id                = "startup"
+    origin_access_control_id = aws_cloudfront_origin_access_control.startup.id
+  }
+
+  default_cache_behavior {
+    target_origin_id       = "startup"
+    viewer_protocol_policy = "https-only"
+    allowed_methods        = ["GET", "HEAD"]
+    cached_methods         = ["GET", "HEAD"]
+    # The document reports live wake progress and must never be served stale.
+    cache_policy_id = data.aws_cloudfront_cache_policy.caching_disabled.id
+  }
+
+  restrictions {
+    geo_restriction { restriction_type = "none" }
+  }
+
+  viewer_certificate {
+    cloudfront_default_certificate = true
+  }
+
+  tags = local.common_tags
+}
+
+data "aws_iam_policy_document" "startup_origin_read" {
+  statement {
+    sid       = "ReadStartupDocumentFromDistribution"
+    effect    = "Allow"
+    actions   = ["s3:GetObject"]
+    resources = ["${aws_s3_bucket.startup.arn}/startup/index.html"]
+    principals {
+      type        = "Service"
+      identifiers = ["cloudfront.amazonaws.com"]
+    }
+    condition {
+      test     = "ArnEquals"
+      variable = "AWS:SourceArn"
+      values   = [aws_cloudfront_distribution.startup.arn]
+    }
+  }
+
+  statement {
+    sid       = "DenyInsecureTransport"
+    effect    = "Deny"
+    actions   = ["s3:*"]
+    resources = [aws_s3_bucket.startup.arn, "${aws_s3_bucket.startup.arn}/*"]
+    principals {
+      type        = "*"
+      identifiers = ["*"]
+    }
+    condition {
+      test     = "Bool"
+      variable = "aws:SecureTransport"
+      values   = ["false"]
+    }
+  }
+}
+
+resource "aws_s3_bucket_policy" "startup_origin_read" {
   bucket     = aws_s3_bucket.startup.id
-  policy     = data.aws_iam_policy_document.startup_public_read.json
+  policy     = data.aws_iam_policy_document.startup_origin_read.json
   depends_on = [aws_s3_bucket_public_access_block.startup]
 }
 
@@ -227,7 +472,12 @@ resource "aws_s3_object" "startup_page" {
 resource "aws_secretsmanager_secret" "admin_token" {
   name                    = "${var.name}/admin-token"
   recovery_window_in_days = 7
+  kms_key_id              = aws_kms_key.this.arn
   tags                    = local.common_tags
+
+  lifecycle {
+    prevent_destroy = true
+  }
 }
 
 resource "aws_secretsmanager_secret_version" "admin_token" {
@@ -242,7 +492,13 @@ resource "tls_private_key" "ssh_host" {
 resource "aws_secretsmanager_secret" "ssh_host_key" {
   name                    = "${var.name}/ssh-host-key"
   recovery_window_in_days = 7
+  kms_key_id              = aws_kms_key.this.arn
   tags                    = local.common_tags
+
+  # Replacing this rotates the host key every client has pinned.
+  lifecycle {
+    prevent_destroy = true
+  }
 }
 
 resource "aws_secretsmanager_secret_version" "ssh_host_key" {
@@ -253,6 +509,7 @@ resource "aws_secretsmanager_secret_version" "ssh_host_key" {
 resource "aws_cloudwatch_log_group" "this" {
   name              = "/bleephub/${var.name}"
   retention_in_days = var.log_retention_days
+  kms_key_id        = aws_kms_key.this.arn
   tags              = local.common_tags
 }
 
@@ -300,7 +557,7 @@ resource "aws_security_group" "ssh" {
     protocol    = "tcp"
     from_port   = 22
     to_port     = 22
-    cidr_blocks = ["0.0.0.0/0"]
+    cidr_blocks = var.ssh_ingress_cidr_blocks
   }
   egress {
     protocol    = "-1"
@@ -366,8 +623,20 @@ resource "aws_security_group" "dqlite" {
 }
 
 resource "aws_efs_file_system" "sqlite" {
-  encrypted = true
-  tags      = merge(local.common_tags, { Name = "${var.name}-sqlite" })
+  encrypted  = true
+  kms_key_id = aws_kms_key.this.arn
+  tags       = merge(local.common_tags, { Name = "${var.name}-sqlite" })
+
+  lifecycle {
+    prevent_destroy = true
+  }
+}
+
+# The dqlite raft logs and release assets exist only on this filesystem, so
+# without AWS Backup a deleted or corrupted directory has no restore path.
+resource "aws_efs_backup_policy" "sqlite" {
+  file_system_id = aws_efs_file_system.sqlite.id
+  backup_policy { status = "ENABLED" }
 }
 
 resource "aws_efs_access_point" "sqlite" {
@@ -454,9 +723,12 @@ resource "aws_iam_role_policy_attachment" "execution" {
 }
 
 resource "aws_iam_role_policy" "execution_secret" {
-  name   = "read-admin-token"
-  role   = aws_iam_role.execution.id
-  policy = jsonencode({ Version = "2012-10-17", Statement = [{ Effect = "Allow", Action = ["secretsmanager:GetSecretValue"], Resource = compact([aws_secretsmanager_secret.admin_token.arn, aws_secretsmanager_secret.ssh_host_key.arn, var.github_oauth_client_secret_arn, var.shauth_oidc_client_secret_arn]) }] })
+  name = "read-admin-token"
+  role = aws_iam_role.execution.id
+  policy = jsonencode({ Version = "2012-10-17", Statement = [
+    { Effect = "Allow", Action = ["secretsmanager:GetSecretValue"], Resource = compact([aws_secretsmanager_secret.admin_token.arn, aws_secretsmanager_secret.ssh_host_key.arn, var.github_oauth_client_secret_arn, var.shauth_oidc_client_secret_arn]) },
+    { Effect = "Allow", Action = ["kms:Decrypt"], Resource = aws_kms_key.this.arn }
+  ] })
 }
 
 resource "aws_iam_role" "task" {
@@ -470,7 +742,8 @@ resource "aws_iam_role_policy" "task_storage" {
   role = aws_iam_role.task.id
   policy = jsonencode({ Version = "2012-10-17", Statement = [
     { Effect = "Allow", Action = ["s3:ListBucket"], Resource = [aws_s3_bucket.git.arn, aws_s3_bucket.objects.arn] },
-    { Effect = "Allow", Action = ["s3:GetObject", "s3:PutObject", "s3:DeleteObject"], Resource = ["${aws_s3_bucket.git.arn}/*", "${aws_s3_bucket.objects.arn}/*"] }
+    { Effect = "Allow", Action = ["s3:GetObject", "s3:PutObject", "s3:DeleteObject"], Resource = ["${aws_s3_bucket.git.arn}/*", "${aws_s3_bucket.objects.arn}/*"] },
+    { Effect = "Allow", Action = ["kms:Decrypt", "kms:GenerateDataKey"], Resource = aws_kms_key.this.arn }
   ] })
 }
 
@@ -515,6 +788,7 @@ resource "aws_iam_role_policy" "wake_service" {
       { Effect = "Allow", Action = ["ecs:DescribeServices", "ecs:UpdateService"], Resource = concat([aws_ecs_service.this.id], [for service in aws_ecs_service.dqlite : service.id]) },
       { Effect = "Allow", Action = ["ecs:ListTasks", "ecs:DescribeTasks", "ecs:StopTask"], Resource = "*" },
       { Effect = "Allow", Action = ["secretsmanager:GetSecretValue"], Resource = aws_secretsmanager_secret.admin_token.arn },
+      { Effect = "Allow", Action = ["kms:Decrypt"], Resource = aws_kms_key.this.arn },
       { Effect = "Allow", Action = ["apigateway:GET", "apigateway:PATCH"], Resource = "arn:aws:apigateway:${var.region}::/apis/${aws_apigatewayv2_api.this.id}/*" },
       { Effect = "Allow", Action = ["cloudwatch:SetAlarmState", "cloudwatch:DisableAlarmActions", "cloudwatch:EnableAlarmActions"], Resource = aws_cloudwatch_metric_alarm.idle_shutdown.arn },
       { Effect = "Allow", Action = ["cloudwatch:DescribeAlarms"], Resource = "*" },
@@ -660,7 +934,7 @@ resource "aws_apigatewayv2_integration" "wake" {
 resource "aws_apigatewayv2_integration" "startup_page" {
   api_id                 = aws_apigatewayv2_api.this.id
   integration_type       = "HTTP_PROXY"
-  integration_uri        = "https://${aws_s3_bucket.startup.bucket_regional_domain_name}/startup/index.html"
+  integration_uri        = "https://${aws_cloudfront_distribution.startup.domain_name}/startup/index.html"
   integration_method     = "GET"
   payload_format_version = "1.0"
 }
@@ -789,10 +1063,16 @@ resource "aws_ecs_task_definition" "this" {
       }
     }
   }
-  container_definitions = jsonencode([{ name = "bleephub", image = var.container_image, essential = true, portMappings = [{ containerPort = 5555, protocol = "tcp" }, { containerPort = 2222, protocol = "tcp" }], mountPoints = [{ sourceVolume = "sqlite", containerPath = "/var/lib/bleephub", readOnly = false }], environment = concat([{ name = "BLEEPHUB_PERSIST", value = "true" }, { name = "BLEEPHUB_DATA_DIR", value = "/var/lib/bleephub" }, { name = "BLEEPHUB_DQLITE_SERVERS", value = join(",", [for node in sort(keys(local.dqlite_nodes)) : local.dqlite_live_addresses[node]]) }, { name = "BLEEPHUB_S3_BUCKET", value = aws_s3_bucket.git.bucket }, { name = "BLEEPHUB_S3_PREFIX", value = "git" }, { name = "BLEEPHUB_OBJECT_S3_BUCKET", value = aws_s3_bucket.objects.bucket }, { name = "BLEEPHUB_OBJECT_S3_PREFIX", value = "objects" }, { name = "BLEEPHUB_S3_REGION", value = var.region }, { name = "BLEEPHUB_EXTERNAL_URL", value = "https://${var.domain_name}" }, { name = "BLEEPHUB_ADMIN_HOST", value = "admin.${var.domain_name}" }, { name = "BLEEPHUB_SSH_ADDR", value = ":2222" }, { name = "BLEEPHUB_SSH_HOST", value = "ssh.${var.domain_name}" }], local.dqlite_address_map == "" ? [] : [{ name = "BLEEPHUB_DQLITE_ADDRESS_MAP", value = local.dqlite_address_map }], var.github_oauth_client_id == "" ? [] : [{ name = "BLEEPHUB_GITHUB_OAUTH_CLIENT_ID", value = var.github_oauth_client_id }], var.shauth_oidc_issuer == "" ? [] : [{ name = "BLEEPHUB_SHAUTH_ISSUER", value = var.shauth_oidc_issuer }, { name = "BLEEPHUB_SHAUTH_CLIENT_ID", value = var.shauth_oidc_client_id }, { name = "BLEEPHUB_SHAUTH_POST_LOGOUT_URL", value = var.shauth_oidc_post_logout_url }]), secrets = concat([{ name = "BLEEPHUB_ADMIN_TOKEN", valueFrom = aws_secretsmanager_secret.admin_token.arn }, { name = "BLEEPHUB_SSH_HOST_KEY", valueFrom = aws_secretsmanager_secret.ssh_host_key.arn }], var.github_oauth_client_secret_arn == "" ? [] : [{ name = "BLEEPHUB_GITHUB_OAUTH_CLIENT_SECRET", valueFrom = var.github_oauth_client_secret_arn }], var.shauth_oidc_client_secret_arn == "" ? [] : [{ name = "BLEEPHUB_SHAUTH_CLIENT_SECRET", valueFrom = var.shauth_oidc_client_secret_arn }]), logConfiguration = { logDriver = "awslogs", options = { awslogs-group = aws_cloudwatch_log_group.this.name, awslogs-region = var.region, awslogs-stream-prefix = "service" } } }])
+  container_definitions = jsonencode([{ name = "bleephub", image = var.container_image, essential = true, portMappings = [{ containerPort = 5555, protocol = "tcp" }, { containerPort = 2222, protocol = "tcp" }], healthCheck = local.app_health_check, mountPoints = [{ sourceVolume = "sqlite", containerPath = "/var/lib/bleephub", readOnly = false }], environment = concat([{ name = "BLEEPHUB_PERSIST", value = "true" }, { name = "BLEEPHUB_DATA_DIR", value = "/var/lib/bleephub" }, { name = "BLEEPHUB_DQLITE_SERVERS", value = join(",", [for node in sort(keys(local.dqlite_nodes)) : local.dqlite_live_addresses[node]]) }, { name = "BLEEPHUB_S3_BUCKET", value = aws_s3_bucket.git.bucket }, { name = "BLEEPHUB_S3_PREFIX", value = "git" }, { name = "BLEEPHUB_OBJECT_S3_BUCKET", value = aws_s3_bucket.objects.bucket }, { name = "BLEEPHUB_OBJECT_S3_PREFIX", value = "objects" }, { name = "BLEEPHUB_S3_REGION", value = var.region }, { name = "BLEEPHUB_EXTERNAL_URL", value = "https://${var.domain_name}" }, { name = "BLEEPHUB_ADMIN_HOST", value = "admin.${var.domain_name}" }, { name = "BLEEPHUB_SSH_ADDR", value = ":2222" }, { name = "BLEEPHUB_SSH_HOST", value = "ssh.${var.domain_name}" }], local.dqlite_address_map == "" ? [] : [{ name = "BLEEPHUB_DQLITE_ADDRESS_MAP", value = local.dqlite_address_map }], var.github_oauth_client_id == "" ? [] : [{ name = "BLEEPHUB_GITHUB_OAUTH_CLIENT_ID", value = var.github_oauth_client_id }], var.shauth_oidc_issuer == "" ? [] : [{ name = "BLEEPHUB_SHAUTH_ISSUER", value = var.shauth_oidc_issuer }, { name = "BLEEPHUB_SHAUTH_CLIENT_ID", value = var.shauth_oidc_client_id }, { name = "BLEEPHUB_SHAUTH_POST_LOGOUT_URL", value = var.shauth_oidc_post_logout_url }]), secrets = concat([{ name = "BLEEPHUB_ADMIN_TOKEN", valueFrom = aws_secretsmanager_secret.admin_token.arn }, { name = "BLEEPHUB_SSH_HOST_KEY", valueFrom = aws_secretsmanager_secret.ssh_host_key.arn }], var.github_oauth_client_secret_arn == "" ? [] : [{ name = "BLEEPHUB_GITHUB_OAUTH_CLIENT_SECRET", valueFrom = var.github_oauth_client_secret_arn }], var.shauth_oidc_client_secret_arn == "" ? [] : [{ name = "BLEEPHUB_SHAUTH_CLIENT_SECRET", valueFrom = var.shauth_oidc_client_secret_arn }]), logConfiguration = { logDriver = "awslogs", options = { awslogs-group = aws_cloudwatch_log_group.this.name, awslogs-region = var.region, awslogs-stream-prefix = "service" } } }])
   tags                  = local.common_tags
 
   lifecycle {
+    # The caller owns the provider, so region is a second writer for every ARN,
+    # endpoint, and container environment value the module composes by hand.
+    precondition {
+      condition     = var.region == data.aws_region.current.region
+      error_message = "region must equal the region of the AWS provider passed to this module."
+    }
     precondition {
       condition = (
         (var.existing_vpc_id == "" && length(var.existing_private_subnet_ids) == 0 && length(var.existing_public_subnet_ids) == 0 && var.existing_ecs_cluster_arn == "") ||
@@ -885,11 +1165,17 @@ resource "aws_ecs_service" "this" {
   desired_count   = var.idle_shutdown_enabled ? 0 : 1
   launch_type     = "FARGATE"
 
-  # Artifact/package files retain one mounted writer while metadata is served
-  # by the independent dqlite quorum.
-  deployment_minimum_healthy_percent = 0
-  deployment_maximum_percent         = 100
+  # A replacement task must pass its health check before the serving one is
+  # taken away. Metadata is served by the independent dqlite quorum, and the
+  # two tasks that briefly overlap write disjoint files under the EFS mount.
+  deployment_minimum_healthy_percent = 100
+  deployment_maximum_percent         = 200
   availability_zone_rebalancing      = "DISABLED"
+
+  deployment_circuit_breaker {
+    enable   = true
+    rollback = true
+  }
 
   network_configuration {
     subnets          = local.private_subnet_ids
@@ -903,18 +1189,34 @@ resource "aws_ecs_service" "this" {
   }
   depends_on = [aws_efs_mount_target.sqlite]
   tags       = local.common_tags
+
+  # The wake controller owns capacity once the service exists; desired_count
+  # here is only the initial value. Reconciling it would stop a live service.
+  lifecycle {
+    ignore_changes = [desired_count]
+  }
 }
 
 resource "aws_ecs_service" "dqlite" {
-  for_each                           = local.dqlite_nodes
-  name                               = "${var.name}-dqlite-${each.key}"
-  cluster                            = local.ecs_cluster_arn
-  task_definition                    = aws_ecs_task_definition.dqlite[each.key].arn
-  desired_count                      = var.idle_shutdown_enabled ? 0 : 1
-  launch_type                        = "FARGATE"
+  for_each                      = local.dqlite_nodes
+  name                          = "${var.name}-dqlite-${each.key}"
+  cluster                       = local.ecs_cluster_arn
+  task_definition               = aws_ecs_task_definition.dqlite[each.key].arn
+  desired_count                 = var.idle_shutdown_enabled ? 0 : 1
+  launch_type                   = "FARGATE"
+  availability_zone_rebalancing = "DISABLED"
+
+  # A voter owns one raft directory on one EFS access point. Two tasks of the
+  # same voter would write the same log, so this one replaces rather than
+  # overlaps; the circuit breaker is what stops a bad release looping.
   deployment_minimum_healthy_percent = 0
   deployment_maximum_percent         = 100
-  availability_zone_rebalancing      = "DISABLED"
+
+  deployment_circuit_breaker {
+    enable   = true
+    rollback = true
+  }
+
   network_configuration {
     subnets          = local.private_subnet_ids
     security_groups  = [aws_security_group.dqlite.id]
@@ -927,6 +1229,11 @@ resource "aws_ecs_service" "dqlite" {
   }
   depends_on = [aws_efs_mount_target.sqlite]
   tags       = merge(local.common_tags, { Name = "${var.name}-dqlite-${each.key}" })
+
+  # The wake controller scales the quorum with the application service.
+  lifecycle {
+    ignore_changes = [desired_count]
+  }
 }
 
 resource "aws_ecs_service" "ssh_gateway" {
@@ -935,6 +1242,12 @@ resource "aws_ecs_service" "ssh_gateway" {
   task_definition = aws_ecs_task_definition.ssh_gateway.arn
   desired_count   = 1
   launch_type     = "FARGATE"
+
+  deployment_circuit_breaker {
+    enable   = true
+    rollback = true
+  }
+
   network_configuration {
     subnets          = local.private_subnet_ids
     security_groups  = [aws_security_group.ssh_gateway.id]

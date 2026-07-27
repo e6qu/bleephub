@@ -698,6 +698,15 @@ func (s *Server) addRepoFieldsToSchema(userType, queryType *graphql.Object) (*gr
 			login, _ := u["login"].(string)
 			repos := s.store.ListReposByOwner(login)
 
+			// Drop what the viewer cannot see, before any other filter.
+			// ListReposByOwner is a bare prefix match over the repo index with
+			// no visibility check, and Query.repository gates readability while
+			// this connection did not — so listing a user enumerated their
+			// private repositories, and each node returned here is a live
+			// handle into that repository's issues, pull requests, discussions
+			// and releases, none of which re-check.
+			repos = visibleRepos(s.store, ghUserFromContext(p.Context), repos)
+
 			// Filter by privacy
 			if privacy, ok := p.Args["privacy"].(string); ok {
 				var filtered []*Repo
@@ -920,6 +929,14 @@ func (s *Server) addRepoFieldsToSchema(userType, queryType *graphql.Object) (*gr
 
 					if found == nil {
 						return nil, fmt.Errorf("could not resolve to a Repository with the global id of '%s'", repoID)
+					}
+
+					// Authenticating the caller is not authorizing them. The
+					// REST twin of this mutation checks canAdminRepo; without
+					// the same check here, any signed-in user could delete any
+					// repository on the instance by node id.
+					if !canAdminRepo(s.store, user, found) {
+						return nil, fmt.Errorf("must have admin rights to Repository")
 					}
 
 					if _, err := s.store.DeleteRepo(found.Owner.Login, found.Name); err != nil {

@@ -119,9 +119,15 @@ export interface BleephubRepo {
   topics?: string[];
 }
 
-/** Dashboard metrics derived from public GitHub REST repository and Actions routes. */
+/**
+ * Dashboard metrics, as reported by the server's own counters.
+ *
+ * `workflow_submissions` is the server's submission counter; it is not a count
+ * of stored workflow runs, and the server exposes no such total, so nothing
+ * here may be labelled "workflow runs".
+ */
 export interface BleephubMetrics {
-  workflow_runs: number;
+  workflow_submissions: number;
   job_dispatches: number;
   jobs_by_status: Record<string, number>;
   job_completions: Record<string, number>;
@@ -129,7 +135,7 @@ export interface BleephubMetrics {
   connected_runners: number;
 }
 
-/** Runtime status derived from public GitHub REST repository and Actions routes. */
+/** Runtime status reported by the server. */
 export interface BleephubStatus {
   active_workflows: number;
   jobs_by_status: Record<string, number>;

@@ -2,6 +2,7 @@ import { useEffect, useRef, useState, type ReactNode, type CSSProperties, type F
 import { Link, NavLink, useNavigate } from "react-router";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useTheme } from "@bleephub/ui-core/hooks";
+import { useReportError } from "@bleephub/ui-core/components";
 import {
   Mark,
   ThreeBarsIcon,
@@ -28,7 +29,7 @@ import {
   AuditLogIcon,
   GraphIcon,
 } from "./octicons.js";
-import { clearToken, fetchCurrentUser, fetchNotifications } from "../api.js";
+import { abortPendingRequests, clearToken, fetchCurrentUser, fetchNotifications } from "../api.js";
 
 /**
  * GitHub-faithful global header: hamburger → global-nav drawer, brand, a
@@ -339,6 +340,7 @@ function Avatar({ login, url, size = 24 }: { login: string; url?: string; size?:
 export function AppHeader() {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
+  const reportError = useReportError();
   const { theme, toggle } = useTheme("light");
   const isDark = theme === "dark";
   const [drawer, setDrawer] = useState(false);
@@ -362,7 +364,15 @@ export function AppHeader() {
   const submitLogout = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     const form = event.currentTarget;
-    await queryClient.cancelQueries();
+    // cancelQueries alone was not enough: nothing in the API layer honoured an
+    // abort signal, so in-flight polls kept running, landed after the token was
+    // gone, and 401'd. Abort them for real before navigating.
+    try {
+      await queryClient.cancelQueries();
+    } catch (err) {
+      reportError(err, "Sign-out could not cancel in-flight requests");
+    }
+    abortPendingRequests();
     queryClient.clear();
     clearToken();
     form.submit();

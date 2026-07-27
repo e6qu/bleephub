@@ -12,7 +12,7 @@ web-build:
 	cp -R web/dist/. internal/server/dist/
 
 test:
-	GOWORK=off go test -tags noui -count=1 -timeout 8m ./...
+	GOWORK=off go test -tags noui -count=1 -timeout 20m ./...
 
 gh-test:
 	docker buildx build --load -f Dockerfile.gh-test -t bleephub-gh-test:local .

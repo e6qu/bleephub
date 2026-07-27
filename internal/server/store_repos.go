@@ -148,6 +148,19 @@ func (st *Store) GetRepo(owner, name string) *Repo {
 	return st.ReposByName[owner+"/"+name]
 }
 
+// GetRepoByFullName resolves an "owner/name" key under the read lock.
+//
+// Handlers must use this rather than indexing ReposByName directly. That map is
+// written under the write lock by repository create, rename and delete, and an
+// unsynchronized read racing one of those is a concurrent map read and map
+// write — which the runtime reports as a fatal error and kills the process,
+// rather than a panic a recovery middleware could turn into a 500.
+func (st *Store) GetRepoByFullName(fullName string) *Repo {
+	st.mu.RLock()
+	defer st.mu.RUnlock()
+	return st.ReposByName[fullName]
+}
+
 func (st *Store) GetRepoByID(id int) *Repo {
 	st.mu.RLock()
 	defer st.mu.RUnlock()

@@ -27,6 +27,7 @@ import {
   ErrorBanner,
   DialogActions,
 } from "../components/ui.js";
+import { MutationError } from "../components/MutationError.js";
 import { DiscussionIcon } from "../components/octicons.js";
 
 export function DiscussionsPage() {
@@ -351,6 +352,10 @@ function DiscussionDetail({
   return (
     <div>
       <RepoHeader owner={owner} repo={repo} active="discussions" {...counts} />
+
+      <MutationError
+        of={[markAnswerMutation, deleteCommentMutation, editCommentMutation, deleteDiscussionMutation]}
+      />
 
       <div className="mb-1 flex flex-wrap items-baseline gap-2">
         <h1 style={{ fontSize: "1.4rem", fontWeight: 600, color: "var(--color-fg)" }}>

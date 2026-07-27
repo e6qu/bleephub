@@ -11,6 +11,7 @@ import { useOpenCounts } from "../hooks/useOpenCounts.js";
 import { RepoHeader } from "../components/Shell.js";
 import { Spinner, InlineError } from "@bleephub/ui-core/components";
 import { Box } from "../components/ui.js";
+import { MutationError } from "../components/MutationError.js";
 import type {
   GithubSecretScanningAlert,
   GithubSecretScanningLocation,
@@ -78,6 +79,8 @@ export function SecretScanningPage() {
   return (
     <div>
       <RepoHeader owner={owner} repo={repo} active="security" {...counts} />
+
+      <MutationError of={resolveMutation} />
 
       <div className="mb-4 flex flex-wrap items-center gap-2">
         <label style={{ fontSize: "0.85rem", color: "var(--color-fg-muted)" }}>State:</label>

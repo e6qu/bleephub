@@ -1,57 +1,81 @@
 import { useEffect, useState } from "react";
 import { getToken, setToken, verifyToken } from "../api.js";
 import { Mark } from "../components/octicons.js";
-import { Button } from "../components/ui.js";
+import { Button, ErrorBanner } from "../components/ui.js";
 import { BleephubBuildFooter } from "../components/Shell.js";
+
+function describeFailure(err: unknown): string {
+  return err instanceof Error ? err.message : String(err);
+}
 
 export function LoginPage() {
   const [token, setTokenValue] = useState(getToken() ?? "");
   const [error, setError] = useState("");
   const [verifying, setVerifying] = useState(false);
   const [providers, setProviders] = useState<{ github?: boolean; shauth?: boolean } | null>(null);
+  const [providersError, setProvidersError] = useState<string | null>(null);
   const [login, setLogin] = useState("");
   const [password, setPassword] = useState("");
   const [localSigningIn, setLocalSigningIn] = useState(false);
 
   useEffect(() => {
-    void fetch("/auth/providers")
-      .then(async (response): Promise<{ github?: boolean; shauth?: boolean }> =>
-        response.ok ? response.json() : {},
-      )
-      .then(setProviders)
-      .catch(() => setProviders({}));
+    void (async () => {
+      try {
+        const response = await fetch("/auth/providers");
+        if (!response.ok) {
+          throw new Error(`${response.status} ${response.statusText}`);
+        }
+        setProviders((await response.json()) as { github?: boolean; shauth?: boolean });
+      } catch (err) {
+        // An unreachable provider list is not the same as an instance with no
+        // providers configured. Token sign-in still works, so fall through to
+        // it — but say why the other options are missing instead of just
+        // rendering none of them.
+        setProvidersError(describeFailure(err));
+        setProviders({});
+      }
+    })();
   }, []);
 
   async function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
     setError("");
     setVerifying(true);
-    const valid = await verifyToken(token);
-    if (valid) {
-      setToken(token);
-      const requested = new URLSearchParams(window.location.search).get("return_to");
-      window.location.href = requested?.startsWith("/ui/") ? requested : "/ui/";
-    } else {
+    try {
+      const valid = await verifyToken(token);
+      if (valid) {
+        setToken(token);
+        const requested = new URLSearchParams(window.location.search).get("return_to");
+        window.location.href = requested?.startsWith("/ui/") ? requested : "/ui/";
+        return;
+      }
       setError("Token rejected. Bleephub could not authenticate it through the GitHub REST user endpoint.");
-      setVerifying(false);
+    } catch (err) {
+      setError(`Could not reach Bleephub to verify the token: ${describeFailure(err)}`);
     }
+    setVerifying(false);
   }
 
   async function handleLocalSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
     setError("");
     setLocalSigningIn(true);
-    const response = await fetch("/auth/local", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ login, password }),
-    });
-    if (response.ok) {
-      const requested = new URLSearchParams(window.location.search).get("return_to");
-      window.location.href = requested?.startsWith("/ui/") || requested === "/control" ? requested : "/ui/";
-      return;
+    try {
+      const response = await fetch("/auth/local", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ login, password }),
+      });
+      if (response.ok) {
+        const requested = new URLSearchParams(window.location.search).get("return_to");
+        window.location.href =
+          requested?.startsWith("/ui/") || requested === "/control" ? requested : "/ui/";
+        return;
+      }
+      setError("Local credentials were not accepted.");
+    } catch (err) {
+      setError(`Could not reach Bleephub to sign in: ${describeFailure(err)}`);
     }
-    setError("Local credentials were not accepted.");
     setLocalSigningIn(false);
   }
 
@@ -197,6 +221,12 @@ export function LoginPage() {
           <p className="mb-3" style={{ fontSize: "0.78rem", color: "var(--color-fg-muted)" }}>
             Use the admin token, a personal access token, or an OAuth token accepted by this Bleephub instance.
           </p>
+          {providersError && (
+            <ErrorBanner>
+              Could not load the available sign-in methods, so only token sign-in is offered:{" "}
+              {providersError}
+            </ErrorBanner>
+          )}
           {error && (
             <p className="mb-3" style={{ fontSize: "0.82rem", color: "var(--color-status-error)" }}>
               {error}

@@ -90,6 +90,12 @@ func lastPathSegment(p string) string {
 // immediately) THEN lists every WorkflowFile registered for the repo
 // (includes both "discovered" and "submitted" sources).
 func (s *Server) handleListGHWorkflows(w http.ResponseWriter, r *http.Request) {
+	// The workflow inventory names the repository's CI: file paths, workflow
+	// names and their state. It is repo-scoped content and gets the same
+	// visibility gate as any other read of one.
+	if s.lookupReadableRepoFromPath(w, r) == nil {
+		return
+	}
 	repo := repoFullName(r)
 	s.store.DiscoverWorkflowFilesFromGit(repo)
 	files := s.store.ListWorkflowFiles(repo)

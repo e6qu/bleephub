@@ -3,7 +3,8 @@ import { DataTable, InlineError, Spinner, StatusBadge } from "@bleephub/ui-core/
 import { createColumnHelper } from "@tanstack/react-table";
 import { useNavigate } from "react-router";
 import { useState } from "react";
-import { dispatchWorkflow, fetchWorkflowFiles, fetchWorkflows } from "../api.js";
+import { dispatchWorkflow, fetchWorkflowFiles } from "../api.js";
+import { RUNS_TAB_LIMIT, useRecentWorkflows } from "../hooks/useRecentWorkflows.js";
 import type { BleephubWorkflow, BleephubWorkflowFile } from "../types.js";
 import {
   PageTitle,
@@ -114,11 +115,7 @@ const runsCol = createColumnHelper<BleephubWorkflow>();
 
 function RunsTab() {
   const navigate = useNavigate();
-  const { data, isLoading, isError } = useQuery({
-    queryKey: ["workflows"],
-    queryFn: fetchWorkflows,
-    refetchInterval: 3000,
-  });
+  const { data, isLoading, isError } = useRecentWorkflows(RUNS_TAB_LIMIT);
 
   if (isError) return <InlineError title="Failed to load runs" />;
   if (isLoading || !data) return <Spinner label="loading runs" />;

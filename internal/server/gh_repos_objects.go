@@ -32,9 +32,8 @@ func (s *Server) handleListCommits(w http.ResponseWriter, r *http.Request) {
 	owner := r.PathValue("owner")
 	repoName := r.PathValue("repo")
 
-	repo := s.store.GetRepo(owner, repoName)
+	repo := s.lookupReadableRepoFromPath(w, r)
 	if repo == nil {
-		writeGHError(w, http.StatusNotFound, "Not Found")
 		return
 	}
 
@@ -97,9 +96,8 @@ func (s *Server) handleGetTree(w http.ResponseWriter, r *http.Request) {
 	repoName := r.PathValue("repo")
 	sha := r.PathValue("sha")
 
-	repo := s.store.GetRepo(owner, repoName)
+	repo := s.lookupReadableRepoFromPath(w, r)
 	if repo == nil {
-		writeGHError(w, http.StatusNotFound, "Not Found")
 		return
 	}
 
@@ -142,9 +140,8 @@ func (s *Server) handleGetBlob(w http.ResponseWriter, r *http.Request) {
 	repoName := r.PathValue("repo")
 	sha := r.PathValue("sha")
 
-	repo := s.store.GetRepo(owner, repoName)
+	repo := s.lookupReadableRepoFromPath(w, r)
 	if repo == nil {
-		writeGHError(w, http.StatusNotFound, "Not Found")
 		return
 	}
 
@@ -185,9 +182,8 @@ func (s *Server) handleGetReadme(w http.ResponseWriter, r *http.Request) {
 	owner := r.PathValue("owner")
 	repoName := r.PathValue("repo")
 
-	repo := s.store.GetRepo(owner, repoName)
+	repo := s.lookupReadableRepoFromPath(w, r)
 	if repo == nil {
-		writeGHError(w, http.StatusNotFound, "Not Found")
 		return
 	}
 
@@ -254,9 +250,8 @@ func (s *Server) handlePutContents(w http.ResponseWriter, r *http.Request) {
 	repoName := r.PathValue("repo")
 	path := r.PathValue("path")
 
-	repo := s.store.GetRepo(owner, repoName)
+	repo := s.lookupReadableRepoFromPath(w, r)
 	if repo == nil {
-		writeGHError(w, http.StatusNotFound, "Not Found")
 		return
 	}
 
@@ -418,9 +413,8 @@ func (s *Server) handleDeleteContents(w http.ResponseWriter, r *http.Request) {
 	repoName := r.PathValue("repo")
 	path := r.PathValue("path")
 
-	repo := s.store.GetRepo(owner, repoName)
+	repo := s.lookupReadableRepoFromPath(w, r)
 	if repo == nil {
-		writeGHError(w, http.StatusNotFound, "Not Found")
 		return
 	}
 
@@ -574,9 +568,8 @@ func (s *Server) handleGetContents(w http.ResponseWriter, r *http.Request) {
 	repoName := r.PathValue("repo")
 	path := r.PathValue("path")
 
-	repo := s.store.GetRepo(owner, repoName)
+	repo := s.lookupReadableRepoFromPath(w, r)
 	if repo == nil {
-		writeGHError(w, http.StatusNotFound, "Not Found")
 		return
 	}
 

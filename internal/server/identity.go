@@ -10,6 +10,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"html"
 	"net/http"
 	"net/url"
 	"os"
@@ -289,7 +290,11 @@ func (s *Server) handleIdentitySession(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) handleIdentityValidation(w http.ResponseWriter, r *http.Request) {
 	session := s.sessionFromRequest(r)
-	if session == nil || s.store.GetUserByID(session.UserID) == nil {
+	var user *User
+	if session != nil {
+		user = s.store.GetUserByID(session.UserID)
+	}
+	if user == nil {
 		if s.identity.shauthConfigured() {
 			http.Redirect(w, r, "/auth/shauth?return_to=%2Fauth%2Fvalidation", http.StatusFound)
 			return
@@ -297,13 +302,35 @@ func (s *Server) handleIdentityValidation(w http.ResponseWriter, r *http.Request
 		http.Redirect(w, r, "/ui/login?return_to=%2Fauth%2Fvalidation", http.StatusFound)
 		return
 	}
+	// Render the signed-in identity with the data-testid markers the Shauth SSO
+	// validator asserts against (validator/validate.mjs assertValidationIdentity):
+	// username (the OIDC preferred_username -> our login), email, role, and the
+	// running release revision. Built with fmt on this small fragment only -- the
+	// page's inline CSS contains % and is composed via a literal marker replace.
+	role := "developer"
+	if user.SiteAdmin {
+		role = "admin"
+	}
+	identity := fmt.Sprintf(
+		`<dl class="validation-identity">`+
+			`<dt>Username</dt><dd data-testid="validation-username">%s</dd>`+
+			`<dt>Email</dt><dd data-testid="validation-email">%s</dd>`+
+			`<dt>Role</dt><dd data-testid="validation-role">%s</dd>`+
+			`<dt>Release</dt><dd data-testid="validation-release">%s</dd>`+
+			`</dl>`,
+		html.EscapeString(user.Login),
+		html.EscapeString(user.Email),
+		html.EscapeString(role),
+		html.EscapeString(s.build.Version),
+	)
+	page := strings.Replace(identityValidationPage, "<!--VALIDATION-IDENTITY-->", identity, 1)
 	w.Header().Set("Cache-Control", "no-store")
 	w.Header().Set("Content-Security-Policy", "default-src 'none'; style-src 'unsafe-inline'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'")
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	w.Header().Set("Referrer-Policy", "no-referrer")
 	w.Header().Set("X-Content-Type-Options", "nosniff")
 	w.WriteHeader(http.StatusOK)
-	_, _ = w.Write([]byte(identityValidationPage))
+	_, _ = w.Write([]byte(page))
 }
 
 const identityValidationPage = `<!doctype html>
@@ -322,6 +349,7 @@ const identityValidationPage = `<!doctype html>
 <main aria-labelledby="authenticated-title">
 <h1 id="authenticated-title">Bleephub is authenticated</h1>
 <p>Your Bleephub browser session is active.</p>
+<!--VALIDATION-IDENTITY-->
 <form method="post" action="/auth/logout"><button type="submit">Sign out</button></form>
 </main>
 </body>

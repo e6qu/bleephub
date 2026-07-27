@@ -43,8 +43,32 @@ func (s *Server) registerMgmtRoutes() {
 		{"POST /internal/packages/{owner_type}/{owner}/{package_type}/{package_name}/versions", s.handleInternalCreatePackageVersion},
 		{"POST /internal/packages/{owner_type}/{owner}/{repo}/{package_type}/{package_name}/versions", s.handleInternalCreatePackageVersion},
 	}
+	// Site-admin is applied here, to the whole table, rather than remembered
+	// inside each handler.
+	//
+	// It was previously a per-handler habit and seven of these routes had
+	// forgotten it, so any account on the instance could read every private
+	// repository's metadata, every repository's job logs, live runner session
+	// ids, and — through /internal/oauth/state — other users' unredeemed OAuth
+	// authorization codes, which is an account takeover. Declaring the
+	// privilege at registration means a route added later cannot arrive without
+	// one. The handlers that already check keep their check; a second identical
+	// assertion costs nothing and keeps them correct if called directly.
 	for _, r := range routes {
-		s.route(r.pattern, r.handler)
+		s.route(r.pattern, s.requireSiteAdminHandler(r.handler))
+	}
+}
+
+// requireSiteAdminHandler refuses anyone who is not a site administrator.
+//
+// The /internal/ prefix is a naming convention, not an access control: the
+// middleware in front of it only establishes that somebody is signed in.
+func (s *Server) requireSiteAdminHandler(next http.HandlerFunc) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		if s.requireSiteAdmin(w, r) == nil {
+			return
+		}
+		next(w, r)
 	}
 }
 

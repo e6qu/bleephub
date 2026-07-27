@@ -3,6 +3,10 @@ name: Publish Bleephub container
 on:
   push:
     branches: [main]
+    # A release is the same pipeline entered from a tag rather than a second
+    # workflow beside it, because two workflows building the same Dockerfiles
+    # drift and then ship different bytes under the two names.
+    tags: ['v[0-9]+.[0-9]+.[0-9]+', 'v[0-9]+.[0-9]+.[0-9]+-*']
 
 permissions:
   contents: read
@@ -10,7 +14,10 @@ permissions:
 
 concurrency:
   group: publish-bleephub-${{ github.ref_name }}
-  cancel-in-progress: true
+  # A tagged release must never be cancelled by a later push: the tag is
+  # already public and immutable, so a half-published release cannot be
+  # re-driven by pushing again.
+  cancel-in-progress: ${{ !startsWith(github.ref, 'refs/tags/') }}
 
 env:
   IMAGE: ghcr.io/e6qu/bleephub
@@ -23,6 +30,8 @@ jobs:
     runs-on: ubuntu-latest
     outputs:
       tag: ${{ steps.tag.outputs.value }}
+      version: ${{ steps.version.outputs.value }}
+      is_release: ${{ steps.version.outputs.is_release }}
       published_at: ${{ steps.published_at.outputs.value }}
     steps:
       - id: tag
@@ -30,6 +39,28 @@ jobs:
         env:
           SHA: ${{ github.sha }}
         run: echo "value=${SHA::12}" >> "$GITHUB_OUTPUT"
+      # Every build is addressable by commit; a tagged build is additionally
+      # addressable by version. Deriving both here keeps the branch and tag
+      # entry points on one code path.
+      - id: version
+        name: Derive the release version
+        env:
+          REF: ${{ github.ref }}
+        run: |
+          set -euo pipefail
+          if [ "${REF#refs/tags/v}" != "$REF" ]; then
+            version="${REF#refs/tags/v}"
+            if ! printf '%s' "$version" \
+              | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$'; then
+              echo "::error::Tag $REF is not a semantic version"
+              exit 1
+            fi
+            echo "value=$version" >> "$GITHUB_OUTPUT"
+            echo "is_release=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "value=" >> "$GITHUB_OUTPUT"
+            echo "is_release=false" >> "$GITHUB_OUTPUT"
+          fi
       - id: published_at
         name: Record release publication time
         run: echo "value=$(date -u +%Y-%m-%dT%H:%M:%SZ)" >> "$GITHUB_OUTPUT"
@@ -67,8 +98,20 @@ jobs:
           # anonymously retrievable from GitHub Container Registry.
           provenance: false
           tags: ${{ env.IMAGE }}:${{ needs.metadata.outputs.tag }}-${{ matrix.arch.suffix }}
+          # The release image carried no OCI labels while the runner image
+          # beside it carried three. Without image.source a GitHub Container
+          # Registry package is not linked to its repository, so it does not
+          # inherit the repository's visibility or licence and shows no source
+          # link. image.licenses is now answerable because the repository has a
+          # LICENSE.
+          labels: |
+            org.opencontainers.image.source=https://github.com/${{ github.repository }}
+            org.opencontainers.image.revision=${{ github.sha }}
+            org.opencontainers.image.created=${{ needs.metadata.outputs.published_at }}
+            org.opencontainers.image.version=${{ needs.metadata.outputs.version || needs.metadata.outputs.tag }}
+            org.opencontainers.image.licenses=AGPL-3.0-or-later
           build-args: |
-            BLEEPHUB_VERSION=${{ needs.metadata.outputs.tag }}
+            BLEEPHUB_VERSION=${{ needs.metadata.outputs.version || needs.metadata.outputs.tag }}
             BLEEPHUB_COMMIT=${{ github.sha }}
             BLEEPHUB_PUBLISHED_AT=${{ needs.metadata.outputs.published_at }}
           cache-from: type=gha,scope=bleephub-${{ matrix.arch.suffix }}
@@ -86,6 +129,8 @@ jobs:
             org.opencontainers.image.source=https://github.com/${{ github.repository }}
             org.opencontainers.image.revision=${{ github.sha }}
             org.opencontainers.image.created=${{ needs.metadata.outputs.published_at }}
+            org.opencontainers.image.version=${{ needs.metadata.outputs.version || needs.metadata.outputs.tag }}
+            org.opencontainers.image.licenses=AGPL-3.0-or-later
           cache-from: type=gha,scope=bleephub-runner-${{ matrix.arch.suffix }}
           cache-to: type=gha,scope=bleephub-runner-${{ matrix.arch.suffix }},mode=max
 
@@ -93,7 +138,13 @@ jobs:
     name: Bleephub multi-architecture manifests
     needs: [metadata, build]
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 15
+    permissions:
+      contents: read
+      packages: write
+      # Keyless signing exchanges this for a Sigstore certificate; there is no
+      # long-lived key to hold or rotate.
+      id-token: write
     steps:
       - uses: oras-project/setup-oras@v1
       - name: Log in to GitHub Container Registry
@@ -105,16 +156,85 @@ jobs:
       - name: Publish multi-architecture manifest
         env:
           TAG: ${{ needs.metadata.outputs.tag }}
+          VERSION: ${{ needs.metadata.outputs.version }}
         run: |
           set -euo pipefail
+          # A tagged build gets `1.2.3` and `latest` pointing at the same
+          # digest as its commit tag, so a release is addressable by version
+          # without ever being a separate build of the same source.
+          bleephub_tags=(--tag "$IMAGE:$TAG")
+          runner_tags=(--tag "$RUNNER_IMAGE:$TAG")
+          if [ -n "$VERSION" ]; then
+            bleephub_tags+=(--tag "$IMAGE:$VERSION" --tag "$IMAGE:latest")
+            runner_tags+=(--tag "$RUNNER_IMAGE:$VERSION" --tag "$RUNNER_IMAGE:latest")
+          fi
           docker buildx imagetools create \
-            --tag "$IMAGE:$TAG" \
+            "${bleephub_tags[@]}" \
             "$IMAGE:$TAG-amd64" \
             "$IMAGE:$TAG-arm64"
           docker buildx imagetools create \
-            --tag "$RUNNER_IMAGE:$TAG" \
+            "${runner_tags[@]}" \
             "$RUNNER_IMAGE:$TAG-amd64" \
             "$RUNNER_IMAGE:$TAG-arm64"
+      # Four public images were published with no signature, no bill of
+      # materials and no vulnerability scan, so a consumer had no way to
+      # establish that a given digest came from this repository rather than
+      # from anyone else who could write to the registry.
+      #
+      # Signing and attesting happen here, against the multi-architecture
+      # manifest, rather than through buildx's own provenance and sbom flags:
+      # those republish an architecture tag as an OCI index whose child
+      # manifest AWS Fargate cannot resolve, which is why provenance is
+      # explicitly disabled in the build job above. Cosign attaches its
+      # artifacts as separate tags and leaves the image manifests untouched.
+      - uses: sigstore/cosign-installer@v4.1.0
+      - uses: anchore/sbom-action/download-syft@v0.20.11
+      - name: Sign the manifests and attach a bill of materials
+        env:
+          TAG: ${{ needs.metadata.outputs.tag }}
+        run: |
+          set -euo pipefail
+          for image in "$IMAGE" "$RUNNER_IMAGE"; do
+            digest=$(docker buildx imagetools inspect "$image:$TAG" \
+              --format '{{json .Manifest}}' | jq -r .digest)
+            cosign sign --yes "$image@$digest"
+            syft "$image@$digest" -o spdx-json > sbom.spdx.json
+            cosign attest --yes --predicate sbom.spdx.json \
+              --type spdxjson "$image@$digest"
+          done
+
+  scan:
+    name: Vulnerability scan
+    needs: [metadata, manifest]
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+      packages: read
+      security-events: write
+    steps:
+      - uses: actions/checkout@v7.0.0
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v4.4.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      # Reported into code scanning rather than failing the publish. A
+      # published image cannot be unpublished by turning a job red, and a
+      # gate that blocks every release the moment a base-image advisory lands
+      # gets bypassed rather than fixed. The pull-request build is where a
+      # scan can still change the outcome, and it runs there too.
+      - uses: aquasecurity/trivy-action@v0.36.0
+        with:
+          image-ref: ${{ env.IMAGE }}:${{ needs.metadata.outputs.tag }}
+          format: sarif
+          output: trivy-bleephub.sarif
+          severity: HIGH,CRITICAL
+      - uses: github/codeql-action/upload-sarif@v4
+        with:
+          sarif_file: trivy-bleephub.sarif
+          category: trivy-bleephub
 
   startup-bundle:
     name: Bleephub startup bundle
@@ -128,7 +248,7 @@ jobs:
         env:
           BLEEPHUB_VERSION: ${{ needs.metadata.outputs.tag }}
           BLEEPHUB_PUBLISHED_AT: ${{ needs.metadata.outputs.published_at }}
-        run: scripts/build-startup.sh .build/bleephub-ecs
+        run: scripts/build-bleephub-startup.sh .build/bleephub-ecs
       - name: Log in to GitHub Container Registry
         uses: docker/login-action@v4.4.0
         with:
@@ -187,6 +307,58 @@ jobs:
           oras pull "$IMAGE" --output verified
           test -s verified/bleephub-wake.zip
 
+  release:
+    name: GitHub Release
+    needs: [metadata, manifest, startup-bundle, wake-bundle]
+    if: needs.metadata.outputs.is_release == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v7.0.0
+        with:
+          # Release notes are generated by diffing against the previous tag, so
+          # a shallow clone would produce notes covering one commit.
+          fetch-depth: 0
+      - uses: actions/setup-go@v6.5.0
+        with:
+          go-version-file: go.mod
+          cache: true
+      # The bundles are rebuilt here rather than passed between jobs because an
+      # artifact upload would let the release attach different bytes from the
+      # ones published to the registry. Both come from the same tagged tree.
+      - name: Rebuild the release bundles for attachment
+        env:
+          BLEEPHUB_VERSION: ${{ needs.metadata.outputs.version }}
+          BLEEPHUB_PUBLISHED_AT: ${{ needs.metadata.outputs.published_at }}
+        run: |
+          set -euo pipefail
+          scripts/build-bleephub-startup.sh .build/bleephub-ecs
+          scripts/build-bleephub-wake.sh .build/bleephub-wake
+      - name: Publish the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ needs.metadata.outputs.version }}
+          TAG: ${{ needs.metadata.outputs.tag }}
+        run: |
+          set -euo pipefail
+          prerelease=()
+          case "$VERSION" in *-*) prerelease=(--prerelease) ;; esac
+          # --notes is prepended to --generate-notes output, so the commit log
+          # since the previous tag is the changelog and this block is the
+          # header above it.
+          # shellcheck disable=SC2016  # the backticks are markdown code spans
+          notes=$(printf '## Container images\n\n```\ndocker pull %s:%s\ndocker pull %s:%s\n```\n\nBuilt from `%s`, also published as `%s:%s`.\n' \
+            "$IMAGE" "$VERSION" "$RUNNER_IMAGE" "$VERSION" "$GITHUB_SHA" "$IMAGE" "$TAG")
+          gh release create "v$VERSION" \
+            --title "v$VERSION" \
+            --notes "$notes" \
+            --generate-notes \
+            "${prerelease[@]}" \
+            .build/bleephub-ecs/bleephub-startup.zip \
+            .build/bleephub-wake/bleephub-wake.zip
+
   prune:
     name: Retain 20 Bleephub releases
     needs: [metadata, manifest, startup-bundle, wake-bundle]
@@ -217,12 +389,17 @@ jobs:
             gh api --paginate \
               "/$package_namespace/$OWNER/packages/container/$package/versions?per_page=100" \
               | jq -s 'add' > "$versions_file"
+            # Commit-tagged versions rotate at twenty. Semantic-version tags and
+            # `latest` are retained without limit: a published release is a
+            # promise that `1.2.3` keeps resolving, and the twenty-first commit
+            # after it must not quietly break that.
             keep_tags="$({
               jq -r '[ .[] | select(any(.metadata.container.tags[]?; test("^[0-9a-f]{12}$"))) ] | sort_by(.created_at) | reverse | .[:20] | .[] | .metadata.container.tags[] | select(test("^[0-9a-f]{12}$"))' "$versions_file" \
                 | while IFS= read -r tag; do
                     printf '%s\n' "$tag"
                     if [ "$include_architectures" = true ]; then printf '%s\n' "$tag-amd64" "$tag-arm64"; fi
                   done
+              jq -r '.[] | .metadata.container.tags[]? | select(test("^([0-9]+\\.[0-9]+\\.[0-9]+(-[0-9A-Za-z.-]+)?|latest)$"))' "$versions_file"
             } | jq -R . | jq -s 'unique')"
             jq -r \
               --argjson include_architectures "$include_architectures" \

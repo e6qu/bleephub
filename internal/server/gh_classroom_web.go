@@ -280,7 +280,7 @@ func (s *Server) handleCreateClassroomAssignment(w http.ResponseWriter, r *http.
 	}
 	owner, name, found := strings.Cut(*req.StarterCodeRepository, "/")
 	starter := s.store.GetRepo(owner, name)
-	if !found || starter == nil || !canReadRepo(s.store, ghUserFromContext(r.Context()), starter) {
+	if !found || starter == nil || !s.viewerCanReadRepo(r, starter) {
 		writeGHError(w, http.StatusUnprocessableEntity, "Starter code repository not found")
 		return
 	}

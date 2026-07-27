@@ -1,3 +1,18 @@
+// These 9 tests do NOT run in this repository, and that is expected.
+//
+// They drive @bleephub/ui-core's generic operator shell — BackendApp, with its
+// Overview / Containers / Resources / Metrics pages — against a Go backend
+// serving those routes under /ui/. Bleephub ships no such backend (cmd/ holds
+// only `bleephub`, which serves the Bleephub SPA at /ui/), and nothing in
+// web/src renders BackendApp, so there is no server to point a Playwright
+// project at. web/playwright.config.ts therefore has testDir "./e2e" and never
+// reaches web/core/e2e.
+//
+// They are kept because ui-core is a shared library and these are its
+// contract; they are type-checked here via web/tsconfig.e2e.json. The
+// components they cover are exercised in this repository by the unit suites
+// in web/core/src/__tests__ (BackendApp, SimulatorApp, ResourceListPage,
+// hooks), which do run as part of `bun run test`.
 import { test, expect } from "@playwright/test";
 
 const TITLE = process.env.BACKEND_TITLE || "Backend";

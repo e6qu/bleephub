@@ -159,6 +159,15 @@ redirects only to Shauth's fixed `/oauth/logout/complete` endpoint. Shauth then
 consumes its one-time logout correlation and returns the browser to Bleephub's
 persistent `/ui/signed-out` page.
 
+Webhook delivery refuses any target that is not a public address — loopback,
+link-local (including the `169.254.169.254` instance-metadata endpoint),
+RFC1918, carrier-grade NAT and IPv6 unique-local space — and any scheme other
+than `http`/`https`. The address is checked when the hook is configured and
+again against the address actually dialed, and redirects are not followed.
+`BLEEPHUB_ALLOW_PRIVATE_WEBHOOK_TARGETS=true` opts a development or test
+instance out so its hook receivers can live on loopback; it defaults to off and
+nothing enables it implicitly.
+
 Bleephub verifies discovery metadata, authorization code + PKCE, state, nonce,
 issuer, audience, expiry, role, subject, and the OpenID Connect `sid`. Durable
 browser-session records retain verified issuer, subject, `sid`, and the ID
@@ -298,7 +307,7 @@ Git repository storage (go-git) is selected by its own env vars:
 
 Database persistence **requires** durable git storage (`BLEEPHUB_GIT_DIR` or `BLEEPHUB_S3_BUCKET`): reloading repo metadata against in-memory git storage would resurrect every repo empty, so that combination is a startup error — never a silent degraded mode.
 
-The S3 filesystem test suite drives this path through a real `simulator-aws` S3 endpoint and `aws-sdk-go-v2`; it does not use a local fake S3 server. The tests cover object reads/writes/open modes, paginated listings, and repository-prefix rename/delete through the same list/copy/delete APIs that S3-backed git storage uses.
+The S3 filesystem test suite drives this path through a real S3 server — a MinIO container started by the test itself (`s3fs_test.go`) — and `aws-sdk-go-v2`, not an in-process fake. The tests cover object reads/writes/open modes, paginated listings, and repository-prefix rename/delete through the same list/copy/delete APIs that S3-backed git storage uses. When MinIO cannot be started the suite fails rather than skipping, so an absent dependency can never read as a pass.
 
 Actions byte storage is selected separately from git storage:
 
@@ -331,14 +340,44 @@ The full command ↔ endpoint table appears in [Supported commands](#supported-c
 
 Verified end-to-end by [`make gh-test`](#integration-tests), which builds a Docker image bundling Bleephub, the official `gh` command-line interface, and a self-signed Transport Layer Security certificate, then runs the harness against the live Bleephub binary inside the container.
 
-## What it does not implement (deferred)
+## What it does not implement
 
-- V2 broker flow (uses legacy V1 pipelines paths).
-- Failed-run shells exist for TRIGGERED workflows that can't start (conclusion `startup_failure`, no jobs); explicit dispatches still 422 with the parse error (more useful to the caller).
-- SAML SSO + SCIM provisioning.
-- Org `plan` member / billing endpoints (bleephub has no billing model).
-- `gh` command-line interface commands that require deep workflow-run state Bleephub does not synthesize (`gh run watch` long-poll, log tail).
-- `on: schedule` crons fire from real server time (minute-aligned); there is no time-warp hook for tests beyond calling the dispatcher directly.
+These are real GitHub behaviours that Bleephub does not have. They are not
+"deferred" — a client that depends on one of them will not work, and calling
+that a design decision would be dishonest. `BUGS.md` tracks each of them.
+
+**Whole surfaces**
+
+- Copilot Spaces — 28 REST operations, none routed.
+- SAML single sign-on and SCIM provisioning.
+- Organization `plan` member and billing endpoints.
+- The V2 broker flow; the runner is driven over the legacy V1 pipelines paths.
+
+**Partly present, and wrong in ways a client will notice**
+
+- Roughly forty `on:` event types parse and are then never dispatched. Only
+  `push`, `pull_request`, `repository_dispatch`, `release` and `schedule` ever
+  fire a workflow, so a workflow keyed on `workflow_run`, `issues`,
+  `issue_comment` or `pull_request_target` is accepted and silently inert.
+- Several workflow keys are accepted by the parser and discarded, including
+  `permissions:`, `defaults:`, `run-name:`, job-level `concurrency:`, and
+  `steps.*.env` / `steps.*.shell`. `permissions:` matters most: the
+  `GITHUB_TOKEN` is minted with a fixed scope regardless of what the workflow
+  asked for.
+- Pull requests do not appear in the issues list and cannot be fetched through
+  `GET /issues/{number}`, though on GitHub every pull request is an issue.
+- `on: schedule` crons fire from real server time, minute-aligned, and accept
+  intervals below GitHub's five-minute minimum. There is no time-warp hook for
+  tests beyond calling the dispatcher directly.
+- `gh` commands needing workflow-run state Bleephub does not synthesize —
+  `gh run watch` long-poll and log tail.
+
+**Failure-path deviations**
+
+- A workflow that cannot start produces a failed-run shell with conclusion
+  `startup_failure` and no jobs, but emits no check suite and reports an empty
+  conclusion. An explicit dispatch instead returns 422 with the parse error,
+  which is more useful to the caller and is a deliberate difference.
 
 ## How it works
 
@@ -384,6 +423,33 @@ Env vars:
 - `BPH_TLS_CERT` + `BPH_TLS_KEY` — serve over TLS.
 - `BLEEPHUB_MAX_WORKFLOWS=N` — concurrency cap (default 10).
 - `OTEL_EXPORTER_OTLP_ENDPOINT` — when set, emits traces + metrics + logs via OTLP (off by default; preserves the components-decoupled invariant).
+- `BLEEPHUB_EXTERNAL_URL` — the origin Bleephub is reached on, used to build absolute URLs in API responses and webhook payloads. A trailing slash is trimmed. Unset means URLs are derived per request.
+- `BLEEPHUB_ADMIN_HOST` — when set, `GET /` on that hostname serves the dashboard instead of the API root. Unset disables the redirect entirely.
+- `BLEEPHUB_ENTERPRISE_SLUG` — the slug the enterprise endpoints answer on (default `bleephub`).
+- `BLEEPHUB_S3_REGION` — region for the git object store. Falls back to `AWS_REGION`, then `us-east-1` for local simulators.
+- `BLEEPHUB_ALLOW_PRIVATE_WEBHOOK_TARGETS=true` — allow webhook deliveries to private addresses, for a development instance whose receivers are on loopback. Off by default; see [Webhook delivery](#how-it-works) above for what it turns off.
+- `BLEEPHUB_PAGES_JEKYLL_EXECUTABLE` — the Pages build binary (default `bleephub-pages-jekyll`).
+
+Git over SSH (all unset by default; the SSH transport does not start without the first two):
+- `BLEEPHUB_SSH_ADDR` — listen address. Unset means no SSH transport.
+- `BLEEPHUB_SSH_HOST_KEY` — the host private key, in PEM. **Required** whenever `BLEEPHUB_SSH_ADDR` is set; startup fails loudly if it is empty, rather than generating a fresh identity on every restart and tripping every client's known-hosts.
+- `BLEEPHUB_SSH_HOST` — the host (optionally `host:port`) advertised in the `ssh_url` of API responses. Unset omits the field.
+
+Single sign-on, all unset by default:
+- `BLEEPHUB_GITHUB_OAUTH_CLIENT_ID` / `BLEEPHUB_GITHUB_OAUTH_CLIENT_SECRET` — sign in with a real github.com OAuth app.
+- `BLEEPHUB_SHAUTH_ISSUER` / `BLEEPHUB_SHAUTH_CLIENT_ID` / `BLEEPHUB_SHAUTH_CLIENT_SECRET` / `BLEEPHUB_SHAUTH_POST_LOGOUT_URL` — sign in through a shauth OpenID Connect provider.
+
+Seeding, for reproducible fixtures:
+- `BLEEPHUB_SEED_APPS_FILE` — path to a JSON file of GitHub App seed specs.
+- `BLEEPHUB_SEED_APPS` — the same JSON inline. Both may be set; the specs concatenate. Invalid JSON is a startup error, not a skipped seed.
+
+The SSH gateway binary (`ssh-gateway/`) reads two of its own, and requires both:
+- `BLEEPHUB_WAKE_URL` — the wake endpoint to call before dialling.
+- `BLEEPHUB_INTERNAL_SSH_TARGET` — the upstream address to proxy to.
+
+Test-only, read by the suite and never by the server: `BLEEPHUB_STRESS_WORKERS`, `BLEEPHUB_STRESS_DURATION`, `BLEEPHUB_LOAD_WORKERS`, `BLEEPHUB_LOAD_SECONDS`, `BLEEPHUB_DQLITE_SERVERS`, `SOCKERLESS_REPOSITORY`.
+
+The wake Lambda has its own set (`ECS_CLUSTER`, `IDLE_SHUTDOWN_MINUTES` and the rest); Terraform supplies them, and they are documented in [terraform/README.md](terraform/README.md).
 
 ## Container images
 
@@ -439,18 +505,20 @@ Shauth source rather than an implicit network image.
 
 Two unit-test gates validate bleephub against the vendored GitHub OpenAPI description (`testdata/github-openapi.json.gz`, refreshed via `scripts/update-github-openapi.sh`):
 
-- **Route definitions** (`gh_api_definition_test.go`) — every registered `/api/v3` route must exist in the description; paths can't be invented under GitHub's namespace.
-- **Response-shape ratchet** (`openapi_shape_validator_test.go`) — an observer on the shared test server validates every 2xx `/api/v3` JavaScript Object Notation response member-by-member against the documented response schema. Violations are gated against [`openapi-violation-allowlist.txt`](openapi-violation-allowlist.txt): each entry is either a real-but-undescribed member (GitHub Enterprise Server-only surface, with a citation — currently only `/meta`'s `installed_version`) or a filed bug on its way to being fixed. The list only shrinks; new violations fail the suite.
+- **Route definitions** (`gh_api_definition_test.go`) — every registered `/api/v3` route must exist in the description, *or* in one of two allowlists in that file: `allowedGHESOnly` (real GitHub Enterprise Server operations the dotcom description omits) and `dispatchRoutes` (wildcard patterns that fan out to several real endpoints). Those allowlists are an escape hatch, not a formality: entries in them are exactly the paths the gate is not checking, and `BUGS.md` records several that are currently invented rather than real.
+- **Response-shape ratchet** (`openapi_shape_validator_test.go`) — an observer on the shared test server validates every 2xx `/api/v3` JavaScript Object Notation response member-by-member against the documented response schema. Violations are gated against [`internal/server/openapi-violation-allowlist.txt`](internal/server/openapi-violation-allowlist.txt) — note that this is the copy the test actually reads, resolved relative to the package directory. Entries are supposed to be either a real-but-undescribed member with a citation or a filed bug on its way out; today most of them are neither, and the count is 60, not one. Reducing that list to the single genuinely-justified entry (`/meta`'s `installed_version`) is tracked in `BUGS.md` under `PAR-001` through `PAR-007`.
+
+  The gate is a "no new keys" check. It does not yet enforce that the list only shrinks, that entries carry a citation, or that an allowlisted key is still reachable at all.
 
 ## Source layout (~180 Go files)
 
 | Group | Files | Purpose |
 |---|---|---|
 | Core protocol | `server.go`, `auth.go`, `agents.go`, `broker.go`, `run_service.go`, `timeline.go` | Runner registration, job delivery, lifecycle |
-| Jobs & workflows | `jobs.go`, `workflow.go`, `workflows.go`, `workflows_msg.go`, `matrix.go`, `outputs.go`, `secrets.go`, `expressions.go`, `actions.go`, `artifacts.go` | Multi-job, matrix, secrets, expressions, artifacts |
+| Jobs & workflows | `jobs.go`, `workflow.go`, `workflows.go`, `workflows_msg.go`, `matrix.go`, `secrets.go`, `expressions.go`, `actions.go`, `artifacts.go` | Multi-job, matrix, secrets, expressions, artifacts |
 | GitHub Representational State Transfer core | `gh_rest.go`, `gh_repos_*.go`, `gh_orgs_*.go`, `gh_issues_*.go`, `gh_pulls_*.go`, `gh_teams_rest.go`, `gh_labels_rest.go`, `gh_members_rest.go` | Repositories, organizations, issues, pull requests, teams, labels, milestones |
 | GitHub Apps + OAuth | `gh_apps_*.go`, `gh_oauth.go`, `gh_app_hooks_rest.go`, `gh_apps_user_tokens.go`, `gh_apps_oauth_mgmt.go`, `gh_apps_perms.go` | JSON Web Token authentication, installations, OAuth Apps, ghs_/ghu_/gho_/ghr_, permission enforcement |
-| Reactions + Releases + Deployments | `gh_reactions.go`, `gh_releases.go`, `gh_deployments.go`, `gh_pr_comments.go`, `gh_pr_threads.go` | Reactions, releases, deployments + environments + approvals, pull request review comments/threads |
+| Reactions + Releases + Deployments | `gh_reactions.go`, `gh_releases.go`, `gh_deployments.go`, `gh_pr_comments.go` | Reactions, releases, deployments + environments + approvals, pull request review comments/threads |
 | Actions extras | `gh_actions_rest.go`, `gh_actions_extras.go`, `gh_workflows_rest.go` | Runs/jobs/steps, repository_dispatch, logs zip, timing |
 | Checks application programming interface | `gh_checks_rest.go`, `gh_checks_store.go` | check-runs + check-suites |
 | Misc long-tail | `gh_misc_endpoints.go` | Users keys/follow, Actions OIDC + JWKS, Pages, Branch protection, Marketplace |
@@ -465,6 +533,21 @@ Two unit-test gates validate bleephub against the vendored GitHub OpenAPI descri
 - This README — operator-facing `gh` setup walkthrough.
 - [specs/BLEEPHUB_GITHUB_API_PARITY.md](specs/BLEEPHUB_GITHUB_API_PARITY.md) — per-endpoint parity audit + acceptance criteria.
 - The repository source and tests — standalone server, user interface, and infrastructure module.
+
+## Releasing
+
+Push a semver tag; everything else is automatic. See [RELEASING.md](RELEASING.md).
+
+## Licence
+
+GNU Affero General Public License v3.0 or later — see [LICENSE](LICENSE).
+
+Because the server is normally reached over a network, AGPL section 13 applies:
+anyone you let use a modified instance is entitled to that instance's source.
+
+Third-party material redistributed inside the published images is inventoried in
+[THIRD-PARTY-NOTICES.md](THIRD-PARTY-NOTICES.md); all of it (MIT, CC-BY 4.0) is
+one-way compatible with AGPLv3, so inbound dependencies must stay that way.
 
 ## Prior art
 

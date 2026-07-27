@@ -1,10 +1,20 @@
 import { Spinner, InlineError } from "@bleephub/ui-core/components";
 import { useMetricsData } from "../hooks/useMetricsData.js";
 import { PageTitle, StatCard, SectionLabel } from "../components/ui.js";
+import { OperatorOnlyStats } from "../components/OperatorOnly.js";
+
+const STAT_TITLES = [
+  "Workflow submissions",
+  "Job dispatches",
+  "Active workflows",
+  "Connected runners",
+];
 
 export function MetricsPage() {
-  const { metrics, status, isLoading, isError } = useMetricsData();
+  const { metrics, status, isLoading, isError, isOperatorOnly } = useMetricsData();
 
+  // A transport fault is a failure; a refusal is not. Only the first gets an
+  // error surface — the second is explained in place of the figures below.
   if (isError) return <InlineError title="Failed to load metrics" />;
   if (isLoading && !metrics) return <Spinner label="loading metrics" />;
 
@@ -12,14 +22,21 @@ export function MetricsPage() {
     <div>
       <PageTitle
         title="GitHub Actions throughput"
-        meta={metrics ? `${metrics.workflow_runs} workflow runs · ${metrics.connected_runners} connected runners` : undefined}
+        meta={metrics ? `${metrics.workflow_submissions} workflow submissions · ${metrics.connected_runners} connected runners` : undefined}
       />
+
+      {isOperatorOnly && (
+        <section className="mb-8">
+          <SectionLabel>Counters</SectionLabel>
+          <OperatorOnlyStats titles={STAT_TITLES} />
+        </section>
+      )}
 
       {metrics && (
         <section className="mb-8">
           <SectionLabel>Counters</SectionLabel>
           <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-            <StatCard title="Workflow runs" value={metrics.workflow_runs} />
+            <StatCard title="Workflow submissions" value={metrics.workflow_submissions} />
             <StatCard title="Job dispatches" value={metrics.job_dispatches} />
             <StatCard
               title="Active workflows"

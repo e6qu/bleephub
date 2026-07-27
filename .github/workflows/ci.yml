@@ -8,9 +8,115 @@ on:
 permissions:
   contents: read
 
+# Without this, a force-push leaves the superseded run executing all seven jobs
+# to completion — roughly ninety runner-minutes spent on a commit nobody is
+# waiting for, while the run that matters queues behind it.
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   server:
     name: Go server
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v7.0.0
+      - uses: actions/setup-go@v6.5.0
+        with:
+          go-version-file: go.mod
+          cache: true
+      # The suite takes a little over seven minutes on a warm developer
+      # machine. The previous 8m budget left about nine percent of headroom, so
+      # a slower runner turned a slow suite into a timeout — which surfaces as a
+      # hung test rather than a slow one, and sends whoever is on the PR looking
+      # for a deadlock that isn't there.
+      - name: Run the complete server suite against MinIO S3
+        run: go test -tags noui -count=1 -timeout 20m ./...
+
+  quality:
+    name: Go static analysis
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v7.0.0
+      - uses: actions/setup-go@v6.5.0
+        with:
+          go-version-file: go.mod
+          cache: true
+      # There was no static analysis of any kind: no vet, no format check, no
+      # linter, across roughly 180 non-test Go files. This is the first gate,
+      # deliberately limited to checks the tree already passes so it starts
+      # green and stays meaningful. golangci-lint, -race, coverage and
+      # govulncheck are tracked separately — each needs real defects fixed
+      # before it can be switched on, and a gate that is red on arrival gets
+      # ignored.
+      - name: Check formatting
+        run: |
+          unformatted=$(gofmt -l . | grep -v '^web/' || true)
+          if [ -n "$unformatted" ]; then
+            echo "These files are not gofmt-formatted:"; echo "$unformatted"
+            exit 1
+          fi
+      - name: Vet with the UI embedded
+        run: go vet ./...
+      - name: Vet without the UI
+        run: go vet -tags noui ./...
+      # The race detector was absent entirely, while five tests name it as
+      # their assertion mechanism in their own doc comments — without it,
+      # TestStressPRSerializerRace and its siblings cannot fail for any reason
+      # short of a panic. That matters here because a concurrent map write in
+      # Go is a fatal error that kills the process, not a recoverable panic a
+      # handler could turn into a 500.
+      #
+      # This is a subset, not the whole suite: -race is several times slower,
+      # and the Docker-backed tests would push the job past its budget. It
+      # covers the tests written for the detector plus the authorization and
+      # workflow paths, and reports zero races today. Widening it to the full
+      # suite is worth doing once the runtime is measured on a real runner.
+      - name: Race detector over the concurrency and authorization paths
+        run: |
+          go test -race -tags noui -count=1 -timeout 15m \
+            -run 'Stress|Race|Concurren|PrivateRepo|RequirePerm|AuthHardening|GraphQLDelete|Workflow' \
+            ./internal/server/
+      # scripts/deadcode.sh and scripts/dupl.sh were written, made executable
+      # and then referenced by nothing — no workflow, no Makefile target, no
+      # documentation. dupl.sh in particular scanned the repository root at
+      # depth 1, where this tree keeps no Go files at all, so it exited 1 on
+      # "no Go files found" every time it was run and had never once reported
+      # on the 203 files it was written for.
+      #
+      # Tool versions are pinned rather than @latest so a gate cannot change
+      # its verdict on an unrelated pull request. deadcode tracks the x/tools
+      # version the module already depends on.
+      - name: Install the pinned analysis tools
+        run: |
+          go install github.com/mibk/dupl@v1.1.0
+          go install golang.org/x/tools/cmd/deadcode@v0.47.0
+      - name: Check for unreachable functions
+        run: ./scripts/deadcode.sh
+      - name: Check for copy-pasted Go code
+        run: ./scripts/dupl.sh
+      # The workflows and the shell scripts they call had no linting of their
+      # own, so the class of mistake that only shows up on a runner — a bad
+      # expression, an unquoted expansion, a step referring to a script that
+      # was renamed — could only be found by pushing. Both tools report clean
+      # on this tree today.
+      - name: Install the pinned workflow linter
+        run: go install github.com/rhysd/actionlint/cmd/actionlint@v1.7.12
+      - name: Lint the workflows
+        run: actionlint .github/workflows/*.yml
+      - name: Lint the shell scripts
+        run: shellcheck scripts/*.sh web/e2e/*.sh
+      # The findings ledger is edited constantly and by several hands, and a
+      # row that loses its status column or reuses an identifier is still valid
+      # markdown — it just quietly drops a finding. That happened twice before
+      # this check existed.
+      - name: Check the findings ledger
+        run: ./scripts/check-bugs-ledger.sh
+
+  modules:
+    name: Nested Go modules
     runs-on: ubuntu-latest
     timeout-minutes: 12
     steps:
@@ -19,13 +125,119 @@ jobs:
         with:
           go-version-file: go.mod
           cache: true
-      - name: Run the complete server suite against MinIO S3
-        run: go test -tags noui -count=1 -timeout 8m ./...
+      # sdk-tests, terraform/wake and test/terraform-sockerless are separate
+      # modules, and `go test ./...` from the root module cannot cross a module
+      # boundary — so roughly 2,600 lines of test code, including the entire
+      # go-github conformance suite and the only test for the Lambda that gates
+      # all production traffic, was never compiled by CI at all.
+      #
+      # Building and vetting every module runs here. The wake module's tests are
+      # self-contained and run too; sdk-tests needs a live server and
+      # terraform-sockerless needs AWS, so those stay build-and-vet until their
+      # harnesses are wired up.
+      - name: Build and vet every nested module
+        run: |
+          set -euo pipefail
+          for module in sdk-tests terraform/wake test/terraform-sockerless; do
+            echo "::group::$module"
+            (cd "$module" && go build ./... && go vet ./...)
+            echo "::endgroup::"
+          done
+      - name: Test the wake controller
+        run: cd terraform/wake && go test -count=1 ./...
+      # A fourth module must not be able to arrive unnoticed the way these three
+      # did. Discovering go.mod files and checking them against the list above
+      # makes that a build failure rather than a silence.
+      - name: Assert every module is covered
+        run: |
+          set -euo pipefail
+          expected=$'./go.mod\n./sdk-tests/go.mod\n./terraform/wake/go.mod\n./test/terraform-sockerless/go.mod'
+          found=$(find . -name go.mod -not -path './web/*' | sort)
+          if [ "$found" != "$(printf '%s' "$expected" | sort)" ]; then
+            echo "Go modules changed. Found:"; echo "$found"
+            echo "Update the loop above and this list together."
+            exit 1
+          fi
+
+  images:
+    name: Release images
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v7.0.0
+      - uses: docker/setup-buildx-action@v4.2.0
+      # Both release Dockerfiles were built for the first time on push to main,
+      # after review had already happened — so a Dockerfile change could only
+      # be discovered broken once it was unreviewable and the publish had
+      # already failed.
+      #
+      # This also compiles dqlite-node, which is the only build of it anywhere.
+      # It sits behind `//go:build dqlite` and needs libdqlite headers, so
+      # `go build ./...` and `go vet ./...` both skip the file silently; the
+      # release image's dqlite-builder stage installs the headers and is the
+      # one place it is type-checked at all.
+      #
+      # Reads the publish workflow's cache and writes its own, so a pull request
+      # gets warm layers without being able to poison what main publishes.
+      - name: Build the release image
+        uses: docker/build-push-action@v7.3.0
+        with:
+          context: .
+          file: Dockerfile.release
+          platforms: linux/amd64
+          push: false
+          load: true
+          tags: bleephub:ci
+          cache-from: |
+            type=gha,scope=bleephub-ci-amd64
+            type=gha,scope=bleephub-amd64
+          cache-to: type=gha,scope=bleephub-ci-amd64,mode=max
+      # Reporting only, and deliberately not yet a gate: nobody has ever
+      # scanned these images, so the finding count is unknown and a blocking
+      # threshold picked blind would either be red on arrival or meaningless.
+      # The first runs measure it; the threshold goes in afterwards, against a
+      # real number. Until then this prints to the job log and changes no
+      # outcome — which is worth stating plainly rather than leaving an
+      # exit-code of zero to imply a gate that is not there.
+      - name: Scan the release image
+        uses: aquasecurity/trivy-action@v0.36.0
+        with:
+          image-ref: bleephub:ci
+          format: table
+          severity: HIGH,CRITICAL
+          ignore-unfixed: true
+          exit-code: '0'
+      - name: Build the runner image
+        uses: docker/build-push-action@v7.3.0
+        with:
+          context: .
+          file: Dockerfile.runner
+          platforms: linux/amd64
+          push: false
+          cache-from: |
+            type=gha,scope=bleephub-runner-ci-amd64
+            type=gha,scope=bleephub-runner-amd64
+          cache-to: type=gha,scope=bleephub-runner-ci-amd64,mode=max
+      # The two release bundles are shell scripts run only by the publish
+      # workflow, so a syntax error or a broken cross-compile in either reached
+      # main unbuilt as well.
+      - uses: actions/setup-go@v6.5.0
+        with:
+          go-version-file: go.mod
+          cache: true
+      - name: Build the startup and wake bundles
+        run: |
+          set -euo pipefail
+          BLEEPHUB_VERSION=ci BLEEPHUB_PUBLISHED_AT=1970-01-01T00:00:00Z \
+            scripts/build-bleephub-startup.sh .build/bleephub-ecs
+          scripts/build-bleephub-wake.sh .build/bleephub-wake
+          test -s .build/bleephub-ecs/bleephub-startup.zip
+          test -s .build/bleephub-wake/bleephub-wake.zip
 
   web:
     name: Web application
     runs-on: ubuntu-latest
-    timeout-minutes: 12
+    timeout-minutes: 16
     steps:
       - uses: actions/checkout@v7.0.0
       - uses: oven-sh/setup-bun@v2.2.0
@@ -37,6 +249,15 @@ jobs:
         run: cd web && bun run typecheck && bun run test
       - name: Build the embedded web application
         run: cd web && bun run build
+      # The web counterparts of the same two orphaned gates. knip reported
+      # e2e/shauth-sso.mjs as an unused file because it is launched by
+      # scripts/test-shauth-sso.sh rather than imported; it is declared as an
+      # entry point alongside the webhook receiver, which had the same shape
+      # and was already declared.
+      - name: Check for dead TypeScript exports
+        run: ./scripts/knip.sh
+      - name: Check for copy-pasted TypeScript
+        run: ./scripts/jscpd.sh
 
   terraform:
     name: Terraform module
@@ -110,9 +331,14 @@ jobs:
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@v7.0.0
+      # Pinned to a commit for the same reason the shauth checkout above is:
+      # an unpinned default branch makes this job's verdict depend on a push to
+      # a different repository, so a green pull request can turn red without
+      # anyone touching it — and the reverse, which is worse.
       - uses: actions/checkout@v7.0.0
         with:
           repository: e6qu/sockerless
+          ref: 2e6966f7982e6d908a4beb1e59e0973ac892b6b1
           path: sockerless
       - name: Exercise the official runner against the real simulator and backend
         run: timeout --foreground --kill-after=1m 14m env SOCKERLESS_ROOT="$GITHUB_WORKSPACE/sockerless" make runner-sockerless-test

@@ -338,54 +338,70 @@ func expandMatrixJobs(wf *WorkflowDef) *WorkflowDef {
 		Concurrency: wf.Concurrency,
 	}
 
+	// Two passes. The needs rewrite has to run after every job has been
+	// expanded, because it must be able to see expansions that had not been
+	// produced yet when it ran: wf.Jobs is a map, so a single interleaved pass
+	// rewrote `needs` against a partially-built result and left a dependent job
+	// pointing at a key that no longer existed whenever iteration happened to
+	// reach it before its dependency. That failed validateJobGraph on roughly
+	// half of runs, which reads as flakiness rather than as a bug.
+	expandedKeysFor := make(map[string][]string, len(wf.Jobs))
+
 	for key, jd := range wf.Jobs {
-		if jd.Strategy == nil || len(jd.Strategy.Matrix.Values) == 0 {
-			expanded.Jobs[key] = jd
-			continue
+		var combos []map[string]interface{}
+		if jd.Strategy != nil {
+			// Gate on the expansion, not on Values. A matrix declaring only
+			// `include:` has no Values and is a perfectly ordinary GitHub
+			// matrix; testing Values skipped it and emitted the job once with
+			// no matrix context at all, silently dropping every include entry.
+			combos = ExpandMatrix(&jd.Strategy.Matrix)
 		}
-
-		combos := ExpandMatrix(&jd.Strategy.Matrix)
 		if len(combos) == 0 {
-			expanded.Jobs[key] = jd
+			single := *jd
+			single.Needs = append([]string(nil), jd.Needs...)
+			expanded.Jobs[key] = &single
 			continue
 		}
 
+		keys := make([]string, 0, len(combos))
 		for i, combo := range combos {
 			newKey := fmt.Sprintf("%s_%d", key, i)
-			newJD := *jd // shallow copy
+			newJD := *jd
 			newJD.Name = MatrixJobName(key, combo)
-			// Store matrix values in a way the workflow engine can use
-			// We'll use a convention: the expanded jobs get the same needs
-			// but their own key
-			expanded.Jobs[newKey] = &newJD
+			newJD.Needs = append([]string(nil), jd.Needs...)
 
-			// We need to track matrix values — stash them so submitWorkflow can set them.
-			// Use a special env prefix since MatrixValues lives on WorkflowJob.
-			if newJD.Env == nil {
-				newJD.Env = make(map[string]string)
+			// Deep-copy the environment. A shallow struct copy shares the Env
+			// map with the original job and with every sibling combination, so
+			// each combination overwrote the previous one's matrix values and
+			// all of them ended up with the last combination's — and the
+			// caller's WorkflowDef was mutated as a side effect. It only
+			// happened when the job also declared `env:`, since otherwise the
+			// nil map forced a fresh allocation, which is why the existing
+			// matrix test never caught it.
+			newJD.Env = make(map[string]string, len(jd.Env)+len(combo))
+			for k, v := range jd.Env {
+				newJD.Env[k] = v
 			}
 			for mk, mv := range combo {
-				newJD.Env["__matrix_"+mk] = fmt.Sprintf("%v", mv)
+				newJD.Env[matrixEnvPrefix+mk] = fmt.Sprintf("%v", mv)
 			}
-		}
 
-		// Update needs references: any job that depends on the original key
-		// should depend on ALL expanded keys
-		expandedKeys := make([]string, 0, len(combos))
-		for i := range combos {
-			expandedKeys = append(expandedKeys, fmt.Sprintf("%s_%d", key, i))
+			expanded.Jobs[newKey] = &newJD
+			keys = append(keys, newKey)
 		}
-		for _, otherJD := range expanded.Jobs {
-			newNeeds := make([]string, 0, len(otherJD.Needs))
-			for _, dep := range otherJD.Needs {
-				if dep == key {
-					newNeeds = append(newNeeds, expandedKeys...)
-				} else {
-					newNeeds = append(newNeeds, dep)
-				}
+		expandedKeysFor[key] = keys
+	}
+
+	for _, jd := range expanded.Jobs {
+		newNeeds := make([]string, 0, len(jd.Needs))
+		for _, dep := range jd.Needs {
+			if keys, ok := expandedKeysFor[dep]; ok {
+				newNeeds = append(newNeeds, keys...)
+				continue
 			}
-			otherJD.Needs = newNeeds
+			newNeeds = append(newNeeds, dep)
 		}
+		jd.Needs = newNeeds
 	}
 
 	return expanded
@@ -551,3 +567,13 @@ func buildJobMessage(serverURL, jobID, planID, timelineID string, requestID int6
 		"fileTable":            []string{".github/workflows/ci.yml"},
 	}
 }
+
+// matrixEnvPrefix is the key prefix expandMatrixJobs uses to carry a
+// combination's matrix values from expansion to submitWorkflow.
+//
+// Using the environment map as an out-of-band channel is a wart: these keys
+// have to be filtered out again before the runner job message is built, and
+// values round-trip through a map[string]string so numbers and booleans arrive
+// as strings. Both are tracked; the prefix is named here so the producer and
+// the consumer cannot disagree about it in the meantime.
+const matrixEnvPrefix = "__matrix_"

@@ -1,0 +1,68 @@
+version: 2
+
+# Every Go module in the tree gets an entry. The root module is not the whole
+# story here: sdk-tests, terraform/wake and test/terraform-sockerless are
+# separate modules, and until recently nothing built them at all, so nothing
+# would have noticed their dependencies drifting either.
+updates:
+  - package-ecosystem: gomod
+    directory: /
+    schedule:
+      interval: weekly
+    groups:
+      aws-sdk:
+        patterns:
+          - github.com/aws/aws-sdk-go-v2*
+      otel:
+        patterns:
+          - go.opentelemetry.io/*
+
+  - package-ecosystem: gomod
+    directory: /sdk-tests
+    schedule:
+      interval: weekly
+
+  - package-ecosystem: gomod
+    directory: /terraform/wake
+    schedule:
+      interval: weekly
+
+  - package-ecosystem: gomod
+    directory: /test/terraform-sockerless
+    schedule:
+      interval: weekly
+
+  - package-ecosystem: npm
+    directory: /web
+    schedule:
+      interval: weekly
+    groups:
+      react:
+        patterns:
+          - react
+          - react-dom
+          - "@types/react*"
+      vite:
+        patterns:
+          - vite
+          - "@vitejs/*"
+          - vitest
+          - "@vitest/*"
+
+  # Actions are referenced by mutable tag today, which means the code running
+  # with packages:write can change without a commit here. Dependabot keeps the
+  # pinned SHAs current once they are pinned.
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+
+  - package-ecosystem: docker
+    directory: /
+    schedule:
+      interval: weekly
+
+  - package-ecosystem: terraform
+    directory: /terraform
+    schedule:
+      interval: weekly

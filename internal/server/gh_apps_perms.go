@@ -82,6 +82,19 @@ func parsePermLevel(s string) permLevel {
 
 // requirePerm returns a wrapper that enforces (scope, level) on the request's auth.
 //
+// Two decisions are made, and both are made for every credential shape. First
+// the credential's own permission set is checked — the installation's grant,
+// the user-to-server grant, the fine-grained PAT's grant. That answers "may
+// this credential do this kind of thing at all", and it is the only question
+// the permissions map can answer, because the map does not know which
+// repository or organization the request names.
+//
+// Then the resource check answers the question the map cannot: is *this*
+// credential entitled to *this* target. Skipping it for a credential shape is
+// what let an app installed on the attacker's own account write to a stranger's
+// private repository — the grant was real, it just was not a grant over that
+// repository.
+//
 // Usage:
 //
 //	s.route("PATCH /api/v3/repos/{owner}/{repo}", s.requirePerm(scopeContents, permWrite, s.handleUpdateRepo))
@@ -124,7 +137,322 @@ func (s *Server) requirePerm(scope permScope, level permLevel, next http.Handler
 			return
 		}
 
+		need := resourceCapabilityFor(scope, level, r.Method, r.URL.Path)
+		if !s.credentialMayAccessTarget(r, user, instTok, scope, need) {
+			denyResourceAccess(w, need)
+			return
+		}
+
 		next(w, r)
+	}
+}
+
+// credentialMayAccessTarget routes the resource decision to the check that
+// suits the credential.
+//
+// An installation token's principal is the installation, not the synthetic bot
+// user the middleware puts on the context: that bot is a collaborator on
+// nothing, so asking the user-shaped question about it answers "no" for reads
+// the app is entitled to and — because the question was not asked at all —
+// "yes" for writes it is not.
+func (s *Server) credentialMayAccessTarget(r *http.Request, user *User, instTok *InstallationToken, scope permScope, need permLevel) bool {
+	if instTok != nil {
+		return s.installationMayAccessTarget(r, instTok, scope)
+	}
+	// A ghu_ user-to-server token is the intersection of what the user can
+	// reach and what the app is installed on — it is not simply the user. On
+	// GitHub an app cannot borrow a user's access to a repository it was never
+	// installed on, so both halves have to hold.
+	if uts := ghUserToServerTokenFromContext(r.Context()); uts != nil && uts.AppID != 0 {
+		if repo := s.repoFromPATRequest(r); repo != nil {
+			// Same public-repository carve-out the installation path gets. A
+			// ghu_ token must not end up narrower than a ghs_ token of the
+			// same app on data publicReadAllowed itself calls public.
+			readOnly := r.Method == http.MethodGet || r.Method == http.MethodHead
+			if !(readOnly && !repo.Private && publicReadAllowed(scope)) && !s.userToServerReachesRepo(uts, repo) {
+				return false
+			}
+		}
+		// And the organization half. Checking only the repository left
+		// org-only routes falling through to the user's own capability, so a
+		// ghu_ token for an app installed on a user — never on the org — minted
+		// that org's runner registration token. installationReachesOrg exists
+		// precisely for this and was unreachable from here.
+		if orgLogin := r.PathValue("org"); orgLogin != "" && !s.userToServerReachesOrg(uts, orgLogin) {
+			return false
+		}
+	}
+	return s.principalMayAccessTarget(r, user, need)
+}
+
+// userToServerReachesRepo reports whether any installation of the token's app
+// covers the repository, honouring a token narrowed to specific installations.
+//
+// A gho_ OAuth-app token has no app installation behind it and acts purely as
+// the user, so it is not constrained here.
+// userToServerReachesOrg reports whether any installation of the token's app is
+// installed on the organization, honouring a token narrowed to specific
+// installations. Mirrors userToServerReachesRepo for the org half.
+func (s *Server) userToServerReachesOrg(tok *UserToServerToken, orgLogin string) bool {
+	if tok == nil || tok.AppID == 0 {
+		return true
+	}
+	for _, inst := range s.store.ListAppInstallations(tok.AppID) {
+		if len(tok.InstallationIDs) > 0 && !containsRepoID(tok.InstallationIDs, inst.ID) {
+			continue
+		}
+		if strings.EqualFold(inst.TargetType, "Organization") && strings.EqualFold(inst.TargetLogin, orgLogin) {
+			return true
+		}
+	}
+	return false
+}
+
+func (s *Server) userToServerReachesRepo(tok *UserToServerToken, repo *Repo) bool {
+	if tok == nil || tok.AppID == 0 || repo == nil {
+		return true
+	}
+	for _, inst := range s.store.ListAppInstallations(tok.AppID) {
+		if len(tok.InstallationIDs) > 0 && !containsRepoID(tok.InstallationIDs, inst.ID) {
+			continue
+		}
+		if installationCovers(inst, nil, repo) {
+			return true
+		}
+	}
+	return false
+}
+
+// installationMayAccessTarget checks that the installation behind a token
+// actually covers the repository and organization the path names. The token's
+// permission map was already checked by the caller; this answers which
+// resources that grant is over.
+func (s *Server) installationMayAccessTarget(r *http.Request, tok *InstallationToken, scope permScope) bool {
+	if repo := s.repoFromPATRequest(r); repo != nil {
+		// A public repository is readable by anyone, including an app whose
+		// installation is elsewhere — the same carve-out canReadRepo and the
+		// fine-grained PAT checks already make. Without it, scoping the write
+		// path also removed every read an app could perform against a public
+		// repository it is not installed on.
+		readOnly := r.Method == http.MethodGet || r.Method == http.MethodHead
+		if !(readOnly && !repo.Private && publicReadAllowed(scope)) && !s.installationReachesRepo(tok, repo) {
+			return false
+		}
+	}
+	if orgLogin := r.PathValue("org"); orgLogin != "" && !s.installationReachesOrg(tok, orgLogin) {
+		return false
+	}
+	return true
+}
+
+// installationReachesRepo reports whether an installation covers a repository:
+// the repository must belong to the account the app was installed on, must be
+// within a `selected` installation's chosen set, and must be within any
+// narrower set the token itself was scoped to.
+func (s *Server) installationReachesRepo(tok *InstallationToken, repo *Repo) bool {
+	if tok == nil || repo == nil {
+		return false
+	}
+	return installationCovers(s.store.GetInstallation(tok.InstallationID), tok.RepositoryIDs, repo)
+}
+
+// installationCovers is the shared predicate: the repository must belong to the
+// account the app was installed on, be within a non-"all" installation's chosen
+// set, and be within any narrower set the token itself was scoped to.
+//
+// The selection test is spelled deny-by-default. Reading it as
+// `== "selected"` would admit every repository for any future selection value
+// the field grows, which is the wrong way round for an access check.
+func installationCovers(inst *Installation, tokenRepoIDs []int, repo *Repo) bool {
+	if inst == nil || repo == nil {
+		return false
+	}
+	owner, _, ok := strings.Cut(repo.FullName, "/")
+	if !ok || !strings.EqualFold(owner, inst.TargetLogin) {
+		return false
+	}
+	if inst.RepositorySelection != "all" && !containsRepoID(inst.SelectedRepoIDs, repo.ID) {
+		return false
+	}
+	if len(tokenRepoIDs) > 0 && !containsRepoID(tokenRepoIDs, repo.ID) {
+		return false
+	}
+	return true
+}
+
+// installationReachesOrg reports whether an installation is installed on the
+// organization the path names.
+func (s *Server) installationReachesOrg(tok *InstallationToken, orgLogin string) bool {
+	if tok == nil {
+		return false
+	}
+	inst := s.store.GetInstallation(tok.InstallationID)
+	if inst == nil {
+		return false
+	}
+	// The target type matters as much as the login. Nothing in the store keeps
+	// a user login and an organization login distinct — CreateOrg checks only
+	// OrgsByLogin, and user creation only UsersByLogin — so matching on the
+	// login alone let an app installed on a *user* named `acme` administer the
+	// *organization* named `acme`, up to and including minting a runner
+	// registration token for it.
+	if !strings.EqualFold(inst.TargetType, "Organization") {
+		return false
+	}
+	return strings.EqualFold(inst.TargetLogin, orgLogin)
+}
+
+func containsRepoID(ids []int, id int) bool {
+	for _, candidate := range ids {
+		if candidate == id {
+			return true
+		}
+	}
+	return false
+}
+
+// viewerCanReadRepo answers repository readability for whichever credential the
+// request carries. Read handlers must use this rather than canReadRepo
+// directly, for the same reason credentialMayAccessTarget exists: an
+// installation token's viewer is an installation, and the bot user standing in
+// for it can read nothing.
+func (s *Server) viewerCanReadRepo(r *http.Request, repo *Repo) bool {
+	if tok := ghInstallationTokenFromContext(r.Context()); tok != nil {
+		// A public repository is readable by anyone; only private ones need the
+		// installation to actually cover them.
+		return (repo != nil && !repo.Private) || s.installationReachesRepo(tok, repo)
+	}
+	// A ghu_ token has to be intersected here as well, not only in
+	// credentialMayAccessTarget. That covers requirePerm routes; handlers that
+	// gate themselves land here, and without this arm a user-to-server token is
+	// indistinguishable from a session, borrows the bearer's own collaborator
+	// access, and ends up reading private repositories the app was never
+	// installed on — strictly broader than the ghs_ token of the same app,
+	// which is refused.
+	if uts := ghUserToServerTokenFromContext(r.Context()); uts != nil && uts.AppID != 0 {
+		if repo != nil && repo.Private && !s.userToServerReachesRepo(uts, repo) {
+			return false
+		}
+	}
+	return canReadRepo(s.store, ghUserFromContext(r.Context()), repo)
+}
+
+// resourceCapabilityFor maps a permission scope, level and request method onto
+// the capability the caller must hold on the resource named in the path.
+//
+// Two adjustments to the declared level, both matching GitHub:
+//
+// Scopes that administer a resource demand admin whatever level they were
+// declared with — writing a secret or a branch-protection rule is an
+// administrative act, not a write to repository contents.
+//
+// And "write" on the collaborative scopes does not mean repository write.
+// Anyone who can read a repository may open an issue on it, propose a pull
+// request from a fork, or submit a review; those are how outside contributors
+// participate, and demanding push access for them would wall off the normal
+// contribution path. Creating is therefore gated on read. Editing and deleting
+// still require push, which is what keeps a stranger from deleting labels or
+// closing other people's issues.
+func resourceCapabilityFor(scope permScope, level permLevel, method, path string) permLevel {
+	switch scope {
+	case scopeAdministration, scopeOrgAdministration, scopeSecrets,
+		scopeDependabotSecrets, scopePATs, scopePATRequests:
+		return permAdmin
+	}
+	// scopeSecurityEvents is not here either, and was briefly. Promoting it to
+	// admin refused a collaborator with push the alert reads GitHub grants at
+	// security_events:read — and worse, it routed those denials into the 403
+	// arm of denyResourceAccess, which reintroduced exactly the existence
+	// oracle the 404-on-read rule three lines below exists to prevent: 403 for
+	// a private repository that exists, 404 for one that does not.
+	// scopeMembers is deliberately NOT in that list, though it governs team and
+	// membership changes. On GitHub a team maintainer manages their own team's
+	// membership without being an organization admin, and a non-member reading
+	// teams gets 404 rather than 403. Demanding org admin here refused the
+	// maintainer and turned the non-member's 404 into a 403 that confirms the
+	// team exists. Those checks belong to the team resolvers, which already
+	// distinguish maintainer from member from outsider.
+	if method == http.MethodPost && isOutsideContributorPost(path) {
+		return permRead
+	}
+	return level
+}
+
+// isOutsideContributorPost matches the few creations an outside contributor
+// legitimately performs with only read access: filing an issue, proposing a
+// pull request from a fork, commenting, reviewing, reacting, forking.
+//
+// This used to be keyed on the scope rather than the path, which was too
+// coarse. `POST .../labels`, `.../milestones`, `.../issues/{n}/assignees` and
+// `.../pulls/{n}/requested_reviewers` are all registered under scopeIssues or
+// scopePullRequests at write level, and all of them require push on GitHub —
+// so downgrading every POST under those scopes let any signed-in account create
+// labels and assign issues on any public repository.
+func isOutsideContributorPost(path string) bool {
+	switch {
+	case strings.HasSuffix(path, "/issues"),
+		strings.HasSuffix(path, "/pulls"),
+		strings.HasSuffix(path, "/forks"),
+		strings.HasSuffix(path, "/comments"),
+		strings.HasSuffix(path, "/reviews"),
+		strings.HasSuffix(path, "/reactions"),
+		strings.HasSuffix(path, "/replies"):
+		return true
+	}
+	return false
+}
+
+// principalMayAccessTarget resolves the repository or organization named in the
+// request path and reports whether the user holds the required capability on
+// it. A request naming no resource carries no resource decision to make and is
+// admitted — the handler's own checks then apply.
+func (s *Server) principalMayAccessTarget(r *http.Request, user *User, need permLevel) bool {
+	if user == nil {
+		return false
+	}
+	if user.SiteAdmin {
+		return true
+	}
+	// The organization is checked first, and separately, because the two are
+	// not alternatives. Several org routes also carry {repository_id}, and that
+	// id comes from the caller — so resolving the repository and returning its
+	// verdict let someone name a repository they own and thereby administer a
+	// stranger's organization. Both must pass when both are named.
+	//
+	// Organizations are gated at admin only. Read and write access to
+	// org-scoped collections varies per endpoint on GitHub, so tightening those
+	// belongs with the per-family resolvers rather than in this wrapper.
+	if need >= permAdmin {
+		if orgLogin := r.PathValue("org"); orgLogin != "" {
+			if org := s.store.GetOrg(orgLogin); org != nil && !canAdminOrg(s.store, user, org) {
+				return false
+			}
+		}
+	}
+	if repo := s.repoFromPATRequest(r); repo != nil {
+		switch {
+		case need >= permAdmin:
+			return canAdminRepo(s.store, user, repo)
+		case need >= permWrite:
+			return canPushRepo(s.store, user, repo)
+		default:
+			return canReadRepo(s.store, user, repo)
+		}
+	}
+	return true
+}
+
+// denyResourceAccess answers a failed resource check. A denied read is
+// answered 404 so the response cannot be used to prove a private resource
+// exists; write and admin denials are 403, as on GitHub.
+func denyResourceAccess(w http.ResponseWriter, need permLevel) {
+	switch {
+	case need >= permAdmin:
+		writeGHError(w, http.StatusForbidden, "Must have admin rights to Repository.")
+	case need >= permWrite:
+		writeGHError(w, http.StatusForbidden, "Resource not accessible by integration")
+	default:
+		writeGHError(w, http.StatusNotFound, "Not Found")
 	}
 }
 
@@ -132,7 +460,8 @@ func (s *Server) fineGrainedPATAllows(r *http.Request, token *Token, scope permS
 	if token.ExpiresAt != nil && !token.ExpiresAt.After(time.Now()) {
 		return false
 	}
-	if repo := s.repoFromPATRequest(r); repo != nil && !repo.Private && (r.Method == http.MethodGet || r.Method == http.MethodHead) {
+	if repo := s.repoFromPATRequest(r); repo != nil && !repo.Private &&
+		(r.Method == http.MethodGet || r.Method == http.MethodHead) && publicReadAllowed(scope) {
 		return true
 	}
 	if !s.fineGrainedPATResourceAllowed(r, token) {
@@ -214,7 +543,9 @@ func (s *Server) enforceFineGrainedPATResource(pattern string, next http.Handler
 			next(w, r)
 			return
 		}
-		if repo := s.repoFromPATRequest(r); repo != nil && !repo.Private && (r.Method == http.MethodGet || r.Method == http.MethodHead) {
+		scope, level := fineGrainedPATPermissionForPattern(pattern, r.Method)
+		if repo := s.repoFromPATRequest(r); repo != nil && !repo.Private &&
+			(r.Method == http.MethodGet || r.Method == http.MethodHead) && publicReadAllowed(scope) {
 			next(w, r)
 			return
 		}
@@ -222,7 +553,6 @@ func (s *Server) enforceFineGrainedPATResource(pattern string, next http.Handler
 			writeGHError(w, http.StatusForbidden, "Resource not accessible by personal access token")
 			return
 		}
-		scope, level := fineGrainedPATPermissionForPattern(pattern, r.Method)
 		permissions := token.Permissions.Repository
 		if r.PathValue("org") != "" && s.repoFromPATRequest(r) == nil && !strings.Contains(pattern, "/orgs/{org}/repos") {
 			permissions = token.Permissions.Organization
@@ -436,6 +766,25 @@ func classicScopeCovers(scopes string, scope permScope, level permLevel) bool {
 			return level <= permWrite
 		}
 		return false
+	}
+	return false
+}
+
+// publicReadAllowed reports whether a scope's data is genuinely public when the
+// repository is.
+//
+// "Public repository" is not the same as "every scope on it is public". The
+// listing endpoints for Actions secrets and variables are registered under
+// scopeSecrets at read level, and they return secret names and variable
+// *values* — a repository being public says nothing about those. A blanket
+// public-repo bypass therefore hands any credential holding secrets:read the
+// variables of every public repository on the instance, which is why this is
+// keyed on the scope rather than on the repository alone.
+func publicReadAllowed(scope permScope) bool {
+	switch scope {
+	case scopeMetadata, scopeContents, scopeIssues, scopePullRequests,
+		scopePages, scopeChecks, scopeReactions, scopeProjects, scopeDeployments:
+		return true
 	}
 	return false
 }

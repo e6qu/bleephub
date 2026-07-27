@@ -121,7 +121,7 @@ test.describe("Operations console", () => {
     await page.goto("/ui/admin");
     await expect(page.getByText("Active Workflows")).toBeVisible();
     await expect(page.getByText("Connected Runners")).toBeVisible();
-    await expect(page.getByText("Workflow runs", { exact: true })).toBeVisible();
+    await expect(page.getByText("Workflow submissions", { exact: true })).toBeVisible();
     await shot(page, "02-ops-metrics");
   });
 });
@@ -521,9 +521,10 @@ test.describe("Apps page", () => {
     const newAppBtn = page.getByRole("button", { name: /new.*app/i }).first();
     await newAppBtn.click();
     await expect(page.getByRole("heading", { name: /create/i })).toBeVisible();
+    await expect(page.getByRole("dialog")).toHaveAttribute("aria-modal", "true");
     await shot(page, "22-create-app-modal");
-    // Close modal
     await page.keyboard.press("Escape");
+    await expect(page.getByRole("dialog")).toHaveCount(0);
   });
 
   test("switches to OAuth Apps tab", async ({ page }) => {

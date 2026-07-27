@@ -3,6 +3,7 @@ package bleephub
 import (
 	"bytes"
 	"encoding/json"
+	"fmt"
 	"io"
 	"net/http"
 	"strconv"
@@ -82,7 +83,11 @@ func (b *flexBool) UnmarshalJSON(data []byte) error {
 	case "false", "0", "no", "":
 		*b = false
 	default:
-		return &json.UnmarshalTypeError{Value: s, Type: nil}
+		// Not a json.UnmarshalTypeError: its Error method dereferences Type
+		// unconditionally, so constructing one with a nil Type produces a value
+		// that panics the moment anything formats it. Today nothing does, which
+		// is the only reason this has not fired.
+		return fmt.Errorf("invalid boolean value %q", s)
 	}
 	return nil
 }

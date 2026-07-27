@@ -1,4 +1,13 @@
 import "@testing-library/jest-dom/vitest";
+import { cleanup } from "@testing-library/react";
+import { afterEach } from "vitest";
+
+// Unmount rendered trees between tests. Without this every render leaks into
+// the next test's document, so queries can match a previous test's markup and
+// document-level listeners from unmounted components stay attached.
+afterEach(() => {
+  cleanup();
+});
 
 // Install storage without probing window.localStorage first; Node emits an
 // experimental warning when that getter is touched without --localstorage-file.

@@ -216,7 +216,7 @@ func (s *Server) handlePagesContent(w http.ResponseWriter, r *http.Request) {
 	s.store.Misc.mu.RLock()
 	site := s.store.Misc.pagesByRepo[repo.ID]
 	s.store.Misc.mu.RUnlock()
-	if site != nil && !site.Public && !canReadRepo(s.store, ghUserFromContext(r.Context()), repo) {
+	if site != nil && !site.Public && !s.viewerCanReadRepo(r, repo) {
 		http.NotFound(w, r)
 		return
 	}

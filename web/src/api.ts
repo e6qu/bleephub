@@ -145,6 +145,40 @@ import type {
   GithubMarketplaceSubscription,
 } from "./types.js";
 
+// One AbortController behind every request this module makes.
+//
+// The client had no cancellation of any kind: TanStack Query passes an
+// AbortSignal into every queryFn and the API layer discarded it, so
+// queryClient.cancelQueries() — which sign-out calls — could not actually stop
+// anything. In-flight polls therefore landed after the token was cleared, got
+// 401, and the browser logged a console error the end-to-end suite treats as a
+// failure. Aborting is the only fix available: a 401 console entry is emitted
+// by the browser for the response itself and cannot be suppressed from script.
+//
+// This is deliberately coarse — one controller for the whole module rather than
+// per-query plumbing. Per-request signals are the better shape and are tracked
+// separately; this gives sign-out something real to cancel with.
+let pendingRequests = new AbortController();
+
+/** Aborts every request this module currently has in flight. */
+export function abortPendingRequests(): void {
+  pendingRequests.abort();
+  pendingRequests = new AbortController();
+}
+
+/**
+ * apiFetch is the single exit point to the network for this module. Every
+ * request inherits the module-wide abort signal; a caller-supplied signal is
+ * combined with it rather than replacing it, so passing a per-request deadline
+ * never costs the request its sign-out cancellation.
+ */
+function apiFetch(input: RequestInfo | URL, init?: RequestInit): Promise<Response> {
+  const signal = init?.signal
+    ? AbortSignal.any([pendingRequests.signal, init.signal])
+    : pendingRequests.signal;
+  return fetch(input, { ...init, signal });
+}
+
 const TOKEN_KEY = "bleephub_token";
 
 export function getToken(): string | null {
@@ -161,6 +195,27 @@ export function clearToken(): void {
 
 export function isLoggedIn(): boolean {
   return !!getToken();
+}
+
+/** How long the cookie-session probe may take before it is treated as failed. */
+export const SESSION_PROBE_TIMEOUT_MS = 5000;
+
+/**
+ * Reports whether the browser holds a valid cookie session.
+ *
+ * `/auth/session` answers 200 with `{authenticated: false}` for an anonymous
+ * visitor, so any rejection here is a transport or server fault and must stay
+ * distinguishable from "signed out" — it is thrown, never folded into `false`.
+ */
+export async function fetchBrowserSession(
+  timeoutMs: number = SESSION_PROBE_TIMEOUT_MS,
+): Promise<boolean> {
+  const res = await apiFetch("/auth/session", { signal: AbortSignal.timeout(timeoutMs) });
+  if (!res.ok) {
+    throw new ApiError(res.status, `session probe failed: ${res.status} ${res.statusText}`);
+  }
+  const session = (await res.json()) as { authenticated?: boolean };
+  return session.authenticated === true;
 }
 
 export function authHeaders(): Record<string, string> {
@@ -193,8 +248,16 @@ export function isNotFound(err: unknown): boolean {
   return err instanceof ApiError && err.status === 404;
 }
 
+/**
+ * True when the server refused on authorization grounds. This is an answer,
+ * not a fault: retrying or reporting it as a failure is wrong.
+ */
+export function isForbidden(err: unknown): boolean {
+  return err instanceof ApiError && err.status === 403;
+}
+
 async function fetchJSON<T>(url: string): Promise<T> {
-  const res = await fetch(url, { headers: authHeaders() });
+  const res = await apiFetch(url, { headers: authHeaders() });
   if (!res.ok) {
     handleUnauthorized(res);
     throw new ApiError(res.status, `${res.status} ${res.statusText}`);
@@ -276,22 +339,40 @@ function mapWorkflowRun(repoFullName: string, run: GithubWorkflowRun, jobs: Gith
   };
 }
 
-export async function fetchWorkflows(): Promise<BleephubWorkflow[]> {
+/**
+ * Most recent workflow runs across every repository the viewer can see.
+ *
+ * This cannot become a single request. There is no cross-repository runs
+ * route, so the repository list plus one runs page per repository is
+ * irreducible over the public API; and `GET .../actions/runs` carries no
+ * per-run job count (it mirrors GitHub's payload, which has none), so a job
+ * count costs one request per run.
+ *
+ * What is avoidable is fetching jobs for runs nobody displays: this used to
+ * ask for the jobs of every run on every repository's first page. Runs are
+ * merged and trimmed to `limit` first, so the job requests are bounded by
+ * what the caller actually renders.
+ */
+export async function fetchWorkflows(limit: number): Promise<BleephubWorkflow[]> {
   const repos = await fetchAllUserRepos();
   const perRepo = await Promise.all(
     repos.map(async (repo) => {
       const [owner, repoName] = splitRepoFullName(repo.full_name);
       const runsPage = await fetchWorkflowRunsPage(owner, repoName, {});
-      const runs = await Promise.all(
-        runsPage.items.map(async (run) => {
-          const jobsPage = await fetchRunJobs(owner, repoName, run.id);
-          return mapWorkflowRun(repo.full_name, run, jobsPage.items);
-        }),
-      );
-      return runs;
+      return runsPage.items.map((run) => ({ repoFullName: repo.full_name, owner, repoName, run }));
     }),
   );
-  return perRepo.flat().sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+  const newestFirst = perRepo
+    .flat()
+    .sort((a, b) => b.run.created_at.localeCompare(a.run.created_at))
+    .slice(0, limit);
+
+  return Promise.all(
+    newestFirst.map(async ({ repoFullName, owner, repoName, run }) => {
+      const jobsPage = await fetchRunJobs(owner, repoName, run.id);
+      return mapWorkflowRun(repoFullName, run, jobsPage.items);
+    }),
+  );
 }
 
 export async function fetchWorkflowDetail(id: string): Promise<BleephubWorkflow> {
@@ -321,69 +402,48 @@ export async function fetchWorkflowLogs(id: string): Promise<Record<string, stri
 export const fetchRepos = () =>
   fetchAllUserRepos();
 
-async function fetchAllWorkflowRuns(owner: string, repo: string): Promise<GithubWorkflowRun[]> {
-  const runs: GithubWorkflowRun[] = [];
-  let nextUrl: string | null = null;
-  do {
-    const page = await fetchWorkflowRunsPage(owner, repo, {}, nextUrl ?? undefined);
-    runs.push(...page.items);
-    nextUrl = page.nextUrl;
-  } while (nextUrl);
-  return runs;
+/**
+ * Wire shape of `GET /internal/metrics` (MetricsSnapshot) and
+ * `GET /internal/status`. Both are site-admin only.
+ */
+interface WireInternalMetrics {
+  workflow_submissions: number;
+  job_dispatches: number;
+  job_completions: Record<string, number>;
+  active_workflows: number;
 }
 
-async function fetchRepositoryActionsState(repo: BleephubRepo): Promise<{
-  runs: GithubWorkflowRun[];
-  jobs: GithubJob[];
-  runners: GithubRunner[];
-}> {
-  const [owner, repoName] = splitRepoFullName(repo.full_name);
-  const runs = await fetchAllWorkflowRuns(owner, repoName);
-  const jobsPages = await Promise.all(
-    runs.map((run) => fetchRunJobs(owner, repoName, run.id)),
-  );
-  const runnersPage = await fetchActionsRunners(owner, repoName);
-  return {
-    runs,
-    jobs: jobsPages.flatMap((page) => page.items),
-    runners: runnersPage.items,
-  };
+interface WireInternalStatus {
+  active_workflows: number;
+  jobs_by_status: Record<string, number>;
+  connected_runners: number;
 }
 
-async function fetchActionsAggregate(): Promise<BleephubMetrics> {
-  const repos = await fetchAllUserRepos();
-  const perRepo = await Promise.all(repos.map((repo) => fetchRepositoryActionsState(repo)));
-  const runs = perRepo.flatMap((repo) => repo.runs);
-  const jobs = perRepo.flatMap((repo) => repo.jobs);
-  const onlineRunnerIDs = new Set<number>();
-  for (const runner of perRepo.flatMap((repo) => repo.runners)) {
-    if (runner.status === "online") onlineRunnerIDs.add(runner.id);
-  }
-
-  const jobsByStatus: Record<string, number> = {};
-  const jobCompletions: Record<string, number> = {};
-  for (const job of jobs) {
-    jobsByStatus[job.status] = (jobsByStatus[job.status] ?? 0) + 1;
-    if (job.conclusion) {
-      jobCompletions[job.conclusion] = (jobCompletions[job.conclusion] ?? 0) + 1;
-    }
-  }
-
-  const activeWorkflows = runs.filter((run) => run.status !== "completed").length;
-  const connectedRunners = onlineRunnerIDs.size;
-  return {
-    workflow_runs: runs.length,
-    job_dispatches: jobs.length,
-    jobs_by_status: jobsByStatus,
-    job_completions: jobCompletions,
-    active_workflows: activeWorkflows,
-    connected_runners: connectedRunners,
-  };
-}
-
+/**
+ * Reads the server's own counters.
+ *
+ * This used to be computed in the browser by walking every repository, every
+ * page of its workflow runs, and every run's jobs — several hundred requests
+ * per poll. The server already counts all of it.
+ *
+ * `jobs_by_status` and `connected_runners` live on /internal/status; the rest
+ * on /internal/metrics. Two requests, not several hundred.
+ */
 export async function fetchMetrics(): Promise<BleephubMetrics> {
-  return fetchActionsAggregate();
+  const [metrics, status] = await Promise.all([
+    fetchJSON<WireInternalMetrics>("/internal/metrics"),
+    fetchJSON<WireInternalStatus>("/internal/status"),
+  ]);
+  return {
+    workflow_submissions: metrics.workflow_submissions,
+    job_dispatches: metrics.job_dispatches,
+    job_completions: metrics.job_completions ?? {},
+    jobs_by_status: status.jobs_by_status ?? {},
+    active_workflows: status.active_workflows,
+    connected_runners: status.connected_runners,
+  };
 }
+
 
 export const fetchHealth = () =>
   fetchJSON<BleephubHealth>("/health");
@@ -414,7 +474,7 @@ export async function fetchInstallations(): Promise<BleephubInstallation[]> {
 }
 // Verify identity through GitHub's REST user endpoint.
 export async function verifyToken(token: string): Promise<boolean> {
-  const res = await fetch("/api/v3/user", {
+  const res = await apiFetch("/api/v3/user", {
     headers: { Authorization: `Bearer ${token}` },
   });
   return res.ok;
@@ -479,7 +539,7 @@ export async function createApp(payload: {
   const form = new URLSearchParams();
   form.set("manifest", JSON.stringify(manifest));
 
-  const createRes = await fetch("/settings/apps/new", {
+  const createRes = await apiFetch("/settings/apps/new", {
     method: "POST",
     headers: {
       "Content-Type": "application/x-www-form-urlencoded",
@@ -499,7 +559,7 @@ export async function createApp(payload: {
     throw new Error("createApp manifest: missing conversion code");
   }
 
-  const convertRes = await fetch(`/api/v3/app-manifests/${encodeURIComponent(code)}/conversions`, {
+  const convertRes = await apiFetch(`/api/v3/app-manifests/${encodeURIComponent(code)}/conversions`, {
     method: "POST",
     headers: authHeaders(),
   });
@@ -517,7 +577,7 @@ export async function createApp(payload: {
 }
 
 export async function fetchOAuthApps(): Promise<BleephubOAuthApp[]> {
-  const res = await fetch("/settings/oauth-apps", {
+  const res = await apiFetch("/settings/oauth-apps", {
     headers: authHeaders(),
   });
   if (!res.ok) {
@@ -539,7 +599,7 @@ export async function createOAuthApp(payload: {
   if (payload.description) form.set("description", payload.description);
   if (payload.url) form.set("url", payload.url);
   if (payload.callback_url) form.set("callback_url", payload.callback_url);
-  const res = await fetch("/settings/oauth-apps/new", {
+  const res = await apiFetch("/settings/oauth-apps/new", {
     method: "POST",
     headers: {
       "Content-Type": "application/x-www-form-urlencoded",
@@ -560,7 +620,7 @@ export async function createOAuthApp(payload: {
 
 export async function suspendInstallation(installationID: number, suspend: boolean): Promise<void> {
   const verb = suspend ? "suspend" : "unsuspend";
-  const res = await fetch(`/settings/installations/${installationID}/${verb}`, {
+  const res = await apiFetch(`/settings/installations/${installationID}/${verb}`, {
     method: "POST",
     headers: authHeaders(),
   });
@@ -571,7 +631,7 @@ export async function suspendInstallation(installationID: number, suspend: boole
 }
 
 export async function deleteInstallation(installationID: number): Promise<void> {
-  const res = await fetch(`/settings/installations/${installationID}`, {
+  const res = await apiFetch(`/settings/installations/${installationID}`, {
     method: "DELETE",
     headers: authHeaders(),
   });
@@ -586,7 +646,7 @@ export async function dispatchWorkflow(
   workflowId: number | string,
   body: BleephubDispatchRequest = {},
 ): Promise<void> {
-  const res = await fetch(
+  const res = await apiFetch(
     `/api/v3/repos/${repoFullName}/actions/workflows/${workflowId}/dispatches`,
     {
       method: "POST",
@@ -601,7 +661,7 @@ export async function dispatchWorkflow(
 }
 
 async function ghFetch<T>(path: string): Promise<T> {
-  const res = await fetch(path, { headers: authHeaders() });
+  const res = await apiFetch(path, { headers: authHeaders() });
   if (!res.ok) {
     handleUnauthorized(res);
     throw new ApiError(res.status, `${res.status} ${res.statusText}`);
@@ -640,7 +700,7 @@ export function parseLinkNext(link: string | null): string | null {
 // follow-up page via the Link header — honor it instead of silently showing
 // only the first 50 items.
 async function ghFetchPage<T>(url: string): Promise<Page<T>> {
-  const res = await fetch(url, { headers: authHeaders() });
+  const res = await apiFetch(url, { headers: authHeaders() });
   if (!res.ok) {
     handleUnauthorized(res);
     throw new ApiError(res.status, `${res.status} ${res.statusText}`);
@@ -726,7 +786,7 @@ export async function updateRepo(
   repo: string,
   payload: Partial<BleephubRepo>,
 ): Promise<BleephubRepo> {
-  const res = await fetch(`/api/v3/repos/${owner}/${repo}`, {
+  const res = await apiFetch(`/api/v3/repos/${owner}/${repo}`, {
     method: "PATCH",
     headers: { "Content-Type": "application/json", ...authHeaders() },
     body: JSON.stringify(payload),
@@ -761,7 +821,7 @@ export const updateRepoTopics = (owner: string, repo: string, names: string[]): 
   ghPutJSON(`/api/v3/repos/${owner}/${repo}/topics`, { names });
 
 async function ghPutJSON<T>(path: string, body: unknown): Promise<T> {
-  const res = await fetch(path, {
+  const res = await apiFetch(path, {
     method: "PUT",
     headers: { "Content-Type": "application/json", ...authHeaders() },
     body: JSON.stringify(body),
@@ -775,7 +835,7 @@ async function ghPutJSON<T>(path: string, body: unknown): Promise<T> {
 }
 
 async function ghDeleteJSON<T>(path: string, body: unknown): Promise<T> {
-  const res = await fetch(path, {
+  const res = await apiFetch(path, {
     method: "DELETE",
     headers: { "Content-Type": "application/json", ...authHeaders() },
     body: JSON.stringify(body),
@@ -796,7 +856,7 @@ export const fetchLicenseTemplates = () =>
   ghFetch<{ key: string; name: string; spdx_id: string }[]>("/api/v3/licenses");
 
 async function ghPostJSON<T>(path: string, body: unknown): Promise<T> {
-  const res = await fetch(path, {
+  const res = await apiFetch(path, {
     method: "POST",
     headers: { "Content-Type": "application/json", ...authHeaders() },
     body: JSON.stringify(body),
@@ -893,7 +953,7 @@ export const acceptClassroomInvitation = (code: string, groupName?: string, rost
     { ...(groupName ? { group_name: groupName } : {}), ...(rosterIdentifier ? { roster_identifier: rosterIdentifier } : {}) },
   );
 export async function exportClassroomTransition(): Promise<Blob> {
-  const response = await fetch("/classroom-data/export", { headers: authHeaders() });
+  const response = await apiFetch("/classroom-data/export", { headers: authHeaders() });
   if (!response.ok) throw new ApiError(response.status, `${response.status} ${response.statusText}`);
   return response.blob();
 }
@@ -1012,7 +1072,7 @@ export const deleteBranchProtection = (owner: string, repo: string, branch: stri
   ghDeleteJSON<void>(`/api/v3/repos/${owner}/${repo}/branches/${encodeURIComponent(branch)}/protection`, {});
 
 export async function fetchRepoCommits(owner: string, repo: string): Promise<GithubCommit[]> {
-  const res = await fetch(`/ui-data/repos/${owner}/${repo}/commits`, { headers: authHeaders() });
+  const res = await apiFetch(`/ui-data/repos/${owner}/${repo}/commits`, { headers: authHeaders() });
   if (!res.ok) {
     handleUnauthorized(res);
     const text = await res.text();
@@ -1026,7 +1086,7 @@ export async function createIssue(
   repo: string,
   payload: { title: string; body?: string },
 ): Promise<GithubIssue> {
-  const res = await fetch(`/api/v3/repos/${owner}/${repo}/issues`, {
+  const res = await apiFetch(`/api/v3/repos/${owner}/${repo}/issues`, {
     method: "POST",
     headers: { "Content-Type": "application/json", ...authHeaders() },
     body: JSON.stringify(payload),
@@ -1044,7 +1104,7 @@ export async function mergePR(
   number: number,
   mergeMethod = "merge",
 ): Promise<void> {
-  const res = await fetch(`/api/v3/repos/${owner}/${repo}/pulls/${number}/merge`, {
+  const res = await apiFetch(`/api/v3/repos/${owner}/${repo}/pulls/${number}/merge`, {
     method: "PUT",
     headers: { "Content-Type": "application/json", ...authHeaders() },
     body: JSON.stringify({ merge_method: mergeMethod }),
@@ -1109,7 +1169,7 @@ export async function updateRelease(
   releaseId: number,
   payload: Partial<ReleasePayload>,
 ): Promise<GithubRelease> {
-  const res = await fetch(`/api/v3/repos/${owner}/${repo}/releases/${releaseId}`, {
+  const res = await apiFetch(`/api/v3/repos/${owner}/${repo}/releases/${releaseId}`, {
     method: "PATCH",
     headers: { "Content-Type": "application/json", ...authHeaders() },
     body: JSON.stringify(payload),
@@ -1135,7 +1195,7 @@ export async function uploadReleaseAsset(
 ): Promise<GithubReleaseAsset> {
   const params = new URLSearchParams({ name: file.name });
   if (label) params.set("label", label);
-  const res = await fetch(
+  const res = await apiFetch(
     `/api/uploads/repos/${owner}/${repo}/releases/${releaseId}/assets?${params}`,
     {
       method: "POST",
@@ -1152,7 +1212,7 @@ export async function uploadReleaseAsset(
 }
 
 export async function downloadReleaseAsset(owner: string, repo: string, assetId: number): Promise<Blob> {
-  const res = await fetch(`/api/v3/repos/${owner}/${repo}/releases/assets/${assetId}`, {
+  const res = await apiFetch(`/api/v3/repos/${owner}/${repo}/releases/assets/${assetId}`, {
     headers: { Accept: "application/octet-stream", ...authHeaders() },
   });
   if (!res.ok) {
@@ -1180,7 +1240,7 @@ export interface EnvelopePage<T> {
 }
 
 async function ghFetchEnvelope<T>(url: string, key: string): Promise<EnvelopePage<T>> {
-  const res = await fetch(url, { headers: authHeaders() });
+  const res = await apiFetch(url, { headers: authHeaders() });
   if (!res.ok) {
     handleUnauthorized(res);
     throw new ApiError(res.status, `${res.status} ${res.statusText}`);
@@ -1197,7 +1257,7 @@ async function ghFetchEnvelope<T>(url: string, key: string): Promise<EnvelopePag
 
 /** Non-GET request that returns no JSON the caller renders. */
 async function ghSend(method: string, path: string, body?: unknown): Promise<void> {
-  const res = await fetch(path, {
+  const res = await apiFetch(path, {
     method,
     headers: body !== undefined
       ? { "Content-Type": "application/json", ...authHeaders() }
@@ -1269,7 +1329,7 @@ export const fetchRunJobs = (owner: string, repo: string, runId: number) =>
 
 /** Job logs are text/plain, not JSON. */
 export async function fetchJobLogs(owner: string, repo: string, jobId: number): Promise<string> {
-  const res = await fetch(`/api/v3/repos/${owner}/${repo}/actions/jobs/${jobId}/logs`, {
+  const res = await apiFetch(`/api/v3/repos/${owner}/${repo}/actions/jobs/${jobId}/logs`, {
     headers: authHeaders(),
   });
   if (!res.ok) {
@@ -1580,7 +1640,7 @@ export const markThreadRead = (threadId: string) =>
 export async function getThreadSubscription(
   threadId: string,
 ): Promise<GithubThreadSubscription | null> {
-  const res = await fetch(`/api/v3/notifications/threads/${threadId}/subscription`, {
+  const res = await apiFetch(`/api/v3/notifications/threads/${threadId}/subscription`, {
     headers: authHeaders(),
   });
   if (res.status === 404) return null;
@@ -1615,7 +1675,7 @@ export const fetchGistForks = (id: string) => ghFetch<BleephubGist[]>(`/api/v3/g
 export const forkGist = (id: string) => ghPostJSON<BleephubGist>(`/api/v3/gists/${id}/forks`, {});
 
 export async function isGistStarred(id: string): Promise<boolean> {
-  const res = await fetch(`/api/v3/gists/${id}/star`, { headers: authHeaders() });
+  const res = await apiFetch(`/api/v3/gists/${id}/star`, { headers: authHeaders() });
   if (res.status === 204) return true;
   if (res.status === 404) return false;
   if (!res.ok) {
@@ -1789,7 +1849,7 @@ export const deleteCodeQLDatabase = (owner: string, repo: string, language: stri
   ghSend("DELETE", `/api/v3/repos/${owner}/${repo}/code-scanning/codeql/databases/${encodeURIComponent(language)}`);
 
 export async function downloadCodeQLDatabase(owner: string, repo: string, language: string): Promise<Blob> {
-  const response = await fetch(
+  const response = await apiFetch(
     `/api/v3/repos/${owner}/${repo}/code-scanning/codeql/databases/${encodeURIComponent(language)}`,
     { headers: { Accept: "application/zip", ...authHeaders() } },
   );
@@ -1801,7 +1861,7 @@ export async function downloadCodeQLDatabase(owner: string, repo: string, langua
 }
 
 async function ghPatchJSON<T>(path: string, body: unknown): Promise<T> {
-  const res = await fetch(path, {
+  const res = await apiFetch(path, {
     method: "PATCH",
     headers: { "Content-Type": "application/json", ...authHeaders() },
     body: JSON.stringify(body),
@@ -1947,7 +2007,7 @@ export async function downloadMigrationArchive(
   id: number,
   filename: string,
 ): Promise<void> {
-  const res = await fetch(`${migrationBase(scope)}/${id}/archive`, {
+  const res = await apiFetch(`${migrationBase(scope)}/${id}/archive`, {
     headers: authHeaders(),
   });
   if (!res.ok) {
@@ -2070,7 +2130,7 @@ interface GraphQLResponse<T> {
 }
 
 async function ghGraphQL<T>(query: string, variables?: Record<string, unknown>): Promise<T> {
-  const res = await fetch("/api/graphql", {
+  const res = await apiFetch("/api/graphql", {
     method: "POST",
     headers: { "Content-Type": "application/json", ...authHeaders() },
     body: JSON.stringify({ query, variables }),
@@ -2295,7 +2355,7 @@ export async function updateDiscussionComment(commentId: string, body: string): 
 /** GET /contributors returns 204 with an empty body for a repo with no
  * commits — that reads as an honest empty list, not a parse error. */
 export async function fetchRepoContributors(owner: string, repo: string): Promise<GithubContributor[]> {
-  const res = await fetch(`/api/v3/repos/${owner}/${repo}/contributors`, { headers: authHeaders() });
+  const res = await apiFetch(`/api/v3/repos/${owner}/${repo}/contributors`, { headers: authHeaders() });
   if (!res.ok) {
     handleUnauthorized(res);
     throw new ApiError(res.status, `${res.status} ${res.statusText}`);
@@ -2954,7 +3014,7 @@ export const requestPagesBuild = (
  * ("There isn't a custom domain on this Pages site") the panel must show.
  */
 export async function fetchPagesHealth(owner: string, repo: string): Promise<GithubPagesHealth> {
-  const res = await fetch(`/api/v3/repos/${owner}/${repo}/pages/health`, {
+  const res = await apiFetch(`/api/v3/repos/${owner}/${repo}/pages/health`, {
     headers: authHeaders(),
   });
   if (!res.ok) {
@@ -3277,7 +3337,7 @@ export async function inviteRepoCollaborator(
   username: string,
   permission: string,
 ): Promise<GithubRepoInvitation | null> {
-  const res = await fetch(
+  const res = await apiFetch(
     `/api/v3/repos/${owner}/${repo}/collaborators/${encodeURIComponent(username)}`,
     {
       method: "PUT",

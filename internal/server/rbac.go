@@ -1,6 +1,9 @@
 package bleephub
 
-import "strings"
+import (
+	"crypto/subtle"
+	"strings"
+)
 
 // canAdminOrg checks if a user is an active admin of the given organization.
 // A pending (invited) admin has not accepted yet and holds no rights.
@@ -209,4 +212,36 @@ func hasTeamAccessLocked(st *Store, orgLogin string, userID int, repoFullName st
 func permissionAtLeast(perm, minPerm TeamPermission) bool {
 	levels := map[TeamPermission]int{TeamPermissionPull: 1, TeamPermissionPush: 2, TeamPermissionAdmin: 3}
 	return levels[perm] >= levels[minPerm]
+}
+
+// secretEqual compares two credential strings in constant time.
+//
+// The comparison must not short-circuit on the first differing byte: several of
+// these are reachable unauthenticated and unthrottled — the OAuth token
+// endpoint accepts a client secret from any caller — which is exactly the shape
+// a byte-at-a-time timing oracle needs. Use this for every comparison of secret
+// material: client secrets, CSRF tokens, webhook signatures, download tokens.
+func secretEqual(a, b string) bool {
+	return subtle.ConstantTimeCompare([]byte(a), []byte(b)) == 1
+}
+
+// visibleRepos filters a repository list down to what a viewer may see.
+//
+// Several list paths reach the repository index directly and return whatever
+// the prefix match found. Public repositories are visible to everyone
+// including an anonymous viewer; a private one requires read access. Doing
+// this in one place means a new listing gets the rule by calling a function
+// rather than by its author remembering the rule exists.
+func visibleRepos(st *Store, viewer *User, repos []*Repo) []*Repo {
+	out := make([]*Repo, 0, len(repos))
+	for _, repo := range repos {
+		if repo == nil {
+			continue
+		}
+		if repo.Private && !canReadRepo(st, viewer, repo) {
+			continue
+		}
+		out = append(out, repo)
+	}
+	return out
 }

@@ -478,7 +478,7 @@ func (st *Store) VerifyOAuthAppSecret(clientID, clientSecret string) *OAuthApp {
 	st.mu.RLock()
 	defer st.mu.RUnlock()
 	app := st.OAuthApps[clientID]
-	if app == nil || app.ClientSecret != clientSecret {
+	if app == nil || !secretEqual(app.ClientSecret, clientSecret) {
 		return nil
 	}
 	return app
@@ -489,7 +489,7 @@ func (st *Store) VerifyAppClientSecret(clientID, clientSecret string) *App {
 	st.mu.RLock()
 	defer st.mu.RUnlock()
 	app := st.AppsByClientID[clientID]
-	if app == nil || app.ClientSecret != clientSecret {
+	if app == nil || !secretEqual(app.ClientSecret, clientSecret) {
 		return nil
 	}
 	return app
