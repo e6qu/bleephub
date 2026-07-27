@@ -221,6 +221,12 @@ func TestIdentityValidationRequiresAuthenticationAndExposesSignOut(t *testing.T)
 		`<h1 id="authenticated-title">Bleephub is authenticated</h1>`,
 		`<form method="post" action="/auth/logout"><button type="submit">Sign out</button></form>`,
 		`@media(prefers-color-scheme:dark)`,
+		// The Shauth SSO validator asserts these test-id markers carry the
+		// signed-in identity; a static page without them times the validator out.
+		`data-testid="validation-username"`,
+		`data-testid="validation-email"`,
+		`data-testid="validation-role"`,
+		`data-testid="validation-release"`,
 	} {
 		if !strings.Contains(body, expected) {
 			t.Fatalf("validation body omitted %q: %s", expected, body)
