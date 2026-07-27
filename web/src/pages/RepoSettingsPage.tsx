@@ -995,7 +995,11 @@ function PagesTab({ owner, repo }: { owner: string; repo: string }) {
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: "1rem" }}>
       <PagesSiteCard owner={owner} repo={repo} site={site} onChanged={invalidate} />
-      <PagesBuildsCard owner={owner} repo={repo} />
+      <PagesBuildsCard
+        owner={owner}
+        repo={repo}
+        buildType={site.build_type === "workflow" ? "workflow" : "legacy"}
+      />
       <PagesHealthCard owner={owner} repo={repo} hasCustomDomain={!!site.cname} />
       <PagesDeploymentLookupCard owner={owner} repo={repo} />
     </div>
@@ -1015,6 +1019,10 @@ function PagesEnableForm({
   const [branch, setBranch] = useState("");
   const [path, setPath] = useState("/");
   const [buildType, setBuildType] = useState<"legacy" | "workflow">("legacy");
+  const branchesQ = useQuery({
+    queryKey: ["repo-branches", owner, repo],
+    queryFn: () => fetchRepoBranches(owner, repo),
+  });
 
   const enableMut = useMutation({
     mutationFn: () =>
@@ -1057,8 +1065,19 @@ function PagesEnableForm({
           value={branch}
           onChange={(e) => setBranch(e.target.value)}
           placeholder={buildType === "workflow" ? "optional for workflow builds" : "main"}
+          list="pages-source-branches"
           className="w-full"
         />
+        <datalist id="pages-source-branches">
+          {(branchesQ.data ?? []).map((candidate) => (
+            <option key={candidate.name} value={candidate.name} />
+          ))}
+        </datalist>
+        {branchesQ.isError && (
+          <div style={{ color: "var(--color-fg-muted)", fontSize: "0.78rem" }}>
+            Branch suggestions are unavailable; enter a branch name.
+          </div>
+        )}
         <FormLabel id="pages-source-path">Source path</FormLabel>
         <input
           id="pages-source-path"
@@ -1099,12 +1118,23 @@ function PagesSiteCard({
   const [success, setSuccess] = useState<string | null>(null);
   const [cname, setCname] = useState(site.cname);
   const [httpsEnforced, setHttpsEnforced] = useState(site.https_enforced);
+  const [buildType, setBuildType] = useState<"legacy" | "workflow">(
+    site.build_type === "workflow" ? "workflow" : "legacy",
+  );
+  const [sourceBranch, setSourceBranch] = useState(site.source?.branch ?? "");
+  const [sourcePath, setSourcePath] = useState(site.source?.path ?? "/");
+  const [isPublic, setIsPublic] = useState(site.public);
 
   const updateMut = useMutation({
     mutationFn: () =>
       updatePagesSite(owner, repo, {
         cname: cname.trim() || null,
         https_enforced: httpsEnforced,
+        build_type: buildType,
+        public: isPublic,
+        ...(buildType === "legacy"
+          ? { source: { branch: sourceBranch.trim(), path: sourcePath } }
+          : {}),
       }),
     onSuccess: () => {
       setError(null);
@@ -1157,6 +1187,41 @@ function PagesSiteCard({
           placeholder="www.example.com"
           className="w-full"
         />
+        <FormLabel id="pages-current-build-type">Build and deployment source</FormLabel>
+        <select
+          id="pages-current-build-type"
+          value={buildType}
+          onChange={(event) => setBuildType(event.target.value as "legacy" | "workflow")}
+          className="w-full"
+        >
+          <option value="legacy">Deploy from a branch</option>
+          <option value="workflow">GitHub Actions workflow</option>
+        </select>
+        {buildType === "legacy" && (
+          <div className="grid gap-3 md:grid-cols-2">
+            <div>
+              <FormLabel id="pages-current-source-branch">Source branch</FormLabel>
+              <input
+                id="pages-current-source-branch"
+                value={sourceBranch}
+                onChange={(event) => setSourceBranch(event.target.value)}
+                className="w-full"
+              />
+            </div>
+            <div>
+              <FormLabel id="pages-current-source-path">Source path</FormLabel>
+              <select
+                id="pages-current-source-path"
+                value={sourcePath}
+                onChange={(event) => setSourcePath(event.target.value)}
+                className="w-full"
+              >
+                <option value="/">/ (repository root)</option>
+                <option value="/docs">/docs</option>
+              </select>
+            </div>
+          </div>
+        )}
         <label style={{ display: "flex", alignItems: "center", gap: "0.4rem", fontSize: "0.85rem" }}>
           <input
             type="checkbox"
@@ -1164,6 +1229,14 @@ function PagesSiteCard({
             onChange={(e) => setHttpsEnforced(e.target.checked)}
           />
           Enforce HTTPS
+        </label>
+        <label style={{ display: "flex", alignItems: "center", gap: "0.4rem", fontSize: "0.85rem" }}>
+          <input
+            type="checkbox"
+            checked={isPublic}
+            onChange={(event) => setIsPublic(event.target.checked)}
+          />
+          Publish this site publicly
         </label>
         <div className="flex justify-end gap-2">
           <Button
@@ -1196,7 +1269,15 @@ function PagesSiteCard({
   );
 }
 
-function PagesBuildsCard({ owner, repo }: { owner: string; repo: string }) {
+function PagesBuildsCard({
+  owner,
+  repo,
+  buildType,
+}: {
+  owner: string;
+  repo: string;
+  buildType: "legacy" | "workflow";
+}) {
   const queryClient = useQueryClient();
   const [error, setError] = useState<string | null>(null);
 
@@ -1219,17 +1300,23 @@ function PagesBuildsCard({ owner, repo }: { owner: string; repo: string }) {
       header={
         <div className="flex w-full items-center justify-between">
           <span style={{ fontWeight: 600 }}>Builds</span>
-          <Button
-            variant="secondary"
-            size="sm"
-            onClick={() => {
-              setError(null);
-              requestMut.mutate();
-            }}
-            disabled={requestMut.isPending}
-          >
-            Request build
-          </Button>
+          {buildType === "legacy" ? (
+            <Button
+              variant="secondary"
+              size="sm"
+              onClick={() => {
+                setError(null);
+                requestMut.mutate();
+              }}
+              disabled={requestMut.isPending}
+            >
+              Request build
+            </Button>
+          ) : (
+            <span style={{ color: "var(--color-fg-muted)", fontSize: "0.78rem" }}>
+              Deployments are published by GitHub Actions
+            </span>
+          )}
         </div>
       }
     >

@@ -10,10 +10,21 @@ import {
   dispatchWorkflow,
   enableWorkflow,
   disableWorkflow,
+  deleteRepoActionsCache,
+  deleteRepoArtifact,
+  fetchRepoActionsCaches,
+  fetchRepoActionsCacheUsage,
+  fetchRepoArtifacts,
   isNotFound,
   type RunFilters,
 } from "../api.js";
-import type { GithubWorkflow, GithubWorkflowRun, WorkflowDispatchInput } from "../types.js";
+import type {
+  GithubActionsCache,
+  GithubArtifact,
+  GithubWorkflow,
+  GithubWorkflowRun,
+  WorkflowDispatchInput,
+} from "../types.js";
 import { decodeContentsBase64, parseWorkflowDispatch } from "../utils/workflowDispatch.js";
 import { useOpenCounts } from "../hooks/useOpenCounts.js";
 import { RepoHeader } from "../components/Shell.js";
@@ -27,7 +38,13 @@ import {
   ErrorBanner,
   DialogActions,
 } from "../components/ui.js";
-import { BranchIcon, KebabIcon, PlayIcon } from "../components/octicons.js";
+import {
+  BranchIcon,
+  DownloadIcon,
+  KebabIcon,
+  PlayIcon,
+  TrashIcon,
+} from "../components/octicons.js";
 
 const RUN_STATUSES = ["queued", "in_progress", "completed", "waiting"] as const;
 const RUN_EVENTS = [
@@ -50,6 +67,7 @@ export function ActionsPage() {
   });
 
   const selectedId = searchParams.get("workflow");
+  const view = searchParams.get("view") ?? "runs";
   const workflows = workflowsQ.data?.items ?? [];
   const selected = selectedId
     ? workflows.find((w) => String(w.id) === selectedId) ?? null
@@ -58,8 +76,18 @@ export function ActionsPage() {
   const selectWorkflow = (id: number | null) => {
     setSearchParams((prev) => {
       const next = new URLSearchParams(prev);
+      next.delete("view");
       if (id === null) next.delete("workflow");
       else next.set("workflow", String(id));
+      return next;
+    });
+  };
+  const selectView = (nextView: "runs" | "artifacts" | "caches") => {
+    setSearchParams((prev) => {
+      const next = new URLSearchParams(prev);
+      next.delete("workflow");
+      if (nextView === "runs") next.delete("view");
+      else next.set("view", nextView);
       return next;
     });
   };
@@ -87,7 +115,7 @@ export function ActionsPage() {
             <nav aria-label="Workflows" className="flex flex-col">
               <SidebarItem
                 label="All workflows"
-                active={selected === null}
+                active={view === "runs" && selected === null}
                 dimmed={false}
                 onClick={() => selectWorkflow(null)}
               />
@@ -100,11 +128,30 @@ export function ActionsPage() {
                   onClick={() => selectWorkflow(w.id)}
                 />
               ))}
+              <div style={{ height: "0.75rem" }} />
+              <SidebarItem
+                label="Artifacts"
+                active={view === "artifacts"}
+                dimmed={false}
+                onClick={() => selectView("artifacts")}
+              />
+              <SidebarItem
+                label="Caches"
+                active={view === "caches"}
+                dimmed={false}
+                onClick={() => selectView("caches")}
+              />
             </nav>
           )}
         </aside>
         <div className="min-w-0 flex-1">
-          <RunsPane owner={owner} repo={repo} workflow={selected} />
+          {view === "artifacts" ? (
+            <RepositoryArtifactsPane owner={owner} repo={repo} />
+          ) : view === "caches" ? (
+            <RepositoryCachesPane owner={owner} repo={repo} />
+          ) : (
+            <RunsPane owner={owner} repo={repo} workflow={selected} />
+          )}
         </div>
       </div>
     </div>
@@ -289,6 +336,230 @@ const filterControlStyle: React.CSSProperties = {
   border: "1px solid var(--color-border)",
   borderRadius: "var(--radius-md)",
 };
+
+function formatStorageBytes(bytes: number): string {
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+  if (bytes < 1024 * 1024 * 1024) return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+  return `${(bytes / (1024 * 1024 * 1024)).toFixed(1)} GB`;
+}
+
+function RepositoryArtifactsPane({ owner, repo }: { owner: string; repo: string }) {
+  const qc = useQueryClient();
+  const [pendingDelete, setPendingDelete] = useState<GithubArtifact | null>(null);
+  const artifactsQ = useQuery({
+    queryKey: ["repo-artifacts", owner, repo],
+    queryFn: () => fetchRepoArtifacts(owner, repo),
+  });
+  const deleteMutation = useMutation({
+    mutationFn: (artifact: GithubArtifact) => deleteRepoArtifact(owner, repo, artifact.id),
+    onSuccess: () => {
+      setPendingDelete(null);
+      void qc.invalidateQueries({ queryKey: ["repo-artifacts", owner, repo] });
+    },
+  });
+  const artifacts = artifactsQ.data?.items ?? [];
+
+  return (
+    <div>
+      <h2 className="mb-3" style={{ fontSize: "1.15rem", fontWeight: 600 }}>
+        Artifacts
+      </h2>
+      <p className="mb-4" style={{ fontSize: "0.84rem", color: "var(--color-fg-muted)" }}>
+        Download or remove finalized artifacts produced by this repository’s workflow runs.
+      </p>
+      {artifactsQ.isLoading ? (
+        <Spinner label="loading repository artifacts" />
+      ) : artifactsQ.isError ? (
+        <InlineError title="Failed to load artifacts" detail={String(artifactsQ.error)} />
+      ) : artifacts.length === 0 ? (
+        <Blankslate title="No artifacts">
+          Artifacts uploaded by workflow runs will appear here.
+        </Blankslate>
+      ) : (
+        <Box>
+          {artifacts.map((artifact, index) => (
+            <div
+              key={artifact.id}
+              className="flex items-center gap-3"
+              style={{
+                padding: "0.7rem 1rem",
+                borderBottom: index === artifacts.length - 1 ? "none" : "1px solid var(--color-border)",
+              }}
+            >
+              <div className="min-w-0 flex-1">
+                <div style={{ fontSize: "0.88rem", fontWeight: 600 }}>{artifact.name}</div>
+                <div style={{ fontSize: "0.76rem", color: "var(--color-fg-muted)" }}>
+                  {new Date(artifact.created_at).toLocaleString()}
+                  {artifact.workflow_run?.id ? ` · run #${artifact.workflow_run.id}` : ""}
+                </div>
+              </div>
+              <span style={{ fontSize: "0.78rem", color: "var(--color-fg-muted)" }}>
+                {formatStorageBytes(artifact.size_in_bytes)}
+              </span>
+              <a
+                href={`/api/v3/repos/${owner}/${repo}/actions/artifacts/${artifact.id}/zip`}
+                className="inline-flex items-center gap-1"
+                style={{ fontSize: "0.8rem", color: "var(--color-accent)", textDecoration: "none" }}
+                download
+              >
+                <DownloadIcon size={13} /> Download
+              </a>
+              <Button
+                variant="danger"
+                size="sm"
+                aria-label={`Delete artifact ${artifact.name}`}
+                disabled={deleteMutation.isPending}
+                onClick={() => {
+                  deleteMutation.reset();
+                  setPendingDelete(artifact);
+                }}
+              >
+                <TrashIcon size={13} />
+              </Button>
+            </div>
+          ))}
+        </Box>
+      )}
+      {pendingDelete && (
+        <Modal title="Delete artifact?" onClose={() => setPendingDelete(null)}>
+          <p style={{ color: "var(--color-fg-muted)", fontSize: "0.86rem" }}>
+            “{pendingDelete.name}” and its stored archive will be permanently removed.
+          </p>
+          {deleteMutation.isError && <ErrorBanner>{String(deleteMutation.error)}</ErrorBanner>}
+          <DialogActions>
+            <Button
+              variant="ghost"
+              disabled={deleteMutation.isPending}
+              onClick={() => setPendingDelete(null)}
+            >
+              Cancel
+            </Button>
+            <Button
+              variant="danger"
+              disabled={deleteMutation.isPending}
+              onClick={() => deleteMutation.mutate(pendingDelete)}
+            >
+              {deleteMutation.isPending ? "Deleting…" : "Delete artifact"}
+            </Button>
+          </DialogActions>
+        </Modal>
+      )}
+    </div>
+  );
+}
+
+function RepositoryCachesPane({ owner, repo }: { owner: string; repo: string }) {
+  const qc = useQueryClient();
+  const [pendingDelete, setPendingDelete] = useState<GithubActionsCache | null>(null);
+  const cachesQ = useQuery({
+    queryKey: ["repo-actions-caches", owner, repo],
+    queryFn: () => fetchRepoActionsCaches(owner, repo),
+  });
+  const usageQ = useQuery({
+    queryKey: ["repo-actions-cache-usage", owner, repo],
+    queryFn: () => fetchRepoActionsCacheUsage(owner, repo),
+  });
+  const deleteMutation = useMutation({
+    mutationFn: (cache: GithubActionsCache) => deleteRepoActionsCache(owner, repo, cache.id),
+    onSuccess: () => {
+      setPendingDelete(null);
+      void qc.invalidateQueries({ queryKey: ["repo-actions-caches", owner, repo] });
+      void qc.invalidateQueries({ queryKey: ["repo-actions-cache-usage", owner, repo] });
+    },
+  });
+  const caches = cachesQ.data?.items ?? [];
+
+  return (
+    <div>
+      <div className="mb-3 flex flex-wrap items-baseline justify-between gap-2">
+        <h2 style={{ fontSize: "1.15rem", fontWeight: 600 }}>Caches</h2>
+        {usageQ.data && (
+          <span style={{ fontSize: "0.8rem", color: "var(--color-fg-muted)" }}>
+            {usageQ.data.active_caches_count} active ·{" "}
+            {formatStorageBytes(usageQ.data.active_caches_size_in_bytes)}
+          </span>
+        )}
+      </div>
+      <p className="mb-4" style={{ fontSize: "0.84rem", color: "var(--color-fg-muted)" }}>
+        Inspect and evict dependency caches restored by Actions jobs.
+      </p>
+      {usageQ.isError && (
+        <InlineError inline title="Failed to load cache usage" detail={String(usageQ.error)} />
+      )}
+      {cachesQ.isLoading ? (
+        <Spinner label="loading Actions caches" />
+      ) : cachesQ.isError ? (
+        <InlineError title="Failed to load caches" detail={String(cachesQ.error)} />
+      ) : caches.length === 0 ? (
+        <Blankslate title="No caches">
+          Caches saved by actions/cache will appear here.
+        </Blankslate>
+      ) : (
+        <Box>
+          {caches.map((cache, index) => (
+            <div
+              key={cache.id}
+              className="flex items-center gap-3"
+              style={{
+                padding: "0.7rem 1rem",
+                borderBottom: index === caches.length - 1 ? "none" : "1px solid var(--color-border)",
+              }}
+            >
+              <div className="min-w-0 flex-1">
+                <div className="truncate font-mono" style={{ fontSize: "0.84rem", fontWeight: 600 }}>
+                  {cache.key}
+                </div>
+                <div style={{ fontSize: "0.75rem", color: "var(--color-fg-muted)" }}>
+                  {cache.ref} · last used {new Date(cache.last_accessed_at).toLocaleString()}
+                </div>
+              </div>
+              <span style={{ fontSize: "0.78rem", color: "var(--color-fg-muted)" }}>
+                {formatStorageBytes(cache.size_in_bytes)}
+              </span>
+              <Button
+                variant="danger"
+                size="sm"
+                aria-label={`Delete cache ${cache.key}`}
+                disabled={deleteMutation.isPending}
+                onClick={() => {
+                  deleteMutation.reset();
+                  setPendingDelete(cache);
+                }}
+              >
+                <TrashIcon size={13} />
+              </Button>
+            </div>
+          ))}
+        </Box>
+      )}
+      {pendingDelete && (
+        <Modal title="Delete cache?" onClose={() => setPendingDelete(null)}>
+          <p style={{ color: "var(--color-fg-muted)", fontSize: "0.86rem" }}>
+            “{pendingDelete.key}” will no longer be available to future workflow runs.
+          </p>
+          {deleteMutation.isError && <ErrorBanner>{String(deleteMutation.error)}</ErrorBanner>}
+          <DialogActions>
+            <Button
+              variant="ghost"
+              disabled={deleteMutation.isPending}
+              onClick={() => setPendingDelete(null)}
+            >
+              Cancel
+            </Button>
+            <Button
+              variant="danger"
+              disabled={deleteMutation.isPending}
+              onClick={() => deleteMutation.mutate(pendingDelete)}
+            >
+              {deleteMutation.isPending ? "Deleting…" : "Delete cache"}
+            </Button>
+          </DialogActions>
+        </Modal>
+      )}
+    </div>
+  );
+}
 
 function RunRow({
   owner,

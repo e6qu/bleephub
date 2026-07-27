@@ -23,19 +23,22 @@ type WorkflowDef struct {
 
 // JobDef represents a single job definition within a workflow.
 type JobDef struct {
-	Name            string                 `yaml:"name"`
-	RunsOn          interface{}            `yaml:"runs-on"`
-	Container       interface{}            `yaml:"container"` // string or object
-	Services        map[string]*ServiceDef // parsed from string or ServiceDef object
-	Needs           []string               // parsed from string or list
-	Env             map[string]string      `yaml:"env"`
-	Outputs         map[string]string      `yaml:"outputs"`
-	Strategy        *StrategyDef           `yaml:"strategy"`
-	Steps           []StepDef              `yaml:"steps"`
-	If              string                 `yaml:"if"`
-	ContinueOnError bool                   `yaml:"continue-on-error"`
-	TimeoutMinutes  int                    `yaml:"timeout-minutes"`
-	Environment     interface{}            `yaml:"environment"` // string or {name, url}
+	Name              string                 `yaml:"name"`
+	RunsOn            interface{}            `yaml:"runs-on"`
+	Container         interface{}            `yaml:"container"` // string or object
+	Services          map[string]*ServiceDef // parsed from string or ServiceDef object
+	Needs             []string               // parsed from string or list
+	Env               map[string]string      `yaml:"env"`
+	Outputs           map[string]string      `yaml:"outputs"`
+	Strategy          *StrategyDef           `yaml:"strategy"`
+	Steps             []StepDef              `yaml:"steps"`
+	If                string                 `yaml:"if"`
+	ContinueOnError   bool                   `yaml:"continue-on-error"`
+	TimeoutMinutes    int                    `yaml:"timeout-minutes"`
+	Environment       interface{}            `yaml:"environment"` // string or {name, url}
+	MatrixValues      map[string]interface{} `yaml:"-"`
+	MatrixGroup       string                 `yaml:"-"`
+	MatrixMaxParallel int                    `yaml:"-"`
 
 	// Uses marks the job as a reusable-workflow call
 	// ("./.github/workflows/x.yml" or "owner/repo/.github/workflows/x.yml@ref");
@@ -101,14 +104,17 @@ type MatrixDef struct {
 
 // StepDef represents a single step in a job.
 type StepDef struct {
-	ID    string            `yaml:"id"`
-	Name  string            `yaml:"name"`
-	Uses  string            `yaml:"uses"`
-	Run   string            `yaml:"run"`
-	With  map[string]string `yaml:"with"`
-	Env   map[string]string `yaml:"env"`
-	If    string            `yaml:"if"`
-	Shell string            `yaml:"shell"`
+	ID               string            `yaml:"id"`
+	Name             string            `yaml:"name"`
+	Uses             string            `yaml:"uses"`
+	Run              string            `yaml:"run"`
+	With             map[string]string `yaml:"with"`
+	Env              map[string]string `yaml:"env"`
+	If               string            `yaml:"if"`
+	Shell            string            `yaml:"shell"`
+	WorkingDirectory string            `yaml:"working-directory"`
+	ContinueOnError  interface{}       `yaml:"continue-on-error"`
+	TimeoutMinutes   int               `yaml:"timeout-minutes"`
 }
 
 // ContainerDef represents a container configuration when specified as an object.

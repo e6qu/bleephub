@@ -442,7 +442,11 @@ func (s *Server) artifactJSON(art *Artifact, r *http.Request) map[string]any {
 	if created.IsZero() {
 		created = time.Unix(0, 0).UTC()
 	}
-	hash := sha256.Sum256(art.Data)
+	digest := art.Digest
+	if digest == "" {
+		hash := sha256.Sum256(art.Data)
+		digest = fmt.Sprintf("sha256:%x", hash)
+	}
 	runID := art.GitHubRunID
 	headBranch := ""
 	headSHA := ""
@@ -462,7 +466,7 @@ func (s *Server) artifactJSON(art *Artifact, r *http.Request) map[string]any {
 		"created_at":           created.Format("2006-01-02T15:04:05Z"),
 		"expires_at":           created.Add(90 * 24 * time.Hour).Format("2006-01-02T15:04:05Z"),
 		"updated_at":           created.Format("2006-01-02T15:04:05Z"),
-		"digest":               fmt.Sprintf("sha256:%x", hash),
+		"digest":               digest,
 		"workflow_run": map[string]any{
 			"id":                 int64(runID),
 			"repository_id":      int64(s.repoIDByFullName(repo)),

@@ -90,13 +90,36 @@ func EvalTemplate(s string, ctx *ExprContext) (string, error) {
 	}
 }
 
-// ExprContainsStatusFunction checks if an expression contains always() or failure()
-// which would override default dependency-failure skip behavior.
+// ExprContainsStatusFunction checks whether the parsed expression calls
+// always() or failure(), which override default dependency-failure skipping.
+// Token inspection avoids mistaking string literals and longer identifiers
+// for status calls.
 func ExprContainsStatusFunction(expr string) (hasAlways, hasFailure bool) {
-	lower := strings.ToLower(expr)
-	hasAlways = strings.Contains(lower, "always()")
-	hasFailure = strings.Contains(lower, "failure()")
-	return
+	functions := expressionFunctionCalls(expr)
+	return functions["always"], functions["failure"]
+}
+
+func ExprContainsAnyStatusFunction(expr string) bool {
+	functions := expressionFunctionCalls(expr)
+	return functions["always"] || functions["failure"] || functions["success"] || functions["cancelled"]
+}
+
+func expressionFunctionCalls(expr string) map[string]bool {
+	expr = strings.TrimSpace(expr)
+	if strings.HasPrefix(expr, "${{") && strings.HasSuffix(expr, "}}") {
+		expr = strings.TrimSpace(expr[3 : len(expr)-2])
+	}
+	tokens, err := lexExpr(expr)
+	if err != nil {
+		return nil
+	}
+	calls := map[string]bool{}
+	for i := 0; i+1 < len(tokens); i++ {
+		if tokens[i].kind == tokIdent && tokens[i+1].kind == tokLParen {
+			calls[strings.ToLower(tokens[i].text)] = true
+		}
+	}
+	return calls
 }
 
 // ── Lexer ───────────────────────────────────────────────────────────

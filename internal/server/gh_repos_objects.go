@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/go-git/go-git/v5/plumbing"
+	"github.com/go-git/go-git/v5/plumbing/filemode"
 	"github.com/go-git/go-git/v5/plumbing/object"
 	gitStorage "github.com/go-git/go-git/v5/storage"
 )
@@ -114,18 +115,39 @@ func (s *Server) handleGetTree(w http.ResponseWriter, r *http.Request) {
 	}
 
 	entries := make([]map[string]interface{}, 0, len(tree.Entries))
-	for _, e := range tree.Entries {
+	appendEntry := func(name string, e object.TreeEntry) {
 		entryType := "tree"
-		if e.Mode.IsFile() {
+		switch {
+		case e.Mode.IsFile():
 			entryType = "blob"
+		case e.Mode == filemode.Submodule:
+			entryType = "commit"
 		}
-
 		entries = append(entries, map[string]interface{}{
-			"path": e.Name,
+			"path": name,
 			"mode": e.Mode.String(),
 			"type": entryType,
 			"sha":  e.Hash.String(),
 		})
+	}
+	if _, recursive := r.URL.Query()["recursive"]; recursive {
+		walker := object.NewTreeWalker(tree, true, nil)
+		defer walker.Close()
+		for {
+			name, entry, err := walker.Next()
+			if err == io.EOF {
+				break
+			}
+			if err != nil {
+				http.Error(w, err.Error(), http.StatusInternalServerError)
+				return
+			}
+			appendEntry(name, entry)
+		}
+	} else {
+		for _, entry := range tree.Entries {
+			appendEntry(entry.Name, entry)
+		}
 	}
 
 	writeJSON(w, http.StatusOK, map[string]interface{}{

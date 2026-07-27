@@ -109,3 +109,29 @@ func TestRepositoriesBranches(t *testing.T) {
 		}
 	}
 }
+
+// TestRepositorySearchTopicQualifier pins query-language fidelity through the
+// official client. The OpenAPI parameter is only a string named q; its schema
+// cannot say that topic: is accepted or that it performs an exact topic match.
+func TestRepositorySearchTopicQualifier(t *testing.T) {
+	name := uniqueName("repo-topic-search")
+	createRepo(t, name)
+	if _, _, err := client.Repositories.ReplaceAllTopics(ctx(), "admin", name, []string{"golden-path", "banking"}); err != nil {
+		t.Fatalf("ReplaceAllTopics: %v", err)
+	}
+
+	result, _, err := client.Search.Repositories(ctx(), "user:admin topic:golden-path topic:BANKING", nil)
+	if err != nil {
+		t.Fatalf("Search.Repositories(topic:): %v", err)
+	}
+	found := false
+	for _, repo := range result.Repositories {
+		if repo.GetFullName() == "admin/"+name {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Fatalf("topic-qualified search omitted admin/%s from %+v", name, result.Repositories)
+	}
+}

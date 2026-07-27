@@ -139,6 +139,8 @@ func (s *Server) handleRenewRequest(w http.ResponseWriter, r *http.Request) {
 			if wfJob, ok := findWorkflowJobByID(wf, job.ID); ok {
 				if wfJob.Status == JobStatusQueued {
 					wfJob.Status = JobStatusRunning
+					wfJob.StartedAt = time.Now()
+					s.store.persistWorkflowRecord(wf)
 					s.queueActionsEvent(evJobInProgress, wf, wfJob)
 				}
 				break

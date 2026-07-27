@@ -34,6 +34,7 @@ type searchQuery struct {
 	User      string
 	Org       string
 	Language  string
+	Topics    []string
 	Label     string
 	State     string
 	IsIssue   *bool
@@ -150,6 +151,11 @@ func parseSearchQuery(r *http.Request) (searchQuery, error) {
 				q.Org = val
 			case "language":
 				q.Language = val
+			case "topic":
+				if val == "" {
+					return q, unsupportedQualifierError{key: "topic", value: val}
+				}
+				q.Topics = append(q.Topics, val)
 			case "label":
 				q.Label = val
 			case "state":
@@ -647,6 +653,20 @@ func (s *Server) handleSearchRepositories(w http.ResponseWriter, r *http.Request
 	if !ok {
 		return
 	}
+	if strings.TrimSpace(r.URL.Query().Get("q")) == "" {
+		writeGHValidationError(w, "Search", "q", "missing_field")
+		return
+	}
+	switch q.Sort {
+	case "", "stars", "forks", "help-wanted-issues", "updated":
+	default:
+		writeGHValidationError(w, "Search", "sort", "invalid")
+		return
+	}
+	if q.Order != "" && q.Order != "asc" && q.Order != "desc" {
+		writeGHValidationError(w, "Search", "order", "invalid")
+		return
+	}
 
 	// Matching repos are gathered under the read lock; rendering happens
 	// after release because repoToJSON takes the store lock itself.
@@ -687,6 +707,9 @@ func (s *Server) handleSearchRepositories(w http.ResponseWriter, r *http.Request
 		if q.Language != "" && !strings.EqualFold(repo.Language, q.Language) {
 			continue
 		}
+		if !repoHasAllTopics(repo, q.Topics) {
+			continue
+		}
 		text := repo.Name + " " + repo.Description + " " + strings.Join(repo.Topics, " ")
 		if !q.matchesText(text) {
 			continue
@@ -700,10 +723,49 @@ func (s *Server) handleSearchRepositories(w http.ResponseWriter, r *http.Request
 	for _, repo := range matched {
 		item := repoToJSON(repo, s.store, base)
 		item["score"] = 1.0
+		item["_help_wanted_issues"] = repoHelpWantedIssueCount(s.store, repo.ID)
 		results = append(results, item)
 	}
 
 	writeJSON(w, http.StatusOK, searchEnvelope("", results, q, sortRepoSearchResults))
+}
+
+func repoHelpWantedIssueCount(st *Store, repoID int) int {
+	st.mu.RLock()
+	defer st.mu.RUnlock()
+	count := 0
+	for _, issue := range st.Issues {
+		if issue == nil || issue.RepoID != repoID || !strings.EqualFold(issue.State, "open") {
+			continue
+		}
+		for _, labelID := range issue.LabelIDs {
+			if label := st.Labels[labelID]; label != nil && strings.EqualFold(label.Name, "help wanted") {
+				count++
+				break
+			}
+		}
+	}
+	return count
+}
+
+// repoHasAllTopics implements GitHub's repeated topic: qualifier semantics:
+// every qualifier must match a complete topic name (case-insensitively).
+// Treating topic as free text would incorrectly match descriptions and topic
+// substrings, which is precisely the compatibility guarantee clients rely on.
+func repoHasAllTopics(repo *Repo, wanted []string) bool {
+	for _, want := range wanted {
+		found := false
+		for _, topic := range repo.Topics {
+			if strings.EqualFold(topic, want) {
+				found = true
+				break
+			}
+		}
+		if !found {
+			return false
+		}
+	}
+	return true
 }
 
 func (s *Server) handleSearchCode(w http.ResponseWriter, r *http.Request) {
@@ -1050,6 +1112,24 @@ func sortRepoSearchResults(items []map[string]interface{}, sortKey, order string
 			}
 			return a > b
 		})
+	case "forks":
+		sort.SliceStable(items, func(i, j int) bool {
+			a, _ := items[i]["forks_count"].(int)
+			b, _ := items[j]["forks_count"].(int)
+			if order == "asc" {
+				return a < b
+			}
+			return a > b
+		})
+	case "help-wanted-issues":
+		sort.SliceStable(items, func(i, j int) bool {
+			a, _ := items[i]["_help_wanted_issues"].(int)
+			b, _ := items[j]["_help_wanted_issues"].(int)
+			if order == "asc" {
+				return a < b
+			}
+			return a > b
+		})
 	case "created":
 		sort.SliceStable(items, func(i, j int) bool {
 			a, _ := items[i]["created_at"].(string)
@@ -1068,6 +1148,9 @@ func sortRepoSearchResults(items []map[string]interface{}, sortKey, order string
 			}
 			return a > b
 		})
+	}
+	for _, item := range items {
+		delete(item, "_help_wanted_issues")
 	}
 	return items
 }

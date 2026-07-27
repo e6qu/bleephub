@@ -8,6 +8,7 @@ import (
 
 func (s *Server) registerGHRulesetRoutes() {
 	s.route("GET /api/v3/repos/{owner}/{repo}/rulesets", s.handleListRulesets)
+	s.route("GET /api/v3/repos/{owner}/{repo}/rulesets/rule-suites", s.handleListRepoRuleSuites)
 	s.route("POST /api/v3/repos/{owner}/{repo}/rulesets", s.handleCreateRuleset)
 	s.route("GET /api/v3/repos/{owner}/{repo}/rulesets/{ruleset_id}", s.handleGetRuleset)
 	s.route("PUT /api/v3/repos/{owner}/{repo}/rulesets/{ruleset_id}", s.handleUpdateRuleset)
@@ -20,6 +21,23 @@ func (s *Server) registerGHRulesetRoutes() {
 	s.route("GET /api/v3/repos/{owner}/{repo}/rulesets/{ruleset_id}/history/{version_id}", s.handleGetRulesetVersion)
 
 	s.registerGHOrgRulesetRoutes()
+}
+
+func (s *Server) handleListRepoRuleSuites(w http.ResponseWriter, r *http.Request) {
+	user := ghUserFromContext(r.Context())
+	if user == nil {
+		writeGHError(w, http.StatusUnauthorized, "Requires authentication")
+		return
+	}
+	repo := s.resolveRepo(w, r)
+	if repo == nil {
+		return
+	}
+	if !s.viewerCanReadRepo(r.Context(), repo) {
+		writeGHError(w, http.StatusNotFound, "Not Found")
+		return
+	}
+	writeJSON(w, http.StatusOK, []map[string]interface{}{})
 }
 
 func (s *Server) handleRepoRulesetTwoSegDispatch(w http.ResponseWriter, r *http.Request) {

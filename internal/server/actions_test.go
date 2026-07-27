@@ -289,6 +289,7 @@ func newTestServer() *Server {
 		store:         NewStore(),
 		actionCache:   NewActionCache(),
 		artifactStore: NewArtifactStoreWithByteStore("", nil),
+		metrics:       NewMetrics(),
 		// Unit-test hook receivers are loopback httptest servers; the SSRF
 		// tests build their own server with this left at the secure default.
 		allowPrivateOutboundTargets: true,

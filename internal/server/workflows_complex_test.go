@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"strings"
 	"testing"
 	"time"
 )
@@ -180,7 +181,7 @@ func TestMaxParallelZeroMeansUnlimited(t *testing.T) {
 
 // --- P57-001e: timeout enforcement test ---
 
-func TestJobTimeoutCancelsJob(t *testing.T) {
+func TestJobTimeoutFailsJobFromExecutionStart(t *testing.T) {
 	s := newTestServer()
 
 	workflow := &Workflow{
@@ -213,8 +214,8 @@ func TestJobTimeoutCancelsJob(t *testing.T) {
 	if workflow.Jobs["slow"].Status != "completed" {
 		t.Errorf("status = %q, want completed", workflow.Jobs["slow"].Status)
 	}
-	if workflow.Jobs["slow"].Result != "cancelled" {
-		t.Errorf("result = %q, want cancelled", workflow.Jobs["slow"].Result)
+	if workflow.Jobs["slow"].Result != "failure" {
+		t.Errorf("result = %q, want failure", workflow.Jobs["slow"].Result)
 	}
 }
 
@@ -430,7 +431,7 @@ jobs:
     strategy:
       matrix:
         os: [ubuntu, macos]
-        version: ["1.0", "2.0"]
+        version: [1, true]
     steps:
       - run: echo ${{ matrix.os }} ${{ matrix.version }}
 `
@@ -444,25 +445,28 @@ jobs:
 		t.Fatalf("expanded jobs = %d, want 4", len(expanded.Jobs))
 	}
 
-	// Each job should have matrix env vars
+	// Matrix values stay in their typed context and never leak into the shell
+	// environment under internal __matrix_* names.
+	sawNumber := false
+	sawBoolean := false
 	for key, jd := range expanded.Jobs {
-		if jd.Env == nil {
-			t.Errorf("job %q has no env", key)
-			continue
+		if len(jd.MatrixValues) != 2 {
+			t.Errorf("job %q matrix values = %#v", key, jd.MatrixValues)
 		}
-		hasOS := false
-		hasVer := false
 		for k := range jd.Env {
-			if k == "__matrix_os" {
-				hasOS = true
-			}
-			if k == "__matrix_version" {
-				hasVer = true
+			if strings.HasPrefix(k, "__matrix_") {
+				t.Errorf("job %q leaked internal matrix environment key %q", key, k)
 			}
 		}
-		if !hasOS || !hasVer {
-			t.Errorf("job %q missing matrix env: os=%v ver=%v", key, hasOS, hasVer)
+		switch jd.MatrixValues["version"].(type) {
+		case int:
+			sawNumber = true
+		case bool:
+			sawBoolean = true
 		}
+	}
+	if !sawNumber || !sawBoolean {
+		t.Fatalf("typed matrix values lost: number=%v boolean=%v", sawNumber, sawBoolean)
 	}
 }
 

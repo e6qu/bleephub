@@ -3,6 +3,7 @@ package bleephub
 import (
 	"context"
 	"crypto/rand"
+	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
@@ -32,7 +33,13 @@ type ArtifactStore struct {
 	logPlans    map[int]string // logID → the plan that reserved it
 	dataDir     string         // empty = in-memory mode
 	byteStore   actionsByteStore
+	persist     *Persistence
 }
+
+const (
+	actionsArtifactsBucket = "actions_artifacts"
+	actionsCachesBucket    = "actions_caches"
+)
 
 // claimLog records the plan a log container was reserved for.
 func (as *ArtifactStore) claimLog(logID int, planID string) {
@@ -66,6 +73,7 @@ type Artifact struct {
 	RepoFullName         string    `json:"repoFullName"`
 	WorkflowRunBackendID string    `json:"workflowRunBackendId"`
 	CreatedAt            time.Time `json:"createdAt"`
+	Digest               string    `json:"digest,omitempty"`
 }
 
 // CacheEntry represents one immutable Actions dependency cache archive.
@@ -74,15 +82,16 @@ type Artifact struct {
 // GitHub's pre-signed archive URL: the cache toolkit fetches archiveLocation
 // with an unauthenticated client, so the URL itself must be unguessable.
 type CacheEntry struct {
-	ID            int64     `json:"id"`
-	Repo          string    `json:"repo"`
-	Key           string    `json:"key"`
-	Version       string    `json:"version"`
-	Size          int64     `json:"size"`
-	Data          []byte    `json:"-"`
-	Finalized     bool      `json:"finalized"`
-	DownloadToken string    `json:"downloadToken"`
-	CreatedAt     time.Time `json:"createdAt"`
+	ID             int64     `json:"id"`
+	Repo           string    `json:"repo"`
+	Key            string    `json:"key"`
+	Version        string    `json:"version"`
+	Size           int64     `json:"size"`
+	Data           []byte    `json:"-"`
+	Finalized      bool      `json:"finalized"`
+	DownloadToken  string    `json:"downloadToken"`
+	CreatedAt      time.Time `json:"createdAt"`
+	LastAccessedAt time.Time `json:"lastAccessedAt"`
 
 	// chunks holds the ranged bodies received for an unfinalized
 	// reservation; finalize tiles them into Data. Buffering what arrived
@@ -121,6 +130,139 @@ func NewArtifactStoreWithByteStore(dataDir string, byteStore actionsByteStore) *
 		store.recoverFromDisk()
 	}
 	return store
+}
+
+// SetPersistence moves Actions artifact/cache metadata onto the same durable
+// SQLite/dqlite store as workflow runs. Object storage holds the bytes; these
+// records are the durable index that makes those bytes discoverable after a
+// restart without relying on one replica's local filesystem.
+//
+// Existing local metadata is migrated only when the durable buckets are
+// empty. Once durable metadata exists it is authoritative, preventing stale
+// files on one replica from overwriting newer shared records.
+func (as *ArtifactStore) SetPersistence(p *Persistence) error {
+	if p == nil {
+		return nil
+	}
+	artifactRows, err := p.List(actionsArtifactsBucket)
+	if err != nil {
+		return fmt.Errorf("load Actions artifact metadata: %w", err)
+	}
+	cacheRows, err := p.List(actionsCachesBucket)
+	if err != nil {
+		return fmt.Errorf("load Actions cache metadata: %w", err)
+	}
+
+	as.mu.Lock()
+	defer as.mu.Unlock()
+	as.persist = p
+	if len(artifactRows) == 0 {
+		for id, art := range as.artifacts {
+			if !art.Finalized {
+				continue
+			}
+			as.populateArtifactDigest(art)
+			if err := p.Put(actionsArtifactsBucket, strconv.FormatInt(id, 10), art); err != nil {
+				return fmt.Errorf("migrate Actions artifact %d metadata: %w", id, err)
+			}
+		}
+	} else {
+		as.artifacts = make(map[int64]*Artifact, len(artifactRows))
+		for key, raw := range artifactRows {
+			var art Artifact
+			if err := json.Unmarshal(raw, &art); err != nil {
+				return fmt.Errorf("decode Actions artifact %s metadata: %w", key, err)
+			}
+			if !art.Finalized {
+				continue
+			}
+			if art.Digest == "" {
+				as.populateArtifactDigest(&art)
+				if art.Digest != "" {
+					if err := p.Put(actionsArtifactsBucket, key, &art); err != nil {
+						return fmt.Errorf("persist Actions artifact %s digest: %w", key, err)
+					}
+				}
+			}
+			as.artifacts[art.ID] = &art
+			if art.ID >= as.nextID {
+				as.nextID = art.ID + 1
+			}
+		}
+	}
+	if len(cacheRows) == 0 {
+		for id, entry := range as.caches {
+			if !entry.Finalized {
+				continue
+			}
+			if err := p.Put(actionsCachesBucket, strconv.FormatInt(id, 10), entry); err != nil {
+				return fmt.Errorf("migrate Actions cache %d metadata: %w", id, err)
+			}
+		}
+	} else {
+		as.caches = make(map[int64]*CacheEntry, len(cacheRows))
+		as.cacheIndex = make(map[string]int64, len(cacheRows))
+		for key, raw := range cacheRows {
+			var entry CacheEntry
+			if err := json.Unmarshal(raw, &entry); err != nil {
+				return fmt.Errorf("decode Actions cache %s metadata: %w", key, err)
+			}
+			if !entry.Finalized {
+				continue
+			}
+			as.caches[entry.ID] = &entry
+			as.cacheIndex[cacheLookupKey(entry.Repo, entry.Key, entry.Version)] = entry.ID
+			if entry.ID >= as.nextCacheID {
+				as.nextCacheID = entry.ID + 1
+			}
+		}
+	}
+	if highWater, err := p.KeyHighWater(actionsArtifactsBucket); err != nil {
+		return fmt.Errorf("load Actions artifact identifier: %w", err)
+	} else if highWater > as.nextID {
+		as.nextID = highWater
+	}
+	if highWater, err := p.KeyHighWater(actionsCachesBucket); err != nil {
+		return fmt.Errorf("load Actions cache identifier: %w", err)
+	} else if highWater > as.nextCacheID {
+		as.nextCacheID = highWater
+	}
+	return nil
+}
+
+func (as *ArtifactStore) populateArtifactDigest(art *Artifact) {
+	if art == nil || art.Digest != "" {
+		return
+	}
+	data := art.Data
+	if len(data) == 0 && art.Size > 0 {
+		if stored, err := as.readBytes(
+			context.Background(),
+			artifactDataKey(art.ID),
+			filepath.Join(as.dataDir, "artifacts", strconv.FormatInt(art.ID, 10), "data"),
+		); err == nil {
+			data = stored
+			art.Data = stored
+		}
+	}
+	if art.Size > 0 && len(data) == 0 {
+		return
+	}
+	digest := sha256.Sum256(data)
+	art.Digest = fmt.Sprintf("sha256:%x", digest)
+}
+
+func (as *ArtifactStore) reserveID(bucket string, local *int64) (int64, error) {
+	id := *local
+	if as.persist != nil {
+		reserved, err := as.persist.AllocateCounterValue(bucketKeyCounter(bucket), id)
+		if err != nil {
+			return 0, err
+		}
+		id = reserved
+	}
+	*local = id + 1
+	return id, nil
 }
 
 // recoverFromDisk scans the artifacts directory and rebuilds the in-memory map.
@@ -196,18 +338,26 @@ func (as *ArtifactStore) recoverCachesFromDisk() {
 	}
 }
 
-// persistMeta writes artifact metadata to disk.
-func (as *ArtifactStore) persistMeta(art *Artifact) {
+// persistMeta writes finalized artifact metadata to durable persistence and
+// keeps the local development copy in sync when configured.
+func (as *ArtifactStore) persistMeta(art *Artifact) error {
+	if as.persist != nil && art.Finalized {
+		if err := as.persist.Put(actionsArtifactsBucket, strconv.FormatInt(art.ID, 10), art); err != nil {
+			return err
+		}
+	}
 	if as.dataDir == "" {
-		return
+		return nil
 	}
 	dir := filepath.Join(as.dataDir, "artifacts", strconv.FormatInt(art.ID, 10))
-	os.MkdirAll(dir, 0o755)
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		return err
+	}
 	data, err := json.Marshal(art)
 	if err != nil {
-		return
+		return err
 	}
-	os.WriteFile(filepath.Join(dir, "meta.json"), data, 0o644)
+	return os.WriteFile(filepath.Join(dir, "meta.json"), data, 0o644)
 }
 
 func (as *ArtifactStore) writeArtifactData(ctx context.Context, art *Artifact) error {
@@ -317,23 +467,96 @@ func (as *ArtifactStore) deleteArtifact(ctx context.Context, id int64) (bool, er
 			return true, err
 		}
 	}
+	if as.persist != nil {
+		if err := as.persist.Delete(actionsArtifactsBucket, strconv.FormatInt(id, 10)); err != nil {
+			return true, err
+		}
+	}
 	as.mu.Lock()
 	delete(as.artifacts, id)
 	as.mu.Unlock()
 	return true, nil
 }
 
-func (as *ArtifactStore) persistCacheMeta(entry *CacheEntry) {
+func (as *ArtifactStore) renameRepository(oldFullName, newFullName string) error {
+	as.mu.Lock()
+	defer as.mu.Unlock()
+	for _, art := range as.artifacts {
+		if art.RepoFullName != oldFullName {
+			continue
+		}
+		art.RepoFullName = newFullName
+		if err := as.persistMeta(art); err != nil {
+			return fmt.Errorf("persist renamed artifact %d: %w", art.ID, err)
+		}
+	}
+	for _, entry := range as.caches {
+		if entry.Repo != oldFullName {
+			continue
+		}
+		delete(as.cacheIndex, cacheLookupKey(entry.Repo, entry.Key, entry.Version))
+		entry.Repo = newFullName
+		as.cacheIndex[cacheLookupKey(entry.Repo, entry.Key, entry.Version)] = entry.ID
+		if err := as.persistCacheMeta(entry); err != nil {
+			return fmt.Errorf("persist renamed cache %d: %w", entry.ID, err)
+		}
+	}
+	return nil
+}
+
+func (s *Server) deleteRepositoryActionsData(ctx context.Context, repoFullName string) error {
+	s.artifactStore.mu.RLock()
+	artifactIDs := make([]int64, 0)
+	cacheIDs := make([]int64, 0)
+	for id, art := range s.artifactStore.artifacts {
+		if art.RepoFullName == repoFullName {
+			artifactIDs = append(artifactIDs, id)
+		}
+	}
+	for id, entry := range s.artifactStore.caches {
+		if entry.Repo == repoFullName {
+			cacheIDs = append(cacheIDs, id)
+		}
+	}
+	s.artifactStore.mu.RUnlock()
+	for _, id := range artifactIDs {
+		if _, err := s.artifactStore.deleteArtifact(ctx, id); err != nil {
+			return fmt.Errorf("delete Actions artifact %d: %w", id, err)
+		}
+	}
+	for _, id := range cacheIDs {
+		if err := s.removeCacheBytes(ctx, id); err != nil {
+			return fmt.Errorf("delete Actions cache %d: %w", id, err)
+		}
+		s.artifactStore.mu.Lock()
+		entry := s.artifactStore.caches[id]
+		if entry != nil {
+			delete(s.artifactStore.cacheIndex, cacheLookupKey(entry.Repo, entry.Key, entry.Version))
+			delete(s.artifactStore.caches, id)
+		}
+		s.artifactStore.mu.Unlock()
+	}
+	return nil
+}
+
+func (as *ArtifactStore) persistCacheMeta(entry *CacheEntry) error {
+	if as.persist != nil && entry.Finalized {
+		if err := as.persist.Put(actionsCachesBucket, strconv.FormatInt(entry.ID, 10), entry); err != nil {
+			return err
+		}
+	}
 	if as.dataDir == "" {
-		return
+		return nil
 	}
 	dir := filepath.Join(as.dataDir, "caches", strconv.FormatInt(entry.ID, 10))
-	os.MkdirAll(dir, 0o755)
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		return err
+	}
 	data, err := json.Marshal(entry)
 	if err != nil {
-		return
+		return err
 	}
-	os.WriteFile(filepath.Join(dir, "meta.json"), data, 0o644)
+	return os.WriteFile(filepath.Join(dir, "meta.json"), data, 0o644)
 }
 
 // writeCacheDataAt writes a ranged chunk to the cache's data file at the
@@ -407,18 +630,19 @@ func (s *Server) registerArtifactRoutes() {
 	s.route("GET /api/v3/repos/{owner}/{repo}/actions/cache/usage", s.handleRepoCacheUsage)
 }
 
-// repoCacheJSON renders a CacheEntry in GitHub's ActionsCacheList item
-// shape. last_accessed_at isn't tracked separately, so it mirrors
-// created_at (GitHub updates it on restore; bleephub has no restore-time
-// hook, so created_at is the faithful best value).
+// repoCacheJSON renders a CacheEntry in GitHub's ActionsCacheList item shape.
 func repoCacheJSON(entry *CacheEntry) map[string]any {
 	created := entry.CreatedAt.UTC().Format("2006-01-02T15:04:05Z")
+	lastAccessed := entry.LastAccessedAt
+	if lastAccessed.IsZero() {
+		lastAccessed = entry.CreatedAt
+	}
 	return map[string]any{
 		"id":               entry.ID,
 		"ref":              "refs/heads/main",
 		"key":              entry.Key,
 		"version":          entry.Version,
-		"last_accessed_at": created,
+		"last_accessed_at": lastAccessed.UTC().Format("2006-01-02T15:04:05Z"),
 		"created_at":       created,
 		"size_in_bytes":    entry.Size,
 	}
@@ -566,6 +790,11 @@ func (s *Server) removeCacheBytes(ctx context.Context, id int64) error {
 			return err
 		}
 	}
+	if s.artifactStore.persist != nil {
+		if err := s.artifactStore.persist.Delete(actionsCachesBucket, strconv.FormatInt(id, 10)); err != nil {
+			return err
+		}
+	}
 	return nil
 }
 
@@ -598,13 +827,15 @@ func (s *Server) runArtifactScope(w http.ResponseWriter, r *http.Request, backen
 
 func (s *Server) handleCreateArtifact(w http.ResponseWriter, r *http.Request) {
 	var req struct {
-		WorkflowRunBackendID string `json:"workflow_run_backend_id"`
-		Name                 string `json:"name"`
-		Version              int    `json:"version"`
+		WorkflowRunBackendID    string `json:"workflow_run_backend_id"`
+		WorkflowRunBackendIDAlt string `json:"workflowRunBackendId"`
+		Name                    string `json:"name"`
+		Version                 int    `json:"version"`
 	}
 	if !decodeJSONBody(w, r, &req) {
 		return
 	}
+	req.WorkflowRunBackendID = coalesceStr(req.WorkflowRunBackendID, req.WorkflowRunBackendIDAlt)
 
 	wf, ok := s.runArtifactScope(w, r, req.WorkflowRunBackendID)
 	if !ok {
@@ -614,8 +845,12 @@ func (s *Server) handleCreateArtifact(w http.ResponseWriter, r *http.Request) {
 	githubRunID := wf.RunID
 
 	s.artifactStore.mu.Lock()
-	id := s.artifactStore.nextID
-	s.artifactStore.nextID++
+	id, err := s.artifactStore.reserveID(actionsArtifactsBucket, &s.artifactStore.nextID)
+	if err != nil {
+		s.artifactStore.mu.Unlock()
+		writeGHError(w, http.StatusInternalServerError, "reserve artifact identifier: "+err.Error())
+		return
+	}
 	art := &Artifact{
 		ID:                   id,
 		Name:                 req.Name,
@@ -626,7 +861,12 @@ func (s *Server) handleCreateArtifact(w http.ResponseWriter, r *http.Request) {
 		CreatedAt:            time.Now(),
 	}
 	s.artifactStore.artifacts[id] = art
-	s.artifactStore.persistMeta(art)
+	if err := s.artifactStore.persistMeta(art); err != nil {
+		delete(s.artifactStore.artifacts, id)
+		s.artifactStore.mu.Unlock()
+		writeGHError(w, http.StatusInternalServerError, "persist artifact metadata: "+err.Error())
+		return
+	}
 	s.artifactStore.mu.Unlock()
 
 	scheme := "http"
@@ -670,11 +910,26 @@ func (s *Server) handleUploadArtifact(w http.ResponseWriter, r *http.Request) {
 	s.artifactStore.mu.Lock()
 	art, ok = s.artifactStore.artifacts[id]
 	if ok {
+		if int64(len(art.Data))+int64(len(data)) > maxArtifactChunkBytes {
+			s.artifactStore.mu.Unlock()
+			writeGHError(w, http.StatusRequestEntityTooLarge, fmt.Sprintf("artifact exceeds the %d byte limit", int64(maxArtifactChunkBytes)))
+			return
+		}
+		previousSize := len(art.Data)
 		art.Data = append(art.Data, data...)
 		art.Size = int64(len(art.Data))
 		if err := s.artifactStore.writeArtifactData(r.Context(), art); err != nil {
+			art.Data = art.Data[:previousSize]
+			art.Size = int64(previousSize)
 			s.artifactStore.mu.Unlock()
 			http.Error(w, "artifact byte-store write: "+err.Error(), http.StatusInternalServerError)
+			return
+		}
+		if err := s.artifactStore.persistMeta(art); err != nil {
+			art.Data = art.Data[:previousSize]
+			art.Size = int64(previousSize)
+			s.artifactStore.mu.Unlock()
+			writeGHError(w, http.StatusInternalServerError, "persist artifact upload metadata: "+err.Error())
 			return
 		}
 	}
@@ -707,8 +962,21 @@ func (s *Server) handleFinalizeArtifact(w http.ResponseWriter, r *http.Request) 
 	s.artifactStore.mu.Lock()
 	found := s.artifactStore.findArtifactByNameLocked(req.Name, workflowRunBackendID, false)
 	if found != nil {
+		if req.Size < 0 || req.Size != found.Size {
+			actual := found.Size
+			s.artifactStore.mu.Unlock()
+			writeGHError(w, http.StatusBadRequest, fmt.Sprintf("artifact size %d does not match %d bytes uploaded", req.Size, actual))
+			return
+		}
 		found.Finalized = true
-		s.artifactStore.persistMeta(found)
+		digest := sha256.Sum256(found.Data)
+		found.Digest = fmt.Sprintf("sha256:%x", digest)
+		if err := s.artifactStore.persistMeta(found); err != nil {
+			found.Finalized = false
+			s.artifactStore.mu.Unlock()
+			writeGHError(w, http.StatusInternalServerError, "persist artifact metadata: "+err.Error())
+			return
+		}
 	}
 	s.artifactStore.mu.Unlock()
 
@@ -923,19 +1191,30 @@ func (s *Server) handleCacheReserve(w http.ResponseWriter, r *http.Request) {
 		writeGHError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
-	id := s.artifactStore.nextCacheID
-	s.artifactStore.nextCacheID++
+	id, err := s.artifactStore.reserveID(actionsCachesBucket, &s.artifactStore.nextCacheID)
+	if err != nil {
+		s.artifactStore.mu.Unlock()
+		writeGHError(w, http.StatusInternalServerError, "reserve cache identifier: "+err.Error())
+		return
+	}
 	entry := &CacheEntry{
-		ID:            id,
-		Repo:          repo,
-		Key:           req.Key,
-		Version:       req.Version,
-		DownloadToken: downloadToken,
-		CreatedAt:     time.Now(),
+		ID:             id,
+		Repo:           repo,
+		Key:            req.Key,
+		Version:        req.Version,
+		DownloadToken:  downloadToken,
+		CreatedAt:      time.Now(),
+		LastAccessedAt: time.Now(),
 	}
 	s.artifactStore.caches[id] = entry
 	s.artifactStore.cacheIndex[cacheLookupKey(repo, req.Key, req.Version)] = id
-	s.artifactStore.persistCacheMeta(entry)
+	if err := s.artifactStore.persistCacheMeta(entry); err != nil {
+		delete(s.artifactStore.caches, id)
+		delete(s.artifactStore.cacheIndex, cacheLookupKey(repo, req.Key, req.Version))
+		s.artifactStore.mu.Unlock()
+		writeGHError(w, http.StatusInternalServerError, "persist cache metadata: "+err.Error())
+		return
+	}
 	s.artifactStore.mu.Unlock()
 
 	s.logger.Debug().Int64("id", id).Str("repo", repo).Str("key", req.Key).Msg("cache reserved")
@@ -954,9 +1233,17 @@ func (s *Server) handleCacheLookup(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	s.artifactStore.mu.RLock()
+	s.artifactStore.mu.Lock()
 	entry := s.lookupFinalizedCacheLocked(repo, keys, version)
-	s.artifactStore.mu.RUnlock()
+	if entry != nil {
+		entry.LastAccessedAt = time.Now().UTC()
+		if err := s.artifactStore.persistCacheMeta(entry); err != nil {
+			s.artifactStore.mu.Unlock()
+			writeGHError(w, http.StatusInternalServerError, "persist cache access metadata: "+err.Error())
+			return
+		}
+	}
+	s.artifactStore.mu.Unlock()
 	if entry == nil {
 		s.logger.Debug().Str("repo", repo).Strs("keys", keys).Str("version", version).Msg("cache lookup miss")
 		w.WriteHeader(http.StatusNoContent)
@@ -1051,15 +1338,23 @@ func (s *Server) handleCacheUpload(w http.ResponseWriter, r *http.Request) {
 	}
 	entry.chunks = append(entry.chunks, cacheChunk{start: start, data: chunk})
 	entry.received += declared
+	previousSize := entry.Size
 	if end+1 > entry.Size {
 		entry.Size = end + 1
 	}
 	if err := s.artifactStore.writeCacheChunkToDisk(entry, chunk, start); err != nil {
+		entry.chunks = entry.chunks[:len(entry.chunks)-1]
+		entry.received -= declared
+		entry.Size = previousSize
 		s.artifactStore.mu.Unlock()
 		writeGHError(w, http.StatusInternalServerError, "cache byte-store write: "+err.Error())
 		return
 	}
-	s.artifactStore.persistCacheMeta(entry)
+	if err := s.artifactStore.persistCacheMeta(entry); err != nil {
+		s.artifactStore.mu.Unlock()
+		writeGHError(w, http.StatusInternalServerError, "persist cache metadata: "+err.Error())
+		return
+	}
 	s.artifactStore.mu.Unlock()
 
 	s.logger.Debug().Int64("id", id).Int64("start", start).Int64("end", end).Msg("cache chunk uploaded")
@@ -1118,7 +1413,12 @@ func (s *Server) handleCacheFinalize(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		entry.Finalized = true
-		s.artifactStore.persistCacheMeta(entry)
+		if err := s.artifactStore.persistCacheMeta(entry); err != nil {
+			entry.Finalized = false
+			s.artifactStore.mu.Unlock()
+			writeGHError(w, http.StatusInternalServerError, "persist cache metadata: "+err.Error())
+			return
+		}
 	}
 	s.artifactStore.mu.Unlock()
 

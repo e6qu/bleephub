@@ -182,6 +182,9 @@ describe("RepoSettingsPage Pages panel", () => {
       expect(JSON.parse(putCall![1].body as string)).toEqual({
         cname: "pages.example.test",
         https_enforced: true,
+        build_type: "legacy",
+        public: true,
+        source: { branch: "main", path: "/" },
       });
     });
     expect(await screen.findByText(/pages settings saved/i)).toBeInTheDocument();

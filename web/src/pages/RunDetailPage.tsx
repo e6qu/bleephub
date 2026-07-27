@@ -1,12 +1,15 @@
 import { useMemo, useState } from "react";
 import { useParams } from "react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import Markdown from "react-markdown";
+import remarkGfm from "remark-gfm";
 import { Spinner, InlineError } from "@bleephub/ui-core/components";
 import {
   fetchWorkflowRun,
   fetchWorkflowRunAttempt,
   fetchRunJobs,
   fetchJobLogs,
+  fetchJobSummary,
   fetchRunArtifacts,
   fetchPendingDeployments,
   reviewPendingDeployments,
@@ -446,6 +449,11 @@ function JobPane({
     queryFn: () => fetchJobLogs(owner, repo, job.id),
     refetchInterval: live ? 2000 : false,
   });
+  const summaryQ = useQuery({
+    queryKey: ["job-summary", owner, repo, job.id],
+    queryFn: () => fetchJobSummary(owner, repo, job.id),
+    refetchInterval: live ? 2000 : false,
+  });
   const { segments, lines } = useMemo(
     () => segmentJobLog(logsQ.data ?? ""),
     [logsQ.data],
@@ -511,6 +519,27 @@ function JobPane({
             Job log
           </div>
           <LogBlock lines={lines} />
+        </div>
+      )}
+      {summaryQ.isError && (
+        <InlineError inline title="Failed to load job summary" detail={String(summaryQ.error)} />
+      )}
+      {summaryQ.data && (
+        <div
+          className="markdown-body"
+          style={{ borderTop: "1px solid var(--color-border)", padding: "0.85rem 1rem" }}
+        >
+          <div
+            style={{
+              marginBottom: "0.5rem",
+              fontSize: "0.76rem",
+              fontWeight: 600,
+              color: "var(--color-fg-muted)",
+            }}
+          >
+            Job summary
+          </div>
+          <Markdown remarkPlugins={[remarkGfm]}>{summaryQ.data}</Markdown>
         </div>
       )}
     </Box>

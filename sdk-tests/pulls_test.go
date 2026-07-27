@@ -73,6 +73,22 @@ func TestPullRequestsLifecycle(t *testing.T) {
 		t.Error("List returned no PRs")
 	}
 
+	qualified, _, err := client.PullRequests.List(ctx(), "admin", name, &github.PullRequestListOptions{
+		Head: "admin:feature",
+	})
+	if err != nil {
+		t.Fatalf("List(head=admin:feature): %v", err)
+	}
+	if len(qualified) != 1 {
+		t.Fatalf("List(head=admin:feature) returned %d PRs, want 1", len(qualified))
+	}
+	if qualified[0].GetHead().GetLabel() != "admin:feature" {
+		t.Errorf("head.label = %q, want admin:feature", qualified[0].GetHead().GetLabel())
+	}
+	if qualified[0].GetBase().GetLabel() != "admin:main" {
+		t.Errorf("base.label = %q, want admin:main", qualified[0].GetBase().GetLabel())
+	}
+
 	edited, _, err := client.PullRequests.Edit(ctx(), "admin", name, num, &github.PullRequest{
 		Title: github.Ptr("renamed PR"),
 	})

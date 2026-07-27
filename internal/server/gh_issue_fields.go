@@ -297,6 +297,23 @@ func (s *Server) handleSetIssueFieldValues(w http.ResponseWriter, r *http.Reques
 	s.applyIssueFieldValues(w, r, true)
 }
 
+func (s *Server) handleDeleteIssueFieldValue(w http.ResponseWriter, r *http.Request) {
+	repo, issue, ok := s.resolveIssueForFieldValues(w, r)
+	if !ok {
+		return
+	}
+	if !s.viewerHasRepoPermission(r.Context(), repo, scopeIssues, permWrite) {
+		writeGHError(w, http.StatusForbidden, "Must have push access to the repository.")
+		return
+	}
+	fieldID, err := strconv.Atoi(r.PathValue("issue_field_id"))
+	if err != nil || !s.store.DeleteIssueFieldValue(issue.ID, fieldID) {
+		writeGHError(w, http.StatusNotFound, "Not Found")
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
 // applyIssueFieldValues implements both POST (merge; an empty array clears)
 // and PUT (replace) for issue field values.
 func (s *Server) applyIssueFieldValues(w http.ResponseWriter, r *http.Request, replace bool) {
@@ -574,6 +591,20 @@ func (st *Store) AddIssueFieldValues(issueID int, values map[int]interface{}) {
 	if st.persist != nil {
 		st.persist.MustPut("issue_field_values", strconv.Itoa(issueID), st.IssueFieldValues[issueID])
 	}
+}
+
+func (st *Store) DeleteIssueFieldValue(issueID, fieldID int) bool {
+	st.mu.Lock()
+	defer st.mu.Unlock()
+	values := st.IssueFieldValues[issueID]
+	if _, ok := values[fieldID]; !ok {
+		return false
+	}
+	delete(values, fieldID)
+	if st.persist != nil {
+		st.persist.MustPut("issue_field_values", strconv.Itoa(issueID), values)
+	}
+	return true
 }
 
 // ListIssueFieldValues renders an issue's field values in the REST

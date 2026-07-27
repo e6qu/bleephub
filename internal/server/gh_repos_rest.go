@@ -684,13 +684,14 @@ func (s *Server) handleUpdateRepo(w http.ResponseWriter, r *http.Request) {
 		// Update artifacts that embed the repo full name.
 		oldFull := owner + "/" + name
 		newFull := owner + "/" + newName
-		s.artifactStore.mu.Lock()
-		for _, art := range s.artifactStore.artifacts {
-			if art.RepoFullName == oldFull {
-				art.RepoFullName = newFull
+		if err := s.artifactStore.renameRepository(oldFull, newFull); err != nil {
+			if !s.store.RenameRepo(owner, newName, name) {
+				writeGHError(w, http.StatusInternalServerError, "repository artifact metadata rename failed and repository rename rollback failed: "+err.Error())
+				return
 			}
+			writeGHError(w, http.StatusInternalServerError, "repository artifact metadata rename failed; repository rename rolled back: "+err.Error())
+			return
 		}
-		s.artifactStore.mu.Unlock()
 
 		name = newName
 	}
@@ -807,6 +808,10 @@ func (s *Server) handleDeleteRepo(w http.ResponseWriter, r *http.Request) {
 
 	if _, err := s.store.DeleteRepo(owner, name); err != nil {
 		writeGHError(w, http.StatusInternalServerError, "repository delete failed: "+err.Error())
+		return
+	}
+	if err := s.deleteRepositoryActionsData(r.Context(), repo.FullName); err != nil {
+		writeGHError(w, http.StatusInternalServerError, "repository deleted but Actions data cleanup failed: "+err.Error())
 		return
 	}
 	s.recordAuditEvent("repo.destroy", user.Login, "", map[string]interface{}{"repo": owner + "/" + name})
