@@ -425,9 +425,7 @@ func openDqlite(addresses string) (*sql.DB, error) {
 	}
 
 	dqliteDriver, err := driver.New(store,
-		driver.WithDialFunc(func(ctx context.Context, address string) (net.Conn, error) {
-			return dqliteHTTPDial(ctx, addressMap.Resolve(address), secret)
-		}),
+		driver.WithDialFunc(dqliteDialer(addressMap, secret)),
 		driver.WithAttemptTimeout(5*time.Second),
 		driver.WithConnectionBackoffFactor(100*time.Millisecond),
 		driver.WithConnectionBackoffCap(time.Second),
@@ -446,6 +444,14 @@ func openDqlite(addresses string) (*sql.DB, error) {
 		return nil, fmt.Errorf("ping dqlite: %w", err)
 	}
 	return db, nil
+}
+
+// dqliteDialer binds durable-member address resolution and the cluster
+// credential to the transport used by the driver.
+func dqliteDialer(addresses dqliteaddr.Map, secret string) client.DialFunc {
+	return func(ctx context.Context, address string) (net.Conn, error) {
+		return dqliteHTTPDial(ctx, addresses.Resolve(address), secret)
+	}
 }
 
 // dqliteHTTPDial opens the dqlite HTTP-upgrade transport exposed by each

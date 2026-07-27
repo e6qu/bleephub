@@ -10,8 +10,6 @@ import (
 // executor. A malformed or pathological query must surface as a GraphQL error,
 // never a panic.
 func FuzzGraphQLQuery(f *testing.F) {
-	s := newTestServer()
-	s.initGraphQLSchema()
 	f.Add("{viewer{login}}")
 	f.Add("")
 	f.Add("{")
@@ -19,6 +17,8 @@ func FuzzGraphQLQuery(f *testing.F) {
 	f.Add("{__schema{types{name}}}")
 	f.Add("mutation{")
 	f.Fuzz(func(t *testing.T, q string) {
+		s := newTestServer()
+		s.initGraphQLSchema()
 		_ = graphql.Do(graphql.Params{Schema: s.graphqlSchema, RequestString: q})
 	})
 }
@@ -82,12 +82,12 @@ func FuzzParseContentRange(f *testing.F) {
 
 // FuzzParseAndVerifyAppJWT feeds arbitrary token strings to the app-JWT parser.
 func FuzzParseAndVerifyAppJWT(f *testing.F) {
-	st := NewStore()
 	f.Add("a.b.c")
 	f.Add("")
 	f.Add("....")
 	f.Add("eyJ.eyJ.")
 	f.Fuzz(func(t *testing.T, tok string) {
+		st := NewStore()
 		_, _ = st.parseAndVerifyAppJWT(tok)
 	})
 }

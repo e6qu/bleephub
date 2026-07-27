@@ -66,16 +66,26 @@ func authedPost(path, contentType string, body io.Reader) (*http.Response, error
 }
 
 func TestMain(m *testing.M) {
+	// The fuzz targets build isolated in-memory servers when they need one.
+	// Starting the package-wide HTTP/SSH harness in the coordinator and every
+	// fuzz worker both wastes a listener per process and can prevent baseline
+	// collection from ever completing. Keep the one environment value those
+	// isolated fixtures require, then leave fuzz processes to m.Run.
+	os.Setenv("BLEEPHUB_ADMIN_TOKEN", defaultToken)
+	if fuzzProcess(os.Args[1:]) {
+		os.Exit(m.Run())
+	}
+
 	// Clear MinIO containers left by a suite that did not reach its own
 	// cleanup — a timeout panic, an interrupt, a kill. This runs on every
-	// suite, including one whose S3 tests are filtered out, because a run that
-	// never starts a server is exactly the run that would otherwise let
-	// abandoned ones accumulate unnoticed.
+	// ordinary suite, including one whose S3 tests are filtered out, because a
+	// run that never starts a server is exactly the run that would otherwise
+	// let abandoned ones accumulate unnoticed. Fuzz workers were returned
+	// above because they must not coordinate shared external state.
 	reapAbandonedS3Servers()
 
 	// The admin token has no default — every consumer (incl. the test harness)
 	// must set it explicitly. defaultToken is the non-PAT value the tests use.
-	os.Setenv("BLEEPHUB_ADMIN_TOKEN", defaultToken)
 	// Webhook receivers in this suite are httptest servers on loopback, which
 	// delivery refuses unless the instance opts in.
 	os.Setenv("BLEEPHUB_ALLOW_PRIVATE_OUTBOUND_TARGETS", "true")
@@ -179,6 +189,17 @@ func TestMain(m *testing.M) {
 	}
 
 	os.Exit(code)
+}
+
+func fuzzProcess(args []string) bool {
+	for _, arg := range args {
+		if arg == "-test.fuzzworker" ||
+			strings.HasPrefix(arg, "-test.fuzzworker=") ||
+			strings.HasPrefix(arg, "-test.fuzz=") {
+			return true
+		}
+	}
+	return false
 }
 
 func TestHealth(t *testing.T) {

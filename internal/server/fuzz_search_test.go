@@ -55,13 +55,6 @@ func FuzzSearchQueryParser(f *testing.F) {
 // response is always a well-formed search envelope (integer total_count + an
 // items array), never a truncated or wrong-typed body.
 func FuzzSearchEndpoints(f *testing.F) {
-	s := fuzzRoutedServer(f)
-	admin := s.store.UsersByLogin["admin"]
-	repo := s.store.CreateRepo(admin, "search-fuzz", "searchable repo", false)
-	s.store.CreateIssue(repo.ID, admin.ID, "findable bug", "body with keyword", nil, nil, 0)
-	stor := s.store.GetGitStorage(admin.Login, "search-fuzz")
-	_, _ = initRepoWithFiles(stor, "main", "init", map[string]string{"main.go": "package main"}, repoSignature(admin.Login, "a@b.c"))
-
 	endpoints := []string{"issues", "repositories", "code", "users", "commits", "labels", "topics"}
 
 	f.Add(`repo:admin/search-fuzz bug`, "1", "30")
@@ -73,6 +66,13 @@ func FuzzSearchEndpoints(f *testing.F) {
 	f.Add(`repo:admin/search-fuzz`, "9223372036854775807", "9223372036854775807")
 
 	f.Fuzz(func(t *testing.T, q, page, perPage string) {
+		s := fuzzRoutedServer(t)
+		admin := s.store.UsersByLogin["admin"]
+		repo := s.store.CreateRepo(admin, "search-fuzz", "searchable repo", false)
+		s.store.CreateIssue(repo.ID, admin.ID, "findable bug", "body with keyword", nil, nil, 0)
+		stor := s.store.GetGitStorage(admin.Login, "search-fuzz")
+		_, _ = initRepoWithFiles(stor, "main", "init", map[string]string{"main.go": "package main"}, repoSignature(admin.Login, "a@b.c"))
+
 		for _, ep := range endpoints {
 			vals := url.Values{"q": {q}, "page": {page}, "per_page": {perPage}}
 			w := fuzzServe(s, http.MethodGet, "/api/v3/search/"+ep+"?"+vals.Encode(), nil)

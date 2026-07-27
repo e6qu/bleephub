@@ -15,6 +15,7 @@ import (
 	"github.com/go-git/go-git/v5/plumbing"
 	"github.com/go-git/go-git/v5/plumbing/filemode"
 	"github.com/go-git/go-git/v5/plumbing/object"
+	"github.com/go-git/go-git/v5/plumbing/storer"
 	gitStorage "github.com/go-git/go-git/v5/storage"
 )
 
@@ -332,41 +333,35 @@ func (s *Server) requireRepoPush(next http.HandlerFunc) http.HandlerFunc {
 	}
 }
 
-// refWriteKind names the two destructive ref updates branch protection governs
-// with separate allowances.
-type refWriteKind int
+// refUpdateIsFastForward reports whether moving a ref from current to target
+// discards nothing the ref already reaches, which is true exactly when target
+// descends from current. A target that is not a commit — a tag, a tree, a blob
+// — can never descend from one, so it is not a fast forward.
+func refUpdateIsFastForward(stor storer.Storer, current, target plumbing.Hash) (bool, error) {
+	if current == target {
+		return true, nil
+	}
+	base, err := object.GetCommit(stor, current)
+	if err != nil {
+		return false, nil
+	}
+	head, err := object.GetCommit(stor, target)
+	if err != nil {
+		return false, nil
+	}
+	ancestor, err := base.IsAncestor(head)
+	if err != nil {
+		return false, fmt.Errorf("ancestry of %s in %s: %w", current, target, err)
+	}
+	return ancestor, nil
+}
 
-const (
-	refForcePush refWriteKind = iota
-	refDeletion
-)
-
-// destructiveRefWriteAllowed decides a force update or a deletion against the
-// branch's protection rule. Push access — required by the route gate — is
-// enough for an unprotected ref; a protected one needs the matching allowance,
-// or repository admin when the rule does not enforce against admins.
-func (s *Server) destructiveRefWriteAllowed(r *http.Request, repo *Repo, ref plumbing.ReferenceName, kind refWriteKind) bool {
-	if !ref.IsBranch() {
-		return true
-	}
-	bp := s.branchProtectionFor(repo.ID, ref.Short())
-	if bp == nil {
-		return true
-	}
-	switch kind {
-	case refForcePush:
-		if bp.AllowForcePushes != nil && bp.AllowForcePushes.Enabled {
-			return true
-		}
-	case refDeletion:
-		if bp.AllowDeletions != nil && bp.AllowDeletions.Enabled {
-			return true
-		}
-	}
-	if bp.EnforceAdmins != nil && bp.EnforceAdmins.Enabled {
-		return false
-	}
-	return s.viewerCanAdminRepo(r.Context(), repo)
+// refWriteRefusal decides a REST ref write against the branch's protection
+// rule, through the same predicate the git transports push through. Push
+// access — required by the route gate — is enough for an unprotected ref.
+func (s *Server) refWriteRefusal(r *http.Request, repo *Repo, ref plumbing.ReferenceName, kind refWriteKind, target plumbing.Hash) string {
+	stor, _ := s.store.GitStorageForRepoID(repo.ID)
+	return s.protectedRefWriteRefusal(r.Context(), repo, stor, ref, kind, target)
 }
 
 // requireRefDeletionAllowed guards the delete-ref route, whose handler lives
@@ -380,8 +375,8 @@ func (s *Server) requireRefDeletionAllowed(next http.HandlerFunc) http.HandlerFu
 			return
 		}
 		ref := plumbing.ReferenceName("refs/" + r.PathValue("ref"))
-		if !s.destructiveRefWriteAllowed(r, repo, ref, refDeletion) {
-			writeGHError(w, http.StatusForbidden, "Cannot delete protected branch "+ref.Short()+".")
+		if refusal := s.refWriteRefusal(r, repo, ref, refDeletion, plumbing.ZeroHash); refusal != "" {
+			writeGHError(w, http.StatusForbidden, refusal)
 			return
 		}
 		next(w, r)
@@ -747,6 +742,10 @@ func (s *Server) handleCreateRef(w http.ResponseWriter, r *http.Request) {
 		writeGHError(w, http.StatusUnprocessableEntity, "Reference already exists")
 		return
 	}
+	if refusal := s.refWriteRefusal(r, repo, fullRef, refCreation, target); refusal != "" {
+		writeGHError(w, http.StatusForbidden, refusal)
+		return
+	}
 	if ph, err := s.secretScanningPushProtectionPlaceholderForRef(repo, stor, fullRef, target); err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
@@ -783,8 +782,13 @@ func (s *Server) handleUpdateRef(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	fullRef := plumbing.ReferenceName("refs/" + refPath)
-	if req.Force && !s.destructiveRefWriteAllowed(r, repo, fullRef, refForcePush) {
-		writeGHError(w, http.StatusForbidden, "Cannot force-push to protected branch "+fullRef.Short()+".")
+	kind := refFastForward
+	if req.Force {
+		kind = refForcePush
+	}
+	newTarget := plumbing.NewHash(req.SHA)
+	if refusal := s.refWriteRefusal(r, repo, fullRef, kind, newTarget); refusal != "" {
+		writeGHError(w, http.StatusForbidden, refusal)
 		return
 	}
 	oldRef, err := stor.Reference(fullRef)
@@ -792,32 +796,19 @@ func (s *Server) handleUpdateRef(w http.ResponseWriter, r *http.Request) {
 		writeGHError(w, http.StatusUnprocessableEntity, "Reference does not exist")
 		return
 	}
-	newTarget := plumbing.NewHash(req.SHA)
 	if _, err := stor.EncodedObject(plumbing.AnyObject, newTarget); err != nil {
 		writeGHError(w, http.StatusUnprocessableEntity, "Object does not exist")
 		return
 	}
-	if !req.Force {
-		// Reject non-fast-forward updates.
-		if oldRef.Type() == plumbing.HashReference {
-			oldHash := oldRef.Hash()
-			if newTarget != oldHash {
-				// A target that isn't a commit (tag/tree/blob) can never be a
-				// fast-forward of the old head, so a failed commit load rejects too.
-				isFF := false
-				if commit, err := object.GetCommit(stor, newTarget); err == nil {
-					for _, p := range commit.ParentHashes {
-						if p == oldHash {
-							isFF = true
-							break
-						}
-					}
-				}
-				if !isFF {
-					writeGHError(w, http.StatusUnprocessableEntity, "Update is not a fast forward")
-					return
-				}
-			}
+	if !req.Force && oldRef.Type() == plumbing.HashReference && newTarget != oldRef.Hash() {
+		fastForward, err := refUpdateIsFastForward(stor, oldRef.Hash(), newTarget)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		if !fastForward {
+			writeGHError(w, http.StatusUnprocessableEntity, "Update is not a fast forward")
+			return
 		}
 	}
 	if ph, err := s.secretScanningPushProtectionPlaceholderForRef(repo, stor, fullRef, newTarget); err != nil {

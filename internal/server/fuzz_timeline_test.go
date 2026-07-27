@@ -25,21 +25,24 @@ var knownIssueEventTypes = []string{
 // dangling by fuzzing their IDs so the "missing referenced user/commit" path
 // is covered. Invariant: no panic, and every rendered map marshals to JSON.
 func FuzzTimelineEventRender(f *testing.F) {
-	st := NewStore()
-	st.SeedDefaultUser()
-	admin := st.UsersByLogin["admin"]
-	// One real label / milestone so resolved arms are exercised too.
-	st.Labels[1] = &IssueLabel{ID: 1, Name: "bug", Color: "f00"}
-	st.Milestones[1] = &Milestone{ID: 1, Title: "v1"}
+	// seedAdminID is the identifier SeedDefaultUser always assigns the admin
+	// user in a fresh store, which is what the seeds name as a live actor.
+	const seedAdminID = 1
 
 	// eventIdx selects the event string; the ints dangle references.
-	f.Add(0, admin.ID, 1, 1, 1, "from", "to", "resolved")
+	f.Add(0, seedAdminID, 1, 1, 1, "from", "to", "resolved")
 	f.Add(6, 99999, 0, -1, 424242, "", "", "")
-	f.Add(3, admin.ID, 0, 0, 1, "old name", "new name", "off-topic")
+	f.Add(3, seedAdminID, 0, 0, 1, "old name", "new name", "off-topic")
 	f.Add(17, 0, 999, 999, 999, "\x00", "￿", "spam")
-	f.Add(9, admin.ID, 1, 0, 0, "a", "b", "too heated")
+	f.Add(9, seedAdminID, 1, 0, 0, "a", "b", "too heated")
 
 	f.Fuzz(func(t *testing.T, eventIdx, actorID, labelID, assigneeID, milestoneID int, renameFrom, renameTo, lockReason string) {
+		st := NewStore()
+		st.SeedDefaultUser()
+		// One real label / milestone so resolved arms are exercised too.
+		st.Labels[1] = &IssueLabel{ID: 1, Name: "bug", Color: "f00"}
+		st.Milestones[1] = &Milestone{ID: 1, Title: "v1"}
+
 		ev := knownIssueEventTypes[((eventIdx%len(knownIssueEventTypes))+len(knownIssueEventTypes))%len(knownIssueEventTypes)]
 		e := &IssueEvent{
 			ID:                  1,

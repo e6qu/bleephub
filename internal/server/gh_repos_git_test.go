@@ -184,8 +184,22 @@ func TestGitDataRefsAndTag(t *testing.T) {
 	json.Unmarshal(w.Body.Bytes(), &commit2Resp)
 	commit2SHA := commit2Resp["sha"].(string)
 
-	// Update ref (fast-forward)
-	body, _ = json.Marshal(map[string]any{"sha": commit2SHA})
+	// Add a grandchild and update straight from the root to it. A
+	// fast-forward is ancestry, not only an immediate parent edge.
+	body, _ = json.Marshal(map[string]any{
+		"tree":    treeHashFromCommit(t, stor, commitHash),
+		"parents": []string{commit2SHA},
+		"message": "third",
+	})
+	w = doMiscReq(s, "POST", "/api/v3/repos/"+repo.FullName+"/git/commits", string(body))
+	if w.Code != http.StatusCreated {
+		t.Fatalf("create third commit status = %d, want 201; body = %s", w.Code, w.Body.String())
+	}
+	var commit3Resp map[string]any
+	json.Unmarshal(w.Body.Bytes(), &commit3Resp)
+
+	// Update ref (multi-commit fast-forward)
+	body, _ = json.Marshal(map[string]any{"sha": commit3Resp["sha"].(string)})
 	w = doMiscReq(s, "PATCH", "/api/v3/repos/"+repo.FullName+"/git/refs/heads/feature", string(body))
 	if w.Code != http.StatusOK {
 		t.Fatalf("update ref status = %d, want 200; body = %s", w.Code, w.Body.String())

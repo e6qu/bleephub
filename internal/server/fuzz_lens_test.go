@@ -10,8 +10,11 @@ import (
 
 // graphQLFuzzServer builds a server with the GraphQL schema initialized and a
 // minimal amount of seeded state so resolvers exercise real lookup paths
-// rather than bailing at "not found" immediately.
-func graphQLFuzzServer() *Server {
+// rather than bailing at "not found" immediately. It takes *testing.T so a
+// *testing.F cannot be passed: GraphQL mutations write to the store, and a
+// server shared across fuzz executions makes replay order-dependent.
+func graphQLFuzzServer(t *testing.T) *Server {
+	t.Helper()
 	s := newTestServer()
 	s.initGraphQLSchema()
 	return s
@@ -23,8 +26,6 @@ func graphQLFuzzServer() *Server {
 // input[...] / p.Source.(T) must never panic on any combination — a wrong
 // type, a null, a string where an Int is declared, a deeply nested object.
 func FuzzGraphQLWithVariables(f *testing.F) {
-	s := graphQLFuzzServer()
-
 	seeds := []struct {
 		q    string
 		vars string
@@ -46,6 +47,7 @@ func FuzzGraphQLWithVariables(f *testing.F) {
 	}
 
 	f.Fuzz(func(t *testing.T, query, varsJSON string) {
+		s := graphQLFuzzServer(t)
 		var vars map[string]interface{}
 		// Tolerate non-object / invalid variable docs; an invalid doc yields a
 		// nil map, which is exactly what a real malformed request produces.
@@ -70,7 +72,6 @@ func FuzzGraphQLWithVariables(f *testing.F) {
 // member is itself an arbitrary JSON value (not just an object), driving the
 // whole decode path in handleGraphQL.
 func FuzzGraphQLRawVariables(f *testing.F) {
-	s := graphQLFuzzServer()
 	f.Add(`{"query":"{viewer{login}}","variables":{"x":1}}`)
 	f.Add(`{"query":"{viewer{login}}","variables":[1,2,3]}`)
 	f.Add(`{"query":"{viewer{login}}","variables":"str"}`)
@@ -79,6 +80,7 @@ func FuzzGraphQLRawVariables(f *testing.F) {
 	f.Add(`{}`)
 	f.Add(`not json`)
 	f.Fuzz(func(t *testing.T, rawBody string) {
+		s := graphQLFuzzServer(t)
 		req := httptest.NewRequest(http.MethodPost, "/api/graphql", bytes.NewReader([]byte(rawBody)))
 		req.Header.Set("Authorization", "Bearer "+defaultToken)
 		w := httptest.NewRecorder()
@@ -106,8 +108,6 @@ func FuzzEncodeCursorRoundTrip(f *testing.F) {
 // FuzzRESTMapBody drives the map[string]interface{} REST body parsers that read
 // fields with type assertions. These must never panic on a wrong-typed field.
 func FuzzRESTMapBody(f *testing.F) {
-	s := newTestServer()
-	s.registerRoutes()
 	// Endpoints whose handlers decode into a bare map and read typed fields.
 	paths := []string{
 		"/api/v3/orgs/acme/teams",
@@ -120,6 +120,10 @@ func FuzzRESTMapBody(f *testing.F) {
 	f.Add(`"string"`)
 	f.Add(`{"parent_team_id":1.5}`)
 	f.Fuzz(func(t *testing.T, body string) {
+		// A team create that succeeds would make the next execution's duplicate
+		// name a 422 instead, so the server is rebuilt per execution.
+		s := newTestServer()
+		s.registerRoutes()
 		for _, p := range paths {
 			req := httptest.NewRequest(http.MethodPost, p, bytes.NewReader([]byte(body)))
 			req.Header.Set("Authorization", "Bearer "+defaultToken)

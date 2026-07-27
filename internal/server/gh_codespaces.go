@@ -408,7 +408,7 @@ func (s *Server) handleUserCodespaceThreeSegGetDispatch(w http.ResponseWriter, r
 		return
 	}
 	user := ghUserFromContext(r.Context())
-	cs := s.resolveCodespace(w, r, user.Login, "")
+	cs := s.snapshotCodespace(s.resolveCodespace(w, r, user.Login, ""))
 	if cs == nil {
 		return
 	}
@@ -421,7 +421,8 @@ func (s *Server) handleUserCodespaceThreeSegGetDispatch(w http.ResponseWriter, r
 
 // --- exports + publish ---
 
-func (s *Server) codespaceExportJSON(cs *Codespace, export *CodespaceExport, baseURL string) map[string]interface{} {
+func (s *Server) codespaceExportJSON(live *Codespace, liveExport *CodespaceExport, baseURL string) map[string]interface{} {
+	cs, export := s.snapshotCodespaceExport(live, liveExport)
 	out := map[string]interface{}{
 		"state":        export.State,
 		"completed_at": export.CompletedAt.UTC().Format(time.RFC3339),
@@ -694,7 +695,7 @@ func (s *Server) handleStopOrgMemberCodespace(w http.ResponseWriter, r *http.Req
 func (s *Server) handleListUserCodespaceSecrets(w http.ResponseWriter, r *http.Request) {
 	user := ghUserFromContext(r.Context())
 	scope := codespaceSecretScopeKey("user", user.Login)
-	secs := s.store.ListCodespaceSecrets(scope)
+	secs := s.snapshotCodespaceSecrets(s.store.ListCodespaceSecrets(scope))
 	writeJSON(w, http.StatusOK, codespaceSecretsListJSON(secs, s.baseURL(r)))
 }
 
@@ -735,7 +736,7 @@ func (s *Server) handleListRepoCodespaceSecrets(w http.ResponseWriter, r *http.R
 		return
 	}
 	scope := codespaceSecretScopeKey("repo", repo.FullName)
-	secs := s.store.ListCodespaceSecrets(scope)
+	secs := s.snapshotCodespaceSecrets(s.store.ListCodespaceSecrets(scope))
 	out := make([]map[string]interface{}, len(secs))
 	for i, sec := range secs {
 		out[i] = codespaceRepoSecretJSON(sec)
@@ -788,7 +789,7 @@ func (s *Server) handleDeleteRepoCodespaceSecret(w http.ResponseWriter, r *http.
 func (s *Server) handleListOrgCodespaceSecrets(w http.ResponseWriter, r *http.Request) {
 	org := r.PathValue("org")
 	scope := codespaceSecretScopeKey("org", org)
-	secs := s.store.ListCodespaceSecrets(scope)
+	secs := s.snapshotCodespaceSecrets(s.store.ListCodespaceSecrets(scope))
 	out := make([]map[string]interface{}, len(secs))
 	for i, sec := range secs {
 		out[i] = codespaceOrgSecretJSON(sec, org, s.baseURL(r))
@@ -875,8 +876,11 @@ func (s *Server) handleGetCodespacePublicKey(w http.ResponseWriter, r *http.Requ
 	s.writeActionsPublicKey(w)
 }
 
+// getCodespaceSecret resolves {secret_name} in a scope as a snapshot: the
+// handlers that follow read its selected-repository list and render it, and a
+// concurrent selection change would otherwise be seen half-applied.
 func (s *Server) getCodespaceSecret(r *http.Request, kind, key string) *CodespaceSecret {
-	return s.store.GetCodespaceSecret(codespaceSecretScopeKey(kind, key), r.PathValue("secret_name"))
+	return s.snapshotCodespaceSecret(s.store.GetCodespaceSecret(codespaceSecretScopeKey(kind, key), r.PathValue("secret_name")))
 }
 
 func (s *Server) readSealedCodespaceSecret(w http.ResponseWriter, r *http.Request) (string, bool) {
@@ -931,7 +935,60 @@ type codespacePatchRequest struct {
 	RetentionPeriodMinutes int    `json:"retention_period_minutes"`
 }
 
-func (s *Server) codespaceToJSON(cs *Codespace, baseURL string) map[string]interface{} {
+func cloneCodespace(cs *Codespace) *Codespace {
+	if cs == nil {
+		return nil
+	}
+	view := *cs
+	view.LatestExport = clonePointer(cs.LatestExport)
+	return &view
+}
+
+// snapshotCodespace copies a stored codespace under the store lock. Every
+// response is rendered from a copy: a codespace is written by container
+// lifecycle transitions that run concurrently with requests, and a serializer
+// walking the stored record would publish a half-applied one.
+func (s *Server) snapshotCodespace(cs *Codespace) *Codespace {
+	if cs == nil {
+		return nil
+	}
+	s.store.mu.RLock()
+	defer s.store.mu.RUnlock()
+	return cloneCodespace(cs)
+}
+
+// snapshotCodespaceExport copies a codespace and one of its exports under a
+// single acquisition of the lock, so the pair a response renders is one
+// consistent instant rather than two.
+func (s *Server) snapshotCodespaceExport(cs *Codespace, export *CodespaceExport) (*Codespace, *CodespaceExport) {
+	s.store.mu.RLock()
+	defer s.store.mu.RUnlock()
+	return cloneCodespace(cs), clonePointer(export)
+}
+
+// snapshotCodespaceSecret copies a stored secret under the store lock,
+// including the selected-repository list a concurrent write replaces.
+func (s *Server) snapshotCodespaceSecret(sec *CodespaceSecret) *CodespaceSecret {
+	if sec == nil {
+		return nil
+	}
+	s.store.mu.RLock()
+	defer s.store.mu.RUnlock()
+	view := *sec
+	view.SelectedRepoIDs = append([]int(nil), sec.SelectedRepoIDs...)
+	return &view
+}
+
+func (s *Server) snapshotCodespaceSecrets(secs []*CodespaceSecret) []*CodespaceSecret {
+	out := make([]*CodespaceSecret, len(secs))
+	for i, sec := range secs {
+		out[i] = s.snapshotCodespaceSecret(sec)
+	}
+	return out
+}
+
+func (s *Server) codespaceToJSON(live *Codespace, baseURL string) map[string]interface{} {
+	cs := s.snapshotCodespace(live)
 	owner := s.store.LookupUserByLogin(cs.OwnerLogin)
 	ownerJSON := map[string]interface{}(nil)
 	if owner != nil {
@@ -1242,7 +1299,7 @@ func (s *Server) orgCodespaceSecretSelectionChange(w http.ResponseWriter, r *htt
 			}
 			return nil
 		},
-		func() {})
+		func() { s.store.persistCodespaceSecretScopeLocked(scope) })
 }
 
 func (s *Server) handleAddOrgCodespaceSecretRepo(w http.ResponseWriter, r *http.Request) {

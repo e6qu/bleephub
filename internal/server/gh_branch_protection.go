@@ -8,6 +8,10 @@ import (
 	"io"
 	"net/http"
 	"strings"
+
+	"github.com/go-git/go-git/v5/plumbing"
+	"github.com/go-git/go-git/v5/plumbing/object"
+	"github.com/go-git/go-git/v5/plumbing/storer"
 )
 
 // BranchProtection matches the GitHub REST API response shape for
@@ -244,10 +248,77 @@ func (s *Server) branchProtectionSubURL(baseURL, fullName, branch, sub string) s
 // branchProtectionFor is the single read path into the protection table; the
 // map is written under Misc.mu and an unsynchronized read racing a write is a
 // fatal error rather than a recoverable panic.
+//
+// The caller gets a copy. Handlers edit the rule they read and renderers fill
+// request-derived URLs into it, and both would otherwise be writing the object
+// every other request reads, without the lock and with this request's host.
 func (s *Server) branchProtectionFor(repoID int, branch string) *BranchProtection {
 	s.store.Misc.mu.RLock()
 	defer s.store.Misc.mu.RUnlock()
-	return s.store.Misc.branchProtection[bpKey(repoID, branch)]
+	return cloneBranchProtection(s.store.Misc.branchProtection[bpKey(repoID, branch)])
+}
+
+// clonePointer copies the value behind a pointer field.
+func clonePointer[T any](p *T) *T {
+	if p == nil {
+		return nil
+	}
+	copied := *p
+	return &copied
+}
+
+// cloneBranchProtection deep-copies a protection rule so that no caller holds a
+// pointer into the stored table. Every field is copied explicitly and
+// TestBranchProtectionCloneCoversEveryField fails when a new one is added
+// without being copied here.
+func cloneBranchProtection(bp *BranchProtection) *BranchProtection {
+	if bp == nil {
+		return nil
+	}
+	out := *bp
+	if bp.RequiredStatusChecks != nil {
+		checks := *bp.RequiredStatusChecks
+		checks.Contexts = append([]string(nil), bp.RequiredStatusChecks.Contexts...)
+		checks.Checks = make([]BPCheck, len(bp.RequiredStatusChecks.Checks))
+		for i, check := range bp.RequiredStatusChecks.Checks {
+			check.AppID = clonePointer(check.AppID)
+			checks.Checks[i] = check
+		}
+		out.RequiredStatusChecks = &checks
+	}
+	if bp.RequiredPullRequestReviews != nil {
+		reviews := *bp.RequiredPullRequestReviews
+		reviews.DismissalRestrictions = cloneBPRestrictions(bp.RequiredPullRequestReviews.DismissalRestrictions)
+		if bp.RequiredPullRequestReviews.BypassPullRequestAllowances != nil {
+			allowances := BPBypassAllowances{
+				Users: append([]BPActor(nil), bp.RequiredPullRequestReviews.BypassPullRequestAllowances.Users...),
+				Teams: append([]BPActor(nil), bp.RequiredPullRequestReviews.BypassPullRequestAllowances.Teams...),
+				Apps:  append([]BPActor(nil), bp.RequiredPullRequestReviews.BypassPullRequestAllowances.Apps...),
+			}
+			reviews.BypassPullRequestAllowances = &allowances
+		}
+		out.RequiredPullRequestReviews = &reviews
+	}
+	out.EnforceAdmins = clonePointer(bp.EnforceAdmins)
+	out.Restrictions = cloneBPRestrictions(bp.Restrictions)
+	out.RequiredLinearHistory = clonePointer(bp.RequiredLinearHistory)
+	out.AllowForcePushes = clonePointer(bp.AllowForcePushes)
+	out.AllowDeletions = clonePointer(bp.AllowDeletions)
+	out.BlockCreations = clonePointer(bp.BlockCreations)
+	out.RequiredConversationResolution = clonePointer(bp.RequiredConversationResolution)
+	out.RequiredSignatures = clonePointer(bp.RequiredSignatures)
+	return &out
+}
+
+func cloneBPRestrictions(r *BPRestrictions) *BPRestrictions {
+	if r == nil {
+		return nil
+	}
+	out := *r
+	out.Users = append([]BPActor(nil), r.Users...)
+	out.Teams = append([]BPActor(nil), r.Teams...)
+	out.Apps = append([]BPActor(nil), r.Apps...)
+	return &out
 }
 
 func (s *Server) getBranchProtection(r *http.Request) (*Repo, string, *BranchProtection) {
@@ -259,18 +330,22 @@ func (s *Server) getBranchProtection(r *http.Request) (*Repo, string, *BranchPro
 	return repo, branch, s.branchProtectionFor(repo.ID, branch)
 }
 
+// setBranchProtection replaces the stored rule with a copy of the supplied one,
+// so that whatever the caller does with its own rule afterwards — render it,
+// hydrate URLs into it, edit it again — cannot reach the stored table.
 func (s *Server) setBranchProtection(repo *Repo, branch string, bp *BranchProtection) {
 	key := bpKey(repo.ID, branch)
+	stored := cloneBranchProtection(bp)
 	s.store.Misc.mu.Lock()
-	if bp == nil || !bp.IsProtected() {
+	if stored == nil || !stored.IsProtected() {
 		delete(s.store.Misc.branchProtection, key)
 		if s.store.Misc.persist != nil {
 			s.store.Misc.persist.MustDelete("branch_protection", key)
 		}
 	} else {
-		s.store.Misc.branchProtection[key] = bp
+		s.store.Misc.branchProtection[key] = stored
 		if s.store.Misc.persist != nil {
-			s.store.Misc.persist.MustPut("branch_protection", key, bp)
+			s.store.Misc.persist.MustPut("branch_protection", key, stored)
 		}
 	}
 	s.store.Misc.mu.Unlock()
@@ -310,14 +385,14 @@ func (s *Server) handleBranchProtectionPut(w http.ResponseWriter, r *http.Reques
 		return
 	}
 
+	key := bpKey(repo.ID, branch)
 	s.store.Misc.mu.Lock()
-	bp := s.store.Misc.branchProtection[bpKey(repo.ID, branch)]
+	bp := cloneBranchProtection(s.store.Misc.branchProtection[key])
 	if bp == nil {
 		bp = &BranchProtection{}
 	}
 	bp = s.applyBranchProtectionRequest(bp, &req)
-	key := bpKey(repo.ID, branch)
-	s.store.Misc.branchProtection[key] = bp
+	s.store.Misc.branchProtection[key] = cloneBranchProtection(bp)
 	if s.store.Misc.persist != nil {
 		s.store.Misc.persist.MustPut("branch_protection", key, bp)
 	}
@@ -1228,18 +1303,173 @@ func decodeStringArrayBody(w http.ResponseWriter, r *http.Request, out *[]string
 	return true
 }
 
-// branchProtectionForRepo returns the protection rule for a repo+branch, or nil.
-func (s *Server) branchProtectionForRepo(repoID int, branch string) *BranchProtection {
-	s.store.Misc.mu.RLock()
-	defer s.store.Misc.mu.RUnlock()
-	return s.store.Misc.branchProtection[bpKey(repoID, branch)]
+// refWriteKind names the ref updates a protection rule governs with separate
+// allowances.
+type refWriteKind int
+
+const (
+	refForcePush refWriteKind = iota
+	refDeletion
+	refCreation
+	// refFastForward is an update whose target descends from what the branch
+	// already points at, so no commit the branch reaches is discarded.
+	refFastForward
+)
+
+// protectedRefWriteRefusal decides one ref write against the branch's
+// protection rule and returns the refusal, or "" when the rule allows it. Both
+// git transports and the REST ref-write routes decide here, so a rule cannot
+// bind one lane and be decoration on the other.
+//
+// A push writes the ref rather than merging into it, so the destructive
+// allowances — force push, deletion, creation — are decided here as well as the
+// requirements a merge into the branch faces. Those come from the evaluator the
+// merge gate itself uses, applied to the commit being pushed.
+func (s *Server) protectedRefWriteRefusal(ctx context.Context, repo *Repo, stor storer.Storer, ref plumbing.ReferenceName, kind refWriteKind, target plumbing.Hash) string {
+	if !ref.IsBranch() {
+		return ""
+	}
+	branch := ref.Short()
+	bp := s.branchProtectionFor(repo.ID, branch)
+	if bp == nil {
+		return ""
+	}
+	// enforce_admins is the setting that decides whether the rule binds a
+	// repository administrator; with it off an administrator bypasses the
+	// whole rule, which is the same bypass the merge gate grants.
+	if (bp.EnforceAdmins == nil || !bp.EnforceAdmins.Enabled) && s.viewerCanAdminRepo(ctx, repo) {
+		return ""
+	}
+	if bp.Restrictions != nil && !s.viewerIsRestrictedPusher(ctx, repo, bp.Restrictions) {
+		return "You're not authorized to push to this branch."
+	}
+	switch kind {
+	case refDeletion:
+		if bp.AllowDeletions == nil || !bp.AllowDeletions.Enabled {
+			return "Cannot delete protected branch " + branch + "."
+		}
+		// A deletion moves the branch nowhere, so the requirements on what
+		// it may point at do not apply to it.
+		return ""
+	case refForcePush:
+		if bp.AllowForcePushes == nil || !bp.AllowForcePushes.Enabled {
+			return "Cannot force-push to protected branch " + branch + "."
+		}
+	case refCreation:
+		if bp.BlockCreations != nil && bp.BlockCreations.Enabled {
+			return "Cannot create protected branch " + branch + "."
+		}
+	case refFastForward:
+	}
+	return s.protectedBranchTargetRefusal(repo, bp, stor, branch, target)
+}
+
+// protectedBranchTargetRefusal answers the requirements that govern what a
+// protected branch may be moved to. A direct write faces them exactly as a
+// merge into the branch does.
+func (s *Server) protectedBranchTargetRefusal(repo *Repo, bp *BranchProtection, stor storer.Storer, branch string, target plumbing.Hash) string {
+	if bp.RequiredPullRequestReviews != nil {
+		return "Changes must be made through a pull request."
+	}
+	if target.IsZero() {
+		return ""
+	}
+	if state := s.evaluateChecksForMerge(repo, branch, target.String()); len(state.MissingRequired) > 0 {
+		return fmt.Sprintf("Required status check %q is expected.", state.MissingRequired[0])
+	}
+	linear := bp.RequiredLinearHistory != nil && bp.RequiredLinearHistory.Enabled
+	signed := bp.RequiredSignatures != nil && bp.RequiredSignatures.Enabled
+	if !linear && !signed {
+		return ""
+	}
+	added, err := commitsAddedToBranch(stor, branch, target)
+	if err != nil {
+		return "Cannot read the commits this update adds to " + branch + ": " + err.Error()
+	}
+	for _, commit := range added {
+		if linear && commit.NumParents() > 1 {
+			return "Cannot push a merge commit to " + branch + ", which requires linear history."
+		}
+		if signed && commit.PGPSignature == "" {
+			return "Commits must have verified signatures."
+		}
+	}
+	return ""
+}
+
+// commitsAddedToBranch returns the commits a write of target onto branch adds
+// to it: those reachable from target but not from where the branch stands.
+func commitsAddedToBranch(stor storer.Storer, branch string, target plumbing.Hash) ([]*object.Commit, error) {
+	if stor == nil {
+		return nil, errors.New("no git storage for the repository")
+	}
+	head, err := object.GetCommit(stor, target)
+	if err != nil {
+		return nil, fmt.Errorf("read commit %s: %w", target, err)
+	}
+	seen := map[plumbing.Hash]bool{}
+	if current, err := stor.Reference(plumbing.NewBranchReferenceName(branch)); err == nil {
+		if base, err := object.GetCommit(stor, current.Hash()); err == nil {
+			if err := object.NewCommitPreorderIter(base, nil, nil).ForEach(func(c *object.Commit) error {
+				seen[c.Hash] = true
+				return nil
+			}); err != nil {
+				return nil, fmt.Errorf("walk %s: %w", branch, err)
+			}
+		}
+	}
+	var added []*object.Commit
+	err = object.NewCommitPreorderIter(head, seen, nil).ForEach(func(c *object.Commit) error {
+		added = append(added, c)
+		return nil
+	})
+	if err != nil {
+		return nil, fmt.Errorf("walk %s: %w", target, err)
+	}
+	return added, nil
+}
+
+// viewerIsRestrictedPusher reports whether the request's actor is one of the
+// actors a restrictions rule allows to write the branch.
+func (s *Server) viewerIsRestrictedPusher(ctx context.Context, repo *Repo, restrictions *BPRestrictions) bool {
+	user := ghUserFromContext(ctx)
+	if user == nil {
+		return false
+	}
+	for _, actor := range restrictions.Users {
+		if strings.EqualFold(actor.Login, user.Login) || (actor.ID != 0 && actor.ID == user.ID) {
+			return true
+		}
+	}
+	orgLogin, _, ok := splitRepoFullName(repo.FullName)
+	if ok {
+		for _, actor := range restrictions.Teams {
+			if _, member := s.store.GetTeamMembership(orgLogin, actor.Login, user.ID); member {
+				return true
+			}
+		}
+	}
+	app := ghAppFromContext(ctx)
+	if app == nil {
+		if token := ghInstallationTokenFromContext(ctx); token != nil {
+			app = s.store.GetApp(token.AppID)
+		}
+	}
+	if app != nil {
+		for _, actor := range restrictions.Apps {
+			if app.Slug == actor.Login || app.ID == actor.ID {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 // canMergePullRequest checks branch protection rules for a PR merge.
 // It returns (ok, errorMessage). ok==false with empty message means the caller
 // should fall back to the existing required-status-check message.
 func (s *Server) canMergePullRequest(ctx context.Context, repo *Repo, pr *PullRequest) (bool, string) {
-	bp := s.branchProtectionForRepo(repo.ID, pr.BaseRefName)
+	bp := s.branchProtectionFor(repo.ID, pr.BaseRefName)
 	if bp == nil {
 		return true, ""
 	}
@@ -1316,7 +1546,7 @@ func (s *Server) hasRequestedChanges(prID int) bool {
 // requiredCheckContexts returns the base branch's protected status-check
 // contexts from the typed model.
 func (s *Server) requiredCheckContexts(repoID int, baseBranch string) []string {
-	bp := s.branchProtectionForRepo(repoID, baseBranch)
+	bp := s.branchProtectionFor(repoID, baseBranch)
 	if bp == nil || bp.RequiredStatusChecks == nil {
 		return nil
 	}
@@ -1339,7 +1569,7 @@ func (s *Server) requiredCheckContexts(repoID int, baseBranch string) []string {
 
 // branchProtectionRuleForPR returns a GraphQL-shaped map for baseRef.branchProtectionRule.
 func (s *Server) branchProtectionRuleForPR(repo *Repo, baseBranch string) map[string]interface{} {
-	bp := s.branchProtectionForRepo(repo.ID, baseBranch)
+	bp := s.branchProtectionFor(repo.ID, baseBranch)
 	if bp == nil {
 		return nil
 	}

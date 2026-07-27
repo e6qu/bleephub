@@ -1,0 +1,9 @@
+# The gem tree the release image installs to run Pages builds. Every gem in the
+# resolved closure is pinned by SHA-256 in pinned-gems.sha256, which the image
+# downloads and verifies before bundler is allowed to install anything; the
+# install itself runs with --local so nothing unpinned can be reached.
+#
+# Regenerate both files together with resolve-pins.py.
+source "https://rubygems.org"
+
+gem "github-pages", "= 232"

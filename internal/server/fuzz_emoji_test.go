@@ -18,9 +18,8 @@ import (
 //     archive (the lookup is a pure map read, so escape is structurally
 //     impossible — this asserts it stays that way).
 func FuzzEmojiPathResolver(f *testing.F) {
-	s := fuzzRoutedServer(f)
-
-	// A real catalog path from the archive, plus adversarial variants.
+	// A real catalog path from the archive, plus adversarial variants. The
+	// archive is embedded and immutable, so reading it needs no server.
 	assets, err := loadEmojiAssets()
 	if err != nil {
 		f.Fatalf("loadEmojiAssets: %v", err)
@@ -48,6 +47,7 @@ func FuzzEmojiPathResolver(f *testing.F) {
 	f.Add("LICENSE-TWEMOJI")
 
 	f.Fuzz(func(t *testing.T, p string) {
+		s := fuzzRoutedServer(t)
 		// Route the request so PathValue("path") is populated exactly as the
 		// mux would. Bad request targets (control bytes) are simply not served.
 		req, err := http.NewRequest(http.MethodGet, "http://x/images/icons/emoji/"+p, nil)

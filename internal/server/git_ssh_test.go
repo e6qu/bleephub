@@ -63,6 +63,19 @@ func TestGitSSHTransportPushAndClone(t *testing.T) {
 			t.Fatalf("git %s: %v\n%s", strings.Join(args, " "), runErr, output)
 		}
 	}
+	runGitFails := func(dir string, want string, args ...string) {
+		t.Helper()
+		command := exec.Command("git", args...)
+		command.Dir = dir
+		command.Env = append(os.Environ(), "GIT_SSH_COMMAND=ssh -i "+keyPath+" -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null")
+		output, runErr := command.CombinedOutput()
+		if runErr == nil {
+			t.Fatalf("git %s succeeded, want refusal containing %q\n%s", strings.Join(args, " "), want, output)
+		}
+		if !strings.Contains(string(output), want) {
+			t.Fatalf("git %s refusal does not contain %q: %v\n%s", strings.Join(args, " "), want, runErr, output)
+		}
+	}
 	url := "ssh://git@" + testSSHAddr + "/admin/" + name + ".git"
 	emptyClone := filepath.Join(temp, "empty-clone")
 	runGit(temp, "clone", url, emptyClone)
@@ -90,6 +103,36 @@ func TestGitSSHTransportPushAndClone(t *testing.T) {
 	runGit(temp, "clone", url, clone)
 	if _, err := os.Stat(filepath.Join(clone, "README.md")); err != nil {
 		t.Fatalf("cloned repository did not contain pushed file: %v", err)
+	}
+
+	// Branch protection must bind both transports, not just the REST ref
+	// endpoints. Requiring a pull request gives a deterministic refusal that
+	// applies even to this repository administrator because enforce_admins is
+	// enabled.
+	protection := ghPut(t, "/api/v3/repos/admin/"+name+"/branches/main/protection", defaultToken, map[string]interface{}{
+		"required_pull_request_reviews": map[string]interface{}{"required_approving_review_count": 1},
+		"enforce_admins":                true,
+	})
+	requireStatus(t, protection, http.StatusOK)
+
+	if err := os.WriteFile(filepath.Join(worktree, "README.md"), []byte("protected update\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	runGit(worktree, "add", "README.md")
+	runGit(worktree, "commit", "-m", "Protected update")
+	const refusal = "Changes must be made through a pull request."
+	runGitFails(worktree, refusal, "push", "origin", "HEAD:main")
+	runGitFails(worktree, refusal, "push", httpURL, "HEAD:main")
+
+	// A refused push may transfer objects, but it must not move the ref.
+	verify := filepath.Join(temp, "protected-clone")
+	runGit(temp, "clone", url, verify)
+	got, err := os.ReadFile(filepath.Join(verify, "README.md"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(got) != "SSH transport\n" {
+		t.Fatalf("protected main contains %q after refused pushes", got)
 	}
 }
 
