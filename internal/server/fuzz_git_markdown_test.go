@@ -36,7 +36,12 @@ func FuzzGitRefUpdate(f *testing.F) {
 	f.Add("heads/main", "0000000000000000000000000000000000000000", true, false)
 
 	f.Fuzz(func(t *testing.T, ref, sha string, force, useHead bool) {
-		s := fuzzRoutedServer(t)
+		// This target only exercises the Git Data REST surface. Building the
+		// GraphQL schema and every unrelated route for every mutation adds
+		// enough allocation pressure to leave workers in GC when a short fuzz
+		// burst ends. Keep the same auth middleware and production handler,
+		// but register only the route family under test.
+		s := gitDataTestServer(t)
 		admin := s.store.UsersByLogin["admin"]
 		const name = "ref-fuzz"
 		s.store.CreateRepo(admin, name, "", false)
