@@ -159,7 +159,36 @@ func (s *Server) credentialMayAccessTarget(r *http.Request, user *User, instTok 
 	if instTok != nil {
 		return s.installationMayAccessTarget(r, instTok)
 	}
+	// A ghu_ user-to-server token is the intersection of what the user can
+	// reach and what the app is installed on — it is not simply the user. On
+	// GitHub an app cannot borrow a user's access to a repository it was never
+	// installed on, so both halves have to hold.
+	if uts := ghUserToServerTokenFromContext(r.Context()); uts != nil && uts.AppID != 0 {
+		if repo := s.repoFromPATRequest(r); repo != nil && !s.userToServerReachesRepo(uts, repo) {
+			return false
+		}
+	}
 	return s.principalMayAccessTarget(r, user, need)
+}
+
+// userToServerReachesRepo reports whether any installation of the token's app
+// covers the repository, honouring a token narrowed to specific installations.
+//
+// A gho_ OAuth-app token has no app installation behind it and acts purely as
+// the user, so it is not constrained here.
+func (s *Server) userToServerReachesRepo(tok *UserToServerToken, repo *Repo) bool {
+	if tok == nil || tok.AppID == 0 || repo == nil {
+		return true
+	}
+	for _, inst := range s.store.ListAppInstallations(tok.AppID) {
+		if len(tok.InstallationIDs) > 0 && !containsRepoID(tok.InstallationIDs, inst.ID) {
+			continue
+		}
+		if installationCovers(inst, nil, repo) {
+			return true
+		}
+	}
+	return false
 }
 
 // installationMayAccessTarget checks that the installation behind a token
@@ -167,8 +196,16 @@ func (s *Server) credentialMayAccessTarget(r *http.Request, user *User, instTok 
 // permission map was already checked by the caller; this answers which
 // resources that grant is over.
 func (s *Server) installationMayAccessTarget(r *http.Request, tok *InstallationToken) bool {
-	if repo := s.repoFromPATRequest(r); repo != nil && !s.installationReachesRepo(tok, repo) {
-		return false
+	if repo := s.repoFromPATRequest(r); repo != nil {
+		// A public repository is readable by anyone, including an app whose
+		// installation is elsewhere — the same carve-out canReadRepo and the
+		// fine-grained PAT checks already make. Without it, scoping the write
+		// path also removed every read an app could perform against a public
+		// repository it is not installed on.
+		readOnly := r.Method == http.MethodGet || r.Method == http.MethodHead
+		if !(readOnly && !repo.Private) && !s.installationReachesRepo(tok, repo) {
+			return false
+		}
 	}
 	if orgLogin := r.PathValue("org"); orgLogin != "" && !s.installationReachesOrg(tok, orgLogin) {
 		return false
@@ -184,18 +221,28 @@ func (s *Server) installationReachesRepo(tok *InstallationToken, repo *Repo) boo
 	if tok == nil || repo == nil {
 		return false
 	}
-	inst := s.store.GetInstallation(tok.InstallationID)
-	if inst == nil {
+	return installationCovers(s.store.GetInstallation(tok.InstallationID), tok.RepositoryIDs, repo)
+}
+
+// installationCovers is the shared predicate: the repository must belong to the
+// account the app was installed on, be within a non-"all" installation's chosen
+// set, and be within any narrower set the token itself was scoped to.
+//
+// The selection test is spelled deny-by-default. Reading it as
+// `== "selected"` would admit every repository for any future selection value
+// the field grows, which is the wrong way round for an access check.
+func installationCovers(inst *Installation, tokenRepoIDs []int, repo *Repo) bool {
+	if inst == nil || repo == nil {
 		return false
 	}
 	owner, _, ok := strings.Cut(repo.FullName, "/")
 	if !ok || !strings.EqualFold(owner, inst.TargetLogin) {
 		return false
 	}
-	if inst.RepositorySelection == "selected" && !containsRepoID(inst.SelectedRepoIDs, repo.ID) {
+	if inst.RepositorySelection != "all" && !containsRepoID(inst.SelectedRepoIDs, repo.ID) {
 		return false
 	}
-	if len(tok.RepositoryIDs) > 0 && !containsRepoID(tok.RepositoryIDs, repo.ID) {
+	if len(tokenRepoIDs) > 0 && !containsRepoID(tokenRepoIDs, repo.ID) {
 		return false
 	}
 	return true
@@ -208,7 +255,19 @@ func (s *Server) installationReachesOrg(tok *InstallationToken, orgLogin string)
 		return false
 	}
 	inst := s.store.GetInstallation(tok.InstallationID)
-	return inst != nil && strings.EqualFold(inst.TargetLogin, orgLogin)
+	if inst == nil {
+		return false
+	}
+	// The target type matters as much as the login. Nothing in the store keeps
+	// a user login and an organization login distinct — CreateOrg checks only
+	// OrgsByLogin, and user creation only UsersByLogin — so matching on the
+	// login alone let an app installed on a *user* named `acme` administer the
+	// *organization* named `acme`, up to and including minting a runner
+	// registration token for it.
+	if !strings.EqualFold(inst.TargetType, "Organization") {
+		return false
+	}
+	return strings.EqualFold(inst.TargetLogin, orgLogin)
 }
 
 func containsRepoID(ids []int, id int) bool {
@@ -227,7 +286,9 @@ func containsRepoID(ids []int, id int) bool {
 // for it can read nothing.
 func (s *Server) viewerCanReadRepo(r *http.Request, repo *Repo) bool {
 	if tok := ghInstallationTokenFromContext(r.Context()); tok != nil {
-		return s.installationReachesRepo(tok, repo)
+		// A public repository is readable by anyone; only private ones need the
+		// installation to actually cover them.
+		return (repo != nil && !repo.Private) || s.installationReachesRepo(tok, repo)
 	}
 	return canReadRepo(s.store, ghUserFromContext(r.Context()), repo)
 }
@@ -251,10 +312,15 @@ func (s *Server) viewerCanReadRepo(r *http.Request, repo *Repo) bool {
 func resourceCapabilityFor(scope permScope, level permLevel, method, path string) permLevel {
 	switch scope {
 	case scopeAdministration, scopeOrgAdministration, scopeSecrets,
-		scopeDependabotSecrets, scopePATs, scopePATRequests,
-		scopeSecurityEvents:
+		scopeDependabotSecrets, scopePATs, scopePATRequests:
 		return permAdmin
 	}
+	// scopeSecurityEvents is not here either, and was briefly. Promoting it to
+	// admin refused a collaborator with push the alert reads GitHub grants at
+	// security_events:read — and worse, it routed those denials into the 403
+	// arm of denyResourceAccess, which reintroduced exactly the existence
+	// oracle the 404-on-read rule three lines below exists to prevent: 403 for
+	// a private repository that exists, 404 for one that does not.
 	// scopeMembers is deliberately NOT in that list, though it governs team and
 	// membership changes. On GitHub a team maintainer manages their own team's
 	// membership without being an organization admin, and a non-member reading

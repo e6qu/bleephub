@@ -104,7 +104,7 @@ func (s *Server) handleListIssues(w http.ResponseWriter, r *http.Request) {
 		writeGHError(w, http.StatusNotFound, "Not Found")
 		return
 	}
-	if repo.Private && !canReadRepo(s.store, ghUserFromContext(r.Context()), repo) {
+	if repo.Private && !s.viewerCanReadRepo(r, repo) {
 		writeGHError(w, http.StatusNotFound, "Not Found")
 		return
 	}
@@ -175,7 +175,7 @@ func (s *Server) handleGetIssue(w http.ResponseWriter, r *http.Request) {
 		writeGHError(w, http.StatusNotFound, "Not Found")
 		return
 	}
-	if repo.Private && !canReadRepo(s.store, ghUserFromContext(r.Context()), repo) {
+	if repo.Private && !s.viewerCanReadRepo(r, repo) {
 		writeGHError(w, http.StatusNotFound, "Not Found")
 		return
 	}
@@ -446,7 +446,7 @@ func (s *Server) handleListIssueComments(w http.ResponseWriter, r *http.Request)
 		writeGHError(w, http.StatusNotFound, "Not Found")
 		return
 	}
-	if repo.Private && !canReadRepo(s.store, ghUserFromContext(r.Context()), repo) {
+	if repo.Private && !s.viewerCanReadRepo(r, repo) {
 		writeGHError(w, http.StatusNotFound, "Not Found")
 		return
 	}
@@ -633,7 +633,7 @@ func (s *Server) handleListRepoIssueComments(w http.ResponseWriter, r *http.Requ
 		writeGHError(w, http.StatusNotFound, "Not Found")
 		return
 	}
-	if repo.Private && !canReadRepo(s.store, ghUserFromContext(r.Context()), repo) {
+	if repo.Private && !s.viewerCanReadRepo(r, repo) {
 		writeGHError(w, http.StatusNotFound, "Not Found")
 		return
 	}
@@ -660,7 +660,7 @@ func (s *Server) handleGetIssueComment(w http.ResponseWriter, r *http.Request) {
 		writeGHError(w, http.StatusNotFound, "Not Found")
 		return
 	}
-	if repo.Private && !canReadRepo(s.store, ghUserFromContext(r.Context()), repo) {
+	if repo.Private && !s.viewerCanReadRepo(r, repo) {
 		writeGHError(w, http.StatusNotFound, "Not Found")
 		return
 	}
@@ -920,7 +920,7 @@ func (s *Server) handleListIssueTimeline(w http.ResponseWriter, r *http.Request)
 		writeGHError(w, http.StatusNotFound, "Not Found")
 		return
 	}
-	if repo.Private && !canReadRepo(s.store, ghUserFromContext(r.Context()), repo) {
+	if repo.Private && !s.viewerCanReadRepo(r, repo) {
 		writeGHError(w, http.StatusNotFound, "Not Found")
 		return
 	}
@@ -960,7 +960,7 @@ func (s *Server) handleListIssueEvents(w http.ResponseWriter, r *http.Request) {
 		writeGHError(w, http.StatusNotFound, "Not Found")
 		return
 	}
-	if repo.Private && !canReadRepo(s.store, ghUserFromContext(r.Context()), repo) {
+	if repo.Private && !s.viewerCanReadRepo(r, repo) {
 		writeGHError(w, http.StatusNotFound, "Not Found")
 		return
 	}
@@ -999,7 +999,7 @@ func (s *Server) handleListRepoIssueEvents(w http.ResponseWriter, r *http.Reques
 		writeGHError(w, http.StatusNotFound, "Not Found")
 		return
 	}
-	if repo.Private && !canReadRepo(s.store, ghUserFromContext(r.Context()), repo) {
+	if repo.Private && !s.viewerCanReadRepo(r, repo) {
 		writeGHError(w, http.StatusNotFound, "Not Found")
 		return
 	}
@@ -1022,7 +1022,7 @@ func (s *Server) handleGetIssueEvent(w http.ResponseWriter, r *http.Request) {
 		writeGHError(w, http.StatusNotFound, "Not Found")
 		return
 	}
-	if repo.Private && !canReadRepo(s.store, ghUserFromContext(r.Context()), repo) {
+	if repo.Private && !s.viewerCanReadRepo(r, repo) {
 		writeGHError(w, http.StatusNotFound, "Not Found")
 		return
 	}

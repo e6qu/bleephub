@@ -581,7 +581,7 @@ func (s *Server) lookupReadableRepoFromPath(w http.ResponseWriter, r *http.Reque
 // must not leak private-repo content but operate on non-Repo-keyed state.
 func (s *Server) enforceRepoReadable(w http.ResponseWriter, r *http.Request) bool {
 	repo := s.store.GetRepo(r.PathValue("owner"), r.PathValue("repo"))
-	if repo != nil && repo.Private && !canReadRepo(s.store, ghUserFromContext(r.Context()), repo) {
+	if repo != nil && repo.Private && !s.viewerCanReadRepo(r, repo) {
 		writeGHError(w, http.StatusNotFound, "Not Found")
 		return false
 	}

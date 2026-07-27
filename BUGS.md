@@ -13,7 +13,7 @@ source or comments. The reasoning behind a fix belongs in its commit message.
 
 | ID | S | Location | Finding | Status |
 |---|---|---|---|---|
-| AUTH-001 | B | gh_apps_perms.go:100-128 | `requirePerm` is a credential-shape gate, not an authorization gate: for a classic PAT or any browser session it evaluates no predicate and falls through to the handler | fixed — resource check now runs for every credential shape; classic-PAT scope enforcement still open |
+| AUTH-001 | B | gh_apps_perms.go:100-128 | `requirePerm` is a credential-shape gate, not an authorization gate: for a classic PAT or any browser session it evaluates no predicate and falls through to the handler | partial — the resource check runs for every credential shape and 20 request-scoped read gates are credential-aware; the remaining ~50 canReadRepo sites and classic-PAT scope enforcement are still open |
 | AUTH-002 | B | gh_apps_perms.go:113 | `token.Scopes` is stored, persisted and emitted as `X-OAuth-Scopes` but enforced nowhere — a PAT scoped `read:org` can delete organizations | open |
 | AUTH-003 | B | auth.go:19-29, agents.go:33,180, broker.go:112 | The entire `/_apis/` runner protocol has no authentication; `ghHeadersMiddleware` does not even run on it | open |
 | AUTH-004 | B | secrets_vars_inject.go:39 | Job messages carry every org/repo/environment secret in plaintext to any caller who can poll the broker | open |

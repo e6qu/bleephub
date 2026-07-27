@@ -474,7 +474,7 @@ func (s *Server) handleGetRepoCodeSecurityConfiguration(w http.ResponseWriter, r
 		writeGHError(w, http.StatusNotFound, "Not Found")
 		return
 	}
-	if !canReadRepo(s.store, ghUserFromContext(r.Context()), repo) {
+	if !s.viewerCanReadRepo(r, repo) {
 		writeGHError(w, http.StatusNotFound, "Not Found")
 		return
 	}
