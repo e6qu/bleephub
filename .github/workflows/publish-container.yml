@@ -188,7 +188,7 @@ jobs:
       # explicitly disabled in the build job above. Cosign attaches its
       # artifacts as separate tags and leaves the image manifests untouched.
       - uses: sigstore/cosign-installer@v4.1.0
-      - uses: anchore/sbom-action/download-syft@v0.20.11
+      - uses: anchore/sbom-action/download-syft@v0.24.0
       - name: Sign the manifests and attach a bill of materials
         env:
           TAG: ${{ needs.metadata.outputs.tag }}
