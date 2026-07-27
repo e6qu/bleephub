@@ -65,6 +65,13 @@ func authedPost(path, contentType string, body io.Reader) (*http.Response, error
 }
 
 func TestMain(m *testing.M) {
+	// Clear MinIO containers left by a suite that did not reach its own
+	// cleanup — a timeout panic, an interrupt, a kill. This runs on every
+	// suite, including one whose S3 tests are filtered out, because a run that
+	// never starts a server is exactly the run that would otherwise let
+	// abandoned ones accumulate unnoticed.
+	reapAbandonedS3Servers()
+
 	// The admin token has no default — every consumer (incl. the test harness)
 	// must set it explicitly. defaultToken is the non-PAT value the tests use.
 	os.Setenv("BLEEPHUB_ADMIN_TOKEN", defaultToken)
