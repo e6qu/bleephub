@@ -1008,13 +1008,18 @@ func (r repoRule) authorize(s *Server, p graphql.ResolveParams, input map[string
 	if r.authorMayAct && target.authorID != 0 && target.authorID == user.ID {
 		return nil
 	}
+	// Credential-aware on the write half too. Reading through the choke point
+	// and then writing through the user-scoped predicate made a ghu_ token
+	// broader than the ghs_ token of the same app on every push and admin
+	// mutation here — the asymmetry this lane exists to prevent, reintroduced
+	// one level down.
 	switch r.level {
 	case mutationPushRepo:
-		if !canPushRepo(s.store, user, target.repo) {
+		if !s.viewerCanPushRepo(p.Context, target.repo) {
 			return fmt.Errorf("must have push access to Repository")
 		}
 	case mutationAdminRepo:
-		if !canAdminRepo(s.store, user, target.repo) {
+		if !s.viewerCanAdminRepo(p.Context, target.repo) {
 			return fmt.Errorf("must have admin rights to Repository")
 		}
 	}

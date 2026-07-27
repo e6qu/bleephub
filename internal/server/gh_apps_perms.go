@@ -422,6 +422,23 @@ func (s *Server) viewerCanPushRepo(ctx context.Context, repo *Repo) bool {
 	return canPushRepo(s.store, ghUserFromContext(ctx), repo)
 }
 
+// viewerCanAdminRepo is the admin counterpart. Handlers registered through
+// requirePerm are already covered by credentialMayAccessTarget; this is for the
+// surfaces that gate themselves, of which the GraphQL mutation lane is the
+// largest — /api/graphql is a plain route, so nothing else intersects the
+// credential for it.
+func (s *Server) viewerCanAdminRepo(ctx context.Context, repo *Repo) bool {
+	if tok := ghInstallationTokenFromContext(ctx); tok != nil {
+		return s.installationReachesRepo(tok, repo)
+	}
+	if uts := ghUserToServerTokenFromContext(ctx); uts != nil && uts.AppID != 0 {
+		if !s.userToServerReachesRepo(uts, repo) {
+			return false
+		}
+	}
+	return canAdminRepo(s.store, ghUserFromContext(ctx), repo)
+}
+
 // orgRole is the level a caller must hold on an organization for
 // viewerHoldsOrgRole to admit it.
 type orgRole int
