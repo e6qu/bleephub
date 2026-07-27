@@ -200,8 +200,32 @@ jobs:
               --format '{{json .Manifest}}' | jq -r .digest)
             scripts/retry-command.sh cosign sign --yes "$image@$digest"
             syft "$image@$digest" -o spdx-json > sbom.spdx.json
-            scripts/retry-command.sh cosign attest --yes --predicate sbom.spdx.json \
-              --type spdxjson "$image@$digest"
+
+            # Rekor's public instance limits an attestation to 100 KB. The
+            # release SBOM is about 20 MB, so embedding it in the attestation
+            # can never succeed. Store the complete document as an OCI
+            # referrer, sign that immutable artifact, and attest its URI and
+            # content digest from the image as recommended by Sigstore.
+            sbom_reference=$(
+              scripts/retry-command.sh oras attach \
+                --artifact-type application/spdx+json \
+                --format go-template \
+                --template '{{.reference}}' \
+                "$image@$digest" \
+                sbom.spdx.json:application/spdx+json
+            )
+            scripts/retry-command.sh cosign sign --yes "$sbom_reference"
+            sbom_hash="sha256:$(sha256sum sbom.spdx.json | cut -d ' ' -f 1)"
+            jq -n \
+              --arg sbom_path "$sbom_reference" \
+              --arg sbom_hash "$sbom_hash" \
+              '{sbom_path: $sbom_path, sbom_hash: $sbom_hash}' \
+              > sbom-reference.json
+            test "$(wc -c < sbom-reference.json)" -lt 100000
+            scripts/retry-command.sh cosign attest --yes \
+              --predicate sbom-reference.json \
+              --type custom \
+              "$image@$digest"
           done
 
   scan:
