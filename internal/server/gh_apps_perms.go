@@ -164,7 +164,21 @@ func (s *Server) credentialMayAccessTarget(r *http.Request, user *User, instTok 
 	// GitHub an app cannot borrow a user's access to a repository it was never
 	// installed on, so both halves have to hold.
 	if uts := ghUserToServerTokenFromContext(r.Context()); uts != nil && uts.AppID != 0 {
-		if repo := s.repoFromPATRequest(r); repo != nil && !s.userToServerReachesRepo(uts, repo) {
+		if repo := s.repoFromPATRequest(r); repo != nil {
+			// Same public-repository carve-out the installation path gets. A
+			// ghu_ token must not end up narrower than a ghs_ token of the
+			// same app on data publicReadAllowed itself calls public.
+			readOnly := r.Method == http.MethodGet || r.Method == http.MethodHead
+			if !(readOnly && !repo.Private && publicReadAllowed(scope)) && !s.userToServerReachesRepo(uts, repo) {
+				return false
+			}
+		}
+		// And the organization half. Checking only the repository left
+		// org-only routes falling through to the user's own capability, so a
+		// ghu_ token for an app installed on a user — never on the org — minted
+		// that org's runner registration token. installationReachesOrg exists
+		// precisely for this and was unreachable from here.
+		if orgLogin := r.PathValue("org"); orgLogin != "" && !s.userToServerReachesOrg(uts, orgLogin) {
 			return false
 		}
 	}
@@ -176,6 +190,24 @@ func (s *Server) credentialMayAccessTarget(r *http.Request, user *User, instTok 
 //
 // A gho_ OAuth-app token has no app installation behind it and acts purely as
 // the user, so it is not constrained here.
+// userToServerReachesOrg reports whether any installation of the token's app is
+// installed on the organization, honouring a token narrowed to specific
+// installations. Mirrors userToServerReachesRepo for the org half.
+func (s *Server) userToServerReachesOrg(tok *UserToServerToken, orgLogin string) bool {
+	if tok == nil || tok.AppID == 0 {
+		return true
+	}
+	for _, inst := range s.store.ListAppInstallations(tok.AppID) {
+		if len(tok.InstallationIDs) > 0 && !containsRepoID(tok.InstallationIDs, inst.ID) {
+			continue
+		}
+		if strings.EqualFold(inst.TargetType, "Organization") && strings.EqualFold(inst.TargetLogin, orgLogin) {
+			return true
+		}
+	}
+	return false
+}
+
 func (s *Server) userToServerReachesRepo(tok *UserToServerToken, repo *Repo) bool {
 	if tok == nil || tok.AppID == 0 || repo == nil {
 		return true
@@ -416,7 +448,8 @@ func (s *Server) fineGrainedPATAllows(r *http.Request, token *Token, scope permS
 	if token.ExpiresAt != nil && !token.ExpiresAt.After(time.Now()) {
 		return false
 	}
-	if repo := s.repoFromPATRequest(r); repo != nil && !repo.Private && (r.Method == http.MethodGet || r.Method == http.MethodHead) {
+	if repo := s.repoFromPATRequest(r); repo != nil && !repo.Private &&
+		(r.Method == http.MethodGet || r.Method == http.MethodHead) && publicReadAllowed(scope) {
 		return true
 	}
 	if !s.fineGrainedPATResourceAllowed(r, token) {
@@ -498,7 +531,9 @@ func (s *Server) enforceFineGrainedPATResource(pattern string, next http.Handler
 			next(w, r)
 			return
 		}
-		if repo := s.repoFromPATRequest(r); repo != nil && !repo.Private && (r.Method == http.MethodGet || r.Method == http.MethodHead) {
+		scope, level := fineGrainedPATPermissionForPattern(pattern, r.Method)
+		if repo := s.repoFromPATRequest(r); repo != nil && !repo.Private &&
+			(r.Method == http.MethodGet || r.Method == http.MethodHead) && publicReadAllowed(scope) {
 			next(w, r)
 			return
 		}
@@ -506,7 +541,6 @@ func (s *Server) enforceFineGrainedPATResource(pattern string, next http.Handler
 			writeGHError(w, http.StatusForbidden, "Resource not accessible by personal access token")
 			return
 		}
-		scope, level := fineGrainedPATPermissionForPattern(pattern, r.Method)
 		permissions := token.Permissions.Repository
 		if r.PathValue("org") != "" && s.repoFromPATRequest(r) == nil && !strings.Contains(pattern, "/orgs/{org}/repos") {
 			permissions = token.Permissions.Organization

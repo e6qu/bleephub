@@ -29,7 +29,7 @@ source or comments. The reasoning behind a fix belongs in its commit message.
 | AUTH-014 | B | gh_apps_store.go:481,492 | Client secrets compared with `!=`, reachable unauthenticated and unrate-limited — byte-at-a-time timing oracle | fixed |
 | AUTH-015 | B | gh_middleware.go:172-175 | Every JWT verification failure is discarded and the request continues as anonymous; invalid `ghp_`/`gho_` tokens likewise | open |
 | AUTH-016 | M | gh_oauth.go:165, identity.go:577 | `browserLoginUser` accepts any PAT as a password with no scope check, laundering a restricted credential into an unrestricted session | open |
-| AUTH-017 | M | gh_apps_perms.go:135,217 | Public repo + GET bypasses scope, resource-owner and repository-selection checks — a PAT scoped to org A reads org B's Actions variable values | fixed — the public-repository bypass is keyed on the scope, so secrets and variables are excluded |
+| AUTH-017 | M | gh_apps_perms.go:135,217 | Public repo + GET bypasses scope, resource-owner and repository-selection checks — a PAT scoped to org A reads org B's Actions variable values | fixed — both fine-grained-PAT carve-outs and the installation carve-out are keyed on the scope |
 | AUTH-018 | M | secrets.go:22, actions_store.go:84, persistence.go:38 | Secret plaintexts and the X25519 private key that opens them are written unencrypted into adjacent rows of the same table | open |
 | AUTH-019 | M | store.go createTokenLocked | PATs are stored keyed *by* the raw token value; one DB read is total credential compromise | open |
 | AUTH-020 | M | secrets_vars_inject.go:39, handle_mgmt.go:218 | No `::add-mask::` handling and no log scrubbing anywhere — a secret echoed by a job is readable by any authenticated user | open |
