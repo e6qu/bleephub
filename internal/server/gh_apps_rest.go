@@ -560,9 +560,9 @@ func (s *Server) handleDeleteAppInstallation(w http.ResponseWriter, r *http.Requ
 }
 
 func (s *Server) handleGetRepoInstallation(w http.ResponseWriter, r *http.Request) {
-	user := ghUserFromContext(r.Context())
-	if user == nil {
-		writeGHError(w, http.StatusUnauthorized, "Bad credentials")
+	app := ghAppFromContext(r.Context())
+	if app == nil {
+		writeGHError(w, http.StatusUnauthorized, "A JSON web token could not be decoded")
 		return
 	}
 	owner := r.PathValue("owner")
@@ -571,18 +571,20 @@ func (s *Server) handleGetRepoInstallation(w http.ResponseWriter, r *http.Reques
 		writeGHError(w, http.StatusNotFound, "Not Found")
 		return
 	}
-	inst := s.store.GetRepoInstallation(owner)
-	if inst == nil {
-		writeGHError(w, http.StatusNotFound, "Not Found")
-		return
+	for _, inst := range s.snapshotInstallations() {
+		if inst.AppID != app.ID ||
+			!strings.EqualFold(inst.TargetLogin, owner) ||
+			!strings.EqualFold(inst.TargetType, repo.OwnerType) {
+			continue
+		}
+		// A "selected"-mode installation only covers repos on its allow-list;
+		// real GitHub 404s for repos outside the selection.
+		if _, ok := installationAccessibleRepoIDs(s.store, inst)[repo.ID]; ok {
+			writeJSON(w, http.StatusOK, installationToJSON(inst))
+			return
+		}
 	}
-	// A "selected"-mode installation only covers repos on its allow-list;
-	// real GitHub 404s for repos outside the selection.
-	if _, ok := installationAccessibleRepoIDs(s.store, inst)[repo.ID]; !ok {
-		writeGHError(w, http.StatusNotFound, "Not Found")
-		return
-	}
-	writeJSON(w, http.StatusOK, installationToJSON(inst))
+	writeGHError(w, http.StatusNotFound, "Not Found")
 }
 
 // JSON serializers
@@ -854,11 +856,13 @@ func (s *Server) handleUnsuspendInstallation(w http.ResponseWriter, r *http.Requ
 	w.WriteHeader(http.StatusNoContent)
 }
 
-// findInstallationByTarget returns the JSON for the first installation matching
-// targetLogin + targetType, or writes 404 and returns false.
-func (s *Server) findInstallationByTarget(w http.ResponseWriter, targetLogin, targetType string) bool {
+// findAppInstallationByTarget returns the authenticated app's installation
+// matching targetLogin + targetType, or writes 404 and returns false.
+func (s *Server) findAppInstallationByTarget(w http.ResponseWriter, appID int, targetLogin, targetType string) bool {
 	for _, inst := range s.snapshotInstallations() {
-		if inst.TargetLogin == targetLogin && inst.TargetType == targetType {
+		if inst.AppID == appID &&
+			strings.EqualFold(inst.TargetLogin, targetLogin) &&
+			strings.EqualFold(inst.TargetType, targetType) {
 			writeJSON(w, http.StatusOK, installationToJSON(inst))
 			return true
 		}
@@ -905,20 +909,22 @@ func (s *Server) handleListOrgInstallations(w http.ResponseWriter, r *http.Reque
 
 // handleGetOrgInstallation — GET /api/v3/orgs/{org}/installation.
 func (s *Server) handleGetOrgInstallation(w http.ResponseWriter, r *http.Request) {
-	if ghUserFromContext(r.Context()) == nil {
-		writeGHError(w, http.StatusUnauthorized, "Bad credentials")
+	app := ghAppFromContext(r.Context())
+	if app == nil {
+		writeGHError(w, http.StatusUnauthorized, "A JSON web token could not be decoded")
 		return
 	}
-	s.findInstallationByTarget(w, r.PathValue("org"), "Organization")
+	s.findAppInstallationByTarget(w, app.ID, r.PathValue("org"), "Organization")
 }
 
 // handleGetUserInstallation — GET /api/v3/users/{username}/installation.
 func (s *Server) handleGetUserInstallation(w http.ResponseWriter, r *http.Request) {
-	if ghUserFromContext(r.Context()) == nil {
-		writeGHError(w, http.StatusUnauthorized, "Bad credentials")
+	app := ghAppFromContext(r.Context())
+	if app == nil {
+		writeGHError(w, http.StatusUnauthorized, "A JSON web token could not be decoded")
 		return
 	}
-	s.findInstallationByTarget(w, r.PathValue("username"), "User")
+	s.findAppInstallationByTarget(w, app.ID, r.PathValue("username"), "User")
 }
 
 // handleAddUserInstallationRepo — PUT /api/v3/user/installations/{id}/repositories/{repo_id}.

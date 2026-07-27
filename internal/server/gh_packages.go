@@ -771,7 +771,11 @@ func (s *Server) handleListRepoPackages(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 	repo, ok := s.resolveRepoForPackages(w, r)
-	if !ok || !s.viewerCanReadRepo(r.Context(), repo) {
+	if !ok {
+		return
+	}
+	if !s.viewerCanReadRepo(r.Context(), repo) {
+		writeGHError(w, http.StatusNotFound, "Not Found")
 		return
 	}
 	pkgs := s.store.ListPackages(repo.FullName)

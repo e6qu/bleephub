@@ -425,6 +425,10 @@ func (s *Server) handleCheckPrivateVulnerabilityReporting(w http.ResponseWriter,
 	if repo == nil {
 		return
 	}
+	if !s.viewerCanReadRepo(r.Context(), repo) {
+		writeGHError(w, http.StatusNotFound, "Not Found")
+		return
+	}
 	writeJSON(w, http.StatusOK, map[string]interface{}{
 		"enabled": repo.PrivateVulnerabilityReportingEnabled,
 	})
@@ -1217,7 +1221,8 @@ func repoOrganizationJSON(repo *Repo, st *Store) interface{} {
 func (s *Server) handleListStargazers(w http.ResponseWriter, r *http.Request) {
 	owner := r.PathValue("owner")
 	name := r.PathValue("repo")
-	if s.store.GetRepo(owner, name) == nil {
+	repo := s.store.GetRepo(owner, name)
+	if repo == nil || !s.viewerCanReadRepo(r.Context(), repo) {
 		writeGHError(w, http.StatusNotFound, "Not Found")
 		return
 	}
