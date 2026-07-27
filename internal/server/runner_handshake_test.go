@@ -698,6 +698,90 @@ func TestEphemeralRunnerTeardownStaysAuthenticated(t *testing.T) {
 	}
 }
 
+// actionArchiveAuthorization is the header the runner's action downloader
+// builds out of the token an ActionDownloadInfo response named. It is spelled
+// out here rather than taken from the server so the test pins the wire shape
+// the runner actually sends: basic auth, the token as the password, under a
+// fixed user name.
+func actionArchiveAuthorization(token string) string {
+	return "Basic " + base64.StdEncoding.EncodeToString([]byte("x-access-token:"+token))
+}
+
+// TestRunnerActionDownloadCarriesTheCredentialItIsGiven walks the half of a job
+// the worker performs: resolve an action reference to an archive, then fetch
+// that archive.
+//
+// The fetch is the one runner protocol call not made by the runner's service
+// stack. A plain HTTP client makes it, holding no credential of its own and no
+// ability to negotiate one — it sends the token the download info named, as
+// basic auth, or no header at all when the response named none. So the
+// contract has two halves and neither is optional: the response has to carry a
+// usable token, and the route has to accept it in that shape.
+func TestRunnerActionDownloadCarriesTheCredentialItIsGiven(t *testing.T) {
+	const actionRepo = "handshake-actions/hello-action"
+	commitFilesToStorage(t, testServer, actionRepo, map[string]string{
+		"action.yml": "name: hello\nruns:\n  using: composite\n  steps:\n    - run: echo hi\n      shell: bash\n",
+	})
+	jobToken, scopeID := testJobToken(t, testServer, actionRepo)
+
+	infoPath := fmt.Sprintf("/_apis/v1/ActionDownloadInfo/%s/build/plan-%s", scopeID, scopeID)
+	infoBody := fmt.Sprintf(`{"actions":[{"nameWithOwner":%q,"ref":"main"}]}`, actionRepo)
+	refuseAnonymous(t, "resolve action download", "POST", infoPath, "application/json", infoBody)
+	payload := handshakeStep(t, "resolve action download", "POST", infoPath,
+		"Bearer "+jobToken, "application/json", infoBody, http.StatusOK)
+
+	var resolved struct {
+		Actions map[string]struct {
+			TarballURL     string `json:"tarballUrl"`
+			ResolvedSha    string `json:"resolvedSha"`
+			Authentication struct {
+				Token     string `json:"token"`
+				ExpiresAt string `json:"expiresAt"`
+			} `json:"authentication"`
+		} `json:"actions"`
+	}
+	if err := json.Unmarshal(payload, &resolved); err != nil {
+		t.Fatalf("decode action download info: %v", err)
+	}
+	info, ok := resolved.Actions[actionRepo+"@main"]
+	if !ok {
+		t.Fatalf("action download info carried no entry for %s@main: %s", actionRepo, payload)
+	}
+	if info.Authentication.Token == "" {
+		t.Fatalf("action download info named no token; the runner would fetch the archive with no credential at all: %s", payload)
+	}
+	expiry, err := time.Parse(time.RFC3339, info.Authentication.ExpiresAt)
+	if err != nil {
+		t.Fatalf("action download expiresAt %q is not a timestamp: %v", info.Authentication.ExpiresAt, err)
+	}
+	if !expiry.After(time.Now()) || expiry.After(time.Now().Add(48*time.Hour)) {
+		t.Errorf("action download expiresAt = %s, want the real near-term expiry of the token it describes", expiry)
+	}
+
+	archivePath, found := strings.CutPrefix(info.TarballURL, testBaseURL)
+	if !found {
+		t.Fatalf("tarball url %q does not address this server", info.TarballURL)
+	}
+
+	// Presented the way the runner presents it, the archive is served.
+	refuseAnonymous(t, "download action archive", "GET", archivePath, "", "")
+	handshakeStep(t, "download action archive", "GET", archivePath,
+		actionArchiveAuthorization(info.Authentication.Token), "", "", http.StatusOK)
+
+	// And the token in it is verified, not merely present: a basic credential
+	// carrying anything else is refused exactly like none at all.
+	for name, authorization := range map[string]string{
+		"a forged token":       actionArchiveAuthorization("not-a-runner-token"),
+		"an agent session":     actionArchiveAuthorization(makeJWT(uuid.New().String(), runnerAudSession)),
+		"another user's token": "Basic " + base64.StdEncoding.EncodeToString([]byte("someone-else:"+info.Authentication.Token)),
+	} {
+		status, _, body := handshakeCall(t, "GET", archivePath, authorization, "", "")
+		if status == http.StatusOK {
+			t.Errorf("action archive served to %s: status = %d; body=%d bytes", name, status, len(body))
+		}
+	}
+}
+
 // TestRunnerHandshakeRoutesAreRegistered keeps the sequence above honest
 // against the route table rather than against a remembered list of paths: a
 // step exercising a path that no longer exists would otherwise pass by
@@ -725,6 +809,8 @@ func TestRunnerHandshakeRoutesAreRegistered(t *testing.T) {
 		"PATCH /_apis/v1/AgentRequest/{poolId}/{requestId}",
 		"DELETE /_apis/v1/AgentRequest/{poolId}/{requestId}",
 		"POST /_apis/v1/FinishJob/{scopeId}/{hubName}/{planId}",
+		"POST /_apis/v1/ActionDownloadInfo/{scopeId}/{hubName}/{planId}",
+		"GET /_apis/v1/actions/tarball/{owner}/{repo}/{ref...}",
 	} {
 		if !registered[pattern] {
 			t.Errorf("the runner handshake exercises %q, which is not a registered route", pattern)

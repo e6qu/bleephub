@@ -754,6 +754,32 @@ func bearerCredential(r *http.Request) (string, bool) {
 	return cred, true
 }
 
+// actionArchiveUser is the user half of the basic credential the runner
+// presents when it downloads an action archive. ActionManager.CreateAuthHeader
+// builds `Basic base64("x-access-token:<token>")` out of the token the
+// ActionDownloadInfo response handed it, so the token travels as the password.
+const actionArchiveUser = "x-access-token"
+
+// actionArchiveCredential reads the token off an action archive download.
+// Unlike the rest of the runner protocol this request is made by a plain HTTP
+// client rather than the runner's service stack, and it carries whatever the
+// download info response named — never a bearer token it negotiated itself.
+func actionArchiveCredential(r *http.Request) (string, bool) {
+	scheme, cred := authScheme(r.Header.Get("Authorization"))
+	if scheme != "basic" || cred == "" {
+		return "", false
+	}
+	decoded, err := base64.StdEncoding.DecodeString(cred)
+	if err != nil {
+		return "", false
+	}
+	user, token, ok := strings.Cut(string(decoded), ":")
+	if !ok || user != actionArchiveUser || token == "" {
+		return "", false
+	}
+	return token, true
+}
+
 // authenticateRunner resolves the caller of a runner protocol route to a
 // verified principal.
 func (s *Server) authenticateRunner(r *http.Request) (*runnerPrincipal, error) {
@@ -761,6 +787,13 @@ func (s *Server) authenticateRunner(r *http.Request) (*runnerPrincipal, error) {
 	if !ok {
 		return nil, fmt.Errorf("missing runner bearer token")
 	}
+	return s.runnerPrincipalForToken(token)
+}
+
+// runnerPrincipalForToken verifies a runner bearer credential and resolves the
+// identity behind it. Every route reaches it, whichever header shape the
+// credential arrived in, so a token admits exactly the same caller either way.
+func (s *Server) runnerPrincipalForToken(token string) (*runnerPrincipal, error) {
 	claims, err := parseRunnerToken(token)
 	if err != nil {
 		return nil, err
@@ -826,6 +859,35 @@ func (s *Server) requireJobToken(next http.HandlerFunc) http.HandlerFunc {
 		}
 		next(w, r)
 	})
+}
+
+// requireActionArchiveToken gates an action archive download on the job
+// runtime token the ActionDownloadInfo response handed the runner.
+//
+// The archive is fetched by a plain HTTP client that attaches the download
+// info's token as basic auth under the x-access-token user, so that shape has
+// to be read here or the runner cannot present the credential it was given at
+// all. What is accepted is the same job runtime token as everywhere else,
+// verified the same way: the encoding differs, the entitlement does not.
+func (s *Server) requireActionArchiveToken(next http.HandlerFunc) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		token, ok := actionArchiveCredential(r)
+		if !ok {
+			s.requireJobToken(next)(w, r)
+			return
+		}
+		principal, err := s.runnerPrincipalForToken(token)
+		if err != nil {
+			s.logger.Debug().Err(err).Str("path", r.URL.Path).Msg("action archive download rejected")
+			writeGHError(w, http.StatusUnauthorized, "Must authenticate to use the runner protocol")
+			return
+		}
+		if !principal.IsJobToken() {
+			writeGHError(w, http.StatusForbidden, "This route requires a job runtime token")
+			return
+		}
+		next(w, r.WithContext(context.WithValue(r.Context(), ctxRunner, principal)))
+	}
 }
 
 // requireRunnerSetupCredential gates a route the runner reaches during

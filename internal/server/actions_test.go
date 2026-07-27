@@ -13,6 +13,20 @@ import (
 	"github.com/rs/zerolog"
 )
 
+// actionDownloadInfoRequest makes the call the worker makes. The handler mints
+// the archive download credential from the caller's own job runtime token, so
+// there is no such thing as an uncredentialed resolve — a request without one
+// is a state the route cannot produce.
+func actionDownloadInfoRequest(t *testing.T, s *Server, body string) *httptest.ResponseRecorder {
+	t.Helper()
+	token, _ := testJobToken(t, s, "actions/job-repo")
+	req := httptest.NewRequest("POST", "/_apis/v1/ActionDownloadInfo/scope/hub/plan", bytes.NewBufferString(body))
+	req.Header.Set("Authorization", "Bearer "+token)
+	w := httptest.NewRecorder()
+	s.handleActionDownloadInfo(w, req)
+	return w
+}
+
 func TestActionDownloadInfoReturnsFormat(t *testing.T) {
 	s := newTestServer()
 	commitFilesToStorage(t, s, "actions/checkout", map[string]string{
@@ -20,9 +34,7 @@ func TestActionDownloadInfoReturnsFormat(t *testing.T) {
 	})
 
 	body := `{"actions":[{"nameWithOwner":"actions/checkout","ref":"master"}]}`
-	req := httptest.NewRequest("POST", "/_apis/v1/ActionDownloadInfo/scope/hub/plan", bytes.NewBufferString(body))
-	w := httptest.NewRecorder()
-	s.handleActionDownloadInfo(w, req)
+	w := actionDownloadInfoRequest(t, s, body)
 
 	if w.Code != http.StatusOK {
 		t.Fatalf("status = %d, want 200", w.Code)
@@ -67,9 +79,7 @@ func TestActionDownloadInfoResolvesLocalActionSha(t *testing.T) {
 	}
 
 	body := `{"actions":[{"nameWithOwner":"actions/local-checkout","ref":"master"}]}`
-	req := httptest.NewRequest("POST", "/_apis/v1/ActionDownloadInfo/scope/hub/plan", bytes.NewBufferString(body))
-	w := httptest.NewRecorder()
-	s.handleActionDownloadInfo(w, req)
+	w := actionDownloadInfoRequest(t, s, body)
 
 	if w.Code != http.StatusOK {
 		t.Fatalf("status = %d, want 200", w.Code)
@@ -91,9 +101,7 @@ func TestActionDownloadInfoResolvesLocalActionSha(t *testing.T) {
 func TestActionDownloadInfoEmptyBody(t *testing.T) {
 	s := newTestServer()
 
-	req := httptest.NewRequest("POST", "/_apis/v1/ActionDownloadInfo/scope/hub/plan", bytes.NewBufferString("{}"))
-	w := httptest.NewRecorder()
-	s.handleActionDownloadInfo(w, req)
+	w := actionDownloadInfoRequest(t, s, "{}")
 
 	if w.Code != http.StatusOK {
 		t.Fatalf("status = %d, want 200", w.Code)
@@ -120,9 +128,7 @@ func TestActionDownloadInfoMultipleActions(t *testing.T) {
 		{"nameWithOwner":"actions/checkout","ref":"master"},
 		{"nameWithOwner":"actions/setup-go","ref":"master"}
 	]}`
-	req := httptest.NewRequest("POST", "/_apis/v1/ActionDownloadInfo/scope/hub/plan", bytes.NewBufferString(body))
-	w := httptest.NewRecorder()
-	s.handleActionDownloadInfo(w, req)
+	w := actionDownloadInfoRequest(t, s, body)
 
 	var resp map[string]interface{}
 	json.Unmarshal(w.Body.Bytes(), &resp)
@@ -142,9 +148,7 @@ func TestActionDownloadInfoFailsLoudForUnresolvedAction(t *testing.T) {
 	s := newTestServer()
 
 	body := `{"actions":[{"nameWithOwner":"actions/checkout","ref":"v4"}]}`
-	req := httptest.NewRequest("POST", "/_apis/v1/ActionDownloadInfo/scope/hub/plan", bytes.NewBufferString(body))
-	w := httptest.NewRecorder()
-	s.handleActionDownloadInfo(w, req)
+	w := actionDownloadInfoRequest(t, s, body)
 
 	if w.Code != http.StatusUnprocessableEntity {
 		t.Fatalf("status = %d, want 422 for an action absent from bleephub git storage", w.Code)

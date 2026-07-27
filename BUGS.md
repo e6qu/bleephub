@@ -350,6 +350,8 @@ source or comments. The reasoning behind a fix belongs in its commit message.
 | ACT-050 | m | dependabot_ingest.go:148 | Any non-numeric version segment is silently treated as not vulnerable | open |
 | ACT-051 | m | workflows_msg.go:280 | `runner.os`, `arch` and `name` are constants; the github context omits `workflow_ref` and `job_workflow_sha`, which are load-bearing for OIDC claims | open |
 | ACT-052 | m | artifacts.go:966 | The cache download token — documented as the sole access control — is compared with `!=`; no eviction, and `LastAccessedAt` is faked | partial — constant-time compare landed; eviction and LastAccessedAt still open |
+| ACT-091 | B | actions.go | `ActionDownloadInfo` returned `"token": "x-access-token"` — the literal *username* half of the Basic credential, mistaken for the token — beside a hardcoded `"expiresAt": "2099-01-01T00:00:00Z"`, the same far-future placeholder another test in this package explicitly bans. The runner dutifully sent `Basic base64("x-access-token:x-access-token")`. The tarball route also read only Bearer, so a real token in the shape the runner sends would have been refused too | fixed — the download info mints a job token for the plan the caller already authenticated as, with its real expiry, and the route accepts the Basic download credential as well as a Bearer job token. ACT-003's private-repository scoping is unchanged and now covered through the Basic form |
+| ACT-092 | m | auth.go | `authenticateRunner` reports `missing runner bearer token` identically for an absent Authorization header and for one carrying a scheme it does not read, which is what made the tarball failure look like an anonymous request for two CI cycles | open |
 
 ## STORE — persistence, storage, dqlite, S3
 

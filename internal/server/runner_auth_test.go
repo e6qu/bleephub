@@ -3,6 +3,7 @@ package bleephub
 import (
 	"bytes"
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"github.com/google/uuid"
@@ -529,6 +530,42 @@ func TestActionTarballRejectsPrivateRepositoryOutsideScope(t *testing.T) {
 	token, _ := testJobToken(t, s, "other/unrelated")
 	if w := runnerRequest(s, "GET", "/_apis/v1/actions/tarball/octo/private-action/main", token, ""); w.Code != http.StatusNotFound {
 		t.Fatalf("out-of-scope private action tarball = %d, want 404; body=%s", w.Code, w.Body.String())
+	}
+
+	// The archive is the one runner route reached with a basic credential
+	// rather than a bearer one, and it confines the caller identically: the
+	// shape the token arrives in decides nothing about what it may read.
+	basic := func(user, tok string) string {
+		return "Basic " + base64.StdEncoding.EncodeToString([]byte(user+":"+tok))
+	}
+	req := httptest.NewRequest("GET", "/_apis/v1/actions/tarball/octo/private-action/main", nil)
+	req.Header.Set("Authorization", basic("x-access-token", token))
+	w := httptest.NewRecorder()
+	s.mux.ServeHTTP(w, req)
+	if w.Code != http.StatusNotFound {
+		t.Fatalf("out-of-scope private action tarball over basic auth = %d, want 404; body=%s", w.Code, w.Body.String())
+	}
+
+	// And the basic form is a credential, not a bypass: an unverifiable token,
+	// an agent session, and the right token under the wrong user are all
+	// refused before the repository is even resolved.
+	session, _ := testAgentSession(t, s, runnerScope{Repo: "octo/private-action"})
+	for name, tc := range map[string]struct {
+		authorization string
+		want          int
+	}{
+		"a forged token":       {basic("x-access-token", "not-a-runner-token"), http.StatusUnauthorized},
+		"an agent session":     {basic("x-access-token", session), http.StatusForbidden},
+		"another user's token": {basic("other-user", token), http.StatusUnauthorized},
+		"an empty token":       {basic("x-access-token", ""), http.StatusUnauthorized},
+	} {
+		req := httptest.NewRequest("GET", "/_apis/v1/actions/tarball/octo/private-action/main", nil)
+		req.Header.Set("Authorization", tc.authorization)
+		w := httptest.NewRecorder()
+		s.mux.ServeHTTP(w, req)
+		if w.Code != tc.want {
+			t.Errorf("action archive with %s = %d, want %d; body=%s", name, w.Code, tc.want, w.Body.String())
+		}
 	}
 }
 
