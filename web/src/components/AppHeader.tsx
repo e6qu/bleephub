@@ -28,7 +28,7 @@ import {
   AuditLogIcon,
   GraphIcon,
 } from "./octicons.js";
-import { clearToken, fetchCurrentUser, fetchNotifications } from "../api.js";
+import { abortPendingRequests, clearToken, fetchCurrentUser, fetchNotifications } from "../api.js";
 
 /**
  * GitHub-faithful global header: hamburger → global-nav drawer, brand, a
@@ -362,7 +362,11 @@ export function AppHeader() {
   const submitLogout = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     const form = event.currentTarget;
+    // cancelQueries alone was not enough: nothing in the API layer honoured an
+    // abort signal, so in-flight polls kept running, landed after the token was
+    // gone, and 401'd. Abort them for real before navigating.
     await queryClient.cancelQueries();
+    abortPendingRequests();
     queryClient.clear();
     clearToken();
     form.submit();

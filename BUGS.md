@@ -399,7 +399,7 @@ source or comments. The reasoning behind a fix belongs in its commit message.
 | WEB-007 | M | vite.config.ts:30 | The dev proxy omits `/auth` and `/settings`, so `bun run dev` cannot authenticate | open |
 | WEB-008 | M | RepoSocialPage.tsx:96 | React state mutated inside a query function, so the 5-second refetch discards every page the user loaded | open |
 | WEB-009 | M | DeploymentsPage.tsx:96 + 2 | "Load more" has no in-flight guard, so two clicks append the same page twice | open |
-| WEB-010 | M | api.ts, ~64 sites | Not one fetch accepts or forwards an abort signal, and there is no request timeout anywhere | open |
+| WEB-010 | M | api.ts, ~64 sites | Not one fetch accepts or forwards an abort signal, and there is no request timeout anywhere | partial — a module-wide abort controller now backs cancellation, which sign-out uses; per-request signals threaded from queryFn contexts are still open |
 | WEB-011 | M | api.ts:148, DiscussionsPage.tsx:490 | A bearer token in localStorage alongside three unsanitised HTML sinks, safe only via an untested server-side coupling | open |
 | WEB-012 | M | api.ts | 3,552 lines with ten near-identical request helpers and 34 inline fetches, each subtly different | open |
 | WEB-013 | M | api.ts:202, types.ts | Every response is cast, never validated, against 2,153 hand-written lines with no generator | open |

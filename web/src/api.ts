@@ -145,6 +145,36 @@ import type {
   GithubMarketplaceSubscription,
 } from "./types.js";
 
+// One AbortController behind every request this module makes.
+//
+// The client had no cancellation of any kind: TanStack Query passes an
+// AbortSignal into every queryFn and the API layer discarded it, so
+// queryClient.cancelQueries() — which sign-out calls — could not actually stop
+// anything. In-flight polls therefore landed after the token was cleared, got
+// 401, and the browser logged a console error the end-to-end suite treats as a
+// failure. Aborting is the only fix available: a 401 console entry is emitted
+// by the browser for the response itself and cannot be suppressed from script.
+//
+// This is deliberately coarse — one controller for the whole module rather than
+// per-query plumbing. Per-request signals are the better shape and are tracked
+// separately; this gives sign-out something real to cancel with.
+let pendingRequests = new AbortController();
+
+/** Aborts every request this module currently has in flight. */
+export function abortPendingRequests(): void {
+  pendingRequests.abort();
+  pendingRequests = new AbortController();
+}
+
+/**
+ * apiFetch is the single exit point to the network for this module. Every
+ * request inherits the module-wide abort signal unless the caller supplies its
+ * own.
+ */
+function apiFetch(input: RequestInfo | URL, init?: RequestInit): Promise<Response> {
+  return fetch(input, { ...init, signal: init?.signal ?? pendingRequests.signal });
+}
+
 const TOKEN_KEY = "bleephub_token";
 
 export function getToken(): string | null {
@@ -194,7 +224,7 @@ export function isNotFound(err: unknown): boolean {
 }
 
 async function fetchJSON<T>(url: string): Promise<T> {
-  const res = await fetch(url, { headers: authHeaders() });
+  const res = await apiFetch(url, { headers: authHeaders() });
   if (!res.ok) {
     handleUnauthorized(res);
     throw new ApiError(res.status, `${res.status} ${res.statusText}`);
@@ -414,7 +444,7 @@ export async function fetchInstallations(): Promise<BleephubInstallation[]> {
 }
 // Verify identity through GitHub's REST user endpoint.
 export async function verifyToken(token: string): Promise<boolean> {
-  const res = await fetch("/api/v3/user", {
+  const res = await apiFetch("/api/v3/user", {
     headers: { Authorization: `Bearer ${token}` },
   });
   return res.ok;
@@ -479,7 +509,7 @@ export async function createApp(payload: {
   const form = new URLSearchParams();
   form.set("manifest", JSON.stringify(manifest));
 
-  const createRes = await fetch("/settings/apps/new", {
+  const createRes = await apiFetch("/settings/apps/new", {
     method: "POST",
     headers: {
       "Content-Type": "application/x-www-form-urlencoded",
@@ -499,7 +529,7 @@ export async function createApp(payload: {
     throw new Error("createApp manifest: missing conversion code");
   }
 
-  const convertRes = await fetch(`/api/v3/app-manifests/${encodeURIComponent(code)}/conversions`, {
+  const convertRes = await apiFetch(`/api/v3/app-manifests/${encodeURIComponent(code)}/conversions`, {
     method: "POST",
     headers: authHeaders(),
   });
@@ -517,7 +547,7 @@ export async function createApp(payload: {
 }
 
 export async function fetchOAuthApps(): Promise<BleephubOAuthApp[]> {
-  const res = await fetch("/settings/oauth-apps", {
+  const res = await apiFetch("/settings/oauth-apps", {
     headers: authHeaders(),
   });
   if (!res.ok) {
@@ -539,7 +569,7 @@ export async function createOAuthApp(payload: {
   if (payload.description) form.set("description", payload.description);
   if (payload.url) form.set("url", payload.url);
   if (payload.callback_url) form.set("callback_url", payload.callback_url);
-  const res = await fetch("/settings/oauth-apps/new", {
+  const res = await apiFetch("/settings/oauth-apps/new", {
     method: "POST",
     headers: {
       "Content-Type": "application/x-www-form-urlencoded",
@@ -560,7 +590,7 @@ export async function createOAuthApp(payload: {
 
 export async function suspendInstallation(installationID: number, suspend: boolean): Promise<void> {
   const verb = suspend ? "suspend" : "unsuspend";
-  const res = await fetch(`/settings/installations/${installationID}/${verb}`, {
+  const res = await apiFetch(`/settings/installations/${installationID}/${verb}`, {
     method: "POST",
     headers: authHeaders(),
   });
@@ -571,7 +601,7 @@ export async function suspendInstallation(installationID: number, suspend: boole
 }
 
 export async function deleteInstallation(installationID: number): Promise<void> {
-  const res = await fetch(`/settings/installations/${installationID}`, {
+  const res = await apiFetch(`/settings/installations/${installationID}`, {
     method: "DELETE",
     headers: authHeaders(),
   });
@@ -586,7 +616,7 @@ export async function dispatchWorkflow(
   workflowId: number | string,
   body: BleephubDispatchRequest = {},
 ): Promise<void> {
-  const res = await fetch(
+  const res = await apiFetch(
     `/api/v3/repos/${repoFullName}/actions/workflows/${workflowId}/dispatches`,
     {
       method: "POST",
@@ -601,7 +631,7 @@ export async function dispatchWorkflow(
 }
 
 async function ghFetch<T>(path: string): Promise<T> {
-  const res = await fetch(path, { headers: authHeaders() });
+  const res = await apiFetch(path, { headers: authHeaders() });
   if (!res.ok) {
     handleUnauthorized(res);
     throw new ApiError(res.status, `${res.status} ${res.statusText}`);
@@ -640,7 +670,7 @@ export function parseLinkNext(link: string | null): string | null {
 // follow-up page via the Link header — honor it instead of silently showing
 // only the first 50 items.
 async function ghFetchPage<T>(url: string): Promise<Page<T>> {
-  const res = await fetch(url, { headers: authHeaders() });
+  const res = await apiFetch(url, { headers: authHeaders() });
   if (!res.ok) {
     handleUnauthorized(res);
     throw new ApiError(res.status, `${res.status} ${res.statusText}`);
@@ -726,7 +756,7 @@ export async function updateRepo(
   repo: string,
   payload: Partial<BleephubRepo>,
 ): Promise<BleephubRepo> {
-  const res = await fetch(`/api/v3/repos/${owner}/${repo}`, {
+  const res = await apiFetch(`/api/v3/repos/${owner}/${repo}`, {
     method: "PATCH",
     headers: { "Content-Type": "application/json", ...authHeaders() },
     body: JSON.stringify(payload),
@@ -761,7 +791,7 @@ export const updateRepoTopics = (owner: string, repo: string, names: string[]): 
   ghPutJSON(`/api/v3/repos/${owner}/${repo}/topics`, { names });
 
 async function ghPutJSON<T>(path: string, body: unknown): Promise<T> {
-  const res = await fetch(path, {
+  const res = await apiFetch(path, {
     method: "PUT",
     headers: { "Content-Type": "application/json", ...authHeaders() },
     body: JSON.stringify(body),
@@ -775,7 +805,7 @@ async function ghPutJSON<T>(path: string, body: unknown): Promise<T> {
 }
 
 async function ghDeleteJSON<T>(path: string, body: unknown): Promise<T> {
-  const res = await fetch(path, {
+  const res = await apiFetch(path, {
     method: "DELETE",
     headers: { "Content-Type": "application/json", ...authHeaders() },
     body: JSON.stringify(body),
@@ -796,7 +826,7 @@ export const fetchLicenseTemplates = () =>
   ghFetch<{ key: string; name: string; spdx_id: string }[]>("/api/v3/licenses");
 
 async function ghPostJSON<T>(path: string, body: unknown): Promise<T> {
-  const res = await fetch(path, {
+  const res = await apiFetch(path, {
     method: "POST",
     headers: { "Content-Type": "application/json", ...authHeaders() },
     body: JSON.stringify(body),
@@ -893,7 +923,7 @@ export const acceptClassroomInvitation = (code: string, groupName?: string, rost
     { ...(groupName ? { group_name: groupName } : {}), ...(rosterIdentifier ? { roster_identifier: rosterIdentifier } : {}) },
   );
 export async function exportClassroomTransition(): Promise<Blob> {
-  const response = await fetch("/classroom-data/export", { headers: authHeaders() });
+  const response = await apiFetch("/classroom-data/export", { headers: authHeaders() });
   if (!response.ok) throw new ApiError(response.status, `${response.status} ${response.statusText}`);
   return response.blob();
 }
@@ -1012,7 +1042,7 @@ export const deleteBranchProtection = (owner: string, repo: string, branch: stri
   ghDeleteJSON<void>(`/api/v3/repos/${owner}/${repo}/branches/${encodeURIComponent(branch)}/protection`, {});
 
 export async function fetchRepoCommits(owner: string, repo: string): Promise<GithubCommit[]> {
-  const res = await fetch(`/ui-data/repos/${owner}/${repo}/commits`, { headers: authHeaders() });
+  const res = await apiFetch(`/ui-data/repos/${owner}/${repo}/commits`, { headers: authHeaders() });
   if (!res.ok) {
     handleUnauthorized(res);
     const text = await res.text();
@@ -1026,7 +1056,7 @@ export async function createIssue(
   repo: string,
   payload: { title: string; body?: string },
 ): Promise<GithubIssue> {
-  const res = await fetch(`/api/v3/repos/${owner}/${repo}/issues`, {
+  const res = await apiFetch(`/api/v3/repos/${owner}/${repo}/issues`, {
     method: "POST",
     headers: { "Content-Type": "application/json", ...authHeaders() },
     body: JSON.stringify(payload),
@@ -1044,7 +1074,7 @@ export async function mergePR(
   number: number,
   mergeMethod = "merge",
 ): Promise<void> {
-  const res = await fetch(`/api/v3/repos/${owner}/${repo}/pulls/${number}/merge`, {
+  const res = await apiFetch(`/api/v3/repos/${owner}/${repo}/pulls/${number}/merge`, {
     method: "PUT",
     headers: { "Content-Type": "application/json", ...authHeaders() },
     body: JSON.stringify({ merge_method: mergeMethod }),
@@ -1109,7 +1139,7 @@ export async function updateRelease(
   releaseId: number,
   payload: Partial<ReleasePayload>,
 ): Promise<GithubRelease> {
-  const res = await fetch(`/api/v3/repos/${owner}/${repo}/releases/${releaseId}`, {
+  const res = await apiFetch(`/api/v3/repos/${owner}/${repo}/releases/${releaseId}`, {
     method: "PATCH",
     headers: { "Content-Type": "application/json", ...authHeaders() },
     body: JSON.stringify(payload),
@@ -1135,7 +1165,7 @@ export async function uploadReleaseAsset(
 ): Promise<GithubReleaseAsset> {
   const params = new URLSearchParams({ name: file.name });
   if (label) params.set("label", label);
-  const res = await fetch(
+  const res = await apiFetch(
     `/api/uploads/repos/${owner}/${repo}/releases/${releaseId}/assets?${params}`,
     {
       method: "POST",
@@ -1152,7 +1182,7 @@ export async function uploadReleaseAsset(
 }
 
 export async function downloadReleaseAsset(owner: string, repo: string, assetId: number): Promise<Blob> {
-  const res = await fetch(`/api/v3/repos/${owner}/${repo}/releases/assets/${assetId}`, {
+  const res = await apiFetch(`/api/v3/repos/${owner}/${repo}/releases/assets/${assetId}`, {
     headers: { Accept: "application/octet-stream", ...authHeaders() },
   });
   if (!res.ok) {
@@ -1180,7 +1210,7 @@ export interface EnvelopePage<T> {
 }
 
 async function ghFetchEnvelope<T>(url: string, key: string): Promise<EnvelopePage<T>> {
-  const res = await fetch(url, { headers: authHeaders() });
+  const res = await apiFetch(url, { headers: authHeaders() });
   if (!res.ok) {
     handleUnauthorized(res);
     throw new ApiError(res.status, `${res.status} ${res.statusText}`);
@@ -1197,7 +1227,7 @@ async function ghFetchEnvelope<T>(url: string, key: string): Promise<EnvelopePag
 
 /** Non-GET request that returns no JSON the caller renders. */
 async function ghSend(method: string, path: string, body?: unknown): Promise<void> {
-  const res = await fetch(path, {
+  const res = await apiFetch(path, {
     method,
     headers: body !== undefined
       ? { "Content-Type": "application/json", ...authHeaders() }
@@ -1269,7 +1299,7 @@ export const fetchRunJobs = (owner: string, repo: string, runId: number) =>
 
 /** Job logs are text/plain, not JSON. */
 export async function fetchJobLogs(owner: string, repo: string, jobId: number): Promise<string> {
-  const res = await fetch(`/api/v3/repos/${owner}/${repo}/actions/jobs/${jobId}/logs`, {
+  const res = await apiFetch(`/api/v3/repos/${owner}/${repo}/actions/jobs/${jobId}/logs`, {
     headers: authHeaders(),
   });
   if (!res.ok) {
@@ -1580,7 +1610,7 @@ export const markThreadRead = (threadId: string) =>
 export async function getThreadSubscription(
   threadId: string,
 ): Promise<GithubThreadSubscription | null> {
-  const res = await fetch(`/api/v3/notifications/threads/${threadId}/subscription`, {
+  const res = await apiFetch(`/api/v3/notifications/threads/${threadId}/subscription`, {
     headers: authHeaders(),
   });
   if (res.status === 404) return null;
@@ -1615,7 +1645,7 @@ export const fetchGistForks = (id: string) => ghFetch<BleephubGist[]>(`/api/v3/g
 export const forkGist = (id: string) => ghPostJSON<BleephubGist>(`/api/v3/gists/${id}/forks`, {});
 
 export async function isGistStarred(id: string): Promise<boolean> {
-  const res = await fetch(`/api/v3/gists/${id}/star`, { headers: authHeaders() });
+  const res = await apiFetch(`/api/v3/gists/${id}/star`, { headers: authHeaders() });
   if (res.status === 204) return true;
   if (res.status === 404) return false;
   if (!res.ok) {
@@ -1789,7 +1819,7 @@ export const deleteCodeQLDatabase = (owner: string, repo: string, language: stri
   ghSend("DELETE", `/api/v3/repos/${owner}/${repo}/code-scanning/codeql/databases/${encodeURIComponent(language)}`);
 
 export async function downloadCodeQLDatabase(owner: string, repo: string, language: string): Promise<Blob> {
-  const response = await fetch(
+  const response = await apiFetch(
     `/api/v3/repos/${owner}/${repo}/code-scanning/codeql/databases/${encodeURIComponent(language)}`,
     { headers: { Accept: "application/zip", ...authHeaders() } },
   );
@@ -1801,7 +1831,7 @@ export async function downloadCodeQLDatabase(owner: string, repo: string, langua
 }
 
 async function ghPatchJSON<T>(path: string, body: unknown): Promise<T> {
-  const res = await fetch(path, {
+  const res = await apiFetch(path, {
     method: "PATCH",
     headers: { "Content-Type": "application/json", ...authHeaders() },
     body: JSON.stringify(body),
@@ -1947,7 +1977,7 @@ export async function downloadMigrationArchive(
   id: number,
   filename: string,
 ): Promise<void> {
-  const res = await fetch(`${migrationBase(scope)}/${id}/archive`, {
+  const res = await apiFetch(`${migrationBase(scope)}/${id}/archive`, {
     headers: authHeaders(),
   });
   if (!res.ok) {
@@ -2070,7 +2100,7 @@ interface GraphQLResponse<T> {
 }
 
 async function ghGraphQL<T>(query: string, variables?: Record<string, unknown>): Promise<T> {
-  const res = await fetch("/api/graphql", {
+  const res = await apiFetch("/api/graphql", {
     method: "POST",
     headers: { "Content-Type": "application/json", ...authHeaders() },
     body: JSON.stringify({ query, variables }),
@@ -2295,7 +2325,7 @@ export async function updateDiscussionComment(commentId: string, body: string): 
 /** GET /contributors returns 204 with an empty body for a repo with no
  * commits — that reads as an honest empty list, not a parse error. */
 export async function fetchRepoContributors(owner: string, repo: string): Promise<GithubContributor[]> {
-  const res = await fetch(`/api/v3/repos/${owner}/${repo}/contributors`, { headers: authHeaders() });
+  const res = await apiFetch(`/api/v3/repos/${owner}/${repo}/contributors`, { headers: authHeaders() });
   if (!res.ok) {
     handleUnauthorized(res);
     throw new ApiError(res.status, `${res.status} ${res.statusText}`);
@@ -2954,7 +2984,7 @@ export const requestPagesBuild = (
  * ("There isn't a custom domain on this Pages site") the panel must show.
  */
 export async function fetchPagesHealth(owner: string, repo: string): Promise<GithubPagesHealth> {
-  const res = await fetch(`/api/v3/repos/${owner}/${repo}/pages/health`, {
+  const res = await apiFetch(`/api/v3/repos/${owner}/${repo}/pages/health`, {
     headers: authHeaders(),
   });
   if (!res.ok) {
@@ -3277,7 +3307,7 @@ export async function inviteRepoCollaborator(
   username: string,
   permission: string,
 ): Promise<GithubRepoInvitation | null> {
-  const res = await fetch(
+  const res = await apiFetch(
     `/api/v3/repos/${owner}/${repo}/collaborators/${encodeURIComponent(username)}`,
     {
       method: "PUT",
