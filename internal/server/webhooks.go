@@ -344,10 +344,9 @@ func (st *Store) SnapshotHook(h *Webhook) *Webhook {
 	}
 	st.mu.RLock()
 	defer st.mu.RUnlock()
-	snapshot := *h
-	snapshot.Events = append([]string(nil), h.Events...)
+	snapshot := cloneWebhook(h)
 	snapshot.LastResponse = nil
-	return &snapshot
+	return snapshot
 }
 
 // appWebhookPseudoHook is the Webhook view of a GitHub App's single webhook

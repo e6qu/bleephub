@@ -49,6 +49,21 @@ type HookLastResponse struct {
 	Message string `json:"message"`
 }
 
+// cloneWebhook detaches every mutable child from the store-owned hook.
+// Callers must hold st.mu while cloning a hook that belongs to a Store.
+func cloneWebhook(h *Webhook) *Webhook {
+	if h == nil {
+		return nil
+	}
+	snapshot := *h
+	snapshot.Events = append([]string(nil), h.Events...)
+	if h.LastResponse != nil {
+		lastResponse := *h.LastResponse
+		snapshot.LastResponse = &lastResponse
+	}
+	return &snapshot
+}
+
 // DeliveryRequest holds the request details of a webhook delivery.
 type DeliveryRequest struct {
 	Headers map[string]string `json:"headers"`
@@ -126,7 +141,7 @@ func (st *Store) GetHook(repoKey string, hookID int) *Webhook {
 
 	for _, h := range st.Hooks[repoKey] {
 		if h.ID == hookID {
-			return h
+			return cloneWebhook(h)
 		}
 	}
 	return nil
@@ -139,7 +154,9 @@ func (st *Store) ListHooks(repoKey string) []*Webhook {
 
 	hooks := st.Hooks[repoKey]
 	out := make([]*Webhook, len(hooks))
-	copy(out, hooks)
+	for i, hook := range hooks {
+		out[i] = cloneWebhook(hook)
+	}
 	return out
 }
 

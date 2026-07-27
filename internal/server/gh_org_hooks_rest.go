@@ -504,7 +504,7 @@ func (st *Store) GetOrgHook(orgLogin string, hookID int) *Webhook {
 	defer st.mu.RUnlock()
 	for _, h := range st.OrgHooks[orgLogin] {
 		if h.ID == hookID {
-			return h
+			return cloneWebhook(h)
 		}
 	}
 	return nil
@@ -516,7 +516,9 @@ func (st *Store) ListOrgHooks(orgLogin string) []*Webhook {
 	defer st.mu.RUnlock()
 	hooks := st.OrgHooks[orgLogin]
 	out := make([]*Webhook, len(hooks))
-	copy(out, hooks)
+	for i, hook := range hooks {
+		out[i] = cloneWebhook(hook)
+	}
 	return out
 }
 

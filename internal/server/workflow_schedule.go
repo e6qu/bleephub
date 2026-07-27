@@ -104,9 +104,7 @@ func (s *Server) markScheduleFired(key string, minute time.Time) bool {
 // event has no webhook delivery on real GitHub — it only starts the run;
 // its payload carries the matching cron line.
 func (s *Server) fireScheduledWorkflow(repoKey, fileName string, content []byte, cron string) {
-	s.store.mu.RLock()
-	repo := s.store.ReposByName[repoKey]
-	s.store.mu.RUnlock()
+	repo := s.store.GetRepoByFullName(repoKey)
 	if repo == nil {
 		return
 	}

@@ -234,7 +234,7 @@ func (s *Server) handleDispatchWorkflow(w http.ResponseWriter, r *http.Request) 
 	}
 	if req.Ref == "" {
 		defaultBranch := "main"
-		if repoObj := s.store.ReposByName[repo]; repoObj != nil && repoObj.DefaultBranch != "" {
+		if repoObj := s.store.GetRepoByFullName(repo); repoObj != nil && repoObj.DefaultBranch != "" {
 			defaultBranch = repoObj.DefaultBranch
 		}
 		req.Ref = defaultBranch
@@ -300,7 +300,7 @@ func (s *Server) handleDispatchWorkflow(w http.ResponseWriter, r *http.Request) 
 	if user := ghUserFromContext(r.Context()); user != nil {
 		payload["sender"] = senderPayload(user)
 	}
-	if repoObj := s.store.ReposByName[repo]; repoObj != nil {
+	if repoObj := s.store.GetRepoByFullName(repo); repoObj != nil {
 		payload["repository"] = repoPayload(repoObj)
 	}
 
