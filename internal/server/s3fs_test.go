@@ -11,8 +11,10 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"sync"
+	"syscall"
 	"testing"
 	"time"
 
@@ -26,6 +28,75 @@ var (
 	s3ServerContainer string
 	s3ServerErr       error
 )
+
+// s3TestOwnerLabel marks the MinIO container with the process id of the test
+// binary that started it.
+//
+// The container is removed after m.Run() returns, which covers a suite that
+// finishes. It does not cover a suite that does not: the go test timeout panics
+// the binary, and an interrupt or a kill ends it outright, so the removal never
+// runs. The container is started with --detach --rm, which self-removes only
+// once the container stops — and nothing stops it — so an abandoned MinIO runs
+// until the host is rebooted, holding its port and its volume.
+//
+// Recording the owner lets a later run tell an abandoned container from one a
+// concurrently running suite is still using: several suites run at once on a
+// developer's machine, so "remove every container carrying this label" would
+// pull the server out from under a live run.
+const s3TestOwnerLabel = "bleephub-test-s3-owner"
+
+// s3ServerRunArgs is the docker argument vector that starts the shared MinIO
+// server. It exists as its own function so the owner label the reaper selects
+// on can be asserted without depending on a running container: the shared
+// server's lifetime is not this test package's to guarantee.
+func s3ServerRunArgs(addr string) []string {
+	return []string{
+		"run", "--detach", "--rm",
+		"--label", fmt.Sprintf("%s=%d", s3TestOwnerLabel, os.Getpid()),
+		"--publish", addr + ":9000",
+		"--env", "MINIO_ROOT_USER=bleephub-test",
+		"--env", "MINIO_ROOT_PASSWORD=bleephub-test-secret",
+		"minio/minio:RELEASE.2025-04-22T22-12-26Z", "server", "/data",
+	}
+}
+
+// reapAbandonedS3Servers removes MinIO containers whose owning test binary is
+// gone. It is deliberately silent: reaping is opportunistic cleanup, and a
+// docker that cannot answer is reported by the run that actually needs a
+// server, not by this one.
+func reapAbandonedS3Servers() {
+	listed, err := exec.Command("docker", "ps", "--all", "--quiet", "--filter", "label="+s3TestOwnerLabel).Output()
+	if err != nil {
+		return
+	}
+	for _, id := range strings.Fields(string(listed)) {
+		owner, err := exec.Command("docker", "inspect", "--format",
+			"{{index .Config.Labels \""+s3TestOwnerLabel+"\"}}", id).Output()
+		if err != nil {
+			continue
+		}
+		pid, err := strconv.Atoi(strings.TrimSpace(string(owner)))
+		if err != nil || testBinaryAlive(pid) {
+			continue
+		}
+		_ = exec.Command("docker", "rm", "--force", id).Run()
+	}
+}
+
+// testBinaryAlive reports whether a process with this id still exists. Signal 0
+// performs the permission and existence checks without delivering anything;
+// EPERM means the process exists and is not ours, which still counts as alive.
+func testBinaryAlive(pid int) bool {
+	if pid <= 0 {
+		return false
+	}
+	process, err := os.FindProcess(pid)
+	if err != nil {
+		return false
+	}
+	err = process.Signal(syscall.Signal(0))
+	return err == nil || errors.Is(err, syscall.EPERM)
+}
 
 func resetS3FSCacheForTest(t *testing.T) {
 	t.Helper()
@@ -100,7 +171,7 @@ func startS3ServerForTest(t *testing.T) string {
 		s3ServerEndpoint = "http://" + addr
 		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
 		defer cancel()
-		command := exec.CommandContext(ctx, "docker", "run", "--detach", "--rm", "--publish", addr+":9000", "--env", "MINIO_ROOT_USER=bleephub-test", "--env", "MINIO_ROOT_PASSWORD=bleephub-test-secret", "minio/minio:RELEASE.2025-04-22T22-12-26Z", "server", "/data")
+		command := exec.CommandContext(ctx, "docker", s3ServerRunArgs(addr)...)
 		output, err := command.CombinedOutput()
 		if err != nil {
 			s3ServerErr = fmt.Errorf("start MinIO S3 server: %w\n%s", err, output)
