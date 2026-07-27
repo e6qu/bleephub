@@ -1,6 +1,6 @@
 # Bleephub bug ledger
 
-445 findings from a full-surface audit; 109 blockers. Every entry carries a
+512 findings from a full-surface audit: 120 blockers, 287 major, 105 minor. Every entry carries a
 location and a one-sentence claim. Severity is `B` blocker, `M` major, `m` minor.
 Status is `open` until the fix lands with a test.
 
@@ -21,8 +21,8 @@ source or comments. The reasoning behind a fix belongs in its commit message.
 | AUTH-006 | B | artifacts.go:1017-1059 | `repoForRuntimeToken` trusts the unverified `sub` claim; forging a token is base64 encoding | open |
 | AUTH-007 | B | secrets.go:230-304 | Repository secret handlers never resolve the repo and never check admin; `PUT /repos/anything/at-all/actions/secrets/X` returns 201 | open |
 | AUTH-008 | B | secrets.go:230, store_repos.go:145 | Case-variant paths write a shadow scope key the injector never reads: operator sets a production secret, gets 201, job runs without it | open |
-| AUTH-009 | B | handle_mgmt.go:75-102 | `GET /internal/oauth/state` returns every live OAuth authorization code with its owning user ID to any authenticated caller — account takeover | open |
-| AUTH-010 | B | handle_mgmt.go:20-27 | 7 of 23 `/internal/` routes omit `requireSiteAdmin`, including every private repo's metadata and unmasked job logs | open |
+| AUTH-009 | B | handle_mgmt.go:75-102 | `GET /internal/oauth/state` returns every live OAuth authorization code with its owning user ID to any authenticated caller — account takeover | fixed |
+| AUTH-010 | B | handle_mgmt.go:20-27 | 7 of 23 `/internal/` routes omit `requireSiteAdmin`, including every private repo's metadata and unmasked job logs | fixed |
 | AUTH-011 | B | identity.go:622-636, gh_oauth.go:488 | The CSRF token is set equal to the session cookie value and printed into the OAuth consent page HTML, defeating HttpOnly | open |
 | AUTH-012 | B | git_http.go:292, git_ssh.go:170, gh_branch_protection.go:1225 | Branch protection is never consulted by either git transport; `branchProtectionForRepo` has no caller outside its own file | open |
 | AUTH-013 | B | gh_oauth.go:568-599 | `redirect_uri` is taken verbatim and never compared to the app's registered callback — authorization-code interception and open redirect | open |
@@ -61,10 +61,10 @@ source or comments. The reasoning behind a fix belongs in its commit message.
 | REST-001 | B | gh_repos_objects.go:23-26,572 | Private repo contents, commits and README readable by an anonymous caller; `lookupReadableRepoFromPath` exists and is not used | fixed |
 | REST-002 | B | gh_repos_refs.go:16-20,236,287 | Branch, tag and ref listings for private repos likewise anonymous | fixed |
 | REST-003 | B | gh_labels_rest.go:127-477 | Labels and milestones for private repos anonymous — roadmap and security leakage | fixed |
-| REST-004 | B | gh_branch_protection.go:243 | All 14 protection GETs anonymous | open |
-| REST-005 | B | gh_actions_extras.go:104, gh_workflows_rest.go:92 | Private build logs, artifact bytes and workflow inventory anonymous | open |
-| REST-006 | B | gh_checks_rest.go:229 | Private CI results anonymous | open |
-| REST-007 | B | gh_import.go:81 | Commit-author emails and large-file paths anonymous | open |
+| REST-004 | B | gh_branch_protection.go:243 | All 14 protection GETs anonymous | fixed |
+| REST-005 | B | gh_actions_extras.go:104, gh_workflows_rest.go:92 | Private build logs, artifact bytes and workflow inventory anonymous | fixed |
+| REST-006 | B | gh_checks_rest.go:229 | Private CI results anonymous | fixed |
+| REST-007 | B | gh_import.go:81 | Commit-author emails and large-file paths anonymous | fixed |
 | REST-008 | B | gh_repos_git.go:288-678 | Any logged-in user can force-push or delete `refs/heads/main` on any repository | open |
 | REST-009 | B | gh_hooks_rest.go:69-82 | Any authenticated user installs a webhook on any private repo and exfiltrates every subsequent payload | open |
 | REST-010 | B | gh_branch_protection.go:141 | All 41 branch-protection routes unauthorized — privilege escalation against the merge gate in the same file | open |
@@ -176,8 +176,8 @@ source or comments. The reasoning behind a fix belongs in its commit message.
 | ID | S | Location | Finding | Status |
 |---|---|---|---|---|
 | GQL-001 | B | gh_graphql.go:138-143 | `POST /api/graphql` serves anonymous requests; real GitHub 401s every unauthenticated request | fixed |
-| GQL-002 | B | gh_repos_graphql.go:693, store_repos.go:1249 | `user(login:).repositories` has no visibility filter and each leaked node is a live handle into issues, PRs, discussions and releases | open |
-| GQL-003 | B | gh_repos_graphql.go:901 + 22 siblings | No mutation in the lane calls any permission helper — any authenticated user can delete any repository | open |
+| GQL-002 | B | gh_repos_graphql.go:693, store_repos.go:1249 | `user(login:).repositories` has no visibility filter and each leaked node is a live handle into issues, PRs, discussions and releases | fixed |
+| GQL-003 | B | gh_repos_graphql.go:901 + 22 siblings | No mutation in the lane calls any permission helper — any authenticated user can delete any repository | partial — deleteRepository now checks canAdminRepo; the other 22 mutations still open |
 | GQL-004 | B | gh_discussions_graphql.go:934,959 | Two discussion answer mutations skip authentication entirely | open |
 | GQL-005 | B | gh_pulls_graphql.go:1682 | `expectedHeadOid` — the `--match-head-commit` safety interlock — accepted and ignored | open |
 | GQL-006 | B | gh_issues_graphql.go:1242 | `updateIssue` drops `labelIds`, `assigneeIds` and `milestoneId` and returns a success payload showing the unchanged issue | open |
@@ -379,7 +379,7 @@ source or comments. The reasoning behind a fix belongs in its commit message.
 | CORE-024 | M | actions_test.go:276 | The test helper hand-builds a partial `*Server`, producing eight nil-guards in production code and leaving `NewServer` untested | open |
 | CORE-025 | M | main.go:36, persistence.go:395 | ANSI console logging in production plus 29 stdlib `log` calls that bypass zerolog, the level filter and the telemetry bridge | partial — net/http ErrorLog now routed through zerolog; console-vs-JSON and the 29 stdlib log calls still open |
 | CORE-026 | M | internal/emojigen/main.go:42 | A third-party tarball downloaded by mutable tag with no checksum, no pinned commit and no client timeout, then committed | open |
-| CORE-027 | m | server.go:665 | `writeJSON` discards the encode error, shipping a truncated body with a success status | open |
+| CORE-027 | m | server.go:665 | `writeJSON` discards the encode error, shipping a truncated body with a success status | fixed |
 | CORE-028 | m | server.go:530 | Every HTTP span is named `bleephub` with no route attribute | open |
 | CORE-029 | m | metrics.go:76 | `ReadMemStats` stops the world while holding the metrics mutex | fixed |
 | CORE-030 | m | metrics.go:9 | JSON tags on a struct that is never marshalled, implying a contract that does not exist | open |
@@ -514,7 +514,7 @@ source or comments. The reasoning behind a fix belongs in its commit message.
 |---|---|---|---|---|
 | CI-001 | B | repo root | No LICENSE file, while every published image embeds a CC-BY-4.0 asset archive | open |
 | CI-002 | B | publish-container.yml | No release workflow, no semver, no tag, no GitHub Release, no changelog — zero git tags exist | open |
-| CI-003 | B | ci.yml:23,37 | Zero static analysis: no vet, lint, gofmt check, race, coverage, govulncheck, module verification or ESLint | open |
+| CI-003 | B | ci.yml:23,37 | Zero static analysis: no vet, lint, gofmt check, race, coverage, govulncheck, module verification or ESLint | partial — gofmt and go vet (both tag sets) now gate; golangci-lint, -race, coverage and govulncheck need real defects fixed first |
 | CI-004 | B | scripts/*.sh | Four written quality gates referenced by nothing | open |
 | CI-005 | B | scripts/dupl.sh:20 | Scans repo root at depth 1 where no Go files live — it would fail 100% of the time if wired, and has never detected a clone | open |
 | CI-006 | B | ci.yml:113 | The sockerless checkout is unpinned while shauth beside it is pinned to a SHA | open |
@@ -524,7 +524,7 @@ source or comments. The reasoning behind a fix belongs in its commit message.
 | CI-010 | B | terraform/main.tf:146,368 | Git bucket versioning suspended and no EFS backup policy — no restore path for either durable store | open |
 | CI-011 | B | 5 fetches | Five network fetches into shipped images and vendored files with no checksum, including the runner tarball and the gh signing keyring | open |
 | CI-012 | B | publish-container.yml:63 | Four public images with no SBOM, signing, provenance or vulnerability scanning | open |
-| CI-013 | B | 3 modules | Three Go modules never built or tested, including the only test for the Lambda gating production traffic | open |
+| CI-013 | B | 3 modules | Three Go modules never built or tested, including the only test for the Lambda gating production traffic | fixed |
 | CI-014 | B | dqlite-node/main.go:1 | The storage quorum binary is behind a build tag CI never enables and first compiles after merge | open |
 | CI-015 | B | publish-container.yml:3 | The release Dockerfiles are never built on pull requests | open |
 | CI-016 | M | publish-container.yml:11 | `cancel-in-progress` on a publishing workflow can orphan architecture tags with no manifest | open |

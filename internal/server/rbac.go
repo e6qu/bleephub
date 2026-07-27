@@ -224,3 +224,24 @@ func permissionAtLeast(perm, minPerm TeamPermission) bool {
 func secretEqual(a, b string) bool {
 	return subtle.ConstantTimeCompare([]byte(a), []byte(b)) == 1
 }
+
+// visibleRepos filters a repository list down to what a viewer may see.
+//
+// Several list paths reach the repository index directly and return whatever
+// the prefix match found. Public repositories are visible to everyone
+// including an anonymous viewer; a private one requires read access. Doing
+// this in one place means a new listing gets the rule by calling a function
+// rather than by its author remembering the rule exists.
+func visibleRepos(st *Store, viewer *User, repos []*Repo) []*Repo {
+	out := make([]*Repo, 0, len(repos))
+	for _, repo := range repos {
+		if repo == nil {
+			continue
+		}
+		if repo.Private && !canReadRepo(st, viewer, repo) {
+			continue
+		}
+		out = append(out, repo)
+	}
+	return out
+}

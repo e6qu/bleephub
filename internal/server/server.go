@@ -696,10 +696,28 @@ func (rw *responseWriter) WriteHeader(code int) {
 }
 
 // writeJSON marshals v as JSON and writes it to w.
+// writeJSON is the response choke point for essentially every handler.
+//
+// The body is marshalled before the status is written, so a value that cannot
+// be encoded — an unsupported type, a NaN, a cycle — becomes a 500 instead of a
+// 200 with a truncated body and no record of what happened. Previously the
+// encoder wrote straight to the ResponseWriter and its error was discarded, so
+// the status line had already been committed by the time anything could fail.
+//
+// Content-Length is deliberately left to net/http: a handful of handlers write
+// further bytes after calling this, and declaring a length here would make
+// those responses malformed.
 func writeJSON(w http.ResponseWriter, status int, v interface{}) {
+	body, err := json.Marshal(v)
+	if err != nil {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusInternalServerError)
+		_, _ = w.Write([]byte(`{"message":"Internal Server Error","documentation_url":"https://docs.github.com/rest"}` + "\n"))
+		return
+	}
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
-	json.NewEncoder(w).Encode(v)
+	_, _ = w.Write(append(body, '\n'))
 }
 
 // recoverMiddleware turns a panicking handler into a 500 instead of a silently

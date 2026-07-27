@@ -143,14 +143,33 @@ func TestPrivateRepoReadsRejectAnUnrelatedUser(t *testing.T) {
 	handler := testServer.ghHeadersMiddleware(testServer.mux)
 
 	// Anonymous, which is the sharpest case: no credential at all.
+	base := "/api/v3/repos/" + ownerLogin + "/" + repoName
 	paths := []string{
-		"/api/v3/repos/" + ownerLogin + "/" + repoName + "/contents/README.md",
-		"/api/v3/repos/" + ownerLogin + "/" + repoName + "/commits",
-		"/api/v3/repos/" + ownerLogin + "/" + repoName + "/readme",
-		"/api/v3/repos/" + ownerLogin + "/" + repoName + "/branches",
-		"/api/v3/repos/" + ownerLogin + "/" + repoName + "/tags",
-		"/api/v3/repos/" + ownerLogin + "/" + repoName + "/labels",
-		"/api/v3/repos/" + ownerLogin + "/" + repoName + "/milestones",
+		base + "/contents/README.md",
+		base + "/commits",
+		base + "/readme",
+		base + "/branches",
+		base + "/tags",
+		base + "/labels",
+		base + "/milestones",
+		base + "/git/refs",
+		base + "/issues",
+		base + "/pulls",
+		base + "/releases",
+		base + "/deployments",
+		base + "/environments",
+		base + "/hooks",
+		base + "/collaborators",
+		base + "/branches/main/protection",
+		base + "/actions/workflows",
+		base + "/actions/runs",
+		base + "/actions/secrets",
+		base + "/actions/variables",
+		base + "/import",
+		base + "/check-suites/1",
+		base + "/code-scanning/alerts",
+		base + "/secret-scanning/alerts",
+		base + "/dependabot/alerts",
 	}
 
 	var disclosed []string
@@ -186,5 +205,50 @@ func TestPrivateRepoReadsRejectAnUnrelatedUser(t *testing.T) {
 		if w.Code < 200 || w.Code >= 300 {
 			t.Errorf("owner GET %s = %d, want 2xx — the gate is refusing the owner too", path, w.Code)
 		}
+	}
+}
+
+// TestGraphQLDeleteRepositoryRejectsANonAdmin covers the GraphQL side of the
+// same property the REST matrix above asserts.
+//
+// GraphQL mutations checked that a caller was signed in and then acted, so the
+// schema was an authorization bypass around REST: the REST delete-repository
+// handler calls canAdminRepo, and the mutation reaching the same store did not.
+func TestGraphQLDeleteRepositoryRejectsANonAdmin(t *testing.T) {
+	store := testServer.store
+
+	now := time.Now().UTC()
+	store.mu.Lock()
+	owner := &User{ID: store.NextUser, Login: "gqldel-owner", Type: "User", CreatedAt: now, UpdatedAt: now}
+	store.Users[owner.ID] = owner
+	store.UsersByLogin[owner.Login] = owner
+	store.NextUser++
+	stranger := &User{ID: store.NextUser, Login: "gqldel-stranger", Type: "User", CreatedAt: now, UpdatedAt: now}
+	store.Users[stranger.ID] = stranger
+	store.UsersByLogin[stranger.Login] = stranger
+	store.NextUser++
+	store.mu.Unlock()
+
+	repo := store.CreateRepo(owner, "gqldel-target", "", false)
+	if repo == nil {
+		t.Fatalf("could not create the fixture repository")
+	}
+	strangerToken := store.CreateToken(stranger.ID, "repo")
+
+	resp := ghPost(t, "/api/graphql", strangerToken.Value, map[string]interface{}{
+		"query": `mutation($id:ID!){deleteRepository(input:{repositoryId:$id}){clientMutationId}}`,
+		"variables": map[string]interface{}{
+			"id": repo.NodeID,
+		},
+	})
+	defer resp.Body.Close()
+
+	body := decodeJSON(t, resp)
+	errs, _ := body["errors"].([]interface{})
+	if len(errs) == 0 {
+		t.Fatalf("deleteRepository by a non-admin returned no error: %v", body)
+	}
+	if store.GetRepoByFullName(repo.FullName) == nil {
+		t.Fatalf("repository was deleted by a user with no admin rights")
 	}
 }

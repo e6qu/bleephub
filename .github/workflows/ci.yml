@@ -34,6 +34,79 @@ jobs:
       - name: Run the complete server suite against MinIO S3
         run: go test -tags noui -count=1 -timeout 20m ./...
 
+  quality:
+    name: Go static analysis
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v7.0.0
+      - uses: actions/setup-go@v6.5.0
+        with:
+          go-version-file: go.mod
+          cache: true
+      # There was no static analysis of any kind: no vet, no format check, no
+      # linter, across roughly 180 non-test Go files. This is the first gate,
+      # deliberately limited to checks the tree already passes so it starts
+      # green and stays meaningful. golangci-lint, -race, coverage and
+      # govulncheck are tracked separately — each needs real defects fixed
+      # before it can be switched on, and a gate that is red on arrival gets
+      # ignored.
+      - name: Check formatting
+        run: |
+          unformatted=$(gofmt -l . | grep -v '^web/' || true)
+          if [ -n "$unformatted" ]; then
+            echo "These files are not gofmt-formatted:"; echo "$unformatted"
+            exit 1
+          fi
+      - name: Vet with the UI embedded
+        run: go vet ./...
+      - name: Vet without the UI
+        run: go vet -tags noui ./...
+
+  modules:
+    name: Nested Go modules
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v7.0.0
+      - uses: actions/setup-go@v6.5.0
+        with:
+          go-version-file: go.mod
+          cache: true
+      # sdk-tests, terraform/wake and test/terraform-sockerless are separate
+      # modules, and `go test ./...` from the root module cannot cross a module
+      # boundary — so roughly 2,600 lines of test code, including the entire
+      # go-github conformance suite and the only test for the Lambda that gates
+      # all production traffic, was never compiled by CI at all.
+      #
+      # Building and vetting every module runs here. The wake module's tests are
+      # self-contained and run too; sdk-tests needs a live server and
+      # terraform-sockerless needs AWS, so those stay build-and-vet until their
+      # harnesses are wired up.
+      - name: Build and vet every nested module
+        run: |
+          set -euo pipefail
+          for module in sdk-tests terraform/wake test/terraform-sockerless; do
+            echo "::group::$module"
+            (cd "$module" && go build ./... && go vet ./...)
+            echo "::endgroup::"
+          done
+      - name: Test the wake controller
+        run: cd terraform/wake && go test -count=1 ./...
+      # A fourth module must not be able to arrive unnoticed the way these three
+      # did. Discovering go.mod files and checking them against the list above
+      # makes that a build failure rather than a silence.
+      - name: Assert every module is covered
+        run: |
+          set -euo pipefail
+          expected=$'./go.mod\n./sdk-tests/go.mod\n./terraform/wake/go.mod\n./test/terraform-sockerless/go.mod'
+          found=$(find . -name go.mod -not -path './web/*' | sort)
+          if [ "$found" != "$(printf '%s' "$expected" | sort)" ]; then
+            echo "Go modules changed. Found:"; echo "$found"
+            echo "Update the loop above and this list together."
+            exit 1
+          fi
+
   web:
     name: Web application
     runs-on: ubuntu-latest
