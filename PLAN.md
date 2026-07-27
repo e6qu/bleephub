@@ -37,6 +37,20 @@ issued bearer token to an agent, bind sessions and job requests to that agent,
 and sign runtime tokens (currently `alg:none`, one-year expiry, trusted
 unverified).
 
+Groundwork, so this is not re-derived: the token already exists and is already
+keyed to the right thing. `handleOAuthToken` (`auth.go:163`) returns
+`makeJWT(agent.Authorization.ClientID, "bleephub")`, so the subject identifies
+the registering agent. Nothing reads it — grepping `Authorization` across
+`broker.go`, `agents.go`, `run_service.go` and `timeline.go` finds only the
+struct the server *hands out*, never a header it inspects. So the work is to
+verify the token and resolve it to an `*Agent`, not to invent a credential.
+
+Two things make this the phase to be careful with. The token is `alg:none`, so
+verification is meaningless until it is signed — sign first, then enforce, or
+enforcement is theatre. And the only thing that proves the real `actions/runner`
+still works afterwards is the Sockerless CI job, which takes about fifteen
+minutes per attempt and cannot run locally without Docker.
+
 ### Phase 3 — GraphQL
 The endpoint serves anonymous requests; mutations authenticate but never
 authorize; `user(login:).repositories` leaks private repositories. Add the
