@@ -860,8 +860,9 @@ export GITHUB_ACTIONS_RUNNER_TLS_NO_VERIFY=1
 # config.sh --token takes the registration token an administration:write
 # caller mints, exactly as against real GitHub; the runner control plane
 # verifies it, so a placeholder string is refused at the first request.
-REG_TOKEN=$(api_post "/api/v3/repos/admin/test/actions/runners/registration-token" | jq -r '.token // empty')
-[ -n "$REG_TOKEN" ] || fail "mint runner registration token"
+REG_TOKEN=$(api_post "/api/v3/repos/admin/test/actions/runners/registration-token" \
+    | jq -r '.token // empty') || fail "mint runner registration token"
+[ -n "$REG_TOKEN" ] || fail "runner registration token response carried no token"
 
 ./config.sh \
     --url "$BLEEPHUB_EXTERNAL_URL/admin/test" \
@@ -888,7 +889,8 @@ PIDS+=("$RUNNER_PID")
 log "Waiting for runner to connect..."
 COUNT=0
 for i in $(seq 1 30); do
-    COUNT=$(api_get "/api/v3/repos/admin/test/actions/runners" | jq -r '.total_count // 0')
+    COUNT=$(api_get "/api/v3/repos/admin/test/actions/runners" \
+        | jq -r '.total_count // 0') || fail "list the repository's runners"
     if [ "$COUNT" -gt 0 ]; then
         log "Runner connected (agent count: $COUNT)"
         break
