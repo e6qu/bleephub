@@ -146,7 +146,7 @@ jobs:
       # long-lived key to hold or rotate.
       id-token: write
     steps:
-      - uses: oras-project/setup-oras@v1
+      - uses: oras-project/setup-oras@v2
       - name: Log in to GitHub Container Registry
         uses: docker/login-action@v4.4.0
         with:
@@ -243,7 +243,7 @@ jobs:
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@v7.0.0
-      - uses: oras-project/setup-oras@v1
+      - uses: oras-project/setup-oras@v2
       - name: Build the versioned static startup bundle
         env:
           BLEEPHUB_VERSION: ${{ needs.metadata.outputs.tag }}
@@ -280,7 +280,7 @@ jobs:
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@v7.0.0
-      - uses: oras-project/setup-oras@v1
+      - uses: oras-project/setup-oras@v2
       - name: Build the Linux ARM64 wake-listener ZIP
         run: scripts/build-bleephub-wake.sh .build/bleephub-wake
       - name: Log in to GitHub Container Registry
