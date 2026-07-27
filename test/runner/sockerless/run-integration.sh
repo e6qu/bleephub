@@ -22,7 +22,20 @@ show_diag() {
             tail -40 "$lf"
         fi
     done
+    if [ -f /tmp/runner-config.log ]; then
+        echo "=== runner configuration output ==="
+        cat /tmp/runner-config.log
+    fi
     if [ -d /runner/_diag ]; then
+        # Configuration writes Runner_*.log, not Worker_*.log. A config-time
+        # failure leaves nothing in the worker logs at all, which is why this
+        # dump used to come back empty for one.
+        echo "=== runner configuration diagnostics ==="
+        for f in /runner/_diag/Runner_*.log; do
+            [ -f "$f" ] || continue
+            echo "--- $f"
+            grep -iE 'http|request|response|status|error|exception|unauthor' "$f" 2>/dev/null | tail -60 || true
+        done
         echo "=== Docker exec commands ==="
         for f in /runner/_diag/Worker_*.log; do
             [ -f "$f" ] || continue
@@ -219,7 +232,7 @@ export BLEEPHUB_ADMIN_TOKEN="bleephub-admin-token-00000000000000000000"
 # so one URL serves both (the GitHub Enterprise Server external-URL model).
 export BLEEPHUB_EXTERNAL_URL="http://host.docker.internal"
 echo "127.0.0.1 host.docker.internal" >> /etc/hosts
-bleephub --addr ":80" --log-level "${BLEEPHUB_LOG_LEVEL:-info}" &
+bleephub --addr ":80" --log-level "${BLEEPHUB_LOG_LEVEL:-debug}" &
 PIDS+=($!)
 wait_for_url "http://$BLEEPHUB_ADDR/health"
 log "bleephub ready"
@@ -873,7 +886,12 @@ REG_TOKEN=$(api_post "/api/v3/repos/admin/test/actions/runners/registration-toke
     --replace \
     --labels self-hosted,linux,arm64 \
     --no-default-labels \
-    2>&1 | tail -5 || fail "Runner configuration failed"
+    >/tmp/runner-config.log 2>&1 || {
+        echo "=== runner configuration output ==="
+        cat /tmp/runner-config.log
+        fail "Runner configuration failed"
+    }
+tail -5 /tmp/runner-config.log
 
 log "Runner configured"
 
