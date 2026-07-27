@@ -134,7 +134,7 @@ source or comments. The reasoning behind a fix belongs in its commit message.
 | REST-074 | M | gh_repos_compare.go:158 | `commitToJSON` emits `{base}/repos/…`, which is not a registered route — every URL it hands out 404s | open |
 | REST-075 | M | gh_hooks_rest.go:468 | Hook URLs built from `"http://" + r.Host`, plaintext behind TLS | open |
 | REST-076 | M | 8 endpoints | Actions settings PUTs return 200+body where GitHub returns 204, while newer endpoints in the same file correctly 204 | open |
-| REST-077 | M | gh_pat_web.go:313 | `||` short-circuit means nothing is written and net/http emits 200 with a zero-length body where 404 is correct | open |
+| REST-077 | M | gh_pat_web.go:313 | `\|\|` short-circuit means nothing is written and net/http emits 200 with a zero-length body where 404 is correct | open |
 | REST-078 | M | gh_teams_rest.go:717, gh_teams_legacy_rest.go:394 | Discarded `decodeJSONBody` result: the handler continues after a 400 was written, grants access, then writes 204 | open |
 | REST-079 | M | gh_api_insights.go:77-275 | Every API request takes the full store write lock and appends a durable row with no cap or eviction | open |
 | REST-080 | M | gh_apps_perms.go:327 | Permission decisions return on the first matching installation while ranging a map — nondeterministic authorization | open |
@@ -148,7 +148,7 @@ source or comments. The reasoning behind a fix belongs in its commit message.
 | REST-088 | M | gh_orgs_rest.go:281 | A pending, never-accepted invitee can create org repos; `MembersCanCreateRepositories` is never consulted | open |
 | REST-089 | M | gh_workflows_rest.go:166 | Runs attributed to a workflow file by comparing the human-authored `name:` string — two files named `CI` cross-contaminate billing totals | open |
 | REST-090 | M | gh_repos_objects.go:589 | `?ref=` hardcodes `NewBranchReferenceName`, so tags and SHAs 404; `resolveGitRef` handles all three and is used elsewhere | open |
-| REST-091 | M | gh_repos_objects.go, gh_repos_commit_reads.go | `Accept: vnd.github.raw|html|object|diff|patch|sha` accepted and ignored; five Accept inspections in 117 files | open |
+| REST-091 | M | gh_repos_objects.go, gh_repos_commit_reads.go | `Accept: vnd.github.raw\|html\|object\|diff\|patch\|sha` accepted and ignored; five Accept inspections in 117 files | open |
 | REST-092 | M | gh_pr_comments.go:539 vs :632 | Reactions written and read under one parent-type key and deleted under another, orphaning rows forever | open |
 | REST-093 | M | gh_repos_archive.go:128 | A mid-stream archive failure returns 200 with a truncated archive though the whole repo was already buffered | open |
 | REST-094 | M | server.go:666 | `writeJSON` ignores the encode error after `WriteHeader` — the choke point every handler uses | open |
@@ -473,7 +473,7 @@ source or comments. The reasoning behind a fix belongs in its commit message.
 | TEST-032 | m | stress_crud_test.go:119 | The stress seed is time-based, never logged and not overridable, so failures cannot be replayed | open |
 | TEST-033 | m | 4 files | 24 bug IDs in test comments, violating the project rule that production code already follows | open |
 | TEST-034 | m | auth_hardening_test.go:93 | Asserting "not 401" passes for 404 and 500 | open |
-| TEST-035 | m | run-gh-test.sh:109, run-integration.sh:1417 | Three `|| true` on auth login, a sleep among poll loops, and a banner claiming 14 tests where 13 exist | open |
+| TEST-035 | m | run-gh-test.sh:109, run-integration.sh:1417 | Three `\|\| true` on auth login, a sleep among poll loops, and a banner claiming 14 tests where 13 exist | open |
 
 ## PARITY — GitHub API fidelity
 
