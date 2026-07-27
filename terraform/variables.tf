@@ -9,7 +9,7 @@ variable "name" {
 }
 
 variable "region" {
-  description = "AWS region for the Bleephub task, buckets, and supporting infrastructure."
+  description = "AWS region for the Bleephub task, buckets, and supporting infrastructure. It must equal the region of the AWS provider the caller passes in; the module checks that and refuses to plan otherwise."
   type        = string
   default     = "eu-west-1"
 }
@@ -91,6 +91,31 @@ variable "availability_zones" {
   validation {
     condition     = length(var.availability_zones) >= 2
     error_message = "Bleephub requires at least two Availability Zones for Amazon ECS VPC-link availability and Amazon Elastic File System."
+  }
+
+  validation {
+    condition     = alltrue([for zone in var.availability_zones : startswith(zone, var.region)])
+    error_message = "Every entry of availability_zones must be an Availability Zone of region; the two defaults drift apart otherwise."
+  }
+}
+
+variable "ssh_ingress_cidr_blocks" {
+  description = "IPv4 CIDR blocks allowed to reach the public SSH Network Load Balancer on port 22. Public SSH has no safe default, so this is required."
+  type        = list(string)
+
+  validation {
+    condition     = length(var.ssh_ingress_cidr_blocks) > 0
+    error_message = "ssh_ingress_cidr_blocks must name at least one IPv4 CIDR block; Bleephub will not publish SSH to an unstated audience."
+  }
+
+  validation {
+    condition     = alltrue([for cidr in var.ssh_ingress_cidr_blocks : can(cidrnetmask(cidr))])
+    error_message = "ssh_ingress_cidr_blocks entries must be IPv4 CIDR blocks such as 203.0.113.0/24."
+  }
+
+  validation {
+    condition     = alltrue([for cidr in var.ssh_ingress_cidr_blocks : can(cidrnetmask(cidr)) ? tonumber(split("/", cidr)[1]) >= 8 : false])
+    error_message = "ssh_ingress_cidr_blocks entries must be /8 or narrower; 0.0.0.0/0 and other internet-wide ranges are rejected."
   }
 }
 
@@ -207,10 +232,11 @@ variable "tags" {
   default     = {}
 }
 
-# Storage that a destroy must be able to remove. A disposable environment sets
-# this so `terraform destroy` completes without an operator emptying versioned
-# buckets by hand; a long-lived one leaves it unset so a destroy stops rather
-# than discarding data.
+# Emptying a versioned bucket by hand is the tedious half of tearing down a
+# disposable environment; this does it for you. It is not the whole story:
+# the durable stores also carry a prevent_destroy guard, which Terraform only
+# accepts as a literal, so a teardown must release those from state as well.
+# terraform/README.md documents the sequence.
 variable "force_destroy_storage" {
   description = "Delete the Git, object, and startup buckets together with their contents."
   type        = bool

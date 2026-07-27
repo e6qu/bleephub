@@ -19,6 +19,7 @@ import { useOpenCounts } from "../hooks/useOpenCounts.js";
 import { RepoHeader } from "../components/Shell.js";
 import { Spinner, InlineError } from "@bleephub/ui-core/components";
 import { Box } from "../components/ui.js";
+import { MutationError } from "../components/MutationError.js";
 import type {
   GithubCodeScanningAlert,
   GithubCodeScanningAlertInstance,
@@ -225,6 +226,7 @@ export function CodeScanningPage() {
         </Box>
 
         <Box className="security-panel security-detail-panel">
+          <MutationError of={updateMutation} />
           {selected ? (
             <AlertDetail
               alert={selected}
@@ -362,6 +364,7 @@ function AnalysisItem({
       >
         Delete
       </button>
+      <MutationError of={deleteMutation} />
     </li>
   );
 }

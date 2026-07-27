@@ -116,6 +116,7 @@ provider "aws" {
     acm = "%[1]s"
     apigatewayv2 = "%[1]s"
     autoscaling = "%[1]s"
+    cloudfront = "%[1]s"
     cloudwatch = "%[1]s"
     cloudwatchlogs = "%[1]s"
     ec2 = "%[1]s"
@@ -123,6 +124,7 @@ provider "aws" {
     efs = "%[1]s"
     elasticloadbalancing = "%[1]s"
     iam = "%[1]s"
+    kms = "%[1]s"
     lambda = "%[1]s"
     route53 = "%[1]s"
     scheduler = "%[1]s"
@@ -144,6 +146,7 @@ module "bleephub" {
   hosted_zone_id = aws_route53_zone.bleephub.zone_id
   domain_name = "bleephub.example.test"
   container_image = "public.ecr.aws/docker/library/alpine:3.20"
+  ssh_ingress_cidr_blocks = ["203.0.113.0/24"]
   admin_token = "test-administrator-token"
   idle_shutdown_enabled = false
   dqlite_advertise_addresses = {
@@ -191,12 +194,35 @@ module "bleephub" {
 	if !strings.Contains(discovery, `name                            = "app"`) || !strings.Contains(discovery, `type = "SRV"`) {
 		t.Fatalf("Bleephub application did not register its direct Amazon ECS discovery endpoint:\n%s", discovery)
 	}
+	// The wake controller is the only writer of desired_count once the service
+	// exists. Reconciling it here would stop whatever the controller started, so
+	// a plan must stay clean across an out-of-band capacity change.
 	setServiceDesiredCount(t, "bleephub-test", 0)
-	if output, exitCode := runTerraformWithExitCode(t, dir, "plan", "-detailed-exitcode"); exitCode != 2 || !strings.Contains(output, "desired_count") {
-		t.Fatalf("Terraform did not reconcile always-on application capacity after ECS drift (exit %d):\n%s", exitCode, output)
+	if output, exitCode := runTerraformWithExitCode(t, dir, "plan", "-detailed-exitcode"); exitCode != 0 {
+		t.Fatalf("Terraform tried to reclaim application capacity the wake controller owns (exit %d):\n%s", exitCode, output)
 	}
-	runTerraform(t, dir, "apply", "-auto-approve")
-	runTerraform(t, dir, "plan", "-detailed-exitcode")
+
+	// Every store that holds the only copy of user data carries prevent_destroy,
+	// which Terraform accepts only as a literal. A teardown therefore releases
+	// them from state first, and this proves the guard is what stops it.
+	guarded := []string{
+		"module.bleephub.aws_kms_key.this",
+		"module.bleephub.aws_s3_bucket.git",
+		"module.bleephub.aws_s3_bucket.objects",
+		"module.bleephub.aws_efs_file_system.sqlite",
+		"module.bleephub.aws_secretsmanager_secret.admin_token",
+		"module.bleephub.aws_secretsmanager_secret.ssh_host_key",
+	}
+	output, exitCode := runTerraformWithExitCode(t, dir, "plan", "-destroy")
+	if exitCode == 0 || !strings.Contains(output, "prevent_destroy") {
+		t.Fatalf("a destroy of the durable stores was not refused (exit %d):\n%s", exitCode, output)
+	}
+	for _, address := range guarded {
+		if !strings.Contains(output, address) {
+			t.Fatalf("%s is not protected against destroy:\n%s", address, output)
+		}
+	}
+	runTerraform(t, dir, append([]string{"state", "rm"}, guarded...)...)
 	runTerraform(t, dir, "destroy", "-auto-approve")
 }
 

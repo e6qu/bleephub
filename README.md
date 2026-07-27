@@ -159,6 +159,15 @@ redirects only to Shauth's fixed `/oauth/logout/complete` endpoint. Shauth then
 consumes its one-time logout correlation and returns the browser to Bleephub's
 persistent `/ui/signed-out` page.
 
+Webhook delivery refuses any target that is not a public address — loopback,
+link-local (including the `169.254.169.254` instance-metadata endpoint),
+RFC1918, carrier-grade NAT and IPv6 unique-local space — and any scheme other
+than `http`/`https`. The address is checked when the hook is configured and
+again against the address actually dialed, and redirects are not followed.
+`BLEEPHUB_ALLOW_PRIVATE_WEBHOOK_TARGETS=true` opts a development or test
+instance out so its hook receivers can live on loopback; it defaults to off and
+nothing enables it implicitly.
+
 Bleephub verifies discovery metadata, authorization code + PKCE, state, nonce,
 issuer, audience, expiry, role, subject, and the OpenID Connect `sid`. Durable
 browser-session records retain verified issuer, subject, `sid`, and the ID
@@ -414,6 +423,33 @@ Env vars:
 - `BPH_TLS_CERT` + `BPH_TLS_KEY` — serve over TLS.
 - `BLEEPHUB_MAX_WORKFLOWS=N` — concurrency cap (default 10).
 - `OTEL_EXPORTER_OTLP_ENDPOINT` — when set, emits traces + metrics + logs via OTLP (off by default; preserves the components-decoupled invariant).
+- `BLEEPHUB_EXTERNAL_URL` — the origin Bleephub is reached on, used to build absolute URLs in API responses and webhook payloads. A trailing slash is trimmed. Unset means URLs are derived per request.
+- `BLEEPHUB_ADMIN_HOST` — when set, `GET /` on that hostname serves the dashboard instead of the API root. Unset disables the redirect entirely.
+- `BLEEPHUB_ENTERPRISE_SLUG` — the slug the enterprise endpoints answer on (default `bleephub`).
+- `BLEEPHUB_S3_REGION` — region for the git object store. Falls back to `AWS_REGION`, then `us-east-1` for local simulators.
+- `BLEEPHUB_ALLOW_PRIVATE_WEBHOOK_TARGETS=true` — allow webhook deliveries to private addresses, for a development instance whose receivers are on loopback. Off by default; see [Webhook delivery](#how-it-works) above for what it turns off.
+- `BLEEPHUB_PAGES_JEKYLL_EXECUTABLE` — the Pages build binary (default `bleephub-pages-jekyll`).
+
+Git over SSH (all unset by default; the SSH transport does not start without the first two):
+- `BLEEPHUB_SSH_ADDR` — listen address. Unset means no SSH transport.
+- `BLEEPHUB_SSH_HOST_KEY` — the host private key, in PEM. **Required** whenever `BLEEPHUB_SSH_ADDR` is set; startup fails loudly if it is empty, rather than generating a fresh identity on every restart and tripping every client's known-hosts.
+- `BLEEPHUB_SSH_HOST` — the host (optionally `host:port`) advertised in the `ssh_url` of API responses. Unset omits the field.
+
+Single sign-on, all unset by default:
+- `BLEEPHUB_GITHUB_OAUTH_CLIENT_ID` / `BLEEPHUB_GITHUB_OAUTH_CLIENT_SECRET` — sign in with a real github.com OAuth app.
+- `BLEEPHUB_SHAUTH_ISSUER` / `BLEEPHUB_SHAUTH_CLIENT_ID` / `BLEEPHUB_SHAUTH_CLIENT_SECRET` / `BLEEPHUB_SHAUTH_POST_LOGOUT_URL` — sign in through a shauth OpenID Connect provider.
+
+Seeding, for reproducible fixtures:
+- `BLEEPHUB_SEED_APPS_FILE` — path to a JSON file of GitHub App seed specs.
+- `BLEEPHUB_SEED_APPS` — the same JSON inline. Both may be set; the specs concatenate. Invalid JSON is a startup error, not a skipped seed.
+
+The SSH gateway binary (`ssh-gateway/`) reads two of its own, and requires both:
+- `BLEEPHUB_WAKE_URL` — the wake endpoint to call before dialling.
+- `BLEEPHUB_INTERNAL_SSH_TARGET` — the upstream address to proxy to.
+
+Test-only, read by the suite and never by the server: `BLEEPHUB_STRESS_WORKERS`, `BLEEPHUB_STRESS_DURATION`, `BLEEPHUB_LOAD_WORKERS`, `BLEEPHUB_LOAD_SECONDS`, `BLEEPHUB_DQLITE_SERVERS`, `SOCKERLESS_REPOSITORY`.
+
+The wake Lambda has its own set (`ECS_CLUSTER`, `IDLE_SHUTDOWN_MINUTES` and the rest); Terraform supplies them, and they are documented in [terraform/README.md](terraform/README.md).
 
 ## Container images
 

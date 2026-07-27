@@ -10,10 +10,48 @@ Route 53 records, and certificate. Standalone mode also creates fck-nat and an
 Amazon Simple Storage Service gateway endpoint; shared-network mode reuses the
 environment's equivalents.
 
-The module deliberately contains no backend or environment-specific values.
-Use it through Terragrunt from the private `e6qu/infra` repository. The
-production environment is `bleephub`, with `bleephub.e6qu.dev` as the public
-origin and `admin.bleephub.e6qu.dev` as the administrator origin.
+The module contains no environment-specific values. Use it through Terragrunt
+from the private `e6qu/infra` repository. The production environment is
+`bleephub`, with `bleephub.e6qu.dev` as the public origin and
+`admin.bleephub.e6qu.dev` as the administrator origin.
+
+## State backend
+
+State holds the generated SSH host private key and the administrator token, so
+it must never live on a laptop or in the repository. `versions.tf` declares an
+S3 backend as a *partial* configuration — encryption and S3-native locking are
+fixed there, and every coordinate is supplied at init:
+
+```bash
+terraform -chdir=terraform init \
+  -backend-config="bucket=<state-bucket>" \
+  -backend-config="key=bleephub/<environment>.tfstate" \
+  -backend-config="region=<region>" \
+  -backend-config="kms_key_id=<state-key-arn>"
+```
+
+The state bucket must have versioning and default encryption enabled and public
+access fully blocked; it is not created by this module, because a module cannot
+hold the state of its own backend. `use_lockfile = true` is S3-native locking,
+which replaces the DynamoDB lock table on this Terraform line — no table is
+needed or accepted.
+
+Terragrunt supplies the same coordinates through its `remote_state` block; the
+empty `backend "s3"` body is exactly the shape it expects. CI runs
+`init -backend=false`, which skips the backend entirely, so validation and the
+contract tests need no credentials.
+
+One of the contract tests calls this root module as a child module, so every
+`init`, `validate`, and `test` run prints a "Backend configuration ignored"
+warning against `versions.tf`. It is expected and applies only to that nested
+call; the backend still governs the real root.
+
+`terraform fmt`, `validate`, and `test` are gated by the `terraform` job in
+`.github/workflows/ci.yml` on the Terraform version pinned in `versions.tf`.
+`.terraform.lock.hcl` records provider checksums for `linux_amd64`,
+`linux_arm64`, `darwin_amd64`, and `darwin_arm64`; regenerate it with
+`terraform providers lock -platform=…` for all four whenever a provider version
+changes, or `init` re-resolves them.
 
 ## Required inputs
 
@@ -23,8 +61,65 @@ origin and `admin.bleephub.e6qu.dev` as the administrator origin.
 - `container_image` — immutable Bleephub release image coordinate.
 - `admin_token` — initial administrator secret; provide it through the
   Terragrunt environment rather than committing it.
+- `ssh_ingress_cidr_blocks` — IPv4 CIDR blocks allowed to reach public SSH on
+  port 22. There is no default: publishing SSH to an unstated audience is a
+  decision the caller has to make explicitly, and `0.0.0.0/0` is rejected.
 - `wake_listener_zip_path` — pre-built Linux Amazon Lambda wake-listener ZIP.
 - `startup_page_path` — extracted `index.html` from the versioned startup ZIP.
+
+`region` must equal the region of the AWS provider the caller passes in, and
+every entry of `availability_zones` must belong to it. The module checks both
+and refuses to plan otherwise rather than composing ARNs for one region while
+deploying into another.
+
+## Encryption and durability
+
+One customer-managed KMS key, created by the module with annual rotation,
+encrypts the Git bucket, the object bucket, the EFS filesystem, both AWS
+Secrets Manager secrets, and the CloudWatch log group. Revoking or disabling
+`alias/<name>` takes every one of them offline at once, which is the point.
+
+The Git and object buckets are versioned and the EFS filesystem has an AWS
+Backup policy, so an overwrite or a deletion has somewhere to restore from.
+All three buckets block public access completely; the startup document is
+served through a CloudFront distribution with an origin access control, so no
+bucket policy grants anonymous reads.
+
+An EFS filesystem cannot be re-keyed in place, so on an environment that was
+deployed before the key existed the plan will stop on `prevent_destroy` rather
+than replace the filesystem underneath the quorum. Migrating means restoring an
+AWS Backup recovery point onto a new encrypted filesystem and moving the state
+entry across; the buckets, secrets, and log group re-key in place and need no
+such step.
+
+Each of those stores also carries `prevent_destroy`, which Terraform accepts
+only as a literal. `force_destroy_storage = true` empties the buckets but does
+not lift the guard, so a deliberate teardown is:
+
+```bash
+terraform -chdir=terraform state rm \
+  aws_kms_key.this \
+  aws_s3_bucket.git aws_s3_bucket.objects \
+  aws_efs_file_system.sqlite \
+  aws_secretsmanager_secret.admin_token aws_secretsmanager_secret.ssh_host_key
+terraform -chdir=terraform destroy
+```
+
+The released resources then have to be deleted by hand, which is deliberate.
+
+## Deployments
+
+The application service deploys with `deployment_minimum_healthy_percent = 100`
+and a container health check against `/health`, so a replacement task has to
+pass before the serving one is taken away, and a deployment circuit breaker
+rolls back a release that never becomes healthy. Each dqlite voter owns a
+single raft directory on its own EFS access point, so those services replace
+rather than overlap and rely on the circuit breaker alone.
+
+`desired_count` is carried by `ignore_changes` on the application and dqlite
+services: the wake controller owns capacity at runtime, and reconciling it from
+Terraform would stop a live service mid-request. The value in the configuration
+is only the count the service is created with.
 
 To use a shared VPC, set `existing_vpc_id`,
 `existing_private_subnet_ids`, `existing_public_subnet_ids`, and
@@ -74,8 +169,9 @@ running while the rest of the deployment stays unchanged.
 
 The module returns the public Bleephub URL, administrator URL, SSH host,
 service and Amazon API Gateway identifiers, the effective Amazon API Gateway
-VPC Link and security-group identifiers, durable object-store names, and the
-AWS Secrets Manager ARN holding the administrator token.
+VPC Link and security-group identifiers, durable object-store names, the AWS
+Secrets Manager ARN holding the administrator token, the KMS key ARN, and the
+startup distribution's domain name.
 
 ## Validation
 

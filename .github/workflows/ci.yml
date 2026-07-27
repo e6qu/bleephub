@@ -108,6 +108,12 @@ jobs:
         run: actionlint .github/workflows/*.yml
       - name: Lint the shell scripts
         run: shellcheck scripts/*.sh web/e2e/*.sh
+      # The findings ledger is edited constantly and by several hands, and a
+      # row that loses its status column or reuses an identifier is still valid
+      # markdown — it just quietly drops a finding. That happened twice before
+      # this check existed.
+      - name: Check the findings ledger
+        run: ./scripts/check-bugs-ledger.sh
 
   modules:
     name: Nested Go modules
@@ -180,10 +186,27 @@ jobs:
           file: Dockerfile.release
           platforms: linux/amd64
           push: false
+          load: true
+          tags: bleephub:ci
           cache-from: |
             type=gha,scope=bleephub-ci-amd64
             type=gha,scope=bleephub-amd64
           cache-to: type=gha,scope=bleephub-ci-amd64,mode=max
+      # Reporting only, and deliberately not yet a gate: nobody has ever
+      # scanned these images, so the finding count is unknown and a blocking
+      # threshold picked blind would either be red on arrival or meaningless.
+      # The first runs measure it; the threshold goes in afterwards, against a
+      # real number. Until then this prints to the job log and changes no
+      # outcome — which is worth stating plainly rather than leaving an
+      # exit-code of zero to imply a gate that is not there.
+      - name: Scan the release image
+        uses: aquasecurity/trivy-action@v0.36.0
+        with:
+          image-ref: bleephub:ci
+          format: table
+          severity: HIGH,CRITICAL
+          ignore-unfixed: true
+          exit-code: '0'
       - name: Build the runner image
         uses: docker/build-push-action@v7.3.0
         with:

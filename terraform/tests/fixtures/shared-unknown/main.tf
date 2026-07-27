@@ -29,6 +29,7 @@ module "bleephub" {
   api_gateway_vpc_link_id                = aws_apigatewayv2_vpc_link.shared.id
   api_gateway_vpc_link_security_group_id = aws_security_group.shared_api_gateway_vpc_link.id
   container_image                        = "example.invalid/bleephub:test"
+  ssh_ingress_cidr_blocks                = ["203.0.113.0/24"]
   hosted_zone_id                         = "Z0123456789ABCDEFGH"
   domain_name                            = "bleephub.test.example"
   admin_token                            = "terraform-test-admin-token"

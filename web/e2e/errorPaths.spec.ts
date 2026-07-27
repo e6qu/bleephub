@@ -50,7 +50,27 @@ test.describe("Error handling / fault injection", () => {
     await expect(page.getByRole("link", { name: "bleephub" })).toBeVisible();
   });
 
-  test("an injected 500 on the public repository list degrades the Operations console to a visible error", async ({ page }) => {
+  test("an injected 500 on the server metrics endpoint degrades the Operations console to a visible error", async ({ page }) => {
+    // The console's counters come from the server's own metrics surface.
+    await page.route("**/internal/metrics**", (route) =>
+      route.fulfill({
+        status: 500,
+        contentType: "application/json",
+        body: JSON.stringify({ message: "Internal Server Error" }),
+      }),
+    );
+
+    // The "System status" console lives at /ui/admin.
+    await page.goto("/ui/admin");
+    await page.waitForLoadState("networkidle");
+
+    // A failed metrics fetch must degrade to a visible InlineError, never a
+    // blank console or an uncaught render. The app shell survives.
+    await expect(page.getByText(/Failed to load overview/i)).toBeVisible();
+    await expect(page.getByRole("link", { name: "bleephub" })).toBeVisible();
+  });
+
+  test("an injected 500 on the recent-workflows fetch leaves the console's counters intact", async ({ page }) => {
     await page.route("**/api/v3/user/repos**", (route) =>
       route.fulfill({
         status: 500,
@@ -59,13 +79,12 @@ test.describe("Error handling / fault injection", () => {
       }),
     );
 
-    // The GitHub Actions metrics-driven "System status" console lives at /ui/admin.
     await page.goto("/ui/admin");
     await page.waitForLoadState("networkidle");
 
-    // A failed public aggregate fetch must degrade to a visible InlineError,
-    // never a blank console or an uncaught render. The app shell survives.
-    await expect(page.getByText(/Failed to load overview/i)).toBeVisible();
-    await expect(page.getByRole("link", { name: "bleephub" })).toBeVisible();
+    // Only the recent-workflows table depends on the repository list now, so
+    // the counters must survive its failure and the table degrades on its own.
+    await expect(page.getByText(/Failed to load workflows/i)).toBeVisible();
+    await expect(page.getByText("Connected runners")).toBeVisible();
   });
 });

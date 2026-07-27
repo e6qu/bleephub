@@ -1,8 +1,9 @@
-import { lazy, Suspense, useEffect, useState } from "react";
+import { lazy, Suspense, useCallback, useEffect, useState } from "react";
 import { BrowserRouter, Routes, Route, Navigate, useLocation } from "react-router";
-import { ErrorBoundary, ToastProvider } from "@bleephub/ui-core/components";
-import { isLoggedIn } from "./api.js";
+import { ErrorBoundary, InlineError, ToastProvider } from "@bleephub/ui-core/components";
+import { fetchBrowserSession, isLoggedIn } from "./api.js";
 import { BleephubShell } from "./components/Shell.js";
+import { Button } from "./components/ui.js";
 
 const LoginPage = lazy(() => import("./pages/LoginPage.js").then(({ LoginPage }) => ({ default: LoginPage })));
 const OverviewPage = lazy(() => import("./pages/OverviewPage.js").then(({ OverviewPage }) => ({ default: OverviewPage })));
@@ -64,31 +65,88 @@ function LoginRedirect() {
   return <Navigate to={`/ui/login?return_to=${encodeURIComponent(returnTo)}`} replace />;
 }
 
-export function App() {
-  const [browserSession, setBrowserSession] = useState<boolean | null>(null);
+/**
+ * A signed-out visitor and an unreachable server are different situations and
+ * must not collapse into the same blank screen, so the probe's outcome is
+ * modelled explicitly rather than as a nullable boolean.
+ */
+type SessionState =
+  | { status: "probing" }
+  | { status: "signed-in" }
+  | { status: "signed-out" }
+  | { status: "failed"; detail: Error };
+
+function SessionPending() {
+  return (
+    <div role="status" className="flex min-h-screen items-center justify-center p-6">
+      Checking your session…
+    </div>
+  );
+}
+
+function SessionUnavailable({ detail, onRetry }: { detail: Error; onRetry: () => void }) {
+  return (
+    <div className="mx-auto max-w-xl p-6">
+      <InlineError
+        title="Could not check your session"
+        detail={detail}
+        action={
+          <Button type="button" onClick={onRetry}>
+            Try again
+          </Button>
+        }
+      />
+    </div>
+  );
+}
+
+function useSessionState() {
+  const [state, setState] = useState<SessionState>(() =>
+    isLoggedIn() ? { status: "signed-in" } : { status: "probing" },
+  );
+  const [attempt, setAttempt] = useState(0);
 
   useEffect(() => {
     if (isLoggedIn()) {
-      setBrowserSession(false);
+      setState({ status: "signed-in" });
       return;
     }
-    void fetch("/auth/session")
-      .then(async (response) => {
-        if (!response.ok) {
-          setBrowserSession(false);
-          return;
-        }
-        const session = (await response.json()) as { authenticated?: boolean };
-        setBrowserSession(session.authenticated === true);
+    let current = true;
+    setState({ status: "probing" });
+    fetchBrowserSession()
+      .then((authenticated) => {
+        if (current) setState({ status: authenticated ? "signed-in" : "signed-out" });
       })
-      .catch(() => setBrowserSession(false));
-  }, []);
+      .catch((err: unknown) => {
+        if (current) {
+          setState({ status: "failed", detail: err instanceof Error ? err : new Error(String(err)) });
+        }
+      });
+    return () => {
+      current = false;
+    };
+  }, [attempt]);
 
-  if (browserSession === null && !isLoggedIn()) {
-    return null;
+  const retry = useCallback(() => setAttempt((n) => n + 1), []);
+  return { state, retry };
+}
+
+export function App() {
+  const { state, retry } = useSessionState();
+
+  if (state.status === "probing") {
+    return <SessionPending />;
   }
 
-  if (!isLoggedIn() && !browserSession) {
+  if (state.status === "failed") {
+    return (
+      <ErrorBoundary>
+        <SessionUnavailable detail={state.detail} onRetry={retry} />
+      </ErrorBoundary>
+    );
+  }
+
+  if (state.status === "signed-out") {
     return (
       <ErrorBoundary>
         <BrowserRouter>

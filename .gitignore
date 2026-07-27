@@ -12,15 +12,30 @@ web/test-results/
 web/playwright-report/
 *.tsbuildinfo
 
-# Terraform state holds the SSH host private key and the admin token in
-# cleartext. The module declares no backend, so a bare `terraform apply` in
-# this directory writes them here — these must never be committable.
+# Terraform state holds the SSH host private key and the admin token. The
+# module keeps it in an encrypted remote backend, but a local `terraform apply`
+# or a `-backend=false` run still writes it here, and a plan file carries the
+# same values — none of it must ever be committable.
 *.tfstate
 *.tfstate.*
 .terraform.tfstate.lock.info
 *.tfvars
 *.auto.tfvars
 !terraform.tfvars.example
+*.tfplan
+*.tfplan.*
+crash.log
+crash.*.log
+override.tf
+override.tf.json
+*_override.tf
+*_override.tf.json
+
+# Private key material of any kind.
+*.pem
+*.key
+id_rsa
+id_ed25519
 
 # Test and coverage output.
 coverage.out

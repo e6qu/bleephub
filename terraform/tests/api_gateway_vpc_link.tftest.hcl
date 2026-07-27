@@ -30,6 +30,12 @@ mock_provider "aws" {
     }
   }
 
+  mock_data "aws_region" {
+    defaults = {
+      region = "eu-west-1"
+    }
+  }
+
   mock_data "aws_iam_policy_document" {
     defaults = {
       json = "{\"Version\":\"2012-10-17\",\"Statement\":[]}"
@@ -60,6 +66,7 @@ variables {
   existing_public_subnet_ids  = ["subnet-00000000000000003", "subnet-00000000000000004"]
   existing_ecs_cluster_arn    = "arn:aws:ecs:eu-west-1:123456789012:cluster/dev"
   container_image             = "example.invalid/bleephub:test"
+  ssh_ingress_cidr_blocks     = ["203.0.113.0/24"]
   hosted_zone_id              = "Z0123456789ABCDEFGH"
   domain_name                 = "bleephub.test.example"
   admin_token                 = "terraform-test-admin-token"

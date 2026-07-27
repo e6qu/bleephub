@@ -168,11 +168,15 @@ export function abortPendingRequests(): void {
 
 /**
  * apiFetch is the single exit point to the network for this module. Every
- * request inherits the module-wide abort signal unless the caller supplies its
- * own.
+ * request inherits the module-wide abort signal; a caller-supplied signal is
+ * combined with it rather than replacing it, so passing a per-request deadline
+ * never costs the request its sign-out cancellation.
  */
 function apiFetch(input: RequestInfo | URL, init?: RequestInit): Promise<Response> {
-  return fetch(input, { ...init, signal: init?.signal ?? pendingRequests.signal });
+  const signal = init?.signal
+    ? AbortSignal.any([pendingRequests.signal, init.signal])
+    : pendingRequests.signal;
+  return fetch(input, { ...init, signal });
 }
 
 const TOKEN_KEY = "bleephub_token";
@@ -191,6 +195,27 @@ export function clearToken(): void {
 
 export function isLoggedIn(): boolean {
   return !!getToken();
+}
+
+/** How long the cookie-session probe may take before it is treated as failed. */
+export const SESSION_PROBE_TIMEOUT_MS = 5000;
+
+/**
+ * Reports whether the browser holds a valid cookie session.
+ *
+ * `/auth/session` answers 200 with `{authenticated: false}` for an anonymous
+ * visitor, so any rejection here is a transport or server fault and must stay
+ * distinguishable from "signed out" — it is thrown, never folded into `false`.
+ */
+export async function fetchBrowserSession(
+  timeoutMs: number = SESSION_PROBE_TIMEOUT_MS,
+): Promise<boolean> {
+  const res = await apiFetch("/auth/session", { signal: AbortSignal.timeout(timeoutMs) });
+  if (!res.ok) {
+    throw new ApiError(res.status, `session probe failed: ${res.status} ${res.statusText}`);
+  }
+  const session = (await res.json()) as { authenticated?: boolean };
+  return session.authenticated === true;
 }
 
 export function authHeaders(): Record<string, string> {
@@ -221,6 +246,14 @@ export class ApiError extends Error {
 
 export function isNotFound(err: unknown): boolean {
   return err instanceof ApiError && err.status === 404;
+}
+
+/**
+ * True when the server refused on authorization grounds. This is an answer,
+ * not a fault: retrying or reporting it as a failure is wrong.
+ */
+export function isForbidden(err: unknown): boolean {
+  return err instanceof ApiError && err.status === 403;
 }
 
 async function fetchJSON<T>(url: string): Promise<T> {
@@ -306,22 +339,40 @@ function mapWorkflowRun(repoFullName: string, run: GithubWorkflowRun, jobs: Gith
   };
 }
 
-export async function fetchWorkflows(): Promise<BleephubWorkflow[]> {
+/**
+ * Most recent workflow runs across every repository the viewer can see.
+ *
+ * This cannot become a single request. There is no cross-repository runs
+ * route, so the repository list plus one runs page per repository is
+ * irreducible over the public API; and `GET .../actions/runs` carries no
+ * per-run job count (it mirrors GitHub's payload, which has none), so a job
+ * count costs one request per run.
+ *
+ * What is avoidable is fetching jobs for runs nobody displays: this used to
+ * ask for the jobs of every run on every repository's first page. Runs are
+ * merged and trimmed to `limit` first, so the job requests are bounded by
+ * what the caller actually renders.
+ */
+export async function fetchWorkflows(limit: number): Promise<BleephubWorkflow[]> {
   const repos = await fetchAllUserRepos();
   const perRepo = await Promise.all(
     repos.map(async (repo) => {
       const [owner, repoName] = splitRepoFullName(repo.full_name);
       const runsPage = await fetchWorkflowRunsPage(owner, repoName, {});
-      const runs = await Promise.all(
-        runsPage.items.map(async (run) => {
-          const jobsPage = await fetchRunJobs(owner, repoName, run.id);
-          return mapWorkflowRun(repo.full_name, run, jobsPage.items);
-        }),
-      );
-      return runs;
+      return runsPage.items.map((run) => ({ repoFullName: repo.full_name, owner, repoName, run }));
     }),
   );
-  return perRepo.flat().sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+  const newestFirst = perRepo
+    .flat()
+    .sort((a, b) => b.run.created_at.localeCompare(a.run.created_at))
+    .slice(0, limit);
+
+  return Promise.all(
+    newestFirst.map(async ({ repoFullName, owner, repoName, run }) => {
+      const jobsPage = await fetchRunJobs(owner, repoName, run.id);
+      return mapWorkflowRun(repoFullName, run, jobsPage.items);
+    }),
+  );
 }
 
 export async function fetchWorkflowDetail(id: string): Promise<BleephubWorkflow> {
@@ -351,69 +402,48 @@ export async function fetchWorkflowLogs(id: string): Promise<Record<string, stri
 export const fetchRepos = () =>
   fetchAllUserRepos();
 
-async function fetchAllWorkflowRuns(owner: string, repo: string): Promise<GithubWorkflowRun[]> {
-  const runs: GithubWorkflowRun[] = [];
-  let nextUrl: string | null = null;
-  do {
-    const page = await fetchWorkflowRunsPage(owner, repo, {}, nextUrl ?? undefined);
-    runs.push(...page.items);
-    nextUrl = page.nextUrl;
-  } while (nextUrl);
-  return runs;
+/**
+ * Wire shape of `GET /internal/metrics` (MetricsSnapshot) and
+ * `GET /internal/status`. Both are site-admin only.
+ */
+interface WireInternalMetrics {
+  workflow_submissions: number;
+  job_dispatches: number;
+  job_completions: Record<string, number>;
+  active_workflows: number;
 }
 
-async function fetchRepositoryActionsState(repo: BleephubRepo): Promise<{
-  runs: GithubWorkflowRun[];
-  jobs: GithubJob[];
-  runners: GithubRunner[];
-}> {
-  const [owner, repoName] = splitRepoFullName(repo.full_name);
-  const runs = await fetchAllWorkflowRuns(owner, repoName);
-  const jobsPages = await Promise.all(
-    runs.map((run) => fetchRunJobs(owner, repoName, run.id)),
-  );
-  const runnersPage = await fetchActionsRunners(owner, repoName);
-  return {
-    runs,
-    jobs: jobsPages.flatMap((page) => page.items),
-    runners: runnersPage.items,
-  };
+interface WireInternalStatus {
+  active_workflows: number;
+  jobs_by_status: Record<string, number>;
+  connected_runners: number;
 }
 
-async function fetchActionsAggregate(): Promise<BleephubMetrics> {
-  const repos = await fetchAllUserRepos();
-  const perRepo = await Promise.all(repos.map((repo) => fetchRepositoryActionsState(repo)));
-  const runs = perRepo.flatMap((repo) => repo.runs);
-  const jobs = perRepo.flatMap((repo) => repo.jobs);
-  const onlineRunnerIDs = new Set<number>();
-  for (const runner of perRepo.flatMap((repo) => repo.runners)) {
-    if (runner.status === "online") onlineRunnerIDs.add(runner.id);
-  }
-
-  const jobsByStatus: Record<string, number> = {};
-  const jobCompletions: Record<string, number> = {};
-  for (const job of jobs) {
-    jobsByStatus[job.status] = (jobsByStatus[job.status] ?? 0) + 1;
-    if (job.conclusion) {
-      jobCompletions[job.conclusion] = (jobCompletions[job.conclusion] ?? 0) + 1;
-    }
-  }
-
-  const activeWorkflows = runs.filter((run) => run.status !== "completed").length;
-  const connectedRunners = onlineRunnerIDs.size;
-  return {
-    workflow_runs: runs.length,
-    job_dispatches: jobs.length,
-    jobs_by_status: jobsByStatus,
-    job_completions: jobCompletions,
-    active_workflows: activeWorkflows,
-    connected_runners: connectedRunners,
-  };
-}
-
+/**
+ * Reads the server's own counters.
+ *
+ * This used to be computed in the browser by walking every repository, every
+ * page of its workflow runs, and every run's jobs — several hundred requests
+ * per poll. The server already counts all of it.
+ *
+ * `jobs_by_status` and `connected_runners` live on /internal/status; the rest
+ * on /internal/metrics. Two requests, not several hundred.
+ */
 export async function fetchMetrics(): Promise<BleephubMetrics> {
-  return fetchActionsAggregate();
+  const [metrics, status] = await Promise.all([
+    fetchJSON<WireInternalMetrics>("/internal/metrics"),
+    fetchJSON<WireInternalStatus>("/internal/status"),
+  ]);
+  return {
+    workflow_submissions: metrics.workflow_submissions,
+    job_dispatches: metrics.job_dispatches,
+    job_completions: metrics.job_completions ?? {},
+    jobs_by_status: status.jobs_by_status ?? {},
+    active_workflows: status.active_workflows,
+    connected_runners: status.connected_runners,
+  };
 }
+
 
 export const fetchHealth = () =>
   fetchJSON<BleephubHealth>("/health");

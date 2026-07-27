@@ -3,6 +3,9 @@ import {
   type CSSProperties,
   type ReactNode,
   forwardRef,
+  useEffect,
+  useId,
+  useRef,
 } from "react";
 
 /*
@@ -379,6 +382,71 @@ export function CodeBlock({ children }: { children: ReactNode }) {
 
 // ─── Modal ───────────────────────────────────────────────────────────────
 
+const FOCUSABLE_SELECTOR = [
+  "a[href]",
+  "area[href]",
+  "button:not([disabled])",
+  "input:not([disabled]):not([type=hidden])",
+  "select:not([disabled])",
+  "textarea:not([disabled])",
+  "[contenteditable=true]",
+  '[tabindex]:not([tabindex="-1"])',
+].join(",");
+
+function focusablesWithin(panel: HTMLElement | null): HTMLElement[] {
+  if (!panel) return [];
+  return Array.from(panel.querySelectorAll<HTMLElement>(FOCUSABLE_SELECTOR)).filter(
+    (element) => element.getAttribute("aria-hidden") !== "true",
+  );
+}
+
+// Only the topmost open Modal reacts to Escape and Tab. Modals appear both
+// nested (a detail dialog rendering an edit dialog) and as independent
+// siblings, and effects run child-first, so mount order does not identify
+// the top one — document order does: a nested panel is contained by its
+// parent panel, and sibling panels share a z-index so the later one paints
+// on top.
+type PanelRef = { current: HTMLElement | null };
+const openPanels = new Set<PanelRef>();
+
+function topPanel(): HTMLElement | null {
+  let top: HTMLElement | null = null;
+  for (const ref of openPanels) {
+    const panel = ref.current;
+    if (!panel) continue;
+    if (!top || top.compareDocumentPosition(panel) & Node.DOCUMENT_POSITION_FOLLOWING) {
+      top = panel;
+    }
+  }
+  return top;
+}
+
+function trapTab(event: KeyboardEvent, panel: HTMLElement | null) {
+  const focusables = focusablesWithin(panel);
+  const active = document.activeElement as HTMLElement | null;
+
+  if (focusables.length === 0) {
+    event.preventDefault();
+    panel?.focus();
+    return;
+  }
+  const first = focusables[0];
+  const last = focusables[focusables.length - 1];
+
+  if (!panel || !active || !panel.contains(active)) {
+    event.preventDefault();
+    (event.shiftKey ? last : first).focus();
+    return;
+  }
+  if (event.shiftKey && active === first) {
+    event.preventDefault();
+    last.focus();
+  } else if (!event.shiftKey && active === last) {
+    event.preventDefault();
+    first.focus();
+  }
+}
+
 export function Modal({
   title,
   onClose,
@@ -388,6 +456,37 @@ export function Modal({
   onClose: () => void;
   children: ReactNode;
 }) {
+  const panelRef = useRef<HTMLDivElement>(null);
+  const titleId = useId();
+  const onCloseRef = useRef(onClose);
+  onCloseRef.current = onClose;
+
+  useEffect(() => {
+    openPanels.add(panelRef);
+
+    const panel = panelRef.current;
+    const previouslyFocused = document.activeElement as HTMLElement | null;
+    (focusablesWithin(panel)[0] ?? panel)?.focus();
+
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (panelRef.current !== topPanel()) return;
+      if (event.key === "Escape") {
+        event.preventDefault();
+        event.stopPropagation();
+        onCloseRef.current();
+        return;
+      }
+      if (event.key === "Tab") trapTab(event, panelRef.current);
+    };
+    document.addEventListener("keydown", onKeyDown, true);
+
+    return () => {
+      document.removeEventListener("keydown", onKeyDown, true);
+      openPanels.delete(panelRef);
+      previouslyFocused?.focus();
+    };
+  }, []);
+
   return (
     <div
       className="fixed inset-0 z-50 flex items-start justify-center overflow-auto p-6"
@@ -395,6 +494,11 @@ export function Modal({
       onClick={onClose}
     >
       <div
+        ref={panelRef}
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby={titleId}
+        tabIndex={-1}
         className="w-full max-w-lg my-auto"
         style={{
           background: "var(--color-surface-raised)",
@@ -413,7 +517,9 @@ export function Modal({
             borderBottom: "1px solid var(--color-border)",
           }}
         >
-          <h2 style={{ fontSize: "1rem", fontWeight: 600, color: "var(--color-fg)" }}>{title}</h2>
+          <h2 id={titleId} style={{ fontSize: "1rem", fontWeight: 600, color: "var(--color-fg)" }}>
+            {title}
+          </h2>
           <button
             type="button"
             onClick={onClose}
@@ -451,6 +557,7 @@ export function FormLabel({ id, children }: { id?: string; children: ReactNode }
 export function ErrorBanner({ children }: { children: ReactNode }) {
   return (
     <div
+      role="alert"
       className="mb-4"
       style={{
         padding: "0.5rem 0.75rem",

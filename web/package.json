@@ -11,7 +11,7 @@
     "preview": "vite preview",
     "test": "vitest run",
     "test:e2e": "playwright test",
-    "typecheck": "rm -f core/tsconfig.build.tsbuildinfo && bun run --cwd core build && tsc --noEmit"
+    "typecheck": "rm -f core/tsconfig.build.tsbuildinfo && bun run --cwd core build && tsc --noEmit && tsc -p core/tsconfig.json --noEmit && tsc -p tsconfig.e2e.json"
   },
   "dependencies": {
     "@bleephub/ui-core": "workspace:*",
@@ -30,6 +30,7 @@
     "@tailwindcss/vite": "^4.1.0",
     "@testing-library/jest-dom": "^6.6.0",
     "@testing-library/react": "^16.3.0",
+    "@testing-library/user-event": "^14.6.1",
     "@types/node": "^25.9.1",
     "@types/react": "^19.1.0",
     "@types/react-dom": "^19.1.0",

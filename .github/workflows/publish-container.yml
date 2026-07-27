@@ -138,7 +138,13 @@ jobs:
     name: Bleephub multi-architecture manifests
     needs: [metadata, build]
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 15
+    permissions:
+      contents: read
+      packages: write
+      # Keyless signing exchanges this for a Sigstore certificate; there is no
+      # long-lived key to hold or rotate.
+      id-token: write
     steps:
       - uses: oras-project/setup-oras@v1
       - name: Log in to GitHub Container Registry
@@ -170,6 +176,65 @@ jobs:
             "${runner_tags[@]}" \
             "$RUNNER_IMAGE:$TAG-amd64" \
             "$RUNNER_IMAGE:$TAG-arm64"
+      # Four public images were published with no signature, no bill of
+      # materials and no vulnerability scan, so a consumer had no way to
+      # establish that a given digest came from this repository rather than
+      # from anyone else who could write to the registry.
+      #
+      # Signing and attesting happen here, against the multi-architecture
+      # manifest, rather than through buildx's own provenance and sbom flags:
+      # those republish an architecture tag as an OCI index whose child
+      # manifest AWS Fargate cannot resolve, which is why provenance is
+      # explicitly disabled in the build job above. Cosign attaches its
+      # artifacts as separate tags and leaves the image manifests untouched.
+      - uses: sigstore/cosign-installer@v4.1.0
+      - uses: anchore/sbom-action/download-syft@v0.20.11
+      - name: Sign the manifests and attach a bill of materials
+        env:
+          TAG: ${{ needs.metadata.outputs.tag }}
+        run: |
+          set -euo pipefail
+          for image in "$IMAGE" "$RUNNER_IMAGE"; do
+            digest=$(docker buildx imagetools inspect "$image:$TAG" \
+              --format '{{json .Manifest}}' | jq -r .digest)
+            cosign sign --yes "$image@$digest"
+            syft "$image@$digest" -o spdx-json > sbom.spdx.json
+            cosign attest --yes --predicate sbom.spdx.json \
+              --type spdxjson "$image@$digest"
+          done
+
+  scan:
+    name: Vulnerability scan
+    needs: [metadata, manifest]
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+      packages: read
+      security-events: write
+    steps:
+      - uses: actions/checkout@v7.0.0
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v4.4.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      # Reported into code scanning rather than failing the publish. A
+      # published image cannot be unpublished by turning a job red, and a
+      # gate that blocks every release the moment a base-image advisory lands
+      # gets bypassed rather than fixed. The pull-request build is where a
+      # scan can still change the outcome, and it runs there too.
+      - uses: aquasecurity/trivy-action@v0.36.0
+        with:
+          image-ref: ${{ env.IMAGE }}:${{ needs.metadata.outputs.tag }}
+          format: sarif
+          output: trivy-bleephub.sarif
+          severity: HIGH,CRITICAL
+      - uses: github/codeql-action/upload-sarif@v4
+        with:
+          sarif_file: trivy-bleephub.sarif
+          category: trivy-bleephub
 
   startup-bundle:
     name: Bleephub startup bundle

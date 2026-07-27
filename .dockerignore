@@ -2,6 +2,12 @@
 .build
 .local
 **/.terraform
+**/*.tfstate
+**/*.tfstate.*
+**/*.tfvars
+**/*.tfplan
+**/*.pem
+**/*.key
 bleephub-server
 bleephub-dqlite-node
 web/node_modules

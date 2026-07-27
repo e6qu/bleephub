@@ -26,6 +26,7 @@ import {
   PageTitle,
   Tabs,
 } from "../components/ui.js";
+import { MutationError } from "../components/MutationError.js";
 import { PackageIcon, TrashIcon } from "../components/octicons.js";
 
 const PACKAGE_TYPES: GithubPackageType[] = [
@@ -203,6 +204,7 @@ function PackagesList({
 
   return (
     <>
+      <MutationError of={deletePkgMut} />
       <div className="mb-3 flex items-center justify-between">
         <div style={{ color: "var(--color-fg-muted)", fontSize: "0.85rem" }}>
           {filtered.length} package{filtered.length === 1 ? "" : "s"}

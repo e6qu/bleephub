@@ -9,6 +9,9 @@ import {
   fetchPRDetail,
   createIssue,
   parseLinkNext,
+  fetchBrowserSession,
+  fetchWorkflows,
+  fetchMetrics,
   dispatchWorkflow,
   setToken,
   clearToken,
@@ -731,5 +734,167 @@ describe("Gists application programming interface helpers", () => {
     const [url, opts] = mockFetch.mock.calls[0];
     expect(url).toBe("/api/v3/gists/g1/star");
     expect(opts.method).toBe("DELETE");
+  });
+});
+
+describe("fetchBrowserSession", () => {
+  it("reports an authenticated cookie session", async () => {
+    mockFetch.mockResolvedValue(
+      new Response(JSON.stringify({ authenticated: true }), { status: 200 }),
+    );
+    expect(await fetchBrowserSession()).toBe(true);
+  });
+
+  it("reports an anonymous visitor as not authenticated", async () => {
+    mockFetch.mockResolvedValue(
+      new Response(JSON.stringify({ authenticated: false }), { status: 200 }),
+    );
+    expect(await fetchBrowserSession()).toBe(false);
+  });
+
+  it("throws rather than reporting 'signed out' when the probe itself fails", async () => {
+    mockFetch.mockResolvedValue(new Response("nope", { status: 503, statusText: "Unavailable" }));
+    await expect(fetchBrowserSession()).rejects.toThrow(/503/);
+  });
+
+  it("bounds the probe with an abort signal", async () => {
+    mockFetch.mockResolvedValue(
+      new Response(JSON.stringify({ authenticated: true }), { status: 200 }),
+    );
+    await fetchBrowserSession(25);
+    const [url, opts] = mockFetch.mock.calls[0];
+    expect(url).toBe("/auth/session");
+    expect(opts.signal).toBeInstanceOf(AbortSignal);
+    expect(opts.signal.aborted).toBe(false);
+  });
+
+  it("aborts once the deadline passes", async () => {
+    mockFetch.mockImplementation((_url: string, init: RequestInit) =>
+      new Promise((_resolve, reject) => {
+        init.signal?.addEventListener("abort", () => reject(new Error("aborted")));
+      }),
+    );
+    await expect(fetchBrowserSession(10)).rejects.toThrow(/aborted/);
+  });
+});
+
+describe("fetchMetrics", () => {
+  it("asks the server twice, not once per repository", async () => {
+    mockFetch.mockImplementation((url: string) => {
+      if (String(url).includes("/internal/metrics")) {
+        return Promise.resolve(
+          new Response(
+            JSON.stringify({
+              workflow_submissions: 3,
+              job_dispatches: 5,
+              job_completions: { success: 5 },
+              active_workflows: 1,
+            }),
+            { status: 200 },
+          ),
+        );
+      }
+      return Promise.resolve(
+        new Response(
+          JSON.stringify({
+            active_workflows: 1,
+            jobs_by_status: { completed: 5 },
+            connected_runners: 2,
+          }),
+          { status: 200 },
+        ),
+      );
+    });
+
+    const metrics = await fetchMetrics();
+    expect(mockFetch).toHaveBeenCalledTimes(2);
+    expect(metrics).toEqual({
+      workflow_submissions: 3,
+      job_dispatches: 5,
+      job_completions: { success: 5 },
+      jobs_by_status: { completed: 5 },
+      active_workflows: 1,
+      connected_runners: 2,
+    });
+  });
+
+  it("propagates a failure instead of returning zeroes", async () => {
+    mockFetch.mockResolvedValue(new Response("boom", { status: 500, statusText: "Server Error" }));
+    await expect(fetchMetrics()).rejects.toThrow(/500/);
+  });
+});
+
+describe("fetchWorkflows", () => {
+  function mockRepoFanout(repoCount: number, runsPerRepo: number) {
+    const repos = Array.from({ length: repoCount }, (_, i) => ({
+      id: i,
+      name: `r${i}`,
+      full_name: `admin/r${i}`,
+      default_branch: "main",
+      owner: { login: "admin", type: "User" },
+    }));
+    mockFetch.mockImplementation((url: string) => {
+      const u = String(url);
+      if (u.includes("/user/repos")) {
+        return Promise.resolve(new Response(JSON.stringify(repos), { status: 200 }));
+      }
+      if (/\/actions\/runs\/\d+\/jobs/.test(u)) {
+        return Promise.resolve(
+          new Response(JSON.stringify({ total_count: 1, jobs: [{ id: 1, name: "build", status: "completed", conclusion: "success" }] }), { status: 200 }),
+        );
+      }
+      if (u.includes("/actions/runs")) {
+        const repo = /repos\/admin\/r(\d+)\//.exec(u)?.[1] ?? "0";
+        const workflow_runs = Array.from({ length: runsPerRepo }, (_, j) => ({
+          id: Number(repo) * 1000 + j,
+          name: `run-${repo}-${j}`,
+          run_number: j,
+          run_attempt: 1,
+          event: "push",
+          status: "completed",
+          conclusion: "success",
+          head_branch: "main",
+          head_sha: "abc",
+          path: ".github/workflows/ci.yml",
+          workflow_id: 1,
+          // Newer index => newer run, so the trim is observable.
+          created_at: `2026-01-${String(j + 1).padStart(2, "0")}T00:00:00Z`,
+          updated_at: "2026-01-01T00:00:00Z",
+          actor: { login: "admin" },
+        }));
+        return Promise.resolve(new Response(JSON.stringify({ total_count: runsPerRepo, workflow_runs }), { status: 200 }));
+      }
+      return Promise.resolve(new Response("{}", { status: 200 }));
+    });
+  }
+
+  it("fetches jobs only for the runs it returns, not for every run on every repo", async () => {
+    mockRepoFanout(5, 20);
+    const runs = await fetchWorkflows(10);
+    expect(runs).toHaveLength(10);
+
+    const jobCalls = mockFetch.mock.calls.filter((c) => String(c[0]).includes("/jobs?"));
+    // 5 repos x 20 runs = 100 runs available; only the 10 returned cost a
+    // jobs request. The old shape issued one per run.
+    expect(jobCalls).toHaveLength(10);
+
+    const runsCalls = mockFetch.mock.calls.filter((c) => /\/actions\/runs\?/.test(String(c[0])));
+    expect(runsCalls).toHaveLength(5);
+  });
+
+  it("returns the newest runs across all repositories", async () => {
+    mockRepoFanout(3, 20);
+    const runs = await fetchWorkflows(3);
+    const created = runs.map((r) => r.createdAt);
+    expect(created).toEqual([...created].sort().reverse());
+    expect(created[0]).toBe("2026-01-20T00:00:00Z");
+  });
+
+  it("still populates the job count each consumer renders", async () => {
+    mockRepoFanout(2, 3);
+    const runs = await fetchWorkflows(2);
+    for (const run of runs) {
+      expect(Object.keys(run.jobs)).toHaveLength(1);
+    }
   });
 });

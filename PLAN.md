@@ -109,10 +109,10 @@ correctness and durability fixes.
 
 | Phase | State |
 |---|---|
-| 1 — Authorization | **landed.** `requirePerm` decides on every branch; 25 read endpoints gated; `/internal/` declares site-admin at the route table; route-inventory test in place. Classic-PAT scope enforcement still open — `classicScopeCovers` is incomplete by its own admission and does not cover administration at all, so enabling it would deny far more than it should |
+| 1 — Authorization | partial, and previously recorded here as landed while two blockers were live — the recurring failure on this branch. `requirePerm` decides on every credential shape, 25 read endpoints are gated, `/internal/` declares site-admin at the route table, the installation predicate is single-sourced, and a route-inventory test is in place. Still open: `viewerCanReadRepo` is not yet the choke point it claims to be (50 handlers across 24 files call the user-scoped predicate directly, so a zero-permission app still reads private repositories through five of them), the org surface has no user-to-server intersection at all, and classic-PAT scope enforcement is untouched — `classicScopeCovers` is incomplete by its own admission and does not cover administration, so enabling it would deny far more than it should. The phase is not done until a review round finds nothing, twice running |
 | 2 — Runner control plane | pending — the largest remaining blocker |
 | 3 — GraphQL | partial. Endpoint requires authentication, the private-repository leak in `user().repositories` is closed, `deleteRepository` checks admin. The other 22 mutations still authenticate without authorizing |
-| 4 — Crash classes | partial. Map-write-under-read-lock fixed, 9 unsynchronized reads converted, panic recovery added. Six further reads sit inside a held lock and need per-site work; the confirmed nil-dereferences are untouched |
+| 4 — Crash classes | partial. Map-write-under-read-lock fixed, 9 unsynchronized reads converted, panic recovery added. Every confirmed nil-dereference is now closed at a choke point — `userToJSON(nil)` renders the ghost account, `mutated[T]` guards the lost-target mutators, `projectCardToJSON` reports an unrenderable card. Six reads still sit inside a held lock, and 78 unlocked `ReposByName` reads remain, which are the unrecoverable-fatal-error class rather than a catchable panic |
 | 5 — Lifecycle | partial. TLS pair validation, panic recovery, query redaction, `net/http` error log bridged. Signal handling, graceful shutdown, goroutine ownership and body limits still open |
 | 6 — Persistence | pending |
 | 7 — Actions engine | partial. Matrix expansion (include-only, `needs` ordering, shared env map), exclude-before-include, `continue-on-error`, job-duration metric. The lease/requeue, trigger-ref and webhook SSRF blockers are open |
@@ -120,7 +120,7 @@ correctness and durability fixes.
 | 9 — Parity | pending |
 | 10 — Web | pending |
 | 11 — Test infrastructure | pending |
-| 12 — CI, release, deployment | partial. Test timeout, concurrency group, dependabot, CODEOWNERS, SECURITY.md, THIRD-PARTY-NOTICES.md, `.gitignore`. LICENSE needs an owner decision; static analysis and the release workflow are open |
+| 12 — CI, release, deployment | partial. LICENSE (AGPL-3.0-or-later, assumed from the project's own dependency rule and needing the owner's confirmation), a release path from a semver tag through the existing publish pipeline, signing and SBOM attestation, image scanning, the four orphaned quality gates plus actionlint and shellcheck, release Dockerfiles and both bundles built on pull requests, sockerless pinned, three duplicate scripts removed. Terraform deployment safety is in flight; golangci-lint, coverage and govulncheck still need real defects fixed first |
 
 Counts as of the latest commit: **33 fixed, 6 partial, the rest open.** Every
 open item still carries its location and claim; nothing was dropped to make the
