@@ -38,7 +38,7 @@
     "jsdom": "^26.1.0",
     "knip": "6.23.0",
     "tailwindcss": "^4.1.0",
-    "typescript": "^5.8.0",
+    "typescript": "^7.0.2",
     "vite": "^6.3.0",
     "vitest": "^3.2.0"
   }
