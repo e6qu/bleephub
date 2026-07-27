@@ -295,11 +295,16 @@ func (s *Server) handleIdentityValidation(w http.ResponseWriter, r *http.Request
 		user = s.store.GetUserByID(session.UserID)
 	}
 	if user == nil {
-		if s.identity.shauthConfigured() {
-			http.Redirect(w, r, "/auth/shauth?return_to=%2Fauth%2Fvalidation", http.StatusFound)
-			return
-		}
-		http.Redirect(w, r, "/ui/login?return_to=%2Fauth%2Fvalidation", http.StatusFound)
+		// Fail closed to the signed-out page, not back into a fresh
+		// authorization. The Shauth SSO validator reloads validation_url after a
+		// global provider logout and requires the browser to come to rest exactly
+		// at signed_out_url (validator/validate.mjs "verify Shauth provider logout
+		// revoked"): redirecting to /auth/shauth would silently re-enter the
+		// authorization flow, so the browser never reaches signed_out_url and the
+		// app reads as "remained authenticated". /ui/signed-out is this app's
+		// registered signed_out_url and also satisfies the anonymous fail-closed
+		// check, so it is correct in both the logged-out and never-logged-in cases.
+		http.Redirect(w, r, "/ui/signed-out", http.StatusFound)
 		return
 	}
 	// Render the signed-in identity with the data-testid markers the Shauth SSO
