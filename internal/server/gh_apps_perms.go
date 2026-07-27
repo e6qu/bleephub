@@ -138,7 +138,7 @@ func (s *Server) requirePerm(scope permScope, level permLevel, next http.Handler
 		}
 
 		need := resourceCapabilityFor(scope, level, r.Method, r.URL.Path)
-		if !s.credentialMayAccessTarget(r, user, instTok, need) {
+		if !s.credentialMayAccessTarget(r, user, instTok, scope, need) {
 			denyResourceAccess(w, need)
 			return
 		}
@@ -155,9 +155,9 @@ func (s *Server) requirePerm(scope permScope, level permLevel, next http.Handler
 // nothing, so asking the user-shaped question about it answers "no" for reads
 // the app is entitled to and — because the question was not asked at all —
 // "yes" for writes it is not.
-func (s *Server) credentialMayAccessTarget(r *http.Request, user *User, instTok *InstallationToken, need permLevel) bool {
+func (s *Server) credentialMayAccessTarget(r *http.Request, user *User, instTok *InstallationToken, scope permScope, need permLevel) bool {
 	if instTok != nil {
-		return s.installationMayAccessTarget(r, instTok)
+		return s.installationMayAccessTarget(r, instTok, scope)
 	}
 	// A ghu_ user-to-server token is the intersection of what the user can
 	// reach and what the app is installed on — it is not simply the user. On
@@ -195,7 +195,7 @@ func (s *Server) userToServerReachesRepo(tok *UserToServerToken, repo *Repo) boo
 // actually covers the repository and organization the path names. The token's
 // permission map was already checked by the caller; this answers which
 // resources that grant is over.
-func (s *Server) installationMayAccessTarget(r *http.Request, tok *InstallationToken) bool {
+func (s *Server) installationMayAccessTarget(r *http.Request, tok *InstallationToken, scope permScope) bool {
 	if repo := s.repoFromPATRequest(r); repo != nil {
 		// A public repository is readable by anyone, including an app whose
 		// installation is elsewhere — the same carve-out canReadRepo and the
@@ -203,7 +203,7 @@ func (s *Server) installationMayAccessTarget(r *http.Request, tok *InstallationT
 		// path also removed every read an app could perform against a public
 		// repository it is not installed on.
 		readOnly := r.Method == http.MethodGet || r.Method == http.MethodHead
-		if !(readOnly && !repo.Private) && !s.installationReachesRepo(tok, repo) {
+		if !(readOnly && !repo.Private && publicReadAllowed(scope)) && !s.installationReachesRepo(tok, repo) {
 			return false
 		}
 	}
@@ -720,6 +720,25 @@ func classicScopeCovers(scopes string, scope permScope, level permLevel) bool {
 			return level <= permWrite
 		}
 		return false
+	}
+	return false
+}
+
+// publicReadAllowed reports whether a scope's data is genuinely public when the
+// repository is.
+//
+// "Public repository" is not the same as "every scope on it is public". The
+// listing endpoints for Actions secrets and variables are registered under
+// scopeSecrets at read level, and they return secret names and variable
+// *values* — a repository being public says nothing about those. A blanket
+// public-repo bypass therefore hands any credential holding secrets:read the
+// variables of every public repository on the instance, which is why this is
+// keyed on the scope rather than on the repository alone.
+func publicReadAllowed(scope permScope) bool {
+	switch scope {
+	case scopeMetadata, scopeContents, scopeIssues, scopePullRequests,
+		scopePages, scopeChecks, scopeReactions, scopeProjects, scopeDeployments:
+		return true
 	}
 	return false
 }
