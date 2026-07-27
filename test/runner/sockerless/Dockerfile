@@ -1,4 +1,4 @@
-FROM golang:1.25 AS builder
+FROM golang:1.26 AS builder
 
 WORKDIR /src
 
@@ -58,7 +58,7 @@ COPY . /bleephub/
 RUN cd /bleephub && GOWORK=off go build -tags noui -o /out/bleephub ./cmd/bleephub
 
 # --- Runtime stage ---
-FROM ubuntu:22.04
+FROM ubuntu:26.04
 
 # python3-nacl: the harness seals secrets with the real libsodium
 # sealed-box contract before PUTting them.
