@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"net/http"
 	"net/http/httptest"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -115,6 +116,58 @@ func TestPrivateRepoMutationsRejectAnUnrelatedUser(t *testing.T) {
 			t.Errorf("  %s", entry)
 		}
 	}
+
+	// Positive control, and a floor on it.
+	//
+	// Most iterations above cannot distinguish "denied" from "that sub-resource
+	// does not exist": the substitution fills {issue_number}, {secret_name} and
+	// friends with a literal 1, so the handler 404s for anybody, authorized or
+	// not. Those iterations are guaranteed passes and they are the majority.
+	//
+	// Sweeping the same routes as the owner of a repository they fully control
+	// measures how many actually reach a handler that would have said yes. If
+	// that number collapses — because a refactor made more routes 404 on a
+	// missing id, or because the gate started refusing the owner — this test
+	// quietly stops proving anything, so it fails instead.
+	ownerRepo := "authzmatrix-owned"
+	if store.CreateRepo(owner, ownerRepo, "public fixture", false) == nil {
+		t.Fatalf("could not create the owner's fixture repository")
+	}
+	ownerToken := store.CreateToken(owner.ID, "repo, workflow, read:org, admin:org, gist")
+
+	discriminating := 0
+	for _, pattern := range testServer.routePatterns {
+		if !strings.Contains(pattern, "/api/v3/repos/{owner}/{repo}") {
+			continue
+		}
+		method, path, ok := authzMatrixSubstitute(pattern, ownerLogin, ownerRepo)
+		if !ok {
+			continue
+		}
+		switch method {
+		case http.MethodPost, http.MethodPut, http.MethodPatch, http.MethodDelete:
+		default:
+			continue
+		}
+		req := httptest.NewRequest(method, path, bytes.NewReader([]byte("{}")))
+		req.Header.Set("Authorization", "token "+ownerToken.Value)
+		req.Header.Set("Content-Type", "application/json")
+		w := httptest.NewRecorder()
+		handler.ServeHTTP(w, req)
+		if w.Code >= 200 && w.Code < 300 {
+			discriminating++
+		}
+	}
+
+	// Measured at 22 when this floor was written. Set below that so ordinary
+	// churn does not trip it, high enough that a collapse does.
+	const minDiscriminating = 15
+	if discriminating < minDiscriminating {
+		t.Errorf("only %d of the swept routes answer their own owner 2xx (want at least %d): "+
+			"the rest cannot tell a denial from a missing sub-resource, so this test is "+
+			"no longer proving what it claims", discriminating, minDiscriminating)
+	}
+	t.Logf("mutation sweep: %d routes discriminate (owner answered 2xx)", discriminating)
 }
 
 // TestPrivateRepoReadsRejectAnUnrelatedUser is the read-side companion. A
@@ -331,5 +384,96 @@ func TestInstallationTokenCannotReachAnotherAccountsRepo(t *testing.T) {
 	ownBase := "/api/v3/repos/" + attacker.Login + "/" + attackerRepo.Name
 	if code := do(http.MethodGet, ownBase+"/labels"); code < 200 || code >= 300 {
 		t.Errorf("GET %s/labels = %d, want 2xx — the installation is entitled to its own account's repository", ownBase, code)
+	}
+}
+
+// TestOrgMutationsRejectAnUnrelatedUser sweeps the organization surface.
+//
+// The repository sweep above missed an entire class: several org routes also
+// carry {repository_id}, and the resource check used to resolve the repository
+// and return its verdict *instead of* the organization's. Because the id comes
+// from the caller, naming a repository you own let you administer a stranger's
+// organization — a 204 where the same call against the victim's own repository
+// id gave 403, which is what made the misdirected check visible.
+func TestOrgMutationsRejectAnUnrelatedUser(t *testing.T) {
+	store := testServer.store
+
+	now := time.Now().UTC()
+	store.mu.Lock()
+	stranger := &User{ID: store.NextUser, Login: "orgsweep-stranger", Type: "User", CreatedAt: now, UpdatedAt: now}
+	store.Users[stranger.ID] = stranger
+	store.UsersByLogin[stranger.Login] = stranger
+	store.NextUser++
+	victim := &User{ID: store.NextUser, Login: "orgsweep-victim", Type: "User", CreatedAt: now, UpdatedAt: now}
+	store.Users[victim.ID] = victim
+	store.UsersByLogin[victim.Login] = victim
+	store.NextUser++
+	store.mu.Unlock()
+
+	org := store.CreateOrg(victim, "orgsweep-org", "Orgsweep", "")
+	if org == nil {
+		t.Fatalf("could not create the fixture organization")
+	}
+	// A repository the stranger genuinely administers. This is the lever: the
+	// check must not accept it as authorization over somebody else's org.
+	ownRepo := store.CreateRepo(stranger, "orgsweep-own", "", false)
+	if ownRepo == nil {
+		t.Fatalf("could not create the stranger's repository")
+	}
+	strangerToken := store.CreateToken(stranger.ID, "repo, workflow, read:org, admin:org, gist")
+
+	handler := testServer.ghHeadersMiddleware(testServer.mux)
+	ownRepoID := strconv.Itoa(ownRepo.ID)
+
+	var admitted []string
+	for _, pattern := range testServer.routePatterns {
+		if !strings.Contains(pattern, "/api/v3/orgs/{org}") {
+			continue
+		}
+		method, rest, found := strings.Cut(pattern, " ")
+		if !found {
+			continue
+		}
+		switch method {
+		case http.MethodPost, http.MethodPut, http.MethodPatch, http.MethodDelete:
+		default:
+			continue
+		}
+		segments := strings.Split(rest, "/")
+		for i, seg := range segments {
+			if !strings.HasPrefix(seg, "{") {
+				continue
+			}
+			name := strings.TrimSuffix(strings.Trim(seg, "{}"), "...")
+			switch name {
+			case "org":
+				segments[i] = org.Login
+			case "repository_id":
+				segments[i] = ownRepoID
+			case "username":
+				segments[i] = stranger.Login
+			case "$":
+				segments[i] = ""
+			default:
+				segments[i] = "1"
+			}
+		}
+		path := strings.Join(segments, "/")
+
+		req := httptest.NewRequest(method, path, bytes.NewReader([]byte("{}")))
+		req.Header.Set("Authorization", "token "+strangerToken.Value)
+		req.Header.Set("Content-Type", "application/json")
+		w := httptest.NewRecorder()
+		handler.ServeHTTP(w, req)
+		if w.Code >= 200 && w.Code < 300 {
+			admitted = append(admitted, method+" "+path+" -> "+http.StatusText(w.Code))
+		}
+	}
+
+	if len(admitted) > 0 {
+		t.Errorf("%d organization routes admitted a user with no role in the organization:", len(admitted))
+		for _, entry := range admitted {
+			t.Errorf("  %s", entry)
+		}
 	}
 }
