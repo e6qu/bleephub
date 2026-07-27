@@ -458,13 +458,11 @@ func (s *Server) orgMigrationToJSON(m *OrgMigration, baseURL string, excludeRepo
 }
 
 func (s *Server) migrationToJSON(m MigrationCommon, owner map[string]interface{}, baseURL, scope, scopeLogin string, excludeRepos bool) map[string]interface{} {
-	var url, htmlURL, archiveURL string
+	var url, archiveURL string
 	if scope == "user" {
 		url = baseURL + "/api/v3/user/migrations/" + strconv.Itoa(m.ID)
-		htmlURL = baseURL + "/user/migrations/" + strconv.Itoa(m.ID)
 	} else {
 		url = baseURL + "/api/v3/orgs/" + scopeLogin + "/migrations/" + strconv.Itoa(m.ID)
-		htmlURL = baseURL + "/orgs/" + scopeLogin + "/migrations/" + strconv.Itoa(m.ID)
 	}
 	archiveURL = url + "/archive"
 
@@ -482,11 +480,9 @@ func (s *Server) migrationToJSON(m MigrationCommon, owner map[string]interface{}
 		"org_metadata_only":      m.OrgMetadataOnly,
 		"repositories":           []map[string]interface{}{},
 		"url":                    url,
-		"html_url":               htmlURL,
 		"archive_url":            archiveURL,
 		"created_at":             m.CreatedAt.Format(time.RFC3339),
 		"updated_at":             m.UpdatedAt.Format(time.RFC3339),
-		"exported_at":            m.ExportedAt.Format(time.RFC3339),
 		"node_id":                m.NodeID,
 		"exclude":                []string{},
 	}

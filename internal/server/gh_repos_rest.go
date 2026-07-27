@@ -1281,7 +1281,10 @@ func (s *Server) handleListStarredRepos(w http.ResponseWriter, r *http.Request) 
 	repos = s.filterReposForFineGrainedPAT(r, repos)
 	out := make([]map[string]interface{}, 0, len(repos))
 	for _, repo := range repos {
-		out = append(out, fullRepoJSONForViewer(repo, s.store, s.baseURL(r), user))
+		// GitHub documents this against `repository`, not `full-repository`:
+		// the fuller shape adds network_count, subscribers_count and
+		// organization, which the starred listing does not carry.
+		out = append(out, repoToJSONForViewer(repo, s.store, s.baseURL(r), user))
 	}
 	writeJSON(w, http.StatusOK, out)
 }

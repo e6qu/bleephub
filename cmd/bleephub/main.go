@@ -2,8 +2,13 @@ package main
 
 import (
 	"context"
+	"errors"
 	"flag"
+	"net/http"
 	"os"
+	"os/signal"
+	"syscall"
+	"time"
 
 	"github.com/e6qu/bleephub/internal/server"
 	"github.com/rs/zerolog"
@@ -15,7 +20,24 @@ var (
 	publishedAt = "not-yet-published"
 )
 
+// obsFlushGrace bounds the telemetry flush at shutdown. The exporter's endpoint
+// may be the thing that has gone away, and a flush that blocks on it forever is
+// indistinguishable from a hang.
+const obsFlushGrace = 5 * time.Second
+
+// main does nothing but choose the exit status. Every deferred cleanup lives in
+// run, because a deferred call and os.Exit in the same function means the
+// cleanup never runs — which is how telemetry came to be dropped on every exit
+// path, the ordinary one included.
 func main() {
+	if err := run(); err != nil {
+		bootLogger := zerolog.New(zerolog.ConsoleWriter{Out: os.Stderr})
+		bootLogger.Error().Err(err).Msg("bleephub exited")
+		os.Exit(1)
+	}
+}
+
+func run() error {
 	addr := flag.String("addr", ":5555", "listen address")
 	logLevel := flag.String("log-level", "info", "log level (debug, info, warn, error)")
 	flag.Parse()
@@ -27,10 +49,13 @@ func main() {
 
 	obs, err := bleephub.InitObservability("bleephub")
 	if err != nil {
-		bootLogger := zerolog.New(zerolog.ConsoleWriter{Out: os.Stderr})
-		bootLogger.Fatal().Err(err).Msg("failed to init observability")
+		return err
 	}
-	defer func() { _ = obs.Shutdown(context.Background()) }()
+	defer func() {
+		flush, cancel := context.WithTimeout(context.Background(), obsFlushGrace)
+		defer cancel()
+		_ = obs.Shutdown(flush)
+	}()
 
 	var output zerolog.LevelWriter
 	consoleW := zerolog.ConsoleWriter{Out: os.Stderr}
@@ -45,10 +70,18 @@ func main() {
 
 	logger.Info().Str("version", version).Str("commit", commit).Msg("starting")
 
+	// SIGTERM is what a container runtime sends first. Without a handler the
+	// process runs as PID 1, ignores it, and is SIGKILLed after the runtime's
+	// grace period with every in-flight request cut mid-response.
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
+
 	srv := bleephub.NewServer(*addr, logger, bleephub.WithBuildInfo(bleephub.BuildInfo{
 		Version: version, Commit: commit, PublishedAt: publishedAt,
 	}))
-	if err := srv.ListenAndServe(); err != nil {
-		logger.Fatal().Err(err).Msg("server exited")
+	if err := srv.ListenAndServe(ctx); err != nil && !errors.Is(err, http.ErrServerClosed) {
+		return err
 	}
+	logger.Info().Msg("stopped")
+	return nil
 }

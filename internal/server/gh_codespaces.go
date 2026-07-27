@@ -618,16 +618,6 @@ func (s *Server) resolveOrgMemberForCodespaces(w http.ResponseWriter, r *http.Re
 	return org, member
 }
 
-// orgScopedCodespaceJSON renders a codespace with exactly the members
-// the documented codespace schema carries — the org-member operations
-// have no allowlisted extras.
-func (s *Server) orgScopedCodespaceJSON(cs *Codespace, baseURL string) map[string]interface{} {
-	j := s.codespaceToJSON(cs, baseURL)
-	delete(j, "html_url")
-	delete(j, "billing_url")
-	return j
-}
-
 // handleListOrgMemberCodespaces — GET /api/v3/orgs/{org}/members/{username}/codespaces:
 // the member's codespaces on the organization's repositories.
 func (s *Server) handleListOrgMemberCodespaces(w http.ResponseWriter, r *http.Request) {
@@ -642,7 +632,7 @@ func (s *Server) handleListOrgMemberCodespaces(w http.ResponseWriter, r *http.Re
 		if !strings.HasPrefix(cs.RepoKey, prefix) {
 			continue
 		}
-		out = append(out, s.orgScopedCodespaceJSON(cs, base))
+		out = append(out, s.codespaceToJSON(cs, base))
 	}
 	writeJSON(w, http.StatusOK, map[string]interface{}{"codespaces": out, "total_count": len(out)})
 }
@@ -696,7 +686,7 @@ func (s *Server) handleStopOrgMemberCodespace(w http.ResponseWriter, r *http.Req
 		writeGHError(w, http.StatusInternalServerError, "codespace stop failed: "+err.Error())
 		return
 	}
-	writeJSON(w, http.StatusOK, s.orgScopedCodespaceJSON(cs, s.baseURL(r)))
+	writeJSON(w, http.StatusOK, s.codespaceToJSON(cs, s.baseURL(r)))
 }
 
 // --- secrets handlers ---
@@ -971,9 +961,7 @@ func (s *Server) codespaceToJSON(cs *Codespace, baseURL string) map[string]inter
 		"last_used_at":             cs.LastUsedAt.UTC().Format(time.RFC3339),
 		"state":                    cs.State,
 		"url":                      url,
-		"html_url":                 fmt.Sprintf("%s/codespaces/%s", baseURL, cs.Name),
 		"web_url":                  fmt.Sprintf("%s/codespaces/%s/web", baseURL, cs.Name),
-		"billing_url":              fmt.Sprintf("%s/settings/billing", baseURL),
 		"git_status":               map[string]interface{}{"ahead": 0, "behind": 0, "has_uncommitted_changes": false, "ref": cs.GitRef},
 		"devcontainer_path":        cs.DevcontainerPath,
 		"retention_period_minutes": cs.RetentionPeriodMinutes,
@@ -1158,11 +1146,6 @@ func (s *Server) handleListOrgCodespaces(w http.ResponseWriter, r *http.Request)
 	out := make([]map[string]interface{}, len(list))
 	for i, cs := range list {
 		out[i] = s.codespaceToJSON(cs, base)
-		// The vendored OpenAPI description's codespace schema does not
-		// declare html_url/billing_url, and this endpoint emits exactly the
-		// documented members.
-		delete(out[i], "html_url")
-		delete(out[i], "billing_url")
 	}
 	writeJSON(w, http.StatusOK, map[string]interface{}{"codespaces": out, "total_count": len(out)})
 }

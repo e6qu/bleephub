@@ -63,6 +63,22 @@ type Server struct {
 	// assigns it (same package) to validate /api/v3 response shapes
 	// against the vendored GitHub OpenAPI description; nil costs nothing.
 	responseObserver func(req *http.Request, status int, header http.Header, body []byte)
+	// background tracks the goroutines the server itself starts, so shutdown
+	// can wait for them instead of returning while they still run. A goroutine
+	// that outlives the process it belongs to keeps writing to a store nobody
+	// is reading and holds the listener it was told to release.
+	background sync.WaitGroup
+}
+
+// goBackground runs fn as an owned goroutine: shutdown waits for it. Every
+// goroutine the server starts for its own lifetime goes through here, so
+// "which goroutines are still running" has an answer.
+func (s *Server) goBackground(fn func()) {
+	s.background.Add(1)
+	go func() {
+		defer s.background.Done()
+		fn()
+	}()
 }
 
 // BuildInfo identifies the immutable application artifact serving a request.
@@ -564,11 +580,18 @@ func (s *Server) handleInternalStorage(w http.ResponseWriter, r *http.Request) {
 }
 
 // ListenAndServe starts the HTTP server (crash-only, no graceful shutdown).
-func (s *Server) ListenAndServe() error {
-	if err := s.startGitSSH(); err != nil {
+// ListenAndServe runs the server until ctx is cancelled, then drains.
+//
+// The drain is bounded because this server has long-poll routes by design —
+// the runner's broker holds a request open waiting for work — so waiting for
+// every connection to close would mean never shutting down. Requests still in
+// flight past the bound are cut, which is the honest trade: a container that
+// refuses to stop is killed anyway, and then nothing drains at all.
+func (s *Server) ListenAndServe(ctx context.Context) error {
+	if err := s.startGitSSH(ctx); err != nil {
 		return err
 	}
-	s.startScheduleDispatcher()
+	s.startScheduleDispatcher(ctx)
 	inner := s.prefixStripMiddleware(s.internalAuthMiddleware(s.mux))
 	ghWrapped := s.ghHeadersMiddleware(inner)
 	observed := ghWrapped
@@ -609,6 +632,7 @@ func (s *Server) ListenAndServe() error {
 		return fmt.Errorf("BPH_TLS_CERT and BPH_TLS_KEY must be set together (cert %s, key %s)",
 			presenceLabel(certFile), presenceLabel(keyFile))
 	}
+	serveErr := make(chan error, 1)
 	if certFile != "" {
 		// Fail on an unreadable cert here rather than at the first handshake,
 		// so a bad path is a startup error and not an outage discovered by a
@@ -617,12 +641,37 @@ func (s *Server) ListenAndServe() error {
 			return fmt.Errorf("load TLS keypair: %w", err)
 		}
 		s.logger.Info().Msgf("bleephub listening on https://%s:%s", host, port)
-		return srv.ListenAndServeTLS(certFile, keyFile)
+		go func() { serveErr <- srv.ListenAndServeTLS(certFile, keyFile) }()
+	} else {
+		s.logger.Info().Msgf("bleephub listening on http://%s:%s", host, port)
+		go func() { serveErr <- srv.ListenAndServe() }()
 	}
 
-	s.logger.Info().Msgf("bleephub listening on http://%s:%s", host, port)
-	return srv.ListenAndServe()
+	select {
+	case err := <-serveErr:
+		return err
+	case <-ctx.Done():
+	}
+
+	s.logger.Info().Msg("shutting down")
+	drain, cancel := context.WithTimeout(context.Background(), shutdownGrace)
+	defer cancel()
+	err := srv.Shutdown(drain)
+	// Whatever the listeners did, the owned goroutines get their chance to
+	// notice ctx and finish; a goroutine still running after this is a bug in
+	// its own ownership, not something to wait indefinitely for.
+	s.background.Wait()
+	if err != nil {
+		return fmt.Errorf("shutdown: %w", err)
+	}
+	return nil
 }
+
+// shutdownGrace bounds the drain. Long enough for an ordinary request or a
+// git push to finish, short enough that a container stop does not escalate to
+// SIGKILL — Docker and Kubernetes both default to ten seconds, so anything
+// larger is theatre unless the operator raises theirs too.
+const shutdownGrace = 8 * time.Second
 
 func presenceLabel(v string) string {
 	if v == "" {

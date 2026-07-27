@@ -27,6 +27,5 @@
 
 # Fidelity gates and their allowlists. Growing an allowlist is a parity
 # regression, so it should be a deliberate, reviewed act.
-/openapi-violation-allowlist.txt                        @e6qu
 /internal/server/openapi-violation-allowlist.txt        @e6qu
 /internal/server/gh_api_definition_test.go              @e6qu

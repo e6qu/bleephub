@@ -494,7 +494,7 @@ func (s *Server) handleCreateMySocialAccounts(w http.ResponseWriter, r *http.Req
 	var urls []string
 	if err := json.Unmarshal(body, &urls); err == nil && len(urls) > 0 {
 		s.store.SetUserSocialAccounts(user.ID, urls)
-		writeJSON(w, http.StatusOK, s.store.ListUserSocialAccounts(user.ID))
+		writeJSON(w, http.StatusCreated, s.store.ListUserSocialAccounts(user.ID))
 		return
 	}
 	var objects []map[string]interface{}
@@ -509,7 +509,7 @@ func (s *Server) handleCreateMySocialAccounts(w http.ResponseWriter, r *http.Req
 		}
 	}
 	s.store.SetUserSocialAccounts(user.ID, urls)
-	writeJSON(w, http.StatusOK, s.store.ListUserSocialAccounts(user.ID))
+	writeJSON(w, http.StatusCreated, s.store.ListUserSocialAccounts(user.ID))
 }
 
 func (s *Server) handleDeleteMySocialAccounts(w http.ResponseWriter, r *http.Request) {
