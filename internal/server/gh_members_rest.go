@@ -35,15 +35,8 @@ func (s *Server) handleListOrgMembers(w http.ResponseWriter, r *http.Request) {
 	// the org; a non-member (or anonymous caller) sees just the publicized
 	// members. This mirrors the behaviour of GET /orgs/{org}/members vs
 	// /orgs/{org}/public_members.
-	user := ghUserFromContext(r.Context())
-	isMember := false
-	if user != nil {
-		if m := s.store.GetMembership(orgLogin, user.ID); m != nil && m.State == MembershipStateActive {
-			isMember = true
-		}
-	}
 	var members []*User
-	if isMember {
+	if s.viewerIsOrgMember(r.Context(), orgLogin) {
 		members = s.store.ListOrgMembers(orgLogin)
 	} else {
 		members = s.store.ListPublicOrgMembers(orgLogin)
@@ -99,7 +92,7 @@ func (s *Server) handleSetOrgMembership(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	if !canAdminOrg(s.store, user, org) {
+	if !s.viewerCanAdminOrg(r.Context(), org.Login) {
 		writeGHError(w, http.StatusForbidden, "Must be an organization owner.")
 		return
 	}
@@ -167,7 +160,7 @@ func (s *Server) handleRemoveOrgMembership(w http.ResponseWriter, r *http.Reques
 		return
 	}
 
-	if !canAdminOrg(s.store, user, org) {
+	if !s.viewerCanAdminOrg(r.Context(), org.Login) {
 		writeGHError(w, http.StatusForbidden, "Must be an organization owner.")
 		return
 	}
@@ -231,7 +224,7 @@ func (s *Server) handleRemoveOrgMember(w http.ResponseWriter, r *http.Request) {
 		writeGHError(w, http.StatusNotFound, "Not Found")
 		return
 	}
-	if !canAdminOrg(s.store, user, org) {
+	if !s.viewerCanAdminOrg(r.Context(), org.Login) {
 		writeGHError(w, http.StatusForbidden, "Must be an organization owner.")
 		return
 	}
@@ -365,7 +358,7 @@ func (s *Server) handleGetAuthUserMembership(w http.ResponseWriter, r *http.Requ
 		return
 	}
 	m := s.store.GetMembership(orgLogin, user.ID)
-	if m == nil {
+	if m == nil || !s.viewerReachesOrg(r.Context(), orgLogin) {
 		writeGHError(w, http.StatusNotFound, "Not Found")
 		return
 	}
@@ -398,7 +391,7 @@ func (s *Server) handleUpdateAuthUserMembership(w http.ResponseWriter, r *http.R
 		return
 	}
 	m := s.store.GetMembership(orgLogin, user.ID)
-	if m == nil {
+	if m == nil || !s.viewerReachesOrg(r.Context(), orgLogin) {
 		writeGHError(w, http.StatusNotFound, "Not Found")
 		return
 	}

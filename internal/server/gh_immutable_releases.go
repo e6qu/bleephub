@@ -180,7 +180,7 @@ func (s *Server) resolveRepoForImmutableReleases(w http.ResponseWriter, r *http.
 		writeGHError(w, http.StatusNotFound, "Not Found")
 		return nil
 	}
-	if !canAdminRepo(s.store, ghUserFromContext(r.Context()), repo) {
+	if !s.viewerCanAdminRepo(r.Context(), repo) {
 		writeGHError(w, http.StatusNotFound, "Not Found")
 		return nil
 	}

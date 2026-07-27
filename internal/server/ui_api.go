@@ -30,7 +30,7 @@ func (s *Server) handleUIRepoViewer(w http.ResponseWriter, r *http.Request) {
 	owner := r.PathValue("owner")
 	repoName := r.PathValue("repo")
 	repo := s.store.GetRepo(owner, repoName)
-	if repo == nil || (repo.Private && !canReadRepo(s.store, user, repo)) {
+	if repo == nil || (repo.Private && !s.viewerCanReadRepo(ctx, repo)) {
 		writeGHError(w, http.StatusNotFound, "Not Found")
 		return
 	}

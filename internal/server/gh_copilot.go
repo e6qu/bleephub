@@ -55,7 +55,7 @@ func (s *Server) copilotOrgAdmin(w http.ResponseWriter, r *http.Request) *Org {
 		writeGHError(w, http.StatusNotFound, "Not Found")
 		return nil
 	}
-	if !canAdminOrg(s.store, user, org) {
+	if !s.viewerCanAdminOrg(r.Context(), org.Login) {
 		writeGHError(w, http.StatusForbidden, "Must be an organization owner.")
 		return nil
 	}
@@ -327,8 +327,12 @@ func (s *Server) handleGetCopilotSeatDetailsForUser(w http.ResponseWriter, r *ht
 		writeGHError(w, http.StatusNotFound, "Not Found")
 		return
 	}
+	// The self-lookup arm is intersected with the credential's reach of the org
+	// for the same reason the admin arm is: "I am asking about myself" is a fact
+	// about the bearer, not about the app speaking for them.
 	username := r.PathValue("username")
-	if !canAdminOrg(s.store, caller, org) && !strings.EqualFold(caller.Login, username) {
+	self := strings.EqualFold(caller.Login, username) && s.viewerReachesOrg(r.Context(), org.Login)
+	if !self && !s.viewerCanAdminOrg(r.Context(), org.Login) {
 		writeGHError(w, http.StatusForbidden, "Must be an organization owner.")
 		return
 	}

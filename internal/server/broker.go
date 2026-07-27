@@ -3,7 +3,9 @@ package bleephub
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"net/http"
+	"strconv"
 	"strings"
 	"time"
 
@@ -14,15 +16,28 @@ const messagePollTimeout = 30 * time.Second
 
 func (s *Server) registerBrokerRoutes() {
 	// Sessions
-	s.route("POST /_apis/v1/AgentSession/{poolId}", s.handleCreateSession)
-	s.route("DELETE /_apis/v1/AgentSession/{poolId}/{sessionId}", s.handleDeleteSession)
+	s.route("POST /_apis/v1/AgentSession/{poolId}", s.requireAgentSession(s.handleCreateSession))
+	s.route("DELETE /_apis/v1/AgentSession/{poolId}/{sessionId}", s.requireAgentSession(s.handleDeleteSession))
 
 	// Message polling
-	s.route("GET /_apis/v1/Message/{poolId}", s.handleGetMessage)
-	s.route("DELETE /_apis/v1/Message/{poolId}/{messageId}", s.handleDeleteMessage)
+	s.route("GET /_apis/v1/Message/{poolId}", s.requireAgentSession(s.handleGetMessage))
+	s.route("DELETE /_apis/v1/Message/{poolId}/{messageId}", s.requireAgentSession(s.handleDeleteMessage))
 }
 
 func (s *Server) handleCreateSession(w http.ResponseWriter, r *http.Request) {
+	// The registered agent behind the session token is the routing source of
+	// truth: it holds the labels from config-time registration and the scope
+	// that decides which jobs — and therefore which secrets — it may receive.
+	caller, err := s.callerRunner(r)
+	if err == nil && caller.Agent == nil {
+		err = fmt.Errorf("opening a session needs an agent session token, not a job runtime token")
+	}
+	if err != nil {
+		s.challengeRunnerAuth(w, r, err)
+		return
+	}
+	agent := caller.Agent
+
 	var raw map[string]interface{}
 	if err := json.NewDecoder(r.Body).Decode(&raw); err != nil {
 		s.logger.Error().Err(err).Msg("failed to parse session request")
@@ -32,30 +47,12 @@ func (s *Server) handleCreateSession(w http.ResponseWriter, r *http.Request) {
 
 	ownerName, _ := raw["ownerName"].(string)
 
-	var agent *Agent
+	// A session request naming a different agent is refused rather than
+	// quietly rebound to the authenticated one.
 	if agentRaw, ok := raw["agent"].(map[string]interface{}); ok {
-		// The session request carries a slim agent reference; the
-		// REGISTERED agent is the routing source of truth because it
-		// holds the labels from config-time registration.
-		if id, ok := agentRaw["id"].(float64); ok {
-			s.store.mu.RLock()
-			agent = s.store.Agents[int(id)]
-			s.store.mu.RUnlock()
-		}
-		if agent == nil {
-			agent = &Agent{
-				Enabled: true,
-				Status:  "online",
-			}
-			if id, ok := agentRaw["id"].(float64); ok {
-				agent.ID = int(id)
-			}
-			if name, ok := agentRaw["name"].(string); ok {
-				agent.Name = name
-			}
-			if version, ok := agentRaw["version"].(string); ok {
-				agent.Version = version
-			}
+		if id, ok := agentRaw["id"].(float64); ok && int(id) != agent.ID {
+			writeGHError(w, http.StatusForbidden, "Session agent does not match the authenticated runner")
+			return
 		}
 	}
 
@@ -87,14 +84,27 @@ func (s *Server) handleCreateSession(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) handleDeleteSession(w http.ResponseWriter, r *http.Request) {
 	sessionID := r.PathValue("sessionId")
+	caller, _ := s.callerRunner(r)
 
 	s.store.mu.Lock()
 	session, ok := s.store.Sessions[sessionID]
+	ok = ok && sessionOwnedBy(session, caller)
+	var retiring int
 	if ok {
 		close(session.MsgCh)
 		delete(s.store.Sessions, sessionID)
+		if session.Agent != nil {
+			retiring = session.Agent.ID
+		}
 	}
 	s.store.mu.Unlock()
+
+	// Deleting its session is the last thing a runner does. An ephemeral
+	// runner is deregistered here rather than the moment its job finished,
+	// because a registration removed mid-teardown cannot authenticate the
+	// calls the runner has still to make — closing its job request and this
+	// session. pullPendingMessage is what holds it to one job.
+	s.removeEphemeralAgent(retiring)
 
 	if s.metrics != nil {
 		s.metrics.SetActiveSessions(int64(s.sessionCount()))
@@ -104,6 +114,16 @@ func (s *Server) handleDeleteSession(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusOK)
 }
 
+// sessionOwnedBy reports whether the runner credential on a request owns the
+// session it addresses. Sessions are keyed by an id the runner echoes back;
+// without this the id alone would be the credential.
+func sessionOwnedBy(session *Session, caller *runnerPrincipal) bool {
+	if session == nil || caller == nil || caller.Agent == nil {
+		return false
+	}
+	return session.Agent != nil && session.Agent.ID == caller.Agent.ID
+}
+
 // handleGetMessage long-polls for a job message (30s timeout). Queued
 // pending messages are PULLED here rather than pushed: a runner polls
 // continuously even while running a job (cancellation channel), and the
@@ -111,6 +131,11 @@ func (s *Server) handleDeleteSession(w http.ResponseWriter, r *http.Request) {
 // so job delivery only happens on a poll from a free agent.
 func (s *Server) handleGetMessage(w http.ResponseWriter, r *http.Request) {
 	sessionID := r.URL.Query().Get("sessionId")
+	caller, err := s.callerRunner(r)
+	if err != nil {
+		s.challengeRunnerAuth(w, r, err)
+		return
+	}
 
 	s.store.mu.RLock()
 	session, ok := s.store.Sessions[sessionID]
@@ -120,10 +145,19 @@ func (s *Server) handleGetMessage(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "session not found", http.StatusNotFound)
 		return
 	}
+	if !sessionOwnedBy(session, caller) {
+		writeGHError(w, http.StatusForbidden, "Session belongs to another runner")
+		return
+	}
 
-	if msg := s.pullPendingMessage(session); msg != nil {
+	if msg := s.pullPendingMessage(session, caller.Scope); msg != nil {
 		s.logger.Info().Int64("messageId", msg.MessageID).Msg("delivering pending message to runner")
-		writeJSON(w, http.StatusOK, msg)
+		if err := deliverJSON(w, msg); err != nil {
+			// The queue entry is only given up once the runner has the bytes;
+			// a dropped connection must not lose the job.
+			s.requeuePendingMessage(msg)
+			s.logger.Warn().Err(err).Int64("messageId", msg.MessageID).Msg("message delivery failed — requeued")
+		}
 		return
 	}
 
@@ -143,16 +177,44 @@ func (s *Server) handleGetMessage(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-// pullPendingMessage hands the polling session the first queued message
-// its agent can take (labels covered, agent free); nil when none.
-func (s *Server) pullPendingMessage(session *Session) *TaskAgentMessage {
+// deliverJSON writes a message and pushes it out to the client, reporting
+// whether the bytes actually left. Delivery of a queued job is only committed
+// on success, so this cannot use the fire-and-forget writeJSON.
+func deliverJSON(w http.ResponseWriter, v interface{}) error {
+	body, err := json.Marshal(v)
+	if err != nil {
+		writeGHError(w, http.StatusInternalServerError, "encode runner message")
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("Content-Length", strconv.Itoa(len(body)+1))
+	w.WriteHeader(http.StatusOK)
+	if _, err := w.Write(append(body, '\n')); err != nil {
+		return err
+	}
+	if flusher, ok := w.(http.Flusher); ok {
+		flusher.Flush()
+	}
+	return nil
+}
+
+// pullPendingMessage hands the polling session the first queued message its
+// agent can take: labels covered, agent free, and the job's repository inside
+// the runner's registration scope. A job message carries that repository's
+// secrets, so a runner registered elsewhere never sees it. Operator-submitted
+// jobs (/internal/exec/submit) name no repository and carry no repository,
+// organization or environment secrets, so any registered runner may take one.
+func (s *Server) pullPendingMessage(session *Session, scope runnerScope) *TaskAgentMessage {
 	s.store.mu.Lock()
 	defer s.store.mu.Unlock()
-	if session.Agent != nil && s.agentBusyLocked(session.Agent.ID) {
+	if !s.agentTakesAJobLocked(session.Agent) {
 		return nil
 	}
 	for i, msg := range s.store.PendingMessages {
 		if !agentSatisfiesLabels(session.Agent, msg.Labels) {
+			continue
+		}
+		if !jobSecretsEntitled(scope, jobMessageRepoName(msg.Body)) {
 			continue
 		}
 		s.store.PendingMessages = append(s.store.PendingMessages[:i], s.store.PendingMessages[i+1:]...)
@@ -162,20 +224,46 @@ func (s *Server) pullPendingMessage(session *Session) *TaskAgentMessage {
 	return nil
 }
 
-// agentBusyLocked reports whether the agent has an assigned job that
-// hasn't finished — real GitHub never assigns a busy runner, and the
-// official runner DROPS job messages received mid-job. Callers hold the
+// jobMessageRepoName reports the repository a queued job message runs as, or
+// "" for an operator-submitted job that names none.
+func jobMessageRepoName(message string) string {
+	_, repo := jobMessageScopeAndRepo(message)
+	return repo
+}
+
+// requeuePendingMessage puts an undelivered job back at the head of the queue
+// and releases the agent it was tentatively assigned to.
+func (s *Server) requeuePendingMessage(msg *TaskAgentMessage) {
+	s.store.mu.Lock()
+	defer s.store.mu.Unlock()
+	if job := s.store.Jobs[msg.JobID]; job != nil {
+		job.AgentID = 0
+	}
+	s.store.PendingMessages = append([]*TaskAgentMessage{msg}, s.store.PendingMessages...)
+}
+
+// agentTakesAJobLocked reports whether the agent may be handed a queued job.
+// There must be a registered agent to hand it to — the routes that renew and
+// complete a job request are gated on the runner it was assigned to, so a
+// session with no agent would receive a job it could never report on. It must
+// not already hold an unfinished one either: real GitHub never assigns a busy
+// runner, and the official runner DROPS job messages received mid-job. An
+// ephemeral runner exists for exactly one job, so a job it has already been
+// assigned disqualifies it even after that job finished. Callers hold the
 // store lock.
-func (s *Server) agentBusyLocked(agentID int) bool {
-	if agentID == 0 {
+func (s *Server) agentTakesAJobLocked(agent *Agent) bool {
+	if agent == nil || agent.ID == 0 {
 		return false
 	}
 	for _, j := range s.store.Jobs {
-		if j.AgentID == agentID && j.Status != "completed" {
-			return true
+		if j.AgentID != agent.ID {
+			continue
+		}
+		if agent.Ephemeral || j.Status != "completed" {
+			return false
 		}
 	}
-	return false
+	return true
 }
 
 // recordJobAgentLocked associates a delivered job with the agent that

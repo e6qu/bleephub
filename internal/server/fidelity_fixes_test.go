@@ -159,6 +159,8 @@ func TestJobRunAttemptReflectsRun(t *testing.T) {
 func TestListArtifactsScopedToRun(t *testing.T) {
 	s := newTestServer()
 	s.registerArtifactRoutes()
+	token := seedRunJobToken(t, s, "octo/repo", "run-A")
+	seedRunJobToken(t, s, "octo/repo", "run-B")
 
 	add := func(id int64, name, backendID string) {
 		s.artifactStore.mu.Lock()
@@ -174,10 +176,11 @@ func TestListArtifactsScopedToRun(t *testing.T) {
 	req := httptest.NewRequest("POST",
 		"/twirp/github.actions.results.api.v1.ArtifactService/ListArtifacts",
 		strings.NewReader(`{"workflow_run_backend_id":"run-A"}`))
+	req.Header.Set("Authorization", "Bearer "+token)
 	w := httptest.NewRecorder()
 	s.mux.ServeHTTP(w, req)
 	if w.Code != 200 {
-		t.Fatalf("ListArtifacts = %d, want 200", w.Code)
+		t.Fatalf("ListArtifacts = %d, want 200; body=%s", w.Code, w.Body.String())
 	}
 	var resp struct {
 		Artifacts []struct {

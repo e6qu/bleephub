@@ -87,7 +87,8 @@ func (s *Server) serveArchive(w http.ResponseWriter, r *http.Request, format, ow
 		http.NotFound(w, r)
 		return
 	}
-	if repo.Private && !canReadRepo(s.store, s.authenticateGitRequest(r), repo) {
+	ctx, _ := s.authenticateGitRequest(r)
+	if repo.Private && !s.viewerCanReadRepo(ctx, repo) {
 		http.NotFound(w, r)
 		return
 	}

@@ -1,6 +1,7 @@
 package bleephub
 
 import (
+	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
@@ -53,7 +54,53 @@ type searchQuery struct {
 	Hash      string // commit search: hash qualifier
 }
 
-func parseSearchQuery(r *http.Request) searchQuery {
+// unsupportedQualifierError names a qualifier — or a qualifier value — that
+// the search parser does not implement. Silently dropping one would widen the
+// result set to the unfiltered universe, so it is a 422 instead.
+type unsupportedQualifierError struct {
+	key   string
+	value string
+}
+
+func (e unsupportedQualifierError) Error() string {
+	if e.value == "" {
+		return "The search qualifier \"" + e.key + "\" is not supported."
+	}
+	return "The value \"" + e.value + "\" is not supported for the search qualifier \"" + e.key + "\"."
+}
+
+// writeGHSearchQualifierError writes GitHub's 422 for an unparseable search
+// query, carrying the offending qualifier in the errors array.
+func writeGHSearchQualifierError(w http.ResponseWriter, err error) {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusUnprocessableEntity)
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"message":           "Validation Failed",
+		"documentation_url": "https://docs.github.com/rest/search/search",
+		"errors": []map[string]string{
+			{
+				"message":  err.Error(),
+				"resource": "Search",
+				"field":    "q",
+				"code":     "invalid",
+			},
+		},
+	})
+}
+
+// searchQueryOrError is the only way a handler obtains a searchQuery: it
+// rejects queries carrying qualifiers this server does not implement rather
+// than dropping them and answering with the unfiltered universe.
+func searchQueryOrError(w http.ResponseWriter, r *http.Request) (searchQuery, bool) {
+	q, err := parseSearchQuery(r)
+	if err != nil {
+		writeGHSearchQualifierError(w, err)
+		return q, false
+	}
+	return q, true
+}
+
+func parseSearchQuery(r *http.Request) (searchQuery, error) {
 	q := searchQuery{
 		Terms:   []string{},
 		Sort:    r.URL.Query().Get("sort"),
@@ -106,7 +153,12 @@ func parseSearchQuery(r *http.Request) searchQuery {
 			case "label":
 				q.Label = val
 			case "state":
-				q.State = strings.ToLower(val)
+				switch strings.ToLower(val) {
+				case "open", "closed":
+					q.State = strings.ToLower(val)
+				default:
+					return q, unsupportedQualifierError{key: "state", value: val}
+				}
 			case "is":
 				switch strings.ToLower(val) {
 				case "issue":
@@ -123,6 +175,8 @@ func parseSearchQuery(r *http.Request) searchQuery {
 					q.IsPublic = &v
 				case "open", "closed":
 					q.State = strings.ToLower(val)
+				default:
+					return q, unsupportedQualifierError{key: "is", value: val}
 				}
 			case "in":
 				switch strings.ToLower(val) {
@@ -130,6 +184,8 @@ func parseSearchQuery(r *http.Request) searchQuery {
 					q.InTitle = true
 				case "body":
 					q.InBody = true
+				default:
+					return q, unsupportedQualifierError{key: "in", value: val}
 				}
 			case "path":
 				q.Path = val
@@ -138,17 +194,24 @@ func parseSearchQuery(r *http.Request) searchQuery {
 			case "filename", "file":
 				q.Filename = val
 			case "type":
-				q.Type = strings.ToLower(val)
+				switch strings.ToLower(val) {
+				case "user", "org":
+					q.Type = strings.ToLower(val)
+				default:
+					return q, unsupportedQualifierError{key: "type", value: val}
+				}
 			case "author":
 				q.Author = val
 			case "hash":
 				q.Hash = val
+			default:
+				return q, unsupportedQualifierError{key: key}
 			}
 			continue
 		}
 		q.Terms = append(q.Terms, strings.ToLower(token))
 	}
-	return q
+	return q, nil
 }
 
 func (q searchQuery) matchesText(text string) bool {
@@ -166,7 +229,10 @@ func (q searchQuery) matchesText(text string) bool {
 
 func (s *Server) handleSearchIssues(w http.ResponseWriter, r *http.Request) {
 	user := ghUserFromContext(r.Context())
-	q := parseSearchQuery(r)
+	q, ok := searchQueryOrError(w, r)
+	if !ok {
+		return
+	}
 
 	// Matching rows are gathered under the read lock; rendering happens
 	// after release because the JSON builders (issueToJSON, repoToJSON and
@@ -331,8 +397,7 @@ func (s *Server) handleSearchIssues(w http.ResponseWriter, r *http.Request) {
 		for _, row := range rows {
 			results = append(results, render(row))
 		}
-		results = sortSearchResults(results, q.Sort, q.Order)
-		writeJSON(w, http.StatusOK, searchEnvelope("issues", results, q.Page, q.PerPage))
+		writeJSON(w, http.StatusOK, searchEnvelope("issues", results, q, sortSearchResults))
 		return
 	}
 
@@ -374,10 +439,32 @@ func (row searchIssueRow) updatedAt() time.Time {
 	return row.pr.UpdatedAt
 }
 
-// sortSearchRows orders unified search rows in place by the same keys as
-// sortSearchResults (created/updated), so paginate-before-render yields the
-// identical page a render-all-then-sort would.
+// orderKey mirrors searchItemOrderKey for an unrendered row: the entity id
+// plus its issue path, which is unique because issues and pull requests draw
+// numbers from one per-repository counter.
+func (row searchIssueRow) orderKey() (int, string) {
+	id, number := 0, 0
+	if row.issue != nil {
+		id, number = row.issue.ID, row.issue.Number
+	} else {
+		id, number = row.pr.ID, row.pr.Number
+	}
+	return id, "/api/v3/repos/" + row.repo.FullName + "/issues/" + strconv.Itoa(number)
+}
+
+// sortSearchRows establishes the total row order — the deterministic base
+// order that map iteration does not provide, then the requested sort stably on
+// top — by the same keys as sortSearchResults, so paginate-before-render
+// yields the identical page a render-all-then-sort would.
 func sortSearchRows(rows []searchIssueRow, sortKey, order string) {
+	sort.Slice(rows, func(i, j int) bool {
+		idI, keyI := rows[i].orderKey()
+		idJ, keyJ := rows[j].orderKey()
+		if idI != idJ {
+			return idI < idJ
+		}
+		return keyI < keyJ
+	})
 	switch sortKey {
 	case "created":
 		sort.SliceStable(rows, func(i, j int) bool {
@@ -556,7 +643,10 @@ func prHasLabelNames(st *Store, pr *PullRequest, names []string) bool {
 
 func (s *Server) handleSearchRepositories(w http.ResponseWriter, r *http.Request) {
 	user := ghUserFromContext(r.Context())
-	q := parseSearchQuery(r)
+	q, ok := searchQueryOrError(w, r)
+	if !ok {
+		return
+	}
 
 	// Matching repos are gathered under the read lock; rendering happens
 	// after release because repoToJSON takes the store lock itself.
@@ -613,13 +703,15 @@ func (s *Server) handleSearchRepositories(w http.ResponseWriter, r *http.Request
 		results = append(results, item)
 	}
 
-	results = sortRepoSearchResults(results, q.Sort, q.Order)
-	writeJSON(w, http.StatusOK, searchEnvelope("", results, q.Page, q.PerPage))
+	writeJSON(w, http.StatusOK, searchEnvelope("", results, q, sortRepoSearchResults))
 }
 
 func (s *Server) handleSearchCode(w http.ResponseWriter, r *http.Request) {
 	user := ghUserFromContext(r.Context())
-	q := parseSearchQuery(r)
+	q, ok := searchQueryOrError(w, r)
+	if !ok {
+		return
+	}
 
 	if len(q.Terms) == 0 && q.Filename == "" && q.Extension == "" && q.Path == "" {
 		writeGHValidationError(w, "Search", "q", "missing_field")
@@ -665,6 +757,9 @@ func (s *Server) handleSearchCode(w http.ResponseWriter, r *http.Request) {
 		searchRepos = append(searchRepos, codeSearchRepo{repo, stor})
 	}
 	s.store.mu.RUnlock()
+	// Scan repositories in a fixed order: the 1000-result cap below otherwise
+	// truncates a different subset on every request.
+	sort.Slice(searchRepos, func(i, j int) bool { return searchRepos[i].repo.ID < searchRepos[j].repo.ID })
 
 	base := s.baseURL(r)
 	var results []map[string]interface{}
@@ -749,11 +844,14 @@ func (s *Server) handleSearchCode(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	writeJSON(w, http.StatusOK, searchEnvelope("", results, q.Page, q.PerPage))
+	writeJSON(w, http.StatusOK, searchEnvelope("", results, q, nil))
 }
 
 func (s *Server) handleSearchUsers(w http.ResponseWriter, r *http.Request) {
-	q := parseSearchQuery(r)
+	q, ok := searchQueryOrError(w, r)
+	if !ok {
+		return
+	}
 
 	// Matching users and orgs are gathered under the read lock; rendering
 	// happens after release because fullUserJSON derives follower and repo
@@ -797,8 +895,7 @@ func (s *Server) handleSearchUsers(w http.ResponseWriter, r *http.Request) {
 		results = append(results, item)
 	}
 
-	results = sortUserSearchResults(results, q.Sort, q.Order)
-	writeJSON(w, http.StatusOK, searchEnvelope("", results, q.Page, q.PerPage))
+	writeJSON(w, http.StatusOK, searchEnvelope("", results, q, sortUserSearchResults))
 }
 
 func pathMatches(text string, terms []string) bool {
@@ -837,7 +934,51 @@ func detectLanguage(filename string) interface{} {
 	return ext
 }
 
-func searchEnvelope(searchType string, items []map[string]interface{}, page, perPage int) map[string]interface{} {
+// searchSorter applies a requested sort key to already-ordered results. Every
+// implementation must sort stably so the base order survives as the tiebreak.
+type searchSorter func(items []map[string]interface{}, sortKey, order string) []map[string]interface{}
+
+// searchItemOrderKey is the identity a search result is tiebroken on: its id,
+// then the first globally unique string member it carries. Every rendered item
+// has one, so the resulting order is total.
+func searchItemOrderKey(item map[string]interface{}) (int, string) {
+	id, _ := item["id"].(int)
+	for _, member := range []string{"url", "node_id", "name"} {
+		if s, ok := item[member].(string); ok && s != "" {
+			return id, s
+		}
+	}
+	return id, ""
+}
+
+// orderSearchItems imposes the total result order — score descending, then
+// identity ascending — that map iteration does not provide. Without it,
+// slicing a page out of the result set overlaps and omits results between
+// requests for the same query.
+func orderSearchItems(items []map[string]interface{}) {
+	sort.SliceStable(items, func(i, j int) bool {
+		si, _ := items[i]["score"].(float64)
+		sj, _ := items[j]["score"].(float64)
+		if si != sj {
+			return si > sj
+		}
+		idI, keyI := searchItemOrderKey(items[i])
+		idJ, keyJ := searchItemOrderKey(items[j])
+		if idI != idJ {
+			return idI < idJ
+		}
+		return keyI < keyJ
+	})
+}
+
+// searchEnvelope orders, sorts and pages a search result set. Ordering is not
+// optional: it happens here so no handler can slice an unordered set.
+func searchEnvelope(searchType string, items []map[string]interface{}, q searchQuery, sortBy searchSorter) map[string]interface{} {
+	orderSearchItems(items)
+	if sortBy != nil {
+		items = sortBy(items, q.Sort, q.Order)
+	}
+	page, perPage := q.Page, q.PerPage
 	total := len(items)
 	start := (page - 1) * perPage
 	if start < 0 || start > total {
@@ -868,7 +1009,7 @@ func searchEnvelope(searchType string, items []map[string]interface{}, page, per
 func sortSearchResults(items []map[string]interface{}, sortKey, order string) []map[string]interface{} {
 	switch sortKey {
 	case "created":
-		sort.Slice(items, func(i, j int) bool {
+		sort.SliceStable(items, func(i, j int) bool {
 			a, _ := items[i]["created_at"].(string)
 			b, _ := items[j]["created_at"].(string)
 			if order == "asc" {
@@ -877,7 +1018,7 @@ func sortSearchResults(items []map[string]interface{}, sortKey, order string) []
 			return a > b
 		})
 	case "updated":
-		sort.Slice(items, func(i, j int) bool {
+		sort.SliceStable(items, func(i, j int) bool {
 			a, _ := items[i]["updated_at"].(string)
 			b, _ := items[j]["updated_at"].(string)
 			if order == "asc" {
@@ -886,7 +1027,7 @@ func sortSearchResults(items []map[string]interface{}, sortKey, order string) []
 			return a > b
 		})
 	case "comments":
-		sort.Slice(items, func(i, j int) bool {
+		sort.SliceStable(items, func(i, j int) bool {
 			a, _ := items[i]["comments"].(int)
 			b, _ := items[j]["comments"].(int)
 			if order == "asc" {
@@ -901,7 +1042,7 @@ func sortSearchResults(items []map[string]interface{}, sortKey, order string) []
 func sortRepoSearchResults(items []map[string]interface{}, sortKey, order string) []map[string]interface{} {
 	switch sortKey {
 	case "stars", "stargazers":
-		sort.Slice(items, func(i, j int) bool {
+		sort.SliceStable(items, func(i, j int) bool {
 			a, _ := items[i]["stargazers_count"].(int)
 			b, _ := items[j]["stargazers_count"].(int)
 			if order == "asc" {
@@ -910,7 +1051,7 @@ func sortRepoSearchResults(items []map[string]interface{}, sortKey, order string
 			return a > b
 		})
 	case "created":
-		sort.Slice(items, func(i, j int) bool {
+		sort.SliceStable(items, func(i, j int) bool {
 			a, _ := items[i]["created_at"].(string)
 			b, _ := items[j]["created_at"].(string)
 			if order == "asc" {
@@ -919,7 +1060,7 @@ func sortRepoSearchResults(items []map[string]interface{}, sortKey, order string
 			return a > b
 		})
 	case "updated":
-		sort.Slice(items, func(i, j int) bool {
+		sort.SliceStable(items, func(i, j int) bool {
 			a, _ := items[i]["updated_at"].(string)
 			b, _ := items[j]["updated_at"].(string)
 			if order == "asc" {
@@ -934,7 +1075,7 @@ func sortRepoSearchResults(items []map[string]interface{}, sortKey, order string
 func sortUserSearchResults(items []map[string]interface{}, sortKey, order string) []map[string]interface{} {
 	switch sortKey {
 	case "followers":
-		sort.Slice(items, func(i, j int) bool {
+		sort.SliceStable(items, func(i, j int) bool {
 			a, _ := items[i]["followers"].(int)
 			b, _ := items[j]["followers"].(int)
 			if order == "asc" {
@@ -943,7 +1084,7 @@ func sortUserSearchResults(items []map[string]interface{}, sortKey, order string
 			return a > b
 		})
 	case "created":
-		sort.Slice(items, func(i, j int) bool {
+		sort.SliceStable(items, func(i, j int) bool {
 			a, _ := items[i]["created_at"].(string)
 			b, _ := items[j]["created_at"].(string)
 			if order == "asc" {
@@ -952,7 +1093,7 @@ func sortUserSearchResults(items []map[string]interface{}, sortKey, order string
 			return a > b
 		})
 	case "updated":
-		sort.Slice(items, func(i, j int) bool {
+		sort.SliceStable(items, func(i, j int) bool {
 			a, _ := items[i]["updated_at"].(string)
 			b, _ := items[j]["updated_at"].(string)
 			if order == "asc" {
@@ -970,7 +1111,10 @@ func sortUserSearchResults(items []map[string]interface{}, sortKey, order string
 // qualifiers.
 func (s *Server) handleSearchCommits(w http.ResponseWriter, r *http.Request) {
 	user := ghUserFromContext(r.Context())
-	q := parseSearchQuery(r)
+	q, ok := searchQueryOrError(w, r)
+	if !ok {
+		return
+	}
 
 	if len(q.Terms) == 0 && q.Repo == "" && q.Author == "" && q.Hash == "" && q.User == "" && q.Org == "" {
 		writeGHValidationError(w, "Search", "q", "missing_field")
@@ -1010,6 +1154,9 @@ func (s *Server) handleSearchCommits(w http.ResponseWriter, r *http.Request) {
 		searchRepos = append(searchRepos, commitSearchRepo{repo, stor})
 	}
 	s.store.mu.RUnlock()
+	// Scan repositories in a fixed order: the 1000-result cap below otherwise
+	// truncates a different subset on every request.
+	sort.Slice(searchRepos, func(i, j int) bool { return searchRepos[i].repo.ID < searchRepos[j].repo.ID })
 
 	base := s.baseURL(r)
 	var results []map[string]interface{}
@@ -1050,8 +1197,7 @@ func (s *Server) handleSearchCommits(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	sortCommitSearchResults(results, q.Sort, q.Order)
-	writeJSON(w, http.StatusOK, searchEnvelope("", results, q.Page, q.PerPage))
+	writeJSON(w, http.StatusOK, searchEnvelope("", results, q, sortCommitSearchResults))
 }
 
 // commitAuthorMatches matches the author: qualifier against the commit's
@@ -1143,9 +1289,9 @@ func (s *Server) commitSearchItemJSON(commit *object.Commit, repo *Repo, base st
 
 // sortCommitSearchResults orders commit results for the documented sort
 // keys (author-date, committer-date); default is best-match order.
-func sortCommitSearchResults(items []map[string]interface{}, sortKey, order string) {
+func sortCommitSearchResults(items []map[string]interface{}, sortKey, order string) []map[string]interface{} {
 	if sortKey != "author-date" && sortKey != "committer-date" {
-		return
+		return items
 	}
 	role := "author"
 	if sortKey == "committer-date" {
@@ -1163,12 +1309,12 @@ func sortCommitSearchResults(items []map[string]interface{}, sortKey, order stri
 		}
 		return dateOf(items[i]) > dateOf(items[j])
 	})
+	return items
 }
 
 // handleSearchLabels implements GET /search/labels: a real search over the
 // labels of the repository named by the required repository_id parameter.
 func (s *Server) handleSearchLabels(w http.ResponseWriter, r *http.Request) {
-	user := ghUserFromContext(r.Context())
 	repoIDStr := r.URL.Query().Get("repository_id")
 	if repoIDStr == "" {
 		writeGHValidationError(w, "Search", "repository_id", "missing_field")
@@ -1184,11 +1330,14 @@ func (s *Server) handleSearchLabels(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	repo := s.store.GetRepoByID(repoID)
-	if repo == nil || !canReadRepo(s.store, user, repo) {
+	if repo == nil || !s.viewerCanReadRepo(r.Context(), repo) {
 		writeGHError(w, http.StatusNotFound, "Not Found")
 		return
 	}
-	q := parseSearchQuery(r)
+	q, ok := searchQueryOrError(w, r)
+	if !ok {
+		return
+	}
 
 	s.store.mu.RLock()
 	labels := make([]*IssueLabel, 0)
@@ -1218,7 +1367,7 @@ func (s *Server) handleSearchLabels(w http.ResponseWriter, r *http.Request) {
 			"score":       1.0,
 		})
 	}
-	writeJSON(w, http.StatusOK, searchEnvelope("", items, q.Page, q.PerPage))
+	writeJSON(w, http.StatusOK, searchEnvelope("", items, q, nil))
 }
 
 // handleSearchTopics implements GET /search/topics: a real search over the
@@ -1229,7 +1378,10 @@ func (s *Server) handleSearchTopics(w http.ResponseWriter, r *http.Request) {
 		writeGHValidationError(w, "Search", "q", "missing_field")
 		return
 	}
-	q := parseSearchQuery(r)
+	q, ok := searchQueryOrError(w, r)
+	if !ok {
+		return
+	}
 
 	type topicAgg struct {
 		name      string
@@ -1286,5 +1438,5 @@ func (s *Server) handleSearchTopics(w http.ResponseWriter, r *http.Request) {
 			"repository_count":  t.count,
 		})
 	}
-	writeJSON(w, http.StatusOK, searchEnvelope("", items, q.Page, q.PerPage))
+	writeJSON(w, http.StatusOK, searchEnvelope("", items, q, nil))
 }

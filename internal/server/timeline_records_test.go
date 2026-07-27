@@ -54,9 +54,10 @@ func patchTimelineRecords(t *testing.T, s *Server, planID, timelineID string, wr
 		t.Fatalf("marshal records: %v", err)
 	}
 	req := httptest.NewRequest("PATCH",
-		fmt.Sprintf("/_apis/v1/Timeline/%s/build/%s/%s", uuid.New().String(), planID, timelineID),
+		fmt.Sprintf("/_apis/v1/Timeline/%s/build/%s/%s", planID, planID, timelineID),
 		bytes.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Authorization", "Bearer "+seedPlanScopeToken(t, s, planID, "octo/repo"))
 	w := httptest.NewRecorder()
 	s.mux.ServeHTTP(w, req)
 	if w.Code != http.StatusOK {
@@ -69,8 +70,9 @@ func patchTimelineRecords(t *testing.T, s *Server, planID, timelineID string, wr
 func createLogFile(t *testing.T, s *Server, planID string) int {
 	t.Helper()
 	req := httptest.NewRequest("POST",
-		fmt.Sprintf("/_apis/v1/Logfiles/%s/build/%s", uuid.New().String(), planID),
+		fmt.Sprintf("/_apis/v1/Logfiles/%s/build/%s", planID, planID),
 		strings.NewReader(`{}`))
+	req.Header.Set("Authorization", "Bearer "+seedPlanScopeToken(t, s, planID, "octo/repo"))
 	w := httptest.NewRecorder()
 	s.mux.ServeHTTP(w, req)
 	if w.Code != http.StatusOK {
@@ -89,8 +91,9 @@ func createLogFile(t *testing.T, s *Server, planID string) int {
 func uploadLogBlock(t *testing.T, s *Server, planID string, logID int, content []byte) {
 	t.Helper()
 	req := httptest.NewRequest("POST",
-		fmt.Sprintf("/_apis/v1/Logfiles/%s/build/%s/%d", uuid.New().String(), planID, logID),
+		fmt.Sprintf("/_apis/v1/Logfiles/%s/build/%s/%d", planID, planID, logID),
 		bytes.NewReader(content))
+	req.Header.Set("Authorization", "Bearer "+seedPlanScopeToken(t, s, planID, "octo/repo"))
 	w := httptest.NewRecorder()
 	s.mux.ServeHTTP(w, req)
 	if w.Code != http.StatusOK {
@@ -109,9 +112,10 @@ func postConsoleLines(t *testing.T, s *Server, planID, timelineID string, lines 
 	})
 	req := httptest.NewRequest("POST",
 		fmt.Sprintf("/_apis/v1/TimeLineWebConsoleLog/%s/build/%s/%s/%s",
-			uuid.New().String(), planID, timelineID, uuid.New().String()),
+			planID, planID, timelineID, uuid.New().String()),
 		bytes.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Authorization", "Bearer "+seedPlanScopeToken(t, s, planID, "octo/repo"))
 	w := httptest.NewRecorder()
 	s.mux.ServeHTTP(w, req)
 	if w.Code != http.StatusOK {
@@ -184,9 +188,11 @@ func TestTimelineRecords_BareArrayBodyStored(t *testing.T) {
 
 func TestTimelineRecords_InvalidBodyRejected(t *testing.T) {
 	s := newTimelineTestServer()
+	planID := uuid.New().String()
 	req := httptest.NewRequest("PATCH",
-		fmt.Sprintf("/_apis/v1/Timeline/%s/build/%s/%s", uuid.New().String(), uuid.New().String(), uuid.New().String()),
+		fmt.Sprintf("/_apis/v1/Timeline/%s/build/%s/%s", planID, planID, uuid.New().String()),
 		strings.NewReader("not json"))
+	req.Header.Set("Authorization", "Bearer "+seedPlanScopeToken(t, s, planID, "octo/repo"))
 	w := httptest.NewRecorder()
 	s.mux.ServeHTTP(w, req)
 	if w.Code != http.StatusBadRequest {
@@ -446,8 +452,9 @@ func TestLogfilesUpload_ObjectStoreFailurePreservesState(t *testing.T) {
 	s.store.mu.Unlock()
 
 	req := httptest.NewRequest("POST",
-		fmt.Sprintf("/_apis/v1/Logfiles/%s/build/%s/%d", uuid.New().String(), planID, logID),
+		fmt.Sprintf("/_apis/v1/Logfiles/%s/build/%s/%d", planID, planID, logID),
 		bytes.NewReader([]byte("not durable\n")))
+	req.Header.Set("Authorization", "Bearer "+seedPlanScopeToken(t, s, planID, "octo/repo"))
 	w := httptest.NewRecorder()
 	s.mux.ServeHTTP(w, req)
 	if w.Code != http.StatusInternalServerError {
@@ -671,8 +678,9 @@ func TestWebConsoleLog_BareArrayBodyAccepted(t *testing.T) {
 	body, _ := json.Marshal([]string{"bare line"})
 	req := httptest.NewRequest("POST",
 		fmt.Sprintf("/_apis/v1/TimeLineWebConsoleLog/%s/build/%s/%s/%s",
-			uuid.New().String(), planID, timelineID, uuid.New().String()),
+			planID, planID, timelineID, uuid.New().String()),
 		bytes.NewReader(body))
+	req.Header.Set("Authorization", "Bearer "+seedPlanScopeToken(t, s, planID, "octo/repo"))
 	w := httptest.NewRecorder()
 	s.mux.ServeHTTP(w, req)
 	if w.Code != http.StatusOK {

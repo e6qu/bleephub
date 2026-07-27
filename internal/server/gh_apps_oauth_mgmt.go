@@ -251,7 +251,7 @@ func (s *Server) handleRevokeOAuthGrant(w http.ResponseWriter, r *http.Request) 
 }
 
 func (s *Server) handleCreateBrowserOAuthApp(w http.ResponseWriter, r *http.Request) {
-	user := ghUserFromContext(s.authenticateRequest(r))
+	r, user := s.authenticatedBrowserRequest(r)
 	if user == nil {
 		writeGHError(w, http.StatusUnauthorized, "Bad credentials")
 		return
@@ -269,7 +269,7 @@ func (s *Server) handleCreateBrowserOAuthApp(w http.ResponseWriter, r *http.Requ
 }
 
 func (s *Server) handleListBrowserOAuthApps(w http.ResponseWriter, r *http.Request) {
-	user := ghUserFromContext(s.authenticateRequest(r))
+	r, user := s.authenticatedBrowserRequest(r)
 	if user == nil {
 		writeGHError(w, http.StatusUnauthorized, "Bad credentials")
 		return
@@ -315,6 +315,11 @@ func decodeOAuthAppSettingsRequest(w http.ResponseWriter, r *http.Request) (oaut
 	req.Name = strings.TrimSpace(req.Name)
 	if req.Name == "" {
 		writeGHValidationError(w, "OAuthApp", "name", "missing_field")
+		return req, false
+	}
+	req.CallbackURL = strings.TrimSpace(req.CallbackURL)
+	if err := validateClientCallbackURL(req.CallbackURL); err != nil {
+		writeGHValidationError(w, "OAuthApp", "callback_url", "invalid")
 		return req, false
 	}
 	return req, true

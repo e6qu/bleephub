@@ -707,7 +707,7 @@ func (s *Server) dispatchWorkflowJob(ctx context.Context, wf *Workflow, wfJob *W
 		TimelineID:  timelineID,
 		Status:      "queued",
 		Message:     string(msgJSON),
-		LockedUntil: time.Now().Add(1 * time.Hour),
+		LockedUntil: time.Now().Add(jobLeaseDuration),
 	}
 
 	s.store.mu.Lock()
@@ -1199,20 +1199,7 @@ func workflowNeedsForkPRApproval(wf *Workflow, st *Store) bool {
 	if wf.EventName != "pull_request" || wf.RepoFullName == "" || wf.EventPayload == nil {
 		return false
 	}
-	pr, _ := wf.EventPayload["pull_request"].(map[string]interface{})
-	if pr == nil {
-		return false
-	}
-	head, _ := pr["head"].(map[string]interface{})
-	if head == nil {
-		return false
-	}
-	headRepo, _ := head["repo"].(map[string]interface{})
-	if headRepo == nil {
-		return false
-	}
-	headFullName, _ := headRepo["full_name"].(string)
-	if headFullName == "" || strings.EqualFold(headFullName, wf.RepoFullName) {
+	if !pullRequestIsFromFork(wf.EventPayload, wf.RepoFullName) {
 		return false
 	}
 	policy := st.GetRepoActionsPermissions(wf.RepoFullName).ForkPRContributorApproval
@@ -1256,8 +1243,75 @@ func (s *Server) startTimeoutWatcher(wf *Workflow) {
 	}()
 }
 
-// checkJobTimeouts cancels jobs that have exceeded their timeout.
+// jobLeaseDuration is how long a dispatched job stays leased to the runner
+// holding it. The runner renews the lease while it works; a lease that lapses
+// means the runner is gone.
+const jobLeaseDuration = 1 * time.Hour
+
+// reclaimExpiredJobLeases puts jobs whose runner stopped renewing back on the
+// broker's queue. Without it the lease was written three times and read
+// nowhere, so a runner that died mid-job left the job — and its run — hung
+// until the six-hour job timeout cancelled it.
+//
+// A job still sitting on the pending queue has not been taken by anyone, so
+// there is nothing to reclaim; its lease is simply extended. Callers must not
+// hold the store lock.
+func (s *Server) reclaimExpiredJobLeases(wf *Workflow) {
+	now := time.Now()
+	var redeliver []*TaskAgentMessage
+	var reclaimed []string
+
+	s.store.mu.Lock()
+	queued := make(map[string]bool, len(s.store.PendingMessages))
+	for _, msg := range s.store.PendingMessages {
+		if msg.JobID != "" {
+			queued[msg.JobID] = true
+		}
+	}
+	for _, wfJob := range wf.Jobs {
+		if wfJob.Status != JobStatusQueued && wfJob.Status != JobStatusRunning {
+			continue
+		}
+		job := s.store.Jobs[wfJob.JobID]
+		if job == nil || job.Status == "completed" || job.LockedUntil.IsZero() || job.LockedUntil.After(now) {
+			continue
+		}
+		job.LockedUntil = now.Add(jobLeaseDuration)
+		if queued[wfJob.JobID] {
+			continue
+		}
+		job.Status = "queued"
+		job.AgentID = 0
+		wfJob.Status = JobStatusQueued
+		reclaimed = append(reclaimed, wfJob.Key)
+		redeliver = append(redeliver, &TaskAgentMessage{
+			MessageType: "PipelineAgentJobRequest",
+			Body:        job.Message,
+			Labels:      wfJob.Def.RunsOnLabels(),
+			JobID:       wfJob.JobID,
+		})
+	}
+	if len(reclaimed) > 0 {
+		s.store.persistWorkflowRecord(wf)
+	}
+	s.store.mu.Unlock()
+
+	for i, msg := range redeliver {
+		msg.MessageID = s.nextMessageID()
+		s.queueJobMessage(msg)
+		s.logger.Warn().
+			Str("workflow_id", wf.ID).
+			Str("job_key", reclaimed[i]).
+			Str("jobId", msg.JobID).
+			Msg("job lease expired — requeued for another runner")
+	}
+}
+
+// checkJobTimeouts cancels jobs that have exceeded their timeout, and hands
+// back any job whose runner stopped renewing its lease.
 func (s *Server) checkJobTimeouts(wf *Workflow) {
+	s.reclaimExpiredJobLeases(wf)
+
 	s.store.mu.Lock()
 	if wf.Status == WorkflowStatusCompleted {
 		s.store.mu.Unlock()

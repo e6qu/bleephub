@@ -506,6 +506,32 @@ resource "aws_secretsmanager_secret_version" "ssh_host_key" {
   secret_string = tls_private_key.ssh_host.private_key_openssh
 }
 
+# The dqlite transport upgrade carries this in an HTTP header, so the alphabet
+# stays alphanumeric. No human ever needs the value: it only has to be identical
+# across the application task and all three voters.
+resource "random_password" "dqlite_secret" {
+  length  = 64
+  special = false
+}
+
+resource "aws_secretsmanager_secret" "dqlite_secret" {
+  name                    = "${var.name}/dqlite-secret"
+  recovery_window_in_days = 7
+  kms_key_id              = aws_kms_key.this.arn
+  tags                    = local.common_tags
+
+  # Replacing this splits the quorum: the members that restart with the new
+  # value cannot speak to the members still holding the old one.
+  lifecycle {
+    prevent_destroy = true
+  }
+}
+
+resource "aws_secretsmanager_secret_version" "dqlite_secret" {
+  secret_id     = aws_secretsmanager_secret.dqlite_secret.id
+  secret_string = random_password.dqlite_secret.result
+}
+
 resource "aws_cloudwatch_log_group" "this" {
   name              = "/bleephub/${var.name}"
   retention_in_days = var.log_retention_days
@@ -726,7 +752,7 @@ resource "aws_iam_role_policy" "execution_secret" {
   name = "read-admin-token"
   role = aws_iam_role.execution.id
   policy = jsonencode({ Version = "2012-10-17", Statement = [
-    { Effect = "Allow", Action = ["secretsmanager:GetSecretValue"], Resource = compact([aws_secretsmanager_secret.admin_token.arn, aws_secretsmanager_secret.ssh_host_key.arn, var.github_oauth_client_secret_arn, var.shauth_oidc_client_secret_arn]) },
+    { Effect = "Allow", Action = ["secretsmanager:GetSecretValue"], Resource = compact([aws_secretsmanager_secret.admin_token.arn, aws_secretsmanager_secret.ssh_host_key.arn, aws_secretsmanager_secret.dqlite_secret.arn, var.github_oauth_client_secret_arn, var.shauth_oidc_client_secret_arn]) },
     { Effect = "Allow", Action = ["kms:Decrypt"], Resource = aws_kms_key.this.arn }
   ] })
 }
@@ -1063,7 +1089,7 @@ resource "aws_ecs_task_definition" "this" {
       }
     }
   }
-  container_definitions = jsonencode([{ name = "bleephub", image = var.container_image, essential = true, portMappings = [{ containerPort = 5555, protocol = "tcp" }, { containerPort = 2222, protocol = "tcp" }], healthCheck = local.app_health_check, mountPoints = [{ sourceVolume = "sqlite", containerPath = "/var/lib/bleephub", readOnly = false }], environment = concat([{ name = "BLEEPHUB_PERSIST", value = "true" }, { name = "BLEEPHUB_DATA_DIR", value = "/var/lib/bleephub" }, { name = "BLEEPHUB_DQLITE_SERVERS", value = join(",", [for node in sort(keys(local.dqlite_nodes)) : local.dqlite_live_addresses[node]]) }, { name = "BLEEPHUB_S3_BUCKET", value = aws_s3_bucket.git.bucket }, { name = "BLEEPHUB_S3_PREFIX", value = "git" }, { name = "BLEEPHUB_OBJECT_S3_BUCKET", value = aws_s3_bucket.objects.bucket }, { name = "BLEEPHUB_OBJECT_S3_PREFIX", value = "objects" }, { name = "BLEEPHUB_S3_REGION", value = var.region }, { name = "BLEEPHUB_EXTERNAL_URL", value = "https://${var.domain_name}" }, { name = "BLEEPHUB_ADMIN_HOST", value = "admin.${var.domain_name}" }, { name = "BLEEPHUB_SSH_ADDR", value = ":2222" }, { name = "BLEEPHUB_SSH_HOST", value = "ssh.${var.domain_name}" }], local.dqlite_address_map == "" ? [] : [{ name = "BLEEPHUB_DQLITE_ADDRESS_MAP", value = local.dqlite_address_map }], var.github_oauth_client_id == "" ? [] : [{ name = "BLEEPHUB_GITHUB_OAUTH_CLIENT_ID", value = var.github_oauth_client_id }], var.shauth_oidc_issuer == "" ? [] : [{ name = "BLEEPHUB_SHAUTH_ISSUER", value = var.shauth_oidc_issuer }, { name = "BLEEPHUB_SHAUTH_CLIENT_ID", value = var.shauth_oidc_client_id }, { name = "BLEEPHUB_SHAUTH_POST_LOGOUT_URL", value = var.shauth_oidc_post_logout_url }]), secrets = concat([{ name = "BLEEPHUB_ADMIN_TOKEN", valueFrom = aws_secretsmanager_secret.admin_token.arn }, { name = "BLEEPHUB_SSH_HOST_KEY", valueFrom = aws_secretsmanager_secret.ssh_host_key.arn }], var.github_oauth_client_secret_arn == "" ? [] : [{ name = "BLEEPHUB_GITHUB_OAUTH_CLIENT_SECRET", valueFrom = var.github_oauth_client_secret_arn }], var.shauth_oidc_client_secret_arn == "" ? [] : [{ name = "BLEEPHUB_SHAUTH_CLIENT_SECRET", valueFrom = var.shauth_oidc_client_secret_arn }]), logConfiguration = { logDriver = "awslogs", options = { awslogs-group = aws_cloudwatch_log_group.this.name, awslogs-region = var.region, awslogs-stream-prefix = "service" } } }])
+  container_definitions = jsonencode([{ name = "bleephub", image = var.container_image, essential = true, portMappings = [{ containerPort = 5555, protocol = "tcp" }, { containerPort = 2222, protocol = "tcp" }], healthCheck = local.app_health_check, mountPoints = [{ sourceVolume = "sqlite", containerPath = "/var/lib/bleephub", readOnly = false }], environment = concat([{ name = "BLEEPHUB_PERSIST", value = "true" }, { name = "BLEEPHUB_DATA_DIR", value = "/var/lib/bleephub" }, { name = "BLEEPHUB_DQLITE_SERVERS", value = join(",", [for node in sort(keys(local.dqlite_nodes)) : local.dqlite_live_addresses[node]]) }, { name = "BLEEPHUB_S3_BUCKET", value = aws_s3_bucket.git.bucket }, { name = "BLEEPHUB_S3_PREFIX", value = "git" }, { name = "BLEEPHUB_OBJECT_S3_BUCKET", value = aws_s3_bucket.objects.bucket }, { name = "BLEEPHUB_OBJECT_S3_PREFIX", value = "objects" }, { name = "BLEEPHUB_S3_REGION", value = var.region }, { name = "BLEEPHUB_EXTERNAL_URL", value = "https://${var.domain_name}" }, { name = "BLEEPHUB_ADMIN_HOST", value = "admin.${var.domain_name}" }, { name = "BLEEPHUB_SSH_ADDR", value = ":2222" }, { name = "BLEEPHUB_SSH_HOST", value = "ssh.${var.domain_name}" }], local.dqlite_address_map == "" ? [] : [{ name = "BLEEPHUB_DQLITE_ADDRESS_MAP", value = local.dqlite_address_map }], var.github_oauth_client_id == "" ? [] : [{ name = "BLEEPHUB_GITHUB_OAUTH_CLIENT_ID", value = var.github_oauth_client_id }], var.shauth_oidc_issuer == "" ? [] : [{ name = "BLEEPHUB_SHAUTH_ISSUER", value = var.shauth_oidc_issuer }, { name = "BLEEPHUB_SHAUTH_CLIENT_ID", value = var.shauth_oidc_client_id }, { name = "BLEEPHUB_SHAUTH_POST_LOGOUT_URL", value = var.shauth_oidc_post_logout_url }]), secrets = concat([{ name = "BLEEPHUB_ADMIN_TOKEN", valueFrom = aws_secretsmanager_secret.admin_token.arn }, { name = "BLEEPHUB_SSH_HOST_KEY", valueFrom = aws_secretsmanager_secret.ssh_host_key.arn }, { name = "BLEEPHUB_DQLITE_SECRET", valueFrom = aws_secretsmanager_secret.dqlite_secret.arn }], var.github_oauth_client_secret_arn == "" ? [] : [{ name = "BLEEPHUB_GITHUB_OAUTH_CLIENT_SECRET", valueFrom = var.github_oauth_client_secret_arn }], var.shauth_oidc_client_secret_arn == "" ? [] : [{ name = "BLEEPHUB_SHAUTH_CLIENT_SECRET", valueFrom = var.shauth_oidc_client_secret_arn }]), logConfiguration = { logDriver = "awslogs", options = { awslogs-group = aws_cloudwatch_log_group.this.name, awslogs-region = var.region, awslogs-stream-prefix = "service" } } }])
   tags                  = local.common_tags
 
   lifecycle {
@@ -1153,6 +1179,7 @@ resource "aws_ecs_task_definition" "dqlite" {
       { name = "BLEEPHUB_DQLITE_DATA_DIR", value = "/var/lib/dqlite" },
       { name = "BLEEPHUB_DQLITE_ADVERTISE_ADDR", value = local.dqlite_advertise_addresses[each.key] }
     ], local.dqlite_address_map == "" ? [] : [{ name = "BLEEPHUB_DQLITE_ADDRESS_MAP", value = local.dqlite_address_map }], each.key == "0" ? [] : [{ name = "BLEEPHUB_DQLITE_JOIN", value = local.dqlite_live_addresses["0"] }])
+    secrets          = [{ name = "BLEEPHUB_DQLITE_SECRET", valueFrom = aws_secretsmanager_secret.dqlite_secret.arn }]
     logConfiguration = { logDriver = "awslogs", options = { awslogs-group = aws_cloudwatch_log_group.this.name, awslogs-region = var.region, awslogs-stream-prefix = "dqlite-${each.key}" } }
   }])
   tags = merge(local.common_tags, { Name = "${var.name}-dqlite-${each.key}" })

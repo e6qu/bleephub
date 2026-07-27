@@ -199,8 +199,8 @@ func TestDeleteContentsFile_ShaMismatch(t *testing.T) {
 		"sha":     "0000000000000000000000000000000000000000",
 	})
 	defer delResp.Body.Close()
-	if delResp.StatusCode != 422 {
-		t.Fatalf("expected 422 for sha mismatch, got %d", delResp.StatusCode)
+	if delResp.StatusCode != 409 {
+		t.Fatalf("expected 409 for sha mismatch, got %d", delResp.StatusCode)
 	}
 }
 

@@ -563,10 +563,13 @@ func TestCodeQLDatabaseUpload_ActionsInstallationTokenLifecycle(t *testing.T) {
 		t.Fatalf("installation uploader = %v", uploader)
 	}
 
+	// 404, not 403: a repository the token cannot read must answer the same
+	// whether it exists or not, or the pair of statuses proves which private
+	// names are real.
 	resp = postCodeQLDatabase(t, token.Token, other.FullName, "go", "go-database", otherCommit, "application/zip", bundle)
 	resp.Body.Close()
-	if resp.StatusCode != http.StatusForbidden {
-		t.Fatalf("token upload outside selected repository = %d, want 403", resp.StatusCode)
+	if resp.StatusCode != http.StatusNotFound {
+		t.Fatalf("token upload outside selected repository = %d, want 404", resp.StatusCode)
 	}
 
 	contentsOnly := testServer.store.CreateInstallationToken(installation.ID, app.ID, map[string]string{"contents": "write"}, []int{repo.ID})

@@ -26,23 +26,28 @@ var (
 )
 
 func (s *Server) registerTimelineRoutes() {
+	// Every route here writes into one job's plan and addresses that plan by
+	// its {planId}, so each is gated on the runtime token of the job the
+	// {planId} resolves to. Binding to the {scopeId} segment instead would
+	// leave the path parameter the handlers actually read unchecked.
+
 	// Timeline CRUD
-	s.route("POST /_apis/v1/Timeline/{scopeId}/{hubName}/{planId}/timeline", s.handleCreateTimeline)
-	s.route("POST /_apis/v1/Timeline/{scopeId}/{hubName}/{planId}/timeline/{timelineId}", s.handleCreateTimeline)
-	s.route("PUT /_apis/v1/Timeline/{scopeId}/{hubName}/{planId}/timeline/{timelineId}", s.handleCreateTimeline)
+	s.route("POST /_apis/v1/Timeline/{scopeId}/{hubName}/{planId}/timeline", s.requirePlanJob(s.handleCreateTimeline))
+	s.route("POST /_apis/v1/Timeline/{scopeId}/{hubName}/{planId}/timeline/{timelineId}", s.requirePlanJob(s.handleCreateTimeline))
+	s.route("PUT /_apis/v1/Timeline/{scopeId}/{hubName}/{planId}/timeline/{timelineId}", s.requirePlanJob(s.handleCreateTimeline))
 
 	// Timeline records
-	s.route("PATCH /_apis/v1/Timeline/{scopeId}/{hubName}/{planId}/{timelineId}", s.handleUpdateRecords)
+	s.route("PATCH /_apis/v1/Timeline/{scopeId}/{hubName}/{planId}/{timelineId}", s.requirePlanJob(s.handleUpdateRecords))
 
 	// Log files
-	s.route("POST /_apis/v1/Logfiles/{scopeId}/{hubName}/{planId}", s.handleCreateLog)
-	s.route("POST /_apis/v1/Logfiles/{scopeId}/{hubName}/{planId}/{logId}", s.handleUploadLog)
+	s.route("POST /_apis/v1/Logfiles/{scopeId}/{hubName}/{planId}", s.requirePlanJob(s.handleCreateLog))
+	s.route("POST /_apis/v1/Logfiles/{scopeId}/{hubName}/{planId}/{logId}", s.requirePlanJob(s.handleUploadLog))
 
 	// Web console log (live output)
-	s.route("POST /_apis/v1/TimeLineWebConsoleLog/{scopeId}/{hubName}/{planId}/{timelineId}/{recordId}", s.handleWebConsoleLog)
+	s.route("POST /_apis/v1/TimeLineWebConsoleLog/{scopeId}/{hubName}/{planId}/{timelineId}/{recordId}", s.requirePlanJob(s.handleWebConsoleLog))
 
 	// Timeline attachments
-	s.route("PUT /_apis/v1/Timeline/{scopeId}/{hubName}/{planId}/{timelineId}/attachments/{recordId}/{attachType}/{name}", s.handleTimelineAttachment)
+	s.route("PUT /_apis/v1/Timeline/{scopeId}/{hubName}/{planId}/{timelineId}/attachments/{recordId}/{attachType}/{name}", s.requirePlanJob(s.handleTimelineAttachment))
 }
 
 func (s *Server) handleCreateTimeline(w http.ResponseWriter, r *http.Request) {
@@ -182,6 +187,10 @@ func mergeTimelineRecord(stored, incoming *TimelineRecord) {
 
 func (s *Server) handleCreateLog(w http.ResponseWriter, r *http.Request) {
 	logID := s.nextLogID()
+	// Log ids come from one counter shared by every plan, so the id alone
+	// would be the only thing standing between a job and another job's log
+	// content. Record which plan reserved it.
+	s.artifactStore.claimLog(logID, r.PathValue("planId"))
 	s.logger.Debug().Int("logId", logID).Msg("create log container")
 
 	writeJSON(w, http.StatusOK, map[string]interface{}{
@@ -196,6 +205,10 @@ func (s *Server) handleUploadLog(w http.ResponseWriter, r *http.Request) {
 	logID, err := strconv.Atoi(r.PathValue("logId"))
 	if err != nil {
 		http.Error(w, "invalid log ID", http.StatusBadRequest)
+		return
+	}
+	if !s.artifactStore.logBelongsToPlan(logID, r.PathValue("planId")) {
+		http.Error(w, "log not found", http.StatusNotFound)
 		return
 	}
 

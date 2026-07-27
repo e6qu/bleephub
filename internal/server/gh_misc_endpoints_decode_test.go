@@ -62,6 +62,7 @@ func assertProblemsParsingJSON(t *testing.T, w *httptest.ResponseRecorder, surfa
 
 func TestOIDCCustomSubPut_RejectsMalformedJSON(t *testing.T) {
 	s := miscEndpointsTestServer(t)
+	ensureSeededRepo(s, "admin/oidc-repo")
 	w := doMiscReq(s, "PUT", "/api/v3/repos/admin/oidc-repo/actions/oidc/customization/sub", `{"include_claim_keys":`)
 	assertProblemsParsingJSON(t, w, "OIDC custom-sub PUT")
 }
@@ -71,6 +72,7 @@ func TestOIDCCustomSubPut_EmptyBodyOK(t *testing.T) {
 	// "missing field defaults to []" reading; the strict-decode fix should
 	// only reject *malformed* JSON, not absent bodies.
 	s := miscEndpointsTestServer(t)
+	ensureSeededRepo(s, "admin/oidc-repo")
 	w := doMiscReq(s, "PUT", "/api/v3/repos/admin/oidc-repo/actions/oidc/customization/sub", "")
 	if w.Code != http.StatusCreated {
 		t.Fatalf("empty-body status = %d, want 201; body = %s", w.Code, w.Body.String())

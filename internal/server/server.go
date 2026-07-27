@@ -12,6 +12,7 @@ import (
 	"net/url"
 	"os"
 	"runtime/debug"
+	"sort"
 	"strconv"
 	"strings"
 	"sync"
@@ -47,6 +48,16 @@ type Server struct {
 	pagesJekyllExecutable  string
 	identity               identityConfig
 	build                  BuildInfo
+	// allowPrivateOutboundTargets opts every server-initiated fetch — webhook
+	// delivery and source import — out of the public-address requirement, for
+	// a development or test instance whose receivers and sources live on
+	// loopback. Denying is the default; nothing turns this on implicitly, and
+	// it never relaxes the http/https scheme rule.
+	allowPrivateOutboundTargets bool
+	webhookClientsOnce          sync.Once
+	webhookClients              [2]*http.Client // [verifying TLS, insecure_ssl=1]
+	webhookPoolOnce             sync.Once
+	webhookPool                 *webhookDispatcher
 	// responseObserver, when set before ListenAndServe, sees every
 	// request/response pair in the handler chain. The test harness
 	// assigns it (same package) to validate /api/v3 response shapes
@@ -84,6 +95,31 @@ func (s *Server) route(pattern string, handler http.HandlerFunc) {
 	// /api/v3 routes are instrumented so served requests feed the API
 	// insights stats (gh_api_insights.go); other patterns pass through.
 	s.mux.HandleFunc(pattern, s.instrumentAPIRoute(pattern, s.enforceFineGrainedPATResource(pattern, handler)))
+}
+
+// retiredEnvVars maps an environment variable that no longer exists to the one
+// that replaced it. A renamed switch that is simply ignored is a silent loss of
+// whatever the operator configured — here, an instance that would stop
+// delivering to its own loopback receivers with nothing said — so startup
+// refuses instead.
+var retiredEnvVars = map[string]string{
+	"BLEEPHUB_ALLOW_PRIVATE_WEBHOOK_TARGETS": "BLEEPHUB_ALLOW_PRIVATE_OUTBOUND_TARGETS (it now gates source import as well as webhook delivery)",
+}
+
+// retiredEnvVarMessage returns the startup refusal for the first retired
+// variable still set, or "" when none is.
+func retiredEnvVarMessage() string {
+	names := make([]string, 0, len(retiredEnvVars))
+	for name := range retiredEnvVars {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+	for _, name := range names {
+		if _, present := os.LookupEnv(name); present {
+			return name + " has been renamed to " + retiredEnvVars[name] + "; unset the old name and set the new one"
+		}
+	}
+	return ""
 }
 
 // NewServer creates a bleephub server with all routes registered.
@@ -152,6 +188,11 @@ func NewServer(addr string, logger zerolog.Logger, options ...ServerOption) *Ser
 		pagesJekyllExecutable:  coalesceStr(os.Getenv("BLEEPHUB_PAGES_JEKYLL_EXECUTABLE"), "bleephub-pages-jekyll"),
 		identity:               identityConfigFromEnv(),
 		build:                  BuildInfo{Version: "development", Commit: "none", PublishedAt: "not-yet-published"},
+
+		allowPrivateOutboundTargets: strings.EqualFold(strings.TrimSpace(os.Getenv("BLEEPHUB_ALLOW_PRIVATE_OUTBOUND_TARGETS")), "true"),
+	}
+	if msg := retiredEnvVarMessage(); msg != "" {
+		logger.Fatal().Msg(msg)
 	}
 	for _, option := range options {
 		option(s)
@@ -604,9 +645,6 @@ func (s *Server) adminHostMiddleware(next http.Handler) http.Handler {
 	})
 }
 
-// prefixStripMiddleware removes any path segments before known API prefixes.
-// The runner prepends the tenant URL path to all API calls, e.g.
-// /owner/repo/_apis/... instead of /_apis/...
 // internalAuthMiddleware gates the operator-facing /internal/* surface — the
 // sim-control + dashboard endpoints that have no GitHub API equivalent
 // (job/workflow submission + status under /internal/exec, app/oauth-app
@@ -671,6 +709,10 @@ func (s *Server) internalTokenUser(r *http.Request) *User {
 	return user
 }
 
+// prefixStripMiddleware removes any path segments before the known API
+// prefixes. The runner prepends the tenant URL path to every call, so a
+// request arrives as /owner/repo/_apis/... rather than /_apis/... — which
+// is why a refused runner call logs the stripped path.
 func (s *Server) prefixStripMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		path := r.URL.Path

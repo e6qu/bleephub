@@ -1,0 +1,627 @@
+package bleephub
+
+import (
+	"encoding/base64"
+	"go/ast"
+	"go/parser"
+	"go/token"
+	"net/http"
+	"strconv"
+	"strings"
+	"testing"
+	"time"
+
+	"github.com/go-git/go-git/v5/plumbing"
+)
+
+// --- Presented credentials that do not verify ---
+
+// TestPresentedCredentialThatDoesNotVerifyIsRejected pins the difference
+// between "no credential" and "a credential that is not good". Every
+// verification failure used to be discarded and the request continued as
+// anonymous, so a revoked, expired or forged token read whatever the public
+// surface answers instead of being told it was rejected.
+func TestPresentedCredentialThatDoesNotVerifyIsRejected(t *testing.T) {
+	ghPost(t, "/api/v3/user/repos", defaultToken, map[string]interface{}{
+		"name":      "credprobe",
+		"auto_init": true,
+	}).Body.Close()
+	const path = "/api/v3/repos/admin/credprobe"
+
+	// Positive controls: no credential at all stays anonymous and reads the
+	// public repository, and a good credential still works.
+	requireStatus(t, ghGet(t, path, ""), http.StatusOK)
+	requireStatus(t, ghGet(t, path, defaultToken), http.StatusOK)
+
+	for name, credential := range map[string]string{
+		"unknown classic pat":  "ghp_0000000000000000000000000000000000",
+		"unknown oauth token":  "gho_0000000000000000000000000000000000",
+		"unknown app user":     "ghu_0000000000000000000000000000000000",
+		"unknown installation": "ghs_0000000000000000000000000000000000",
+		"refresh token":        "ghr_0000000000000000000000000000000000",
+		"unverifiable jwt":     "eyJhbGciOiJSUzI1NiJ9.eyJpc3MiOiI5OTkifQ.bm90LWEtc2lnbmF0dXJl",
+		"free-form garbage":    "not-a-token-at-all",
+	} {
+		t.Run(name, func(t *testing.T) {
+			requireStatus(t, ghGet(t, path, credential), http.StatusUnauthorized)
+		})
+	}
+}
+
+// TestSessionSurvivesWithoutAnAuthorizationHeader is the other half of the
+// control: rejecting presented-but-invalid credentials must not reject the
+// requests that present none.
+func TestSessionSurvivesWithoutAnAuthorizationHeader(t *testing.T) {
+	requireStatus(t, ghGet(t, "/api/v3/zen", ""), http.StatusOK)
+	requireStatus(t, ghGet(t, "/api/v3/meta", ""), http.StatusOK)
+}
+
+// --- Classic OAuth scopes ---
+
+// TestClassicScopesGateOrganizationDeletion is the finding itself: the scope
+// string was stored, persisted and echoed in X-OAuth-Scopes while being
+// enforced nowhere, so a token the user deliberately narrowed to read:org
+// deleted their organizations.
+func TestClassicScopesGateOrganizationDeletion(t *testing.T) {
+	owner := createTestUser(t, "scopedel-owner")
+	readOnly := testServer.store.CreateToken(owner.ID, "read:org").Value
+	admin := testServer.store.CreateToken(owner.ID, "admin:org").Value
+
+	if org := testServer.store.CreateOrg(owner, "scopedel-org", "", ""); org == nil {
+		t.Fatal("CreateOrg returned nil")
+	}
+
+	requireStatus(t, ghDelete(t, "/api/v3/orgs/scopedel-org", readOnly), http.StatusForbidden)
+	if testServer.store.GetOrg("scopedel-org") == nil {
+		t.Fatal("a read:org token deleted the organization")
+	}
+
+	// Positive control: the scope that does grant it still does.
+	requireStatus(t, ghDelete(t, "/api/v3/orgs/scopedel-org", admin), http.StatusNoContent)
+	if testServer.store.GetOrg("scopedel-org") != nil {
+		t.Fatal("an admin:org token failed to delete the organization")
+	}
+}
+
+// TestClassicScopesAdmitWhatTheyGrant is the over-blocking control. Each of
+// these is a write a real classic scope selection permits, and each one is
+// what a too-tight gate breaks first — CI drives this surface with the real
+// gh CLI.
+func TestClassicScopesAdmitWhatTheyGrant(t *testing.T) {
+	owner := createTestUser(t, "scopeok-owner")
+	repoTok := testServer.store.CreateToken(owner.ID, "repo").Value
+	adminOrgTok := testServer.store.CreateToken(owner.ID, "admin:org").Value
+
+	repo := testServer.store.CreateRepo(owner, "scopeok-repo", "", false)
+	if repo == nil {
+		t.Fatal("CreateRepo returned nil")
+	}
+	base := "/api/v3/repos/scopeok-owner/scopeok-repo"
+
+	// `repo` covers repository contents, issues and repository administration.
+	requireStatus(t, ghPut(t, base+"/contents/hello.txt", repoTok, map[string]interface{}{
+		"message": "add",
+		"content": base64.StdEncoding.EncodeToString([]byte("hi\n")),
+	}), http.StatusCreated)
+	requireStatus(t, ghPost(t, base+"/issues", repoTok, map[string]interface{}{"title": "t"}), http.StatusCreated)
+	requireStatus(t, ghPost(t, base+"/hooks", repoTok, map[string]interface{}{
+		"config": map[string]interface{}{"url": "https://example.test/hook"},
+	}), http.StatusCreated)
+	requireStatus(t, ghPatch(t, base, repoTok, map[string]interface{}{"description": "d"}), http.StatusOK)
+
+	// `admin:org` covers organization administration.
+	if org := testServer.store.CreateOrg(owner, "scopeok-org", "", ""); org == nil {
+		t.Fatal("CreateOrg returned nil")
+	}
+	requireStatus(t, ghPatch(t, "/api/v3/orgs/scopeok-org", adminOrgTok, map[string]interface{}{
+		"description": "d",
+	}), http.StatusOK)
+	requireStatus(t, ghPost(t, "/api/v3/orgs/scopeok-org/teams", adminOrgTok, map[string]interface{}{
+		"name": "scopeok-team",
+	}), http.StatusCreated)
+}
+
+// TestClassicScopeSeparatorsBothParse: X-OAuth-Scopes and stored PATs are
+// comma-separated, the OAuth `scope` request parameter is space-separated, and
+// this codebase mints tokens both ways. A parser that knows only one of them
+// reads the other as a single nonsense scope and grants nothing.
+func TestClassicScopeSeparatorsBothParse(t *testing.T) {
+	for _, scopes := range []string{"repo,read:org", "repo read:org", "repo, read:org", " repo\tread:org "} {
+		if !classicScopeCovers(scopes, scopeContents, permWrite) {
+			t.Errorf("scopes %q did not grant contents:write", scopes)
+		}
+		if !classicScopeCovers(scopes, scopeOrgAdministration, permRead) {
+			t.Errorf("scopes %q did not grant organization_administration:read", scopes)
+		}
+		if classicScopeCovers(scopes, scopeOrgAdministration, permWrite) {
+			t.Errorf("scopes %q granted organization_administration:write", scopes)
+		}
+	}
+}
+
+// TestUnscopedClassicTokenReadsPublicMetadataOnly documents what an empty
+// scope string means. It is a real GitHub credential shape — a classic PAT
+// with nothing selected reads public information — and not an internal
+// "everything" escape hatch.
+func TestUnscopedClassicTokenReadsPublicMetadataOnly(t *testing.T) {
+	if !classicScopeCovers("", scopeMetadata, permRead) {
+		t.Error("an unscoped token cannot read public metadata")
+	}
+	for _, scope := range []permScope{scopeContents, scopeIssues, scopeOrgAdministration, scopeAdministration} {
+		if classicScopeCovers("", scope, permWrite) {
+			t.Errorf("an unscoped token was granted %s:write", scope)
+		}
+	}
+}
+
+// TestClassicScopeGrantsCoverEveryPermission is the loudness guard on the
+// mapping table: a permission constant introduced without a classic mapping
+// must fail here rather than turn into a silent deny (or, in the shape this
+// replaced, a silent admit) for every classic credential.
+func TestClassicScopeGrantsCoverEveryPermission(t *testing.T) {
+	declared := map[string]bool{}
+	fset := token.NewFileSet()
+	file, err := parser.ParseFile(fset, "gh_apps_perms.go", nil, 0)
+	if err != nil {
+		t.Fatalf("parsing gh_apps_perms.go: %v", err)
+	}
+	ast.Inspect(file, func(node ast.Node) bool {
+		spec, ok := node.(*ast.ValueSpec)
+		if !ok {
+			return true
+		}
+		ident, ok := spec.Type.(*ast.Ident)
+		if !ok || ident.Name != "permScope" {
+			return true
+		}
+		for _, name := range spec.Names {
+			declared[name.Name] = true
+		}
+		return true
+	})
+	if len(declared) == 0 {
+		t.Fatal("found no permScope constants; the AST walk is looking in the wrong place")
+	}
+
+	listed := map[string]bool{}
+	for _, scope := range allPermScopes {
+		listed[string(scope)] = true
+		if _, ok := classicScopeGrants[scope]; !ok {
+			t.Errorf("permission %s has no classic OAuth scope mapping", scope)
+		}
+	}
+	// The AST gives constant identifiers; map them to their values through the
+	// enumerated list, which is what the rest of the package uses.
+	if len(declared) != len(allPermScopes) {
+		t.Errorf("gh_apps_perms.go declares %d permScope constants but allPermScopes lists %d; add the new one to allPermScopes and to classicScopeGrants",
+			len(declared), len(allPermScopes))
+	}
+}
+
+// --- Workflow trigger refs ---
+
+const forkTriggerBaseYAML = `name: base-ci
+on: [pull_request]
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo base
+`
+
+const forkTriggerForkYAML = `name: fork-ci
+on: [pull_request]
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo fork
+`
+
+// TestForkPullRequestTriggersWithTheBaseWorkflowDefinition covers both halves:
+// a fork pull request produced no run at all (the fork's branch does not
+// resolve in the base repository), and the definition that does run must be
+// the base repository's — a fork supplying its own could rewrite the workflow
+// and read the base repository's secrets.
+func TestForkPullRequestTriggersWithTheBaseWorkflowDefinition(t *testing.T) {
+	const baseKey = "forkbase-owner/fork-app"
+	const forkKey = "forkhead-owner/fork-app"
+	cancelRepoRunsCleanup(t, baseKey)
+
+	commitWorkflowYAMLToStorage(t, testServer, baseKey, ".github/workflows/ci.yml", forkTriggerBaseYAML)
+	forkHeadSha := commitWorkflowYAMLToStorage(t, testServer, forkKey, ".github/workflows/ci.yml", forkTriggerForkYAML)
+
+	payload := map[string]interface{}{
+		"pull_request": map[string]interface{}{
+			"number": float64(1),
+			"head": map[string]interface{}{
+				"ref":  "contrib-branch",
+				"sha":  forkHeadSha,
+				"repo": map[string]interface{}{"full_name": forkKey},
+			},
+			"base": map[string]interface{}{
+				"ref":  "main",
+				"repo": map[string]interface{}{"full_name": baseKey},
+			},
+		},
+	}
+	testServer.triggerWorkflowsForEvent(baseKey, "pull_request", "opened", "refs/heads/contrib-branch", payload)
+
+	runs := runsForRepo(t, baseKey)
+	if len(runs) != 1 {
+		t.Fatalf("fork pull request produced %d runs, want 1", len(runs))
+	}
+	if runs[0].Name != "base-ci" {
+		t.Fatalf("run used the %q definition; the base repository's is base-ci", runs[0].Name)
+	}
+	if runs[0].Sha != forkHeadSha {
+		t.Fatalf("run sha = %q, want the pull request head %q", runs[0].Sha, forkHeadSha)
+	}
+
+	// And the approval machinery below the trigger, which was unreachable
+	// while no fork pull request ever produced a run, now engages.
+	perms := testServer.store.GetRepoActionsPermissions(baseKey)
+	perms.ForkPRContributorApproval = "all_external_contributors"
+	testServer.store.SetRepoActionsPermissions(baseKey, perms)
+	testServer.triggerWorkflowsForEvent(baseKey, "pull_request", "synchronize", "refs/heads/contrib-branch", payload)
+
+	runs = runsForRepo(t, baseKey)
+	if len(runs) != 2 {
+		t.Fatalf("second fork pull request event produced %d runs in total, want 2", len(runs))
+	}
+	held := 0
+	for _, run := range runs {
+		if run.Status == WorkflowStatusActionRequired {
+			held++
+		}
+	}
+	if held != 1 {
+		t.Fatalf("%d runs held for fork-PR approval, want 1", held)
+	}
+}
+
+// TestPushRunsTheDefinitionOnThePushedRef: definitions were read from HEAD, so
+// a push to any other branch ran whatever the default branch happened to say.
+func TestPushRunsTheDefinitionOnThePushedRef(t *testing.T) {
+	const repoKey = "refdef-owner/refdef-app"
+	cancelRepoRunsCleanup(t, repoKey)
+
+	commitWorkflowYAMLToStorage(t, testServer, repoKey, ".github/workflows/ci.yml", `name: main-ci
+on: [push]
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo main
+`)
+	stor := testServer.store.GetGitStorage("refdef-owner", "refdef-app")
+	if stor == nil {
+		t.Fatal("no git storage for the fixture repository")
+	}
+	mainSha := resolveRefSha(stor, "refs/heads/main")
+	if mainSha == zeroCommitSha {
+		t.Fatal("fixture main branch does not resolve")
+	}
+	if err := stor.SetReference(plumbing.NewHashReference(
+		plumbing.NewBranchReferenceName("feature"), plumbing.NewHash(mainSha))); err != nil {
+		t.Fatalf("branch feature: %v", err)
+	}
+	if _, err := createFileCommit(stor, "feature", ".github/workflows/ci.yml", `name: feature-ci
+on: [push]
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo feature
+`, "redefine on feature", repoSignature("refdef-owner", "refdef@bleephub.local")); err != nil {
+		t.Fatalf("commit on feature: %v", err)
+	}
+	// Committing through a worktree leaves HEAD on the commit it just made.
+	// The fixture is a bare repository whose HEAD is the default branch, and
+	// the whole point of the test is that HEAD is not the triggering ref.
+	if err := stor.SetReference(plumbing.NewSymbolicReference(
+		plumbing.HEAD, plumbing.NewBranchReferenceName("main"))); err != nil {
+		t.Fatalf("restore HEAD: %v", err)
+	}
+
+	testServer.triggerWorkflowsForEvent(repoKey, "push", "", "refs/heads/feature", nil)
+	runs := runsForRepo(t, repoKey)
+	if len(runs) != 1 || runs[0].Name != "feature-ci" {
+		t.Fatalf("push to feature produced %v, want one run named feature-ci", runNames(runs))
+	}
+
+	// Positive control: the default branch still runs its own definition.
+	testServer.triggerWorkflowsForEvent(repoKey, "push", "", "refs/heads/main", nil)
+	runs = runsForRepo(t, repoKey)
+	if len(runs) != 2 {
+		t.Fatalf("push to main produced %v, want a second run", runNames(runs))
+	}
+	names := runNames(runs)
+	if !strings.Contains(strings.Join(names, ","), "main-ci") {
+		t.Fatalf("push to main produced %v, want one named main-ci", names)
+	}
+}
+
+func runsForRepo(t *testing.T, repoKey string) []*Workflow {
+	t.Helper()
+	testServer.store.mu.RLock()
+	defer testServer.store.mu.RUnlock()
+	var out []*Workflow
+	for _, wf := range testServer.store.Workflows {
+		if wf.RepoFullName == repoKey {
+			out = append(out, wf)
+		}
+	}
+	return out
+}
+
+func runNames(runs []*Workflow) []string {
+	names := make([]string, 0, len(runs))
+	for _, run := range runs {
+		names = append(names, run.Name)
+	}
+	return names
+}
+
+// --- Job leases ---
+
+// TestExpiredJobLeaseIsRedelivered: the lease was written at dispatch, renewed
+// on every runner poll, and read nowhere, so a runner that vanished mid-job
+// left the job assigned to it forever.
+func TestExpiredJobLeaseIsRedelivered(t *testing.T) {
+	const repoKey = "leaseowner/lease-app"
+	cancelRepoRunsCleanup(t, repoKey)
+	commitWorkflowYAMLToStorage(t, testServer, repoKey, ".github/workflows/ci.yml", `name: lease-ci
+on: [push]
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo hi
+`)
+	testServer.triggerWorkflowsForEvent(repoKey, "push", "", "refs/heads/main", nil)
+
+	var wf *Workflow
+	waitUntil(t, "dispatched run", func() bool {
+		runs := runsForRepo(t, repoKey)
+		if len(runs) == 0 {
+			return false
+		}
+		wf = runs[0]
+		return len(wf.Jobs) > 0
+	})
+
+	var jobID string
+	for _, wfJob := range wf.Jobs {
+		jobID = wfJob.JobID
+	}
+	waitUntil(t, "queued job message", func() bool { return pendingMessageFor(jobID) != nil })
+
+	// A runner takes the message and then disappears: the message leaves the
+	// queue, the job is assigned, and nothing ever renews the lease.
+	testServer.store.mu.Lock()
+	remaining := testServer.store.PendingMessages[:0]
+	for _, msg := range testServer.store.PendingMessages {
+		if msg.JobID != jobID {
+			remaining = append(remaining, msg)
+		}
+	}
+	testServer.store.PendingMessages = remaining
+	job := testServer.store.Jobs[jobID]
+	if job == nil {
+		testServer.store.mu.Unlock()
+		t.Fatalf("no engine job for %s", jobID)
+	}
+	job.AgentID = 4242
+	job.Status = "running"
+	job.LockedUntil = time.Now().Add(-time.Minute)
+	testServer.store.mu.Unlock()
+
+	testServer.checkJobTimeouts(wf)
+
+	if pendingMessageFor(jobID) == nil {
+		t.Fatal("an expired lease left the job with the runner that vanished; it was never requeued")
+	}
+	testServer.store.mu.RLock()
+	defer testServer.store.mu.RUnlock()
+	if job.AgentID != 0 {
+		t.Errorf("reclaimed job is still assigned to agent %d", job.AgentID)
+	}
+	if job.Status != "queued" {
+		t.Errorf("reclaimed job status = %q, want queued", job.Status)
+	}
+	if !job.LockedUntil.After(time.Now()) {
+		t.Error("reclaimed job kept its expired lease and will be reclaimed again on every tick")
+	}
+}
+
+// TestLiveJobLeaseIsLeftAlone is the control: reclaiming must not steal a job
+// from a runner that is still renewing.
+func TestLiveJobLeaseIsLeftAlone(t *testing.T) {
+	const repoKey = "leaselive/lease-app"
+	cancelRepoRunsCleanup(t, repoKey)
+	commitWorkflowYAMLToStorage(t, testServer, repoKey, ".github/workflows/ci.yml", `name: lease-live
+on: [push]
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo hi
+`)
+	testServer.triggerWorkflowsForEvent(repoKey, "push", "", "refs/heads/main", nil)
+
+	var wf *Workflow
+	waitUntil(t, "dispatched run", func() bool {
+		runs := runsForRepo(t, repoKey)
+		if len(runs) == 0 {
+			return false
+		}
+		wf = runs[0]
+		return len(wf.Jobs) > 0
+	})
+	var jobID string
+	for _, wfJob := range wf.Jobs {
+		jobID = wfJob.JobID
+	}
+	waitUntil(t, "queued job message", func() bool { return pendingMessageFor(jobID) != nil })
+
+	testServer.store.mu.Lock()
+	remaining := testServer.store.PendingMessages[:0]
+	for _, msg := range testServer.store.PendingMessages {
+		if msg.JobID != jobID {
+			remaining = append(remaining, msg)
+		}
+	}
+	testServer.store.PendingMessages = remaining
+	job := testServer.store.Jobs[jobID]
+	job.AgentID = 99
+	job.Status = "running"
+	job.LockedUntil = time.Now().Add(time.Hour)
+	testServer.store.mu.Unlock()
+
+	testServer.checkJobTimeouts(wf)
+
+	if pendingMessageFor(jobID) != nil {
+		t.Fatal("a live lease was reclaimed; the job would run twice")
+	}
+	testServer.store.mu.RLock()
+	defer testServer.store.mu.RUnlock()
+	if job.AgentID != 99 {
+		t.Errorf("live job was unassigned from its runner (agent %d)", job.AgentID)
+	}
+}
+
+func pendingMessageFor(jobID string) *TaskAgentMessage {
+	testServer.store.mu.RLock()
+	defer testServer.store.mu.RUnlock()
+	for _, msg := range testServer.store.PendingMessages {
+		if msg.JobID == jobID {
+			return msg
+		}
+	}
+	return nil
+}
+
+// --- Contents preconditions ---
+
+// TestPutContentsEnforcesTheBlobSHA: the sha was decoded and never read, so
+// every write was an unconditional overwrite and two editors of the same file
+// silently lost one edit.
+func TestPutContentsEnforcesTheBlobSHA(t *testing.T) {
+	ghPost(t, "/api/v3/user/repos", defaultToken, map[string]interface{}{
+		"name":      "contents-sha",
+		"auto_init": true,
+	}).Body.Close()
+	const path = "/api/v3/repos/admin/contents-sha/contents/note.txt"
+
+	// Creating carries no sha.
+	created := decodeJSONWithStatus(t, ghPut(t, path, defaultToken, map[string]interface{}{
+		"message": "create",
+		"content": base64.StdEncoding.EncodeToString([]byte("one\n")),
+	}), http.StatusCreated)
+	content, _ := created["content"].(map[string]interface{})
+	currentSHA, _ := content["sha"].(string)
+	if currentSHA == "" {
+		t.Fatalf("create response carried no content sha: %v", created)
+	}
+
+	// Replacing with a sha that is not the current blob is a lost update.
+	requireStatus(t, ghPut(t, path, defaultToken, map[string]interface{}{
+		"message": "stale overwrite",
+		"content": base64.StdEncoding.EncodeToString([]byte("stale\n")),
+		"sha":     "0000000000000000000000000000000000000000",
+	}), http.StatusConflict)
+
+	// Replacing without any sha is equally blind.
+	requireStatus(t, ghPut(t, path, defaultToken, map[string]interface{}{
+		"message": "blind overwrite",
+		"content": base64.StdEncoding.EncodeToString([]byte("blind\n")),
+	}), http.StatusUnprocessableEntity)
+
+	// The refusals must not have changed the file.
+	got := decodeJSONWithStatus(t, ghGet(t, path, defaultToken), http.StatusOK)
+	if got["sha"] != currentSHA {
+		t.Fatalf("a refused write changed the file: sha %v, want %v", got["sha"], currentSHA)
+	}
+
+	// Positive control: the current sha replaces it, and updating answers 200.
+	updated := decodeJSONWithStatus(t, ghPut(t, path, defaultToken, map[string]interface{}{
+		"message": "update",
+		"content": base64.StdEncoding.EncodeToString([]byte("two\n")),
+		"sha":     currentSHA,
+	}), http.StatusOK)
+	newContent, _ := updated["content"].(map[string]interface{})
+	if newContent["sha"] == currentSHA {
+		t.Fatal("the accepted write did not change the blob")
+	}
+
+	// A sha for a path that holds no file names something that is not there.
+	requireStatus(t, ghPut(t, "/api/v3/repos/admin/contents-sha/contents/absent.txt", defaultToken,
+		map[string]interface{}{
+			"message": "create with a sha",
+			"content": base64.StdEncoding.EncodeToString([]byte("x\n")),
+			"sha":     currentSHA,
+		}), http.StatusUnprocessableEntity)
+}
+
+// --- Pull requests are issues ---
+
+// TestPullRequestsAppearAsIssues: on GitHub every pull request is also an
+// issue, and the `pull_request` member is what distinguishes them. Both the
+// listing and the by-number read omitted pull requests entirely.
+func TestPullRequestsAppearAsIssues(t *testing.T) {
+	owner := createTestUser(t, "prissue-owner")
+	repo := testServer.store.CreateRepo(owner, "prissue-repo", "", false)
+	if repo == nil {
+		t.Fatal("CreateRepo returned nil")
+	}
+	seedStorePullRequestBranches(t, testServer.store, repo, "feature")
+	issue := testServer.store.CreateIssue(repo.ID, owner.ID, "a plain issue", "", nil, nil, 0)
+	if issue == nil {
+		t.Fatal("CreateIssue returned nil")
+	}
+	pr := testServer.store.CreatePullRequest(repo.ID, owner.ID, "a pull request", "", "feature", "main", false, nil, nil, 0)
+	if pr == nil {
+		t.Fatal("CreatePullRequest returned nil")
+	}
+
+	listed := decodeJSONArray(t, ghGet(t, "/api/v3/repos/prissue-owner/prissue-repo/issues", defaultToken))
+	byNumber := map[float64]map[string]interface{}{}
+	for _, row := range listed {
+		number, _ := row["number"].(float64)
+		byNumber[number] = row
+	}
+
+	prRow := byNumber[float64(pr.Number)]
+	if prRow == nil {
+		t.Fatalf("pull request #%d is missing from the issues list (%d rows)", pr.Number, len(listed))
+	}
+	links, _ := prRow["pull_request"].(map[string]interface{})
+	if links == nil {
+		t.Fatalf("pull request row carries no pull_request member: %v", prRow)
+	}
+	for _, key := range []string{"url", "html_url", "diff_url", "patch_url"} {
+		if s, _ := links[key].(string); s == "" {
+			t.Errorf("pull_request.%s is empty", key)
+		}
+	}
+
+	issueRow := byNumber[float64(issue.Number)]
+	if issueRow == nil {
+		t.Fatalf("plain issue #%d disappeared from the issues list", issue.Number)
+	}
+	if _, has := issueRow["pull_request"]; has {
+		t.Error("a plain issue carries a pull_request member; nothing could tell the two apart")
+	}
+
+	// The by-number read answers for a pull request too.
+	fetched := decodeJSONWithStatus(t,
+		ghGet(t, "/api/v3/repos/prissue-owner/prissue-repo/issues/"+strconv.Itoa(pr.Number), defaultToken),
+		http.StatusOK)
+	if _, has := fetched["pull_request"]; !has {
+		t.Errorf("GET issues/%d carries no pull_request member: %v", pr.Number, fetched)
+	}
+	if fetched["title"] != "a pull request" {
+		t.Errorf("GET issues/%d returned %v", pr.Number, fetched["title"])
+	}
+}

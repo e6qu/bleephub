@@ -599,13 +599,15 @@ func TestPersistenceReload_DeleteRepoPurgesIssueAndPullChildren(t *testing.T) {
 	if org == nil {
 		t.Fatalf("organization %s did not reload", orgLogin)
 	}
+	// Identifier counters are durable, so a recreation after a reload starts
+	// past every identifier ever issued rather than at the surviving maximum.
 	recreated := st2.CreateOrgRepo(org, admin, "deleted-issue-children", "", false)
-	if recreated.ID != oldRepoID {
-		t.Fatalf("fixture did not reuse repository ID after reload: got %d want %d", recreated.ID, oldRepoID)
+	if recreated.ID <= oldRepoID {
+		t.Fatalf("recreated repository reused identifier %d, which the deleted repository already held (%d)", recreated.ID, oldRepoID)
 	}
 	fresh := st2.CreateIssue(recreated.ID, admin.ID, "fresh", "", nil, nil, 0)
-	if fresh.ID != oldIssueID {
-		t.Fatalf("fixture did not reuse issue ID after reload: got %d want %d", fresh.ID, oldIssueID)
+	if fresh.ID <= oldIssueID {
+		t.Fatalf("fresh issue reused identifier %d, which the deleted issue already held (%d)", fresh.ID, oldIssueID)
 	}
 	if got := st2.CountCommentsFor("issue", fresh.ID); got != 0 {
 		t.Fatalf("fresh issue inherited stale comment count = %d", got)

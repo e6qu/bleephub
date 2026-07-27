@@ -427,6 +427,9 @@ func (s *Server) handleSetCodeSecurityConfigurationAsDefault(w http.ResponseWrit
 		return
 	}
 	updated := s.store.SetCodeSecurityConfigurationAsDefault(c.OrgLogin, c.ID, *req.DefaultForNewRepos)
+	if !mutated(w, updated) {
+		return
+	}
 	writeJSON(w, http.StatusOK, map[string]interface{}{
 		"default_for_new_repos": updated.DefaultForNewRepos,
 		"configuration":         codeSecurityConfigurationJSON(updated, s.baseURL(r)),
@@ -474,7 +477,7 @@ func (s *Server) handleGetRepoCodeSecurityConfiguration(w http.ResponseWriter, r
 		writeGHError(w, http.StatusNotFound, "Not Found")
 		return
 	}
-	if !s.viewerCanReadRepo(r, repo) {
+	if !s.viewerCanReadRepo(r.Context(), repo) {
 		writeGHError(w, http.StatusNotFound, "Not Found")
 		return
 	}
@@ -734,6 +737,9 @@ func (st *Store) SetCodeSecurityConfigurationAsDefault(orgLogin string, id int, 
 	st.mu.Lock()
 	defer st.mu.Unlock()
 	c := st.CodeSecurityConfigs[orgLogin][id]
+	if c == nil {
+		return nil
+	}
 	if defaultFor != "none" {
 		for _, other := range st.CodeSecurityConfigs[orgLogin] {
 			if other.ID == id || other.DefaultForNewRepos == "none" || other.DefaultForNewRepos == "" {

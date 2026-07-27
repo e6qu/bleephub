@@ -56,7 +56,7 @@ func TestBusyRunnerNeverReceivesJobs(t *testing.T) {
 	s.queueJobMessage(&TaskAgentMessage{MessageID: 7, JobID: "job-2", Labels: []string{"self-hosted"}})
 
 	// While busy, polls must not pull the queued job.
-	if got := s.pullPendingMessage(sess); got != nil {
+	if got := s.pullPendingMessage(sess, runnerScope{Org: "octo"}); got != nil {
 		t.Fatal("busy runner's poll pulled a job message")
 	}
 
@@ -64,7 +64,7 @@ func TestBusyRunnerNeverReceivesJobs(t *testing.T) {
 	s.store.mu.Lock()
 	s.store.Jobs["job-1"].Status = "completed"
 	s.store.mu.Unlock()
-	got := s.pullPendingMessage(sess)
+	got := s.pullPendingMessage(sess, runnerScope{Org: "octo"})
 	if got == nil || got.MessageID != 7 {
 		t.Fatalf("free runner's poll did not pull the pending job: %v", got)
 	}
@@ -103,17 +103,17 @@ func TestLabelRoutingQueuesUntilMatch(t *testing.T) {
 	s.queueJobMessage(&TaskAgentMessage{MessageID: 1, Labels: []string{"self-hosted", "gpu"}})
 
 	// A poll from a non-matching runner must not pull the job.
-	if got := s.pullPendingMessage(plain); got != nil {
+	if got := s.pullPendingMessage(plain, runnerScope{Org: "octo"}); got != nil {
 		t.Fatal("job pulled by a runner without the required labels")
 	}
 
 	// A matching runner's poll pulls it.
 	gpu := mkSession("b-gpu", "self-hosted", "linux", "gpu")
-	got := s.pullPendingMessage(gpu)
+	got := s.pullPendingMessage(gpu, runnerScope{Org: "octo"})
 	if got == nil || got.MessageID != 1 {
 		t.Fatalf("matching runner's poll did not pull the job: %v", got)
 	}
-	if again := s.pullPendingMessage(gpu); again != nil {
+	if again := s.pullPendingMessage(gpu, runnerScope{Org: "octo"}); again != nil {
 		t.Fatal("message pulled twice")
 	}
 }

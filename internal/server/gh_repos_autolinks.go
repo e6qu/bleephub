@@ -23,8 +23,7 @@ func (s *Server) handleListAutolinks(w http.ResponseWriter, r *http.Request) {
 		writeGHError(w, http.StatusNotFound, "Not Found")
 		return
 	}
-	user := ghUserFromContext(r.Context())
-	if repo.Private && !canReadRepo(s.store, user, repo) {
+	if repo.Private && !s.viewerCanReadRepo(r.Context(), repo) {
 		writeGHError(w, http.StatusNotFound, "Not Found")
 		return
 	}
@@ -45,8 +44,7 @@ func (s *Server) handleCreateAutolink(w http.ResponseWriter, r *http.Request) {
 		writeGHError(w, http.StatusNotFound, "Not Found")
 		return
 	}
-	user := ghUserFromContext(r.Context())
-	if !canAdminRepo(s.store, user, repo) {
+	if !s.viewerCanAdminRepo(r.Context(), repo) {
 		writeGHError(w, http.StatusForbidden, "Must have admin rights to Repository.")
 		return
 	}
@@ -84,8 +82,7 @@ func (s *Server) handleGetAutolink(w http.ResponseWriter, r *http.Request) {
 		writeGHError(w, http.StatusNotFound, "Not Found")
 		return
 	}
-	user := ghUserFromContext(r.Context())
-	if repo.Private && !canReadRepo(s.store, user, repo) {
+	if repo.Private && !s.viewerCanReadRepo(r.Context(), repo) {
 		writeGHError(w, http.StatusNotFound, "Not Found")
 		return
 	}
@@ -111,8 +108,7 @@ func (s *Server) handleDeleteAutolink(w http.ResponseWriter, r *http.Request) {
 		writeGHError(w, http.StatusNotFound, "Not Found")
 		return
 	}
-	user := ghUserFromContext(r.Context())
-	if !canAdminRepo(s.store, user, repo) {
+	if !s.viewerCanAdminRepo(r.Context(), repo) {
 		writeGHError(w, http.StatusForbidden, "Must have admin rights to Repository.")
 		return
 	}

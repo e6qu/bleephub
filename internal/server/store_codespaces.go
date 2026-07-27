@@ -99,6 +99,7 @@ func codespaceMachineByName(name string) codespaceMachine {
 
 const (
 	codespaceContainerPrefix = "bleephub-codespace-"
+	codespaceWorkspacePrefix = "bleephub-codespace-"
 	codespaceDefaultImage    = "mcr.microsoft.com/devcontainers/universal:latest"
 )
 
@@ -126,13 +127,63 @@ func (st *Store) persistCodespaceSecretScopeLocked(scope string) {
 }
 
 // CreateCodespace records a new codespace and starts its backing container.
+// The container image pull and start can take minutes, so the codespace is
+// registered in the Creating state first and the store lock is released for
+// the duration — every other request would otherwise queue behind Docker.
 func (st *Store) CreateCodespace(ownerLogin, repoKey, gitRef, machineName, displayName string) (*Codespace, error) {
+	cs, workspace, cleanup, err := st.reserveCodespace(ownerLogin, repoKey, gitRef, machineName, displayName)
+	if err != nil {
+		return nil, err
+	}
+
+	containerName := codespaceContainerName(cs.Name)
+	ctx, cancel := context.WithTimeout(context.Background(), 180*time.Second)
+	defer cancel()
+
+	containerID, err := dockerRunCodespace(ctx, containerName, cs.ImageName, workspace, repoNameFromRepoKey(repoKey))
+	if err != nil {
+		cleanup()
+		st.discardCodespace(cs.ID)
+		return nil, fmt.Errorf("docker run: %w", err)
+	}
+	state := dockerStateToCodespaceState(containerID)
+
+	st.mu.Lock()
+	defer st.mu.Unlock()
+	live := st.Codespaces[cs.ID]
+	if live == nil {
+		return nil, fmt.Errorf("codespace %s was removed while its container started", cs.Name)
+	}
+	live.ContainerID = containerID
+	live.ContainerName = containerName
+	live.State = state
+	live.UpdatedAt = time.Now().UTC()
+	st.persistCodespaceLocked(live)
+	return live, nil
+}
+
+// discardCodespace removes a codespace whose container never started.
+func (st *Store) discardCodespace(id int) {
+	st.mu.Lock()
+	defer st.mu.Unlock()
+	cs := st.Codespaces[id]
+	if cs == nil {
+		return
+	}
+	delete(st.Codespaces, id)
+	delete(st.CodespacesByName, cs.Name)
+	if st.persist != nil {
+		st.persist.MustDelete("codespaces", strconv.Itoa(id))
+	}
+}
+
+func (st *Store) reserveCodespace(ownerLogin, repoKey, gitRef, machineName, displayName string) (*Codespace, string, func(), error) {
 	st.mu.Lock()
 	defer st.mu.Unlock()
 
 	name, err := generateCodespaceName(repoKey)
 	if err != nil {
-		return nil, err
+		return nil, "", nil, err
 	}
 	machine := codespaceDefaultMachine()
 	for _, m := range codespaceMachines {
@@ -174,27 +225,15 @@ func (st *Store) CreateCodespace(ownerLogin, repoKey, gitRef, machineName, displ
 
 	repoDir, cleanup, err := st.prepareWorkspaceLocked(repoKey, gitRef)
 	if err != nil {
-		return nil, fmt.Errorf("prepare workspace: %w", err)
+		return nil, "", nil, fmt.Errorf("prepare workspace: %w", err)
 	}
 	cs.WorkspaceMount = repoDir
 
-	containerName := codespaceContainerName(cs.Name)
-	ctx, cancel := context.WithTimeout(context.Background(), 180*time.Second)
-	defer cancel()
-
-	containerID, err := dockerRunCodespace(ctx, containerName, image, repoDir, repoNameFromRepoKey(repoKey))
-	if err != nil {
-		cleanup()
-		return nil, fmt.Errorf("docker run: %w", err)
-	}
-	cs.ContainerID = containerID
-	cs.ContainerName = containerName
-	cs.State = dockerStateToCodespaceState(containerID)
 	st.Codespaces[cs.ID] = cs
 	st.CodespacesByName[cs.Name] = cs
 	st.NextCodespaceID++
 	st.persistCodespaceLocked(cs)
-	return cs, nil
+	return cs, repoDir, cleanup, nil
 }
 
 // GetCodespace returns a codespace by ID.
@@ -267,15 +306,49 @@ func (st *Store) deleteCodespaceRuntimeLocked(cs *Codespace) error {
 			return fmt.Errorf("docker remove: %w", err)
 		}
 	}
-	if cs.WorkspaceMount != "" && !pathIsUnderDir(cs.WorkspaceMount, os.TempDir()) {
-		return fmt.Errorf("refusing to remove workspace outside temp dir: %s", cs.WorkspaceMount)
-	}
-	if cs.WorkspaceMount != "" {
+	switch classifyCodespaceWorkspace(cs.WorkspaceMount) {
+	case codespaceWorkspaceNone, codespaceWorkspaceBorrowed:
+		return nil
+	case codespaceWorkspaceScratch:
 		if err := os.RemoveAll(cs.WorkspaceMount); err != nil {
 			return fmt.Errorf("remove workspace: %w", err)
 		}
+		return nil
+	default:
+		return fmt.Errorf("refusing to remove codespace workspace outside the temporary directory: %s", cs.WorkspaceMount)
 	}
-	return nil
+}
+
+type codespaceWorkspaceKind int
+
+const (
+	codespaceWorkspaceNone codespaceWorkspaceKind = iota
+	// codespaceWorkspaceScratch is an export this server created and owns.
+	codespaceWorkspaceScratch
+	// codespaceWorkspaceBorrowed is the repository's own git directory: it
+	// outlives the codespace, so removing the codespace must leave it alone.
+	// Treating it as unremovable instead made the codespace, and through
+	// DeleteRepo's cascade the repository too, permanently undeletable.
+	codespaceWorkspaceBorrowed
+	codespaceWorkspaceForeign
+)
+
+func classifyCodespaceWorkspace(mount string) codespaceWorkspaceKind {
+	if mount == "" {
+		return codespaceWorkspaceNone
+	}
+	if gitDir := GitDataDir(); gitDir != "" && pathIsUnderDir(mount, gitDir) {
+		return codespaceWorkspaceBorrowed
+	}
+	if pathIsUnderDir(mount, os.TempDir()) {
+		return codespaceWorkspaceScratch
+	}
+	// The temporary directory can move between restarts; the export prefix
+	// still identifies a directory this server created.
+	if strings.HasPrefix(filepath.Base(mount), codespaceWorkspacePrefix) {
+		return codespaceWorkspaceScratch
+	}
+	return codespaceWorkspaceForeign
 }
 
 func pathIsUnderDir(path, dir string) bool {
@@ -695,7 +768,7 @@ func (st *Store) prepareWorkspaceLocked(repoKey, gitRef string) (dir string, cle
 		return "", cleanup, fmt.Errorf("git storage not found")
 	}
 
-	tmpDir, err := os.MkdirTemp("", "bleephub-codespace-"+repo.Name+"-*")
+	tmpDir, err := os.MkdirTemp("", codespaceWorkspacePrefix+repo.Name+"-*")
 	if err != nil {
 		return "", cleanup, fmt.Errorf("mkdirtemp: %w", err)
 	}

@@ -55,13 +55,19 @@ func TestFinishJobCapturesOfficialRunnerOutputsBeforeCompletion(t *testing.T) {
 		},
 	}
 	s.store.Workflows[wf.ID] = wf
-	s.store.Jobs[jobID] = &Job{ID: jobID, PlanID: planID, Status: "running"}
+	// FinishJob is gated on the runtime token of the job whose plan it names,
+	// so the job needs the dispatched message that token is minted against.
+	scopeID := "scope-" + planID
+	s.store.Jobs[jobID] = &Job{ID: jobID, PlanID: planID, Status: "running", Message: fmt.Sprintf(
+		`{"plan":{"scopeIdentifier":%q,"planId":%q},"contextData":{"github":{"t":2,"d":[{"k":"repository","v":"admin/test"}]}}}`,
+		scopeID, planID)}
 
 	// Captured from actions/runner v2.321.0's JobCompletedEvent contract:
 	// JobServer.RaisePlanEventAsync POSTs this body to the advertised
 	// FinishJob service-location route.
 	body := fmt.Sprintf(`{"name":"JobCompleted","jobId":%q,"requestId":17,"result":"succeeded","outputs":{"version":{"value":"1.2.3","isSecret":false}}}`, jobID)
-	req := httptest.NewRequest(http.MethodPost, "/_apis/v1/FinishJob/scope/free/"+planID, bytes.NewBufferString(body))
+	req := httptest.NewRequest(http.MethodPost, "/_apis/v1/FinishJob/"+scopeID+"/free/"+planID, bytes.NewBufferString(body))
+	req.Header.Set("Authorization", "Bearer "+makeJWT(scopeID, runnerAudJob))
 	w := httptest.NewRecorder()
 	s.mux.ServeHTTP(w, req)
 	if w.Code != http.StatusOK {
@@ -84,10 +90,14 @@ func TestFinishJobRejectsMismatchedJobAndPlan(t *testing.T) {
 	s.registerRunServiceRoutes()
 	jobID := uuid.New().String()
 	planID := uuid.New().String()
-	s.store.Jobs[jobID] = &Job{ID: jobID, PlanID: planID, Status: "running"}
+	scopeID := "scope-" + planID
+	s.store.Jobs[jobID] = &Job{ID: jobID, PlanID: planID, Status: "running", Message: fmt.Sprintf(
+		`{"plan":{"scopeIdentifier":%q,"planId":%q},"contextData":{"github":{"t":2,"d":[{"k":"repository","v":"admin/test"}]}}}`,
+		scopeID, planID)}
 
 	body := fmt.Sprintf(`{"name":"JobCompleted","jobId":%q,"result":"succeeded","outputs":{"version":{"value":"attacker-controlled"}}}`, uuid.New().String())
-	req := httptest.NewRequest(http.MethodPost, "/_apis/v1/FinishJob/scope/free/"+planID, bytes.NewBufferString(body))
+	req := httptest.NewRequest(http.MethodPost, "/_apis/v1/FinishJob/"+scopeID+"/free/"+planID, bytes.NewBufferString(body))
+	req.Header.Set("Authorization", "Bearer "+makeJWT(scopeID, runnerAudJob))
 	w := httptest.NewRecorder()
 	s.mux.ServeHTTP(w, req)
 	if w.Code != http.StatusBadRequest {

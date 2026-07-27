@@ -88,6 +88,7 @@ func mustStatus(t *testing.T, resp *http.Response, want int, what string) {
 // --- repository secrets ---
 
 func TestSecretsPublicKey(t *testing.T) {
+	ensureSeededRepo(testServer, "owner/repo")
 	resp := ghGet(t, "/api/v3/repos/owner/repo/actions/secrets/public-key", defaultToken)
 	if resp.StatusCode != 200 {
 		t.Fatalf("status %d, want 200", resp.StatusCode)
@@ -131,6 +132,7 @@ func TestSecretsSealedRoundTrip(t *testing.T) {
 }
 
 func TestSecretsPutWrongKeyID422(t *testing.T) {
+	ensureSeededRepo(testServer, "owner/repo")
 	enc, keyID := sealForServer(t, "doesnt-matter")
 	resp := ghPut(t, "/api/v3/repos/owner/repo/actions/secrets/WRONG_KID", defaultToken,
 		map[string]interface{}{"encrypted_value": enc, "key_id": keyID + "0"})
@@ -138,6 +140,7 @@ func TestSecretsPutWrongKeyID422(t *testing.T) {
 }
 
 func TestSecretsPutBadCiphertext422(t *testing.T) {
+	ensureSeededRepo(testServer, "owner/repo")
 	_, keyID := sealForServer(t, "x")
 	cases := []struct {
 		name string
@@ -157,6 +160,7 @@ func TestSecretsPutBadCiphertext422(t *testing.T) {
 }
 
 func TestSecretsPutMissingKeyID422(t *testing.T) {
+	ensureSeededRepo(testServer, "owner/repo")
 	enc, _ := sealForServer(t, "x")
 	resp := ghPut(t, "/api/v3/repos/owner/repo/actions/secrets/NO_KID", defaultToken,
 		map[string]interface{}{"encrypted_value": enc})
@@ -164,6 +168,7 @@ func TestSecretsPutMissingKeyID422(t *testing.T) {
 }
 
 func TestSecretsBadNames422(t *testing.T) {
+	ensureSeededRepo(testServer, "owner/repo")
 	enc, keyID := sealForServer(t, "x")
 	body := map[string]interface{}{"encrypted_value": enc, "key_id": keyID}
 	for _, name := range []string{"1STARTS_WITH_DIGIT", "HAS-DASH", "GITHUB_RESERVED", "github_reserved"} {

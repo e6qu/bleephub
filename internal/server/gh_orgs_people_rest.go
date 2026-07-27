@@ -80,7 +80,7 @@ func (s *Server) resolveOrgOwner(w http.ResponseWriter, r *http.Request) (*Org, 
 		writeGHError(w, http.StatusNotFound, "Not Found")
 		return nil, nil
 	}
-	if !canAdminOrg(s.store, user, org) {
+	if !s.viewerCanAdminOrg(r.Context(), org.Login) {
 		writeGHError(w, http.StatusForbidden, "Must be an organization owner.")
 		return nil, nil
 	}
@@ -101,7 +101,7 @@ func (s *Server) resolveOrgMember(w http.ResponseWriter, r *http.Request) (*Org,
 		writeGHError(w, http.StatusNotFound, "Not Found")
 		return nil, nil
 	}
-	if !isActiveOrgMember(s.store, user, org.Login) {
+	if !s.viewerIsOrgMember(r.Context(), org.Login) {
 		writeGHError(w, http.StatusNotFound, "Not Found")
 		return nil, nil
 	}

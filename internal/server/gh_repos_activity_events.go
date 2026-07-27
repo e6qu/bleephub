@@ -313,7 +313,7 @@ func (s *Server) trafficRepo(w http.ResponseWriter, r *http.Request) *Repo {
 	if repo == nil {
 		return nil
 	}
-	if !canPushRepo(s.store, ghUserFromContext(r.Context()), repo) {
+	if !s.viewerMayActOnRepo(r.Context(), repo, scopeAdministration, permRead, permWrite) {
 		writeGHError(w, http.StatusForbidden, "Must have push access to repository")
 		return nil
 	}

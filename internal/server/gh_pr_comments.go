@@ -481,22 +481,41 @@ func (s *Server) handleListPRComments(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, out)
 }
 
+// prReviewCommentInRepo resolves the review comment named by {comment_id} and
+// the pull request that owns it, answering 404 unless that pull request lives
+// in repo. Review comment ids are global, so every by-id handler has to walk
+// back to the repository before it acts.
+func (s *Server) prReviewCommentInRepo(w http.ResponseWriter, r *http.Request, repo *Repo) (*PRReviewComment, *PullRequest) {
+	id, err := strconv.Atoi(r.PathValue("comment_id"))
+	if err != nil {
+		writeGHError(w, http.StatusNotFound, "Not Found")
+		return nil, nil
+	}
+	c := s.store.PRReviewComments.Get(id)
+	if c == nil {
+		writeGHError(w, http.StatusNotFound, "Not Found")
+		return nil, nil
+	}
+	pr := s.store.GetPullRequest(c.PullRequestID)
+	if pr == nil {
+		writeGHError(w, http.StatusNotFound, "Not Found")
+		return nil, nil
+	}
+	if !requireRepoOwns(w, repo, pr.RepoID) {
+		return nil, nil
+	}
+	return c, pr
+}
+
 func (s *Server) handleGetPRComment(w http.ResponseWriter, r *http.Request) {
 	repo := s.lookupReadableRepoFromPath(w, r)
 	if repo == nil {
 		return
 	}
-	id, err := strconv.Atoi(r.PathValue("comment_id"))
-	if err != nil {
-		writeGHError(w, http.StatusNotFound, "Not Found")
-		return
-	}
-	c := s.store.PRReviewComments.Get(id)
+	c, pr := s.prReviewCommentInRepo(w, r, repo)
 	if c == nil {
-		writeGHError(w, http.StatusNotFound, "Not Found")
 		return
 	}
-	pr := s.store.GetPullRequest(c.PullRequestID)
 	writeJSON(w, http.StatusOK, prReviewCommentToJSON(c, s.store, s.baseURL(r), repo, pr))
 }
 
@@ -506,9 +525,8 @@ func (s *Server) handleUpdatePRComment(w http.ResponseWriter, r *http.Request) {
 		writeGHError(w, http.StatusNotFound, "Not Found")
 		return
 	}
-	id, err := strconv.Atoi(r.PathValue("comment_id"))
-	if err != nil {
-		writeGHError(w, http.StatusNotFound, "Not Found")
+	c, pr := s.prReviewCommentInRepo(w, r, repo)
+	if c == nil {
 		return
 	}
 	var req struct {
@@ -517,26 +535,28 @@ func (s *Server) handleUpdatePRComment(w http.ResponseWriter, r *http.Request) {
 	if !decodeJSONBody(w, r, &req) {
 		return
 	}
-	if !s.store.PRReviewComments.Update(id, req.Body) {
+	if !s.store.PRReviewComments.Update(c.ID, req.Body) {
 		writeGHError(w, http.StatusNotFound, "Not Found")
 		return
 	}
-	c := s.store.PRReviewComments.Get(id)
-	pr := s.store.GetPullRequest(c.PullRequestID)
-	writeJSON(w, http.StatusOK, prReviewCommentToJSON(c, s.store, s.baseURL(r), repo, pr))
+	writeJSON(w, http.StatusOK, prReviewCommentToJSON(s.store.PRReviewComments.Get(c.ID), s.store, s.baseURL(r), repo, pr))
 }
 
 func (s *Server) handleDeletePRComment(w http.ResponseWriter, r *http.Request) {
-	id, err := strconv.Atoi(r.PathValue("comment_id"))
-	if err != nil {
+	repo := s.lookupRepoFromPath(r)
+	if repo == nil {
 		writeGHError(w, http.StatusNotFound, "Not Found")
 		return
 	}
-	if !s.store.PRReviewComments.Delete(id) {
+	c, _ := s.prReviewCommentInRepo(w, r, repo)
+	if c == nil {
+		return
+	}
+	if !s.store.PRReviewComments.Delete(c.ID) {
 		writeGHError(w, http.StatusNotFound, "Not Found")
 		return
 	}
-	s.store.Reactions.DeleteParent("pull_request_comment", id)
+	s.store.Reactions.DeleteParent("pull_request_comment", c.ID)
 	w.WriteHeader(http.StatusNoContent)
 }
 

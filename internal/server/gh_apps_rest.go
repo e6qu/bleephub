@@ -1,6 +1,7 @@
 package bleephub
 
 import (
+	"context"
 	"encoding/json"
 	"io"
 	"net/http"
@@ -66,7 +67,7 @@ func (s *Server) registerGHAppsUserAndOperatorRoutes() {
 // to the manifest's redirect_url with a one-time `code` (echoing the optional
 // `state`). The conversion endpoint below redeems the code for credentials.
 func (s *Server) handleManifestSubmission(w http.ResponseWriter, r *http.Request) {
-	user := ghUserFromContext(s.authenticateRequest(r))
+	r, user := s.authenticatedBrowserRequest(r)
 	if user == nil {
 		writeGHError(w, http.StatusUnauthorized, "Bad credentials")
 		return
@@ -84,6 +85,7 @@ func (s *Server) handleManifestSubmission(w http.ResponseWriter, r *http.Request
 			URL    string `json:"url"`
 			Active *bool  `json:"active"`
 		} `json:"hook_attributes"`
+		CallbackURLs       []string          `json:"callback_urls"`
 		DefaultEvents      []string          `json:"default_events"`
 		DefaultPermissions map[string]string `json:"default_permissions"`
 	}
@@ -115,28 +117,43 @@ func (s *Server) handleManifestSubmission(w http.ResponseWriter, r *http.Request
 			return
 		}
 	}
+	// bleephub records one callback per client, the same shape OAuth Apps
+	// carry, so the authorize gate has a single destination to compare
+	// against. A manifest offering several is refused rather than quietly
+	// reduced to its first entry.
+	callbackURL := ""
+	if len(manifest.CallbackURLs) > 1 {
+		writeGHValidationError(w, "AppManifest", "callback_urls", "invalid")
+		return
+	}
+	if len(manifest.CallbackURLs) == 1 {
+		callbackURL = strings.TrimSpace(manifest.CallbackURLs[0])
+		if err := validateClientCallbackURL(callbackURL); err != nil {
+			writeGHValidationError(w, "AppManifest", "callback_urls", "invalid")
+			return
+		}
+	}
 
 	app, err := s.store.CreateAppE(user.ID, manifest.Name, manifest.Description, manifest.DefaultPermissions, manifest.DefaultEvents)
 	if err != nil {
 		writeGHError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
-	if manifest.URL != "" || manifest.HookAttributes.URL != "" {
-		s.store.UpdateAppHookConfig(app.ID, func(a *App) {
-			if manifest.URL != "" {
-				// The manifest's `url` is the app homepage, served back
-				// as external_url.
-				a.ExternalURL = manifest.URL
+	s.store.UpdateApp(app.ID, func(a *App) {
+		if manifest.URL != "" {
+			// The manifest's `url` is the app homepage, served back
+			// as external_url.
+			a.ExternalURL = manifest.URL
+		}
+		a.CallbackURL = callbackURL
+		if manifest.HookAttributes.URL != "" {
+			a.WebhookURL = manifest.HookAttributes.URL
+			if manifest.HookAttributes.Active != nil {
+				a.WebhookActive = *manifest.HookAttributes.Active
 			}
-			if manifest.HookAttributes.URL != "" {
-				a.WebhookURL = manifest.HookAttributes.URL
-				if manifest.HookAttributes.Active != nil {
-					a.WebhookActive = *manifest.HookAttributes.Active
-				}
-				a.WebhookEvents = manifest.DefaultEvents
-			}
-		})
-	}
+			a.WebhookEvents = manifest.DefaultEvents
+		}
+	})
 
 	q := redirect.Query()
 	q.Set("code", s.store.RegisterManifestCode(app.ID))
@@ -150,7 +167,7 @@ func (s *Server) handleManifestSubmission(w http.ResponseWriter, r *http.Request
 // handleListBrowserGitHubApps exposes the signed-in user's GitHub Apps through
 // the same settings surface that owns the browser manifest flow.
 func (s *Server) handleListBrowserGitHubApps(w http.ResponseWriter, r *http.Request) {
-	user := ghUserFromContext(s.authenticateRequest(r))
+	r, user := s.authenticatedBrowserRequest(r)
 	if user == nil {
 		writeGHError(w, http.StatusUnauthorized, "Bad credentials")
 		return
@@ -170,7 +187,7 @@ func (s *Server) handleListBrowserGitHubApps(w http.ResponseWriter, r *http.Requ
 // permissions/events are the installation grant; the form only chooses the
 // target account and all-vs-selected repository access.
 func (s *Server) handleBrowserInstallApp(w http.ResponseWriter, r *http.Request) {
-	user := ghUserFromContext(s.authenticateRequest(r))
+	r, user := s.authenticatedBrowserRequest(r)
 	if user == nil {
 		writeGHError(w, http.StatusUnauthorized, "Bad credentials")
 		return
@@ -188,7 +205,7 @@ func (s *Server) handleBrowserInstallApp(w http.ResponseWriter, r *http.Request)
 	if targetLogin == "" {
 		targetLogin = user.Login
 	}
-	targetType, targetID, ok := s.resolveInstallTarget(user, targetLogin)
+	targetType, targetID, ok := s.resolveInstallTarget(r.Context(), user, targetLogin)
 	if !ok {
 		writeGHError(w, http.StatusForbidden, "Must be able to install GitHub Apps on this account")
 		return
@@ -235,7 +252,7 @@ func (s *Server) handleBrowserUnsuspendInstallation(w http.ResponseWriter, r *ht
 }
 
 func (s *Server) handleBrowserInstallationState(w http.ResponseWriter, r *http.Request, suspend bool) {
-	user := ghUserFromContext(s.authenticateRequest(r))
+	r, user := s.authenticatedBrowserRequest(r)
 	if user == nil {
 		writeGHError(w, http.StatusUnauthorized, "Bad credentials")
 		return
@@ -265,7 +282,7 @@ func (s *Server) handleBrowserInstallationState(w http.ResponseWriter, r *http.R
 }
 
 func (s *Server) handleBrowserDeleteInstallation(w http.ResponseWriter, r *http.Request) {
-	user := ghUserFromContext(s.authenticateRequest(r))
+	r, user := s.authenticatedBrowserRequest(r)
 	if user == nil {
 		writeGHError(w, http.StatusUnauthorized, "Bad credentials")
 		return
@@ -295,22 +312,19 @@ func (s *Server) browserManageableInstallation(w http.ResponseWriter, r *http.Re
 	if inst.TargetLogin == user.Login {
 		return inst, true
 	}
-	if inst.TargetType == "Organization" {
-		if m := s.store.GetMembership(inst.TargetLogin, user.ID); m != nil && m.State == MembershipStateActive && m.Role == OrgRoleAdmin {
-			return inst, true
-		}
+	if inst.TargetType == "Organization" && s.viewerCanAdminOrg(r.Context(), inst.TargetLogin) {
+		return inst, true
 	}
 	writeGHError(w, http.StatusForbidden, "Must be able to manage GitHub Apps on this account")
 	return nil, false
 }
 
-func (s *Server) resolveInstallTarget(user *User, targetLogin string) (string, int, bool) {
+func (s *Server) resolveInstallTarget(ctx context.Context, user *User, targetLogin string) (string, int, bool) {
 	if targetLogin == user.Login {
 		return "User", user.ID, true
 	}
 	if org := s.store.GetOrg(targetLogin); org != nil {
-		m := s.store.GetMembership(targetLogin, user.ID)
-		return "Organization", org.ID, m != nil && m.State == MembershipStateActive && m.Role == OrgRoleAdmin
+		return "Organization", org.ID, s.viewerCanAdminOrg(ctx, targetLogin)
 	}
 	return "", 0, false
 }
@@ -714,10 +728,8 @@ func (s *Server) handleListUserInstallations(w http.ResponseWriter, r *http.Requ
 			all = append(all, inst)
 			continue
 		}
-		if inst.TargetType == "Organization" {
-			if m := s.store.GetMembership(inst.TargetLogin, user.ID); m != nil && m.State == MembershipStateActive {
-				all = append(all, inst)
-			}
+		if inst.TargetType == "Organization" && s.viewerIsOrgMember(r.Context(), inst.TargetLogin) {
+			all = append(all, inst)
 		}
 	}
 
@@ -870,7 +882,7 @@ func (s *Server) handleListOrgInstallations(w http.ResponseWriter, r *http.Reque
 		writeGHError(w, http.StatusNotFound, "Not Found")
 		return
 	}
-	if !canAdminOrg(s.store, user, org) {
+	if !s.viewerCanAdminOrg(r.Context(), org.Login) {
 		writeGHError(w, http.StatusForbidden, "Must be an organization owner.")
 		return
 	}
@@ -1085,7 +1097,9 @@ func (s *Server) emitInstallationEvent(app *App, action string, inst *Installati
 	}
 	sender := s.store.LookupUserByLogin(inst.TargetLogin)
 	payload := buildInstallationEventPayload(app, action, inst, sender)
-	go s.deliverAppWebhook(app, "installation", action, inst.ID, mustMarshal(payload))
+	s.enqueueWebhookJob(appWebhookQueueKey(app), func() {
+		s.deliverAppWebhook(app, "installation", action, inst.ID, mustMarshal(payload))
+	})
 }
 
 // emitInstallationRepositoriesEvent fires an `installation_repositories`
@@ -1096,19 +1110,15 @@ func (s *Server) emitInstallationRepositoriesEvent(app *App, action string, inst
 	}
 	sender := s.store.LookupUserByLogin(inst.TargetLogin)
 	payload := buildInstallationRepositoriesEventPayload(app, action, inst, repoIDsChanged, sender)
-	go s.deliverAppWebhook(app, "installation_repositories", action, inst.ID, mustMarshal(payload))
+	s.enqueueWebhookJob(appWebhookQueueKey(app), func() {
+		s.deliverAppWebhook(app, "installation_repositories", action, inst.ID, mustMarshal(payload))
+	})
 }
 
 // deliverAppWebhook is the app-level analogue of deliverWebhook: same
 // retry shape, but records to AppHookDeliveries.
 func (s *Server) deliverAppWebhook(app *App, event, action string, installationID int, payloadBytes []byte) {
-	hook := &Webhook{
-		ID:     -app.ID, // negative ID flags an app-level hook (middleware reads ID < 0)
-		URL:    app.WebhookURL,
-		Secret: app.WebhookSecret,
-		Events: app.WebhookEvents,
-		Active: app.WebhookActive,
-	}
+	hook := appWebhookPseudoHook(app)
 	guid := uuid.New().String()
 	backoffs := []time.Duration{0, 1 * time.Second, 5 * time.Second}
 	for attempt, backoff := range backoffs {

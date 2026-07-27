@@ -6,6 +6,7 @@ import (
 	"html"
 	"net/http"
 	"net/url"
+	"path"
 	"strings"
 	"time"
 
@@ -188,6 +189,72 @@ func (s *Server) oauthClientKind(clientID string) (appID int, oauthClientID stri
 		}
 	}
 	return 0, "", false, false
+}
+
+// registeredCallbackURL returns the callback URL the client registered, which
+// is the only destination an authorization code may be delivered to.
+//
+// A client that registered none has nothing to compare against, and comparing
+// against nothing is what turns this endpoint into an open redirect and a code
+// interception primitive — so it is refused rather than defaulted.
+func (s *Server) registeredCallbackURL(clientID string) (string, bool) {
+	if clientID == "" {
+		return "", false
+	}
+	if app := s.store.GetOAuthApp(clientID); app != nil {
+		return app.CallbackURL, true
+	}
+	if app := s.store.GetAppByClientID(clientID); app != nil {
+		return app.CallbackURL, true
+	}
+	return "", false
+}
+
+// redirectURIMatchesRegistration compares a requested redirect_uri against the
+// client's registration. GitHub allows a sub-path of the registered callback
+// and nothing else: same scheme, host, port and query, with a path the
+// registered one is a prefix of at a segment boundary.
+func redirectURIMatchesRegistration(requested, registered string) bool {
+	if registered == "" || requested == "" {
+		return false
+	}
+	if requested == registered {
+		return true
+	}
+	want, err := url.Parse(registered)
+	if err != nil {
+		return false
+	}
+	got, err := url.Parse(requested)
+	if err != nil {
+		return false
+	}
+	if !strings.EqualFold(got.Scheme, want.Scheme) || !strings.EqualFold(got.Host, want.Host) {
+		return false
+	}
+	if got.RawQuery != want.RawQuery || got.User.String() != want.User.String() {
+		return false
+	}
+	// Compare cleaned paths: "/cb/../../elsewhere" is a prefix match against
+	// "/cb" as written and a different destination once the client resolves it.
+	base := strings.TrimSuffix(path.Clean("/"+want.Path), "/")
+	candidate := path.Clean("/" + got.Path)
+	return candidate == base || strings.HasPrefix(candidate, base+"/")
+}
+
+// requireRegisteredRedirectURI enforces the comparison above, answering the
+// caller with a GitHub-shaped error and reporting whether to continue.
+func (s *Server) requireRegisteredRedirectURI(w http.ResponseWriter, clientID, redirectURI string) bool {
+	registered, known := s.registeredCallbackURL(clientID)
+	if !known {
+		writeGHError(w, http.StatusBadRequest, "incorrect_client_credentials")
+		return false
+	}
+	if !redirectURIMatchesRegistration(redirectURI, registered) {
+		writeGHError(w, http.StatusBadRequest, "redirect_uri_mismatch")
+		return false
+	}
+	return true
 }
 
 func (s *Server) verifyOAuthClientSecret(clientID, clientSecret string) (appID int, oauthClientID string, isGitHubApp bool, ok bool) {
@@ -482,13 +549,21 @@ func (s *Server) handleOAuthAuthorize(w http.ResponseWriter, r *http.Request) {
 		writeGHError(w, http.StatusBadRequest, "incorrect_client_credentials")
 		return
 	}
+	if !s.requireRegisteredRedirectURI(w, clientID, redirectURI) {
+		return
+	}
 
 	s.store.mu.RLock()
 	user := s.store.Users[sess.UserID]
-	csrf := sess.CSRFToken
 	s.store.mu.RUnlock()
 	if user == nil {
 		writeGHError(w, http.StatusUnauthorized, "session user not found")
+		return
+	}
+	csrf, err := s.mintConsentToken(r)
+	if err != nil {
+		s.logger.Error().Err(err).Msg("mint OAuth consent token")
+		writeGHError(w, http.StatusServiceUnavailable, "browser session is unavailable")
 		return
 	}
 
@@ -533,16 +608,19 @@ func (s *Server) handleOAuthAuthorizeApprove(w http.ResponseWriter, r *http.Requ
 		return
 	}
 
-	provided := r.FormValue("authenticity_token")
-	s.store.mu.RLock()
-	expected := sess.CSRFToken
-	user := s.store.Users[sess.UserID]
-	s.store.mu.RUnlock()
-
-	if provided == "" || !secretEqual(provided, expected) {
+	consumed, err := s.consumeConsentToken(r, r.FormValue("authenticity_token"))
+	if err != nil {
+		s.logger.Error().Err(err).Msg("rotate OAuth consent token")
+		writeGHError(w, http.StatusServiceUnavailable, "browser session is unavailable")
+		return
+	}
+	if !consumed {
 		writeGHError(w, http.StatusUnprocessableEntity, "Invalid authenticity_token")
 		return
 	}
+	s.store.mu.RLock()
+	user := s.store.Users[sess.UserID]
+	s.store.mu.RUnlock()
 	if user == nil {
 		writeGHError(w, http.StatusUnauthorized, "session user not found")
 		return
@@ -563,9 +641,75 @@ func (s *Server) handleOAuthAuthorizeApprove(w http.ResponseWriter, r *http.Requ
 	s.completeAuthorize(w, r, user, clientID, redirectURI, scopes, state)
 }
 
+// mintConsentToken issues the authenticity_token the consent form carries.
+//
+// It is a fresh secret bound to the session and never the session identifier
+// itself: the identifier travels in an HttpOnly cookie precisely so that page
+// markup cannot yield it, and printing it into the form gave it back to anyone
+// who could read the page.
+func (s *Server) mintConsentToken(r *http.Request) (string, error) {
+	id, sess, err := s.sessionRecordFromRequest(r)
+	if err != nil || sess == nil {
+		return "", err
+	}
+	token, err := randomIdentityState()
+	if err != nil {
+		return "", err
+	}
+	sess.CSRFToken = token
+	if err := s.store.PutLoginSession(id, sess); err != nil {
+		return "", err
+	}
+	return token, nil
+}
+
+// consumeConsentToken verifies a submitted authenticity_token and retires it,
+// so a token that leaks after use buys nothing.
+func (s *Server) consumeConsentToken(r *http.Request, provided string) (bool, error) {
+	id, sess, err := s.sessionRecordFromRequest(r)
+	if err != nil || sess == nil {
+		return false, err
+	}
+	if provided == "" || sess.CSRFToken == "" || !secretEqual(provided, sess.CSRFToken) {
+		return false, nil
+	}
+	rotated, err := randomIdentityState()
+	if err != nil {
+		return false, err
+	}
+	sess.CSRFToken = rotated
+	if err := s.store.PutLoginSession(id, sess); err != nil {
+		return false, err
+	}
+	return true, nil
+}
+
+// sessionRecordFromRequest returns the session together with the cookie value
+// that keys it, which the CSRF rotation needs and sessionFromRequest drops.
+func (s *Server) sessionRecordFromRequest(r *http.Request) (string, *LoginSession, error) {
+	cookie, err := r.Cookie("_gh_sess")
+	if err != nil {
+		return "", nil, nil
+	}
+	sess, err := s.store.GetLoginSession(cookie.Value)
+	if err != nil {
+		return "", nil, err
+	}
+	if sess == nil || time.Now().After(sess.ExpiresAt) {
+		return "", nil, nil
+	}
+	return cookie.Value, sess, nil
+}
+
 // completeAuthorize mints a one-time-use auth code bound to user, stores it,
 // and 302s back to redirect_uri with code + state.
+//
+// The destination is checked here rather than only at the form, because this
+// is the single point at which a code becomes deliverable to an address.
 func (s *Server) completeAuthorize(w http.ResponseWriter, r *http.Request, user *User, clientID, redirectURI, scopes, state string) {
+	if !s.requireRegisteredRedirectURI(w, clientID, redirectURI) {
+		return
+	}
 	s.store.mu.Lock()
 	if s.store.AuthCodes == nil {
 		s.store.AuthCodes = map[string]*authCode{}

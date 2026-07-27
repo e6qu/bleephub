@@ -315,28 +315,22 @@ func (st *Store) RenameRepo(owner, name, newName string) bool {
 		return false
 	}
 
-	// Rename on-disk / S3 git storage first; if it fails, abort before mutating
-	// in-memory indexes.
-	if GitDataDir() != "" {
-		oldDir := filepath.Join(GitDataDir(), filepath.FromSlash(oldFull))
-		newDir := filepath.Join(GitDataDir(), filepath.FromSlash(newFull))
-		if err := os.Rename(oldDir, newDir); err != nil && os.IsExist(err) {
-			log.Printf("bleephub: rename repo %s -> %s: move git dir: %v", oldFull, newFull, err)
-			return false
-		}
+	// Move the bytes and rebind the storer first; if either fails, abort before
+	// mutating in-memory indexes. A path-bound storer keeps addressing the
+	// prefix the bytes just left, so it has to be reopened against the new one.
+	// An in-memory storer holds the objects itself and is simply re-keyed.
+	if err := moveRepoGitStorage(oldFull, newFull); err != nil {
+		log.Printf("bleephub: rename repo %s -> %s: %v", oldFull, newFull, err)
+		return false
 	}
-	if IsS3GitStorage() {
-		s3fs, err := getS3FS(context.Background())
+	stor := st.GitStorages[oldFull]
+	if stor != nil && repoGitStorageIsPathBound() {
+		reopened, err := openOrInitGitStorage(context.Background(), newFull)
 		if err != nil {
-			log.Printf("bleephub: rename repo %s -> %s: resolve s3 fs: %v", oldFull, newFull, err)
+			log.Printf("bleephub: rename repo %s -> %s: reopen git storage: %v", oldFull, newFull, err)
 			return false
 		}
-		if s3fs != nil {
-			if err := s3fs.renameRepoPrefix(oldFull, newFull); err != nil {
-				log.Printf("bleephub: rename repo %s -> %s: move s3 prefix: %v", oldFull, newFull, err)
-				return false
-			}
-		}
+		stor = reopened
 	}
 
 	repo.Name = newName
@@ -346,7 +340,7 @@ func (st *Store) RenameRepo(owner, name, newName string) bool {
 	st.ReposByName[newFull] = repo
 	delete(st.ReposByName, oldFull)
 
-	if stor := st.GitStorages[oldFull]; stor != nil {
+	if stor != nil {
 		st.GitStorages[newFull] = stor
 		delete(st.GitStorages, oldFull)
 	}
@@ -359,15 +353,55 @@ func (st *Store) RenameRepo(owner, name, newName string) bool {
 	return true
 }
 
+// DeleteRepo removes a repository, its cascade and its bytes. The metadata
+// goes first and atomically; the object bytes go afterwards, outside the store
+// lock, guarded by a recorded deletion intent that a later start can finish.
 func (st *Store) DeleteRepo(owner, name string) (bool, error) {
+	fullName := owner + "/" + name
+	existed, err := st.deleteRepoMetadata(owner, name)
+	if err != nil || !existed {
+		return existed, err
+	}
+	return true, st.purgeDeletedRepoBytes(fullName)
+}
+
+// purgeDeletedRepoBytes destroys the git bytes of an already-unregistered
+// repository and clears its deletion intent. Nothing can reach the repository
+// at this point, so the object-store round trip does not need the store lock.
+func (st *Store) purgeDeletedRepoBytes(fullName string) error {
+	if err := deleteRepoGitStorage(fullName); err != nil {
+		return fmt.Errorf("delete repo %s git storage: %w", fullName, err)
+	}
+	if err := st.persist.Delete(pendingDeletionsBucket, pendingRepoDeletionKey(fullName)); err != nil {
+		return fmt.Errorf("delete repo %s: clear deletion intent: %w", fullName, err)
+	}
+	return nil
+}
+
+func (st *Store) deleteRepoMetadata(owner, name string) (bool, error) {
 	st.mu.Lock()
 	defer st.mu.Unlock()
+	return st.deleteRepoLocked(owner, name)
+}
 
+// deleteRepoLocked purges the repository from memory and, in one transaction,
+// from the database. Caller must hold st.mu and must call
+// purgeDeletedRepoBytes afterwards to finish the deletion.
+func (st *Store) deleteRepoLocked(owner, name string) (bool, error) {
 	fullName := owner + "/" + name
 	repo, ok := st.ReposByName[fullName]
 	if !ok {
 		return false, nil
 	}
+
+	if err := st.persist.Put(pendingDeletionsBucket, pendingRepoDeletionKey(fullName), pendingDeletion{
+		Kind:      "repo",
+		Name:      fullName,
+		StartedAt: time.Now().UTC(),
+	}); err != nil {
+		return true, fmt.Errorf("delete repo %s: record deletion intent: %w", fullName, err)
+	}
+	batch := newPersistBatch(st.persist)
 
 	for _, cs := range st.Codespaces {
 		if cs.RepoKey != fullName {
@@ -376,10 +410,6 @@ func (st *Store) DeleteRepo(owner, name string) (bool, error) {
 		if err := st.deleteCodespaceRuntimeLocked(cs); err != nil {
 			return true, fmt.Errorf("delete repo %s codespace %s: %w", fullName, cs.Name, err)
 		}
-	}
-
-	if err := deleteRepoGitStorage(fullName); err != nil {
-		return true, fmt.Errorf("delete repo %s git storage: %w", fullName, err)
 	}
 
 	if err := st.deletePackageFilesForOwnerLocked(fullName); err != nil {
@@ -401,9 +431,7 @@ func (st *Store) DeleteRepo(owner, name string) (bool, error) {
 	delete(st.Repos, repo.ID)
 	delete(st.ReposByName, fullName)
 	delete(st.GitStorages, fullName)
-	if st.persist != nil {
-		st.persist.MustDelete("repos", strconv.Itoa(repo.ID))
-	}
+	batch.Delete("repos", strconv.Itoa(repo.ID))
 
 	// Cascade: purge everything keyed to this repo from memory AND the DB.
 	// Hook IDs, issue numbers and release IDs restart from the surviving
@@ -411,9 +439,7 @@ func (st *Store) DeleteRepo(owner, name string) (bool, error) {
 	// same-name repo.
 	for _, h := range st.Hooks[fullName] {
 		delete(st.HookDeliveries, h.ID)
-		if st.persist != nil {
-			st.persist.MustDelete("hook_deliveries", strconv.Itoa(h.ID))
-		}
+		batch.Delete("hook_deliveries", strconv.Itoa(h.ID))
 	}
 	delete(st.Hooks, fullName)
 	delete(st.RepoSecrets, fullName)
@@ -433,7 +459,7 @@ func (st *Store) DeleteRepo(owner, name string) (bool, error) {
 	delete(st.AgentsRepoVariables, fullName)
 	delete(st.SecretScanningPushPlaceholders, fullName)
 	delete(st.SecretScanningPushBypasses, fullName)
-	st.deleteRepoFullNameReferencesLocked(fullName)
+	st.deleteRepoFullNameReferencesLocked(batch, fullName)
 	st.deleteNotificationRepoKeyLocked(fullName)
 	st.CommitStatuses.deleteRepoKey(fullName)
 	commitCommentIDs := st.CommitComments.IDsForRepo(repo.ID)
@@ -442,48 +468,40 @@ func (st *Store) DeleteRepo(owner, name string) (bool, error) {
 	for id, alert := range st.SecretScanningAlerts {
 		if alert.RepoKey == fullName {
 			delete(st.SecretScanningAlerts, id)
-			if st.persist != nil {
-				st.persist.MustDelete("secret_scanning_alerts", strconv.Itoa(id))
-			}
+			batch.Delete("secret_scanning_alerts", strconv.Itoa(id))
 		}
 	}
 	delete(st.SecretScanningAlertsByRepo, fullName)
 	delete(st.SecretScanningNextNumber, fullName)
-	if st.persist != nil {
-		st.persist.MustDelete("hooks", fullName)
-		st.persist.MustDelete("repo_secrets", fullName)
-		st.persist.MustDelete("repo_variables", fullName)
-		st.persist.MustDelete("repo_collaborators", fullName)
-		st.persist.MustDelete("repo_autolinks", fullName)
-		st.persist.MustDelete("repo_invitations", fullName)
-		st.persist.MustDelete("repo_deploy_keys", fullName)
-		st.persist.MustDelete("check_suite_prefs", fullName)
-		st.persist.MustDelete("repo_actions_permissions", fullName)
-		st.persist.MustDelete("secret_scanning_alerts", fullName)
-		st.persist.MustDelete("dependabot_secrets", fullName)
-		st.persist.MustDelete("code_scanning_default_setups", fullName)
-		st.persist.MustDelete("code_quality_setups", fullName)
-		st.persist.MustDelete("repo_custom_property_values", fullName)
-		st.persist.MustDelete("repo_immutable_releases", fullName)
-		st.persist.MustDelete("agents_repo_secrets", fullName)
-		st.persist.MustDelete("agents_repo_variables", fullName)
-		st.persist.MustDelete("secret_scanning_push_placeholders", fullName)
-		st.persist.MustDelete("secret_scanning_push_bypasses", fullName)
-	}
+	batch.Delete("hooks", fullName)
+	batch.Delete("repo_secrets", fullName)
+	batch.Delete("repo_variables", fullName)
+	batch.Delete("repo_collaborators", fullName)
+	batch.Delete("repo_autolinks", fullName)
+	batch.Delete("repo_invitations", fullName)
+	batch.Delete("repo_deploy_keys", fullName)
+	batch.Delete("check_suite_prefs", fullName)
+	batch.Delete("repo_actions_permissions", fullName)
+	batch.Delete("secret_scanning_alerts", fullName)
+	batch.Delete("dependabot_secrets", fullName)
+	batch.Delete("code_scanning_default_setups", fullName)
+	batch.Delete("code_quality_setups", fullName)
+	batch.Delete("repo_custom_property_values", fullName)
+	batch.Delete("repo_immutable_releases", fullName)
+	batch.Delete("agents_repo_secrets", fullName)
+	batch.Delete("agents_repo_variables", fullName)
+	batch.Delete("secret_scanning_push_placeholders", fullName)
+	batch.Delete("secret_scanning_push_bypasses", fullName)
 	for id, suite := range st.CheckSuites {
 		if suite.RepoKey == fullName {
 			delete(st.CheckSuites, id)
-			if st.persist != nil {
-				st.persist.MustDelete("check_suites", strconv.FormatInt(id, 10))
-			}
+			batch.Delete("check_suites", strconv.FormatInt(id, 10))
 		}
 	}
 	for id, run := range st.CheckRuns {
 		if run.RepoKey == fullName {
 			delete(st.CheckRuns, id)
-			if st.persist != nil {
-				st.persist.MustDelete("check_runs", strconv.FormatInt(id, 10))
-			}
+			batch.Delete("check_runs", strconv.FormatInt(id, 10))
 		}
 	}
 	for id, wf := range st.Workflows {
@@ -510,9 +528,7 @@ func (st *Store) DeleteRepo(owner, name string) (bool, error) {
 	for id, alert := range st.CodeScanningAlerts {
 		if alert.RepoKey == fullName {
 			delete(st.CodeScanningAlerts, id)
-			if st.persist != nil {
-				st.persist.MustDelete("code_scanning_alerts", strconv.Itoa(id))
-			}
+			batch.Delete("code_scanning_alerts", strconv.Itoa(id))
 		}
 	}
 	delete(st.CodeScanningAlertsByRepo, fullName)
@@ -520,51 +536,39 @@ func (st *Store) DeleteRepo(owner, name string) (bool, error) {
 	for id, analysis := range st.CodeScanningAnalyses {
 		if analysis.RepoKey == fullName {
 			delete(st.CodeScanningAnalyses, id)
-			if st.persist != nil {
-				st.persist.MustDelete("code_scanning_analyses", strconv.Itoa(id))
-			}
+			batch.Delete("code_scanning_analyses", strconv.Itoa(id))
 		}
 	}
 	delete(st.CodeScanningAnalysesByRepo, fullName)
 	for key, fix := range st.CodeScanningAutofixes {
 		if fix.RepoKey == fullName {
 			delete(st.CodeScanningAutofixes, key)
-			if st.persist != nil {
-				st.persist.MustDelete("code_scanning_autofixes", key)
-			}
+			batch.Delete("code_scanning_autofixes", key)
 		}
 	}
 	for id, up := range st.SARIFUploads {
 		if up.RepoKey == fullName {
 			delete(st.SARIFUploads, id)
-			if st.persist != nil {
-				st.persist.MustDelete("sarif_uploads", id)
-			}
+			batch.Delete("sarif_uploads", id)
 		}
 	}
 	for id, db := range st.CodeQLDatabases {
 		if db.RepoKey == fullName {
 			delete(st.CodeQLDatabases, id)
-			if st.persist != nil {
-				st.persist.MustDelete("codeql_databases", strconv.Itoa(id))
-			}
+			batch.Delete("codeql_databases", strconv.Itoa(id))
 		}
 	}
 	delete(st.CodeQLDatabasesByRepo, fullName)
 	for id, va := range st.CodeQLVariantAnalyses {
 		if va.ControllerRepoKey == fullName {
 			delete(st.CodeQLVariantAnalyses, id)
-			if st.persist != nil {
-				st.persist.MustDelete("codeql_variant_analyses", strconv.Itoa(id))
-			}
+			batch.Delete("codeql_variant_analyses", strconv.Itoa(id))
 		}
 	}
 	for id, alert := range st.DependabotAlerts {
 		if alert.RepoKey == fullName {
 			delete(st.DependabotAlerts, id)
-			if st.persist != nil {
-				st.persist.MustDelete("dependabot_alerts", strconv.Itoa(id))
-			}
+			batch.Delete("dependabot_alerts", strconv.Itoa(id))
 		}
 	}
 	delete(st.DependabotAlertsByRepo, fullName)
@@ -572,29 +576,21 @@ func (st *Store) DeleteRepo(owner, name string) (bool, error) {
 	for id, rs := range st.Rulesets {
 		if rs.RepoID == repo.ID {
 			delete(st.Rulesets, id)
-			if st.persist != nil {
-				st.persist.MustDelete("repo_rulesets", strconv.Itoa(id))
-			}
+			batch.Delete("repo_rulesets", strconv.Itoa(id))
 		}
 	}
 	for id, project := range st.ProjectClassic {
 		if project.RepoKey == fullName {
 			delete(st.ProjectClassic, id)
-			if st.persist != nil {
-				st.persist.MustDelete("projects_classic", strconv.Itoa(id))
-			}
+			batch.Delete("projects_classic", strconv.Itoa(id))
 			for columnID, column := range st.ProjectColumns {
 				if column.ProjectID == id {
 					delete(st.ProjectColumns, columnID)
-					if st.persist != nil {
-						st.persist.MustDelete("project_columns", strconv.Itoa(columnID))
-					}
+					batch.Delete("project_columns", strconv.Itoa(columnID))
 					for cardID, card := range st.ProjectCards {
 						if card.ColumnID == columnID {
 							delete(st.ProjectCards, cardID)
-							if st.persist != nil {
-								st.persist.MustDelete("project_cards", strconv.Itoa(cardID))
-							}
+							batch.Delete("project_cards", strconv.Itoa(cardID))
 						}
 					}
 				}
@@ -605,28 +601,20 @@ func (st *Store) DeleteRepo(owner, name string) (bool, error) {
 		if cs.RepoKey == fullName {
 			delete(st.Codespaces, id)
 			delete(st.CodespacesByName, cs.Name)
-			if st.persist != nil {
-				st.persist.MustDelete("codespaces", strconv.Itoa(id))
-			}
+			batch.Delete("codespaces", strconv.Itoa(id))
 		}
 	}
 	if pkgs := st.PackagesByOwnerKey[fullName]; len(pkgs) > 0 {
 		for _, pkg := range pkgs {
 			delete(st.Packages, pkg.ID)
-			if st.persist != nil {
-				st.persist.MustDelete("packages", strconv.Itoa(pkg.ID))
-			}
+			batch.Delete("packages", strconv.Itoa(pkg.ID))
 			for versionID := range st.PackageVersionsByPackage[pkg.ID] {
 				delete(st.PackageVersions, versionID)
-				if st.persist != nil {
-					st.persist.MustDelete("package_versions", strconv.Itoa(versionID))
-				}
+				batch.Delete("package_versions", strconv.Itoa(versionID))
 				for fileID, file := range st.PackageFiles {
 					if file.VersionID == versionID {
 						delete(st.PackageFiles, fileID)
-						if st.persist != nil {
-							st.persist.MustDelete("package_files", strconv.Itoa(fileID))
-						}
+						batch.Delete("package_files", strconv.Itoa(fileID))
 					}
 				}
 				delete(st.PackageFilesByVersion, versionID)
@@ -638,46 +626,34 @@ func (st *Store) DeleteRepo(owner, name string) (bool, error) {
 	for id, alert := range st.SecurityAdvisories {
 		if alert.RepoID == repo.ID {
 			delete(st.SecurityAdvisories, id)
-			if st.persist != nil {
-				st.persist.MustDelete("security_advisories", strconv.Itoa(id))
-			}
+			batch.Delete("security_advisories", strconv.Itoa(id))
 		}
 	}
 	delete(st.SecurityAdvisoriesByRepo, fullName)
-	if st.persist != nil {
-		st.persist.MustDelete("security_advisories", fullName)
-	}
-	st.deleteRepoIDReferencesLocked(repo.ID)
+	batch.Delete("security_advisories", fullName)
+	st.deleteRepoIDReferencesLocked(batch, repo.ID)
 	for _, envID := range st.Deployments.DeleteRepo(repo.ID) {
 		if _, ok := st.EnvBranchPolicies[envID]; ok {
 			delete(st.EnvBranchPolicies, envID)
-			if st.persist != nil {
-				st.persist.MustDelete("env_branch_policies", strconv.Itoa(envID))
-			}
+			batch.Delete("env_branch_policies", strconv.Itoa(envID))
 		}
 		if _, ok := st.EnvProtectionRules[envID]; ok {
 			delete(st.EnvProtectionRules, envID)
-			if st.persist != nil {
-				st.persist.MustDelete("env_protection_rules", strconv.Itoa(envID))
-			}
+			batch.Delete("env_protection_rules", strconv.Itoa(envID))
 		}
 	}
 	for k := range st.EnvSecrets {
 		repoKey, _, found := strings.Cut(k, "\x1f")
 		if found && repoKey == fullName {
 			delete(st.EnvSecrets, k)
-			if st.persist != nil {
-				st.persist.MustDelete("env_secrets", k)
-			}
+			batch.Delete("env_secrets", k)
 		}
 	}
 	for k := range st.EnvVariables {
 		repoKey, _, found := strings.Cut(k, "\x1f")
 		if found && repoKey == fullName {
 			delete(st.EnvVariables, k)
-			if st.persist != nil {
-				st.persist.MustDelete("env_variables", k)
-			}
+			batch.Delete("env_variables", k)
 		}
 	}
 	issueIDs := map[int]bool{}
@@ -692,30 +668,24 @@ func (st *Store) DeleteRepo(owner, name string) (bool, error) {
 			prIDs[pr.ID] = true
 		}
 	}
-	st.deleteRepoIssueAndPullChildrenLocked(repo.ID, issueIDs, prIDs)
+	st.deleteRepoIssueAndPullChildrenLocked(batch, repo.ID, issueIDs, prIDs)
 	for id, label := range st.Labels {
 		if label.RepoID == repo.ID {
 			delete(st.Labels, id)
-			if st.persist != nil {
-				st.persist.MustDelete("labels", strconv.Itoa(id))
-			}
+			batch.Delete("labels", strconv.Itoa(id))
 		}
 	}
 	for id, milestone := range st.Milestones {
 		if milestone.RepoID == repo.ID {
 			delete(st.Milestones, id)
-			if st.persist != nil {
-				st.persist.MustDelete("milestones", strconv.Itoa(id))
-			}
+			batch.Delete("milestones", strconv.Itoa(id))
 		}
 	}
 	for id, issue := range st.Issues {
 		if issue.RepoID == repo.ID {
 			delete(st.Issues, id)
 			st.unindexIssueLocked(issue)
-			if st.persist != nil {
-				st.persist.MustDelete("issues", strconv.Itoa(id))
-			}
+			batch.Delete("issues", strconv.Itoa(id))
 		}
 	}
 	delete(st.IssuesByRepo, repo.ID)
@@ -723,9 +693,7 @@ func (st *Store) DeleteRepo(owner, name string) (bool, error) {
 		if pr.RepoID == repo.ID {
 			delete(st.PullRequests, id)
 			st.unindexPullLocked(pr)
-			if st.persist != nil {
-				st.persist.MustDelete("pull_requests", strconv.Itoa(id))
-			}
+			batch.Delete("pull_requests", strconv.Itoa(id))
 		}
 	}
 	delete(st.PullsByRepo, repo.ID)
@@ -739,25 +707,19 @@ func (st *Store) DeleteRepo(owner, name string) (bool, error) {
 	for id, c := range st.DiscussionComments {
 		if d := st.Discussions[c.DiscussionID]; d != nil && d.RepoID == repo.ID {
 			delete(st.DiscussionComments, id)
-			if st.persist != nil {
-				st.persist.MustDelete("discussion_comments", strconv.Itoa(id))
-			}
+			batch.Delete("discussion_comments", strconv.Itoa(id))
 		}
 	}
 	for id, d := range st.Discussions {
 		if d.RepoID == repo.ID {
 			delete(st.Discussions, id)
-			if st.persist != nil {
-				st.persist.MustDelete("discussions", strconv.Itoa(id))
-			}
+			batch.Delete("discussions", strconv.Itoa(id))
 		}
 	}
 	for id, cat := range st.DiscussionCategories {
 		if cat.RepoID == repo.ID {
 			delete(st.DiscussionCategories, id)
-			if st.persist != nil {
-				st.persist.MustDelete("discussion_categories", strconv.Itoa(id))
-			}
+			batch.Delete("discussion_categories", strconv.Itoa(id))
 		}
 	}
 
@@ -768,18 +730,51 @@ func (st *Store) DeleteRepo(owner, name string) (bool, error) {
 	for key := range st.Misc.branchProtection {
 		if strings.HasPrefix(key, bpPrefix) {
 			delete(st.Misc.branchProtection, key)
-			if st.persist != nil {
-				st.persist.MustDelete("branch_protection", key)
-			}
+			batch.Delete("branch_protection", key)
 		}
 	}
 	delete(st.Misc.pagesBuilds, fullName)
-	if st.persist != nil {
-		st.persist.MustDelete("pages_builds", fullName)
-	}
+	batch.Delete("pages_builds", fullName)
 	st.Misc.mu.Unlock()
 
+	if err := batch.Commit(); err != nil {
+		return true, fmt.Errorf("delete repo %s: %w", fullName, err)
+	}
 	return true, nil
+}
+
+// repoGitStorageIsPathBound reports whether a repository's storer addresses
+// its bytes by path. An in-memory storer does not, so it survives a rename
+// while a path-bound one has to be reopened against the new location.
+func repoGitStorageIsPathBound() bool {
+	return GitDataDir() != "" || IsS3GitStorage()
+}
+
+func moveRepoGitStorage(oldFull, newFull string) error {
+	if gitDir := GitDataDir(); gitDir != "" {
+		oldDir := filepath.Join(gitDir, filepath.FromSlash(oldFull))
+		newDir := filepath.Join(gitDir, filepath.FromSlash(newFull))
+		if err := os.MkdirAll(filepath.Dir(newDir), 0o755); err != nil {
+			return fmt.Errorf("create git directory %s: %w", filepath.Dir(newDir), err)
+		}
+		if err := os.Rename(oldDir, newDir); err != nil {
+			return fmt.Errorf("move git directory %s -> %s: %w", oldDir, newDir, err)
+		}
+	}
+	if !IsS3GitStorage() {
+		return nil
+	}
+	s3fs, err := getS3FS(context.Background())
+	if err != nil {
+		return fmt.Errorf("resolve S3 git storage: %w", err)
+	}
+	if s3fs == nil {
+		return nil
+	}
+	if err := s3fs.renameRepoPrefix(oldFull, newFull); err != nil {
+		return fmt.Errorf("move S3 object prefix: %w", err)
+	}
+	return nil
 }
 
 func deleteRepoGitStorage(fullName string) error {
@@ -805,29 +800,23 @@ func deleteRepoGitStorage(fullName string) error {
 	return nil
 }
 
-func (st *Store) deleteRepoIDReferencesLocked(repoID int) {
+func (st *Store) deleteRepoIDReferencesLocked(batch *persistBatch, repoID int) {
 	delete(st.RepoImports, repoID)
 	delete(st.DependencySnapshots, repoID)
 	delete(st.PagesDeployments, repoID)
-	if st.persist != nil {
-		st.persist.MustDelete("repo_imports", strconv.Itoa(repoID))
-		st.persist.MustDelete("dependency_snapshots", strconv.Itoa(repoID))
-		st.persist.MustDelete("pages_deployments", strconv.Itoa(repoID))
-	}
+	batch.Delete("repo_imports", strconv.Itoa(repoID))
+	batch.Delete("dependency_snapshots", strconv.Itoa(repoID))
+	batch.Delete("pages_deployments", strconv.Itoa(repoID))
 	for id, exp := range st.SBOMExports {
 		if exp.RepoID == repoID {
 			delete(st.SBOMExports, id)
-			if st.persist != nil {
-				st.persist.MustDelete("sbom_exports", id)
-			}
+			batch.Delete("sbom_exports", id)
 		}
 	}
 	for id, task := range st.AgentTasks {
 		if task.RepoID == repoID {
 			delete(st.AgentTasks, id)
-			if st.persist != nil {
-				st.persist.MustDelete("agent_tasks", id)
-			}
+			batch.Delete("agent_tasks", id)
 		}
 	}
 	if st.EnterpriseSettings != nil {
@@ -839,31 +828,23 @@ func (st *Store) deleteRepoIDReferencesLocked(repoID int) {
 	for id, a := range st.RepoActivities {
 		if a.RepoID == repoID {
 			delete(st.RepoActivities, id)
-			if st.persist != nil {
-				st.persist.MustDelete("repo_activity", strconv.Itoa(id))
-			}
+			batch.Delete("repo_activity", strconv.Itoa(id))
 		}
 	}
 	for key, bucket := range st.RepoCloneTraffic {
 		if bucket.RepoID == repoID {
 			delete(st.RepoCloneTraffic, key)
-			if st.persist != nil {
-				st.persist.MustDelete("repo_traffic_clones", key)
-			}
+			batch.Delete("repo_traffic_clones", key)
 		}
 	}
 	for key, sub := range st.RepoSubscriptions {
 		if sub != nil && sub.RepoID == repoID {
 			delete(st.RepoSubscriptions, key)
-			if st.persist != nil {
-				st.persist.MustDelete("repo_subscriptions", key)
-			}
+			batch.Delete("repo_subscriptions", key)
 		}
 	}
 	delete(st.EnterpriseCodeSecurityRepoConfigs, repoID)
-	if st.persist != nil {
-		st.persist.MustDelete("enterprise_code_security_attachments", strconv.Itoa(repoID))
-	}
+	batch.Delete("enterprise_code_security_attachments", strconv.Itoa(repoID))
 	for orgLogin, attachments := range st.CodeSecurityRepoAttachments {
 		if _, ok := attachments[repoID]; !ok {
 			continue
@@ -871,44 +852,32 @@ func (st *Store) deleteRepoIDReferencesLocked(repoID int) {
 		delete(attachments, repoID)
 		if len(attachments) == 0 {
 			delete(st.CodeSecurityRepoAttachments, orgLogin)
-			if st.persist != nil {
-				st.persist.MustDelete("code_security_repo_attachments", orgLogin)
-			}
+			batch.Delete("code_security_repo_attachments", orgLogin)
 			continue
 		}
-		if st.persist != nil {
-			st.persist.MustPut("code_security_repo_attachments", orgLogin, attachments)
-		}
+		batch.Put("code_security_repo_attachments", orgLogin, attachments)
 	}
 	for orgLogin, ids := range st.DependabotRepositoryAccess {
 		if kept, changed := removeRepoIDFromList(ids, repoID); changed {
 			if len(kept) == 0 {
 				delete(st.DependabotRepositoryAccess, orgLogin)
-				if st.persist != nil {
-					st.persist.MustDelete("dependabot_repo_access", orgLogin)
-				}
+				batch.Delete("dependabot_repo_access", orgLogin)
 			} else {
 				st.DependabotRepositoryAccess[orgLogin] = kept
-				if st.persist != nil {
-					st.persist.MustPut("dependabot_repo_access", orgLogin, kept)
-				}
+				batch.Put("dependabot_repo_access", orgLogin, kept)
 			}
 		}
 	}
 	for _, inst := range st.Installations {
 		if kept, changed := removeRepoIDFromList(inst.SelectedRepoIDs, repoID); changed {
 			inst.SelectedRepoIDs = kept
-			if st.persist != nil {
-				st.persist.MustPut("installations", strconv.Itoa(inst.ID), inst)
-			}
+			batch.Put("installations", strconv.Itoa(inst.ID), inst)
 		}
 	}
 	for token, t := range st.InstallationTokens {
 		if kept, changed := removeRepoIDFromList(t.RepositoryIDs, repoID); changed {
 			t.RepositoryIDs = kept
-			if st.persist != nil {
-				st.persist.MustPut("installation_tokens", token, t)
-			}
+			batch.Put("installation_tokens", token, t)
 		}
 	}
 	for orgLogin, p := range st.OrgActionsPermissions {
@@ -928,29 +897,27 @@ func (st *Store) deleteRepoIDReferencesLocked(repoID int) {
 	for _, g := range st.RunnerGroups {
 		if kept, changed := removeRepoIDFromList(g.SelectedRepoIDs, repoID); changed {
 			g.SelectedRepoIDs = kept
-			if st.persist != nil {
-				st.persist.MustPut("runner_groups", strconv.Itoa(g.ID), g)
-			}
+			batch.Put("runner_groups", strconv.Itoa(g.ID), g)
 		}
 	}
 	for orgLogin, m := range st.OrgSecrets {
-		if removeRepoIDFromOrgSecrets(m, repoID) && st.persist != nil {
-			st.persist.MustPut("org_secrets", orgLogin, m)
+		if removeRepoIDFromOrgSecrets(m, repoID) {
+			batch.Put("org_secrets", orgLogin, m)
 		}
 	}
 	for orgLogin, m := range st.OrgVariables {
-		if removeRepoIDFromActionsVariables(m, repoID) && st.persist != nil {
-			st.persist.MustPut("org_variables", orgLogin, m)
+		if removeRepoIDFromActionsVariables(m, repoID) {
+			batch.Put("org_variables", orgLogin, m)
 		}
 	}
 	for orgLogin, m := range st.AgentsOrgSecrets {
-		if removeRepoIDFromOrgSecrets(m, repoID) && st.persist != nil {
-			st.persist.MustPut("agents_org_secrets", orgLogin, m)
+		if removeRepoIDFromOrgSecrets(m, repoID) {
+			batch.Put("agents_org_secrets", orgLogin, m)
 		}
 	}
 	for orgLogin, m := range st.AgentsOrgVariables {
-		if removeRepoIDFromActionsVariables(m, repoID) && st.persist != nil {
-			st.persist.MustPut("agents_org_variables", orgLogin, m)
+		if removeRepoIDFromActionsVariables(m, repoID) {
+			batch.Put("agents_org_variables", orgLogin, m)
 		}
 	}
 	for orgLogin, m := range st.DependabotOrgSecrets {
@@ -961,8 +928,8 @@ func (st *Store) deleteRepoIDReferencesLocked(repoID int) {
 				changed = true
 			}
 		}
-		if changed && st.persist != nil {
-			st.persist.MustPut("dependabot_org_secrets", orgLogin, m)
+		if changed {
+			batch.Put("dependabot_org_secrets", orgLogin, m)
 		}
 	}
 	for scope, m := range st.CodespaceSecrets {
@@ -992,25 +959,21 @@ func (st *Store) deleteRepoIDReferencesLocked(repoID int) {
 				changed = true
 			}
 		}
-		if changed && st.persist != nil {
-			st.persist.MustPut("org_private_registries", orgLogin, regs)
+		if changed {
+			batch.Put("org_private_registries", orgLogin, regs)
 		}
 	}
 	for orgLogin, settings := range st.OrgImmutableReleases {
 		if kept, changed := removeRepoIDFromList(settings.SelectedRepositoryIDs, repoID); changed {
 			settings.SelectedRepositoryIDs = kept
-			if st.persist != nil {
-				st.persist.MustPut("org_immutable_releases", orgLogin, settings)
-			}
+			batch.Put("org_immutable_releases", orgLogin, settings)
 		}
 	}
 	for id, va := range st.CodeQLVariantAnalyses {
 		if va.ControllerRepoKey != "" {
 			if repo := st.ReposByName[va.ControllerRepoKey]; repo != nil && repo.ID == repoID {
 				delete(st.CodeQLVariantAnalyses, id)
-				if st.persist != nil {
-					st.persist.MustDelete("codeql_variant_analyses", strconv.Itoa(id))
-				}
+				batch.Delete("codeql_variant_analyses", strconv.Itoa(id))
 				continue
 			}
 		}
@@ -1030,13 +993,13 @@ func (st *Store) deleteRepoIDReferencesLocked(repoID int) {
 			va.NoCodeQLDBRepos = kept
 			changed = true
 		}
-		if changed && st.persist != nil {
-			st.persist.MustPut("codeql_variant_analyses", strconv.Itoa(id), va)
+		if changed {
+			batch.Put("codeql_variant_analyses", strconv.Itoa(id), va)
 		}
 	}
 }
 
-func (st *Store) deleteRepoFullNameReferencesLocked(fullName string) {
+func (st *Store) deleteRepoFullNameReferencesLocked(batch *persistBatch, fullName string) {
 	for _, team := range st.Teams {
 		changed := false
 		kept := team.RepoNames[:0]
@@ -1053,25 +1016,19 @@ func (st *Store) deleteRepoFullNameReferencesLocked(fullName string) {
 				delete(team.RepoPermissions, fullName)
 			}
 			team.UpdatedAt = time.Now().UTC()
-			if st.persist != nil {
-				st.persist.MustPut("teams", strconv.Itoa(team.ID), team)
-			}
+			batch.Put("teams", strconv.Itoa(team.ID), team)
 		}
 	}
 	for id, rec := range st.ArtifactStorageRecords {
 		if rec.GitHubRepository == fullName {
 			delete(st.ArtifactStorageRecords, id)
-			if st.persist != nil {
-				st.persist.MustDelete("artifact_storage_records", strconv.Itoa(id))
-			}
+			batch.Delete("artifact_storage_records", strconv.Itoa(id))
 		}
 	}
 	for id, rec := range st.ArtifactDeploymentRecords {
 		if rec.GitHubRepository == fullName {
 			delete(st.ArtifactDeploymentRecords, id)
-			if st.persist != nil {
-				st.persist.MustDelete("artifact_deployment_records", strconv.Itoa(id))
-			}
+			batch.Delete("artifact_deployment_records", strconv.Itoa(id))
 		}
 	}
 }
@@ -1111,15 +1068,13 @@ func removeRepoIDFromActionsVariables(vars map[string]*ActionsVariable, repoID i
 	return changed
 }
 
-func (st *Store) deleteRepoIssueAndPullChildrenLocked(repoID int, issueIDs, prIDs map[int]bool) {
+func (st *Store) deleteRepoIssueAndPullChildrenLocked(batch *persistBatch, repoID int, issueIDs, prIDs map[int]bool) {
 	if len(issueIDs) == 0 && len(prIDs) == 0 {
 		return
 	}
 	for issueID := range issueIDs {
 		delete(st.IssueFieldValues, issueID)
-		if st.persist != nil {
-			st.persist.MustDelete("issue_field_values", strconv.Itoa(issueID))
-		}
+		batch.Delete("issue_field_values", strconv.Itoa(issueID))
 	}
 	st.ProjectsV2.DeleteContentItems("Issue", issueIDs)
 	st.ProjectsV2.DeleteContentItems("PullRequest", prIDs)
@@ -1136,17 +1091,13 @@ func (st *Store) deleteRepoIssueAndPullChildrenLocked(repoID int, issueIDs, prID
 			delete(st.Comments, id)
 			st.Reactions.DeleteParent(c.ParentType+"_comment", id)
 			delete(st.CommentCounts, commentCountKey(c.ParentType, c.IssueID))
-			if st.persist != nil {
-				st.persist.MustDelete("comments", strconv.Itoa(id))
-			}
+			batch.Delete("comments", strconv.Itoa(id))
 		}
 	}
 	for id, e := range st.IssueEvents {
 		if e.RepoID == repoID || (e.ParentType == "issue" && issueIDs[e.IssueID]) || (e.ParentType == "pull_request" && prIDs[e.IssueID]) {
 			delete(st.IssueEvents, id)
-			if st.persist != nil {
-				st.persist.MustDelete("issue_events", strconv.Itoa(id))
-			}
+			batch.Delete("issue_events", strconv.Itoa(id))
 		}
 	}
 	for parentID, children := range st.SubIssueLists {
@@ -1155,9 +1106,7 @@ func (st *Store) deleteRepoIssueAndPullChildrenLocked(repoID int, issueIDs, prID
 				delete(st.SubIssueParent, childID)
 			}
 			delete(st.SubIssueLists, parentID)
-			if st.persist != nil {
-				st.persist.MustDelete("sub_issues", strconv.Itoa(parentID))
-			}
+			batch.Delete("sub_issues", strconv.Itoa(parentID))
 			continue
 		}
 		kept := children[:0]
@@ -1188,9 +1137,7 @@ func (st *Store) deleteRepoIssueAndPullChildrenLocked(repoID int, issueIDs, prID
 	for issueID, blockers := range st.IssueBlockedBy {
 		if issueIDs[issueID] {
 			delete(st.IssueBlockedBy, issueID)
-			if st.persist != nil {
-				st.persist.MustDelete("issue_blocked_by", strconv.Itoa(issueID))
-			}
+			batch.Delete("issue_blocked_by", strconv.Itoa(issueID))
 			continue
 		}
 		kept := blockers[:0]
@@ -1215,9 +1162,7 @@ func (st *Store) deleteRepoIssueAndPullChildrenLocked(repoID int, issueIDs, prID
 	for id, r := range st.PRReviews {
 		if prIDs[r.PRID] {
 			delete(st.PRReviews, id)
-			if st.persist != nil {
-				st.persist.MustDelete("pr_reviews", strconv.Itoa(id))
-			}
+			batch.Delete("pr_reviews", strconv.Itoa(id))
 		}
 	}
 	for prID := range prIDs {
@@ -2409,7 +2354,7 @@ func (st *Store) moveRepoKeyLocked(oldFull, newFull string) {
 				changed = true
 			}
 		}
-		if changed && st.persist != nil {
+		if changed {
 			st.persist.MustPut("codeql_variant_analyses", strconv.Itoa(va.ID), va)
 		}
 	}

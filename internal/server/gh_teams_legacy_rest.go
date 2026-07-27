@@ -66,7 +66,7 @@ func (s *Server) resolveLegacyTeamForMember(w http.ResponseWriter, r *http.Reque
 	if team == nil {
 		return nil, nil, nil
 	}
-	if !isActiveOrgMember(s.store, user, org.Login) {
+	if !s.viewerIsOrgMember(r.Context(), org.Login) {
 		writeGHError(w, http.StatusNotFound, "Not Found")
 		return nil, nil, nil
 	}
@@ -101,7 +101,7 @@ func (s *Server) handleLegacyUpdateTeam(w http.ResponseWriter, r *http.Request) 
 	if team == nil {
 		return
 	}
-	if !canAdminOrg(s.store, user, org) {
+	if !s.viewerCanAdminOrg(r.Context(), org.Login) {
 		writeGHError(w, http.StatusForbidden, "Must be an organization owner.")
 		return
 	}
@@ -118,7 +118,7 @@ func (s *Server) handleLegacyDeleteTeam(w http.ResponseWriter, r *http.Request) 
 	if team == nil {
 		return
 	}
-	if !canAdminOrg(s.store, user, org) {
+	if !s.viewerCanAdminOrg(r.Context(), org.Login) {
 		writeGHError(w, http.StatusForbidden, "Must be an organization owner.")
 		return
 	}
@@ -202,7 +202,7 @@ func (s *Server) handleLegacyAddTeamMember(w http.ResponseWriter, r *http.Reques
 	if team == nil {
 		return
 	}
-	if !s.canManageTeam(user, org, team, false) {
+	if !s.canManageTeam(r.Context(), user, org, team, false) {
 		writeGHError(w, http.StatusForbidden, "Must be an organization owner or team maintainer.")
 		return
 	}
@@ -229,7 +229,7 @@ func (s *Server) handleLegacyRemoveTeamMember(w http.ResponseWriter, r *http.Req
 	if team == nil {
 		return
 	}
-	if !s.canManageTeam(user, org, team, false) {
+	if !s.canManageTeam(r.Context(), user, org, team, false) {
 		writeGHError(w, http.StatusForbidden, "Must be an organization owner or team maintainer.")
 		return
 	}
@@ -301,7 +301,7 @@ func (s *Server) handleLegacyPutTeamMembership(w http.ResponseWriter, r *http.Re
 		return
 	}
 
-	if !s.canManageTeam(user, org, team, role == TeamRoleMaintainer) {
+	if !s.canManageTeam(r.Context(), user, org, team, role == TeamRoleMaintainer) {
 		writeGHError(w, http.StatusForbidden, "Must be an organization owner or team maintainer.")
 		return
 	}
@@ -327,7 +327,7 @@ func (s *Server) handleLegacyDeleteTeamMembership(w http.ResponseWriter, r *http
 	if team == nil {
 		return
 	}
-	if !s.canManageTeam(user, org, team, false) {
+	if !s.canManageTeam(r.Context(), user, org, team, false) {
 		writeGHError(w, http.StatusForbidden, "Must be an organization owner or team maintainer.")
 		return
 	}
@@ -378,7 +378,7 @@ func (s *Server) handleLegacyAddTeamRepo(w http.ResponseWriter, r *http.Request)
 	if team == nil {
 		return
 	}
-	if !s.canManageTeam(user, org, team, false) {
+	if !s.canManageTeam(r.Context(), user, org, team, false) {
 		writeGHError(w, http.StatusForbidden, "Must be an organization owner or team maintainer.")
 		return
 	}
@@ -413,7 +413,7 @@ func (s *Server) handleLegacyRemoveTeamRepo(w http.ResponseWriter, r *http.Reque
 	if team == nil {
 		return
 	}
-	if !s.canManageTeam(user, org, team, false) {
+	if !s.canManageTeam(r.Context(), user, org, team, false) {
 		writeGHError(w, http.StatusForbidden, "Must be an organization owner or team maintainer.")
 		return
 	}

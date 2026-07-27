@@ -11,20 +11,80 @@ import (
 )
 
 func (s *Server) registerRunServiceRoutes() {
-	// Acquire / renew / complete job requests
-	s.route("GET /_apis/v1/AgentRequest/{poolId}/{requestId}", s.handleGetRequest)
-	s.route("PATCH /_apis/v1/AgentRequest/{poolId}/{requestId}", s.handleRenewRequest)
-	s.route("PUT /_apis/v1/AgentRequest/{poolId}/{requestId}", s.handleRenewRequest)
-	s.route("DELETE /_apis/v1/AgentRequest/{poolId}/{requestId}", s.handleCompleteRequest)
+	// Acquire / renew / complete job requests. The runner listener holds an
+	// agent session token here, and every one of these names a single job by
+	// its {requestId}, so each is bound to the runner the broker handed that
+	// job to.
+	s.route("GET /_apis/v1/AgentRequest/{poolId}/{requestId}", s.requireAssignedAgent(s.handleGetRequest))
+	s.route("PATCH /_apis/v1/AgentRequest/{poolId}/{requestId}", s.requireAssignedAgent(s.handleRenewRequest))
+	s.route("PUT /_apis/v1/AgentRequest/{poolId}/{requestId}", s.requireAssignedAgent(s.handleRenewRequest))
+	s.route("DELETE /_apis/v1/AgentRequest/{poolId}/{requestId}", s.requireAssignedAgent(s.handleCompleteRequest))
 
-	// FinishJob (runner reports job completion)
-	s.route("POST /_apis/v1/FinishJob/{scopeId}/{hubName}/{planId}", s.handleFinishJob)
+	// FinishJob (the worker reports job completion) and the legacy plan event
+	// route both act on the job named by {planId}, so both are bound to that
+	// job's runtime token.
+	s.route("POST /_apis/v1/FinishJob/{scopeId}/{hubName}/{planId}", s.requirePlanJob(s.handleFinishJob))
+	s.route("PUT /_apis/v1/plans/{planId}/events", s.requirePlanJob(s.handleJobEvents))
 
-	// Job events (legacy)
-	s.route("PUT /_apis/v1/plans/{planId}/events", s.handleJobEvents)
+	// CustomerIntelligence (telemetry, accept and discard). Nothing in the
+	// path names a job, so the gate is a verified runner credential of either
+	// audience.
+	s.route("POST /_apis/v1/tasks", s.requireRunnerAuth(s.handleTelemetry))
+}
 
-	// CustomerIntelligence (telemetry, accept and discard)
-	s.route("POST /_apis/v1/tasks", s.handleTelemetry)
+// requireAssignedAgent gates a route that names a job by its {requestId} on
+// the agent session of the runner that job was dispatched to. The broker
+// records the agent when it hands the job message out, so ownership is server
+// state rather than a claim on the request: one runner cannot read another
+// runner's job message — it carries that job's secrets and runtime token — nor
+// renew or complete its request.
+func (s *Server) requireAssignedAgent(next http.HandlerFunc) http.HandlerFunc {
+	return s.requireAgentSession(func(w http.ResponseWriter, r *http.Request) {
+		reqID, err := strconv.ParseInt(r.PathValue("requestId"), 10, 64)
+		if err != nil {
+			http.Error(w, "invalid request ID", http.StatusBadRequest)
+			return
+		}
+		job := s.lookupJobByRequestID(reqID)
+		if job == nil {
+			http.Error(w, "request not found", http.StatusNotFound)
+			return
+		}
+		s.store.mu.RLock()
+		assigned := job.AgentID
+		s.store.mu.RUnlock()
+		if assigned == 0 || assigned != runnerFromContext(r.Context()).Agent.ID {
+			writeGHError(w, http.StatusForbidden, "This job request belongs to another runner")
+			return
+		}
+		next(w, r)
+	})
+}
+
+// requirePlanJob gates a route that names a job by its {planId} on that job's
+// runtime token. Every such handler reads the {planId}, so that is what the
+// credential is bound to: the plan's own scopeIdentifier is resolved from the
+// dispatched job message and compared against the already-verified sub claim.
+// Checking the {scopeId} path segment instead leaves the parameter the
+// handlers act on unchecked, which is a job writing another job's plan.
+func (s *Server) requirePlanJob(next http.HandlerFunc) http.HandlerFunc {
+	return s.requireJobToken(func(w http.ResponseWriter, r *http.Request) {
+		planID := r.PathValue("planId")
+		job := s.lookupJobByPlanID(planID)
+		if job == nil {
+			http.Error(w, "plan not found", http.StatusNotFound)
+			return
+		}
+		s.store.mu.RLock()
+		message := job.Message
+		s.store.mu.RUnlock()
+		scopeID, _ := jobMessageScopeAndRepo(message)
+		if scopeID == "" || scopeID != runnerFromContext(r.Context()).Claims.Sub {
+			writeGHError(w, http.StatusForbidden, "Job token does not cover this plan")
+			return
+		}
+		next(w, r)
+	})
 }
 
 func (s *Server) handleGetRequest(w http.ResponseWriter, r *http.Request) {
@@ -174,47 +234,37 @@ func (s *Server) handleFinishJob(w http.ResponseWriter, r *http.Request) {
 		Str("result", result).
 		Msg("job finished")
 
-	// Update job status — try both plan ID lookup and job ID lookup
+	// The plan names the job. A jobId in the body may confirm it but never
+	// select a different one: completing whatever job the body pointed at was
+	// a way to finish another runner's work.
 	job := s.lookupJobByPlanID(planID)
-	if job == nil && jobID != "" {
-		s.store.mu.RLock()
-		job = s.store.Jobs[jobID]
-		s.store.mu.RUnlock()
+	if job == nil {
+		http.Error(w, "plan not found", http.StatusNotFound)
+		return
 	}
-	if job != nil {
-		if jobID != "" && jobID != job.ID {
-			http.Error(w, "JobCompleted event jobId does not match plan", http.StatusBadRequest)
-			return
-		}
-		jobID = job.ID
-		// Store the official runner's evaluated outputs before completing the
-		// workflow job. Completion can synchronously dispatch a downstream
-		// job whose needs context must already contain these values.
-		s.captureResolvedJobOutputs(jobID, body.Outputs)
-
-		s.store.mu.Lock()
-		job.Status = "completed"
-		job.Result = result
-		// Snapshot under the lock: the broker concurrently mutates these
-		// fields (recordJobAgentLocked writes AgentID), so every read after
-		// the unlock must come from a local, not the shared *Job.
-		jobIDSnap := job.ID
-		jobResultSnap := job.Result
-		jobAgentSnap := job.AgentID
-		s.store.mu.Unlock()
-		s.logger.Info().Str("jobId", jobIDSnap).Str("result", jobResultSnap).Msg("job status updated")
-
-		// Notify workflow engine of job completion
-		s.onJobCompleted(r.Context(), jobIDSnap, jobResultSnap)
-
-		// Ephemeral runners exist for exactly one job — real GitHub
-		// auto-deregisters them after it completes (the dispatcher's
-		// one-runner-per-job model depends on the registration not
-		// lingering as an offline zombie).
-		s.removeEphemeralAgent(jobAgentSnap)
-	} else {
-		s.logger.Warn().Str("planId", planID).Msg("could not find job for finish")
+	if jobID != "" && jobID != job.ID {
+		http.Error(w, "JobCompleted event jobId does not match plan", http.StatusBadRequest)
+		return
 	}
+
+	// Store the official runner's evaluated outputs before completing the
+	// workflow job. Completion can synchronously dispatch a downstream
+	// job whose needs context must already contain these values.
+	s.captureResolvedJobOutputs(job.ID, body.Outputs)
+
+	s.store.mu.Lock()
+	job.Status = "completed"
+	job.Result = result
+	// Snapshot under the lock: the broker concurrently mutates these
+	// fields (recordJobAgentLocked writes AgentID), so every read after
+	// the unlock must come from a local, not the shared *Job.
+	jobIDSnap := job.ID
+	jobResultSnap := job.Result
+	s.store.mu.Unlock()
+	s.logger.Info().Str("jobId", jobIDSnap).Str("result", jobResultSnap).Msg("job status updated")
+
+	// Notify workflow engine of job completion
+	s.onJobCompleted(r.Context(), jobIDSnap, jobResultSnap)
 
 	writeJSON(w, http.StatusOK, map[string]interface{}{"status": "ok"})
 }
@@ -284,33 +334,30 @@ func (s *Server) handleJobEvents(w http.ResponseWriter, r *http.Request) {
 
 	s.logger.Debug().Str("planId", planID).Str("event", body.Name).Msg("job event")
 	if body.Name == "JobCompleted" {
+		// As on FinishJob: the plan names the job, and a jobId in the body may
+		// only confirm it.
 		job := s.lookupJobByPlanID(planID)
-		jobID := body.JobID
-		if job != nil {
-			if jobID != "" && jobID != job.ID {
-				http.Error(w, "JobCompleted event jobId does not match plan", http.StatusBadRequest)
-				return
-			}
-			jobID = job.ID
+		if job == nil {
+			http.Error(w, "plan not found", http.StatusNotFound)
+			return
 		}
-		if jobID == "" {
-			http.Error(w, "JobCompleted event is missing jobId", http.StatusBadRequest)
+		if body.JobID != "" && body.JobID != job.ID {
+			http.Error(w, "JobCompleted event jobId does not match plan", http.StatusBadRequest)
 			return
 		}
 
-		s.captureResolvedJobOutputs(jobID, body.Outputs)
+		s.captureResolvedJobOutputs(job.ID, body.Outputs)
 		result, err := runnerJobResult(body.Result)
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusBadRequest)
 			return
 		}
-		if job != nil {
-			s.store.mu.Lock()
-			job.Status = "completed"
-			job.Result = result
-			s.store.mu.Unlock()
-		}
-		s.onJobCompleted(r.Context(), jobID, result)
+		s.store.mu.Lock()
+		job.Status = "completed"
+		job.Result = result
+		jobIDSnap := job.ID
+		s.store.mu.Unlock()
+		s.onJobCompleted(r.Context(), jobIDSnap, result)
 	}
 
 	w.WriteHeader(http.StatusOK)

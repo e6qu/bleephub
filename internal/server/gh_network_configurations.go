@@ -171,6 +171,9 @@ func (s *Server) handleUpdateOrgNetworkConfiguration(w http.ResponseWriter, r *h
 		return
 	}
 	updated := s.store.UpdateNetworkConfiguration(org, c.ID, &req)
+	if !mutated(w, updated) {
+		return
+	}
 	writeJSON(w, http.StatusOK, networkConfigurationJSON(updated))
 }
 

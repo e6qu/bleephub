@@ -48,13 +48,31 @@ func (ac *ActionCache) Put(key string, entry *ActionCacheEntry) {
 }
 
 func (s *Server) registerActionRoutes() {
-	// Tarball proxy — serves cached action tarballs
-	s.route("GET /_apis/v1/actions/tarball/{owner}/{repo}/{ref...}", s.handleActionTarball)
+	// Tarball proxy — serves cached action tarballs. This streams repository
+	// content, so it takes the job's runtime token and resolves the action
+	// repository's visibility before it serves a byte. The runner presents
+	// that token as basic auth here, which is why the gate is not the plain
+	// bearer one the rest of the runner protocol uses.
+	s.route("GET /_apis/v1/actions/tarball/{owner}/{repo}/{ref...}", s.requireActionArchiveToken(s.handleActionTarball))
 }
 
-// handleActionDownloadInfo returns tarball URLs for requested actions.
+// handleActionDownloadInfo returns tarball URLs for requested actions, each
+// with the credential the runner is to present when it fetches one.
+//
+// The archive download is made by a plain HTTP client that has no credential
+// of its own: it sends the token named here, and nothing at all when the
+// response names none. So the answer carries a job runtime token for the plan
+// the caller already authenticated as, with the expiry that token really has.
 func (s *Server) handleActionDownloadInfo(w http.ResponseWriter, r *http.Request) {
 	serverURL := s.baseURL(r)
+
+	caller, err := s.callerRunner(r)
+	if err != nil || !caller.IsJobToken() {
+		writeGHError(w, http.StatusForbidden, "This route requires a job runtime token")
+		return
+	}
+	downloadToken := makeJWT(caller.Claims.Sub, runnerAudJob)
+	downloadExpiry := time.Now().Add(runnerTokenTTL).UTC().Format(time.RFC3339)
 
 	var body struct {
 		Actions []struct {
@@ -103,8 +121,8 @@ func (s *Server) handleActionDownloadInfo(w http.ResponseWriter, r *http.Request
 			"tarballUrl":            tarballURL,
 			"zipballUrl":            zipballURL,
 			"authentication": map[string]interface{}{
-				"expiresAt": "2099-01-01T00:00:00Z",
-				"token":     "x-access-token",
+				"expiresAt": downloadExpiry,
+				"token":     downloadToken,
 			},
 		}
 	}
@@ -145,6 +163,23 @@ func (s *Server) handleActionTarball(w http.ResponseWriter, r *http.Request) {
 
 	nameWithOwner := owner + "/" + repo
 	key := nameWithOwner + "@" + ref
+
+	// Resolve the action's repository before anything is served, including a
+	// cache hit: a private repository's tree only goes to a job entitled to
+	// it. Repositories bleephub does not host are 404, never a passthrough.
+	actionRepo := s.store.GetRepo(owner, repo)
+	if actionRepo == nil {
+		http.Error(w, "action repository "+nameWithOwner+" is not hosted in bleephub", http.StatusNotFound)
+		return
+	}
+	if actionRepo.Private {
+		caller, err := s.callerRunner(r)
+		if err != nil || !caller.Scope.coversRepo(actionRepo.FullName) {
+			s.logger.Warn().Str("action", nameWithOwner).Msg("action tarball denied: private repository outside the job's scope")
+			http.Error(w, "action repository "+nameWithOwner+" is not hosted in bleephub", http.StatusNotFound)
+			return
+		}
+	}
 
 	if entry := s.actionCache.Get(key); entry != nil {
 		s.logger.Debug().Str("key", key).Msg("serving cached action tarball")

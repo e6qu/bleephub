@@ -565,7 +565,7 @@ func (s *Server) lookupReadableRepoFromPath(w http.ResponseWriter, r *http.Reque
 		writeGHError(w, http.StatusNotFound, "Not Found")
 		return nil
 	}
-	if repo.Private && !s.viewerCanReadRepo(r, repo) {
+	if repo.Private && !s.viewerCanReadRepo(r.Context(), repo) {
 		writeGHError(w, http.StatusNotFound, "Not Found")
 		return nil
 	}
@@ -580,8 +580,20 @@ func (s *Server) lookupReadableRepoFromPath(w http.ResponseWriter, r *http.Reque
 // their own not-found semantics. Use this on repo-scoped read handlers that
 // must not leak private-repo content but operate on non-Repo-keyed state.
 func (s *Server) enforceRepoReadable(w http.ResponseWriter, r *http.Request) bool {
-	repo := s.store.GetRepo(r.PathValue("owner"), r.PathValue("repo"))
-	if repo != nil && repo.Private && !s.viewerCanReadRepo(r, repo) {
+	// A route that names no repository — the same handler is registered under
+	// /orgs/{org} for a few families — has nothing to resolve here.
+	if !repoNamedInRequest(r) {
+		return true
+	}
+	repo := s.repoFromPATRequest(r)
+	if repo == nil {
+		// Named but absent. Answering 200 for a repository that does not exist
+		// while answering 404 for one the caller may not see is an existence
+		// oracle run backwards.
+		writeGHError(w, http.StatusNotFound, "Not Found")
+		return false
+	}
+	if repo.Private && !s.viewerCanReadRepo(r.Context(), repo) {
 		writeGHError(w, http.StatusNotFound, "Not Found")
 		return false
 	}
@@ -1015,6 +1027,9 @@ func (s *Server) handleUpdateReleaseAsset(w http.ResponseWriter, r *http.Request
 		label = *req.Label
 	}
 	updated := s.store.Releases.UpdateReleaseAsset(assetID, name, label)
+	if !mutated(w, updated) {
+		return
+	}
 	writeJSON(w, http.StatusOK, releaseAssetToJSON(updated, s.store, s.baseURL(r), repo, rel))
 }
 

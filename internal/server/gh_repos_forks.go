@@ -21,7 +21,7 @@ func (s *Server) handleCreateFork(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// GitHub allows forking public repos and private repos the user can read.
-	if sourceRepo.Private && !canReadRepo(s.store, user, sourceRepo) {
+	if sourceRepo.Private && !s.viewerCanReadRepo(r.Context(), sourceRepo) {
 		writeGHError(w, http.StatusNotFound, "Not Found")
 		return
 	}
@@ -70,7 +70,7 @@ func (s *Server) handleListForks(w http.ResponseWriter, r *http.Request) {
 	}
 
 	user := ghUserFromContext(r.Context())
-	if sourceRepo.Private && !canReadRepo(s.store, user, sourceRepo) {
+	if sourceRepo.Private && !s.viewerCanReadRepo(r.Context(), sourceRepo) {
 		writeGHError(w, http.StatusNotFound, "Not Found")
 		return
 	}

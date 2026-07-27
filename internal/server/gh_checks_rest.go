@@ -35,49 +35,35 @@ func (s *Server) registerGHChecksRoutes() {
 // handleRerequestCheckRun resets a completed check run to queued and fires
 // the check_run "rerequested" webhook, asking the owning app to run it again.
 func (s *Server) handleRerequestCheckRun(w http.ResponseWriter, r *http.Request) {
-	repoKey := r.PathValue("owner") + "/" + r.PathValue("repo")
-	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
-	if err != nil {
-		writeGHError(w, http.StatusNotFound, "Not Found")
-		return
-	}
-	cr := s.store.GetCheckRun(id)
-	if cr == nil || cr.RepoKey != repoKey {
-		writeGHError(w, http.StatusNotFound, "Not Found")
+	cr := s.checkRunInRepo(w, r)
+	if cr == nil {
 		return
 	}
 	if cr.Status != "completed" {
 		writeGHError(w, http.StatusUnprocessableEntity, "This check run is not yet completed and cannot be rerequested.")
 		return
 	}
-	s.store.UpdateCheckRun(id, func(c *CheckRun) {
+	s.store.UpdateCheckRun(cr.ID, func(c *CheckRun) {
 		c.Status = "queued"
 		c.Conclusion = ""
 		c.CompletedAt = nil
 	})
-	s.emitCheckRunEvent(repoKey, id, "rerequested")
+	s.emitCheckRunEvent(cr.RepoKey, cr.ID, "rerequested")
 	writeJSON(w, http.StatusCreated, map[string]interface{}{})
 }
 
 // handleRerequestCheckSuite marks a check suite queued and fires the
 // check_suite "rerequested" webhook, asking apps to re-create their runs.
 func (s *Server) handleRerequestCheckSuite(w http.ResponseWriter, r *http.Request) {
-	repoKey := r.PathValue("owner") + "/" + r.PathValue("repo")
-	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
-	if err != nil {
-		writeGHError(w, http.StatusNotFound, "Not Found")
+	suite := s.checkSuiteInRepo(w, r)
+	if suite == nil {
 		return
 	}
-	suite := s.store.GetCheckSuite(id)
-	if suite == nil || suite.RepoKey != repoKey {
-		writeGHError(w, http.StatusNotFound, "Not Found")
-		return
-	}
-	s.store.UpdateCheckSuite(id, func(cs *CheckSuite) {
+	s.store.UpdateCheckSuite(suite.ID, func(cs *CheckSuite) {
 		cs.Status = "queued"
 		cs.Conclusion = ""
 	})
-	s.emitCheckSuiteEvent(repoKey, id, "rerequested")
+	s.emitCheckSuiteEvent(suite.RepoKey, suite.ID, "rerequested")
 	writeJSON(w, http.StatusCreated, map[string]interface{}{})
 }
 
@@ -141,26 +127,54 @@ func (s *Server) handleCreateCheckRun(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusCreated, s.checkRunToJSON(s.store.GetCheckRun(cr.ID), s.baseURL(r)))
 }
 
-func (s *Server) handleGetCheckRun(w http.ResponseWriter, r *http.Request) {
+// checkRunInRepo resolves the check run named by {id}, answering 404 unless it
+// belongs to the repository in the URL path. Check run ids are global, so the
+// path repository is the only thing that ties the id to a tenant.
+func (s *Server) checkRunInRepo(w http.ResponseWriter, r *http.Request) *CheckRun {
+	repoKey := r.PathValue("owner") + "/" + r.PathValue("repo")
 	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
 	if err != nil {
 		writeGHError(w, http.StatusNotFound, "Not Found")
-		return
+		return nil
 	}
 	cr := s.store.GetCheckRun(id)
-	if cr == nil {
+	if cr == nil || cr.RepoKey != repoKey {
 		writeGHError(w, http.StatusNotFound, "Not Found")
+		return nil
+	}
+	return cr
+}
+
+// checkSuiteInRepo is checkRunInRepo for check suites.
+func (s *Server) checkSuiteInRepo(w http.ResponseWriter, r *http.Request) *CheckSuite {
+	repoKey := r.PathValue("owner") + "/" + r.PathValue("repo")
+	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
+	if err != nil {
+		writeGHError(w, http.StatusNotFound, "Not Found")
+		return nil
+	}
+	suite := s.store.GetCheckSuite(id)
+	if suite == nil || suite.RepoKey != repoKey {
+		writeGHError(w, http.StatusNotFound, "Not Found")
+		return nil
+	}
+	return suite
+}
+
+func (s *Server) handleGetCheckRun(w http.ResponseWriter, r *http.Request) {
+	cr := s.checkRunInRepo(w, r)
+	if cr == nil {
 		return
 	}
 	writeJSON(w, http.StatusOK, s.checkRunToJSON(cr, s.baseURL(r)))
 }
 
 func (s *Server) handleUpdateCheckRun(w http.ResponseWriter, r *http.Request) {
-	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
-	if err != nil {
-		writeGHError(w, http.StatusNotFound, "Not Found")
+	existing := s.checkRunInRepo(w, r)
+	if existing == nil {
 		return
 	}
+	id := existing.ID
 	var req struct {
 		Name        *string         `json:"name"`
 		Status      *string         `json:"status"`
@@ -209,14 +223,8 @@ func (s *Server) handleUpdateCheckRun(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleListCheckRunAnnotations(w http.ResponseWriter, r *http.Request) {
-	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
-	if err != nil {
-		writeGHError(w, http.StatusNotFound, "Not Found")
-		return
-	}
-	cr := s.store.GetCheckRun(id)
+	cr := s.checkRunInRepo(w, r)
 	if cr == nil {
-		writeGHError(w, http.StatusNotFound, "Not Found")
 		return
 	}
 	out := []*CheckAnnotation{}
@@ -290,26 +298,19 @@ func (s *Server) handleUpdateCheckSuitePrefs(w http.ResponseWriter, r *http.Requ
 }
 
 func (s *Server) handleGetCheckSuite(w http.ResponseWriter, r *http.Request) {
-	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
-	if err != nil {
-		writeGHError(w, http.StatusNotFound, "Not Found")
-		return
-	}
-	suite := s.store.GetCheckSuite(id)
+	suite := s.checkSuiteInRepo(w, r)
 	if suite == nil {
-		writeGHError(w, http.StatusNotFound, "Not Found")
 		return
 	}
 	writeJSON(w, http.StatusOK, s.checkSuiteToJSON(suite, s.baseURL(r)))
 }
 
 func (s *Server) handleListCheckRunsForSuite(w http.ResponseWriter, r *http.Request) {
-	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
-	if err != nil {
-		writeGHError(w, http.StatusNotFound, "Not Found")
+	suite := s.checkSuiteInRepo(w, r)
+	if suite == nil {
 		return
 	}
-	runs := s.store.ListCheckRunsForSuite(id)
+	runs := s.store.ListCheckRunsForSuite(suite.ID)
 	page := paginateAndLink(w, r, runs)
 	out := make([]map[string]interface{}, 0, len(page))
 	for _, cr := range page {

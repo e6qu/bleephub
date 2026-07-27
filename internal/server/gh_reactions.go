@@ -316,6 +316,9 @@ func (s *Server) handleCreateReaction(parentType, pathParam string) http.Handler
 
 func (s *Server) handleListReactions(parentType, pathParam string) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
+		if !s.enforceRepoReadable(w, r) {
+			return
+		}
 		effType, parentID, ok := s.resolveReactionParent(w, r, parentType, pathParam)
 		if !ok {
 			return

@@ -1526,16 +1526,13 @@ func (s *Server) addPullRequestFieldsToSchema(userType, issueType, repoType, mut
 		},
 	})
 
-	mutationType.AddFieldConfig("createPullRequest", &graphql.Field{
+	s.registerMutation(mutationType, "createPullRequest", &graphql.Field{
 		Type: createPRPayloadType,
 		Args: graphql.FieldConfigArgument{
 			"input": &graphql.ArgumentConfig{Type: graphql.NewNonNull(createPRInputType)},
 		},
 		Resolve: func(p graphql.ResolveParams) (interface{}, error) {
 			user := ghUserFromContext(p.Context)
-			if user == nil {
-				return nil, fmt.Errorf("authentication required")
-			}
 
 			input, _ := p.Args["input"].(map[string]interface{})
 			repoNodeID, _ := input["repositoryId"].(string)
@@ -1583,16 +1580,13 @@ func (s *Server) addPullRequestFieldsToSchema(userType, issueType, repoType, mut
 		},
 	})
 
-	mutationType.AddFieldConfig("closePullRequest", &graphql.Field{
+	s.registerMutation(mutationType, "closePullRequest", &graphql.Field{
 		Type: closePRPayloadType,
 		Args: graphql.FieldConfigArgument{
 			"input": &graphql.ArgumentConfig{Type: graphql.NewNonNull(closePRInputType)},
 		},
 		Resolve: func(p graphql.ResolveParams) (interface{}, error) {
 			user := ghUserFromContext(p.Context)
-			if user == nil {
-				return nil, fmt.Errorf("authentication required")
-			}
 
 			input, _ := p.Args["input"].(map[string]interface{})
 			prNodeID, _ := input["pullRequestId"].(string)
@@ -1633,16 +1627,13 @@ func (s *Server) addPullRequestFieldsToSchema(userType, issueType, repoType, mut
 		},
 	})
 
-	mutationType.AddFieldConfig("reopenPullRequest", &graphql.Field{
+	s.registerMutation(mutationType, "reopenPullRequest", &graphql.Field{
 		Type: reopenPRPayloadType,
 		Args: graphql.FieldConfigArgument{
 			"input": &graphql.ArgumentConfig{Type: graphql.NewNonNull(reopenPRInputType)},
 		},
 		Resolve: func(p graphql.ResolveParams) (interface{}, error) {
 			user := ghUserFromContext(p.Context)
-			if user == nil {
-				return nil, fmt.Errorf("authentication required")
-			}
 
 			input, _ := p.Args["input"].(map[string]interface{})
 			prNodeID, _ := input["pullRequestId"].(string)
@@ -1680,7 +1671,7 @@ func (s *Server) addPullRequestFieldsToSchema(userType, issueType, repoType, mut
 			"commitHeadline": &graphql.InputObjectFieldConfig{Type: graphql.String},
 			"commitBody":     &graphql.InputObjectFieldConfig{Type: graphql.String},
 			// gh sets authorEmail (--author-email) and expectedHeadOid
-			// (--match-head-commit); accepted so input coercion succeeds.
+			// (--match-head-commit).
 			"authorEmail":      &graphql.InputObjectFieldConfig{Type: graphql.String},
 			"expectedHeadOid":  &graphql.InputObjectFieldConfig{Type: graphql.String},
 			"clientMutationId": &graphql.InputObjectFieldConfig{Type: graphql.String},
@@ -1705,16 +1696,13 @@ func (s *Server) addPullRequestFieldsToSchema(userType, issueType, repoType, mut
 		},
 	})
 
-	mutationType.AddFieldConfig("mergePullRequest", &graphql.Field{
+	s.registerMutation(mutationType, "mergePullRequest", &graphql.Field{
 		Type: mergePRPayloadType,
 		Args: graphql.FieldConfigArgument{
 			"input": &graphql.ArgumentConfig{Type: graphql.NewNonNull(mergePRInputType)},
 		},
 		Resolve: func(p graphql.ResolveParams) (interface{}, error) {
 			user := ghUserFromContext(p.Context)
-			if user == nil {
-				return nil, fmt.Errorf("authentication required")
-			}
 
 			input, _ := p.Args["input"].(map[string]interface{})
 			prNodeID, _ := input["pullRequestId"].(string)
@@ -1733,13 +1721,49 @@ func (s *Server) addPullRequestFieldsToSchema(userType, issueType, repoType, mut
 				return nil, fmt.Errorf("could not resolve to a Repository")
 			}
 
+			// expectedHeadOid is gh's --match-head-commit interlock: the client
+			// names the commit it reviewed, and a head that has moved since
+			// must refuse rather than merge code nobody looked at. A head that
+			// cannot be resolved at all refuses too — an unverifiable
+			// interlock is not a satisfied one.
+			if expected, ok := input["expectedHeadOid"].(string); ok && expected != "" {
+				head := s.prHeadSha(repo, pr)
+				if head == "" || !strings.EqualFold(head, expected) {
+					return nil, fmt.Errorf("Head branch was modified. Review and try the merge again.")
+				}
+			}
+
+			// Required status checks are evaluated unconditionally, as the REST
+			// merge does, and not only through canMergePullRequest — that one
+			// sits behind branch protection's admin bypass, so relying on it
+			// alone would let an admin merge a red pull request through GraphQL
+			// that REST refuses. Both gates run before the single call into
+			// completePullRequestMerge below; there is no other path to it.
+			if headSha := s.prHeadSha(repo, pr); headSha != "" {
+				if st := s.evaluateChecksForMerge(repo, pr.BaseRefName, headSha); len(st.MissingRequired) > 0 {
+					return nil, fmt.Errorf("Required status check %q is expected.", st.MissingRequired[0])
+				}
+			}
+
+			if ok, msg := s.canMergePullRequest(p.Context, repo, pr); !ok {
+				if msg == "" {
+					msg = "Pull Request is not mergeable"
+				}
+				return nil, fmt.Errorf("%s", msg)
+			}
+
 			method := "merge"
 			if v, ok := input["mergeMethod"].(string); ok && v != "" {
 				method = strings.ToLower(v)
 			}
 			commitHeadline, _ := input["commitHeadline"].(string)
 			commitBody, _ := input["commitBody"].(string)
-			if _, errMsg := s.completePullRequestMerge(repo, pr, user, method, commitHeadline, commitBody); errMsg != "" {
+			// authorEmail names the address recorded on the merge commit.
+			merger := *user
+			if v, ok := input["authorEmail"].(string); ok && v != "" {
+				merger.Email = v
+			}
+			if _, errMsg := s.completePullRequestMerge(repo, pr, &merger, method, commitHeadline, commitBody); errMsg != "" {
 				return nil, fmt.Errorf("%s", errMsg)
 			}
 
@@ -1802,16 +1826,13 @@ func (s *Server) addPullRequestFieldsToSchema(userType, issueType, repoType, mut
 		},
 	})
 
-	mutationType.AddFieldConfig("addPullRequestReview", &graphql.Field{
+	s.registerMutation(mutationType, "addPullRequestReview", &graphql.Field{
 		Type: addPRReviewPayloadType,
 		Args: graphql.FieldConfigArgument{
 			"input": &graphql.ArgumentConfig{Type: graphql.NewNonNull(addPRReviewInputType)},
 		},
 		Resolve: func(p graphql.ResolveParams) (interface{}, error) {
 			user := ghUserFromContext(p.Context)
-			if user == nil {
-				return nil, fmt.Errorf("authentication required")
-			}
 
 			input, _ := p.Args["input"].(map[string]interface{})
 			prNodeID, _ := input["pullRequestId"].(string)
@@ -1880,7 +1901,7 @@ func (s *Server) addPullRequestFieldsToSchema(userType, issueType, repoType, mut
 		},
 	})
 
-	mutationType.AddFieldConfig("resolveReviewThread", &graphql.Field{
+	s.registerMutation(mutationType, "resolveReviewThread", &graphql.Field{
 		Type: resolveReviewThreadPayloadType,
 		Args: graphql.FieldConfigArgument{
 			"input": &graphql.ArgumentConfig{Type: graphql.NewNonNull(resolveReviewThreadInputType)},
@@ -1889,7 +1910,7 @@ func (s *Server) addPullRequestFieldsToSchema(userType, issueType, repoType, mut
 			return s.resolveReviewThreadGraphQL(p, true)
 		},
 	})
-	mutationType.AddFieldConfig("unresolveReviewThread", &graphql.Field{
+	s.registerMutation(mutationType, "unresolveReviewThread", &graphql.Field{
 		Type: unresolveReviewThreadPayloadType,
 		Args: graphql.FieldConfigArgument{
 			"input": &graphql.ArgumentConfig{Type: graphql.NewNonNull(unresolveReviewThreadInputType)},
@@ -1919,17 +1940,12 @@ func (s *Server) addPullRequestFieldsToSchema(userType, issueType, repoType, mut
 		},
 	})
 
-	mutationType.AddFieldConfig("updatePullRequest", &graphql.Field{
+	s.registerMutation(mutationType, "updatePullRequest", &graphql.Field{
 		Type: updatePRPayloadType,
 		Args: graphql.FieldConfigArgument{
 			"input": &graphql.ArgumentConfig{Type: graphql.NewNonNull(updatePRInputType)},
 		},
 		Resolve: func(p graphql.ResolveParams) (interface{}, error) {
-			user := ghUserFromContext(p.Context)
-			if user == nil {
-				return nil, fmt.Errorf("authentication required")
-			}
-
 			input, _ := p.Args["input"].(map[string]interface{})
 			prNodeID, _ := input["pullRequestId"].(string)
 
@@ -1938,26 +1954,21 @@ func (s *Server) addPullRequestFieldsToSchema(userType, issueType, repoType, mut
 				return nil, fmt.Errorf("could not resolve to a PullRequest")
 			}
 
-			// Resolve label IDs
-			var labelIDs []int
-			if rawLabels, ok := input["labelIds"].([]interface{}); ok {
-				for _, raw := range rawLabels {
-					nodeID := fmt.Sprintf("%v", raw)
-					if l := findLabelByNodeID(s.store, nodeID); l != nil {
-						labelIDs = append(labelIDs, l.ID)
-					}
-				}
+			repo := s.store.GetRepoByID(pr.RepoID)
+			if repo == nil {
+				return nil, fmt.Errorf("could not resolve to a Repository")
 			}
-
-			// Resolve assignee IDs
-			var assigneeIDs []int
-			if rawAssignees, ok := input["assigneeIds"].([]interface{}); ok {
-				for _, raw := range rawAssignees {
-					nodeID := fmt.Sprintf("%v", raw)
-					if u := findUserByNodeID(s.store, nodeID); u != nil {
-						assigneeIDs = append(assigneeIDs, u.ID)
-					}
-				}
+			labelIDs, err := resolveGQLLabelIDs(s.store, repo.ID, input["labelIds"])
+			if err != nil {
+				return nil, err
+			}
+			assigneeIDs, err := resolveGQLAssigneeIDs(s.store, input["assigneeIds"])
+			if err != nil {
+				return nil, err
+			}
+			milestoneID, err := resolveGQLMilestoneID(s.store, repo.ID, input, "milestoneId")
+			if err != nil {
+				return nil, err
 			}
 
 			s.store.UpdatePullRequest(pr.ID, func(p *PullRequest) {
@@ -1970,11 +1981,14 @@ func (s *Server) addPullRequestFieldsToSchema(userType, issueType, repoType, mut
 				if v, ok := input["baseRefName"].(string); ok {
 					p.BaseRefName = v
 				}
-				if rawLabels, ok := input["labelIds"].([]interface{}); ok && rawLabels != nil {
-					p.LabelIDs = labelIDs
+				if labelIDs != nil {
+					p.LabelIDs = *labelIDs
 				}
-				if rawAssignees, ok := input["assigneeIds"].([]interface{}); ok && rawAssignees != nil {
-					p.AssigneeIDs = assigneeIDs
+				if assigneeIDs != nil {
+					p.AssigneeIDs = *assigneeIDs
+				}
+				if milestoneID != nil {
+					p.MilestoneID = *milestoneID
 				}
 			})
 
@@ -2411,10 +2425,6 @@ func reviewThreadsForGraphQL(threads []*ReviewThread, st *Store) []map[string]in
 }
 
 func (s *Server) resolveReviewThreadGraphQL(p graphql.ResolveParams, resolved bool) (interface{}, error) {
-	user := ghUserFromContext(p.Context)
-	if user == nil {
-		return nil, fmt.Errorf("authentication required")
-	}
 	input, _ := p.Args["input"].(map[string]interface{})
 	threadNodeID, _ := input["threadId"].(string)
 	threadID, ok := parsePRReviewThreadNodeID(threadNodeID)
@@ -2941,7 +2951,7 @@ func (s *Server) searchIssuesAndPRs(query string, viewer *User) []map[string]int
 	s.store.mu.RLock()
 	// Real GitHub search only returns results from repositories the
 	// authenticated viewer can access; a private repo the viewer can't read
-	// must never contribute issues/PRs. Mirror canReadRepo's logic inline
+	// must never contribute issues/PRs. Mirror canReadRepoAsUser's logic inline
 	// (the store RLock is already held here, so we access its maps directly
 	// rather than calling the helpers, which take the lock themselves).
 	repoReadable := func(repo *Repo) bool {

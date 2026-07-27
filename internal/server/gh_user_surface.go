@@ -875,7 +875,7 @@ func (s *Server) handleListAuthUserIssues(w http.ResponseWriter, r *http.Request
 		labelNames = strings.Split(labelsParam, ",")
 	}
 	for _, p := range pairs {
-		if !canReadRepo(s.store, user, p.repo) {
+		if !s.viewerCanReadRepo(r.Context(), p.repo) {
 			continue
 		}
 		switch state {

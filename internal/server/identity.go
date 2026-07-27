@@ -652,13 +652,22 @@ func (s *Server) createBrowserSession(w http.ResponseWriter, user *User) error {
 	return s.createOIDCBrowserSession(w, user, LoginSession{ExpiresAt: time.Now().Add(12 * time.Hour)})
 }
 
+// createOIDCBrowserSession issues the browser session cookie.
+//
+// The CSRF token is drawn separately from the cookie value. Reusing the cookie
+// value made every page that prints an authenticity_token a disclosure of the
+// session identifier, which is the one thing HttpOnly exists to withhold.
 func (s *Server) createOIDCBrowserSession(w http.ResponseWriter, user *User, session LoginSession) error {
 	id, err := randomIdentityState()
 	if err != nil {
 		return err
 	}
+	csrf, err := randomIdentityState()
+	if err != nil {
+		return err
+	}
 	session.UserID = user.ID
-	session.CSRFToken = id
+	session.CSRFToken = csrf
 	if session.ExpiresAt.IsZero() {
 		session.ExpiresAt = time.Now().Add(12 * time.Hour)
 	}

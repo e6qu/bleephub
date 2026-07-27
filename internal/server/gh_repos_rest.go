@@ -173,7 +173,7 @@ func (s *Server) handleTransferRepo(w http.ResponseWriter, r *http.Request) {
 	if repo == nil {
 		return
 	}
-	if !canAdminRepo(s.store, user, repo) {
+	if !s.viewerCanAdminRepo(r.Context(), repo) {
 		writeGHError(w, http.StatusForbidden, "Must have admin rights to Repository.")
 		return
 	}
@@ -317,7 +317,7 @@ func (s *Server) handleSetRepoSubscription(w http.ResponseWriter, r *http.Reques
 	if repo == nil {
 		return
 	}
-	if repo.Private && !canReadRepo(s.store, user, repo) {
+	if repo.Private && !s.viewerCanReadRepo(r.Context(), repo) {
 		writeGHError(w, http.StatusNotFound, "Not Found")
 		return
 	}
@@ -641,7 +641,7 @@ func (s *Server) handleGetRepo(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	user := ghUserFromContext(r.Context())
-	if repo.Private && !canReadRepo(s.store, user, repo) {
+	if repo.Private && !s.viewerCanReadRepo(r.Context(), repo) {
 		writeGHError(w, http.StatusNotFound, "Not Found")
 		return
 	}
@@ -662,7 +662,7 @@ func (s *Server) handleUpdateRepo(w http.ResponseWriter, r *http.Request) {
 		writeGHError(w, http.StatusNotFound, "Not Found")
 		return
 	}
-	if !canAdminRepo(s.store, user, repo) {
+	if !s.viewerCanAdminRepo(r.Context(), repo) {
 		writeGHError(w, http.StatusForbidden, "Must have admin rights to Repository.")
 		return
 	}
@@ -796,7 +796,7 @@ func (s *Server) handleDeleteRepo(w http.ResponseWriter, r *http.Request) {
 		writeGHError(w, http.StatusNotFound, "Not Found")
 		return
 	}
-	if !canAdminRepo(s.store, user, repo) {
+	if !s.viewerCanAdminRepo(r.Context(), repo) {
 		writeGHError(w, http.StatusForbidden, "Must have admin rights to Repository.")
 		return
 	}
@@ -819,8 +819,7 @@ func (s *Server) handleGetRepoTopics(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	user := ghUserFromContext(r.Context())
-	if repo.Private && !canReadRepo(s.store, user, repo) {
+	if repo.Private && !s.viewerCanReadRepo(r.Context(), repo) {
 		writeGHError(w, http.StatusNotFound, "Not Found")
 		return
 	}
@@ -845,8 +844,7 @@ func (s *Server) handlePutRepoTopics(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	user := ghUserFromContext(r.Context())
-	if !canPushRepo(s.store, user, repo) {
+	if !s.viewerCanPushRepo(r.Context(), repo) {
 		writeGHError(w, http.StatusForbidden, "Must have push access to Repository.")
 		return
 	}
@@ -1114,14 +1112,6 @@ func repoToJSONForViewer(repo *Repo, st *Store, baseURL string, viewer *User) ma
 		"created_at":        repo.CreatedAt.Format(time.RFC3339),
 		"updated_at":        repo.UpdatedAt.Format(time.RFC3339),
 		"pushed_at":         nullableTimestamp(repo.PushedAt),
-	}
-}
-
-func repoPermissionsJSON(st *Store, viewer *User, repo *Repo) map[string]bool {
-	return map[string]bool{
-		"admin": canAdminRepo(st, viewer, repo),
-		"push":  canPushRepo(st, viewer, repo),
-		"pull":  canReadRepo(st, viewer, repo),
 	}
 }
 

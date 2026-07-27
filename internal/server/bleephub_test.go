@@ -75,6 +75,9 @@ func TestMain(m *testing.M) {
 	// The admin token has no default — every consumer (incl. the test harness)
 	// must set it explicitly. defaultToken is the non-PAT value the tests use.
 	os.Setenv("BLEEPHUB_ADMIN_TOKEN", defaultToken)
+	// Webhook receivers in this suite are httptest servers on loopback, which
+	// delivery refuses unless the instance opts in.
+	os.Setenv("BLEEPHUB_ALLOW_PRIVATE_OUTBOUND_TARGETS", "true")
 	_, hostKey, err := ed25519.GenerateKey(rand.Reader)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "generate SSH host key: %v\n", err)
@@ -223,10 +226,8 @@ func TestOAuthToken(t *testing.T) {
 	mod := base64.StdEncoding.EncodeToString(key.N.Bytes())
 	exp := base64.StdEncoding.EncodeToString(big.NewInt(int64(key.E)).Bytes())
 	regBody := fmt.Sprintf(`{"name":"oauth-test","version":"2.0","authorization":{"publicKey":{"modulus":%q,"exponent":%q}}}`, mod, exp)
-	regResp, err := http.Post(testBaseURL+"/_apis/v1/Agent/1", "application/json", bytes.NewBufferString(regBody))
-	if err != nil {
-		t.Fatalf("register agent: %v", err)
-	}
+	regToken := mustRunnerRegistrationToken(t, runnerScope{Repo: "oauth-owner/oauth-repo"})
+	regResp := runnerDo(t, "POST", testBaseURL+"/_apis/v1/Agent/1", regToken, regBody)
 	defer regResp.Body.Close()
 	if regResp.StatusCode != 200 {
 		t.Fatalf("agent register: expected 200, got %d", regResp.StatusCode)
@@ -244,11 +245,7 @@ func TestOAuthToken(t *testing.T) {
 		t.Fatal("missing clientId on registered agent")
 	}
 
-	assertion := signTestAssertion(t, key, agent.Authorization.ClientID)
-	form := url.Values{}
-	form.Set("grant_type", "urn:ietf:params:oauth:grant-type:jwt-bearer")
-	form.Set("client_assertion_type", "urn:ietf:params:oauth:client-assertion-type:jwt-bearer")
-	form.Set("client_assertion", assertion)
+	form := runnerTokenExchangeForm(signTestAssertion(t, key, agent.Authorization.ClientID))
 
 	resp, err := http.Post(testBaseURL+"/_apis/v1/auth/", "application/x-www-form-urlencoded", strings.NewReader(form.Encode()))
 	if err != nil {
@@ -285,11 +282,7 @@ func TestOAuthTokenRejectsUnknownClient(t *testing.T) {
 	if err != nil {
 		t.Fatalf("generate key: %v", err)
 	}
-	assertion := signTestAssertion(t, key, "00000000-0000-0000-0000-000000000000")
-	form := url.Values{}
-	form.Set("grant_type", "urn:ietf:params:oauth:grant-type:jwt-bearer")
-	form.Set("client_assertion_type", "urn:ietf:params:oauth:client-assertion-type:jwt-bearer")
-	form.Set("client_assertion", assertion)
+	form := runnerTokenExchangeForm(signTestAssertion(t, key, "00000000-0000-0000-0000-000000000000"))
 	resp, err := http.Post(testBaseURL+"/_apis/v1/auth/", "application/x-www-form-urlencoded", strings.NewReader(form.Encode()))
 	if err != nil {
 		t.Fatal(err)
@@ -316,12 +309,30 @@ func signTestAssertion(t *testing.T, key *rsa.PrivateKey, clientID string) strin
 	return signInput + "." + base64.RawURLEncoding.EncodeToString(sig)
 }
 
+// runnerTokenExchangeForm is the body the runner posts to its authorizationUrl:
+// the client credentials grant, with the client authenticated by an RSA
+// assertion rather than a secret.
+func runnerTokenExchangeForm(assertion string) url.Values {
+	form := url.Values{}
+	form.Set("grant_type", "client_credentials")
+	form.Set("client_assertion_type", "urn:ietf:params:oauth:client-assertion-type:jwt-bearer")
+	form.Set("client_assertion", assertion)
+	return form
+}
+
 func TestRunnerRegistration(t *testing.T) {
 	body := `{"url":"http://localhost","runner_event":"register"}`
-	resp, err := http.Post(testBaseURL+"/api/v3/actions/runner-registration", "application/json", bytes.NewBufferString(body))
-	if err != nil {
-		t.Fatal(err)
+	// config.sh presents the administration:write-minted registration token.
+	regToken := mustRunnerRegistrationToken(t, runnerScope{Repo: "reg-owner/reg-repo"})
+
+	if unauth := runnerDo(t, "POST", testBaseURL+"/api/v3/actions/runner-registration", "", body); true {
+		unauth.Body.Close()
+		if unauth.StatusCode != 401 {
+			t.Fatalf("unauthenticated runner-registration: expected 401, got %d", unauth.StatusCode)
+		}
 	}
+
+	resp := runnerDo(t, "POST", testBaseURL+"/api/v3/actions/runner-registration", regToken, body)
 	defer resp.Body.Close()
 	if resp.StatusCode != 200 {
 		t.Fatalf("expected 200, got %d", resp.StatusCode)
@@ -339,10 +350,8 @@ func TestRunnerRegistration(t *testing.T) {
 }
 
 func TestListPools(t *testing.T) {
-	resp, err := http.Get(testBaseURL + "/_apis/v1/AgentPools")
-	if err != nil {
-		t.Fatal(err)
-	}
+	sessionToken, _ := testAgentSession(t, testServer, runnerScope{Repo: "pool-owner/pool-repo"})
+	resp := runnerDo(t, "GET", testBaseURL+"/_apis/v1/AgentPools", sessionToken, "")
 	defer resp.Body.Close()
 
 	var data map[string]interface{}
@@ -355,30 +364,36 @@ func TestListPools(t *testing.T) {
 }
 
 func TestAgentLifecycle(t *testing.T) {
-	// Register agent
+	// Register agent with the credential config.sh was given.
 	agentBody := `{"name":"test-runner","version":"3.0.0","labels":[{"name":"self-hosted","type":"system"}]}`
-	resp, err := http.Post(testBaseURL+"/_apis/v1/Agent/1", "application/json", bytes.NewBufferString(agentBody))
-	if err != nil {
-		t.Fatal(err)
-	}
+	regToken := mustRunnerRegistrationToken(t, runnerScope{Repo: "life-owner/life-repo"})
+	resp := runnerDo(t, "POST", testBaseURL+"/_apis/v1/Agent/1", regToken, agentBody)
 	defer resp.Body.Close()
 
-	var agent map[string]interface{}
-	json.NewDecoder(resp.Body).Decode(&agent)
-
-	agentID := int(agent["id"].(float64))
+	var agent struct {
+		ID            int    `json:"id"`
+		Name          string `json:"name"`
+		Authorization struct {
+			ClientID string `json:"clientId"`
+		} `json:"authorization"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&agent); err != nil {
+		t.Fatalf("decode agent: %v", err)
+	}
+	agentID := agent.ID
 	if agentID == 0 {
 		t.Fatal("agent ID should be non-zero")
 	}
-	if agent["name"] != "test-runner" {
-		t.Fatalf("unexpected name: %v", agent["name"])
+	if agent.Name != "test-runner" {
+		t.Fatalf("unexpected name: %v", agent.Name)
 	}
 
+	// From here the runner holds the session token its client_assertion
+	// exchange returns.
+	sessionToken := makeJWT(agent.Authorization.ClientID, runnerAudSession)
+
 	// List agents
-	resp2, err := http.Get(testBaseURL + "/_apis/v1/Agent/1")
-	if err != nil {
-		t.Fatal(err)
-	}
+	resp2 := runnerDo(t, "GET", testBaseURL+"/_apis/v1/Agent/1", sessionToken, "")
 	defer resp2.Body.Close()
 
 	var list map[string]interface{}
@@ -390,31 +405,24 @@ func TestAgentLifecycle(t *testing.T) {
 	}
 
 	// Get agent
-	resp3, err := http.Get(fmt.Sprintf("%s/_apis/v1/Agent/1/%d", testBaseURL, agentID))
-	if err != nil {
-		t.Fatal(err)
-	}
+	resp3 := runnerDo(t, "GET", fmt.Sprintf("%s/_apis/v1/Agent/1/%d", testBaseURL, agentID), sessionToken, "")
 	defer resp3.Body.Close()
 	if resp3.StatusCode != 200 {
 		t.Fatalf("get agent: expected 200, got %d", resp3.StatusCode)
 	}
 
 	// Delete agent
-	req, _ := http.NewRequest("DELETE", fmt.Sprintf("%s/_apis/v1/Agent/1/%d", testBaseURL, agentID), nil)
-	resp4, err := http.DefaultClient.Do(req)
-	if err != nil {
-		t.Fatal(err)
-	}
+	resp4 := runnerDo(t, "DELETE", fmt.Sprintf("%s/_apis/v1/Agent/1/%d", testBaseURL, agentID), sessionToken, "")
 	defer resp4.Body.Close()
 	if resp4.StatusCode != 200 {
 		t.Fatalf("delete agent: expected 200, got %d", resp4.StatusCode)
 	}
 
-	// Verify deleted
-	resp5, err := http.Get(fmt.Sprintf("%s/_apis/v1/Agent/1/%d", testBaseURL, agentID))
-	if err != nil {
-		t.Fatal(err)
-	}
+	// Verify deleted. The deleted runner's own token no longer resolves to an
+	// agent, so the check runs as another runner registered for the same
+	// scope.
+	observerToken, _ := testAgentSession(t, testServer, runnerScope{Repo: "life-owner/life-repo"})
+	resp5 := runnerDo(t, "GET", fmt.Sprintf("%s/_apis/v1/Agent/1/%d", testBaseURL, agentID), observerToken, "")
 	defer resp5.Body.Close()
 	if resp5.StatusCode != 404 {
 		t.Fatalf("expected 404 after delete, got %d", resp5.StatusCode)
@@ -422,12 +430,10 @@ func TestAgentLifecycle(t *testing.T) {
 }
 
 func TestSessionAndMessage(t *testing.T) {
-	// Create session
-	sessionBody := `{"ownerName":"RUNNER","agent":{"id":99,"name":"test"}}`
-	resp, err := http.Post(testBaseURL+"/_apis/v1/AgentSession/1", "application/json", bytes.NewBufferString(sessionBody))
-	if err != nil {
-		t.Fatal(err)
-	}
+	// Create session as a registered runner.
+	sessionToken, agent := testAgentSession(t, testServer, runnerScope{Repo: "sess-owner/sess-repo"})
+	sessionBody := fmt.Sprintf(`{"ownerName":"RUNNER","agent":{"id":%d,"name":"test"}}`, agent.ID)
+	resp := runnerDo(t, "POST", testBaseURL+"/_apis/v1/AgentSession/1", sessionToken, sessionBody)
 	defer resp.Body.Close()
 
 	var session map[string]interface{}
@@ -447,10 +453,7 @@ func TestSessionAndMessage(t *testing.T) {
 	resp2.Body.Close()
 
 	// Poll for message (should get it immediately since job was just submitted)
-	resp3, err := http.Get(testBaseURL + "/_apis/v1/Message/1?sessionId=" + sessionID)
-	if err != nil {
-		t.Fatal(err)
-	}
+	resp3 := runnerDo(t, "GET", testBaseURL+"/_apis/v1/Message/1?sessionId="+sessionID, sessionToken, "")
 	defer resp3.Body.Close()
 
 	body, _ := io.ReadAll(resp3.Body)
@@ -468,10 +471,5 @@ func TestSessionAndMessage(t *testing.T) {
 	}
 
 	// Delete session
-	req, _ := http.NewRequest("DELETE", testBaseURL+"/_apis/v1/AgentSession/1/"+sessionID, nil)
-	resp4, err := http.DefaultClient.Do(req)
-	if err != nil {
-		t.Fatal(err)
-	}
-	resp4.Body.Close()
+	runnerDo(t, "DELETE", testBaseURL+"/_apis/v1/AgentSession/1/"+sessionID, sessionToken, "").Body.Close()
 }

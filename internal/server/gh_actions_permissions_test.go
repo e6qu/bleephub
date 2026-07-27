@@ -246,6 +246,7 @@ func TestOrgCacheUsage_ComputedFromRealCacheStore(t *testing.T) {
 
 func TestRunnerLabels_AddAndRemoveSingle(t *testing.T) {
 	org := createTestOrg(t)
+	ensureSeededRepo(testServer, "octo/repo")
 
 	// Register a runner with a system label through the real agent
 	// registration path.

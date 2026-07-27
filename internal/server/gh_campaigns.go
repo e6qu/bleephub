@@ -131,7 +131,7 @@ func (s *Server) handleCreateOrgCampaign(w http.ResponseWriter, r *http.Request)
 		return
 	}
 	for _, login := range req.Managers {
-		if !isActiveOrgMember(s.store, s.store.LookupUserByLogin(login), org) {
+		if !namedUserIsActiveOrgMember(s.store, s.store.LookupUserByLogin(login), org) {
 			writeGHError(w, http.StatusUnprocessableEntity, "Validation failed: manager "+login+" is not an organization member")
 			return
 		}
@@ -230,7 +230,7 @@ func (s *Server) handleUpdateOrgCampaign(w http.ResponseWriter, r *http.Request)
 		return
 	}
 	for _, login := range req.Managers {
-		if !isActiveOrgMember(s.store, s.store.LookupUserByLogin(login), org) {
+		if !namedUserIsActiveOrgMember(s.store, s.store.LookupUserByLogin(login), org) {
 			writeGHError(w, http.StatusUnprocessableEntity, "Validation failed: manager "+login+" is not an organization member")
 			return
 		}
@@ -270,6 +270,9 @@ func (s *Server) handleUpdateOrgCampaign(w http.ResponseWriter, r *http.Request)
 			}
 		}
 	})
+	if !mutated(w, updated) {
+		return
+	}
 	writeJSON(w, http.StatusOK, s.campaignJSON(updated, r))
 }
 

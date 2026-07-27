@@ -5,6 +5,7 @@ package main
 import (
 	"bufio"
 	"context"
+	"crypto/subtle"
 	"fmt"
 	"log"
 	"net"
@@ -15,6 +16,7 @@ import (
 	"strings"
 	"sync"
 	"syscall"
+	"time"
 
 	"github.com/canonical/go-dqlite/v3/app"
 	"github.com/canonical/go-dqlite/v3/client"
@@ -24,6 +26,7 @@ import (
 func main() {
 	dataDir := requiredEnv("BLEEPHUB_DQLITE_DATA_DIR")
 	address := requiredEnv("BLEEPHUB_DQLITE_ADVERTISE_ADDR")
+	secret := requiredEnv(dqliteaddr.SecretEnvironment)
 	join := csvEnv("BLEEPHUB_DQLITE_JOIN")
 	addresses, err := dqliteaddr.FromEnvironment(os.Getenv(dqliteaddr.Environment))
 	if err != nil {
@@ -33,29 +36,39 @@ func main() {
 		log.Fatalf("create dqlite data directory %s: %v", dataDir, err)
 	}
 
-	listener, err := net.Listen("tcp", ":9000")
+	listenAddress := os.Getenv("BLEEPHUB_DQLITE_LISTEN_ADDR")
+	if strings.TrimSpace(listenAddress) == "" {
+		listenAddress = ":9000"
+	}
+	listener, err := net.Listen("tcp", listenAddress)
 	if err != nil {
 		log.Fatalf("listen dqlite transport: %v", err)
 	}
 	defer listener.Close()
 
+	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer cancel()
+
 	accepted := make(chan net.Conn)
-	server := &http.Server{Handler: dqliteHandler(accepted)}
+	server := &http.Server{Handler: dqliteHandler(ctx, accepted, secret), ReadHeaderTimeout: 10 * time.Second}
 	go func() {
 		if err := server.Serve(listener); err != nil && err != http.ErrServerClosed {
 			log.Printf("dqlite transport server: %v", err)
 		}
 	}()
+	defer func() {
+		shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer shutdownCancel()
+		if err := server.Shutdown(shutdownCtx); err != nil {
+			log.Printf("shut down dqlite transport server: %v", err)
+		}
+	}()
 
-	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
-	defer cancel()
 	node, err := app.New(
 		dataDir,
 		app.WithAddress(address),
 		app.WithCluster(join),
-		app.WithExternalConn(func(ctx context.Context, address string) (net.Conn, error) {
-			return dqliteHTTPDial(ctx, addresses.Resolve(address))
-		}, accepted),
+		app.WithExternalConn(dqliteDialer(addresses, secret), accepted),
 		app.WithVoters(3),
 	)
 	if err != nil {
@@ -105,7 +118,13 @@ func csvEnv(name string) []string {
 	return values
 }
 
-func dqliteHandler(accepted chan<- net.Conn) http.Handler {
+// dqliteAcceptTimeout bounds how long a hijacked connection waits to be handed
+// to the node. The channel is unbuffered and only drained once the node exists,
+// so a peer that dials during startup or shutdown would otherwise strand a
+// goroutine and a socket for the lifetime of the process.
+const dqliteAcceptTimeout = 30 * time.Second
+
+func dqliteHandler(ctx context.Context, accepted chan<- net.Conn, secret string) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method == http.MethodGet && r.URL.Path == "/health" {
 			// This reports only transport reachability. AWS Cloud Map can then
@@ -118,6 +137,13 @@ func dqliteHandler(accepted chan<- net.Conn) http.Handler {
 			http.Error(w, "dqlite upgrade required", http.StatusUpgradeRequired)
 			return
 		}
+		// The dqlite wire protocol carries unauthenticated statements against
+		// the whole database, so the transport itself has to prove the caller
+		// is a cluster member before it is upgraded.
+		if subtle.ConstantTimeCompare([]byte(r.Header.Get(dqliteaddr.SecretHeader)), []byte(secret)) != 1 {
+			http.Error(w, "dqlite cluster credential required", http.StatusUnauthorized)
+			return
+		}
 		hijacker, ok := w.(http.Hijacker)
 		if !ok {
 			http.Error(w, "connection hijacking unavailable", http.StatusInternalServerError)
@@ -125,13 +151,21 @@ func dqliteHandler(accepted chan<- net.Conn) http.Handler {
 		}
 		connection, _, err := hijacker.Hijack()
 		if err != nil {
+			log.Printf("hijack dqlite transport connection from %s: %v", r.RemoteAddr, err)
 			return
 		}
-		accepted <- connection
+		select {
+		case accepted <- connection:
+		case <-ctx.Done():
+			_ = connection.Close()
+		case <-time.After(dqliteAcceptTimeout):
+			log.Printf("dqlite node did not accept the transport connection from %s within %s", r.RemoteAddr, dqliteAcceptTimeout)
+			_ = connection.Close()
+		}
 	})
 }
 
-func dqliteHTTPDial(ctx context.Context, address string) (net.Conn, error) {
+func dqliteHTTPDial(ctx context.Context, address, secret string) (net.Conn, error) {
 	dialer := &net.Dialer{}
 	connection, err := dialer.DialContext(ctx, "tcp", address)
 	if err != nil {
@@ -145,6 +179,7 @@ func dqliteHTTPDial(ctx context.Context, address string) (net.Conn, error) {
 	request := &http.Request{Method: http.MethodGet, URL: requestURL, Host: requestURL.Host, Header: make(http.Header)}
 	request.Header.Set("Connection", "Upgrade")
 	request.Header.Set("Upgrade", "dqlite")
+	request.Header.Set(dqliteaddr.SecretHeader, secret)
 	if err := request.Write(connection); err != nil {
 		_ = connection.Close()
 		return nil, err
@@ -162,4 +197,10 @@ func dqliteHTTPDial(ctx context.Context, address string) (net.Conn, error) {
 	return connection, nil
 }
 
-var _ client.DialFunc = dqliteHTTPDial
+// dqliteDialer binds the resolved member address and the cluster credential to
+// the dial function dqlite uses for outbound member connections.
+func dqliteDialer(addresses dqliteaddr.Map, secret string) client.DialFunc {
+	return func(ctx context.Context, address string) (net.Conn, error) {
+		return dqliteHTTPDial(ctx, addresses.Resolve(address), secret)
+	}
+}

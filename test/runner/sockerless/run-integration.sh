@@ -22,7 +22,20 @@ show_diag() {
             tail -40 "$lf"
         fi
     done
+    if [ -f /tmp/runner-config.log ]; then
+        echo "=== runner configuration output ==="
+        cat /tmp/runner-config.log
+    fi
     if [ -d /runner/_diag ]; then
+        # Configuration writes Runner_*.log, not Worker_*.log. A config-time
+        # failure leaves nothing in the worker logs at all, which is why this
+        # dump used to come back empty for one.
+        echo "=== runner configuration diagnostics ==="
+        for f in /runner/_diag/Runner_*.log; do
+            [ -f "$f" ] || continue
+            echo "--- $f"
+            grep -iE 'http|request|response|status|error|exception|unauthor' "$f" 2>/dev/null | tail -60 || true
+        done
         echo "=== Docker exec commands ==="
         for f in /runner/_diag/Worker_*.log; do
             [ -f "$f" ] || continue
@@ -219,7 +232,7 @@ export BLEEPHUB_ADMIN_TOKEN="bleephub-admin-token-00000000000000000000"
 # so one URL serves both (the GitHub Enterprise Server external-URL model).
 export BLEEPHUB_EXTERNAL_URL="http://host.docker.internal"
 echo "127.0.0.1 host.docker.internal" >> /etc/hosts
-bleephub --addr ":80" --log-level "${BLEEPHUB_LOG_LEVEL:-info}" &
+bleephub --addr ":80" --log-level "${BLEEPHUB_LOG_LEVEL:-debug}" &
 PIDS+=($!)
 wait_for_url "http://$BLEEPHUB_ADDR/health"
 log "bleephub ready"
@@ -833,49 +846,6 @@ case "${BLEEPHUB_BACKEND:-ecs}" in
     *) fail "unsupported BLEEPHUB_BACKEND: ${BLEEPHUB_BACKEND} (ecs|aca|azf|cloudrun|gcf)" ;;
 esac
 
-# --- 4. Configure the runner ---
-log "Configuring runner..."
-cd /runner
-
-# The runner needs to write config files here
-export RUNNER_ALLOW_RUNASROOT=1
-export GITHUB_ACTIONS_RUNNER_TLS_NO_VERIFY=1
-# export GITHUB_ACTIONS_RUNNER_TRACE=1  # Uncomment for debug logging
-
-./config.sh \
-    --url "$BLEEPHUB_EXTERNAL_URL/admin/test" \
-    --token BLEEPHUB_REG_TOKEN \
-    --name test-runner \
-    --work "$WORK_DIR" \
-    --unattended \
-    --replace \
-    --labels self-hosted,linux,arm64 \
-    --no-default-labels \
-    2>&1 | tail -5 || fail "Runner configuration failed"
-
-log "Runner configured"
-
-# --- 5. Start runner ---
-log "Starting runner (DOCKER_HOST → sockerless-backend-ecs)..."
-DOCKER_HOST=tcp://127.0.0.1:3375 ./run.sh 2>&1 &
-RUNNER_PID=$!
-PIDS+=("$RUNNER_PID")
-
-# Wait for runner to register a session
-log "Waiting for runner to connect..."
-for i in $(seq 1 30); do
-    AGENTS=$(curl -sf "http://$BLEEPHUB_ADDR/_apis/v1/Agent/1" 2>/dev/null || echo '{"count":0}')
-    COUNT=$(echo "$AGENTS" | jq -r '.count // 0')
-    if [ "$COUNT" -gt 0 ]; then
-        log "Runner connected (agent count: $COUNT)"
-        break
-    fi
-    sleep 1
-done
-
-# Give the runner a moment to establish its session
-sleep 5
-
 api_get() {
     local path="$1"
     curl -sf -H "Authorization: token $BLEEPHUB_ADMIN_TOKEN" "http://$BLEEPHUB_ADDR$path"
@@ -890,6 +860,75 @@ api_post() {
         -H "Content-Type: application/json" \
         -d "$body" "http://$BLEEPHUB_ADDR$path"
 }
+
+# --- 4. Configure the runner ---
+log "Configuring runner..."
+cd /runner
+
+# The runner needs to write config files here
+export RUNNER_ALLOW_RUNASROOT=1
+export GITHUB_ACTIONS_RUNNER_TLS_NO_VERIFY=1
+# export GITHUB_ACTIONS_RUNNER_TRACE=1  # Uncomment for debug logging
+
+# config.sh --token takes the registration token an administration:write
+# caller mints, exactly as against real GitHub; the runner control plane
+# verifies it, so a placeholder string is refused at the first request.
+REG_TOKEN=$(api_post "/api/v3/repos/admin/test/actions/runners/registration-token" \
+    | jq -r '.token // empty') || fail "mint runner registration token"
+[ -n "$REG_TOKEN" ] || fail "runner registration token response carried no token"
+
+./config.sh \
+    --url "$BLEEPHUB_EXTERNAL_URL/admin/test" \
+    --token "$REG_TOKEN" \
+    --name test-runner \
+    --work "$WORK_DIR" \
+    --unattended \
+    --replace \
+    --labels self-hosted,linux,arm64 \
+    --no-default-labels \
+    >/tmp/runner-config.log 2>&1 || {
+        echo "=== runner configuration output ==="
+        cat /tmp/runner-config.log
+        fail "Runner configuration failed"
+    }
+tail -5 /tmp/runner-config.log
+
+# config.sh prints this only after it has exchanged its RSA client assertion
+# for a session token and re-read the pool with it. Nothing earlier in
+# configuration uses that credential, so without this line the runner reached
+# "Runner successfully added" and stopped short of ever holding a session.
+grep -q "Runner connection is good" /tmp/runner-config.log || {
+    echo "=== runner configuration output ==="
+    cat /tmp/runner-config.log
+    fail "runner never completed its credential test"
+}
+
+log "Runner configured"
+
+# --- 5. Start runner ---
+log "Starting runner (DOCKER_HOST → sockerless-backend-ecs)..."
+DOCKER_HOST=tcp://127.0.0.1:3375 ./run.sh 2>&1 &
+RUNNER_PID=$!
+PIDS+=("$RUNNER_PID")
+
+# Wait for runner to register a session. The runner pool is read through the
+# administration:read REST listing rather than the runner control plane: the
+# harness is an operator here, not a runner, and it holds no runner credential.
+log "Waiting for runner to connect..."
+COUNT=0
+for i in $(seq 1 30); do
+    COUNT=$(api_get "/api/v3/repos/admin/test/actions/runners" \
+        | jq -r '.total_count // 0') || fail "list the repository's runners"
+    if [ "$COUNT" -gt 0 ]; then
+        log "Runner connected (agent count: $COUNT)"
+        break
+    fi
+    sleep 1
+done
+[ "$COUNT" -gt 0 ] || fail "runner never registered with bleephub"
+
+# Give the runner a moment to establish its session
+sleep 5
 
 put_workflow_file() {
     local filename="$1" yaml="$2" encoded

@@ -1060,6 +1060,27 @@ func (st *Store) GetComment(id int) *Comment {
 	return st.Comments[id]
 }
 
+// CommentRepoID returns the ID of the repository owning the comment's parent
+// issue or pull request, or 0 when the parent no longer exists.
+func (st *Store) CommentRepoID(c *Comment) int {
+	if c == nil {
+		return 0
+	}
+	st.mu.RLock()
+	defer st.mu.RUnlock()
+	switch c.ParentType {
+	case "issue":
+		if i := st.Issues[c.IssueID]; i != nil {
+			return i.RepoID
+		}
+	case "pull_request":
+		if pr := st.PullRequests[c.IssueID]; pr != nil {
+			return pr.RepoID
+		}
+	}
+	return 0
+}
+
 // DeleteComment removes a comment by id. Returns true if removed.
 func (st *Store) DeleteComment(id int) bool {
 	st.mu.Lock()

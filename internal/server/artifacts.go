@@ -29,8 +29,29 @@ type ArtifactStore struct {
 	caches      map[int64]*CacheEntry
 	cacheIndex  map[string]int64
 	nextCacheID int64
-	dataDir     string // empty = in-memory mode
+	logPlans    map[int]string // logID → the plan that reserved it
+	dataDir     string         // empty = in-memory mode
 	byteStore   actionsByteStore
+}
+
+// claimLog records the plan a log container was reserved for.
+func (as *ArtifactStore) claimLog(logID int, planID string) {
+	as.mu.Lock()
+	defer as.mu.Unlock()
+	as.logPlans[logID] = planID
+}
+
+// logBelongsToPlan reports whether planID reserved logID. A log id nobody
+// reserved belongs to nobody: uploads to it are refused rather than accepted
+// into a container no plan owns.
+func (as *ArtifactStore) logBelongsToPlan(logID int, planID string) bool {
+	if planID == "" {
+		return false
+	}
+	as.mu.RLock()
+	defer as.mu.RUnlock()
+	owner, ok := as.logPlans[logID]
+	return ok && owner == planID
 }
 
 // Artifact represents an uploaded artifact.
@@ -62,7 +83,28 @@ type CacheEntry struct {
 	Finalized     bool      `json:"finalized"`
 	DownloadToken string    `json:"downloadToken"`
 	CreatedAt     time.Time `json:"createdAt"`
+
+	// chunks holds the ranged bodies received for an unfinalized
+	// reservation; finalize tiles them into Data. Buffering what arrived
+	// instead of writing into a buffer sized from Content-Range keeps the
+	// memory a client can make this server allocate bounded by the bytes it
+	// actually uploaded.
+	chunks   []cacheChunk
+	received int64
 }
+
+// cacheChunk is one ranged upload body and the offset it covers.
+type cacheChunk struct {
+	start int64
+	data  []byte
+}
+
+// maxCacheEntryBytes is GitHub's per-entry Actions cache limit.
+const maxCacheEntryBytes = 10 << 30
+
+// maxArtifactChunkBytes is GitHub's per-artifact size limit, applied to a
+// single upload body so a client cannot stream an unbounded one.
+const maxArtifactChunkBytes = 10 << 30
 
 func NewArtifactStoreWithByteStore(dataDir string, byteStore actionsByteStore) *ArtifactStore {
 	store := &ArtifactStore{
@@ -71,6 +113,7 @@ func NewArtifactStoreWithByteStore(dataDir string, byteStore actionsByteStore) *
 		caches:      make(map[int64]*CacheEntry),
 		cacheIndex:  make(map[string]int64),
 		nextCacheID: 1,
+		logPlans:    make(map[int]string),
 		dataDir:     dataDir,
 		byteStore:   byteStore,
 	}
@@ -180,6 +223,11 @@ func (as *ArtifactStore) writeLogData(ctx context.Context, logID int, data []byt
 }
 
 func (as *ArtifactStore) deleteLogData(ctx context.Context, logID int) error {
+	// Deleting a run's logs releases the container too, so the claim does not
+	// outlive the bytes it guards.
+	as.mu.Lock()
+	delete(as.logPlans, logID)
+	as.mu.Unlock()
 	if as.byteStore == nil {
 		return nil
 	}
@@ -222,6 +270,21 @@ func (as *ArtifactStore) finalizedArtifacts() []*Artifact {
 		out = append(out, &copyArt)
 	}
 	return out
+}
+
+// artifactByIDForCaller returns an artifact's metadata regardless of
+// finalization, for the access checks that must answer before the body is
+// read. Data is left out: only the ownership fields matter here.
+func (s *Server) artifactByIDForCaller(id int64) (*Artifact, bool) {
+	s.artifactStore.mu.RLock()
+	defer s.artifactStore.mu.RUnlock()
+	art, ok := s.artifactStore.artifacts[id]
+	if !ok {
+		return nil, false
+	}
+	meta := *art
+	meta.Data = nil
+	return &meta, true
 }
 
 func (as *ArtifactStore) artifactByID(id int64) (*Artifact, bool) {
@@ -282,6 +345,12 @@ func (as *ArtifactStore) writeCacheDataAt(entry *CacheEntry, chunk []byte, offse
 	if as.byteStore != nil {
 		return as.writeCacheData(context.Background(), entry)
 	}
+	return as.writeCacheChunkToDisk(entry, chunk, offset)
+}
+
+// writeCacheChunkToDisk lands one ranged chunk in the cache's local data file
+// at the offset its Content-Range declared. No-op in in-memory mode.
+func (as *ArtifactStore) writeCacheChunkToDisk(entry *CacheEntry, chunk []byte, offset int64) error {
 	if as.dataDir == "" {
 		return nil
 	}
@@ -301,23 +370,29 @@ func (as *ArtifactStore) writeCacheDataAt(entry *CacheEntry, chunk []byte, offse
 }
 
 func (s *Server) registerArtifactRoutes() {
-	// Twirp-style artifact service (JSON over HTTP, @actions/artifact v4)
-	s.route("POST /twirp/github.actions.results.api.v1.ArtifactService/CreateArtifact", s.handleCreateArtifact)
-	s.route("POST /twirp/github.actions.results.api.v1.ArtifactService/FinalizeArtifact", s.handleFinalizeArtifact)
-	s.route("POST /twirp/github.actions.results.api.v1.ArtifactService/ListArtifacts", s.handleListArtifacts)
-	s.route("POST /twirp/github.actions.results.api.v1.ArtifactService/GetSignedArtifactURL", s.handleGetSignedArtifactURL)
+	// Twirp-style artifact service (JSON over HTTP, @actions/artifact v4).
+	// The toolkit calls these with the job's runtime token.
+	s.route("POST /twirp/github.actions.results.api.v1.ArtifactService/CreateArtifact", s.requireJobToken(s.handleCreateArtifact))
+	s.route("POST /twirp/github.actions.results.api.v1.ArtifactService/FinalizeArtifact", s.requireJobToken(s.handleFinalizeArtifact))
+	s.route("POST /twirp/github.actions.results.api.v1.ArtifactService/ListArtifacts", s.requireJobToken(s.handleListArtifacts))
+	s.route("POST /twirp/github.actions.results.api.v1.ArtifactService/GetSignedArtifactURL", s.requireJobToken(s.handleGetSignedArtifactURL))
 
-	// Artifact upload/download blob endpoints
-	s.route("PUT /_apis/v1/artifacts/{artifactId}/upload", s.handleUploadArtifact)
+	// Artifact upload/download blob endpoints. Download is also where the
+	// REST `.../artifacts/{id}/zip` redirect lands, so it additionally accepts
+	// a GitHub credential with read access to the owning repository.
+	s.route("PUT /_apis/v1/artifacts/{artifactId}/upload", s.requireJobToken(s.handleUploadArtifact))
 	s.route("GET /_apis/v1/artifacts/{artifactId}/download", s.handleDownloadArtifact)
 
 	// Actions cache API used by actions/cache. The @actions/cache toolkit
 	// reserves at the plural `caches` path (getCacheApiUrl('caches')) and
 	// looks up at the singular `cache?keys=`.
-	s.route("POST /_apis/artifactcache/caches", s.handleCacheReserve)
-	s.route("GET /_apis/artifactcache/cache", s.handleCacheLookup)
-	s.route("PATCH /_apis/artifactcache/caches/{cacheId}", s.handleCacheUpload)
-	s.route("POST /_apis/artifactcache/caches/{cacheId}", s.handleCacheFinalize)
+	s.route("POST /_apis/artifactcache/caches", s.requireJobToken(s.handleCacheReserve))
+	s.route("GET /_apis/artifactcache/cache", s.requireJobToken(s.handleCacheLookup))
+	s.route("PATCH /_apis/artifactcache/caches/{cacheId}", s.requireJobToken(s.handleCacheUpload))
+	s.route("POST /_apis/artifactcache/caches/{cacheId}", s.requireJobToken(s.handleCacheFinalize))
+	// Cache download is the archiveLocation URL the toolkit fetches with an
+	// unauthenticated client, exactly as it fetches real GitHub's pre-signed
+	// blob URL; the unguessable `sig` query parameter is its credential.
 	s.route("GET /_apis/artifactcache/caches/{cacheId}", s.handleCacheDownload)
 
 	// Public GitHub Actions cache REST surface (the `gh` CLI + the
@@ -366,6 +441,9 @@ func (as *ArtifactStore) finalizedRepoCaches(repo string) []*CacheEntry {
 
 // handleListRepoCaches — GET .../actions/caches.
 func (s *Server) handleListRepoCaches(w http.ResponseWriter, r *http.Request) {
+	if !s.enforceRepoReadable(w, r) {
+		return
+	}
 	repo := repoFullName(r)
 	entries := s.artifactStore.finalizedRepoCaches(repo)
 	if key := r.URL.Query().Get("key"); key != "" {
@@ -460,6 +538,9 @@ func (s *Server) handleDeleteRepoCacheByID(w http.ResponseWriter, r *http.Reques
 
 // handleRepoCacheUsage — GET .../actions/cache/usage.
 func (s *Server) handleRepoCacheUsage(w http.ResponseWriter, r *http.Request) {
+	if !s.enforceRepoReadable(w, r) {
+		return
+	}
 	repo := repoFullName(r)
 	entries := s.artifactStore.finalizedRepoCaches(repo)
 	var total int64
@@ -490,6 +571,31 @@ func (s *Server) removeCacheBytes(ctx context.Context, id int64) error {
 
 // --- Artifact Twirp handlers ---
 
+// runArtifactScope resolves the workflow run an artifact call names and
+// checks it against the caller's job scope. An absent or unknown run id is an
+// error: it must never widen the call to every run on the instance.
+func (s *Server) runArtifactScope(w http.ResponseWriter, r *http.Request, backendID string) (*Workflow, bool) {
+	if backendID == "" {
+		writeGHError(w, http.StatusBadRequest, "workflow_run_backend_id is required")
+		return nil, false
+	}
+	wf := s.findWorkflowByBackendID(backendID)
+	if wf == nil {
+		writeGHError(w, http.StatusNotFound, "Not Found")
+		return nil, false
+	}
+	caller, err := s.callerRunner(r)
+	if err != nil {
+		s.challengeRunnerAuth(w, r, err)
+		return nil, false
+	}
+	if !caller.Scope.coversRepo(wf.RepoFullName) {
+		writeGHError(w, http.StatusForbidden, "Not entitled to this workflow run")
+		return nil, false
+	}
+	return wf, true
+}
+
 func (s *Server) handleCreateArtifact(w http.ResponseWriter, r *http.Request) {
 	var req struct {
 		WorkflowRunBackendID string `json:"workflow_run_backend_id"`
@@ -500,13 +606,12 @@ func (s *Server) handleCreateArtifact(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	wf := s.findWorkflowByBackendID(req.WorkflowRunBackendID)
-	repoFullName := ""
-	githubRunID := 0
-	if wf != nil {
-		repoFullName = wf.RepoFullName
-		githubRunID = wf.RunID
+	wf, ok := s.runArtifactScope(w, r, req.WorkflowRunBackendID)
+	if !ok {
+		return
 	}
+	repoFullName := wf.RepoFullName
+	githubRunID := wf.RunID
 
 	s.artifactStore.mu.Lock()
 	id := s.artifactStore.nextID
@@ -545,14 +650,25 @@ func (s *Server) handleUploadArtifact(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	data, err := io.ReadAll(r.Body)
+	caller, err := s.callerRunner(r)
 	if err != nil {
-		http.Error(w, "read body: "+err.Error(), http.StatusInternalServerError)
+		s.challengeRunnerAuth(w, r, err)
+		return
+	}
+	art, ok := s.artifactByIDForCaller(id)
+	if !ok || !caller.Scope.coversRepo(art.RepoFullName) {
+		http.Error(w, "artifact not found", http.StatusNotFound)
+		return
+	}
+
+	data, err := io.ReadAll(http.MaxBytesReader(w, r.Body, maxArtifactChunkBytes))
+	if err != nil {
+		http.Error(w, "read body: "+err.Error(), http.StatusBadRequest)
 		return
 	}
 
 	s.artifactStore.mu.Lock()
-	art, ok := s.artifactStore.artifacts[id]
+	art, ok = s.artifactStore.artifacts[id]
 	if ok {
 		art.Data = append(art.Data, data...)
 		art.Size = int64(len(art.Data))
@@ -584,6 +700,9 @@ func (s *Server) handleFinalizeArtifact(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 	workflowRunBackendID := coalesceStr(req.WorkflowRunBackendID, req.WorkflowRunBackendIDAlt)
+	if _, ok := s.runArtifactScope(w, r, workflowRunBackendID); !ok {
+		return
+	}
 
 	s.artifactStore.mu.Lock()
 	found := s.artifactStore.findArtifactByNameLocked(req.Name, workflowRunBackendID, false)
@@ -606,10 +725,9 @@ func (s *Server) handleFinalizeArtifact(w http.ResponseWriter, r *http.Request) 
 }
 
 func (s *Server) handleListArtifacts(w http.ResponseWriter, r *http.Request) {
-	// The @actions/artifact v4 client scopes ListArtifacts to its own run
-	// via workflow_run_backend_id. Without filtering, concurrent runs see
-	// each other's artifacts (e.g. a later stage's upload_artifacts finds a
-	// name-collision from an unrelated run).
+	// The @actions/artifact v4 client scopes ListArtifacts to its own run via
+	// workflow_run_backend_id, and so must this handler: an absent run id is a
+	// bad request, never a listing of every artifact on the instance.
 	var req struct {
 		WorkflowRunBackendID string `json:"workflow_run_backend_id"`
 		NameFilter           *struct {
@@ -622,6 +740,9 @@ func (s *Server) handleListArtifacts(w http.ResponseWriter, r *http.Request) {
 	if !decodeJSONBody(w, r, &req) {
 		return
 	}
+	if _, ok := s.runArtifactScope(w, r, req.WorkflowRunBackendID); !ok {
+		return
+	}
 
 	s.artifactStore.mu.RLock()
 	var list []map[string]interface{}
@@ -629,7 +750,7 @@ func (s *Server) handleListArtifacts(w http.ResponseWriter, r *http.Request) {
 		if !art.Finalized {
 			continue
 		}
-		if req.WorkflowRunBackendID != "" && art.WorkflowRunBackendID != req.WorkflowRunBackendID {
+		if art.WorkflowRunBackendID != req.WorkflowRunBackendID {
 			continue
 		}
 		if req.NameFilter != nil && req.NameFilter.Value != "" && art.Name != req.NameFilter.Value {
@@ -667,6 +788,9 @@ func (s *Server) handleGetSignedArtifactURL(w http.ResponseWriter, r *http.Reque
 		return
 	}
 	workflowRunBackendID := coalesceStr(req.WorkflowRunBackendID, req.WorkflowRunBackendIDAlt)
+	if _, ok := s.runArtifactScope(w, r, workflowRunBackendID); !ok {
+		return
+	}
 
 	s.artifactStore.mu.RLock()
 	found := s.artifactStore.findArtifactByNameLocked(req.Name, workflowRunBackendID, true)
@@ -705,6 +829,28 @@ func (as *ArtifactStore) findArtifactByNameLocked(name, workflowRunBackendID str
 	return found
 }
 
+// mayReadArtifact resolves the repository an artifact belongs to and answers
+// whether this caller may read it. A job runtime token reads only its own
+// repository's artifacts; every other caller is resolved to a GitHub identity
+// and needs read access on the owning repository, so an anonymous caller gets
+// public repositories only. An artifact with no owning repository is
+// unreadable rather than public — a sequential id must never be a wildcard.
+func (s *Server) mayReadArtifact(r *http.Request, art *Artifact) bool {
+	if art.RepoFullName == "" {
+		return false
+	}
+	if _, ok := bearerCredential(r); ok {
+		if principal, err := s.authenticateRunner(r); err == nil {
+			return principal.Scope.coversRepo(art.RepoFullName)
+		}
+	}
+	repo := s.store.GetRepoByFullName(art.RepoFullName)
+	if repo == nil {
+		return false
+	}
+	return s.viewerCanReadRepo(s.authenticateRequest(r), repo)
+}
+
 func (s *Server) handleDownloadArtifact(w http.ResponseWriter, r *http.Request) {
 	idStr := r.PathValue("artifactId")
 	id, err := strconv.ParseInt(idStr, 10, 64)
@@ -718,6 +864,10 @@ func (s *Server) handleDownloadArtifact(w http.ResponseWriter, r *http.Request) 
 	s.artifactStore.mu.RUnlock()
 
 	if !ok || !art.Finalized {
+		http.Error(w, "artifact not found", http.StatusNotFound)
+		return
+	}
+	if !s.mayReadArtifact(r, art) {
 		http.Error(w, "artifact not found", http.StatusNotFound)
 		return
 	}
@@ -865,12 +1015,19 @@ func (s *Server) handleCacheUpload(w http.ResponseWriter, r *http.Request) {
 		writeGHError(w, http.StatusBadRequest, err.Error())
 		return
 	}
-	chunk, err := io.ReadAll(r.Body)
+	declared := end - start + 1
+	if end+1 > maxCacheEntryBytes {
+		writeGHError(w, http.StatusBadRequest, fmt.Sprintf("Content-Range end %d exceeds the %d byte cache entry limit", end, int64(maxCacheEntryBytes)))
+		return
+	}
+	// The declared range bounds the read: a body longer than the range it
+	// claims is rejected by the length check below rather than buffered.
+	chunk, err := io.ReadAll(http.MaxBytesReader(w, r.Body, declared+1))
 	if err != nil {
 		writeGHError(w, http.StatusBadRequest, "read body: "+err.Error())
 		return
 	}
-	if int64(len(chunk)) != end-start+1 {
+	if int64(len(chunk)) != declared {
 		writeGHError(w, http.StatusBadRequest, fmt.Sprintf("Content-Range bytes %d-%d does not match body length %d", start, end, len(chunk)))
 		return
 	}
@@ -887,12 +1044,17 @@ func (s *Server) handleCacheUpload(w http.ResponseWriter, r *http.Request) {
 		writeGHError(w, http.StatusConflict, "Cache already finalized")
 		return
 	}
-	if needed := end + 1; int64(len(entry.Data)) < needed {
-		entry.Data = append(entry.Data, make([]byte, needed-int64(len(entry.Data)))...)
+	if entry.received+declared > maxCacheEntryBytes {
+		s.artifactStore.mu.Unlock()
+		writeGHError(w, http.StatusBadRequest, fmt.Sprintf("cache entry exceeds the %d byte limit", int64(maxCacheEntryBytes)))
+		return
 	}
-	copy(entry.Data[start:end+1], chunk)
-	entry.Size = int64(len(entry.Data))
-	if err := s.artifactStore.writeCacheDataAt(entry, chunk, start); err != nil {
+	entry.chunks = append(entry.chunks, cacheChunk{start: start, data: chunk})
+	entry.received += declared
+	if end+1 > entry.Size {
+		entry.Size = end + 1
+	}
+	if err := s.artifactStore.writeCacheChunkToDisk(entry, chunk, start); err != nil {
 		s.artifactStore.mu.Unlock()
 		writeGHError(w, http.StatusInternalServerError, "cache byte-store write: "+err.Error())
 		return
@@ -931,10 +1093,28 @@ func (s *Server) handleCacheFinalize(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if !entry.Finalized {
-		if req.Size != int64(len(entry.Data)) {
-			assembled := int64(len(entry.Data))
+		// The declared size may not exceed the bytes that actually arrived —
+		// that is what bounds the buffer assembleCacheChunks allocates.
+		// Overlapping chunks make `received` larger than the archive, never
+		// smaller.
+		if req.Size > entry.received || req.Size != entry.Size {
+			uploaded, ranged := entry.received, entry.Size
 			s.artifactStore.mu.Unlock()
-			writeGHError(w, http.StatusBadRequest, fmt.Sprintf("Cache size %d does not match %d bytes uploaded", req.Size, assembled))
+			writeGHError(w, http.StatusBadRequest, fmt.Sprintf("Cache size %d does not match %d bytes uploaded across ranges ending at %d", req.Size, uploaded, ranged))
+			return
+		}
+		data, err := assembleCacheChunks(entry.chunks, req.Size)
+		if err != nil {
+			s.artifactStore.mu.Unlock()
+			writeGHError(w, http.StatusBadRequest, err.Error())
+			return
+		}
+		entry.Data = data
+		entry.Size = req.Size
+		entry.chunks = nil
+		if err := s.artifactStore.writeCacheDataAt(entry, entry.Data, 0); err != nil {
+			s.artifactStore.mu.Unlock()
+			writeGHError(w, http.StatusInternalServerError, "cache byte-store write: "+err.Error())
 			return
 		}
 		entry.Finalized = true
@@ -983,6 +1163,33 @@ func (s *Server) handleCacheDownload(w http.ResponseWriter, r *http.Request) {
 	_, _ = w.Write(data)
 }
 
+// assembleCacheChunks lays the received chunks into one buffer of exactly
+// size bytes. Chunks may arrive in any order and may overlap — the toolkit
+// uploads them concurrently — but they must cover [0, size) with no hole: a
+// gap would mean serving back an archive padded with zeroes the client never
+// uploaded, so it is an error instead.
+func assembleCacheChunks(chunks []cacheChunk, size int64) ([]byte, error) {
+	ordered := append([]cacheChunk(nil), chunks...)
+	sort.Slice(ordered, func(i, j int) bool { return ordered[i].start < ordered[j].start })
+	var covered int64
+	for _, c := range ordered {
+		if c.start > covered {
+			return nil, fmt.Errorf("cache archive has a hole at byte %d: the next chunk starts at %d", covered, c.start)
+		}
+		if end := c.start + int64(len(c.data)); end > covered {
+			covered = end
+		}
+	}
+	if covered != size {
+		return nil, fmt.Errorf("cache chunks cover %d bytes, declared size is %d", covered, size)
+	}
+	data := make([]byte, size)
+	for _, c := range ordered {
+		copy(data[c.start:], c.data)
+	}
+	return data, nil
+}
+
 func cacheLookupKey(repo, key, version string) string {
 	return repo + "\x00" + key + "\x00" + version
 }
@@ -999,68 +1206,48 @@ func newCacheDownloadTokenFromReader(random io.Reader) (string, error) {
 	return hex.EncodeToString(b), nil
 }
 
-// cacheScopeRepo resolves the repository an Actions cache request acts for
-// and writes a 401 when it can't. The @actions/cache toolkit authenticates
-// every cache call with the job's runtime token (Authorization: Bearer);
-// that token's sub claim is the plan scopeIdentifier of the dispatched job,
-// and the job message records the repository the run executes as.
+// cacheScopeRepo resolves the repository an Actions cache request acts for.
+// The @actions/cache toolkit authenticates every cache call with the job's
+// runtime token, which requireJobToken has already verified; the principal's
+// scope is the repository the dispatched job runs as.
 func (s *Server) cacheScopeRepo(w http.ResponseWriter, r *http.Request) (string, bool) {
-	repo, err := s.repoForRuntimeToken(r)
-	if err != nil {
+	caller, err := s.callerRunner(r)
+	if err != nil || caller.Scope.Repo == "" {
 		s.logger.Debug().Err(err).Str("path", r.URL.Path).Msg("cache request rejected")
 		writeGHError(w, http.StatusUnauthorized, "Must authenticate to access cache")
 		return "", false
 	}
-	return repo, true
+	return caller.Scope.Repo, true
 }
 
-func (s *Server) repoForRuntimeToken(r *http.Request) (string, error) {
-	auth := r.Header.Get("Authorization")
-	token, ok := strings.CutPrefix(auth, "Bearer ")
-	if !ok {
-		return "", fmt.Errorf("missing bearer token")
+// repoForJobScope maps a verified job runtime token's sub — the plan
+// scopeIdentifier of a dispatched job — to the repository that job runs as.
+// The plan must exist: a token naming no plan is a token for nothing.
+//
+// An operator-submitted job (/internal/exec/submit) names no repository, and
+// answers "" rather than an error. That empty scope is the narrowest one
+// there is, not a wildcard — runnerScope.coversRepo is false for every
+// repository — so such a token reaches its own plan and nothing repository
+// scoped. Failing here instead left those jobs unable to report a timeline,
+// a log line or their own completion.
+func (s *Server) repoForJobScope(scopeID string) (string, error) {
+	if scopeID == "" {
+		return "", fmt.Errorf("job token carries no plan scope")
 	}
-	scopeID, err := jwtSubject(token)
-	if err != nil {
-		return "", err
-	}
-
 	s.store.mu.RLock()
 	defer s.store.mu.RUnlock()
 	for _, job := range s.store.Jobs {
-		if repo, ok := jobMessageRepo(job.Message, scopeID); ok {
+		if plan, repo := jobMessageScopeAndRepo(job.Message); plan != "" && plan == scopeID {
 			return repo, nil
 		}
 	}
 	return "", fmt.Errorf("no job with plan scope %q", scopeID)
 }
 
-// jwtSubject extracts the sub claim from a JWT without verifying the
-// signature; bleephub issues runtime tokens with alg:none (see makeJWT).
-func jwtSubject(token string) (string, error) {
-	parts := strings.SplitN(token, ".", 3)
-	if len(parts) != 3 {
-		return "", fmt.Errorf("malformed JWT: expected 3 parts")
-	}
-	payloadBytes, err := base64urlDecode(parts[1])
-	if err != nil {
-		return "", fmt.Errorf("decode JWT payload: %w", err)
-	}
-	var payload struct {
-		Sub string `json:"sub"`
-	}
-	if err := json.Unmarshal(payloadBytes, &payload); err != nil {
-		return "", fmt.Errorf("parse JWT payload: %w", err)
-	}
-	if payload.Sub == "" {
-		return "", fmt.Errorf("missing sub claim")
-	}
-	return payload.Sub, nil
-}
-
-// jobMessageRepo reports the github.repository context value of a dispatched
-// job message when its plan scopeIdentifier matches scopeID.
-func jobMessageRepo(message, scopeID string) (string, bool) {
+// jobMessageScopeAndRepo reads a dispatched job message's plan
+// scopeIdentifier and the repository it runs as. An operator-submitted job
+// (/internal/exec/submit) carries no repository and yields "".
+func jobMessageScopeAndRepo(message string) (scopeID, repo string) {
 	var msg struct {
 		Plan struct {
 			ScopeIdentifier string `json:"scopeIdentifier"`
@@ -1075,22 +1262,18 @@ func jobMessageRepo(message, scopeID string) (string, bool) {
 		} `json:"contextData"`
 	}
 	if err := json.Unmarshal([]byte(message), &msg); err != nil {
-		return "", false
-	}
-	if msg.Plan.ScopeIdentifier == "" || msg.Plan.ScopeIdentifier != scopeID {
-		return "", false
+		return "", ""
 	}
 	for _, kv := range msg.ContextData.GitHub.D {
 		if kv.K != "repository" {
 			continue
 		}
-		var repo string
-		if err := json.Unmarshal(kv.V, &repo); err != nil || repo == "" {
-			return "", false
+		if err := json.Unmarshal(kv.V, &repo); err != nil {
+			repo = ""
 		}
-		return repo, true
+		break
 	}
-	return "", false
+	return msg.Plan.ScopeIdentifier, repo
 }
 
 // parseContentRange parses the "bytes <start>-<end>/<total>" header the

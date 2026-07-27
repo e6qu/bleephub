@@ -777,7 +777,6 @@ var fuzzRoutePatterns = []string{
 	"GET /api/v3/users",
 	"GET /api/v3/users/{username}",
 	"GET /api/v3/users/{username}/attestations/{subject_digest}",
-	"GET /api/v3/users/{username}/codespaces",
 	"GET /api/v3/users/{username}/docker/conflicts",
 	"GET /api/v3/users/{username}/events",
 	"GET /api/v3/users/{username}/events/orgs/{org}",

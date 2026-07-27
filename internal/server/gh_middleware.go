@@ -22,6 +22,11 @@ const ctxPersonalAccessToken contextKey = "gh-personal-access-token"
 const ctxSuspendedInstallation contextKey = "gh-suspended-installation"
 const ctxSuspendedUser contextKey = "gh-suspended-user"
 
+// ctxInvalidCredential marks a request that presented an Authorization header
+// which resolved to nothing. Absent credentials are anonymous; presented ones
+// that do not verify are rejected, never downgraded to anonymous.
+const ctxInvalidCredential contextKey = "gh-invalid-credential"
+
 // GitHub token prefixes. Each prefix selects a different lookup table and
 // auth shape in authenticateRequest; using the named constants keeps the
 // middleware, stores and handlers agreeing on the exact prefix bytes.
@@ -36,6 +41,17 @@ const (
 func ghUserFromContext(ctx context.Context) *User {
 	u, _ := ctx.Value(ctxUser).(*User)
 	return u
+}
+
+// contextWithUser carries an authenticated user on a context built outside the
+// HTTP middleware — the SSH transport has no request to attach one to. A nil
+// user is left off entirely so ghUserFromContext keeps returning nil rather
+// than a typed nil.
+func contextWithUser(ctx context.Context, user *User) context.Context {
+	if user == nil {
+		return ctx
+	}
+	return context.WithValue(ctx, ctxUser, user)
 }
 
 // ghAppFromContext extracts the JWT-authenticated app from the request context.
@@ -91,6 +107,15 @@ func (s *Server) ghHeadersMiddleware(next http.Handler) http.Handler {
 		ctx := s.authenticateRequest(r)
 		r = r.WithContext(ctx)
 
+		// A credential that was presented and did not resolve is an error, not
+		// an anonymous request: continuing would silently downgrade a revoked,
+		// expired or forged token to "no credential" and answer whatever the
+		// public surface allows.
+		if bad, _ := ctx.Value(ctxInvalidCredential).(bool); bad {
+			writeGHError(w, http.StatusUnauthorized, "Bad credentials")
+			return
+		}
+
 		// A suspended installation's tokens are dead for the entire API
 		// surface (real GitHub fails every request made with the app's
 		// credentials while suspended), not just for minting new tokens.
@@ -103,34 +128,17 @@ func (s *Server) ghHeadersMiddleware(next http.Handler) http.Handler {
 			return
 		}
 
-		// Parse token for rate-limit header info
+		// X-OAuth-Scopes reports the scopes of whichever credential
+		// authenticated the request; authenticateRequest already resolved it,
+		// so re-parsing the header here would be a second, divergent parse.
 		var token *Token
-		if auth := r.Header.Get("Authorization"); auth != "" {
-			scheme, cred := authScheme(auth)
-			var tokenStr string
-			if scheme == "token" || scheme == "bearer" {
-				tokenStr = cred
-			}
-			if tokenStr != "" && !looksLikeJWT(tokenStr) && !strings.HasPrefix(tokenStr, tokenPrefixInstallation) && !strings.HasPrefix(tokenStr, tokenPrefixRefresh) {
-				if strings.HasPrefix(tokenStr, tokenPrefixOAuthUser) || strings.HasPrefix(tokenStr, tokenPrefixAppUser) {
-					if utsTok, _ := s.store.LookupUserToServerToken(tokenStr); utsTok != nil {
-						// Materialize a transient classic token so the response
-						// writer can emit X-OAuth-Scopes for OAuth/GitHub-App
-						// user-to-server tokens, matching real GitHub.
-						token = &Token{Value: utsTok.Token, UserID: utsTok.UserID, Scopes: utsTok.Scopes}
-					}
-				} else {
-					token, _ = s.store.LookupToken(tokenStr)
-				}
-			} else if scheme == "basic" {
-				decoded, err := base64.StdEncoding.DecodeString(cred)
-				if err == nil {
-					parts := strings.SplitN(string(decoded), ":", 2)
-					if len(parts) == 2 && parts[1] != "" {
-						token, _ = s.store.LookupToken(parts[1])
-					}
-				}
-			}
+		if pat := ghPersonalAccessTokenFromContext(ctx); pat != nil {
+			token = pat
+		} else if uts := ghUserToServerTokenFromContext(ctx); uts != nil {
+			// Materialize a transient classic token so the response writer can
+			// emit X-OAuth-Scopes for OAuth/GitHub-App user-to-server tokens,
+			// matching real GitHub.
+			token = &Token{Value: uts.Token, UserID: uts.UserID, Scopes: uts.Scopes}
 		}
 
 		// Wrap response writer to inject headers
@@ -158,10 +166,17 @@ func authScheme(auth string) (scheme, credential string) {
 // authenticateRequest parses the Authorization header and returns a context
 // with the authenticated user/app/installation set. Used by both /api/
 // middleware and git HTTP handlers.
+//
+// A header that resolves to nothing sets ctxInvalidCredential rather than
+// falling through to the anonymous path; ghHeadersMiddleware turns that into
+// the 401 the caller earned. Callers outside that middleware must consult the
+// flag themselves — resolving to no principal is not the same answer as
+// "no credential was offered".
 func (s *Server) authenticateRequest(r *http.Request) context.Context {
 	ctx := r.Context()
 	var user *User
 	if auth := r.Header.Get("Authorization"); auth != "" {
+		credentialResolved := false
 		scheme, cred := authScheme(auth)
 		var tokenStr string
 		if scheme == "token" || scheme == "bearer" {
@@ -172,9 +187,11 @@ func (s *Server) authenticateRequest(r *http.Request) context.Context {
 			case looksLikeJWT(tokenStr):
 				if app, err := s.store.parseAndVerifyAppJWT(tokenStr); err == nil {
 					ctx = context.WithValue(ctx, ctxApp, app)
+					credentialResolved = true
 				}
 			case strings.HasPrefix(tokenStr, tokenPrefixInstallation):
 				if instToken, inst := s.store.LookupInstallationToken(tokenStr); instToken != nil {
+					credentialResolved = true
 					if inst != nil && inst.SuspendedAt != nil {
 						ctx = context.WithValue(ctx, ctxSuspendedInstallation, true)
 						break
@@ -189,6 +206,7 @@ func (s *Server) authenticateRequest(r *http.Request) context.Context {
 				}
 			case strings.HasPrefix(tokenStr, tokenPrefixOAuthUser), strings.HasPrefix(tokenStr, tokenPrefixAppUser):
 				if utsTok, u := s.store.LookupUserToServerToken(tokenStr); utsTok != nil {
+					credentialResolved = true
 					ctx = context.WithValue(ctx, ctxUserToServerToken, utsTok)
 					if u != nil {
 						ctx = context.WithValue(ctx, ctxUser, u)
@@ -196,8 +214,10 @@ func (s *Server) authenticateRequest(r *http.Request) context.Context {
 					}
 				}
 			case strings.HasPrefix(tokenStr, tokenPrefixRefresh):
+				// A refresh token is never an access credential.
 			default:
 				if token, resolved := s.store.LookupToken(tokenStr); token != nil {
+					credentialResolved = true
 					user = resolved
 					ctx = context.WithValue(ctx, ctxPersonalAccessToken, token)
 				}
@@ -206,13 +226,31 @@ func (s *Server) authenticateRequest(r *http.Request) context.Context {
 			decoded, err := base64.StdEncoding.DecodeString(cred)
 			if err == nil {
 				parts := strings.SplitN(string(decoded), ":", 2)
+				// An empty password is the anonymous Basic form the OCI
+				// registry clients send; it offers no credential to reject.
+				credentialResolved = len(parts) == 2 && parts[1] == ""
 				if len(parts) == 2 && parts[1] != "" {
 					if token, resolved := s.store.LookupToken(parts[1]); token != nil {
+						credentialResolved = true
 						user = resolved
 						ctx = context.WithValue(ctx, ctxPersonalAccessToken, token)
+					} else if s.clientCredentialsVerify(parts[0], parts[1]) {
+						// client_id:client_secret for the OAuth app management
+						// endpoints. It authenticates an app, not a user, and
+						// those handlers verify it again themselves.
+						credentialResolved = true
 					}
 				}
 			}
+		}
+		// Runner protocol credentials authenticate a runner rather than a
+		// user, so they resolve to no principal here — but they are real
+		// credentials this server minted and verifies, not rejects.
+		if !credentialResolved && runnerCredentialVerifies(runnerCredentialOffered(scheme, cred)) {
+			credentialResolved = true
+		}
+		if !credentialResolved {
+			ctx = context.WithValue(ctx, ctxInvalidCredential, true)
 		}
 	}
 	if user == nil {
@@ -228,6 +266,40 @@ func (s *Server) authenticateRequest(r *http.Request) context.Context {
 		}
 	}
 	return ctx
+}
+
+// runnerCredentialOffered returns the credential a request offers to the
+// runner protocol, or "" when it offers none. Alongside bearer and token,
+// actions/runner presents its registration and removal tokens under the
+// RemoteAuth scheme — a scheme that names no user credential, so the
+// user-facing resolution above never looks at it.
+func runnerCredentialOffered(scheme, credential string) string {
+	switch scheme {
+	case "token", "bearer", "remoteauth":
+		return credential
+	}
+	return ""
+}
+
+// runnerCredentialVerifies reports whether a bearer credential is one of the
+// runner-protocol credentials this server signs: an agent session or job
+// token, or a registration/removal token.
+func runnerCredentialVerifies(token string) bool {
+	if token == "" {
+		return false
+	}
+	if _, err := parseRunnerToken(token); err == nil {
+		return true
+	}
+	var claims runnerRegistrationClaims
+	return parseSignedBlob("A", token, &claims) == nil
+}
+
+// clientCredentialsVerify reports whether a Basic username/password pair is a
+// registered OAuth App or GitHub App client id and secret.
+func (s *Server) clientCredentialsVerify(clientID, secret string) bool {
+	return s.store.VerifyOAuthAppSecret(clientID, secret) != nil ||
+		s.store.VerifyAppClientSecret(clientID, secret) != nil
 }
 
 // ghResponseWriter injects GitHub API headers before the first write.

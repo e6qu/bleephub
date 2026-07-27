@@ -6,7 +6,9 @@ import (
 	"crypto/x509"
 	"encoding/pem"
 	"fmt"
+	"net/url"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/google/uuid"
@@ -34,6 +36,7 @@ type App struct {
 	WebhookEvents      []string          `json:"webhook_events"`
 	WebhookContentType string            `json:"webhook_content_type"` // "json" | "form" (default "form")
 	WebhookInsecureSSL string            `json:"webhook_insecure_ssl"` // "0" | "1" (default "0")
+	CallbackURL        string            `json:"callback_url"`         // OAuth web-flow destination; empty means none registered
 	PEMPrivateKey      string            `json:"pem_private_key"`
 	Permissions        map[string]string `json:"permissions"`
 	Events             []string          `json:"events"`
@@ -86,6 +89,32 @@ type OAuthApp struct {
 	OwnerID      int
 	CreatedAt    time.Time
 	UpdatedAt    time.Time
+}
+
+// validateClientCallbackURL is the registration rule for an OAuth client's
+// callback, shared by both client kinds so "where may this client be
+// redirected" has one answer and one validator rather than two.
+//
+// An empty callback records no destination. That is a legal registration — the
+// authorize flow refuses a client that has none — but it is never a licence to
+// redirect somewhere else.
+func validateClientCallbackURL(raw string) error {
+	if raw == "" {
+		return nil
+	}
+	parsed, err := url.Parse(raw)
+	if err != nil {
+		return fmt.Errorf("callback URL %q is not a valid URL: %w", raw, err)
+	}
+	switch strings.ToLower(parsed.Scheme) {
+	case "http", "https":
+	default:
+		return fmt.Errorf("callback URL scheme %q is not supported; use an absolute http or https URL", parsed.Scheme)
+	}
+	if parsed.Host == "" {
+		return fmt.Errorf("callback URL %q names no host; use an absolute http or https URL", raw)
+	}
+	return nil
 }
 
 // CreateApp generates a new GitHub App with an RSA key pair.
@@ -155,8 +184,10 @@ func (st *Store) CreateAppE(ownerID int, name, description string, perms map[str
 	return app, nil
 }
 
-// UpdateAppHookConfig mutates the app's hook URL/secret/active flags.
-func (st *Store) UpdateAppHookConfig(appID int, fn func(a *App)) bool {
+// UpdateApp mutates a registered app under the write lock and persists it.
+// Every field-level app edit goes through here so none of them can forget the
+// lock or the persistence write.
+func (st *Store) UpdateApp(appID int, fn func(a *App)) bool {
 	st.mu.Lock()
 	defer st.mu.Unlock()
 	app := st.Apps[appID]
@@ -169,6 +200,11 @@ func (st *Store) UpdateAppHookConfig(appID int, fn func(a *App)) bool {
 		st.persist.MustPut("apps", strconv.Itoa(appID), app)
 	}
 	return true
+}
+
+// UpdateAppHookConfig mutates the app's hook URL/secret/active flags.
+func (st *Store) UpdateAppHookConfig(appID int, fn func(a *App)) bool {
+	return st.UpdateApp(appID, fn)
 }
 
 // GetApp returns an app by ID, or nil.
@@ -422,7 +458,10 @@ func (st *Store) CreateOAuthApp(ownerID int, name, description, url, callbackURL
 	return app
 }
 
-func (st *Store) CreateOAuthAppE(ownerID int, name, description, url, callbackURL string) (*OAuthApp, error) {
+func (st *Store) CreateOAuthAppE(ownerID int, name, description, appURL, callbackURL string) (*OAuthApp, error) {
+	if err := validateClientCallbackURL(callbackURL); err != nil {
+		return nil, err
+	}
 	st.mu.Lock()
 	defer st.mu.Unlock()
 	if st.OAuthApps == nil {
@@ -442,7 +481,7 @@ func (st *Store) CreateOAuthAppE(ownerID int, name, description, url, callbackUR
 		ClientSecret: clientSecret,
 		Name:         name,
 		Description:  description,
-		URL:          url,
+		URL:          appURL,
 		CallbackURL:  callbackURL,
 		OwnerID:      ownerID,
 		CreatedAt:    now,

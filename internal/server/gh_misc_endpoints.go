@@ -776,6 +776,9 @@ func (s *Server) handleJWKS(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleOIDCCustomSubGet(w http.ResponseWriter, r *http.Request) {
+	if !s.enforceRepoReadable(w, r) {
+		return
+	}
 	s.store.Misc.mu.RLock()
 	keys := s.store.Misc.oidcClaimKeys
 	if keys == nil {
@@ -864,7 +867,7 @@ func (s *Server) mintOIDCToken(r *http.Request, audience string) (string, error)
 	}
 	// The actor is the authenticated user who triggered the run. /token sits
 	// outside the /api middleware, so resolve the caller's token directly.
-	user := ghUserFromContext(s.authenticateRequest(r))
+	r, user := s.authenticatedBrowserRequest(r)
 	if user == nil {
 		return "", fmt.Errorf("oidc: unauthenticated — no actor for the token")
 	}
@@ -1323,7 +1326,7 @@ func (s *Server) handleOrgAuditLog(w http.ResponseWriter, r *http.Request) {
 	// admin:org). Anyone else gets 404 (GitHub hides existence from non-admins).
 	user := ghUserFromContext(r.Context())
 	org := s.store.GetOrg(orgName)
-	if user == nil || org == nil || !canAdminOrg(s.store, user, org) {
+	if user == nil || org == nil || !s.viewerCanAdminOrg(r.Context(), org.Login) {
 		writeGHError(w, http.StatusNotFound, "Not Found")
 		return
 	}

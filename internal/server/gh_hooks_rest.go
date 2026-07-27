@@ -22,6 +22,32 @@ func (s *Server) registerGHHookRoutes() {
 	s.route("POST /api/v3/repos/{owner}/{repo}/hooks/{id}/tests", s.requirePerm(scopeAdministration, permWrite, s.handleTestHook))
 }
 
+// hookRepo resolves the repository the hook routes name, or writes 404.
+//
+// The route gate compares the caller against the repository the path resolves
+// to, and has nothing to compare against when the path names a repository that
+// does not exist — so every handler here must resolve the repository itself
+// rather than operate on a key that belongs to no repository.
+func (s *Server) hookRepo(w http.ResponseWriter, r *http.Request) *Repo {
+	repo := s.store.GetRepo(r.PathValue("owner"), r.PathValue("repo"))
+	if repo == nil {
+		writeGHError(w, http.StatusNotFound, "Not Found")
+		return nil
+	}
+	return repo
+}
+
+// rejectUndeliverableHookURL writes GitHub's validation error when a webhook
+// target is one deliveries must never reach.
+func (s *Server) rejectUndeliverableHookURL(w http.ResponseWriter, target string) bool {
+	if err := validateWebhookTargetURL(target, s.allowPrivateOutboundTargets); err != nil {
+		s.logger.Warn().Err(err).Msg("webhook target rejected at configuration time")
+		writeGHValidationError(w, "Hook", "config.url", "invalid")
+		return true
+	}
+	return false
+}
+
 func (s *Server) handleCreateHook(w http.ResponseWriter, r *http.Request) {
 	user := ghUserFromContext(r.Context())
 	if user == nil {
@@ -29,7 +55,11 @@ func (s *Server) handleCreateHook(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	repoKey := r.PathValue("owner") + "/" + r.PathValue("repo")
+	repo := s.hookRepo(w, r)
+	if repo == nil {
+		return
+	}
+	repoKey := repo.FullName
 
 	var req struct {
 		Name   string `json:"name"`
@@ -56,6 +86,9 @@ func (s *Server) handleCreateHook(w http.ResponseWriter, r *http.Request) {
 		writeGHValidationError(w, "Hook", "url", "missing_field")
 		return
 	}
+	if s.rejectUndeliverableHookURL(w, req.Config.URL) {
+		return
+	}
 
 	events := req.Events
 	if len(events) == 0 {
@@ -74,8 +107,7 @@ func (s *Server) handleCreateHook(w http.ResponseWriter, r *http.Request) {
 	// is created (so the consumer can verify the endpoint). Inactive hooks
 	// receive no deliveries.
 	if hook.Active {
-		repo := s.store.GetRepo(r.PathValue("owner"), r.PathValue("repo"))
-		go s.deliverWebhook(hook, "ping", "", mustMarshal(buildPingPayload(repo, hook)))
+		s.enqueueWebhookDelivery(hook, "ping", "", mustMarshal(buildPingPayload(repo, hook)))
 	}
 
 	writeJSON(w, http.StatusCreated, hookToJSON(hook, s.store.HookLastResp(hook), r, r.PathValue("owner"), r.PathValue("repo")))
@@ -88,13 +120,16 @@ func (s *Server) handleListHooks(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	repoKey := r.PathValue("owner") + "/" + r.PathValue("repo")
-	hooks := s.store.ListHooks(repoKey)
+	repo := s.hookRepo(w, r)
+	if repo == nil {
+		return
+	}
+	hooks := s.store.ListHooks(repo.FullName)
 
-	owner, repo := r.PathValue("owner"), r.PathValue("repo")
+	ownerName, repoName := r.PathValue("owner"), r.PathValue("repo")
 	result := make([]map[string]interface{}, 0, len(hooks))
 	for _, h := range hooks {
-		result = append(result, hookToJSON(h, s.store.HookLastResp(h), r, owner, repo))
+		result = append(result, hookToJSON(h, s.store.HookLastResp(h), r, ownerName, repoName))
 	}
 	writeJSON(w, http.StatusOK, result)
 }
@@ -106,14 +141,17 @@ func (s *Server) handleGetHook(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	repoKey := r.PathValue("owner") + "/" + r.PathValue("repo")
+	repo := s.hookRepo(w, r)
+	if repo == nil {
+		return
+	}
 	hookID, err := strconv.Atoi(r.PathValue("id"))
 	if err != nil {
 		writeGHError(w, http.StatusNotFound, "Not Found")
 		return
 	}
 
-	hook := s.store.GetHook(repoKey, hookID)
+	hook := s.store.GetHook(repo.FullName, hookID)
 	if hook == nil {
 		writeGHError(w, http.StatusNotFound, "Not Found")
 		return
@@ -129,7 +167,11 @@ func (s *Server) handleUpdateHook(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	repoKey := r.PathValue("owner") + "/" + r.PathValue("repo")
+	repo := s.hookRepo(w, r)
+	if repo == nil {
+		return
+	}
+	repoKey := repo.FullName
 	hookID, err := strconv.Atoi(r.PathValue("id"))
 	if err != nil {
 		writeGHError(w, http.StatusNotFound, "Not Found")
@@ -153,6 +195,14 @@ func (s *Server) handleUpdateHook(w http.ResponseWriter, r *http.Request) {
 
 	if req.Name != "" && req.Name != "web" {
 		writeGHValidationError(w, "Hook", "name", "invalid")
+		return
+	}
+	// Existence before validity: an unknown hook is 404 whatever the body says.
+	if s.store.GetHook(repoKey, hookID) == nil {
+		writeGHError(w, http.StatusNotFound, "Not Found")
+		return
+	}
+	if req.Config != nil && req.Config.URL != "" && s.rejectUndeliverableHookURL(w, req.Config.URL) {
 		return
 	}
 
@@ -195,7 +245,11 @@ func (s *Server) handleDeleteHook(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	repoKey := r.PathValue("owner") + "/" + r.PathValue("repo")
+	repo := s.hookRepo(w, r)
+	if repo == nil {
+		return
+	}
+	repoKey := repo.FullName
 	hookID, err := strconv.Atoi(r.PathValue("id"))
 	if err != nil {
 		writeGHError(w, http.StatusNotFound, "Not Found")
@@ -218,14 +272,17 @@ func (s *Server) handleListHookDeliveries(w http.ResponseWriter, r *http.Request
 		return
 	}
 
-	repoKey := r.PathValue("owner") + "/" + r.PathValue("repo")
+	repo := s.hookRepo(w, r)
+	if repo == nil {
+		return
+	}
 	hookID, err := strconv.Atoi(r.PathValue("id"))
 	if err != nil {
 		writeGHError(w, http.StatusNotFound, "Not Found")
 		return
 	}
 
-	hook := s.store.GetHook(repoKey, hookID)
+	hook := s.store.GetHook(repo.FullName, hookID)
 	if hook == nil {
 		writeGHError(w, http.StatusNotFound, "Not Found")
 		return
@@ -246,25 +303,23 @@ func (s *Server) handlePingHook(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	owner := r.PathValue("owner")
-	repoName := r.PathValue("repo")
-	repoKey := owner + "/" + repoName
+	repo := s.hookRepo(w, r)
+	if repo == nil {
+		return
+	}
 	hookID, err := strconv.Atoi(r.PathValue("id"))
 	if err != nil {
 		writeGHError(w, http.StatusNotFound, "Not Found")
 		return
 	}
 
-	hook := s.store.GetHook(repoKey, hookID)
+	hook := s.store.GetHook(repo.FullName, hookID)
 	if hook == nil {
 		writeGHError(w, http.StatusNotFound, "Not Found")
 		return
 	}
 
-	repo := s.store.GetRepo(owner, repoName)
-	payload := buildPingPayload(repo, hook)
-
-	go s.deliverWebhook(hook, "ping", "", mustMarshal(payload))
+	s.enqueueWebhookDelivery(hook, "ping", "", mustMarshal(buildPingPayload(repo, hook)))
 
 	w.WriteHeader(http.StatusNoContent)
 }
@@ -286,13 +341,16 @@ func hookConfigJSON(h *Webhook) map[string]interface{} {
 
 // handleGetHookConfig — GET /repos/{o}/{r}/hooks/{id}/config.
 func (s *Server) handleGetHookConfig(w http.ResponseWriter, r *http.Request) {
-	repoKey := r.PathValue("owner") + "/" + r.PathValue("repo")
+	repo := s.hookRepo(w, r)
+	if repo == nil {
+		return
+	}
 	hookID, err := strconv.Atoi(r.PathValue("id"))
 	if err != nil {
 		writeGHError(w, http.StatusNotFound, "Not Found")
 		return
 	}
-	hook := s.store.GetHook(repoKey, hookID)
+	hook := s.store.GetHook(repo.FullName, hookID)
 	if hook == nil {
 		writeGHError(w, http.StatusNotFound, "Not Found")
 		return
@@ -304,7 +362,11 @@ func (s *Server) handleGetHookConfig(w http.ResponseWriter, r *http.Request) {
 // the config sub-view of the webhook: present members replace the stored
 // value, absent members are left unchanged.
 func (s *Server) handleUpdateHookConfig(w http.ResponseWriter, r *http.Request) {
-	repoKey := r.PathValue("owner") + "/" + r.PathValue("repo")
+	repo := s.hookRepo(w, r)
+	if repo == nil {
+		return
+	}
+	repoKey := repo.FullName
 	hookID, err := strconv.Atoi(r.PathValue("id"))
 	if err != nil {
 		writeGHError(w, http.StatusNotFound, "Not Found")
@@ -317,6 +379,14 @@ func (s *Server) handleUpdateHookConfig(w http.ResponseWriter, r *http.Request) 
 		InsecureSSL interface{} `json:"insecure_ssl"`
 	}
 	if !decodeJSONBody(w, r, &req) {
+		return
+	}
+	// Existence before validity: an unknown hook is 404 whatever the body says.
+	if s.store.GetHook(repoKey, hookID) == nil {
+		writeGHError(w, http.StatusNotFound, "Not Found")
+		return
+	}
+	if req.URL != nil && s.rejectUndeliverableHookURL(w, *req.URL) {
 		return
 	}
 	found := s.store.UpdateHook(repoKey, hookID, func(h *Webhook) {
@@ -345,34 +415,30 @@ func (s *Server) handleUpdateHookConfig(w http.ResponseWriter, r *http.Request) 
 // head). When the hook is not subscribed to push events no delivery is
 // generated, but the response is still 204 — matching real GitHub.
 func (s *Server) handleTestHook(w http.ResponseWriter, r *http.Request) {
-	owner := r.PathValue("owner")
-	repoName := r.PathValue("repo")
-	repoKey := owner + "/" + repoName
+	repo := s.hookRepo(w, r)
+	if repo == nil {
+		return
+	}
 	hookID, err := strconv.Atoi(r.PathValue("id"))
 	if err != nil {
 		writeGHError(w, http.StatusNotFound, "Not Found")
 		return
 	}
-	hook := s.store.GetHook(repoKey, hookID)
+	hook := s.store.GetHook(repo.FullName, hookID)
 	if hook == nil {
-		writeGHError(w, http.StatusNotFound, "Not Found")
-		return
-	}
-	repo := s.store.GetRepo(owner, repoName)
-	if repo == nil {
 		writeGHError(w, http.StatusNotFound, "Not Found")
 		return
 	}
 	if hookMatchesEvent(hook, "push") {
 		sender := ghUserFromContext(r.Context())
 		branch := repo.DefaultBranch
-		headSha := resolveBranchSha(s.store.GetGitStorage(owner, repoName), branch)
+		headSha := resolveBranchSha(s.store.GetGitStorage(r.PathValue("owner"), r.PathValue("repo")), branch)
 		if headSha == "" {
 			writeGHError(w, http.StatusUnprocessableEntity, "No default branch commit found")
 			return
 		}
 		payload := buildPushPayload(s.store, repo, sender, "refs/heads/"+branch, headSha, headSha)
-		go s.deliverWebhook(hook, "push", "", mustMarshal(payload))
+		s.enqueueWebhookDelivery(hook, "push", "", mustMarshal(payload))
 	}
 	w.WriteHeader(http.StatusNoContent)
 }
@@ -393,7 +459,10 @@ func (s *Server) handleGetHookDelivery(w http.ResponseWriter, r *http.Request) {
 		writeGHError(w, http.StatusUnauthorized, "Bad credentials")
 		return
 	}
-	repoKey := r.PathValue("owner") + "/" + r.PathValue("repo")
+	repo := s.hookRepo(w, r)
+	if repo == nil {
+		return
+	}
 	hookID, err := strconv.Atoi(r.PathValue("id"))
 	if err != nil {
 		writeGHError(w, http.StatusNotFound, "Not Found")
@@ -404,7 +473,7 @@ func (s *Server) handleGetHookDelivery(w http.ResponseWriter, r *http.Request) {
 		writeGHError(w, http.StatusNotFound, "Not Found")
 		return
 	}
-	hook := s.store.GetHook(repoKey, hookID)
+	hook := s.store.GetHook(repo.FullName, hookID)
 	if hook == nil {
 		writeGHError(w, http.StatusNotFound, "Not Found")
 		return
@@ -425,7 +494,10 @@ func (s *Server) handleRedeliverHookDelivery(w http.ResponseWriter, r *http.Requ
 		writeGHError(w, http.StatusUnauthorized, "Bad credentials")
 		return
 	}
-	repoKey := r.PathValue("owner") + "/" + r.PathValue("repo")
+	repo := s.hookRepo(w, r)
+	if repo == nil {
+		return
+	}
 	hookID, err := strconv.Atoi(r.PathValue("id"))
 	if err != nil {
 		writeGHError(w, http.StatusNotFound, "Not Found")
@@ -436,7 +508,7 @@ func (s *Server) handleRedeliverHookDelivery(w http.ResponseWriter, r *http.Requ
 		writeGHError(w, http.StatusNotFound, "Not Found")
 		return
 	}
-	hook := s.store.GetHook(repoKey, hookID)
+	hook := s.store.GetHook(repo.FullName, hookID)
 	if hook == nil {
 		writeGHError(w, http.StatusNotFound, "Not Found")
 		return
@@ -453,13 +525,9 @@ func (s *Server) handleRedeliverHookDelivery(w http.ResponseWriter, r *http.Requ
 		return
 	}
 	payloadBytes := mustMarshal(original.Request.Payload)
-	go func() {
-		delivery := s.doDeliverAttempt(hook, original.Event, original.Action, original.GUID, payloadBytes, true)
-		s.store.AddDelivery(delivery)
-		if hook.RepoKey != "" {
-			s.store.SetHookLastResponse(hook.RepoKey, hook.ID, deliveryLastResponse(delivery))
-		}
-	}()
+	s.enqueueWebhookJob(webhookQueueKey(hook), func() {
+		s.redeliverWebhook(hook, original.Event, original.Action, original.GUID, payloadBytes)
+	})
 	w.WriteHeader(http.StatusAccepted)
 }
 

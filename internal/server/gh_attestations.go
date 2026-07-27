@@ -44,7 +44,7 @@ func (s *Server) handleRepoCreateAttestation(w http.ResponseWriter, r *http.Requ
 		writeGHError(w, http.StatusUnauthorized, "Bad credentials")
 		return
 	}
-	if !canPushRepo(s.store, user, repo) {
+	if !s.viewerCanPushRepo(r.Context(), repo) {
 		writeGHError(w, http.StatusForbidden, "Must have write access to the repository.")
 		return
 	}
@@ -73,8 +73,7 @@ func (s *Server) handleRepoCreateAttestation(w http.ResponseWriter, r *http.Requ
 
 func (s *Server) handleRepoListAttestations(w http.ResponseWriter, r *http.Request) {
 	repo := s.store.GetRepo(r.PathValue("owner"), r.PathValue("repo"))
-	user := ghUserFromContext(r.Context())
-	if repo == nil || !canReadRepo(s.store, user, repo) {
+	if repo == nil || !s.viewerCanReadRepo(r.Context(), repo) {
 		writeGHError(w, http.StatusNotFound, "Not Found")
 		return
 	}
@@ -92,11 +91,10 @@ func (s *Server) handleRepoListAttestations(w http.ResponseWriter, r *http.Reque
 // attestationRepoScope returns the IDs of the owner's repositories the
 // requesting user can read — the set an attestation list may draw from.
 func (s *Server) attestationRepoScope(r *http.Request, ownerLogin string) map[int]bool {
-	user := ghUserFromContext(r.Context())
 	ids := s.store.RepoIDsOwnedBy(ownerLogin)
 	for id := range ids {
 		repo := s.store.GetRepoByID(id)
-		if repo == nil || !canReadRepo(s.store, user, repo) {
+		if repo == nil || !s.viewerCanReadRepo(r.Context(), repo) {
 			delete(ids, id)
 		}
 	}
@@ -116,7 +114,7 @@ func (s *Server) requireOrgAttestationAdmin(w http.ResponseWriter, r *http.Reque
 		writeGHError(w, http.StatusUnauthorized, "Bad credentials")
 		return nil, false
 	}
-	if !user.SiteAdmin && !canAdminOrg(s.store, user, org) {
+	if !user.SiteAdmin && !s.viewerCanAdminOrg(r.Context(), org.Login) {
 		writeGHError(w, http.StatusForbidden, "Must be an organization admin.")
 		return nil, false
 	}

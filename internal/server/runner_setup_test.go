@@ -1,15 +1,73 @@
 package bleephub
 
 import (
+	"crypto/rsa"
 	"encoding/base64"
 	"encoding/json"
+	"io"
+	"math/big"
+	"net/http"
+	"strings"
 	"testing"
 )
+
+// jitRunnerPrivateKey reads `.credentials_rsaparams` the way the runner does —
+// as .NET's RSAParameters, whose members are named in the serialized form and
+// whose byte widths are fixed by the modulus length. A component trimmed to
+// its significant bytes is rejected by .NET outright, so the widths are
+// asserted here rather than left to a runner nobody can run in a unit test.
+func jitRunnerPrivateKey(t *testing.T, params []byte) *rsa.PrivateKey {
+	t.Helper()
+	var stored struct {
+		D        []byte `json:"d"`
+		DP       []byte `json:"dp"`
+		DQ       []byte `json:"dq"`
+		Exponent []byte `json:"exponent"`
+		InverseQ []byte `json:"inverseQ"`
+		Modulus  []byte `json:"modulus"`
+		P        []byte `json:"p"`
+		Q        []byte `json:"q"`
+	}
+	if err := json.Unmarshal(params, &stored); err != nil {
+		t.Fatalf(".credentials_rsaparams is not RSAParameters JSON: %v", err)
+	}
+	size := len(stored.Modulus)
+	if size == 0 {
+		t.Fatal(".credentials_rsaparams carries no modulus")
+	}
+	if len(stored.D) != size {
+		t.Errorf(".credentials_rsaparams d is %d bytes, want the modulus length %d; .NET refuses any other width",
+			len(stored.D), size)
+	}
+	for name, component := range map[string][]byte{
+		"dp": stored.DP, "dq": stored.DQ, "inverseQ": stored.InverseQ, "p": stored.P, "q": stored.Q,
+	} {
+		if len(component) != size/2 {
+			t.Errorf(".credentials_rsaparams %s is %d bytes, want half the modulus length %d; .NET refuses any other width",
+				name, len(component), size/2)
+		}
+	}
+
+	key := &rsa.PrivateKey{
+		PublicKey: rsa.PublicKey{
+			N: new(big.Int).SetBytes(stored.Modulus),
+			E: int(new(big.Int).SetBytes(stored.Exponent).Int64()),
+		},
+		D:      new(big.Int).SetBytes(stored.D),
+		Primes: []*big.Int{new(big.Int).SetBytes(stored.P), new(big.Int).SetBytes(stored.Q)},
+	}
+	if err := key.Validate(); err != nil {
+		t.Fatalf(".credentials_rsaparams is not a usable RSA key: %v", err)
+	}
+	key.Precompute()
+	return key
+}
 
 // TestRegistrationTokenRandom verifies the repo registration token is a
 // random per-request opaque value (not the old hardcoded constant) with a
 // near-term expiry, and that an authenticated caller gets 201.
 func TestRegistrationTokenRandom(t *testing.T) {
+	ensureSeededRepo(testServer, "admin/regtok")
 	mint := func() (string, string) {
 		resp := ghPost(t, "/api/v3/repos/admin/regtok/actions/runners/registration-token", defaultToken, map[string]interface{}{})
 		if resp.StatusCode != 201 {
@@ -76,6 +134,7 @@ func TestAgentRSAPublicKeyRequiresProtocolStandardBase64(t *testing.T) {
 // TestRemoveToken verifies the repo removal token endpoint returns the
 // {token, expires_at} shape with 201 for an authenticated caller.
 func TestRemoveToken(t *testing.T) {
+	ensureSeededRepo(testServer, "admin/rmtok")
 	resp := ghPost(t, "/api/v3/repos/admin/rmtok/actions/runners/remove-token", defaultToken, map[string]interface{}{})
 	if resp.StatusCode != 201 {
 		resp.Body.Close()
@@ -99,6 +158,7 @@ func TestRemoveToken(t *testing.T) {
 // a runner + a decodable base64 JIT config, validates required fields, and
 // registers the runner so it appears in the runners list.
 func TestGenerateJITConfig(t *testing.T) {
+	ensureSeededRepo(testServer, "admin/jit")
 	// Missing required fields → 422.
 	bad := ghPost(t, "/api/v3/repos/admin/jit/actions/runners/generate-jitconfig", defaultToken,
 		map[string]interface{}{"name": "jit-runner"})
@@ -141,21 +201,81 @@ func TestGenerateJITConfig(t *testing.T) {
 	if body.EncodedJITConfig == "" {
 		t.Fatal("encoded_jit_config must be non-empty")
 	}
-	// The runner must be able to consume the JIT config: it's base64 of a
-	// JSON blob carrying the agent identity + server URL.
+	// The runner must be able to consume the JIT config. It deserializes the
+	// decoded blob as a map of file name to the base64 of that file's
+	// contents and writes each entry into its root directory verbatim, so
+	// anything that is not a string of base64 fails to deserialize and the
+	// runner terminates before it configures itself.
 	raw, err := base64.StdEncoding.DecodeString(body.EncodedJITConfig)
 	if err != nil {
 		t.Fatalf("encoded_jit_config is not valid base64: %v", err)
 	}
-	var blob map[string]json.RawMessage
+	var blob map[string]string
 	if err := json.Unmarshal(raw, &blob); err != nil {
-		t.Fatalf("decoded JIT config is not valid JSON: %v", err)
+		t.Fatalf("decoded JIT config does not deserialize as a file-name-to-contents map, which is the only shape the runner accepts: %v; got %s", err, raw)
 	}
-	if _, ok := blob[".runner"]; !ok {
-		t.Errorf("JIT config missing .runner section: %s", raw)
+	files := map[string][]byte{}
+	for name, encoded := range blob {
+		contents, err := base64.StdEncoding.DecodeString(encoded)
+		if err != nil {
+			t.Fatalf("JIT config entry %s is not base64 file contents: %v", name, err)
+		}
+		files[name] = contents
 	}
-	if _, ok := blob[".credentials"]; !ok {
-		t.Errorf("JIT config missing .credentials section: %s", raw)
+	for _, name := range []string{".runner", ".credentials", ".credentials_rsaparams"} {
+		if _, ok := files[name]; !ok {
+			t.Fatalf("JIT config carries no %s; the runner writes each entry as a file and cannot configure without this one: %s", name, raw)
+		}
+	}
+
+	var settings struct {
+		AgentID   int    `json:"agentId"`
+		AgentName string `json:"agentName"`
+		Ephemeral bool   `json:"ephemeral"`
+		ServerURL string `json:"serverUrl"`
+	}
+	if err := json.Unmarshal(files[".runner"], &settings); err != nil {
+		t.Fatalf(".runner is not the runner's settings JSON: %v", err)
+	}
+	if int64(settings.AgentID) != body.Runner.ID || settings.AgentName != "jit-runner" || !settings.Ephemeral || settings.ServerURL == "" {
+		t.Errorf(".runner = %+v, want agent %d named jit-runner, ephemeral, with a server url", settings, body.Runner.ID)
+	}
+
+	var credentials struct {
+		Scheme string            `json:"scheme"`
+		Data   map[string]string `json:"data"`
+	}
+	if err := json.Unmarshal(files[".credentials"], &credentials); err != nil {
+		t.Fatalf(".credentials is not the runner's credential JSON: %v", err)
+	}
+	if credentials.Scheme != "OAuth" || credentials.Data["clientId"] == "" || credentials.Data["authorizationUrl"] == "" {
+		t.Fatalf(".credentials = %+v, want the OAuth scheme with a clientId and an authorizationUrl", credentials)
+	}
+
+	// The private key the runner signs its client_assertion with comes from
+	// the JIT config too — it generates none on this path — so the server must
+	// have recorded the matching public half against the agent. Signing with
+	// the key it was handed is the only proof of that.
+	key := jitRunnerPrivateKey(t, files[".credentials_rsaparams"])
+	form := runnerTokenExchangeForm(signTestAssertion(t, key, credentials.Data["clientId"]))
+	tokenResp, err := http.Post(credentials.Data["authorizationUrl"],
+		"application/x-www-form-urlencoded", strings.NewReader(form.Encode()))
+	if err != nil {
+		t.Fatalf("JIT token exchange: %v", err)
+	}
+	defer tokenResp.Body.Close()
+	if tokenResp.StatusCode != 200 {
+		payload, _ := io.ReadAll(tokenResp.Body)
+		t.Fatalf("JIT runner token exchange = %d, want 200; body=%s", tokenResp.StatusCode, payload)
+	}
+	var issued struct {
+		AccessToken string `json:"access_token"`
+	}
+	if err := json.NewDecoder(tokenResp.Body).Decode(&issued); err != nil {
+		t.Fatalf("decode JIT session token: %v", err)
+	}
+	if issued.AccessToken == "" {
+		t.Fatal("JIT runner token exchange issued no access_token")
 	}
 
 	// The minted runner must be registered (visible in the runners list).

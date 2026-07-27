@@ -360,7 +360,7 @@ func (s *Server) addDiscussionFieldsToSchema(userType, repoType, mutationType *g
 					}
 					repoID, _ := d["repoID"].(int)
 					repo := s.store.GetRepoByID(repoID)
-					return repo != nil && canAdminRepo(s.store, viewer, repo), nil
+					return s.viewerMayActOnRepo(p.Context, repo, scopeDiscussions, permWrite, permAdmin), nil
 				},
 			},
 			"viewerCanUpdate": &graphql.Field{
@@ -380,7 +380,7 @@ func (s *Server) addDiscussionFieldsToSchema(userType, repoType, mutationType *g
 					}
 					repoID, _ := d["repoID"].(int)
 					repo := s.store.GetRepoByID(repoID)
-					return repo != nil && canAdminRepo(s.store, viewer, repo), nil
+					return s.viewerMayActOnRepo(p.Context, repo, scopeDiscussions, permWrite, permAdmin), nil
 				},
 			},
 			"viewerCanReact": &graphql.Field{
@@ -396,7 +396,7 @@ func (s *Server) addDiscussionFieldsToSchema(userType, repoType, mutationType *g
 					}
 					repoID, _ := d["repoID"].(int)
 					repo := s.store.GetRepoByID(repoID)
-					return repo != nil && canReadRepo(s.store, viewer, repo), nil
+					return repo != nil && s.viewerCanReadRepo(p.Context, repo), nil
 				},
 			},
 			"reactionGroups": &graphql.Field{
@@ -730,16 +730,13 @@ func (s *Server) addDiscussionFieldsToSchema(userType, repoType, mutationType *g
 		},
 	})
 
-	mutationType.AddFieldConfig("createDiscussion", &graphql.Field{
+	s.registerMutation(mutationType, "createDiscussion", &graphql.Field{
 		Type: createDiscussionPayloadType,
 		Args: graphql.FieldConfigArgument{
 			"input": &graphql.ArgumentConfig{Type: graphql.NewNonNull(createDiscussionInputType)},
 		},
 		Resolve: func(p graphql.ResolveParams) (interface{}, error) {
 			user := ghUserFromContext(p.Context)
-			if user == nil {
-				return nil, fmt.Errorf("authentication required")
-			}
 			input, _ := p.Args["input"].(map[string]interface{})
 			repoNodeID, _ := input["repositoryId"].(string)
 			categoryNodeID, _ := input["categoryId"].(string)
@@ -765,25 +762,17 @@ func (s *Server) addDiscussionFieldsToSchema(userType, repoType, mutationType *g
 		},
 	})
 
-	mutationType.AddFieldConfig("updateDiscussion", &graphql.Field{
+	s.registerMutation(mutationType, "updateDiscussion", &graphql.Field{
 		Type: updateDiscussionPayloadType,
 		Args: graphql.FieldConfigArgument{
 			"input": &graphql.ArgumentConfig{Type: graphql.NewNonNull(updateDiscussionInputType)},
 		},
 		Resolve: func(p graphql.ResolveParams) (interface{}, error) {
-			user := ghUserFromContext(p.Context)
-			if user == nil {
-				return nil, fmt.Errorf("authentication required")
-			}
 			input, _ := p.Args["input"].(map[string]interface{})
 			discussionNodeID, _ := input["discussionId"].(string)
 			d := findDiscussionByNodeID(s.store, discussionNodeID)
 			if d == nil {
 				return nil, fmt.Errorf("could not resolve to a Discussion")
-			}
-			repo := s.store.GetRepoByID(d.RepoID)
-			if repo == nil || (!canAdminRepo(s.store, user, repo) && d.AuthorID != user.ID) {
-				return nil, fmt.Errorf("you do not have permission to update this discussion")
 			}
 			s.store.UpdateDiscussion(d.ID, func(disc *Discussion) {
 				if v, ok := input["title"].(string); ok {
@@ -805,25 +794,17 @@ func (s *Server) addDiscussionFieldsToSchema(userType, repoType, mutationType *g
 		},
 	})
 
-	mutationType.AddFieldConfig("deleteDiscussion", &graphql.Field{
+	s.registerMutation(mutationType, "deleteDiscussion", &graphql.Field{
 		Type: deleteDiscussionPayloadType,
 		Args: graphql.FieldConfigArgument{
 			"input": &graphql.ArgumentConfig{Type: graphql.NewNonNull(deleteDiscussionInputType)},
 		},
 		Resolve: func(p graphql.ResolveParams) (interface{}, error) {
-			user := ghUserFromContext(p.Context)
-			if user == nil {
-				return nil, fmt.Errorf("authentication required")
-			}
 			input, _ := p.Args["input"].(map[string]interface{})
 			discussionNodeID, _ := input["discussionId"].(string)
 			d := findDiscussionByNodeID(s.store, discussionNodeID)
 			if d == nil {
 				return nil, fmt.Errorf("could not resolve to a Discussion")
-			}
-			repo := s.store.GetRepoByID(d.RepoID)
-			if repo == nil || (!canAdminRepo(s.store, user, repo) && d.AuthorID != user.ID) {
-				return nil, fmt.Errorf("you do not have permission to delete this discussion")
 			}
 			s.store.DeleteDiscussion(d.ID)
 			return map[string]interface{}{
@@ -832,16 +813,13 @@ func (s *Server) addDiscussionFieldsToSchema(userType, repoType, mutationType *g
 		},
 	})
 
-	mutationType.AddFieldConfig("addDiscussionComment", &graphql.Field{
+	s.registerMutation(mutationType, "addDiscussionComment", &graphql.Field{
 		Type: addDiscussionCommentPayloadType,
 		Args: graphql.FieldConfigArgument{
 			"input": &graphql.ArgumentConfig{Type: graphql.NewNonNull(addDiscussionCommentInputType)},
 		},
 		Resolve: func(p graphql.ResolveParams) (interface{}, error) {
 			user := ghUserFromContext(p.Context)
-			if user == nil {
-				return nil, fmt.Errorf("authentication required")
-			}
 			input, _ := p.Args["input"].(map[string]interface{})
 			discussionNodeID, _ := input["discussionId"].(string)
 			body, _ := input["body"].(string)
@@ -865,27 +843,18 @@ func (s *Server) addDiscussionFieldsToSchema(userType, repoType, mutationType *g
 		},
 	})
 
-	mutationType.AddFieldConfig("updateDiscussionComment", &graphql.Field{
+	s.registerMutation(mutationType, "updateDiscussionComment", &graphql.Field{
 		Type: updateDiscussionCommentPayloadType,
 		Args: graphql.FieldConfigArgument{
 			"input": &graphql.ArgumentConfig{Type: graphql.NewNonNull(updateDiscussionCommentInputType)},
 		},
 		Resolve: func(p graphql.ResolveParams) (interface{}, error) {
-			user := ghUserFromContext(p.Context)
-			if user == nil {
-				return nil, fmt.Errorf("authentication required")
-			}
 			input, _ := p.Args["input"].(map[string]interface{})
 			commentNodeID, _ := input["commentId"].(string)
 			body, _ := input["body"].(string)
 			c := findDiscussionCommentByNodeID(s.store, commentNodeID)
 			if c == nil {
 				return nil, fmt.Errorf("could not resolve to a DiscussionComment")
-			}
-			d := s.store.GetDiscussion(c.DiscussionID)
-			repo := s.store.GetRepoByID(d.RepoID)
-			if repo == nil || (!canAdminRepo(s.store, user, repo) && c.AuthorID != user.ID) {
-				return nil, fmt.Errorf("you do not have permission to update this comment")
 			}
 			s.store.UpdateDiscussionComment(c.ID, func(cc *DiscussionComment) {
 				cc.Body = body
@@ -897,26 +866,17 @@ func (s *Server) addDiscussionFieldsToSchema(userType, repoType, mutationType *g
 		},
 	})
 
-	mutationType.AddFieldConfig("deleteDiscussionComment", &graphql.Field{
+	s.registerMutation(mutationType, "deleteDiscussionComment", &graphql.Field{
 		Type: deleteDiscussionCommentPayloadType,
 		Args: graphql.FieldConfigArgument{
 			"input": &graphql.ArgumentConfig{Type: graphql.NewNonNull(deleteDiscussionCommentInputType)},
 		},
 		Resolve: func(p graphql.ResolveParams) (interface{}, error) {
-			user := ghUserFromContext(p.Context)
-			if user == nil {
-				return nil, fmt.Errorf("authentication required")
-			}
 			input, _ := p.Args["input"].(map[string]interface{})
 			commentNodeID, _ := input["commentId"].(string)
 			c := findDiscussionCommentByNodeID(s.store, commentNodeID)
 			if c == nil {
 				return nil, fmt.Errorf("could not resolve to a DiscussionComment")
-			}
-			d := s.store.GetDiscussion(c.DiscussionID)
-			repo := s.store.GetRepoByID(d.RepoID)
-			if repo == nil || (!canAdminRepo(s.store, user, repo) && c.AuthorID != user.ID) {
-				return nil, fmt.Errorf("you do not have permission to delete this comment")
 			}
 			s.store.DeleteDiscussionComment(c.ID)
 			return map[string]interface{}{
@@ -926,7 +886,7 @@ func (s *Server) addDiscussionFieldsToSchema(userType, repoType, mutationType *g
 		},
 	})
 
-	mutationType.AddFieldConfig("markDiscussionCommentAsAnswer", &graphql.Field{
+	s.registerMutation(mutationType, "markDiscussionCommentAsAnswer", &graphql.Field{
 		Type: markDiscussionCommentAsAnswerPayloadType,
 		Args: graphql.FieldConfigArgument{
 			"input": &graphql.ArgumentConfig{Type: graphql.NewNonNull(markDiscussionCommentAsAnswerInputType)},
@@ -939,6 +899,9 @@ func (s *Server) addDiscussionFieldsToSchema(userType, repoType, mutationType *g
 				return nil, fmt.Errorf("could not resolve to a DiscussionComment")
 			}
 			d := s.store.GetDiscussion(c.DiscussionID)
+			if d == nil {
+				return nil, fmt.Errorf("could not resolve to a Discussion")
+			}
 			cat := s.store.GetDiscussionCategory(d.CategoryID)
 			if cat == nil || !cat.IsAnswerable {
 				return nil, fmt.Errorf("this discussion's category does not support answers")
@@ -951,7 +914,7 @@ func (s *Server) addDiscussionFieldsToSchema(userType, repoType, mutationType *g
 		},
 	})
 
-	mutationType.AddFieldConfig("unmarkDiscussionCommentAsAnswer", &graphql.Field{
+	s.registerMutation(mutationType, "unmarkDiscussionCommentAsAnswer", &graphql.Field{
 		Type: unmarkDiscussionCommentAsAnswerPayloadType,
 		Args: graphql.FieldConfigArgument{
 			"input": &graphql.ArgumentConfig{Type: graphql.NewNonNull(unmarkDiscussionCommentAsAnswerInputType)},
@@ -964,6 +927,9 @@ func (s *Server) addDiscussionFieldsToSchema(userType, repoType, mutationType *g
 				return nil, fmt.Errorf("could not resolve to a DiscussionComment")
 			}
 			d := s.store.GetDiscussion(c.DiscussionID)
+			if d == nil {
+				return nil, fmt.Errorf("could not resolve to a Discussion")
+			}
 			s.store.UnmarkDiscussionCommentAsAnswer(c.ID)
 			return map[string]interface{}{
 				"discussion":       discussionToGQL(s.store.GetDiscussion(d.ID), s.store),

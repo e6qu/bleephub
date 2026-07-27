@@ -8,14 +8,11 @@ import (
 
 func registerRunnerForLabels(t *testing.T) int {
 	t.Helper()
-	body := map[string]interface{}{
-		"name": "label-runner",
-		"labels": []map[string]string{
-			{"name": "self-hosted", "type": "system"},
-			{"name": "linux", "type": "system"},
-		},
-	}
-	resp := ghPost(t, "/_apis/v1/Agent/1", defaultToken, body)
+	// Agent registration presents the scoped registration token config.sh is
+	// given, not a personal access token.
+	body := `{"name":"label-runner","labels":[{"name":"self-hosted","type":"system"},{"name":"linux","type":"system"}]}`
+	token := mustRunnerRegistrationToken(t, runnerScope{Repo: "labels-owner/labels-repo"})
+	resp := runnerDo(t, "POST", testBaseURL+"/_apis/v1/Agent/1", token, body)
 	agent := decodeJSONWithStatus(t, resp, 200)
 	return int(agent["id"].(float64))
 }

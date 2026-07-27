@@ -16,11 +16,9 @@ func (s *Server) registerGHEnterpriseDependabotRoutes() {
 // organization-owned repository on the instance. Matching real GitHub,
 // alerts surface only for organizations the caller owns.
 func (s *Server) handleListEnterpriseDependabotAlerts(w http.ResponseWriter, r *http.Request) {
-	user := ghUserFromContext(r.Context())
-
 	var alerts []*DependabotAlert
 	for _, org := range s.store.ListOrgsAll(0) {
-		if !canAdminOrg(s.store, user, org) {
+		if !s.viewerCanAdminOrg(r.Context(), org.Login) {
 			continue
 		}
 		alerts = append(alerts, s.store.ListDependabotAlertsByOrg(org.ID)...)

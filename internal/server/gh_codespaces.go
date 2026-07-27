@@ -20,9 +20,6 @@ func (s *Server) registerGHCodespacesRoutes() {
 	s.route("POST /api/v3/user/codespaces/{codespace_name}/start", s.requirePerm(scopeCodespaces, permWrite, s.handleStartUserCodespace))
 	s.route("POST /api/v3/user/codespaces/{codespace_name}/stop", s.requirePerm(scopeCodespaces, permWrite, s.handleStopUserCodespace))
 
-	// Public-ish user-scoped list (matches real GitHub path shape).
-	s.route("GET /api/v3/users/{username}/codespaces", s.handleListUserCodespacesByLogin)
-
 	// Repository-scoped codespaces.
 	s.route("GET /api/v3/repos/{owner}/{repo}/codespaces", s.requirePerm(scopeCodespaces, permRead, s.handleListRepoCodespaces))
 	s.route("POST /api/v3/repos/{owner}/{repo}/codespaces", s.requirePerm(scopeCodespaces, permWrite, s.handleCreateRepoCodespace))
@@ -108,7 +105,7 @@ func (s *Server) requireOrgAdminOrCodespaceScope(next http.HandlerFunc) http.Han
 			writeGHError(w, http.StatusNotFound, "Not Found")
 			return
 		}
-		if !canAdminOrg(s.store, user, org) {
+		if !s.viewerCanAdminOrg(r.Context(), org.Login) {
 			writeGHError(w, http.StatusForbidden, "Must have admin rights to Organization.")
 			return
 		}
@@ -139,16 +136,6 @@ func (s *Server) resolveCodespace(w http.ResponseWriter, r *http.Request, ownerL
 func (s *Server) handleListUserCodespaces(w http.ResponseWriter, r *http.Request) {
 	user := ghUserFromContext(r.Context())
 	list := s.store.ListCodespacesByOwner(user.Login)
-	out := make([]map[string]interface{}, len(list))
-	for i, cs := range list {
-		out[i] = s.codespaceToJSON(cs, s.baseURL(r))
-	}
-	writeJSON(w, http.StatusOK, map[string]interface{}{"codespaces": out, "total_count": len(out)})
-}
-
-func (s *Server) handleListUserCodespacesByLogin(w http.ResponseWriter, r *http.Request) {
-	login := r.PathValue("username")
-	list := s.store.ListCodespacesByOwner(login)
 	out := make([]map[string]interface{}, len(list))
 	for i, cs := range list {
 		out[i] = s.codespaceToJSON(cs, s.baseURL(r))

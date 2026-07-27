@@ -119,7 +119,7 @@ func (s *Server) handleRedeliverAppHookDelivery(w http.ResponseWriter, r *http.R
 		writeGHError(w, http.StatusUnprocessableEntity, "App has no webhook URL configured")
 		return
 	}
-	go s.redeliverAppWebhook(app, d)
+	s.enqueueWebhookJob(appWebhookQueueKey(app), func() { s.redeliverAppWebhook(app, d) })
 	w.WriteHeader(http.StatusAccepted)
 }
 
@@ -215,13 +215,7 @@ func (s *Server) redeliverAppWebhook(app *App, original *WebhookDelivery) {
 		return
 	}
 	payloadBytes, _ := json.Marshal(original.Request.Payload)
-	hook := &Webhook{
-		ID:     -app.ID, // pseudo-hook id for app deliveries
-		URL:    app.WebhookURL,
-		Secret: app.WebhookSecret,
-		Events: app.WebhookEvents,
-		Active: app.WebhookActive,
-	}
+	hook := appWebhookPseudoHook(app)
 	delivery := s.doDeliverAttempt(hook, original.Event, original.Action, original.GUID, payloadBytes, true)
 	delivery.HookID = -app.ID
 	delivery.AppID = app.ID

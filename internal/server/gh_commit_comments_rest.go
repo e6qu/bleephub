@@ -313,7 +313,7 @@ func (s *Server) handleUpdateCommitComment(w http.ResponseWriter, r *http.Reques
 		writeGHError(w, http.StatusNotFound, "Not Found")
 		return
 	}
-	if c.AuthorID != user.ID && !canAdminRepo(s.store, user, repo) {
+	if c.AuthorID != user.ID && !s.viewerMayActOnRepo(r.Context(), repo, scopeContents, permWrite, permAdmin) {
 		writeGHError(w, http.StatusForbidden, "Must have push access")
 		return
 	}
@@ -346,7 +346,7 @@ func (s *Server) handleDeleteCommitComment(w http.ResponseWriter, r *http.Reques
 		writeGHError(w, http.StatusNotFound, "Not Found")
 		return
 	}
-	if c.AuthorID != user.ID && !canAdminRepo(s.store, user, repo) {
+	if c.AuthorID != user.ID && !s.viewerMayActOnRepo(r.Context(), repo, scopeContents, permWrite, permAdmin) {
 		writeGHError(w, http.StatusForbidden, "Must have push access")
 		return
 	}
