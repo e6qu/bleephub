@@ -6,10 +6,14 @@ import (
 	"fmt"
 	"net/http"
 	"os"
+	"path/filepath"
 	"regexp"
+	"slices"
 	"sort"
+	"strconv"
 	"strings"
 	"sync"
+	"testing"
 )
 
 // Runtime response-shape validation against the vendored GitHub OpenAPI
@@ -17,16 +21,29 @@ import (
 // shared server routes most of the package's test traffic; an observer
 // validates every 2xx /api/v3 JSON response member-by-member against
 // the documented response schema. Violations are deduped after m.Run()
-// and gated against openapi-violation-allowlist.txt — an entry is
-// either a real-but-undescribed member (GHES-only surface, with a
-// citation) or a filed BUG on its way to being fixed; the list only
-// shrinks. The companion route
-// check (gh_api_definition_test.go) keeps paths honest; this keeps the
-// bodies honest.
+// and gated against openapi-violation-allowlist.txt, whose entries are
+// either cited against an official GitHub description or marked
+// unverified with the emitter named as the thing to fix; the list only
+// shrinks. The companion route check (gh_api_definition_test.go) keeps
+// paths honest; this keeps the bodies honest.
+//
+// Two properties the gate depends on and therefore enforces on itself:
+// every judgement is a deterministic function of the vendored
+// description (no Go map iteration order reaches a verdict), and an
+// exchange the description does not cover is reported, never skipped.
+
+// allowlistFile is the single gate ledger, resolved relative to the
+// package directory. TestViolationAllowlistIsSingleCopy keeps it single.
+const allowlistFile = "openapi-violation-allowlist.txt"
 
 type shapeViolation struct {
-	Op    string // "METHOD /spec/path/template -> status"
-	Kind  string // unknown-field | type-mismatch | missing-required | malformed-json | internal-url
+	Op string // "METHOD /spec/path/template -> status"
+	// Kind is one of: unknown-field, type-mismatch, missing-required,
+	// malformed-json, internal-url, undocumented-status (the description
+	// does not list this status for the operation at all),
+	// undocumented-body (it lists the status but documents no JSON body
+	// for it), vacuous-gate.
+	Kind  string
 	Field string
 }
 
@@ -36,20 +53,41 @@ func (v shapeViolation) Key() string {
 
 type openAPIOperation struct {
 	Method   string
+	Path     string   // spec path template verbatim; ties the total order
 	Template []string // path segments; "{}" = parameter
 	Literals int
-	// Responses maps status code (or "default") to the JSON schema.
-	Responses map[string]map[string]any
+	// Bodies maps status code (or "default") to every JSON response
+	// schema the description declares for it, ordered by media type. A
+	// response with several JSON media types (application/json plus a
+	// vendor variant) declares several shapes, all of them legitimate,
+	// so the response is judged against all of them and accepted if any
+	// one accepts.
+	Bodies map[string][]map[string]any
+	// Statuses is every status code the operation documents, whether or
+	// not it carries a JSON body.
+	Statuses map[string]bool
 }
 
 type shapeValidator struct {
 	mu         sync.Mutex
 	seen       map[string]shapeViolation
 	ops        []openAPIOperation
-	schemas    map[string]any // components/schemas
+	schemas    map[string]any             // components/schemas
+	responses  map[string]json.RawMessage // components/responses
 	exchanges  int
 	validated  int
 	skippedOps int
+}
+
+// openAPIResponse is a response object, possibly a $ref into
+// components/responses. GitHub's description shares most of its response
+// objects that way, so an unresolved $ref reads as "no documented body"
+// and takes the operation out of the gate.
+type openAPIResponse struct {
+	Ref     string `json:"$ref"`
+	Content map[string]struct {
+		Schema map[string]any `json:"schema"`
+	} `json:"content"`
 }
 
 var apiShapeValidator *shapeValidator
@@ -71,18 +109,25 @@ func newShapeValidator() (*shapeValidator, error) {
 	var doc struct {
 		Paths      map[string]map[string]json.RawMessage `json:"paths"`
 		Components struct {
-			Schemas map[string]any `json:"schemas"`
+			Schemas   map[string]any             `json:"schemas"`
+			Responses map[string]json.RawMessage `json:"responses"`
 		} `json:"components"`
 	}
 	if err := json.NewDecoder(gz).Decode(&doc); err != nil {
 		return nil, err
 	}
-	if len(doc.Paths) < 500 || len(doc.Components.Schemas) < 100 {
-		return nil, fmt.Errorf("vendored OpenAPI looks truncated: %d paths, %d schemas", len(doc.Paths), len(doc.Components.Schemas))
+	if len(doc.Paths) < 500 || len(doc.Components.Schemas) < 100 || len(doc.Components.Responses) < 10 {
+		return nil, fmt.Errorf("vendored OpenAPI looks truncated: %d paths, %d schemas, %d shared responses",
+			len(doc.Paths), len(doc.Components.Schemas), len(doc.Components.Responses))
 	}
 
-	v := &shapeValidator{seen: map[string]shapeViolation{}, schemas: doc.Components.Schemas}
-	for path, methods := range doc.Paths {
+	v := &shapeValidator{
+		seen:      map[string]shapeViolation{},
+		schemas:   doc.Components.Schemas,
+		responses: doc.Components.Responses,
+	}
+	for _, path := range sortedMapKeys(doc.Paths) {
+		methods := doc.Paths[path]
 		segs := strings.Split(strings.Trim(path, "/"), "/")
 		template := make([]string, len(segs))
 		literals := 0
@@ -94,40 +139,152 @@ func newShapeValidator() (*shapeValidator, error) {
 				literals++
 			}
 		}
-		for method, raw := range methods {
+		for _, method := range sortedMapKeys(methods) {
 			switch method {
 			case "get", "post", "put", "patch", "delete", "head":
 			default:
 				continue
 			}
 			var op struct {
-				Responses map[string]struct {
-					Content map[string]struct {
-						Schema map[string]any `json:"schema"`
-					} `json:"content"`
-				} `json:"responses"`
+				Responses map[string]json.RawMessage `json:"responses"`
 			}
-			if err := json.Unmarshal(raw, &op); err != nil {
-				continue
+			if err := json.Unmarshal(methods[method], &op); err != nil {
+				return nil, fmt.Errorf("decode %s %s: %w", strings.ToUpper(method), path, err)
 			}
-			responses := map[string]map[string]any{}
-			for status, resp := range op.Responses {
-				for ct, content := range resp.Content {
-					if strings.Contains(ct, "json") && content.Schema != nil {
-						responses[status] = content.Schema
-						break
+			bodies := map[string][]map[string]any{}
+			statuses := map[string]bool{}
+			for _, status := range sortedMapKeys(op.Responses) {
+				statuses[status] = true
+				resp, err := v.resolveResponse(op.Responses[status])
+				if err != nil {
+					return nil, fmt.Errorf("%s %s response %s: %w", strings.ToUpper(method), path, status, err)
+				}
+				for _, ct := range sortedMapKeys(resp.Content) {
+					if strings.Contains(ct, "json") && resp.Content[ct].Schema != nil {
+						bodies[status] = append(bodies[status], resp.Content[ct].Schema)
 					}
 				}
 			}
 			v.ops = append(v.ops, openAPIOperation{
-				Method:    strings.ToUpper(method),
-				Template:  template,
-				Literals:  literals,
-				Responses: responses,
+				Method:   strings.ToUpper(method),
+				Path:     path,
+				Template: template,
+				Literals: literals,
+				Bodies:   bodies,
+				Statuses: statuses,
 			})
 		}
 	}
+	if err := v.verifySchemaRefs(); err != nil {
+		return nil, err
+	}
 	return v, nil
+}
+
+// resolveResponse follows a response object's $ref into
+// components/responses.
+func (v *shapeValidator) resolveResponse(raw json.RawMessage) (openAPIResponse, error) {
+	for i := 0; i < 16; i++ {
+		var resp openAPIResponse
+		if err := json.Unmarshal(raw, &resp); err != nil {
+			return resp, err
+		}
+		if resp.Ref == "" {
+			return resp, nil
+		}
+		name, ok := strings.CutPrefix(resp.Ref, "#/components/responses/")
+		if !ok {
+			return resp, fmt.Errorf("unsupported response $ref %q", resp.Ref)
+		}
+		next, ok := v.responses[name]
+		if !ok {
+			return resp, fmt.Errorf("response $ref %q has no target in components/responses", resp.Ref)
+		}
+		raw = next
+	}
+	return openAPIResponse{}, fmt.Errorf("response $ref chain deeper than 16 hops")
+}
+
+// verifySchemaRefs asserts every $ref in the description's schemas names
+// an existing components/schemas entry. resolve() cannot report a dangling
+// $ref from inside the walk, and an unresolved schema reads as an open
+// schema that accepts anything, so the check happens once at load.
+func (v *shapeValidator) verifySchemaRefs() error {
+	var bad []string
+	var visit func(node any)
+	visitSchemaMap := func(node any) {
+		members, ok := node.(map[string]any)
+		if !ok {
+			return
+		}
+		for _, name := range sortedMapKeys(members) {
+			visit(members[name])
+		}
+	}
+	visit = func(node any) {
+		switch x := node.(type) {
+		case map[string]any:
+			for _, k := range sortedMapKeys(x) {
+				switch k {
+				case "$ref":
+					ref, ok := x[k].(string)
+					if !ok {
+						bad = append(bad, fmt.Sprintf("non-string $ref %v", x[k]))
+						continue
+					}
+					name, isSchemaRef := strings.CutPrefix(ref, "#/components/schemas/")
+					if !isSchemaRef {
+						bad = append(bad, fmt.Sprintf("schema $ref outside components/schemas: %s", ref))
+						continue
+					}
+					if _, found := v.schemas[name]; !found {
+						bad = append(bad, fmt.Sprintf("dangling $ref %s", ref))
+					}
+				case "example", "examples", "default", "enum", "const":
+					// Instance values, not schemas; a $ref inside one points
+					// at components/examples and is none of this gate's
+					// business.
+				case "properties", "patternProperties":
+					// Member names are arbitrary, so the keys here must not be
+					// read as schema keywords.
+					visitSchemaMap(x[k])
+				default:
+					visit(x[k])
+				}
+			}
+		case []any:
+			for _, item := range x {
+				visit(item)
+			}
+		}
+	}
+	for _, name := range sortedMapKeys(v.schemas) {
+		visit(v.schemas[name])
+	}
+	for _, op := range v.ops {
+		for _, status := range sortedMapKeys(op.Bodies) {
+			for _, schema := range op.Bodies[status] {
+				visit(schema)
+			}
+		}
+	}
+	if len(bad) > 0 {
+		sort.Strings(bad)
+		bad = slices.Compact(bad)
+		return fmt.Errorf("vendored OpenAPI has %d unresolvable schema reference(s): %s", len(bad), strings.Join(bad, "; "))
+	}
+	return nil
+}
+
+// sortedMapKeys iterates a map in a fixed order, so no verdict this file
+// reaches can depend on Go's randomized map iteration.
+func sortedMapKeys[V any](m map[string]V) []string {
+	keys := make([]string, 0, len(m))
+	for k := range m {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	return keys
 }
 
 // Observe is the Server response observer.
@@ -171,47 +328,82 @@ func (v *shapeValidator) Observe(req *http.Request, status int, header http.Head
 		return
 	}
 	// Most-literal template first: a concrete path must not be judged by
-	// a generic sibling when a more specific one exists.
-	sort.Slice(candidates, func(i, j int) bool { return candidates[i].Literals > candidates[j].Literals })
+	// a generic sibling when a more specific one exists. Path breaks
+	// ties, so the winner never depends on iteration order.
+	sort.Slice(candidates, func(i, j int) bool {
+		if candidates[i].Literals != candidates[j].Literals {
+			return candidates[i].Literals > candidates[j].Literals
+		}
+		return candidates[i].Path < candidates[j].Path
+	})
+	primary := candidates[0]
 
 	var decoded any
 	if err := json.Unmarshal(body, &decoded); err != nil {
-		op := candidates[0]
-		v.record(shapeViolation{Op: opLabel(op, status), Kind: "malformed-json", Field: "$"})
+		v.record(shapeViolation{Op: opLabel(primary, status), Kind: "malformed-json", Field: "$"})
 		return
 	}
 	for _, field := range internalURLFields(decoded, "$") {
-		v.record(shapeViolation{Op: opLabel(candidates[0], status), Kind: "internal-url", Field: field})
+		v.record(shapeViolation{Op: opLabel(primary, status), Kind: "internal-url", Field: field})
 	}
 
+	// The most specific candidate that documents this status is the one the
+	// response is judged by. Comparing violation counts across candidates
+	// would let a generic sibling's single type-mismatch stand in for the
+	// right operation's precise list, which reads as a smaller finding
+	// while hiding a bigger one.
+	statusKey := strconv.Itoa(status)
 	var best []shapeViolation
 	bestSet := false
+	documented := false
 	for _, op := range candidates {
-		schema, ok := op.Responses[fmt.Sprintf("%d", status)]
+		schemas, ok := op.Bodies[statusKey]
 		if !ok {
-			schema, ok = op.Responses["default"]
+			schemas, ok = op.Bodies["default"]
 		}
 		if !ok {
-			continue // status not documented with a body for this op
+			continue
 		}
-		var out []shapeViolation
-		v.walk(schema, decoded, opLabel(op, status), "$", &out, 0)
-		if len(out) == 0 {
-			return // a documented schema fully accepts the response
+		documented = true
+		for _, schema := range schemas {
+			var out []shapeViolation
+			v.walk(schema, decoded, opLabel(op, status), "$", &out, 0)
+			if len(out) == 0 {
+				v.countValidated()
+				return // a documented schema fully accepts the response
+			}
+			if !bestSet || len(out) < len(best) {
+				best, bestSet = out, true
+			}
 		}
-		if !bestSet || len(out) < len(best) {
-			best, bestSet = out, true
-		}
+		break
 	}
-	if !bestSet {
-		return // no candidate documents a body for this status
+	if !documented {
+		// The description covers the path but not this status with a JSON
+		// body, so there is nothing to validate against. Report that
+		// instead of dropping the exchange: an undocumented status is the
+		// strongest parity signal the observer can see, not a licence to
+		// stop looking.
+		kind := "undocumented-status"
+		for _, op := range candidates {
+			if op.Statuses[statusKey] {
+				kind = "undocumented-body"
+				break
+			}
+		}
+		v.record(shapeViolation{Op: opLabel(primary, status), Kind: kind, Field: "$"})
+		return
 	}
-	v.mu.Lock()
-	v.validated++
-	v.mu.Unlock()
+	v.countValidated()
 	for _, viol := range best {
 		v.record(viol)
 	}
+}
+
+func (v *shapeValidator) countValidated() {
+	v.mu.Lock()
+	v.validated++
+	v.mu.Unlock()
 }
 
 func internalURLFields(v any, field string) []string {
@@ -379,7 +571,8 @@ func (v *shapeValidator) walk(schema map[string]any, val any, op, path string, o
 				*out = append(*out, shapeViolation{Op: op, Kind: "missing-required", Field: path + "." + name})
 			}
 		}
-		for name, member := range value {
+		for _, name := range sortedMapKeys(value) {
+			member := value[name]
 			sub, known := props[name]
 			if known {
 				v.walk(sub, member, op, path+"."+name, out, depth+1)
@@ -455,22 +648,43 @@ func contains(list []string, s string) bool {
 	return false
 }
 
-// ratchet compares the deduped violations against the allowlist and
-// returns the new keys. Allowlist format: key lines (op<TAB>kind<TAB>field)
-// with #-comments; every entry carries a BUG ID.
-func (v *shapeValidator) ratchet() (newKeys []string, total int) {
+// readViolationAllowlist parses the gate ledger. Format: one key per
+// line, op<TAB>kind<TAB>field, with #-comments carrying the citation for
+// the block that follows. A missing, unreadable, malformed or duplicated
+// entry is an error, never an empty allowlist: silently reading zero
+// entries would turn every allowlisted key into a fresh "new violation"
+// and bury the real ones.
+func readViolationAllowlist(path string) (map[string]bool, error) {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return nil, err
+	}
 	allowed := map[string]bool{}
-	if data, err := os.ReadFile("openapi-violation-allowlist.txt"); err == nil {
-		for _, line := range strings.Split(string(data), "\n") {
-			if i := strings.Index(line, "#"); i >= 0 {
-				line = line[:i]
-			}
-			line = strings.TrimRight(line, " \t")
-			if strings.TrimSpace(line) == "" {
-				continue
-			}
-			allowed[line] = true
+	for n, line := range strings.Split(string(data), "\n") {
+		if i := strings.Index(line, "#"); i >= 0 {
+			line = line[:i]
 		}
+		line = strings.TrimRight(line, " \t\r")
+		if strings.TrimSpace(line) == "" {
+			continue
+		}
+		if fields := strings.Split(line, "\t"); len(fields) != 3 {
+			return nil, fmt.Errorf("%s:%d: want op<TAB>kind<TAB>field, got %d tab-separated field(s): %q", path, n+1, len(fields), line)
+		}
+		if allowed[line] {
+			return nil, fmt.Errorf("%s:%d: duplicate entry %q", path, n+1, line)
+		}
+		allowed[line] = true
+	}
+	return allowed, nil
+}
+
+// ratchet compares the deduped violations against the allowlist and
+// returns the new keys.
+func (v *shapeValidator) ratchet() (newKeys []string, total int) {
+	allowed, err := readViolationAllowlist(allowlistFile)
+	if err != nil {
+		return []string{fmt.Sprintf("allowlist unreadable, gate verdict withheld: %v", err)}, 0
 	}
 	v.mu.Lock()
 	defer v.mu.Unlock()
@@ -479,6 +693,216 @@ func (v *shapeValidator) ratchet() (newKeys []string, total int) {
 			newKeys = append(newKeys, key)
 		}
 	}
+	if v.exchanges > 0 && v.validated == 0 {
+		// Every observed exchange found a way not to be checked. Whatever
+		// this run proved about response shapes, it is not parity.
+		newKeys = append(newKeys, shapeViolation{
+			Op:    fmt.Sprintf("%d /api/v3 exchange(s) observed", v.exchanges),
+			Kind:  "vacuous-gate",
+			Field: fmt.Sprintf("0 validated, %d unmatched path(s)", v.skippedOps),
+		}.Key())
+	}
 	sort.Strings(newKeys)
 	return newKeys, len(v.seen)
+}
+
+// repoRoot walks up from the package directory to the module root.
+func repoRoot(t *testing.T) string {
+	t.Helper()
+	dir, err := os.Getwd()
+	if err != nil {
+		t.Fatalf("getwd: %v", err)
+	}
+	for {
+		if _, err := os.Stat(filepath.Join(dir, "go.mod")); err == nil {
+			return dir
+		}
+		parent := filepath.Dir(dir)
+		if parent == dir {
+			t.Fatalf("no go.mod above %s", dir)
+		}
+		dir = parent
+	}
+}
+
+// TestViolationAllowlistIsSingleCopy makes a second ledger impossible to
+// add. Two copies had already drifted apart once, and only one of them
+// was ever read, so the other one's contents were decoration.
+func TestViolationAllowlistIsSingleCopy(t *testing.T) {
+	root := repoRoot(t)
+	pkgDir, err := os.Getwd()
+	if err != nil {
+		t.Fatalf("getwd: %v", err)
+	}
+	want := filepath.Join(pkgDir, allowlistFile)
+
+	var found []string
+	err = filepath.WalkDir(root, func(path string, d os.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		if d.IsDir() {
+			switch d.Name() {
+			case ".git", "node_modules", "dist", ".terraform":
+				return filepath.SkipDir
+			}
+			return nil
+		}
+		if d.Name() == allowlistFile {
+			found = append(found, path)
+		}
+		return nil
+	})
+	if err != nil {
+		t.Fatalf("walk %s: %v", root, err)
+	}
+	sort.Strings(found)
+	if len(found) != 1 || found[0] != want {
+		t.Errorf("want exactly one %s at %s, found %d: %v\n"+
+			"the validator reads the package-relative copy; any other copy is unread and will drift",
+			allowlistFile, want, len(found), found)
+	}
+	if _, err := readViolationAllowlist(want); err != nil {
+		t.Errorf("allowlist does not parse: %v", err)
+	}
+}
+
+// TestShapeValidatorModelIsDeterministic pins the property the gate rests
+// on: the parsed description is a function of the bytes on disk, not of
+// Go's map iteration order.
+func TestShapeValidatorModelIsDeterministic(t *testing.T) {
+	fingerprint := func() string {
+		v, err := newShapeValidator()
+		if err != nil {
+			t.Fatalf("newShapeValidator: %v", err)
+		}
+		var b strings.Builder
+		for _, op := range v.ops {
+			b.WriteString(op.Method + " " + op.Path + " " + strconv.Itoa(op.Literals))
+			for _, status := range sortedMapKeys(op.Bodies) {
+				b.WriteString(" " + status + ":" + strconv.Itoa(len(op.Bodies[status])))
+			}
+			b.WriteString(" |" + strings.Join(sortedMapKeys(op.Statuses), ",") + "\n")
+		}
+		return b.String()
+	}
+	if a, b := fingerprint(), fingerprint(); a != b {
+		t.Error("two loads of the vendored description produced different operation models")
+	}
+}
+
+// TestShapeValidatorKeepsEveryJSONMediaTypeSchema covers the responses
+// that declare more than one JSON media type. Picking one of them by map
+// iteration made those operations' verdicts a coin flip.
+func TestShapeValidatorKeepsEveryJSONMediaTypeSchema(t *testing.T) {
+	v, err := newShapeValidator()
+	if err != nil {
+		t.Fatalf("newShapeValidator: %v", err)
+	}
+	multi := 0
+	for _, op := range v.ops {
+		for _, status := range sortedMapKeys(op.Bodies) {
+			if len(op.Bodies[status]) > 1 {
+				multi++
+			}
+		}
+	}
+	if multi == 0 {
+		t.Error("no response in the vendored description declares multiple JSON media types; " +
+			"either the description changed shape or the parser dropped the extra schemas")
+	}
+}
+
+// TestShapeValidatorReportsUndocumentedStatus covers the case that used
+// to disable body validation instead of reporting it.
+func TestShapeValidatorReportsUndocumentedStatus(t *testing.T) {
+	v, err := newShapeValidator()
+	if err != nil {
+		t.Fatalf("newShapeValidator: %v", err)
+	}
+
+	// A status the operation does not list at all.
+	var undocumentedStatus, undocumentedBody int
+	for _, op := range v.ops {
+		if op.Method != "GET" || op.Literals != len(op.Template) {
+			continue
+		}
+		if op.Statuses["205"] || len(op.Bodies) == 0 {
+			continue
+		}
+		probe := newProbeValidator(t)
+		probe.Observe(mustGet(t, "/api/v3/"+strings.Join(op.Template, "/")), 205, jsonHeader(), []byte(`{}`))
+		if got := probe.kinds(); len(got) != 1 || got[0] != "undocumented-status" {
+			t.Fatalf("%s %s with an undocumented 205: got %v, want [undocumented-status]", op.Method, op.Path, got)
+		}
+		undocumentedStatus++
+		break
+	}
+
+	// A status the operation lists, but with no JSON body documented.
+	for _, op := range v.ops {
+		if op.Method != "GET" || op.Literals != len(op.Template) {
+			continue
+		}
+		status := ""
+		for _, s := range sortedMapKeys(op.Statuses) {
+			code, err := strconv.Atoi(s)
+			if err != nil || code < 200 || code >= 300 {
+				continue
+			}
+			if len(op.Bodies[s]) == 0 {
+				status = s
+				break
+			}
+		}
+		if status == "" {
+			continue
+		}
+		code, _ := strconv.Atoi(status)
+		probe := newProbeValidator(t)
+		probe.Observe(mustGet(t, "/api/v3/"+strings.Join(op.Template, "/")), code, jsonHeader(), []byte(`{}`))
+		if got := probe.kinds(); len(got) != 1 || got[0] != "undocumented-body" {
+			t.Fatalf("%s %s with a body on undocumented-body status %s: got %v, want [undocumented-body]", op.Method, op.Path, status, got)
+		}
+		undocumentedBody++
+		break
+	}
+
+	if undocumentedStatus == 0 || undocumentedBody == 0 {
+		t.Errorf("no probe operation found (undocumented-status=%d undocumented-body=%d); the description no longer covers this case",
+			undocumentedStatus, undocumentedBody)
+	}
+}
+
+func newProbeValidator(t *testing.T) *shapeValidator {
+	t.Helper()
+	v, err := newShapeValidator()
+	if err != nil {
+		t.Fatalf("newShapeValidator: %v", err)
+	}
+	return v
+}
+
+func (v *shapeValidator) kinds() []string {
+	v.mu.Lock()
+	defer v.mu.Unlock()
+	out := make([]string, 0, len(v.seen))
+	for _, viol := range v.seen {
+		out = append(out, viol.Kind)
+	}
+	sort.Strings(out)
+	return out
+}
+
+func jsonHeader() http.Header {
+	return http.Header{"Content-Type": []string{"application/json"}}
+}
+
+func mustGet(t *testing.T, path string) *http.Request {
+	t.Helper()
+	req, err := http.NewRequest(http.MethodGet, "http://127.0.0.1"+path, nil)
+	if err != nil {
+		t.Fatalf("build probe request for %s: %v", path, err)
+	}
+	return req
 }

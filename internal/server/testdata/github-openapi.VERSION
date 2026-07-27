@@ -1,4 +1,13 @@
-source: https://raw.githubusercontent.com/github/rest-api-description/main/descriptions/api.github.com/api.github.com.json
+vendored: github.com/github/rest-api-description (descriptions/api.github.com/api.github.com.json, bundled api.github.com description)
+upstream commit: 4f249d4b6f72c9bdd9a1eed4b797e4260a1b765e
+source: https://raw.githubusercontent.com/github/rest-api-description/4f249d4b6f72c9bdd9a1eed4b797e4260a1b765e/descriptions/api.github.com/api.github.com.json
+content sha256: 7dcf50fb93d26ad2021c9fdb48c88fe78a63ce3b187a78f30f509c7e75869c65
+gzip sha256: 40e03ae4af31cc087112fd773111241710a82d5de923df8ddc4ba412e4f79922
 openapi info.version: 1.1.4
-vendored: github.com/github/rest-api-description (api.github.com bundled description)
+paths: 787
+route index: ghec sha256 368b611509dd5f2c477d4e5f917700c32ccb437eb2629c6ea806cc7778f3ddd8, 1418 routes
+route index: ghes-3.21 sha256 32839398f9be37cf633dd3c1d2a36aa0e2d0eedcc7844a5cc489f8dc4ddf9f13, 1093 routes
+route index: ghes-3.13 sha256 c7a706c67b51c7317bd02b17d83972cdfb269cfde6257cc09062d9c38a950bf8, 974 routes
+route index: ghes-2.22 sha256 629f829cc1bbcba9785b2bcca4d0cec9119c963a20690fa550513cf209f777e6, 642 routes
+route index sha256: ab2b2ec8b60b8afd484344f66ab3c18614a66e3801f06e65fd372571aa2066a5
 refresh: scripts/update-github-openapi.sh

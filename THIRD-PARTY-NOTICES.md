@@ -47,12 +47,12 @@ Used by the route and response-shape fidelity gates. Not shipped.
 | | |
 |---|---|
 | Upstream | https://github.com/github/rest-api-description |
-| Vendored as | `internal/server/testdata/github-openapi.json.gz` |
-| Refreshed by | `scripts/update-github-openapi.sh` |
+| Upstream commit | `4f249d4b6f72c9bdd9a1eed4b797e4260a1b765e` (committed 2026-06-08) |
+| Vendored as | `internal/server/testdata/github-openapi.json.gz` (dotcom `api.github.com.json`, SHA-256 `7dcf50fb93d26ad2021c9fdb48c88fe78a63ce3b187a78f30f509c7e75869c65` uncompressed) |
+| Vendored as | `internal/server/testdata/github-openapi-routes.txt.gz` (route lists derived from the `ghec`, `ghes-3.21`, `ghes-3.13` and `ghes-2.22` descriptions at the same commit; their SHA-256s are recorded in `internal/server/testdata/github-openapi.VERSION`) |
+| Refreshed by | `scripts/update-github-openapi.sh` (pins the commit and verifies every checksum before vendoring) |
+| Enforced by | `TestVendoredOpenAPIMatchesRecordedPin` |
 | Licence | MIT |
-
-**Provenance gap:** fetched from the `main` branch tip with no commit pin, date
-or checksum recorded. Tracked as `PAR-005`.
 
 ## GitHub Actions runner — MIT — **redistributed in the runner image**
 

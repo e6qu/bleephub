@@ -153,9 +153,10 @@ func TestUserExtras_SocialAccounts(t *testing.T) {
 	resp := ghPost(t, "/api/v3/user/social_accounts", defaultToken, []map[string]interface{}{
 		{"url": "https://example.com/me"},
 	})
-	if resp.StatusCode != 200 {
+	// GitHub answers this 201 Created, not 200.
+	if resp.StatusCode != 201 {
 		resp.Body.Close()
-		t.Fatalf("expected 200, got %d", resp.StatusCode)
+		t.Fatalf("expected 201, got %d", resp.StatusCode)
 	}
 	accounts := decodeJSONArray(t, resp)
 	if len(accounts) == 0 {

@@ -21,7 +21,7 @@ import (
 // and BLEEPHUB_SSH_HOST_KEY are configured. The host key is required so a
 // restarted durable server retains its SSH host identity instead of silently
 // generating a different key for every process.
-func (s *Server) startGitSSH() error {
+func (s *Server) startGitSSH(ctx context.Context) error {
 	addr := strings.TrimSpace(os.Getenv("BLEEPHUB_SSH_ADDR"))
 	if addr == "" {
 		return nil
@@ -49,16 +49,26 @@ func (s *Server) startGitSSH() error {
 	}
 	config.AddHostKey(signer)
 	s.logger.Info().Str("addr", addr).Msg("bleephub SSH Git transport listening")
-	go func() {
+	// Closing the listener is what unblocks Accept, so shutdown closes it and
+	// the accept loop reports a clean stop rather than an error.
+	s.goBackground(func() {
+		<-ctx.Done()
+		_ = listener.Close()
+	})
+	s.goBackground(func() {
 		for {
 			conn, acceptErr := listener.Accept()
 			if acceptErr != nil {
-				s.logger.Error().Err(acceptErr).Msg("SSH Git transport listener stopped")
+				if ctx.Err() != nil {
+					s.logger.Info().Msg("SSH Git transport listener closed")
+				} else {
+					s.logger.Error().Err(acceptErr).Msg("SSH Git transport listener stopped")
+				}
 				return
 			}
 			go s.serveGitSSHConn(conn, config)
 		}
-	}()
+	})
 	return nil
 }
 

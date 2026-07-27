@@ -2,13 +2,72 @@ package bleephub
 
 import (
 	"compress/gzip"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
+	"io"
 	"os"
 	"regexp"
 	"sort"
 	"strings"
 	"testing"
 )
+
+const (
+	vendoredSpecFile    = "testdata/github-openapi.json.gz"
+	vendoredSpecVersion = "testdata/github-openapi.VERSION"
+)
+
+// TestVendoredOpenAPIMatchesRecordedPin makes the provenance record
+// load-bearing. Both fidelity gates measure against the vendored
+// description, so if the bytes can be swapped without a matching pin
+// update, a gate's verdict can change without anyone deciding it should.
+// The digest covers the uncompressed description: gzip output is not
+// portable across implementations, the content is.
+func TestVendoredOpenAPIMatchesRecordedPin(t *testing.T) {
+	meta, err := os.ReadFile(vendoredSpecVersion)
+	if err != nil {
+		t.Fatalf("read %s: %v", vendoredSpecVersion, err)
+	}
+	pins := map[string]string{}
+	for _, line := range strings.Split(string(meta), "\n") {
+		key, value, ok := strings.Cut(line, ": ")
+		if !ok {
+			continue
+		}
+		pins[key] = strings.TrimSpace(value)
+	}
+	commit, sha := pins["upstream commit"], pins["content sha256"]
+	if len(commit) != 40 {
+		t.Errorf("%s: 'upstream commit' must be a full commit SHA, got %q; refresh with scripts/update-github-openapi.sh", vendoredSpecVersion, commit)
+	}
+	if len(sha) != 64 {
+		t.Fatalf("%s: 'content sha256' must be 64 hex characters, got %q", vendoredSpecVersion, sha)
+	}
+	if !strings.Contains(pins["source"], commit) {
+		t.Errorf("%s: 'source' %q does not name the pinned commit %s", vendoredSpecVersion, pins["source"], commit)
+	}
+
+	f, err := os.Open(vendoredSpecFile)
+	if err != nil {
+		t.Fatalf("open %s: %v", vendoredSpecFile, err)
+	}
+	defer f.Close()
+	gz, err := gzip.NewReader(f)
+	if err != nil {
+		t.Fatalf("gunzip %s: %v", vendoredSpecFile, err)
+	}
+	defer gz.Close()
+	digest := sha256.New()
+	if _, err := io.Copy(digest, gz); err != nil {
+		t.Fatalf("read %s: %v", vendoredSpecFile, err)
+	}
+	if got := hex.EncodeToString(digest.Sum(nil)); got != sha {
+		t.Errorf("%s content sha256 = %s, %s records %s\n"+
+			"the description the fidelity gates measure against is not the one recorded as pinned",
+			vendoredSpecFile, got, vendoredSpecVersion, sha)
+	}
+}
 
 // This test enforces the core fidelity invariant the project cares about:
 // every route bleephub serves under the GitHub-compatible /api/v3 surface must
@@ -32,7 +91,7 @@ func normalizePath(path string) string {
 // set of normalized "METHOD /path" operations GitHub documents.
 func loadGitHubOperations(t *testing.T) map[string]bool {
 	t.Helper()
-	f, err := os.Open("testdata/github-openapi.json.gz")
+	f, err := os.Open(vendoredSpecFile)
 	if err != nil {
 		t.Fatalf("open vendored OpenAPI: %v", err)
 	}
@@ -66,62 +125,187 @@ func loadGitHubOperations(t *testing.T) map[string]bool {
 	return ops
 }
 
-// allowedGHESOnly lists real GitHub Enterprise Server /api/v3 endpoints that
-// are NOT present in the dotcom api.github.com description (GHES admin/staff
-// tools, the actions/runner registration endpoint, and enterprise-only
-// surfaces). Each entry MUST be a documented real GitHub endpoint — this is an
-// allow-list of real-but-undescribed paths, never a place to hide an invented
-// one. Keyed by normalized "METHOD /path" (without the /api/v3 prefix).
-var allowedGHESOnly = map[string]string{
-	"POST /actions/runner-registration":                              "GHES runner registration endpoint (actions/runner config.sh)",
-	"POST /admin/organizations":                                      "GHES admin/staff-tools API (create org)",
-	"POST /admin/users":                                              "GHES admin/staff-tools API (create user)",
-	"PATCH /admin/users/{}":                                          "GHES admin/staff-tools API (update user)",
-	"DELETE /admin/users/{}":                                         "GHES admin/staff-tools API (delete user)",
-	"GET /orgs/{}/audit-log":                                         "Org audit log — real GitHub (Enterprise), absent from the dotcom bundled description",
-	"GET /repos/{}/{}/git/refs":                                      "GHES / real GitHub git-refs listing endpoint, absent from the dotcom bundled description",
-	"GET /repos/{}/{}/branches/{}/protection/allow_deletions":        "Branch protection allow-deletions setting — real GitHub endpoint, absent from the bundled dotcom description",
-	"PUT /repos/{}/{}/branches/{}/protection/allow_deletions":        "Branch protection allow-deletions setting — real GitHub endpoint, absent from the bundled dotcom description",
-	"DELETE /repos/{}/{}/branches/{}/protection/allow_deletions":     "Branch protection allow-deletions setting — real GitHub endpoint, absent from the bundled dotcom description",
-	"GET /repos/{}/{}/branches/{}/protection/allow_force_pushes":     "Branch protection allow-force-pushes setting — real GitHub endpoint, absent from the bundled dotcom description",
-	"PUT /repos/{}/{}/branches/{}/protection/allow_force_pushes":     "Branch protection allow-force-pushes setting — real GitHub endpoint, absent from the bundled dotcom description",
-	"DELETE /repos/{}/{}/branches/{}/protection/allow_force_pushes":  "Branch protection allow-force-pushes setting — real GitHub endpoint, absent from the bundled dotcom description",
-	"PUT /repos/{}/{}/branches/{}/protection/required_status_checks": "Branch protection required status checks update — real GitHub endpoint, absent from the bundled dotcom description",
-	"PUT /repos/{}/{}/branches/{}/protection/restrictions":           "Branch protection push restrictions update — real GitHub endpoint, absent from the bundled dotcom description",
-	"GET /repos/{}/{}/projects":                                      "Projects classic (v1) repo-scoped list — real GitHub endpoint, absent from the bundled dotcom description",
-	"POST /repos/{}/{}/projects":                                     "Projects classic (v1) repo-scoped create — real GitHub endpoint, absent from the bundled dotcom description",
-	"PATCH /repos/{}/{}/secret-scanning/alerts":                      "Secret scanning bulk update by query — real GitHub endpoint, absent from the bundled dotcom description",
-	"GET /orgs/{}/migrations/{}/repos/{}/lock":                       "Organization migration repository lock status — real GitHub (GHES) endpoint, absent from the bundled dotcom description",
-	"GET /projects/{}":                                               "Projects classic (v1) get project — real GitHub endpoint, absent from the bundled dotcom description",
-	"PATCH /projects/{}":                                             "Projects classic (v1) update project — real GitHub endpoint, absent from the bundled dotcom description",
-	"DELETE /projects/{}":                                            "Projects classic (v1) delete project — real GitHub endpoint, absent from the bundled dotcom description",
-	"POST /projects/columns/{}/moves":                                "Projects classic (v1) move column — real GitHub endpoint, absent from the bundled dotcom description",
-	"POST /projects/columns/cards/{}/moves":                          "Projects classic (v1) move card — real GitHub endpoint, absent from the bundled dotcom description",
-	"GET /repos/{}/{}/codespaces/{}":                                 "GHES repo-scoped codespace fetch — real GitHub (GHES) endpoint, absent from the bundled dotcom description",
-	"DELETE /repos/{}/{}/codespaces/{}":                              "GHES repo-scoped codespace deletion — real GitHub (GHES) endpoint, absent from the bundled dotcom description",
-	"POST /repos/{}/{}/codespaces/{}/start":                          "GHES repo-scoped codespace start — real GitHub (GHES) endpoint, absent from the bundled dotcom description",
-	"POST /repos/{}/{}/codespaces/{}/stop":                           "GHES repo-scoped codespace stop — real GitHub (GHES) endpoint, absent from the bundled dotcom description",
-	"GET /repos/{}/{}/packages":                                      "GHES repo-scoped package list — real GitHub (GHES) endpoint, absent from the bundled dotcom description",
-	"GET /repos/{}/{}/packages/{}/{}":                                "GHES repo-scoped package get/delete — real GitHub (GHES) endpoint, absent from the bundled dotcom description",
-	"DELETE /repos/{}/{}/packages/{}/{}":                             "GHES repo-scoped package delete — real GitHub (GHES) endpoint, absent from the bundled dotcom description",
-	"GET /repos/{}/{}/packages/{}/{}/versions":                       "GHES repo-scoped package version list — real GitHub (GHES) endpoint, absent from the bundled dotcom description",
-	"GET /repos/{}/{}/packages/{}/{}/versions/{}":                    "GHES repo-scoped package version get/delete — real GitHub (GHES) endpoint, absent from the bundled dotcom description",
-	"DELETE /repos/{}/{}/packages/{}/{}/versions/{}":                 "GHES repo-scoped package version delete — real GitHub (GHES) endpoint, absent from the bundled dotcom description",
-	"GET /repos/{}/{}/packages/{}/{}/versions/{}/files":              "GHES repo-scoped package version file list — real GitHub (GHES) endpoint, absent from the bundled dotcom description",
-	"GET /repos/{}/{}/packages/{}/{}/versions/{}/files/{}":           "GHES repo-scoped package version file download — real GitHub (GHES) endpoint, absent from the bundled dotcom description",
-	"GET /repos/{}/{}/pages/deployments/{}/status":                   "GitHub Pages deployment status endpoint, absent from the bundled dotcom description",
-	"GET /users/{}/packages/{}/{}/versions/{}/files":                 "GHES user-scoped package version file list — real GitHub (GHES) endpoint, absent from the bundled dotcom description",
-	"GET /users/{}/packages/{}/{}/versions/{}/files/{}":              "GHES user-scoped package version file download — real GitHub (GHES) endpoint, absent from the bundled dotcom description",
-	"PUT /users/{}/site_admin":                                       "GHES admin/staff-tools API (promote user to site admin)",
-	"DELETE /users/{}/site_admin":                                    "GHES admin/staff-tools API (demote user from site admin)",
-	"PUT /users/{}/suspended":                                        "GHES admin/staff-tools API (suspend user)",
-	"DELETE /users/{}/suspended":                                     "GHES admin/staff-tools API (unsuspend user)",
-	"GET /orgs/{}/packages/{}/{}/versions/{}/files":                  "GHES org-scoped package version file list — real GitHub (GHES) endpoint, absent from the bundled dotcom description",
-	"GET /orgs/{}/packages/{}/{}/versions/{}/files/{}":               "GHES org-scoped package version file download — real GitHub (GHES) endpoint, absent from the bundled dotcom description",
-	"GET /orgs/{}/actions/cache/retention-limit":                     "GHES org Actions cache retention limit endpoint, absent from the bundled dotcom description",
-	"PUT /orgs/{}/actions/cache/retention-limit":                     "GHES org Actions cache retention limit endpoint, absent from the bundled dotcom description",
-	"GET /orgs/{}/actions/cache/storage-limit":                       "GHES org Actions cache storage limit endpoint, absent from the bundled dotcom description",
-	"PUT /orgs/{}/actions/cache/storage-limit":                       "GHES org Actions cache storage limit endpoint, absent from the bundled dotcom description",
+// officialDescriptions are the non-dotcom GitHub descriptions whose route
+// lists are vendored in testdata/github-openapi-routes.txt.gz, at the
+// commit pinned in testdata/github-openapi.VERSION. A route bleephub
+// serves that the dotcom description omits must be citable in one of
+// them; otherwise nothing establishes that GitHub has it at all.
+var officialDescriptions = []string{"ghec", "ghes-3.21", "ghes-3.13", "ghes-2.22"}
+
+const routeIndexFile = "testdata/github-openapi-routes.txt.gz"
+
+// loadOfficialRouteIndex returns description name -> normalized
+// "METHOD /path" set.
+func loadOfficialRouteIndex(t *testing.T) map[string]map[string]bool {
+	t.Helper()
+	f, err := os.Open(routeIndexFile)
+	if err != nil {
+		t.Fatalf("open %s: %v", routeIndexFile, err)
+	}
+	defer f.Close()
+	gz, err := gzip.NewReader(f)
+	if err != nil {
+		t.Fatalf("gunzip %s: %v", routeIndexFile, err)
+	}
+	defer gz.Close()
+	raw, err := io.ReadAll(gz)
+	if err != nil {
+		t.Fatalf("read %s: %v", routeIndexFile, err)
+	}
+	index := map[string]map[string]bool{}
+	for n, line := range strings.Split(string(raw), "\n") {
+		if line == "" {
+			continue
+		}
+		name, route, ok := strings.Cut(line, "\t")
+		if !ok {
+			t.Fatalf("%s:%d: want description<TAB>route, got %q", routeIndexFile, n+1, line)
+		}
+		if index[name] == nil {
+			index[name] = map[string]bool{}
+		}
+		index[name][route] = true
+	}
+	for _, name := range officialDescriptions {
+		if len(index[name]) < 300 {
+			t.Fatalf("%s: %s contributes only %d routes; regenerate with scripts/update-github-openapi.sh",
+				routeIndexFile, name, len(index[name]))
+		}
+	}
+	return index
+}
+
+// describedOutsideDotcom maps a route bleephub serves to the official
+// GitHub description that documents it, for routes the dotcom description
+// omits: the Enterprise Server admin/staff-tools surface, and Projects
+// classic, which GitHub retired from the current descriptions but still
+// describes in ghes-3.13 and ghes-2.22. The citation is checked, not
+// trusted: TestRouteAllowlistCitationsHold fails if the named description
+// does not carry the route.
+var describedOutsideDotcom = map[string]string{
+	"POST /admin/organizations":             "ghes-3.21",
+	"POST /admin/users":                     "ghes-3.21",
+	"PATCH /admin/users/{}":                 "ghes-3.21",
+	"DELETE /admin/users/{}":                "ghes-3.21",
+	"PUT /users/{}/site_admin":              "ghes-3.21",
+	"DELETE /users/{}/site_admin":           "ghes-3.21",
+	"PUT /users/{}/suspended":               "ghes-3.21",
+	"DELETE /users/{}/suspended":            "ghes-3.21",
+	"GET /orgs/{}/audit-log":                "ghes-3.21",
+	"GET /repos/{}/{}/projects":             "ghes-3.13",
+	"POST /repos/{}/{}/projects":            "ghes-3.13",
+	"GET /projects/{}":                      "ghes-3.13",
+	"PATCH /projects/{}":                    "ghes-3.13",
+	"DELETE /projects/{}":                   "ghes-3.13",
+	"POST /projects/columns/{}/moves":       "ghes-3.13",
+	"POST /projects/columns/cards/{}/moves": "ghes-3.13",
+}
+
+// uncitedRoutes are routes bleephub registers under /api/v3 that NO
+// official GitHub description carries — not the dotcom one, not
+// Enterprise Cloud, not Enterprise Server 3.21, 3.13 or 2.22. They were
+// previously asserted to be "real GitHub (GHES) endpoints"; nothing
+// supports that, so they are recorded here as outstanding parity defects
+// with the correction where one is known, and the value names the file
+// that registers the route. This ledger may only shrink: fixing an entry
+// means changing or deleting the route, never rewording the excuse.
+// TestRouteAllowlistCitationsHold fails if an entry turns out to be
+// described after all, so it has to be promoted rather than left here.
+var uncitedRoutes = map[string]string{
+	"POST /actions/runner-registration": "auth.go — used by actions/runner config.sh against GHES; not in any description",
+
+	"GET /repos/{}/{}/git/refs": "gh_repos_git.go — GitHub lists refs at GET /repos/{}/{}/git/matching-refs/{ref}",
+
+	"GET /repos/{}/{}/branches/{}/protection/allow_deletions":        "gh_branch_protection.go — allow_deletions is a field of the protection object, not an endpoint",
+	"PUT /repos/{}/{}/branches/{}/protection/allow_deletions":        "gh_branch_protection.go — allow_deletions is a field of the protection object, not an endpoint",
+	"DELETE /repos/{}/{}/branches/{}/protection/allow_deletions":     "gh_branch_protection.go — allow_deletions is a field of the protection object, not an endpoint",
+	"GET /repos/{}/{}/branches/{}/protection/allow_force_pushes":     "gh_branch_protection.go — allow_force_pushes is a field of the protection object, not an endpoint",
+	"PUT /repos/{}/{}/branches/{}/protection/allow_force_pushes":     "gh_branch_protection.go — allow_force_pushes is a field of the protection object, not an endpoint",
+	"DELETE /repos/{}/{}/branches/{}/protection/allow_force_pushes":  "gh_branch_protection.go — allow_force_pushes is a field of the protection object, not an endpoint",
+	"PUT /repos/{}/{}/branches/{}/protection/required_status_checks": "gh_branch_protection.go — GitHub updates status-check protection with PATCH, not PUT",
+	"PUT /repos/{}/{}/branches/{}/protection/restrictions":           "gh_branch_protection.go — GitHub has GET and DELETE on /restrictions; PUT only on its apps/teams/users children",
+
+	"PATCH /repos/{}/{}/secret-scanning/alerts": "gh_secret_scanning.go — GitHub updates one alert at a time: PATCH /repos/{}/{}/secret-scanning/alerts/{alert_number}",
+
+	"GET /orgs/{}/migrations/{}/repos/{}/lock": "gh_migrations.go — GitHub only has DELETE on the migration repo lock",
+
+	"GET /repos/{}/{}/pages/deployments/{}/status": "gh_pages_deployments.go — the deployment status is GET /repos/{}/{}/pages/deployments/{}, already registered alongside this alias",
+
+	"GET /orgs/{}/actions/cache/retention-limit": "gh_actions_permissions.go — GitHub scopes the org cache limits under /organizations/{org_id}/actions/cache/retention-limit",
+	"PUT /orgs/{}/actions/cache/retention-limit": "gh_actions_permissions.go — GitHub scopes the org cache limits under /organizations/{org_id}/actions/cache/retention-limit",
+	"GET /orgs/{}/actions/cache/storage-limit":   "gh_actions_permissions.go — GitHub scopes the org cache limits under /organizations/{org_id}/actions/cache/storage-limit",
+	"PUT /orgs/{}/actions/cache/storage-limit":   "gh_actions_permissions.go — GitHub scopes the org cache limits under /organizations/{org_id}/actions/cache/storage-limit",
+
+	"GET /repos/{}/{}/codespaces/{}":        "gh_codespaces.go — GitHub addresses a codespace by name under /user/codespaces/{codespace_name}",
+	"DELETE /repos/{}/{}/codespaces/{}":     "gh_codespaces.go — GitHub addresses a codespace by name under /user/codespaces/{codespace_name}",
+	"POST /repos/{}/{}/codespaces/{}/start": "gh_codespaces.go — GitHub starts a codespace at POST /user/codespaces/{codespace_name}/start",
+	"POST /repos/{}/{}/codespaces/{}/stop":  "gh_codespaces.go — GitHub stops a codespace at POST /user/codespaces/{codespace_name}/stop",
+
+	"GET /repos/{}/{}/packages":                            "gh_packages.go — the Packages API is scoped to a user or an org, never a repo",
+	"GET /repos/{}/{}/packages/{}/{}":                      "gh_packages.go — the Packages API is scoped to a user or an org, never a repo",
+	"DELETE /repos/{}/{}/packages/{}/{}":                   "gh_packages.go — the Packages API is scoped to a user or an org, never a repo",
+	"GET /repos/{}/{}/packages/{}/{}/versions":             "gh_packages.go — the Packages API is scoped to a user or an org, never a repo",
+	"GET /repos/{}/{}/packages/{}/{}/versions/{}":          "gh_packages.go — the Packages API is scoped to a user or an org, never a repo",
+	"DELETE /repos/{}/{}/packages/{}/{}/versions/{}":       "gh_packages.go — the Packages API is scoped to a user or an org, never a repo",
+	"GET /repos/{}/{}/packages/{}/{}/versions/{}/files":    "gh_packages.go — no description declares a files sub-resource on a package version",
+	"GET /repos/{}/{}/packages/{}/{}/versions/{}/files/{}": "gh_packages.go — no description declares a files sub-resource on a package version",
+	"GET /users/{}/packages/{}/{}/versions/{}/files":       "gh_packages.go — no description declares a files sub-resource on a package version",
+	"GET /users/{}/packages/{}/{}/versions/{}/files/{}":    "gh_packages.go — no description declares a files sub-resource on a package version",
+	"GET /orgs/{}/packages/{}/{}/versions/{}/files":        "gh_packages.go — no description declares a files sub-resource on a package version",
+	"GET /orgs/{}/packages/{}/{}/versions/{}/files/{}":     "gh_packages.go — no description declares a files sub-resource on a package version",
+}
+
+// maxUncitedRoutes ratchets the ledger above. It may be lowered, never
+// raised: a new uncited route means a route that GitHub does not have.
+const maxUncitedRoutes = 33
+
+// TestRouteAllowlistCitationsHold checks the two ledgers against the
+// vendored descriptions, so neither can drift into decoration.
+func TestRouteAllowlistCitationsHold(t *testing.T) {
+	dotcom := loadGitHubOperations(t)
+	index := loadOfficialRouteIndex(t)
+
+	for route, description := range describedOutsideDotcom {
+		if dotcom[route] {
+			t.Errorf("describedOutsideDotcom[%q]: the dotcom description already documents this route; drop the entry", route)
+			continue
+		}
+		if index[description] == nil {
+			t.Errorf("describedOutsideDotcom[%q]: cites %q, which is not a vendored description (%s)",
+				route, description, strings.Join(officialDescriptions, ", "))
+			continue
+		}
+		if !index[description][route] {
+			t.Errorf("describedOutsideDotcom[%q]: %s does not document this route; the citation is wrong",
+				route, description)
+		}
+	}
+
+	for route := range uncitedRoutes {
+		if _, both := describedOutsideDotcom[route]; both {
+			t.Errorf("%q is in both describedOutsideDotcom and uncitedRoutes", route)
+		}
+		if dotcom[route] {
+			t.Errorf("uncitedRoutes[%q]: the dotcom description documents this route; drop the entry", route)
+			continue
+		}
+		var found []string
+		for _, name := range officialDescriptions {
+			if index[name][route] {
+				found = append(found, name)
+			}
+		}
+		if len(found) > 0 {
+			sort.Strings(found)
+			t.Errorf("uncitedRoutes[%q]: %s documents it; move it to describedOutsideDotcom",
+				route, strings.Join(found, ", "))
+		}
+	}
+
+	if len(uncitedRoutes) > maxUncitedRoutes {
+		t.Errorf("uncitedRoutes has %d entries, ratchet allows %d; a route GitHub does not have is a defect, not an allowance",
+			len(uncitedRoutes), maxUncitedRoutes)
+	}
 }
 
 // dispatchRoutes are real GitHub sub-resource paths served through a single
@@ -185,7 +369,10 @@ func TestRegisteredAPIv3RoutesExistInGitHubSpec(t *testing.T) {
 		if ghOps[norm] {
 			continue
 		}
-		if _, ok := allowedGHESOnly[norm]; ok {
+		if _, ok := describedOutsideDotcom[norm]; ok {
+			continue
+		}
+		if _, ok := uncitedRoutes[norm]; ok {
 			continue
 		}
 		if _, ok := dispatchRoutes[norm]; ok {
@@ -196,8 +383,37 @@ func TestRegisteredAPIv3RoutesExistInGitHubSpec(t *testing.T) {
 
 	if len(offenders) > 0 {
 		sort.Strings(offenders)
-		t.Errorf("%d /api/v3 route(s) are not real GitHub API paths (invented under the GitHub namespace, "+
-			"a parameter/path-shape mismatch, or a real GHES endpoint that must be added to allowedGHESOnly):\n  %s",
+		t.Errorf("%d /api/v3 route(s) are not real GitHub API paths (invented under the GitHub namespace "+
+			"or a parameter/path-shape mismatch). Cite the official description that documents each in "+
+			"describedOutsideDotcom, or delete the route:\n  %s",
 			len(offenders), strings.Join(offenders, "\n  "))
+	}
+}
+
+// TestUncitedRoutesAreStillRegistered keeps the defect ledger from
+// outliving the defects. An entry for a route nobody serves any more is a
+// stale excuse, and it would silently re-authorise the route if it came
+// back.
+func TestUncitedRoutesAreStillRegistered(t *testing.T) {
+	s := newTestServer()
+	s.registerRoutes()
+	registered := map[string]bool{}
+	for _, pat := range s.routePatterns {
+		method, path, found := strings.Cut(pat, " ")
+		if !found || !strings.HasPrefix(path, "/api/v3/") {
+			continue
+		}
+		registered[method+" "+normalizePath(strings.TrimPrefix(path, "/api/v3"))] = true
+	}
+	var stale []string
+	for route := range uncitedRoutes {
+		if !registered[route] {
+			stale = append(stale, route)
+		}
+	}
+	if len(stale) > 0 {
+		sort.Strings(stale)
+		t.Errorf("%d uncitedRoutes entr(ies) name a route that is no longer registered; delete them and lower maxUncitedRoutes:\n  %s",
+			len(stale), strings.Join(stale, "\n  "))
 	}
 }

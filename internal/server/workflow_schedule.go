@@ -1,6 +1,7 @@
 package bleephub
 
 import (
+	"context"
 	"fmt"
 	"strconv"
 	"strings"
@@ -18,15 +19,21 @@ type scheduleFiredKeys struct {
 // startScheduleDispatcher launches the minute-aligned loop that fires
 // `on: schedule:` workflows, the server-side clock real GitHub runs for
 // cron triggers.
-func (s *Server) startScheduleDispatcher() {
-	go func() {
+func (s *Server) startScheduleDispatcher(ctx context.Context) {
+	s.goBackground(func() {
 		for {
 			now := time.Now().UTC()
 			next := now.Truncate(time.Minute).Add(time.Minute)
-			time.Sleep(time.Until(next))
+			timer := time.NewTimer(time.Until(next))
+			select {
+			case <-ctx.Done():
+				timer.Stop()
+				return
+			case <-timer.C:
+			}
 			s.fireDueSchedules(time.Now().UTC())
 		}
-	}()
+	})
 }
 
 // fireDueSchedules triggers every schedule-bearing workflow (at HEAD of

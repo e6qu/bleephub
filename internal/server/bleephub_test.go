@@ -2,6 +2,7 @@ package bleephub
 
 import (
 	"bytes"
+	"context"
 	"crypto"
 	"crypto/ed25519"
 	"crypto/rand"
@@ -140,7 +141,9 @@ func TestMain(m *testing.M) {
 	apiShapeValidator = validator
 	srv.responseObserver = validator.Observe
 
-	go srv.ListenAndServe()
+	// The shared harness server lives for the whole run; shutdown is exercised
+	// against its own server in lifecycle_test.go rather than here.
+	go srv.ListenAndServe(context.Background())
 
 	// Wait for server to be ready
 	for i := 0; i < 50; i++ {

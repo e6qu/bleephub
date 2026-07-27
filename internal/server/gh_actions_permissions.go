@@ -27,7 +27,7 @@ type OrgActionsPermissions struct {
 	ActionsAllowed          *ActionsAllowed `json:"actions_allowed,omitempty"`
 	WorkflowPermissions     *WorkflowPermissions
 	CacheRetentionLimitDays int
-	CacheStorageLimitBytes  int64
+	CacheStorageLimitGB     int64
 	// ArtifactAndLogRetentionDays is the org-wide artifact/log retention
 	// setting (GET/PUT /orgs/{org}/actions/permissions/artifact-and-log-retention).
 	ArtifactAndLogRetentionDays int
@@ -49,6 +49,10 @@ type OrgActionsPermissions struct {
 	MaxCacheSizeGB        int
 }
 
+// artifactRetentionMaximumDays is the ceiling GitHub reports beside the
+// configured value; the description declares both as required.
+const artifactRetentionMaximumDays = 90
+
 // ForkPRWorkflowsPrivateRepos is the actions-fork-pr-workflows-private-repos
 // settings shape.
 type ForkPRWorkflowsPrivateRepos struct {
@@ -66,11 +70,11 @@ type RepoActionsPermissions struct {
 	ActionsAllowed              *ActionsAllowed `json:"actions_allowed,omitempty"`
 	AccessLevel                 string          `json:"access_level"`
 	WorkflowPermissions         *WorkflowPermissions
-	ForkPRContributorApproval   string `json:"fork_pull_request_member_approval"`
-	ForkPRWorkflowsPrivateRepos string `json:"fork_pull_request_workflows_private_repos"`
-	ArtifactAndLogRetentionDays int    `json:"artifact_and_log_retention_days"`
+	ForkPRContributorApproval   string                       `json:"fork_pull_request_member_approval"`
+	ForkPRWorkflowsPrivateRepos *ForkPRWorkflowsPrivateRepos `json:"fork_pull_request_workflows_private_repos,omitempty"`
+	ArtifactAndLogRetentionDays int                          `json:"artifact_and_log_retention_days"`
 	CacheRetentionLimitDays     int
-	CacheStorageLimitBytes      int64
+	CacheStorageLimitGB         int64
 }
 
 // ActionsAllowed is the "selected actions" allow-list shape.
@@ -93,7 +97,7 @@ func defaultOrgActionsPermissions() *OrgActionsPermissions {
 		AllowedActions:                       "all",
 		SelectedRepositoryIDs:                []int{},
 		CacheRetentionLimitDays:              90,
-		CacheStorageLimitBytes:               0,
+		CacheStorageLimitGB:                  0,
 		ArtifactAndLogRetentionDays:          90,
 		ForkPRApprovalPolicy:                 "first_time_contributors",
 		SelfHostedRunnersEnabledRepositories: "all",
@@ -113,10 +117,10 @@ func defaultRepoActionsPermissions() *RepoActionsPermissions {
 		AllowedActions:              "all",
 		AccessLevel:                 "none",
 		ForkPRContributorApproval:   "none",
-		ForkPRWorkflowsPrivateRepos: "none",
+		ForkPRWorkflowsPrivateRepos: &ForkPRWorkflowsPrivateRepos{},
 		ArtifactAndLogRetentionDays: 90,
 		CacheRetentionLimitDays:     0,
-		CacheStorageLimitBytes:      0,
+		CacheStorageLimitGB:         0,
 	}
 }
 
@@ -533,7 +537,7 @@ func (s *Server) handleSetOrgActionsPermissions(w http.ResponseWriter, r *http.R
 		p.AllowedActions = req.AllowedActions
 	}
 	s.store.SetOrgActionsPermissions(org, p)
-	writeJSON(w, http.StatusOK, orgActionsPermissionsJSON(p, s.baseURL(r), org))
+	w.WriteHeader(http.StatusNoContent)
 }
 
 func (s *Server) handleListOrgSelectedRepos(w http.ResponseWriter, r *http.Request) {
@@ -612,7 +616,7 @@ func (s *Server) handleSetOrgAllowedActions(w http.ResponseWriter, r *http.Reque
 	p.ActionsAllowed = &req
 	p.AllowedActions = "selected"
 	s.store.SetOrgActionsPermissions(org, p)
-	writeJSON(w, http.StatusOK, allowedActionsJSON(p.ActionsAllowed))
+	w.WriteHeader(http.StatusNoContent)
 }
 
 func (s *Server) handleGetOrgWorkflowPermissions(w http.ResponseWriter, r *http.Request) {
@@ -633,30 +637,30 @@ func (s *Server) handleSetOrgWorkflowPermissions(w http.ResponseWriter, r *http.
 	p := s.store.GetOrgActionsPermissions(org)
 	p.WorkflowPermissions = &req
 	s.store.SetOrgActionsPermissions(org, p)
-	writeJSON(w, http.StatusOK, workflowPermissionsJSON(p.WorkflowPermissions))
+	w.WriteHeader(http.StatusNoContent)
 }
 
 func (s *Server) handleGetOrgCacheRetentionLimit(w http.ResponseWriter, r *http.Request) {
 	org := r.PathValue("org")
 	p := s.store.GetOrgActionsPermissions(org)
 	writeJSON(w, http.StatusOK, map[string]int{
-		"retention_limit_in_days": p.CacheRetentionLimitDays,
+		"max_cache_retention_days": p.CacheRetentionLimitDays,
 	})
 }
 
 func (s *Server) handleSetOrgCacheRetentionLimit(w http.ResponseWriter, r *http.Request) {
 	var req struct {
-		RetentionLimitInDays int `json:"retention_limit_in_days"`
+		MaxCacheRetentionDays int `json:"max_cache_retention_days"`
 	}
 	if !decodeJSONBody(w, r, &req) {
 		return
 	}
 	org := r.PathValue("org")
 	p := s.store.GetOrgActionsPermissions(org)
-	p.CacheRetentionLimitDays = req.RetentionLimitInDays
+	p.CacheRetentionLimitDays = req.MaxCacheRetentionDays
 	s.store.SetOrgActionsPermissions(org, p)
 	writeJSON(w, http.StatusOK, map[string]int{
-		"retention_limit_in_days": p.CacheRetentionLimitDays,
+		"max_cache_retention_days": p.CacheRetentionLimitDays,
 	})
 }
 
@@ -664,23 +668,23 @@ func (s *Server) handleGetOrgCacheStorageLimit(w http.ResponseWriter, r *http.Re
 	org := r.PathValue("org")
 	p := s.store.GetOrgActionsPermissions(org)
 	writeJSON(w, http.StatusOK, map[string]int64{
-		"storage_limit_in_bytes": p.CacheStorageLimitBytes,
+		"max_cache_size_gb": p.CacheStorageLimitGB,
 	})
 }
 
 func (s *Server) handleSetOrgCacheStorageLimit(w http.ResponseWriter, r *http.Request) {
 	var req struct {
-		StorageLimitInBytes int64 `json:"storage_limit_in_bytes"`
+		MaxCacheSizeGB int64 `json:"max_cache_size_gb"`
 	}
 	if !decodeJSONBody(w, r, &req) {
 		return
 	}
 	org := r.PathValue("org")
 	p := s.store.GetOrgActionsPermissions(org)
-	p.CacheStorageLimitBytes = req.StorageLimitInBytes
+	p.CacheStorageLimitGB = req.MaxCacheSizeGB
 	s.store.SetOrgActionsPermissions(org, p)
 	writeJSON(w, http.StatusOK, map[string]int64{
-		"storage_limit_in_bytes": p.CacheStorageLimitBytes,
+		"max_cache_size_gb": p.CacheStorageLimitGB,
 	})
 }
 
@@ -1046,7 +1050,7 @@ func (s *Server) handleSetRepoActionsPermissions(w http.ResponseWriter, r *http.
 		p.AllowedActions = req.AllowedActions
 	}
 	s.store.SetRepoActionsPermissions(repo, p)
-	writeJSON(w, http.StatusOK, repoActionsPermissionsJSON(p, s.baseURL(r), repo))
+	w.WriteHeader(http.StatusNoContent)
 }
 
 func (s *Server) handleGetRepoActionsAccessLevel(w http.ResponseWriter, r *http.Request) {
@@ -1068,9 +1072,7 @@ func (s *Server) handleSetRepoActionsAccessLevel(w http.ResponseWriter, r *http.
 	p := s.store.GetRepoActionsPermissions(repo)
 	p.AccessLevel = req.AccessLevel
 	s.store.SetRepoActionsPermissions(repo, p)
-	writeJSON(w, http.StatusOK, map[string]string{
-		"access_level": p.AccessLevel,
-	})
+	w.WriteHeader(http.StatusNoContent)
 }
 
 func (s *Server) handleGetRepoAllowedActions(w http.ResponseWriter, r *http.Request) {
@@ -1089,7 +1091,7 @@ func (s *Server) handleSetRepoAllowedActions(w http.ResponseWriter, r *http.Requ
 	p.ActionsAllowed = &req
 	p.AllowedActions = "selected"
 	s.store.SetRepoActionsPermissions(repo, p)
-	writeJSON(w, http.StatusOK, allowedActionsJSON(p.ActionsAllowed))
+	w.WriteHeader(http.StatusNoContent)
 }
 
 func (s *Server) handleGetRepoWorkflowPermissions(w http.ResponseWriter, r *http.Request) {
@@ -1110,127 +1112,144 @@ func (s *Server) handleSetRepoWorkflowPermissions(w http.ResponseWriter, r *http
 	p := s.store.GetRepoActionsPermissions(repo)
 	p.WorkflowPermissions = &req
 	s.store.SetRepoActionsPermissions(repo, p)
-	writeJSON(w, http.StatusOK, workflowPermissionsJSON(p.WorkflowPermissions))
+	w.WriteHeader(http.StatusNoContent)
 }
 
 func (s *Server) handleGetRepoForkPRContributorApproval(w http.ResponseWriter, r *http.Request) {
 	repo := repoFullName(r)
 	p := s.store.GetRepoActionsPermissions(repo)
 	writeJSON(w, http.StatusOK, map[string]string{
-		"require_approval": p.ForkPRContributorApproval,
+		"approval_policy": p.ForkPRContributorApproval,
 	})
 }
 
 func (s *Server) handleSetRepoForkPRContributorApproval(w http.ResponseWriter, r *http.Request) {
 	var req struct {
-		RequireApproval string `json:"require_approval"`
+		ApprovalPolicy string `json:"approval_policy"`
 	}
 	if !decodeJSONBody(w, r, &req) {
 		return
 	}
 	repo := repoFullName(r)
 	p := s.store.GetRepoActionsPermissions(repo)
-	p.ForkPRContributorApproval = req.RequireApproval
+	p.ForkPRContributorApproval = req.ApprovalPolicy
 	s.store.SetRepoActionsPermissions(repo, p)
-	writeJSON(w, http.StatusOK, map[string]string{
-		"require_approval": p.ForkPRContributorApproval,
-	})
+	w.WriteHeader(http.StatusNoContent)
 }
 
 func (s *Server) handleGetRepoForkPRWorkflowsPrivateRepos(w http.ResponseWriter, r *http.Request) {
 	repo := repoFullName(r)
 	p := s.store.GetRepoActionsPermissions(repo)
-	writeJSON(w, http.StatusOK, map[string]string{
-		"policy": p.ForkPRWorkflowsPrivateRepos,
+	settings := p.ForkPRWorkflowsPrivateRepos
+	if settings == nil {
+		settings = &ForkPRWorkflowsPrivateRepos{}
+	}
+	writeJSON(w, http.StatusOK, map[string]any{
+		"run_workflows_from_fork_pull_requests":  settings.RunWorkflowsFromForkPullRequests,
+		"send_write_tokens_to_workflows":         settings.SendWriteTokensToWorkflows,
+		"send_secrets_and_variables":             settings.SendSecretsAndVariables,
+		"require_approval_for_fork_pr_workflows": settings.RequireApprovalForForkPRWorkflows,
 	})
 }
 
 func (s *Server) handleSetRepoForkPRWorkflowsPrivateRepos(w http.ResponseWriter, r *http.Request) {
 	var req struct {
-		Policy string `json:"policy"`
+		RunWorkflowsFromForkPullRequests  *bool `json:"run_workflows_from_fork_pull_requests"`
+		SendWriteTokensToWorkflows        *bool `json:"send_write_tokens_to_workflows"`
+		SendSecretsAndVariables           *bool `json:"send_secrets_and_variables"`
+		RequireApprovalForForkPRWorkflows *bool `json:"require_approval_for_fork_pr_workflows"`
 	}
 	if !decodeJSONBody(w, r, &req) {
 		return
 	}
 	repo := repoFullName(r)
 	p := s.store.GetRepoActionsPermissions(repo)
-	p.ForkPRWorkflowsPrivateRepos = req.Policy
+	settings := p.ForkPRWorkflowsPrivateRepos
+	if settings == nil {
+		settings = &ForkPRWorkflowsPrivateRepos{}
+	}
+	if req.RunWorkflowsFromForkPullRequests != nil {
+		settings.RunWorkflowsFromForkPullRequests = *req.RunWorkflowsFromForkPullRequests
+	}
+	if req.SendWriteTokensToWorkflows != nil {
+		settings.SendWriteTokensToWorkflows = *req.SendWriteTokensToWorkflows
+	}
+	if req.SendSecretsAndVariables != nil {
+		settings.SendSecretsAndVariables = *req.SendSecretsAndVariables
+	}
+	if req.RequireApprovalForForkPRWorkflows != nil {
+		settings.RequireApprovalForForkPRWorkflows = *req.RequireApprovalForForkPRWorkflows
+	}
+	p.ForkPRWorkflowsPrivateRepos = settings
 	s.store.SetRepoActionsPermissions(repo, p)
-	writeJSON(w, http.StatusOK, map[string]string{
-		"policy": p.ForkPRWorkflowsPrivateRepos,
-	})
+	w.WriteHeader(http.StatusNoContent)
 }
 
 func (s *Server) handleGetRepoArtifactAndLogRetention(w http.ResponseWriter, r *http.Request) {
 	repo := repoFullName(r)
 	p := s.store.GetRepoActionsPermissions(repo)
 	writeJSON(w, http.StatusOK, map[string]int{
-		"artifact_and_log_retention_days": p.ArtifactAndLogRetentionDays,
+		"days":                 p.ArtifactAndLogRetentionDays,
+		"maximum_allowed_days": artifactRetentionMaximumDays,
 	})
 }
 
 func (s *Server) handleSetRepoArtifactAndLogRetention(w http.ResponseWriter, r *http.Request) {
 	var req struct {
-		ArtifactAndLogRetentionDays int `json:"artifact_and_log_retention_days"`
+		Days int `json:"days"`
 	}
 	if !decodeJSONBody(w, r, &req) {
 		return
 	}
 	repo := repoFullName(r)
 	p := s.store.GetRepoActionsPermissions(repo)
-	p.ArtifactAndLogRetentionDays = req.ArtifactAndLogRetentionDays
+	p.ArtifactAndLogRetentionDays = req.Days
 	s.store.SetRepoActionsPermissions(repo, p)
-	writeJSON(w, http.StatusOK, map[string]int{
-		"artifact_and_log_retention_days": p.ArtifactAndLogRetentionDays,
-	})
+	w.WriteHeader(http.StatusNoContent)
 }
 
 func (s *Server) handleGetRepoCacheRetentionLimit(w http.ResponseWriter, r *http.Request) {
 	repo := repoFullName(r)
 	p := s.store.GetRepoActionsPermissions(repo)
 	writeJSON(w, http.StatusOK, map[string]int{
-		"retention_limit_in_days": p.CacheRetentionLimitDays,
+		"max_cache_retention_days": p.CacheRetentionLimitDays,
 	})
 }
 
 func (s *Server) handleSetRepoCacheRetentionLimit(w http.ResponseWriter, r *http.Request) {
 	var req struct {
-		RetentionLimitInDays int `json:"retention_limit_in_days"`
+		MaxCacheRetentionDays int `json:"max_cache_retention_days"`
 	}
 	if !decodeJSONBody(w, r, &req) {
 		return
 	}
 	repo := repoFullName(r)
 	p := s.store.GetRepoActionsPermissions(repo)
-	p.CacheRetentionLimitDays = req.RetentionLimitInDays
+	p.CacheRetentionLimitDays = req.MaxCacheRetentionDays
 	s.store.SetRepoActionsPermissions(repo, p)
-	writeJSON(w, http.StatusOK, map[string]int{
-		"retention_limit_in_days": p.CacheRetentionLimitDays,
-	})
+	w.WriteHeader(http.StatusNoContent)
 }
 
 func (s *Server) handleGetRepoCacheStorageLimit(w http.ResponseWriter, r *http.Request) {
 	repo := repoFullName(r)
 	p := s.store.GetRepoActionsPermissions(repo)
 	writeJSON(w, http.StatusOK, map[string]int64{
-		"storage_limit_in_bytes": p.CacheStorageLimitBytes,
+		"max_cache_size_gb": p.CacheStorageLimitGB,
 	})
 }
 
 func (s *Server) handleSetRepoCacheStorageLimit(w http.ResponseWriter, r *http.Request) {
 	var req struct {
-		StorageLimitInBytes int64 `json:"storage_limit_in_bytes"`
+		MaxCacheSizeGB int64 `json:"max_cache_size_gb"`
 	}
 	if !decodeJSONBody(w, r, &req) {
 		return
 	}
 	repo := repoFullName(r)
 	p := s.store.GetRepoActionsPermissions(repo)
-	p.CacheStorageLimitBytes = req.StorageLimitInBytes
+	p.CacheStorageLimitGB = req.MaxCacheSizeGB
 	s.store.SetRepoActionsPermissions(repo, p)
-	writeJSON(w, http.StatusOK, map[string]int64{
-		"storage_limit_in_bytes": p.CacheStorageLimitBytes,
-	})
+	w.WriteHeader(http.StatusNoContent)
 }
 
 // --- Run logs ---

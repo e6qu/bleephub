@@ -1,17 +1,30 @@
 # Allowlisted response-shape deviations from the vendored DOTCOM OpenAPI
-# description (testdata/github-openapi.json.gz). Format per line:
+# description (testdata/github-openapi.json.gz, pinned in
+# testdata/github-openapi.VERSION). Format per line:
 #   op<TAB>kind<TAB>field   (see openapi_shape_validator_test.go)
-# Entries must cite why the member is real despite the dotcom spec.
-
-# GHES exposes installed_version; the official GitHub CLI requires it for
-# feature detection against an enterprise host.
+#
+# This is the only copy; TestViolationAllowlistIsSingleCopy fails if a
+# second one appears. The list may only shrink. Every block states what
+# was actually checked: either a citation into an official GitHub
+# description that carries the member, or — where no such citation
+# exists — a plain statement that the member is unverified and that the
+# emitter, not this file, is what has to change.
+#
+# VERIFIED: installed_version is declared by api-overview in GitHub's
+# ghes-3.21 description (descriptions/ghes-3.21/ghes-3.21.json at
+# github/rest-api-description commit
+# 16bc535ad66fac59d585b1516d1d52f58f787962) and absent from the dotcom
+# one. bleephub reports installed_version 3.21.0 and gh CLI's feature
+# detection resolves the host version from it.
 GET /meta -> 200	unknown-field	$.installed_version
 
-# /user/starred is a repository list while the vendored description matches
-# the nearest parameterized route and therefore reports a top-level mismatch.
-GET /user/{} -> 200	type-mismatch	$
-
-# GHES migration responses include html_url and exported_at.
+# UNVERIFIED — no official GitHub description declares these. The
+# migration schema in both the dotcom description and ghes-3.21 declares
+# archive_url, created_at, exclude*, guid, id, lock_repositories,
+# node_id, org_metadata_only, owner, repositories, state, updated_at and
+# url, and neither html_url nor exported_at. These entries hold the gate
+# green while the migration responses still emit them; the fix is to
+# stop emitting them.
 GET /user/migrations/{} -> 200	unknown-field	$.html_url
 GET /user/migrations/{} -> 200	unknown-field	$.exported_at
 POST /user/migrations -> 201	unknown-field	$.html_url
@@ -23,37 +36,13 @@ GET /orgs/{}/migrations/{} -> 200	unknown-field	$.exported_at
 POST /orgs/{}/migrations -> 201	unknown-field	$.html_url
 POST /orgs/{}/migrations -> 201	unknown-field	$.exported_at
 
-# Codespaces responses include enterprise links and billing members.
-GET /repos/{}/{}/codespaces -> 200	unknown-field	$.codespaces[].html_url
-GET /repos/{}/{}/codespaces -> 200	unknown-field	$.codespaces[].billing_url
-GET /user/codespaces -> 200	unknown-field	$.codespaces[].html_url
-GET /user/codespaces -> 200	unknown-field	$.codespaces[].billing_url
-POST /user/codespaces -> 201	unknown-field	$.html_url
-POST /user/codespaces -> 201	unknown-field	$.billing_url
-GET /user/codespaces/{} -> 200	unknown-field	$.html_url
-GET /user/codespaces/{} -> 200	unknown-field	$.billing_url
-PATCH /user/codespaces/{} -> 200	unknown-field	$.html_url
-PATCH /user/codespaces/{} -> 200	unknown-field	$.billing_url
-POST /user/codespaces/{}/start -> 202	unknown-field	$.html_url
-POST /user/codespaces/{}/start -> 202	unknown-field	$.billing_url
-POST /user/codespaces/{}/stop -> 202	unknown-field	$.html_url
-POST /user/codespaces/{}/stop -> 202	unknown-field	$.billing_url
-GET /repos/{}/{}/codespaces -> 200	unknown-field	$[].html_url
-GET /repos/{}/{}/codespaces -> 200	unknown-field	$[].billing_url
-POST /repos/{}/{}/codespaces -> 201	unknown-field	$.html_url
-POST /repos/{}/{}/codespaces -> 201	unknown-field	$.billing_url
-GET /repos/{}/{}/codespaces/{} -> 200	unknown-field	$.html_url
-GET /repos/{}/{}/codespaces/{} -> 200	unknown-field	$.billing_url
-POST /repos/{}/{}/codespaces/{}/start -> 202	unknown-field	$.html_url
-POST /repos/{}/{}/codespaces/{}/start -> 202	unknown-field	$.billing_url
-POST /repos/{}/{}/codespaces/{}/stop -> 202	unknown-field	$.html_url
-POST /repos/{}/{}/codespaces/{}/stop -> 202	unknown-field	$.billing_url
-POST /repos/{}/{}/pulls/{}/codespaces -> 201	unknown-field	$.html_url
-POST /repos/{}/{}/pulls/{}/codespaces -> 201	unknown-field	$.billing_url
-POST /user/codespaces/{}/publish -> 201	unknown-field	$.html_url
-POST /user/codespaces/{}/publish -> 201	unknown-field	$.billing_url
-
-# GitHub Packages emits node_id even though the vendored schema omits it.
+# UNVERIFIED — no official GitHub description declares node_id on a
+# package or a package version. The package schema (dotcom and
+# ghes-3.21) declares created_at, html_url, id, name, owner,
+# package_type, repository, updated_at, url, version_count and
+# visibility; package-version declares created_at, deleted_at,
+# description, html_url, id, license, metadata, name, package_html_url,
+# updated_at and url. The fix is to stop emitting node_id.
 GET /users/{}/packages -> 200	unknown-field	$[].node_id
 GET /users/{}/packages/{}/{} -> 200	unknown-field	$.node_id
 GET /users/{}/packages/{}/{}/versions -> 200	unknown-field	$[].node_id
@@ -69,7 +58,10 @@ GET /user/packages/{}/{}/versions/{} -> 200	unknown-field	$.node_id
 GET /user/docker/conflicts -> 200	unknown-field	$[].node_id
 GET /users/{}/docker/conflicts -> 200	unknown-field	$[].node_id
 
-# Team membership responses include user, team, and organization_url.
+# UNVERIFIED — the team-membership schema declares exactly role, state
+# and url in both the dotcom description and ghes-3.21. user, team and
+# organization_url are bleephub additions; the fix is to stop emitting
+# them.
 GET /orgs/{}/teams/{}/memberships/{} -> 200	unknown-field	$.organization_url
 GET /orgs/{}/teams/{}/memberships/{} -> 200	unknown-field	$.team
 GET /orgs/{}/teams/{}/memberships/{} -> 200	unknown-field	$.user
