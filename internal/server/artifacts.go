@@ -586,7 +586,7 @@ func (s *Server) runArtifactScope(w http.ResponseWriter, r *http.Request, backen
 	}
 	caller, err := s.callerRunner(r)
 	if err != nil {
-		writeGHError(w, http.StatusUnauthorized, "Must authenticate to use the runner protocol")
+		s.challengeRunnerAuth(w, r, err)
 		return nil, false
 	}
 	if !caller.Scope.coversRepo(wf.RepoFullName) {
@@ -652,7 +652,7 @@ func (s *Server) handleUploadArtifact(w http.ResponseWriter, r *http.Request) {
 
 	caller, err := s.callerRunner(r)
 	if err != nil {
-		http.Error(w, "Must authenticate to use the runner protocol", http.StatusUnauthorized)
+		s.challengeRunnerAuth(w, r, err)
 		return
 	}
 	art, ok := s.artifactByIDForCaller(id)

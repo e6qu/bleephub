@@ -40,10 +40,17 @@ import (
 //	runner    POST /_apis/v1/Agent/{poolId}              tenant token
 //	           AddAgentAsync, carrying the RSA public key it just generated
 //	           (or PUT /_apis/v1/Agent/{poolId}/{agentId} for --replace)
+//	runner    GET  /_apis/connectionData                 no credential
+//	           the credential test: the runner reconnects on the OAuth
+//	           credential it just saved, and its HTTP stack sends the first
+//	           request of that session with nothing attached
+//	runner    GET  /_apis/v1/AgentPools?poolType=…       no credential
+//	           answered with a Bearer challenge, which is the only thing that
+//	           makes the runner ask for a token at all
 //	runner    POST /_apis/v1/auth/                       RSA client_assertion
 //	           exchanged for the agent session bearer
-//	runner    GET  /_apis/connectionData                 session bearer
-//	           the runner re-connects to test the credential it was issued
+//	runner    GET  /_apis/v1/AgentPools?poolType=…       session bearer
+//	           the retry that ends configuration with "Runner connection is good"
 //	runner    POST /_apis/v1/AgentSession/{poolId}       session bearer
 //	runner    GET  /_apis/v1/Message/{poolId}?sessionId= session bearer
 
@@ -63,9 +70,9 @@ type handshakeRunner struct {
 }
 
 // handshakeCall issues one request against the live test server and returns
-// its status and body. authorization is sent verbatim, so a step can present
-// the RemoteAuth scheme the runner uses.
-func handshakeCall(t *testing.T, method, path, authorization, contentType, body string) (int, []byte) {
+// its status, response headers and body. authorization is sent verbatim, so a
+// step can present the RemoteAuth scheme the runner uses.
+func handshakeCall(t *testing.T, method, path, authorization, contentType, body string) (int, http.Header, []byte) {
 	t.Helper()
 	var reader io.Reader
 	if body != "" {
@@ -90,14 +97,14 @@ func handshakeCall(t *testing.T, method, path, authorization, contentType, body 
 	if err != nil {
 		t.Fatalf("read %s %s: %v", method, path, err)
 	}
-	return resp.StatusCode, payload
+	return resp.StatusCode, resp.Header, payload
 }
 
 // handshakeStep runs one step of the handshake and fails with the step's name
 // when it does not succeed, so an over-tight gate names itself.
 func handshakeStep(t *testing.T, step, method, path, authorization, contentType, body string, want int) []byte {
 	t.Helper()
-	status, payload := handshakeCall(t, method, path, authorization, contentType, body)
+	status, _, payload := handshakeCall(t, method, path, authorization, contentType, body)
 	if status != want {
 		t.Fatalf("%s: %s %s = %d, want %d; body=%s", step, method, path, status, want, payload)
 	}
@@ -107,12 +114,39 @@ func handshakeStep(t *testing.T, step, method, path, authorization, contentType,
 // refuseAnonymous asserts the same route is unreachable without a credential.
 // Every step of the handshake is paired with one of these: the point of the
 // test is that widening a gate for the runner did not open it to everyone.
+//
+// A runner protocol route has to refuse in the runner's own terms as well. The
+// runner opens every session by sending a request with no credential attached
+// and asks for one only when the refusal names the Bearer scheme, so a 401
+// without that challenge ends configuration instead of starting the token
+// exchange.
 func refuseAnonymous(t *testing.T, step, method, path, contentType, body string) {
 	t.Helper()
-	status, payload := handshakeCall(t, method, path, "", contentType, body)
+	status, header, payload := handshakeCall(t, method, path, "", contentType, body)
 	if status != http.StatusUnauthorized {
 		t.Errorf("%s: anonymous %s %s = %d, want 401; body=%s", step, method, path, status, payload)
+		return
 	}
+	if !runnerRouteChallenges(method, path) {
+		return
+	}
+	if challenge := header.Get("WWW-Authenticate"); !strings.Contains(challenge, "Bearer") {
+		t.Errorf("%s: anonymous %s %s answered 401 with WWW-Authenticate %q, which names no Bearer challenge; the runner will never ask for a token",
+			step, method, path, challenge)
+	}
+}
+
+// runnerRouteChallenges reports whether a 401 from this route has to name the
+// Bearer scheme. Every runner protocol route that accepts an agent session
+// does, because the runner's OAuth credential asks for a token only when it is
+// challenged for one. Agent registration is the exception: it accepts the
+// token config.sh was handed and no session at all, so challenging there would
+// advertise a credential the route refuses.
+func runnerRouteChallenges(method, path string) bool {
+	if !strings.HasPrefix(path, "/_apis/") {
+		return false
+	}
+	return !(method == "POST" && strings.HasPrefix(path, "/_apis/v1/Agent/"))
 }
 
 func newHandshakeRunner(t *testing.T, name, scopePath string) *handshakeRunner {
@@ -196,6 +230,25 @@ func (h *handshakeRunner) listPools() {
 		"Bearer "+h.setupToken, "", "", http.StatusOK)
 }
 
+// testConnection is the step that runs once the pool has accepted the
+// registration: the runner reconnects on the OAuth credential it derives from
+// the authorization record it was handed, and reads the pool list a second
+// time to force that credential into use.
+//
+// It holds no token at this point, so the call goes out bare, is challenged,
+// and is only then exchanged and retried. Nothing before this step exercises
+// the OAuth credential — the tenant token carried everything up to here — so
+// the whole exchange lives or dies on this one call being challenged.
+func (h *handshakeRunner) testConnection() {
+	h.t.Helper()
+	const path = "/_apis/v1/AgentPools?poolType=Automation"
+	h.connectionData("")
+	refuseAnonymous(h.t, "credential test", "GET", path, "", "")
+	h.exchangeSessionToken()
+	handshakeStep(h.t, "credential test", "GET", path, "Bearer "+h.session, "", "", http.StatusOK)
+	h.connectionData("Bearer " + h.session)
+}
+
 // lookUpOwnName is GetAgentsAsync — the call config.sh makes to decide
 // between adding a registration and replacing one. It runs on the tenant
 // token, long before any agent session exists.
@@ -273,14 +326,12 @@ func (h *handshakeRunner) readAgent(step string, payload []byte) {
 	h.clientID = agent.Authorization.ClientID
 }
 
-// exchangeSessionToken is the OAuth2 jwt-bearer exchange: the runner signs a
-// client_assertion with the key it registered and receives the session bearer.
+// exchangeSessionToken is the token exchange the runner performs against the
+// authorizationUrl on its agent record: the client credentials grant, with the
+// client authenticated by an assertion signed with the key it registered.
 func (h *handshakeRunner) exchangeSessionToken() {
 	h.t.Helper()
-	form := url.Values{}
-	form.Set("grant_type", "urn:ietf:params:oauth:grant-type:jwt-bearer")
-	form.Set("client_assertion_type", "urn:ietf:params:oauth:client-assertion-type:jwt-bearer")
-	form.Set("client_assertion", signTestAssertion(h.t, h.key, h.clientID))
+	form := runnerTokenExchangeForm(signTestAssertion(h.t, h.key, h.clientID))
 	payload := handshakeStep(h.t, "session token", "POST", "/_apis/v1/auth/", "",
 		"application/x-www-form-urlencoded", form.Encode(), http.StatusOK)
 	var issued struct {
@@ -346,8 +397,7 @@ func (h *handshakeRunner) configure(registrationTokenPath string) {
 	} else {
 		h.addAgent()
 	}
-	h.exchangeSessionToken()
-	h.connectionData("Bearer " + h.session)
+	h.testConnection()
 }
 
 // TestRunnerConfigurationHandshakeSucceedsForARepositoryRunner is the
@@ -474,7 +524,7 @@ func TestRunnerSetupCredentialsDoNotCrossPurposes(t *testing.T) {
 		{"remove", registration, "registration token removing"},
 	} {
 		body := fmt.Sprintf(`{"url":%q,"runner_event":%q}`, testBaseURL+runner.scopePath, tc.event)
-		status, payload := handshakeCall(t, "POST", "/api/v3/actions/runner-registration",
+		status, _, payload := handshakeCall(t, "POST", "/api/v3/actions/runner-registration",
 			"RemoteAuth "+tc.token, "application/json", body)
 		if status != http.StatusUnauthorized {
 			t.Errorf("%s: status = %d, want 401; body=%s", tc.name, status, payload)
@@ -483,7 +533,7 @@ func TestRunnerSetupCredentialsDoNotCrossPurposes(t *testing.T) {
 
 	// An unrecognized runner_event names no operation, so it cannot select one.
 	body := fmt.Sprintf(`{"url":%q,"runner_event":"sideways"}`, testBaseURL+runner.scopePath)
-	if status, payload := handshakeCall(t, "POST", "/api/v3/actions/runner-registration",
+	if status, _, payload := handshakeCall(t, "POST", "/api/v3/actions/runner-registration",
 		"RemoteAuth "+registration, "application/json", body); status != http.StatusBadRequest {
 		t.Errorf("unknown runner_event: status = %d, want 400; body=%s", status, payload)
 	}
@@ -502,16 +552,16 @@ func TestRunnerSetupCredentialsDoNotCrossPurposes(t *testing.T) {
 	// credential may not delete one. A setup token offered for the wrong
 	// purpose is not a credential the route knows, so it is refused exactly
 	// like none at all.
-	if status, payload := handshakeCall(t, "POST", "/_apis/v1/Agent/1",
+	if status, _, payload := handshakeCall(t, "POST", "/_apis/v1/Agent/1",
 		"Bearer "+removalTenant.setupToken, "application/json", runner.agentBody()); status != http.StatusUnauthorized {
 		t.Errorf("removal token adding an agent: status = %d, want 401; body=%s", status, payload)
 	}
 	replacePath := fmt.Sprintf("/_apis/v1/Agent/1/%d", runner.agentID)
-	if status, payload := handshakeCall(t, "PUT", replacePath,
+	if status, _, payload := handshakeCall(t, "PUT", replacePath,
 		"Bearer "+removalTenant.setupToken, "application/json", runner.agentBody()); status != http.StatusUnauthorized {
 		t.Errorf("removal token replacing an agent: status = %d, want 401; body=%s", status, payload)
 	}
-	if status, payload := handshakeCall(t, "DELETE", replacePath,
+	if status, _, payload := handshakeCall(t, "DELETE", replacePath,
 		"Bearer "+runner.setupToken, "", ""); status != http.StatusUnauthorized {
 		t.Errorf("registration token deleting an agent: status = %d, want 401; body=%s", status, payload)
 	}
@@ -544,7 +594,7 @@ func TestRunnerJobTokenIsNotAConfigurationCredential(t *testing.T) {
 		if tc.body != "" {
 			contentType = "application/json"
 		}
-		status, payload := handshakeCall(t, tc.method, tc.path, "Bearer "+jobToken, contentType, tc.body)
+		status, _, payload := handshakeCall(t, tc.method, tc.path, "Bearer "+jobToken, contentType, tc.body)
 		if status != http.StatusForbidden {
 			t.Errorf("job token on %s %s: status = %d, want 403; body=%s", tc.method, tc.path, status, payload)
 		}
@@ -642,7 +692,7 @@ func TestEphemeralRunnerTeardownStaysAuthenticated(t *testing.T) {
 	}
 
 	// And with the registration gone, its session bearer is dead.
-	if status, payload := handshakeCall(t, "GET", "/_apis/v1/AgentPools",
+	if status, _, payload := handshakeCall(t, "GET", "/_apis/v1/AgentPools",
 		"Bearer "+runner.session, "", ""); status != http.StatusUnauthorized {
 		t.Errorf("deregistered runner's session token: status = %d, want 401; body=%s", status, payload)
 	}

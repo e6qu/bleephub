@@ -3,6 +3,7 @@ package bleephub
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"strconv"
 	"strings"
@@ -28,8 +29,11 @@ func (s *Server) handleCreateSession(w http.ResponseWriter, r *http.Request) {
 	// truth: it holds the labels from config-time registration and the scope
 	// that decides which jobs — and therefore which secrets — it may receive.
 	caller, err := s.callerRunner(r)
-	if err != nil || caller.Agent == nil {
-		writeGHError(w, http.StatusUnauthorized, "Must authenticate to use the runner protocol")
+	if err == nil && caller.Agent == nil {
+		err = fmt.Errorf("opening a session needs an agent session token, not a job runtime token")
+	}
+	if err != nil {
+		s.challengeRunnerAuth(w, r, err)
 		return
 	}
 	agent := caller.Agent
@@ -129,7 +133,7 @@ func (s *Server) handleGetMessage(w http.ResponseWriter, r *http.Request) {
 	sessionID := r.URL.Query().Get("sessionId")
 	caller, err := s.callerRunner(r)
 	if err != nil {
-		writeGHError(w, http.StatusUnauthorized, "Must authenticate to use the runner protocol")
+		s.challengeRunnerAuth(w, r, err)
 		return
 	}
 

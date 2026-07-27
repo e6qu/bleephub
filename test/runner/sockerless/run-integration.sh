@@ -893,6 +893,16 @@ REG_TOKEN=$(api_post "/api/v3/repos/admin/test/actions/runners/registration-toke
     }
 tail -5 /tmp/runner-config.log
 
+# config.sh prints this only after it has exchanged its RSA client assertion
+# for a session token and re-read the pool with it. Nothing earlier in
+# configuration uses that credential, so without this line the runner reached
+# "Runner successfully added" and stopped short of ever holding a session.
+grep -q "Runner connection is good" /tmp/runner-config.log || {
+    echo "=== runner configuration output ==="
+    cat /tmp/runner-config.log
+    fail "runner never completed its credential test"
+}
+
 log "Runner configured"
 
 # --- 5. Start runner ---

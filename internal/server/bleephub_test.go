@@ -238,11 +238,7 @@ func TestOAuthToken(t *testing.T) {
 		t.Fatal("missing clientId on registered agent")
 	}
 
-	assertion := signTestAssertion(t, key, agent.Authorization.ClientID)
-	form := url.Values{}
-	form.Set("grant_type", "urn:ietf:params:oauth:grant-type:jwt-bearer")
-	form.Set("client_assertion_type", "urn:ietf:params:oauth:client-assertion-type:jwt-bearer")
-	form.Set("client_assertion", assertion)
+	form := runnerTokenExchangeForm(signTestAssertion(t, key, agent.Authorization.ClientID))
 
 	resp, err := http.Post(testBaseURL+"/_apis/v1/auth/", "application/x-www-form-urlencoded", strings.NewReader(form.Encode()))
 	if err != nil {
@@ -279,11 +275,7 @@ func TestOAuthTokenRejectsUnknownClient(t *testing.T) {
 	if err != nil {
 		t.Fatalf("generate key: %v", err)
 	}
-	assertion := signTestAssertion(t, key, "00000000-0000-0000-0000-000000000000")
-	form := url.Values{}
-	form.Set("grant_type", "urn:ietf:params:oauth:grant-type:jwt-bearer")
-	form.Set("client_assertion_type", "urn:ietf:params:oauth:client-assertion-type:jwt-bearer")
-	form.Set("client_assertion", assertion)
+	form := runnerTokenExchangeForm(signTestAssertion(t, key, "00000000-0000-0000-0000-000000000000"))
 	resp, err := http.Post(testBaseURL+"/_apis/v1/auth/", "application/x-www-form-urlencoded", strings.NewReader(form.Encode()))
 	if err != nil {
 		t.Fatal(err)
@@ -308,6 +300,17 @@ func signTestAssertion(t *testing.T, key *rsa.PrivateKey, clientID string) strin
 		t.Fatalf("sign: %v", err)
 	}
 	return signInput + "." + base64.RawURLEncoding.EncodeToString(sig)
+}
+
+// runnerTokenExchangeForm is the body the runner posts to its authorizationUrl:
+// the client credentials grant, with the client authenticated by an RSA
+// assertion rather than a secret.
+func runnerTokenExchangeForm(assertion string) url.Values {
+	form := url.Values{}
+	form.Set("grant_type", "client_credentials")
+	form.Set("client_assertion_type", "urn:ietf:params:oauth:client-assertion-type:jwt-bearer")
+	form.Set("client_assertion", assertion)
+	return form
 }
 
 func TestRunnerRegistration(t *testing.T) {

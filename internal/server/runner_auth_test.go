@@ -273,6 +273,18 @@ func TestRunnerProtocolRejectsUnauthenticatedCalls(t *testing.T) {
 		w := runnerRequest(s, tc.method, tc.path, "", tc.body)
 		if w.Code != http.StatusUnauthorized {
 			t.Errorf("%s %s: status = %d, want 401; body=%s", tc.method, tc.path, w.Code, w.Body.String())
+			continue
+		}
+		// Refusing is half of it. The runner's HTTP stack opens a session with
+		// an uncredentialed request and asks for a token only when the refusal
+		// names the Bearer scheme, so a 401 without that challenge locks a
+		// runner out of a route it is entitled to reach.
+		if !runnerRouteChallenges(tc.method, tc.path) {
+			continue
+		}
+		if challenge := w.Header().Get("WWW-Authenticate"); !strings.Contains(challenge, "Bearer") {
+			t.Errorf("%s %s: 401 carried WWW-Authenticate %q, which names no Bearer challenge",
+				tc.method, tc.path, challenge)
 		}
 	}
 }

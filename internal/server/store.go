@@ -557,7 +557,7 @@ type Agent struct {
 	// Scope is the repository or organization the agent registered against. It
 	// is recorded here rather than encoded into the clientId because the runner
 	// deserializes that field as a GUID and rejects anything else.
-	Scope runnerScope `json:"scope,omitempty"`
+	Scope runnerScope `json:"scope"`
 }
 
 // Label is an agent label.

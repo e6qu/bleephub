@@ -431,10 +431,11 @@ func (s *Server) viewerMayActOnRepo(ctx context.Context, repo *Repo, scope permS
 	return s.principalHoldsRepoCapability(ctx, repo, standing)
 }
 
-// credentialGrantsRepo is the app half of viewerHasRepoPermission: the grant
-// carried by an installation or user-to-server token, intersected with the
-// repositories that grant is over. A session or personal access token has no
-// app behind it and is decided entirely by the principal half.
+// credentialGrantsRepo is the credential half of viewerHasRepoPermission: the
+// grant the request's credential carries, intersected with the repositories
+// that grant is over. Only a browser session reaches the bottom of it: a
+// session carries no selection of its own, so it is decided entirely by the
+// principal half.
 //
 // It is separate from that half because the author exemption on the GraphQL
 // mutation lane relaxes the principal and must not relax this: the author of an
@@ -456,19 +457,79 @@ func (s *Server) credentialGrantsRepo(ctx context.Context, repo *Repo, scope per
 		}
 		return s.installationReachesRepo(tok, repo)
 	}
-	// A ghu_ token has to be intersected here as well, not only in
+	// A user-to-server token has to be intersected here as well, not only in
 	// credentialMayAccessTarget. That covers requirePerm routes; handlers that
-	// gate themselves land here, and without this arm a user-to-server token is
+	// gate themselves land here, and without this arm the token is
 	// indistinguishable from a session, borrows the bearer's own collaborator
 	// access, and ends up broader than the ghs_ token of the same app, which is
 	// refused.
-	if uts := ghUserToServerTokenFromContext(ctx); uts != nil && uts.AppID != 0 {
+	//
+	// Both prefixes are asked the grant question and only ghu_ is asked the
+	// reach question, which is not an oversight: a gho_ OAuth-App token carries
+	// classic scopes that userToServerHasPerm knows how to evaluate, but it has
+	// no installation anywhere to reach through, so a reach test would refuse
+	// every OAuth app outright. userToServerReachesRepo encodes that half and
+	// admits an AppID-less token for exactly this reason.
+	if uts := ghUserToServerTokenFromContext(ctx); uts != nil {
 		if !userToServerHasPerm(uts, scope, level, s.store) {
 			return false
 		}
 		return s.userToServerReachesRepo(uts, repo)
 	}
+	// A fine-grained PAT names both halves itself — the repositories it selects
+	// and the permission map over them — and neither is the bearer's own
+	// standing. requirePerm consults them through fineGrainedPATAllows, but
+	// /api/graphql and the git transports never reach requirePerm, so without
+	// this arm a token selecting one repository acted on every repository its
+	// bearer could reach.
+	if token := ghPersonalAccessTokenFromContext(ctx); token != nil {
+		if token.FineGrained {
+			return s.fineGrainedPATGrantsRepo(token, repo, scope, level)
+		}
+		// A classic token's scope selection, on the same terms
+		// classicScopeGateApplies sets for the routed gate: writes only, because
+		// the classic scopes are coarse and unambiguous there while GitHub's read
+		// rules vary per endpoint. The "names a repository" half of that test is
+		// satisfied by construction here.
+		return level < permWrite || classicScopeCovers(token.Scopes, scope, level)
+	}
 	return true
+}
+
+// fineGrainedPATGrantsRepo is fineGrainedPATAllows for a repository already
+// resolved, so the resolvers and transports that hold no *http.Request reach
+// the same decision the routed gate makes.
+func (s *Server) fineGrainedPATGrantsRepo(token *Token, repo *Repo, scope permScope, level permLevel) bool {
+	if fineGrainedPATExpired(token) || !s.fineGrainedPATApproved(token) {
+		return false
+	}
+	if !fineGrainedPATSelectsRepo(token, repo) {
+		return false
+	}
+	return hasPerm(token.Permissions.Repository, scope, level)
+}
+
+func fineGrainedPATExpired(token *Token) bool {
+	return token.ExpiresAt != nil && !token.ExpiresAt.After(time.Now())
+}
+
+// fineGrainedPATSelectsRepo reports whether a fine-grained token's resource
+// owner and repository selection cover the repository.
+//
+// The selection test is spelled allow-by-enumeration for the same reason
+// installationCovers is: an unrecognised selection value grants nothing.
+func fineGrainedPATSelectsRepo(token *Token, repo *Repo) bool {
+	owner, _, ok := strings.Cut(repo.FullName, "/")
+	if !ok || !strings.EqualFold(owner, token.ResourceOwner) {
+		return false
+	}
+	switch token.RepositorySelection {
+	case "all":
+		return true
+	case "subset":
+		return containsRepoID(token.RepositoryIDs, repo.ID)
+	}
+	return false
 }
 
 // principalHoldsRepoCapability is the user half: the capability the bearer holds
@@ -520,8 +581,8 @@ func (s *Server) viewerCanAdminRepo(ctx context.Context, repo *Repo) bool {
 // a user-to-server token that skipped the second half acted as its bearer on
 // accounts the app was never installed on.
 //
-// A session or personal access token has no app behind it and is unconstrained
-// here; its standing is the caller's own.
+// A browser session carries no selection of its own and is unconstrained here;
+// its standing is the caller's own.
 func (s *Server) credentialGrantsAccount(ctx context.Context, kind accountKind, login string, scope permScope, level permLevel) bool {
 	if login == "" {
 		return false
@@ -529,10 +590,39 @@ func (s *Server) credentialGrantsAccount(ctx context.Context, kind accountKind, 
 	if tok := ghInstallationTokenFromContext(ctx); tok != nil {
 		return hasPerm(tok.Permissions, scope, level) && s.installationReachesAccount(tok, kind, login)
 	}
-	if uts := ghUserToServerTokenFromContext(ctx); uts != nil && uts.AppID != 0 {
+	// Grant for both prefixes, reach for ghu_ only — the same asymmetry
+	// credentialGrantsRepo spells out, and userToServerReachesAccount encodes
+	// the gho_ side of it.
+	if uts := ghUserToServerTokenFromContext(ctx); uts != nil {
 		return userToServerHasPerm(uts, scope, level, s.store) && s.userToServerReachesAccount(uts, kind, login)
 	}
+	if token := ghPersonalAccessTokenFromContext(ctx); token != nil && token.FineGrained {
+		return s.fineGrainedPATGrantsAccount(token, login, scope, level)
+	}
 	return true
+}
+
+// fineGrainedPATGrantsAccount is fineGrainedPATGrantsRepo for the account half:
+// a fine-grained token belongs to exactly one resource owner, and a token
+// belonging to somebody else reaches this account through no permission it
+// holds.
+//
+// Both halves of the permission map are consulted because which half carries a
+// name is a fact about the resource, not about the token: creating a repository
+// under an organization is granted by the *repository* Administration
+// permission, while that organization's membership is granted by the
+// organization Members permission. The routed gate picks a half per URL
+// pattern; here there is no pattern to pick from, and narrowing to one half
+// would refuse grants GitHub allows.
+func (s *Server) fineGrainedPATGrantsAccount(token *Token, login string, scope permScope, level permLevel) bool {
+	if fineGrainedPATExpired(token) || !s.fineGrainedPATApproved(token) {
+		return false
+	}
+	if !strings.EqualFold(login, token.ResourceOwner) {
+		return false
+	}
+	return hasPerm(token.Permissions.Organization, scope, level) ||
+		hasPerm(token.Permissions.Repository, scope, level)
 }
 
 // viewerReachesOrg asks only whether the app behind the request is installed on
@@ -740,7 +830,7 @@ func (s *Server) denyResourceAccess(w http.ResponseWriter, r *http.Request, need
 }
 
 func (s *Server) fineGrainedPATAllows(r *http.Request, token *Token, scope permScope, level permLevel) bool {
-	if token.ExpiresAt != nil && !token.ExpiresAt.After(time.Now()) {
+	if fineGrainedPATExpired(token) {
 		return false
 	}
 	if repo := s.repoFromPATRequest(r); repo != nil && !repo.Private &&
@@ -797,21 +887,7 @@ func (s *Server) fineGrainedPATResourceAllowed(r *http.Request, token *Token) bo
 		// path naming no repository, and only the latter has nothing to check.
 		return !repoNamedInRequest(r)
 	}
-	owner, _, ok := strings.Cut(repo.FullName, "/")
-	if !ok || !strings.EqualFold(owner, token.ResourceOwner) {
-		return false
-	}
-	switch token.RepositorySelection {
-	case "all":
-		return true
-	case "subset":
-		for _, id := range token.RepositoryIDs {
-			if id == repo.ID {
-				return true
-			}
-		}
-	}
-	return false
+	return fineGrainedPATSelectsRepo(token, repo)
 }
 
 // classicScopeGateApplies reports whether a classic token's scope selection is
@@ -838,11 +914,28 @@ func denyMissingScope(w http.ResponseWriter, scope permScope) {
 	writeGHError(w, http.StatusForbidden, "Token does not have the OAuth scopes required for "+string(scope))
 }
 
-// enforceFineGrainedPATResource is the per-route personal-access-token gate for
+// classicOAuthScopesOffered returns the classic OAuth scope selection the
+// request's credential carries, and whether it carries one at all.
+//
+// A classic PAT and a gho_ OAuth-App user token are the same scope model, and
+// only the first was being read here. That is how an OAuth token holding no
+// scopes at all passed the self-gating routes a classic token of the same shape
+// is refused, organization webhook creation among them.
+func classicOAuthScopesOffered(ctx context.Context) (string, bool) {
+	if token := ghPersonalAccessTokenFromContext(ctx); token != nil && !token.FineGrained {
+		return token.Scopes, true
+	}
+	if uts := ghUserToServerTokenFromContext(ctx); uts != nil && uts.AppID == 0 {
+		return uts.Scopes, true
+	}
+	return "", false
+}
+
+// enforceFineGrainedPATResource is the per-route credential-selection gate for
 // handlers that perform their own role checks instead of using requirePerm. It
 // runs after ServeMux has filled path values, so a selected-repository token
 // cannot inherit its owner's wider membership through those handlers, and a
-// classic token cannot exceed its scope selection through them either —
+// classic scope selection cannot be exceeded through them either —
 // `DELETE /orgs/{org}` is one of the handlers that never reaches requirePerm.
 func (s *Server) enforceFineGrainedPATResource(pattern string, next http.HandlerFunc) http.HandlerFunc {
 	if !strings.Contains(pattern, " /api/") || (!strings.Contains(pattern, "{repo}") && !strings.Contains(pattern, "{org}") && !strings.Contains(pattern, "{repository_id}")) {
@@ -850,7 +943,8 @@ func (s *Server) enforceFineGrainedPATResource(pattern string, next http.Handler
 	}
 	return func(w http.ResponseWriter, r *http.Request) {
 		token := ghPersonalAccessTokenFromContext(r.Context())
-		if token == nil {
+		scopes, classic := classicOAuthScopesOffered(r.Context())
+		if token == nil && !classic {
 			next(w, r)
 			return
 		}
@@ -860,8 +954,8 @@ func (s *Server) enforceFineGrainedPATResource(pattern string, next http.Handler
 			next(w, r)
 			return
 		}
-		if !token.FineGrained {
-			if classicScopeGateApplies(r, level) && !classicScopeCovers(token.Scopes, scope, level) {
+		if classic {
+			if classicScopeGateApplies(r, level) && !classicScopeCovers(scopes, scope, level) {
 				denyMissingScope(w, scope)
 				return
 			}
@@ -978,19 +1072,28 @@ func userToServerHasPerm(tok *UserToServerToken, scope permScope, level permLeve
 		// specific installations (POST /applications/{cid}/token/scoped)
 		// must be checked against exactly those; an unscoped token checks
 		// any installation of the app.
+		//
+		// Every candidate installation is asked, not just the first one
+		// reached. Returning the first candidate's verdict decided an
+		// authorization question by Go's map iteration order once an app was
+		// installed in more than one place: the same token and the same scope
+		// answered differently from one request to the next. The reach half
+		// already scans every installation this way, and the two must range
+		// over the same set or their intersection is not the one either of
+		// them describes.
 		st.mu.RLock()
 		defer st.mu.RUnlock()
 		if len(tok.InstallationIDs) > 0 {
 			for _, id := range tok.InstallationIDs {
-				if inst := st.Installations[id]; inst != nil && inst.AppID == tok.AppID {
-					return hasPerm(inst.Permissions, scope, level)
+				if inst := st.Installations[id]; inst != nil && inst.AppID == tok.AppID && hasPerm(inst.Permissions, scope, level) {
+					return true
 				}
 			}
 			return false
 		}
 		for _, inst := range st.Installations {
-			if inst.AppID == tok.AppID {
-				return hasPerm(inst.Permissions, scope, level)
+			if inst.AppID == tok.AppID && hasPerm(inst.Permissions, scope, level) {
+				return true
 			}
 		}
 		return false

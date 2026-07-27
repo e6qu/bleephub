@@ -645,9 +645,6 @@ func (s *Server) adminHostMiddleware(next http.Handler) http.Handler {
 	})
 }
 
-// prefixStripMiddleware removes any path segments before known API prefixes.
-// The runner prepends the tenant URL path to all API calls, e.g.
-// /owner/repo/_apis/... instead of /_apis/...
 // internalAuthMiddleware gates the operator-facing /internal/* surface — the
 // sim-control + dashboard endpoints that have no GitHub API equivalent
 // (job/workflow submission + status under /internal/exec, app/oauth-app
@@ -712,6 +709,10 @@ func (s *Server) internalTokenUser(r *http.Request) *User {
 	return user
 }
 
+// prefixStripMiddleware removes any path segments before the known API
+// prefixes. The runner prepends the tenant URL path to every call, so a
+// request arrives as /owner/repo/_apis/... rather than /_apis/... — which
+// is why a refused runner call logs the stripped path.
 func (s *Server) prefixStripMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		path := r.URL.Path

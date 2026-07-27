@@ -212,6 +212,25 @@ func (s *Server) handleConnectionData(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+// The token exchange the runner performs against authorizationUrl: the OAuth
+// 2.0 client credentials grant, with the client authenticated by an RSA
+// assertion rather than a secret. The runner builds the request from
+// VssOAuthGrant.ClientCredentials and VssOAuthJwtBearerClientCredential, so
+// the grant type is client_credentials and the assertion travels in
+// client_assertion — not the jwt-bearer authorization grant, which no runner
+// sends.
+const (
+	runnerGrantType           = "client_credentials"
+	runnerClientAssertionType = "urn:ietf:params:oauth:client-assertion-type:jwt-bearer"
+)
+
+// agentAuthorizationURL is the token endpoint an agent exchanges its RSA
+// client_assertion at. It is handed to the runner in its authorization record
+// and named in the challenge unauthenticated runner requests answer with.
+func (s *Server) agentAuthorizationURL(r *http.Request) string {
+	return s.baseURL(r) + "/_apis/v1/auth/"
+}
+
 // handleOAuthToken exchanges a runner-signed client_assertion JWT for a
 // session access token. The runner registered its RSA public key on
 // /_apis/v1/Agent/{poolId}; the assertion's iss claim names the agent's
@@ -221,11 +240,11 @@ func (s *Server) handleOAuthToken(w http.ResponseWriter, r *http.Request) {
 		writeOAuthError(w, http.StatusBadRequest, "invalid_request", "failed to parse form body: "+err.Error())
 		return
 	}
-	if grant := r.PostFormValue("grant_type"); grant != "urn:ietf:params:oauth:grant-type:jwt-bearer" {
+	if grant := r.PostFormValue("grant_type"); grant != runnerGrantType {
 		writeOAuthError(w, http.StatusBadRequest, "unsupported_grant_type", fmt.Sprintf("grant_type %q is not supported", grant))
 		return
 	}
-	if at := r.PostFormValue("client_assertion_type"); at != "urn:ietf:params:oauth:client-assertion-type:jwt-bearer" {
+	if at := r.PostFormValue("client_assertion_type"); at != runnerClientAssertionType {
 		writeOAuthError(w, http.StatusBadRequest, "invalid_request", fmt.Sprintf("client_assertion_type %q is not supported", at))
 		return
 	}
@@ -593,15 +612,6 @@ func parseRunnerRegistrationToken(token string, purposes []string) (runnerRegist
 	return claims, nil
 }
 
-// agentClientClaims is the payload of an agent's clientId. The runner treats
-// the clientId as opaque and echoes it as the client_assertion `iss`, so
-// binding the scope into it means an agent's entitlement survives the
-// assertion exchange without a second lookup table.
-type agentClientClaims struct {
-	Scope runnerScope `json:"scope"`
-	Nonce string      `json:"nonce"`
-}
-
 // newAgentClientID mints the clientId the runner stores in its credentials and
 // echoes back as the client_assertion issuer.
 //
@@ -776,6 +786,20 @@ func (s *Server) authenticateRunner(r *http.Request) (*runnerPrincipal, error) {
 	}
 }
 
+// challengeRunnerAuth refuses a runner protocol request that carries no usable
+// credential, and names the scheme that would satisfy it.
+//
+// The WWW-Authenticate header is what drives the runner's token exchange. It
+// opens every session by sending a request with no credential attached and
+// acquires one only when the refusal is a challenge it recognizes: a 401
+// carrying a WWW-Authenticate value containing "Bearer". A bare 401 is read as
+// the route's own answer, and no token is ever requested.
+func (s *Server) challengeRunnerAuth(w http.ResponseWriter, r *http.Request, err error) {
+	s.logger.Debug().Err(err).Str("path", r.URL.Path).Msg("runner protocol request rejected")
+	w.Header().Set("WWW-Authenticate", fmt.Sprintf("Bearer authorization_uri=%q", s.agentAuthorizationURL(r)))
+	writeGHError(w, http.StatusUnauthorized, "Must authenticate to use the runner protocol")
+}
+
 // requireRunnerAuth gates a runner protocol route on a verified runner
 // credential and hands the principal to the handler through the request
 // context. Every /_apis/ and /twirp/ route registered outside the
@@ -784,8 +808,7 @@ func (s *Server) requireRunnerAuth(next http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		principal, err := s.authenticateRunner(r)
 		if err != nil {
-			s.logger.Debug().Err(err).Str("path", r.URL.Path).Msg("runner protocol request rejected")
-			writeGHError(w, http.StatusUnauthorized, "Must authenticate to use the runner protocol")
+			s.challengeRunnerAuth(w, r, err)
 			return
 		}
 		next(w, r.WithContext(context.WithValue(r.Context(), ctxRunner, principal)))

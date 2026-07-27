@@ -2,10 +2,12 @@ package bleephub
 
 import (
 	"crypto/rand"
+	"crypto/rsa"
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"io"
+	"math/big"
 	"net/http"
 	"strconv"
 	"strings"
@@ -145,6 +147,11 @@ func (s *Server) handleGenerateJITConfig(w http.ResponseWriter, r *http.Request)
 		writeGHError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
+	publicKey, privateParams, err := newJITRunnerKey()
+	if err != nil {
+		writeGHError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
 
 	s.store.mu.Lock()
 	agent.ID = s.store.NextAgent
@@ -154,25 +161,29 @@ func (s *Server) handleGenerateJITConfig(w http.ResponseWriter, r *http.Request)
 	agent.CreatedOn = time.Now()
 	agent.Scope = scope
 	agent.Authorization = &AgentAuthorization{
-		AuthorizationURL: s.baseURL(r) + "/_apis/v1/auth/",
+		AuthorizationURL: s.agentAuthorizationURL(r),
 		ClientID:         clientID,
+		PublicKey:        publicKey,
 	}
 	s.store.Agents[agent.ID] = &agent
 	s.store.mu.Unlock()
 
-	// encoded_jit_config: the base64 of the JSON config blob the runner's
-	// JIT listener reads. It carries the agent identity + server URL +
-	// auth so the runner can connect without a separate config.sh step.
-	jitBlob := map[string]interface{}{
+	// encoded_jit_config: the base64 of the JSON config blob the runner's JIT
+	// listener reads. It carries the agent identity + server URL + auth so the
+	// runner can connect without a separate config.sh step.
+	encoded, err := encodeJITConfig(map[string]interface{}{
 		".runner": map[string]interface{}{
-			"agentId":    agent.ID,
-			"agentName":  agent.Name,
-			"poolId":     1,
-			"poolName":   "Default",
-			"serverUrl":  s.baseURL(r),
-			"gitHubUrl":  s.baseURL(r) + "/" + jitScope,
-			"workFolder": workFolder,
-			"ephemeral":  true,
+			"agentId":   agent.ID,
+			"agentName": agent.Name,
+			"poolId":    1,
+			"poolName":  "Default",
+			"serverUrl": s.baseURL(r),
+			"gitHubUrl": s.baseURL(r) + "/" + jitScope,
+			// bleephub is never the hosted service, and the runner reads this
+			// to decide where the github context's server_url comes from.
+			"isHostedServer": false,
+			"workFolder":     workFolder,
+			"ephemeral":      true,
 		},
 		".credentials": map[string]interface{}{
 			"scheme": "OAuth",
@@ -181,19 +192,89 @@ func (s *Server) handleGenerateJITConfig(w http.ResponseWriter, r *http.Request)
 				"authorizationUrl": agent.Authorization.AuthorizationURL,
 			},
 		},
-	}
-	blobBytes, err := json.Marshal(jitBlob)
+		".credentials_rsaparams": privateParams,
+	})
 	if err != nil {
-		writeGHError(w, http.StatusInternalServerError, "encode jit config")
+		writeGHError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
-	encoded := base64.StdEncoding.EncodeToString(blobBytes)
 
 	s.logger.Info().Int("id", agent.ID).Str("name", agent.Name).Msg("JIT runner config generated")
 	writeJSON(w, http.StatusCreated, map[string]interface{}{
 		"runner":             runnerJSON(&agent, false),
 		"encoded_jit_config": encoded,
 	})
+}
+
+// encodeJITConfig renders the runner's just-in-time configuration: the runner
+// deserializes the decoded blob as a map of file name to the base64 of that
+// file's contents and writes each one into its root directory verbatim, so a
+// section nested as an object rather than encoded as a file body fails to
+// deserialize and configuration ends before it starts.
+func encodeJITConfig(files map[string]interface{}) (string, error) {
+	blob := make(map[string]string, len(files))
+	for name, contents := range files {
+		body, err := json.Marshal(contents)
+		if err != nil {
+			return "", fmt.Errorf("encode jit config file %s: %w", name, err)
+		}
+		blob[name] = base64.StdEncoding.EncodeToString(body)
+	}
+	encoded, err := json.Marshal(blob)
+	if err != nil {
+		return "", fmt.Errorf("encode jit config: %w", err)
+	}
+	return base64.StdEncoding.EncodeToString(encoded), nil
+}
+
+// rsaParametersJSON is .NET's RSAParameters in the shape the runner persists
+// it as `.credentials_rsaparams`, whose members are read back by name from the
+// serialized form. Every component is fixed-width — .NET rejects a parameter
+// set whose private exponent is not exactly the modulus length, or whose CRT
+// factors are not exactly half of it — so leading zero bytes are kept rather
+// than trimmed to the significant bytes Go's big.Int would emit.
+type rsaParametersJSON struct {
+	D        []byte `json:"d"`
+	DP       []byte `json:"dp"`
+	DQ       []byte `json:"dq"`
+	Exponent []byte `json:"exponent"`
+	InverseQ []byte `json:"inverseQ"`
+	Modulus  []byte `json:"modulus"`
+	P        []byte `json:"p"`
+	Q        []byte `json:"q"`
+}
+
+// newJITRunnerKey mints the RSA key pair a just-in-time runner authenticates
+// with, returning the public half to record on the agent and the private half
+// to hand over inside the JIT config. The runner generates no key on this
+// path — it writes `.credentials_rsaparams` from the config it was given and
+// reads its signing key straight back out of that file — so a JIT agent whose
+// record carries no public key can never have its client_assertion verified.
+func newJITRunnerKey() (*AgentPublicKey, *rsaParametersJSON, error) {
+	key, err := rsa.GenerateKey(rand.Reader, 2048)
+	if err != nil {
+		return nil, nil, fmt.Errorf("generate JIT runner key: %w", err)
+	}
+	key.Precompute()
+
+	size := key.Size()
+	half := (key.Primes[0].BitLen() + 7) / 8
+	exponent := big.NewInt(int64(key.E)).Bytes()
+	params := &rsaParametersJSON{
+		D:        key.D.FillBytes(make([]byte, size)),
+		DP:       key.Precomputed.Dp.FillBytes(make([]byte, half)),
+		DQ:       key.Precomputed.Dq.FillBytes(make([]byte, half)),
+		Exponent: exponent,
+		InverseQ: key.Precomputed.Qinv.FillBytes(make([]byte, half)),
+		Modulus:  key.N.FillBytes(make([]byte, size)),
+		P:        key.Primes[0].FillBytes(make([]byte, half)),
+		Q:        key.Primes[1].FillBytes(make([]byte, half)),
+	}
+	public := &AgentPublicKey{
+		Exponent: base64.StdEncoding.EncodeToString(exponent),
+		Modulus:  base64.StdEncoding.EncodeToString(params.Modulus),
+	}
+	return public, params, nil
 }
 
 func (s *Server) handleListPools(w http.ResponseWriter, r *http.Request) {
@@ -289,7 +370,7 @@ func (s *Server) handleRegisterAgent(w http.ResponseWriter, r *http.Request) {
 		agent.Authorization = &AgentAuthorization{}
 	}
 	agent.Scope = scope
-	agent.Authorization.AuthorizationURL = s.baseURL(r) + "/_apis/v1/auth/"
+	agent.Authorization.AuthorizationURL = s.agentAuthorizationURL(r)
 	agent.Authorization.ClientID = clientID
 
 	s.store.Agents[agent.ID] = &agent
