@@ -1,6 +1,6 @@
 # Bleephub bug ledger
 
-512 findings from a full-surface audit: 120 blockers, 287 major, 105 minor. Every entry carries a
+513 findings from a full-surface audit: 120 blockers, 288 major, 105 minor. Every entry carries a
 location and a one-sentence claim. Severity is `B` blocker, `M` major, `m` minor.
 Status is `open` until the fix lands with a test.
 
@@ -657,6 +657,7 @@ source or comments. The reasoning behind a fix belongs in its commit message.
 | CI-059 | B | terraform/main.tf:241,309 | The git and object buckets had no public-access block at all, no TLS-only bucket policy, and no incomplete-multipart-upload cleanup on the two buckets that take pack and artifact uploads; the startup bucket had no encryption configuration | fixed — all four blocks on for all three buckets, `Deny` on `aws:SecureTransport = false`, a 7-day abort rule, and SSE-S3 on startup |
 | CI-060 | M | test/terraform-sockerless/bleephub_ecs_test.go | The only test of the deployment module asserted the **opposite** of correct `desired_count` behaviour — it required Terraform to reconcile the wake controller's out-of-band scaling, which is exactly the bug that terminates a live service — and ran an unguarded `destroy` | fixed — the drift check now requires a clean plan and the teardown asserts the `prevent_destroy` guard fires before releasing the six guarded addresses |
 | CI-061 | M | terraform/main.tf:637 | `aws_efs_file_system.kms_key_id` is ForceNew, so introducing the customer-managed key stops an already-deployed plan on `prevent_destroy` rather than replacing the filesystem. That is the correct failure mode, but a deployed environment needs either the documented AWS Backup restore migration or the key dropped from EFS specifically — an owner decision, not a code one | open |
+| CI-062 | M | publish-container.yml:192 | Keyless signing relied only on cosign's two internal Rekor POST attempts, so two consecutive main releases built and published every image but stopped before attestation, scanning, and retention when Rekor remained temporarily unavailable | fixed — signing and attestation each use the tested retry helper for five bounded attempts with exponential backoff, while a persistent error still fails the release loudly |
 
 ## ARCH — recorded, deliberately not attempted on this branch
 

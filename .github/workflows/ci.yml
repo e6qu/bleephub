@@ -108,6 +108,8 @@ jobs:
         run: actionlint .github/workflows/*.yml
       - name: Lint the shell scripts
         run: shellcheck scripts/*.sh web/e2e/*.sh
+      - name: Test bounded command retries
+        run: ./scripts/test-retry-command.sh
       # The findings ledger is edited constantly and by several hands, and a
       # row that loses its status column or reuses an identifier is still valid
       # markdown — it just quietly drops a finding. That happened twice before
