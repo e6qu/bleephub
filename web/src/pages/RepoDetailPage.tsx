@@ -1329,6 +1329,20 @@ function BranchesList({ branches, defaultBranch }: { branches: GithubBranch[]; d
                 default
               </span>
             )}
+            {b.protected && (
+              <Link
+                to="settings/branch-protection"
+                style={{
+                  marginLeft: "0.45rem",
+                  fontSize: "0.72rem",
+                  fontWeight: 600,
+                  color: "var(--color-success-fg)",
+                  textDecoration: "none",
+                }}
+              >
+                protected
+              </Link>
+            )}
           </span>
           <span className="font-mono" style={{ fontSize: "0.74rem", color: "var(--color-fg-muted)" }}>
             {b.commit.sha.slice(0, 7)}

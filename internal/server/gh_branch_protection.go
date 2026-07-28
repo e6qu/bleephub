@@ -238,11 +238,45 @@ func (s *Server) registerGHBranchProtectionRoutes() {
 
 // branchProtectionURL returns the canonical URL for the top-level protection resource.
 func (s *Server) branchProtectionURL(baseURL, fullName, branch string) string {
-	return baseURL + "/repos/" + fullName + "/branches/" + branch + "/protection"
+	return baseURL + "/api/v3/repos/" + fullName + "/branches/" + branch + "/protection"
 }
 
 func (s *Server) branchProtectionSubURL(baseURL, fullName, branch, sub string) string {
 	return s.branchProtectionURL(baseURL, fullName, branch) + "/" + sub
+}
+
+// branchProtectionShape is the single source of truth for the protected flag
+// and protection members embedded in branch responses. GitHub considers a
+// branch protected when either a classic protection resource or an applicable
+// ruleset protects it; deriving the flag from both prevents the branch and
+// protection APIs from reporting contradictory state.
+func (s *Server) branchProtectionShape(repo *Repo, branch, baseURL string) (bool, map[string]interface{}, string) {
+	bp := s.branchProtectionFor(repo.ID, branch)
+	protected := bp != nil || s.store.BranchProtectedByRuleset(repo, branch)
+	protectionURL := s.branchProtectionURL(baseURL, repo.FullName, branch)
+
+	if bp == nil {
+		return protected, map[string]interface{}{
+			"enabled": protected,
+			"required_status_checks": map[string]interface{}{
+				"enforcement_level": "off",
+				"contexts":          []string{},
+				"checks":            []interface{}{},
+			},
+		}, protectionURL
+	}
+
+	hydrated := s.hydrateBranchProtectionURLs(bp, repo, branch, baseURL)
+	raw, err := json.Marshal(hydrated)
+	if err != nil {
+		return protected, map[string]interface{}{"enabled": protected}, protectionURL
+	}
+	var protection map[string]interface{}
+	if err := json.Unmarshal(raw, &protection); err != nil {
+		return protected, map[string]interface{}{"enabled": protected}, protectionURL
+	}
+	protection["enabled"] = protected
+	return protected, protection, protectionURL
 }
 
 // branchProtectionFor is the single read path into the protection table; the

@@ -285,11 +285,12 @@ func (s *Server) handleRenameBranch(w http.ResponseWriter, r *http.Request) {
 	base := s.baseURL(r)
 	api := base + "/api/v3/repos/" + repo.FullName
 	branchURL := api + "/branches/" + req.NewName
+	protected, protection, protectionURL := s.branchProtectionShape(repo, req.NewName, base)
 	result := map[string]interface{}{
 		"name":           req.NewName,
-		"protected":      false,
-		"protection":     map[string]interface{}{},
-		"protection_url": branchURL + "/protection",
+		"protected":      protected,
+		"protection":     protection,
+		"protection_url": protectionURL,
 		"_links": map[string]interface{}{
 			"self": branchURL,
 			"html": base + "/" + repo.FullName + "/tree/" + req.NewName,

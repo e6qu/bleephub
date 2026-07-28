@@ -2483,6 +2483,18 @@ func (st *Store) RenameBranch(repoID int, branch, newName string) bool {
 	if repo.DefaultBranch == branch {
 		repo.DefaultBranch = newName
 	}
+	oldProtectionKey := bpKey(repo.ID, branch)
+	newProtectionKey := bpKey(repo.ID, newName)
+	st.Misc.mu.Lock()
+	if protection, ok := st.Misc.branchProtection[oldProtectionKey]; ok {
+		st.Misc.branchProtection[newProtectionKey] = protection
+		delete(st.Misc.branchProtection, oldProtectionKey)
+		if st.Misc.persist != nil {
+			st.Misc.persist.MustPut("branch_protection", newProtectionKey, protection)
+			st.Misc.persist.MustDelete("branch_protection", oldProtectionKey)
+		}
+	}
+	st.Misc.mu.Unlock()
 	repo.UpdatedAt = time.Now().UTC()
 	if st.persist != nil {
 		st.persist.MustPut("repos", strconv.Itoa(repo.ID), repo)

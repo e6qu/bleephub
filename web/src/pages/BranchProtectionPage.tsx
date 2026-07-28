@@ -131,6 +131,8 @@ export function BranchProtectionPage() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["branch-protection", owner, repo, branch] });
+      queryClient.invalidateQueries({ queryKey: ["repo-branches", owner, repo] });
+      queryClient.invalidateQueries({ queryKey: ["branches", owner, repo] });
     },
   });
 
@@ -167,6 +169,7 @@ export function BranchProtectionPage() {
               {branches.map((b: GithubBranch) => (
                 <option key={b.name} value={b.name}>
                   {b.name}
+                  {b.protected ? " (protected)" : ""}
                 </option>
               ))}
             </select>

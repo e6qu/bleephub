@@ -40,7 +40,7 @@ function installFetchRoutes() {
     if (url.startsWith("/api/v3/repos/admin/social-repo/branches"))
       return Promise.resolve(
         jsonResponse([
-          { name: "main", commit: { sha: "a".repeat(40) } },
+          { name: "main", commit: { sha: "a".repeat(40) }, protected: true },
           { name: "feature", commit: { sha: "b".repeat(40) } },
         ]),
       );
@@ -108,7 +108,7 @@ describe("RepoDetailPage social reads", () => {
     expect(screen.getByText("25.0%")).toBeInTheDocument();
   });
 
-  it("lists branches with the default-branch indicator", async () => {
+  it("lists branches with default and protection state", async () => {
     installFetchRoutes();
     renderPage();
     await waitFor(() => screen.getByRole("button", { name: "Branches" }));
@@ -117,6 +117,10 @@ describe("RepoDetailPage social reads", () => {
       expect(screen.getByText("feature")).toBeInTheDocument();
     });
     expect(screen.getByText("default")).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "protected" })).toHaveAttribute(
+      "href",
+      "/ui/repos/admin/social-repo/settings/branch-protection",
+    );
   });
 
   it("lists tags with tarball and zipball download links", async () => {

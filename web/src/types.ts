@@ -357,6 +357,8 @@ export interface GithubCommit {
 export interface GithubBranch {
   name: string;
   commit: { sha: string };
+  protected?: boolean;
+  protection_url?: string;
 }
 
 export interface GithubStatusCheck {

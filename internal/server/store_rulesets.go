@@ -316,7 +316,7 @@ func (st *Store) ListRulesForBranch(repo *Repo, branch string) []map[string]inte
 
 	var out []map[string]interface{}
 	for _, rs := range st.Rulesets {
-		if rs.RepoID != repo.ID {
+		if !rulesetAppliesToRepo(rs, repo) {
 			continue
 		}
 		if rs.Enforcement == "disabled" {
@@ -342,6 +342,33 @@ func (st *Store) ListRulesForBranch(repo *Repo, branch string) []map[string]inte
 		}
 	}
 	return out
+}
+
+// BranchProtectedByRuleset reports whether an enforced branch-targeting
+// repository or organization ruleset applies to the branch. Rulesets in
+// evaluate mode are observable through the rules API but do not enforce
+// restrictions and therefore do not make the branch protected.
+func (st *Store) BranchProtectedByRuleset(repo *Repo, branch string) bool {
+	st.mu.RLock()
+	defer st.mu.RUnlock()
+
+	for _, rs := range st.Rulesets {
+		if !rulesetAppliesToRepo(rs, repo) ||
+			rs.Enforcement != "active" ||
+			(rs.Target != "" && rs.Target != "branch") ||
+			len(rs.Rules) == 0 {
+			continue
+		}
+		if rulesetMatchesBranch(rs, repo.DefaultBranch, branch) {
+			return true
+		}
+	}
+	return false
+}
+
+func rulesetAppliesToRepo(rs *Ruleset, repo *Repo) bool {
+	return rs.RepoID == repo.ID ||
+		(repo.OwnerType == "Organization" && rs.OrgID != 0 && rs.OrgID == repo.OwnerID)
 }
 
 // GetRulesetHistory returns prior versions of a ruleset.

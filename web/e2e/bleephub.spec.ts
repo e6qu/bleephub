@@ -454,6 +454,31 @@ test.describe("Repo detail page", () => {
     await shot(page, "15b-repo-detail-with-readme");
   });
 
+  test("shows configured branch protection and links to its settings", async ({ page }) => {
+    const repo = `protected-branch-${Date.now().toString(36)}`;
+    await page.goto("/ui/");
+    await apiPost(page, "/api/v3/user/repos", {
+      name: repo,
+      description: "Protected branch browser journey",
+      private: false,
+      auto_init: true,
+    });
+    await apiPut(page, `/api/v3/repos/admin/${repo}/branches/main/protection`, {
+      required_status_checks: { strict: true, contexts: ["ci"] },
+      required_pull_request_reviews: null,
+      enforce_admins: false,
+      restrictions: null,
+    });
+
+    await page.goto(`/ui/repos/admin/${repo}`);
+    await page.getByRole("button", { name: "Branches" }).click();
+    const protectedLink = page.getByRole("link", { name: "protected", exact: true });
+    await expect(protectedLink).toBeVisible();
+    await protectedLink.click();
+    await expect(page).toHaveURL(new RegExp(`/ui/repos/admin/${repo}/settings/branch-protection`));
+    await expect(page.getByRole("combobox", { name: "Branch" })).toContainText("main (protected)");
+  });
+
   test("issues tab shows issue list", async ({ page }) => {
     await page.goto("/ui/");
     const user = await apiGet(page, "/api/v3/user");
