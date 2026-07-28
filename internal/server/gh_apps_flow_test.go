@@ -361,8 +361,8 @@ func TestInstallationTokenDownscoping(t *testing.T) {
 		t.Fatalf("token = %q, want ghs_ prefix", tokenStr)
 	}
 	perms := tokData["permissions"].(map[string]interface{})
-	if perms["issues"] != "read" || len(perms) != 1 {
-		t.Errorf("token permissions = %v, want exactly issues:read", perms)
+	if perms["issues"] != "read" || perms["metadata"] != "read" || len(perms) != 2 {
+		t.Errorf("token permissions = %v, want issues:read plus mandatory metadata:read", perms)
 	}
 
 	// The downscoped token cannot write where the level is read-only:

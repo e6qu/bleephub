@@ -288,14 +288,6 @@ func (st *Store) SaveMarketplacePurchase(purchase *MarketplacePurchase) error {
 	return nil
 }
 
-func copyMarketplaceStringMap(input map[string]string) map[string]string {
-	output := make(map[string]string, len(input))
-	for key, value := range input {
-		output[key] = value
-	}
-	return output
-}
-
 // CreateMarketplacePurchase atomically creates a Marketplace subscription and,
 // for a GitHub App listing, its account installation. It reports whether the
 // installation was newly created so webhook delivery can begin only after both
@@ -338,7 +330,7 @@ func (st *Store) CreateMarketplacePurchase(listing *MarketplaceListing, account 
 			installation = &Installation{
 				ID: st.NextInstallationID, AppID: app.ID, AppSlug: app.Slug,
 				TargetType: account.accountType, TargetID: account.id, TargetLogin: account.login,
-				Permissions: copyMarketplaceStringMap(app.Permissions), Events: append([]string(nil), app.Events...),
+				Permissions: normalizeAppPermissions(app.Permissions), Events: append([]string(nil), app.Events...),
 				RepositorySelection: "all", CreatedAt: now, UpdatedAt: now,
 			}
 			if user := st.UsersByLogin[account.login]; user != nil {

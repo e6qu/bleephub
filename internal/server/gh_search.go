@@ -1,6 +1,7 @@
 package bleephub
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -25,6 +26,35 @@ func (s *Server) registerGHSearchRoutes() {
 	s.route("GET /api/v3/search/commits", s.handleSearchCommits)
 	s.route("GET /api/v3/search/labels", s.handleSearchLabels)
 	s.route("GET /api/v3/search/topics", s.handleSearchTopics)
+}
+
+// searchAccessibleRepoIDs snapshots the repositories that the request
+// credential may search. Search is unusual among repository-backed APIs:
+// GitHub App installation tokens may call every search endpoint without an
+// Issues, Pull requests, or Contents grant. Repository reach is still
+// enforced, though, so private results are limited to the installation and any
+// narrower repository selection on the token. Metadata read is implicit on
+// every installation and is the common reach check for this surface.
+//
+// This must run outside a caller-held store lock. viewerCanReadRepo follows the
+// installation, user-to-server, and fine-grained PAT selections and takes its
+// own store locks.
+func (s *Server) searchAccessibleRepoIDs(ctx context.Context) map[int]struct{} {
+	s.store.mu.RLock()
+	repositories := make([]*Repo, 0, len(s.store.Repos))
+	for _, repo := range s.store.Repos {
+		snapshot := *repo
+		repositories = append(repositories, &snapshot)
+	}
+	s.store.mu.RUnlock()
+
+	accessible := make(map[int]struct{}, len(repositories))
+	for _, repo := range repositories {
+		if s.viewerCanReadRepo(ctx, repo) {
+			accessible[repo.ID] = struct{}{}
+		}
+	}
+	return accessible
 }
 
 // searchQuery holds the parsed pieces of a GitHub search query.
@@ -312,11 +342,11 @@ func (q searchQuery) matchesText(text string) bool {
 }
 
 func (s *Server) handleSearchIssues(w http.ResponseWriter, r *http.Request) {
-	user := ghUserFromContext(r.Context())
 	q, ok := searchQueryOrError(w, r, "issues")
 	if !ok {
 		return
 	}
+	accessibleRepoIDs := s.searchAccessibleRepoIDs(r.Context())
 
 	// Matching rows are gathered under the read lock; rendering happens
 	// after release because the JSON builders (issueToJSON, repoToJSON and
@@ -341,7 +371,7 @@ func (s *Server) handleSearchIssues(w http.ResponseWriter, r *http.Request) {
 		if repo == nil {
 			continue
 		}
-		if !canReadRepoLocked(s.store, user, repo) {
+		if _, accessible := accessibleRepoIDs[repo.ID]; !accessible {
 			continue
 		}
 		if q.Repo != "" && !strings.EqualFold(repo.FullName, q.Repo) {
@@ -420,7 +450,7 @@ func (s *Server) handleSearchIssues(w http.ResponseWriter, r *http.Request) {
 		if repo == nil {
 			continue
 		}
-		if !canReadRepoLocked(s.store, user, repo) {
+		if _, accessible := accessibleRepoIDs[repo.ID]; !accessible {
 			continue
 		}
 		if q.Repo != "" && !strings.EqualFold(repo.FullName, q.Repo) {
@@ -788,7 +818,6 @@ func prHasLabelNames(st *Store, pr *PullRequest, names []string) bool {
 }
 
 func (s *Server) handleSearchRepositories(w http.ResponseWriter, r *http.Request) {
-	user := ghUserFromContext(r.Context())
 	q, ok := searchQueryOrError(w, r, "repositories")
 	if !ok {
 		return
@@ -813,9 +842,10 @@ func (s *Server) handleSearchRepositories(w http.ResponseWriter, r *http.Request
 	// after releasing it. repoToJSON and several qualifier counters lock the
 	// store themselves.
 	var candidates []*Repo
+	accessibleRepoIDs := s.searchAccessibleRepoIDs(r.Context())
 	s.store.mu.RLock()
 	for _, repo := range s.store.Repos {
-		if !canReadRepoLocked(s.store, user, repo) {
+		if _, accessible := accessibleRepoIDs[repo.ID]; !accessible {
 			continue
 		}
 		snapshot := *repo
@@ -866,7 +896,10 @@ func repoIssueLabelCount(st *Store, repoID int, labelName string) int {
 }
 
 func (s *Server) handleSearchCode(w http.ResponseWriter, r *http.Request) {
-	user := ghUserFromContext(r.Context())
+	if ghUserFromContext(r.Context()) == nil {
+		writeGHError(w, http.StatusUnauthorized, "Requires authentication")
+		return
+	}
 	q, ok := searchQueryOrError(w, r, "code")
 	if !ok {
 		return
@@ -885,9 +918,10 @@ func (s *Server) handleSearchCode(w http.ResponseWriter, r *http.Request) {
 		stor gitStorage.Storer
 	}
 	var searchRepos []codeSearchRepo
+	accessibleRepoIDs := s.searchAccessibleRepoIDs(r.Context())
 	s.store.mu.RLock()
 	for _, repo := range s.store.Repos {
-		if !canReadRepoLocked(s.store, user, repo) {
+		if _, accessible := accessibleRepoIDs[repo.ID]; !accessible {
 			continue
 		}
 		if q.Repo != "" && !strings.EqualFold(repo.FullName, q.Repo) {
@@ -1311,7 +1345,6 @@ func sortUserSearchResults(items []map[string]interface{}, sortKey, order string
 // query terms against commit messages with repo:/user:/org:/author:/hash:
 // qualifiers.
 func (s *Server) handleSearchCommits(w http.ResponseWriter, r *http.Request) {
-	user := ghUserFromContext(r.Context())
 	q, ok := searchQueryOrError(w, r, "commits")
 	if !ok {
 		return
@@ -1331,9 +1364,10 @@ func (s *Server) handleSearchCommits(w http.ResponseWriter, r *http.Request) {
 		stor gitStorage.Storer
 	}
 	var searchRepos []commitSearchRepo
+	accessibleRepoIDs := s.searchAccessibleRepoIDs(r.Context())
 	s.store.mu.RLock()
 	for _, repo := range s.store.Repos {
-		if !canReadRepoLocked(s.store, user, repo) {
+		if _, accessible := accessibleRepoIDs[repo.ID]; !accessible {
 			continue
 		}
 		if q.Repo != "" && !strings.EqualFold(repo.FullName, q.Repo) {
@@ -1590,7 +1624,6 @@ func (s *Server) handleSearchLabels(w http.ResponseWriter, r *http.Request) {
 // handleSearchTopics implements GET /search/topics: a real search over the
 // topics applied to repositories the caller can read.
 func (s *Server) handleSearchTopics(w http.ResponseWriter, r *http.Request) {
-	user := ghUserFromContext(r.Context())
 	if r.URL.Query().Get("q") == "" {
 		writeGHValidationError(w, "Search", "q", "missing_field")
 		return
@@ -1606,10 +1639,11 @@ func (s *Server) handleSearchTopics(w http.ResponseWriter, r *http.Request) {
 		createdAt time.Time
 		updatedAt time.Time
 	}
+	accessibleRepoIDs := s.searchAccessibleRepoIDs(r.Context())
 	s.store.mu.RLock()
 	agg := map[string]*topicAgg{}
 	for _, repo := range s.store.Repos {
-		if !canReadRepoLocked(s.store, user, repo) {
+		if _, accessible := accessibleRepoIDs[repo.ID]; !accessible {
 			continue
 		}
 		for _, topic := range repo.Topics {

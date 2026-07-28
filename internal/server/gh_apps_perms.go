@@ -1049,9 +1049,6 @@ func (s *Server) filterReposForFineGrainedPAT(r *http.Request, repos []*Repo) []
 // hasPerm checks an installation-token permissions map against (scope, level).
 // Missing scope = no grant. Admin implies write, write implies read.
 func hasPerm(perms map[string]string, scope permScope, level permLevel) bool {
-	if perms == nil {
-		return false
-	}
 	got, ok := perms[string(scope)]
 	if !ok {
 		// "metadata" is auto-granted on every installation per real GH; honour it

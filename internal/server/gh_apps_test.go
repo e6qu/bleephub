@@ -57,6 +57,29 @@ func TestAppStoreCreateAndGet(t *testing.T) {
 	}
 }
 
+func TestAppPermissionsAlwaysIncludeIndependentReadMetadata(t *testing.T) {
+	st := NewStore()
+	requested := map[string]string{"contents": "read", "metadata": "admin"}
+	app := st.CreateApp(1, "Metadata App", "", requested, nil)
+	inst := st.CreateInstallation(app.ID, "User", 1, "admin", app.Permissions, nil)
+	token := st.CreateInstallationToken(inst.ID, app.ID, inst.Permissions, nil)
+
+	for name, permissions := range map[string]map[string]string{
+		"app": app.Permissions, "installation": inst.Permissions, "token": token.Permissions,
+	} {
+		if permissions["metadata"] != "read" {
+			t.Fatalf("%s metadata permission=%q, want read", name, permissions["metadata"])
+		}
+	}
+
+	requested["contents"] = "admin"
+	app.Permissions["contents"] = "write"
+	inst.Permissions["contents"] = "admin"
+	if token.Permissions["contents"] != "read" {
+		t.Fatalf("token permissions aliased another permission snapshot: %#v", token.Permissions)
+	}
+}
+
 func TestInstallationStoreCreateAndList(t *testing.T) {
 	st := NewStore()
 	app := st.CreateApp(1, "Install App", "", nil, nil)
@@ -185,6 +208,40 @@ func TestJSONWebTokenSignAndVerify(t *testing.T) {
 	}
 	if got.ID != app.ID {
 		t.Fatalf("expected app ID=%d, got %d", app.ID, got.ID)
+	}
+}
+
+func TestJSONWebTokenAcceptsOctokitAndClientIDIssuers(t *testing.T) {
+	st := NewStore()
+	app := st.CreateApp(1, "Issuer fidelity App", "", nil, nil)
+
+	for name, issuer := range map[string]string{
+		"numeric app id from Octokit": fmt.Sprint(app.ID),
+		"quoted client id":            fmt.Sprintf("%q", app.ClientID),
+	} {
+		t.Run(name, func(t *testing.T) {
+			token, err := signAppJWTWithIssuer(app.PEMPrivateKey, issuer, time.Now())
+			if err != nil {
+				t.Fatalf("sign JWT: %v", err)
+			}
+			got, err := st.parseAndVerifyAppJWT(token)
+			if err != nil {
+				t.Fatalf("verify JWT issuer %s: %v", issuer, err)
+			}
+			if got.ID != app.ID {
+				t.Fatalf("JWT issuer %s resolved app %d, want %d", issuer, got.ID, app.ID)
+			}
+		})
+	}
+
+	for _, issuer := range []string{"null", "true", "1.5", `{}`, `""`} {
+		token, err := signAppJWTWithIssuer(app.PEMPrivateKey, issuer, time.Now())
+		if err != nil {
+			t.Fatalf("sign invalid issuer %s: %v", issuer, err)
+		}
+		if _, err := st.parseAndVerifyAppJWT(token); err == nil {
+			t.Errorf("issuer %s was accepted", issuer)
+		}
 	}
 }
 

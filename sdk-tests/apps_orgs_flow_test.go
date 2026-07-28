@@ -65,7 +65,10 @@ func TestAppsInstallationTokenFlow(t *testing.T) {
 	if code := createOrganizationViaAdminAPI(t, org, "", nil); code != http.StatusCreated {
 		t.Fatalf("admin organization create status = %d, want 201", code)
 	}
-	repo, _, err := client.Repositories.Create(ctx(), org, &github.Repository{Name: github.Ptr("flow-repo")})
+	repo, _, err := client.Repositories.Create(ctx(), org, &github.Repository{
+		Name:    github.Ptr("flow-repo"),
+		Private: github.Ptr(true),
+	})
 	if err != nil {
 		t.Fatalf("Repositories.Create: %v", err)
 	}
@@ -132,6 +135,19 @@ func TestAppsInstallationTokenFlow(t *testing.T) {
 	}
 	if repos.GetTotalCount() != 1 || repos.Repositories[0].GetName() != "flow-repo" {
 		t.Fatalf("installation repos = %+v, want exactly flow-repo", repos)
+	}
+
+	// Search is repository-selection-aware for an installation credential. A
+	// synthetic app bot has no collaborator row of its own, so this private
+	// result specifically guards against accidentally applying user-shaped
+	// visibility instead of the installation and token selections.
+	search, _, err := instClient.Search.Repositories(ctx(), "repo:"+repo.GetFullName(), nil)
+	if err != nil {
+		t.Fatalf("Search.Repositories with installation token: %v", err)
+	}
+	if search.GetTotal() != 1 || len(search.Repositories) != 1 ||
+		search.Repositories[0].GetFullName() != repo.GetFullName() {
+		t.Fatalf("installation repository search = %+v, want exactly %s", search, repo.GetFullName())
 	}
 
 	// Org-side installation listing through the typed client.

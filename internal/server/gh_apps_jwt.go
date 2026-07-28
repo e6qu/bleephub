@@ -47,9 +47,9 @@ func (st *Store) parseAndVerifyAppJWT(tokenStr string) (*App, error) {
 		return nil, fmt.Errorf("invalid JWT payload: %w", err)
 	}
 	var payload struct {
-		Iss string  `json:"iss"`
-		Iat float64 `json:"iat"`
-		Exp float64 `json:"exp"`
+		Iss json.RawMessage `json:"iss"`
+		Iat float64         `json:"iat"`
+		Exp float64         `json:"exp"`
 	}
 	if err := json.Unmarshal(payloadBytes, &payload); err != nil {
 		return nil, fmt.Errorf("invalid JWT payload JSON: %w", err)
@@ -73,21 +73,27 @@ func (st *Store) parseAndVerifyAppJWT(tokenStr string) (*App, error) {
 		return nil, fmt.Errorf("JWT iat is in the future")
 	}
 
-	appID, err := strconv.Atoi(payload.Iss)
+	issuer, err := appJWTIssuer(payload.Iss)
 	if err != nil {
-		return nil, fmt.Errorf("invalid iss claim: %w", err)
+		return nil, err
 	}
 
 	st.mu.RLock()
-	app := st.Apps[appID]
+	var app *App
+	if appID, parseErr := strconv.Atoi(issuer); parseErr == nil {
+		app = st.Apps[appID]
+	}
+	if app == nil {
+		app = st.AppsByClientID[issuer]
+	}
 	st.mu.RUnlock()
 	if app == nil {
-		return nil, fmt.Errorf("app not found: %d", appID)
+		return nil, fmt.Errorf("app not found: %s", issuer)
 	}
 
 	block, _ := pem.Decode([]byte(app.PEMPrivateKey))
 	if block == nil {
-		return nil, fmt.Errorf("failed to decode PEM for app %d", appID)
+		return nil, fmt.Errorf("failed to decode PEM for app %d", app.ID)
 	}
 	privKey, err := x509.ParsePKCS1PrivateKey(block.Bytes)
 	if err != nil {
@@ -106,6 +112,29 @@ func (st *Store) parseAndVerifyAppJWT(tokenStr string) (*App, error) {
 	}
 
 	return app, nil
+}
+
+// appJWTIssuer accepts both issuer shapes GitHub supports. Octokit serializes a
+// numeric App ID as a JSON number, while newer integrations may send the
+// GitHub App's Client ID as a JSON string (GitHub's currently recommended
+// form). Restrict the numeric form to a positive base-10 integer so floats,
+// objects, booleans, and null never become lookup keys by string coercion.
+func appJWTIssuer(raw json.RawMessage) (string, error) {
+	if len(raw) == 0 {
+		return "", fmt.Errorf("invalid iss claim: missing")
+	}
+	var issuer string
+	if err := json.Unmarshal(raw, &issuer); err == nil {
+		if issuer == "" {
+			return "", fmt.Errorf("invalid iss claim: empty")
+		}
+		return issuer, nil
+	}
+	appID, err := strconv.ParseInt(string(raw), 10, 64)
+	if err != nil || appID <= 0 {
+		return "", fmt.Errorf("invalid iss claim")
+	}
+	return strconv.FormatInt(appID, 10), nil
 }
 
 // base64urlDecode handles JWT's unpadded base64url encoding.

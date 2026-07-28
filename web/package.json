@@ -26,6 +26,7 @@
     "yaml": "^2.9.0"
   },
   "devDependencies": {
+    "@octokit/auth-app": "^8.2.0",
     "@playwright/test": "^1.62.0",
     "@tailwindcss/vite": "^4.3.3",
     "@testing-library/jest-dom": "^7.0.0",
@@ -37,6 +38,7 @@
     "@vitejs/plugin-react": "^6.0.4",
     "jsdom": "^29.1.1",
     "knip": "6.29.0",
+    "octokit": "^5.0.5",
     "tailwindcss": "^4.3.3",
     "typescript": "^7.0.2",
     "vite": "^8.1.5",

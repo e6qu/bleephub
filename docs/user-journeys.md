@@ -34,7 +34,7 @@ GitHub-compatible REST contract.
 | Inspect cache usage and delete dependency caches | repository `/actions?view=caches` |
 | Register and manage runners | `/ui/runners` |
 | Read and act on notifications | `/ui/notifications` |
-| Search across the instance; narrow repositories by visibility, archive state, forks, required/excluded topics, language, sort, and order | `/ui/search`; all controls compose the GitHub query grammar and remain shareable in the URL |
+| Search across the instance; narrow repositories by visibility, archive state, forks, required/excluded topics, language, sort, and order | `/ui/search`; all controls compose the GitHub query grammar and remain shareable in the URL. API clients may search with user, OAuth, fine-grained, GitHub App user, or installation tokens; repository-backed results use that credential's exact installation and repository selection |
 
 Actions execution preserves the split GitHub exposes between a global run ID
 and a per-workflow run number. Reruns keep both identities and increment the
@@ -133,6 +133,7 @@ responses remain within GitHub's Codespaces response schema.
 | Multiple open pull requests could be created for the same head and base | Added an atomic shared-store invariant, GitHub-shaped REST 422 response, and REST, GraphQL, concurrency, and official-SDK compatibility vectors |
 | GitHub App ownership stopped at create/list, with no settings, credential lifecycle, installation target, or selected-repository UI | Added persisted owner settings, client-secret/private-key rotation, cascading deletion, personal/organization installation, and repository-selection management |
 | OAuth App ownership stopped at create/list and OAuth flows required hand-copying client identifiers | Added edit/rotate/delete settings with grant revocation and populate web/device flows from the signed-in owner's registered GitHub and OAuth Apps |
+| GitHub App installation-token search returned no private repositories because handlers tested the synthetic bot user's memberships | Routed every repository-backed search family through the credential-aware Metadata reach gate, including installation/token repository narrowing and GitHub App user-token intersection; added real Octokit and official `go-github` journeys |
 
 The GitHub-compatible API is substantially larger than the browser product.
 Endpoint-level parity and deliberate API-only automation surfaces continue to
@@ -159,6 +160,9 @@ happy-path tests:
 - Semantics OpenAPI cannot express—qualifier grammar, filtering, ordering,
   validation, and derived label formats—are pinned as compatibility vectors in
   both server regression tests and the SDK suite.
+- GitHub App compatibility runs through the real Octokit App auth strategy:
+  numeric or client-ID JWT issuer, installation-token minting, selected private
+  repository search, and installation-repository listing.
 
 The definition and route gates provide 100% operation-level coverage. They do
 not pretend OpenAPI describes server semantics; any discovered dotcom
