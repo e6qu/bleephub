@@ -643,7 +643,7 @@ var fuzzRoutePatterns = []string{
 	"GET /api/v3/repos/{owner}/{repo}/git/refs",
 	"GET /api/v3/repos/{owner}/{repo}/git/refs/{ref...}",
 	"GET /api/v3/repos/{owner}/{repo}/git/tags/{sha}",
-	"GET /api/v3/repos/{owner}/{repo}/git/trees/{sha}",
+	"GET /api/v3/repos/{owner}/{repo}/git/trees/{sha...}",
 	"GET /api/v3/repos/{owner}/{repo}/hash-algorithm",
 	"GET /api/v3/repos/{owner}/{repo}/hooks",
 	"GET /api/v3/repos/{owner}/{repo}/hooks/{id}",

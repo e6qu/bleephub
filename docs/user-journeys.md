@@ -12,6 +12,8 @@ GitHub-compatible REST contract.
 | Discover, create, filter, and open repositories | `/ui/`, `/ui/repos`, `/ui/orgs/:org/repos` | repositories REST API |
 | Browse branches and directories | `/ui/repos/:owner/:repo` | contents, branches, and Git data APIs |
 | Open a file at a ref | `/ui/repos/:owner/:repo/blob/:ref/*` | contents API |
+| Read raw Git trees by tree SHA, commit SHA, branch, full ref, or tag | repository clients and SDKs | Git trees API with recursive walking, tag peeling, canonical object URLs, sizes, and response shapes |
+| Create and inspect blobs, trees, commits, tags, and references | repository clients and SDKs | Git database APIs with GitHub-compatible validation and typed object links |
 | Browse commits and inspect a patch | `/ui/repos/:owner/:repo/commits`, `/commits/:sha` | commits API |
 | Clone over HTTPS or SSH | repository **Code** menu | smart HTTP and configured SSH Git transports |
 | Create and inspect releases | `/releases`, `/releases/new`, `/releases/:releaseId` | releases API |

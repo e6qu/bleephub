@@ -11,6 +11,7 @@ import (
 	"github.com/go-git/go-git/v5/plumbing"
 	"github.com/go-git/go-git/v5/plumbing/object"
 	"github.com/go-git/go-git/v5/plumbing/storer"
+	gitStorage "github.com/go-git/go-git/v5/storage"
 )
 
 func (s *Server) registerGHRepoRefRoutes() {
@@ -128,7 +129,7 @@ func (s *Server) handleGetRefs(w http.ResponseWriter, r *http.Request) {
 	// namespace and lists everything underneath.
 	fullRef := plumbing.ReferenceName("refs/" + refPath)
 	if ref, err := stor.Reference(fullRef); err == nil {
-		writeJSON(w, http.StatusOK, refToJSON(base, repo.FullName, ref))
+		writeJSON(w, http.StatusOK, refToJSON(stor, base, repo.FullName, ref))
 		return
 	}
 
@@ -155,10 +156,10 @@ func (s *Server) handleGetRefs(w http.ResponseWriter, r *http.Request) {
 
 	var items []map[string]interface{}
 	_ = refs.ForEach(func(ref *plumbing.Reference) error {
-		if !strings.HasPrefix(string(ref.Name()), prefix) {
+		if ref.Type() != plumbing.HashReference || !strings.HasPrefix(string(ref.Name()), prefix) {
 			return nil
 		}
-		items = append(items, refToJSON(base, repo.FullName, ref))
+		items = append(items, refToJSON(stor, base, repo.FullName, ref))
 		return nil
 	})
 
@@ -169,10 +170,13 @@ func (s *Server) handleGetRefs(w http.ResponseWriter, r *http.Request) {
 	if items == nil {
 		items = []map[string]interface{}{}
 	}
+	sort.Slice(items, func(i, j int) bool {
+		return fmt.Sprint(items[i]["ref"]) < fmt.Sprint(items[j]["ref"])
+	})
 	writeJSON(w, http.StatusOK, items)
 }
 
-func (s *Server) listRefs(w http.ResponseWriter, r *http.Request, baseURL, fullName string, stor storer.ReferenceStorer, prefix string) {
+func (s *Server) listRefs(w http.ResponseWriter, r *http.Request, baseURL, fullName string, stor gitStorage.Storer, prefix string) {
 	refs, err := stor.IterReferences()
 	if err != nil {
 		writeJSON(w, http.StatusOK, []interface{}{})
@@ -181,41 +185,50 @@ func (s *Server) listRefs(w http.ResponseWriter, r *http.Request, baseURL, fullN
 
 	var items []map[string]interface{}
 	_ = refs.ForEach(func(ref *plumbing.Reference) error {
+		if ref.Type() != plumbing.HashReference || !strings.HasPrefix(string(ref.Name()), "refs/") {
+			return nil
+		}
 		if prefix != "" && !strings.HasPrefix(string(ref.Name()), prefix) {
 			return nil
 		}
-		items = append(items, refToJSON(baseURL, fullName, ref))
+		items = append(items, refToJSON(stor, baseURL, fullName, ref))
 		return nil
 	})
 
 	if items == nil {
 		items = []map[string]interface{}{}
 	}
+	sort.Slice(items, func(i, j int) bool {
+		return fmt.Sprint(items[i]["ref"]) < fmt.Sprint(items[j]["ref"])
+	})
 	writeJSON(w, http.StatusOK, items)
 }
 
-func refToJSON(baseURL, fullName string, ref *plumbing.Reference) map[string]interface{} {
+func refToJSON(stor gitStorage.Storer, baseURL, fullName string, ref *plumbing.Reference) map[string]interface{} {
+	hash, err := resolvedReferenceHash(stor, ref, map[plumbing.ReferenceName]bool{})
+	if err != nil {
+		hash = ref.Hash()
+	}
+	objectType := gitObjectTypeName(stor, hash)
+	refPath := strings.TrimPrefix(ref.Name().String(), "refs/")
 	return map[string]interface{}{
 		"ref":     string(ref.Name()),
 		"node_id": encodeNodeID("Ref", 0, string(ref.Name())),
-		"url":     baseURL + "/api/v3/repos/" + fullName + "/git/refs/" + ref.Name().String(),
+		"url":     baseURL + "/api/v3/repos/" + fullName + "/git/refs/" + refPath,
 		"object": map[string]interface{}{
-			"sha":  ref.Hash().String(),
-			"type": refObjectType(ref),
-			"url":  baseURL + "/api/v3/repos/" + fullName + "/git/" + refObjectType(ref) + "s/" + ref.Hash().String(),
+			"sha":  hash.String(),
+			"type": objectType,
+			"url":  baseURL + "/api/v3/repos/" + fullName + "/git/" + objectType + "s/" + hash.String(),
 		},
 	}
 }
 
-func refObjectType(ref *plumbing.Reference) string {
-	switch {
-	case ref.Name().IsTag():
-		return "tag"
-	case ref.Name().IsBranch():
-		return "commit"
-	default:
+func gitObjectTypeName(stor gitStorage.Storer, hash plumbing.Hash) string {
+	encoded, err := stor.EncodedObject(plumbing.AnyObject, hash)
+	if err != nil {
 		return "commit"
 	}
+	return objectTypeName(encoded.Type())
 }
 
 // encodeNodeID returns a deterministic base64 GraphQL global node id for the
@@ -336,6 +349,10 @@ func (s *Server) handleDeleteRef(w http.ResponseWriter, r *http.Request) {
 
 	// refPath is like "heads/branch-name" or "tags/v1.0"
 	fullRef := plumbing.ReferenceName("refs/" + refPath)
+	if !validFullyQualifiedGitRef(fullRef.String()) {
+		writeGHValidationError(w, "Reference", "ref", "invalid")
+		return
+	}
 	oldRef, err := stor.Reference(fullRef)
 	if err != nil {
 		writeGHError(w, http.StatusUnprocessableEntity, "Reference does not exist")

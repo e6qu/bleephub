@@ -543,7 +543,7 @@ func (s *Server) handleGetSingleRef(w http.ResponseWriter, r *http.Request) {
 		writeGHError(w, http.StatusNotFound, "Not Found")
 		return
 	}
-	writeJSON(w, http.StatusOK, refToJSON(s.baseURL(r), repo.FullName, ref))
+	writeJSON(w, http.StatusOK, refToJSON(stor, s.baseURL(r), repo.FullName, ref))
 }
 
 func (s *Server) handleListMatchingRefs(w http.ResponseWriter, r *http.Request) {
@@ -563,7 +563,7 @@ func (s *Server) handleListMatchingRefs(w http.ResponseWriter, r *http.Request) 
 			if !strings.HasPrefix(string(ref.Name()), prefix) {
 				return nil
 			}
-			items = append(items, refToJSON(base, repo.FullName, ref))
+			items = append(items, refToJSON(stor, base, repo.FullName, ref))
 			return nil
 		})
 	}

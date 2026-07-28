@@ -1,6 +1,6 @@
 # Bleephub bug ledger
 
-516 findings from a full-surface audit: 120 blockers, 291 major, 105 minor. Every entry carries a
+517 findings from a full-surface audit: 120 blockers, 292 major, 105 minor. Every entry carries a
 location and a one-sentence claim. Severity is `B` blocker, `M` major, `m` minor.
 Status is `open` until the fix lands with a test.
 
@@ -594,6 +594,7 @@ source or comments. The reasoning behind a fix belongs in its commit message.
 | PAR-032 | M | store_pulls.go, gh_pulls_rest.go | Bleephub accepted multiple open pull requests with the same head repository/ref and base ref, while GitHub rejects the second create with a 422 validation response | fixed — creation now checks the coordinate while holding the shared store lock, REST emits GitHub's structured 422 validation error, GraphQL rejects the mutation, and server concurrency plus official `go-github` vectors prevent the invariant from regressing |
 | PAR-033 | M | AppsPage.tsx, gh_apps_rest.go | GitHub Apps could be listed and created but had no owner settings, credential/key lifecycle, install-target repository selector, or selected-repository management journey | fixed — authenticated owner settings now cover configuration, permissions, events, client-secret/private-key rotation and cascading deletion; the browser installs to personal or administered organization accounts and manages selected repositories through the official installation endpoints |
 | PAR-034 | M | OAuthPage.tsx, gh_apps_oauth_mgmt.go | OAuth Apps stopped after registration: owners could not edit, rotate credentials, revoke/delete the app, or select a registered client in the web/device-flow browser | fixed — durable owner CRUD and secret rotation revoke derived grants on deletion, while the browser exposes complete settings and populates web/device flows from both OAuth Apps and GitHub Apps |
+| PAR-035 | M | gh_repos_objects.go, gh_repos_git.go, gh_repos_refs.go | The Git database surface accepted only raw tree-object SHAs at `GET /git/trees/{tree_sha}`, omitted required blob/tree fields, emitted duplicated ref URLs and mislabeled every tag ref as an annotated tag, while create operations accepted undocumented encodings, object types, malformed refs, and invalid identity dates | fixed — one treeish resolver now matches live GitHub across tree and commit SHAs, slash branches, full refs, lightweight tags, and annotated tags (while raw tag/blob objects receive 422); shared serializers emit canonical URLs, node IDs, blob sizes, actual ref target types and verification; request validation and official `go-github` plus observed-OpenAPI regressions cover the whole Git-data family |
 
 ## CI — pipeline, release, deployment, hygiene
 

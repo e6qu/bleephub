@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
@@ -16,6 +17,7 @@ func gitDataTestServer(t *testing.T) *Server {
 	t.Helper()
 	s := newTestServer()
 	s.registerGHRepoRoutes()
+	s.registerGHRepoReadsRoutes()
 	admin := s.store.UsersByLogin["admin"]
 	s.store.Tokens[adminPAT] = &Token{Value: adminPAT, UserID: admin.ID, Scopes: "repo"}
 	return s
@@ -121,6 +123,257 @@ func TestGitDataTreeAndCommit(t *testing.T) {
 	_, err := object.GetCommit(stor, plumbing.NewHash(commitSHA))
 	if err != nil {
 		t.Fatalf("commit not in storage: %v", err)
+	}
+}
+
+func TestGitDataGetTreeResolvesEveryDocumentedTreeish(t *testing.T) {
+	s := gitDataTestServer(t)
+	admin := s.store.UsersByLogin["admin"]
+	repo := s.store.CreateRepo(admin, "gitdata-treeish", "", false)
+	stor := s.store.GetGitStorage(admin.Login, repo.Name)
+	sig := repoSignature(admin.Login, "bleephub@local")
+	commitHash, err := initRepoWithFiles(stor, "main", "init", map[string]string{
+		"root.txt":       "root\n",
+		"nested/file.md": "nested\n",
+	}, sig)
+	if err != nil {
+		t.Fatalf("init repo: %v", err)
+	}
+	commit, err := object.GetCommit(stor, commitHash)
+	if err != nil {
+		t.Fatalf("get commit: %v", err)
+	}
+	tree, err := commit.Tree()
+	if err != nil {
+		t.Fatalf("get tree: %v", err)
+	}
+	rootEntry, err := tree.FindEntry("root.txt")
+	if err != nil {
+		t.Fatalf("find root blob: %v", err)
+	}
+
+	if err := stor.SetReference(plumbing.NewHashReference(
+		plumbing.NewBranchReferenceName("feature/slash"), commitHash,
+	)); err != nil {
+		t.Fatalf("create slash branch: %v", err)
+	}
+	if err := stor.SetReference(plumbing.NewHashReference(
+		plumbing.NewTagReferenceName("v-light"), commitHash,
+	)); err != nil {
+		t.Fatalf("create lightweight tag: %v", err)
+	}
+	annotated := &object.Tag{
+		Name:       "v-annotated",
+		Tagger:     *sig,
+		Message:    "release",
+		Target:     commitHash,
+		TargetType: plumbing.CommitObject,
+	}
+	annotatedHash, err := encodeTag(stor, annotated)
+	if err != nil {
+		t.Fatalf("encode annotated tag: %v", err)
+	}
+	if err := stor.SetReference(plumbing.NewHashReference(
+		plumbing.NewTagReferenceName("v-annotated"), annotatedHash,
+	)); err != nil {
+		t.Fatalf("create annotated tag ref: %v", err)
+	}
+
+	cases := []struct {
+		name string
+		ref  string
+		sha  plumbing.Hash
+	}{
+		{"tree object SHA", tree.Hash.String(), tree.Hash},
+		{"commit SHA", commitHash.String(), commitHash},
+		{"branch shorthand", "main", commitHash},
+		{"heads shorthand", "heads/main", commitHash},
+		{"full branch ref", "refs/heads/main", commitHash},
+		{"slash branch", "feature/slash", commitHash},
+		{"lightweight tag", "v-light", commitHash},
+		{"annotated tag", "v-annotated", commitHash},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			w := doMiscReq(s, http.MethodGet, "/api/v3/repos/"+repo.FullName+"/git/trees/"+tc.ref, "")
+			if w.Code != http.StatusOK {
+				t.Fatalf("GET tree %q = %d: %s", tc.ref, w.Code, w.Body.String())
+			}
+			var out map[string]any
+			if err := json.Unmarshal(w.Body.Bytes(), &out); err != nil {
+				t.Fatal(err)
+			}
+			if out["sha"] != tc.sha.String() {
+				t.Errorf("sha = %v, want %s", out["sha"], tc.sha)
+			}
+			wantURL := "/git/trees/" + tc.sha.String()
+			if url, _ := out["url"].(string); !strings.HasSuffix(url, wantURL) {
+				t.Errorf("url = %q, want suffix %q", url, wantURL)
+			}
+		})
+	}
+
+	w := doMiscReq(s, http.MethodGet, "/api/v3/repos/"+repo.FullName+"/git/trees/main?recursive=false", "")
+	if w.Code != http.StatusOK {
+		t.Fatalf("recursive tree = %d: %s", w.Code, w.Body.String())
+	}
+	var recursive struct {
+		Tree []map[string]any `json:"tree"`
+	}
+	if err := json.Unmarshal(w.Body.Bytes(), &recursive); err != nil {
+		t.Fatal(err)
+	}
+	var nested, root map[string]any
+	for _, entry := range recursive.Tree {
+		switch entry["path"] {
+		case "nested/file.md":
+			nested = entry
+		case "root.txt":
+			root = entry
+		}
+	}
+	for name, entry := range map[string]map[string]any{"root.txt": root, "nested/file.md": nested} {
+		if entry == nil {
+			t.Fatalf("recursive response omitted %s: %#v", name, recursive.Tree)
+		}
+		if entry["size"] == nil {
+			t.Errorf("%s omitted blob size: %#v", name, entry)
+		}
+		if url, _ := entry["url"].(string); !strings.Contains(url, "/git/blobs/") {
+			t.Errorf("%s url = %q, want blob URL", name, url)
+		}
+	}
+
+	for _, tc := range []struct {
+		name string
+		ref  string
+		code int
+	}{
+		{"raw annotated tag object", annotatedHash.String(), http.StatusUnprocessableEntity},
+		{"raw blob object", rootEntry.Hash.String(), http.StatusUnprocessableEntity},
+		{"unknown ref", "definitely-missing", http.StatusNotFound},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			w := doMiscReq(s, http.MethodGet, "/api/v3/repos/"+repo.FullName+"/git/trees/"+tc.ref, "")
+			if w.Code != tc.code {
+				t.Fatalf("GET tree %q = %d, want %d: %s", tc.ref, w.Code, tc.code, w.Body.String())
+			}
+		})
+	}
+}
+
+func TestGitDataReadShapesAndReferenceObjectTypes(t *testing.T) {
+	s := gitDataTestServer(t)
+	admin := s.store.UsersByLogin["admin"]
+	repo := s.store.CreateRepo(admin, "gitdata-read-shapes", "", false)
+	stor := s.store.GetGitStorage(admin.Login, repo.Name)
+	sig := repoSignature(admin.Login, "bleephub@local")
+	commitHash, err := initRepoWithFiles(stor, "main", "init", map[string]string{"shape.txt": "shape\n"}, sig)
+	if err != nil {
+		t.Fatalf("init repo: %v", err)
+	}
+	commit, _ := object.GetCommit(stor, commitHash)
+	tree, _ := commit.Tree()
+	blobEntry, _ := tree.FindEntry("shape.txt")
+
+	blobResponse := doMiscReq(s, http.MethodGet, "/api/v3/repos/"+repo.FullName+"/git/blobs/"+blobEntry.Hash.String(), "")
+	if blobResponse.Code != http.StatusOK {
+		t.Fatalf("get blob = %d: %s", blobResponse.Code, blobResponse.Body.String())
+	}
+	var blob map[string]any
+	if err := json.Unmarshal(blobResponse.Body.Bytes(), &blob); err != nil {
+		t.Fatal(err)
+	}
+	for _, field := range []string{"sha", "node_id", "url", "size", "encoding", "content"} {
+		if blob[field] == nil || blob[field] == "" {
+			t.Errorf("blob response omitted %s: %#v", field, blob)
+		}
+	}
+
+	annotated := &object.Tag{
+		Name:       "annotated",
+		Tagger:     *sig,
+		Message:    "annotated",
+		Target:     commitHash,
+		TargetType: plumbing.CommitObject,
+	}
+	tagHash, err := encodeTag(stor, annotated)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for name, hash := range map[string]plumbing.Hash{"light": commitHash, "annotated": tagHash} {
+		if err := stor.SetReference(plumbing.NewHashReference(plumbing.NewTagReferenceName(name), hash)); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	for _, tc := range []struct {
+		ref, objectType, objectPath string
+	}{
+		{"tags/light", "commit", "/git/commits/"},
+		{"tags/annotated", "tag", "/git/tags/"},
+	} {
+		w := doMiscReq(s, http.MethodGet, "/api/v3/repos/"+repo.FullName+"/git/ref/"+tc.ref, "")
+		if w.Code != http.StatusOK {
+			t.Fatalf("get ref %s = %d: %s", tc.ref, w.Code, w.Body.String())
+		}
+		var out map[string]any
+		if err := json.Unmarshal(w.Body.Bytes(), &out); err != nil {
+			t.Fatal(err)
+		}
+		refURL, _ := out["url"].(string)
+		if strings.Contains(refURL, "/refs/refs/") || !strings.Contains(refURL, "/git/refs/"+tc.ref) {
+			t.Errorf("%s ref url = %q", tc.ref, refURL)
+		}
+		object, _ := out["object"].(map[string]any)
+		if object["type"] != tc.objectType {
+			t.Errorf("%s object type = %v, want %s", tc.ref, object["type"], tc.objectType)
+		}
+		if objectURL, _ := object["url"].(string); !strings.Contains(objectURL, tc.objectPath) {
+			t.Errorf("%s object url = %q, want %s", tc.ref, objectURL, tc.objectPath)
+		}
+	}
+}
+
+func TestGitDataRejectsInvalidCreateShapes(t *testing.T) {
+	s := gitDataTestServer(t)
+	admin := s.store.UsersByLogin["admin"]
+	repo := s.store.CreateRepo(admin, "gitdata-invalid-shapes", "", false)
+	stor := s.store.GetGitStorage(admin.Login, repo.Name)
+	sig := repoSignature(admin.Login, "bleephub@local")
+	commitHash, err := initRepoWithFiles(stor, "main", "init", map[string]string{"a.txt": "a"}, sig)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	cases := []struct {
+		name, path, body string
+	}{
+		{"blob missing content", "blobs", `{"encoding":"utf-8"}`},
+		{"blob encoding", "blobs", `{"content":"x","encoding":"rot13"}`},
+		{"blob base64", "blobs", `{"content":"%%%","encoding":"base64"}`},
+		{"commit author identity", "commits", `{"message":"m","tree":"` + treeHashFromCommit(t, stor, commitHash) + `","author":{"name":"only-name"}}`},
+		{"commit author date", "commits", `{"message":"m","tree":"` + treeHashFromCommit(t, stor, commitHash) + `","author":{"name":"A","email":"a@example.test","date":"yesterday"}}`},
+		{"tag missing message", "tags", `{"tag":"v1","object":"` + commitHash.String() + `","type":"commit"}`},
+		{"tag invalid type", "tags", `{"tag":"v1","message":"m","object":"` + commitHash.String() + `","type":"tag"}`},
+		{"tag missing object", "tags", `{"tag":"v1","message":"m","object":"` + strings.Repeat("f", 40) + `","type":"commit"}`},
+		{"tagger date", "tags", `{"tag":"v1","message":"m","object":"` + commitHash.String() + `","type":"commit","tagger":{"name":"A","email":"a@example.test","date":"yesterday"}}`},
+		{"ref not fully qualified", "refs", `{"ref":"heads/feature","sha":"` + commitHash.String() + `"}`},
+		{"ref invalid name", "refs", `{"ref":"refs/heads/bad..name","sha":"` + commitHash.String() + `"}`},
+		{"ref invalid sha", "refs", `{"ref":"refs/heads/feature","sha":"not-a-sha"}`},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			w := doMiscReq(s, http.MethodPost, "/api/v3/repos/"+repo.FullName+"/git/"+tc.path, tc.body)
+			if w.Code != http.StatusUnprocessableEntity {
+				t.Fatalf("%s = %d, want 422: %s", tc.name, w.Code, w.Body.String())
+			}
+		})
+	}
+
+	w := doMiscReq(s, http.MethodPatch, "/api/v3/repos/"+repo.FullName+"/git/refs/heads/main", `{}`)
+	if w.Code != http.StatusUnprocessableEntity {
+		t.Fatalf("PATCH ref without sha = %d, want 422: %s", w.Code, w.Body.String())
 	}
 }
 

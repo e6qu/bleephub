@@ -282,7 +282,7 @@ func renderReadme(repoName, description string) string {
 func (s *Server) registerGHGitDataRoutes() {
 	s.route("GET /api/v3/repos/{owner}/{repo}/git/blobs/{sha}", s.requirePerm(scopeContents, permRead, s.handleGetBlob))
 	s.route("POST /api/v3/repos/{owner}/{repo}/git/blobs", s.requirePerm(scopeContents, permWrite, s.requireRepoPush(s.handleCreateBlob)))
-	s.route("GET /api/v3/repos/{owner}/{repo}/git/trees/{sha}", s.requirePerm(scopeContents, permRead, s.handleGetTree))
+	s.route("GET /api/v3/repos/{owner}/{repo}/git/trees/{sha...}", s.requirePerm(scopeContents, permRead, s.handleGetTree))
 	s.route("POST /api/v3/repos/{owner}/{repo}/git/trees", s.requirePerm(scopeContents, permWrite, s.requireRepoPush(s.handleCreateTree)))
 	s.route("GET /api/v3/repos/{owner}/{repo}/git/commits/{sha}", s.requirePerm(scopeContents, permRead, s.handleGetCommit))
 	s.route("POST /api/v3/repos/{owner}/{repo}/git/commits", s.requirePerm(scopeContents, permWrite, s.requireRepoPush(s.handleCreateCommit)))
@@ -409,18 +409,29 @@ func (s *Server) handleCreateBlob(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var req struct {
-		Content  string `json:"content"`
-		Encoding string `json:"encoding"`
+		Content  *string `json:"content"`
+		Encoding string  `json:"encoding"`
 	}
 	if !decodeJSONBody(w, r, &req) {
 		return
 	}
-	data := []byte(req.Content)
+	if req.Content == nil {
+		writeGHValidationError(w, "Blob", "content", "missing_field")
+		return
+	}
+	if req.Encoding == "" {
+		req.Encoding = "utf-8"
+	}
+	if req.Encoding != "utf-8" && req.Encoding != "base64" {
+		writeGHValidationError(w, "Blob", "encoding", "invalid")
+		return
+	}
+	data := []byte(*req.Content)
 	if req.Encoding == "base64" {
 		var err error
-		data, err = base64.StdEncoding.DecodeString(req.Content)
+		data, err = base64.StdEncoding.DecodeString(*req.Content)
 		if err != nil {
-			writeGHError(w, http.StatusBadRequest, "content must be valid base64")
+			writeGHValidationError(w, "Blob", "content", "invalid")
 			return
 		}
 	}
@@ -623,18 +634,7 @@ func (s *Server) handleCreateTree(w http.ResponseWriter, r *http.Request) {
 
 	entries := make([]map[string]interface{}, 0, len(tree.Entries))
 	for _, e := range tree.Entries {
-		entryType := "tree"
-		if e.Mode.IsFile() {
-			entryType = "blob"
-		}
-		entries = append(entries, map[string]interface{}{
-			"path": e.Name,
-			"mode": e.Mode.String(),
-			"type": entryType,
-			"sha":  e.Hash.String(),
-			"size": 0,
-			"url":  s.baseURL(r) + "/api/v3/repos/" + repo.FullName + "/git/" + entryType + "s/" + e.Hash.String(),
-		})
+		entries = append(entries, gitTreeEntryJSON(stor, s.baseURL(r), repo.FullName, e.Name, e))
 	}
 	writeJSON(w, http.StatusCreated, map[string]interface{}{
 		"sha":       hash.String(),
@@ -721,17 +721,21 @@ func (s *Server) handleCreateCommit(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var req struct {
-		Message   string    `json:"message"`
-		Tree      string    `json:"tree"`
-		Parents   []string  `json:"parents"`
-		Author    gitPerson `json:"author"`
-		Committer gitPerson `json:"committer"`
+		Message   string     `json:"message"`
+		Tree      string     `json:"tree"`
+		Parents   []string   `json:"parents"`
+		Author    *gitPerson `json:"author"`
+		Committer *gitPerson `json:"committer"`
 	}
 	if !decodeJSONBody(w, r, &req) {
 		return
 	}
 	if req.Message == "" || req.Tree == "" {
 		writeGHError(w, http.StatusUnprocessableEntity, "message and tree are required")
+		return
+	}
+	if !validGitObjectID(req.Tree) {
+		writeGHValidationError(w, "Commit", "tree", "invalid")
 		return
 	}
 
@@ -743,6 +747,10 @@ func (s *Server) handleCreateCommit(w http.ResponseWriter, r *http.Request) {
 
 	var parentHashes []plumbing.Hash
 	for _, p := range req.Parents {
+		if !validGitObjectID(p) {
+			writeGHValidationError(w, "Commit", "parents", "invalid")
+			return
+		}
 		h := plumbing.NewHash(p)
 		if _, err := object.GetCommit(stor, h); err != nil {
 			writeGHError(w, http.StatusNotFound, "Not Found")
@@ -752,27 +760,17 @@ func (s *Server) handleCreateCommit(w http.ResponseWriter, r *http.Request) {
 	}
 
 	sig := repoSignature(userDisplayName(repo), "bleephub@local")
-	if req.Author.Name != "" {
-		sig.Name = req.Author.Name
-	}
-	if req.Author.Email != "" {
-		sig.Email = req.Author.Email
-	}
-	if req.Author.Date != "" {
-		if d, err := time.Parse(time.RFC3339, req.Author.Date); err == nil {
-			sig.When = d
+	if req.Author != nil {
+		if err := applyGitPerson(sig, *req.Author); err != nil {
+			writeGHValidationError(w, "Commit", "author", "invalid")
+			return
 		}
 	}
 	committerSig := *sig
-	if req.Committer.Name != "" {
-		committerSig.Name = req.Committer.Name
-	}
-	if req.Committer.Email != "" {
-		committerSig.Email = req.Committer.Email
-	}
-	if req.Committer.Date != "" {
-		if d, err := time.Parse(time.RFC3339, req.Committer.Date); err == nil {
-			committerSig.When = d
+	if req.Committer != nil {
+		if err := applyGitPerson(&committerSig, *req.Committer); err != nil {
+			writeGHValidationError(w, "Commit", "committer", "invalid")
+			return
 		}
 	}
 
@@ -811,17 +809,21 @@ func (s *Server) handleCreateTag(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var req struct {
-		Tag     string    `json:"tag"`
-		Message string    `json:"message"`
-		Object  string    `json:"object"`
-		Type    string    `json:"type"`
-		Tagger  gitPerson `json:"tagger"`
+		Tag     string     `json:"tag"`
+		Message string     `json:"message"`
+		Object  string     `json:"object"`
+		Type    string     `json:"type"`
+		Tagger  *gitPerson `json:"tagger"`
 	}
 	if !decodeJSONBody(w, r, &req) {
 		return
 	}
-	if req.Tag == "" || req.Object == "" {
-		writeGHError(w, http.StatusUnprocessableEntity, "tag and object are required")
+	if req.Tag == "" || req.Message == "" || req.Object == "" || req.Type == "" {
+		writeGHError(w, http.StatusUnprocessableEntity, "tag, message, object, and type are required")
+		return
+	}
+	if !validGitObjectID(req.Object) {
+		writeGHValidationError(w, "Tag", "object", "invalid")
 		return
 	}
 
@@ -834,31 +836,28 @@ func (s *Server) handleCreateTag(w http.ResponseWriter, r *http.Request) {
 		objType = plumbing.TreeObject
 	case "blob":
 		objType = plumbing.BlobObject
-	case "tag":
-		objType = plumbing.TagObject
+	default:
+		writeGHValidationError(w, "Tag", "type", "invalid")
+		return
 	}
 	if _, err := stor.EncodedObject(objType, targetHash); err != nil {
-		writeGHError(w, http.StatusNotFound, "Not Found")
+		writeGHValidationError(w, "Tag", "object", "invalid")
 		return
 	}
 
+	tagger := repoSignature(userDisplayName(repo), "bleephub@local")
+	if req.Tagger != nil {
+		if err := applyGitPerson(tagger, *req.Tagger); err != nil {
+			writeGHValidationError(w, "Tag", "tagger", "invalid")
+			return
+		}
+	}
 	tag := &object.Tag{
 		Name:       req.Tag,
-		Tagger:     *repoSignature(userDisplayName(repo), "bleephub@local"),
+		Tagger:     *tagger,
 		Message:    req.Message,
 		Target:     targetHash,
 		TargetType: objType,
-	}
-	if req.Tagger.Name != "" {
-		tag.Tagger.Name = req.Tagger.Name
-	}
-	if req.Tagger.Email != "" {
-		tag.Tagger.Email = req.Tagger.Email
-	}
-	if req.Tagger.Date != "" {
-		if d, err := time.Parse(time.RFC3339, req.Tagger.Date); err == nil {
-			tag.Tagger.When = d
-		}
 	}
 	hash, err := encodeTag(stor, tag)
 	if err != nil {
@@ -898,10 +897,15 @@ func (s *Server) handleCreateRef(w http.ResponseWriter, r *http.Request) {
 		writeGHError(w, http.StatusUnprocessableEntity, "ref and sha are required")
 		return
 	}
-	fullRef := plumbing.ReferenceName(req.Ref)
-	if !strings.HasPrefix(string(fullRef), "refs/") {
-		fullRef = plumbing.ReferenceName("refs/" + req.Ref)
+	if !validFullyQualifiedGitRef(req.Ref) {
+		writeGHValidationError(w, "Reference", "ref", "invalid")
+		return
 	}
+	if !validGitObjectID(req.SHA) {
+		writeGHValidationError(w, "Reference", "sha", "invalid")
+		return
+	}
+	fullRef := plumbing.ReferenceName(req.Ref)
 	target := plumbing.NewHash(req.SHA)
 	if _, err := stor.EncodedObject(plumbing.AnyObject, target); err != nil {
 		writeGHError(w, http.StatusUnprocessableEntity, "Object does not exist")
@@ -934,7 +938,7 @@ func (s *Server) handleCreateRef(w http.ResponseWriter, r *http.Request) {
 		s.afterCommittedRefUpdate(repo, ghUserFromContext(r.Context()), fullRef.String(), plumbing.ZeroHash.String(), target.String(), s.baseURL(r))
 	}
 	ref, _ := stor.Reference(fullRef)
-	writeJSON(w, http.StatusCreated, refToJSON(s.baseURL(r), repo.FullName, ref))
+	writeJSON(w, http.StatusCreated, refToJSON(stor, s.baseURL(r), repo.FullName, ref))
 }
 
 func (s *Server) handleUpdateRef(w http.ResponseWriter, r *http.Request) {
@@ -951,6 +955,14 @@ func (s *Server) handleUpdateRef(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	fullRef := plumbing.ReferenceName("refs/" + refPath)
+	if req.SHA == "" {
+		writeGHValidationError(w, "Reference", "sha", "missing_field")
+		return
+	}
+	if !validFullyQualifiedGitRef(fullRef.String()) || !validGitObjectID(req.SHA) {
+		writeGHValidationError(w, "Reference", "sha", "invalid")
+		return
+	}
 	kind := refFastForward
 	if req.Force {
 		kind = refForcePush
@@ -999,7 +1011,7 @@ func (s *Server) handleUpdateRef(w http.ResponseWriter, r *http.Request) {
 		s.afterCommittedRefUpdate(repo, ghUserFromContext(r.Context()), fullRef.String(), oldRef.Hash().String(), newTarget.String(), s.baseURL(r))
 	}
 	ref, _ := stor.Reference(fullRef)
-	writeJSON(w, http.StatusOK, refToJSON(s.baseURL(r), repo.FullName, ref))
+	writeJSON(w, http.StatusOK, refToJSON(stor, s.baseURL(r), repo.FullName, ref))
 }
 
 func (s *Server) scanRefForSecretScanning(repo *Repo, stor gitStorage.Storer, ref plumbing.ReferenceName, target plumbing.Hash, baseURL string) error {
@@ -1016,6 +1028,43 @@ type gitPerson struct {
 	Name  string `json:"name"`
 	Email string `json:"email"`
 	Date  string `json:"date"`
+}
+
+func applyGitPerson(signature *object.Signature, person gitPerson) error {
+	if strings.TrimSpace(person.Name) == "" || strings.TrimSpace(person.Email) == "" {
+		return errors.New("git identity requires name and email")
+	}
+	signature.Name = person.Name
+	signature.Email = person.Email
+	if person.Date == "" {
+		return nil
+	}
+	when, err := time.Parse(time.RFC3339, person.Date)
+	if err != nil {
+		return err
+	}
+	signature.When = when
+	return nil
+}
+
+func validFullyQualifiedGitRef(value string) bool {
+	if !strings.HasPrefix(value, "refs/") || strings.Count(value, "/") < 2 ||
+		strings.HasSuffix(value, "/") || strings.HasSuffix(value, ".") ||
+		strings.Contains(value, "..") || strings.Contains(value, "@{") ||
+		strings.Contains(value, "//") || strings.Contains(value, "\\") {
+		return false
+	}
+	for _, segment := range strings.Split(value, "/") {
+		if segment == "" || strings.HasPrefix(segment, ".") || strings.HasSuffix(segment, ".lock") {
+			return false
+		}
+	}
+	for _, char := range value {
+		if char <= ' ' || char == 0x7f || strings.ContainsRune("~^:?*[", char) {
+			return false
+		}
+	}
+	return true
 }
 
 func gitCommitToJSON(baseURL, fullName, sha string, c *object.Commit) map[string]interface{} {
@@ -1076,6 +1125,13 @@ func gitTagToJSON(baseURL, fullName, sha string, t *object.Tag) map[string]inter
 			"sha":  t.Target.String(),
 			"type": objectTypeName(t.TargetType),
 			"url":  baseURL + "/api/v3/repos/" + fullName + "/git/" + objectTypeName(t.TargetType) + "s/" + t.Target.String(),
+		},
+		"verification": map[string]interface{}{
+			"verified":    false,
+			"reason":      "unsigned",
+			"signature":   nil,
+			"payload":     nil,
+			"verified_at": nil,
 		},
 	}
 }
