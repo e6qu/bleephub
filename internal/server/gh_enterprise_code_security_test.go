@@ -108,6 +108,23 @@ func TestEnterpriseCodeSecurityConfigurations_CRUD(t *testing.T) {
 	}
 }
 
+func TestEnterpriseCodeSecurityConfigurations_OpaqueCursorValidation(t *testing.T) {
+	base := enterpriseAPI + "/code-security/configurations"
+	resp := ghGet(t, base+"?after="+encodeCursor(0), defaultToken)
+	if resp.StatusCode != http.StatusOK {
+		body := decodeResponseBodyForTest(resp)
+		t.Fatalf("opaque cursor status = %d, want 200; body=%s", resp.StatusCode, body)
+	}
+	resp.Body.Close()
+
+	resp = ghGet(t, base+"?after=not-a-cursor", defaultToken)
+	if resp.StatusCode != http.StatusUnprocessableEntity {
+		body := decodeResponseBodyForTest(resp)
+		t.Fatalf("malformed cursor status = %d, want 422; body=%s", resp.StatusCode, body)
+	}
+	resp.Body.Close()
+}
+
 func TestEnterpriseCodeSecurityConfiguration_AdvancedSecurityAggregates(t *testing.T) {
 	base := enterpriseAPI + "/code-security/configurations"
 	resp := ghPost(t, base, defaultToken, map[string]interface{}{

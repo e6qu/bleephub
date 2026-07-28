@@ -28,6 +28,8 @@ type IssueType struct {
 }
 
 func (s *Server) registerGHIssueTypeRoutes() {
+	s.route("GET /api/v3/repos/{owner}/{repo}/issue-types",
+		s.requirePerm(scopeIssues, permRead, s.handleListRepoIssueTypes))
 	s.route("GET /api/v3/orgs/{org}/issue-types",
 		s.requirePerm(scopeOrgAdministration, permRead, s.orgGated(s.handleListOrgIssueTypes)))
 	s.route("POST /api/v3/orgs/{org}/issue-types",
@@ -36,6 +38,29 @@ func (s *Server) registerGHIssueTypeRoutes() {
 		s.requirePerm(scopeOrgAdministration, permWrite, s.orgGated(s.handleUpdateOrgIssueType)))
 	s.route("DELETE /api/v3/orgs/{org}/issue-types/{issue_type_id}",
 		s.requirePerm(scopeOrgAdministration, permWrite, s.orgGated(s.handleDeleteOrgIssueType)))
+}
+
+// handleListRepoIssueTypes returns the enabled issue types defined by the
+// repository owner's organization. User-owned repositories have no issue-type
+// catalog; private repositories remain concealed from unauthorized callers.
+func (s *Server) handleListRepoIssueTypes(w http.ResponseWriter, r *http.Request) {
+	repo := s.lookupReadableRepoFromPath(w, r)
+	if repo == nil {
+		return
+	}
+	orgLogin := orgLoginForIssueTypeRepo(repo)
+	if orgLogin == "" {
+		writeJSON(w, http.StatusOK, []map[string]interface{}{})
+		return
+	}
+	types := s.store.ListIssueTypes(orgLogin)
+	out := make([]map[string]interface{}, 0, len(types))
+	for _, issueType := range types {
+		if issueType.IsEnabled {
+			out = append(out, issueTypeJSON(issueType))
+		}
+	}
+	writeJSON(w, http.StatusOK, paginateAndLink(w, r, out))
 }
 
 // writeGHValidationErrorSimple writes GitHub's validation-error-simple shape

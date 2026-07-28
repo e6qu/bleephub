@@ -1,7 +1,9 @@
 package bleephub
 
 import (
+	"io"
 	"net/http"
+	"net/http/httptest"
 	"strings"
 	"testing"
 )
@@ -214,6 +216,67 @@ func TestConformanceApiVersionHeader(t *testing.T) {
 	ver := resp.Header.Get("X-GitHub-Api-Version")
 	if ver != "2022-11-28" {
 		t.Fatalf("expected X-GitHub-Api-Version=2022-11-28, got %s", ver)
+	}
+}
+
+func TestConformanceApiVersionSelectionAndRetirement(t *testing.T) {
+	req, _ := newGHRequest("GET", testBaseURL+"/api/v3/user", defaultToken)
+	req.Header.Set("X-GitHub-Api-Version", "2026-03-10")
+	resp, err := doGHRequest(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("supported API version status = %d, want 200", resp.StatusCode)
+	}
+	if got := resp.Header.Get("X-GitHub-Api-Version"); got != "2026-03-10" {
+		t.Fatalf("supported API version response header = %q", got)
+	}
+
+	req, _ = newGHRequest("GET", testBaseURL+"/api/v3/user", defaultToken)
+	req.Header.Set("X-GitHub-Api-Version", "2020-01-01")
+	resp, err = doGHRequest(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusGone {
+		t.Fatalf("retired API version status = %d, want 410", resp.StatusCode)
+	}
+
+	// The calendar header only versions REST. GraphQL remains a continuously
+	// evolving schema and must not be rejected because a client happens to
+	// carry a retired REST version header on all GitHub requests.
+	req, _ = newGHRequest("POST", testBaseURL+"/api/graphql", defaultToken)
+	req.Header.Set("X-GitHub-Api-Version", "2020-01-01")
+	req.Header.Set("Content-Type", "application/json")
+	req.Body = io.NopCloser(strings.NewReader(`{"query":"{ viewer { login } }"}`))
+	resp, err = doGHRequest(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("GraphQL with REST version header status = %d, want 200", resp.StatusCode)
+	}
+}
+
+func TestConformanceMediaTypeAndStreamingWriter(t *testing.T) {
+	resp := ghGet(t, "/api/v3/user", defaultToken)
+	defer resp.Body.Close()
+	if got := resp.Header.Get("X-GitHub-Media-Type"); got != "github.v3; format=json" {
+		t.Fatalf("X-GitHub-Media-Type = %q", got)
+	}
+
+	recorder := httptest.NewRecorder()
+	writer := &ghResponseWriter{ResponseWriter: recorder, path: "/api/v3/user"}
+	writer.Flush()
+	if !recorder.Flushed {
+		t.Fatal("GitHub response writer swallowed the downstream Flush")
+	}
+	if recorder.Header().Get("X-GitHub-Request-Id") == "" {
+		t.Fatal("Flush did not commit GitHub response headers")
 	}
 }
 

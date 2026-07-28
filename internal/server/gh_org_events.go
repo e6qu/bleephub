@@ -141,7 +141,7 @@ func (s *Server) deriveActivityEvents(base string, repos map[int]*Repo, org *Org
 	}
 	for _, pr := range pulls {
 		repo := repos[pr.RepoID]
-		author := s.store.GetUserByID(pr.AuthorID)
+		author := s.store.GetActorByID(pr.AuthorID)
 		if author == nil {
 			continue
 		}

@@ -17,6 +17,7 @@ import (
 )
 
 func (s *Server) registerGHPullRoutes() {
+	s.registerGHPullExtensionRoutes()
 	s.route("POST /api/v3/repos/{owner}/{repo}/pulls", s.requirePerm(scopePullRequests, permWrite, s.handleCreatePullRequest))
 	s.route("GET /api/v3/repos/{owner}/{repo}/pulls", s.handleListPullRequests)
 	s.route("GET /api/v3/repos/{owner}/{repo}/pulls/{number}", s.handleGetPullRequest)
@@ -96,6 +97,10 @@ func (s *Server) handleCreatePullRequest(w http.ResponseWriter, r *http.Request)
 	headRepo, headRef := resolvePullRequestHead(s.store, repo, req.Head)
 	if headRepo == nil || headRef == "" {
 		writeGHValidationError(w, "PullRequest", "head", "invalid")
+		return
+	}
+	if !s.store.CanCreatePullRequest(repo.ID, user.ID, user.Login) {
+		writeGHValidationError(w, "PullRequest", "head", "too_many_open_pull_requests")
 		return
 	}
 
@@ -1517,7 +1522,7 @@ func pullRequestSimpleJSON(pr *PullRequest, st *Store, baseURL, repoFullName str
 
 	// Resolve author
 	var authorJSON map[string]interface{}
-	if u, ok := st.Users[pr.AuthorID]; ok {
+	if u := actorUserLocked(st, pr.AuthorID); u != nil {
 		authorJSON = userToJSON(u)
 	}
 

@@ -1,8 +1,10 @@
 package bleephub
 
 import (
+	"encoding/base64"
 	"net/http"
 	"strconv"
+	"strings"
 	"time"
 )
 
@@ -210,7 +212,11 @@ func (s *Server) handleListEnterpriseCodeSecurityConfigs(w http.ResponseWriter, 
 	configs := s.store.ListEnterpriseCodeSecurityConfigs()
 	base := s.baseURL(r)
 	out := make([]map[string]interface{}, 0, len(configs))
-	for _, c := range cursorPageByID(r, configs, func(c *EnterpriseCodeSecurityConfiguration) int { return c.ID }) {
+	page, ok := cursorPageByID(w, r, configs, func(c *EnterpriseCodeSecurityConfiguration) int { return c.ID })
+	if !ok {
+		return
+	}
+	for _, c := range page {
 		out = append(out, s.enterpriseCodeSecurityConfigJSON(c, base))
 	}
 	writeJSON(w, http.StatusOK, out)
@@ -386,7 +392,11 @@ func (s *Server) handleListEnterpriseCodeSecurityConfigRepos(w http.ResponseWrit
 	out := make([]map[string]interface{}, 0)
 	if status == "" || status == "all" || statusFilterContains(status, "attached") {
 		repos := s.store.ListEnterpriseCodeSecurityConfigRepos(c.ID)
-		for _, repo := range cursorPageByID(r, repos, func(rp *Repo) int { return rp.ID }) {
+		page, ok := cursorPageByID(w, r, repos, func(rp *Repo) int { return rp.ID })
+		if !ok {
+			return
+		}
+		for _, repo := range page {
 			out = append(out, map[string]interface{}{
 				"status":     "attached",
 				"repository": simpleRepoJSON(repo, s.store, base),
@@ -411,7 +421,7 @@ func statusFilterContains(filter, state string) bool {
 // endpoints use (per_page + before/after, where the cursor is the item ID):
 // "after" returns items with IDs strictly greater, "before" strictly smaller
 // (keeping the window closest to the cursor), and per_page caps the page.
-func cursorPageByID[T any](r *http.Request, items []T, id func(T) int) []T {
+func cursorPageByID[T any](w http.ResponseWriter, r *http.Request, items []T, id func(T) int) ([]T, bool) {
 	q := r.URL.Query()
 	perPage := 30
 	if v, err := strconv.Atoi(q.Get("per_page")); err == nil && v > 0 {
@@ -420,22 +430,57 @@ func cursorPageByID[T any](r *http.Request, items []T, id func(T) int) []T {
 			perPage = 100
 		}
 	}
-	if after, err := strconv.Atoi(q.Get("after")); err == nil {
+	after, hasAfter, valid := restCursorID(q.Get("after"))
+	if !valid {
+		writeGHValidationError(w, "Pagination", "after", "invalid")
+		return nil, false
+	}
+	if hasAfter {
 		for len(items) > 0 && id(items[0]) <= after {
 			items = items[1:]
 		}
 	}
-	if before, err := strconv.Atoi(q.Get("before")); err == nil {
+	before, hasBefore, valid := restCursorID(q.Get("before"))
+	if !valid {
+		writeGHValidationError(w, "Pagination", "before", "invalid")
+		return nil, false
+	}
+	if hasBefore {
 		for len(items) > 0 && id(items[len(items)-1]) >= before {
 			items = items[:len(items)-1]
 		}
 		if len(items) > perPage {
 			items = items[len(items)-perPage:]
 		}
-		return items
+		return items, true
 	}
 	if len(items) > perPage {
 		items = items[:perPage]
 	}
-	return items
+	return items, true
+}
+
+// restCursorID accepts the opaque base64 "cursor:<id>" values emitted by
+// GitHub-style Link headers. Decimal IDs remain accepted for older Bleephub
+// clients that consumed the pre-ratchet implementation.
+func restCursorID(value string) (id int, present, valid bool) {
+	if value == "" {
+		return 0, false, true
+	}
+	if id, err := strconv.Atoi(value); err == nil && id >= 0 {
+		return id, true, true
+	}
+	for _, encoding := range []*base64.Encoding{
+		base64.StdEncoding, base64.RawStdEncoding, base64.URLEncoding, base64.RawURLEncoding,
+	} {
+		decoded, err := encoding.DecodeString(value)
+		if err != nil {
+			continue
+		}
+		raw := strings.TrimPrefix(string(decoded), "cursor:")
+		if id, err := strconv.Atoi(raw); err == nil && id >= 0 {
+			return id, true, true
+		}
+	}
+	return 0, true, false
 }

@@ -689,7 +689,7 @@ func issueToJSONForPR(pr *PullRequest, st *Store, baseURL, repoFullName string) 
 // derives milestone issue counts via milestoneToJSON, which locks too.
 func issueToJSONForPullRequest(pr *PullRequest, st *Store, baseURL, repoFullName string) map[string]interface{} {
 	st.mu.RLock()
-	authorJSON := userToJSON(st.Users[pr.AuthorID])
+	authorJSON := userToJSON(actorUserLocked(st, pr.AuthorID))
 
 	labels := make([]map[string]interface{}, 0)
 	for _, lid := range pr.LabelIDs {

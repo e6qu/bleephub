@@ -27,6 +27,7 @@ func (s *Server) registerGHCopilotRoutes() {
 	s.route("GET /api/v3/orgs/{org}/copilot/metrics/reports/organization-1-day", s.handleCopilotOneDayReport)
 	s.route("GET /api/v3/orgs/{org}/copilot/metrics/reports/users-1-day", s.handleCopilotOneDayReport)
 	s.route("GET /api/v3/orgs/{org}/copilot/metrics/reports/user-teams-1-day", s.handleCopilotOneDayReport)
+	s.route("GET /api/v3/orgs/{org}/copilot/metrics/reports/repos-1-day", s.handleCopilotOneDayReport)
 	s.route("GET /api/v3/orgs/{org}/copilot/metrics/reports/organization-28-day/latest", s.handleCopilotLatest28DayReport)
 	s.route("GET /api/v3/orgs/{org}/copilot/metrics/reports/users-28-day/latest", s.handleCopilotLatest28DayReport)
 	s.route("GET /api/v3/orgs/{org}/copilot/content_exclusion", s.handleGetCopilotContentExclusion)
@@ -374,6 +375,10 @@ func copilotMetricsWindow(w http.ResponseWriter, r *http.Request) bool {
 }
 
 func (s *Server) handleCopilotMetricsForOrganization(w http.ResponseWriter, r *http.Request) {
+	if githubAPIVersionFromContext(r.Context()) == "2026-03-10" {
+		writeGHError(w, http.StatusNotFound, "Not Found")
+		return
+	}
 	org := s.copilotOrgAdmin(w, r)
 	if org == nil {
 		return
@@ -388,6 +393,10 @@ func (s *Server) handleCopilotMetricsForOrganization(w http.ResponseWriter, r *h
 }
 
 func (s *Server) handleCopilotMetricsForTeam(w http.ResponseWriter, r *http.Request) {
+	if githubAPIVersionFromContext(r.Context()) == "2026-03-10" {
+		writeGHError(w, http.StatusNotFound, "Not Found")
+		return
+	}
 	org := s.copilotOrgAdmin(w, r)
 	if org == nil {
 		return
@@ -687,7 +696,8 @@ func (s *Server) handleDisableCopilotCodingAgentRepo(w http.ResponseWriter, r *h
 // through the repository settings UI only — the REST surface is
 // read-only — so every repository reports GitHub's defaults: firewall on
 // with the recommended allowlist, Actions workflow approval required,
-// the full review-tool suite enabled, and no MCP configuration.
+// the full review-tool suite and automations enabled, automation triggers
+// restricted to writers, and no MCP configuration.
 func (s *Server) handleGetCopilotCloudAgentConfiguration(w http.ResponseWriter, r *http.Request) {
 	if ghUserFromContext(r.Context()) == nil {
 		writeGHError(w, http.StatusUnauthorized, "Requires authentication")
@@ -705,9 +715,11 @@ func (s *Server) handleGetCopilotCloudAgentConfiguration(w http.ResponseWriter, 
 			"secret_scanning":                 true,
 			"dependency_vulnerability_checks": true,
 		},
-		"require_actions_workflow_approval":         true,
-		"is_firewall_enabled":                       true,
-		"is_firewall_recommended_allowlist_enabled": true,
-		"custom_allowlist":                          []string{},
+		"require_actions_workflow_approval":            true,
+		"is_firewall_enabled":                          true,
+		"is_firewall_recommended_allowlist_enabled":    true,
+		"custom_allowlist":                             []string{},
+		"is_automations_enabled":                       true,
+		"require_write_access_for_automation_triggers": true,
 	})
 }

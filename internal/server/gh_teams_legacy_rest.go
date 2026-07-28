@@ -391,7 +391,9 @@ func (s *Server) handleLegacyAddTeamRepo(w http.ResponseWriter, r *http.Request)
 	var req struct {
 		Permission string `json:"permission"`
 	}
-	decodeJSONBodyOptional(w, r, &req)
+	if !decodeJSONBodyOptional(w, r, &req) {
+		return
+	}
 	perm := TeamPermission(req.Permission)
 	switch perm {
 	case "", TeamPermissionPull, TeamPermissionPush, TeamPermissionAdmin:

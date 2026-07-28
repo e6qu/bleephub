@@ -126,7 +126,7 @@ func octocatArt(text string) string {
 // handleGHAPIVersions serves GET /versions — the list of supported GitHub
 // REST API calendar versions.
 func (s *Server) handleGHAPIVersions(w http.ResponseWriter, r *http.Request) {
-	writeJSON(w, http.StatusOK, []string{"2022-11-28"})
+	writeJSON(w, http.StatusOK, supportedGitHubAPIVersions)
 }
 
 // handleGHCredentialsRevoke implements POST /credentials/revoke: it revokes

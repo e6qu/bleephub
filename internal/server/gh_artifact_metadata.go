@@ -2,6 +2,7 @@ package bleephub
 
 import (
 	"net/http"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -13,8 +14,111 @@ func (s *Server) registerGHOrgArtifactMetadataRoutes() {
 	s.route("POST /api/v3/orgs/{org}/artifacts/metadata/storage-record", s.handleOrgCreateArtifactStorageRecord)
 	s.route("POST /api/v3/orgs/{org}/artifacts/metadata/deployment-record", s.handleOrgCreateArtifactDeploymentRecord)
 	s.route("POST /api/v3/orgs/{org}/artifacts/metadata/deployment-record/cluster/{cluster}", s.handleOrgSetClusterDeploymentRecords)
+	s.route("POST /api/v3/orgs/{org}/artifacts/metadata/deployment-record/cluster/{cluster}/jobs", s.handleOrgCreateClusterDeploymentJob)
+	s.route("GET /api/v3/orgs/{org}/artifacts/metadata/deployment-record/cluster/{cluster}/jobs/{job_id}", s.handleOrgGetClusterDeploymentJob)
 	s.route("GET /api/v3/orgs/{org}/artifacts/{subject_digest}/metadata/storage-records", s.handleOrgListArtifactStorageRecords)
 	s.route("GET /api/v3/orgs/{org}/artifacts/{subject_digest}/metadata/deployment-records", s.handleOrgListArtifactDeploymentRecords)
+}
+
+type artifactDeploymentJobRequest struct {
+	LogicalEnvironment  string `json:"logical_environment"`
+	PhysicalEnvironment string `json:"physical_environment"`
+	Deployments         []struct {
+		Name             string            `json:"name"`
+		Digest           string            `json:"digest"`
+		Version          string            `json:"version"`
+		Status           string            `json:"status"`
+		DeploymentName   string            `json:"deployment_name"`
+		GitHubRepository string            `json:"github_repository"`
+		Tags             map[string]string `json:"tags"`
+		RuntimeRisks     []string          `json:"runtime_risks"`
+	} `json:"deployments"`
+}
+
+func validateArtifactDeploymentJob(w http.ResponseWriter, req *artifactDeploymentJobRequest) bool {
+	if req.LogicalEnvironment == "" {
+		writeGHValidationError(w, "ArtifactDeploymentJob", "logical_environment", "missing_field")
+		return false
+	}
+	if len(req.Deployments) > 5000 {
+		writeGHValidationError(w, "ArtifactDeploymentJob", "deployments", "too_many")
+		return false
+	}
+	for _, deployment := range req.Deployments {
+		if deployment.Name == "" || deployment.DeploymentName == "" ||
+			!artifactDigestPattern.MatchString(deployment.Digest) {
+			writeGHValidationError(w, "ArtifactDeploymentJob", "deployments", "invalid")
+			return false
+		}
+		if deployment.Status != "" && deployment.Status != "deployed" && deployment.Status != "decommissioned" {
+			writeGHValidationError(w, "ArtifactDeploymentJob", "deployments.status", "invalid")
+			return false
+		}
+		if !validArtifactRuntimeRisks(deployment.RuntimeRisks) {
+			writeGHValidationError(w, "ArtifactDeploymentJob", "deployments.runtime_risks", "invalid")
+			return false
+		}
+	}
+	return true
+}
+
+func (s *Server) handleOrgCreateClusterDeploymentJob(w http.ResponseWriter, r *http.Request) {
+	org, ok := s.requireOrgArtifactMetadataWrite(w, r)
+	if !ok {
+		return
+	}
+	var req artifactDeploymentJobRequest
+	if !decodeJSONBody(w, r, &req) || !validateArtifactDeploymentJob(w, &req) {
+		return
+	}
+	cluster := r.PathValue("cluster")
+	for _, deployment := range req.Deployments {
+		status := deployment.Status
+		if status == "" {
+			status = "deployed"
+		}
+		s.store.UpsertArtifactDeploymentRecord(&ArtifactDeploymentRecord{
+			OrgID:               org.ID,
+			Name:                deployment.Name,
+			Digest:              deployment.Digest,
+			Version:             deployment.Version,
+			Status:              status,
+			LogicalEnvironment:  req.LogicalEnvironment,
+			PhysicalEnvironment: req.PhysicalEnvironment,
+			Cluster:             cluster,
+			DeploymentName:      deployment.DeploymentName,
+			GitHubRepository:    deployment.GitHubRepository,
+			Tags:                deployment.Tags,
+			RuntimeRisks:        deployment.RuntimeRisks,
+		})
+	}
+	job := s.store.CreateArtifactDeploymentJob(&ArtifactDeploymentJob{
+		OrgID: org.ID, Cluster: cluster, Status: "completed",
+		StartedAt: time.Now().UTC(), TotalCount: len(req.Deployments), Errors: []any{},
+	})
+	writeJSON(w, http.StatusAccepted, map[string]interface{}{"job_id": job.ID, "errors": []any{}})
+}
+
+func (s *Server) handleOrgGetClusterDeploymentJob(w http.ResponseWriter, r *http.Request) {
+	org, ok := s.requireOrgArtifactMetadataRead(w, r)
+	if !ok {
+		return
+	}
+	id, err := strconv.Atoi(r.PathValue("job_id"))
+	if err != nil {
+		writeGHError(w, http.StatusNotFound, "Not Found")
+		return
+	}
+	job := s.store.GetArtifactDeploymentJob(org.ID, id, r.PathValue("cluster"))
+	if job == nil {
+		writeGHError(w, http.StatusNotFound, "Not Found")
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]interface{}{
+		"job_id": job.ID, "status": job.Status,
+		"started_at":  job.StartedAt.UTC().Format(time.RFC3339),
+		"total_count": job.TotalCount, "errors": job.Errors,
+	})
 }
 
 // requireOrgArtifactMetadataWrite resolves {org} and enforces org-admin

@@ -45,6 +45,45 @@ type App struct {
 	UpdatedAt          time.Time         `json:"updated_at"`
 }
 
+// appBotUser materializes the Bot actor GitHub exposes for installation-token
+// writes. The bot is derived from the app rather than persisted as an ordinary
+// account: its negative internal ID cannot collide with a real user, while the
+// app record is sufficient to restore the identity after a restart.
+func appBotUser(app *App) *User {
+	if app == nil {
+		return nil
+	}
+	return &User{
+		ID:        -app.ID,
+		NodeID:    fmt.Sprintf("BOT_kgDO%08d", app.ID),
+		Login:     app.Slug + "[bot]",
+		Name:      app.Name,
+		Type:      "Bot",
+		CreatedAt: app.CreatedAt,
+		UpdatedAt: app.UpdatedAt,
+	}
+}
+
+// actorUserLocked resolves both persisted users and the derived GitHub App bot
+// IDs stored on resources created with an installation token. st.mu must be
+// held by the caller.
+func actorUserLocked(st *Store, id int) *User {
+	if user := st.Users[id]; user != nil {
+		return user
+	}
+	if id < 0 {
+		return appBotUser(st.Apps[-id])
+	}
+	return nil
+}
+
+// GetActorByID is the lock-safe form used by response and activity builders.
+func (st *Store) GetActorByID(id int) *User {
+	st.mu.RLock()
+	defer st.mu.RUnlock()
+	return actorUserLocked(st, id)
+}
+
 // Installation represents an app installation on a user or org.
 type Installation struct {
 	ID                  int               `json:"id"`

@@ -95,6 +95,59 @@ func TestCreatePullRequestREST(t *testing.T) {
 	}
 }
 
+func TestInstallationAuthoredPullRequestRendersAppBot(t *testing.T) {
+	createTestPRRepo(t, "pr-installation-bot")
+	repo := testServer.store.GetRepo("admin", "pr-installation-bot")
+	admin := testServer.store.LookupUserByLogin("admin")
+	app := testServer.store.CreateApp(admin.ID, "Pull Author App", "", map[string]string{
+		"contents":      "read",
+		"pull_requests": "write",
+	}, nil)
+	installation := testServer.store.CreateInstallation(
+		app.ID, "User", admin.ID, admin.Login, app.Permissions, nil,
+	)
+	token := testServer.store.CreateInstallationToken(
+		installation.ID, app.ID, installation.Permissions, []int{repo.ID},
+	)
+
+	created := decodeJSONWithStatus(t, ghPost(t,
+		"/api/v3/repos/admin/pr-installation-bot/pulls",
+		token.Token,
+		map[string]interface{}{
+			"title": "Created by an installation",
+			"head":  "feature",
+			"base":  "main",
+		},
+	), http.StatusCreated)
+	assertBot := func(surface string, value interface{}) {
+		t.Helper()
+		user, ok := value.(map[string]interface{})
+		if !ok {
+			t.Fatalf("%s user = %#v, want an app bot object", surface, value)
+		}
+		if user["login"] != app.Slug+"[bot]" || user["type"] != "Bot" {
+			t.Fatalf("%s user = %#v, want %s[bot] Bot", surface, user, app.Slug)
+		}
+		if user["node_id"] == "" {
+			t.Fatalf("%s app bot has an empty node_id: %#v", surface, user)
+		}
+	}
+	assertBot("create", created["user"])
+
+	got := decodeJSONWithStatus(t, ghGet(t,
+		"/api/v3/repos/admin/pr-installation-bot/pulls/1", defaultToken,
+	), http.StatusOK)
+	assertBot("get", got["user"])
+
+	list := decodeJSONWithStatus2xxArray(t, ghGet(t,
+		"/api/v3/repos/admin/pr-installation-bot/pulls", defaultToken,
+	), http.StatusOK)
+	if len(list) != 1 {
+		t.Fatalf("list pull requests returned %d entries, want 1", len(list))
+	}
+	assertBot("list", list[0]["user"])
+}
+
 func TestForkPullRequestRESTAndGraphQL(t *testing.T) {
 	sourceName := "pr-fork-source"
 	resp := ghPost(t, "/api/v3/user/repos", defaultToken, map[string]interface{}{

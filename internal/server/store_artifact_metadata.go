@@ -51,6 +51,20 @@ type ArtifactDeploymentRecord struct {
 	UpdatedAt           time.Time         `json:"updated_at"`
 }
 
+// ArtifactDeploymentJob records one asynchronous bulk cluster update. The
+// implementation applies the validated batch before returning 202, so a newly
+// created job is already completed; keeping the job as a durable resource
+// preserves GitHub's polling contract and makes retries observable.
+type ArtifactDeploymentJob struct {
+	ID         int       `json:"job_id"`
+	OrgID      int       `json:"org_id"`
+	Cluster    string    `json:"cluster"`
+	Status     string    `json:"status"`
+	StartedAt  time.Time `json:"started_at"`
+	TotalCount int       `json:"total_count"`
+	Errors     []any     `json:"errors"`
+}
+
 var artifactDigestPattern = regexp.MustCompile(`^sha256:[a-f0-9]{64}$`)
 
 // CreateArtifactStorageRecord appends a storage record for the org.
@@ -143,4 +157,37 @@ func (st *Store) ListArtifactDeploymentRecords(orgID int, digest string) []*Arti
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].ID < out[j].ID })
 	return out
+}
+
+func (st *Store) CreateArtifactDeploymentJob(job *ArtifactDeploymentJob) *ArtifactDeploymentJob {
+	st.mu.Lock()
+	defer st.mu.Unlock()
+	job.ID = st.NextArtifactDeploymentJobID
+	st.NextArtifactDeploymentJobID++
+	if job.StartedAt.IsZero() {
+		job.StartedAt = time.Now().UTC()
+	}
+	if job.Status == "" {
+		job.Status = "completed"
+	}
+	if job.Errors == nil {
+		job.Errors = []any{}
+	}
+	st.ArtifactDeploymentJobs[job.ID] = job
+	if st.persist != nil {
+		st.persist.MustPut("artifact_deployment_jobs", strconv.Itoa(job.ID), job)
+	}
+	return job
+}
+
+func (st *Store) GetArtifactDeploymentJob(orgID, id int, cluster string) *ArtifactDeploymentJob {
+	st.mu.RLock()
+	defer st.mu.RUnlock()
+	job := st.ArtifactDeploymentJobs[id]
+	if job == nil || job.OrgID != orgID || job.Cluster != cluster {
+		return nil
+	}
+	copy := *job
+	copy.Errors = append([]any(nil), job.Errors...)
+	return &copy
 }

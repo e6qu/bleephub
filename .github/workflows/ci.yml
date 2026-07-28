@@ -116,6 +116,8 @@ jobs:
       # this check existed.
       - name: Check the findings ledger
         run: ./scripts/check-bugs-ledger.sh
+      - name: Require the current official GitHub REST definition
+        run: ./scripts/check-github-openapi-drift.sh
 
   fuzz:
     name: Go fuzz burst

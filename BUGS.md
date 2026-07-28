@@ -145,16 +145,16 @@ source or comments. The reasoning behind a fix belongs in its commit message.
 | REST-029 | B | gh_issues_rest.go:130,189 | Pull requests are invisible in the issues list and in `GET /issues/{number}`; `issueToJSON` has no `pull_request` key | fixed — `issueToJSON` carries the `pull_request` member, so pull requests appear in the issues list and in `GET /issues/{number}` as they do on GitHub |
 | REST-030 | B | gh_request_decode.go:85 | `&json.UnmarshalTypeError{Type: nil}` — confirmed by execution to panic the moment anything formats it | fixed |
 | REST-031 | M | whole lane | One `ETag` in 117 files and it is never honored; no `If-None-Match`, no 304, no `X-Poll-Interval`, no `X-GitHub-Media-Type` | open |
-| REST-032 | M | gh_middleware.go:234, gh_api_insights.go:111 | `ghResponseWriter` erases `Flusher`/`Hijacker`, so the downstream `Flush()` is a silent no-op | open |
-| REST-033 | M | gh_pagination.go:19-35 | `page=abc`, `page=0`, `per_page=-1` silently become defaults | open |
-| REST-034 | M | gh_pagination.go:274 | `Link` header URLs are relative; GitHub emits absolute | open |
-| REST-035 | M | gh_code_security_configurations.go:243 | Truncate-only pagination ignores `page` entirely — page 2 is unreachable | open |
-| REST-036 | M | gh_enterprise_code_security.go:414 | `strconv.Atoi` on an opaque base64 cursor, error discarded — returns page 1 forever | open |
-| REST-037 | M | gh_enterprise_dependabot.go:96 | Open-coded slicing drops the overflow guard — large `page` yields a negative index and a slice-bounds panic | open |
+| REST-032 | M | gh_middleware.go:234, gh_api_insights.go:111 | `ghResponseWriter` erases `Flusher`/`Hijacker`, so the downstream `Flush()` is a silent no-op | fixed — the wrapper exposes `Unwrap`, `Flush`, and `Hijack` through `http.ResponseController`, preserving streaming and upgrade behavior while still committing GitHub headers first |
+| REST-033 | M | gh_pagination.go:19-35 | `page=abc`, `page=0`, `per_page=-1` silently become defaults | fixed — the REST middleware rejects malformed and non-positive pagination before a handler can reinterpret it as a default; the shared slicer retains GitHub's 100-item ceiling |
+| REST-034 | M | gh_pagination.go:274 | `Link` header URLs are relative; GitHub emits absolute | fixed — the shared Link builder emits absolute targets and honors the first forwarded scheme/host supplied by a trusted deployment proxy |
+| REST-035 | M | gh_code_security_configurations.go:243 | Truncate-only pagination ignores `page` entirely — page 2 is unreachable | fixed — organization configurations use the shared overflow-safe page slicer and emit followable Link headers |
+| REST-036 | M | gh_enterprise_code_security.go:414 | `strconv.Atoi` on an opaque base64 cursor, error discarded — returns page 1 forever | fixed — enterprise code-security lists decode opaque base64 `cursor:<id>` values (plus the former decimal form for compatibility) and reject malformed cursors with 422 |
+| REST-037 | M | gh_enterprise_dependabot.go:96 | Open-coded slicing drops the overflow guard — large `page` yields a negative index and a slice-bounds panic | fixed — the repository-access envelope delegates its nested list to the shared int64 overflow-safe paginator |
 | REST-038 | M | ~60 handlers | List endpoints return whole collections with no pagination and no `Link` | open |
 | REST-039 | M | gh_issues_rest.go:112-166 | `milestone`, `creator`, `mentioned`, `sort`, `direction`, `since` dropped; invalid `state` silently becomes OPEN; unknown assignee returns the unfiltered list | open |
 | REST-040 | M | gh_repos_objects.go:41-93 | Commit list drops six filters and hard-stops at 30 first-parent commits, so `?page=2` is always empty | open |
-| REST-041 | M | gh_checks_rest.go:234 | `filter` misread as a conclusion, so GitHub's documented default `?filter=latest` returns an empty list | open |
+| REST-041 | M | gh_checks_rest.go:234 | `filter` misread as a conclusion, so GitHub's documented default `?filter=latest` returns an empty list | fixed — the enum is validated, the default is `latest`, `all` retains reruns, and `app_id` no longer silently ignores malformed values |
 | REST-042 | M | gh_secret_scanning.go:190, gh_dependabot.go:622 | Org alert endpoints drop every filter while the repo siblings parse them | open |
 | REST-043 | M | gh_code_scanning.go:82,191,640 | `tool_guid` dropped in three places and hardcoded `nil` in the renderer | open |
 | REST-044 | M | gh_rulesets.go | `r.URL.Query()` never called; `includes_parents` defaults true and is dropped | open |
@@ -173,7 +173,7 @@ source or comments. The reasoning behind a fix belongs in its commit message.
 | REST-057 | M | gh_branch_protection.go:596,619 | POST aliased to PUT destroys entries not resent; the three DELETE handlers never read the body and remove everything | open |
 | REST-058 | M | gh_statuses_rest.go:89 | A typo'd commit-status state becomes `pending` forever, permanently blocking required-status-check merges | open |
 | REST-059 | M | gh_pulls_rest.go:540 | `{"event":"APPROVED"}` silently produces an unsubmitted PENDING draft with a 200 | open |
-| REST-060 | M | gh_notifications.go:30-129 | A malformed `last_read_at` falls back to `time.Now()` — a typo marks everything read | open |
+| REST-060 | M | gh_notifications.go:30-129 | A malformed `last_read_at` falls back to `time.Now()` — a typo marks everything read | fixed — global and repository-scoped mark-read handlers validate RFC 3339 and return 422 without mutating notification state; regression coverage pins the failure |
 | REST-061 | M | 30+ sites | `strconv.Atoi` errors discarded on path and query values | open |
 | REST-062 | M | gh_enterprise_teams.go:219, gh_pulls_rest.go:550 | Bulk operations validate inside the mutation loop and partially commit before returning 422 | open |
 | REST-063 | M | gh_repos_compare.go:299 | A missing git storer makes `compare` report two refs identical — a CI gate keyed on that passes on a broken server | open |
@@ -191,7 +191,7 @@ source or comments. The reasoning behind a fix belongs in its commit message.
 | REST-075 | M | gh_hooks_rest.go:468 | Hook URLs built from `"http://" + r.Host`, plaintext behind TLS | open |
 | REST-076 | M | 8 endpoints | Actions settings PUTs return 200+body where GitHub returns 204, while newer endpoints in the same file correctly 204 | open |
 | REST-077 | M | gh_pat_web.go:313 | `\|\|` short-circuit means nothing is written and net/http emits 200 with a zero-length body where 404 is correct | open |
-| REST-078 | M | gh_teams_rest.go:717, gh_teams_legacy_rest.go:394 | Discarded `decodeJSONBody` result: the handler continues after a 400 was written, grants access, then writes 204 | open |
+| REST-078 | M | gh_teams_rest.go:717, gh_teams_legacy_rest.go:394 | Discarded `decodeJSONBody` result: the handler continues after a 400 was written, grants access, then writes 204 | fixed — both current and legacy routes stop immediately after the shared decoder rejects a malformed body |
 | REST-079 | M | gh_api_insights.go:77-275 | Every API request takes the full store write lock and appends a durable row with no cap or eviction | open |
 | REST-080 | M | gh_apps_perms.go:327 | Permission decisions return on the first matching installation while ranging a map — nondeterministic authorization | open |
 | REST-081 | M | gh_teams_rest.go:308 | `handleListChildTeams` resolves the user, nil-checks it, never uses it; secret teams enumerable | open |
@@ -208,7 +208,7 @@ source or comments. The reasoning behind a fix belongs in its commit message.
 | REST-092 | M | gh_pr_comments.go:539 vs :632 | Reactions written and read under one parent-type key and deleted under another, orphaning rows forever | open |
 | REST-093 | M | gh_repos_archive.go:128 | A mid-stream archive failure returns 200 with a truncated archive though the whole repo was already buffered | open |
 | REST-094 | M | server.go:666 | `writeJSON` ignores the encode error after `WriteHeader` — the choke point every handler uses | open |
-| REST-095 | M | gh_apps_oauth_mgmt.go:126 | A failed token revocation reports success | open |
+| REST-095 | M | gh_apps_oauth_mgmt.go:126 | A failed token revocation reports success | fixed — the endpoint resolves and verifies the client-bound token before revocation, treats only an already-absent token as idempotent, and the store removes both access and refresh credentials atomically |
 | REST-096 | M | gh_enterprise_actions.go:20 | Enterprise settings never key on the path enterprise, conflating all tenants | open |
 | REST-097 | M | gh_custom_properties.go:487 | The same slice header written into every repo's property map — N repos alias one array | open |
 | REST-098 | M | server.go:69, gh_releases.go:464 | `{p1}/{p2}` dispatchers make ~a dozen real endpoints invisible to `RegisteredRoutes()`, defeating the mechanism's stated purpose | open |

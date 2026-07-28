@@ -150,6 +150,9 @@ happy-path tests:
   definition.
 - Every operation in that definition must be registered directly or named in
   the exact dispatcher-operation inventory.
+- Pull requests and a daily scheduled workflow compare the hermetic pin with
+  the official `github/rest-api-description` HEAD, so operation coverage
+  cannot silently become stale after an upstream schema change.
 - Every registered operation must appear exactly once in the HTTP fuzz route
   inventory, and a reachability test proves the multi-byte selector can select
   every entry.

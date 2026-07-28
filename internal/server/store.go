@@ -485,6 +485,8 @@ type Store struct {
 	NextArtifactStorageRecordID    int
 	ArtifactDeploymentRecords      map[int]*ArtifactDeploymentRecord // id → deployment record
 	NextArtifactDeploymentRecordID int
+	ArtifactDeploymentJobs         map[int]*ArtifactDeploymentJob // id → asynchronous cluster job
+	NextArtifactDeploymentJobID    int
 
 	// copilot + code quality (gh_copilot.go, gh_copilot_spaces.go, gh_code_quality.go)
 	CopilotSeats             map[string]map[int]*CopilotSeat           // org login → user ID → seat
@@ -492,7 +494,19 @@ type Store struct {
 	CopilotCodingAgentPerms  map[string]*CopilotCodingAgentPermissions // org login → policy
 	CopilotSpaces            map[int64]*CopilotSpace                   // space ID → space
 	NextCopilotSpaceID       int64
-	CodeQualitySetups        map[string]*CodeQualitySetup // repo full name → setup
+	CodeQualitySetups        map[string]*CodeQualitySetup           // repo full name → setup
+	CodeQualityFindings      map[string]map[int]*CodeQualityFinding // repo full name → finding number → finding
+
+	// Current GitHub REST resource families introduced after the original
+	// OpenAPI pin. They are first-class durable state, not route-only shims.
+	SecretScanningCustomPatterns map[string]map[int]*SecretScanningCustomPattern // "org:<login>" or "repo:<full>" → id → pattern
+	NextSecretScanningPatternID  int
+	PRCreationCaps               map[string]*PRCreationCap           // repo full name → cap
+	PRCreationBypass             map[string]map[string]bool          // repo full name → login set
+	IssueSuggestions             map[string]map[int]*IssueSuggestion // "owner/repo#issueID" → id → suggestion
+	NextIssueSuggestionID        int
+	PullRequestStacks            map[string]map[int]*PullRequestStack // repo full name → stack number → stack
+	NextPullRequestStackID       int
 
 	// org governance surfaces (code security configurations, custom
 	// properties, issue types, issue fields, security campaigns, private
@@ -847,14 +861,25 @@ func NewStore() *Store {
 		NextArtifactStorageRecordID:    1,
 		ArtifactDeploymentRecords:      map[int]*ArtifactDeploymentRecord{},
 		NextArtifactDeploymentRecordID: 1,
+		ArtifactDeploymentJobs:         map[int]*ArtifactDeploymentJob{},
+		NextArtifactDeploymentJobID:    1,
 
 		// copilot + code quality
-		CopilotSeats:             make(map[string]map[int]*CopilotSeat),
-		CopilotContentExclusions: make(map[string]*CopilotContentExclusion),
-		CopilotCodingAgentPerms:  make(map[string]*CopilotCodingAgentPermissions),
-		CopilotSpaces:            make(map[int64]*CopilotSpace),
-		NextCopilotSpaceID:       1,
-		CodeQualitySetups:        make(map[string]*CodeQualitySetup),
+		CopilotSeats:                 make(map[string]map[int]*CopilotSeat),
+		CopilotContentExclusions:     make(map[string]*CopilotContentExclusion),
+		CopilotCodingAgentPerms:      make(map[string]*CopilotCodingAgentPermissions),
+		CopilotSpaces:                make(map[int64]*CopilotSpace),
+		NextCopilotSpaceID:           1,
+		CodeQualitySetups:            make(map[string]*CodeQualitySetup),
+		CodeQualityFindings:          make(map[string]map[int]*CodeQualityFinding),
+		SecretScanningCustomPatterns: make(map[string]map[int]*SecretScanningCustomPattern),
+		NextSecretScanningPatternID:  1,
+		PRCreationCaps:               make(map[string]*PRCreationCap),
+		PRCreationBypass:             make(map[string]map[string]bool),
+		IssueSuggestions:             make(map[string]map[int]*IssueSuggestion),
+		NextIssueSuggestionID:        1,
+		PullRequestStacks:            make(map[string]map[int]*PullRequestStack),
+		NextPullRequestStackID:       1,
 
 		// org governance surfaces
 		CodeSecurityConfigs:         map[string]map[int]*CodeSecurityConfiguration{},
@@ -2890,6 +2915,19 @@ func (st *Store) loadFromPersistence() error {
 	}); err != nil {
 		return err
 	}
+	if err := st.loadBucket("artifact_deployment_jobs", func(raw []byte) error {
+		var job ArtifactDeploymentJob
+		if err := loadJSON(raw, &job); err != nil {
+			return err
+		}
+		st.ArtifactDeploymentJobs[job.ID] = &job
+		if job.ID >= st.NextArtifactDeploymentJobID {
+			st.NextArtifactDeploymentJobID = job.ID + 1
+		}
+		return nil
+	}); err != nil {
+		return err
+	}
 
 	// copilot + code quality
 	if err := st.loadBucket("copilot_seats", func(raw []byte) error {
@@ -2962,6 +3000,87 @@ func (st *Store) loadFromPersistence() error {
 		return nil
 	}); err != nil {
 		return err
+	}
+	if rows, err := st.persist.List("code_quality_findings"); err != nil {
+		return fmt.Errorf("load code_quality_findings: %w", err)
+	} else {
+		for repoKey, raw := range rows {
+			findings := map[int]*CodeQualityFinding{}
+			if err := loadJSON(raw, &findings); err != nil {
+				return fmt.Errorf("decode code_quality_findings row: %w", err)
+			}
+			st.CodeQualityFindings[repoKey] = findings
+		}
+	}
+	if rows, err := st.persist.List("secret_scanning_custom_patterns"); err != nil {
+		return fmt.Errorf("load secret_scanning_custom_patterns: %w", err)
+	} else {
+		for scope, raw := range rows {
+			patterns := map[int]*SecretScanningCustomPattern{}
+			if err := loadJSON(raw, &patterns); err != nil {
+				return fmt.Errorf("decode secret_scanning_custom_patterns row: %w", err)
+			}
+			st.SecretScanningCustomPatterns[scope] = patterns
+			for id := range patterns {
+				if id >= st.NextSecretScanningPatternID {
+					st.NextSecretScanningPatternID = id + 1
+				}
+			}
+		}
+	}
+	if rows, err := st.persist.List("pr_creation_caps"); err != nil {
+		return fmt.Errorf("load pr_creation_caps: %w", err)
+	} else {
+		for repoKey, raw := range rows {
+			var cap PRCreationCap
+			if err := loadJSON(raw, &cap); err != nil {
+				return fmt.Errorf("decode pr_creation_caps row: %w", err)
+			}
+			st.PRCreationCaps[repoKey] = &cap
+		}
+	}
+	if rows, err := st.persist.List("pr_creation_bypass"); err != nil {
+		return fmt.Errorf("load pr_creation_bypass: %w", err)
+	} else {
+		for repoKey, raw := range rows {
+			users := map[string]bool{}
+			if err := loadJSON(raw, &users); err != nil {
+				return fmt.Errorf("decode pr_creation_bypass row: %w", err)
+			}
+			st.PRCreationBypass[repoKey] = users
+		}
+	}
+	if rows, err := st.persist.List("issue_suggestions"); err != nil {
+		return fmt.Errorf("load issue_suggestions: %w", err)
+	} else {
+		for key, raw := range rows {
+			suggestions := map[int]*IssueSuggestion{}
+			if err := loadJSON(raw, &suggestions); err != nil {
+				return fmt.Errorf("decode issue_suggestions row: %w", err)
+			}
+			st.IssueSuggestions[key] = suggestions
+			for id := range suggestions {
+				if id >= st.NextIssueSuggestionID {
+					st.NextIssueSuggestionID = id + 1
+				}
+			}
+		}
+	}
+	if rows, err := st.persist.List("pull_request_stacks"); err != nil {
+		return fmt.Errorf("load pull_request_stacks: %w", err)
+	} else {
+		for repoKey, raw := range rows {
+			stacks := map[int]*PullRequestStack{}
+			if err := loadJSON(raw, &stacks); err != nil {
+				return fmt.Errorf("decode pull_request_stacks row: %w", err)
+			}
+			st.PullRequestStacks[repoKey] = stacks
+			for _, stack := range stacks {
+				if stack.ID >= st.NextPullRequestStackID {
+					st.NextPullRequestStackID = stack.ID + 1
+				}
+			}
+		}
 	}
 	// actions-oidc-properties (keyed by org login, so List directly)
 	if rows, err := st.persist.List("org_oidc_property_inclusions"); err != nil {

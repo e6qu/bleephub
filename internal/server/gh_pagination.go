@@ -15,6 +15,20 @@ type PaginationParams struct {
 	PerPage int
 }
 
+func invalidRESTPaginationQuery(r *http.Request) string {
+	for _, name := range []string{"page", "per_page"} {
+		value := r.URL.Query().Get(name)
+		if value == "" {
+			continue
+		}
+		number, err := strconv.Atoi(value)
+		if err != nil || number < 1 {
+			return name
+		}
+	}
+	return ""
+}
+
 // parsePagination extracts page/per_page from query string with GitHub defaults.
 func parsePagination(r *http.Request) PaginationParams {
 	p := PaginationParams{Page: 1, PerPage: 30}
@@ -276,8 +290,21 @@ func buildLinkHeader(r *http.Request, page, perPage, lastPage int) string {
 		return ""
 	}
 
-	// Build base URL preserving existing query params except page
-	base := r.URL.Path
+	// GitHub emits absolute pagination targets. Respect the first
+	// proxy-forwarded origin when present so clients can follow Link headers
+	// without accidentally switching to an internal listener address.
+	scheme := "http"
+	if r.TLS != nil {
+		scheme = "https"
+	}
+	if forwarded := strings.TrimSpace(strings.Split(r.Header.Get("X-Forwarded-Proto"), ",")[0]); forwarded == "http" || forwarded == "https" {
+		scheme = forwarded
+	}
+	host := r.Host
+	if forwarded := strings.TrimSpace(strings.Split(r.Header.Get("X-Forwarded-Host"), ",")[0]); forwarded != "" {
+		host = forwarded
+	}
+	base := (&url.URL{Scheme: scheme, Host: host, Path: r.URL.Path}).String()
 	q := r.URL.Query()
 	q.Del("page")
 
