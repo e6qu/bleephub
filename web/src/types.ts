@@ -521,6 +521,23 @@ export interface GithubArtifact {
   size_in_bytes: number;
   expired: boolean;
   created_at: string;
+  workflow_run?: { id: number; head_branch: string; head_sha: string };
+}
+
+export interface GithubActionsCache {
+  id: number;
+  ref: string;
+  key: string;
+  version: string;
+  last_accessed_at: string;
+  created_at: string;
+  size_in_bytes: number;
+}
+
+export interface GithubActionsCacheUsage {
+  full_name: string;
+  active_caches_size_in_bytes: number;
+  active_caches_count: number;
 }
 
 /** Pending deployment — GET .../actions/runs/{run_id}/pending_deployments. */

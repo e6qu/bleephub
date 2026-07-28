@@ -374,21 +374,18 @@ func expandMatrixJobs(wf *WorkflowDef) *WorkflowDef {
 			newJD := *jd
 			newJD.Name = MatrixJobName(key, combo)
 			newJD.Needs = append([]string(nil), jd.Needs...)
+			newJD.MatrixGroup = key
+			newJD.MatrixMaxParallel = jd.Strategy.MaxParallel
+			newJD.MatrixValues = make(map[string]interface{}, len(combo))
+			for matrixKey, matrixValue := range combo {
+				newJD.MatrixValues[matrixKey] = matrixValue
+			}
 
-			// Deep-copy the environment. A shallow struct copy shares the Env
-			// map with the original job and with every sibling combination, so
-			// each combination overwrote the previous one's matrix values and
-			// all of them ended up with the last combination's — and the
-			// caller's WorkflowDef was mutated as a side effect. It only
-			// happened when the job also declared `env:`, since otherwise the
-			// nil map forced a fresh allocation, which is why the existing
-			// matrix test never caught it.
-			newJD.Env = make(map[string]string, len(jd.Env)+len(combo))
+			// Deep-copy the environment without smuggling internal matrix
+			// values into it. Matrix is its own typed runner context.
+			newJD.Env = make(map[string]string, len(jd.Env))
 			for k, v := range jd.Env {
 				newJD.Env[k] = v
-			}
-			for mk, mv := range combo {
-				newJD.Env[matrixEnvPrefix+mk] = fmt.Sprintf("%v", mv)
 			}
 
 			expanded.Jobs[newKey] = &newJD
@@ -572,13 +569,3 @@ func buildJobMessage(serverURL, jobID, planID, timelineID string, requestID int6
 		"fileTable":            []string{".github/workflows/ci.yml"},
 	}
 }
-
-// matrixEnvPrefix is the key prefix expandMatrixJobs uses to carry a
-// combination's matrix values from expansion to submitWorkflow.
-//
-// Using the environment map as an out-of-band channel is a wart: these keys
-// have to be filtered out again before the runner job message is built, and
-// values round-trip through a map[string]string so numbers and booleans arrive
-// as strings. Both are tracked; the prefix is named here so the producer and
-// the consumer cannot disagree about it in the meantime.
-const matrixEnvPrefix = "__matrix_"

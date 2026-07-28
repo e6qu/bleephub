@@ -4,7 +4,6 @@ import (
 	"context"
 	"crypto/rand"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -133,8 +132,8 @@ func (st *Store) persistCodespaceSecretScopeLocked(scope string) {
 // CreateCodespace records a new codespace and starts its runtime. A Docker
 // image pull and container start can take minutes, so the codespace is
 // registered in the Creating state first and the store lock is released for
-// the duration. If the Docker executable is absent, the prepared workspace is
-// retained and promoted to the built-in lifecycle runtime.
+// the duration. If Docker cannot provision the requested image, the prepared
+// workspace is retained and promoted to the built-in lifecycle runtime.
 func (st *Store) CreateCodespace(ownerLogin, repoKey, gitRef, machineName, displayName string) (*Codespace, error) {
 	cs, workspace, cleanup, err := st.reserveCodespace(ownerLogin, repoKey, gitRef, machineName, displayName)
 	if err != nil {
@@ -147,24 +146,19 @@ func (st *Store) CreateCodespace(ownerLogin, repoKey, gitRef, machineName, displ
 
 	containerID, err := dockerRunCodespace(ctx, containerName, cs.ImageName, workspace, repoNameFromRepoKey(repoKey))
 	if err != nil {
-		if errors.Is(err, exec.ErrNotFound) {
-			st.mu.Lock()
-			live := st.Codespaces[cs.ID]
-			if live == nil {
-				st.mu.Unlock()
-				cleanup()
-				return nil, fmt.Errorf("codespace %s was removed while its workspace started", cs.Name)
-			}
-			live.Runtime = "workspace"
-			live.State = "Available"
-			live.UpdatedAt = time.Now().UTC()
-			st.persistCodespaceLocked(live)
+		st.mu.Lock()
+		live := st.Codespaces[cs.ID]
+		if live == nil {
 			st.mu.Unlock()
-			return live, nil
+			cleanup()
+			return nil, fmt.Errorf("codespace %s was removed while its workspace started", cs.Name)
 		}
-		cleanup()
-		st.discardCodespace(cs.ID)
-		return nil, fmt.Errorf("docker run: %w", err)
+		live.Runtime = "workspace"
+		live.State = "Available"
+		live.UpdatedAt = time.Now().UTC()
+		st.persistCodespaceLocked(live)
+		st.mu.Unlock()
+		return live, nil
 	}
 	state := dockerStateToCodespaceState(containerID)
 
@@ -181,21 +175,6 @@ func (st *Store) CreateCodespace(ownerLogin, repoKey, gitRef, machineName, displ
 	live.UpdatedAt = time.Now().UTC()
 	st.persistCodespaceLocked(live)
 	return live, nil
-}
-
-// discardCodespace removes a codespace whose container never started.
-func (st *Store) discardCodespace(id int) {
-	st.mu.Lock()
-	defer st.mu.Unlock()
-	cs := st.Codespaces[id]
-	if cs == nil {
-		return
-	}
-	delete(st.Codespaces, id)
-	delete(st.CodespacesByName, cs.Name)
-	if st.persist != nil {
-		st.persist.MustDelete("codespaces", strconv.Itoa(id))
-	}
 }
 
 func (st *Store) reserveCodespace(ownerLogin, repoKey, gitRef, machineName, displayName string) (*Codespace, string, func(), error) {

@@ -23,6 +23,9 @@ func (s *Server) registerGHCodespacesRoutes() {
 	// Repository-scoped codespaces.
 	s.route("GET /api/v3/repos/{owner}/{repo}/codespaces", s.requirePerm(scopeCodespaces, permRead, s.handleListRepoCodespaces))
 	s.route("POST /api/v3/repos/{owner}/{repo}/codespaces", s.requirePerm(scopeCodespaces, permWrite, s.handleCreateRepoCodespace))
+	s.route("GET /api/v3/repos/{owner}/{repo}/codespaces/devcontainers", s.requirePerm(scopeCodespaces, permRead, s.handleListRepoDevcontainers))
+	s.route("GET /api/v3/repos/{owner}/{repo}/codespaces/new", s.requirePerm(scopeCodespaces, permRead, s.handleGetCodespaceDefaults))
+	s.route("GET /api/v3/repos/{owner}/{repo}/codespaces/permissions_check", s.requirePerm(scopeCodespaces, permRead, s.handleCodespacePermissionsCheck))
 	s.route("GET /api/v3/repos/{owner}/{repo}/codespaces/{codespace_name}", s.requirePerm(scopeCodespaces, permRead, s.handleGetRepoCodespace))
 	s.route("DELETE /api/v3/repos/{owner}/{repo}/codespaces/{codespace_name}", s.requirePerm(scopeCodespaces, permWrite, s.handleDeleteRepoCodespace))
 	s.route("POST /api/v3/repos/{owner}/{repo}/codespaces/{codespace_name}/start", s.requirePerm(scopeCodespaces, permWrite, s.handleStartRepoCodespace))
@@ -91,6 +94,36 @@ func (s *Server) registerGHCodespacesRoutes() {
 	s.route("DELETE /api/v3/orgs/{org}/codespaces/secrets/{secret_name}/repositories/{repository_id}", s.requireOrgAdminOrCodespaceScope(s.handleRemoveOrgCodespaceSecretRepo))
 }
 
+func (s *Server) handleListRepoDevcontainers(w http.ResponseWriter, r *http.Request) {
+	if s.lookupReadableRepoFromPath(w, r) == nil {
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]interface{}{
+		"total_count":   0,
+		"devcontainers": []map[string]interface{}{},
+	})
+}
+
+func (s *Server) handleGetCodespaceDefaults(w http.ResponseWriter, r *http.Request) {
+	if s.lookupReadableRepoFromPath(w, r) == nil {
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]interface{}{
+		"billable_owner": userToJSON(ghUserFromContext(r.Context())),
+		"defaults": map[string]interface{}{
+			"location":          "EastUs",
+			"devcontainer_path": nil,
+		},
+	})
+}
+
+func (s *Server) handleCodespacePermissionsCheck(w http.ResponseWriter, r *http.Request) {
+	if s.lookupReadableRepoFromPath(w, r) == nil {
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]interface{}{"accepted": true})
+}
+
 // --- auth helpers ---
 
 func (s *Server) requireOrgAdminOrCodespaceScope(next http.HandlerFunc) http.HandlerFunc {
@@ -149,16 +182,40 @@ func (s *Server) handleCreateUserCodespace(w http.ResponseWriter, r *http.Reques
 	if !decodeJSONBody(w, r, &req) {
 		return
 	}
-	repoKey := ""
-	if req.RepositoryID > 0 {
-		repo := s.store.GetRepoByID(req.RepositoryID)
-		if repo == nil {
-			writeGHValidationError(w, "Codespace", "repository_id", "invalid")
+	hasRepository := req.RepositoryID > 0
+	hasPullRequest := req.PullRequest != nil
+	if hasRepository == hasPullRequest {
+		writeGHValidationError(w, "Codespace", "repository_id or pull_request", "missing_field")
+		return
+	}
+	repositoryID := req.RepositoryID
+	gitRef := req.Ref
+	if hasPullRequest {
+		repositoryID = req.PullRequest.RepositoryID
+		if repositoryID <= 0 || req.PullRequest.PullRequestNumber <= 0 {
+			writeGHValidationError(w, "Codespace", "pull_request", "invalid")
 			return
 		}
-		repoKey = repo.FullName
 	}
-	cs, err := s.store.CreateCodespace(user.Login, repoKey, req.Ref, req.Machine, req.DisplayName)
+	repo := s.store.GetRepoByID(repositoryID)
+	if repo == nil {
+		field := "repository_id"
+		if hasPullRequest {
+			field = "pull_request"
+		}
+		writeGHValidationError(w, "Codespace", field, "invalid")
+		return
+	}
+	if hasPullRequest {
+		pr := s.store.GetPullRequestByNumber(repo.ID, req.PullRequest.PullRequestNumber)
+		if pr == nil {
+			writeGHValidationError(w, "Codespace", "pull_request", "invalid")
+			return
+		}
+		gitRef = pr.HeadRefName
+	}
+	repoKey := repo.FullName
+	cs, err := s.store.CreateCodespace(user.Login, repoKey, gitRef, req.Machine, req.DisplayName)
 	if err != nil {
 		writeGHError(w, http.StatusInternalServerError, "codespace create failed: "+err.Error())
 		return
@@ -930,11 +987,17 @@ func (s *Server) stopCodespace(cs *Codespace) error {
 // --- request/response shapes ---
 
 type codespaceCreateRequest struct {
-	RepositoryID int    `json:"repository_id"`
-	Ref          string `json:"ref"`
-	Machine      string `json:"machine"`
-	DisplayName  string `json:"display_name"`
-	Location     string `json:"location"`
+	RepositoryID int                   `json:"repository_id"`
+	PullRequest  *codespacePullRequest `json:"pull_request"`
+	Ref          string                `json:"ref"`
+	Machine      string                `json:"machine"`
+	DisplayName  string                `json:"display_name"`
+	Location     string                `json:"location"`
+}
+
+type codespacePullRequest struct {
+	PullRequestNumber int `json:"pull_request_number"`
+	RepositoryID      int `json:"repository_id"`
 }
 
 type codespacePatchRequest struct {

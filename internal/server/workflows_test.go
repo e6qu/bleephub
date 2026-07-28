@@ -327,7 +327,7 @@ func TestNormalizeResult(t *testing.T) {
 		"Failed":    "failure",
 		"failed":    "failure",
 		"Cancelled": "cancelled",
-		"":          "success",
+		"":          "failure",
 		"custom":    "custom",
 	}
 	for input, expected := range tests {

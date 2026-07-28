@@ -30,21 +30,25 @@ func getS3FS(ctx context.Context) (*s3FS, error) {
 	if s3FSInited {
 		return s3FSCache, s3FSErr
 	}
-	s3FSInited = true
 
 	endpoint := os.Getenv("BLEEPHUB_S3_ENDPOINT")
 	bucket := os.Getenv("BLEEPHUB_S3_BUCKET")
 	if bucket == "" {
+		s3FSInited = true
 		return nil, nil
 	}
 
 	prefix := os.Getenv("BLEEPHUB_S3_PREFIX")
 	fs, err := newS3FS(ctx, endpoint, bucket, prefix)
 	if err != nil {
-		s3FSErr = err
+		// Configuration discovery can fail transiently (for example while an
+		// ECS task waits for credentials). Do not poison Git storage for the
+		// lifetime of the process; the next repository operation retries.
 		return nil, err
 	}
 	s3FSCache = fs
+	s3FSErr = nil
+	s3FSInited = true
 	return fs, nil
 }
 

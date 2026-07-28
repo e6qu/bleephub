@@ -1,11 +1,15 @@
 package bleephub
 
 import (
+	"bytes"
 	"context"
 	"encoding/base64"
+	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"net/http"
+	"path"
 	"strings"
 	"time"
 
@@ -441,19 +445,27 @@ func (s *Server) handleCreateTree(w http.ResponseWriter, r *http.Request) {
 	var req struct {
 		BaseTree string `json:"base_tree"`
 		Tree     []struct {
-			Path    string `json:"path"`
-			Mode    string `json:"mode"`
-			Type    string `json:"type"`
-			SHA     string `json:"sha"`
-			Content string `json:"content"`
+			Path    string          `json:"path"`
+			Mode    string          `json:"mode"`
+			Type    string          `json:"type"`
+			SHA     json.RawMessage `json:"sha"`
+			Content *string         `json:"content"`
 		} `json:"tree"`
 	}
 	if !decodeJSONBody(w, r, &req) {
 		return
 	}
+	if req.Tree == nil {
+		writeGHValidationError(w, "Tree", "tree", "missing_field")
+		return
+	}
 
 	var baseTree *object.Tree
 	if req.BaseTree != "" {
+		if !validGitObjectID(req.BaseTree) {
+			writeGHValidationError(w, "Tree", "base_tree", "invalid")
+			return
+		}
 		var err error
 		baseTree, err = object.GetTree(stor, plumbing.NewHash(req.BaseTree))
 		if err != nil {
@@ -462,9 +474,10 @@ func (s *Server) handleCreateTree(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	tree := &object.Tree{}
-	if baseTree != nil {
-		tree.Entries = append([]object.TreeEntry(nil), baseTree.Entries...)
+	files, err := flattenTreeForCreate(stor, baseTree)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
 	}
 
 	modeOverride := map[string]filemode.FileMode{
@@ -476,7 +489,35 @@ func (s *Server) handleCreateTree(w http.ResponseWriter, r *http.Request) {
 	}
 
 	for _, ent := range req.Tree {
+		if !validGitTreePath(ent.Path) {
+			writeGHValidationError(w, "Tree", "path", "invalid")
+			return
+		}
+
+		hasSHA := len(bytes.TrimSpace(ent.SHA)) > 0
+		deleteEntry := hasSHA && bytes.Equal(bytes.TrimSpace(ent.SHA), []byte("null"))
+		if deleteEntry {
+			if ent.Content != nil {
+				writeGHError(w, http.StatusUnprocessableEntity, "sha and content are mutually exclusive")
+				return
+			}
+			if !deleteTreePath(files, ent.Path) {
+				writeGHError(w, http.StatusUnprocessableEntity, "cannot delete a non-existent path")
+				return
+			}
+			continue
+		}
+		if hasSHA && ent.Content != nil {
+			writeGHError(w, http.StatusUnprocessableEntity, "sha and content are mutually exclusive")
+			return
+		}
+		if !hasSHA && ent.Content == nil {
+			writeGHError(w, http.StatusUnprocessableEntity, "sha or content required")
+			return
+		}
+
 		mode := filemode.Regular
+		modeProvided := ent.Mode != ""
 		if ent.Mode != "" {
 			if m, ok := modeOverride[ent.Mode]; ok {
 				mode = m
@@ -485,39 +526,96 @@ func (s *Server) handleCreateTree(w http.ResponseWriter, r *http.Request) {
 				return
 			}
 		}
-		if ent.Type == "tree" {
+		switch ent.Type {
+		case "", "blob":
+			if mode == filemode.Dir || mode == filemode.Submodule {
+				writeGHValidationError(w, "Tree", "mode", "invalid")
+				return
+			}
+		case "tree":
+			if modeProvided && mode != filemode.Dir {
+				writeGHValidationError(w, "Tree", "mode", "invalid")
+				return
+			}
 			mode = filemode.Dir
+		case "commit":
+			if modeProvided && mode != filemode.Submodule {
+				writeGHValidationError(w, "Tree", "mode", "invalid")
+				return
+			}
+			mode = filemode.Submodule
+		default:
+			writeGHValidationError(w, "Tree", "type", "invalid")
+			return
 		}
 
 		var hash plumbing.Hash
-		if ent.SHA != "" {
-			hash = plumbing.NewHash(ent.SHA)
-			if _, err := stor.EncodedObject(plumbing.AnyObject, hash); err != nil {
+		if hasSHA {
+			var sha string
+			if err := json.Unmarshal(ent.SHA, &sha); err != nil || !validGitObjectID(sha) {
+				writeGHValidationError(w, "Tree", "sha", "invalid")
+				return
+			}
+			hash = plumbing.NewHash(sha)
+			obj, err := stor.EncodedObject(plumbing.AnyObject, hash)
+			if err != nil {
 				writeGHError(w, http.StatusNotFound, "Not Found")
 				return
 			}
-		} else if ent.Content != "" {
-			hash, _ = encodeBlob(stor, []byte(ent.Content))
+			wantType := ent.Type
+			if wantType == "" {
+				wantType = "blob"
+			}
+			if objectTypeName(obj.Type()) != wantType {
+				writeGHValidationError(w, "Tree", "type", "invalid")
+				return
+			}
+		} else if ent.Content != nil {
+			if ent.Type != "" && ent.Type != "blob" {
+				writeGHValidationError(w, "Tree", "type", "invalid")
+				return
+			}
+			hash, err = encodeBlob(stor, []byte(*ent.Content))
+			if err != nil {
+				http.Error(w, err.Error(), http.StatusInternalServerError)
+				return
+			}
 		} else {
 			writeGHError(w, http.StatusUnprocessableEntity, "sha or content required")
 			return
 		}
 
-		// Replace existing entry with same path, or append.
-		found := false
-		for i, e := range tree.Entries {
-			if e.Name == ent.Path {
-				tree.Entries[i] = object.TreeEntry{Name: ent.Path, Mode: mode, Hash: hash}
-				found = true
-				break
+		deleteTreePath(files, ent.Path)
+		deleteTreePathAncestors(files, ent.Path)
+		if mode == filemode.Dir {
+			subtree, err := object.GetTree(stor, hash)
+			if err != nil {
+				writeGHError(w, http.StatusNotFound, "Not Found")
+				return
 			}
+			nested, err := flattenTreeForCreate(stor, subtree)
+			if err != nil {
+				http.Error(w, err.Error(), http.StatusInternalServerError)
+				return
+			}
+			if len(nested) == 0 {
+				files[ent.Path] = object.TreeEntry{Name: path.Base(ent.Path), Mode: mode, Hash: hash}
+				continue
+			}
+			for nestedPath, nestedEntry := range nested {
+				files[path.Join(ent.Path, nestedPath)] = nestedEntry
+			}
+			continue
 		}
-		if !found {
-			tree.Entries = append(tree.Entries, object.TreeEntry{Name: ent.Path, Mode: mode, Hash: hash})
-		}
+		files[ent.Path] = object.TreeEntry{Name: path.Base(ent.Path), Mode: mode, Hash: hash}
 	}
 
-	hash, err := encodeTree(stor, tree)
+	hash, err := buildTreeFromPaths(stor, files)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	tree, err := object.GetTree(stor, hash)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
@@ -544,6 +642,77 @@ func (s *Server) handleCreateTree(w http.ResponseWriter, r *http.Request) {
 		"tree":      entries,
 		"truncated": false,
 	})
+}
+
+func validGitObjectID(value string) bool {
+	if len(value) != len(plumbing.ZeroHash.String()) {
+		return false
+	}
+	_, err := hex.DecodeString(value)
+	return err == nil
+}
+
+// flattenTreeForCreate keeps empty directory entries while reducing populated
+// subtrees to leaf paths. The shared merge flattener intentionally drops all
+// tree entries, which would silently discard a valid empty tree supplied to
+// the Git data API.
+func flattenTreeForCreate(stor gitStorage.Storer, tree *object.Tree) (map[string]object.TreeEntry, error) {
+	out := map[string]object.TreeEntry{}
+	var walk func(*object.Tree, string) error
+	walk = func(current *object.Tree, prefix string) error {
+		if current == nil {
+			return nil
+		}
+		for _, entry := range current.Entries {
+			name := path.Join(prefix, entry.Name)
+			if entry.Mode != filemode.Dir {
+				out[name] = entry
+				continue
+			}
+			subtree, err := object.GetTree(stor, entry.Hash)
+			if err != nil {
+				return err
+			}
+			if len(subtree.Entries) == 0 {
+				out[name] = entry
+				continue
+			}
+			if err := walk(subtree, name); err != nil {
+				return err
+			}
+		}
+		return nil
+	}
+	return out, walk(tree, "")
+}
+
+func validGitTreePath(value string) bool {
+	if value == "" || strings.HasPrefix(value, "/") || strings.ContainsRune(value, '\x00') {
+		return false
+	}
+	cleaned := path.Clean(value)
+	return cleaned == value && cleaned != "." && cleaned != ".." && !strings.HasPrefix(cleaned, "../")
+}
+
+// deleteTreePath removes a file or every file below a directory-like path.
+func deleteTreePath(files map[string]object.TreeEntry, target string) bool {
+	found := false
+	prefix := target + "/"
+	for name := range files {
+		if name == target || strings.HasPrefix(name, prefix) {
+			delete(files, name)
+			found = true
+		}
+	}
+	return found
+}
+
+// A new nested path replaces a blob/submodule at any ancestor, matching
+// GitHub's "entries overwrite base_tree at the same path" behavior.
+func deleteTreePathAncestors(files map[string]object.TreeEntry, target string) {
+	for parent := path.Dir(target); parent != "." && parent != "/"; parent = path.Dir(parent) {
+		delete(files, parent)
+	}
 }
 
 func (s *Server) handleCreateCommit(w http.ResponseWriter, r *http.Request) {
@@ -938,15 +1107,6 @@ func encodeBlob(stor gitStorage.Storer, data []byte) (plumbing.Hash, error) {
 		return plumbing.ZeroHash, err
 	}
 	if err := w.Close(); err != nil {
-		return plumbing.ZeroHash, err
-	}
-	return stor.SetEncodedObject(obj)
-}
-
-func encodeTree(stor gitStorage.Storer, t *object.Tree) (plumbing.Hash, error) {
-	obj := stor.NewEncodedObject()
-	obj.SetType(plumbing.TreeObject)
-	if err := t.Encode(obj); err != nil {
 		return plumbing.ZeroHash, err
 	}
 	return stor.SetEncodedObject(obj)

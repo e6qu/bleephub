@@ -21,6 +21,7 @@ func (s *Server) registerGHPullRoutes() {
 	s.route("GET /api/v3/repos/{owner}/{repo}/pulls/{number}", s.handleGetPullRequest)
 	s.route("PATCH /api/v3/repos/{owner}/{repo}/pulls/{number}", s.requirePerm(scopePullRequests, permWrite, s.handleUpdatePullRequest))
 	s.route("PUT /api/v3/repos/{owner}/{repo}/pulls/{number}/merge", s.requirePerm(scopeContents, permWrite, s.handleMergePullRequest))
+	s.route("GET /api/v3/repos/{owner}/{repo}/pulls/{number}/merge", s.handleCheckPullRequestMerged)
 
 	// PR reviews. The 3-segment GET/PUT/DELETE paths conflict with PR
 	// review-comment reaction routes under Go 1.22's mux, so they are
@@ -40,6 +41,24 @@ func (s *Server) registerGHPullRoutes() {
 
 	// Update branch (merge base into PR head)
 	s.route("PUT /api/v3/repos/{owner}/{repo}/pulls/{number}/update-branch", s.requirePerm(scopePullRequests, permWrite, s.handleUpdateBranch))
+}
+
+func (s *Server) handleCheckPullRequestMerged(w http.ResponseWriter, r *http.Request) {
+	repo := s.lookupReadableRepoFromPath(w, r)
+	if repo == nil {
+		return
+	}
+	number, err := strconv.Atoi(r.PathValue("number"))
+	if err != nil {
+		writeGHError(w, http.StatusNotFound, "Not Found")
+		return
+	}
+	pr := s.store.GetPullRequestByNumber(repo.ID, number)
+	if pr == nil || pr.State != "MERGED" {
+		writeGHError(w, http.StatusNotFound, "Not Found")
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
 }
 
 func (s *Server) handleCreatePullRequest(w http.ResponseWriter, r *http.Request) {
@@ -124,10 +143,43 @@ func (s *Server) handleListPullRequests(w http.ResponseWriter, r *http.Request) 
 	case "all":
 		stateFilter = "all"
 	default:
-		stateFilter = "OPEN"
+		writeGHValidationError(w, "PullRequest", "state", "invalid")
+		return
 	}
 
 	prs := s.store.ListPullRequests(repo.ID, stateFilter)
+	sortBy := r.URL.Query().Get("sort")
+	if sortBy == "" {
+		sortBy = "created"
+	}
+	switch sortBy {
+	case "created", "updated", "popularity", "long-running":
+	default:
+		writeGHValidationError(w, "PullRequest", "sort", "invalid")
+		return
+	}
+	direction := r.URL.Query().Get("direction")
+	if direction == "" {
+		if sortBy == "created" {
+			direction = "desc"
+		} else {
+			direction = "asc"
+		}
+	}
+	if direction != "asc" && direction != "desc" {
+		writeGHValidationError(w, "PullRequest", "direction", "invalid")
+		return
+	}
+	if sortBy == "long-running" {
+		monthAgo := time.Now().UTC().AddDate(0, -1, 0)
+		filtered := prs[:0]
+		for _, pr := range prs {
+			if pr.State == "OPEN" && pr.CreatedAt.Before(monthAgo) && pr.UpdatedAt.After(monthAgo) {
+				filtered = append(filtered, pr)
+			}
+		}
+		prs = filtered
+	}
 
 	// Filter by head
 	if head := r.URL.Query().Get("head"); head != "" {
@@ -145,7 +197,7 @@ func (s *Server) handleListPullRequests(w http.ResponseWriter, r *http.Request) 
 			}
 			if headOwner != "" {
 				headRepo := pullRequestHeadRepo(s.store, pr)
-				if headRepo == nil || headRepo.Owner == nil || headRepo.Owner.Login != headOwner {
+				if headRepo == nil || !strings.EqualFold(repoOwnerLogin(headRepo), headOwner) {
 					continue
 				}
 			}
@@ -168,9 +220,57 @@ func (s *Server) handleListPullRequests(w http.ResponseWriter, r *http.Request) 
 	base := s.baseURL(r)
 	result := make([]map[string]interface{}, 0, len(prs))
 	for _, pr := range prs {
-		result = append(result, pullRequestSimpleJSON(pr, s.store, base, repo.FullName))
+		item := pullRequestSimpleJSON(pr, s.store, base, repo.FullName)
+		item["_comments"] = s.store.CountCommentsFor("pull_request", pr.ID)
+		result = append(result, item)
+	}
+	sortPullRequestList(result, sortBy, direction)
+	for _, item := range result {
+		delete(item, "_comments")
 	}
 	writeJSON(w, http.StatusOK, paginateAndLink(w, r, result))
+}
+
+func sortPullRequestList(prs []map[string]interface{}, sortBy, direction string) {
+	field := "created_at"
+	switch sortBy {
+	case "updated":
+		field = "updated_at"
+	case "popularity":
+		field = "_comments"
+	}
+	ascending := direction == "asc"
+	sort.SliceStable(prs, func(i, j int) bool {
+		var less bool
+		if field == "_comments" {
+			a, _ := prs[i][field].(int)
+			b, _ := prs[j][field].(int)
+			if a == b {
+				return pullRequestListNumberLess(prs[i], prs[j], ascending)
+			}
+			less = a < b
+		} else {
+			a, _ := prs[i][field].(string)
+			b, _ := prs[j][field].(string)
+			if a == b {
+				return pullRequestListNumberLess(prs[i], prs[j], ascending)
+			}
+			less = a < b
+		}
+		if ascending {
+			return less
+		}
+		return !less
+	})
+}
+
+func pullRequestListNumberLess(a, b map[string]interface{}, ascending bool) bool {
+	an, _ := a["number"].(int)
+	bn, _ := b["number"].(int)
+	if ascending {
+		return an < bn
+	}
+	return an > bn
 }
 
 func (s *Server) handleGetPullRequest(w http.ResponseWriter, r *http.Request) {
@@ -1462,6 +1562,8 @@ func pullRequestSimpleJSON(pr *PullRequest, st *Store, baseURL, repoFullName str
 		headRepoJSON = repoToJSON(headRepo, st, baseURL)
 		headRepoOwnerJSON = repoOwnerREST(headRepo, st, baseURL)
 	}
+	headOwnerLogin := ownerFromRepoFullName(headRepoFullName)
+	baseOwnerLogin := ownerFromRepoFullName(repoFullName)
 
 	// GitHub's assignee is the first assignee, null when unassigned.
 	var assignee interface{}
@@ -1523,14 +1625,14 @@ func pullRequestSimpleJSON(pr *PullRequest, st *Store, baseURL, repoFullName str
 		"head": map[string]interface{}{
 			"ref":   pr.HeadRefName,
 			"sha":   headSHA,
-			"label": headRepoFullName + ":" + pr.HeadRefName,
+			"label": headOwnerLogin + ":" + pr.HeadRefName,
 			"repo":  headRepoJSON,
 			"user":  headRepoOwnerJSON,
 		},
 		"base": map[string]interface{}{
 			"ref":   pr.BaseRefName,
 			"sha":   baseSHA,
-			"label": repoFullName + ":" + pr.BaseRefName,
+			"label": baseOwnerLogin + ":" + pr.BaseRefName,
 			"repo":  repoJSON,
 			"user":  repoOwnerJSON,
 		},
@@ -1558,6 +1660,21 @@ func pullRequestSimpleJSON(pr *PullRequest, st *Store, baseURL, repoFullName str
 		"updated_at":          pr.UpdatedAt.Format(time.RFC3339),
 		"closed_at":           closedAt,
 	}
+}
+
+func ownerFromRepoFullName(fullName string) string {
+	owner, _, ok := splitRepoFullName(fullName)
+	if !ok {
+		return fullName
+	}
+	return owner
+}
+
+func repoOwnerLogin(repo *Repo) string {
+	if repo == nil {
+		return ""
+	}
+	return ownerFromRepoFullName(repo.FullName)
 }
 
 // pullRequestToJSON converts a PullRequest to the full GitHub

@@ -1011,8 +1011,8 @@ func (s *Server) createStartupFailureRun(fileName string, content []byte, meta *
 		RepoFullName: meta.Repo,
 		EventPayload: meta.Payload,
 	}
-	wf.RunNumber = wf.RunID
 	wf.WorkflowFileID, wf.WorkflowFilePath = s.resolveWorkflowFileForRun(wf)
+	wf.RunNumber = s.store.ReserveWorkflowRunNumber(wf)
 	s.store.mu.Lock()
 	s.store.Workflows[wf.ID] = wf
 	s.store.persistWorkflowRecord(wf)

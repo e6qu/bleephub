@@ -5,6 +5,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"fmt"
 	"io"
 	"os"
 	"regexp"
@@ -388,6 +389,165 @@ func TestRegisteredAPIv3RoutesExistInGitHubSpec(t *testing.T) {
 			"describedOutsideDotcom, or delete the route:\n  %s",
 			len(offenders), strings.Join(offenders, "\n  "))
 	}
+}
+
+// TestRegisteredRoutesHaveCompleteFuzzInventory makes route-level coverage a
+// set equality rather than a comment above a hand-maintained slice. Every
+// registered operation must enter the HTTP fuzz vocabulary, and stale entries
+// must be removed. This is the 100% operation-level floor; semantic behavior
+// that OpenAPI cannot describe is pinned by focused compatibility vectors.
+func TestRegisteredRoutesHaveCompleteFuzzInventory(t *testing.T) {
+	s := newTestServer()
+	s.registerRoutes()
+
+	registered := make(map[string]int, len(s.routePatterns))
+	for _, pattern := range s.routePatterns {
+		_, path, found := strings.Cut(pattern, " ")
+		if !found || !strings.HasPrefix(path, "/api/v3/") {
+			continue
+		}
+		registered[pattern]++
+	}
+	inventory := make(map[string]int, len(fuzzRoutePatterns))
+	for _, pattern := range fuzzRoutePatterns {
+		_, path, found := strings.Cut(pattern, " ")
+		if !found || !strings.HasPrefix(path, "/api/v3/") {
+			continue
+		}
+		inventory[pattern]++
+	}
+
+	var missing, stale, duplicates []string
+	for pattern, count := range registered {
+		if count != 1 {
+			duplicates = append(duplicates, fmt.Sprintf("registered %dx: %s", count, pattern))
+		}
+		if inventory[pattern] == 0 {
+			missing = append(missing, pattern)
+		}
+	}
+	for pattern, count := range inventory {
+		if count != 1 {
+			duplicates = append(duplicates, fmt.Sprintf("inventory %dx: %s", count, pattern))
+		}
+		if registered[pattern] == 0 {
+			stale = append(stale, pattern)
+		}
+	}
+	sort.Strings(missing)
+	sort.Strings(stale)
+	sort.Strings(duplicates)
+	if len(missing) > 0 || len(stale) > 0 || len(duplicates) > 0 {
+		t.Fatalf("registered route coverage is not 100%%\nmissing from fuzz inventory (%d):\n  %s\n"+
+			"stale fuzz inventory entries (%d):\n  %s\nduplicates (%d):\n  %s",
+			len(missing), strings.Join(missing, "\n  "),
+			len(stale), strings.Join(stale, "\n  "),
+			len(duplicates), strings.Join(duplicates, "\n  "))
+	}
+	t.Logf("GitHub REST route inventory coverage: %d/%d operations (100%%)", len(inventory), len(registered))
+}
+
+func TestFuzzRouteSelectorCanReachEveryRegisteredAPIOperation(t *testing.T) {
+	total := len(fuzzRoutePatterns)
+	if total <= 256 {
+		t.Fatalf("route selector reachability test is no longer exercising the multi-byte case: %d routes", total)
+	}
+	for want := range fuzzRoutePatterns {
+		data := []byte{byte(want >> 8), byte(want)}
+		reader := &fuzzReader{b: data}
+		if got := reader.pick(total); got != want {
+			t.Fatalf("route %d/%d is unreachable: selector returned %d for %v", want, total, got, data)
+		}
+	}
+}
+
+var dispatchCoveredOperations = map[string]bool{
+	"DELETE /repos/{}/{}/issues/comments/{}":              true,
+	"DELETE /repos/{}/{}/issues/comments/{}/pin":          true,
+	"DELETE /repos/{}/{}/issues/{}/issue-field-values/{}": true,
+	"DELETE /repos/{}/{}/issues/{}/labels/{}":             true,
+	"DELETE /repos/{}/{}/issues/{}/lock":                  true,
+	"DELETE /repos/{}/{}/issues/{}/reactions/{}":          true,
+	"DELETE /repos/{}/{}/issues/{}/sub_issue":             true,
+	"DELETE /repos/{}/{}/pulls/comments/{}":               true,
+	"DELETE /repos/{}/{}/pulls/{}/reviews/{}":             true,
+	"DELETE /repos/{}/{}/releases/assets/{}":              true,
+	"DELETE /repos/{}/{}/releases/{}/reactions/{}":        true,
+	"GET /orgs/{}/rulesets/rule-suites/{}":                true,
+	"GET /orgs/{}/rulesets/{}/history":                    true,
+	"GET /orgs/{}/rulesets/{}/history/{}":                 true,
+	"GET /repos/{}/{}/issues/comments/{}":                 true,
+	"GET /repos/{}/{}/issues/comments/{}/reactions":       true,
+	"GET /repos/{}/{}/issues/events/{}":                   true,
+	"GET /repos/{}/{}/issues/{}/assignees/{}":             true,
+	"GET /repos/{}/{}/issues/{}/comments":                 true,
+	"GET /repos/{}/{}/issues/{}/dependencies/blocked_by":  true,
+	"GET /repos/{}/{}/issues/{}/dependencies/blocking":    true,
+	"GET /repos/{}/{}/issues/{}/events":                   true,
+	"GET /repos/{}/{}/issues/{}/issue-field-values":       true,
+	"GET /repos/{}/{}/issues/{}/labels":                   true,
+	"GET /repos/{}/{}/issues/{}/parent":                   true,
+	"GET /repos/{}/{}/issues/{}/reactions":                true,
+	"GET /repos/{}/{}/issues/{}/sub_issues":               true,
+	"GET /repos/{}/{}/issues/{}/timeline":                 true,
+	"GET /repos/{}/{}/pulls/comments/{}":                  true,
+	"GET /repos/{}/{}/pulls/comments/{}/reactions":        true,
+	"GET /repos/{}/{}/pulls/{}/files":                     true,
+	"GET /repos/{}/{}/pulls/{}/reviews/{}":                true,
+	"GET /repos/{}/{}/releases/assets/{}":                 true,
+	"GET /repos/{}/{}/releases/tags/{}":                   true,
+	"GET /repos/{}/{}/releases/{}/assets":                 true,
+	"GET /repos/{}/{}/releases/{}/reactions":              true,
+	"GET /repos/{}/{}/rulesets/rule-suites/{}":            true,
+	"GET /repos/{}/{}/rulesets/{}/history":                true,
+	"GET /user/codespaces/{}/exports/{}":                  true,
+	"GET /user/codespaces/{}/machines":                    true,
+	"PATCH /repos/{}/{}/pulls/comments/{}":                true,
+	"PATCH /repos/{}/{}/releases/assets/{}":               true,
+	"POST /repos/{}/{}/pulls/comments/{}/reactions":       true,
+	"POST /repos/{}/{}/releases/{}/assets":                true,
+	"POST /repos/{}/{}/releases/{}/reactions":             true,
+	"POST /repos/{}/{}/security-advisories/reports":       true,
+	"PUT /repos/{}/{}/pulls/{}/reviews/{}":                true,
+}
+
+// TestEveryDocumentedGitHubRESTOperationIsRegistered is the reverse half of
+// TestRegisteredAPIv3RoutesExistInGitHubSpec. Together they make API coverage a
+// two-way set comparison: Bleephub neither invents GitHub routes nor silently
+// omits operations from the pinned dotcom description.
+func TestEveryDocumentedGitHubRESTOperationIsRegistered(t *testing.T) {
+	s := newTestServer()
+	s.registerRoutes()
+	registered := map[string]bool{}
+	for _, pattern := range s.routePatterns {
+		method, routePath, found := strings.Cut(pattern, " ")
+		if !found || !strings.HasPrefix(routePath, "/api/v3/") {
+			continue
+		}
+		operation := method + " " + normalizePath(strings.TrimPrefix(routePath, "/api/v3"))
+		registered[operation] = true
+	}
+	documented := loadGitHubOperations(t)
+	var missing []string
+	for operation := range documented {
+		if !registered[operation] && !dispatchCoveredOperations[operation] {
+			missing = append(missing, operation)
+		}
+	}
+	for operation := range dispatchCoveredOperations {
+		if !documented[operation] {
+			t.Errorf("dispatch coverage entry is not in the pinned GitHub definition: %s", operation)
+		}
+		if registered[operation] {
+			t.Errorf("dispatch coverage entry now has a direct route and must be removed: %s", operation)
+		}
+	}
+	sort.Strings(missing)
+	if len(missing) > 0 {
+		t.Fatalf("GitHub REST definition coverage is not 100%%: %d documented operation(s) are not registered:\n  %s",
+			len(missing), strings.Join(missing, "\n  "))
+	}
+	t.Logf("GitHub REST definition coverage: %d/%d operations (100%%)", len(documented), len(documented))
 }
 
 // TestUncitedRoutesAreStillRegistered keeps the defect ledger from

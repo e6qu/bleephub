@@ -18,6 +18,7 @@ function jsonResponse(data: unknown, status = 200, headers: Record<string, strin
 afterEach(() => {
   cleanup();
   mockFetch.mockReset();
+  vi.restoreAllMocks();
 });
 
 function renderPage() {
@@ -111,7 +112,15 @@ function contentsResponse(yaml: string) {
 }
 
 /** URL-routed mocks for the actions surface; returns nothing extra for counts. */
-function installMocks({ yaml = ciYaml } = {}) {
+function installMocks({
+  yaml = ciYaml,
+  artifacts = [],
+  caches = [],
+}: {
+  yaml?: string;
+  artifacts?: unknown[];
+  caches?: unknown[];
+} = {}) {
   mockFetch.mockImplementation((url: RequestInfo | URL, init?: RequestInit) => {
     const u = url.toString();
     const method = init?.method ?? "GET";
@@ -129,6 +138,22 @@ function installMocks({ yaml = ciYaml } = {}) {
     }
     if (method === "POST" && u.endsWith("/dispatches")) {
       return Promise.resolve(new Response(null, { status: 204 }));
+    }
+    if (method === "DELETE" && (u.includes("/actions/artifacts/") || u.includes("/actions/caches/"))) {
+      return Promise.resolve(new Response(null, { status: 204 }));
+    }
+    if (u.includes("/actions/cache/usage")) {
+      return Promise.resolve(jsonResponse({
+        full_name: "admin/test",
+        active_caches_count: caches.length,
+        active_caches_size_in_bytes: 4096,
+      }));
+    }
+    if (u.includes("/actions/caches")) {
+      return Promise.resolve(jsonResponse({ total_count: caches.length, actions_caches: caches }));
+    }
+    if (u.includes("/actions/artifacts")) {
+      return Promise.resolve(jsonResponse({ total_count: artifacts.length, artifacts }));
     }
     if (u.includes("/actions/workflows")) return Promise.resolve(jsonResponse(workflowsData));
     if (u.includes("/contents/")) return Promise.resolve(jsonResponse(contentsResponse(yaml)));
@@ -181,6 +206,65 @@ describe("ActionsPage runs list", () => {
     await waitFor(() => {
       const calls = mockFetch.mock.calls.map((c) => c[0].toString());
       expect(calls.some((c) => c.includes("/actions/workflows/10/runs"))).toBe(true);
+    });
+  });
+});
+
+describe("ActionsPage storage management", () => {
+  it("lists, downloads, and deletes repository artifacts", async () => {
+    installMocks({
+      artifacts: [{
+        id: 7,
+        name: "dist",
+        size_in_bytes: 2048,
+        expired: false,
+        created_at: "2026-01-01T00:00:00Z",
+        workflow_run: { id: 12, head_branch: "main", head_sha: "abc" },
+      }],
+    });
+    renderPage();
+    fireEvent.click(await screen.findByRole("button", { name: "Artifacts" }));
+    expect(await screen.findByText("dist")).toBeInTheDocument();
+    expect(screen.getByText("2.0 KB")).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: /download/i })).toHaveAttribute(
+      "href",
+      "/api/v3/repos/admin/test/actions/artifacts/7/zip",
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Delete artifact dist" }));
+    expect(screen.getByRole("dialog", { name: "Delete artifact?" })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Delete artifact" }));
+    await waitFor(() => {
+      expect(mockFetch).toHaveBeenCalledWith(
+        "/api/v3/repos/admin/test/actions/artifacts/7",
+        expect.objectContaining({ method: "DELETE" }),
+      );
+    });
+  });
+
+  it("shows cache usage and evicts a repository cache", async () => {
+    installMocks({
+      caches: [{
+        id: 9,
+        ref: "refs/heads/main",
+        key: "linux-node",
+        version: "v1",
+        last_accessed_at: "2026-01-02T00:00:00Z",
+        created_at: "2026-01-01T00:00:00Z",
+        size_in_bytes: 4096,
+      }],
+    });
+    renderPage();
+    fireEvent.click(await screen.findByRole("button", { name: "Caches" }));
+    expect(await screen.findByText("linux-node")).toBeInTheDocument();
+    expect(screen.getByText(/1 active/)).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Delete cache linux-node" }));
+    expect(screen.getByRole("dialog", { name: "Delete cache?" })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Delete cache" }));
+    await waitFor(() => {
+      expect(mockFetch).toHaveBeenCalledWith(
+        "/api/v3/repos/admin/test/actions/caches/9",
+        expect.objectContaining({ method: "DELETE" }),
+      );
     });
   });
 });

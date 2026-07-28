@@ -3,6 +3,7 @@ package bleephub
 import (
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 )
 
@@ -15,15 +16,20 @@ import (
 func TestFuzzHarnessReachesRealHandlers(t *testing.T) {
 	fx := newFuzzFixture(t)
 	codes := map[int]int{}
+	var internalErrors []string
 	for i := 0; i < 20000; i++ {
 		data := []byte{byte(i), byte(i >> 8), byte(i >> 3), byte(i >> 5), byte(i >> 2), byte(i >> 7), byte(i >> 4), byte(i >> 1)}
 		req := fx.decodeFuzzRequest(data)
 		w := httptest.NewRecorder()
 		fx.handler.ServeHTTP(w, req)
 		codes[w.Code]++
+		if w.Code == http.StatusInternalServerError {
+			internalErrors = append(internalErrors, req.Method+" "+req.URL.RequestURI()+" -> "+w.Body.String())
+		}
 	}
 	if codes[http.StatusInternalServerError] > 0 {
-		t.Fatalf("harness produced %d HTTP 500(s): %v", codes[http.StatusInternalServerError], codes)
+		t.Fatalf("harness produced %d HTTP 500(s): %v\n%s",
+			codes[http.StatusInternalServerError], codes, strings.Join(internalErrors, "\n"))
 	}
 	// Real handler engagement: successful reads (200) and mutations (200/201/204).
 	if codes[http.StatusOK]+codes[http.StatusNoContent]+codes[http.StatusCreated] == 0 {

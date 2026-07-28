@@ -174,6 +174,12 @@ func (r *fuzzReader) pick(n int) int {
 	if n <= 0 {
 		return 0
 	}
+	if n > 256 {
+		// The API route inventory is much larger than one byte. The old
+		// selector used u8()%n, making every route at index 256+ mathematically
+		// unreachable no matter how long the fuzzer ran.
+		return ((r.u8() << 8) | r.u8()) % n
+	}
 	return r.u8() % n
 }
 

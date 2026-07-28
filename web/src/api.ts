@@ -32,6 +32,8 @@ import type {
   GithubWorkflowRun,
   GithubJob,
   GithubArtifact,
+  GithubActionsCache,
+  GithubActionsCacheUsage,
   GithubPendingDeployment,
   GithubCheckRun,
   GithubPublicKey,
@@ -1372,6 +1374,11 @@ export async function fetchJobLogs(owner: string, repo: string, jobId: number): 
   return res.text();
 }
 
+export const fetchJobSummary = (owner: string, repo: string, jobId: number) =>
+  ghFetch<{ summary: string }>(
+    `/internal/repos/${owner}/${repo}/actions/jobs/${jobId}/summary`,
+  ).then((result) => result.summary);
+
 export const cancelRun = (owner: string, repo: string, runId: number) =>
   ghSend("POST", `/api/v3/repos/${owner}/${repo}/actions/runs/${runId}/cancel`);
 
@@ -1386,6 +1393,29 @@ export const fetchRunArtifacts = (owner: string, repo: string, runId: number) =>
     `/api/v3/repos/${owner}/${repo}/actions/runs/${runId}/artifacts`,
     "artifacts",
   );
+
+export const fetchRepoArtifacts = (owner: string, repo: string) =>
+  ghFetchEnvelope<GithubArtifact>(
+    `/api/v3/repos/${owner}/${repo}/actions/artifacts?per_page=100`,
+    "artifacts",
+  );
+
+export const deleteRepoArtifact = (owner: string, repo: string, artifactId: number) =>
+  ghSend("DELETE", `/api/v3/repos/${owner}/${repo}/actions/artifacts/${artifactId}`);
+
+export const fetchRepoActionsCaches = (owner: string, repo: string) =>
+  ghFetchEnvelope<GithubActionsCache>(
+    `/api/v3/repos/${owner}/${repo}/actions/caches?per_page=100`,
+    "actions_caches",
+  );
+
+export const fetchRepoActionsCacheUsage = (owner: string, repo: string) =>
+  ghFetch<GithubActionsCacheUsage>(
+    `/api/v3/repos/${owner}/${repo}/actions/cache/usage`,
+  );
+
+export const deleteRepoActionsCache = (owner: string, repo: string, cacheId: number) =>
+  ghSend("DELETE", `/api/v3/repos/${owner}/${repo}/actions/caches/${cacheId}`);
 
 export const fetchPendingDeployments = (owner: string, repo: string, runId: number) =>
   ghFetch<GithubPendingDeployment[]>(
@@ -3028,6 +3058,7 @@ export const updatePagesSite = (
     cname?: string | null;
     https_enforced?: boolean;
     build_type?: "legacy" | "workflow";
+    public?: boolean;
     source?: { branch: string; path?: string };
   },
 ) => ghSend("PUT", `/api/v3/repos/${owner}/${repo}/pages`, payload);

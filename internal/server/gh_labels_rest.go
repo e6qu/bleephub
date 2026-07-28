@@ -573,6 +573,12 @@ func (s *Server) handleIssuesTwoSegGetDispatch(w http.ResponseWriter, r *http.Re
 	case p2 == "reactions":
 		r.SetPathValue("number", p1)
 		s.handleListReactions("issue", "number")(w, r)
+	case p2 == "labels":
+		r.SetPathValue("number", p1)
+		s.handleListIssueLabels(w, r)
+	case p2 == "parent":
+		r.SetPathValue("number", p1)
+		s.handleGetIssueParent(w, r)
 	case p2 == "sub_issues" || p2 == "sub_issue":
 		r.SetPathValue("number", p1)
 		s.handleListSubIssues(w, r)
@@ -604,6 +610,10 @@ func (s *Server) handleIssuesThreeSegDeleteDispatch(w http.ResponseWriter, r *ht
 		r.SetPathValue("number", p1)
 		r.SetPathValue("name", p3)
 		s.handleRemoveIssueLabel(w, r)
+	case p2 == "issue-field-values":
+		r.SetPathValue("number", p1)
+		r.SetPathValue("issue_field_id", p3)
+		s.handleDeleteIssueFieldValue(w, r)
 	default:
 		writeGHError(w, http.StatusNotFound, "Not Found")
 	}
@@ -623,7 +633,53 @@ func (s *Server) handleIssuesThreeSegGetDispatch(w http.ResponseWriter, r *http.
 	case p2 == "dependencies" && p3 == "blocked_by":
 		r.SetPathValue("number", p1)
 		s.handleListIssueDependenciesBlockedBy(w, r)
+	case p2 == "dependencies" && p3 == "blocking":
+		r.SetPathValue("number", p1)
+		s.handleListIssueDependenciesBlocking(w, r)
+	case p2 == "assignees":
+		r.SetPathValue("number", p1)
+		r.SetPathValue("assignee", p3)
+		s.handleCheckIssueAssignee(w, r)
 	default:
 		writeGHError(w, http.StatusNotFound, "Not Found")
 	}
+}
+
+func (s *Server) handleListIssueLabels(w http.ResponseWriter, r *http.Request) {
+	repo, issue := s.issueFromNumberPath(w, r)
+	if issue == nil {
+		return
+	}
+	s.store.mu.RLock()
+	labels := make([]*IssueLabel, 0, len(issue.LabelIDs))
+	for _, id := range issue.LabelIDs {
+		if label := s.store.Labels[id]; label != nil {
+			labels = append(labels, label)
+		}
+	}
+	s.store.mu.RUnlock()
+	out := make([]map[string]interface{}, 0, len(labels))
+	for _, label := range labels {
+		out = append(out, issueLabelToJSON(label, s.baseURL(r), repo.FullName))
+	}
+	writeJSON(w, http.StatusOK, paginateAndLink(w, r, out))
+}
+
+func (s *Server) handleCheckIssueAssignee(w http.ResponseWriter, r *http.Request) {
+	_, issue := s.issueFromNumberPath(w, r)
+	if issue == nil {
+		return
+	}
+	user := s.store.LookupUserByLogin(r.PathValue("assignee"))
+	if user == nil {
+		writeGHError(w, http.StatusNotFound, "Not Found")
+		return
+	}
+	for _, id := range issue.AssigneeIDs {
+		if id == user.ID {
+			w.WriteHeader(http.StatusNoContent)
+			return
+		}
+	}
+	writeGHError(w, http.StatusNotFound, "Not Found")
 }

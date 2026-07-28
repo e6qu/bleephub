@@ -7,6 +7,7 @@ import (
 	"io"
 	"net/http"
 	"strconv"
+	"strings"
 )
 
 const (
@@ -17,7 +18,9 @@ const (
 
 	// consoleLineCap bounds the live console capture per job. When the
 	// cap trims lines, consoleTruncationMarker is appended once.
-	consoleLineCap = 10000
+	consoleLineCap     = 10000
+	stepSummaryCap     = 1 << 20
+	timelineRequestCap = 4 << 20
 )
 
 var (
@@ -70,7 +73,7 @@ func (s *Server) handleUpdateRecords(w http.ResponseWriter, r *http.Request) {
 	planID := r.PathValue("planId")
 	timelineID := r.PathValue("timelineId")
 
-	body, err := io.ReadAll(r.Body)
+	body, err := io.ReadAll(http.MaxBytesReader(w, r.Body, timelineRequestCap))
 	if err != nil {
 		http.Error(w, "read timeline records body: "+err.Error(), http.StatusBadRequest)
 		return
@@ -212,7 +215,7 @@ func (s *Server) handleUploadLog(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	body, err := io.ReadAll(r.Body)
+	body, err := io.ReadAll(io.LimitReader(r.Body, logFileCap+1))
 	if err != nil {
 		http.Error(w, "read log content: "+err.Error(), http.StatusBadRequest)
 		return
@@ -259,7 +262,7 @@ func (s *Server) handleWebConsoleLog(w http.ResponseWriter, r *http.Request) {
 	planID := r.PathValue("planId")
 	recordID := r.PathValue("recordId")
 
-	body, err := io.ReadAll(r.Body)
+	body, err := io.ReadAll(http.MaxBytesReader(w, r.Body, timelineRequestCap))
 	if err != nil {
 		http.Error(w, "read console log body: "+err.Error(), http.StatusBadRequest)
 		return
@@ -322,10 +325,40 @@ func (s *Server) handleTimelineAttachment(w http.ResponseWriter, r *http.Request
 	name := r.PathValue("name")
 	s.logger.Debug().Str("type", attachType).Str("name", name).Msg("timeline attachment")
 
-	if _, err := io.ReadAll(r.Body); err != nil {
+	body, err := io.ReadAll(http.MaxBytesReader(w, r.Body, stepSummaryCap+1))
+	if err != nil {
 		s.logger.Error().Err(err).Str("type", attachType).Str("name", name).Msg("timeline attachment: read body")
 		writeJSON(w, http.StatusBadRequest, map[string]interface{}{"status": "error", "message": err.Error()})
 		return
+	}
+	if len(body) > stepSummaryCap {
+		writeJSON(w, http.StatusRequestEntityTooLarge, map[string]interface{}{"status": "error", "message": "timeline attachment exceeds 1 MiB"})
+		return
+	}
+	if strings.Contains(strings.ToLower(attachType), "summary") {
+		planID := r.PathValue("planId")
+		s.store.mu.Lock()
+		for _, wf := range s.store.Workflows {
+			for _, job := range wf.Jobs {
+				if job.PlanID != planID {
+					continue
+				}
+				if job.Summary != "" && len(body) > 0 {
+					body = append([]byte{'\n'}, body...)
+				}
+				if len(job.Summary)+len(body) > stepSummaryCap {
+					s.store.mu.Unlock()
+					writeJSON(w, http.StatusRequestEntityTooLarge, map[string]interface{}{"status": "error", "message": "job summary exceeds 1 MiB"})
+					return
+				}
+				job.Summary += string(body)
+				s.store.persistWorkflowRecord(wf)
+				s.store.mu.Unlock()
+				writeJSON(w, http.StatusOK, map[string]interface{}{"status": "ok"})
+				return
+			}
+		}
+		s.store.mu.Unlock()
 	}
 	writeJSON(w, http.StatusOK, map[string]interface{}{"status": "ok"})
 }

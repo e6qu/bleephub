@@ -2,6 +2,7 @@ package bleephub
 
 import (
 	"fmt"
+	"regexp"
 	"sort"
 	"strconv"
 	"strings"
@@ -48,7 +49,19 @@ func (s *Server) buildJobMessageFromDef(serverURL string, wf *Workflow, wfJob *W
 			if contextName == "" {
 				contextName = fmt.Sprintf("__run_%d", i+1)
 			}
-			steps = append(steps, map[string]interface{}{
+			inputEntries := []interface{}{
+				map[string]interface{}{
+					"Key":   map[string]interface{}{"type": 0, "lit": "script"},
+					"Value": templateToken(step.Run),
+				},
+			}
+			if step.Shell != "" {
+				inputEntries = append(inputEntries, mappingEntry("shell", templateToken(step.Shell)))
+			}
+			if step.WorkingDirectory != "" {
+				inputEntries = append(inputEntries, mappingEntry("workingDirectory", templateToken(step.WorkingDirectory)))
+			}
+			messageStep := map[string]interface{}{
 				"type": "action",
 				"id":   stepID,
 				"name": contextName,
@@ -60,14 +73,11 @@ func (s *Server) buildJobMessageFromDef(serverURL string, wf *Workflow, wfJob *W
 				"condition":        stepCondition(step.If),
 				"inputs": map[string]interface{}{
 					"type": 2,
-					"map": []interface{}{
-						map[string]interface{}{
-							"Key":   map[string]interface{}{"type": 0, "lit": "script"},
-							"Value": templateToken(step.Run),
-						},
-					},
+					"map":  inputEntries,
 				},
-			})
+			}
+			applyStepExecutionOptions(messageStep, step)
+			steps = append(steps, messageStep)
 		} else if step.Uses != "" {
 			// Action step
 			nameWithOwner, path, ref, isLocal := ParseActionRef(step.Uses)
@@ -107,7 +117,7 @@ func (s *Server) buildJobMessageFromDef(serverURL string, wf *Workflow, wfJob *W
 				})
 			}
 
-			steps = append(steps, map[string]interface{}{
+			messageStep := map[string]interface{}{
 				"type":             "action",
 				"id":               stepID,
 				"name":             contextName,
@@ -119,7 +129,9 @@ func (s *Server) buildJobMessageFromDef(serverURL string, wf *Workflow, wfJob *W
 					"type": 2,
 					"map":  inputEntries,
 				},
-			})
+			}
+			applyStepExecutionOptions(messageStep, step)
+			steps = append(steps, messageStep)
 		}
 	}
 
@@ -149,11 +161,7 @@ func (s *Server) buildJobMessageFromDef(serverURL string, wf *Workflow, wfJob *W
 	// Build matrix context
 	var matrixCtx interface{}
 	if len(wfJob.MatrixValues) > 0 {
-		matrixPairs := make([]string, 0, len(wfJob.MatrixValues)*2)
-		for k, v := range wfJob.MatrixValues {
-			matrixPairs = append(matrixPairs, k, fmt.Sprintf("%v", v))
-		}
-		matrixCtx = dictContextData(matrixPairs...)
+		matrixCtx = toPipelineContextData(anyMap(wfJob.MatrixValues))
 	}
 
 	runID := strconv.Itoa(wf.RunID)
@@ -170,7 +178,7 @@ func (s *Server) buildJobMessageFromDef(serverURL string, wf *Workflow, wfJob *W
 
 	// Always include GITHUB_TOKEN
 	secretsPairs = append(secretsPairs, "GITHUB_TOKEN", jobToken)
-	maskArray = append(maskArray, map[string]interface{}{"type": "regex", "value": jobToken})
+	maskArray = append(maskArray, map[string]interface{}{"type": "regex", "value": regexp.QuoteMeta(jobToken)})
 
 	// Org → repo → environment secrets and variables merge (highest
 	// scope wins); every secret value rides the mask list so the runner
@@ -204,7 +212,7 @@ func (s *Server) buildJobMessageFromDef(serverURL string, wf *Workflow, wfJob *W
 		for _, name := range sortedKeys(secretsMap) {
 			secretsPairs = append(secretsPairs, name, secretsMap[name])
 			variables[name] = varSecret(secretsMap[name])
-			maskArray = append(maskArray, map[string]interface{}{"type": "regex", "value": secretsMap[name]})
+			maskArray = append(maskArray, map[string]interface{}{"type": "regex", "value": regexp.QuoteMeta(secretsMap[name])})
 		}
 		for _, name := range sortedKeys(varsMap) {
 			varsPairs = append(varsPairs, name, varsMap[name])
@@ -524,6 +532,29 @@ func mappingEntry(key string, value interface{}) map[string]interface{} {
 	}
 }
 
+func applyStepExecutionOptions(message map[string]interface{}, step StepDef) {
+	if len(step.Env) > 0 {
+		entries := make([]interface{}, 0, len(step.Env))
+		for _, name := range sortedKeys(step.Env) {
+			entries = append(entries, mappingEntry(name, templateToken(step.Env[name])))
+		}
+		message["environment"] = mappingToken(entries)
+	}
+	if step.ContinueOnError != nil {
+		message["continueOnError"] = scalarOrTemplateToken(step.ContinueOnError)
+	}
+	if step.TimeoutMinutes > 0 {
+		message["timeoutInMinutes"] = scalarToken(step.TimeoutMinutes)
+	}
+}
+
+func scalarOrTemplateToken(value interface{}) map[string]interface{} {
+	if text, ok := value.(string); ok {
+		return templateToken(text)
+	}
+	return scalarToken(value)
+}
+
 // scalarToken encodes a YAML scalar (string / number / bool) as the
 // matching literal TemplateToken — `ports:` entries in particular
 // parse as numbers (`- 80`) or strings (`- "8080:80"`).
@@ -600,10 +631,13 @@ func buildNeedsContext(wf *Workflow, wfJob *WorkflowJob) interface{} {
 
 // stepCondition returns the condition string for a step.
 func stepCondition(ifExpr string) string {
-	if ifExpr != "" {
+	if ifExpr == "" {
+		return "success()"
+	}
+	if ExprContainsAnyStatusFunction(ifExpr) {
 		return ifExpr
 	}
-	return "success()"
+	return "success() && (" + ifExpr + ")"
 }
 
 // dictContextData builds a PipelineContextData DictionaryContextData.

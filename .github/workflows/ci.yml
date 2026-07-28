@@ -152,9 +152,10 @@ jobs:
       # all production traffic, was never compiled by CI at all.
       #
       # Building and vetting every module runs here. The wake module's tests are
-      # self-contained and run too; sdk-tests needs a live server and
-      # terraform-sockerless needs AWS, so those stay build-and-vet until their
-      # harnesses are wired up.
+      # self-contained and run too. sdk-tests owns an ephemeral Bleephub
+      # process in TestMain, so it is a real conformance suite and must run,
+      # not merely compile. terraform-sockerless needs AWS and stays
+      # build-and-vet until that harness is wired up.
       - name: Build and vet every nested module
         run: |
           set -euo pipefail
@@ -165,6 +166,8 @@ jobs:
           done
       - name: Test the wake controller
         run: cd terraform/wake && go test -count=1 ./...
+      - name: Run the official go-github conformance suite
+        run: cd sdk-tests && go test -count=1 -timeout 10m ./...
       # A fourth module must not be able to arrive unnoticed the way these three
       # did. Discovering go.mod files and checking them against the list above
       # makes that a build failure rather than a silence.

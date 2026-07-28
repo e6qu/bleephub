@@ -100,6 +100,7 @@ interface MockState {
   logs?: string;
   artifacts?: unknown[];
   pending?: unknown[];
+  summary?: string;
 }
 
 function installMocks({
@@ -108,6 +109,7 @@ function installMocks({
   logs = "",
   artifacts = [],
   pending = [],
+  summary = "",
 }: MockState = {}) {
   mockFetch.mockImplementation((url: RequestInfo | URL, init?: RequestInit) => {
     const u = url.toString();
@@ -132,6 +134,9 @@ function installMocks({
     }
     if (u.includes("/actions/jobs/") && u.endsWith("/logs")) {
       return Promise.resolve(textResponse(logs));
+    }
+    if (u.includes("/internal/repos/") && u.endsWith("/summary")) {
+      return Promise.resolve(jsonResponse({ summary }));
     }
     if (u.endsWith("/artifacts")) {
       return Promise.resolve(jsonResponse({ total_count: artifacts.length, artifacts }));
@@ -219,6 +224,14 @@ describe("RunDetailPage", () => {
     renderPage();
     expect(await screen.findByText("Job log")).toBeInTheDocument();
     expect(screen.getByText(/hello from the runner/)).toBeInTheDocument();
+  });
+
+  it("renders the persisted GitHub step summary", async () => {
+    installMocks({ summary: "## Test report\n\n- **12** passed" });
+    renderPage();
+    expect(await screen.findByText("Job summary")).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Test report" })).toBeInTheDocument();
+    expect(screen.getByText("12", { selector: "strong" })).toBeInTheDocument();
   });
 
   it("lists artifacts with a direct zip download link", async () => {

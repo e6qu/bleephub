@@ -93,6 +93,24 @@ func TestGitData(t *testing.T) {
 		t.Fatal("Git.CreateTree returned empty SHA")
 	}
 
+	// Entries supplied with base_tree are request-order independent. The new
+	// name sorts before hello.txt, which used to make go-git's encoder reject
+	// Bleephub's unsorted merged tree with HTTP 500.
+	merged, _, err := client.Git.CreateTree(ctx(), "admin", name, tree.GetSHA(), []*github.TreeEntry{{
+		Path:    github.Ptr("a-first.txt"),
+		Mode:    github.Ptr("100644"),
+		Type:    github.Ptr("blob"),
+		Content: github.Ptr("first\n"),
+	}})
+	if err != nil {
+		t.Fatalf("Git.CreateTree(base_tree, unsorted input): %v", err)
+	}
+	if len(merged.Entries) != 2 ||
+		merged.Entries[0].GetPath() != "a-first.txt" ||
+		merged.Entries[1].GetPath() != "hello.txt" {
+		t.Fatalf("merged tree entries = %+v, want [a-first.txt hello.txt]", merged.Entries)
+	}
+
 	commit, _, err := client.Git.CreateCommit(ctx(), "admin", name, github.Commit{
 		Message: github.Ptr("add hello"),
 		Tree:    tree,

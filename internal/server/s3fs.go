@@ -491,6 +491,7 @@ func (f *s3FS) renameRepoPrefix(oldFull, newFull string) error {
 	defer cancel()
 
 	var continuation *string
+	var oldKeys []string
 	for {
 		resp, err := f.client.ListObjectsV2(ctx, &s3.ListObjectsV2Input{
 			Bucket:            aws.String(f.bucket),
@@ -501,29 +502,25 @@ func (f *s3FS) renameRepoPrefix(oldFull, newFull string) error {
 			return fmt.Errorf("s3 list %s: %w", oldPrefix, err)
 		}
 		for _, obj := range resp.Contents {
-			oldKey := aws.ToString(obj.Key)
-			rel := strings.TrimPrefix(oldKey, oldPrefix)
-			newKey := newPrefix + rel
-			if _, err := f.client.CopyObject(ctx, &s3.CopyObjectInput{
-				Bucket:     aws.String(f.bucket),
-				CopySource: aws.String(f.bucket + "/" + oldKey),
-				Key:        aws.String(newKey),
-			}); err != nil {
-				return fmt.Errorf("s3 copy %s -> %s: %w", oldKey, newKey, err)
-			}
-			if _, err := f.client.DeleteObject(ctx, &s3.DeleteObjectInput{
-				Bucket: aws.String(f.bucket),
-				Key:    aws.String(oldKey),
-			}); err != nil {
-				return fmt.Errorf("s3 delete %s: %w", oldKey, err)
-			}
+			oldKeys = append(oldKeys, aws.ToString(obj.Key))
 		}
 		if !aws.ToBool(resp.IsTruncated) {
 			break
 		}
 		continuation = resp.NextContinuationToken
 	}
-	return nil
+	for _, oldKey := range oldKeys {
+		rel := strings.TrimPrefix(oldKey, oldPrefix)
+		newKey := newPrefix + rel
+		if _, err := f.client.CopyObject(ctx, &s3.CopyObjectInput{
+			Bucket:     aws.String(f.bucket),
+			CopySource: aws.String(f.bucket + "/" + oldKey),
+			Key:        aws.String(newKey),
+		}); err != nil {
+			return fmt.Errorf("s3 copy %s -> %s: %w", oldKey, newKey, err)
+		}
+	}
+	return f.deleteObjectKeys(ctx, oldKeys)
 }
 
 func (f *s3FS) deleteRepoPrefix(fullName string) error {
@@ -531,28 +528,46 @@ func (f *s3FS) deleteRepoPrefix(fullName string) error {
 	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 	defer cancel()
 
-	var continuation *string
 	for {
 		resp, err := f.client.ListObjectsV2(ctx, &s3.ListObjectsV2Input{
-			Bucket:            aws.String(f.bucket),
-			Prefix:            aws.String(prefix),
-			ContinuationToken: continuation,
+			Bucket: aws.String(f.bucket),
+			Prefix: aws.String(prefix),
 		})
 		if err != nil {
 			return fmt.Errorf("s3 list %s: %w", prefix, err)
 		}
+		keys := make([]string, 0, len(resp.Contents))
 		for _, obj := range resp.Contents {
-			if _, err := f.client.DeleteObject(ctx, &s3.DeleteObjectInput{
-				Bucket: aws.String(f.bucket),
-				Key:    obj.Key,
-			}); err != nil {
-				return fmt.Errorf("s3 delete %s: %w", aws.ToString(obj.Key), err)
-			}
+			keys = append(keys, aws.ToString(obj.Key))
 		}
-		if !aws.ToBool(resp.IsTruncated) {
-			break
+		if len(keys) == 0 {
+			return nil
 		}
-		continuation = resp.NextContinuationToken
+		if err := f.deleteObjectKeys(ctx, keys); err != nil {
+			return err
+		}
+	}
+}
+
+func (f *s3FS) deleteObjectKeys(ctx context.Context, keys []string) error {
+	const maxDeleteObjects = 1000
+	for start := 0; start < len(keys); start += maxDeleteObjects {
+		end := min(start+maxDeleteObjects, len(keys))
+		objects := make([]s3types.ObjectIdentifier, 0, end-start)
+		for _, key := range keys[start:end] {
+			objects = append(objects, s3types.ObjectIdentifier{Key: aws.String(key)})
+		}
+		response, err := f.client.DeleteObjects(ctx, &s3.DeleteObjectsInput{
+			Bucket: aws.String(f.bucket),
+			Delete: &s3types.Delete{Objects: objects, Quiet: aws.Bool(true)},
+		})
+		if err != nil {
+			return fmt.Errorf("s3 delete %d objects: %w", len(objects), err)
+		}
+		if len(response.Errors) > 0 {
+			first := response.Errors[0]
+			return fmt.Errorf("s3 delete %s: %s", aws.ToString(first.Key), aws.ToString(first.Message))
+		}
 	}
 	return nil
 }

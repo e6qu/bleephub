@@ -77,7 +77,8 @@ type Workflow struct {
 	EnvApprovals       []*EnvApproval       `json:"envApprovals,omitempty"`
 	Result             Result               `json:"result"` // "success", "failure", "cancelled"
 	CreatedAt          time.Time            `json:"createdAt"`
-	MaxParallel        int                  `json:"-"` // per-matrix-group limit
+	MaxParallel        int                  `json:"-"` // compatibility fallback for directly-constructed runs
+	MatrixMaxParallel  map[string]int       `json:"-"`
 	cancelTimeout      func()               // stops the timeout watcher goroutine
 	EventName          string               `json:"eventName,omitempty"`
 	Ref                string               `json:"ref,omitempty"`
@@ -128,9 +129,11 @@ type WorkflowJob struct {
 	Outputs         map[string]string      `json:"outputs,omitempty"`
 	MatrixValues    map[string]interface{} `json:"matrix,omitempty"`
 	ContinueOnError bool                   `json:"continueOnError,omitempty"`
+	QueuedAt        time.Time              `json:"queuedAt,omitempty"`
 	StartedAt       time.Time              `json:"startedAt,omitempty"`
 	CompletedAt     time.Time              `json:"completedAt,omitempty"`
 	MatrixGroup     string                 `json:"matrixGroup,omitempty"`
+	Summary         string                 `json:"summary,omitempty"`
 	Def             *JobDef                `json:"-"`
 	// Hidden marks synthetic reusable-workflow gate/collector nodes the
 	// jobs API never lists (real GitHub shows only the called jobs).
@@ -151,7 +154,8 @@ type WorkflowEventMeta struct {
 	Attempt int
 	// ReuseRunID keeps the original run id/number across rerun attempts
 	// (real GitHub never mints a new run id for a re-run).
-	ReuseRunID int
+	ReuseRunID     int
+	ReuseRunNumber int
 	// WorkflowFileID / WorkflowFilePath preserve the originating workflow
 	// file across rerun attempts, even when multiple files share the same
 	// workflow display name.
@@ -262,14 +266,14 @@ func (s *Server) submitWorkflow(ctx context.Context, serverURL string, wf *Workf
 	}
 
 	workflow := &Workflow{
-		ID:        uuid.New().String(),
-		Name:      wf.Name,
-		RunID:     runID,
-		RunNumber: runID,
-		Jobs:      make(map[string]*WorkflowJob),
-		Env:       wf.Env,
-		Status:    WorkflowStatusRunning,
-		CreatedAt: time.Now(),
+		ID:                uuid.New().String(),
+		Name:              wf.Name,
+		RunID:             runID,
+		Jobs:              make(map[string]*WorkflowJob),
+		Env:               wf.Env,
+		Status:            WorkflowStatusRunning,
+		CreatedAt:         time.Now(),
+		MatrixMaxParallel: make(map[string]int),
 	}
 
 	if workflow.Name == "" {
@@ -299,34 +303,15 @@ func (s *Server) submitWorkflow(ctx context.Context, serverURL string, wf *Workf
 			wfJob.DisplayName = jd.Name
 		}
 
-		// Extract matrix values from the prefix expandMatrixJobs stashed them
-		// under. Smuggling them through the environment map is the reason the
-		// keys have to be filtered back out again before the job message is
-		// built, and the reason matrix values lose their type on the way; both
-		// are recorded as open.
-		if jd.Env != nil {
-			matrixVals := make(map[string]interface{})
-			for k, v := range jd.Env {
-				if name, ok := strings.CutPrefix(k, matrixEnvPrefix); ok {
-					matrixVals[name] = v
-				}
-			}
-			if len(matrixVals) > 0 {
-				wfJob.MatrixValues = matrixVals
+		if len(jd.MatrixValues) > 0 {
+			wfJob.MatrixValues = make(map[string]interface{}, len(jd.MatrixValues))
+			for matrixKey, matrixValue := range jd.MatrixValues {
+				wfJob.MatrixValues[matrixKey] = matrixValue
 			}
 		}
-
-		// Detect matrix group from key pattern (e.g., "test_0", "test_1" → group "test")
-		if idx := strings.LastIndex(key, "_"); idx > 0 {
-			suffix := key[idx+1:]
-			if _, err := fmt.Sscanf(suffix, "%d", new(int)); err == nil {
-				wfJob.MatrixGroup = key[:idx]
-			}
-		}
-
-		// Track max-parallel from strategy
-		if jd.Strategy != nil && jd.Strategy.MaxParallel > 0 && wfJob.MatrixGroup != "" {
-			workflow.MaxParallel = jd.Strategy.MaxParallel
+		wfJob.MatrixGroup = jd.MatrixGroup
+		if jd.MatrixGroup != "" && jd.MatrixMaxParallel > 0 {
+			workflow.MatrixMaxParallel[jd.MatrixGroup] = jd.MatrixMaxParallel
 		}
 
 		workflow.Jobs[key] = wfJob
@@ -386,6 +371,11 @@ func (s *Server) submitWorkflow(ctx context.Context, serverURL string, wf *Workf
 	// can reference its stable id + real path (workflow_id / workflow_url /
 	// path), which are constant across every run produced from the file.
 	workflow.WorkflowFileID, workflow.WorkflowFilePath = s.resolveWorkflowFileForRun(workflow)
+	if len(eventMeta) > 0 && eventMeta[0] != nil && eventMeta[0].ReuseRunNumber > 0 {
+		workflow.RunNumber = eventMeta[0].ReuseRunNumber
+	} else {
+		workflow.RunNumber = s.store.ReserveWorkflowRunNumber(workflow)
+	}
 
 	// Fork-PR contributor approval: a run triggered by a pull request
 	// whose head repository differs from the base repository holds in
@@ -402,48 +392,52 @@ func (s *Server) submitWorkflow(ctx context.Context, serverURL string, wf *Workf
 		return workflow, nil
 	}
 
-	// Handle concurrency control
+	// Concurrency admission and insertion are one critical section. The prior
+	// read-then-write sequence let simultaneous submissions both observe an
+	// empty group and start. GitHub also retains only the newest pending run
+	// for a group, so stale queued runs are cancelled as a new one arrives.
+	var cancelForConcurrency []*Workflow
 	if workflow.ConcurrencyGroup != "" {
-		s.store.mu.RLock()
-		var activeWf *Workflow
+		s.workflowConcurrencyMu.Lock()
+		s.store.mu.Lock()
+		var active bool
 		for _, existing := range s.store.Workflows {
-			if existing.ID == workflow.ID {
+			if existing.ConcurrencyGroup != workflow.ConcurrencyGroup || existing.Status == WorkflowStatusCompleted {
 				continue
 			}
-			if existing.ConcurrencyGroup == workflow.ConcurrencyGroup &&
-				existing.Status == WorkflowStatusRunning {
-				activeWf = existing
-				break
+			switch existing.Status {
+			case WorkflowStatusRunning, WorkflowStatusWaiting:
+				active = true
+				if workflow.CancelInProgress {
+					cancelForConcurrency = append(cancelForConcurrency, existing)
+				}
+			case WorkflowStatusPendingConcurrency:
+				// At most one pending run is retained, and it is the newest.
+				cancelForConcurrency = append(cancelForConcurrency, existing)
 			}
 		}
-		s.store.mu.RUnlock()
-
-		if activeWf != nil {
-			if workflow.CancelInProgress {
-				// Cancel the old workflow
-				s.cancelWorkflow(activeWf)
-			} else {
-				// Queue this workflow behind the active one
-				workflow.Status = WorkflowStatusPendingConcurrency
-				s.store.mu.Lock()
-				s.store.Workflows[workflow.ID] = workflow
-				s.store.persistWorkflowRecord(workflow)
-				s.store.mu.Unlock()
-				s.queueActionsEvent(evRunRequested, workflow, nil)
-				return workflow, nil
-			}
+		if active && !workflow.CancelInProgress {
+			workflow.Status = WorkflowStatusPendingConcurrency
+		} else {
+			workflow.ConcurrencyAcquiredAt = time.Now().UTC()
 		}
+		s.store.Workflows[workflow.ID] = workflow
+		s.store.persistWorkflowRecord(workflow)
+		s.store.mu.Unlock()
+		s.workflowConcurrencyMu.Unlock()
+	} else {
+		s.store.mu.Lock()
+		s.store.Workflows[workflow.ID] = workflow
+		s.store.persistWorkflowRecord(workflow)
+		s.store.mu.Unlock()
 	}
-
-	// Store the workflow
-	if workflow.ConcurrencyGroup != "" {
-		workflow.ConcurrencyAcquiredAt = time.Now().UTC()
-	}
-	s.store.mu.Lock()
-	s.store.Workflows[workflow.ID] = workflow
-	s.store.persistWorkflowRecord(workflow)
-	s.store.mu.Unlock()
 	s.queueActionsEvent(evRunRequested, workflow, nil)
+	for _, existing := range cancelForConcurrency {
+		s.cancelWorkflow(existing)
+	}
+	if workflow.Status == WorkflowStatusPendingConcurrency {
+		return workflow, nil
+	}
 
 	if s.metrics != nil {
 		s.metrics.RecordWorkflowSubmit()
@@ -610,7 +604,11 @@ func (s *Server) dispatchReadyJobs(ctx context.Context, wf *Workflow, serverURL 
 			}
 
 			// Enforce max-parallel: count running/queued jobs in same matrix group
-			if wf.MaxParallel > 0 {
+			maxParallel := wf.MaxParallel
+			if wfJob.MatrixGroup != "" && wf.MatrixMaxParallel[wfJob.MatrixGroup] > 0 {
+				maxParallel = wf.MatrixMaxParallel[wfJob.MatrixGroup]
+			}
+			if maxParallel > 0 {
 				active := 0
 				for _, j := range wf.Jobs {
 					if j.Key == wfJob.Key {
@@ -620,7 +618,7 @@ func (s *Server) dispatchReadyJobs(ctx context.Context, wf *Workflow, serverURL 
 						active++
 					}
 				}
-				if active >= wf.MaxParallel {
+				if active >= maxParallel {
 					continue // Skip dispatch, will retry when a job completes
 				}
 			}
@@ -645,7 +643,7 @@ func (s *Server) dispatchReadyJobs(ctx context.Context, wf *Workflow, serverURL 
 
 			// Mark as queued now so max-parallel checks in this iteration see it
 			wfJob.Status = JobStatusQueued
-			wfJob.StartedAt = time.Now()
+			wfJob.QueuedAt = time.Now()
 			toDispatch = append(toDispatch, wfJob)
 			s.queueActionsEvent(evJobQueued, wf, wfJob)
 			changed = true
@@ -1158,18 +1156,34 @@ func (s *Server) cancelWorkflow(wf *Workflow) {
 // startPendingConcurrencyWorkflow finds and starts the next pending-concurrency
 // workflow in the given concurrency group.
 func (s *Server) startPendingConcurrencyWorkflow(group string) {
+	s.workflowConcurrencyMu.Lock()
 	s.store.mu.Lock()
 	var pendingWf *Workflow
+	var stale []*Workflow
 	for _, wf := range s.store.Workflows {
-		if wf.ConcurrencyGroup == group && wf.Status == WorkflowStatusPendingConcurrency {
-			if pendingWf == nil || wf.CreatedAt.Before(pendingWf.CreatedAt) {
+		if wf.ConcurrencyGroup != group {
+			continue
+		}
+		if wf.Status == WorkflowStatusRunning || wf.Status == WorkflowStatusWaiting {
+			s.store.mu.Unlock()
+			s.workflowConcurrencyMu.Unlock()
+			return
+		}
+		if wf.Status == WorkflowStatusPendingConcurrency {
+			if pendingWf == nil || wf.CreatedAt.After(pendingWf.CreatedAt) {
+				if pendingWf != nil {
+					stale = append(stale, pendingWf)
+				}
 				pendingWf = wf
+			} else {
+				stale = append(stale, wf)
 			}
 		}
 	}
 
 	if pendingWf == nil {
 		s.store.mu.Unlock()
+		s.workflowConcurrencyMu.Unlock()
 		return
 	}
 
@@ -1177,7 +1191,11 @@ func (s *Server) startPendingConcurrencyWorkflow(group string) {
 	pendingWf.ConcurrencyAcquiredAt = time.Now().UTC()
 	s.store.persistWorkflowRecord(pendingWf)
 	s.store.mu.Unlock()
+	s.workflowConcurrencyMu.Unlock()
 
+	for _, wf := range stale {
+		s.cancelWorkflow(wf)
+	}
 	if s.metrics != nil {
 		s.metrics.RecordWorkflowSubmit()
 	}
@@ -1219,7 +1237,7 @@ func normalizeResult(result string) string {
 		return "cancelled"
 	default:
 		if result == "" {
-			return "success"
+			return "failure"
 		}
 		return result
 	}
@@ -1322,7 +1340,7 @@ func (s *Server) checkJobTimeouts(wf *Workflow) {
 	var timedOut bool
 	var timedOutJobIDs []string
 	for _, wfJob := range wf.Jobs {
-		if wfJob.Status != JobStatusQueued && wfJob.Status != JobStatusRunning {
+		if wfJob.Status != JobStatusRunning {
 			continue
 		}
 		if wfJob.StartedAt.IsZero() {
@@ -1337,9 +1355,9 @@ func (s *Server) checkJobTimeouts(wf *Workflow) {
 				Str("workflow_id", wf.ID).
 				Str("job_key", wfJob.Key).
 				Int("timeout_minutes", timeout).
-				Msg("job timed out, marking cancelled")
+				Msg("job timed out, marking failed")
 			wfJob.Status = JobStatusCompleted
-			wfJob.Result = ResultCancelled
+			wfJob.Result = ResultFailure
 			wfJob.CompletedAt = now
 			s.queueActionsEvent(evJobCompleted, wf, wfJob)
 			timedOutJobIDs = append(timedOutJobIDs, wfJob.JobID)

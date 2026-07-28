@@ -38,9 +38,12 @@ func (s *Server) registerGHActionsRoutes() {
 	s.route("GET /api/v3/repos/{owner}/{repo}/actions/runs/{run_id}/attempts/{attempt_number}/jobs", s.handleListRunAttemptJobs)
 	s.route("GET /api/v3/repos/{owner}/{repo}/actions/jobs/{job_id}", s.handleGetWorkflowJob)
 	s.route("GET /api/v3/repos/{owner}/{repo}/actions/jobs/{job_id}/logs", s.handleGetWorkflowJobLogs)
+	s.route("GET /internal/repos/{owner}/{repo}/actions/jobs/{job_id}/summary", s.handleGetWorkflowJobSummary)
 	// List/get runners require administration:read on real GitHub.
 	s.route("GET /api/v3/repos/{owner}/{repo}/actions/runners",
 		s.requirePerm(scopeAdministration, permRead, s.handleListRunners))
+	s.route("GET /api/v3/repos/{owner}/{repo}/actions/runners/downloads",
+		s.requirePerm(scopeAdministration, permRead, s.handleListRunnerApplications))
 	s.route("GET /api/v3/repos/{owner}/{repo}/actions/runners/{runner_id}",
 		s.requirePerm(scopeAdministration, permRead, s.handleGetRunner))
 	s.route("DELETE /api/v3/repos/{owner}/{repo}/actions/runners/{runner_id}",
@@ -50,6 +53,8 @@ func (s *Server) registerGHActionsRoutes() {
 	// scope serves the same agents (404 only for unknown orgs).
 	s.route("GET /api/v3/orgs/{org}/actions/runners",
 		s.requirePerm(scopeAdministration, permRead, s.handleListRunners))
+	s.route("GET /api/v3/orgs/{org}/actions/runners/downloads",
+		s.requirePerm(scopeAdministration, permRead, s.handleListRunnerApplications))
 	s.route("GET /api/v3/orgs/{org}/actions/runners/{runner_id}",
 		s.requirePerm(scopeAdministration, permRead, s.handleGetRunner))
 	s.route("DELETE /api/v3/orgs/{org}/actions/runners/{runner_id}",
@@ -60,6 +65,20 @@ func (s *Server) registerGHActionsRoutes() {
 		s.requirePerm(scopeAdministration, permWrite, s.handleOrgRemoveToken))
 	s.route("POST /api/v3/orgs/{org}/actions/runners/generate-jitconfig",
 		s.requirePerm(scopeAdministration, permWrite, s.handleOrgGenerateJITConfig))
+}
+
+func (s *Server) handleListRunnerApplications(w http.ResponseWriter, r *http.Request) {
+	if org := r.PathValue("org"); org != "" {
+		if s.store.GetOrg(org) == nil {
+			writeGHError(w, http.StatusNotFound, "Not Found")
+			return
+		}
+	} else if s.lookupReadableRepoFromPath(w, r) == nil {
+		return
+	}
+	// Bleephub runners are distributed as container images, not downloadable
+	// application archives. An empty catalog is the truthful GitHub shape.
+	writeJSON(w, http.StatusOK, []map[string]interface{}{})
 }
 
 // handleOrgRegistrationToken mirrors the repo-scoped registration token
@@ -324,10 +343,18 @@ func (s *Server) workflowJobJSONLocked(wf *Workflow, wfJob *WorkflowJob, baseURL
 	htmlBase := fmt.Sprintf("%s/%s", baseURL, repoPath)
 	status := jobStatus(string(wfJob.Status))
 	id := stableJobID(wfJob.JobID)
-	startedAt := wfJob.StartedAt.UTC().Format("2006-01-02T15:04:05Z")
-	// created_at is the queue time; bleephub records StartedAt at queue
-	// (dispatchReadyJobs sets it when the job is marked queued), so it
-	// doubles as the created timestamp.
+	var startedAt any
+	if !wfJob.StartedAt.IsZero() {
+		startedAt = wfJob.StartedAt.UTC().Format("2006-01-02T15:04:05Z")
+	}
+	queuedAt := wfJob.QueuedAt
+	if queuedAt.IsZero() {
+		queuedAt = wfJob.StartedAt
+	}
+	if queuedAt.IsZero() {
+		queuedAt = wf.CreatedAt
+	}
+	createdAt := queuedAt.UTC().Format("2006-01-02T15:04:05Z")
 	var completedAt any
 	if status == "completed" {
 		t := wfJob.CompletedAt
@@ -349,7 +376,7 @@ func (s *Server) workflowJobJSONLocked(wf *Workflow, wfJob *WorkflowJob, baseURL
 		"html_url":          fmt.Sprintf("%s/actions/runs/%d/job/%d", htmlBase, wf.RunID, id),
 		"status":            status,
 		"conclusion":        jobConclusion(status, string(wfJob.Result)),
-		"created_at":        startedAt,
+		"created_at":        createdAt,
 		"started_at":        startedAt,
 		"completed_at":      completedAt,
 		"name":              wfJob.DisplayName,
@@ -770,6 +797,26 @@ func (s *Server) handleGetWorkflowJobLogs(w http.ResponseWriter, r *http.Request
 	_, _ = w.Write(content)
 }
 
+func (s *Server) handleGetWorkflowJobSummary(w http.ResponseWriter, r *http.Request) {
+	if !s.enforceRepoReadable(w, r) {
+		return
+	}
+	jobID, err := strconv.ParseInt(r.PathValue("job_id"), 10, 64)
+	if err != nil {
+		writeGHError(w, http.StatusBadRequest, "invalid job_id")
+		return
+	}
+	_, job := s.findJobByStableIDInRepo(jobID, repoFullName(r))
+	if job == nil {
+		writeGHError(w, http.StatusNotFound, "Not Found")
+		return
+	}
+	s.store.mu.RLock()
+	summary := job.Summary
+	s.store.mu.RUnlock()
+	writeJSON(w, http.StatusOK, map[string]string{"summary": summary})
+}
+
 type jobLogRef struct {
 	ID   int
 	Name string
@@ -963,16 +1010,17 @@ func (s *Server) rerunWorkflowAsNewAttempt(r *http.Request, old *Workflow, file 
 	}
 
 	meta := WorkflowEventMeta{
-		EventName:     eventOf(old),
-		Ref:           old.Ref,
-		Sha:           old.Sha,
-		Repo:          old.RepoFullName,
-		Inputs:        old.Inputs,
-		TypedInputs:   old.TypedInputs,
-		Payload:       old.EventPayload,
-		ReuseRunID:    old.RunID,
-		Attempt:       old.AttemptNumber() + 1,
-		CarryOverJobs: carryOver,
+		EventName:      eventOf(old),
+		Ref:            old.Ref,
+		Sha:            old.Sha,
+		Repo:           old.RepoFullName,
+		Inputs:         old.Inputs,
+		TypedInputs:    old.TypedInputs,
+		Payload:        old.EventPayload,
+		ReuseRunID:     old.RunID,
+		ReuseRunNumber: old.RunNumber,
+		Attempt:        old.AttemptNumber() + 1,
+		CarryOverJobs:  carryOver,
 	}
 	if file != nil {
 		meta.WorkflowFileID = file.ID

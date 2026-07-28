@@ -41,12 +41,14 @@ func (st *Store) ReserveRunID() int {
 	st.mu.Lock()
 	defer st.mu.Unlock()
 	id := st.NextRunID
-	st.NextRunID++
 	if st.persist != nil {
-		if err := st.persist.SetCounter("next_run_id", int64(st.NextRunID)); err != nil {
+		reserved, err := st.persist.AllocateCounterValue("next_run_id", int64(id))
+		if err != nil {
 			panic(&persistenceFailure{op: "counter", bucket: "counters", key: "next_run_id", err: err})
 		}
+		id = int(reserved)
 	}
+	st.NextRunID = id + 1
 	return id
 }
 
@@ -57,13 +59,64 @@ func (st *Store) ReserveLogID() int {
 	st.mu.Lock()
 	defer st.mu.Unlock()
 	id := st.NextLog
-	st.NextLog++
 	if st.persist != nil {
-		if err := st.persist.SetCounter("next_log_id", int64(st.NextLog)); err != nil {
+		reserved, err := st.persist.AllocateCounterValue("next_log_id", int64(id))
+		if err != nil {
 			panic(&persistenceFailure{op: "counter", bucket: "counters", key: "next_log_id", err: err})
 		}
+		id = int(reserved)
 	}
+	st.NextLog = id + 1
 	return id
+}
+
+// ReserveWorkflowRunNumber returns the next number for one workflow file.
+// GitHub numbers each workflow independently; the run ID remains the global
+// identifier. The durable counter also makes concurrent replicas agree.
+func (st *Store) ReserveWorkflowRunNumber(wf *Workflow) int {
+	st.mu.Lock()
+	defer st.mu.Unlock()
+	minimum := 1
+	sameWorkflow := func(existing *Workflow) bool {
+		if existing == nil || existing.RepoFullName != wf.RepoFullName {
+			return false
+		}
+		if wf.WorkflowFileID != 0 && existing.WorkflowFileID != 0 {
+			return existing.WorkflowFileID == wf.WorkflowFileID
+		}
+		if wf.WorkflowFilePath != "" && existing.WorkflowFilePath != "" {
+			return existing.WorkflowFilePath == wf.WorkflowFilePath
+		}
+		return existing.Name == wf.Name
+	}
+	for _, existing := range st.Workflows {
+		if sameWorkflow(existing) && existing.RunNumber >= minimum {
+			minimum = existing.RunNumber + 1
+		}
+	}
+	for _, attempts := range st.WorkflowAttempts {
+		for _, existing := range attempts {
+			if sameWorkflow(existing) && existing.RunNumber >= minimum {
+				minimum = existing.RunNumber + 1
+			}
+		}
+	}
+	if st.persist == nil {
+		return minimum
+	}
+	identity := wf.WorkflowFilePath
+	if wf.WorkflowFileID != 0 {
+		identity = strconv.FormatInt(wf.WorkflowFileID, 10)
+	}
+	if identity == "" {
+		identity = wf.Name
+	}
+	counter := "workflow_run_number:" + wf.RepoFullName + ":" + identity
+	number, err := st.persist.AllocateCounterValue(counter, int64(minimum))
+	if err != nil {
+		panic(&persistenceFailure{op: "counter", bucket: "counters", key: counter, err: err})
+	}
+	return int(number)
 }
 
 // User represents a GitHub user account.

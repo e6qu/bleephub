@@ -43,6 +43,7 @@ type Server struct {
 	registryUploads        map[string]*containerRegistryUpload
 	classroomMu            sync.Mutex // serializes multi-resource Classroom browser transactions
 	marketplaceMu          sync.Mutex // serializes Marketplace billing transitions and webhook emission
+	workflowConcurrencyMu  sync.Mutex // serializes concurrency-group admission and queue promotion
 	routePatterns          []string   // every pattern registered via route(), for fidelity enumeration
 	externalURL            string     // BLEEPHUB_EXTERNAL_URL; when set, overrides request-Host URL derivation (job messages, action URLs) — the GHES "external URL" knob
 	pagesJekyllExecutable  string
@@ -234,6 +235,9 @@ func NewServer(addr string, logger zerolog.Logger, options ...ServerOption) *Ser
 		}
 		if err := s.store.SetPersistence(persist); err != nil {
 			logger.Fatal().Err(err).Msg("failed to load persisted state")
+		}
+		if err := s.artifactStore.SetPersistence(persist); err != nil {
+			logger.Fatal().Err(err).Msg("failed to load persisted Actions artifact and cache metadata")
 		}
 		s.logger.Info().Str("dialect", persist.dialect.name).Str("data_dir", dataDir).Msg("bleephub persistence enabled")
 	}

@@ -228,6 +228,12 @@ func (st *Store) ListIssueBlocking(issueID int) []int {
 	return out
 }
 
+func (st *Store) GetSubIssueParent(issueID int) int {
+	st.mu.RLock()
+	defer st.mu.RUnlock()
+	return st.SubIssueParent[issueID]
+}
+
 func (st *Store) persistBlockedByLocked(issueID int) {
 	if st.persist == nil {
 		return
@@ -375,6 +381,34 @@ func (s *Server) handleListIssueDependenciesBlockedBy(w http.ResponseWriter, r *
 		}
 	}
 	writeJSON(w, http.StatusOK, paginateAndLink(w, r, out))
+}
+
+func (s *Server) handleListIssueDependenciesBlocking(w http.ResponseWriter, r *http.Request) {
+	repo, issue := s.issueFromNumberPath(w, r)
+	if issue == nil {
+		return
+	}
+	ids := s.store.ListIssueBlocking(issue.ID)
+	out := make([]map[string]interface{}, 0, len(ids))
+	for _, id := range ids {
+		if blocked := s.store.GetIssue(id); blocked != nil {
+			out = append(out, issueToJSON(blocked, s.store, s.baseURL(r), repo.FullName))
+		}
+	}
+	writeJSON(w, http.StatusOK, paginateAndLink(w, r, out))
+}
+
+func (s *Server) handleGetIssueParent(w http.ResponseWriter, r *http.Request) {
+	repo, issue := s.issueFromNumberPath(w, r)
+	if issue == nil {
+		return
+	}
+	parent := s.store.GetIssue(s.store.GetSubIssueParent(issue.ID))
+	if parent == nil {
+		writeGHError(w, http.StatusNotFound, "Not Found")
+		return
+	}
+	writeJSON(w, http.StatusOK, issueToJSON(parent, s.store, s.baseURL(r), repo.FullName))
 }
 
 func (s *Server) handleAddIssueDependencyBlockedBy(w http.ResponseWriter, r *http.Request) {

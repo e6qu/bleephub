@@ -67,6 +67,120 @@ func TestArtifactCreateUploadFinalize(t *testing.T) {
 	}
 }
 
+func TestActionsArtifactAndCacheMetadataPersistence(t *testing.T) {
+	t.Setenv("BLEEPHUB_PERSIST", "true")
+	t.Setenv("BLEEPHUB_DATA_DIR", t.TempDir())
+
+	p1, err := NewPersistence()
+	if err != nil {
+		t.Fatalf("open persistence: %v", err)
+	}
+	first := NewArtifactStoreWithByteStore("", nil)
+	if err := first.SetPersistence(p1); err != nil {
+		t.Fatalf("attach persistence: %v", err)
+	}
+	first.mu.Lock()
+	artifactID, err := first.reserveID(actionsArtifactsBucket, &first.nextID)
+	if err != nil {
+		first.mu.Unlock()
+		t.Fatalf("reserve artifact identifier: %v", err)
+	}
+	artifact := &Artifact{
+		ID: artifactID, Name: "release", Data: []byte("release archive"), Size: int64(len("release archive")), Finalized: true,
+		RepoFullName: "octo/repo", WorkflowRunBackendID: "run-1", GitHubRunID: 17,
+		CreatedAt: time.Now().UTC(),
+	}
+	first.populateArtifactDigest(artifact)
+	first.artifacts[artifact.ID] = artifact
+	if err := first.persistMeta(artifact); err != nil {
+		first.mu.Unlock()
+		t.Fatalf("persist artifact: %v", err)
+	}
+	cacheID, err := first.reserveID(actionsCachesBucket, &first.nextCacheID)
+	if err != nil {
+		first.mu.Unlock()
+		t.Fatalf("reserve cache identifier: %v", err)
+	}
+	cache := &CacheEntry{
+		ID: cacheID, Repo: "octo/repo", Key: "linux-go", Version: "v1",
+		Size: 456, Finalized: true, DownloadToken: "opaque", CreatedAt: time.Now().UTC(),
+		LastAccessedAt: time.Now().UTC().Add(time.Minute),
+	}
+	first.caches[cache.ID] = cache
+	first.cacheIndex[cacheLookupKey(cache.Repo, cache.Key, cache.Version)] = cache.ID
+	if err := first.persistCacheMeta(cache); err != nil {
+		first.mu.Unlock()
+		t.Fatalf("persist cache: %v", err)
+	}
+	first.mu.Unlock()
+	if err := p1.Close(); err != nil {
+		t.Fatalf("close first persistence: %v", err)
+	}
+
+	p2, err := NewPersistence()
+	if err != nil {
+		t.Fatalf("reopen persistence: %v", err)
+	}
+	defer p2.Close()
+	reloaded := NewArtifactStoreWithByteStore("", nil)
+	if err := reloaded.SetPersistence(p2); err != nil {
+		t.Fatalf("reload artifact metadata: %v", err)
+	}
+	gotArtifact, ok := reloaded.artifactByID(artifactID)
+	if !ok || gotArtifact.Name != "release" || gotArtifact.RepoFullName != "octo/repo" ||
+		gotArtifact.Size != int64(len("release archive")) || gotArtifact.Digest == "" {
+		t.Fatalf("reloaded artifact = %#v, found=%v", gotArtifact, ok)
+	}
+	gotCaches := reloaded.finalizedRepoCaches("octo/repo")
+	if len(gotCaches) != 1 || gotCaches[0].ID != cacheID || gotCaches[0].Size != 456 || gotCaches[0].LastAccessedAt.IsZero() {
+		t.Fatalf("reloaded caches = %#v", gotCaches)
+	}
+
+	reloaded.mu.Lock()
+	nextArtifactID, err := reloaded.reserveID(actionsArtifactsBucket, &reloaded.nextID)
+	reloaded.mu.Unlock()
+	if err != nil {
+		t.Fatalf("reserve post-reload artifact identifier: %v", err)
+	}
+	if nextArtifactID <= artifactID {
+		t.Fatalf("post-reload artifact identifier = %d, want greater than %d", nextArtifactID, artifactID)
+	}
+	if err := reloaded.renameRepository("octo/repo", "octo/renamed"); err != nil {
+		t.Fatalf("rename artifact repository metadata: %v", err)
+	}
+	if _, ok := reloaded.artifactByID(artifactID); !ok {
+		t.Fatal("artifact disappeared after repository rename")
+	}
+	if len(reloaded.finalizedRepoCaches("octo/repo")) != 0 || len(reloaded.finalizedRepoCaches("octo/renamed")) != 1 {
+		t.Fatal("cache repository index did not move on rename")
+	}
+
+	renamedReload := NewArtifactStoreWithByteStore("", nil)
+	if err := renamedReload.SetPersistence(p2); err != nil {
+		t.Fatalf("reload renamed metadata: %v", err)
+	}
+	if art, ok := renamedReload.artifactByID(artifactID); !ok || art.RepoFullName != "octo/renamed" {
+		t.Fatalf("durable renamed artifact = %#v, found=%v", art, ok)
+	}
+	if len(renamedReload.finalizedRepoCaches("octo/renamed")) != 1 {
+		t.Fatal("durable renamed cache index was not rebuilt")
+	}
+
+	s := newTestServer()
+	s.artifactStore = renamedReload
+	if err := s.deleteRepositoryActionsData(t.Context(), "octo/renamed"); err != nil {
+		t.Fatalf("delete repository Actions data: %v", err)
+	}
+	deletedReload := NewArtifactStoreWithByteStore("", nil)
+	if err := deletedReload.SetPersistence(p2); err != nil {
+		t.Fatalf("reload deleted metadata: %v", err)
+	}
+	if _, ok := deletedReload.artifactByID(artifactID); ok ||
+		len(deletedReload.finalizedRepoCaches("octo/renamed")) != 0 {
+		t.Fatal("repository deletion left durable Actions metadata")
+	}
+}
+
 func TestArtifactUploadWritesObjectStore(t *testing.T) {
 	fs := newS3FSForTest(t)
 	objectFS := &s3FS{client: fs.client, bucket: fs.bucket, prefix: "objects"}

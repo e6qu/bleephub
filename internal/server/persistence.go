@@ -783,6 +783,30 @@ func (p *Persistence) SetCounter(name string, value int64) error {
 	return err
 }
 
+// AllocateCounterValue atomically reserves one value from a durable sequence.
+// minimum is the first value the caller is willing to accept. Unlike a
+// GetCounter/SetCounter pair, the single upsert is safe when multiple dqlite
+// clients allocate from the same sequence concurrently.
+func (p *Persistence) AllocateCounterValue(name string, minimum int64) (int64, error) {
+	if p == nil {
+		return minimum, nil
+	}
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	var next int64
+	err := p.db.QueryRow(
+		`INSERT INTO counters (name, value) VALUES (?, ?)
+		 ON CONFLICT(name) DO UPDATE SET value = MAX(counters.value, excluded.value - 1) + 1
+		 RETURNING value`,
+		name,
+		minimum+1,
+	).Scan(&next)
+	if err != nil {
+		return 0, err
+	}
+	return next - 1, nil
+}
+
 func (p *Persistence) Close() error {
 	if p == nil {
 		return nil

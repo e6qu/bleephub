@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"sort"
 	"strconv"
 	"sync"
 	"time"
@@ -348,6 +349,8 @@ func (s *PRReviewCommentStore) ListThreads(prID int) []*ReviewThread {
 }
 
 func (s *Server) registerGHPRCommentsRoutes() {
+	s.route("GET /api/v3/repos/{owner}/{repo}/pulls/comments",
+		s.handleListRepoPRComments)
 	// `/pulls/{number}/comments` (3 segments, literal "comments" at pos 3)
 	s.route("POST /api/v3/repos/{owner}/{repo}/pulls/{number}/comments",
 		s.requirePerm(scopePullRequests, permWrite, s.handleCreatePRComment))
@@ -374,6 +377,31 @@ func (s *Server) registerGHPRCommentsRoutes() {
 		s.handlePRCommentTwoSegDispatch("PATCH"))
 	s.route("DELETE /api/v3/repos/{owner}/{repo}/pulls/{p1}/{p2}",
 		s.handlePRCommentTwoSegDispatch("DELETE"))
+}
+
+func (s *Server) handleListRepoPRComments(w http.ResponseWriter, r *http.Request) {
+	repo := s.lookupReadableRepoFromPath(w, r)
+	if repo == nil {
+		return
+	}
+	prs := s.store.ListPullRequests(repo.ID, "all")
+	type row struct {
+		comment *PRReviewComment
+		pr      *PullRequest
+	}
+	var rows []row
+	for _, pr := range prs {
+		for _, comment := range s.store.PRReviewComments.ListForPR(pr.ID) {
+			rows = append(rows, row{comment: comment, pr: pr})
+		}
+	}
+	sort.Slice(rows, func(i, j int) bool { return rows[i].comment.ID < rows[j].comment.ID })
+	page := paginateAndLink(w, r, rows)
+	out := make([]map[string]interface{}, 0, len(page))
+	for _, item := range page {
+		out = append(out, prReviewCommentToJSON(item.comment, s.store, s.baseURL(r), repo, item.pr))
+	}
+	writeJSON(w, http.StatusOK, out)
 }
 
 // handlePRCommentTwoSegDispatch routes `/pulls/{p1}/{p2}` when p1=="comments"
