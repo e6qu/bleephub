@@ -142,7 +142,7 @@ func (s *Server) handleGHRateLimit(w http.ResponseWriter, r *http.Request) {
 func writeGHError(w http.ResponseWriter, status int, message string) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
-	json.NewEncoder(w).Encode(map[string]string{
+	_ = json.NewEncoder(w).Encode(map[string]string{
 		"message":           message,
 		"documentation_url": "https://docs.github.com/rest",
 	})
@@ -152,7 +152,7 @@ func writeGHError(w http.ResponseWriter, status int, message string) {
 func writeGHValidationError(w http.ResponseWriter, resource, field, code string) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusUnprocessableEntity)
-	json.NewEncoder(w).Encode(map[string]interface{}{
+	_ = json.NewEncoder(w).Encode(map[string]interface{}{
 		"message":           "Validation Failed",
 		"documentation_url": "https://docs.github.com/rest",
 		"errors": []map[string]string{

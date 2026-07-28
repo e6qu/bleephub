@@ -2,6 +2,9 @@ import type { KnipConfig } from "knip";
 
 const config: KnipConfig = {
   ignoreExportsUsedInFile: true,
+  // jscpd is launched by ../scripts/jscpd.sh through its exact local binary;
+  // it is intentionally not a package.json script or an imported module.
+  ignoreDependencies: ["jscpd"],
   workspaces: {
     ".": {
       // Both are launched out-of-band by shell, so nothing imports them and

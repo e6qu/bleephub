@@ -997,6 +997,43 @@ func TestPersistenceReload_PRReviewComments(t *testing.T) {
 	}
 }
 
+func TestPersistenceReload_InstallationPullAuthorRemainsAppBot(t *testing.T) {
+	var prID int
+	var appSlug string
+	st2 := reloadedStore(t, func(_ *Persistence, st *Store) {
+		st.SeedDefaultUser()
+		admin := st.UsersByLogin["admin"]
+		repo := st.CreateRepo(admin, "installation-author", "", false)
+		seedStorePullRequestBranches(t, st, repo, "feature")
+		app := st.CreateApp(admin.ID, "Persistent Pull Author", "", map[string]string{
+			"pull_requests": "write",
+		}, nil)
+		appSlug = app.Slug
+		pr := st.CreatePullRequest(
+			repo.ID, -app.ID, "installation-authored", "", "feature", "main",
+			false, nil, nil, 0,
+		)
+		if pr == nil {
+			t.Fatal("CreatePullRequest returned nil")
+		}
+		prID = pr.ID
+	})
+
+	pr := st2.GetPullRequest(prID)
+	if pr == nil {
+		t.Fatalf("pull request %d did not survive reload", prID)
+	}
+	actor := st2.GetActorByID(pr.AuthorID)
+	if actor == nil || actor.Login != appSlug+"[bot]" || actor.Type != "Bot" {
+		t.Fatalf("reloaded installation author = %#v, want %s[bot] Bot", actor, appSlug)
+	}
+	rendered := pullRequestToJSON(pr, st2, "https://example.test", "admin/installation-author")
+	user, ok := rendered["user"].(map[string]interface{})
+	if !ok || user["login"] != appSlug+"[bot]" || user["type"] != "Bot" {
+		t.Fatalf("reloaded pull request user = %#v, want %s[bot] Bot", rendered["user"], appSlug)
+	}
+}
+
 // G8: check runs/suites keep their repo key so commit-scoped lookups match,
 // and check-run annotations survive.
 func TestPersistenceReload_CheckRunsAndSuites(t *testing.T) {

@@ -13,17 +13,17 @@ Ubuntu 24.04) is older than the 2.5.6 that can select the precompiled
 "<cpu>-linux-gnu" gems, so it would build those from source anyway.
 """
 import functools
+import http.client
 import os
 import re
 import sys
-import urllib.request
+import urllib.parse
 
 # The declared dependency, and the ruby that Ubuntu 24.04's ruby-full provides.
 ROOT_GEM = "github-pages"
 ROOT_REQUIREMENT = "= 232"
 TARGET_RUBY = "3.2.3"
 
-INDEX = "https://index.rubygems.org/info/"
 CACHE = os.environ.get("GEM_INDEX_CACHE", "")
 
 
@@ -33,8 +33,19 @@ def index_entry(gem):
         path = os.path.join(CACHE, gem.replace("/", "_"))
         if os.path.exists(path):
             return open(path, encoding="utf-8").read()
-    with urllib.request.urlopen(INDEX + gem, timeout=60) as response:
+    if not re.fullmatch(r"[A-Za-z0-9_.-]+", gem):
+        raise SystemExit("unsafe gem name %r" % gem)
+    # Python 3.10+ verifies HTTPSConnection certificates by default; the host
+    # and TLS scheme are constants, so neither can be redirected by gem input.
+    connection = http.client.HTTPSConnection("index.rubygems.org", timeout=60)  # nosemgrep: python.lang.security.audit.httpsconnection-detected.httpsconnection-detected
+    try:
+        connection.request("GET", "/info/" + urllib.parse.quote(gem, safe=""))
+        response = connection.getresponse()
+        if response.status != 200:
+            raise SystemExit("RubyGems index returned HTTP %d for %s" % (response.status, gem))
         body = response.read().decode("utf-8")
+    finally:
+        connection.close()
     if CACHE:
         os.makedirs(CACHE, exist_ok=True)
         with open(os.path.join(CACHE, gem.replace("/", "_")), "w", encoding="utf-8") as f:

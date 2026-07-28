@@ -318,10 +318,10 @@ func (st *Store) CreatePackageVersion(ownerType, ownerKey, pkgType, pkgName, ver
 			}
 		} else if vdir != "" {
 			pf.StoragePath = filepath.Join(vdir, sanitizePackagePathSegment(fin.Name))
-			if err := os.MkdirAll(vdir, 0o755); err != nil {
+			if err := os.MkdirAll(vdir, 0o750); err != nil {
 				return nil, fmt.Errorf("mkdir %s: %w", vdir, err)
 			}
-			if err := os.WriteFile(pf.StoragePath, fin.Data, 0o644); err != nil {
+			if err := os.WriteFile(pf.StoragePath, fin.Data, 0o600); err != nil {
 				return nil, fmt.Errorf("write file %s: %w", pf.StoragePath, err)
 			}
 		}

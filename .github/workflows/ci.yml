@@ -21,8 +21,10 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 25
     steps:
-      - uses: actions/checkout@v7.0.0
-      - uses: actions/setup-go@v7.0.0
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
           go-version-file: go.mod
           cache: true
@@ -39,8 +41,10 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
-      - uses: actions/checkout@v7.0.0
-      - uses: actions/setup-go@v7.0.0
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
           go-version-file: go.mod
           cache: true
@@ -91,8 +95,12 @@ jobs:
       # version the module already depends on.
       - name: Install the pinned analysis tools
         run: |
-          go install github.com/mibk/dupl@v1.1.0
-          go install golang.org/x/tools/cmd/deadcode@v0.47.0
+          mkdir -p "$RUNNER_TEMP/bin"
+          go build -mod=readonly -modfile=.github/security-go.mod \
+            -o "$RUNNER_TEMP/bin/dupl" github.com/mibk/dupl
+          go build -mod=readonly -modfile=.github/security-go.mod \
+            -o "$RUNNER_TEMP/bin/deadcode" golang.org/x/tools/cmd/deadcode
+          echo "$RUNNER_TEMP/bin" >> "$GITHUB_PATH"
       - name: Check for unreachable functions
         run: ./scripts/deadcode.sh
       - name: Check for copy-pasted Go code
@@ -103,11 +111,13 @@ jobs:
       # was renamed — could only be found by pushing. Both tools report clean
       # on this tree today.
       - name: Install the pinned workflow linter
-        run: go install github.com/rhysd/actionlint/cmd/actionlint@v1.7.12
+        run: |
+          go build -mod=readonly -modfile=.github/workflow-tools-go.mod \
+            -o "$RUNNER_TEMP/bin/actionlint" github.com/rhysd/actionlint/cmd/actionlint
       - name: Lint the workflows
         run: actionlint .github/workflows/*.yml
       - name: Lint the shell scripts
-        run: shellcheck scripts/*.sh web/e2e/*.sh
+        run: shellcheck scripts/*.sh docker/*.sh test/runner/sockerless/*.sh web/e2e/*.sh
       - name: Test bounded command retries
         run: ./scripts/test-retry-command.sh
       # The findings ledger is edited constantly and by several hands, and a
@@ -119,13 +129,92 @@ jobs:
       - name: Require the current official GitHub REST definition
         run: ./scripts/check-github-openapi-drift.sh
 
+  security:
+    name: Security analysis
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+          cache: true
+      - name: Install age-qualified security analyzers
+        run: |
+          mkdir -p "$RUNNER_TEMP/bin"
+          go build -mod=readonly -modfile=.github/security-go.mod \
+            -o "$RUNNER_TEMP/bin/gosec" github.com/securego/gosec/v2/cmd/gosec
+          go build -mod=readonly -modfile=.github/security-go.mod \
+            -o "$RUNNER_TEMP/bin/govulncheck" golang.org/x/vuln/cmd/govulncheck
+          go build -mod=readonly -modfile=.github/security-go.mod \
+            -o "$RUNNER_TEMP/bin/staticcheck" honnef.co/go/tools/cmd/staticcheck
+          echo "$RUNNER_TEMP/bin" >> "$GITHUB_PATH"
+      - name: Enforce the dependency quarantine window
+        run: ./scripts/check-dependency-age.py go nuget terraform docker actions runner
+      - name: Run staticcheck and gosec in every Go module
+        run: |
+          set -euo pipefail
+          for module in . sdk-tests terraform/wake test/terraform-sockerless; do
+            echo "::group::$module"
+            (cd "$module" && staticcheck ./...)
+            # G101 treats public context keys and token-prefix constants as
+            # credentials. Trivy's dedicated secret scanner remains blocking.
+            (cd "$module" && gosec -quiet -exclude=G101 ./...)
+            echo "::endgroup::"
+          done
+      - name: Reject reachable Go vulnerabilities in every module
+        run: |
+          set -euo pipefail
+          for module in . sdk-tests terraform/wake test/terraform-sockerless; do
+            echo "::group::$module"
+            (cd "$module" && govulncheck ./...)
+            echo "::endgroup::"
+          done
+      - name: Install pinned Semgrep
+        run: |
+          python3 -m venv "$RUNNER_TEMP/semgrep"
+          "$RUNNER_TEMP/semgrep/bin/pip" install --disable-pip-version-check \
+            --require-hashes -r .github/security-requirements.txt
+      - name: Enforce quarantine across the installed Python analyzer graph
+        env:
+          BLEEPHUB_PYTHON: ${{ runner.temp }}/semgrep/bin/python
+        run: ./scripts/check-dependency-age.py python
+      - name: Audit workflow supply-chain boundaries
+        run: |
+          "$RUNNER_TEMP/semgrep/bin/zizmor" .github/workflows
+      - name: Run security and secret SAST rules
+        run: |
+          "$RUNNER_TEMP/semgrep/bin/semgrep" scan \
+            --config p/security-audit \
+            --config p/secrets \
+            --metrics=off \
+            --error \
+            --exclude web/node_modules \
+            --exclude web/dist \
+            .
+      - name: Scan dependencies, infrastructure, containers, and secrets
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        with:
+          version: v0.70.0
+          scan-type: fs
+          scan-ref: .
+          scanners: vuln,misconfig,secret
+          trivyignores: .trivyignore.yaml
+          skip-dirs: web/node_modules,web/dist
+          severity: UNKNOWN,LOW,MEDIUM,HIGH,CRITICAL
+          exit-code: '1'
+
   fuzz:
     name: Go fuzz burst
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
-      - uses: actions/checkout@v7.0.0
-      - uses: actions/setup-go@v7.0.0
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
           go-version-file: go.mod
           cache: true
@@ -142,8 +231,10 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 12
     steps:
-      - uses: actions/checkout@v7.0.0
-      - uses: actions/setup-go@v7.0.0
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
           go-version-file: go.mod
           cache: true
@@ -189,8 +280,10 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
-      - uses: actions/checkout@v7.0.0
-      - uses: docker/setup-buildx-action@v4.2.0
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          persist-credentials: false
+      - uses: docker/setup-buildx-action@bb05f3f5519dd87d3ba754cc423b652a5edd6d2c # v4.2.0
       # Both release Dockerfiles were built for the first time on push to main,
       # after review had already happened — so a Dockerfile change could only
       # be discovered broken once it was unreviewable and the publish had
@@ -205,7 +298,7 @@ jobs:
       # Reads the publish workflow's cache and writes its own, so a pull request
       # gets warm layers without being able to poison what main publishes.
       - name: Build the release image
-        uses: docker/build-push-action@v7.3.0
+        uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7.3.0
         with:
           context: .
           file: Dockerfile.release
@@ -217,36 +310,45 @@ jobs:
             type=gha,scope=bleephub-ci-amd64
             type=gha,scope=bleephub-amd64
           cache-to: type=gha,scope=bleephub-ci-amd64,mode=max
-      # Reporting only, and deliberately not yet a gate: nobody has ever
-      # scanned these images, so the finding count is unknown and a blocking
-      # threshold picked blind would either be red on arrival or meaningless.
-      # The first runs measure it; the threshold goes in afterwards, against a
-      # real number. Until then this prints to the job log and changes no
-      # outcome — which is worth stating plainly rather than leaving an
-      # exit-code of zero to imply a gate that is not there.
       - name: Scan the release image
-        uses: aquasecurity/trivy-action@v0.36.0
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
         with:
+          version: v0.70.0
           image-ref: bleephub:ci
           format: table
+          scanners: vuln
           severity: HIGH,CRITICAL
           ignore-unfixed: true
-          exit-code: '0'
+          trivyignores: .trivyignore.yaml
+          exit-code: '1'
       - name: Build the runner image
-        uses: docker/build-push-action@v7.3.0
+        uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7.3.0
         with:
           context: .
           file: Dockerfile.runner
           platforms: linux/amd64
           push: false
+          load: true
+          tags: bleephub-runner:ci
           cache-from: |
             type=gha,scope=bleephub-runner-ci-amd64
             type=gha,scope=bleephub-runner-amd64
           cache-to: type=gha,scope=bleephub-runner-ci-amd64,mode=max
+      - name: Scan the runner image
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        with:
+          version: v0.70.0
+          image-ref: bleephub-runner:ci
+          format: table
+          scanners: vuln
+          severity: HIGH,CRITICAL
+          ignore-unfixed: true
+          trivyignores: .trivyignore.yaml
+          exit-code: '1'
       # The two release bundles are shell scripts run only by the publish
       # workflow, so a syntax error or a broken cross-compile in either reached
       # main unbuilt as well.
-      - uses: actions/setup-go@v7.0.0
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
           go-version-file: go.mod
           cache: true
@@ -264,12 +366,18 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 16
     steps:
-      - uses: actions/checkout@v7.0.0
-      - uses: oven-sh/setup-bun@v2.2.0
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          persist-credentials: false
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
         with:
           bun-version: '1.3.14'
       - name: Install locked web dependencies
         run: cd web && bun install --frozen-lockfile
+      - name: Enforce the transitive dependency quarantine window
+        run: ./scripts/check-dependency-age.py bun
+      - name: Audit the locked web dependency graph
+        run: cd web && bun audit
       - name: Type-check and test the web application
         run: cd web && bun run typecheck && bun run test
       - name: Build the embedded web application
@@ -289,10 +397,12 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 12
     steps:
-      - uses: actions/checkout@v7.0.0
-      - uses: hashicorp/setup-terraform@v4.0.1
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
-          terraform_version: 1.13.5
+          persist-credentials: false
+      - uses: hashicorp/setup-terraform@dfe3c3f87815947d99a8997f908cb6525fc44e9e # v4.0.1
+        with:
+          terraform_version: 1.15.8
       - name: Initialize the module
         run: terraform -chdir=terraform init -backend=false -input=false
       - name: Check formatting and configuration
@@ -305,7 +415,9 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
-      - uses: actions/checkout@v7.0.0
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          persist-credentials: false
       - name: Exercise the official GitHub CLI against Bleephub
         run: make gh-test
 
@@ -314,12 +426,14 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
-      - uses: actions/checkout@v7.0.0
-      - uses: actions/setup-go@v7.0.0
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
           go-version-file: go.mod
           cache: true
-      - uses: oven-sh/setup-bun@v2.2.0
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
         with:
           bun-version: '1.3.14'
       - name: Build server and web application
@@ -332,17 +446,20 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
-      - uses: actions/checkout@v7.0.0
-      - uses: actions/checkout@v7.0.0
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
+          persist-credentials: false
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          persist-credentials: false
           repository: e6qu/shauth
           ref: 08f5a78fb8b159fcbfe8317f24f430dbdfd3ed56
           path: .test-deps/shauth
-      - uses: actions/setup-go@v7.0.0
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
           go-version-file: go.mod
           cache: true
-      - uses: oven-sh/setup-bun@v2.2.0
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
         with:
           bun-version: '1.3.14'
       - name: Install locked browser dependencies and Chromium
@@ -355,13 +472,16 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
-      - uses: actions/checkout@v7.0.0
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          persist-credentials: false
       # Pinned to a commit for the same reason the shauth checkout above is:
       # an unpinned default branch makes this job's verdict depend on a push to
       # a different repository, so a green pull request can turn red without
       # anyone touching it — and the reverse, which is worse.
-      - uses: actions/checkout@v7.0.0
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
+          persist-credentials: false
           repository: e6qu/sockerless
           ref: 2e6966f7982e6d908a4beb1e59e0973ac892b6b1
           path: sockerless

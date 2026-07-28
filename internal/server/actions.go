@@ -186,7 +186,7 @@ func (s *Server) handleActionTarball(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/gzip")
 		w.Header().Set("Content-Length", fmt.Sprintf("%d", len(entry.Data)))
 		w.WriteHeader(http.StatusOK)
-		w.Write(entry.Data)
+		_, _ = w.Write(entry.Data)
 		return
 	}
 
@@ -198,7 +198,7 @@ func (s *Server) handleActionTarball(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/gzip")
 		w.Header().Set("Content-Length", fmt.Sprintf("%d", len(entry.Data)))
 		w.WriteHeader(http.StatusOK)
-		w.Write(entry.Data)
+		_, _ = w.Write(entry.Data)
 		return
 	} else if err != nil {
 		s.logger.Error().Err(err).Str("key", key).Msg("local action tarball failed")

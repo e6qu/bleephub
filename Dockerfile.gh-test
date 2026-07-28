@@ -1,9 +1,9 @@
-FROM golang:1.26 AS builder
+FROM golang:1.26@sha256:3aff6657219a4d9c14e27fb1d8976c49c29fddb70ba835014f477e1c70636647 AS builder
 WORKDIR /src
 COPY . .
 RUN CGO_ENABLED=0 go build -tags noui -o /out/bleephub ./cmd/bleephub
 
-FROM ubuntu:26.04
+FROM ubuntu:26.04@sha256:3131b4cc82a783df6c9df078f86e01819a13594b865c2cad47bd1bca2b7063bb
 RUN apt-get update && apt-get install -y --no-install-recommends curl ca-certificates jq git openssl zip && rm -rf /var/lib/apt/lists/*
 # The keyring is the trust root for everything apt then pulls from
 # cli.github.com, so it is checked against a recorded digest before apt sees it.
@@ -16,7 +16,7 @@ RUN curl -fsSL -o /tmp/githubcli-archive-keyring.gpg https://cli.github.com/pack
     install -m 0644 /tmp/githubcli-archive-keyring.gpg /usr/share/keyrings/githubcli-archive-keyring.gpg && \
     rm /tmp/githubcli-archive-keyring.gpg && \
     echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/githubcli-archive-keyring.gpg] https://cli.github.com/packages stable main" > /etc/apt/sources.list.d/github-cli.list && \
-    apt-get update && apt-get install -y gh && rm -rf /var/lib/apt/lists/*
+    apt-get update && apt-get install -y --no-install-recommends gh && rm -rf /var/lib/apt/lists/*
 COPY --from=builder /out/bleephub /usr/local/bin/
 COPY test/run-gh-test.sh /test/run-gh-test.sh
 RUN chmod +x /test/run-gh-test.sh

@@ -113,7 +113,7 @@ func (e unsupportedQualifierError) Error() string {
 func writeGHSearchQualifierError(w http.ResponseWriter, err error) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusUnprocessableEntity)
-	json.NewEncoder(w).Encode(map[string]interface{}{
+	_ = json.NewEncoder(w).Encode(map[string]interface{}{
 		"message":           "Validation Failed",
 		"documentation_url": "https://docs.github.com/rest/search/search",
 		"errors": []map[string]string{

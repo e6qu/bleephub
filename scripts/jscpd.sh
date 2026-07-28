@@ -19,7 +19,7 @@ cd "$(dirname "${BASH_SOURCE[0]}")/../web"
 report_dir=$(mktemp -d)
 trap 'rm -rf "$report_dir"' EXIT
 
-npx --yes jscpd@5.0.12 \
+./node_modules/.bin/jscpd \
   --min-tokens 200 \
   --ignore "**/__tests__/**" \
   --reporters json \

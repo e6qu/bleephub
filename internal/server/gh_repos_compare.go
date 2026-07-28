@@ -956,10 +956,10 @@ func copyGitObjects(src, dst gitStorage.Storer) error {
 				return err
 			}
 			if _, err := io.Copy(w, r); err != nil {
-				r.Close()
+				_ = r.Close()
 				return err
 			}
-			r.Close()
+			_ = r.Close()
 			if err := w.Close(); err != nil {
 				return err
 			}

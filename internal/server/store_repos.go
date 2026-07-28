@@ -754,7 +754,7 @@ func moveRepoGitStorage(oldFull, newFull string) error {
 	if gitDir := GitDataDir(); gitDir != "" {
 		oldDir := filepath.Join(gitDir, filepath.FromSlash(oldFull))
 		newDir := filepath.Join(gitDir, filepath.FromSlash(newFull))
-		if err := os.MkdirAll(filepath.Dir(newDir), 0o755); err != nil {
+		if err := os.MkdirAll(filepath.Dir(newDir), 0o750); err != nil {
 			return fmt.Errorf("create git directory %s: %w", filepath.Dir(newDir), err)
 		}
 		if err := os.Rename(oldDir, newDir); err != nil {

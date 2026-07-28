@@ -28,7 +28,7 @@ func (s *Server) registerGHAppSettingsRoutes() {
 }
 
 func (s *Server) handleListBrowserOAuthGrants(w http.ResponseWriter, r *http.Request) {
-	r, user := s.authenticatedBrowserRequest(r)
+	_, user := s.authenticatedBrowserRequest(r)
 	if user == nil {
 		writeGHError(w, http.StatusUnauthorized, "Bad credentials")
 		return

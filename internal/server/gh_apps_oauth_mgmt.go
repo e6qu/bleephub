@@ -269,7 +269,7 @@ func (s *Server) handleCreateBrowserOAuthApp(w http.ResponseWriter, r *http.Requ
 }
 
 func (s *Server) handleListBrowserOAuthApps(w http.ResponseWriter, r *http.Request) {
-	r, user := s.authenticatedBrowserRequest(r)
+	_, user := s.authenticatedBrowserRequest(r)
 	if user == nil {
 		writeGHError(w, http.StatusUnauthorized, "Bad credentials")
 		return

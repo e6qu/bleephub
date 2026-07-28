@@ -15,7 +15,10 @@ import (
 
 type contextKey string
 
+// #nosec G101 -- typed context key, not a credential.
 const ctxUser contextKey = "gh-user"
+
+// #nosec G101 -- typed context key, not a credential.
 const ctxApp contextKey = "gh-app"
 const ctxInstallation contextKey = "gh-installation"
 const ctxInstallationToken contextKey = "gh-installation-token"
@@ -55,7 +58,8 @@ const ctxInvalidCredential contextKey = "gh-invalid-credential"
 // auth shape in authenticateRequest; using the named constants keeps the
 // middleware, stores and handlers agreeing on the exact prefix bytes.
 const (
-	tokenPrefixInstallation = "ghs_" // installation access token
+	// #nosec G101 -- public token type prefix, not a credential.
+	tokenPrefixInstallation = "ghs_"
 	tokenPrefixOAuthUser    = "gho_" // classic OAuth-App user token
 	tokenPrefixAppUser      = "ghu_" // GitHub-App user-to-server token
 	tokenPrefixRefresh      = "ghr_" // refresh token (never valid as auth)

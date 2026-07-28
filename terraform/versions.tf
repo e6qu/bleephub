@@ -1,16 +1,16 @@
 terraform {
   # CI provisions exactly this Terraform minor. A wider constraint would admit
   # releases nothing in this repository ever runs.
-  required_version = "~> 1.13.5"
+  required_version = "~> 1.15.8"
 
   required_providers {
     aws = {
       source  = "hashicorp/aws"
-      version = "6.54.0"
+      version = "6.56.0"
     }
     random = {
       source  = "hashicorp/random"
-      version = "3.7.2"
+      version = "3.9.0"
     }
     tls = {
       source  = "hashicorp/tls"

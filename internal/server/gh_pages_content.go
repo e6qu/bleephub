@@ -93,7 +93,8 @@ func readPagesZipFile(data []byte, requested string) ([]byte, string, error) {
 		if mode.IsRegular() {
 			regularFiles++
 		}
-		if file.UncompressedSize64 > uint64(maxPagesArtifactSize-total) {
+		if file.UncompressedSize64 > uint64(maxPagesArtifactSize) ||
+			int64(file.UncompressedSize64) > maxPagesArtifactSize-total {
 			return nil, "", errors.New("pages artifact exceeds 10 GB")
 		}
 		total += int64(file.UncompressedSize64)
@@ -138,7 +139,7 @@ func readPagesTarFile(r io.Reader, requested string) ([]byte, string, error) {
 			return nil, "", fmt.Errorf("unsafe TAR path %q", header.Name)
 		}
 		switch header.Typeflag {
-		case tar.TypeReg, tar.TypeRegA:
+		case tar.TypeReg, 0: // 0 is the legacy regular-file marker (formerly tar.TypeRegA).
 			regularFiles++
 			total += header.Size
 			if total > maxPagesArtifactSize {
@@ -258,10 +259,18 @@ func (s *Server) handlePagesContent(w http.ResponseWriter, r *http.Request) {
 		contentType = http.DetectContentType(content)
 	}
 	w.Header().Set("Content-Type", contentType)
+	// Pages publishes repository-controlled HTML. A sandbox without
+	// allow-same-origin lets sites run their own scripts while preventing those
+	// scripts from reading the authenticated Bleephub origin.
+	w.Header().Set("Content-Security-Policy", "sandbox allow-forms allow-modals allow-popups allow-scripts")
+	w.Header().Set("Referrer-Policy", "strict-origin-when-cross-origin")
+	w.Header().Set("X-Content-Type-Options", "nosniff")
 	w.Header().Set("ETag", `"`+strings.TrimPrefix(deployment.ArtifactSHA, "sha256:")+`"`)
 	w.Header().Set("Content-Length", fmt.Sprintf("%d", len(content)))
 	w.WriteHeader(status)
 	if r.Method != http.MethodHead {
+		// #nosec G705 -- repository-controlled Pages HTML is isolated by the
+		// opaque-origin CSP sandbox above, matching a dedicated Pages origin.
 		_, _ = w.Write(content)
 	}
 }

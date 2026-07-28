@@ -101,13 +101,14 @@ jobs:
 `;
 
 function contentsResponse(yaml: string) {
+  const bytes = new TextEncoder().encode(yaml);
   return {
     name: "ci.yml",
     path: ".github/workflows/ci.yml",
     sha: "deadbeef",
     type: "file",
     encoding: "base64",
-    content: Buffer.from(yaml, "utf-8").toString("base64"),
+    content: btoa(Array.from(bytes, (byte) => String.fromCharCode(byte)).join("")),
   };
 }
 

@@ -78,7 +78,7 @@ func newGitStorage(ctx context.Context, fullName string) (gitStorage.Storer, err
 		return memory.NewStorage(), nil
 	}
 	repoDir := filepath.Join(gitDir, filepath.FromSlash(fullName))
-	if err := os.MkdirAll(repoDir, 0o755); err != nil {
+	if err := os.MkdirAll(repoDir, 0o750); err != nil {
 		return nil, fmt.Errorf("mkdir %s: %w", repoDir, err)
 	}
 	fs := osfs.New(repoDir)

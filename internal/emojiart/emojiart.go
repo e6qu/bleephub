@@ -36,7 +36,7 @@ const textScale = 4
 
 // palette holds the badge background colors. The color for a name is
 // palette[fnv1a32(name) % len(palette)] — stable across runs and platforms.
-var palette = []color.NRGBA{
+var palette = [...]color.NRGBA{
 	{R: 0xB7, G: 0x1C, B: 0x1C, A: 0xFF}, // deep red
 	{R: 0xAD, G: 0x14, B: 0x57, A: 0xFF}, // raspberry
 	{R: 0x6A, G: 0x1B, B: 0x9A, A: 0xFF}, // violet
@@ -62,7 +62,8 @@ func BadgePNG(name string) ([]byte, error) {
 		return nil, fmt.Errorf("emojiart: empty emoji name")
 	}
 	img := image.NewNRGBA(image.Rect(0, 0, Size, Size))
-	bg := palette[nameHash(name)%uint32(len(palette))]
+	const paletteSize = uint32(len(palette))
+	bg := palette[nameHash(name)%paletteSize]
 	fillRoundedSquare(img, bg)
 	if err := drawInitials(img, initials(name)); err != nil {
 		return nil, fmt.Errorf("emojiart: render %q: %w", name, err)

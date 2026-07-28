@@ -7,8 +7,9 @@ terraform {
 }
 
 resource "aws_security_group" "shared_api_gateway_vpc_link" {
-  name   = "shared-api-gateway-vpc-link"
-  vpc_id = "vpc-0123456789abcdef0"
+  name        = "shared-api-gateway-vpc-link"
+  description = "Fixture shared API Gateway VPC link security group"
+  vpc_id      = "vpc-0123456789abcdef0"
 }
 
 resource "aws_apigatewayv2_vpc_link" "shared" {

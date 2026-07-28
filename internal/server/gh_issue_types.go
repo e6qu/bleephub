@@ -69,7 +69,7 @@ func (s *Server) handleListRepoIssueTypes(w http.ResponseWriter, r *http.Request
 func writeGHValidationErrorSimple(w http.ResponseWriter, errs ...string) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusUnprocessableEntity)
-	json.NewEncoder(w).Encode(map[string]interface{}{
+	_ = json.NewEncoder(w).Encode(map[string]interface{}{
 		"message":           "Validation Failed",
 		"documentation_url": "https://docs.github.com/rest",
 		"errors":            errs,

@@ -8,6 +8,7 @@ import (
 	"log"
 	"net"
 	"net/http"
+	"net/url"
 	"os"
 	"strconv"
 	"strings"
@@ -113,18 +114,32 @@ func wakeAndConnect(ctx context.Context) (net.Conn, error) {
 	if wakeURL == "" || service == "" {
 		return nil, fmt.Errorf("BLEEPHUB_WAKE_URL and BLEEPHUB_INTERNAL_SSH_TARGET are required")
 	}
+	parsedWakeURL, err := url.Parse(wakeURL)
+	if err != nil || parsedWakeURL.Host == "" ||
+		(parsedWakeURL.Scheme != "http" && parsedWakeURL.Scheme != "https") ||
+		parsedWakeURL.User != nil {
+		return nil, fmt.Errorf("BLEEPHUB_WAKE_URL must be an HTTP(S) URL without user information")
+	}
+	if strings.ContainsAny(service, "/:@?#") {
+		return nil, fmt.Errorf("BLEEPHUB_INTERNAL_SSH_TARGET must be a DNS service name")
+	}
 
 	deadline := time.Now().Add(startupTimeout)
 	for time.Now().Before(deadline) {
+		// #nosec G704 -- wakeURL is deployment-controlled and validated above.
 		request, err := http.NewRequestWithContext(ctx, http.MethodGet, wakeURL, nil)
 		if err != nil {
 			return nil, fmt.Errorf("create bleephub wake request: %w", err)
 		}
+		// #nosec G704 -- the URL is deployment-controlled configuration,
+		// validated above, and redirects are refused.
 		response, err := (&http.Client{Timeout: 5 * time.Second, CheckRedirect: func(_ *http.Request, _ []*http.Request) error { return http.ErrUseLastResponse }}).Do(request)
 		if err == nil {
 			_ = response.Body.Close()
 		}
 		for _, target := range sshTargetsFromSRV(service) {
+			// #nosec G704 -- targets come only from the validated, operator-set
+			// private Cloud Map SRV record and the fixed SSH port.
 			connection, err := net.DialTimeout("tcp", target, 5*time.Second)
 			if err == nil {
 				return connection, nil
@@ -140,6 +155,7 @@ func wakeAndConnect(ctx context.Context) (net.Conn, error) {
 // while the same task's SSH transport listens on 2222, so this deliberately
 // preserves the registered task hostname and replaces only the port.
 func sshTargetsFromSRV(service string) []string {
+	// #nosec G704 -- service is validated operator configuration, not request input.
 	_, records, err := net.LookupSRV("", "", service)
 	if err != nil {
 		return nil

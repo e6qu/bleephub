@@ -382,7 +382,7 @@ func (s *Server) handleGetReadme(w http.ResponseWriter, r *http.Request) {
 			continue
 		}
 		content, err := io.ReadAll(reader)
-		reader.Close()
+		_ = reader.Close()
 		if err != nil {
 			continue
 		}
