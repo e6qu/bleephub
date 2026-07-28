@@ -89,6 +89,10 @@ export interface BleephubRepo {
   default_branch: string;
   visibility: string;
   private: boolean;
+  fork?: boolean;
+  language?: string | null;
+  stargazers_count?: number;
+  forks_count?: number;
   created_at: string;
   updated_at: string;
   pushed_at: string | null;
@@ -353,6 +357,8 @@ export interface GithubCommit {
 export interface GithubBranch {
   name: string;
   commit: { sha: string };
+  protected?: boolean;
+  protection_url?: string;
 }
 
 export interface GithubStatusCheck {

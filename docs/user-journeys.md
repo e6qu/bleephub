@@ -10,7 +10,7 @@ GitHub-compatible REST contract.
 | Journey | Browser surface | Backing API |
 | --- | --- | --- |
 | Discover, create, filter, and open repositories | `/ui/`, `/ui/repos`, `/ui/orgs/:org/repos` | repositories REST API |
-| Browse branches and directories | `/ui/repos/:owner/:repo` | contents, branches, and Git data APIs |
+| Browse branches and directories, including live protection state and a direct settings path | `/ui/repos/:owner/:repo` | contents, branches, branch-protection, ruleset, and Git data APIs |
 | Open a file at a ref | `/ui/repos/:owner/:repo/blob/:ref/*` | contents API |
 | Read raw Git trees by tree SHA, commit SHA, branch, full ref, or tag | repository clients and SDKs | Git trees API with recursive walking, tag peeling, canonical object URLs, sizes, and response shapes |
 | Create and inspect blobs, trees, commits, tags, and references | repository clients and SDKs | Git database APIs with GitHub-compatible validation and typed object links |
@@ -34,7 +34,7 @@ GitHub-compatible REST contract.
 | Inspect cache usage and delete dependency caches | repository `/actions?view=caches` |
 | Register and manage runners | `/ui/runners` |
 | Read and act on notifications | `/ui/notifications` |
-| Search across the instance | `/ui/search` |
+| Search across the instance; narrow repositories by visibility, archive state, forks, required/excluded topics, language, sort, and order | `/ui/search`; all controls compose the GitHub query grammar and remain shareable in the URL |
 
 Actions execution preserves the split GitHub exposes between a global run ID
 and a per-workflow run number. Reruns keep both identities and increment the

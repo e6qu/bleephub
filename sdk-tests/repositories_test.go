@@ -1,6 +1,7 @@
 package sdktests
 
 import (
+	"strings"
 	"testing"
 
 	github "github.com/google/go-github/v88/github"
@@ -110,6 +111,70 @@ func TestRepositoriesBranches(t *testing.T) {
 	}
 }
 
+// TestRepositoryBranchProtectionState pins the cross-endpoint contract that
+// the official client relies on after it updates a branch protection resource.
+func TestRepositoryBranchProtectionState(t *testing.T) {
+	name := uniqueName("repo-protected-branch")
+	_, _, err := client.Repositories.Create(ctx(), "", &github.Repository{
+		Name:     github.Ptr(name),
+		AutoInit: github.Ptr(true),
+	})
+	if err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+	t.Cleanup(func() { _, _ = client.Repositories.Delete(ctx(), "admin", name) })
+
+	contexts := []string{"ci"}
+	if _, _, err := client.Repositories.UpdateBranchProtection(
+		ctx(),
+		"admin",
+		name,
+		"main",
+		&github.ProtectionRequest{
+			RequiredStatusChecks: &github.RequiredStatusChecks{
+				Strict: true, Contexts: &contexts,
+			},
+		},
+	); err != nil {
+		t.Fatalf("UpdateBranchProtection: %v", err)
+	}
+
+	branch, _, err := client.Repositories.GetBranch(ctx(), "admin", name, "main", 0)
+	if err != nil {
+		t.Fatalf("GetBranch: %v", err)
+	}
+	if !branch.GetProtected() {
+		t.Fatal("GetBranch protected = false after UpdateBranchProtection")
+	}
+	if branch.Protection == nil {
+		t.Fatal("GetBranch omitted protection")
+	}
+	if got := branch.GetProtectionURL(); !strings.Contains(got, "/api/v3/repos/admin/"+name+"/branches/main/protection") {
+		t.Errorf("GetBranch protection_url = %q", got)
+	}
+
+	onlyProtected, _, err := client.Repositories.ListBranches(ctx(), "admin", name, &github.BranchListOptions{
+		Protected: github.Ptr(true),
+	})
+	if err != nil {
+		t.Fatalf("ListBranches(protected=true): %v", err)
+	}
+	if len(onlyProtected) != 1 || onlyProtected[0].GetName() != "main" || !onlyProtected[0].GetProtected() {
+		t.Fatalf("ListBranches(protected=true) = %+v", onlyProtected)
+	}
+
+	if _, err := client.Repositories.RemoveBranchProtection(ctx(), "admin", name, "main"); err != nil {
+		t.Fatalf("RemoveBranchProtection: %v", err)
+	}
+	branch, _, err = client.Repositories.GetBranch(ctx(), "admin", name, "main", 0)
+	if err != nil {
+		t.Fatalf("GetBranch after removal: %v", err)
+	}
+	if branch.GetProtected() {
+		t.Fatal("GetBranch protected = true after RemoveBranchProtection")
+	}
+}
+
 // TestRepositorySearchTopicQualifier pins query-language fidelity through the
 // official client. The OpenAPI parameter is only a string named q; its schema
 // cannot say that topic: is accepted or that it performs an exact topic match.
@@ -133,5 +198,51 @@ func TestRepositorySearchTopicQualifier(t *testing.T) {
 	}
 	if !found {
 		t.Fatalf("topic-qualified search omitted admin/%s from %+v", name, result.Repositories)
+	}
+}
+
+// TestRepositorySearchExclusionAndStatusQualifiers drives the documented
+// repository query grammar through go-github. OpenAPI can validate the
+// envelope, but only an SDK lifecycle can pin -QUALIFIER set-complement
+// semantics and combinations such as archived:false + fork:false.
+func TestRepositorySearchExclusionAndStatusQualifiers(t *testing.T) {
+	marker := uniqueName("repo-search-marker")
+	includedName := uniqueName("repo-search-included")
+	topicName := uniqueName("repo-search-topic")
+	archivedName := uniqueName("repo-search-archived")
+	createRepo(t, includedName)
+	createRepo(t, topicName)
+	createRepo(t, archivedName)
+
+	for _, name := range []string{includedName, topicName, archivedName} {
+		if _, _, err := client.Repositories.Edit(ctx(), "admin", name, &github.Repository{
+			Description: github.Ptr(marker),
+		}); err != nil {
+			t.Fatalf("Repositories.Edit(%s): %v", name, err)
+		}
+	}
+	if _, _, err := client.Repositories.ReplaceAllTopics(ctx(), "admin", topicName, []string{"web"}); err != nil {
+		t.Fatalf("ReplaceAllTopics: %v", err)
+	}
+	if _, _, err := client.Repositories.Edit(ctx(), "admin", archivedName, &github.Repository{
+		Archived: github.Ptr(true),
+	}); err != nil {
+		t.Fatalf("archive repository: %v", err)
+	}
+
+	query := marker + " user:admin -topic:web archived:false fork:false"
+	result, _, err := client.Search.Repositories(ctx(), query, &github.SearchOptions{
+		Sort:  "updated",
+		Order: "desc",
+	})
+	if err != nil {
+		t.Fatalf("Search.Repositories(%q): %v", query, err)
+	}
+	got := map[string]bool{}
+	for _, repo := range result.Repositories {
+		got[repo.GetName()] = true
+	}
+	if !got[includedName] || got[topicName] || got[archivedName] {
+		t.Fatalf("combined qualifier results=%v, want only %s", got, includedName)
 	}
 }

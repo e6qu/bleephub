@@ -6,7 +6,6 @@ import (
 	"net/http"
 	"sort"
 	"strings"
-	"time"
 
 	"github.com/go-git/go-git/v5/plumbing"
 	"github.com/go-git/go-git/v5/plumbing/object"
@@ -268,6 +267,19 @@ func (s *Server) handleListBranches(w http.ResponseWriter, r *http.Request) {
 	// exactly {sha, url} (the full commit object belongs to the
 	// single-branch endpoint).
 	base := s.baseURL(r)
+	var protectedFilter *bool
+	switch raw := r.URL.Query().Get("protected"); raw {
+	case "":
+	case "true":
+		value := true
+		protectedFilter = &value
+	case "false":
+		value := false
+		protectedFilter = &value
+	default:
+		writeGHValidationError(w, "Branch", "protected", "invalid")
+		return
+	}
 	var branches []map[string]interface{}
 	_ = refs.ForEach(func(ref *plumbing.Reference) error {
 		if !ref.Name().IsBranch() {
@@ -277,20 +289,34 @@ func (s *Server) handleListBranches(w http.ResponseWriter, r *http.Request) {
 			return nil
 		}
 		branchName := ref.Name().Short()
-		branches = append(branches, map[string]interface{}{
+		protected, protection, protectionURL := s.branchProtectionShape(repo, branchName, base)
+		if protectedFilter != nil && protected != *protectedFilter {
+			return nil
+		}
+		item := map[string]interface{}{
 			"name":      branchName,
-			"protected": false,
+			"protected": protected,
 			"commit": map[string]interface{}{
 				"sha": ref.Hash().String(),
 				"url": base + "/api/v3/repos/" + repo.FullName + "/commits/" + ref.Hash().String(),
 			},
-		})
+		}
+		if protected {
+			item["protection"] = protection
+			item["protection_url"] = protectionURL
+		}
+		branches = append(branches, item)
 		return nil
 	})
 
 	if branches == nil {
 		branches = []map[string]interface{}{}
 	}
+	sort.Slice(branches, func(i, j int) bool {
+		left, _ := branches[i]["name"].(string)
+		right, _ := branches[j]["name"].(string)
+		return left < right
+	})
 	writeJSON(w, http.StatusOK, paginateAndLink(w, r, branches))
 }
 
@@ -316,16 +342,25 @@ func (s *Server) handleGetBranch(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	base := s.baseURL(r)
+	protected, protection, protectionURL := s.branchProtectionShape(repo, branch, base)
+	branchURL := base + "/api/v3/repos/" + repo.FullName + "/branches/" + branch
 	result := map[string]interface{}{
-		"name":      branch,
-		"protected": false,
+		"name":           branch,
+		"protected":      protected,
+		"protection":     protection,
+		"protection_url": protectionURL,
+		"_links": map[string]interface{}{
+			"self": branchURL,
+			"html": base + "/" + repo.FullName + "/tree/" + branch,
+		},
 		"commit": map[string]interface{}{
 			"sha": ref.Hash().String(),
 		},
 	}
 
 	if commit := resolveCommit(stor, ref.Hash()); commit != nil {
-		result["commit"] = commitSummary(commit)
+		result["commit"] = commitToJSON(commit, repo, base)
 	}
 
 	writeJSON(w, http.StatusOK, result)
@@ -377,27 +412,4 @@ func resolveCommit(stor storer.EncodedObjectStorer, hash plumbing.Hash) *object.
 		return nil
 	}
 	return obj
-}
-
-// commitSummary converts a commit to a JSON map.
-func commitSummary(c *object.Commit) map[string]interface{} {
-	return map[string]interface{}{
-		"sha": c.Hash.String(),
-		"commit": map[string]interface{}{
-			"message": strings.TrimSpace(c.Message),
-			"author": map[string]interface{}{
-				"name":  c.Author.Name,
-				"email": c.Author.Email,
-				"date":  c.Author.When.Format(time.RFC3339),
-			},
-			"committer": map[string]interface{}{
-				"name":  c.Committer.Name,
-				"email": c.Committer.Email,
-				"date":  c.Committer.When.Format(time.RFC3339),
-			},
-			"tree": map[string]interface{}{
-				"sha": c.TreeHash.String(),
-			},
-		},
-	}
 }

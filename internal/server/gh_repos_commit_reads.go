@@ -225,9 +225,11 @@ func (s *Server) handleListBranchesWhereHead(w http.ResponseWriter, r *http.Requ
 			if !ref.Name().IsBranch() || ref.Hash() != hash {
 				return nil
 			}
+			branchName := ref.Name().Short()
+			protected, _, _ := s.branchProtectionShape(repo, branchName, base)
 			out = append(out, map[string]interface{}{
-				"name":      ref.Name().Short(),
-				"protected": false,
+				"name":      branchName,
+				"protected": protected,
 				"commit": map[string]interface{}{
 					"sha": ref.Hash().String(),
 					"url": base + "/api/v3/repos/" + repo.FullName + "/commits/" + ref.Hash().String(),

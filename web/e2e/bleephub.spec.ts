@@ -184,6 +184,39 @@ test.describe("Global navigation", () => {
   });
 });
 
+test.describe("Repository search", () => {
+  test("excludes a topic through shareable GitHub-compatible filters", async ({ page }) => {
+    const marker = `search-${Date.now().toString(36)}`;
+    const included = `${marker}-current`;
+    const excluded = `${marker}-legacy`;
+    await page.goto("/ui/");
+    await apiPost(page, "/api/v3/user/repos", {
+      name: included,
+      description: marker,
+    });
+    await apiPost(page, "/api/v3/user/repos", {
+      name: excluded,
+      description: marker,
+    });
+    await apiPut(page, `/api/v3/repos/admin/${excluded}/topics`, { names: ["web"] });
+
+    await page.goto(`/ui/search?q=${encodeURIComponent(marker)}&type=repositories`);
+    await expect(page.getByRole("link", { name: `admin/${included}` })).toBeVisible();
+    await expect(page.getByRole("link", { name: `admin/${excluded}` })).toBeVisible();
+
+    const filteredResponse = page.waitForResponse((response) => {
+      const requestURL = new URL(response.url());
+      return requestURL.pathname.endsWith("/search/repositories") &&
+        (requestURL.searchParams.get("q")?.includes("-topic:web") ?? false);
+    });
+    await page.getByLabel("Excluded repository topic").fill("web");
+    expect((await filteredResponse).status()).toBe(200);
+    await expect(page).toHaveURL(/exclude_topic=web/);
+    await expect(page.getByRole("link", { name: `admin/${included}` })).toBeVisible();
+    await expect(page.getByRole("link", { name: `admin/${excluded}` })).toHaveCount(0);
+  });
+});
+
 test.describe("User menu and packages", () => {
   test("labels personal destinations consistently and submits sign-out", async ({ page }) => {
     await page.goto("/ui/");
@@ -419,6 +452,31 @@ test.describe("Repo detail page", () => {
     await expect(page.getByText("README.md").first()).toBeVisible();
     await expect(page.getByRole("combobox", { name: "Branch" })).toHaveValue("main");
     await shot(page, "15b-repo-detail-with-readme");
+  });
+
+  test("shows configured branch protection and links to its settings", async ({ page }) => {
+    const repo = `protected-branch-${Date.now().toString(36)}`;
+    await page.goto("/ui/");
+    await apiPost(page, "/api/v3/user/repos", {
+      name: repo,
+      description: "Protected branch browser journey",
+      private: false,
+      auto_init: true,
+    });
+    await apiPut(page, `/api/v3/repos/admin/${repo}/branches/main/protection`, {
+      required_status_checks: { strict: true, contexts: ["ci"] },
+      required_pull_request_reviews: null,
+      enforce_admins: false,
+      restrictions: null,
+    });
+
+    await page.goto(`/ui/repos/admin/${repo}`);
+    await page.getByRole("button", { name: "Branches" }).click();
+    const protectedLink = page.getByRole("link", { name: "protected", exact: true });
+    await expect(protectedLink).toBeVisible();
+    await protectedLink.click();
+    await expect(page).toHaveURL(new RegExp(`/ui/repos/admin/${repo}/settings/branch-protection`));
+    await expect(page.getByRole("combobox", { name: "Branch" })).toContainText("main (protected)");
   });
 
   test("issues tab shows issue list", async ({ page }) => {

@@ -10,7 +10,8 @@ import (
 )
 
 // FuzzSearchQueryParser drives the qualifier tokenizer (repo:/user:/org:/is:/
-// in:/label:/language:/author:/hash:, quoted phrases, bare terms) with raw
+// in:/label:/language:/author:/hash:, exclusions, numeric/date comparisons,
+// quoted qualifier values, quoted phrases, and bare terms) with raw
 // attacker-controlled `q` strings. The parser must never panic or hang and
 // must always yield either a searchQuery whose slice fields are non-nil-safe
 // to iterate or a named unsupported-qualifier rejection.
@@ -21,6 +22,9 @@ func FuzzSearchQueryParser(f *testing.F) {
 		`:`, `::`, `repo:`, `is:`, `is::`, `"unterminated`, `""`, `"" ""`,
 		`state:CLOSED type:USER extension:.go filename:main.go path:a/b`,
 		`label:"multi word label" repo:a/b`,
+		`org:acme -topic:web archived:false stars:>=10 topics:1..4`,
+		`"multi word" in:description language:"Objective C" -repo:acme/old`,
+		`created:2025-01-01..2025-12-31 pushed:>2025-06-01 fork:only`,
 		"\t\t  \t", "a\tb\tc", `+1 -1`,
 		`repo:a:b:c`, `is:pull-request`, `is:pr`, `ext:go file:x`,
 	}
@@ -40,6 +44,10 @@ func FuzzSearchQueryParser(f *testing.F) {
 		// Every field must be safe to consume: iterate the term slice, read the
 		// pointer bools. A panic here fails the fuzz.
 		for range parsed.Terms {
+		}
+		for range parsed.ExcludedTerms {
+		}
+		for range parsed.Qualifiers {
 		}
 		_ = parsed.IsIssue
 		_ = parsed.IsPR

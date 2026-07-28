@@ -29,30 +29,38 @@ func (s *Server) registerGHSearchRoutes() {
 
 // searchQuery holds the parsed pieces of a GitHub search query.
 type searchQuery struct {
-	Terms     []string
-	Repo      string
-	User      string
-	Org       string
-	Language  string
-	Topics    []string
-	Label     string
-	State     string
-	IsIssue   *bool
-	IsPR      *bool
-	IsPrivate *bool
-	IsPublic  *bool
-	InTitle   bool
-	InBody    bool
-	Sort      string
-	Order     string
-	PerPage   int
-	Page      int
-	Path      string
-	Extension string
-	Filename  string
-	Type      string // user search type: user/org
-	Author    string // commit search: author qualifier
-	Hash      string // commit search: hash qualifier
+	Terms         []string
+	ExcludedTerms []string
+	Qualifiers    []searchQualifier
+	Repo          string
+	User          string
+	Org           string
+	Language      string
+	Topics        []string
+	Label         string
+	State         string
+	IsIssue       *bool
+	IsPR          *bool
+	IsPrivate     *bool
+	IsPublic      *bool
+	InTitle       bool
+	InBody        bool
+	Sort          string
+	Order         string
+	PerPage       int
+	Page          int
+	Path          string
+	Extension     string
+	Filename      string
+	Type          string // user search type: user/org
+	Author        string // commit search: author qualifier
+	Hash          string // commit search: hash qualifier
+}
+
+type searchQualifier struct {
+	Key     string
+	Value   string
+	Negated bool
 }
 
 // unsupportedQualifierError names a qualifier — or a qualifier value — that
@@ -92,9 +100,13 @@ func writeGHSearchQualifierError(w http.ResponseWriter, err error) {
 // searchQueryOrError is the only way a handler obtains a searchQuery: it
 // rejects queries carrying qualifiers this server does not implement rather
 // than dropping them and answering with the unfiltered universe.
-func searchQueryOrError(w http.ResponseWriter, r *http.Request) (searchQuery, bool) {
+func searchQueryOrError(w http.ResponseWriter, r *http.Request, searchType string) (searchQuery, bool) {
 	q, err := parseSearchQuery(r)
 	if err != nil {
+		writeGHSearchQualifierError(w, err)
+		return q, false
+	}
+	if err := q.validateFor(searchType); err != nil {
 		writeGHSearchQualifierError(w, err)
 		return q, false
 	}
@@ -103,130 +115,196 @@ func searchQueryOrError(w http.ResponseWriter, r *http.Request) (searchQuery, bo
 
 func parseSearchQuery(r *http.Request) (searchQuery, error) {
 	q := searchQuery{
-		Terms:   []string{},
-		Sort:    r.URL.Query().Get("sort"),
-		Order:   r.URL.Query().Get("order"),
-		PerPage: 30,
-		Page:    1,
+		Terms:         []string{},
+		ExcludedTerms: []string{},
+		Qualifiers:    []searchQualifier{},
+		Sort:          r.URL.Query().Get("sort"),
+		Order:         r.URL.Query().Get("order"),
+		PerPage:       30,
+		Page:          1,
 	}
 	pp := parsePagination(r)
 	q.PerPage = pp.PerPage
 	q.Page = pp.Page
 
-	raw := strings.TrimSpace(r.URL.Query().Get("q"))
-	for len(raw) > 0 {
-		var token string
-		if raw[0] == '"' {
-			idx := strings.Index(raw[1:], "\"")
-			if idx < 0 {
-				token = raw[1:]
-				raw = ""
-			} else {
-				token = raw[1 : idx+1]
-				raw = strings.TrimSpace(raw[idx+2:])
-			}
-		} else {
-			idx := strings.IndexAny(raw, " \t")
-			if idx < 0 {
-				token = raw
-				raw = ""
-			} else {
-				token = raw[:idx]
-				raw = strings.TrimSpace(raw[idx:])
-			}
-		}
-		token = strings.Trim(token, "\"")
+	for _, parsedToken := range tokenizeSearchQuery(r.URL.Query().Get("q")) {
+		token := parsedToken.Value
 		if token == "" {
 			continue
 		}
-		if strings.Contains(token, ":") {
+		negated := strings.HasPrefix(token, "-") && len(token) > 1
+		if negated {
+			token = strings.TrimPrefix(token, "-")
+		}
+		if !parsedToken.Quoted && strings.Contains(token, ":") {
 			parts := strings.SplitN(token, ":", 2)
-			key, val := parts[0], parts[1]
-			switch strings.ToLower(key) {
-			case "repo":
-				q.Repo = val
-			case "user":
-				q.User = val
-			case "org":
-				q.Org = val
-			case "language":
-				q.Language = val
-			case "topic":
-				if val == "" {
-					return q, unsupportedQualifierError{key: "topic", value: val}
+			key, val := strings.ToLower(parts[0]), parts[1]
+			normalizedValue := strings.ToLower(val)
+			if val == "" {
+				return q, unsupportedQualifierError{key: key, value: val}
+			}
+			qualifier := searchQualifier{Key: key, Value: val, Negated: negated}
+			if propertyName, ok := strings.CutPrefix(key, "props."); ok {
+				if propertyName == "" || !validCustomPropertyName(propertyName) {
+					return q, unsupportedQualifierError{key: key, value: val}
 				}
-				q.Topics = append(q.Topics, val)
+				q.Qualifiers = append(q.Qualifiers, qualifier)
+				continue
+			}
+			switch key {
+			case "repo":
+				if !negated {
+					q.Repo = val
+				}
+			case "user":
+				if !negated {
+					q.User = val
+				}
+			case "org":
+				if !negated {
+					q.Org = val
+				}
+			case "language":
+				if !negated {
+					q.Language = val
+				}
+			case "topic":
+				if !negated {
+					q.Topics = append(q.Topics, val)
+				}
 			case "label":
-				q.Label = val
+				if !negated {
+					q.Label = val
+				}
 			case "state":
 				switch strings.ToLower(val) {
 				case "open", "closed":
-					q.State = strings.ToLower(val)
+					if !negated {
+						q.State = strings.ToLower(val)
+					}
 				default:
 					return q, unsupportedQualifierError{key: "state", value: val}
 				}
 			case "is":
 				switch strings.ToLower(val) {
 				case "issue":
-					v := true
-					q.IsIssue = &v
+					if !negated {
+						v := true
+						q.IsIssue = &v
+					}
 				case "pr", "pull-request":
-					v := true
-					q.IsPR = &v
+					if !negated {
+						v := true
+						q.IsPR = &v
+					}
 				case "private":
-					v := true
-					q.IsPrivate = &v
+					if !negated {
+						v := true
+						q.IsPrivate = &v
+					}
 				case "public":
-					v := true
-					q.IsPublic = &v
+					if !negated {
+						v := true
+						q.IsPublic = &v
+					}
 				case "open", "closed":
-					q.State = strings.ToLower(val)
+					if !negated {
+						q.State = strings.ToLower(val)
+					}
+				case "internal", "sponsorable":
 				default:
 					return q, unsupportedQualifierError{key: "is", value: val}
 				}
 			case "in":
-				switch strings.ToLower(val) {
-				case "title":
-					q.InTitle = true
-				case "body":
-					q.InBody = true
-				default:
-					return q, unsupportedQualifierError{key: "in", value: val}
+				for _, field := range strings.Split(strings.ToLower(val), ",") {
+					switch field {
+					case "title":
+						q.InTitle = true
+					case "body":
+						q.InBody = true
+					case "name", "description", "topics", "readme":
+					default:
+						return q, unsupportedQualifierError{key: "in", value: val}
+					}
 				}
 			case "path":
-				q.Path = val
+				if !negated {
+					q.Path = val
+				}
 			case "extension", "ext":
-				q.Extension = val
+				if !negated {
+					q.Extension = val
+				}
 			case "filename", "file":
-				q.Filename = val
+				if !negated {
+					q.Filename = val
+				}
 			case "type":
 				switch strings.ToLower(val) {
 				case "user", "org":
-					q.Type = strings.ToLower(val)
+					if !negated {
+						q.Type = strings.ToLower(val)
+					}
 				default:
 					return q, unsupportedQualifierError{key: "type", value: val}
 				}
 			case "author":
-				q.Author = val
+				if !negated {
+					q.Author = val
+				}
 			case "hash":
-				q.Hash = val
+				if !negated {
+					q.Hash = val
+				}
+			case "archived", "template", "mirror", "deployable", "deployed":
+				if normalizedValue != "true" && normalizedValue != "false" {
+					return q, unsupportedQualifierError{key: key, value: val}
+				}
+			case "fork":
+				if normalizedValue != "true" && normalizedValue != "false" && normalizedValue != "only" {
+					return q, unsupportedQualifierError{key: key, value: val}
+				}
+			case "visibility":
+				if normalizedValue != "public" && normalizedValue != "private" && normalizedValue != "internal" {
+					return q, unsupportedQualifierError{key: key, value: val}
+				}
+			case "size", "followers", "forks", "stars", "topics", "good-first-issues", "help-wanted-issues":
+				if _, err := parseNumericSearchConstraint(val); err != nil {
+					return q, unsupportedQualifierError{key: key, value: val}
+				}
+			case "created", "pushed":
+				if _, err := parseDateSearchConstraint(val); err != nil {
+					return q, unsupportedQualifierError{key: key, value: val}
+				}
+			case "license":
+			case "has":
+				if normalizedValue != "funding-file" {
+					return q, unsupportedQualifierError{key: key, value: val}
+				}
 			default:
 				return q, unsupportedQualifierError{key: key}
 			}
+			q.Qualifiers = append(q.Qualifiers, qualifier)
 			continue
 		}
-		q.Terms = append(q.Terms, strings.ToLower(token))
+		if negated {
+			q.ExcludedTerms = append(q.ExcludedTerms, strings.ToLower(token))
+		} else {
+			q.Terms = append(q.Terms, strings.ToLower(token))
+		}
 	}
 	return q, nil
 }
 
 func (q searchQuery) matchesText(text string) bool {
-	if len(q.Terms) == 0 {
-		return true
-	}
 	text = strings.ToLower(text)
 	for _, term := range q.Terms {
 		if !strings.Contains(text, term) {
+			return false
+		}
+	}
+	for _, term := range q.ExcludedTerms {
+		if strings.Contains(text, term) {
 			return false
 		}
 	}
@@ -235,7 +313,7 @@ func (q searchQuery) matchesText(text string) bool {
 
 func (s *Server) handleSearchIssues(w http.ResponseWriter, r *http.Request) {
 	user := ghUserFromContext(r.Context())
-	q, ok := searchQueryOrError(w, r)
+	q, ok := searchQueryOrError(w, r, "issues")
 	if !ok {
 		return
 	}
@@ -269,7 +347,8 @@ func (s *Server) handleSearchIssues(w http.ResponseWriter, r *http.Request) {
 		if q.Repo != "" && !strings.EqualFold(repo.FullName, q.Repo) {
 			continue
 		}
-		if q.User != "" && !strings.EqualFold(repo.Owner.Login, q.User) {
+		owner, _, _ := strings.Cut(repo.FullName, "/")
+		if q.User != "" && !strings.EqualFold(owner, q.User) {
 			continue
 		}
 		if q.Org != "" && repo.OwnerType != "Organization" {
@@ -281,10 +360,38 @@ func (s *Server) handleSearchIssues(w http.ResponseWriter, r *http.Request) {
 				continue
 			}
 		}
+		if q.IsPrivate != nil && *q.IsPrivate != repo.Private {
+			continue
+		}
+		if q.IsPublic != nil && (*q.IsPublic == repo.Private || strings.EqualFold(repo.Visibility, "internal")) {
+			continue
+		}
+		if q.includes("is", "internal") && !strings.EqualFold(repo.Visibility, "internal") {
+			continue
+		}
+		if q.excludes("repo", repo.FullName) || q.excludes("user", owner) ||
+			repo.OwnerType == "Organization" && q.excludes("org", owner) ||
+			repo.Private && q.excludes("is", "private") ||
+			!repo.Private && q.excludes("is", "public") ||
+			strings.EqualFold(repo.Visibility, "internal") && q.excludes("is", "internal") {
+			continue
+		}
 		if q.Label != "" {
 			if !issueHasLabelNames(s.store, issue, []string{q.Label}) {
 				continue
 			}
+		}
+		excludedLabel := false
+		for _, qualifier := range q.Qualifiers {
+			if qualifier.Negated && qualifier.Key == "label" &&
+				issueHasLabelNames(s.store, issue, []string{qualifier.Value}) {
+				excludedLabel = true
+				break
+			}
+		}
+		if excludedLabel || q.excludes("state", strings.ToLower(issue.State)) ||
+			q.excludes("is", strings.ToLower(issue.State)) || q.excludes("is", "issue") {
+			continue
 		}
 		if q.State != "" && !strings.EqualFold(issue.State, q.State) {
 			continue
@@ -319,7 +426,8 @@ func (s *Server) handleSearchIssues(w http.ResponseWriter, r *http.Request) {
 		if q.Repo != "" && !strings.EqualFold(repo.FullName, q.Repo) {
 			continue
 		}
-		if q.User != "" && !strings.EqualFold(repo.Owner.Login, q.User) {
+		owner, _, _ := strings.Cut(repo.FullName, "/")
+		if q.User != "" && !strings.EqualFold(owner, q.User) {
 			continue
 		}
 		if q.Org != "" {
@@ -328,10 +436,42 @@ func (s *Server) handleSearchIssues(w http.ResponseWriter, r *http.Request) {
 				continue
 			}
 		}
+		if q.IsPrivate != nil && *q.IsPrivate != repo.Private {
+			continue
+		}
+		if q.IsPublic != nil && (*q.IsPublic == repo.Private || strings.EqualFold(repo.Visibility, "internal")) {
+			continue
+		}
+		if q.includes("is", "internal") && !strings.EqualFold(repo.Visibility, "internal") {
+			continue
+		}
+		if q.excludes("repo", repo.FullName) || q.excludes("user", owner) ||
+			repo.OwnerType == "Organization" && q.excludes("org", owner) ||
+			repo.Private && q.excludes("is", "private") ||
+			!repo.Private && q.excludes("is", "public") ||
+			strings.EqualFold(repo.Visibility, "internal") && q.excludes("is", "internal") {
+			continue
+		}
 		if q.Label != "" {
 			if !prHasLabelNames(s.store, pr, []string{q.Label}) {
 				continue
 			}
+		}
+		excludedLabel := false
+		for _, qualifier := range q.Qualifiers {
+			if qualifier.Negated && qualifier.Key == "label" &&
+				prHasLabelNames(s.store, pr, []string{qualifier.Value}) {
+				excludedLabel = true
+				break
+			}
+		}
+		prState := "closed"
+		if pr.State == "OPEN" {
+			prState = "open"
+		}
+		if excludedLabel || q.excludes("state", prState) || q.excludes("is", prState) ||
+			q.excludes("is", "pr") || q.excludes("is", "pull-request") {
+			continue
 		}
 		if q.State != "" {
 			if q.State == "open" && pr.State != "OPEN" {
@@ -649,7 +789,7 @@ func prHasLabelNames(st *Store, pr *PullRequest, names []string) bool {
 
 func (s *Server) handleSearchRepositories(w http.ResponseWriter, r *http.Request) {
 	user := ghUserFromContext(r.Context())
-	q, ok := searchQueryOrError(w, r)
+	q, ok := searchQueryOrError(w, r, "repositories")
 	if !ok {
 		return
 	}
@@ -668,69 +808,46 @@ func (s *Server) handleSearchRepositories(w http.ResponseWriter, r *http.Request
 		return
 	}
 
-	// Matching repos are gathered under the read lock; rendering happens
-	// after release because repoToJSON takes the store lock itself.
-	var matched []*Repo
+	// Take private snapshots of readable repositories under the store lock,
+	// then evaluate storage-backed qualifiers (size, README and funding file)
+	// after releasing it. repoToJSON and several qualifier counters lock the
+	// store themselves.
+	var candidates []*Repo
 	s.store.mu.RLock()
 	for _, repo := range s.store.Repos {
 		if !canReadRepoLocked(s.store, user, repo) {
 			continue
 		}
-		if q.Repo != "" && !strings.EqualFold(repo.FullName, q.Repo) {
-			continue
+		snapshot := *repo
+		snapshot.Topics = append([]string(nil), repo.Topics...)
+		if repo.Owner != nil {
+			owner := *repo.Owner
+			snapshot.Owner = &owner
 		}
-		if q.User != "" {
-			if repo.OwnerType == "Organization" {
-				parts := strings.SplitN(repo.FullName, "/", 2)
-				if len(parts) == 0 || !strings.EqualFold(parts[0], q.User) {
-					continue
-				}
-			} else if repo.Owner == nil || !strings.EqualFold(repo.Owner.Login, q.User) {
-				continue
-			}
-		}
-		if q.Org != "" {
-			if repo.OwnerType != "Organization" {
-				continue
-			}
-			parts := strings.SplitN(repo.FullName, "/", 2)
-			if len(parts) == 0 || !strings.EqualFold(parts[0], q.Org) {
-				continue
-			}
-		}
-		if q.IsPrivate != nil && *q.IsPrivate != repo.Private {
-			continue
-		}
-		if q.IsPublic != nil && *q.IsPublic == repo.Private {
-			continue
-		}
-		if q.Language != "" && !strings.EqualFold(repo.Language, q.Language) {
-			continue
-		}
-		if !repoHasAllTopics(repo, q.Topics) {
-			continue
-		}
-		text := repo.Name + " " + repo.Description + " " + strings.Join(repo.Topics, " ")
-		if !q.matchesText(text) {
-			continue
-		}
-		matched = append(matched, repo)
+		candidates = append(candidates, &snapshot)
 	}
 	s.store.mu.RUnlock()
+
+	var matched []*Repo
+	for _, repo := range candidates {
+		if repositoryMatchesSearch(s.store, repo, q) {
+			matched = append(matched, repo)
+		}
+	}
 
 	base := s.baseURL(r)
 	var results []map[string]interface{}
 	for _, repo := range matched {
 		item := repoToJSON(repo, s.store, base)
 		item["score"] = 1.0
-		item["_help_wanted_issues"] = repoHelpWantedIssueCount(s.store, repo.ID)
+		item["_help_wanted_issues"] = repoIssueLabelCount(s.store, repo.ID, "help wanted")
 		results = append(results, item)
 	}
 
 	writeJSON(w, http.StatusOK, searchEnvelope("", results, q, sortRepoSearchResults))
 }
 
-func repoHelpWantedIssueCount(st *Store, repoID int) int {
+func repoIssueLabelCount(st *Store, repoID int, labelName string) int {
 	st.mu.RLock()
 	defer st.mu.RUnlock()
 	count := 0
@@ -739,7 +856,7 @@ func repoHelpWantedIssueCount(st *Store, repoID int) int {
 			continue
 		}
 		for _, labelID := range issue.LabelIDs {
-			if label := st.Labels[labelID]; label != nil && strings.EqualFold(label.Name, "help wanted") {
+			if label := st.Labels[labelID]; label != nil && strings.EqualFold(label.Name, labelName) {
 				count++
 				break
 			}
@@ -748,29 +865,9 @@ func repoHelpWantedIssueCount(st *Store, repoID int) int {
 	return count
 }
 
-// repoHasAllTopics implements GitHub's repeated topic: qualifier semantics:
-// every qualifier must match a complete topic name (case-insensitively).
-// Treating topic as free text would incorrectly match descriptions and topic
-// substrings, which is precisely the compatibility guarantee clients rely on.
-func repoHasAllTopics(repo *Repo, wanted []string) bool {
-	for _, want := range wanted {
-		found := false
-		for _, topic := range repo.Topics {
-			if strings.EqualFold(topic, want) {
-				found = true
-				break
-			}
-		}
-		if !found {
-			return false
-		}
-	}
-	return true
-}
-
 func (s *Server) handleSearchCode(w http.ResponseWriter, r *http.Request) {
 	user := ghUserFromContext(r.Context())
-	q, ok := searchQueryOrError(w, r)
+	q, ok := searchQueryOrError(w, r, "code")
 	if !ok {
 		return
 	}
@@ -810,6 +907,12 @@ func (s *Server) handleSearchCode(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 		if q.Language != "" && !strings.EqualFold(repo.Language, q.Language) {
+			continue
+		}
+		owner, _, _ := strings.Cut(repo.FullName, "/")
+		if q.excludes("repo", repo.FullName) || q.excludes("user", owner) ||
+			repo.OwnerType == "Organization" && q.excludes("org", owner) ||
+			q.excludes("language", repo.Language) {
 			continue
 		}
 		stor, ok := s.store.GitStorages[repo.FullName]
@@ -858,6 +961,15 @@ func (s *Server) handleSearchCode(w http.ResponseWriter, r *http.Request) {
 			}
 			if q.Path != "" && !strings.Contains(path, q.Path) {
 				return nil
+			}
+			if q.excludes("filename", name) || q.excludes("file", name) ||
+				q.excludes("extension", ext) || q.excludes("ext", ext) {
+				return nil
+			}
+			for _, qualifier := range q.Qualifiers {
+				if qualifier.Negated && qualifier.Key == "path" && strings.Contains(path, qualifier.Value) {
+					return nil
+				}
 			}
 
 			matched := false
@@ -910,7 +1022,7 @@ func (s *Server) handleSearchCode(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleSearchUsers(w http.ResponseWriter, r *http.Request) {
-	q, ok := searchQueryOrError(w, r)
+	q, ok := searchQueryOrError(w, r, "users")
 	if !ok {
 		return
 	}
@@ -925,6 +1037,9 @@ func (s *Server) handleSearchUsers(w http.ResponseWriter, r *http.Request) {
 		if q.Type == "org" {
 			continue
 		}
+		if q.excludes("type", "user") {
+			continue
+		}
 		text := u.Login + " " + u.Name + " " + u.Bio
 		if !q.matchesText(text) {
 			continue
@@ -933,6 +1048,9 @@ func (s *Server) handleSearchUsers(w http.ResponseWriter, r *http.Request) {
 	}
 	for _, org := range s.store.Orgs {
 		if q.Type == "user" {
+			continue
+		}
+		if q.excludes("type", "org") {
 			continue
 		}
 		text := org.Login + " " + org.Name + " " + org.Description
@@ -1194,7 +1312,7 @@ func sortUserSearchResults(items []map[string]interface{}, sortKey, order string
 // qualifiers.
 func (s *Server) handleSearchCommits(w http.ResponseWriter, r *http.Request) {
 	user := ghUserFromContext(r.Context())
-	q, ok := searchQueryOrError(w, r)
+	q, ok := searchQueryOrError(w, r, "commits")
 	if !ok {
 		return
 	}
@@ -1229,6 +1347,11 @@ func (s *Server) handleSearchCommits(w http.ResponseWriter, r *http.Request) {
 			if q.Org != "" && (repo.OwnerType != "Organization" || !strings.EqualFold(owner, q.Org)) {
 				continue
 			}
+		}
+		owner, _, _ := strings.Cut(repo.FullName, "/")
+		if q.excludes("repo", repo.FullName) || q.excludes("user", owner) ||
+			repo.OwnerType == "Organization" && q.excludes("org", owner) {
+			continue
 		}
 		stor, ok := s.store.GitStorages[repo.FullName]
 		if !ok {
@@ -1265,6 +1388,17 @@ func (s *Server) handleSearchCommits(w http.ResponseWriter, r *http.Request) {
 			sha := commit.Hash.String()
 			if q.Hash != "" && !strings.HasPrefix(sha, q.Hash) {
 				return nil
+			}
+			for _, qualifier := range q.Qualifiers {
+				if !qualifier.Negated {
+					continue
+				}
+				if qualifier.Key == "hash" && strings.HasPrefix(sha, qualifier.Value) {
+					return nil
+				}
+				if qualifier.Key == "author" && commitAuthorMatches(s.store, commit, qualifier.Value) {
+					return nil
+				}
 			}
 			if q.Author != "" && !commitAuthorMatches(s.store, commit, q.Author) {
 				return nil
@@ -1417,7 +1551,7 @@ func (s *Server) handleSearchLabels(w http.ResponseWriter, r *http.Request) {
 		writeGHError(w, http.StatusNotFound, "Not Found")
 		return
 	}
-	q, ok := searchQueryOrError(w, r)
+	q, ok := searchQueryOrError(w, r, "labels")
 	if !ok {
 		return
 	}
@@ -1461,7 +1595,7 @@ func (s *Server) handleSearchTopics(w http.ResponseWriter, r *http.Request) {
 		writeGHValidationError(w, "Search", "q", "missing_field")
 		return
 	}
-	q, ok := searchQueryOrError(w, r)
+	q, ok := searchQueryOrError(w, r, "topics")
 	if !ok {
 		return
 	}
