@@ -1,4 +1,7 @@
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
+import { fetchApps, fetchOAuthApps, fetchOAuthGrants, revokeOAuthGrant } from "../api.js";
+import { InlineError, Spinner } from "@bleephub/ui-core/components";
 import { PageTitle, Button, Box, CodeBlock, ErrorBanner } from "../components/ui.js";
 
 export function OAuthPage() {
@@ -10,11 +13,77 @@ export function OAuthPage() {
       />
 
       <FlowSimulator />
+      <AuthorizedApplications />
     </div>
   );
 }
 
+function AuthorizedApplications() {
+  const queryClient = useQueryClient();
+  const grants = useQuery({ queryKey: ["oauth-grants"], queryFn: fetchOAuthGrants });
+  const revoke = useMutation({
+    mutationFn: revokeOAuthGrant,
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["oauth-grants"] }),
+  });
+  return (
+    <Box header={<span style={{ fontWeight: 600 }}>Authorized applications</span>}>
+      <div style={{ padding: "1rem" }}>
+        {grants.isLoading ? <Spinner label="loading authorized applications" /> : grants.isError ? (
+          <InlineError title="Failed to load authorized applications" detail={String(grants.error)} />
+        ) : grants.data?.length === 0 ? (
+          <p style={{ color: "var(--color-fg-muted)" }}>You have not authorized any applications.</p>
+        ) : (
+          <div className="grid gap-3">
+            {grants.data?.map((grant) => (
+              <div key={grant.client_id} className="flex flex-wrap items-center justify-between gap-3 rounded border p-3">
+                <div>
+                  <b>{grant.name || grant.client_id}</b>
+                  <div style={{ color: "var(--color-fg-muted)", fontSize: "0.78rem" }}>
+                    {grant.type === "GitHubApp" ? "GitHub App" : "OAuth App"}
+                    {grant.scopes.length > 0 ? ` · ${grant.scopes.join(", ")}` : ""}
+                  </div>
+                </div>
+                <Button
+                  size="sm"
+                  variant="danger"
+                  disabled={revoke.isPending}
+                  onClick={() => {
+                    if (confirm(`Revoke authorization for ${grant.name || grant.client_id}?`)) {
+                      revoke.mutate(grant.client_id);
+                    }
+                  }}
+                >
+                  Revoke
+                </Button>
+              </div>
+            ))}
+          </div>
+        )}
+        {revoke.error && <div className="mt-3"><ErrorBanner>{String(revoke.error)}</ErrorBanner></div>}
+      </div>
+    </Box>
+  );
+}
+
 function FlowSimulator() {
+  const apps = useQuery({
+    queryKey: ["oauth-flow-clients"],
+    queryFn: async () => {
+      const [githubApps, oauthApps] = await Promise.all([fetchApps(), fetchOAuthApps()]);
+      return [
+        ...oauthApps.map((app) => ({
+          id: app.clientId,
+          label: `${app.name} (OAuth App)`,
+          callback: app.callbackUrl,
+        })),
+        ...githubApps.map((app) => ({
+          id: app.clientId,
+          label: `${app.name} (GitHub App)`,
+          callback: app.callbackUrl,
+        })),
+      ];
+    },
+  });
   const [clientID, setClientID] = useState("");
   const [redirectURI, setRedirectURI] = useState("http://localhost:8080/callback");
   const [scope, setScope] = useState("repo read:org");
@@ -88,6 +157,28 @@ function FlowSimulator() {
   return (
     <Box className="mb-6" header={<span style={{ fontWeight: 600, color: "var(--color-fg)" }}>OAuth flow controls</span>}>
       <div style={{ padding: "1rem" }}>
+        {apps.isLoading ? <Spinner label="loading OAuth clients" /> : apps.isError ? (
+          <InlineError title="Failed to load OAuth clients" detail={String(apps.error)} />
+        ) : (
+          <div className="mb-4">
+            <label htmlFor="oauth-registered-client" className="mb-1 block" style={{ fontSize: "0.82rem", fontWeight: 600 }}>
+              Registered application
+            </label>
+            <select
+              id="oauth-registered-client"
+              className="w-full"
+              value={clientID}
+              onChange={(event) => {
+                const selected = apps.data?.find((app) => app.id === event.target.value);
+                setClientID(event.target.value);
+                if (selected?.callback) setRedirectURI(selected.callback);
+              }}
+            >
+              <option value="">Choose an application…</option>
+              {apps.data?.map((app) => <option key={app.id} value={app.id}>{app.label}</option>)}
+            </select>
+          </div>
+        )}
         <div className="mb-4 grid gap-3 md:grid-cols-2">
           <Field label="Client identifier" value={clientID} onChange={setClientID} />
           <Field label="State" value={state} onChange={setState} />
@@ -96,10 +187,10 @@ function FlowSimulator() {
           <Field label="Device code" value={deviceCode} onChange={setDeviceCode} />
         </div>
         <div className="flex flex-wrap gap-2">
-          <Button variant="primary" size="sm" onClick={startWebFlow}>
+          <Button variant="primary" size="sm" onClick={startWebFlow} disabled={!clientID.trim()}>
             Web flow
           </Button>
-          <Button variant="secondary" size="sm" onClick={startDeviceFlow}>
+          <Button variant="secondary" size="sm" onClick={startDeviceFlow} disabled={!clientID.trim()}>
             Device flow
           </Button>
           <Button variant="secondary" size="sm" onClick={pollDeviceToken} disabled={!deviceCode.trim()}>

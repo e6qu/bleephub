@@ -14,6 +14,7 @@ import (
 )
 
 func (s *Server) registerGHAppsRoutes() {
+	s.registerGHAppSettingsRoutes()
 	// GitHub App application programming interface endpoints.
 	s.route("POST /api/v3/app-manifests/{code}/conversions", s.handleManifestConversion)
 	s.route("GET /api/v3/app", s.handleGetAuthenticatedApp)
@@ -102,6 +103,14 @@ func (s *Server) handleManifestSubmission(w http.ResponseWriter, r *http.Request
 		writeGHValidationError(w, "AppManifest", "name", "missing_field")
 		return
 	}
+	if manifest.URL == "" {
+		writeGHValidationError(w, "AppManifest", "url", "missing_field")
+		return
+	}
+	if err := validateClientCallbackURL(strings.TrimSpace(manifest.URL)); err != nil {
+		writeGHValidationError(w, "AppManifest", "url", "invalid")
+		return
+	}
 	if manifest.RedirectURL == "" {
 		writeGHValidationError(w, "AppManifest", "redirect_url", "missing_field")
 		return
@@ -176,7 +185,7 @@ func (s *Server) handleListBrowserGitHubApps(w http.ResponseWriter, r *http.Requ
 	out := make([]map[string]interface{}, 0, len(apps))
 	for _, app := range apps {
 		if app.OwnerID == user.ID {
-			out = append(out, appToJSON(s.store, app, false))
+			out = append(out, appSettingsJSON(s.store, app))
 		}
 	}
 	writeJSON(w, http.StatusOK, out)

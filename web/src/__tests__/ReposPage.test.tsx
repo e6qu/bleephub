@@ -17,6 +17,7 @@ function jsonResponse(data: unknown, status = 200, headers?: Record<string, stri
 afterEach(() => {
   cleanup();
   mockFetch.mockReset();
+  window.history.pushState({}, "", "/");
 });
 
 function renderPage() {
@@ -155,5 +156,16 @@ describe("ReposPage", () => {
         }),
       );
     });
+  });
+
+  it("opens the create dialog from the global new-repository deep link", async () => {
+    window.history.pushState({}, "", "/ui/repos?new=1");
+    mockFetch.mockResolvedValue(jsonResponse(reposData, 200, { Link: "" }));
+
+    renderPage();
+
+    expect(
+      await screen.findByRole("heading", { name: /create a new repository/i }),
+    ).toBeInTheDocument();
   });
 });

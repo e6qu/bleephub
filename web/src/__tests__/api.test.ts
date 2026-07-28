@@ -6,6 +6,7 @@ import {
   fetchEnvironments,
   fetchRepoIssuesPage,
   fetchRepoCommits,
+  fetchBranchProtection,
   fetchPRDetail,
   createIssue,
   parseLinkNext,
@@ -54,6 +55,19 @@ import {
   buildAuditLogPhrase,
   fetchEnterpriseSlug,
   packageListPath,
+  fetchSecurityAdvisory,
+  updateSecurityAdvisory,
+  createSecurityAdvisoryTemporaryFork,
+  addInstallationRepository,
+  deleteApp,
+  deleteOAuthApp,
+  installApp,
+  removeInstallationRepository,
+  rotateAppClientSecret,
+  rotateAppPrivateKey,
+  rotateOAuthAppClientSecret,
+  updateAppSettings,
+  updateOAuthApp,
 } from "../api.js";
 
 const mockFetch = vi.fn();
@@ -167,6 +181,18 @@ describe("api wire-shape normalization", () => {
 });
 
 describe("repository API helpers", () => {
+  it("treats a missing branch-protection resource as an unprotected branch", async () => {
+    mockFetch.mockResolvedValue(jsonResponse({ message: "Branch not protected" }, 404));
+
+    await expect(fetchBranchProtection("admin", "repo", "main")).resolves.toBeNull();
+  });
+
+  it("does not hide branch-protection server failures", async () => {
+    mockFetch.mockResolvedValue(jsonResponse({ message: "boom" }, 500));
+
+    await expect(fetchBranchProtection("admin", "repo", "main")).rejects.toMatchObject({ status: 500 });
+  });
+
   it("fetchRepoCommits reads the user-interface commit adapter", async () => {
     mockFetch.mockResolvedValue(jsonResponse([]));
 
@@ -178,6 +204,148 @@ describe("repository API helpers", () => {
     mockFetch.mockResolvedValue(jsonResponse({ message: "Git object unavailable" }, 500));
 
     await expect(fetchRepoCommits("admin", "blocked")).rejects.toMatchObject({ status: 500 });
+  });
+});
+
+describe("application settings API helpers", () => {
+  it("uses the owner settings lifecycle and installation contracts", async () => {
+    const app = {
+      id: 1,
+      slug: "ci-bot",
+      name: "CI Bot",
+      client_id: "Iv1.client",
+      description: "",
+      external_url: "https://example.test",
+      callback_url: "https://example.test/callback",
+      webhook_url: "",
+      webhook_active: false,
+      webhook_content_type: "form",
+      permissions: {},
+      events: [],
+      owner: { id: 1 },
+      created_at: "2026-01-01T00:00:00Z",
+      updated_at: "2026-01-01T00:00:00Z",
+    };
+    mockFetch.mockImplementation((_input: RequestInfo | URL, init?: RequestInit) => {
+      if (init?.method === "DELETE" || init?.method === "PUT") {
+        return Promise.resolve(new Response(null, { status: 204 }));
+      }
+      return Promise.resolve(jsonResponse(app));
+    });
+
+    await updateAppSettings("ci-bot", {
+      name: "CI Bot",
+      description: "",
+      url: "https://example.test",
+      callback_url: "https://example.test/callback",
+      webhook_url: "",
+      webhook_active: false,
+      webhook_content_type: "form",
+      permissions: {},
+      events: [],
+    });
+    expect(mockFetch).toHaveBeenLastCalledWith(
+      "/settings/apps/ci-bot",
+      expect.objectContaining({ method: "PATCH" }),
+    );
+
+    mockFetch.mockResolvedValueOnce(jsonResponse({ client_secret: "secret" }));
+    await rotateAppClientSecret("ci-bot");
+    mockFetch.mockResolvedValueOnce(jsonResponse({ pem: "pem" }));
+    await rotateAppPrivateKey("ci-bot");
+    await deleteApp("ci-bot");
+    expect(mockFetch).toHaveBeenLastCalledWith(
+      "/settings/apps/ci-bot",
+      expect.objectContaining({ method: "DELETE" }),
+    );
+
+    mockFetch.mockResolvedValueOnce(jsonResponse({
+      id: 2,
+      app_id: 1,
+      app_slug: "ci-bot",
+      target_type: "User",
+      account: { login: "admin" },
+      repository_selection: "selected",
+      permissions: {},
+      events: [],
+      created_at: "2026-01-01T00:00:00Z",
+      suspended_at: null,
+    }));
+    await installApp("ci-bot", {
+      target_login: "admin",
+      repository_selection: "selected",
+      repository_ids: [10, 11],
+    });
+    const installOptions = mockFetch.mock.calls.at(-1)?.[1] as RequestInit;
+    expect(mockFetch.mock.calls.at(-1)?.[0]).toBe("/settings/apps/ci-bot/installations/new");
+    expect(new URLSearchParams(String(installOptions.body)).getAll("repository_ids")).toEqual(["10", "11"]);
+
+    await addInstallationRepository(2, 12);
+    await removeInstallationRepository(2, 12);
+  });
+
+  it("updates, rotates, and deletes OAuth Apps", async () => {
+    const oauth = {
+      client_id: "oauth-client",
+      name: "OAuth",
+      description: "",
+      url: "https://example.test",
+      callback_url: "https://example.test/callback",
+      owner_id: 1,
+      created_at: "2026-01-01T00:00:00Z",
+    };
+    mockFetch.mockResolvedValueOnce(jsonResponse(oauth));
+    await updateOAuthApp(oauth.client_id, {
+      name: oauth.name,
+      description: "",
+      url: oauth.url,
+      callback_url: oauth.callback_url,
+    });
+    mockFetch.mockResolvedValueOnce(jsonResponse({ client_secret: "new-secret" }));
+    await rotateOAuthAppClientSecret(oauth.client_id);
+    mockFetch.mockResolvedValueOnce(new Response(null, { status: 204 }));
+    await deleteOAuthApp(oauth.client_id);
+    expect(mockFetch).toHaveBeenLastCalledWith(
+      "/settings/oauth-apps/oauth-client",
+      expect.objectContaining({ method: "DELETE" }),
+    );
+  });
+});
+
+describe("security advisory API helpers", () => {
+  it("fetches and patches a single repository advisory", async () => {
+    const advisory = {
+      ghsa_id: "GHSA-1234-5678-9012",
+      summary: "Example",
+      description: "Details",
+      severity: "high",
+      state: "draft",
+    };
+    mockFetch.mockImplementation(() => Promise.resolve(jsonResponse(advisory)));
+
+    await fetchSecurityAdvisory("admin", "repo", advisory.ghsa_id);
+    expect(mockFetch).toHaveBeenLastCalledWith(
+      `/api/v3/repos/admin/repo/security-advisories/${advisory.ghsa_id}`,
+      expect.anything(),
+    );
+
+    await updateSecurityAdvisory("admin", "repo", advisory.ghsa_id, { state: "published" });
+    expect(mockFetch).toHaveBeenLastCalledWith(
+      `/api/v3/repos/admin/repo/security-advisories/${advisory.ghsa_id}`,
+      expect.objectContaining({
+        method: "PATCH",
+        body: JSON.stringify({ state: "published" }),
+      }),
+    );
+
+    await createSecurityAdvisoryTemporaryFork("admin", "repo", advisory.ghsa_id);
+    expect(mockFetch).toHaveBeenLastCalledWith(
+      `/api/v3/repos/admin/repo/security-advisories/${advisory.ghsa_id}/forks`,
+      expect.objectContaining({
+        method: "POST",
+        body: JSON.stringify({}),
+      }),
+    );
   });
 });
 

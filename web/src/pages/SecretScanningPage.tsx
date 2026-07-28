@@ -10,7 +10,7 @@ import {
 import { useOpenCounts } from "../hooks/useOpenCounts.js";
 import { RepoHeader } from "../components/Shell.js";
 import { Spinner, InlineError } from "@bleephub/ui-core/components";
-import { Box } from "../components/ui.js";
+import { Box, Button } from "../components/ui.js";
 import { MutationError } from "../components/MutationError.js";
 import type {
   GithubSecretScanningAlert,
@@ -32,7 +32,7 @@ const RESOLUTIONS: { value: GithubSecretScanningResolution; label: string }[] = 
 export function SecretScanningPage() {
   const { owner = "", repo = "" } = useParams<{ owner: string; repo: string }>();
   const [filter, setFilter] = useState<FilterState>("all");
-  const [selected, setSelected] = useState<GithubSecretScanningAlert | null>(null);
+  const [selectedNumber, setSelectedNumber] = useState<number | null>(null);
   const counts = useOpenCounts(owner, repo);
   const queryClient = useQueryClient();
 
@@ -48,10 +48,16 @@ export function SecretScanningPage() {
     enabled: !!owner && !!repo,
   });
 
-  const { data: locations = [] } = useQuery({
-    queryKey: ["secret-scanning-locations", owner, repo, selected?.number],
-    queryFn: () => fetchSecretScanningAlertLocations(owner, repo, selected!.number),
-    enabled: !!selected,
+  const selectedQuery = useQuery({
+    queryKey: ["secret-scanning-alert", owner, repo, selectedNumber],
+    queryFn: () => fetchSecretScanningAlert(owner, repo, selectedNumber!),
+    enabled: selectedNumber !== null,
+  });
+
+  const locationsQuery = useQuery({
+    queryKey: ["secret-scanning-locations", owner, repo, selectedNumber],
+    queryFn: () => fetchSecretScanningAlertLocations(owner, repo, selectedNumber!),
+    enabled: selectedNumber !== null,
   });
 
   const resolveMutation = useMutation({
@@ -63,15 +69,16 @@ export function SecretScanningPage() {
     }) => updateSecretScanningAlert(owner, repo, payload.number, payload),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["secret-scanning", owner, repo] });
-      if (selected) {
-        queryClient.invalidateQueries({ queryKey: ["secret-scanning-locations", owner, repo, selected.number] });
+      if (selectedNumber !== null) {
+        queryClient.invalidateQueries({ queryKey: ["secret-scanning-alert", owner, repo, selectedNumber] });
+        queryClient.invalidateQueries({ queryKey: ["secret-scanning-locations", owner, repo, selectedNumber] });
       }
     },
   });
 
   useEffect(() => {
-    setSelected(null);
-  }, [owner, repo]);
+    setSelectedNumber(null);
+  }, [owner, repo, filter]);
 
   if (isLoading) return <Spinner label={`loading ${owner}/${repo} secret scanning`} />;
   if (isError) return <InlineError title="Failed to load secret scanning alerts" detail={String(error)} />;
@@ -95,7 +102,7 @@ export function SecretScanningPage() {
         </select>
       </div>
 
-      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "1rem" }}>
+      <div className="grid gap-4 md:grid-cols-2">
         <Box>
           <h3 style={{ marginTop: 0, marginBottom: "0.75rem" }}>Alerts ({alerts.length})</h3>
           {alerts.length === 0 ? (
@@ -103,23 +110,30 @@ export function SecretScanningPage() {
           ) : (
             <ul style={{ listStyle: "none", padding: 0, margin: 0 }}>
               {alerts.map((alert) => (
-                <li
-                  key={alert.number}
-                  onClick={() => setSelected(alert)}
-                  style={{
-                    padding: "0.6rem 0.4rem",
-                    borderBottom: "1px solid var(--color-border)",
-                    cursor: "pointer",
-                    background: selected?.number === alert.number ? "var(--color-accent-subtle)" : "transparent",
-                  }}
-                >
-                  <div style={{ fontWeight: 600, fontSize: "0.9rem" }}>
-                    #{alert.number} {alert.secret_type_display_name}
-                  </div>
-                  <div style={{ fontSize: "0.8rem", color: "var(--color-fg-muted)" }}>
-                    {alert.state}
-                    {alert.resolution ? ` — ${alert.resolution}` : ""}
-                  </div>
+                <li key={alert.number} style={{ borderBottom: "1px solid var(--color-border)" }}>
+                  <button
+                    type="button"
+                    aria-pressed={selectedNumber === alert.number}
+                    onClick={() => setSelectedNumber(alert.number)}
+                    style={{
+                      display: "block",
+                      width: "100%",
+                      padding: "0.6rem 0.4rem",
+                      border: 0,
+                      textAlign: "left",
+                      cursor: "pointer",
+                      color: "inherit",
+                      background: selectedNumber === alert.number ? "var(--color-accent-subtle)" : "transparent",
+                    }}
+                  >
+                    <div style={{ fontWeight: 600, fontSize: "0.9rem" }}>
+                      #{alert.number} {alert.secret_type_display_name}
+                    </div>
+                    <div style={{ fontSize: "0.8rem", color: "var(--color-fg-muted)" }}>
+                      {alert.state}
+                      {alert.resolution ? ` — ${alert.resolution}` : ""}
+                    </div>
+                  </button>
                 </li>
               ))}
             </ul>
@@ -127,14 +141,25 @@ export function SecretScanningPage() {
         </Box>
 
         <Box>
-          {selected ? (
+          {selectedQuery.isLoading ? (
+            <Spinner label={`loading alert ${selectedNumber}`} />
+          ) : selectedQuery.isError ? (
+            <InlineError title="Failed to load secret scanning alert" detail={String(selectedQuery.error)} />
+          ) : selectedQuery.data ? (
             <AlertDetail
-              alert={selected}
-              locations={locations}
+              alert={selectedQuery.data}
+              locations={locationsQuery.data ?? []}
+              locationsLoading={locationsQuery.isLoading}
+              locationsError={locationsQuery.error}
               onResolve={(resolution, comment) =>
-                resolveMutation.mutate({ number: selected.number, state: "resolved", resolution, resolution_comment: comment })
+                resolveMutation.mutate({
+                  number: selectedQuery.data.number,
+                  state: "resolved",
+                  resolution,
+                  resolution_comment: comment,
+                })
               }
-              onReopen={() => resolveMutation.mutate({ number: selected.number, state: "open" })}
+              onReopen={() => resolveMutation.mutate({ number: selectedQuery.data.number, state: "open" })}
             />
           ) : (
             <p style={{ color: "var(--color-fg-muted)", fontSize: "0.85rem" }}>Select an alert to view details.</p>
@@ -148,11 +173,15 @@ export function SecretScanningPage() {
 function AlertDetail({
   alert,
   locations,
+  locationsLoading,
+  locationsError,
   onResolve,
   onReopen,
 }: {
   alert: GithubSecretScanningAlert;
   locations: GithubSecretScanningLocation[];
+  locationsLoading: boolean;
+  locationsError: Error | null;
   onResolve: (resolution: GithubSecretScanningResolution, comment: string) => void;
   onReopen: () => void;
 }) {
@@ -200,24 +229,24 @@ function AlertDetail({
             onChange={(e) => setComment(e.target.value)}
             style={{ fontSize: "0.85rem", padding: "0.35rem 0.5rem", width: "100%", marginBottom: "0.5rem" }}
           />
-          <button
-            type="button"
-            onClick={() => onResolve(resolution, comment)}
-            style={{ fontSize: "0.85rem", padding: "0.4rem 0.8rem" }}
-          >
+          <Button type="button" onClick={() => onResolve(resolution, comment)} size="sm">
             Resolve
-          </button>
+          </Button>
         </div>
       ) : (
         <div style={{ marginBottom: "1rem" }}>
-          <button type="button" onClick={onReopen} style={{ fontSize: "0.85rem", padding: "0.4rem 0.8rem" }}>
+          <Button type="button" onClick={onReopen} size="sm">
             Reopen
-          </button>
+          </Button>
         </div>
       )}
 
       <h4 style={{ fontSize: "0.9rem", marginBottom: "0.5rem" }}>Locations ({locations.length})</h4>
-      {locations.length === 0 ? (
+      {locationsLoading ? (
+        <Spinner label={`loading locations for alert ${alert.number}`} />
+      ) : locationsError ? (
+        <InlineError title="Failed to load alert locations" detail={String(locationsError)} />
+      ) : locations.length === 0 ? (
         <p style={{ color: "var(--color-fg-muted)", fontSize: "0.85rem" }}>No locations.</p>
       ) : (
         <ul style={{ listStyle: "none", padding: 0, margin: 0 }}>

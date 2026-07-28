@@ -38,7 +38,7 @@ export function DependabotPage() {
   const { owner = "", repo = "" } = useParams<{ owner: string; repo: string }>();
   const [stateFilter, setStateFilter] = useState<FilterState>("all");
   const [severityFilter, setSeverityFilter] = useState<SeverityFilter>("all");
-  const [selected, setSelected] = useState<GithubDependabotAlert | null>(null);
+  const [selectedNumber, setSelectedNumber] = useState<number | null>(null);
   const counts = useOpenCounts(owner, repo);
   const queryClient = useQueryClient();
 
@@ -57,10 +57,10 @@ export function DependabotPage() {
     enabled: !!owner && !!repo,
   });
 
-  const { data: selectedDetail } = useQuery({
-    queryKey: ["dependabot-alert", owner, repo, selected?.number],
-    queryFn: () => fetchDependabotAlert(owner, repo, selected!.number),
-    enabled: !!selected,
+  const selectedQuery = useQuery({
+    queryKey: ["dependabot-alert", owner, repo, selectedNumber],
+    queryFn: () => fetchDependabotAlert(owner, repo, selectedNumber!),
+    enabled: selectedNumber !== null,
   });
 
   const updateMutation = useMutation({
@@ -72,20 +72,18 @@ export function DependabotPage() {
     }) => updateDependabotAlert(owner, repo, payload.number, payload),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["dependabot", owner, repo] });
-      if (selected) {
-        queryClient.invalidateQueries({ queryKey: ["dependabot-alert", owner, repo, selected.number] });
+      if (selectedNumber !== null) {
+        queryClient.invalidateQueries({ queryKey: ["dependabot-alert", owner, repo, selectedNumber] });
       }
     },
   });
 
   useEffect(() => {
-    setSelected(null);
-  }, [owner, repo]);
+    setSelectedNumber(null);
+  }, [owner, repo, stateFilter, severityFilter]);
 
   if (isLoading) return <Spinner label={`loading ${owner}/${repo} dependabot`} />;
   if (isError) return <InlineError title="Failed to load Dependabot alerts" detail={String(error)} />;
-
-  const activeAlert = selectedDetail ?? selected;
 
   return (
     <div>
@@ -121,7 +119,7 @@ export function DependabotPage() {
         </select>
       </div>
 
-      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "1rem" }}>
+      <div className="grid gap-4 md:grid-cols-2">
         <Box>
           <h3 style={{ marginTop: 0, marginBottom: "0.75rem" }}>Alerts ({alerts.length})</h3>
           {alerts.length === 0 ? (
@@ -129,25 +127,32 @@ export function DependabotPage() {
           ) : (
             <ul style={{ listStyle: "none", padding: 0, margin: 0 }}>
               {alerts.map((alert) => (
-                <li
-                  key={alert.number}
-                  onClick={() => setSelected(alert)}
-                  style={{
-                    padding: "0.6rem 0.4rem",
-                    borderBottom: "1px solid var(--color-border)",
-                    cursor: "pointer",
-                    background: selected?.number === alert.number ? "var(--color-accent-subtle)" : "transparent",
-                  }}
-                >
-                  <div style={{ fontWeight: 600, fontSize: "0.9rem" }}>
-                    #{alert.number} {alert.security_advisory.summary}
-                  </div>
-                  <div style={{ fontSize: "0.8rem", color: "var(--color-fg-muted)" }}>
-                    {alert.state}
-                    {alert.dismissed_reason ? ` — ${alert.dismissed_reason}` : ""}
-                    {` · ${alert.security_vulnerability.severity}`}
-                    {` · ${alert.dependency.package.ecosystem}`}
-                  </div>
+                <li key={alert.number} style={{ borderBottom: "1px solid var(--color-border)" }}>
+                  <button
+                    type="button"
+                    aria-pressed={selectedNumber === alert.number}
+                    onClick={() => setSelectedNumber(alert.number)}
+                    style={{
+                      display: "block",
+                      width: "100%",
+                      padding: "0.6rem 0.4rem",
+                      border: 0,
+                      textAlign: "left",
+                      cursor: "pointer",
+                      color: "inherit",
+                      background: selectedNumber === alert.number ? "var(--color-accent-subtle)" : "transparent",
+                    }}
+                  >
+                    <div style={{ fontWeight: 600, fontSize: "0.9rem" }}>
+                      #{alert.number} {alert.security_advisory.summary}
+                    </div>
+                    <div style={{ fontSize: "0.8rem", color: "var(--color-fg-muted)" }}>
+                      {alert.state}
+                      {alert.dismissed_reason ? ` — ${alert.dismissed_reason}` : ""}
+                      {` · ${alert.security_vulnerability.severity}`}
+                      {` · ${alert.dependency.package.ecosystem}`}
+                    </div>
+                  </button>
                 </li>
               ))}
             </ul>
@@ -155,18 +160,22 @@ export function DependabotPage() {
         </Box>
 
         <Box>
-          {activeAlert ? (
+          {selectedQuery.isLoading ? (
+            <Spinner label={`loading alert ${selectedNumber}`} />
+          ) : selectedQuery.isError ? (
+            <InlineError title="Failed to load Dependabot alert" detail={String(selectedQuery.error)} />
+          ) : selectedQuery.data ? (
             <AlertDetail
-              alert={activeAlert}
+              alert={selectedQuery.data}
               onDismiss={(reason, comment) =>
                 updateMutation.mutate({
-                  number: activeAlert.number,
+                  number: selectedQuery.data.number,
                   state: "dismissed",
                   dismissed_reason: reason,
                   dismissed_comment: comment,
                 })
               }
-              onReopen={() => updateMutation.mutate({ number: activeAlert.number, state: "open" })}
+              onReopen={() => updateMutation.mutate({ number: selectedQuery.data.number, state: "open" })}
             />
           ) : (
             <p style={{ color: "var(--color-fg-muted)", fontSize: "0.85rem" }}>Select an alert to view details.</p>
@@ -247,19 +256,15 @@ function AlertDetail({
             onChange={(e) => setComment(e.target.value)}
             style={{ fontSize: "0.85rem", padding: "0.35rem 0.5rem", width: "100%", marginBottom: "0.5rem" }}
           />
-          <button
-            type="button"
-            onClick={() => onDismiss(reason, comment)}
-            style={{ fontSize: "0.85rem", padding: "0.4rem 0.8rem" }}
-          >
+          <Button type="button" onClick={() => onDismiss(reason, comment)} size="sm">
             Dismiss
-          </button>
+          </Button>
         </div>
       ) : (
         <div style={{ marginBottom: "1rem" }}>
-          <button type="button" onClick={onReopen} style={{ fontSize: "0.85rem", padding: "0.4rem 0.8rem" }}>
+          <Button type="button" onClick={onReopen} size="sm">
             Reopen
-          </button>
+          </Button>
         </div>
       )}
     </div>

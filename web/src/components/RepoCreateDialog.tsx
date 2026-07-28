@@ -177,7 +177,7 @@ export function RepoCreateDialog({ open, onClose, onCreated, createTarget = "use
           Initialize this repository with a README
         </label>
 
-        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0.75rem" }}>
+        <div className="grid gap-3 sm:grid-cols-2">
           <label style={{ display: "flex", flexDirection: "column", gap: "0.25rem" }}>
             <span style={{ fontSize: "0.85rem", fontWeight: 500 }}>.gitignore template</span>
             {gitignoresQ.isLoading && <Spinner label="loading" />}

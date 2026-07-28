@@ -31,24 +31,34 @@ function renderPage() {
 }
 
 describe("OAuthPage", () => {
-  it("renders OAuth flow controls without reading internal OAuth state", () => {
+  it("renders OAuth flow controls and loads registered clients", async () => {
+    mockFetch.mockImplementation((input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url === "/settings/apps" || url === "/settings/oauth-apps" || url === "/settings/connections/applications") {
+        return Promise.resolve(jsonResponse([]));
+      }
+      return Promise.resolve(jsonResponse({}));
+    });
     renderPage();
     expect(screen.getAllByText(/OAuth flow controls/i).length).toBeGreaterThan(0);
-    expect(screen.queryByText(/active device codes/i)).not.toBeInTheDocument();
-    expect(screen.queryByText(/active authorization codes/i)).not.toBeInTheDocument();
-    expect(mockFetch).not.toHaveBeenCalled();
+    expect(await screen.findByLabelText("Registered application")).toBeInTheDocument();
+    expect(mockFetch).toHaveBeenCalledTimes(3);
   });
 
   it("starts device flow through the GitHub device-code endpoint", async () => {
-    mockFetch.mockResolvedValue(jsonResponse({ device_code: "device-123", user_code: "ABCD-EFGH" }));
+    mockFetch.mockImplementation((input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url === "/settings/apps" || url === "/settings/oauth-apps" || url === "/settings/connections/applications") return Promise.resolve(jsonResponse([]));
+      return Promise.resolve(jsonResponse({ device_code: "device-123", user_code: "ABCD-EFGH" }));
+    });
     renderPage();
     fireEvent.change(screen.getByLabelText("Client identifier"), { target: { value: "Iv1.client" } });
     fireEvent.click(screen.getByRole("button", { name: "Device flow" }));
 
     await waitFor(() => {
-      expect(mockFetch).toHaveBeenCalledTimes(1);
+      expect(mockFetch.mock.calls.some(([url]) => url === "/login/device/code")).toBe(true);
     });
-    const [url, opts] = mockFetch.mock.calls[0];
+    const [url, opts] = mockFetch.mock.calls.find(([calledUrl]) => calledUrl === "/login/device/code")!;
     expect(url).toBe("/login/device/code");
     expect(opts).toMatchObject({ method: "POST" });
     const body = new URLSearchParams(String(opts.body));
@@ -58,16 +68,20 @@ describe("OAuthPage", () => {
   });
 
   it("polls the shared OAuth access-token endpoint for a device token", async () => {
-    mockFetch.mockResolvedValue(jsonResponse({ access_token: "gho_token", token_type: "bearer", scope: "repo" }));
+    mockFetch.mockImplementation((input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url === "/settings/apps" || url === "/settings/oauth-apps" || url === "/settings/connections/applications") return Promise.resolve(jsonResponse([]));
+      return Promise.resolve(jsonResponse({ access_token: "gho_token", token_type: "bearer", scope: "repo" }));
+    });
     renderPage();
     fireEvent.change(screen.getByLabelText("Client identifier"), { target: { value: "Iv1.client" } });
     fireEvent.change(screen.getByLabelText("Device code"), { target: { value: "device-123" } });
     fireEvent.click(screen.getByRole("button", { name: "Poll device token" }));
 
     await waitFor(() => {
-      expect(mockFetch).toHaveBeenCalledTimes(1);
+      expect(mockFetch.mock.calls.some(([url]) => url === "/login/oauth/access_token")).toBe(true);
     });
-    const [url, opts] = mockFetch.mock.calls[0];
+    const [url, opts] = mockFetch.mock.calls.find(([calledUrl]) => calledUrl === "/login/oauth/access_token")!;
     expect(url).toBe("/login/oauth/access_token");
     expect(opts).toMatchObject({ method: "POST" });
     expect(opts.headers).toMatchObject({ Accept: "application/json" });
@@ -77,6 +91,7 @@ describe("OAuthPage", () => {
   });
 
   it("opens the GitHub OAuth authorize endpoint for web flow", () => {
+    mockFetch.mockImplementation(() => Promise.resolve(jsonResponse([])));
     const openSpy = vi.spyOn(window, "open").mockReturnValue(null);
     renderPage();
     fireEvent.change(screen.getByLabelText("Client identifier"), { target: { value: "Iv1.client" } });
@@ -87,5 +102,38 @@ describe("OAuthPage", () => {
       "_blank",
       "noopener",
     );
+  });
+
+  it("lists and revokes an authorized OAuth grant", async () => {
+    vi.spyOn(window, "confirm").mockReturnValue(true);
+    mockFetch.mockImplementation((input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      if (url === "/settings/apps" || url === "/settings/oauth-apps") return Promise.resolve(jsonResponse([]));
+      if (url === "/settings/connections/applications" && init?.method !== "DELETE") {
+        return Promise.resolve(jsonResponse([{
+          client_id: "oauth-client",
+          name: "Example OAuth",
+          type: "OAuthApp",
+          url: "https://example.test",
+          scopes: ["repo"],
+          created_at: "2026-01-01T00:00:00Z",
+        }]));
+      }
+      if (url === "/settings/connections/applications/oauth-client") {
+        return Promise.resolve(new Response(null, { status: 204 }));
+      }
+      return Promise.resolve(jsonResponse([]));
+    });
+    renderPage();
+
+    expect(await screen.findByText("Example OAuth")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Revoke" }));
+
+    await waitFor(() => {
+      expect(mockFetch).toHaveBeenCalledWith(
+        "/settings/connections/applications/oauth-client",
+        expect.objectContaining({ method: "DELETE" }),
+      );
+    });
   });
 });

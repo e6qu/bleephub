@@ -207,6 +207,115 @@ func (st *Store) UpdateAppHookConfig(appID int, fn func(a *App)) bool {
 	return st.UpdateApp(appID, fn)
 }
 
+// RotateAppClientSecret replaces an app's OAuth client secret and returns the
+// new one-time value.
+func (st *Store) RotateAppClientSecret(appID int) (string, error) {
+	secret, err := randomHex(20)
+	if err != nil {
+		return "", fmt.Errorf("generate GitHub App client secret: %w", err)
+	}
+	if !st.UpdateApp(appID, func(a *App) { a.ClientSecret = secret }) {
+		return "", fmt.Errorf("GitHub App not found")
+	}
+	return secret, nil
+}
+
+// RotateAppPrivateKey replaces the signing key and returns its one-time PEM.
+func (st *Store) RotateAppPrivateKey(appID int) (string, error) {
+	key, err := rsa.GenerateKey(rand.Reader, 2048)
+	if err != nil {
+		return "", fmt.Errorf("generate GitHub App private key: %w", err)
+	}
+	privateKey := string(pem.EncodeToMemory(&pem.Block{
+		Type:  "RSA PRIVATE KEY",
+		Bytes: x509.MarshalPKCS1PrivateKey(key),
+	}))
+	if !st.UpdateApp(appID, func(a *App) { a.PEMPrivateKey = privateKey }) {
+		return "", fmt.Errorf("GitHub App not found")
+	}
+	return privateKey, nil
+}
+
+// DeleteApp removes an app and every credential or installation derived from
+// it. Marketplace deletion is handled by the settings layer because that
+// store has a separate lock and may refuse deletion while purchases exist.
+func (st *Store) DeleteApp(appID int) bool {
+	st.mu.Lock()
+	defer st.mu.Unlock()
+	app := st.Apps[appID]
+	if app == nil {
+		return false
+	}
+	delete(st.Apps, appID)
+	delete(st.AppsBySlug, app.Slug)
+	delete(st.AppsByClientID, app.ClientID)
+	if st.persist != nil {
+		st.persist.MustDelete("apps", strconv.Itoa(appID))
+	}
+	for code, id := range st.ManifestCodes {
+		if id == appID {
+			delete(st.ManifestCodes, code)
+		}
+	}
+	for code, authorization := range st.AuthCodes {
+		if authorization.ClientID == app.ClientID {
+			delete(st.AuthCodes, code)
+		}
+	}
+	for code, device := range st.DeviceCodes {
+		if device.AppID == appID || device.ClientID == app.ClientID {
+			delete(st.DeviceCodes, code)
+		}
+	}
+	for id, inst := range st.Installations {
+		if inst.AppID != appID {
+			continue
+		}
+		delete(st.Installations, id)
+		if st.persist != nil {
+			st.persist.MustDelete("installations", strconv.Itoa(id))
+		}
+	}
+	for token, installationToken := range st.InstallationTokens {
+		if installationToken.AppID != appID {
+			continue
+		}
+		delete(st.InstallationTokens, token)
+		if st.persist != nil {
+			st.persist.MustDelete("installation_tokens", token)
+		}
+	}
+	for token, userToken := range st.UserToServerTokens {
+		if userToken.AppID != appID {
+			continue
+		}
+		delete(st.UserToServerTokens, token)
+		if st.persist != nil {
+			st.persist.MustDelete("user_to_server_tokens", token)
+		}
+		if userToken.RefreshTokenValue != "" {
+			delete(st.RefreshTokens, userToken.RefreshTokenValue)
+			if st.persist != nil {
+				st.persist.MustDelete("refresh_tokens", userToken.RefreshTokenValue)
+			}
+		}
+	}
+	for token, refresh := range st.RefreshTokens {
+		if refresh.AppID != appID {
+			continue
+		}
+		delete(st.RefreshTokens, token)
+		if st.persist != nil {
+			st.persist.MustDelete("refresh_tokens", token)
+		}
+	}
+	delete(st.AppHookDeliveries, appID)
+	if st.persist != nil {
+		st.persist.MustDelete("app_hook_deliveries", strconv.Itoa(appID))
+	}
+	return true
+}
+
 // GetApp returns an app by ID, or nil.
 func (st *Store) GetApp(id int) *App {
 	st.mu.RLock()
@@ -510,6 +619,79 @@ func (st *Store) ListOAuthApps() []*OAuthApp {
 		out = append(out, a)
 	}
 	return out
+}
+
+func (st *Store) UpdateOAuthApp(clientID string, fn func(a *OAuthApp)) bool {
+	st.mu.Lock()
+	defer st.mu.Unlock()
+	app := st.OAuthApps[clientID]
+	if app == nil {
+		return false
+	}
+	fn(app)
+	app.UpdatedAt = time.Now().UTC()
+	if st.persist != nil {
+		st.persist.MustPut("oauth_apps", clientID, app)
+	}
+	return true
+}
+
+func (st *Store) RotateOAuthAppClientSecret(clientID string) (string, error) {
+	secret, err := randomHex(20)
+	if err != nil {
+		return "", fmt.Errorf("generate OAuth App client secret: %w", err)
+	}
+	if !st.UpdateOAuthApp(clientID, func(a *OAuthApp) { a.ClientSecret = secret }) {
+		return "", fmt.Errorf("OAuth App not found")
+	}
+	return secret, nil
+}
+
+func (st *Store) DeleteOAuthApp(clientID string) bool {
+	st.mu.Lock()
+	defer st.mu.Unlock()
+	if st.OAuthApps[clientID] == nil {
+		return false
+	}
+	delete(st.OAuthApps, clientID)
+	if st.persist != nil {
+		st.persist.MustDelete("oauth_apps", clientID)
+	}
+	for code, authorization := range st.AuthCodes {
+		if authorization.ClientID == clientID {
+			delete(st.AuthCodes, code)
+		}
+	}
+	for code, device := range st.DeviceCodes {
+		if device.OAuthClientID == clientID || device.ClientID == clientID {
+			delete(st.DeviceCodes, code)
+		}
+	}
+	for token, userToken := range st.UserToServerTokens {
+		if userToken.OAuthAppClientID != clientID {
+			continue
+		}
+		delete(st.UserToServerTokens, token)
+		if st.persist != nil {
+			st.persist.MustDelete("user_to_server_tokens", token)
+		}
+		if userToken.RefreshTokenValue != "" {
+			delete(st.RefreshTokens, userToken.RefreshTokenValue)
+			if st.persist != nil {
+				st.persist.MustDelete("refresh_tokens", userToken.RefreshTokenValue)
+			}
+		}
+	}
+	for token, refresh := range st.RefreshTokens {
+		if refresh.OAuthAppClientID != clientID {
+			continue
+		}
+		delete(st.RefreshTokens, token)
+		if st.persist != nil {
+			st.persist.MustDelete("refresh_tokens", token)
+		}
+	}
+	return true
 }
 
 // VerifyOAuthAppSecret returns the OAuth App if client_id+client_secret match, else nil.

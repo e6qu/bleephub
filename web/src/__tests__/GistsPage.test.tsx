@@ -17,6 +17,7 @@ function jsonResponse(data: unknown, status = 200) {
 afterEach(() => {
   cleanup();
   mockFetch.mockReset();
+  window.history.pushState({}, "", "/");
 });
 
 function renderPage() {
@@ -103,5 +104,16 @@ describe("GistsPage", () => {
       expect(screen.getByText("Fork")).toBeInTheDocument();
       expect(screen.getByText("hello.txt")).toBeInTheDocument();
     });
+  });
+
+  it("opens the create form from the global new-gist deep link", async () => {
+    window.history.pushState({}, "", "/ui/gists?new=1");
+    mockEndpoints();
+
+    renderPage();
+
+    expect(
+      await screen.findByRole("heading", { name: /create gist/i }),
+    ).toBeInTheDocument();
   });
 });

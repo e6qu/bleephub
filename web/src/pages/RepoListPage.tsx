@@ -1,6 +1,6 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { Link } from "react-router";
+import { Link, useSearchParams } from "react-router";
 import { Spinner, InlineError } from "@bleephub/ui-core/components";
 import type { BleephubRepo, RepoListFilters } from "../types.js";
 import { PageTitle, Blankslate, Button } from "../components/ui.js";
@@ -24,11 +24,31 @@ export function RepoListPage({
   createTarget = "user",
 }: RepoListPageProps) {
   const queryClient = useQueryClient();
+  const [searchParams, setSearchParams] = useSearchParams();
   const [filter, setFilter] = useState("");
   const [filters, setFilters] = useState<RepoListFilters>({});
   const [pageUrl, setPageUrl] = useState<string | undefined>(undefined);
   const [pageStack, setPageStack] = useState<string[]>([]);
   const [createOpen, setCreateOpen] = useState(false);
+
+  useEffect(() => {
+    if (allowCreate && searchParams.get("new") === "1") {
+      setCreateOpen(true);
+    }
+  }, [allowCreate, searchParams]);
+
+  const clearNewParam = () => {
+    if (searchParams.has("new")) {
+      const next = new URLSearchParams(searchParams);
+      next.delete("new");
+      setSearchParams(next, { replace: true });
+    }
+  };
+
+  const closeCreate = () => {
+    setCreateOpen(false);
+    clearNewParam();
+  };
 
   const { data, isLoading, isError, error } = useQuery({
     queryKey: [...queryKey, filters, pageUrl ?? "first"],
@@ -138,9 +158,10 @@ export function RepoListPage({
       {allowCreate && (
         <RepoCreateDialog
           open={createOpen}
-          onClose={() => setCreateOpen(false)}
+          onClose={closeCreate}
           onCreated={() => {
             queryClient.invalidateQueries({ queryKey });
+            clearNewParam();
           }}
           createTarget={createTarget}
         />

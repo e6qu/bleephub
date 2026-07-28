@@ -1,4 +1,5 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
+import { useSearchParams } from "react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { DataTable, InlineError, Spinner } from "@bleephub/ui-core/components";
 import { createColumnHelper } from "@tanstack/react-table";
@@ -37,9 +38,25 @@ type GistScope = "yours" | "public" | "starred";
 const col = createColumnHelper<BleephubGist>();
 
 export function GistsPage() {
+  const [searchParams, setSearchParams] = useSearchParams();
   const [scope, setScope] = useState<GistScope>("yours");
   const [showCreate, setShowCreate] = useState(false);
   const [selectedId, setSelectedId] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (searchParams.get("new") === "1") {
+      setShowCreate(true);
+    }
+  }, [searchParams]);
+
+  const closeCreate = () => {
+    setShowCreate(false);
+    if (searchParams.has("new")) {
+      const next = new URLSearchParams(searchParams);
+      next.delete("new");
+      setSearchParams(next, { replace: true });
+    }
+  };
 
   return (
     <div>
@@ -65,7 +82,7 @@ export function GistsPage() {
       />
 
       <GistsTable scope={scope} onSelect={(id) => setSelectedId(id)} />
-      {showCreate && <CreateGistDialog onClose={() => setShowCreate(false)} />}
+      {showCreate && <CreateGistDialog onClose={closeCreate} />}
       {selectedId && <GistDetail id={selectedId} onClose={() => setSelectedId(null)} />}
     </div>
   );

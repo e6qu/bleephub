@@ -1,6 +1,7 @@
 package bleephub
 
 import (
+	"errors"
 	"fmt"
 	"strconv"
 	"strings"
@@ -61,15 +62,25 @@ type PullRequestOptions struct {
 	MaintainerCanModify bool
 }
 
+var ErrOpenPullRequestExists = errors.New("an open pull request already exists for the head and base")
+
 // CreatePullRequest creates a new pull request in the given repository.
 // Uses the shared NextIssueNumber counter for issue/PR numbering.
 func (st *Store) CreatePullRequest(repoID, authorID int, title, body, headRefName, baseRefName string, isDraft bool, labelIDs, assigneeIDs []int, milestoneID int, opts ...PullRequestOptions) *PullRequest {
+	pr, _ := st.CreatePullRequestChecked(repoID, authorID, title, body, headRefName, baseRefName, isDraft, labelIDs, assigneeIDs, milestoneID, opts...)
+	return pr
+}
+
+// CreatePullRequestChecked atomically enforces GitHub's invariant that a
+// repository cannot have two open pull requests with the same source
+// repository/ref and base ref.
+func (st *Store) CreatePullRequestChecked(repoID, authorID int, title, body, headRefName, baseRefName string, isDraft bool, labelIDs, assigneeIDs []int, milestoneID int, opts ...PullRequestOptions) (*PullRequest, error) {
 	st.mu.Lock()
 	defer st.mu.Unlock()
 
 	repo := st.Repos[repoID]
 	if repo == nil {
-		return nil
+		return nil, nil
 	}
 	headRepoID := repoID
 	maintainerCanModify := false
@@ -81,11 +92,23 @@ func (st *Store) CreatePullRequest(repoID, authorID int, title, body, headRefNam
 	}
 	headRepo := st.Repos[headRepoID]
 	if headRepo == nil {
-		return nil
+		return nil, nil
 	}
 
 	if baseRefName == "" {
 		baseRefName = repo.DefaultBranch
+	}
+	for _, existing := range st.PullsByRepo[repoID] {
+		existingHeadRepoID := existing.HeadRepoID
+		if existingHeadRepoID == 0 {
+			existingHeadRepoID = existing.RepoID
+		}
+		if existing.State == "OPEN" &&
+			existingHeadRepoID == headRepoID &&
+			existing.HeadRefName == headRefName &&
+			existing.BaseRefName == baseRefName {
+			return nil, ErrOpenPullRequestExists
+		}
 	}
 
 	if labelIDs == nil {
@@ -99,7 +122,7 @@ func (st *Store) CreatePullRequest(repoID, authorID int, title, body, headRefNam
 	headSHA := resolveBranchSha(headStor, headRefName)
 	baseSHA := resolveBranchSha(baseStor, baseRefName)
 	if headSHA == "" || baseSHA == "" {
-		return nil
+		return nil, nil
 	}
 
 	now := time.Now().UTC()
@@ -135,7 +158,7 @@ func (st *Store) CreatePullRequest(repoID, authorID int, title, body, headRefNam
 	if st.persist != nil {
 		st.persist.MustPut("pull_requests", strconv.Itoa(pr.ID), pr)
 	}
-	return pr
+	return pr, nil
 }
 
 // indexPullLocked records the PR in the per-repo secondary index so

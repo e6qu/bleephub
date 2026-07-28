@@ -2,9 +2,11 @@ package bleephub
 
 import (
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"strconv"
+	"sync"
 	"testing"
 )
 
@@ -80,6 +82,86 @@ func TestUnitCreatePR_Basic(t *testing.T) {
 	user, _ := data["user"].(map[string]interface{})
 	if user == nil || user["login"] != "admin" {
 		t.Fatalf("user.login = %v, want 'admin'", user)
+	}
+}
+
+func TestUnitCreatePR_RejectsDuplicateOpenHeadAndBase(t *testing.T) {
+	s, _, repo := pullsTestServer(t)
+	body := `{"title":"First","head":"feature","base":"main"}`
+	first := doPullsReq(s, "POST", "/api/v3/repos/admin/pr-unit-test/pulls", body)
+	if first.Code != http.StatusCreated {
+		t.Fatalf("first status = %d, want 201; body = %s", first.Code, first.Body.String())
+	}
+
+	duplicate := doPullsReq(s, "POST", "/api/v3/repos/admin/pr-unit-test/pulls",
+		`{"title":"Duplicate","head":"feature","base":"main"}`)
+	if duplicate.Code != http.StatusUnprocessableEntity {
+		t.Fatalf("duplicate status = %d, want 422; body = %s", duplicate.Code, duplicate.Body.String())
+	}
+	data := assertJSON(t, duplicate)
+	if data["message"] != "Validation Failed" {
+		t.Fatalf("duplicate message = %v, want Validation Failed", data["message"])
+	}
+	details, _ := data["errors"].([]interface{})
+	if len(details) != 1 {
+		t.Fatalf("duplicate errors = %#v, want one detail", data["errors"])
+	}
+	detail, _ := details[0].(map[string]interface{})
+	if detail["resource"] != "PullRequest" || detail["field"] != "head" || detail["code"] != "custom" {
+		t.Fatalf("duplicate detail = %#v", detail)
+	}
+
+	differentBase := doPullsReq(s, "POST", "/api/v3/repos/admin/pr-unit-test/pulls",
+		`{"title":"Different base","head":"feature","base":"fix"}`)
+	if differentBase.Code != http.StatusCreated {
+		t.Fatalf("different-base status = %d, want 201; body = %s", differentBase.Code, differentBase.Body.String())
+	}
+
+	firstPR := s.store.GetPullRequestByNumber(repo.ID, 1)
+	if firstPR == nil || !s.store.UpdatePullRequest(firstPR.ID, func(pr *PullRequest) { pr.State = "CLOSED" }) {
+		t.Fatal("close first pull request")
+	}
+	reopenedCoordinate := doPullsReq(s, "POST", "/api/v3/repos/admin/pr-unit-test/pulls",
+		`{"title":"After close","head":"feature","base":"main"}`)
+	if reopenedCoordinate.Code != http.StatusCreated {
+		t.Fatalf("after-close status = %d, want 201; body = %s", reopenedCoordinate.Code, reopenedCoordinate.Body.String())
+	}
+}
+
+func TestCreatePullRequestChecked_AtomicallyRejectsConcurrentDuplicates(t *testing.T) {
+	s, admin, repo := pullsTestServer(t)
+	const attempts = 16
+	results := make(chan error, attempts)
+	var wg sync.WaitGroup
+	for range attempts {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			pr, err := s.store.CreatePullRequestChecked(
+				repo.ID, admin.ID, "Concurrent", "", "feature", "main", false, nil, nil, 0,
+			)
+			if err == nil && pr == nil {
+				err = errors.New("creation returned neither a pull request nor an error")
+			}
+			results <- err
+		}()
+	}
+	wg.Wait()
+	close(results)
+
+	var created, rejected int
+	for err := range results {
+		switch {
+		case err == nil:
+			created++
+		case errors.Is(err, ErrOpenPullRequestExists):
+			rejected++
+		default:
+			t.Fatalf("unexpected creation error: %v", err)
+		}
+	}
+	if created != 1 || rejected != attempts-1 {
+		t.Fatalf("created=%d rejected=%d, want 1 and %d", created, rejected, attempts-1)
 	}
 }
 

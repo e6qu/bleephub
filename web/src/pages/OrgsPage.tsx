@@ -1,5 +1,5 @@
-import { useState } from "react";
-import { Link } from "react-router";
+import { useEffect, useState } from "react";
+import { Link, useSearchParams } from "react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { DataTable, InlineError, Spinner } from "@bleephub/ui-core/components";
 import { createColumnHelper } from "@tanstack/react-table";
@@ -22,7 +22,23 @@ import {
 const col = createColumnHelper<BleephubOrg>();
 
 export function OrgsPage() {
+  const [searchParams, setSearchParams] = useSearchParams();
   const [showCreate, setShowCreate] = useState(false);
+
+  useEffect(() => {
+    if (searchParams.get("new") === "1") {
+      setShowCreate(true);
+    }
+  }, [searchParams]);
+
+  const closeCreate = () => {
+    setShowCreate(false);
+    if (searchParams.has("new")) {
+      const next = new URLSearchParams(searchParams);
+      next.delete("new");
+      setSearchParams(next, { replace: true });
+    }
+  };
 
   return (
     <div>
@@ -36,7 +52,7 @@ export function OrgsPage() {
         }
       />
       <OrgsTable />
-      {showCreate && <CreateOrgDialog onClose={() => setShowCreate(false)} />}
+      {showCreate && <CreateOrgDialog onClose={closeCreate} />}
     </div>
   );
 }
