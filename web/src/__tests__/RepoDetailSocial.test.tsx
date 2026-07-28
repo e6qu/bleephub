@@ -44,7 +44,7 @@ function installFetchRoutes() {
           { name: "feature", commit: { sha: "b".repeat(40) } },
         ]),
       );
-    if (url.startsWith("/ui-data/repos/admin/social-repo/commits"))
+    if (url.startsWith("/api/v3/repos/admin/social-repo/commits?"))
       return Promise.resolve(jsonResponse([]));
     if (url.startsWith("/api/v3/repos/admin/social-repo/languages"))
       return Promise.resolve(jsonResponse({ Go: 3000, Shell: 1000 }));
@@ -74,6 +74,14 @@ function renderPage() {
       <MemoryRouter initialEntries={["/ui/repos/admin/social-repo"]}>
         <Routes>
           <Route path="/ui/repos/:owner/:repo" element={<RepoDetailPage />} />
+          <Route
+            path="/ui/repos/:owner/:repo/branches"
+            element={<RepoDetailPage initialTab="branches" />}
+          />
+          <Route
+            path="/ui/repos/:owner/:repo/tags"
+            element={<RepoDetailPage initialTab="tags" />}
+          />
         </Routes>
       </MemoryRouter>
     </QueryClientProvider>,
@@ -111,8 +119,8 @@ describe("RepoDetailPage social reads", () => {
   it("lists branches with default and protection state", async () => {
     installFetchRoutes();
     renderPage();
-    await waitFor(() => screen.getByRole("button", { name: "Branches" }));
-    fireEvent.click(screen.getByRole("button", { name: "Branches" }));
+    await waitFor(() => screen.getByRole("link", { name: "Branches" }));
+    fireEvent.click(screen.getByRole("link", { name: "Branches" }));
     await waitFor(() => {
       expect(screen.getByText("feature")).toBeInTheDocument();
     });
@@ -126,8 +134,8 @@ describe("RepoDetailPage social reads", () => {
   it("lists tags with tarball and zipball download links", async () => {
     installFetchRoutes();
     renderPage();
-    await waitFor(() => screen.getByRole("button", { name: "Tags" }));
-    fireEvent.click(screen.getByRole("button", { name: "Tags" }));
+    await waitFor(() => screen.getByRole("link", { name: "Tags" }));
+    fireEvent.click(screen.getByRole("link", { name: "Tags" }));
     await waitFor(() => {
       expect(screen.getByText("v1.0.0")).toBeInTheDocument();
     });

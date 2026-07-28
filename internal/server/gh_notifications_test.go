@@ -84,6 +84,29 @@ func TestNotifications_ListAndRead(t *testing.T) {
 	}
 }
 
+func TestNotificationsRejectInvalidFiltersAndReadTimestamps(t *testing.T) {
+	for _, path := range []string{
+		"/api/v3/notifications?all=yes",
+		"/api/v3/notifications?participating=1",
+		"/api/v3/notifications?since=yesterday",
+		"/api/v3/notifications?before=tomorrow",
+	} {
+		resp := ghGet(t, path, defaultToken)
+		resp.Body.Close()
+		if resp.StatusCode != http.StatusUnprocessableEntity {
+			t.Errorf("%s = %d, want 422", path, resp.StatusCode)
+		}
+	}
+
+	resp := ghPut(t, "/api/v3/notifications", defaultToken, map[string]interface{}{
+		"last_read_at": "not-a-timestamp",
+	})
+	resp.Body.Close()
+	if resp.StatusCode != http.StatusUnprocessableEntity {
+		t.Fatalf("invalid last_read_at = %d, want 422", resp.StatusCode)
+	}
+}
+
 func TestNotifications_ThreadIDsSeparateIssuesAndPullRequests(t *testing.T) {
 	s := newTestServer()
 	s.registerGHNotificationsRoutes()
@@ -234,8 +257,18 @@ func TestNotifications_ParticipatingFilter(t *testing.T) {
 	}
 	threads = nil
 	json.Unmarshal(w.Body.Bytes(), &threads)
+	if len(threads) != 0 {
+		t.Errorf("read access alone produced notifications: %+v", threads)
+	}
+
+	if !s.store.SetRepoSubscription(other.ID, repo.ID, true) {
+		t.Fatal("failed to watch repository")
+	}
+	w = do(otherToken, "GET", "/api/v3/notifications", nil)
+	threads = nil
+	json.Unmarshal(w.Body.Bytes(), &threads)
 	if len(threads) != 1 || threads[0]["reason"] != "subscribed" {
-		t.Errorf("expected subscribed thread, got %+v", threads)
+		t.Errorf("expected watched-repository thread, got %+v", threads)
 	}
 }
 

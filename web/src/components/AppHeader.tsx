@@ -349,7 +349,7 @@ export function AppHeader() {
   const { data: user } = useQuery({ queryKey: ["current-user"], queryFn: fetchCurrentUser, staleTime: 60_000 });
   const { data: notifications } = useQuery({
     queryKey: ["notifications", "header"],
-    queryFn: fetchNotifications,
+    queryFn: () => fetchNotifications(),
     refetchInterval: 30_000,
   });
   const unread = notifications?.filter((n) => n.unread !== false).length ?? 0;

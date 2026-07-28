@@ -471,7 +471,7 @@ test.describe("Repo detail page", () => {
     });
 
     await page.goto(`/ui/repos/admin/${repo}`);
-    await page.getByRole("button", { name: "Branches" }).click();
+    await page.getByRole("link", { name: "Branches" }).click();
     const protectedLink = page.getByRole("link", { name: "protected", exact: true });
     await expect(protectedLink).toBeVisible();
     await protectedLink.click();

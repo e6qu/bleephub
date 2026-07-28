@@ -1025,6 +1025,69 @@ func TestGetContentsRootListing(t *testing.T) {
 	}
 }
 
+func TestRepositoryReadsResolveBranchTagAndCommitRefs(t *testing.T) {
+	created := ghPost(t, "/api/v3/user/repos", defaultToken, map[string]interface{}{
+		"name":      "treeish-reads",
+		"auto_init": true,
+	})
+	repo := decodeJSON(t, created)
+
+	initialResp := ghGet(t, "/api/v3/repos/admin/treeish-reads/commits", defaultToken)
+	initial := decodeJSONArray(t, initialResp)
+	if len(initial) != 1 {
+		t.Fatalf("initial commits = %v, want one commit", initial)
+	}
+	initialSHA := initial[0]["sha"].(string)
+	wantCommitURL := testBaseURL + "/api/v3/repos/admin/treeish-reads/commits/" + initialSHA
+	if initial[0]["url"] != wantCommitURL {
+		t.Fatalf("commit url = %v, want %s", initial[0]["url"], wantCommitURL)
+	}
+	if initial[0]["html_url"] != testBaseURL+"/admin/treeish-reads/commit/"+initialSHA {
+		t.Fatalf("commit html_url = %v", initial[0]["html_url"])
+	}
+	commitDetails := initial[0]["commit"].(map[string]interface{})
+	tree := commitDetails["tree"].(map[string]interface{})
+	wantTreeURL := testBaseURL + "/api/v3/repos/admin/treeish-reads/git/trees/" + tree["sha"].(string)
+	if tree["url"] != wantTreeURL {
+		t.Fatalf("commit tree url = %v, want %s", tree["url"], wantTreeURL)
+	}
+
+	added := ghPut(t, "/api/v3/repos/admin/treeish-reads/contents/after.txt", defaultToken, map[string]interface{}{
+		"message": "second commit",
+		"content": base64.StdEncoding.EncodeToString([]byte("after")),
+	})
+	addedJSON := decodeJSONWithStatus(t, added, http.StatusCreated)
+	headSHA := addedJSON["commit"].(map[string]interface{})["sha"].(string)
+
+	for _, ref := range []string{"main", headSHA} {
+		resp := ghGet(t, "/api/v3/repos/admin/treeish-reads/contents/after.txt?ref="+ref, defaultToken)
+		if resp.StatusCode != http.StatusOK {
+			body, _ := io.ReadAll(resp.Body)
+			resp.Body.Close()
+			t.Fatalf("contents at %q = %d %s", ref, resp.StatusCode, body)
+		}
+		resp.Body.Close()
+	}
+
+	old := ghGet(t, "/api/v3/repos/admin/treeish-reads/contents/after.txt?ref="+initialSHA, defaultToken)
+	old.Body.Close()
+	if old.StatusCode != http.StatusNotFound {
+		t.Fatalf("new file at old commit = %d, want 404", old.StatusCode)
+	}
+
+	readme := ghGet(t, "/api/v3/repos/admin/treeish-reads/readme?ref="+initialSHA, defaultToken)
+	readme.Body.Close()
+	if readme.StatusCode != http.StatusOK {
+		t.Fatalf("README at commit = %d, want 200 (repo=%v)", readme.StatusCode, repo["full_name"])
+	}
+
+	history := ghGet(t, "/api/v3/repos/admin/treeish-reads/commits?sha="+initialSHA, defaultToken)
+	commits := decodeJSONArray(t, history)
+	if len(commits) != 1 || commits[0]["sha"] != initialSHA {
+		t.Fatalf("history rooted at old commit = %v", commits)
+	}
+}
+
 // TestGitignoreTemplates verifies the gitignore template endpoints.
 func TestGitignoreTemplates(t *testing.T) {
 	listResp := ghGet(t, "/api/v3/gitignore/templates", defaultToken)

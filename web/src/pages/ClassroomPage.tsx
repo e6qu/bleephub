@@ -11,6 +11,9 @@ import {
   deleteClassroomAssignment,
   fetchClassroomDashboard,
   fetchClassroomInvitation,
+  fetchClassroomAcceptedAssignments,
+  fetchClassroomGrades,
+  fetchRepos,
   exportClassroomTransition,
   importClassroomTransition,
   replaceClassroomRoster,
@@ -19,7 +22,10 @@ import {
   type Classroom,
   type ClassroomAssignment,
   type ClassroomAutogradingTest,
+  type ClassroomAcceptedAssignment,
+  type ClassroomGrade,
 } from "../api.js";
+import type { BleephubRepo } from "../types.js";
 import { Blankslate, Box, Button, DialogActions, ErrorBanner, FormLabel, Modal, StateLabel } from "../components/ui.js";
 import { MutationError } from "../components/MutationError.js";
 import { GearIcon, OrganizationIcon, PeopleIcon, PlusIcon, RepoIcon } from "../components/octicons.js";
@@ -121,6 +127,7 @@ function ClassroomDetail({ classroom }: { classroom: Classroom }) {
   const [showRoster, setShowRoster] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
   const [editingAssignment, setEditingAssignment] = useState<ClassroomAssignment | null>(null);
+  const [reportingAssignment, setReportingAssignment] = useState<ClassroomAssignment | null>(null);
   const archive = useMutation({ mutationFn: () => updateClassroom(classroom.id, { archived: !classroom.archived }), onSuccess: () => client.invalidateQueries({ queryKey: ["classrooms"] }) });
   return (
     <div>
@@ -133,10 +140,11 @@ function ClassroomDetail({ classroom }: { classroom: Classroom }) {
       <div className="mb-5 grid gap-3 sm:grid-cols-3">
         {[{ label: "Students", value: classroom.roster.length, color: "#0969da" }, { label: "Accepted repositories", value: classroom.assignments.reduce((n, a) => n + a.accepted, 0), color: "#8250df" }, { label: "Passing", value: classroom.assignments.reduce((n, a) => n + a.passing, 0), color: "#18a957" }].map((stat) => <Box key={stat.label}><div style={{ padding: "1rem", borderLeft: `5px solid ${stat.color}` }}><div style={{ fontSize: "1.5rem", fontWeight: 750 }}>{stat.value}</div><div style={{ color: "var(--color-fg-muted)", fontSize: ".8rem" }}>{stat.label}</div></div></Box>)}
       </div>
-      {classroom.assignments.length === 0 ? <Blankslate icon={<RepoIcon size={34} />} title="No assignments yet">Create an individual or group assignment from a real starter repository.</Blankslate> : <div className="grid gap-3">{classroom.assignments.map((assignment) => <Box key={assignment.id}><div className="flex flex-wrap items-center justify-between gap-4" style={{ padding: "1rem" }}><div><div className="flex items-center gap-2"><RepoIcon size={17} /><b>{assignment.title}</b><span style={{ color: "var(--color-fg-muted)", fontSize: ".76rem" }}>{assignment.type}</span></div><div className="mt-2 flex flex-wrap gap-4" style={{ color: "var(--color-fg-muted)", fontSize: ".8rem" }}><span>{assignment.accepted} accepted</span><span>{assignment.submitted} submitted</span><span style={{ color: "var(--gh-open-solid)" }}>{assignment.passing} passing</span></div></div><div className="text-right"><code style={{ display: "block", color: "var(--color-accent)", fontSize: ".75rem" }}>{assignment.invite_link}</code><span style={{ fontSize: ".72rem", color: "var(--color-fg-muted)" }}>{assignment.autograding_tests?.reduce((n, test) => n + test.points, 0) ?? 0} autograding points</span><div className="mt-2"><Button size="sm" disabled={classroom.archived} onClick={() => setEditingAssignment(assignment)}>Edit assignment</Button></div></div></div></Box>)}</div>}
+      {classroom.assignments.length === 0 ? <Blankslate icon={<RepoIcon size={34} />} title="No assignments yet">Create an individual or group assignment from a real starter repository.</Blankslate> : <div className="grid gap-3">{classroom.assignments.map((assignment) => <Box key={assignment.id}><div className="flex flex-wrap items-center justify-between gap-4" style={{ padding: "1rem" }}><div><div className="flex items-center gap-2"><RepoIcon size={17} /><b>{assignment.title}</b><span style={{ color: "var(--color-fg-muted)", fontSize: ".76rem" }}>{assignment.type}</span></div><div className="mt-2 flex flex-wrap gap-4" style={{ color: "var(--color-fg-muted)", fontSize: ".8rem" }}><span>{assignment.accepted} accepted</span><span>{assignment.submitted} submitted</span><span style={{ color: "var(--gh-open-solid)" }}>{assignment.passing} passing</span></div></div><div className="text-right"><code style={{ display: "block", color: "var(--color-accent)", fontSize: ".75rem" }}>{assignment.invite_link}</code><span style={{ fontSize: ".72rem", color: "var(--color-fg-muted)" }}>{assignment.autograding_tests?.reduce((n, test) => n + test.points, 0) ?? 0} autograding points</span><div className="mt-2 flex justify-end gap-2"><Button size="sm" onClick={() => setReportingAssignment(assignment)}>View submissions</Button><Button size="sm" disabled={classroom.archived} onClick={() => setEditingAssignment(assignment)}>Edit assignment</Button></div></div></div></Box>)}</div>}
       {showRoster && <RosterDialog classroom={classroom} onClose={() => setShowRoster(false)} />}
       {showAssignment && <AssignmentDialog classroom={classroom} onClose={() => setShowAssignment(false)} />}
       {editingAssignment && <AssignmentDialog classroom={classroom} assignment={editingAssignment} onClose={() => setEditingAssignment(null)} />}
+      {reportingAssignment && <AssignmentReportingDialog assignment={reportingAssignment} onClose={() => setReportingAssignment(null)} />}
       {showSettings && <ClassroomSettingsDialog classroom={classroom} onClose={() => setShowSettings(false)} />}
     </div>
   );
@@ -392,6 +400,11 @@ function AssignmentDialog({
       : [{ name: "Tests", command: "go test ./...", points: 10, key: nextTestKey.current++ }],
   );
   const [confirmDelete, setConfirmDelete] = useState(false);
+  const repositories = useQuery({
+    queryKey: ["classroom-starter-repositories"],
+    queryFn: fetchRepos,
+    enabled: !editing,
+  });
 
   const mutation = useMutation({
     mutationFn: () => editing
@@ -438,7 +451,25 @@ function AssignmentDialog({
         {!editing && (
           <>
             <FormLabel id="assignment-starter">Starter repository</FormLabel>
-            <input id="assignment-starter" className="mb-3 w-full" value={starter} onChange={(event) => setStarter(event.target.value)} placeholder="organization/starter-code" required />
+            <select
+              id="assignment-starter"
+              className="mb-3 w-full"
+              value={starter}
+              onChange={(event) => setStarter(event.target.value)}
+              required
+            >
+              <option value="">
+                {repositories.isLoading ? "Loading repositories…" : "Select a starter repository"}
+              </option>
+              {(repositories.data ?? []).map((repository: BleephubRepo) => (
+                <option key={repository.id} value={repository.full_name}>
+                  {repository.full_name}
+                </option>
+              ))}
+            </select>
+            {repositories.isError && (
+              <ErrorBanner>Could not load repositories: {String(repositories.error)}</ErrorBanner>
+            )}
           </>
         )}
         <div className="mb-3 grid grid-cols-2 gap-3">
@@ -500,6 +531,78 @@ function AssignmentDialog({
           )}
         </DialogActions>
       </form>
+    </Modal>
+  );
+}
+
+function AssignmentReportingDialog({
+  assignment,
+  onClose,
+}: {
+  assignment: ClassroomAssignment;
+  onClose: () => void;
+}) {
+  const accepted = useQuery<ClassroomAcceptedAssignment[]>({
+    queryKey: ["classroom-assignment", assignment.id, "accepted"],
+    queryFn: () => fetchClassroomAcceptedAssignments(assignment.id),
+  });
+  const grades = useQuery<ClassroomGrade[]>({
+    queryKey: ["classroom-assignment", assignment.id, "grades"],
+    queryFn: () => fetchClassroomGrades(assignment.id),
+  });
+
+  const gradeByLogin = new Map(
+    (grades.data ?? []).map((grade) => [grade.github_username, grade]),
+  );
+  return (
+    <Modal title={`${assignment.title} submissions`} onClose={onClose}>
+      {accepted.isLoading || grades.isLoading ? (
+        <Spinner label="Loading assignment submissions" />
+      ) : accepted.isError || grades.isError ? (
+        <InlineError
+          title="Failed to load assignment reporting"
+          detail={String(accepted.error ?? grades.error)}
+        />
+      ) : (accepted.data ?? []).length === 0 ? (
+        <Blankslate title="No accepted assignments">
+          Share the invitation link with students to create their repositories.
+        </Blankslate>
+      ) : (
+        <div className="flex flex-col gap-2">
+          {(accepted.data ?? []).map((submission) => (
+            <Box key={submission.id}>
+              <div className="flex flex-wrap items-center justify-between gap-3" style={{ padding: ".85rem 1rem" }}>
+                <div>
+                  <Link
+                    to={`/ui/repos/${submission.repository.full_name}`}
+                    style={{ color: "var(--color-accent)", fontWeight: 650, textDecoration: "none" }}
+                  >
+                    {submission.repository.full_name}
+                  </Link>
+                  <div className="mt-1" style={{ color: "var(--color-fg-muted)", fontSize: ".78rem" }}>
+                    {submission.students.map((student) => student.login).join(", ")}
+                    {" · "}{submission.commit_count} commits
+                  </div>
+                </div>
+                <div className="text-right">
+                  <StateLabel state={submission.passing ? "open" : submission.submitted ? "closed" : "draft"}>
+                    {submission.passing ? "passing" : submission.submitted ? "submitted" : "in progress"}
+                  </StateLabel>
+                  <div className="mt-1" style={{ fontSize: ".78rem" }}>
+                    {submission.grade}
+                    {submission.students[0] && gradeByLogin.get(submission.students[0].login)
+                      ? ` points · ${gradeByLogin.get(submission.students[0].login)!.roster_identifier}`
+                      : ""}
+                  </div>
+                </div>
+              </div>
+            </Box>
+          ))}
+        </div>
+      )}
+      <DialogActions>
+        <Button onClick={onClose}>Close</Button>
+      </DialogActions>
     </Modal>
   );
 }

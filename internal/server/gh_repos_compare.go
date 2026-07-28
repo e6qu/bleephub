@@ -155,14 +155,16 @@ func commitToJSON(c *object.Commit, repo *Repo, baseURL string) map[string]inter
 	if c == nil {
 		return nil
 	}
-	commitURL := baseURL + "/repos/" + repo.FullName + "/commits/" + c.Hash.String()
-	htmlURL := "/" + repo.FullName + "/commit/" + c.Hash.String()
+	apiRepoURL := baseURL + "/api/v3/repos/" + repo.FullName
+	webRepoURL := baseURL + "/" + repo.FullName
+	commitURL := apiRepoURL + "/commits/" + c.Hash.String()
+	htmlURL := webRepoURL + "/commit/" + c.Hash.String()
 	parents := make([]map[string]interface{}, 0, len(c.ParentHashes))
 	for _, h := range c.ParentHashes {
 		parents = append(parents, map[string]interface{}{
 			"sha":      h.String(),
-			"url":      baseURL + "/repos/" + repo.FullName + "/commits/" + h.String(),
-			"html_url": "/" + repo.FullName + "/commit/" + h.String(),
+			"url":      apiRepoURL + "/commits/" + h.String(),
+			"html_url": webRepoURL + "/commit/" + h.String(),
 		})
 	}
 	return map[string]interface{}{
@@ -190,7 +192,7 @@ func commitToJSON(c *object.Commit, repo *Repo, baseURL string) map[string]inter
 			},
 			"tree": map[string]interface{}{
 				"sha": c.TreeHash.String(),
-				"url": baseURL + "/repos/" + repo.FullName + "/git/trees/" + c.TreeHash.String(),
+				"url": apiRepoURL + "/git/trees/" + c.TreeHash.String(),
 			},
 			"verification": map[string]interface{}{
 				"verified":    false,

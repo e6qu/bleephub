@@ -7,6 +7,8 @@ import {
   deleteThreadSubscription,
   fetchNotifications,
   getThreadSubscription,
+  markAllNotificationsRead,
+  markThreadDone,
   markThreadRead,
   setThreadSubscription,
 } from "../api.js";
@@ -57,12 +59,28 @@ function ThreadsTable({ all }: { all: boolean }) {
 
   const { data, isLoading, isError } = useQuery({
     queryKey: ["notifications", all],
-    queryFn: () => fetchNotifications(),
+    queryFn: () => fetchNotifications({ all }),
     refetchInterval: 10000,
   });
 
   const readMut = useMutation({
     mutationFn: (id: string) => markThreadRead(id),
+    onSuccess: () => {
+      setMutationError(null);
+      queryClient.invalidateQueries({ queryKey: ["notifications"] });
+    },
+    onError: (err: Error) => setMutationError(err.message),
+  });
+  const markAllMut = useMutation({
+    mutationFn: markAllNotificationsRead,
+    onSuccess: () => {
+      setMutationError(null);
+      queryClient.invalidateQueries({ queryKey: ["notifications"] });
+    },
+    onError: (err: Error) => setMutationError(err.message),
+  });
+  const doneMut = useMutation({
+    mutationFn: (id: string) => markThreadDone(id),
     onSuccess: () => {
       setMutationError(null);
       queryClient.invalidateQueries({ queryKey: ["notifications"] });
@@ -150,6 +168,14 @@ function ThreadsTable({ all }: { all: boolean }) {
             <Button size="sm" variant="ghost" onClick={() => setActiveThread(thread)}>
               Subscription
             </Button>
+            <Button
+              size="sm"
+              variant="ghost"
+              onClick={() => doneMut.mutate(thread.id)}
+              disabled={doneMut.isPending}
+            >
+              Done
+            </Button>
           </div>
         );
       },
@@ -159,6 +185,18 @@ function ThreadsTable({ all }: { all: boolean }) {
   return (
     <>
       {mutationError && <ErrorBanner>{mutationError}</ErrorBanner>}
+      {!all && filtered && filtered.length > 0 && (
+        <div className="mb-3 flex justify-end">
+          <Button
+            size="sm"
+            variant="secondary"
+            onClick={() => markAllMut.mutate()}
+            disabled={markAllMut.isPending}
+          >
+            {markAllMut.isPending ? "Marking…" : "Mark all as read"}
+          </Button>
+        </div>
+      )}
       <DataTable
         data={filtered ?? []}
         columns={columns}

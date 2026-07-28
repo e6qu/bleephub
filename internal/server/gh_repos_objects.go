@@ -18,6 +18,7 @@ import (
 var (
 	errRepoGitStorageUnavailable = errors.New("repository git storage unavailable")
 	errRepoGitRepositoryEmpty    = errors.New("repository git repository empty")
+	errRepoGitRefUnavailable     = errors.New("repository git ref unavailable")
 	errRepoGitObjectUnavailable  = errors.New("repository git object unavailable")
 	errGitTreeishNotFound        = errors.New("git treeish not found")
 	errGitTreeishInvalidObject   = errors.New("git treeish must identify a commit or tree")
@@ -40,11 +41,13 @@ func (s *Server) handleListCommits(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	commits, err := s.listRepoCommits(repo, owner, repoName, s.baseURL(r))
+	commits, err := s.listRepoCommits(repo, owner, repoName, r.URL.Query().Get("sha"), s.baseURL(r))
 	if err != nil {
 		switch {
 		case errors.Is(err, errRepoGitRepositoryEmpty):
 			writeGHError(w, http.StatusConflict, "Git Repository is empty.")
+		case errors.Is(err, errRepoGitRefUnavailable):
+			writeGHError(w, http.StatusNotFound, "No commit found for SHA: "+r.URL.Query().Get("sha"))
 		case errors.Is(err, errRepoGitObjectUnavailable):
 			writeGHError(w, http.StatusInternalServerError, "Git object unavailable")
 		default:
@@ -55,26 +58,27 @@ func (s *Server) handleListCommits(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, paginateAndLink(w, r, commits))
 }
 
-func (s *Server) listRepoCommits(repo *Repo, owner, repoName, baseURL string) ([]map[string]interface{}, error) {
+func (s *Server) listRepoCommits(repo *Repo, owner, repoName, refName, baseURL string) ([]map[string]interface{}, error) {
 	stor := s.store.GetGitStorage(owner, repoName)
 	if stor == nil {
 		return nil, errRepoGitStorageUnavailable
 	}
 
-	// Resolve default branch
-	branchRef := plumbing.NewBranchReferenceName(repo.DefaultBranch)
-	ref, err := stor.Reference(branchRef)
+	usingDefault := refName == ""
+	if usingDefault {
+		refName = repo.DefaultBranch
+	}
+	hash, err := resolveGitRef(stor, refName)
 	if err != nil {
-		if errors.Is(err, plumbing.ErrReferenceNotFound) {
+		if usingDefault {
 			return nil, errRepoGitRepositoryEmpty
 		}
-		return nil, errRepoGitStorageUnavailable
+		return nil, fmt.Errorf("%w: %v", errRepoGitRefUnavailable, err)
 	}
 
 	// Walk commits
 	var commits []map[string]interface{}
-	hash := ref.Hash()
-	for i := 0; i < 30; i++ {
+	for i := 0; i < 1000; i++ {
 		commit, err := object.GetCommit(stor, hash)
 		if err != nil {
 			return nil, errRepoGitObjectUnavailable
@@ -345,39 +349,21 @@ func (s *Server) handleGetBlob(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleGetReadme(w http.ResponseWriter, r *http.Request) {
-	owner := r.PathValue("owner")
-	repoName := r.PathValue("repo")
-
 	repo := s.lookupReadableRepoFromPath(w, r)
 	if repo == nil {
 		return
 	}
 
-	stor := s.store.GetGitStorage(owner, repoName)
-	if stor == nil {
-		writeGHError(w, http.StatusNotFound, "Not Found")
-		return
-	}
-
-	// Resolve default branch
-	branchRef := plumbing.NewBranchReferenceName(repo.DefaultBranch)
-	ref, err := stor.Reference(branchRef)
+	refName := r.URL.Query().Get("ref")
+	tree, _, err := s.repoTreeAtRef(repo, refName)
 	if err != nil {
 		writeGHError(w, http.StatusNotFound, "Not Found")
 		return
 	}
-
-	commit, err := object.GetCommit(stor, ref.Hash())
-	if err != nil {
-		writeGHError(w, http.StatusNotFound, "Not Found")
-		return
+	if refName == "" {
+		refName = repo.DefaultBranch
 	}
-
-	tree, err := commit.Tree()
-	if err != nil {
-		writeGHError(w, http.StatusNotFound, "Not Found")
-		return
-	}
+	stor := s.gitStorageForRepo(repo)
 
 	// Search for README variants
 	for _, name := range []string{"README.md", "README", "README.txt", "readme.md"} {
@@ -401,7 +387,7 @@ func (s *Server) handleGetReadme(w http.ResponseWriter, r *http.Request) {
 			continue
 		}
 
-		out := contentFileJSON(s.baseURL(r), repo, repo.DefaultBranch, name, entry.Hash.String(), blob.Size)
+		out := contentFileJSON(s.baseURL(r), repo, refName, name, entry.Hash.String(), blob.Size)
 		out["encoding"] = "base64"
 		out["content"] = base64.StdEncoding.EncodeToString(content)
 		writeJSON(w, http.StatusOK, out)
@@ -774,8 +760,6 @@ func contentFileJSON(baseURL string, repo *Repo, ref, path, sha string, size int
 }
 
 func (s *Server) handleGetContents(w http.ResponseWriter, r *http.Request) {
-	owner := r.PathValue("owner")
-	repoName := r.PathValue("repo")
 	path := r.PathValue("path")
 
 	repo := s.lookupReadableRepoFromPath(w, r)
@@ -783,35 +767,19 @@ func (s *Server) handleGetContents(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	stor := s.store.GetGitStorage(owner, repoName)
-	if stor == nil {
+	// GitHub accepts a branch, tag, full ref, or commit SHA here. Keep the
+	// original ref text in hypermedia URLs while resolving it through the
+	// same treeish helper used by the rest of the repository read surface.
+	refName := r.URL.Query().Get("ref")
+	tree, _, err := s.repoTreeAtRef(repo, refName)
+	if err != nil {
 		writeGHError(w, http.StatusNotFound, "Not Found")
 		return
 	}
-
-	// Resolve ref (query param or default branch)
-	refName := r.URL.Query().Get("ref")
 	if refName == "" {
 		refName = repo.DefaultBranch
 	}
-	branchRef := plumbing.NewBranchReferenceName(refName)
-	ref, err := stor.Reference(branchRef)
-	if err != nil {
-		writeGHError(w, http.StatusNotFound, "Not Found")
-		return
-	}
-
-	commit, err := object.GetCommit(stor, ref.Hash())
-	if err != nil {
-		writeGHError(w, http.StatusNotFound, "Not Found")
-		return
-	}
-
-	tree, err := commit.Tree()
-	if err != nil {
-		writeGHError(w, http.StatusNotFound, "Not Found")
-		return
-	}
+	stor := s.gitStorageForRepo(repo)
 
 	// Empty path means list the root tree.
 	if path == "" {

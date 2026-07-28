@@ -218,7 +218,7 @@ func (st *Store) reserveCodespace(ownerLogin, repoKey, gitRef, machineName, disp
 		CreatedAt:          time.Now().UTC(),
 		UpdatedAt:          time.Now().UTC(),
 		LastUsedAt:         time.Now().UTC(),
-		State:              "Creating",
+		State:              "Provisioning",
 		ImageName:          image,
 		DevcontainerPath:   devcontainerPath,
 		Runtime:            "docker",
