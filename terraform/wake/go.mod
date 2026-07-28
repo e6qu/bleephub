@@ -1,6 +1,6 @@
 module github.com/e6qu/bleephub-ecs-wake
 
-go 1.25.0
+go 1.25.12
 
 require (
 	github.com/aws/aws-lambda-go v1.54.0

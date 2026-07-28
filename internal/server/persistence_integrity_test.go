@@ -288,6 +288,51 @@ func TestRenameRepoAbortsWhenTheStorageMoveFails(t *testing.T) {
 	}
 }
 
+func TestTransferRepoRebindsGitStorageToNewOwnerPrefix(t *testing.T) {
+	gitDir := t.TempDir()
+	t.Setenv("BLEEPHUB_S3_BUCKET", "")
+	t.Setenv("BLEEPHUB_GIT_DIR", gitDir)
+
+	st := NewStore()
+	st.SeedDefaultUser()
+	admin := st.UsersByLogin["admin"]
+	if st.CreateOrg(admin, "new-owner", "New Owner", "") == nil {
+		t.Fatal("CreateOrg returned nil")
+	}
+	if st.CreateRepo(admin, "transferred", "", false) == nil {
+		t.Fatal("CreateRepo returned nil")
+	}
+	hash := plumbing.NewHash(strings.Repeat("cd", 20))
+	if err := st.GitStorages["admin/transferred"].SetReference(
+		plumbing.NewHashReference("refs/heads/main", hash),
+	); err != nil {
+		t.Fatalf("seed reference: %v", err)
+	}
+
+	if !st.TransferRepo("admin", "transferred", "new-owner") {
+		t.Fatal("TransferRepo failed")
+	}
+	transferred := st.GitStorages["new-owner/transferred"]
+	if transferred == nil {
+		t.Fatal("transferred repository has no rebound git storage")
+	}
+	ref, err := transferred.Reference("refs/heads/main")
+	if err != nil || ref.Hash() != hash {
+		t.Fatalf("read reference through transferred storer = %v, %v", ref, err)
+	}
+	if err := transferred.SetReference(
+		plumbing.NewHashReference("refs/heads/next", hash),
+	); err != nil {
+		t.Fatalf("write reference through transferred storer: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(gitDir, "new-owner", "transferred", "refs", "heads", "next")); err != nil {
+		t.Fatalf("new reference did not land under transferred prefix: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(gitDir, "admin", "transferred")); !os.IsNotExist(err) {
+		t.Fatalf("old owner prefix still exists after transfer: %v", err)
+	}
+}
+
 // TestInterruptedRepoDeleteIsFinishedOnRestart pins that a cascade cut short
 // mid-flight leaves no half-deleted repository behind.
 func TestInterruptedRepoDeleteIsFinishedOnRestart(t *testing.T) {

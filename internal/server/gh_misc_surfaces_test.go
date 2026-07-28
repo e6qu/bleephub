@@ -41,7 +41,7 @@ func realPagesJekyllExecutable(t *testing.T) string {
 	}
 	dir := t.TempDir()
 	executable := filepath.Join(dir, "bleephub-pages-jekyll")
-	script := "#!/bin/sh\nset -eu\nworkspace=$(dirname \"$4\")\nexec docker run --rm -v \"$workspace:$workspace\" --entrypoint bleephub-pages-jekyll " + pagesJekyllTestImage + " \"$@\"\n"
+	script := "#!/bin/sh\nset -eu\nworkspace=$(dirname \"$4\")\nexec docker run --rm --user \"$(id -u):$(id -g)\" -v \"$workspace:$workspace\" --entrypoint bleephub-pages-jekyll " + pagesJekyllTestImage + " \"$@\"\n"
 	if err := os.WriteFile(executable, []byte(script), 0o755); err != nil {
 		t.Fatalf("write GitHub Pages Jekyll test executable: %v", err)
 	}

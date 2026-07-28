@@ -18,7 +18,7 @@ COPY docker/runner-nuget-locks/ /runner-nuget-locks/
 COPY docker/build-actions-runner.sh /usr/local/bin/build-actions-runner
 RUN bash /usr/local/bin/build-actions-runner
 
-FROM golang:1.26@sha256:3aff6657219a4d9c14e27fb1d8976c49c29fddb70ba835014f477e1c70636647 AS builder
+FROM golang:1.26.5@sha256:3aff6657219a4d9c14e27fb1d8976c49c29fddb70ba835014f477e1c70636647 AS builder
 
 WORKDIR /src
 

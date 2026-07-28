@@ -89,7 +89,7 @@ jobs:
         with:
           # setup-go only parses files named go.mod; for a deliberately
           # nonstandard tool module filename, pass its exact directive.
-          go-version: '1.26.0'
+          go-version: '1.26.5'
           cache: false
       # scripts/deadcode.sh and scripts/dupl.sh were written, made executable
       # and then referenced by nothing — no workflow, no Makefile target, no
@@ -149,7 +149,7 @@ jobs:
         with:
           # The analyzers deliberately live in a separate Go 1.26 module so
           # their release cadence cannot force the product module forward.
-          go-version: '1.26.0'
+          go-version: '1.26.5'
           cache: false
       - name: Install age-qualified security analyzers
         run: |

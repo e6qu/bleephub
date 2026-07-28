@@ -1,6 +1,6 @@
 module github.com/e6qu/bleephub-sdk-tests
 
-go 1.25.0
+go 1.25.12
 
 require github.com/google/go-github/v88 v88.0.0
 

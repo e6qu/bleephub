@@ -28,6 +28,7 @@ ALLOWED_METADATA_HOSTS = {
     "api.github.com",
     "builds.dotnet.microsoft.com",
     "hub.docker.com",
+    "proxy.golang.org",
     "registry.npmjs.org",
     "registry.terraform.io",
     "pypi.org",
@@ -108,14 +109,33 @@ def concatenated_json(raw: str) -> list[dict]:
 def go_dependencies() -> dict[str, dt.datetime]:
     dependencies: dict[str, dt.datetime] = {}
     modules = (
-        (ROOT, []),
-        (ROOT / "sdk-tests", []),
-        (ROOT / "terraform/wake", []),
-        (ROOT / "test/terraform-sockerless", []),
-        (ROOT, ["-modfile=.github/security-go.mod"]),
-        (ROOT, ["-modfile=.github/workflow-tools-go.mod"]),
+        (ROOT, ROOT / "go.mod", []),
+        (ROOT / "sdk-tests", ROOT / "sdk-tests/go.mod", []),
+        (ROOT / "terraform/wake", ROOT / "terraform/wake/go.mod", []),
+        (
+            ROOT / "test/terraform-sockerless",
+            ROOT / "test/terraform-sockerless/go.mod",
+            [],
+        ),
+        (ROOT, ROOT / ".github/security-go.mod", ["-modfile=.github/security-go.mod"]),
+        (
+            ROOT,
+            ROOT / ".github/workflow-tools-go.mod",
+            ["-modfile=.github/workflow-tools-go.mod"],
+        ),
     )
-    for module, build_flags in modules:
+    toolchain_versions: set[str] = set()
+    for module, module_file, build_flags in modules:
+        directive = re.search(
+            r"^go ([0-9]+\.[0-9]+\.[0-9]+)$",
+            module_file.read_text(encoding="utf-8"),
+            re.MULTILINE,
+        )
+        if directive is None:
+            raise RuntimeError(
+                f"{module_file.relative_to(ROOT)} must pin an exact patched Go toolchain"
+            )
+        toolchain_versions.add(directive.group(1))
         output = subprocess.check_output(
             ["go", "list", *build_flags, "-m", "-json", "all"],
             cwd=module,
@@ -131,6 +151,31 @@ def go_dependencies() -> dict[str, dt.datetime]:
                     f"Go module {item['Path']}@{item['Version']} has no publication time"
                 )
             dependencies[f"go:{item['Path']}@{item['Version']}"] = parse_time(published)
+
+    analyzer_version = re.search(
+        r"^go ([0-9]+\.[0-9]+\.[0-9]+)$",
+        (ROOT / ".github/security-go.mod").read_text(encoding="utf-8"),
+        re.MULTILINE,
+    ).group(1)
+    workflow_versions = re.findall(
+        r"^\s+go-version: '([0-9]+\.[0-9]+\.[0-9]+)'$",
+        (ROOT / ".github/workflows/ci.yml").read_text(encoding="utf-8"),
+        re.MULTILINE,
+    )
+    if len(workflow_versions) != 2 or set(workflow_versions) != {analyzer_version}:
+        raise RuntimeError(
+            "CI analyzer Go versions must exactly match .github/security-go.mod"
+        )
+
+    for version in sorted(toolchain_versions):
+        module_version = f"v0.0.1-go{version}.linux-amd64"
+        metadata = request_json(
+            "https://proxy.golang.org/golang.org/toolchain/@v/"
+            f"{module_version}.info"
+        )
+        if metadata.get("Version") != module_version or not metadata.get("Time"):
+            raise RuntimeError(f"Go toolchain {version} has incomplete proxy metadata")
+        dependencies[f"go-toolchain:go{version}"] = parse_time(metadata["Time"])
     return dependencies
 
 
@@ -268,6 +313,14 @@ def docker_dependencies() -> dict[str, dt.datetime]:
                     f"{reference}"
                 )
             image = match.group("image")
+            if image == "golang" and not re.fullmatch(
+                r"[0-9]+\.[0-9]+\.[0-9]+(?:-[a-z0-9.-]+)?",
+                match.group("tag"),
+            ):
+                raise RuntimeError(
+                    f"{path.relative_to(ROOT)} does not pin a patched Go image tag: "
+                    f"{reference}"
+                )
             if "." in image.split("/", 1)[0] or ":" in image.split("/", 1)[0]:
                 if image == "mcr.microsoft.com/dotnet/sdk":
                     # runner_dependencies validates this sole non-Docker-Hub

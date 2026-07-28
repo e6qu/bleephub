@@ -6,6 +6,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -591,11 +592,13 @@ func (as *ArtifactStore) writeCacheChunkToDisk(entry *CacheEntry, chunk []byte, 
 	if err != nil {
 		return err
 	}
-	defer f.Close()
-	if _, err := f.WriteAt(chunk, offset); err != nil {
-		return err
+	if _, writeErr := f.WriteAt(chunk, offset); writeErr != nil {
+		if closeErr := f.Close(); closeErr != nil {
+			return errors.Join(writeErr, closeErr)
+		}
+		return writeErr
 	}
-	return nil
+	return f.Close()
 }
 
 func (s *Server) registerArtifactRoutes() {

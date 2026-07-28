@@ -761,7 +761,10 @@ func (st *Store) prepareWorkspaceLocked(repoKey, gitRef string) (dir string, cle
 	}
 
 	if GitDataDir() != "" {
-		dir := filepath.Join(GitDataDir(), filepath.FromSlash(repoKey))
+		dir, pathErr := repoGitDirPath(GitDataDir(), repoKey)
+		if pathErr != nil {
+			return "", cleanup, pathErr
+		}
 		if _, err := os.Stat(dir); err == nil {
 			return dir, cleanup, nil
 		}
