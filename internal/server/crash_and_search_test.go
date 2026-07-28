@@ -306,7 +306,7 @@ func TestSearchRejectsUnknownQualifierInsteadOfWideningResults(t *testing.T) {
 		{"in-value", "in%3Atitel"},
 		{"state-value", "state%3Aopne"},
 		{"type-value", "type%3Aorgs"},
-		{"unknown-key", "archived%3Atrue"},
+		{"unknown-key", "not-a-real-qualifier%3Atrue"},
 	}
 	// repositories first: a dropped is:private is what discloses private repos.
 	endpoints := []string{"repositories", "issues", "users", "code", "commits"}

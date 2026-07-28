@@ -34,7 +34,7 @@ GitHub-compatible REST contract.
 | Inspect cache usage and delete dependency caches | repository `/actions?view=caches` |
 | Register and manage runners | `/ui/runners` |
 | Read and act on notifications | `/ui/notifications` |
-| Search across the instance | `/ui/search` |
+| Search across the instance; narrow repositories by visibility, archive state, forks, required/excluded topics, language, sort, and order | `/ui/search`; all controls compose the GitHub query grammar and remain shareable in the URL |
 
 Actions execution preserves the split GitHub exposes between a global run ID
 and a per-workflow run number. Reruns keep both identities and increment the

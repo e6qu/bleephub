@@ -184,6 +184,39 @@ test.describe("Global navigation", () => {
   });
 });
 
+test.describe("Repository search", () => {
+  test("excludes a topic through shareable GitHub-compatible filters", async ({ page }) => {
+    const marker = `search-${Date.now().toString(36)}`;
+    const included = `${marker}-current`;
+    const excluded = `${marker}-legacy`;
+    await page.goto("/ui/");
+    await apiPost(page, "/api/v3/user/repos", {
+      name: included,
+      description: marker,
+    });
+    await apiPost(page, "/api/v3/user/repos", {
+      name: excluded,
+      description: marker,
+    });
+    await apiPut(page, `/api/v3/repos/admin/${excluded}/topics`, { names: ["web"] });
+
+    await page.goto(`/ui/search?q=${encodeURIComponent(marker)}&type=repositories`);
+    await expect(page.getByRole("link", { name: `admin/${included}` })).toBeVisible();
+    await expect(page.getByRole("link", { name: `admin/${excluded}` })).toBeVisible();
+
+    const filteredResponse = page.waitForResponse((response) => {
+      const requestURL = new URL(response.url());
+      return requestURL.pathname.endsWith("/search/repositories") &&
+        (requestURL.searchParams.get("q")?.includes("-topic:web") ?? false);
+    });
+    await page.getByLabel("Excluded repository topic").fill("web");
+    expect((await filteredResponse).status()).toBe(200);
+    await expect(page).toHaveURL(/exclude_topic=web/);
+    await expect(page.getByRole("link", { name: `admin/${included}` })).toBeVisible();
+    await expect(page.getByRole("link", { name: `admin/${excluded}` })).toHaveCount(0);
+  });
+});
+
 test.describe("User menu and packages", () => {
   test("labels personal destinations consistently and submits sign-out", async ({ page }) => {
     await page.goto("/ui/");

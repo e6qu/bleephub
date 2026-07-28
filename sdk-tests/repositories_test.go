@@ -135,3 +135,49 @@ func TestRepositorySearchTopicQualifier(t *testing.T) {
 		t.Fatalf("topic-qualified search omitted admin/%s from %+v", name, result.Repositories)
 	}
 }
+
+// TestRepositorySearchExclusionAndStatusQualifiers drives the documented
+// repository query grammar through go-github. OpenAPI can validate the
+// envelope, but only an SDK lifecycle can pin -QUALIFIER set-complement
+// semantics and combinations such as archived:false + fork:false.
+func TestRepositorySearchExclusionAndStatusQualifiers(t *testing.T) {
+	marker := uniqueName("repo-search-marker")
+	includedName := uniqueName("repo-search-included")
+	topicName := uniqueName("repo-search-topic")
+	archivedName := uniqueName("repo-search-archived")
+	createRepo(t, includedName)
+	createRepo(t, topicName)
+	createRepo(t, archivedName)
+
+	for _, name := range []string{includedName, topicName, archivedName} {
+		if _, _, err := client.Repositories.Edit(ctx(), "admin", name, &github.Repository{
+			Description: github.Ptr(marker),
+		}); err != nil {
+			t.Fatalf("Repositories.Edit(%s): %v", name, err)
+		}
+	}
+	if _, _, err := client.Repositories.ReplaceAllTopics(ctx(), "admin", topicName, []string{"web"}); err != nil {
+		t.Fatalf("ReplaceAllTopics: %v", err)
+	}
+	if _, _, err := client.Repositories.Edit(ctx(), "admin", archivedName, &github.Repository{
+		Archived: github.Ptr(true),
+	}); err != nil {
+		t.Fatalf("archive repository: %v", err)
+	}
+
+	query := marker + " user:admin -topic:web archived:false fork:false"
+	result, _, err := client.Search.Repositories(ctx(), query, &github.SearchOptions{
+		Sort:  "updated",
+		Order: "desc",
+	})
+	if err != nil {
+		t.Fatalf("Search.Repositories(%q): %v", query, err)
+	}
+	got := map[string]bool{}
+	for _, repo := range result.Repositories {
+		got[repo.GetName()] = true
+	}
+	if !got[includedName] || got[topicName] || got[archivedName] {
+		t.Fatalf("combined qualifier results=%v, want only %s", got, includedName)
+	}
+}

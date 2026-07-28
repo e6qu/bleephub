@@ -63,6 +63,48 @@ describe("SearchPage", () => {
     expect(url).toContain("per_page=30");
   });
 
+  it("builds official repository qualifiers from the filter UI and preserves sort options", async () => {
+    mockFetch.mockResolvedValue(
+      jsonResponse({ total_count: 1, incomplete_results: false, items: [repoItem] }),
+    );
+    renderPage(
+      "/ui/search?q=bank&type=repositories&exclude_topic=web&archived=false&fork=true&sort=stars&order=asc",
+    );
+    await waitFor(() => {
+      expect(screen.getByText("admin/hit-repo")).toBeInTheDocument();
+    });
+
+    const firstURL = new URL(String(mockFetch.mock.calls[0][0]), "http://bleephub.test");
+    expect(firstURL.searchParams.get("q")).toBe(
+      "bank archived:false fork:true -topic:web",
+    );
+    expect(firstURL.searchParams.get("sort")).toBe("stars");
+    expect(firstURL.searchParams.get("order")).toBe("asc");
+
+    fireEvent.change(screen.getByLabelText("Excluded repository topic"), {
+      target: { value: "legacy systems" },
+    });
+    await waitFor(() => {
+      const lastURL = new URL(
+        String(mockFetch.mock.calls[mockFetch.mock.calls.length - 1][0]),
+        "http://bleephub.test",
+      );
+      expect(lastURL.searchParams.get("q")).toContain('-topic:"legacy systems"');
+    });
+  });
+
+  it("can run a qualifier-only repository search", async () => {
+    mockFetch.mockResolvedValue(
+      jsonResponse({ total_count: 1, incomplete_results: false, items: [repoItem] }),
+    );
+    renderPage("/ui/search?type=repositories&archived=true");
+    await waitFor(() => {
+      expect(screen.getByText("admin/hit-repo")).toBeInTheDocument();
+    });
+    const requestURL = new URL(String(mockFetch.mock.calls[0][0]), "http://bleephub.test");
+    expect(requestURL.searchParams.get("q")).toBe("archived:true");
+  });
+
   it("switches tabs and hits the matching search endpoint", async () => {
     mockFetch.mockResolvedValue(
       jsonResponse({ total_count: 0, incomplete_results: false, items: [] }),

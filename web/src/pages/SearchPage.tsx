@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Link, useSearchParams } from "react-router";
 import { useQuery } from "@tanstack/react-query";
 import { Spinner, InlineError } from "@bleephub/ui-core/components";
@@ -28,6 +28,16 @@ import { PageTitle, Box, Blankslate, Button, Tabs, StateLabel } from "../compone
 import { SearchIcon } from "../components/octicons.js";
 
 type SearchTab = "repositories" | "code" | "issues" | "users" | "commits" | "labels" | "topics";
+type RepositorySearchFilters = {
+  visibility: string;
+  archived: string;
+  fork: string;
+  topic: string;
+  excludeTopic: string;
+  language: string;
+  sort: string;
+  order: string;
+};
 
 const TABS: { key: SearchTab; label: string }[] = [
   { key: "repositories", label: "Repositories" },
@@ -49,6 +59,22 @@ export function SearchPage() {
   const labelsRepo = params.get("repo") ?? "";
   const [draft, setDraft] = useState(q);
   const [labelsRepoDraft, setLabelsRepoDraft] = useState(labelsRepo);
+  const repositoryFilters: RepositorySearchFilters = {
+    visibility: params.get("visibility") ?? "",
+    archived: params.get("archived") ?? "",
+    fork: params.get("fork") ?? "",
+    topic: params.get("topic") ?? "",
+    excludeTopic: params.get("exclude_topic") ?? "",
+    language: params.get("language") ?? "",
+    sort: params.get("sort") ?? "",
+    order: params.get("order") ?? "desc",
+  };
+  const hasSearch =
+    !!q.trim() ||
+    (tab === "repositories" && !!buildRepositoryQuery("", repositoryFilters));
+
+  useEffect(() => setDraft(q), [q]);
+  useEffect(() => setLabelsRepoDraft(labelsRepo), [labelsRepo]);
 
   const update = (next: Record<string, string>) => {
     const merged = new URLSearchParams(params);
@@ -94,17 +120,24 @@ export function SearchPage() {
       </form>
       <p className="mb-4" style={{ fontSize: "0.78rem", color: "var(--color-fg-muted)" }}>
         Qualifiers: <code>repo:owner/name</code> <code>user:login</code> <code>org:name</code>{" "}
-        <code>language:go</code> <code>label:bug</code> <code>state:open</code> <code>is:pr</code>{" "}
-        <code>is:issue</code> <code>in:title</code> <code>path:dir</code> <code>extension:go</code>{" "}
-        <code>filename:main.go</code> <code>author:login</code> <code>hash:sha</code> — quote
-        multi-word terms.
+        <code>language:go</code> <code>topic:web</code> <code>-topic:legacy</code>{" "}
+        <code>archived:false</code> <code>fork:only</code> <code>stars:&gt;10</code>{" "}
+        <code>label:bug</code> <code>state:open</code> <code>is:pr</code> <code>in:title</code>{" "}
+        <code>path:dir</code> <code>extension:go</code> <code>author:login</code> — quote multi-word
+        terms and prefix a qualifier with <code>-</code> to exclude matches.
       </p>
       <Tabs
         items={TABS}
         active={tab}
         onChange={(next) => update({ type: next, page: "" })}
       />
-      {!q.trim() ? (
+      {tab === "repositories" && (
+        <RepositoryFilters
+          filters={repositoryFilters}
+          onChange={(next) => update({ ...next, page: "" })}
+        />
+      )}
+      {!hasSearch ? (
         <Blankslate
           icon={<SearchIcon size={26} />}
           title="Search bleephub"
@@ -117,6 +150,7 @@ export function SearchPage() {
           q={q}
           page={page}
           labelsRepo={labelsRepo}
+          repositoryFilters={repositoryFilters}
           onPage={(p) => update({ page: String(p) })}
         />
       )}
@@ -129,20 +163,37 @@ function SearchResults({
   q,
   page,
   labelsRepo,
+  repositoryFilters,
   onPage,
 }: {
   tab: SearchTab;
   q: string;
   page: number;
   labelsRepo: string;
+  repositoryFilters: RepositorySearchFilters;
   onPage: (page: number) => void;
 }) {
   switch (tab) {
-    case "repositories":
+    case "repositories": {
+      const repositoryQuery = buildRepositoryQuery(q, repositoryFilters);
       return (
         <ResultList
-          queryKey={["search", "repositories", q, page]}
-          queryFn={() => searchRepositories(q, page)}
+          queryKey={[
+            "search",
+            "repositories",
+            repositoryQuery,
+            repositoryFilters.sort,
+            repositoryFilters.order,
+            page,
+          ]}
+          queryFn={() =>
+            searchRepositories(repositoryQuery, page, {
+              sort: repositoryFilters.sort as "stars" | "forks" | "help-wanted-issues" | "updated" | undefined,
+              order: repositoryFilters.sort
+                ? repositoryFilters.order as "asc" | "desc"
+                : undefined,
+            })
+          }
           page={page}
           onPage={onPage}
           noun={{ singular: "repository", plural: "repositories" }}
@@ -155,12 +206,24 @@ function SearchResults({
                 {r.full_name}
               </Link>
               <div style={{ fontSize: "0.8rem", color: "var(--color-fg-muted)" }}>
-                {r.description || "No description."} · {r.visibility}
+                {r.description || "No description."}
+              </div>
+              <div
+                className="mt-1 flex flex-wrap gap-2"
+                style={{ fontSize: "0.74rem", color: "var(--color-fg-muted)" }}
+              >
+                <span>{r.visibility}</span>
+                {r.archived && <span>archived</span>}
+                {r.fork && <span>fork</span>}
+                {r.language && <span>{r.language}</span>}
+                {typeof r.stargazers_count === "number" && <span>★ {r.stargazers_count}</span>}
+                {typeof r.forks_count === "number" && <span>{r.forks_count} forks</span>}
               </div>
             </div>
           )}
         />
       );
+    }
     case "code":
       return (
         <ResultList
@@ -273,6 +336,165 @@ function SearchResults({
         />
       );
   }
+}
+
+function quotedQualifierValue(value: string) {
+  const trimmed = value.trim();
+  if (!trimmed) return "";
+  return /\s/.test(trimmed) ? `"${trimmed.replaceAll('"', '\\"')}"` : trimmed;
+}
+
+export function buildRepositoryQuery(q: string, filters: RepositorySearchFilters) {
+  const qualifiers = [
+    filters.visibility && `is:${filters.visibility}`,
+    filters.archived && `archived:${filters.archived}`,
+    filters.fork && `fork:${filters.fork}`,
+    filters.topic && `topic:${quotedQualifierValue(filters.topic)}`,
+    filters.excludeTopic && `-topic:${quotedQualifierValue(filters.excludeTopic)}`,
+    filters.language && `language:${quotedQualifierValue(filters.language)}`,
+  ].filter(Boolean);
+  return [q.trim(), ...qualifiers].filter(Boolean).join(" ");
+}
+
+function RepositoryFilters({
+  filters,
+  onChange,
+}: {
+  filters: RepositorySearchFilters;
+  onChange: (next: Record<string, string>) => void;
+}) {
+  const selectStyle = { fontSize: "0.78rem", padding: "0.32rem 0.45rem" };
+  const inputStyle = { ...selectStyle, minWidth: "8.5rem" };
+  return (
+    <Box className="mb-4">
+      <div style={{ padding: "0.75rem 1rem" }}>
+        <div className="mb-2" style={{ fontSize: "0.8rem", fontWeight: 650 }}>
+          Repository filters
+        </div>
+        <div className="flex flex-wrap items-end gap-2">
+          <label style={{ fontSize: "0.72rem" }}>
+            <span className="mb-1 block">Visibility</span>
+            <select
+              aria-label="Repository visibility"
+              value={filters.visibility}
+              onChange={(event) => onChange({ visibility: event.target.value })}
+              style={selectStyle}
+            >
+              <option value="">Any visibility</option>
+              <option value="public">Public</option>
+              <option value="private">Private</option>
+              <option value="internal">Internal</option>
+            </select>
+          </label>
+          <label style={{ fontSize: "0.72rem" }}>
+            <span className="mb-1 block">Archive state</span>
+            <select
+              aria-label="Repository archive state"
+              value={filters.archived}
+              onChange={(event) => onChange({ archived: event.target.value })}
+              style={selectStyle}
+            >
+              <option value="">Active and archived</option>
+              <option value="false">Active</option>
+              <option value="true">Archived</option>
+            </select>
+          </label>
+          <label style={{ fontSize: "0.72rem" }}>
+            <span className="mb-1 block">Forks</span>
+            <select
+              aria-label="Repository forks"
+              value={filters.fork}
+              onChange={(event) => onChange({ fork: event.target.value })}
+              style={selectStyle}
+            >
+              <option value="">Sources only</option>
+              <option value="true">Include forks</option>
+              <option value="only">Only forks</option>
+            </select>
+          </label>
+          <label style={{ fontSize: "0.72rem" }}>
+            <span className="mb-1 block">Has topic</span>
+            <input
+              aria-label="Required repository topic"
+              value={filters.topic}
+              onChange={(event) => onChange({ topic: event.target.value })}
+              placeholder="web"
+              style={inputStyle}
+            />
+          </label>
+          <label style={{ fontSize: "0.72rem" }}>
+            <span className="mb-1 block">Without topic</span>
+            <input
+              aria-label="Excluded repository topic"
+              value={filters.excludeTopic}
+              onChange={(event) => onChange({ exclude_topic: event.target.value })}
+              placeholder="legacy"
+              style={inputStyle}
+            />
+          </label>
+          <label style={{ fontSize: "0.72rem" }}>
+            <span className="mb-1 block">Language</span>
+            <input
+              aria-label="Repository language"
+              value={filters.language}
+              onChange={(event) => onChange({ language: event.target.value })}
+              placeholder="Go"
+              style={inputStyle}
+            />
+          </label>
+          <label style={{ fontSize: "0.72rem" }}>
+            <span className="mb-1 block">Sort</span>
+            <select
+              aria-label="Repository search sort"
+              value={filters.sort}
+              onChange={(event) => onChange({ sort: event.target.value })}
+              style={selectStyle}
+            >
+              <option value="">Best match</option>
+              <option value="updated">Recently updated</option>
+              <option value="stars">Most stars</option>
+              <option value="forks">Most forks</option>
+              <option value="help-wanted-issues">Help wanted issues</option>
+            </select>
+          </label>
+          {filters.sort && (
+            <label style={{ fontSize: "0.72rem" }}>
+              <span className="mb-1 block">Order</span>
+              <select
+                aria-label="Repository search order"
+                value={filters.order}
+                onChange={(event) => onChange({ order: event.target.value })}
+                style={selectStyle}
+              >
+                <option value="desc">Descending</option>
+                <option value="asc">Ascending</option>
+              </select>
+            </label>
+          )}
+          {Object.values(filters).some((value) => value && value !== "desc") && (
+            <Button
+              size="sm"
+              variant="secondary"
+              onClick={() =>
+                onChange({
+                  visibility: "",
+                  archived: "",
+                  fork: "",
+                  topic: "",
+                  exclude_topic: "",
+                  language: "",
+                  sort: "",
+                  order: "",
+                })
+              }
+            >
+              Clear filters
+            </Button>
+          )}
+        </div>
+      </div>
+    </Box>
+  );
 }
 
 /** Label search requires a repository_id; resolve the typed owner/repo first. */

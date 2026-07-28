@@ -4,11 +4,31 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"net/url"
 	"os"
 	"strings"
 	"testing"
 	"time"
 )
+
+func TestOpenAPISearchRepositories(t *testing.T) {
+	query := url.QueryEscape("user:admin -topic:does-not-exist archived:false fork:false")
+	resp := ghGet(t, "/api/v3/search/repositories?q="+query+"&sort=updated&order=desc", defaultToken)
+	if resp.StatusCode != http.StatusOK {
+		resp.Body.Close()
+		t.Fatalf("search repositories status=%d, want 200", resp.StatusCode)
+	}
+	body := decodeJSON(t, resp)
+	if _, ok := body["total_count"].(float64); !ok {
+		t.Fatalf("total_count missing or not numeric: %#v", body["total_count"])
+	}
+	if _, ok := body["incomplete_results"].(bool); !ok {
+		t.Fatalf("incomplete_results missing or not boolean: %#v", body["incomplete_results"])
+	}
+	if _, ok := body["items"].([]interface{}); !ok {
+		t.Fatalf("items missing or not an array: %#v", body["items"])
+	}
+}
 
 // Schema definitions loaded from testdata.
 type schemaProperty struct {

@@ -3562,8 +3562,17 @@ async function ghSearch<T>(
   };
 }
 
-export const searchRepositories = (q: string, page = 1) =>
-  ghSearch<BleephubRepo>("repositories", q, page);
+export interface RepositorySearchOptions {
+  sort?: "stars" | "forks" | "help-wanted-issues" | "updated";
+  order?: "asc" | "desc";
+}
+
+export const searchRepositories = (q: string, page = 1, options: RepositorySearchOptions = {}) => {
+  const extra: Record<string, string> = {};
+  if (options.sort) extra.sort = options.sort;
+  if (options.order) extra.order = options.order;
+  return ghSearch<BleephubRepo>("repositories", q, page, extra);
+};
 
 export const searchCode = (q: string, page = 1) =>
   ghSearch<GithubSearchCodeItem>("code", q, page);
