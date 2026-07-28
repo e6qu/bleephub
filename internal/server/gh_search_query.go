@@ -124,15 +124,6 @@ func (q searchQuery) validateFor(searchType string) error {
 	return nil
 }
 
-func (q searchQuery) hasQualifier(key string) bool {
-	for _, qualifier := range q.Qualifiers {
-		if qualifier.Key == key {
-			return true
-		}
-	}
-	return false
-}
-
 func (q searchQuery) excludes(key, candidate string) bool {
 	for _, qualifier := range q.Qualifiers {
 		if qualifier.Negated && qualifier.Key == key && strings.EqualFold(qualifier.Value, candidate) {

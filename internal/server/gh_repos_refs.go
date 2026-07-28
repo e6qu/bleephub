@@ -6,7 +6,6 @@ import (
 	"net/http"
 	"sort"
 	"strings"
-	"time"
 
 	"github.com/go-git/go-git/v5/plumbing"
 	"github.com/go-git/go-git/v5/plumbing/object"
@@ -413,27 +412,4 @@ func resolveCommit(stor storer.EncodedObjectStorer, hash plumbing.Hash) *object.
 		return nil
 	}
 	return obj
-}
-
-// commitSummary converts a commit to a JSON map.
-func commitSummary(c *object.Commit) map[string]interface{} {
-	return map[string]interface{}{
-		"sha": c.Hash.String(),
-		"commit": map[string]interface{}{
-			"message": strings.TrimSpace(c.Message),
-			"author": map[string]interface{}{
-				"name":  c.Author.Name,
-				"email": c.Author.Email,
-				"date":  c.Author.When.Format(time.RFC3339),
-			},
-			"committer": map[string]interface{}{
-				"name":  c.Committer.Name,
-				"email": c.Committer.Email,
-				"date":  c.Committer.When.Format(time.RFC3339),
-			},
-			"tree": map[string]interface{}{
-				"sha": c.TreeHash.String(),
-			},
-		},
-	}
 }
