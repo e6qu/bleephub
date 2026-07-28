@@ -428,9 +428,9 @@ export function AppHeader() {
             <HeaderMenu label="Create new…" trigger={<><PlusIcon size={14} /><TriangleDownIcon size={12} /></>}>
               {(close) => (
                 <>
-                  <MenuLink to="/ui/repos" icon={<RepoIcon size={16} />} onClick={close}>New repository</MenuLink>
-                  <MenuLink to="/ui/gists" icon={<GistIcon size={16} />} onClick={close}>New gist</MenuLink>
-                  <MenuLink to="/ui/admin/orgs" icon={<OrganizationIcon size={16} />} onClick={close}>New organization</MenuLink>
+                  <MenuLink to="/ui/repos?new=1" icon={<RepoIcon size={16} />} onClick={close}>New repository</MenuLink>
+                  <MenuLink to="/ui/gists?new=1" icon={<GistIcon size={16} />} onClick={close}>New gist</MenuLink>
+                  <MenuLink to="/ui/admin/orgs?new=1" icon={<OrganizationIcon size={16} />} onClick={close}>New organization</MenuLink>
                 </>
               )}
             </HeaderMenu>

@@ -3,6 +3,7 @@ package bleephub
 import (
 	"encoding/json"
 	"fmt"
+	"net/http"
 	"os"
 	"strings"
 	"testing"
@@ -154,6 +155,122 @@ func TestOpenAPIPullRequest(t *testing.T) {
 	resp2 := ghGet(t, "/api/v3/repos/admin/oa-pr/pulls/1", "")
 	data2 := decodeJSON(t, resp2)
 	validateSchema(t, "PullRequest", data2)
+}
+
+func TestOpenAPIGitDataShapes(t *testing.T) {
+	repoName := fmt.Sprintf("oa-git-data-%d", time.Now().UnixNano())
+	resp := ghPost(t, "/api/v3/user/repos", defaultToken, map[string]interface{}{
+		"name": repoName, "auto_init": true,
+	})
+	if resp.StatusCode != http.StatusCreated {
+		resp.Body.Close()
+		t.Fatalf("create git-data repo = %d", resp.StatusCode)
+	}
+	resp.Body.Close()
+	base := "/api/v3/repos/admin/" + repoName
+
+	ref := decodeJSONWithStatus(t, ghGet(t, base+"/git/ref/heads/main", defaultToken), http.StatusOK)
+	refObject, _ := ref["object"].(map[string]interface{})
+	commitSHA, _ := refObject["sha"].(string)
+	if commitSHA == "" || refObject["type"] != "commit" {
+		t.Fatalf("ref object = %#v", refObject)
+	}
+	if raw, _ := ref["url"].(string); strings.Contains(raw, "/refs/refs/") {
+		t.Fatalf("ref URL duplicated refs namespace: %q", raw)
+	}
+
+	commit := decodeJSONWithStatus(t, ghGet(t, base+"/git/commits/"+commitSHA, defaultToken), http.StatusOK)
+	commitTree, _ := commit["tree"].(map[string]interface{})
+	treeSHA, _ := commitTree["sha"].(string)
+	if treeSHA == "" {
+		t.Fatalf("commit tree = %#v", commitTree)
+	}
+
+	createdBlob := decodeJSONWithStatus(t, ghPost(t, base+"/git/blobs", defaultToken, map[string]interface{}{
+		"content": "Git data OpenAPI shape\n", "encoding": "utf-8",
+	}), http.StatusCreated)
+	createdBlobSHA, _ := createdBlob["sha"].(string)
+	if createdBlobSHA == "" || createdBlob["url"] == nil {
+		t.Fatalf("created blob = %#v", createdBlob)
+	}
+	blob := decodeJSONWithStatus(t, ghGet(t, base+"/git/blobs/"+createdBlobSHA, defaultToken), http.StatusOK)
+	for _, field := range []string{"sha", "node_id", "url", "size", "content", "encoding"} {
+		if _, ok := blob[field]; !ok {
+			t.Errorf("blob omitted required field %q: %#v", field, blob)
+		}
+	}
+
+	createdTree := decodeJSONWithStatus(t, ghPost(t, base+"/git/trees", defaultToken, map[string]interface{}{
+		"tree": []map[string]interface{}{{
+			"path": "openapi.txt", "mode": "100644", "type": "blob", "sha": createdBlobSHA,
+		}},
+	}), http.StatusCreated)
+	createdTreeSHA, _ := createdTree["sha"].(string)
+	if createdTreeSHA == "" || createdTree["url"] == nil {
+		t.Fatalf("created tree = %#v", createdTree)
+	}
+
+	createdCommit := decodeJSONWithStatus(t, ghPost(t, base+"/git/commits", defaultToken, map[string]interface{}{
+		"message": "Git data OpenAPI shape",
+		"tree":    createdTreeSHA,
+		"parents": []string{commitSHA},
+	}), http.StatusCreated)
+	createdCommitSHA, _ := createdCommit["sha"].(string)
+	if createdCommitSHA == "" || createdCommit["verification"] == nil {
+		t.Fatalf("created commit = %#v", createdCommit)
+	}
+	decodeJSONWithStatus(t, ghGet(t, base+"/git/commits/"+createdCommitSHA, defaultToken), http.StatusOK)
+
+	createdTag := decodeJSONWithStatus(t, ghPost(t, base+"/git/tags", defaultToken, map[string]interface{}{
+		"tag": "openapi", "message": "Git data OpenAPI tag",
+		"object": createdCommitSHA, "type": "commit",
+	}), http.StatusCreated)
+	createdTagSHA, _ := createdTag["sha"].(string)
+	if createdTagSHA == "" || createdTag["verification"] == nil {
+		t.Fatalf("created tag = %#v", createdTag)
+	}
+	readTag := decodeJSONWithStatus(t, ghGet(t, base+"/git/tags/"+createdTagSHA, defaultToken), http.StatusOK)
+	if readTag["verification"] == nil {
+		t.Fatalf("read tag omitted verification: %#v", readTag)
+	}
+
+	createdRef := decodeJSONWithStatus(t, ghPost(t, base+"/git/refs", defaultToken, map[string]interface{}{
+		"ref": "refs/tags/openapi", "sha": createdTagSHA,
+	}), http.StatusCreated)
+	createdRefObject, _ := createdRef["object"].(map[string]interface{})
+	if createdRefObject["type"] != "tag" {
+		t.Fatalf("created annotated tag ref = %#v", createdRef)
+	}
+	decodeJSONWithStatus(t, ghGet(t, base+"/git/ref/tags/openapi", defaultToken), http.StatusOK)
+	matching := decodeJSONArray(t, ghGet(t, base+"/git/matching-refs/tags/open", defaultToken))
+	if len(matching) != 1 || matching[0]["ref"] != "refs/tags/openapi" {
+		t.Fatalf("matching refs = %#v", matching)
+	}
+
+	updatedRef := decodeJSONWithStatus(t, ghPatch(t, base+"/git/refs/heads/main", defaultToken, map[string]interface{}{
+		"sha": createdCommitSHA,
+	}), http.StatusOK)
+	updatedObject, _ := updatedRef["object"].(map[string]interface{})
+	if updatedObject["sha"] != createdCommitSHA || updatedObject["type"] != "commit" {
+		t.Fatalf("updated ref = %#v", updatedRef)
+	}
+
+	for _, treeish := range []string{treeSHA, commitSHA, "main"} {
+		tree := decodeJSONWithStatus(t, ghGet(t, base+"/git/trees/"+treeish+"?recursive=1", defaultToken), http.StatusOK)
+		if tree["url"] == nil || tree["truncated"] != false {
+			t.Fatalf("tree %q shape = %#v", treeish, tree)
+		}
+		entries, _ := tree["tree"].([]interface{})
+		if len(entries) == 0 {
+			t.Fatalf("tree %q has no entries", treeish)
+		}
+		entry, _ := entries[0].(map[string]interface{})
+		if entry["url"] == nil || entry["size"] == nil {
+			t.Fatalf("tree entry shape = %#v", entry)
+		}
+	}
+
+	requireStatus(t, ghDelete(t, base+"/git/refs/tags/openapi", defaultToken), http.StatusNoContent)
 }
 
 func TestOpenAPILabel(t *testing.T) {

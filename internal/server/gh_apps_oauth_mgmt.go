@@ -317,7 +317,20 @@ func decodeOAuthAppSettingsRequest(w http.ResponseWriter, r *http.Request) (oaut
 		writeGHValidationError(w, "OAuthApp", "name", "missing_field")
 		return req, false
 	}
+	req.URL = strings.TrimSpace(req.URL)
+	if req.URL == "" {
+		writeGHValidationError(w, "OAuthApp", "url", "missing_field")
+		return req, false
+	}
+	if err := validateClientCallbackURL(req.URL); err != nil {
+		writeGHValidationError(w, "OAuthApp", "url", "invalid")
+		return req, false
+	}
 	req.CallbackURL = strings.TrimSpace(req.CallbackURL)
+	if req.CallbackURL == "" {
+		writeGHValidationError(w, "OAuthApp", "callback_url", "missing_field")
+		return req, false
+	}
 	if err := validateClientCallbackURL(req.CallbackURL); err != nil {
 		writeGHValidationError(w, "OAuthApp", "callback_url", "invalid")
 		return req, false

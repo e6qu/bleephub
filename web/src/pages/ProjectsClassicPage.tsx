@@ -28,6 +28,14 @@ import type {
   GithubProjectCard,
 } from "../types.js";
 
+export function projectCardContentHref(contentUrl: string | null): string {
+  if (!contentUrl) return "#";
+  const match = contentUrl.match(/\/api\/v3\/repos\/([^/]+)\/([^/]+)\/(issues|pulls)\/(\d+)(?:$|[?#])/);
+  if (!match) return contentUrl;
+  const [, owner, repo, kind, number] = match;
+  return `/ui/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/${kind}/${number}`;
+}
+
 export function ProjectsClassicPage() {
   const { owner = "", repo = "" } = useParams<{ owner: string; repo: string }>();
   const [selectedProject, setSelectedProject] = useState<GithubProjectClassic | null>(null);
@@ -580,7 +588,7 @@ function ProjectCardItem({
           <div style={{ fontSize: "0.85rem", whiteSpace: "pre-wrap" }}>
             {card.note || (
               <a
-                href={card.content_url?.replace("/api/v3/repos/", "/").replace("/issues/", "/issues/") ?? "#"}
+                href={projectCardContentHref(card.content_url)}
                 style={{ color: "var(--color-accent)" }}
               >
                 linked issue

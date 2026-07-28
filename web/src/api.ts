@@ -86,6 +86,7 @@ import type {
   GithubDiscussionCommentConnection,
   GithubSecurityAdvisory,
   GithubSecurityAdvisoryCreatePayload,
+  GithubSecurityAdvisoryUpdatePayload,
   GithubVulnerabilityReportPayload,
   GithubRuleset,
   GithubRulesetCreatePayload,
@@ -141,6 +142,7 @@ import type {
   GithubFeedIssue,
   GithubPRFile,
   GithubMarketplaceAccount,
+  BleephubOAuthGrant,
   GithubMarketplaceListing,
   GithubMarketplaceListingSettings,
   GithubMarketplacePlan,
@@ -491,9 +493,18 @@ function normalizeGitHubApp(raw: WireGitHubApp): BleephubApp {
     id: raw.id,
     slug: raw.slug,
     name: raw.name,
+    clientId: raw.client_id,
     description: raw.description,
+    url: raw.external_url,
+    callbackUrl: raw.callback_url ?? "",
+    webhookUrl: raw.webhook_url ?? "",
+    webhookActive: raw.webhook_active ?? false,
+    webhookContentType: raw.webhook_content_type ?? "form",
+    permissions: raw.permissions ?? {},
+    events: raw.events ?? [],
     ownerId: raw.owner.id,
     createdAt: raw.created_at,
+    updatedAt: raw.updated_at,
   };
 }
 
@@ -505,6 +516,8 @@ function normalizeInstallation(raw: WireInstallation): BleephubInstallation {
     targetType: raw.target_type,
     targetLogin: raw.account.login,
     repositorySelection: raw.repository_selection,
+    permissions: raw.permissions ?? {},
+    events: raw.events ?? [],
     createdAt: raw.created_at,
     suspendedAt: raw.suspended_at,
   };
@@ -525,6 +538,10 @@ function normalizeOAuthApp(raw: WireOAuthApp): BleephubOAuthApp {
 export async function createApp(payload: {
   name: string;
   description?: string;
+  url?: string;
+  callback_url?: string;
+  webhook_url?: string;
+  webhook_active?: boolean;
   permissions?: Record<string, string>;
   events?: string[];
 }): Promise<{ clientId: string; pem: string; client_secret: string; webhook_secret: string }> {
@@ -532,9 +549,13 @@ export async function createApp(payload: {
   const redirectUrl = `${origin}/ui/apps`;
   const manifest = {
     name: payload.name,
-    url: origin,
+    url: payload.url || origin,
     redirect_url: redirectUrl,
     description: payload.description || "",
+    callback_urls: payload.callback_url ? [payload.callback_url] : [],
+    hook_attributes: payload.webhook_url
+      ? { url: payload.webhook_url, active: payload.webhook_active ?? true }
+      : undefined,
     default_permissions: payload.permissions || {},
     default_events: payload.events || [],
   };
@@ -588,6 +609,126 @@ export async function fetchOAuthApps(): Promise<BleephubOAuthApp[]> {
   }
   const raw = (await res.json()) as WireOAuthApp[];
   return raw.map(normalizeOAuthApp);
+}
+
+export async function fetchAppSettings(slug: string): Promise<BleephubApp> {
+  const raw = await fetchJSON<WireGitHubApp>(`/settings/apps/${encodeURIComponent(slug)}`);
+  return normalizeGitHubApp(raw);
+}
+
+export async function updateAppSettings(
+  slug: string,
+  payload: {
+    name: string;
+    description: string;
+    url: string;
+    callback_url: string;
+    webhook_url: string;
+    webhook_active: boolean;
+    webhook_content_type: "json" | "form";
+    permissions: Record<string, string>;
+    events: string[];
+  },
+): Promise<BleephubApp> {
+  const raw = await ghPatchJSON<WireGitHubApp>(
+    `/settings/apps/${encodeURIComponent(slug)}`,
+    payload,
+  );
+  return normalizeGitHubApp(raw);
+}
+
+export const rotateAppClientSecret = (slug: string) =>
+  ghPostJSON<{ client_secret: string }>(
+    `/settings/apps/${encodeURIComponent(slug)}/client-secret`,
+    {},
+  );
+
+export const rotateAppPrivateKey = (slug: string) =>
+  ghPostJSON<{ pem: string }>(
+    `/settings/apps/${encodeURIComponent(slug)}/private-key`,
+    {},
+  );
+
+export const deleteApp = (slug: string) =>
+  ghDelete(`/settings/apps/${encodeURIComponent(slug)}`);
+
+export async function updateOAuthApp(
+  clientId: string,
+  payload: { name: string; description: string; url: string; callback_url: string },
+): Promise<BleephubOAuthApp> {
+  const raw = await ghPatchJSON<WireOAuthApp>(
+    `/settings/oauth-apps/${encodeURIComponent(clientId)}`,
+    payload,
+  );
+  return normalizeOAuthApp(raw);
+}
+
+export const rotateOAuthAppClientSecret = (clientId: string) =>
+  ghPostJSON<{ client_secret: string }>(
+    `/settings/oauth-apps/${encodeURIComponent(clientId)}/client-secret`,
+    {},
+  );
+
+export const deleteOAuthApp = (clientId: string) =>
+  ghDelete(`/settings/oauth-apps/${encodeURIComponent(clientId)}`);
+
+export const fetchOAuthGrants = () =>
+  ghFetch<BleephubOAuthGrant[]>("/settings/connections/applications");
+
+export const revokeOAuthGrant = (clientId: string) =>
+  ghDelete(`/settings/connections/applications/${encodeURIComponent(clientId)}`);
+
+export async function installApp(
+  slug: string,
+  payload: {
+    target_login: string;
+    repository_selection: "all" | "selected";
+    repository_ids: number[];
+  },
+): Promise<WireInstallation> {
+  const form = new URLSearchParams();
+  form.set("target_login", payload.target_login);
+  form.set("repository_selection", payload.repository_selection);
+  for (const id of payload.repository_ids) form.append("repository_ids", String(id));
+  const res = await apiFetch(`/settings/apps/${encodeURIComponent(slug)}/installations/new`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/x-www-form-urlencoded",
+      ...authHeaders(),
+    },
+    body: form,
+  });
+  if (!res.ok) {
+    const text = await res.text();
+    throw new ApiError(res.status, text || res.statusText);
+  }
+  return (await res.json()) as WireInstallation;
+}
+
+export const fetchInstallationRepositories = (installationId: number) =>
+  ghFetch<{ total_count: number; repositories: BleephubRepo[] }>(
+    `/api/v3/user/installations/${installationId}/repositories?per_page=100`,
+  );
+
+export const addInstallationRepository = (installationId: number, repoId: number) =>
+  ghPutJSON<void>(
+    `/api/v3/user/installations/${installationId}/repositories/${repoId}`,
+    {},
+  );
+
+export const removeInstallationRepository = (installationId: number, repoId: number) =>
+  ghDelete(`/api/v3/user/installations/${installationId}/repositories/${repoId}`);
+
+export async function fetchInstallableRepositories(
+  login: string,
+  accountType: "User" | "Organization",
+): Promise<BleephubRepo[]> {
+  const path =
+    accountType === "Organization"
+      ? `/api/v3/orgs/${encodeURIComponent(login)}/repos?per_page=100`
+      : "/api/v3/user/repos?affiliation=owner&per_page=100";
+  const repos = await ghFetch<BleephubRepo[]>(path);
+  return repos.filter((repo) => repo.owner.login === login);
 }
 
 export async function createOAuthApp(payload: {
@@ -846,7 +987,22 @@ async function ghPutJSON<T>(path: string, body: unknown): Promise<T> {
     const text = await res.text();
     throw new ApiError(res.status, `${res.status} ${res.statusText}: ${text || res.statusText}`);
   }
+  if (res.status === 204) {
+    return undefined as T;
+  }
   return res.json() as Promise<T>;
+}
+
+async function ghDelete(path: string): Promise<void> {
+  const res = await apiFetch(path, {
+    method: "DELETE",
+    headers: authHeaders(),
+  });
+  if (!res.ok) {
+    handleUnauthorized(res);
+    const text = await res.text();
+    throw new ApiError(res.status, `${res.status} ${res.statusText}: ${text || res.statusText}`);
+  }
 }
 
 async function ghDeleteJSON<T>(path: string, body: unknown): Promise<T> {
@@ -1081,8 +1237,20 @@ export const fetchRepoBranches = (owner: string, repo: string) =>
 export const fetchRepoBranch = (owner: string, repo: string, branch: string) =>
   ghFetch<GithubBranch>(`/api/v3/repos/${owner}/${repo}/branches/${encodeURIComponent(branch)}`);
 
-export const fetchBranchProtection = (owner: string, repo: string, branch: string) =>
-  ghFetch<GithubBranchProtection>(`/api/v3/repos/${owner}/${repo}/branches/${encodeURIComponent(branch)}/protection`);
+export const fetchBranchProtection = async (
+  owner: string,
+  repo: string,
+  branch: string,
+): Promise<GithubBranchProtection | null> => {
+  try {
+    return await ghFetch<GithubBranchProtection>(
+      `/api/v3/repos/${owner}/${repo}/branches/${encodeURIComponent(branch)}/protection`,
+    );
+  } catch (err) {
+    if (isNotFound(err)) return null;
+    throw err;
+  }
+};
 
 export const createBranchProtection = (
   owner: string,
@@ -2006,6 +2174,32 @@ export const createSecurityAdvisory = (
   repo: string,
   payload: GithubSecurityAdvisoryCreatePayload,
 ) => ghPostJSON<GithubSecurityAdvisory>(`/api/v3/repos/${owner}/${repo}/security-advisories`, payload);
+
+export const fetchSecurityAdvisory = (owner: string, repo: string, ghsaId: string) =>
+  ghFetch<GithubSecurityAdvisory>(
+    `/api/v3/repos/${owner}/${repo}/security-advisories/${encodeURIComponent(ghsaId)}`,
+  );
+
+export const updateSecurityAdvisory = (
+  owner: string,
+  repo: string,
+  ghsaId: string,
+  payload: GithubSecurityAdvisoryUpdatePayload,
+) =>
+  ghPatchJSON<GithubSecurityAdvisory>(
+    `/api/v3/repos/${owner}/${repo}/security-advisories/${encodeURIComponent(ghsaId)}`,
+    payload,
+  );
+
+export const createSecurityAdvisoryTemporaryFork = (
+  owner: string,
+  repo: string,
+  ghsaId: string,
+) =>
+  ghPostJSON<BleephubRepo>(
+    `/api/v3/repos/${owner}/${repo}/security-advisories/${encodeURIComponent(ghsaId)}/forks`,
+    {},
+  );
 
 export const requestCVE = (owner: string, repo: string, ghsaId: string) =>
   ghPostJSON<GithubSecurityAdvisory>(`/api/v3/repos/${owner}/${repo}/security-advisories/${encodeURIComponent(ghsaId)}/cve`, {});

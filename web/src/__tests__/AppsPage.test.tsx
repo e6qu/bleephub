@@ -39,6 +39,10 @@ const apps = [
     client_id: "Iv1.example",
     description: "Helper",
     external_url: "https://example.test",
+    callback_url: "https://example.test/callback",
+    webhook_url: "https://example.test/hooks",
+    webhook_active: true,
+    webhook_content_type: "json",
     html_url: "https://github.com/apps/ci-bot",
     permissions: {},
     events: [],
@@ -67,6 +71,10 @@ const installations = [
 function routedFetch(url: RequestInfo | URL): Promise<Response> {
   const u = typeof url === "string" ? url : url.toString();
   if (u === "/settings/apps") return Promise.resolve(jsonResponse(apps));
+  if (u === "/settings/apps/ci-bot") return Promise.resolve(jsonResponse(apps[0]));
+  if (u === "/ui-data/marketplace/accounts") {
+    return Promise.resolve(jsonResponse([{ id: 1, login: "octocat", type: "User", avatar_url: "" }]));
+  }
   if (u.includes("/api/v3/user/installations")) {
     return Promise.resolve(jsonResponse({ total_count: installations.length, installations }));
   }
@@ -117,5 +125,29 @@ describe("AppsPage", () => {
       expect(screen.getByLabelText(/^name$/i)).toBeInTheDocument();
       expect(screen.getByLabelText(/description/i)).toBeInTheDocument();
     });
+  });
+
+  it("opens complete GitHub App settings from the app row", async () => {
+    mockFetch.mockImplementation((url: RequestInfo | URL) => routedFetch(url));
+    renderPage();
+
+    fireEvent.click(await screen.findByRole("button", { name: "Settings" }));
+
+    expect(await screen.findByRole("heading", { name: /GitHub App settings · ci-bot/i })).toBeInTheDocument();
+    expect(screen.getByLabelText("Client identifier")).toHaveValue("Iv1.example");
+    expect(screen.getByLabelText("Callback URL")).toHaveValue("https://example.test/callback");
+    expect(screen.getByRole("button", { name: "Generate client secret" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Generate private key" })).toBeInTheDocument();
+  });
+
+  it("starts installation with an owned account and repository selection", async () => {
+    mockFetch.mockImplementation((url: RequestInfo | URL) => routedFetch(url));
+    renderPage();
+
+    fireEvent.click(await screen.findByRole("button", { name: "Install" }));
+
+    expect(await screen.findByRole("heading", { name: "Install ci-bot" })).toBeInTheDocument();
+    expect(await screen.findByLabelText("Account")).toHaveValue("User:1");
+    expect(screen.getByLabelText("Repository access")).toBeInTheDocument();
   });
 });

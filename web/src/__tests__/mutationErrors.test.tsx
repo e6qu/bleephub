@@ -90,6 +90,7 @@ describe("failing mutations surface on the page", () => {
         return Promise.resolve(jsonResponse({ message: "Forbidden" }, 403));
       }
       if (url.includes("/locations")) return Promise.resolve(jsonResponse([]));
+      if (url.endsWith("/secret-scanning/alerts/7")) return Promise.resolve(jsonResponse(alert));
       if (url.includes("/secret-scanning/alerts")) return Promise.resolve(jsonResponse([alert]));
       return Promise.resolve(jsonResponse([]));
     });
@@ -100,8 +101,7 @@ describe("failing mutations surface on the page", () => {
       <SecretScanningPage />,
     );
 
-    // The alert row is a clickable <li>, not a button.
-    fireEvent.click(await screen.findByText(/#7 GitHub PAT/));
+    fireEvent.click(await screen.findByRole("button", { name: /#7 GitHub PAT/ }));
     fireEvent.click(await screen.findByRole("button", { name: "Resolve" }));
 
     expect(await screen.findByRole("alert")).toHaveTextContent(/403/);

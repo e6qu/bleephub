@@ -12,6 +12,8 @@ GitHub-compatible REST contract.
 | Discover, create, filter, and open repositories | `/ui/`, `/ui/repos`, `/ui/orgs/:org/repos` | repositories REST API |
 | Browse branches and directories | `/ui/repos/:owner/:repo` | contents, branches, and Git data APIs |
 | Open a file at a ref | `/ui/repos/:owner/:repo/blob/:ref/*` | contents API |
+| Read raw Git trees by tree SHA, commit SHA, branch, full ref, or tag | repository clients and SDKs | Git trees API with recursive walking, tag peeling, canonical object URLs, sizes, and response shapes |
+| Create and inspect blobs, trees, commits, tags, and references | repository clients and SDKs | Git database APIs with GitHub-compatible validation and typed object links |
 | Browse commits and inspect a patch | `/ui/repos/:owner/:repo/commits`, `/commits/:sha` | commits API |
 | Clone over HTTPS or SSH | repository **Code** menu | smart HTTP and configured SSH Git transports |
 | Create and inspect releases | `/releases`, `/releases/new`, `/releases/:releaseId` | releases API |
@@ -123,6 +125,14 @@ responses remain within GitHub's Codespaces response schema.
 | Concurrency groups replayed stale pending runs and could admit simultaneous submissions | Serialized admission, cancelled superseded pending runs, and promoted only the newest pending run |
 | Pages settings exposed only domain/HTTPS controls and offered an invalid manual build action for workflow sites | Added source/build/visibility configuration and build-type-aware controls |
 | S3 repository rename/delete could skip keys while mutating paginated listings and issued one delete request per object | Snapshot-before-rename and bounded multi-object delete now cover every page |
+| The global “new” menu opened repository, gist, and organization lists without beginning creation | Added durable `?new=1` entry points that open the corresponding creation dialog and clear the intent after completion or cancellation |
+| A normal unprotected branch appeared as a 404 error and saving its unchanged state attempted a failing delete | Treat branch-protection 404 as the valid unprotected state while preserving every other error and avoiding a no-op delete |
+| Dependabot, secret-scanning, and security-advisory rows were mouse-only, fixed-width, and could show stale detail after a mutation | Replaced rows with keyboard controls, made list/detail panes responsive, gave detail requests explicit loading/error states, and refresh selected resources after mutations |
+| Repository security advisories could be created but not edited, moved from triage, published, closed, reopened, or given a temporary private fork in the browser | Connected the existing single-advisory GET/PATCH/fork contracts to full edit and lifecycle controls |
+| Linked issues on classic project cards navigated outside the browser application | Translate REST `content_url` coordinates into the durable repository issue route |
+| Multiple open pull requests could be created for the same head and base | Added an atomic shared-store invariant, GitHub-shaped REST 422 response, and REST, GraphQL, concurrency, and official-SDK compatibility vectors |
+| GitHub App ownership stopped at create/list, with no settings, credential lifecycle, installation target, or selected-repository UI | Added persisted owner settings, client-secret/private-key rotation, cascading deletion, personal/organization installation, and repository-selection management |
+| OAuth App ownership stopped at create/list and OAuth flows required hand-copying client identifiers | Added edit/rotate/delete settings with grant revocation and populate web/device flows from the signed-in owner's registered GitHub and OAuth Apps |
 
 The GitHub-compatible API is substantially larger than the browser product.
 Endpoint-level parity and deliberate API-only automation surfaces continue to

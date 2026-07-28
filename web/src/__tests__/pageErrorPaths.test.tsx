@@ -21,6 +21,15 @@ import { OrgGovernancePage } from "../pages/OrgGovernancePage.js";
 import { EnterprisePage } from "../pages/EnterprisePage.js";
 import { CopilotPage } from "../pages/CopilotPage.js";
 import { RepoSocialPage } from "../pages/RepoSocialPage.js";
+import { AuditLogPage } from "../pages/AuditLogPage.js";
+import { BranchProtectionPage } from "../pages/BranchProtectionPage.js";
+import { DependabotPage } from "../pages/DependabotPage.js";
+import { OrgsPage } from "../pages/OrgsPage.js";
+import { ProjectsClassicPage } from "../pages/ProjectsClassicPage.js";
+import { RulesetsPage } from "../pages/RulesetsPage.js";
+import { SecretScanningPage } from "../pages/SecretScanningPage.js";
+import { SecurityAdvisoriesPage } from "../pages/SecurityAdvisoriesPage.js";
+import { UsersPage } from "../pages/UsersPage.js";
 
 const mockFetch = vi.fn();
 globalThis.fetch = mockFetch;
@@ -119,6 +128,60 @@ const PAGES: Array<{ name: string; routePath: string; entry: string; element: Re
     routePath: "/ui/repos/:owner/:repo/stargazers",
     entry: "/ui/repos/admin/r/stargazers",
     element: <RepoSocialPage kind="stargazers" />,
+  },
+  {
+    name: "AuditLogPage",
+    routePath: "/ui/admin/audit-log",
+    entry: "/ui/admin/audit-log",
+    element: <AuditLogPage />,
+  },
+  {
+    name: "BranchProtectionPage",
+    routePath: "/ui/repos/:owner/:repo/settings/branches",
+    entry: "/ui/repos/admin/r/settings/branches",
+    element: <BranchProtectionPage />,
+  },
+  {
+    name: "DependabotPage",
+    routePath: "/ui/repos/:owner/:repo/security/dependabot",
+    entry: "/ui/repos/admin/r/security/dependabot",
+    element: <DependabotPage />,
+  },
+  {
+    name: "OrgsPage",
+    routePath: "/ui/admin/orgs",
+    entry: "/ui/admin/orgs",
+    element: <OrgsPage />,
+  },
+  {
+    name: "ProjectsClassicPage",
+    routePath: "/ui/repos/:owner/:repo/projects-classic",
+    entry: "/ui/repos/admin/r/projects-classic",
+    element: <ProjectsClassicPage />,
+  },
+  {
+    name: "RulesetsPage",
+    routePath: "/ui/orgs/:org/rulesets",
+    entry: "/ui/orgs/acme/rulesets",
+    element: <RulesetsPage />,
+  },
+  {
+    name: "SecretScanningPage",
+    routePath: "/ui/repos/:owner/:repo/security/secret-scanning",
+    entry: "/ui/repos/admin/r/security/secret-scanning",
+    element: <SecretScanningPage />,
+  },
+  {
+    name: "SecurityAdvisoriesPage",
+    routePath: "/ui/repos/:owner/:repo/security/advisories",
+    entry: "/ui/repos/admin/r/security/advisories",
+    element: <SecurityAdvisoriesPage />,
+  },
+  {
+    name: "UsersPage",
+    routePath: "/ui/admin/users",
+    entry: "/ui/admin/users",
+    element: <UsersPage />,
   },
 ];
 

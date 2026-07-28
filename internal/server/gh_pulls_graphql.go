@@ -1,6 +1,7 @@
 package bleephub
 
 import (
+	"errors"
 	"fmt"
 	"regexp"
 	"sort"
@@ -1552,10 +1553,13 @@ func (s *Server) addPullRequestFieldsToSchema(userType, issueType, repoType, mut
 			if headRepo == nil || headRefName == "" {
 				return nil, fmt.Errorf("pull request creation failed")
 			}
-			pr := s.store.CreatePullRequest(repo.ID, user.ID, title, body, headRefName, baseRefName, draft, nil, nil, 0, PullRequestOptions{
+			pr, err := s.store.CreatePullRequestChecked(repo.ID, user.ID, title, body, headRefName, baseRefName, draft, nil, nil, 0, PullRequestOptions{
 				HeadRepoID:          headRepo.ID,
 				MaintainerCanModify: maintainerCanModify,
 			})
+			if errors.Is(err, ErrOpenPullRequestExists) {
+				return nil, fmt.Errorf("a pull request already exists for this head and base")
+			}
 			if pr == nil {
 				return nil, fmt.Errorf("pull request creation failed")
 			}

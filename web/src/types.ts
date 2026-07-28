@@ -172,9 +172,18 @@ export interface BleephubApp {
   id: number;
   slug: string;
   name: string;
+  clientId: string;
   description: string;
+  url: string;
+  callbackUrl: string;
+  webhookUrl: string;
+  webhookActive: boolean;
+  webhookContentType: "json" | "form";
+  permissions: Record<string, string>;
+  events: string[];
   ownerId: number;
   createdAt: string;
+  updatedAt: string;
 }
 
 /** GitHub App installation row normalized from GitHub's REST installation shape. */
@@ -185,6 +194,8 @@ export interface BleephubInstallation {
   targetType: string;
   targetLogin: string;
   repositorySelection: string;
+  permissions: Record<string, string>;
+  events: string[];
   createdAt: string;
   /** Always present on the wire; null when the installation is active. */
   suspendedAt: string | null;
@@ -201,13 +212,31 @@ export interface BleephubOAuthApp {
   createdAt: string;
 }
 
+export interface BleephubOAuthGrant {
+  client_id: string;
+  name: string;
+  type: "OAuthApp" | "GitHubApp";
+  url: string;
+  scopes: string[];
+  created_at: string;
+}
+
 export interface WireGitHubApp {
   id: number;
   slug: string;
   name: string;
   description: string;
   owner: { id: number };
+  client_id: string;
+  external_url: string;
+  callback_url?: string;
+  webhook_url?: string;
+  webhook_active?: boolean;
+  webhook_content_type?: "json" | "form";
+  permissions: Record<string, string> | null;
+  events: string[] | null;
   created_at: string;
+  updated_at: string;
 }
 
 export interface WireInstallation {
@@ -216,6 +245,8 @@ export interface WireInstallation {
   app_slug: string;
   target_type: string;
   repository_selection: string;
+  permissions: Record<string, string> | null;
+  events: string[] | null;
   created_at: string;
   suspended_at: string | null;
   account: { login: string };
@@ -1205,14 +1236,19 @@ export interface GithubPackageFile {
 // ─── GitHub Security Advisories shapes ──────────────────────────────────
 
 export type GithubSecurityAdvisorySeverity = "critical" | "high" | "medium" | "low";
-export type GithubSecurityAdvisoryState = "draft" | "published" | "closed";
+export type GithubSecurityAdvisoryState =
+  | "triage"
+  | "draft"
+  | "published"
+  | "closed"
+  | "withdrawn";
 
 export interface GithubSecurityAdvisory {
-  id: number;
+  id?: number;
   ghsa_id: string;
   cve_id: string | null;
   summary: string;
-  description: string;
+  description: string | null;
   severity: GithubSecurityAdvisorySeverity;
   cwe_ids?: string[];
   state: GithubSecurityAdvisoryState;
@@ -1222,6 +1258,7 @@ export interface GithubSecurityAdvisory {
   published_at: string | null;
   url: string;
   html_url: string;
+  private_fork?: BleephubRepo | null;
 }
 
 export interface GithubSecurityAdvisoryCreatePayload {
@@ -1229,6 +1266,14 @@ export interface GithubSecurityAdvisoryCreatePayload {
   description: string;
   severity: GithubSecurityAdvisorySeverity;
   cwe_ids?: string[];
+}
+
+export interface GithubSecurityAdvisoryUpdatePayload {
+  summary?: string;
+  description?: string;
+  severity?: GithubSecurityAdvisorySeverity;
+  cwe_ids?: string[];
+  state?: GithubSecurityAdvisoryState;
 }
 
 export interface GithubVulnerabilityReportPayload {

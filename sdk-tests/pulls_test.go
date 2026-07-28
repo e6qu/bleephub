@@ -1,10 +1,42 @@
 package sdktests
 
 import (
+	"errors"
+	"net/http"
 	"testing"
 
 	github "github.com/google/go-github/v88/github"
 )
+
+func TestDuplicateOpenPullRequestRejected(t *testing.T) {
+	name := uniqueName("pr-duplicate")
+	createRepo(t, name)
+	createPullRequestBranches(t, name)
+	request := &github.NewPullRequest{
+		Title: github.Ptr("first"),
+		Head:  github.Ptr("feature"),
+		Base:  github.Ptr("main"),
+	}
+	if _, _, err := client.PullRequests.Create(ctx(), "admin", name, request); err != nil {
+		t.Fatalf("first Create: %v", err)
+	}
+
+	_, resp, err := client.PullRequests.Create(ctx(), "admin", name, request)
+	if err == nil || resp == nil || resp.StatusCode != http.StatusUnprocessableEntity {
+		t.Fatalf("duplicate Create: err=%v status=%v, want 422", err, resp)
+	}
+	var githubErr *github.ErrorResponse
+	if !errors.As(err, &githubErr) {
+		t.Fatalf("duplicate Create error = %T, want *github.ErrorResponse", err)
+	}
+	if githubErr.Message != "Validation Failed" || len(githubErr.Errors) != 1 {
+		t.Fatalf("duplicate Create error = %#v", githubErr)
+	}
+	detail := githubErr.Errors[0]
+	if detail.Resource != "PullRequest" || detail.Field != "head" || detail.Code != "custom" || detail.Message == "" {
+		t.Fatalf("duplicate Create detail = %#v", detail)
+	}
+}
 
 // createTestPR creates a repo and a single open PR, returning the repo name and
 // PR number. The branches are created through the public Git Data API so the

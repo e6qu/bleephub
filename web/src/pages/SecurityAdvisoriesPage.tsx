@@ -1,20 +1,26 @@
 import { useEffect, useState } from "react";
-import { useParams } from "react-router";
+import { Link, useParams } from "react-router";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Spinner, InlineError } from "@bleephub/ui-core/components";
 import {
   fetchSecurityAdvisories,
+  fetchSecurityAdvisory,
   createSecurityAdvisory,
+  createSecurityAdvisoryTemporaryFork,
+  updateSecurityAdvisory,
   requestCVE,
   reportVulnerability,
 } from "../api.js";
 import { useOpenCounts } from "../hooks/useOpenCounts.js";
 import { RepoHeader } from "../components/Shell.js";
 import { Box, Button, Modal, FormLabel, ErrorBanner, DialogActions } from "../components/ui.js";
+import { MutationError } from "../components/MutationError.js";
 import type {
   GithubSecurityAdvisory,
   GithubSecurityAdvisorySeverity,
+  GithubSecurityAdvisoryState,
   GithubSecurityAdvisoryCreatePayload,
+  GithubSecurityAdvisoryUpdatePayload,
   GithubVulnerabilityReportPayload,
 } from "../types.js";
 
@@ -23,17 +29,20 @@ type SeverityFilter = "all" | GithubSecurityAdvisorySeverity;
 const SEVERITIES: GithubSecurityAdvisorySeverity[] = ["critical", "high", "medium", "low"];
 
 const STATE_LABELS: Record<string, string> = {
+  triage: "Triage",
   draft: "Draft",
   published: "Published",
   closed: "Closed",
+  withdrawn: "Withdrawn",
 };
 
 export function SecurityAdvisoriesPage() {
   const { owner = "", repo = "" } = useParams<{ owner: string; repo: string }>();
   const [severityFilter, setSeverityFilter] = useState<SeverityFilter>("all");
-  const [selected, setSelected] = useState<GithubSecurityAdvisory | null>(null);
+  const [selectedId, setSelectedId] = useState<string | null>(null);
   const [showCreate, setShowCreate] = useState(false);
   const [showReport, setShowReport] = useState(false);
+  const [showEdit, setShowEdit] = useState(false);
   const counts = useOpenCounts(owner, repo);
   const queryClient = useQueryClient();
 
@@ -48,11 +57,18 @@ export function SecurityAdvisoriesPage() {
     enabled: !!owner && !!repo,
   });
 
+  const selectedQuery = useQuery({
+    queryKey: ["security-advisory", owner, repo, selectedId],
+    queryFn: () => fetchSecurityAdvisory(owner, repo, selectedId!),
+    enabled: selectedId !== null,
+  });
+
   const createMutation = useMutation({
     mutationFn: (payload: GithubSecurityAdvisoryCreatePayload) =>
       createSecurityAdvisory(owner, repo, payload),
-    onSuccess: () => {
+    onSuccess: (created) => {
       queryClient.invalidateQueries({ queryKey: ["security-advisories", owner, repo] });
+      setSelectedId(created.ghsa_id);
       setShowCreate(false);
     },
   });
@@ -69,15 +85,35 @@ export function SecurityAdvisoriesPage() {
     mutationFn: (ghsaId: string) => requestCVE(owner, repo, ghsaId),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["security-advisories", owner, repo] });
-      if (selected) {
-        queryClient.invalidateQueries({ queryKey: ["security-advisory", owner, repo, selected.ghsa_id] });
+      if (selectedId) {
+        queryClient.invalidateQueries({ queryKey: ["security-advisory", owner, repo, selectedId] });
       }
     },
   });
 
+  const updateMutation = useMutation({
+    mutationFn: (payload: GithubSecurityAdvisoryUpdatePayload) =>
+      updateSecurityAdvisory(owner, repo, selectedId!, payload),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["security-advisories", owner, repo] });
+      queryClient.invalidateQueries({ queryKey: ["security-advisory", owner, repo, selectedId] });
+      setShowEdit(false);
+    },
+  });
+
+  const forkMutation = useMutation({
+    mutationFn: (ghsaId: string) =>
+      createSecurityAdvisoryTemporaryFork(owner, repo, ghsaId),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["security-advisories", owner, repo] });
+      queryClient.invalidateQueries({ queryKey: ["security-advisory", owner, repo, selectedId] });
+    },
+  });
+
   useEffect(() => {
-    setSelected(null);
-  }, [owner, repo]);
+    setSelectedId(null);
+    setShowEdit(false);
+  }, [owner, repo, severityFilter]);
 
   const filtered =
     severityFilter === "all"
@@ -90,6 +126,8 @@ export function SecurityAdvisoriesPage() {
   return (
     <div>
       <RepoHeader owner={owner} repo={repo} active="security" {...counts} />
+      <MutationError of={updateMutation} />
+      <MutationError of={forkMutation} />
 
       <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
         <div className="flex flex-wrap items-center gap-2">
@@ -117,7 +155,7 @@ export function SecurityAdvisoriesPage() {
         </div>
       </div>
 
-      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "1rem" }}>
+      <div className="grid gap-4 md:grid-cols-2">
         <Box>
           <h3 style={{ marginTop: 0, marginBottom: "0.75rem" }}>Advisories ({filtered.length})</h3>
           {filtered.length === 0 ? (
@@ -125,25 +163,32 @@ export function SecurityAdvisoriesPage() {
           ) : (
             <ul style={{ listStyle: "none", padding: 0, margin: 0 }}>
               {filtered.map((advisory) => (
-                <li
-                  key={advisory.ghsa_id}
-                  onClick={() => setSelected(advisory)}
-                  style={{
-                    padding: "0.6rem 0.4rem",
-                    borderBottom: "1px solid var(--color-border)",
-                    cursor: "pointer",
-                    background: selected?.ghsa_id === advisory.ghsa_id ? "var(--color-accent-subtle)" : "transparent",
-                  }}
-                >
-                  <div style={{ fontWeight: 600, fontSize: "0.9rem" }}>{advisory.summary}</div>
-                  <div style={{ fontSize: "0.8rem", color: "var(--color-fg-muted)" }}>
-                    {advisory.ghsa_id}
-                    {advisory.cve_id ? ` / ${advisory.cve_id}` : ""}
-                    {" · "}
-                    {STATE_LABELS[advisory.state] ?? advisory.state}
-                    {" · "}
-                    {advisory.severity}
-                  </div>
+                <li key={advisory.ghsa_id} style={{ borderBottom: "1px solid var(--color-border)" }}>
+                  <button
+                    type="button"
+                    aria-pressed={selectedId === advisory.ghsa_id}
+                    onClick={() => setSelectedId(advisory.ghsa_id)}
+                    style={{
+                      display: "block",
+                      width: "100%",
+                      padding: "0.6rem 0.4rem",
+                      border: 0,
+                      textAlign: "left",
+                      cursor: "pointer",
+                      color: "inherit",
+                      background: selectedId === advisory.ghsa_id ? "var(--color-accent-subtle)" : "transparent",
+                    }}
+                  >
+                    <div style={{ fontWeight: 600, fontSize: "0.9rem" }}>{advisory.summary}</div>
+                    <div style={{ fontSize: "0.8rem", color: "var(--color-fg-muted)" }}>
+                      {advisory.ghsa_id}
+                      {advisory.cve_id ? ` / ${advisory.cve_id}` : ""}
+                      {" · "}
+                      {STATE_LABELS[advisory.state] ?? advisory.state}
+                      {" · "}
+                      {advisory.severity}
+                    </div>
+                  </button>
                 </li>
               ))}
             </ul>
@@ -151,10 +196,19 @@ export function SecurityAdvisoriesPage() {
         </Box>
 
         <Box>
-          {selected ? (
+          {selectedQuery.isLoading ? (
+            <Spinner label={`loading advisory ${selectedId}`} />
+          ) : selectedQuery.isError ? (
+            <InlineError title="Failed to load security advisory" detail={String(selectedQuery.error)} />
+          ) : selectedQuery.data ? (
             <AdvisoryDetail
-              advisory={selected}
-              onRequestCVE={() => cveMutation.mutate(selected.ghsa_id)}
+              advisory={selectedQuery.data}
+              onEdit={() => setShowEdit(true)}
+              onChangeState={(state) => updateMutation.mutate({ state })}
+              statePending={updateMutation.isPending}
+              onCreateFork={() => forkMutation.mutate(selectedQuery.data.ghsa_id)}
+              forkPending={forkMutation.isPending}
+              onRequestCVE={() => cveMutation.mutate(selectedQuery.data.ghsa_id)}
               cvePending={cveMutation.isPending}
               cveError={cveMutation.error}
             />
@@ -190,17 +244,37 @@ export function SecurityAdvisoriesPage() {
           error={reportMutation.error}
         />
       )}
+
+      {showEdit && selectedQuery.data && (
+        <AdvisoryEditModal
+          advisory={selectedQuery.data}
+          onClose={() => setShowEdit(false)}
+          onSubmit={(payload) => updateMutation.mutate(payload)}
+          pending={updateMutation.isPending}
+          error={updateMutation.error}
+        />
+      )}
     </div>
   );
 }
 
 function AdvisoryDetail({
   advisory,
+  onEdit,
+  onChangeState,
+  statePending,
+  onCreateFork,
+  forkPending,
   onRequestCVE,
   cvePending,
   cveError,
 }: {
   advisory: GithubSecurityAdvisory;
+  onEdit: () => void;
+  onChangeState: (state: GithubSecurityAdvisoryState) => void;
+  statePending: boolean;
+  onCreateFork: () => void;
+  forkPending: boolean;
   onRequestCVE: () => void;
   cvePending: boolean;
   cveError: Error | null;
@@ -239,16 +313,62 @@ function AdvisoryDetail({
             <strong>Published:</strong> {new Date(advisory.published_at).toLocaleString()}
           </div>
         )}
-        <div style={{ marginTop: "0.5rem", whiteSpace: "pre-wrap" }}>{advisory.description}</div>
+        <div style={{ marginTop: "0.5rem", whiteSpace: "pre-wrap" }}>
+          {advisory.description || "No description provided."}
+        </div>
+        {advisory.private_fork && (
+          <div style={{ marginTop: "0.5rem" }}>
+            <strong>Temporary private fork:</strong>{" "}
+            <Link
+              to={`/ui/repos/${advisory.private_fork.full_name}`}
+              style={{ color: "var(--color-accent)" }}
+            >
+              {advisory.private_fork.full_name}
+            </Link>
+          </div>
+        )}
       </div>
 
-      {!advisory.cve_id && advisory.state !== "closed" && (
-        <div className="flex flex-wrap items-center gap-2" style={{ marginBottom: "1rem" }}>
+      <div className="flex flex-wrap items-center gap-2" style={{ marginBottom: "1rem" }}>
+        <Button variant="secondary" size="sm" onClick={onEdit} disabled={statePending}>
+          Edit advisory
+        </Button>
+        {advisory.state === "draft" && (
+          <Button variant="primary" size="sm" onClick={() => onChangeState("published")} disabled={statePending}>
+            {statePending ? "Publishing…" : "Publish advisory"}
+          </Button>
+        )}
+        {advisory.state === "triage" && (
+          <Button variant="primary" size="sm" onClick={() => onChangeState("draft")} disabled={statePending}>
+            {statePending ? "Moving…" : "Move to draft"}
+          </Button>
+        )}
+        {(advisory.state === "triage" ||
+          advisory.state === "draft" ||
+          advisory.state === "published") && (
+          <Button variant="danger" size="sm" onClick={() => onChangeState("closed")} disabled={statePending}>
+            {statePending ? "Closing…" : "Close advisory"}
+          </Button>
+        )}
+        {advisory.state === "closed" && (
+          <Button variant="secondary" size="sm" onClick={() => onChangeState("draft")} disabled={statePending}>
+            {statePending ? "Reopening…" : "Reopen as draft"}
+          </Button>
+        )}
+        {!advisory.private_fork && (advisory.state === "triage" || advisory.state === "draft") && (
+          <Button variant="secondary" size="sm" onClick={onCreateFork} disabled={forkPending}>
+            {forkPending ? "Creating fork…" : "Create temporary private fork"}
+          </Button>
+        )}
+        {!advisory.cve_id &&
+          (advisory.state === "triage" ||
+            advisory.state === "draft" ||
+            advisory.state === "published") && (
           <Button variant="secondary" size="sm" onClick={onRequestCVE} disabled={cvePending}>
             {cvePending ? "Requesting CVE…" : "Request CVE"}
           </Button>
-        </div>
-      )}
+        )}
+      </div>
 
       {cveError && (
         <div style={{ color: "var(--color-status-error)", fontSize: "0.85rem" }}>
@@ -256,6 +376,108 @@ function AdvisoryDetail({
         </div>
       )}
     </div>
+  );
+}
+
+function AdvisoryEditModal({
+  advisory,
+  onClose,
+  onSubmit,
+  pending,
+  error,
+}: {
+  advisory: GithubSecurityAdvisory;
+  onClose: () => void;
+  onSubmit: (payload: GithubSecurityAdvisoryUpdatePayload) => void;
+  pending: boolean;
+  error: Error | null;
+}) {
+  const [summary, setSummary] = useState(advisory.summary);
+  const [description, setDescription] = useState(advisory.description ?? "");
+  const [severity, setSeverity] = useState(advisory.severity);
+  const [cwe, setCwe] = useState((advisory.cwe_ids ?? []).join(", "));
+  const [validationError, setValidationError] = useState<string | null>(null);
+
+  const handleSubmit = () => {
+    setValidationError(null);
+    if (!summary.trim()) {
+      setValidationError("Summary is required.");
+      return;
+    }
+    if (!description.trim()) {
+      setValidationError("Description is required.");
+      return;
+    }
+    onSubmit({
+      summary: summary.trim(),
+      description: description.trim(),
+      severity,
+      cwe_ids: cwe
+        .split(",")
+        .map((value) => value.trim())
+        .filter(Boolean),
+    });
+  };
+
+  return (
+    <Modal title={`Edit ${advisory.ghsa_id}`} onClose={onClose}>
+      <FormLabel id="edit-advisory-summary">Summary</FormLabel>
+      <input
+        id="edit-advisory-summary"
+        type="text"
+        value={summary}
+        onChange={(event) => setSummary(event.target.value)}
+        className="mb-4 w-full"
+      />
+
+      <FormLabel id="edit-advisory-description">Description</FormLabel>
+      <textarea
+        id="edit-advisory-description"
+        rows={5}
+        value={description}
+        onChange={(event) => setDescription(event.target.value)}
+        className="mb-4 w-full"
+        style={{ resize: "vertical" }}
+      />
+
+      <FormLabel id="edit-advisory-severity">Severity</FormLabel>
+      <select
+        id="edit-advisory-severity"
+        value={severity}
+        onChange={(event) => setSeverity(event.target.value as GithubSecurityAdvisorySeverity)}
+        className="mb-4 w-full"
+      >
+        {SEVERITIES.map((value) => (
+          <option key={value} value={value}>
+            {value[0].toUpperCase() + value.slice(1)}
+          </option>
+        ))}
+      </select>
+
+      <FormLabel id="edit-advisory-cwe">CWE IDs (comma separated)</FormLabel>
+      <input
+        id="edit-advisory-cwe"
+        type="text"
+        value={cwe}
+        onChange={(event) => setCwe(event.target.value)}
+        className="mb-4 w-full"
+      />
+
+      {(validationError || error) && (
+        <ErrorBanner>
+          {validationError ?? (error instanceof Error ? error.message : String(error))}
+        </ErrorBanner>
+      )}
+
+      <DialogActions>
+        <Button onClick={onClose} disabled={pending} variant="ghost">
+          Cancel
+        </Button>
+        <Button onClick={handleSubmit} disabled={pending} variant="primary">
+          {pending ? "Saving…" : "Save changes"}
+        </Button>
+      </DialogActions>
+    </Modal>
   );
 }
 

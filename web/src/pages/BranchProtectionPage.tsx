@@ -9,6 +9,7 @@ import {
   updateBranchProtection,
   createBranchProtection,
   deleteBranchProtection,
+  isNotFound,
 } from "../api.js";
 import type { GithubBranch, GithubBranchProtection } from "../types.js";
 import { RepoHeader } from "../components/Shell.js";
@@ -95,7 +96,9 @@ export function BranchProtectionPage() {
         .map((c) => c.trim())
         .filter(Boolean);
       if (!next.enabled) {
-        await deleteBranchProtection(owner, repo, branch);
+        if (protectionQuery.data) {
+          await deleteBranchProtection(owner, repo, branch);
+        }
         return null;
       }
         const payload: Partial<GithubBranchProtection> = {
@@ -120,7 +123,7 @@ export function BranchProtectionPage() {
       try {
         return await updateBranchProtection(owner, repo, branch, payload);
       } catch (err) {
-        if (err instanceof Error && err.message.includes("404")) {
+        if (isNotFound(err)) {
           return await createBranchProtection(owner, repo, branch, payload);
         }
         throw err;
@@ -178,7 +181,7 @@ export function BranchProtectionPage() {
         </div>
       )}
 
-      {!protectionQuery.isLoading && (
+      {!protectionQuery.isLoading && !protectionQuery.isError && (
         <form
           onSubmit={(e) => {
             e.preventDefault();

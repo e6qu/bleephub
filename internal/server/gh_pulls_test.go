@@ -688,6 +688,28 @@ func TestGraphQLCreatePullRequest(t *testing.T) {
 	if pr["state"] != "OPEN" {
 		t.Fatalf("expected state=OPEN, got %v", pr["state"])
 	}
+
+	duplicate := ghPost(t, "/api/graphql", defaultToken, map[string]interface{}{
+		"query": `mutation($input: CreatePullRequestInput!) { createPullRequest(input: $input) { pullRequest { number } } }`,
+		"variables": map[string]interface{}{
+			"input": map[string]interface{}{
+				"repositoryId": repoNodeID,
+				"title":        "Duplicate GQL PR",
+				"headRefName":  "feature",
+				"baseRefName":  "main",
+			},
+		},
+	})
+	duplicateData := decodeJSON(t, duplicate)
+	duplicateErrors, _ := duplicateData["errors"].([]interface{})
+	if len(duplicateErrors) != 1 {
+		t.Fatalf("expected one duplicate-coordinate error, got %v", duplicateData)
+	}
+	duplicateError, _ := duplicateErrors[0].(map[string]interface{})
+	message, _ := duplicateError["message"].(string)
+	if !strings.Contains(message, "already exists") {
+		t.Fatalf("duplicate error message = %q, want already-exists detail", message)
+	}
 }
 
 func TestGraphQLListPullRequests(t *testing.T) {

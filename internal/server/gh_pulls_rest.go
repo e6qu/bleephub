@@ -2,6 +2,7 @@ package bleephub
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -98,10 +99,14 @@ func (s *Server) handleCreatePullRequest(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	pr := s.store.CreatePullRequest(repo.ID, user.ID, req.Title, req.Body, headRef, req.Base, bool(req.Draft), nil, nil, 0, PullRequestOptions{
+	pr, err := s.store.CreatePullRequestChecked(repo.ID, user.ID, req.Title, req.Body, headRef, req.Base, bool(req.Draft), nil, nil, 0, PullRequestOptions{
 		HeadRepoID:          headRepo.ID,
 		MaintainerCanModify: bool(req.MaintainerCanModify),
 	})
+	if errors.Is(err, ErrOpenPullRequestExists) {
+		writePullRequestAlreadyExists(w)
+		return
+	}
 	if pr == nil {
 		writeGHError(w, http.StatusUnprocessableEntity, "Pull request creation failed")
 		return
@@ -114,6 +119,21 @@ func (s *Server) handleCreatePullRequest(w http.ResponseWriter, r *http.Request)
 
 	s.recordAuditEvent("pull_request.create", user.Login, "", map[string]interface{}{"repo": repoKey, "pr_id": pr.ID})
 	writeJSON(w, http.StatusCreated, pullRequestToJSON(pr, s.store, s.baseURL(r), repo.FullName))
+}
+
+func writePullRequestAlreadyExists(w http.ResponseWriter) {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusUnprocessableEntity)
+	_ = json.NewEncoder(w).Encode(map[string]interface{}{
+		"message":           "Validation Failed",
+		"documentation_url": "https://docs.github.com/rest/pulls/pulls#create-a-pull-request",
+		"errors": []map[string]string{{
+			"resource": "PullRequest",
+			"field":    "head",
+			"code":     "custom",
+			"message":  "A pull request already exists for this head and base.",
+		}},
+	})
 }
 
 func (s *Server) handleListPullRequests(w http.ResponseWriter, r *http.Request) {
