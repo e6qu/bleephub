@@ -83,6 +83,12 @@ jobs:
           go test -race -tags noui -count=1 -timeout 15m \
             -run 'Stress|Race|Concurren|PrivateRepo|RequirePerm|AuthHardening|GraphQLDelete|Workflow' \
             ./internal/server/
+      # Keep the product checks on the supported Go version above, then use
+      # the independently locked tool module's minimum toolchain for analyzers.
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: .github/security-go.mod
+          cache: false
       # scripts/deadcode.sh and scripts/dupl.sh were written, made executable
       # and then referenced by nothing — no workflow, no Makefile target, no
       # documentation. dupl.sh in particular scanned the repository root at
@@ -139,8 +145,10 @@ jobs:
           persist-credentials: false
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
-          go-version-file: go.mod
-          cache: true
+          # The analyzers deliberately live in a separate Go 1.26 module so
+          # their release cadence cannot force the product module forward.
+          go-version-file: .github/security-go.mod
+          cache: false
       - name: Install age-qualified security analyzers
         run: |
           mkdir -p "$RUNNER_TEMP/bin"
