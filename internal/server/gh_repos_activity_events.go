@@ -212,7 +212,7 @@ func (s *Server) repoEvents(repo *Repo, base string) []repoEventEntry {
 
 	stor := s.gitStorageForRepo(repo)
 	for _, pr := range s.store.ListPullRequests(repo.ID, "all") {
-		author := s.store.GetUserByID(pr.AuthorID)
+		author := s.store.GetActorByID(pr.AuthorID)
 		add(strconv.Itoa(2_000_000_000+pr.ID), "PullRequestEvent", author, map[string]interface{}{
 			"action":       "opened",
 			"number":       pr.Number,

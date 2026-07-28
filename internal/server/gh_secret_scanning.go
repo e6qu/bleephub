@@ -8,6 +8,14 @@ import (
 )
 
 func (s *Server) registerGHSecretScanningRoutes() {
+	s.route("GET /api/v3/repos/{owner}/{repo}/secret-scanning/custom-patterns",
+		s.requirePerm(scopeSecurityEvents, permRead, s.handleListRepoSecretScanningCustomPatterns))
+	s.route("POST /api/v3/repos/{owner}/{repo}/secret-scanning/custom-patterns",
+		s.requirePerm(scopeSecurityEvents, permWrite, s.handleCreateRepoSecretScanningCustomPatterns))
+	s.route("DELETE /api/v3/repos/{owner}/{repo}/secret-scanning/custom-patterns",
+		s.requirePerm(scopeSecurityEvents, permWrite, s.handleDeleteRepoSecretScanningCustomPatterns))
+	s.route("PATCH /api/v3/repos/{owner}/{repo}/secret-scanning/custom-patterns/{pattern_id}",
+		s.requirePerm(scopeSecurityEvents, permWrite, s.handleUpdateRepoSecretScanningCustomPattern))
 	s.route("GET /api/v3/repos/{owner}/{repo}/secret-scanning/alerts", s.handleListSecretScanningAlerts)
 	s.route("PATCH /api/v3/repos/{owner}/{repo}/secret-scanning/alerts", s.handleBulkUpdateSecretScanningAlerts)
 	s.route("GET /api/v3/repos/{owner}/{repo}/secret-scanning/alerts/{alert_number}", s.handleGetSecretScanningAlert)
@@ -21,6 +29,14 @@ func (s *Server) registerGHSecretScanningRoutes() {
 		s.requireOrgAdmin(scopeSecurityEvents, permRead, s.handleListSecretScanningPatternConfigurations))
 	s.route("PATCH /api/v3/orgs/{org}/secret-scanning/pattern-configurations",
 		s.requireOrgAdmin(scopeSecurityEvents, permWrite, s.handleUpdateSecretScanningPatternConfigurations))
+	s.route("GET /api/v3/orgs/{org}/secret-scanning/custom-patterns",
+		s.requireOrgAdmin(scopeSecurityEvents, permRead, s.handleListOrgSecretScanningCustomPatterns))
+	s.route("POST /api/v3/orgs/{org}/secret-scanning/custom-patterns",
+		s.requireOrgAdmin(scopeSecurityEvents, permWrite, s.handleCreateOrgSecretScanningCustomPatterns))
+	s.route("DELETE /api/v3/orgs/{org}/secret-scanning/custom-patterns",
+		s.requireOrgAdmin(scopeSecurityEvents, permWrite, s.handleDeleteOrgSecretScanningCustomPatterns))
+	s.route("PATCH /api/v3/orgs/{org}/secret-scanning/custom-patterns/{pattern_id}",
+		s.requireOrgAdmin(scopeSecurityEvents, permWrite, s.handleUpdateOrgSecretScanningCustomPattern))
 
 	// Push protection bypasses + scan history
 	s.route("POST /api/v3/repos/{owner}/{repo}/secret-scanning/push-protection-bypasses", s.handleCreateSecretScanningPushProtectionBypass)

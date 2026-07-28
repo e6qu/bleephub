@@ -14,6 +14,7 @@ func (s *Server) registerGHEnterpriseCopilotRoutes() {
 	s.route("GET /api/v3/enterprises/{enterprise}/copilot/metrics/reports/enterprise-28-day/latest", s.requireEnterpriseOwner(s.handleEnterpriseCopilotLatest28DayReport))
 	s.route("GET /api/v3/enterprises/{enterprise}/copilot/metrics/reports/user-teams-1-day", s.requireEnterpriseOwner(s.handleEnterpriseCopilotOneDayReport))
 	s.route("GET /api/v3/enterprises/{enterprise}/copilot/metrics/reports/users-1-day", s.requireEnterpriseOwner(s.handleEnterpriseCopilotOneDayReport))
+	s.route("GET /api/v3/enterprises/{enterprise}/copilot/metrics/reports/repos-1-day", s.requireEnterpriseOwner(s.handleEnterpriseCopilotOneDayReport))
 	s.route("GET /api/v3/enterprises/{enterprise}/copilot/metrics/reports/users-28-day/latest", s.requireEnterpriseOwner(s.handleEnterpriseCopilotLatest28DayReport))
 }
 

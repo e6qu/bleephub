@@ -112,6 +112,18 @@ func TestCheckRunLifecycle(t *testing.T) {
 	}
 }
 
+func TestLatestCheckRunsFilter(t *testing.T) {
+	runs := []*CheckRun{
+		{ID: 1, SuiteID: 10},
+		{ID: 2, SuiteID: 20},
+		{ID: 3, SuiteID: 10},
+	}
+	latest := latestCheckRuns(runs)
+	if len(latest) != 2 || latest[0].ID != 2 || latest[1].ID != 3 {
+		t.Fatalf("latestCheckRuns = %#v, want run ids [2 3]", latest)
+	}
+}
+
 func TestCheckRunRequiresChecksScope(t *testing.T) {
 	s := newTestServer()
 	s.store.SeedDefaultUser()

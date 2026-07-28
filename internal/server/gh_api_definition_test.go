@@ -131,7 +131,7 @@ func loadGitHubOperations(t *testing.T) map[string]bool {
 // commit pinned in testdata/github-openapi.VERSION. A route bleephub
 // serves that the dotcom description omits must be citable in one of
 // them; otherwise nothing establishes that GitHub has it at all.
-var officialDescriptions = []string{"ghec", "ghes-3.21", "ghes-3.13", "ghes-2.22"}
+var officialDescriptions = []string{"ghec", "ghes-3.21", "ghes-3.13", "ghes-2.22", "api-2022"}
 
 const routeIndexFile = "testdata/github-openapi-routes.txt.gz"
 
@@ -193,6 +193,8 @@ var describedOutsideDotcom = map[string]string{
 	"PUT /users/{}/suspended":               "ghes-3.21",
 	"DELETE /users/{}/suspended":            "ghes-3.21",
 	"GET /orgs/{}/audit-log":                "ghes-3.21",
+	"GET /orgs/{}/copilot/metrics":          "api-2022",
+	"GET /orgs/{}/team/{}/copilot/metrics":  "api-2022",
 	"GET /repos/{}/{}/projects":             "ghes-3.13",
 	"POST /repos/{}/{}/projects":            "ghes-3.13",
 	"GET /projects/{}":                      "ghes-3.13",

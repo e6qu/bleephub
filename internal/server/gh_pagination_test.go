@@ -65,6 +65,9 @@ func TestPaginationCustomPerPage(t *testing.T) {
 	if !strings.Contains(link, `rel="last"`) {
 		t.Fatalf("expected rel=last in Link, got %s", link)
 	}
+	if !strings.Contains(link, "<"+testBaseURL+"/api/v3/") {
+		t.Fatalf("expected absolute pagination targets rooted at %s, got %s", testBaseURL, link)
+	}
 }
 
 func TestPaginationSecondPage(t *testing.T) {
@@ -147,6 +150,17 @@ func TestPaginationPerPageMaxClamp(t *testing.T) {
 	issues := decodeJSONArray(t, resp)
 	if len(issues) != 3 {
 		t.Fatalf("expected 3 issues, got %d", len(issues))
+	}
+}
+
+func TestPaginationRejectsMalformedAndNonPositiveValues(t *testing.T) {
+	for _, query := range []string{"page=abc", "page=0", "page=-1", "per_page=nope", "per_page=0", "per_page=-1"} {
+		resp := ghGet(t, "/api/v3/issues?"+query, defaultToken)
+		if resp.StatusCode != http.StatusUnprocessableEntity {
+			body := decodeResponseBodyForTest(resp)
+			t.Fatalf("%s status = %d, want 422; body=%s", query, resp.StatusCode, body)
+		}
+		resp.Body.Close()
 	}
 }
 

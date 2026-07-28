@@ -123,8 +123,8 @@ func TestRESTAPIVersions(t *testing.T) {
 	if err := json.NewDecoder(resp.Body).Decode(&versions); err != nil {
 		t.Fatalf("decode versions: %v", err)
 	}
-	if len(versions) != 1 || versions[0] != "2022-11-28" {
-		t.Fatalf("versions = %v, want [2022-11-28]", versions)
+	if len(versions) != 2 || versions[0] != "2022-11-28" || versions[1] != "2026-03-10" {
+		t.Fatalf("versions = %v, want [2022-11-28 2026-03-10]", versions)
 	}
 }
 

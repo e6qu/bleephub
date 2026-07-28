@@ -91,18 +91,10 @@ func (s *Server) handleGetEnterpriseDependabotRepositoryAccess(w http.ResponseWr
 	repos := s.dependabotAccessibleRepos(r, ids)
 	// The endpoint paginates the repository list with page/per_page while the
 	// envelope (default_level + list) stays a single object.
-	pp := parsePagination(r)
-	start := (pp.Page - 1) * pp.PerPage
-	if start > len(repos) {
-		start = len(repos)
-	}
-	end := start + pp.PerPage
-	if end > len(repos) {
-		end = len(repos)
-	}
+	repos = paginateAndLink(w, r, repos)
 	writeJSON(w, http.StatusOK, map[string]interface{}{
 		"default_level":           nullOrString(level),
-		"accessible_repositories": repos[start:end],
+		"accessible_repositories": repos,
 	})
 }
 

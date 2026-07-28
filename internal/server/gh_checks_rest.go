@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -239,9 +240,27 @@ func (s *Server) handleListCheckRunsForCommit(w http.ResponseWriter, r *http.Req
 	sha := r.PathValue("sha")
 	q := r.URL.Query()
 	status := q.Get("status")
-	conclusion := q.Get("filter")
-	appID, _ := strconv.Atoi(q.Get("app_id"))
-	runs := s.store.ListCheckRunsForCommit(repoKey, sha, status, conclusion, appID)
+	filter := q.Get("filter")
+	if filter == "" {
+		filter = "latest"
+	}
+	if filter != "latest" && filter != "all" {
+		writeGHValidationError(w, "CheckRun", "filter", "invalid")
+		return
+	}
+	appID := 0
+	if raw := q.Get("app_id"); raw != "" {
+		var err error
+		appID, err = strconv.Atoi(raw)
+		if err != nil || appID < 1 {
+			writeGHValidationError(w, "CheckRun", "app_id", "invalid")
+			return
+		}
+	}
+	runs := s.store.ListCheckRunsForCommit(repoKey, sha, status, "", appID)
+	if filter == "latest" {
+		runs = latestCheckRuns(runs)
+	}
 	page := paginateAndLink(w, r, runs)
 	out := make([]map[string]interface{}, 0, len(page))
 	for _, cr := range page {
@@ -251,6 +270,25 @@ func (s *Server) handleListCheckRunsForCommit(w http.ResponseWriter, r *http.Req
 		"total_count": len(runs),
 		"check_runs":  out,
 	})
+}
+
+// latestCheckRuns implements the documented default filter: reruns remain
+// addressable with filter=all, while the normal listing exposes only the most
+// recent run in each check suite.
+func latestCheckRuns(runs []*CheckRun) []*CheckRun {
+	latest := make(map[int64]*CheckRun, len(runs))
+	for _, run := range runs {
+		current := latest[run.SuiteID]
+		if current == nil || run.ID > current.ID {
+			latest[run.SuiteID] = run
+		}
+	}
+	out := make([]*CheckRun, 0, len(latest))
+	for _, run := range latest {
+		out = append(out, run)
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].ID < out[j].ID })
+	return out
 }
 
 func (s *Server) handleListCheckSuitesForCommit(w http.ResponseWriter, r *http.Request) {

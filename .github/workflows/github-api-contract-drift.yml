@@ -1,0 +1,19 @@
+name: GitHub API contract drift
+
+on:
+  schedule:
+    - cron: "17 5 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  current-rest-contract:
+    name: Current REST contract
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v7.0.0
+      - name: Require the current official GitHub REST definition
+        run: ./scripts/check-github-openapi-drift.sh

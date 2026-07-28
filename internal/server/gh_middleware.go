@@ -1,9 +1,11 @@
 package bleephub
 
 import (
+	"bufio"
 	"context"
 	"encoding/base64"
 	"fmt"
+	"net"
 	"net/http"
 	"strings"
 	"time"
@@ -21,6 +23,28 @@ const ctxUserToServerToken contextKey = "gh-uts-token"
 const ctxPersonalAccessToken contextKey = "gh-personal-access-token"
 const ctxSuspendedInstallation contextKey = "gh-suspended-installation"
 const ctxSuspendedUser contextKey = "gh-suspended-user"
+const ctxGitHubAPIVersion contextKey = "gh-api-version"
+
+const defaultGitHubAPIVersion = "2022-11-28"
+
+var supportedGitHubAPIVersions = []string{defaultGitHubAPIVersion, "2026-03-10"}
+
+func isSupportedGitHubAPIVersion(version string) bool {
+	for _, supported := range supportedGitHubAPIVersions {
+		if version == supported {
+			return true
+		}
+	}
+	return false
+}
+
+func githubAPIVersionFromContext(ctx context.Context) string {
+	version, _ := ctx.Value(ctxGitHubAPIVersion).(string)
+	if version == "" {
+		return defaultGitHubAPIVersion
+	}
+	return version
+}
 
 // ctxInvalidCredential marks a request that presented an Authorization header
 // which resolved to nothing. Absent credentials are anonymous; presented ones
@@ -106,6 +130,28 @@ func (s *Server) ghHeadersMiddleware(next http.Handler) http.Handler {
 
 		ctx := s.authenticateRequest(r)
 		r = r.WithContext(ctx)
+		apiVersion := defaultGitHubAPIVersion
+		// Calendar API versions apply to REST. GraphQL has one continuously
+		// evolving schema, so a REST version header must not accidentally
+		// retire an otherwise valid /api/graphql request.
+		isVersionedREST := path == "/api/v3" || strings.HasPrefix(path, "/api/v3/") ||
+			strings.HasPrefix(path, "/repos/") || strings.HasPrefix(path, "/code-scanning/")
+		if isVersionedREST {
+			if requested := r.Header.Get("X-GitHub-Api-Version"); requested != "" {
+				apiVersion = requested
+			}
+
+			// GitHub keeps calendar API versions alive for a published support
+			// window. A caller that explicitly asks for anything else receives
+			// 410 rather than silently running against a different contract.
+			if !isSupportedGitHubAPIVersion(apiVersion) {
+				rw := &ghResponseWriter{ResponseWriter: w, path: path, apiVersion: apiVersion}
+				writeGHError(rw, http.StatusGone, "The requested API version is no longer supported.")
+				return
+			}
+		}
+		ctx = context.WithValue(ctx, ctxGitHubAPIVersion, apiVersion)
+		r = r.WithContext(ctx)
 
 		// A credential that was presented and did not resolve is an error, not
 		// an anonymous request: continuing would silently downgrade a revoked,
@@ -146,6 +192,11 @@ func (s *Server) ghHeadersMiddleware(next http.Handler) http.Handler {
 			ResponseWriter: w,
 			token:          token,
 			path:           path,
+			apiVersion:     apiVersion,
+		}
+		if field := invalidRESTPaginationQuery(r); strings.HasPrefix(path, "/api/v3/") && field != "" {
+			writeGHValidationError(rw, "Pagination", field, "invalid")
+			return
 		}
 		next.ServeHTTP(rw, r)
 	})
@@ -200,8 +251,7 @@ func (s *Server) authenticateRequest(r *http.Request) context.Context {
 					ctx = context.WithValue(ctx, ctxInstallationToken, instToken)
 					app := s.store.GetApp(instToken.AppID)
 					if app != nil {
-						botUser := &User{Login: app.Slug + "[bot]", Type: "Bot", ID: -app.ID}
-						ctx = context.WithValue(ctx, ctxUser, botUser)
+						ctx = context.WithValue(ctx, ctxUser, appBotUser(app))
 					}
 				}
 			case strings.HasPrefix(tokenStr, tokenPrefixOAuthUser), strings.HasPrefix(tokenStr, tokenPrefixAppUser):
@@ -307,6 +357,7 @@ type ghResponseWriter struct {
 	http.ResponseWriter
 	token       *Token
 	path        string
+	apiVersion  string
 	wroteHeader bool
 }
 
@@ -337,9 +388,29 @@ func (rw *ghResponseWriter) WriteHeader(code int) {
 		}
 		h.Set("X-RateLimit-Resource", resource)
 		h.Set("X-GitHub-Request-Id", uuid.New().String())
-		h.Set("X-GitHub-Api-Version", "2022-11-28")
+		apiVersion := rw.apiVersion
+		if apiVersion == "" {
+			apiVersion = defaultGitHubAPIVersion
+		}
+		h.Set("X-GitHub-Api-Version", apiVersion)
+		h.Set("X-GitHub-Media-Type", "github.v3; format=json")
 	}
 	rw.ResponseWriter.WriteHeader(code)
+}
+
+// Unwrap lets net/http's ResponseController reach optional interfaces on the
+// real writer even though GitHub headers are injected through this wrapper.
+func (rw *ghResponseWriter) Unwrap() http.ResponseWriter { return rw.ResponseWriter }
+
+func (rw *ghResponseWriter) Flush() {
+	if !rw.wroteHeader {
+		rw.WriteHeader(http.StatusOK)
+	}
+	_ = http.NewResponseController(rw.ResponseWriter).Flush()
+}
+
+func (rw *ghResponseWriter) Hijack() (net.Conn, *bufio.ReadWriter, error) {
+	return http.NewResponseController(rw.ResponseWriter).Hijack()
 }
 
 func (rw *ghResponseWriter) Write(b []byte) (int, error) {

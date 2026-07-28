@@ -12,8 +12,8 @@ set -euo pipefail
 # github/rest-api-description commit that the vendored copy comes from,
 # and the SHA-256 of descriptions/api.github.com/api.github.com.json at
 # that commit.
-PIN_COMMIT="4f249d4b6f72c9bdd9a1eed4b797e4260a1b765e"
-PIN_SHA256="7dcf50fb93d26ad2021c9fdb48c88fe78a63ce3b187a78f30f509c7e75869c65"
+PIN_COMMIT="768a056f8e09a337a050da627073cc3c99ba1607"
+PIN_SHA256="04a2597b999c6d13d5269334d0c105252b8b58321c9fcdade40ddc50302220fb"
 
 usage() {
   cat >&2 <<'USAGE'
@@ -68,11 +68,18 @@ URL="https://raw.githubusercontent.com/github/rest-api-description/$PIN_COMMIT/$
 # citation instead of trusting a comment. Each is pinned by SHA-256 at
 # PIN_COMMIT.
 EXTRA_DESCRIPTIONS=(
-  "ghec:368b611509dd5f2c477d4e5f917700c32ccb437eb2629c6ea806cc7778f3ddd8"
-  "ghes-3.21:32839398f9be37cf633dd3c1d2a36aa0e2d0eedcc7844a5cc489f8dc4ddf9f13"
+  "ghec:bb510303579ac8465df3d7fc96d01bdace61a052a8a099b0cf58a75566bf0a3b"
+  "ghes-3.21:47361d4176dd17d8f61884e9bc98faf4c862ba75bcb7d02bb6ec731e5928878a"
   "ghes-3.13:c7a706c67b51c7317bd02b17d83972cdfb269cfde6257cc09062d9c38a950bf8"
   "ghes-2.22:629f829cc1bbcba9785b2bcca4d0cec9119c963a20690fa550513cf209f777e6"
 )
+
+# GitHub still supports the 2022-11-28 API version. The rolling descriptions
+# above now describe 2026-03-10 and legitimately omit operations retired only
+# in that newer contract, so retain a separately pinned official 2022
+# dotcom description for version-specific route citations.
+API_2022_COMMIT="4f249d4b6f72c9bdd9a1eed4b797e4260a1b765e"
+API_2022_SHA256="7dcf50fb93d26ad2021c9fdb48c88fe78a63ce3b187a78f30f509c7e75869c65"
 
 tmp="$(mktemp)"
 extra_tmp="$(mktemp)"
@@ -113,16 +120,20 @@ gz_sha="$(shasum -a 256 "$DEST" | cut -d' ' -f1)"
 
 : > "$routes_tmp"
 extra_meta=""
-for entry in "${EXTRA_DESCRIPTIONS[@]}"; do
-  name="${entry%%:*}"
-  want="${entry##*:}"
-  path="descriptions/$name/$name.json"
-  url="https://raw.githubusercontent.com/github/rest-api-description/$PIN_COMMIT/$path"
+index_description() {
+  local name="$1"
+  local commit="$2"
+  local path="$3"
+  local want="$4"
+  local url="https://raw.githubusercontent.com/github/rest-api-description/$commit/$path"
+  local got
+  local count
+
   echo "Fetching $url"
   curl -sSLf -o "$extra_tmp" "$url"
   got="$(shasum -a 256 "$extra_tmp" | cut -d' ' -f1)"
   if [[ "$got" != "$want" ]]; then
-    echo "error: $path at $PIN_COMMIT hashes to $got, expected $want" >&2
+    echo "error: $path at $commit hashes to $got, expected $want" >&2
     exit 1
   fi
   count=0
@@ -134,8 +145,16 @@ for entry in "${EXTRA_DESCRIPTIONS[@]}"; do
     echo "error: $path yielded only $count routes" >&2
     exit 1
   fi
-  extra_meta+="route index: $name sha256 $want, $count routes"$'\n'
+  extra_meta+="route index: $name commit $commit sha256 $want, $count routes"$'\n'
+}
+
+for entry in "${EXTRA_DESCRIPTIONS[@]}"; do
+  name="${entry%%:*}"
+  want="${entry##*:}"
+  path="descriptions/$name/$name.json"
+  index_description "$name" "$PIN_COMMIT" "$path" "$want"
 done
+index_description "api-2022" "$API_2022_COMMIT" "$SPEC_PATH" "$API_2022_SHA256"
 gzip -n -9 -c "$routes_tmp" > "$ROUTE_INDEX"
 
 cat > "$VERSION_FILE" <<EOF

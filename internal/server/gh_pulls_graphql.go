@@ -2130,7 +2130,7 @@ func pullRequestToGQL(pr *PullRequest, st *Store) map[string]interface{} {
 
 	// Author
 	var author map[string]interface{}
-	if u, ok := st.Users[pr.AuthorID]; ok {
+	if u := actorUserLocked(st, pr.AuthorID); u != nil {
 		author = userToGraphQL(u)
 	}
 
@@ -2242,7 +2242,7 @@ func pullRequestToGQL(pr *PullRequest, st *Store) map[string]interface{} {
 
 	commitNodes := make([]interface{}, 0)
 	var commitAuthors []interface{}
-	if u, ok := st.Users[pr.AuthorID]; ok {
+	if u := actorUserLocked(st, pr.AuthorID); u != nil {
 		commitAuthors = append(commitAuthors, map[string]interface{}{
 			"name":  u.Name,
 			"email": u.Email,

@@ -240,15 +240,7 @@ func (s *Server) handleListCodeSecurityConfigurations(w http.ResponseWriter, r *
 		// bleephub defines no global (GitHub-managed) configurations.
 		configs = nil
 	}
-	perPage := 30
-	if v := r.URL.Query().Get("per_page"); v != "" {
-		if n, err := strconv.Atoi(v); err == nil && n > 0 && n <= 100 {
-			perPage = n
-		}
-	}
-	if len(configs) > perPage {
-		configs = configs[:perPage]
-	}
+	configs = paginateAndLink(w, r, configs)
 	base := s.baseURL(r)
 	out := make([]map[string]interface{}, 0, len(configs))
 	for _, c := range configs {

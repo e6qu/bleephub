@@ -3,6 +3,7 @@ package bleephub
 import (
 	"encoding/json"
 	"fmt"
+	"net/http"
 	"testing"
 	"time"
 )
@@ -231,6 +232,18 @@ func TestOrgCopilotMetrics_HonestlyEmptyWithoutActivity(t *testing.T) {
 		if len(days) != 0 {
 			t.Fatalf("%s returned %d fabricated day(s)", path, len(days))
 		}
+
+		req, _ := newGHRequest("GET", testBaseURL+path, defaultToken)
+		req.Header.Set("X-GitHub-Api-Version", "2026-03-10")
+		resp, err := doGHRequest(req)
+		if err != nil {
+			t.Fatalf("GET %s with 2026 API version: %v", path, err)
+		}
+		if resp.StatusCode != http.StatusNotFound {
+			resp.Body.Close()
+			t.Fatalf("GET %s with 2026 API version = %d, want 404", path, resp.StatusCode)
+		}
+		resp.Body.Close()
 	}
 
 	// Unknown team → 404; malformed since → 422.
@@ -381,7 +394,13 @@ func TestRepoCopilotCloudAgentConfiguration(t *testing.T) {
 			t.Fatalf("enabled_tools.%s missing or not boolean: %v", tool, tools)
 		}
 	}
-	for _, field := range []string{"require_actions_workflow_approval", "is_firewall_enabled", "is_firewall_recommended_allowlist_enabled"} {
+	for _, field := range []string{
+		"require_actions_workflow_approval",
+		"is_firewall_enabled",
+		"is_firewall_recommended_allowlist_enabled",
+		"is_automations_enabled",
+		"require_write_access_for_automation_triggers",
+	} {
 		if _, ok := cfg[field].(bool); !ok {
 			t.Fatalf("%s missing or not boolean: %v", field, cfg)
 		}

@@ -1118,7 +1118,7 @@ func (s *Server) generatedReleaseNotes(repo *Repo, tagName, targetCommitish, pre
 	lines = append(lines, "## What's Changed", "")
 	for _, pr := range s.mergedPullRequestsInRange(repo, tagName, targetCommitish, previousTagName) {
 		author := ""
-		if u := s.store.GetUserByID(pr.AuthorID); u != nil {
+		if u := s.store.GetActorByID(pr.AuthorID); u != nil {
 			author = u.Login
 		}
 		if author == "" {
