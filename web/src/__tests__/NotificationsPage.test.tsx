@@ -46,7 +46,9 @@ const thread = {
 
 function mockEndpoints() {
   mockFetch.mockImplementation((url: string, init?: RequestInit) => {
-    if (url === "/api/v3/notifications") return Promise.resolve(jsonResponse([thread]));
+    if (url === "/api/v3/notifications" || url === "/api/v3/notifications?all=true") {
+      return Promise.resolve(jsonResponse([thread]));
+    }
     if (url === "/api/v3/notifications/threads/t1/subscription") {
       if (init?.method === "DELETE") return Promise.resolve(new Response(null, { status: 204 }));
       return Promise.resolve(
@@ -62,6 +64,12 @@ function mockEndpoints() {
     }
     if (url === "/api/v3/notifications/threads/t1" && init?.method === "PATCH") {
       return Promise.resolve(new Response(null, { status: 205 }));
+    }
+    if (url === "/api/v3/notifications/threads/t1" && init?.method === "DELETE") {
+      return Promise.resolve(new Response(null, { status: 204 }));
+    }
+    if (url === "/api/v3/notifications" && init?.method === "PUT") {
+      return Promise.resolve(new Response(null, { status: 202 }));
     }
     return Promise.resolve(jsonResponse({}));
   });
@@ -86,6 +94,10 @@ describe("NotificationsPage", () => {
       expect(screen.getByText("All")).toBeInTheDocument();
       expect(screen.getByText("Issue title")).toBeInTheDocument();
     });
+    expect(mockFetch).toHaveBeenCalledWith(
+      "/api/v3/notifications?all=true",
+      expect.any(Object),
+    );
   });
 
   it("marks a thread read", async () => {
@@ -109,6 +121,26 @@ describe("NotificationsPage", () => {
     await waitFor(() => {
       expect(screen.getByText("Thread subscription")).toBeInTheDocument();
       expect(screen.getByText("Subscribed:")).toBeInTheDocument();
+    });
+  });
+
+  it("marks every unread notification read and can mark one done", async () => {
+    mockEndpoints();
+    renderPage();
+    fireEvent.click(await screen.findByRole("button", { name: "Mark all as read" }));
+    await waitFor(() => {
+      expect(mockFetch).toHaveBeenCalledWith(
+        "/api/v3/notifications",
+        expect.objectContaining({ method: "PUT" }),
+      );
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: "Done" }));
+    await waitFor(() => {
+      expect(mockFetch).toHaveBeenCalledWith(
+        "/api/v3/notifications/threads/t1",
+        expect.objectContaining({ method: "DELETE" }),
+      );
     });
   });
 });

@@ -276,15 +276,28 @@ func (s *Server) handleCreateClassroomAssignment(w http.ResponseWriter, r *http.
 	if !decodeJSONBody(w, r, &req) {
 		return
 	}
-	if req.Title == nil || strings.TrimSpace(*req.Title) == "" || req.Type == nil || (*req.Type != "individual" && *req.Type != "group") || req.StarterCodeRepository == nil {
-		writeGHValidationError(w, "ClassroomAssignment", "assignment", "invalid")
+	if req.Title == nil || strings.TrimSpace(*req.Title) == "" {
+		writeGHValidationError(w, "ClassroomAssignment", "title", "missing_field")
+		return
+	}
+	if req.Type == nil || (*req.Type != "individual" && *req.Type != "group") {
+		writeGHValidationError(w, "ClassroomAssignment", "type", "invalid")
+		return
+	}
+	if req.StarterCodeRepository == nil || strings.TrimSpace(*req.StarterCodeRepository) == "" {
+		writeGHValidationError(w, "ClassroomAssignment", "starter_code_repository", "missing_field")
+		return
+	}
+	if (req.MaxTeams != nil && *req.MaxTeams < 1) || (req.MaxMembers != nil && *req.MaxMembers < 1) {
+		writeGHValidationError(w, "ClassroomAssignment", "team_limits", "invalid")
 		return
 	}
 	if !validAutogradingTests(req.AutogradingTests) {
 		writeGHValidationError(w, "ClassroomAssignment", "autograding_tests", "invalid")
 		return
 	}
-	owner, name, found := strings.Cut(*req.StarterCodeRepository, "/")
+	starterFullName := strings.TrimSpace(*req.StarterCodeRepository)
+	owner, name, found := strings.Cut(starterFullName, "/")
 	starter := s.store.GetRepo(owner, name)
 	if !found || starter == nil || !s.viewerCanReadRepo(r.Context(), starter) {
 		writeGHError(w, http.StatusUnprocessableEntity, "Starter code repository not found")
@@ -367,6 +380,14 @@ func (s *Server) handleUpdateClassroomAssignment(w http.ResponseWriter, r *http.
 	}
 	if req.Type != nil && *req.Type != "individual" && *req.Type != "group" {
 		writeGHValidationError(w, "ClassroomAssignment", "type", "invalid")
+		return
+	}
+	if req.Title != nil && strings.TrimSpace(*req.Title) == "" {
+		writeGHValidationError(w, "ClassroomAssignment", "title", "invalid")
+		return
+	}
+	if (req.MaxTeams != nil && *req.MaxTeams < 1) || (req.MaxMembers != nil && *req.MaxMembers < 1) {
+		writeGHValidationError(w, "ClassroomAssignment", "team_limits", "invalid")
 		return
 	}
 	if !validAutogradingTests(req.AutogradingTests) {

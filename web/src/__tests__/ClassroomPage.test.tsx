@@ -103,7 +103,7 @@ describe("ClassroomPage", () => {
   });
 
   it("renders the retained Classroom dashboard and real coursework counters", async () => {
-    mockFetch.mockResolvedValue(jsonResponse({ classrooms: [classroom], organizations: [classroom.organization] }));
+    mockFetch.mockResolvedValue(jsonResponse({ classrooms: [classroom], organizations: [classroom.organization], can_create_organization: true }));
     renderAt("/ui/classrooms");
     expect(await screen.findByText("GitHub Classroom, kept alive.")).toBeInTheDocument();
     expect(screen.getByText("Systems Programming")).toBeInTheDocument();
@@ -112,13 +112,62 @@ describe("ClassroomPage", () => {
   });
 
   it("renders assignment organization, roster, autograding, and status detail", async () => {
-    mockFetch.mockResolvedValue(jsonResponse({ classrooms: [classroom], organizations: [classroom.organization] }));
+    mockFetch.mockResolvedValue(jsonResponse({ classrooms: [classroom], organizations: [classroom.organization], can_create_organization: true }));
     renderAt("/ui/classrooms/41");
     expect(await screen.findByRole("heading", { name: "Systems Programming" })).toBeInTheDocument();
     expect(screen.getByText("Processes")).toBeInTheDocument();
     expect(screen.getByText("3 accepted")).toBeInTheDocument();
     expect(screen.getByText("1 passing")).toBeInTheDocument();
     expect(screen.getByText("10 autograding points")).toBeInTheDocument();
+  });
+
+  it("creates an assignment from a readable repository selection", async () => {
+    const requests: Array<{ url: string; method: string; body?: unknown }> = [];
+    mockFetch.mockImplementation((input: RequestInfo | URL, init?: RequestInit) => {
+      const url = input.toString();
+      const method = init?.method ?? "GET";
+      requests.push({
+        url,
+        method,
+        body: typeof init?.body === "string" ? JSON.parse(init.body) : undefined,
+      });
+      if (url === "/api/v3/user/repos?per_page=100") {
+        return Promise.resolve(jsonResponse([{
+          id: 99,
+          full_name: "octo-school/processes-starter",
+          name: "processes-starter",
+          owner: { login: "octo-school", type: "Organization" },
+        }]));
+      }
+      if (url === "/classroom-data/classrooms/41/assignments" && method === "POST") {
+        return Promise.resolve(jsonResponse({
+          ...classroom.assignments[0],
+          id: 52,
+          title: "Threads",
+        }, 201));
+      }
+      return Promise.resolve(jsonResponse({
+        classrooms: [classroom],
+        organizations: [classroom.organization],
+        can_create_organization: true,
+      }));
+    });
+
+    renderAt("/ui/classrooms/41");
+    fireEvent.click(await screen.findByRole("button", { name: "New assignment" }));
+    fireEvent.change(screen.getByLabelText("Assignment title"), { target: { value: "Threads" } });
+    await screen.findByRole("option", { name: "octo-school/processes-starter" });
+    fireEvent.change(screen.getByLabelText("Starter repository"), {
+      target: { value: "octo-school/processes-starter" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Create assignment" }));
+
+    await waitFor(() => expect(requests.some((request) =>
+      request.url === "/classroom-data/classrooms/41/assignments"
+      && request.method === "POST"
+      && (request.body as { starter_code_repository?: string }).starter_code_repository
+        === "octo-school/processes-starter",
+    )).toBe(true));
   });
 
   it("renames classrooms and edits or deletes assignments through their management dialogs", async () => {

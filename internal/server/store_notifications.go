@@ -111,6 +111,18 @@ func (st *Store) NotificationRows(user *User, opts NotificationListOptions) []no
 		}
 
 		reason := notificationReasonWithComments(user, src, commentedOn)
+		// Read access alone does not subscribe a user to every issue and pull
+		// request in a repository. A non-participant receives the thread only
+		// after explicitly subscribing to it or watching the repository.
+		if reason == "subscribed" {
+			threadSubscription := state.Subscriptions[threadID]
+			repoSubscription := st.RepoSubscriptions[repoSubscriptionKey(user.ID, repo.ID)]
+			explicitlySubscribed := threadSubscription != nil && threadSubscription.Subscribed && !threadSubscription.Ignored
+			watchingRepo := repoSubscription != nil && repoSubscription.Subscribed && !repoSubscription.Ignored
+			if !explicitlySubscribed && !watchingRepo {
+				return
+			}
+		}
 		if opts.Participating && reason == "subscribed" {
 			return
 		}

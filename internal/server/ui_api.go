@@ -66,7 +66,7 @@ func (s *Server) handleUIListCommits(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	commits, err := s.listRepoCommits(repo, owner, repoName, s.baseURL(r))
+	commits, err := s.listRepoCommits(repo, owner, repoName, "", s.baseURL(r))
 	if err != nil {
 		switch {
 		case errors.Is(err, errRepoGitRepositoryEmpty):

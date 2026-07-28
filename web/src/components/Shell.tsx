@@ -34,6 +34,7 @@ import { Counter } from "./ui.js";
 import { AppHeader } from "./AppHeader.js";
 import {
   fetchRepoSocialCounts,
+  fetchRepoDetail,
   fetchRepoViewerState,
   fetchAuthenticatedUserOrgs,
   fetchCurrentUser,
@@ -42,6 +43,7 @@ import {
   starRepo,
   unstarRepo,
 } from "../api.js";
+import { accountRoute } from "../routes.js";
 
 /**
  * App chrome: the GitHub-faithful global header ({@link AppHeader}) above the
@@ -138,6 +140,10 @@ export function RepoHeader({
   const viewerKey = ["repo-viewer", owner, repo] as const;
   const social = useQuery({ queryKey: socialKey, queryFn: () => fetchRepoSocialCounts(owner, repo) });
   const viewer = useQuery({ queryKey: viewerKey, queryFn: () => fetchRepoViewerState(owner, repo) });
+  const repository = useQuery({
+    queryKey: ["repo", owner, repo],
+    queryFn: () => fetchRepoDetail(owner, repo),
+  });
   const currentUser = useQuery({ queryKey: ["current-user"], queryFn: fetchCurrentUser, staleTime: 60_000 });
   const organizations = useQuery({
     queryKey: ["viewer-organizations"],
@@ -186,7 +192,10 @@ export function RepoHeader({
         <div className="repo-title-row">
           <div className="flex min-w-0 items-center gap-1.5" style={{ fontSize: "1.15rem" }}>
             <RepoIcon size={18} style={{ color: "var(--color-fg-muted)" }} />
-            <Link to={`/ui/${owner}`} style={{ color: "var(--color-accent)", textDecoration: "none" }}>
+            <Link
+              to={accountRoute(owner, repository.data?.owner?.type ?? "User")}
+              style={{ color: "var(--color-accent)", textDecoration: "none" }}
+            >
               {owner}
             </Link>
             <span style={{ color: "var(--color-fg-muted)" }}>/</span>

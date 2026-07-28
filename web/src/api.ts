@@ -1077,6 +1077,30 @@ export interface ClassroomAssignment {
   roster_identifier_required?: boolean;
 }
 
+export interface ClassroomAcceptedAssignment {
+  id: number;
+  submitted: boolean;
+  passing: boolean;
+  commit_count: number;
+  grade: string;
+  students: Array<{ id: number; login: string; avatar_url: string; html_url: string }>;
+  repository: { id: number; full_name: string; html_url: string };
+}
+
+export interface ClassroomGrade {
+  assignment_name: string;
+  assignment_url: string;
+  starter_code_url: string;
+  github_username: string;
+  roster_identifier: string;
+  student_repository_name: string;
+  student_repository_url: string;
+  submission_timestamp: string;
+  points_awarded: number;
+  points_available: number;
+  group_name?: string;
+}
+
 export interface Classroom {
   id: number;
   name: string;
@@ -1093,7 +1117,73 @@ export interface ClassroomDashboard {
   can_create_organization: boolean;
 }
 
-export const fetchClassroomDashboard = () => ghFetch<ClassroomDashboard>("/classroom-data");
+function responseObject(value: unknown, label: string): Record<string, unknown> {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    throw new Error(`malformed ${label}: expected an object`);
+  }
+  return value as Record<string, unknown>;
+}
+
+function decodeClassroomOrganization(value: unknown): ClassroomOrganization {
+  const organization = responseObject(value, "Classroom organization");
+  if (typeof organization.id !== "number" || typeof organization.login !== "string") {
+    throw new Error('malformed Classroom organization: "id" and "login" are required');
+  }
+  return value as ClassroomOrganization;
+}
+
+function decodeClassroomAssignment(value: unknown): ClassroomAssignment {
+  const assignment = responseObject(value, "Classroom assignment");
+  if (
+    typeof assignment.id !== "number"
+    || typeof assignment.title !== "string"
+    || (assignment.type !== "individual" && assignment.type !== "group")
+    || typeof assignment.invite_link !== "string"
+  ) {
+    throw new Error("malformed Classroom assignment: incomplete identity");
+  }
+  for (const field of ["accepted", "submitted", "passing"] as const) {
+    if (typeof assignment[field] !== "number") {
+      throw new Error(`malformed Classroom assignment: "${field}" must be a number`);
+    }
+  }
+  return value as ClassroomAssignment;
+}
+
+function decodeClassroomDashboard(value: unknown): ClassroomDashboard {
+  const dashboard = responseObject(value, "Classroom dashboard");
+  if (!Array.isArray(dashboard.classrooms) || !Array.isArray(dashboard.organizations)) {
+    throw new Error('malformed Classroom dashboard: "classrooms" and "organizations" must be arrays');
+  }
+  dashboard.organizations.forEach(decodeClassroomOrganization);
+  for (const classroom of dashboard.classrooms) {
+    const item = responseObject(classroom, "Classroom");
+    if (
+      typeof item.id !== "number"
+      || typeof item.name !== "string"
+      || typeof item.archived !== "boolean"
+      || !Array.isArray(item.roster)
+      || !Array.isArray(item.assignments)
+    ) {
+      throw new Error("malformed Classroom dashboard: incomplete classroom");
+    }
+    decodeClassroomOrganization(item.organization);
+    for (const rosterEntry of item.roster) {
+      const student = responseObject(rosterEntry, "Classroom roster entry");
+      if (typeof student.id !== "number" || typeof student.login !== "string") {
+        throw new Error("malformed Classroom roster entry: incomplete student");
+      }
+    }
+    item.assignments.forEach(decodeClassroomAssignment);
+  }
+  if (typeof dashboard.can_create_organization !== "boolean") {
+    throw new Error('malformed Classroom dashboard: "can_create_organization" must be boolean');
+  }
+  return value as ClassroomDashboard;
+}
+
+export const fetchClassroomDashboard = () =>
+  ghFetch<unknown>("/classroom-data").then(decodeClassroomDashboard);
 export const createClassroom = (body: { name: string; organization: string }) =>
   ghPostJSON<Classroom>("/classroom-data/classrooms", body);
 export const updateClassroom = (id: number, body: { name?: string; archived?: boolean }) =>
@@ -1133,6 +1223,12 @@ export const deleteClassroomAssignment = (assignmentID: number) =>
   ghDeleteJSON<void>(`/classroom-data/assignments/${assignmentID}`, {});
 export const fetchClassroomInvitation = (code: string) =>
   ghFetch<ClassroomAssignment>(`/classroom-data/invitations/${encodeURIComponent(code)}`);
+export const fetchClassroomAcceptedAssignments = (assignmentID: number) =>
+  ghFetch<ClassroomAcceptedAssignment[]>(
+    `/api/v3/assignments/${assignmentID}/accepted_assignments?per_page=100`,
+  );
+export const fetchClassroomGrades = (assignmentID: number) =>
+  ghFetch<ClassroomGrade[]>(`/api/v3/assignments/${assignmentID}/grades`);
 export const acceptClassroomInvitation = (code: string, groupName?: string, rosterIdentifier?: string) =>
   ghPostJSON<{ id: number; repository: { full_name: string; html_url: string } }>(
     `/classroom-data/invitations/${encodeURIComponent(code)}/accept`,
@@ -1269,15 +1365,13 @@ export const updateBranchProtection = (
 export const deleteBranchProtection = (owner: string, repo: string, branch: string) =>
   ghDeleteJSON<void>(`/api/v3/repos/${owner}/${repo}/branches/${encodeURIComponent(branch)}/protection`, {});
 
-export async function fetchRepoCommits(owner: string, repo: string): Promise<GithubCommit[]> {
-  const res = await apiFetch(`/ui-data/repos/${owner}/${repo}/commits`, { headers: authHeaders() });
-  if (!res.ok) {
-    handleUnauthorized(res);
-    const text = await res.text();
-    throw new ApiError(res.status, `${res.status} ${res.statusText}: ${text || res.statusText}`);
-  }
-  return res.json() as Promise<GithubCommit[]>;
-}
+export const fetchRepoCommits = (owner: string, repo: string, ref?: string) => {
+  const query = new URLSearchParams({ per_page: "100" });
+  if (ref) query.set("sha", ref);
+  return ghFetch<GithubCommit[]>(
+    `/api/v3/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/commits?${query}`,
+  );
+};
 
 export const fetchRepoCommit = (owner: string, repo: string, ref: string) =>
   ghFetch<GithubCommit>(
@@ -1442,20 +1536,35 @@ export interface EnvelopePage<T> {
   nextUrl: string | null;
 }
 
-async function ghFetchEnvelope<T>(url: string, key: string): Promise<EnvelopePage<T>> {
+async function ghFetchEnvelope<T>(
+  url: string,
+  key: string,
+  decode?: (value: unknown, index: number) => T,
+): Promise<EnvelopePage<T>> {
   const res = await apiFetch(url, { headers: authHeaders() });
   if (!res.ok) {
     handleUnauthorized(res);
     throw new ApiError(res.status, `${res.status} ${res.statusText}`);
   }
-  const body = (await res.json()) as { total_count: number } & Record<string, T[]>;
+  const body = (await res.json()) as unknown;
+  if (!body || typeof body !== "object" || Array.isArray(body)) {
+    throw new Error("malformed response: expected a JSON object");
+  }
   // No `?? []`: a missing array member is a contract break that must
   // surface as an error, not render as an empty list.
-  const items = body[key];
+  const items = (body as Record<string, unknown>)[key];
   if (!Array.isArray(items)) {
     throw new Error(`malformed response: missing "${key}" array`);
   }
-  return { items, totalCount: body.total_count, nextUrl: parseLinkNext(res.headers.get("Link")) };
+  const totalCount = (body as Record<string, unknown>).total_count;
+  if (typeof totalCount !== "number" || !Number.isInteger(totalCount) || totalCount < 0) {
+    throw new Error('malformed response: missing non-negative integer "total_count"');
+  }
+  return {
+    items: decode ? items.map(decode) : items as T[],
+    totalCount,
+    nextUrl: parseLinkNext(res.headers.get("Link")),
+  };
 }
 
 /** Non-GET request that returns no JSON the caller renders. */
@@ -1862,11 +1971,31 @@ export const buildAuditLogPhrase = (filters: {
   return terms.join(" ");
 };
 
-export const fetchNotifications = () =>
-  ghFetch<GithubNotificationThread[]>("/api/v3/notifications");
+export interface NotificationFilters {
+  all?: boolean;
+  participating?: boolean;
+  since?: string;
+  before?: string;
+}
+
+export const fetchNotifications = (filters: NotificationFilters = {}) => {
+  const query = new URLSearchParams();
+  if (filters.all) query.set("all", "true");
+  if (filters.participating) query.set("participating", "true");
+  if (filters.since) query.set("since", filters.since);
+  if (filters.before) query.set("before", filters.before);
+  const suffix = query.size ? `?${query}` : "";
+  return ghFetch<GithubNotificationThread[]>(`/api/v3/notifications${suffix}`);
+};
+
+export const markAllNotificationsRead = () =>
+  ghSend("PUT", "/api/v3/notifications");
 
 export const markThreadRead = (threadId: string) =>
   ghSend("PATCH", `/api/v3/notifications/threads/${threadId}`);
+
+export const markThreadDone = (threadId: string) =>
+  ghSend("DELETE", `/api/v3/notifications/threads/${threadId}`);
 
 export async function getThreadSubscription(
   threadId: string,
@@ -2284,32 +2413,88 @@ export async function downloadMigrationArchive(
 
 // ─── GitHub Codespaces Representational State Transfer ──────────────────
 
+const codespaceStates = new Set<GithubCodespace["state"]>([
+  "Unknown", "Created", "Queued", "Provisioning", "Available", "Awaiting",
+  "Unavailable", "Deleted", "Moved", "Shutdown", "Archived", "Starting",
+  "ShuttingDown", "Failed", "Exporting", "Updating", "Rebuilding",
+]);
+
+function decodeCodespaceMachine(value: unknown): GithubCodespaceMachine {
+  const machine = responseObject(value, "codespace machine");
+  for (const field of ["name", "display_name", "operating_system"] as const) {
+    if (typeof machine[field] !== "string") {
+      throw new Error(`malformed codespace machine: "${field}" must be a string`);
+    }
+  }
+  for (const field of ["storage_in_bytes", "memory_in_bytes", "cpus"] as const) {
+    if (typeof machine[field] !== "number") {
+      throw new Error(`malformed codespace machine: "${field}" must be a number`);
+    }
+  }
+  return value as GithubCodespaceMachine;
+}
+
+function decodeCodespace(value: unknown): GithubCodespace {
+  const codespace = responseObject(value, "codespace response");
+  if (typeof codespace.id !== "number" || typeof codespace.name !== "string") {
+    throw new Error('malformed codespace response: "id" and "name" are required');
+  }
+  for (const field of ["display_name", "created_at", "updated_at", "last_used_at"] as const) {
+    if (typeof codespace[field] !== "string") {
+      throw new Error(`malformed codespace response: "${field}" must be a string`);
+    }
+  }
+  if (typeof codespace.state !== "string" || !codespaceStates.has(codespace.state as GithubCodespace["state"])) {
+    throw new Error(`malformed codespace response: unknown state "${String(codespace.state)}"`);
+  }
+  if (codespace.machine !== null) decodeCodespaceMachine(codespace.machine);
+  if (codespace.repository !== null) {
+    const repository = responseObject(codespace.repository, "codespace repository");
+    if (typeof repository.id !== "number" || typeof repository.full_name !== "string") {
+      throw new Error("malformed codespace repository: incomplete identity");
+    }
+  }
+  const gitStatus = responseObject(codespace.git_status, "codespace git_status");
+  if (typeof gitStatus.ref !== "string") {
+    throw new Error('malformed codespace git_status: "ref" must be a string');
+  }
+  return value as GithubCodespace;
+}
+
 export const fetchUserCodespaces = () =>
-  ghFetchEnvelope<GithubCodespace>("/api/v3/user/codespaces", "codespaces");
+  ghFetchEnvelope<GithubCodespace>("/api/v3/user/codespaces", "codespaces", decodeCodespace);
 
 export const fetchRepoCodespaces = (owner: string, repo: string) =>
-  ghFetchEnvelope<GithubCodespace>(`/api/v3/repos/${owner}/${repo}/codespaces`, "codespaces");
+  ghFetchEnvelope<GithubCodespace>(
+    `/api/v3/repos/${owner}/${repo}/codespaces`,
+    "codespaces",
+    decodeCodespace,
+  );
 
 export const fetchCodespace = (name: string) =>
-  ghFetch<GithubCodespace>(`/api/v3/user/codespaces/${encodeURIComponent(name)}`);
+  ghFetch<unknown>(`/api/v3/user/codespaces/${encodeURIComponent(name)}`).then(decodeCodespace);
 
 export const createUserCodespace = (payload: CodespaceCreatePayload) =>
-  ghPostJSON<GithubCodespace>("/api/v3/user/codespaces", payload);
+  ghPostJSON<unknown>("/api/v3/user/codespaces", payload).then(decodeCodespace);
 
 export const createRepoCodespace = (owner: string, repo: string, payload: CodespaceCreatePayload) =>
-  ghPostJSON<GithubCodespace>(`/api/v3/repos/${owner}/${repo}/codespaces`, payload);
+  ghPostJSON<unknown>(`/api/v3/repos/${owner}/${repo}/codespaces`, payload).then(decodeCodespace);
 
 export const startCodespace = (name: string) =>
-  ghPostJSON<GithubCodespace>(`/api/v3/user/codespaces/${encodeURIComponent(name)}/start`, {});
+  ghPostJSON<unknown>(`/api/v3/user/codespaces/${encodeURIComponent(name)}/start`, {}).then(decodeCodespace);
 
 export const stopCodespace = (name: string) =>
-  ghPostJSON<GithubCodespace>(`/api/v3/user/codespaces/${encodeURIComponent(name)}/stop`, {});
+  ghPostJSON<unknown>(`/api/v3/user/codespaces/${encodeURIComponent(name)}/stop`, {}).then(decodeCodespace);
 
 export const deleteCodespace = (name: string) =>
-  ghDeleteJSON<void>(`/api/v3/user/codespaces/${encodeURIComponent(name)}`, {});
+  ghDelete(`/api/v3/user/codespaces/${encodeURIComponent(name)}`);
 
 export const fetchCodespaceMachines = (owner: string, repo: string) =>
-  ghFetchEnvelope<GithubCodespaceMachine>(`/api/v3/repos/${owner}/${repo}/codespaces/machines`, "machines");
+  ghFetchEnvelope<GithubCodespaceMachine>(
+    `/api/v3/repos/${owner}/${repo}/codespaces/machines`,
+    "machines",
+    decodeCodespaceMachine,
+  );
 
 export const fetchCurrentUser = () => ghFetch<BleephubUser>("/api/v3/user");
 

@@ -193,11 +193,11 @@ describe("repository API helpers", () => {
     await expect(fetchBranchProtection("admin", "repo", "main")).rejects.toMatchObject({ status: 500 });
   });
 
-  it("fetchRepoCommits reads the user-interface commit adapter", async () => {
+  it("fetchRepoCommits uses the official repository commits endpoint", async () => {
     mockFetch.mockResolvedValue(jsonResponse([]));
 
     await expect(fetchRepoCommits("admin", "empty")).resolves.toEqual([]);
-    expect(mockFetch.mock.calls[0][0]).toBe("/ui-data/repos/admin/empty/commits");
+    expect(mockFetch.mock.calls[0][0]).toBe("/api/v3/repos/admin/empty/commits?per_page=100");
   });
 
   it("fetchRepoCommits still fails on adapter errors", async () => {
@@ -547,7 +547,7 @@ describe("Codespaces application programming interface helpers", () => {
   });
 
   it("deleteCodespace DELETEs the named codespace", async () => {
-    mockFetch.mockResolvedValue(new Response(null, { status: 204 }));
+    mockFetch.mockResolvedValue(new Response(null, { status: 202 }));
     await deleteCodespace("crimson-spoon-abc123");
     const [url, opts] = mockFetch.mock.calls[0];
     expect(url).toBe("/api/v3/user/codespaces/crimson-spoon-abc123");

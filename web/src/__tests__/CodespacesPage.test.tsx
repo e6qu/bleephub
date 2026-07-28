@@ -17,6 +17,7 @@ function jsonResponse(data: unknown, status = 200) {
 afterEach(() => {
   cleanup();
   mockFetch.mockReset();
+  vi.restoreAllMocks();
 });
 
 function renderPage(path = "/ui/codespaces") {
@@ -168,5 +169,42 @@ describe("CodespacesPage", () => {
       expect(screen.getByText(/Codespaces for admin\/test/)).toBeInTheDocument();
       expect(screen.getByText("my codespace")).toBeInTheDocument();
     });
+  });
+
+  it("accepts transitional states and a nullable machine without crashing", async () => {
+    mockFetch.mockResolvedValue(jsonResponse({
+      total_count: 1,
+      codespaces: [{ ...codespace, state: "Provisioning", machine: null }],
+    }));
+    renderPage();
+
+    expect(await screen.findByText("provisioning")).toBeInTheDocument();
+    expect(screen.getByText("Not assigned")).toBeInTheDocument();
+  });
+
+  it("treats an empty 202 delete response as success and removes the row", async () => {
+    let deleted = false;
+    mockFetch.mockImplementation((input: RequestInfo | URL, init?: RequestInit) => {
+      const url = input.toString();
+      if (url === `/api/v3/user/codespaces/${codespace.name}` && init?.method === "DELETE") {
+        deleted = true;
+        return Promise.resolve(new Response(null, { status: 202 }));
+      }
+      if (url === "/api/v3/user/codespaces") {
+        return Promise.resolve(jsonResponse({
+          total_count: deleted ? 0 : 1,
+          codespaces: deleted ? [] : [codespace],
+        }));
+      }
+      return Promise.resolve(jsonResponse([]));
+    });
+    vi.spyOn(globalThis, "confirm").mockReturnValue(true);
+    renderPage();
+
+    fireEvent.click(await screen.findByRole("button", { name: /Delete/ }));
+    await waitFor(() => {
+      expect(screen.queryByText(codespace.name)).not.toBeInTheDocument();
+    });
+    expect(screen.queryByText(/Unexpected end of JSON/i)).not.toBeInTheDocument();
   });
 });

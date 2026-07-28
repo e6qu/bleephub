@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { Link, useParams } from "react-router";
+import { Link, useNavigate, useParams } from "react-router";
 import { useQuery } from "@tanstack/react-query";
 import { Spinner, InlineError } from "@bleephub/ui-core/components";
 import Markdown from "react-markdown";
@@ -25,6 +25,7 @@ import {
 import { useOpenCounts } from "../hooks/useOpenCounts.js";
 import { decodeContentsBase64 } from "../utils/workflowDispatch.js";
 import { relativeTimeFromNow } from "../utils/format.js";
+import { repoCodeRoute } from "../routes.js";
 import type {
   BleephubRepo,
   GithubBranch,
@@ -75,8 +76,16 @@ const CONTENT_TABS = SUB_TABS.slice(0, 5);
 const ADMIN_TABS = SUB_TABS.slice(5);
 
 export function RepoDetailPage({ initialTab = "code" }: { initialTab?: SubTab }) {
-  const { owner = "", repo = "" } = useParams<{ owner: string; repo: string }>();
+  const params = useParams<{ owner: string; repo: string; ref?: string; "*": string }>();
+  const owner = params.owner ?? "";
+  const repo = params.repo ?? "";
+  const routeRef = params.ref ?? "";
+  const routePath = params["*"] ?? "";
   const [tab, setTab] = useState<SubTab>(initialTab);
+
+  useEffect(() => {
+    setTab(initialTab);
+  }, [initialTab]);
 
   const { data: repoData, isLoading, isError, error } = useQuery({
     queryKey: ["repo", owner, repo],
@@ -94,8 +103,8 @@ export function RepoDetailPage({ initialTab = "code" }: { initialTab?: SubTab })
     isError: commitsError,
     error: commitsErr,
   } = useQuery({
-    queryKey: ["commits", owner, repo],
-    queryFn: () => fetchRepoCommits(owner, repo),
+    queryKey: ["commits", owner, repo, routeRef],
+    queryFn: () => fetchRepoCommits(owner, repo, routeRef || undefined),
     enabled: tab === "commits" || tab === "code",
   });
   const counts = useOpenCounts(owner, repo);
@@ -147,11 +156,35 @@ export function RepoDetailPage({ initialTab = "code" }: { initialTab?: SubTab })
           administrative resources behind Settings/overflow navigation. */}
       <nav className="repo-utility-bar mb-4" aria-label="Repository content">
         <div className="flex min-w-0 flex-wrap gap-1">
-        {CONTENT_TABS.map((t) => (
-          <button
+        {CONTENT_TABS.map((t) => {
+          if (t.key === "releases") {
+            return (
+              <button
+                key={t.key}
+                type="button"
+                onClick={() => setTab(t.key)}
+                className="repo-utility-tab"
+                aria-current={tab === t.key ? "page" : undefined}
+                style={{
+                  fontWeight: tab === t.key ? 600 : 500,
+                  color: tab === t.key ? "var(--color-fg)" : "var(--color-fg-muted)",
+                  background: tab === t.key ? "var(--color-accent-soft)" : "transparent",
+                  borderColor: tab === t.key ? "color-mix(in srgb, var(--color-accent) 30%, var(--color-border))" : "transparent",
+                }}
+              >
+                {t.label}
+              </button>
+            );
+          }
+          const destination =
+            t.key === "commits" || t.key === "branches" || t.key === "tags"
+              ? t.key
+              : "root";
+          const to = repoCodeRoute(owner, repo, { kind: destination });
+          return (
+          <Link
             key={t.key}
-            type="button"
-            onClick={() => setTab(t.key)}
+            to={to}
             className="repo-utility-tab"
             aria-current={tab === t.key ? "page" : undefined}
             style={{
@@ -162,8 +195,9 @@ export function RepoDetailPage({ initialTab = "code" }: { initialTab?: SubTab })
             }}
           >
             {t.label}
-          </button>
-        ))}
+          </Link>
+          );
+        })}
         </div>
         <details className="repo-more-menu">
           <summary className="repo-more-trigger">
@@ -208,6 +242,8 @@ export function RepoDetailPage({ initialTab = "code" }: { initialTab?: SubTab })
                 branches={branches.map((b) => b.name)}
                 defaultBranch={repoData.default_branch}
                 sshUrl={repoData.ssh_url}
+                initialRef={routeRef}
+                initialPath={routePath}
               />
             </div>
             <AboutSidebar
@@ -227,7 +263,12 @@ export function RepoDetailPage({ initialTab = "code" }: { initialTab?: SubTab })
           <CommitsList owner={owner} repo={repo} commits={commits} loading={commitsLoading} />
         ))}
       {tab === "branches" && (
-        <BranchesList branches={branches} defaultBranch={repoData.default_branch} />
+        <BranchesList
+          owner={owner}
+          repo={repo}
+          branches={branches}
+          defaultBranch={repoData.default_branch}
+        />
       )}
       {tab === "tags" &&
         (tagsError ? (
@@ -281,6 +322,8 @@ function CodeView({
   branches,
   defaultBranch,
   sshUrl,
+  initialRef,
+  initialPath,
 }: {
   owner: string;
   repo: string;
@@ -289,13 +332,17 @@ function CodeView({
   branches: string[];
   defaultBranch: string;
   sshUrl?: string;
+  initialRef?: string;
+  initialPath?: string;
 }) {
-  const [branch, setBranch] = useState(defaultBranch);
-  const [path, setPath] = useState("");
+  const navigate = useNavigate();
+  const [branch, setBranch] = useState(initialRef || defaultBranch);
+  const [path, setPath] = useState(initialPath ?? "");
 
   useEffect(() => {
-    setBranch(defaultBranch);
-  }, [defaultBranch]);
+    setBranch(initialRef || defaultBranch);
+    setPath(initialPath ?? "");
+  }, [defaultBranch, initialPath, initialRef]);
 
   const {
     data: items,
@@ -341,7 +388,10 @@ function CodeView({
         <select
           aria-label="Branch"
           value={branch}
-          onChange={(e) => setBranch(e.target.value)}
+          onChange={(e) => {
+            const nextRef = e.target.value;
+            navigate(repoCodeRoute(owner, repo, { kind: "tree", ref: nextRef }));
+          }}
           style={{ fontSize: "0.85rem", padding: "0.35rem 0.5rem" }}
         >
           {branches.map((b) => (
@@ -353,7 +403,10 @@ function CodeView({
         {path && (
           <button
             type="button"
-            onClick={() => setPath(path.split("/").slice(0, -1).join("/"))}
+            onClick={() => {
+              const parent = path.split("/").slice(0, -1).join("/");
+              navigate(repoCodeRoute(owner, repo, { kind: "tree", ref: branch, path: parent }));
+            }}
             style={{ fontSize: "0.85rem", color: "var(--color-accent)", background: "transparent", border: "none" }}
           >
             ..
@@ -376,15 +429,9 @@ function CodeView({
               key={item.sha}
               item={item}
               isLast={i === fileList.length - 1}
-              fileHref={`/ui/repos/${owner}/${repo}/blob/${encodeURIComponent(branch)}/${item.path
-                .split("/")
-                .map(encodeURIComponent)
-                .join("/")}`}
-              onClick={() => {
-                if (item.type === "dir") {
-                  setPath(path ? `${path}/${item.name}` : item.name);
-                }
-              }}
+              href={repoCodeRoute(owner, repo, item.type === "dir"
+                ? { kind: "tree", ref: branch, path: item.path }
+                : { kind: "blob", ref: branch, path: item.path })}
             />
           ))}
         </Box>
@@ -759,13 +806,11 @@ function AboutSidebar({
 function FileRow({
   item,
   isLast,
-  fileHref,
-  onClick,
+  href,
 }: {
   item: GithubContentItem;
   isLast: boolean;
-  fileHref: string;
-  onClick: () => void;
+  href: string;
 }) {
   const isDir = item.type === "dir";
   const content = (
@@ -788,20 +833,7 @@ function FileRow({
     background: "transparent",
     textDecoration: "none",
   } as const;
-  return isDir ? (
-    <button
-      type="button"
-      onClick={onClick}
-      className="flex items-center gap-2"
-      style={style}
-    >
-      {content}
-    </button>
-  ) : (
-    <Link to={fileHref} className="flex items-center gap-2" style={style}>
-      {content}
-    </Link>
-  );
+  return <Link to={href} className="flex items-center gap-2" style={style}>{content}</Link>;
 }
 
 function EmptyRepoSetup({
@@ -1099,12 +1131,18 @@ export function RepoCommitPage() {
   return (
     <div>
       <RepoHeader owner={owner} repo={repo} active="code" {...counts} />
-      <div className="mb-4">
+      <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
         <Link
           to={`/ui/repos/${owner}/${repo}/commits`}
           style={{ color: "var(--color-accent)", textDecoration: "none" }}
         >
           ← Commit history
+        </Link>
+        <Link
+          to={repoCodeRoute(owner, repo, { kind: "tree", ref: commit.sha })}
+          style={{ color: "var(--color-accent)", textDecoration: "none" }}
+        >
+          Browse repository at this commit
         </Link>
       </div>
       <Box
@@ -1144,7 +1182,21 @@ export function RepoCommitPage() {
               key={file.filename}
               header={
                 <div className="flex w-full items-center gap-2">
-                  <span className="font-mono min-w-0 flex-1 truncate">{file.filename}</span>
+                  {file.status === "removed" ? (
+                    <span className="font-mono min-w-0 flex-1 truncate">{file.filename}</span>
+                  ) : (
+                    <Link
+                      className="font-mono min-w-0 flex-1 truncate"
+                      to={repoCodeRoute(owner, repo, {
+                        kind: "blob",
+                        ref: commit.sha,
+                        path: file.filename,
+                      })}
+                      style={{ color: "var(--color-accent)", textDecoration: "none" }}
+                    >
+                      {file.filename}
+                    </Link>
+                  )}
                   <span style={{ color: "var(--color-status-ok)" }}>+{file.additions}</span>
                   <span style={{ color: "var(--color-status-error)" }}>−{file.deletions}</span>
                 </div>
@@ -1298,7 +1350,17 @@ function LanguagesBar({ languages }: { languages: Record<string, number> }) {
   );
 }
 
-function BranchesList({ branches, defaultBranch }: { branches: GithubBranch[]; defaultBranch: string }) {
+function BranchesList({
+  owner,
+  repo,
+  branches,
+  defaultBranch,
+}: {
+  owner: string;
+  repo: string;
+  branches: GithubBranch[];
+  defaultBranch: string;
+}) {
   if (branches.length === 0) return <Blankslate icon={<BranchIcon size={26} />} title="No branches" />;
   return (
     <Box>
@@ -1331,7 +1393,7 @@ function BranchesList({ branches, defaultBranch }: { branches: GithubBranch[]; d
             )}
             {b.protected && (
               <Link
-                to="settings/branch-protection"
+                to={`/ui/repos/${owner}/${repo}/settings/branch-protection`}
                 style={{
                   marginLeft: "0.45rem",
                   fontSize: "0.72rem",

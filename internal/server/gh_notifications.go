@@ -18,26 +18,37 @@ func (s *Server) registerGHNotificationsRoutes() {
 	s.route("DELETE /api/v3/notifications/threads/{thread_id}/subscription", s.handleDeleteThreadSubscription)
 }
 
-func parseNotificationListOptions(r *http.Request) NotificationListOptions {
+func parseNotificationListOptions(w http.ResponseWriter, r *http.Request) (NotificationListOptions, bool) {
 	opts := NotificationListOptions{}
 	q := r.URL.Query()
-	if q.Get("all") == "true" {
-		opts.All = true
-	}
-	if q.Get("participating") == "true" {
-		opts.Participating = true
+	for name, target := range map[string]*bool{
+		"all": &opts.All, "participating": &opts.Participating,
+	} {
+		if value := q.Get(name); value != "" {
+			if value != "true" && value != "false" {
+				writeGHValidationError(w, "Notification", name, "invalid")
+				return NotificationListOptions{}, false
+			}
+			*target = value == "true"
+		}
 	}
 	if v := q.Get("since"); v != "" {
-		if t, err := time.Parse(time.RFC3339, v); err == nil {
-			opts.Since = t
+		t, err := time.Parse(time.RFC3339, v)
+		if err != nil {
+			writeGHValidationError(w, "Notification", "since", "invalid")
+			return NotificationListOptions{}, false
 		}
+		opts.Since = t
 	}
 	if v := q.Get("before"); v != "" {
-		if t, err := time.Parse(time.RFC3339, v); err == nil {
-			opts.Before = t
+		t, err := time.Parse(time.RFC3339, v)
+		if err != nil {
+			writeGHValidationError(w, "Notification", "before", "invalid")
+			return NotificationListOptions{}, false
 		}
+		opts.Before = t
 	}
-	return opts
+	return opts, true
 }
 
 func (s *Server) handleListNotifications(w http.ResponseWriter, r *http.Request) {
@@ -47,7 +58,10 @@ func (s *Server) handleListNotifications(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	opts := parseNotificationListOptions(r)
+	opts, ok := parseNotificationListOptions(w, r)
+	if !ok {
+		return
+	}
 	rows := s.store.NotificationRows(user, opts)
 	rows = paginateAndLink(w, r, rows)
 	threads := s.store.BuildNotificationThreads(rows, s.baseURL(r))
@@ -69,10 +83,16 @@ func (s *Server) handleMarkNotificationsRead(w http.ResponseWriter, r *http.Requ
 	var body struct {
 		LastReadAt string `json:"last_read_at"`
 	}
-	if decodeJSONBodyOptional(w, r, &body) && body.LastReadAt != "" {
-		if t, err := time.Parse(time.RFC3339, body.LastReadAt); err == nil {
-			at = t
+	if !decodeJSONBodyOptional(w, r, &body) {
+		return
+	}
+	if body.LastReadAt != "" {
+		t, err := time.Parse(time.RFC3339, body.LastReadAt)
+		if err != nil {
+			writeGHValidationError(w, "Notification", "last_read_at", "invalid")
+			return
 		}
+		at = t
 	}
 	s.store.MarkNotificationsRead(user.ID, at, "")
 	w.WriteHeader(http.StatusAccepted)
@@ -92,7 +112,10 @@ func (s *Server) handleListRepoNotifications(w http.ResponseWriter, r *http.Requ
 		return
 	}
 
-	opts := parseNotificationListOptions(r)
+	opts, ok := parseNotificationListOptions(w, r)
+	if !ok {
+		return
+	}
 	opts.RepoScope = repo.FullName
 	rows := s.store.NotificationRows(user, opts)
 	rows = paginateAndLink(w, r, rows)
@@ -122,10 +145,16 @@ func (s *Server) handleMarkRepoNotificationsRead(w http.ResponseWriter, r *http.
 	var body struct {
 		LastReadAt string `json:"last_read_at"`
 	}
-	if decodeJSONBodyOptional(w, r, &body) && body.LastReadAt != "" {
-		if t, err := time.Parse(time.RFC3339, body.LastReadAt); err == nil {
-			at = t
+	if !decodeJSONBodyOptional(w, r, &body) {
+		return
+	}
+	if body.LastReadAt != "" {
+		t, err := time.Parse(time.RFC3339, body.LastReadAt)
+		if err != nil {
+			writeGHValidationError(w, "Notification", "last_read_at", "invalid")
+			return
 		}
+		at = t
 	}
 	s.store.MarkNotificationsRead(user.ID, at, repo.FullName)
 	w.WriteHeader(http.StatusAccepted)
@@ -160,16 +189,8 @@ func (s *Server) handlePatchThread(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	var body struct {
-		Ignored string `json:"ignored"`
-	}
+	var body struct{}
 	if !decodeJSONBodyOptional(w, r, &body) {
-		return
-	}
-
-	if body.Ignored == "true" {
-		s.store.MarkThreadDone(user.ID, threadID)
-		w.WriteHeader(http.StatusNoContent)
 		return
 	}
 

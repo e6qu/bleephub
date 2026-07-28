@@ -30,6 +30,7 @@ function renderPage(path = "/ui/repos/admin/test") {
           <Route path="/ui/repos/:owner/:repo" element={<RepoDetailPage />} />
           <Route path="/ui/repos/:owner/:repo/commits" element={<RepoDetailPage initialTab="commits" />} />
           <Route path="/ui/repos/:owner/:repo/commits/:sha" element={<RepoCommitPage />} />
+          <Route path="/ui/repos/:owner/:repo/tree/:ref/*" element={<RepoDetailPage />} />
           <Route path="/ui/repos/:owner/:repo/blob/:ref/*" element={<RepoFilePage />} />
         </Routes>
       </MemoryRouter>
@@ -52,6 +53,7 @@ const repoData = {
   subscribers_count: 2,
   forks_count: 1,
   ssh_url: "git@bleephub.example:admin/test.git",
+  owner: { login: "admin", type: "User" },
 };
 
 const topicsData = { names: ["cli", "tooling"] };
@@ -126,7 +128,7 @@ function routedFetch(url: RequestInfo | URL): Promise<Response> {
   if (u.endsWith("/packages")) return Promise.resolve(jsonResponse([]));
   if (u.endsWith("/repos/admin/test")) return Promise.resolve(jsonResponse(repoData));
   if (u.endsWith("/branches")) return Promise.resolve(jsonResponse(branchesData));
-  if (u.endsWith("/commits")) return Promise.resolve(jsonResponse(commitsData));
+  if (u.includes("/commits?")) return Promise.resolve(jsonResponse(commitsData));
   if (u.includes("/readme")) return Promise.resolve(jsonResponse(readmeData));
   if (u.includes("/contents/README.md")) return Promise.resolve(jsonResponse(readmeData));
   if (u.includes("/contents/")) return Promise.resolve(jsonResponse(contentsData));
@@ -174,7 +176,7 @@ describe("RepoDetailPage code", () => {
         return Promise.resolve(jsonResponse({ ...repoData, ssh_url: "" }));
       }
       if (u.endsWith("/branches")) return Promise.resolve(jsonResponse([]));
-      if (u.endsWith("/commits")) return Promise.resolve(jsonResponse([]));
+      if (u.includes("/commits?")) return Promise.resolve(jsonResponse([]));
       return Promise.resolve(jsonResponse([]));
     });
     renderPage();
@@ -237,10 +239,46 @@ describe("RepoDetailPage code", () => {
       "href",
       "/ui/repos/admin/test/blob/main/README.md",
     );
-    fireEvent.click(screen.getByRole("button", { name: "Commits" }));
+    fireEvent.click(screen.getByRole("link", { name: "Commits" }));
     expect(await screen.findByRole("link", { name: "Initial commit" })).toHaveAttribute(
       "href",
       "/ui/repos/admin/test/commits/abc123",
+    );
+  });
+
+  it("loads a shareable repository tree at a commit and path", async () => {
+    const calls: string[] = [];
+    mockFetch.mockImplementation((url: RequestInfo | URL) => {
+      calls.push(url.toString());
+      return routedFetch(url);
+    });
+    renderPage("/ui/repos/admin/test/tree/abc123/src");
+
+    await screen.findAllByText("src");
+    expect(calls).toContain(
+      "/api/v3/repos/admin/test/contents/src?ref=abc123",
+    );
+    expect(calls).toContain(
+      "/api/v3/repos/admin/test/commits?per_page=100&sha=abc123",
+    );
+  });
+
+  it("routes an organization repository owner to the organization profile", async () => {
+    mockFetch.mockImplementation((url: RequestInfo | URL) => {
+      if (url.toString().endsWith("/repos/acme/test")) {
+        return Promise.resolve(jsonResponse({
+          ...repoData,
+          full_name: "acme/test",
+          owner: { login: "acme", type: "Organization" },
+        }));
+      }
+      return routedFetch(url);
+    });
+    renderPage("/ui/repos/acme/test");
+
+    expect(await screen.findByRole("link", { name: "acme" })).toHaveAttribute(
+      "href",
+      "/ui/orgs/acme",
     );
   });
 

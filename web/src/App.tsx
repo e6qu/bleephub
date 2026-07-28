@@ -181,6 +181,9 @@ export function App() {
               <Route path="/ui/orgs/:org/copilot" element={<CopilotPage />} />
               <Route path="/ui/repos/:owner/:repo" element={<RepoDetailPage />} />
               <Route path="/ui/repos/:owner/:repo/commits" element={<RepoDetailPage initialTab="commits" />} />
+              <Route path="/ui/repos/:owner/:repo/branches" element={<RepoDetailPage initialTab="branches" />} />
+              <Route path="/ui/repos/:owner/:repo/tags" element={<RepoDetailPage initialTab="tags" />} />
+              <Route path="/ui/repos/:owner/:repo/tree/:ref/*" element={<RepoDetailPage />} />
               <Route path="/ui/repos/:owner/:repo/commits/:sha" element={<RepoCommitPage />} />
               <Route path="/ui/repos/:owner/:repo/blob/:ref/*" element={<RepoFilePage />} />
               <Route path="/ui/repos/:owner/:repo/releases" element={<ReleasesPage />} />

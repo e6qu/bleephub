@@ -37,12 +37,30 @@ function stateLabel(state: GithubCodespaceState): { state: "open" | "closed" | "
       return { state: "open", label: "available" };
     case "Shutdown":
       return { state: "closed", label: "shutdown" };
-    case "Creating":
-      return { state: "draft", label: "creating" };
     case "Unavailable":
       return { state: "closed", label: "unavailable" };
+    case "Failed":
+    case "Deleted":
+    case "Archived":
+      return { state: "closed", label: state.toLowerCase() };
+    case "Unknown":
+    case "Created":
+    case "Queued":
+    case "Provisioning":
+    case "Awaiting":
+    case "Moved":
+    case "Starting":
+    case "ShuttingDown":
+    case "Exporting":
+    case "Updating":
+    case "Rebuilding":
+      return { state: "draft", label: state.replace(/([a-z])([A-Z])/g, "$1 $2").toLowerCase() };
   }
 }
+
+const canStart = (state: GithubCodespaceState) =>
+  state === "Shutdown" || state === "Unavailable" || state === "Failed";
+const canStop = (state: GithubCodespaceState) => state === "Available";
 
 export function CodespacesPage() {
   const { owner, repo, codespaceName } = useParams<{
@@ -133,7 +151,7 @@ function CodespacesList({ repoScope }: { repoScope: string | null }) {
       }),
       col.accessor("machine", {
         header: "Machine",
-        cell: (info) => info.getValue<GithubCodespace["machine"]>().display_name,
+        cell: (info) => info.getValue<GithubCodespace["machine"]>()?.display_name ?? "Not assigned",
       }),
       col.accessor("last_used_at", {
         header: "Last used",
@@ -146,15 +164,15 @@ function CodespacesList({ repoScope }: { repoScope: string | null }) {
           const cs = info.row.original;
           return (
             <div className="flex flex-wrap items-center gap-2">
-              {cs.state !== "Available" ? (
+              {canStart(cs.state) ? (
                 <Button size="sm" variant="secondary" onClick={() => startMut.mutate(cs.name)}>
                   <PlayIcon size={14} /> Start
                 </Button>
-              ) : (
+              ) : canStop(cs.state) ? (
                 <Button size="sm" variant="secondary" onClick={() => stopMut.mutate(cs.name)}>
                   <SquareIcon size={14} /> Stop
                 </Button>
-              )}
+              ) : null}
               <Button
                 size="sm"
                 variant="ghost"
@@ -236,15 +254,15 @@ function CodespaceDetail({ name }: { name: string }) {
         meta={cs.name}
         actions={
           <>
-            {cs.state === "Available" ? (
+            {canStop(cs.state) ? (
               <Button onClick={() => stop.mutate()} disabled={stop.isPending}>
                 <SquareIcon size={14} /> Stop
               </Button>
-            ) : (
+            ) : canStart(cs.state) ? (
               <Button onClick={() => start.mutate()} disabled={start.isPending}>
                 <PlayIcon size={14} /> Start
               </Button>
-            )}
+            ) : null}
             <Button
               variant="danger"
               disabled={remove.isPending}
@@ -275,7 +293,7 @@ function CodespaceDetail({ name }: { name: string }) {
               </Link>
             ) : "Unpublished"}
           </CodespaceFact>
-          <CodespaceFact label="Machine">{cs.machine.display_name}</CodespaceFact>
+          <CodespaceFact label="Machine">{cs.machine?.display_name ?? "Not assigned"}</CodespaceFact>
           <CodespaceFact label="Git ref">{cs.git_status.ref || "Default branch"}</CodespaceFact>
           <CodespaceFact label="Created">{new Date(cs.created_at).toLocaleString()}</CodespaceFact>
           <CodespaceFact label="Last used">{new Date(cs.last_used_at).toLocaleString()}</CodespaceFact>

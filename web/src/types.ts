@@ -341,6 +341,7 @@ export interface GithubCommit {
   };
   author?: { login: string; avatar_url?: string } | null;
   committer?: { login: string; avatar_url?: string } | null;
+  parents?: Array<{ sha: string; url: string; html_url: string }>;
   stats?: { additions: number; deletions: number; total: number };
   files?: Array<{
     sha: string;
@@ -1146,9 +1147,22 @@ export interface GithubDependabotSecret {
 // ─── GitHub Codespaces shapes ───────────────────────────────────────────
 
 export type GithubCodespaceState =
+  | "Unknown"
+  | "Created"
+  | "Queued"
+  | "Provisioning"
   | "Available"
+  | "Awaiting"
+  | "Deleted"
+  | "Moved"
   | "Shutdown"
-  | "Creating"
+  | "Archived"
+  | "Starting"
+  | "ShuttingDown"
+  | "Failed"
+  | "Exporting"
+  | "Updating"
+  | "Rebuilding"
   | "Unavailable";
 
 export interface GithubCodespaceMachine {
@@ -1169,7 +1183,7 @@ export interface GithubCodespace {
   owner: { login: string; type: string; avatar_url?: string } | null;
   billable_owner: { login: string; type: string; avatar_url?: string } | null;
   repository: { id: number; full_name: string; name: string; owner: { login: string; type: string } } | null;
-  machine: GithubCodespaceMachine;
+  machine: GithubCodespaceMachine | null;
   created_at: string;
   updated_at: string;
   last_used_at: string;
