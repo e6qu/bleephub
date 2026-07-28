@@ -49,6 +49,7 @@ const repoData = {
   private: false,
   created_at: "2026-01-01T00:00:00Z",
   updated_at: "2026-01-02T00:00:00Z",
+  pushed_at: "2026-01-02T00:00:00Z",
   stargazers_count: 5,
   subscribers_count: 2,
   forks_count: 1,
@@ -170,13 +171,14 @@ describe("RepoDetailPage code", () => {
   });
 
   it("shows only supported empty-repository transport setup", async () => {
+    const calls: string[] = [];
     mockFetch.mockImplementation((url: RequestInfo | URL) => {
       const u = url.toString();
+      calls.push(u);
       if (u.endsWith("/repos/admin/test")) {
-        return Promise.resolve(jsonResponse({ ...repoData, ssh_url: "" }));
+        return Promise.resolve(jsonResponse({ ...repoData, pushed_at: null, ssh_url: "" }));
       }
       if (u.endsWith("/branches")) return Promise.resolve(jsonResponse([]));
-      if (u.includes("/commits?")) return Promise.resolve(jsonResponse([]));
       return Promise.resolve(jsonResponse([]));
     });
     renderPage();
@@ -190,6 +192,7 @@ describe("RepoDetailPage code", () => {
     expect(screen.getByRole("button", { name: "GitHub CLI" })).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "SSH" }));
     expect(screen.getByRole("note")).toHaveTextContent(/SSH cloning is not enabled/i);
+    expect(calls.some((url) => url.includes("/commits?"))).toBe(false);
   });
 
   it("renders the latest-commit banner above the file table", async () => {

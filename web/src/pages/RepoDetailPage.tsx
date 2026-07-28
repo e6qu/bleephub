@@ -105,7 +105,13 @@ export function RepoDetailPage({ initialTab = "code" }: { initialTab?: SubTab })
   } = useQuery({
     queryKey: ["commits", owner, repo, routeRef],
     queryFn: () => fetchRepoCommits(owner, repo, routeRef || undefined),
-    enabled: tab === "commits" || tab === "code",
+    // GitHub returns 409 for the commits endpoint on an empty repository.
+    // `pushed_at` is the reliable emptiness signal here; `size` is not,
+    // because in-memory and S3-backed repositories legitimately report zero.
+    enabled:
+      (tab === "commits" || tab === "code")
+      && repoData !== undefined
+      && repoData.pushed_at !== null,
   });
   const counts = useOpenCounts(owner, repo);
   const { data: webhooks = [], isError: webhooksError, error: webhooksErr } = useQuery({
