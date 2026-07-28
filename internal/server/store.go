@@ -1114,6 +1114,7 @@ func (st *Store) loadFromPersistence() error {
 		if st.Users[a.OwnerID] == nil {
 			return fmt.Errorf("app %d (%s): owner id %d not found in loaded users", a.ID, a.Slug, a.OwnerID)
 		}
+		a.Permissions = normalizeAppPermissions(a.Permissions)
 		st.Apps[a.ID] = &a
 		st.AppsBySlug[a.Slug] = &a
 		st.AppsByClientID[a.ClientID] = &a
@@ -1139,6 +1140,7 @@ func (st *Store) loadFromPersistence() error {
 		if err := loadJSON(raw, &inst); err != nil {
 			return err
 		}
+		inst.Permissions = normalizeAppPermissions(inst.Permissions)
 		st.Installations[inst.ID] = &inst
 		if inst.ID >= st.NextInstallationID {
 			st.NextInstallationID = inst.ID + 1
@@ -1152,6 +1154,7 @@ func (st *Store) loadFromPersistence() error {
 		if err := loadJSON(raw, &t); err != nil {
 			return err
 		}
+		t.Permissions = normalizeAppPermissions(t.Permissions)
 		st.InstallationTokens[t.Token] = &t
 		return nil
 	}); err != nil {

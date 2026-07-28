@@ -15,6 +15,10 @@ import (
 // Lives here (not in gh_apps_jwt.go) so the production binary doesn't
 // carry test-only signing logic.
 func signAppJWT(privateKeyPEM string, appID int, now time.Time) (string, error) {
+	return signAppJWTWithIssuer(privateKeyPEM, fmt.Sprintf("%q", fmt.Sprint(appID)), now)
+}
+
+func signAppJWTWithIssuer(privateKeyPEM, issuerJSON string, now time.Time) (string, error) {
 	block, _ := pem.Decode([]byte(privateKeyPEM))
 	if block == nil {
 		return "", fmt.Errorf("failed to decode PEM")
@@ -25,7 +29,7 @@ func signAppJWT(privateKeyPEM string, appID int, now time.Time) (string, error) 
 	}
 
 	header := testBase64urlEncode([]byte(`{"alg":"RS256","typ":"JWT"}`))
-	payload := fmt.Sprintf(`{"iss":"%d","iat":%d,"exp":%d}`, appID, now.Unix(), now.Unix()+600)
+	payload := fmt.Sprintf(`{"iss":%s,"iat":%d,"exp":%d}`, issuerJSON, now.Unix(), now.Unix()+600)
 	payloadEnc := testBase64urlEncode([]byte(payload))
 
 	signInput := header + "." + payloadEnc

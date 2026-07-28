@@ -365,14 +365,7 @@ func (s *Server) resolveInstallationRepositorySelection(targetLogin, selection s
 }
 
 func copyInstallationPermissions(perms map[string]string) map[string]string {
-	if perms == nil {
-		return nil
-	}
-	out := make(map[string]string, len(perms))
-	for k, v := range perms {
-		out[k] = v
-	}
-	return out
+	return normalizeAppPermissions(perms)
 }
 
 func (s *Server) handleManifestConversion(w http.ResponseWriter, r *http.Request) {

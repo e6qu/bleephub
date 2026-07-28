@@ -76,6 +76,22 @@ type InstallationToken struct {
 	AppID          int               `json:"app_id"`
 }
 
+// normalizeAppPermissions materializes the Metadata read permission GitHub
+// grants to every GitHub App installation. It cannot be deselected in GitHub's
+// App settings and remains present when an app asks for no other permission.
+//
+// Always return a copy: App, Installation, and InstallationToken are separate
+// persisted snapshots and mutating one grant must never silently mutate the
+// others through a shared map.
+func normalizeAppPermissions(perms map[string]string) map[string]string {
+	out := make(map[string]string, len(perms)+1)
+	for scope, level := range perms {
+		out[scope] = level
+	}
+	out[string(scopeMetadata)] = "read"
+	return out
+}
+
 // OAuthApp is the OAuth-app entity Basic-authenticated by client_id+client_secret.
 // Distinct from GitHub Apps (App above) although a GitHub App also has a client_id+secret pair
 // that can be used the same way for OAuth user-to-server flows.
@@ -166,7 +182,7 @@ func (st *Store) CreateAppE(ownerID int, name, description string, perms map[str
 		WebhookContentType: "form",
 		WebhookInsecureSSL: "0",
 		PEMPrivateKey:      string(privPEM),
-		Permissions:        perms,
+		Permissions:        normalizeAppPermissions(perms),
 		Events:             events,
 		OwnerID:            ownerID,
 		CreatedAt:          now,
@@ -363,7 +379,7 @@ func (st *Store) CreateInstallation(appID int, targetType string, targetID int, 
 		TargetLogin:         targetLogin,
 		TargetNodeID:        targetNodeID,
 		TargetAvatarURL:     targetAvatarURL,
-		Permissions:         perms,
+		Permissions:         normalizeAppPermissions(perms),
 		Events:              events,
 		RepositorySelection: "all",
 		CreatedAt:           now,
@@ -740,7 +756,7 @@ func (st *Store) CreateInstallationTokenE(installationID, appID int, perms map[s
 	token := &InstallationToken{
 		Token:          tokenStr,
 		ExpiresAt:      time.Now().UTC().Add(1 * time.Hour),
-		Permissions:    perms,
+		Permissions:    normalizeAppPermissions(perms),
 		RepositoryIDs:  append([]int(nil), repoIDs...),
 		InstallationID: installationID,
 		AppID:          appID,

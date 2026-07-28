@@ -427,7 +427,7 @@ function CreateAppDialog({ onClose }: { onClose: () => void }) {
   const [callbackURL, setCallbackURL] = useState("");
   const [webhookURL, setWebhookURL] = useState("");
   const [webhookActive, setWebhookActive] = useState(true);
-  const [perms, setPerms] = useState<Record<string, string>>({});
+  const [perms, setPerms] = useState<Record<string, string>>({ metadata: "read" });
   const [events, setEvents] = useState<string[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [created, setCreated] = useState<{
@@ -502,7 +502,8 @@ function CreateAppDialog({ onClose }: { onClose: () => void }) {
           <select
             key={scope}
             aria-label={`${scope} permission`}
-            value={perms[scope] || ""}
+            value={scope === "metadata" ? "read" : perms[scope] || ""}
+            disabled={scope === "metadata"}
             onChange={(e) => {
               const v = e.target.value;
               setPerms((cur) => {
@@ -514,10 +515,10 @@ function CreateAppDialog({ onClose }: { onClose: () => void }) {
             }}
             style={{ fontSize: "0.78rem", padding: "0.3rem 0.4rem" }}
           >
-            <option value="">{scope}: —</option>
+            {scope !== "metadata" && <option value="">{scope}: —</option>}
             <option value="read">{scope}: read</option>
-            <option value="write">{scope}: write</option>
-            <option value="admin">{scope}: admin</option>
+            {scope !== "metadata" && <option value="write">{scope}: write</option>}
+            {scope !== "metadata" && <option value="admin">{scope}: admin</option>}
           </select>
         ))}
       </div>
@@ -1110,7 +1111,8 @@ function PermissionEditor({
           <select
             key={scope}
             aria-label={`${scope} permission`}
-            value={permissions[scope] ?? ""}
+            value={scope === "metadata" ? "read" : permissions[scope] ?? ""}
+            disabled={scope === "metadata"}
             onChange={(event) => {
               const next = { ...permissions };
               if (event.target.value) next[scope] = event.target.value;
@@ -1118,10 +1120,10 @@ function PermissionEditor({
               onChange(next);
             }}
           >
-            <option value="">{scope}: no access</option>
+            {scope !== "metadata" && <option value="">{scope}: no access</option>}
             <option value="read">{scope}: read</option>
-            <option value="write">{scope}: write</option>
-            <option value="admin">{scope}: admin</option>
+            {scope !== "metadata" && <option value="write">{scope}: write</option>}
+            {scope !== "metadata" && <option value="admin">{scope}: admin</option>}
           </select>
         ))}
       </div>

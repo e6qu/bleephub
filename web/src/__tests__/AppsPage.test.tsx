@@ -125,6 +125,9 @@ describe("AppsPage", () => {
       expect(screen.getByLabelText(/^name$/i)).toBeInTheDocument();
       expect(screen.getByLabelText(/description/i)).toBeInTheDocument();
     });
+    const metadata = screen.getByLabelText("metadata permission");
+    expect(metadata).toHaveValue("read");
+    expect(metadata).toBeDisabled();
   });
 
   it("opens complete GitHub App settings from the app row", async () => {
