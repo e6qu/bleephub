@@ -39,6 +39,17 @@ jobs:
         if: matrix.language == 'go'
         uses: github/codeql-action/autobuild@e4fba868fa4b1b91e1fdab776edc8cfbe6e9fb81 # v4
       - name: Analyze
+        id: analyze
         uses: github/codeql-action/analyze@e4fba868fa4b1b91e1fdab776edc8cfbe6e9fb81 # v4
         with:
           category: /language:${{ matrix.language }}
+          output: codeql-results
+          upload: always
+          wait-for-processing: true
+      - name: Test the SARIF policy
+        if: matrix.language == 'go'
+        run: python3 -m unittest scripts/test_check_codeql_sarif.py
+      - name: Reject CodeQL findings
+        env:
+          CODEQL_SARIF_DIRECTORY: ${{ steps.analyze.outputs.sarif-output }}
+        run: python3 scripts/check-codeql-sarif.py "$CODEQL_SARIF_DIRECTORY"
