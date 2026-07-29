@@ -48,6 +48,8 @@ type InstallationSeedSpec struct {
 func loadAppSeedSpecs() ([]AppSeedSpec, error) {
 	var specs []AppSeedSpec
 	if path := os.Getenv("BLEEPHUB_SEED_APPS_FILE"); path != "" {
+		// #nosec G304,G703 -- this is an operator-selected startup config file,
+		// never a path supplied by an HTTP client.
 		b, err := os.ReadFile(path)
 		if err != nil {
 			return nil, fmt.Errorf("BLEEPHUB_SEED_APPS_FILE: %w", err)
@@ -86,6 +88,7 @@ func (s *Server) seedConfiguredApps() error {
 		}
 		pemKey := spec.PrivateKeyPEM
 		if pemKey == "" && spec.PrivateKeyFile != "" {
+			// #nosec G304 -- this is an operator-selected startup key file.
 			b, err := os.ReadFile(spec.PrivateKeyFile)
 			if err != nil {
 				return fmt.Errorf("seed app %q: read private_key_pem_file: %w", spec.Name, err)

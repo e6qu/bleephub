@@ -1,14 +1,37 @@
-FROM ubuntu:26.04
+ARG RUNNER_VERSION=2.336.0
+ARG RUNNER_SOURCE_COMMIT=98aabcd429c4e8402406c56ce2d26387fed3b9ce
+ARG DOTNET_SDK_VERSION=8.0.423
+ARG DOTNET_RUNTIME_VERSION=8.0.29
+
+FROM --platform=$BUILDPLATFORM mcr.microsoft.com/dotnet/sdk:8.0.423-bookworm-slim@sha256:3c0edbfe1549dd93fb789dc96299a40df865ad7bffefcaf38e8c05940686d641 AS actions-runner-builder
+ARG TARGETARCH
+ARG RUNNER_VERSION
+ARG RUNNER_SOURCE_COMMIT
+ARG DOTNET_SDK_VERSION
+ARG DOTNET_RUNTIME_VERSION
+ENV TARGETARCH=$TARGETARCH \
+    RUNNER_VERSION=$RUNNER_VERSION \
+    RUNNER_SOURCE_COMMIT=$RUNNER_SOURCE_COMMIT \
+    DOTNET_SDK_VERSION=$DOTNET_SDK_VERSION \
+    DOTNET_RUNTIME_VERSION=$DOTNET_RUNTIME_VERSION
+COPY docker/runner-nuget-locks/ /runner-nuget-locks/
+COPY docker/build-actions-runner.sh /usr/local/bin/build-actions-runner
+RUN bash /usr/local/bin/build-actions-runner
+
+FROM ubuntu:26.04@sha256:3131b4cc82a783df6c9df078f86e01819a13594b865c2cad47bd1bca2b7063bb
 
 ARG TARGETARCH
-# Pinned release, with the SHA-256 that actions/runner publishes for each linux
-# tarball in the release notes. Bumping the version means bumping both digests.
-ARG RUNNER_VERSION=2.321.0
-ARG RUNNER_SHA256_AMD64=ba46ba7ce3a4d7236b16fbe44419fb453bc08f866b24f04d549ec89f1722a29e
-ARG RUNNER_SHA256_ARM64=62cc5735d63057d8d07441507c3d6974e90c1854bdb33e9c8b26c0da086336e1
+ARG RUNNER_VERSION
+# SHA-256 values published with the official release. The binary archive still
+# supplies GitHub's root scripts and Node runtimes; its vulnerable .NET bin
+# directory is replaced by the same immutable source rebuilt above.
+ARG RUNNER_SHA256_AMD64=04cf0be1aff4c3ec3554466c39124ca250e3effd8873bb7e8d68535aa9505d5d
+ARG RUNNER_SHA256_ARM64=58b758e420b87093fbd4bfddd368074960053e2f1388f01848c82624b90f27d1
+ARG DOTNET_RUNTIME_VERSION
 
-# The tarball lands on disk and is checked before anything reads it: piping curl
-# into tar spends the bytes before they can be hashed.
+# The tarball lands on disk and is checked before anything reads it. The
+# Ubuntu base also carries an unrelated, unowned ACME test server; remove it
+# before handing the image to untrusted workflow jobs.
 RUN case "$TARGETARCH" in \
         amd64) runner_arch=x64; runner_sha256="$RUNNER_SHA256_AMD64" ;; \
         arm64) runner_arch=arm64; runner_sha256="$RUNNER_SHA256_ARM64" ;; \
@@ -23,8 +46,36 @@ RUN case "$TARGETARCH" in \
       "https://github.com/actions/runner/releases/download/v${RUNNER_VERSION}/actions-runner-linux-${runner_arch}-${RUNNER_VERSION}.tar.gz" && \
     printf '%s  %s\n' "$runner_sha256" /tmp/actions-runner.tar.gz | sha256sum --check --strict - && \
     tar --extract --gzip --file /tmp/actions-runner.tar.gz --directory /opt/actions-runner && \
-    rm /tmp/actions-runner.tar.gz && \
+    rm /tmp/actions-runner.tar.gz
+
+COPY --from=actions-runner-builder /runner-src/_layout/bin/ /tmp/actions-runner-bin/
+
+RUN case "$TARGETARCH" in \
+        amd64) runner_arch=x64 ;; \
+        arm64) runner_arch=arm64 ;; \
+        *) echo "Unsupported target architecture: $TARGETARCH" >&2; exit 1 ;; \
+    esac && \
+    rm -rf /opt/actions-runner/bin && \
+    mv /tmp/actions-runner-bin /opt/actions-runner/bin && \
     /opt/actions-runner/bin/installdependencies.sh && \
+    grep -q "Microsoft.NETCore.App.Runtime.linux-${runner_arch}/${DOTNET_RUNTIME_VERSION}" \
+      /opt/actions-runner/bin/Runner.Listener.deps.json && \
+    grep -q "\"version\": \"${DOTNET_RUNTIME_VERSION}\"" \
+      /opt/actions-runner/bin/Runner.Listener.runtimeconfig.json && \
+    rm -rf \
+      /opt/actions-runner/externals/node20/lib/node_modules \
+      /opt/actions-runner/externals/node24/lib/node_modules && \
+    rm -f \
+      /opt/actions-runner/externals/node20/bin/corepack \
+      /opt/actions-runner/externals/node20/bin/npm \
+      /opt/actions-runner/externals/node20/bin/npx \
+      /opt/actions-runner/externals/node24/bin/corepack \
+      /opt/actions-runner/externals/node24/bin/npm \
+      /opt/actions-runner/externals/node24/bin/npx && \
+    /opt/actions-runner/externals/node20/bin/node --version && \
+    /opt/actions-runner/externals/node24/bin/node --version && \
+    /opt/actions-runner/bin/Runner.Listener --version | grep -Fx "$RUNNER_VERSION" && \
+    rm -f /usr/bin/pebble && \
     chown -R runner:runner /opt/actions-runner
 
 COPY --chown=runner:runner docker/bleephub-runner-entrypoint.sh /usr/local/bin/bleephub-runner

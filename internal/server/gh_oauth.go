@@ -143,11 +143,14 @@ func (s *Server) handleLoginPost(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// #nosec G124 -- Secure is required in production and conditional only for
+	// the explicitly supported local HTTP development mode.
 	http.SetCookie(w, &http.Cookie{
 		Name:     "_gh_sess",
 		Value:    sessionID,
 		Path:     "/",
 		HttpOnly: true,
+		Secure:   strings.HasPrefix(s.externalURL, "https://") || r.TLS != nil,
 		SameSite: http.SameSiteLaxMode,
 		Expires:  sess.ExpiresAt,
 	})

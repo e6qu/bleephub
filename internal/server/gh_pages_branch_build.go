@@ -1,3 +1,4 @@
+//lint:file-ignore ST1005 GitHub Pages surfaces these product-prefixed messages to clients.
 package bleephub
 
 import (
@@ -6,6 +7,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"fmt"
+	"io"
 	"io/fs"
 	"os"
 	"os/exec"
@@ -175,12 +177,12 @@ func (s *Server) buildJekyllPagesArtifact(ctx context.Context, repo *Repo, entri
 	defer os.RemoveAll(workspace)
 	sourceDir := filepath.Join(workspace, "source")
 	destinationDir := filepath.Join(workspace, "site")
-	if err := os.MkdirAll(sourceDir, 0o755); err != nil {
+	if err := os.MkdirAll(sourceDir, 0o750); err != nil {
 		return nil, false, fmt.Errorf("create GitHub Pages Jekyll source: %w", err)
 	}
 	for _, entry := range entries {
 		target := filepath.Join(sourceDir, filepath.FromSlash(entry.path))
-		if err := os.MkdirAll(filepath.Dir(target), 0o755); err != nil {
+		if err := os.MkdirAll(filepath.Dir(target), 0o750); err != nil {
 			return nil, false, fmt.Errorf("create GitHub Pages source directory: %w", err)
 		}
 		mode := fs.FileMode(0o644)
@@ -191,6 +193,8 @@ func (s *Server) buildJekyllPagesArtifact(ctx context.Context, repo *Repo, entri
 			return nil, false, fmt.Errorf("write GitHub Pages source %q: %w", entry.path, err)
 		}
 	}
+	// #nosec G204 -- the executable is deployment configuration; every argument
+	// is fixed or a server-created temporary directory and no shell is involved.
 	cmd := exec.CommandContext(ctx, s.pagesJekyllExecutable, "build", "--safe", "--source", sourceDir, "--destination", destinationDir, "--trace")
 	cmd.Env = append(os.Environ(), "JEKYLL_ENV=production", "PAGES_REPO_NWO="+repo.FullName)
 	output := &pagesJekyllOutput{}
@@ -208,33 +212,49 @@ func (s *Server) buildJekyllPagesArtifact(ctx context.Context, repo *Repo, entri
 }
 
 func collectPagesOutput(root string) ([]archiveEntry, error) {
+	outputRoot, err := os.OpenRoot(root)
+	if err != nil {
+		return nil, fmt.Errorf("open GitHub Pages Jekyll output root: %w", err)
+	}
+	defer outputRoot.Close()
+
 	entries := []archiveEntry{}
 	var total int64
-	err := filepath.WalkDir(root, func(filePath string, dirEntry fs.DirEntry, walkErr error) error {
+	err = filepath.WalkDir(root, func(filePath string, dirEntry fs.DirEntry, walkErr error) error {
 		if walkErr != nil {
 			return walkErr
 		}
 		if filePath == root || dirEntry.IsDir() {
 			return nil
 		}
-		info, err := dirEntry.Info()
+		relative, err := filepath.Rel(root, filePath)
 		if err != nil {
+			return err
+		}
+		file, err := outputRoot.Open(relative)
+		if err != nil {
+			return err
+		}
+		info, err := file.Stat()
+		if err != nil {
+			_ = file.Close()
 			return err
 		}
 		if !info.Mode().IsRegular() {
+			_ = file.Close()
 			return fmt.Errorf("GitHub Pages Jekyll output %q is not a regular file", filePath)
 		}
-		content, err := os.ReadFile(filePath)
+		content, err := io.ReadAll(io.LimitReader(file, maxPagesArtifactSize-total+1))
+		closeErr := file.Close()
 		if err != nil {
 			return err
+		}
+		if closeErr != nil {
+			return closeErr
 		}
 		total += int64(len(content))
 		if total > maxPagesArtifactSize {
 			return fmt.Errorf("GitHub Pages Jekyll output exceeds 10 GB")
-		}
-		relative, err := filepath.Rel(root, filePath)
-		if err != nil {
-			return err
 		}
 		entries = append(entries, archiveEntry{path: filepath.ToSlash(relative), mode: filemode.Regular, content: content})
 		return nil

@@ -360,8 +360,6 @@ test.describe("Repos page", () => {
   test("shows repo after creation and links to detail", async ({ page }) => {
     // Create user + repo via API
     await page.goto("/ui/");
-    const user = await apiGet(page, "/api/v3/user");
-    const owner = (user as { login: string }).login;
 
     await apiPost(page, "/api/v3/user/repos", {
       name: "test-repo-playwright",

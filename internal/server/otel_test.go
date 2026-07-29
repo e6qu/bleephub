@@ -10,7 +10,7 @@ import (
 	"go.opentelemetry.io/otel"
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 	"go.opentelemetry.io/otel/sdk/trace/tracetest"
-	"go.opentelemetry.io/otel/trace"
+	"go.opentelemetry.io/otel/trace/noop"
 )
 
 func TestInitObservabilityNoEndpoint(t *testing.T) {
@@ -47,7 +47,7 @@ func TestInitObservabilityWithEndpoint(t *testing.T) {
 		t.Error("expected valid SpanContext when OTEL_EXPORTER_OTLP_ENDPOINT is set")
 	}
 
-	otel.SetTracerProvider(trace.NewNoopTracerProvider())
+	otel.SetTracerProvider(noop.NewTracerProvider())
 }
 
 func TestHTTPMiddlewareCreatesSpan(t *testing.T) {
@@ -55,7 +55,7 @@ func TestHTTPMiddlewareCreatesSpan(t *testing.T) {
 	tp := sdktrace.NewTracerProvider(sdktrace.WithSyncer(exporter))
 	defer tp.Shutdown(context.Background())
 	otel.SetTracerProvider(tp)
-	defer otel.SetTracerProvider(trace.NewNoopTracerProvider())
+	defer otel.SetTracerProvider(noop.NewTracerProvider())
 
 	handler := otelhttp.NewHandler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
@@ -83,7 +83,7 @@ func TestWorkflowDispatchCreatesSpan(t *testing.T) {
 	tp := sdktrace.NewTracerProvider(sdktrace.WithSyncer(exporter))
 	defer tp.Shutdown(context.Background())
 	otel.SetTracerProvider(tp)
-	defer otel.SetTracerProvider(trace.NewNoopTracerProvider())
+	defer otel.SetTracerProvider(noop.NewTracerProvider())
 
 	s := newTestServer()
 	wf := &WorkflowDef{
@@ -119,7 +119,7 @@ func TestWorkflowDispatchCreatesSpan(t *testing.T) {
 
 func TestNoSpansWhenDisabled(t *testing.T) {
 	// Use default no-op provider — should not crash
-	otel.SetTracerProvider(trace.NewNoopTracerProvider())
+	otel.SetTracerProvider(noop.NewTracerProvider())
 
 	s := newTestServer()
 	wf := &WorkflowDef{

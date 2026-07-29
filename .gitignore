@@ -41,6 +41,8 @@ id_ed25519
 coverage.out
 coverage.html
 *.test
+__pycache__/
+*.py[cod]
 
 # Local credentials.
 .env

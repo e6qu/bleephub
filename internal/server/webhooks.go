@@ -4,7 +4,7 @@ import (
 	"bytes"
 	"context"
 	"crypto/hmac"
-	"crypto/sha1" //nolint:gosec // X-Hub-Signature legacy SHA1 alongside SHA256 — required for parity with real GH
+	"crypto/sha1" // #nosec G505 -- GitHub's legacy X-Hub-Signature compatibility header requires HMAC-SHA1
 	"crypto/sha256"
 	"crypto/tls"
 	"encoding/hex"
@@ -220,7 +220,8 @@ func newWebhookClient(allowPrivate, insecureTLS bool) *http.Client {
 		ExpectContinueTimeout: 1 * time.Second,
 	}
 	if insecureTLS {
-		//nolint:gosec // hook config insecure_ssl=1 disables verification on real GitHub too
+		// #nosec G402 -- hook config insecure_ssl=1 explicitly disables
+		// verification on GitHub too; redirects and private-address dials remain blocked.
 		transport.TLSClientConfig = &tls.Config{InsecureSkipVerify: true}
 	}
 	return &http.Client{
@@ -981,7 +982,7 @@ func listWorkflowFilesAtRef(stor gitStorage.Storer, ref string) map[string][]byt
 			continue
 		}
 		content, err := io.ReadAll(reader)
-		reader.Close()
+		_ = reader.Close()
 		if err != nil {
 			continue
 		}

@@ -62,7 +62,7 @@ const (
 	scopeMembers           permScope = "members"
 	scopeOrgAdministration permScope = "organization_administration"
 	scopeSecurityEvents    permScope = "security_events"
-	scopeDependabotSecrets permScope = "dependabot_secrets"
+	scopeDependabotSecrets permScope = "dependabot_secrets" // #nosec G101 -- permission name, not a secret
 	scopeCodespaces        permScope = "codespaces"
 	scopeReactions         permScope = "reactions"
 	scopeProjects          permScope = "projects"

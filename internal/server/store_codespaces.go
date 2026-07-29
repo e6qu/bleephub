@@ -761,7 +761,10 @@ func (st *Store) prepareWorkspaceLocked(repoKey, gitRef string) (dir string, cle
 	}
 
 	if GitDataDir() != "" {
-		dir := filepath.Join(GitDataDir(), filepath.FromSlash(repoKey))
+		dir, pathErr := repoGitDirPath(GitDataDir(), repoKey)
+		if pathErr != nil {
+			return "", cleanup, pathErr
+		}
 		if _, err := os.Stat(dir); err == nil {
 			return dir, cleanup, nil
 		}
@@ -835,7 +838,7 @@ func exportGitRef(stor gitStorage.Storer, refName, dst string) error {
 			return err
 		}
 		full := filepath.Join(dst, filepath.FromSlash(f.Name))
-		if err := os.MkdirAll(filepath.Dir(full), 0o755); err != nil {
+		if err := os.MkdirAll(filepath.Dir(full), 0o750); err != nil {
 			return err
 		}
 		content, err := f.Contents()
@@ -918,6 +921,8 @@ func ensureDockerImage(ctx context.Context, image string) error {
 }
 
 func runDockerCLI(ctx context.Context, args ...string) ([]byte, error) {
+	// #nosec G204 -- docker is a fixed executable and exec.Command preserves
+	// argument boundaries; no request value can become shell syntax.
 	cmd := exec.CommandContext(ctx, "docker", args...)
 	return cmd.CombinedOutput()
 }

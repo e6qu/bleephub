@@ -1,4 +1,24 @@
-FROM golang:1.26 AS builder
+ARG RUNNER_VERSION=2.336.0
+ARG RUNNER_SOURCE_COMMIT=98aabcd429c4e8402406c56ce2d26387fed3b9ce
+ARG DOTNET_SDK_VERSION=8.0.423
+ARG DOTNET_RUNTIME_VERSION=8.0.29
+
+FROM --platform=$BUILDPLATFORM mcr.microsoft.com/dotnet/sdk:8.0.423-bookworm-slim@sha256:3c0edbfe1549dd93fb789dc96299a40df865ad7bffefcaf38e8c05940686d641 AS actions-runner-builder
+ARG TARGETARCH
+ARG RUNNER_VERSION
+ARG RUNNER_SOURCE_COMMIT
+ARG DOTNET_SDK_VERSION
+ARG DOTNET_RUNTIME_VERSION
+ENV TARGETARCH=$TARGETARCH \
+    RUNNER_VERSION=$RUNNER_VERSION \
+    RUNNER_SOURCE_COMMIT=$RUNNER_SOURCE_COMMIT \
+    DOTNET_SDK_VERSION=$DOTNET_SDK_VERSION \
+    DOTNET_RUNTIME_VERSION=$DOTNET_RUNTIME_VERSION
+COPY docker/runner-nuget-locks/ /runner-nuget-locks/
+COPY docker/build-actions-runner.sh /usr/local/bin/build-actions-runner
+RUN bash /usr/local/bin/build-actions-runner
+
+FROM golang:1.26.5@sha256:3aff6657219a4d9c14e27fb1d8976c49c29fddb70ba835014f477e1c70636647 AS builder
 
 WORKDIR /src
 
@@ -58,7 +78,7 @@ COPY . /bleephub/
 RUN cd /bleephub && GOWORK=off go build -tags noui -o /out/bleephub ./cmd/bleephub
 
 # --- Runtime stage ---
-FROM ubuntu:26.04
+FROM ubuntu:26.04@sha256:3131b4cc82a783df6c9df078f86e01819a13594b865c2cad47bd1bca2b7063bb
 
 # python3-nacl: the harness seals secrets with the real libsodium
 # sealed-box contract before PUTting them.
@@ -71,17 +91,54 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     curl ca-certificates jq git libicu78 libssl3 openssl python3 python3-nacl docker.io && \
     rm -rf /var/lib/apt/lists/*
 
-# Download official GitHub Actions runner (auto-detect architecture)
-ARG RUNNER_VERSION=2.321.0
+# Download the same checksummed runner payload used by Dockerfile.runner.
+# The dependency-age gate rejects any drift between these two pin sets.
+ARG TARGETARCH
+ARG RUNNER_VERSION
+ARG RUNNER_SHA256_AMD64=04cf0be1aff4c3ec3554466c39124ca250e3effd8873bb7e8d68535aa9505d5d
+ARG RUNNER_SHA256_ARM64=58b758e420b87093fbd4bfddd368074960053e2f1388f01848c82624b90f27d1
+ARG DOTNET_RUNTIME_VERSION
 RUN mkdir -p /runner && \
     ARCH=$(dpkg --print-architecture) && \
+    case "$ARCH" in \
+        amd64) RUNNER_ARCH=x64; RUNNER_SHA256="$RUNNER_SHA256_AMD64" ;; \
+        arm64) RUNNER_ARCH=arm64; RUNNER_SHA256="$RUNNER_SHA256_ARM64" ;; \
+        *) echo "Unsupported arch: $ARCH"; exit 1 ;; \
+    esac && \
+    curl --fail --location --silent --show-error \
+      --output /tmp/actions-runner.tar.gz \
+      "https://github.com/actions/runner/releases/download/v${RUNNER_VERSION}/actions-runner-linux-${RUNNER_ARCH}-${RUNNER_VERSION}.tar.gz" && \
+    printf '%s  %s\n' "$RUNNER_SHA256" /tmp/actions-runner.tar.gz | sha256sum --check --strict - && \
+    tar --extract --gzip --file /tmp/actions-runner.tar.gz --directory /runner && \
+    rm /tmp/actions-runner.tar.gz
+
+COPY --from=actions-runner-builder /runner-src/_layout/bin/ /tmp/actions-runner-bin/
+
+RUN ARCH=$(dpkg --print-architecture) && \
     case "$ARCH" in \
         amd64) RUNNER_ARCH=x64 ;; \
         arm64) RUNNER_ARCH=arm64 ;; \
         *) echo "Unsupported arch: $ARCH"; exit 1 ;; \
     esac && \
-    curl -fsSL "https://github.com/actions/runner/releases/download/v${RUNNER_VERSION}/actions-runner-linux-${RUNNER_ARCH}-${RUNNER_VERSION}.tar.gz" \
-    | tar xz -C /runner
+    rm -rf /runner/bin && \
+    mv /tmp/actions-runner-bin /runner/bin && \
+    grep -q "Microsoft.NETCore.App.Runtime.linux-${RUNNER_ARCH}/${DOTNET_RUNTIME_VERSION}" \
+      /runner/bin/Runner.Listener.deps.json && \
+    grep -q "\"version\": \"${DOTNET_RUNTIME_VERSION}\"" \
+      /runner/bin/Runner.Listener.runtimeconfig.json && \
+    rm -rf \
+      /runner/externals/node20/lib/node_modules \
+      /runner/externals/node24/lib/node_modules && \
+    rm -f \
+      /runner/externals/node20/bin/corepack \
+      /runner/externals/node20/bin/npm \
+      /runner/externals/node20/bin/npx \
+      /runner/externals/node24/bin/corepack \
+      /runner/externals/node24/bin/npm \
+      /runner/externals/node24/bin/npx && \
+    /runner/externals/node20/bin/node --version && \
+    /runner/externals/node24/bin/node --version && \
+    /runner/bin/Runner.Listener --version | grep -Fx "$RUNNER_VERSION"
 
 COPY --from=builder /out/ /usr/local/bin/
 COPY test/runner/sockerless/ /test/

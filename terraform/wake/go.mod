@@ -1,6 +1,6 @@
 module github.com/e6qu/bleephub-ecs-wake
 
-go 1.25.0
+go 1.25.12
 
 require (
 	github.com/aws/aws-lambda-go v1.54.0
@@ -27,5 +27,6 @@ require (
 	github.com/aws/aws-sdk-go-v2/service/sso v1.33.0 // indirect
 	github.com/aws/aws-sdk-go-v2/service/ssooidc v1.38.0 // indirect
 	github.com/aws/aws-sdk-go-v2/service/sts v1.45.0 // indirect
-	github.com/aws/smithy-go v1.27.4 // indirect
+	github.com/aws/smithy-go v1.27.5 // indirect
+	github.com/stretchr/testify v1.11.1 // indirect
 )

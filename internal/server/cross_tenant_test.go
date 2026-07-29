@@ -82,8 +82,11 @@ func TestCrossTenantCheckRunsAndSuitesAreNotReachableByID(t *testing.T) {
 	store := testServer.store
 
 	suite := store.CreateCheckSuite(f.victimRepo.FullName, "main", "deadbeefdeadbeefdeadbeefdeadbeefdeadbeef", 0)
+	if suite == nil {
+		t.Fatal("could not create the victim's check suite fixture")
+	}
 	run := store.CreateCheckRun(f.victimRepo.FullName, "deadbeefdeadbeefdeadbeefdeadbeefdeadbeef", "victim-only", 0, suite.ID)
-	if suite == nil || run == nil {
+	if run == nil {
 		t.Fatalf("could not create the victim's check fixtures")
 	}
 	victimBase := "/api/v3/repos/" + f.victimRepo.FullName

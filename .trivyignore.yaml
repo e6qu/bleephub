@@ -1,0 +1,44 @@
+vulnerabilities:
+  - id: GO-2026-5932
+    paths:
+      - go.mod
+    expired_at: 2026-10-28
+    statement: >-
+      The advisory is limited to golang.org/x/crypto/openpgp. Bleephub uses
+      x/crypto for SSH and never imports openpgp; govulncheck is the blocking
+      reachability gate and reports no call path.
+
+misconfigurations:
+  - id: DS-0002
+    paths:
+      - Dockerfile.gh-test
+      - test/runner/sockerless/Dockerfile
+      - test/runner/sockerless/Dockerfile.spawn-runner
+      - test/shauth/Dockerfile
+    expired_at: 2027-01-28
+    statement: >-
+      These are disposable test harnesses. Root is required for port 443,
+      installing an ephemeral test CA, or driving the mounted Docker socket;
+      none is a published runtime image.
+
+  - id: DS-0013
+    paths:
+      - test/runner/sockerless/Dockerfile
+    expired_at: 2027-01-28
+    statement: >-
+      The integration-only image deliberately builds several independent Go
+      modules from one copied fixture tree. The working-directory changes do
+      not survive into a published runtime artifact.
+
+  - id: DS-0026
+    paths:
+      - Dockerfile.gh-test
+      - Dockerfile.runner
+      - test/runner/sockerless/Dockerfile
+      - test/runner/sockerless/Dockerfile.spawn-runner
+      - test/shauth/Dockerfile
+    expired_at: 2027-01-28
+    statement: >-
+      These are finite jobs or test harnesses, not services. Their owning
+      process/runner protocol is the liveness signal; a Docker HEALTHCHECK
+      would not be consumed.

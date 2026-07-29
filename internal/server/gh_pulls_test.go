@@ -146,6 +146,24 @@ func TestInstallationAuthoredPullRequestRendersAppBot(t *testing.T) {
 		t.Fatalf("list pull requests returned %d entries, want 1", len(list))
 	}
 	assertBot("list", list[0]["user"])
+
+	issue := decodeJSONWithStatus(t, ghGet(t,
+		"/api/v3/repos/admin/pr-installation-bot/issues/1", defaultToken,
+	), http.StatusOK)
+	assertBot("issue projection", issue["user"])
+
+	search := decodeJSONWithStatus(t, ghGet(t,
+		"/api/v3/search/issues?q=repo%3Aadmin%2Fpr-installation-bot+is%3Apr", defaultToken,
+	), http.StatusOK)
+	items, ok := search["items"].([]interface{})
+	if !ok || len(items) != 1 {
+		t.Fatalf("search issue projection items = %#v, want one pull request", search["items"])
+	}
+	item, ok := items[0].(map[string]interface{})
+	if !ok {
+		t.Fatalf("search issue projection item = %#v", items[0])
+	}
+	assertBot("search issue projection", item["user"])
 }
 
 func TestForkPullRequestRESTAndGraphQL(t *testing.T) {

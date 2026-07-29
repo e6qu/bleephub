@@ -437,6 +437,8 @@ func (s *Server) setIdentityState(w http.ResponseWriter, pending identityState) 
 	mac := hmac.New(sha256.New, []byte(s.identityStateSecret(pending.Provider)))
 	_, _ = mac.Write(payload)
 	value := base64.RawURLEncoding.EncodeToString(payload) + "." + base64.RawURLEncoding.EncodeToString(mac.Sum(nil))
+	// #nosec G124 -- Secure is conditional only because explicitly enabled local
+	// HTTP development is supported; production external URLs are HTTPS.
 	http.SetCookie(w, &http.Cookie{Name: identityStateCookiePrefix + pending.State, Value: value, Path: "/auth/", MaxAge: 600, Expires: pending.ExpiresAt, HttpOnly: true, Secure: strings.HasPrefix(s.externalURL, "https://"), SameSite: http.SameSiteLaxMode})
 	return nil
 }
@@ -451,6 +453,7 @@ func (s *Server) consumeIdentityState(w http.ResponseWriter, r *http.Request, pr
 		}
 	}
 	cookieName := identityStateCookiePrefix + state
+	// #nosec G124 -- see setIdentityState; deletion must use the same Secure policy.
 	http.SetCookie(w, &http.Cookie{Name: cookieName, Value: "", Path: "/auth/", MaxAge: -1, HttpOnly: true, Secure: strings.HasPrefix(s.externalURL, "https://"), SameSite: http.SameSiteLaxMode})
 	cookie, err := r.Cookie(cookieName)
 	if err != nil {
@@ -599,10 +602,10 @@ func githubTeamRoles(token, login string) (admin, developer bool, err error) {
 				developer = true
 			}
 		} else if response.StatusCode != http.StatusNotFound {
-			response.Body.Close()
+			_ = response.Body.Close()
 			return false, false, fmt.Errorf("GitHub team membership lookup for %s status %d", team.slug, response.StatusCode)
 		}
-		response.Body.Close()
+		_ = response.Body.Close()
 	}
 	return admin, developer, nil
 }
@@ -674,6 +677,7 @@ func (s *Server) createOIDCBrowserSession(w http.ResponseWriter, user *User, ses
 	if err := s.store.PutLoginSession(id, &session); err != nil {
 		return err
 	}
+	// #nosec G124 -- Secure is conditional only for explicitly enabled local HTTP.
 	http.SetCookie(w, &http.Cookie{Name: "_gh_sess", Value: id, Path: "/", HttpOnly: true, Secure: strings.HasPrefix(s.externalURL, "https://"), SameSite: http.SameSiteLaxMode, Expires: session.ExpiresAt})
 	return nil
 }
@@ -694,6 +698,7 @@ func (s *Server) handleIdentityLogout(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
+	// #nosec G124 -- deletion mirrors the session's conditional local-HTTP policy.
 	http.SetCookie(w, &http.Cookie{Name: "_gh_sess", Value: "", Path: "/", MaxAge: -1, HttpOnly: true, Secure: strings.HasPrefix(s.externalURL, "https://"), SameSite: http.SameSiteLaxMode})
 	logoutTarget := ""
 	if s.identity.shauthConfigured() {
@@ -737,6 +742,7 @@ func (s *Server) handleIdentitySignedOut(w http.ResponseWriter, r *http.Request)
 			return
 		}
 	}
+	// #nosec G124 -- deletion mirrors the session's conditional local-HTTP policy.
 	http.SetCookie(w, &http.Cookie{Name: "_gh_sess", Value: "", Path: "/", MaxAge: -1, HttpOnly: true, Secure: strings.HasPrefix(s.externalURL, "https://"), SameSite: http.SameSiteLaxMode})
 	w.Header().Set("Cache-Control", "no-store")
 	w.Header().Set("Content-Security-Policy", "default-src 'none'; style-src 'unsafe-inline'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'")

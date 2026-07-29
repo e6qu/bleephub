@@ -10,11 +10,11 @@ set -euo pipefail
 
 cd "$(dirname "${BASH_SOURCE[0]}")/../web"
 
-if npx knip --reporter json > /dev/null; then
+if ./node_modules/.bin/knip --reporter json > /dev/null; then
   echo "bleephub-knip: OK"
   exit 0
 fi
 
 echo "FAIL: bleephub knip found dead exports/files:" >&2
-npx knip >&2 || true
+./node_modules/.bin/knip >&2 || true
 exit 1

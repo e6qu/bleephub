@@ -129,13 +129,6 @@ func (l *s3KeyLocks) drop(key string) {
 func newS3FS(ctx context.Context, endpoint, bucket, prefix string) (*s3FS, error) {
 	var opts []func(*awsconfig.LoadOptions) error
 	opts = append(opts, awsconfig.WithRegion(bleephubS3Region()))
-	if endpoint != "" {
-		opts = append(opts, awsconfig.WithEndpointResolverWithOptions(
-			aws.EndpointResolverWithOptionsFunc(func(service, region string, options ...interface{}) (aws.Endpoint, error) {
-				return aws.Endpoint{URL: endpoint}, nil
-			}),
-		))
-	}
 	cfg, err := awsconfig.LoadDefaultConfig(ctx, opts...)
 	if err != nil {
 		return nil, fmt.Errorf("s3 config: %w", err)
@@ -202,7 +195,7 @@ func (f *s3FS) Open(filename string) (billy.File, error) {
 	}
 
 	data, err := io.ReadAll(resp.Body)
-	resp.Body.Close()
+	_ = resp.Body.Close()
 	if err != nil {
 		return nil, fmt.Errorf("s3 read %s: %w", key, err)
 	}

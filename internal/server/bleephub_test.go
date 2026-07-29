@@ -269,24 +269,27 @@ func TestOAuthToken(t *testing.T) {
 		t.Fatal("missing clientId on registered agent")
 	}
 
-	form := runnerTokenExchangeForm(signTestAssertion(t, key, agent.Authorization.ClientID))
+	for _, algorithm := range []string{"RS256", "PS256"} {
+		t.Run(algorithm, func(t *testing.T) {
+			form := runnerTokenExchangeForm(signTestAssertionWithAlgorithm(t, key, agent.Authorization.ClientID, algorithm))
+			resp, err := http.Post(testBaseURL+"/_apis/v1/auth/", "application/x-www-form-urlencoded", strings.NewReader(form.Encode()))
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer resp.Body.Close()
+			if resp.StatusCode != 200 {
+				body, _ := io.ReadAll(resp.Body)
+				t.Fatalf("expected 200, got %d: %s", resp.StatusCode, body)
+			}
 
-	resp, err := http.Post(testBaseURL+"/_apis/v1/auth/", "application/x-www-form-urlencoded", strings.NewReader(form.Encode()))
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer resp.Body.Close()
-	if resp.StatusCode != 200 {
-		body, _ := io.ReadAll(resp.Body)
-		t.Fatalf("expected 200, got %d: %s", resp.StatusCode, body)
-	}
-
-	var data map[string]interface{}
-	if err := json.NewDecoder(resp.Body).Decode(&data); err != nil {
-		t.Fatalf("decode response: %v", err)
-	}
-	if data["access_token"] == nil {
-		t.Fatal("missing access_token")
+			var data map[string]interface{}
+			if err := json.NewDecoder(resp.Body).Decode(&data); err != nil {
+				t.Fatalf("decode response: %v", err)
+			}
+			if data["access_token"] == nil {
+				t.Fatal("missing access_token")
+			}
+		})
 	}
 }
 
@@ -319,14 +322,28 @@ func TestOAuthTokenRejectsUnknownClient(t *testing.T) {
 
 func signTestAssertion(t *testing.T, key *rsa.PrivateKey, clientID string) string {
 	t.Helper()
-	header := base64.RawURLEncoding.EncodeToString([]byte(`{"alg":"RS256","typ":"JWT"}`))
+	return signTestAssertionWithAlgorithm(t, key, clientID, "RS256")
+}
+
+func signTestAssertionWithAlgorithm(t *testing.T, key *rsa.PrivateKey, clientID, algorithm string) string {
+	t.Helper()
+	header := base64.RawURLEncoding.EncodeToString([]byte(fmt.Sprintf(`{"alg":%q,"typ":"JWT"}`, algorithm)))
 	now := time.Now().Unix()
 	payload := base64.RawURLEncoding.EncodeToString([]byte(fmt.Sprintf(
 		`{"iss":%q,"iat":%d,"exp":%d}`, clientID, now, now+300,
 	)))
 	signInput := header + "." + payload
 	hash := sha256.Sum256([]byte(signInput))
-	sig, err := rsa.SignPKCS1v15(rand.Reader, key, crypto.SHA256, hash[:])
+	var (
+		sig []byte
+		err error
+	)
+	switch algorithm {
+	case "PS256":
+		sig, err = rsa.SignPSS(rand.Reader, key, crypto.SHA256, hash[:], &rsa.PSSOptions{SaltLength: rsa.PSSSaltLengthEqualsHash})
+	default:
+		sig, err = rsa.SignPKCS1v15(rand.Reader, key, crypto.SHA256, hash[:])
+	}
 	if err != nil {
 		t.Fatalf("sign: %v", err)
 	}

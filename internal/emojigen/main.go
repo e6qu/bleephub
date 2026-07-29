@@ -136,6 +136,7 @@ func main() {
 	if err != nil {
 		log.Fatalf("build archive: %v", err)
 	}
+	// #nosec G306 -- generated emoji artwork is a distributable public asset.
 	if err := os.WriteFile(*outPath, archive, 0o644); err != nil {
 		log.Fatalf("write %s: %v", *outPath, err)
 	}
@@ -166,6 +167,7 @@ func readTwemojiTarball(localPath string) ([]byte, error) {
 
 func fetchTwemojiTarball(localPath string) ([]byte, error) {
 	if localPath != "" {
+		// #nosec G304 -- localPath is explicitly selected by the build operator.
 		return os.ReadFile(localPath)
 	}
 	client := &http.Client{Timeout: twemojiHTTPTimeout}

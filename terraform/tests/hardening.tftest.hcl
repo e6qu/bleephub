@@ -79,6 +79,14 @@ override_resource {
   }
 }
 
+override_resource {
+  target          = aws_cloudwatch_log_group.this
+  override_during = plan
+  values = {
+    arn = "arn:aws:logs:eu-west-1:123456789012:log-group:/ecs/bleephub-test"
+  }
+}
+
 variables {
   name                        = "bleephub-test"
   existing_vpc_id             = "vpc-0123456789abcdef0"
@@ -267,6 +275,11 @@ run "both_durable_stores_have_a_restore_path" {
   }
 
   assert {
+    condition     = aws_s3_bucket_versioning.startup.versioning_configuration[0].status == "Enabled"
+    error_message = "the startup document must be versioned so a bad rollout is recoverable"
+  }
+
+  assert {
     condition     = aws_efs_backup_policy.sqlite.backup_policy[0].status == "ENABLED"
     error_message = "the EFS filesystem must have AWS Backup enabled"
   }
@@ -284,14 +297,16 @@ run "durable_data_is_encrypted_with_a_rotating_customer_managed_key" {
     condition = alltrue([
       one(aws_s3_bucket_server_side_encryption_configuration.git.rule).apply_server_side_encryption_by_default[0].sse_algorithm == "aws:kms",
       one(aws_s3_bucket_server_side_encryption_configuration.objects.rule).apply_server_side_encryption_by_default[0].sse_algorithm == "aws:kms",
+      one(aws_s3_bucket_server_side_encryption_configuration.startup.rule).apply_server_side_encryption_by_default[0].sse_algorithm == "aws:kms",
     ])
-    error_message = "the Git and object buckets must be encrypted with a KMS key, not the S3-managed one"
+    error_message = "every bucket must be encrypted with a KMS key, not the S3-managed one"
   }
 
   assert {
     condition = alltrue([
       one(aws_s3_bucket_server_side_encryption_configuration.git.rule).apply_server_side_encryption_by_default[0].kms_master_key_id == aws_kms_key.this.arn,
       one(aws_s3_bucket_server_side_encryption_configuration.objects.rule).apply_server_side_encryption_by_default[0].kms_master_key_id == aws_kms_key.this.arn,
+      one(aws_s3_bucket_server_side_encryption_configuration.startup.rule).apply_server_side_encryption_by_default[0].kms_master_key_id == aws_kms_key.this.arn,
       aws_efs_file_system.sqlite.kms_key_id == aws_kms_key.this.arn,
       aws_cloudwatch_log_group.this.kms_key_id == aws_kms_key.this.arn,
       aws_secretsmanager_secret.admin_token.kms_key_id == aws_kms_key.this.arn,
@@ -332,6 +347,24 @@ run "the_startup_bucket_is_never_public" {
   assert {
     condition     = aws_apigatewayv2_integration.startup_page.integration_uri == "https://d000000000000.cloudfront.net/startup/index.html"
     error_message = "the startup route must be served through the distribution, not the bucket"
+  }
+}
+
+run "the_public_edge_and_wake_functions_emit_audit_telemetry" {
+  command = plan
+
+  assert {
+    condition     = one(aws_apigatewayv2_stage.default.access_log_settings).destination_arn == aws_cloudwatch_log_group.this.arn
+    error_message = "the public HTTP API must write structured access logs"
+  }
+
+  assert {
+    condition = alltrue([
+      one(aws_lambda_function.wake.tracing_config).mode == "Active",
+      one(aws_lambda_function.idle_shutdown.tracing_config).mode == "Active",
+      one(aws_lambda_function.idle_arm.tracing_config).mode == "Active",
+    ])
+    error_message = "every wake-controller Lambda must emit active X-Ray traces"
   }
 }
 

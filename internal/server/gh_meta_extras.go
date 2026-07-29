@@ -1,9 +1,10 @@
 package bleephub
 
 import (
+	cryptorand "crypto/rand"
 	_ "embed"
 	"encoding/json"
-	"math/rand"
+	"math/big"
 	"net/http"
 	"regexp"
 	"strings"
@@ -76,17 +77,25 @@ func (s *Server) handleGHEmojis(w http.ResponseWriter, r *http.Request) {
 func (s *Server) handleGHZen(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "text/plain; charset=utf-8")
 	w.WriteHeader(http.StatusOK)
-	_, _ = w.Write([]byte(zenQuotes[rand.Intn(len(zenQuotes))]))
+	_, _ = w.Write([]byte(randomZenQuote()))
 }
 
 func (s *Server) handleGHOctocat(w http.ResponseWriter, r *http.Request) {
 	text := r.URL.Query().Get("s")
 	if !octocatSpeechRe.MatchString(text) {
-		text = zenQuotes[rand.Intn(len(zenQuotes))]
+		text = randomZenQuote()
 	}
 	w.Header().Set("Content-Type", "application/octocat-stream")
 	w.WriteHeader(http.StatusOK)
 	_, _ = w.Write([]byte(octocatArt(text)))
+}
+
+func randomZenQuote() string {
+	index, err := cryptorand.Int(cryptorand.Reader, big.NewInt(int64(len(zenQuotes))))
+	if err != nil {
+		return zenQuotes[0]
+	}
+	return zenQuotes[index.Int64()]
 }
 
 // octocatArt renders GitHub's octocat ASCII art with the given text in the

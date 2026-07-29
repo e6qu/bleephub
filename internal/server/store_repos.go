@@ -125,7 +125,7 @@ func (st *Store) createRepoLocked(fullName, name, description string, private bo
 	// as "name taken" at the call sites, hiding storage misconfiguration.
 	stor, err := openOrInitGitStorage(context.Background(), fullName)
 	if err != nil {
-		log.Printf("bleephub: create repo %s: open git storage: %v", fullName, err)
+		log.Printf("bleephub: create repo %s: open git storage: %s", safeLogText(fullName), safeLogError(err))
 		return nil
 	}
 
@@ -256,11 +256,11 @@ func (st *Store) ForkRepo(owner *User, sourceRepo *Repo, name string) *Repo {
 
 	stor, err := openOrInitGitStorage(context.Background(), fullName)
 	if err != nil {
-		log.Printf("bleephub: fork repo %s: open git storage: %v", fullName, err)
+		log.Printf("bleephub: fork repo %s: open git storage: %s", safeLogText(fullName), safeLogError(err))
 		return nil
 	}
 	if err := copyGitStorage(srcStor, stor); err != nil {
-		log.Printf("bleephub: fork repo %s: copy git storage: %v", fullName, err)
+		log.Printf("bleephub: fork repo %s: copy git storage: %s", safeLogText(fullName), safeLogError(err))
 		return nil
 	}
 
@@ -320,14 +320,14 @@ func (st *Store) RenameRepo(owner, name, newName string) bool {
 	// prefix the bytes just left, so it has to be reopened against the new one.
 	// An in-memory storer holds the objects itself and is simply re-keyed.
 	if err := moveRepoGitStorage(oldFull, newFull); err != nil {
-		log.Printf("bleephub: rename repo %s -> %s: %v", oldFull, newFull, err)
+		log.Printf("bleephub: rename repo %s -> %s: %s", safeLogText(oldFull), safeLogText(newFull), safeLogError(err))
 		return false
 	}
 	stor := st.GitStorages[oldFull]
 	if stor != nil && repoGitStorageIsPathBound() {
 		reopened, err := openOrInitGitStorage(context.Background(), newFull)
 		if err != nil {
-			log.Printf("bleephub: rename repo %s -> %s: reopen git storage: %v", oldFull, newFull, err)
+			log.Printf("bleephub: rename repo %s -> %s: reopen git storage: %s", safeLogText(oldFull), safeLogText(newFull), safeLogError(err))
 			return false
 		}
 		stor = reopened
@@ -751,10 +751,22 @@ func repoGitStorageIsPathBound() bool {
 }
 
 func moveRepoGitStorage(oldFull, newFull string) error {
+	if err := validateRepoStorageFullName(oldFull); err != nil {
+		return err
+	}
+	if err := validateRepoStorageFullName(newFull); err != nil {
+		return err
+	}
 	if gitDir := GitDataDir(); gitDir != "" {
-		oldDir := filepath.Join(gitDir, filepath.FromSlash(oldFull))
-		newDir := filepath.Join(gitDir, filepath.FromSlash(newFull))
-		if err := os.MkdirAll(filepath.Dir(newDir), 0o755); err != nil {
+		oldDir, err := repoGitDirPath(gitDir, oldFull)
+		if err != nil {
+			return err
+		}
+		newDir, err := repoGitDirPath(gitDir, newFull)
+		if err != nil {
+			return err
+		}
+		if err := os.MkdirAll(filepath.Dir(newDir), 0o750); err != nil {
 			return fmt.Errorf("create git directory %s: %w", filepath.Dir(newDir), err)
 		}
 		if err := os.Rename(oldDir, newDir); err != nil {
@@ -778,8 +790,14 @@ func moveRepoGitStorage(oldFull, newFull string) error {
 }
 
 func deleteRepoGitStorage(fullName string) error {
+	if err := validateRepoStorageFullName(fullName); err != nil {
+		return err
+	}
 	if gitDir := GitDataDir(); gitDir != "" {
-		repoDir := filepath.Join(gitDir, filepath.FromSlash(fullName))
+		repoDir, err := repoGitDirPath(gitDir, fullName)
+		if err != nil {
+			return err
+		}
 		if err := os.RemoveAll(repoDir); err != nil {
 			return fmt.Errorf("remove filesystem git directory %s: %w", repoDir, err)
 		}
@@ -1509,7 +1527,10 @@ func (st *Store) RepoSize(fullName string) int64 {
 	if gitDir == "" {
 		return 0
 	}
-	repoDir := filepath.Join(gitDir, filepath.FromSlash(fullName))
+	repoDir, err := repoGitDirPath(gitDir, fullName)
+	if err != nil {
+		return 0
+	}
 	var total int64
 	_ = filepath.Walk(repoDir, func(_ string, info os.FileInfo, _ error) error {
 		if info != nil && !info.IsDir() {
@@ -1950,26 +1971,18 @@ func (st *Store) TransferRepo(owner, name, newOwner string) bool {
 		return false
 	}
 
-	if GitDataDir() != "" {
-		oldDir := filepath.Join(GitDataDir(), filepath.FromSlash(oldFull))
-		newDir := filepath.Join(GitDataDir(), filepath.FromSlash(newFull))
-		if err := os.Rename(oldDir, newDir); err != nil && os.IsExist(err) {
-			log.Printf("bleephub: transfer repo %s -> %s: move git dir: %v", oldFull, newFull, err)
-			return false
-		}
+	if err := moveRepoGitStorage(oldFull, newFull); err != nil {
+		log.Printf("bleephub: transfer repo %s -> %s: %s", safeLogText(oldFull), safeLogText(newFull), safeLogError(err))
+		return false
 	}
-	if IsS3GitStorage() {
-		s3fs, err := getS3FS(context.Background())
+	stor := st.GitStorages[oldFull]
+	if stor != nil && repoGitStorageIsPathBound() {
+		reopened, err := openOrInitGitStorage(context.Background(), newFull)
 		if err != nil {
-			log.Printf("bleephub: transfer repo %s -> %s: resolve s3 fs: %v", oldFull, newFull, err)
+			log.Printf("bleephub: transfer repo %s -> %s: reopen git storage: %s", safeLogText(oldFull), safeLogText(newFull), safeLogError(err))
 			return false
 		}
-		if s3fs != nil {
-			if err := s3fs.renameRepoPrefix(oldFull, newFull); err != nil {
-				log.Printf("bleephub: transfer repo %s -> %s: move s3 prefix: %v", oldFull, newFull, err)
-				return false
-			}
-		}
+		stor = reopened
 	}
 
 	repo.FullName = newFull
@@ -1987,7 +2000,7 @@ func (st *Store) TransferRepo(owner, name, newOwner string) bool {
 	st.ReposByName[newFull] = repo
 	delete(st.ReposByName, oldFull)
 
-	if stor := st.GitStorages[oldFull]; stor != nil {
+	if stor != nil {
 		st.GitStorages[newFull] = stor
 		delete(st.GitStorages, oldFull)
 	}

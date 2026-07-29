@@ -252,10 +252,10 @@ func (rs *ReleaseStore) saveAssetDataLocked(id int, data []byte) error {
 		return rs.byteStore.Put(context.Background(), releaseAssetDataKey(id), data)
 	}
 	if rs.assetDataDir != "" {
-		if err := os.MkdirAll(rs.assetDataDir, 0o755); err != nil {
+		if err := os.MkdirAll(rs.assetDataDir, 0o750); err != nil {
 			return err
 		}
-		return os.WriteFile(rs.assetFilePath(id), data, 0o644)
+		return os.WriteFile(rs.assetFilePath(id), data, 0o600)
 	}
 	rs.assetData[id] = data
 	return nil
@@ -271,6 +271,7 @@ func (rs *ReleaseStore) loadAssetDataLocked(id int) ([]byte, bool) {
 	}
 	if rs.assetDataDir != "" {
 		path := rs.assetFilePath(id)
+		// #nosec G304 -- assetFilePath appends only the decimal internal ID.
 		data, err := os.ReadFile(path)
 		if err != nil {
 			return nil, false

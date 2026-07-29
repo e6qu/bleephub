@@ -105,7 +105,7 @@ func (s *Server) handleGetRequest(w http.ResponseWriter, r *http.Request) {
 	// Return the full job message as the request details
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
-	w.Write([]byte(job.Message))
+	_, _ = w.Write([]byte(job.Message))
 }
 
 func (s *Server) handleRenewRequest(w http.ResponseWriter, r *http.Request) {

@@ -102,6 +102,25 @@ data "aws_iam_policy_document" "kms" {
       values   = ["arn:aws:logs:${var.region}:${data.aws_caller_identity.current.account_id}:log-group:/bleephub/${var.name}"]
     }
   }
+
+  # CloudFront decrypts the KMS-encrypted startup document through its OAC.
+  # Bind that ability to this distribution rather than granting the service
+  # principal access to every object encrypted by the shared key.
+  statement {
+    sid       = "CloudFrontStartupDecryption"
+    effect    = "Allow"
+    actions   = ["kms:Decrypt"]
+    resources = ["*"]
+    principals {
+      type        = "Service"
+      identifiers = ["cloudfront.amazonaws.com"]
+    }
+    condition {
+      test     = "StringEquals"
+      variable = "AWS:SourceArn"
+      values   = [aws_cloudfront_distribution.startup.arn]
+    }
+  }
 }
 
 moved {
@@ -210,6 +229,9 @@ resource "aws_vpc_endpoint" "s3" {
   tags              = merge(local.common_tags, { Name = "${var.name}-s3" })
 }
 
+# S3 server-access logs would duplicate CloudTrail data-event auditing while
+# adding a fourth durable bucket; revisit with the audit-log rollout.
+#trivy:ignore:AWS-0089:exp:2027-01-28
 resource "aws_s3_bucket" "git" {
   bucket        = local.git_bucket
   force_destroy = var.force_destroy_storage
@@ -280,6 +302,8 @@ resource "aws_s3_bucket_lifecycle_configuration" "git" {
   }
 }
 
+# See the git bucket: data-event auditing is the intended object-access ledger.
+#trivy:ignore:AWS-0089:exp:2027-01-28
 resource "aws_s3_bucket" "objects" {
   bucket        = local.object_bucket
   force_destroy = var.force_destroy_storage
@@ -351,18 +375,29 @@ resource "aws_s3_bucket_lifecycle_configuration" "objects" {
 # This contains exactly one non-sensitive document. It makes the scale-to-zero
 # transition visible without starting an ECS task merely to render a loading
 # screen; no application, Git, object, or status data is readable from it.
+# Viewer requests are recorded by API Gateway; S3 sees only CloudFront's fixed
+# origin read and a separate server-access-log bucket would recursively expand
+# the storage surface for no additional viewer attribution.
+#trivy:ignore:AWS-0089:exp:2027-01-28
 resource "aws_s3_bucket" "startup" {
   bucket        = local.startup_bucket
   force_destroy = var.force_destroy_storage
   tags          = local.common_tags
 }
 
+resource "aws_s3_bucket_versioning" "startup" {
+  bucket = aws_s3_bucket.startup.id
+  versioning_configuration { status = "Enabled" }
+}
+
 resource "aws_s3_bucket_server_side_encryption_configuration" "startup" {
   bucket = aws_s3_bucket.startup.id
   rule {
     apply_server_side_encryption_by_default {
-      sse_algorithm = "AES256"
+      sse_algorithm     = "aws:kms"
+      kms_master_key_id = aws_kms_key.this.arn
     }
+    bucket_key_enabled = true
   }
 }
 
@@ -389,6 +424,10 @@ data "aws_cloudfront_cache_policy" "caching_disabled" {
   name = "Managed-CachingDisabled"
 }
 
+# The origin is one fixed, non-sensitive startup document; API Gateway access
+# logs cover every viewer request, while a WAF or a second CloudFront log bucket
+# would add cost and attack surface without protecting a dynamic application.
+#trivy:ignore:AWS-0010:exp:2027-01-28 trivy:ignore:AWS-0011:exp:2027-01-28
 resource "aws_cloudfront_distribution" "startup" {
   enabled = true
   comment = "${var.name} startup document"
@@ -467,6 +506,10 @@ resource "aws_s3_object" "startup_page" {
   content_type  = "text/html; charset=utf-8"
   cache_control = "no-store, max-age=0"
   tags          = local.common_tags
+  depends_on = [
+    aws_s3_bucket_server_side_encryption_configuration.startup,
+    aws_s3_bucket_versioning.startup,
+  ]
 }
 
 resource "aws_secretsmanager_secret" "admin_token" {
@@ -542,8 +585,12 @@ resource "aws_cloudwatch_log_group" "this" {
 resource "aws_security_group" "api_link" {
   count       = local.uses_shared_api_gateway_vpc_link ? 0 : 1
   name_prefix = "${var.name}-api-link-"
+  description = "API Gateway VPC link to Bleephub application tasks"
   vpc_id      = local.vpc_id
+  # The link must reach dynamically addressed application tasks.
+  #trivy:ignore:AWS-0104:exp:2027-01-28
   egress {
+    description = "Reach application tasks selected by service discovery"
     protocol    = "-1"
     from_port   = 0
     to_port     = 0
@@ -554,20 +601,27 @@ resource "aws_security_group" "api_link" {
 
 resource "aws_security_group" "task" {
   name_prefix = "${var.name}-task-"
+  description = "Bleephub application task ingress and outbound integrations"
   vpc_id      = local.vpc_id
   ingress {
+    description     = "HTTP API traffic from the API Gateway VPC link"
     protocol        = "tcp"
     from_port       = 5555
     to_port         = 5555
     security_groups = [local.api_gateway_vpc_link_security_group_id]
   }
   ingress {
+    description     = "Git SSH traffic from the SSH gateway"
     protocol        = "tcp"
     from_port       = 2222
     to_port         = 2222
     security_groups = [aws_security_group.ssh_gateway.id]
   }
+  # Git remotes, webhooks, package registries, and OIDC providers are
+  # user-configurable internet destinations and cannot be reduced to CIDRs.
+  #trivy:ignore:AWS-0104:exp:2027-01-28
   egress {
+    description = "User-configured GitHub-compatible outbound integrations"
     protocol    = "-1"
     from_port   = 0
     to_port     = 0
@@ -578,14 +632,20 @@ resource "aws_security_group" "task" {
 
 resource "aws_security_group" "ssh" {
   name_prefix = "${var.name}-ssh-"
+  description = "Public SSH Network Load Balancer ingress"
   vpc_id      = local.vpc_id
   ingress {
+    description = "Operator-configured public Git SSH ingress"
     protocol    = "tcp"
     from_port   = 22
     to_port     = 22
     cidr_blocks = var.ssh_ingress_cidr_blocks
   }
+  # The Network Load Balancer preserves client IPs and its nodes require
+  # return traffic to arbitrary clients.
+  #trivy:ignore:AWS-0104:exp:2027-01-28
   egress {
+    description = "Return traffic to Git SSH clients"
     protocol    = "-1"
     from_port   = 0
     to_port     = 0
@@ -596,14 +656,19 @@ resource "aws_security_group" "ssh" {
 
 resource "aws_security_group" "ssh_gateway" {
   name_prefix = "${var.name}-ssh-gateway-"
+  description = "SSH gateway traffic between the NLB and application tasks"
   vpc_id      = local.vpc_id
   ingress {
+    description     = "Git SSH traffic from the public NLB"
     protocol        = "tcp"
     from_port       = 2222
     to_port         = 2222
     security_groups = [aws_security_group.ssh.id]
   }
+  # The gateway wakes API Gateway and resolves dynamic Cloud Map task targets.
+  #trivy:ignore:AWS-0104:exp:2027-01-28
   egress {
+    description = "Wake endpoint and dynamic application task targets"
     protocol    = "-1"
     from_port   = 0
     to_port     = 0
@@ -614,8 +679,10 @@ resource "aws_security_group" "ssh_gateway" {
 
 resource "aws_security_group" "efs" {
   name_prefix = "${var.name}-efs-"
+  description = "Encrypted EFS access from application and dqlite tasks"
   vpc_id      = local.vpc_id
   ingress {
+    description     = "NFS from application and dqlite tasks"
     protocol        = "tcp"
     from_port       = 2049
     to_port         = 2049
@@ -626,20 +693,27 @@ resource "aws_security_group" "efs" {
 
 resource "aws_security_group" "dqlite" {
   name_prefix = "${var.name}-dqlite-"
+  description = "Private dqlite quorum traffic"
   vpc_id      = local.vpc_id
   ingress {
+    description     = "dqlite client traffic from application tasks"
     protocol        = "tcp"
     from_port       = 9000
     to_port         = 9000
     security_groups = [aws_security_group.task.id]
   }
   ingress {
-    protocol  = "tcp"
-    from_port = 9000
-    to_port   = 9000
-    self      = true
+    description = "dqlite raft traffic between quorum members"
+    protocol    = "tcp"
+    from_port   = 9000
+    to_port     = 9000
+    self        = true
   }
+  # Quorum nodes require EFS, CloudWatch, Secrets Manager, and peer discovery;
+  # endpoint addresses vary by VPC and account.
+  #trivy:ignore:AWS-0104:exp:2027-01-28
   egress {
+    description = "AWS services, EFS, and dqlite quorum peers"
     protocol    = "-1"
     from_port   = 0
     to_port     = 0
@@ -815,6 +889,7 @@ resource "aws_iam_role_policy" "wake_service" {
       { Effect = "Allow", Action = ["ecs:ListTasks", "ecs:DescribeTasks", "ecs:StopTask"], Resource = "*" },
       { Effect = "Allow", Action = ["secretsmanager:GetSecretValue"], Resource = aws_secretsmanager_secret.admin_token.arn },
       { Effect = "Allow", Action = ["kms:Decrypt"], Resource = aws_kms_key.this.arn },
+      { Effect = "Allow", Action = ["xray:PutTraceSegments", "xray:PutTelemetryRecords"], Resource = "*" },
       { Effect = "Allow", Action = ["apigateway:GET", "apigateway:PATCH"], Resource = "arn:aws:apigateway:${var.region}::/apis/${aws_apigatewayv2_api.this.id}/*" },
       { Effect = "Allow", Action = ["cloudwatch:SetAlarmState", "cloudwatch:DisableAlarmActions", "cloudwatch:EnableAlarmActions"], Resource = aws_cloudwatch_metric_alarm.idle_shutdown.arn },
       { Effect = "Allow", Action = ["cloudwatch:DescribeAlarms"], Resource = "*" },
@@ -894,6 +969,9 @@ resource "aws_service_discovery_service" "dqlite" {
   tags = merge(local.common_tags, { Name = "${var.name}-dqlite-${each.key}" })
 }
 
+# Public reachability is the purpose of the Git SSH endpoint; ingress CIDRs are
+# independently operator-restricted on aws_security_group.ssh.
+#trivy:ignore:AWS-0053:exp:2027-01-28
 resource "aws_lb" "ssh" {
   name               = "${var.name}-ssh"
   internal           = false
@@ -991,6 +1069,19 @@ resource "aws_apigatewayv2_stage" "default" {
   default_route_settings {
     throttling_burst_limit = 100
     throttling_rate_limit  = 50
+  }
+  access_log_settings {
+    destination_arn = aws_cloudwatch_log_group.this.arn
+    format = jsonencode({
+      requestId      = "$context.requestId"
+      ip             = "$context.identity.sourceIp"
+      requestTime    = "$context.requestTime"
+      httpMethod     = "$context.httpMethod"
+      routeKey       = "$context.routeKey"
+      status         = "$context.status"
+      protocol       = "$context.protocol"
+      responseLength = "$context.responseLength"
+    })
   }
   tags = local.common_tags
 }
@@ -1298,6 +1389,7 @@ resource "aws_lambda_function" "wake" {
   architectures    = ["arm64"]
   source_code_hash = filebase64sha256(var.wake_listener_zip_path)
   timeout          = 120
+  tracing_config { mode = "Active" }
 
   environment {
     variables = {
@@ -1356,6 +1448,7 @@ resource "aws_lambda_function" "idle_shutdown" {
   architectures    = ["arm64"]
   source_code_hash = filebase64sha256(var.wake_listener_zip_path)
   timeout          = 300
+  tracing_config { mode = "Active" }
 
   environment {
     variables = {
@@ -1381,6 +1474,7 @@ resource "aws_lambda_function" "idle_arm" {
   architectures    = ["arm64"]
   source_code_hash = filebase64sha256(var.wake_listener_zip_path)
   timeout          = 30
+  tracing_config { mode = "Active" }
 
   environment {
     variables = {

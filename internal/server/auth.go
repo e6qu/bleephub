@@ -277,9 +277,10 @@ func writeOAuthError(w http.ResponseWriter, status int, code, desc string) {
 	_, _ = w.Write(body)
 }
 
-// verifyAgentClientAssertion validates an RS256 JWT signed by the agent's
-// registered RSA private key. The JWT's iss claim must match a known agent
-// ClientID; the signature is verified against that agent's public key.
+// verifyAgentClientAssertion validates an RSA JWT signed by the agent's
+// registered private key. Current runners use PS256 while older supported
+// runners use RS256. The JWT's iss claim must match a known agent ClientID;
+// the signature is verified against that agent's public key.
 func (s *Server) verifyAgentClientAssertion(token string) (*Agent, error) {
 	parts := strings.SplitN(token, ".", 3)
 	if len(parts) != 3 {
@@ -296,8 +297,8 @@ func (s *Server) verifyAgentClientAssertion(token string) (*Agent, error) {
 	if err := json.Unmarshal(headerBytes, &header); err != nil {
 		return nil, fmt.Errorf("parse JWT header: %w", err)
 	}
-	if header.Alg != "RS256" {
-		return nil, fmt.Errorf("unsupported JWT algorithm %q (expected RS256)", header.Alg)
+	if header.Alg != "RS256" && header.Alg != "PS256" {
+		return nil, fmt.Errorf("unsupported JWT algorithm %q (expected RS256 or PS256)", header.Alg)
 	}
 
 	payloadBytes, err := base64urlDecode(parts[1])
@@ -336,8 +337,15 @@ func (s *Server) verifyAgentClientAssertion(token string) (*Agent, error) {
 	}
 	signInput := parts[0] + "." + parts[1]
 	hash := sha256.Sum256([]byte(signInput))
-	if err := rsa.VerifyPKCS1v15(pubKey, crypto.SHA256, hash[:], sigBytes); err != nil {
-		return nil, fmt.Errorf("invalid JWT signature: %w", err)
+	var verifyErr error
+	switch header.Alg {
+	case "PS256":
+		verifyErr = rsa.VerifyPSS(pubKey, crypto.SHA256, hash[:], sigBytes, nil)
+	default:
+		verifyErr = rsa.VerifyPKCS1v15(pubKey, crypto.SHA256, hash[:], sigBytes)
+	}
+	if verifyErr != nil {
+		return nil, fmt.Errorf("invalid JWT signature: %w", verifyErr)
 	}
 	return agent, nil
 }

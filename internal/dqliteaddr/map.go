@@ -13,8 +13,8 @@ const Environment = "BLEEPHUB_DQLITE_ADDRESS_MAP"
 // request header that carries it. The dqlite wire protocol authenticates
 // nothing itself, so the transport upgrade is where membership is proven.
 const (
-	SecretEnvironment = "BLEEPHUB_DQLITE_SECRET"
-	SecretHeader      = "X-Bleephub-Dqlite-Secret"
+	SecretEnvironment = "BLEEPHUB_DQLITE_SECRET"   // #nosec G101 -- environment variable name
+	SecretHeader      = "X-Bleephub-Dqlite-Secret" // #nosec G101 -- header name, not a credential
 )
 
 // Map parses the comma-separated old-address=new-address mapping stored in

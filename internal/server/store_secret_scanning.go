@@ -2,6 +2,7 @@ package bleephub
 
 import (
 	"fmt"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -101,14 +102,7 @@ func (st *Store) CreateSecretScanningAlertIfNew(repoKey, secretType string, loca
 		if existing.SecretType != secretType || len(existing.Locations) != len(locations) {
 			continue
 		}
-		same := true
-		for i := range existing.Locations {
-			if !sameSecretScanningLocation(existing.Locations[i], locations[i]) {
-				same = false
-				break
-			}
-		}
-		if same {
+		if slices.EqualFunc(existing.Locations, locations, sameSecretScanningLocation) {
 			return existing
 		}
 	}

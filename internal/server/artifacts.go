@@ -6,6 +6,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -286,6 +287,7 @@ func (as *ArtifactStore) recoverArtifactsFromDisk() {
 			continue
 		}
 		metaPath := filepath.Join(artDir, entry.Name(), "meta.json")
+		// #nosec G304 -- entry.Name was parsed as a base-10 artifact ID above.
 		metaBytes, err := os.ReadFile(metaPath)
 		if err != nil {
 			continue
@@ -319,6 +321,7 @@ func (as *ArtifactStore) recoverCachesFromDisk() {
 			continue
 		}
 		metaPath := filepath.Join(cacheDir, entry.Name(), "meta.json")
+		// #nosec G304 -- entry.Name was parsed as a base-10 cache ID above.
 		metaBytes, err := os.ReadFile(metaPath)
 		if err != nil {
 			continue
@@ -350,14 +353,14 @@ func (as *ArtifactStore) persistMeta(art *Artifact) error {
 		return nil
 	}
 	dir := filepath.Join(as.dataDir, "artifacts", strconv.FormatInt(art.ID, 10))
-	if err := os.MkdirAll(dir, 0o755); err != nil {
+	if err := os.MkdirAll(dir, 0o750); err != nil {
 		return err
 	}
 	data, err := json.Marshal(art)
 	if err != nil {
 		return err
 	}
-	return os.WriteFile(filepath.Join(dir, "meta.json"), data, 0o644)
+	return os.WriteFile(filepath.Join(dir, "meta.json"), data, 0o600)
 }
 
 func (as *ArtifactStore) writeArtifactData(ctx context.Context, art *Artifact) error {
@@ -393,16 +396,18 @@ func (as *ArtifactStore) writeBytes(ctx context.Context, objectKey, localPath st
 	if as.dataDir == "" || localPath == "" {
 		return nil
 	}
-	if err := os.MkdirAll(filepath.Dir(localPath), 0o755); err != nil {
+	if err := os.MkdirAll(filepath.Dir(localPath), 0o750); err != nil {
 		return err
 	}
-	return os.WriteFile(localPath, data, 0o644)
+	return os.WriteFile(localPath, data, 0o600)
 }
 
 func (as *ArtifactStore) readBytes(ctx context.Context, objectKey, localPath string) ([]byte, error) {
 	if as.byteStore != nil {
 		return as.byteStore.Get(ctx, objectKey)
 	}
+	// #nosec G304,G703 -- localPath is assembled internally from the configured
+	// artifact root and a numeric store ID, never from request path text.
 	return os.ReadFile(localPath)
 }
 
@@ -549,14 +554,14 @@ func (as *ArtifactStore) persistCacheMeta(entry *CacheEntry) error {
 		return nil
 	}
 	dir := filepath.Join(as.dataDir, "caches", strconv.FormatInt(entry.ID, 10))
-	if err := os.MkdirAll(dir, 0o755); err != nil {
+	if err := os.MkdirAll(dir, 0o750); err != nil {
 		return err
 	}
 	data, err := json.Marshal(entry)
 	if err != nil {
 		return err
 	}
-	return os.WriteFile(filepath.Join(dir, "meta.json"), data, 0o644)
+	return os.WriteFile(filepath.Join(dir, "meta.json"), data, 0o600)
 }
 
 // writeCacheDataAt writes a ranged chunk to the cache's data file at the
@@ -578,18 +583,22 @@ func (as *ArtifactStore) writeCacheChunkToDisk(entry *CacheEntry, chunk []byte, 
 		return nil
 	}
 	dir := filepath.Join(as.dataDir, "caches", strconv.FormatInt(entry.ID, 10))
-	if err := os.MkdirAll(dir, 0o755); err != nil {
+	if err := os.MkdirAll(dir, 0o750); err != nil {
 		return err
 	}
-	f, err := os.OpenFile(filepath.Join(dir, "data"), os.O_CREATE|os.O_WRONLY, 0o644)
+	// #nosec G304 -- the path contains only the configured artifact root and
+	// the decimal internal cache ID.
+	f, err := os.OpenFile(filepath.Join(dir, "data"), os.O_CREATE|os.O_WRONLY, 0o600)
 	if err != nil {
 		return err
 	}
-	defer f.Close()
-	if _, err := f.WriteAt(chunk, offset); err != nil {
-		return err
+	if _, writeErr := f.WriteAt(chunk, offset); writeErr != nil {
+		if closeErr := f.Close(); closeErr != nil {
+			return errors.Join(writeErr, closeErr)
+		}
+		return writeErr
 	}
-	return nil
+	return f.Close()
 }
 
 func (s *Server) registerArtifactRoutes() {

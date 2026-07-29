@@ -1733,6 +1733,7 @@ func (s *Server) addPullRequestFieldsToSchema(userType, issueType, repoType, mut
 			if expected, ok := input["expectedHeadOid"].(string); ok && expected != "" {
 				head := s.prHeadSha(repo, pr)
 				if head == "" || !strings.EqualFold(head, expected) {
+					//lint:ignore ST1005 GitHub GraphQL parity requires this exact upstream message.
 					return nil, fmt.Errorf("Head branch was modified. Review and try the merge again.")
 				}
 			}
@@ -1745,6 +1746,7 @@ func (s *Server) addPullRequestFieldsToSchema(userType, issueType, repoType, mut
 			// completePullRequestMerge below; there is no other path to it.
 			if headSha := s.prHeadSha(repo, pr); headSha != "" {
 				if st := s.evaluateChecksForMerge(repo, pr.BaseRefName, headSha); len(st.MissingRequired) > 0 {
+					//lint:ignore ST1005 GitHub GraphQL parity requires this exact upstream message.
 					return nil, fmt.Errorf("Required status check %q is expected.", st.MissingRequired[0])
 				}
 			}

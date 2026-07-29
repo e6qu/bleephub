@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, afterEach } from "vitest";
 import { render, cleanup, screen, waitFor } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { BrowserRouter, Routes, Route, MemoryRouter } from "react-router";
+import { Routes, Route, MemoryRouter } from "react-router";
 import { OrgReposPage } from "../pages/OrgReposPage.js";
 
 const mockFetch = vi.fn();

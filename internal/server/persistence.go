@@ -382,7 +382,9 @@ func (p *Persistence) ClaimOIDCLogoutAndDeleteSessions(replayKey string, expires
 }
 
 func openSQLite(dataDir string) (*sql.DB, error) {
-	if err := os.MkdirAll(dataDir, 0o755); err != nil {
+	// #nosec G703 -- dataDir is deployment configuration, not request input;
+	// the only appended component is the fixed database filename.
+	if err := os.MkdirAll(dataDir, 0o750); err != nil {
 		return nil, fmt.Errorf("mkdir %s: %w", dataDir, err)
 	}
 	dbPath := filepath.Join(dataDir, "bleephub.db")

@@ -5,7 +5,9 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"path"
 	"path/filepath"
+	"strings"
 	"sync"
 
 	"github.com/go-git/go-billy/v5/helper/polyfill"
@@ -60,7 +62,45 @@ func IsS3GitStorage() bool {
 	return os.Getenv("BLEEPHUB_S3_BUCKET") != ""
 }
 
+// validateRepoStorageFullName keeps every filesystem and object-store backend
+// at the same trust boundary. Repository keys are always exactly owner/name;
+// accepting an absolute path, a dot component, or a platform separator here
+// would let a valid API request escape the configured repository namespace.
+func validateRepoStorageFullName(fullName string) error {
+	if fullName == "" ||
+		strings.Contains(fullName, `\`) ||
+		strings.Count(fullName, "/") != 1 ||
+		path.Clean(fullName) != fullName ||
+		!filepath.IsLocal(filepath.FromSlash(fullName)) {
+		return fmt.Errorf("invalid repository storage name %q", fullName)
+	}
+	parts := strings.Split(fullName, "/")
+	if parts[0] == "" || parts[1] == "" || parts[0] == "." || parts[0] == ".." || parts[1] == "." || parts[1] == ".." {
+		return fmt.Errorf("invalid repository storage name %q", fullName)
+	}
+	return nil
+}
+
+func repoGitDirPath(gitDir, fullName string) (string, error) {
+	if err := validateRepoStorageFullName(fullName); err != nil {
+		return "", err
+	}
+	root, err := filepath.Abs(gitDir)
+	if err != nil {
+		return "", fmt.Errorf("resolve git directory %q: %w", gitDir, err)
+	}
+	repoDir := filepath.Join(root, filepath.FromSlash(fullName))
+	relative, err := filepath.Rel(root, repoDir)
+	if err != nil || !filepath.IsLocal(relative) {
+		return "", fmt.Errorf("repository storage name %q escapes git directory", fullName)
+	}
+	return repoDir, nil
+}
+
 func newGitStorage(ctx context.Context, fullName string) (gitStorage.Storer, error) {
+	if err := validateRepoStorageFullName(fullName); err != nil {
+		return nil, err
+	}
 	s3fs, err := getS3FS(ctx)
 	if err != nil {
 		return nil, err
@@ -77,8 +117,11 @@ func newGitStorage(ctx context.Context, fullName string) (gitStorage.Storer, err
 	if gitDir == "" {
 		return memory.NewStorage(), nil
 	}
-	repoDir := filepath.Join(gitDir, filepath.FromSlash(fullName))
-	if err := os.MkdirAll(repoDir, 0o755); err != nil {
+	repoDir, err := repoGitDirPath(gitDir, fullName)
+	if err != nil {
+		return nil, err
+	}
+	if err := os.MkdirAll(repoDir, 0o750); err != nil {
 		return nil, fmt.Errorf("mkdir %s: %w", repoDir, err)
 	}
 	fs := osfs.New(repoDir)

@@ -176,7 +176,7 @@ func (s *Server) handleManifestSubmission(w http.ResponseWriter, r *http.Request
 // handleListBrowserGitHubApps exposes the signed-in user's GitHub Apps through
 // the same settings surface that owns the browser manifest flow.
 func (s *Server) handleListBrowserGitHubApps(w http.ResponseWriter, r *http.Request) {
-	r, user := s.authenticatedBrowserRequest(r)
+	_, user := s.authenticatedBrowserRequest(r)
 	if user == nil {
 		writeGHError(w, http.StatusUnauthorized, "Bad credentials")
 		return
