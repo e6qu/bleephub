@@ -160,11 +160,7 @@ func createFileCommitExpectedGuarded(stor gitStorage.Storer, branch, path, conte
 
 // deleteFileCommit removes a single file on the given branch and returns the
 // new commit hash. It returns an error if the file does not exist.
-func deleteFileCommit(stor gitStorage.Storer, branch, path, message string, sig *object.Signature, expectedParent plumbing.Hash) (plumbing.Hash, error) {
-	return deleteFileCommitGuarded(stor, branch, path, message, sig, expectedParent, nil)
-}
-
-func deleteFileCommitGuarded(stor gitStorage.Storer, branch, path, message string, sig *object.Signature, expectedParent plumbing.Hash, guard func(plumbing.Hash) error) (plumbing.Hash, error) {
+func deleteFileCommit(stor gitStorage.Storer, branch, path, message string, sig *object.Signature, expectedParent plumbing.Hash, guard func(plumbing.Hash) error) (plumbing.Hash, error) {
 	fs := memfs.New()
 	repo, err := git.Open(stor, fs)
 	if err != nil {

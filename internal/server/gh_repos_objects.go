@@ -729,7 +729,7 @@ func (s *Server) handleDeleteContents(w http.ResponseWriter, r *http.Request) {
 		sig = repoSignature(req.Author.Name, req.Author.Email)
 	}
 
-	commitHash, err := deleteFileCommitGuarded(
+	commitHash, err := deleteFileCommit(
 		stor, branch, path, req.Message, sig, ref.Hash(),
 		s.contentRefWriteGuard(r, repo, stor, branchRef, refFastForward),
 	)

@@ -405,7 +405,7 @@ func (st *Store) ApplicableRulesets(repo *Repo, ref string) []Ruleset {
 	st.mu.RLock()
 	defer st.mu.RUnlock()
 
-	target, short := "", ref
+	var target, short string
 	switch {
 	case strings.HasPrefix(ref, "refs/heads/"):
 		target, short = "branch", strings.TrimPrefix(ref, "refs/heads/")

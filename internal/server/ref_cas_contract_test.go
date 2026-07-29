@@ -17,7 +17,6 @@ func TestDerivedRefMutationsUseCompareAndSwap(t *testing.T) {
 			"createFileCommitExpected",
 			"createFileCommitExpectedGuarded",
 			"deleteFileCommit",
-			"deleteFileCommitGuarded",
 			"handleUpdateRef",
 		},
 		"gh_repos_compare.go": {
@@ -29,7 +28,6 @@ func TestDerivedRefMutationsUseCompareAndSwap(t *testing.T) {
 	}
 	casDelegates := map[string]string{
 		"createFileCommitExpected": "createFileCommitExpectedGuarded",
-		"deleteFileCommit":         "deleteFileCommitGuarded",
 	}
 	for name, functions := range files {
 		parsed, err := parser.ParseFile(token.NewFileSet(), name, nil, parser.SkipObjectResolution)
