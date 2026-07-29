@@ -89,6 +89,7 @@ func (s *Server) handleSubmitJob(w http.ResponseWriter, r *http.Request) {
 
 	s.store.mu.Lock()
 	s.store.Jobs[jobID] = job
+	s.store.registerJobLogMasksLocked(planID, msg)
 	s.store.mu.Unlock()
 
 	// Build the envelope message

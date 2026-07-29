@@ -3,6 +3,8 @@ package bleephub
 import (
 	"bytes"
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"log"
@@ -158,7 +160,10 @@ type UserEmail struct {
 
 // Token represents a personal access token.
 type Token struct {
-	Value               string
+	// Value is returned exactly once when a token is minted and is retained
+	// only by the live process that minted it. Persistence keys tokens by a
+	// one-way digest and never serializes the bearer credential itself.
+	Value               string `json:"-"`
 	UserID              int
 	Scopes              string
 	CreatedAt           time.Time
@@ -170,6 +175,43 @@ type Token struct {
 	RepositoryIDs       []int             `json:"repository_ids,omitempty"`
 	Permissions         OrgPATPermissions `json:"permissions,omitempty"`
 	ExpiresAt           *time.Time        `json:"expires_at,omitempty"`
+}
+
+const tokenDigestPrefix = "sha256:"
+
+func tokenPersistenceKey(value string) string {
+	digest := sha256.Sum256([]byte(value))
+	return tokenDigestPrefix + hex.EncodeToString(digest[:])
+}
+
+func tokenPersistenceKeyForMapKey(key string) string {
+	if strings.HasPrefix(key, tokenDigestPrefix) {
+		return key
+	}
+	return tokenPersistenceKey(key)
+}
+
+// tokenByValueLocked resolves a presented bearer without retaining or
+// persisting a reversible copy. Callers must hold at least st.mu.RLock.
+func (st *Store) tokenByValueLocked(value string) (*Token, string) {
+	if token := st.Tokens[value]; token != nil {
+		return token, value // newly minted in this process
+	}
+	key := tokenPersistenceKey(value)
+	return st.Tokens[key], key
+}
+
+func (st *Store) persistTokenLocked(token *Token) {
+	if st.persist != nil {
+		st.persist.MustPut("tokens", tokenPersistenceKey(token.Value), token)
+	}
+}
+
+func (st *Store) deleteTokenMapKeyLocked(mapKey string) {
+	delete(st.Tokens, mapKey)
+	if st.persist != nil {
+		st.persist.MustDelete("tokens", tokenPersistenceKeyForMapKey(mapKey))
+	}
 }
 
 // DeviceCode represents a pending device authorization flow.
@@ -330,6 +372,7 @@ type Store struct {
 	EnvVariables                 map[string]map[string]*ActionsVariable // envScopeKey(repo, env) → NAME → variable
 	TimelineRecords              map[string][]*TimelineRecord           // planID → runner-uploaded timeline records
 	LogFiles                     map[int][]byte                         // logID → uploaded runner log content
+	LogMasks                     map[string][]string                    // planID → exact values scrubbed from every log surface
 	WorkflowAttempts             map[int][]*Workflow                    // runID → prior attempts (oldest first)
 	RunnerGroups                 map[int]*RunnerGroup                   // org runner groups (global pool overlay)
 	NextRunnerGroupID            int
@@ -728,6 +771,7 @@ func NewStore() *Store {
 		EnvVariables:                 make(map[string]map[string]*ActionsVariable),
 		TimelineRecords:              make(map[string][]*TimelineRecord),
 		LogFiles:                     make(map[int][]byte),
+		LogMasks:                     make(map[string][]string),
 		WorkflowAttempts:             make(map[int][]*Workflow),
 		RunnerGroups:                 make(map[int]*RunnerGroup),
 		NextRunnerGroupID:            2,
@@ -1056,15 +1100,28 @@ func (st *Store) loadFromPersistence() error {
 			st.LoginSessions[id] = &session
 		}
 	}
-	if err := st.loadBucket("tokens", func(raw []byte) error {
+	tokenRows, err := st.persist.List("tokens")
+	if err != nil {
+		return fmt.Errorf("load tokens: %w", err)
+	}
+	tokenMigration := newPersistBatch(st.persist)
+	for persistedKey, raw := range tokenRows {
 		var t Token
 		if err := loadJSON(raw, &t); err != nil {
-			return err
+			return fmt.Errorf("decode tokens row: %w", err)
 		}
-		st.Tokens[t.Value] = &t
-		return nil
-	}); err != nil {
-		return err
+		key := persistedKey
+		if !strings.HasPrefix(key, tokenDigestPrefix) {
+			// Migrate the legacy raw-key/raw-value row in one transaction.
+			// Token.Value is json:"-", so the rewritten value is sanitized.
+			key = tokenPersistenceKey(persistedKey)
+			tokenMigration.Put("tokens", key, &t)
+			tokenMigration.Delete("tokens", persistedKey)
+		}
+		st.Tokens[key] = &t
+	}
+	if err := tokenMigration.Commit(); err != nil {
+		return fmt.Errorf("migrate token digests: %w", err)
 	}
 	if err := st.loadBucket("gists", func(raw []byte) error {
 		var g Gist
@@ -3589,9 +3646,7 @@ func (st *Store) SeedDefaultUser() {
 		CreatedAt: now,
 	}
 	st.Tokens[t.Value] = t
-	if st.persist != nil {
-		st.persist.MustPut("tokens", t.Value, t)
-	}
+	st.persistTokenLocked(t)
 }
 
 // LookupToken returns the token and associated user, or nil if not found.
@@ -3599,8 +3654,8 @@ func (st *Store) LookupToken(tokenStr string) (*Token, *User) {
 	st.mu.RLock()
 	defer st.mu.RUnlock()
 
-	t, ok := st.Tokens[tokenStr]
-	if !ok {
+	t, _ := st.tokenByValueLocked(tokenStr)
+	if t == nil {
 		return nil, nil
 	}
 	if t.ExpiresAt != nil && !t.ExpiresAt.After(time.Now()) {

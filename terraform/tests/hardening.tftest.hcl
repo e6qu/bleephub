@@ -161,6 +161,15 @@ run "the_application_container_reports_its_own_health" {
     }
   }
 
+  override_resource {
+    target          = aws_secretsmanager_secret.persistence_encryption_key
+    override_during = plan
+    values = {
+      arn = "arn:aws:secretsmanager:eu-west-1:123456789012:secret:bleephub-test/persistence-encryption-key"
+      id  = "arn:aws:secretsmanager:eu-west-1:123456789012:secret:bleephub-test/persistence-encryption-key"
+    }
+  }
+
   assert {
     condition     = can(jsondecode(aws_ecs_task_definition.this.container_definitions)[0].healthCheck.command)
     error_message = "the application container must declare a health check"
@@ -206,6 +215,15 @@ run "the_dqlite_cluster_secret_reaches_both_ends" {
     values = {
       arn = "arn:aws:secretsmanager:eu-west-1:123456789012:secret:bleephub-test/dqlite-secret"
       id  = "arn:aws:secretsmanager:eu-west-1:123456789012:secret:bleephub-test/dqlite-secret"
+    }
+  }
+
+  override_resource {
+    target          = aws_secretsmanager_secret.persistence_encryption_key
+    override_during = plan
+    values = {
+      arn = "arn:aws:secretsmanager:eu-west-1:123456789012:secret:bleephub-test/persistence-encryption-key"
+      id  = "arn:aws:secretsmanager:eu-west-1:123456789012:secret:bleephub-test/persistence-encryption-key"
     }
   }
 
@@ -259,6 +277,30 @@ run "the_dqlite_cluster_secret_reaches_both_ends" {
     ])
     error_message = "the execution role must be able to decrypt the secret under the module's key"
   }
+
+  assert {
+    condition     = aws_secretsmanager_secret.persistence_encryption_key.name == "bleephub-test/persistence-encryption-key" && aws_secretsmanager_secret.persistence_encryption_key.kms_key_id == aws_kms_key.this.arn
+    error_message = "the persistence encryption key must live in Secrets Manager under the module's own KMS key"
+  }
+
+  assert {
+    condition     = aws_secretsmanager_secret_version.persistence_encryption_key.secret_id == aws_secretsmanager_secret.persistence_encryption_key.id
+    error_message = "the generated persistence encryption key must be stored as a version of its own secret"
+  }
+
+  assert {
+    condition     = one([for entry in jsondecode(aws_ecs_task_definition.this.container_definitions)[0].secrets : entry.valueFrom if entry.name == "BLEEPHUB_PERSISTENCE_ENCRYPTION_KEY"]) == aws_secretsmanager_secret.persistence_encryption_key.arn
+    error_message = "the application task must receive the persistence encryption key as an ECS secret"
+  }
+
+  assert {
+    condition = anytrue([
+      for statement in jsondecode(aws_iam_role_policy.execution_secret.policy).Statement :
+      contains(statement.Resource, aws_secretsmanager_secret.persistence_encryption_key.arn)
+      if contains(statement.Action, "secretsmanager:GetSecretValue")
+    ])
+    error_message = "the execution role must be able to read the persistence encryption key"
+  }
 }
 
 run "both_durable_stores_have_a_restore_path" {
@@ -311,6 +353,7 @@ run "durable_data_is_encrypted_with_a_rotating_customer_managed_key" {
       aws_cloudwatch_log_group.this.kms_key_id == aws_kms_key.this.arn,
       aws_secretsmanager_secret.admin_token.kms_key_id == aws_kms_key.this.arn,
       aws_secretsmanager_secret.ssh_host_key.kms_key_id == aws_kms_key.this.arn,
+      aws_secretsmanager_secret.persistence_encryption_key.kms_key_id == aws_kms_key.this.arn,
     ])
     error_message = "every durable store, secret, and log group must use the module's own key"
   }

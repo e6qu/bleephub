@@ -232,8 +232,8 @@
         "id": "AUTH-016",
         "location": "gh_oauth.go:165, identity.go:577",
         "severity": "M",
-        "status": "open",
-        "status_kind": "open"
+        "status": "fixed \u2014 ordinary users authenticate browser sessions only with their local password or external identity; the sole token-form exception is an exact constant-time match for the configured bootstrap administrator token, and a regression proves even a scoped administrator PAT cannot become an unrestricted cookie",
+        "status_kind": "fixed"
       },
       {
         "category": "AUTH",
@@ -250,8 +250,8 @@
         "id": "AUTH-018",
         "location": "secrets.go:22, actions_store.go:84, persistence.go:38",
         "severity": "M",
-        "status": "open",
-        "status_kind": "open"
+        "status": "fixed \u2014 the persistence boundary AES-256-GCM encrypts every Actions, Codespaces, App/OAuth, token, and browser-session credential row with bucket/key associated data; startup transactionally migrates plaintext rows and validates every envelope, while Terraform generates a retained 32-byte key in Secrets Manager and injects it only as an ECS secret",
+        "status_kind": "fixed"
       },
       {
         "category": "AUTH",
@@ -259,8 +259,8 @@
         "id": "AUTH-019",
         "location": "store.go createTokenLocked",
         "severity": "M",
-        "status": "open",
-        "status_kind": "open"
+        "status": "fixed \u2014 PAT JSON never contains the one-time value, persisted lookup keys are SHA-256 digests, legacy raw-key rows migrate transactionally, and installation/OAuth/refresh/session bearer keys are independently replaced by HMAC digests derived from the persistence key",
+        "status_kind": "fixed"
       },
       {
         "category": "AUTH",
@@ -268,8 +268,8 @@
         "id": "AUTH-020",
         "location": "secrets_vars_inject.go:39, handle_mgmt.go:218",
         "severity": "M",
-        "status": "open",
-        "status_kind": "open"
+        "status": "fixed \u2014 every secret variable in a dispatched message is registered as a server-side plan mask, both `::add-mask::` and runner `##[add-mask]` commands extend it, and console plus uploaded log bytes are scrubbed before structured logging, in-memory storage, or object-store persistence",
+        "status_kind": "fixed"
       },
       {
         "category": "AUTH",
@@ -5636,8 +5636,8 @@
         },
         "AUTH": {
           "status": {
-            "fixed": 62,
-            "open": 26,
+            "fixed": 66,
+            "open": 22,
             "partial": 5
           },
           "total": 93
@@ -5713,8 +5713,8 @@
       },
       "status": {
         "deferred": 1,
-        "fixed": 254,
-        "open": 324,
+        "fixed": 258,
+        "open": 320,
         "partial": 35
       },
       "total": 614

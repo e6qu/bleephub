@@ -242,22 +242,8 @@ func (st *Store) ActiveOrgLoginsForUser(userID int) []string {
 func (st *Store) PATIdentityByTokenValue(value string) (int, string, bool) {
 	st.mu.RLock()
 	defer st.mu.RUnlock()
-	if token := st.Tokens[value]; token != nil && token.FineGrained {
+	if token, _ := st.tokenByValueLocked(value); token != nil && token.FineGrained {
 		return token.FineGrainedID, token.Name, true
-	}
-	for _, m := range st.OrgPATGrants {
-		for _, g := range m {
-			if g.TokenValue == value {
-				return g.TokenID, g.TokenName, true
-			}
-		}
-	}
-	for _, m := range st.OrgPATGrantRequests {
-		for _, req := range m {
-			if req.TokenValue == value {
-				return req.TokenID, req.TokenName, true
-			}
-		}
 	}
 	return 0, "", false
 }

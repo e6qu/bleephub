@@ -167,11 +167,8 @@ func (st *Store) RevokeCredentials(credentials []string) int {
 	defer st.mu.Unlock()
 	revoked := 0
 	for _, c := range credentials {
-		if _, ok := st.Tokens[c]; ok {
-			delete(st.Tokens, c)
-			if st.persist != nil {
-				st.persist.MustDelete("tokens", c)
-			}
+		if _, mapKey := st.tokenByValueLocked(c); mapKey != "" {
+			st.deleteTokenMapKeyLocked(mapKey)
 			revoked++
 		}
 		if _, ok := st.UserToServerTokens[c]; ok {

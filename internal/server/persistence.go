@@ -3,9 +3,17 @@ package bleephub
 import (
 	"bufio"
 	"context"
+	"crypto/aes"
+	"crypto/cipher"
+	"crypto/hmac"
+	"crypto/rand"
+	"crypto/sha256"
 	"database/sql"
+	"encoding/base64"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"io"
 	"log"
 	"math"
 	"net"
@@ -61,6 +69,45 @@ var (
 // this one cannot be trusted to decode, so startup refuses it.
 const currentSchemaVersion = 2
 
+const (
+	persistenceEncryptionKeyEnvironment = "BLEEPHUB_PERSISTENCE_ENCRYPTION_KEY"
+	sealedPersistenceValuePrefix        = "bleephub:sealed:v1:"
+	opaquePersistenceKeyPrefix          = "hmac:v1:"
+)
+
+// sensitivePersistenceBuckets is deliberately centralized at the persistence
+// boundary. A caller cannot accidentally write a newly-added value in one of
+// these established credential stores as plaintext just because it used Put,
+// PutBatch, or a bespoke transaction.
+var sensitivePersistenceBuckets = map[string]struct{}{
+	"actions_crypto":          {},
+	"agents_org_secrets":      {},
+	"agents_repo_secrets":     {},
+	"apps":                    {},
+	"codespace_secrets":       {},
+	"dependabot_org_secrets":  {},
+	"dependabot_secrets":      {},
+	"dependabot_user_secrets": {},
+	"env_secrets":             {},
+	"installation_tokens":     {},
+	"login_sessions":          {},
+	"oauth_apps":              {},
+	"org_secrets":             {},
+	"refresh_tokens":          {},
+	"repo_secrets":            {},
+	"user_to_server_tokens":   {},
+}
+
+// opaquePersistenceKeyBuckets use bearer credentials as their logical map
+// keys. Persist only a keyed digest so a database read does not disclose a
+// credential even though point lookup remains possible.
+var opaquePersistenceKeyBuckets = map[string]struct{}{
+	"installation_tokens":   {},
+	"login_sessions":        {},
+	"refresh_tokens":        {},
+	"user_to_server_tokens": {},
+}
+
 // schemaMetaDDL bootstraps the table that carries the schema version itself.
 // It predates versioning, so it is created unconditionally on every open.
 const schemaMetaDDL = `CREATE TABLE IF NOT EXISTS schema_meta (
@@ -102,9 +149,11 @@ var schemaMigrations = []schemaMigration{
 }
 
 type Persistence struct {
-	db      *sql.DB
-	dialect dbDialect
-	mu      sync.Mutex
+	db            *sql.DB
+	dialect       dbDialect
+	mu            sync.Mutex
+	encryptionKey []byte
+	keyDigestKey  []byte
 	// keyHighWater caches the durable per-bucket identifier high-water mark
 	// already written by this process, so the common case costs no extra SQL.
 	keyHighWater map[string]int64
@@ -202,18 +251,24 @@ func (p *Persistence) apply(ops []persistOp) error {
 	}
 	raised := map[string]int64{}
 	for _, op := range ops {
+		storageKey := p.storageKey(op.bucket, op.key)
 		switch op.kind {
 		case persistOpPut:
-			if err := p.raiseKeyHighWaterTx(tx, op.bucket, op.key, raised); err != nil {
+			if err := p.raiseKeyHighWaterTx(tx, op.bucket, storageKey, raised); err != nil {
 				_ = tx.Rollback()
 				return err
 			}
-			if _, err := tx.Exec(p.dialect.putSQL, op.bucket, op.key, op.raw); err != nil {
+			raw, err := p.sealValue(op.bucket, storageKey, op.raw)
+			if err != nil {
+				_ = tx.Rollback()
+				return err
+			}
+			if _, err := tx.Exec(p.dialect.putSQL, op.bucket, storageKey, raw); err != nil {
 				_ = tx.Rollback()
 				return err
 			}
 		case persistOpDelete:
-			if _, err := tx.Exec(p.dialect.deleteSQL, op.bucket, op.key); err != nil {
+			if _, err := tx.Exec(p.dialect.deleteSQL, op.bucket, storageKey); err != nil {
 				_ = tx.Rollback()
 				return err
 			}
@@ -351,6 +406,11 @@ func (p *Persistence) ClaimOIDCLogoutAndDeleteSessions(replayKey string, expires
 		var id string
 		var raw []byte
 		if err := rows.Scan(&id, &raw); err != nil {
+			_ = rows.Close()
+			return false, err
+		}
+		raw, err = p.openValue(loginSessionsBucket, id, raw)
+		if err != nil {
 			_ = rows.Close()
 			return false, err
 		}
@@ -501,16 +561,17 @@ func NewPersistence() (*Persistence, error) {
 	if os.Getenv("BLEEPHUB_PERSIST") != "true" {
 		return nil, nil //nolint:nilnil // intentional: nil persistence = disabled
 	}
+	encryptionKey, err := persistenceEncryptionKey()
+	if err != nil {
+		return nil, err
+	}
 
 	dataDir := os.Getenv("BLEEPHUB_DATA_DIR")
 	if dataDir == "" {
 		dataDir = "."
 	}
 
-	var (
-		db  *sql.DB
-		err error
-	)
+	var db *sql.DB
 	if addresses := strings.TrimSpace(os.Getenv("BLEEPHUB_DQLITE_SERVERS")); addresses != "" {
 		db, err = openDqlite(addresses)
 	} else {
@@ -527,7 +588,179 @@ func NewPersistence() (*Persistence, error) {
 		_ = db.Close()
 		return nil, err
 	}
-	return &Persistence{db: db, dialect: dialect, keyHighWater: map[string]int64{}}, nil
+	p := &Persistence{
+		db:            db,
+		dialect:       dialect,
+		encryptionKey: encryptionKey,
+		keyDigestKey:  derivePersistenceKey(encryptionKey, "opaque-key-digests"),
+		keyHighWater:  map[string]int64{},
+	}
+	if err := p.migrateSensitiveRows(); err != nil {
+		_ = db.Close()
+		return nil, err
+	}
+	return p, nil
+}
+
+func persistenceEncryptionKey() ([]byte, error) {
+	encoded := strings.TrimSpace(os.Getenv(persistenceEncryptionKeyEnvironment))
+	if encoded == "" {
+		return nil, fmt.Errorf("%s is required when BLEEPHUB_PERSIST=true; provide a stable base64-encoded 32-byte key", persistenceEncryptionKeyEnvironment)
+	}
+	key, err := base64.StdEncoding.DecodeString(encoded)
+	if err != nil || len(key) != 32 {
+		return nil, fmt.Errorf("%s must be a base64-encoded 32-byte key", persistenceEncryptionKeyEnvironment)
+	}
+	return key, nil
+}
+
+func derivePersistenceKey(master []byte, purpose string) []byte {
+	mac := hmac.New(sha256.New, master)
+	_, _ = mac.Write([]byte("bleephub:persistence:v1:" + purpose))
+	return mac.Sum(nil)
+}
+
+func isSensitivePersistenceBucket(bucket string) bool {
+	_, ok := sensitivePersistenceBuckets[bucket]
+	return ok
+}
+
+func isOpaquePersistenceKeyBucket(bucket string) bool {
+	_, ok := opaquePersistenceKeyBuckets[bucket]
+	return ok
+}
+
+func (p *Persistence) storageKey(bucket, key string) string {
+	if !isOpaquePersistenceKeyBucket(bucket) || strings.HasPrefix(key, opaquePersistenceKeyPrefix) {
+		return key
+	}
+	mac := hmac.New(sha256.New, p.keyDigestKey)
+	_, _ = mac.Write([]byte(bucket))
+	_, _ = mac.Write([]byte{0})
+	_, _ = mac.Write([]byte(key))
+	return opaquePersistenceKeyPrefix + hex.EncodeToString(mac.Sum(nil))
+}
+
+func persistenceAssociatedData(bucket, key string) []byte {
+	return []byte(bucket + "\x00" + key)
+}
+
+func (p *Persistence) sealValue(bucket, key string, raw []byte) ([]byte, error) {
+	if !isSensitivePersistenceBucket(bucket) {
+		return raw, nil
+	}
+	block, err := aes.NewCipher(p.encryptionKey)
+	if err != nil {
+		return nil, fmt.Errorf("initialize persistence encryption: %w", err)
+	}
+	gcm, err := cipher.NewGCM(block)
+	if err != nil {
+		return nil, fmt.Errorf("initialize persistence authenticated encryption: %w", err)
+	}
+	nonce := make([]byte, gcm.NonceSize())
+	if _, err := io.ReadFull(rand.Reader, nonce); err != nil {
+		return nil, fmt.Errorf("generate persistence encryption nonce: %w", err)
+	}
+	envelope := append(nonce, gcm.Seal(nil, nonce, raw, persistenceAssociatedData(bucket, key))...)
+	encoded := base64.RawStdEncoding.EncodeToString(envelope)
+	return []byte(sealedPersistenceValuePrefix + encoded), nil
+}
+
+func (p *Persistence) openValue(bucket, key string, raw []byte) ([]byte, error) {
+	if !isSensitivePersistenceBucket(bucket) {
+		return raw, nil
+	}
+	if !strings.HasPrefix(string(raw), sealedPersistenceValuePrefix) {
+		return raw, nil // legacy plaintext; migrateSensitiveRows rewrites it.
+	}
+	envelope, err := base64.RawStdEncoding.DecodeString(strings.TrimPrefix(string(raw), sealedPersistenceValuePrefix))
+	if err != nil {
+		return nil, fmt.Errorf("decode encrypted persistence row %s/%s: %w", bucket, key, err)
+	}
+	block, err := aes.NewCipher(p.encryptionKey)
+	if err != nil {
+		return nil, fmt.Errorf("initialize persistence decryption: %w", err)
+	}
+	gcm, err := cipher.NewGCM(block)
+	if err != nil {
+		return nil, fmt.Errorf("initialize persistence authenticated decryption: %w", err)
+	}
+	if len(envelope) < gcm.NonceSize() {
+		return nil, fmt.Errorf("encrypted persistence row %s/%s is truncated", bucket, key)
+	}
+	nonce, ciphertext := envelope[:gcm.NonceSize()], envelope[gcm.NonceSize():]
+	plain, err := gcm.Open(nil, nonce, ciphertext, persistenceAssociatedData(bucket, key))
+	if err != nil {
+		return nil, fmt.Errorf("decrypt persistence row %s/%s (wrong key or corrupted data): %w", bucket, key, err)
+	}
+	return plain, nil
+}
+
+// migrateSensitiveRows encrypts legacy plaintext values and replaces raw
+// bearer-token keys with keyed digests in one transaction. It also decrypts
+// every existing envelope during startup, making a wrong deployment key a
+// fail-fast configuration error rather than delayed data loss.
+func (p *Persistence) migrateSensitiveRows() error {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	tx, err := p.db.Begin()
+	if err != nil {
+		return err
+	}
+	defer func() { _ = tx.Rollback() }()
+	for bucket := range sensitivePersistenceBuckets {
+		rows, err := tx.Query(p.dialect.listSQL, bucket)
+		if err != nil {
+			return fmt.Errorf("scan sensitive persistence bucket %s: %w", bucket, err)
+		}
+		type row struct {
+			key string
+			raw []byte
+		}
+		var entries []row
+		for rows.Next() {
+			var entry row
+			if err := rows.Scan(&entry.key, &entry.raw); err != nil {
+				_ = rows.Close()
+				return err
+			}
+			entries = append(entries, entry)
+		}
+		if err := rows.Err(); err != nil {
+			_ = rows.Close()
+			return err
+		}
+		if err := rows.Close(); err != nil {
+			return err
+		}
+		for _, entry := range entries {
+			plain, err := p.openValue(bucket, entry.key, entry.raw)
+			if err != nil {
+				return err
+			}
+			storageKey := p.storageKey(bucket, entry.key)
+			alreadySealed := strings.HasPrefix(string(entry.raw), sealedPersistenceValuePrefix)
+			if alreadySealed && storageKey == entry.key {
+				continue
+			}
+			sealed, err := p.sealValue(bucket, storageKey, plain)
+			if err != nil {
+				return err
+			}
+			if _, err := tx.Exec(p.dialect.putSQL, bucket, storageKey, sealed); err != nil {
+				return err
+			}
+			if storageKey != entry.key {
+				if _, err := tx.Exec(p.dialect.deleteSQL, bucket, entry.key); err != nil {
+					return err
+				}
+			}
+		}
+	}
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("commit sensitive persistence migration: %w", err)
+	}
+	return nil
 }
 
 // migrateSchema brings the database up to currentSchemaVersion and refuses a
@@ -606,9 +839,14 @@ func (p *Persistence) Put(bucket, key string, v interface{}) error {
 	if err != nil {
 		return fmt.Errorf("marshal %s/%s: %w", bucket, key, err)
 	}
+	storageKey := p.storageKey(bucket, key)
+	raw, err = p.sealValue(bucket, storageKey, raw)
+	if err != nil {
+		return err
+	}
 	p.mu.Lock()
 	defer p.mu.Unlock()
-	next, raise := keyHighWaterCandidate(key)
+	next, raise := keyHighWaterCandidate(storageKey)
 	if raise && p.keyHighWater[bucket] < next {
 		// Written before the row so an interrupted pair can only leave the
 		// counter ahead of reality, which skips identifiers instead of reusing
@@ -618,7 +856,7 @@ func (p *Persistence) Put(bucket, key string, v interface{}) error {
 		}
 		p.cacheKeyHighWater(bucket, next)
 	}
-	_, err = p.db.Exec(p.dialect.putSQL, bucket, key, raw)
+	_, err = p.db.Exec(p.dialect.putSQL, bucket, storageKey, raw)
 	return err
 }
 
@@ -717,7 +955,7 @@ func (p *Persistence) Delete(bucket, key string) error {
 	}
 	p.mu.Lock()
 	defer p.mu.Unlock()
-	_, err := p.db.Exec(p.dialect.deleteSQL, bucket, key)
+	_, err := p.db.Exec(p.dialect.deleteSQL, bucket, p.storageKey(bucket, key))
 	return err
 }
 
@@ -739,7 +977,11 @@ func (p *Persistence) List(bucket string) (map[string][]byte, error) {
 		if err := rows.Scan(&k, &v); err != nil {
 			return nil, err
 		}
-		out[k] = v
+		plain, err := p.openValue(bucket, k, v)
+		if err != nil {
+			return nil, err
+		}
+		out[k] = plain
 	}
 	return out, rows.Err()
 }
@@ -751,14 +993,15 @@ func (p *Persistence) Get(bucket, key string) ([]byte, error) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	var raw []byte
-	err := p.db.QueryRow(p.dialect.valueSQL, bucket, key).Scan(&raw)
+	storageKey := p.storageKey(bucket, key)
+	err := p.db.QueryRow(p.dialect.valueSQL, bucket, storageKey).Scan(&raw)
 	if err == sql.ErrNoRows {
 		return nil, nil
 	}
 	if err != nil {
 		return nil, err
 	}
-	return raw, nil
+	return p.openValue(bucket, storageKey, raw)
 }
 
 func (p *Persistence) GetCounter(name string) (int64, error) {

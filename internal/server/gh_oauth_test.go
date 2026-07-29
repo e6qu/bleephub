@@ -8,21 +8,30 @@ import (
 	"net/url"
 	"strings"
 	"testing"
+
+	"golang.org/x/crypto/bcrypt"
 )
 
 // OAuth web flow — /login/oauth/authorize redirects + /login/oauth/access_token
 // code exchange + device-code polling against the GitHub-compatible OAuth
 // surface using registered OAuth App and GitHub App client credentials.
 
-// doLogin posts a real stored personal access token to POST /login and returns
-// a cookie jar carrying the browser session.
+// doLogin gives the fixture a local password and posts it to /login. PATs are
+// API credentials and must not be laundered into unscoped browser sessions.
 func doLogin(t *testing.T, s *Server, login string) http.CookieJar {
 	t.Helper()
 	user := s.store.LookupUserByLogin(login)
 	if user == nil {
 		t.Fatalf("test user %q not found", login)
 	}
-	credential := s.store.CreateToken(user.ID, "repo,read:org").Value
+	credential := "oauth-test-password-" + login
+	passwordHash, err := bcrypt.GenerateFromPassword([]byte(credential), bcrypt.MinCost)
+	if err != nil {
+		t.Fatal(err)
+	}
+	s.store.mu.Lock()
+	user.PasswordHash = string(passwordHash)
+	s.store.mu.Unlock()
 	form := url.Values{}
 	form.Set("login", login)
 	form.Set("password", credential)
@@ -240,7 +249,7 @@ func TestOAuth_LoginPost_SetsSessionCookie(t *testing.T) {
 	}
 }
 
-func TestOAuth_LoginPost_RequiresStoredPersonalAccessToken(t *testing.T) {
+func TestOAuth_LoginPost_RejectsScopedPATSessionLaundering(t *testing.T) {
 	s := newTestServer()
 	s.store.SeedDefaultUser()
 	alice := seedOAuthTestUser(t, s, "login-alice")
@@ -256,6 +265,12 @@ func TestOAuth_LoginPost_RequiresStoredPersonalAccessToken(t *testing.T) {
 	w = postLogin(t, s, "admin", aliceToken)
 	if w.Code != http.StatusUnauthorized {
 		t.Fatalf("mismatched token status = %d, want 401", w.Code)
+	}
+
+	scopedAdminToken := s.store.CreateToken(s.store.UsersByLogin["admin"].ID, "read:org").Value
+	w = postLogin(t, s, "admin", scopedAdminToken)
+	if w.Code != http.StatusUnauthorized {
+		t.Fatalf("scoped admin token status = %d, want 401", w.Code)
 	}
 
 	w = postLogin(t, s, "admin", adminToken)

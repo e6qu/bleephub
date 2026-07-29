@@ -39,7 +39,7 @@ type OrgPATGrantRequest struct {
 	OwnerUserID         int               `json:"owner_user_id"`
 	TokenID             int               `json:"token_id"`
 	TokenName           string            `json:"token_name"`
-	TokenValue          string            `json:"token_value,omitempty"`
+	TokenValue          string            `json:"-"`
 	Reason              *string           `json:"reason"`
 	RepositorySelection string            `json:"repository_selection"` // none | all | subset
 	RepositoryIDs       []int             `json:"repository_ids,omitempty"`
@@ -55,7 +55,7 @@ type OrgPATGrant struct {
 	OwnerUserID         int               `json:"owner_user_id"`
 	TokenID             int               `json:"token_id"`
 	TokenName           string            `json:"token_name"`
-	TokenValue          string            `json:"token_value,omitempty"`
+	TokenValue          string            `json:"-"`
 	RepositorySelection string            `json:"repository_selection"`
 	RepositoryIDs       []int             `json:"repository_ids,omitempty"`
 	Permissions         OrgPATPermissions `json:"permissions"`
@@ -174,9 +174,7 @@ func (st *Store) createOrgPATGrantRequestWithRandom(orgLogin string, ownerUserID
 		Permissions: perms, ExpiresAt: expiresAt,
 	}
 	st.Tokens[value] = tok
-	if st.persist != nil {
-		st.persist.MustPut("tokens", tok.Value, tok)
-	}
+	st.persistTokenLocked(tok)
 
 	req := &OrgPATGrantRequest{
 		ID:                  st.NextPATRequestID,

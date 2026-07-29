@@ -710,6 +710,7 @@ func (s *Server) dispatchWorkflowJob(ctx context.Context, wf *Workflow, wfJob *W
 
 	s.store.mu.Lock()
 	s.store.Jobs[wfJob.JobID] = job
+	s.store.registerJobLogMasksLocked(planID, msg)
 	wfJob.PlanID = planID
 	s.store.persistWorkflowRecord(wf)
 	s.store.mu.Unlock()

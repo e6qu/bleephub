@@ -225,16 +225,15 @@ func (s *Server) handleUploadLog(w http.ResponseWriter, r *http.Request) {
 	// stored size at logFileCap, keeping the head and marking the cut.
 	s.store.mu.Lock()
 	existing := s.store.LogFiles[logID]
-	next := append([]byte(nil), existing...)
+	next := append(append([]byte(nil), existing...), body...)
+	next = s.store.redactLogBytesLocked(r.PathValue("planId"), next)
 	switch {
 	case bytes.HasSuffix(existing, logTruncationMarker):
 		// Already capped; later blocks are dropped past the marker.
-	case len(existing)+len(body) <= logFileCap:
-		next = append(next, body...)
+		next = append([]byte(nil), existing...)
+	case len(next) <= logFileCap:
 	default:
-		if keep := logFileCap - len(existing); keep > 0 {
-			next = append(next, body[:keep]...)
-		}
+		next = next[:logFileCap]
 		next = append(next, logTruncationMarker...)
 	}
 	storedData := append([]byte(nil), next...)
@@ -273,16 +272,13 @@ func (s *Server) handleWebConsoleLog(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	for _, line := range lines {
-		s.logger.Info().Str("recordId", recordID).Str("line", line).Msg("console")
-	}
-
 	// Capture log lines keyed by jobID for the management dashboard.
 	// Capped at consoleLineCap; trimming appends the marker line once.
 	if planID != "" && len(lines) > 0 {
 		job := s.lookupJobByPlanID(planID)
+		s.store.mu.Lock()
+		lines = s.store.redactLogLinesLocked(planID, lines)
 		if job != nil {
-			s.store.mu.Lock()
 			existing := s.store.LogLines[job.ID]
 			switch {
 			case len(existing) > 0 && existing[len(existing)-1] == consoleTruncationMarker:
@@ -295,8 +291,11 @@ func (s *Server) handleWebConsoleLog(w http.ResponseWriter, r *http.Request) {
 				}
 				s.store.LogLines[job.ID] = append(existing, consoleTruncationMarker)
 			}
-			s.store.mu.Unlock()
 		}
+		s.store.mu.Unlock()
+	}
+	for _, line := range lines {
+		s.logger.Info().Str("recordId", recordID).Str("line", line).Msg("console")
 	}
 
 	writeJSON(w, http.StatusOK, map[string]interface{}{"count": len(lines)})

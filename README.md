@@ -297,7 +297,7 @@ The script compiles the current source, starts the server and user interface, an
 
 ### Persistence
 
-Bleephub stores its own metadata state in SQLite. `BLEEPHUB_PERSIST=true` enables the write-through database, and the DB file is `<BLEEPHUB_DATA_DIR>/bleephub.db` (default `./bleephub.db`). SQLite open/schema failures fail startup loudly; there is no silent in-memory fallback once persistence is requested.
+Bleephub stores its own metadata state in SQLite. `BLEEPHUB_PERSIST=true` enables the write-through database, and the DB file is `<BLEEPHUB_DATA_DIR>/bleephub.db` (default `./bleephub.db`). Persistent mode also requires `BLEEPHUB_PERSISTENCE_ENCRYPTION_KEY`, a stable base64-encoded 32-byte key. Sensitive rows are AES-256-GCM encrypted with bucket/key binding, bearer credentials used as database keys are replaced by keyed digests, and existing plaintext rows are migrated transactionally at startup. A missing or wrong key fails startup loudly; losing or rotating it without re-encrypting the database makes the protected rows unreadable. Terraform generates and retains this key in AWS Secrets Manager.
 
 `persistence_test.go` always exercises the SQLite round-trip. The obsolete `BLEEPHUB_DATABASE_URL` PostgreSQL path fails loudly so operators do not accidentally deploy a state backend outside the supported service model.
 
@@ -422,6 +422,7 @@ Flags:
 Env vars:
 - `BLEEPHUB_ADMIN_TOKEN=<token>` — **required.** The seeded admin token. There is no default (a default would be a guessable credential, and the historical `ghp_...` value tripped secret scanners); the binary fails loudly at startup if unset. Set a non-personal-access-token-shaped value.
 - `BLEEPHUB_PERSIST=true` — enable SQLite persistence (off by default; see [Persistence](#persistence)).
+- `BLEEPHUB_PERSISTENCE_ENCRYPTION_KEY` — **required when persistence is enabled.** A stable base64-encoded 32-byte key used for authenticated encryption of Actions, Codespaces, App/OAuth, token, and browser-session credentials at rest. Terraform generates and injects it through AWS Secrets Manager.
 - `BLEEPHUB_DATA_DIR=<dir>` — directory for the SQLite database (`bleephub.db`) and local non-persistent development metadata (default `.`).
 - `BLEEPHUB_GIT_DIR=<dir>` — store git repos on the local filesystem (default: in-memory).
 - `BLEEPHUB_S3_BUCKET` / `BLEEPHUB_S3_ENDPOINT` / `BLEEPHUB_S3_PREFIX` — store git repos in S3-compatible object storage (bucket set ⇒ S3 wins over `BLEEPHUB_GIT_DIR`).
