@@ -1,6 +1,6 @@
 # Bleephub ↔ GitHub parity audit
 
-Status: **active parity ratchet on `feat/bleephub-ui-api-completeness-audit`**. Original audit: 2026-05-12. Last verified: 2026-07-12.
+Status: **active generated parity ratchet**. Original audit: 2026-05-12. Last verified: 2026-07-29.
 
 ## Goal
 
@@ -14,6 +14,19 @@ Every Bleephub client surface should behave like GitHub or GitHub Enterprise Ser
 - Web UI: GitHub-shaped information architecture backed by the same public APIs and durable state
 
 GitHub Enterprise Server coordinates are intentional. Official clients already swap their base URL this way.
+
+## Executable inventory
+
+[`parity-inventory.json`](parity-inventory.json) is the reviewable, machine-readable snapshot of the implementation and its known defects. It contains:
+
+- all 1,216 operations and documented statuses in the vendored GitHub REST description;
+- all 1,223 literal `/api/v3` route registrations with source locations (runtime registration tests cover the composed routes too);
+- every routed UI component and the component or journey tests that exercise it;
+- GraphQL resolver and test files;
+- literal GitHub Actions event producers plus the scheduled-workflow implementation and test; and
+- every ledger row, normalized category, severity, and status.
+
+`scripts/parity_inventory.py --check` regenerates the snapshot in memory and fails CI on any drift. `BUGS.md` remains the human-editable source for findings, but its totals and status vocabulary are checked by the same parser. A new route, UI page, resolver, event producer, OpenAPI update, or ledger edit therefore cannot disappear into prose or pass with an outdated coverage claim.
 
 ## What was verified
 

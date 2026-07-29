@@ -134,6 +134,8 @@ jobs:
       # this check existed.
       - name: Check the findings ledger
         run: ./scripts/check-bugs-ledger.sh
+      - name: Check the generated parity inventory
+        run: ./scripts/parity_inventory.py --check
       - name: Require the current official GitHub REST definition
         run: ./scripts/check-github-openapi-drift.sh
 
