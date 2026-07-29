@@ -44,14 +44,10 @@ func repoSignature(name, email string) *object.Signature {
 // exists, including when a concurrent request won the race on a different
 // branch.
 func initEmptyRepoWithFiles(stor gitStorage.Storer, branch, message string, files map[string]string, sig *object.Signature) (plumbing.Hash, error) {
-	return commitRootBranchWithFilesGuarded(stor, branch, message, files, sig, true, nil)
+	return commitRootBranchWithFiles(stor, branch, message, files, sig, true, nil)
 }
 
-func commitRootBranchWithFiles(stor gitStorage.Storer, branch, message string, files map[string]string, sig *object.Signature, requireEmpty bool) (plumbing.Hash, error) {
-	return commitRootBranchWithFilesGuarded(stor, branch, message, files, sig, requireEmpty, nil)
-}
-
-func commitRootBranchWithFilesGuarded(stor gitStorage.Storer, branch, message string, files map[string]string, sig *object.Signature, requireEmpty bool, guard func(plumbing.Hash) error) (plumbing.Hash, error) {
+func commitRootBranchWithFiles(stor gitStorage.Storer, branch, message string, files map[string]string, sig *object.Signature, requireEmpty bool, guard func(plumbing.Hash) error) (plumbing.Hash, error) {
 	fs := memfs.New()
 	// Build the unborn-branch commit in an isolated storer. go-git's
 	// Worktree.Commit advances refs/heads/master as a side effect, which

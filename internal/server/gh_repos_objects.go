@@ -568,7 +568,7 @@ func (s *Server) handlePutContents(w http.ResponseWriter, r *http.Request) {
 			writeSecretScanningPushProtectionBlocked(w, ph)
 			return
 		}
-		commitHash, err = commitRootBranchWithFilesGuarded(
+		commitHash, err = commitRootBranchWithFiles(
 			stor, branch, req.Message, files, sig, true,
 			s.contentRefWriteGuard(r, repo, stor, branchRef, refCreation),
 		)
