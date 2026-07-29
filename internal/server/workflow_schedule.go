@@ -41,6 +41,10 @@ func (s *Server) startScheduleDispatcher(ctx context.Context) {
 // Separated from the ticker so tests drive it with a fixed clock.
 func (s *Server) fireDueSchedules(now time.Time) {
 	minute := now.Truncate(time.Minute)
+	if err := s.store.RefreshFromPersistenceIfStale(); err != nil {
+		s.logger.Error().Err(err).Msg("scheduled workflow scan could not refresh shared state")
+		return
+	}
 
 	s.store.mu.RLock()
 	repoKeys := make([]string, 0, len(s.store.ReposByName))
@@ -76,7 +80,12 @@ func (s *Server) fireDueSchedules(now time.Time) {
 				if !cs.matches(minute) {
 					continue
 				}
-				if !s.markScheduleFired(repoKey+"\x00"+name+"\x00"+cron, minute) {
+				claimed, err := s.markScheduleFired(repoKey+"\x00"+name+"\x00"+cron, minute)
+				if err != nil {
+					s.logger.Error().Err(err).Str("repo", repoKey).Str("file", name).Str("cron", cron).Msg("failed to claim scheduled workflow firing")
+					continue
+				}
+				if !claimed {
 					continue
 				}
 				s.fireScheduledWorkflow(repoKey, name, content, cron)
@@ -87,17 +96,23 @@ func (s *Server) fireDueSchedules(now time.Time) {
 
 // markScheduleFired records a firing; false means this (key, minute)
 // already fired.
-func (s *Server) markScheduleFired(key string, minute time.Time) bool {
+func (s *Server) markScheduleFired(key string, minute time.Time) (bool, error) {
+	s.store.mu.RLock()
+	persist := s.store.persist
+	s.store.mu.RUnlock()
+	if persist != nil {
+		return persist.ClaimScheduleFiring(key, minute)
+	}
 	s.scheduleFired.mu.Lock()
 	defer s.scheduleFired.mu.Unlock()
 	if s.scheduleFired.seen == nil {
 		s.scheduleFired.seen = map[string]time.Time{}
 	}
 	if last, ok := s.scheduleFired.seen[key]; ok && last.Equal(minute) {
-		return false
+		return false, nil
 	}
 	s.scheduleFired.seen[key] = minute
-	return true
+	return true, nil
 }
 
 // fireScheduledWorkflow submits one schedule-triggered run. The schedule

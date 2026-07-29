@@ -21,6 +21,7 @@ import (
 	"github.com/go-git/go-git/v5/plumbing/object"
 	"github.com/go-git/go-git/v5/plumbing/storer"
 	gitStorage "github.com/go-git/go-git/v5/storage"
+	"github.com/go-git/go-git/v5/storage/memory"
 )
 
 // repoSignature returns the default author/committer signature for
@@ -39,16 +40,28 @@ func repoSignature(name, email string) *object.Signature {
 // the resulting commit. It is used for auto_init and for the contents
 // PUT endpoint when the caller creates the first file in an empty repo.
 func initRepoWithFiles(stor gitStorage.Storer, branch, message string, files map[string]string, sig *object.Signature) (plumbing.Hash, error) {
+	return commitRootBranchWithFiles(stor, branch, message, files, sig, false)
+}
+
+// initEmptyRepoWithFiles is the API-facing first-commit operation. Unlike the
+// lower-level fixture/import helper above, it rejects initialization once any
+// branch exists, including when a concurrent request won the race on a
+// different branch.
+func initEmptyRepoWithFiles(stor gitStorage.Storer, branch, message string, files map[string]string, sig *object.Signature) (plumbing.Hash, error) {
+	return commitRootBranchWithFiles(stor, branch, message, files, sig, true)
+}
+
+func commitRootBranchWithFiles(stor gitStorage.Storer, branch, message string, files map[string]string, sig *object.Signature, requireEmpty bool) (plumbing.Hash, error) {
 	fs := memfs.New()
-	repo, err := git.Init(stor, fs)
+	// Build the unborn-branch commit in an isolated storer. go-git's
+	// Worktree.Commit advances refs/heads/master as a side effect, which
+	// would expose a provisional ref in the destination and let concurrent
+	// first-commit requests overwrite each other before our atomic
+	// initialization boundary.
+	source := memory.NewStorage()
+	repo, err := git.Init(source, fs)
 	if err != nil {
-		if !errors.Is(err, git.ErrRepositoryAlreadyExists) {
-			return plumbing.ZeroHash, fmt.Errorf("git init: %w", err)
-		}
-		repo, err = git.Open(stor, fs)
-		if err != nil {
-			return plumbing.ZeroHash, fmt.Errorf("git open: %w", err)
-		}
+		return plumbing.ZeroHash, fmt.Errorf("git init: %w", err)
 	}
 	wt, err := repo.Worktree()
 	if err != nil {
@@ -61,18 +74,22 @@ func initRepoWithFiles(stor gitStorage.Storer, branch, message string, files map
 	if err != nil {
 		return plumbing.ZeroHash, fmt.Errorf("commit: %w", err)
 	}
-	branchRef := plumbing.NewHashReference(plumbing.NewBranchReferenceName(branch), commitHash)
-	if err := repo.Storer.SetReference(branchRef); err != nil {
-		return plumbing.ZeroHash, fmt.Errorf("set ref: %w", err)
-	}
-	if err := repo.Storer.SetReference(plumbing.NewSymbolicReference(plumbing.HEAD, branchRef.Name())); err != nil {
-		return plumbing.ZeroHash, fmt.Errorf("set HEAD: %w", err)
-	}
-	if branch != "master" {
-		masterRef := plumbing.NewBranchReferenceName("master")
-		if _, err := repo.Storer.Reference(masterRef); err == nil {
-			_ = repo.Storer.RemoveReference(masterRef)
+	for _, objectType := range []plumbing.ObjectType{plumbing.BlobObject, plumbing.TreeObject, plumbing.CommitObject} {
+		objects, err := source.IterEncodedObjects(objectType)
+		if err != nil {
+			return plumbing.ZeroHash, fmt.Errorf("iterate initial %s objects: %w", objectType, err)
 		}
+		copyErr := objects.ForEach(func(encoded plumbing.EncodedObject) error {
+			return copyEncodedObject(stor, encoded)
+		})
+		objects.Close()
+		if copyErr != nil {
+			return plumbing.ZeroHash, fmt.Errorf("store initial %s objects: %w", objectType, copyErr)
+		}
+	}
+	branchRef := plumbing.NewHashReference(plumbing.NewBranchReferenceName(branch), commitHash)
+	if err := initializeRepositoryReferences(stor, branchRef, requireEmpty); err != nil {
+		return plumbing.ZeroHash, fmt.Errorf("initialize refs: %w", err)
 	}
 	return commitHash, nil
 }
@@ -81,6 +98,10 @@ func initRepoWithFiles(stor gitStorage.Storer, branch, message string, files map
 // returns the new commit hash. It preserves the existing tree, sets the
 // commit parent to the current branch HEAD, and updates the branch ref.
 func createFileCommit(stor gitStorage.Storer, branch, path, content, message string, sig *object.Signature) (plumbing.Hash, error) {
+	return createFileCommitExpected(stor, branch, path, content, message, sig, plumbing.ZeroHash)
+}
+
+func createFileCommitExpected(stor gitStorage.Storer, branch, path, content, message string, sig *object.Signature, expectedParent plumbing.Hash) (plumbing.Hash, error) {
 	fs := memfs.New()
 	repo, err := git.Open(stor, fs)
 	if err != nil {
@@ -97,6 +118,9 @@ func createFileCommit(stor gitStorage.Storer, branch, path, content, message str
 		return plumbing.ZeroHash, fmt.Errorf("resolve branch %s: %w", branch, err)
 	}
 	parentHash := ref.Hash()
+	if !expectedParent.IsZero() && parentHash != expectedParent {
+		return plumbing.ZeroHash, gitStorage.ErrReferenceHasChanged
+	}
 
 	if err := wt.Checkout(&git.CheckoutOptions{Hash: parentHash, Force: true}); err != nil {
 		return plumbing.ZeroHash, fmt.Errorf("checkout: %w", err)
@@ -114,7 +138,7 @@ func createFileCommit(stor gitStorage.Storer, branch, path, content, message str
 	if err != nil {
 		return plumbing.ZeroHash, fmt.Errorf("commit: %w", err)
 	}
-	if err := repo.Storer.SetReference(plumbing.NewHashReference(branchRef, commitHash)); err != nil {
+	if err := repo.Storer.CheckAndSetReference(plumbing.NewHashReference(branchRef, commitHash), ref); err != nil {
 		return plumbing.ZeroHash, fmt.Errorf("set ref: %w", err)
 	}
 	return commitHash, nil
@@ -122,7 +146,7 @@ func createFileCommit(stor gitStorage.Storer, branch, path, content, message str
 
 // deleteFileCommit removes a single file on the given branch and returns the
 // new commit hash. It returns an error if the file does not exist.
-func deleteFileCommit(stor gitStorage.Storer, branch, path, message string, sig *object.Signature) (plumbing.Hash, error) {
+func deleteFileCommit(stor gitStorage.Storer, branch, path, message string, sig *object.Signature, expectedParent plumbing.Hash) (plumbing.Hash, error) {
 	fs := memfs.New()
 	repo, err := git.Open(stor, fs)
 	if err != nil {
@@ -139,6 +163,9 @@ func deleteFileCommit(stor gitStorage.Storer, branch, path, message string, sig 
 		return plumbing.ZeroHash, fmt.Errorf("resolve branch %s: %w", branch, err)
 	}
 	parentHash := ref.Hash()
+	if !expectedParent.IsZero() && parentHash != expectedParent {
+		return plumbing.ZeroHash, gitStorage.ErrReferenceHasChanged
+	}
 
 	if err := wt.Checkout(&git.CheckoutOptions{Hash: parentHash, Force: true}); err != nil {
 		return plumbing.ZeroHash, fmt.Errorf("checkout: %w", err)
@@ -160,7 +187,7 @@ func deleteFileCommit(stor gitStorage.Storer, branch, path, message string, sig 
 	if err != nil {
 		return plumbing.ZeroHash, fmt.Errorf("commit: %w", err)
 	}
-	if err := repo.Storer.SetReference(plumbing.NewHashReference(branchRef, commitHash)); err != nil {
+	if err := repo.Storer.CheckAndSetReference(plumbing.NewHashReference(branchRef, commitHash), ref); err != nil {
 		return plumbing.ZeroHash, fmt.Errorf("set ref: %w", err)
 	}
 	return commitHash, nil
@@ -230,7 +257,7 @@ func (s *Server) initRepoFiles(ctx context.Context, repo *Repo, branch, descript
 	}
 
 	sig := repoSignature(userDisplayName(repo), "bleephub@local")
-	_, err := initRepoWithFiles(stor, branch, "Initial commit", files, sig)
+	_, err := initEmptyRepoWithFiles(stor, branch, "Initial commit", files, sig)
 	if err != nil {
 		return err
 	}
@@ -911,10 +938,6 @@ func (s *Server) handleCreateRef(w http.ResponseWriter, r *http.Request) {
 		writeGHError(w, http.StatusUnprocessableEntity, "Object does not exist")
 		return
 	}
-	if _, err := stor.Reference(fullRef); err == nil {
-		writeGHError(w, http.StatusUnprocessableEntity, "Reference already exists")
-		return
-	}
 	if refusal := s.refWriteRefusal(r, repo, fullRef, refCreation, target); refusal != "" {
 		writeGHError(w, http.StatusForbidden, refusal)
 		return
@@ -926,7 +949,11 @@ func (s *Server) handleCreateRef(w http.ResponseWriter, r *http.Request) {
 		writeSecretScanningPushProtectionBlocked(w, ph)
 		return
 	}
-	if err := stor.SetReference(plumbing.NewHashReference(fullRef, target)); err != nil {
+	if err := createReferenceIfAbsent(stor, plumbing.NewHashReference(fullRef, target)); err != nil {
+		if errors.Is(err, errReferenceAlreadyExists) {
+			writeGHError(w, http.StatusUnprocessableEntity, "Reference already exists")
+			return
+		}
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
@@ -999,7 +1026,11 @@ func (s *Server) handleUpdateRef(w http.ResponseWriter, r *http.Request) {
 		writeSecretScanningPushProtectionBlocked(w, ph)
 		return
 	}
-	if err := stor.SetReference(plumbing.NewHashReference(fullRef, newTarget)); err != nil {
+	if err := stor.CheckAndSetReference(plumbing.NewHashReference(fullRef, newTarget), oldRef); err != nil {
+		if errors.Is(err, gitStorage.ErrReferenceHasChanged) {
+			writeGHError(w, http.StatusConflict, "Reference update failed: the ref changed while the request was being processed")
+			return
+		}
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}

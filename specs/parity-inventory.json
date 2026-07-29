@@ -3031,7 +3031,7 @@
         "id": "STORE-002",
         "location": "persistence.go:400",
         "severity": "B",
-        "status": "partial \u2014 `MustPut`/`MustDelete` now panic with a typed failure the recovery middleware turns into a 500, with deferred unlocks releasing the store lock, instead of `os.Exit(1)` from inside a handler. The ~600 `Must*` call sites in other files still cannot return an error, so a mutation is still half-applied in memory when one fires",
+        "status": "partial \u2014 `MustPut`/`MustDelete` panic with a typed failure rather than exiting, and recovery now reloads a revision-stable durable snapshot so an uncommitted memory mutation cannot survive the 500. If rollback cannot reach persistence, the store is poisoned and every later request retries recovery or fails 503 rather than serving half-applied memory. A handler that deliberately performs several independent successful transactions before a later one fails still needs conversion to one `persistBatch`; the reload honestly reflects those already-committed rows",
         "status_kind": "partial"
       },
       {
@@ -3094,8 +3094,8 @@
         "id": "STORE-009",
         "location": "store.go:930",
         "severity": "B",
-        "status": "partial \u2014 the write-side symptom is fixed and a durable TTL lock table plus an exclusive-ownership check now exist. After boot no read consults the database, so a replica never observes another's writes. The remaining choices are a single writer with mutation proxying, a monotonic revision change feed, or genuine read-through across roughly 600 call sites. Nothing currently claims multi-replica read consistency",
-        "status_kind": "partial"
+        "status": "fixed \u2014 every metadata transaction advances a monotonic shared revision; before serving a request a dqlite replica detects peer revisions and reloads until the revision is stable across the complete durable-state inventory. Reconciliation updates the existing Store under its lock, preserves an explicit process-local runner/session/log field set and locally-owned active workflow pointers, and fails 503 rather than serving a snapshot it could not refresh. Two independent database connections prove organizations and Classrooms propagate while a local runner survives",
+        "status_kind": "fixed"
       },
       {
         "category": "STORE",
@@ -3157,8 +3157,8 @@
         "id": "STORE-016",
         "location": "all store files",
         "severity": "M",
-        "status": "open",
-        "status_kind": "open"
+        "status": "partial \u2014 Git ref-derived mutations now have storage-level optimistic concurrency across REST and Git transports, with stale update/delete conflicts and exclusive creation. Generic metadata resources still mostly expose last-writer-wins updates without ETags or explicit versions",
+        "status_kind": "partial"
       },
       {
         "category": "STORE",
@@ -3166,8 +3166,8 @@
         "id": "STORE-017",
         "location": "gh_repos_git.go:688",
         "severity": "M",
-        "status": "open",
-        "status_kind": "open"
+        "status": "fixed \u2014 content writes, ref updates, merge, merge-commit, squash and rebase all compare against the exact ref they read; create requires atomic absence and delete compares the old value. Every repository storer serializes ref operations in-process and through the shared dqlite lease manager, covering HTTP/SSH pushes as well as REST. An AST ratchet forbids unconditional writes in derived-ref functions and deterministic races prove a competing ref is never overwritten or deleted",
+        "status_kind": "fixed"
       },
       {
         "category": "STORE",
@@ -5683,8 +5683,8 @@
         },
         "STORE": {
           "status": {
-            "fixed": 16,
-            "open": 41,
+            "fixed": 18,
+            "open": 39,
             "partial": 7
           },
           "total": 64
@@ -5713,8 +5713,8 @@
       },
       "status": {
         "deferred": 1,
-        "fixed": 258,
-        "open": 320,
+        "fixed": 260,
+        "open": 318,
         "partial": 35
       },
       "total": 614
@@ -21492,13 +21492,13 @@
         "source": "internal/server/gh_repos_rest.go"
       },
       {
-        "line": 17,
+        "line": 18,
         "method": "GET",
         "path": "/api/v3/repos/{owner}/{repo}/branches",
         "source": "internal/server/gh_repos_refs.go"
       },
       {
-        "line": 18,
+        "line": 19,
         "method": "GET",
         "path": "/api/v3/repos/{owner}/{repo}/branches/{branch}",
         "source": "internal/server/gh_repos_refs.go"
@@ -22524,25 +22524,25 @@
         "source": "internal/server/gh_repos_rest.go"
       },
       {
-        "line": 284,
+        "line": 311,
         "method": "POST",
         "path": "/api/v3/repos/{owner}/{repo}/git/blobs",
         "source": "internal/server/gh_repos_git.go"
       },
       {
-        "line": 283,
+        "line": 310,
         "method": "GET",
         "path": "/api/v3/repos/{owner}/{repo}/git/blobs/{sha}",
         "source": "internal/server/gh_repos_git.go"
       },
       {
-        "line": 288,
+        "line": 315,
         "method": "POST",
         "path": "/api/v3/repos/{owner}/{repo}/git/commits",
         "source": "internal/server/gh_repos_git.go"
       },
       {
-        "line": 287,
+        "line": 314,
         "method": "GET",
         "path": "/api/v3/repos/{owner}/{repo}/git/commits/{sha}",
         "source": "internal/server/gh_repos_git.go"
@@ -22560,55 +22560,55 @@
         "source": "internal/server/gh_repos_reads.go"
       },
       {
-        "line": 291,
+        "line": 318,
         "method": "GET",
         "path": "/api/v3/repos/{owner}/{repo}/git/refs",
         "source": "internal/server/gh_repos_git.go"
       },
       {
-        "line": 293,
+        "line": 320,
         "method": "POST",
         "path": "/api/v3/repos/{owner}/{repo}/git/refs",
         "source": "internal/server/gh_repos_git.go"
       },
       {
-        "line": 295,
+        "line": 322,
         "method": "DELETE",
         "path": "/api/v3/repos/{owner}/{repo}/git/refs/{ref...}",
         "source": "internal/server/gh_repos_git.go"
       },
       {
-        "line": 292,
+        "line": 319,
         "method": "GET",
         "path": "/api/v3/repos/{owner}/{repo}/git/refs/{ref...}",
         "source": "internal/server/gh_repos_git.go"
       },
       {
-        "line": 294,
+        "line": 321,
         "method": "PATCH",
         "path": "/api/v3/repos/{owner}/{repo}/git/refs/{ref...}",
         "source": "internal/server/gh_repos_git.go"
       },
       {
-        "line": 290,
+        "line": 317,
         "method": "POST",
         "path": "/api/v3/repos/{owner}/{repo}/git/tags",
         "source": "internal/server/gh_repos_git.go"
       },
       {
-        "line": 289,
+        "line": 316,
         "method": "GET",
         "path": "/api/v3/repos/{owner}/{repo}/git/tags/{sha}",
         "source": "internal/server/gh_repos_git.go"
       },
       {
-        "line": 286,
+        "line": 313,
         "method": "POST",
         "path": "/api/v3/repos/{owner}/{repo}/git/trees",
         "source": "internal/server/gh_repos_git.go"
       },
       {
-        "line": 285,
+        "line": 312,
         "method": "GET",
         "path": "/api/v3/repos/{owner}/{repo}/git/trees/{sha...}",
         "source": "internal/server/gh_repos_git.go"
@@ -23832,7 +23832,7 @@
         "source": "internal/server/gh_repos_rest.go"
       },
       {
-        "line": 19,
+        "line": 20,
         "method": "GET",
         "path": "/api/v3/repos/{owner}/{repo}/tags",
         "source": "internal/server/gh_repos_refs.go"

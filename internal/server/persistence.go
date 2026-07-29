@@ -24,6 +24,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/canonical/go-dqlite/v3/client"
@@ -67,7 +68,7 @@ var (
 // currentSchemaVersion is the schema this build writes and reads. A database
 // stamped with a higher version was written by a newer build whose row layout
 // this one cannot be trusted to decode, so startup refuses it.
-const currentSchemaVersion = 2
+const currentSchemaVersion = 3
 
 const (
 	persistenceEncryptionKeyEnvironment = "BLEEPHUB_PERSISTENCE_ENCRYPTION_KEY"
@@ -146,6 +147,16 @@ var schemaMigrations = []schemaMigration{
 );`,
 		},
 	},
+	{
+		version: 3,
+		statements: []string{
+			`CREATE TABLE IF NOT EXISTS schedule_claims (
+	key          TEXT NOT NULL PRIMARY KEY,
+	scheduled_at INTEGER NOT NULL
+);`,
+			`CREATE INDEX IF NOT EXISTS schedule_claims_scheduled_at ON schedule_claims (scheduled_at);`,
+		},
+	},
 }
 
 type Persistence struct {
@@ -154,6 +165,7 @@ type Persistence struct {
 	mu            sync.Mutex
 	encryptionKey []byte
 	keyDigestKey  []byte
+	localRevision atomic.Int64
 	// keyHighWater caches the durable per-bucket identifier high-water mark
 	// already written by this process, so the common case costs no extra SQL.
 	keyHighWater map[string]int64
@@ -277,9 +289,15 @@ func (p *Persistence) apply(ops []persistOp) error {
 			return fmt.Errorf("unknown persistence operation %d for %s/%s", op.kind, op.bucket, op.key)
 		}
 	}
+	revision, err := p.bumpStateRevisionTx(tx)
+	if err != nil {
+		_ = tx.Rollback()
+		return err
+	}
 	if err := tx.Commit(); err != nil {
 		return err
 	}
+	p.observeLocalRevision(revision)
 	for bucket, next := range raised {
 		p.cacheKeyHighWater(bucket, next)
 	}
@@ -435,9 +453,14 @@ func (p *Persistence) ClaimOIDCLogoutAndDeleteSessions(replayKey string, expires
 			return false, err
 		}
 	}
+	revision, err := p.bumpStateRevisionTx(tx)
+	if err != nil {
+		return false, err
+	}
 	if err := tx.Commit(); err != nil {
 		return false, err
 	}
+	p.observeLocalRevision(revision)
 	return true, nil
 }
 
@@ -599,6 +622,12 @@ func NewPersistence() (*Persistence, error) {
 		_ = db.Close()
 		return nil, err
 	}
+	revision, err := p.StateRevision()
+	if err != nil {
+		_ = db.Close()
+		return nil, err
+	}
+	p.localRevision.Store(revision)
 	return p, nil
 }
 
@@ -835,29 +864,9 @@ func (p *Persistence) Put(bucket, key string, v interface{}) error {
 	if p == nil {
 		return nil
 	}
-	raw, err := json.Marshal(v)
-	if err != nil {
-		return fmt.Errorf("marshal %s/%s: %w", bucket, key, err)
-	}
-	storageKey := p.storageKey(bucket, key)
-	raw, err = p.sealValue(bucket, storageKey, raw)
-	if err != nil {
-		return err
-	}
-	p.mu.Lock()
-	defer p.mu.Unlock()
-	next, raise := keyHighWaterCandidate(storageKey)
-	if raise && p.keyHighWater[bucket] < next {
-		// Written before the row so an interrupted pair can only leave the
-		// counter ahead of reality, which skips identifiers instead of reusing
-		// one whose object bytes still exist.
-		if _, err := p.db.Exec(p.dialect.raiseSQL, bucketKeyCounter(bucket), next); err != nil {
-			return err
-		}
-		p.cacheKeyHighWater(bucket, next)
-	}
-	_, err = p.db.Exec(p.dialect.putSQL, bucket, storageKey, raw)
-	return err
+	batch := newPersistBatch(p)
+	batch.Put(bucket, key, v)
+	return batch.Commit()
 }
 
 // OwnedExclusively reports whether this process is the only writer of the
@@ -949,14 +958,78 @@ func (p *Persistence) ReleaseLock(name, owner string) error {
 	return err
 }
 
+// ClaimScheduleFiring atomically selects one replica for a cron tuple/minute.
+// Claims are intentionally outside the metadata revision feed: they coordinate
+// the creation of a durable Workflow row but are not themselves API state.
+func (p *Persistence) ClaimScheduleFiring(key string, minute time.Time) (bool, error) {
+	if p == nil {
+		return false, fmt.Errorf("claim scheduled workflow: persistence is disabled")
+	}
+	digest := sha256.Sum256([]byte(key + "\x00" + minute.UTC().Truncate(time.Minute).Format(time.RFC3339)))
+	claimKey := hex.EncodeToString(digest[:])
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	tx, err := p.db.Begin()
+	if err != nil {
+		return false, err
+	}
+	defer func() { _ = tx.Rollback() }()
+	result, err := tx.Exec(`INSERT INTO schedule_claims (key, scheduled_at) VALUES (?, ?) ON CONFLICT(key) DO NOTHING`, claimKey, minute.UTC().Unix())
+	if err != nil {
+		return false, err
+	}
+	inserted, err := result.RowsAffected()
+	if err != nil {
+		return false, err
+	}
+	if _, err := tx.Exec(`DELETE FROM schedule_claims WHERE scheduled_at < ?`, minute.UTC().Add(-48*time.Hour).Unix()); err != nil {
+		return false, err
+	}
+	if err := tx.Commit(); err != nil {
+		return false, err
+	}
+	return inserted == 1, nil
+}
+
 func (p *Persistence) Delete(bucket, key string) error {
 	if p == nil {
 		return nil
 	}
-	p.mu.Lock()
-	defer p.mu.Unlock()
-	_, err := p.db.Exec(p.dialect.deleteSQL, bucket, p.storageKey(bucket, key))
-	return err
+	return p.apply([]persistOp{{kind: persistOpDelete, bucket: bucket, key: key}})
+}
+
+const stateRevisionCounter = "state_revision"
+
+func (p *Persistence) bumpStateRevisionTx(tx *sql.Tx) (int64, error) {
+	if _, err := tx.Exec(`INSERT INTO counters (name, value) VALUES (?, 1) ON CONFLICT(name) DO UPDATE SET value = counters.value + 1`, stateRevisionCounter); err != nil {
+		return 0, err
+	}
+	var revision int64
+	if err := tx.QueryRow(p.dialect.getSQL, stateRevisionCounter).Scan(&revision); err != nil {
+		return 0, err
+	}
+	return revision, nil
+}
+
+func (p *Persistence) StateRevision() (int64, error) {
+	return p.GetCounter(stateRevisionCounter)
+}
+
+func (p *Persistence) LocalRevision() int64 {
+	if p == nil {
+		return 0
+	}
+	return p.localRevision.Load()
+}
+
+func (p *Persistence) observeLocalRevision(revision int64) {
+	observed := p.localRevision.Load()
+	if revision == observed+1 {
+		p.localRevision.Store(revision)
+	}
+	// A gap means another replica committed since this process last loaded
+	// state. Do not bless the new revision merely because our write happened
+	// to be last; the request middleware must reload the missing rows.
 }
 
 func (p *Persistence) List(bucket string) (map[string][]byte, error) {

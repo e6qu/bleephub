@@ -496,6 +496,9 @@ type Store struct {
 	RepoActionsPermissions       map[string]*RepoActionsPermissions
 	actionsKeyPair               *SecretsKeyPair // lazily generated sealed-box keypair (persisted)
 	persist                      *Persistence
+	persistenceRevision          int64
+	persistenceRecoveryRequired  bool
+	replicaRefreshMu             sync.Mutex
 	// mu guards the Store's maps and counters. sync.RWMutex read locks are
 	// NOT reentrant: once a writer queues on Lock, new RLock calls block, so
 	// a goroutine that re-acquires mu while already holding it deadlocks.
@@ -1032,6 +1035,32 @@ func (st *Store) SetPersistence(p *Persistence) error {
 	if p == nil {
 		return nil
 	}
+	if !p.OwnedExclusively() {
+		st.wirePersistence(p)
+		// A dqlite peer may be writing while this replica starts. Use the same
+		// before/after revision-stable reconciler as request-time refreshes;
+		// otherwise startup could bless a cross-bucket partial snapshot as the
+		// newest revision and never reload it.
+		return st.refreshFromPersistence(true)
+	}
+	return st.setPersistence(p, true)
+}
+
+func (st *Store) setPersistence(p *Persistence, observeRevision bool) error {
+	if p == nil {
+		return nil
+	}
+	st.wirePersistence(p)
+	if err := st.loadFromPersistence(); err != nil {
+		return err
+	}
+	if observeRevision {
+		p.localRevision.Store(st.persistenceRevision)
+	}
+	return nil
+}
+
+func (st *Store) wirePersistence(p *Persistence) {
 	st.mu.Lock()
 	st.persist = p
 	st.Reactions.persist = p
@@ -1049,7 +1078,6 @@ func (st *Store) SetPersistence(p *Persistence) error {
 	if IsS3GitStorage() {
 		setGitObjectLocker(p)
 	}
-	return st.loadFromPersistence()
 }
 
 // loadFromPersistence repopulates the in-memory maps from disk.
@@ -3420,6 +3448,11 @@ func (st *Store) loadFromPersistence() error {
 	if err := st.finishInterruptedDeletions(); err != nil {
 		return err
 	}
+	revision, err := st.persist.StateRevision()
+	if err != nil {
+		return fmt.Errorf("load persistence state revision: %w", err)
+	}
+	st.persistenceRevision = revision
 
 	return nil
 }
