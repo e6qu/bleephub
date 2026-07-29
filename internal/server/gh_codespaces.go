@@ -26,11 +26,6 @@ func (s *Server) registerGHCodespacesRoutes() {
 	s.route("GET /api/v3/repos/{owner}/{repo}/codespaces/devcontainers", s.requirePerm(scopeCodespaces, permRead, s.handleListRepoDevcontainers))
 	s.route("GET /api/v3/repos/{owner}/{repo}/codespaces/new", s.requirePerm(scopeCodespaces, permRead, s.handleGetCodespaceDefaults))
 	s.route("GET /api/v3/repos/{owner}/{repo}/codespaces/permissions_check", s.requirePerm(scopeCodespaces, permRead, s.handleCodespacePermissionsCheck))
-	s.route("GET /api/v3/repos/{owner}/{repo}/codespaces/{codespace_name}", s.requirePerm(scopeCodespaces, permRead, s.handleGetRepoCodespace))
-	s.route("DELETE /api/v3/repos/{owner}/{repo}/codespaces/{codespace_name}", s.requirePerm(scopeCodespaces, permWrite, s.handleDeleteRepoCodespace))
-	s.route("POST /api/v3/repos/{owner}/{repo}/codespaces/{codespace_name}/start", s.requirePerm(scopeCodespaces, permWrite, s.handleStartRepoCodespace))
-	s.route("POST /api/v3/repos/{owner}/{repo}/codespaces/{codespace_name}/stop", s.requirePerm(scopeCodespaces, permWrite, s.handleStopRepoCodespace))
-
 	// Machine types.
 	s.route("GET /api/v3/repos/{owner}/{repo}/codespaces/machines", s.requirePerm(scopeCodespaces, permRead, s.handleListCodespaceMachines))
 
@@ -335,76 +330,6 @@ func (s *Server) handleCreateRepoCodespace(w http.ResponseWriter, r *http.Reques
 		return
 	}
 	writeJSON(w, http.StatusCreated, s.codespaceToJSON(cs, s.baseURL(r)))
-}
-
-func (s *Server) handleGetRepoCodespace(w http.ResponseWriter, r *http.Request) {
-	repo := s.lookupRepoFromPath(r)
-	if repo == nil {
-		writeGHError(w, http.StatusNotFound, "Not Found")
-		return
-	}
-	cs := s.resolveCodespace(w, r, "", repo.FullName)
-	if cs == nil {
-		return
-	}
-	_ = s.store.RefreshCodespaceState(cs.ID)
-	writeJSON(w, http.StatusOK, s.codespaceToJSON(cs, s.baseURL(r)))
-}
-
-func (s *Server) handleDeleteRepoCodespace(w http.ResponseWriter, r *http.Request) {
-	repo := s.lookupRepoFromPath(r)
-	if repo == nil {
-		writeGHError(w, http.StatusNotFound, "Not Found")
-		return
-	}
-	cs := s.resolveCodespace(w, r, "", repo.FullName)
-	if cs == nil {
-		return
-	}
-	ok, err := s.store.DeleteCodespace(cs.ID)
-	if err != nil {
-		writeGHError(w, http.StatusInternalServerError, "codespace delete failed: "+err.Error())
-		return
-	}
-	if !ok {
-		writeGHError(w, http.StatusNotFound, "Not Found")
-		return
-	}
-	w.WriteHeader(http.StatusAccepted)
-}
-
-func (s *Server) handleStartRepoCodespace(w http.ResponseWriter, r *http.Request) {
-	repo := s.lookupRepoFromPath(r)
-	if repo == nil {
-		writeGHError(w, http.StatusNotFound, "Not Found")
-		return
-	}
-	cs := s.resolveCodespace(w, r, "", repo.FullName)
-	if cs == nil {
-		return
-	}
-	if err := s.startCodespace(cs); err != nil {
-		writeGHError(w, http.StatusInternalServerError, "codespace start failed: "+err.Error())
-		return
-	}
-	writeJSON(w, http.StatusAccepted, s.codespaceToJSON(cs, s.baseURL(r)))
-}
-
-func (s *Server) handleStopRepoCodespace(w http.ResponseWriter, r *http.Request) {
-	repo := s.lookupRepoFromPath(r)
-	if repo == nil {
-		writeGHError(w, http.StatusNotFound, "Not Found")
-		return
-	}
-	cs := s.resolveCodespace(w, r, "", repo.FullName)
-	if cs == nil {
-		return
-	}
-	if err := s.stopCodespace(cs); err != nil {
-		writeGHError(w, http.StatusInternalServerError, "codespace stop failed: "+err.Error())
-		return
-	}
-	writeJSON(w, http.StatusAccepted, s.codespaceToJSON(cs, s.baseURL(r)))
 }
 
 // --- machines ---

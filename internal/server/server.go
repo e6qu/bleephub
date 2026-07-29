@@ -2,6 +2,7 @@ package bleephub
 
 import (
 	"context"
+	"crypto/sha256"
 	"crypto/tls"
 	"encoding/json"
 	"errors"
@@ -44,8 +45,10 @@ type Server struct {
 	classroomMu            sync.Mutex // serializes multi-resource Classroom browser transactions
 	marketplaceMu          sync.Mutex // serializes Marketplace billing transitions and webhook emission
 	workflowConcurrencyMu  sync.Mutex // serializes concurrency-group admission and queue promotion
-	routePatterns          []string   // every pattern registered via route(), for fidelity enumeration
-	externalURL            string     // BLEEPHUB_EXTERNAL_URL; when set, overrides request-Host URL derivation (job messages, action URLs) — the GHES "external URL" knob
+	rateLimitsMu           sync.Mutex
+	rateLimits             map[string]*apiRateWindow // hashed credential + resource -> current primary-limit window
+	routePatterns          []string                  // every pattern registered via route(), for fidelity enumeration
+	externalURL            string                    // BLEEPHUB_EXTERNAL_URL; when set, overrides request-Host URL derivation (job messages, action URLs) — the GHES "external URL" knob
 	pagesJekyllExecutable  string
 	identity               identityConfig
 	build                  BuildInfo
@@ -109,9 +112,35 @@ func WithBuildInfo(info BuildInfo) ServerOption {
 // never silently swallowed by the fallback.
 func (s *Server) route(pattern string, handler http.HandlerFunc) {
 	s.routePatterns = append(s.routePatterns, pattern)
+	if strings.Contains(pattern, " /ui-data/") {
+		handler = s.authenticateUIData(handler)
+	}
 	// /api/v3 routes are instrumented so served requests feed the API
 	// insights stats (gh_api_insights.go); other patterns pass through.
 	s.mux.HandleFunc(pattern, s.instrumentAPIRoute(pattern, s.enforceFineGrainedPATResource(pattern, handler)))
+}
+
+// authenticateUIData gives every browser-only adapter the same credential
+// semantics. Previously individual handlers had to remember to authenticate
+// themselves; package views did not, so both browser sessions and bearer-based
+// browser tests reached them with an empty context and failed 401.
+func (s *Server) authenticateUIData(next http.HandlerFunc) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		ctx := s.authenticateRequest(r)
+		if invalid, _ := ctx.Value(ctxInvalidCredential).(bool); invalid {
+			writeGHError(w, http.StatusUnauthorized, "Bad credentials")
+			return
+		}
+		if suspended, _ := ctx.Value(ctxSuspendedInstallation).(bool); suspended {
+			writeGHError(w, http.StatusForbidden, "This installation has been suspended")
+			return
+		}
+		if suspended, _ := ctx.Value(ctxSuspendedUser).(bool); suspended {
+			writeGHError(w, http.StatusForbidden, "This account has been suspended")
+			return
+		}
+		next(w, r.WithContext(ctx))
+	}
 }
 
 // retiredEnvVars maps an environment variable that no longer exists to the one
@@ -201,6 +230,7 @@ func NewServer(addr string, logger zerolog.Logger, options ...ServerOption) *Ser
 		metrics:                NewMetrics(),
 		maxConcurrentWorkflows: maxWF,
 		registryUploads:        map[string]*containerRegistryUpload{},
+		rateLimits:             map[string]*apiRateWindow{},
 		externalURL:            strings.TrimRight(os.Getenv("BLEEPHUB_EXTERNAL_URL"), "/"),
 		pagesJekyllExecutable:  coalesceStr(os.Getenv("BLEEPHUB_PAGES_JEKYLL_EXECUTABLE"), "bleephub-pages-jekyll"),
 		identity:               identityConfigFromEnv(),
@@ -837,6 +867,26 @@ func writeJSON(w http.ResponseWriter, status int, v interface{}) {
 		w.WriteHeader(http.StatusInternalServerError)
 		_, _ = w.Write([]byte(`{"message":"Internal Server Error","documentation_url":"https://docs.github.com/rest"}` + "\n"))
 		return
+	}
+	sum := sha256.Sum256(body)
+	etag := fmt.Sprintf(`"%x"`, sum)
+	for current := w; current != nil; {
+		if conditional, ok := current.(interface {
+			conditionalJSON(string, int) bool
+		}); ok {
+			if conditional.conditionalJSON(etag, status) {
+				w.WriteHeader(http.StatusNotModified)
+				return
+			}
+			break
+		}
+		unwrapper, ok := current.(interface {
+			Unwrap() http.ResponseWriter
+		})
+		if !ok {
+			break
+		}
+		current = unwrapper.Unwrap()
 	}
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)

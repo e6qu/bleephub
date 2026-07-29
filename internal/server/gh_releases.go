@@ -849,9 +849,6 @@ func (s *Server) handleDeleteRelease(w http.ResponseWriter, r *http.Request) {
 	}
 	s.store.Reactions.DeleteParent("release", id)
 	s.emitWebhookEvent(repo.FullName, "release", "deleted", payload)
-	if !rel.Draft {
-		s.triggerWorkflowsForEvent(repo.FullName, "release", "deleted", plumbing.NewTagReferenceName(rel.TagName).String(), payload)
-	}
 	s.recordAuditEvent("release.destroy", user.Login, "", map[string]interface{}{"repo": repo.FullName, "release_id": id})
 	w.WriteHeader(http.StatusNoContent)
 }
@@ -874,10 +871,6 @@ func releaseUpdateAction(wasDraft, wasPrerelease, draft, prerelease bool) string
 func (s *Server) emitReleaseEvent(repo *Repo, release *Release, sender *User, action, baseURL string) {
 	payload := s.buildReleaseEventPayload(repo, release, sender, action, baseURL)
 	s.emitWebhookEvent(repo.FullName, "release", action, payload)
-	if release.Draft && (action == "created" || action == "edited" || action == "deleted") {
-		return
-	}
-	s.triggerWorkflowsForEvent(repo.FullName, "release", action, plumbing.NewTagReferenceName(release.TagName).String(), payload)
 }
 
 func readUploadAssetBody(r *http.Request) (name, label, contentType string, data []byte, ok bool, err error) {

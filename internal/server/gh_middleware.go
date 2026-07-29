@@ -27,6 +27,7 @@ const ctxPersonalAccessToken contextKey = "gh-personal-access-token"
 const ctxSuspendedInstallation contextKey = "gh-suspended-installation"
 const ctxSuspendedUser contextKey = "gh-suspended-user"
 const ctxGitHubAPIVersion contextKey = "gh-api-version"
+const ctxAPIRateLimit contextKey = "gh-api-rate-limit"
 
 const defaultGitHubAPIVersion = "2022-11-28"
 
@@ -192,11 +193,20 @@ func (s *Server) ghHeadersMiddleware(next http.Handler) http.Handler {
 		}
 
 		// Wrap response writer to inject headers
+		resource := apiRateResource(path)
+		// GitHub documents GET /rate_limit as not consuming the primary rate
+		// limit; it observes the current core window instead.
+		rate := s.rateLimitSnapshot(r, resource, path != "/api/v3/rate_limit")
+		ctx = context.WithValue(ctx, ctxAPIRateLimit, rate)
+		r = r.WithContext(ctx)
 		rw := &ghResponseWriter{
 			ResponseWriter: w,
 			token:          token,
 			path:           path,
 			apiVersion:     apiVersion,
+			method:         r.Method,
+			ifNoneMatch:    r.Header.Get("If-None-Match"),
+			rateLimit:      rate,
 		}
 		if field := invalidRESTPaginationQuery(r); strings.HasPrefix(path, "/api/v3/") && field != "" {
 			writeGHValidationError(rw, "Pagination", field, "invalid")
@@ -362,7 +372,24 @@ type ghResponseWriter struct {
 	token       *Token
 	path        string
 	apiVersion  string
+	method      string
+	ifNoneMatch string
+	rateLimit   apiRateSnapshot
 	wroteHeader bool
+}
+
+func (rw *ghResponseWriter) conditionalJSON(etag string, status int) bool {
+	if rw.method != http.MethodGet || status != http.StatusOK {
+		return false
+	}
+	rw.Header().Set("ETag", etag)
+	for _, candidate := range strings.Split(rw.ifNoneMatch, ",") {
+		candidate = strings.TrimSpace(candidate)
+		if candidate == "*" || candidate == etag || strings.TrimPrefix(candidate, "W/") == etag {
+			return true
+		}
+	}
+	return false
 }
 
 func (rw *ghResponseWriter) WriteHeader(code int) {
@@ -380,17 +407,20 @@ func (rw *ghResponseWriter) WriteHeader(code int) {
 		}
 		h.Set("X-Accepted-OAuth-Scopes", "")
 
-		now := time.Now()
-		h.Set("X-RateLimit-Limit", "5000")
-		h.Set("X-RateLimit-Remaining", "4999")
-		h.Set("X-RateLimit-Used", "1")
-		h.Set("X-RateLimit-Reset", fmt.Sprintf("%d", now.Unix()+3600))
-
-		resource := "core"
-		if strings.HasPrefix(rw.path, "/api/graphql") {
-			resource = "graphql"
+		rate := rw.rateLimit
+		if rate.Limit == 0 {
+			resource := apiRateResource(rw.path)
+			rate = apiRateSnapshot{
+				Resource: resource, Limit: apiRateResourceLimits[resource],
+				Used: 1, Remaining: apiRateResourceLimits[resource] - 1,
+				Reset: time.Now().Add(apiRateWindowDuration(resource)).Unix(),
+			}
 		}
-		h.Set("X-RateLimit-Resource", resource)
+		h.Set("X-RateLimit-Limit", fmt.Sprintf("%d", rate.Limit))
+		h.Set("X-RateLimit-Remaining", fmt.Sprintf("%d", rate.Remaining))
+		h.Set("X-RateLimit-Used", fmt.Sprintf("%d", rate.Used))
+		h.Set("X-RateLimit-Reset", fmt.Sprintf("%d", rate.Reset))
+		h.Set("X-RateLimit-Resource", rate.Resource)
 		h.Set("X-GitHub-Request-Id", uuid.New().String())
 		apiVersion := rw.apiVersion
 		if apiVersion == "" {

@@ -192,18 +192,6 @@ func TestMigrations_OrgCRUD(t *testing.T) {
 		t.Fatalf("expected exported, got %v", got["state"])
 	}
 
-	// Get lock status
-	resp = ghGet(t, "/api/v3/orgs/"+org.Login+"/migrations/"+itoa(migrationID)+"/repos/"+r1.Name+"/lock", defaultToken)
-	if resp.StatusCode != http.StatusOK {
-		b, _ := io.ReadAll(resp.Body)
-		resp.Body.Close()
-		t.Fatalf("get lock status: %d %s", resp.StatusCode, b)
-	}
-	lockStatus := decodeJSON(t, resp)
-	if lockStatus["locked"] != true {
-		t.Fatalf("expected locked true, got %v", lockStatus)
-	}
-
 	// Unlock
 	resp = ghDelete(t, "/api/v3/orgs/"+org.Login+"/migrations/"+itoa(migrationID)+"/repos/"+r1.Name+"/lock", defaultToken)
 	if resp.StatusCode != http.StatusNoContent {
@@ -213,11 +201,13 @@ func TestMigrations_OrgCRUD(t *testing.T) {
 	}
 	resp.Body.Close()
 
-	// Lock status after unlock returns 404
-	resp = ghGet(t, "/api/v3/orgs/"+org.Login+"/migrations/"+itoa(migrationID)+"/repos/"+r1.Name+"/lock", defaultToken)
+	// Repeating the documented unlock after it has already been unlocked
+	// returns 404; there is no GitHub GET lock-status operation.
+	resp = ghDelete(t, "/api/v3/orgs/"+org.Login+"/migrations/"+itoa(migrationID)+"/repos/"+r1.Name+"/lock", defaultToken)
 	if resp.StatusCode != http.StatusNotFound {
-		t.Fatalf("expected 404 after unlock, got %d", resp.StatusCode)
+		t.Fatalf("expected second unlock to return 404, got %d", resp.StatusCode)
 	}
+	resp.Body.Close()
 	resp.Body.Close()
 }
 

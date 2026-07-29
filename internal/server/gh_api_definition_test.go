@@ -204,63 +204,21 @@ var describedOutsideDotcom = map[string]string{
 	"POST /projects/columns/cards/{}/moves": "ghes-3.13",
 }
 
-// uncitedRoutes are routes bleephub registers under /api/v3 that NO
-// official GitHub description carries — not the dotcom one, not
-// Enterprise Cloud, not Enterprise Server 3.21, 3.13 or 2.22. They were
-// previously asserted to be "real GitHub (GHES) endpoints"; nothing
-// supports that, so they are recorded here as outstanding parity defects
-// with the correction where one is known, and the value names the file
-// that registers the route. This ledger may only shrink: fixing an entry
-// means changing or deleting the route, never rewording the excuse.
-// TestRouteAllowlistCitationsHold fails if an entry turns out to be
-// described after all, so it has to be promoted rather than left here.
-var uncitedRoutes = map[string]string{
-	"POST /actions/runner-registration": "auth.go — used by actions/runner config.sh against GHES; not in any description",
+// uncitedRoutes must stay empty. A public /api/v3 operation without an
+// official GitHub description is an invented API, not an implementation
+// backlog item.
+var uncitedRoutes = map[string]string{}
 
-	"GET /repos/{}/{}/git/refs": "gh_repos_git.go — GitHub lists refs at GET /repos/{}/{}/git/matching-refs/{ref}",
+const maxUncitedRoutes = 0
 
-	"GET /repos/{}/{}/branches/{}/protection/allow_deletions":        "gh_branch_protection.go — allow_deletions is a field of the protection object, not an endpoint",
-	"PUT /repos/{}/{}/branches/{}/protection/allow_deletions":        "gh_branch_protection.go — allow_deletions is a field of the protection object, not an endpoint",
-	"DELETE /repos/{}/{}/branches/{}/protection/allow_deletions":     "gh_branch_protection.go — allow_deletions is a field of the protection object, not an endpoint",
-	"GET /repos/{}/{}/branches/{}/protection/allow_force_pushes":     "gh_branch_protection.go — allow_force_pushes is a field of the protection object, not an endpoint",
-	"PUT /repos/{}/{}/branches/{}/protection/allow_force_pushes":     "gh_branch_protection.go — allow_force_pushes is a field of the protection object, not an endpoint",
-	"DELETE /repos/{}/{}/branches/{}/protection/allow_force_pushes":  "gh_branch_protection.go — allow_force_pushes is a field of the protection object, not an endpoint",
-	"PUT /repos/{}/{}/branches/{}/protection/required_status_checks": "gh_branch_protection.go — GitHub updates status-check protection with PATCH, not PUT",
-	"PUT /repos/{}/{}/branches/{}/protection/restrictions":           "gh_branch_protection.go — GitHub has GET and DELETE on /restrictions; PUT only on its apps/teams/users children",
-
-	"PATCH /repos/{}/{}/secret-scanning/alerts": "gh_secret_scanning.go — GitHub updates one alert at a time: PATCH /repos/{}/{}/secret-scanning/alerts/{alert_number}",
-
-	"GET /orgs/{}/migrations/{}/repos/{}/lock": "gh_migrations.go — GitHub only has DELETE on the migration repo lock",
-
-	"GET /repos/{}/{}/pages/deployments/{}/status": "gh_pages_deployments.go — the deployment status is GET /repos/{}/{}/pages/deployments/{}, already registered alongside this alias",
-
-	"GET /orgs/{}/actions/cache/retention-limit": "gh_actions_permissions.go — GitHub scopes the org cache limits under /organizations/{org_id}/actions/cache/retention-limit",
-	"PUT /orgs/{}/actions/cache/retention-limit": "gh_actions_permissions.go — GitHub scopes the org cache limits under /organizations/{org_id}/actions/cache/retention-limit",
-	"GET /orgs/{}/actions/cache/storage-limit":   "gh_actions_permissions.go — GitHub scopes the org cache limits under /organizations/{org_id}/actions/cache/storage-limit",
-	"PUT /orgs/{}/actions/cache/storage-limit":   "gh_actions_permissions.go — GitHub scopes the org cache limits under /organizations/{org_id}/actions/cache/storage-limit",
-
-	"GET /repos/{}/{}/codespaces/{}":        "gh_codespaces.go — GitHub addresses a codespace by name under /user/codespaces/{codespace_name}",
-	"DELETE /repos/{}/{}/codespaces/{}":     "gh_codespaces.go — GitHub addresses a codespace by name under /user/codespaces/{codespace_name}",
-	"POST /repos/{}/{}/codespaces/{}/start": "gh_codespaces.go — GitHub starts a codespace at POST /user/codespaces/{codespace_name}/start",
-	"POST /repos/{}/{}/codespaces/{}/stop":  "gh_codespaces.go — GitHub stops a codespace at POST /user/codespaces/{codespace_name}/stop",
-
-	"GET /repos/{}/{}/packages":                            "gh_packages.go — the Packages API is scoped to a user or an org, never a repo",
-	"GET /repos/{}/{}/packages/{}/{}":                      "gh_packages.go — the Packages API is scoped to a user or an org, never a repo",
-	"DELETE /repos/{}/{}/packages/{}/{}":                   "gh_packages.go — the Packages API is scoped to a user or an org, never a repo",
-	"GET /repos/{}/{}/packages/{}/{}/versions":             "gh_packages.go — the Packages API is scoped to a user or an org, never a repo",
-	"GET /repos/{}/{}/packages/{}/{}/versions/{}":          "gh_packages.go — the Packages API is scoped to a user or an org, never a repo",
-	"DELETE /repos/{}/{}/packages/{}/{}/versions/{}":       "gh_packages.go — the Packages API is scoped to a user or an org, never a repo",
-	"GET /repos/{}/{}/packages/{}/{}/versions/{}/files":    "gh_packages.go — no description declares a files sub-resource on a package version",
-	"GET /repos/{}/{}/packages/{}/{}/versions/{}/files/{}": "gh_packages.go — no description declares a files sub-resource on a package version",
-	"GET /users/{}/packages/{}/{}/versions/{}/files":       "gh_packages.go — no description declares a files sub-resource on a package version",
-	"GET /users/{}/packages/{}/{}/versions/{}/files/{}":    "gh_packages.go — no description declares a files sub-resource on a package version",
-	"GET /orgs/{}/packages/{}/{}/versions/{}/files":        "gh_packages.go — no description declares a files sub-resource on a package version",
-	"GET /orgs/{}/packages/{}/{}/versions/{}/files/{}":     "gh_packages.go — no description declares a files sub-resource on a package version",
+// runnerProtocolRoutes are private Actions runner handshake operations. The
+// official runner invokes these below the GHES API prefix, but they are not
+// GitHub REST operations and therefore do not appear in the REST description.
+// Keep this boundary exact and prove it with the official-runner handshake
+// suite rather than weakening the REST coverage gate.
+var runnerProtocolRoutes = map[string]string{
+	"POST /actions/runner-registration": "official actions/runner registration handshake",
 }
-
-// maxUncitedRoutes ratchets the ledger above. It may be lowered, never
-// raised: a new uncited route means a route that GitHub does not have.
-const maxUncitedRoutes = 33
 
 // TestRouteAllowlistCitationsHold checks the two ledgers against the
 // vendored descriptions, so neither can drift into decoration.
@@ -376,6 +334,9 @@ func TestRegisteredAPIv3RoutesExistInGitHubSpec(t *testing.T) {
 			continue
 		}
 		if _, ok := uncitedRoutes[norm]; ok {
+			continue
+		}
+		if _, ok := runnerProtocolRoutes[norm]; ok {
 			continue
 		}
 		if _, ok := dispatchRoutes[norm]; ok {
@@ -577,5 +538,10 @@ func TestUncitedRoutesAreStillRegistered(t *testing.T) {
 		sort.Strings(stale)
 		t.Errorf("%d uncitedRoutes entr(ies) name a route that is no longer registered; delete them and lower maxUncitedRoutes:\n  %s",
 			len(stale), strings.Join(stale, "\n  "))
+	}
+	for route := range runnerProtocolRoutes {
+		if !registered[route] {
+			t.Errorf("runner protocol compatibility route is no longer registered: %s", route)
+		}
 	}
 }

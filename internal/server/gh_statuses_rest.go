@@ -206,7 +206,7 @@ func (s *Server) handleGetCombinedStatus(w http.ResponseWriter, r *http.Request)
 	if repo == nil {
 		return
 	}
-	ref := r.PathValue("ref")
+	ref := s.canonicalCommitStatusRef(repo, r.PathValue("ref"))
 	state, total, statuses := s.store.CommitStatuses.Combined(repo.FullName, ref)
 	out := make([]map[string]interface{}, 0, len(statuses))
 	for _, st := range statuses {
@@ -226,7 +226,7 @@ func (s *Server) handleListCommitStatuses(w http.ResponseWriter, r *http.Request
 	if repo == nil {
 		return
 	}
-	ref := r.PathValue("ref")
+	ref := s.canonicalCommitStatusRef(repo, r.PathValue("ref"))
 	statuses := s.store.CommitStatuses.List(repo.FullName, ref)
 	page := paginateAndLink(w, r, statuses)
 	out := make([]map[string]interface{}, 0, len(page))
@@ -260,9 +260,41 @@ func (s *Server) handleCreateCommitStatus(w http.ResponseWriter, r *http.Request
 		writeGHValidationError(w, "Status", "state", "missing_field")
 		return
 	}
-	sha := r.PathValue("sha")
+	switch strings.ToLower(req.State) {
+	case "error", "failure", "pending", "success":
+	default:
+		writeGHValidationError(w, "Status", "state", "invalid")
+		return
+	}
+	sha := s.canonicalCommitStatusRef(repo, r.PathValue("sha"))
 	st := s.store.CommitStatuses.Create(repo.FullName, sha, user.ID, req.State, req.TargetURL, req.Description, req.Context)
+	s.emitWebhookEvent(repo.FullName, "status", "", map[string]interface{}{
+		"id":          st.ID,
+		"sha":         sha,
+		"state":       st.State,
+		"context":     st.Context,
+		"description": st.Description,
+		"target_url":  st.TargetURL,
+		"repository":  repoToJSON(repo, s.store, s.baseURL(r)),
+		"sender":      userToJSON(user),
+	})
 	writeJSON(w, http.StatusCreated, commitStatusToJSON(st, s.store, s.baseURL(r), repo.FullName))
+}
+
+func (s *Server) canonicalCommitStatusRef(repo *Repo, ref string) string {
+	if repo == nil {
+		return ref
+	}
+	owner, name, ok := splitRepoFullName(repo.FullName)
+	if !ok {
+		return ref
+	}
+	if stor := s.store.GetGitStorage(owner, name); stor != nil {
+		if hash, err := resolveGitRef(stor, ref); err == nil {
+			return hash.String()
+		}
+	}
+	return ref
 }
 
 func commitStatusToJSON(st *CommitStatus, stStore *Store, baseURL, repoKey string) map[string]interface{} {

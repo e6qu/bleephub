@@ -42,8 +42,6 @@ func (s *Server) registerGHPackagesRoutes() {
 	s.route("GET /api/v3/users/{username}/packages/{package_type}/{package_name}/versions/{package_version_id}", s.handleGetUserPackageVersion)
 	s.route("DELETE /api/v3/users/{username}/packages/{package_type}/{package_name}/versions/{package_version_id}", s.handleDeleteUserPackageVersion)
 	s.route("POST /api/v3/users/{username}/packages/{package_type}/{package_name}/versions/{package_version_id}/restore", s.handleRestoreUserPackageVersion)
-	s.route("GET /api/v3/users/{username}/packages/{package_type}/{package_name}/versions/{package_version_id}/files", s.handleListUserPackageFiles)
-	s.route("GET /api/v3/users/{username}/packages/{package_type}/{package_name}/versions/{package_version_id}/files/{file_id}", s.handleDownloadUserPackageFile)
 
 	// Org-scoped
 	s.route("GET /api/v3/orgs/{org}/packages", s.handleListOrgPackages)
@@ -55,18 +53,6 @@ func (s *Server) registerGHPackagesRoutes() {
 	s.route("GET /api/v3/orgs/{org}/packages/{package_type}/{package_name}/versions/{package_version_id}", s.handleGetOrgPackageVersion)
 	s.route("DELETE /api/v3/orgs/{org}/packages/{package_type}/{package_name}/versions/{package_version_id}", s.handleDeleteOrgPackageVersion)
 	s.route("POST /api/v3/orgs/{org}/packages/{package_type}/{package_name}/versions/{package_version_id}/restore", s.handleRestoreOrgPackageVersion)
-	s.route("GET /api/v3/orgs/{org}/packages/{package_type}/{package_name}/versions/{package_version_id}/files", s.handleListOrgPackageFiles)
-	s.route("GET /api/v3/orgs/{org}/packages/{package_type}/{package_name}/versions/{package_version_id}/files/{file_id}", s.handleDownloadOrgPackageFile)
-
-	// Repo-scoped
-	s.route("GET /api/v3/repos/{owner}/{repo}/packages", s.handleListRepoPackages)
-	s.route("GET /api/v3/repos/{owner}/{repo}/packages/{package_type}/{package_name}", s.handleGetRepoPackage)
-	s.route("DELETE /api/v3/repos/{owner}/{repo}/packages/{package_type}/{package_name}", s.handleDeleteRepoPackage)
-	s.route("GET /api/v3/repos/{owner}/{repo}/packages/{package_type}/{package_name}/versions", s.handleListRepoPackageVersions)
-	s.route("GET /api/v3/repos/{owner}/{repo}/packages/{package_type}/{package_name}/versions/{package_version_id}", s.handleGetRepoPackageVersion)
-	s.route("DELETE /api/v3/repos/{owner}/{repo}/packages/{package_type}/{package_name}/versions/{package_version_id}", s.handleDeleteRepoPackageVersion)
-	s.route("GET /api/v3/repos/{owner}/{repo}/packages/{package_type}/{package_name}/versions/{package_version_id}/files", s.handleListRepoPackageFiles)
-	s.route("GET /api/v3/repos/{owner}/{repo}/packages/{package_type}/{package_name}/versions/{package_version_id}/files/{file_id}", s.handleDownloadRepoPackageFile)
 }
 
 // ─── Internal upload endpoint ───────────────────────────────────────────
@@ -1131,7 +1117,6 @@ func (s *Server) canAdminPackage(ctx context.Context, user *User, p *Package) bo
 func (s *Server) packageToJSON(p *Package, baseURL string) map[string]interface{} {
 	out := map[string]interface{}{
 		"id":            p.ID,
-		"node_id":       p.NodeID,
 		"name":          p.Name,
 		"package_type":  p.PackageType,
 		"visibility":    p.Visibility,
@@ -1170,7 +1155,6 @@ func (s *Server) packageToJSON(p *Package, baseURL string) map[string]interface{
 func (s *Server) packageVersionToJSON(v *PackageVersion, p *Package, baseURL, scopePath string) map[string]interface{} {
 	out := map[string]interface{}{
 		"id":               v.ID,
-		"node_id":          v.NodeID,
 		"name":             v.Version,
 		"url":              s.packageVersionURL(baseURL, scopePath, p, v),
 		"package_html_url": s.packageHTMLURL(baseURL, p),

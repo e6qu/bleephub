@@ -264,6 +264,29 @@
         }
       }
     },
+    "CodeOfConduct": {
+      "kind": "OBJECT",
+      "fields": {
+        "body": {
+          "type": "String"
+        },
+        "id": {
+          "type": "ID!"
+        },
+        "key": {
+          "type": "String!"
+        },
+        "name": {
+          "type": "String!"
+        },
+        "resourcePath": {
+          "type": "URI"
+        },
+        "url": {
+          "type": "URI"
+        }
+      }
+    },
     "Commit": {
       "kind": "OBJECT",
       "fields": {
@@ -407,6 +430,9 @@
           "type": "Repository"
         }
       }
+    },
+    "DateTime": {
+      "kind": "SCALAR"
     },
     "DeleteDiscussionCommentInput": {
       "kind": "INPUT_OBJECT",
@@ -878,6 +904,35 @@
           "type": "Int!"
         }
       }
+    },
+    "GitHubMetadata": {
+      "kind": "OBJECT",
+      "fields": {
+        "gitHubServicesSha": {
+          "type": "GitObjectID!"
+        },
+        "gitIpAddresses": {
+          "type": "[String!]"
+        },
+        "githubEnterpriseImporterIpAddresses": {
+          "type": "[String!]"
+        },
+        "hookIpAddresses": {
+          "type": "[String!]"
+        },
+        "importerIpAddresses": {
+          "type": "[String!]"
+        },
+        "isPasswordAuthenticationVerifiable": {
+          "type": "Boolean!"
+        },
+        "pagesIpAddresses": {
+          "type": "[String!]"
+        }
+      }
+    },
+    "GitObjectID": {
+      "kind": "SCALAR"
     },
     "ID": {
       "kind": "SCALAR"
@@ -1644,6 +1699,70 @@
         },
         "totalCount": {
           "type": "Int!"
+        }
+      }
+    },
+    "License": {
+      "kind": "OBJECT",
+      "fields": {
+        "body": {
+          "type": "String!"
+        },
+        "conditions": {
+          "type": "[LicenseRule]!"
+        },
+        "description": {
+          "type": "String"
+        },
+        "featured": {
+          "type": "Boolean!"
+        },
+        "hidden": {
+          "type": "Boolean!"
+        },
+        "id": {
+          "type": "ID!"
+        },
+        "implementation": {
+          "type": "String"
+        },
+        "key": {
+          "type": "String!"
+        },
+        "limitations": {
+          "type": "[LicenseRule]!"
+        },
+        "name": {
+          "type": "String!"
+        },
+        "nickname": {
+          "type": "String"
+        },
+        "permissions": {
+          "type": "[LicenseRule]!"
+        },
+        "pseudoLicense": {
+          "type": "Boolean!"
+        },
+        "spdxId": {
+          "type": "String"
+        },
+        "url": {
+          "type": "URI"
+        }
+      }
+    },
+    "LicenseRule": {
+      "kind": "OBJECT",
+      "fields": {
+        "description": {
+          "type": "String!"
+        },
+        "key": {
+          "type": "String!"
+        },
+        "label": {
+          "type": "String!"
         }
       }
     },
@@ -3202,11 +3321,44 @@
     "Query": {
       "kind": "OBJECT",
       "fields": {
+        "codeOfConduct": {
+          "type": "CodeOfConduct",
+          "args": {
+            "key": "String!"
+          }
+        },
+        "codesOfConduct": {
+          "type": "[CodeOfConduct]"
+        },
+        "id": {
+          "type": "ID!"
+        },
+        "license": {
+          "type": "License",
+          "args": {
+            "key": "String!"
+          }
+        },
+        "licenses": {
+          "type": "[License]!"
+        },
+        "meta": {
+          "type": "GitHubMetadata!"
+        },
         "organization": {
           "type": "Organization",
           "args": {
             "login": "String!"
           }
+        },
+        "rateLimit": {
+          "type": "RateLimit",
+          "args": {
+            "dryRun": "Boolean"
+          }
+        },
+        "relay": {
+          "type": "Query!"
         },
         "repository": {
           "type": "Repository",
@@ -3239,6 +3391,29 @@
         },
         "viewer": {
           "type": "User"
+        }
+      }
+    },
+    "RateLimit": {
+      "kind": "OBJECT",
+      "fields": {
+        "cost": {
+          "type": "Int!"
+        },
+        "limit": {
+          "type": "Int!"
+        },
+        "nodeCount": {
+          "type": "Int!"
+        },
+        "remaining": {
+          "type": "Int!"
+        },
+        "resetAt": {
+          "type": "DateTime!"
+        },
+        "used": {
+          "type": "Int!"
         }
       }
     },
@@ -4021,6 +4196,9 @@
           "type": "String!"
         }
       }
+    },
+    "URI": {
+      "kind": "SCALAR"
     },
     "UnlockLockableInput": {
       "kind": "INPUT_OBJECT",

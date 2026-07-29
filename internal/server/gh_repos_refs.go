@@ -95,10 +95,6 @@ func nodeIDForTag(repo *Repo, tagName string) string {
 	return encodeNodeID("Tag", repo.ID, tagName)
 }
 
-func (s *Server) handleListRefs(w http.ResponseWriter, r *http.Request) {
-	s.handleGetRefs(w, r)
-}
-
 func (s *Server) handleGetRefs(w http.ResponseWriter, r *http.Request) {
 	owner := r.PathValue("owner")
 	repoName := r.PathValue("repo")

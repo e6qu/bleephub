@@ -95,6 +95,8 @@ type apiInsightsStatusRecorder struct {
 	wroteHeader bool
 }
 
+func (w *apiInsightsStatusRecorder) Unwrap() http.ResponseWriter { return w.ResponseWriter }
+
 func (w *apiInsightsStatusRecorder) WriteHeader(code int) {
 	if !w.wroteHeader {
 		w.wroteHeader = true

@@ -45,6 +45,7 @@ on:
     branches: [main]
   schedule:
     - cron: '0 4 * * 1-5'
+      timezone: Europe/Bucharest
     - cron: '30 0 * * 0'
   workflow_dispatch:
     inputs:
@@ -73,8 +74,9 @@ jobs: {}
 		t.Errorf("pr types = %v", pr.Types)
 	}
 	sched := on["schedule"]
-	if len(sched.Crons) != 2 || sched.Crons[0] != "0 4 * * 1-5" {
-		t.Errorf("schedule crons = %v", sched.Crons)
+	if len(sched.Schedules) != 2 || sched.Schedules[0].Cron != "0 4 * * 1-5" ||
+		sched.Schedules[0].Timezone != "Europe/Bucharest" {
+		t.Errorf("schedule entries = %+v", sched.Schedules)
 	}
 	wd := on["workflow_dispatch"]
 	if wd.Inputs["env"] == nil || wd.Inputs["env"].Type != "choice" || !wd.Inputs["env"].Required {
@@ -90,6 +92,7 @@ func TestParseWorkflowOnInvalidCombos(t *testing.T) {
 		"on:\n  push:\n    branches: [main]\n    branches-ignore: [dev]\njobs: {}",
 		"on:\n  push:\n    tags: [v1]\n    tags-ignore: [v2]\njobs: {}",
 		"on:\n  push:\n    paths: [a]\n    paths-ignore: [b]\njobs: {}",
+		"on:\n  schedule:\n    - cron: '0 0 * * *'\n      timezone: Not/AZone\njobs: {}",
 	} {
 		if _, err := ParseWorkflowOn([]byte(yaml)); err == nil {
 			t.Errorf("expected error for combined include+ignore filters in %q", yaml)
@@ -342,6 +345,48 @@ jobs:
 	}
 	if hc, _ := withPayload.EventPayload["head_commit"].(map[string]interface{}); hc == nil || hc["message"] != "x" {
 		t.Fatalf("EventPayload = %v", withPayload.EventPayload)
+	}
+}
+
+func TestWebhookEventProductionAlwaysFeedsActions(t *testing.T) {
+	s := newTestServer()
+	repoKey := "eventbridge/event-repo"
+	commitWorkflowYAMLToStorage(t, s, repoKey, ".github/workflows/issues.yml", `name: issue-events
+on:
+  issues:
+    types: [opened]
+jobs:
+  observe:
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo issue
+`)
+	repo := s.store.GetRepoByFullName(repoKey)
+	if repo == nil {
+		t.Fatal("workflow fixture did not create repository")
+	}
+	payload := map[string]interface{}{
+		"action":     "opened",
+		"repository": repoPayload(repo),
+		"issue":      map[string]interface{}{"number": 1},
+	}
+
+	s.emitWebhookEvent(repoKey, "issues", "opened", payload)
+
+	s.store.mu.RLock()
+	defer s.store.mu.RUnlock()
+	var matched *Workflow
+	for _, workflow := range s.store.Workflows {
+		if workflow.RepoFullName == repoKey && workflow.Name == "issue-events" {
+			matched = workflow
+			break
+		}
+	}
+	if matched == nil {
+		t.Fatal("issues webhook event did not produce an Actions run")
+	}
+	if matched.EventName != "issues" || matched.Ref != "refs/heads/main" {
+		t.Fatalf("run event/ref = %q/%q, want issues/refs/heads/main", matched.EventName, matched.Ref)
 	}
 }
 

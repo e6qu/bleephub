@@ -3,6 +3,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useParams } from "react-router";
 import { DataTable, InlineError, Spinner } from "@bleephub/ui-core/components";
 import { createColumnHelper } from "@tanstack/react-table";
+import { confirmAction } from "../components/confirmAction.js";
 import {
   deletePackage,
   deletePackageVersion,
@@ -176,8 +177,8 @@ function PackagesList({
               <Button
                 size="sm"
                 variant="ghost"
-                onClick={() => {
-                  if (confirm(`Delete package ${pkg.name}?`)) {
+                onClick={async () => {
+                  if (await confirmAction(`Delete package ${pkg.name}?`)) {
                     deletePkgMut.mutate(pkg);
                   }
                 }}
@@ -305,8 +306,8 @@ function PackageDetailDialog({
                 <Button
                   size="sm"
                   variant="ghost"
-                  onClick={() => {
-                    if (confirm(`Delete version ${v.name}?`)) {
+                  onClick={async () => {
+                    if (await confirmAction(`Delete version ${v.name}?`)) {
                       deleteMut.mutate(v);
                     }
                   }}

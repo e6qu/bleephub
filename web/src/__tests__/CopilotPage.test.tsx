@@ -120,12 +120,12 @@ describe("CopilotPage", () => {
     mockCopilotEndpoints({
       "/copilot/billing/selected_users": () => new Response(null, { status: 204 }),
     });
-    const confirmSpy = vi.spyOn(window, "confirm").mockReturnValue(true);
     renderAt("/ui/orgs/acme/copilot");
     await waitFor(() => {
       expect(screen.getByRole("button", { name: /cancel seat/i })).toBeInTheDocument();
     });
     fireEvent.click(screen.getByRole("button", { name: /cancel seat/i }));
+    fireEvent.click(await screen.findByRole("button", { name: "Confirm" }));
     await waitFor(() => {
       const del = mockFetch.mock.calls.find(
         (c) =>
@@ -134,7 +134,6 @@ describe("CopilotPage", () => {
       expect(del).toBeTruthy();
       expect(JSON.parse(String(del![1]!.body))).toEqual({ selected_usernames: ["dev1"] });
     });
-    confirmSpy.mockRestore();
   });
 
   it("creates a Copilot Space through the dialog", async () => {
@@ -309,19 +308,18 @@ describe("CopilotPage", () => {
 
   it("deletes a space after confirmation", async () => {
     mockSpaceDetailEndpoints();
-    const confirmSpy = vi.spyOn(window, "confirm").mockReturnValue(true);
     renderAt("/ui/orgs/acme/copilot");
     await waitFor(() => {
       expect(screen.getByRole("button", { name: "delete" })).toBeInTheDocument();
     });
     fireEvent.click(screen.getByRole("button", { name: "delete" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Confirm" }));
     await waitFor(() => {
       const del = mockFetch.mock.calls.find(
         (c) => c[0].toString().includes("/copilot-spaces/4") && c[1]?.method === "DELETE",
       );
       expect(del).toBeTruthy();
     });
-    confirmSpy.mockRestore();
   });
 
   it("lists Copilot Spaces when present and surfaces billing errors", async () => {

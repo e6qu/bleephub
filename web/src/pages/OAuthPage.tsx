@@ -3,6 +3,7 @@ import { useState } from "react";
 import { fetchApps, fetchOAuthApps, fetchOAuthGrants, revokeOAuthGrant } from "../api.js";
 import { InlineError, Spinner } from "@bleephub/ui-core/components";
 import { PageTitle, Button, Box, CodeBlock, ErrorBanner } from "../components/ui.js";
+import { confirmAction } from "../components/confirmAction.js";
 
 export function OAuthPage() {
   return (
@@ -47,8 +48,8 @@ function AuthorizedApplications() {
                   size="sm"
                   variant="danger"
                   disabled={revoke.isPending}
-                  onClick={() => {
-                    if (confirm(`Revoke authorization for ${grant.name || grant.client_id}?`)) {
+                  onClick={async () => {
+                    if (await confirmAction(`Revoke authorization for ${grant.name || grant.client_id}?`)) {
                       revoke.mutate(grant.client_id);
                     }
                   }}

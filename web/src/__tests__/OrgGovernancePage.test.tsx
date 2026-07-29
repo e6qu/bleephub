@@ -192,7 +192,6 @@ describe("OrgGovernancePage custom properties tab", () => {
       }
       return Promise.resolve(jsonResponse([]));
     });
-    const confirmSpy = vi.spyOn(window, "confirm").mockReturnValue(true);
     renderAt("/ui/orgs/acme/governance");
 
     fireEvent.click(screen.getByRole("button", { name: "Custom properties" }));
@@ -203,13 +202,13 @@ describe("OrgGovernancePage custom properties tab", () => {
     });
 
     fireEvent.click(screen.getByRole("button", { name: "delete" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Confirm" }));
     await waitFor(() => {
       const del = mockFetch.mock.calls.find(
         (c) => c[0].toString().includes("/properties/schema/env") && c[1]?.method === "DELETE",
       );
       expect(del).toBeTruthy();
     });
-    confirmSpy.mockRestore();
   });
 
   it("edits required and default_value through the schema PATCH", async () => {

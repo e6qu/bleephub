@@ -48,7 +48,6 @@ func (s *Server) registerGHPagesDeploymentRoutes() {
 	s.route("POST /api/v3/repos/{owner}/{repo}/pages/deployments",
 		s.requirePerm(scopePages, permWrite, s.handlePagesDeploymentCreate))
 	s.route("GET /api/v3/repos/{owner}/{repo}/pages/deployments/{pages_deployment_id}", s.requirePagesRead(s.handlePagesDeploymentStatus))
-	s.route("GET /api/v3/repos/{owner}/{repo}/pages/deployments/{pages_deployment_id}/status", s.requirePagesRead(s.handlePagesDeploymentStatus))
 	s.route("POST /api/v3/repos/{owner}/{repo}/pages/deployments/{pages_deployment_id}/cancel",
 		s.requirePerm(scopePages, permWrite, s.handlePagesDeploymentCancel))
 	s.route("GET /api/v3/repos/{owner}/{repo}/pages/health", s.requirePagesRead(s.handlePagesHealthCheck))
@@ -230,7 +229,7 @@ func (s *Server) handlePagesDeploymentCreate(w http.ResponseWriter, r *http.Requ
 	base := s.baseURL(r)
 	writeJSON(w, http.StatusOK, map[string]interface{}{
 		"id":         d.BuildVersion,
-		"status_url": base + "/api/v3/repos/" + repo.FullName + "/pages/deployments/" + d.BuildVersion + "/status",
+		"status_url": base + "/api/v3/repos/" + repo.FullName + "/pages/deployments/" + d.BuildVersion,
 		"page_url":   site.HTMLURL,
 	})
 }

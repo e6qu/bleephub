@@ -3,6 +3,7 @@ package bleephub
 import (
 	"encoding/json"
 	"net/http"
+	"net/http/httptest"
 	"net/url"
 	"testing"
 	"time"
@@ -11,6 +12,40 @@ import (
 // These are semantic compatibility vectors, not response-shape snapshots.
 // Each reproduces a request accepted by github.com and pins the observable
 // behavior that OpenAPI schemas cannot express.
+
+func TestJSONReadsHonorIfNoneMatch(t *testing.T) {
+	s := fuzzRoutedServer(t)
+	handler := s.ghHeadersMiddleware(s.mux)
+	path := "/api/v3/user"
+
+	request := func(ifNoneMatch string) *httptest.ResponseRecorder {
+		t.Helper()
+		req := httptest.NewRequest(http.MethodGet, path, nil)
+		req.Header.Set("Authorization", "Bearer "+defaultToken)
+		if ifNoneMatch != "" {
+			req.Header.Set("If-None-Match", ifNoneMatch)
+		}
+		rec := httptest.NewRecorder()
+		handler.ServeHTTP(rec, req)
+		return rec
+	}
+
+	first := request("")
+	if first.Code != http.StatusOK {
+		t.Fatalf("initial status = %d, want 200; body=%s", first.Code, first.Body.String())
+	}
+	etag := first.Header().Get("ETag")
+	if etag == "" {
+		t.Fatal("JSON GET omitted ETag")
+	}
+	second := request(etag)
+	if second.Code != http.StatusNotModified {
+		t.Fatalf("conditional status = %d, want 304; body=%s", second.Code, second.Body.String())
+	}
+	if second.Body.Len() != 0 {
+		t.Fatalf("304 response carried %d body bytes", second.Body.Len())
+	}
+}
 
 func TestSearchRepositoriesTopicQualifierUsesExactTopicMatches(t *testing.T) {
 	s := fuzzRoutedServer(t)

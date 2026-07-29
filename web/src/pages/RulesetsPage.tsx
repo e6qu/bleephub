@@ -10,6 +10,7 @@ import {
   deleteOrgRuleset,
 } from "../api.js";
 import type { GithubRuleset, GithubRulesetTarget, GithubRulesetEnforcement } from "../types.js";
+import { confirmAction } from "../components/confirmAction.js";
 import { OrgHeader } from "../components/Shell.js";
 import {
   Box,
@@ -157,8 +158,8 @@ function RulesetsContent({ org }: { org: string }) {
             <Button
               size="sm"
               variant="danger"
-              onClick={() => {
-                if (confirm(`Delete ruleset "${ruleset.name}"?`)) {
+              onClick={async () => {
+                if (await confirmAction(`Delete ruleset "${ruleset.name}"?`)) {
                   deleteMutation.mutate(ruleset.id);
                 }
               }}

@@ -75,9 +75,6 @@ func (s *Server) handleRepositoryDispatch(w http.ResponseWriter, r *http.Request
 	}
 	payload := repositoryDispatchPayload(repo, user, req.EventType, req.ClientPayload)
 	s.emitWebhookEvent(repo.FullName, "repository_dispatch", req.EventType, attachInstallationBlock(payload, nil))
-	// The custom event_type is the activity type: `on.repository_dispatch.
-	// types` filters against it on real GitHub.
-	s.triggerWorkflowsForEvent(repo.FullName, "repository_dispatch", req.EventType, "refs/heads/"+repo.DefaultBranch, payload)
 	w.WriteHeader(http.StatusNoContent)
 }
 

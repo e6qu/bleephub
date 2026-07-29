@@ -8,6 +8,22 @@ import (
 func (s *Server) registerUIAPIRoutes() {
 	s.route("GET /ui-data/repos/{owner}/{repo}/commits", s.handleUIListCommits)
 	s.route("GET /ui-data/repos/{owner}/{repo}/viewer", s.handleUIRepoViewer)
+
+	// GitHub's web package views expose repository-associated packages and
+	// version assets that its public REST API does not. Keep those browser
+	// adapters outside /api/v3 so the REST namespace remains spec-exact.
+	s.route("GET /ui-data/repos/{owner}/{repo}/packages", s.handleListRepoPackages)
+	s.route("GET /ui-data/repos/{owner}/{repo}/packages/{package_type}/{package_name}", s.handleGetRepoPackage)
+	s.route("DELETE /ui-data/repos/{owner}/{repo}/packages/{package_type}/{package_name}", s.handleDeleteRepoPackage)
+	s.route("GET /ui-data/repos/{owner}/{repo}/packages/{package_type}/{package_name}/versions", s.handleListRepoPackageVersions)
+	s.route("GET /ui-data/repos/{owner}/{repo}/packages/{package_type}/{package_name}/versions/{package_version_id}", s.handleGetRepoPackageVersion)
+	s.route("DELETE /ui-data/repos/{owner}/{repo}/packages/{package_type}/{package_name}/versions/{package_version_id}", s.handleDeleteRepoPackageVersion)
+	s.route("GET /ui-data/repos/{owner}/{repo}/packages/{package_type}/{package_name}/versions/{package_version_id}/files", s.handleListRepoPackageFiles)
+	s.route("GET /ui-data/repos/{owner}/{repo}/packages/{package_type}/{package_name}/versions/{package_version_id}/files/{file_id}", s.handleDownloadRepoPackageFile)
+	s.route("GET /ui-data/users/{username}/packages/{package_type}/{package_name}/versions/{package_version_id}/files", s.handleListUserPackageFiles)
+	s.route("GET /ui-data/users/{username}/packages/{package_type}/{package_name}/versions/{package_version_id}/files/{file_id}", s.handleDownloadUserPackageFile)
+	s.route("GET /ui-data/orgs/{org}/packages/{package_type}/{package_name}/versions/{package_version_id}/files", s.handleListOrgPackageFiles)
+	s.route("GET /ui-data/orgs/{org}/packages/{package_type}/{package_name}/versions/{package_version_id}/files/{file_id}", s.handleDownloadOrgPackageFile)
 }
 
 // handleUIRepoViewer gives the browser one successful read for viewer-specific

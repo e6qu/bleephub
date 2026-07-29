@@ -217,13 +217,13 @@ describe("RepoSettingsPage Pages panel", () => {
   });
 
   it("disables Pages via DELETE /pages after confirmation", async () => {
-    vi.spyOn(window, "confirm").mockReturnValue(true);
     mockPagesRoutes({
       "DELETE /api/v3/repos/admin/pages-repo/pages": () => new Response(null, { status: 204 }),
     });
     await openPagesTab();
 
     fireEvent.click(await screen.findByRole("button", { name: /disable pages/i }));
+    fireEvent.click(await screen.findByRole("button", { name: "Confirm" }));
 
     await waitFor(() => {
       const deleteCall = mockFetch.mock.calls.find(

@@ -14,6 +14,7 @@ import {
   unlockMigrationRepo,
 } from "../api.js";
 import type { BleephubRepo, GithubMigration, GithubMigrationState } from "../types.js";
+import { confirmAction } from "../components/confirmAction.js";
 import {
   Blankslate,
   Box,
@@ -195,8 +196,8 @@ function MigrationsList({ scope }: { scope: Scope }) {
               <Button
                 size="sm"
                 variant="ghost"
-                onClick={() => {
-                  if (confirm("Delete this migration archive?")) {
+                onClick={async () => {
+                  if (await confirmAction("Delete this migration archive?")) {
                     deleteMut.mutate(migration.id);
                   }
                 }}

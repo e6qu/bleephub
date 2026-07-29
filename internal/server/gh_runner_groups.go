@@ -65,6 +65,25 @@ func (s *Server) orgGated(h http.HandlerFunc) http.HandlerFunc {
 	}
 }
 
+// orgIDGated resolves an official numeric {org_id} path parameter and makes
+// the organization login available to the existing policy handlers.
+func (s *Server) orgIDGated(h http.HandlerFunc) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		id, err := strconv.Atoi(r.PathValue("org_id"))
+		if err != nil {
+			writeGHError(w, http.StatusNotFound, "Not Found")
+			return
+		}
+		org := s.store.GetOrgByID(id)
+		if org == nil {
+			writeGHError(w, http.StatusNotFound, "Not Found")
+			return
+		}
+		r.SetPathValue("org", org.Login)
+		h(w, r)
+	}
+}
+
 // ensureDefaultRunnerGroupLocked materializes the implicit Default
 // group (every GitHub org has one). Callers hold the store lock.
 func (s *Server) ensureDefaultRunnerGroupLocked() {

@@ -388,28 +388,27 @@ func TestSecretScanning_BulkUpdate(t *testing.T) {
 	seedSecretAlert(t, "admin", "ss-bulk", "github_personal_access_token")
 	seedSecretAlert(t, "admin", "ss-bulk", "aws_access_key_id")
 
-	patch, _ := json.Marshal(map[string]any{"state": "resolved", "resolution": "used_in_tests"})
-	req, _ := http.NewRequest("PATCH", testBaseURL+"/api/v3/repos/admin/ss-bulk/secret-scanning/alerts?secret_type=github_personal_access_token", bytes.NewReader(patch))
-	req.Header.Set("Authorization", "Bearer "+defaultToken)
-	req.Header.Set("Content-Type", "application/json")
-	resp, err := http.DefaultClient.Do(req)
-	if err != nil {
-		t.Fatalf("bulk patch: %v", err)
-	}
-	if resp.StatusCode != http.StatusOK {
-		b, _ := io.ReadAll(resp.Body)
+	// GitHub exposes only the per-alert PATCH. A client that wants a bulk
+	// operation lists with a filter, then updates each returned alert.
+	resp := authedGet(t, "/api/v3/repos/admin/ss-bulk/secret-scanning/alerts?secret_type=github_personal_access_token")
+	var selected []map[string]any
+	if err := json.NewDecoder(resp.Body).Decode(&selected); err != nil {
 		resp.Body.Close()
-		t.Fatalf("bulk patch: %d body=%s", resp.StatusCode, b)
-	}
-	var updated []map[string]any
-	if err := json.NewDecoder(resp.Body).Decode(&updated); err != nil {
-		t.Fatalf("decode bulk response: %v", err)
+		t.Fatalf("decode filtered alerts: %v", err)
 	}
 	resp.Body.Close()
-	if len(updated) != 2 {
-		t.Fatalf("expected 2 updated alerts, got %d", len(updated))
+	if len(selected) != 2 {
+		t.Fatalf("expected 2 filtered alerts, got %d", len(selected))
 	}
-	for _, a := range updated {
+	for _, alert := range selected {
+		number := int(alert["number"].(float64))
+		updated := decodeJSON(t, ghPatch(
+			t,
+			fmt.Sprintf("/api/v3/repos/admin/ss-bulk/secret-scanning/alerts/%d", number),
+			defaultToken,
+			map[string]any{"state": "resolved", "resolution": "used_in_tests"},
+		))
+		a := updated
 		if a["state"] != "resolved" || a["resolution"] != "used_in_tests" {
 			t.Fatalf("unexpected updated alert: %+v", a)
 		}

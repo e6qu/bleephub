@@ -356,12 +356,12 @@ describe("package API helpers", () => {
     );
   });
 
-  it("keeps organization and repository package coordinates scoped", () => {
+  it("keeps official org REST and repository web package coordinates separate", () => {
     expect(packageListPath({ kind: "org", org: "e6qu" }, "npm")).toBe(
       "/api/v3/orgs/e6qu/packages?package_type=npm",
     );
     expect(packageListPath({ kind: "repo", owner: "e6qu", repo: "bleephub" })).toBe(
-      "/api/v3/repos/e6qu/bleephub/packages",
+      "/ui-data/repos/e6qu/bleephub/packages",
     );
   });
 });

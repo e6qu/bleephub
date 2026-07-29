@@ -9,6 +9,7 @@ import {
   updateUser,
 } from "../api.js";
 import type { BleephubUser } from "../types.js";
+import { confirmAction } from "../components/confirmAction.js";
 import {
   Button,
   Modal,
@@ -119,8 +120,8 @@ function UsersTable() {
           <Button
             size="sm"
             variant="danger"
-            onClick={() => {
-              if (confirm(`Delete user @${user.login}?`)) {
+            onClick={async () => {
+              if (await confirmAction(`Delete user @${user.login}?`)) {
                 deleteMut.mutate(user.login);
               }
             }}

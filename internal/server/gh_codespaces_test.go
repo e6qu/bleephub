@@ -209,9 +209,10 @@ func TestCodespaces_RepoCreateStartStopDelete(t *testing.T) {
 		cleanupCodespaceContainer(t, name)
 	})
 
-	// Start then stop.
-	resp = ghPost(t, fmt.Sprintf("/api/v3/repos/%s/codespaces/%s/start", repo.FullName, name), defaultToken, nil)
-	if resp.StatusCode != http.StatusAccepted {
+	// Individual codespaces are addressed through the user-scoped operations,
+	// including when they were created from a repository.
+	resp = ghPost(t, fmt.Sprintf("/api/v3/user/codespaces/%s/start", name), defaultToken, nil)
+	if resp.StatusCode != http.StatusOK {
 		b, _ := io.ReadAll(resp.Body)
 		resp.Body.Close()
 		t.Fatalf("start repo codespace: %d %s", resp.StatusCode, b)
@@ -222,8 +223,8 @@ func TestCodespaces_RepoCreateStartStopDelete(t *testing.T) {
 		t.Fatalf("start state = %v, want Available", started["state"])
 	}
 
-	resp = ghPost(t, fmt.Sprintf("/api/v3/repos/%s/codespaces/%s/stop", repo.FullName, name), defaultToken, nil)
-	if resp.StatusCode != http.StatusAccepted {
+	resp = ghPost(t, fmt.Sprintf("/api/v3/user/codespaces/%s/stop", name), defaultToken, nil)
+	if resp.StatusCode != http.StatusOK {
 		b, _ := io.ReadAll(resp.Body)
 		resp.Body.Close()
 		t.Fatalf("stop repo codespace: %d %s", resp.StatusCode, b)
@@ -235,7 +236,7 @@ func TestCodespaces_RepoCreateStartStopDelete(t *testing.T) {
 	}
 
 	// Delete.
-	resp = ghDelete(t, fmt.Sprintf("/api/v3/repos/%s/codespaces/%s", repo.FullName, name), defaultToken)
+	resp = ghDelete(t, fmt.Sprintf("/api/v3/user/codespaces/%s", name), defaultToken)
 	if resp.StatusCode != http.StatusAccepted {
 		b, _ := io.ReadAll(resp.Body)
 		resp.Body.Close()
@@ -422,9 +423,9 @@ func TestCodespaces_OrgSecretsCRUD(t *testing.T) {
 }
 
 func TestCodespaces_404Cases(t *testing.T) {
-	repo := createTestCodespaceRepo(t, "cs-404-repo")
+	createTestCodespaceRepo(t, "cs-404-repo")
 
-	resp := ghGet(t, fmt.Sprintf("/api/v3/repos/%s/codespaces/no-such-codespace", repo.FullName), defaultToken)
+	resp := ghGet(t, "/api/v3/user/codespaces/no-such-codespace", defaultToken)
 	if resp.StatusCode != http.StatusNotFound {
 		b, _ := io.ReadAll(resp.Body)
 		resp.Body.Close()

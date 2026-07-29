@@ -50,7 +50,9 @@ RUN apt_transaction() { rm -rf /var/lib/apt/lists/*; apt-get update && DEBIAN_FR
     retry_apt_transaction ruby-full ruby-bundler build-essential git libdqlite0 && \
     mkdir -p /opt/bleephub-pages/vendor/cache && \
     while read -r digest gem; do \
-        curl --fail --location --silent --show-error --remote-name "https://rubygems.org/downloads/$gem" || exit 1; \
+        curl --fail --location --silent --show-error \
+            --retry 5 --retry-all-errors --retry-delay 1 --connect-timeout 30 \
+            --remote-name "https://rubygems.org/downloads/$gem" || exit 1; \
     done < /opt/bleephub-pages/pinned-gems.sha256 && \
     sha256sum --check --strict /opt/bleephub-pages/pinned-gems.sha256 && \
     BUNDLE_GEMFILE=/opt/bleephub-pages/Gemfile bundle install --local && \

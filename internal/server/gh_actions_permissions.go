@@ -399,14 +399,6 @@ func (s *Server) registerGHActionsPermissionsRoutes() {
 		s.requirePerm(scopeAdministration, permRead, s.orgGated(s.handleGetOrgWorkflowPermissions)))
 	s.route("PUT /api/v3/orgs/{org}/actions/permissions/workflow",
 		s.requirePerm(scopeAdministration, permWrite, s.orgGated(s.handleSetOrgWorkflowPermissions)))
-	s.route("GET /api/v3/orgs/{org}/actions/cache/retention-limit",
-		s.requirePerm(scopeAdministration, permRead, s.orgGated(s.handleGetOrgCacheRetentionLimit)))
-	s.route("PUT /api/v3/orgs/{org}/actions/cache/retention-limit",
-		s.requirePerm(scopeAdministration, permWrite, s.orgGated(s.handleSetOrgCacheRetentionLimit)))
-	s.route("GET /api/v3/orgs/{org}/actions/cache/storage-limit",
-		s.requirePerm(scopeAdministration, permRead, s.orgGated(s.handleGetOrgCacheStorageLimit)))
-	s.route("PUT /api/v3/orgs/{org}/actions/cache/storage-limit",
-		s.requirePerm(scopeAdministration, permWrite, s.orgGated(s.handleSetOrgCacheStorageLimit)))
 	s.route("GET /api/v3/orgs/{org}/actions/permissions/artifact-and-log-retention",
 		s.requirePerm(scopeOrgAdministration, permRead, s.orgGated(s.handleGetOrgArtifactAndLogRetention)))
 	s.route("PUT /api/v3/orgs/{org}/actions/permissions/artifact-and-log-retention",
@@ -436,16 +428,16 @@ func (s *Server) registerGHActionsPermissionsRoutes() {
 	s.route("GET /api/v3/orgs/{org}/actions/cache/usage-by-repository",
 		s.requirePerm(scopeOrgAdministration, permRead, s.orgGated(s.handleOrgCacheUsageByRepository)))
 
-	// Org cache policy limits at the /organizations/{org} path (the
+	// Org cache policy limits at the /organizations/{org_id} path (the
 	// dotcom REST description's path for these settings).
-	s.route("GET /api/v3/organizations/{org}/actions/cache/retention-limit",
-		s.requirePerm(scopeOrgAdministration, permRead, s.orgGated(s.handleGetOrgMaxCacheRetention)))
-	s.route("PUT /api/v3/organizations/{org}/actions/cache/retention-limit",
-		s.requirePerm(scopeOrgAdministration, permWrite, s.orgGated(s.handleSetOrgMaxCacheRetention)))
-	s.route("GET /api/v3/organizations/{org}/actions/cache/storage-limit",
-		s.requirePerm(scopeOrgAdministration, permRead, s.orgGated(s.handleGetOrgMaxCacheSize)))
-	s.route("PUT /api/v3/organizations/{org}/actions/cache/storage-limit",
-		s.requirePerm(scopeOrgAdministration, permWrite, s.orgGated(s.handleSetOrgMaxCacheSize)))
+	s.route("GET /api/v3/organizations/{org_id}/actions/cache/retention-limit",
+		s.requirePerm(scopeOrgAdministration, permRead, s.orgIDGated(s.handleGetOrgMaxCacheRetention)))
+	s.route("PUT /api/v3/organizations/{org_id}/actions/cache/retention-limit",
+		s.requirePerm(scopeOrgAdministration, permWrite, s.orgIDGated(s.handleSetOrgMaxCacheRetention)))
+	s.route("GET /api/v3/organizations/{org_id}/actions/cache/storage-limit",
+		s.requirePerm(scopeOrgAdministration, permRead, s.orgIDGated(s.handleGetOrgMaxCacheSize)))
+	s.route("PUT /api/v3/organizations/{org_id}/actions/cache/storage-limit",
+		s.requirePerm(scopeOrgAdministration, permWrite, s.orgIDGated(s.handleSetOrgMaxCacheSize)))
 
 	// Repo permissions.
 	s.route("GET /api/v3/repos/{owner}/{repo}/actions/permissions",
@@ -638,54 +630,6 @@ func (s *Server) handleSetOrgWorkflowPermissions(w http.ResponseWriter, r *http.
 	p.WorkflowPermissions = &req
 	s.store.SetOrgActionsPermissions(org, p)
 	w.WriteHeader(http.StatusNoContent)
-}
-
-func (s *Server) handleGetOrgCacheRetentionLimit(w http.ResponseWriter, r *http.Request) {
-	org := r.PathValue("org")
-	p := s.store.GetOrgActionsPermissions(org)
-	writeJSON(w, http.StatusOK, map[string]int{
-		"max_cache_retention_days": p.CacheRetentionLimitDays,
-	})
-}
-
-func (s *Server) handleSetOrgCacheRetentionLimit(w http.ResponseWriter, r *http.Request) {
-	var req struct {
-		MaxCacheRetentionDays int `json:"max_cache_retention_days"`
-	}
-	if !decodeJSONBody(w, r, &req) {
-		return
-	}
-	org := r.PathValue("org")
-	p := s.store.GetOrgActionsPermissions(org)
-	p.CacheRetentionLimitDays = req.MaxCacheRetentionDays
-	s.store.SetOrgActionsPermissions(org, p)
-	writeJSON(w, http.StatusOK, map[string]int{
-		"max_cache_retention_days": p.CacheRetentionLimitDays,
-	})
-}
-
-func (s *Server) handleGetOrgCacheStorageLimit(w http.ResponseWriter, r *http.Request) {
-	org := r.PathValue("org")
-	p := s.store.GetOrgActionsPermissions(org)
-	writeJSON(w, http.StatusOK, map[string]int64{
-		"max_cache_size_gb": p.CacheStorageLimitGB,
-	})
-}
-
-func (s *Server) handleSetOrgCacheStorageLimit(w http.ResponseWriter, r *http.Request) {
-	var req struct {
-		MaxCacheSizeGB int64 `json:"max_cache_size_gb"`
-	}
-	if !decodeJSONBody(w, r, &req) {
-		return
-	}
-	org := r.PathValue("org")
-	p := s.store.GetOrgActionsPermissions(org)
-	p.CacheStorageLimitGB = req.MaxCacheSizeGB
-	s.store.SetOrgActionsPermissions(org, p)
-	writeJSON(w, http.StatusOK, map[string]int64{
-		"max_cache_size_gb": p.CacheStorageLimitGB,
-	})
 }
 
 // --- Org permissions extras ---

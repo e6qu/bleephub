@@ -12,7 +12,7 @@ func TestParseCron(t *testing.T) {
 		want    bool
 		wantErr bool
 	}{
-		// every minute
+		// every minute parses, but the dispatcher rejects its sub-five-minute interval
 		{expr: "* * * * *", t: time.Date(2026, 6, 12, 10, 30, 0, 0, time.UTC), want: true},
 		// specific minute/hour
 		{expr: "30 10 * * *", t: time.Date(2026, 6, 12, 10, 30, 0, 0, time.UTC), want: true},
@@ -66,6 +66,26 @@ func TestParseCron(t *testing.T) {
 		}
 		if got := cs.matches(tc.t); got != tc.want {
 			t.Errorf("cron %q at %s = %v, want %v", tc.expr, tc.t.Format("2006-01-02 15:04 Mon"), got, tc.want)
+		}
+	}
+}
+
+func TestCronMinimumInterval(t *testing.T) {
+	for _, tc := range []struct {
+		expr string
+		want time.Duration
+	}{
+		{"* * * * *", time.Minute},
+		{"*/5 * * * *", 5 * time.Minute},
+		{"0,30 * * * *", 30 * time.Minute},
+		{"30 4 * * *", 24 * time.Hour},
+	} {
+		cs, err := parseCron(tc.expr)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got := cs.minimumInterval(); got != tc.want {
+			t.Errorf("%s minimum interval = %s, want %s", tc.expr, got, tc.want)
 		}
 	}
 }

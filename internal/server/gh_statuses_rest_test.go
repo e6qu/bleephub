@@ -130,4 +130,13 @@ func TestCommitStatuses_MissingState422(t *testing.T) {
 	if w.Code != http.StatusUnprocessableEntity {
 		t.Errorf("missing state: %d", w.Code)
 	}
+
+	body, _ = json.Marshal(map[string]string{"state": "successful"})
+	req = httptest.NewRequest("POST", "/api/v3/repos/admin/status-repo2/statuses/abc", bytes.NewReader(body))
+	req.Header.Set("Authorization", "Bearer bleephub-admin-token-00000000000000000000")
+	w = httptest.NewRecorder()
+	s.ghHeadersMiddleware(s.mux).ServeHTTP(w, req)
+	if w.Code != http.StatusUnprocessableEntity {
+		t.Errorf("invalid state: %d body=%s", w.Code, w.Body.String())
+	}
 }

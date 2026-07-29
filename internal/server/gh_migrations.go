@@ -30,7 +30,6 @@ func (s *Server) registerGHMigrationsRoutes() {
 	s.route("GET /api/v3/orgs/{org}/migrations/{migration_id}/repositories", s.handleListOrgMigrationRepositories)
 	s.route("GET /api/v3/orgs/{org}/migrations/{migration_id}/archive", s.handleDownloadOrgMigrationArchive)
 	s.route("DELETE /api/v3/orgs/{org}/migrations/{migration_id}/archive", s.handleDeleteOrgMigrationArchive)
-	s.route("GET /api/v3/orgs/{org}/migrations/{migration_id}/repos/{repo_name}/lock", s.handleGetOrgMigrationLock)
 	s.route("DELETE /api/v3/orgs/{org}/migrations/{migration_id}/repos/{repo_name}/lock", s.handleUnlockOrgMigrationRepo)
 }
 
@@ -327,24 +326,6 @@ func (s *Server) handleDeleteOrgMigrationArchive(w http.ResponseWriter, r *http.
 	}
 	s.recordAuditEvent("org_migration.archive_deleted", user.Login, "", map[string]interface{}{"org": org.Login, "migration_id": m.ID})
 	w.WriteHeader(http.StatusNoContent)
-}
-
-func (s *Server) handleGetOrgMigrationLock(w http.ResponseWriter, r *http.Request) {
-	user := ghUserFromContext(r.Context())
-	if user == nil {
-		writeGHError(w, http.StatusUnauthorized, "Requires authentication")
-		return
-	}
-	m, _, ok := s.resolveOrgMigration(w, r, user)
-	if !ok {
-		return
-	}
-	repoName := r.PathValue("repo_name")
-	if !s.store.IsOrgMigrationRepoLocked(m.ID, repoName) {
-		writeGHError(w, http.StatusNotFound, "Not Found")
-		return
-	}
-	writeJSON(w, http.StatusOK, map[string]bool{"locked": true})
 }
 
 func (s *Server) handleUnlockOrgMigrationRepo(w http.ResponseWriter, r *http.Request) {

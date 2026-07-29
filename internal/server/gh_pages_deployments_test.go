@@ -251,7 +251,7 @@ func TestPagesDeployments_CreateStatusCancel(t *testing.T) {
 	if err != nil {
 		t.Fatalf("status_url did not parse: %v", err)
 	}
-	wantStatusPath := "/api/v3/repos/admin/" + repo + "/pages/deployments/" + buildVersion + "/status"
+	wantStatusPath := "/api/v3/repos/admin/" + repo + "/pages/deployments/" + buildVersion
 	if parsedStatusURL.Path != wantStatusPath {
 		t.Fatalf("status_url path = %q, want %q", parsedStatusURL.Path, wantStatusPath)
 	}

@@ -1210,7 +1210,6 @@ export type GithubPackageVisibility = "public" | "private" | "internal";
 
 export interface GithubPackage {
   id: number;
-  node_id: string;
   name: string;
   package_type: GithubPackageType;
   visibility: GithubPackageVisibility;
@@ -1225,7 +1224,6 @@ export interface GithubPackage {
 
 export interface GithubPackageVersion {
   id: number;
-  node_id: string;
   name: string;
   url: string;
   package_html_url: string;

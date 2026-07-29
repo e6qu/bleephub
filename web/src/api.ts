@@ -2514,7 +2514,7 @@ function packageBasePath(scope: PackageScope, pkgType: string, pkgName: string):
     case "org":
       return `/api/v3/orgs/${scope.org}/packages/${pt}/${pn}`;
     case "repo":
-      return `/api/v3/repos/${scope.owner}/${scope.repo}/packages/${pt}/${pn}`;
+      return `/ui-data/repos/${scope.owner}/${scope.repo}/packages/${pt}/${pn}`;
   }
 }
 
@@ -2526,7 +2526,7 @@ export function packageListPath(scope: PackageScope, pkgType?: string): string {
     case "org":
       return `/api/v3/orgs/${scope.org}/packages${query}`;
     case "repo":
-      return `/api/v3/repos/${scope.owner}/${scope.repo}/packages${query}`;
+      return `/ui-data/repos/${scope.owner}/${scope.repo}/packages${query}`;
   }
 }
 
@@ -2541,10 +2541,17 @@ export const fetchPackageFiles = (
   pkgType: string,
   pkgName: string,
   versionID: number,
-) =>
-  ghFetch<GithubPackageFile[]>(
-    `${packageBasePath(scope, pkgType, pkgName)}/versions/${versionID}/files`,
-  );
+) => {
+  const suffix = `/packages/${encodeURIComponent(pkgType)}/${encodeURIComponent(pkgName)}/versions/${versionID}/files`;
+  switch (scope.kind) {
+    case "user":
+      return ghFetch<GithubPackageFile[]>(`/ui-data/users/${scope.username}${suffix}`);
+    case "org":
+      return ghFetch<GithubPackageFile[]>(`/ui-data/orgs/${scope.org}${suffix}`);
+    case "repo":
+      return ghFetch<GithubPackageFile[]>(`/ui-data/repos/${scope.owner}/${scope.repo}${suffix}`);
+  }
+};
 
 export const deletePackageVersion = (
   scope: PackageScope,

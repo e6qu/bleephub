@@ -3,6 +3,7 @@ import { useSearchParams } from "react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { DataTable, InlineError, Spinner } from "@bleephub/ui-core/components";
 import { createColumnHelper } from "@tanstack/react-table";
+import { confirmAction } from "../components/confirmAction.js";
 import {
   createGist,
   deleteGist,
@@ -177,8 +178,8 @@ function GistsTable({ scope, onSelect }: { scope: GistScope; onSelect: (id: stri
           <Button
             size="sm"
             variant="danger"
-            onClick={() => {
-              if (confirm(`Delete gist ${gist.id}?`)) {
+            onClick={async () => {
+              if (await confirmAction(`Delete gist ${gist.id}?`)) {
                 deleteMut.mutate(gist.id);
               }
             }}

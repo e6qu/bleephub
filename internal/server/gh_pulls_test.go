@@ -11,6 +11,9 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/go-git/go-git/v5/plumbing"
+	"github.com/go-git/go-git/v5/plumbing/object"
 )
 
 func createTestPRRepo(t *testing.T, name string) {
@@ -657,7 +660,33 @@ func TestPRUpdateBranchREST(t *testing.T) {
 		"title": "Update branch", "head": "feat", "base": "main",
 	}).Body.Close()
 
-	resp := ghPut(t, "/api/v3/repos/admin/pr-update-branch/pulls/1/update-branch", defaultToken, map[string]interface{}{})
+	repo := testServer.store.GetRepo("admin", "pr-update-branch")
+	stor := testServer.store.GetGitStorage("admin", "pr-update-branch")
+	headBefore := resolveBranchSha(stor, "feat")
+	_, err := createFileCommit(
+		stor, "main", "base-update.txt", "new base work\n", "advance base",
+		&object.Signature{Name: "admin", Email: "admin@example.com", When: time.Now().UTC()},
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	baseAfter := resolveBranchSha(stor, "main")
+
+	stale := ghPut(t, "/api/v3/repos/admin/pr-update-branch/pulls/1/update-branch", defaultToken, map[string]interface{}{
+		"expected_head_sha": plumbing.ZeroHash.String(),
+	})
+	if stale.StatusCode != http.StatusUnprocessableEntity {
+		stale.Body.Close()
+		t.Fatalf("stale expected_head_sha status = %d, want 422", stale.StatusCode)
+	}
+	stale.Body.Close()
+	if got := resolveBranchSha(stor, "feat"); got != headBefore {
+		t.Fatalf("stale precondition moved head to %s", got)
+	}
+
+	resp := ghPut(t, "/api/v3/repos/admin/pr-update-branch/pulls/1/update-branch", defaultToken, map[string]interface{}{
+		"expected_head_sha": headBefore,
+	})
 	if resp.StatusCode != 202 {
 		resp.Body.Close()
 		t.Fatalf("expected 202, got %d", resp.StatusCode)
@@ -665,6 +694,56 @@ func TestPRUpdateBranchREST(t *testing.T) {
 	data := decodeJSON(t, resp)
 	if data["message"] == nil || data["message"] == "" {
 		t.Fatal("expected message in update-branch response")
+	}
+	headAfter := resolveBranchSha(stor, "feat")
+	if headAfter == headBefore {
+		t.Fatal("update-branch returned 202 without moving the pull request head")
+	}
+	commit, err := object.GetCommit(stor, plumbing.NewHash(headAfter))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(commit.ParentHashes) != 2 ||
+		commit.ParentHashes[0].String() != headBefore ||
+		commit.ParentHashes[1].String() != baseAfter {
+		t.Fatalf("update commit parents = %v, want [%s %s]", commit.ParentHashes, headBefore, baseAfter)
+	}
+	pr := testServer.store.GetPullRequestByNumber(repo.ID, 1)
+	if pr.BaseSHA != baseAfter {
+		t.Fatalf("updated PR base SHA = %q, want %q", pr.BaseSHA, baseAfter)
+	}
+}
+
+func TestPRTeamReviewRequestsRoundTrip(t *testing.T) {
+	admin := testServer.store.LookupUserByLogin("admin")
+	org := testServer.store.CreateOrg(admin, "pr-team-review-org", "PR review org", "")
+	team := testServer.store.CreateTeam(org.Login, "Core Reviewers", TeamOptions{})
+	repo := testServer.store.CreateOrgRepo(org, admin, "repo", "", false)
+	seedPullRequestBranches(t, testServer, repo, "feature")
+	pr := testServer.store.CreatePullRequest(repo.ID, admin.ID, "Team review", "", "feature", "main", false, nil, nil, 0)
+
+	response := ghPost(t,
+		fmt.Sprintf("/api/v3/repos/%s/pulls/%d/requested_reviewers", repo.FullName, pr.Number),
+		defaultToken,
+		map[string]interface{}{"team_reviewers": []string{team.Slug}},
+	)
+	if response.StatusCode != http.StatusCreated {
+		response.Body.Close()
+		t.Fatalf("request team reviewer status = %d, want 201", response.StatusCode)
+	}
+	body := decodeJSON(t, response)
+	requested, _ := body["requested_teams"].([]interface{})
+	if len(requested) != 1 || requested[0].(map[string]interface{})["slug"] != team.Slug {
+		t.Fatalf("requested_teams = %#v", requested)
+	}
+
+	list := decodeJSON(t, ghGet(t,
+		fmt.Sprintf("/api/v3/repos/%s/pulls/%d/requested_reviewers", repo.FullName, pr.Number),
+		defaultToken,
+	))
+	teams, _ := list["teams"].([]interface{})
+	if len(teams) != 1 || teams[0].(map[string]interface{})["slug"] != team.Slug {
+		t.Fatalf("listed teams = %#v", teams)
 	}
 }
 

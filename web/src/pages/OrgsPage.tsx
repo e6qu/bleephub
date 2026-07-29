@@ -10,6 +10,7 @@ import {
   updateOrg,
 } from "../api.js";
 import type { BleephubOrg } from "../types.js";
+import { confirmAction } from "../components/confirmAction.js";
 import {
   Button,
   Modal,
@@ -125,8 +126,8 @@ function OrgsTable() {
             <Button
               size="sm"
               variant="danger"
-              onClick={() => {
-                if (confirm(`Delete org @${org.login}?`)) {
+              onClick={async () => {
+                if (await confirmAction(`Delete org @${org.login}?`)) {
                   deleteMut.mutate(org.login);
                 }
               }}

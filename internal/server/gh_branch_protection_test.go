@@ -84,9 +84,9 @@ func TestBranchProtection_RequiredStatusChecksSubresource(t *testing.T) {
 	admin := s.store.UsersByLogin["admin"]
 	repo := s.store.CreateRepo(admin, "bp-rsc", "", false)
 
-	doBPReq(s, adminPAT, "PUT", "/api/v3/repos/"+repo.FullName+"/branches/main/protection", `{}`)
+	doBPReq(s, adminPAT, "PUT", "/api/v3/repos/"+repo.FullName+"/branches/main/protection", `{"required_status_checks":{"strict":false,"contexts":["bootstrap"]}}`)
 
-	w := doBPReq(s, adminPAT, "PUT", "/api/v3/repos/"+repo.FullName+"/branches/main/protection/required_status_checks", `{"strict": true, "contexts": ["ci", "lint"]}`)
+	w := doBPReq(s, adminPAT, "PATCH", "/api/v3/repos/"+repo.FullName+"/branches/main/protection/required_status_checks", `{"strict": true, "contexts": ["ci", "lint"]}`)
 	require.Equal(t, http.StatusOK, w.Code)
 	var sc BPStatusChecks
 	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &sc))
@@ -162,13 +162,14 @@ func TestBranchProtection_RestrictionsSubresource(t *testing.T) {
 
 	doBPReq(s, adminPAT, "PUT", "/api/v3/repos/"+repo.FullName+"/branches/main/protection", `{}`)
 
-	body := `{"users":[{"login":"admin","id":1,"type":"User"}]}`
-	w := doBPReq(s, adminPAT, "PUT", "/api/v3/repos/"+repo.FullName+"/branches/main/protection/restrictions", body)
+	body := `{"restrictions":{"users":[{"login":"admin","id":1,"type":"User"}]}}`
+	w := doBPReq(s, adminPAT, "PUT", "/api/v3/repos/"+repo.FullName+"/branches/main/protection", body)
 	require.Equal(t, http.StatusOK, w.Code)
-	var res BPRestrictions
-	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &res))
-	require.Len(t, res.Users, 1)
-	require.Equal(t, "admin", res.Users[0].Login)
+	var protection BranchProtection
+	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &protection))
+	require.NotNil(t, protection.Restrictions)
+	require.Len(t, protection.Restrictions.Users, 1)
+	require.Equal(t, "admin", protection.Restrictions.Users[0].Login)
 
 	w = doBPReq(s, adminPAT, "GET", "/api/v3/repos/"+repo.FullName+"/branches/main/protection/restrictions/users", "")
 	require.Equal(t, http.StatusOK, w.Code)

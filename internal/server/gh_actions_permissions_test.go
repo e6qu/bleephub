@@ -2,6 +2,7 @@ package bleephub
 
 import (
 	"fmt"
+	"strconv"
 	"testing"
 	"time"
 )
@@ -157,8 +158,9 @@ func TestOrgActionsPermissions_SelfHostedRunners(t *testing.T) {
 
 func TestOrganizationsCachePolicyLimits(t *testing.T) {
 	org := createTestOrg(t)
-	retention := "/api/v3/organizations/" + org + "/actions/cache/retention-limit"
-	storage := "/api/v3/organizations/" + org + "/actions/cache/storage-limit"
+	orgID := strconv.Itoa(testServer.store.GetOrg(org).ID)
+	retention := "/api/v3/organizations/" + orgID + "/actions/cache/retention-limit"
+	storage := "/api/v3/organizations/" + orgID + "/actions/cache/storage-limit"
 
 	data := decodeJSONWithStatus(t, ghGet(t, retention, defaultToken), 200)
 	if data["max_cache_retention_days"].(float64) != 90 {

@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"io"
 	"net/http"
+	"sort"
 	"strings"
 	"time"
 )
@@ -114,27 +115,16 @@ func (s *Server) handleGHUserByLogin(w http.ResponseWriter, r *http.Request) {
 
 // handleGHRateLimit returns rate limit status.
 func (s *Server) handleGHRateLimit(w http.ResponseWriter, r *http.Request) {
-	now := time.Now()
-	reset := now.Unix() + 3600
-
-	limit := map[string]interface{}{
-		"limit":     5000,
-		"remaining": 4999,
-		"reset":     reset,
-		"used":      1,
+	resources := make(map[string]interface{}, len(apiRateResponseResources))
+	names := append([]string(nil), apiRateResponseResources...)
+	sort.Strings(names)
+	for _, resource := range names {
+		resources[resource] = rateSnapshotJSON(s.rateLimitSnapshot(r, resource, false))
 	}
+	core := resources["core"]
 	writeJSON(w, http.StatusOK, map[string]interface{}{
-		"resources": map[string]interface{}{
-			"core":    limit,
-			"graphql": limit,
-			"search": map[string]interface{}{
-				"limit":     30,
-				"remaining": 29,
-				"reset":     reset,
-				"used":      1,
-			},
-		},
-		"rate": limit,
+		"resources": resources,
+		"rate":      core,
 	})
 }
 

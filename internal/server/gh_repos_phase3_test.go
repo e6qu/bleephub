@@ -97,14 +97,15 @@ func TestListTags(t *testing.T) {
 	}
 }
 
-// TestListRefs_All verifies GET /repos/{owner}/{repo}/git/refs.
+// TestListRefs_All verifies the official matching-refs operation with an
+// empty prefix, which lists every reference.
 func TestListRefs_All(t *testing.T) {
 	ghPost(t, "/api/v3/user/repos", defaultToken, map[string]interface{}{
 		"name":      "refs-repo",
 		"auto_init": true,
 	})
 
-	resp := ghGet(t, "/api/v3/repos/admin/refs-repo/git/refs", defaultToken)
+	resp := ghGet(t, "/api/v3/repos/admin/refs-repo/git/matching-refs/", defaultToken)
 	defer resp.Body.Close()
 	if resp.StatusCode != 200 {
 		t.Fatalf("expected 200, got %d", resp.StatusCode)
