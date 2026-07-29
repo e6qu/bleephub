@@ -15,7 +15,9 @@ func TestDerivedRefMutationsUseCompareAndSwap(t *testing.T) {
 	files := map[string][]string{
 		"gh_repos_git.go": {
 			"createFileCommitExpected",
+			"createFileCommitExpectedGuarded",
 			"deleteFileCommit",
+			"deleteFileCommitGuarded",
 			"handleUpdateRef",
 		},
 		"gh_repos_compare.go": {
@@ -24,6 +26,10 @@ func TestDerivedRefMutationsUseCompareAndSwap(t *testing.T) {
 			"performSquashMerge",
 			"performRebaseMerge",
 		},
+	}
+	casDelegates := map[string]string{
+		"createFileCommitExpected": "createFileCommitExpectedGuarded",
+		"deleteFileCommit":         "deleteFileCommitGuarded",
 	}
 	for name, functions := range files {
 		parsed, err := parser.ParseFile(token.NewFileSet(), name, nil, parser.SkipObjectResolution)
@@ -42,10 +48,14 @@ func TestDerivedRefMutationsUseCompareAndSwap(t *testing.T) {
 				t.Fatalf("%s: mutation function %s disappeared; update the compare-and-swap contract explicitly", name, functionName)
 			}
 			compareAndSets := 0
+			delegated := false
 			ast.Inspect(function.Body, func(node ast.Node) bool {
 				call, ok := node.(*ast.CallExpr)
 				if !ok {
 					return true
+				}
+				if callee, ok := call.Fun.(*ast.Ident); ok && callee.Name == casDelegates[functionName] {
+					delegated = true
 				}
 				selector, ok := call.Fun.(*ast.SelectorExpr)
 				if !ok {
@@ -59,7 +69,7 @@ func TestDerivedRefMutationsUseCompareAndSwap(t *testing.T) {
 				}
 				return true
 			})
-			if compareAndSets == 0 {
+			if compareAndSets == 0 && !delegated {
 				t.Errorf("%s:%s has no compare-and-set ref write", name, functionName)
 			}
 		}
@@ -69,8 +79,9 @@ func TestDerivedRefMutationsUseCompareAndSwap(t *testing.T) {
 func TestRefLifecycleMutationsKeepAtomicStorageBoundaries(t *testing.T) {
 	expectations := map[string]map[string]string{
 		"gh_repos_git.go": {
-			"commitRootBranchWithFiles": "initializeRepositoryReferences",
-			"handleCreateRef":           "createReferenceIfAbsent",
+			"commitRootBranchWithFiles":        "commitRootBranchWithFilesGuarded",
+			"commitRootBranchWithFilesGuarded": "initializeRepositoryReferences",
+			"handleCreateRef":                  "createReferenceIfAbsent",
 		},
 		"gh_repos_refs.go": {
 			"handleDeleteRef": "removeReferenceCAS",

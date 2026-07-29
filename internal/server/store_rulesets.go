@@ -3,6 +3,7 @@ package bleephub
 import (
 	"encoding/base64"
 	"fmt"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -25,18 +26,42 @@ type Ruleset struct {
 	Rules                []Rule                 `json:"rules"`
 	CreatedAt            time.Time              `json:"created_at"`
 	UpdatedAt            time.Time              `json:"updated_at"`
-	Versions             map[int]RulesetVersion `json:"-"`
-	NextVersionID        int                    `json:"-"`
+	Versions             map[int]RulesetVersion `json:"versions,omitempty"`
+	NextVersionID        int                    `json:"next_version_id,omitempty"`
 }
 
 // RulesetSuite is a single ruleset evaluation run.
 type RulesetSuite struct {
-	ID        int       `json:"id"`
-	NodeID    string    `json:"node_id"`
-	RulesetID int       `json:"ruleset_id"`
-	Status    string    `json:"status"`
-	CreatedAt time.Time `json:"created_at"`
-	UpdatedAt time.Time `json:"updated_at"`
+	ID               int                 `json:"id"`
+	ActorID          *int                `json:"actor_id"`
+	ActorName        *string             `json:"actor_name"`
+	BeforeSHA        string              `json:"before_sha"`
+	AfterSHA         string              `json:"after_sha"`
+	Ref              string              `json:"ref"`
+	RepositoryID     int                 `json:"repository_id"`
+	RepositoryName   string              `json:"repository_name"`
+	OrganizationID   int                 `json:"organization_id,omitempty"`
+	PushedAt         time.Time           `json:"pushed_at"`
+	Result           string              `json:"result"`
+	EvaluationResult *string             `json:"evaluation_result"`
+	RuleEvaluations  []RulesetEvaluation `json:"rule_evaluations"`
+}
+
+// RulesetEvaluation is the result of one rule inside a rule suite.
+type RulesetEvaluation struct {
+	RuleSource  RulesetEvaluationSource `json:"rule_source"`
+	Enforcement string                  `json:"enforcement"`
+	Result      string                  `json:"result"`
+	RuleType    string                  `json:"rule_type"`
+	Details     *string                 `json:"details"`
+}
+
+// RulesetEvaluationSource identifies the repository or organization ruleset
+// that contributed a rule to an evaluation.
+type RulesetEvaluationSource struct {
+	Type string  `json:"type"`
+	ID   *int    `json:"id"`
+	Name *string `json:"name"`
 }
 
 // RulesetBypassActor represents an actor that can bypass a ruleset.
@@ -216,6 +241,7 @@ func (st *Store) ListOrgRulesets(orgID int) []*Ruleset {
 			out = append(out, rs)
 		}
 	}
+	sort.Slice(out, func(i, j int) bool { return out[i].ID < out[j].ID })
 	return out
 }
 
@@ -264,46 +290,147 @@ func (st *Store) DeleteOrgRuleset(id int) bool {
 	return st.DeleteRuleset(id)
 }
 
-// ListOrgRulesetSuites returns rule suites for an organization.
-// Currently always returns an empty list.
+// RecordRulesetSuite persists one completed evaluation. pushedAt is supplied
+// by the caller so tests and importers never need to consult the wall clock.
+func (st *Store) RecordRulesetSuite(repo *Repo, actor *User, ref, beforeSHA, afterSHA, result string, evaluationResult *string, evaluations []RulesetEvaluation, pushedAt time.Time) *RulesetSuite {
+	if repo == nil {
+		return nil
+	}
+	st.mu.Lock()
+	defer st.mu.Unlock()
+
+	suite := &RulesetSuite{
+		ID:               st.NextRulesetSuiteID,
+		BeforeSHA:        beforeSHA,
+		AfterSHA:         afterSHA,
+		Ref:              ref,
+		RepositoryID:     repo.ID,
+		RepositoryName:   repo.Name,
+		PushedAt:         pushedAt.UTC(),
+		Result:           result,
+		EvaluationResult: evaluationResult,
+		RuleEvaluations:  append([]RulesetEvaluation(nil), evaluations...),
+	}
+	if actor != nil {
+		actorID, actorName := actor.ID, actor.Login
+		suite.ActorID, suite.ActorName = &actorID, &actorName
+	}
+	if repo.OwnerType == "Organization" {
+		suite.OrganizationID = repo.OwnerID
+	}
+	st.NextRulesetSuiteID++
+	st.RulesetSuites[suite.ID] = suite
+	if st.persist != nil {
+		st.persist.MustPut("ruleset_suites", strconv.Itoa(suite.ID), suite)
+	}
+	return cloneRulesetSuite(suite)
+}
+
+// ListOrgRulesetSuites returns rule suites for an organization, newest first.
 func (st *Store) ListOrgRulesetSuites(orgID int) []RulesetSuite {
 	st.mu.RLock()
 	defer st.mu.RUnlock()
-	_ = orgID
-	return nil
+	var out []RulesetSuite
+	for _, suite := range st.RulesetSuites {
+		if suite.OrganizationID == orgID {
+			out = append(out, *cloneRulesetSuite(suite))
+		}
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].ID > out[j].ID })
+	return out
 }
 
 // GetOrgRulesetSuite returns a single rule suite for an organization.
-// Currently always returns nil.
 func (st *Store) GetOrgRulesetSuite(orgID int, suiteID int) *RulesetSuite {
 	st.mu.RLock()
 	defer st.mu.RUnlock()
-	_ = orgID
-	_ = suiteID
-	return nil
+	suite := st.RulesetSuites[suiteID]
+	if suite == nil || suite.OrganizationID != orgID {
+		return nil
+	}
+	return cloneRulesetSuite(suite)
 }
 
 // GetRepoRulesetSuite returns a single rule suite for a repository.
-// bleephub does not evaluate rulesets on push, so no suites are ever
-// recorded — mirrors GetOrgRulesetSuite.
 func (st *Store) GetRepoRulesetSuite(repoID int, suiteID int) *RulesetSuite {
 	st.mu.RLock()
 	defer st.mu.RUnlock()
-	_ = repoID
-	_ = suiteID
-	return nil
+	suite := st.RulesetSuites[suiteID]
+	if suite == nil || suite.RepositoryID != repoID {
+		return nil
+	}
+	return cloneRulesetSuite(suite)
 }
 
-// ListRulesetsForRepo returns all rulesets for a repository, sorted by ID.
-func (st *Store) ListRulesetsForRepo(repoID int) []*Ruleset {
+// ListRepoRulesetSuites returns rule suites for a repository, newest first.
+func (st *Store) ListRepoRulesetSuites(repoID int) []RulesetSuite {
+	st.mu.RLock()
+	defer st.mu.RUnlock()
+	var out []RulesetSuite
+	for _, suite := range st.RulesetSuites {
+		if suite.RepositoryID == repoID {
+			out = append(out, *cloneRulesetSuite(suite))
+		}
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].ID > out[j].ID })
+	return out
+}
+
+// ListRulesetsForRepository returns repository rulesets and, when requested,
+// organization rulesets that apply to the repository, sorted by ID.
+func (st *Store) ListRulesetsForRepository(repo *Repo, includeParents bool) []*Ruleset {
+	if repo == nil {
+		return nil
+	}
 	st.mu.RLock()
 	defer st.mu.RUnlock()
 	var out []*Ruleset
 	for _, rs := range st.Rulesets {
-		if rs.RepoID == repoID {
+		if rs.RepoID == repo.ID ||
+			(includeParents && repo.OwnerType == "Organization" && rs.OrgID != 0 && rs.OrgID == repo.OwnerID) {
 			out = append(out, rs)
 		}
 	}
+	sort.Slice(out, func(i, j int) bool { return out[i].ID < out[j].ID })
+	return out
+}
+
+// ApplicableRulesets snapshots every repository and organization ruleset that
+// targets ref. Returning values rather than the live map entries lets push
+// evaluation run without holding the global store lock across Git reads.
+func (st *Store) ApplicableRulesets(repo *Repo, ref string) []Ruleset {
+	if repo == nil {
+		return nil
+	}
+	st.mu.RLock()
+	defer st.mu.RUnlock()
+
+	target, short := "", ref
+	switch {
+	case strings.HasPrefix(ref, "refs/heads/"):
+		target, short = "branch", strings.TrimPrefix(ref, "refs/heads/")
+	case strings.HasPrefix(ref, "refs/tags/"):
+		target, short = "tag", strings.TrimPrefix(ref, "refs/tags/")
+	default:
+		return nil
+	}
+	var out []Ruleset
+	for _, rs := range st.Rulesets {
+		if !rulesetAppliesToRepo(rs, repo) || rs.Enforcement == "disabled" {
+			continue
+		}
+		if rs.Target != "" && rs.Target != target {
+			continue
+		}
+		if !rulesetMatchesBranch(rs, repo.DefaultBranch, short) {
+			continue
+		}
+		clone := *rs
+		clone.Rules = append([]Rule(nil), rs.Rules...)
+		clone.BypassActors = append([]RulesetBypassActor(nil), rs.BypassActors...)
+		out = append(out, clone)
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].ID < out[j].ID })
 	return out
 }
 
@@ -379,6 +506,7 @@ func (st *Store) GetRulesetHistory(rs *Ruleset) []RulesetVersion {
 	for _, v := range rs.Versions {
 		out = append(out, v)
 	}
+	sort.Slice(out, func(i, j int) bool { return out[i].VersionID < out[j].VersionID })
 	return out
 }
 
@@ -400,6 +528,15 @@ func (st *Store) persistRuleset(rs *Ruleset) {
 
 func rulesetNodeID(id int) string {
 	return "RSR_" + base64.RawURLEncoding.EncodeToString([]byte(fmt.Sprintf("ruleset:%d", id)))
+}
+
+func cloneRulesetSuite(suite *RulesetSuite) *RulesetSuite {
+	if suite == nil {
+		return nil
+	}
+	clone := *suite
+	clone.RuleEvaluations = append([]RulesetEvaluation(nil), suite.RuleEvaluations...)
+	return &clone
 }
 
 func rulesetMatchesBranch(rs *Ruleset, defaultBranch, branch string) bool {

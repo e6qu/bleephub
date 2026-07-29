@@ -53,8 +53,8 @@
         "id": "AUTH-001",
         "location": "gh_apps_perms.go:100-128",
         "severity": "B",
-        "status": "partial \u2014 the resource check runs for every credential shape and 20 request-scoped read gates are credential-aware; the remaining ~50 canReadRepo sites and classic-PAT scope enforcement are still open",
-        "status_kind": "partial"
+        "status": "fixed \u2014 every credential shape now passes both its credential grant and the target-resource authorization check; classic scopes, fine-grained selection/permissions/approval/expiry, and App/OAuth repository reach are regression-tested at the authorization chokepoint",
+        "status_kind": "fixed"
       },
       {
         "category": "AUTH",
@@ -728,8 +728,8 @@
         "id": "AUTH-075",
         "location": "gh_apps_perms.go:430",
         "severity": "B",
-        "status": "partial \u2014 the intersection covers installation and user-to-server tokens; `gho_` OAuth-App tokens and fine-grained PATs reach the `return true` and are not checked against the grant they carry. A scopeless `gho_` deletes a repository through GraphQL, clones and pushes over git, and plants an organization webhook (201) \u2014 AUTH-045's finding, closed for `ghu_` and open here. A fine-grained PAT selecting repository A mutates B through GraphQL and git. Pre-existing rather than a regression, but the row overstated it. See AUTH-090",
-        "status_kind": "partial"
+        "status": "fixed \u2014 installation, user-to-server, OAuth-App, classic PAT, and fine-grained PAT grants are intersected with repository reach on REST, GraphQL, and Git; deletion, clone/push, and organization-hook regressions cover the formerly open lanes",
+        "status_kind": "fixed"
       },
       {
         "category": "AUTH",
@@ -1304,8 +1304,8 @@
         "id": "REST-044",
         "location": "gh_rulesets.go",
         "severity": "M",
-        "status": "open",
-        "status_kind": "open"
+        "status": "fixed \u2014 repository lists include applicable organization rulesets by default, honor `includes_parents`, `targets`, and pagination, and reject malformed query values; organization lists share the official target filter and pagination",
+        "status_kind": "fixed"
       },
       {
         "category": "REST",
@@ -1673,8 +1673,8 @@
         "id": "REST-085",
         "location": "gh_rulesets.go:11-14",
         "severity": "M",
-        "status": "open",
-        "status_kind": "open"
+        "status": "fixed \u2014 every repository ruleset, history, branch-rule, and rule-suite route now declares the official administration/metadata permission and tests installation-token denial and admission",
+        "status_kind": "fixed"
       },
       {
         "category": "REST",
@@ -3167,8 +3167,8 @@
         "id": "STORE-022",
         "location": "store_projects_classic.go:34, store_rulesets.go:28",
         "severity": "M",
-        "status": "open",
-        "status_kind": "open"
+        "status": "partial \u2014 ruleset history and its next-version counter are durable and reload-tested; classic board ordering remains open",
+        "status_kind": "partial"
       },
       {
         "category": "STORE",
@@ -3257,8 +3257,8 @@
         "id": "STORE-032",
         "location": "store_rulesets.go:269",
         "severity": "M",
-        "status": "open",
-        "status_kind": "open"
+        "status": "fixed \u2014 ref writes evaluate active/evaluate rulesets, persist official-shaped suites, and serve filtered/paginated list and detail endpoints with reload coverage",
+        "status_kind": "fixed"
       },
       {
         "category": "STORE",
@@ -3428,8 +3428,8 @@
         "id": "STORE-051",
         "location": "store_rulesets.go:209",
         "severity": "m",
-        "status": "open",
-        "status_kind": "open"
+        "status": "fixed \u2014 repository and organization rulesets and version history are explicitly ID-sorted before pagination",
+        "status_kind": "fixed"
       },
       {
         "category": "STORE",
@@ -4553,8 +4553,8 @@
         "id": "TEST-029",
         "location": "4 specs",
         "severity": "M",
-        "status": "open",
-        "status_kind": "open"
+        "status": "partial \u2014 Codespaces lifecycle and OAuth success paths are covered; Discussions writes and OAuth error branches remain open",
+        "status_kind": "partial"
       },
       {
         "category": "TEST",
@@ -4751,8 +4751,8 @@
         "id": "PAR-014",
         "location": "spec `/copilot-spaces*`",
         "severity": "M",
-        "status": "open",
-        "status_kind": "open"
+        "status": "fixed \u2014 all 28 Copilot Spaces operations are registered, implemented, and represented in the generated parity inventory",
+        "status_kind": "fixed"
       },
       {
         "category": "PAR",
@@ -4778,8 +4778,8 @@
         "id": "PAR-017",
         "location": "BLEEPHUB_GITHUB_API_PARITY.md:22",
         "severity": "M",
-        "status": "open",
-        "status_kind": "open"
+        "status": "fixed \u2014 parity documentation now distinguishes route presence, response-shape checks, and executable semantic evidence instead of treating a registered handler as behavioral coverage",
+        "status_kind": "fixed"
       },
       {
         "category": "PAR",
@@ -5592,9 +5592,9 @@
         },
         "AUTH": {
           "status": {
-            "fixed": 66,
+            "fixed": 68,
             "open": 21,
-            "partial": 6
+            "partial": 4
           },
           "total": 93
         },
@@ -5623,33 +5623,33 @@
         },
         "PAR": {
           "status": {
-            "fixed": 19,
-            "open": 18,
+            "fixed": 21,
+            "open": 16,
             "partial": 2
           },
           "total": 39
         },
         "REST": {
           "status": {
-            "fixed": 39,
-            "open": 68,
+            "fixed": 41,
+            "open": 66,
             "partial": 9
           },
           "total": 116
         },
         "STORE": {
           "status": {
-            "fixed": 18,
-            "open": 39,
-            "partial": 7
+            "fixed": 20,
+            "open": 36,
+            "partial": 8
           },
           "total": 64
         },
         "TEST": {
           "status": {
             "fixed": 8,
-            "open": 29,
-            "partial": 2
+            "open": 28,
+            "partial": 3
           },
           "total": 39
         },
@@ -5669,8 +5669,8 @@
       },
       "status": {
         "deferred": 1,
-        "fixed": 274,
-        "open": 298,
+        "fixed": 282,
+        "open": 290,
         "partial": 41
       },
       "total": 614
@@ -18064,7 +18064,7 @@
         "source": "internal/server/gh_members_rest.go"
       },
       {
-        "line": 95,
+        "line": 102,
         "method": "DELETE",
         "path": "/api/v3/orgs/{org}/rulesets/{ruleset_id}",
         "source": "internal/server/gh_rulesets.go"
@@ -18364,7 +18364,7 @@
         "source": "internal/server/variables.go"
       },
       {
-        "line": 317,
+        "line": 344,
         "method": "DELETE",
         "path": "/api/v3/repos/{owner}/{repo}/git/refs/{ref...}",
         "source": "internal/server/gh_repos_git.go"
@@ -18514,7 +18514,7 @@
         "source": "internal/server/gh_releases.go"
       },
       {
-        "line": 15,
+        "line": 16,
         "method": "DELETE",
         "path": "/api/v3/repos/{owner}/{repo}/rulesets/{ruleset_id}",
         "source": "internal/server/gh_rulesets.go"
@@ -20158,31 +20158,31 @@
         "source": "internal/server/gh_repos_rest.go"
       },
       {
-        "line": 90,
+        "line": 97,
         "method": "GET",
         "path": "/api/v3/orgs/{org}/rulesets",
         "source": "internal/server/gh_rulesets.go"
       },
       {
-        "line": 92,
+        "line": 99,
         "method": "GET",
         "path": "/api/v3/orgs/{org}/rulesets/rule-suites",
         "source": "internal/server/gh_rulesets.go"
       },
       {
-        "line": 96,
+        "line": 103,
         "method": "GET",
         "path": "/api/v3/orgs/{org}/rulesets/{p1}/{p2}",
         "source": "internal/server/gh_rulesets.go"
       },
       {
-        "line": 97,
+        "line": 104,
         "method": "GET",
         "path": "/api/v3/orgs/{org}/rulesets/{p1}/{p2}/{p3}",
         "source": "internal/server/gh_rulesets.go"
       },
       {
-        "line": 93,
+        "line": 100,
         "method": "GET",
         "path": "/api/v3/orgs/{org}/rulesets/{ruleset_id}",
         "source": "internal/server/gh_rulesets.go"
@@ -21220,13 +21220,13 @@
         "source": "internal/server/gh_repos_rest.go"
       },
       {
-        "line": 306,
+        "line": 333,
         "method": "GET",
         "path": "/api/v3/repos/{owner}/{repo}/git/blobs/{sha}",
         "source": "internal/server/gh_repos_git.go"
       },
       {
-        "line": 310,
+        "line": 337,
         "method": "GET",
         "path": "/api/v3/repos/{owner}/{repo}/git/commits/{sha}",
         "source": "internal/server/gh_repos_git.go"
@@ -21244,19 +21244,19 @@
         "source": "internal/server/gh_repos_reads.go"
       },
       {
-        "line": 314,
+        "line": 341,
         "method": "GET",
         "path": "/api/v3/repos/{owner}/{repo}/git/refs/{ref...}",
         "source": "internal/server/gh_repos_git.go"
       },
       {
-        "line": 312,
+        "line": 339,
         "method": "GET",
         "path": "/api/v3/repos/{owner}/{repo}/git/tags/{sha}",
         "source": "internal/server/gh_repos_git.go"
       },
       {
-        "line": 308,
+        "line": 335,
         "method": "GET",
         "path": "/api/v3/repos/{owner}/{repo}/git/trees/{sha...}",
         "source": "internal/server/gh_repos_git.go"
@@ -21616,37 +21616,37 @@
         "source": "internal/server/gh_releases.go"
       },
       {
-        "line": 16,
+        "line": 17,
         "method": "GET",
         "path": "/api/v3/repos/{owner}/{repo}/rules/branches/{branch}",
         "source": "internal/server/gh_rulesets.go"
       },
       {
-        "line": 10,
+        "line": 11,
         "method": "GET",
         "path": "/api/v3/repos/{owner}/{repo}/rulesets",
         "source": "internal/server/gh_rulesets.go"
       },
       {
-        "line": 11,
+        "line": 12,
         "method": "GET",
         "path": "/api/v3/repos/{owner}/{repo}/rulesets/rule-suites",
         "source": "internal/server/gh_rulesets.go"
       },
       {
-        "line": 20,
+        "line": 21,
         "method": "GET",
         "path": "/api/v3/repos/{owner}/{repo}/rulesets/{p1}/{p2}",
         "source": "internal/server/gh_rulesets.go"
       },
       {
-        "line": 13,
+        "line": 14,
         "method": "GET",
         "path": "/api/v3/repos/{owner}/{repo}/rulesets/{ruleset_id}",
         "source": "internal/server/gh_rulesets.go"
       },
       {
-        "line": 21,
+        "line": 22,
         "method": "GET",
         "path": "/api/v3/repos/{owner}/{repo}/rulesets/{ruleset_id}/history/{version_id}",
         "source": "internal/server/gh_rulesets.go"
@@ -22738,7 +22738,7 @@
         "source": "internal/server/variables.go"
       },
       {
-        "line": 316,
+        "line": 343,
         "method": "PATCH",
         "path": "/api/v3/repos/{owner}/{repo}/git/refs/{ref...}",
         "source": "internal/server/gh_repos_git.go"
@@ -23320,7 +23320,7 @@
         "source": "internal/server/gh_orgs_rest.go"
       },
       {
-        "line": 91,
+        "line": 98,
         "method": "POST",
         "path": "/api/v3/orgs/{org}/rulesets",
         "source": "internal/server/gh_rulesets.go"
@@ -23632,31 +23632,31 @@
         "source": "internal/server/gh_repos_rest.go"
       },
       {
-        "line": 307,
+        "line": 334,
         "method": "POST",
         "path": "/api/v3/repos/{owner}/{repo}/git/blobs",
         "source": "internal/server/gh_repos_git.go"
       },
       {
-        "line": 311,
+        "line": 338,
         "method": "POST",
         "path": "/api/v3/repos/{owner}/{repo}/git/commits",
         "source": "internal/server/gh_repos_git.go"
       },
       {
-        "line": 315,
+        "line": 342,
         "method": "POST",
         "path": "/api/v3/repos/{owner}/{repo}/git/refs",
         "source": "internal/server/gh_repos_git.go"
       },
       {
-        "line": 313,
+        "line": 340,
         "method": "POST",
         "path": "/api/v3/repos/{owner}/{repo}/git/tags",
         "source": "internal/server/gh_repos_git.go"
       },
       {
-        "line": 309,
+        "line": 336,
         "method": "POST",
         "path": "/api/v3/repos/{owner}/{repo}/git/trees",
         "source": "internal/server/gh_repos_git.go"
@@ -23878,7 +23878,7 @@
         "source": "internal/server/gh_releases.go"
       },
       {
-        "line": 12,
+        "line": 13,
         "method": "POST",
         "path": "/api/v3/repos/{owner}/{repo}/rulesets",
         "source": "internal/server/gh_rulesets.go"
@@ -24496,7 +24496,7 @@
         "source": "internal/server/gh_members_rest.go"
       },
       {
-        "line": 94,
+        "line": 101,
         "method": "PUT",
         "path": "/api/v3/orgs/{org}/rulesets/{ruleset_id}",
         "source": "internal/server/gh_rulesets.go"
@@ -24796,7 +24796,7 @@
         "source": "internal/server/gh_reactions.go"
       },
       {
-        "line": 14,
+        "line": 15,
         "method": "PUT",
         "path": "/api/v3/repos/{owner}/{repo}/rulesets/{ruleset_id}",
         "source": "internal/server/gh_rulesets.go"
@@ -25258,6 +25258,7 @@
         "path": "/ui/orgs/:org/rulesets",
         "source": "web/src/App.tsx",
         "tests": [
+          "web/src/__tests__/RulesetsPage.test.tsx",
           "web/src/__tests__/pageErrorPaths.test.tsx"
         ]
       },

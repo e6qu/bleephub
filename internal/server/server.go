@@ -52,6 +52,9 @@ type Server struct {
 	pagesJekyllExecutable  string
 	identity               identityConfig
 	build                  BuildInfo
+	// clockNow is injected by deterministic tests and simulators. Production
+	// leaves it nil and currentTime uses the process clock.
+	clockNow func() time.Time
 	// allowPrivateOutboundTargets opts every server-initiated fetch — webhook
 	// delivery and source import — out of the public-address requirement, for
 	// a development or test instance whose receivers and sources live on
@@ -72,6 +75,13 @@ type Server struct {
 	// that outlives the process it belongs to keeps writing to a store nobody
 	// is reading and holds the listener it was told to release.
 	background sync.WaitGroup
+}
+
+func (s *Server) currentTime() time.Time {
+	if s != nil && s.clockNow != nil {
+		return s.clockNow().UTC()
+	}
+	return time.Now().UTC()
 }
 
 // goBackground runs fn as an owned goroutine: shutdown waits for it. Every

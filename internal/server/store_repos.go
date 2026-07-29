@@ -579,6 +579,12 @@ func (st *Store) deleteRepoLocked(owner, name string) (bool, error) {
 			batch.Delete("repo_rulesets", strconv.Itoa(id))
 		}
 	}
+	for id, suite := range st.RulesetSuites {
+		if suite.RepositoryID == repo.ID {
+			delete(st.RulesetSuites, id)
+			batch.Delete("ruleset_suites", strconv.Itoa(id))
+		}
+	}
 	for id, project := range st.ProjectClassic {
 		if project.RepoKey == fullName {
 			delete(st.ProjectClassic, id)
@@ -2378,6 +2384,15 @@ func (st *Store) moveRepoKeyLocked(oldFull, newFull string) {
 		rs.Source = newFull
 		if st.persist != nil {
 			st.persist.MustPut("repo_rulesets", strconv.Itoa(rs.ID), rs)
+		}
+	}
+	renamedRepo := st.ReposByName[newFull]
+	for _, suite := range st.RulesetSuites {
+		if renamedRepo != nil && suite.RepositoryID == renamedRepo.ID {
+			suite.RepositoryName = renamedRepo.Name
+			if st.persist != nil {
+				st.persist.MustPut("ruleset_suites", strconv.Itoa(suite.ID), suite)
+			}
 		}
 	}
 	for _, project := range st.ProjectClassic {
