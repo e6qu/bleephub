@@ -39,14 +39,10 @@ func repoSignature(name, email string) *object.Signature {
 // populating it with the supplied files and pointing the given branch at
 // the resulting commit. It is used for auto_init and for the contents
 // PUT endpoint when the caller creates the first file in an empty repo.
-func initRepoWithFiles(stor gitStorage.Storer, branch, message string, files map[string]string, sig *object.Signature) (plumbing.Hash, error) {
-	return commitRootBranchWithFiles(stor, branch, message, files, sig, false)
-}
-
 // initEmptyRepoWithFiles is the API-facing first-commit operation. Unlike the
-// lower-level fixture/import helper above, it rejects initialization once any
-// branch exists, including when a concurrent request won the race on a
-// different branch.
+// lower-level root-branch builder, it rejects initialization once any branch
+// exists, including when a concurrent request won the race on a different
+// branch.
 func initEmptyRepoWithFiles(stor gitStorage.Storer, branch, message string, files map[string]string, sig *object.Signature) (plumbing.Hash, error) {
 	return commitRootBranchWithFiles(stor, branch, message, files, sig, true)
 }
