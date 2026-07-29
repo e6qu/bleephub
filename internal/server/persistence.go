@@ -96,6 +96,7 @@ var sensitivePersistenceBuckets = map[string]struct{}{
 	"org_secrets":             {},
 	"refresh_tokens":          {},
 	"repo_secrets":            {},
+	"tokens":                  {},
 	"user_to_server_tokens":   {},
 }
 
@@ -106,6 +107,7 @@ var opaquePersistenceKeyBuckets = map[string]struct{}{
 	"installation_tokens":   {},
 	"login_sessions":        {},
 	"refresh_tokens":        {},
+	"tokens":                {},
 	"user_to_server_tokens": {},
 }
 

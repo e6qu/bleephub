@@ -69,8 +69,8 @@ func persistRoundTrip(t *testing.T, open func() (*Persistence, error)) {
 		t.Fatalf("list persisted personal access tokens: %v", err)
 	}
 	for key, raw := range tokenRows {
-		if !strings.HasPrefix(key, tokenDigestPrefix) {
-			t.Errorf("personal access token persistence key %q is not a digest", key)
+		if !strings.HasPrefix(key, opaquePersistenceKeyPrefix) {
+			t.Errorf("personal access token persistence key %q is not a keyed digest", key)
 		}
 		for _, credential := range []string{defaultToken, fineGrained.Value} {
 			if strings.Contains(key, credential) || bytes.Contains(raw, []byte(credential)) {
@@ -244,6 +244,11 @@ func TestPersistence_MigratesLegacySensitiveRowsAndRejectsWrongKey(t *testing.T)
 	if _, err := p.db.Exec(p.dialect.putSQL, loginSessionsBucket, "legacy-cookie", legacySession); err != nil {
 		t.Fatal(err)
 	}
+	const legacyPAT = "ghp_legacy-persistence-token"
+	legacyToken := []byte(`{"UserID":1,"Scopes":"repo","CreatedAt":"2026-07-29T00:00:00Z"}`)
+	if _, err := p.db.Exec(p.dialect.putSQL, "tokens", legacyPAT, legacyToken); err != nil {
+		t.Fatal(err)
+	}
 	if err := p.Close(); err != nil {
 		t.Fatal(err)
 	}
@@ -266,6 +271,22 @@ func TestPersistence_MigratesLegacySensitiveRowsAndRejectsWrongKey(t *testing.T)
 	raw, err := p.Get(loginSessionsBucket, "legacy-cookie")
 	if err != nil || !bytes.Equal(raw, legacySession) {
 		t.Fatalf("migrated row did not decrypt: raw=%q err=%v", raw, err)
+	}
+	var storedTokenKey string
+	var storedTokenValue []byte
+	if err := p.db.QueryRow(p.dialect.listSQL, "tokens").Scan(&storedTokenKey, &storedTokenValue); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.HasPrefix(storedTokenKey, opaquePersistenceKeyPrefix) || strings.Contains(storedTokenKey, legacyPAT) {
+		t.Fatalf("legacy personal access token key was not replaced by a keyed digest: %q", storedTokenKey)
+	}
+	if !strings.HasPrefix(string(storedTokenValue), sealedPersistenceValuePrefix) ||
+		bytes.Contains(storedTokenValue, []byte(legacyPAT)) {
+		t.Fatalf("legacy personal access token row was not protected: %q", storedTokenValue)
+	}
+	raw, err = p.Get("tokens", legacyPAT)
+	if err != nil || !bytes.Equal(raw, legacyToken) {
+		t.Fatalf("migrated personal access token did not decrypt: raw=%q err=%v", raw, err)
 	}
 	if err := p.Close(); err != nil {
 		t.Fatal(err)

@@ -3,8 +3,6 @@ package bleephub
 import (
 	"bytes"
 	"context"
-	"crypto/sha256"
-	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"log"
@@ -162,7 +160,7 @@ type UserEmail struct {
 type Token struct {
 	// Value is returned exactly once when a token is minted and is retained
 	// only by the live process that minted it. Persistence keys tokens by a
-	// one-way digest and never serializes the bearer credential itself.
+	// keyed digest and never serializes the bearer credential itself.
 	Value               string `json:"-"`
 	UserID              int
 	Scopes              string
@@ -177,18 +175,11 @@ type Token struct {
 	ExpiresAt           *time.Time        `json:"expires_at,omitempty"`
 }
 
-const tokenDigestPrefix = "sha256:"
-
-func tokenPersistenceKey(value string) string {
-	digest := sha256.Sum256([]byte(value))
-	return tokenDigestPrefix + hex.EncodeToString(digest[:])
-}
-
-func tokenPersistenceKeyForMapKey(key string) string {
-	if strings.HasPrefix(key, tokenDigestPrefix) {
-		return key
+func (st *Store) tokenMapKey(value string) string {
+	if st.persist == nil {
+		return value
 	}
-	return tokenPersistenceKey(key)
+	return st.persist.storageKey("tokens", value)
 }
 
 // tokenByValueLocked resolves a presented bearer without retaining or
@@ -197,20 +188,20 @@ func (st *Store) tokenByValueLocked(value string) (*Token, string) {
 	if token := st.Tokens[value]; token != nil {
 		return token, value // newly minted in this process
 	}
-	key := tokenPersistenceKey(value)
+	key := st.tokenMapKey(value)
 	return st.Tokens[key], key
 }
 
 func (st *Store) persistTokenLocked(token *Token) {
 	if st.persist != nil {
-		st.persist.MustPut("tokens", tokenPersistenceKey(token.Value), token)
+		st.persist.MustPut("tokens", token.Value, token)
 	}
 }
 
 func (st *Store) deleteTokenMapKeyLocked(mapKey string) {
 	delete(st.Tokens, mapKey)
 	if st.persist != nil {
-		st.persist.MustDelete("tokens", tokenPersistenceKeyForMapKey(mapKey))
+		st.persist.MustDelete("tokens", mapKey)
 	}
 }
 
@@ -1132,24 +1123,12 @@ func (st *Store) loadFromPersistence() error {
 	if err != nil {
 		return fmt.Errorf("load tokens: %w", err)
 	}
-	tokenMigration := newPersistBatch(st.persist)
 	for persistedKey, raw := range tokenRows {
 		var t Token
 		if err := loadJSON(raw, &t); err != nil {
 			return fmt.Errorf("decode tokens row: %w", err)
 		}
-		key := persistedKey
-		if !strings.HasPrefix(key, tokenDigestPrefix) {
-			// Migrate the legacy raw-key/raw-value row in one transaction.
-			// Token.Value is json:"-", so the rewritten value is sanitized.
-			key = tokenPersistenceKey(persistedKey)
-			tokenMigration.Put("tokens", key, &t)
-			tokenMigration.Delete("tokens", persistedKey)
-		}
-		st.Tokens[key] = &t
-	}
-	if err := tokenMigration.Commit(); err != nil {
-		return fmt.Errorf("migrate token digests: %w", err)
+		st.Tokens[persistedKey] = &t
 	}
 	if err := st.loadBucket("gists", func(raw []byte) error {
 		var g Gist
