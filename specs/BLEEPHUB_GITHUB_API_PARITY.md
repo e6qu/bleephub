@@ -28,6 +28,10 @@ GitHub Enterprise Server coordinates are intentional. Official clients already s
 
 `scripts/parity_inventory.py --check` regenerates the snapshot in memory and fails CI on any drift. `BUGS.md` remains the human-editable source for findings, but its totals and status vocabulary are checked by the same parser. A new route, UI page, resolver, event producer, OpenAPI update, or ledger edit therefore cannot disappear into prose or pass with an outdated coverage claim.
 
+[`rest-semantic-contracts.json`](rest-semantic-contracts.json) is the companion per-operation semantic matrix. For all 1,216 official operations it records path/query/header parameters and constraints, required request-body fields by media type, documented success and error statuses, security alternatives and scopes, pagination inputs, conditional-request declarations, and mutation obligations for reload persistence, event emission, and failure atomicity. The current pin contains 342 body-bearing operations, 277 required bodies, 283 paginated operations, and 582 state-changing operations.
+
+The matrix deliberately distinguishes a described obligation from behavioural evidence. For example, the current OpenAPI pin declares no conditional-request headers even though GitHub supports conditional requests broadly; that produces an explicit zero rather than a false green. Runtime status/shape observation, credential/resource authorization matrices, stable pagination/Link tests, reload tests, event tests, and injected storage-failure tests remain the evidence layers named in the matrix's `coverage_boundary`.
+
 ## What was verified
 
 ### REST route and response contracts

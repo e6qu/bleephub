@@ -17,6 +17,7 @@ ROOT = Path(__file__).resolve().parent.parent
 LEDGER_PATH = ROOT / "BUGS.md"
 OPENAPI_PATH = ROOT / "internal" / "server" / "testdata" / "github-openapi.json.gz"
 INVENTORY_PATH = ROOT / "specs" / "parity-inventory.json"
+REST_CONTRACT_PATH = ROOT / "specs" / "rest-semantic-contracts.json"
 HTTP_METHODS = {"get", "post", "put", "patch", "delete", "head"}
 LEDGER_ID = re.compile(r"^(AUTH|REST|GQL|ACT|STORE|CORE|WEB|TEST|PAR|CI|ARCH)-\d+$")
 LEDGER_HEADER = re.compile(
@@ -227,6 +228,231 @@ def documented_rest_operations() -> tuple[str, list[dict[str, Any]]]:
     return hashlib.sha256(compressed).hexdigest(), operations
 
 
+def resolve_openapi_ref(document: dict[str, Any], value: Any) -> Any:
+    seen: set[str] = set()
+    while isinstance(value, dict) and "$ref" in value:
+        reference = value["$ref"]
+        if reference in seen or not reference.startswith("#/"):
+            raise InventoryError(f"invalid or cyclic OpenAPI reference {reference!r}")
+        seen.add(reference)
+        target: Any = document
+        for segment in reference[2:].split("/"):
+            segment = segment.replace("~1", "/").replace("~0", "~")
+            if not isinstance(target, dict) or segment not in target:
+                raise InventoryError(f"OpenAPI reference has no target: {reference}")
+            target = target[segment]
+        value = target
+    return value
+
+
+def schema_contract(document: dict[str, Any], schema: Any) -> dict[str, Any]:
+    schema = resolve_openapi_ref(document, schema)
+    if not isinstance(schema, dict):
+        return {}
+    required: set[str] = set(schema.get("required", []))
+    properties: dict[str, Any] = dict(schema.get("properties", {}))
+    for member in schema.get("allOf", []):
+        nested = schema_contract(document, member)
+        required.update(nested.get("required_fields", []))
+        for name, value in nested.get("properties", {}).items():
+            properties.setdefault(name, value)
+    property_contracts: dict[str, Any] = {}
+    for name, value in sorted(properties.items()):
+        value = resolve_openapi_ref(document, value)
+        if not isinstance(value, dict):
+            property_contracts[name] = {}
+            continue
+        contract: dict[str, Any] = {}
+        if "type" in value:
+            contract["type"] = value["type"]
+        if "format" in value:
+            contract["format"] = value["format"]
+        if "enum" in value:
+            contract["enum"] = value["enum"]
+        if value.get("nullable") is True:
+            contract["nullable"] = True
+        property_contracts[name] = contract
+    contract = {
+        "type": schema.get("type", "object" if properties else ""),
+        "required_fields": sorted(required),
+        "properties": property_contracts,
+    }
+    return contract
+
+
+def parameter_contract(document: dict[str, Any], parameter: Any) -> dict[str, Any]:
+    parameter = resolve_openapi_ref(document, parameter)
+    if not isinstance(parameter, dict):
+        return {}
+    schema = resolve_openapi_ref(document, parameter.get("schema", {}))
+    result: dict[str, Any] = {
+        "name": parameter.get("name", ""),
+        "in": parameter.get("in", ""),
+        "required": bool(parameter.get("required", False)),
+    }
+    if isinstance(schema, dict):
+        for key in ("type", "format", "default", "minimum", "maximum", "enum"):
+            if key in schema:
+                result[key] = schema[key]
+    return result
+
+
+def request_body_contract(document: dict[str, Any], request_body: Any) -> dict[str, Any]:
+    if request_body is None:
+        return {"required": False, "media_types": {}}
+    request_body = resolve_openapi_ref(document, request_body)
+    if not isinstance(request_body, dict):
+        return {"required": False, "media_types": {}}
+    media_types: dict[str, Any] = {}
+    for media_type, content in sorted(request_body.get("content", {}).items()):
+        if isinstance(content, dict) and "schema" in content:
+            media_types[media_type] = schema_contract(document, content["schema"])
+    return {
+        "required": bool(request_body.get("required", False)),
+        "media_types": media_types,
+    }
+
+
+def security_contract(
+    document: dict[str, Any], operation: dict[str, Any]
+) -> dict[str, Any]:
+    requirements = operation.get("security", document.get("security", []))
+    alternatives: list[dict[str, Any]] = []
+    for alternative in requirements:
+        if not isinstance(alternative, dict):
+            continue
+        alternatives.append(
+            {
+                name: {
+                    "scopes": scopes,
+                    "type": document.get("components", {})
+                    .get("securitySchemes", {})
+                    .get(name, {})
+                    .get("type", ""),
+                }
+                for name, scopes in sorted(alternative.items())
+            }
+        )
+    return {
+        "public": requirements == [],
+        "alternatives": alternatives,
+    }
+
+
+def build_rest_semantic_contracts() -> dict[str, Any]:
+    compressed = OPENAPI_PATH.read_bytes()
+    document = json.loads(gzip.decompress(compressed))
+    operations: list[dict[str, Any]] = []
+    pagination_names = {"page", "per_page", "before", "after", "since"}
+    conditional_headers = {
+        "if-none-match",
+        "if-modified-since",
+        "if-match",
+        "if-unmodified-since",
+    }
+    for path, path_item in document["paths"].items():
+        inherited_parameters = path_item.get("parameters", [])
+        for method, operation in path_item.items():
+            if method not in HTTP_METHODS:
+                continue
+            parameters_by_key: dict[tuple[str, str], dict[str, Any]] = {}
+            for raw_parameter in [
+                *inherited_parameters,
+                *operation.get("parameters", []),
+            ]:
+                parameter = parameter_contract(document, raw_parameter)
+                key = (parameter.get("in", ""), parameter.get("name", ""))
+                parameters_by_key[key] = parameter
+            parameters = sorted(
+                parameters_by_key.values(),
+                key=lambda value: (value.get("in", ""), value.get("name", "")),
+            )
+            parameter_names = {value.get("name", "") for value in parameters}
+            header_names = {
+                value.get("name", "").lower()
+                for value in parameters
+                if value.get("in") == "header"
+            }
+            mutation = method in {"post", "put", "patch", "delete"}
+            statuses = sorted(operation.get("responses", {}).keys())
+            operations.append(
+                {
+                    "method": method.upper(),
+                    "path": path,
+                    "operation_id": operation.get("operationId", ""),
+                    "request": {
+                        "parameters": parameters,
+                        "body": request_body_contract(
+                            document, operation.get("requestBody")
+                        ),
+                    },
+                    "responses": {
+                        "documented_statuses": statuses,
+                        "redirect_statuses": [
+                            status for status in statuses if status.startswith("3")
+                        ],
+                    },
+                    "authorization": security_contract(document, operation),
+                    "pagination": {
+                        "parameters": sorted(parameter_names & pagination_names),
+                        "required": bool(parameter_names & pagination_names),
+                    },
+                    "conditional_requests": {
+                        "headers": sorted(header_names & conditional_headers),
+                        "documented": bool(header_names & conditional_headers),
+                    },
+                    "mutation_obligations": {
+                        "state_changing": mutation,
+                        "persistence_reload_review": mutation,
+                        "webhook_actions_event_review": mutation,
+                        "failure_atomicity_review": mutation,
+                    },
+                }
+            )
+    operations.sort(key=lambda row: (row["path"], row["method"]))
+    if len(operations) < 1000:
+        raise InventoryError(
+            f"REST semantic matrix has only {len(operations)} operations"
+        )
+    summary = {
+        "operations": len(operations),
+        "with_request_body": sum(
+            bool(operation["request"]["body"]["media_types"])
+            for operation in operations
+        ),
+        "with_required_body": sum(
+            operation["request"]["body"]["required"] for operation in operations
+        ),
+        "with_pagination": sum(
+            operation["pagination"]["required"] for operation in operations
+        ),
+        "with_conditional_requests": sum(
+            operation["conditional_requests"]["documented"]
+            for operation in operations
+        ),
+        "state_changing": sum(
+            operation["mutation_obligations"]["state_changing"]
+            for operation in operations
+        ),
+    }
+    return {
+        "schema_version": 1,
+        "source": str(OPENAPI_PATH.relative_to(ROOT)),
+        "source_sha256": hashlib.sha256(compressed).hexdigest(),
+        "coverage_boundary": {
+            "request_contract": "OpenAPI-derived; handler behaviour requires a positive and invalid-input vector",
+            "response_contract": "runtime OpenAPI observer validates exercised statuses and JSON shapes",
+            "authorization": "security requirements are spec-derived; credential/resource matrices remain behavioural gates",
+            "pagination": "declared parameters are spec-derived; ordering, disjoint pages, and Link headers remain behavioural gates",
+            "persistence": "every state-changing operation requires create/update/delete plus reload evidence unless explicitly non-durable",
+            "events": "every state-changing operation requires webhook, Actions, and audit review; not every GitHub mutation emits every event family",
+            "atomicity": "every state-changing operation owning git or object bytes requires injected-failure evidence",
+        },
+        "summary": summary,
+        "operations": operations,
+    }
+
+
 def graphql_inventory() -> dict[str, Any]:
     directory = ROOT / "internal" / "server"
     resolver_files = sorted(
@@ -355,21 +581,28 @@ def main(argv: list[str]) -> int:
             )
             return 0
         generated = encoded_inventory(build_inventory())
+        rest_contracts = encoded_inventory(build_rest_semantic_contracts())
         if args.write:
             INVENTORY_PATH.write_bytes(generated)
+            REST_CONTRACT_PATH.write_bytes(rest_contracts)
             print(f"wrote {INVENTORY_PATH.relative_to(ROOT)}")
+            print(f"wrote {REST_CONTRACT_PATH.relative_to(ROOT)}")
             return 0
-        if not INVENTORY_PATH.exists():
-            raise InventoryError(
-                f"{INVENTORY_PATH.relative_to(ROOT)} is missing; run "
-                "./scripts/parity_inventory.py --write"
-            )
-        current = INVENTORY_PATH.read_bytes()
-        if current != generated:
-            raise InventoryError(
-                f"{INVENTORY_PATH.relative_to(ROOT)} is stale; run "
-                "./scripts/parity_inventory.py --write and review the diff"
-            )
+        for path, expected in (
+            (INVENTORY_PATH, generated),
+            (REST_CONTRACT_PATH, rest_contracts),
+        ):
+            if not path.exists():
+                raise InventoryError(
+                    f"{path.relative_to(ROOT)} is missing; run "
+                    "./scripts/parity_inventory.py --write"
+                )
+            current = path.read_bytes()
+            if current != expected:
+                raise InventoryError(
+                    f"{path.relative_to(ROOT)} is stale; run "
+                    "./scripts/parity_inventory.py --write and review the diff"
+                )
         print("parity inventory: OK")
         return 0
     except (InventoryError, OSError, json.JSONDecodeError) as error:
