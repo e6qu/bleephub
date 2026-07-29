@@ -28,6 +28,7 @@ import {
   GlobeIcon,
   AuditLogIcon,
   GraphIcon,
+  CommentIcon,
 } from "./octicons.js";
 import { abortPendingRequests, clearToken, fetchCurrentUser, fetchNotifications } from "../api.js";
 
@@ -187,6 +188,7 @@ const GITHUB_NAV: DrawerItem[] = [
   { label: "Packages", to: "/ui/packages", icon: <PackageIcon size={16} /> },
   { label: "Marketplace", to: "/ui/marketplace", icon: <PackageIcon size={16} /> },
   { label: "Codespaces", to: "/ui/codespaces", icon: <CodespaceIcon size={16} /> },
+  { label: "Copilot Spaces", to: "/ui/copilot/spaces", icon: <CommentIcon size={16} /> },
   { label: "Classroom", to: "/ui/classrooms", icon: <PeopleIcon size={16} /> },
   { label: "Migrations", to: "/ui/migrations", icon: <MigrationIcon size={16} /> },
   { label: "Notifications", to: "/ui/notifications", icon: <NotificationBellIcon size={16} /> },

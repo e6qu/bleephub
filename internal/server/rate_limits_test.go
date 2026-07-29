@@ -2,9 +2,13 @@ package bleephub
 
 import (
 	"bytes"
+	"net/http"
 	"net/http/httptest"
 	"testing"
+	"time"
 )
+
+var testRateLimitReset = time.Date(9999, time.December, 31, 23, 59, 59, 0, time.UTC)
 
 func TestPrimaryRateLimitsAreStatefulAndCredentialScoped(t *testing.T) {
 	server := &Server{rateLimits: map[string]*apiRateWindow{}}
@@ -28,6 +32,16 @@ func TestPrimaryRateLimitsAreStatefulAndCredentialScoped(t *testing.T) {
 	}
 }
 
+func TestPrimaryRateIdentityCannotBeBypassedByChangingAuthScheme(t *testing.T) {
+	bearer := httptest.NewRequest("GET", "/api/v3/user", nil)
+	bearer.Header.Set("Authorization", "Bearer shared-credential")
+	classic := httptest.NewRequest("GET", "/api/v3/user", nil)
+	classic.Header.Set("Authorization", "TOKEN shared-credential")
+	if apiRateIdentity(bearer) != apiRateIdentity(classic) {
+		t.Fatal("Bearer and token schemes produced separate budgets for one credential")
+	}
+}
+
 func TestPrimaryRateLimitResourceClassification(t *testing.T) {
 	cases := map[string]string{
 		"/api/graphql":                                         "graphql",
@@ -45,6 +59,62 @@ func TestPrimaryRateLimitResourceClassification(t *testing.T) {
 		if got := apiRateResource(path); got != want {
 			t.Errorf("apiRateResource(%q) = %q, want %q", path, got, want)
 		}
+	}
+}
+
+func TestPrimaryRateLimitRejectsOnlyRequestsBeyondTheBudget(t *testing.T) {
+	server := &Server{rateLimits: map[string]*apiRateWindow{}}
+	request := httptest.NewRequest("GET", "/api/v3/user", nil)
+	request.Header.Set("Authorization", "Bearer exhausted-credential")
+	key := apiRateIdentity(request) + "\x1fcore"
+	server.rateLimits[key] = &apiRateWindow{
+		Limit: 2,
+		Used:  1,
+		Reset: testRateLimitReset,
+	}
+
+	lastAllowed := server.rateLimitSnapshot(request, "core", true)
+	if lastAllowed.Exceeded || lastAllowed.Used != 2 || lastAllowed.Remaining != 0 {
+		t.Fatalf("last allowed request = %+v", lastAllowed)
+	}
+	rejected := server.rateLimitSnapshot(request, "core", true)
+	if !rejected.Exceeded || rejected.Used != 2 || rejected.Remaining != 0 {
+		t.Fatalf("request past the budget = %+v", rejected)
+	}
+}
+
+func TestRateLimitMiddlewareReturnsGitHubShaped403(t *testing.T) {
+	server := newTestServer()
+	server.rateLimits = map[string]*apiRateWindow{}
+	request := httptest.NewRequest("GET", "/api/v3/user", nil)
+	request.Header.Set("Authorization", "Bearer "+defaultToken)
+	key := apiRateIdentity(request) + "\x1fcore"
+	server.rateLimits[key] = &apiRateWindow{
+		Limit: 1,
+		Used:  1,
+		Reset: testRateLimitReset,
+	}
+	recorder := httptest.NewRecorder()
+	server.ghHeadersMiddleware(http.HandlerFunc(func(http.ResponseWriter, *http.Request) {
+		t.Fatal("rate-limited request reached the handler")
+	})).ServeHTTP(recorder, request)
+	if recorder.Code != http.StatusForbidden {
+		t.Fatalf("status = %d, body = %s", recorder.Code, recorder.Body.String())
+	}
+	if recorder.Header().Get("X-RateLimit-Remaining") != "0" || recorder.Header().Get("Retry-After") == "" {
+		t.Fatalf("rate-limit headers = %v", recorder.Header())
+	}
+	if !bytes.Contains(recorder.Body.Bytes(), []byte(`"message":"API rate limit exceeded"`)) {
+		t.Fatalf("body = %s", recorder.Body.String())
+	}
+}
+
+func TestUnauthenticatedCoreRateLimitIsSixty(t *testing.T) {
+	server := &Server{rateLimits: map[string]*apiRateWindow{}}
+	request := httptest.NewRequest("GET", "/api/v3/users/octocat", nil)
+	got := server.rateLimitSnapshot(request, "core", true)
+	if got.Limit != 60 || got.Remaining != 59 {
+		t.Fatalf("anonymous core snapshot = %+v", got)
 	}
 }
 

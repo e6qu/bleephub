@@ -68,6 +68,10 @@ import {
   rotateOAuthAppClientSecret,
   updateAppSettings,
   updateOAuthApp,
+  suspendInstallation,
+  deleteInstallation,
+  fetchDiscussionCategories,
+  isNotFound,
 } from "../api.js";
 
 const mockFetch = vi.fn();
@@ -1064,5 +1068,30 @@ describe("fetchWorkflows", () => {
     for (const run of runs) {
       expect(Object.keys(run.jobs)).toHaveLength(1);
     }
+  });
+});
+
+describe("typed failure fidelity", () => {
+  it("does not treat installation conflicts or missing installations as success", async () => {
+    mockFetch.mockResolvedValueOnce(jsonResponse({ message: "already suspended" }, 409));
+    await expect(suspendInstallation(3, true)).rejects.toThrow(/409/);
+
+    mockFetch.mockResolvedValueOnce(jsonResponse({ message: "not found" }, 404));
+    await expect(deleteInstallation(3)).rejects.toThrow(/404/);
+  });
+
+  it("retains every GraphQL error and exposes NOT_FOUND to shared detection", async () => {
+    mockFetch.mockResolvedValue(jsonResponse({
+      data: null,
+      errors: [
+        { type: "NOT_FOUND", message: "Could not resolve repository" },
+        { type: "FORBIDDEN", message: "Viewer cannot read discussions" },
+      ],
+    }));
+
+    const error = await fetchDiscussionCategories("acme", "missing").catch((value: unknown) => value);
+    expect(isNotFound(error)).toBe(true);
+    expect(String(error)).toContain("Could not resolve repository");
+    expect(String(error)).toContain("Viewer cannot read discussions");
   });
 });

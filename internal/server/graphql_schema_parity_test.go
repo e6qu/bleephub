@@ -496,8 +496,22 @@ func TestGraphQLSchemaMatchesIntrospectionAndOfficialRatchets(t *testing.T) {
 	bleephub := bleephubIntrospectionShape(t)
 	official := officialGraphQLShape(t)
 	gaps := graphQLCompatibilityGaps(bleephub, official)
+	report := graphQLCoverageReport(bleephub, official, gaps)
+	// Snapshot updates are an explicit review action, but they must never be
+	// able to bless less coverage or more incompatibility. These monotonic
+	// floors make "update the generated files" incapable of hiding a schema
+	// regression.
+	if report.ImplementedFields < 779 {
+		t.Fatalf("GraphQL implemented fields regressed to %d; floor is 779", report.ImplementedFields)
+	}
+	if report.SignatureExactFields < 543 {
+		t.Fatalf("GraphQL exact-signature fields regressed to %d; floor is 543", report.SignatureExactFields)
+	}
+	if report.CompatibilityGapCount > 319 {
+		t.Fatalf("GraphQL compatibility gaps grew to %d; ceiling is 319", report.CompatibilityGapCount)
+	}
 	snapshot := canonicalJSON(t, bleephub)
-	coverage := canonicalJSON(t, graphQLCoverageReport(bleephub, official, gaps))
+	coverage := canonicalJSON(t, report)
 	allowlist := []byte(strings.Join(gaps, "\n") + "\n")
 
 	if os.Getenv("BLEEPHUB_UPDATE_GRAPHQL_SCHEMA") == "1" {

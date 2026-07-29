@@ -2,7 +2,7 @@ import { describe, it, expect, vi, afterEach } from "vitest";
 import { render, cleanup, screen, waitFor, fireEvent } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { MemoryRouter, Routes, Route } from "react-router";
-import { CopilotPage } from "../pages/CopilotPage.js";
+import { CopilotPage, PersonalCopilotSpacesPage } from "../pages/CopilotPage.js";
 
 const mockFetch = vi.fn();
 globalThis.fetch = mockFetch;
@@ -28,6 +28,21 @@ function renderAt(path: string) {
       <MemoryRouter initialEntries={[path]}>
         <Routes>
           <Route path="/ui/orgs/:org/copilot" element={<CopilotPage />} />
+        </Routes>
+      </MemoryRouter>
+    </QueryClientProvider>,
+  );
+}
+
+function renderPersonal() {
+  const queryClient = new QueryClient({
+    defaultOptions: { queries: { retry: false } },
+  });
+  return render(
+    <QueryClientProvider client={queryClient}>
+      <MemoryRouter initialEntries={["/ui/copilot/spaces"]}>
+        <Routes>
+          <Route path="/ui/copilot/spaces" element={<PersonalCopilotSpacesPage />} />
         </Routes>
       </MemoryRouter>
     </QueryClientProvider>,
@@ -304,6 +319,27 @@ describe("CopilotPage", () => {
         metadata: { repository_id: 42 },
       });
     });
+
+    fireEvent.change(screen.getByLabelText("Resource type"), {
+      target: { value: "media_content" },
+    });
+    fireEvent.change(screen.getByLabelText("Resource metadata JSON"), {
+      target: { value: '{"name":"architecture diagram","url":"https://example.test/diagram"}' },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Attach" }));
+    await waitFor(() => {
+      const posts = mockFetch.mock.calls.filter(
+        (c) => c[0].toString().includes("/copilot-spaces/4/resources") && c[1]?.method === "POST",
+      );
+      expect(posts).toHaveLength(2);
+      expect(JSON.parse(String(posts[1]![1]!.body))).toEqual({
+        resource_type: "media_content",
+        metadata: {
+          name: "architecture diagram",
+          url: "https://example.test/diagram",
+        },
+      });
+    });
   });
 
   it("deletes a space after confirmation", async () => {
@@ -352,5 +388,44 @@ describe("CopilotPage", () => {
     expect(screen.getByText("onboarding")).toBeInTheDocument();
     expect(screen.getByText("New-hire context")).toBeInTheDocument();
     expect(screen.getByText(/base role: reader · created by @admin/)).toBeInTheDocument();
+  });
+});
+
+describe("PersonalCopilotSpacesPage", () => {
+  it("loads and creates spaces through the user-scoped API", async () => {
+    mockFetch.mockImplementation((url: RequestInfo | URL, init?: RequestInit) => {
+      const value = url.toString();
+      if (value.endsWith("/api/v3/user")) {
+        return Promise.resolve(jsonResponse({
+          id: 7,
+          login: "alice",
+          type: "User",
+          site_admin: false,
+          created_at: "2026-01-01T00:00:00Z",
+        }));
+      }
+      if (value.endsWith("/api/v3/users/alice/copilot-spaces") && init?.method === "POST") {
+        return Promise.resolve(jsonResponse({ id: 1, number: 1, name: "Personal context" }, 201));
+      }
+      if (value.endsWith("/api/v3/users/alice/copilot-spaces")) {
+        return Promise.resolve(jsonResponse({ spaces: [] }));
+      }
+      return Promise.resolve(jsonResponse({ message: "not found" }, 404));
+    });
+
+    renderPersonal();
+    expect(await screen.findByText(/no copilot spaces/i)).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: /new space/i }));
+    fireEvent.change(screen.getByLabelText("Name"), { target: { value: "Personal context" } });
+    expect(screen.queryByLabelText(/base role/i)).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: /create space/i }));
+
+    await waitFor(() => {
+      const request = mockFetch.mock.calls.find(
+        ([url, init]) => url.toString().endsWith("/api/v3/users/alice/copilot-spaces") &&
+          init?.method === "POST",
+      );
+      expect(request).toBeTruthy();
+    });
   });
 });

@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Link, useParams, useSearchParams } from "react-router";
 import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Spinner, InlineError } from "@bleephub/ui-core/components";
@@ -787,6 +787,14 @@ function DispatchFormModal({
     return init;
   });
   const [error, setError] = useState<string | null>(null);
+  const refreshTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(
+    () => () => {
+      if (refreshTimer.current !== null) clearTimeout(refreshTimer.current);
+    },
+    [],
+  );
 
   // `environment`-typed inputs offer the repo's environments as choices.
   const needsEnvs = inputNames.some((n) => inputs[n].type === "environment");
@@ -811,7 +819,7 @@ function DispatchFormModal({
     onSuccess: () => {
       // The new run appears asynchronously — give the server a beat
       // before refreshing the runs list.
-      setTimeout(() => {
+      refreshTimer.current = setTimeout(() => {
         void qc.invalidateQueries({ queryKey: ["runs", owner, repo] });
       }, 1000);
       onClose();

@@ -9,9 +9,10 @@ import (
 )
 
 // addOrgFieldsToSchema adds Organization types, queries, and viewer.organizations to the schema.
-func (s *Server) addOrgFieldsToSchema(userType, queryType *graphql.Object) {
+func (s *Server) addOrgFieldsToSchema(userType, queryType *graphql.Object, nodeInterface *graphql.Interface) *graphql.Object {
 	orgType := graphql.NewObject(graphql.ObjectConfig{
-		Name: "Organization",
+		Name:       "Organization",
+		Interfaces: []*graphql.Interface{nodeInterface},
 		Fields: graphql.Fields{
 			"id": &graphql.Field{
 				Type: graphql.NewNonNull(graphql.ID),
@@ -109,6 +110,7 @@ func (s *Server) addOrgFieldsToSchema(userType, queryType *graphql.Object) {
 			return orgToGraphQL(org), nil
 		},
 	})
+	return orgType
 }
 
 // orgToGraphQL converts an Org to a map for GraphQL resolvers.

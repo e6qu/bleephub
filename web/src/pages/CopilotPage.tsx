@@ -20,7 +20,9 @@ import {
   addCopilotSpaceResource,
   updateCopilotSpaceResource,
   removeCopilotSpaceResource,
+  fetchCurrentUser,
 } from "../api.js";
+import type { CopilotSpaceOwner } from "../api.js";
 import type {
   GithubCopilotSpace,
   GithubCopilotSpaceCollaborator,
@@ -49,8 +51,30 @@ export function CopilotPage() {
       <div className="flex flex-col gap-6">
         <BillingSection org={org} />
         <SeatsSection org={org} />
-        <SpacesSection org={org} />
+        <SpacesSection owner={org} />
       </div>
+    </div>
+  );
+}
+
+export function PersonalCopilotSpacesPage() {
+  const { data: user, isLoading, isError, error } = useQuery({
+    queryKey: ["current-user"],
+    queryFn: fetchCurrentUser,
+    staleTime: 60_000,
+  });
+
+  return (
+    <div className="flex flex-col gap-4">
+      <div>
+        <h1 style={{ fontSize: "1.5rem", fontWeight: 600, margin: 0 }}>Your Copilot Spaces</h1>
+        <p style={{ color: "var(--color-fg-muted)", marginTop: ".25rem" }}>
+          Create personal context collections for Copilot and control who can collaborate on them.
+        </p>
+      </div>
+      {isLoading && <Spinner label="loading your profile" />}
+      {isError && <InlineError title="Failed to load your profile" detail={String(error)} />}
+      {user && <SpacesSection owner={{ kind: "user", login: user.login }} />}
     </div>
   );
 }
@@ -213,22 +237,26 @@ function SeatsSection({ org }: { org: string }) {
   );
 }
 
-function SpacesSection({ org }: { org: string }) {
+function ownerKey(owner: CopilotSpaceOwner): string {
+  return typeof owner === "string" ? `organization:${owner}` : `${owner.kind}:${owner.login}`;
+}
+
+function SpacesSection({ owner }: { owner: CopilotSpaceOwner }) {
   const qc = useQueryClient();
   const [error, setError] = useState<string | null>(null);
   const [creating, setCreating] = useState(false);
   const [editing, setEditing] = useState<GithubCopilotSpace | null>(null);
 
   const { data, isLoading, isError, error: loadErr } = useQuery({
-    queryKey: ["copilot-spaces", org],
-    queryFn: () => fetchCopilotSpaces(org),
+    queryKey: ["copilot-spaces", ownerKey(owner)],
+    queryFn: () => fetchCopilotSpaces(owner),
   });
 
   const deleteMut = useMutation({
-    mutationFn: (spaceNumber: number) => deleteCopilotSpace(org, spaceNumber),
+    mutationFn: (spaceNumber: number) => deleteCopilotSpace(owner, spaceNumber),
     onSuccess: () => {
       setError(null);
-      qc.invalidateQueries({ queryKey: ["copilot-spaces", org] });
+      qc.invalidateQueries({ queryKey: ["copilot-spaces", ownerKey(owner)] });
     },
     onError: (err: Error) => setError(err.message),
   });
@@ -254,7 +282,7 @@ function SpacesSection({ org }: { org: string }) {
             {data.map((space) => (
               <SpaceCard
                 key={space.id}
-                org={org}
+                owner={owner}
                 space={space}
                 onEdit={() => setEditing(space)}
                 onDelete={async () => {
@@ -267,7 +295,7 @@ function SpacesSection({ org }: { org: string }) {
         ))}
       {(creating || editing) && (
         <SpaceDialog
-          org={org}
+          owner={owner}
           space={editing ?? undefined}
           onClose={() => {
             setCreating(false);
@@ -280,13 +308,13 @@ function SpacesSection({ org }: { org: string }) {
 }
 
 function SpaceCard({
-  org,
+  owner,
   space,
   onEdit,
   onDelete,
   deleting,
 }: {
-  org: string;
+  owner: CopilotSpaceOwner;
   space: GithubCopilotSpace;
   onEdit: () => void;
   onDelete: () => void;
@@ -333,8 +361,8 @@ function SpaceCard({
               {space.general_instructions}
             </div>
           )}
-          <SpaceCollaboratorsPanel org={org} spaceNumber={space.number} />
-          <SpaceResourcesPanel org={org} spaceNumber={space.number} />
+          <SpaceCollaboratorsPanel owner={owner} spaceNumber={space.number} />
+          <SpaceResourcesPanel owner={owner} spaceNumber={space.number} />
         </div>
       )}
     </Box>
@@ -344,11 +372,11 @@ function SpaceCard({
 const COPILOT_SPACE_ROLES = ["reader", "writer", "admin"];
 
 function SpaceDialog({
-  org,
+  owner,
   space,
   onClose,
 }: {
-  org: string;
+  owner: CopilotSpaceOwner;
   space?: GithubCopilotSpace;
   onClose: () => void;
 }) {
@@ -367,10 +395,10 @@ function SpaceDialog({
         general_instructions: instructions,
         base_role: baseRole,
       };
-      return space ? updateCopilotSpace(org, space.number, payload) : createCopilotSpace(org, payload);
+      return space ? updateCopilotSpace(owner, space.number, payload) : createCopilotSpace(owner, payload);
     },
     onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ["copilot-spaces", org] });
+      qc.invalidateQueries({ queryKey: ["copilot-spaces", ownerKey(owner)] });
       onClose();
     },
     onError: (err: Error) => setError(err.message),
@@ -401,20 +429,24 @@ function SpaceDialog({
         rows={3}
         className="mb-3 w-full"
       />
-      <FormLabel id="space-base-role">Base role for organization members</FormLabel>
-      <select
-        id="space-base-role"
-        value={baseRole}
-        onChange={(e) => setBaseRole(e.target.value)}
-        className="mb-4 w-full"
-      >
-        <option value="no_access">no_access</option>
-        {COPILOT_SPACE_ROLES.map((r) => (
-          <option key={r} value={r}>
-            {r}
-          </option>
-        ))}
-      </select>
+      {typeof owner === "string" || owner.kind === "organization" ? (
+        <>
+          <FormLabel id="space-base-role">Base role for organization members</FormLabel>
+          <select
+            id="space-base-role"
+            value={baseRole}
+            onChange={(e) => setBaseRole(e.target.value)}
+            className="mb-4 w-full"
+          >
+            <option value="no_access">no_access</option>
+            {COPILOT_SPACE_ROLES.map((r) => (
+              <option key={r} value={r}>
+                {r}
+              </option>
+            ))}
+          </select>
+        </>
+      ) : null}
       {error && <ErrorBanner>{error}</ErrorBanner>}
       <DialogActions>
         <Button variant="ghost" size="sm" onClick={onClose} disabled={mutation.isPending}>
@@ -441,17 +473,23 @@ function collaboratorIdentifier(c: GithubCopilotSpaceCollaborator): string {
   return (c.actor_type === "Team" ? c.slug : c.login) ?? String(c.id);
 }
 
-function SpaceCollaboratorsPanel({ org, spaceNumber }: { org: string; spaceNumber: number }) {
+function SpaceCollaboratorsPanel({
+  owner,
+  spaceNumber,
+}: {
+  owner: CopilotSpaceOwner;
+  spaceNumber: number;
+}) {
   const qc = useQueryClient();
   const [error, setError] = useState<string | null>(null);
   const [actorType, setActorType] = useState<"User" | "Team">("User");
   const [identifier, setIdentifier] = useState("");
   const [role, setRole] = useState("reader");
 
-  const key = ["copilot-space-collaborators", org, spaceNumber];
+  const key = ["copilot-space-collaborators", ownerKey(owner), spaceNumber];
   const { data, isLoading, isError, error: loadErr } = useQuery({
     queryKey: key,
-    queryFn: () => fetchCopilotSpaceCollaborators(org, spaceNumber),
+    queryFn: () => fetchCopilotSpaceCollaborators(owner, spaceNumber),
   });
 
   const invalidate = () => {
@@ -460,7 +498,7 @@ function SpaceCollaboratorsPanel({ org, spaceNumber }: { org: string; spaceNumbe
   };
   const addMut = useMutation({
     mutationFn: () =>
-      addCopilotSpaceCollaborator(org, spaceNumber, {
+      addCopilotSpaceCollaborator(owner, spaceNumber, {
         actor_type: actorType,
         actor_identifier: identifier.trim(),
         role,
@@ -473,13 +511,13 @@ function SpaceCollaboratorsPanel({ org, spaceNumber }: { org: string; spaceNumbe
   });
   const roleMut = useMutation({
     mutationFn: ({ c, newRole }: { c: GithubCopilotSpaceCollaborator; newRole: string }) =>
-      updateCopilotSpaceCollaborator(org, spaceNumber, c.actor_type, collaboratorIdentifier(c), newRole),
+      updateCopilotSpaceCollaborator(owner, spaceNumber, c.actor_type, collaboratorIdentifier(c), newRole),
     onSuccess: invalidate,
     onError: (err: Error) => setError(err.message),
   });
   const removeMut = useMutation({
     mutationFn: (c: GithubCopilotSpaceCollaborator) =>
-      removeCopilotSpaceCollaborator(org, spaceNumber, c.actor_type, collaboratorIdentifier(c)),
+      removeCopilotSpaceCollaborator(owner, spaceNumber, c.actor_type, collaboratorIdentifier(c)),
     onSuccess: invalidate,
     onError: (err: Error) => setError(err.message),
   });
@@ -540,7 +578,7 @@ function SpaceCollaboratorsPanel({ org, spaceNumber }: { org: string; spaceNumbe
           onChange={(e) => setActorType(e.target.value as "User" | "Team")}
         >
           <option value="User">User</option>
-          <option value="Team">Team</option>
+          {(typeof owner === "string" || owner.kind === "organization") && <option value="Team">Team</option>}
         </select>
         <input
           aria-label="Collaborator username or team slug"
@@ -577,6 +615,8 @@ const SPACE_RESOURCE_TYPES = [
   "github_issue",
   "github_pull_request",
   "free_text",
+  "media_content",
+  "uploaded_text_file",
 ] as const;
 
 type SpaceResourceType = (typeof SPACE_RESOURCE_TYPES)[number];
@@ -599,19 +639,19 @@ function resourceSummary(res: GithubCopilotSpaceResource): string {
   }
 }
 
-function SpaceResourcesPanel({ org, spaceNumber }: { org: string; spaceNumber: number }) {
+function SpaceResourcesPanel({ owner, spaceNumber }: { owner: CopilotSpaceOwner; spaceNumber: number }) {
   const qc = useQueryClient();
   const [error, setError] = useState<string | null>(null);
   const [editing, setEditing] = useState<GithubCopilotSpaceResource | null>(null);
 
-  const key = ["copilot-space-resources", org, spaceNumber];
+  const key = ["copilot-space-resources", ownerKey(owner), spaceNumber];
   const { data, isLoading, isError, error: loadErr } = useQuery({
     queryKey: key,
-    queryFn: () => fetchCopilotSpaceResources(org, spaceNumber),
+    queryFn: () => fetchCopilotSpaceResources(owner, spaceNumber),
   });
 
   const removeMut = useMutation({
-    mutationFn: (resourceId: number) => removeCopilotSpaceResource(org, spaceNumber, resourceId),
+    mutationFn: (resourceId: number) => removeCopilotSpaceResource(owner, spaceNumber, resourceId),
     onSuccess: () => {
       setError(null);
       qc.invalidateQueries({ queryKey: key });
@@ -660,7 +700,7 @@ function SpaceResourcesPanel({ org, spaceNumber }: { org: string; spaceNumber: n
       {/* Keyed on the edited resource so switching rows remounts with fresh fields. */}
       <SpaceResourceForm
         key={editing?.id ?? "new"}
-        org={org}
+        owner={owner}
         spaceNumber={spaceNumber}
         resource={editing ?? undefined}
         onDone={() => setEditing(null)}
@@ -670,12 +710,12 @@ function SpaceResourcesPanel({ org, spaceNumber }: { org: string; spaceNumber: n
 }
 
 function SpaceResourceForm({
-  org,
+  owner,
   spaceNumber,
   resource,
   onDone,
 }: {
-  org: string;
+  owner: CopilotSpaceOwner;
   spaceNumber: number;
   /** When set the form edits this resource's metadata (the type is fixed). */
   resource?: GithubCopilotSpaceResource;
@@ -696,14 +736,35 @@ function SpaceResourceForm({
   const [text, setText] = useState(
     typeof resource?.metadata.text === "string" ? resource.metadata.text : "",
   );
+  const [rawMetadata, setRawMetadata] = useState(
+    JSON.stringify(resource?.metadata ?? {}, null, 2),
+  );
 
   const effectiveType = resource ? (resource.resource_type as SpaceResourceType) : resourceType;
-  const needsRepo = effectiveType !== "free_text";
+  const needsRepo =
+    effectiveType === "repository" ||
+    effectiveType === "github_file" ||
+    effectiveType === "github_issue" ||
+    effectiveType === "github_pull_request";
   const needsPath = effectiveType === "github_file";
   const needsNumber = effectiveType === "github_issue" || effectiveType === "github_pull_request";
   const needsText = effectiveType === "free_text";
+  const needsRawMetadata =
+    effectiveType === "media_content" || effectiveType === "uploaded_text_file";
+  let parsedRawMetadata: Record<string, unknown> | undefined;
+  if (needsRawMetadata) {
+    try {
+      const parsed: unknown = JSON.parse(rawMetadata);
+      if (typeof parsed === "object" && parsed !== null && !Array.isArray(parsed)) {
+        parsedRawMetadata = parsed as Record<string, unknown>;
+      }
+    } catch {
+      // The invalid state is reflected in `valid` and keeps submission disabled.
+    }
+  }
 
   const metadata = (): Record<string, unknown> => {
+    if (needsRawMetadata) return parsedRawMetadata ?? {};
     const m: Record<string, unknown> = {};
     if (needsRepo) m.repository_id = parseInt(repositoryId, 10);
     if (needsPath) m.file_path = filePath.trim();
@@ -715,20 +776,22 @@ function SpaceResourceForm({
     (!needsRepo || Number.isFinite(parseInt(repositoryId, 10))) &&
     (!needsPath || filePath.trim() !== "") &&
     (!needsNumber || Number.isFinite(parseInt(itemNumber, 10))) &&
-    (!needsText || text.trim() !== "");
+    (!needsText || text.trim() !== "") &&
+    (!needsRawMetadata || parsedRawMetadata !== undefined);
 
   const saveMut = useMutation({
     mutationFn: () =>
       resource
-        ? updateCopilotSpaceResource(org, spaceNumber, resource.id, metadata())
-        : addCopilotSpaceResource(org, spaceNumber, { resource_type: effectiveType, metadata: metadata() }),
+        ? updateCopilotSpaceResource(owner, spaceNumber, resource.id, metadata())
+        : addCopilotSpaceResource(owner, spaceNumber, { resource_type: effectiveType, metadata: metadata() }),
     onSuccess: () => {
       setError(null);
       setRepositoryId("");
       setFilePath("");
       setItemNumber("");
       setText("");
-      qc.invalidateQueries({ queryKey: ["copilot-space-resources", org, spaceNumber] });
+      setRawMetadata("{}");
+      qc.invalidateQueries({ queryKey: ["copilot-space-resources", ownerKey(owner), spaceNumber] });
       onDone();
     },
     onError: (err: Error) => setError(err.message),
@@ -787,6 +850,15 @@ function SpaceResourceForm({
             placeholder="free text"
             value={text}
             onChange={(e) => setText(e.target.value)}
+            className="min-w-0 flex-1"
+          />
+        )}
+        {needsRawMetadata && (
+          <textarea
+            aria-label="Resource metadata JSON"
+            value={rawMetadata}
+            onChange={(e) => setRawMetadata(e.target.value)}
+            rows={4}
             className="min-w-0 flex-1"
           />
         )}

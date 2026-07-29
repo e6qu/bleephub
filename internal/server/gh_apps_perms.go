@@ -69,6 +69,7 @@ const (
 	scopePages             permScope = "pages"
 	scopePATRequests       permScope = "organization_personal_access_token_requests"
 	scopePATs              permScope = "organization_personal_access_tokens"
+	scopeCopilotSpaces     permScope = "copilot_spaces"
 )
 
 func parsePermLevel(s string) permLevel {
@@ -987,6 +988,9 @@ func fineGrainedPATPermissionForPattern(pattern, method string) (permScope, perm
 	if strings.Contains(lower, "/orgs/{org}/repos") {
 		return scopeMetadata, level
 	}
+	if strings.Contains(lower, "/copilot-spaces") {
+		return scopeCopilotSpaces, level
+	}
 	// A team route naming a repository is still a team route: the repository
 	// in the path is the team's grant, not the resource being administered.
 	// Classified by the {repo} in the path, adding a repository to a team
@@ -1183,6 +1187,10 @@ var classicScopeGrants = map[permScope][]classicScopeGrant{
 	},
 	scopePATRequests: {{"admin:org", permAdmin}},
 	scopePATs:        {{"admin:org", permAdmin}},
+	scopeCopilotSpaces: {
+		{"admin:org", permWrite}, {"write:org", permWrite}, {"read:org", permRead},
+		{"user", permWrite}, {"read:user", permRead}, {"repo", permWrite},
+	},
 }
 
 // allPermScopes enumerates every permission constant declared above.
@@ -1194,7 +1202,7 @@ var allPermScopes = []permScope{
 	scopeMetadata, scopeContents, scopeIssues, scopeDiscussions, scopePullRequests, scopeActions,
 	scopeChecks, scopeSecrets, scopeDeployments, scopeAdministration, scopeMembers,
 	scopeOrgAdministration, scopeSecurityEvents, scopeDependabotSecrets, scopeCodespaces,
-	scopeReactions, scopeProjects, scopePages, scopePATRequests, scopePATs,
+	scopeReactions, scopeProjects, scopePages, scopePATRequests, scopePATs, scopeCopilotSpaces,
 }
 
 func init() {

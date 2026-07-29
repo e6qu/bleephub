@@ -17,20 +17,20 @@ import (
 
 func (s *Server) registerGHCopilotSpacesRoutes() {
 	for _, prefix := range []string{"/api/v3/orgs/{org}/copilot-spaces", "/api/v3/users/{username}/copilot-spaces"} {
-		s.route("GET "+prefix, s.handleListCopilotSpaces)
-		s.route("POST "+prefix, s.handleCreateCopilotSpace)
-		s.route("GET "+prefix+"/{space_number}", s.handleGetCopilotSpace)
-		s.route("PUT "+prefix+"/{space_number}", s.handleUpdateCopilotSpace)
-		s.route("DELETE "+prefix+"/{space_number}", s.handleDeleteCopilotSpace)
-		s.route("GET "+prefix+"/{space_number}/collaborators", s.handleListCopilotSpaceCollaborators)
-		s.route("POST "+prefix+"/{space_number}/collaborators", s.handleAddCopilotSpaceCollaborator)
-		s.route("PUT "+prefix+"/{space_number}/collaborators/{actor_type}/{actor_identifier}", s.handleUpdateCopilotSpaceCollaborator)
-		s.route("DELETE "+prefix+"/{space_number}/collaborators/{actor_type}/{actor_identifier}", s.handleRemoveCopilotSpaceCollaborator)
-		s.route("GET "+prefix+"/{space_number}/resources", s.handleListCopilotSpaceResources)
-		s.route("POST "+prefix+"/{space_number}/resources", s.handleCreateCopilotSpaceResource)
-		s.route("GET "+prefix+"/{space_number}/resources/{space_resource_id}", s.handleGetCopilotSpaceResource)
-		s.route("PUT "+prefix+"/{space_number}/resources/{space_resource_id}", s.handleUpdateCopilotSpaceResource)
-		s.route("DELETE "+prefix+"/{space_number}/resources/{space_resource_id}", s.handleDeleteCopilotSpaceResource)
+		s.route("GET "+prefix, s.requirePerm(scopeCopilotSpaces, permRead, s.handleListCopilotSpaces))
+		s.route("POST "+prefix, s.requirePerm(scopeCopilotSpaces, permWrite, s.handleCreateCopilotSpace))
+		s.route("GET "+prefix+"/{space_number}", s.requirePerm(scopeCopilotSpaces, permRead, s.handleGetCopilotSpace))
+		s.route("PUT "+prefix+"/{space_number}", s.requirePerm(scopeCopilotSpaces, permWrite, s.handleUpdateCopilotSpace))
+		s.route("DELETE "+prefix+"/{space_number}", s.requirePerm(scopeCopilotSpaces, permWrite, s.handleDeleteCopilotSpace))
+		s.route("GET "+prefix+"/{space_number}/collaborators", s.requirePerm(scopeCopilotSpaces, permRead, s.handleListCopilotSpaceCollaborators))
+		s.route("POST "+prefix+"/{space_number}/collaborators", s.requirePerm(scopeCopilotSpaces, permWrite, s.handleAddCopilotSpaceCollaborator))
+		s.route("PUT "+prefix+"/{space_number}/collaborators/{actor_type}/{actor_identifier}", s.requirePerm(scopeCopilotSpaces, permWrite, s.handleUpdateCopilotSpaceCollaborator))
+		s.route("DELETE "+prefix+"/{space_number}/collaborators/{actor_type}/{actor_identifier}", s.requirePerm(scopeCopilotSpaces, permWrite, s.handleRemoveCopilotSpaceCollaborator))
+		s.route("GET "+prefix+"/{space_number}/resources", s.requirePerm(scopeCopilotSpaces, permRead, s.handleListCopilotSpaceResources))
+		s.route("POST "+prefix+"/{space_number}/resources", s.requirePerm(scopeCopilotSpaces, permWrite, s.handleCreateCopilotSpaceResource))
+		s.route("GET "+prefix+"/{space_number}/resources/{space_resource_id}", s.requirePerm(scopeCopilotSpaces, permRead, s.handleGetCopilotSpaceResource))
+		s.route("PUT "+prefix+"/{space_number}/resources/{space_resource_id}", s.requirePerm(scopeCopilotSpaces, permWrite, s.handleUpdateCopilotSpaceResource))
+		s.route("DELETE "+prefix+"/{space_number}/resources/{space_resource_id}", s.requirePerm(scopeCopilotSpaces, permWrite, s.handleDeleteCopilotSpaceResource))
 	}
 }
 
@@ -79,6 +79,17 @@ func (s *Server) copilotSpaceRole(ctx context.Context, user *User, space *Copilo
 		}
 	}
 	if space.OwnerType == "Organization" {
+		// Installation tokens have a bot identity rather than an organization
+		// membership. Their installation reach and Copilot Spaces grant are
+		// the two halves of access.
+		if token := ghInstallationTokenFromContext(ctx); token != nil && s.viewerReachesOrg(ctx, space.OwnerLogin) {
+			if hasPerm(token.Permissions, scopeCopilotSpaces, permWrite) {
+				return "admin"
+			}
+			if hasPerm(token.Permissions, scopeCopilotSpaces, permRead) {
+				return "reader"
+			}
+		}
 		if org := s.store.GetOrg(space.OwnerLogin); org != nil {
 			if s.viewerCanAdminOrg(ctx, org.Login) {
 				return "admin"
@@ -107,6 +118,19 @@ func (s *Server) copilotSpaceRole(ctx context.Context, user *User, space *Copilo
 	return role
 }
 
+func copilotUserSpaceCredentialSupported(ctx context.Context) bool {
+	if ghInstallationTokenFromContext(ctx) != nil {
+		return false
+	}
+	if token := ghUserToServerTokenFromContext(ctx); token != nil && token.AppID > 0 {
+		return false
+	}
+	if token := ghPersonalAccessTokenFromContext(ctx); token != nil && token.FineGrained {
+		return false
+	}
+	return true
+}
+
 // lookupCopilotSpace resolves the owner and {space_number} to a space
 // visible to the caller, writing 401/404 on failure. minRole gates the
 // operation: a caller who can see the space but lacks the role gets 403.
@@ -118,6 +142,10 @@ func (s *Server) lookupCopilotSpace(w http.ResponseWriter, r *http.Request, minR
 	}
 	ownerType, ownerLogin, ok := s.copilotSpaceOwner(w, r)
 	if !ok {
+		return nil, nil
+	}
+	if ownerType == "User" && !copilotUserSpaceCredentialSupported(r.Context()) {
+		writeGHError(w, http.StatusForbidden, "Resource not accessible by integration")
 		return nil, nil
 	}
 	number, err := strconv.Atoi(r.PathValue("space_number"))
@@ -265,6 +293,89 @@ func validCopilotSpaceBaseRole(ownerType, role string) bool {
 	}
 }
 
+type copilotSpaceResourceAttribute struct {
+	ID           *int                   `json:"id"`
+	Destroy      bool                   `json:"_destroy"`
+	ResourceType string                 `json:"resource_type"`
+	Metadata     map[string]interface{} `json:"metadata"`
+}
+
+func cloneCopilotSpaceResources(resources []*CopilotSpaceResource) []*CopilotSpaceResource {
+	out := make([]*CopilotSpaceResource, 0, len(resources))
+	for _, resource := range resources {
+		copy := *resource
+		copy.Metadata = make(map[string]interface{}, len(resource.Metadata))
+		for key, value := range resource.Metadata {
+			copy.Metadata[key] = value
+		}
+		out = append(out, &copy)
+	}
+	return out
+}
+
+// applyCopilotSpaceResourceAttributes implements the nested create/update
+// contract used by the official space endpoints. It validates a complete
+// working copy first, so one invalid member cannot partially mutate the
+// existing space.
+func (s *Server) applyCopilotSpaceResourceAttributes(space *CopilotSpace, attributes []copilotSpaceResourceAttribute) string {
+	resources := cloneCopilotSpaceResources(space.Resources)
+	nextID := space.NextResourceID
+	for _, attribute := range attributes {
+		index := -1
+		if attribute.ID != nil {
+			for i, resource := range resources {
+				if resource.ID == *attribute.ID {
+					index = i
+					break
+				}
+			}
+			if index < 0 {
+				return "resources_attributes.id"
+			}
+		}
+		if attribute.Destroy {
+			if index < 0 {
+				return "resources_attributes.id"
+			}
+			resources = append(resources[:index], resources[index+1:]...)
+			continue
+		}
+
+		resourceType := attribute.ResourceType
+		if index >= 0 && resourceType == "" {
+			resourceType = resources[index].ResourceType
+		}
+		if !validCopilotSpaceResourceType(resourceType) {
+			return "resources_attributes.resource_type"
+		}
+		metadata := attribute.Metadata
+		if metadata == nil && index >= 0 {
+			metadata = resources[index].Metadata
+		}
+		if metadata == nil {
+			return "resources_attributes.metadata"
+		}
+		if field := s.validateCopilotSpaceResource(resourceType, metadata); field != "" {
+			return "resources_attributes." + field
+		}
+		now := time.Now().UTC()
+		if index >= 0 {
+			resources[index].ResourceType = resourceType
+			resources[index].Metadata = metadata
+			resources[index].UpdatedAt = now
+			continue
+		}
+		resources = append(resources, &CopilotSpaceResource{
+			ID: nextID, ResourceType: resourceType, Metadata: metadata,
+			CreatedAt: now, UpdatedAt: now,
+		})
+		nextID++
+	}
+	space.Resources = resources
+	space.NextResourceID = nextID
+	return ""
+}
+
 func (s *Server) handleListCopilotSpaces(w http.ResponseWriter, r *http.Request) {
 	user := ghUserFromContext(r.Context())
 	if user == nil {
@@ -273,6 +384,10 @@ func (s *Server) handleListCopilotSpaces(w http.ResponseWriter, r *http.Request)
 	}
 	ownerType, ownerLogin, ok := s.copilotSpaceOwner(w, r)
 	if !ok {
+		return
+	}
+	if ownerType == "User" && !copilotUserSpaceCredentialSupported(r.Context()) {
+		writeGHError(w, http.StatusForbidden, "Resource not accessible by integration")
 		return
 	}
 	var visible []*CopilotSpace
@@ -346,9 +461,18 @@ func (s *Server) handleCreateCopilotSpace(w http.ResponseWriter, r *http.Request
 	if !ok {
 		return
 	}
+	if ownerType == "User" && !copilotUserSpaceCredentialSupported(r.Context()) {
+		writeGHError(w, http.StatusForbidden, "Resource not accessible by integration")
+		return
+	}
 	if ownerType == "Organization" {
 		// Organizations hide their internal structure from non-members.
-		if !s.viewerIsOrgMember(r.Context(), ownerLogin) {
+		installationCanWrite := false
+		if token := ghInstallationTokenFromContext(r.Context()); token != nil {
+			installationCanWrite = s.viewerReachesOrg(r.Context(), ownerLogin) &&
+				hasPerm(token.Permissions, scopeCopilotSpaces, permWrite)
+		}
+		if !s.viewerIsOrgMember(r.Context(), ownerLogin) && !installationCanWrite {
 			writeGHError(w, http.StatusNotFound, "Not Found")
 			return
 		}
@@ -357,10 +481,11 @@ func (s *Server) handleCreateCopilotSpace(w http.ResponseWriter, r *http.Request
 		return
 	}
 	var req struct {
-		Name                string  `json:"name"`
-		Description         string  `json:"description"`
-		GeneralInstructions string  `json:"general_instructions"`
-		BaseRole            *string `json:"base_role"`
+		Name                string                          `json:"name"`
+		Description         string                          `json:"description"`
+		GeneralInstructions string                          `json:"general_instructions"`
+		BaseRole            *string                         `json:"base_role"`
+		ResourcesAttributes []copilotSpaceResourceAttribute `json:"resources_attributes"`
 	}
 	if !decodeJSONBody(w, r, &req) {
 		return
@@ -381,7 +506,17 @@ func (s *Server) handleCreateCopilotSpace(w http.ResponseWriter, r *http.Request
 		}
 		baseRole = *req.BaseRole
 	}
+	pendingResources := &CopilotSpace{NextResourceID: 1}
+	if field := s.applyCopilotSpaceResourceAttributes(pendingResources, req.ResourcesAttributes); field != "" {
+		writeGHValidationError(w, "CopilotSpace", field, "invalid")
+		return
+	}
 	space := s.store.CreateCopilotSpace(ownerType, ownerLogin, user.ID, req.Name, req.Description, req.GeneralInstructions, baseRole)
+	if len(pendingResources.Resources) > 0 {
+		space.Resources = pendingResources.Resources
+		space.NextResourceID = pendingResources.NextResourceID
+		s.store.SaveCopilotSpace(space)
+	}
 	writeJSON(w, http.StatusCreated, s.copilotSpaceJSON(space, s.baseURL(r)))
 }
 
@@ -399,10 +534,11 @@ func (s *Server) handleUpdateCopilotSpace(w http.ResponseWriter, r *http.Request
 		return
 	}
 	var req struct {
-		Name                *string `json:"name"`
-		Description         *string `json:"description"`
-		GeneralInstructions *string `json:"general_instructions"`
-		BaseRole            *string `json:"base_role"`
+		Name                *string                         `json:"name"`
+		Description         *string                         `json:"description"`
+		GeneralInstructions *string                         `json:"general_instructions"`
+		BaseRole            *string                         `json:"base_role"`
+		ResourcesAttributes []copilotSpaceResourceAttribute `json:"resources_attributes"`
 	}
 	if !decodeJSONBody(w, r, &req) {
 		return
@@ -417,6 +553,10 @@ func (s *Server) handleUpdateCopilotSpace(w http.ResponseWriter, r *http.Request
 	}
 	if req.BaseRole != nil && !validCopilotSpaceBaseRole(space.OwnerType, *req.BaseRole) {
 		writeGHValidationError(w, "CopilotSpace", "base_role", "invalid")
+		return
+	}
+	if field := s.applyCopilotSpaceResourceAttributes(space, req.ResourcesAttributes); field != "" {
+		writeGHValidationError(w, "CopilotSpace", field, "invalid")
 		return
 	}
 	if req.Name != nil {
@@ -671,6 +811,16 @@ func (s *Server) validateCopilotSpaceResource(resourceType string, metadata map[
 	return ""
 }
 
+func validCopilotSpaceResourceType(resourceType string) bool {
+	switch resourceType {
+	case "repository", "github_file", "free_text", "github_issue", "github_pull_request",
+		"media_content", "uploaded_text_file":
+		return true
+	default:
+		return false
+	}
+}
+
 func (s *Server) handleCreateCopilotSpaceResource(w http.ResponseWriter, r *http.Request) {
 	space, _ := s.lookupCopilotSpace(w, r, "writer")
 	if space == nil {
@@ -683,9 +833,7 @@ func (s *Server) handleCreateCopilotSpaceResource(w http.ResponseWriter, r *http
 	if !decodeJSONBody(w, r, &req) {
 		return
 	}
-	switch req.ResourceType {
-	case "repository", "github_file", "free_text", "github_issue", "github_pull_request":
-	default:
+	if !validCopilotSpaceResourceType(req.ResourceType) {
 		writeGHValidationError(w, "CopilotSpaceResource", "resource_type", "invalid")
 		return
 	}

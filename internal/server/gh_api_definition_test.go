@@ -15,8 +15,9 @@ import (
 )
 
 const (
-	vendoredSpecFile    = "testdata/github-openapi.json.gz"
-	vendoredSpecVersion = "testdata/github-openapi.VERSION"
+	vendoredSpecFile            = "testdata/github-openapi.json.gz"
+	vendoredSpecVersion         = "testdata/github-openapi.VERSION"
+	registeredRouteSnapshotFile = "testdata/registered-api-v3-routes.txt"
 )
 
 // TestVendoredOpenAPIMatchesRecordedPin makes the provenance record
@@ -511,6 +512,34 @@ func TestEveryDocumentedGitHubRESTOperationIsRegistered(t *testing.T) {
 			len(missing), strings.Join(missing, "\n  "))
 	}
 	t.Logf("GitHub REST definition coverage: %d/%d operations (100%%)", len(documented), len(documented))
+}
+
+// TestRegisteredAPIRouteSnapshot makes the reviewable parity inventory derive
+// from the route table the server actually registers. Source-code regexes miss
+// registrations assembled from loops or variables, which previously made the
+// generated inventory claim that every Copilot Spaces operation was absent
+// while the runtime route-set test above correctly reported 100% coverage.
+func TestRegisteredAPIRouteSnapshot(t *testing.T) {
+	s := newTestServer()
+	s.registerRoutes()
+	var routes []string
+	for _, pattern := range s.routePatterns {
+		_, path, found := strings.Cut(pattern, " ")
+		if found && strings.HasPrefix(path, "/api/v3/") {
+			routes = append(routes, pattern)
+		}
+	}
+	sort.Strings(routes)
+	body := []byte(strings.Join(routes, "\n") + "\n")
+	if os.Getenv("BLEEPHUB_UPDATE_REST_ROUTE_SNAPSHOT") == "1" {
+		if err := os.WriteFile(registeredRouteSnapshotFile, body, 0o644); err != nil {
+			t.Fatal(err)
+		}
+		t.Logf("updated %s with %d runtime routes", registeredRouteSnapshotFile, len(routes))
+		return
+	}
+	assertFileBytes(t, registeredRouteSnapshotFile, body,
+		"the runtime REST route table changed; review it and run BLEEPHUB_UPDATE_REST_ROUTE_SNAPSHOT=1 go test ./internal/server -run TestRegisteredAPIRouteSnapshot")
 }
 
 // TestUncitedRoutesAreStillRegistered keeps the defect ledger from

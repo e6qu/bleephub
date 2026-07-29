@@ -63,13 +63,15 @@ const (
 
 // Workflow represents a running multi-job workflow.
 type Workflow struct {
-	ID        string                  `json:"id"`
-	Name      string                  `json:"name"`
-	RunID     int                     `json:"runId"`
-	RunNumber int                     `json:"runNumber"`
-	Jobs      map[string]*WorkflowJob `json:"jobs"`
-	Env       map[string]string       `json:"env,omitempty"`
-	Status    WorkflowStatus          `json:"status"` // "running", "completed", "pending_concurrency"
+	ID           string                  `json:"id"`
+	Name         string                  `json:"name"`
+	DisplayTitle string                  `json:"displayTitle,omitempty"`
+	RunID        int                     `json:"runId"`
+	RunNumber    int                     `json:"runNumber"`
+	Jobs         map[string]*WorkflowJob `json:"jobs"`
+	Env          map[string]string       `json:"env,omitempty"`
+	Permissions  PermissionDef           `json:"permissions,omitempty"`
+	Status       WorkflowStatus          `json:"status"` // "running", "completed", "pending_concurrency"
 	// PendingDeployments holds one record per reviewer-protected
 	// environment the run is waiting on; EnvApprovals records every
 	// approve/reject review submitted for the run.
@@ -140,6 +142,13 @@ type WorkflowJob struct {
 	Hidden bool `json:"hidden,omitempty"`
 	// CheckRunID links the job to the check run mirroring it.
 	CheckRunID int64 `json:"checkRunId,omitempty"`
+}
+
+func (wf *Workflow) RunDisplayTitle() string {
+	if wf.DisplayTitle != "" {
+		return wf.DisplayTitle
+	}
+	return wf.Name
 }
 
 // WorkflowEventMeta carries event metadata to be set on the workflow before dispatch.
@@ -268,9 +277,11 @@ func (s *Server) submitWorkflow(ctx context.Context, serverURL string, wf *Workf
 	workflow := &Workflow{
 		ID:                uuid.New().String(),
 		Name:              wf.Name,
+		DisplayTitle:      wf.Name,
 		RunID:             runID,
 		Jobs:              make(map[string]*WorkflowJob),
 		Env:               wf.Env,
+		Permissions:       wf.Permissions,
 		Status:            WorkflowStatusRunning,
 		CreatedAt:         time.Now(),
 		MatrixMaxParallel: make(map[string]int),
@@ -278,6 +289,9 @@ func (s *Server) submitWorkflow(ctx context.Context, serverURL string, wf *Workf
 
 	if workflow.Name == "" {
 		workflow.Name = "workflow"
+	}
+	if workflow.DisplayTitle == "" {
+		workflow.DisplayTitle = workflow.Name
 	}
 
 	// Apply concurrency from WorkflowDef
@@ -348,6 +362,21 @@ func (s *Server) submitWorkflow(ctx context.Context, serverURL string, wf *Workf
 				wfJob.Outputs[k] = v
 			}
 		}
+	}
+
+	if wf.RunName != "" {
+		inputsCtx := make(map[string]interface{}, len(workflow.Inputs))
+		for key, value := range workflow.Inputs {
+			inputsCtx[key] = value
+		}
+		displayTitle, err := EvalTemplate(wf.RunName, &ExprContext{Contexts: map[string]interface{}{
+			"github": s.githubContextMap(workflow),
+			"inputs": inputsCtx,
+		}})
+		if err != nil {
+			return nil, fmt.Errorf("run-name: %w", err)
+		}
+		workflow.DisplayTitle = displayTitle
 	}
 
 	// Concurrency groups are template strings on real GitHub

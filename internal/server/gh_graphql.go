@@ -1,8 +1,10 @@
 package bleephub
 
 import (
+	"context"
 	"fmt"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/graphql-go/graphql"
@@ -47,8 +49,37 @@ func ghErrorIsNotFound(err error) bool {
 
 // initGraphQLSchema builds the GraphQL schema with all types and resolvers.
 func (s *Server) initGraphQLSchema() {
+	nodeTypes := map[string]*graphql.Object{}
+	nodeInterface := graphql.NewInterface(graphql.InterfaceConfig{
+		Name: "Node",
+		Fields: graphql.Fields{
+			"id": &graphql.Field{Type: graphql.NewNonNull(graphql.ID)},
+		},
+		ResolveType: func(p graphql.ResolveTypeParams) *graphql.Object {
+			source, _ := p.Value.(map[string]interface{})
+			if name, _ := source["__typename"].(string); name != "" {
+				return nodeTypes[name]
+			}
+			nodeID, _ := source["nodeID"].(string)
+			switch {
+			case strings.HasPrefix(nodeID, "U_"):
+				return nodeTypes["User"]
+			case strings.HasPrefix(nodeID, "O_"):
+				return nodeTypes["Organization"]
+			case strings.HasPrefix(nodeID, "R_"):
+				return nodeTypes["Repository"]
+			case strings.HasPrefix(nodeID, "I_"):
+				return nodeTypes["Issue"]
+			case strings.HasPrefix(nodeID, "PR_"):
+				return nodeTypes["PullRequest"]
+			default:
+				return nil
+			}
+		},
+	})
 	userType := graphql.NewObject(graphql.ObjectConfig{
-		Name: "User",
+		Name:       "User",
+		Interfaces: []*graphql.Interface{nodeInterface},
 		Fields: graphql.Fields{
 			"id": &graphql.Field{
 				Type: graphql.NewNonNull(graphql.ID),
@@ -71,6 +102,7 @@ func (s *Server) initGraphQLSchema() {
 			"updatedAt":  &graphql.Field{Type: graphql.NewNonNull(graphql.String)},
 		},
 	})
+	nodeTypes["User"] = userType
 
 	queryType := graphql.NewObject(graphql.ObjectConfig{
 		Name: "Query",
@@ -106,16 +138,21 @@ func (s *Server) initGraphQLSchema() {
 	s.addMetaFieldsToSchema(queryType)
 
 	// Add repository types, queries, and mutations
-	repoType, mutationType := s.addRepoFieldsToSchema(userType, queryType)
+	repoType, mutationType := s.addRepoFieldsToSchema(userType, queryType, nodeInterface)
+	nodeTypes["Repository"] = repoType
 
 	// Add organization types and queries
-	s.addOrgFieldsToSchema(userType, queryType)
+	orgType := s.addOrgFieldsToSchema(userType, queryType, nodeInterface)
+	nodeTypes["Organization"] = orgType
 
 	// Add issue types, queries, and mutations
-	issueType := s.addIssueFieldsToSchema(userType, repoType, mutationType, queryType)
+	issueType := s.addIssueFieldsToSchema(userType, repoType, mutationType, queryType, nodeInterface)
+	nodeTypes["Issue"] = issueType
 
 	// Add pull request types, queries, and mutations
-	s.addPullRequestFieldsToSchema(userType, issueType, repoType, mutationType, queryType)
+	pullRequestType := s.addPullRequestFieldsToSchema(userType, issueType, repoType, mutationType, queryType, nodeInterface)
+	nodeTypes["PullRequest"] = pullRequestType
+	s.addNodeFieldsToSchema(queryType, nodeInterface)
 
 	// Add discussion types, queries, and mutations
 	s.addDiscussionFieldsToSchema(userType, repoType, mutationType)
@@ -140,6 +177,74 @@ func (s *Server) initGraphQLSchema() {
 		panic(fmt.Sprintf("failed to create graphql schema: %v", err))
 	}
 	s.graphqlSchema = schema
+}
+
+func (s *Server) addNodeFieldsToSchema(queryType *graphql.Object, nodeInterface *graphql.Interface) {
+	queryType.AddFieldConfig("node", &graphql.Field{
+		Type: nodeInterface,
+		Args: graphql.FieldConfigArgument{
+			"id": &graphql.ArgumentConfig{Type: graphql.NewNonNull(graphql.ID)},
+		},
+		Resolve: func(p graphql.ResolveParams) (interface{}, error) {
+			id, _ := p.Args["id"].(string)
+			return s.graphQLNodeByID(p.Context, id), nil
+		},
+	})
+	queryType.AddFieldConfig("nodes", &graphql.Field{
+		Type: graphql.NewNonNull(graphql.NewList(nodeInterface)),
+		Args: graphql.FieldConfigArgument{
+			"ids": &graphql.ArgumentConfig{Type: graphql.NewNonNull(graphql.NewList(graphql.NewNonNull(graphql.ID)))},
+		},
+		Resolve: func(p graphql.ResolveParams) (interface{}, error) {
+			ids, _ := p.Args["ids"].([]interface{})
+			nodes := make([]interface{}, 0, len(ids))
+			for _, raw := range ids {
+				id, _ := raw.(string)
+				nodes = append(nodes, s.graphQLNodeByID(p.Context, id))
+			}
+			return nodes, nil
+		},
+	})
+}
+
+func (s *Server) graphQLNodeByID(ctx context.Context, nodeID string) interface{} {
+	if user := findUserByNodeID(s.store, nodeID); user != nil {
+		return userToGraphQL(user)
+	}
+	s.store.mu.RLock()
+	var organization *Org
+	for _, candidate := range s.store.Orgs {
+		if candidate.NodeID == nodeID {
+			copy := *candidate
+			organization = &copy
+			break
+		}
+	}
+	s.store.mu.RUnlock()
+	if organization != nil {
+		return orgToGraphQL(organization)
+	}
+	if repo := findRepoByNodeID(s.store, nodeID); repo != nil {
+		if repo.Private && !s.viewerCanReadRepo(ctx, repo) {
+			return nil
+		}
+		return repoToGraphQL(s.store, s.store.snapRepo(repo))
+	}
+	if issue := findIssueByNodeID(s.store, nodeID); issue != nil {
+		repo := s.store.GetRepoByID(issue.RepoID)
+		if repo == nil || (repo.Private && !s.viewerCanReadRepo(ctx, repo)) {
+			return nil
+		}
+		return issueToGQL(issue, s.store)
+	}
+	if pullRequest := findPullRequestByNodeID(s.store, nodeID); pullRequest != nil {
+		repo := s.store.GetRepoByID(pullRequest.RepoID)
+		if repo == nil || (repo.Private && !s.viewerCanReadRepo(ctx, repo)) {
+			return nil
+		}
+		return pullRequestToGQL(pullRequest, s.store)
+	}
+	return nil
 }
 
 func (s *Server) registerGHGraphQLRoutes() {

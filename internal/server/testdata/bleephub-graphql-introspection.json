@@ -1054,7 +1054,10 @@
         "url": {
           "type": "String!"
         }
-      }
+      },
+      "interfaces": [
+        "Node"
+      ]
     },
     "IssueClosedStateReason": {
       "kind": "ENUM",
@@ -2147,6 +2150,21 @@
         }
       }
     },
+    "Node": {
+      "kind": "INTERFACE",
+      "fields": {
+        "id": {
+          "type": "ID!"
+        }
+      },
+      "possible_types": [
+        "Issue",
+        "Organization",
+        "PullRequest",
+        "Repository",
+        "User"
+      ]
+    },
     "OrderDirection": {
       "kind": "ENUM",
       "enum_values": [
@@ -2204,7 +2222,10 @@
         "url": {
           "type": "String!"
         }
-      }
+      },
+      "interfaces": [
+        "Node"
+      ]
     },
     "OrganizationConnection": {
       "kind": "OBJECT",
@@ -3042,7 +3063,10 @@
         "url": {
           "type": "String!"
         }
-      }
+      },
+      "interfaces": [
+        "Node"
+      ]
     },
     "PullRequestChangedFile": {
       "kind": "OBJECT",
@@ -3344,6 +3368,18 @@
         },
         "meta": {
           "type": "GitHubMetadata!"
+        },
+        "node": {
+          "type": "Node",
+          "args": {
+            "id": "ID!"
+          }
+        },
+        "nodes": {
+          "type": "[Node]!",
+          "args": {
+            "ids": "[ID!]!"
+          }
         },
         "organization": {
           "type": "Organization",
@@ -3844,7 +3880,10 @@
         "watchers": {
           "type": "RepoWatcherConnection"
         }
-      }
+      },
+      "interfaces": [
+        "Node"
+      ]
     },
     "RepositoryAffiliation": {
       "kind": "ENUM",
@@ -4421,7 +4460,10 @@
         "url": {
           "type": "String!"
         }
-      }
+      },
+      "interfaces": [
+        "Node"
+      ]
     },
     "UserConnection": {
       "kind": "OBJECT",

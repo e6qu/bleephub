@@ -94,7 +94,7 @@ func runMemberJSON(m concurrencyGroupMember, baseURL, repo string) map[string]an
 	htmlBase := fmt.Sprintf("%s/%s", baseURL, repo)
 	return map[string]any{
 		"run_id":       int64(m.wf.RunID),
-		"run_name":     m.wf.Name,
+		"run_name":     m.wf.RunDisplayTitle(),
 		"run_url":      fmt.Sprintf("%s/actions/runs/%d", apiBase, m.wf.RunID),
 		"run_html_url": fmt.Sprintf("%s/actions/runs/%d", htmlBase, m.wf.RunID),
 		"status":       m.status(),

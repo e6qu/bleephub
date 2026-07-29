@@ -11,7 +11,7 @@ import (
 )
 
 // addIssueFieldsToSchema adds Issue types, queries, and mutations to the schema.
-func (s *Server) addIssueFieldsToSchema(userType, repoType, mutationType, queryType *graphql.Object) *graphql.Object {
+func (s *Server) addIssueFieldsToSchema(userType, repoType, mutationType, queryType *graphql.Object, nodeInterface *graphql.Interface) *graphql.Object {
 	// --- Label types ---
 	issueLabelType := graphql.NewObject(graphql.ObjectConfig{
 		Name: "Label",
@@ -320,7 +320,8 @@ func (s *Server) addIssueFieldsToSchema(userType, repoType, mutationType, queryT
 
 	// --- Issue type ---
 	issueType := graphql.NewObject(graphql.ObjectConfig{
-		Name: "Issue",
+		Name:       "Issue",
+		Interfaces: []*graphql.Interface{nodeInterface},
 		Fields: graphql.Fields{
 			"id": &graphql.Field{
 				Type: graphql.NewNonNull(graphql.ID),
