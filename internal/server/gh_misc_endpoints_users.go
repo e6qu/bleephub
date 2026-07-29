@@ -161,10 +161,7 @@ func (s *Server) handleAdminDeleteUser(w http.ResponseWriter, r *http.Request) {
 	delete(s.store.UsersByLogin, u.Login)
 	for val, t := range s.store.Tokens {
 		if t.UserID == u.ID {
-			delete(s.store.Tokens, val)
-			if s.store.persist != nil {
-				s.store.persist.MustDelete("tokens", val)
-			}
+			s.store.deleteTokenMapKeyLocked(val)
 		}
 	}
 	if s.store.persist != nil {

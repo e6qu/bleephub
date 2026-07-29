@@ -2,6 +2,7 @@ package bleephub
 
 import (
 	"encoding/base64"
+	"errors"
 	"fmt"
 	"net/http"
 	"sort"
@@ -394,7 +395,11 @@ func (s *Server) handleDeleteRef(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := stor.RemoveReference(fullRef); err != nil {
+	if err := removeReferenceCAS(stor, oldRef); err != nil {
+		if errors.Is(err, gitStorage.ErrReferenceHasChanged) {
+			writeGHError(w, http.StatusConflict, "Reference changed while it was being deleted")
+			return
+		}
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}

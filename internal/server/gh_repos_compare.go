@@ -595,7 +595,7 @@ func performMerge(stor gitStorage.Storer, baseRef plumbing.ReferenceName, headHa
 	}
 	if mergeBase == baseHash {
 		// Fast-forward: point base at head.
-		if err := stor.SetReference(plumbing.NewHashReference(baseRef, headHash)); err != nil {
+		if err := stor.CheckAndSetReference(plumbing.NewHashReference(baseRef, headHash), baseRefObj); err != nil {
 			return plumbing.ZeroHash, false, err
 		}
 		return headHash, true, nil
@@ -620,7 +620,7 @@ func performMerge(stor gitStorage.Storer, baseRef plumbing.ReferenceName, headHa
 	if err != nil {
 		return plumbing.ZeroHash, false, err
 	}
-	if err := stor.SetReference(plumbing.NewHashReference(baseRef, commitHash)); err != nil {
+	if err := stor.CheckAndSetReference(plumbing.NewHashReference(baseRef, commitHash), baseRefObj); err != nil {
 		return plumbing.ZeroHash, false, err
 	}
 	return commitHash, false, nil
@@ -711,7 +711,7 @@ func performMergeCommit(stor gitStorage.Storer, baseRef plumbing.ReferenceName, 
 	if err != nil {
 		return plumbing.ZeroHash, err
 	}
-	if err := stor.SetReference(plumbing.NewHashReference(baseRef, commitHash)); err != nil {
+	if err := stor.CheckAndSetReference(plumbing.NewHashReference(baseRef, commitHash), baseRefObj); err != nil {
 		return plumbing.ZeroHash, err
 	}
 	return commitHash, nil
@@ -764,7 +764,7 @@ func performSquashMerge(stor gitStorage.Storer, baseRef plumbing.ReferenceName, 
 	if err != nil {
 		return plumbing.ZeroHash, err
 	}
-	if err := stor.SetReference(plumbing.NewHashReference(baseRef, commitHash)); err != nil {
+	if err := stor.CheckAndSetReference(plumbing.NewHashReference(baseRef, commitHash), baseRefObj); err != nil {
 		return plumbing.ZeroHash, err
 	}
 	return commitHash, nil
@@ -827,7 +827,7 @@ func performRebaseMerge(stor gitStorage.Storer, baseRef plumbing.ReferenceName, 
 			return plumbing.ZeroHash, err
 		}
 	}
-	if err := stor.SetReference(plumbing.NewHashReference(baseRef, newParent)); err != nil {
+	if err := stor.CheckAndSetReference(plumbing.NewHashReference(baseRef, newParent), baseRefObj); err != nil {
 		return plumbing.ZeroHash, err
 	}
 	return newParent, nil
@@ -899,6 +899,10 @@ func (s *Server) handleMergeRefs(w http.ResponseWriter, r *http.Request) {
 	sig := repoSignature("GitHub", "noreply@github.com")
 	commitHash, _, err := performMerge(stor, baseRef, headHash, req.Head, req.CommitMessage, sig)
 	if err != nil {
+		if errors.Is(err, gitStorage.ErrReferenceHasChanged) {
+			writeGHError(w, http.StatusConflict, "Base branch changed while the merge was being prepared")
+			return
+		}
 		if strings.Contains(err.Error(), "merge conflict") {
 			writeGHError(w, http.StatusConflict, "Merge conflict")
 			return

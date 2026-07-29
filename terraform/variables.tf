@@ -66,14 +66,6 @@ variable "api_gateway_vpc_link_id" {
   type        = string
   default     = null
   nullable    = true
-
-  validation {
-    condition = (
-      (var.create_api_gateway_vpc_link && var.api_gateway_vpc_link_id == null && var.api_gateway_vpc_link_security_group_id == null) ||
-      (!var.create_api_gateway_vpc_link && var.api_gateway_vpc_link_id != null && trimspace(var.api_gateway_vpc_link_id) != "" && var.api_gateway_vpc_link_security_group_id != null && trimspace(var.api_gateway_vpc_link_security_group_id) != "")
-    )
-    error_message = "Leave both shared VPC Link coordinates null when create_api_gateway_vpc_link is true, or set both to non-empty values when it is false."
-  }
 }
 
 variable "api_gateway_vpc_link_security_group_id" {
@@ -91,11 +83,6 @@ variable "availability_zones" {
   validation {
     condition     = length(var.availability_zones) >= 2
     error_message = "Bleephub requires at least two Availability Zones for Amazon ECS VPC-link availability and Amazon Elastic File System."
-  }
-
-  validation {
-    condition     = alltrue([for zone in var.availability_zones : startswith(zone, var.region)])
-    error_message = "Every entry of availability_zones must be an Availability Zone of region; the two defaults drift apart otherwise."
   }
 }
 

@@ -1,6 +1,6 @@
 # Bleephub ↔ GitHub parity audit
 
-Status: **active parity ratchet on `feat/bleephub-ui-api-completeness-audit`**. Original audit: 2026-05-12. Last verified: 2026-07-12.
+Status: **active generated parity ratchet**. Original audit: 2026-05-12. Last verified: 2026-07-29.
 
 ## Goal
 
@@ -14,6 +14,23 @@ Every Bleephub client surface should behave like GitHub or GitHub Enterprise Ser
 - Web UI: GitHub-shaped information architecture backed by the same public APIs and durable state
 
 GitHub Enterprise Server coordinates are intentional. Official clients already swap their base URL this way.
+
+## Executable inventory
+
+[`parity-inventory.json`](parity-inventory.json) is the reviewable, machine-readable snapshot of the implementation and its known defects. It contains:
+
+- all 1,216 operations and documented statuses in the vendored GitHub REST description;
+- all 1,223 literal `/api/v3` route registrations with source locations (runtime registration tests cover the composed routes too);
+- every routed UI component and the component or journey tests that exercise it;
+- the pinned official GraphQL schema, canonical Bleephub introspection digest, compatibility-gap count, resolver files, and test files;
+- literal GitHub Actions event producers plus the scheduled-workflow implementation and test; and
+- every ledger row, normalized category, severity, and status.
+
+`scripts/parity_inventory.py --check` regenerates the snapshot in memory and fails CI on any drift. `BUGS.md` remains the human-editable source for findings, but its totals and status vocabulary are checked by the same parser. A new route, UI page, resolver, event producer, OpenAPI update, or ledger edit therefore cannot disappear into prose or pass with an outdated coverage claim.
+
+[`rest-semantic-contracts.json`](rest-semantic-contracts.json) is the companion per-operation semantic matrix. For all 1,216 official operations it records path/query/header parameters and constraints, required request-body fields by media type, documented success and error statuses, security alternatives and scopes, pagination inputs, conditional-request declarations, and mutation obligations for reload persistence, event emission, and failure atomicity. The current pin contains 342 body-bearing operations, 277 required bodies, 283 paginated operations, and 582 state-changing operations.
+
+The matrix deliberately distinguishes a described obligation from behavioural evidence. For example, the current OpenAPI pin declares no conditional-request headers even though GitHub supports conditional requests broadly; that produces an explicit zero rather than a false green. Runtime status/shape observation, credential/resource authorization matrices, stable pagination/Link tests, reload tests, event tests, and injected storage-failure tests remain the evidence layers named in the matrix's `coverage_boundary`.
 
 ## What was verified
 
@@ -74,9 +91,11 @@ CodeQL databases no longer belonged in this table. The official CodeQL Action's 
 
 The runner execution controller (`/internal/exec/...`) and operator diagnostics (`/internal/{metrics,status,storage}`) were not classified as GitHub API gaps: they are Bleephub control-plane interfaces, and user-facing UI pages already read public GitHub/health routes instead of them.
 
-### 2. GraphQL has no full public-schema ratchet
+### 2. GraphQL schema coverage is ratcheted and the remaining surface is quantified
 
-Bleephub supports the GraphQL queries and mutations required by its consumers, including repository, pull request, issue, discussion, Projects v2, organization, and status/check relationships. It does not yet validate its entire introspectable schema against GitHub's published schema. GitHub GraphQL is strongly typed and introspective; complete parity therefore needs a vendored schema/introspection diff plus official-client queries, not only hand-selected resolver tests.
+The official public schema from `docs.github.com` is digest-pinned and checked for upstream drift. A full authenticated introspection-equivalent snapshot of Bleephub is compared structurally against it: type kinds, fields, arguments, input fields, enum values, interfaces, possible types, and nested null/list signatures. The exact compatibility-gap set is allowlisted and may only change through review; a canonical introspection snapshot rejects accidental schema drift.
+
+The generated coverage report is intentionally blunt: the current official schema has 1,794 types and 8,285 object/input fields; Bleephub exposes 267 types, shares 201 official types, implements 734 official fields, and matches 498 field signatures exactly. It currently records 319 compatibility gaps, 1,593 missing types, and 1,213 missing fields on shared types. Official-client query tests still prove the consumer subset behaves, while [`graphql-schema-coverage.json`](graphql-schema-coverage.json) prevents that subset from being mistaken for full GitHub GraphQL coverage.
 
 ### 3. REST semantic coverage is observed, not exhaustive
 

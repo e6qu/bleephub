@@ -1,6 +1,7 @@
 package bleephub
 
 import (
+	"bytes"
 	"os"
 	"path/filepath"
 	"strings"
@@ -46,8 +47,15 @@ func persistRoundTrip(t *testing.T, open func() (*Persistence, error)) {
 	tok := st1.CreateInstallationToken(inst.ID, app.ID, map[string]string{"issues": "write"}, nil)
 	st1.SuspendInstallation(inst.ID, user)
 	oapp := st1.CreateOAuthApp(user.ID, "Persist OAuth", "", "", "")
-	utsTok, _ := st1.CreateUserToServerToken(user.ID, 0, oapp.ClientID, "repo", 60_000_000_000, true)
+	utsTok, refreshTok := st1.CreateUserToServerToken(user.ID, 0, oapp.ClientID, "repo", 60_000_000_000, true)
 	repo := st1.CreateRepo(user, "persist-target", "", false)
+	repoSecret := &Secret{Name: "DATABASE_PASSWORD", Value: "persisted-database-password", CreatedAt: time.Now().UTC(), UpdatedAt: time.Now().UTC()}
+	st1.RepoSecrets[repo.FullName] = map[string]*Secret{repoSecret.Name: repoSecret}
+	p1.MustPut("repo_secrets", repo.FullName, st1.RepoSecrets[repo.FullName])
+	keyPair, err := st1.ActionsKeyPair()
+	if err != nil {
+		t.Fatalf("create Actions secrets keypair: %v", err)
+	}
 	expiresAt := time.Now().UTC().Add(24 * time.Hour)
 	fineGrained, err := st1.CreateUserFineGrainedPAT(user.ID, createPersonalAccessTokenWebRequest{
 		Name: "persist fine-grained", ResourceOwner: user.Login, RepositorySelection: "subset",
@@ -56,12 +64,66 @@ func persistRoundTrip(t *testing.T, open func() (*Persistence, error)) {
 	if err != nil {
 		t.Fatalf("create fine-grained personal access token: %v", err)
 	}
+	tokenRows, err := p1.List("tokens")
+	if err != nil {
+		t.Fatalf("list persisted personal access tokens: %v", err)
+	}
+	for key, raw := range tokenRows {
+		if !strings.HasPrefix(key, opaquePersistenceKeyPrefix) {
+			t.Errorf("personal access token persistence key %q is not a keyed digest", key)
+		}
+		for _, credential := range []string{defaultToken, fineGrained.Value} {
+			if strings.Contains(key, credential) || bytes.Contains(raw, []byte(credential)) {
+				t.Errorf("persisted personal access token row discloses bearer credential %q", credential)
+			}
+		}
+	}
 	loginSession := &LoginSession{
 		UserID: user.ID, CSRFToken: "persisted-csrf", ExpiresAt: time.Now().UTC().Add(time.Hour),
 		OIDCProvider: "shauth", OIDCIssuer: "https://auth.example.test", OIDCSubject: "subject-1", OIDCSID: "sid-1", OIDCIDToken: "signed.id.token",
 	}
 	if err := st1.PutLoginSession("persisted-browser-session", loginSession); err != nil {
 		t.Fatalf("persist login session: %v", err)
+	}
+	rows, err := p1.db.Query(`SELECT bucket, key, value FROM kv`)
+	if err != nil {
+		t.Fatalf("inspect raw persistence: %v", err)
+	}
+	protectedRows := 0
+	for rows.Next() {
+		var bucket, key string
+		var raw []byte
+		if err := rows.Scan(&bucket, &key, &raw); err != nil {
+			_ = rows.Close()
+			t.Fatal(err)
+		}
+		if !isSensitivePersistenceBucket(bucket) {
+			continue
+		}
+		protectedRows++
+		if !strings.HasPrefix(string(raw), sealedPersistenceValuePrefix) {
+			t.Errorf("sensitive persistence row %s/%s is plaintext: %q", bucket, key, raw)
+		}
+		for _, credential := range []string{
+			app.ClientSecret, app.PEMPrivateKey, oapp.ClientSecret, tok.Token,
+			utsTok.Token, refreshTok.Token, "persisted-browser-session",
+			loginSession.CSRFToken, loginSession.OIDCIDToken,
+			repoSecret.Value, keyPair.PrivateKey,
+		} {
+			if credential != "" && (strings.Contains(key, credential) || bytes.Contains(raw, []byte(credential))) {
+				t.Errorf("sensitive persistence row %s/%s discloses credential %q", bucket, key, credential)
+			}
+		}
+	}
+	if err := rows.Err(); err != nil {
+		_ = rows.Close()
+		t.Fatal(err)
+	}
+	if err := rows.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if protectedRows < 7 {
+		t.Fatalf("inspected %d encrypted rows, want credentials from every exercised bucket", protectedRows)
 	}
 	st1.UpdateRepo(user.Login, repo.Name, func(r *Repo) {
 		r.HasDiscussions = boolPointer(false)
@@ -90,6 +152,9 @@ func persistRoundTrip(t *testing.T, open func() (*Persistence, error)) {
 	if gotLoginSession == nil || gotLoginSession.UserID != user.ID || gotLoginSession.CSRFToken != "persisted-csrf" || gotLoginSession.OIDCProvider != "shauth" || gotLoginSession.OIDCIssuer != "https://auth.example.test" || gotLoginSession.OIDCSubject != "subject-1" || gotLoginSession.OIDCSID != "sid-1" || gotLoginSession.OIDCIDToken != "signed.id.token" {
 		t.Fatalf("login session did not round-trip: %+v", gotLoginSession)
 	}
+	if got := st2.RepoSecrets[repo.FullName][repoSecret.Name]; got == nil || got.Value != repoSecret.Value {
+		t.Fatalf("encrypted repository secret did not round-trip: %+v", got)
+	}
 	if err := st2.DeleteLoginSessionsForOIDC("shauth", "https://auth.example.test", "sid-1", "subject-1"); err != nil {
 		t.Fatalf("delete persisted OpenID Connect session: %v", err)
 	}
@@ -99,6 +164,9 @@ func persistRoundTrip(t *testing.T, open func() (*Persistence, error)) {
 	gotFineGrained, gotFineGrainedUser := st2.LookupToken(fineGrained.Value)
 	if gotFineGrained == nil || gotFineGrainedUser == nil || !gotFineGrained.FineGrained || gotFineGrained.Name != "persist fine-grained" || gotFineGrained.ResourceOwner != user.Login || gotFineGrained.RepositorySelection != "subset" || len(gotFineGrained.RepositoryIDs) != 1 || gotFineGrained.RepositoryIDs[0] != repo.ID || gotFineGrained.Permissions.Repository["contents"] != "read" || gotFineGrained.ExpiresAt == nil {
 		t.Fatalf("fine-grained personal access token did not round-trip: token=%+v user=%+v", gotFineGrained, gotFineGrainedUser)
+	}
+	if gotFineGrained.Value != "" {
+		t.Fatalf("reloaded personal access token retained plaintext value %q", gotFineGrained.Value)
 	}
 
 	got := st2.GetApp(app.ID)
@@ -145,6 +213,91 @@ func persistRoundTrip(t *testing.T, open func() (*Persistence, error)) {
 		t.Errorf("repo ID round-trip: got %d want %d", got.ID, repo.ID)
 	} else if repoHasDiscussions(got) {
 		t.Error("repo has_discussions=false did not persist")
+	}
+}
+
+func TestPersistence_RequiresStableEncryptionKey(t *testing.T) {
+	t.Setenv("BLEEPHUB_PERSIST", "true")
+	t.Setenv("BLEEPHUB_DATA_DIR", t.TempDir())
+	t.Setenv(persistenceEncryptionKeyEnvironment, "")
+	p, err := NewPersistence()
+	if err == nil {
+		if p != nil {
+			_ = p.Close()
+		}
+		t.Fatal("persistent mode accepted an empty encryption key")
+	}
+	if !strings.Contains(err.Error(), persistenceEncryptionKeyEnvironment+" is required") {
+		t.Fatalf("unexpected missing-key error: %v", err)
+	}
+}
+
+func TestPersistence_MigratesLegacySensitiveRowsAndRejectsWrongKey(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("BLEEPHUB_PERSIST", "true")
+	t.Setenv("BLEEPHUB_DATA_DIR", dir)
+	p, err := NewPersistence()
+	if err != nil {
+		t.Fatal(err)
+	}
+	legacySession := []byte(`{"UserID":1,"CSRFToken":"legacy-csrf","ExpiresAt":"2099-01-01T00:00:00Z"}`)
+	if _, err := p.db.Exec(p.dialect.putSQL, loginSessionsBucket, "legacy-cookie", legacySession); err != nil {
+		t.Fatal(err)
+	}
+	const legacyPAT = "ghp_legacy-persistence-token"
+	legacyToken := []byte(`{"UserID":1,"Scopes":"repo","CreatedAt":"2026-07-29T00:00:00Z"}`)
+	if _, err := p.db.Exec(p.dialect.putSQL, "tokens", legacyPAT, legacyToken); err != nil {
+		t.Fatal(err)
+	}
+	if err := p.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	p, err = NewPersistence()
+	if err != nil {
+		t.Fatalf("migrate legacy sensitive row: %v", err)
+	}
+	var storedKey string
+	var storedValue []byte
+	if err := p.db.QueryRow(p.dialect.listSQL, loginSessionsBucket).Scan(&storedKey, &storedValue); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.HasPrefix(storedKey, opaquePersistenceKeyPrefix) || strings.Contains(storedKey, "legacy-cookie") {
+		t.Fatalf("legacy bearer key was not replaced by a keyed digest: %q", storedKey)
+	}
+	if !strings.HasPrefix(string(storedValue), sealedPersistenceValuePrefix) || bytes.Contains(storedValue, []byte("legacy-csrf")) {
+		t.Fatalf("legacy sensitive value was not encrypted: %q", storedValue)
+	}
+	raw, err := p.Get(loginSessionsBucket, "legacy-cookie")
+	if err != nil || !bytes.Equal(raw, legacySession) {
+		t.Fatalf("migrated row did not decrypt: raw=%q err=%v", raw, err)
+	}
+	var storedTokenKey string
+	var storedTokenValue []byte
+	if err := p.db.QueryRow(p.dialect.listSQL, "tokens").Scan(&storedTokenKey, &storedTokenValue); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.HasPrefix(storedTokenKey, opaquePersistenceKeyPrefix) || strings.Contains(storedTokenKey, legacyPAT) {
+		t.Fatalf("legacy personal access token key was not replaced by a keyed digest: %q", storedTokenKey)
+	}
+	if !strings.HasPrefix(string(storedTokenValue), sealedPersistenceValuePrefix) ||
+		bytes.Contains(storedTokenValue, []byte(legacyPAT)) {
+		t.Fatalf("legacy personal access token row was not protected: %q", storedTokenValue)
+	}
+	raw, err = p.Get("tokens", legacyPAT)
+	if err != nil || !bytes.Equal(raw, legacyToken) {
+		t.Fatalf("migrated personal access token did not decrypt: raw=%q err=%v", raw, err)
+	}
+	if err := p.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	t.Setenv(persistenceEncryptionKeyEnvironment, "ZmVkY2JhOTg3NjU0MzIxMGZlZGNiYTk4NzY1NDMyMTA=")
+	if wrong, err := NewPersistence(); err == nil {
+		_ = wrong.Close()
+		t.Fatal("database opened with the wrong persistence encryption key")
+	} else if !strings.Contains(err.Error(), "wrong key or corrupted data") {
+		t.Fatalf("unexpected wrong-key error: %v", err)
 	}
 }
 

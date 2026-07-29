@@ -1,6 +1,7 @@
 package bleephub
 
 import (
+	"crypto/subtle"
 	"encoding/json"
 	"fmt"
 	"html"
@@ -167,8 +168,15 @@ func (s *Server) handleLoginPost(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) browserLoginUser(login, credential string) *User {
+	// A PAT is an API capability, not an account password. Turning an
+	// arbitrary scoped PAT into a browser session drops every scope and grants
+	// the bearer's full account privileges. Retain only the explicitly
+	// configured site-admin bootstrap credential; ordinary accounts use their
+	// password or an external identity provider.
 	_, user := s.store.LookupToken(credential)
-	if user != nil && user.Login == login && !user.Suspended {
+	adminCredential := AdminToken()
+	if user != nil && user.Login == login && user.SiteAdmin && !user.Suspended &&
+		subtle.ConstantTimeCompare([]byte(credential), []byte(adminCredential)) == 1 {
 		return user
 	}
 	user = s.store.LookupUserByLogin(login)
@@ -784,8 +792,6 @@ func (st *Store) createTokenLocked(userID int, scopes string) *Token {
 		CreatedAt: time.Now(),
 	}
 	st.Tokens[t.Value] = t
-	if st.persist != nil {
-		st.persist.MustPut("tokens", t.Value, t)
-	}
+	st.persistTokenLocked(t)
 	return t
 }

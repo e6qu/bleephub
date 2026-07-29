@@ -158,7 +158,10 @@ type UserEmail struct {
 
 // Token represents a personal access token.
 type Token struct {
-	Value               string
+	// Value is returned exactly once when a token is minted and is retained
+	// only by the live process that minted it. Persistence keys tokens by a
+	// keyed digest and never serializes the bearer credential itself.
+	Value               string `json:"-"`
 	UserID              int
 	Scopes              string
 	CreatedAt           time.Time
@@ -170,6 +173,36 @@ type Token struct {
 	RepositoryIDs       []int             `json:"repository_ids,omitempty"`
 	Permissions         OrgPATPermissions `json:"permissions,omitempty"`
 	ExpiresAt           *time.Time        `json:"expires_at,omitempty"`
+}
+
+func (st *Store) tokenMapKey(value string) string {
+	if st.persist == nil {
+		return value
+	}
+	return st.persist.storageKey("tokens", value)
+}
+
+// tokenByValueLocked resolves a presented bearer without retaining or
+// persisting a reversible copy. Callers must hold at least st.mu.RLock.
+func (st *Store) tokenByValueLocked(value string) (*Token, string) {
+	if token := st.Tokens[value]; token != nil {
+		return token, value // newly minted in this process
+	}
+	key := st.tokenMapKey(value)
+	return st.Tokens[key], key
+}
+
+func (st *Store) persistTokenLocked(token *Token) {
+	if st.persist != nil {
+		st.persist.MustPut("tokens", token.Value, token)
+	}
+}
+
+func (st *Store) deleteTokenMapKeyLocked(mapKey string) {
+	delete(st.Tokens, mapKey)
+	if st.persist != nil {
+		st.persist.MustDelete("tokens", mapKey)
+	}
 }
 
 // DeviceCode represents a pending device authorization flow.
@@ -330,6 +363,7 @@ type Store struct {
 	EnvVariables                 map[string]map[string]*ActionsVariable // envScopeKey(repo, env) → NAME → variable
 	TimelineRecords              map[string][]*TimelineRecord           // planID → runner-uploaded timeline records
 	LogFiles                     map[int][]byte                         // logID → uploaded runner log content
+	LogMasks                     map[string][]string                    // planID → exact values scrubbed from every log surface
 	WorkflowAttempts             map[int][]*Workflow                    // runID → prior attempts (oldest first)
 	RunnerGroups                 map[int]*RunnerGroup                   // org runner groups (global pool overlay)
 	NextRunnerGroupID            int
@@ -453,6 +487,9 @@ type Store struct {
 	RepoActionsPermissions       map[string]*RepoActionsPermissions
 	actionsKeyPair               *SecretsKeyPair // lazily generated sealed-box keypair (persisted)
 	persist                      *Persistence
+	persistenceRevision          int64
+	persistenceRecoveryRequired  bool
+	replicaRefreshMu             sync.Mutex
 	// mu guards the Store's maps and counters. sync.RWMutex read locks are
 	// NOT reentrant: once a writer queues on Lock, new RLock calls block, so
 	// a goroutine that re-acquires mu while already holding it deadlocks.
@@ -728,6 +765,7 @@ func NewStore() *Store {
 		EnvVariables:                 make(map[string]map[string]*ActionsVariable),
 		TimelineRecords:              make(map[string][]*TimelineRecord),
 		LogFiles:                     make(map[int][]byte),
+		LogMasks:                     make(map[string][]string),
 		WorkflowAttempts:             make(map[int][]*Workflow),
 		RunnerGroups:                 make(map[int]*RunnerGroup),
 		NextRunnerGroupID:            2,
@@ -988,6 +1026,32 @@ func (st *Store) SetPersistence(p *Persistence) error {
 	if p == nil {
 		return nil
 	}
+	if !p.OwnedExclusively() {
+		st.wirePersistence(p)
+		// A dqlite peer may be writing while this replica starts. Use the same
+		// before/after revision-stable reconciler as request-time refreshes;
+		// otherwise startup could bless a cross-bucket partial snapshot as the
+		// newest revision and never reload it.
+		return st.refreshFromPersistence(true)
+	}
+	return st.setPersistence(p, true)
+}
+
+func (st *Store) setPersistence(p *Persistence, observeRevision bool) error {
+	if p == nil {
+		return nil
+	}
+	st.wirePersistence(p)
+	if err := st.loadFromPersistence(); err != nil {
+		return err
+	}
+	if observeRevision {
+		p.localRevision.Store(st.persistenceRevision)
+	}
+	return nil
+}
+
+func (st *Store) wirePersistence(p *Persistence) {
 	st.mu.Lock()
 	st.persist = p
 	st.Reactions.persist = p
@@ -1005,7 +1069,6 @@ func (st *Store) SetPersistence(p *Persistence) error {
 	if IsS3GitStorage() {
 		setGitObjectLocker(p)
 	}
-	return st.loadFromPersistence()
 }
 
 // loadFromPersistence repopulates the in-memory maps from disk.
@@ -1056,15 +1119,16 @@ func (st *Store) loadFromPersistence() error {
 			st.LoginSessions[id] = &session
 		}
 	}
-	if err := st.loadBucket("tokens", func(raw []byte) error {
+	tokenRows, err := st.persist.List("tokens")
+	if err != nil {
+		return fmt.Errorf("load tokens: %w", err)
+	}
+	for persistedKey, raw := range tokenRows {
 		var t Token
 		if err := loadJSON(raw, &t); err != nil {
-			return err
+			return fmt.Errorf("decode tokens row: %w", err)
 		}
-		st.Tokens[t.Value] = &t
-		return nil
-	}); err != nil {
-		return err
+		st.Tokens[persistedKey] = &t
 	}
 	if err := st.loadBucket("gists", func(raw []byte) error {
 		var g Gist
@@ -3363,6 +3427,11 @@ func (st *Store) loadFromPersistence() error {
 	if err := st.finishInterruptedDeletions(); err != nil {
 		return err
 	}
+	revision, err := st.persist.StateRevision()
+	if err != nil {
+		return fmt.Errorf("load persistence state revision: %w", err)
+	}
+	st.persistenceRevision = revision
 
 	return nil
 }
@@ -3589,9 +3658,7 @@ func (st *Store) SeedDefaultUser() {
 		CreatedAt: now,
 	}
 	st.Tokens[t.Value] = t
-	if st.persist != nil {
-		st.persist.MustPut("tokens", t.Value, t)
-	}
+	st.persistTokenLocked(t)
 }
 
 // LookupToken returns the token and associated user, or nil if not found.
@@ -3599,8 +3666,8 @@ func (st *Store) LookupToken(tokenStr string) (*Token, *User) {
 	st.mu.RLock()
 	defer st.mu.RUnlock()
 
-	t, ok := st.Tokens[tokenStr]
-	if !ok {
+	t, _ := st.tokenByValueLocked(tokenStr)
+	if t == nil {
 		return nil, nil
 	}
 	if t.ExpiresAt != nil && !t.ExpiresAt.After(time.Now()) {

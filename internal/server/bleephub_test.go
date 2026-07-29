@@ -72,6 +72,7 @@ func TestMain(m *testing.M) {
 	// collection from ever completing. Keep the one environment value those
 	// isolated fixtures require, then leave fuzz processes to m.Run.
 	os.Setenv("BLEEPHUB_ADMIN_TOKEN", defaultToken)
+	os.Setenv("BLEEPHUB_PERSISTENCE_ENCRYPTION_KEY", "MDEyMzQ1Njc4OWFiY2RlZjAxMjM0NTY3ODlhYmNkZWY=")
 	if fuzzProcess(os.Args[1:]) {
 		os.Exit(m.Run())
 	}

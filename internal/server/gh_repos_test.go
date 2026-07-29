@@ -17,6 +17,7 @@ import (
 	"github.com/go-git/go-git/v5/plumbing"
 	"github.com/go-git/go-git/v5/plumbing/object"
 	githttp "github.com/go-git/go-git/v5/plumbing/transport/http"
+	gitStorage "github.com/go-git/go-git/v5/storage"
 	"github.com/go-git/go-git/v5/storage/memory"
 )
 
@@ -513,7 +514,7 @@ func TestGitClonePush(t *testing.T) {
 
 // Helper functions for creating git objects in memory storage.
 
-func storeBlob(s *memory.Storage, content []byte) (plumbing.Hash, error) {
+func storeBlob(s gitStorage.Storer, content []byte) (plumbing.Hash, error) {
 	obj := s.NewEncodedObject()
 	obj.SetType(plumbing.BlobObject)
 	obj.SetSize(int64(len(content)))
@@ -532,7 +533,7 @@ func storeBlob(s *memory.Storage, content []byte) (plumbing.Hash, error) {
 	return s.SetEncodedObject(obj)
 }
 
-func storeTree(s *memory.Storage, entries []object.TreeEntry) (plumbing.Hash, error) {
+func storeTree(s gitStorage.Storer, entries []object.TreeEntry) (plumbing.Hash, error) {
 	tree := &object.Tree{Entries: entries}
 	obj := s.NewEncodedObject()
 	if err := tree.Encode(obj); err != nil {
@@ -541,7 +542,7 @@ func storeTree(s *memory.Storage, entries []object.TreeEntry) (plumbing.Hash, er
 	return s.SetEncodedObject(obj)
 }
 
-func storeCommit(s *memory.Storage, treeHash, parentHash plumbing.Hash, msg string) (plumbing.Hash, error) {
+func storeCommit(s gitStorage.Storer, treeHash, parentHash plumbing.Hash, msg string) (plumbing.Hash, error) {
 	now := time.Now()
 	commit := &object.Commit{
 		Author: object.Signature{

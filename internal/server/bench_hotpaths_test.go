@@ -9,7 +9,6 @@ import (
 
 	"github.com/go-git/go-git/v5/plumbing"
 	"github.com/go-git/go-git/v5/plumbing/object"
-	"github.com/go-git/go-git/v5/storage/memory"
 	"github.com/rs/zerolog"
 )
 
@@ -109,29 +108,25 @@ func seedGitHistory(tb testing.TB, s *Server, fullName string, commits int) {
 		return
 	}
 	storer := s.store.GitStorages[fullName]
-	mem, ok := storer.(*memory.Storage)
-	if !ok {
-		tb.Fatalf("expected in-memory git storage for %s, got %T", fullName, storer)
-	}
 	var parent plumbing.Hash
 	for i := 0; i < commits; i++ {
-		blob, err := storeBlob(mem, []byte(fmt.Sprintf("line %d\ncontent revision %d\n", i, i)))
+		blob, err := storeBlob(storer, []byte(fmt.Sprintf("line %d\ncontent revision %d\n", i, i)))
 		if err != nil {
 			tb.Fatalf("store blob: %v", err)
 		}
-		tree, err := storeTree(mem, []object.TreeEntry{
+		tree, err := storeTree(storer, []object.TreeEntry{
 			{Name: "README.md", Mode: 0o100644, Hash: blob},
 		})
 		if err != nil {
 			tb.Fatalf("store tree: %v", err)
 		}
-		commit, err := storeCommit(mem, tree, parent, fmt.Sprintf("commit %d", i))
+		commit, err := storeCommit(storer, tree, parent, fmt.Sprintf("commit %d", i))
 		if err != nil {
 			tb.Fatalf("store commit: %v", err)
 		}
 		parent = commit
 	}
-	if err := mem.SetReference(plumbing.NewHashReference(plumbing.NewBranchReferenceName("main"), parent)); err != nil {
+	if err := storer.SetReference(plumbing.NewHashReference(plumbing.NewBranchReferenceName("main"), parent)); err != nil {
 		tb.Fatalf("set ref: %v", err)
 	}
 }

@@ -233,9 +233,7 @@ func (st *Store) CreateUserFineGrainedPAT(userID int, body createPersonalAccessT
 	token := &Token{Value: value, UserID: userID, CreatedAt: time.Now().UTC(), FineGrained: true, FineGrainedID: st.NextPATTokenID, Name: body.Name, ResourceOwner: body.ResourceOwner, RepositorySelection: body.RepositorySelection, RepositoryIDs: append([]int(nil), body.RepositoryIDs...), Permissions: body.Permissions, ExpiresAt: body.ExpiresAt}
 	st.NextPATTokenID++
 	st.Tokens[value] = token
-	if st.persist != nil {
-		st.persist.MustPut("tokens", value, token)
-	}
+	st.persistTokenLocked(token)
 	return token, nil
 }
 
@@ -277,10 +275,7 @@ func (st *Store) DeleteFineGrainedPAT(userID, tokenID int) bool {
 	if value == "" {
 		return false
 	}
-	delete(st.Tokens, value)
-	if st.persist != nil {
-		st.persist.MustDelete("tokens", value)
-	}
+	st.deleteTokenMapKeyLocked(value)
 	for org, requests := range st.OrgPATGrantRequests {
 		for id, request := range requests {
 			if request.TokenID == tokenID {

@@ -140,6 +140,15 @@ reaches the application task and all three voter tasks as an Amazon ECS
 `secrets` entry, never as a plaintext task environment variable, so it does not
 appear in `DescribeTaskDefinition` output.
 
+The module also generates a separate 32-byte
+`<name>/persistence-encryption-key` and injects it only into the application as
+`BLEEPHUB_PERSISTENCE_ENCRYPTION_KEY`. Bleephub uses it for authenticated
+application-level encryption of credential-bearing dqlite rows and keyed
+digests of bearer-token lookup keys. The Secrets Manager resource has
+`prevent_destroy`; losing or replacing this key without re-encrypting the
+database makes protected rows unreadable, and the application intentionally
+fails startup instead of silently discarding them.
+
 It carries `prevent_destroy` like the other two secrets. Replacing it splits the
 quorum, because members that restart with the new value cannot speak to members
 still holding the old one — rotating it means restarting the application and all

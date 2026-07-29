@@ -539,15 +539,19 @@ func (s *Server) handlePutContents(w http.ResponseWriter, r *http.Request) {
 			writeSecretScanningPushProtectionBlocked(w, ph)
 			return
 		}
-		commitHash, err = initRepoWithFiles(stor, branch, req.Message, files, sig)
+		commitHash, err = initEmptyRepoWithFiles(stor, branch, req.Message, files, sig)
 	} else {
 		if ph := s.createSecretScanningPushProtectionPlaceholder(repo, secretScanningContentMatches(string(decoded))); ph != nil {
 			writeSecretScanningPushProtectionBlocked(w, ph)
 			return
 		}
-		commitHash, err = createFileCommit(stor, branch, path, string(decoded), req.Message, sig)
+		commitHash, err = createFileCommitExpected(stor, branch, path, string(decoded), req.Message, sig, plumbing.NewHash(beforeHash))
 	}
 	if err != nil {
+		if errors.Is(err, gitStorage.ErrReferenceHasChanged) {
+			writeGHError(w, http.StatusConflict, "The branch changed while the file was being updated")
+			return
+		}
 		writeGHError(w, http.StatusUnprocessableEntity, err.Error())
 		return
 	}
@@ -694,8 +698,12 @@ func (s *Server) handleDeleteContents(w http.ResponseWriter, r *http.Request) {
 		sig = repoSignature(req.Author.Name, req.Author.Email)
 	}
 
-	commitHash, err := deleteFileCommit(stor, branch, path, req.Message, sig)
+	commitHash, err := deleteFileCommit(stor, branch, path, req.Message, sig, ref.Hash())
 	if err != nil {
+		if errors.Is(err, gitStorage.ErrReferenceHasChanged) {
+			writeGHError(w, http.StatusConflict, "The branch changed while the file was being deleted")
+			return
+		}
 		writeGHError(w, http.StatusUnprocessableEntity, err.Error())
 		return
 	}

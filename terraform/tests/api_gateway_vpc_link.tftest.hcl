@@ -157,7 +157,7 @@ run "vpc_link_without_security_group_is_rejected" {
     api_gateway_vpc_link_id     = "ynul34"
   }
 
-  expect_failures = [var.api_gateway_vpc_link_id]
+  expect_failures = [aws_ecs_task_definition.this]
 }
 
 run "security_group_without_vpc_link_is_rejected" {
@@ -168,7 +168,7 @@ run "security_group_without_vpc_link_is_rejected" {
     api_gateway_vpc_link_security_group_id = "sg-0123456789abcdef0"
   }
 
-  expect_failures = [var.api_gateway_vpc_link_id]
+  expect_failures = [aws_ecs_task_definition.this]
 }
 
 run "empty_shared_coordinates_are_rejected" {
@@ -180,7 +180,7 @@ run "empty_shared_coordinates_are_rejected" {
     api_gateway_vpc_link_security_group_id = ""
   }
 
-  expect_failures = [var.api_gateway_vpc_link_id]
+  expect_failures = [aws_ecs_task_definition.this]
 }
 
 run "dedicated_mode_rejects_shared_coordinates" {
@@ -191,5 +191,5 @@ run "dedicated_mode_rejects_shared_coordinates" {
     api_gateway_vpc_link_security_group_id = "sg-0123456789abcdef0"
   }
 
-  expect_failures = [var.api_gateway_vpc_link_id]
+  expect_failures = [aws_ecs_task_definition.this]
 }

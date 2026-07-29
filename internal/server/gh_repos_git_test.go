@@ -2,6 +2,7 @@ package bleephub
 
 import (
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -11,7 +12,25 @@ import (
 	"github.com/go-git/go-git/v5/plumbing"
 	"github.com/go-git/go-git/v5/plumbing/object"
 	gitStorage "github.com/go-git/go-git/v5/storage"
+	"github.com/go-git/go-git/v5/storage/memory"
 )
+
+type competingReferenceStorer struct {
+	gitStorage.Storer
+	target    plumbing.ReferenceName
+	competing *plumbing.Reference
+	fired     bool
+}
+
+func (s *competingReferenceStorer) CheckAndSetReference(next, old *plumbing.Reference) error {
+	if next.Name() == s.target && !s.fired {
+		s.fired = true
+		if err := s.Storer.SetReference(s.competing); err != nil {
+			return err
+		}
+	}
+	return s.Storer.CheckAndSetReference(next, old)
+}
 
 func gitDataTestServer(t *testing.T) *Server {
 	t.Helper()
@@ -573,5 +592,30 @@ func TestGitDataReadRequiresContentsRead(t *testing.T) {
 	s.ghHeadersMiddleware(s.mux).ServeHTTP(w, req)
 	if w.Code != http.StatusForbidden {
 		t.Errorf("status = %d, want 403 for metadata-only token", w.Code)
+	}
+}
+
+func TestCreateFileCommitDoesNotOverwriteConcurrentRefUpdate(t *testing.T) {
+	stor := memory.NewStorage()
+	sig := repoSignature("admin", "admin@example.test")
+	base, err := initRepoWithFiles(stor, "main", "base", map[string]string{"README.md": "base\n"}, sig)
+	if err != nil {
+		t.Fatal(err)
+	}
+	competing := plumbing.NewHash("1111111111111111111111111111111111111111")
+	wrapped := &competingReferenceStorer{
+		Storer:    stor,
+		target:    plumbing.NewBranchReferenceName("main"),
+		competing: plumbing.NewHashReference(plumbing.NewBranchReferenceName("main"), competing),
+	}
+	if _, err := createFileCommitExpected(wrapped, "main", "README.md", "request\n", "request", sig, base); !errors.Is(err, gitStorage.ErrReferenceHasChanged) {
+		t.Fatalf("concurrent content write error = %v, want ErrReferenceHasChanged", err)
+	}
+	ref, err := stor.Reference(plumbing.NewBranchReferenceName("main"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if ref.Hash() != competing {
+		t.Fatalf("request overwrote concurrent ref: got %s want %s", ref.Hash(), competing)
 	}
 }

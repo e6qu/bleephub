@@ -596,7 +596,7 @@ func (s *Server) ListenAndServe(ctx context.Context) error {
 		return err
 	}
 	s.startScheduleDispatcher(ctx)
-	inner := s.prefixStripMiddleware(s.internalAuthMiddleware(s.mux))
+	inner := s.prefixStripMiddleware(s.replicaRefreshMiddleware(s.internalAuthMiddleware(s.mux)))
 	ghWrapped := s.ghHeadersMiddleware(inner)
 	observed := ghWrapped
 	if s.responseObserver != nil {
@@ -742,6 +742,19 @@ func (s *Server) internalAuthMiddleware(next http.Handler) http.Handler {
 	})
 }
 
+func (s *Server) replicaRefreshMiddleware(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if err := s.store.RefreshFromPersistenceIfStale(); err != nil {
+			s.logger.Error().Err(err).Msg("failed to refresh shared persistence state")
+			writeJSON(w, http.StatusServiceUnavailable, map[string]string{
+				"message": "Shared state is temporarily unavailable",
+			})
+			return
+		}
+		next.ServeHTTP(w, r)
+	})
+}
+
 // internalTokenUser resolves the user for a token recognized on the internal
 // surface: any PAT in the store (which includes the seeded admin token).
 // Returns nil when absent/unknown. ghs_/gho_/ghu_ installation/OAuth tokens
@@ -854,6 +867,11 @@ func (s *Server) recoverMiddleware(next http.Handler) http.Handler {
 			// standard library uses this sentinel for exactly that.
 			if recovered == http.ErrAbortHandler {
 				panic(recovered)
+			}
+			if _, ok := recovered.(*persistenceFailure); ok {
+				if reloadErr := s.store.ReloadFromPersistence(); reloadErr != nil {
+					s.logger.Error().Err(reloadErr).Msg("failed to restore durable state after persistence error")
+				}
 			}
 
 			span := trace.SpanFromContext(r.Context())

@@ -406,19 +406,68 @@ func (s *Server) applyReceivePack(ctx context.Context, repo *Repo, stor storer.S
 		}
 		request.Commands = allowed
 	}
+	// go-git's receive-pack implementation applies every command with
+	// unconditional SetReference/RemoveReference calls even though the wire
+	// command carries the exact old object ID. Let it validate capabilities
+	// and finish pack ingestion, but apply refs here through the same atomic
+	// boundaries as REST so a concurrent API write cannot be overwritten.
+	allowedCommands := request.Commands
+	request.Commands = nil
 	report, err := session.ReceivePack(ctx, request)
+	request.Commands = allowedCommands
 	if err != nil && report == nil {
 		return nil, err
 	}
 	if err != nil {
 		s.logger.Debug().Err(err).Str("repo", repo.FullName).Msg("git receive-pack reported a per-ref failure")
 	}
+	if report == nil {
+		report = packp.NewReportStatus()
+		report.UnpackStatus = "ok"
+	}
+	var firstRefErr error
+	for _, command := range allowedCommands {
+		status := "ok"
+		if updateErr := applyPushCommandAtomic(stor, command); updateErr != nil {
+			status = "failed to update ref"
+			if firstRefErr == nil {
+				firstRefErr = updateErr
+			}
+		}
+		report.CommandStatuses = append(report.CommandStatuses, &packp.CommandStatus{
+			ReferenceName: command.Name,
+			Status:        status,
+		})
+	}
 	for _, command := range requested {
 		if refusal, refused := refusals[command.Name]; refused {
 			report.CommandStatuses = append(report.CommandStatuses, &packp.CommandStatus{ReferenceName: command.Name, Status: refusal})
 		}
 	}
-	return report, nil
+	return report, firstRefErr
+}
+
+func applyPushCommandAtomic(stor storer.Storer, command *packp.Command) error {
+	atomic, ok := stor.(interface {
+		CreateReference(*plumbing.Reference) error
+		RemoveReferenceCAS(*plumbing.Reference) error
+	})
+	if !ok {
+		return fmt.Errorf("git storer for %s has no atomic ref lifecycle support", command.Name)
+	}
+	switch command.Action() {
+	case packp.Create:
+		return atomic.CreateReference(plumbing.NewHashReference(command.Name, command.New))
+	case packp.Update:
+		old := plumbing.NewHashReference(command.Name, command.Old)
+		next := plumbing.NewHashReference(command.Name, command.New)
+		return stor.CheckAndSetReference(next, old)
+	case packp.Delete:
+		old := plumbing.NewHashReference(command.Name, command.Old)
+		return atomic.RemoveReferenceCAS(old)
+	default:
+		return fmt.Errorf("invalid ref update for %s", command.Name)
+	}
 }
 
 // refusedPushCommands maps each command branch protection refuses to its

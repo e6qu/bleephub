@@ -34,6 +34,13 @@ func oidcLoginSessionMatches(session *LoginSession, provider, issuer, sid, subje
 	return subject != "" && session.OIDCSubject == subject
 }
 
+func loginSessionMapKey(persist *Persistence, id string) string {
+	if persist == nil {
+		return id
+	}
+	return persist.storageKey(loginSessionsBucket, id)
+}
+
 func (st *Store) PutLoginSession(id string, session *LoginSession) error {
 	if id == "" || session == nil {
 		return fmt.Errorf("login session id and value are required")
@@ -48,7 +55,7 @@ func (st *Store) PutLoginSession(id string, session *LoginSession) error {
 	}
 	st.mu.Lock()
 	copy := *session
-	st.LoginSessions[id] = &copy
+	st.LoginSessions[loginSessionMapKey(persist, id)] = &copy
 	st.mu.Unlock()
 	return nil
 }
@@ -56,7 +63,7 @@ func (st *Store) PutLoginSession(id string, session *LoginSession) error {
 func (st *Store) GetLoginSession(id string) (*LoginSession, error) {
 	st.mu.RLock()
 	persist := st.persist
-	local := st.LoginSessions[id]
+	local := st.LoginSessions[loginSessionMapKey(persist, id)]
 	st.mu.RUnlock()
 	if persist == nil {
 		if local == nil {
@@ -71,7 +78,7 @@ func (st *Store) GetLoginSession(id string) (*LoginSession, error) {
 	}
 	if raw == nil {
 		st.mu.Lock()
-		delete(st.LoginSessions, id)
+		delete(st.LoginSessions, loginSessionMapKey(persist, id))
 		st.mu.Unlock()
 		return nil, nil
 	}
@@ -86,7 +93,7 @@ func (st *Store) GetLoginSession(id string) (*LoginSession, error) {
 		return nil, nil
 	}
 	st.mu.Lock()
-	st.LoginSessions[id] = &session
+	st.LoginSessions[loginSessionMapKey(persist, id)] = &session
 	st.mu.Unlock()
 	return &session, nil
 }
@@ -101,7 +108,7 @@ func (st *Store) DeleteLoginSession(id string) error {
 		}
 	}
 	st.mu.Lock()
-	delete(st.LoginSessions, id)
+	delete(st.LoginSessions, loginSessionMapKey(persist, id))
 	st.mu.Unlock()
 	return nil
 }
