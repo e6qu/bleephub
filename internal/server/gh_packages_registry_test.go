@@ -62,7 +62,7 @@ func TestContainerRegistryPublishCreatesPackageVersion(t *testing.T) {
 		t.Fatalf("version name = %v, want 1.0.0", versions[0]["name"])
 	}
 	versionID := int(versions[0]["id"].(float64))
-	files := decodeJSONArray(t, ghGet(t, "/api/v3/users/admin/packages/container/registry-image/versions/"+itoa(versionID)+"/files", defaultToken))
+	files := decodeJSONArray(t, ghGet(t, "/ui-data/users/admin/packages/container/registry-image/versions/"+itoa(versionID)+"/files", defaultToken))
 	if len(files) != 3 {
 		t.Fatalf("files len = %d, want manifest + config + layer: %#v", len(files), files)
 	}
@@ -112,7 +112,8 @@ func TestPackageAndRegistryBytesUseObjectStore(t *testing.T) {
 		t.Fatalf("package file data ok=%v contentType=%q data=%q", ok, contentType, string(data))
 	}
 	s.registerGHPackagesRoutes()
-	req := httptest.NewRequest("GET", "/api/v3/users/admin/packages/container/object-package/versions/"+itoa(version.ID)+"/files/"+itoa(files[0].ID), nil)
+	s.registerUIAPIRoutes()
+	req := httptest.NewRequest("GET", "/ui-data/users/admin/packages/container/object-package/versions/"+itoa(version.ID)+"/files/"+itoa(files[0].ID), nil)
 	req.Header.Set("Authorization", "Bearer "+defaultToken)
 	rec := httptest.NewRecorder()
 	s.ghHeadersMiddleware(s.mux).ServeHTTP(rec, req)

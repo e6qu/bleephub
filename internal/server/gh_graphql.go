@@ -103,6 +103,7 @@ func (s *Server) initGraphQLSchema() {
 			},
 		},
 	})
+	s.addMetaFieldsToSchema(queryType)
 
 	// Add repository types, queries, and mutations
 	repoType, mutationType := s.addRepoFieldsToSchema(userType, queryType)

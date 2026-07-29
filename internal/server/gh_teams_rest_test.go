@@ -288,14 +288,13 @@ func TestTeamMembershipGet(t *testing.T) {
 	if m["role"] != "member" || m["state"] != "active" {
 		t.Errorf("membership = %v, want member/active", m)
 	}
-	if _, ok := m["user"].(map[string]interface{}); !ok {
-		t.Errorf("membership missing user object")
+	if m["url"] == "" {
+		t.Errorf("membership missing canonical url")
 	}
-	if _, ok := m["team"].(map[string]interface{}); !ok {
-		t.Errorf("membership missing team object")
-	}
-	if m["organization_url"] == "" {
-		t.Errorf("membership missing organization_url")
+	for _, invented := range []string{"user", "team", "organization_url"} {
+		if _, exists := m[invented]; exists {
+			t.Errorf("membership includes undocumented %q field", invented)
+		}
 	}
 }
 

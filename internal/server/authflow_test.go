@@ -616,7 +616,6 @@ func TestBranchProtectionRefusesNonAdmins(t *testing.T) {
 	}{
 		{"PUT", base, map[string]interface{}{"enforce_admins": false, "allow_force_pushes": true}},
 		{"DELETE", base, nil},
-		{"PUT", base + "/allow_force_pushes", map[string]interface{}{}},
 		{"POST", base + "/enforce_admins", map[string]interface{}{}},
 		{"DELETE", base + "/restrictions", nil},
 	}
@@ -638,7 +637,7 @@ func TestBranchProtectionRefusesNonAdmins(t *testing.T) {
 		resp.Body.Close()
 	}
 
-	for _, path := range []string{base, base + "/enforce_admins", base + "/allow_force_pushes", base + "/restrictions"} {
+	for _, path := range []string{base, base + "/enforce_admins", base + "/restrictions"} {
 		resp := ghGet(t, path, pushToken)
 		if resp.StatusCode >= 200 && resp.StatusCode < 300 {
 			resp.Body.Close()

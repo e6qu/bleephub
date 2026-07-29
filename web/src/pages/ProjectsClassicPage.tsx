@@ -3,6 +3,7 @@ import { useParams } from "react-router";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Spinner, InlineError } from "@bleephub/ui-core/components";
 import { RepoHeader } from "../components/Shell.js";
+import { confirmAction } from "../components/confirmAction.js";
 import { PageTitle, Button, Box } from "../components/ui.js";
 import { MutationError } from "../components/MutationError.js";
 import { useOpenCounts } from "../hooks/useOpenCounts.js";
@@ -262,8 +263,8 @@ function ProjectBoard({
             <Button
               variant="danger"
               size="sm"
-              onClick={() => {
-                if (window.confirm(`Delete project "${project.name}"?`)) {
+              onClick={async () => {
+                if (await confirmAction(`Delete project "${project.name}"?`)) {
                   remove.mutate();
                 }
               }}
@@ -454,8 +455,8 @@ function ColumnCard({
               </button>
               <button
                 type="button"
-                onClick={() => {
-                  if (window.confirm(`Delete column "${column.name}"?`)) {
+                onClick={async () => {
+                  if (await confirmAction(`Delete column "${column.name}"?`)) {
                     remove.mutate();
                   }
                 }}
@@ -633,8 +634,8 @@ function ProjectCardItem({
             </button>
             <button
               type="button"
-              onClick={() => {
-                if (window.confirm("Delete this card?")) {
+              onClick={async () => {
+                if (await confirmAction("Delete this card?")) {
                   remove.mutate();
                 }
               }}

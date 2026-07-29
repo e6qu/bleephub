@@ -17,7 +17,6 @@ func (s *Server) registerGHSecretScanningRoutes() {
 	s.route("PATCH /api/v3/repos/{owner}/{repo}/secret-scanning/custom-patterns/{pattern_id}",
 		s.requirePerm(scopeSecurityEvents, permWrite, s.handleUpdateRepoSecretScanningCustomPattern))
 	s.route("GET /api/v3/repos/{owner}/{repo}/secret-scanning/alerts", s.handleListSecretScanningAlerts)
-	s.route("PATCH /api/v3/repos/{owner}/{repo}/secret-scanning/alerts", s.handleBulkUpdateSecretScanningAlerts)
 	s.route("GET /api/v3/repos/{owner}/{repo}/secret-scanning/alerts/{alert_number}", s.handleGetSecretScanningAlert)
 	s.route("PATCH /api/v3/repos/{owner}/{repo}/secret-scanning/alerts/{alert_number}", s.handleUpdateSecretScanningAlert)
 	s.route("GET /api/v3/repos/{owner}/{repo}/secret-scanning/alerts/{alert_number}/locations", s.handleListSecretScanningAlertLocations)

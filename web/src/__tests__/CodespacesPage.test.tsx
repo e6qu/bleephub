@@ -198,10 +198,10 @@ describe("CodespacesPage", () => {
       }
       return Promise.resolve(jsonResponse([]));
     });
-    vi.spyOn(globalThis, "confirm").mockReturnValue(true);
     renderPage();
 
     fireEvent.click(await screen.findByRole("button", { name: /Delete/ }));
+    fireEvent.click(await screen.findByRole("button", { name: "Confirm" }));
     await waitFor(() => {
       expect(screen.queryByText(codespace.name)).not.toBeInTheDocument();
     });

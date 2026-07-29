@@ -28,6 +28,7 @@ type PullRequest struct {
 	AssigneeIDs          []int
 	LabelIDs             []int
 	RequestedReviewerIDs []int
+	RequestedTeamIDs     []int
 	MilestoneID          int    // 0 = none
 	Mergeable            string // "MERGEABLE", "CONFLICTING", "UNKNOWN"
 	Additions            int
@@ -605,6 +606,59 @@ func (st *Store) RemoveRequestedReviewers(repoKey string, pullNumber int, review
 		st.recordPullRequestEventLocked(pr.RepoID, pr.ID, actorID, "review_request_removed", "", id)
 	}
 	pr.RequestedReviewerIDs = kept
+	pr.UpdatedAt = time.Now().UTC()
+	if st.persist != nil {
+		st.persist.MustPut("pull_requests", strconv.Itoa(pr.ID), pr)
+	}
+	return true
+}
+
+// RequestTeamReviewers adds organization team review requests to a pull
+// request. Team IDs are used instead of slugs so a later team rename preserves
+// the request just as it does on GitHub.
+func (st *Store) RequestTeamReviewers(repoKey string, pullNumber int, teamIDs []int) bool {
+	st.mu.Lock()
+	defer st.mu.Unlock()
+	pr := st.findPRByRepoNumberLocked(repoKey, pullNumber)
+	if pr == nil {
+		return false
+	}
+	existing := make(map[int]struct{}, len(pr.RequestedTeamIDs))
+	for _, id := range pr.RequestedTeamIDs {
+		existing[id] = struct{}{}
+	}
+	for _, id := range teamIDs {
+		if _, ok := existing[id]; ok {
+			continue
+		}
+		pr.RequestedTeamIDs = append(pr.RequestedTeamIDs, id)
+		existing[id] = struct{}{}
+	}
+	pr.UpdatedAt = time.Now().UTC()
+	if st.persist != nil {
+		st.persist.MustPut("pull_requests", strconv.Itoa(pr.ID), pr)
+	}
+	return true
+}
+
+func (st *Store) RemoveRequestedTeamReviewers(repoKey string, pullNumber int, teamIDs []int) bool {
+	st.mu.Lock()
+	defer st.mu.Unlock()
+	pr := st.findPRByRepoNumberLocked(repoKey, pullNumber)
+	if pr == nil {
+		return false
+	}
+	remove := make(map[int]struct{}, len(teamIDs))
+	for _, id := range teamIDs {
+		remove[id] = struct{}{}
+	}
+	kept := pr.RequestedTeamIDs[:0]
+	for _, id := range pr.RequestedTeamIDs {
+		if _, ok := remove[id]; !ok {
+			kept = append(kept, id)
+		}
+	}
+	pr.RequestedTeamIDs = kept
 	pr.UpdatedAt = time.Now().UTC()
 	if st.persist != nil {
 		st.persist.MustPut("pull_requests", strconv.Itoa(pr.ID), pr)

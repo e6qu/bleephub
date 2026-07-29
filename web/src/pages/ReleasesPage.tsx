@@ -16,6 +16,7 @@ import {
 import type { GithubRelease, GithubReleaseAsset } from "../types.js";
 import { RepoHeader } from "../components/Shell.js";
 import { Blankslate, Box, Button, ErrorBanner, FormLabel, PageTitle } from "../components/ui.js";
+import { confirmAction } from "../components/confirmAction.js";
 import { DownloadIcon, PlusIcon, TagIcon, TrashIcon } from "../components/octicons.js";
 
 const inputStyle = {
@@ -215,7 +216,7 @@ function ReleaseDetail({ owner, repo, releaseId }: { owner: string; repo: string
         icon={<TagIcon size={22} />}
         title={release.data.name || release.data.tag_name}
         meta={<><span className="font-mono">{release.data.tag_name}</span>{release.data.draft ? " · Draft" : release.data.prerelease ? " · Pre-release" : " · Published"}</>}
-        actions={<><Button onClick={() => setEditing(true)}>Edit</Button><Button variant="danger" onClick={() => { if (confirm("Delete this release and all of its assets?")) remove.mutate(); }}><TrashIcon size={14} /> Delete</Button></>}
+        actions={<><Button onClick={() => setEditing(true)}>Edit</Button><Button variant="danger" onClick={async () => { if (await confirmAction("Delete this release and all of its assets?")) remove.mutate(); }}><TrashIcon size={14} /> Delete</Button></>}
       />
       {remove.isError && <ErrorBanner>{String(remove.error)}</ErrorBanner>}
       {release.data.body && <div className="mb-5 whitespace-pre-wrap" style={{ lineHeight: 1.6 }}>{release.data.body}</div>}

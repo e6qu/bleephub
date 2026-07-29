@@ -705,8 +705,9 @@ test.describe("Release provider", () => {
 
     await page.getByRole("button", { name: "Delete artifact.txt" }).click();
     await expect(page.getByText("Linux artifact")).not.toBeVisible();
-    page.once("dialog", (dialog) => dialog.accept());
     await page.getByRole("button", { name: "Delete" }).click();
+    await expect(page.getByRole("dialog", { name: "Confirm action" })).toBeVisible();
+    await page.getByRole("button", { name: "Confirm" }).click();
     await expect(page).toHaveURL(new RegExp(`/ui/repos/${owner}/${repo}/releases$`));
     await expect(page.getByText("No releases published")).toBeVisible();
   });

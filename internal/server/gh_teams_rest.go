@@ -534,12 +534,9 @@ func (s *Server) handleGetTeamMembership(w http.ResponseWriter, r *http.Request)
 func teamMembershipJSON(baseURL, orgLogin, slug string, user *User, team *Team, org *Org, role TeamRole, state MembershipState) map[string]interface{} {
 	api := baseURL + "/api/v3/orgs/" + orgLogin + "/teams/" + slug
 	return map[string]interface{}{
-		"url":              api + "/memberships/" + user.Login,
-		"role":             role,
-		"state":            state,
-		"user":             userToJSON(user),
-		"team":             teamRefJSON(team, org, baseURL),
-		"organization_url": baseURL + "/api/v3/orgs/" + orgLogin,
+		"url":   api + "/memberships/" + user.Login,
+		"role":  role,
+		"state": state,
 	}
 }
 

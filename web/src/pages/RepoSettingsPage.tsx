@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { useParams, Link } from "react-router";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Spinner, InlineError } from "@bleephub/ui-core/components";
+import { confirmAction } from "../components/confirmAction.js";
 import {
   addRepoDeployKey,
   createPagesSite,
@@ -517,8 +518,8 @@ function CollaboratorsTab({ owner, repo }: { owner: string; repo: string }) {
                   <Button
                     size="sm"
                     variant="danger"
-                    onClick={() => {
-                      if (confirm(`Remove ${c.login} from ${owner}/${repo}?`)) {
+                    onClick={async () => {
+                      if (await confirmAction(`Remove ${c.login} from ${owner}/${repo}?`)) {
                         removeMut.mutate(c.login);
                       }
                     }}
@@ -689,8 +690,8 @@ function DeployKeysTab({ owner, repo }: { owner: string; repo: string }) {
                   <Button
                     size="sm"
                     variant="danger"
-                    onClick={() => {
-                      if (confirm(`Delete deploy key "${k.title}"?`)) {
+                    onClick={async () => {
+                      if (await confirmAction(`Delete deploy key "${k.title}"?`)) {
                         deleteMut.mutate(k.id);
                       }
                     }}
@@ -1241,8 +1242,8 @@ function PagesSiteCard({
         <div className="flex justify-end gap-2">
           <Button
             variant="danger"
-            onClick={() => {
-              if (confirm("Disable GitHub Pages for this repository?")) {
+            onClick={async () => {
+              if (await confirmAction("Disable GitHub Pages for this repository?")) {
                 setError(null);
                 setSuccess(null);
                 disableMut.mutate();

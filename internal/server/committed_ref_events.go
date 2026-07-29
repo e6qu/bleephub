@@ -27,7 +27,6 @@ func (s *Server) afterCommittedRefUpdate(repo *Repo, sender *User, ref, before, 
 	s.store.RecordRepoActivity(repo.ID, ref, before, after, actorID, classifyRefUpdate(stor, oldHash, newHash))
 	payload := buildPushPayload(s.store, repo, sender, ref, before, after)
 	s.emitWebhookEvent(repo.FullName, "push", "", payload)
-	s.triggerWorkflowsForEvent(repo.FullName, "push", "", ref, payload)
 	if branch := strings.TrimPrefix(ref, "refs/heads/"); branch != ref {
 		s.firePullRequestSynchronize(repo, repo.FullName, branch)
 	}

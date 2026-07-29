@@ -7,6 +7,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/go-git/go-git/v5/plumbing"
 )
 
 // scheduleFiredKeys dedupes cron firings: a (repo, file, cron) tuple
@@ -36,8 +38,8 @@ func (s *Server) startScheduleDispatcher(ctx context.Context) {
 	})
 }
 
-// fireDueSchedules triggers every schedule-bearing workflow (at HEAD of
-// each repo's default branch) whose cron matches the given minute.
+// fireDueSchedules triggers every schedule-bearing workflow from each
+// repository's explicit default branch whose cron matches the given minute.
 // Separated from the ticker so tests drive it with a fixed clock.
 func (s *Server) fireDueSchedules(now time.Time) {
 	minute := now.Truncate(time.Minute)
@@ -54,44 +56,83 @@ func (s *Server) fireDueSchedules(now time.Time) {
 	s.store.mu.RUnlock()
 
 	for _, repoKey := range repoKeys {
+		repo := s.store.GetRepoByFullName(repoKey)
+		if repo == nil {
+			continue
+		}
 		parts := splitRepoKeyParts(repoKey)
 		stor := s.store.GetGitStorage(parts[0], parts[1])
 		if stor == nil {
 			continue
 		}
-		for name, content := range listWorkflowFiles(stor) {
+		defaultBranch := repo.DefaultBranch
+		if defaultBranch == "" {
+			defaultBranch = "main"
+		}
+		definitionRef := plumbing.NewBranchReferenceName(defaultBranch).String()
+		for name, content := range listWorkflowFilesAtRef(stor, definitionRef) {
 			on, err := ParseWorkflowOn(content)
 			if err != nil {
+				s.logger.Warn().Err(err).Str("repo", repoKey).Str("file", name).Msg("invalid scheduled workflow")
 				continue
 			}
 			sched := on["schedule"]
-			if sched == nil || len(sched.Crons) == 0 {
+			if sched == nil || len(sched.Schedules) == 0 {
+				continue
+			}
+			if scheduleInactive(repo, minute) {
+				s.store.SetWorkflowFileState(repoKey, ".github/workflows/"+name, "disabled_inactivity")
 				continue
 			}
 			if s.workflowFileDisabled(repoKey, name) {
 				continue
 			}
-			for _, cron := range sched.Crons {
-				cs, err := parseCron(cron)
+			for _, entry := range sched.Schedules {
+				cs, err := parseCron(entry.Cron)
 				if err != nil {
-					s.logger.Warn().Err(err).Str("file", name).Str("cron", cron).Msg("invalid cron in on: schedule")
+					s.logger.Warn().Err(err).Str("file", name).Str("cron", entry.Cron).Msg("invalid cron in on: schedule")
 					continue
 				}
-				if !cs.matches(minute) {
+				if cs.minimumInterval() < 5*time.Minute {
+					s.logger.Warn().Str("file", name).Str("cron", entry.Cron).Msg("scheduled workflow interval is shorter than GitHub's five-minute minimum")
 					continue
 				}
-				claimed, err := s.markScheduleFired(repoKey+"\x00"+name+"\x00"+cron, minute)
+				scheduledMinute := minute
+				if entry.Timezone != "" {
+					location, err := time.LoadLocation(entry.Timezone)
+					if err != nil {
+						s.logger.Warn().Err(err).Str("file", name).Str("timezone", entry.Timezone).Msg("invalid schedule timezone")
+						continue
+					}
+					scheduledMinute = minute.In(location)
+				}
+				if !cs.matches(scheduledMinute) {
+					continue
+				}
+				claimKey := repoKey + "\x00" + name + "\x00" + entry.Cron + "\x00" + entry.Timezone
+				claimed, err := s.markScheduleFired(claimKey, minute)
 				if err != nil {
-					s.logger.Error().Err(err).Str("repo", repoKey).Str("file", name).Str("cron", cron).Msg("failed to claim scheduled workflow firing")
+					s.logger.Error().Err(err).Str("repo", repoKey).Str("file", name).Str("cron", entry.Cron).Msg("failed to claim scheduled workflow firing")
 					continue
 				}
 				if !claimed {
 					continue
 				}
-				s.fireScheduledWorkflow(repoKey, name, content, cron)
+				s.fireScheduledWorkflow(repoKey, name, content, entry.Cron)
 			}
 		}
 	}
+}
+
+func scheduleInactive(repo *Repo, now time.Time) bool {
+	if repo == nil || repo.Private {
+		return false
+	}
+	lastActivity := repo.PushedAt
+	if repo.UpdatedAt.After(lastActivity) {
+		lastActivity = repo.UpdatedAt
+	}
+	return !lastActivity.IsZero() && now.Sub(lastActivity) >= 60*24*time.Hour
 }
 
 // markScheduleFired records a firing; false means this (key, minute)
@@ -169,6 +210,37 @@ func (s *Server) fireScheduledWorkflow(repoKey, fileName string, content []byte,
 type cronSchedule struct {
 	min, hour, dom, month, dow uint64
 	domStar, dowStar           bool
+}
+
+// minimumInterval returns the shortest interval this cron's minute/hour masks
+// can produce. Day/month filters can only make occurrences farther apart, so
+// this is a conservative enforcement of GitHub's five-minute floor.
+func (cs *cronSchedule) minimumInterval() time.Duration {
+	var minutes []int
+	for hour := 0; hour < 24; hour++ {
+		if cs.hour&(uint64(1)<<hour) == 0 {
+			continue
+		}
+		for minute := 0; minute < 60; minute++ {
+			if cs.min&(uint64(1)<<minute) != 0 {
+				minutes = append(minutes, hour*60+minute)
+			}
+		}
+	}
+	if len(minutes) < 2 {
+		return 24 * time.Hour
+	}
+	best := 24 * time.Hour
+	for i, current := range minutes {
+		next := minutes[(i+1)%len(minutes)]
+		if i == len(minutes)-1 {
+			next += 24 * 60
+		}
+		if gap := time.Duration(next-current) * time.Minute; gap < best {
+			best = gap
+		}
+	}
+	return best
 }
 
 var cronMonthNames = map[string]int{

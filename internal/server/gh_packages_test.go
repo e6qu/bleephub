@@ -176,7 +176,7 @@ func TestPackages_UserCRUD(t *testing.T) {
 	}
 
 	// List files
-	resp = ghGet(t, "/api/v3/users/"+admin.Login+"/packages/container/user-pkg/versions/"+strconv.Itoa(versionID)+"/files", defaultToken)
+	resp = ghGet(t, "/ui-data/users/"+admin.Login+"/packages/container/user-pkg/versions/"+strconv.Itoa(versionID)+"/files", defaultToken)
 	if resp.StatusCode != http.StatusOK {
 		b, _ := io.ReadAll(resp.Body)
 		resp.Body.Close()
@@ -207,7 +207,7 @@ func TestPackages_UserCRUD(t *testing.T) {
 	}
 
 	// Download file
-	resp = ghGet(t, "/api/v3/users/"+admin.Login+"/packages/container/user-pkg/versions/"+strconv.Itoa(versionID)+"/files/"+strconv.Itoa(fileID), defaultToken)
+	resp = ghGet(t, "/ui-data/users/"+admin.Login+"/packages/container/user-pkg/versions/"+strconv.Itoa(versionID)+"/files/"+strconv.Itoa(fileID), defaultToken)
 	if resp.StatusCode != http.StatusOK {
 		b, _ := io.ReadAll(resp.Body)
 		resp.Body.Close()
@@ -347,7 +347,7 @@ func TestPackages_RepoCRUD(t *testing.T) {
 	repo := testServer.store.CreateRepo(admin, "pkg-repo", "pkg repo", false)
 	pkgID, versionID := seedPackageVersion(t, "repository", repo.FullName, "docker", "repo-pkg", "3.0.0")
 
-	resp := ghGet(t, "/api/v3/repos/"+repo.FullName+"/packages", defaultToken)
+	resp := ghGet(t, "/ui-data/repos/"+repo.FullName+"/packages", defaultToken)
 	if resp.StatusCode != http.StatusOK {
 		b, _ := io.ReadAll(resp.Body)
 		resp.Body.Close()
@@ -369,7 +369,7 @@ func TestPackages_RepoCRUD(t *testing.T) {
 		t.Fatalf("seeded repo-pkg not in list: %v", list)
 	}
 
-	resp = ghGet(t, "/api/v3/repos/"+repo.FullName+"/packages/docker/repo-pkg", defaultToken)
+	resp = ghGet(t, "/ui-data/repos/"+repo.FullName+"/packages/docker/repo-pkg", defaultToken)
 	if resp.StatusCode != http.StatusOK {
 		b, _ := io.ReadAll(resp.Body)
 		resp.Body.Close()
@@ -380,7 +380,7 @@ func TestPackages_RepoCRUD(t *testing.T) {
 		t.Fatal("expected repository block")
 	}
 
-	resp = ghDelete(t, "/api/v3/repos/"+repo.FullName+"/packages/docker/repo-pkg/versions/"+strconv.Itoa(versionID), defaultToken)
+	resp = ghDelete(t, "/ui-data/repos/"+repo.FullName+"/packages/docker/repo-pkg/versions/"+strconv.Itoa(versionID), defaultToken)
 	if resp.StatusCode != http.StatusNoContent {
 		b, _ := io.ReadAll(resp.Body)
 		resp.Body.Close()
@@ -388,7 +388,7 @@ func TestPackages_RepoCRUD(t *testing.T) {
 	}
 	resp.Body.Close()
 
-	resp = ghDelete(t, "/api/v3/repos/"+repo.FullName+"/packages/docker/repo-pkg", defaultToken)
+	resp = ghDelete(t, "/ui-data/repos/"+repo.FullName+"/packages/docker/repo-pkg", defaultToken)
 	if resp.StatusCode != http.StatusNoContent {
 		b, _ := io.ReadAll(resp.Body)
 		resp.Body.Close()
@@ -432,7 +432,7 @@ func TestPackages_404s(t *testing.T) {
 	resp.Body.Close()
 
 	// Missing repo
-	resp = ghGet(t, "/api/v3/repos/nonexistent/repo/packages", defaultToken)
+	resp = ghGet(t, "/ui-data/repos/nonexistent/repo/packages", defaultToken)
 	if resp.StatusCode != http.StatusNotFound {
 		t.Fatalf("expected 404 for missing repo, got %d", resp.StatusCode)
 	}

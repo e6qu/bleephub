@@ -120,7 +120,6 @@ func (s *Server) handleCreatePullRequest(w http.ResponseWriter, r *http.Request)
 	repoKey := owner + "/" + name
 	openedPayload := buildPullRequestPayload(s.store, repo, pr, user, "opened")
 	s.emitWebhookEvent(repoKey, "pull_request", "opened", openedPayload)
-	s.triggerWorkflowsForEvent(repoKey, "pull_request", "opened", "refs/heads/"+pr.HeadRefName, openedPayload)
 
 	s.recordAuditEvent("pull_request.create", user.Login, "", map[string]interface{}{"repo": repoKey, "pr_id": pr.ID})
 	writeJSON(w, http.StatusCreated, pullRequestToJSON(pr, s.store, s.baseURL(r), repo.FullName))
@@ -430,7 +429,6 @@ func (s *Server) handleUpdatePullRequest(w http.ResponseWriter, r *http.Request)
 		repoKey := owner + "/" + repoName
 		payload := buildPullRequestPayload(s.store, repo, updated, user, action)
 		s.emitWebhookEvent(repoKey, "pull_request", action, payload)
-		s.triggerWorkflowsForEvent(repoKey, "pull_request", action, "refs/heads/"+updated.HeadRefName, payload)
 	}
 
 	writeJSON(w, http.StatusOK, pullRequestToJSON(updated, s.store, s.baseURL(r), repo.FullName))
@@ -528,7 +526,6 @@ func (s *Server) handleMergePullRequest(w http.ResponseWriter, r *http.Request) 
 	repoKey := owner + "/" + repoName
 	mergedPayload := buildPullRequestPayload(s.store, repo, merged, user, "closed")
 	s.emitWebhookEvent(repoKey, "pull_request", "closed", mergedPayload)
-	s.triggerWorkflowsForEvent(repoKey, "pull_request", "closed", "refs/heads/"+merged.HeadRefName, mergedPayload)
 
 	writeJSON(w, http.StatusOK, map[string]interface{}{
 		"sha":     mergeSha,
@@ -1027,6 +1024,11 @@ func (s *Server) handleRequestReviewers(w http.ResponseWriter, r *http.Request) 
 	}
 
 	reviewerIDs := reviewerIDsFromRequest(s.store, req.Reviewers)
+	teamIDs, teamsOK := requestedTeamIDs(s.store, repo, req.TeamReviewers)
+	if !teamsOK {
+		writeGHValidationError(w, "PullRequest", "team_reviewers", "invalid")
+		return
+	}
 	if len(reviewerIDs) == 0 && len(req.TeamReviewers) == 0 {
 		writeGHValidationError(w, "PullRequest", "reviewers", "missing_field")
 		return
@@ -1037,6 +1039,10 @@ func (s *Server) handleRequestReviewers(w http.ResponseWriter, r *http.Request) 
 			writeGHError(w, http.StatusUnprocessableEntity, "Unable to request reviewers")
 			return
 		}
+	}
+	if len(teamIDs) > 0 && !s.store.RequestTeamReviewers(repo.FullName, pr.Number, teamIDs) {
+		writeGHError(w, http.StatusUnprocessableEntity, "Unable to request team reviewers")
+		return
 	}
 
 	updated := s.store.GetPullRequestByNumber(repo.ID, num)
@@ -1077,11 +1083,20 @@ func (s *Server) handleRemoveRequestedReviewers(w http.ResponseWriter, r *http.R
 	}
 
 	reviewerIDs := reviewerIDsFromRequest(s.store, req.Reviewers)
+	teamIDs, teamsOK := requestedTeamIDs(s.store, repo, req.TeamReviewers)
+	if !teamsOK {
+		writeGHValidationError(w, "PullRequest", "team_reviewers", "invalid")
+		return
+	}
 	if len(reviewerIDs) > 0 {
 		if !s.store.RemoveRequestedReviewers(repo.FullName, pr.Number, reviewerIDs, user.ID) {
 			writeGHError(w, http.StatusUnprocessableEntity, "Unable to remove reviewers")
 			return
 		}
+	}
+	if len(teamIDs) > 0 && !s.store.RemoveRequestedTeamReviewers(repo.FullName, pr.Number, teamIDs) {
+		writeGHError(w, http.StatusUnprocessableEntity, "Unable to remove team reviewers")
+		return
 	}
 
 	updated := s.store.GetPullRequestByNumber(repo.ID, num)
@@ -1090,8 +1105,7 @@ func (s *Server) handleRemoveRequestedReviewers(w http.ResponseWriter, r *http.R
 
 // handleListRequestedReviewers serves
 // GET /repos/{owner}/{repo}/pulls/{number}/requested_reviewers — the
-// pull-request-review-request shape ({users, teams}). bleephub does not model
-// team review requests, so teams is always empty.
+// pull-request-review-request shape ({users, teams}).
 func (s *Server) handleListRequestedReviewers(w http.ResponseWriter, r *http.Request) {
 	repo := s.lookupReadableRepoFromPath(w, r)
 	if repo == nil {
@@ -1111,17 +1125,24 @@ func (s *Server) handleListRequestedReviewers(w http.ResponseWriter, r *http.Req
 	}
 
 	users := make([]map[string]interface{}, 0)
+	teams := make([]map[string]interface{}, 0)
 	s.store.mu.RLock()
 	for _, id := range pr.RequestedReviewerIDs {
 		if u, ok := s.store.Users[id]; ok {
 			users = append(users, userToJSON(u))
 		}
 	}
+	org := s.store.OrgsByLogin[ownerFromRepoFullName(repo.FullName)]
+	for _, id := range pr.RequestedTeamIDs {
+		if team := s.store.Teams[id]; team != nil && org != nil && team.OrgID == org.ID {
+			teams = append(teams, requestedTeamJSONLocked(s.store, team, org, s.baseURL(r)))
+		}
+	}
 	s.store.mu.RUnlock()
 
 	writeJSON(w, http.StatusOK, map[string]interface{}{
 		"users": users,
-		"teams": []interface{}{},
+		"teams": teams,
 	})
 }
 
@@ -1356,10 +1377,74 @@ func (s *Server) handleUpdateBranch(w http.ResponseWriter, r *http.Request) {
 		writeGHError(w, http.StatusNotFound, "Not Found")
 		return
 	}
+	if pr.State != "OPEN" {
+		writeGHValidationError(w, "PullRequest", "state", "invalid")
+		return
+	}
+	var body struct {
+		ExpectedHeadSHA string `json:"expected_head_sha"`
+	}
+	if !decodeJSONBodyOptional(w, r, &body) {
+		return
+	}
 
-	// bleephub does not materialise branch merges; accept the request and
-	// return the message and URL documented for the async 202 response.
-	_, _ = io.Copy(io.Discard, r.Body)
+	headRepo := pullRequestHeadRepo(s.store, pr)
+	if headRepo == nil {
+		writeGHError(w, http.StatusUnprocessableEntity, "Pull request head repository is unavailable")
+		return
+	}
+	headOwner, headName, _ := splitRepoFullName(headRepo.FullName)
+	headStor := s.store.GetGitStorage(headOwner, headName)
+	baseOwner, baseName, _ := splitRepoFullName(repo.FullName)
+	baseStor := s.store.GetGitStorage(baseOwner, baseName)
+	if headStor == nil || baseStor == nil {
+		writeGHError(w, http.StatusUnprocessableEntity, "Pull request branch cannot be updated")
+		return
+	}
+	headRef := plumbing.NewBranchReferenceName(pr.HeadRefName)
+	headReference, err := headStor.Reference(headRef)
+	if err != nil {
+		writeGHError(w, http.StatusUnprocessableEntity, "Pull request head branch does not exist")
+		return
+	}
+	before := headReference.Hash()
+	if body.ExpectedHeadSHA != "" && body.ExpectedHeadSHA != before.String() {
+		writeGHValidationError(w, "PullRequest", "expected_head_sha", "invalid")
+		return
+	}
+	baseHash, err := resolveGitRef(baseStor, pr.BaseRefName)
+	if err != nil {
+		writeGHError(w, http.StatusUnprocessableEntity, "Pull request base branch does not exist")
+		return
+	}
+	if headRepo.FullName != repo.FullName {
+		if err := copyGitObjects(baseStor, headStor); err != nil {
+			writeGHError(w, http.StatusUnprocessableEntity, "Pull request branch cannot be updated")
+			return
+		}
+	}
+	email := user.Email
+	if email == "" {
+		email = user.Login + "@users.noreply.bleephub.local"
+	}
+	after, _, err := performMerge(
+		headStor, headRef, baseHash, pr.BaseRefName,
+		fmt.Sprintf("Merge branch '%s' into %s", pr.BaseRefName, pr.HeadRefName),
+		repoSignature(user.Login, email),
+	)
+	if err != nil {
+		writeGHError(w, http.StatusUnprocessableEntity, "Pull request branch cannot be updated due to conflicts")
+		return
+	}
+	s.store.UpdatePullRequest(pr.ID, func(current *PullRequest) {
+		current.BaseSHA = baseHash.String()
+		current.Mergeable = "UNKNOWN"
+	})
+	if after != before {
+		s.afterCommittedRefUpdate(
+			headRepo, user, headRef.String(), before.String(), after.String(), s.baseURL(r),
+		)
+	}
 	writeJSON(w, http.StatusAccepted, map[string]interface{}{
 		"message": "Updating pull request branch.",
 		"url":     fmt.Sprintf("%s/api/v3/repos/%s/pulls/%d", s.baseURL(r), repo.FullName, pr.Number),
@@ -1478,6 +1563,42 @@ func reviewerIDsFromRequest(st *Store, reviewers []interface{}) []int {
 	return ids
 }
 
+func requestedTeamIDs(st *Store, repo *Repo, slugs []string) ([]int, bool) {
+	if len(slugs) == 0 {
+		return nil, true
+	}
+	orgLogin := ownerFromRepoFullName(repo.FullName)
+	org := st.GetOrg(orgLogin)
+	if org == nil {
+		return nil, false
+	}
+	ids := make([]int, 0, len(slugs))
+	seen := map[int]struct{}{}
+	for _, slug := range slugs {
+		team := st.GetTeam(orgLogin, slug)
+		if team == nil || team.OrgID != org.ID {
+			return nil, false
+		}
+		if _, ok := seen[team.ID]; !ok {
+			ids = append(ids, team.ID)
+			seen[team.ID] = struct{}{}
+		}
+	}
+	return ids, true
+}
+
+// requestedTeamJSONLocked is the team-simple shape used by pull request
+// review requests. Callers hold st.mu, so parent lookup uses the map directly
+// instead of the locking teamSimpleJSON helper.
+func requestedTeamJSONLocked(st *Store, team *Team, org *Org, baseURL string) map[string]interface{} {
+	out := teamRefJSON(team, org, baseURL)
+	out["parent"] = nil
+	if parent := st.Teams[team.ParentID]; parent != nil && parent.OrgID == org.ID {
+		out["parent"] = teamRefJSON(parent, org, baseURL)
+	}
+	return out
+}
+
 // --- JSON converters ---
 
 func pullRequestHeadSHA(pr *PullRequest, st *Store) string {
@@ -1547,6 +1668,14 @@ func pullRequestSimpleJSON(pr *PullRequest, st *Store, baseURL, repoFullName str
 	for _, rid := range pr.RequestedReviewerIDs {
 		if u, ok := st.Users[rid]; ok {
 			requestedReviewers = append(requestedReviewers, userToJSON(u))
+		}
+	}
+	requestedTeams := make([]map[string]interface{}, 0)
+	if org := st.OrgsByLogin[ownerFromRepoFullName(repoFullName)]; org != nil {
+		for _, teamID := range pr.RequestedTeamIDs {
+			if team := st.Teams[teamID]; team != nil && team.OrgID == org.ID {
+				requestedTeams = append(requestedTeams, requestedTeamJSONLocked(st, team, org, baseURL))
+			}
 		}
 	}
 
@@ -1676,7 +1805,7 @@ func pullRequestSimpleJSON(pr *PullRequest, st *Store, baseURL, repoFullName str
 		"assignees":           assignees,
 		"milestone":           milestoneJSON,
 		"requested_reviewers": requestedReviewers,
-		"requested_teams":     []interface{}{},
+		"requested_teams":     requestedTeams,
 		"author_association":  authorAssociation,
 		"auto_merge":          nil,
 		"merged_at":           mergedAt,

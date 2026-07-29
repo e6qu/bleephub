@@ -5,6 +5,7 @@ import (
 	"regexp"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/go-git/go-git/v5/plumbing"
 	"github.com/go-git/go-git/v5/plumbing/object"
@@ -25,13 +26,21 @@ type TriggerDef struct {
 	Types          []string
 	// Inputs carries workflow_dispatch / workflow_call input declarations.
 	Inputs map[string]*WorkflowInputDef
-	// Crons carries the cron lines of `on: schedule:`.
-	Crons []string
+	// Schedules carries every cron line together with its optional IANA
+	// timezone. GitHub evaluates each entry independently and exposes the
+	// matching cron expression through github.event.schedule.
+	Schedules []WorkflowScheduleDef
 	// Outputs carries workflow_call output declarations: name → the
 	// `${{ jobs.<id>.outputs.<o> }}` value template.
 	Outputs map[string]string
 	// Secrets carries workflow_call secret declarations.
 	Secrets map[string]*WorkflowCallSecretDef
+}
+
+// WorkflowScheduleDef is one `on.schedule` entry.
+type WorkflowScheduleDef struct {
+	Cron     string
+	Timezone string
 }
 
 // WorkflowCallSecretDef is a declared workflow_call secret.
@@ -134,7 +143,8 @@ func parseTriggerDef(event string, node *yaml.Node) (*TriggerDef, error) {
 	}
 	if event == "schedule" {
 		var entries []struct {
-			Cron string `yaml:"cron"`
+			Cron     string `yaml:"cron"`
+			Timezone string `yaml:"timezone"`
 		}
 		if err := node.Decode(&entries); err != nil {
 			return nil, fmt.Errorf("schedule must be a list of {cron: ...}: %w", err)
@@ -142,7 +152,15 @@ func parseTriggerDef(event string, node *yaml.Node) (*TriggerDef, error) {
 		td := &TriggerDef{}
 		for _, e := range entries {
 			if e.Cron != "" {
-				td.Crons = append(td.Crons, e.Cron)
+				if e.Timezone != "" {
+					if _, err := time.LoadLocation(e.Timezone); err != nil {
+						return nil, fmt.Errorf("schedule timezone %q is not an IANA timezone: %w", e.Timezone, err)
+					}
+				}
+				td.Schedules = append(td.Schedules, WorkflowScheduleDef{
+					Cron:     e.Cron,
+					Timezone: e.Timezone,
+				})
 			}
 		}
 		return td, nil
@@ -453,7 +471,6 @@ func (s *Server) firePullRequestSynchronize(repo *Repo, repoKey, branch string) 
 		}
 		payload := buildPullRequestPayload(s.store, baseRepo, pr, nil, "synchronize")
 		s.emitWebhookEvent(baseRepo.FullName, "pull_request", "synchronize", payload)
-		s.triggerWorkflowsForEvent(baseRepo.FullName, "pull_request", "synchronize", "refs/heads/"+pr.HeadRefName, payload)
 	}
 }
 

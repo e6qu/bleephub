@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Spinner, InlineError } from "@bleephub/ui-core/components";
+import { confirmAction } from "../components/confirmAction.js";
 import {
   fetchEnterpriseSlug,
   fetchEnterpriseTeams,
@@ -142,8 +143,8 @@ function EnterpriseTeamsPanel() {
                 size="sm"
                 variant="danger"
                 disabled={deleteMut.isPending}
-                onClick={() => {
-                  if (confirm(`Delete enterprise team ${team.slug}?`)) deleteMut.mutate(team.slug);
+                onClick={async () => {
+                  if (await confirmAction(`Delete enterprise team ${team.slug}?`)) deleteMut.mutate(team.slug);
                 }}
               >
                 delete
@@ -328,8 +329,8 @@ function EnterpriseTeamMembersDialog({
                   size="sm"
                   variant="danger"
                   disabled={removeMut.isPending}
-                  onClick={() => {
-                    if (confirm(`Remove ${m.login} from ${team.slug}?`)) removeMut.mutate(m.login);
+                  onClick={async () => {
+                    if (await confirmAction(`Remove ${m.login} from ${team.slug}?`)) removeMut.mutate(m.login);
                   }}
                 >
                   remove
@@ -437,8 +438,8 @@ function EnterpriseTeamOrgsDialog({
                   size="sm"
                   variant="danger"
                   disabled={!editable || unassignMut.isPending}
-                  onClick={() => {
-                    if (confirm(`Unassign ${org.login} from ${team.slug}?`)) unassignMut.mutate(org.login);
+                  onClick={async () => {
+                    if (await confirmAction(`Unassign ${org.login} from ${team.slug}?`)) unassignMut.mutate(org.login);
                   }}
                 >
                   unassign

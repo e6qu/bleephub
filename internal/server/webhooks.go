@@ -428,6 +428,7 @@ func (s *Server) emitWebhookEvent(repoKey, eventType, action string, payload int
 				}
 			}
 		}
+		s.triggerWorkflowsForWebhookEvent(repoKey, eventType, action, m)
 	}
 
 	payloadBytes, err := json.Marshal(payload)
@@ -445,6 +446,54 @@ func (s *Server) emitWebhookEvent(repoKey, eventType, action string, payload int
 		}
 		s.enqueueWebhookDelivery(hook, eventType, action, payloadBytes)
 	}
+}
+
+// triggerWorkflowsForWebhookEvent makes webhook and Actions event production
+// one application concept. A mutator cannot implement an event for hooks while
+// silently forgetting that the same event triggers workflows.
+func (s *Server) triggerWorkflowsForWebhookEvent(repoKey, eventType, action string, payload map[string]interface{}) {
+	repo := s.store.GetRepoByFullName(repoKey)
+	if repo == nil {
+		return
+	}
+	ref := plumbing.NewBranchReferenceName(repo.DefaultBranch).String()
+	switch eventType {
+	case "push":
+		if eventRef, _ := payload["ref"].(string); eventRef != "" {
+			ref = eventRef
+		}
+	case "pull_request", "pull_request_target":
+		if pull, _ := payload["pull_request"].(map[string]interface{}); pull != nil {
+			if head, _ := pull["head"].(map[string]interface{}); head != nil {
+				if headRef, _ := head["ref"].(string); headRef != "" {
+					ref = plumbing.NewBranchReferenceName(headRef).String()
+				}
+			}
+		}
+	case "release":
+		if release, _ := payload["release"].(map[string]interface{}); release != nil {
+			if draft, _ := release["draft"].(bool); draft &&
+				(action == "created" || action == "edited" || action == "deleted") {
+				return
+			}
+			if tag, _ := release["tag_name"].(string); tag != "" {
+				ref = plumbing.NewTagReferenceName(tag).String()
+			}
+		}
+	case "deployment", "deployment_status":
+		if deployment, _ := payload["deployment"].(map[string]interface{}); deployment != nil {
+			if deploymentRef, _ := deployment["ref"].(string); deploymentRef != "" {
+				owner, name, _ := splitRepoFullName(repo.FullName)
+				stor := s.store.GetGitStorage(owner, name)
+				if stor != nil {
+					if normalized, sha := resolveGitHubRefInput(stor, deploymentRef); sha != zeroCommitSha {
+						ref = normalized
+					}
+				}
+			}
+		}
+	}
+	s.triggerWorkflowsForEvent(repoKey, eventType, action, ref, payload)
 }
 
 func hookMatchesEvent(hook *Webhook, eventType string) bool {
@@ -770,11 +819,37 @@ func workflowRefsForEvent(stor gitStorage.Storer, repoKey, eventType, ref string
 			}
 		}
 	}
+	if eventType != "push" && eventType != "release" {
+		definitionRef := defaultWorkflowDefinitionRef(stor, payload)
+		sha := resolveRefSha(stor, definitionRef)
+		if sha == zeroCommitSha {
+			return workflowRunRefs{}, fmt.Errorf("default branch %s does not resolve to a commit", definitionRef)
+		}
+		runRef := ref
+		runSHA := resolveRefSha(stor, runRef)
+		if runSHA == zeroCommitSha {
+			runRef = definitionRef
+			runSHA = sha
+		}
+		return workflowRunRefs{definitionRef: definitionRef, runRef: runRef, runSha: runSHA}, nil
+	}
 	sha := resolveRefSha(stor, ref)
 	if sha == zeroCommitSha {
 		return workflowRunRefs{}, fmt.Errorf("ref %q does not resolve to a commit", ref)
 	}
 	return workflowRunRefs{definitionRef: ref, runRef: ref, runSha: sha}, nil
+}
+
+func defaultWorkflowDefinitionRef(stor gitStorage.Storer, payload map[string]interface{}) string {
+	if repository, _ := payload["repository"].(map[string]interface{}); repository != nil {
+		if branch, _ := repository["default_branch"].(string); branch != "" {
+			return plumbing.NewBranchReferenceName(branch).String()
+		}
+	}
+	if head, err := stor.Reference(plumbing.HEAD); err == nil && head.Type() == plumbing.SymbolicReference {
+		return head.Target().String()
+	}
+	return plumbing.NewBranchReferenceName("main").String()
 }
 
 // pullRequestIsFromFork reports whether the event payload's pull request has

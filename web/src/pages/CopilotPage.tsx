@@ -2,6 +2,7 @@ import { useState } from "react";
 import { useParams } from "react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Spinner, InlineError } from "@bleephub/ui-core/components";
+import { confirmAction } from "../components/confirmAction.js";
 import {
   fetchCopilotBilling,
   fetchCopilotSeats,
@@ -194,8 +195,8 @@ function SeatsSection({ org }: { org: string }) {
                     size="sm"
                     variant="danger"
                     disabled={removeMut.isPending}
-                    onClick={() => {
-                      if (confirm(`Cancel ${login}'s Copilot seat?`)) {
+                    onClick={async () => {
+                      if (await confirmAction(`Cancel ${login}'s Copilot seat?`)) {
                         removeMut.mutate(login);
                       }
                     }}
@@ -256,8 +257,8 @@ function SpacesSection({ org }: { org: string }) {
                 org={org}
                 space={space}
                 onEdit={() => setEditing(space)}
-                onDelete={() => {
-                  if (confirm(`Delete Copilot Space ${space.name}?`)) deleteMut.mutate(space.number);
+                onDelete={async () => {
+                  if (await confirmAction(`Delete Copilot Space ${space.name}?`)) deleteMut.mutate(space.number);
                 }}
                 deleting={deleteMut.isPending}
               />

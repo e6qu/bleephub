@@ -16,6 +16,7 @@ import {
   stopCodespace,
 } from "../api.js";
 import type { BleephubRepo, GithubCodespace, GithubCodespaceState } from "../types.js";
+import { confirmAction } from "../components/confirmAction.js";
 import {
   Blankslate,
   Box,
@@ -176,8 +177,8 @@ function CodespacesList({ repoScope }: { repoScope: string | null }) {
               <Button
                 size="sm"
                 variant="ghost"
-                onClick={() => {
-                  if (confirm(`Delete codespace ${cs.name}?`)) {
+                onClick={async () => {
+                  if (await confirmAction(`Delete codespace ${cs.name}?`)) {
                     deleteMut.mutate(cs.name);
                   }
                 }}
@@ -266,8 +267,8 @@ function CodespaceDetail({ name }: { name: string }) {
             <Button
               variant="danger"
               disabled={remove.isPending}
-              onClick={() => {
-                if (confirm(`Delete codespace ${cs.name}?`)) remove.mutate();
+              onClick={async () => {
+                if (await confirmAction(`Delete codespace ${cs.name}?`)) remove.mutate();
               }}
             >
               <TrashIcon size={14} /> Delete

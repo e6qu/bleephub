@@ -311,7 +311,6 @@ func (s *Server) registerGHGitDataRoutes() {
 	s.route("POST /api/v3/repos/{owner}/{repo}/git/commits", s.requirePerm(scopeContents, permWrite, s.requireRepoPush(s.handleCreateCommit)))
 	s.route("GET /api/v3/repos/{owner}/{repo}/git/tags/{sha}", s.requirePerm(scopeContents, permRead, s.handleGetTag))
 	s.route("POST /api/v3/repos/{owner}/{repo}/git/tags", s.requirePerm(scopeContents, permWrite, s.requireRepoPush(s.handleCreateTag)))
-	s.route("GET /api/v3/repos/{owner}/{repo}/git/refs", s.requirePerm(scopeContents, permRead, s.handleListRefs))
 	s.route("GET /api/v3/repos/{owner}/{repo}/git/refs/{ref...}", s.requirePerm(scopeContents, permRead, s.handleGetRefs))
 	s.route("POST /api/v3/repos/{owner}/{repo}/git/refs", s.requirePerm(scopeContents, permWrite, s.requireRepoPush(s.handleCreateRef)))
 	s.route("PATCH /api/v3/repos/{owner}/{repo}/git/refs/{ref...}", s.requirePerm(scopeContents, permWrite, s.requireRepoPush(s.handleUpdateRef)))

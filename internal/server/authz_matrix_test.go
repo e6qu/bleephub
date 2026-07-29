@@ -223,7 +223,7 @@ func TestPrivateRepoReadsRejectAnUnrelatedUser(t *testing.T) {
 		base + "/tags",
 		base + "/labels",
 		base + "/milestones",
-		base + "/git/refs",
+		base + "/git/matching-refs/",
 		base + "/issues",
 		base + "/pulls",
 		base + "/releases",
@@ -238,7 +238,6 @@ func TestPrivateRepoReadsRejectAnUnrelatedUser(t *testing.T) {
 		base + "/actions/variables",
 		base + "/private-vulnerability-reporting",
 		base + "/stargazers",
-		base + "/packages",
 		base + "/import",
 		base + "/check-suites/1",
 		base + "/code-scanning/alerts",
@@ -284,7 +283,6 @@ func TestPrivateRepoReadsRejectAnUnrelatedUser(t *testing.T) {
 		"/api/v3/repos/" + ownerLogin + "/" + repoName + "/branches",
 		"/api/v3/repos/" + ownerLogin + "/" + repoName + "/private-vulnerability-reporting",
 		"/api/v3/repos/" + ownerLogin + "/" + repoName + "/stargazers",
-		"/api/v3/repos/" + ownerLogin + "/" + repoName + "/packages",
 	} {
 		req := httptest.NewRequest(http.MethodGet, path, nil)
 		req.Header.Set("Authorization", "token "+ownerToken.Value)

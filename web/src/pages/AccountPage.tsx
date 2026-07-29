@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Spinner, InlineError } from "@bleephub/ui-core/components";
+import { confirmAction } from "../components/confirmAction.js";
 import {
   addUserEmails,
   blockUser,
@@ -135,7 +136,7 @@ function FineGrainedTokensTab() {
       <div className="flex justify-end" style={{ padding: "0 1rem 1rem" }}><Button variant="primary" disabled={!name.trim() || (selection === "subset" && repositoryIDs.length === 0) || createMutation.isPending} onClick={() => createMutation.mutate()}>Generate token</Button></div>
     </Box>
     {data.pending_requests.length > 0 && <Box header={<span style={{ fontWeight: 650 }}>Organization approval requests</span>}><ul style={{ listStyle: "none", margin: 0, padding: 0 }}>{data.pending_requests.map((request) => <li key={`${request.organization}-${request.id}`} className="flex flex-wrap items-center justify-between gap-3" style={{ padding: ".9rem 1rem", borderBottom: "1px solid var(--color-border)" }}><div><b>{request.token_name}</b><div style={{ color: "var(--color-fg-muted)", fontSize: ".82rem" }}>{request.owner.login} requests {request.organization} · {request.repository_selection} repositories{request.reason ? ` · ${request.reason}` : ""}</div></div><div className="flex gap-2"><Button size="sm" onClick={() => reviewMutation.mutate({ org: request.organization, id: request.id, action: "deny" })}>Deny</Button><Button size="sm" variant="primary" onClick={() => reviewMutation.mutate({ org: request.organization, id: request.id, action: "approve" })}>Approve</Button></div></li>)}</ul></Box>}
-    <Box header={<span style={{ fontWeight: 650 }}>Your fine-grained tokens</span>}>{data.tokens.length === 0 ? <div style={{ padding: "1rem", color: "var(--color-fg-muted)" }}>You have not generated any fine-grained tokens.</div> : <ul style={{ listStyle: "none", margin: 0, padding: 0 }}>{data.tokens.map((token) => <li key={token.id} className="flex flex-wrap items-center justify-between gap-3" style={{ padding: ".9rem 1rem", borderBottom: "1px solid var(--color-border)" }}><div><div className="flex items-center gap-2"><b>{token.name}</b><span style={{ padding: ".12rem .45rem", borderRadius: 999, fontSize: ".72rem", fontWeight: 650, color: token.status === "active" ? "var(--color-status-ok)" : "var(--color-status-warn)", background: token.status === "active" ? "var(--color-status-ok-soft)" : "var(--color-status-warn-soft)" }}>{token.status}</span></div><div style={{ color: "var(--color-fg-muted)", fontSize: ".82rem" }}>{token.resource_owner} · {token.repository_selection} repositories · {token.expires_at ? `expires ${new Date(token.expires_at).toLocaleDateString()}` : "no expiration"}</div></div><Button size="sm" variant="danger" disabled={deleteMutation.isPending} onClick={() => confirm(`Delete ${token.name}?`) && deleteMutation.mutate(token.id)}>Delete</Button></li>)}</ul>}</Box>
+    <Box header={<span style={{ fontWeight: 650 }}>Your fine-grained tokens</span>}>{data.tokens.length === 0 ? <div style={{ padding: "1rem", color: "var(--color-fg-muted)" }}>You have not generated any fine-grained tokens.</div> : <ul style={{ listStyle: "none", margin: 0, padding: 0 }}>{data.tokens.map((token) => <li key={token.id} className="flex flex-wrap items-center justify-between gap-3" style={{ padding: ".9rem 1rem", borderBottom: "1px solid var(--color-border)" }}><div><div className="flex items-center gap-2"><b>{token.name}</b><span style={{ padding: ".12rem .45rem", borderRadius: 999, fontSize: ".72rem", fontWeight: 650, color: token.status === "active" ? "var(--color-status-ok)" : "var(--color-status-warn)", background: token.status === "active" ? "var(--color-status-ok-soft)" : "var(--color-status-warn-soft)" }}>{token.status}</span></div><div style={{ color: "var(--color-fg-muted)", fontSize: ".82rem" }}>{token.resource_owner} · {token.repository_selection} repositories · {token.expires_at ? `expires ${new Date(token.expires_at).toLocaleDateString()}` : "no expiration"}</div></div><Button size="sm" variant="danger" disabled={deleteMutation.isPending} onClick={async () => { if (await confirmAction(`Delete ${token.name}?`)) deleteMutation.mutate(token.id); }}>Delete</Button></li>)}</ul>}</Box>
   </div>;
 }
 
@@ -246,8 +247,8 @@ function KeyManager<T extends { id: number }>({
                 <Button
                   size="sm"
                   variant="danger"
-                  onClick={() => {
-                    if (confirm(`Delete this ${kind}?`)) deleteMut.mutate(k.id);
+                  onClick={async () => {
+                    if (await confirmAction(`Delete this ${kind}?`)) deleteMut.mutate(k.id);
                   }}
                   disabled={deleteMut.isPending}
                 >
@@ -441,8 +442,8 @@ function EmailsTab() {
                   <Button
                     size="sm"
                     variant="danger"
-                    onClick={() => {
-                      if (confirm(`Remove ${e.email}?`)) deleteMut.mutate(e.email);
+                    onClick={async () => {
+                      if (await confirmAction(`Remove ${e.email}?`)) deleteMut.mutate(e.email);
                     }}
                     disabled={deleteMut.isPending}
                   >

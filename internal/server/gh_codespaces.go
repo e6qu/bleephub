@@ -26,11 +26,6 @@ func (s *Server) registerGHCodespacesRoutes() {
 	s.route("GET /api/v3/repos/{owner}/{repo}/codespaces/devcontainers", s.requirePerm(scopeCodespaces, permRead, s.handleListRepoDevcontainers))
 	s.route("GET /api/v3/repos/{owner}/{repo}/codespaces/new", s.requirePerm(scopeCodespaces, permRead, s.handleGetCodespaceDefaults))
 	s.route("GET /api/v3/repos/{owner}/{repo}/codespaces/permissions_check", s.requirePerm(scopeCodespaces, permRead, s.handleCodespacePermissionsCheck))
-	s.route("GET /api/v3/repos/{owner}/{repo}/codespaces/{codespace_name}", s.requirePerm(scopeCodespaces, permRead, s.handleGetRepoCodespace))
-	s.route("DELETE /api/v3/repos/{owner}/{repo}/codespaces/{codespace_name}", s.requirePerm(scopeCodespaces, permWrite, s.handleDeleteRepoCodespace))
-	s.route("POST /api/v3/repos/{owner}/{repo}/codespaces/{codespace_name}/start", s.requirePerm(scopeCodespaces, permWrite, s.handleStartRepoCodespace))
-	s.route("POST /api/v3/repos/{owner}/{repo}/codespaces/{codespace_name}/stop", s.requirePerm(scopeCodespaces, permWrite, s.handleStopRepoCodespace))
-
 	// Machine types.
 	s.route("GET /api/v3/repos/{owner}/{repo}/codespaces/machines", s.requirePerm(scopeCodespaces, permRead, s.handleListCodespaceMachines))
 

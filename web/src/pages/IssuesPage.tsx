@@ -2,6 +2,7 @@ import { useMemo, useState } from "react";
 import { useParams, Link, useNavigate } from "react-router";
 import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Spinner, InlineError } from "@bleephub/ui-core/components";
+import { confirmAction } from "../components/confirmAction.js";
 import {
   fetchRepoIssuesPage,
   fetchRepoIssuesFilteredPage,
@@ -439,8 +440,8 @@ function LabelsView({ owner, repo }: { owner: string; repo: string }) {
                 size="sm"
                 variant="danger"
                 disabled={deleteMut.isPending}
-                onClick={() => {
-                  if (confirm(`Delete label ${label.name}?`)) deleteMut.mutate(label.name);
+                onClick={async () => {
+                  if (await confirmAction(`Delete label ${label.name}?`)) deleteMut.mutate(label.name);
                 }}
               >
                 delete
@@ -597,8 +598,8 @@ function MilestonesView({ owner, repo }: { owner: string; repo: string }) {
               milestone={ms}
               last={i === milestones.length - 1}
               onToggleState={(next) => stateMut.mutate({ number: ms.number, next })}
-              onDelete={() => {
-                if (confirm(`Delete milestone ${ms.title}?`)) deleteMut.mutate(ms.number);
+              onDelete={async () => {
+                if (await confirmAction(`Delete milestone ${ms.title}?`)) deleteMut.mutate(ms.number);
               }}
               busy={stateMut.isPending || deleteMut.isPending}
             />

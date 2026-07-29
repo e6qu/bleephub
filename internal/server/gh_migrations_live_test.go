@@ -97,12 +97,17 @@ func TestLiveMigrations_UserAndOrg(t *testing.T) {
 	}
 	resp.Body.Close()
 
-	// Get lock status
-	resp = authedGet(t, "/api/v3/orgs/"+org.Login+"/migrations/"+itoa(orgMigID)+"/repos/"+orgRepo.Name+"/lock")
-	if resp.StatusCode != http.StatusOK {
+	// Unlock the migrated repository through GitHub's documented operation.
+	req, _ := http.NewRequest(http.MethodDelete, testBaseURL+"/api/v3/orgs/"+org.Login+"/migrations/"+itoa(orgMigID)+"/repos/"+orgRepo.Name+"/lock", nil)
+	req.Header.Set("Authorization", "Bearer "+defaultToken)
+	resp, err = http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if resp.StatusCode != http.StatusNoContent {
 		b, _ := io.ReadAll(resp.Body)
 		resp.Body.Close()
-		t.Fatalf("get org lock status: %d %s", resp.StatusCode, b)
+		t.Fatalf("unlock org migration repository: %d %s", resp.StatusCode, b)
 	}
 	resp.Body.Close()
 }

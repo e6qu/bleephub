@@ -2,6 +2,7 @@ import { useState } from "react";
 import { useParams } from "react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Spinner, InlineError } from "@bleephub/ui-core/components";
+import { confirmAction } from "../components/confirmAction.js";
 import {
   fetchOrgInvitations,
   fetchFailedOrgInvitations,
@@ -248,8 +249,8 @@ function PeoplePanel({ org }: { org: string }) {
                   size="sm"
                   variant="danger"
                   disabled={removeOutsideMut.isPending}
-                  onClick={() => {
-                    if (confirm(`Remove ${u.login} as an outside collaborator?`)) {
+                  onClick={async () => {
+                    if (await confirmAction(`Remove ${u.login} as an outside collaborator?`)) {
                       removeOutsideMut.mutate(u.login);
                     }
                   }}
@@ -551,8 +552,8 @@ function PropertiesPanel({ org }: { org: string }) {
                 size="sm"
                 variant="danger"
                 disabled={deleteMut.isPending}
-                onClick={() => {
-                  if (confirm(`Delete property ${p.property_name}?`)) deleteMut.mutate(p.property_name);
+                onClick={async () => {
+                  if (await confirmAction(`Delete property ${p.property_name}?`)) deleteMut.mutate(p.property_name);
                 }}
               >
                 delete
@@ -1038,8 +1039,8 @@ function IssueTypesPanel({ org }: { org: string }) {
                 size="sm"
                 variant="danger"
                 disabled={deleteMut.isPending}
-                onClick={() => {
-                  if (confirm(`Delete issue type ${it.name}?`)) deleteMut.mutate(it.id);
+                onClick={async () => {
+                  if (await confirmAction(`Delete issue type ${it.name}?`)) deleteMut.mutate(it.id);
                 }}
               >
                 delete

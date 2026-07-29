@@ -198,7 +198,6 @@ describe("EnterprisePage teams tab", () => {
       }
       return Promise.resolve(jsonResponse([]));
     });
-    const confirmSpy = vi.spyOn(window, "confirm").mockReturnValue(true);
     renderPage();
     await waitFor(() => {
       expect(screen.getByRole("button", { name: "organizations" })).toBeInTheDocument();
@@ -222,6 +221,7 @@ describe("EnterprisePage teams tab", () => {
     });
 
     fireEvent.click(screen.getByRole("button", { name: "unassign" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Confirm" }));
     await waitFor(() => {
       const del = mockFetch.mock.calls.find(
         (c) =>
@@ -230,7 +230,6 @@ describe("EnterprisePage teams tab", () => {
       );
       expect(del).toBeTruthy();
     });
-    confirmSpy.mockRestore();
   });
 
   it("disables organization assignment editing unless the selection type is selected", async () => {

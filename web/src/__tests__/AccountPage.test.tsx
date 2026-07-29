@@ -161,7 +161,6 @@ describe("AccountPage", () => {
   });
 
   it("deletes an SSH key via DELETE /user/keys/{id}", async () => {
-    vi.spyOn(window, "confirm").mockReturnValue(true);
     installFetchRoutes({
       "DELETE /api/v3/user/keys/3": () => new Response(null, { status: 204 }),
     });
@@ -169,6 +168,7 @@ describe("AccountPage", () => {
     await waitFor(() => screen.getByText("laptop"));
 
     fireEvent.click(screen.getByRole("button", { name: "delete" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Confirm" }));
     await waitFor(() => {
       const del = mockFetch.mock.calls.find((c) => c[1]?.method === "DELETE");
       expect(del).toBeDefined();

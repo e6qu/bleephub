@@ -153,7 +153,6 @@ describe("RepoSettingsPage collaborators tab", () => {
   });
 
   it("removes a collaborator", async () => {
-    vi.spyOn(window, "confirm").mockReturnValue(true);
     installFetchRoutes({
       "DELETE /api/v3/repos/admin/collab-repo/collaborators/carol": () =>
         new Response(null, { status: 204 }),
@@ -162,6 +161,7 @@ describe("RepoSettingsPage collaborators tab", () => {
     await waitFor(() => screen.getByText("carol"));
 
     fireEvent.click(screen.getByRole("button", { name: "remove" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Confirm" }));
     await waitFor(() => {
       const del = mockFetch.mock.calls.find(
         (c) => c[1]?.method === "DELETE" && String(c[0]).includes("/collaborators/"),

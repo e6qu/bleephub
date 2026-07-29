@@ -1,0 +1,151 @@
+package bleephub
+
+import (
+	"crypto/sha256"
+	"fmt"
+	"net"
+	"net/http"
+	"strings"
+	"time"
+)
+
+// apiRateWindow is one credential/resource primary-rate-limit window. Tokens
+// are never retained: the map key contains only a SHA-256 digest of the
+// presented authorization value (or the anonymous remote address).
+type apiRateWindow struct {
+	Limit int
+	Used  int
+	Reset time.Time
+}
+
+type apiRateSnapshot struct {
+	Resource  string
+	Limit     int
+	Used      int
+	Remaining int
+	Reset     int64
+}
+
+var apiRateResourceLimits = map[string]int{
+	"actions_runner_registration": 10000,
+	"code_scanning_autofix":       10,
+	"code_scanning_upload":        500,
+	"code_search":                 10,
+	"core":                        5000,
+	"dependency_snapshots":        100,
+	"graphql":                     5000,
+	"integration_manifest":        5000,
+	"scim":                        15000,
+	"search":                      30,
+	"source_import":               100,
+}
+
+// apiRateResponseResources is the exact object currently described by
+// GitHub's REST schema. code_scanning_upload has a distinct request-header
+// bucket on GHES versions, but is not a permitted property in the current
+// /rate_limit response schema.
+var apiRateResponseResources = []string{
+	"actions_runner_registration",
+	"code_scanning_autofix",
+	"code_search",
+	"core",
+	"dependency_snapshots",
+	"graphql",
+	"integration_manifest",
+	"scim",
+	"search",
+	"source_import",
+}
+
+func apiRateResource(path string) string {
+	switch {
+	case strings.HasPrefix(path, "/api/graphql"):
+		return "graphql"
+	case strings.HasPrefix(path, "/api/v3/search/code"):
+		return "code_search"
+	case strings.HasPrefix(path, "/api/v3/search/"):
+		return "search"
+	case strings.Contains(path, "/actions/runners/registration-token"),
+		strings.Contains(path, "/actions/runners/remove-token"),
+		path == "/api/v3/actions/runner-registration":
+		return "actions_runner_registration"
+	case strings.Contains(path, "/import"):
+		return "source_import"
+	case strings.Contains(path, "/dependency-graph/snapshots"):
+		return "dependency_snapshots"
+	case strings.Contains(path, "/code-scanning/sarifs"):
+		return "code_scanning_upload"
+	case strings.Contains(path, "/code-scanning/alerts/") && strings.HasSuffix(path, "/autofix"):
+		return "code_scanning_autofix"
+	case strings.Contains(path, "/scim/"):
+		return "scim"
+	case strings.Contains(path, "/app-manifests/"):
+		return "integration_manifest"
+	default:
+		return "core"
+	}
+}
+
+func apiRateWindowDuration(resource string) time.Duration {
+	switch resource {
+	case "search", "code_search", "dependency_snapshots", "code_scanning_autofix":
+		return time.Minute
+	default:
+		return time.Hour
+	}
+}
+
+func apiRateIdentity(r *http.Request) string {
+	if authorization := r.Header.Get("Authorization"); authorization != "" {
+		sum := sha256.Sum256([]byte(authorization))
+		return fmt.Sprintf("auth:%x", sum)
+	}
+	host := r.RemoteAddr
+	if parsed, _, err := net.SplitHostPort(host); err == nil {
+		host = parsed
+	}
+	if host == "" {
+		host = "unknown"
+	}
+	return "anonymous:" + host
+}
+
+func (s *Server) rateLimitSnapshot(r *http.Request, resource string, consume bool) apiRateSnapshot {
+	limit, ok := apiRateResourceLimits[resource]
+	if !ok {
+		resource, limit = "core", apiRateResourceLimits["core"]
+	}
+	key := apiRateIdentity(r) + "\x1f" + resource
+	now := time.Now().UTC()
+
+	s.rateLimitsMu.Lock()
+	if s.rateLimits == nil {
+		s.rateLimits = map[string]*apiRateWindow{}
+	}
+	window := s.rateLimits[key]
+	if window == nil || !now.Before(window.Reset) {
+		window = &apiRateWindow{Limit: limit, Reset: now.Add(apiRateWindowDuration(resource))}
+		s.rateLimits[key] = window
+	}
+	if consume && window.Used < window.Limit {
+		window.Used++
+	}
+	snapshot := apiRateSnapshot{
+		Resource:  resource,
+		Limit:     window.Limit,
+		Used:      window.Used,
+		Remaining: max(window.Limit-window.Used, 0),
+		Reset:     window.Reset.Unix(),
+	}
+	s.rateLimitsMu.Unlock()
+	return snapshot
+}
+
+func rateSnapshotJSON(snapshot apiRateSnapshot) map[string]interface{} {
+	return map[string]interface{}{
+		"limit":     snapshot.Limit,
+		"used":      snapshot.Used,
+		"remaining": snapshot.Remaining,
+		"reset":     snapshot.Reset,
+	}
+}

@@ -3,6 +3,7 @@ import { DataTable, InlineError, Spinner } from "@bleephub/ui-core/components";
 import { createColumnHelper } from "@tanstack/react-table";
 import { useState } from "react";
 import { Link } from "react-router";
+import { confirmAction } from "../components/confirmAction.js";
 import {
   addInstallationRepository,
   createApp,
@@ -266,8 +267,8 @@ function InstallationsTab() {
             <Button
               size="sm"
               variant="danger"
-              onClick={() => {
-                if (confirm(`Delete installation #${inst.id}?`)) {
+              onClick={async () => {
+                if (await confirmAction(`Delete installation #${inst.id}?`)) {
                   deleteMut.mutate(inst.id);
                 }
               }}
@@ -823,8 +824,8 @@ function AppSettingsDialog({ slug, onClose }: { slug: string; onClose: () => voi
           <Button
             size="sm"
             variant="danger"
-            onClick={() => {
-              if (confirm(`Delete GitHub App ${app.name} and revoke all of its credentials?`)) remove.mutate();
+            onClick={async () => {
+              if (await confirmAction(`Delete GitHub App ${app.name} and revoke all of its credentials?`)) remove.mutate();
             }}
             disabled={remove.isPending}
           >
@@ -902,8 +903,8 @@ function OAuthAppSettingsDialog({ app, onClose }: { app: BleephubOAuthApp; onClo
           <Button
             size="sm"
             variant="danger"
-            onClick={() => {
-              if (confirm(`Delete OAuth App ${draft.name} and revoke all grants?`)) remove.mutate();
+            onClick={async () => {
+              if (await confirmAction(`Delete OAuth App ${draft.name} and revoke all grants?`)) remove.mutate();
             }}
             disabled={remove.isPending}
           >

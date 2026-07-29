@@ -108,7 +108,6 @@ describe("failing mutations surface on the page", () => {
   });
 
   it("PackagesPage shows an error when deleting a package fails", async () => {
-    vi.spyOn(window, "confirm").mockReturnValue(true);
     const pkg = {
       id: 1,
       name: "widget",
@@ -137,6 +136,7 @@ describe("failing mutations surface on the page", () => {
     renderAt("/ui/packages", "/ui/packages", <PackagesPage />);
 
     fireEvent.click(await screen.findByRole("button", { name: /Delete/i }));
+    fireEvent.click(await screen.findByRole("button", { name: "Confirm" }));
 
     await waitFor(() =>
       expect(screen.getByRole("alert")).toHaveTextContent(/500/),

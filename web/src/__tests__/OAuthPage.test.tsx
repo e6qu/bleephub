@@ -105,7 +105,6 @@ describe("OAuthPage", () => {
   });
 
   it("lists and revokes an authorized OAuth grant", async () => {
-    vi.spyOn(window, "confirm").mockReturnValue(true);
     mockFetch.mockImplementation((input: RequestInfo | URL, init?: RequestInit) => {
       const url = String(input);
       if (url === "/settings/apps" || url === "/settings/oauth-apps") return Promise.resolve(jsonResponse([]));
@@ -128,6 +127,7 @@ describe("OAuthPage", () => {
 
     expect(await screen.findByText("Example OAuth")).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "Revoke" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Confirm" }));
 
     await waitFor(() => {
       expect(mockFetch).toHaveBeenCalledWith(

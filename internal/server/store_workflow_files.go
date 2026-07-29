@@ -67,20 +67,28 @@ func (st *Store) RegisterWorkflowFile(repoFullName, path, name, yamlBody, source
 	id := stableWorkflowFileID(repoFullName, path)
 	now := time.Now().UTC()
 	if existing, ok := st.WorkflowFiles[id]; ok {
+		yamlChanged := existing.YAML != yamlBody
 		existing.Name = name
 		existing.YAML = yamlBody
 		existing.Source = source
 		existing.UpdatedAt = now
+		if yamlChanged && existing.State == "disabled_inactivity" {
+			existing.State = "active"
+		}
 		if st.persist != nil {
 			st.persist.MustPut("workflow_files", strconv.FormatInt(id, 10), existing)
 		}
 		return existing
 	}
+	state := "active"
+	if repo := st.ReposByName[repoFullName]; repo != nil && repo.Fork {
+		state = "disabled_fork"
+	}
 	wf := &WorkflowFile{
 		ID:           id,
 		Name:         name,
 		Path:         path,
-		State:        "active",
+		State:        state,
 		RepoFullName: repoFullName,
 		NodeID:       "WF_" + path,
 		YAML:         yamlBody,
@@ -93,6 +101,26 @@ func (st *Store) RegisterWorkflowFile(repoFullName, path, name, yamlBody, source
 		st.persist.MustPut("workflow_files", strconv.FormatInt(id, 10), wf)
 	}
 	return wf
+}
+
+// SetWorkflowFileState updates the persisted state of one discovered workflow.
+func (st *Store) SetWorkflowFileState(repoFullName, path, state string) bool {
+	st.mu.Lock()
+	defer st.mu.Unlock()
+	id := stableWorkflowFileID(repoFullName, path)
+	wf := st.WorkflowFiles[id]
+	if wf == nil {
+		return false
+	}
+	if wf.State == state {
+		return true
+	}
+	wf.State = state
+	wf.UpdatedAt = time.Now().UTC()
+	if st.persist != nil {
+		st.persist.MustPut("workflow_files", strconv.FormatInt(id, 10), wf)
+	}
+	return true
 }
 
 // GetWorkflowFile returns the WorkflowFile keyed by (repo, id).
@@ -149,12 +177,9 @@ func (st *Store) DiscoverWorkflowFilesFromGit(repoFullName string) int {
 	if err != nil {
 		return 0
 	}
-	headRef, err := repo.Head()
+	headRef, err := repo.Storer.Reference(plumbing.NewBranchReferenceName(defaultBranch))
 	if err != nil {
-		headRef, err = repo.Storer.Reference(plumbing.NewBranchReferenceName(defaultBranch))
-		if err != nil {
-			return 0
-		}
+		return 0
 	}
 	commit, err := repo.CommitObject(headRef.Hash())
 	if err != nil {

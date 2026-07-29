@@ -30,7 +30,6 @@ func (s *Server) registerGHMigrationsRoutes() {
 	s.route("GET /api/v3/orgs/{org}/migrations/{migration_id}/repositories", s.handleListOrgMigrationRepositories)
 	s.route("GET /api/v3/orgs/{org}/migrations/{migration_id}/archive", s.handleDownloadOrgMigrationArchive)
 	s.route("DELETE /api/v3/orgs/{org}/migrations/{migration_id}/archive", s.handleDeleteOrgMigrationArchive)
-	s.route("GET /api/v3/orgs/{org}/migrations/{migration_id}/repos/{repo_name}/lock", s.handleGetOrgMigrationLock)
 	s.route("DELETE /api/v3/orgs/{org}/migrations/{migration_id}/repos/{repo_name}/lock", s.handleUnlockOrgMigrationRepo)
 }
 

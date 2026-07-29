@@ -16,6 +16,7 @@ import {
   updateTeam,
 } from "../api.js";
 import type { BleephubTeam, GithubTeamMember, GithubTeamRepo } from "../types.js";
+import { confirmAction } from "../components/confirmAction.js";
 import {
   Button,
   Modal,
@@ -121,8 +122,8 @@ function TeamsTable() {
             <Button
               size="sm"
               variant="danger"
-              onClick={() => {
-                if (confirm(`Delete team ${team.slug}?`)) {
+              onClick={async () => {
+                if (await confirmAction(`Delete team ${team.slug}?`)) {
                   deleteMut.mutate(team);
                 }
               }}
@@ -424,8 +425,8 @@ function TeamMembersPanel({ org, slug }: { org: string; slug: string }) {
                   <Button
                     size="sm"
                     variant="danger"
-                    onClick={() => {
-                      if (confirm(`Remove ${m.login} from team?`)) {
+                    onClick={async () => {
+                      if (await confirmAction(`Remove ${m.login} from team?`)) {
                         removeMut.mutate(m.login);
                       }
                     }}
@@ -542,8 +543,8 @@ function TeamReposPanel({ org, slug }: { org: string; slug: string }) {
                   <Button
                     size="sm"
                     variant="danger"
-                    onClick={() => {
-                      if (confirm(`Remove ${r.full_name} from team?`)) {
+                    onClick={async () => {
+                      if (await confirmAction(`Remove ${r.full_name} from team?`)) {
                         removeMut.mutate({ owner: r.owner.login, repo: r.name });
                       }
                     }}

@@ -150,8 +150,6 @@ func (s *Server) registerGHBranchProtectionRoutes() {
 
 	// Required status checks
 	s.route("GET /api/v3/repos/{owner}/{repo}/branches/{branch}/protection/required_status_checks", s.requirePerm(scopeAdministration, permRead, s.handleBPStatusChecksGet))
-	s.route("PUT /api/v3/repos/{owner}/{repo}/branches/{branch}/protection/required_status_checks",
-		s.requirePerm(scopeAdministration, permWrite, s.handleBPStatusChecksPut))
 	s.route("PATCH /api/v3/repos/{owner}/{repo}/branches/{branch}/protection/required_status_checks",
 		s.requirePerm(scopeAdministration, permWrite, s.handleBPStatusChecksPatch))
 	s.route("DELETE /api/v3/repos/{owner}/{repo}/branches/{branch}/protection/required_status_checks",
@@ -191,8 +189,6 @@ func (s *Server) registerGHBranchProtectionRoutes() {
 
 	// Restrictions
 	s.route("GET /api/v3/repos/{owner}/{repo}/branches/{branch}/protection/restrictions", s.requirePerm(scopeAdministration, permRead, s.handleBPRestrictionsGet))
-	s.route("PUT /api/v3/repos/{owner}/{repo}/branches/{branch}/protection/restrictions",
-		s.requirePerm(scopeAdministration, permWrite, s.handleBPRestrictionsPut))
 	s.route("DELETE /api/v3/repos/{owner}/{repo}/branches/{branch}/protection/restrictions",
 		s.requirePerm(scopeAdministration, permWrite, s.handleBPRestrictionsDelete))
 
@@ -221,19 +217,6 @@ func (s *Server) registerGHBranchProtectionRoutes() {
 	s.route("DELETE /api/v3/repos/{owner}/{repo}/branches/{branch}/protection/enforce_admins",
 		s.requirePerm(scopeAdministration, permWrite, s.handleBPEnforceAdminsDelete))
 
-	// Allow force pushes
-	s.route("GET /api/v3/repos/{owner}/{repo}/branches/{branch}/protection/allow_force_pushes", s.requirePerm(scopeAdministration, permRead, s.handleBPAllowForcePushesGet))
-	s.route("PUT /api/v3/repos/{owner}/{repo}/branches/{branch}/protection/allow_force_pushes",
-		s.requirePerm(scopeAdministration, permWrite, s.handleBPAllowForcePushesPut))
-	s.route("DELETE /api/v3/repos/{owner}/{repo}/branches/{branch}/protection/allow_force_pushes",
-		s.requirePerm(scopeAdministration, permWrite, s.handleBPAllowForcePushesDelete))
-
-	// Allow deletions
-	s.route("GET /api/v3/repos/{owner}/{repo}/branches/{branch}/protection/allow_deletions", s.requirePerm(scopeAdministration, permRead, s.handleBPAllowDeletionsGet))
-	s.route("PUT /api/v3/repos/{owner}/{repo}/branches/{branch}/protection/allow_deletions",
-		s.requirePerm(scopeAdministration, permWrite, s.handleBPAllowDeletionsPut))
-	s.route("DELETE /api/v3/repos/{owner}/{repo}/branches/{branch}/protection/allow_deletions",
-		s.requirePerm(scopeAdministration, permWrite, s.handleBPAllowDeletionsDelete))
 }
 
 // branchProtectionURL returns the canonical URL for the top-level protection resource.

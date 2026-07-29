@@ -13,6 +13,7 @@ import {
 } from "../api.js";
 import type { GithubMarketplaceListing, GithubMarketplacePlan } from "../types.js";
 import { Blankslate, Box, Button, ErrorBanner, FormLabel, StateLabel } from "../components/ui.js";
+import { confirmAction } from "../components/confirmAction.js";
 import { CheckIcon, PackageIcon, SearchIcon } from "../components/octicons.js";
 
 const MARKETPLACE_COLORS = [
@@ -216,7 +217,7 @@ function MarketplaceDetail({ slug }: { slug: string }) {
                 {current ? "Update plan" : "Complete order and begin installation"}
               </Button>
               {setupURL && <a className="marketplace-setup mt-3" href={setupURL}>Continue to {listing.data.name} setup →</a>}
-              {current && <Button className="mt-2 w-full" variant="danger" disabled={cancel.isPending} onClick={() => { if (confirm(`Cancel ${listing.data.name} for ${selectedAccount}?`)) cancel.mutate(); }}>Cancel plan</Button>}
+              {current && <Button className="mt-2 w-full" variant="danger" disabled={cancel.isPending} onClick={async () => { if (await confirmAction(`Cancel ${listing.data.name} for ${selectedAccount}?`)) cancel.mutate(); }}>Cancel plan</Button>}
               <p className="marketplace-fine-print">Plan changes follow GitHub Marketplace billing boundaries. Upgrades begin now; downgrades and paid cancellations begin next cycle.</p>
             </div>
           </Box>
