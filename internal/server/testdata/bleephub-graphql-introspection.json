@@ -1,0 +1,4263 @@
+{
+  "query_type": "Query",
+  "mutation_type": "Mutation",
+  "types": {
+    "AddCommentInput": {
+      "kind": "INPUT_OBJECT",
+      "input_fields": {
+        "body": "String!",
+        "subjectId": "ID!"
+      }
+    },
+    "AddCommentPayload": {
+      "kind": "OBJECT",
+      "fields": {
+        "commentEdge": {
+          "type": "IssueCommentEdge"
+        },
+        "subject": {
+          "type": "Issue"
+        }
+      }
+    },
+    "AddDiscussionCommentInput": {
+      "kind": "INPUT_OBJECT",
+      "input_fields": {
+        "body": "String!",
+        "clientMutationId": "String",
+        "discussionId": "ID!",
+        "replyToId": "ID"
+      }
+    },
+    "AddDiscussionCommentPayload": {
+      "kind": "OBJECT",
+      "fields": {
+        "clientMutationId": {
+          "type": "String"
+        },
+        "comment": {
+          "type": "DiscussionComment"
+        }
+      }
+    },
+    "AddProjectV2ItemByIdInput": {
+      "kind": "INPUT_OBJECT",
+      "input_fields": {
+        "contentId": "ID!",
+        "projectId": "ID!"
+      }
+    },
+    "AddProjectV2ItemByIdPayload": {
+      "kind": "OBJECT",
+      "fields": {
+        "item": {
+          "type": "AddProjectV2ItemByIdPayloadItem"
+        }
+      }
+    },
+    "AddProjectV2ItemByIdPayloadItem": {
+      "kind": "OBJECT",
+      "fields": {
+        "id": {
+          "type": "ID!"
+        }
+      }
+    },
+    "AddPullRequestReviewInput": {
+      "kind": "INPUT_OBJECT",
+      "input_fields": {
+        "body": "String",
+        "clientMutationId": "String",
+        "commitOID": "String",
+        "event": "PullRequestReviewEvent",
+        "pullRequestId": "ID!"
+      }
+    },
+    "AddPullRequestReviewPayload": {
+      "kind": "OBJECT",
+      "fields": {
+        "clientMutationId": {
+          "type": "String"
+        },
+        "pullRequestReview": {
+          "type": "PullRequestReview"
+        }
+      }
+    },
+    "AssigneePageInfo": {
+      "kind": "OBJECT",
+      "fields": {
+        "endCursor": {
+          "type": "String"
+        },
+        "hasNextPage": {
+          "type": "Boolean!"
+        },
+        "hasPreviousPage": {
+          "type": "Boolean!"
+        },
+        "startCursor": {
+          "type": "String"
+        }
+      }
+    },
+    "AutoMergeRequest": {
+      "kind": "OBJECT",
+      "fields": {
+        "authorEmail": {
+          "type": "String"
+        },
+        "commitBody": {
+          "type": "String"
+        },
+        "commitHeadline": {
+          "type": "String"
+        },
+        "enabledAt": {
+          "type": "String"
+        },
+        "enabledBy": {
+          "type": "User"
+        },
+        "mergeMethod": {
+          "type": "String!"
+        }
+      }
+    },
+    "Boolean": {
+      "kind": "SCALAR"
+    },
+    "Bot": {
+      "kind": "OBJECT",
+      "fields": {
+        "id": {
+          "type": "ID!"
+        },
+        "login": {
+          "type": "String!"
+        }
+      }
+    },
+    "BranchProtectionRule": {
+      "kind": "OBJECT",
+      "fields": {
+        "requiredApprovingReviewCount": {
+          "type": "Int"
+        },
+        "requiresStrictStatusChecks": {
+          "type": "Boolean!"
+        }
+      }
+    },
+    "CheckRun": {
+      "kind": "OBJECT",
+      "fields": {
+        "checkSuite": {
+          "type": "CheckSuiteRef"
+        },
+        "completedAt": {
+          "type": "String"
+        },
+        "conclusion": {
+          "type": "String"
+        },
+        "detailsUrl": {
+          "type": "String"
+        },
+        "name": {
+          "type": "String!"
+        },
+        "startedAt": {
+          "type": "String"
+        },
+        "status": {
+          "type": "String!"
+        }
+      }
+    },
+    "CheckRunStateCount": {
+      "kind": "OBJECT",
+      "fields": {
+        "count": {
+          "type": "Int!"
+        },
+        "state": {
+          "type": "String!"
+        }
+      }
+    },
+    "CheckSuiteRef": {
+      "kind": "OBJECT",
+      "fields": {
+        "workflowRun": {
+          "type": "CheckWorkflowRun"
+        }
+      }
+    },
+    "CheckWorkflow": {
+      "kind": "OBJECT",
+      "fields": {
+        "name": {
+          "type": "String!"
+        }
+      }
+    },
+    "CheckWorkflowRun": {
+      "kind": "OBJECT",
+      "fields": {
+        "workflow": {
+          "type": "CheckWorkflow"
+        }
+      }
+    },
+    "CloseIssueInput": {
+      "kind": "INPUT_OBJECT",
+      "input_fields": {
+        "issueId": "ID!",
+        "stateReason": "IssueClosedStateReason"
+      }
+    },
+    "CloseIssuePayload": {
+      "kind": "OBJECT",
+      "fields": {
+        "issue": {
+          "type": "Issue"
+        }
+      }
+    },
+    "ClosePullRequestInput": {
+      "kind": "INPUT_OBJECT",
+      "input_fields": {
+        "pullRequestId": "ID!"
+      }
+    },
+    "ClosePullRequestPayload": {
+      "kind": "OBJECT",
+      "fields": {
+        "pullRequest": {
+          "type": "PullRequest"
+        }
+      }
+    },
+    "ClosingIssuesReferencesConnection": {
+      "kind": "OBJECT",
+      "fields": {
+        "nodes": {
+          "type": "[Issue]"
+        },
+        "pageInfo": {
+          "type": "ClosingIssuesReferencesPageInfo!"
+        },
+        "totalCount": {
+          "type": "Int!"
+        }
+      }
+    },
+    "ClosingIssuesReferencesPageInfo": {
+      "kind": "OBJECT",
+      "fields": {
+        "endCursor": {
+          "type": "String"
+        },
+        "hasNextPage": {
+          "type": "Boolean!"
+        }
+      }
+    },
+    "Commit": {
+      "kind": "OBJECT",
+      "fields": {
+        "authoredDate": {
+          "type": "String"
+        },
+        "authors": {
+          "type": "GitActorConnection",
+          "args": {
+            "first": "Int"
+          }
+        },
+        "committedDate": {
+          "type": "String"
+        },
+        "messageBody": {
+          "type": "String"
+        },
+        "messageHeadline": {
+          "type": "String"
+        },
+        "oid": {
+          "type": "String!"
+        },
+        "statusCheckRollup": {
+          "type": "StatusCheckRollup"
+        }
+      }
+    },
+    "CreateDiscussionInput": {
+      "kind": "INPUT_OBJECT",
+      "input_fields": {
+        "body": "String",
+        "categoryId": "ID!",
+        "clientMutationId": "String",
+        "repositoryId": "ID!",
+        "title": "String!"
+      }
+    },
+    "CreateDiscussionPayload": {
+      "kind": "OBJECT",
+      "fields": {
+        "clientMutationId": {
+          "type": "String"
+        },
+        "discussion": {
+          "type": "Discussion"
+        }
+      }
+    },
+    "CreateIssueInput": {
+      "kind": "INPUT_OBJECT",
+      "input_fields": {
+        "assigneeIds": "[ID]",
+        "body": "String",
+        "issueTemplate": "String",
+        "issueTypeId": "ID",
+        "labelIds": "[ID]",
+        "milestoneId": "ID",
+        "projectIds": "[ID]",
+        "repositoryId": "ID!",
+        "title": "String!"
+      }
+    },
+    "CreateIssuePayload": {
+      "kind": "OBJECT",
+      "fields": {
+        "issue": {
+          "type": "Issue"
+        }
+      }
+    },
+    "CreateProjectV2FieldInput": {
+      "kind": "INPUT_OBJECT",
+      "input_fields": {
+        "dataType": "ProjectV2CustomFieldType!",
+        "iterationConfiguration": "ProjectV2IterationConfigurationInput",
+        "name": "String!",
+        "projectId": "ID!",
+        "singleSelectOptions": "[ProjectV2SingleSelectFieldOptionInput!]"
+      }
+    },
+    "CreateProjectV2FieldPayload": {
+      "kind": "OBJECT",
+      "fields": {
+        "projectV2Field": {
+          "type": "ProjectV2FieldSummary"
+        }
+      }
+    },
+    "CreateProjectV2Input": {
+      "kind": "INPUT_OBJECT",
+      "input_fields": {
+        "ownerId": "ID!",
+        "title": "String!"
+      }
+    },
+    "CreateProjectV2Payload": {
+      "kind": "OBJECT",
+      "fields": {
+        "projectV2": {
+          "type": "ProjectV2"
+        }
+      }
+    },
+    "CreatePullRequestInput": {
+      "kind": "INPUT_OBJECT",
+      "input_fields": {
+        "baseRefName": "String!",
+        "body": "String",
+        "draft": "Boolean",
+        "headRefName": "String!",
+        "maintainerCanModify": "Boolean",
+        "repositoryId": "ID!",
+        "title": "String!"
+      }
+    },
+    "CreatePullRequestPayload": {
+      "kind": "OBJECT",
+      "fields": {
+        "pullRequest": {
+          "type": "PullRequest"
+        }
+      }
+    },
+    "CreateRepositoryInput": {
+      "kind": "INPUT_OBJECT",
+      "input_fields": {
+        "description": "String",
+        "hasIssuesEnabled": "Boolean",
+        "hasWikiEnabled": "Boolean",
+        "name": "String!",
+        "ownerId": "ID",
+        "visibility": "String"
+      }
+    },
+    "CreateRepositoryPayload": {
+      "kind": "OBJECT",
+      "fields": {
+        "repository": {
+          "type": "Repository"
+        }
+      }
+    },
+    "DeleteDiscussionCommentInput": {
+      "kind": "INPUT_OBJECT",
+      "input_fields": {
+        "clientMutationId": "String",
+        "commentId": "ID!"
+      }
+    },
+    "DeleteDiscussionCommentPayload": {
+      "kind": "OBJECT",
+      "fields": {
+        "clientMutationId": {
+          "type": "String"
+        },
+        "comment": {
+          "type": "DiscussionComment"
+        }
+      }
+    },
+    "DeleteDiscussionInput": {
+      "kind": "INPUT_OBJECT",
+      "input_fields": {
+        "clientMutationId": "String",
+        "discussionId": "ID!"
+      }
+    },
+    "DeleteDiscussionPayload": {
+      "kind": "OBJECT",
+      "fields": {
+        "clientMutationId": {
+          "type": "String"
+        }
+      }
+    },
+    "DeleteRepositoryInput": {
+      "kind": "INPUT_OBJECT",
+      "input_fields": {
+        "repositoryId": "ID!"
+      }
+    },
+    "DeleteRepositoryPayload": {
+      "kind": "OBJECT",
+      "fields": {
+        "clientMutationId": {
+          "type": "String"
+        }
+      }
+    },
+    "Discussion": {
+      "kind": "OBJECT",
+      "fields": {
+        "author": {
+          "type": "User"
+        },
+        "body": {
+          "type": "String"
+        },
+        "bodyHTML": {
+          "type": "String!"
+        },
+        "bodyText": {
+          "type": "String!"
+        },
+        "category": {
+          "type": "DiscussionCategory"
+        },
+        "comments": {
+          "type": "DiscussionCommentConnection",
+          "args": {
+            "after": "String",
+            "before": "String",
+            "first": "Int",
+            "last": "Int"
+          }
+        },
+        "createdAt": {
+          "type": "String!"
+        },
+        "id": {
+          "type": "ID!"
+        },
+        "lastEditedAt": {
+          "type": "String"
+        },
+        "locked": {
+          "type": "Boolean!"
+        },
+        "lockedReason": {
+          "type": "String"
+        },
+        "number": {
+          "type": "Int!"
+        },
+        "publishedAt": {
+          "type": "String"
+        },
+        "reactionGroups": {
+          "type": "[DiscussionReactionGroup]"
+        },
+        "reactions": {
+          "type": "DiscussionReactionConnection",
+          "args": {
+            "after": "String",
+            "before": "String",
+            "first": "Int",
+            "last": "Int"
+          }
+        },
+        "title": {
+          "type": "String!"
+        },
+        "updatedAt": {
+          "type": "String!"
+        },
+        "url": {
+          "type": "String!"
+        },
+        "viewerCanDelete": {
+          "type": "Boolean!"
+        },
+        "viewerCanReact": {
+          "type": "Boolean!"
+        },
+        "viewerCanUpdate": {
+          "type": "Boolean!"
+        }
+      }
+    },
+    "DiscussionCategory": {
+      "kind": "OBJECT",
+      "fields": {
+        "createdAt": {
+          "type": "String!"
+        },
+        "description": {
+          "type": "String"
+        },
+        "emoji": {
+          "type": "String"
+        },
+        "id": {
+          "type": "ID!"
+        },
+        "isAnswerable": {
+          "type": "Boolean!"
+        },
+        "name": {
+          "type": "String!"
+        },
+        "updatedAt": {
+          "type": "String!"
+        }
+      }
+    },
+    "DiscussionCategoryConnection": {
+      "kind": "OBJECT",
+      "fields": {
+        "edges": {
+          "type": "[DiscussionCategoryEdge]"
+        },
+        "nodes": {
+          "type": "[DiscussionCategory]"
+        },
+        "pageInfo": {
+          "type": "DiscussionCategoryPageInfo!"
+        },
+        "totalCount": {
+          "type": "Int!"
+        }
+      }
+    },
+    "DiscussionCategoryEdge": {
+      "kind": "OBJECT",
+      "fields": {
+        "cursor": {
+          "type": "String!"
+        },
+        "node": {
+          "type": "DiscussionCategory"
+        }
+      }
+    },
+    "DiscussionCategoryPageInfo": {
+      "kind": "OBJECT",
+      "fields": {
+        "endCursor": {
+          "type": "String"
+        },
+        "hasNextPage": {
+          "type": "Boolean!"
+        },
+        "hasPreviousPage": {
+          "type": "Boolean!"
+        },
+        "startCursor": {
+          "type": "String"
+        }
+      }
+    },
+    "DiscussionComment": {
+      "kind": "OBJECT",
+      "fields": {
+        "author": {
+          "type": "User"
+        },
+        "body": {
+          "type": "String!"
+        },
+        "bodyHTML": {
+          "type": "String!"
+        },
+        "bodyText": {
+          "type": "String!"
+        },
+        "createdAt": {
+          "type": "String!"
+        },
+        "discussion": {
+          "type": "Discussion"
+        },
+        "id": {
+          "type": "ID!"
+        },
+        "isAnswer": {
+          "type": "Boolean!"
+        },
+        "lastEditedAt": {
+          "type": "String"
+        },
+        "reactionGroups": {
+          "type": "[DiscussionReactionGroup]"
+        },
+        "reactions": {
+          "type": "DiscussionReactionConnection",
+          "args": {
+            "after": "String",
+            "before": "String",
+            "first": "Int",
+            "last": "Int"
+          }
+        },
+        "replies": {
+          "type": "DiscussionCommentConnection",
+          "args": {
+            "after": "String",
+            "before": "String",
+            "first": "Int",
+            "last": "Int"
+          }
+        },
+        "updatedAt": {
+          "type": "String!"
+        }
+      }
+    },
+    "DiscussionCommentConnection": {
+      "kind": "OBJECT",
+      "fields": {
+        "edges": {
+          "type": "[DiscussionCommentEdge]"
+        },
+        "nodes": {
+          "type": "[DiscussionComment]"
+        },
+        "pageInfo": {
+          "type": "DiscussionCommentPageInfo!"
+        },
+        "totalCount": {
+          "type": "Int!"
+        }
+      }
+    },
+    "DiscussionCommentEdge": {
+      "kind": "OBJECT",
+      "fields": {
+        "cursor": {
+          "type": "String!"
+        },
+        "node": {
+          "type": "DiscussionComment"
+        }
+      }
+    },
+    "DiscussionCommentPageInfo": {
+      "kind": "OBJECT",
+      "fields": {
+        "endCursor": {
+          "type": "String"
+        },
+        "hasNextPage": {
+          "type": "Boolean!"
+        },
+        "hasPreviousPage": {
+          "type": "Boolean!"
+        },
+        "startCursor": {
+          "type": "String"
+        }
+      }
+    },
+    "DiscussionConnection": {
+      "kind": "OBJECT",
+      "fields": {
+        "edges": {
+          "type": "[DiscussionEdge]"
+        },
+        "nodes": {
+          "type": "[Discussion]"
+        },
+        "pageInfo": {
+          "type": "DiscussionPageInfo!"
+        },
+        "totalCount": {
+          "type": "Int!"
+        }
+      }
+    },
+    "DiscussionEdge": {
+      "kind": "OBJECT",
+      "fields": {
+        "cursor": {
+          "type": "String!"
+        },
+        "node": {
+          "type": "Discussion"
+        }
+      }
+    },
+    "DiscussionOrder": {
+      "kind": "INPUT_OBJECT",
+      "input_fields": {
+        "direction": "DiscussionOrderDirection",
+        "field": "DiscussionOrderField"
+      }
+    },
+    "DiscussionOrderDirection": {
+      "kind": "ENUM",
+      "enum_values": [
+        "ASC",
+        "DESC"
+      ]
+    },
+    "DiscussionOrderField": {
+      "kind": "ENUM",
+      "enum_values": [
+        "CREATED_AT",
+        "UPDATED_AT"
+      ]
+    },
+    "DiscussionPageInfo": {
+      "kind": "OBJECT",
+      "fields": {
+        "endCursor": {
+          "type": "String"
+        },
+        "hasNextPage": {
+          "type": "Boolean!"
+        },
+        "hasPreviousPage": {
+          "type": "Boolean!"
+        },
+        "startCursor": {
+          "type": "String"
+        }
+      }
+    },
+    "DiscussionReactingUserConnection": {
+      "kind": "OBJECT",
+      "fields": {
+        "totalCount": {
+          "type": "Int!"
+        }
+      }
+    },
+    "DiscussionReaction": {
+      "kind": "OBJECT",
+      "fields": {
+        "content": {
+          "type": "String!"
+        },
+        "id": {
+          "type": "ID!"
+        },
+        "user": {
+          "type": "User"
+        }
+      }
+    },
+    "DiscussionReactionConnection": {
+      "kind": "OBJECT",
+      "fields": {
+        "edges": {
+          "type": "[DiscussionReactionEdge]"
+        },
+        "nodes": {
+          "type": "[DiscussionReaction]"
+        },
+        "pageInfo": {
+          "type": "DiscussionReactionPageInfo!"
+        },
+        "totalCount": {
+          "type": "Int!"
+        }
+      }
+    },
+    "DiscussionReactionEdge": {
+      "kind": "OBJECT",
+      "fields": {
+        "cursor": {
+          "type": "String!"
+        },
+        "node": {
+          "type": "DiscussionReaction"
+        }
+      }
+    },
+    "DiscussionReactionGroup": {
+      "kind": "OBJECT",
+      "fields": {
+        "content": {
+          "type": "String!"
+        },
+        "users": {
+          "type": "DiscussionReactingUserConnection"
+        }
+      }
+    },
+    "DiscussionReactionPageInfo": {
+      "kind": "OBJECT",
+      "fields": {
+        "endCursor": {
+          "type": "String"
+        },
+        "hasNextPage": {
+          "type": "Boolean!"
+        },
+        "hasPreviousPage": {
+          "type": "Boolean!"
+        },
+        "startCursor": {
+          "type": "String"
+        }
+      }
+    },
+    "Float": {
+      "kind": "SCALAR"
+    },
+    "GitActor": {
+      "kind": "OBJECT",
+      "fields": {
+        "email": {
+          "type": "String"
+        },
+        "name": {
+          "type": "String"
+        },
+        "user": {
+          "type": "User"
+        }
+      }
+    },
+    "GitActorConnection": {
+      "kind": "OBJECT",
+      "fields": {
+        "nodes": {
+          "type": "[GitActor]"
+        },
+        "totalCount": {
+          "type": "Int!"
+        }
+      }
+    },
+    "ID": {
+      "kind": "SCALAR"
+    },
+    "Int": {
+      "kind": "SCALAR"
+    },
+    "Issue": {
+      "kind": "OBJECT",
+      "fields": {
+        "activeLockReason": {
+          "type": "String"
+        },
+        "assignees": {
+          "type": "UserConnection",
+          "args": {
+            "after": "String",
+            "first": "Int"
+          }
+        },
+        "author": {
+          "type": "User"
+        },
+        "body": {
+          "type": "String"
+        },
+        "closed": {
+          "type": "Boolean!"
+        },
+        "closedAt": {
+          "type": "String"
+        },
+        "comments": {
+          "type": "IssueCommentConnection",
+          "args": {
+            "after": "String",
+            "before": "String",
+            "first": "Int",
+            "last": "Int"
+          }
+        },
+        "createdAt": {
+          "type": "String!"
+        },
+        "databaseId": {
+          "type": "Int"
+        },
+        "id": {
+          "type": "ID!"
+        },
+        "isPinned": {
+          "type": "Boolean"
+        },
+        "issueFieldValues": {
+          "type": "IssueFieldValueConnection",
+          "args": {
+            "after": "String",
+            "before": "String",
+            "first": "Int",
+            "last": "Int"
+          }
+        },
+        "issueType": {
+          "type": "IssueType"
+        },
+        "labels": {
+          "type": "LabelConnection",
+          "args": {
+            "after": "String",
+            "first": "Int"
+          }
+        },
+        "locked": {
+          "type": "Boolean!"
+        },
+        "milestone": {
+          "type": "Milestone"
+        },
+        "number": {
+          "type": "Int!"
+        },
+        "parent": {
+          "type": "RelatedIssue"
+        },
+        "projectItems": {
+          "type": "ProjectV2ItemConnection",
+          "args": {
+            "after": "String",
+            "before": "String",
+            "first": "Int",
+            "last": "Int"
+          }
+        },
+        "reactionGroups": {
+          "type": "[ReactionGroup]"
+        },
+        "state": {
+          "type": "String!"
+        },
+        "stateReason": {
+          "type": "String"
+        },
+        "subIssues": {
+          "type": "SubIssueConnection",
+          "args": {
+            "after": "String",
+            "first": "Int"
+          }
+        },
+        "subIssuesSummary": {
+          "type": "SubIssuesSummary"
+        },
+        "title": {
+          "type": "String!"
+        },
+        "updatedAt": {
+          "type": "String!"
+        },
+        "url": {
+          "type": "String!"
+        }
+      }
+    },
+    "IssueClosedStateReason": {
+      "kind": "ENUM",
+      "enum_values": [
+        "COMPLETED",
+        "NOT_PLANNED"
+      ]
+    },
+    "IssueComment": {
+      "kind": "OBJECT",
+      "fields": {
+        "author": {
+          "type": "User"
+        },
+        "authorAssociation": {
+          "type": "String"
+        },
+        "body": {
+          "type": "String!"
+        },
+        "createdAt": {
+          "type": "String!"
+        },
+        "editor": {
+          "type": "User"
+        },
+        "id": {
+          "type": "ID!"
+        },
+        "includesCreatedEdit": {
+          "type": "Boolean"
+        },
+        "isMinimized": {
+          "type": "Boolean"
+        },
+        "isPinned": {
+          "type": "Boolean"
+        },
+        "lastEditedAt": {
+          "type": "String"
+        },
+        "minimizedReason": {
+          "type": "String"
+        },
+        "reactionGroups": {
+          "type": "[ReactionGroup]"
+        },
+        "updatedAt": {
+          "type": "String!"
+        },
+        "url": {
+          "type": "String"
+        },
+        "viewerDidAuthor": {
+          "type": "Boolean"
+        }
+      }
+    },
+    "IssueCommentConnection": {
+      "kind": "OBJECT",
+      "fields": {
+        "nodes": {
+          "type": "[IssueComment]"
+        },
+        "pageInfo": {
+          "type": "IssueCommentPageInfo!"
+        },
+        "totalCount": {
+          "type": "Int!"
+        }
+      }
+    },
+    "IssueCommentEdge": {
+      "kind": "OBJECT",
+      "fields": {
+        "node": {
+          "type": "IssueComment"
+        }
+      }
+    },
+    "IssueCommentPageInfo": {
+      "kind": "OBJECT",
+      "fields": {
+        "endCursor": {
+          "type": "String"
+        },
+        "hasNextPage": {
+          "type": "Boolean!"
+        },
+        "hasPreviousPage": {
+          "type": "Boolean!"
+        },
+        "startCursor": {
+          "type": "String"
+        }
+      }
+    },
+    "IssueConnection": {
+      "kind": "OBJECT",
+      "fields": {
+        "edges": {
+          "type": "[IssueEdge]"
+        },
+        "nodes": {
+          "type": "[Issue]"
+        },
+        "pageInfo": {
+          "type": "IssuePageInfo!"
+        },
+        "totalCount": {
+          "type": "Int!"
+        }
+      }
+    },
+    "IssueEdge": {
+      "kind": "OBJECT",
+      "fields": {
+        "cursor": {
+          "type": "String!"
+        },
+        "node": {
+          "type": "Issue"
+        }
+      }
+    },
+    "IssueFieldDataType": {
+      "kind": "ENUM",
+      "enum_values": [
+        "DATE",
+        "MULTI_SELECT",
+        "NUMBER",
+        "SINGLE_SELECT",
+        "TEXT"
+      ]
+    },
+    "IssueFieldDate": {
+      "kind": "OBJECT",
+      "fields": {
+        "createdAt": {
+          "type": "String!"
+        },
+        "dataType": {
+          "type": "IssueFieldDataType!"
+        },
+        "description": {
+          "type": "String"
+        },
+        "fullDatabaseId": {
+          "type": "String"
+        },
+        "id": {
+          "type": "ID!"
+        },
+        "name": {
+          "type": "String!"
+        },
+        "visibility": {
+          "type": "IssueFieldVisibility!"
+        }
+      }
+    },
+    "IssueFieldDateValue": {
+      "kind": "OBJECT",
+      "fields": {
+        "field": {
+          "type": "IssueFields"
+        },
+        "id": {
+          "type": "ID!"
+        },
+        "value": {
+          "type": "String!"
+        }
+      }
+    },
+    "IssueFieldMultiSelect": {
+      "kind": "OBJECT",
+      "fields": {
+        "createdAt": {
+          "type": "String!"
+        },
+        "dataType": {
+          "type": "IssueFieldDataType!"
+        },
+        "description": {
+          "type": "String"
+        },
+        "fullDatabaseId": {
+          "type": "String"
+        },
+        "id": {
+          "type": "ID!"
+        },
+        "name": {
+          "type": "String!"
+        },
+        "options": {
+          "type": "[IssueFieldSingleSelectOption!]!"
+        },
+        "visibility": {
+          "type": "IssueFieldVisibility!"
+        }
+      }
+    },
+    "IssueFieldMultiSelectValue": {
+      "kind": "OBJECT",
+      "fields": {
+        "field": {
+          "type": "IssueFields"
+        },
+        "id": {
+          "type": "ID!"
+        },
+        "options": {
+          "type": "[IssueFieldSingleSelectOption!]!"
+        },
+        "value": {
+          "type": "String"
+        }
+      }
+    },
+    "IssueFieldNumber": {
+      "kind": "OBJECT",
+      "fields": {
+        "createdAt": {
+          "type": "String!"
+        },
+        "dataType": {
+          "type": "IssueFieldDataType!"
+        },
+        "description": {
+          "type": "String"
+        },
+        "fullDatabaseId": {
+          "type": "String"
+        },
+        "id": {
+          "type": "ID!"
+        },
+        "name": {
+          "type": "String!"
+        },
+        "visibility": {
+          "type": "IssueFieldVisibility!"
+        }
+      }
+    },
+    "IssueFieldNumberValue": {
+      "kind": "OBJECT",
+      "fields": {
+        "field": {
+          "type": "IssueFields"
+        },
+        "id": {
+          "type": "ID!"
+        },
+        "value": {
+          "type": "Float!"
+        }
+      }
+    },
+    "IssueFieldSingleSelect": {
+      "kind": "OBJECT",
+      "fields": {
+        "createdAt": {
+          "type": "String!"
+        },
+        "dataType": {
+          "type": "IssueFieldDataType!"
+        },
+        "description": {
+          "type": "String"
+        },
+        "fullDatabaseId": {
+          "type": "String"
+        },
+        "id": {
+          "type": "ID!"
+        },
+        "name": {
+          "type": "String!"
+        },
+        "options": {
+          "type": "[IssueFieldSingleSelectOption!]!"
+        },
+        "visibility": {
+          "type": "IssueFieldVisibility!"
+        }
+      }
+    },
+    "IssueFieldSingleSelectOption": {
+      "kind": "OBJECT",
+      "fields": {
+        "color": {
+          "type": "IssueFieldSingleSelectOptionColor!"
+        },
+        "databaseId": {
+          "type": "Int"
+        },
+        "description": {
+          "type": "String"
+        },
+        "fullDatabaseId": {
+          "type": "String"
+        },
+        "id": {
+          "type": "ID!"
+        },
+        "name": {
+          "type": "String!"
+        },
+        "priority": {
+          "type": "Int"
+        }
+      }
+    },
+    "IssueFieldSingleSelectOptionColor": {
+      "kind": "ENUM",
+      "enum_values": [
+        "BLUE",
+        "GRAY",
+        "GREEN",
+        "ORANGE",
+        "PINK",
+        "PURPLE",
+        "RED",
+        "YELLOW"
+      ]
+    },
+    "IssueFieldSingleSelectValue": {
+      "kind": "OBJECT",
+      "fields": {
+        "color": {
+          "type": "IssueFieldSingleSelectOptionColor!"
+        },
+        "description": {
+          "type": "String"
+        },
+        "field": {
+          "type": "IssueFields"
+        },
+        "id": {
+          "type": "ID!"
+        },
+        "name": {
+          "type": "String!"
+        },
+        "optionId": {
+          "type": "String"
+        },
+        "value": {
+          "type": "String!"
+        }
+      }
+    },
+    "IssueFieldText": {
+      "kind": "OBJECT",
+      "fields": {
+        "createdAt": {
+          "type": "String!"
+        },
+        "dataType": {
+          "type": "IssueFieldDataType!"
+        },
+        "description": {
+          "type": "String"
+        },
+        "fullDatabaseId": {
+          "type": "String"
+        },
+        "id": {
+          "type": "ID!"
+        },
+        "name": {
+          "type": "String!"
+        },
+        "visibility": {
+          "type": "IssueFieldVisibility!"
+        }
+      }
+    },
+    "IssueFieldTextValue": {
+      "kind": "OBJECT",
+      "fields": {
+        "field": {
+          "type": "IssueFields"
+        },
+        "id": {
+          "type": "ID!"
+        },
+        "value": {
+          "type": "String!"
+        }
+      }
+    },
+    "IssueFieldValue": {
+      "kind": "UNION",
+      "possible_types": [
+        "IssueFieldDateValue",
+        "IssueFieldMultiSelectValue",
+        "IssueFieldNumberValue",
+        "IssueFieldSingleSelectValue",
+        "IssueFieldTextValue"
+      ]
+    },
+    "IssueFieldValueConnection": {
+      "kind": "OBJECT",
+      "fields": {
+        "edges": {
+          "type": "[IssueFieldValueEdge]"
+        },
+        "nodes": {
+          "type": "[IssueFieldValue]"
+        },
+        "pageInfo": {
+          "type": "PageInfo!"
+        },
+        "totalCount": {
+          "type": "Int!"
+        }
+      }
+    },
+    "IssueFieldValueEdge": {
+      "kind": "OBJECT",
+      "fields": {
+        "cursor": {
+          "type": "String!"
+        },
+        "node": {
+          "type": "IssueFieldValue"
+        }
+      }
+    },
+    "IssueFieldVisibility": {
+      "kind": "ENUM",
+      "enum_values": [
+        "ALL",
+        "ORG_ONLY"
+      ]
+    },
+    "IssueFields": {
+      "kind": "UNION",
+      "possible_types": [
+        "IssueFieldDate",
+        "IssueFieldMultiSelect",
+        "IssueFieldNumber",
+        "IssueFieldSingleSelect",
+        "IssueFieldText"
+      ]
+    },
+    "IssueFilters": {
+      "kind": "INPUT_OBJECT",
+      "input_fields": {
+        "assignee": "String",
+        "createdBy": "String",
+        "labels": "[String]",
+        "mentioned": "String",
+        "states": "[IssueState]"
+      }
+    },
+    "IssueOrPullRequest": {
+      "kind": "UNION",
+      "possible_types": [
+        "Issue",
+        "PullRequest"
+      ]
+    },
+    "IssueOrder": {
+      "kind": "INPUT_OBJECT",
+      "input_fields": {
+        "direction": "IssueOrderDirection",
+        "field": "IssueOrderField"
+      }
+    },
+    "IssueOrder2": {
+      "kind": "INPUT_OBJECT",
+      "input_fields": {
+        "direction": "PullRequestOrderDirection",
+        "field": "PullRequestOrderField"
+      }
+    },
+    "IssueOrderDirection": {
+      "kind": "ENUM",
+      "enum_values": [
+        "ASC",
+        "DESC"
+      ]
+    },
+    "IssueOrderField": {
+      "kind": "ENUM",
+      "enum_values": [
+        "COMMENTS",
+        "CREATED_AT",
+        "UPDATED_AT"
+      ]
+    },
+    "IssuePageInfo": {
+      "kind": "OBJECT",
+      "fields": {
+        "endCursor": {
+          "type": "String"
+        },
+        "hasNextPage": {
+          "type": "Boolean!"
+        },
+        "hasPreviousPage": {
+          "type": "Boolean!"
+        },
+        "startCursor": {
+          "type": "String"
+        }
+      }
+    },
+    "IssueState": {
+      "kind": "ENUM",
+      "enum_values": [
+        "CLOSED",
+        "OPEN"
+      ]
+    },
+    "IssueType": {
+      "kind": "OBJECT",
+      "fields": {
+        "color": {
+          "type": "String"
+        },
+        "description": {
+          "type": "String"
+        },
+        "id": {
+          "type": "ID!"
+        },
+        "name": {
+          "type": "String!"
+        }
+      }
+    },
+    "Label": {
+      "kind": "OBJECT",
+      "fields": {
+        "color": {
+          "type": "String!"
+        },
+        "description": {
+          "type": "String"
+        },
+        "id": {
+          "type": "ID!"
+        },
+        "name": {
+          "type": "String!"
+        }
+      }
+    },
+    "LabelConnection": {
+      "kind": "OBJECT",
+      "fields": {
+        "nodes": {
+          "type": "[Label]"
+        },
+        "pageInfo": {
+          "type": "LabelPageInfo!"
+        },
+        "totalCount": {
+          "type": "Int!"
+        }
+      }
+    },
+    "LabelOrder": {
+      "kind": "INPUT_OBJECT",
+      "input_fields": {
+        "direction": "LabelOrderDirection",
+        "field": "LabelOrderField"
+      }
+    },
+    "LabelOrderDirection": {
+      "kind": "ENUM",
+      "enum_values": [
+        "ASC",
+        "DESC"
+      ]
+    },
+    "LabelOrderField": {
+      "kind": "ENUM",
+      "enum_values": [
+        "CREATED_AT",
+        "NAME"
+      ]
+    },
+    "LabelPageInfo": {
+      "kind": "OBJECT",
+      "fields": {
+        "endCursor": {
+          "type": "String"
+        },
+        "hasNextPage": {
+          "type": "Boolean!"
+        },
+        "hasPreviousPage": {
+          "type": "Boolean!"
+        },
+        "startCursor": {
+          "type": "String"
+        }
+      }
+    },
+    "Language": {
+      "kind": "OBJECT",
+      "fields": {
+        "name": {
+          "type": "String!"
+        }
+      }
+    },
+    "LanguageConnection": {
+      "kind": "OBJECT",
+      "fields": {
+        "edges": {
+          "type": "[LanguageEdge]"
+        },
+        "totalCount": {
+          "type": "Int!"
+        }
+      }
+    },
+    "LanguageEdge": {
+      "kind": "OBJECT",
+      "fields": {
+        "node": {
+          "type": "Language!"
+        },
+        "size": {
+          "type": "Int!"
+        }
+      }
+    },
+    "LatestReviewConnection": {
+      "kind": "OBJECT",
+      "fields": {
+        "nodes": {
+          "type": "[PullRequestReview]"
+        },
+        "totalCount": {
+          "type": "Int!"
+        }
+      }
+    },
+    "LockLockableInput": {
+      "kind": "INPUT_OBJECT",
+      "input_fields": {
+        "lockReason": "LockReason",
+        "lockableId": "ID!"
+      }
+    },
+    "LockLockablePayload": {
+      "kind": "OBJECT",
+      "fields": {
+        "lockedRecord": {
+          "type": "LockableSummary"
+        }
+      }
+    },
+    "LockReason": {
+      "kind": "ENUM",
+      "enum_values": [
+        "OFF_TOPIC",
+        "RESOLVED",
+        "SPAM",
+        "TOO_HEATED"
+      ]
+    },
+    "LockableSummary": {
+      "kind": "OBJECT",
+      "fields": {
+        "activeLockReason": {
+          "type": "String"
+        },
+        "id": {
+          "type": "ID!"
+        },
+        "locked": {
+          "type": "Boolean!"
+        }
+      }
+    },
+    "MarkDiscussionCommentAsAnswerInput": {
+      "kind": "INPUT_OBJECT",
+      "input_fields": {
+        "clientMutationId": "String",
+        "commentId": "ID!"
+      }
+    },
+    "MarkDiscussionCommentAsAnswerPayload": {
+      "kind": "OBJECT",
+      "fields": {
+        "clientMutationId": {
+          "type": "String"
+        },
+        "discussion": {
+          "type": "Discussion"
+        }
+      }
+    },
+    "MergePullRequestInput": {
+      "kind": "INPUT_OBJECT",
+      "input_fields": {
+        "authorEmail": "String",
+        "clientMutationId": "String",
+        "commitBody": "String",
+        "commitHeadline": "String",
+        "expectedHeadOid": "String",
+        "mergeMethod": "PullRequestMergeMethod",
+        "pullRequestId": "ID!"
+      }
+    },
+    "MergePullRequestPayload": {
+      "kind": "OBJECT",
+      "fields": {
+        "clientMutationId": {
+          "type": "String"
+        },
+        "pullRequest": {
+          "type": "PullRequest"
+        }
+      }
+    },
+    "MergeStateStatus": {
+      "kind": "ENUM",
+      "enum_values": [
+        "BEHIND",
+        "BLOCKED",
+        "CLEAN",
+        "DIRTY",
+        "DRAFT",
+        "HAS_HOOKS",
+        "UNKNOWN",
+        "UNSTABLE"
+      ]
+    },
+    "MergeableState": {
+      "kind": "ENUM",
+      "enum_values": [
+        "CONFLICTING",
+        "MERGEABLE",
+        "UNKNOWN"
+      ]
+    },
+    "Milestone": {
+      "kind": "OBJECT",
+      "fields": {
+        "description": {
+          "type": "String"
+        },
+        "dueOn": {
+          "type": "String"
+        },
+        "id": {
+          "type": "ID!"
+        },
+        "number": {
+          "type": "Int!"
+        },
+        "state": {
+          "type": "String!"
+        },
+        "title": {
+          "type": "String!"
+        }
+      }
+    },
+    "MilestoneConnection": {
+      "kind": "OBJECT",
+      "fields": {
+        "nodes": {
+          "type": "[Milestone]"
+        },
+        "pageInfo": {
+          "type": "MilestonePageInfo!"
+        },
+        "totalCount": {
+          "type": "Int!"
+        }
+      }
+    },
+    "MilestonePageInfo": {
+      "kind": "OBJECT",
+      "fields": {
+        "endCursor": {
+          "type": "String"
+        },
+        "hasNextPage": {
+          "type": "Boolean!"
+        },
+        "hasPreviousPage": {
+          "type": "Boolean!"
+        },
+        "startCursor": {
+          "type": "String"
+        }
+      }
+    },
+    "MilestoneState": {
+      "kind": "ENUM",
+      "enum_values": [
+        "CLOSED",
+        "OPEN"
+      ]
+    },
+    "MinimizableComment": {
+      "kind": "OBJECT",
+      "fields": {
+        "id": {
+          "type": "ID!"
+        },
+        "isMinimized": {
+          "type": "Boolean!"
+        },
+        "minimizedReason": {
+          "type": "String"
+        }
+      }
+    },
+    "MinimizeCommentInput": {
+      "kind": "INPUT_OBJECT",
+      "input_fields": {
+        "classifier": "ReportedContentClassifier!",
+        "subjectId": "ID!"
+      }
+    },
+    "MinimizeCommentPayload": {
+      "kind": "OBJECT",
+      "fields": {
+        "minimizedComment": {
+          "type": "MinimizableComment"
+        }
+      }
+    },
+    "Mutation": {
+      "kind": "OBJECT",
+      "fields": {
+        "addComment": {
+          "type": "AddCommentPayload",
+          "args": {
+            "input": "AddCommentInput!"
+          }
+        },
+        "addDiscussionComment": {
+          "type": "AddDiscussionCommentPayload",
+          "args": {
+            "input": "AddDiscussionCommentInput!"
+          }
+        },
+        "addProjectV2ItemById": {
+          "type": "AddProjectV2ItemByIdPayload",
+          "args": {
+            "input": "AddProjectV2ItemByIdInput!"
+          }
+        },
+        "addPullRequestReview": {
+          "type": "AddPullRequestReviewPayload",
+          "args": {
+            "input": "AddPullRequestReviewInput!"
+          }
+        },
+        "closeIssue": {
+          "type": "CloseIssuePayload",
+          "args": {
+            "input": "CloseIssueInput!"
+          }
+        },
+        "closePullRequest": {
+          "type": "ClosePullRequestPayload",
+          "args": {
+            "input": "ClosePullRequestInput!"
+          }
+        },
+        "createDiscussion": {
+          "type": "CreateDiscussionPayload",
+          "args": {
+            "input": "CreateDiscussionInput!"
+          }
+        },
+        "createIssue": {
+          "type": "CreateIssuePayload",
+          "args": {
+            "input": "CreateIssueInput!"
+          }
+        },
+        "createProjectV2": {
+          "type": "CreateProjectV2Payload",
+          "args": {
+            "input": "CreateProjectV2Input!"
+          }
+        },
+        "createProjectV2Field": {
+          "type": "CreateProjectV2FieldPayload",
+          "args": {
+            "input": "CreateProjectV2FieldInput!"
+          }
+        },
+        "createPullRequest": {
+          "type": "CreatePullRequestPayload",
+          "args": {
+            "input": "CreatePullRequestInput!"
+          }
+        },
+        "createRepository": {
+          "type": "CreateRepositoryPayload",
+          "args": {
+            "input": "CreateRepositoryInput!"
+          }
+        },
+        "deleteDiscussion": {
+          "type": "DeleteDiscussionPayload",
+          "args": {
+            "input": "DeleteDiscussionInput!"
+          }
+        },
+        "deleteDiscussionComment": {
+          "type": "DeleteDiscussionCommentPayload",
+          "args": {
+            "input": "DeleteDiscussionCommentInput!"
+          }
+        },
+        "deleteRepository": {
+          "type": "DeleteRepositoryPayload",
+          "args": {
+            "input": "DeleteRepositoryInput!"
+          }
+        },
+        "lockLockable": {
+          "type": "LockLockablePayload",
+          "args": {
+            "input": "LockLockableInput!"
+          }
+        },
+        "markDiscussionCommentAsAnswer": {
+          "type": "MarkDiscussionCommentAsAnswerPayload",
+          "args": {
+            "input": "MarkDiscussionCommentAsAnswerInput!"
+          }
+        },
+        "mergePullRequest": {
+          "type": "MergePullRequestPayload",
+          "args": {
+            "input": "MergePullRequestInput!"
+          }
+        },
+        "minimizeComment": {
+          "type": "MinimizeCommentPayload",
+          "args": {
+            "input": "MinimizeCommentInput!"
+          }
+        },
+        "reopenIssue": {
+          "type": "ReopenIssuePayload",
+          "args": {
+            "input": "ReopenIssueInput!"
+          }
+        },
+        "reopenPullRequest": {
+          "type": "ReopenPullRequestPayload",
+          "args": {
+            "input": "ReopenPullRequestInput!"
+          }
+        },
+        "resolveReviewThread": {
+          "type": "ResolveReviewThreadPayload",
+          "args": {
+            "input": "ResolveReviewThreadInput!"
+          }
+        },
+        "unlockLockable": {
+          "type": "UnlockLockablePayload",
+          "args": {
+            "input": "UnlockLockableInput!"
+          }
+        },
+        "unmarkDiscussionCommentAsAnswer": {
+          "type": "UnmarkDiscussionCommentAsAnswerPayload",
+          "args": {
+            "input": "UnmarkDiscussionCommentAsAnswerInput!"
+          }
+        },
+        "unminimizeComment": {
+          "type": "UnminimizeCommentPayload",
+          "args": {
+            "input": "UnminimizeCommentInput!"
+          }
+        },
+        "unresolveReviewThread": {
+          "type": "UnresolveReviewThreadPayload",
+          "args": {
+            "input": "UnresolveReviewThreadInput!"
+          }
+        },
+        "updateDiscussion": {
+          "type": "UpdateDiscussionPayload",
+          "args": {
+            "input": "UpdateDiscussionInput!"
+          }
+        },
+        "updateDiscussionComment": {
+          "type": "UpdateDiscussionCommentPayload",
+          "args": {
+            "input": "UpdateDiscussionCommentInput!"
+          }
+        },
+        "updateIssue": {
+          "type": "UpdateIssuePayload",
+          "args": {
+            "input": "UpdateIssueInput!"
+          }
+        },
+        "updateProjectV2ItemFieldValue": {
+          "type": "UpdateProjectV2ItemFieldValuePayload",
+          "args": {
+            "input": "UpdateProjectV2ItemFieldValueInput!"
+          }
+        },
+        "updatePullRequest": {
+          "type": "UpdatePullRequestPayload",
+          "args": {
+            "input": "UpdatePullRequestInput!"
+          }
+        }
+      }
+    },
+    "OrderDirection": {
+      "kind": "ENUM",
+      "enum_values": [
+        "ASC",
+        "DESC"
+      ]
+    },
+    "OrgPageInfo": {
+      "kind": "OBJECT",
+      "fields": {
+        "endCursor": {
+          "type": "String"
+        },
+        "hasNextPage": {
+          "type": "Boolean!"
+        },
+        "hasPreviousPage": {
+          "type": "Boolean!"
+        },
+        "startCursor": {
+          "type": "String"
+        }
+      }
+    },
+    "Organization": {
+      "kind": "OBJECT",
+      "fields": {
+        "avatarUrl": {
+          "type": "String"
+        },
+        "createdAt": {
+          "type": "String!"
+        },
+        "databaseId": {
+          "type": "Int"
+        },
+        "description": {
+          "type": "String"
+        },
+        "email": {
+          "type": "String"
+        },
+        "id": {
+          "type": "ID!"
+        },
+        "login": {
+          "type": "String!"
+        },
+        "name": {
+          "type": "String"
+        },
+        "updatedAt": {
+          "type": "String!"
+        },
+        "url": {
+          "type": "String!"
+        }
+      }
+    },
+    "OrganizationConnection": {
+      "kind": "OBJECT",
+      "fields": {
+        "edges": {
+          "type": "[OrganizationEdge]"
+        },
+        "nodes": {
+          "type": "[Organization]"
+        },
+        "pageInfo": {
+          "type": "OrgPageInfo!"
+        },
+        "totalCount": {
+          "type": "Int!"
+        }
+      }
+    },
+    "OrganizationEdge": {
+      "kind": "OBJECT",
+      "fields": {
+        "cursor": {
+          "type": "String!"
+        },
+        "node": {
+          "type": "Organization"
+        }
+      }
+    },
+    "PRAssigneePageInfo": {
+      "kind": "OBJECT",
+      "fields": {
+        "endCursor": {
+          "type": "String"
+        },
+        "hasNextPage": {
+          "type": "Boolean!"
+        },
+        "hasPreviousPage": {
+          "type": "Boolean!"
+        },
+        "startCursor": {
+          "type": "String"
+        }
+      }
+    },
+    "PRBaseRef": {
+      "kind": "OBJECT",
+      "fields": {
+        "branchProtectionRule": {
+          "type": "BranchProtectionRule"
+        },
+        "name": {
+          "type": "String!"
+        }
+      }
+    },
+    "PRComment": {
+      "kind": "OBJECT",
+      "fields": {
+        "author": {
+          "type": "User"
+        },
+        "authorAssociation": {
+          "type": "String"
+        },
+        "body": {
+          "type": "String!"
+        },
+        "createdAt": {
+          "type": "String!"
+        },
+        "editor": {
+          "type": "User"
+        },
+        "id": {
+          "type": "ID!"
+        },
+        "includesCreatedEdit": {
+          "type": "Boolean"
+        },
+        "isMinimized": {
+          "type": "Boolean"
+        },
+        "lastEditedAt": {
+          "type": "String"
+        },
+        "minimizedReason": {
+          "type": "String"
+        },
+        "reactionGroups": {
+          "type": "[PRReactionGroup]"
+        },
+        "url": {
+          "type": "String"
+        },
+        "viewerDidAuthor": {
+          "type": "Boolean"
+        }
+      }
+    },
+    "PRCommentConnection": {
+      "kind": "OBJECT",
+      "fields": {
+        "nodes": {
+          "type": "[PRComment]"
+        },
+        "pageInfo": {
+          "type": "PRCommentPageInfo!"
+        },
+        "totalCount": {
+          "type": "Int!"
+        }
+      }
+    },
+    "PRCommentPageInfo": {
+      "kind": "OBJECT",
+      "fields": {
+        "endCursor": {
+          "type": "String"
+        },
+        "hasNextPage": {
+          "type": "Boolean!"
+        },
+        "hasPreviousPage": {
+          "type": "Boolean!"
+        },
+        "startCursor": {
+          "type": "String"
+        }
+      }
+    },
+    "PRLabel": {
+      "kind": "OBJECT",
+      "fields": {
+        "color": {
+          "type": "String!"
+        },
+        "description": {
+          "type": "String"
+        },
+        "id": {
+          "type": "ID!"
+        },
+        "name": {
+          "type": "String!"
+        }
+      }
+    },
+    "PRLabelConnection": {
+      "kind": "OBJECT",
+      "fields": {
+        "nodes": {
+          "type": "[PRLabel]"
+        },
+        "pageInfo": {
+          "type": "PRLabelPageInfo!"
+        },
+        "totalCount": {
+          "type": "Int!"
+        }
+      }
+    },
+    "PRLabelPageInfo": {
+      "kind": "OBJECT",
+      "fields": {
+        "endCursor": {
+          "type": "String"
+        },
+        "hasNextPage": {
+          "type": "Boolean!"
+        },
+        "hasPreviousPage": {
+          "type": "Boolean!"
+        },
+        "startCursor": {
+          "type": "String"
+        }
+      }
+    },
+    "PRMilestone": {
+      "kind": "OBJECT",
+      "fields": {
+        "description": {
+          "type": "String"
+        },
+        "dueOn": {
+          "type": "String"
+        },
+        "number": {
+          "type": "Int!"
+        },
+        "title": {
+          "type": "String!"
+        }
+      }
+    },
+    "PRReactingUserConnection": {
+      "kind": "OBJECT",
+      "fields": {
+        "totalCount": {
+          "type": "Int!"
+        }
+      }
+    },
+    "PRReactionGroup": {
+      "kind": "OBJECT",
+      "fields": {
+        "content": {
+          "type": "String!"
+        },
+        "users": {
+          "type": "PRReactingUserConnection"
+        }
+      }
+    },
+    "PRReviewPageInfo": {
+      "kind": "OBJECT",
+      "fields": {
+        "endCursor": {
+          "type": "String"
+        },
+        "hasNextPage": {
+          "type": "Boolean!"
+        },
+        "hasPreviousPage": {
+          "type": "Boolean!"
+        },
+        "startCursor": {
+          "type": "String"
+        }
+      }
+    },
+    "PRUserConnection": {
+      "kind": "OBJECT",
+      "fields": {
+        "nodes": {
+          "type": "[User]"
+        },
+        "pageInfo": {
+          "type": "PRAssigneePageInfo!"
+        },
+        "totalCount": {
+          "type": "Int!"
+        }
+      }
+    },
+    "PageInfo": {
+      "kind": "OBJECT",
+      "fields": {
+        "endCursor": {
+          "type": "String"
+        },
+        "hasNextPage": {
+          "type": "Boolean!"
+        },
+        "hasPreviousPage": {
+          "type": "Boolean!"
+        },
+        "startCursor": {
+          "type": "String"
+        }
+      }
+    },
+    "ProjectV2": {
+      "kind": "OBJECT",
+      "fields": {
+        "closed": {
+          "type": "Boolean!"
+        },
+        "fields": {
+          "type": "ProjectV2FieldConnection",
+          "args": {
+            "after": "String",
+            "before": "String",
+            "first": "Int",
+            "last": "Int"
+          }
+        },
+        "id": {
+          "type": "ID!"
+        },
+        "items": {
+          "type": "ProjectV2ItemConnection",
+          "args": {
+            "after": "String",
+            "before": "String",
+            "first": "Int",
+            "last": "Int"
+          }
+        },
+        "number": {
+          "type": "Int!"
+        },
+        "public": {
+          "type": "Boolean!"
+        },
+        "title": {
+          "type": "String!"
+        },
+        "url": {
+          "type": "String"
+        },
+        "views": {
+          "type": "ProjectV2ViewConnection",
+          "args": {
+            "after": "String",
+            "before": "String",
+            "first": "Int",
+            "last": "Int"
+          }
+        }
+      }
+    },
+    "ProjectV2CustomFieldType": {
+      "kind": "ENUM",
+      "enum_values": [
+        "DATE",
+        "ITERATION",
+        "NUMBER",
+        "SINGLE_SELECT",
+        "TEXT"
+      ]
+    },
+    "ProjectV2Field": {
+      "kind": "OBJECT",
+      "fields": {
+        "createdAt": {
+          "type": "String!"
+        },
+        "dataType": {
+          "type": "String!"
+        },
+        "id": {
+          "type": "ID!"
+        },
+        "iterationConfiguration": {
+          "type": "ProjectV2IterationConfiguration"
+        },
+        "name": {
+          "type": "String!"
+        },
+        "options": {
+          "type": "[ProjectV2SingleSelectFieldOption]"
+        },
+        "updatedAt": {
+          "type": "String!"
+        }
+      }
+    },
+    "ProjectV2FieldConnection": {
+      "kind": "OBJECT",
+      "fields": {
+        "edges": {
+          "type": "[ProjectV2FieldEdge]"
+        },
+        "nodes": {
+          "type": "[ProjectV2Field]"
+        },
+        "pageInfo": {
+          "type": "PageInfo!"
+        },
+        "totalCount": {
+          "type": "Int!"
+        }
+      }
+    },
+    "ProjectV2FieldEdge": {
+      "kind": "OBJECT",
+      "fields": {
+        "cursor": {
+          "type": "String!"
+        },
+        "node": {
+          "type": "ProjectV2Field"
+        }
+      }
+    },
+    "ProjectV2FieldSummary": {
+      "kind": "OBJECT",
+      "fields": {
+        "dataType": {
+          "type": "String!"
+        },
+        "id": {
+          "type": "ID!"
+        },
+        "name": {
+          "type": "String!"
+        }
+      }
+    },
+    "ProjectV2FieldValueInput": {
+      "kind": "INPUT_OBJECT",
+      "input_fields": {
+        "date": "String",
+        "iterationId": "String",
+        "number": "Float",
+        "singleSelectOptionId": "String",
+        "text": "String"
+      }
+    },
+    "ProjectV2Item": {
+      "kind": "OBJECT",
+      "fields": {
+        "fieldValueByName": {
+          "type": "ProjectV2ItemFieldValue",
+          "args": {
+            "name": "String!"
+          }
+        },
+        "id": {
+          "type": "ID!"
+        },
+        "project": {
+          "type": "ProjectV2"
+        }
+      }
+    },
+    "ProjectV2ItemConnection": {
+      "kind": "OBJECT",
+      "fields": {
+        "edges": {
+          "type": "[ProjectV2ItemEdge]"
+        },
+        "nodes": {
+          "type": "[ProjectV2Item]"
+        },
+        "pageInfo": {
+          "type": "PageInfo!"
+        },
+        "totalCount": {
+          "type": "Int!"
+        }
+      }
+    },
+    "ProjectV2ItemEdge": {
+      "kind": "OBJECT",
+      "fields": {
+        "cursor": {
+          "type": "String!"
+        },
+        "node": {
+          "type": "ProjectV2Item"
+        }
+      }
+    },
+    "ProjectV2ItemFieldDateValue": {
+      "kind": "OBJECT",
+      "fields": {
+        "date": {
+          "type": "String"
+        }
+      }
+    },
+    "ProjectV2ItemFieldIterationValue": {
+      "kind": "OBJECT",
+      "fields": {
+        "duration": {
+          "type": "Int"
+        },
+        "iterationId": {
+          "type": "String"
+        },
+        "startDate": {
+          "type": "String"
+        },
+        "title": {
+          "type": "String"
+        }
+      }
+    },
+    "ProjectV2ItemFieldNumberValue": {
+      "kind": "OBJECT",
+      "fields": {
+        "number": {
+          "type": "Float"
+        }
+      }
+    },
+    "ProjectV2ItemFieldSingleSelectValue": {
+      "kind": "OBJECT",
+      "fields": {
+        "name": {
+          "type": "String"
+        },
+        "optionId": {
+          "type": "String"
+        }
+      }
+    },
+    "ProjectV2ItemFieldTextValue": {
+      "kind": "OBJECT",
+      "fields": {
+        "text": {
+          "type": "String"
+        }
+      }
+    },
+    "ProjectV2ItemFieldValue": {
+      "kind": "UNION",
+      "possible_types": [
+        "ProjectV2ItemFieldDateValue",
+        "ProjectV2ItemFieldIterationValue",
+        "ProjectV2ItemFieldNumberValue",
+        "ProjectV2ItemFieldSingleSelectValue",
+        "ProjectV2ItemFieldTextValue"
+      ]
+    },
+    "ProjectV2Iteration": {
+      "kind": "OBJECT",
+      "fields": {
+        "duration": {
+          "type": "Int!"
+        },
+        "id": {
+          "type": "String!"
+        },
+        "startDate": {
+          "type": "String!"
+        },
+        "title": {
+          "type": "String!"
+        }
+      }
+    },
+    "ProjectV2IterationConfiguration": {
+      "kind": "OBJECT",
+      "fields": {
+        "duration": {
+          "type": "Int"
+        },
+        "iterations": {
+          "type": "[ProjectV2Iteration]"
+        },
+        "startDate": {
+          "type": "String"
+        }
+      }
+    },
+    "ProjectV2IterationConfigurationInput": {
+      "kind": "INPUT_OBJECT",
+      "input_fields": {
+        "duration": "Int!",
+        "iterations": "[ProjectV2IterationInput!]",
+        "startDate": "String!"
+      }
+    },
+    "ProjectV2IterationInput": {
+      "kind": "INPUT_OBJECT",
+      "input_fields": {
+        "duration": "Int",
+        "startDate": "String!",
+        "title": "String!"
+      }
+    },
+    "ProjectV2SingleSelectFieldOption": {
+      "kind": "OBJECT",
+      "fields": {
+        "color": {
+          "type": "String"
+        },
+        "description": {
+          "type": "String"
+        },
+        "id": {
+          "type": "String!"
+        },
+        "name": {
+          "type": "String!"
+        }
+      }
+    },
+    "ProjectV2SingleSelectFieldOptionInput": {
+      "kind": "INPUT_OBJECT",
+      "input_fields": {
+        "name": "String!"
+      }
+    },
+    "ProjectV2View": {
+      "kind": "OBJECT",
+      "fields": {
+        "createdAt": {
+          "type": "String!"
+        },
+        "filter": {
+          "type": "String"
+        },
+        "id": {
+          "type": "ID!"
+        },
+        "layout": {
+          "type": "String!"
+        },
+        "name": {
+          "type": "String!"
+        },
+        "number": {
+          "type": "Int!"
+        },
+        "updatedAt": {
+          "type": "String!"
+        },
+        "visibleFieldIds": {
+          "type": "[Int!]"
+        }
+      }
+    },
+    "ProjectV2ViewConnection": {
+      "kind": "OBJECT",
+      "fields": {
+        "edges": {
+          "type": "[ProjectV2ViewEdge]"
+        },
+        "nodes": {
+          "type": "[ProjectV2View]"
+        },
+        "pageInfo": {
+          "type": "PageInfo!"
+        },
+        "totalCount": {
+          "type": "Int!"
+        }
+      }
+    },
+    "ProjectV2ViewEdge": {
+      "kind": "OBJECT",
+      "fields": {
+        "cursor": {
+          "type": "String!"
+        },
+        "node": {
+          "type": "ProjectV2View"
+        }
+      }
+    },
+    "PullRequest": {
+      "kind": "OBJECT",
+      "fields": {
+        "activeLockReason": {
+          "type": "String"
+        },
+        "additions": {
+          "type": "Int!"
+        },
+        "assignees": {
+          "type": "PRUserConnection",
+          "args": {
+            "after": "String",
+            "first": "Int"
+          }
+        },
+        "author": {
+          "type": "User"
+        },
+        "autoMergeRequest": {
+          "type": "AutoMergeRequest"
+        },
+        "baseRef": {
+          "type": "PRBaseRef"
+        },
+        "baseRefName": {
+          "type": "String!"
+        },
+        "baseRefOid": {
+          "type": "String!"
+        },
+        "body": {
+          "type": "String"
+        },
+        "changedFiles": {
+          "type": "Int!"
+        },
+        "closed": {
+          "type": "Boolean!"
+        },
+        "closedAt": {
+          "type": "String"
+        },
+        "closingIssuesReferences": {
+          "type": "ClosingIssuesReferencesConnection",
+          "args": {
+            "after": "String",
+            "first": "Int"
+          }
+        },
+        "comments": {
+          "type": "PRCommentConnection",
+          "args": {
+            "after": "String",
+            "before": "String",
+            "first": "Int",
+            "last": "Int"
+          }
+        },
+        "commits": {
+          "type": "PullRequestCommitConnection",
+          "args": {
+            "first": "Int",
+            "last": "Int"
+          }
+        },
+        "createdAt": {
+          "type": "String!"
+        },
+        "databaseId": {
+          "type": "Int"
+        },
+        "deletions": {
+          "type": "Int!"
+        },
+        "files": {
+          "type": "PullRequestChangedFileConnection",
+          "args": {
+            "after": "String",
+            "first": "Int"
+          }
+        },
+        "fullDatabaseId": {
+          "type": "String"
+        },
+        "headRefName": {
+          "type": "String!"
+        },
+        "headRefOid": {
+          "type": "String!"
+        },
+        "headRepository": {
+          "type": "Repository"
+        },
+        "headRepositoryOwner": {
+          "type": "User"
+        },
+        "id": {
+          "type": "ID!"
+        },
+        "isCrossRepository": {
+          "type": "Boolean!"
+        },
+        "isDraft": {
+          "type": "Boolean!"
+        },
+        "labels": {
+          "type": "PRLabelConnection",
+          "args": {
+            "after": "String",
+            "first": "Int"
+          }
+        },
+        "latestReviews": {
+          "type": "LatestReviewConnection",
+          "args": {
+            "first": "Int"
+          }
+        },
+        "locked": {
+          "type": "Boolean!"
+        },
+        "maintainerCanModify": {
+          "type": "Boolean!"
+        },
+        "mergeCommit": {
+          "type": "Commit"
+        },
+        "mergeStateStatus": {
+          "type": "MergeStateStatus!"
+        },
+        "mergeable": {
+          "type": "MergeableState!"
+        },
+        "merged": {
+          "type": "Boolean!"
+        },
+        "mergedAt": {
+          "type": "String"
+        },
+        "mergedBy": {
+          "type": "User"
+        },
+        "milestone": {
+          "type": "PRMilestone"
+        },
+        "number": {
+          "type": "Int!"
+        },
+        "potentialMergeCommit": {
+          "type": "Commit"
+        },
+        "projectItems": {
+          "type": "ProjectV2ItemConnection",
+          "args": {
+            "after": "String",
+            "before": "String",
+            "first": "Int",
+            "last": "Int"
+          }
+        },
+        "reactionGroups": {
+          "type": "[PRReactionGroup]"
+        },
+        "reviewDecision": {
+          "type": "PullRequestReviewDecision"
+        },
+        "reviewRequests": {
+          "type": "ReviewRequestConnection",
+          "args": {
+            "first": "Int"
+          }
+        },
+        "reviewThreads": {
+          "type": "PullRequestReviewThreadConnection",
+          "args": {
+            "first": "Int",
+            "last": "Int"
+          }
+        },
+        "reviews": {
+          "type": "PullRequestReviewConnection",
+          "args": {
+            "after": "String",
+            "before": "String",
+            "first": "Int",
+            "last": "Int"
+          }
+        },
+        "state": {
+          "type": "String!"
+        },
+        "title": {
+          "type": "String!"
+        },
+        "updatedAt": {
+          "type": "String!"
+        },
+        "url": {
+          "type": "String!"
+        }
+      }
+    },
+    "PullRequestChangedFile": {
+      "kind": "OBJECT",
+      "fields": {
+        "additions": {
+          "type": "Int!"
+        },
+        "changeType": {
+          "type": "String!"
+        },
+        "deletions": {
+          "type": "Int!"
+        },
+        "path": {
+          "type": "String!"
+        }
+      }
+    },
+    "PullRequestChangedFileConnection": {
+      "kind": "OBJECT",
+      "fields": {
+        "nodes": {
+          "type": "[PullRequestChangedFile]"
+        },
+        "totalCount": {
+          "type": "Int!"
+        }
+      }
+    },
+    "PullRequestCommit": {
+      "kind": "OBJECT",
+      "fields": {
+        "commit": {
+          "type": "Commit!"
+        }
+      }
+    },
+    "PullRequestCommitConnection": {
+      "kind": "OBJECT",
+      "fields": {
+        "nodes": {
+          "type": "[PullRequestCommit]"
+        },
+        "totalCount": {
+          "type": "Int!"
+        }
+      }
+    },
+    "PullRequestConnection": {
+      "kind": "OBJECT",
+      "fields": {
+        "edges": {
+          "type": "[PullRequestEdge]"
+        },
+        "nodes": {
+          "type": "[PullRequest]"
+        },
+        "pageInfo": {
+          "type": "PullRequestPageInfo!"
+        },
+        "totalCount": {
+          "type": "Int!"
+        }
+      }
+    },
+    "PullRequestEdge": {
+      "kind": "OBJECT",
+      "fields": {
+        "cursor": {
+          "type": "String!"
+        },
+        "node": {
+          "type": "PullRequest"
+        }
+      }
+    },
+    "PullRequestMergeMethod": {
+      "kind": "ENUM",
+      "enum_values": [
+        "MERGE",
+        "REBASE",
+        "SQUASH"
+      ]
+    },
+    "PullRequestOrderDirection": {
+      "kind": "ENUM",
+      "enum_values": [
+        "ASC",
+        "DESC"
+      ]
+    },
+    "PullRequestOrderField": {
+      "kind": "ENUM",
+      "enum_values": [
+        "CREATED_AT",
+        "UPDATED_AT"
+      ]
+    },
+    "PullRequestPageInfo": {
+      "kind": "OBJECT",
+      "fields": {
+        "endCursor": {
+          "type": "String"
+        },
+        "hasNextPage": {
+          "type": "Boolean!"
+        },
+        "hasPreviousPage": {
+          "type": "Boolean!"
+        },
+        "startCursor": {
+          "type": "String"
+        }
+      }
+    },
+    "PullRequestReview": {
+      "kind": "OBJECT",
+      "fields": {
+        "author": {
+          "type": "User"
+        },
+        "authorAssociation": {
+          "type": "String"
+        },
+        "body": {
+          "type": "String"
+        },
+        "commit": {
+          "type": "Commit"
+        },
+        "createdAt": {
+          "type": "String!"
+        },
+        "id": {
+          "type": "ID!"
+        },
+        "reactionGroups": {
+          "type": "[PRReactionGroup]"
+        },
+        "state": {
+          "type": "String!"
+        },
+        "submittedAt": {
+          "type": "String"
+        },
+        "updatedAt": {
+          "type": "String!"
+        }
+      }
+    },
+    "PullRequestReviewComment": {
+      "kind": "OBJECT",
+      "fields": {
+        "author": {
+          "type": "User"
+        },
+        "body": {
+          "type": "String!"
+        },
+        "createdAt": {
+          "type": "String!"
+        },
+        "databaseId": {
+          "type": "Int"
+        },
+        "diffHunk": {
+          "type": "String"
+        },
+        "id": {
+          "type": "ID!"
+        },
+        "line": {
+          "type": "Int"
+        },
+        "path": {
+          "type": "String!"
+        },
+        "position": {
+          "type": "Int"
+        },
+        "state": {
+          "type": "String!"
+        },
+        "updatedAt": {
+          "type": "String!"
+        }
+      }
+    },
+    "PullRequestReviewCommentConnection": {
+      "kind": "OBJECT",
+      "fields": {
+        "nodes": {
+          "type": "[PullRequestReviewComment]"
+        },
+        "totalCount": {
+          "type": "Int!"
+        }
+      }
+    },
+    "PullRequestReviewConnection": {
+      "kind": "OBJECT",
+      "fields": {
+        "nodes": {
+          "type": "[PullRequestReview]"
+        },
+        "pageInfo": {
+          "type": "PRReviewPageInfo!"
+        },
+        "totalCount": {
+          "type": "Int!"
+        }
+      }
+    },
+    "PullRequestReviewDecision": {
+      "kind": "ENUM",
+      "enum_values": [
+        "APPROVED",
+        "CHANGES_REQUESTED",
+        "REVIEW_REQUIRED"
+      ]
+    },
+    "PullRequestReviewEvent": {
+      "kind": "ENUM",
+      "enum_values": [
+        "APPROVE",
+        "COMMENT",
+        "DISMISS",
+        "REQUEST_CHANGES"
+      ]
+    },
+    "PullRequestReviewThread": {
+      "kind": "OBJECT",
+      "fields": {
+        "comments": {
+          "type": "PullRequestReviewCommentConnection!"
+        },
+        "id": {
+          "type": "ID!"
+        },
+        "isOutdated": {
+          "type": "Boolean!"
+        },
+        "isResolved": {
+          "type": "Boolean!"
+        },
+        "line": {
+          "type": "Int"
+        },
+        "path": {
+          "type": "String"
+        },
+        "resolvedBy": {
+          "type": "User"
+        }
+      }
+    },
+    "PullRequestReviewThreadConnection": {
+      "kind": "OBJECT",
+      "fields": {
+        "nodes": {
+          "type": "[PullRequestReviewThread]"
+        },
+        "totalCount": {
+          "type": "Int!"
+        }
+      }
+    },
+    "PullRequestState": {
+      "kind": "ENUM",
+      "enum_values": [
+        "CLOSED",
+        "MERGED",
+        "OPEN"
+      ]
+    },
+    "Query": {
+      "kind": "OBJECT",
+      "fields": {
+        "organization": {
+          "type": "Organization",
+          "args": {
+            "login": "String!"
+          }
+        },
+        "repository": {
+          "type": "Repository",
+          "args": {
+            "name": "String!",
+            "owner": "String!"
+          }
+        },
+        "repositoryOwner": {
+          "type": "User",
+          "args": {
+            "login": "String!"
+          }
+        },
+        "search": {
+          "type": "SearchResultItemConnection",
+          "args": {
+            "after": "String",
+            "first": "Int",
+            "last": "Int",
+            "query": "String!",
+            "type": "SearchType!"
+          }
+        },
+        "user": {
+          "type": "User",
+          "args": {
+            "login": "String!"
+          }
+        },
+        "viewer": {
+          "type": "User"
+        }
+      }
+    },
+    "ReactingUserConnection": {
+      "kind": "OBJECT",
+      "fields": {
+        "totalCount": {
+          "type": "Int!"
+        }
+      }
+    },
+    "ReactionGroup": {
+      "kind": "OBJECT",
+      "fields": {
+        "content": {
+          "type": "String!"
+        },
+        "users": {
+          "type": "ReactingUserConnection"
+        }
+      }
+    },
+    "Ref": {
+      "kind": "OBJECT",
+      "fields": {
+        "name": {
+          "type": "String"
+        },
+        "prefix": {
+          "type": "String"
+        }
+      }
+    },
+    "RelatedIssue": {
+      "kind": "OBJECT",
+      "fields": {
+        "id": {
+          "type": "ID!"
+        },
+        "number": {
+          "type": "Int!"
+        },
+        "repository": {
+          "type": "RelatedIssueRepository"
+        },
+        "state": {
+          "type": "String!"
+        },
+        "title": {
+          "type": "String!"
+        },
+        "url": {
+          "type": "String!"
+        }
+      }
+    },
+    "RelatedIssueRepository": {
+      "kind": "OBJECT",
+      "fields": {
+        "nameWithOwner": {
+          "type": "String!"
+        }
+      }
+    },
+    "Release": {
+      "kind": "OBJECT",
+      "fields": {
+        "createdAt": {
+          "type": "String!"
+        },
+        "databaseId": {
+          "type": "Int"
+        },
+        "description": {
+          "type": "String"
+        },
+        "id": {
+          "type": "ID!"
+        },
+        "immutable": {
+          "type": "Boolean!"
+        },
+        "isDraft": {
+          "type": "Boolean!"
+        },
+        "isLatest": {
+          "type": "Boolean!"
+        },
+        "isPrerelease": {
+          "type": "Boolean!"
+        },
+        "name": {
+          "type": "String"
+        },
+        "publishedAt": {
+          "type": "String"
+        },
+        "tagName": {
+          "type": "String!"
+        },
+        "url": {
+          "type": "String!"
+        }
+      }
+    },
+    "ReleaseConnection": {
+      "kind": "OBJECT",
+      "fields": {
+        "nodes": {
+          "type": "[Release]"
+        },
+        "pageInfo": {
+          "type": "ReleasePageInfo!"
+        },
+        "totalCount": {
+          "type": "Int!"
+        }
+      }
+    },
+    "ReleaseOrder": {
+      "kind": "INPUT_OBJECT",
+      "input_fields": {
+        "direction": "OrderDirection",
+        "field": "ReleaseOrderField"
+      }
+    },
+    "ReleaseOrderField": {
+      "kind": "ENUM",
+      "enum_values": [
+        "CREATED_AT",
+        "NAME"
+      ]
+    },
+    "ReleasePageInfo": {
+      "kind": "OBJECT",
+      "fields": {
+        "endCursor": {
+          "type": "String"
+        },
+        "hasNextPage": {
+          "type": "Boolean!"
+        },
+        "hasPreviousPage": {
+          "type": "Boolean!"
+        },
+        "startCursor": {
+          "type": "String"
+        }
+      }
+    },
+    "ReopenIssueInput": {
+      "kind": "INPUT_OBJECT",
+      "input_fields": {
+        "issueId": "ID!"
+      }
+    },
+    "ReopenIssuePayload": {
+      "kind": "OBJECT",
+      "fields": {
+        "issue": {
+          "type": "Issue"
+        }
+      }
+    },
+    "ReopenPullRequestInput": {
+      "kind": "INPUT_OBJECT",
+      "input_fields": {
+        "pullRequestId": "ID!"
+      }
+    },
+    "ReopenPullRequestPayload": {
+      "kind": "OBJECT",
+      "fields": {
+        "pullRequest": {
+          "type": "PullRequest"
+        }
+      }
+    },
+    "RepoWatcherConnection": {
+      "kind": "OBJECT",
+      "fields": {
+        "totalCount": {
+          "type": "Int!"
+        }
+      }
+    },
+    "ReportedContentClassifier": {
+      "kind": "ENUM",
+      "enum_values": [
+        "ABUSE",
+        "DUPLICATE",
+        "OFF_TOPIC",
+        "OUTDATED",
+        "RESOLVED",
+        "SPAM"
+      ]
+    },
+    "Repository": {
+      "kind": "OBJECT",
+      "fields": {
+        "archivedAt": {
+          "type": "String"
+        },
+        "assignableUsers": {
+          "type": "UserConnection",
+          "args": {
+            "after": "String",
+            "first": "Int",
+            "query": "String"
+          }
+        },
+        "createdAt": {
+          "type": "String!"
+        },
+        "databaseId": {
+          "type": "Int"
+        },
+        "defaultBranchRef": {
+          "type": "Ref"
+        },
+        "deleteBranchOnMerge": {
+          "type": "Boolean!"
+        },
+        "description": {
+          "type": "String"
+        },
+        "discussion": {
+          "type": "Discussion",
+          "args": {
+            "number": "Int!"
+          }
+        },
+        "discussionCategories": {
+          "type": "DiscussionCategoryConnection",
+          "args": {
+            "after": "String",
+            "before": "String",
+            "first": "Int",
+            "last": "Int"
+          }
+        },
+        "discussions": {
+          "type": "DiscussionConnection",
+          "args": {
+            "after": "String",
+            "before": "String",
+            "categoryId": "ID",
+            "first": "Int",
+            "last": "Int",
+            "orderBy": "DiscussionOrder"
+          }
+        },
+        "forkCount": {
+          "type": "Int!"
+        },
+        "hasDiscussionsEnabled": {
+          "type": "Boolean!"
+        },
+        "hasIssuesEnabled": {
+          "type": "Boolean!"
+        },
+        "hasProjectsEnabled": {
+          "type": "Boolean!"
+        },
+        "hasWikiEnabled": {
+          "type": "Boolean!"
+        },
+        "homepageUrl": {
+          "type": "String"
+        },
+        "id": {
+          "type": "ID!"
+        },
+        "isArchived": {
+          "type": "Boolean!"
+        },
+        "isEmpty": {
+          "type": "Boolean!"
+        },
+        "isFork": {
+          "type": "Boolean!"
+        },
+        "isPrivate": {
+          "type": "Boolean!"
+        },
+        "isTemplate": {
+          "type": "Boolean!"
+        },
+        "issue": {
+          "type": "Issue",
+          "args": {
+            "number": "Int!"
+          }
+        },
+        "issueOrPullRequest": {
+          "type": "IssueOrPullRequest",
+          "args": {
+            "number": "Int!"
+          }
+        },
+        "issues": {
+          "type": "IssueConnection",
+          "args": {
+            "after": "String",
+            "filterBy": "IssueFilters",
+            "first": "Int",
+            "labels": "[String]",
+            "orderBy": "IssueOrder",
+            "states": "[IssueState]"
+          }
+        },
+        "labels": {
+          "type": "LabelConnection",
+          "args": {
+            "after": "String",
+            "first": "Int",
+            "orderBy": "LabelOrder",
+            "query": "String"
+          }
+        },
+        "languages": {
+          "type": "LanguageConnection",
+          "args": {
+            "first": "Int"
+          }
+        },
+        "latestRelease": {
+          "type": "Release"
+        },
+        "licenseInfo": {
+          "type": "RepositoryLicense"
+        },
+        "mergeCommitAllowed": {
+          "type": "Boolean"
+        },
+        "milestones": {
+          "type": "MilestoneConnection",
+          "args": {
+            "after": "String",
+            "first": "Int",
+            "query": "String",
+            "states": "[MilestoneState]"
+          }
+        },
+        "name": {
+          "type": "String!"
+        },
+        "nameWithOwner": {
+          "type": "String!"
+        },
+        "owner": {
+          "type": "User"
+        },
+        "parent": {
+          "type": "Repository"
+        },
+        "primaryLanguage": {
+          "type": "Language"
+        },
+        "pullRequest": {
+          "type": "PullRequest",
+          "args": {
+            "number": "Int!"
+          }
+        },
+        "pullRequests": {
+          "type": "PullRequestConnection",
+          "args": {
+            "after": "String",
+            "baseRefName": "String",
+            "first": "Int",
+            "headRefName": "String",
+            "labels": "[String]",
+            "orderBy": "IssueOrder2",
+            "states": "[PullRequestState]"
+          }
+        },
+        "pushedAt": {
+          "type": "String"
+        },
+        "rebaseMergeAllowed": {
+          "type": "Boolean"
+        },
+        "release": {
+          "type": "Release",
+          "args": {
+            "tagName": "String!"
+          }
+        },
+        "releases": {
+          "type": "ReleaseConnection",
+          "args": {
+            "after": "String",
+            "first": "Int",
+            "orderBy": "ReleaseOrder"
+          }
+        },
+        "repositoryTopics": {
+          "type": "RepositoryTopicConnection",
+          "args": {
+            "first": "Int"
+          }
+        },
+        "squashMergeAllowed": {
+          "type": "Boolean"
+        },
+        "sshUrl": {
+          "type": "String"
+        },
+        "stargazerCount": {
+          "type": "Int"
+        },
+        "templateRepository": {
+          "type": "Repository"
+        },
+        "updatedAt": {
+          "type": "String!"
+        },
+        "url": {
+          "type": "String!"
+        },
+        "viewerPermission": {
+          "type": "String"
+        },
+        "visibility": {
+          "type": "String!"
+        },
+        "watchers": {
+          "type": "RepoWatcherConnection"
+        }
+      }
+    },
+    "RepositoryAffiliation": {
+      "kind": "ENUM",
+      "enum_values": [
+        "COLLABORATOR",
+        "ORGANIZATION_MEMBER",
+        "OWNER"
+      ]
+    },
+    "RepositoryConnection": {
+      "kind": "OBJECT",
+      "fields": {
+        "edges": {
+          "type": "[RepositoryEdge]"
+        },
+        "nodes": {
+          "type": "[Repository]"
+        },
+        "pageInfo": {
+          "type": "PageInfo!"
+        },
+        "totalCount": {
+          "type": "Int!"
+        }
+      }
+    },
+    "RepositoryEdge": {
+      "kind": "OBJECT",
+      "fields": {
+        "cursor": {
+          "type": "String!"
+        },
+        "node": {
+          "type": "Repository"
+        }
+      }
+    },
+    "RepositoryLicense": {
+      "kind": "OBJECT",
+      "fields": {
+        "key": {
+          "type": "String!"
+        },
+        "name": {
+          "type": "String!"
+        },
+        "nickname": {
+          "type": "String"
+        },
+        "spdxId": {
+          "type": "String"
+        }
+      }
+    },
+    "RepositoryOrder": {
+      "kind": "INPUT_OBJECT",
+      "input_fields": {
+        "direction": "OrderDirection",
+        "field": "RepositoryOrderField"
+      }
+    },
+    "RepositoryOrderField": {
+      "kind": "ENUM",
+      "enum_values": [
+        "CREATED_AT",
+        "NAME",
+        "PUSHED_AT",
+        "STARGAZERS",
+        "UPDATED_AT"
+      ]
+    },
+    "RepositoryPrivacy": {
+      "kind": "ENUM",
+      "enum_values": [
+        "INTERNAL",
+        "PRIVATE",
+        "PUBLIC"
+      ]
+    },
+    "RepositoryTopic": {
+      "kind": "OBJECT",
+      "fields": {
+        "topic": {
+          "type": "Topic!"
+        }
+      }
+    },
+    "RepositoryTopicConnection": {
+      "kind": "OBJECT",
+      "fields": {
+        "nodes": {
+          "type": "[RepositoryTopic]"
+        },
+        "totalCount": {
+          "type": "Int!"
+        }
+      }
+    },
+    "RequestedReviewer": {
+      "kind": "UNION",
+      "possible_types": [
+        "Bot",
+        "Team",
+        "User"
+      ]
+    },
+    "ResolveReviewThreadInput": {
+      "kind": "INPUT_OBJECT",
+      "input_fields": {
+        "clientMutationId": "String",
+        "threadId": "ID!"
+      }
+    },
+    "ResolveReviewThreadPayload": {
+      "kind": "OBJECT",
+      "fields": {
+        "clientMutationId": {
+          "type": "String"
+        },
+        "thread": {
+          "type": "PullRequestReviewThread"
+        }
+      }
+    },
+    "ReviewRequest": {
+      "kind": "OBJECT",
+      "fields": {
+        "requestedReviewer": {
+          "type": "RequestedReviewer"
+        }
+      }
+    },
+    "ReviewRequestConnection": {
+      "kind": "OBJECT",
+      "fields": {
+        "nodes": {
+          "type": "[ReviewRequest]"
+        },
+        "totalCount": {
+          "type": "Int!"
+        }
+      }
+    },
+    "SearchPageInfo": {
+      "kind": "OBJECT",
+      "fields": {
+        "endCursor": {
+          "type": "String"
+        },
+        "hasNextPage": {
+          "type": "Boolean!"
+        },
+        "hasPreviousPage": {
+          "type": "Boolean!"
+        },
+        "startCursor": {
+          "type": "String"
+        }
+      }
+    },
+    "SearchResultItem": {
+      "kind": "UNION",
+      "possible_types": [
+        "Issue",
+        "PullRequest"
+      ]
+    },
+    "SearchResultItemConnection": {
+      "kind": "OBJECT",
+      "fields": {
+        "edges": {
+          "type": "[SearchResultItemEdge]"
+        },
+        "issueCount": {
+          "type": "Int!"
+        },
+        "nodes": {
+          "type": "[SearchResultItem]"
+        },
+        "pageInfo": {
+          "type": "SearchPageInfo!"
+        }
+      }
+    },
+    "SearchResultItemEdge": {
+      "kind": "OBJECT",
+      "fields": {
+        "cursor": {
+          "type": "String!"
+        },
+        "node": {
+          "type": "SearchResultItem"
+        }
+      }
+    },
+    "SearchType": {
+      "kind": "ENUM",
+      "enum_values": [
+        "ISSUE"
+      ]
+    },
+    "StatusCheckRollup": {
+      "kind": "OBJECT",
+      "fields": {
+        "contexts": {
+          "type": "StatusCheckRollupContextConnection!",
+          "args": {
+            "after": "String",
+            "first": "Int"
+          }
+        },
+        "state": {
+          "type": "String!"
+        }
+      }
+    },
+    "StatusCheckRollupContext": {
+      "kind": "UNION",
+      "possible_types": [
+        "CheckRun",
+        "StatusContext"
+      ]
+    },
+    "StatusCheckRollupContextConnection": {
+      "kind": "OBJECT",
+      "fields": {
+        "checkRunCount": {
+          "type": "Int!"
+        },
+        "checkRunCountsByState": {
+          "type": "[CheckRunStateCount!]!"
+        },
+        "nodes": {
+          "type": "[StatusCheckRollupContext]"
+        },
+        "pageInfo": {
+          "type": "StatusCheckRollupContextPageInfo!"
+        },
+        "statusContextCount": {
+          "type": "Int!"
+        },
+        "statusContextCountsByState": {
+          "type": "[StatusContextStateCount!]!"
+        },
+        "totalCount": {
+          "type": "Int!"
+        }
+      }
+    },
+    "StatusCheckRollupContextPageInfo": {
+      "kind": "OBJECT",
+      "fields": {
+        "endCursor": {
+          "type": "String"
+        },
+        "hasNextPage": {
+          "type": "Boolean!"
+        }
+      }
+    },
+    "StatusContext": {
+      "kind": "OBJECT",
+      "fields": {
+        "context": {
+          "type": "String!"
+        },
+        "createdAt": {
+          "type": "String!"
+        },
+        "description": {
+          "type": "String"
+        },
+        "state": {
+          "type": "String!"
+        },
+        "targetUrl": {
+          "type": "String"
+        }
+      }
+    },
+    "StatusContextStateCount": {
+      "kind": "OBJECT",
+      "fields": {
+        "count": {
+          "type": "Int!"
+        },
+        "state": {
+          "type": "String!"
+        }
+      }
+    },
+    "String": {
+      "kind": "SCALAR"
+    },
+    "SubIssueConnection": {
+      "kind": "OBJECT",
+      "fields": {
+        "nodes": {
+          "type": "[RelatedIssue]"
+        },
+        "totalCount": {
+          "type": "Int!"
+        }
+      }
+    },
+    "SubIssuesSummary": {
+      "kind": "OBJECT",
+      "fields": {
+        "completed": {
+          "type": "Int!"
+        },
+        "percentCompleted": {
+          "type": "Int!"
+        },
+        "total": {
+          "type": "Int!"
+        }
+      }
+    },
+    "Team": {
+      "kind": "OBJECT",
+      "fields": {
+        "id": {
+          "type": "ID!"
+        },
+        "name": {
+          "type": "String"
+        },
+        "organization": {
+          "type": "TeamOrganization!"
+        },
+        "slug": {
+          "type": "String!"
+        }
+      }
+    },
+    "TeamOrganization": {
+      "kind": "OBJECT",
+      "fields": {
+        "login": {
+          "type": "String!"
+        }
+      }
+    },
+    "Topic": {
+      "kind": "OBJECT",
+      "fields": {
+        "name": {
+          "type": "String!"
+        }
+      }
+    },
+    "UnlockLockableInput": {
+      "kind": "INPUT_OBJECT",
+      "input_fields": {
+        "lockableId": "ID!"
+      }
+    },
+    "UnlockLockablePayload": {
+      "kind": "OBJECT",
+      "fields": {
+        "unlockedRecord": {
+          "type": "LockableSummary"
+        }
+      }
+    },
+    "UnmarkDiscussionCommentAsAnswerInput": {
+      "kind": "INPUT_OBJECT",
+      "input_fields": {
+        "clientMutationId": "String",
+        "commentId": "ID!"
+      }
+    },
+    "UnmarkDiscussionCommentAsAnswerPayload": {
+      "kind": "OBJECT",
+      "fields": {
+        "clientMutationId": {
+          "type": "String"
+        },
+        "discussion": {
+          "type": "Discussion"
+        }
+      }
+    },
+    "UnminimizeCommentInput": {
+      "kind": "INPUT_OBJECT",
+      "input_fields": {
+        "subjectId": "ID!"
+      }
+    },
+    "UnminimizeCommentPayload": {
+      "kind": "OBJECT",
+      "fields": {
+        "unminimizedComment": {
+          "type": "MinimizableComment"
+        }
+      }
+    },
+    "UnresolveReviewThreadInput": {
+      "kind": "INPUT_OBJECT",
+      "input_fields": {
+        "clientMutationId": "String",
+        "threadId": "ID!"
+      }
+    },
+    "UnresolveReviewThreadPayload": {
+      "kind": "OBJECT",
+      "fields": {
+        "clientMutationId": {
+          "type": "String"
+        },
+        "thread": {
+          "type": "PullRequestReviewThread"
+        }
+      }
+    },
+    "UpdateDiscussionCommentInput": {
+      "kind": "INPUT_OBJECT",
+      "input_fields": {
+        "body": "String!",
+        "clientMutationId": "String",
+        "commentId": "ID!"
+      }
+    },
+    "UpdateDiscussionCommentPayload": {
+      "kind": "OBJECT",
+      "fields": {
+        "clientMutationId": {
+          "type": "String"
+        },
+        "comment": {
+          "type": "DiscussionComment"
+        }
+      }
+    },
+    "UpdateDiscussionInput": {
+      "kind": "INPUT_OBJECT",
+      "input_fields": {
+        "body": "String",
+        "categoryId": "ID",
+        "clientMutationId": "String",
+        "discussionId": "ID!",
+        "title": "String"
+      }
+    },
+    "UpdateDiscussionPayload": {
+      "kind": "OBJECT",
+      "fields": {
+        "clientMutationId": {
+          "type": "String"
+        },
+        "discussion": {
+          "type": "Discussion"
+        }
+      }
+    },
+    "UpdateIssueInput": {
+      "kind": "INPUT_OBJECT",
+      "input_fields": {
+        "assigneeIds": "[ID]",
+        "body": "String",
+        "id": "ID!",
+        "issueTypeId": "ID",
+        "labelIds": "[ID]",
+        "milestoneId": "ID",
+        "state": "IssueState",
+        "title": "String"
+      }
+    },
+    "UpdateIssuePayload": {
+      "kind": "OBJECT",
+      "fields": {
+        "issue": {
+          "type": "Issue"
+        }
+      }
+    },
+    "UpdateProjectV2ItemFieldValueInput": {
+      "kind": "INPUT_OBJECT",
+      "input_fields": {
+        "fieldId": "ID!",
+        "itemId": "ID!",
+        "projectId": "ID!",
+        "value": "ProjectV2FieldValueInput!"
+      }
+    },
+    "UpdateProjectV2ItemFieldValuePayload": {
+      "kind": "OBJECT",
+      "fields": {
+        "projectV2Item": {
+          "type": "UpdateProjectV2ItemFieldValuePayloadItem"
+        }
+      }
+    },
+    "UpdateProjectV2ItemFieldValuePayloadItem": {
+      "kind": "OBJECT",
+      "fields": {
+        "id": {
+          "type": "ID!"
+        }
+      }
+    },
+    "UpdatePullRequestInput": {
+      "kind": "INPUT_OBJECT",
+      "input_fields": {
+        "assigneeIds": "[ID]",
+        "baseRefName": "String",
+        "body": "String",
+        "labelIds": "[ID]",
+        "milestoneId": "ID",
+        "pullRequestId": "ID!",
+        "title": "String"
+      }
+    },
+    "UpdatePullRequestPayload": {
+      "kind": "OBJECT",
+      "fields": {
+        "pullRequest": {
+          "type": "PullRequest"
+        }
+      }
+    },
+    "User": {
+      "kind": "OBJECT",
+      "fields": {
+        "avatarUrl": {
+          "type": "String"
+        },
+        "bio": {
+          "type": "String"
+        },
+        "createdAt": {
+          "type": "String!"
+        },
+        "databaseId": {
+          "type": "Int"
+        },
+        "email": {
+          "type": "String!"
+        },
+        "id": {
+          "type": "ID!"
+        },
+        "login": {
+          "type": "String!"
+        },
+        "name": {
+          "type": "String"
+        },
+        "organizations": {
+          "type": "OrganizationConnection",
+          "args": {
+            "after": "String",
+            "first": "Int"
+          }
+        },
+        "repositories": {
+          "type": "RepositoryConnection",
+          "args": {
+            "after": "String",
+            "first": "Int",
+            "isFork": "Boolean",
+            "orderBy": "RepositoryOrder",
+            "ownerAffiliations": "[RepositoryAffiliation]",
+            "privacy": "RepositoryPrivacy"
+          }
+        },
+        "updatedAt": {
+          "type": "String!"
+        },
+        "url": {
+          "type": "String!"
+        }
+      }
+    },
+    "UserConnection": {
+      "kind": "OBJECT",
+      "fields": {
+        "nodes": {
+          "type": "[User]"
+        },
+        "pageInfo": {
+          "type": "AssigneePageInfo!"
+        },
+        "totalCount": {
+          "type": "Int!"
+        }
+      }
+    }
+  }
+}

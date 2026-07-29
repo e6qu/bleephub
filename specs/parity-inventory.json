@@ -53,6 +53,21 @@
     }
   },
   "graphql": {
+    "compatibility_gap_count": 319,
+    "coverage": {
+      "bleephub_types": 267,
+      "compatibility_gap_count": 319,
+      "implemented_fields": 734,
+      "official_fields": 8285,
+      "official_types": 1794,
+      "shared_types": 201,
+      "signature_exact_fields": 498
+    },
+    "introspection_snapshot_sha256": "ca36ab9adb573027555328eca344951faf99a8297c01275d718ab763639fb30e",
+    "official_schema": {
+      "content_sha256": "f7a98392e2281c215810c5ac648c3a6940bcd49db74beb2502143f244fdb4da3",
+      "source": "https://docs.github.com/public/fpt/schema.docs.graphql"
+    },
     "resolver_files": [
       "internal/server/gh_discussions_graphql.go",
       "internal/server/gh_issues_graphql.go",
@@ -70,6 +85,7 @@
       "internal/server/gh_sweep_graphql_test.go",
       "internal/server/graphql_authz_test.go",
       "internal/server/graphql_credential_test.go",
+      "internal/server/graphql_schema_parity_test.go",
       "internal/server/org_pr_graphql_test.go"
     ]
   },
@@ -24972,6 +24988,7 @@
   },
   "schema_version": 1,
   "sources": {
+    "graphql_schema": "internal/server/testdata/github-graphql-schema.graphql.gz",
     "ledger": "BUGS.md",
     "rest_openapi": "internal/server/testdata/github-openapi.json.gz",
     "web_router": "web/src/App.tsx"

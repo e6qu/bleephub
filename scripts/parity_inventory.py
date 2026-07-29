@@ -465,9 +465,34 @@ def graphql_inventory() -> dict[str, Any]:
     )
     if not resolver_files or not test_files:
         raise InventoryError("GraphQL resolver or test discovery returned nothing")
+    version_path = directory / "testdata" / "github-graphql-schema.VERSION"
+    version = {}
+    for line in version_path.read_text(encoding="utf-8").splitlines():
+        key, separator, value = line.partition(": ")
+        if separator:
+            version[key] = value
+    snapshot_path = directory / "testdata" / "bleephub-graphql-introspection.json"
+    gap_path = directory / "testdata" / "graphql-schema-gap-allowlist.txt"
+    coverage_path = ROOT / "specs" / "graphql-schema-coverage.json"
+    coverage = json.loads(coverage_path.read_text(encoding="utf-8"))
     return {
         "resolver_files": resolver_files,
         "test_files": test_files,
+        "official_schema": {
+            "source": version.get("source", ""),
+            "content_sha256": version.get("content sha256", ""),
+        },
+        "introspection_snapshot_sha256": hashlib.sha256(
+            snapshot_path.read_bytes()
+        ).hexdigest(),
+        "compatibility_gap_count": len(
+            [line for line in gap_path.read_text(encoding="utf-8").splitlines() if line]
+        ),
+        "coverage": {
+            key: value
+            for key, value in coverage.items()
+            if key not in {"missing_types", "missing_fields"}
+        },
     }
 
 
@@ -547,6 +572,7 @@ def build_inventory() -> dict[str, Any]:
         "sources": {
             "ledger": str(LEDGER_PATH.relative_to(ROOT)),
             "rest_openapi": str(OPENAPI_PATH.relative_to(ROOT)),
+            "graphql_schema": "internal/server/testdata/github-graphql-schema.graphql.gz",
             "web_router": "web/src/App.tsx",
         },
         "ledger": {"summary": ledger_summary, "findings": findings},
