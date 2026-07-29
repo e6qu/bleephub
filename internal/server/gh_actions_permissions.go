@@ -632,54 +632,6 @@ func (s *Server) handleSetOrgWorkflowPermissions(w http.ResponseWriter, r *http.
 	w.WriteHeader(http.StatusNoContent)
 }
 
-func (s *Server) handleGetOrgCacheRetentionLimit(w http.ResponseWriter, r *http.Request) {
-	org := r.PathValue("org")
-	p := s.store.GetOrgActionsPermissions(org)
-	writeJSON(w, http.StatusOK, map[string]int{
-		"max_cache_retention_days": p.CacheRetentionLimitDays,
-	})
-}
-
-func (s *Server) handleSetOrgCacheRetentionLimit(w http.ResponseWriter, r *http.Request) {
-	var req struct {
-		MaxCacheRetentionDays int `json:"max_cache_retention_days"`
-	}
-	if !decodeJSONBody(w, r, &req) {
-		return
-	}
-	org := r.PathValue("org")
-	p := s.store.GetOrgActionsPermissions(org)
-	p.CacheRetentionLimitDays = req.MaxCacheRetentionDays
-	s.store.SetOrgActionsPermissions(org, p)
-	writeJSON(w, http.StatusOK, map[string]int{
-		"max_cache_retention_days": p.CacheRetentionLimitDays,
-	})
-}
-
-func (s *Server) handleGetOrgCacheStorageLimit(w http.ResponseWriter, r *http.Request) {
-	org := r.PathValue("org")
-	p := s.store.GetOrgActionsPermissions(org)
-	writeJSON(w, http.StatusOK, map[string]int64{
-		"max_cache_size_gb": p.CacheStorageLimitGB,
-	})
-}
-
-func (s *Server) handleSetOrgCacheStorageLimit(w http.ResponseWriter, r *http.Request) {
-	var req struct {
-		MaxCacheSizeGB int64 `json:"max_cache_size_gb"`
-	}
-	if !decodeJSONBody(w, r, &req) {
-		return
-	}
-	org := r.PathValue("org")
-	p := s.store.GetOrgActionsPermissions(org)
-	p.CacheStorageLimitGB = req.MaxCacheSizeGB
-	s.store.SetOrgActionsPermissions(org, p)
-	writeJSON(w, http.StatusOK, map[string]int64{
-		"max_cache_size_gb": p.CacheStorageLimitGB,
-	})
-}
-
 // --- Org permissions extras ---
 
 func (s *Server) handleGetOrgArtifactAndLogRetention(w http.ResponseWriter, r *http.Request) {

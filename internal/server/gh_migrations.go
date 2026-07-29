@@ -328,24 +328,6 @@ func (s *Server) handleDeleteOrgMigrationArchive(w http.ResponseWriter, r *http.
 	w.WriteHeader(http.StatusNoContent)
 }
 
-func (s *Server) handleGetOrgMigrationLock(w http.ResponseWriter, r *http.Request) {
-	user := ghUserFromContext(r.Context())
-	if user == nil {
-		writeGHError(w, http.StatusUnauthorized, "Requires authentication")
-		return
-	}
-	m, _, ok := s.resolveOrgMigration(w, r, user)
-	if !ok {
-		return
-	}
-	repoName := r.PathValue("repo_name")
-	if !s.store.IsOrgMigrationRepoLocked(m.ID, repoName) {
-		writeGHError(w, http.StatusNotFound, "Not Found")
-		return
-	}
-	writeJSON(w, http.StatusOK, map[string]bool{"locked": true})
-}
-
 func (s *Server) handleUnlockOrgMigrationRepo(w http.ResponseWriter, r *http.Request) {
 	user := ghUserFromContext(r.Context())
 	if user == nil {

@@ -127,53 +127,6 @@ func (s *Server) handleUpdateSecretScanningAlert(w http.ResponseWriter, r *http.
 	writeJSON(w, http.StatusOK, secretScanningAlertToJSON(a, s.baseURL(r), repo))
 }
 
-func (s *Server) handleBulkUpdateSecretScanningAlerts(w http.ResponseWriter, r *http.Request) {
-	user := ghUserFromContext(r.Context())
-	if user == nil {
-		writeGHError(w, http.StatusUnauthorized, "Requires authentication")
-		return
-	}
-	repo := s.lookupRepoFromPath(r)
-	if repo == nil {
-		writeGHError(w, http.StatusNotFound, "Not Found")
-		return
-	}
-	if !s.viewerMayActOnRepo(r.Context(), repo, scopeSecurityEvents, permWrite, permAdmin) {
-		writeGHError(w, http.StatusNotFound, "Not Found")
-		return
-	}
-
-	var req struct {
-		State             string `json:"state"`
-		Resolution        string `json:"resolution"`
-		ResolutionComment string `json:"resolution_comment"`
-	}
-	if !decodeJSONBody(w, r, &req) {
-		return
-	}
-	if req.State != "resolved" || !isValidResolution(req.Resolution) {
-		writeGHValidationError(w, "SecretScanningAlert", "state", "invalid")
-		return
-	}
-
-	state := r.URL.Query().Get("state")
-	secretType := r.URL.Query().Get("secret_type")
-	resolution := r.URL.Query().Get("resolution")
-
-	updated, err := s.store.BulkUpdateSecretScanningAlerts(repo.FullName, state, secretType, resolution, req.Resolution, req.ResolutionComment)
-	if err != nil {
-		writeGHValidationError(w, "SecretScanningAlert", "state", "invalid")
-		return
-	}
-
-	baseURL := s.baseURL(r)
-	out := make([]map[string]interface{}, len(updated))
-	for i, a := range updated {
-		out[i] = secretScanningAlertToJSON(a, baseURL, repo)
-	}
-	writeJSON(w, http.StatusOK, out)
-}
-
 func (s *Server) handleListSecretScanningAlertLocations(w http.ResponseWriter, r *http.Request) {
 	user := ghUserFromContext(r.Context())
 	if user == nil {

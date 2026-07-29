@@ -641,27 +641,6 @@ func (s *Server) handleBPStatusChecksPatch(w http.ResponseWriter, r *http.Reques
 	writeJSON(w, http.StatusOK, s.statusCheckPolicyJSON(bp.RequiredStatusChecks, repo, branch, s.baseURL(r)))
 }
 
-func (s *Server) handleBPStatusChecksPut(w http.ResponseWriter, r *http.Request) {
-	repo, branch, bp := s.getBranchProtection(r)
-	if repo == nil {
-		writeGHError(w, http.StatusNotFound, "Not Found")
-		return
-	}
-	if bp == nil {
-		s.branchProtectionNotFound(w)
-		return
-	}
-	var req BPStatusChecks
-	if !decodeJSONBody(w, r, &req) {
-		return
-	}
-	bp.RequiredStatusChecks = &req
-	s.setBranchProtection(repo, branch, bp)
-	req.URL = s.branchProtectionSubURL(s.baseURL(r), repo.FullName, branch, "required_status_checks")
-	req.ContextsURL = s.branchProtectionSubURL(s.baseURL(r), repo.FullName, branch, "required_status_checks/contexts")
-	writeJSON(w, http.StatusOK, req)
-}
-
 func (s *Server) handleBPStatusChecksDelete(w http.ResponseWriter, r *http.Request) {
 	repo, branch, bp := s.getBranchProtection(r)
 	if repo == nil {
@@ -804,30 +783,6 @@ func (s *Server) handleBPRestrictionsGet(w http.ResponseWriter, r *http.Request)
 	res := *bp.Restrictions
 	s.hydrateRestrictionsURLs(&res, s.baseURL(r), repo.FullName, branch, "restrictions")
 	writeJSON(w, http.StatusOK, res)
-}
-
-func (s *Server) handleBPRestrictionsPut(w http.ResponseWriter, r *http.Request) {
-	repo, branch, bp := s.getBranchProtection(r)
-	if repo == nil {
-		writeGHError(w, http.StatusNotFound, "Not Found")
-		return
-	}
-	if bp == nil {
-		s.branchProtectionNotFound(w)
-		return
-	}
-	var req BPRestrictions
-	if !decodeJSONBody(w, r, &req) {
-		return
-	}
-	if !s.isEmptyRestrictions(&req) {
-		bp.Restrictions = &req
-	} else {
-		bp.Restrictions = nil
-	}
-	s.setBranchProtection(repo, branch, bp)
-	s.hydrateRestrictionsURLs(&req, s.baseURL(r), repo.FullName, branch, "restrictions")
-	writeJSON(w, http.StatusOK, req)
 }
 
 func (s *Server) handleBPRestrictionsDelete(w http.ResponseWriter, r *http.Request) {
@@ -996,104 +951,6 @@ func (s *Server) handleBPEnforceAdminsDelete(w http.ResponseWriter, r *http.Requ
 		return
 	}
 	bp.EnforceAdmins = nil
-	s.setBranchProtection(repo, branch, bp)
-	w.WriteHeader(http.StatusNoContent)
-}
-
-// --- Allow force pushes ---
-
-func (s *Server) handleBPAllowForcePushesGet(w http.ResponseWriter, r *http.Request) {
-	repo, _, bp := s.getBranchProtection(r)
-	if repo == nil {
-		writeGHError(w, http.StatusNotFound, "Not Found")
-		return
-	}
-	if bp == nil || bp.AllowForcePushes == nil {
-		s.branchProtectionNotFound(w)
-		return
-	}
-	writeJSON(w, http.StatusOK, bp.AllowForcePushes)
-}
-
-func (s *Server) handleBPAllowForcePushesPut(w http.ResponseWriter, r *http.Request) {
-	repo, branch, bp := s.getBranchProtection(r)
-	if repo == nil {
-		writeGHError(w, http.StatusNotFound, "Not Found")
-		return
-	}
-	if bp == nil {
-		s.branchProtectionNotFound(w)
-		return
-	}
-	var req BPEnabled
-	if !decodeJSONBody(w, r, &req) {
-		return
-	}
-	bp.AllowForcePushes = &req
-	s.setBranchProtection(repo, branch, bp)
-	writeJSON(w, http.StatusOK, req)
-}
-
-func (s *Server) handleBPAllowForcePushesDelete(w http.ResponseWriter, r *http.Request) {
-	repo, branch, bp := s.getBranchProtection(r)
-	if repo == nil {
-		writeGHError(w, http.StatusNotFound, "Not Found")
-		return
-	}
-	if bp == nil {
-		s.branchProtectionNotFound(w)
-		return
-	}
-	bp.AllowForcePushes = nil
-	s.setBranchProtection(repo, branch, bp)
-	w.WriteHeader(http.StatusNoContent)
-}
-
-// --- Allow deletions ---
-
-func (s *Server) handleBPAllowDeletionsGet(w http.ResponseWriter, r *http.Request) {
-	repo, _, bp := s.getBranchProtection(r)
-	if repo == nil {
-		writeGHError(w, http.StatusNotFound, "Not Found")
-		return
-	}
-	if bp == nil || bp.AllowDeletions == nil {
-		s.branchProtectionNotFound(w)
-		return
-	}
-	writeJSON(w, http.StatusOK, bp.AllowDeletions)
-}
-
-func (s *Server) handleBPAllowDeletionsPut(w http.ResponseWriter, r *http.Request) {
-	repo, branch, bp := s.getBranchProtection(r)
-	if repo == nil {
-		writeGHError(w, http.StatusNotFound, "Not Found")
-		return
-	}
-	if bp == nil {
-		s.branchProtectionNotFound(w)
-		return
-	}
-	var req BPEnabled
-	if !decodeJSONBody(w, r, &req) {
-		return
-	}
-	bp.AllowDeletions = &req
-	s.setBranchProtection(repo, branch, bp)
-	writeJSON(w, http.StatusOK, req)
-}
-
-func (s *Server) handleBPAllowDeletionsDelete(w http.ResponseWriter, r *http.Request) {
-	repo, branch, bp := s.getBranchProtection(r)
-	if repo == nil {
-		writeGHError(w, http.StatusNotFound, "Not Found")
-		return
-	}
-	if bp == nil {
-		s.branchProtectionNotFound(w)
-		return
-	}
-	bp.AllowDeletions = nil
 	s.setBranchProtection(repo, branch, bp)
 	w.WriteHeader(http.StatusNoContent)
 }

@@ -997,13 +997,6 @@ func splitRepoKeyParts(repoKey string) [2]string {
 	return [2]string{repoKey, ""}
 }
 
-// listWorkflowFiles reads the workflow definitions at HEAD. Schedule triggers
-// are the case with no ref of their own; everything driven by an event reads
-// the ref the event names via listWorkflowFilesAtRef.
-func listWorkflowFiles(stor gitStorage.Storer) map[string][]byte {
-	return listWorkflowFilesAtRef(stor, "")
-}
-
 // listWorkflowFilesAtRef reads .github/workflows as of ref. An empty ref means
 // HEAD.
 func listWorkflowFilesAtRef(stor gitStorage.Storer, ref string) map[string][]byte {
