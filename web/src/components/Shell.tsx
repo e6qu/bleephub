@@ -1,7 +1,6 @@
 import { type ReactNode, useEffect, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { NavLink, Link, useLocation, useNavigate } from "react-router";
-import { useTheme } from "@bleephub/ui-core/hooks";
+import { Link, useLocation, useNavigate } from "react-router";
 import {
   RepoIcon,
   CommentIcon,
@@ -11,21 +10,12 @@ import {
   PeopleIcon,
   OrganizationIcon,
   TeamIcon,
-  AuditLogIcon,
-  ServerIcon,
-  GistIcon,
   ProjectIcon,
   LockIcon,
-  MigrationIcon,
-  CodespaceIcon,
   PackageIcon,
   DiscussionIcon,
-  NotificationBellIcon,
   GraphIcon,
-  GlobeIcon,
   WebhookIcon,
-  SearchIcon,
-  KeyIcon,
   StarIcon,
   EyeIcon,
   RepoForkedIcon,

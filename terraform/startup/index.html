@@ -36,7 +36,8 @@
     <script>
       (() => {
         const query = new URLSearchParams(location.search);
-        const next = query.get("next") || "/";
+        const requestedNext = new URL(query.get("next") || "/", location.origin);
+        const next = requestedNext.origin === location.origin ? requestedNext.href : location.origin + "/";
         const phase = query.get("phase");
         const isAdmin = location.hostname.toLowerCase().startsWith("admin.");
         const status = document.querySelector("#admin");
@@ -51,7 +52,7 @@
             const response = await fetch(next, { cache: "no-store", redirect: "follow" });
             const type = response.headers.get("content-type") || "";
             if (response.ok && type.includes("text/html")) {
-              document.open(); document.write(await response.text()); document.close(); return;
+              location.replace(next); return;
             }
           } catch (_) { }
           setTimeout(loadApplication, 2000);

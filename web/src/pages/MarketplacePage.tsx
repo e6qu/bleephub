@@ -13,7 +13,7 @@ import {
 } from "../api.js";
 import type { GithubMarketplaceListing, GithubMarketplacePlan } from "../types.js";
 import { Blankslate, Box, Button, ErrorBanner, FormLabel, StateLabel } from "../components/ui.js";
-import { CheckIcon, OrganizationIcon, PackageIcon, SearchIcon } from "../components/octicons.js";
+import { CheckIcon, PackageIcon, SearchIcon } from "../components/octicons.js";
 
 const MARKETPLACE_COLORS = [
   "var(--color-brand-purple)",

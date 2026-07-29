@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, afterEach } from "vitest";
-import { render, cleanup, screen, waitFor, fireEvent } from "@testing-library/react";
+import { render, cleanup, screen, waitFor } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { MemoryRouter, Routes, Route } from "react-router";
 import { DiscussionsPage } from "../pages/DiscussionsPage.js";

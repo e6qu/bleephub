@@ -9,7 +9,7 @@ import {
 } from "../api.js";
 import type { BleephubRepo, GithubOrgSummary, GithubUserProfile } from "../types.js";
 import { Avatar } from "../components/Avatar.js";
-import { Box, SectionLabel, Blankslate, Button } from "../components/ui.js";
+import { SectionLabel, Blankslate, Button } from "../components/ui.js";
 import {
   RepoIcon,
   BranchIcon,
