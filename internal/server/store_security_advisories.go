@@ -370,11 +370,11 @@ func (st *Store) CreateTemporaryFork(repoID int, ghsaID string) *Repo {
 	}
 	stor, err := openOrInitGitStorage(context.Background(), fullName)
 	if err != nil {
-		log.Printf("bleephub: security advisory fork %s: open git storage: %v", fullName, err)
+		log.Printf("bleephub: security advisory fork %s: open git storage: %s", safeLogText(fullName), safeLogError(err))
 		return nil
 	}
 	if err := copyGitStorage(srcStor, stor); err != nil {
-		log.Printf("bleephub: security advisory fork %s: copy git storage: %v", fullName, err)
+		log.Printf("bleephub: security advisory fork %s: copy git storage: %s", safeLogText(fullName), safeLogError(err))
 		return nil
 	}
 
