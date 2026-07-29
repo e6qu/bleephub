@@ -37,6 +37,12 @@ func (s *Server) buildJobMessageFromDef(serverURL string, wf *Workflow, wfJob *W
 	// Build steps
 	steps := make([]map[string]interface{}, 0, len(jd.Steps))
 	for i, step := range jd.Steps {
+		if step.Shell == "" {
+			step.Shell = jd.Defaults.Shell
+		}
+		if step.WorkingDirectory == "" {
+			step.WorkingDirectory = jd.Defaults.WorkingDirectory
+		}
 		stepID := uuid.New().String()
 
 		if step.Run != "" {

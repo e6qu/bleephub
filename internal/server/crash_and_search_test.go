@@ -368,6 +368,17 @@ const searchOrderRepeats = 25
 // or drop entries.
 func assertStablePagination(t *testing.T, s *Server, label, query string, wantTotal int) {
 	t.Helper()
+	rateRequest := httptest.NewRequest(http.MethodGet, query, nil)
+	rateRequest.Header.Set("Authorization", "token "+defaultToken)
+	resource := apiRateResource("/api/v3/" + label)
+	if s.rateLimits == nil {
+		s.rateLimits = map[string]*apiRateWindow{}
+	}
+	s.rateLimits[apiRateIdentity(rateRequest)+"\x1f"+resource] = &apiRateWindow{
+		Limit:     apiRateResourceLimits[resource],
+		Reset:     testRateLimitReset,
+		unbounded: true,
+	}
 	pages := (wantTotal + searchOrderPerPage - 1) / searchOrderPerPage
 	var first [][]float64
 	for repeat := 0; repeat < searchOrderRepeats; repeat++ {

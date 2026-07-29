@@ -33,6 +33,67 @@ jobs:
 	}
 }
 
+func TestWorkflowParsesRunNamePermissionsDefaultsAndJobConcurrency(t *testing.T) {
+	yaml := `
+name: CI
+run-name: Deploy ${{ inputs.environment }}
+permissions:
+  contents: read
+  deployments: write
+defaults:
+  run:
+    shell: bash
+    working-directory: app
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    permissions: read-all
+    defaults:
+      run:
+        working-directory: deploy
+    concurrency:
+      group: deploy-${{ inputs.environment }}
+      cancel-in-progress: true
+    steps:
+      - run: ./deploy
+`
+	wf, err := ParseWorkflow([]byte(yaml))
+	if err != nil {
+		t.Fatalf("parse: %v", err)
+	}
+	if wf.RunName != "Deploy ${{ inputs.environment }}" {
+		t.Fatalf("run-name = %q", wf.RunName)
+	}
+	if wf.Permissions["contents"] != "read" || wf.Permissions["deployments"] != "write" {
+		t.Fatalf("workflow permissions = %v", wf.Permissions)
+	}
+	job := wf.Jobs["deploy"]
+	if job.Permissions["*"] != "read" {
+		t.Fatalf("job permissions = %v", job.Permissions)
+	}
+	if job.Defaults.Shell != "bash" || job.Defaults.WorkingDirectory != "deploy" {
+		t.Fatalf("resolved defaults = %+v", job.Defaults)
+	}
+	if job.Concurrency == nil || job.Concurrency.Group != "deploy-${{ inputs.environment }}" ||
+		!job.Concurrency.CancelInProgress {
+		t.Fatalf("job concurrency = %+v", job.Concurrency)
+	}
+}
+
+func TestWorkflowRejectsInvalidPermissionAccess(t *testing.T) {
+	_, err := ParseWorkflow([]byte(`
+permissions:
+  contents: admin
+jobs:
+  test:
+    steps:
+      - run: true
+`))
+	if err == nil {
+		t.Fatal("invalid permission access was accepted")
+	}
+}
+
 func TestWorkflowParseMultiJobWithNeeds(t *testing.T) {
 	yaml := `
 jobs:

@@ -65,13 +65,13 @@ func s3ServerRunArgs(addr string) []string {
 // docker that cannot answer is reported by the run that actually needs a
 // server, not by this one.
 func reapAbandonedS3Servers() {
-	listed, err := exec.Command("docker", "ps", "--all", "--quiet", "--filter", "label="+s3TestOwnerLabel).Output()
+	listed, err := boundedDockerCleanupOutput("ps", "--all", "--quiet", "--filter", "label="+s3TestOwnerLabel)
 	if err != nil {
 		return
 	}
 	for _, id := range strings.Fields(string(listed)) {
-		owner, err := exec.Command("docker", "inspect", "--format",
-			"{{index .Config.Labels \""+s3TestOwnerLabel+"\"}}", id).Output()
+		owner, err := boundedDockerCleanupOutput("inspect", "--format",
+			"{{index .Config.Labels \""+s3TestOwnerLabel+"\"}}", id)
 		if err != nil {
 			continue
 		}
@@ -79,8 +79,14 @@ func reapAbandonedS3Servers() {
 		if err != nil || testBinaryAlive(pid) {
 			continue
 		}
-		_ = exec.Command("docker", "rm", "--force", id).Run()
+		_, _ = boundedDockerCleanupOutput("rm", "--force", id)
 	}
+}
+
+func boundedDockerCleanupOutput(args ...string) ([]byte, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	return exec.CommandContext(ctx, "docker", args...).CombinedOutput()
 }
 
 // testBinaryAlive reports whether a process with this id still exists. Signal 0

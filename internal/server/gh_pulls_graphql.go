@@ -14,7 +14,7 @@ import (
 )
 
 // addPullRequestFieldsToSchema adds PR types, queries, and mutations to the schema.
-func (s *Server) addPullRequestFieldsToSchema(userType, issueType, repoType, mutationType, queryType *graphql.Object) {
+func (s *Server) addPullRequestFieldsToSchema(userType, issueType, repoType, mutationType, queryType *graphql.Object, nodeInterface *graphql.Interface) *graphql.Object {
 	// --- Enums ---
 	pullRequestStateEnum := graphql.NewEnum(graphql.EnumConfig{
 		Name: "PullRequestState",
@@ -742,7 +742,8 @@ func (s *Server) addPullRequestFieldsToSchema(userType, issueType, repoType, mut
 
 	// --- PullRequest type ---
 	pullRequestType := graphql.NewObject(graphql.ObjectConfig{
-		Name: "PullRequest",
+		Name:       "PullRequest",
+		Interfaces: []*graphql.Interface{nodeInterface},
 		Fields: graphql.Fields{
 			"id": &graphql.Field{
 				Type: graphql.NewNonNull(graphql.ID),
@@ -2008,6 +2009,7 @@ func (s *Server) addPullRequestFieldsToSchema(userType, issueType, repoType, mut
 	// (it's already defined in gh_issues_graphql.go for issues;
 	// we can't redefine it, but the resolver there already only returns issues.
 	// For completeness we'd need to update it, but gh pr view uses pullRequest(number) directly.)
+	return pullRequestType
 }
 
 // --- GraphQL converter helpers ---

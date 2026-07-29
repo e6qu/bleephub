@@ -36,6 +36,31 @@ func TestWorkflowSingleJobSubmit(t *testing.T) {
 	}
 }
 
+func TestWorkflowRunNameBecomesDisplayTitle(t *testing.T) {
+	s := newTestServer()
+	def := &WorkflowDef{
+		Name:    "Deploy",
+		RunName: "Deploy ${{ inputs.environment }} from ${{ github.ref_name }}",
+		Jobs: map[string]*JobDef{
+			"deploy": {Steps: []StepDef{{Run: "true"}}},
+		},
+	}
+	run, err := s.submitWorkflow(context.Background(), "http://localhost", def, "alpine:latest", &WorkflowEventMeta{
+		EventName: "workflow_dispatch",
+		Ref:       "refs/heads/main",
+		Inputs:    map[string]string{"environment": "production"},
+	})
+	if err != nil {
+		t.Fatalf("submit: %v", err)
+	}
+	if run.DisplayTitle != "Deploy production from main" {
+		t.Fatalf("display title = %q", run.DisplayTitle)
+	}
+	if got := workflowRunJSON(run, "http://localhost", "", nil)["display_title"]; got != run.DisplayTitle {
+		t.Fatalf("REST display_title = %v", got)
+	}
+}
+
 func TestInternalSubmitJobRequiresExplicitImageOrHostMode(t *testing.T) {
 	s := newTestServer()
 	s.registerJobRoutes()

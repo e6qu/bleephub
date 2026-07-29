@@ -9,8 +9,8 @@ permissions:
   contents: read
 
 jobs:
-  current-rest-contract:
-    name: Current REST contract
+  current-api-contracts:
+    name: Current REST and GraphQL contracts
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
@@ -19,3 +19,5 @@ jobs:
           persist-credentials: false
       - name: Require the current official GitHub REST definition
         run: ./scripts/check-github-openapi-drift.sh
+      - name: Require the current official GitHub GraphQL schema
+        run: ./scripts/check-github-graphql-schema-drift.sh

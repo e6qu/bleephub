@@ -18,6 +18,9 @@ LEDGER_PATH = ROOT / "BUGS.md"
 OPENAPI_PATH = ROOT / "internal" / "server" / "testdata" / "github-openapi.json.gz"
 INVENTORY_PATH = ROOT / "specs" / "parity-inventory.json"
 REST_CONTRACT_PATH = ROOT / "specs" / "rest-semantic-contracts.json"
+REST_ROUTE_SNAPSHOT_PATH = (
+    ROOT / "internal" / "server" / "testdata" / "registered-api-v3-routes.txt"
+)
 HTTP_METHODS = {"get", "post", "put", "patch", "delete", "head"}
 LEDGER_ID = re.compile(r"^(AUTH|REST|GQL|ACT|STORE|CORE|WEB|TEST|PAR|CI|ARCH)-\d+$")
 LEDGER_HEADER = re.compile(
@@ -178,29 +181,54 @@ def mask_go_comments(source: str) -> str:
 
 
 def registered_rest_routes() -> list[dict[str, Any]]:
-    routes: list[dict[str, Any]] = []
+    literal_sources: dict[tuple[str, str], tuple[str, int]] = {}
     for path in sorted((ROOT / "internal" / "server").glob("*.go")):
         if path.name.endswith("_test.go"):
             continue
         source = path.read_text(encoding="utf-8")
         searchable = mask_go_comments(source)
         for match in ROUTE.finditer(searchable):
-            routes.append(
-                {
-                    "method": match.group(1),
-                    "path": match.group(2),
-                    "source": str(path.relative_to(ROOT)),
-                    "line": source_line(source, match.start()),
-                }
+            literal_sources[(match.group(1), match.group(2))] = (
+                str(path.relative_to(ROOT)),
+                source_line(source, match.start()),
             )
-    routes.sort(key=lambda row: (row["path"], row["method"], row["source"], row["line"]))
+
+    if not REST_ROUTE_SNAPSHOT_PATH.exists():
+        raise InventoryError(
+            f"{REST_ROUTE_SNAPSHOT_PATH.relative_to(ROOT)} is missing; run "
+            "BLEEPHUB_UPDATE_REST_ROUTE_SNAPSHOT=1 go test ./internal/server "
+            "-run TestRegisteredAPIRouteSnapshot"
+        )
+    routes: list[dict[str, Any]] = []
+    for line_number, line in enumerate(
+        REST_ROUTE_SNAPSHOT_PATH.read_text(encoding="utf-8").splitlines(), 1
+    ):
+        method, separator, route_path = line.partition(" ")
+        if not separator or method.lower() not in HTTP_METHODS:
+            raise InventoryError(
+                f"{REST_ROUTE_SNAPSHOT_PATH.relative_to(ROOT)}:{line_number}: "
+                f"malformed route {line!r}"
+            )
+        source, source_line_number = literal_sources.get(
+            (method, route_path),
+            ("runtime route table (programmatic registration)", 0),
+        )
+        routes.append(
+            {
+                "method": method,
+                "path": route_path,
+                "source": source,
+                "line": source_line_number,
+            }
+        )
+
     keys = [(route["method"], route["path"]) for route in routes]
     duplicates = [key for key, count in collections.Counter(keys).items() if count > 1]
     if duplicates:
         rendered = ", ".join(f"{method} {path}" for method, path in duplicates)
-        raise InventoryError(f"duplicate literal REST registrations: {rendered}")
+        raise InventoryError(f"duplicate runtime REST registrations: {rendered}")
     if len(routes) < 1000:
-        raise InventoryError(f"only {len(routes)} literal REST routes found")
+        raise InventoryError(f"only {len(routes)} runtime REST routes found")
     return routes
 
 
@@ -579,7 +607,7 @@ def build_inventory() -> dict[str, Any]:
         "rest": {
             "vendored_openapi_sha256": openapi_sha256,
             "documented_operations": operations,
-            "registered_literal_routes": routes,
+            "registered_routes": routes,
         },
         "graphql": graphql_inventory(),
         "ui": ui_inventory(),

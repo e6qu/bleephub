@@ -767,7 +767,7 @@ export async function suspendInstallation(installationID: number, suspend: boole
     method: "POST",
     headers: authHeaders(),
   });
-  if (!res.ok && res.status !== 409) {
+  if (!res.ok) {
     const text = await res.text();
     throw new Error(`${verb} ${res.status}: ${text || res.statusText}`);
   }
@@ -778,7 +778,7 @@ export async function deleteInstallation(installationID: number): Promise<void> 
     method: "DELETE",
     headers: authHeaders(),
   });
-  if (!res.ok && res.status !== 404) {
+  if (!res.ok) {
     const text = await res.text();
     throw new Error(`delete ${res.status}: ${text || res.statusText}`);
   }
@@ -2593,8 +2593,8 @@ async function ghGraphQL<T>(query: string, variables?: Record<string, unknown>):
   }
   const json = (await res.json()) as GraphQLResponse<T>;
   if (json.errors && json.errors.length > 0) {
-    const first = json.errors[0];
-    throw new Error(first.type === "NOT_FOUND" ? "Not found" : first.message);
+    const status = json.errors.some((error) => error.type === "NOT_FOUND") ? 404 : 422;
+    throw new ApiError(status, json.errors.map((error) => error.message).join("; "));
   }
   if (json.data === undefined) {
     throw new Error("graphql response missing data");
@@ -3133,8 +3133,20 @@ export const cancelCopilotSeats = (org: string, usernames: string[]) =>
     selected_usernames: usernames,
   });
 
-export async function fetchCopilotSpaces(org: string): Promise<GithubCopilotSpace[]> {
-  const body = await ghFetch<{ spaces: GithubCopilotSpace[] }>(`/api/v3/orgs/${org}/copilot-spaces`);
+export type CopilotSpaceOwner =
+  | string
+  | { kind: "organization" | "user"; login: string };
+
+const copilotSpacesBase = (owner: CopilotSpaceOwner) => {
+  if (typeof owner === "string") {
+    return `/api/v3/orgs/${encodeURIComponent(owner)}/copilot-spaces`;
+  }
+  const collection = owner.kind === "user" ? "users" : "orgs";
+  return `/api/v3/${collection}/${encodeURIComponent(owner.login)}/copilot-spaces`;
+};
+
+export async function fetchCopilotSpaces(owner: CopilotSpaceOwner): Promise<GithubCopilotSpace[]> {
+  const body = await ghFetch<{ spaces: GithubCopilotSpace[] }>(copilotSpacesBase(owner));
   if (!Array.isArray(body.spaces)) {
     throw new Error(`malformed response: missing "spaces" array`);
   }
@@ -3150,20 +3162,18 @@ import type {
   GithubOrgRepoCustomPropertyValues,
 } from "./types.js";
 
-const copilotSpacesBase = (org: string) => `/api/v3/orgs/${org}/copilot-spaces`;
-
 export const createCopilotSpace = (
-  org: string,
+  owner: CopilotSpaceOwner,
   payload: {
     name: string;
     description?: string;
     general_instructions?: string;
     base_role?: string;
   },
-): Promise<GithubCopilotSpace> => ghPostJSON(copilotSpacesBase(org), payload);
+): Promise<GithubCopilotSpace> => ghPostJSON(copilotSpacesBase(owner), payload);
 
 export const updateCopilotSpace = (
-  org: string,
+  owner: CopilotSpaceOwner,
   spaceNumber: number,
   payload: {
     name?: string;
@@ -3172,17 +3182,17 @@ export const updateCopilotSpace = (
     base_role?: string;
   },
 ): Promise<GithubCopilotSpace> =>
-  ghPutJSON(`${copilotSpacesBase(org)}/${spaceNumber}`, payload);
+  ghPutJSON(`${copilotSpacesBase(owner)}/${spaceNumber}`, payload);
 
-export const deleteCopilotSpace = (org: string, spaceNumber: number) =>
-  ghSend("DELETE", `${copilotSpacesBase(org)}/${spaceNumber}`);
+export const deleteCopilotSpace = (owner: CopilotSpaceOwner, spaceNumber: number) =>
+  ghSend("DELETE", `${copilotSpacesBase(owner)}/${spaceNumber}`);
 
 export async function fetchCopilotSpaceCollaborators(
-  org: string,
+  owner: CopilotSpaceOwner,
   spaceNumber: number,
 ): Promise<GithubCopilotSpaceCollaborator[]> {
   const body = await ghFetch<{ collaborators: GithubCopilotSpaceCollaborator[] }>(
-    `${copilotSpacesBase(org)}/${spaceNumber}/collaborators`,
+    `${copilotSpacesBase(owner)}/${spaceNumber}/collaborators`,
   );
   if (!Array.isArray(body.collaborators)) {
     throw new Error(`malformed response: missing "collaborators" array`);
@@ -3191,15 +3201,15 @@ export async function fetchCopilotSpaceCollaborators(
 }
 
 export const addCopilotSpaceCollaborator = (
-  org: string,
+  owner: CopilotSpaceOwner,
   spaceNumber: number,
   payload: { actor_type: "User" | "Team"; actor_identifier: string; role: string },
 ): Promise<GithubCopilotSpaceCollaborator> =>
-  ghPostJSON(`${copilotSpacesBase(org)}/${spaceNumber}/collaborators`, payload);
+  ghPostJSON(`${copilotSpacesBase(owner)}/${spaceNumber}/collaborators`, payload);
 
 /** Role "no_access" removes the collaborator grant (the endpoint's contract). */
 export const updateCopilotSpaceCollaborator = (
-  org: string,
+  owner: CopilotSpaceOwner,
   spaceNumber: number,
   actorType: "User" | "Team",
   identifier: string,
@@ -3207,27 +3217,27 @@ export const updateCopilotSpaceCollaborator = (
 ) =>
   ghSend(
     "PUT",
-    `${copilotSpacesBase(org)}/${spaceNumber}/collaborators/${actorType}/${encodeURIComponent(identifier)}`,
+    `${copilotSpacesBase(owner)}/${spaceNumber}/collaborators/${actorType}/${encodeURIComponent(identifier)}`,
     { role },
   );
 
 export const removeCopilotSpaceCollaborator = (
-  org: string,
+  owner: CopilotSpaceOwner,
   spaceNumber: number,
   actorType: "User" | "Team",
   identifier: string,
 ) =>
   ghSend(
     "DELETE",
-    `${copilotSpacesBase(org)}/${spaceNumber}/collaborators/${actorType}/${encodeURIComponent(identifier)}`,
+    `${copilotSpacesBase(owner)}/${spaceNumber}/collaborators/${actorType}/${encodeURIComponent(identifier)}`,
   );
 
 export async function fetchCopilotSpaceResources(
-  org: string,
+  owner: CopilotSpaceOwner,
   spaceNumber: number,
 ): Promise<GithubCopilotSpaceResource[]> {
   const body = await ghFetch<{ resources: GithubCopilotSpaceResource[] }>(
-    `${copilotSpacesBase(org)}/${spaceNumber}/resources`,
+    `${copilotSpacesBase(owner)}/${spaceNumber}/resources`,
   );
   if (!Array.isArray(body.resources)) {
     throw new Error(`malformed response: missing "resources" array`);
@@ -3236,25 +3246,25 @@ export async function fetchCopilotSpaceResources(
 }
 
 export const addCopilotSpaceResource = (
-  org: string,
+  owner: CopilotSpaceOwner,
   spaceNumber: number,
   payload: { resource_type: string; metadata: Record<string, unknown> },
 ): Promise<GithubCopilotSpaceResource> =>
-  ghPostJSON(`${copilotSpacesBase(org)}/${spaceNumber}/resources`, payload);
+  ghPostJSON(`${copilotSpacesBase(owner)}/${spaceNumber}/resources`, payload);
 
 export const updateCopilotSpaceResource = (
-  org: string,
+  owner: CopilotSpaceOwner,
   spaceNumber: number,
   resourceId: number,
   metadata: Record<string, unknown>,
 ): Promise<GithubCopilotSpaceResource> =>
-  ghPutJSON(`${copilotSpacesBase(org)}/${spaceNumber}/resources/${resourceId}`, { metadata });
+  ghPutJSON(`${copilotSpacesBase(owner)}/${spaceNumber}/resources/${resourceId}`, { metadata });
 
 export const removeCopilotSpaceResource = (
-  org: string,
+  owner: CopilotSpaceOwner,
   spaceNumber: number,
   resourceId: number,
-) => ghSend("DELETE", `${copilotSpacesBase(org)}/${spaceNumber}/resources/${resourceId}`);
+) => ghSend("DELETE", `${copilotSpacesBase(owner)}/${spaceNumber}/resources/${resourceId}`);
 
 export const fetchEnterpriseTeamOrgs = (slug: string) =>
   enterprisePath(`/teams/${encodeURIComponent(slug)}/organizations`).then((path) =>

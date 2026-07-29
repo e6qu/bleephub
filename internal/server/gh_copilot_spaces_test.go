@@ -2,6 +2,7 @@ package bleephub
 
 import (
 	"fmt"
+	"net/http"
 	"strings"
 	"testing"
 )
@@ -232,7 +233,7 @@ func TestCopilotSpaceResources_CRUD(t *testing.T) {
 	// Validation: type outside the create enum, missing metadata,
 	// dangling repository_id.
 	requireStatus(t, ghPost(t, resBase, defaultToken, map[string]interface{}{
-		"resource_type": "media_content", "metadata": map[string]interface{}{}}), 422)
+		"resource_type": "unknown", "metadata": map[string]interface{}{}}), 422)
 	requireStatus(t, ghPost(t, resBase, defaultToken, map[string]interface{}{"resource_type": "repository"}), 422)
 	requireStatus(t, ghPost(t, resBase, defaultToken, map[string]interface{}{
 		"resource_type": "repository", "metadata": map[string]interface{}{"repository_id": 999999}}), 422)
@@ -281,5 +282,52 @@ func TestCopilotSpaceResources_CRUD(t *testing.T) {
 	attrs := space["resources_attributes"].([]interface{})
 	if len(attrs) != 1 || attrs[0].(map[string]interface{})["resource_type"] != "repository" {
 		t.Fatalf("resources_attributes = %v, want the repository resource", attrs)
+	}
+}
+
+func TestCopilotSpaceNestedResourceAttributesAreAtomic(t *testing.T) {
+	org, _ := copilotTestOrg(t, "copilot-nested-resources-org")
+	admin := testServer.store.LookupUserByLogin("admin")
+	repo := testServer.store.CreateOrgRepo(org, admin, "nested-resources-repo", "", false)
+	base := "/api/v3/orgs/" + org.Login + "/copilot-spaces"
+
+	created := decodeJSONWithStatus(t, ghPost(t, base, defaultToken, map[string]interface{}{
+		"name": "Nested resources",
+		"resources_attributes": []map[string]interface{}{
+			{"resource_type": "repository", "metadata": map[string]interface{}{"repository_id": repo.ID}},
+			{"resource_type": "free_text", "metadata": map[string]interface{}{"name": "notes", "text": "first"}},
+		},
+	}), http.StatusCreated)
+	resources := created["resources_attributes"].([]interface{})
+	if len(resources) != 2 {
+		t.Fatalf("created resources = %v", resources)
+	}
+	repositoryID := int(resources[0].(map[string]interface{})["id"].(float64))
+	textID := int(resources[1].(map[string]interface{})["id"].(float64))
+
+	updated := decodeJSONWithStatus(t, ghPut(t, base+"/1", defaultToken, map[string]interface{}{
+		"resources_attributes": []map[string]interface{}{
+			{"id": repositoryID, "_destroy": true},
+			{"id": textID, "metadata": map[string]interface{}{"name": "notes", "text": "updated"}},
+			{"resource_type": "media_content", "metadata": map[string]interface{}{"name": "diagram"}},
+		},
+	}), http.StatusOK)
+	resources = updated["resources_attributes"].([]interface{})
+	if len(resources) != 2 ||
+		resources[0].(map[string]interface{})["metadata"].(map[string]interface{})["text"] != "updated" ||
+		resources[1].(map[string]interface{})["resource_type"] != "media_content" {
+		t.Fatalf("updated resources = %v", resources)
+	}
+
+	// A later invalid member rejects the entire nested update.
+	requireStatus(t, ghPut(t, base+"/1", defaultToken, map[string]interface{}{
+		"resources_attributes": []map[string]interface{}{
+			{"id": textID, "_destroy": true},
+			{"resource_type": "repository", "metadata": map[string]interface{}{"repository_id": 999999}},
+		},
+	}), http.StatusUnprocessableEntity)
+	after := decodeJSONWithStatus(t, ghGet(t, base+"/1", defaultToken), http.StatusOK)
+	if got := after["resources_attributes"].([]interface{}); len(got) != 2 {
+		t.Fatalf("invalid nested update partially committed: %v", got)
 	}
 }

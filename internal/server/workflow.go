@@ -13,10 +13,56 @@ type ConcurrencyDef struct {
 	CancelInProgress bool   `yaml:"cancel-in-progress" json:"cancel_in_progress"`
 }
 
+// PermissionDef is the normalized permissions block for the workflow's
+// GITHUB_TOKEN. "*" represents the read-all/write-all scalar shorthand.
+type PermissionDef map[string]string
+
+func (p *PermissionDef) UnmarshalYAML(node *yaml.Node) error {
+	normalized := make(PermissionDef)
+	switch node.Kind {
+	case yaml.ScalarNode:
+		switch node.Value {
+		case "read-all":
+			normalized["*"] = "read"
+		case "write-all":
+			normalized["*"] = "write"
+		default:
+			return fmt.Errorf("permissions must be read-all, write-all, or a mapping")
+		}
+	case yaml.MappingNode:
+		var values map[string]string
+		if err := node.Decode(&values); err != nil {
+			return fmt.Errorf("decode permissions: %w", err)
+		}
+		for scope, access := range values {
+			switch access {
+			case "read", "write", "none":
+				normalized[scope] = access
+			default:
+				return fmt.Errorf("permission %q has invalid access %q", scope, access)
+			}
+		}
+	default:
+		return fmt.Errorf("permissions must be a scalar or mapping")
+	}
+	*p = normalized
+	return nil
+}
+
+// RunDefaults is the defaults.run block inherited by every script step unless
+// the job or step supplies a more specific value.
+type RunDefaults struct {
+	Shell            string `yaml:"shell" json:"shell,omitempty"`
+	WorkingDirectory string `yaml:"working-directory" json:"working_directory,omitempty"`
+}
+
 // WorkflowDef represents a parsed GitHub Actions workflow YAML.
 type WorkflowDef struct {
 	Name        string            `yaml:"name"`
+	RunName     string            `yaml:"run-name"`
 	Env         map[string]string `yaml:"env"`
+	Permissions PermissionDef     `yaml:"permissions"`
+	Defaults    RunDefaults       `yaml:"defaults"`
 	Concurrency *ConcurrencyDef
 	Jobs        map[string]*JobDef
 }
@@ -36,6 +82,9 @@ type JobDef struct {
 	ContinueOnError   bool                   `yaml:"continue-on-error"`
 	TimeoutMinutes    int                    `yaml:"timeout-minutes"`
 	Environment       interface{}            `yaml:"environment"` // string or {name, url}
+	Permissions       PermissionDef          `yaml:"permissions"`
+	Defaults          RunDefaults            `yaml:"defaults"`
+	Concurrency       *ConcurrencyDef        `yaml:"concurrency"`
 	MatrixValues      map[string]interface{} `yaml:"-"`
 	MatrixGroup       string                 `yaml:"-"`
 	MatrixMaxParallel int                    `yaml:"-"`
@@ -141,8 +190,13 @@ type ServiceDef struct {
 
 // rawWorkflow is the intermediate YAML structure before normalization.
 type rawWorkflow struct {
-	Name        string                `yaml:"name"`
-	Env         map[string]string     `yaml:"env"`
+	Name        string            `yaml:"name"`
+	RunName     string            `yaml:"run-name"`
+	Env         map[string]string `yaml:"env"`
+	Permissions PermissionDef     `yaml:"permissions"`
+	Defaults    struct {
+		Run RunDefaults `yaml:"run"`
+	} `yaml:"defaults"`
 	Concurrency interface{}           `yaml:"concurrency"` // string or object
 	Jobs        map[string]*rawJobDef `yaml:"jobs"`
 }
@@ -161,15 +215,38 @@ type rawJobDef struct {
 	ContinueOnError bool                   `yaml:"continue-on-error"`
 	TimeoutMinutes  int                    `yaml:"timeout-minutes"`
 	Environment     interface{}            `yaml:"environment"` // string or {name, url}
-	Uses            string                 `yaml:"uses"`
-	With            map[string]interface{} `yaml:"with"`
-	Secrets         interface{}            `yaml:"secrets"` // "inherit" or map
+	Permissions     PermissionDef          `yaml:"permissions"`
+	Defaults        struct {
+		Run RunDefaults `yaml:"run"`
+	} `yaml:"defaults"`
+	Concurrency interface{}            `yaml:"concurrency"`
+	Uses        string                 `yaml:"uses"`
+	With        map[string]interface{} `yaml:"with"`
+	Secrets     interface{}            `yaml:"secrets"` // "inherit" or map
 }
 
 type rawStrategyDef struct {
 	Matrix      yaml.Node `yaml:"matrix"`
 	FailFast    *bool     `yaml:"fail-fast"`
 	MaxParallel int       `yaml:"max-parallel"`
+}
+
+func normalizeConcurrency(value interface{}) *ConcurrencyDef {
+	switch v := value.(type) {
+	case string:
+		return &ConcurrencyDef{Group: v}
+	case map[string]interface{}:
+		cd := &ConcurrencyDef{}
+		if group, ok := v["group"].(string); ok {
+			cd.Group = group
+		}
+		if cancel, ok := v["cancel-in-progress"].(bool); ok {
+			cd.CancelInProgress = cancel
+		}
+		return cd
+	default:
+		return nil
+	}
 }
 
 // ParseWorkflow parses a GitHub Actions workflow YAML definition.
@@ -184,32 +261,26 @@ func ParseWorkflow(yamlBytes []byte) (*WorkflowDef, error) {
 	}
 
 	wf := &WorkflowDef{
-		Name: raw.Name,
-		Env:  raw.Env,
-		Jobs: make(map[string]*JobDef, len(raw.Jobs)),
+		Name:        raw.Name,
+		RunName:     raw.RunName,
+		Env:         raw.Env,
+		Permissions: raw.Permissions,
+		Defaults:    raw.Defaults.Run,
+		Jobs:        make(map[string]*JobDef, len(raw.Jobs)),
 	}
 
-	// Parse concurrency: string → {Group: s}, object → decode
-	if raw.Concurrency != nil {
-		switch v := raw.Concurrency.(type) {
-		case string:
-			wf.Concurrency = &ConcurrencyDef{Group: v}
-		case map[string]interface{}:
-			cd := &ConcurrencyDef{}
-			if g, ok := v["group"].(string); ok {
-				cd.Group = g
-			}
-			if ci, ok := v["cancel-in-progress"].(bool); ok {
-				cd.CancelInProgress = ci
-			}
-			wf.Concurrency = cd
-		}
-	}
+	wf.Concurrency = normalizeConcurrency(raw.Concurrency)
 
 	for key, rj := range raw.Jobs {
 		jd, err := normalizeJob(rj)
 		if err != nil {
 			return nil, fmt.Errorf("job %q: %w", key, err)
+		}
+		if jd.Defaults.Shell == "" {
+			jd.Defaults.Shell = wf.Defaults.Shell
+		}
+		if jd.Defaults.WorkingDirectory == "" {
+			jd.Defaults.WorkingDirectory = wf.Defaults.WorkingDirectory
 		}
 		wf.Jobs[key] = jd
 	}
@@ -230,6 +301,9 @@ func normalizeJob(rj *rawJobDef) (*JobDef, error) {
 		ContinueOnError: rj.ContinueOnError,
 		TimeoutMinutes:  rj.TimeoutMinutes,
 		Environment:     rj.Environment,
+		Permissions:     rj.Permissions,
+		Defaults:        rj.Defaults.Run,
+		Concurrency:     normalizeConcurrency(rj.Concurrency),
 		Uses:            rj.Uses,
 	}
 

@@ -255,7 +255,7 @@ func workflowRunJSON(wf *Workflow, baseURL, repoName string, repoJSON map[string
 		"head_branch":          headBranchOf(wf),
 		"head_sha":             wf.Sha,
 		"path":                 filePath,
-		"display_title":        wf.Name,
+		"display_title":        wf.RunDisplayTitle(),
 		"run_number":           wf.RunNumber,
 		"event":                eventOf(wf),
 		"status":               status,

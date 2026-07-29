@@ -91,7 +91,10 @@ func (s *Server) expandReusableWorkflows(def *WorkflowDef, repoKey string, depth
 
 	out := &WorkflowDef{
 		Name:        def.Name,
+		RunName:     def.RunName,
 		Env:         def.Env,
+		Permissions: def.Permissions,
+		Defaults:    def.Defaults,
 		Concurrency: def.Concurrency,
 		Jobs:        make(map[string]*JobDef, len(def.Jobs)),
 	}

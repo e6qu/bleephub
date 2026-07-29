@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"net"
 	"net/http"
+	"strconv"
 	"strings"
 	"time"
 
@@ -207,6 +208,12 @@ func (s *Server) ghHeadersMiddleware(next http.Handler) http.Handler {
 			method:         r.Method,
 			ifNoneMatch:    r.Header.Get("If-None-Match"),
 			rateLimit:      rate,
+		}
+		if rate.Exceeded {
+			seconds := max(int(time.Until(time.Unix(rate.Reset, 0)).Seconds()), 1)
+			rw.Header().Set("Retry-After", strconv.Itoa(seconds))
+			writeGHError(rw, http.StatusForbidden, "API rate limit exceeded")
+			return
 		}
 		if field := invalidRESTPaginationQuery(r); strings.HasPrefix(path, "/api/v3/") && field != "" {
 			writeGHValidationError(rw, "Pagination", field, "invalid")

@@ -18,7 +18,6 @@ import (
 	"net/http"
 	"net/url"
 	"os"
-	"os/exec"
 	"strings"
 	"testing"
 	"time"
@@ -115,8 +114,10 @@ func TestMain(m *testing.M) {
 		os.Exit(1)
 	}
 
-	logger := zerolog.New(zerolog.ConsoleWriter{Out: os.Stderr}).
-		With().Timestamp().Logger().Level(zerolog.DebugLevel)
+	// Individual logging tests construct their own captured logger. The
+	// package-wide fixture serves thousands of requests, and debug access logs
+	// otherwise bury the actual failing assertion in hundreds of kilobytes.
+	logger := zerolog.Nop()
 
 	// Find free port
 	ln, err := net.Listen("tcp", "127.0.0.1:0")
@@ -131,6 +132,35 @@ func TestMain(m *testing.M) {
 
 	srv := NewServer(addr, logger)
 	testServer = srv
+	// The package-wide fixture intentionally reuses one credential across
+	// thousands of otherwise independent tests. Keep that synthetic principal
+	// from coupling late tests to early request volume; dedicated rate-limit
+	// tests use isolated servers and the production 5,000-request budget.
+	rateRequest, err := http.NewRequest(http.MethodGet, testBaseURL+"/api/v3/user", nil)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "build test rate-limit request: %v\n", err)
+		os.Exit(1)
+	}
+	rateRequest.Header.Set("Authorization", "Bearer "+defaultToken)
+	anonymousRateRequest, err := http.NewRequest(http.MethodGet, testBaseURL+"/api/v3/user", nil)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "build anonymous test rate-limit request: %v\n", err)
+		os.Exit(1)
+	}
+	anonymousRateRequest.RemoteAddr = "127.0.0.1:1"
+	for index, identity := range []string{apiRateIdentity(rateRequest), apiRateIdentity(anonymousRateRequest)} {
+		for resource := range apiRateResourceLimits {
+			limit := apiRateResourceLimits[resource]
+			if index == 1 && resource == "core" {
+				limit = 60
+			}
+			testServer.rateLimits[identity+"\x1f"+resource] = &apiRateWindow{
+				Limit:     limit,
+				Reset:     testRateLimitReset,
+				unbounded: true,
+			}
+		}
+	}
 
 	// Give the shared test server a real on-disk packages directory so
 	// package-file upload/download tests exercise real bytes.
@@ -169,7 +199,7 @@ func TestMain(m *testing.M) {
 	code := m.Run()
 
 	if s3ServerContainer != "" {
-		if output, err := exec.Command("docker", "rm", "--force", s3ServerContainer).CombinedOutput(); err != nil {
+		if output, err := boundedDockerCleanupOutput("rm", "--force", s3ServerContainer); err != nil {
 			fmt.Fprintf(os.Stderr, "remove MinIO S3 test server: %v\n%s", err, output)
 			if code == 0 {
 				code = 1

@@ -339,7 +339,10 @@ func (s *Server) handleCancelWorkflow(w http.ResponseWriter, r *http.Request) {
 func expandMatrixJobs(wf *WorkflowDef) *WorkflowDef {
 	expanded := &WorkflowDef{
 		Name:        wf.Name,
+		RunName:     wf.RunName,
 		Env:         wf.Env,
+		Permissions: wf.Permissions,
+		Defaults:    wf.Defaults,
 		Jobs:        make(map[string]*JobDef),
 		Concurrency: wf.Concurrency,
 	}

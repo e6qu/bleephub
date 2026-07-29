@@ -45,6 +45,9 @@ const PackagesPage = lazy(() => import("./pages/PackagesPage.js").then(({ Packag
 const InsightsPage = lazy(() => import("./pages/InsightsPage.js").then(({ InsightsPage }) => ({ default: InsightsPage })));
 const OrgGovernancePage = lazy(() => import("./pages/OrgGovernancePage.js").then(({ OrgGovernancePage }) => ({ default: OrgGovernancePage })));
 const CopilotPage = lazy(() => import("./pages/CopilotPage.js").then(({ CopilotPage }) => ({ default: CopilotPage })));
+const PersonalCopilotSpacesPage = lazy(() =>
+  import("./pages/CopilotPage.js").then(({ PersonalCopilotSpacesPage }) => ({ default: PersonalCopilotSpacesPage })),
+);
 const EnterprisePage = lazy(() => import("./pages/EnterprisePage.js").then(({ EnterprisePage }) => ({ default: EnterprisePage })));
 const DeploymentsPage = lazy(() => import("./pages/DeploymentsPage.js").then(({ DeploymentsPage }) => ({ default: DeploymentsPage })));
 const WebhookDeliveriesPage = lazy(() => import("./pages/WebhookDeliveriesPage.js").then(({ WebhookDeliveriesPage }) => ({ default: WebhookDeliveriesPage })));
@@ -221,6 +224,7 @@ export function App() {
               <Route path="/ui/codespaces" element={<CodespacesPage />} />
               <Route path="/ui/codespaces/:codespaceName" element={<CodespacesPage />} />
               <Route path="/ui/repos/:owner/:repo/codespaces" element={<CodespacesPage />} />
+              <Route path="/ui/copilot/spaces" element={<PersonalCopilotSpacesPage />} />
               <Route path="/ui/classrooms" element={<ClassroomPage />} />
               <Route path="/ui/classrooms/:classroomId" element={<ClassroomPage />} />
               <Route path="/ui/classrooms/accept/:inviteCode" element={<ClassroomPage />} />

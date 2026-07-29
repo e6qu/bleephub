@@ -13,9 +13,10 @@ import (
 // are never retained: the map key contains only a SHA-256 digest of the
 // presented authorization value (or the anonymous remote address).
 type apiRateWindow struct {
-	Limit int
-	Used  int
-	Reset time.Time
+	Limit     int
+	Used      int
+	Reset     time.Time
+	unbounded bool // test fixtures that intentionally reuse one identity
 }
 
 type apiRateSnapshot struct {
@@ -24,6 +25,7 @@ type apiRateSnapshot struct {
 	Used      int
 	Remaining int
 	Reset     int64
+	Exceeded  bool
 }
 
 var apiRateResourceLimits = map[string]int{
@@ -97,7 +99,15 @@ func apiRateWindowDuration(resource string) time.Duration {
 
 func apiRateIdentity(r *http.Request) string {
 	if authorization := r.Header.Get("Authorization"); authorization != "" {
-		sum := sha256.Sum256([]byte(authorization))
+		scheme, credential := authScheme(authorization)
+		identity := strings.TrimSpace(authorization)
+		// "token" and "Bearer" are interchangeable ways to present the same
+		// GitHub credential. Keying on the raw header would let a client double
+		// its budget merely by alternating schemes (or their casing).
+		if credential != "" && (scheme == "token" || scheme == "bearer") {
+			identity = credential
+		}
+		sum := sha256.Sum256([]byte(identity))
 		return fmt.Sprintf("auth:%x", sum)
 	}
 	host := r.RemoteAddr
@@ -115,6 +125,11 @@ func (s *Server) rateLimitSnapshot(r *http.Request, resource string, consume boo
 	if !ok {
 		resource, limit = "core", apiRateResourceLimits["core"]
 	}
+	// GitHub's unauthenticated core budget is IP-scoped and deliberately much
+	// smaller than an authenticated user's budget.
+	if resource == "core" && r.Header.Get("Authorization") == "" {
+		limit = 60
+	}
 	key := apiRateIdentity(r) + "\x1f" + resource
 	now := time.Now().UTC()
 
@@ -127,8 +142,13 @@ func (s *Server) rateLimitSnapshot(r *http.Request, resource string, consume boo
 		window = &apiRateWindow{Limit: limit, Reset: now.Add(apiRateWindowDuration(resource))}
 		s.rateLimits[key] = window
 	}
-	if consume && window.Used < window.Limit {
-		window.Used++
+	exceeded := false
+	if consume {
+		if window.Used >= window.Limit && !window.unbounded {
+			exceeded = true
+		} else {
+			window.Used++
+		}
 	}
 	snapshot := apiRateSnapshot{
 		Resource:  resource,
@@ -136,6 +156,7 @@ func (s *Server) rateLimitSnapshot(r *http.Request, resource string, consume boo
 		Used:      window.Used,
 		Remaining: max(window.Limit-window.Used, 0),
 		Reset:     window.Reset.Unix(),
+		Exceeded:  exceeded,
 	}
 	s.rateLimitsMu.Unlock()
 	return snapshot
