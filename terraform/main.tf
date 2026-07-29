@@ -1190,6 +1190,20 @@ resource "aws_ecs_task_definition" "this" {
       condition     = var.region == data.aws_region.current.region
       error_message = "region must equal the region of the AWS provider passed to this module."
     }
+    # Keep relationships between inputs out of variable validation blocks.
+    # Terraform module registries and input-form parsers commonly implement
+    # the legacy rule that a variable may validate only itself.
+    precondition {
+      condition     = alltrue([for zone in var.availability_zones : startswith(zone, var.region)])
+      error_message = "Every entry of availability_zones must be an Availability Zone of region; the two defaults drift apart otherwise."
+    }
+    precondition {
+      condition = (
+        (var.create_api_gateway_vpc_link && var.api_gateway_vpc_link_id == null && var.api_gateway_vpc_link_security_group_id == null) ||
+        (!var.create_api_gateway_vpc_link && var.api_gateway_vpc_link_id != null && trimspace(var.api_gateway_vpc_link_id) != "" && var.api_gateway_vpc_link_security_group_id != null && trimspace(var.api_gateway_vpc_link_security_group_id) != "")
+      )
+      error_message = "Leave both shared VPC Link coordinates null when create_api_gateway_vpc_link is true, or set both to non-empty values when it is false."
+    }
     precondition {
       condition = (
         (var.existing_vpc_id == "" && length(var.existing_private_subnet_ids) == 0 && length(var.existing_public_subnet_ids) == 0 && var.existing_ecs_cluster_arn == "") ||

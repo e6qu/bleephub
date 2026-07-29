@@ -428,7 +428,7 @@ run "availability_zones_outside_the_region_are_rejected" {
     availability_zones = ["us-east-1a", "us-east-1b"]
   }
 
-  expect_failures = [var.availability_zones]
+  expect_failures = [aws_ecs_task_definition.this]
 }
 
 run "a_region_disagreeing_with_the_provider_is_rejected" {
