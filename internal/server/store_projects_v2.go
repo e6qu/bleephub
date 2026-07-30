@@ -136,6 +136,8 @@ type ProjectV2View struct {
 // ProjectV2Store is the in-memory store. Concurrency-safe via mu.
 type ProjectV2Store struct {
 	mu             sync.RWMutex
+	clockMu        sync.RWMutex
+	clockNow       func() time.Time
 	projects       map[int]*ProjectV2
 	items          map[int]*ProjectV2Item
 	itemsByOwner   map[int][]*ProjectV2Item // contentID → items it appears in
@@ -149,6 +151,27 @@ type ProjectV2Store struct {
 	nextOptionSeed int
 	nextViewID     int
 	persist        *Persistence
+}
+
+func (s *ProjectV2Store) currentTime() time.Time {
+	if s != nil {
+		s.clockMu.RLock()
+		clockNow := s.clockNow
+		s.clockMu.RUnlock()
+		if clockNow != nil {
+			return clockNow().UTC()
+		}
+	}
+	return time.Now().UTC()
+}
+
+func (s *ProjectV2Store) replaceClockNow(clockNow func() time.Time) {
+	if s == nil {
+		return
+	}
+	s.clockMu.Lock()
+	s.clockNow = clockNow
+	s.clockMu.Unlock()
 }
 
 func newProjectV2Store(p *Persistence) *ProjectV2Store {
@@ -183,7 +206,7 @@ func (s *ProjectV2Store) CreateProject(ownerID int, ownerType, title string, cre
 			number = p.Number + 1
 		}
 	}
-	now := time.Now()
+	now := s.currentTime()
 	p := &ProjectV2{
 		ID:        id,
 		NodeID:    fmt.Sprintf("PVT_kgDO%08d", id),
@@ -238,7 +261,7 @@ func (s *ProjectV2Store) AddItem(projectID int, contentType string, contentID, c
 	}
 	id := s.nextItemID
 	s.nextItemID++
-	now := time.Now()
+	now := s.currentTime()
 	it := &ProjectV2Item{
 		ID:          id,
 		NodeID:      fmt.Sprintf("PVTI_kgDO%08d", id),
@@ -267,7 +290,7 @@ func (s *ProjectV2Store) AddDraftItem(projectID int, title, body string, creator
 	}
 	id := s.nextItemID
 	s.nextItemID++
-	now := time.Now()
+	now := s.currentTime()
 	it := &ProjectV2Item{
 		ID:          id,
 		NodeID:      fmt.Sprintf("PVTI_kgDO%08d", id),
@@ -346,7 +369,7 @@ func (s *ProjectV2Store) CreateField(projectID int, name string, dataType Projec
 	}
 	id := s.nextFieldID
 	s.nextFieldID++
-	now := time.Now()
+	now := s.currentTime()
 	f := &ProjectV2Field{
 		ID:        id,
 		NodeID:    fmt.Sprintf("PVTF_kgDO%08d", id),
@@ -522,7 +545,7 @@ func (s *ProjectV2Store) UpdateProject(id int, title *string, closed, public *bo
 	}
 	if closed != nil {
 		if *closed && !p.Closed {
-			now := time.Now()
+			now := s.currentTime()
 			p.ClosedAt = &now
 		}
 		if !*closed {
@@ -533,7 +556,7 @@ func (s *ProjectV2Store) UpdateProject(id int, title *string, closed, public *bo
 	if public != nil {
 		p.Public = *public
 	}
-	p.UpdatedAt = time.Now()
+	p.UpdatedAt = s.currentTime()
 	if s.persist != nil {
 		s.persist.MustPut("projects_v2", strconv.Itoa(id), p)
 	}
@@ -635,7 +658,7 @@ func (s *ProjectV2Store) UpdateItem(id int, draftTitle, draftBody *string) *Proj
 	if draftBody != nil {
 		it.DraftBody = *draftBody
 	}
-	it.UpdatedAt = time.Now()
+	it.UpdatedAt = s.currentTime()
 	if s.persist != nil {
 		s.persist.MustPut("project_v2_items", strconv.Itoa(id), it)
 	}
@@ -665,7 +688,7 @@ func (s *ProjectV2Store) SetFieldValueAny(itemID, fieldID int, value interface{}
 	}
 	if value == nil {
 		delete(item.FieldValues, fieldID)
-		item.UpdatedAt = time.Now()
+		item.UpdatedAt = s.currentTime()
 		if s.persist != nil {
 			s.persist.MustPut("project_v2_items", strconv.Itoa(itemID), item)
 		}
@@ -733,7 +756,7 @@ func (s *ProjectV2Store) SetFieldValueAny(itemID, fieldID int, value interface{}
 		return fmt.Errorf("field %q of type %q cannot be set directly", field.Name, field.DataType)
 	}
 	item.FieldValues[fieldID] = val
-	item.UpdatedAt = time.Now()
+	item.UpdatedAt = s.currentTime()
 	if s.persist != nil {
 		s.persist.MustPut("project_v2_items", strconv.Itoa(itemID), item)
 	}
@@ -800,7 +823,7 @@ func (s *ProjectV2Store) UpdateField(id int, name *string, options []*ProjectV2S
 			})
 		}
 	}
-	f.UpdatedAt = time.Now()
+	f.UpdatedAt = s.currentTime()
 	if s.persist != nil {
 		s.persist.MustPut("project_v2_fields", strconv.Itoa(id), f)
 	}
@@ -845,7 +868,7 @@ func (s *ProjectV2Store) CreateView(projectID int, name, layout string, filter *
 			number = v.Number + 1
 		}
 	}
-	now := time.Now()
+	now := s.currentTime()
 	v := &ProjectV2View{
 		ID:            id,
 		NodeID:        fmt.Sprintf("PVTV_kgDO%08d", id),

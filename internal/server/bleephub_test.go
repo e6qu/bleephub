@@ -64,7 +64,6 @@ func testEventually(timeout, interval time.Duration, condition func() bool) bool
 func useFixedTestClock(server *Server) {
 	clockNow := func() time.Time { return fixedTestTime }
 	server.replaceClockNow(clockNow)
-	server.store.clockNow = clockNow
 }
 
 // authedGet issues a GET against the live test server with the admin

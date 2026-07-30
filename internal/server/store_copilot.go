@@ -61,7 +61,7 @@ func (st *Store) persistCopilotSeatLocked(seat *CopilotSeat) {
 func (st *Store) GetCopilotSeat(orgLogin string, userID int) *CopilotSeat {
 	st.mu.Lock()
 	defer st.mu.Unlock()
-	st.expireCopilotSeatsLocked(orgLogin, time.Now())
+	st.expireCopilotSeatsLocked(orgLogin, st.currentTime())
 	if st.CopilotSeats[orgLogin] == nil {
 		return nil
 	}
@@ -73,7 +73,7 @@ func (st *Store) GetCopilotSeat(orgLogin string, userID int) *CopilotSeat {
 func (st *Store) ListCopilotSeats(orgLogin string) []*CopilotSeat {
 	st.mu.Lock()
 	defer st.mu.Unlock()
-	st.expireCopilotSeatsLocked(orgLogin, time.Now())
+	st.expireCopilotSeatsLocked(orgLogin, st.currentTime())
 	out := make([]*CopilotSeat, 0, len(st.CopilotSeats[orgLogin]))
 	for _, seat := range st.CopilotSeats[orgLogin] {
 		out = append(out, seat)
@@ -94,7 +94,7 @@ func (st *Store) ListCopilotSeats(orgLogin string) []*CopilotSeat {
 func (st *Store) AddCopilotSeats(orgLogin string, userIDs []int, teamSlug string) int {
 	st.mu.Lock()
 	defer st.mu.Unlock()
-	now := time.Now().UTC()
+	now := st.currentTime()
 	st.expireCopilotSeatsLocked(orgLogin, now)
 	if st.CopilotSeats[orgLogin] == nil {
 		st.CopilotSeats[orgLogin] = map[int]*CopilotSeat{}
@@ -133,7 +133,7 @@ func (st *Store) AddCopilotSeats(orgLogin string, userIDs []int, teamSlug string
 func (st *Store) CancelCopilotSeatsForUsers(orgLogin string, userIDs []int) (cancelled int, teamAssigned []int) {
 	st.mu.Lock()
 	defer st.mu.Unlock()
-	now := time.Now().UTC()
+	now := st.currentTime()
 	st.expireCopilotSeatsLocked(orgLogin, now)
 	for _, id := range userIDs {
 		if seat, ok := st.CopilotSeats[orgLogin][id]; ok && seat.AssigningTeamSlug != "" {
@@ -162,7 +162,7 @@ func (st *Store) CancelCopilotSeatsForUsers(orgLogin string, userIDs []int) (can
 func (st *Store) CancelCopilotSeatsForTeam(orgLogin, teamSlug string) int {
 	st.mu.Lock()
 	defer st.mu.Unlock()
-	now := time.Now().UTC()
+	now := st.currentTime()
 	st.expireCopilotSeatsLocked(orgLogin, now)
 	date := copilotNextCycleDate(now)
 	cancelled := 0

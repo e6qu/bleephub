@@ -47,7 +47,7 @@ func (st *Store) RecordRepoActivity(repoID int, ref, before, after string, actor
 		After:        after,
 		ActorID:      actorID,
 		ActivityType: activityType,
-		Timestamp:    time.Now().UTC(),
+		Timestamp:    st.currentTime(),
 	}
 	st.NextRepoActivity++
 	st.RepoActivities[a.ID] = a
@@ -76,7 +76,7 @@ func (st *Store) ListRepoActivity(repoID int) []*RepoActivity {
 func (st *Store) RecordRepoClone(repoID int, actor string) {
 	st.mu.Lock()
 	defer st.mu.Unlock()
-	day := time.Now().UTC().Format("2006-01-02")
+	day := st.currentTime().Format("2006-01-02")
 	key := repoTrafficKey(repoID, day)
 	b := st.RepoCloneTraffic[key]
 	if b == nil {

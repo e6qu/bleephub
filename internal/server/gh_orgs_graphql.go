@@ -82,7 +82,10 @@ func (s *Server) addOrgFieldsToSchema(userType, queryType *graphql.Object, nodeI
 
 			// Sort by creation time (newest first)
 			sort.Slice(orgs, func(i, j int) bool {
-				return orgs[i].CreatedAt.After(orgs[j].CreatedAt)
+				if !orgs[i].CreatedAt.Equal(orgs[j].CreatedAt) {
+					return orgs[i].CreatedAt.After(orgs[j].CreatedAt)
+				}
+				return orgs[i].ID > orgs[j].ID
 			})
 
 			first := 30

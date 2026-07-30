@@ -65,7 +65,7 @@ func (st *Store) RegisterWorkflowFile(repoFullName, path, name, yamlBody, source
 		st.WorkflowFiles = map[int64]*WorkflowFile{}
 	}
 	id := stableWorkflowFileID(repoFullName, path)
-	now := time.Now().UTC()
+	now := st.currentTime()
 	if existing, ok := st.WorkflowFiles[id]; ok {
 		yamlChanged := existing.YAML != yamlBody
 		existing.Name = name
@@ -116,7 +116,7 @@ func (st *Store) SetWorkflowFileState(repoFullName, path, state string) bool {
 		return true
 	}
 	wf.State = state
-	wf.UpdatedAt = time.Now().UTC()
+	wf.UpdatedAt = st.currentTime()
 	if st.persist != nil {
 		st.persist.MustPut("workflow_files", strconv.FormatInt(id, 10), wf)
 	}

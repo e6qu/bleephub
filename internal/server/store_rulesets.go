@@ -166,7 +166,7 @@ func (st *Store) CreateRuleset(repo *Repo, rs *Ruleset) *Ruleset {
 	if rs.Target == "" {
 		rs.Target = "branch"
 	}
-	now := time.Now().UTC()
+	now := st.currentTime()
 	rs.CreatedAt = now
 	rs.UpdatedAt = now
 	rs.Versions = map[int]RulesetVersion{}
@@ -202,7 +202,7 @@ func (st *Store) UpdateRuleset(repo *Repo, rs *Ruleset, updates *Ruleset, actorI
 		VersionID: rs.NextVersionID,
 		Ruleset:   snapshot,
 		ActorID:   actorID,
-		CreatedAt: time.Now().UTC(),
+		CreatedAt: st.currentTime(),
 	}
 	rs.NextVersionID++
 
@@ -227,7 +227,7 @@ func (st *Store) UpdateRuleset(repo *Repo, rs *Ruleset, updates *Ruleset, actorI
 	if updates.Rules != nil {
 		rs.Rules = updates.Rules
 	}
-	rs.UpdatedAt = time.Now().UTC()
+	rs.UpdatedAt = st.currentTime()
 	st.persistRuleset(rs)
 	return cloneRuleset(rs)
 }
@@ -270,8 +270,8 @@ func (st *Store) CreateOrgRuleset(orgID int, name string, target string, enforce
 		CurrentUserCanBypass: "never",
 		Conditions:           conditions,
 		Rules:                rules,
-		CreatedAt:            time.Now().UTC(),
-		UpdatedAt:            time.Now().UTC(),
+		CreatedAt:            st.currentTime(),
+		UpdatedAt:            st.currentTime(),
 		Versions:             map[int]RulesetVersion{},
 		NextVersionID:        1,
 	}
@@ -335,12 +335,12 @@ func (st *Store) UpdateOrgRuleset(id int, actorID int, fn func(*Ruleset)) bool {
 		VersionID: rs.NextVersionID,
 		Ruleset:   snapshot,
 		ActorID:   actorID,
-		CreatedAt: time.Now().UTC(),
+		CreatedAt: st.currentTime(),
 	}
 	rs.NextVersionID++
 
 	fn(rs)
-	rs.UpdatedAt = time.Now().UTC()
+	rs.UpdatedAt = st.currentTime()
 	st.persistRuleset(rs)
 	return true
 }

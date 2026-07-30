@@ -104,7 +104,7 @@ func generateGHSAID() (string, error) {
 	return fmt.Sprintf("GHSA-%s-%s-%s", h[0:4], h[4:8], h[8:12]), nil
 }
 
-func generateCVEID() (string, error) {
+func generateCVEID(now time.Time) (string, error) {
 	b, err := randomBytes(4)
 	if err != nil {
 		return "", fmt.Errorf("generate CVE id: %w", err)
@@ -113,7 +113,7 @@ func generateCVEID() (string, error) {
 	if n < 0 {
 		n = -n
 	}
-	return fmt.Sprintf("CVE-%d-%04d", time.Now().UTC().Year(), n%10000), nil
+	return fmt.Sprintf("CVE-%d-%04d", now.UTC().Year(), n%10000), nil
 }
 
 // CreateSecurityAdvisory creates a new security advisory in the given repo.
@@ -151,7 +151,7 @@ func (st *Store) CreateSecurityAdvisoryE(repoID, authorID int, req CreateAdvisor
 		return nil, err
 	}
 
-	now := time.Now().UTC()
+	now := st.currentTime()
 	adv := &SecurityAdvisory{
 		ID:                     st.NextSecurityAdvisoryID,
 		NodeID:                 fmt.Sprintf("GSA_kwCN%07d", st.NextSecurityAdvisoryID),
@@ -246,7 +246,7 @@ func (st *Store) UpdateSecurityAdvisory(id int, fn func(*SecurityAdvisory)) bool
 	if adv.CWEs == nil {
 		adv.CWEs = []string{}
 	}
-	adv.UpdatedAt = time.Now().UTC()
+	adv.UpdatedAt = st.currentTime()
 	st.persistSecurityAdvisory(adv)
 	return true
 }
@@ -268,12 +268,12 @@ func (st *Store) RequestCVEE(id int) (bool, error) {
 	if adv == nil || adv.CVEID != "" {
 		return false, nil
 	}
-	cveID, err := generateCVEID()
+	cveID, err := generateCVEID(st.currentTime())
 	if err != nil {
 		return false, err
 	}
 	adv.CVEID = cveID
-	adv.UpdatedAt = time.Now().UTC()
+	adv.UpdatedAt = st.currentTime()
 	st.persistSecurityAdvisory(adv)
 	return true, nil
 }
@@ -358,9 +358,9 @@ func (st *Store) CreateTemporaryFork(repoID int, ghsaID string) *Repo {
 		Stargazers:                map[int]bool{},
 		NextIssueNumber:           1,
 		NextMilestoneNumber:       1,
-		CreatedAt:                 time.Now().UTC(),
-		UpdatedAt:                 time.Now().UTC(),
-		PushedAt:                  time.Now().UTC(),
+		CreatedAt:                 st.currentTime(),
+		UpdatedAt:                 st.currentTime(),
+		PushedAt:                  st.currentTime(),
 	}
 	st.NextRepo++
 

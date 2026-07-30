@@ -326,7 +326,7 @@ func (st *Store) CreateMarketplacePurchase(listing *MarketplaceListing, account 
 			}
 		}
 		if installation == nil {
-			now := time.Now().UTC()
+			now := st.currentTime()
 			installation = &Installation{
 				ID: st.NextInstallationID, AppID: app.ID, AppSlug: app.Slug,
 				TargetType: account.accountType, TargetID: account.id, TargetLogin: account.login,

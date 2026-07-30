@@ -140,7 +140,7 @@ func (st *Store) CreateEnterpriseTeam(name, description, selectionType string, g
 	if notificationSetting == "" {
 		notificationSetting = "notifications_enabled"
 	}
-	now := time.Now().UTC()
+	now := st.currentTime()
 	t := &EnterpriseTeam{
 		ID:                        st.NextEnterpriseTeamID,
 		Name:                      name,
@@ -209,7 +209,7 @@ func (st *Store) UpdateEnterpriseTeam(t *EnterpriseTeam, name, description, sele
 	if groupID != nil {
 		t.GroupID = *groupID
 	}
-	t.UpdatedAt = time.Now().UTC()
+	t.UpdatedAt = st.currentTime()
 	st.persistEnterpriseTeam(t)
 	return true
 }
@@ -243,7 +243,7 @@ func (st *Store) AddEnterpriseTeamMember(t *EnterpriseTeam, userID int) {
 		}
 	}
 	t.MemberIDs = append(t.MemberIDs, userID)
-	t.UpdatedAt = time.Now().UTC()
+	t.UpdatedAt = st.currentTime()
 	st.persistEnterpriseTeam(t)
 }
 
@@ -256,7 +256,7 @@ func (st *Store) RemoveEnterpriseTeamMember(t *EnterpriseTeam, userID int) bool 
 	for i, id := range t.MemberIDs {
 		if id == userID {
 			t.MemberIDs = append(t.MemberIDs[:i], t.MemberIDs[i+1:]...)
-			t.UpdatedAt = time.Now().UTC()
+			t.UpdatedAt = st.currentTime()
 			st.persistEnterpriseTeam(t)
 			return true
 		}
@@ -302,7 +302,7 @@ func (st *Store) AddEnterpriseTeamOrg(t *EnterpriseTeam, orgLogin string) {
 	}
 	t.SelectedOrgLogins = append(t.SelectedOrgLogins, orgLogin)
 	sort.Strings(t.SelectedOrgLogins)
-	t.UpdatedAt = time.Now().UTC()
+	t.UpdatedAt = st.currentTime()
 	st.persistEnterpriseTeam(t)
 }
 
@@ -315,7 +315,7 @@ func (st *Store) RemoveEnterpriseTeamOrg(t *EnterpriseTeam, orgLogin string) boo
 	for i, l := range t.SelectedOrgLogins {
 		if l == orgLogin {
 			t.SelectedOrgLogins = append(t.SelectedOrgLogins[:i], t.SelectedOrgLogins[i+1:]...)
-			t.UpdatedAt = time.Now().UTC()
+			t.UpdatedAt = st.currentTime()
 			st.persistEnterpriseTeam(t)
 			return true
 		}
@@ -354,7 +354,7 @@ func (st *Store) CreateEnterpriseCodeSecurityConfig(c *EnterpriseCodeSecurityCon
 	st.mu.Lock()
 	defer st.mu.Unlock()
 
-	now := time.Now().UTC()
+	now := st.currentTime()
 	c.ID = st.NextEnterpriseCodeSecurityConfigID
 	st.NextEnterpriseCodeSecurityConfigID++
 	c.CreatedAt = now
@@ -392,7 +392,7 @@ func (st *Store) TouchEnterpriseCodeSecurityConfig(c *EnterpriseCodeSecurityConf
 	st.mu.Lock()
 	defer st.mu.Unlock()
 	mutate()
-	c.UpdatedAt = time.Now().UTC()
+	c.UpdatedAt = st.currentTime()
 	st.persistEnterpriseCodeSecurityConfig(c)
 }
 
@@ -474,7 +474,7 @@ func (st *Store) SetEnterpriseCodeSecurityConfigDefault(c *EnterpriseCodeSecurit
 	st.mu.Lock()
 	defer st.mu.Unlock()
 	c.DefaultForNewRepos = defaultForNewRepos
-	c.UpdatedAt = time.Now().UTC()
+	c.UpdatedAt = st.currentTime()
 	st.persistEnterpriseCodeSecurityConfig(c)
 }
 

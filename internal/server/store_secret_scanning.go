@@ -68,7 +68,7 @@ func (st *Store) createSecretScanningAlertLocked(repoKey, secretType string, loc
 		st.SecretScanningNextNumber[repoKey] = 1
 	}
 
-	now := time.Now().UTC()
+	now := st.currentTime()
 	number := st.SecretScanningNextNumber[repoKey]
 	st.SecretScanningNextNumber[repoKey] = number + 1
 
@@ -193,7 +193,7 @@ func (st *Store) UpdateSecretScanningAlert(a *SecretScanningAlert, state, resolu
 		return err
 	}
 
-	now := time.Now().UTC()
+	now := st.currentTime()
 	if state != "" {
 		a.State = state
 	}
@@ -217,7 +217,7 @@ func (st *Store) BulkUpdateSecretScanningAlerts(repoKey, stateFilter, secretType
 	defer st.mu.Unlock()
 
 	byRepo := st.SecretScanningAlertsByRepo[repoKey]
-	now := time.Now().UTC()
+	now := st.currentTime()
 	var updated []*SecretScanningAlert
 	for _, a := range byRepo {
 		if stateFilter != "" && a.State != stateFilter {
@@ -459,7 +459,7 @@ func (st *Store) UpdateSecretScanningPatternConfig(orgLogin string, expectedVers
 		cfg.CustomSettings[tokenType] = setting
 	}
 	cfg.Version = uuid.New().String()
-	cfg.UpdatedAt = time.Now().UTC()
+	cfg.UpdatedAt = st.currentTime()
 	if st.persist != nil {
 		st.persist.MustPut("secret_scanning_pattern_configs", orgLogin, cfg)
 	}
@@ -512,7 +512,7 @@ func (st *Store) CreateSecretScanningPushProtectionPlaceholder(repoKey, tokenTyp
 		ID:        uuid.New().String(),
 		RepoKey:   repoKey,
 		TokenType: tokenType,
-		CreatedAt: time.Now().UTC(),
+		CreatedAt: st.currentTime(),
 	}
 	if st.SecretScanningPushPlaceholders[repoKey] == nil {
 		st.SecretScanningPushPlaceholders[repoKey] = map[string]*SecretScanningPushProtectionPlaceholder{}
@@ -539,7 +539,7 @@ func (st *Store) CreateSecretScanningPushProtectionBypass(repoKey, placeholderID
 		return nil
 	}
 	delete(st.SecretScanningPushPlaceholders[repoKey], placeholderID)
-	now := time.Now().UTC()
+	now := st.currentTime()
 	bypass := &SecretScanningPushProtectionBypass{
 		PlaceholderID: placeholderID,
 		RepoKey:       repoKey,

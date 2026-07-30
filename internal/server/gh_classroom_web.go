@@ -707,7 +707,7 @@ type classroomTransitionAccepted struct {
 
 func (s *Server) handleExportClassrooms(w http.ResponseWriter, r *http.Request) {
 	user := ghUserFromContext(r.Context())
-	bundle := classroomTransitionBundle{Format: "bleephub-classroom-transition-v1", ExportedAt: time.Now().UTC()}
+	bundle := classroomTransitionBundle{Format: "bleephub-classroom-transition-v1", ExportedAt: s.currentTime()}
 	for _, classroom := range s.classroomsAdministeredBy(r.Context(), user) {
 		org := s.store.GetOrgByID(classroom.OrgID)
 		course := classroomTransitionCourse{Name: classroom.Name, Archived: classroom.Archived, Organization: org.Login}

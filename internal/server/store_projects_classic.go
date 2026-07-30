@@ -72,7 +72,7 @@ func (st *Store) CreateProjectClassic(repo *Repo, creatorID int, name, body, sta
 	if state == "" {
 		state = "open"
 	}
-	now := time.Now().UTC()
+	now := st.currentTime()
 	proj := &ProjectClassic{
 		ID:        st.NextProjectClassicID,
 		NodeID:    projectClassicNodeID(st.NextProjectClassicID),
@@ -125,7 +125,7 @@ func (st *Store) UpdateProjectClassic(proj *ProjectClassic, name, body, state *s
 	if state != nil {
 		proj.State = *state
 	}
-	proj.UpdatedAt = time.Now().UTC()
+	proj.UpdatedAt = st.currentTime()
 	st.persistProjectClassic(proj)
 	return proj
 }
@@ -167,7 +167,7 @@ func (st *Store) CreateProjectColumn(projectID int, name string) *ProjectColumn 
 		}
 	}
 
-	now := time.Now().UTC()
+	now := st.currentTime()
 	col := &ProjectColumn{
 		ID:        st.NextProjectColumnID,
 		NodeID:    projectColumnNodeID(st.NextProjectColumnID),
@@ -209,7 +209,7 @@ func (st *Store) UpdateProjectColumn(col *ProjectColumn, name string) *ProjectCo
 	st.mu.Lock()
 	defer st.mu.Unlock()
 	col.Name = name
-	col.UpdatedAt = time.Now().UTC()
+	col.UpdatedAt = st.currentTime()
 	st.persistProjectColumn(col)
 	return col
 }
@@ -294,7 +294,7 @@ func (st *Store) MoveProjectColumn(col *ProjectColumn, position string) error {
 			col.Position = (afterPos + nextPos) / 2
 		}
 	}
-	col.UpdatedAt = time.Now().UTC()
+	col.UpdatedAt = st.currentTime()
 	st.persistProjectColumn(col)
 	return nil
 }
@@ -312,7 +312,7 @@ func (st *Store) CreateProjectCard(columnID, creatorID int, note string, issueID
 		}
 	}
 
-	now := time.Now().UTC()
+	now := st.currentTime()
 	card := &ProjectCard{
 		ID:        st.NextProjectCardID,
 		NodeID:    projectCardNodeID(st.NextProjectCardID),
@@ -357,7 +357,7 @@ func (st *Store) UpdateProjectCard(card *ProjectCard, note string) *ProjectCard 
 	st.mu.Lock()
 	defer st.mu.Unlock()
 	card.Note = note
-	card.UpdatedAt = time.Now().UTC()
+	card.UpdatedAt = st.currentTime()
 	st.persistProjectCard(card)
 	return card
 }
@@ -444,7 +444,7 @@ func (st *Store) MoveProjectCard(card *ProjectCard, targetColumnID int, position
 			card.Position = (afterPos + nextPos) / 2
 		}
 	}
-	card.UpdatedAt = time.Now().UTC()
+	card.UpdatedAt = st.currentTime()
 	st.persistProjectCard(card)
 	return nil
 }
@@ -456,7 +456,7 @@ func (st *Store) ConvertProjectCardToIssue(card *ProjectCard, issueID int) *Proj
 	defer st.mu.Unlock()
 	card.Note = ""
 	card.IssueID = issueID
-	card.UpdatedAt = time.Now().UTC()
+	card.UpdatedAt = st.currentTime()
 	st.persistProjectCard(card)
 	return card
 }

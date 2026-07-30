@@ -143,7 +143,7 @@ func (st *Store) CreateUserMigration(userID int, repos []string, lock, exMeta, e
 	st.mu.Lock()
 	defer st.mu.Unlock()
 
-	now := time.Now().UTC()
+	now := st.currentTime()
 	id := st.NextUserMigrationID
 	m := &UserMigration{
 		MigrationCommon: MigrationCommon{
@@ -209,7 +209,7 @@ func (st *Store) DeleteUserMigrationArchive(id int) bool {
 		return false
 	}
 	m.ArchiveDeleted = true
-	m.UpdatedAt = time.Now().UTC()
+	m.UpdatedAt = st.currentTime()
 	st.persistUserMigration(m)
 	return true
 }
@@ -223,7 +223,7 @@ func (st *Store) UnlockUserMigrationRepo(id int, repoName string) bool {
 		return false
 	}
 	delete(m.LockedRepos, repoName)
-	m.UpdatedAt = time.Now().UTC()
+	m.UpdatedAt = st.currentTime()
 	st.persistUserMigration(m)
 	return true
 }
@@ -244,7 +244,7 @@ func (st *Store) CreateOrgMigration(orgLogin string, repos []string, lock, exMet
 	st.mu.Lock()
 	defer st.mu.Unlock()
 
-	now := time.Now().UTC()
+	now := st.currentTime()
 	id := st.NextOrgMigrationID
 	m := &OrgMigration{
 		MigrationCommon: MigrationCommon{
@@ -310,7 +310,7 @@ func (st *Store) DeleteOrgMigrationArchive(id int) bool {
 		return false
 	}
 	m.ArchiveDeleted = true
-	m.UpdatedAt = time.Now().UTC()
+	m.UpdatedAt = st.currentTime()
 	st.persistOrgMigration(m)
 	return true
 }
@@ -324,7 +324,7 @@ func (st *Store) UnlockOrgMigrationRepo(id int, repoName string) bool {
 		return false
 	}
 	delete(m.LockedRepos, repoName)
-	m.UpdatedAt = time.Now().UTC()
+	m.UpdatedAt = st.currentTime()
 	st.persistOrgMigration(m)
 	return true
 }

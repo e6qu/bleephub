@@ -84,7 +84,7 @@ func (st *Store) createRepoLocked(fullName, name, description string, private bo
 		return nil
 	}
 
-	now := time.Now().UTC()
+	now := st.currentTime()
 	visibility := "public"
 	if private {
 		visibility = "private"
@@ -176,7 +176,7 @@ func (st *Store) UpdateRepo(owner, name string, fn func(*Repo)) bool {
 		return false
 	}
 	fn(repo)
-	repo.UpdatedAt = time.Now().UTC()
+	repo.UpdatedAt = st.currentTime()
 	if st.persist != nil {
 		st.persist.MustPut("repos", strconv.Itoa(repo.ID), repo)
 	}
@@ -248,8 +248,8 @@ func (st *Store) ForkRepo(owner *User, sourceRepo *Repo, name string) *Repo {
 		Stargazers:                map[int]bool{},
 		NextIssueNumber:           1,
 		NextMilestoneNumber:       1,
-		CreatedAt:                 time.Now().UTC(),
-		UpdatedAt:                 time.Now().UTC(),
+		CreatedAt:                 st.currentTime(),
+		UpdatedAt:                 st.currentTime(),
 		PushedAt:                  sourceRepo.PushedAt,
 	}
 	st.NextRepo++
@@ -335,7 +335,7 @@ func (st *Store) RenameRepo(owner, name, newName string) bool {
 
 	repo.Name = newName
 	repo.FullName = newFull
-	repo.UpdatedAt = time.Now().UTC()
+	repo.UpdatedAt = st.currentTime()
 
 	st.ReposByName[newFull] = repo
 	delete(st.ReposByName, oldFull)
@@ -856,7 +856,7 @@ func (st *Store) repoDeletionIntentLocked(repo *Repo) pendingDeletion {
 	record := pendingDeletion{
 		Kind:      "repo",
 		Name:      repo.FullName,
-		StartedAt: time.Now().UTC(),
+		StartedAt: st.currentTime(),
 	}
 	addObject := func(key string) {
 		if key != "" {
@@ -1210,7 +1210,7 @@ func (st *Store) deleteRepoFullNameReferencesLocked(batch *persistBatch, fullNam
 			if team.RepoPermissions != nil {
 				delete(team.RepoPermissions, fullName)
 			}
-			team.UpdatedAt = time.Now().UTC()
+			team.UpdatedAt = st.currentTime()
 			batch.Put("teams", strconv.Itoa(team.ID), team)
 		}
 	}
@@ -1750,7 +1750,7 @@ func (st *Store) AddRepoCollaborator(owner, name, login, permission string) bool
 		st.RepoCollaborators[fullName] = map[string]string{}
 	}
 	st.RepoCollaborators[fullName][login] = perm
-	repo.UpdatedAt = time.Now().UTC()
+	repo.UpdatedAt = st.currentTime()
 	if st.persist != nil {
 		st.persist.MustPut("repo_collaborators", fullName, st.RepoCollaborators[fullName])
 		st.persist.MustPut("repos", strconv.Itoa(repo.ID), repo)
@@ -1776,7 +1776,7 @@ func (st *Store) RemoveRepoCollaborator(owner, name, login string) bool {
 		return false
 	}
 	delete(st.RepoCollaborators[fullName], login)
-	repo.UpdatedAt = time.Now().UTC()
+	repo.UpdatedAt = st.currentTime()
 	if st.persist != nil {
 		st.persist.MustPut("repo_collaborators", fullName, st.RepoCollaborators[fullName])
 		st.persist.MustPut("repos", strconv.Itoa(repo.ID), repo)
@@ -1849,9 +1849,9 @@ func (st *Store) StarRepo(userID int, owner, name string) bool {
 	}
 	repo.Stargazers[userID] = true
 	repo.StargazersCount = len(repo.Stargazers)
-	repo.UpdatedAt = time.Now().UTC()
+	repo.UpdatedAt = st.currentTime()
 	user.StarredRepos[fullName] = true
-	user.UpdatedAt = time.Now().UTC()
+	user.UpdatedAt = st.currentTime()
 	if st.persist != nil {
 		st.persist.MustPut("repos", strconv.Itoa(repo.ID), repo)
 		st.persist.MustPut("users", strconv.Itoa(user.ID), user)
@@ -1879,11 +1879,11 @@ func (st *Store) UnstarRepo(userID int, owner, name string) bool {
 	}
 	delete(repo.Stargazers, userID)
 	repo.StargazersCount = len(repo.Stargazers)
-	repo.UpdatedAt = time.Now().UTC()
+	repo.UpdatedAt = st.currentTime()
 	if user.StarredRepos != nil {
 		delete(user.StarredRepos, fullName)
 	}
-	user.UpdatedAt = time.Now().UTC()
+	user.UpdatedAt = st.currentTime()
 	if st.persist != nil {
 		st.persist.MustPut("repos", strconv.Itoa(repo.ID), repo)
 		st.persist.MustPut("users", strconv.Itoa(user.ID), user)
@@ -2001,11 +2001,11 @@ func (st *Store) CreateRepoDeployKey(repoID int, title, key string, readOnly boo
 		Key:       key,
 		ReadOnly:  readOnly,
 		Verified:  true,
-		CreatedAt: time.Now().UTC(),
+		CreatedAt: st.currentTime(),
 	}
 	st.RepoDeployKeys[repo.FullName][k.ID] = k
 	st.NextDeployKeyID++
-	repo.UpdatedAt = time.Now().UTC()
+	repo.UpdatedAt = st.currentTime()
 	if st.persist != nil {
 		st.persist.MustPut("repo_deploy_keys", repo.FullName, st.RepoDeployKeys[repo.FullName])
 		st.persist.MustPut("repos", strconv.Itoa(repo.ID), repo)
@@ -2023,7 +2023,7 @@ func (st *Store) DeleteRepoDeployKey(id int) bool {
 			delete(keys, id)
 			repo := st.Repos[k.RepoID]
 			if repo != nil {
-				repo.UpdatedAt = time.Now().UTC()
+				repo.UpdatedAt = st.currentTime()
 				if st.persist != nil {
 					st.persist.MustPut("repos", strconv.Itoa(repo.ID), repo)
 				}
@@ -2064,7 +2064,7 @@ func (st *Store) SetRepoSubscription(userID int, repoID int, subscribed bool) bo
 		RepoID:     repoID,
 		Subscribed: subscribed,
 		Ignored:    false,
-		CreatedAt:  time.Now().UTC(),
+		CreatedAt:  st.currentTime(),
 	}
 	if existing := st.RepoSubscriptions[key]; existing != nil {
 		sub.CreatedAt = existing.CreatedAt
@@ -2165,7 +2165,7 @@ func (st *Store) TransferRepo(owner, name, newOwner string) bool {
 	}
 
 	repo.FullName = newFull
-	repo.UpdatedAt = time.Now().UTC()
+	repo.UpdatedAt = st.currentTime()
 	if newOwnerOrg != nil {
 		repo.OwnerType = "Organization"
 		repo.OwnerID = newOwnerOrg.ID
@@ -2236,7 +2236,7 @@ func (st *Store) moveRepoKeyLocked(oldFull, newFull string) {
 			}
 		}
 		if changed {
-			team.UpdatedAt = time.Now().UTC()
+			team.UpdatedAt = st.currentTime()
 			if st.persist != nil {
 				st.persist.MustPut("teams", strconv.Itoa(team.ID), team)
 			}
@@ -2245,7 +2245,7 @@ func (st *Store) moveRepoKeyLocked(oldFull, newFull string) {
 	for _, rec := range st.ArtifactStorageRecords {
 		if rec.GitHubRepository == oldFull {
 			rec.GitHubRepository = newFull
-			rec.UpdatedAt = time.Now().UTC()
+			rec.UpdatedAt = st.currentTime()
 			if st.persist != nil {
 				st.persist.MustPut("artifact_storage_records", strconv.Itoa(rec.ID), rec)
 			}
@@ -2254,7 +2254,7 @@ func (st *Store) moveRepoKeyLocked(oldFull, newFull string) {
 	for _, rec := range st.ArtifactDeploymentRecords {
 		if rec.GitHubRepository == oldFull {
 			rec.GitHubRepository = newFull
-			rec.UpdatedAt = time.Now().UTC()
+			rec.UpdatedAt = st.currentTime()
 			if st.persist != nil {
 				st.persist.MustPut("artifact_deployment_records", strconv.Itoa(rec.ID), rec)
 			}
@@ -2579,7 +2579,7 @@ func (st *Store) moveRepoKeyLocked(oldFull, newFull string) {
 	for _, cs := range st.Codespaces {
 		if cs.RepoKey == oldFull {
 			cs.RepoKey = newFull
-			cs.UpdatedAt = time.Now().UTC()
+			cs.UpdatedAt = st.currentTime()
 			if st.persist != nil {
 				st.persist.MustPut("codespaces", strconv.Itoa(cs.ID), cs)
 			}
@@ -2590,7 +2590,7 @@ func (st *Store) moveRepoKeyLocked(oldFull, newFull string) {
 		delete(st.PackagesByOwnerKey, oldFull)
 		for _, pkg := range pkgs {
 			pkg.OwnerKey = newFull
-			pkg.UpdatedAt = time.Now().UTC()
+			pkg.UpdatedAt = st.currentTime()
 			if st.persist != nil {
 				st.persist.MustPut("packages", strconv.Itoa(pkg.ID), pkg)
 			}
@@ -2696,7 +2696,7 @@ func (st *Store) RenameBranch(repoID int, branch, newName string) bool {
 		}
 	}
 	st.Misc.mu.Unlock()
-	repo.UpdatedAt = time.Now().UTC()
+	repo.UpdatedAt = st.currentTime()
 	if st.persist != nil {
 		st.persist.MustPut("repos", strconv.Itoa(repo.ID), repo)
 	}
@@ -2722,7 +2722,7 @@ func (st *Store) SetRepoFlag(repoID int, field string, value bool) bool {
 	default:
 		return false
 	}
-	repo.UpdatedAt = time.Now().UTC()
+	repo.UpdatedAt = st.currentTime()
 	if st.persist != nil {
 		st.persist.MustPut("repos", strconv.Itoa(repo.ID), repo)
 	}
@@ -2740,7 +2740,7 @@ func (st *Store) SetRepoInteractionLimit(repoID int, limit string, expiry *time.
 	}
 	repo.InteractionLimit = limit
 	repo.InteractionLimitExpiry = expiry
-	repo.UpdatedAt = time.Now().UTC()
+	repo.UpdatedAt = st.currentTime()
 	if st.persist != nil {
 		st.persist.MustPut("repos", strconv.Itoa(repo.ID), repo)
 	}

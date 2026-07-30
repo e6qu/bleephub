@@ -18,6 +18,9 @@ func (s *Server) replaceClockNow(clockNow func() time.Time) func() time.Time {
 	previous := s.clockNow
 	s.clockNow = clockNow
 	s.clockMu.Unlock()
+	if s.store != nil {
+		s.store.replaceClockNow(clockNow)
+	}
 	return previous
 }
 

@@ -858,8 +858,8 @@
         "id": "TEST-037",
         "location": "gh_classroom_test.go:346",
         "severity": "M",
-        "status": "open",
-        "status_kind": "open"
+        "status": "fixed \u2014 the test creates its own organization and classroom, verifies that exact classroom by name in the transition bundle, and no longer relies on an earlier test's fixture",
+        "status_kind": "fixed"
       },
       {
         "category": "AUTH",
@@ -2104,6 +2104,15 @@
         "status_kind": "fixed"
       },
       {
+        "category": "REST",
+        "finding": "Notification rows were sorted only by `updated_at`; equal timestamps inherited Go map order, so page boundaries shifted and a newly-created thread could be absent from the first page under a deterministic clock",
+        "id": "REST-118",
+        "location": "store_notifications.go",
+        "severity": "M",
+        "status": "fixed \u2014 ordering is total and stable: update time descending, source ID descending, then source type; the live notification journey remains reachable after a large shared inbox accumulates",
+        "status_kind": "fixed"
+      },
+      {
         "category": "GQL",
         "finding": "`POST /api/graphql` serves anonymous requests; real GitHub 401s every unauthenticated request",
         "id": "GQL-001",
@@ -2642,6 +2651,15 @@
         "severity": "m",
         "status": "open",
         "status_kind": "open"
+      },
+      {
+        "category": "GQL",
+        "finding": "`User.organizations` sorted only by `createdAt`; equal timestamps retained map order, making cursor pages unstable and omitting newly-created organizations from bounded connections under a deterministic clock",
+        "id": "GQL-059",
+        "location": "gh_orgs_graphql.go",
+        "severity": "M",
+        "status": "fixed \u2014 equal creation times are ordered by descending organization ID, giving a total newest-first order and stable Relay page boundaries",
+        "status_kind": "fixed"
       },
       {
         "category": "ACT",
@@ -3712,6 +3730,15 @@
         "location": "terraform/",
         "severity": "B",
         "status": "fixed \u2014 module-generated `random_password` (64 alphanumeric chars, because the value travels in an HTTP header and a header-unsafe alphabet would be a latent bug), stored in Secrets Manager under the customer-managed key with `prevent_destroy`, injected into the application task and every dqlite voter as ECS `secrets` rather than `environment` so it never appears in `DescribeTaskDefinition`. Verified by three negative controls \u2014 removing either end's block, or the role's grant, each fails the test with its own message",
+        "status_kind": "fixed"
+      },
+      {
+        "category": "STORE",
+        "finding": "The store exposed a deterministic clock but 24 store modules bypassed it with direct `time.Now` calls, so expiry, persistence/reload, generated CVE years, and Project V2 timestamps changed with the wall clock even under deterministic tests",
+        "id": "STORE-065",
+        "location": "store*.go",
+        "severity": "M",
+        "status": "fixed \u2014 all store modules use the concurrency-safe injected clock, Project V2 shares the parent store clock, CVE generation receives the operation time explicitly, and an AST ratchet permits direct wall-clock access only inside the two clock fallback methods",
         "status_kind": "fixed"
       },
       {
@@ -5782,11 +5809,11 @@
         },
         "GQL": {
           "status": {
-            "fixed": 17,
+            "fixed": 18,
             "open": 38,
             "partial": 3
           },
-          "total": 58
+          "total": 59
         },
         "PAR": {
           "status": {
@@ -5798,24 +5825,24 @@
         },
         "REST": {
           "status": {
-            "fixed": 89,
+            "fixed": 90,
             "open": 25,
             "partial": 3
           },
-          "total": 117
+          "total": 118
         },
         "STORE": {
           "status": {
-            "fixed": 22,
+            "fixed": 23,
             "open": 35,
             "partial": 7
           },
-          "total": 64
+          "total": 65
         },
         "TEST": {
           "status": {
-            "fixed": 11,
-            "open": 26,
+            "fixed": 12,
+            "open": 25,
             "partial": 2
           },
           "total": 39
@@ -5831,16 +5858,16 @@
       },
       "severity": {
         "blocker": 155,
-        "major": 343,
+        "major": 346,
         "minor": 117
       },
       "status": {
         "deferred": 1,
-        "fixed": 347,
-        "open": 234,
+        "fixed": 351,
+        "open": 233,
         "partial": 33
       },
-      "total": 615
+      "total": 618
     }
   },
   "rest": {

@@ -509,6 +509,7 @@ type Store struct {
 	//     sub-store mutex (Misc.mu, Reactions.mu, Releases.mu, persistence),
 	//     never the reverse.
 	mu       sync.RWMutex
+	clockMu  sync.RWMutex
 	clockNow func() time.Time
 	// enterprises
 	EnterpriseTeams                    map[int]*EnterpriseTeam
@@ -648,10 +649,29 @@ type Store struct {
 }
 
 func (st *Store) currentTime() time.Time {
-	if st != nil && st.clockNow != nil {
-		return st.clockNow().UTC()
+	if st != nil {
+		st.clockMu.RLock()
+		clockNow := st.clockNow
+		st.clockMu.RUnlock()
+		if clockNow != nil {
+			return clockNow().UTC()
+		}
 	}
 	return time.Now().UTC()
+}
+
+func (st *Store) replaceClockNow(clockNow func() time.Time) func() time.Time {
+	if st == nil {
+		return nil
+	}
+	st.clockMu.Lock()
+	previous := st.clockNow
+	st.clockNow = clockNow
+	st.clockMu.Unlock()
+	if st.ProjectsV2 != nil {
+		st.ProjectsV2.replaceClockNow(clockNow)
+	}
+	return previous
 }
 
 // Agent represents a registered runner agent.
@@ -3665,7 +3685,7 @@ func (st *Store) SeedDefaultUser() {
 	st.mu.Lock()
 	defer st.mu.Unlock()
 
-	now := time.Now().UTC()
+	now := st.currentTime()
 	u := &User{
 		ID:           st.NextUser,
 		NodeID:       "U_kgDOBdefault",
@@ -3884,7 +3904,7 @@ func (st *Store) CreateGistE(owner *User, description string, public bool, files
 			return nil, err
 		}
 	}
-	now := time.Now().UTC()
+	now := st.currentTime()
 	g := &Gist{
 		ID:          id,
 		NodeID:      fmt.Sprintf("G_kwDOB%06d", st.NextGistID),
@@ -3953,7 +3973,7 @@ func (st *Store) UpdateGistE(id string, description *string, files map[string]*G
 			delete(g.Files, name)
 		}
 	}
-	g.UpdatedAt = time.Now().UTC()
+	g.UpdatedAt = st.currentTime()
 
 	version, err := generateGistID()
 	if err != nil {
@@ -4140,7 +4160,7 @@ func (st *Store) ForkGistE(user *User, gistID string) (*Gist, bool, error) {
 		cp := *f
 		files[name] = &cp
 	}
-	now := time.Now().UTC()
+	now := st.currentTime()
 	id, err := generateGistID()
 	if err != nil {
 		return nil, false, err
@@ -4197,7 +4217,7 @@ func (st *Store) CreateGistComment(gistID string, user *User, body string) *Gist
 	if g == nil {
 		return nil
 	}
-	now := time.Now().UTC()
+	now := st.currentTime()
 	c := &GistComment{
 		ID:                st.NextGistCommentID,
 		NodeID:            fmt.Sprintf("GC_kwDOB%06d", st.NextGistCommentID),
@@ -4232,7 +4252,7 @@ func (st *Store) UpdateGistComment(id int, body string) (*GistComment, bool) {
 		return nil, false
 	}
 	c.Body = body
-	c.UpdatedAt = time.Now().UTC()
+	c.UpdatedAt = st.currentTime()
 	st.persistGistCommentLocked(c)
 	return c, true
 }
@@ -4407,7 +4427,7 @@ func (st *Store) AddUserSSHSigningKey(userID int, key string) map[string]interfa
 		"id":         id,
 		"key":        key,
 		"title":      "",
-		"created_at": time.Now().UTC().Format(time.RFC3339),
+		"created_at": st.currentTime().Format(time.RFC3339),
 	}
 	st.Misc.sshSigningKeys[userID] = append(st.Misc.sshSigningKeys[userID], entry)
 	if st.Misc.persist != nil {
