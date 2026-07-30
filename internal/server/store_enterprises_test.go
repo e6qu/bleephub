@@ -137,6 +137,12 @@ func TestEnterpriseStatePersistenceReload(t *testing.T) {
 		EndDate: "2026-01-31", Status: "completed", Actor: admin.Login,
 		CreatedAt: st1.currentTime(), DownloadURLs: []string{"https://example.test/report.csv"},
 	}
+	st1.EnterpriseSettings.GHESManagement.SSHKeys = []string{"ssh-ed25519 reload"}
+	st1.EnterpriseSettings.GHESManagement.Settings["github_hostname"] = "reload.example.test"
+	st1.EnterpriseSettings.GHESManagement.Maintenance = GHESMaintenanceState{
+		Enabled: true, IPExceptionList: []string{"192.0.2.1"}, MaintenanceModeMessage: "Reloading",
+	}
+	st1.EnterpriseSettings.GHESManagement.ConfigStatus = "success"
 	st1.EnterpriseSettings.OIDCIncludeEnterpriseSlug = true
 	st1.EnterpriseSettings.ActionsEnabledOrganizations = "selected"
 	st1.EnterpriseSettings.ActionsAllowedActions = "selected"
@@ -309,6 +315,11 @@ func TestEnterpriseStatePersistenceReload(t *testing.T) {
 		len(s.EnterpriseBillingReports["reload-report"].DownloadURLs) != 1 {
 		t.Errorf("enterprise billing state did not persist: budgets=%+v centers=%+v reports=%+v",
 			s.EnterpriseBudgets, s.EnterpriseCostCenters, s.EnterpriseBillingReports)
+	}
+	if s.GHESManagement == nil || len(s.GHESManagement.SSHKeys) != 1 ||
+		s.GHESManagement.Settings["github_hostname"] != "reload.example.test" ||
+		!s.GHESManagement.Maintenance.Enabled || s.GHESManagement.ConfigStatus != "success" {
+		t.Errorf("GHES management state did not persist: %+v", s.GHESManagement)
 	}
 	if len(s.DependabotAccessibleRepoIDs) != 1 || s.DependabotAccessibleRepoIDs[0] != repo.ID {
 		t.Errorf("dependabot access = %v", s.DependabotAccessibleRepoIDs)

@@ -100,6 +100,7 @@ type EnterpriseSettings struct {
 	EnterpriseBudgets              map[string]*OrgBudget                    `json:"enterprise_budgets,omitempty"`
 	EnterpriseCostCenters          map[string]*EnterpriseCostCenter         `json:"enterprise_cost_centers,omitempty"`
 	EnterpriseBillingReports       map[string]*EnterpriseBillingReport      `json:"enterprise_billing_reports,omitempty"`
+	GHESManagement                 *GHESManagementState                     `json:"ghes_management,omitempty"`
 
 	// Dependabot repository access across organizations.
 	DependabotAccessibleRepoIDs []int  `json:"dependabot_accessible_repo_ids"`
@@ -219,6 +220,15 @@ func normalizeEnterpriseSettings(settings *EnterpriseSettings) *EnterpriseSettin
 	}
 	if settings.EnterpriseBillingReports == nil {
 		settings.EnterpriseBillingReports = map[string]*EnterpriseBillingReport{}
+	}
+	if settings.GHESManagement == nil {
+		settings.GHESManagement = defaultGHESManagementState()
+	}
+	if settings.GHESManagement.Settings == nil {
+		settings.GHESManagement.Settings = map[string]interface{}{}
+	}
+	if settings.GHESManagement.SSHKeys == nil {
+		settings.GHESManagement.SSHKeys = []string{}
 	}
 	if settings.ActionsCacheRetentionDays == 0 {
 		settings.ActionsCacheRetentionDays = 14

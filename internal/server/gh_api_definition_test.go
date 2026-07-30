@@ -15,9 +15,10 @@ import (
 )
 
 const (
-	vendoredSpecFile            = "testdata/github-openapi.json.gz"
-	vendoredSpecVersion         = "testdata/github-openapi.VERSION"
-	registeredRouteSnapshotFile = "testdata/registered-api-v3-routes.txt"
+	vendoredSpecFile             = "testdata/github-openapi.json.gz"
+	vendoredSpecVersion          = "testdata/github-openapi.VERSION"
+	registeredRouteSnapshotFile  = "testdata/registered-api-v3-routes.txt"
+	registeredManageSnapshotFile = "testdata/registered-ghes-manage-routes.txt"
 )
 
 // TestVendoredOpenAPIMatchesRecordedPin makes the provenance record
@@ -573,7 +574,7 @@ func TestRegisteredRoutesHaveCompleteFuzzInventory(t *testing.T) {
 	registered := make(map[string]int, len(s.routePatterns))
 	for _, pattern := range s.routePatterns {
 		_, path, found := strings.Cut(pattern, " ")
-		if !found || !strings.HasPrefix(path, "/api/v3/") {
+		if !found || !(strings.HasPrefix(path, "/api/v3/") || strings.HasPrefix(path, "/manage/v1/")) {
 			continue
 		}
 		registered[pattern]++
@@ -581,7 +582,7 @@ func TestRegisteredRoutesHaveCompleteFuzzInventory(t *testing.T) {
 	inventory := make(map[string]int, len(fuzzRoutePatterns))
 	for _, pattern := range fuzzRoutePatterns {
 		_, path, found := strings.Cut(pattern, " ")
-		if !found || !strings.HasPrefix(path, "/api/v3/") {
+		if !found || !(strings.HasPrefix(path, "/api/v3/") || strings.HasPrefix(path, "/manage/v1/")) {
 			continue
 		}
 		inventory[pattern]++
@@ -746,6 +747,33 @@ func TestRegisteredAPIRouteSnapshot(t *testing.T) {
 	}
 	assertFileBytes(t, registeredRouteSnapshotFile, body,
 		"the runtime REST route table changed; review it and run BLEEPHUB_UPDATE_REST_ROUTE_SNAPSHOT=1 go test ./internal/server -run TestRegisteredAPIRouteSnapshot")
+}
+
+func TestRegisteredGHESManageRoutesMatchOfficialDescriptionAndSnapshot(t *testing.T) {
+	s := newTestServer()
+	s.registerRoutes()
+	official := loadOfficialRouteIndex(t)["ghes-3.21"]
+	var routes []string
+	for _, pattern := range s.routePatterns {
+		method, path, found := strings.Cut(pattern, " ")
+		if !found || !strings.HasPrefix(path, "/manage/v1/") {
+			continue
+		}
+		if normalized := method + " " + normalizePath(path); !official[normalized] {
+			t.Errorf("GHES Manage route is not in the pinned official description: %s", normalized)
+		}
+		routes = append(routes, pattern)
+	}
+	sort.Strings(routes)
+	body := []byte(strings.Join(routes, "\n") + "\n")
+	if os.Getenv("BLEEPHUB_UPDATE_REST_ROUTE_SNAPSHOT") == "1" {
+		if err := os.WriteFile(registeredManageSnapshotFile, body, 0o644); err != nil {
+			t.Fatal(err)
+		}
+		return
+	}
+	assertFileBytes(t, registeredManageSnapshotFile, body,
+		"the GHES Manage route table changed; review it and update the REST route snapshots")
 }
 
 // TestUncitedRoutesAreStillRegistered keeps the defect ledger from
