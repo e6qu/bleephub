@@ -9,9 +9,8 @@ var fixedCampaignTestTime = time.Date(2035, time.June, 15, 12, 0, 0, 0, time.UTC
 
 func useFixedCampaignClock(t *testing.T) {
 	t.Helper()
-	previous := testServer.clockNow
-	testServer.clockNow = func() time.Time { return fixedCampaignTestTime }
-	t.Cleanup(func() { testServer.clockNow = previous })
+	previous := testServer.replaceClockNow(func() time.Time { return fixedCampaignTestTime })
+	t.Cleanup(func() { testServer.replaceClockNow(previous) })
 }
 
 func TestOrgCampaigns_CRUD(t *testing.T) {

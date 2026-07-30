@@ -53,7 +53,10 @@ type Server struct {
 	identity               identityConfig
 	build                  BuildInfo
 	// clockNow is injected by deterministic tests and simulators. Production
-	// leaves it nil and currentTime uses the process clock.
+	// leaves it nil and currentTime uses the process clock. clockMu makes
+	// replacing a test clock safe while owned background workers are winding
+	// down; tests must use replaceClockNow instead of assigning the function.
+	clockMu  sync.RWMutex
 	clockNow func() time.Time
 	// allowPrivateOutboundTargets opts every server-initiated fetch — webhook
 	// delivery and source import — out of the public-address requirement, for
@@ -78,10 +81,30 @@ type Server struct {
 }
 
 func (s *Server) currentTime() time.Time {
-	if s != nil && s.clockNow != nil {
-		return s.clockNow().UTC()
+	if s != nil {
+		s.clockMu.RLock()
+		clockNow := s.clockNow
+		s.clockMu.RUnlock()
+		if clockNow != nil {
+			return clockNow().UTC()
+		}
 	}
 	return time.Now().UTC()
+}
+
+// replaceClockNow atomically installs a deterministic clock and returns the
+// previous source so callers can restore it. It is intentionally the only
+// supported clock mutation path because servers own concurrent schedulers and
+// timeout watchers that may read the clock during test cleanup.
+func (s *Server) replaceClockNow(clockNow func() time.Time) func() time.Time {
+	if s == nil {
+		return nil
+	}
+	s.clockMu.Lock()
+	previous := s.clockNow
+	s.clockNow = clockNow
+	s.clockMu.Unlock()
+	return previous
 }
 
 // goBackground runs fn as an owned goroutine: shutdown waits for it. Every
