@@ -973,50 +973,17 @@ func (s *Server) handleGetUserInstallation(w http.ResponseWriter, r *http.Reques
 // User-auth. Adds a repository owned by the installation target to an existing
 // "selected"-mode installation's allow-list.
 func (s *Server) handleAddUserInstallationRepo(w http.ResponseWriter, r *http.Request) {
-	user := ghUserFromContext(r.Context())
-	if user == nil {
-		writeGHError(w, http.StatusUnauthorized, "Bad credentials")
-		return
-	}
-	instID, err := strconv.Atoi(r.PathValue("id"))
-	if err != nil {
-		writeGHError(w, http.StatusBadRequest, "Invalid installation ID")
-		return
-	}
-	repoID, err := strconv.Atoi(r.PathValue("repo_id"))
-	if err != nil {
-		writeGHError(w, http.StatusBadRequest, "Invalid repository ID")
-		return
-	}
-	inst, allowed := s.userAccessibleInstallation(r.Context(), user, instID, true)
-	if !allowed {
-		writeGHError(w, http.StatusNotFound, "Not Found")
-		return
-	}
-	if inst.RepositorySelection != "selected" {
-		writeGHValidationError(w, "Installation", "repository_selection", "not_selected")
-		return
-	}
-	repo := s.store.GetRepoByID(repoID)
-	if !installationOwnsRepo(inst, repo) {
-		writeGHError(w, http.StatusNotFound, "Not Found")
-		return
-	}
-	added, ok := s.store.AddInstallationRepo(instID, repoID)
-	if !ok {
-		writeGHError(w, http.StatusNotFound, "Not Found")
-		return
-	}
-	if current := s.store.GetInstallation(instID); current != nil && added {
-		if app := s.store.GetApp(current.AppID); app != nil {
-			s.emitInstallationRepositoriesEvent(app, "added", current, []int{repoID})
-		}
-	}
-	w.WriteHeader(http.StatusNoContent)
+	s.handleUserInstallationRepoMutation(w, r, true)
 }
 
 // handleRemoveUserInstallationRepo — DELETE /api/v3/user/installations/{id}/repositories/{repo_id}.
 func (s *Server) handleRemoveUserInstallationRepo(w http.ResponseWriter, r *http.Request) {
+	s.handleUserInstallationRepoMutation(w, r, false)
+}
+
+// handleUserInstallationRepoMutation applies the common authorization and
+// ownership contract for adding or removing a selected installation repo.
+func (s *Server) handleUserInstallationRepoMutation(w http.ResponseWriter, r *http.Request, add bool) {
 	user := ghUserFromContext(r.Context())
 	if user == nil {
 		writeGHError(w, http.StatusUnauthorized, "Bad credentials")
@@ -1046,14 +1013,21 @@ func (s *Server) handleRemoveUserInstallationRepo(w http.ResponseWriter, r *http
 		writeGHError(w, http.StatusNotFound, "Not Found")
 		return
 	}
-	removed, ok := s.store.RemoveInstallationRepo(instID, repoID)
+	var changed, ok bool
+	eventAction := "added"
+	if add {
+		changed, ok = s.store.AddInstallationRepo(instID, repoID)
+	} else {
+		changed, ok = s.store.RemoveInstallationRepo(instID, repoID)
+		eventAction = "removed"
+	}
 	if !ok {
 		writeGHError(w, http.StatusNotFound, "Not Found")
 		return
 	}
-	if current := s.store.GetInstallation(instID); current != nil && removed {
+	if current := s.store.GetInstallation(instID); current != nil && changed {
 		if app := s.store.GetApp(current.AppID); app != nil {
-			s.emitInstallationRepositoriesEvent(app, "removed", current, []int{repoID})
+			s.emitInstallationRepositoriesEvent(app, eventAction, current, []int{repoID})
 		}
 	}
 	w.WriteHeader(http.StatusNoContent)
