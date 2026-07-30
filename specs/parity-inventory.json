@@ -17804,7 +17804,6 @@
         "ghec": {
           "documented_operations": 1458,
           "missing_operations": [
-            "DELETE /enterprises/{}/apps/organizations/{}/installations/{}",
             "DELETE /enterprises/{}/copilot/billing/selected_enterprise_teams",
             "DELETE /enterprises/{}/copilot/billing/selected_users",
             "DELETE /enterprises/{}/copilot/custom-agents/source",
@@ -17829,10 +17828,6 @@
             "DELETE /scim/v2/enterprises/{}/Users/{}",
             "DELETE /scim/v2/organizations/{}/Users/{}",
             "GET /enterprise-installation/{}/server-statistics",
-            "GET /enterprises/{}/apps/installable_organizations",
-            "GET /enterprises/{}/apps/installable_organizations/{}/accessible_repositories",
-            "GET /enterprises/{}/apps/organizations/{}/installations",
-            "GET /enterprises/{}/apps/organizations/{}/installations/{}/repositories",
             "GET /enterprises/{}/consumed-licenses",
             "GET /enterprises/{}/copilot/billing/seats",
             "GET /enterprises/{}/copilot/content_exclusion",
@@ -17898,9 +17893,6 @@
             "GET /scim/v2/organizations/{}/Users",
             "GET /scim/v2/organizations/{}/Users/{}",
             "GET /teams/{}/team-sync/group-mappings",
-            "PATCH /enterprises/{}/apps/organizations/{}/installations/{}/repositories",
-            "PATCH /enterprises/{}/apps/organizations/{}/installations/{}/repositories/add",
-            "PATCH /enterprises/{}/apps/organizations/{}/installations/{}/repositories/remove",
             "PATCH /enterprises/{}/settings/billing/budgets/{}",
             "PATCH /enterprises/{}/settings/billing/cost-centers/{}",
             "PATCH /organizations/{}/org-properties/values",
@@ -17918,7 +17910,6 @@
             "PATCH /scim/v2/enterprises/{}/Users/{}",
             "PATCH /scim/v2/organizations/{}/Users/{}",
             "PATCH /teams/{}/team-sync/group-mappings",
-            "POST /enterprises/{}/apps/organizations/{}/installations",
             "POST /enterprises/{}/copilot/billing/selected_enterprise_teams",
             "POST /enterprises/{}/copilot/billing/selected_users",
             "POST /enterprises/{}/innersource-vulnerabilities/sync",
@@ -17943,7 +17934,7 @@
             "PUT /scim/v2/enterprises/{}/Users/{}",
             "PUT /scim/v2/organizations/{}/Users/{}"
           ],
-          "represented_operations": 1320
+          "represented_operations": 1329
         },
         "ghes-2.22": {
           "documented_operations": 642,
@@ -18289,7 +18280,6 @@
             "DELETE /applications/grants/{}",
             "DELETE /authorizations/{}",
             "DELETE /enterprise/announcement",
-            "DELETE /enterprises/{}/apps/organizations/{}/installations/{}",
             "DELETE /manage/v1/access/ssh",
             "DELETE /orgs/{}/announcement",
             "DELETE /orgs/{}/custom-repository-roles/{}",
@@ -18330,10 +18320,6 @@
             "GET /enterprise/stats/security-products",
             "GET /enterprise/stats/users",
             "GET /enterprises/{}/actions/cache/usage-policy",
-            "GET /enterprises/{}/apps/installable_organizations",
-            "GET /enterprises/{}/apps/installable_organizations/{}/accessible_repositories",
-            "GET /enterprises/{}/apps/organizations/{}/installations",
-            "GET /enterprises/{}/apps/organizations/{}/installations/{}/repositories",
             "GET /enterprises/{}/installation",
             "GET /enterprises/{}/settings/billing/advanced-security",
             "GET /manage/v1/access/ssh",
@@ -18393,9 +18379,6 @@
             "PATCH /authorizations/{}",
             "PATCH /enterprise/announcement",
             "PATCH /enterprises/{}/actions/cache/usage-policy",
-            "PATCH /enterprises/{}/apps/organizations/{}/installations/{}/repositories",
-            "PATCH /enterprises/{}/apps/organizations/{}/installations/{}/repositories/add",
-            "PATCH /enterprises/{}/apps/organizations/{}/installations/{}/repositories/remove",
             "PATCH /organizations/{}/org-properties/values",
             "PATCH /orgs/{}/announcement",
             "PATCH /orgs/{}/custom-repository-roles/{}",
@@ -18419,7 +18402,6 @@
             "POST /admin/pre-receive-hooks",
             "POST /admin/users/{}/authorizations",
             "POST /authorizations",
-            "POST /enterprises/{}/apps/organizations/{}/installations",
             "POST /manage/v1/access/ssh",
             "POST /manage/v1/config/apply",
             "POST /manage/v1/config/init",
@@ -18437,7 +18419,7 @@
             "PUT /scim/v2/enterprises/{}/Groups/{}",
             "PUT /scim/v2/enterprises/{}/Users/{}"
           ],
-          "represented_operations": 936
+          "represented_operations": 945
         }
       },
       "dispatch_covered_operations": [
@@ -18593,6 +18575,12 @@
         "method": "DELETE",
         "path": "/api/v3/enterprises/{enterprise}/announcement",
         "source": "internal/server/gh_enterprise_admin.go"
+      },
+      {
+        "line": 47,
+        "method": "DELETE",
+        "path": "/api/v3/enterprises/{enterprise}/apps/organizations/{org}/installations/{installation_id}",
+        "source": "internal/server/gh_enterprise_apps.go"
       },
       {
         "line": 40,
@@ -20057,6 +20045,30 @@
         "method": "GET",
         "path": "/api/v3/enterprises/{enterprise}/announcement",
         "source": "internal/server/gh_enterprise_admin.go"
+      },
+      {
+        "line": 43,
+        "method": "GET",
+        "path": "/api/v3/enterprises/{enterprise}/apps/installable_organizations",
+        "source": "internal/server/gh_enterprise_apps.go"
+      },
+      {
+        "line": 44,
+        "method": "GET",
+        "path": "/api/v3/enterprises/{enterprise}/apps/installable_organizations/{org}/accessible_repositories",
+        "source": "internal/server/gh_enterprise_apps.go"
+      },
+      {
+        "line": 45,
+        "method": "GET",
+        "path": "/api/v3/enterprises/{enterprise}/apps/organizations/{org}/installations",
+        "source": "internal/server/gh_enterprise_apps.go"
+      },
+      {
+        "line": 48,
+        "method": "GET",
+        "path": "/api/v3/enterprises/{enterprise}/apps/organizations/{org}/installations/{installation_id}/repositories",
+        "source": "internal/server/gh_enterprise_apps.go"
       },
       {
         "line": 34,
@@ -23809,6 +23821,24 @@
         "source": "internal/server/gh_enterprise_admin.go"
       },
       {
+        "line": 49,
+        "method": "PATCH",
+        "path": "/api/v3/enterprises/{enterprise}/apps/organizations/{org}/installations/{installation_id}/repositories",
+        "source": "internal/server/gh_enterprise_apps.go"
+      },
+      {
+        "line": 50,
+        "method": "PATCH",
+        "path": "/api/v3/enterprises/{enterprise}/apps/organizations/{org}/installations/{installation_id}/repositories/add",
+        "source": "internal/server/gh_enterprise_apps.go"
+      },
+      {
+        "line": 51,
+        "method": "PATCH",
+        "path": "/api/v3/enterprises/{enterprise}/apps/organizations/{org}/installations/{installation_id}/repositories/remove",
+        "source": "internal/server/gh_enterprise_apps.go"
+      },
+      {
         "line": 16,
         "method": "PATCH",
         "path": "/api/v3/enterprises/{enterprise}/code-security/configurations/{configuration_id}",
@@ -24383,6 +24413,12 @@
         "method": "POST",
         "path": "/api/v3/enterprises/{enterprise}/actions/runners/{runner_id}/labels",
         "source": "internal/server/gh_enterprise_actions.go"
+      },
+      {
+        "line": 46,
+        "method": "POST",
+        "path": "/api/v3/enterprises/{enterprise}/apps/organizations/{org}/installations",
+        "source": "internal/server/gh_enterprise_apps.go"
       },
       {
         "line": 37,

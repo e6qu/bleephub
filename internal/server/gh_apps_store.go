@@ -257,7 +257,7 @@ func (st *Store) CreateAppE(ownerID int, name, description string, perms map[str
 
 	id := st.NextAppID
 	st.NextAppID++
-	now := time.Now().UTC()
+	now := st.currentTime()
 	slug := slugify(name)
 
 	app := &App{
@@ -450,7 +450,7 @@ func (st *Store) CreateInstallation(appID int, targetType string, targetID int, 
 
 	id := st.NextInstallationID
 	st.NextInstallationID++
-	now := time.Now().UTC()
+	now := st.currentTime()
 
 	// Snapshot the target account's node ID and avatar so the
 	// installation's `account` object can be served without a live
@@ -588,7 +588,7 @@ func (st *Store) UnsuspendInstallation(id int) bool {
 	}
 	inst.SuspendedAt = nil
 	inst.SuspendedBy = nil
-	inst.UpdatedAt = time.Now().UTC()
+	inst.UpdatedAt = st.currentTime()
 	st.persistInstallation(inst)
 	return true
 }
@@ -607,7 +607,7 @@ func (st *Store) SetInstallationRepositorySelection(id int, mode string, repoIDs
 	} else {
 		inst.SelectedRepoIDs = nil
 	}
-	inst.UpdatedAt = time.Now().UTC()
+	inst.UpdatedAt = st.currentTime()
 	st.persistInstallation(inst)
 	return true
 }
@@ -637,7 +637,7 @@ func (st *Store) AddInstallationRepo(id, repoID int) (bool, bool) {
 		}
 	}
 	inst.SelectedRepoIDs = append(inst.SelectedRepoIDs, repoID)
-	inst.UpdatedAt = time.Now().UTC()
+	inst.UpdatedAt = st.currentTime()
 	st.persistInstallation(inst)
 	return true, true
 }
@@ -655,7 +655,7 @@ func (st *Store) RemoveInstallationRepo(id, repoID int) (bool, bool) {
 	for i, r := range inst.SelectedRepoIDs {
 		if r == repoID {
 			inst.SelectedRepoIDs = append(inst.SelectedRepoIDs[:i], inst.SelectedRepoIDs[i+1:]...)
-			inst.UpdatedAt = time.Now().UTC()
+			inst.UpdatedAt = st.currentTime()
 			st.persistInstallation(inst)
 			return true, true
 		}

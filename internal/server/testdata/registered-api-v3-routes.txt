@@ -15,6 +15,7 @@ DELETE /api/v3/enterprises/{enterprise}/actions/runners/{runner_id}
 DELETE /api/v3/enterprises/{enterprise}/actions/runners/{runner_id}/labels
 DELETE /api/v3/enterprises/{enterprise}/actions/runners/{runner_id}/labels/{name}
 DELETE /api/v3/enterprises/{enterprise}/announcement
+DELETE /api/v3/enterprises/{enterprise}/apps/organizations/{org}/installations/{installation_id}
 DELETE /api/v3/enterprises/{enterprise}/audit-log/streams/{stream_id}
 DELETE /api/v3/enterprises/{enterprise}/code-security/configurations/{configuration_id}
 DELETE /api/v3/enterprises/{enterprise}/copilot/policies/coding_agent/organizations
@@ -259,6 +260,10 @@ GET /api/v3/enterprises/{enterprise}/actions/runners/downloads
 GET /api/v3/enterprises/{enterprise}/actions/runners/{runner_id}
 GET /api/v3/enterprises/{enterprise}/actions/runners/{runner_id}/labels
 GET /api/v3/enterprises/{enterprise}/announcement
+GET /api/v3/enterprises/{enterprise}/apps/installable_organizations
+GET /api/v3/enterprises/{enterprise}/apps/installable_organizations/{org}/accessible_repositories
+GET /api/v3/enterprises/{enterprise}/apps/organizations/{org}/installations
+GET /api/v3/enterprises/{enterprise}/apps/organizations/{org}/installations/{installation_id}/repositories
 GET /api/v3/enterprises/{enterprise}/audit-log
 GET /api/v3/enterprises/{enterprise}/audit-log/stream-key
 GET /api/v3/enterprises/{enterprise}/audit-log/streams
@@ -884,6 +889,9 @@ PATCH /api/v3/applications/{client_id}/token
 PATCH /api/v3/enterprises/{enterprise}/actions/hosted-runners/{hosted_runner_id}
 PATCH /api/v3/enterprises/{enterprise}/actions/runner-groups/{runner_group_id}
 PATCH /api/v3/enterprises/{enterprise}/announcement
+PATCH /api/v3/enterprises/{enterprise}/apps/organizations/{org}/installations/{installation_id}/repositories
+PATCH /api/v3/enterprises/{enterprise}/apps/organizations/{org}/installations/{installation_id}/repositories/add
+PATCH /api/v3/enterprises/{enterprise}/apps/organizations/{org}/installations/{installation_id}/repositories/remove
 PATCH /api/v3/enterprises/{enterprise}/code-security/configurations/{configuration_id}
 PATCH /api/v3/enterprises/{enterprise}/code_security_and_analysis
 PATCH /api/v3/enterprises/{enterprise}/dependabot/repository-access
@@ -980,6 +988,7 @@ POST /api/v3/enterprises/{enterprise}/actions/runners/generate-jitconfig
 POST /api/v3/enterprises/{enterprise}/actions/runners/registration-token
 POST /api/v3/enterprises/{enterprise}/actions/runners/remove-token
 POST /api/v3/enterprises/{enterprise}/actions/runners/{runner_id}/labels
+POST /api/v3/enterprises/{enterprise}/apps/organizations/{org}/installations
 POST /api/v3/enterprises/{enterprise}/audit-log/streams
 POST /api/v3/enterprises/{enterprise}/code-security/configurations
 POST /api/v3/enterprises/{enterprise}/code-security/configurations/{configuration_id}/attach
