@@ -64,6 +64,9 @@ func TestOrgInvitationsLifecycle(t *testing.T) {
 	if inv["failed_at"] != nil {
 		t.Fatalf("fresh invitation has failed_at = %v", inv["failed_at"])
 	}
+	if inv["created_at"] != fixedTestTime.Format(time.RFC3339) {
+		t.Fatalf("created_at = %v, want fixed store time %s", inv["created_at"], fixedTestTime.Format(time.RFC3339))
+	}
 	invID := int(inv["id"].(float64))
 
 	// The invitation creates the pending membership the invitee accepts.

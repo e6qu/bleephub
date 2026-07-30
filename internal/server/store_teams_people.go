@@ -94,7 +94,7 @@ func (st *Store) CreateOrgInvitation(org *Org, inviter *User, invitee *User, ema
 		InviterID: inviter.ID,
 		TeamIDs:   append([]int{}, teamIDs...),
 		Source:    "member",
-		CreatedAt: time.Now().UTC(),
+		CreatedAt: st.currentTime(),
 	}
 	st.NextOrgInvitationID++
 	if invitee != nil {
@@ -175,7 +175,7 @@ func (st *Store) consumeOrgInvitationLocked(inv *OrgInvitation) {
 		}
 		if !slices.Contains(team.MemberIDs, inv.UserID) {
 			team.MemberIDs = append(team.MemberIDs, inv.UserID)
-			team.UpdatedAt = time.Now().UTC()
+			team.UpdatedAt = st.currentTime()
 			if st.persist != nil {
 				st.persist.MustPut("teams", strconv.Itoa(team.ID), team)
 			}
@@ -317,7 +317,7 @@ func (st *Store) BlockUserForOrg(orgLogin string, userID int) {
 		st.OrgBlocks[orgLogin] = map[int]time.Time{}
 	}
 	if _, ok := st.OrgBlocks[orgLogin][userID]; !ok {
-		st.OrgBlocks[orgLogin][userID] = time.Now().UTC()
+		st.OrgBlocks[orgLogin][userID] = st.currentTime()
 	}
 	if st.persist != nil {
 		st.persist.MustPut("org_blocks", orgLogin, st.OrgBlocks[orgLogin])
