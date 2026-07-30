@@ -39,7 +39,7 @@
     "@vitejs/plugin-react": "^6.0.4",
     "@vitest/coverage-v8": "4.1.10",
     "jsdom": "29.1.1",
-    "jscpd": "5.0.12",
+    "jscpd": "5.0.14",
     "knip": "6.29.0",
     "octokit": "^5.0.5",
     "tailwindcss": "^4.3.3",
