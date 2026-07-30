@@ -88,6 +88,7 @@ func splitCommaList(v string) []string {
 }
 
 func (s *Server) registerGHEnterpriseRoutes() {
+	s.registerGHEnterpriseAdminRoutes()
 	s.registerGHEnterpriseTeamRoutes()
 	s.registerGHEnterpriseCodeSecurityRoutes()
 	s.registerGHEnterpriseActionsRoutes()

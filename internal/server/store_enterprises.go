@@ -79,6 +79,11 @@ type EnterpriseCodeSecurityAttachment struct {
 // bucket; zero-value fields fall back to defaultEnterpriseSettings values on
 // first access paths that seed them in NewStore.
 type EnterpriseSettings struct {
+	// Enterprise administration settings.
+	Announcement              *EnterpriseAnnouncement `json:"announcement,omitempty"`
+	AccessRestrictionsEnabled bool                    `json:"access_restrictions_enabled"`
+	CodeSecurityAndAnalysis   EnterpriseCodeSecurity  `json:"code_security_and_analysis"`
+
 	// Dependabot repository access across organizations.
 	DependabotAccessibleRepoIDs []int  `json:"dependabot_accessible_repo_ids"`
 	DependabotDefaultLevel      string `json:"dependabot_default_level"` // "" = never set (null), else public|internal
@@ -111,6 +116,27 @@ type EnterpriseSettings struct {
 	// Copilot coding agent policy. "" = never set.
 	CopilotCodingAgentPolicy string   `json:"copilot_coding_agent_policy"`
 	CopilotCodingAgentOrgs   []string `json:"copilot_coding_agent_orgs"`
+}
+
+// EnterpriseAnnouncement is the enterprise-wide banner returned by the
+// announcement API. ExpiresAt is kept as the caller's RFC3339 representation
+// because GitHub returns an ISO-8601 string and null has distinct semantics.
+type EnterpriseAnnouncement struct {
+	Announcement    string  `json:"announcement"`
+	ExpiresAt       *string `json:"expires_at"`
+	UserDismissible bool    `json:"user_dismissible"`
+}
+
+// EnterpriseCodeSecurity is the legacy enterprise security policy. GitHub
+// keeps this API for compatibility alongside code-security configurations.
+type EnterpriseCodeSecurity struct {
+	AdvancedSecurityEnabledForNewRepositories                  bool    `json:"advanced_security_enabled_for_new_repositories"`
+	AdvancedSecurityEnabledNewUserNamespaceRepos               bool    `json:"advanced_security_enabled_new_user_namespace_repos"`
+	DependabotAlertsEnabledForNewRepositories                  bool    `json:"dependabot_alerts_enabled_for_new_repositories"`
+	SecretScanningEnabledForNewRepositories                    bool    `json:"secret_scanning_enabled_for_new_repositories"`
+	SecretScanningPushProtectionEnabledForNewRepositories      bool    `json:"secret_scanning_push_protection_enabled_for_new_repositories"`
+	SecretScanningPushProtectionCustomLink                     *string `json:"secret_scanning_push_protection_custom_link"`
+	SecretScanningNonProviderPatternsEnabledForNewRepositories bool    `json:"secret_scanning_non_provider_patterns_enabled_for_new_repositories"`
 }
 
 func defaultEnterpriseSettings() *EnterpriseSettings {

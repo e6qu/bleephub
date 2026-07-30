@@ -63,6 +63,16 @@ func TestEnterpriseStatePersistenceReload(t *testing.T) {
 	st1.SetEnterpriseCopilotCodingAgentPolicy("enabled_for_selected_orgs")
 	st1.AddEnterpriseCopilotCodingAgentOrgs([]string{"reload-org"})
 	st1.mu.Lock()
+	expiry := "2030-01-02T03:04:05Z"
+	customLink := "https://example.test/security"
+	st1.EnterpriseSettings.Announcement = &EnterpriseAnnouncement{
+		Announcement: "Persistent announcement", ExpiresAt: &expiry, UserDismissible: true,
+	}
+	st1.EnterpriseSettings.AccessRestrictionsEnabled = true
+	st1.EnterpriseSettings.CodeSecurityAndAnalysis = EnterpriseCodeSecurity{
+		AdvancedSecurityEnabledForNewRepositories: true,
+		SecretScanningPushProtectionCustomLink:    &customLink,
+	}
 	st1.EnterpriseSettings.OIDCIncludeEnterpriseSlug = true
 	st1.EnterpriseSettings.ActionsEnabledOrganizations = "selected"
 	st1.EnterpriseSettings.ActionsAllowedActions = "selected"
@@ -152,6 +162,14 @@ func TestEnterpriseStatePersistenceReload(t *testing.T) {
 	}
 
 	s := st2.EnterpriseSettings
+	if s.Announcement == nil || s.Announcement.Announcement != "Persistent announcement" ||
+		s.Announcement.ExpiresAt == nil || *s.Announcement.ExpiresAt != "2030-01-02T03:04:05Z" ||
+		!s.Announcement.UserDismissible || !s.AccessRestrictionsEnabled ||
+		!s.CodeSecurityAndAnalysis.AdvancedSecurityEnabledForNewRepositories ||
+		s.CodeSecurityAndAnalysis.SecretScanningPushProtectionCustomLink == nil ||
+		*s.CodeSecurityAndAnalysis.SecretScanningPushProtectionCustomLink != "https://example.test/security" {
+		t.Errorf("enterprise administration settings = %+v", s)
+	}
 	if len(s.DependabotAccessibleRepoIDs) != 1 || s.DependabotAccessibleRepoIDs[0] != repo.ID {
 		t.Errorf("dependabot access = %v", s.DependabotAccessibleRepoIDs)
 	}

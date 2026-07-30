@@ -17804,7 +17804,6 @@
         "ghec": {
           "documented_operations": 1458,
           "missing_operations": [
-            "DELETE /enterprises/{}/announcement",
             "DELETE /enterprises/{}/apps/organizations/{}/installations/{}",
             "DELETE /enterprises/{}/audit-log/streams/{}",
             "DELETE /enterprises/{}/copilot/billing/selected_enterprise_teams",
@@ -17836,7 +17835,6 @@
             "DELETE /scim/v2/enterprises/{}/Users/{}",
             "DELETE /scim/v2/organizations/{}/Users/{}",
             "GET /enterprise-installation/{}/server-statistics",
-            "GET /enterprises/{}/announcement",
             "GET /enterprises/{}/apps/installable_organizations",
             "GET /enterprises/{}/apps/installable_organizations/{}/accessible_repositories",
             "GET /enterprises/{}/apps/organizations/{}/installations",
@@ -17848,7 +17846,6 @@
             "GET /enterprises/{}/bypass-requests/push-rules",
             "GET /enterprises/{}/bypass-requests/secret-scanning",
             "GET /enterprises/{}/code-scanning/alerts",
-            "GET /enterprises/{}/code_security_and_analysis",
             "GET /enterprises/{}/consumed-licenses",
             "GET /enterprises/{}/copilot/billing/seats",
             "GET /enterprises/{}/copilot/content_exclusion",
@@ -17929,11 +17926,9 @@
             "GET /scim/v2/organizations/{}/Users",
             "GET /scim/v2/organizations/{}/Users/{}",
             "GET /teams/{}/team-sync/group-mappings",
-            "PATCH /enterprises/{}/announcement",
             "PATCH /enterprises/{}/apps/organizations/{}/installations/{}/repositories",
             "PATCH /enterprises/{}/apps/organizations/{}/installations/{}/repositories/add",
             "PATCH /enterprises/{}/apps/organizations/{}/installations/{}/repositories/remove",
-            "PATCH /enterprises/{}/code_security_and_analysis",
             "PATCH /enterprises/{}/network-configurations/{}",
             "PATCH /enterprises/{}/org-properties/schema",
             "PATCH /enterprises/{}/org-properties/values",
@@ -17957,16 +17952,10 @@
             "PATCH /scim/v2/enterprises/{}/Users/{}",
             "PATCH /scim/v2/organizations/{}/Users/{}",
             "PATCH /teams/{}/team-sync/group-mappings",
-            "POST /enterprises/{}/access-restrictions/disable",
-            "POST /enterprises/{}/access-restrictions/enable",
             "POST /enterprises/{}/apps/organizations/{}/installations",
             "POST /enterprises/{}/audit-log/streams",
             "POST /enterprises/{}/copilot/billing/selected_enterprise_teams",
             "POST /enterprises/{}/copilot/billing/selected_users",
-            "POST /enterprises/{}/credential-authorizations/revoke-all",
-            "POST /enterprises/{}/credential-authorizations/revoke-credential-type",
-            "POST /enterprises/{}/credential-authorizations/{}/revoke",
-            "POST /enterprises/{}/credential-authorizations/{}/revoke-credential-type",
             "POST /enterprises/{}/innersource-vulnerabilities/sync",
             "POST /enterprises/{}/network-configurations",
             "POST /enterprises/{}/rulesets",
@@ -17975,7 +17964,6 @@
             "POST /enterprises/{}/settings/billing/cost-centers",
             "POST /enterprises/{}/settings/billing/cost-centers/{}/resource",
             "POST /enterprises/{}/settings/billing/reports",
-            "POST /enterprises/{}/{}/{}",
             "POST /orgs/{}/custom-repository-roles",
             "POST /orgs/{}/custom_roles",
             "POST /orgs/{}/organization-roles",
@@ -17998,7 +17986,7 @@
             "PUT /scim/v2/enterprises/{}/Users/{}",
             "PUT /scim/v2/organizations/{}/Users/{}"
           ],
-          "represented_operations": 1265
+          "represented_operations": 1277
         },
         "ghes-2.22": {
           "documented_operations": 642,
@@ -18202,7 +18190,6 @@
             "GET /enterprises/{}/actions/cache/usage-policy",
             "GET /enterprises/{}/audit-log",
             "GET /enterprises/{}/code-scanning/alerts",
-            "GET /enterprises/{}/code_security_and_analysis",
             "GET /enterprises/{}/secret-scanning/alerts",
             "GET /enterprises/{}/settings/billing/advanced-security",
             "GET /manage/v1/access/ssh",
@@ -18274,7 +18261,6 @@
             "PATCH /authorizations/{}",
             "PATCH /enterprise/announcement",
             "PATCH /enterprises/{}/actions/cache/usage-policy",
-            "PATCH /enterprises/{}/code_security_and_analysis",
             "PATCH /orgs/{}/announcement",
             "PATCH /orgs/{}/custom-repository-roles/{}",
             "PATCH /orgs/{}/pre-receive-hooks/{}",
@@ -18298,7 +18284,6 @@
             "POST /admin/pre-receive-hooks",
             "POST /admin/users/{}/authorizations",
             "POST /authorizations",
-            "POST /enterprises/{}/{}/{}",
             "POST /manage/v1/access/ssh",
             "POST /manage/v1/config/apply",
             "POST /manage/v1/config/init",
@@ -18336,7 +18321,7 @@
             "PUT /setup/api/settings",
             "PUT /teams/{}/projects/{}"
           ],
-          "represented_operations": 780
+          "represented_operations": 783
         },
         "ghes-3.21": {
           "documented_operations": 1092,
@@ -18405,7 +18390,6 @@
             "GET /enterprises/{}/bypass-requests/push-rules",
             "GET /enterprises/{}/bypass-requests/secret-scanning",
             "GET /enterprises/{}/code-scanning/alerts",
-            "GET /enterprises/{}/code_security_and_analysis",
             "GET /enterprises/{}/dismissal-requests/secret-scanning",
             "GET /enterprises/{}/installation",
             "GET /enterprises/{}/org-properties/schema",
@@ -18478,7 +18462,6 @@
             "PATCH /enterprises/{}/apps/organizations/{}/installations/{}/repositories",
             "PATCH /enterprises/{}/apps/organizations/{}/installations/{}/repositories/add",
             "PATCH /enterprises/{}/apps/organizations/{}/installations/{}/repositories/remove",
-            "PATCH /enterprises/{}/code_security_and_analysis",
             "PATCH /enterprises/{}/org-properties/schema",
             "PATCH /enterprises/{}/org-properties/values",
             "PATCH /enterprises/{}/properties/schema",
@@ -18508,7 +18491,6 @@
             "POST /authorizations",
             "POST /enterprises/{}/apps/organizations/{}/installations",
             "POST /enterprises/{}/audit-log/streams",
-            "POST /enterprises/{}/{}/{}",
             "POST /manage/v1/access/ssh",
             "POST /manage/v1/config/apply",
             "POST /manage/v1/config/init",
@@ -18530,7 +18512,7 @@
             "PUT /scim/v2/enterprises/{}/Groups/{}",
             "PUT /scim/v2/enterprises/{}/Users/{}"
           ],
-          "represented_operations": 904
+          "represented_operations": 907
         }
       },
       "dispatch_covered_operations": [
@@ -18680,6 +18662,12 @@
         "method": "DELETE",
         "path": "/api/v3/enterprises/{enterprise}/actions/runners/{runner_id}/labels/{name}",
         "source": "internal/server/gh_enterprise_actions.go"
+      },
+      {
+        "line": 19,
+        "method": "DELETE",
+        "path": "/api/v3/enterprises/{enterprise}/announcement",
+        "source": "internal/server/gh_enterprise_admin.go"
       },
       {
         "line": 17,
@@ -20104,6 +20092,12 @@
         "source": "internal/server/gh_enterprise_actions.go"
       },
       {
+        "line": 17,
+        "method": "GET",
+        "path": "/api/v3/enterprises/{enterprise}/announcement",
+        "source": "internal/server/gh_enterprise_admin.go"
+      },
+      {
         "line": 12,
         "method": "GET",
         "path": "/api/v3/enterprises/{enterprise}/code-security/configurations",
@@ -20126,6 +20120,12 @@
         "method": "GET",
         "path": "/api/v3/enterprises/{enterprise}/code-security/configurations/{configuration_id}/repositories",
         "source": "internal/server/gh_enterprise_code_security.go"
+      },
+      {
+        "line": 24,
+        "method": "GET",
+        "path": "/api/v3/enterprises/{enterprise}/code_security_and_analysis",
+        "source": "internal/server/gh_enterprise_admin.go"
       },
       {
         "line": 13,
@@ -23710,10 +23710,22 @@
         "source": "internal/server/gh_enterprise_actions.go"
       },
       {
+        "line": 18,
+        "method": "PATCH",
+        "path": "/api/v3/enterprises/{enterprise}/announcement",
+        "source": "internal/server/gh_enterprise_admin.go"
+      },
+      {
         "line": 16,
         "method": "PATCH",
         "path": "/api/v3/enterprises/{enterprise}/code-security/configurations/{configuration_id}",
         "source": "internal/server/gh_enterprise_code_security.go"
+      },
+      {
+        "line": 25,
+        "method": "PATCH",
+        "path": "/api/v3/enterprises/{enterprise}/code_security_and_analysis",
+        "source": "internal/server/gh_enterprise_admin.go"
       },
       {
         "line": 11,
@@ -24190,6 +24202,18 @@
         "source": "internal/server/gh_meta_extras.go"
       },
       {
+        "line": 22,
+        "method": "POST",
+        "path": "/api/v3/enterprises/{enterprise}/access-restrictions/disable",
+        "source": "internal/server/gh_enterprise_admin.go"
+      },
+      {
+        "line": 21,
+        "method": "POST",
+        "path": "/api/v3/enterprises/{enterprise}/access-restrictions/enable",
+        "source": "internal/server/gh_enterprise_admin.go"
+      },
+      {
         "line": 66,
         "method": "POST",
         "path": "/api/v3/enterprises/{enterprise}/actions/hosted-runners",
@@ -24250,6 +24274,30 @@
         "source": "internal/server/gh_enterprise_copilot.go"
       },
       {
+        "line": 28,
+        "method": "POST",
+        "path": "/api/v3/enterprises/{enterprise}/credential-authorizations/revoke-all",
+        "source": "internal/server/gh_enterprise_admin.go"
+      },
+      {
+        "line": 29,
+        "method": "POST",
+        "path": "/api/v3/enterprises/{enterprise}/credential-authorizations/revoke-credential-type",
+        "source": "internal/server/gh_enterprise_admin.go"
+      },
+      {
+        "line": 30,
+        "method": "POST",
+        "path": "/api/v3/enterprises/{enterprise}/credential-authorizations/{username}/revoke",
+        "source": "internal/server/gh_enterprise_admin.go"
+      },
+      {
+        "line": 31,
+        "method": "POST",
+        "path": "/api/v3/enterprises/{enterprise}/credential-authorizations/{username}/revoke-credential-type",
+        "source": "internal/server/gh_enterprise_admin.go"
+      },
+      {
         "line": 12,
         "method": "POST",
         "path": "/api/v3/enterprises/{enterprise}/teams",
@@ -24278,6 +24326,12 @@
         "method": "POST",
         "path": "/api/v3/enterprises/{enterprise}/teams/{team_slug}/organizations/remove",
         "source": "internal/server/gh_enterprise_teams.go"
+      },
+      {
+        "line": 26,
+        "method": "POST",
+        "path": "/api/v3/enterprises/{enterprise}/{security_product}/{enablement}",
+        "source": "internal/server/gh_enterprise_admin.go"
       },
       {
         "line": 16,
