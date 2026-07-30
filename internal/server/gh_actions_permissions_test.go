@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"strconv"
 	"testing"
-	"time"
 )
 
 func TestOrgActionsPermissions_ArtifactAndLogRetention(t *testing.T) {
@@ -217,7 +216,7 @@ func TestOrgCacheUsage_ComputedFromRealCacheStore(t *testing.T) {
 		as.nextCacheID++
 		as.caches[id] = &CacheEntry{
 			ID: id, Repo: repo, Key: key, Version: "v1",
-			Size: size, Finalized: true, CreatedAt: time.Now(),
+			Size: size, Finalized: true, CreatedAt: fixedTestTime,
 		}
 		as.cacheIndex[cacheLookupKey(repo, key, "v1")] = id
 		as.mu.Unlock()

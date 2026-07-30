@@ -359,7 +359,7 @@ func TestInterruptedRepoDeleteIsFinishedOnRestart(t *testing.T) {
 	if err := p1.Put(pendingDeletionsBucket, pendingRepoDeletionKey(repo.FullName), pendingDeletion{
 		Kind:      "repo",
 		Name:      repo.FullName,
-		StartedAt: time.Now().UTC(),
+		StartedAt: fixedTestTime.UTC(),
 	}); err != nil {
 		t.Fatalf("record deletion intent: %v", err)
 	}
@@ -423,7 +423,7 @@ func TestInterruptedOrgDeleteDoesNotPoisonBoot(t *testing.T) {
 	if err := p1.Put(pendingDeletionsBucket, pendingOrgDeletionKey(org.Login), pendingDeletion{
 		Kind:      "org",
 		Name:      org.Login,
-		StartedAt: time.Now().UTC(),
+		StartedAt: fixedTestTime.UTC(),
 	}); err != nil {
 		t.Fatalf("record deletion intent: %v", err)
 	}

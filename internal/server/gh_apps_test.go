@@ -14,10 +14,16 @@ import (
 	"time"
 )
 
+func newAppTestStore() *Store {
+	store := NewStore()
+	store.clockNow = func() time.Time { return fixedTestTime }
+	return store
+}
+
 // --- Unit tests (store + JSON Web Token) ---
 
 func TestAppStoreCreateAndGet(t *testing.T) {
-	st := NewStore()
+	st := newAppTestStore()
 	app := st.CreateApp(1, "My Test App", "A test app", map[string]string{"contents": "read"}, []string{"push"})
 
 	if app.ID == 0 {
@@ -58,7 +64,7 @@ func TestAppStoreCreateAndGet(t *testing.T) {
 }
 
 func TestAppPermissionsAlwaysIncludeIndependentReadMetadata(t *testing.T) {
-	st := NewStore()
+	st := newAppTestStore()
 	requested := map[string]string{"contents": "read", "metadata": "admin"}
 	app := st.CreateApp(1, "Metadata App", "", requested, nil)
 	inst := st.CreateInstallation(app.ID, "User", 1, "admin", app.Permissions, nil)
@@ -81,7 +87,7 @@ func TestAppPermissionsAlwaysIncludeIndependentReadMetadata(t *testing.T) {
 }
 
 func TestInstallationStoreCreateAndList(t *testing.T) {
-	st := NewStore()
+	st := newAppTestStore()
 	app := st.CreateApp(1, "Install App", "", nil, nil)
 
 	inst := st.CreateInstallation(app.ID, "User", 42, "testuser", map[string]string{"issues": "write"}, []string{"issues"})
@@ -128,7 +134,7 @@ func TestInstallationStoreCreateAndList(t *testing.T) {
 }
 
 func TestInstallationTokenGeneration(t *testing.T) {
-	st := NewStore()
+	st := newAppTestStore()
 	app := st.CreateApp(1, "Token App", "", nil, nil)
 	inst := st.CreateInstallation(app.ID, "User", 1, "admin", nil, nil)
 
@@ -154,7 +160,7 @@ func TestInstallationTokenGeneration(t *testing.T) {
 }
 
 func TestInstallationTokenExpiry(t *testing.T) {
-	st := NewStore()
+	st := newAppTestStore()
 	app := st.CreateApp(1, "Expiry App", "", nil, nil)
 	inst := st.CreateInstallation(app.ID, "User", 1, "admin", nil, nil)
 
@@ -162,7 +168,7 @@ func TestInstallationTokenExpiry(t *testing.T) {
 
 	// Force expire
 	st.mu.Lock()
-	st.InstallationTokens[token.Token].ExpiresAt = time.Now().Add(-1 * time.Hour)
+	st.InstallationTokens[token.Token].ExpiresAt = fixedTestTime.Add(-1 * time.Hour)
 	st.mu.Unlock()
 
 	tok, _ := st.LookupInstallationToken(token.Token)
@@ -172,7 +178,7 @@ func TestInstallationTokenExpiry(t *testing.T) {
 }
 
 func TestManifestCodeOneTimeUse(t *testing.T) {
-	st := NewStore()
+	st := newAppTestStore()
 	app := st.CreateApp(1, "Manifest App", "", nil, nil)
 
 	code := st.RegisterManifestCode(app.ID)
@@ -194,10 +200,10 @@ func TestManifestCodeOneTimeUse(t *testing.T) {
 }
 
 func TestJSONWebTokenSignAndVerify(t *testing.T) {
-	st := NewStore()
+	st := newAppTestStore()
 	app := st.CreateApp(1, "JSON Web Token App", "", nil, nil)
 
-	jwt, err := signAppJWT(app.PEMPrivateKey, app.ID, time.Now())
+	jwt, err := signAppJWT(app.PEMPrivateKey, app.ID, fixedTestTime)
 	if err != nil {
 		t.Fatalf("signAppJSONWebToken: %v", err)
 	}
@@ -212,7 +218,7 @@ func TestJSONWebTokenSignAndVerify(t *testing.T) {
 }
 
 func TestJSONWebTokenAcceptsOctokitAndClientIDIssuers(t *testing.T) {
-	st := NewStore()
+	st := newAppTestStore()
 	app := st.CreateApp(1, "Issuer fidelity App", "", nil, nil)
 
 	for name, issuer := range map[string]string{
@@ -220,7 +226,7 @@ func TestJSONWebTokenAcceptsOctokitAndClientIDIssuers(t *testing.T) {
 		"quoted client id":            fmt.Sprintf("%q", app.ClientID),
 	} {
 		t.Run(name, func(t *testing.T) {
-			token, err := signAppJWTWithIssuer(app.PEMPrivateKey, issuer, time.Now())
+			token, err := signAppJWTWithIssuer(app.PEMPrivateKey, issuer, fixedTestTime)
 			if err != nil {
 				t.Fatalf("sign JWT: %v", err)
 			}
@@ -235,7 +241,7 @@ func TestJSONWebTokenAcceptsOctokitAndClientIDIssuers(t *testing.T) {
 	}
 
 	for _, issuer := range []string{"null", "true", "1.5", `{}`, `""`} {
-		token, err := signAppJWTWithIssuer(app.PEMPrivateKey, issuer, time.Now())
+		token, err := signAppJWTWithIssuer(app.PEMPrivateKey, issuer, fixedTestTime)
 		if err != nil {
 			t.Fatalf("sign invalid issuer %s: %v", issuer, err)
 		}
@@ -246,11 +252,11 @@ func TestJSONWebTokenAcceptsOctokitAndClientIDIssuers(t *testing.T) {
 }
 
 func TestJSONWebTokenExpiredRejected(t *testing.T) {
-	st := NewStore()
+	st := newAppTestStore()
 	app := st.CreateApp(1, "Expired JSON Web Token App", "", nil, nil)
 
 	// Sign with a time in the past
-	jwt, err := signAppJWT(app.PEMPrivateKey, app.ID, time.Now().Add(-20*time.Minute))
+	jwt, err := signAppJWT(app.PEMPrivateKey, app.ID, fixedTestTime.Add(-20*time.Minute))
 	if err != nil {
 		t.Fatalf("signAppJSONWebToken: %v", err)
 	}
@@ -269,7 +275,7 @@ func TestJSONWebTokenExpiredRejected(t *testing.T) {
 // distance between iat and exp is NOT constrained — a client that backdates
 // iat for clock skew (ghinstallation sets iat=now-60) must stay valid.
 func TestJSONWebTokenExpWindow(t *testing.T) {
-	st := NewStore()
+	st := newAppTestStore()
 	app := st.CreateApp(1, "Long JSON Web Token App", "", nil, nil)
 
 	block, _ := pemDecode(app.PEMPrivateKey)
@@ -288,7 +294,7 @@ func TestJSONWebTokenExpWindow(t *testing.T) {
 		return signInput + "." + testBase64urlEncode(sig)
 	}
 
-	now := time.Now().Unix()
+	now := fixedTestTime.Unix()
 
 	// exp beyond now+600+drift → rejected.
 	if _, err := st.parseAndVerifyAppJWT(mintJSONWebToken(now, now+700)); err == nil {
@@ -310,11 +316,11 @@ func TestJSONWebTokenExpWindow(t *testing.T) {
 }
 
 func TestJSONWebTokenWrongAppIdentifier(t *testing.T) {
-	st := NewStore()
+	st := newAppTestStore()
 	app := st.CreateApp(1, "Wrong ID App", "", nil, nil)
 
 	// Sign with the wrong app identifier.
-	jwt, err := signAppJWT(app.PEMPrivateKey, 9999, time.Now())
+	jwt, err := signAppJWT(app.PEMPrivateKey, 9999, fixedTestTime)
 	if err != nil {
 		t.Fatalf("signAppJSONWebToken: %v", err)
 	}
@@ -329,10 +335,10 @@ func TestJSONWebTokenWrongAppIdentifier(t *testing.T) {
 }
 
 func TestJSONWebTokenInvalidSignature(t *testing.T) {
-	st := NewStore()
+	st := newAppTestStore()
 	app := st.CreateApp(1, "Bad Sig App", "", nil, nil)
 
-	jwt, err := signAppJWT(app.PEMPrivateKey, app.ID, time.Now())
+	jwt, err := signAppJWT(app.PEMPrivateKey, app.ID, fixedTestTime)
 	if err != nil {
 		t.Fatalf("signAppJSONWebToken: %v", err)
 	}
@@ -355,7 +361,7 @@ func TestJSONWebTokenInvalidSignature(t *testing.T) {
 }
 
 func TestDeleteInstallation(t *testing.T) {
-	st := NewStore()
+	st := newAppTestStore()
 	app := st.CreateApp(1, "Del App", "", nil, nil)
 	inst := st.CreateInstallation(app.ID, "User", 1, "admin", nil, nil)
 
@@ -403,7 +409,7 @@ func TestGetAuthenticatedApp(t *testing.T) {
 	pem := appData["pem"].(string)
 
 	// Sign the JSON Web Token.
-	jwt, err := signAppJWT(pem, appID, time.Now())
+	jwt, err := signAppJWT(pem, appID, fixedTestTime)
 	if err != nil {
 		t.Fatalf("signAppJSONWebToken: %v", err)
 	}
@@ -489,7 +495,7 @@ func TestListAppInstallationsHTTP(t *testing.T) {
 	installGitHubAppViaBrowser(t, appData["slug"].(string), "admin", "all")
 
 	// List via a JSON Web Token.
-	jwt, _ := signAppJWT(pem, appID, time.Now())
+	jwt, _ := signAppJWT(pem, appID, fixedTestTime)
 	req, _ := http.NewRequest("GET", testBaseURL+"/api/v3/app/installations", nil)
 	req.Header.Set("Authorization", "Bearer "+jwt)
 	httpResp, err := http.DefaultClient.Do(req)
@@ -517,7 +523,7 @@ func TestCreateInstallationTokenHTTP(t *testing.T) {
 	instID := int(instData["id"].(float64))
 
 	// Create an installation token via a JSON Web Token.
-	jwt, _ := signAppJWT(pemKey, appID, time.Now())
+	jwt, _ := signAppJWT(pemKey, appID, fixedTestTime)
 	req, _ := http.NewRequest("POST", fmt.Sprintf("%s/api/v3/app/installations/%d/access_tokens", testBaseURL, instID), nil)
 	req.Header.Set("Authorization", "Bearer "+jwt)
 	httpResp, err := http.DefaultClient.Do(req)
@@ -554,7 +560,7 @@ func TestInstallationTokenAuth(t *testing.T) {
 	instData := installGitHubAppViaBrowser(t, appData["slug"].(string), "admin", "all")
 	instID := int(instData["id"].(float64))
 
-	jwt, _ := signAppJWT(pemKey, appID, time.Now())
+	jwt, _ := signAppJWT(pemKey, appID, fixedTestTime)
 	req, _ := http.NewRequest("POST", fmt.Sprintf("%s/api/v3/app/installations/%d/access_tokens", testBaseURL, instID), nil)
 	req.Header.Set("Authorization", "Bearer "+jwt)
 	httpResp, _ := http.DefaultClient.Do(req)
@@ -592,7 +598,7 @@ func TestInstallationTokenWrongApp(t *testing.T) {
 	instAID := int(instData["id"].(float64))
 
 	// Try to create a token for app A's installation using app B's JSON Web Token.
-	jwt, _ := signAppJWT(appBPEM, appBID, time.Now())
+	jwt, _ := signAppJWT(appBPEM, appBID, fixedTestTime)
 	req, _ := http.NewRequest("POST", fmt.Sprintf("%s/api/v3/app/installations/%d/access_tokens", testBaseURL, instAID), nil)
 	req.Header.Set("Authorization", "Bearer "+jwt)
 	httpResp, err := http.DefaultClient.Do(req)
@@ -616,7 +622,7 @@ func TestGetRepoInstallationHTTP(t *testing.T) {
 
 	appData := createGitHubAppViaManifest(t, "Repo Inst App", nil, nil)
 	appID := int(appData["id"].(float64))
-	appJWT, err := signAppJWT(appData["pem"].(string), appID, time.Now())
+	appJWT, err := signAppJWT(appData["pem"].(string), appID, fixedTestTime)
 	if err != nil {
 		t.Fatalf("sign app JWT: %v", err)
 	}
@@ -658,7 +664,7 @@ func TestGetRepoInstallationHTTP(t *testing.T) {
 	patResp.Body.Close()
 
 	otherApp := createGitHubAppViaManifest(t, "Other Repo Inst App", nil, nil)
-	otherJWT, err := signAppJWT(otherApp["pem"].(string), int(otherApp["id"].(float64)), time.Now())
+	otherJWT, err := signAppJWT(otherApp["pem"].(string), int(otherApp["id"].(float64)), fixedTestTime)
 	if err != nil {
 		t.Fatalf("sign other app JWT: %v", err)
 	}
@@ -679,7 +685,7 @@ func TestDeleteInstallationHTTP(t *testing.T) {
 	instID := int(instData["id"].(float64))
 
 	// Delete via a JSON Web Token.
-	jwt, _ := signAppJWT(pemKey, appID, time.Now())
+	jwt, _ := signAppJWT(pemKey, appID, fixedTestTime)
 	req, _ := http.NewRequest("DELETE", fmt.Sprintf("%s/api/v3/app/installations/%d", testBaseURL, instID), nil)
 	req.Header.Set("Authorization", "Bearer "+jwt)
 	httpResp, err := http.DefaultClient.Do(req)
@@ -748,9 +754,9 @@ func rsaSign(key *rsa.PrivateKey, hash []byte) []byte {
 // unsigned (alg=none) or HMAC-flavoured token must never resolve to an app,
 // no matter how well-formed the claims are.
 func TestJSONWebTokenAlgorithmRejection(t *testing.T) {
-	st := NewStore()
+	st := newAppTestStore()
 	app := st.CreateApp(1, "Alg App", "", nil, nil)
-	now := time.Now().Unix()
+	now := fixedTestTime.Unix()
 	claims := testBase64urlEncode([]byte(fmt.Sprintf(`{"iss":"%d","iat":%d,"exp":%d}`, app.ID, now, now+540)))
 
 	for _, alg := range []string{"none", "HS256", "RS512"} {

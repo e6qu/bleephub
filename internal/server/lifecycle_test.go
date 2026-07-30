@@ -41,14 +41,15 @@ func lifecycleServer(t *testing.T) (base string, cancel func(), done <-chan erro
 	go func() { exit <- srv.ListenAndServe(ctx) }()
 
 	base = "http://" + addr
-	deadline := time.Now().Add(5 * time.Second)
-	for time.Now().Before(deadline) {
+	if testEventually(5*time.Second, 20*time.Millisecond, func() bool {
 		resp, err := http.Get(base + "/health")
 		if err == nil {
 			resp.Body.Close()
-			return base, stop, exit
+			return true
 		}
-		time.Sleep(20 * time.Millisecond)
+		return false
+	}) {
+		return base, stop, exit
 	}
 	stop()
 	t.Fatalf("server never became ready on %s", addr)
@@ -117,15 +118,11 @@ func TestShutdownIsBoundedByItsGrace(t *testing.T) {
 	defer conn.Close()
 	fmt.Fprintf(conn, "GET /_apis/v1/Message/1 HTTP/1.1\r\nHost: %s\r\n\r\n", base[len("http://"):])
 
-	start := time.Now()
 	stop()
 	select {
 	case <-done:
-	case <-time.After(shutdownGrace + 10*time.Second):
-		t.Fatalf("shutdown exceeded its %s grace by more than 10s — the bound is not being applied", shutdownGrace)
-	}
-	if elapsed := time.Since(start); elapsed > shutdownGrace+5*time.Second {
-		t.Errorf("shutdown took %s against a %s grace", elapsed, shutdownGrace)
+	case <-time.After(shutdownGrace + 5*time.Second):
+		t.Fatalf("shutdown exceeded its %s grace by more than 5s — the bound is not being applied", shutdownGrace)
 	}
 }
 

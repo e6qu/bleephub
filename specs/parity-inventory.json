@@ -399,8 +399,8 @@
         "id": "AUTH-022",
         "location": "rbac.go:90-101",
         "severity": "M",
-        "status": "open",
-        "status_kind": "open"
+        "status": "fixed \u2014 read, push, and admin now share one locked capability lattice: the org's `default_repository_permission` (unset = read), active owner role, team grant, and collaborator grant are compared at their actual levels; matrix regressions cover none/read/write/admin",
+        "status_kind": "fixed"
       },
       {
         "category": "AUTH",
@@ -696,8 +696,8 @@
         "id": "AUTH-056",
         "location": "gh_search.go, store_notifications.go, gh_user_issues.go",
         "severity": "M",
-        "status": "open",
-        "status_kind": "open"
+        "status": "fixed \u2014 aggregate issue and notification rows are gathered under the store lock, released, then filtered through a required credential-aware callback; nil exposes nothing. Thread reads use the same path, selected-repository App-token regressions cover both aggregate APIs, and the AST ratchet now bans the locked predicate outside RBAC",
+        "status_kind": "fixed"
       },
       {
         "category": "AUTH",
@@ -1065,8 +1065,8 @@
         "id": "AUTH-091",
         "location": "authz_chokepoint_test.go",
         "severity": "m",
-        "status": "open",
-        "status_kind": "open"
+        "status": "fixed \u2014 the ratchet scans every identifier reference rather than only direct call expressions, so aliases are caught, and `canReadRepoLocked` is in the banned family with no callers outside RBAC",
+        "status_kind": "fixed"
       },
       {
         "category": "REST",
@@ -1173,8 +1173,8 @@
         "id": "REST-012",
         "location": "gh_apps_rest.go:916-973",
         "severity": "B",
-        "status": "partial \u2014 installation tokens are now scoped to their installation at the wrapper; the per-handler installation checks are still open",
-        "status_kind": "partial"
+        "status": "fixed \u2014 list/add/remove bind the installation to the user account or active org membership/owner, bind `ghu_` credentials to their app and optional installation subset, require selected mode, validate repository ownership/type, and revalidate mode + ownership atomically in the Store",
+        "status_kind": "fixed"
       },
       {
         "category": "REST",
@@ -5749,8 +5749,8 @@
         },
         "AUTH": {
           "status": {
-            "fixed": 68,
-            "open": 21,
+            "fixed": 71,
+            "open": 18,
             "partial": 4
           },
           "total": 93
@@ -5789,9 +5789,9 @@
         },
         "REST": {
           "status": {
-            "fixed": 43,
+            "fixed": 44,
             "open": 64,
-            "partial": 9
+            "partial": 8
           },
           "total": 116
         },
@@ -5827,9 +5827,9 @@
       },
       "status": {
         "deferred": 1,
-        "fixed": 287,
-        "open": 282,
-        "partial": 44
+        "fixed": 291,
+        "open": 279,
+        "partial": 43
       },
       "total": 614
     }
@@ -18716,13 +18716,13 @@
         "source": "internal/server/gh_misc_endpoints.go"
       },
       {
-        "line": 26,
+        "line": 27,
         "method": "DELETE",
         "path": "/api/v3/app/installations/{id}",
         "source": "internal/server/gh_apps_rest.go"
       },
       {
-        "line": 28,
+        "line": 29,
         "method": "DELETE",
         "path": "/api/v3/app/installations/{id}/suspended",
         "source": "internal/server/gh_apps_rest.go"
@@ -18794,7 +18794,7 @@
         "source": "internal/server/gh_gists_rest.go"
       },
       {
-        "line": 58,
+        "line": 59,
         "method": "DELETE",
         "path": "/api/v3/installation/token",
         "source": "internal/server/gh_apps_rest.go"
@@ -19712,7 +19712,7 @@
         "source": "internal/server/gh_misc_endpoints.go"
       },
       {
-        "line": 57,
+        "line": 58,
         "method": "DELETE",
         "path": "/api/v3/user/installations/{id}/repositories/{repo_id}",
         "source": "internal/server/gh_apps_rest.go"
@@ -19880,7 +19880,7 @@
         "source": "internal/server/gh_agents_tasks.go"
       },
       {
-        "line": 20,
+        "line": 21,
         "method": "GET",
         "path": "/api/v3/app",
         "source": "internal/server/gh_apps_rest.go"
@@ -19904,25 +19904,25 @@
         "source": "internal/server/gh_app_hooks_rest.go"
       },
       {
-        "line": 23,
+        "line": 24,
         "method": "GET",
         "path": "/api/v3/app/installation-requests",
         "source": "internal/server/gh_apps_rest.go"
       },
       {
-        "line": 22,
+        "line": 23,
         "method": "GET",
         "path": "/api/v3/app/installations",
         "source": "internal/server/gh_apps_rest.go"
       },
       {
-        "line": 24,
+        "line": 25,
         "method": "GET",
         "path": "/api/v3/app/installations/{id}",
         "source": "internal/server/gh_apps_rest.go"
       },
       {
-        "line": 21,
+        "line": 22,
         "method": "GET",
         "path": "/api/v3/apps/{app_slug}",
         "source": "internal/server/gh_apps_rest.go"
@@ -20192,13 +20192,13 @@
         "source": "internal/server/gh_repos_templates.go"
       },
       {
-        "line": 61,
+        "line": 62,
         "method": "GET",
         "path": "/api/v3/installation/repositories",
         "source": "internal/server/gh_apps_rest.go"
       },
       {
-        "line": 14,
+        "line": 15,
         "method": "GET",
         "path": "/api/v3/issues",
         "source": "internal/server/gh_user_issues.go"
@@ -20990,13 +20990,13 @@
         "source": "internal/server/gh_api_insights.go"
       },
       {
-        "line": 30,
+        "line": 31,
         "method": "GET",
         "path": "/api/v3/orgs/{org}/installation",
         "source": "internal/server/gh_apps_rest.go"
       },
       {
-        "line": 31,
+        "line": 32,
         "method": "GET",
         "path": "/api/v3/orgs/{org}/installations",
         "source": "internal/server/gh_apps_rest.go"
@@ -22430,7 +22430,7 @@
         "source": "internal/server/gh_import.go"
       },
       {
-        "line": 29,
+        "line": 30,
         "method": "GET",
         "path": "/api/v3/repos/{owner}/{repo}/installation",
         "source": "internal/server/gh_apps_rest.go"
@@ -23126,13 +23126,13 @@
         "source": "internal/server/gh_misc_endpoints.go"
       },
       {
-        "line": 54,
+        "line": 55,
         "method": "GET",
         "path": "/api/v3/user/installations",
         "source": "internal/server/gh_apps_rest.go"
       },
       {
-        "line": 55,
+        "line": 56,
         "method": "GET",
         "path": "/api/v3/user/installations/{id}/repositories",
         "source": "internal/server/gh_apps_rest.go"
@@ -23414,7 +23414,7 @@
         "source": "internal/server/gh_user_surface.go"
       },
       {
-        "line": 32,
+        "line": 33,
         "method": "GET",
         "path": "/api/v3/users/{username}/installation",
         "source": "internal/server/gh_apps_rest.go"
@@ -24038,7 +24038,7 @@
         "source": "internal/server/gh_agents_tasks.go"
       },
       {
-        "line": 19,
+        "line": 20,
         "method": "POST",
         "path": "/api/v3/app-manifests/{code}/conversions",
         "source": "internal/server/gh_apps_rest.go"
@@ -24050,7 +24050,7 @@
         "source": "internal/server/gh_app_hooks_rest.go"
       },
       {
-        "line": 25,
+        "line": 26,
         "method": "POST",
         "path": "/api/v3/app/installations/{id}/access_tokens",
         "source": "internal/server/gh_apps_rest.go"
@@ -25214,7 +25214,7 @@
         "source": "internal/server/gh_projects_v2_rest.go"
       },
       {
-        "line": 27,
+        "line": 28,
         "method": "PUT",
         "path": "/api/v3/app/installations/{id}/suspended",
         "source": "internal/server/gh_apps_rest.go"
@@ -25976,7 +25976,7 @@
         "source": "internal/server/gh_misc_endpoints.go"
       },
       {
-        "line": 56,
+        "line": 57,
         "method": "PUT",
         "path": "/api/v3/user/installations/{id}/repositories/{repo_id}",
         "source": "internal/server/gh_apps_rest.go"

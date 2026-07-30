@@ -97,7 +97,7 @@ func TestStoreLockReentrancyUnderWriterPressure(t *testing.T) {
 					return
 				}
 			} else {
-				testServer.store.MarkNotificationsRead(admin.ID, time.Now().UTC(), "")
+				testServer.store.MarkNotificationsRead(admin.ID, fixedTestTime.UTC(), "")
 			}
 		}
 	}()

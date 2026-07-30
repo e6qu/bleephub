@@ -294,6 +294,7 @@ func newTestServer() *Server {
 		// tests build their own server with this left at the secure default.
 		allowPrivateOutboundTargets: true,
 	}
+	useFixedTestClock(s)
 	s.store.SeedDefaultUser()
 	return s
 }

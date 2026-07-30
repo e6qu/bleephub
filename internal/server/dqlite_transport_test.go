@@ -103,9 +103,15 @@ func TestDqliteHTTPDialUpgrades(t *testing.T) {
 	if _, err := conn.Write([]byte("dqlite-frame\n")); err != nil {
 		t.Fatalf("write after upgrade: %v", err)
 	}
-	if err := conn.SetReadDeadline(time.Now().Add(5 * time.Second)); err != nil {
-		t.Fatalf("set read deadline: %v", err)
-	}
+	readDone := make(chan struct{})
+	defer close(readDone)
+	go func() {
+		select {
+		case <-time.After(5 * time.Second):
+			_ = conn.Close()
+		case <-readDone:
+		}
+	}()
 	echoed, err := bufio.NewReader(conn).ReadString('\n')
 	if err != nil {
 		t.Fatalf("read after upgrade: %v", err)

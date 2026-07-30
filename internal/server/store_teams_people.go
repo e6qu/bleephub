@@ -213,7 +213,7 @@ func (st *Store) ListPendingOrgInvitations(orgLogin string) []*OrgInvitation {
 	if org == nil {
 		return nil
 	}
-	st.reconcileOrgInvitationsLocked(org, time.Now().UTC())
+	st.reconcileOrgInvitationsLocked(org, st.currentTime())
 	var out []*OrgInvitation
 	for _, inv := range st.OrgInvitations {
 		if inv.OrgID == org.ID && inv.FailedAt == nil {
@@ -234,7 +234,7 @@ func (st *Store) ListFailedOrgInvitations(orgLogin string) []*OrgInvitation {
 	if org == nil {
 		return nil
 	}
-	st.reconcileOrgInvitationsLocked(org, time.Now().UTC())
+	st.reconcileOrgInvitationsLocked(org, st.currentTime())
 	var out []*OrgInvitation
 	for _, inv := range st.OrgInvitations {
 		if inv.OrgID == org.ID && inv.FailedAt != nil {
@@ -254,7 +254,7 @@ func (st *Store) GetOrgInvitation(orgLogin string, id int) *OrgInvitation {
 	if org == nil {
 		return nil
 	}
-	st.reconcileOrgInvitationsLocked(org, time.Now().UTC())
+	st.reconcileOrgInvitationsLocked(org, st.currentTime())
 	inv := st.OrgInvitations[id]
 	if inv == nil || inv.OrgID != org.ID || inv.FailedAt != nil {
 		return nil
@@ -380,7 +380,7 @@ func (st *Store) GetOrgInteractionLimit(orgLogin string) *OrgInteractionLimit {
 	if lim == nil {
 		return nil
 	}
-	if time.Now().UTC().After(lim.ExpiresAt) {
+	if st.currentTime().After(lim.ExpiresAt) {
 		delete(st.OrgInteractionLimits, orgLogin)
 		if st.persist != nil {
 			st.persist.MustDelete("org_interaction_limits", orgLogin)

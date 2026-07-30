@@ -99,7 +99,7 @@ func TestRepoCodeQualitySetup_Validation(t *testing.T) {
 
 func TestStoreCodeQualitySetup_SnapshotsStoreBoundary(t *testing.T) {
 	st := NewStore()
-	now := time.Now().UTC()
+	now := fixedTestTime.UTC()
 	wantUpdatedAt := now
 	input := &CodeQualitySetup{
 		RepoFullName: "admin/code-quality-boundary",

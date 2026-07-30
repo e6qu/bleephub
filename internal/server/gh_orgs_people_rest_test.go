@@ -201,7 +201,7 @@ func TestOrgFailedInvitations(t *testing.T) {
 
 	// Age the invitation past the 7-day TTL.
 	testServer.store.mu.Lock()
-	testServer.store.OrgInvitations[invID].CreatedAt = time.Now().UTC().Add(-8 * 24 * time.Hour)
+	testServer.store.OrgInvitations[invID].CreatedAt = fixedTestTime.UTC().Add(-8 * 24 * time.Hour)
 	testServer.store.mu.Unlock()
 
 	if pending := decodeJSONArray(t, ghGet(t, "/api/v3/orgs/people-fail-org/invitations", defaultToken)); len(pending) != 0 {
@@ -371,7 +371,7 @@ func TestOrgInteractionLimits(t *testing.T) {
 	if err != nil {
 		t.Fatalf("expires_at parse: %v", err)
 	}
-	if d := time.Until(expires); d < 6*24*time.Hour || d > 8*24*time.Hour {
+	if d := expires.Sub(fixedTestTime); d < 6*24*time.Hour || d > 8*24*time.Hour {
 		t.Fatalf("one_week expiry lands %v away", d)
 	}
 

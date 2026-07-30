@@ -523,26 +523,22 @@ jobs:
 
 	testServer.firePullRequestSynchronize(repo, repoKey, "feature-x")
 
-	deadline := time.Now().Add(2 * time.Second)
-	for {
+	var found *Workflow
+	ok := testEventually(2*time.Second, 20*time.Millisecond, func() bool {
 		testServer.store.mu.RLock()
-		var found *Workflow
 		for _, w := range testServer.store.Workflows {
 			if w.RepoFullName == repoKey && w.EventName == "pull_request" {
 				found = w
 			}
 		}
 		testServer.store.mu.RUnlock()
-		if found != nil {
-			if !strings.HasPrefix(found.Ref, "refs/heads/feature-x") {
-				t.Fatalf("synchronize run ref = %q", found.Ref)
-			}
-			break
-		}
-		if time.Now().After(deadline) {
-			t.Fatal("no pull_request run created by synchronize")
-		}
-		time.Sleep(20 * time.Millisecond)
+		return found != nil
+	})
+	if !ok {
+		t.Fatal("no pull_request run created by synchronize")
+	}
+	if !strings.HasPrefix(found.Ref, "refs/heads/feature-x") {
+		t.Fatalf("synchronize run ref = %q", found.Ref)
 	}
 }
 

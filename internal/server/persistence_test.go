@@ -49,14 +49,14 @@ func persistRoundTrip(t *testing.T, open func() (*Persistence, error)) {
 	oapp := st1.CreateOAuthApp(user.ID, "Persist OAuth", "", "", "")
 	utsTok, refreshTok := st1.CreateUserToServerToken(user.ID, 0, oapp.ClientID, "repo", 60_000_000_000, true)
 	repo := st1.CreateRepo(user, "persist-target", "", false)
-	repoSecret := &Secret{Name: "DATABASE_PASSWORD", Value: "persisted-database-password", CreatedAt: time.Now().UTC(), UpdatedAt: time.Now().UTC()}
+	repoSecret := &Secret{Name: "DATABASE_PASSWORD", Value: "persisted-database-password", CreatedAt: fixedTestTime.UTC(), UpdatedAt: fixedTestTime.UTC()}
 	st1.RepoSecrets[repo.FullName] = map[string]*Secret{repoSecret.Name: repoSecret}
 	p1.MustPut("repo_secrets", repo.FullName, st1.RepoSecrets[repo.FullName])
 	keyPair, err := st1.ActionsKeyPair()
 	if err != nil {
 		t.Fatalf("create Actions secrets keypair: %v", err)
 	}
-	expiresAt := time.Now().UTC().Add(24 * time.Hour)
+	expiresAt := fixedTestTime.UTC().Add(24 * time.Hour)
 	fineGrained, err := st1.CreateUserFineGrainedPAT(user.ID, createPersonalAccessTokenWebRequest{
 		Name: "persist fine-grained", ResourceOwner: user.Login, RepositorySelection: "subset",
 		RepositoryIDs: []int{repo.ID}, Permissions: OrgPATPermissions{Repository: map[string]string{"contents": "read"}}, ExpiresAt: &expiresAt,
@@ -79,7 +79,7 @@ func persistRoundTrip(t *testing.T, open func() (*Persistence, error)) {
 		}
 	}
 	loginSession := &LoginSession{
-		UserID: user.ID, CSRFToken: "persisted-csrf", ExpiresAt: time.Now().UTC().Add(time.Hour),
+		UserID: user.ID, CSRFToken: "persisted-csrf", ExpiresAt: fixedTestTime.UTC().Add(time.Hour),
 		OIDCProvider: "shauth", OIDCIssuer: "https://auth.example.test", OIDCSubject: "subject-1", OIDCSID: "sid-1", OIDCIDToken: "signed.id.token",
 	}
 	if err := st1.PutLoginSession("persisted-browser-session", loginSession); err != nil {
@@ -351,13 +351,13 @@ func TestPersistentOIDCLogoutReplayCannotRevokeLaterSession(t *testing.T) {
 	}
 
 	session := &LoginSession{
-		UserID: 1, ExpiresAt: time.Now().Add(time.Hour), OIDCProvider: "shauth",
+		UserID: 1, ExpiresAt: fixedTestTime.Add(time.Hour), OIDCProvider: "shauth",
 		OIDCIssuer: "https://auth.example.test/", OIDCSubject: "subject-1", OIDCSID: "sid-1",
 	}
 	if err := first.PutLoginSession("first-session", session); err != nil {
 		t.Fatal(err)
 	}
-	now := time.Now()
+	now := fixedTestTime
 	claimed, err := first.ClaimOIDCLogoutAndDeleteSessions(
 		"shauth", "https://auth.example.test/", "bleephub", "same-jti",
 		now.Add(10*time.Minute), now, "sid-1", "subject-1",
@@ -421,7 +421,7 @@ func TestPersistentOIDCLogoutClaimIsExclusiveAcrossConnections(t *testing.T) {
 		go func(store *Store) {
 			ready.Done()
 			<-start
-			now := time.Now()
+			now := fixedTestTime
 			claimed, err := store.ClaimOIDCLogoutAndDeleteSessions(
 				"shauth", "https://auth.example.test/", "bleephub", "concurrent-jti",
 				now.Add(10*time.Minute), now, "sid-1", "subject-1",

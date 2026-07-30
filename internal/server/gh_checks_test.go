@@ -7,7 +7,6 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
-	"time"
 )
 
 // Checks API parity — check-run + check-suite CRUD against the
@@ -71,7 +70,7 @@ func TestCheckRunLifecycle(t *testing.T) {
 	}
 
 	// PATCH check run → completed
-	completedAt := time.Now()
+	completedAt := fixedTestTime
 	body, _ = json.Marshal(map[string]any{
 		"status":       "completed",
 		"conclusion":   "success",

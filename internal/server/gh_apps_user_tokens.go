@@ -62,7 +62,7 @@ func (st *Store) createUserToServerTokenLocked(userID, appID int, oauthClientID,
 		st.RefreshTokens = make(map[string]*RefreshToken)
 	}
 
-	now := time.Now()
+	now := st.currentTime()
 	if ttl <= 0 {
 		ttl = 8 * time.Hour
 	}
@@ -135,7 +135,7 @@ func (st *Store) LookupUserToServerToken(tokenStr string) (*UserToServerToken, *
 	st.mu.RLock()
 	defer st.mu.RUnlock()
 	tok := st.UserToServerTokens[tokenStr]
-	if tok == nil || time.Now().After(tok.ExpiresAt) {
+	if tok == nil || st.currentTime().After(tok.ExpiresAt) {
 		return nil, nil
 	}
 	return tok, st.Users[tok.UserID]
@@ -176,7 +176,7 @@ func (st *Store) RotateUserToServerTokenE(refreshTokenStr string) (*UserToServer
 	st.mu.Lock()
 	defer st.mu.Unlock()
 	rt := st.RefreshTokens[refreshTokenStr]
-	if rt == nil || time.Now().After(rt.ExpiresAt) {
+	if rt == nil || st.currentTime().After(rt.ExpiresAt) {
 		return nil, nil, nil
 	}
 	// Revoke the matching user token (find by RefreshTokenValue). The deletes

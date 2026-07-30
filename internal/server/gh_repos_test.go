@@ -10,7 +10,6 @@ import (
 	"strconv"
 	"strings"
 	"testing"
-	"time"
 
 	git "github.com/go-git/go-git/v5"
 	"github.com/go-git/go-git/v5/config"
@@ -543,7 +542,7 @@ func storeTree(s gitStorage.Storer, entries []object.TreeEntry) (plumbing.Hash, 
 }
 
 func storeCommit(s gitStorage.Storer, treeHash, parentHash plumbing.Hash, msg string) (plumbing.Hash, error) {
-	now := time.Now()
+	now := fixedTestTime
 	commit := &object.Commit{
 		Author: object.Signature{
 			Name:  "Test User",

@@ -458,7 +458,7 @@ func (s *Server) handleGetInteractionLimits(w http.ResponseWriter, r *http.Reque
 	if repo == nil {
 		return
 	}
-	if repo.InteractionLimit == "" || repo.InteractionLimitExpiry == nil || time.Now().After(*repo.InteractionLimitExpiry) {
+	if repo.InteractionLimit == "" || repo.InteractionLimitExpiry == nil || s.currentTime().After(*repo.InteractionLimitExpiry) {
 		writeJSON(w, http.StatusOK, map[string]interface{}{})
 		return
 	}
@@ -489,7 +489,7 @@ func (s *Server) handleSetInteractionLimits(w http.ResponseWriter, r *http.Reque
 		writeGHValidationError(w, "InteractionLimit", "limit", "invalid")
 		return
 	}
-	expiresAt, ok := interactionLimitExpiry(req.Expiry, time.Now().UTC())
+	expiresAt, ok := interactionLimitExpiry(req.Expiry, s.currentTime())
 	if !ok {
 		writeGHValidationError(w, "InteractionLimit", "expiry", "invalid")
 		return

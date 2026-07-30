@@ -2,7 +2,6 @@ package bleephub
 
 import (
 	"testing"
-	"time"
 )
 
 func TestMarketplaceStatePersistsAcrossRestart(t *testing.T) {
@@ -23,7 +22,7 @@ func TestMarketplaceStatePersistsAcrossRestart(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	now := time.Now().UTC()
+	now := fixedTestTime.UTC()
 	listing := &MarketplaceListing{
 		Slug: app.Slug, Name: app.Name, Description: "Persistent listing", SetupURL: "https://example.test/setup",
 		GitHubAppID: app.ID, WebhookURL: "https://example.test/hook", WebhookContentType: "json", WebhookActive: true,
@@ -93,7 +92,7 @@ func TestMarketplacePurchaseStorageFailureLeavesNoInstallationOrPurchase(t *test
 	if err != nil {
 		t.Fatal(err)
 	}
-	now := time.Now().UTC()
+	now := fixedTestTime.UTC()
 	listing := &MarketplaceListing{Slug: app.Slug, Name: app.Name, Description: "Atomic listing", GitHubAppID: app.ID, CreatedAt: now, UpdatedAt: now}
 	if err := store.SaveMarketplaceListing(listing); err != nil {
 		t.Fatal(err)

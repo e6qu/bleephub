@@ -723,6 +723,14 @@ func resourceCapabilityFor(scope permScope, level permLevel, method, path string
 	if scopeAdministersResource(scope) {
 		return permAdmin
 	}
+	// Team-repository association endpoints carry {owner}/{repo} in their
+	// path, but the repository is the object being assigned to the team, not
+	// the caller's authorization boundary. Team membership/maintainer checks
+	// in the handler decide the standing; requiring repository push here would
+	// incorrectly override an org's read-only base permission.
+	if scope == scopeMembers && strings.Contains(path, "/teams/") && strings.Contains(path, "/repos/") {
+		return permRead
+	}
 	// scopeSecurityEvents is not here either, and was briefly. Promoting it to
 	// admin refused a collaborator with push the alert reads GitHub grants at
 	// security_events:read — and worse, it routed those denials into the 403

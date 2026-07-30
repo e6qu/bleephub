@@ -2,6 +2,7 @@ package bleephub
 
 import (
 	"fmt"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -49,18 +50,6 @@ type notificationThreadRow struct {
 	lastReadAt *time.Time
 }
 
-// ListNotifications builds notification threads for the given user.
-// Thread sources are gathered under the read lock; rendering happens after
-// release because buildThread embeds the repository via repoToJSON, which
-// derives counters under the store lock itself.
-// ListNotifications gathers, sorts and renders every accepted thread. It is a
-// convenience wrapper over NotificationRows + BuildNotificationThreads; hot
-// handlers should paginate the rows first and render only the page.
-func (st *Store) ListNotifications(user *User, baseURL string, opts NotificationListOptions) []*NotificationThread {
-	rows := st.NotificationRows(user, opts)
-	return st.BuildNotificationThreads(rows, baseURL)
-}
-
 // BuildNotificationThreads renders a (typically already-paginated) slice of
 // rows into notification threads. buildThread is expensive per row (it embeds
 // repoToJSON and scans comments for the latest-comment URL), so callers should
@@ -73,10 +62,14 @@ func (st *Store) BuildNotificationThreads(rows []notificationThreadRow, baseURL 
 	return threads
 }
 
-// NotificationRows gathers and sorts (newest-first) the lightweight thread rows
-// the user should see, without rendering any of them. Rendering each row is
-// expensive, so callers paginate these rows and render only the page.
-func (st *Store) NotificationRows(user *User, opts NotificationListOptions) []notificationThreadRow {
+// NotificationRowsFor applies a request-credential reach check after the
+// store's read lock has been released. A nil predicate exposes no rows, making
+// it impossible for an HTTP caller to accidentally request a
+// credential-blind human-principal view.
+func (st *Store) NotificationRowsFor(user *User, opts NotificationListOptions, canRead func(*Repo) bool) []notificationThreadRow {
+	if canRead == nil {
+		return nil
+	}
 	st.mu.RLock()
 
 	state := st.notificationsStateViewLocked(user.ID)
@@ -96,9 +89,6 @@ func (st *Store) NotificationRows(user *User, opts NotificationListOptions) []no
 	add := func(src notificationThreadSource) {
 		repo := st.Repos[src.RepoID]
 		if repo == nil {
-			return
-		}
-		if !canReadRepoLocked(st, user, repo) {
 			return
 		}
 		if opts.RepoScope != "" && repo.FullName != opts.RepoScope {
@@ -183,6 +173,9 @@ func (st *Store) NotificationRows(user *User, opts NotificationListOptions) []no
 
 	st.mu.RUnlock()
 
+	rows = slices.DeleteFunc(rows, func(row notificationThreadRow) bool {
+		return !canRead(row.repo)
+	})
 	sort.Slice(rows, func(i, j int) bool {
 		return rows[i].src.UpdatedAt.After(rows[j].src.UpdatedAt)
 	})
@@ -326,11 +319,12 @@ func (st *Store) buildThread(row notificationThreadRow, baseURL string) *Notific
 	}
 }
 
-// GetNotificationThread returns a single notification thread by ID.
-// The thread source is gathered under the read lock; rendering happens after
-// release because buildThread embeds the repository via repoToJSON, which
-// derives counters under the store lock itself.
-func (st *Store) GetNotificationThread(user *User, baseURL, threadID string) *NotificationThread {
+// GetNotificationThreadFor is the credential-aware form used by HTTP
+// handlers. The callback runs only after st.mu is released; nil denies access.
+func (st *Store) GetNotificationThreadFor(user *User, baseURL, threadID string, canRead func(*Repo) bool) *NotificationThread {
+	if canRead == nil {
+		return nil
+	}
 	sourceType, id, ok := parseNotificationThreadID(threadID)
 	if !ok {
 		return nil
@@ -353,12 +347,15 @@ func (st *Store) GetNotificationThread(user *User, baseURL, threadID string) *No
 	if row == nil {
 		return nil
 	}
+	if !canRead(row.repo) {
+		return nil
+	}
 	return st.buildThread(*row, baseURL)
 }
 
 func (st *Store) notificationIssueRowLocked(user *User, issue *Issue, threadID string) *notificationThreadRow {
 	repo := st.Repos[issue.RepoID]
-	if repo == nil || !canReadRepoLocked(st, user, repo) {
+	if repo == nil {
 		return nil
 	}
 	src := notificationThreadSource{
@@ -377,7 +374,7 @@ func (st *Store) notificationIssueRowLocked(user *User, issue *Issue, threadID s
 
 func (st *Store) notificationPullRequestRowLocked(user *User, pr *PullRequest, threadID string) *notificationThreadRow {
 	repo := st.Repos[pr.RepoID]
-	if repo == nil || !canReadRepoLocked(st, user, repo) {
+	if repo == nil {
 		return nil
 	}
 	src := notificationThreadSource{

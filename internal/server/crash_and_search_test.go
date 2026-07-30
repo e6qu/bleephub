@@ -225,7 +225,7 @@ func TestUpdateCampaignLosingTargetIsNotFound(t *testing.T) {
 	if org == nil {
 		t.Fatal("CreateOrg returned nil")
 	}
-	c := s.store.CreateCampaign(org.Login, "camp", "desc", nil, nil, time.Now().UTC().Add(48*time.Hour), nil, nil)
+	c := s.store.CreateCampaign(org.Login, "camp", "desc", nil, nil, fixedTestTime.UTC().Add(48*time.Hour), nil, nil)
 	if c == nil {
 		t.Fatal("CreateCampaign returned nil")
 	}

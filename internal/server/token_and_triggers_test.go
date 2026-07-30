@@ -414,7 +414,7 @@ jobs:
 	}
 	job.AgentID = 4242
 	job.Status = "running"
-	job.LockedUntil = time.Now().Add(-time.Minute)
+	job.LockedUntil = fixedTestTime.Add(-time.Minute)
 	testServer.store.mu.Unlock()
 
 	testServer.checkJobTimeouts(wf)
@@ -430,7 +430,7 @@ jobs:
 	if job.Status != "queued" {
 		t.Errorf("reclaimed job status = %q, want queued", job.Status)
 	}
-	if !job.LockedUntil.After(time.Now()) {
+	if !job.LockedUntil.After(fixedTestTime) {
 		t.Error("reclaimed job kept its expired lease and will be reclaimed again on every tick")
 	}
 }
@@ -476,7 +476,7 @@ jobs:
 	job := testServer.store.Jobs[jobID]
 	job.AgentID = 99
 	job.Status = "running"
-	job.LockedUntil = time.Now().Add(time.Hour)
+	job.LockedUntil = fixedTestTime.Add(time.Hour)
 	testServer.store.mu.Unlock()
 
 	testServer.checkJobTimeouts(wf)

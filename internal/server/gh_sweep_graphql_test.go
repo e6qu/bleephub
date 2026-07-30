@@ -419,11 +419,11 @@ func TestRepoGraphQL_ForkParentAndCount(t *testing.T) {
 	owner, name := sweepRepo(t, "sweep-fork-graphql")
 
 	testServer.store.mu.Lock()
-	forker := &User{ID: testServer.store.NextUser, Login: "graphql-forker", Type: "User", CreatedAt: time.Now(), UpdatedAt: time.Now()}
+	forker := &User{ID: testServer.store.NextUser, Login: "graphql-forker", Type: "User", CreatedAt: fixedTestTime, UpdatedAt: fixedTestTime}
 	testServer.store.NextUser++
 	testServer.store.Users[forker.ID] = forker
 	testServer.store.UsersByLogin[forker.Login] = forker
-	tok := &Token{Value: "graphql-forker-token", UserID: forker.ID, Scopes: "repo", CreatedAt: time.Now()}
+	tok := &Token{Value: "graphql-forker-token", UserID: forker.ID, Scopes: "repo", CreatedAt: fixedTestTime}
 	testServer.store.Tokens[tok.Value] = tok
 	testServer.store.mu.Unlock()
 
@@ -558,7 +558,7 @@ func TestPRGraphQL_ViewDefaultFields(t *testing.T) {
 		t.Fatal("PR head sha did not resolve")
 	}
 	repoKey := owner + "/" + name
-	now := time.Now().UTC()
+	now := fixedTestTime.UTC()
 	runID := testServer.store.ReserveRunID()
 	wf := &Workflow{
 		ID:           "gql-rollup-" + repoKey,

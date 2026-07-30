@@ -11,7 +11,6 @@ import (
 	"fmt"
 	"strconv"
 	"strings"
-	"time"
 )
 
 const (
@@ -62,7 +61,7 @@ func (st *Store) parseAndVerifyAppJWT(tokenStr string) (*App, error) {
 	// minutes ahead and iat in the past, each with ~60s drift tolerance.
 	// It does not constrain exp-iat directly, so a client that backdates
 	// iat for clock skew (ghinstallation sets iat=now-60) stays valid.
-	now := time.Now().Unix()
+	now := st.currentTime().Unix()
 	if exp <= now {
 		return nil, fmt.Errorf("JWT expired")
 	}

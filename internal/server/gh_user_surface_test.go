@@ -17,7 +17,7 @@ func userSurfaceUser(t *testing.T, login string) (*User, string) {
 	u := createTestUser(t, login)
 	tok := "ghp_" + login + "0000000000token"
 	testServer.store.mu.Lock()
-	testServer.store.Tokens[tok] = &Token{Value: tok, UserID: u.ID, Scopes: "repo, workflow, read:org, admin:org, gist, user", CreatedAt: time.Now()}
+	testServer.store.Tokens[tok] = &Token{Value: tok, UserID: u.ID, Scopes: "repo, workflow, read:org, admin:org, gist, user", CreatedAt: fixedTestTime}
 	testServer.store.mu.Unlock()
 	return u, tok
 }
@@ -388,7 +388,7 @@ func TestUserBillingUsage_FromRealWorkflowRuns(t *testing.T) {
 
 	// Record a completed workflow run with one 90-second job — the real
 	// state the report is derived from (metered as 2 rounded-up minutes).
-	started := time.Now().UTC().Add(-10 * time.Minute)
+	started := fixedTestTime.UTC().Add(-10 * time.Minute)
 	testServer.store.mu.Lock()
 	testServer.store.Workflows["bill-run-1"] = &Workflow{
 		ID:           "bill-run-1",

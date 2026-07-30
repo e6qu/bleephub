@@ -97,7 +97,9 @@ func TestStressReaderWriterLockGraph(t *testing.T) {
 	}
 
 	dur := stressDuration(3 * time.Second)
-	deadline := time.Now().Add(dur)
+	var stopStorm atomic.Bool
+	stopTimer := time.AfterFunc(dur, func() { stopStorm.Store(true) })
+	defer stopTimer.Stop()
 
 	var bad atomic.Int64
 	errCh := make(chan error, 256)
@@ -144,7 +146,7 @@ func TestStressReaderWriterLockGraph(t *testing.T) {
 		readers.Add(1)
 		go func(id int) {
 			defer readers.Done()
-			for time.Now().Before(deadline) {
+			for !stopStorm.Load() {
 				if id%4 == 0 {
 					call("POST", "/api/graphql", prGraphQL)
 					continue

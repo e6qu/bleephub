@@ -584,7 +584,7 @@ func TestGitDataReadRequiresContentsRead(t *testing.T) {
 
 	// Create an installation token with metadata:read only (no contents)
 	s.store.Installations[1] = &Installation{ID: 1, AppID: 1, TargetID: admin.ID, Permissions: map[string]string{"metadata": "read"}}
-	s.store.InstallationTokens["ghs_notallowed"] = &InstallationToken{Token: "ghs_notallowed", InstallationID: 1, AppID: 1, Permissions: map[string]string{"metadata": "read"}, ExpiresAt: time.Now().Add(time.Hour)}
+	s.store.InstallationTokens["ghs_notallowed"] = &InstallationToken{Token: "ghs_notallowed", InstallationID: 1, AppID: 1, Permissions: map[string]string{"metadata": "read"}, ExpiresAt: fixedTestTime.Add(time.Hour)}
 
 	req, _ := http.NewRequest("GET", "/api/v3/repos/"+repo.FullName+"/git/commits/"+commitHash.String(), nil)
 	req.Header.Set("Authorization", "Bearer ghs_notallowed")

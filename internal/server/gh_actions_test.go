@@ -35,7 +35,7 @@ func ensureSeededRepo(s *Server, fullName string) *Repo {
 	user := s.store.LookupUserByLogin(owner)
 	if user == nil {
 		s.store.mu.Lock()
-		user = &User{ID: s.store.NextUser, Login: owner, Type: "User", CreatedAt: time.Now().UTC()}
+		user = &User{ID: s.store.NextUser, Login: owner, Type: "User", CreatedAt: fixedTestTime.UTC()}
 		s.store.Users[user.ID] = user
 		s.store.UsersByLogin[owner] = user
 		s.store.NextUser++
@@ -64,7 +64,7 @@ func seedRun(t *testing.T, s *Server, repo string, status, result string) (*Work
 		RunNumber:    runID,
 		Status:       WorkflowStatus(status),
 		Result:       Result(result),
-		CreatedAt:    time.Now(),
+		CreatedAt:    fixedTestTime,
 		EventName:    "push",
 		Ref:          "refs/heads/main",
 		Sha:          "abcdef0123456789abcdef0123456789abcdef01",
@@ -77,7 +77,7 @@ func seedRun(t *testing.T, s *Server, repo string, status, result string) (*Work
 		DisplayName: "Build",
 		Status:      "completed",
 		Result:      "success",
-		StartedAt:   time.Now(),
+		StartedAt:   fixedTestTime,
 	}
 	wf.Jobs["build"] = wfJob
 	s.store.Workflows[wf.ID] = wf
@@ -288,7 +288,7 @@ func TestActionsRunAndJobEndpointsScopeIDsToPathRepository(t *testing.T) {
 	s.store.CreateRepo(admin, "repo-a", "", false)
 	s.store.CreateRepo(admin, "repo-b", "", false)
 	wf, wfJob := seedRun(t, s, "admin/repo-a", "completed", "success")
-	seedFinalizedArtifact(s, 1, wf, "logs", time.Now())
+	seedFinalizedArtifact(s, 1, wf, "logs", fixedTestTime)
 	jobID := stableJobID(wfJob.JobID)
 
 	cases := []struct {
@@ -348,8 +348,8 @@ func TestActionsArtifacts_ListRunArtifacts(t *testing.T) {
 	s.store.CreateRepo(s.store.LookupUserByLogin("admin"), "repo", "", false)
 	wf, _ := seedRun(t, s, "admin/repo", "completed", "success")
 	other, _ := seedRun(t, s, "admin/repo", "completed", "success")
-	seedFinalizedArtifact(s, 1, wf, "logs", time.Now().Add(-time.Minute))
-	seedFinalizedArtifact(s, 2, other, "other-run", time.Now())
+	seedFinalizedArtifact(s, 1, wf, "logs", fixedTestTime.Add(-time.Minute))
+	seedFinalizedArtifact(s, 2, other, "other-run", fixedTestTime)
 
 	w := runRequest(s, "GET", fmt.Sprintf("/api/v3/repos/admin/repo/actions/runs/%d/artifacts", wf.RunID))
 	if w.Code != http.StatusOK {
@@ -401,7 +401,7 @@ func TestActionsArtifacts_ListRepoArtifactsWithNameFilter(t *testing.T) {
 	s.registerGHActionsExtrasRoutes()
 	wf, _ := seedRun(t, s, "admin/repo", "completed", "success")
 	otherRepo, _ := seedRun(t, s, "other/repo", "completed", "success")
-	now := time.Now()
+	now := fixedTestTime
 	seedFinalizedArtifact(s, 1, wf, "logs", now.Add(-2*time.Minute))
 	seedFinalizedArtifact(s, 2, wf, "coverage", now)
 	seedFinalizedArtifact(s, 3, otherRepo, "logs", now.Add(time.Minute))
@@ -429,7 +429,7 @@ func TestActionsArtifacts_GetDownloadAndDelete(t *testing.T) {
 	s := newTestServer()
 	s.registerGHActionsExtrasRoutes()
 	wf, _ := seedRun(t, s, "admin/repo", "completed", "success")
-	seedFinalizedArtifact(s, 1, wf, "logs", time.Now())
+	seedFinalizedArtifact(s, 1, wf, "logs", fixedTestTime)
 
 	getResp := runRequest(s, "GET", "/api/v3/repos/admin/repo/actions/artifacts/1")
 	if getResp.Code != http.StatusOK {
@@ -1069,14 +1069,14 @@ jobs:
 
 func createTestOrg(t *testing.T) string {
 	t.Helper()
-	login := "test-org-actions-" + strconv.FormatInt(time.Now().UnixNano(), 36)
+	login := "test-org-actions-" + strconv.FormatInt(int64(nextTestID()), 36)
 	createOrgViaAdminAPI(t, login, "Test Org Actions")
 	return login
 }
 
 func createTestRepo(t *testing.T) string {
 	t.Helper()
-	name := "test-repo-actions-" + strconv.FormatInt(time.Now().UnixNano(), 36)
+	name := "test-repo-actions-" + strconv.FormatInt(int64(nextTestID()), 36)
 	resp := ghPost(t, "/api/v3/user/repos", defaultToken, map[string]interface{}{
 		"name":    name,
 		"private": false,

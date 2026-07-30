@@ -85,7 +85,7 @@ func TestEnterpriseAdminUsersCRUDSiteAdminAndSuspension(t *testing.T) {
 	}
 	userToken := "tok-" + login
 	testServer.store.mu.Lock()
-	testServer.store.Tokens[userToken] = &Token{Value: userToken, UserID: u.ID, Scopes: "repo", CreatedAt: time.Now().UTC()}
+	testServer.store.Tokens[userToken] = &Token{Value: userToken, UserID: u.ID, Scopes: "repo", CreatedAt: fixedTestTime.UTC()}
 	testServer.store.mu.Unlock()
 	asSuspended := ghGet(t, "/api/v3/user", userToken)
 	asSuspended.Body.Close()

@@ -44,12 +44,8 @@ func (er *eventRecorder) has(want string) bool {
 
 func waitUntil(t *testing.T, what string, cond func() bool) {
 	t.Helper()
-	deadline := time.Now().Add(5 * time.Second)
-	for !cond() {
-		if time.Now().After(deadline) {
-			t.Fatalf("timed out waiting for %s", what)
-		}
-		time.Sleep(20 * time.Millisecond)
+	if !testEventually(5*time.Second, 20*time.Millisecond, cond) {
+		t.Fatalf("timed out waiting for %s", what)
 	}
 }
 
@@ -247,7 +243,7 @@ func TestMergeGatingByRequiredChecks(t *testing.T) {
 	resp.Body.Close()
 
 	// Green required check → merge allowed.
-	now := time.Now().UTC()
+	now := fixedTestTime
 	testServer.store.UpdateCheckRun(cr.ID, func(c *CheckRun) {
 		c.Status = "completed"
 		c.Conclusion = "success"
@@ -286,7 +282,7 @@ func TestUnstableMergeableStateOnFailingNonRequired(t *testing.T) {
 	testServer.store.UpdatePullRequest(pr.ID, func(p *PullRequest) { p.Mergeable = "MERGEABLE" })
 
 	cr := testServer.store.CreateCheckRun(repoKey, headSha, "lint", githubActionsAppID, 0)
-	now := time.Now().UTC()
+	now := fixedTestTime
 	testServer.store.UpdateCheckRun(cr.ID, func(c *CheckRun) {
 		c.Status = "completed"
 		c.Conclusion = "failure"

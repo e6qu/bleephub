@@ -282,13 +282,7 @@ func TestWebhookDeliveryRetry(t *testing.T) {
 	resp2.Body.Close()
 
 	// Wait for retries (1s + 5s backoff = ~6s, use generous timeout)
-	deadline := time.Now().Add(15 * time.Second)
-	for time.Now().Before(deadline) {
-		if attempts.Load() >= 3 {
-			break
-		}
-		time.Sleep(200 * time.Millisecond)
-	}
+	testEventually(15*time.Second, 200*time.Millisecond, func() bool { return attempts.Load() >= 3 })
 
 	if attempts.Load() < 3 {
 		t.Fatalf("expected at least 3 delivery attempts, got %d", attempts.Load())
@@ -421,16 +415,12 @@ func TestWebhookReleaseLifecycleActions(t *testing.T) {
 	deleted := ghDelete(t, "/api/v3/repos/admin/"+repo+"/releases/"+itoa(releaseID), defaultToken)
 	deleted.Body.Close()
 
-	deadline := time.Now().Add(5 * time.Second)
-	for time.Now().Before(deadline) {
+	testEventually(5*time.Second, 20*time.Millisecond, func() bool {
 		mu.Lock()
 		count := len(actions)
 		mu.Unlock()
-		if count == 3 {
-			break
-		}
-		time.Sleep(20 * time.Millisecond)
-	}
+		return count == 3
+	})
 	mu.Lock()
 	defer mu.Unlock()
 	if fmt.Sprint(actions) != "[created published deleted]" {
@@ -820,7 +810,7 @@ func pushTestCommit(t *testing.T, owner, repoName string) {
 		Author: &object.Signature{
 			Name:  "test",
 			Email: "test@test.com",
-			When:  time.Now(),
+			When:  fixedTestTime,
 		},
 	})
 	if err != nil {

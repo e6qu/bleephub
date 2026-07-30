@@ -10,7 +10,6 @@ import (
 	"os"
 	"strings"
 	"testing"
-	"time"
 
 	"github.com/go-git/go-git/v5/plumbing"
 	"github.com/go-git/go-git/v5/plumbing/object"
@@ -182,11 +181,11 @@ func TestForkPullRequestRESTAndGraphQL(t *testing.T) {
 	seedPullRequestBranches(t, testServer, source)
 
 	testServer.store.mu.Lock()
-	forker := &User{ID: testServer.store.NextUser, Login: "pr-forker", Type: "User", CreatedAt: time.Now(), UpdatedAt: time.Now()}
+	forker := &User{ID: testServer.store.NextUser, Login: "pr-forker", Type: "User", CreatedAt: fixedTestTime, UpdatedAt: fixedTestTime}
 	testServer.store.NextUser++
 	testServer.store.Users[forker.ID] = forker
 	testServer.store.UsersByLogin[forker.Login] = forker
-	tok := &Token{Value: "pr-forker-token", UserID: forker.ID, Scopes: "repo", CreatedAt: time.Now()}
+	tok := &Token{Value: "pr-forker-token", UserID: forker.ID, Scopes: "repo", CreatedAt: fixedTestTime}
 	testServer.store.Tokens[tok.Value] = tok
 	testServer.store.mu.Unlock()
 
@@ -665,7 +664,7 @@ func TestPRUpdateBranchREST(t *testing.T) {
 	headBefore := resolveBranchSha(stor, "feat")
 	_, err := createFileCommit(
 		stor, "main", "base-update.txt", "new base work\n", "advance base",
-		&object.Signature{Name: "admin", Email: "admin@example.com", When: time.Now().UTC()},
+		&object.Signature{Name: "admin", Email: "admin@example.com", When: fixedTestTime.UTC()},
 	)
 	if err != nil {
 		t.Fatal(err)

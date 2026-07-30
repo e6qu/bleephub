@@ -84,7 +84,7 @@ func TestRepoInteractionLimits_RoundTrip(t *testing.T) {
 	if err != nil {
 		t.Fatalf("expires_at unparsable: %v", err)
 	}
-	want := time.Now().Add(7 * 24 * time.Hour)
+	want := fixedTestTime.Add(7 * 24 * time.Hour)
 	if diff := expiresAt.Sub(want); diff < -time.Minute || diff > time.Minute {
 		t.Fatalf("expires_at = %v, want ~one week out", expiresAt)
 	}

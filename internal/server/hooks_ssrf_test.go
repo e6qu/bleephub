@@ -242,16 +242,12 @@ func TestWebhookDeliveryPreservesPerHookOrder(t *testing.T) {
 		s.enqueueWebhookDelivery(hook, "push", "", []byte(fmt.Sprintf(`{"seq":%d}`, i)))
 	}
 
-	deadline := time.Now().Add(20 * time.Second)
-	for time.Now().Before(deadline) {
+	testEventually(20*time.Second, 20*time.Millisecond, func() bool {
 		mu.Lock()
 		done := len(seen) >= events
 		mu.Unlock()
-		if done {
-			break
-		}
-		time.Sleep(20 * time.Millisecond)
-	}
+		return done
+	})
 
 	mu.Lock()
 	defer mu.Unlock()
@@ -293,10 +289,9 @@ func TestWebhookDeliveryConcurrencyIsBounded(t *testing.T) {
 	}
 
 	// Let the pool saturate, then let every held request finish.
-	deadline := time.Now().Add(5 * time.Second)
-	for time.Now().Before(deadline) && atomic.LoadInt64(&peak) < webhookDeliveryWorkers {
-		time.Sleep(10 * time.Millisecond)
-	}
+	testEventually(5*time.Second, 10*time.Millisecond, func() bool {
+		return atomic.LoadInt64(&peak) >= webhookDeliveryWorkers
+	})
 	got := atomic.LoadInt64(&peak)
 	close(release)
 
@@ -313,7 +308,7 @@ func TestWebhookDeliveryConcurrencyIsBounded(t *testing.T) {
 // that does not exist must be refused by the handler rather than acted on.
 func TestRepoHookRoutesRefuseAnUnresolvedRepository(t *testing.T) {
 	store := testServer.store
-	now := time.Now().UTC()
+	now := fixedTestTime
 	store.mu.Lock()
 	stranger := &User{ID: store.NextUser, Login: "ssrf-stranger", Type: "User", CreatedAt: now, UpdatedAt: now}
 	store.Users[stranger.ID] = stranger
@@ -352,7 +347,7 @@ func TestRepoHookRoutesRefuseAnUnresolvedRepository(t *testing.T) {
 // looking at the repository or organization the path named.
 func TestDependabotSecretsRefuseAnUnresolvedRepository(t *testing.T) {
 	store := testServer.store
-	now := time.Now().UTC()
+	now := fixedTestTime
 	store.mu.Lock()
 	stranger := &User{ID: store.NextUser, Login: "ssrf-dependabot-stranger", Type: "User", CreatedAt: now, UpdatedAt: now}
 	store.Users[stranger.ID] = stranger

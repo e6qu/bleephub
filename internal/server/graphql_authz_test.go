@@ -6,7 +6,6 @@ import (
 	"net/http"
 	"strings"
 	"testing"
-	"time"
 
 	"github.com/graphql-go/graphql"
 )
@@ -48,7 +47,7 @@ type gqlAuthzFixture struct {
 func newGQLAuthzFixture(t *testing.T, tag string, private bool) *gqlAuthzFixture {
 	t.Helper()
 	st := testServer.store
-	now := time.Now().UTC()
+	now := fixedTestTime.UTC()
 
 	mkUser := func(login string) *User {
 		st.mu.Lock()
@@ -744,7 +743,7 @@ type gqlProjectAuthzFixture struct {
 func newGQLProjectAuthzFixture(t *testing.T, tag string) *gqlProjectAuthzFixture {
 	t.Helper()
 	st := testServer.store
-	now := time.Now().UTC()
+	now := fixedTestTime.UTC()
 
 	mkUser := func(login string) *User {
 		st.mu.Lock()

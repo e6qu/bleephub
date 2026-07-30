@@ -7,7 +7,6 @@ import (
 	"net/http/httptest"
 	"strconv"
 	"testing"
-	"time"
 )
 
 // Write on a project is not read on what goes into it. Adding an issue to a
@@ -20,7 +19,7 @@ import (
 func TestProjectItemAddRefusesContentTheCallerCannotRead(t *testing.T) {
 	store := testServer.store
 
-	now := time.Now().UTC()
+	now := fixedTestTime.UTC()
 	store.mu.Lock()
 	victim := &User{ID: store.NextUser, Login: "projcontent-victim", Type: "User", CreatedAt: now, UpdatedAt: now}
 	store.Users[victim.ID] = victim

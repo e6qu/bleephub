@@ -3,14 +3,13 @@ package bleephub
 import (
 	"strconv"
 	"testing"
-	"time"
 )
 
 // createOrgRepoForGovernance creates a repository inside the org through the
 // REST API and returns its name and numeric ID.
 func createOrgRepoForGovernance(t *testing.T, org string) (string, int) {
 	t.Helper()
-	name := "gov-repo-" + strconv.FormatInt(time.Now().UnixNano(), 36)
+	name := "gov-repo-" + strconv.FormatInt(int64(nextTestID()), 36)
 	resp := ghPost(t, "/api/v3/orgs/"+org+"/repos", defaultToken, map[string]interface{}{
 		"name":    name,
 		"private": false,
@@ -285,7 +284,7 @@ func TestIssueFieldValues_PushAccessRequired(t *testing.T) {
 	repoPath := org + "/" + repoName
 	number := createIssueForGovernance(t, repoPath, "outsider test")
 
-	outsider := createTestUser(t, "gov-outsider-"+strconv.FormatInt(time.Now().UnixNano(), 36))
+	outsider := createTestUser(t, "gov-outsider-"+strconv.FormatInt(int64(nextTestID()), 36))
 	tok := testServer.store.CreateToken(outsider.ID, "repo").Value
 
 	resp := ghPost(t, "/api/v3/repos/"+repoPath+"/issues/"+itoa(number)+"/issue-field-values", tok, map[string]interface{}{

@@ -46,7 +46,7 @@ func TestPersistence_GovernanceSurfacesRoundTrip(t *testing.T) {
 		t.Fatal("attach failed")
 	}
 	campaign := st1.CreateCampaign(org.Login, "persist campaign", "d", []string{admin.Login}, nil,
-		time.Now().Add(24*time.Hour), nil, map[int][]int{})
+		fixedTestTime.Add(24*time.Hour), nil, map[int][]int{})
 	urlStr := "https://maven.example.com"
 	st1.CreatePrivateRegistry(org.Login, &privateRegistryRequest{
 		RegistryType: strPtr("maven_repository"), URL: &urlStr, Visibility: strPtr("all"),

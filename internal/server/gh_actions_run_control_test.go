@@ -50,7 +50,7 @@ func seedGatedRun(t *testing.T, repo string) *Workflow {
 		RunID:        runID,
 		RunNumber:    runID,
 		Status:       WorkflowStatusActionRequired,
-		CreatedAt:    time.Now(),
+		CreatedAt:    fixedTestTime,
 		EventName:    "pull_request",
 		Ref:          "refs/heads/feature",
 		Sha:          "abcdef0123456789abcdef0123456789abcdef01",
@@ -211,7 +211,7 @@ func TestRerunWorkflowJob_NewAttemptCarriesOtherJobs(t *testing.T) {
 		RunNumber:    runID,
 		Status:       WorkflowStatusCompleted,
 		Result:       ResultSuccess,
-		CreatedAt:    time.Now(),
+		CreatedAt:    fixedTestTime,
 		EventName:    "push",
 		Ref:          "refs/heads/main",
 		Sha:          "abcdef0123456789abcdef0123456789abcdef01",
@@ -222,7 +222,7 @@ func TestRerunWorkflowJob_NewAttemptCarriesOtherJobs(t *testing.T) {
 		wf.Jobs[key] = &WorkflowJob{
 			Key: key, JobID: uuid.New().String(), DisplayName: key,
 			Status: JobStatusCompleted, Result: ResultSuccess,
-			StartedAt: time.Now().Add(-time.Minute), CompletedAt: time.Now(),
+			StartedAt: fixedTestTime.Add(-time.Minute), CompletedAt: fixedTestTime,
 			Outputs: map[string]string{},
 		}
 	}
@@ -307,7 +307,7 @@ func TestReviewCustomDeploymentProtectionRule(t *testing.T) {
 		RunID:        runID,
 		RunNumber:    runID,
 		Status:       WorkflowStatusWaiting,
-		CreatedAt:    time.Now(),
+		CreatedAt:    fixedTestTime,
 		EventName:    "push",
 		Ref:          "refs/heads/main",
 		Sha:          "abcdef0123456789abcdef0123456789abcdef01",
@@ -315,7 +315,7 @@ func TestReviewCustomDeploymentProtectionRule(t *testing.T) {
 		Env:          map[string]string{"__serverURL": testBaseURL, "__defaultImage": "alpine:latest"},
 		Jobs:         map[string]*WorkflowJob{},
 		PendingDeployments: []*PendingDeployment{
-			{EnvID: env.ID, EnvName: "production", WaitTimerStartedAt: time.Now().UTC()},
+			{EnvID: env.ID, EnvName: "production", WaitTimerStartedAt: fixedTestTime.UTC()},
 		},
 	}
 	wf.Jobs["deploy"] = &WorkflowJob{
@@ -433,8 +433,8 @@ func TestWorkflowFileTiming_ComputedFromRunHistory(t *testing.T) {
 
 	wf, job := seedRun(t, testServer, repo, "completed", "success")
 	testServer.store.mu.Lock()
-	job.StartedAt = time.Now().Add(-3 * time.Second)
-	job.CompletedAt = time.Now()
+	job.StartedAt = fixedTestTime.Add(-3 * time.Second)
+	job.CompletedAt = fixedTestTime
 	testServer.store.mu.Unlock()
 	_ = wf
 

@@ -152,7 +152,7 @@ func newS3FSForTest(t *testing.T) *s3FS {
 
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
-	bucket := fmt.Sprintf("bleephub-test-%d", time.Now().UnixNano())
+	bucket := fmt.Sprintf("bleephub-test-%d", nextTestID())
 	fs, err := newS3FS(ctx, endpoint, bucket, "git")
 	if err != nil {
 		t.Fatalf("newS3FS: %v", err)
@@ -184,16 +184,17 @@ func startS3ServerForTest(t *testing.T) string {
 			return
 		}
 		s3ServerContainer = strings.TrimSpace(string(output))
-		deadline := time.Now().Add(30 * time.Second)
-		for time.Now().Before(deadline) {
+		if testEventually(30*time.Second, 100*time.Millisecond, func() bool {
 			response, err := http.Get(s3ServerEndpoint + "/minio/health/ready") // #nosec G107 -- local test server
 			if err == nil {
 				_ = response.Body.Close()
 				if response.StatusCode == http.StatusOK {
-					return
+					return true
 				}
 			}
-			time.Sleep(100 * time.Millisecond)
+			return false
+		}) {
+			return
 		}
 		s3ServerErr = fmt.Errorf("MinIO S3 server did not become healthy at %s", s3ServerEndpoint)
 	})

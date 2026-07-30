@@ -507,7 +507,8 @@ type Store struct {
 	//   - Lock order between mutexes: Store.mu is acquired before any
 	//     sub-store mutex (Misc.mu, Reactions.mu, Releases.mu, persistence),
 	//     never the reverse.
-	mu sync.RWMutex
+	mu       sync.RWMutex
+	clockNow func() time.Time
 	// enterprises
 	EnterpriseTeams                    map[int]*EnterpriseTeam
 	EnterpriseTeamsBySlug              map[string]*EnterpriseTeam
@@ -643,6 +644,13 @@ type Store struct {
 	RepoActivities   map[int]*RepoActivity         // id → recorded ref update (push activity)
 	NextRepoActivity int                           // next RepoActivity ID
 	RepoCloneTraffic map[string]*RepoTrafficBucket // "repoID:YYYY-MM-DD" → clone counters
+}
+
+func (st *Store) currentTime() time.Time {
+	if st != nil && st.clockNow != nil {
+		return st.clockNow().UTC()
+	}
+	return time.Now().UTC()
 }
 
 // Agent represents a registered runner agent.
@@ -1119,7 +1127,7 @@ func (st *Store) loadFromPersistence() error {
 		if err := loadJSON(raw, &session); err != nil {
 			return fmt.Errorf("decode %s row: %w", loginSessionsBucket, err)
 		}
-		if session.ExpiresAt.After(time.Now()) && st.Users[session.UserID] != nil {
+		if session.ExpiresAt.After(st.currentTime()) && st.Users[session.UserID] != nil {
 			st.LoginSessions[id] = &session
 		}
 	}
@@ -3686,7 +3694,7 @@ func (st *Store) LookupToken(tokenStr string) (*Token, *User) {
 	if t == nil {
 		return nil, nil
 	}
-	if t.ExpiresAt != nil && !t.ExpiresAt.After(time.Now()) {
+	if t.ExpiresAt != nil && !t.ExpiresAt.After(st.currentTime()) {
 		return nil, nil
 	}
 	return t, st.Users[t.UserID]

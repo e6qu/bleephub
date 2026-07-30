@@ -594,7 +594,7 @@ func (s *Server) handleSetUserInteractionLimits(w http.ResponseWriter, r *http.R
 		writeGHValidationError(w, "InteractionLimit", "limit", "invalid")
 		return
 	}
-	expiresAt, ok := interactionLimitExpiry(req.Expiry, time.Now().UTC())
+	expiresAt, ok := interactionLimitExpiry(req.Expiry, s.currentTime())
 	if !ok {
 		writeGHValidationError(w, "InteractionLimit", "expiry", "invalid")
 		return
@@ -647,7 +647,7 @@ func (st *Store) GetUserInteractionLimit(userID int) (string, time.Time) {
 	if u == nil || u.InteractionLimit == "" || u.InteractionLimitExpiry == nil {
 		return "", time.Time{}
 	}
-	if time.Now().After(*u.InteractionLimitExpiry) {
+	if st.currentTime().After(*u.InteractionLimitExpiry) {
 		return "", time.Time{}
 	}
 	return u.InteractionLimit, *u.InteractionLimitExpiry
@@ -986,9 +986,9 @@ type billingTimeFilter struct {
 // parseBillingTimeFilter reads year/month/day query params. A missing
 // year defaults to the current year; when defaultMonth is set, a missing
 // month defaults to the current month.
-func parseBillingTimeFilter(r *http.Request, defaultMonth bool) (billingTimeFilter, error) {
+func parseBillingTimeFilter(r *http.Request, defaultMonth bool, now time.Time) (billingTimeFilter, error) {
 	q := r.URL.Query()
-	now := time.Now().UTC()
+	now = now.UTC()
 	f := billingTimeFilter{year: now.Year()}
 	if defaultMonth {
 		f.month = int(now.Month())
@@ -1039,7 +1039,7 @@ func (s *Server) resolveBillingUser(w http.ResponseWriter, r *http.Request) *Use
 
 // filteredBillingItems applies time/repository/product/sku query filters.
 func (s *Server) filteredBillingItems(w http.ResponseWriter, r *http.Request, user *User, defaultMonth bool) ([]billingUsageItem, *billingTimeFilter) {
-	f, err := parseBillingTimeFilter(r, defaultMonth)
+	f, err := parseBillingTimeFilter(r, defaultMonth, s.currentTime())
 	if err != nil {
 		writeGHError(w, http.StatusBadRequest, err.Error())
 		return nil, nil
@@ -1167,7 +1167,7 @@ func (s *Server) writeEmptyModelUsageReport(w http.ResponseWriter, r *http.Reque
 	if user == nil {
 		return
 	}
-	f, err := parseBillingTimeFilter(r, true)
+	f, err := parseBillingTimeFilter(r, true, s.currentTime())
 	if err != nil {
 		writeGHError(w, http.StatusBadRequest, err.Error())
 		return

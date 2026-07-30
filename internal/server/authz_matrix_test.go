@@ -7,7 +7,6 @@ import (
 	"strconv"
 	"strings"
 	"testing"
-	"time"
 )
 
 // The registered route table is the authority on what surface exists, so it is
@@ -68,7 +67,7 @@ func TestPrivateRepoMutationsRejectAnUnrelatedUser(t *testing.T) {
 
 	store := testServer.store
 
-	now := time.Now().UTC()
+	now := fixedTestTime.UTC()
 	store.mu.Lock()
 	owner := &User{ID: store.NextUser, Login: ownerLogin, Type: "User", CreatedAt: now, UpdatedAt: now}
 	store.Users[owner.ID] = owner
@@ -198,7 +197,7 @@ func TestPrivateRepoReadsRejectAnUnrelatedUser(t *testing.T) {
 
 	store := testServer.store
 
-	now := time.Now().UTC()
+	now := fixedTestTime.UTC()
 	store.mu.Lock()
 	owner := &User{ID: store.NextUser, Login: ownerLogin, Type: "User", CreatedAt: now, UpdatedAt: now}
 	store.Users[owner.ID] = owner
@@ -303,7 +302,7 @@ func TestPrivateRepoReadsRejectAnUnrelatedUser(t *testing.T) {
 func TestGraphQLDeleteRepositoryRejectsANonAdmin(t *testing.T) {
 	store := testServer.store
 
-	now := time.Now().UTC()
+	now := fixedTestTime.UTC()
 	store.mu.Lock()
 	owner := &User{ID: store.NextUser, Login: "gqldel-owner", Type: "User", CreatedAt: now, UpdatedAt: now}
 	store.Users[owner.ID] = owner
@@ -356,7 +355,7 @@ func TestGraphQLDeleteRepositoryRejectsANonAdmin(t *testing.T) {
 func TestInstallationTokenCannotReachAnotherAccountsRepo(t *testing.T) {
 	store := testServer.store
 
-	now := time.Now().UTC()
+	now := fixedTestTime.UTC()
 	store.mu.Lock()
 	attacker := &User{ID: store.NextUser, Login: "instscope-attacker", Type: "User", CreatedAt: now, UpdatedAt: now}
 	store.Users[attacker.ID] = attacker
@@ -431,7 +430,7 @@ func TestInstallationTokenCannotReachAnotherAccountsRepo(t *testing.T) {
 func TestOrgMutationsRejectAnUnrelatedUser(t *testing.T) {
 	store := testServer.store
 
-	now := time.Now().UTC()
+	now := fixedTestTime.UTC()
 	store.mu.Lock()
 	stranger := &User{ID: store.NextUser, Login: "orgsweep-stranger", Type: "User", CreatedAt: now, UpdatedAt: now}
 	store.Users[stranger.ID] = stranger
@@ -526,7 +525,7 @@ func TestOrgMutationsRejectAnUnrelatedUser(t *testing.T) {
 func TestPublicRepositoryBypassIsKeyedOnTheScope(t *testing.T) {
 	store := testServer.store
 
-	now := time.Now().UTC()
+	now := fixedTestTime.UTC()
 	store.mu.Lock()
 	owner := &User{ID: store.NextUser, Login: "scopebypass-owner", Type: "User", CreatedAt: now, UpdatedAt: now}
 	store.Users[owner.ID] = owner

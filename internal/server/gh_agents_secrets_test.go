@@ -5,7 +5,6 @@ import (
 	"context"
 	"fmt"
 	"testing"
-	"time"
 )
 
 // --- GitHub Copilot coding agent repository secrets ---
@@ -360,7 +359,7 @@ func TestAgentsCodeScanPersistenceReload(t *testing.T) {
 
 	srv1 := &Server{store: st1}
 	srv1.upsertSecret(st1.AgentsRepoSecrets, "agents_repo_secrets", repo.FullName, "RELOAD_SECRET", "plain-value")
-	now := time.Now().UTC()
+	now := fixedTestTime.UTC()
 	tbl := agentsVariableTable{srv1, "agents_repo_variables", repo.FullName}
 	if !tbl.create(&ActionsVariable{Name: "RELOAD_VAR", Value: "vv", CreatedAt: now, UpdatedAt: now}) {
 		t.Fatal("create agents variable failed")

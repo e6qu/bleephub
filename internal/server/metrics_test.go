@@ -22,7 +22,7 @@ func TestMetricsSubmitIncrement(t *testing.T) {
 func TestMetricsCompletionByResult(t *testing.T) {
 	m := NewMetrics()
 	completed := func(result Result, d time.Duration) *WorkflowJob {
-		start := time.Now().Add(-d)
+		start := fixedTestTime.Add(-d)
 		return &WorkflowJob{Result: result, StartedAt: start, CompletedAt: start.Add(d)}
 	}
 	m.RecordJobCompletion(completed(ResultSuccess, 100*time.Millisecond))

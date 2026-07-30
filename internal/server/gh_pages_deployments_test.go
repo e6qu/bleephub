@@ -13,7 +13,6 @@ import (
 	"strings"
 	"sync/atomic"
 	"testing"
-	"time"
 )
 
 var repoWriteRepoSeq int64
@@ -82,7 +81,7 @@ func mintPagesOIDCTokenForAudience(t *testing.T, repo, sha, ref, environment, au
 // optionally with an auto-init initial commit. Returns the repo name.
 func createRepoWriteRepo(t *testing.T, autoInit bool) string {
 	t.Helper()
-	name := fmt.Sprintf("rw-%d-%d", time.Now().UnixNano(), atomic.AddInt64(&repoWriteRepoSeq, 1))
+	name := fmt.Sprintf("rw-%d-%d", int64(nextTestID()), atomic.AddInt64(&repoWriteRepoSeq, 1))
 	resp := ghPost(t, "/api/v3/user/repos", defaultToken, map[string]interface{}{
 		"name":      name,
 		"auto_init": autoInit,
@@ -206,7 +205,7 @@ func TestPagesDeployments_CreateStatusCancel(t *testing.T) {
 		t.Fatalf("put invalid Pages artifact: %v", err)
 	}
 	testServer.artifactStore.mu.Lock()
-	testServer.artifactStore.artifacts[4241] = &Artifact{ID: 4241, Name: "invalid-pages", Size: int64(len(invalidArtifact)), Finalized: true, RepoFullName: "admin/" + repo, CreatedAt: time.Now()}
+	testServer.artifactStore.artifacts[4241] = &Artifact{ID: 4241, Name: "invalid-pages", Size: int64(len(invalidArtifact)), Finalized: true, RepoFullName: "admin/" + repo, CreatedAt: fixedTestTime}
 	testServer.artifactStore.mu.Unlock()
 	resp = ghPost(t, "/api/v3/repos/admin/"+repo+"/pages/deployments", defaultToken, map[string]interface{}{
 		"artifact_id":         4241,
@@ -229,7 +228,7 @@ func TestPagesDeployments_CreateStatusCancel(t *testing.T) {
 		Size:         int64(len(artifactBytes)),
 		Finalized:    true,
 		RepoFullName: "admin/" + repo,
-		CreatedAt:    time.Now(),
+		CreatedAt:    fixedTestTime,
 	}
 	testServer.artifactStore.nextID = 4243
 	testServer.artifactStore.mu.Unlock()

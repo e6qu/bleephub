@@ -4,7 +4,6 @@ import (
 	"context"
 	"strings"
 	"testing"
-	"time"
 
 	"github.com/go-git/go-billy/v5/memfs"
 	git "github.com/go-git/go-git/v5"
@@ -22,7 +21,7 @@ func commitFilesToStorage(t *testing.T, s *Server, repoFullName string, files ma
 	}
 	if s.store.UsersByLogin[parts[0]] == nil {
 		s.store.mu.Lock()
-		user := &User{ID: s.store.NextUser, Login: parts[0], Type: "User", CreatedAt: time.Now(), UpdatedAt: time.Now()}
+		user := &User{ID: s.store.NextUser, Login: parts[0], Type: "User", CreatedAt: fixedTestTime, UpdatedAt: fixedTestTime}
 		s.store.NextUser++
 		s.store.Users[user.ID] = user
 		s.store.UsersByLogin[user.Login] = user
@@ -64,7 +63,7 @@ func commitFilesToStorage(t *testing.T, s *Server, repoFullName string, files ma
 		}
 	}
 	commitHash, err := wt.Commit("test files", &git.CommitOptions{
-		Author: &object.Signature{Name: "t", Email: "t@t", When: time.Now()},
+		Author: &object.Signature{Name: "t", Email: "t@t", When: fixedTestTime},
 	})
 	if err != nil {
 		t.Fatalf("commit: %v", err)

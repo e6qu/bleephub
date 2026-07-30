@@ -6,6 +6,7 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -766,12 +767,12 @@ func (s *Server) handleListUserInstallationRepos(w http.ResponseWriter, r *http.
 		writeGHError(w, http.StatusBadRequest, "Invalid installation ID")
 		return
 	}
-	inst := s.store.GetInstallation(id)
-	if inst == nil {
+	inst, ok := s.userAccessibleInstallation(r.Context(), user, id, false)
+	if !ok {
 		writeGHError(w, http.StatusNotFound, "Not Found")
 		return
 	}
-	repos := s.store.ListReposByOwner(inst.TargetLogin)
+	repos := filterInstallationRepos(s.store.ListReposByOwner(inst.TargetLogin), inst)
 	page := paginateAndLink(w, r, repos)
 	base := s.baseURL(r)
 	repoJSON := make([]map[string]interface{}, 0, len(page))
@@ -783,6 +784,45 @@ func (s *Server) handleListUserInstallationRepos(w http.ResponseWriter, r *http.
 		"repository_selection": inst.RepositorySelection,
 		"repositories":         repoJSON,
 	})
+}
+
+// userAccessibleInstallation binds a /user/installations/{id} request to the
+// authenticated human and, for GitHub App user-to-server credentials, to the
+// app and explicit installation subset represented by that credential.
+//
+// Read endpoints accept active organization members, matching
+// /user/installations. Mutations require an organization owner. A user-account
+// installation is visible and mutable only by that account's user.
+func (s *Server) userAccessibleInstallation(ctx context.Context, user *User, id int, requireAdmin bool) (*Installation, bool) {
+	inst := s.store.GetInstallation(id)
+	if inst == nil || user == nil {
+		return nil, false
+	}
+	if token := ghUserToServerTokenFromContext(ctx); token != nil && token.AppID > 0 {
+		if token.AppID != inst.AppID {
+			return nil, false
+		}
+		if len(token.InstallationIDs) > 0 && !slices.Contains(token.InstallationIDs, inst.ID) {
+			return nil, false
+		}
+	}
+	switch inst.TargetType {
+	case "User":
+		if inst.TargetID != user.ID || !strings.EqualFold(inst.TargetLogin, user.Login) {
+			return nil, false
+		}
+	case "Organization":
+		if requireAdmin {
+			if !s.viewerCanAdminOrg(ctx, inst.TargetLogin) {
+				return nil, false
+			}
+		} else if !s.viewerIsOrgMember(ctx, inst.TargetLogin) {
+			return nil, false
+		}
+	default:
+		return nil, false
+	}
+	return inst, true
 }
 
 // handleGetAppBySlug — GET /api/v3/apps/{app_slug}.
@@ -930,9 +970,8 @@ func (s *Server) handleGetUserInstallation(w http.ResponseWriter, r *http.Reques
 }
 
 // handleAddUserInstallationRepo — PUT /api/v3/user/installations/{id}/repositories/{repo_id}.
-// User-auth. Adds a repo to a "selected"-mode installation's allow-list. Auto-switches mode
-// to "selected" if it was "all" (real GH requires the mode to already be "selected" — bleephub
-// is permissive in Bleephub). 204 on success.
+// User-auth. Adds a repository owned by the installation target to an existing
+// "selected"-mode installation's allow-list.
 func (s *Server) handleAddUserInstallationRepo(w http.ResponseWriter, r *http.Request) {
 	user := ghUserFromContext(r.Context())
 	if user == nil {
@@ -949,14 +988,28 @@ func (s *Server) handleAddUserInstallationRepo(w http.ResponseWriter, r *http.Re
 		writeGHError(w, http.StatusBadRequest, "Invalid repository ID")
 		return
 	}
+	inst, allowed := s.userAccessibleInstallation(r.Context(), user, instID, true)
+	if !allowed {
+		writeGHError(w, http.StatusNotFound, "Not Found")
+		return
+	}
+	if inst.RepositorySelection != "selected" {
+		writeGHValidationError(w, "Installation", "repository_selection", "not_selected")
+		return
+	}
+	repo := s.store.GetRepoByID(repoID)
+	if !installationOwnsRepo(inst, repo) {
+		writeGHError(w, http.StatusNotFound, "Not Found")
+		return
+	}
 	added, ok := s.store.AddInstallationRepo(instID, repoID)
 	if !ok {
 		writeGHError(w, http.StatusNotFound, "Not Found")
 		return
 	}
-	if inst := s.store.GetInstallation(instID); inst != nil && added {
-		if app := s.store.GetApp(inst.AppID); app != nil {
-			s.emitInstallationRepositoriesEvent(app, "added", inst, []int{repoID})
+	if current := s.store.GetInstallation(instID); current != nil && added {
+		if app := s.store.GetApp(current.AppID); app != nil {
+			s.emitInstallationRepositoriesEvent(app, "added", current, []int{repoID})
 		}
 	}
 	w.WriteHeader(http.StatusNoContent)
@@ -979,14 +1032,28 @@ func (s *Server) handleRemoveUserInstallationRepo(w http.ResponseWriter, r *http
 		writeGHError(w, http.StatusBadRequest, "Invalid repository ID")
 		return
 	}
+	inst, allowed := s.userAccessibleInstallation(r.Context(), user, instID, true)
+	if !allowed {
+		writeGHError(w, http.StatusNotFound, "Not Found")
+		return
+	}
+	if inst.RepositorySelection != "selected" {
+		writeGHValidationError(w, "Installation", "repository_selection", "not_selected")
+		return
+	}
+	repo := s.store.GetRepoByID(repoID)
+	if !installationOwnsRepo(inst, repo) {
+		writeGHError(w, http.StatusNotFound, "Not Found")
+		return
+	}
 	removed, ok := s.store.RemoveInstallationRepo(instID, repoID)
 	if !ok {
 		writeGHError(w, http.StatusNotFound, "Not Found")
 		return
 	}
-	if inst := s.store.GetInstallation(instID); inst != nil && removed {
-		if app := s.store.GetApp(inst.AppID); app != nil {
-			s.emitInstallationRepositoriesEvent(app, "removed", inst, []int{repoID})
+	if current := s.store.GetInstallation(instID); current != nil && removed {
+		if app := s.store.GetApp(current.AppID); app != nil {
+			s.emitInstallationRepositoriesEvent(app, "removed", current, []int{repoID})
 		}
 	}
 	w.WriteHeader(http.StatusNoContent)
@@ -1067,6 +1134,24 @@ func installationAccessibleRepoIDs(st *Store, inst *Installation) map[int]struct
 // filterReposBySelection applies the installation's repository_selection mode
 // + token-scoped repository_ids subset.
 func filterReposBySelection(all []*Repo, inst *Installation, tok *InstallationToken) []*Repo {
+	out := filterInstallationRepos(all, inst)
+	if len(tok.RepositoryIDs) == 0 {
+		return out
+	}
+	allowed := make(map[int]struct{}, len(tok.RepositoryIDs))
+	for _, id := range tok.RepositoryIDs {
+		allowed[id] = struct{}{}
+	}
+	filtered := out[:0]
+	for _, repo := range out {
+		if _, ok := allowed[repo.ID]; ok {
+			filtered = append(filtered, repo)
+		}
+	}
+	return filtered
+}
+
+func filterInstallationRepos(all []*Repo, inst *Installation) []*Repo {
 	allowed := map[int]struct{}{}
 	if inst.RepositorySelection == "selected" {
 		for _, id := range inst.SelectedRepoIDs {
@@ -1076,15 +1161,6 @@ func filterReposBySelection(all []*Repo, inst *Installation, tok *InstallationTo
 		for _, r := range all {
 			allowed[r.ID] = struct{}{}
 		}
-	}
-	if len(tok.RepositoryIDs) > 0 {
-		narrowed := map[int]struct{}{}
-		for _, id := range tok.RepositoryIDs {
-			if _, ok := allowed[id]; ok {
-				narrowed[id] = struct{}{}
-			}
-		}
-		allowed = narrowed
 	}
 	out := make([]*Repo, 0, len(all))
 	for _, r := range all {

@@ -49,16 +49,12 @@ func TestWebhookFormContentTypeSigning(t *testing.T) {
 	s.deliverWebhook(hook, "push", "", payload)
 
 	// deliverWebhook is synchronous; the receiver runs in the test server.
-	deadline := time.Now().Add(2 * time.Second)
-	for time.Now().Before(deadline) {
+	testEventually(2*time.Second, 20*time.Millisecond, func() bool {
 		mu.Lock()
 		done := gotBody != nil
 		mu.Unlock()
-		if done {
-			break
-		}
-		time.Sleep(20 * time.Millisecond)
-	}
+		return done
+	})
 
 	mu.Lock()
 	defer mu.Unlock()
@@ -108,16 +104,12 @@ func TestWebhookJSONContentTypeSigning(t *testing.T) {
 	payload := []byte(`{"ref":"refs/heads/main"}`)
 	s.deliverWebhook(hook, "push", "", payload)
 
-	deadline := time.Now().Add(2 * time.Second)
-	for time.Now().Before(deadline) {
+	testEventually(2*time.Second, 20*time.Millisecond, func() bool {
 		mu.Lock()
 		done := gotBody != nil
 		mu.Unlock()
-		if done {
-			break
-		}
-		time.Sleep(20 * time.Millisecond)
-	}
+		return done
+	})
 
 	mu.Lock()
 	defer mu.Unlock()
@@ -166,7 +158,7 @@ func TestListArtifactsScopedToRun(t *testing.T) {
 		s.artifactStore.mu.Lock()
 		s.artifactStore.artifacts[id] = &Artifact{
 			ID: id, Name: name, Finalized: true,
-			WorkflowRunBackendID: backendID, CreatedAt: time.Now(),
+			WorkflowRunBackendID: backendID, CreatedAt: fixedTestTime,
 		}
 		s.artifactStore.mu.Unlock()
 	}
