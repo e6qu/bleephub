@@ -6,6 +6,21 @@ import (
 	"time"
 )
 
+// replaceClockNow atomically installs a deterministic test clock and returns
+// the previous source so callers can restore it. Servers own concurrent
+// schedulers and timeout watchers that may still read the clock during cleanup,
+// so test code must never assign clockNow directly.
+func (s *Server) replaceClockNow(clockNow func() time.Time) func() time.Time {
+	if s == nil {
+		return nil
+	}
+	s.clockMu.Lock()
+	previous := s.clockNow
+	s.clockNow = clockNow
+	s.clockMu.Unlock()
+	return previous
+}
+
 func TestServerClockReplacementIsConcurrentSafe(t *testing.T) {
 	first := time.Date(2040, time.January, 2, 3, 4, 5, 0, time.UTC)
 	second := first.Add(time.Hour)
