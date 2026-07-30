@@ -45,6 +45,9 @@ func TestEnterpriseStatePersistenceReload(t *testing.T) {
 		Name: "reload-enterprise-ruleset", Target: "branch", Enforcement: "active",
 		Rules: []Rule{{Type: "deletion"}},
 	})
+	enterprisePatterns := st1.CreateSecretScanningCustomPatterns("enterprise:bleephub", []secretScanningPatternCreate{{
+		Name: "reload-enterprise-pattern", Pattern: `ent_[0-9a-f]{16}`,
+	}})
 	repo := st1.CreateRepo(admin, "ent-reload-repo", "", false)
 	if repo == nil {
 		t.Fatal("CreateRepo returned nil")
@@ -196,6 +199,10 @@ func TestEnterpriseStatePersistenceReload(t *testing.T) {
 	if gotRuleset := st2.GetEnterpriseRuleset("bleephub", enterpriseRuleset.ID); gotRuleset == nil ||
 		gotRuleset.Name != "reload-enterprise-ruleset" || len(gotRuleset.Rules) != 1 {
 		t.Errorf("enterprise ruleset did not persist: %+v", gotRuleset)
+	}
+	if gotPatterns := st2.ListSecretScanningCustomPatterns("enterprise:bleephub"); len(gotPatterns) != 1 ||
+		gotPatterns[0].ID != enterprisePatterns[0].ID || gotPatterns[0].Name != "reload-enterprise-pattern" {
+		t.Errorf("enterprise secret scanning patterns did not persist: %+v", gotPatterns)
 	}
 	if st2.GetNetworkConfiguration(enterpriseNetworkScope, enterpriseNetwork.ID) == nil ||
 		st2.GetNetworkSettings(enterpriseNetworkScope, enterpriseNetworkSettings.ID) == nil {

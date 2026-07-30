@@ -92,7 +92,7 @@ func (st *Store) CreateSecretScanningCustomPatterns(scope string, specs []secret
 	if st.SecretScanningCustomPatterns[scope] == nil {
 		st.SecretScanningCustomPatterns[scope] = map[int]*SecretScanningCustomPattern{}
 	}
-	now := time.Now().UTC()
+	now := st.currentTime()
 	out := make([]*SecretScanningCustomPattern, 0, len(specs))
 	for _, spec := range specs {
 		start := spec.StartDelimiter
@@ -149,7 +149,7 @@ func (st *Store) UpdateSecretScanningCustomPattern(scope string, id int, update 
 		pattern.MustNotMatch = append([]string(nil), (*update.MustNotMatch)...)
 	}
 	pattern.Version = uuid.NewString()
-	pattern.UpdatedAt = time.Now().UTC()
+	pattern.UpdatedAt = st.currentTime()
 	if st.persist != nil {
 		st.persist.MustPut("secret_scanning_custom_patterns", scope, st.SecretScanningCustomPatterns[scope])
 	}

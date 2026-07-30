@@ -91,6 +91,7 @@ func (s *Server) registerGHEnterpriseRoutes() {
 	s.registerGHEnterpriseAdminRoutes()
 	s.registerGHEnterprisePropertyRoutes()
 	s.registerGHEnterpriseRulesetRoutes()
+	s.registerGHEnterpriseSecurityRoutes()
 	s.registerGHEnterpriseTeamRoutes()
 	s.registerGHEnterpriseCodeSecurityRoutes()
 	s.registerGHEnterpriseActionsRoutes()

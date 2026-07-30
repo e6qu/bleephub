@@ -17812,7 +17812,6 @@
             "DELETE /enterprises/{}/enterprise-roles/teams/{}/{}",
             "DELETE /enterprises/{}/enterprise-roles/users/{}",
             "DELETE /enterprises/{}/enterprise-roles/users/{}/{}",
-            "DELETE /enterprises/{}/secret-scanning/custom-patterns",
             "DELETE /enterprises/{}/settings/billing/budgets/{}",
             "DELETE /enterprises/{}/settings/billing/cost-centers/{}",
             "DELETE /enterprises/{}/settings/billing/cost-centers/{}/resource",
@@ -17834,16 +17833,12 @@
             "GET /enterprises/{}/apps/installable_organizations/{}/accessible_repositories",
             "GET /enterprises/{}/apps/organizations/{}/installations",
             "GET /enterprises/{}/apps/organizations/{}/installations/{}/repositories",
-            "GET /enterprises/{}/bypass-requests/push-rules",
-            "GET /enterprises/{}/bypass-requests/secret-scanning",
-            "GET /enterprises/{}/code-scanning/alerts",
             "GET /enterprises/{}/consumed-licenses",
             "GET /enterprises/{}/copilot/billing/seats",
             "GET /enterprises/{}/copilot/content_exclusion",
             "GET /enterprises/{}/copilot/custom-agents",
             "GET /enterprises/{}/copilot/custom-agents/source",
             "GET /enterprises/{}/copilot/usage-records",
-            "GET /enterprises/{}/dismissal-requests/secret-scanning",
             "GET /enterprises/{}/enterprise-roles",
             "GET /enterprises/{}/enterprise-roles/{}",
             "GET /enterprises/{}/enterprise-roles/{}/teams",
@@ -17852,9 +17847,6 @@
             "GET /enterprises/{}/installation",
             "GET /enterprises/{}/license-sync-status",
             "GET /enterprises/{}/members/{}/copilot",
-            "GET /enterprises/{}/secret-scanning/alerts",
-            "GET /enterprises/{}/secret-scanning/custom-patterns",
-            "GET /enterprises/{}/secret-scanning/pattern-configurations",
             "GET /enterprises/{}/settings/billing/advanced-security",
             "GET /enterprises/{}/settings/billing/ai_credit/usage",
             "GET /enterprises/{}/settings/billing/budgets",
@@ -17909,8 +17901,6 @@
             "PATCH /enterprises/{}/apps/organizations/{}/installations/{}/repositories",
             "PATCH /enterprises/{}/apps/organizations/{}/installations/{}/repositories/add",
             "PATCH /enterprises/{}/apps/organizations/{}/installations/{}/repositories/remove",
-            "PATCH /enterprises/{}/secret-scanning/custom-patterns/{}",
-            "PATCH /enterprises/{}/secret-scanning/pattern-configurations",
             "PATCH /enterprises/{}/settings/billing/budgets/{}",
             "PATCH /enterprises/{}/settings/billing/cost-centers/{}",
             "PATCH /organizations/{}/org-properties/values",
@@ -17932,7 +17922,6 @@
             "POST /enterprises/{}/copilot/billing/selected_enterprise_teams",
             "POST /enterprises/{}/copilot/billing/selected_users",
             "POST /enterprises/{}/innersource-vulnerabilities/sync",
-            "POST /enterprises/{}/secret-scanning/custom-patterns",
             "POST /enterprises/{}/settings/billing/budgets",
             "POST /enterprises/{}/settings/billing/cost-centers",
             "POST /enterprises/{}/settings/billing/cost-centers/{}/resource",
@@ -17954,7 +17943,7 @@
             "PUT /scim/v2/enterprises/{}/Users/{}",
             "PUT /scim/v2/organizations/{}/Users/{}"
           ],
-          "represented_operations": 1309
+          "represented_operations": 1320
         },
         "ghes-2.22": {
           "documented_operations": 642,
@@ -18156,8 +18145,6 @@
             "GET /enterprise/stats/security-products",
             "GET /enterprise/stats/users",
             "GET /enterprises/{}/actions/cache/usage-policy",
-            "GET /enterprises/{}/code-scanning/alerts",
-            "GET /enterprises/{}/secret-scanning/alerts",
             "GET /enterprises/{}/settings/billing/advanced-security",
             "GET /manage/v1/access/ssh",
             "GET /manage/v1/checks/system-requirements",
@@ -18288,7 +18275,7 @@
             "PUT /setup/api/settings",
             "PUT /teams/{}/projects/{}"
           ],
-          "represented_operations": 784
+          "represented_operations": 786
         },
         "ghes-3.21": {
           "documented_operations": 1092,
@@ -18347,13 +18334,7 @@
             "GET /enterprises/{}/apps/installable_organizations/{}/accessible_repositories",
             "GET /enterprises/{}/apps/organizations/{}/installations",
             "GET /enterprises/{}/apps/organizations/{}/installations/{}/repositories",
-            "GET /enterprises/{}/bypass-requests/push-rules",
-            "GET /enterprises/{}/bypass-requests/secret-scanning",
-            "GET /enterprises/{}/code-scanning/alerts",
-            "GET /enterprises/{}/dismissal-requests/secret-scanning",
             "GET /enterprises/{}/installation",
-            "GET /enterprises/{}/secret-scanning/alerts",
-            "GET /enterprises/{}/secret-scanning/pattern-configurations",
             "GET /enterprises/{}/settings/billing/advanced-security",
             "GET /manage/v1/access/ssh",
             "GET /manage/v1/checks/system-requirements",
@@ -18415,7 +18396,6 @@
             "PATCH /enterprises/{}/apps/organizations/{}/installations/{}/repositories",
             "PATCH /enterprises/{}/apps/organizations/{}/installations/{}/repositories/add",
             "PATCH /enterprises/{}/apps/organizations/{}/installations/{}/repositories/remove",
-            "PATCH /enterprises/{}/secret-scanning/pattern-configurations",
             "PATCH /organizations/{}/org-properties/values",
             "PATCH /orgs/{}/announcement",
             "PATCH /orgs/{}/custom-repository-roles/{}",
@@ -18457,7 +18437,7 @@
             "PUT /scim/v2/enterprises/{}/Groups/{}",
             "PUT /scim/v2/enterprises/{}/Users/{}"
           ],
-          "represented_operations": 929
+          "represented_operations": 936
         }
       },
       "dispatch_covered_operations": [
@@ -18655,6 +18635,12 @@
         "method": "DELETE",
         "path": "/api/v3/enterprises/{enterprise}/rulesets/{ruleset_id}",
         "source": "internal/server/gh_enterprise_rulesets.go"
+      },
+      {
+        "line": 13,
+        "method": "DELETE",
+        "path": "/api/v3/enterprises/{enterprise}/secret-scanning/custom-patterns",
+        "source": "internal/server/gh_enterprise_security.go"
       },
       {
         "line": 15,
@@ -20097,6 +20083,24 @@
         "source": "internal/server/gh_enterprise_admin.go"
       },
       {
+        "line": 17,
+        "method": "GET",
+        "path": "/api/v3/enterprises/{enterprise}/bypass-requests/push-rules",
+        "source": "internal/server/gh_enterprise_security.go"
+      },
+      {
+        "line": 18,
+        "method": "GET",
+        "path": "/api/v3/enterprises/{enterprise}/bypass-requests/secret-scanning",
+        "source": "internal/server/gh_enterprise_security.go"
+      },
+      {
+        "line": 9,
+        "method": "GET",
+        "path": "/api/v3/enterprises/{enterprise}/code-scanning/alerts",
+        "source": "internal/server/gh_enterprise_security.go"
+      },
+      {
         "line": 12,
         "method": "GET",
         "path": "/api/v3/enterprises/{enterprise}/code-security/configurations",
@@ -20175,6 +20179,12 @@
         "source": "internal/server/gh_enterprise_dependabot.go"
       },
       {
+        "line": 19,
+        "method": "GET",
+        "path": "/api/v3/enterprises/{enterprise}/dismissal-requests/secret-scanning",
+        "source": "internal/server/gh_enterprise_security.go"
+      },
+      {
         "line": 42,
         "method": "GET",
         "path": "/api/v3/enterprises/{enterprise}/network-configurations",
@@ -20239,6 +20249,24 @@
         "method": "GET",
         "path": "/api/v3/enterprises/{enterprise}/rulesets/{ruleset_id}/history/{version_id}",
         "source": "internal/server/gh_enterprise_rulesets.go"
+      },
+      {
+        "line": 10,
+        "method": "GET",
+        "path": "/api/v3/enterprises/{enterprise}/secret-scanning/alerts",
+        "source": "internal/server/gh_enterprise_security.go"
+      },
+      {
+        "line": 11,
+        "method": "GET",
+        "path": "/api/v3/enterprises/{enterprise}/secret-scanning/custom-patterns",
+        "source": "internal/server/gh_enterprise_security.go"
+      },
+      {
+        "line": 15,
+        "method": "GET",
+        "path": "/api/v3/enterprises/{enterprise}/secret-scanning/pattern-configurations",
+        "source": "internal/server/gh_enterprise_security.go"
       },
       {
         "line": 11,
@@ -23825,6 +23853,18 @@
       {
         "line": 14,
         "method": "PATCH",
+        "path": "/api/v3/enterprises/{enterprise}/secret-scanning/custom-patterns/{pattern_id}",
+        "source": "internal/server/gh_enterprise_security.go"
+      },
+      {
+        "line": 16,
+        "method": "PATCH",
+        "path": "/api/v3/enterprises/{enterprise}/secret-scanning/pattern-configurations",
+        "source": "internal/server/gh_enterprise_security.go"
+      },
+      {
+        "line": 14,
+        "method": "PATCH",
         "path": "/api/v3/enterprises/{enterprise}/teams/{team_slug}",
         "source": "internal/server/gh_enterprise_teams.go"
       },
@@ -24403,6 +24443,12 @@
         "method": "POST",
         "path": "/api/v3/enterprises/{enterprise}/rulesets",
         "source": "internal/server/gh_enterprise_rulesets.go"
+      },
+      {
+        "line": 12,
+        "method": "POST",
+        "path": "/api/v3/enterprises/{enterprise}/secret-scanning/custom-patterns",
+        "source": "internal/server/gh_enterprise_security.go"
       },
       {
         "line": 12,

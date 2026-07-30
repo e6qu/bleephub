@@ -186,7 +186,10 @@ func validPushProtectionSetting(setting string, allowNotSet bool) bool {
 }
 
 func (s *Server) handleUpdateSecretScanningPatternConfigurations(w http.ResponseWriter, r *http.Request) {
-	orgLogin := r.PathValue("org")
+	s.handleUpdateSecretScanningPatternConfigurationsForScope(w, r, r.PathValue("org"))
+}
+
+func (s *Server) handleUpdateSecretScanningPatternConfigurationsForScope(w http.ResponseWriter, r *http.Request, scope string) {
 	var req struct {
 		PatternConfigVersion    *string `json:"pattern_config_version"`
 		ProviderPatternSettings []struct {
@@ -228,7 +231,7 @@ func (s *Server) handleUpdateSecretScanningPatternConfigurations(w http.Response
 		custom[setting.TokenType] = setting.PushProtectionSetting
 	}
 
-	newVersion, ok := s.store.UpdateSecretScanningPatternConfig(orgLogin, req.PatternConfigVersion, provider, custom)
+	newVersion, ok := s.store.UpdateSecretScanningPatternConfig(scope, req.PatternConfigVersion, provider, custom)
 	if !ok {
 		writeGHError(w, http.StatusConflict, "pattern_config_version does not match the current configuration version")
 		return
