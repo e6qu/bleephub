@@ -17810,7 +17810,6 @@
             "DELETE /enterprises/{}/settings/billing/budgets/{}",
             "DELETE /enterprises/{}/settings/billing/cost-centers/{}",
             "DELETE /enterprises/{}/settings/billing/cost-centers/{}/resource",
-            "DELETE /enterprises/{}/visual-studio-subscriptions/{}",
             "DELETE /orgs/{}/announcement",
             "DELETE /orgs/{}/credential-authorizations/{}",
             "DELETE /orgs/{}/custom-repository-roles/{}",
@@ -17821,16 +17820,11 @@
             "DELETE /repos/{}/{}/dismissal-requests/dependabot/{}",
             "DELETE /repos/{}/{}/lfs",
             "DELETE /scim/v2/organizations/{}/Users/{}",
-            "GET /enterprise-installation/{}/server-statistics",
-            "GET /enterprises/{}/consumed-licenses",
             "GET /enterprises/{}/copilot/billing/seats",
             "GET /enterprises/{}/copilot/content_exclusion",
             "GET /enterprises/{}/copilot/custom-agents",
             "GET /enterprises/{}/copilot/custom-agents/source",
             "GET /enterprises/{}/copilot/usage-records",
-            "GET /enterprises/{}/innersource-vulnerabilities/sync/status/{}",
-            "GET /enterprises/{}/installation",
-            "GET /enterprises/{}/license-sync-status",
             "GET /enterprises/{}/members/{}/copilot",
             "GET /enterprises/{}/settings/billing/advanced-security",
             "GET /enterprises/{}/settings/billing/ai_credit/usage",
@@ -17844,7 +17838,6 @@
             "GET /enterprises/{}/settings/billing/reports/{}",
             "GET /enterprises/{}/settings/billing/usage",
             "GET /enterprises/{}/settings/billing/usage/summary",
-            "GET /enterprises/{}/visual-studio-subscriptions",
             "GET /organizations/{}/custom_roles",
             "GET /organizations/{}/org-properties/values",
             "GET /orgs/{}/announcement",
@@ -17896,7 +17889,6 @@
             "PATCH /teams/{}/team-sync/group-mappings",
             "POST /enterprises/{}/copilot/billing/selected_enterprise_teams",
             "POST /enterprises/{}/copilot/billing/selected_users",
-            "POST /enterprises/{}/innersource-vulnerabilities/sync",
             "POST /enterprises/{}/settings/billing/budgets",
             "POST /enterprises/{}/settings/billing/cost-centers",
             "POST /enterprises/{}/settings/billing/cost-centers/{}/resource",
@@ -17908,11 +17900,10 @@
             "POST /scim/v2/organizations/{}/Users",
             "PUT /enterprises/{}/copilot/content_exclusion",
             "PUT /enterprises/{}/copilot/custom-agents/source",
-            "PUT /enterprises/{}/visual-studio-subscriptions/{}",
             "PUT /repos/{}/{}/lfs",
             "PUT /scim/v2/organizations/{}/Users/{}"
           ],
-          "represented_operations": 1351
+          "represented_operations": 1360
         },
         "ghes-2.22": {
           "documented_operations": 642,
@@ -18284,7 +18275,6 @@
             "GET /enterprise/stats/security-products",
             "GET /enterprise/stats/users",
             "GET /enterprises/{}/actions/cache/usage-policy",
-            "GET /enterprises/{}/installation",
             "GET /enterprises/{}/settings/billing/advanced-security",
             "GET /manage/v1/access/ssh",
             "GET /manage/v1/checks/system-requirements",
@@ -18373,7 +18363,7 @@
             "PUT /manage/v1/config/settings",
             "PUT /repos/{}/{}/lfs"
           ],
-          "represented_operations": 957
+          "represented_operations": 958
         }
       },
       "dispatch_covered_operations": [
@@ -18625,6 +18615,12 @@
         "method": "DELETE",
         "path": "/api/v3/enterprises/{enterprise}/teams/{team_slug}/organizations/{org}",
         "source": "internal/server/gh_enterprise_teams.go"
+      },
+      {
+        "line": 46,
+        "method": "DELETE",
+        "path": "/api/v3/enterprises/{enterprise}/visual-studio-subscriptions/{visual_studio_subscription_id}",
+        "source": "internal/server/gh_enterprise_licensing.go"
       },
       {
         "line": 19,
@@ -19845,6 +19841,12 @@
         "source": "internal/server/gh_meta_extras.go"
       },
       {
+        "line": 41,
+        "method": "GET",
+        "path": "/api/v3/enterprise-installation/{enterprise_or_org}/server-statistics",
+        "source": "internal/server/gh_enterprise_licensing.go"
+      },
+      {
         "line": 8,
         "method": "GET",
         "path": "/api/v3/enterprises/{enterprise}/actions/cache/retention-limit",
@@ -20133,6 +20135,12 @@
         "source": "internal/server/gh_enterprise_admin.go"
       },
       {
+        "line": 42,
+        "method": "GET",
+        "path": "/api/v3/enterprises/{enterprise}/consumed-licenses",
+        "source": "internal/server/gh_enterprise_licensing.go"
+      },
+      {
         "line": 13,
         "method": "GET",
         "path": "/api/v3/enterprises/{enterprise}/copilot/metrics/reports/enterprise-1-day",
@@ -20209,6 +20217,24 @@
         "method": "GET",
         "path": "/api/v3/enterprises/{enterprise}/enterprise-roles/{role_id}/users",
         "source": "internal/server/gh_enterprise_roles.go"
+      },
+      {
+        "line": 53,
+        "method": "GET",
+        "path": "/api/v3/enterprises/{enterprise}/innersource-vulnerabilities/sync/status/{job_id}",
+        "source": "internal/server/gh_enterprise_licensing.go"
+      },
+      {
+        "line": 47,
+        "method": "GET",
+        "path": "/api/v3/enterprises/{enterprise}/installation",
+        "source": "internal/server/gh_enterprise_licensing.go"
+      },
+      {
+        "line": 43,
+        "method": "GET",
+        "path": "/api/v3/enterprises/{enterprise}/license-sync-status",
+        "source": "internal/server/gh_enterprise_licensing.go"
       },
       {
         "line": 42,
@@ -20329,6 +20355,12 @@
         "method": "GET",
         "path": "/api/v3/enterprises/{enterprise}/teams/{team_slug}/organizations/{org}",
         "source": "internal/server/gh_enterprise_teams.go"
+      },
+      {
+        "line": 44,
+        "method": "GET",
+        "path": "/api/v3/enterprises/{enterprise}/visual-studio-subscriptions",
+        "source": "internal/server/gh_enterprise_licensing.go"
       },
       {
         "line": 18,
@@ -24519,6 +24551,12 @@
         "source": "internal/server/gh_enterprise_admin.go"
       },
       {
+        "line": 52,
+        "method": "POST",
+        "path": "/api/v3/enterprises/{enterprise}/innersource-vulnerabilities/sync",
+        "source": "internal/server/gh_enterprise_licensing.go"
+      },
+      {
         "line": 43,
         "method": "POST",
         "path": "/api/v3/enterprises/{enterprise}/network-configurations",
@@ -25849,6 +25887,12 @@
         "method": "PUT",
         "path": "/api/v3/enterprises/{enterprise}/teams/{team_slug}/organizations/{org}",
         "source": "internal/server/gh_enterprise_teams.go"
+      },
+      {
+        "line": 45,
+        "method": "PUT",
+        "path": "/api/v3/enterprises/{enterprise}/visual-studio-subscriptions/{visual_studio_subscription_id}",
+        "source": "internal/server/gh_enterprise_licensing.go"
       },
       {
         "line": 20,

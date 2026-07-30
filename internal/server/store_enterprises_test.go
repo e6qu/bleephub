@@ -106,6 +106,17 @@ func TestEnterpriseStatePersistenceReload(t *testing.T) {
 	}
 	st1.EnterpriseSettings.EnterpriseRoleTeamAssignments[8030] = []int{team.ID}
 	st1.EnterpriseSettings.EnterpriseRoleUserAssignments[8031] = []int{admin.ID}
+	st1.EnterpriseSettings.VisualStudioSubscriptions["00000000-0000-0000-0000-000000000042"] = &VisualStudioSubscription{
+		SubscriptionID: "00000000-0000-0000-0000-000000000042",
+		Email:          admin.Email, Username: admin.Login, ManualMatch: true,
+	}
+	st1.EnterpriseSettings.InnerSourceSyncJobs["external-vulnerability-sync-reload"] = &EnterpriseInnerSourceSyncJob{
+		ID: "external-vulnerability-sync-reload", Status: "completed", Processed: 1, Created: 1,
+		Results: []EnterpriseInnerSourceSyncResult{{
+			ExternalID: "MVS-reload", Status: "created", GHSAID: "GHIS-reload",
+		}},
+		CreatedAt: st1.currentTime(), UpdatedAt: st1.currentTime(),
+	}
 	st1.EnterpriseSettings.OIDCIncludeEnterpriseSlug = true
 	st1.EnterpriseSettings.ActionsEnabledOrganizations = "selected"
 	st1.EnterpriseSettings.ActionsAllowedActions = "selected"
@@ -256,6 +267,13 @@ func TestEnterpriseStatePersistenceReload(t *testing.T) {
 		s.EnterpriseRoleUserAssignments[8031][0] != admin.ID {
 		t.Errorf("enterprise role assignments did not persist: teams=%+v users=%+v",
 			s.EnterpriseRoleTeamAssignments, s.EnterpriseRoleUserAssignments)
+	}
+	if s.VisualStudioSubscriptions["00000000-0000-0000-0000-000000000042"] == nil ||
+		!s.VisualStudioSubscriptions["00000000-0000-0000-0000-000000000042"].ManualMatch ||
+		s.InnerSourceSyncJobs["external-vulnerability-sync-reload"] == nil ||
+		len(s.InnerSourceSyncJobs["external-vulnerability-sync-reload"].Results) != 1 {
+		t.Errorf("enterprise licensing state did not persist: subscriptions=%+v inner_source=%+v",
+			s.VisualStudioSubscriptions, s.InnerSourceSyncJobs)
 	}
 	if len(s.DependabotAccessibleRepoIDs) != 1 || s.DependabotAccessibleRepoIDs[0] != repo.ID {
 		t.Errorf("dependabot access = %v", s.DependabotAccessibleRepoIDs)

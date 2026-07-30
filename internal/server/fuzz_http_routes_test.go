@@ -1470,4 +1470,13 @@ var fuzzRoutePatterns = []string{
 	"GET /api/v3/enterprises/{enterprise}/enterprise-roles/{role_id}/users",
 	"PUT /api/v3/enterprises/{enterprise}/enterprise-roles/teams/{team_slug}/{role_id}",
 	"PUT /api/v3/enterprises/{enterprise}/enterprise-roles/users/{username}/{role_id}",
+	"DELETE /api/v3/enterprises/{enterprise}/visual-studio-subscriptions/{visual_studio_subscription_id}",
+	"GET /api/v3/enterprise-installation/{enterprise_or_org}/server-statistics",
+	"GET /api/v3/enterprises/{enterprise}/consumed-licenses",
+	"GET /api/v3/enterprises/{enterprise}/innersource-vulnerabilities/sync/status/{job_id}",
+	"GET /api/v3/enterprises/{enterprise}/installation",
+	"GET /api/v3/enterprises/{enterprise}/license-sync-status",
+	"GET /api/v3/enterprises/{enterprise}/visual-studio-subscriptions",
+	"POST /api/v3/enterprises/{enterprise}/innersource-vulnerabilities/sync",
+	"PUT /api/v3/enterprises/{enterprise}/visual-studio-subscriptions/{visual_studio_subscription_id}",
 }
