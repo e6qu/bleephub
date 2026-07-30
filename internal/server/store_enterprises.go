@@ -88,6 +88,8 @@ type EnterpriseSettings struct {
 	RepositoryCustomProperties   map[string]*CustomProperty        `json:"repository_custom_properties,omitempty"`
 	OrganizationCustomProperties map[string]*CustomProperty        `json:"organization_custom_properties,omitempty"`
 	OrganizationPropertyValues   map[string]map[string]interface{} `json:"organization_property_values,omitempty"`
+	SCIMUsers                    map[string]*EnterpriseSCIMUser    `json:"scim_users,omitempty"`
+	SCIMGroups                   map[string]*EnterpriseSCIMGroup   `json:"scim_groups,omitempty"`
 
 	// Dependabot repository access across organizations.
 	DependabotAccessibleRepoIDs []int  `json:"dependabot_accessible_repo_ids"`
@@ -177,6 +179,12 @@ func normalizeEnterpriseSettings(settings *EnterpriseSettings) *EnterpriseSettin
 	}
 	if settings.OrganizationPropertyValues == nil {
 		settings.OrganizationPropertyValues = map[string]map[string]interface{}{}
+	}
+	if settings.SCIMUsers == nil {
+		settings.SCIMUsers = map[string]*EnterpriseSCIMUser{}
+	}
+	if settings.SCIMGroups == nil {
+		settings.SCIMGroups = map[string]*EnterpriseSCIMGroup{}
 	}
 	if settings.ActionsCacheRetentionDays == 0 {
 		settings.ActionsCacheRetentionDays = 14

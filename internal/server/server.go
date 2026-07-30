@@ -949,7 +949,9 @@ func writeJSON(w http.ResponseWriter, status int, v interface{}) {
 		}
 		current = unwrapper.Unwrap()
 	}
-	w.Header().Set("Content-Type", "application/json")
+	if w.Header().Get("Content-Type") == "" {
+		w.Header().Set("Content-Type", "application/json")
+	}
 	w.WriteHeader(status)
 	_, _ = w.Write(append(body, '\n'))
 }

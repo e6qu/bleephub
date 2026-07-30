@@ -17824,8 +17824,6 @@
             "DELETE /repos/{}/{}/bypass-responses/secret-scanning/{}",
             "DELETE /repos/{}/{}/dismissal-requests/dependabot/{}",
             "DELETE /repos/{}/{}/lfs",
-            "DELETE /scim/v2/enterprises/{}/Groups/{}",
-            "DELETE /scim/v2/enterprises/{}/Users/{}",
             "DELETE /scim/v2/organizations/{}/Users/{}",
             "GET /enterprise-installation/{}/server-statistics",
             "GET /enterprises/{}/consumed-licenses",
@@ -17886,10 +17884,6 @@
             "GET /repos/{}/{}/dismissal-requests/dependabot/{}",
             "GET /repos/{}/{}/dismissal-requests/secret-scanning",
             "GET /repos/{}/{}/dismissal-requests/secret-scanning/{}",
-            "GET /scim/v2/enterprises/{}/Groups",
-            "GET /scim/v2/enterprises/{}/Groups/{}",
-            "GET /scim/v2/enterprises/{}/Users",
-            "GET /scim/v2/enterprises/{}/Users/{}",
             "GET /scim/v2/organizations/{}/Users",
             "GET /scim/v2/organizations/{}/Users/{}",
             "GET /teams/{}/team-sync/group-mappings",
@@ -17906,8 +17900,6 @@
             "PATCH /repos/{}/{}/dismissal-requests/code-scanning/{}",
             "PATCH /repos/{}/{}/dismissal-requests/dependabot/{}",
             "PATCH /repos/{}/{}/dismissal-requests/secret-scanning/{}",
-            "PATCH /scim/v2/enterprises/{}/Groups/{}",
-            "PATCH /scim/v2/enterprises/{}/Users/{}",
             "PATCH /scim/v2/organizations/{}/Users/{}",
             "PATCH /teams/{}/team-sync/group-mappings",
             "POST /enterprises/{}/copilot/billing/selected_enterprise_teams",
@@ -17921,8 +17913,6 @@
             "POST /orgs/{}/custom_roles",
             "POST /orgs/{}/organization-roles",
             "POST /repos/{}/{}/dismissal-requests/dependabot/{}",
-            "POST /scim/v2/enterprises/{}/Groups",
-            "POST /scim/v2/enterprises/{}/Users",
             "POST /scim/v2/organizations/{}/Users",
             "PUT /enterprises/{}/copilot/content_exclusion",
             "PUT /enterprises/{}/copilot/custom-agents/source",
@@ -17930,11 +17920,9 @@
             "PUT /enterprises/{}/enterprise-roles/users/{}/{}",
             "PUT /enterprises/{}/visual-studio-subscriptions/{}",
             "PUT /repos/{}/{}/lfs",
-            "PUT /scim/v2/enterprises/{}/Groups/{}",
-            "PUT /scim/v2/enterprises/{}/Users/{}",
             "PUT /scim/v2/organizations/{}/Users/{}"
           ],
-          "represented_operations": 1329
+          "represented_operations": 1341
         },
         "ghes-2.22": {
           "documented_operations": 642,
@@ -18102,8 +18090,6 @@
             "DELETE /repos/{}/{}/lfs",
             "DELETE /repos/{}/{}/pre-receive-hooks/{}",
             "DELETE /repos/{}/{}/tags/protection/{}",
-            "DELETE /scim/v2/enterprises/{}/Groups/{}",
-            "DELETE /scim/v2/enterprises/{}/Users/{}",
             "DELETE /setup/api/settings/authorized-keys",
             "DELETE /teams/{}/discussions/{}",
             "DELETE /teams/{}/discussions/{}/comments/{}",
@@ -18180,10 +18166,6 @@
             "GET /repos/{}/{}/pre-receive-hooks/{}",
             "GET /repos/{}/{}/replicas/caches",
             "GET /repos/{}/{}/tags/protection",
-            "GET /scim/v2/enterprises/{}/Groups",
-            "GET /scim/v2/enterprises/{}/Groups/{}",
-            "GET /scim/v2/enterprises/{}/Users",
-            "GET /scim/v2/enterprises/{}/Users/{}",
             "GET /setup/api/configcheck",
             "GET /setup/api/maintenance",
             "GET /setup/api/settings",
@@ -18216,8 +18198,6 @@
             "PATCH /projects/columns/{}",
             "PATCH /repos/{}/{}/actions/cache/usage-policy",
             "PATCH /repos/{}/{}/pre-receive-hooks/{}",
-            "PATCH /scim/v2/enterprises/{}/Groups/{}",
-            "PATCH /scim/v2/enterprises/{}/Users/{}",
             "PATCH /teams/{}/discussions/{}",
             "PATCH /teams/{}/discussions/{}/comments/{}",
             "POST /admin/hooks",
@@ -18242,8 +18222,6 @@
             "POST /projects/columns/{}/cards",
             "POST /projects/{}/columns",
             "POST /repos/{}/{}/tags/protection",
-            "POST /scim/v2/enterprises/{}/Groups",
-            "POST /scim/v2/enterprises/{}/Users",
             "POST /setup/api/configure",
             "POST /setup/api/maintenance",
             "POST /setup/api/settings/authorized-keys",
@@ -18261,12 +18239,10 @@
             "PUT /orgs/{}/teams/{}/projects/{}",
             "PUT /projects/{}/collaborators/{}",
             "PUT /repos/{}/{}/lfs",
-            "PUT /scim/v2/enterprises/{}/Groups/{}",
-            "PUT /scim/v2/enterprises/{}/Users/{}",
             "PUT /setup/api/settings",
             "PUT /teams/{}/projects/{}"
           ],
-          "represented_operations": 786
+          "represented_operations": 798
         },
         "ghes-3.21": {
           "documented_operations": 1092,
@@ -18290,8 +18266,6 @@
             "DELETE /repos/{}/{}/dismissal-requests/dependabot/{}",
             "DELETE /repos/{}/{}/lfs",
             "DELETE /repos/{}/{}/pre-receive-hooks/{}",
-            "DELETE /scim/v2/enterprises/{}/Groups/{}",
-            "DELETE /scim/v2/enterprises/{}/Users/{}",
             "GET /admin/hooks",
             "GET /admin/hooks/{}",
             "GET /admin/keys",
@@ -18366,10 +18340,6 @@
             "GET /repos/{}/{}/pre-receive-hooks",
             "GET /repos/{}/{}/pre-receive-hooks/{}",
             "GET /repos/{}/{}/replicas/caches",
-            "GET /scim/v2/enterprises/{}/Groups",
-            "GET /scim/v2/enterprises/{}/Groups/{}",
-            "GET /scim/v2/enterprises/{}/Users",
-            "GET /scim/v2/enterprises/{}/Users/{}",
             "PATCH /admin/hooks/{}",
             "PATCH /admin/ldap/teams/{}/mapping",
             "PATCH /admin/ldap/users/{}/mapping",
@@ -18391,8 +18361,6 @@
             "PATCH /repos/{}/{}/dismissal-requests/dependabot/{}",
             "PATCH /repos/{}/{}/dismissal-requests/secret-scanning/{}",
             "PATCH /repos/{}/{}/pre-receive-hooks/{}",
-            "PATCH /scim/v2/enterprises/{}/Groups/{}",
-            "PATCH /scim/v2/enterprises/{}/Users/{}",
             "POST /admin/hooks",
             "POST /admin/hooks/{}/pings",
             "POST /admin/ldap/teams/{}/sync",
@@ -18409,17 +18377,13 @@
             "POST /orgs/{}/custom-repository-roles",
             "POST /orgs/{}/organization-roles",
             "POST /repos/{}/{}/dismissal-requests/dependabot/{}",
-            "POST /scim/v2/enterprises/{}/Groups",
-            "POST /scim/v2/enterprises/{}/Users",
             "PUT /authorizations/clients/{}",
             "PUT /authorizations/clients/{}/{}",
             "PUT /manage/v1/config/license",
             "PUT /manage/v1/config/settings",
-            "PUT /repos/{}/{}/lfs",
-            "PUT /scim/v2/enterprises/{}/Groups/{}",
-            "PUT /scim/v2/enterprises/{}/Users/{}"
+            "PUT /repos/{}/{}/lfs"
           ],
-          "represented_operations": 945
+          "represented_operations": 957
         }
       },
       "dispatch_covered_operations": [
@@ -19517,6 +19481,18 @@
         "method": "DELETE",
         "path": "/api/v3/repos/{owner}/{repo}/vulnerability-alerts",
         "source": "internal/server/gh_repos_rest.go"
+      },
+      {
+        "line": 77,
+        "method": "DELETE",
+        "path": "/api/v3/scim/v2/enterprises/{enterprise}/Groups/{scim_group_id}",
+        "source": "internal/server/gh_enterprise_scim.go"
+      },
+      {
+        "line": 70,
+        "method": "DELETE",
+        "path": "/api/v3/scim/v2/enterprises/{enterprise}/Users/{scim_user_id}",
+        "source": "internal/server/gh_enterprise_scim.go"
       },
       {
         "line": 16,
@@ -23137,6 +23113,30 @@
         "source": "internal/server/gh_repos_reads.go"
       },
       {
+        "line": 72,
+        "method": "GET",
+        "path": "/api/v3/scim/v2/enterprises/{enterprise}/Groups",
+        "source": "internal/server/gh_enterprise_scim.go"
+      },
+      {
+        "line": 74,
+        "method": "GET",
+        "path": "/api/v3/scim/v2/enterprises/{enterprise}/Groups/{scim_group_id}",
+        "source": "internal/server/gh_enterprise_scim.go"
+      },
+      {
+        "line": 65,
+        "method": "GET",
+        "path": "/api/v3/scim/v2/enterprises/{enterprise}/Users",
+        "source": "internal/server/gh_enterprise_scim.go"
+      },
+      {
+        "line": 67,
+        "method": "GET",
+        "path": "/api/v3/scim/v2/enterprises/{enterprise}/Users/{scim_user_id}",
+        "source": "internal/server/gh_enterprise_scim.go"
+      },
+      {
         "line": 24,
         "method": "GET",
         "path": "/api/v3/search/code",
@@ -24257,6 +24257,18 @@
         "method": "PATCH",
         "path": "/api/v3/repos/{owner}/{repo}/security-advisories/{ghsa_id}",
         "source": "internal/server/gh_security_advisories.go"
+      },
+      {
+        "line": 76,
+        "method": "PATCH",
+        "path": "/api/v3/scim/v2/enterprises/{enterprise}/Groups/{scim_group_id}",
+        "source": "internal/server/gh_enterprise_scim.go"
+      },
+      {
+        "line": 69,
+        "method": "PATCH",
+        "path": "/api/v3/scim/v2/enterprises/{enterprise}/Users/{scim_user_id}",
+        "source": "internal/server/gh_enterprise_scim.go"
       },
       {
         "line": 15,
@@ -25459,6 +25471,18 @@
         "source": "internal/server/gh_repos_generate.go"
       },
       {
+        "line": 73,
+        "method": "POST",
+        "path": "/api/v3/scim/v2/enterprises/{enterprise}/Groups",
+        "source": "internal/server/gh_enterprise_scim.go"
+      },
+      {
+        "line": 66,
+        "method": "POST",
+        "path": "/api/v3/scim/v2/enterprises/{enterprise}/Users",
+        "source": "internal/server/gh_enterprise_scim.go"
+      },
+      {
         "line": 16,
         "method": "POST",
         "path": "/api/v3/user/codespaces",
@@ -26441,6 +26465,18 @@
         "method": "PUT",
         "path": "/api/v3/repos/{owner}/{repo}/vulnerability-alerts",
         "source": "internal/server/gh_repos_rest.go"
+      },
+      {
+        "line": 75,
+        "method": "PUT",
+        "path": "/api/v3/scim/v2/enterprises/{enterprise}/Groups/{scim_group_id}",
+        "source": "internal/server/gh_enterprise_scim.go"
+      },
+      {
+        "line": 68,
+        "method": "PUT",
+        "path": "/api/v3/scim/v2/enterprises/{enterprise}/Users/{scim_user_id}",
+        "source": "internal/server/gh_enterprise_scim.go"
       },
       {
         "line": 22,

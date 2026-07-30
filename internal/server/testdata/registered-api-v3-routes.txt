@@ -172,6 +172,8 @@ DELETE /api/v3/repos/{owner}/{repo}/rulesets/{ruleset_id}
 DELETE /api/v3/repos/{owner}/{repo}/secret-scanning/custom-patterns
 DELETE /api/v3/repos/{owner}/{repo}/subscription
 DELETE /api/v3/repos/{owner}/{repo}/vulnerability-alerts
+DELETE /api/v3/scim/v2/enterprises/{enterprise}/Groups/{scim_group_id}
+DELETE /api/v3/scim/v2/enterprises/{enterprise}/Users/{scim_user_id}
 DELETE /api/v3/teams/{team_id}
 DELETE /api/v3/teams/{team_id}/members/{username}
 DELETE /api/v3/teams/{team_id}/memberships/{username}
@@ -775,6 +777,10 @@ GET /api/v3/repos/{owner}/{repo}/traffic/views
 GET /api/v3/repos/{owner}/{repo}/vulnerability-alerts
 GET /api/v3/repos/{owner}/{repo}/zipball/{ref...}
 GET /api/v3/repositories
+GET /api/v3/scim/v2/enterprises/{enterprise}/Groups
+GET /api/v3/scim/v2/enterprises/{enterprise}/Groups/{scim_group_id}
+GET /api/v3/scim/v2/enterprises/{enterprise}/Users
+GET /api/v3/scim/v2/enterprises/{enterprise}/Users/{scim_user_id}
 GET /api/v3/search/code
 GET /api/v3/search/commits
 GET /api/v3/search/issues
@@ -962,6 +968,8 @@ PATCH /api/v3/repos/{owner}/{repo}/releases/{release_id}
 PATCH /api/v3/repos/{owner}/{repo}/secret-scanning/alerts/{alert_number}
 PATCH /api/v3/repos/{owner}/{repo}/secret-scanning/custom-patterns/{pattern_id}
 PATCH /api/v3/repos/{owner}/{repo}/security-advisories/{ghsa_id}
+PATCH /api/v3/scim/v2/enterprises/{enterprise}/Groups/{scim_group_id}
+PATCH /api/v3/scim/v2/enterprises/{enterprise}/Users/{scim_user_id}
 PATCH /api/v3/teams/{team_id}
 PATCH /api/v3/user
 PATCH /api/v3/user/codespaces/{codespace_name}
@@ -1162,6 +1170,8 @@ POST /api/v3/repos/{owner}/{repo}/stacks/{stack_number}/unstack
 POST /api/v3/repos/{owner}/{repo}/statuses/{sha}
 POST /api/v3/repos/{owner}/{repo}/transfer
 POST /api/v3/repos/{template_owner}/{template_repo}/generate
+POST /api/v3/scim/v2/enterprises/{enterprise}/Groups
+POST /api/v3/scim/v2/enterprises/{enterprise}/Users
 POST /api/v3/user/codespaces
 POST /api/v3/user/codespaces/{codespace_name}/exports
 POST /api/v3/user/codespaces/{codespace_name}/publish
@@ -1326,6 +1336,8 @@ PUT /api/v3/repos/{owner}/{repo}/rulesets/{ruleset_id}
 PUT /api/v3/repos/{owner}/{repo}/subscription
 PUT /api/v3/repos/{owner}/{repo}/topics
 PUT /api/v3/repos/{owner}/{repo}/vulnerability-alerts
+PUT /api/v3/scim/v2/enterprises/{enterprise}/Groups/{scim_group_id}
+PUT /api/v3/scim/v2/enterprises/{enterprise}/Users/{scim_user_id}
 PUT /api/v3/teams/{team_id}/members/{username}
 PUT /api/v3/teams/{team_id}/memberships/{username}
 PUT /api/v3/teams/{team_id}/repos/{owner}/{repo}

@@ -94,6 +94,16 @@ func TestEnterpriseStatePersistenceReload(t *testing.T) {
 		PropertyName: "cost_center", ValueType: "string", ValuesEditableBy: "enterprise_actors",
 	}
 	st1.EnterpriseSettings.OrganizationPropertyValues["reload-org"] = map[string]interface{}{"cost_center": "CC-42"}
+	st1.EnterpriseSettings.SCIMUsers["scim-user-reload"] = &EnterpriseSCIMUser{
+		Schemas: []string{scimUserSchema}, ID: "scim-user-reload", ExternalID: "directory-user-reload",
+		UserName: admin.Login, DisplayName: "Reload SCIM User", Active: true,
+		UserID: admin.ID, CreatedAt: st1.currentTime(), UpdatedAt: st1.currentTime(),
+	}
+	st1.EnterpriseSettings.SCIMGroups["scim-group-reload"] = &EnterpriseSCIMGroup{
+		Schemas: []string{scimGroupSchema}, ID: "scim-group-reload", ExternalID: "directory-group-reload",
+		DisplayName: "Reload Crew", Members: []EnterpriseSCIMMember{{Value: "scim-user-reload"}},
+		TeamID: team.ID, CreatedAt: st1.currentTime(), UpdatedAt: st1.currentTime(),
+	}
 	st1.EnterpriseSettings.OIDCIncludeEnterpriseSlug = true
 	st1.EnterpriseSettings.ActionsEnabledOrganizations = "selected"
 	st1.EnterpriseSettings.ActionsAllowedActions = "selected"
@@ -230,6 +240,13 @@ func TestEnterpriseStatePersistenceReload(t *testing.T) {
 		s.OrganizationPropertyValues["reload-org"]["cost_center"] != "CC-42" {
 		t.Errorf("enterprise custom properties = repo:%+v org:%+v values:%+v",
 			s.RepositoryCustomProperties, s.OrganizationCustomProperties, s.OrganizationPropertyValues)
+	}
+	if s.SCIMUsers["scim-user-reload"] == nil ||
+		s.SCIMUsers["scim-user-reload"].UserID != admin.ID ||
+		s.SCIMGroups["scim-group-reload"] == nil ||
+		len(s.SCIMGroups["scim-group-reload"].Members) != 1 ||
+		s.SCIMGroups["scim-group-reload"].TeamID != team.ID {
+		t.Errorf("enterprise SCIM resources did not persist: users=%+v groups=%+v", s.SCIMUsers, s.SCIMGroups)
 	}
 	if len(s.DependabotAccessibleRepoIDs) != 1 || s.DependabotAccessibleRepoIDs[0] != repo.ID {
 		t.Errorf("dependabot access = %v", s.DependabotAccessibleRepoIDs)
