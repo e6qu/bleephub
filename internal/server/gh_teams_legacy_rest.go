@@ -28,8 +28,12 @@ func (s *Server) registerGHLegacyTeamRoutes() {
 
 	s.route("GET /api/v3/teams/{team_id}/repos", s.requirePerm(scopeMembers, permRead, s.handleLegacyListTeamRepos))
 	s.route("GET /api/v3/teams/{team_id}/repos/{owner}/{repo}", s.requirePerm(scopeMembers, permRead, s.handleLegacyCheckTeamRepo))
-	s.route("PUT /api/v3/teams/{team_id}/repos/{owner}/{repo}", s.requirePerm(scopeMembers, permWrite, s.handleLegacyAddTeamRepo))
-	s.route("DELETE /api/v3/teams/{team_id}/repos/{owner}/{repo}", s.requirePerm(scopeMembers, permWrite, s.handleLegacyRemoveTeamRepo))
+	teamRepoWrite := []permissionGrant{
+		{scope: scopeMembers, level: permRead},
+		{scope: scopeAdministration, level: permWrite},
+	}
+	s.route("PUT /api/v3/teams/{team_id}/repos/{owner}/{repo}", s.requirePerms(teamRepoWrite, s.handleLegacyAddTeamRepo))
+	s.route("DELETE /api/v3/teams/{team_id}/repos/{owner}/{repo}", s.requirePerms(teamRepoWrite, s.handleLegacyRemoveTeamRepo))
 }
 
 // resolveLegacyTeam resolves the numeric {team_id} path parameter to the
@@ -66,7 +70,7 @@ func (s *Server) resolveLegacyTeamForMember(w http.ResponseWriter, r *http.Reque
 	if team == nil {
 		return nil, nil, nil
 	}
-	if !s.viewerIsOrgMember(r.Context(), org.Login) {
+	if !s.viewerCanReadOrgTeams(r.Context(), org.Login) {
 		writeGHError(w, http.StatusNotFound, "Not Found")
 		return nil, nil, nil
 	}
@@ -101,8 +105,8 @@ func (s *Server) handleLegacyUpdateTeam(w http.ResponseWriter, r *http.Request) 
 	if team == nil {
 		return
 	}
-	if !s.viewerCanAdminOrg(r.Context(), org.Login) {
-		writeGHError(w, http.StatusForbidden, "Must be an organization owner.")
+	if !s.canManageTeam(r.Context(), user, org, team, false) {
+		writeGHError(w, http.StatusForbidden, "Must be an organization owner or team maintainer.")
 		return
 	}
 	s.applyTeamUpdate(w, r, org, team)
@@ -118,8 +122,8 @@ func (s *Server) handleLegacyDeleteTeam(w http.ResponseWriter, r *http.Request) 
 	if team == nil {
 		return
 	}
-	if !s.viewerCanAdminOrg(r.Context(), org.Login) {
-		writeGHError(w, http.StatusForbidden, "Must be an organization owner.")
+	if !s.canManageTeam(r.Context(), user, org, team, false) {
+		writeGHError(w, http.StatusForbidden, "Must be an organization owner or team maintainer.")
 		return
 	}
 	if !s.store.DeleteTeam(org.Login, team.Slug) {
@@ -378,14 +382,15 @@ func (s *Server) handleLegacyAddTeamRepo(w http.ResponseWriter, r *http.Request)
 	if team == nil {
 		return
 	}
-	if !s.canManageTeam(r.Context(), user, org, team, false) {
-		writeGHError(w, http.StatusForbidden, "Must be an organization owner or team maintainer.")
+	owner := r.PathValue("owner")
+	repoName := r.PathValue("repo")
+	repo := s.store.GetRepo(owner, repoName)
+	if repo == nil {
+		writeGHError(w, http.StatusNotFound, "Not Found")
 		return
 	}
-	owner := r.PathValue("owner")
-	repo := r.PathValue("repo")
-	if s.store.GetRepo(owner, repo) == nil {
-		writeGHError(w, http.StatusNotFound, "Not Found")
+	if !s.canManageTeamRepository(r.Context(), user, org, team, repo) {
+		writeGHError(w, http.StatusForbidden, "Must be an organization owner or team maintainer.")
 		return
 	}
 	var req struct {
@@ -401,7 +406,7 @@ func (s *Server) handleLegacyAddTeamRepo(w http.ResponseWriter, r *http.Request)
 		writeGHValidationError(w, "TeamRepo", "permission", "invalid")
 		return
 	}
-	s.store.SetTeamRepoPermission(org.Login, team.Slug, owner+"/"+repo, perm)
+	s.store.SetTeamRepoPermission(org.Login, team.Slug, owner+"/"+repoName, perm)
 	w.WriteHeader(http.StatusNoContent)
 }
 
@@ -415,11 +420,18 @@ func (s *Server) handleLegacyRemoveTeamRepo(w http.ResponseWriter, r *http.Reque
 	if team == nil {
 		return
 	}
-	if !s.canManageTeam(r.Context(), user, org, team, false) {
+	owner := r.PathValue("owner")
+	repoName := r.PathValue("repo")
+	repo := s.store.GetRepo(owner, repoName)
+	if repo == nil {
+		writeGHError(w, http.StatusNotFound, "Not Found")
+		return
+	}
+	if !s.canManageTeamRepository(r.Context(), user, org, team, repo) {
 		writeGHError(w, http.StatusForbidden, "Must be an organization owner or team maintainer.")
 		return
 	}
-	if !s.store.RemoveTeamRepo(org.Login, team.Slug, r.PathValue("owner")+"/"+r.PathValue("repo")) {
+	if !s.store.RemoveTeamRepo(org.Login, team.Slug, owner+"/"+repoName) {
 		writeGHError(w, http.StatusNotFound, "Not Found")
 		return
 	}

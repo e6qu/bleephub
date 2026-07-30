@@ -16,8 +16,8 @@ func (s *Server) registerGHOrgRoutes() {
 	s.route("GET /api/v3/user/orgs", s.handleListAuthUserOrgs)
 	s.route("GET /api/v3/organizations", s.handleListAllOrgs)
 	s.route("GET /api/v3/orgs/{org}", s.handleGetOrg)
-	s.route("PATCH /api/v3/orgs/{org}", s.handleUpdateOrg)
-	s.route("DELETE /api/v3/orgs/{org}", s.handleDeleteOrg)
+	s.route("PATCH /api/v3/orgs/{org}", s.requirePerm(scopeOrgAdministration, permWrite, s.handleUpdateOrg))
+	s.route("DELETE /api/v3/orgs/{org}", s.requirePerm(scopeOrgAdministration, permWrite, s.handleDeleteOrg))
 	s.route("GET /api/v3/users/{username}/orgs", s.handleListUserOrgs)
 	s.route("POST /api/v3/orgs/{org}/repos", s.handleCreateOrgRepo)
 

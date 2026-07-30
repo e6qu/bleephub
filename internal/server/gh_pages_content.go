@@ -299,11 +299,6 @@ func (st *Store) deletePagesPublicationData(ctx context.Context, repoID int) err
 	return st.deletePagesPublicationKeys(ctx, keys, hasDeployments)
 }
 
-func (st *Store) deletePagesPublicationDataLocked(ctx context.Context, repoID int) error {
-	keys, hasDeployments := st.pagesPublicationKeysLocked(repoID)
-	return st.deletePagesPublicationKeys(ctx, keys, hasDeployments)
-}
-
 func (st *Store) pagesPublicationKeysLocked(repoID int) (map[string]struct{}, bool) {
 	deployments := st.PagesDeployments[repoID]
 	keys := map[string]struct{}{}

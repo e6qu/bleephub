@@ -15,25 +15,25 @@
       },
       {
         "event": "deployment",
-        "line": 449,
+        "line": 463,
         "producer": "emitWebhookEvent",
         "source": "internal/server/gh_deployments.go"
       },
       {
         "event": "deployment_status",
-        "line": 544,
+        "line": 558,
         "producer": "emitWebhookEvent",
         "source": "internal/server/gh_deployments.go"
       },
       {
         "event": "issue_comment",
-        "line": 72,
+        "line": 76,
         "producer": "emitWebhookEvent",
         "source": "internal/server/gh_issue_moderation.go"
       },
       {
         "event": "issue_comment",
-        "line": 107,
+        "line": 115,
         "producer": "emitWebhookEvent",
         "source": "internal/server/gh_issue_moderation.go"
       },
@@ -111,7 +111,7 @@
       },
       {
         "event": "pull_request_review_comment",
-        "line": 489,
+        "line": 519,
         "producer": "emitWebhookEvent",
         "source": "internal/server/gh_pr_comments.go"
       },
@@ -123,13 +123,13 @@
       },
       {
         "event": "release",
-        "line": 851,
+        "line": 890,
         "producer": "emitWebhookEvent",
         "source": "internal/server/gh_releases.go"
       },
       {
         "event": "release",
-        "line": 873,
+        "line": 912,
         "producer": "emitWebhookEvent",
         "source": "internal/server/gh_releases.go"
       },
@@ -141,7 +141,7 @@
       },
       {
         "event": "status",
-        "line": 271,
+        "line": 273,
         "producer": "emitWebhookEvent",
         "source": "internal/server/gh_statuses_rest.go"
       },
@@ -597,8 +597,8 @@
         "id": "AUTH-045",
         "location": "gh_org_hooks_rest.go:44",
         "severity": "B",
-        "status": "partial \u2014 fixed as described ( one org predicate `viewerHoldsOrgRole` with `viewerCanAdminOrg`/`viewerIsOrgMember` over it; `canAdminOrg`/`isActiveOrgMember` renamed to `\u2026AsUser` and 55 sites across 25 files converted, `orgHookGate` among them. Pre-fix the planted webhook was created (201), listed (200) and left in the store ), but the conversion missed eight sites that open-code `GetMembership(orgLogin, user.ID)` rather than calling the predicate; see AUTH-079",
-        "status_kind": "partial"
+        "status": "fixed \u2014 one org predicate `viewerHoldsOrgRole` with `viewerCanAdminOrg`/`viewerIsOrgMember` over it; `canAdminOrg`/`isActiveOrgMember` renamed to `\u2026AsUser` and all caller-entitlement sites converted, including the eight follow-ups audited under AUTH-079. Pre-fix the planted webhook was created (201), listed (200) and left in the store",
+        "status_kind": "fixed"
       },
       {
         "category": "AUTH",
@@ -1146,8 +1146,8 @@
         "id": "REST-009",
         "location": "gh_hooks_rest.go:69-82",
         "severity": "B",
-        "status": "partial \u2014 the original existing-private-repository claim was refuted because every route already carried admin-promoted `scopeAdministration`. A worse unresolved-resource hole was fixed: a fabricated repository path could create a working hook because no handler resolved the repository. One `hookRepo` helper now covers all 12 handlers and unknown-hook 404 precedes body validation",
-        "status_kind": "partial"
+        "status": "fixed \u2014 the original existing-private-repository claim was refuted because every route already carried admin-promoted `scopeAdministration`. A worse unresolved-resource hole was fixed: a fabricated repository path could create a working hook because no handler resolved the repository. One `hookRepo` helper covers all 12 handlers and unknown-hook 404 precedes body validation",
+        "status_kind": "fixed"
       },
       {
         "category": "REST",
@@ -1164,8 +1164,8 @@
         "id": "REST-011",
         "location": "gh_dependabot.go:22,242,259",
         "severity": "B",
-        "status": "partial \u2014 the no-admin claim was refuted because all 16 routes already carried admin-promoted `scopeDependabotSecrets`. The two public-key handlers did have an unresolved-resource hole and returned the instance key for a nonexistent repository; both now resolve and authorize the target",
-        "status_kind": "partial"
+        "status": "fixed \u2014 the no-admin claim was refuted because all 16 routes already carried admin-promoted `scopeDependabotSecrets`. The two public-key handlers did have an unresolved-resource hole and returned the instance key for a nonexistent repository; both now resolve and authorize the target",
+        "status_kind": "fixed"
       },
       {
         "category": "REST",
@@ -1191,8 +1191,8 @@
         "id": "REST-014",
         "location": "gh_notifications.go:89, gh_rulesets.go:135, gh_migrations.go:414, gh_apps_oauth_mgmt.go:323",
         "severity": "B",
-        "status": "partial \u2014 9 verified sites converted; 6 more sit inside a held lock and need per-site work",
-        "status_kind": "partial"
+        "status": "fixed \u2014 every verified unlocked access now goes through a locked Store method, including the final OAuth client lookup. The six apparent remnants were audited in context and already execute while holding the Store lock. A concurrent lookup/mutation regression covers the last conversion",
+        "status_kind": "fixed"
       },
       {
         "category": "REST",
@@ -1200,8 +1200,8 @@
         "id": "REST-015",
         "location": "gh_codespaces.go:139, gh_gists_rest.go:436, +9 more",
         "severity": "B",
-        "status": "partial \u2014 the two named families and branch protection now render deep snapshots taken under their owning store lock. Gist URLs are derived onto the copy, and a race regression drives concurrent gist/codespace mutation and rendering while proving no request host reaches stored state. The nine other audited families have not been converted yet",
-        "status_kind": "partial"
+        "status": "fixed \u2014 response-facing reads across gists, codespaces, branch protection, comments, migrations, rulesets, GitHub Apps, installations and installation/user tokens now return detached snapshots; nested maps/slices/interfaces are deep-copied. Gist URLs are derived only onto the copy. Race and ownership regressions mutate returned objects while proving neither torn state nor request hosts reach stored state",
+        "status_kind": "fixed"
       },
       {
         "category": "REST",
@@ -1245,8 +1245,8 @@
         "id": "REST-020",
         "location": "gh_pr_comments.go:484-541",
         "severity": "B",
-        "status": "partial \u2014 `prReviewCommentInRepo` walks comment \u2192 PR \u2192 repo and 404s on mismatch across get/update/delete, and delete now resolves the repo at all. The author-without-push case still 403s where GitHub allows it, because the route-level `requirePerm(permWrite)` gates on `canPushRepo`; see REST-030",
-        "status_kind": "partial"
+        "status": "fixed \u2014 `prReviewCommentInRepo` walks comment \u2192 PR \u2192 repo and 404s on mismatch across get/update/delete, delete resolves the repository, and authors may edit/delete their own comments without acquiring push while non-authors still require push",
+        "status_kind": "fixed"
       },
       {
         "category": "REST",
@@ -1254,8 +1254,8 @@
         "id": "REST-021",
         "location": "gh_issue_moderation.go:25-83",
         "severity": "B",
-        "status": "partial \u2014 same binding fix, backed by the new locked `Store.CommentRepoID`. Author-without-push still 403s; see REST-030",
-        "status_kind": "partial"
+        "status": "fixed \u2014 repository binding is backed by the locked `Store.CommentRepoID`; authors may edit/delete their own comments without push and non-authors still require push",
+        "status_kind": "fixed"
       },
       {
         "category": "REST",
@@ -1272,8 +1272,8 @@
         "id": "REST-023",
         "location": "gh_import.go:201-234",
         "severity": "B",
-        "status": "partial \u2014 the URL is validated with `webhooks.go`'s own predicates rather than a second blocklist, the fetch has a 5-minute deadline and runs off the request goroutine. **Remaining: no dial-time address check**, so DNS rebinding on the import path is still open \u2014 go-git resolves its HTTP transport from a process-global registry, so a per-fetch `Dialer.Control` cannot be injected without `InstallProtocol`, which would change every other go-git consumer in the process",
-        "status_kind": "partial"
+        "status": "fixed \u2014 the URL and every redirect use the shared outbound-target policy, the fetch has a five-minute deadline and runs off the request goroutine, and isolated per-import go-git protocols install a transport whose dial callback re-resolves and rejects every private address at connection time. A DNS-rebinding regression proves the dialed address is checked",
+        "status_kind": "fixed"
       },
       {
         "category": "REST",
@@ -2019,8 +2019,8 @@
         "id": "REST-106",
         "location": "gh_org_hooks_rest.go:33",
         "severity": "M",
-        "status": "open",
-        "status_kind": "open"
+        "status": "fixed \u2014 every organization-hook operation is gated by its typed `organization_hooks` read/write permission and installation target; the downstream owner resolver consumes that proven grant instead of asking whether the synthetic bot has a human membership row",
+        "status_kind": "fixed"
       },
       {
         "category": "REST",
@@ -2082,8 +2082,8 @@
         "id": "REST-113",
         "location": "gh_pr_comments.go:521, gh_issue_moderation.go:44",
         "severity": "M",
-        "status": "open",
-        "status_kind": "open"
+        "status": "fixed \u2014 the credential still needs the write scope, while the resource gate admits either the recorded author or a caller with push. Cross-repository IDs remain 404 and installation tokens cannot borrow their bot user's authorship",
+        "status_kind": "fixed"
       },
       {
         "category": "REST",
@@ -2100,8 +2100,8 @@
         "id": "REST-115",
         "location": "gh_pr_comments.go",
         "severity": "m",
-        "status": "open",
-        "status_kind": "open"
+        "status": "fixed \u2014 get/list/create/update return detached deep snapshots, including nullable line positions, while canonical mutation stays under the owning lock",
+        "status_kind": "fixed"
       },
       {
         "category": "GQL",
@@ -2626,6 +2626,15 @@
         "status_kind": "fixed"
       },
       {
+        "category": "REST",
+        "finding": "Organization and team handlers re-ran human owner/member/maintainer checks after `requirePerm` had authorized a GitHub App installation token, so the synthetic `<slug>[bot]` user made valid Members, Administration, Webhooks, and organization-Administration grants fail",
+        "id": "REST-117",
+        "location": "gh_apps_perms.go, gh_teams_rest.go, gh_members_rest.go, gh_orgs_people_rest.go",
+        "severity": "M",
+        "status": "fixed \u2014 `requirePerm` now carries an unforgeable typed grant into downstream organization resolvers; team, membership, invitation, organization-administration and webhook journeys honor installation permissions and target isolation without persisting the bot as a human member. Team-repository writes explicitly require both Members:read and repository Administration:write, preventing the parity fix from admitting under-scoped Apps",
+        "status_kind": "fixed"
+      },
+      {
         "category": "GQL",
         "finding": "The project lane's NOT_FOUND wording differs in capitalisation from the repository lane's `gqlMissingNode`",
         "id": "GQL-058",
@@ -3135,7 +3144,7 @@
         "id": "STORE-001",
         "location": "persistence.go:71",
         "severity": "B",
-        "status": "partial \u2014 a batch executor commits a whole write set in one transaction; `DeleteRepo` went from 54 statements plus 34 in its cascade helpers to **one**, and `DeleteOrg`, the boot cancel pass and the orphan purge are each one. Cascade helpers living in other agents' files still commit independently; the durable deletion intent is what makes that residue repairable",
+        "status": "partial \u2014 a batch executor commits a whole write set in one transaction. `DeleteRepo` now stages the workflow, notification, status, comment, reaction, deployment, environment, release, ProjectV2, sub-issue and review-comment sub-stores in that same transaction instead of allowing their helpers to commit independently. Other unrelated multi-entity mutations still need transaction-by-transaction conversion",
         "status_kind": "partial"
       },
       {
@@ -3207,7 +3216,7 @@
         "id": "STORE-009",
         "location": "store.go:930",
         "severity": "B",
-        "status": "fixed \u2014 every metadata transaction advances a monotonic shared revision; before serving a request a dqlite replica detects peer revisions and reloads until the revision is stable across the complete durable-state inventory. Reconciliation updates the existing Store under its lock, preserves an explicit process-local runner/session/log field set and locally-owned active workflow pointers, and fails 503 rather than serving a snapshot it could not refresh. Two independent database connections prove organizations and Classrooms propagate while a local runner survives",
+        "status": "fixed \u2014 every metadata transaction advances a monotonic shared revision; before serving a request a dqlite replica detects peer revisions and reloads until the revision is stable across the complete durable-state inventory. Store reconciliation preserves explicit process-local runner/session/log state and locally owned active workflows; the separate Actions artifact/cache index now follows the same revision and preserves in-flight uploads. Refresh failures return 503. Independent database connections prove organizations, Classrooms and Actions metadata propagate while local runtime state survives",
         "status_kind": "fixed"
       },
       {
@@ -3225,8 +3234,8 @@
         "id": "STORE-011",
         "location": "dqlite-node/main.go:108",
         "severity": "B",
-        "status": "partial \u2014 shared-secret authentication on the upgrade with a constant-time compare, required on both ends; the discarded hijack error is logged; the unbuffered send is bounded by shutdown context and timeout; signal context is created before the server; shutdown is graceful; and the port is configurable. The release-image CI job now compiles the real `dqlite` build tag against libdqlite headers. **TLS remains** \u2014 it needs a certificate, issuance and rotation story that does not exist here, so dqlite bytes still cross the private network in clear",
-        "status_kind": "partial"
+        "status": "fixed \u2014 the upgrade is authenticated with a constant-time shared-secret comparison; that independently generated cluster secret also derives a deterministic Ed25519 TLS identity, so transport is TLS 1.3 and a client rejects another cluster. Rotation replaces both credentials. Hijack errors are logged, delivery is shutdown/timeout bounded, signal context precedes the server, shutdown is graceful, the port is configurable, and release CI compiles the real dqlite build",
+        "status_kind": "fixed"
       },
       {
         "category": "STORE",
@@ -3243,7 +3252,7 @@
         "id": "STORE-013",
         "location": "store_codespaces.go:182, timeline.go:210, store_repos.go:249",
         "severity": "B",
-        "status": "partial \u2014 codespace creation reserves under the lock, runs the 180s `docker pull`/`run` unlocked and re-acquires briefly to commit; `DeleteRepo`'s 120s S3 purge now runs after the lock is released. `ForkRepo` and `RenameRepo` are deliberately left: the storers are not goroutine-safe and the global lock is currently the only thing serializing git object access for a live repository, so moving them out would trade a latency bug for a data race. Needs per-repository storage locking first",
+        "status": "partial \u2014 codespace creation reserves under the lock, runs Docker unlocked and re-acquires briefly to commit. Repository deletion snapshots containers, workspaces, package/CodeQL/attestation/Pages/release objects into its durable intent and performs every external cleanup after the metadata transaction and lock release; a blocking-object-store regression proves ordinary reads continue. Fork and rename still need per-repository storage locking before their git object I/O can move safely",
         "status_kind": "partial"
       },
       {
@@ -3252,7 +3261,7 @@
         "id": "STORE-014",
         "location": "store_repos.go:368",
         "severity": "B",
-        "status": "fixed \u2014 the order is now: record a durable deletion intent, purge metadata and commit as one transaction, leave the lock, destroy the bytes, clear the intent. An interruption leaves the intent and boot finishes it",
+        "status": "fixed \u2014 the durable intent now contains every external cleanup target, including Codespaces, package/CodeQL/attestation/Pages/release bytes, Actions artifacts/caches/logs and git storage. Repository, workflow/timeline and all cascade sub-store metadata commit in one transaction, then external data is removed outside the lock. Any partial cleanup is idempotently replayed before the intent clears",
         "status_kind": "fixed"
       },
       {
@@ -4044,8 +4053,8 @@
         "id": "WEB-006",
         "location": "vitest.config.ts:7",
         "severity": "B",
-        "status": "partial \u2014 the 13 core suites now run and pass. The cause was not the tests: a relative `setupFiles` resolved against the wrong root and silently loaded the *application's* setup file instead of core's, so core's `afterEach(cleanup)` and polyfills never installed \u2014 one defect producing all 9 failures. Proved with a sentinel that never appeared; no test source changed. Suite went 49 files/338 tests to 65/409. The 9 (not 11) `core/e2e` tests still do not run \u2014 see WEB-047",
-        "status_kind": "partial"
+        "status": "fixed \u2014 the 13 core suites run and type-check after the setup path was made absolute; the 9 `core/e2e` tests are intentionally owned by Playwright under WEB-047 rather than silently claimed by Vitest. The combined app/core Vitest project now executes 485 tests and measures all source files, not only files imported by tests",
+        "status_kind": "fixed"
       },
       {
         "category": "WEB",
@@ -4458,8 +4467,8 @@
         "id": "TEST-001",
         "location": "ci.yml:23",
         "severity": "B",
-        "status": "partial \u2014 a race job now gates the concurrency and authorization paths and reports zero races; the Docker-backed tests are not yet covered",
-        "status_kind": "partial"
+        "status": "fixed \u2014 the complete Go suite, including Docker/MinIO-backed storage tests, runs under `-race` in the required server job",
+        "status_kind": "fixed"
       },
       {
         "category": "TEST",
@@ -4467,8 +4476,8 @@
         "id": "TEST-002",
         "location": "webhook_lastresp_race_test.go:13",
         "severity": "B",
-        "status": "partial \u2014 the detector now runs in CI, so these tests can fail; they still assert nothing themselves",
-        "status_kind": "partial"
+        "status": "fixed \u2014 both tests now assert the delivery status and exact final-response snapshot in addition to running under the full-suite race gate",
+        "status_kind": "fixed"
       },
       {
         "category": "TEST",
@@ -4530,8 +4539,8 @@
         "id": "TEST-009",
         "location": "actions_test.go:276",
         "severity": "B",
-        "status": "open",
-        "status_kind": "open"
+        "status": "partial \u2014 production and tests share `newServerState`, which initializes every Server dependency; production exposes one `requestHandler` pipeline used by the listener and by stress, fuzz, benchmark and seed fixtures. Focused route-unit tests still call the narrower GitHub-header wrapper directly and need mechanical migration before this can honestly close",
+        "status_kind": "partial"
       },
       {
         "category": "TEST",
@@ -4647,8 +4656,8 @@
         "id": "TEST-022",
         "location": "ci.yml, vitest configs",
         "severity": "M",
-        "status": "open",
-        "status_kind": "open"
+        "status": "fixed \u2014 required CI emits a whole-module Go profile and enforces a 75% statement floor; Vitest V8 coverage includes all app/core source and enforces statement, branch, function and line floors",
+        "status_kind": "fixed"
       },
       {
         "category": "TEST",
@@ -5160,8 +5169,8 @@
         "id": "CI-003",
         "location": "ci.yml:23,37",
         "severity": "B",
-        "status": "partial \u2014 gofmt, vet (both tag sets), a race subset, deadcode, dupl, staticcheck, gosec, govulncheck, Semgrep, CodeQL, knip, jscpd, actionlint and shellcheck now gate with checksum-locked analyzers; coverage and golangci-lint remain",
-        "status_kind": "partial"
+        "status": "fixed \u2014 gofmt, vet (both tag sets), the complete race suite, Go and TypeScript coverage floors, deadcode, dupl, staticcheck, gosec, govulncheck, Semgrep, CodeQL, knip, jscpd, actionlint and shellcheck gate with checksum-locked analyzers. The focused pinned analyzers replace a redundant golangci-lint meta-runner while preserving named, reviewable tool versions",
+        "status_kind": "fixed"
       },
       {
         "category": "CI",
@@ -5749,17 +5758,17 @@
         },
         "AUTH": {
           "status": {
-            "fixed": 71,
+            "fixed": 72,
             "open": 18,
-            "partial": 4
+            "partial": 3
           },
           "total": 93
         },
         "CI": {
           "status": {
-            "fixed": 45,
+            "fixed": 46,
             "open": 16,
-            "partial": 4
+            "partial": 3
           },
           "total": 65
         },
@@ -5789,49 +5798,49 @@
         },
         "REST": {
           "status": {
-            "fixed": 44,
-            "open": 64,
-            "partial": 8
+            "fixed": 55,
+            "open": 61,
+            "partial": 1
           },
-          "total": 116
+          "total": 117
         },
         "STORE": {
           "status": {
-            "fixed": 20,
+            "fixed": 21,
             "open": 36,
-            "partial": 8
+            "partial": 7
           },
           "total": 64
         },
         "TEST": {
           "status": {
-            "fixed": 8,
-            "open": 28,
-            "partial": 3
+            "fixed": 11,
+            "open": 26,
+            "partial": 2
           },
           "total": 39
         },
         "WEB": {
           "status": {
-            "fixed": 24,
+            "fixed": 25,
             "open": 23,
-            "partial": 4
+            "partial": 3
           },
           "total": 51
         }
       },
       "severity": {
         "blocker": 155,
-        "major": 342,
+        "major": 343,
         "minor": 117
       },
       "status": {
         "deferred": 1,
-        "fixed": 291,
-        "open": 279,
-        "partial": 43
+        "fixed": 309,
+        "open": 274,
+        "partial": 31
       },
-      "total": 614
+      "total": 615
     }
   },
   "rest": {
@@ -19076,7 +19085,7 @@
         "source": "internal/server/gh_issue_types.go"
       },
       {
-        "line": 10,
+        "line": 11,
         "method": "DELETE",
         "path": "/api/v3/orgs/{org}/members/{username}",
         "source": "internal/server/gh_members_rest.go"
@@ -19088,7 +19097,7 @@
         "source": "internal/server/gh_codespaces.go"
       },
       {
-        "line": 17,
+        "line": 18,
         "method": "DELETE",
         "path": "/api/v3/orgs/{org}/memberships/{username}",
         "source": "internal/server/gh_members_rest.go"
@@ -19166,7 +19175,7 @@
         "source": "internal/server/gh_custom_properties.go"
       },
       {
-        "line": 14,
+        "line": 15,
         "method": "DELETE",
         "path": "/api/v3/orgs/{org}/public_members/{username}",
         "source": "internal/server/gh_members_rest.go"
@@ -19214,7 +19223,7 @@
         "source": "internal/server/gh_teams_rest.go"
       },
       {
-        "line": 27,
+        "line": 31,
         "method": "DELETE",
         "path": "/api/v3/orgs/{org}/teams/{team_slug}/repos/{owner}/{repo}",
         "source": "internal/server/gh_teams_rest.go"
@@ -19250,13 +19259,13 @@
         "source": "internal/server/gh_actions_extras.go"
       },
       {
-        "line": 635,
+        "line": 790,
         "method": "DELETE",
         "path": "/api/v3/repos/{owner}/{repo}/actions/caches",
         "source": "internal/server/artifacts.go"
       },
       {
-        "line": 637,
+        "line": 792,
         "method": "DELETE",
         "path": "/api/v3/repos/{owner}/{repo}/actions/caches/{cache_id}",
         "source": "internal/server/artifacts.go"
@@ -19412,13 +19421,13 @@
         "source": "internal/server/gh_repos_rest.go"
       },
       {
-        "line": 210,
+        "line": 212,
         "method": "DELETE",
         "path": "/api/v3/repos/{owner}/{repo}/comments/{comment_id}",
         "source": "internal/server/gh_commit_comments_rest.go"
       },
       {
-        "line": 243,
+        "line": 249,
         "method": "DELETE",
         "path": "/api/v3/repos/{owner}/{repo}/comments/{comment_id}/reactions/{reaction_id}",
         "source": "internal/server/gh_reactions.go"
@@ -19436,13 +19445,13 @@
         "source": "internal/server/gh_dependabot.go"
       },
       {
-        "line": 398,
+        "line": 412,
         "method": "DELETE",
         "path": "/api/v3/repos/{owner}/{repo}/deployments/{deployment_id}",
         "source": "internal/server/gh_deployments.go"
       },
       {
-        "line": 413,
+        "line": 427,
         "method": "DELETE",
         "path": "/api/v3/repos/{owner}/{repo}/environments/{env_name}",
         "source": "internal/server/gh_deployments.go"
@@ -19490,7 +19499,7 @@
         "source": "internal/server/gh_immutable_releases.go"
       },
       {
-        "line": 98,
+        "line": 195,
         "method": "DELETE",
         "path": "/api/v3/repos/{owner}/{repo}/import",
         "source": "internal/server/gh_import.go"
@@ -19514,7 +19523,7 @@
         "source": "internal/server/gh_invitations_rest.go"
       },
       {
-        "line": 221,
+        "line": 227,
         "method": "DELETE",
         "path": "/api/v3/repos/{owner}/{repo}/issues/comments/{comment_id}/reactions/{reaction_id}",
         "source": "internal/server/gh_reactions.go"
@@ -19580,7 +19589,7 @@
         "source": "internal/server/gh_repos_rest.go"
       },
       {
-        "line": 226,
+        "line": 232,
         "method": "DELETE",
         "path": "/api/v3/repos/{owner}/{repo}/pulls/comments/{comment_id}/reactions/{reaction_id}",
         "source": "internal/server/gh_reactions.go"
@@ -19592,31 +19601,31 @@
         "source": "internal/server/gh_pulls_rest.go"
       },
       {
-        "line": 378,
+        "line": 408,
         "method": "DELETE",
         "path": "/api/v3/repos/{owner}/{repo}/pulls/{p1}/{p2}",
         "source": "internal/server/gh_pr_comments.go"
       },
       {
-        "line": 236,
+        "line": 242,
         "method": "DELETE",
         "path": "/api/v3/repos/{owner}/{repo}/pulls/{p1}/{p2}/{p3}",
         "source": "internal/server/gh_reactions.go"
       },
       {
-        "line": 473,
+        "line": 512,
         "method": "DELETE",
         "path": "/api/v3/repos/{owner}/{repo}/releases/{p1}/{p2}",
         "source": "internal/server/gh_releases.go"
       },
       {
-        "line": 478,
+        "line": 517,
         "method": "DELETE",
         "path": "/api/v3/repos/{owner}/{repo}/releases/{p1}/{p2}/{p3}",
         "source": "internal/server/gh_releases.go"
       },
       {
-        "line": 455,
+        "line": 494,
         "method": "DELETE",
         "path": "/api/v3/repos/{owner}/{repo}/releases/{release_id}",
         "source": "internal/server/gh_releases.go"
@@ -19664,7 +19673,7 @@
         "source": "internal/server/gh_teams_legacy_rest.go"
       },
       {
-        "line": 32,
+        "line": 36,
         "method": "DELETE",
         "path": "/api/v3/teams/{team_id}/repos/{owner}/{repo}",
         "source": "internal/server/gh_teams_legacy_rest.go"
@@ -21038,13 +21047,13 @@
         "source": "internal/server/gh_labels_rest.go"
       },
       {
-        "line": 8,
+        "line": 9,
         "method": "GET",
         "path": "/api/v3/orgs/{org}/members",
         "source": "internal/server/gh_members_rest.go"
       },
       {
-        "line": 9,
+        "line": 10,
         "method": "GET",
         "path": "/api/v3/orgs/{org}/members/{username}",
         "source": "internal/server/gh_members_rest.go"
@@ -21062,7 +21071,7 @@
         "source": "internal/server/gh_copilot.go"
       },
       {
-        "line": 15,
+        "line": 16,
         "method": "GET",
         "path": "/api/v3/orgs/{org}/memberships/{username}",
         "source": "internal/server/gh_members_rest.go"
@@ -21248,13 +21257,13 @@
         "source": "internal/server/gh_custom_properties.go"
       },
       {
-        "line": 11,
+        "line": 12,
         "method": "GET",
         "path": "/api/v3/orgs/{org}/public_members",
         "source": "internal/server/gh_members_rest.go"
       },
       {
-        "line": 12,
+        "line": 13,
         "method": "GET",
         "path": "/api/v3/orgs/{org}/public_members/{username}",
         "source": "internal/server/gh_members_rest.go"
@@ -21470,13 +21479,13 @@
         "source": "internal/server/gh_actions_permissions.go"
       },
       {
-        "line": 639,
+        "line": 794,
         "method": "GET",
         "path": "/api/v3/repos/{owner}/{repo}/actions/cache/usage",
         "source": "internal/server/artifacts.go"
       },
       {
-        "line": 634,
+        "line": 789,
         "method": "GET",
         "path": "/api/v3/repos/{owner}/{repo}/actions/caches",
         "source": "internal/server/artifacts.go"
@@ -22064,19 +22073,19 @@
         "source": "internal/server/gh_repos_rest.go"
       },
       {
-        "line": 204,
+        "line": 206,
         "method": "GET",
         "path": "/api/v3/repos/{owner}/{repo}/comments",
         "source": "internal/server/gh_commit_comments_rest.go"
       },
       {
-        "line": 208,
+        "line": 210,
         "method": "GET",
         "path": "/api/v3/repos/{owner}/{repo}/comments/{comment_id}",
         "source": "internal/server/gh_commit_comments_rest.go"
       },
       {
-        "line": 241,
+        "line": 247,
         "method": "GET",
         "path": "/api/v3/repos/{owner}/{repo}/comments/{comment_id}/reactions",
         "source": "internal/server/gh_reactions.go"
@@ -22094,7 +22103,7 @@
         "source": "internal/server/gh_repos_reads.go"
       },
       {
-        "line": 205,
+        "line": 207,
         "method": "GET",
         "path": "/api/v3/repos/{owner}/{repo}/commits/{commit_sha}/comments",
         "source": "internal/server/gh_commit_comments_rest.go"
@@ -22112,13 +22121,13 @@
         "source": "internal/server/gh_repos_reads.go"
       },
       {
-        "line": 199,
+        "line": 201,
         "method": "GET",
         "path": "/api/v3/repos/{owner}/{repo}/commits/{ref}/status",
         "source": "internal/server/gh_statuses_rest.go"
       },
       {
-        "line": 200,
+        "line": 202,
         "method": "GET",
         "path": "/api/v3/repos/{owner}/{repo}/commits/{ref}/statuses",
         "source": "internal/server/gh_statuses_rest.go"
@@ -22220,37 +22229,37 @@
         "source": "internal/server/gh_dependency_graph.go"
       },
       {
-        "line": 394,
+        "line": 408,
         "method": "GET",
         "path": "/api/v3/repos/{owner}/{repo}/deployments",
         "source": "internal/server/gh_deployments.go"
       },
       {
-        "line": 396,
+        "line": 410,
         "method": "GET",
         "path": "/api/v3/repos/{owner}/{repo}/deployments/{deployment_id}",
         "source": "internal/server/gh_deployments.go"
       },
       {
-        "line": 402,
+        "line": 416,
         "method": "GET",
         "path": "/api/v3/repos/{owner}/{repo}/deployments/{deployment_id}/statuses",
         "source": "internal/server/gh_deployments.go"
       },
       {
-        "line": 404,
+        "line": 418,
         "method": "GET",
         "path": "/api/v3/repos/{owner}/{repo}/deployments/{deployment_id}/statuses/{status_id}",
         "source": "internal/server/gh_deployments.go"
       },
       {
-        "line": 407,
+        "line": 421,
         "method": "GET",
         "path": "/api/v3/repos/{owner}/{repo}/environments",
         "source": "internal/server/gh_deployments.go"
       },
       {
-        "line": 409,
+        "line": 423,
         "method": "GET",
         "path": "/api/v3/repos/{owner}/{repo}/environments/{env_name}",
         "source": "internal/server/gh_deployments.go"
@@ -22412,19 +22421,19 @@
         "source": "internal/server/gh_immutable_releases.go"
       },
       {
-        "line": 93,
+        "line": 190,
         "method": "GET",
         "path": "/api/v3/repos/{owner}/{repo}/import",
         "source": "internal/server/gh_import.go"
       },
       {
-        "line": 102,
+        "line": 199,
         "method": "GET",
         "path": "/api/v3/repos/{owner}/{repo}/import/authors",
         "source": "internal/server/gh_import.go"
       },
       {
-        "line": 105,
+        "line": 202,
         "method": "GET",
         "path": "/api/v3/repos/{owner}/{repo}/import/large_files",
         "source": "internal/server/gh_import.go"
@@ -22628,7 +22637,7 @@
         "source": "internal/server/gh_pulls_rest.go"
       },
       {
-        "line": 352,
+        "line": 382,
         "method": "GET",
         "path": "/api/v3/repos/{owner}/{repo}/pulls/comments",
         "source": "internal/server/gh_pr_comments.go"
@@ -22640,7 +22649,7 @@
         "source": "internal/server/gh_pulls_rest.go"
       },
       {
-        "line": 357,
+        "line": 387,
         "method": "GET",
         "path": "/api/v3/repos/{owner}/{repo}/pulls/{number}/comments",
         "source": "internal/server/gh_pr_comments.go"
@@ -22670,19 +22679,19 @@
         "source": "internal/server/gh_pulls_rest.go"
       },
       {
-        "line": 364,
+        "line": 394,
         "method": "GET",
         "path": "/api/v3/repos/{owner}/{repo}/pulls/{number}/reviews/{review_id}/comments",
         "source": "internal/server/gh_pr_comments.go"
       },
       {
-        "line": 374,
+        "line": 404,
         "method": "GET",
         "path": "/api/v3/repos/{owner}/{repo}/pulls/{p1}/{p2}",
         "source": "internal/server/gh_pr_comments.go"
       },
       {
-        "line": 233,
+        "line": 239,
         "method": "GET",
         "path": "/api/v3/repos/{owner}/{repo}/pulls/{p1}/{p2}/{p3}",
         "source": "internal/server/gh_reactions.go"
@@ -22700,25 +22709,25 @@
         "source": "internal/server/gh_repos_reads.go"
       },
       {
-        "line": 442,
+        "line": 481,
         "method": "GET",
         "path": "/api/v3/repos/{owner}/{repo}/releases",
         "source": "internal/server/gh_releases.go"
       },
       {
-        "line": 444,
+        "line": 483,
         "method": "GET",
         "path": "/api/v3/repos/{owner}/{repo}/releases/latest",
         "source": "internal/server/gh_releases.go"
       },
       {
-        "line": 465,
+        "line": 504,
         "method": "GET",
         "path": "/api/v3/repos/{owner}/{repo}/releases/{p1}/{p2}",
         "source": "internal/server/gh_releases.go"
       },
       {
-        "line": 451,
+        "line": 490,
         "method": "GET",
         "path": "/api/v3/repos/{owner}/{repo}/releases/{release_id}",
         "source": "internal/server/gh_releases.go"
@@ -23174,13 +23183,13 @@
         "source": "internal/server/gh_user_surface.go"
       },
       {
-        "line": 21,
+        "line": 22,
         "method": "GET",
         "path": "/api/v3/user/memberships/orgs",
         "source": "internal/server/gh_members_rest.go"
       },
       {
-        "line": 22,
+        "line": 23,
         "method": "GET",
         "path": "/api/v3/user/memberships/orgs/{org}",
         "source": "internal/server/gh_members_rest.go"
@@ -23828,7 +23837,7 @@
         "source": "internal/server/gh_code_scanning.go"
       },
       {
-        "line": 209,
+        "line": 211,
         "method": "PATCH",
         "path": "/api/v3/repos/{owner}/{repo}/comments/{comment_id}",
         "source": "internal/server/gh_commit_comments_rest.go"
@@ -23864,19 +23873,19 @@
         "source": "internal/server/gh_hooks_rest.go"
       },
       {
-        "line": 96,
+        "line": 193,
         "method": "PATCH",
         "path": "/api/v3/repos/{owner}/{repo}/import",
         "source": "internal/server/gh_import.go"
       },
       {
-        "line": 103,
+        "line": 200,
         "method": "PATCH",
         "path": "/api/v3/repos/{owner}/{repo}/import/authors/{author_id}",
         "source": "internal/server/gh_import.go"
       },
       {
-        "line": 100,
+        "line": 197,
         "method": "PATCH",
         "path": "/api/v3/repos/{owner}/{repo}/import/lfs",
         "source": "internal/server/gh_import.go"
@@ -23936,19 +23945,19 @@
         "source": "internal/server/gh_pulls_rest.go"
       },
       {
-        "line": 376,
+        "line": 406,
         "method": "PATCH",
         "path": "/api/v3/repos/{owner}/{repo}/pulls/{p1}/{p2}",
         "source": "internal/server/gh_pr_comments.go"
       },
       {
-        "line": 471,
+        "line": 510,
         "method": "PATCH",
         "path": "/api/v3/repos/{owner}/{repo}/releases/{p1}/{p2}",
         "source": "internal/server/gh_releases.go"
       },
       {
-        "line": 453,
+        "line": 492,
         "method": "PATCH",
         "path": "/api/v3/repos/{owner}/{repo}/releases/{release_id}",
         "source": "internal/server/gh_releases.go"
@@ -23996,7 +24005,7 @@
         "source": "internal/server/gh_user_surface.go"
       },
       {
-        "line": 23,
+        "line": 24,
         "method": "PATCH",
         "path": "/api/v3/user/memberships/orgs/{org}",
         "source": "internal/server/gh_members_rest.go"
@@ -24680,13 +24689,13 @@
         "source": "internal/server/gh_codespaces.go"
       },
       {
-        "line": 239,
+        "line": 245,
         "method": "POST",
         "path": "/api/v3/repos/{owner}/{repo}/comments/{comment_id}/reactions",
         "source": "internal/server/gh_reactions.go"
       },
       {
-        "line": 206,
+        "line": 208,
         "method": "POST",
         "path": "/api/v3/repos/{owner}/{repo}/commits/{commit_sha}/comments",
         "source": "internal/server/gh_commit_comments_rest.go"
@@ -24698,13 +24707,13 @@
         "source": "internal/server/gh_dependency_graph.go"
       },
       {
-        "line": 392,
+        "line": 406,
         "method": "POST",
         "path": "/api/v3/repos/{owner}/{repo}/deployments",
         "source": "internal/server/gh_deployments.go"
       },
       {
-        "line": 400,
+        "line": 414,
         "method": "POST",
         "path": "/api/v3/repos/{owner}/{repo}/deployments/{deployment_id}/statuses",
         "source": "internal/server/gh_deployments.go"
@@ -24800,7 +24809,7 @@
         "source": "internal/server/gh_labels_rest.go"
       },
       {
-        "line": 219,
+        "line": 225,
         "method": "POST",
         "path": "/api/v3/repos/{owner}/{repo}/issues/comments/{comment_id}/reactions",
         "source": "internal/server/gh_reactions.go"
@@ -24848,7 +24857,7 @@
         "source": "internal/server/gh_labels_rest.go"
       },
       {
-        "line": 214,
+        "line": 220,
         "method": "POST",
         "path": "/api/v3/repos/{owner}/{repo}/issues/{number}/reactions",
         "source": "internal/server/gh_reactions.go"
@@ -24926,13 +24935,13 @@
         "source": "internal/server/gh_pulls_rest.go"
       },
       {
-        "line": 355,
+        "line": 385,
         "method": "POST",
         "path": "/api/v3/repos/{owner}/{repo}/pulls/{number}/comments",
         "source": "internal/server/gh_pr_comments.go"
       },
       {
-        "line": 359,
+        "line": 389,
         "method": "POST",
         "path": "/api/v3/repos/{owner}/{repo}/pulls/{number}/comments/{comment_id}/replies",
         "source": "internal/server/gh_pr_comments.go"
@@ -24956,7 +24965,7 @@
         "source": "internal/server/gh_pulls_rest.go"
       },
       {
-        "line": 234,
+        "line": 240,
         "method": "POST",
         "path": "/api/v3/repos/{owner}/{repo}/pulls/{p1}/{p2}/{p3}",
         "source": "internal/server/gh_reactions.go"
@@ -24968,19 +24977,19 @@
         "source": "internal/server/gh_codespaces.go"
       },
       {
-        "line": 440,
+        "line": 479,
         "method": "POST",
         "path": "/api/v3/repos/{owner}/{repo}/releases",
         "source": "internal/server/gh_releases.go"
       },
       {
-        "line": 446,
+        "line": 485,
         "method": "POST",
         "path": "/api/v3/repos/{owner}/{repo}/releases/generate-notes",
         "source": "internal/server/gh_releases.go"
       },
       {
-        "line": 467,
+        "line": 506,
         "method": "POST",
         "path": "/api/v3/repos/{owner}/{repo}/releases/{p1}/{p2}",
         "source": "internal/server/gh_releases.go"
@@ -25046,7 +25055,7 @@
         "source": "internal/server/gh_pull_extensions.go"
       },
       {
-        "line": 201,
+        "line": 203,
         "method": "POST",
         "path": "/api/v3/repos/{owner}/{repo}/statuses/{sha}",
         "source": "internal/server/gh_statuses_rest.go"
@@ -25568,7 +25577,7 @@
         "source": "internal/server/gh_issue_types.go"
       },
       {
-        "line": 16,
+        "line": 17,
         "method": "PUT",
         "path": "/api/v3/orgs/{org}/memberships/{username}",
         "source": "internal/server/gh_members_rest.go"
@@ -25598,7 +25607,7 @@
         "source": "internal/server/gh_custom_properties.go"
       },
       {
-        "line": 13,
+        "line": 14,
         "method": "PUT",
         "path": "/api/v3/orgs/{org}/public_members/{username}",
         "source": "internal/server/gh_members_rest.go"
@@ -25640,7 +25649,7 @@
         "source": "internal/server/gh_teams_rest.go"
       },
       {
-        "line": 26,
+        "line": 30,
         "method": "PUT",
         "path": "/api/v3/orgs/{org}/teams/{team_slug}/repos/{owner}/{repo}",
         "source": "internal/server/gh_teams_rest.go"
@@ -25796,7 +25805,7 @@
         "source": "internal/server/gh_dependabot.go"
       },
       {
-        "line": 411,
+        "line": 425,
         "method": "PUT",
         "path": "/api/v3/repos/{owner}/{repo}/environments/{env_name}",
         "source": "internal/server/gh_deployments.go"
@@ -25820,7 +25829,7 @@
         "source": "internal/server/gh_immutable_releases.go"
       },
       {
-        "line": 94,
+        "line": 191,
         "method": "PUT",
         "path": "/api/v3/repos/{owner}/{repo}/import",
         "source": "internal/server/gh_import.go"
@@ -25898,7 +25907,7 @@
         "source": "internal/server/gh_pulls_rest.go"
       },
       {
-        "line": 235,
+        "line": 241,
         "method": "PUT",
         "path": "/api/v3/repos/{owner}/{repo}/pulls/{p1}/{p2}/{p3}",
         "source": "internal/server/gh_reactions.go"
@@ -25940,7 +25949,7 @@
         "source": "internal/server/gh_teams_legacy_rest.go"
       },
       {
-        "line": 31,
+        "line": 35,
         "method": "PUT",
         "path": "/api/v3/teams/{team_id}/repos/{owner}/{repo}",
         "source": "internal/server/gh_teams_legacy_rest.go"

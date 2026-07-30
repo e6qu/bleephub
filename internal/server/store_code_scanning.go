@@ -1019,15 +1019,6 @@ func (st *Store) deleteCodeQLDatabaseDataLocked(db *CodeQLDatabase) error {
 	return nil
 }
 
-func (st *Store) deleteCodeQLDatabaseDataForRepoLocked(repoKey string) error {
-	for _, db := range st.CodeQLDatabasesByRepo[repoKey] {
-		if err := st.deleteCodeQLDatabaseDataLocked(db); err != nil {
-			return err
-		}
-	}
-	return nil
-}
-
 // --- CodeQL variant analyses ---
 
 // CodeQLVariantAnalysisRepoTask is the per-repository result row of a
@@ -1182,26 +1173,4 @@ func (st *Store) ReadCodeQLVariantAnalysisQueryPack(ctx context.Context, va *Cod
 		return nil, fmt.Errorf("stored query pack is corrupt: %w", err)
 	}
 	return pack, nil
-}
-
-func (st *Store) deleteCodeQLVariantAnalysisQueryPackLocked(va *CodeQLVariantAnalysis) error {
-	if va == nil || va.StoragePath == "" || st.ObjectByteStore == nil {
-		return nil
-	}
-	if err := st.ObjectByteStore.Delete(context.Background(), va.StoragePath); err != nil {
-		return fmt.Errorf("delete CodeQL variant-analysis query-pack bytes %s: %w", va.StoragePath, err)
-	}
-	return nil
-}
-
-func (st *Store) deleteCodeQLVariantAnalysisQueryPacksForControllerRepoLocked(repoKey string) error {
-	for _, va := range st.CodeQLVariantAnalyses {
-		if va.ControllerRepoKey != repoKey {
-			continue
-		}
-		if err := st.deleteCodeQLVariantAnalysisQueryPackLocked(va); err != nil {
-			return err
-		}
-	}
-	return nil
 }

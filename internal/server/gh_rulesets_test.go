@@ -434,7 +434,7 @@ func TestRulesets_BranchRuleExclusion(t *testing.T) {
 
 func TestRulesets_ActiveRulesBlockRefWritesAndRecordOfficialSuiteShape(t *testing.T) {
 	s := newTestServer()
-	s.clockNow = func() time.Time { return fixedRulesetTestTime }
+	s.replaceClockNow(func() time.Time { return fixedRulesetTestTime })
 	s.registerGHRulesetRoutes()
 
 	admin := s.store.UsersByLogin["admin"]
@@ -528,7 +528,7 @@ func TestRulesets_ActiveRulesBlockRefWritesAndRecordOfficialSuiteShape(t *testin
 
 func TestRulesets_InstallationTokenRequiresAdministrationGrant(t *testing.T) {
 	s := newTestServer()
-	s.clockNow = func() time.Time { return fixedRulesetTestTime }
+	s.replaceClockNow(func() time.Time { return fixedRulesetTestTime })
 	s.registerGHRulesetRoutes()
 	admin := s.store.UsersByLogin["admin"]
 	repo := s.store.CreateRepo(admin, "ruleset-installation-auth", "", true)
@@ -562,7 +562,7 @@ func TestRulesets_InstallationTokenRequiresAdministrationGrant(t *testing.T) {
 
 func TestRulesets_ContentsAPIUsesTheSameRefWriteGate(t *testing.T) {
 	s := newTestServer()
-	s.clockNow = func() time.Time { return fixedRulesetTestTime }
+	s.replaceClockNow(func() time.Time { return fixedRulesetTestTime })
 	s.registerGHRulesetRoutes()
 	s.registerGHRepoObjectRoutes()
 
@@ -616,7 +616,7 @@ func TestRulesets_ContentsAPIUsesTheSameRefWriteGate(t *testing.T) {
 
 func TestRulesets_EvaluateModeRecordsFailureWithoutBlocking(t *testing.T) {
 	s := newTestServer()
-	s.clockNow = func() time.Time { return fixedRulesetTestTime }
+	s.replaceClockNow(func() time.Time { return fixedRulesetTestTime })
 	admin := s.store.UsersByLogin["admin"]
 	repo := s.store.CreateRepo(admin, "ruleset-evaluate-mode", "", false)
 	stor := s.store.GetGitStorage("admin", repo.Name)
@@ -648,7 +648,7 @@ func TestRulesets_EvaluateModeRecordsFailureWithoutBlocking(t *testing.T) {
 
 func TestRulesets_BypassAndMixedModeSuiteSemantics(t *testing.T) {
 	s := newTestServer()
-	s.clockNow = func() time.Time { return fixedRulesetTestTime }
+	s.replaceClockNow(func() time.Time { return fixedRulesetTestTime })
 	admin := s.store.UsersByLogin["admin"]
 	repo := s.store.CreateRepo(admin, "ruleset-bypass", "", false)
 	stor := s.store.GetGitStorage("admin", repo.Name)
@@ -683,7 +683,7 @@ func TestRulesets_BypassAndMixedModeSuiteSemantics(t *testing.T) {
 
 func TestRulesets_SuiteFiltersAndPaginationAreValidated(t *testing.T) {
 	s := newTestServer()
-	s.clockNow = func() time.Time { return fixedRulesetTestTime.Add(2 * time.Minute) }
+	s.replaceClockNow(func() time.Time { return fixedRulesetTestTime.Add(2 * time.Minute) })
 	s.registerGHRulesetRoutes()
 	admin := s.store.UsersByLogin["admin"]
 	repo := s.store.CreateRepo(admin, "ruleset-suite-filtering", "", false)

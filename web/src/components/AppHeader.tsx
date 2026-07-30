@@ -375,7 +375,10 @@ export function AppHeader() {
       reportError(err, "Sign-out could not cancel in-flight requests");
     }
     abortPendingRequests();
-    queryClient.clear();
+    // Do not clear the cache while this page is still mounted. Active query
+    // observers immediately resubscribe after clear(), schedule fresh API
+    // reads, and race the token removal below with unauthenticated 401s. The
+    // native form navigation unloads this document and its cache moments later.
     clearToken();
     form.submit();
   };

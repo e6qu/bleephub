@@ -212,22 +212,6 @@ func (st *Store) deleteAttestationBundleLocked(a *Attestation) error {
 	return nil
 }
 
-func (st *Store) deleteAttestationsForRepoLocked(repoID int) error {
-	for id, a := range st.Attestations {
-		if a.RepoID != repoID {
-			continue
-		}
-		if err := st.deleteAttestationBundleLocked(a); err != nil {
-			return err
-		}
-		delete(st.Attestations, id)
-		if st.persist != nil {
-			st.persist.MustDelete("attestations", strconv.Itoa(id))
-		}
-	}
-	return nil
-}
-
 // RepoIDsOwnedBy returns the IDs of every repository whose owner
 // segment matches login (an organization or user account name).
 func (st *Store) RepoIDsOwnedBy(login string) map[int]bool {

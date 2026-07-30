@@ -356,7 +356,7 @@ func TestTeamMembershipRequiresAuth(t *testing.T) {
 }
 
 func TestTeamReposCRUD(t *testing.T) {
-	s, admin, maintainer, member, _, org, team := setupTeamTestServer(t)
+	s, admin, _, member, _, org, team := setupTeamTestServer(t)
 	repo := s.store.CreateOrgRepo(org, admin, "team-repo", "", false)
 	if repo == nil {
 		t.Fatal("CreateOrgRepo returned nil")
@@ -371,8 +371,8 @@ func TestTeamReposCRUD(t *testing.T) {
 		t.Fatalf("list repos = %d, want 200; body=%s", w.Code, w.Body.String())
 	}
 
-	// Maintainer adds repo.
-	w = httptestPost(s, repoPath, teamTestToken(s, maintainer, "admin:org"), nil)
+	// The organization owner, who also administers the repository, adds it.
+	w = httptestPost(s, repoPath, teamTestToken(s, admin, "admin:org, repo"), nil)
 	if w.Code != http.StatusNoContent {
 		t.Fatalf("add repo = %d, want 204; body=%s", w.Code, w.Body.String())
 	}
@@ -399,8 +399,8 @@ func TestTeamReposCRUD(t *testing.T) {
 		t.Errorf("check repo = %d, want 204; body=%s", w.Code, w.Body.String())
 	}
 
-	// Maintainer removes repo.
-	w = tokenRequest(s, "DELETE", repoPath, teamTestToken(s, maintainer, "admin:org"))
+	// The organization owner removes it.
+	w = tokenRequest(s, "DELETE", repoPath, teamTestToken(s, admin, "admin:org, repo"))
 	if w.Code != http.StatusNoContent {
 		t.Errorf("remove repo = %d, want 204; body=%s", w.Code, w.Body.String())
 	}
@@ -417,7 +417,7 @@ func TestTeamRepoPermissionOverride(t *testing.T) {
 
 	// Add with explicit admin permission.
 	body, _ := json.Marshal(map[string]string{"permission": "admin"})
-	w := httptestPost(s, repoPath, teamTestToken(s, admin, "admin:org"), body)
+	w := httptestPost(s, repoPath, teamTestToken(s, admin, "admin:org, repo"), body)
 	if w.Code != http.StatusNoContent {
 		t.Fatalf("add repo admin = %d, want 204; body=%s", w.Code, w.Body.String())
 	}
@@ -429,7 +429,7 @@ func TestTeamRepoPermissionOverride(t *testing.T) {
 
 	// Invalid permission is rejected.
 	body, _ = json.Marshal(map[string]string{"permission": "superuser"})
-	w = httptestPost(s, repoPath, teamTestToken(s, admin, "admin:org"), body)
+	w = httptestPost(s, repoPath, teamTestToken(s, admin, "admin:org, repo"), body)
 	if w.Code != http.StatusUnprocessableEntity {
 		t.Errorf("invalid permission = %d, want 422", w.Code)
 	}

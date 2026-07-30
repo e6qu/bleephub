@@ -343,7 +343,7 @@ func tokenMatchesClient(tok *UserToServerToken, clientID string, st *Store) bool
 		return tok.OAuthAppClientID == clientID
 	}
 	if tok.AppID > 0 {
-		if app := st.AppsByClientID[clientID]; app != nil && app.ID == tok.AppID {
+		if app := st.GetAppByClientID(clientID); app != nil && app.ID == tok.AppID {
 			return true
 		}
 	}

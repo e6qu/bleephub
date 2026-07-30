@@ -6,6 +6,7 @@ import (
 	"bufio"
 	"context"
 	"crypto/subtle"
+	"crypto/tls"
 	"fmt"
 	"log"
 	"net"
@@ -40,10 +41,15 @@ func main() {
 	if strings.TrimSpace(listenAddress) == "" {
 		listenAddress = ":9000"
 	}
-	listener, err := net.Listen("tcp", listenAddress)
+	tlsConfig, err := dqliteaddr.TLSConfig(secret, true)
+	if err != nil {
+		log.Fatalf("initialize dqlite transport TLS: %v", err)
+	}
+	tcpListener, err := net.Listen("tcp", listenAddress)
 	if err != nil {
 		log.Fatalf("listen dqlite transport: %v", err)
 	}
+	listener := tls.NewListener(tcpListener, tlsConfig)
 	defer listener.Close()
 
 	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
@@ -167,11 +173,21 @@ func dqliteHandler(ctx context.Context, accepted chan<- net.Conn, secret string)
 
 func dqliteHTTPDial(ctx context.Context, address, secret string) (net.Conn, error) {
 	dialer := &net.Dialer{}
-	connection, err := dialer.DialContext(ctx, "tcp", address)
+	rawConnection, err := dialer.DialContext(ctx, "tcp", address)
 	if err != nil {
 		return nil, err
 	}
-	requestURL, err := url.Parse("http://" + address + "/dqlite")
+	tlsConfig, err := dqliteaddr.TLSConfig(secret, false)
+	if err != nil {
+		_ = rawConnection.Close()
+		return nil, err
+	}
+	connection := tls.Client(rawConnection, tlsConfig)
+	if err := connection.HandshakeContext(ctx); err != nil {
+		_ = connection.Close()
+		return nil, fmt.Errorf("authenticate dqlite TLS endpoint %s: %w", address, err)
+	}
+	requestURL, err := url.Parse("https://" + address + "/dqlite")
 	if err != nil {
 		_ = connection.Close()
 		return nil, err

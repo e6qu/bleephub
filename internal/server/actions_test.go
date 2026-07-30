@@ -279,21 +279,18 @@ func testActionTarball(t *testing.T) []byte {
 	return buf.Bytes()
 }
 
-// newTestServer creates a minimal server for unit testing.
+// newTestServer creates a route-free server for focused unit tests through the
+// same complete state constructor production uses. Tests register only the
+// surface they exercise, but every production dependency field is initialized
+// with its deterministic in-memory counterpart.
 func newTestServer() *Server {
 	logger := zerolog.Nop()
-	s := &Server{
-		addr:          "127.0.0.1:0",
-		mux:           http.NewServeMux(),
-		logger:        logger,
-		store:         NewStore(),
-		actionCache:   NewActionCache(),
-		artifactStore: NewArtifactStoreWithByteStore("", nil),
-		metrics:       NewMetrics(),
-		// Unit-test hook receivers are loopback httptest servers; the SSRF
-		// tests build their own server with this left at the secure default.
-		allowPrivateOutboundTargets: true,
-	}
+	s := newServerState("127.0.0.1:0", logger, serverConstruction{
+		maxConcurrentWorkflows:     10,
+		pagesJekyllExecutable:      "bleephub-pages-jekyll",
+		build:                      BuildInfo{Version: "test", Commit: "fixed", PublishedAt: "2042-07-15T12:00:00Z"},
+		allowPrivateOutboundTarget: true,
+	})
 	useFixedTestClock(s)
 	s.store.SeedDefaultUser()
 	return s

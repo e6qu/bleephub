@@ -37,6 +37,23 @@ type RefreshToken struct {
 	CreatedAt        time.Time
 }
 
+func cloneUserToServerToken(token *UserToServerToken) *UserToServerToken {
+	if token == nil {
+		return nil
+	}
+	copy := *token
+	copy.InstallationIDs = append([]int(nil), token.InstallationIDs...)
+	return &copy
+}
+
+func cloneRefreshToken(token *RefreshToken) *RefreshToken {
+	if token == nil {
+		return nil
+	}
+	copy := *token
+	return &copy
+}
+
 // CreateUserToServerToken mints a gho_/ghu_ token (+ optional ghr_ pair).
 // Pass appID > 0 for ghu_ (GitHub-App user-to-server) or oauthClientID for gho_ (OAuth-App user).
 // If withRefresh is true, also mints a ghr_ refresh token.
@@ -111,7 +128,7 @@ func (st *Store) createUserToServerTokenLocked(userID, appID int, oauthClientID,
 	if st.persist != nil {
 		st.persist.MustPut("user_to_server_tokens", tokenStr, tok)
 	}
-	return tok, rt, nil
+	return cloneUserToServerToken(tok), cloneRefreshToken(rt), nil
 }
 
 // SetUserToServerTokenInstallations binds the token to a set of installation
@@ -138,7 +155,13 @@ func (st *Store) LookupUserToServerToken(tokenStr string) (*UserToServerToken, *
 	if tok == nil || st.currentTime().After(tok.ExpiresAt) {
 		return nil, nil
 	}
-	return tok, st.Users[tok.UserID]
+	token := cloneUserToServerToken(tok)
+	user := st.Users[tok.UserID]
+	if user == nil {
+		return token, nil
+	}
+	userCopy := *user
+	return token, &userCopy
 }
 
 // RevokeUserToServerToken drops a user-to-server token. Returns true if it existed.

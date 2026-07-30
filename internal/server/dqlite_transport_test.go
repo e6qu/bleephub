@@ -3,6 +3,7 @@ package bleephub
 import (
 	"bufio"
 	"context"
+	"crypto/tls"
 	"errors"
 	"io"
 	"net"
@@ -25,10 +26,15 @@ type dqliteUpgradeServer struct {
 
 func newDqliteUpgradeServer(t *testing.T, statusLine, upgradeToken string) *dqliteUpgradeServer {
 	t.Helper()
-	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	tlsConfig, err := dqliteaddr.TLSConfig("cluster-secret", true)
+	if err != nil {
+		t.Fatalf("TLS config: %v", err)
+	}
+	tcpListener, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
 		t.Fatalf("listen: %v", err)
 	}
+	listener := tls.NewListener(tcpListener, tlsConfig)
 	t.Cleanup(func() { _ = listener.Close() })
 
 	server := &dqliteUpgradeServer{
@@ -165,6 +171,18 @@ func TestDqliteHTTPDialReportsUnreachableMembers(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "dial dqlite") {
 		t.Fatalf("error does not name the failed dial: %v", err)
+	}
+}
+
+func TestDqliteHTTPDialRejectsAnotherClusterTLSIdentity(t *testing.T) {
+	server := newDqliteUpgradeServer(t, "HTTP/1.1 101 Switching Protocols", "dqlite")
+	conn, err := dqliteHTTPDial(context.Background(), server.address, "different-cluster-secret")
+	if err == nil {
+		_ = conn.Close()
+		t.Fatal("dial authenticated a dqlite endpoint derived from another cluster secret")
+	}
+	if !strings.Contains(err.Error(), "authenticate dqlite TLS endpoint") {
+		t.Fatalf("wrong-cluster error = %v, want TLS authentication failure", err)
 	}
 }
 

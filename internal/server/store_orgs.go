@@ -237,12 +237,12 @@ func (st *Store) DeleteOrg(login string) bool {
 // organization row that goes away while its repositories stay behind leaves
 // every later start rejecting those rows as an unknown owner.
 func (st *Store) DeleteOrgWithError(login string) (bool, error) {
-	repoNames, deleted, err := st.deleteOrgMetadata(login)
+	repoIntents, deleted, err := st.deleteOrgMetadata(login)
 	if err != nil || !deleted {
 		return deleted, err
 	}
-	for _, fullName := range repoNames {
-		if err := st.purgeDeletedRepoBytes(fullName); err != nil {
+	for _, intent := range repoIntents {
+		if err := st.purgeDeletedRepoBytes(intent.Name, intent); err != nil {
 			return true, fmt.Errorf("delete organization %s: %w", login, err)
 		}
 	}
@@ -255,7 +255,7 @@ func (st *Store) DeleteOrgWithError(login string) (bool, error) {
 // deleteOrgMetadata purges the organization from memory and, in one
 // transaction, from the database. It returns the repositories whose bytes the
 // caller must still destroy.
-func (st *Store) deleteOrgMetadata(login string) ([]string, bool, error) {
+func (st *Store) deleteOrgMetadata(login string) ([]pendingDeletion, bool, error) {
 	st.mu.Lock()
 	defer st.mu.Unlock()
 
@@ -279,14 +279,17 @@ func (st *Store) deleteOrgMetadata(login string) ([]string, bool, error) {
 		}
 	}
 	sort.Strings(repoNames)
+	repoIntents := make([]pendingDeletion, 0, len(repoNames))
 	for _, fullName := range repoNames {
 		owner, name, ok := splitRepoFullName(fullName)
 		if !ok {
 			return nil, true, fmt.Errorf("delete organization %s: repository key %q is not an owner/name pair", login, fullName)
 		}
-		if _, err := st.deleteRepoLocked(owner, name); err != nil {
+		_, intent, err := st.deleteRepoLocked(owner, name)
+		if err != nil {
 			return nil, true, fmt.Errorf("delete organization %s: %w", login, err)
 		}
+		repoIntents = append(repoIntents, intent)
 	}
 
 	batch := newPersistBatch(st.persist)
@@ -310,7 +313,7 @@ func (st *Store) deleteOrgMetadata(login string) ([]string, bool, error) {
 	if err := batch.Commit(); err != nil {
 		return nil, true, fmt.Errorf("delete organization %s: %w", login, err)
 	}
-	return repoNames, true, nil
+	return repoIntents, true, nil
 }
 
 // ListOrgsByUser returns all organizations the user belongs to, in

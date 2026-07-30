@@ -53,7 +53,10 @@ type Server struct {
 	identity               identityConfig
 	build                  BuildInfo
 	// clockNow is injected by deterministic tests and simulators. Production
-	// leaves it nil and currentTime uses the process clock.
+	// leaves it nil and currentTime uses the process clock. clockMu makes
+	// replacing a test clock safe while owned background workers are winding
+	// down; tests replace it through the synchronized helper in _test.go.
+	clockMu  sync.RWMutex
 	clockNow func() time.Time
 	// allowPrivateOutboundTargets opts every server-initiated fetch — webhook
 	// delivery and source import — out of the public-address requirement, for
@@ -78,8 +81,13 @@ type Server struct {
 }
 
 func (s *Server) currentTime() time.Time {
-	if s != nil && s.clockNow != nil {
-		return s.clockNow().UTC()
+	if s != nil {
+		s.clockMu.RLock()
+		clockNow := s.clockNow
+		s.clockMu.RUnlock()
+		if clockNow != nil {
+			return clockNow().UTC()
+		}
 	}
 	return time.Now().UTC()
 }
@@ -112,6 +120,44 @@ func WithBuildInfo(info BuildInfo) ServerOption {
 	return func(server *Server) {
 		server.build = info
 	}
+}
+
+// serverConstruction contains the dependency/configuration values needed to
+// build the complete in-memory server state. Production and tests deliberately
+// share newServerState: a test server may choose not to register every route,
+// but it must not exercise a structurally different six-field Server that
+// production can never create.
+type serverConstruction struct {
+	byteStore                  actionsByteStore
+	dataDir                    string
+	maxConcurrentWorkflows     int
+	externalURL                string
+	pagesJekyllExecutable      string
+	identity                   identityConfig
+	build                      BuildInfo
+	allowPrivateOutboundTarget bool
+}
+
+func newServerState(addr string, logger zerolog.Logger, construction serverConstruction) *Server {
+	s := &Server{
+		addr:                        addr,
+		mux:                         http.NewServeMux(),
+		logger:                      logger,
+		store:                       NewStore(),
+		actionCache:                 NewActionCache(),
+		artifactStore:               NewArtifactStoreWithByteStore(construction.dataDir, construction.byteStore),
+		metrics:                     NewMetrics(),
+		maxConcurrentWorkflows:      construction.maxConcurrentWorkflows,
+		registryUploads:             map[string]*containerRegistryUpload{},
+		rateLimits:                  map[string]*apiRateWindow{},
+		externalURL:                 construction.externalURL,
+		pagesJekyllExecutable:       construction.pagesJekyllExecutable,
+		identity:                    construction.identity,
+		build:                       construction.build,
+		allowPrivateOutboundTargets: construction.allowPrivateOutboundTarget,
+	}
+	s.store.actionsArtifacts = s.artifactStore
+	return s
 }
 
 // route registers a handler AND records its "METHOD /path" pattern so the
@@ -228,26 +274,16 @@ func NewServer(addr string, logger zerolog.Logger, options ...ServerOption) *Ser
 	if err != nil {
 		logger.Fatal().Err(err).Msg("failed to initialize BLEEPHUB_OBJECT_S3_* byte storage")
 	}
-	artifactStore := NewArtifactStoreWithByteStore(dataDir, byteStore)
-
-	s := &Server{
-		addr:                   addr,
-		mux:                    http.NewServeMux(),
-		logger:                 logger,
-		store:                  NewStore(),
-		actionCache:            NewActionCache(),
-		artifactStore:          artifactStore,
-		metrics:                NewMetrics(),
-		maxConcurrentWorkflows: maxWF,
-		registryUploads:        map[string]*containerRegistryUpload{},
-		rateLimits:             map[string]*apiRateWindow{},
-		externalURL:            strings.TrimRight(os.Getenv("BLEEPHUB_EXTERNAL_URL"), "/"),
-		pagesJekyllExecutable:  coalesceStr(os.Getenv("BLEEPHUB_PAGES_JEKYLL_EXECUTABLE"), "bleephub-pages-jekyll"),
-		identity:               identityConfigFromEnv(),
-		build:                  BuildInfo{Version: "development", Commit: "none", PublishedAt: "not-yet-published"},
-
-		allowPrivateOutboundTargets: strings.EqualFold(strings.TrimSpace(os.Getenv("BLEEPHUB_ALLOW_PRIVATE_OUTBOUND_TARGETS")), "true"),
-	}
+	s := newServerState(addr, logger, serverConstruction{
+		byteStore:                  byteStore,
+		dataDir:                    dataDir,
+		maxConcurrentWorkflows:     maxWF,
+		externalURL:                strings.TrimRight(os.Getenv("BLEEPHUB_EXTERNAL_URL"), "/"),
+		pagesJekyllExecutable:      coalesceStr(os.Getenv("BLEEPHUB_PAGES_JEKYLL_EXECUTABLE"), "bleephub-pages-jekyll"),
+		identity:                   identityConfigFromEnv(),
+		build:                      BuildInfo{Version: "development", Commit: "none", PublishedAt: "not-yet-published"},
+		allowPrivateOutboundTarget: strings.EqualFold(strings.TrimSpace(os.Getenv("BLEEPHUB_ALLOW_PRIVATE_OUTBOUND_TARGETS")), "true"),
+	})
 	if msg := retiredEnvVarMessage(); msg != "" {
 		logger.Fatal().Msg(msg)
 	}
@@ -273,11 +309,11 @@ func NewServer(addr string, logger zerolog.Logger, options ...ServerOption) *Ser
 		if err := validatePersistentServerStorage(byteStore != nil); err != nil {
 			logger.Fatal().Err(err).Msg("invalid Bleephub persistent storage configuration")
 		}
-		if err := s.store.SetPersistence(persist); err != nil {
-			logger.Fatal().Err(err).Msg("failed to load persisted state")
-		}
 		if err := s.artifactStore.SetPersistence(persist); err != nil {
 			logger.Fatal().Err(err).Msg("failed to load persisted Actions artifact and cache metadata")
+		}
+		if err := s.store.SetPersistence(persist); err != nil {
+			logger.Fatal().Err(err).Msg("failed to load persisted state")
 		}
 		s.logger.Info().Str("dialect", persist.dialect.name).Str("data_dir", dataDir).Msg("bleephub persistence enabled")
 	}
@@ -636,13 +672,7 @@ func (s *Server) ListenAndServe(ctx context.Context) error {
 		return err
 	}
 	s.startScheduleDispatcher(ctx)
-	inner := s.prefixStripMiddleware(s.replicaRefreshMiddleware(s.internalAuthMiddleware(s.mux)))
-	ghWrapped := s.ghHeadersMiddleware(inner)
-	observed := ghWrapped
-	if s.responseObserver != nil {
-		observed = s.observeMiddleware(ghWrapped)
-	}
-	handler := otelhttp.NewHandler(s.recoverMiddleware(s.loggingMiddleware(s.adminHostMiddleware(observed))), "bleephub")
+	handler := s.requestHandler()
 
 	srv := &http.Server{
 		Addr:    s.addr,
@@ -709,6 +739,20 @@ func (s *Server) ListenAndServe(ctx context.Context) error {
 		return fmt.Errorf("shutdown: %w", err)
 	}
 	return nil
+}
+
+// requestHandler is the one production HTTP pipeline. In-process tests use it
+// too, so authentication, prefix routing, replica refresh, recovery, logging,
+// response observation, and telemetry cannot silently diverge from the live
+// listener.
+func (s *Server) requestHandler() http.Handler {
+	inner := s.prefixStripMiddleware(s.replicaRefreshMiddleware(s.internalAuthMiddleware(s.mux)))
+	ghWrapped := s.ghHeadersMiddleware(inner)
+	observed := ghWrapped
+	if s.responseObserver != nil {
+		observed = s.observeMiddleware(ghWrapped)
+	}
+	return otelhttp.NewHandler(s.recoverMiddleware(s.loggingMiddleware(s.adminHostMiddleware(observed))), "bleephub")
 }
 
 // shutdownGrace bounds the drain. Long enough for an ordinary request or a
@@ -788,6 +832,13 @@ func (s *Server) replicaRefreshMiddleware(next http.Handler) http.Handler {
 			s.logger.Error().Err(err).Msg("failed to refresh shared persistence state")
 			writeJSON(w, http.StatusServiceUnavailable, map[string]string{
 				"message": "Shared state is temporarily unavailable",
+			})
+			return
+		}
+		if err := s.artifactStore.RefreshFromPersistenceIfStale(); err != nil {
+			s.logger.Error().Err(err).Msg("failed to refresh shared Actions metadata")
+			writeJSON(w, http.StatusServiceUnavailable, map[string]string{
+				"message": "Shared Actions metadata is temporarily unavailable",
 			})
 			return
 		}

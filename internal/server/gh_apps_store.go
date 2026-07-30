@@ -81,7 +81,12 @@ func actorUserLocked(st *Store, id int) *User {
 func (st *Store) GetActorByID(id int) *User {
 	st.mu.RLock()
 	defer st.mu.RUnlock()
-	return actorUserLocked(st, id)
+	user := actorUserLocked(st, id)
+	if user == nil {
+		return nil
+	}
+	copy := *user
+	return &copy
 }
 
 // Installation represents an app installation on a user or org.
@@ -144,6 +149,54 @@ type OAuthApp struct {
 	OwnerID      int
 	CreatedAt    time.Time
 	UpdatedAt    time.Time
+}
+
+func cloneApp(app *App) *App {
+	if app == nil {
+		return nil
+	}
+	copy := *app
+	copy.Permissions = normalizeAppPermissions(app.Permissions)
+	copy.Events = append([]string(nil), app.Events...)
+	copy.WebhookEvents = append([]string(nil), app.WebhookEvents...)
+	return &copy
+}
+
+func cloneInstallation(installation *Installation) *Installation {
+	if installation == nil {
+		return nil
+	}
+	copy := *installation
+	copy.Permissions = normalizeAppPermissions(installation.Permissions)
+	copy.Events = append([]string(nil), installation.Events...)
+	copy.SelectedRepoIDs = append([]int(nil), installation.SelectedRepoIDs...)
+	if installation.SuspendedAt != nil {
+		at := *installation.SuspendedAt
+		copy.SuspendedAt = &at
+	}
+	if installation.SuspendedBy != nil {
+		user := *installation.SuspendedBy
+		copy.SuspendedBy = &user
+	}
+	return &copy
+}
+
+func cloneInstallationToken(token *InstallationToken) *InstallationToken {
+	if token == nil {
+		return nil
+	}
+	copy := *token
+	copy.Permissions = normalizeAppPermissions(token.Permissions)
+	copy.RepositoryIDs = append([]int(nil), token.RepositoryIDs...)
+	return &copy
+}
+
+func cloneOAuthApp(app *OAuthApp) *OAuthApp {
+	if app == nil {
+		return nil
+	}
+	copy := *app
+	return &copy
 }
 
 // validateClientCallbackURL is the registration rule for an OAuth client's
@@ -222,7 +275,7 @@ func (st *Store) CreateAppE(ownerID int, name, description string, perms map[str
 		WebhookInsecureSSL: "0",
 		PEMPrivateKey:      string(privPEM),
 		Permissions:        normalizeAppPermissions(perms),
-		Events:             events,
+		Events:             append([]string(nil), events...),
 		OwnerID:            ownerID,
 		CreatedAt:          now,
 		UpdatedAt:          now,
@@ -236,7 +289,7 @@ func (st *Store) CreateAppE(ownerID int, name, description string, perms map[str
 	if st.persist != nil {
 		st.persist.MustPut("apps", strconv.Itoa(id), app)
 	}
-	return app, nil
+	return cloneApp(app), nil
 }
 
 // UpdateApp mutates a registered app under the write lock and persists it.
@@ -375,14 +428,14 @@ func (st *Store) DeleteApp(appID int) bool {
 func (st *Store) GetApp(id int) *App {
 	st.mu.RLock()
 	defer st.mu.RUnlock()
-	return st.Apps[id]
+	return cloneApp(st.Apps[id])
 }
 
 // GetAppBySlug returns an app by slug, or nil.
 func (st *Store) GetAppBySlug(slug string) *App {
 	st.mu.RLock()
 	defer st.mu.RUnlock()
-	return st.AppsBySlug[slug]
+	return cloneApp(st.AppsBySlug[slug])
 }
 
 // CreateInstallation creates a new installation for an app.
@@ -419,7 +472,7 @@ func (st *Store) CreateInstallation(appID int, targetType string, targetID int, 
 		TargetNodeID:        targetNodeID,
 		TargetAvatarURL:     targetAvatarURL,
 		Permissions:         normalizeAppPermissions(perms),
-		Events:              events,
+		Events:              append([]string(nil), events...),
 		RepositorySelection: "all",
 		CreatedAt:           now,
 		UpdatedAt:           now,
@@ -428,14 +481,14 @@ func (st *Store) CreateInstallation(appID int, targetType string, targetID int, 
 	if st.persist != nil {
 		st.persist.MustPut("installations", strconv.Itoa(id), inst)
 	}
-	return inst
+	return cloneInstallation(inst)
 }
 
 // GetInstallation returns an installation by ID, or nil.
 func (st *Store) GetInstallation(id int) *Installation {
 	st.mu.RLock()
 	defer st.mu.RUnlock()
-	return st.Installations[id]
+	return cloneInstallation(st.Installations[id])
 }
 
 // ListAppInstallations returns all installations for a given app.
@@ -446,7 +499,7 @@ func (st *Store) ListAppInstallations(appID int) []*Installation {
 	var result []*Installation
 	for _, inst := range st.Installations {
 		if inst.AppID == appID {
-			result = append(result, inst)
+			result = append(result, cloneInstallation(inst))
 		}
 	}
 	return result
@@ -472,7 +525,7 @@ func (st *Store) GetRepoInstallation(ownerLogin string) *Installation {
 
 	for _, inst := range st.Installations {
 		if inst.TargetLogin == ownerLogin {
-			return inst
+			return cloneInstallation(inst)
 		}
 	}
 	return nil
@@ -614,7 +667,7 @@ func (st *Store) RemoveInstallationRepo(id, repoID int) (bool, bool) {
 func (st *Store) GetAppByClientID(clientID string) *App {
 	st.mu.RLock()
 	defer st.mu.RUnlock()
-	return st.AppsByClientID[clientID]
+	return cloneApp(st.AppsByClientID[clientID])
 }
 
 // CreateOAuthApp registers a new (classic) OAuth App. Distinct from a GitHub App:
@@ -662,14 +715,14 @@ func (st *Store) CreateOAuthAppE(ownerID int, name, description, appURL, callbac
 	if st.persist != nil {
 		st.persist.MustPut("oauth_apps", clientID, app)
 	}
-	return app, nil
+	return cloneOAuthApp(app), nil
 }
 
 // GetOAuthApp returns the OAuth App with the given client_id, or nil.
 func (st *Store) GetOAuthApp(clientID string) *OAuthApp {
 	st.mu.RLock()
 	defer st.mu.RUnlock()
-	return st.OAuthApps[clientID]
+	return cloneOAuthApp(st.OAuthApps[clientID])
 }
 
 // ListOAuthApps returns all OAuth Apps.
@@ -678,7 +731,7 @@ func (st *Store) ListOAuthApps() []*OAuthApp {
 	defer st.mu.RUnlock()
 	out := make([]*OAuthApp, 0, len(st.OAuthApps))
 	for _, a := range st.OAuthApps {
-		out = append(out, a)
+		out = append(out, cloneOAuthApp(a))
 	}
 	return out
 }
@@ -764,7 +817,7 @@ func (st *Store) VerifyOAuthAppSecret(clientID, clientSecret string) *OAuthApp {
 	if app == nil || !secretEqual(app.ClientSecret, clientSecret) {
 		return nil
 	}
-	return app
+	return cloneOAuthApp(app)
 }
 
 // VerifyAppClientSecret returns the GitHub App if client_id+client_secret match, else nil.
@@ -775,7 +828,7 @@ func (st *Store) VerifyAppClientSecret(clientID, clientSecret string) *App {
 	if app == nil || !secretEqual(app.ClientSecret, clientSecret) {
 		return nil
 	}
-	return app
+	return cloneApp(app)
 }
 
 // CreateInstallationToken generates a ghs_-prefixed token with 1h expiry.
@@ -811,7 +864,7 @@ func (st *Store) CreateInstallationTokenE(installationID, appID int, perms map[s
 	if st.persist != nil {
 		st.persist.MustPut("installation_tokens", tokenStr, token)
 	}
-	return token, nil
+	return cloneInstallationToken(token), nil
 }
 
 // RevokeInstallationToken drops the token from the store. Returns
@@ -843,7 +896,7 @@ func (st *Store) LookupInstallationToken(tokenStr string) (*InstallationToken, *
 		return nil, nil
 	}
 	inst := st.Installations[tok.InstallationID]
-	return tok, inst
+	return cloneInstallationToken(tok), cloneInstallation(inst)
 }
 
 // RegisterManifestCode creates a one-time-use code that maps to an app ID.

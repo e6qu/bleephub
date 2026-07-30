@@ -895,6 +895,9 @@ func dockerStopContainer(ctx context.Context, id string) error {
 func dockerRemoveContainer(ctx context.Context, id string) error {
 	out, err := runDockerCLI(ctx, "rm", "-f", "-v", id)
 	if err != nil {
+		if strings.Contains(string(out), "No such container") {
+			return nil
+		}
 		return fmt.Errorf("%w: %s", err, string(out))
 	}
 	return nil

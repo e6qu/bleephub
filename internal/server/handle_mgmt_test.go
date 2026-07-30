@@ -425,9 +425,8 @@ func TestInternalTeamsCRUD(t *testing.T) {
 
 func TestInternalAuditLog(t *testing.T) {
 	fixedNow := time.Date(2035, time.June, 15, 12, 0, 0, 0, time.UTC)
-	previousClock := testServer.clockNow
-	testServer.clockNow = func() time.Time { return fixedNow }
-	t.Cleanup(func() { testServer.clockNow = previousClock })
+	previousClock := testServer.replaceClockNow(func() time.Time { return fixedNow })
+	t.Cleanup(func() { testServer.replaceClockNow(previousClock) })
 	e1 := ghPost(t, "/internal/audit-log/events", defaultToken, map[string]interface{}{
 		"actor":       "admin",
 		"action":      "user.login",

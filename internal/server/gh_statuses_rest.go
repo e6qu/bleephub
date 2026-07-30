@@ -181,14 +181,16 @@ func (s *CommitStatusStore) moveRepoKey(oldFull, newFull string) {
 	}
 }
 
-func (s *CommitStatusStore) deleteRepoKey(fullName string) {
+func (s *CommitStatusStore) deleteRepoKeyBatch(fullName string, batch *persistBatch) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	prefix := fullName + ":"
 	for key := range s.byKey {
 		if strings.HasPrefix(key, prefix) {
 			delete(s.byKey, key)
-			if s.persist != nil {
+			if batch != nil {
+				batch.Delete("commit_statuses", key)
+			} else if s.persist != nil {
 				s.persist.MustDelete("commit_statuses", key)
 			}
 		}

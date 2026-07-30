@@ -97,11 +97,62 @@ type RulesetVersion struct {
 	CreatedAt time.Time `json:"created_at"`
 }
 
+func cloneRulesetParameter(value interface{}) interface{} {
+	switch value := value.(type) {
+	case map[string]interface{}:
+		copy := make(map[string]interface{}, len(value))
+		for key, item := range value {
+			copy[key] = cloneRulesetParameter(item)
+		}
+		return copy
+	case []interface{}:
+		copy := make([]interface{}, len(value))
+		for index, item := range value {
+			copy[index] = cloneRulesetParameter(item)
+		}
+		return copy
+	case []string:
+		return append([]string(nil), value...)
+	case map[string]string:
+		copy := make(map[string]string, len(value))
+		for key, item := range value {
+			copy[key] = item
+		}
+		return copy
+	default:
+		return value
+	}
+}
+
+func cloneRuleset(rs *Ruleset) *Ruleset {
+	if rs == nil {
+		return nil
+	}
+	copy := *rs
+	copy.BypassActors = append([]RulesetBypassActor(nil), rs.BypassActors...)
+	copy.Conditions.RefName.Include = append([]string(nil), rs.Conditions.RefName.Include...)
+	copy.Conditions.RefName.Exclude = append([]string(nil), rs.Conditions.RefName.Exclude...)
+	copy.Rules = make([]Rule, len(rs.Rules))
+	for index, rule := range rs.Rules {
+		copy.Rules[index] = rule
+		if rule.Parameters != nil {
+			copy.Rules[index].Parameters = cloneRulesetParameter(rule.Parameters).(map[string]interface{})
+		}
+	}
+	copy.Versions = make(map[int]RulesetVersion, len(rs.Versions))
+	for id, version := range rs.Versions {
+		version.Ruleset = *cloneRuleset(&version.Ruleset)
+		copy.Versions[id] = version
+	}
+	return &copy
+}
+
 // CreateRuleset creates and persists a new ruleset for a repository.
 func (st *Store) CreateRuleset(repo *Repo, rs *Ruleset) *Ruleset {
 	st.mu.Lock()
 	defer st.mu.Unlock()
 
+	rs = cloneRuleset(rs)
 	rs.ID = st.NextRulesetID
 	st.NextRulesetID++
 	rs.NodeID = rulesetNodeID(rs.ID)
@@ -123,7 +174,7 @@ func (st *Store) CreateRuleset(repo *Repo, rs *Ruleset) *Ruleset {
 
 	st.Rulesets[rs.ID] = rs
 	st.persistRuleset(rs)
-	return rs
+	return cloneRuleset(rs)
 }
 
 // UpdateRuleset updates an existing ruleset and records a history snapshot
@@ -131,6 +182,14 @@ func (st *Store) CreateRuleset(repo *Repo, rs *Ruleset) *Ruleset {
 func (st *Store) UpdateRuleset(repo *Repo, rs *Ruleset, updates *Ruleset, actorID int) *Ruleset {
 	st.mu.Lock()
 	defer st.mu.Unlock()
+	if repo == nil || rs == nil || updates == nil {
+		return nil
+	}
+	updates = cloneRuleset(updates)
+	rs = st.Rulesets[rs.ID]
+	if rs == nil || rs.RepoID != repo.ID {
+		return nil
+	}
 
 	// Snapshot current state to history before mutating.
 	snapshot := *rs
@@ -170,7 +229,7 @@ func (st *Store) UpdateRuleset(repo *Repo, rs *Ruleset, updates *Ruleset, actorI
 	}
 	rs.UpdatedAt = time.Now().UTC()
 	st.persistRuleset(rs)
-	return rs
+	return cloneRuleset(rs)
 }
 
 // DeleteRuleset removes a ruleset.
@@ -191,7 +250,7 @@ func (st *Store) DeleteRuleset(id int) bool {
 func (st *Store) GetRuleset(id int) *Ruleset {
 	st.mu.RLock()
 	defer st.mu.RUnlock()
-	return st.Rulesets[id]
+	return cloneRuleset(st.Rulesets[id])
 }
 
 // CreateOrgRuleset creates and persists a new organization-level ruleset.
@@ -225,10 +284,11 @@ func (st *Store) CreateOrgRuleset(orgID int, name string, target string, enforce
 	if org := st.Orgs[orgID]; org != nil {
 		rs.Source = org.Login
 	}
+	rs = cloneRuleset(rs)
 	st.NextRulesetID++
 	st.Rulesets[rs.ID] = rs
 	st.persistRuleset(rs)
-	return rs
+	return cloneRuleset(rs)
 }
 
 // ListOrgRulesets returns all rulesets for an organization, sorted by ID.
@@ -238,7 +298,7 @@ func (st *Store) ListOrgRulesets(orgID int) []*Ruleset {
 	var out []*Ruleset
 	for _, rs := range st.Rulesets {
 		if rs.OrgID == orgID {
-			out = append(out, rs)
+			out = append(out, cloneRuleset(rs))
 		}
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].ID < out[j].ID })
@@ -249,7 +309,7 @@ func (st *Store) ListOrgRulesets(orgID int) []*Ruleset {
 func (st *Store) GetOrgRuleset(id int) *Ruleset {
 	st.mu.RLock()
 	defer st.mu.RUnlock()
-	return st.Rulesets[id]
+	return cloneRuleset(st.Rulesets[id])
 }
 
 // UpdateOrgRuleset applies a mutation to an organization ruleset and records
@@ -388,7 +448,7 @@ func (st *Store) ListRulesetsForRepository(repo *Repo, includeParents bool) []*R
 	for _, rs := range st.Rulesets {
 		if rs.RepoID == repo.ID ||
 			(includeParents && repo.OwnerType == "Organization" && rs.OrgID != 0 && rs.OrgID == repo.OwnerID) {
-			out = append(out, rs)
+			out = append(out, cloneRuleset(rs))
 		}
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].ID < out[j].ID })
@@ -425,10 +485,8 @@ func (st *Store) ApplicableRulesets(repo *Repo, ref string) []Ruleset {
 		if !rulesetMatchesBranch(rs, repo.DefaultBranch, short) {
 			continue
 		}
-		clone := *rs
-		clone.Rules = append([]Rule(nil), rs.Rules...)
-		clone.BypassActors = append([]RulesetBypassActor(nil), rs.BypassActors...)
-		out = append(out, clone)
+		clone := cloneRuleset(rs)
+		out = append(out, *clone)
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].ID < out[j].ID })
 	return out
@@ -463,7 +521,7 @@ func (st *Store) ListRulesForBranch(repo *Repo, branch string) []map[string]inte
 				"ruleset_source":      rs.Source,
 			}
 			if rule.Parameters != nil {
-				obj["parameters"] = rule.Parameters
+				obj["parameters"] = cloneRulesetParameter(rule.Parameters)
 			}
 			out = append(out, obj)
 		}

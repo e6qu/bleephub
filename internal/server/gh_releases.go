@@ -208,6 +208,45 @@ func (rs *ReleaseStore) DeleteAllForRepo(repoID int) error {
 	return nil
 }
 
+// appendRepoCleanup snapshots release asset locations into a durable
+// repository-deletion intent. The repository cascade can then commit metadata
+// without performing filesystem or object-store I/O while holding its lock.
+func (rs *ReleaseStore) appendRepoCleanup(repoID int, record *pendingDeletion) {
+	rs.mu.RLock()
+	defer rs.mu.RUnlock()
+	for _, release := range rs.byRepo[repoID] {
+		for _, asset := range release.Assets {
+			switch {
+			case rs.byteStore != nil:
+				record.ReleaseAssetObjects = append(record.ReleaseAssetObjects, releaseAssetDataKey(asset.ID))
+			case rs.assetDataDir != "":
+				record.ReleaseAssetFiles = append(record.ReleaseAssetFiles, rs.assetFilePath(asset.ID))
+			}
+		}
+	}
+}
+
+// deleteAllForRepoBatch removes release metadata in memory and stages every
+// durable row in the repository cascade's transaction. Asset bytes are
+// removed later from the durable deletion intent.
+func (rs *ReleaseStore) deleteAllForRepoBatch(repoID int, batch *persistBatch) map[int]bool {
+	rs.mu.Lock()
+	defer rs.mu.Unlock()
+	ids := make(map[int]bool, len(rs.byRepo[repoID]))
+	for _, release := range rs.byRepo[repoID] {
+		ids[release.ID] = true
+		for _, asset := range release.Assets {
+			delete(rs.assetByID, asset.ID)
+			delete(rs.assetData, asset.ID)
+			batch.Delete("release_assets", strconv.Itoa(asset.ID))
+		}
+		delete(rs.byID, release.ID)
+		batch.Delete("releases", strconv.Itoa(release.ID))
+	}
+	delete(rs.byRepo, repoID)
+	return ids
+}
+
 func (rs *ReleaseStore) IDsForRepo(repoID int) map[int]bool {
 	rs.mu.RLock()
 	defer rs.mu.RUnlock()

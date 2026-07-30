@@ -14,9 +14,8 @@ import (
 
 func TestGitHubClassroomSurface(t *testing.T) {
 	fixedNow := time.Date(2035, time.June, 15, 12, 0, 0, 0, time.UTC)
-	previousClock := testServer.clockNow
-	testServer.clockNow = func() time.Time { return fixedNow }
-	t.Cleanup(func() { testServer.clockNow = previousClock })
+	previousClock := testServer.replaceClockNow(func() time.Time { return fixedNow })
+	t.Cleanup(func() { testServer.replaceClockNow(previousClock) })
 	org := createTestOrg(t)
 	starterRepo := createTestRepo(t)
 	starterOwner, starterName, _ := strings.Cut(starterRepo, "/")

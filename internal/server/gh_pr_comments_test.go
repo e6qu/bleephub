@@ -135,3 +135,24 @@ func TestPRReviewComments_MissingBody422(t *testing.T) {
 		t.Errorf("missing body: %d", w.Code)
 	}
 }
+
+func TestPRReviewCommentReadsReturnDetachedSnapshots(t *testing.T) {
+	store := newPRReviewCommentStore(nil)
+	comment := store.CreateRootComment(1, 2, "file.go", "stored", "deadbeef", "RIGHT", 7, 3)
+	if comment == nil {
+		t.Fatal("could not create review comment")
+	}
+
+	got := store.Get(comment.ID)
+	*got.Line = 99
+	got.Body = "mutated"
+	listed := store.ListForPR(1)
+	listed[0].Path = "other.go"
+	threads := store.ListThreads(1)
+	threads[0].Comments[0].StartLine = nil
+
+	again := store.Get(comment.ID)
+	if again.Body != "stored" || again.Path != "file.go" || again.Line == nil || *again.Line != 7 || again.StartLine == nil || *again.StartLine != 3 {
+		t.Fatalf("caller mutation reached stored review comment: %+v", again)
+	}
+}

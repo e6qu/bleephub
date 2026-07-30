@@ -8,6 +8,7 @@ import (
 	"crypto/hmac"
 	"crypto/rand"
 	"crypto/sha256"
+	"crypto/tls"
 	"database/sql"
 	"encoding/base64"
 	"encoding/hex"
@@ -493,7 +494,7 @@ func openDqlite(addresses string) (*sql.DB, error) {
 	}
 	secret := strings.TrimSpace(os.Getenv(dqliteaddr.SecretEnvironment))
 	if secret == "" {
-		return nil, fmt.Errorf("%s is required: the dqlite transport carries unauthenticated statements against the whole database", dqliteaddr.SecretEnvironment)
+		return nil, fmt.Errorf("%s is required: it authenticates and encrypts the dqlite transport carrying statements against the whole database", dqliteaddr.SecretEnvironment)
 	}
 	store := client.NewInmemNodeStore()
 	servers := make([]client.NodeInfo, 0, 3)
@@ -547,12 +548,22 @@ func dqliteDialer(addresses dqliteaddr.Map, secret string) client.DialFunc {
 // identities across replacement and scale-to-zero restarts.
 func dqliteHTTPDial(ctx context.Context, address, secret string) (net.Conn, error) {
 	dialer := &net.Dialer{}
-	conn, err := dialer.DialContext(ctx, "tcp", address)
+	rawConn, err := dialer.DialContext(ctx, "tcp", address)
 	if err != nil {
 		return nil, fmt.Errorf("dial dqlite %s: %w", address, err)
 	}
+	tlsConfig, err := dqliteaddr.TLSConfig(secret, false)
+	if err != nil {
+		_ = rawConn.Close()
+		return nil, fmt.Errorf("configure dqlite TLS: %w", err)
+	}
+	conn := tls.Client(rawConn, tlsConfig)
+	if err := conn.HandshakeContext(ctx); err != nil {
+		_ = conn.Close()
+		return nil, fmt.Errorf("authenticate dqlite TLS endpoint %s: %w", address, err)
+	}
 
-	requestURL, err := url.Parse("http://" + address + "/dqlite")
+	requestURL, err := url.Parse("https://" + address + "/dqlite")
 	if err != nil {
 		_ = conn.Close()
 		return nil, fmt.Errorf("build dqlite upgrade request: %w", err)

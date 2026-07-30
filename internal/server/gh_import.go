@@ -5,8 +5,11 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"net/url"
 	"sort"
 	"strconv"
+	"strings"
+	"sync"
 	"time"
 
 	git "github.com/go-git/go-git/v5"
@@ -14,8 +17,10 @@ import (
 	"github.com/go-git/go-git/v5/plumbing"
 	"github.com/go-git/go-git/v5/plumbing/object"
 	"github.com/go-git/go-git/v5/plumbing/transport"
+	gitClient "github.com/go-git/go-git/v5/plumbing/transport/client"
 	gitHTTP "github.com/go-git/go-git/v5/plumbing/transport/http"
 	gitStorage "github.com/go-git/go-git/v5/storage"
+	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
 )
 
 // Source Import API (sunset on github.com, still real on GitHub Enterprise
@@ -56,6 +61,98 @@ type RepoImport struct {
 	NextAuthorID    int             `json:"next_author_id"`
 	CreatedAt       time.Time       `json:"created_at"`
 	UpdatedAt       time.Time       `json:"updated_at"`
+}
+
+const (
+	importHTTPPublicScheme   = "bleephub-import-http-public"
+	importHTTPSPublicScheme  = "bleephub-import-https-public"
+	importHTTPPrivateScheme  = "bleephub-import-http-private"
+	importHTTPSPrivateScheme = "bleephub-import-https-private"
+)
+
+// importHTTPTransport gives go-git a private protocol name while handing its
+// HTTP implementation an ordinary http/https endpoint. Adding new protocol
+// names is process-global, but unlike replacing go-git's "http" client it
+// cannot change clones, pushes, Actions checkouts, or any other consumer.
+type importHTTPTransport struct {
+	scheme string
+	base   transport.Transport
+}
+
+func (t importHTTPTransport) endpoint(ep *transport.Endpoint) *transport.Endpoint {
+	copy := *ep
+	copy.Protocol = t.scheme
+	return &copy
+}
+
+func (t importHTTPTransport) NewUploadPackSession(ep *transport.Endpoint, auth transport.AuthMethod) (transport.UploadPackSession, error) {
+	return t.base.NewUploadPackSession(t.endpoint(ep), auth)
+}
+
+func (t importHTTPTransport) NewReceivePackSession(ep *transport.Endpoint, auth transport.AuthMethod) (transport.ReceivePackSession, error) {
+	return t.base.NewReceivePackSession(t.endpoint(ep), auth)
+}
+
+var installImportProtocolsOnce sync.Once
+
+func init() {
+	// Register only new, import-specific schemes before the server can accept
+	// concurrent work. Calling InstallProtocol lazily would write go-git's
+	// process-global protocol map while ordinary clones might be reading it.
+	installImportProtocols()
+}
+
+func installImportProtocols() {
+	installImportProtocolsOnce.Do(func() {
+		install := func(protocol, scheme string, allowPrivate bool) {
+			httpClient := &http.Client{
+				Timeout:   importFetchTimeout,
+				Transport: otelhttp.NewTransport(newAddressCheckedHTTPTransport(allowPrivate, false)),
+				CheckRedirect: func(req *http.Request, via []*http.Request) error {
+					if len(via) >= 10 {
+						return errors.New("stopped after 10 redirects")
+					}
+					_, err := parseWebhookTargetURL(req.URL.String(), allowPrivate)
+					return err
+				},
+			}
+			gitClient.InstallProtocol(protocol, importHTTPTransport{
+				scheme: scheme,
+				base:   gitHTTP.NewClient(httpClient),
+			})
+		}
+		install(importHTTPPublicScheme, "http", false)
+		install(importHTTPSPublicScheme, "https", false)
+		install(importHTTPPrivateScheme, "http", true)
+		install(importHTTPSPrivateScheme, "https", true)
+	})
+}
+
+// importFetchURL selects an import-only go-git protocol. The URL still carries
+// the original authority and path; the adapter above changes only the protocol
+// seen by go-git's HTTP session after go-git has selected the isolated client.
+func importFetchURL(raw string, allowPrivate bool) (string, error) {
+	u, err := url.Parse(raw)
+	if err != nil {
+		return "", err
+	}
+	switch strings.ToLower(u.Scheme) {
+	case "http":
+		if allowPrivate {
+			u.Scheme = importHTTPPrivateScheme
+		} else {
+			u.Scheme = importHTTPPublicScheme
+		}
+	case "https":
+		if allowPrivate {
+			u.Scheme = importHTTPSPrivateScheme
+		} else {
+			u.Scheme = importHTTPSPublicScheme
+		}
+	default:
+		return "", fmt.Errorf("unsupported import protocol %q", u.Scheme)
+	}
+	return u.String(), nil
 }
 
 // PorterAuthor is one distinct commit author discovered by the import.
@@ -269,14 +366,9 @@ func (s *Server) handleStartImport(w http.ResponseWriter, r *http.Request) {
 // as webhook delivery rather than a second one of its own: two SSRF filters
 // drift, and the one that drifts is the one nobody is looking at.
 //
-// Unlike webhook delivery, this is the ONLY gate on this path — there is no
-// second check against the address actually dialed, so a name that resolves
-// publicly here and privately a moment later is still reachable. The fetch runs
-// through go-git, which picks its transport out of a process-global registry
-// (transport/client) with no per-fetch hook, so a net.Dialer.Control cannot be
-// installed for this call alone; doing it globally would silently re-dial every
-// other go-git consumer in the process through it. Do not read the presence of
-// this call as meaning the delivery-time check exists here too.
+// The import-only go-git protocols repeat the policy at dial time, after DNS
+// resolution. This early check remains useful because it rejects an obviously
+// private target before a durable import record and worker are created.
 func (s *Server) acceptImportSource(w http.ResponseWriter, rawURL string) bool {
 	if err := validateWebhookTargetURL(rawURL, s.allowPrivateOutboundTargets); err != nil {
 		writeGHValidationError(w, "Import", "vcs_url", "invalid")
@@ -513,9 +605,17 @@ func (s *Server) runRepoImport(imp *RepoImport, repo *Repo) {
 		auth = &gitHTTP.BasicAuth{Username: imp.VCSUsername, Password: imp.VCSPassword}
 	}
 
+	installImportProtocols()
+	fetchURL, err := importFetchURL(imp.VCSURL, s.allowPrivateOutboundTargets)
+	if err != nil {
+		imp.Status = "error"
+		imp.FailedStep = "detecting"
+		imp.ErrorMessage = err.Error()
+		return
+	}
 	remote := git.NewRemote(stor, &gitConfig.RemoteConfig{
 		Name: "bleephub-import",
-		URLs: []string{imp.VCSURL},
+		URLs: []string{fetchURL},
 		Fetch: []gitConfig.RefSpec{
 			"+refs/heads/*:refs/heads/*",
 			"+refs/tags/*:refs/tags/*",
@@ -523,7 +623,7 @@ func (s *Server) runRepoImport(imp *RepoImport, repo *Repo) {
 	})
 	ctx, cancel := context.WithTimeout(context.Background(), importFetchTimeout)
 	defer cancel()
-	err := remote.FetchContext(ctx, &git.FetchOptions{
+	err = remote.FetchContext(ctx, &git.FetchOptions{
 		Auth:  auth,
 		Force: true,
 		Tags:  git.AllTags,

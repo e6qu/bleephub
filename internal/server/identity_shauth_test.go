@@ -29,7 +29,7 @@ type shaAuthTestProvider struct {
 var fixedShauthTestTime = time.Date(2090, time.June, 15, 12, 0, 0, 0, time.UTC)
 
 func useFixedShauthServerClock(server *Server) {
-	server.clockNow = func() time.Time { return fixedShauthTestTime }
+	server.replaceClockNow(func() time.Time { return fixedShauthTestTime })
 }
 
 func newShaAuthTestProvider(t *testing.T) *shaAuthTestProvider {

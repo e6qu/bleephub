@@ -40,6 +40,7 @@ id_ed25519
 # Test and coverage output.
 coverage.out
 coverage.html
+web/coverage/
 *.test
 __pycache__/
 *.py[cod]

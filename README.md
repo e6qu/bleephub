@@ -457,7 +457,7 @@ The SSH gateway binary (`ssh-gateway/`) reads two of its own, and requires both:
 - `BLEEPHUB_INTERNAL_SSH_TARGET` — the upstream address to proxy to.
 
 Storage quorum, only when running against dqlite rather than a local SQLite file:
-- `BLEEPHUB_DQLITE_SECRET` — **required** on both the server and every dqlite node. It authenticates the node's connection upgrade, compared in constant time, and both ends refuse to start without it. Terraform supplies it; setting it on only one end fails at boot rather than degrading, which is deliberate.
+- `BLEEPHUB_DQLITE_SECRET` — **required** on both the server and every dqlite node. It authenticates the connection upgrade and deterministically derives the private-cluster TLS identity, so every dqlite byte is encrypted and the client rejects a node from another cluster. Rotating the secret rotates both credentials. Both ends refuse to start without it; Terraform supplies it from Secrets Manager.
 
 Test-only, read by the suite and never by the server: `BLEEPHUB_STRESS_WORKERS`, `BLEEPHUB_STRESS_DURATION`, `BLEEPHUB_LOAD_WORKERS`, `BLEEPHUB_LOAD_SECONDS`, `BLEEPHUB_DQLITE_SERVERS`, `SOCKERLESS_REPOSITORY`.
 

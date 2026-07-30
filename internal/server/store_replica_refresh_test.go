@@ -147,6 +147,56 @@ func TestStoreRefreshPropagatesPeerWritesAndPreservesRuntimeState(t *testing.T) 
 	}
 }
 
+func TestArtifactStoreRefreshPropagatesPeerMetadataAndPreservesUploads(t *testing.T) {
+	t.Setenv("BLEEPHUB_PERSIST", "true")
+	t.Setenv("BLEEPHUB_DATA_DIR", t.TempDir())
+	firstPersistence, err := NewPersistence()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer firstPersistence.Close()
+	firstPersistence.dialect.name = "dqlite"
+	first := NewArtifactStoreWithByteStore("", nil)
+	if err := first.SetPersistence(firstPersistence); err != nil {
+		t.Fatal(err)
+	}
+
+	secondPersistence, err := NewPersistence()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer secondPersistence.Close()
+	secondPersistence.dialect.name = "dqlite"
+	second := NewArtifactStoreWithByteStore("", nil)
+	if err := second.SetPersistence(secondPersistence); err != nil {
+		t.Fatal(err)
+	}
+	second.artifacts[99] = &Artifact{ID: 99, Name: "uploading", Finalized: false}
+
+	peer := &Artifact{
+		ID: 1, Name: "peer", Finalized: true, RepoFullName: "admin/repo",
+		CreatedAt: fixedTestTime,
+	}
+	if err := firstPersistence.Put(actionsArtifactsBucket, "1", peer); err != nil {
+		t.Fatalf("persist peer artifact: %v", err)
+	}
+	if _, ok := second.artifactByID(peer.ID); ok {
+		t.Fatal("second replica observed peer artifact before refreshing")
+	}
+	if err := second.RefreshFromPersistenceIfStale(); err != nil {
+		t.Fatal(err)
+	}
+	if got, ok := second.artifactByID(peer.ID); !ok || got.Name != peer.Name {
+		t.Fatalf("peer artifact did not propagate: %#v, %v", got, ok)
+	}
+	second.mu.RLock()
+	inFlight := second.artifacts[99]
+	second.mu.RUnlock()
+	if inFlight == nil || inFlight.Finalized {
+		t.Fatalf("replica refresh discarded in-flight upload: %#v", inFlight)
+	}
+}
+
 func TestStoreReloadRollsBackUnpersistedMemoryMutation(t *testing.T) {
 	t.Setenv("BLEEPHUB_PERSIST", "true")
 	t.Setenv("BLEEPHUB_DATA_DIR", t.TempDir())

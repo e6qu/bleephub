@@ -151,7 +151,7 @@ func (s *PRReviewCommentStore) CreateRootComment(prID, authorID int, path, body,
 	s.byPR[prID] = append(s.byPR[prID], c)
 	s.threadRoots[id] = id
 	s.persistComment(c)
-	return c
+	return clonePRReviewComment(c)
 }
 
 // Reply appends a reply to a root comment. Real GH's POST /pulls/{n}/comments/{id}/replies.
@@ -195,7 +195,7 @@ func (s *PRReviewCommentStore) Reply(prID, rootID, authorID int, body string) *P
 	s.byPR[prID] = append(s.byPR[prID], c)
 	s.threadRoots[id] = threadRoot
 	s.persistComment(c)
-	return c
+	return clonePRReviewComment(c)
 }
 
 // AttachToReview links a review comment to the pull request review that
@@ -215,15 +215,39 @@ func (s *PRReviewCommentStore) AttachToReview(commentID, reviewID int) bool {
 func (s *PRReviewCommentStore) Get(id int) *PRReviewComment {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
-	return s.byID[id]
+	return clonePRReviewComment(s.byID[id])
 }
 
 func (s *PRReviewCommentStore) ListForPR(prID int) []*PRReviewComment {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	out := make([]*PRReviewComment, len(s.byPR[prID]))
-	copy(out, s.byPR[prID])
+	for i, comment := range s.byPR[prID] {
+		out[i] = clonePRReviewComment(comment)
+	}
 	return out
+}
+
+func clonePRReviewComment(comment *PRReviewComment) *PRReviewComment {
+	if comment == nil {
+		return nil
+	}
+	copy := *comment
+	copy.Position = cloneInt(comment.Position)
+	copy.OriginalPosition = cloneInt(comment.OriginalPosition)
+	copy.Line = cloneInt(comment.Line)
+	copy.OriginalLine = cloneInt(comment.OriginalLine)
+	copy.StartLine = cloneInt(comment.StartLine)
+	copy.OriginalStartLine = cloneInt(comment.OriginalStartLine)
+	return &copy
+}
+
+func cloneInt(value *int) *int {
+	if value == nil {
+		return nil
+	}
+	copy := *value
+	return &copy
 }
 
 func (s *PRReviewCommentStore) Update(id int, body string) bool {
@@ -272,12 +296,18 @@ func (s *PRReviewCommentStore) IDsForPR(prID int) map[int]bool {
 }
 
 func (s *PRReviewCommentStore) DeleteForPR(prID int) {
+	s.DeleteForPRBatch(prID, nil)
+}
+
+func (s *PRReviewCommentStore) DeleteForPRBatch(prID int, batch *persistBatch) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	for _, c := range s.byPR[prID] {
 		delete(s.byID, c.ID)
 		delete(s.threadRoots, c.ID)
-		if s.persist != nil {
+		if batch != nil {
+			batch.Delete("pr_review_comments", strconv.Itoa(c.ID))
+		} else if s.persist != nil {
 			s.persist.MustDelete("pr_review_comments", strconv.Itoa(c.ID))
 		}
 	}
@@ -308,7 +338,7 @@ func (s *PRReviewCommentStore) GetThread(threadID int) *ReviewThread {
 	thread := &ReviewThread{ID: threadID, IsResolved: root.Resolved}
 	for _, c := range s.byPR[root.PullRequestID] {
 		if c.ID == threadID || c.ThreadID == threadID {
-			thread.Comments = append(thread.Comments, c)
+			thread.Comments = append(thread.Comments, clonePRReviewComment(c))
 		}
 	}
 	return thread
@@ -339,7 +369,7 @@ func (s *PRReviewCommentStore) ListThreads(prID int) []*ReviewThread {
 				t.IsResolved = root.Resolved
 			}
 		}
-		t.Comments = append(t.Comments, c)
+		t.Comments = append(t.Comments, clonePRReviewComment(c))
 	}
 	out := make([]*ReviewThread, 0, len(threads))
 	for _, t := range threads {
@@ -560,6 +590,11 @@ func (s *Server) handleGetPRComment(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleUpdatePRComment(w http.ResponseWriter, r *http.Request) {
+	user := ghUserFromContext(r.Context())
+	if user == nil {
+		writeGHError(w, http.StatusUnauthorized, "Bad credentials")
+		return
+	}
 	repo := s.lookupRepoFromPath(r)
 	if repo == nil {
 		writeGHError(w, http.StatusNotFound, "Not Found")
@@ -567,6 +602,10 @@ func (s *Server) handleUpdatePRComment(w http.ResponseWriter, r *http.Request) {
 	}
 	c, pr := s.prReviewCommentInRepo(w, r, repo)
 	if c == nil {
+		return
+	}
+	if c.AuthorID != user.ID && !s.viewerCanPushRepo(r.Context(), repo) {
+		writeGHError(w, http.StatusForbidden, "Must have push access to edit another user's comment")
 		return
 	}
 	var req struct {
@@ -583,6 +622,11 @@ func (s *Server) handleUpdatePRComment(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleDeletePRComment(w http.ResponseWriter, r *http.Request) {
+	user := ghUserFromContext(r.Context())
+	if user == nil {
+		writeGHError(w, http.StatusUnauthorized, "Bad credentials")
+		return
+	}
 	repo := s.lookupRepoFromPath(r)
 	if repo == nil {
 		writeGHError(w, http.StatusNotFound, "Not Found")
@@ -590,6 +634,10 @@ func (s *Server) handleDeletePRComment(w http.ResponseWriter, r *http.Request) {
 	}
 	c, _ := s.prReviewCommentInRepo(w, r, repo)
 	if c == nil {
+		return
+	}
+	if c.AuthorID != user.ID && !s.viewerCanPushRepo(r.Context(), repo) {
+		writeGHError(w, http.StatusForbidden, "Must have push access to delete another user's comment")
 		return
 	}
 	if !s.store.PRReviewComments.Delete(c.ID) {

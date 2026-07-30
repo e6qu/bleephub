@@ -124,12 +124,14 @@ is only the count the service is created with.
 
 ## dqlite cluster secret
 
-The dqlite wire protocol authenticates nothing, so the HTTP transport upgrade
-carries a shared credential in an `X-Bleephub-Dqlite-Secret` header. Both ends
-require it: the application refuses to open the database without
-`BLEEPHUB_DQLITE_SECRET`, and each voter refuses connections that do not present
-it. A partial wiring is worse than none — it looks configured and then fails at
-boot.
+The dqlite wire protocol authenticates nothing, so the transport uses TLS plus
+an authenticated HTTP upgrade. `BLEEPHUB_DQLITE_SECRET` deterministically
+derives the private-cluster TLS identity and is also compared in constant time
+through the `X-Bleephub-Dqlite-Secret` header. This encrypts every dqlite byte,
+rejects nodes from another cluster, and lets one secret rotation replace both
+credentials. Both ends require it: the application refuses to open the database
+without it, and each voter refuses connections that do not present it. A
+partial wiring is worse than none — it looks configured and then fails at boot.
 
 The module generates the value itself (`random_password`, 64 alphanumeric
 characters) and stores it in AWS Secrets Manager as `<name>/dqlite-secret`,

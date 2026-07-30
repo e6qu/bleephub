@@ -91,6 +91,7 @@ func (st *Store) refreshFromPersistenceBeforeApply(force bool, beforeApply func(
 	loadedRevision = st.persistenceRevision
 	objectByteStore := st.ObjectByteStore
 	packageDataDir := st.PackageDataDir
+	actionsArtifacts := st.actionsArtifacts
 	st.mu.RUnlock()
 	revision, err = persist.StateRevision()
 	if err != nil {
@@ -110,6 +111,7 @@ func (st *Store) refreshFromPersistenceBeforeApply(force bool, beforeApply func(
 		candidate.ObjectByteStore = objectByteStore
 		candidate.PackageDataDir = packageDataDir
 		candidate.Releases.byteStore = objectByteStore
+		candidate.actionsArtifacts = actionsArtifacts
 		// A candidate is not yet the live in-memory snapshot. Do not advance
 		// Persistence.localRevision while loading it: concurrent request
 		// middleware uses that value to decide whether this process has

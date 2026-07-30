@@ -13,9 +13,8 @@ import (
 // insights aggregation reports it.
 func TestAPIInsights_StatsFromObservedTraffic(t *testing.T) {
 	fixedNow := time.Date(2035, time.June, 15, 12, 0, 0, 0, time.UTC)
-	previousClock := testServer.clockNow
-	testServer.clockNow = func() time.Time { return fixedNow }
-	t.Cleanup(func() { testServer.clockNow = previousClock })
+	previousClock := testServer.replaceClockNow(func() time.Time { return fixedNow })
+	t.Cleanup(func() { testServer.replaceClockNow(previousClock) })
 
 	admin := testServer.store.UsersByLogin["admin"]
 	org := testServer.store.CreateOrg(admin, "insights-org", "Insights Org", "")
