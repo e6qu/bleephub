@@ -80,20 +80,23 @@ type EnterpriseCodeSecurityAttachment struct {
 // first access paths that seed them in NewStore.
 type EnterpriseSettings struct {
 	// Enterprise administration settings.
-	Announcement                  *EnterpriseAnnouncement                  `json:"announcement,omitempty"`
-	AccessRestrictionsEnabled     bool                                     `json:"access_restrictions_enabled"`
-	CodeSecurityAndAnalysis       EnterpriseCodeSecurity                   `json:"code_security_and_analysis"`
-	AuditLogStreams               []*EnterpriseAuditLogStream              `json:"audit_log_streams,omitempty"`
-	NextAuditLogStreamID          int                                      `json:"next_audit_log_stream_id"`
-	RepositoryCustomProperties    map[string]*CustomProperty               `json:"repository_custom_properties,omitempty"`
-	OrganizationCustomProperties  map[string]*CustomProperty               `json:"organization_custom_properties,omitempty"`
-	OrganizationPropertyValues    map[string]map[string]interface{}        `json:"organization_property_values,omitempty"`
-	SCIMUsers                     map[string]*EnterpriseSCIMUser           `json:"scim_users,omitempty"`
-	SCIMGroups                    map[string]*EnterpriseSCIMGroup          `json:"scim_groups,omitempty"`
-	EnterpriseRoleTeamAssignments map[int][]int                            `json:"enterprise_role_team_assignments,omitempty"`
-	EnterpriseRoleUserAssignments map[int][]int                            `json:"enterprise_role_user_assignments,omitempty"`
-	VisualStudioSubscriptions     map[string]*VisualStudioSubscription     `json:"visual_studio_subscriptions,omitempty"`
-	InnerSourceSyncJobs           map[string]*EnterpriseInnerSourceSyncJob `json:"innersource_sync_jobs,omitempty"`
+	Announcement                   *EnterpriseAnnouncement                  `json:"announcement,omitempty"`
+	AccessRestrictionsEnabled      bool                                     `json:"access_restrictions_enabled"`
+	CodeSecurityAndAnalysis        EnterpriseCodeSecurity                   `json:"code_security_and_analysis"`
+	AuditLogStreams                []*EnterpriseAuditLogStream              `json:"audit_log_streams,omitempty"`
+	NextAuditLogStreamID           int                                      `json:"next_audit_log_stream_id"`
+	RepositoryCustomProperties     map[string]*CustomProperty               `json:"repository_custom_properties,omitempty"`
+	OrganizationCustomProperties   map[string]*CustomProperty               `json:"organization_custom_properties,omitempty"`
+	OrganizationPropertyValues     map[string]map[string]interface{}        `json:"organization_property_values,omitempty"`
+	SCIMUsers                      map[string]*EnterpriseSCIMUser           `json:"scim_users,omitempty"`
+	SCIMGroups                     map[string]*EnterpriseSCIMGroup          `json:"scim_groups,omitempty"`
+	EnterpriseRoleTeamAssignments  map[int][]int                            `json:"enterprise_role_team_assignments,omitempty"`
+	EnterpriseRoleUserAssignments  map[int][]int                            `json:"enterprise_role_user_assignments,omitempty"`
+	VisualStudioSubscriptions      map[string]*VisualStudioSubscription     `json:"visual_studio_subscriptions,omitempty"`
+	InnerSourceSyncJobs            map[string]*EnterpriseInnerSourceSyncJob `json:"innersource_sync_jobs,omitempty"`
+	EnterpriseCopilotSeats         map[string]*CopilotSeat                  `json:"enterprise_copilot_seats,omitempty"`
+	CopilotCustomAgentsSourceOrgID int                                      `json:"copilot_custom_agents_source_org_id,omitempty"`
+	CopilotCustomAgentsRulesetID   int                                      `json:"copilot_custom_agents_ruleset_id,omitempty"`
 
 	// Dependabot repository access across organizations.
 	DependabotAccessibleRepoIDs []int  `json:"dependabot_accessible_repo_ids"`
@@ -201,6 +204,9 @@ func normalizeEnterpriseSettings(settings *EnterpriseSettings) *EnterpriseSettin
 	}
 	if settings.InnerSourceSyncJobs == nil {
 		settings.InnerSourceSyncJobs = map[string]*EnterpriseInnerSourceSyncJob{}
+	}
+	if settings.EnterpriseCopilotSeats == nil {
+		settings.EnterpriseCopilotSeats = map[string]*CopilotSeat{}
 	}
 	if settings.ActionsCacheRetentionDays == 0 {
 		settings.ActionsCacheRetentionDays = 14

@@ -117,6 +117,12 @@ func TestEnterpriseStatePersistenceReload(t *testing.T) {
 		}},
 		CreatedAt: st1.currentTime(), UpdatedAt: st1.currentTime(),
 	}
+	st1.EnterpriseSettings.EnterpriseCopilotSeats["user:1"] = &CopilotSeat{
+		OrgLogin: "enterprise:bleephub", UserID: admin.ID,
+		CreatedAt: st1.currentTime(), UpdatedAt: st1.currentTime(),
+	}
+	st1.EnterpriseSettings.CopilotCustomAgentsSourceOrgID = 42
+	st1.EnterpriseSettings.CopilotCustomAgentsRulesetID = 73
 	st1.EnterpriseSettings.OIDCIncludeEnterpriseSlug = true
 	st1.EnterpriseSettings.ActionsEnabledOrganizations = "selected"
 	st1.EnterpriseSettings.ActionsAllowedActions = "selected"
@@ -274,6 +280,12 @@ func TestEnterpriseStatePersistenceReload(t *testing.T) {
 		len(s.InnerSourceSyncJobs["external-vulnerability-sync-reload"].Results) != 1 {
 		t.Errorf("enterprise licensing state did not persist: subscriptions=%+v inner_source=%+v",
 			s.VisualStudioSubscriptions, s.InnerSourceSyncJobs)
+	}
+	if s.EnterpriseCopilotSeats["user:1"] == nil ||
+		s.EnterpriseCopilotSeats["user:1"].UserID != admin.ID ||
+		s.CopilotCustomAgentsSourceOrgID != 42 || s.CopilotCustomAgentsRulesetID != 73 {
+		t.Errorf("enterprise Copilot state did not persist: seats=%+v source=%d ruleset=%d",
+			s.EnterpriseCopilotSeats, s.CopilotCustomAgentsSourceOrgID, s.CopilotCustomAgentsRulesetID)
 	}
 	if len(s.DependabotAccessibleRepoIDs) != 1 || s.DependabotAccessibleRepoIDs[0] != repo.ID {
 		t.Errorf("dependabot access = %v", s.DependabotAccessibleRepoIDs)

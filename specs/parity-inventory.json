@@ -17804,9 +17804,6 @@
         "ghec": {
           "documented_operations": 1458,
           "missing_operations": [
-            "DELETE /enterprises/{}/copilot/billing/selected_enterprise_teams",
-            "DELETE /enterprises/{}/copilot/billing/selected_users",
-            "DELETE /enterprises/{}/copilot/custom-agents/source",
             "DELETE /enterprises/{}/settings/billing/budgets/{}",
             "DELETE /enterprises/{}/settings/billing/cost-centers/{}",
             "DELETE /enterprises/{}/settings/billing/cost-centers/{}/resource",
@@ -17820,12 +17817,6 @@
             "DELETE /repos/{}/{}/dismissal-requests/dependabot/{}",
             "DELETE /repos/{}/{}/lfs",
             "DELETE /scim/v2/organizations/{}/Users/{}",
-            "GET /enterprises/{}/copilot/billing/seats",
-            "GET /enterprises/{}/copilot/content_exclusion",
-            "GET /enterprises/{}/copilot/custom-agents",
-            "GET /enterprises/{}/copilot/custom-agents/source",
-            "GET /enterprises/{}/copilot/usage-records",
-            "GET /enterprises/{}/members/{}/copilot",
             "GET /enterprises/{}/settings/billing/advanced-security",
             "GET /enterprises/{}/settings/billing/ai_credit/usage",
             "GET /enterprises/{}/settings/billing/budgets",
@@ -17887,8 +17878,6 @@
             "PATCH /repos/{}/{}/dismissal-requests/secret-scanning/{}",
             "PATCH /scim/v2/organizations/{}/Users/{}",
             "PATCH /teams/{}/team-sync/group-mappings",
-            "POST /enterprises/{}/copilot/billing/selected_enterprise_teams",
-            "POST /enterprises/{}/copilot/billing/selected_users",
             "POST /enterprises/{}/settings/billing/budgets",
             "POST /enterprises/{}/settings/billing/cost-centers",
             "POST /enterprises/{}/settings/billing/cost-centers/{}/resource",
@@ -17898,12 +17887,10 @@
             "POST /orgs/{}/organization-roles",
             "POST /repos/{}/{}/dismissal-requests/dependabot/{}",
             "POST /scim/v2/organizations/{}/Users",
-            "PUT /enterprises/{}/copilot/content_exclusion",
-            "PUT /enterprises/{}/copilot/custom-agents/source",
             "PUT /repos/{}/{}/lfs",
             "PUT /scim/v2/organizations/{}/Users/{}"
           ],
-          "represented_operations": 1360
+          "represented_operations": 1373
         },
         "ghes-2.22": {
           "documented_operations": 642,
@@ -18537,6 +18524,24 @@
         "method": "DELETE",
         "path": "/api/v3/enterprises/{enterprise}/code-security/configurations/{configuration_id}",
         "source": "internal/server/gh_enterprise_code_security.go"
+      },
+      {
+        "line": 22,
+        "method": "DELETE",
+        "path": "/api/v3/enterprises/{enterprise}/copilot/billing/selected_enterprise_teams",
+        "source": "internal/server/gh_enterprise_copilot_v2.go"
+      },
+      {
+        "line": 24,
+        "method": "DELETE",
+        "path": "/api/v3/enterprises/{enterprise}/copilot/billing/selected_users",
+        "source": "internal/server/gh_enterprise_copilot_v2.go"
+      },
+      {
+        "line": 38,
+        "method": "DELETE",
+        "path": "/api/v3/enterprises/{enterprise}/copilot/custom-agents/source",
+        "source": "internal/server/gh_enterprise_copilot_v2.go"
       },
       {
         "line": 11,
@@ -20141,6 +20146,30 @@
         "source": "internal/server/gh_enterprise_licensing.go"
       },
       {
+        "line": 20,
+        "method": "GET",
+        "path": "/api/v3/enterprises/{enterprise}/copilot/billing/seats",
+        "source": "internal/server/gh_enterprise_copilot_v2.go"
+      },
+      {
+        "line": 33,
+        "method": "GET",
+        "path": "/api/v3/enterprises/{enterprise}/copilot/content_exclusion",
+        "source": "internal/server/gh_enterprise_copilot_v2.go"
+      },
+      {
+        "line": 35,
+        "method": "GET",
+        "path": "/api/v3/enterprises/{enterprise}/copilot/custom-agents",
+        "source": "internal/server/gh_enterprise_copilot_v2.go"
+      },
+      {
+        "line": 36,
+        "method": "GET",
+        "path": "/api/v3/enterprises/{enterprise}/copilot/custom-agents/source",
+        "source": "internal/server/gh_enterprise_copilot_v2.go"
+      },
+      {
         "line": 13,
         "method": "GET",
         "path": "/api/v3/enterprises/{enterprise}/copilot/metrics/reports/enterprise-1-day",
@@ -20175,6 +20204,12 @@
         "method": "GET",
         "path": "/api/v3/enterprises/{enterprise}/copilot/metrics/reports/users-28-day/latest",
         "source": "internal/server/gh_enterprise_copilot.go"
+      },
+      {
+        "line": 39,
+        "method": "GET",
+        "path": "/api/v3/enterprises/{enterprise}/copilot/usage-records",
+        "source": "internal/server/gh_enterprise_copilot_v2.go"
       },
       {
         "line": 9,
@@ -20235,6 +20270,12 @@
         "method": "GET",
         "path": "/api/v3/enterprises/{enterprise}/license-sync-status",
         "source": "internal/server/gh_enterprise_licensing.go"
+      },
+      {
+        "line": 25,
+        "method": "GET",
+        "path": "/api/v3/enterprises/{enterprise}/members/{username}/copilot",
+        "source": "internal/server/gh_enterprise_copilot_v2.go"
       },
       {
         "line": 42,
@@ -24521,6 +24562,18 @@
         "source": "internal/server/gh_enterprise_code_security.go"
       },
       {
+        "line": 21,
+        "method": "POST",
+        "path": "/api/v3/enterprises/{enterprise}/copilot/billing/selected_enterprise_teams",
+        "source": "internal/server/gh_enterprise_copilot_v2.go"
+      },
+      {
+        "line": 23,
+        "method": "POST",
+        "path": "/api/v3/enterprises/{enterprise}/copilot/billing/selected_users",
+        "source": "internal/server/gh_enterprise_copilot_v2.go"
+      },
+      {
         "line": 10,
         "method": "POST",
         "path": "/api/v3/enterprises/{enterprise}/copilot/policies/coding_agent/organizations",
@@ -25827,6 +25880,18 @@
         "method": "PUT",
         "path": "/api/v3/enterprises/{enterprise}/code-security/configurations/{configuration_id}/defaults",
         "source": "internal/server/gh_enterprise_code_security.go"
+      },
+      {
+        "line": 34,
+        "method": "PUT",
+        "path": "/api/v3/enterprises/{enterprise}/copilot/content_exclusion",
+        "source": "internal/server/gh_enterprise_copilot_v2.go"
+      },
+      {
+        "line": 37,
+        "method": "PUT",
+        "path": "/api/v3/enterprises/{enterprise}/copilot/custom-agents/source",
+        "source": "internal/server/gh_enterprise_copilot_v2.go"
       },
       {
         "line": 9,
