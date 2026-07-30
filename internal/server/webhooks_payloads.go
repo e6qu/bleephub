@@ -4,6 +4,11 @@ import (
 	"encoding/base64"
 	"fmt"
 	"time"
+
+	"github.com/go-git/go-git/v5/plumbing"
+	"github.com/go-git/go-git/v5/plumbing/object"
+	"github.com/go-git/go-git/v5/plumbing/storer"
+	gitStorage "github.com/go-git/go-git/v5/storage"
 )
 
 // snapRepo / snapIssue / snapPR / snapUser return shallow value copies of a
@@ -140,7 +145,26 @@ func buildInstallationRepositoriesEventPayload(app *App, action string, inst *In
 }
 
 func buildPushPayload(st *Store, repo *Repo, sender *User, ref, before, after string) map[string]interface{} {
-	return buildPushPayloadWithInstallation(st.snapRepo(repo), st.snapUser(sender), ref, before, after, nil)
+	repo = st.snapRepo(repo)
+	sender = st.snapUser(sender)
+	payload := buildPushPayloadWithInstallation(repo, sender, ref, before, after, nil)
+	stor, _ := st.GitStorageForRepoID(repo.ID)
+	oldHash := plumbing.NewHash(before)
+	newHash := plumbing.NewHash(after)
+	payload["forced"] = classifyRefUpdate(stor, oldHash, newHash) == "force_push"
+	if !oldHash.IsZero() && !newHash.IsZero() {
+		payload["compare"] = "/" + repo.FullName + "/compare/" + before + "..." + after
+	}
+	commits := pushCommitPayloads(stor, oldHash, newHash, repo.FullName)
+	payload["commits"] = commits
+	if len(commits) > 0 {
+		payload["head_commit"] = commits[len(commits)-1]
+	}
+	payload["pusher"] = map[string]interface{}{
+		"name":  coalesceUserLogin(sender),
+		"email": coalesceUserEmail(sender),
+	}
+	return payload
 }
 
 func buildPushPayloadWithInstallation(repo *Repo, sender *User, ref, before, after string, inst *Installation) map[string]interface{} {
@@ -159,6 +183,68 @@ func buildPushPayloadWithInstallation(repo *Repo, sender *User, ref, before, aft
 	}, inst)
 }
 
+func pushCommitPayloads(stor gitStorage.Storer, before, after plumbing.Hash, repoFullName string) []map[string]interface{} {
+	if stor == nil || after.IsZero() {
+		return []map[string]interface{}{}
+	}
+	afterCommit, err := object.GetCommit(stor, after)
+	if err != nil {
+		return []map[string]interface{}{}
+	}
+	commits := []*object.Commit{}
+	iter := object.NewCommitPreorderIter(afterCommit, nil, nil)
+	_ = iter.ForEach(func(commit *object.Commit) error {
+		if !before.IsZero() && commit.Hash == before {
+			return storer.ErrStop
+		}
+		commits = append(commits, commit)
+		if len(commits) >= 2048 {
+			return storer.ErrStop
+		}
+		return nil
+	})
+	out := make([]map[string]interface{}, 0, len(commits))
+	for i := len(commits) - 1; i >= 0; i-- {
+		commit := commits[i]
+		out = append(out, map[string]interface{}{
+			"id":        commit.Hash.String(),
+			"tree_id":   commit.TreeHash.String(),
+			"distinct":  true,
+			"message":   commit.Message,
+			"timestamp": commit.Author.When.UTC().Format(time.RFC3339),
+			"url":       "/" + repoFullName + "/commit/" + commit.Hash.String(),
+			"author": map[string]interface{}{
+				"name":     commit.Author.Name,
+				"email":    commit.Author.Email,
+				"username": nil,
+			},
+			"committer": map[string]interface{}{
+				"name":     commit.Committer.Name,
+				"email":    commit.Committer.Email,
+				"username": nil,
+			},
+			"added":    []string{},
+			"removed":  []string{},
+			"modified": []string{},
+		})
+	}
+	return out
+}
+
+func coalesceUserLogin(user *User) string {
+	if user == nil || user.Login == "" {
+		return "web-flow"
+	}
+	return user.Login
+}
+
+func coalesceUserEmail(user *User) string {
+	if user == nil || user.Email == "" {
+		return "noreply@github.com"
+	}
+	return user.Email
+}
+
 func buildPullRequestPayload(st *Store, repo *Repo, pr *PullRequest, sender *User, action string) map[string]interface{} {
 	// Snapshot the shared entities before reading their mutable fields.
 	headRepo := pullRequestHeadRepo(st, pr)
@@ -172,12 +258,13 @@ func buildPullRequestPayload(st *Store, repo *Repo, pr *PullRequest, sender *Use
 	}
 
 	prJSON := map[string]interface{}{
-		"number": pr.Number,
-		"title":  pr.Title,
-		"body":   pr.Body,
-		"state":  state,
-		"draft":  pr.IsDraft,
-		"merged": pr.State == "MERGED",
+		"number":           pr.Number,
+		"title":            pr.Title,
+		"body":             pr.Body,
+		"state":            state,
+		"draft":            pr.IsDraft,
+		"merged":           pr.State == "MERGED",
+		"merge_commit_sha": coalesceStr(pr.MergeCommitSHA, pullRequestHeadSHA(pr, st)),
 		"head": map[string]interface{}{
 			"ref":  pr.HeadRefName,
 			"sha":  pullRequestHeadSHA(pr, st),

@@ -94,6 +94,52 @@ func TestMatrixJobNameEmpty(t *testing.T) {
 	}
 }
 
+func TestMatrixJobNameUsesDeclarationOrder(t *testing.T) {
+	name := MatrixJobName("test", map[string]interface{}{
+		"os": "ubuntu",
+		"go": "1.22",
+	}, []string{"os", "go"})
+	if name != "test (ubuntu, 1.22)" {
+		t.Errorf("name = %q", name)
+	}
+}
+
+func TestMatrixMatchingPreservesValueTypes(t *testing.T) {
+	m := &MatrixDef{
+		Values:  map[string][]interface{}{"version": {float64(1), "1"}},
+		Exclude: []map[string]interface{}{{"version": float64(1)}},
+	}
+	combos := ExpandMatrix(m)
+	if len(combos) != 1 || combos[0]["version"] != "1" {
+		t.Fatalf("typed exclusion = %#v, want only string value", combos)
+	}
+}
+
+func TestParsedMatrixRetainsYAMLKeyOrder(t *testing.T) {
+	def, err := ParseWorkflow([]byte(`name: order
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        os: [ubuntu, macos]
+        version: [1, 2]
+    steps:
+      - run: echo test
+`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	order := def.Jobs["test"].Strategy.Matrix.Order
+	if len(order) != 2 || order[0] != "os" || order[1] != "version" {
+		t.Fatalf("matrix order = %#v", order)
+	}
+	expanded := expandMatrixJobs(def)
+	if got := expanded.Jobs["test_0"].Name; got != "test (ubuntu, 1)" {
+		t.Fatalf("first matrix display name = %q", got)
+	}
+}
+
 func TestExpandMatrixSingle(t *testing.T) {
 	m := &MatrixDef{
 		Values: map[string][]interface{}{

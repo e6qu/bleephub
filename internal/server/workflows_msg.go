@@ -213,7 +213,10 @@ func (s *Server) buildJobMessageFromDef(serverURL string, wf *Workflow, wfJob *W
 			return nil, err
 		}
 		if jd.Call != nil && jd.CallRole == "" && !jd.Call.SecretsInherit {
-			secretsMap = remapCallSecrets(s, wf, jd.Call, secretsMap)
+			secretsMap, err = remapCallSecrets(s, wf, jd.Call, secretsMap)
+			if err != nil {
+				return nil, err
+			}
 		}
 		for _, name := range sortedKeys(secretsMap) {
 			secretsPairs = append(secretsPairs, name, secretsMap[name])
@@ -405,13 +408,20 @@ func githubRunnerContext(s *Server, wf *Workflow, wfJob *WorkflowJob, serverURL,
 	m["action"] = "__run"
 	m["workspace"] = "/github/workspace"
 	m["token"] = jobToken
+	m["job_workflow_sha"] = wf.Sha
+	if wfJob != nil && wfJob.Def != nil && wfJob.Def.Call != nil && wfJob.Def.CallRole == "" {
+		binding := wfJob.Def.Call
+		m["job_workflow_ref"] = binding.CalledRepo + "/" + binding.CalledPath + "@" + wf.Ref
+	} else if workflowRef, ok := m["workflow_ref"]; ok {
+		m["job_workflow_ref"] = workflowRef
+	}
 	return m
 }
 
 // remapCallSecrets applies a reusable-workflow call's explicit `secrets:`
 // map: the called job receives ONLY the mapped names, with each value
 // template (`${{ secrets.X }}`) evaluated against the caller's secrets.
-func remapCallSecrets(s *Server, wf *Workflow, binding *WorkflowCallBinding, callerSecrets map[string]string) map[string]string {
+func remapCallSecrets(s *Server, wf *Workflow, binding *WorkflowCallBinding, callerSecrets map[string]string) (map[string]string, error) {
 	secretsCtx := make(map[string]interface{}, len(callerSecrets))
 	for k, v := range callerSecrets {
 		secretsCtx[k] = v
@@ -425,12 +435,12 @@ func remapCallSecrets(s *Server, wf *Workflow, binding *WorkflowCallBinding, cal
 		val, err := EvalTemplate(tmpl, ctx)
 		if err != nil {
 			s.logger.Warn().Err(err).Str("secret", name).Str("workflow", binding.CalledPath).
-				Msg("workflow_call secret template failed — omitting")
-			continue
+				Msg("workflow_call secret template failed")
+			return nil, fmt.Errorf("evaluate reusable workflow secret %q: %w", name, err)
 		}
 		mapped[name] = val
 	}
-	return mapped
+	return mapped, nil
 }
 
 // toPipelineContextData converts a Go value into the runner's

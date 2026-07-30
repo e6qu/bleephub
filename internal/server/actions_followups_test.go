@@ -220,6 +220,11 @@ jobs:
 	if run["name"] != "broken-call" {
 		t.Errorf("API name = %v, want broken-call", run["name"])
 	}
+	waitUntil(t, "startup failure check suite", func() bool {
+		suites := testServer.store.ListCheckSuitesForCommit(repoKey, wf.Sha, githubActionsAppID)
+		return len(suites) == 1 && suites[0].Status == "completed" &&
+			suites[0].Conclusion == "startup_failure"
+	})
 }
 
 // TestRunnerGroupsCRUD covers BUG-1746.

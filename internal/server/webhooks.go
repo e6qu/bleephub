@@ -488,11 +488,15 @@ func (s *Server) triggerWorkflowsForWebhookEvent(repoKey, eventType, action stri
 		if eventRef, _ := payload["ref"].(string); eventRef != "" {
 			ref = eventRef
 		}
-	case "pull_request", "pull_request_target":
+	case "pull_request":
+		if number := webhookPullRequestNumber(payload); number > 0 {
+			ref = fmt.Sprintf("refs/pull/%d/merge", number)
+		}
+	case "pull_request_target":
 		if pull, _ := payload["pull_request"].(map[string]interface{}); pull != nil {
-			if head, _ := pull["head"].(map[string]interface{}); head != nil {
-				if headRef, _ := head["ref"].(string); headRef != "" {
-					ref = plumbing.NewBranchReferenceName(headRef).String()
+			if base, _ := pull["base"].(map[string]interface{}); base != nil {
+				if baseRef, _ := base["ref"].(string); baseRef != "" {
+					ref = plumbing.NewBranchReferenceName(baseRef).String()
 				}
 			}
 		}
@@ -712,6 +716,11 @@ func (s *Server) triggerWorkflowsForEvent(repoKey, eventType, action, ref string
 			Msg("workflow trigger skipped by Actions permissions")
 		return
 	}
+	if eventType == "push" && pushPayloadSkipsActions(payload) {
+		s.logger.Info().Str("repo", repoKey).Str("ref", ref).
+			Msg("workflow trigger skipped by commit message directive")
+		return
+	}
 
 	stor := s.store.GetGitStorage(parts[0], parts[1])
 	if stor == nil {
@@ -854,40 +863,61 @@ type workflowRunRefs struct {
 // workflowRefsForEvent decides, per trigger type, which ref supplies the
 // workflow definition and which ref/sha the run reports.
 //
-//   - push, release, repository_dispatch and same-repository pull requests:
+//   - push and release:
 //     the triggering ref, in the repository the event happened in. Reading
 //     HEAD instead ran whatever the default branch happened to say, which is
 //     not the definition the event was raised against.
-//   - a pull request from a fork: the definition comes from the BASE
-//     repository's base branch, never the fork's. A fork that supplied its own
-//     definition could rewrite the workflow and read the base repository's
-//     secrets. The run still reports the fork's head ref and sha, which is
-//     what the pull request is about, and which the base repository's git
-//     storage cannot resolve — so it is taken from the event payload.
+//   - pull_request: the definition comes from the base branch and the run
+//     reports refs/pull/<number>/merge with the event's synthetic merge SHA
+//     (falling back to the head SHA while no merge candidate can be created).
+//   - pull_request_target: both definition and run identity use the base ref.
 func workflowRefsForEvent(stor gitStorage.Storer, repoKey, eventType, ref string, payload map[string]interface{}) (workflowRunRefs, error) {
-	if eventType == "pull_request" || eventType == "pull_request_target" {
+	if eventType == "pull_request" {
 		if pr, _ := payload["pull_request"].(map[string]interface{}); pr != nil {
-			if head, _ := pr["head"].(map[string]interface{}); head != nil &&
-				pullRequestIsFromFork(payload, repoKey) {
-				baseRef := ""
-				if base, _ := pr["base"].(map[string]interface{}); base != nil {
-					if name, _ := base["ref"].(string); name != "" {
-						baseRef = plumbing.NewBranchReferenceName(name).String()
-					}
+			baseRef := ""
+			if base, _ := pr["base"].(map[string]interface{}); base != nil {
+				if name, _ := base["ref"].(string); name != "" {
+					baseRef = plumbing.NewBranchReferenceName(name).String()
 				}
-				if baseRef == "" {
-					return workflowRunRefs{}, fmt.Errorf("fork pull request payload names no base branch")
+			}
+			if baseRef == "" {
+				return workflowRunRefs{}, fmt.Errorf("pull request payload names no base branch")
+			}
+			if sha := resolveRefSha(stor, baseRef); sha == zeroCommitSha {
+				return workflowRunRefs{}, fmt.Errorf("base branch %s does not resolve to a commit", baseRef)
+			}
+			runSHA, _ := pr["merge_commit_sha"].(string)
+			if runSHA == "" {
+				head, _ := pr["head"].(map[string]interface{})
+				if head != nil {
+					headSha, _ := head["sha"].(string)
+					runSHA = headSha
 				}
-				if sha := resolveRefSha(stor, baseRef); sha == zeroCommitSha {
-					return workflowRunRefs{}, fmt.Errorf("base branch %s does not resolve to a commit", baseRef)
+			}
+			if runSHA == "" {
+				return workflowRunRefs{}, fmt.Errorf("pull request payload carries no merge or head sha")
+			}
+			runRef := ref
+			if number := webhookPullRequestNumber(payload); number > 0 {
+				runRef = fmt.Sprintf("refs/pull/%d/merge", number)
+			}
+			return workflowRunRefs{definitionRef: baseRef, runRef: runRef, runSha: runSHA}, nil
+		}
+	}
+	if eventType == "pull_request_target" {
+		definitionRef := defaultWorkflowDefinitionRef(stor, payload)
+		if pr, _ := payload["pull_request"].(map[string]interface{}); pr != nil {
+			if base, _ := pr["base"].(map[string]interface{}); base != nil {
+				if name, _ := base["ref"].(string); name != "" {
+					definitionRef = plumbing.NewBranchReferenceName(name).String()
 				}
-				headSha, _ := head["sha"].(string)
-				if headSha == "" {
-					return workflowRunRefs{}, fmt.Errorf("fork pull request payload carries no head sha")
-				}
-				return workflowRunRefs{definitionRef: baseRef, runRef: ref, runSha: headSha}, nil
 			}
 		}
+		sha := resolveRefSha(stor, definitionRef)
+		if sha == zeroCommitSha {
+			return workflowRunRefs{}, fmt.Errorf("base branch %s does not resolve to a commit", definitionRef)
+		}
+		return workflowRunRefs{definitionRef: definitionRef, runRef: definitionRef, runSha: sha}, nil
 	}
 	if eventType != "push" && eventType != "release" {
 		definitionRef := defaultWorkflowDefinitionRef(stor, payload)
@@ -908,6 +938,36 @@ func workflowRefsForEvent(stor gitStorage.Storer, repoKey, eventType, ref string
 		return workflowRunRefs{}, fmt.Errorf("ref %q does not resolve to a commit", ref)
 	}
 	return workflowRunRefs{definitionRef: ref, runRef: ref, runSha: sha}, nil
+}
+
+func webhookPullRequestNumber(payload map[string]interface{}) int {
+	switch number := payload["number"].(type) {
+	case int:
+		return number
+	case float64:
+		return int(number)
+	}
+	if pull, _ := payload["pull_request"].(map[string]interface{}); pull != nil {
+		switch number := pull["number"].(type) {
+		case int:
+			return number
+		case float64:
+			return int(number)
+		}
+	}
+	return 0
+}
+
+func pushPayloadSkipsActions(payload map[string]interface{}) bool {
+	head, _ := payload["head_commit"].(map[string]interface{})
+	message, _ := head["message"].(string)
+	message = strings.ToLower(message)
+	for _, directive := range []string{"[skip ci]", "[ci skip]", "[no ci]", "[skip actions]", "[actions skip]"} {
+		if strings.Contains(message, directive) {
+			return true
+		}
+	}
+	return false
 }
 
 func defaultWorkflowDefinitionRef(stor gitStorage.Storer, payload map[string]interface{}) string {
@@ -1156,6 +1216,7 @@ func (s *Server) createStartupFailureRun(fileName string, content []byte, meta *
 	s.store.Workflows[wf.ID] = wf
 	s.store.persistWorkflowRecord(wf)
 	s.store.mu.Unlock()
+	s.queueActionsEvent(evRunRequested, wf, nil)
 	s.queueActionsEvent(evRunCompleted, wf, nil)
 }
 

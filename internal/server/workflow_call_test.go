@@ -357,10 +357,13 @@ func TestRemapCallSecrets(t *testing.T) {
 		},
 	}
 	wf := &Workflow{}
-	got := remapCallSecrets(testServer, wf, binding, map[string]string{
+	got, err := remapCallSecrets(testServer, wf, binding, map[string]string{
 		"PROD_KEY": "sekrit",
 		"OTHER":    "hidden-from-called",
 	})
+	if err != nil {
+		t.Fatal(err)
+	}
 	if got["deploy-key"] != "sekrit" {
 		t.Errorf("deploy-key = %q, want mapped from PROD_KEY", got["deploy-key"])
 	}
@@ -369,5 +372,69 @@ func TestRemapCallSecrets(t *testing.T) {
 	}
 	if len(got) != 1 {
 		t.Errorf("got %d secrets, want 1", len(got))
+	}
+}
+
+func TestWorkflowCallInputTypingIsStrict(t *testing.T) {
+	boolean := &WorkflowInputDef{Type: "boolean"}
+	if _, err := typedCallInput(boolean, "yes"); err == nil {
+		t.Fatal("boolean input accepted a truthy non-boolean value")
+	}
+	got, err := typedCallInput(boolean, "false")
+	if err != nil || got != false {
+		t.Fatalf("false boolean = %#v, %v", got, err)
+	}
+
+	number := &WorkflowInputDef{Type: "number"}
+	if _, err := typedCallInput(number, "12abc"); err == nil {
+		t.Fatal("number input accepted a numeric prefix")
+	}
+	got, err = typedCallInput(number, "12.5")
+	if err != nil || got != float64(12.5) {
+		t.Fatalf("number = %#v, %v", got, err)
+	}
+
+	choice := &WorkflowInputDef{Type: "choice", Options: []interface{}{"blue", "green"}}
+	if _, err := typedCallInput(choice, "red"); err == nil {
+		t.Fatal("choice input accepted an undeclared option")
+	}
+}
+
+func TestReusableWorkflowTopLevelEnvironmentReachesCalledJobs(t *testing.T) {
+	out := &WorkflowDef{Jobs: map[string]*JobDef{}}
+	called := &WorkflowDef{
+		Env: map[string]string{"FROM_CALLED": "workflow", "OVERRIDDEN": "workflow"},
+		Jobs: map[string]*JobDef{
+			"build": {Env: map[string]string{"OVERRIDDEN": "job"}},
+		},
+	}
+	binding := &WorkflowCallBinding{CallerKey: "call"}
+	for key, job := range called.Jobs {
+		child := *job
+		child.Env = mergedCallEnvironment(called.Env, child.Env)
+		child.Call = binding
+		out.Jobs["call/"+key] = &child
+	}
+	env := out.Jobs["call/build"].Env
+	if env["FROM_CALLED"] != "workflow" || env["OVERRIDDEN"] != "job" {
+		t.Fatalf("called job environment = %#v", env)
+	}
+}
+
+func TestReusableWorkflowTemplateFailuresFailClosed(t *testing.T) {
+	binding := &WorkflowCallBinding{
+		CalledPath: "called.yml",
+		With:       map[string]string{"flag": "${{ inputs.missing["},
+		InputDefs:  map[string]*WorkflowInputDef{"flag": {Type: "boolean"}},
+	}
+	wf := &Workflow{Jobs: map[string]*WorkflowJob{}}
+	gate := &WorkflowJob{Def: &JobDef{Call: binding}}
+	if testServer.resolveCallInputsLocked(wf, gate) {
+		t.Fatal("broken input template succeeded")
+	}
+
+	binding.SecretsMap = map[string]string{"TOKEN": "${{ secrets.MISSING["}
+	if _, err := remapCallSecrets(testServer, wf, binding, map[string]string{}); err == nil {
+		t.Fatal("broken secret template succeeded")
 	}
 }

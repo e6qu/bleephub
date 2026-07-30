@@ -45,6 +45,7 @@ type Server struct {
 	classroomMu            sync.Mutex // serializes multi-resource Classroom browser transactions
 	marketplaceMu          sync.Mutex // serializes Marketplace billing transitions and webhook emission
 	workflowConcurrencyMu  sync.Mutex // serializes concurrency-group admission and queue promotion
+	workflowTimeoutMu      sync.Mutex // serializes timeout watcher replacement and cancellation
 	rateLimitsMu           sync.Mutex
 	rateLimits             map[string]*apiRateWindow // hashed credential + resource -> current primary-limit window
 	routePatterns          []string                  // every pattern registered via route(), for fidelity enumeration

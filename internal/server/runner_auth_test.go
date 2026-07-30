@@ -176,6 +176,22 @@ func runnerRequest(s *Server, method, path, token string, body string) *httptest
 
 // --- forged and tampered runner tokens ---
 
+func TestAuthenticateRunnerDistinguishesMissingAndUnsupportedCredentials(t *testing.T) {
+	s := newTestServer()
+	req := httptest.NewRequest("GET", "/_apis/v1/Message/1", nil)
+	if _, err := s.authenticateRunner(req); err == nil || !strings.Contains(err.Error(), "missing") {
+		t.Fatalf("missing credential error = %v", err)
+	}
+	req.Header.Set("Authorization", "Basic abc")
+	if _, err := s.authenticateRunner(req); err == nil || !strings.Contains(err.Error(), "unsupported") {
+		t.Fatalf("unsupported credential error = %v", err)
+	}
+	req.Header.Set("Authorization", "Bearer")
+	if _, err := s.authenticateRunner(req); err == nil || !strings.Contains(err.Error(), "malformed") {
+		t.Fatalf("malformed credential error = %v", err)
+	}
+}
+
 func TestRunnerTokenRejectsForgedAlgNone(t *testing.T) {
 	s := newTestServer()
 	s.registerRoutes()

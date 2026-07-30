@@ -189,6 +189,10 @@ func (s *Server) onActionsRunRequestedSnapshot(wf, snapshot *Workflow) {
 		cs.WorkflowFileID = wf.WorkflowFileID
 		cs.WorkflowFilePath = wf.WorkflowFilePath
 	})
+	s.store.mu.Lock()
+	wf.CheckSuiteID = suite.ID
+	s.store.persistWorkflowRecord(wf)
+	s.store.mu.Unlock()
 
 	s.store.mu.RLock()
 	jobs := make([]*WorkflowJob, 0, len(wf.Jobs))
@@ -236,7 +240,7 @@ func (s *Server) onActionsRunCompletedSnapshot(wf, snapshot *Workflow) {
 	repoKey := wf.RepoFullName
 
 	s.store.mu.RLock()
-	suiteID := int64(0)
+	suiteID := wf.CheckSuiteID
 	for _, j := range wf.Jobs {
 		if j.CheckRunID != 0 {
 			if cr := s.store.CheckRuns[j.CheckRunID]; cr != nil {
@@ -316,6 +320,8 @@ func resultToConclusion(r Result) string {
 		return "cancelled"
 	case ResultSkipped:
 		return "skipped"
+	case ResultStartupFailure:
+		return "startup_failure"
 	default:
 		return ""
 	}

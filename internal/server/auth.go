@@ -805,9 +805,16 @@ func actionArchiveCredential(r *http.Request) (string, bool) {
 // authenticateRunner resolves the caller of a runner protocol route to a
 // verified principal.
 func (s *Server) authenticateRunner(r *http.Request) (*runnerPrincipal, error) {
-	token, ok := bearerCredential(r)
-	if !ok {
+	raw := r.Header.Get("Authorization")
+	if raw == "" {
 		return nil, fmt.Errorf("missing runner bearer token")
+	}
+	scheme, token := authScheme(raw)
+	if scheme == "" || token == "" {
+		return nil, fmt.Errorf("malformed runner authorization header")
+	}
+	if scheme != "bearer" {
+		return nil, fmt.Errorf("unsupported runner authorization scheme %q", scheme)
 	}
 	return s.runnerPrincipalForToken(token)
 }

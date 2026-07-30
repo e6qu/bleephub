@@ -1000,9 +1000,7 @@ func (s *Server) rerunWorkflowAsNewAttempt(r *http.Request, old *Workflow, file 
 	s.store.persistWorkflowAttemptsRecord(old.RunID)
 	s.store.deleteWorkflowRecord(old.ID)
 	s.store.mu.Unlock()
-	if old.cancelTimeout != nil {
-		old.cancelTimeout()
-	}
+	s.stopTimeoutWatcher(old)
 
 	meta := WorkflowEventMeta{
 		EventName:      eventOf(old),
@@ -1169,6 +1167,7 @@ func (s *Server) handleListRunners(w http.ResponseWriter, r *http.Request) {
 	}
 	busy := s.busyAgentIDsLocked()
 	s.store.mu.RUnlock()
+	sort.Slice(all, func(i, j int) bool { return all[i].ID < all[j].ID })
 
 	page := paginateAndLink(w, r, all)
 	runners := make([]map[string]any, 0, len(page))
