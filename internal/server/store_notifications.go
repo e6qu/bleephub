@@ -468,10 +468,6 @@ func (st *Store) moveNotificationRepoKeyLocked(oldFull, newFull string) {
 	}
 }
 
-func (st *Store) deleteNotificationRepoKeyLocked(fullName string) {
-	st.deleteNotificationRepoKeyBatchLocked(nil, fullName)
-}
-
 func (st *Store) deleteNotificationRepoKeyBatchLocked(batch *persistBatch, fullName string) {
 	for userID, state := range st.NotificationsState {
 		if state == nil || state.RepoLastReadAt == nil {
@@ -486,10 +482,6 @@ func (st *Store) deleteNotificationRepoKeyBatchLocked(batch *persistBatch, fullN
 			}
 		}
 	}
-}
-
-func (st *Store) deleteNotificationThreadStateLocked(threadIDs []string) {
-	st.deleteNotificationThreadStateBatchLocked(nil, threadIDs)
 }
 
 func (st *Store) deleteNotificationThreadStateBatchLocked(batch *persistBatch, threadIDs []string) {

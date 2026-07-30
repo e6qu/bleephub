@@ -152,11 +152,6 @@ func newServerState(addr string, logger zerolog.Logger, construction serverConst
 	return s
 }
 
-func (s *Server) setArtifactStore(store *ArtifactStore) {
-	s.artifactStore = store
-	s.store.actionsArtifacts = store
-}
-
 // route registers a handler AND records its "METHOD /path" pattern so the
 // registered surface can be enumerated and validated directly (e.g. against
 // GitHub's API definition) rather than inferred by probing the catch-all

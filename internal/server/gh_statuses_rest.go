@@ -181,10 +181,6 @@ func (s *CommitStatusStore) moveRepoKey(oldFull, newFull string) {
 	}
 }
 
-func (s *CommitStatusStore) deleteRepoKey(fullName string) {
-	s.deleteRepoKeyBatch(fullName, nil)
-}
-
 func (s *CommitStatusStore) deleteRepoKeyBatch(fullName string, batch *persistBatch) {
 	s.mu.Lock()
 	defer s.mu.Unlock()

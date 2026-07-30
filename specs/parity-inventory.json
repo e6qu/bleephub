@@ -141,7 +141,7 @@
       },
       {
         "event": "status",
-        "line": 277,
+        "line": 273,
         "producer": "emitWebhookEvent",
         "source": "internal/server/gh_statuses_rest.go"
       },
@@ -19259,13 +19259,13 @@
         "source": "internal/server/gh_actions_extras.go"
       },
       {
-        "line": 825,
+        "line": 790,
         "method": "DELETE",
         "path": "/api/v3/repos/{owner}/{repo}/actions/caches",
         "source": "internal/server/artifacts.go"
       },
       {
-        "line": 827,
+        "line": 792,
         "method": "DELETE",
         "path": "/api/v3/repos/{owner}/{repo}/actions/caches/{cache_id}",
         "source": "internal/server/artifacts.go"
@@ -19421,7 +19421,7 @@
         "source": "internal/server/gh_repos_rest.go"
       },
       {
-        "line": 216,
+        "line": 212,
         "method": "DELETE",
         "path": "/api/v3/repos/{owner}/{repo}/comments/{comment_id}",
         "source": "internal/server/gh_commit_comments_rest.go"
@@ -21479,13 +21479,13 @@
         "source": "internal/server/gh_actions_permissions.go"
       },
       {
-        "line": 829,
+        "line": 794,
         "method": "GET",
         "path": "/api/v3/repos/{owner}/{repo}/actions/cache/usage",
         "source": "internal/server/artifacts.go"
       },
       {
-        "line": 824,
+        "line": 789,
         "method": "GET",
         "path": "/api/v3/repos/{owner}/{repo}/actions/caches",
         "source": "internal/server/artifacts.go"
@@ -22073,13 +22073,13 @@
         "source": "internal/server/gh_repos_rest.go"
       },
       {
-        "line": 210,
+        "line": 206,
         "method": "GET",
         "path": "/api/v3/repos/{owner}/{repo}/comments",
         "source": "internal/server/gh_commit_comments_rest.go"
       },
       {
-        "line": 214,
+        "line": 210,
         "method": "GET",
         "path": "/api/v3/repos/{owner}/{repo}/comments/{comment_id}",
         "source": "internal/server/gh_commit_comments_rest.go"
@@ -22103,7 +22103,7 @@
         "source": "internal/server/gh_repos_reads.go"
       },
       {
-        "line": 211,
+        "line": 207,
         "method": "GET",
         "path": "/api/v3/repos/{owner}/{repo}/commits/{commit_sha}/comments",
         "source": "internal/server/gh_commit_comments_rest.go"
@@ -22121,13 +22121,13 @@
         "source": "internal/server/gh_repos_reads.go"
       },
       {
-        "line": 205,
+        "line": 201,
         "method": "GET",
         "path": "/api/v3/repos/{owner}/{repo}/commits/{ref}/status",
         "source": "internal/server/gh_statuses_rest.go"
       },
       {
-        "line": 206,
+        "line": 202,
         "method": "GET",
         "path": "/api/v3/repos/{owner}/{repo}/commits/{ref}/statuses",
         "source": "internal/server/gh_statuses_rest.go"
@@ -23837,7 +23837,7 @@
         "source": "internal/server/gh_code_scanning.go"
       },
       {
-        "line": 215,
+        "line": 211,
         "method": "PATCH",
         "path": "/api/v3/repos/{owner}/{repo}/comments/{comment_id}",
         "source": "internal/server/gh_commit_comments_rest.go"
@@ -24695,7 +24695,7 @@
         "source": "internal/server/gh_reactions.go"
       },
       {
-        "line": 212,
+        "line": 208,
         "method": "POST",
         "path": "/api/v3/repos/{owner}/{repo}/commits/{commit_sha}/comments",
         "source": "internal/server/gh_commit_comments_rest.go"
@@ -25055,7 +25055,7 @@
         "source": "internal/server/gh_pull_extensions.go"
       },
       {
-        "line": 207,
+        "line": 203,
         "method": "POST",
         "path": "/api/v3/repos/{owner}/{repo}/statuses/{sha}",
         "source": "internal/server/gh_statuses_rest.go"

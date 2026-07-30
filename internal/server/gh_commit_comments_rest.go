@@ -179,10 +179,6 @@ func (s *CommitCommentStore) persistComment(c *CommitComment) {
 	s.persist.MustPut("commit_comments", strconv.Itoa(c.ID), c)
 }
 
-func (s *CommitCommentStore) deleteRepo(repoID int) {
-	s.deleteRepoBatch(repoID, nil)
-}
-
 func (s *CommitCommentStore) deleteRepoBatch(repoID int, batch *persistBatch) {
 	s.mu.Lock()
 	defer s.mu.Unlock()

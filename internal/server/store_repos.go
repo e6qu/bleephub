@@ -432,7 +432,7 @@ func (st *Store) cleanupDeletedRepo(record pendingDeletion) error {
 	}
 	for _, key := range record.ActionsObjectKeys {
 		if st.actionsArtifacts == nil || st.actionsArtifacts.byteStore == nil {
-			return fmt.Errorf("Actions object %s requires configured object storage", key)
+			return fmt.Errorf("actions object %s requires configured object storage", key)
 		}
 		if err := st.actionsArtifacts.byteStore.Delete(context.Background(), key); err != nil {
 			return fmt.Errorf("delete Actions object %s: %w", key, err)
