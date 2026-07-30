@@ -83,6 +83,7 @@ DELETE /api/v3/orgs/{org}/copilot-spaces/{space_number}/resources/{space_resourc
 DELETE /api/v3/orgs/{org}/copilot/billing/selected_teams
 DELETE /api/v3/orgs/{org}/copilot/billing/selected_users
 DELETE /api/v3/orgs/{org}/copilot/coding-agent/permissions/repositories/{repository_id}
+DELETE /api/v3/orgs/{org}/credential-authorizations/{credential_id}
 DELETE /api/v3/orgs/{org}/custom-repository-roles/{role_id}
 DELETE /api/v3/orgs/{org}/custom_roles/{role_id}
 DELETE /api/v3/orgs/{org}/dependabot/secrets/{secret_name}
@@ -175,6 +176,7 @@ DELETE /api/v3/repos/{owner}/{repo}/issues/{p1}/{p2}
 DELETE /api/v3/repos/{owner}/{repo}/issues/{p1}/{p2}/{p3}
 DELETE /api/v3/repos/{owner}/{repo}/keys/{key_id}
 DELETE /api/v3/repos/{owner}/{repo}/labels/{name}
+DELETE /api/v3/repos/{owner}/{repo}/lfs
 DELETE /api/v3/repos/{owner}/{repo}/milestones/{number}
 DELETE /api/v3/repos/{owner}/{repo}/pages
 DELETE /api/v3/repos/{owner}/{repo}/private-vulnerability-reporting
@@ -401,6 +403,7 @@ GET /api/v3/organizations
 GET /api/v3/organizations/{org_id}/actions/cache/retention-limit
 GET /api/v3/organizations/{org_id}/actions/cache/storage-limit
 GET /api/v3/organizations/{organization_id}/custom_roles
+GET /api/v3/organizations/{organization_id}/org-properties/values
 GET /api/v3/organizations/{org}/settings/billing/ai_credit/usage
 GET /api/v3/organizations/{org}/settings/billing/budgets
 GET /api/v3/organizations/{org}/settings/billing/budgets/{budget_id}
@@ -493,6 +496,7 @@ GET /api/v3/orgs/{org}/copilot/metrics/reports/repos-1-day
 GET /api/v3/orgs/{org}/copilot/metrics/reports/user-teams-1-day
 GET /api/v3/orgs/{org}/copilot/metrics/reports/users-1-day
 GET /api/v3/orgs/{org}/copilot/metrics/reports/users-28-day/latest
+GET /api/v3/orgs/{org}/credential-authorizations
 GET /api/v3/orgs/{org}/custom-repository-roles
 GET /api/v3/orgs/{org}/custom-repository-roles/{role_id}
 GET /api/v3/orgs/{org}/custom_roles/{role_id}
@@ -580,6 +584,7 @@ GET /api/v3/orgs/{org}/secret-scanning/custom-patterns
 GET /api/v3/orgs/{org}/secret-scanning/pattern-configurations
 GET /api/v3/orgs/{org}/security-advisories
 GET /api/v3/orgs/{org}/security-managers
+GET /api/v3/orgs/{org}/settings/billing/advanced-security
 GET /api/v3/orgs/{org}/settings/immutable-releases
 GET /api/v3/orgs/{org}/settings/immutable-releases/repositories
 GET /api/v3/orgs/{org}/settings/network-configurations
@@ -990,6 +995,7 @@ PATCH /api/v3/enterprises/{enterprise}/teams/{team_slug}
 PATCH /api/v3/gists/{gist_id}
 PATCH /api/v3/gists/{gist_id}/comments/{comment_id}
 PATCH /api/v3/notifications/threads/{thread_id}
+PATCH /api/v3/organizations/{organization_id}/org-properties/values
 PATCH /api/v3/organizations/{org}/settings/billing/budgets/{budget_id}
 PATCH /api/v3/orgs/{org}
 PATCH /api/v3/orgs/{org}/actions/hosted-runners/{hosted_runner_id}
@@ -1428,6 +1434,7 @@ PUT /api/v3/repos/{owner}/{repo}/issues/comments/{comment_id}/pin
 PUT /api/v3/repos/{owner}/{repo}/issues/{number}/issue-field-values
 PUT /api/v3/repos/{owner}/{repo}/issues/{number}/labels
 PUT /api/v3/repos/{owner}/{repo}/issues/{number}/lock
+PUT /api/v3/repos/{owner}/{repo}/lfs
 PUT /api/v3/repos/{owner}/{repo}/notifications
 PUT /api/v3/repos/{owner}/{repo}/pages
 PUT /api/v3/repos/{owner}/{repo}/private-vulnerability-reporting

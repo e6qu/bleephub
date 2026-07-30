@@ -503,6 +503,7 @@ func (s *Server) registerRoutes() {
 	// Org people: invitations, outside collaborators, blocks, interaction
 	// limits, organization roles, security managers (gh_orgs_people_rest.go)
 	s.registerGHOrgsPeopleRoutes()
+	s.registerGHEnterpriseRemainderRoutes()
 
 	// Legacy ID-addressed team endpoints (gh_teams_legacy_rest.go)
 	s.registerGHLegacyTeamRoutes()

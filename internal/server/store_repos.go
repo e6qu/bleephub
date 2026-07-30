@@ -67,6 +67,7 @@ type Repo struct {
 	VulnerabilityAlertsEnabled           bool         `json:"vulnerability_alerts_enabled"`
 	InteractionLimit                     string       `json:"interaction_limit"`
 	InteractionLimitExpiry               *time.Time   `json:"interaction_limit_expiry,omitempty"`
+	LFSEnabled                           bool         `json:"lfs_enabled,omitempty"`
 	CreatedAt                            time.Time    `json:"created_at"`
 	UpdatedAt                            time.Time    `json:"updated_at"`
 	PushedAt                             time.Time    `json:"pushed_at"`

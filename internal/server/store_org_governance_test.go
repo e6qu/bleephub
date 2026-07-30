@@ -1,6 +1,7 @@
 package bleephub
 
 import (
+	"strconv"
 	"testing"
 )
 
@@ -21,6 +22,11 @@ func TestOrganizationGovernanceStatePersistenceReload(t *testing.T) {
 	st1.SeedDefaultUser()
 	admin := st1.LookupUserByLogin("admin")
 	org := st1.CreateOrg(admin, "governance-reload", "Governance", "")
+	repo := st1.CreateOrgRepo(org, admin, "lfs-reload", "", false)
+	st1.mu.Lock()
+	repo.LFSEnabled = true
+	st1.persist.MustPut("repos", strconv.Itoa(repo.ID), repo)
+	st1.mu.Unlock()
 	now := fixedTestTime
 	description := "persists"
 	baseRole := "read"
@@ -93,6 +99,9 @@ func TestOrganizationGovernanceStatePersistenceReload(t *testing.T) {
 	}
 	if st2.NextOrgExternalGroupID <= 17 {
 		t.Fatalf("next external group id = %d, want > 17", st2.NextOrgExternalGroupID)
+	}
+	if got := st2.GetRepo(org.Login, "lfs-reload"); got == nil || !got.LFSEnabled {
+		t.Fatalf("reloaded repository LFS state = %#v", got)
 	}
 	if st2.NextOrgCustomRoleID <= 1002 {
 		t.Fatalf("next custom role id = %d, want > 1002", st2.NextOrgCustomRoleID)

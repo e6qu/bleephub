@@ -187,6 +187,8 @@ func loadOfficialRouteIndex(t *testing.T) map[string]map[string]bool {
 // does not carry the route.
 var describedOutsideDotcom = map[string]string{
 	"GET /organizations/{}/custom_roles":                                               "ghec",
+	"GET /organizations/{}/org-properties/values":                                      "ghec",
+	"PATCH /organizations/{}/org-properties/values":                                    "ghec",
 	"DELETE /orgs/{}/announcement":                                                     "ghec",
 	"GET /orgs/{}/announcement":                                                        "ghec",
 	"PATCH /orgs/{}/announcement":                                                      "ghec",
@@ -205,6 +207,9 @@ var describedOutsideDotcom = map[string]string{
 	"DELETE /orgs/{}/organization-roles/{}":                                            "ghec",
 	"PATCH /orgs/{}/organization-roles/{}":                                             "ghec",
 	"POST /orgs/{}/organization-roles":                                                 "ghec",
+	"DELETE /orgs/{}/credential-authorizations/{}":                                     "ghec",
+	"GET /orgs/{}/credential-authorizations":                                           "ghec",
+	"GET /orgs/{}/settings/billing/advanced-security":                                  "ghec",
 	"GET /orgs/{}/external-group/{}":                                                   "ghec",
 	"GET /orgs/{}/external-groups":                                                     "ghec",
 	"GET /orgs/{}/team-sync/groups":                                                    "ghec",
@@ -221,6 +226,8 @@ var describedOutsideDotcom = map[string]string{
 	"PATCH /scim/v2/organizations/{}/Users/{}":                                         "ghec",
 	"POST /scim/v2/organizations/{}/Users":                                             "ghec",
 	"PUT /scim/v2/organizations/{}/Users/{}":                                           "ghec",
+	"DELETE /repos/{}/{}/lfs":                                                          "ghec",
+	"PUT /repos/{}/{}/lfs":                                                             "ghec",
 	"POST /admin/organizations":                                                        "ghes-3.21",
 	"POST /admin/users":                                                                "ghes-3.21",
 	"PATCH /admin/users/{}":                                                            "ghes-3.21",
