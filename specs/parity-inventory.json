@@ -17804,33 +17804,21 @@
         "ghec": {
           "documented_operations": 1458,
           "missing_operations": [
-            "DELETE /orgs/{}/announcement",
             "DELETE /orgs/{}/credential-authorizations/{}",
-            "DELETE /orgs/{}/custom-repository-roles/{}",
-            "DELETE /orgs/{}/custom_roles/{}",
-            "DELETE /orgs/{}/organization-roles/{}",
             "DELETE /orgs/{}/teams/{}/external-groups",
             "DELETE /repos/{}/{}/bypass-responses/secret-scanning/{}",
             "DELETE /repos/{}/{}/dismissal-requests/dependabot/{}",
             "DELETE /repos/{}/{}/lfs",
             "DELETE /scim/v2/organizations/{}/Users/{}",
-            "GET /organizations/{}/custom_roles",
             "GET /organizations/{}/org-properties/values",
-            "GET /orgs/{}/announcement",
             "GET /orgs/{}/bypass-requests/push-rules",
             "GET /orgs/{}/bypass-requests/secret-scanning",
             "GET /orgs/{}/credential-authorizations",
-            "GET /orgs/{}/custom-repository-roles",
-            "GET /orgs/{}/custom-repository-roles/{}",
-            "GET /orgs/{}/custom_roles/{}",
             "GET /orgs/{}/dismissal-requests/code-scanning",
             "GET /orgs/{}/dismissal-requests/dependabot",
             "GET /orgs/{}/dismissal-requests/secret-scanning",
             "GET /orgs/{}/external-group/{}",
             "GET /orgs/{}/external-groups",
-            "GET /orgs/{}/fine_grained_permissions",
-            "GET /orgs/{}/organization-fine-grained-permissions",
-            "GET /orgs/{}/repository-fine-grained-permissions",
             "GET /orgs/{}/settings/billing/advanced-security",
             "GET /orgs/{}/team-sync/groups",
             "GET /orgs/{}/teams/{}/external-groups",
@@ -17849,10 +17837,6 @@
             "GET /scim/v2/organizations/{}/Users/{}",
             "GET /teams/{}/team-sync/group-mappings",
             "PATCH /organizations/{}/org-properties/values",
-            "PATCH /orgs/{}/announcement",
-            "PATCH /orgs/{}/custom-repository-roles/{}",
-            "PATCH /orgs/{}/custom_roles/{}",
-            "PATCH /orgs/{}/organization-roles/{}",
             "PATCH /orgs/{}/teams/{}/external-groups",
             "PATCH /orgs/{}/teams/{}/team-sync/group-mappings",
             "PATCH /repos/{}/{}/bypass-requests/secret-scanning/{}",
@@ -17861,15 +17845,12 @@
             "PATCH /repos/{}/{}/dismissal-requests/secret-scanning/{}",
             "PATCH /scim/v2/organizations/{}/Users/{}",
             "PATCH /teams/{}/team-sync/group-mappings",
-            "POST /orgs/{}/custom-repository-roles",
-            "POST /orgs/{}/custom_roles",
-            "POST /orgs/{}/organization-roles",
             "POST /repos/{}/{}/dismissal-requests/dependabot/{}",
             "POST /scim/v2/organizations/{}/Users",
             "PUT /repos/{}/{}/lfs",
             "PUT /scim/v2/organizations/{}/Users/{}"
           ],
-          "represented_operations": 1394
+          "represented_operations": 1413
         },
         "ghes-2.22": {
           "documented_operations": 642,
@@ -18009,8 +17990,6 @@
             "DELETE /applications/grants/{}",
             "DELETE /authorizations/{}",
             "DELETE /manage/v1/access/ssh",
-            "DELETE /orgs/{}/announcement",
-            "DELETE /orgs/{}/custom-repository-roles/{}",
             "DELETE /orgs/{}/pre-receive-hooks/{}",
             "DELETE /orgs/{}/teams/{}/discussions/{}",
             "DELETE /orgs/{}/teams/{}/discussions/{}/comments/{}",
@@ -18054,16 +18033,11 @@
             "GET /manage/v1/maintenance",
             "GET /manage/v1/replication/status",
             "GET /manage/v1/version",
-            "GET /organizations/{}/custom_roles",
-            "GET /orgs/{}/announcement",
-            "GET /orgs/{}/custom-repository-roles",
-            "GET /orgs/{}/custom-repository-roles/{}",
             "GET /orgs/{}/external-group/{}",
             "GET /orgs/{}/external-groups",
             "GET /orgs/{}/pre-receive-hooks",
             "GET /orgs/{}/pre-receive-hooks/{}",
             "GET /orgs/{}/projects",
-            "GET /orgs/{}/repository-fine-grained-permissions",
             "GET /orgs/{}/settings/billing/advanced-security",
             "GET /orgs/{}/teams/{}/discussions",
             "GET /orgs/{}/teams/{}/discussions/{}",
@@ -18106,8 +18080,6 @@
             "PATCH /admin/pre-receive-hooks/{}",
             "PATCH /authorizations/{}",
             "PATCH /enterprises/{}/actions/cache/usage-policy",
-            "PATCH /orgs/{}/announcement",
-            "PATCH /orgs/{}/custom-repository-roles/{}",
             "PATCH /orgs/{}/pre-receive-hooks/{}",
             "PATCH /orgs/{}/teams/{}/discussions/{}",
             "PATCH /orgs/{}/teams/{}/discussions/{}/comments/{}",
@@ -18131,7 +18103,6 @@
             "POST /manage/v1/config/apply",
             "POST /manage/v1/config/init",
             "POST /manage/v1/maintenance",
-            "POST /orgs/{}/custom-repository-roles",
             "POST /orgs/{}/projects",
             "POST /orgs/{}/teams/{}/discussions",
             "POST /orgs/{}/teams/{}/discussions/{}/comments",
@@ -18160,7 +18131,7 @@
             "PUT /setup/api/settings",
             "PUT /teams/{}/projects/{}"
           ],
-          "represented_operations": 815
+          "represented_operations": 825
         },
         "ghes-3.21": {
           "documented_operations": 1092,
@@ -18174,9 +18145,6 @@
             "DELETE /applications/grants/{}",
             "DELETE /authorizations/{}",
             "DELETE /manage/v1/access/ssh",
-            "DELETE /orgs/{}/announcement",
-            "DELETE /orgs/{}/custom-repository-roles/{}",
-            "DELETE /orgs/{}/organization-roles/{}",
             "DELETE /orgs/{}/pre-receive-hooks/{}",
             "DELETE /orgs/{}/teams/{}/external-groups",
             "DELETE /repos/{}/{}/bypass-responses/secret-scanning/{}",
@@ -18209,22 +18177,16 @@
             "GET /manage/v1/maintenance",
             "GET /manage/v1/replication/status",
             "GET /manage/v1/version",
-            "GET /organizations/{}/custom_roles",
             "GET /organizations/{}/org-properties/values",
-            "GET /orgs/{}/announcement",
             "GET /orgs/{}/bypass-requests/push-rules",
             "GET /orgs/{}/bypass-requests/secret-scanning",
-            "GET /orgs/{}/custom-repository-roles",
-            "GET /orgs/{}/custom-repository-roles/{}",
             "GET /orgs/{}/dismissal-requests/code-scanning",
             "GET /orgs/{}/dismissal-requests/dependabot",
             "GET /orgs/{}/dismissal-requests/secret-scanning",
             "GET /orgs/{}/external-group/{}",
             "GET /orgs/{}/external-groups",
-            "GET /orgs/{}/organization-fine-grained-permissions",
             "GET /orgs/{}/pre-receive-hooks",
             "GET /orgs/{}/pre-receive-hooks/{}",
-            "GET /orgs/{}/repository-fine-grained-permissions",
             "GET /orgs/{}/settings/billing/advanced-security",
             "GET /orgs/{}/teams/{}/external-groups",
             "GET /repos/{}/{}/actions/cache/usage-policy",
@@ -18250,9 +18212,6 @@
             "PATCH /authorizations/{}",
             "PATCH /enterprises/{}/actions/cache/usage-policy",
             "PATCH /organizations/{}/org-properties/values",
-            "PATCH /orgs/{}/announcement",
-            "PATCH /orgs/{}/custom-repository-roles/{}",
-            "PATCH /orgs/{}/organization-roles/{}",
             "PATCH /orgs/{}/pre-receive-hooks/{}",
             "PATCH /orgs/{}/teams/{}/external-groups",
             "PATCH /repos/{}/{}/actions/cache/usage-policy",
@@ -18274,8 +18233,6 @@
             "POST /manage/v1/config/apply",
             "POST /manage/v1/config/init",
             "POST /manage/v1/maintenance",
-            "POST /orgs/{}/custom-repository-roles",
-            "POST /orgs/{}/organization-roles",
             "POST /repos/{}/{}/dismissal-requests/dependabot/{}",
             "PUT /authorizations/clients/{}",
             "PUT /authorizations/clients/{}/{}",
@@ -18283,7 +18240,7 @@
             "PUT /manage/v1/config/settings",
             "PUT /repos/{}/{}/lfs"
           ],
-          "represented_operations": 975
+          "represented_operations": 989
         }
       },
       "dispatch_covered_operations": [
@@ -18753,6 +18710,12 @@
         "source": "internal/server/gh_agents_secrets.go"
       },
       {
+        "line": 102,
+        "method": "DELETE",
+        "path": "/api/v3/orgs/{org}/announcement",
+        "source": "internal/server/gh_org_governance.go"
+      },
+      {
         "line": 24,
         "method": "DELETE",
         "path": "/api/v3/orgs/{org}/attestations/digest/{subject_digest}",
@@ -18843,6 +18806,18 @@
         "source": "internal/server/gh_copilot.go"
       },
       {
+        "line": 108,
+        "method": "DELETE",
+        "path": "/api/v3/orgs/{org}/custom-repository-roles/{role_id}",
+        "source": "internal/server/gh_org_governance.go"
+      },
+      {
+        "line": 115,
+        "method": "DELETE",
+        "path": "/api/v3/orgs/{org}/custom_roles/{role_id}",
+        "source": "internal/server/gh_org_governance.go"
+      },
+      {
         "line": 42,
         "method": "DELETE",
         "path": "/api/v3/orgs/{org}/dependabot/secrets/{secret_name}",
@@ -18915,27 +18890,33 @@
         "source": "internal/server/gh_migrations.go"
       },
       {
-        "line": 54,
+        "line": 59,
         "method": "DELETE",
         "path": "/api/v3/orgs/{org}/organization-roles/teams/{team_slug}",
         "source": "internal/server/gh_orgs_people_rest.go"
       },
       {
-        "line": 53,
+        "line": 58,
         "method": "DELETE",
         "path": "/api/v3/orgs/{org}/organization-roles/teams/{team_slug}/{role_id}",
         "source": "internal/server/gh_orgs_people_rest.go"
       },
       {
-        "line": 57,
+        "line": 62,
         "method": "DELETE",
         "path": "/api/v3/orgs/{org}/organization-roles/users/{username}",
         "source": "internal/server/gh_orgs_people_rest.go"
       },
       {
-        "line": 56,
+        "line": 61,
         "method": "DELETE",
         "path": "/api/v3/orgs/{org}/organization-roles/users/{username}/{role_id}",
+        "source": "internal/server/gh_orgs_people_rest.go"
+      },
+      {
+        "line": 54,
+        "method": "DELETE",
+        "path": "/api/v3/orgs/{org}/organization-roles/{role_id}",
         "source": "internal/server/gh_orgs_people_rest.go"
       },
       {
@@ -18993,7 +18974,7 @@
         "source": "internal/server/gh_secret_scanning.go"
       },
       {
-        "line": 63,
+        "line": 68,
         "method": "DELETE",
         "path": "/api/v3/orgs/{org}/security-managers/teams/{team_slug}",
         "source": "internal/server/gh_orgs_people_rest.go"
@@ -20715,6 +20696,12 @@
         "source": "internal/server/gh_actions_permissions.go"
       },
       {
+        "line": 111,
+        "method": "GET",
+        "path": "/api/v3/organizations/{organization_id}/custom_roles",
+        "source": "internal/server/gh_org_governance.go"
+      },
+      {
         "line": 62,
         "method": "GET",
         "path": "/api/v3/organizations/{org}/settings/billing/ai_credit/usage",
@@ -21039,6 +21026,12 @@
         "source": "internal/server/gh_agents_secrets.go"
       },
       {
+        "line": 100,
+        "method": "GET",
+        "path": "/api/v3/orgs/{org}/announcement",
+        "source": "internal/server/gh_org_governance.go"
+      },
+      {
         "line": 18,
         "method": "GET",
         "path": "/api/v3/orgs/{org}/artifacts/metadata/deployment-record/cluster/{cluster}/jobs/{job_id}",
@@ -21261,6 +21254,24 @@
         "source": "internal/server/gh_copilot.go"
       },
       {
+        "line": 104,
+        "method": "GET",
+        "path": "/api/v3/orgs/{org}/custom-repository-roles",
+        "source": "internal/server/gh_org_governance.go"
+      },
+      {
+        "line": 106,
+        "method": "GET",
+        "path": "/api/v3/orgs/{org}/custom-repository-roles/{role_id}",
+        "source": "internal/server/gh_org_governance.go"
+      },
+      {
+        "line": 113,
+        "method": "GET",
+        "path": "/api/v3/orgs/{org}/custom_roles/{role_id}",
+        "source": "internal/server/gh_org_governance.go"
+      },
+      {
         "line": 54,
         "method": "GET",
         "path": "/api/v3/orgs/{org}/dependabot/alerts",
@@ -21313,6 +21324,12 @@
         "method": "GET",
         "path": "/api/v3/orgs/{org}/failed_invitations",
         "source": "internal/server/gh_orgs_people_rest.go"
+      },
+      {
+        "line": 117,
+        "method": "GET",
+        "path": "/api/v3/orgs/{org}/fine_grained_permissions",
+        "source": "internal/server/gh_org_governance.go"
       },
       {
         "line": 18,
@@ -21501,25 +21518,31 @@
         "source": "internal/server/gh_migrations.go"
       },
       {
-        "line": 48,
+        "line": 119,
+        "method": "GET",
+        "path": "/api/v3/orgs/{org}/organization-fine-grained-permissions",
+        "source": "internal/server/gh_org_governance.go"
+      },
+      {
+        "line": 50,
         "method": "GET",
         "path": "/api/v3/orgs/{org}/organization-roles",
         "source": "internal/server/gh_orgs_people_rest.go"
       },
       {
-        "line": 49,
+        "line": 52,
         "method": "GET",
         "path": "/api/v3/orgs/{org}/organization-roles/{role_id}",
         "source": "internal/server/gh_orgs_people_rest.go"
       },
       {
-        "line": 50,
+        "line": 55,
         "method": "GET",
         "path": "/api/v3/orgs/{org}/organization-roles/{role_id}/teams",
         "source": "internal/server/gh_orgs_people_rest.go"
       },
       {
-        "line": 51,
+        "line": 56,
         "method": "GET",
         "path": "/api/v3/orgs/{org}/organization-roles/{role_id}/users",
         "source": "internal/server/gh_orgs_people_rest.go"
@@ -21675,6 +21698,12 @@
         "source": "internal/server/gh_repos_rest.go"
       },
       {
+        "line": 118,
+        "method": "GET",
+        "path": "/api/v3/orgs/{org}/repository-fine-grained-permissions",
+        "source": "internal/server/gh_org_governance.go"
+      },
+      {
         "line": 97,
         "method": "GET",
         "path": "/api/v3/orgs/{org}/rulesets",
@@ -21729,7 +21758,7 @@
         "source": "internal/server/gh_security_advisories.go"
       },
       {
-        "line": 61,
+        "line": 66,
         "method": "GET",
         "path": "/api/v3/orgs/{org}/security-managers",
         "source": "internal/server/gh_orgs_people_rest.go"
@@ -24195,6 +24224,12 @@
         "source": "internal/server/gh_agents_secrets.go"
       },
       {
+        "line": 101,
+        "method": "PATCH",
+        "path": "/api/v3/orgs/{org}/announcement",
+        "source": "internal/server/gh_org_governance.go"
+      },
+      {
         "line": 39,
         "method": "PATCH",
         "path": "/api/v3/orgs/{org}/campaigns/{campaign_number}",
@@ -24205,6 +24240,18 @@
         "method": "PATCH",
         "path": "/api/v3/orgs/{org}/code-security/configurations/{configuration_id}",
         "source": "internal/server/gh_code_security_configurations.go"
+      },
+      {
+        "line": 107,
+        "method": "PATCH",
+        "path": "/api/v3/orgs/{org}/custom-repository-roles/{role_id}",
+        "source": "internal/server/gh_org_governance.go"
+      },
+      {
+        "line": 114,
+        "method": "PATCH",
+        "path": "/api/v3/orgs/{org}/custom_roles/{role_id}",
+        "source": "internal/server/gh_org_governance.go"
       },
       {
         "line": 58,
@@ -24229,6 +24276,12 @@
         "method": "PATCH",
         "path": "/api/v3/orgs/{org}/issue-fields/{issue_field_id}",
         "source": "internal/server/gh_issue_fields.go"
+      },
+      {
+        "line": 53,
+        "method": "PATCH",
+        "path": "/api/v3/orgs/{org}/organization-roles/{role_id}",
+        "source": "internal/server/gh_orgs_people_rest.go"
       },
       {
         "line": 56,
@@ -24999,6 +25052,18 @@
         "source": "internal/server/gh_copilot.go"
       },
       {
+        "line": 105,
+        "method": "POST",
+        "path": "/api/v3/orgs/{org}/custom-repository-roles",
+        "source": "internal/server/gh_org_governance.go"
+      },
+      {
+        "line": 112,
+        "method": "POST",
+        "path": "/api/v3/orgs/{org}/custom_roles",
+        "source": "internal/server/gh_org_governance.go"
+      },
+      {
         "line": 17,
         "method": "POST",
         "path": "/api/v3/orgs/{org}/hooks",
@@ -25045,6 +25110,12 @@
         "method": "POST",
         "path": "/api/v3/orgs/{org}/migrations",
         "source": "internal/server/gh_migrations.go"
+      },
+      {
+        "line": 51,
+        "method": "POST",
+        "path": "/api/v3/orgs/{org}/organization-roles",
+        "source": "internal/server/gh_orgs_people_rest.go"
       },
       {
         "line": 48,
@@ -25143,7 +25214,7 @@
         "source": "internal/server/gh_teams_rest.go"
       },
       {
-        "line": 66,
+        "line": 71,
         "method": "POST",
         "path": "/api/v3/orgs/{org}/{security_product}/{enablement}",
         "source": "internal/server/gh_orgs_people_rest.go"
@@ -26427,13 +26498,13 @@
         "source": "internal/server/gh_members_rest.go"
       },
       {
-        "line": 52,
+        "line": 57,
         "method": "PUT",
         "path": "/api/v3/orgs/{org}/organization-roles/teams/{team_slug}/{role_id}",
         "source": "internal/server/gh_orgs_people_rest.go"
       },
       {
-        "line": 55,
+        "line": 60,
         "method": "PUT",
         "path": "/api/v3/orgs/{org}/organization-roles/users/{username}/{role_id}",
         "source": "internal/server/gh_orgs_people_rest.go"
@@ -26463,7 +26534,7 @@
         "source": "internal/server/gh_rulesets.go"
       },
       {
-        "line": 62,
+        "line": 67,
         "method": "PUT",
         "path": "/api/v3/orgs/{org}/security-managers/teams/{team_slug}",
         "source": "internal/server/gh_orgs_people_rest.go"

@@ -44,9 +44,14 @@ func (s *Server) registerGHOrgsPeopleRoutes() {
 }
 
 func (s *Server) registerGHOrgRolesRoutes() {
+	s.registerGHOrgGovernanceRoutes()
+
 	// Organization roles.
 	s.route("GET /api/v3/orgs/{org}/organization-roles", s.requirePerm(scopeOrgAdministration, permRead, s.handleListOrganizationRoles))
+	s.route("POST /api/v3/orgs/{org}/organization-roles", s.requirePerm(scopeOrgAdministration, permWrite, s.handleCreateOrganizationRole))
 	s.route("GET /api/v3/orgs/{org}/organization-roles/{role_id}", s.requirePerm(scopeOrgAdministration, permRead, s.handleGetOrganizationRole))
+	s.route("PATCH /api/v3/orgs/{org}/organization-roles/{role_id}", s.requirePerm(scopeOrgAdministration, permWrite, s.handleUpdateOrganizationRole))
+	s.route("DELETE /api/v3/orgs/{org}/organization-roles/{role_id}", s.requirePerm(scopeOrgAdministration, permWrite, s.handleDeleteOrganizationRole))
 	s.route("GET /api/v3/orgs/{org}/organization-roles/{role_id}/teams", s.requirePerm(scopeOrgAdministration, permRead, s.handleListOrganizationRoleTeams))
 	s.route("GET /api/v3/orgs/{org}/organization-roles/{role_id}/users", s.requirePerm(scopeOrgAdministration, permRead, s.handleListOrganizationRoleUsers))
 	s.route("PUT /api/v3/orgs/{org}/organization-roles/teams/{team_slug}/{role_id}", s.requirePerm(scopeOrgAdministration, permWrite, s.handleAssignOrganizationRoleToTeam))
@@ -570,6 +575,18 @@ type predefinedOrgRole struct {
 	Permissions []string
 }
 
+type organizationRoleView struct {
+	ID          int
+	Name        string
+	Description *string
+	BaseRole    *string
+	Source      string
+	Permissions []string
+	OrgLogin    string
+	CreatedAt   time.Time
+	UpdatedAt   time.Time
+}
+
 // securityManagerOrgRoleID is the predefined security_manager role —
 // the role the deprecated security-managers endpoints alias.
 const securityManagerOrgRoleID = 143
@@ -600,38 +617,71 @@ func predefinedOrgRoleByID(id int) *predefinedOrgRole {
 // orgRoleJSON renders the GitHub `organization-role` shape. Predefined
 // roles carry a null organization and exist from the organization's
 // creation.
-func orgRoleJSON(role *predefinedOrgRole, org *Org) map[string]interface{} {
+func predefinedOrgRoleView(role *predefinedOrgRole, org *Org) *organizationRoleView {
+	description, baseRole := role.Description, role.BaseRole
+	return &organizationRoleView{
+		ID: role.ID, Name: role.Name, Description: &description, BaseRole: &baseRole,
+		Source: "Predefined", Permissions: append([]string(nil), role.Permissions...),
+		CreatedAt: org.CreatedAt, UpdatedAt: org.CreatedAt,
+	}
+}
+
+func customOrgRoleView(role *OrgCustomOrganizationRole) *organizationRoleView {
+	if role == nil {
+		return nil
+	}
+	return &organizationRoleView{
+		ID: role.ID, Name: role.Name, Description: role.Description, BaseRole: role.BaseRole,
+		Source: "Organization", Permissions: append([]string(nil), role.Permissions...),
+		OrgLogin: role.OrgLogin, CreatedAt: role.CreatedAt, UpdatedAt: role.UpdatedAt,
+	}
+}
+
+func orgRoleJSON(role *organizationRoleView, org *Org, baseURL string) map[string]interface{} {
 	permissions := role.Permissions
 	if permissions == nil {
 		permissions = []string{}
+	}
+	var organization interface{}
+	if role.Source == "Organization" {
+		organization = orgRoleOrganizationJSON(org, baseURL)
 	}
 	return map[string]interface{}{
 		"id":           role.ID,
 		"name":         role.Name,
 		"description":  role.Description,
 		"base_role":    role.BaseRole,
-		"source":       "Predefined",
+		"source":       role.Source,
 		"permissions":  permissions,
-		"organization": nil,
-		"created_at":   org.CreatedAt.UTC().Format(time.RFC3339),
-		"updated_at":   org.CreatedAt.UTC().Format(time.RFC3339),
+		"organization": organization,
+		"created_at":   role.CreatedAt.UTC().Format(time.RFC3339),
+		"updated_at":   role.UpdatedAt.UTC().Format(time.RFC3339),
 	}
 }
 
 // resolveOrgRoleID parses the {role_id} path parameter into a
-// predefined role, writing a 404 when it doesn't resolve.
-func (s *Server) resolveOrgRoleID(w http.ResponseWriter, r *http.Request) *predefinedOrgRole {
+// predefined or organization-defined role, writing a 404 when it doesn't
+// resolve.
+func (s *Server) resolveOrgRoleID(w http.ResponseWriter, r *http.Request, orgLogin string) *organizationRoleView {
 	id, err := strconv.Atoi(r.PathValue("role_id"))
 	if err != nil {
 		writeGHError(w, http.StatusNotFound, "Not Found")
 		return nil
 	}
-	role := predefinedOrgRoleByID(id)
-	if role == nil {
-		writeGHError(w, http.StatusNotFound, "Not Found")
-		return nil
+	if role := predefinedOrgRoleByID(id); role != nil {
+		org := s.store.GetOrg(orgLogin)
+		if org != nil {
+			return predefinedOrgRoleView(role, org)
+		}
 	}
-	return role
+	s.store.mu.RLock()
+	role := customOrgRoleView(s.store.OrgCustomRoles[orgLogin][id])
+	s.store.mu.RUnlock()
+	if role != nil {
+		return role
+	}
+	writeGHError(w, http.StatusNotFound, "Not Found")
+	return nil
 }
 
 func (s *Server) handleListOrganizationRoles(w http.ResponseWriter, r *http.Request) {
@@ -641,7 +691,19 @@ func (s *Server) handleListOrganizationRoles(w http.ResponseWriter, r *http.Requ
 	}
 	roles := make([]map[string]interface{}, 0, len(predefinedOrgRoles))
 	for i := range predefinedOrgRoles {
-		roles = append(roles, orgRoleJSON(&predefinedOrgRoles[i], org))
+		roles = append(roles, orgRoleJSON(predefinedOrgRoleView(&predefinedOrgRoles[i], org), org, s.baseURL(r)))
+	}
+	s.store.mu.RLock()
+	custom := make([]*OrgCustomOrganizationRole, 0, len(s.store.OrgCustomRoles[org.Login]))
+	for _, role := range s.store.OrgCustomRoles[org.Login] {
+		copyRole := *role
+		copyRole.Permissions = append([]string(nil), role.Permissions...)
+		custom = append(custom, &copyRole)
+	}
+	s.store.mu.RUnlock()
+	sort.Slice(custom, func(i, j int) bool { return custom[i].ID < custom[j].ID })
+	for _, role := range custom {
+		roles = append(roles, orgRoleJSON(customOrgRoleView(role), org, s.baseURL(r)))
 	}
 	writeJSON(w, http.StatusOK, map[string]interface{}{
 		"total_count": len(roles),
@@ -654,11 +716,11 @@ func (s *Server) handleGetOrganizationRole(w http.ResponseWriter, r *http.Reques
 	if org == nil {
 		return
 	}
-	role := s.resolveOrgRoleID(w, r)
+	role := s.resolveOrgRoleID(w, r, org.Login)
 	if role == nil {
 		return
 	}
-	writeJSON(w, http.StatusOK, orgRoleJSON(role, org))
+	writeJSON(w, http.StatusOK, orgRoleJSON(role, org, s.baseURL(r)))
 }
 
 func (s *Server) handleListOrganizationRoleTeams(w http.ResponseWriter, r *http.Request) {
@@ -666,7 +728,7 @@ func (s *Server) handleListOrganizationRoleTeams(w http.ResponseWriter, r *http.
 	if org == nil {
 		return
 	}
-	role := s.resolveOrgRoleID(w, r)
+	role := s.resolveOrgRoleID(w, r, org.Login)
 	if role == nil {
 		return
 	}
@@ -686,7 +748,7 @@ func (s *Server) handleListOrganizationRoleUsers(w http.ResponseWriter, r *http.
 	if org == nil {
 		return
 	}
-	role := s.resolveOrgRoleID(w, r)
+	role := s.resolveOrgRoleID(w, r, org.Login)
 	if role == nil {
 		return
 	}
@@ -719,7 +781,7 @@ func (s *Server) handleAssignOrganizationRoleToTeam(w http.ResponseWriter, r *ht
 		writeGHError(w, http.StatusNotFound, "Not Found")
 		return
 	}
-	role := s.resolveOrgRoleID(w, r)
+	role := s.resolveOrgRoleID(w, r, org.Login)
 	if role == nil {
 		return
 	}
@@ -737,7 +799,7 @@ func (s *Server) handleRevokeOrganizationRoleFromTeam(w http.ResponseWriter, r *
 		writeGHError(w, http.StatusNotFound, "Not Found")
 		return
 	}
-	role := s.resolveOrgRoleID(w, r)
+	role := s.resolveOrgRoleID(w, r, org.Login)
 	if role == nil {
 		return
 	}
@@ -769,7 +831,7 @@ func (s *Server) handleAssignOrganizationRoleToUser(w http.ResponseWriter, r *ht
 		writeGHError(w, http.StatusNotFound, "Not Found")
 		return
 	}
-	role := s.resolveOrgRoleID(w, r)
+	role := s.resolveOrgRoleID(w, r, org.Login)
 	if role == nil {
 		return
 	}
@@ -791,7 +853,7 @@ func (s *Server) handleRevokeOrganizationRoleFromUser(w http.ResponseWriter, r *
 		writeGHError(w, http.StatusNotFound, "Not Found")
 		return
 	}
-	role := s.resolveOrgRoleID(w, r)
+	role := s.resolveOrgRoleID(w, r, org.Login)
 	if role == nil {
 		return
 	}

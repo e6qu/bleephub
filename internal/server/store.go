@@ -599,6 +599,10 @@ type Store struct {
 	OrgInteractionLimits   map[string]*OrgInteractionLimit // orgLogin → active interaction limit
 	OrgRoleTeamAssignments map[string]map[int][]int        // orgLogin → roleID → team IDs
 	OrgRoleUserAssignments map[string]map[int][]int        // orgLogin → roleID → user IDs
+	OrgAnnouncements       map[string]*EnterpriseAnnouncement
+	OrgCustomRepoRoles     map[string]map[int]*OrgCustomRepositoryRole // orgLogin → role ID → role
+	OrgCustomRoles         map[string]map[int]*OrgCustomOrganizationRole
+	NextOrgCustomRoleID    int
 	// org billing budgets (gh_org_billing.go)
 	OrgBudgets map[string]map[string]*OrgBudget // org login → budget ID → budget
 	// API insights (gh_api_insights.go)
@@ -998,6 +1002,10 @@ func NewStore() *Store {
 		OrgInteractionLimits:   map[string]*OrgInteractionLimit{},
 		OrgRoleTeamAssignments: map[string]map[int][]int{},
 		OrgRoleUserAssignments: map[string]map[int][]int{},
+		OrgAnnouncements:       map[string]*EnterpriseAnnouncement{},
+		OrgCustomRepoRoles:     map[string]map[int]*OrgCustomRepositoryRole{},
+		OrgCustomRoles:         map[string]map[int]*OrgCustomOrganizationRole{},
+		NextOrgCustomRoleID:    1000,
 		// org billing budgets
 		OrgBudgets: map[string]map[string]*OrgBudget{},
 		// API insights
@@ -3222,6 +3230,58 @@ func (st *Store) loadFromPersistence() error {
 				return fmt.Errorf("decode org_interaction_limits row: %w", err)
 			}
 			st.OrgInteractionLimits[orgLogin] = &lim
+		}
+	}
+	if rows, err := st.persist.List("org_announcements"); err != nil {
+		return fmt.Errorf("load org_announcements: %w", err)
+	} else {
+		for orgLogin, raw := range rows {
+			var announcement EnterpriseAnnouncement
+			if err := loadJSON(raw, &announcement); err != nil {
+				return fmt.Errorf("decode org_announcements row: %w", err)
+			}
+			st.OrgAnnouncements[orgLogin] = &announcement
+		}
+	}
+	for bucket, dst := range map[string]map[string]map[int]json.RawMessage{
+		"org_custom_repo_roles": {},
+		"org_custom_roles":      {},
+	} {
+		rows, err := st.persist.List(bucket)
+		if err != nil {
+			return fmt.Errorf("load %s: %w", bucket, err)
+		}
+		for orgLogin, raw := range rows {
+			var records map[int]json.RawMessage
+			if err := loadJSON(raw, &records); err != nil {
+				return fmt.Errorf("decode %s row: %w", bucket, err)
+			}
+			dst[orgLogin] = records
+			for id, record := range records {
+				switch bucket {
+				case "org_custom_repo_roles":
+					var role OrgCustomRepositoryRole
+					if err := loadJSON(record, &role); err != nil {
+						return fmt.Errorf("decode %s role: %w", bucket, err)
+					}
+					if st.OrgCustomRepoRoles[orgLogin] == nil {
+						st.OrgCustomRepoRoles[orgLogin] = map[int]*OrgCustomRepositoryRole{}
+					}
+					st.OrgCustomRepoRoles[orgLogin][id] = &role
+				case "org_custom_roles":
+					var role OrgCustomOrganizationRole
+					if err := loadJSON(record, &role); err != nil {
+						return fmt.Errorf("decode %s role: %w", bucket, err)
+					}
+					if st.OrgCustomRoles[orgLogin] == nil {
+						st.OrgCustomRoles[orgLogin] = map[int]*OrgCustomOrganizationRole{}
+					}
+					st.OrgCustomRoles[orgLogin][id] = &role
+				}
+				if id >= st.NextOrgCustomRoleID {
+					st.NextOrgCustomRoleID = id + 1
+				}
+			}
 		}
 	}
 	for bucket, dst := range map[string]map[string]map[int][]int{

@@ -67,6 +67,7 @@ DELETE /api/v3/orgs/{org}/agents/secrets/{secret_name}
 DELETE /api/v3/orgs/{org}/agents/secrets/{secret_name}/repositories/{repository_id}
 DELETE /api/v3/orgs/{org}/agents/variables/{name}
 DELETE /api/v3/orgs/{org}/agents/variables/{name}/repositories/{repository_id}
+DELETE /api/v3/orgs/{org}/announcement
 DELETE /api/v3/orgs/{org}/attestations/digest/{subject_digest}
 DELETE /api/v3/orgs/{org}/attestations/{attestation_id}
 DELETE /api/v3/orgs/{org}/blocks/{username}
@@ -82,6 +83,8 @@ DELETE /api/v3/orgs/{org}/copilot-spaces/{space_number}/resources/{space_resourc
 DELETE /api/v3/orgs/{org}/copilot/billing/selected_teams
 DELETE /api/v3/orgs/{org}/copilot/billing/selected_users
 DELETE /api/v3/orgs/{org}/copilot/coding-agent/permissions/repositories/{repository_id}
+DELETE /api/v3/orgs/{org}/custom-repository-roles/{role_id}
+DELETE /api/v3/orgs/{org}/custom_roles/{role_id}
 DELETE /api/v3/orgs/{org}/dependabot/secrets/{secret_name}
 DELETE /api/v3/orgs/{org}/dependabot/secrets/{secret_name}/repositories/{repository_id}
 DELETE /api/v3/orgs/{org}/hooks/{id}
@@ -98,6 +101,7 @@ DELETE /api/v3/orgs/{org}/organization-roles/teams/{team_slug}
 DELETE /api/v3/orgs/{org}/organization-roles/teams/{team_slug}/{role_id}
 DELETE /api/v3/orgs/{org}/organization-roles/users/{username}
 DELETE /api/v3/orgs/{org}/organization-roles/users/{username}/{role_id}
+DELETE /api/v3/orgs/{org}/organization-roles/{role_id}
 DELETE /api/v3/orgs/{org}/outside_collaborators/{username}
 DELETE /api/v3/orgs/{org}/packages/{package_type}/{package_name}
 DELETE /api/v3/orgs/{org}/packages/{package_type}/{package_name}/versions/{package_version_id}
@@ -394,6 +398,7 @@ GET /api/v3/octocat
 GET /api/v3/organizations
 GET /api/v3/organizations/{org_id}/actions/cache/retention-limit
 GET /api/v3/organizations/{org_id}/actions/cache/storage-limit
+GET /api/v3/organizations/{organization_id}/custom_roles
 GET /api/v3/organizations/{org}/settings/billing/ai_credit/usage
 GET /api/v3/organizations/{org}/settings/billing/budgets
 GET /api/v3/organizations/{org}/settings/billing/budgets/{budget_id}
@@ -448,6 +453,7 @@ GET /api/v3/orgs/{org}/agents/secrets/{secret_name}/repositories
 GET /api/v3/orgs/{org}/agents/variables
 GET /api/v3/orgs/{org}/agents/variables/{name}
 GET /api/v3/orgs/{org}/agents/variables/{name}/repositories
+GET /api/v3/orgs/{org}/announcement
 GET /api/v3/orgs/{org}/artifacts/metadata/deployment-record/cluster/{cluster}/jobs/{job_id}
 GET /api/v3/orgs/{org}/artifacts/{subject_digest}/metadata/deployment-records
 GET /api/v3/orgs/{org}/artifacts/{subject_digest}/metadata/storage-records
@@ -485,6 +491,9 @@ GET /api/v3/orgs/{org}/copilot/metrics/reports/repos-1-day
 GET /api/v3/orgs/{org}/copilot/metrics/reports/user-teams-1-day
 GET /api/v3/orgs/{org}/copilot/metrics/reports/users-1-day
 GET /api/v3/orgs/{org}/copilot/metrics/reports/users-28-day/latest
+GET /api/v3/orgs/{org}/custom-repository-roles
+GET /api/v3/orgs/{org}/custom-repository-roles/{role_id}
+GET /api/v3/orgs/{org}/custom_roles/{role_id}
 GET /api/v3/orgs/{org}/dependabot/alerts
 GET /api/v3/orgs/{org}/dependabot/repository-access
 GET /api/v3/orgs/{org}/dependabot/secrets
@@ -494,6 +503,7 @@ GET /api/v3/orgs/{org}/dependabot/secrets/{secret_name}/repositories
 GET /api/v3/orgs/{org}/docker/conflicts
 GET /api/v3/orgs/{org}/events
 GET /api/v3/orgs/{org}/failed_invitations
+GET /api/v3/orgs/{org}/fine_grained_permissions
 GET /api/v3/orgs/{org}/hooks
 GET /api/v3/orgs/{org}/hooks/{hook_id}/config
 GET /api/v3/orgs/{org}/hooks/{id}
@@ -525,6 +535,7 @@ GET /api/v3/orgs/{org}/migrations
 GET /api/v3/orgs/{org}/migrations/{migration_id}
 GET /api/v3/orgs/{org}/migrations/{migration_id}/archive
 GET /api/v3/orgs/{org}/migrations/{migration_id}/repositories
+GET /api/v3/orgs/{org}/organization-fine-grained-permissions
 GET /api/v3/orgs/{org}/organization-roles
 GET /api/v3/orgs/{org}/organization-roles/{role_id}
 GET /api/v3/orgs/{org}/organization-roles/{role_id}/teams
@@ -554,6 +565,7 @@ GET /api/v3/orgs/{org}/properties/values
 GET /api/v3/orgs/{org}/public_members
 GET /api/v3/orgs/{org}/public_members/{username}
 GET /api/v3/orgs/{org}/repos
+GET /api/v3/orgs/{org}/repository-fine-grained-permissions
 GET /api/v3/orgs/{org}/rulesets
 GET /api/v3/orgs/{org}/rulesets/rule-suites
 GET /api/v3/orgs/{org}/rulesets/{p1}/{p2}
@@ -974,12 +986,16 @@ PATCH /api/v3/orgs/{org}/actions/hosted-runners/{hosted_runner_id}
 PATCH /api/v3/orgs/{org}/actions/runner-groups/{runner_group_id}
 PATCH /api/v3/orgs/{org}/actions/variables/{name}
 PATCH /api/v3/orgs/{org}/agents/variables/{name}
+PATCH /api/v3/orgs/{org}/announcement
 PATCH /api/v3/orgs/{org}/campaigns/{campaign_number}
 PATCH /api/v3/orgs/{org}/code-security/configurations/{configuration_id}
+PATCH /api/v3/orgs/{org}/custom-repository-roles/{role_id}
+PATCH /api/v3/orgs/{org}/custom_roles/{role_id}
 PATCH /api/v3/orgs/{org}/dependabot/repository-access
 PATCH /api/v3/orgs/{org}/hooks/{hook_id}/config
 PATCH /api/v3/orgs/{org}/hooks/{id}
 PATCH /api/v3/orgs/{org}/issue-fields/{issue_field_id}
+PATCH /api/v3/orgs/{org}/organization-roles/{role_id}
 PATCH /api/v3/orgs/{org}/private-registries/{secret_name}
 PATCH /api/v3/orgs/{org}/projectsV2/{project_number}/items/{item_id}
 PATCH /api/v3/orgs/{org}/properties/schema
@@ -1108,6 +1124,8 @@ POST /api/v3/orgs/{org}/copilot-spaces/{space_number}/collaborators
 POST /api/v3/orgs/{org}/copilot-spaces/{space_number}/resources
 POST /api/v3/orgs/{org}/copilot/billing/selected_teams
 POST /api/v3/orgs/{org}/copilot/billing/selected_users
+POST /api/v3/orgs/{org}/custom-repository-roles
+POST /api/v3/orgs/{org}/custom_roles
 POST /api/v3/orgs/{org}/hooks
 POST /api/v3/orgs/{org}/hooks/{id}/deliveries/{delivery_id}/attempts
 POST /api/v3/orgs/{org}/hooks/{id}/pings
@@ -1116,6 +1134,7 @@ POST /api/v3/orgs/{org}/issue-fields
 POST /api/v3/orgs/{org}/issue-types
 POST /api/v3/orgs/{org}/members/{username}/codespaces/{codespace_name}/stop
 POST /api/v3/orgs/{org}/migrations
+POST /api/v3/orgs/{org}/organization-roles
 POST /api/v3/orgs/{org}/packages/{package_type}/{package_name}/restore
 POST /api/v3/orgs/{org}/packages/{package_type}/{package_name}/versions/{package_version_id}/restore
 POST /api/v3/orgs/{org}/personal-access-token-requests
