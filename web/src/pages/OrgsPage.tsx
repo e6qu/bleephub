@@ -242,6 +242,9 @@ function EditOrgDialog({ org, onClose }: { org: BleephubOrg; onClose: () => void
   const [name, setName] = useState(org.name || "");
   const [description, setDescription] = useState(org.description || "");
   const [billingEmail, setBillingEmail] = useState(org.billing_email || "");
+  const [membersCanCreateRepositories, setMembersCanCreateRepositories] = useState(
+    org.members_can_create_repositories,
+  );
   const [error, setError] = useState<string | null>(null);
 
   const mutation = useMutation({
@@ -250,6 +253,7 @@ function EditOrgDialog({ org, onClose }: { org: BleephubOrg; onClose: () => void
         name: name || undefined,
         description: description || undefined,
         billing_email: billingEmail || undefined,
+        members_can_create_repositories: membersCanCreateRepositories,
       }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["orgs"] });
@@ -286,6 +290,21 @@ function EditOrgDialog({ org, onClose }: { org: BleephubOrg; onClose: () => void
         onChange={(e) => setBillingEmail(e.target.value)}
         className="mb-4 w-full"
       />
+
+      <label className="mb-4 flex items-start gap-2" htmlFor="org-edit-member-repositories">
+        <input
+          id="org-edit-member-repositories"
+          type="checkbox"
+          checked={membersCanCreateRepositories}
+          onChange={(e) => setMembersCanCreateRepositories(e.target.checked)}
+        />
+        <span>
+          <span style={{ display: "block", fontWeight: 600 }}>Repository creation</span>
+          <span style={{ color: "var(--color-fg-muted)", fontSize: "0.82rem" }}>
+            Allow organization members to create repositories.
+          </span>
+        </span>
+      </label>
 
       {error && <ErrorBanner>{error}</ErrorBanner>}
 

@@ -742,6 +742,7 @@ export interface BleephubOrg {
   name: string;
   description: string;
   billing_email?: string;
+  members_can_create_repositories: boolean;
   created_at: string;
   avatar_url?: string;
 }

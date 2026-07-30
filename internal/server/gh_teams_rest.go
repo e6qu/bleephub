@@ -2,6 +2,7 @@ package bleephub
 
 import (
 	"context"
+	"errors"
 	"net/http"
 	"strings"
 	"time"
@@ -279,7 +280,7 @@ func (s *Server) applyTeamUpdate(w http.ResponseWriter, r *http.Request, org *Or
 		}
 	}
 
-	s.store.UpdateTeam(orgLogin, slug, func(t *Team) {
+	err := s.store.UpdateTeamChecked(orgLogin, slug, func(t *Team) {
 		if v, ok := req["name"].(string); ok {
 			t.Name = v
 			t.Slug = slugify(v)
@@ -300,6 +301,14 @@ func (s *Server) applyTeamUpdate(w http.ResponseWriter, r *http.Request, org *Or
 			t.ParentID = parentID
 		}
 	})
+	if errors.Is(err, ErrTeamSlugConflict) {
+		writeGHValidationError(w, "Team", "name", "already_exists")
+		return
+	}
+	if err != nil {
+		writeGHError(w, http.StatusNotFound, "Not Found")
+		return
+	}
 
 	// Re-fetch by ID: a name change re-keys the slug index.
 	updated := s.store.GetTeamByID(team.ID)
@@ -320,6 +329,13 @@ func (s *Server) handleListChildTeams(w http.ResponseWriter, r *http.Request) {
 	orgLogin := r.PathValue("org")
 	org := s.store.GetOrg(orgLogin)
 	if org == nil {
+		writeGHError(w, http.StatusNotFound, "Not Found")
+		return
+	}
+	if !s.viewerIsOrgMember(r.Context(), orgLogin) {
+		// Team hierarchy, including the existence of secret teams, is private
+		// organization data. Installation credentials with members:read are
+		// admitted by the typed grant installed by requirePerm.
 		writeGHError(w, http.StatusNotFound, "Not Found")
 		return
 	}

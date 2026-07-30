@@ -644,7 +644,7 @@ func (s *Server) handleDeletePRComment(w http.ResponseWriter, r *http.Request) {
 		writeGHError(w, http.StatusNotFound, "Not Found")
 		return
 	}
-	s.store.Reactions.DeleteParent("pull_request_comment", c.ID)
+	s.store.Reactions.DeleteParent("pull_request_review_comment", c.ID)
 	w.WriteHeader(http.StatusNoContent)
 }
 

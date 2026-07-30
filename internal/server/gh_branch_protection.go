@@ -441,11 +441,10 @@ func (s *Server) applyBranchProtectionRequest(bp *BranchProtection, req *bpReque
 		}
 	}
 	if req.RequiredPullRequestReviews != nil {
-		if !s.isEmptyReviews(req.RequiredPullRequestReviews) {
-			bp.RequiredPullRequestReviews = req.RequiredPullRequestReviews
-		} else {
-			bp.RequiredPullRequestReviews = nil
-		}
+		// An explicit review-policy object enables the rule even when its
+		// approving-review count is zero. Zero is a valid GitHub setting, not
+		// a sentinel for deleting the whole rule.
+		bp.RequiredPullRequestReviews = req.RequiredPullRequestReviews
 	}
 	if req.EnforceAdmins != nil {
 		if bool(*req.EnforceAdmins) {
@@ -508,10 +507,6 @@ func (s *Server) applyBranchProtectionRequest(bp *BranchProtection, req *bpReque
 
 func (s *Server) isEmptyStatusChecks(sc *BPStatusChecks) bool {
 	return sc == nil || (!sc.Strict && len(sc.Contexts) == 0 && len(sc.Checks) == 0)
-}
-
-func (s *Server) isEmptyReviews(r *BPPullRequestReviews) bool {
-	return r == nil || (!r.DismissStaleReviews && !r.RequireCodeOwnerReviews && r.RequiredApprovingReviewCount == 0 && r.DismissalRestrictions == nil && r.BypassPullRequestAllowances == nil)
 }
 
 func (s *Server) isEmptyRestrictions(r *BPRestrictions) bool {

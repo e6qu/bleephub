@@ -14,15 +14,17 @@ import (
 // Both carry the user identity through the request middleware. The difference is the
 // scope model and whether AppID is set (ghu_) vs OAuthAppClientID (gho_).
 type UserToServerToken struct {
-	Token             string
-	UserID            int
-	AppID             int    // set for ghu_ (GitHub App user-to-server)
-	OAuthAppClientID  string // set for gho_ (OAuth App user token)
-	Scopes            string // classic OAuth scopes when gho_
-	InstallationIDs   []int  // optional: scoped to specific installations (ghu_ only)
-	ExpiresAt         time.Time
-	RefreshTokenValue string // if non-empty, this token has a paired ghr_ refresh
-	CreatedAt         time.Time
+	Token             string            `json:"token"`
+	UserID            int               `json:"user_id"`
+	AppID             int               `json:"app_id"`              // set for ghu_ (GitHub App user-to-server)
+	OAuthAppClientID  string            `json:"oauth_app_client_id"` // set for gho_ (OAuth App user token)
+	Scopes            string            `json:"scopes"`              // classic OAuth scopes when gho_
+	InstallationIDs   []int             `json:"installation_ids,omitempty"`
+	Permissions       map[string]string `json:"permissions,omitempty"`    // nil means not permission-scoped
+	RepositoryIDs     []int             `json:"repository_ids,omitempty"` // nil means not repository-scoped
+	ExpiresAt         time.Time         `json:"expires_at"`
+	RefreshTokenValue string            `json:"refresh_token_value,omitempty"`
+	CreatedAt         time.Time         `json:"created_at"`
 }
 
 // RefreshToken pairs with a UserToServerToken. Used to mint a fresh user token
@@ -43,6 +45,15 @@ func cloneUserToServerToken(token *UserToServerToken) *UserToServerToken {
 	}
 	copy := *token
 	copy.InstallationIDs = append([]int(nil), token.InstallationIDs...)
+	if token.Permissions != nil {
+		copy.Permissions = make(map[string]string, len(token.Permissions))
+		for scope, level := range token.Permissions {
+			copy.Permissions[scope] = level
+		}
+	}
+	if token.RepositoryIDs != nil {
+		copy.RepositoryIDs = append([]int{}, token.RepositoryIDs...)
+	}
 	return &copy
 }
 
@@ -141,6 +152,38 @@ func (st *Store) SetUserToServerTokenInstallations(tokenStr string, installation
 		return false
 	}
 	tok.InstallationIDs = append([]int(nil), installationIDs...)
+	if st.persist != nil {
+		st.persist.MustPut("user_to_server_tokens", tokenStr, tok)
+	}
+	return true
+}
+
+// ScopeUserToServerToken atomically persists every capability constraint of a
+// scoped GitHub App user token. Nil permissions/repositoryIDs mean that
+// dimension was omitted and remains unrestricted; an explicit empty map/slice
+// means the caller intentionally scoped the token to no non-metadata
+// permission or no repository.
+func (st *Store) ScopeUserToServerToken(tokenStr string, installationIDs []int, permissions map[string]string, repositoryIDs []int) bool {
+	st.mu.Lock()
+	defer st.mu.Unlock()
+	tok := st.UserToServerTokens[tokenStr]
+	if tok == nil {
+		return false
+	}
+	tok.InstallationIDs = append([]int(nil), installationIDs...)
+	if permissions == nil {
+		tok.Permissions = nil
+	} else {
+		tok.Permissions = make(map[string]string, len(permissions))
+		for scope, level := range permissions {
+			tok.Permissions[scope] = level
+		}
+	}
+	if repositoryIDs == nil {
+		tok.RepositoryIDs = nil
+	} else {
+		tok.RepositoryIDs = append([]int{}, repositoryIDs...)
+	}
 	if st.persist != nil {
 		st.persist.MustPut("user_to_server_tokens", tokenStr, tok)
 	}

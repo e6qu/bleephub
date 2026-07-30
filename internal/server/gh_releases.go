@@ -690,7 +690,15 @@ func (s *Server) handleListReleases(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	releases := s.store.Releases.List(repo.ID)
-	page := paginateAndLink(w, r, releases)
+	visible := make([]*Release, 0, len(releases))
+	mayPush := s.viewerCanPushRepo(r.Context(), repo)
+	for _, release := range releases {
+		if release.Draft && !mayPush {
+			continue
+		}
+		visible = append(visible, release)
+	}
+	page := paginateAndLink(w, r, visible)
 	out := make([]map[string]interface{}, 0, len(page))
 	for _, rel := range page {
 		out = append(out, releaseToJSON(rel, s.store, s.baseURL(r), repo))

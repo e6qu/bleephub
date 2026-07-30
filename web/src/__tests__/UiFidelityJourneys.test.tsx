@@ -67,6 +67,50 @@ describe("global creation journeys", () => {
     ).toBeInTheDocument();
     expect(screen.getByLabelText("Login")).toBeEnabled();
   });
+
+  it("lets an administrator change the member repository-creation policy", async () => {
+    const org = {
+      id: 1,
+      login: "acme",
+      name: "Acme",
+      description: "",
+      billing_email: "admin@acme.test",
+      members_can_create_repositories: true,
+      created_at: "2026-01-01T00:00:00Z",
+    };
+    mockFetch.mockImplementation((input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      if (init?.method === "PATCH" && url.endsWith("/api/v3/orgs/acme")) {
+        return Promise.resolve(jsonResponse(org));
+      }
+      if (url.endsWith("/api/v3/organizations?per_page=100")) {
+        return Promise.resolve(jsonResponse([{ id: org.id, login: org.login }]));
+      }
+      if (url.endsWith("/api/v3/orgs/acme")) {
+        return Promise.resolve(jsonResponse(org));
+      }
+      return Promise.resolve(jsonResponse([]));
+    });
+
+    renderAt("/ui/admin/orgs", "/ui/admin/orgs", <OrgsPage />);
+
+    fireEvent.click(await screen.findByRole("button", { name: "edit" }));
+    const policy = screen.getByRole("checkbox", { name: /Repository creation/ });
+    expect(policy).toBeChecked();
+    fireEvent.click(policy);
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+
+    await waitFor(() => {
+      const patch = mockFetch.mock.calls.find(
+        ([input, init]) =>
+          String(input).endsWith("/api/v3/orgs/acme") && init?.method === "PATCH",
+      );
+      expect(patch).toBeDefined();
+      expect(JSON.parse(String(patch?.[1]?.body))).toMatchObject({
+        members_can_create_repositories: false,
+      });
+    });
+  });
 });
 
 describe("project-card routing fidelity", () => {

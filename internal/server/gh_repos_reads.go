@@ -23,7 +23,7 @@ func (s *Server) registerGHRepoReadsRoutes() {
 	s.route("GET /api/v3/repos/{owner}/{repo}/teams", s.handleListRepoTeams)
 	s.route("GET /api/v3/repos/{owner}/{repo}/assignees", s.handleListRepoAssignees)
 	s.route("GET /api/v3/repos/{owner}/{repo}/assignees/{assignee}", s.handleCheckRepoAssignee)
-	s.route("GET /api/v3/repos/{owner}/{repo}/collaborators/{username}", s.requirePerm(scopeContents, permRead, s.handleCheckRepoCollaborator))
+	s.route("GET /api/v3/repos/{owner}/{repo}/collaborators/{username}", s.requirePerm(scopeMetadata, permRead, s.handleCheckRepoCollaborator))
 
 	// Repository metadata reads.
 	s.route("GET /api/v3/repos/{owner}/{repo}/hash-algorithm", s.handleGetRepoHashAlgorithm)

@@ -7,6 +7,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"net/http"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -168,8 +169,8 @@ func (s *Server) handleScopeOAuthToken(w http.ResponseWriter, r *http.Request) {
 		Target        string            `json:"target"`
 		TargetID      int               `json:"target_id"`
 		Permissions   map[string]string `json:"permissions"`
-		Repositories  []string          `json:"repositories"`
-		RepositoryIDs []int             `json:"repository_ids"`
+		Repositories  *[]string         `json:"repositories"`
+		RepositoryIDs *[]int            `json:"repository_ids"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil || body.AccessToken == "" {
 		writeGHError(w, http.StatusUnprocessableEntity, "access_token required")
@@ -182,6 +183,47 @@ func (s *Server) handleScopeOAuthToken(w http.ResponseWriter, r *http.Request) {
 	}
 	if !tokenMatchesClient(tok, clientID, s.store) {
 		writeGHError(w, http.StatusUnprocessableEntity, "token does not match client_id")
+		return
+	}
+	if tok.AppID == 0 {
+		writeGHError(w, http.StatusUnprocessableEntity, "access_token must belong to a GitHub App")
+		return
+	}
+	if (body.Target == "" && body.TargetID == 0) || (body.Repositories != nil && body.RepositoryIDs != nil) {
+		writeGHValidationError(w, "Authorization", "target", "invalid")
+		return
+	}
+	inst := s.resolveScopeTargetInstallation(tok, body.Target, body.TargetID)
+	if inst == nil ||
+		(len(tok.InstallationIDs) > 0 && !slices.Contains(tok.InstallationIDs, inst.ID)) ||
+		!s.scopeTargetAccessibleToUser(tok.UserID, inst) {
+		writeGHError(w, http.StatusUnprocessableEntity, "The target is not accessible to the token owner")
+		return
+	}
+	if scope, ok := validateRequestedPermissions(body.Permissions, inst.Permissions); !ok {
+		writeGHError(w, http.StatusUnprocessableEntity,
+			"The permissions requested are not granted to this authorization (permission: "+scope+")")
+		return
+	}
+	if tok.Permissions != nil {
+		if scope, ok := validateRequestedPermissions(body.Permissions, tok.Permissions); !ok {
+			writeGHError(w, http.StatusUnprocessableEntity,
+				"The permissions requested are not granted to this authorization (permission: "+scope+")")
+			return
+		}
+	}
+	var repositoryNames []string
+	if body.Repositories != nil {
+		repositoryNames = *body.Repositories
+	}
+	var requestedRepositoryIDs []int
+	if body.RepositoryIDs != nil {
+		requestedRepositoryIDs = *body.RepositoryIDs
+	}
+	repositoryIDs, ok := s.resolveScopedUserTokenRepositories(inst, tok, repositoryNames, requestedRepositoryIDs)
+	if !ok {
+		writeGHError(w, http.StatusUnprocessableEntity,
+			"There is at least one repository that does not exist or is not accessible to the authorization")
 		return
 	}
 	// Real GitHub mints a fresh user-to-server token narrowed to the requested
@@ -198,14 +240,81 @@ func (s *Server) handleScopeOAuthToken(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Bind the new token to the targeted installation so the inspection response
-	// reflects the narrowed scope.
-	if inst := s.resolveScopeTargetInstallation(tok, body.Target, body.TargetID); inst != nil {
-		s.store.SetUserToServerTokenInstallations(scoped.Token, []int{inst.ID})
-		scoped.InstallationIDs = []int{inst.ID}
+	if !s.store.ScopeUserToServerToken(scoped.Token, []int{inst.ID}, body.Permissions, repositoryIDs) {
+		s.store.RevokeUserToServerToken(scoped.Token)
+		writeGHError(w, http.StatusInternalServerError, "failed to persist scoped token")
+		return
 	}
+	scoped.InstallationIDs = []int{inst.ID}
+	scoped.Permissions = cloneStringMap(body.Permissions)
+	scoped.RepositoryIDs = appendOptionalInts(repositoryIDs)
 
 	writeJSON(w, http.StatusOK, oauthTokenInspectionJSON(s.store, scoped, s.userByID(scoped.UserID)))
+}
+
+func cloneStringMap(values map[string]string) map[string]string {
+	if values == nil {
+		return nil
+	}
+	cloned := make(map[string]string, len(values))
+	for key, value := range values {
+		cloned[key] = value
+	}
+	return cloned
+}
+
+func appendOptionalInts(values []int) []int {
+	if values == nil {
+		return nil
+	}
+	return append([]int{}, values...)
+}
+
+func (s *Server) scopeTargetAccessibleToUser(userID int, inst *Installation) bool {
+	user := s.store.GetUserByID(userID)
+	if user == nil || inst == nil {
+		return false
+	}
+	switch inst.TargetType {
+	case "User":
+		return inst.TargetID == user.ID && strings.EqualFold(inst.TargetLogin, user.Login)
+	case "Organization":
+		// This asks about the token owner named in the authorization, not the
+		// Basic-authenticated App client carrying this management request.
+		return namedUserIsActiveOrgMember(s.store, user, inst.TargetLogin)
+	default:
+		return false
+	}
+}
+
+func (s *Server) resolveScopedUserTokenRepositories(inst *Installation, source *UserToServerToken, names []string, ids []int) ([]int, bool) {
+	if names == nil && ids == nil {
+		return nil, true
+	}
+	accessible := installationAccessibleRepoIDs(s.store, inst)
+	allowedBySource := func(id int) bool {
+		return source.RepositoryIDs == nil || slices.Contains(source.RepositoryIDs, id)
+	}
+	resolved := make([]int, 0, len(names)+len(ids))
+	for _, id := range ids {
+		if _, ok := accessible[id]; !ok || !allowedBySource(id) {
+			return nil, false
+		}
+		resolved = append(resolved, id)
+	}
+	for _, name := range names {
+		repo := s.store.GetRepo(inst.TargetLogin, name)
+		if repo == nil {
+			return nil, false
+		}
+		if _, ok := accessible[repo.ID]; !ok || !allowedBySource(repo.ID) {
+			return nil, false
+		}
+		resolved = append(resolved, repo.ID)
+	}
+	slices.Sort(resolved)
+	resolved = slices.Compact(resolved)
+	return resolved, true
 }
 
 // resolveScopeTargetInstallation finds the installation a scoped-token request
@@ -215,10 +324,9 @@ func (s *Server) resolveScopeTargetInstallation(tok *UserToServerToken, targetLo
 		return nil
 	}
 	for _, inst := range s.store.ListAppInstallations(tok.AppID) {
-		if targetLogin != "" && inst.TargetLogin == targetLogin {
-			return inst
-		}
-		if targetID != 0 && inst.TargetID == targetID {
+		loginMatches := targetLogin == "" || strings.EqualFold(inst.TargetLogin, targetLogin)
+		idMatches := targetID == 0 || inst.TargetID == targetID
+		if loginMatches && idMatches {
 			return inst
 		}
 	}
@@ -383,7 +491,14 @@ func oauthTokenInspectionJSON(st *Store, tok *UserToServerToken, user *User) map
 	var installation interface{}
 	if tok.AppID > 0 {
 		if inst := firstInstallationForToken(st, tok); inst != nil {
-			installation = installationToJSON(inst)
+			rendered := installationToJSON(inst)
+			if tok.Permissions != nil {
+				rendered["permissions"] = cloneStringMap(tok.Permissions)
+			}
+			if tok.RepositoryIDs != nil {
+				rendered["repository_selection"] = "selected"
+			}
+			installation = rendered
 		}
 	}
 

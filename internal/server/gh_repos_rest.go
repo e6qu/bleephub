@@ -31,8 +31,8 @@ func (s *Server) registerGHRepoRoutes() {
 	s.route("DELETE /api/v3/user/starred/{owner}/{repo}", s.handleUnstarRepo)
 	s.route("GET /api/v3/user/starred", s.handleListStarredRepos)
 	s.route("GET /api/v3/users/{username}/starred", s.handleListUserStarredRepos)
-	s.route("GET /api/v3/repos/{owner}/{repo}/collaborators", s.requirePerm(scopeContents, permRead, s.handleListCollaborators))
-	s.route("GET /api/v3/repos/{owner}/{repo}/collaborators/{username}/permission", s.requirePerm(scopeContents, permRead, s.handleGetCollaboratorPermission))
+	s.route("GET /api/v3/repos/{owner}/{repo}/collaborators", s.requirePerm(scopeMetadata, permRead, s.handleListCollaborators))
+	s.route("GET /api/v3/repos/{owner}/{repo}/collaborators/{username}/permission", s.requirePerm(scopeMetadata, permRead, s.handleGetCollaboratorPermission))
 	s.route("PUT /api/v3/repos/{owner}/{repo}/collaborators/{username}", s.requirePerm(scopeAdministration, permWrite, s.handleAddCollaborator))
 	s.route("DELETE /api/v3/repos/{owner}/{repo}/collaborators/{username}", s.requirePerm(scopeAdministration, permWrite, s.handleRemoveCollaborator))
 	s.registerGHRepoRefRoutes()
@@ -1285,15 +1285,17 @@ func (s *Server) handleListStarredRepos(w http.ResponseWriter, r *http.Request) 
 			repos = append(repos, repo)
 		}
 	}
-	repos = s.filterReposForFineGrainedPAT(r, repos)
 	out := make([]map[string]interface{}, 0, len(repos))
 	for _, repo := range repos {
+		if !s.viewerCanReadRepo(r.Context(), repo) {
+			continue
+		}
 		// GitHub documents this against `repository`, not `full-repository`:
 		// the fuller shape adds network_count, subscribers_count and
 		// organization, which the starred listing does not carry.
 		out = append(out, repoToJSONForViewer(repo, s.store, s.baseURL(r), user))
 	}
-	writeJSON(w, http.StatusOK, out)
+	writeJSON(w, http.StatusOK, paginateAndLink(w, r, out))
 }
 
 func (s *Server) handleListUserStarredRepos(w http.ResponseWriter, r *http.Request) {
@@ -1312,10 +1314,13 @@ func (s *Server) handleListUserStarredRepos(w http.ResponseWriter, r *http.Reque
 			continue
 		}
 		if repo := s.store.GetRepo(parts[0], parts[1]); repo != nil {
+			if !s.viewerCanReadRepo(r.Context(), repo) {
+				continue
+			}
 			out = append(out, fullRepoJSONForViewer(repo, s.store, s.baseURL(r), viewer))
 		}
 	}
-	writeJSON(w, http.StatusOK, out)
+	writeJSON(w, http.StatusOK, paginateAndLink(w, r, out))
 }
 
 func (s *Server) handleListCollaborators(w http.ResponseWriter, r *http.Request) {
