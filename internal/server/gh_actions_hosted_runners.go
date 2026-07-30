@@ -469,8 +469,10 @@ func (s *Server) handleCreateHostedRunner(w http.ResponseWriter, r *http.Request
 	}
 
 	s.store.mu.Lock()
-	s.ensureDefaultRunnerGroupLocked()
-	if s.store.RunnerGroups[*req.RunnerGroupID] == nil {
+	target := runnerScope{Org: org}
+	s.ensureDefaultRunnerGroupLocked(target)
+	group := s.store.RunnerGroups[*req.RunnerGroupID]
+	if group == nil || !runnerGroupMatchesTarget(group, target) {
 		s.store.mu.Unlock()
 		writeGHValidationError(w, "HostedRunner", "runner_group_id", "invalid")
 		return
@@ -578,8 +580,10 @@ func (s *Server) handleUpdateHostedRunner(w http.ResponseWriter, r *http.Request
 
 	s.store.mu.Lock()
 	if req.RunnerGroupID != nil {
-		s.ensureDefaultRunnerGroupLocked()
-		if s.store.RunnerGroups[*req.RunnerGroupID] == nil {
+		target := runnerScope{Org: org}
+		s.ensureDefaultRunnerGroupLocked(target)
+		group := s.store.RunnerGroups[*req.RunnerGroupID]
+		if group == nil || !runnerGroupMatchesTarget(group, target) {
 			s.store.mu.Unlock()
 			writeGHValidationError(w, "HostedRunner", "runner_group_id", "invalid")
 			return

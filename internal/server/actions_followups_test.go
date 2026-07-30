@@ -231,7 +231,9 @@ func TestRunnerGroupsCRUD(t *testing.T) {
 	testServer.store.mu.Lock()
 	agentID := testServer.store.NextAgent
 	testServer.store.NextAgent++
-	testServer.store.Agents[agentID] = &Agent{ID: agentID, Name: "rg-agent", Status: "online"}
+	testServer.store.Agents[agentID] = &Agent{
+		ID: agentID, Name: "rg-agent", Status: "online", Scope: runnerScope{Org: "rg-org"},
+	}
 	testServer.store.mu.Unlock()
 
 	do := func(method, path string, body interface{}) (int, map[string]interface{}) {

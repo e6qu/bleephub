@@ -13,6 +13,33 @@ func (s *Server) registerGHEnterpriseActionsRoutes() {
 	s.route("GET /api/v3/enterprises/{enterprise}/actions/oidc/customization/properties/repo", s.requireEnterpriseOwner(s.handleListEnterpriseOIDCCustomProperties))
 	s.route("POST /api/v3/enterprises/{enterprise}/actions/oidc/customization/properties/repo", s.requireEnterpriseOwner(s.handleCreateEnterpriseOIDCCustomProperty))
 	s.route("DELETE /api/v3/enterprises/{enterprise}/actions/oidc/customization/properties/repo/{custom_property_name}", s.requireEnterpriseOwner(s.handleDeleteEnterpriseOIDCCustomProperty))
+
+	s.route("GET /api/v3/enterprises/{enterprise}/actions/runners", s.requireEnterpriseOwner(s.handleListRunners))
+	s.route("GET /api/v3/enterprises/{enterprise}/actions/runners/downloads", s.requireEnterpriseOwner(s.handleListRunnerApplications))
+	s.route("GET /api/v3/enterprises/{enterprise}/actions/runners/{runner_id}", s.requireEnterpriseOwner(s.handleGetRunner))
+	s.route("DELETE /api/v3/enterprises/{enterprise}/actions/runners/{runner_id}", s.requireEnterpriseOwner(s.handleDeleteRunner))
+	s.route("POST /api/v3/enterprises/{enterprise}/actions/runners/registration-token", s.requireEnterpriseOwner(s.handleRegistrationToken))
+	s.route("POST /api/v3/enterprises/{enterprise}/actions/runners/remove-token", s.requireEnterpriseOwner(s.handleRemoveToken))
+	s.route("POST /api/v3/enterprises/{enterprise}/actions/runners/generate-jitconfig", s.requireEnterpriseOwner(s.handleGenerateJITConfig))
+	s.route("GET /api/v3/enterprises/{enterprise}/actions/runners/{runner_id}/labels", s.requireEnterpriseOwner(s.handleListRunnerLabels))
+	s.route("POST /api/v3/enterprises/{enterprise}/actions/runners/{runner_id}/labels", s.requireEnterpriseOwner(s.handleAddRunnerLabels))
+	s.route("PUT /api/v3/enterprises/{enterprise}/actions/runners/{runner_id}/labels", s.requireEnterpriseOwner(s.handleSetRunnerLabels))
+	s.route("DELETE /api/v3/enterprises/{enterprise}/actions/runners/{runner_id}/labels", s.requireEnterpriseOwner(s.handleRemoveAllRunnerLabels))
+	s.route("DELETE /api/v3/enterprises/{enterprise}/actions/runners/{runner_id}/labels/{name}", s.requireEnterpriseOwner(s.handleRemoveRunnerLabel))
+
+	s.route("GET /api/v3/enterprises/{enterprise}/actions/runner-groups", s.requireEnterpriseOwner(s.handleListRunnerGroups))
+	s.route("POST /api/v3/enterprises/{enterprise}/actions/runner-groups", s.requireEnterpriseOwner(s.handleCreateRunnerGroup))
+	s.route("GET /api/v3/enterprises/{enterprise}/actions/runner-groups/{runner_group_id}", s.requireEnterpriseOwner(s.handleGetRunnerGroup))
+	s.route("PATCH /api/v3/enterprises/{enterprise}/actions/runner-groups/{runner_group_id}", s.requireEnterpriseOwner(s.handleUpdateRunnerGroup))
+	s.route("DELETE /api/v3/enterprises/{enterprise}/actions/runner-groups/{runner_group_id}", s.requireEnterpriseOwner(s.handleDeleteRunnerGroup))
+	s.route("GET /api/v3/enterprises/{enterprise}/actions/runner-groups/{runner_group_id}/organizations", s.requireEnterpriseOwner(s.handleListGroupOrganizations))
+	s.route("PUT /api/v3/enterprises/{enterprise}/actions/runner-groups/{runner_group_id}/organizations", s.requireEnterpriseOwner(s.handleSetGroupOrganizations))
+	s.route("PUT /api/v3/enterprises/{enterprise}/actions/runner-groups/{runner_group_id}/organizations/{org_id}", s.requireEnterpriseOwner(s.handleAddGroupOrganization))
+	s.route("DELETE /api/v3/enterprises/{enterprise}/actions/runner-groups/{runner_group_id}/organizations/{org_id}", s.requireEnterpriseOwner(s.handleRemoveGroupOrganization))
+	s.route("GET /api/v3/enterprises/{enterprise}/actions/runner-groups/{runner_group_id}/runners", s.requireEnterpriseOwner(s.handleListGroupRunners))
+	s.route("PUT /api/v3/enterprises/{enterprise}/actions/runner-groups/{runner_group_id}/runners", s.requireEnterpriseOwner(s.handleSetGroupRunners))
+	s.route("PUT /api/v3/enterprises/{enterprise}/actions/runner-groups/{runner_group_id}/runners/{runner_id}", s.requireEnterpriseOwner(s.handleAddGroupRunner))
+	s.route("DELETE /api/v3/enterprises/{enterprise}/actions/runner-groups/{runner_group_id}/runners/{runner_id}", s.requireEnterpriseOwner(s.handleRemoveGroupRunner))
 }
 
 // --- GitHub Actions cache limits ---

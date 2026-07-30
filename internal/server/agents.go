@@ -64,10 +64,10 @@ func randomRunnerTokenFromReader(random io.Reader) (string, error) {
 }
 
 // mintRunnerToken issues the opaque registration/removal token in the shape
-// real GitHub returns ("A" + base64-ish blob), scoped to the repository or
-// organization the request addresses. The token is signed, so the scope it
-// carries survives the round-trip through config.sh without a server-side
-// registry, and a forged one cannot register a runner.
+// real GitHub returns ("A" + base64-ish blob), scoped to the repository,
+// organization, or enterprise the request addresses. The token is signed, so
+// the scope it carries survives the round-trip through config.sh without a
+// server-side registry, and a forged one cannot register a runner.
 func (s *Server) mintRunnerToken(w http.ResponseWriter, r *http.Request, purpose string) {
 	scope, err := s.runnerScopeFromRequest(r)
 	if err != nil {
@@ -141,7 +141,7 @@ func (s *Server) handleGenerateJITConfig(w http.ResponseWriter, r *http.Request)
 		agent.Labels = append(agent.Labels, Label{Name: l, Type: "custom"})
 	}
 
-	jitScope := coalesceStr(scope.Repo, scope.Org)
+	jitScope := coalesceStr(coalesceStr(scope.Repo, scope.Org), scope.Enterprise)
 	clientID, err := newAgentClientID(scope)
 	if err != nil {
 		writeGHError(w, http.StatusInternalServerError, err.Error())

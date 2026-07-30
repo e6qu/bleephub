@@ -1265,8 +1265,8 @@ func (s *Server) handleDeleteRunLogs(w http.ResponseWriter, r *http.Request) {
 // --- Runner labels ---
 
 func (s *Server) handleListRunnerLabels(w http.ResponseWriter, r *http.Request) {
-	if org := r.PathValue("org"); org != "" && s.store.GetOrg(org) == nil {
-		writeGHError(w, http.StatusNotFound, "Not Found")
+	target, ok := s.runnerTargetFromRequest(w, r)
+	if !ok {
 		return
 	}
 	id, err := strconv.Atoi(r.PathValue("runner_id"))
@@ -1277,7 +1277,7 @@ func (s *Server) handleListRunnerLabels(w http.ResponseWriter, r *http.Request) 
 	s.store.mu.RLock()
 	a := s.store.Agents[id]
 	s.store.mu.RUnlock()
-	if a == nil {
+	if a == nil || !runnerVisibleAt(a.Scope, target) {
 		writeGHError(w, http.StatusNotFound, "Not Found")
 		return
 	}
@@ -1285,8 +1285,8 @@ func (s *Server) handleListRunnerLabels(w http.ResponseWriter, r *http.Request) 
 }
 
 func (s *Server) handleSetRunnerLabels(w http.ResponseWriter, r *http.Request) {
-	if org := r.PathValue("org"); org != "" && s.store.GetOrg(org) == nil {
-		writeGHError(w, http.StatusNotFound, "Not Found")
+	target, ok := s.runnerTargetFromRequest(w, r)
+	if !ok {
 		return
 	}
 	id, err := strconv.Atoi(r.PathValue("runner_id"))
@@ -1302,8 +1302,10 @@ func (s *Server) handleSetRunnerLabels(w http.ResponseWriter, r *http.Request) {
 	}
 	s.store.mu.Lock()
 	a := s.store.Agents[id]
-	if a != nil {
+	if a != nil && runnerVisibleAt(a.Scope, target) {
 		a.SetLabels(req.Labels)
+	} else {
+		a = nil
 	}
 	s.store.mu.Unlock()
 	if a == nil {
@@ -1314,8 +1316,8 @@ func (s *Server) handleSetRunnerLabels(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleRemoveAllRunnerLabels(w http.ResponseWriter, r *http.Request) {
-	if org := r.PathValue("org"); org != "" && s.store.GetOrg(org) == nil {
-		writeGHError(w, http.StatusNotFound, "Not Found")
+	target, ok := s.runnerTargetFromRequest(w, r)
+	if !ok {
 		return
 	}
 	id, err := strconv.Atoi(r.PathValue("runner_id"))
@@ -1325,8 +1327,10 @@ func (s *Server) handleRemoveAllRunnerLabels(w http.ResponseWriter, r *http.Requ
 	}
 	s.store.mu.Lock()
 	a := s.store.Agents[id]
-	if a != nil {
+	if a != nil && runnerVisibleAt(a.Scope, target) {
 		a.ClearLabels()
+	} else {
+		a = nil
 	}
 	s.store.mu.Unlock()
 	if a == nil {
@@ -1340,8 +1344,8 @@ func (s *Server) handleRemoveAllRunnerLabels(w http.ResponseWriter, r *http.Requ
 // (repo + org scope): appends custom labels to the runner, returning
 // the full label set.
 func (s *Server) handleAddRunnerLabels(w http.ResponseWriter, r *http.Request) {
-	if org := r.PathValue("org"); org != "" && s.store.GetOrg(org) == nil {
-		writeGHError(w, http.StatusNotFound, "Not Found")
+	target, ok := s.runnerTargetFromRequest(w, r)
+	if !ok {
 		return
 	}
 	id, err := strconv.Atoi(r.PathValue("runner_id"))
@@ -1361,8 +1365,10 @@ func (s *Server) handleAddRunnerLabels(w http.ResponseWriter, r *http.Request) {
 	}
 	s.store.mu.Lock()
 	a := s.store.Agents[id]
-	if a != nil {
+	if a != nil && runnerVisibleAt(a.Scope, target) {
 		a.AddLabels(req.Labels)
+	} else {
+		a = nil
 	}
 	s.store.mu.Unlock()
 	if a == nil {
@@ -1376,8 +1382,8 @@ func (s *Server) handleAddRunnerLabels(w http.ResponseWriter, r *http.Request) {
 // (repo + org scope): removes one custom label. Read-only (system)
 // labels cannot be removed (422); an absent label is 404.
 func (s *Server) handleRemoveRunnerLabel(w http.ResponseWriter, r *http.Request) {
-	if org := r.PathValue("org"); org != "" && s.store.GetOrg(org) == nil {
-		writeGHError(w, http.StatusNotFound, "Not Found")
+	target, ok := s.runnerTargetFromRequest(w, r)
+	if !ok {
 		return
 	}
 	id, err := strconv.Atoi(r.PathValue("runner_id"))
@@ -1390,7 +1396,7 @@ func (s *Server) handleRemoveRunnerLabel(w http.ResponseWriter, r *http.Request)
 	a := s.store.Agents[id]
 	found := false
 	readOnly := false
-	if a != nil {
+	if a != nil && runnerVisibleAt(a.Scope, target) {
 		for _, l := range a.Labels {
 			if l.Name == name {
 				found = true
@@ -1401,6 +1407,8 @@ func (s *Server) handleRemoveRunnerLabel(w http.ResponseWriter, r *http.Request)
 		if found && !readOnly {
 			a.RemoveLabels([]string{name})
 		}
+	} else {
+		a = nil
 	}
 	s.store.mu.Unlock()
 	if a == nil || !found {

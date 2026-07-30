@@ -4,23 +4,30 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"slices"
+	"sort"
 	"strconv"
+	"strings"
 	"time"
 )
 
-// RunnerGroup models an organization runner group. bleephub's runner
-// pool is global, so groups are an organizational overlay: runners
-// carry a RunnerGroupID and the group APIs manage membership and
-// repository visibility; job routing stays label-based (the single
-// pool serves every group).
+// RunnerGroup models an organization or enterprise runner group. Scope is
+// part of the persisted identity: runner-group ids are globally unique, but a
+// group must never become visible through a different owner merely because
+// both owners share the same backing store.
 type RunnerGroup struct {
-	ID                       int       `json:"id"`
-	Name                     string    `json:"name"`
-	Visibility               string    `json:"visibility"` // all | selected | private
-	Default                  bool      `json:"default"`
-	AllowsPublicRepositories bool      `json:"allows_public_repositories"`
-	SelectedRepoIDs          []int     `json:"selected_repository_ids,omitempty"`
-	CreatedAt                time.Time `json:"created_at"`
+	ID                       int         `json:"id"`
+	Name                     string      `json:"name"`
+	Visibility               string      `json:"visibility"` // all | selected | private
+	Default                  bool        `json:"default"`
+	AllowsPublicRepositories bool        `json:"allows_public_repositories"`
+	SelectedRepoIDs          []int       `json:"selected_repository_ids,omitempty"`
+	SelectedOrgIDs           []int       `json:"selected_organization_ids,omitempty"`
+	RestrictedToWorkflows    bool        `json:"restricted_to_workflows,omitempty"`
+	SelectedWorkflows        []string    `json:"selected_workflows,omitempty"`
+	NetworkConfigurationID   string      `json:"network_configuration_id,omitempty"`
+	Scope                    runnerScope `json:"scope"`
+	CreatedAt                time.Time   `json:"created_at"`
 }
 
 const defaultRunnerGroupID = 1
@@ -84,24 +91,76 @@ func (s *Server) orgIDGated(h http.HandlerFunc) http.HandlerFunc {
 	}
 }
 
-// ensureDefaultRunnerGroupLocked materializes the implicit Default
-// group (every GitHub org has one). Callers hold the store lock.
-func (s *Server) ensureDefaultRunnerGroupLocked() {
-	if _, ok := s.store.RunnerGroups[defaultRunnerGroupID]; ok {
-		return
+// ensureDefaultRunnerGroupLocked materializes the implicit Default group that
+// every organization and enterprise has. Callers hold the store lock.
+func (s *Server) ensureDefaultRunnerGroupLocked(target runnerScope) *RunnerGroup {
+	for _, group := range s.store.RunnerGroups {
+		if group.Default && runnerGroupMatchesTarget(group, target) {
+			return group
+		}
 	}
-	s.store.RunnerGroups[defaultRunnerGroupID] = &RunnerGroup{
-		ID:                       defaultRunnerGroupID,
+
+	id := s.store.NextRunnerGroupID
+	if len(s.store.RunnerGroups) == 0 {
+		id = defaultRunnerGroupID
+	}
+	if id <= defaultRunnerGroupID && s.store.RunnerGroups[defaultRunnerGroupID] != nil {
+		id = defaultRunnerGroupID + 1
+	}
+	s.store.NextRunnerGroupID = id + 1
+	group := &RunnerGroup{
+		ID:                       id,
 		Name:                     "Default",
 		Visibility:               "all",
 		Default:                  true,
 		AllowsPublicRepositories: true,
-		CreatedAt:                time.Now().UTC(),
+		Scope:                    target,
+		CreatedAt:                s.store.currentTime(),
+	}
+	s.store.RunnerGroups[id] = group
+	s.persistRunnerGroupLocked(group)
+	return group
+}
+
+func runnerGroupMatchesTarget(group *RunnerGroup, target runnerScope) bool {
+	switch {
+	case target.Org != "":
+		return strings.EqualFold(group.Scope.Org, target.Org)
+	case target.Enterprise != "":
+		return strings.EqualFold(group.Scope.Enterprise, target.Enterprise)
+	default:
+		return false
 	}
 }
 
-func runnerGroupJSON(g *RunnerGroup, baseURL, org string) map[string]any {
-	apiBase := fmt.Sprintf("%s/api/v3/orgs/%s/actions/runner-groups/%d", baseURL, org, g.ID)
+func nonNilStrings(values []string) []string {
+	return append([]string{}, values...)
+}
+
+func repoOwnedByOrg(repo *Repo, org string) bool {
+	if repo == nil || repo.OwnerType != "Organization" {
+		return false
+	}
+	owner, _, ok := strings.Cut(repo.FullName, "/")
+	return ok && strings.EqualFold(owner, org)
+}
+
+func (s *Server) runnerGroupTarget(w http.ResponseWriter, r *http.Request) (runnerScope, bool) {
+	target, err := s.runnerScopeFromRequest(r)
+	if err != nil || (target.Org == "" && target.Enterprise == "") {
+		writeGHError(w, http.StatusNotFound, "Not Found")
+		return runnerScope{}, false
+	}
+	return target, true
+}
+
+func runnerGroupJSON(g *RunnerGroup, baseURL string, target runnerScope) map[string]any {
+	var apiBase string
+	if target.Enterprise != "" {
+		apiBase = fmt.Sprintf("%s/api/v3/enterprises/%s/actions/runner-groups/%d", baseURL, target.Enterprise, g.ID)
+	} else {
+		apiBase = fmt.Sprintf("%s/api/v3/orgs/%s/actions/runner-groups/%d", baseURL, target.Org, g.ID)
+	}
 	out := map[string]any{
 		"id":                              g.ID,
 		"name":                            g.Name,
@@ -110,32 +169,44 @@ func runnerGroupJSON(g *RunnerGroup, baseURL, org string) map[string]any {
 		"runners_url":                     apiBase + "/runners",
 		"inherited":                       false,
 		"allows_public_repositories":      g.AllowsPublicRepositories,
-		"restricted_to_workflows":         false,
-		"selected_workflows":              []any{},
+		"restricted_to_workflows":         g.RestrictedToWorkflows,
+		"selected_workflows":              nonNilStrings(g.SelectedWorkflows),
 		"workflow_restrictions_read_only": false,
 	}
 	if g.Visibility == "selected" {
-		out["selected_repositories_url"] = apiBase + "/repositories"
+		if target.Enterprise != "" {
+			out["selected_organizations_url"] = apiBase + "/organizations"
+		} else {
+			out["selected_repositories_url"] = apiBase + "/repositories"
+		}
+	}
+	if g.NetworkConfigurationID != "" {
+		out["network_configuration_id"] = g.NetworkConfigurationID
 	}
 	return out
 }
 
 func (s *Server) handleListRunnerGroups(w http.ResponseWriter, r *http.Request) {
+	target, ok := s.runnerGroupTarget(w, r)
+	if !ok {
+		return
+	}
 	s.store.mu.Lock()
-	s.ensureDefaultRunnerGroupLocked()
+	s.ensureDefaultRunnerGroupLocked(target)
 	groups := make([]*RunnerGroup, 0, len(s.store.RunnerGroups))
 	for _, g := range s.store.RunnerGroups {
-		groups = append(groups, g)
+		if runnerGroupMatchesTarget(g, target) {
+			groups = append(groups, g)
+		}
 	}
 	s.store.mu.Unlock()
 	sortRunnerGroups(groups)
 
 	page := paginateAndLink(w, r, groups)
 	base := s.baseURL(r)
-	org := r.PathValue("org")
 	out := make([]map[string]any, 0, len(page))
 	for _, g := range page {
-		out = append(out, runnerGroupJSON(g, base, org))
+		out = append(out, runnerGroupJSON(g, base, target))
 	}
 	writeJSON(w, http.StatusOK, map[string]any{
 		"total_count":   len(groups),
@@ -152,12 +223,20 @@ func sortRunnerGroups(groups []*RunnerGroup) {
 }
 
 func (s *Server) handleCreateRunnerGroup(w http.ResponseWriter, r *http.Request) {
+	target, ok := s.runnerGroupTarget(w, r)
+	if !ok {
+		return
+	}
 	var req struct {
-		Name                     string `json:"name"`
-		Visibility               string `json:"visibility"`
-		SelectedRepositoryIDs    []int  `json:"selected_repository_ids"`
-		Runners                  []int  `json:"runners"`
-		AllowsPublicRepositories *bool  `json:"allows_public_repositories"`
+		Name                     string   `json:"name"`
+		Visibility               string   `json:"visibility"`
+		SelectedRepositoryIDs    []int    `json:"selected_repository_ids"`
+		SelectedOrganizationIDs  []int    `json:"selected_organization_ids"`
+		Runners                  []int    `json:"runners"`
+		AllowsPublicRepositories *bool    `json:"allows_public_repositories"`
+		RestrictedToWorkflows    bool     `json:"restricted_to_workflows"`
+		SelectedWorkflows        []string `json:"selected_workflows"`
+		NetworkConfigurationID   string   `json:"network_configuration_id"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil || req.Name == "" {
 		writeGHValidationError(w, "RunnerGroup", "name", "missing_field")
@@ -173,9 +252,42 @@ func (s *Server) handleCreateRunnerGroup(w http.ResponseWriter, r *http.Request)
 		writeGHValidationError(w, "RunnerGroup", "visibility", "invalid")
 		return
 	}
+	if target.Enterprise != "" && visibility == "private" {
+		writeGHValidationError(w, "RunnerGroup", "visibility", "invalid")
+		return
+	}
 
 	s.store.mu.Lock()
-	s.ensureDefaultRunnerGroupLocked()
+	s.ensureDefaultRunnerGroupLocked(target)
+	for _, existing := range s.store.RunnerGroups {
+		if runnerGroupMatchesTarget(existing, target) && strings.EqualFold(existing.Name, req.Name) {
+			s.store.mu.Unlock()
+			writeGHValidationError(w, "RunnerGroup", "name", "already_exists")
+			return
+		}
+	}
+	for _, repoID := range req.SelectedRepositoryIDs {
+		if target.Org == "" || !repoOwnedByOrg(s.store.Repos[repoID], target.Org) {
+			s.store.mu.Unlock()
+			writeGHError(w, http.StatusNotFound, "Not Found")
+			return
+		}
+	}
+	for _, orgID := range req.SelectedOrganizationIDs {
+		if target.Enterprise == "" || s.store.Orgs[orgID] == nil {
+			s.store.mu.Unlock()
+			writeGHError(w, http.StatusNotFound, "Not Found")
+			return
+		}
+	}
+	for _, runnerID := range req.Runners {
+		agent := s.store.Agents[runnerID]
+		if agent == nil || !runnerVisibleAt(agent.Scope, target) {
+			s.store.mu.Unlock()
+			writeGHError(w, http.StatusNotFound, "Not Found")
+			return
+		}
+	}
 	id := s.store.NextRunnerGroupID
 	if id <= defaultRunnerGroupID {
 		id = defaultRunnerGroupID + 1
@@ -187,18 +299,23 @@ func (s *Server) handleCreateRunnerGroup(w http.ResponseWriter, r *http.Request)
 		Visibility:               visibility,
 		AllowsPublicRepositories: req.AllowsPublicRepositories != nil && *req.AllowsPublicRepositories,
 		SelectedRepoIDs:          req.SelectedRepositoryIDs,
-		CreatedAt:                time.Now().UTC(),
+		SelectedOrgIDs:           req.SelectedOrganizationIDs,
+		RestrictedToWorkflows:    req.RestrictedToWorkflows,
+		SelectedWorkflows:        append([]string(nil), req.SelectedWorkflows...),
+		NetworkConfigurationID:   req.NetworkConfigurationID,
+		Scope:                    target,
+		CreatedAt:                s.store.currentTime(),
 	}
 	s.store.RunnerGroups[id] = g
 	for _, runnerID := range req.Runners {
-		if a := s.store.Agents[runnerID]; a != nil {
+		if a := s.store.Agents[runnerID]; a != nil && runnerVisibleAt(a.Scope, target) {
 			a.RunnerGroupID = id
 		}
 	}
 	s.persistRunnerGroupLocked(g)
 	s.store.mu.Unlock()
 
-	writeJSON(w, http.StatusCreated, runnerGroupJSON(g, s.baseURL(r), r.PathValue("org")))
+	writeJSON(w, http.StatusCreated, runnerGroupJSON(g, s.baseURL(r), target))
 }
 
 func (s *Server) persistRunnerGroupLocked(g *RunnerGroup) {
@@ -210,16 +327,20 @@ func (s *Server) persistRunnerGroupLocked(g *RunnerGroup) {
 // lookupRunnerGroup resolves the path's runner_group_id; nil + handled
 // response when missing.
 func (s *Server) lookupRunnerGroup(w http.ResponseWriter, r *http.Request) *RunnerGroup {
+	target, ok := s.runnerGroupTarget(w, r)
+	if !ok {
+		return nil
+	}
 	id, err := strconv.Atoi(r.PathValue("runner_group_id"))
 	if err != nil {
 		writeGHError(w, http.StatusNotFound, "Not Found")
 		return nil
 	}
 	s.store.mu.Lock()
-	s.ensureDefaultRunnerGroupLocked()
+	s.ensureDefaultRunnerGroupLocked(target)
 	g := s.store.RunnerGroups[id]
 	s.store.mu.Unlock()
-	if g == nil {
+	if g == nil || !runnerGroupMatchesTarget(g, target) {
 		writeGHError(w, http.StatusNotFound, "Not Found")
 		return nil
 	}
@@ -231,7 +352,7 @@ func (s *Server) handleGetRunnerGroup(w http.ResponseWriter, r *http.Request) {
 	if g == nil {
 		return
 	}
-	writeJSON(w, http.StatusOK, runnerGroupJSON(g, s.baseURL(r), r.PathValue("org")))
+	writeJSON(w, http.StatusOK, runnerGroupJSON(g, s.baseURL(r), g.Scope))
 }
 
 func (s *Server) handleUpdateRunnerGroup(w http.ResponseWriter, r *http.Request) {
@@ -240,30 +361,59 @@ func (s *Server) handleUpdateRunnerGroup(w http.ResponseWriter, r *http.Request)
 		return
 	}
 	var req struct {
-		Name                     *string `json:"name"`
-		Visibility               *string `json:"visibility"`
-		AllowsPublicRepositories *bool   `json:"allows_public_repositories"`
+		Name                     *string   `json:"name"`
+		Visibility               *string   `json:"visibility"`
+		AllowsPublicRepositories *bool     `json:"allows_public_repositories"`
+		RestrictedToWorkflows    *bool     `json:"restricted_to_workflows"`
+		SelectedWorkflows        *[]string `json:"selected_workflows"`
+		NetworkConfigurationID   *string   `json:"network_configuration_id"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		writeGHError(w, http.StatusBadRequest, "Problems parsing JSON")
 		return
 	}
+	if req.Name != nil && *req.Name == "" {
+		writeGHValidationError(w, "RunnerGroup", "name", "invalid")
+		return
+	}
+	if req.Visibility != nil {
+		valid := *req.Visibility == "all" || *req.Visibility == "selected" ||
+			(*req.Visibility == "private" && g.Scope.Org != "")
+		if !valid {
+			writeGHValidationError(w, "RunnerGroup", "visibility", "invalid")
+			return
+		}
+	}
 	s.store.mu.Lock()
-	if req.Name != nil && *req.Name != "" {
+	if req.Name != nil {
+		for _, existing := range s.store.RunnerGroups {
+			if existing.ID != g.ID && runnerGroupMatchesTarget(existing, g.Scope) &&
+				strings.EqualFold(existing.Name, *req.Name) {
+				s.store.mu.Unlock()
+				writeGHValidationError(w, "RunnerGroup", "name", "already_exists")
+				return
+			}
+		}
 		g.Name = *req.Name
 	}
 	if req.Visibility != nil {
-		switch *req.Visibility {
-		case "all", "selected", "private":
-			g.Visibility = *req.Visibility
-		}
+		g.Visibility = *req.Visibility
 	}
 	if req.AllowsPublicRepositories != nil {
 		g.AllowsPublicRepositories = *req.AllowsPublicRepositories
 	}
+	if req.RestrictedToWorkflows != nil {
+		g.RestrictedToWorkflows = *req.RestrictedToWorkflows
+	}
+	if req.SelectedWorkflows != nil {
+		g.SelectedWorkflows = append([]string(nil), (*req.SelectedWorkflows)...)
+	}
+	if req.NetworkConfigurationID != nil {
+		g.NetworkConfigurationID = *req.NetworkConfigurationID
+	}
 	s.persistRunnerGroupLocked(g)
 	s.store.mu.Unlock()
-	writeJSON(w, http.StatusOK, runnerGroupJSON(g, s.baseURL(r), r.PathValue("org")))
+	writeJSON(w, http.StatusOK, runnerGroupJSON(g, s.baseURL(r), g.Scope))
 }
 
 func (s *Server) handleDeleteRunnerGroup(w http.ResponseWriter, r *http.Request) {
@@ -279,9 +429,10 @@ func (s *Server) handleDeleteRunnerGroup(w http.ResponseWriter, r *http.Request)
 	s.store.mu.Lock()
 	delete(s.store.RunnerGroups, g.ID)
 	// Members fall back to the default group, like real GitHub.
+	fallback := s.ensureDefaultRunnerGroupLocked(g.Scope)
 	for _, a := range s.store.Agents {
 		if a.RunnerGroupID == g.ID {
-			a.RunnerGroupID = defaultRunnerGroupID
+			a.RunnerGroupID = fallback.ID
 		}
 	}
 	if s.store.persist != nil {
@@ -299,7 +450,8 @@ func (s *Server) handleListGroupRunners(w http.ResponseWriter, r *http.Request) 
 	s.store.mu.RLock()
 	members := make([]*Agent, 0)
 	for _, a := range s.store.Agents {
-		if agentGroupID(a) == g.ID {
+		if runnerVisibleAt(a.Scope, g.Scope) &&
+			(a.RunnerGroupID == g.ID || (g.Default && a.RunnerGroupID == 0)) {
 			members = append(members, a)
 		}
 	}
@@ -317,7 +469,9 @@ func (s *Server) handleListGroupRunners(w http.ResponseWriter, r *http.Request) 
 	})
 }
 
-// agentGroupID resolves an agent's group; unset means the default group.
+// agentGroupID resolves an agent's group for legacy response shapes. New
+// membership logic resolves the owning scope's actual default group because
+// every organization and enterprise has a distinct one.
 func agentGroupID(a *Agent) int {
 	if a.RunnerGroupID == 0 {
 		return defaultRunnerGroupID
@@ -342,12 +496,16 @@ func (s *Server) handleSetGroupRunners(w http.ResponseWriter, r *http.Request) {
 		want[id] = true
 	}
 	s.store.mu.Lock()
+	fallback := s.ensureDefaultRunnerGroupLocked(g.Scope)
 	for _, a := range s.store.Agents {
+		if !runnerVisibleAt(a.Scope, g.Scope) {
+			continue
+		}
 		switch {
 		case want[a.ID]:
 			a.RunnerGroupID = g.ID
-		case agentGroupID(a) == g.ID:
-			a.RunnerGroupID = defaultRunnerGroupID
+		case a.RunnerGroupID == g.ID || (g.Default && a.RunnerGroupID == 0):
+			a.RunnerGroupID = fallback.ID
 		}
 	}
 	s.store.mu.Unlock()
@@ -366,8 +524,10 @@ func (s *Server) handleAddGroupRunner(w http.ResponseWriter, r *http.Request) {
 	}
 	s.store.mu.Lock()
 	a := s.store.Agents[id]
-	if a != nil {
+	if a != nil && runnerVisibleAt(a.Scope, g.Scope) {
 		a.RunnerGroupID = g.ID
+	} else {
+		a = nil
 	}
 	s.store.mu.Unlock()
 	if a == nil {
@@ -389,8 +549,12 @@ func (s *Server) handleRemoveGroupRunner(w http.ResponseWriter, r *http.Request)
 	}
 	s.store.mu.Lock()
 	a := s.store.Agents[id]
-	if a != nil && agentGroupID(a) == g.ID {
-		a.RunnerGroupID = defaultRunnerGroupID
+	if a != nil && runnerVisibleAt(a.Scope, g.Scope) &&
+		(a.RunnerGroupID == g.ID || (g.Default && a.RunnerGroupID == 0)) {
+		fallback := s.ensureDefaultRunnerGroupLocked(g.Scope)
+		a.RunnerGroupID = fallback.ID
+	} else if a != nil && !runnerVisibleAt(a.Scope, g.Scope) {
+		a = nil
 	}
 	s.store.mu.Unlock()
 	if a == nil {
@@ -414,7 +578,7 @@ func (s *Server) handleListGroupRepos(w http.ResponseWriter, r *http.Request) {
 		s.store.mu.RLock()
 		repo := s.store.Repos[id]
 		s.store.mu.RUnlock()
-		if repo != nil {
+		if repoOwnedByOrg(repo, g.Scope.Org) {
 			repos = append(repos, repoToJSON(repo, s.store, base))
 		}
 	}
@@ -437,6 +601,14 @@ func (s *Server) handleSetGroupRepos(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	s.store.mu.Lock()
+	for _, id := range req.SelectedRepositoryIDs {
+		repo := s.store.Repos[id]
+		if !repoOwnedByOrg(repo, g.Scope.Org) {
+			s.store.mu.Unlock()
+			writeGHError(w, http.StatusNotFound, "Not Found")
+			return
+		}
+	}
 	g.SelectedRepoIDs = req.SelectedRepositoryIDs
 	s.persistRunnerGroupLocked(g)
 	s.store.mu.Unlock()
@@ -454,7 +626,8 @@ func (s *Server) handleAddGroupRepo(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	s.store.mu.Lock()
-	exists := s.store.Repos[id] != nil
+	repo := s.store.Repos[id]
+	exists := repoOwnedByOrg(repo, g.Scope.Org)
 	if exists {
 		found := false
 		for _, rid := range g.SelectedRepoIDs {
@@ -487,6 +660,12 @@ func (s *Server) handleRemoveGroupRepo(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	s.store.mu.Lock()
+	repo := s.store.Repos[id]
+	if !repoOwnedByOrg(repo, g.Scope.Org) {
+		s.store.mu.Unlock()
+		writeGHError(w, http.StatusNotFound, "Not Found")
+		return
+	}
 	kept := g.SelectedRepoIDs[:0]
 	for _, rid := range g.SelectedRepoIDs {
 		if rid != id {
@@ -494,6 +673,106 @@ func (s *Server) handleRemoveGroupRepo(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	g.SelectedRepoIDs = kept
+	s.persistRunnerGroupLocked(g)
+	s.store.mu.Unlock()
+	w.WriteHeader(http.StatusNoContent)
+}
+
+func (s *Server) handleListGroupOrganizations(w http.ResponseWriter, r *http.Request) {
+	g := s.lookupRunnerGroup(w, r)
+	if g == nil {
+		return
+	}
+	s.store.mu.RLock()
+	orgs := make([]*Org, 0, len(g.SelectedOrgIDs))
+	for _, id := range g.SelectedOrgIDs {
+		if org := s.store.Orgs[id]; org != nil {
+			orgs = append(orgs, org)
+		}
+	}
+	s.store.mu.RUnlock()
+	sort.Slice(orgs, func(i, j int) bool { return orgs[i].ID < orgs[j].ID })
+
+	page := paginateAndLink(w, r, orgs)
+	out := make([]map[string]interface{}, 0, len(page))
+	for _, org := range page {
+		out = append(out, orgSimpleJSON(org, s.baseURL(r)))
+	}
+	writeJSON(w, http.StatusOK, map[string]interface{}{
+		"total_count":   len(orgs),
+		"organizations": out,
+	})
+}
+
+func (s *Server) handleSetGroupOrganizations(w http.ResponseWriter, r *http.Request) {
+	g := s.lookupRunnerGroup(w, r)
+	if g == nil {
+		return
+	}
+	var req struct {
+		SelectedOrganizationIDs []int `json:"selected_organization_ids"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeGHError(w, http.StatusBadRequest, "Problems parsing JSON")
+		return
+	}
+	s.store.mu.Lock()
+	for _, id := range req.SelectedOrganizationIDs {
+		if s.store.Orgs[id] == nil {
+			s.store.mu.Unlock()
+			writeGHError(w, http.StatusNotFound, "Not Found")
+			return
+		}
+	}
+	g.SelectedOrgIDs = append([]int(nil), req.SelectedOrganizationIDs...)
+	s.persistRunnerGroupLocked(g)
+	s.store.mu.Unlock()
+	w.WriteHeader(http.StatusNoContent)
+}
+
+func (s *Server) handleAddGroupOrganization(w http.ResponseWriter, r *http.Request) {
+	g := s.lookupRunnerGroup(w, r)
+	if g == nil {
+		return
+	}
+	id, err := strconv.Atoi(r.PathValue("org_id"))
+	if err != nil {
+		writeGHError(w, http.StatusNotFound, "Not Found")
+		return
+	}
+	s.store.mu.Lock()
+	if s.store.Orgs[id] == nil {
+		s.store.mu.Unlock()
+		writeGHError(w, http.StatusNotFound, "Not Found")
+		return
+	}
+	if !slices.Contains(g.SelectedOrgIDs, id) {
+		g.SelectedOrgIDs = append(g.SelectedOrgIDs, id)
+		s.persistRunnerGroupLocked(g)
+	}
+	s.store.mu.Unlock()
+	w.WriteHeader(http.StatusNoContent)
+}
+
+func (s *Server) handleRemoveGroupOrganization(w http.ResponseWriter, r *http.Request) {
+	g := s.lookupRunnerGroup(w, r)
+	if g == nil {
+		return
+	}
+	id, err := strconv.Atoi(r.PathValue("org_id"))
+	if err != nil {
+		writeGHError(w, http.StatusNotFound, "Not Found")
+		return
+	}
+	s.store.mu.Lock()
+	if s.store.Orgs[id] == nil {
+		s.store.mu.Unlock()
+		writeGHError(w, http.StatusNotFound, "Not Found")
+		return
+	}
+	g.SelectedOrgIDs = slices.DeleteFunc(g.SelectedOrgIDs, func(candidate int) bool {
+		return candidate == id
+	})
 	s.persistRunnerGroupLocked(g)
 	s.store.mu.Unlock()
 	w.WriteHeader(http.StatusNoContent)

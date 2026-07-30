@@ -6,6 +6,21 @@ import (
 	"testing"
 )
 
+func defaultRunnerGroupForOrg(t *testing.T, org string) int {
+	t.Helper()
+	data := decodeJSONWithStatus(t, ghGet(t,
+		"/api/v3/orgs/"+org+"/actions/runner-groups", defaultToken), http.StatusOK)
+	groups, _ := data["runner_groups"].([]interface{})
+	for _, raw := range groups {
+		group, _ := raw.(map[string]interface{})
+		if isDefault, _ := group["default"].(bool); isDefault {
+			return int(group["id"].(float64))
+		}
+	}
+	t.Fatalf("organization %s has no default runner group: %v", org, data)
+	return 0
+}
+
 func TestHostedRunners_CatalogEndpoints(t *testing.T) {
 	org := createTestOrg(t)
 	base := "/api/v3/orgs/" + org + "/actions/hosted-runners"
@@ -62,11 +77,12 @@ func TestHostedRunners_CatalogEndpoints(t *testing.T) {
 func TestHostedRunners_CRUDLifecycle(t *testing.T) {
 	org := createTestOrg(t)
 	base := "/api/v3/orgs/" + org + "/actions/hosted-runners"
+	groupID := defaultRunnerGroupForOrg(t, org)
 
 	// Validation: bad size, missing runner_group_id, unknown image.
 	resp := ghPost(t, base, defaultToken, map[string]interface{}{
 		"name": "hr-bad", "image": map[string]string{"id": "ubuntu-24.04", "source": "github"},
-		"size": "3-core", "runner_group_id": 1,
+		"size": "3-core", "runner_group_id": groupID,
 	})
 	resp.Body.Close()
 	if resp.StatusCode != 422 {
@@ -82,7 +98,7 @@ func TestHostedRunners_CRUDLifecycle(t *testing.T) {
 	}
 	resp = ghPost(t, base, defaultToken, map[string]interface{}{
 		"name": "hr-bad", "image": map[string]string{"id": "no-such-image", "source": "github"},
-		"size": "4-core", "runner_group_id": 1,
+		"size": "4-core", "runner_group_id": groupID,
 	})
 	resp.Body.Close()
 	if resp.StatusCode != 422 {
@@ -93,7 +109,7 @@ func TestHostedRunners_CRUDLifecycle(t *testing.T) {
 	created := decodeJSONWithStatus(t, ghPost(t, base, defaultToken, map[string]interface{}{
 		"name":  "my-hosted-runner",
 		"image": map[string]string{"id": "ubuntu-24.04", "source": "github"},
-		"size":  "8-core", "runner_group_id": 1,
+		"size":  "8-core", "runner_group_id": groupID,
 	}), 201)
 	id := int(created["id"].(float64))
 	if created["platform"] != "linux-x64" || created["status"] != "Ready" {
@@ -140,7 +156,7 @@ func TestHostedRunners_CRUDLifecycle(t *testing.T) {
 
 	// The runner lists under its runner group.
 	groupList := decodeJSONWithStatus(t,
-		ghGet(t, "/api/v3/orgs/"+org+"/actions/runner-groups/1/hosted-runners", defaultToken), 200)
+		ghGet(t, fmt.Sprintf("/api/v3/orgs/%s/actions/runner-groups/%d/hosted-runners", org, groupID), defaultToken), 200)
 	if int(groupList["total_count"].(float64)) != 1 {
 		t.Fatalf("runner-group hosted-runners total = %v, want 1", groupList["total_count"])
 	}
@@ -160,11 +176,12 @@ func TestHostedRunners_CRUDLifecycle(t *testing.T) {
 func TestHostedRunners_StaticIPLimitEnforced(t *testing.T) {
 	org := createTestOrg(t)
 	base := "/api/v3/orgs/" + org + "/actions/hosted-runners"
+	groupID := defaultRunnerGroupForOrg(t, org)
 	// 60 reserved addresses would exceed the 50-address limit.
 	resp := ghPost(t, base, defaultToken, map[string]interface{}{
 		"name":  "too-many-ips",
 		"image": map[string]string{"id": "ubuntu-22.04", "source": "github"},
-		"size":  "4-core", "runner_group_id": 1,
+		"size":  "4-core", "runner_group_id": groupID,
 		"maximum_runners": 60, "enable_static_ip": true,
 	})
 	resp.Body.Close()
@@ -176,6 +193,7 @@ func TestHostedRunners_StaticIPLimitEnforced(t *testing.T) {
 func TestHostedRunners_CustomImages(t *testing.T) {
 	org := createTestOrg(t)
 	base := "/api/v3/orgs/" + org + "/actions/hosted-runners"
+	groupID := defaultRunnerGroupForOrg(t, org)
 
 	// Custom image definitions are produced by the image-generation
 	// pipeline on real GitHub (no public create endpoint); seed one
@@ -224,7 +242,7 @@ func TestHostedRunners_CustomImages(t *testing.T) {
 	created := decodeJSONWithStatus(t, ghPost(t, base, defaultToken, map[string]interface{}{
 		"name":  "custom-image-runner",
 		"image": map[string]string{"id": fmt.Sprintf("%d", img.ID), "source": "custom"},
-		"size":  "4-core", "runner_group_id": 1,
+		"size":  "4-core", "runner_group_id": groupID,
 	}), 201)
 	imgDetails, _ := created["image_details"].(map[string]interface{})
 	if imgDetails["source"] != "custom" || imgDetails["version"] != "1.1.0" ||
