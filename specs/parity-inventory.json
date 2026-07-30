@@ -17809,10 +17809,8 @@
         "ghes-2.22": {
           "documented_operations": 642,
           "missing_operations": [
-            "DELETE /applications/grants/{}",
             "DELETE /applications/{}/grants/{}",
             "DELETE /applications/{}/tokens/{}",
-            "DELETE /authorizations/{}",
             "DELETE /orgs/{}/teams/{}/discussions/{}",
             "DELETE /orgs/{}/teams/{}/discussions/{}/comments/{}",
             "DELETE /orgs/{}/teams/{}/discussions/{}/comments/{}/reactions/{}",
@@ -17826,11 +17824,7 @@
             "DELETE /teams/{}/discussions/{}",
             "DELETE /teams/{}/discussions/{}/comments/{}",
             "DELETE /teams/{}/projects/{}",
-            "GET /applications/grants",
-            "GET /applications/grants/{}",
             "GET /applications/{}/tokens/{}",
-            "GET /authorizations",
-            "GET /authorizations/{}",
             "GET /orgs/{}/projects",
             "GET /orgs/{}/teams/{}/discussions",
             "GET /orgs/{}/teams/{}/discussions/{}",
@@ -17859,7 +17853,6 @@
             "GET /teams/{}/projects",
             "GET /teams/{}/projects/{}",
             "GET /users/{}/projects",
-            "PATCH /authorizations/{}",
             "PATCH /orgs/{}/teams/{}/discussions/{}",
             "PATCH /orgs/{}/teams/{}/discussions/{}/comments/{}",
             "PATCH /projects/columns/cards/{}",
@@ -17867,7 +17860,6 @@
             "PATCH /teams/{}/discussions/{}",
             "PATCH /teams/{}/discussions/{}/comments/{}",
             "POST /applications/{}/tokens/{}",
-            "POST /authorizations",
             "POST /orgs/{}/projects",
             "POST /orgs/{}/teams/{}/discussions",
             "POST /orgs/{}/teams/{}/discussions/{}/comments",
@@ -17886,20 +17878,16 @@
             "POST /teams/{}/discussions/{}/comments/{}/reactions",
             "POST /teams/{}/discussions/{}/reactions",
             "POST /user/projects",
-            "PUT /authorizations/clients/{}",
-            "PUT /authorizations/clients/{}/{}",
             "PUT /orgs/{}/teams/{}/projects/{}",
             "PUT /projects/{}/collaborators/{}",
             "PUT /setup/api/settings",
             "PUT /teams/{}/projects/{}"
           ],
-          "represented_operations": 559
+          "represented_operations": 569
         },
         "ghes-3.13": {
           "documented_operations": 974,
           "missing_operations": [
-            "DELETE /applications/grants/{}",
-            "DELETE /authorizations/{}",
             "DELETE /manage/v1/access/ssh",
             "DELETE /orgs/{}/teams/{}/discussions/{}",
             "DELETE /orgs/{}/teams/{}/discussions/{}/comments/{}",
@@ -17914,10 +17902,6 @@
             "DELETE /teams/{}/discussions/{}",
             "DELETE /teams/{}/discussions/{}/comments/{}",
             "DELETE /teams/{}/projects/{}",
-            "GET /applications/grants",
-            "GET /applications/grants/{}",
-            "GET /authorizations",
-            "GET /authorizations/{}",
             "GET /enterprises/{}/actions/cache/usage-policy",
             "GET /manage/v1/access/ssh",
             "GET /manage/v1/checks/system-requirements",
@@ -17961,7 +17945,6 @@
             "GET /teams/{}/projects",
             "GET /teams/{}/projects/{}",
             "GET /users/{}/projects",
-            "PATCH /authorizations/{}",
             "PATCH /enterprises/{}/actions/cache/usage-policy",
             "PATCH /orgs/{}/teams/{}/discussions/{}",
             "PATCH /orgs/{}/teams/{}/discussions/{}/comments/{}",
@@ -17970,7 +17953,6 @@
             "PATCH /repos/{}/{}/actions/cache/usage-policy",
             "PATCH /teams/{}/discussions/{}",
             "PATCH /teams/{}/discussions/{}/comments/{}",
-            "POST /authorizations",
             "POST /manage/v1/access/ssh",
             "POST /manage/v1/config/apply",
             "POST /manage/v1/config/init",
@@ -17993,8 +17975,6 @@
             "POST /teams/{}/discussions/{}/comments/{}/reactions",
             "POST /teams/{}/discussions/{}/reactions",
             "POST /user/projects",
-            "PUT /authorizations/clients/{}",
-            "PUT /authorizations/clients/{}/{}",
             "PUT /manage/v1/config/license",
             "PUT /manage/v1/config/settings",
             "PUT /orgs/{}/teams/{}/projects/{}",
@@ -18002,18 +17982,12 @@
             "PUT /setup/api/settings",
             "PUT /teams/{}/projects/{}"
           ],
-          "represented_operations": 871
+          "represented_operations": 881
         },
         "ghes-3.21": {
           "documented_operations": 1092,
           "missing_operations": [
-            "DELETE /applications/grants/{}",
-            "DELETE /authorizations/{}",
             "DELETE /manage/v1/access/ssh",
-            "GET /applications/grants",
-            "GET /applications/grants/{}",
-            "GET /authorizations",
-            "GET /authorizations/{}",
             "GET /enterprises/{}/actions/cache/usage-policy",
             "GET /manage/v1/access/ssh",
             "GET /manage/v1/checks/system-requirements",
@@ -18028,23 +18002,22 @@
             "GET /manage/v1/replication/status",
             "GET /manage/v1/version",
             "GET /repos/{}/{}/actions/cache/usage-policy",
-            "PATCH /authorizations/{}",
             "PATCH /enterprises/{}/actions/cache/usage-policy",
             "PATCH /repos/{}/{}/actions/cache/usage-policy",
-            "POST /authorizations",
             "POST /manage/v1/access/ssh",
             "POST /manage/v1/config/apply",
             "POST /manage/v1/config/init",
             "POST /manage/v1/maintenance",
-            "PUT /authorizations/clients/{}",
-            "PUT /authorizations/clients/{}/{}",
             "PUT /manage/v1/config/license",
             "PUT /manage/v1/config/settings"
           ],
-          "represented_operations": 1059
+          "represented_operations": 1069
         }
       },
       "dispatch_covered_operations": [
+        "DELETE /applications/grants/{}",
+        "DELETE /applications/{}/grant",
+        "DELETE /applications/{}/token",
         "DELETE /repos/{}/{}/issues/comments/{}",
         "DELETE /repos/{}/{}/issues/comments/{}/pin",
         "DELETE /repos/{}/{}/issues/{}/issue-field-values/{}",
@@ -18151,15 +18124,15 @@
         "source": "internal/server/gh_apps_rest.go"
       },
       {
-        "line": 34,
+        "line": 32,
         "method": "DELETE",
-        "path": "/api/v3/applications/{client_id}/grant",
+        "path": "/api/v3/applications/{client_id}/{operation}",
         "source": "internal/server/gh_apps_oauth_mgmt.go"
       },
       {
-        "line": 32,
+        "line": 40,
         "method": "DELETE",
-        "path": "/api/v3/applications/{client_id}/token",
+        "path": "/api/v3/authorizations/{authorization_id}",
         "source": "internal/server/gh_apps_oauth_mgmt.go"
       },
       {
@@ -19663,6 +19636,18 @@
         "source": "internal/server/gh_apps_rest.go"
       },
       {
+        "line": 34,
+        "method": "GET",
+        "path": "/api/v3/applications/grants",
+        "source": "internal/server/gh_apps_oauth_mgmt.go"
+      },
+      {
+        "line": 35,
+        "method": "GET",
+        "path": "/api/v3/applications/grants/{grant_id}",
+        "source": "internal/server/gh_apps_oauth_mgmt.go"
+      },
+      {
         "line": 22,
         "method": "GET",
         "path": "/api/v3/apps/{app_slug}",
@@ -19685,6 +19670,18 @@
         "method": "GET",
         "path": "/api/v3/assignments/{assignment_id}/grades",
         "source": "internal/server/gh_classroom.go"
+      },
+      {
+        "line": 36,
+        "method": "GET",
+        "path": "/api/v3/authorizations",
+        "source": "internal/server/gh_apps_oauth_mgmt.go"
+      },
+      {
+        "line": 38,
+        "method": "GET",
+        "path": "/api/v3/authorizations/{authorization_id}",
+        "source": "internal/server/gh_apps_oauth_mgmt.go"
       },
       {
         "line": 85,
@@ -24217,6 +24214,12 @@
         "source": "internal/server/gh_apps_oauth_mgmt.go"
       },
       {
+        "line": 39,
+        "method": "PATCH",
+        "path": "/api/v3/authorizations/{authorization_id}",
+        "source": "internal/server/gh_apps_oauth_mgmt.go"
+      },
+      {
         "line": 28,
         "method": "PATCH",
         "path": "/api/v3/enterprise/announcement",
@@ -24934,6 +24937,12 @@
         "line": 33,
         "method": "POST",
         "path": "/api/v3/applications/{client_id}/token/scoped",
+        "source": "internal/server/gh_apps_oauth_mgmt.go"
+      },
+      {
+        "line": 37,
+        "method": "POST",
+        "path": "/api/v3/authorizations",
         "source": "internal/server/gh_apps_oauth_mgmt.go"
       },
       {
@@ -26279,6 +26288,18 @@
         "method": "PUT",
         "path": "/api/v3/app/installations/{id}/suspended",
         "source": "internal/server/gh_apps_rest.go"
+      },
+      {
+        "line": 41,
+        "method": "PUT",
+        "path": "/api/v3/authorizations/clients/{client_id}",
+        "source": "internal/server/gh_apps_oauth_mgmt.go"
+      },
+      {
+        "line": 42,
+        "method": "PUT",
+        "path": "/api/v3/authorizations/clients/{client_id}/{fingerprint}",
+        "source": "internal/server/gh_apps_oauth_mgmt.go"
       },
       {
         "line": 9,

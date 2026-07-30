@@ -176,7 +176,10 @@ type Token struct {
 	// Impersonation marks a GHES site-admin impersonation OAuth token. GHES
 	// permits at most one active impersonation authorization per user and
 	// exposes it through /admin/users/{username}/authorizations.
-	Impersonation bool `json:"impersonation,omitempty"`
+	Impersonation bool   `json:"impersonation,omitempty"`
+	Note          string `json:"note,omitempty"`
+	NoteURL       string `json:"note_url,omitempty"`
+	Fingerprint   string `json:"fingerprint,omitempty"`
 }
 
 func (st *Store) tokenMapKey(value string) string {

@@ -386,9 +386,9 @@ func classicAuthorizationJSON(key string, token *Token, user *User, revealToken 
 		"scopes": splitScopes(token.Scopes), "token": value, "token_last_eight": lastEight(identity),
 		"hashed_token": hashedToken(identity),
 		"app":          map[string]interface{}{"client_id": "00000000000000000000", "name": "GitHub API", "url": "https://github.com"},
-		"note":         nil, "note_url": nil,
+		"note":         nullableString(token.Note), "note_url": nullableString(token.NoteURL),
 		"updated_at":  token.CreatedAt.UTC().Format(time.RFC3339),
 		"created_at":  token.CreatedAt.UTC().Format(time.RFC3339),
-		"fingerprint": nil, "user": userToJSON(user), "installation": nil, "expires_at": expires,
+		"fingerprint": nullableString(token.Fingerprint), "user": userToJSON(user), "installation": nil, "expires_at": expires,
 	}
 }

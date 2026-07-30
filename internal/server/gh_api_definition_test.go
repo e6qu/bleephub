@@ -224,6 +224,16 @@ var describedOutsideDotcom = map[string]string{
 	"POST /admin/ldap/teams/{}/sync":                                                   "ghes-3.21",
 	"POST /admin/ldap/users/{}/sync":                                                   "ghes-3.21",
 	"GET /repos/{}/{}/replicas/caches":                                                 "ghes-3.21",
+	"DELETE /applications/grants/{}":                                                   "ghes-3.21",
+	"DELETE /authorizations/{}":                                                        "ghes-3.21",
+	"GET /applications/grants":                                                         "ghes-3.21",
+	"GET /applications/grants/{}":                                                      "ghes-3.21",
+	"GET /authorizations":                                                              "ghes-3.21",
+	"GET /authorizations/{}":                                                           "ghes-3.21",
+	"PATCH /authorizations/{}":                                                         "ghes-3.21",
+	"POST /authorizations":                                                             "ghes-3.21",
+	"PUT /authorizations/clients/{}":                                                   "ghes-3.21",
+	"PUT /authorizations/clients/{}/{}":                                                "ghes-3.21",
 	"GET /organizations/{}/custom_roles":                                               "ghec",
 	"GET /organizations/{}/org-properties/values":                                      "ghec",
 	"PATCH /organizations/{}/org-properties/values":                                    "ghec",
@@ -586,6 +596,7 @@ func TestRouteAllowlistCitationsHold(t *testing.T) {
 // out to the real GitHub paths listed; it is a routing implementation detail,
 // not an invented path. Keyed by the normalized wildcard pattern.
 var dispatchRoutes = map[string]string{
+	"DELETE /applications/{}/{}":               "→ DELETE /applications/{client_id}/token, /applications/{client_id}/grant, or /applications/grants/{grant_id}",
 	"DELETE /repos/{}/{}/issues/{}/{}":         "→ DELETE /repos/{}/{}/issues/{}/labels/{} (remove a label)",
 	"GET /repos/{}/{}/issues/{}/{}":            "→ GET /repos/{}/{}/issues/comments/{comment_id}, /issues/{number}/reactions, or /issues/events/{event_id}",
 	"GET /repos/{}/{}/issues/{}/{}/{}":         "→ GET /repos/{}/{}/issues/comments/{comment_id}/reactions or /issues/{number}/dependencies/blocked_by",
@@ -735,6 +746,9 @@ func TestFuzzRouteSelectorCanReachEveryRegisteredAPIOperation(t *testing.T) {
 }
 
 var dispatchCoveredOperations = map[string]bool{
+	"DELETE /applications/{}/grant":                       true,
+	"DELETE /applications/{}/token":                       true,
+	"DELETE /applications/grants/{}":                      true,
 	"DELETE /repos/{}/{}/issues/comments/{}":              true,
 	"DELETE /repos/{}/{}/issues/comments/{}/pin":          true,
 	"DELETE /repos/{}/{}/issues/{}/issue-field-values/{}": true,
@@ -801,6 +815,7 @@ func TestEveryDocumentedGitHubRESTOperationIsRegistered(t *testing.T) {
 		registered[operation] = true
 	}
 	documented := loadGitHubOperations(t)
+	official := loadOfficialRouteIndex(t)
 	var missing []string
 	for operation := range documented {
 		if !registered[operation] && !dispatchCoveredOperations[operation] {
@@ -809,7 +824,10 @@ func TestEveryDocumentedGitHubRESTOperationIsRegistered(t *testing.T) {
 	}
 	for operation := range dispatchCoveredOperations {
 		if !documented[operation] {
-			t.Errorf("dispatch coverage entry is not in the pinned GitHub definition: %s", operation)
+			citation, cited := describedOutsideDotcom[operation]
+			if !cited || !official[citation][operation] {
+				t.Errorf("dispatch coverage entry is not in a pinned GitHub description: %s", operation)
+			}
 		}
 		if registered[operation] {
 			t.Errorf("dispatch coverage entry now has a direct route and must be removed: %s", operation)

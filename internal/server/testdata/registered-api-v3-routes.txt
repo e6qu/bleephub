@@ -7,8 +7,8 @@ DELETE /api/v3/admin/users/{username}
 DELETE /api/v3/admin/users/{username}/authorizations
 DELETE /api/v3/app/installations/{id}
 DELETE /api/v3/app/installations/{id}/suspended
-DELETE /api/v3/applications/{client_id}/grant
-DELETE /api/v3/applications/{client_id}/token
+DELETE /api/v3/applications/{client_id}/{operation}
+DELETE /api/v3/authorizations/{authorization_id}
 DELETE /api/v3/enterprise/announcement
 DELETE /api/v3/enterprises/{enterprise}/actions/hosted-runners/images/custom/{image_definition_id}
 DELETE /api/v3/enterprises/{enterprise}/actions/hosted-runners/images/custom/{image_definition_id}/versions/{version}
@@ -259,10 +259,14 @@ GET /api/v3/app/hook/deliveries/{delivery_id}
 GET /api/v3/app/installation-requests
 GET /api/v3/app/installations
 GET /api/v3/app/installations/{id}
+GET /api/v3/applications/grants
+GET /api/v3/applications/grants/{grant_id}
 GET /api/v3/apps/{app_slug}
 GET /api/v3/assignments/{assignment_id}
 GET /api/v3/assignments/{assignment_id}/accepted_assignments
 GET /api/v3/assignments/{assignment_id}/grades
+GET /api/v3/authorizations
+GET /api/v3/authorizations/{authorization_id}
 GET /api/v3/classrooms
 GET /api/v3/classrooms/{classroom_id}
 GET /api/v3/classrooms/{classroom_id}/assignments
@@ -1018,6 +1022,7 @@ PATCH /api/v3/admin/pre-receive-hooks/{pre_receive_hook_id}
 PATCH /api/v3/admin/users/{username}
 PATCH /api/v3/app/hook/config
 PATCH /api/v3/applications/{client_id}/token
+PATCH /api/v3/authorizations/{authorization_id}
 PATCH /api/v3/enterprise/announcement
 PATCH /api/v3/enterprises/{enterprise}/actions/hosted-runners/{hosted_runner_id}
 PATCH /api/v3/enterprises/{enterprise}/actions/runner-groups/{runner_group_id}
@@ -1138,6 +1143,7 @@ POST /api/v3/app/hook/deliveries/{delivery_id}/attempts
 POST /api/v3/app/installations/{id}/access_tokens
 POST /api/v3/applications/{client_id}/token
 POST /api/v3/applications/{client_id}/token/scoped
+POST /api/v3/authorizations
 POST /api/v3/credentials/revoke
 POST /api/v3/enterprises/{enterprise}/access-restrictions/disable
 POST /api/v3/enterprises/{enterprise}/access-restrictions/enable
@@ -1362,6 +1368,8 @@ POST /api/v3/users/{username}/packages/{package_type}/{package_name}/versions/{p
 POST /api/v3/users/{username}/projectsV2/{project_number}/fields
 POST /api/v3/users/{username}/projectsV2/{project_number}/items
 PUT /api/v3/app/installations/{id}/suspended
+PUT /api/v3/authorizations/clients/{client_id}
+PUT /api/v3/authorizations/clients/{client_id}/{fingerprint}
 PUT /api/v3/enterprises/{enterprise}/actions/cache/retention-limit
 PUT /api/v3/enterprises/{enterprise}/actions/cache/storage-limit
 PUT /api/v3/enterprises/{enterprise}/actions/oidc/customization/issuer
