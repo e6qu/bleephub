@@ -11,5 +11,5 @@ import (
 // initEmptyRepoWithFiles, whose require-empty precondition closes the
 // concurrent repository-initialization race.
 func initRepoWithFiles(stor gitStorage.Storer, branch, message string, files map[string]string, sig *object.Signature) (plumbing.Hash, error) {
-	return commitRootBranchWithFiles(stor, branch, message, files, sig, false)
+	return commitRootBranchWithFiles(stor, branch, message, files, sig, false, nil)
 }

@@ -1201,18 +1201,19 @@ const (
 // merge gate itself uses, applied to the commit being pushed.
 func (s *Server) protectedRefWriteRefusal(ctx context.Context, repo *Repo, stor storer.Storer, ref plumbing.ReferenceName, kind refWriteKind, target plumbing.Hash) string {
 	if !ref.IsBranch() {
-		return ""
+		return s.evaluateRulesetsForRefWrite(ctx, repo, stor, ref, kind, target)
 	}
+	rulesetRefusal := s.evaluateRulesetsForRefWrite(ctx, repo, stor, ref, kind, target)
 	branch := ref.Short()
 	bp := s.branchProtectionFor(repo.ID, branch)
 	if bp == nil {
-		return ""
+		return rulesetRefusal
 	}
 	// enforce_admins is the setting that decides whether the rule binds a
 	// repository administrator; with it off an administrator bypasses the
 	// whole rule, which is the same bypass the merge gate grants.
 	if (bp.EnforceAdmins == nil || !bp.EnforceAdmins.Enabled) && s.viewerCanAdminRepo(ctx, repo) {
-		return ""
+		return rulesetRefusal
 	}
 	if bp.Restrictions != nil && !s.viewerIsRestrictedPusher(ctx, repo, bp.Restrictions) {
 		return "You're not authorized to push to this branch."
@@ -1224,7 +1225,7 @@ func (s *Server) protectedRefWriteRefusal(ctx context.Context, repo *Repo, stor 
 		}
 		// A deletion moves the branch nowhere, so the requirements on what
 		// it may point at do not apply to it.
-		return ""
+		return rulesetRefusal
 	case refForcePush:
 		if bp.AllowForcePushes == nil || !bp.AllowForcePushes.Enabled {
 			return "Cannot force-push to protected branch " + branch + "."
@@ -1235,7 +1236,10 @@ func (s *Server) protectedRefWriteRefusal(ctx context.Context, repo *Repo, stor 
 		}
 	case refFastForward:
 	}
-	return s.protectedBranchTargetRefusal(repo, bp, stor, branch, target)
+	if refusal := s.protectedBranchTargetRefusal(repo, bp, stor, branch, target); refusal != "" {
+		return refusal
+	}
+	return rulesetRefusal
 }
 
 // protectedBranchTargetRefusal answers the requirements that govern what a

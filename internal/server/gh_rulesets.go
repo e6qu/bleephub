@@ -3,22 +3,23 @@ package bleephub
 import (
 	"net/http"
 	"strconv"
+	"strings"
 	"time"
 )
 
 func (s *Server) registerGHRulesetRoutes() {
-	s.route("GET /api/v3/repos/{owner}/{repo}/rulesets", s.handleListRulesets)
-	s.route("GET /api/v3/repos/{owner}/{repo}/rulesets/rule-suites", s.handleListRepoRuleSuites)
-	s.route("POST /api/v3/repos/{owner}/{repo}/rulesets", s.handleCreateRuleset)
-	s.route("GET /api/v3/repos/{owner}/{repo}/rulesets/{ruleset_id}", s.handleGetRuleset)
-	s.route("PUT /api/v3/repos/{owner}/{repo}/rulesets/{ruleset_id}", s.handleUpdateRuleset)
-	s.route("DELETE /api/v3/repos/{owner}/{repo}/rulesets/{ruleset_id}", s.handleDeleteRuleset)
-	s.route("GET /api/v3/repos/{owner}/{repo}/rules/branches/{branch}", s.handleListBranchRules)
+	s.route("GET /api/v3/repos/{owner}/{repo}/rulesets", s.requirePerm(scopeAdministration, permRead, s.handleListRulesets))
+	s.route("GET /api/v3/repos/{owner}/{repo}/rulesets/rule-suites", s.requirePerm(scopeAdministration, permRead, s.handleListRepoRuleSuites))
+	s.route("POST /api/v3/repos/{owner}/{repo}/rulesets", s.requirePerm(scopeAdministration, permWrite, s.handleCreateRuleset))
+	s.route("GET /api/v3/repos/{owner}/{repo}/rulesets/{ruleset_id}", s.requirePerm(scopeAdministration, permRead, s.handleGetRuleset))
+	s.route("PUT /api/v3/repos/{owner}/{repo}/rulesets/{ruleset_id}", s.requirePerm(scopeAdministration, permWrite, s.handleUpdateRuleset))
+	s.route("DELETE /api/v3/repos/{owner}/{repo}/rulesets/{ruleset_id}", s.requirePerm(scopeAdministration, permWrite, s.handleDeleteRuleset))
+	s.route("GET /api/v3/repos/{owner}/{repo}/rules/branches/{branch}", s.requirePerm(scopeMetadata, permRead, s.handleListBranchRules))
 	// /rulesets/{ruleset_id}/history and /rulesets/rule-suites/{rule_suite_id}
 	// both occupy two segments after /rulesets and cannot both be registered
 	// directly with Go 1.22's mux; dispatch on the literal segments.
-	s.route("GET /api/v3/repos/{owner}/{repo}/rulesets/{p1}/{p2}", s.handleRepoRulesetTwoSegDispatch)
-	s.route("GET /api/v3/repos/{owner}/{repo}/rulesets/{ruleset_id}/history/{version_id}", s.handleGetRulesetVersion)
+	s.route("GET /api/v3/repos/{owner}/{repo}/rulesets/{p1}/{p2}", s.requirePerm(scopeAdministration, permRead, s.handleRepoRulesetTwoSegDispatch))
+	s.route("GET /api/v3/repos/{owner}/{repo}/rulesets/{ruleset_id}/history/{version_id}", s.requirePerm(scopeAdministration, permRead, s.handleGetRulesetVersion))
 
 	s.registerGHOrgRulesetRoutes()
 }
@@ -37,7 +38,16 @@ func (s *Server) handleListRepoRuleSuites(w http.ResponseWriter, r *http.Request
 		writeGHError(w, http.StatusNotFound, "Not Found")
 		return
 	}
-	writeJSON(w, http.StatusOK, []map[string]interface{}{})
+	suites, ok := filterRulesetSuites(w, r, s.store.ListRepoRulesetSuites(repo.ID), false, s.currentTime())
+	if !ok {
+		return
+	}
+	suites = paginateAndLink(w, r, suites)
+	out := make([]map[string]interface{}, len(suites))
+	for i := range suites {
+		out[i] = rulesetSuiteToJSON(&suites[i], false)
+	}
+	writeJSON(w, http.StatusOK, out)
 }
 
 func (s *Server) handleRepoRulesetTwoSegDispatch(w http.ResponseWriter, r *http.Request) {
@@ -56,9 +66,6 @@ func (s *Server) handleRepoRulesetTwoSegDispatch(w http.ResponseWriter, r *http.
 }
 
 // handleGetRepoRuleSuite serves GET /repos/{owner}/{repo}/rulesets/rule-suites/{rule_suite_id}.
-// bleephub does not evaluate rulesets on push, so no rule suites are ever
-// recorded and every lookup is a real 404 — the same truthful empty state the
-// organization-level rule-suite surface serves.
 func (s *Server) handleGetRepoRuleSuite(w http.ResponseWriter, r *http.Request) {
 	user := ghUserFromContext(r.Context())
 	if user == nil {
@@ -83,7 +90,7 @@ func (s *Server) handleGetRepoRuleSuite(w http.ResponseWriter, r *http.Request) 
 		writeGHError(w, http.StatusNotFound, "Not Found")
 		return
 	}
-	writeJSON(w, http.StatusOK, rulesetSuiteToJSON(suite))
+	writeJSON(w, http.StatusOK, rulesetSuiteToJSON(suite, true))
 }
 
 func (s *Server) registerGHOrgRulesetRoutes() {
@@ -171,7 +178,24 @@ func (s *Server) handleListRulesets(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	rulesets := s.store.ListRulesetsForRepo(repo.ID)
+	includeParents := true
+	if raw, present := r.URL.Query()["includes_parents"]; present {
+		if len(raw) != 1 || (raw[0] != "true" && raw[0] != "false") {
+			writeGHValidationError(w, "Ruleset", "includes_parents", "invalid")
+			return
+		}
+		includeParents = raw[0] == "true"
+	}
+	targets, ok := rulesetTargetFilter(w, r)
+	if !ok {
+		return
+	}
+	rulesets := filterRulesetsByTarget(s.store.ListRulesetsForRepository(repo, includeParents), targets)
+	if field := invalidRESTPaginationQuery(r); field != "" {
+		writeGHValidationError(w, "Pagination", field, "invalid")
+		return
+	}
+	rulesets = paginateAndLink(w, r, rulesets)
 	out := make([]map[string]interface{}, len(rulesets))
 	for i, rs := range rulesets {
 		out[i] = rulesetToJSON(rs, false)
@@ -418,12 +442,52 @@ func (s *Server) handleListOrgRulesets(w http.ResponseWriter, r *http.Request) {
 		writeGHError(w, http.StatusNotFound, "Not Found")
 		return
 	}
-	rulesets := s.store.ListOrgRulesets(org.ID)
+	targets, ok := rulesetTargetFilter(w, r)
+	if !ok {
+		return
+	}
+	if field := invalidRESTPaginationQuery(r); field != "" {
+		writeGHValidationError(w, "Pagination", field, "invalid")
+		return
+	}
+	rulesets := filterRulesetsByTarget(s.store.ListOrgRulesets(org.ID), targets)
+	rulesets = paginateAndLink(w, r, rulesets)
 	out := make([]map[string]interface{}, len(rulesets))
 	for i, rs := range rulesets {
 		out[i] = rulesetToJSON(rs, false)
 	}
 	writeJSON(w, http.StatusOK, out)
+}
+
+func rulesetTargetFilter(w http.ResponseWriter, r *http.Request) (map[string]bool, bool) {
+	raw := r.URL.Query().Get("targets")
+	if raw == "" {
+		return nil, true
+	}
+	targets := map[string]bool{}
+	for _, target := range strings.Split(raw, ",") {
+		switch target {
+		case "branch", "tag", "push", "repository":
+			targets[target] = true
+		default:
+			writeGHValidationError(w, "Ruleset", "targets", "invalid")
+			return nil, false
+		}
+	}
+	return targets, true
+}
+
+func filterRulesetsByTarget(rulesets []*Ruleset, targets map[string]bool) []*Ruleset {
+	if len(targets) == 0 {
+		return rulesets
+	}
+	filtered := make([]*Ruleset, 0, len(rulesets))
+	for _, ruleset := range rulesets {
+		if targets[ruleset.Target] {
+			filtered = append(filtered, ruleset)
+		}
+	}
+	return filtered
 }
 
 func (s *Server) handleCreateOrgRuleset(w http.ResponseWriter, r *http.Request) {
@@ -527,10 +591,14 @@ func (s *Server) handleListOrgRuleSuites(w http.ResponseWriter, r *http.Request)
 		writeGHError(w, http.StatusNotFound, "Not Found")
 		return
 	}
-	suites := s.store.ListOrgRulesetSuites(org.ID)
+	suites, ok := filterRulesetSuites(w, r, s.store.ListOrgRulesetSuites(org.ID), true, s.currentTime())
+	if !ok {
+		return
+	}
+	suites = paginateAndLink(w, r, suites)
 	out := make([]map[string]interface{}, len(suites))
-	for i, suite := range suites {
-		out[i] = rulesetSuiteToJSON(&suite)
+	for i := range suites {
+		out[i] = rulesetSuiteToJSON(&suites[i], false)
 	}
 	writeJSON(w, http.StatusOK, out)
 }
@@ -551,7 +619,7 @@ func (s *Server) handleGetOrgRuleSuite(w http.ResponseWriter, r *http.Request) {
 		writeGHError(w, http.StatusNotFound, "Not Found")
 		return
 	}
-	writeJSON(w, http.StatusOK, rulesetSuiteToJSON(suite))
+	writeJSON(w, http.StatusOK, rulesetSuiteToJSON(suite, true))
 }
 
 func (s *Server) handleListOrgRulesetHistory(w http.ResponseWriter, r *http.Request) {
@@ -610,13 +678,113 @@ func (s *Server) lookupOrgRuleset(w http.ResponseWriter, r *http.Request, org *O
 	return rs
 }
 
-func rulesetSuiteToJSON(suite *RulesetSuite) map[string]interface{} {
-	return map[string]interface{}{
-		"id":         suite.ID,
-		"node_id":    suite.NodeID,
-		"ruleset_id": suite.RulesetID,
-		"status":     suite.Status,
-		"created_at": suite.CreatedAt.UTC().Format(time.RFC3339),
-		"updated_at": suite.UpdatedAt.UTC().Format(time.RFC3339),
+func rulesetSuiteToJSON(suite *RulesetSuite, detailed bool) map[string]interface{} {
+	out := map[string]interface{}{
+		"id":                suite.ID,
+		"actor_id":          suite.ActorID,
+		"actor_name":        suite.ActorName,
+		"before_sha":        suite.BeforeSHA,
+		"after_sha":         suite.AfterSHA,
+		"ref":               suite.Ref,
+		"repository_id":     suite.RepositoryID,
+		"repository_name":   suite.RepositoryName,
+		"pushed_at":         suite.PushedAt.UTC().Format(time.RFC3339),
+		"result":            suite.Result,
+		"evaluation_result": suite.EvaluationResult,
 	}
+	if detailed {
+		out["rule_evaluations"] = suite.RuleEvaluations
+	}
+	return out
+}
+
+func filterRulesetSuites(w http.ResponseWriter, r *http.Request, suites []RulesetSuite, allowRepositoryName bool, now time.Time) ([]RulesetSuite, bool) {
+	if field := invalidRESTPaginationQuery(r); field != "" {
+		writeGHValidationError(w, "Pagination", field, "invalid")
+		return nil, false
+	}
+	q := r.URL.Query()
+	result := q.Get("rule_suite_result")
+	if result != "" && result != "all" && result != "pass" && result != "fail" && result != "bypass" {
+		writeGHValidationError(w, "RuleSuite", "rule_suite_result", "invalid")
+		return nil, false
+	}
+	evaluateStatus := q.Get("evaluate_status")
+	if evaluateStatus != "" && evaluateStatus != "all" && evaluateStatus != "active" && evaluateStatus != "evaluate" {
+		writeGHValidationError(w, "RuleSuite", "evaluate_status", "invalid")
+		return nil, false
+	}
+	timePeriod := q.Get("time_period")
+	if timePeriod == "" {
+		timePeriod = "day"
+	}
+	var duration time.Duration
+	switch timePeriod {
+	case "hour":
+		duration = time.Hour
+	case "day":
+		duration = 24 * time.Hour
+	case "week":
+		duration = 7 * 24 * time.Hour
+	case "month":
+		duration = 30 * 24 * time.Hour
+	default:
+		writeGHValidationError(w, "RuleSuite", "time_period", "invalid")
+		return nil, false
+	}
+	refFilter := q.Get("ref")
+	if strings.ContainsAny(refFilter, "*?[") {
+		writeGHValidationError(w, "RuleSuite", "ref", "invalid")
+		return nil, false
+	}
+	cutoff := now.UTC().Add(-duration)
+	filtered := make([]RulesetSuite, 0, len(suites))
+	for _, suite := range suites {
+		if suite.PushedAt.Before(cutoff) {
+			continue
+		}
+		if result != "" && result != "all" && suite.Result != result {
+			continue
+		}
+		if actor := q.Get("actor_name"); actor != "" && (suite.ActorName == nil || !strings.EqualFold(*suite.ActorName, actor)) {
+			continue
+		}
+		if allowRepositoryName {
+			if name := q.Get("repository_name"); name != "" && !strings.EqualFold(suite.RepositoryName, name) {
+				continue
+			}
+		}
+		if refFilter != "" && !rulesetSuiteRefMatches(suite.Ref, refFilter) {
+			continue
+		}
+		if evaluateStatus != "" && evaluateStatus != "all" && !rulesetSuiteHasEnforcement(&suite, evaluateStatus) {
+			continue
+		}
+		filtered = append(filtered, suite)
+	}
+	return filtered, true
+}
+
+func rulesetSuiteHasEnforcement(suite *RulesetSuite, enforcement string) bool {
+	for _, evaluation := range suite.RuleEvaluations {
+		if evaluation.Enforcement == enforcement {
+			return true
+		}
+	}
+	// Persisted suites created before per-rule evaluations were stored still
+	// expose enough aggregate information to answer the filter faithfully.
+	if len(suite.RuleEvaluations) == 0 {
+		if enforcement == "evaluate" {
+			return suite.EvaluationResult != nil
+		}
+		return enforcement == "active" && suite.EvaluationResult == nil
+	}
+	return false
+}
+
+func rulesetSuiteRefMatches(ref, filter string) bool {
+	if strings.HasPrefix(filter, "refs/") {
+		return ref == filter
+	}
+	return strings.TrimPrefix(strings.TrimPrefix(ref, "refs/heads/"), "refs/tags/") == filter
 }

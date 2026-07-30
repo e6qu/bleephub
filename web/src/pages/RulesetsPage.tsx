@@ -8,8 +8,15 @@ import {
   createOrgRuleset,
   updateOrgRuleset,
   deleteOrgRuleset,
+  fetchOrgRulesetSuites,
+  fetchOrgRulesetSuite,
 } from "../api.js";
-import type { GithubRuleset, GithubRulesetTarget, GithubRulesetEnforcement } from "../types.js";
+import type {
+  GithubRuleset,
+  GithubRulesetTarget,
+  GithubRulesetEnforcement,
+  GithubRulesetSuite,
+} from "../types.js";
 import { confirmAction } from "../components/confirmAction.js";
 import { OrgHeader } from "../components/Shell.js";
 import {
@@ -23,20 +30,14 @@ import {
 } from "../components/ui.js";
 
 const col = createColumnHelper<GithubRuleset>();
+const suiteCol = createColumnHelper<GithubRulesetSuite>();
 
 const TARGETS: GithubRulesetTarget[] = ["branch", "tag"];
 const ENFORCEMENTS: GithubRulesetEnforcement[] = ["disabled", "active", "evaluate"];
 
 const RULE_TYPES = [
-  "branch_name_pattern",
-  "tag_name_pattern",
-  "commit_author_email_pattern",
-  "commit_message_pattern",
-  "committer_email_pattern",
   "required_linear_history",
   "required_signatures",
-  "required_deployments",
-  "required_status_checks",
   "pull_request",
   "non_fast_forward",
   "creation",
@@ -60,6 +61,7 @@ export function RulesetsPage() {
 
 function RulesetsContent({ org }: { org: string }) {
   const queryClient = useQueryClient();
+  const [view, setView] = useState<"rulesets" | "insights">("rulesets");
   const [selected, setSelected] = useState<GithubRuleset | null>(null);
   const [editing, setEditing] = useState<GithubRuleset | null>(null);
   const [showCreate, setShowCreate] = useState(false);
@@ -73,7 +75,7 @@ function RulesetsContent({ org }: { org: string }) {
   } = useQuery({
     queryKey: ["org-rulesets", org],
     queryFn: () => fetchOrgRulesets(org),
-    enabled: !!org,
+    enabled: !!org && view === "rulesets",
   });
 
   const createMutation = useMutation({
@@ -106,8 +108,8 @@ function RulesetsContent({ org }: { org: string }) {
     onError: (err: Error) => setMutationError(err.message),
   });
 
-  if (isLoading) return <Spinner label={`loading ${org} rulesets`} />;
-  if (isError) return <InlineError title="Failed to load rulesets" detail={String(error)} />;
+  if (view === "rulesets" && isLoading) return <Spinner label={`loading ${org} rulesets`} />;
+  if (view === "rulesets" && isError) return <InlineError title="Failed to load rulesets" detail={String(error)} />;
 
   const columns = [
     col.accessor("id", {
@@ -183,27 +185,48 @@ function RulesetsContent({ org }: { org: string }) {
           </Link>
         }
         actions={
-          <Button variant="primary" size="sm" onClick={() => setShowCreate(true)}>
-            New ruleset
-          </Button>
+          <div className="flex flex-wrap items-center gap-2">
+            <Button
+              variant={view === "rulesets" ? "primary" : "ghost"}
+              size="sm"
+              onClick={() => setView("rulesets")}
+            >
+              Rulesets
+            </Button>
+            <Button
+              variant={view === "insights" ? "primary" : "ghost"}
+              size="sm"
+              onClick={() => setView("insights")}
+            >
+              Rule insights
+            </Button>
+            {view === "rulesets" && (
+              <Button variant="primary" size="sm" onClick={() => setShowCreate(true)}>
+                New ruleset
+              </Button>
+            )}
+          </div>
         }
       />
 
       {mutationError && <ErrorBanner>{mutationError}</ErrorBanner>}
 
-      <Box>
-        <DataTable
-          data={rulesets}
-          columns={columns}
-          emptyMessage="No rulesets configured for this organization."
-        />
-      </Box>
+      {view === "rulesets" ? (
+        <Box>
+          <DataTable
+            data={rulesets}
+            columns={columns}
+            emptyMessage="No rulesets configured for this organization."
+          />
+        </Box>
+      ) : (
+        <RulesetInsights org={org} />
+      )}
 
       {selected && <RulesetDetailDialog ruleset={selected} onClose={() => setSelected(null)} />}
 
       {(showCreate || editing) && (
         <RulesetFormModal
-          org={org}
           ruleset={editing}
           onClose={() => {
             setShowCreate(false);
@@ -222,6 +245,158 @@ function RulesetsContent({ org }: { org: string }) {
       )}
     </div>
   );
+}
+
+function RulesetInsights({ org }: { org: string }) {
+  const [repositoryName, setRepositoryName] = useState("");
+  const [ref, setRef] = useState("");
+  const [result, setResult] = useState<"all" | "pass" | "fail" | "bypass">("all");
+  const [evaluateStatus, setEvaluateStatus] = useState<"all" | "active" | "evaluate">("all");
+  const [timePeriod, setTimePeriod] = useState<"hour" | "day" | "week" | "month">("day");
+  const [selectedID, setSelectedID] = useState<number | null>(null);
+
+  const filters = { repositoryName, ref, result, evaluateStatus, timePeriod };
+  const suitesQuery = useQuery({
+    queryKey: ["org-ruleset-suites", org, filters],
+    queryFn: () => fetchOrgRulesetSuites(org, filters),
+    placeholderData: (previous) => previous,
+  });
+  const detailQuery = useQuery({
+    queryKey: ["org-ruleset-suite", org, selectedID],
+    queryFn: () => fetchOrgRulesetSuite(org, selectedID!),
+    enabled: selectedID !== null,
+  });
+
+  if (suitesQuery.isLoading) return <Spinner label={`loading ${org} rule insights`} />;
+  if (suitesQuery.isError) {
+    return <InlineError title="Failed to load rule insights" detail={String(suitesQuery.error)} />;
+  }
+
+  const columns = [
+    suiteCol.accessor("id", { header: "ID" }),
+    suiteCol.accessor("repository_name", { header: "Repository" }),
+    suiteCol.accessor("ref", {
+      header: "Ref",
+      cell: (info) => info.getValue().replace(/^refs\/(heads|tags)\//, ""),
+    }),
+    suiteCol.accessor("actor_name", {
+      header: "Actor",
+      cell: (info) => info.getValue() ?? "GitHub App",
+    }),
+    suiteCol.accessor("result", {
+      header: "Enforced",
+      cell: (info) => <RuleResult value={info.getValue()} />,
+    }),
+    suiteCol.accessor("evaluation_result", {
+      header: "Evaluate",
+      cell: (info) => info.getValue() ? <RuleResult value={info.getValue()!} /> : "—",
+    }),
+    suiteCol.accessor("pushed_at", {
+      header: "Pushed",
+      cell: (info) => new Date(info.getValue()).toLocaleString(),
+    }),
+    suiteCol.display({
+      id: "details",
+      header: "Details",
+      cell: (info) => (
+        <Button size="sm" variant="ghost" onClick={() => setSelectedID(info.row.original.id)}>
+          View
+        </Button>
+      ),
+    }),
+  ];
+
+  return (
+    <>
+      <Box>
+        <div className="flex flex-wrap gap-3 p-3" aria-label="Rule insight filters">
+          <label className="flex flex-col gap-1">
+            <span className="text-xs">Repository</span>
+            <input
+              aria-label="Repository filter"
+              value={repositoryName}
+              onChange={(event) => setRepositoryName(event.target.value)}
+              placeholder="repository name"
+            />
+          </label>
+          <label className="flex flex-col gap-1">
+            <span className="text-xs">Ref</span>
+            <input
+              aria-label="Ref filter"
+              value={ref}
+              onChange={(event) => setRef(event.target.value)}
+              placeholder="main"
+            />
+          </label>
+          <label className="flex flex-col gap-1">
+            <span className="text-xs">Result</span>
+            <select aria-label="Result filter" value={result} onChange={(event) => setResult(event.target.value as typeof result)}>
+              {["all", "pass", "fail", "bypass"].map((value) => <option key={value} value={value}>{value}</option>)}
+            </select>
+          </label>
+          <label className="flex flex-col gap-1">
+            <span className="text-xs">Mode</span>
+            <select
+              aria-label="Evaluate status filter"
+              value={evaluateStatus}
+              onChange={(event) => setEvaluateStatus(event.target.value as typeof evaluateStatus)}
+            >
+              {["all", "active", "evaluate"].map((value) => <option key={value} value={value}>{value}</option>)}
+            </select>
+          </label>
+          <label className="flex flex-col gap-1">
+            <span className="text-xs">Period</span>
+            <select aria-label="Time period filter" value={timePeriod} onChange={(event) => setTimePeriod(event.target.value as typeof timePeriod)}>
+              {["hour", "day", "week", "month"].map((value) => <option key={value} value={value}>{value}</option>)}
+            </select>
+          </label>
+        </div>
+        <DataTable
+          data={suitesQuery.data ?? []}
+          columns={columns}
+          emptyMessage="No rule evaluations match these filters."
+        />
+      </Box>
+      {selectedID !== null && (
+        <Modal title={`Rule suite #${selectedID}`} onClose={() => setSelectedID(null)}>
+          {detailQuery.isLoading && <Spinner label="loading rule suite details" />}
+          {detailQuery.isError && <InlineError title="Failed to load rule suite" detail={String(detailQuery.error)} />}
+          {detailQuery.data && (
+            <div className="flex flex-col gap-3">
+              <div>
+                <strong>{detailQuery.data.repository_name}</strong>{" "}
+                {detailQuery.data.ref.replace(/^refs\/(heads|tags)\//, "")}
+              </div>
+              <div>
+                Enforced result: <RuleResult value={detailQuery.data.result} />
+                {" · "}Evaluate result:{" "}
+                {detailQuery.data.evaluation_result ? <RuleResult value={detailQuery.data.evaluation_result} /> : "not run"}
+              </div>
+              <ul className="m-0 list-none p-0">
+                {(detailQuery.data.rule_evaluations ?? []).map((evaluation, index) => (
+                  <li key={`${evaluation.rule_source.id ?? "source"}-${evaluation.rule_type}-${index}`} className="py-2" style={{ borderBottom: "1px solid var(--color-border)" }}>
+                    <RuleResult value={evaluation.result} />{" "}
+                    <strong>{evaluation.rule_type}</strong>
+                    {" · "}{evaluation.rule_source.name ?? evaluation.rule_source.type}
+                    {" · "}{evaluation.enforcement}
+                    {evaluation.details && <div style={{ color: "var(--color-fg-muted)" }}>{evaluation.details}</div>}
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+          <DialogActions>
+            <Button onClick={() => setSelectedID(null)} variant="ghost">Close</Button>
+          </DialogActions>
+        </Modal>
+      )}
+    </>
+  );
+}
+
+function RuleResult({ value }: { value: "pass" | "fail" | "bypass" }) {
+  const color = value === "pass" ? "var(--color-status-ok)" : value === "fail" ? "var(--color-status-error)" : "var(--color-status-warn)";
+  return <span style={{ color, fontWeight: 600 }}>{value}</span>;
 }
 
 function RulesetDetailDialog({ ruleset, onClose }: { ruleset: GithubRuleset; onClose: () => void }) {
@@ -273,14 +448,12 @@ function RulesetDetailDialog({ ruleset, onClose }: { ruleset: GithubRuleset; onC
 }
 
 function RulesetFormModal({
-  org,
   ruleset,
   onClose,
   onSubmit,
   pending,
   error,
 }: {
-  org: string;
   ruleset: GithubRuleset | null;
   onClose: () => void;
   onSubmit: (payload: Parameters<typeof createOrgRuleset>[1]) => void;

@@ -439,6 +439,35 @@ func contentSHAPreconditionMet(w http.ResponseWriter, stor gitStorage.Storer, br
 	return false
 }
 
+type contentRefWriteRefusal struct {
+	message string
+}
+
+func (e *contentRefWriteRefusal) Error() string {
+	return e.message
+}
+
+func (s *Server) contentRefWriteGuard(r *http.Request, repo *Repo, stor gitStorage.Storer, ref plumbing.ReferenceName, kind refWriteKind) func(plumbing.Hash) error {
+	return func(target plumbing.Hash) error {
+		if refusal := s.protectedRefWriteRefusal(r.Context(), repo, stor, ref, kind, target); refusal != "" {
+			return &contentRefWriteRefusal{message: refusal}
+		}
+		return nil
+	}
+}
+
+func writeContentCommitError(w http.ResponseWriter, err error) {
+	var refusal *contentRefWriteRefusal
+	switch {
+	case errors.As(err, &refusal):
+		writeGHError(w, http.StatusForbidden, refusal.message)
+	case errors.Is(err, gitStorage.ErrReferenceHasChanged):
+		writeGHError(w, http.StatusConflict, "The branch changed while the file was being updated")
+	default:
+		writeGHError(w, http.StatusUnprocessableEntity, err.Error())
+	}
+}
+
 func (s *Server) handlePutContents(w http.ResponseWriter, r *http.Request) {
 	owner := r.PathValue("owner")
 	repoName := r.PathValue("repo")
@@ -539,20 +568,22 @@ func (s *Server) handlePutContents(w http.ResponseWriter, r *http.Request) {
 			writeSecretScanningPushProtectionBlocked(w, ph)
 			return
 		}
-		commitHash, err = initEmptyRepoWithFiles(stor, branch, req.Message, files, sig)
+		commitHash, err = commitRootBranchWithFiles(
+			stor, branch, req.Message, files, sig, true,
+			s.contentRefWriteGuard(r, repo, stor, branchRef, refCreation),
+		)
 	} else {
 		if ph := s.createSecretScanningPushProtectionPlaceholder(repo, secretScanningContentMatches(string(decoded))); ph != nil {
 			writeSecretScanningPushProtectionBlocked(w, ph)
 			return
 		}
-		commitHash, err = createFileCommitExpected(stor, branch, path, string(decoded), req.Message, sig, plumbing.NewHash(beforeHash))
+		commitHash, err = createFileCommitExpectedGuarded(
+			stor, branch, path, string(decoded), req.Message, sig, plumbing.NewHash(beforeHash),
+			s.contentRefWriteGuard(r, repo, stor, branchRef, refFastForward),
+		)
 	}
 	if err != nil {
-		if errors.Is(err, gitStorage.ErrReferenceHasChanged) {
-			writeGHError(w, http.StatusConflict, "The branch changed while the file was being updated")
-			return
-		}
-		writeGHError(w, http.StatusUnprocessableEntity, err.Error())
+		writeContentCommitError(w, err)
 		return
 	}
 
@@ -698,13 +729,12 @@ func (s *Server) handleDeleteContents(w http.ResponseWriter, r *http.Request) {
 		sig = repoSignature(req.Author.Name, req.Author.Email)
 	}
 
-	commitHash, err := deleteFileCommit(stor, branch, path, req.Message, sig, ref.Hash())
+	commitHash, err := deleteFileCommit(
+		stor, branch, path, req.Message, sig, ref.Hash(),
+		s.contentRefWriteGuard(r, repo, stor, branchRef, refFastForward),
+	)
 	if err != nil {
-		if errors.Is(err, gitStorage.ErrReferenceHasChanged) {
-			writeGHError(w, http.StatusConflict, "The branch changed while the file was being deleted")
-			return
-		}
-		writeGHError(w, http.StatusUnprocessableEntity, err.Error())
+		writeContentCommitError(w, err)
 		return
 	}
 

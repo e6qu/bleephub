@@ -1303,7 +1303,7 @@ export interface GithubVulnerabilityReportPayload {
 
 // ─── GitHub Repository Rulesets shapes ──────────────────────────────────
 
-export type GithubRulesetTarget = "branch" | "tag";
+export type GithubRulesetTarget = "branch" | "tag" | "push" | "repository";
 export type GithubRulesetEnforcement = "disabled" | "active" | "evaluate";
 
 export interface GithubRuleset {
@@ -1338,6 +1338,35 @@ export interface GithubRulesetCreatePayload {
     actor_type: string;
     bypass_mode: string;
   }>;
+}
+
+export type GithubRuleSuiteResult = "pass" | "fail" | "bypass";
+
+export interface GithubRuleEvaluation {
+  rule_source: {
+    type: string;
+    id: number | null;
+    name: string | null;
+  };
+  enforcement: "active" | "evaluate" | "deleted ruleset";
+  result: "pass" | "fail";
+  rule_type: string;
+  details: string | null;
+}
+
+export interface GithubRulesetSuite {
+  id: number;
+  actor_id: number | null;
+  actor_name: string | null;
+  before_sha: string;
+  after_sha: string;
+  ref: string;
+  repository_id: number;
+  repository_name: string;
+  pushed_at: string;
+  result: GithubRuleSuiteResult;
+  evaluation_result: GithubRuleSuiteResult | null;
+  rule_evaluations?: GithubRuleEvaluation[];
 }
 
 // ─── Repo insights ───────────────────────────────────────────────────────

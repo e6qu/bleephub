@@ -393,6 +393,7 @@ type Store struct {
 	ProjectsV2                   *ProjectV2Store               // GitHub Projects v2
 	NotificationsState           map[int]*UserNotificationsState
 	Rulesets                     map[int]*Ruleset
+	RulesetSuites                map[int]*RulesetSuite
 	ProjectClassic               map[int]*ProjectClassic                // id → project
 	ProjectColumns               map[int]*ProjectColumn                 // id → column
 	ProjectCards                 map[int]*ProjectCard                   // id → card
@@ -467,6 +468,7 @@ type Store struct {
 	NextCheckRunID               int64
 	NextCheckSuiteID             int64
 	NextRulesetID                int
+	NextRulesetSuiteID           int
 	NextProjectClassicID         int
 	NextProjectColumnID          int
 	NextProjectCardID            int
@@ -795,6 +797,7 @@ func NewStore() *Store {
 		ProjectsV2:                   newProjectV2Store(nil),
 		NotificationsState:           map[int]*UserNotificationsState{},
 		Rulesets:                     map[int]*Ruleset{},
+		RulesetSuites:                map[int]*RulesetSuite{},
 		ProjectClassic:               map[int]*ProjectClassic{},
 		ProjectColumns:               map[int]*ProjectColumn{},
 		ProjectCards:                 map[int]*ProjectCard{},
@@ -867,6 +870,7 @@ func NewStore() *Store {
 		NextCheckRunID:               1,
 		NextCheckSuiteID:             1,
 		NextRulesetID:                1,
+		NextRulesetSuiteID:           1,
 		NextProjectClassicID:         1,
 		NextProjectColumnID:          1,
 		NextProjectCardID:            1,
@@ -2155,6 +2159,17 @@ func (st *Store) loadFromPersistence() error {
 			st.Rulesets[rs.ID] = &rs
 			if rs.ID >= st.NextRulesetID {
 				st.NextRulesetID = rs.ID + 1
+			}
+			return nil
+		}},
+		{"ruleset_suites", func(key string, raw []byte) error {
+			var suite RulesetSuite
+			if err := loadJSON(raw, &suite); err != nil {
+				return err
+			}
+			st.RulesetSuites[suite.ID] = &suite
+			if suite.ID >= st.NextRulesetSuiteID {
+				st.NextRulesetSuiteID = suite.ID + 1
 			}
 			return nil
 		}},
@@ -3567,6 +3582,7 @@ func (st *Store) idCounterBuckets() map[string]*int {
 		"pull_requests":                    &st.NextPR,
 		"repo_activity":                    &st.NextRepoActivity,
 		"repo_rulesets":                    &st.NextRulesetID,
+		"ruleset_suites":                   &st.NextRulesetSuiteID,
 		"repos":                            &st.NextRepo,
 		"runner_groups":                    &st.NextRunnerGroupID,
 		"secret_scanning_alerts":           &st.NextSecretScanningAlertID,

@@ -90,6 +90,7 @@ import type {
   GithubVulnerabilityReportPayload,
   GithubRuleset,
   GithubRulesetCreatePayload,
+  GithubRulesetSuite,
   GithubContributor,
   GithubTrafficViews,
   GithubTrafficClones,
@@ -2342,16 +2343,43 @@ export const reportVulnerability = (
 // ─── GitHub Organization Rulesets Representational State Transfer ───────
 
 export const fetchOrgRulesets = (org: string) =>
-  ghFetch<GithubRuleset[]>(`/api/v3/orgs/${org}/rulesets`);
+  ghFetch<GithubRuleset[]>(`/api/v3/orgs/${encodeURIComponent(org)}/rulesets`);
 
 export const createOrgRuleset = (org: string, payload: GithubRulesetCreatePayload) =>
-  ghPostJSON<GithubRuleset>(`/api/v3/orgs/${org}/rulesets`, payload);
+  ghPostJSON<GithubRuleset>(`/api/v3/orgs/${encodeURIComponent(org)}/rulesets`, payload);
 
 export const updateOrgRuleset = (org: string, rulesetId: number, payload: GithubRulesetCreatePayload) =>
-  ghPutJSON<GithubRuleset>(`/api/v3/orgs/${org}/rulesets/${rulesetId}`, payload);
+  ghPutJSON<GithubRuleset>(`/api/v3/orgs/${encodeURIComponent(org)}/rulesets/${rulesetId}`, payload);
 
 export const deleteOrgRuleset = (org: string, rulesetId: number) =>
-  ghDeleteJSON<void>(`/api/v3/orgs/${org}/rulesets/${rulesetId}`, {});
+  ghDeleteJSON<void>(`/api/v3/orgs/${encodeURIComponent(org)}/rulesets/${rulesetId}`, {});
+
+export interface GithubRulesetSuiteFilters {
+  repositoryName?: string;
+  ref?: string;
+  actorName?: string;
+  result?: "all" | "pass" | "fail" | "bypass";
+  evaluateStatus?: "all" | "active" | "evaluate";
+  timePeriod?: "hour" | "day" | "week" | "month";
+}
+
+export const fetchOrgRulesetSuites = (org: string, filters: GithubRulesetSuiteFilters = {}) => {
+  const query = new URLSearchParams({ per_page: "100" });
+  if (filters.repositoryName) query.set("repository_name", filters.repositoryName);
+  if (filters.ref) query.set("ref", filters.ref);
+  if (filters.actorName) query.set("actor_name", filters.actorName);
+  if (filters.result && filters.result !== "all") query.set("rule_suite_result", filters.result);
+  if (filters.evaluateStatus && filters.evaluateStatus !== "all") query.set("evaluate_status", filters.evaluateStatus);
+  if (filters.timePeriod) query.set("time_period", filters.timePeriod);
+  return ghFetch<GithubRulesetSuite[]>(
+    `/api/v3/orgs/${encodeURIComponent(org)}/rulesets/rule-suites?${query}`,
+  );
+};
+
+export const fetchOrgRulesetSuite = (org: string, suiteId: number) =>
+  ghFetch<GithubRulesetSuite>(
+    `/api/v3/orgs/${encodeURIComponent(org)}/rulesets/rule-suites/${suiteId}`,
+  );
 
 // ─── GitHub Migrations Representational State Transfer ──────────────────
 
