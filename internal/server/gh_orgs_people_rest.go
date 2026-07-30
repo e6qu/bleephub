@@ -17,6 +17,7 @@ import (
 
 func (s *Server) registerGHOrgsPeopleRoutes() {
 	s.registerGHOrganizationSCIMRoutes()
+	s.registerGHExternalIdentityRoutes()
 
 	// Organization invitations.
 	s.route("GET /api/v3/orgs/{org}/invitations", s.requirePerm(scopeMembers, permRead, s.handleListOrgInvitations))

@@ -46,10 +46,19 @@ func TestOrganizationGovernanceStatePersistenceReload(t *testing.T) {
 			UserID: admin.ID, CreatedAt: now, UpdatedAt: now,
 		},
 	}
+	st1.OrgExternalGroups[org.Login] = map[string]*OrgExternalIdentityGroup{
+		"persistent-group": {
+			ID: "persistent-group", NumericID: 17, Name: "Persistent Group",
+			Description: "survives reload", MemberIDs: []int{admin.ID}, UpdatedAt: now,
+		},
+	}
+	st1.TeamExternalGroupIDs[71] = []string{"persistent-group"}
 	st1.persist.MustPut("org_announcements", org.Login, st1.OrgAnnouncements[org.Login])
 	st1.persist.MustPut("org_custom_repo_roles", org.Login, st1.OrgCustomRepoRoles[org.Login])
 	st1.persist.MustPut("org_custom_roles", org.Login, st1.OrgCustomRoles[org.Login])
 	st1.persist.MustPut("org_scim_users", org.Login, st1.OrgSCIMUsers[org.Login])
+	st1.persist.MustPut("org_external_groups", org.Login, st1.OrgExternalGroups[org.Login])
+	st1.persist.MustPut("team_external_group_ids", "71", st1.TeamExternalGroupIDs[71])
 	st1.mu.Unlock()
 	if err := p1.Close(); err != nil {
 		t.Fatalf("close persistence: %v", err)
@@ -75,6 +84,15 @@ func TestOrganizationGovernanceStatePersistenceReload(t *testing.T) {
 	}
 	if got := st2.OrgSCIMUsers[org.Login]["persistent-scim-user"]; got == nil || got.ExternalID != "directory-persistent" {
 		t.Fatalf("reloaded organization SCIM user = %#v", got)
+	}
+	if got := st2.OrgExternalGroups[org.Login]["persistent-group"]; got == nil || got.NumericID != 17 {
+		t.Fatalf("reloaded external identity group = %#v", got)
+	}
+	if got := st2.TeamExternalGroupIDs[71]; len(got) != 1 || got[0] != "persistent-group" {
+		t.Fatalf("reloaded team external group mapping = %#v", got)
+	}
+	if st2.NextOrgExternalGroupID <= 17 {
+		t.Fatalf("next external group id = %d, want > 17", st2.NextOrgExternalGroupID)
 	}
 	if st2.NextOrgCustomRoleID <= 1002 {
 		t.Fatalf("next custom role id = %d, want > 1002", st2.NextOrgCustomRoleID)

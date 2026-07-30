@@ -604,6 +604,9 @@ type Store struct {
 	OrgCustomRoles         map[string]map[int]*OrgCustomOrganizationRole
 	NextOrgCustomRoleID    int
 	OrgSCIMUsers           map[string]map[string]*EnterpriseSCIMUser // orgLogin → SCIM ID → identity
+	OrgExternalGroups      map[string]map[string]*OrgExternalIdentityGroup
+	TeamExternalGroupIDs   map[int][]string // team ID → external group IDs
+	NextOrgExternalGroupID int
 	// org billing budgets (gh_org_billing.go)
 	OrgBudgets map[string]map[string]*OrgBudget // org login → budget ID → budget
 	// API insights (gh_api_insights.go)
@@ -1008,6 +1011,9 @@ func NewStore() *Store {
 		OrgCustomRoles:         map[string]map[int]*OrgCustomOrganizationRole{},
 		NextOrgCustomRoleID:    1000,
 		OrgSCIMUsers:           map[string]map[string]*EnterpriseSCIMUser{},
+		OrgExternalGroups:      map[string]map[string]*OrgExternalIdentityGroup{},
+		TeamExternalGroupIDs:   map[int][]string{},
+		NextOrgExternalGroupID: 1,
 		// org billing budgets
 		OrgBudgets: map[string]map[string]*OrgBudget{},
 		// API insights
@@ -3254,6 +3260,37 @@ func (st *Store) loadFromPersistence() error {
 				return fmt.Errorf("decode org_scim_users row: %w", err)
 			}
 			st.OrgSCIMUsers[orgLogin] = users
+		}
+	}
+	if rows, err := st.persist.List("org_external_groups"); err != nil {
+		return fmt.Errorf("load org_external_groups: %w", err)
+	} else {
+		for orgLogin, raw := range rows {
+			groups := map[string]*OrgExternalIdentityGroup{}
+			if err := loadJSON(raw, &groups); err != nil {
+				return fmt.Errorf("decode org_external_groups row: %w", err)
+			}
+			st.OrgExternalGroups[orgLogin] = groups
+			for _, group := range groups {
+				if group.NumericID >= st.NextOrgExternalGroupID {
+					st.NextOrgExternalGroupID = group.NumericID + 1
+				}
+			}
+		}
+	}
+	if rows, err := st.persist.List("team_external_group_ids"); err != nil {
+		return fmt.Errorf("load team_external_group_ids: %w", err)
+	} else {
+		for teamIDRaw, raw := range rows {
+			teamID, err := strconv.Atoi(teamIDRaw)
+			if err != nil {
+				return fmt.Errorf("decode team_external_group_ids key %q: %w", teamIDRaw, err)
+			}
+			var groupIDs []string
+			if err := loadJSON(raw, &groupIDs); err != nil {
+				return fmt.Errorf("decode team_external_group_ids row: %w", err)
+			}
+			st.TeamExternalGroupIDs[teamID] = groupIDs
 		}
 	}
 	for bucket, dst := range map[string]map[string]map[int]json.RawMessage{

@@ -17805,7 +17805,6 @@
           "documented_operations": 1458,
           "missing_operations": [
             "DELETE /orgs/{}/credential-authorizations/{}",
-            "DELETE /orgs/{}/teams/{}/external-groups",
             "DELETE /repos/{}/{}/bypass-responses/secret-scanning/{}",
             "DELETE /repos/{}/{}/dismissal-requests/dependabot/{}",
             "DELETE /repos/{}/{}/lfs",
@@ -17816,12 +17815,7 @@
             "GET /orgs/{}/dismissal-requests/code-scanning",
             "GET /orgs/{}/dismissal-requests/dependabot",
             "GET /orgs/{}/dismissal-requests/secret-scanning",
-            "GET /orgs/{}/external-group/{}",
-            "GET /orgs/{}/external-groups",
             "GET /orgs/{}/settings/billing/advanced-security",
-            "GET /orgs/{}/team-sync/groups",
-            "GET /orgs/{}/teams/{}/external-groups",
-            "GET /orgs/{}/teams/{}/team-sync/group-mappings",
             "GET /repos/{}/{}/bypass-requests/push-rules",
             "GET /repos/{}/{}/bypass-requests/push-rules/{}",
             "GET /repos/{}/{}/bypass-requests/secret-scanning",
@@ -17832,19 +17826,15 @@
             "GET /repos/{}/{}/dismissal-requests/dependabot/{}",
             "GET /repos/{}/{}/dismissal-requests/secret-scanning",
             "GET /repos/{}/{}/dismissal-requests/secret-scanning/{}",
-            "GET /teams/{}/team-sync/group-mappings",
             "PATCH /organizations/{}/org-properties/values",
-            "PATCH /orgs/{}/teams/{}/external-groups",
-            "PATCH /orgs/{}/teams/{}/team-sync/group-mappings",
             "PATCH /repos/{}/{}/bypass-requests/secret-scanning/{}",
             "PATCH /repos/{}/{}/dismissal-requests/code-scanning/{}",
             "PATCH /repos/{}/{}/dismissal-requests/dependabot/{}",
             "PATCH /repos/{}/{}/dismissal-requests/secret-scanning/{}",
-            "PATCH /teams/{}/team-sync/group-mappings",
             "POST /repos/{}/{}/dismissal-requests/dependabot/{}",
             "PUT /repos/{}/{}/lfs"
           ],
-          "represented_operations": 1419
+          "represented_operations": 1429
         },
         "ghes-2.22": {
           "documented_operations": 642,
@@ -17989,7 +17979,6 @@
             "DELETE /orgs/{}/teams/{}/discussions/{}/comments/{}",
             "DELETE /orgs/{}/teams/{}/discussions/{}/comments/{}/reactions/{}",
             "DELETE /orgs/{}/teams/{}/discussions/{}/reactions/{}",
-            "DELETE /orgs/{}/teams/{}/external-groups",
             "DELETE /orgs/{}/teams/{}/projects/{}",
             "DELETE /projects/columns/cards/{}",
             "DELETE /projects/columns/{}",
@@ -18027,8 +18016,6 @@
             "GET /manage/v1/maintenance",
             "GET /manage/v1/replication/status",
             "GET /manage/v1/version",
-            "GET /orgs/{}/external-group/{}",
-            "GET /orgs/{}/external-groups",
             "GET /orgs/{}/pre-receive-hooks",
             "GET /orgs/{}/pre-receive-hooks/{}",
             "GET /orgs/{}/projects",
@@ -18039,7 +18026,6 @@
             "GET /orgs/{}/teams/{}/discussions/{}/comments/{}",
             "GET /orgs/{}/teams/{}/discussions/{}/comments/{}/reactions",
             "GET /orgs/{}/teams/{}/discussions/{}/reactions",
-            "GET /orgs/{}/teams/{}/external-groups",
             "GET /orgs/{}/teams/{}/projects",
             "GET /orgs/{}/teams/{}/projects/{}",
             "GET /projects/columns/cards/{}",
@@ -18077,7 +18063,6 @@
             "PATCH /orgs/{}/pre-receive-hooks/{}",
             "PATCH /orgs/{}/teams/{}/discussions/{}",
             "PATCH /orgs/{}/teams/{}/discussions/{}/comments/{}",
-            "PATCH /orgs/{}/teams/{}/external-groups",
             "PATCH /projects/columns/cards/{}",
             "PATCH /projects/columns/{}",
             "PATCH /repos/{}/{}/actions/cache/usage-policy",
@@ -18125,7 +18110,7 @@
             "PUT /setup/api/settings",
             "PUT /teams/{}/projects/{}"
           ],
-          "represented_operations": 825
+          "represented_operations": 830
         },
         "ghes-3.21": {
           "documented_operations": 1092,
@@ -18140,7 +18125,6 @@
             "DELETE /authorizations/{}",
             "DELETE /manage/v1/access/ssh",
             "DELETE /orgs/{}/pre-receive-hooks/{}",
-            "DELETE /orgs/{}/teams/{}/external-groups",
             "DELETE /repos/{}/{}/bypass-responses/secret-scanning/{}",
             "DELETE /repos/{}/{}/dismissal-requests/dependabot/{}",
             "DELETE /repos/{}/{}/lfs",
@@ -18177,12 +18161,9 @@
             "GET /orgs/{}/dismissal-requests/code-scanning",
             "GET /orgs/{}/dismissal-requests/dependabot",
             "GET /orgs/{}/dismissal-requests/secret-scanning",
-            "GET /orgs/{}/external-group/{}",
-            "GET /orgs/{}/external-groups",
             "GET /orgs/{}/pre-receive-hooks",
             "GET /orgs/{}/pre-receive-hooks/{}",
             "GET /orgs/{}/settings/billing/advanced-security",
-            "GET /orgs/{}/teams/{}/external-groups",
             "GET /repos/{}/{}/actions/cache/usage-policy",
             "GET /repos/{}/{}/bypass-requests/push-rules",
             "GET /repos/{}/{}/bypass-requests/push-rules/{}",
@@ -18207,7 +18188,6 @@
             "PATCH /enterprises/{}/actions/cache/usage-policy",
             "PATCH /organizations/{}/org-properties/values",
             "PATCH /orgs/{}/pre-receive-hooks/{}",
-            "PATCH /orgs/{}/teams/{}/external-groups",
             "PATCH /repos/{}/{}/actions/cache/usage-policy",
             "PATCH /repos/{}/{}/bypass-requests/secret-scanning/{}",
             "PATCH /repos/{}/{}/dismissal-requests/code-scanning/{}",
@@ -18234,7 +18214,7 @@
             "PUT /manage/v1/config/settings",
             "PUT /repos/{}/{}/lfs"
           ],
-          "represented_operations": 989
+          "represented_operations": 994
         }
       },
       "dispatch_covered_operations": [
@@ -18722,7 +18702,7 @@
         "source": "internal/server/gh_attestations.go"
       },
       {
-        "line": 38,
+        "line": 39,
         "method": "DELETE",
         "path": "/api/v3/orgs/{org}/blocks/{username}",
         "source": "internal/server/gh_orgs_people_rest.go"
@@ -18830,13 +18810,13 @@
         "source": "internal/server/gh_org_hooks_rest.go"
       },
       {
-        "line": 43,
+        "line": 44,
         "method": "DELETE",
         "path": "/api/v3/orgs/{org}/interaction-limits",
         "source": "internal/server/gh_orgs_people_rest.go"
       },
       {
-        "line": 24,
+        "line": 25,
         "method": "DELETE",
         "path": "/api/v3/orgs/{org}/invitations/{invitation_id}",
         "source": "internal/server/gh_orgs_people_rest.go"
@@ -18884,37 +18864,37 @@
         "source": "internal/server/gh_migrations.go"
       },
       {
-        "line": 61,
+        "line": 62,
         "method": "DELETE",
         "path": "/api/v3/orgs/{org}/organization-roles/teams/{team_slug}",
         "source": "internal/server/gh_orgs_people_rest.go"
       },
       {
-        "line": 60,
+        "line": 61,
         "method": "DELETE",
         "path": "/api/v3/orgs/{org}/organization-roles/teams/{team_slug}/{role_id}",
         "source": "internal/server/gh_orgs_people_rest.go"
       },
       {
-        "line": 64,
+        "line": 65,
         "method": "DELETE",
         "path": "/api/v3/orgs/{org}/organization-roles/users/{username}",
         "source": "internal/server/gh_orgs_people_rest.go"
       },
       {
-        "line": 63,
+        "line": 64,
         "method": "DELETE",
         "path": "/api/v3/orgs/{org}/organization-roles/users/{username}/{role_id}",
         "source": "internal/server/gh_orgs_people_rest.go"
       },
       {
-        "line": 56,
+        "line": 57,
         "method": "DELETE",
         "path": "/api/v3/orgs/{org}/organization-roles/{role_id}",
         "source": "internal/server/gh_orgs_people_rest.go"
       },
       {
-        "line": 32,
+        "line": 33,
         "method": "DELETE",
         "path": "/api/v3/orgs/{org}/outside_collaborators/{username}",
         "source": "internal/server/gh_orgs_people_rest.go"
@@ -18968,7 +18948,7 @@
         "source": "internal/server/gh_secret_scanning.go"
       },
       {
-        "line": 70,
+        "line": 71,
         "method": "DELETE",
         "path": "/api/v3/orgs/{org}/security-managers/teams/{team_slug}",
         "source": "internal/server/gh_orgs_people_rest.go"
@@ -18990,6 +18970,12 @@
         "method": "DELETE",
         "path": "/api/v3/orgs/{org}/teams/{team_slug}",
         "source": "internal/server/gh_teams_rest.go"
+      },
+      {
+        "line": 36,
+        "method": "DELETE",
+        "path": "/api/v3/orgs/{org}/teams/{team_slug}/external-groups",
+        "source": "internal/server/gh_org_external_identity.go"
       },
       {
         "line": 23,
@@ -21068,13 +21054,13 @@
         "source": "internal/server/gh_misc_endpoints.go"
       },
       {
-        "line": 35,
+        "line": 36,
         "method": "GET",
         "path": "/api/v3/orgs/{org}/blocks",
         "source": "internal/server/gh_orgs_people_rest.go"
       },
       {
-        "line": 36,
+        "line": 37,
         "method": "GET",
         "path": "/api/v3/orgs/{org}/blocks/{username}",
         "source": "internal/server/gh_orgs_people_rest.go"
@@ -21320,7 +21306,19 @@
         "source": "internal/server/gh_org_events.go"
       },
       {
-        "line": 26,
+        "line": 31,
+        "method": "GET",
+        "path": "/api/v3/orgs/{org}/external-group/{group_id}",
+        "source": "internal/server/gh_org_external_identity.go"
+      },
+      {
+        "line": 30,
+        "method": "GET",
+        "path": "/api/v3/orgs/{org}/external-groups",
+        "source": "internal/server/gh_org_external_identity.go"
+      },
+      {
+        "line": 27,
         "method": "GET",
         "path": "/api/v3/orgs/{org}/failed_invitations",
         "source": "internal/server/gh_orgs_people_rest.go"
@@ -21428,19 +21426,19 @@
         "source": "internal/server/gh_apps_rest.go"
       },
       {
-        "line": 41,
+        "line": 42,
         "method": "GET",
         "path": "/api/v3/orgs/{org}/interaction-limits",
         "source": "internal/server/gh_orgs_people_rest.go"
       },
       {
-        "line": 22,
+        "line": 23,
         "method": "GET",
         "path": "/api/v3/orgs/{org}/invitations",
         "source": "internal/server/gh_orgs_people_rest.go"
       },
       {
-        "line": 25,
+        "line": 26,
         "method": "GET",
         "path": "/api/v3/orgs/{org}/invitations/{invitation_id}/teams",
         "source": "internal/server/gh_orgs_people_rest.go"
@@ -21524,31 +21522,31 @@
         "source": "internal/server/gh_org_governance.go"
       },
       {
-        "line": 52,
+        "line": 53,
         "method": "GET",
         "path": "/api/v3/orgs/{org}/organization-roles",
         "source": "internal/server/gh_orgs_people_rest.go"
       },
       {
-        "line": 54,
+        "line": 55,
         "method": "GET",
         "path": "/api/v3/orgs/{org}/organization-roles/{role_id}",
         "source": "internal/server/gh_orgs_people_rest.go"
       },
       {
-        "line": 57,
+        "line": 58,
         "method": "GET",
         "path": "/api/v3/orgs/{org}/organization-roles/{role_id}/teams",
         "source": "internal/server/gh_orgs_people_rest.go"
       },
       {
-        "line": 58,
+        "line": 59,
         "method": "GET",
         "path": "/api/v3/orgs/{org}/organization-roles/{role_id}/users",
         "source": "internal/server/gh_orgs_people_rest.go"
       },
       {
-        "line": 30,
+        "line": 31,
         "method": "GET",
         "path": "/api/v3/orgs/{org}/outside_collaborators",
         "source": "internal/server/gh_orgs_people_rest.go"
@@ -21758,7 +21756,7 @@
         "source": "internal/server/gh_security_advisories.go"
       },
       {
-        "line": 68,
+        "line": 69,
         "method": "GET",
         "path": "/api/v3/orgs/{org}/security-managers",
         "source": "internal/server/gh_orgs_people_rest.go"
@@ -21794,6 +21792,12 @@
         "source": "internal/server/gh_network_configurations.go"
       },
       {
+        "line": 32,
+        "method": "GET",
+        "path": "/api/v3/orgs/{org}/team-sync/groups",
+        "source": "internal/server/gh_org_external_identity.go"
+      },
+      {
         "line": 26,
         "method": "GET",
         "path": "/api/v3/orgs/{org}/team/{team_slug}/copilot/metrics",
@@ -21812,7 +21816,13 @@
         "source": "internal/server/gh_teams_rest.go"
       },
       {
-        "line": 27,
+        "line": 34,
+        "method": "GET",
+        "path": "/api/v3/orgs/{org}/teams/{team_slug}/external-groups",
+        "source": "internal/server/gh_org_external_identity.go"
+      },
+      {
+        "line": 28,
         "method": "GET",
         "path": "/api/v3/orgs/{org}/teams/{team_slug}/invitations",
         "source": "internal/server/gh_orgs_people_rest.go"
@@ -21840,6 +21850,12 @@
         "method": "GET",
         "path": "/api/v3/orgs/{org}/teams/{team_slug}/repos/{owner}/{repo}",
         "source": "internal/server/gh_teams_rest.go"
+      },
+      {
+        "line": 37,
+        "method": "GET",
+        "path": "/api/v3/orgs/{org}/teams/{team_slug}/team-sync/group-mappings",
+        "source": "internal/server/gh_org_external_identity.go"
       },
       {
         "line": 18,
@@ -23486,6 +23502,12 @@
         "source": "internal/server/gh_teams_legacy_rest.go"
       },
       {
+        "line": 40,
+        "method": "GET",
+        "path": "/api/v3/teams/{team_id}/team-sync/group-mappings",
+        "source": "internal/server/gh_org_external_identity.go"
+      },
+      {
         "line": 17,
         "method": "GET",
         "path": "/api/v3/teams/{team_id}/teams",
@@ -24290,7 +24312,7 @@
         "source": "internal/server/gh_issue_fields.go"
       },
       {
-        "line": 55,
+        "line": 56,
         "method": "PATCH",
         "path": "/api/v3/orgs/{org}/organization-roles/{role_id}",
         "source": "internal/server/gh_orgs_people_rest.go"
@@ -24342,6 +24364,18 @@
         "method": "PATCH",
         "path": "/api/v3/orgs/{org}/teams/{team_slug}",
         "source": "internal/server/gh_teams_rest.go"
+      },
+      {
+        "line": 35,
+        "method": "PATCH",
+        "path": "/api/v3/orgs/{org}/teams/{team_slug}/external-groups",
+        "source": "internal/server/gh_org_external_identity.go"
+      },
+      {
+        "line": 38,
+        "method": "PATCH",
+        "path": "/api/v3/orgs/{org}/teams/{team_slug}/team-sync/group-mappings",
+        "source": "internal/server/gh_org_external_identity.go"
       },
       {
         "line": 32,
@@ -24588,6 +24622,12 @@
         "method": "PATCH",
         "path": "/api/v3/teams/{team_id}",
         "source": "internal/server/gh_teams_legacy_rest.go"
+      },
+      {
+        "line": 41,
+        "method": "PATCH",
+        "path": "/api/v3/teams/{team_id}/team-sync/group-mappings",
+        "source": "internal/server/gh_org_external_identity.go"
       },
       {
         "line": 19,
@@ -25100,7 +25140,7 @@
         "source": "internal/server/gh_org_hooks_rest.go"
       },
       {
-        "line": 23,
+        "line": 24,
         "method": "POST",
         "path": "/api/v3/orgs/{org}/invitations",
         "source": "internal/server/gh_orgs_people_rest.go"
@@ -25130,7 +25170,7 @@
         "source": "internal/server/gh_migrations.go"
       },
       {
-        "line": 53,
+        "line": 54,
         "method": "POST",
         "path": "/api/v3/orgs/{org}/organization-roles",
         "source": "internal/server/gh_orgs_people_rest.go"
@@ -25232,7 +25272,7 @@
         "source": "internal/server/gh_teams_rest.go"
       },
       {
-        "line": 73,
+        "line": 74,
         "method": "POST",
         "path": "/api/v3/orgs/{org}/{security_product}/{enablement}",
         "source": "internal/server/gh_orgs_people_rest.go"
@@ -26402,7 +26442,7 @@
         "source": "internal/server/gh_agents_secrets.go"
       },
       {
-        "line": 37,
+        "line": 38,
         "method": "PUT",
         "path": "/api/v3/orgs/{org}/blocks/{username}",
         "source": "internal/server/gh_orgs_people_rest.go"
@@ -26504,7 +26544,7 @@
         "source": "internal/server/gh_dependabot.go"
       },
       {
-        "line": 42,
+        "line": 43,
         "method": "PUT",
         "path": "/api/v3/orgs/{org}/interaction-limits",
         "source": "internal/server/gh_orgs_people_rest.go"
@@ -26522,19 +26562,19 @@
         "source": "internal/server/gh_members_rest.go"
       },
       {
-        "line": 59,
+        "line": 60,
         "method": "PUT",
         "path": "/api/v3/orgs/{org}/organization-roles/teams/{team_slug}/{role_id}",
         "source": "internal/server/gh_orgs_people_rest.go"
       },
       {
-        "line": 62,
+        "line": 63,
         "method": "PUT",
         "path": "/api/v3/orgs/{org}/organization-roles/users/{username}/{role_id}",
         "source": "internal/server/gh_orgs_people_rest.go"
       },
       {
-        "line": 31,
+        "line": 32,
         "method": "PUT",
         "path": "/api/v3/orgs/{org}/outside_collaborators/{username}",
         "source": "internal/server/gh_orgs_people_rest.go"
@@ -26558,7 +26598,7 @@
         "source": "internal/server/gh_rulesets.go"
       },
       {
-        "line": 69,
+        "line": 70,
         "method": "PUT",
         "path": "/api/v3/orgs/{org}/security-managers/teams/{team_slug}",
         "source": "internal/server/gh_orgs_people_rest.go"
