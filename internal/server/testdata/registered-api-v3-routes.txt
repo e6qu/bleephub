@@ -859,6 +859,7 @@ GET /api/v3/repos/{owner}/{repo}/releases
 GET /api/v3/repos/{owner}/{repo}/releases/latest
 GET /api/v3/repos/{owner}/{repo}/releases/{p1}/{p2}
 GET /api/v3/repos/{owner}/{repo}/releases/{release_id}
+GET /api/v3/repos/{owner}/{repo}/replicas/caches
 GET /api/v3/repos/{owner}/{repo}/rules/branches/{branch}
 GET /api/v3/repos/{owner}/{repo}/rulesets
 GET /api/v3/repos/{owner}/{repo}/rulesets/rule-suites
@@ -1009,6 +1010,9 @@ GET /api/v3/users/{username}/subscriptions
 GET /api/v3/versions
 GET /api/v3/zen
 PATCH /api/v3/admin/hooks/{hook_id}
+PATCH /api/v3/admin/ldap/teams/{team_id}/mapping
+PATCH /api/v3/admin/ldap/users/{username}/mapping
+PATCH /api/v3/admin/organizations/{org}
 PATCH /api/v3/admin/pre-receive-environments/{pre_receive_environment_id}
 PATCH /api/v3/admin/pre-receive-hooks/{pre_receive_hook_id}
 PATCH /api/v3/admin/users/{username}
@@ -1120,6 +1124,8 @@ PATCH /api/v3/users/{username}/projectsV2/{project_number}/items/{item_id}
 POST /api/v3/actions/runner-registration
 POST /api/v3/admin/hooks
 POST /api/v3/admin/hooks/{hook_id}/pings
+POST /api/v3/admin/ldap/teams/{team_id}/sync
+POST /api/v3/admin/ldap/users/{username}/sync
 POST /api/v3/admin/organizations
 POST /api/v3/admin/pre-receive-environments
 POST /api/v3/admin/pre-receive-environments/{pre_receive_environment_id}/downloads

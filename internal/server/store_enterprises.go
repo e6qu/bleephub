@@ -108,6 +108,8 @@ type EnterpriseSettings struct {
 	GHESRepoPreReceiveOverrides     map[string]map[int]*GHESPreReceiveOverride `json:"ghes_repo_pre_receive_overrides,omitempty"`
 	NextGHESPreReceiveEnvironmentID int                                        `json:"next_ghes_pre_receive_environment_id"`
 	NextGHESPreReceiveHookID        int                                        `json:"next_ghes_pre_receive_hook_id"`
+	GHESLDAPUserMappings            map[string]string                          `json:"ghes_ldap_user_mappings,omitempty"`
+	GHESLDAPTeamMappings            map[int]string                             `json:"ghes_ldap_team_mappings,omitempty"`
 
 	// Dependabot repository access across organizations.
 	DependabotAccessibleRepoIDs []int  `json:"dependabot_accessible_repo_ids"`
@@ -206,6 +208,12 @@ func normalizeEnterpriseSettings(settings *EnterpriseSettings) *EnterpriseSettin
 	}
 	if settings.NextGHESPreReceiveHookID == 0 {
 		settings.NextGHESPreReceiveHookID = 1
+	}
+	if settings.GHESLDAPUserMappings == nil {
+		settings.GHESLDAPUserMappings = map[string]string{}
+	}
+	if settings.GHESLDAPTeamMappings == nil {
+		settings.GHESLDAPTeamMappings = map[int]string{}
 	}
 	if settings.NextAuditLogStreamID == 0 {
 		settings.NextAuditLogStreamID = 1

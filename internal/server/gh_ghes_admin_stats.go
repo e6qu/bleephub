@@ -11,6 +11,7 @@ import (
 func (s *Server) registerGHESAdminStatsRoutes() {
 	admin := s.requireGHESSiteAdmin
 	s.registerGHESPreReceiveRoutes(admin)
+	s.registerGHESDirectoryRoutes(admin)
 	s.route("GET /api/v3/admin/hooks", admin(s.handleListGHESGlobalHooks))
 	s.route("POST /api/v3/admin/hooks", admin(s.handleCreateGHESGlobalHook))
 	s.route("GET /api/v3/admin/hooks/{hook_id}", admin(s.handleGetGHESGlobalHook))
