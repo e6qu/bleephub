@@ -70,7 +70,7 @@ func newGhuFixture(t *testing.T, tag string) *ghuFixture {
 	if !store.AddRepoCollaborator(f.victim.Login, "ghu-private", f.bearer.Login, "pull") {
 		t.Fatalf("could not make the bearer a collaborator")
 	}
-	if tok := store.CreateToken(f.bearer.ID, "repo, admin:org"); tok != nil {
+	if tok := store.CreateToken(f.bearer.ID, "repo, admin:org, admin:org_hook"); tok != nil {
 		f.bearerToken = tok.Value
 	} else {
 		t.Fatalf("could not mint the bearer's PAT")
@@ -103,6 +103,7 @@ func newGhuFixture(t *testing.T, tag string) *ghuFixture {
 		"contents":                    "read",
 		"administration":              "admin",
 		"organization_administration": "admin",
+		"organization_hooks":          "admin",
 	}
 	inside := store.CreateApp(f.bearer.ID, "Ghu Inside "+tag, "", perms, nil)
 	if inside == nil {
