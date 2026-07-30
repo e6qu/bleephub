@@ -3,6 +3,7 @@ DELETE /api/v3/app/installations/{id}
 DELETE /api/v3/app/installations/{id}/suspended
 DELETE /api/v3/applications/{client_id}/grant
 DELETE /api/v3/applications/{client_id}/token
+DELETE /api/v3/enterprise/announcement
 DELETE /api/v3/enterprises/{enterprise}/actions/hosted-runners/images/custom/{image_definition_id}
 DELETE /api/v3/enterprises/{enterprise}/actions/hosted-runners/images/custom/{image_definition_id}/versions/{version}
 DELETE /api/v3/enterprises/{enterprise}/actions/hosted-runners/{hosted_runner_id}
@@ -242,6 +243,20 @@ GET /api/v3/codes_of_conduct
 GET /api/v3/codes_of_conduct/{key}
 GET /api/v3/emojis
 GET /api/v3/enterprise-installation/{enterprise_or_org}/server-statistics
+GET /api/v3/enterprise/announcement
+GET /api/v3/enterprise/settings/license
+GET /api/v3/enterprise/stats/all
+GET /api/v3/enterprise/stats/comments
+GET /api/v3/enterprise/stats/gists
+GET /api/v3/enterprise/stats/hooks
+GET /api/v3/enterprise/stats/issues
+GET /api/v3/enterprise/stats/milestones
+GET /api/v3/enterprise/stats/orgs
+GET /api/v3/enterprise/stats/pages
+GET /api/v3/enterprise/stats/pulls
+GET /api/v3/enterprise/stats/repos
+GET /api/v3/enterprise/stats/security-products
+GET /api/v3/enterprise/stats/users
 GET /api/v3/enterprises/{enterprise}/actions/cache/retention-limit
 GET /api/v3/enterprises/{enterprise}/actions/cache/storage-limit
 GET /api/v3/enterprises/{enterprise}/actions/cache/usage
@@ -931,6 +946,7 @@ GET /api/v3/zen
 PATCH /api/v3/admin/users/{username}
 PATCH /api/v3/app/hook/config
 PATCH /api/v3/applications/{client_id}/token
+PATCH /api/v3/enterprise/announcement
 PATCH /api/v3/enterprises/{enterprise}/actions/hosted-runners/{hosted_runner_id}
 PATCH /api/v3/enterprises/{enterprise}/actions/runner-groups/{runner_group_id}
 PATCH /api/v3/enterprises/{enterprise}/announcement

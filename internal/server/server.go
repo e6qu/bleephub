@@ -471,6 +471,7 @@ func (s *Server) registerRoutes() {
 	s.registerRunnerGroupRoutes()
 
 	s.registerGHEnterpriseRoutes()
+	s.registerGHESAdminStatsRoutes()
 	s.registerGHProjectsV2Routes()
 	s.registerGHAttestationsRoutes()
 	s.registerGHOrgArtifactMetadataRoutes()
