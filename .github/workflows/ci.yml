@@ -150,6 +150,11 @@ jobs:
           echo "$RUNNER_TEMP/bin" >> "$GITHUB_PATH"
       - name: Enforce the dependency quarantine window
         run: ./scripts/check-dependency-age.py go nuget terraform docker actions runner
+        env:
+          # Action commit metadata comes from api.github.com. Authenticate the
+          # read-only requests so repeated PR reruns cannot exhaust the shared
+          # anonymous-IP rate limit and turn the age policy into a flaky gate.
+          GITHUB_TOKEN: ${{ github.token }}
       - name: Run staticcheck and gosec in every Go module
         run: |
           set -euo pipefail
