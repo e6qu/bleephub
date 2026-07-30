@@ -104,7 +104,12 @@ func FuzzContentPut(f *testing.F) {
 	f.Add("/abs", b64("x"), "main", "msg")
 
 	f.Fuzz(func(t *testing.T, path, content, branch, message string) {
-		s := fuzzRoutedServer(t)
+		// This target exercises only repository contents writes. Building the
+		// GraphQL schema and every unrelated route for each mutation can leave
+		// all fuzz workers in setup when the campaign budget expires, which Go
+		// reports as a target failure with no reproducer. Keep the production
+		// repository routes and auth middleware while bounding per-input setup.
+		s := gitDataTestServer(t)
 		admin := s.store.UsersByLogin["admin"]
 		const name = "content-fuzz"
 		s.store.CreateRepo(admin, name, "", false)
