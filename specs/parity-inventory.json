@@ -17803,31 +17803,8 @@
         },
         "ghec": {
           "documented_operations": 1458,
-          "missing_operations": [
-            "DELETE /repos/{}/{}/bypass-responses/secret-scanning/{}",
-            "DELETE /repos/{}/{}/dismissal-requests/dependabot/{}",
-            "GET /orgs/{}/bypass-requests/push-rules",
-            "GET /orgs/{}/bypass-requests/secret-scanning",
-            "GET /orgs/{}/dismissal-requests/code-scanning",
-            "GET /orgs/{}/dismissal-requests/dependabot",
-            "GET /orgs/{}/dismissal-requests/secret-scanning",
-            "GET /repos/{}/{}/bypass-requests/push-rules",
-            "GET /repos/{}/{}/bypass-requests/push-rules/{}",
-            "GET /repos/{}/{}/bypass-requests/secret-scanning",
-            "GET /repos/{}/{}/bypass-requests/secret-scanning/{}",
-            "GET /repos/{}/{}/dismissal-requests/code-scanning",
-            "GET /repos/{}/{}/dismissal-requests/code-scanning/{}",
-            "GET /repos/{}/{}/dismissal-requests/dependabot",
-            "GET /repos/{}/{}/dismissal-requests/dependabot/{}",
-            "GET /repos/{}/{}/dismissal-requests/secret-scanning",
-            "GET /repos/{}/{}/dismissal-requests/secret-scanning/{}",
-            "PATCH /repos/{}/{}/bypass-requests/secret-scanning/{}",
-            "PATCH /repos/{}/{}/dismissal-requests/code-scanning/{}",
-            "PATCH /repos/{}/{}/dismissal-requests/dependabot/{}",
-            "PATCH /repos/{}/{}/dismissal-requests/secret-scanning/{}",
-            "POST /repos/{}/{}/dismissal-requests/dependabot/{}"
-          ],
-          "represented_operations": 1436
+          "missing_operations": [],
+          "represented_operations": 1458
         },
         "ghes-2.22": {
           "documented_operations": 642,
@@ -18115,8 +18092,6 @@
             "DELETE /authorizations/{}",
             "DELETE /manage/v1/access/ssh",
             "DELETE /orgs/{}/pre-receive-hooks/{}",
-            "DELETE /repos/{}/{}/bypass-responses/secret-scanning/{}",
-            "DELETE /repos/{}/{}/dismissal-requests/dependabot/{}",
             "DELETE /repos/{}/{}/pre-receive-hooks/{}",
             "GET /admin/hooks",
             "GET /admin/hooks/{}",
@@ -18144,24 +18119,9 @@
             "GET /manage/v1/maintenance",
             "GET /manage/v1/replication/status",
             "GET /manage/v1/version",
-            "GET /orgs/{}/bypass-requests/push-rules",
-            "GET /orgs/{}/bypass-requests/secret-scanning",
-            "GET /orgs/{}/dismissal-requests/code-scanning",
-            "GET /orgs/{}/dismissal-requests/dependabot",
-            "GET /orgs/{}/dismissal-requests/secret-scanning",
             "GET /orgs/{}/pre-receive-hooks",
             "GET /orgs/{}/pre-receive-hooks/{}",
             "GET /repos/{}/{}/actions/cache/usage-policy",
-            "GET /repos/{}/{}/bypass-requests/push-rules",
-            "GET /repos/{}/{}/bypass-requests/push-rules/{}",
-            "GET /repos/{}/{}/bypass-requests/secret-scanning",
-            "GET /repos/{}/{}/bypass-requests/secret-scanning/{}",
-            "GET /repos/{}/{}/dismissal-requests/code-scanning",
-            "GET /repos/{}/{}/dismissal-requests/code-scanning/{}",
-            "GET /repos/{}/{}/dismissal-requests/dependabot",
-            "GET /repos/{}/{}/dismissal-requests/dependabot/{}",
-            "GET /repos/{}/{}/dismissal-requests/secret-scanning",
-            "GET /repos/{}/{}/dismissal-requests/secret-scanning/{}",
             "GET /repos/{}/{}/pre-receive-hooks",
             "GET /repos/{}/{}/pre-receive-hooks/{}",
             "GET /repos/{}/{}/replicas/caches",
@@ -18175,10 +18135,6 @@
             "PATCH /enterprises/{}/actions/cache/usage-policy",
             "PATCH /orgs/{}/pre-receive-hooks/{}",
             "PATCH /repos/{}/{}/actions/cache/usage-policy",
-            "PATCH /repos/{}/{}/bypass-requests/secret-scanning/{}",
-            "PATCH /repos/{}/{}/dismissal-requests/code-scanning/{}",
-            "PATCH /repos/{}/{}/dismissal-requests/dependabot/{}",
-            "PATCH /repos/{}/{}/dismissal-requests/secret-scanning/{}",
             "PATCH /repos/{}/{}/pre-receive-hooks/{}",
             "POST /admin/hooks",
             "POST /admin/hooks/{}/pings",
@@ -18193,13 +18149,12 @@
             "POST /manage/v1/config/apply",
             "POST /manage/v1/config/init",
             "POST /manage/v1/maintenance",
-            "POST /repos/{}/{}/dismissal-requests/dependabot/{}",
             "PUT /authorizations/clients/{}",
             "PUT /authorizations/clients/{}/{}",
             "PUT /manage/v1/config/license",
             "PUT /manage/v1/config/settings"
           ],
-          "represented_operations": 999
+          "represented_operations": 1021
         }
       },
       "dispatch_covered_operations": [
@@ -18765,7 +18720,7 @@
         "source": "internal/server/gh_copilot.go"
       },
       {
-        "line": 16,
+        "line": 18,
         "method": "DELETE",
         "path": "/api/v3/orgs/{org}/credential-authorizations/{credential_id}",
         "source": "internal/server/gh_enterprise_remainder.go"
@@ -19149,6 +19104,12 @@
         "source": "internal/server/gh_branch_protection.go"
       },
       {
+        "line": 64,
+        "method": "DELETE",
+        "path": "/api/v3/repos/{owner}/{repo}/bypass-responses/secret-scanning/{bypass_response_id}",
+        "source": "internal/server/gh_security_reviews.go"
+      },
+      {
         "line": 31,
         "method": "DELETE",
         "path": "/api/v3/repos/{owner}/{repo}/code-scanning/analyses/{analysis_id}",
@@ -19201,6 +19162,12 @@
         "method": "DELETE",
         "path": "/api/v3/repos/{owner}/{repo}/deployments/{deployment_id}",
         "source": "internal/server/gh_deployments.go"
+      },
+      {
+        "line": 74,
+        "method": "DELETE",
+        "path": "/api/v3/repos/{owner}/{repo}/dismissal-requests/dependabot/{alert_number}",
+        "source": "internal/server/gh_security_reviews.go"
       },
       {
         "line": 427,
@@ -19323,7 +19290,7 @@
         "source": "internal/server/gh_labels_rest.go"
       },
       {
-        "line": 29,
+        "line": 31,
         "method": "DELETE",
         "path": "/api/v3/repos/{owner}/{repo}/lfs",
         "source": "internal/server/gh_enterprise_remainder.go"
@@ -20685,7 +20652,7 @@
         "source": "internal/server/gh_org_governance.go"
       },
       {
-        "line": 19,
+        "line": 21,
         "method": "GET",
         "path": "/api/v3/organizations/{organization_id}/org-properties/values",
         "source": "internal/server/gh_enterprise_remainder.go"
@@ -21069,6 +21036,18 @@
         "source": "internal/server/gh_orgs_people_rest.go"
       },
       {
+        "line": 53,
+        "method": "GET",
+        "path": "/api/v3/orgs/{org}/bypass-requests/push-rules",
+        "source": "internal/server/gh_security_reviews.go"
+      },
+      {
+        "line": 54,
+        "method": "GET",
+        "path": "/api/v3/orgs/{org}/bypass-requests/secret-scanning",
+        "source": "internal/server/gh_security_reviews.go"
+      },
+      {
         "line": 33,
         "method": "GET",
         "path": "/api/v3/orgs/{org}/campaigns",
@@ -21243,7 +21222,7 @@
         "source": "internal/server/gh_copilot.go"
       },
       {
-        "line": 14,
+        "line": 16,
         "method": "GET",
         "path": "/api/v3/orgs/{org}/credential-authorizations",
         "source": "internal/server/gh_enterprise_remainder.go"
@@ -21301,6 +21280,24 @@
         "method": "GET",
         "path": "/api/v3/orgs/{org}/dependabot/secrets/{secret_name}/repositories",
         "source": "internal/server/gh_dependabot.go"
+      },
+      {
+        "line": 55,
+        "method": "GET",
+        "path": "/api/v3/orgs/{org}/dismissal-requests/code-scanning",
+        "source": "internal/server/gh_security_reviews.go"
+      },
+      {
+        "line": 56,
+        "method": "GET",
+        "path": "/api/v3/orgs/{org}/dismissal-requests/dependabot",
+        "source": "internal/server/gh_security_reviews.go"
+      },
+      {
+        "line": 57,
+        "method": "GET",
+        "path": "/api/v3/orgs/{org}/dismissal-requests/secret-scanning",
+        "source": "internal/server/gh_security_reviews.go"
       },
       {
         "line": 51,
@@ -21771,7 +21768,7 @@
         "source": "internal/server/gh_orgs_people_rest.go"
       },
       {
-        "line": 24,
+        "line": 26,
         "method": "GET",
         "path": "/api/v3/orgs/{org}/settings/billing/advanced-security",
         "source": "internal/server/gh_enterprise_remainder.go"
@@ -22341,6 +22338,30 @@
         "source": "internal/server/gh_branch_protection.go"
       },
       {
+        "line": 59,
+        "method": "GET",
+        "path": "/api/v3/repos/{owner}/{repo}/bypass-requests/push-rules",
+        "source": "internal/server/gh_security_reviews.go"
+      },
+      {
+        "line": 60,
+        "method": "GET",
+        "path": "/api/v3/repos/{owner}/{repo}/bypass-requests/push-rules/{bypass_request_number}",
+        "source": "internal/server/gh_security_reviews.go"
+      },
+      {
+        "line": 61,
+        "method": "GET",
+        "path": "/api/v3/repos/{owner}/{repo}/bypass-requests/secret-scanning",
+        "source": "internal/server/gh_security_reviews.go"
+      },
+      {
+        "line": 62,
+        "method": "GET",
+        "path": "/api/v3/repos/{owner}/{repo}/bypass-requests/secret-scanning/{bypass_request_number}",
+        "source": "internal/server/gh_security_reviews.go"
+      },
+      {
         "line": 23,
         "method": "GET",
         "path": "/api/v3/repos/{owner}/{repo}/check-runs/{id}",
@@ -22711,6 +22732,42 @@
         "method": "GET",
         "path": "/api/v3/repos/{owner}/{repo}/deployments/{deployment_id}/statuses/{status_id}",
         "source": "internal/server/gh_deployments.go"
+      },
+      {
+        "line": 66,
+        "method": "GET",
+        "path": "/api/v3/repos/{owner}/{repo}/dismissal-requests/code-scanning",
+        "source": "internal/server/gh_security_reviews.go"
+      },
+      {
+        "line": 67,
+        "method": "GET",
+        "path": "/api/v3/repos/{owner}/{repo}/dismissal-requests/code-scanning/{alert_number}",
+        "source": "internal/server/gh_security_reviews.go"
+      },
+      {
+        "line": 70,
+        "method": "GET",
+        "path": "/api/v3/repos/{owner}/{repo}/dismissal-requests/dependabot",
+        "source": "internal/server/gh_security_reviews.go"
+      },
+      {
+        "line": 71,
+        "method": "GET",
+        "path": "/api/v3/repos/{owner}/{repo}/dismissal-requests/dependabot/{alert_number}",
+        "source": "internal/server/gh_security_reviews.go"
+      },
+      {
+        "line": 76,
+        "method": "GET",
+        "path": "/api/v3/repos/{owner}/{repo}/dismissal-requests/secret-scanning",
+        "source": "internal/server/gh_security_reviews.go"
+      },
+      {
+        "line": 77,
+        "method": "GET",
+        "path": "/api/v3/repos/{owner}/{repo}/dismissal-requests/secret-scanning/{alert_number}",
+        "source": "internal/server/gh_security_reviews.go"
       },
       {
         "line": 421,
@@ -24237,7 +24294,7 @@
         "source": "internal/server/gh_notifications.go"
       },
       {
-        "line": 21,
+        "line": 23,
         "method": "PATCH",
         "path": "/api/v3/organizations/{organization_id}/org-properties/values",
         "source": "internal/server/gh_enterprise_remainder.go"
@@ -24447,6 +24504,12 @@
         "source": "internal/server/gh_branch_protection.go"
       },
       {
+        "line": 63,
+        "method": "PATCH",
+        "path": "/api/v3/repos/{owner}/{repo}/bypass-requests/secret-scanning/{bypass_request_number}",
+        "source": "internal/server/gh_security_reviews.go"
+      },
+      {
         "line": 24,
         "method": "PATCH",
         "path": "/api/v3/repos/{owner}/{repo}/check-runs/{id}",
@@ -24487,6 +24550,24 @@
         "method": "PATCH",
         "path": "/api/v3/repos/{owner}/{repo}/dependabot/alerts/{alert_number}",
         "source": "internal/server/gh_dependabot.go"
+      },
+      {
+        "line": 68,
+        "method": "PATCH",
+        "path": "/api/v3/repos/{owner}/{repo}/dismissal-requests/code-scanning/{alert_number}",
+        "source": "internal/server/gh_security_reviews.go"
+      },
+      {
+        "line": 73,
+        "method": "PATCH",
+        "path": "/api/v3/repos/{owner}/{repo}/dismissal-requests/dependabot/{alert_number}",
+        "source": "internal/server/gh_security_reviews.go"
+      },
+      {
+        "line": 78,
+        "method": "PATCH",
+        "path": "/api/v3/repos/{owner}/{repo}/dismissal-requests/secret-scanning/{alert_number}",
+        "source": "internal/server/gh_security_reviews.go"
       },
       {
         "line": 28,
@@ -25549,6 +25630,12 @@
         "method": "POST",
         "path": "/api/v3/repos/{owner}/{repo}/deployments/{deployment_id}/statuses",
         "source": "internal/server/gh_deployments.go"
+      },
+      {
+        "line": 72,
+        "method": "POST",
+        "path": "/api/v3/repos/{owner}/{repo}/dismissal-requests/dependabot/{alert_number}",
+        "source": "internal/server/gh_security_reviews.go"
       },
       {
         "line": 31,
@@ -26871,7 +26958,7 @@
         "source": "internal/server/gh_labels_rest.go"
       },
       {
-        "line": 27,
+        "line": 29,
         "method": "PUT",
         "path": "/api/v3/repos/{owner}/{repo}/lfs",
         "source": "internal/server/gh_enterprise_remainder.go"

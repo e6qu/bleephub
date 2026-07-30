@@ -107,17 +107,14 @@ func (s *Server) handleListEnterpriseCodeScanningAlerts(w http.ResponseWriter, r
 	writeJSON(w, http.StatusOK, out)
 }
 
-// Bypass and delegated dismissal requests are read-only review queues. The
-// simulator currently has no operation that creates those requests, so the
-// faithful initial state is an empty, paginated collection rather than 404.
 func (s *Server) handleListEnterprisePushRuleBypassRequests(w http.ResponseWriter, r *http.Request) {
-	writeJSON(w, http.StatusOK, paginateAndLink(w, r, []interface{}{}))
+	s.writeSecurityReviewList(w, r, s.store.listSecurityReviewRequests("", "", reviewKindPushBypass))
 }
 
 func (s *Server) handleListEnterpriseSecretScanningBypassRequests(w http.ResponseWriter, r *http.Request) {
-	writeJSON(w, http.StatusOK, paginateAndLink(w, r, []interface{}{}))
+	s.writeSecurityReviewList(w, r, s.store.listSecurityReviewRequests("", "", reviewKindSecretBypass))
 }
 
 func (s *Server) handleListEnterpriseSecretScanningDismissalRequests(w http.ResponseWriter, r *http.Request) {
-	writeJSON(w, http.StatusOK, paginateAndLink(w, r, []interface{}{}))
+	s.writeSecurityReviewList(w, r, s.store.listSecurityReviewRequests("", "", reviewKindSecretDismissal))
 }

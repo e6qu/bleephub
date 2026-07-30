@@ -11,6 +11,8 @@ import (
 )
 
 func (s *Server) registerGHEnterpriseRemainderRoutes() {
+	s.registerGHSecurityReviewRoutes()
+
 	s.route("GET /api/v3/orgs/{org}/credential-authorizations",
 		s.requirePerm(scopeOrgAdministration, permRead, s.handleListOrgCredentialAuthorizations))
 	s.route("DELETE /api/v3/orgs/{org}/credential-authorizations/{credential_id}",

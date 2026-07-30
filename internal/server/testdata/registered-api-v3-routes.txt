@@ -147,6 +147,7 @@ DELETE /api/v3/repos/{owner}/{repo}/branches/{branch}/protection/restrictions
 DELETE /api/v3/repos/{owner}/{repo}/branches/{branch}/protection/restrictions/apps
 DELETE /api/v3/repos/{owner}/{repo}/branches/{branch}/protection/restrictions/teams
 DELETE /api/v3/repos/{owner}/{repo}/branches/{branch}/protection/restrictions/users
+DELETE /api/v3/repos/{owner}/{repo}/bypass-responses/secret-scanning/{bypass_response_id}
 DELETE /api/v3/repos/{owner}/{repo}/code-scanning/analyses/{analysis_id}
 DELETE /api/v3/repos/{owner}/{repo}/code-scanning/codeql/databases/{language}
 DELETE /api/v3/repos/{owner}/{repo}/codespaces/secrets/{secret_name}
@@ -156,6 +157,7 @@ DELETE /api/v3/repos/{owner}/{repo}/comments/{comment_id}/reactions/{reaction_id
 DELETE /api/v3/repos/{owner}/{repo}/contents/{path...}
 DELETE /api/v3/repos/{owner}/{repo}/dependabot/secrets/{secret_name}
 DELETE /api/v3/repos/{owner}/{repo}/deployments/{deployment_id}
+DELETE /api/v3/repos/{owner}/{repo}/dismissal-requests/dependabot/{alert_number}
 DELETE /api/v3/repos/{owner}/{repo}/environments/{env_name}
 DELETE /api/v3/repos/{owner}/{repo}/environments/{env_name}/deployment-branch-policies/{branch_policy_id}
 DELETE /api/v3/repos/{owner}/{repo}/environments/{env_name}/deployment_protection_rules/{protection_rule_id}
@@ -467,6 +469,8 @@ GET /api/v3/orgs/{org}/attestations/{subject_digest}
 GET /api/v3/orgs/{org}/audit-log
 GET /api/v3/orgs/{org}/blocks
 GET /api/v3/orgs/{org}/blocks/{username}
+GET /api/v3/orgs/{org}/bypass-requests/push-rules
+GET /api/v3/orgs/{org}/bypass-requests/secret-scanning
 GET /api/v3/orgs/{org}/campaigns
 GET /api/v3/orgs/{org}/campaigns/{campaign_number}
 GET /api/v3/orgs/{org}/code-scanning/alerts
@@ -506,6 +510,9 @@ GET /api/v3/orgs/{org}/dependabot/secrets
 GET /api/v3/orgs/{org}/dependabot/secrets/public-key
 GET /api/v3/orgs/{org}/dependabot/secrets/{secret_name}
 GET /api/v3/orgs/{org}/dependabot/secrets/{secret_name}/repositories
+GET /api/v3/orgs/{org}/dismissal-requests/code-scanning
+GET /api/v3/orgs/{org}/dismissal-requests/dependabot
+GET /api/v3/orgs/{org}/dismissal-requests/secret-scanning
 GET /api/v3/orgs/{org}/docker/conflicts
 GET /api/v3/orgs/{org}/events
 GET /api/v3/orgs/{org}/external-group/{group_id}
@@ -679,6 +686,10 @@ GET /api/v3/repos/{owner}/{repo}/branches/{branch}/protection/restrictions
 GET /api/v3/repos/{owner}/{repo}/branches/{branch}/protection/restrictions/apps
 GET /api/v3/repos/{owner}/{repo}/branches/{branch}/protection/restrictions/teams
 GET /api/v3/repos/{owner}/{repo}/branches/{branch}/protection/restrictions/users
+GET /api/v3/repos/{owner}/{repo}/bypass-requests/push-rules
+GET /api/v3/repos/{owner}/{repo}/bypass-requests/push-rules/{bypass_request_number}
+GET /api/v3/repos/{owner}/{repo}/bypass-requests/secret-scanning
+GET /api/v3/repos/{owner}/{repo}/bypass-requests/secret-scanning/{bypass_request_number}
 GET /api/v3/repos/{owner}/{repo}/check-runs/{id}
 GET /api/v3/repos/{owner}/{repo}/check-runs/{id}/annotations
 GET /api/v3/repos/{owner}/{repo}/check-suites/{id}
@@ -741,6 +752,12 @@ GET /api/v3/repos/{owner}/{repo}/deployments
 GET /api/v3/repos/{owner}/{repo}/deployments/{deployment_id}
 GET /api/v3/repos/{owner}/{repo}/deployments/{deployment_id}/statuses
 GET /api/v3/repos/{owner}/{repo}/deployments/{deployment_id}/statuses/{status_id}
+GET /api/v3/repos/{owner}/{repo}/dismissal-requests/code-scanning
+GET /api/v3/repos/{owner}/{repo}/dismissal-requests/code-scanning/{alert_number}
+GET /api/v3/repos/{owner}/{repo}/dismissal-requests/dependabot
+GET /api/v3/repos/{owner}/{repo}/dismissal-requests/dependabot/{alert_number}
+GET /api/v3/repos/{owner}/{repo}/dismissal-requests/secret-scanning
+GET /api/v3/repos/{owner}/{repo}/dismissal-requests/secret-scanning/{alert_number}
 GET /api/v3/repos/{owner}/{repo}/environments
 GET /api/v3/repos/{owner}/{repo}/environments/{env_name}
 GET /api/v3/repos/{owner}/{repo}/environments/{env_name}/deployment-branch-policies
@@ -1030,6 +1047,7 @@ PATCH /api/v3/repos/{owner}/{repo}/actions/variables/{name}
 PATCH /api/v3/repos/{owner}/{repo}/agents/variables/{name}
 PATCH /api/v3/repos/{owner}/{repo}/branches/{branch}/protection/required_pull_request_reviews
 PATCH /api/v3/repos/{owner}/{repo}/branches/{branch}/protection/required_status_checks
+PATCH /api/v3/repos/{owner}/{repo}/bypass-requests/secret-scanning/{bypass_request_number}
 PATCH /api/v3/repos/{owner}/{repo}/check-runs/{id}
 PATCH /api/v3/repos/{owner}/{repo}/check-suites/preferences
 PATCH /api/v3/repos/{owner}/{repo}/code-quality/setup
@@ -1037,6 +1055,9 @@ PATCH /api/v3/repos/{owner}/{repo}/code-scanning/alerts/{alert_number}
 PATCH /api/v3/repos/{owner}/{repo}/code-scanning/default-setup
 PATCH /api/v3/repos/{owner}/{repo}/comments/{comment_id}
 PATCH /api/v3/repos/{owner}/{repo}/dependabot/alerts/{alert_number}
+PATCH /api/v3/repos/{owner}/{repo}/dismissal-requests/code-scanning/{alert_number}
+PATCH /api/v3/repos/{owner}/{repo}/dismissal-requests/dependabot/{alert_number}
+PATCH /api/v3/repos/{owner}/{repo}/dismissal-requests/secret-scanning/{alert_number}
 PATCH /api/v3/repos/{owner}/{repo}/environments/{env_name}/variables/{name}
 PATCH /api/v3/repos/{owner}/{repo}/git/refs/{ref...}
 PATCH /api/v3/repos/{owner}/{repo}/hooks/{id}
@@ -1214,6 +1235,7 @@ POST /api/v3/repos/{owner}/{repo}/commits/{commit_sha}/comments
 POST /api/v3/repos/{owner}/{repo}/dependency-graph/snapshots
 POST /api/v3/repos/{owner}/{repo}/deployments
 POST /api/v3/repos/{owner}/{repo}/deployments/{deployment_id}/statuses
+POST /api/v3/repos/{owner}/{repo}/dismissal-requests/dependabot/{alert_number}
 POST /api/v3/repos/{owner}/{repo}/dispatches
 POST /api/v3/repos/{owner}/{repo}/environments/{env_name}/deployment-branch-policies
 POST /api/v3/repos/{owner}/{repo}/environments/{env_name}/deployment_protection_rules

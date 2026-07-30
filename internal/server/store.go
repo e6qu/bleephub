@@ -626,6 +626,9 @@ type Store struct {
 	SecretScanningPatternConfigs   map[string]*OrgSecretScanningPatternConfig                     // org login → config
 	SecretScanningPushPlaceholders map[string]map[string]*SecretScanningPushProtectionPlaceholder // repoKey → placeholder ID → placeholder
 	SecretScanningPushBypasses     map[string][]*SecretScanningPushProtectionBypass               // repoKey → bypasses
+	SecurityReviewRequests         map[string]map[int]*SecurityReviewRequest                      // "repo|kind" → number → request
+	NextSecurityReviewRequestID    int
+	NextSecurityReviewResponseID   int
 
 	// repo-write surfaces
 	PagesDeployments         map[int]map[int]*PagesDeploymentRecord // repoID → deployment ID → record
@@ -1032,6 +1035,9 @@ func NewStore() *Store {
 		SecretScanningPatternConfigs:   map[string]*OrgSecretScanningPatternConfig{},
 		SecretScanningPushPlaceholders: map[string]map[string]*SecretScanningPushProtectionPlaceholder{},
 		SecretScanningPushBypasses:     map[string][]*SecretScanningPushProtectionBypass{},
+		SecurityReviewRequests:         map[string]map[int]*SecurityReviewRequest{},
+		NextSecurityReviewRequestID:    1,
+		NextSecurityReviewResponseID:   1,
 		// repo-write surfaces
 		PagesDeployments:         map[int]map[int]*PagesDeploymentRecord{},
 		NextPagesDeploymentID:    1,
@@ -3291,6 +3297,27 @@ func (st *Store) loadFromPersistence() error {
 				return fmt.Errorf("decode team_external_group_ids row: %w", err)
 			}
 			st.TeamExternalGroupIDs[teamID] = groupIDs
+		}
+	}
+	if rows, err := st.persist.List("security_review_requests"); err != nil {
+		return fmt.Errorf("load security_review_requests: %w", err)
+	} else {
+		for scope, raw := range rows {
+			requests := map[int]*SecurityReviewRequest{}
+			if err := loadJSON(raw, &requests); err != nil {
+				return fmt.Errorf("decode security_review_requests row: %w", err)
+			}
+			st.SecurityReviewRequests[scope] = requests
+			for _, request := range requests {
+				if request.ID >= st.NextSecurityReviewRequestID {
+					st.NextSecurityReviewRequestID = request.ID + 1
+				}
+				for _, response := range request.Responses {
+					if response.ID >= st.NextSecurityReviewResponseID {
+						st.NextSecurityReviewResponseID = response.ID + 1
+					}
+				}
+			}
 		}
 	}
 	for bucket, dst := range map[string]map[string]map[int]json.RawMessage{

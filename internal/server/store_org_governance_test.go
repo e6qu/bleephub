@@ -3,6 +3,7 @@ package bleephub
 import (
 	"strconv"
 	"testing"
+	"time"
 )
 
 func TestOrganizationGovernanceStatePersistenceReload(t *testing.T) {
@@ -59,12 +60,24 @@ func TestOrganizationGovernanceStatePersistenceReload(t *testing.T) {
 		},
 	}
 	st1.TeamExternalGroupIDs[71] = []string{"persistent-group"}
+	reviewScope := securityReviewScope(repo.FullName, reviewKindSecretBypass)
+	st1.SecurityReviewRequests[reviewScope] = map[int]*SecurityReviewRequest{
+		9: {
+			ID: 21, Number: 9, RepoKey: repo.FullName, OrgLogin: org.Login,
+			Kind: reviewKindSecretBypass, RequesterID: admin.ID, ResourceID: "deadbeef",
+			Status: "approved", CreatedAt: now, ExpiresAt: now.Add(7 * 24 * time.Hour),
+			Responses: []SecurityReviewResponse{{
+				ID: 34, ReviewerID: admin.ID, Status: "approved", CreatedAt: now,
+			}},
+		},
+	}
 	st1.persist.MustPut("org_announcements", org.Login, st1.OrgAnnouncements[org.Login])
 	st1.persist.MustPut("org_custom_repo_roles", org.Login, st1.OrgCustomRepoRoles[org.Login])
 	st1.persist.MustPut("org_custom_roles", org.Login, st1.OrgCustomRoles[org.Login])
 	st1.persist.MustPut("org_scim_users", org.Login, st1.OrgSCIMUsers[org.Login])
 	st1.persist.MustPut("org_external_groups", org.Login, st1.OrgExternalGroups[org.Login])
 	st1.persist.MustPut("team_external_group_ids", "71", st1.TeamExternalGroupIDs[71])
+	st1.persist.MustPut("security_review_requests", reviewScope, st1.SecurityReviewRequests[reviewScope])
 	st1.mu.Unlock()
 	if err := p1.Close(); err != nil {
 		t.Fatalf("close persistence: %v", err)
@@ -99,6 +112,13 @@ func TestOrganizationGovernanceStatePersistenceReload(t *testing.T) {
 	}
 	if st2.NextOrgExternalGroupID <= 17 {
 		t.Fatalf("next external group id = %d, want > 17", st2.NextOrgExternalGroupID)
+	}
+	if got := st2.SecurityReviewRequests[reviewScope][9]; got == nil || len(got.Responses) != 1 {
+		t.Fatalf("reloaded security review request = %#v", got)
+	}
+	if st2.NextSecurityReviewRequestID <= 21 || st2.NextSecurityReviewResponseID <= 34 {
+		t.Fatalf("security review counters = request %d response %d",
+			st2.NextSecurityReviewRequestID, st2.NextSecurityReviewResponseID)
 	}
 	if got := st2.GetRepo(org.Login, "lfs-reload"); got == nil || !got.LFSEnabled {
 		t.Fatalf("reloaded repository LFS state = %#v", got)
