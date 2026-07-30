@@ -19,7 +19,8 @@ func TestOrganizationGovernanceStatePersistenceReload(t *testing.T) {
 		t.Fatalf("set persistence: %v", err)
 	}
 	st1.SeedDefaultUser()
-	org := st1.CreateOrg(st1.LookupUserByLogin("admin"), "governance-reload", "Governance", "")
+	admin := st1.LookupUserByLogin("admin")
+	org := st1.CreateOrg(admin, "governance-reload", "Governance", "")
 	now := fixedTestTime
 	description := "persists"
 	baseRole := "read"
@@ -38,9 +39,17 @@ func TestOrganizationGovernanceStatePersistenceReload(t *testing.T) {
 			CreatedAt: now, UpdatedAt: now,
 		},
 	}
+	st1.OrgSCIMUsers[org.Login] = map[string]*EnterpriseSCIMUser{
+		"persistent-scim-user": {
+			Schemas: []string{scimUserSchema}, ID: "persistent-scim-user",
+			ExternalID: "directory-persistent", UserName: "admin", Active: true,
+			UserID: admin.ID, CreatedAt: now, UpdatedAt: now,
+		},
+	}
 	st1.persist.MustPut("org_announcements", org.Login, st1.OrgAnnouncements[org.Login])
 	st1.persist.MustPut("org_custom_repo_roles", org.Login, st1.OrgCustomRepoRoles[org.Login])
 	st1.persist.MustPut("org_custom_roles", org.Login, st1.OrgCustomRoles[org.Login])
+	st1.persist.MustPut("org_scim_users", org.Login, st1.OrgSCIMUsers[org.Login])
 	st1.mu.Unlock()
 	if err := p1.Close(); err != nil {
 		t.Fatalf("close persistence: %v", err)
@@ -63,6 +72,9 @@ func TestOrganizationGovernanceStatePersistenceReload(t *testing.T) {
 	}
 	if got := st2.OrgCustomRoles[org.Login][1002]; got == nil || got.Name != "persistent org role" {
 		t.Fatalf("reloaded custom organization role = %#v", got)
+	}
+	if got := st2.OrgSCIMUsers[org.Login]["persistent-scim-user"]; got == nil || got.ExternalID != "directory-persistent" {
+		t.Fatalf("reloaded organization SCIM user = %#v", got)
 	}
 	if st2.NextOrgCustomRoleID <= 1002 {
 		t.Fatalf("next custom role id = %d, want > 1002", st2.NextOrgCustomRoleID)

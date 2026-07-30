@@ -16,6 +16,8 @@ import (
 // lookup, and org-wide security-product enablement.
 
 func (s *Server) registerGHOrgsPeopleRoutes() {
+	s.registerGHOrganizationSCIMRoutes()
+
 	// Organization invitations.
 	s.route("GET /api/v3/orgs/{org}/invitations", s.requirePerm(scopeMembers, permRead, s.handleListOrgInvitations))
 	s.route("POST /api/v3/orgs/{org}/invitations", s.requirePerm(scopeMembers, permWrite, s.handleCreateOrgInvitation))

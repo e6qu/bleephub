@@ -17809,7 +17809,6 @@
             "DELETE /repos/{}/{}/bypass-responses/secret-scanning/{}",
             "DELETE /repos/{}/{}/dismissal-requests/dependabot/{}",
             "DELETE /repos/{}/{}/lfs",
-            "DELETE /scim/v2/organizations/{}/Users/{}",
             "GET /organizations/{}/org-properties/values",
             "GET /orgs/{}/bypass-requests/push-rules",
             "GET /orgs/{}/bypass-requests/secret-scanning",
@@ -17833,8 +17832,6 @@
             "GET /repos/{}/{}/dismissal-requests/dependabot/{}",
             "GET /repos/{}/{}/dismissal-requests/secret-scanning",
             "GET /repos/{}/{}/dismissal-requests/secret-scanning/{}",
-            "GET /scim/v2/organizations/{}/Users",
-            "GET /scim/v2/organizations/{}/Users/{}",
             "GET /teams/{}/team-sync/group-mappings",
             "PATCH /organizations/{}/org-properties/values",
             "PATCH /orgs/{}/teams/{}/external-groups",
@@ -17843,14 +17840,11 @@
             "PATCH /repos/{}/{}/dismissal-requests/code-scanning/{}",
             "PATCH /repos/{}/{}/dismissal-requests/dependabot/{}",
             "PATCH /repos/{}/{}/dismissal-requests/secret-scanning/{}",
-            "PATCH /scim/v2/organizations/{}/Users/{}",
             "PATCH /teams/{}/team-sync/group-mappings",
             "POST /repos/{}/{}/dismissal-requests/dependabot/{}",
-            "POST /scim/v2/organizations/{}/Users",
-            "PUT /repos/{}/{}/lfs",
-            "PUT /scim/v2/organizations/{}/Users/{}"
+            "PUT /repos/{}/{}/lfs"
           ],
-          "represented_operations": 1413
+          "represented_operations": 1419
         },
         "ghes-2.22": {
           "documented_operations": 642,
@@ -18728,7 +18722,7 @@
         "source": "internal/server/gh_attestations.go"
       },
       {
-        "line": 36,
+        "line": 38,
         "method": "DELETE",
         "path": "/api/v3/orgs/{org}/blocks/{username}",
         "source": "internal/server/gh_orgs_people_rest.go"
@@ -18836,13 +18830,13 @@
         "source": "internal/server/gh_org_hooks_rest.go"
       },
       {
-        "line": 41,
+        "line": 43,
         "method": "DELETE",
         "path": "/api/v3/orgs/{org}/interaction-limits",
         "source": "internal/server/gh_orgs_people_rest.go"
       },
       {
-        "line": 22,
+        "line": 24,
         "method": "DELETE",
         "path": "/api/v3/orgs/{org}/invitations/{invitation_id}",
         "source": "internal/server/gh_orgs_people_rest.go"
@@ -18890,37 +18884,37 @@
         "source": "internal/server/gh_migrations.go"
       },
       {
-        "line": 59,
+        "line": 61,
         "method": "DELETE",
         "path": "/api/v3/orgs/{org}/organization-roles/teams/{team_slug}",
         "source": "internal/server/gh_orgs_people_rest.go"
       },
       {
-        "line": 58,
+        "line": 60,
         "method": "DELETE",
         "path": "/api/v3/orgs/{org}/organization-roles/teams/{team_slug}/{role_id}",
         "source": "internal/server/gh_orgs_people_rest.go"
       },
       {
-        "line": 62,
+        "line": 64,
         "method": "DELETE",
         "path": "/api/v3/orgs/{org}/organization-roles/users/{username}",
         "source": "internal/server/gh_orgs_people_rest.go"
       },
       {
-        "line": 61,
+        "line": 63,
         "method": "DELETE",
         "path": "/api/v3/orgs/{org}/organization-roles/users/{username}/{role_id}",
         "source": "internal/server/gh_orgs_people_rest.go"
       },
       {
-        "line": 54,
+        "line": 56,
         "method": "DELETE",
         "path": "/api/v3/orgs/{org}/organization-roles/{role_id}",
         "source": "internal/server/gh_orgs_people_rest.go"
       },
       {
-        "line": 30,
+        "line": 32,
         "method": "DELETE",
         "path": "/api/v3/orgs/{org}/outside_collaborators/{username}",
         "source": "internal/server/gh_orgs_people_rest.go"
@@ -18974,7 +18968,7 @@
         "source": "internal/server/gh_secret_scanning.go"
       },
       {
-        "line": 68,
+        "line": 70,
         "method": "DELETE",
         "path": "/api/v3/orgs/{org}/security-managers/teams/{team_slug}",
         "source": "internal/server/gh_orgs_people_rest.go"
@@ -19446,6 +19440,12 @@
         "method": "DELETE",
         "path": "/api/v3/scim/v2/enterprises/{enterprise}/Users/{scim_user_id}",
         "source": "internal/server/gh_enterprise_scim.go"
+      },
+      {
+        "line": 23,
+        "method": "DELETE",
+        "path": "/api/v3/scim/v2/organizations/{org}/Users/{scim_user_id}",
+        "source": "internal/server/gh_org_scim.go"
       },
       {
         "line": 16,
@@ -21068,13 +21068,13 @@
         "source": "internal/server/gh_misc_endpoints.go"
       },
       {
-        "line": 33,
+        "line": 35,
         "method": "GET",
         "path": "/api/v3/orgs/{org}/blocks",
         "source": "internal/server/gh_orgs_people_rest.go"
       },
       {
-        "line": 34,
+        "line": 36,
         "method": "GET",
         "path": "/api/v3/orgs/{org}/blocks/{username}",
         "source": "internal/server/gh_orgs_people_rest.go"
@@ -21320,7 +21320,7 @@
         "source": "internal/server/gh_org_events.go"
       },
       {
-        "line": 24,
+        "line": 26,
         "method": "GET",
         "path": "/api/v3/orgs/{org}/failed_invitations",
         "source": "internal/server/gh_orgs_people_rest.go"
@@ -21428,19 +21428,19 @@
         "source": "internal/server/gh_apps_rest.go"
       },
       {
-        "line": 39,
+        "line": 41,
         "method": "GET",
         "path": "/api/v3/orgs/{org}/interaction-limits",
         "source": "internal/server/gh_orgs_people_rest.go"
       },
       {
-        "line": 20,
+        "line": 22,
         "method": "GET",
         "path": "/api/v3/orgs/{org}/invitations",
         "source": "internal/server/gh_orgs_people_rest.go"
       },
       {
-        "line": 23,
+        "line": 25,
         "method": "GET",
         "path": "/api/v3/orgs/{org}/invitations/{invitation_id}/teams",
         "source": "internal/server/gh_orgs_people_rest.go"
@@ -21524,31 +21524,31 @@
         "source": "internal/server/gh_org_governance.go"
       },
       {
-        "line": 50,
+        "line": 52,
         "method": "GET",
         "path": "/api/v3/orgs/{org}/organization-roles",
         "source": "internal/server/gh_orgs_people_rest.go"
       },
       {
-        "line": 52,
+        "line": 54,
         "method": "GET",
         "path": "/api/v3/orgs/{org}/organization-roles/{role_id}",
         "source": "internal/server/gh_orgs_people_rest.go"
       },
       {
-        "line": 55,
+        "line": 57,
         "method": "GET",
         "path": "/api/v3/orgs/{org}/organization-roles/{role_id}/teams",
         "source": "internal/server/gh_orgs_people_rest.go"
       },
       {
-        "line": 56,
+        "line": 58,
         "method": "GET",
         "path": "/api/v3/orgs/{org}/organization-roles/{role_id}/users",
         "source": "internal/server/gh_orgs_people_rest.go"
       },
       {
-        "line": 28,
+        "line": 30,
         "method": "GET",
         "path": "/api/v3/orgs/{org}/outside_collaborators",
         "source": "internal/server/gh_orgs_people_rest.go"
@@ -21758,7 +21758,7 @@
         "source": "internal/server/gh_security_advisories.go"
       },
       {
-        "line": 66,
+        "line": 68,
         "method": "GET",
         "path": "/api/v3/orgs/{org}/security-managers",
         "source": "internal/server/gh_orgs_people_rest.go"
@@ -21812,7 +21812,7 @@
         "source": "internal/server/gh_teams_rest.go"
       },
       {
-        "line": 25,
+        "line": 27,
         "method": "GET",
         "path": "/api/v3/orgs/{org}/teams/{team_slug}/invitations",
         "source": "internal/server/gh_orgs_people_rest.go"
@@ -23390,6 +23390,18 @@
         "source": "internal/server/gh_enterprise_scim.go"
       },
       {
+        "line": 18,
+        "method": "GET",
+        "path": "/api/v3/scim/v2/organizations/{org}/Users",
+        "source": "internal/server/gh_org_scim.go"
+      },
+      {
+        "line": 20,
+        "method": "GET",
+        "path": "/api/v3/scim/v2/organizations/{org}/Users/{scim_user_id}",
+        "source": "internal/server/gh_org_scim.go"
+      },
+      {
         "line": 24,
         "method": "GET",
         "path": "/api/v3/search/code",
@@ -24278,7 +24290,7 @@
         "source": "internal/server/gh_issue_fields.go"
       },
       {
-        "line": 53,
+        "line": 55,
         "method": "PATCH",
         "path": "/api/v3/orgs/{org}/organization-roles/{role_id}",
         "source": "internal/server/gh_orgs_people_rest.go"
@@ -24564,6 +24576,12 @@
         "method": "PATCH",
         "path": "/api/v3/scim/v2/enterprises/{enterprise}/Users/{scim_user_id}",
         "source": "internal/server/gh_enterprise_scim.go"
+      },
+      {
+        "line": 22,
+        "method": "PATCH",
+        "path": "/api/v3/scim/v2/organizations/{org}/Users/{scim_user_id}",
+        "source": "internal/server/gh_org_scim.go"
       },
       {
         "line": 15,
@@ -25082,7 +25100,7 @@
         "source": "internal/server/gh_org_hooks_rest.go"
       },
       {
-        "line": 21,
+        "line": 23,
         "method": "POST",
         "path": "/api/v3/orgs/{org}/invitations",
         "source": "internal/server/gh_orgs_people_rest.go"
@@ -25112,7 +25130,7 @@
         "source": "internal/server/gh_migrations.go"
       },
       {
-        "line": 51,
+        "line": 53,
         "method": "POST",
         "path": "/api/v3/orgs/{org}/organization-roles",
         "source": "internal/server/gh_orgs_people_rest.go"
@@ -25214,7 +25232,7 @@
         "source": "internal/server/gh_teams_rest.go"
       },
       {
-        "line": 71,
+        "line": 73,
         "method": "POST",
         "path": "/api/v3/orgs/{org}/{security_product}/{enablement}",
         "source": "internal/server/gh_orgs_people_rest.go"
@@ -25838,6 +25856,12 @@
         "source": "internal/server/gh_enterprise_scim.go"
       },
       {
+        "line": 19,
+        "method": "POST",
+        "path": "/api/v3/scim/v2/organizations/{org}/Users",
+        "source": "internal/server/gh_org_scim.go"
+      },
+      {
         "line": 16,
         "method": "POST",
         "path": "/api/v3/user/codespaces",
@@ -26378,7 +26402,7 @@
         "source": "internal/server/gh_agents_secrets.go"
       },
       {
-        "line": 35,
+        "line": 37,
         "method": "PUT",
         "path": "/api/v3/orgs/{org}/blocks/{username}",
         "source": "internal/server/gh_orgs_people_rest.go"
@@ -26480,7 +26504,7 @@
         "source": "internal/server/gh_dependabot.go"
       },
       {
-        "line": 40,
+        "line": 42,
         "method": "PUT",
         "path": "/api/v3/orgs/{org}/interaction-limits",
         "source": "internal/server/gh_orgs_people_rest.go"
@@ -26498,19 +26522,19 @@
         "source": "internal/server/gh_members_rest.go"
       },
       {
-        "line": 57,
+        "line": 59,
         "method": "PUT",
         "path": "/api/v3/orgs/{org}/organization-roles/teams/{team_slug}/{role_id}",
         "source": "internal/server/gh_orgs_people_rest.go"
       },
       {
-        "line": 60,
+        "line": 62,
         "method": "PUT",
         "path": "/api/v3/orgs/{org}/organization-roles/users/{username}/{role_id}",
         "source": "internal/server/gh_orgs_people_rest.go"
       },
       {
-        "line": 29,
+        "line": 31,
         "method": "PUT",
         "path": "/api/v3/orgs/{org}/outside_collaborators/{username}",
         "source": "internal/server/gh_orgs_people_rest.go"
@@ -26534,7 +26558,7 @@
         "source": "internal/server/gh_rulesets.go"
       },
       {
-        "line": 67,
+        "line": 69,
         "method": "PUT",
         "path": "/api/v3/orgs/{org}/security-managers/teams/{team_slug}",
         "source": "internal/server/gh_orgs_people_rest.go"
@@ -26862,6 +26886,12 @@
         "method": "PUT",
         "path": "/api/v3/scim/v2/enterprises/{enterprise}/Users/{scim_user_id}",
         "source": "internal/server/gh_enterprise_scim.go"
+      },
+      {
+        "line": 21,
+        "method": "PUT",
+        "path": "/api/v3/scim/v2/organizations/{org}/Users/{scim_user_id}",
+        "source": "internal/server/gh_org_scim.go"
       },
       {
         "line": 22,

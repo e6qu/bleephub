@@ -603,6 +603,7 @@ type Store struct {
 	OrgCustomRepoRoles     map[string]map[int]*OrgCustomRepositoryRole // orgLogin → role ID → role
 	OrgCustomRoles         map[string]map[int]*OrgCustomOrganizationRole
 	NextOrgCustomRoleID    int
+	OrgSCIMUsers           map[string]map[string]*EnterpriseSCIMUser // orgLogin → SCIM ID → identity
 	// org billing budgets (gh_org_billing.go)
 	OrgBudgets map[string]map[string]*OrgBudget // org login → budget ID → budget
 	// API insights (gh_api_insights.go)
@@ -1006,6 +1007,7 @@ func NewStore() *Store {
 		OrgCustomRepoRoles:     map[string]map[int]*OrgCustomRepositoryRole{},
 		OrgCustomRoles:         map[string]map[int]*OrgCustomOrganizationRole{},
 		NextOrgCustomRoleID:    1000,
+		OrgSCIMUsers:           map[string]map[string]*EnterpriseSCIMUser{},
 		// org billing budgets
 		OrgBudgets: map[string]map[string]*OrgBudget{},
 		// API insights
@@ -3241,6 +3243,17 @@ func (st *Store) loadFromPersistence() error {
 				return fmt.Errorf("decode org_announcements row: %w", err)
 			}
 			st.OrgAnnouncements[orgLogin] = &announcement
+		}
+	}
+	if rows, err := st.persist.List("org_scim_users"); err != nil {
+		return fmt.Errorf("load org_scim_users: %w", err)
+	} else {
+		for orgLogin, raw := range rows {
+			users := map[string]*EnterpriseSCIMUser{}
+			if err := loadJSON(raw, &users); err != nil {
+				return fmt.Errorf("decode org_scim_users row: %w", err)
+			}
+			st.OrgSCIMUsers[orgLogin] = users
 		}
 	}
 	for bucket, dst := range map[string]map[string]map[int]json.RawMessage{
