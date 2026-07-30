@@ -17807,10 +17807,6 @@
             "DELETE /enterprises/{}/copilot/billing/selected_enterprise_teams",
             "DELETE /enterprises/{}/copilot/billing/selected_users",
             "DELETE /enterprises/{}/copilot/custom-agents/source",
-            "DELETE /enterprises/{}/enterprise-roles/teams/{}",
-            "DELETE /enterprises/{}/enterprise-roles/teams/{}/{}",
-            "DELETE /enterprises/{}/enterprise-roles/users/{}",
-            "DELETE /enterprises/{}/enterprise-roles/users/{}/{}",
             "DELETE /enterprises/{}/settings/billing/budgets/{}",
             "DELETE /enterprises/{}/settings/billing/cost-centers/{}",
             "DELETE /enterprises/{}/settings/billing/cost-centers/{}/resource",
@@ -17832,10 +17828,6 @@
             "GET /enterprises/{}/copilot/custom-agents",
             "GET /enterprises/{}/copilot/custom-agents/source",
             "GET /enterprises/{}/copilot/usage-records",
-            "GET /enterprises/{}/enterprise-roles",
-            "GET /enterprises/{}/enterprise-roles/{}",
-            "GET /enterprises/{}/enterprise-roles/{}/teams",
-            "GET /enterprises/{}/enterprise-roles/{}/users",
             "GET /enterprises/{}/innersource-vulnerabilities/sync/status/{}",
             "GET /enterprises/{}/installation",
             "GET /enterprises/{}/license-sync-status",
@@ -17916,13 +17908,11 @@
             "POST /scim/v2/organizations/{}/Users",
             "PUT /enterprises/{}/copilot/content_exclusion",
             "PUT /enterprises/{}/copilot/custom-agents/source",
-            "PUT /enterprises/{}/enterprise-roles/teams/{}/{}",
-            "PUT /enterprises/{}/enterprise-roles/users/{}/{}",
             "PUT /enterprises/{}/visual-studio-subscriptions/{}",
             "PUT /repos/{}/{}/lfs",
             "PUT /scim/v2/organizations/{}/Users/{}"
           ],
-          "represented_operations": 1341
+          "represented_operations": 1351
         },
         "ghes-2.22": {
           "documented_operations": 642,
@@ -18563,6 +18553,30 @@
         "method": "DELETE",
         "path": "/api/v3/enterprises/{enterprise}/copilot/policies/coding_agent/organizations",
         "source": "internal/server/gh_enterprise_copilot.go"
+      },
+      {
+        "line": 33,
+        "method": "DELETE",
+        "path": "/api/v3/enterprises/{enterprise}/enterprise-roles/teams/{team_slug}",
+        "source": "internal/server/gh_enterprise_roles.go"
+      },
+      {
+        "line": 32,
+        "method": "DELETE",
+        "path": "/api/v3/enterprises/{enterprise}/enterprise-roles/teams/{team_slug}/{role_id}",
+        "source": "internal/server/gh_enterprise_roles.go"
+      },
+      {
+        "line": 36,
+        "method": "DELETE",
+        "path": "/api/v3/enterprises/{enterprise}/enterprise-roles/users/{username}",
+        "source": "internal/server/gh_enterprise_roles.go"
+      },
+      {
+        "line": 35,
+        "method": "DELETE",
+        "path": "/api/v3/enterprises/{enterprise}/enterprise-roles/users/{username}/{role_id}",
+        "source": "internal/server/gh_enterprise_roles.go"
       },
       {
         "line": 46,
@@ -20171,6 +20185,30 @@
         "method": "GET",
         "path": "/api/v3/enterprises/{enterprise}/dismissal-requests/secret-scanning",
         "source": "internal/server/gh_enterprise_security.go"
+      },
+      {
+        "line": 27,
+        "method": "GET",
+        "path": "/api/v3/enterprises/{enterprise}/enterprise-roles",
+        "source": "internal/server/gh_enterprise_roles.go"
+      },
+      {
+        "line": 28,
+        "method": "GET",
+        "path": "/api/v3/enterprises/{enterprise}/enterprise-roles/{role_id}",
+        "source": "internal/server/gh_enterprise_roles.go"
+      },
+      {
+        "line": 29,
+        "method": "GET",
+        "path": "/api/v3/enterprises/{enterprise}/enterprise-roles/{role_id}/teams",
+        "source": "internal/server/gh_enterprise_roles.go"
+      },
+      {
+        "line": 30,
+        "method": "GET",
+        "path": "/api/v3/enterprises/{enterprise}/enterprise-roles/{role_id}/users",
+        "source": "internal/server/gh_enterprise_roles.go"
       },
       {
         "line": 42,
@@ -25763,6 +25801,18 @@
         "method": "PUT",
         "path": "/api/v3/enterprises/{enterprise}/dependabot/repository-access/default-level",
         "source": "internal/server/gh_enterprise_dependabot.go"
+      },
+      {
+        "line": 31,
+        "method": "PUT",
+        "path": "/api/v3/enterprises/{enterprise}/enterprise-roles/teams/{team_slug}/{role_id}",
+        "source": "internal/server/gh_enterprise_roles.go"
+      },
+      {
+        "line": 34,
+        "method": "PUT",
+        "path": "/api/v3/enterprises/{enterprise}/enterprise-roles/users/{username}/{role_id}",
+        "source": "internal/server/gh_enterprise_roles.go"
       },
       {
         "line": 19,

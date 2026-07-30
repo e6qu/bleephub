@@ -104,6 +104,8 @@ func TestEnterpriseStatePersistenceReload(t *testing.T) {
 		DisplayName: "Reload Crew", Members: []EnterpriseSCIMMember{{Value: "scim-user-reload"}},
 		TeamID: team.ID, CreatedAt: st1.currentTime(), UpdatedAt: st1.currentTime(),
 	}
+	st1.EnterpriseSettings.EnterpriseRoleTeamAssignments[8030] = []int{team.ID}
+	st1.EnterpriseSettings.EnterpriseRoleUserAssignments[8031] = []int{admin.ID}
 	st1.EnterpriseSettings.OIDCIncludeEnterpriseSlug = true
 	st1.EnterpriseSettings.ActionsEnabledOrganizations = "selected"
 	st1.EnterpriseSettings.ActionsAllowedActions = "selected"
@@ -247,6 +249,13 @@ func TestEnterpriseStatePersistenceReload(t *testing.T) {
 		len(s.SCIMGroups["scim-group-reload"].Members) != 1 ||
 		s.SCIMGroups["scim-group-reload"].TeamID != team.ID {
 		t.Errorf("enterprise SCIM resources did not persist: users=%+v groups=%+v", s.SCIMUsers, s.SCIMGroups)
+	}
+	if len(s.EnterpriseRoleTeamAssignments[8030]) != 1 ||
+		s.EnterpriseRoleTeamAssignments[8030][0] != team.ID ||
+		len(s.EnterpriseRoleUserAssignments[8031]) != 1 ||
+		s.EnterpriseRoleUserAssignments[8031][0] != admin.ID {
+		t.Errorf("enterprise role assignments did not persist: teams=%+v users=%+v",
+			s.EnterpriseRoleTeamAssignments, s.EnterpriseRoleUserAssignments)
 	}
 	if len(s.DependabotAccessibleRepoIDs) != 1 || s.DependabotAccessibleRepoIDs[0] != repo.ID {
 		t.Errorf("dependabot access = %v", s.DependabotAccessibleRepoIDs)
