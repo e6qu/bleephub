@@ -95,7 +95,7 @@ The runner execution controller (`/internal/exec/...`) and operator diagnostics 
 
 The official public schema from `docs.github.com` is digest-pinned and checked for upstream drift. A full authenticated introspection-equivalent snapshot of Bleephub is compared structurally against it: type kinds, fields, arguments, input fields, enum values, interfaces, possible types, and nested null/list signatures. The exact compatibility-gap set is allowlisted and may only change through review; a canonical introspection snapshot rejects accidental schema drift.
 
-The generated coverage report is intentionally blunt: the current official schema has 1,794 types and 8,285 object/input fields; Bleephub exposes 276 types, shares 210 official types, implements 782 official fields, and matches 546 field signatures exactly. It currently records 319 compatibility gaps, 1,584 missing types, and 1,203 missing fields on shared types. Official-client query tests still prove the consumer subset behaves, while [`graphql-schema-coverage.json`](graphql-schema-coverage.json) prevents that subset from being mistaken for full GitHub GraphQL coverage.
+The generated coverage report is intentionally blunt: the current official schema has 1,806 types and 8,341 object/input fields; Bleephub exposes 276 types, shares 210 official types, implements 782 official fields, and matches 546 field signatures exactly. It currently records 319 compatibility gaps, 1,596 missing types, and 1,208 missing fields on shared types. Official-client query tests still prove the consumer subset behaves, while [`graphql-schema-coverage.json`](graphql-schema-coverage.json) prevents that subset from being mistaken for full GitHub GraphQL coverage.
 
 ### 3. REST semantic coverage is observed, not exhaustive
 

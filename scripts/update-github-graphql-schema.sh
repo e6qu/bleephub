@@ -2,7 +2,7 @@
 # Refresh GitHub's official public GraphQL schema behind an explicit digest pin.
 set -euo pipefail
 
-PIN_SHA256="f7a98392e2281c215810c5ac648c3a6940bcd49db74beb2502143f244fdb4da3"
+PIN_SHA256="c504a0ed454276c878d5a873b782fa9824f2dec3205de3370845d40977e41322"
 SOURCE_URL="https://docs.github.com/public/fpt/schema.docs.graphql"
 
 usage() {

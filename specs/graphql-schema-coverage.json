@@ -1,8 +1,8 @@
 {
-  "official_types": 1794,
+  "official_types": 1806,
   "bleephub_types": 276,
   "shared_types": 210,
-  "official_fields": 8285,
+  "official_fields": 8341,
   "implemented_fields": 782,
   "signature_exact_fields": 546,
   "compatibility_gap_count": 319,
@@ -270,6 +270,8 @@
     "CreateProjectV2IssueFieldPayload",
     "CreateProjectV2StatusUpdateInput",
     "CreateProjectV2StatusUpdatePayload",
+    "CreateProjectV2ViewInput",
+    "CreateProjectV2ViewPayload",
     "CreateRefInput",
     "CreateRefPayload",
     "CreateRepositoryCustomPropertyInput",
@@ -353,6 +355,8 @@
     "DeleteProjectV2Payload",
     "DeleteProjectV2StatusUpdateInput",
     "DeleteProjectV2StatusUpdatePayload",
+    "DeleteProjectV2ViewInput",
+    "DeleteProjectV2ViewPayload",
     "DeleteProjectV2WorkflowInput",
     "DeleteProjectV2WorkflowPayload",
     "DeletePullRequestReviewCommentInput",
@@ -903,6 +907,7 @@
     "ProjectV2ItemContent",
     "ProjectV2ItemFieldLabelValue",
     "ProjectV2ItemFieldMilestoneValue",
+    "ProjectV2ItemFieldMultiSelectValue",
     "ProjectV2ItemFieldPullRequestValue",
     "ProjectV2ItemFieldRepositoryValue",
     "ProjectV2ItemFieldReviewerValue",
@@ -921,6 +926,9 @@
     "ProjectV2IterationFieldConfiguration",
     "ProjectV2IterationFieldConfigurationInput",
     "ProjectV2IterationFieldIteration",
+    "ProjectV2MultiSelectField",
+    "ProjectV2MultiSelectFieldOption",
+    "ProjectV2MultiSelectFieldOptionInput",
     "ProjectV2Order",
     "ProjectV2OrderField",
     "ProjectV2Owner",
@@ -942,6 +950,8 @@
     "ProjectV2StatusUpdateEdge",
     "ProjectV2StatusUpdateOrderField",
     "ProjectV2StatusUpdateStatus",
+    "ProjectV2ViewConfiguration",
+    "ProjectV2ViewConfigurationInput",
     "ProjectV2ViewLayout",
     "ProjectV2ViewOrder",
     "ProjectV2ViewOrderField",
@@ -1513,6 +1523,8 @@
     "UpdateProjectV2Payload",
     "UpdateProjectV2StatusUpdateInput",
     "UpdateProjectV2StatusUpdatePayload",
+    "UpdateProjectV2ViewInput",
+    "UpdateProjectV2ViewPayload",
     "UpdatePullRequestBranchInput",
     "UpdatePullRequestBranchPayload",
     "UpdatePullRequestReviewCommentInput",
@@ -1741,7 +1753,8 @@
       "clientMutationId"
     ],
     "CreateProjectV2FieldInput": [
-      "clientMutationId"
+      "clientMutationId",
+      "multiSelectOptions"
     ],
     "CreateProjectV2FieldPayload": [
       "clientMutationId"
@@ -2076,6 +2089,7 @@
       "createProject",
       "createProjectV2IssueField",
       "createProjectV2StatusUpdate",
+      "createProjectV2View",
       "createRef",
       "createRepositoryCustomProperty",
       "createRepositoryRuleset",
@@ -2104,6 +2118,7 @@
       "deleteProjectV2Field",
       "deleteProjectV2Item",
       "deleteProjectV2StatusUpdate",
+      "deleteProjectV2View",
       "deleteProjectV2Workflow",
       "deletePullRequestReview",
       "deletePullRequestReviewComment",
@@ -2238,6 +2253,7 @@
       "updateProjectV2Field",
       "updateProjectV2ItemPosition",
       "updateProjectV2StatusUpdate",
+      "updateProjectV2View",
       "updatePullRequestBranch",
       "updatePullRequestReview",
       "updatePullRequestReviewComment",
@@ -2441,6 +2457,7 @@
       "id"
     ],
     "ProjectV2View": [
+      "configuration",
       "databaseId",
       "fields",
       "fullDatabaseId",
