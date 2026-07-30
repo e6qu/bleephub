@@ -811,10 +811,6 @@ func (s *Server) handleDeleteRepo(w http.ResponseWriter, r *http.Request) {
 		writeGHError(w, http.StatusInternalServerError, "repository delete failed: "+err.Error())
 		return
 	}
-	if err := s.deleteRepositoryActionsData(r.Context(), repo.FullName); err != nil {
-		writeGHError(w, http.StatusInternalServerError, "repository deleted but Actions data cleanup failed: "+err.Error())
-		return
-	}
 	s.recordAuditEvent("repo.destroy", user.Login, "", map[string]interface{}{"repo": owner + "/" + name})
 	w.WriteHeader(http.StatusNoContent)
 }

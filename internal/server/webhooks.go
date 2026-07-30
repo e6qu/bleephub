@@ -204,6 +204,23 @@ func webhookDialControl(allowPrivate bool) func(network, address string, c sysca
 
 // newWebhookClient builds the HTTP client webhook deliveries use.
 func newWebhookClient(allowPrivate, insecureTLS bool) *http.Client {
+	transport := newAddressCheckedHTTPTransport(allowPrivate, insecureTLS)
+	return &http.Client{
+		Timeout:   webhookRequestTimeout,
+		Transport: otelhttp.NewTransport(transport),
+		// GitHub does not follow redirects on webhook delivery. Returning the
+		// 3xx as the outcome keeps a redirect from reaching a second
+		// destination the address gate never saw.
+		CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse },
+	}
+}
+
+// newAddressCheckedHTTPTransport is the shared server-side request boundary
+// for URL fetchers. Configuration-time DNS checks are useful feedback, but
+// only Dialer.Control sees the address the kernel is actually about to reach;
+// keeping the transport construction shared prevents webhook and source-import
+// SSRF policy from drifting apart again.
+func newAddressCheckedHTTPTransport(allowPrivate, insecureTLS bool) *http.Transport {
 	dialer := &net.Dialer{
 		Timeout:   webhookDialTimeout,
 		KeepAlive: 30 * time.Second,
@@ -224,14 +241,7 @@ func newWebhookClient(allowPrivate, insecureTLS bool) *http.Client {
 		// verification on GitHub too; redirects and private-address dials remain blocked.
 		transport.TLSClientConfig = &tls.Config{InsecureSkipVerify: true}
 	}
-	return &http.Client{
-		Timeout:   webhookRequestTimeout,
-		Transport: otelhttp.NewTransport(transport),
-		// GitHub does not follow redirects on webhook delivery. Returning the
-		// 3xx as the outcome keeps a redirect from reaching a second
-		// destination the address gate never saw.
-		CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse },
-	}
+	return transport
 }
 
 // webhookDeliveryClient returns the shared client for a hook's TLS setting.

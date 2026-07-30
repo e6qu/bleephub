@@ -584,6 +584,10 @@ func (s *ProjectV2Store) DeleteProject(id int) bool {
 // DeleteContentItems removes every ProjectV2 item whose content points at
 // one of the supplied issue or pull request database IDs.
 func (s *ProjectV2Store) DeleteContentItems(contentType string, contentIDs map[int]bool) {
+	s.DeleteContentItemsBatch(contentType, contentIDs, nil)
+}
+
+func (s *ProjectV2Store) DeleteContentItemsBatch(contentType string, contentIDs map[int]bool, batch *persistBatch) {
 	if len(contentIDs) == 0 {
 		return
 	}
@@ -595,7 +599,9 @@ func (s *ProjectV2Store) DeleteContentItems(contentType string, contentIDs map[i
 		}
 		delete(s.items, id)
 		s.unindexItemLocked(it)
-		if s.persist != nil {
+		if batch != nil {
+			batch.Delete("project_v2_items", strconv.Itoa(id))
+		} else if s.persist != nil {
 			s.persist.MustDelete("project_v2_items", strconv.Itoa(id))
 		}
 	}

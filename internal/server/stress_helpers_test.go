@@ -9,11 +9,9 @@ import (
 	"sync"
 )
 
-// wrappedTestHandler builds the server's real request pipeline — the exact
-// middleware chain ListenAndServe runs (prefix-strip → internal-auth →
-// gh-headers), minus only the optional otel/response-observer wrappers — so
-// the concurrency storms exercise the actual production handler + store code,
-// not a stripped-down subset.
+// wrappedTestHandler uses the exact production request pipeline. Keeping the
+// cache here avoids rebuilding telemetry middleware in the stress loops; the
+// shared stress fixture always passes the package-wide server.
 var (
 	wrappedOnce sync.Once
 	wrappedH    http.Handler
@@ -21,7 +19,7 @@ var (
 
 func wrappedTestHandler(s *Server) http.Handler {
 	wrappedOnce.Do(func() {
-		wrappedH = s.ghHeadersMiddleware(s.prefixStripMiddleware(s.internalAuthMiddleware(s.mux)))
+		wrappedH = s.requestHandler()
 	})
 	return wrappedH
 }

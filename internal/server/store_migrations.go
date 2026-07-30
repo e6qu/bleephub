@@ -48,6 +48,36 @@ type OrgMigration struct {
 	OrgLogin string `json:"-"`
 }
 
+func cloneMigrationCommon(m MigrationCommon) MigrationCommon {
+	m.Repositories = append([]string(nil), m.Repositories...)
+	if m.LockedRepos != nil {
+		lockedRepos := m.LockedRepos
+		m.LockedRepos = make(map[string]bool, len(m.LockedRepos))
+		for name, locked := range lockedRepos {
+			m.LockedRepos[name] = locked
+		}
+	}
+	return m
+}
+
+func cloneUserMigration(m *UserMigration) *UserMigration {
+	if m == nil {
+		return nil
+	}
+	copy := *m
+	copy.MigrationCommon = cloneMigrationCommon(m.MigrationCommon)
+	return &copy
+}
+
+func cloneOrgMigration(m *OrgMigration) *OrgMigration {
+	if m == nil {
+		return nil
+	}
+	copy := *m
+	copy.MigrationCommon = cloneMigrationCommon(m.MigrationCommon)
+	return &copy
+}
+
 func migrationNodeID(id int) string {
 	return fmt.Sprintf("M_kgDO%08d", id)
 }
@@ -121,7 +151,7 @@ func (st *Store) CreateUserMigration(userID int, repos []string, lock, exMeta, e
 			NodeID:               migrationNodeID(id),
 			GUID:                 uuid.New().String(),
 			State:                "exported",
-			Repositories:         repos,
+			Repositories:         append([]string(nil), repos...),
 			LockRepositories:     lock,
 			ExcludeMetadata:      exMeta,
 			ExcludeGitData:       exGit,
@@ -153,7 +183,7 @@ func (st *Store) CreateUserMigration(userID int, repos []string, lock, exMeta, e
 func (st *Store) GetUserMigration(id int) *UserMigration {
 	st.mu.RLock()
 	defer st.mu.RUnlock()
-	return st.UserMigrations[id]
+	return cloneUserMigration(st.UserMigrations[id])
 }
 
 // ListUserMigrations returns a user's migrations, newest first.
@@ -163,7 +193,7 @@ func (st *Store) ListUserMigrations(userID int) []*UserMigration {
 	var out []*UserMigration
 	for _, m := range st.UserMigrations {
 		if m.UserID == userID {
-			out = append(out, m)
+			out = append(out, cloneUserMigration(m))
 		}
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].ID > out[j].ID })
@@ -222,7 +252,7 @@ func (st *Store) CreateOrgMigration(orgLogin string, repos []string, lock, exMet
 			NodeID:               migrationNodeID(id),
 			GUID:                 uuid.New().String(),
 			State:                "exported",
-			Repositories:         repos,
+			Repositories:         append([]string(nil), repos...),
 			LockRepositories:     lock,
 			ExcludeMetadata:      exMeta,
 			ExcludeGitData:       exGit,
@@ -254,7 +284,7 @@ func (st *Store) CreateOrgMigration(orgLogin string, repos []string, lock, exMet
 func (st *Store) GetOrgMigration(id int) *OrgMigration {
 	st.mu.RLock()
 	defer st.mu.RUnlock()
-	return st.OrgMigrations[id]
+	return cloneOrgMigration(st.OrgMigrations[id])
 }
 
 // ListOrgMigrations returns an organization's migrations, newest first.
@@ -264,7 +294,7 @@ func (st *Store) ListOrgMigrations(orgLogin string) []*OrgMigration {
 	var out []*OrgMigration
 	for _, m := range st.OrgMigrations {
 		if m.OrgLogin == orgLogin {
-			out = append(out, m)
+			out = append(out, cloneOrgMigration(m))
 		}
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].ID > out[j].ID })

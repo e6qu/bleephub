@@ -622,8 +622,9 @@ func TestEphemeralRunnerTeardownStaysAuthenticated(t *testing.T) {
 	// aborts when the response drops it.
 	body := fmt.Sprintf(
 		`{"name":%q,"version":"2.330.0","ephemeral":true,`+
-			`"labels":[{"name":"self-hosted","type":"custom"}],"authorization":{"publicKey":%s}}`,
-		runner.name, runner.publicKeyJSON())
+			`"labels":[{"name":"self-hosted","type":"custom"},{"name":%q,"type":"custom"}],`+
+			`"authorization":{"publicKey":%s}}`,
+		runner.name, runner.name, runner.publicKeyJSON())
 	payload := handshakeStep(t, "add ephemeral agent", "POST", "/_apis/v1/Agent/1",
 		"Bearer "+runner.setupToken, "application/json", body, http.StatusOK)
 	var registered Agent
@@ -656,7 +657,7 @@ func TestEphemeralRunnerTeardownStaysAuthenticated(t *testing.T) {
 		MessageType: "PipelineAgentJobRequest",
 		Body:        message,
 		JobID:       jobID,
-		Labels:      []string{"self-hosted"},
+		Labels:      []string{"self-hosted", runner.name},
 	})
 
 	delivered := runner.pollForMessage()

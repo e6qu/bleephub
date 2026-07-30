@@ -95,7 +95,7 @@ func benchServer(tb testing.TB, cfg corpusConfig) (*Server, http.Handler, string
 			seedGitHistory(tb, s, repo.FullName, cfg.gitCommitsRepo)
 		}
 	}
-	handler := s.ghHeadersMiddleware(s.prefixStripMiddleware(s.internalAuthMiddleware(s.mux)))
+	handler := s.requestHandler()
 	return s, handler, org.Login, gitRepoName
 }
 

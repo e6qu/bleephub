@@ -358,17 +358,33 @@ func (st *Store) RenameRepo(owner, name, newName string) bool {
 // lock, guarded by a recorded deletion intent that a later start can finish.
 func (st *Store) DeleteRepo(owner, name string) (bool, error) {
 	fullName := owner + "/" + name
-	existed, err := st.deleteRepoMetadata(owner, name)
+	existed, intent, err := st.deleteRepoMetadata(owner, name)
 	if err != nil || !existed {
 		return existed, err
 	}
-	return true, st.purgeDeletedRepoBytes(fullName)
+	return true, st.purgeDeletedRepoBytes(fullName, intent)
 }
 
 // purgeDeletedRepoBytes destroys the git bytes of an already-unregistered
 // repository and clears its deletion intent. Nothing can reach the repository
 // at this point, so the object-store round trip does not need the store lock.
-func (st *Store) purgeDeletedRepoBytes(fullName string) error {
+func (st *Store) purgeDeletedRepoBytes(fullName string, fallback pendingDeletion) error {
+	raw, err := st.persist.Get(pendingDeletionsBucket, pendingRepoDeletionKey(fullName))
+	if err != nil {
+		return fmt.Errorf("delete repo %s: load deletion intent: %w", fullName, err)
+	}
+	record := fallback
+	if len(raw) > 0 {
+		if err := loadJSON(raw, &record); err != nil {
+			return fmt.Errorf("delete repo %s: decode deletion intent: %w", fullName, err)
+		}
+	}
+	if record.Name == "" {
+		record.Name = fullName
+	}
+	if err := st.cleanupDeletedRepo(record); err != nil {
+		return fmt.Errorf("delete repo %s external data: %w", fullName, err)
+	}
 	if err := deleteRepoGitStorage(fullName); err != nil {
 		return fmt.Errorf("delete repo %s git storage: %w", fullName, err)
 	}
@@ -378,7 +394,64 @@ func (st *Store) purgeDeletedRepoBytes(fullName string) error {
 	return nil
 }
 
-func (st *Store) deleteRepoMetadata(owner, name string) (bool, error) {
+func (st *Store) cleanupDeletedRepo(record pendingDeletion) error {
+	for _, runtime := range record.CodespaceRuntimes {
+		if runtime.ContainerID != "" {
+			ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+			err := dockerRemoveContainer(ctx, runtime.ContainerID)
+			cancel()
+			if err != nil {
+				return fmt.Errorf("remove codespace container %s: %w", runtime.ContainerID, err)
+			}
+		}
+		switch classifyCodespaceWorkspace(runtime.WorkspaceMount) {
+		case codespaceWorkspaceNone, codespaceWorkspaceBorrowed:
+		case codespaceWorkspaceScratch:
+			if err := os.RemoveAll(runtime.WorkspaceMount); err != nil {
+				return fmt.Errorf("remove codespace workspace: %w", err)
+			}
+		default:
+			return fmt.Errorf("refusing to remove codespace workspace outside the temporary directory: %s", runtime.WorkspaceMount)
+		}
+	}
+	for _, key := range record.ObjectKeys {
+		if st.ObjectByteStore == nil {
+			return fmt.Errorf("object %s requires configured object storage", key)
+		}
+		if err := st.ObjectByteStore.Delete(context.Background(), key); err != nil {
+			return fmt.Errorf("delete object %s: %w", key, err)
+		}
+	}
+	for _, key := range record.ReleaseAssetObjects {
+		if st.Releases.byteStore == nil {
+			return fmt.Errorf("release asset object %s requires configured object storage", key)
+		}
+		if err := st.Releases.byteStore.Delete(context.Background(), key); err != nil {
+			return fmt.Errorf("delete release asset object %s: %w", key, err)
+		}
+	}
+	for _, key := range record.ActionsObjectKeys {
+		if st.actionsArtifacts == nil || st.actionsArtifacts.byteStore == nil {
+			return fmt.Errorf("Actions object %s requires configured object storage", key)
+		}
+		if err := st.actionsArtifacts.byteStore.Delete(context.Background(), key); err != nil {
+			return fmt.Errorf("delete Actions object %s: %w", key, err)
+		}
+	}
+	for _, path := range append(record.LocalFiles, record.ReleaseAssetFiles...) {
+		if err := os.Remove(path); err != nil && !os.IsNotExist(err) {
+			return fmt.Errorf("delete file %s: %w", path, err)
+		}
+	}
+	for _, directory := range record.ActionsDirectories {
+		if err := os.RemoveAll(directory); err != nil {
+			return fmt.Errorf("delete Actions directory %s: %w", directory, err)
+		}
+	}
+	return nil
+}
+
+func (st *Store) deleteRepoMetadata(owner, name string) (bool, pendingDeletion, error) {
 	st.mu.Lock()
 	defer st.mu.Unlock()
 	return st.deleteRepoLocked(owner, name)
@@ -387,45 +460,37 @@ func (st *Store) deleteRepoMetadata(owner, name string) (bool, error) {
 // deleteRepoLocked purges the repository from memory and, in one transaction,
 // from the database. Caller must hold st.mu and must call
 // purgeDeletedRepoBytes afterwards to finish the deletion.
-func (st *Store) deleteRepoLocked(owner, name string) (bool, error) {
+func (st *Store) deleteRepoLocked(owner, name string) (bool, pendingDeletion, error) {
 	fullName := owner + "/" + name
 	repo, ok := st.ReposByName[fullName]
 	if !ok {
-		return false, nil
+		return false, pendingDeletion{}, nil
 	}
 
-	if err := st.persist.Put(pendingDeletionsBucket, pendingRepoDeletionKey(fullName), pendingDeletion{
-		Kind:      "repo",
-		Name:      fullName,
-		StartedAt: time.Now().UTC(),
-	}); err != nil {
-		return true, fmt.Errorf("delete repo %s: record deletion intent: %w", fullName, err)
+	intent := st.repoDeletionIntentLocked(repo)
+	planIDs, logIDs := st.repoWorkflowCleanupIDsLocked(fullName)
+	var completeActionsDeletion func(*persistBatch)
+	if st.actionsArtifacts != nil {
+		completeActionsDeletion = st.actionsArtifacts.prepareRepositoryDeletion(fullName, logIDs, &intent)
+	}
+	sort.Strings(intent.ActionsObjectKeys)
+	sort.Strings(intent.ActionsDirectories)
+	if err := st.persist.Put(pendingDeletionsBucket, pendingRepoDeletionKey(fullName), intent); err != nil {
+		if completeActionsDeletion != nil {
+			completeActionsDeletion(nil)
+		}
+		return true, pendingDeletion{}, fmt.Errorf("delete repo %s: record deletion intent: %w", fullName, err)
 	}
 	batch := newPersistBatch(st.persist)
-
-	for _, cs := range st.Codespaces {
-		if cs.RepoKey != fullName {
-			continue
-		}
-		if err := st.deleteCodespaceRuntimeLocked(cs); err != nil {
-			return true, fmt.Errorf("delete repo %s codespace %s: %w", fullName, cs.Name, err)
-		}
+	if completeActionsDeletion != nil {
+		completeActionsDeletion(batch)
 	}
-
-	if err := st.deletePackageFilesForOwnerLocked(fullName); err != nil {
-		return true, fmt.Errorf("delete repo %s package files: %w", fullName, err)
+	for planID := range planIDs {
+		delete(st.TimelineRecords, planID)
+		batch.Delete("timeline_records", planID)
 	}
-	if err := st.deleteCodeQLDatabaseDataForRepoLocked(fullName); err != nil {
-		return true, fmt.Errorf("delete repo %s CodeQL database files: %w", fullName, err)
-	}
-	if err := st.deleteCodeQLVariantAnalysisQueryPacksForControllerRepoLocked(fullName); err != nil {
-		return true, fmt.Errorf("delete repo %s CodeQL variant-analysis query packs: %w", fullName, err)
-	}
-	if err := st.deleteAttestationsForRepoLocked(repo.ID); err != nil {
-		return true, fmt.Errorf("delete repo %s artifact attestations: %w", fullName, err)
-	}
-	if err := st.deletePagesPublicationDataLocked(context.Background(), repo.ID); err != nil {
-		return true, fmt.Errorf("delete repo %s Pages publication: %w", fullName, err)
+	for logID := range logIDs {
+		delete(st.LogFiles, logID)
 	}
 
 	delete(st.Repos, repo.ID)
@@ -460,11 +525,11 @@ func (st *Store) deleteRepoLocked(owner, name string) (bool, error) {
 	delete(st.SecretScanningPushPlaceholders, fullName)
 	delete(st.SecretScanningPushBypasses, fullName)
 	st.deleteRepoFullNameReferencesLocked(batch, fullName)
-	st.deleteNotificationRepoKeyLocked(fullName)
-	st.CommitStatuses.deleteRepoKey(fullName)
+	st.deleteNotificationRepoKeyBatchLocked(batch, fullName)
+	st.CommitStatuses.deleteRepoKeyBatch(fullName, batch)
 	commitCommentIDs := st.CommitComments.IDsForRepo(repo.ID)
-	st.CommitComments.deleteRepo(repo.ID)
-	st.Reactions.DeleteParents("commit_comment", commitCommentIDs)
+	st.CommitComments.deleteRepoBatch(repo.ID, batch)
+	st.Reactions.DeleteParentsBatch("commit_comment", commitCommentIDs, batch)
 	for id, alert := range st.SecretScanningAlerts {
 		if alert.RepoKey == fullName {
 			delete(st.SecretScanningAlerts, id)
@@ -507,9 +572,9 @@ func (st *Store) deleteRepoLocked(owner, name string) (bool, error) {
 	for id, wf := range st.Workflows {
 		if wf.RepoFullName == fullName {
 			delete(st.Workflows, id)
-			st.deleteWorkflowRecord(id)
+			batch.Delete("workflows", id)
 			delete(st.WorkflowAttempts, wf.RunID)
-			st.persistWorkflowAttemptsRecord(wf.RunID)
+			batch.Delete("workflow_attempts", strconv.Itoa(wf.RunID))
 		}
 	}
 	for runID, attempts := range st.WorkflowAttempts {
@@ -523,7 +588,11 @@ func (st *Store) deleteRepoLocked(owner, name string) (bool, error) {
 			continue
 		}
 		st.WorkflowAttempts[runID] = kept
-		st.persistWorkflowAttemptsRecord(runID)
+		if len(kept) == 0 {
+			batch.Delete("workflow_attempts", strconv.Itoa(runID))
+		} else {
+			batch.Put("workflow_attempts", strconv.Itoa(runID), kept)
+		}
 	}
 	for id, alert := range st.CodeScanningAlerts {
 		if alert.RepoKey == fullName {
@@ -563,6 +632,12 @@ func (st *Store) deleteRepoLocked(owner, name string) (bool, error) {
 		if va.ControllerRepoKey == fullName {
 			delete(st.CodeQLVariantAnalyses, id)
 			batch.Delete("codeql_variant_analyses", strconv.Itoa(id))
+		}
+	}
+	for id, attestation := range st.Attestations {
+		if attestation.RepoID == repo.ID {
+			delete(st.Attestations, id)
+			batch.Delete("attestations", strconv.Itoa(id))
 		}
 	}
 	for id, alert := range st.DependabotAlerts {
@@ -638,7 +713,7 @@ func (st *Store) deleteRepoLocked(owner, name string) (bool, error) {
 	delete(st.SecurityAdvisoriesByRepo, fullName)
 	batch.Delete("security_advisories", fullName)
 	st.deleteRepoIDReferencesLocked(batch, repo.ID)
-	for _, envID := range st.Deployments.DeleteRepo(repo.ID) {
+	for _, envID := range st.Deployments.DeleteRepoBatch(repo.ID, batch) {
 		if _, ok := st.EnvBranchPolicies[envID]; ok {
 			delete(st.EnvBranchPolicies, envID)
 			batch.Delete("env_branch_policies", strconv.Itoa(envID))
@@ -703,11 +778,8 @@ func (st *Store) deleteRepoLocked(owner, name string) (bool, error) {
 		}
 	}
 	delete(st.PullsByRepo, repo.ID)
-	releaseIDs := st.Releases.IDsForRepo(repo.ID)
-	if err := st.Releases.DeleteAllForRepo(repo.ID); err != nil {
-		return true, fmt.Errorf("delete repo %s release assets: %w", fullName, err)
-	}
-	st.Reactions.DeleteParents("release", releaseIDs)
+	releaseIDs := st.Releases.deleteAllForRepoBatch(repo.ID, batch)
+	st.Reactions.DeleteParentsBatch("release", releaseIDs, batch)
 
 	// Discussion surfaces — comments first because they reference discussions.
 	for id, c := range st.DiscussionComments {
@@ -744,9 +816,104 @@ func (st *Store) deleteRepoLocked(owner, name string) (bool, error) {
 	st.Misc.mu.Unlock()
 
 	if err := batch.Commit(); err != nil {
-		return true, fmt.Errorf("delete repo %s: %w", fullName, err)
+		return true, pendingDeletion{}, fmt.Errorf("delete repo %s: %w", fullName, err)
 	}
-	return true, nil
+	return true, intent, nil
+}
+
+func (st *Store) repoWorkflowCleanupIDsLocked(fullName string) (map[string]bool, map[int]bool) {
+	planIDs := map[string]bool{}
+	addWorkflow := func(workflow *Workflow) {
+		if workflow == nil || workflow.RepoFullName != fullName {
+			return
+		}
+		for _, job := range workflow.Jobs {
+			if job != nil && job.PlanID != "" {
+				planIDs[job.PlanID] = true
+			}
+		}
+	}
+	for _, workflow := range st.Workflows {
+		addWorkflow(workflow)
+	}
+	for _, attempts := range st.WorkflowAttempts {
+		for _, workflow := range attempts {
+			addWorkflow(workflow)
+		}
+	}
+	logIDs := map[int]bool{}
+	for planID := range planIDs {
+		for _, record := range st.TimelineRecords[planID] {
+			if record != nil && record.Log != nil && record.Log.ID != 0 {
+				logIDs[record.Log.ID] = true
+			}
+		}
+	}
+	return planIDs, logIDs
+}
+
+func (st *Store) repoDeletionIntentLocked(repo *Repo) pendingDeletion {
+	record := pendingDeletion{
+		Kind:      "repo",
+		Name:      repo.FullName,
+		StartedAt: time.Now().UTC(),
+	}
+	addObject := func(key string) {
+		if key != "" {
+			record.ObjectKeys = append(record.ObjectKeys, key)
+		}
+	}
+	addPackageFile := func(path string) {
+		if path == "" {
+			return
+		}
+		if st.ObjectByteStore != nil {
+			addObject(path)
+		} else {
+			record.LocalFiles = append(record.LocalFiles, path)
+		}
+	}
+	for _, cs := range st.Codespaces {
+		if cs.RepoKey == repo.FullName {
+			record.CodespaceRuntimes = append(record.CodespaceRuntimes, pendingCodespaceRuntime{
+				ContainerID: cs.ContainerID, WorkspaceMount: cs.WorkspaceMount,
+			})
+		}
+	}
+	for _, pkg := range st.PackagesByOwnerKey[repo.FullName] {
+		for versionID := range st.PackageVersionsByPackage[pkg.ID] {
+			for _, file := range st.PackageFilesByVersion[versionID] {
+				addPackageFile(file.StoragePath)
+			}
+		}
+	}
+	if st.ObjectByteStore != nil {
+		for _, db := range st.CodeQLDatabasesByRepo[repo.FullName] {
+			addObject(db.StoragePath)
+		}
+		for _, analysis := range st.CodeQLVariantAnalyses {
+			if analysis.ControllerRepoKey == repo.FullName {
+				addObject(analysis.StoragePath)
+			}
+		}
+		for _, attestation := range st.Attestations {
+			if attestation.RepoID == repo.ID {
+				addObject(attestation.StoragePath)
+			}
+		}
+	}
+	pageKeys, _ := st.pagesPublicationKeysLocked(repo.ID)
+	for key := range pageKeys {
+		addObject(key)
+	}
+	st.Releases.appendRepoCleanup(repo.ID, &record)
+	sort.Strings(record.ObjectKeys)
+	sort.Strings(record.LocalFiles)
+	sort.Strings(record.ReleaseAssetObjects)
+	sort.Strings(record.ReleaseAssetFiles)
+	sort.Strings(record.ActionsObjectKeys)
+	sort.Strings(record.ActionsDirectories)
+	return record
 }
 
 // repoGitStorageIsPathBound reports whether a repository's storer addresses
@@ -846,7 +1013,7 @@ func (st *Store) deleteRepoIDReferencesLocked(batch *persistBatch, repoID int) {
 	if st.EnterpriseSettings != nil {
 		if kept, changed := removeRepoIDFromList(st.EnterpriseSettings.DependabotAccessibleRepoIDs, repoID); changed {
 			st.EnterpriseSettings.DependabotAccessibleRepoIDs = kept
-			st.persistEnterpriseSettings()
+			batch.Put("enterprise_settings", "enterprise", st.EnterpriseSettings)
 		}
 	}
 	for id, a := range st.RepoActivities {
@@ -915,7 +1082,7 @@ func (st *Store) deleteRepoIDReferencesLocked(batch *persistBatch, repoID int) {
 			changed = true
 		}
 		if changed {
-			st.persistOrgActionsPermissionsLocked(orgLogin)
+			batch.Put("org_actions_permissions", orgLogin, p)
 		}
 	}
 	for _, g := range st.RunnerGroups {
@@ -965,13 +1132,17 @@ func (st *Store) deleteRepoIDReferencesLocked(batch *persistBatch, repoID int) {
 			}
 		}
 		if changed {
-			st.persistCodespaceSecretScopeLocked(scope)
+			if len(m) == 0 {
+				batch.Delete("codespace_secrets", scope)
+			} else {
+				batch.Put("codespace_secrets", scope, m)
+			}
 		}
 	}
 	for orgLogin, p := range st.CopilotCodingAgentPerms {
 		if kept, changed := removeRepoIDFromList(p.SelectedRepositoryIDs, repoID); changed {
 			p.SelectedRepositoryIDs = kept
-			st.persistCopilotCodingAgentPermsLocked(p)
+			batch.Put("copilot_coding_agent_permissions", p.OrgLogin, p)
 			st.CopilotCodingAgentPerms[orgLogin] = p
 		}
 	}
@@ -1100,8 +1271,8 @@ func (st *Store) deleteRepoIssueAndPullChildrenLocked(batch *persistBatch, repoI
 		delete(st.IssueFieldValues, issueID)
 		batch.Delete("issue_field_values", strconv.Itoa(issueID))
 	}
-	st.ProjectsV2.DeleteContentItems("Issue", issueIDs)
-	st.ProjectsV2.DeleteContentItems("PullRequest", prIDs)
+	st.ProjectsV2.DeleteContentItemsBatch("Issue", issueIDs, batch)
+	st.ProjectsV2.DeleteContentItemsBatch("PullRequest", prIDs, batch)
 	threadIDs := make([]string, 0, len(issueIDs)+len(prIDs))
 	for issueID := range issueIDs {
 		threadIDs = append(threadIDs, notificationThreadID("Issue", issueID))
@@ -1109,7 +1280,7 @@ func (st *Store) deleteRepoIssueAndPullChildrenLocked(batch *persistBatch, repoI
 	for prID := range prIDs {
 		threadIDs = append(threadIDs, notificationThreadID("PullRequest", prID))
 	}
-	st.deleteNotificationThreadStateLocked(threadIDs)
+	st.deleteNotificationThreadStateBatchLocked(batch, threadIDs)
 	for id, c := range st.Comments {
 		if (c.ParentType == "issue" && issueIDs[c.IssueID]) || (c.ParentType == "pull_request" && prIDs[c.IssueID]) {
 			delete(st.Comments, id)
@@ -1148,10 +1319,11 @@ func (st *Store) deleteRepoIssueAndPullChildrenLocked(batch *persistBatch, repoI
 		}
 		if len(kept) == 0 {
 			delete(st.SubIssueLists, parentID)
+			batch.Delete("sub_issues", strconv.Itoa(parentID))
 		} else {
 			st.SubIssueLists[parentID] = kept
+			batch.Put("sub_issues", strconv.Itoa(parentID), kept)
 		}
-		st.persistSubIssuesLocked(parentID)
 	}
 	for childID, parentID := range st.SubIssueParent {
 		if issueIDs[childID] || issueIDs[parentID] {
@@ -1178,10 +1350,11 @@ func (st *Store) deleteRepoIssueAndPullChildrenLocked(batch *persistBatch, repoI
 		}
 		if len(kept) == 0 {
 			delete(st.IssueBlockedBy, issueID)
+			batch.Delete("issue_blocked_by", strconv.Itoa(issueID))
 		} else {
 			st.IssueBlockedBy[issueID] = kept
+			batch.Put("issue_blocked_by", strconv.Itoa(issueID), kept)
 		}
-		st.persistBlockedByLocked(issueID)
 	}
 	for id, r := range st.PRReviews {
 		if prIDs[r.PRID] {
@@ -1191,11 +1364,11 @@ func (st *Store) deleteRepoIssueAndPullChildrenLocked(batch *persistBatch, repoI
 	}
 	for prID := range prIDs {
 		delete(st.PRReviewsByPR, prID)
-		st.Reactions.DeleteParents("pull_request_comment", st.PRReviewComments.IDsForPR(prID))
-		st.PRReviewComments.DeleteForPR(prID)
+		st.Reactions.DeleteParentsBatch("pull_request_comment", st.PRReviewComments.IDsForPR(prID), batch)
+		st.PRReviewComments.DeleteForPRBatch(prID, batch)
 	}
-	st.Reactions.DeleteParents("issue", issueIDs)
-	st.Reactions.DeleteParents("pull_request", prIDs)
+	st.Reactions.DeleteParentsBatch("issue", issueIDs, batch)
+	st.Reactions.DeleteParentsBatch("pull_request", prIDs, batch)
 }
 
 // ListForks returns all repositories whose ParentID or SourceID matches

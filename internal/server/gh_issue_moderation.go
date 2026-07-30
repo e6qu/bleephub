@@ -49,6 +49,10 @@ func (s *Server) handleUpdateIssueComment(w http.ResponseWriter, r *http.Request
 	if !requireRepoOwns(w, repo, s.store.CommentRepoID(existing)) {
 		return
 	}
+	if existing.AuthorID != user.ID && !s.viewerCanPushRepo(r.Context(), repo) {
+		writeGHError(w, http.StatusForbidden, "Must have push access to edit another user's comment")
+		return
+	}
 
 	var req struct {
 		Body string `json:"body"`
@@ -96,6 +100,10 @@ func (s *Server) handleDeleteIssueComment(w http.ResponseWriter, r *http.Request
 		return
 	}
 	if !requireRepoOwns(w, repo, s.store.CommentRepoID(c)) {
+		return
+	}
+	if c.AuthorID != user.ID && !s.viewerCanPushRepo(r.Context(), repo) {
+		writeGHError(w, http.StatusForbidden, "Must have push access to delete another user's comment")
 		return
 	}
 	parentNumber := commentParentNumber(s.store, c)

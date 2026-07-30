@@ -7,6 +7,24 @@ const dir = (relative: string) => fileURLToPath(new URL(relative, import.meta.ur
 
 export default defineConfig({
   test: {
+    coverage: {
+      provider: "v8",
+      include: ["src/**/*.{ts,tsx}", "core/src/**/*.{ts,tsx}"],
+      exclude: [
+        "src/__tests__/**",
+        "core/src/__tests__/**",
+        "src/test-setup.ts",
+        "core/src/test-setup.ts",
+        "**/*.d.ts",
+      ],
+      reporter: ["text-summary", "json-summary"],
+      thresholds: {
+        statements: 65,
+        branches: 62,
+        functions: 55,
+        lines: 68,
+      },
+    },
     projects: [
       {
         test: {

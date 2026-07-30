@@ -35,6 +35,8 @@ type ArtifactStore struct {
 	dataDir     string         // empty = in-memory mode
 	byteStore   actionsByteStore
 	persist     *Persistence
+	revision    int64
+	refreshMu   sync.Mutex
 }
 
 const (
@@ -228,7 +230,134 @@ func (as *ArtifactStore) SetPersistence(p *Persistence) error {
 	} else if highWater > as.nextCacheID {
 		as.nextCacheID = highWater
 	}
+	revision, err := p.StateRevision()
+	if err != nil {
+		return fmt.Errorf("load Actions metadata revision: %w", err)
+	}
+	as.revision = revision
 	return nil
+}
+
+// RefreshFromPersistenceIfStale brings Actions artifact/cache indexes written
+// by another dqlite replica into this process. In-flight local uploads are
+// deliberately preserved; only finalized rows are durable and replaceable.
+func (as *ArtifactStore) RefreshFromPersistenceIfStale() error {
+	as.mu.RLock()
+	persist := as.persist
+	loadedRevision := as.revision
+	as.mu.RUnlock()
+	if persist == nil || persist.OwnedExclusively() {
+		return nil
+	}
+	revision, err := persist.StateRevision()
+	if err != nil {
+		return fmt.Errorf("read Actions metadata revision: %w", err)
+	}
+	if revision <= loadedRevision {
+		return nil
+	}
+
+	as.refreshMu.Lock()
+	defer as.refreshMu.Unlock()
+	for attempt := 0; attempt < 3; attempt++ {
+		before, err := persist.StateRevision()
+		if err != nil {
+			return fmt.Errorf("read Actions metadata revision before reload: %w", err)
+		}
+		artifactRows, err := persist.List(actionsArtifactsBucket)
+		if err != nil {
+			return fmt.Errorf("load Actions artifact metadata: %w", err)
+		}
+		cacheRows, err := persist.List(actionsCachesBucket)
+		if err != nil {
+			return fmt.Errorf("load Actions cache metadata: %w", err)
+		}
+		artifactHighWater, err := persist.KeyHighWater(actionsArtifactsBucket)
+		if err != nil {
+			return fmt.Errorf("load Actions artifact identifier: %w", err)
+		}
+		cacheHighWater, err := persist.KeyHighWater(actionsCachesBucket)
+		if err != nil {
+			return fmt.Errorf("load Actions cache identifier: %w", err)
+		}
+		artifacts, caches, err := decodeDurableActionsMetadata(artifactRows, cacheRows)
+		if err != nil {
+			return err
+		}
+
+		as.mu.Lock()
+		latest, err := persist.StateRevision()
+		if err != nil {
+			as.mu.Unlock()
+			return fmt.Errorf("verify Actions metadata revision: %w", err)
+		}
+		if latest != before {
+			as.mu.Unlock()
+			continue
+		}
+		for id, artifact := range as.artifacts {
+			if !artifact.Finalized {
+				artifacts[id] = artifact
+			}
+		}
+		for id, cache := range as.caches {
+			if !cache.Finalized {
+				caches[id] = cache
+			}
+		}
+		as.artifacts = artifacts
+		as.caches = caches
+		as.cacheIndex = make(map[string]int64, len(caches))
+		as.nextID = 1
+		as.nextCacheID = 1
+		for id := range artifacts {
+			if id >= as.nextID {
+				as.nextID = id + 1
+			}
+		}
+		for id, cache := range caches {
+			if cache.Finalized {
+				as.cacheIndex[cacheLookupKey(cache.Repo, cache.Key, cache.Version)] = id
+			}
+			if id >= as.nextCacheID {
+				as.nextCacheID = id + 1
+			}
+		}
+		if artifactHighWater > as.nextID {
+			as.nextID = artifactHighWater
+		}
+		if cacheHighWater > as.nextCacheID {
+			as.nextCacheID = cacheHighWater
+		}
+		as.revision = before
+		as.mu.Unlock()
+		return nil
+	}
+	return errors.New("Actions metadata kept changing during three replica snapshot attempts")
+}
+
+func decodeDurableActionsMetadata(artifactRows, cacheRows map[string][]byte) (map[int64]*Artifact, map[int64]*CacheEntry, error) {
+	artifacts := make(map[int64]*Artifact, len(artifactRows))
+	for key, raw := range artifactRows {
+		var artifact Artifact
+		if err := json.Unmarshal(raw, &artifact); err != nil {
+			return nil, nil, fmt.Errorf("decode Actions artifact %s metadata: %w", key, err)
+		}
+		if artifact.Finalized {
+			artifacts[artifact.ID] = &artifact
+		}
+	}
+	caches := make(map[int64]*CacheEntry, len(cacheRows))
+	for key, raw := range cacheRows {
+		var cache CacheEntry
+		if err := json.Unmarshal(raw, &cache); err != nil {
+			return nil, nil, fmt.Errorf("decode Actions cache %s metadata: %w", key, err)
+		}
+		if cache.Finalized {
+			caches[cache.ID] = &cache
+		}
+	}
+	return artifacts, caches, nil
 }
 
 func (as *ArtifactStore) populateArtifactDigest(art *Artifact) {
@@ -507,6 +636,67 @@ func (as *ArtifactStore) renameRepository(oldFullName, newFullName string) error
 		}
 	}
 	return nil
+}
+
+// prepareRepositoryDeletion holds the artifact index stable while the caller
+// commits the durable intent. Calling the returned closure with a batch stages
+// metadata deletion and releases the lock; calling it with nil aborts without
+// mutation and releases the lock.
+func (as *ArtifactStore) prepareRepositoryDeletion(repoFullName string, logIDs map[int]bool, record *pendingDeletion) func(*persistBatch) {
+	as.mu.Lock()
+	for id, art := range as.artifacts {
+		if art.RepoFullName != repoFullName {
+			continue
+		}
+		if as.byteStore != nil {
+			record.ActionsObjectKeys = append(record.ActionsObjectKeys, artifactDataKey(id))
+		}
+		if as.dataDir != "" {
+			record.ActionsDirectories = append(record.ActionsDirectories,
+				filepath.Join(as.dataDir, "artifacts", strconv.FormatInt(id, 10)))
+		}
+	}
+	for id, entry := range as.caches {
+		if entry.Repo != repoFullName {
+			continue
+		}
+		if as.byteStore != nil {
+			record.ActionsObjectKeys = append(record.ActionsObjectKeys, cacheDataKey(id))
+		}
+		if as.dataDir != "" {
+			record.ActionsDirectories = append(record.ActionsDirectories,
+				filepath.Join(as.dataDir, "caches", strconv.FormatInt(id, 10)))
+		}
+	}
+	if as.byteStore != nil {
+		for logID := range logIDs {
+			record.ActionsObjectKeys = append(record.ActionsObjectKeys, logDataKey(logID))
+		}
+	}
+	return func(batch *persistBatch) {
+		defer as.mu.Unlock()
+		if batch == nil {
+			return
+		}
+		for id, art := range as.artifacts {
+			if art.RepoFullName != repoFullName {
+				continue
+			}
+			delete(as.artifacts, id)
+			batch.Delete(actionsArtifactsBucket, strconv.FormatInt(id, 10))
+		}
+		for id, entry := range as.caches {
+			if entry.Repo != repoFullName {
+				continue
+			}
+			delete(as.cacheIndex, cacheLookupKey(entry.Repo, entry.Key, entry.Version))
+			delete(as.caches, id)
+			batch.Delete(actionsCachesBucket, strconv.FormatInt(id, 10))
+		}
+		for logID := range logIDs {
+			delete(as.logPlans, logID)
+		}
+	}
 }
 
 func (s *Server) deleteRepositoryActionsData(ctx context.Context, repoFullName string) error {

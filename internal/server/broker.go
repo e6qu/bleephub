@@ -423,10 +423,24 @@ func (s *Server) nextMessageID() int64 {
 
 func (s *Server) nextRequestID() int64 {
 	s.store.mu.Lock()
-	id := s.store.NextReqID
-	s.store.NextReqID++
-	s.store.mu.Unlock()
-	return id
+	defer s.store.mu.Unlock()
+	if s.store.NextReqID < 1 {
+		s.store.NextReqID = 1
+	}
+	for {
+		id := s.store.NextReqID
+		s.store.NextReqID++
+		collision := false
+		for _, job := range s.store.Jobs {
+			if int64(job.RequestID) == id {
+				collision = true
+				break
+			}
+		}
+		if !collision {
+			return id
+		}
+	}
 }
 
 func (s *Server) nextLogID() int {

@@ -106,16 +106,18 @@ func TestInstallationTokensSearchTheirRepositorySelection(t *testing.T) {
 	// Installation selection and token selection are intersected. Public
 	// repositories remain public, but neither selection can expose a private
 	// repository on another account.
-	installation.RepositorySelection = "selected"
-	installation.SelectedRepoIDs = []int{second.ID}
+	if !s.store.SetInstallationRepositorySelection(installation.ID, "selected", []int{second.ID}) {
+		t.Fatal("select installation repositories")
+	}
 	selectedToken := s.store.CreateInstallationToken(installation.ID, app.ID, nil, nil)
 	selected := installationSearch(t, s, selectedToken.Token, "/api/v3/search/repositories?q="+query)
 	requireSearchRepositories(t, selected, second.FullName, outsidePublic.FullName)
 
 	// A GitHub App user access token is also the intersection of its user and
 	// the app's installations, not the user's wider repository membership.
-	installation.RepositorySelection = "all"
-	installation.SelectedRepoIDs = nil
+	if !s.store.SetInstallationRepositorySelection(installation.ID, "all", nil) {
+		t.Fatal("restore all-repositories installation")
+	}
 	userToken, err := s.store.CreateUserToServerToken(admin.ID, app.ID, "", "repo", 0, false)
 	if err != nil {
 		t.Fatalf("create GitHub App user token: %v", err)

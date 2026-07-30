@@ -89,7 +89,7 @@ func newFuzzFixture(t *testing.T) *fuzzFixture {
 	s.store.Tokens[scoped] = &Token{Value: scoped, UserID: admin.ID, Scopes: "public_repo", CreatedAt: fixedTestTime.UTC()}
 	s.store.mu.Unlock()
 
-	handler := s.ghHeadersMiddleware(s.prefixStripMiddleware(s.internalAuthMiddleware(s.mux)))
+	handler := s.requestHandler()
 
 	return &fuzzFixture{
 		s:           s,

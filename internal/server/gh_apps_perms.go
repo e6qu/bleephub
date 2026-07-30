@@ -61,6 +61,7 @@ const (
 	scopeAdministration    permScope = "administration"
 	scopeMembers           permScope = "members"
 	scopeOrgAdministration permScope = "organization_administration"
+	scopeOrganizationHooks permScope = "organization_hooks"
 	scopeSecurityEvents    permScope = "security_events"
 	scopeDependabotSecrets permScope = "dependabot_secrets" // #nosec G101 -- permission name, not a secret
 	scopeCodespaces        permScope = "codespaces"
@@ -71,6 +72,27 @@ const (
 	scopePATs              permScope = "organization_personal_access_tokens"
 	scopeCopilotSpaces     permScope = "copilot_spaces"
 )
+
+// permissionGrant is the typed authorization fact requirePerm passes to the
+// handler after both halves of its decision have succeeded: the credential
+// carries this permission and the credential reaches every named target.
+//
+// Keeping this in the request context prevents downstream organization
+// resolvers from reinterpreting an installation token's synthetic bot user as
+// a human organization member. It is deliberately unexported and can only be
+// constructed by requirePerm, so a handler cannot accidentally manufacture
+// authority by attaching an arbitrary scope to a request.
+type permissionGrant struct {
+	scope permScope
+	level permLevel
+}
+
+const ctxPermissionGrant contextKey = "gh-permission-grant"
+
+func permissionGrantFromContext(ctx context.Context) (permissionGrant, bool) {
+	grant, ok := ctx.Value(ctxPermissionGrant).(permissionGrant)
+	return grant, ok
+}
 
 func parsePermLevel(s string) permLevel {
 	switch strings.ToLower(s) {
@@ -158,8 +180,23 @@ func (s *Server) requirePerm(scope permScope, level permLevel, next http.Handler
 			return
 		}
 
-		next(w, r)
+		grant := permissionGrant{scope: scope, level: level}
+		ctx := context.WithValue(r.Context(), ctxPermissionGrant, grant)
+		next(w, r.WithContext(ctx))
 	}
+}
+
+// requirePerms composes permission requirements as a conjunction. GitHub has
+// endpoints whose authorization contract names both a repository permission
+// and an organization permission (team-repository grants are one example).
+// Modeling those as one "closest" scope either rejects valid installations or
+// silently accepts under-scoped ones.
+func (s *Server) requirePerms(requirements []permissionGrant, next http.HandlerFunc) http.HandlerFunc {
+	for index := len(requirements) - 1; index >= 0; index-- {
+		requirement := requirements[index]
+		next = s.requirePerm(requirement.scope, requirement.level, next)
+	}
+	return next
 }
 
 // authenticatedBrowserRequest resolves the credential on a route served outside
@@ -651,10 +688,18 @@ const (
 // app with no installation anywhere was minting org webhooks through its
 // bearer's admin role.
 //
-// An installation token's viewer is a bot with no membership, so it is denied
-// by the user arm below; installations reach org resources through requirePerm,
-// which checks their permission map first.
+// An installation token's viewer is a bot with no membership. On a
+// requirePerm route the typed grant in the context stands in for human
+// membership: the middleware has already checked both the permission map and
+// the installation's target, and this re-check keeps the resolver safe even if
+// its organization argument did not come from the request path. Outside that
+// chokepoint there is no grant, so a synthetic bot cannot acquire organization
+// standing merely by reaching this helper.
 func (s *Server) viewerHoldsOrgRole(ctx context.Context, orgLogin string, need orgRole) bool {
+	if ghInstallationTokenFromContext(ctx) != nil {
+		grant, ok := permissionGrantFromContext(ctx)
+		return ok && s.credentialGrantsAccount(ctx, organizationAccount, orgLogin, grant.scope, grant.level)
+	}
 	if !s.viewerReachesOrg(ctx, orgLogin) {
 		return false
 	}
@@ -685,7 +730,7 @@ func (s *Server) viewerIsOrgMember(ctx context.Context, orgLogin string) bool {
 // the route declared its level.
 func scopeAdministersResource(scope permScope) bool {
 	switch scope {
-	case scopeAdministration, scopeOrgAdministration, scopeSecrets,
+	case scopeAdministration, scopeOrgAdministration, scopeOrganizationHooks, scopeSecrets,
 		scopeDependabotSecrets, scopePATs, scopePATRequests:
 		return true
 	}
@@ -747,7 +792,24 @@ func resourceCapabilityFor(scope permScope, level permLevel, method, path string
 	if method == http.MethodPost && isOutsideContributorPost(path) {
 		return permRead
 	}
+	// GitHub lets a comment's author edit or delete that comment without
+	// repository push access. Keep the credential grant at write (the route's
+	// declared level is still checked above) but defer the resource decision to
+	// the handler, which can inspect the comment owner. This is deliberately
+	// path-specific: labels, milestones, assignments, and other writes under
+	// the same Issues/Pull requests scopes continue to require push.
+	if (method == http.MethodPatch || method == http.MethodDelete) && isAuthorEditableCommentPath(path) {
+		return permRead
+	}
 	return level
+}
+
+func isAuthorEditableCommentPath(path string) bool {
+	parts := strings.Split(strings.Trim(path, "/"), "/")
+	if len(parts) != 8 || parts[0] != "api" || parts[1] != "v3" || parts[2] != "repos" {
+		return false
+	}
+	return (parts[5] == "issues" || parts[5] == "pulls") && parts[6] == "comments"
 }
 
 // isOutsideContributorPost matches the few creations an outside contributor
@@ -999,6 +1061,9 @@ func fineGrainedPATPermissionForPattern(pattern, method string) (permScope, perm
 	if strings.Contains(lower, "/copilot-spaces") {
 		return scopeCopilotSpaces, level
 	}
+	if strings.Contains(lower, "/orgs/{org}/hooks") {
+		return scopeOrganizationHooks, level
+	}
 	// A team route naming a repository is still a team route: the repository
 	// in the path is the team's grant, not the resource being administered.
 	// Classified by the {repo} in the path, adding a repository to a team
@@ -1188,6 +1253,9 @@ var classicScopeGrants = map[permScope][]classicScopeGrant{
 	scopeOrgAdministration: {
 		{"admin:org", permAdmin}, {"write:org", permWrite}, {"read:org", permRead},
 	},
+	scopeOrganizationHooks: {
+		{"admin:org_hook", permAdmin},
+	},
 	scopeProjects: {
 		{"project", permAdmin}, {"read:project", permRead},
 		{"repo", permWrite}, {"public_repo", permWrite},
@@ -1209,7 +1277,7 @@ var classicScopeGrants = map[permScope][]classicScopeGrant{
 var allPermScopes = []permScope{
 	scopeMetadata, scopeContents, scopeIssues, scopeDiscussions, scopePullRequests, scopeActions,
 	scopeChecks, scopeSecrets, scopeDeployments, scopeAdministration, scopeMembers,
-	scopeOrgAdministration, scopeSecurityEvents, scopeDependabotSecrets, scopeCodespaces,
+	scopeOrgAdministration, scopeOrganizationHooks, scopeSecurityEvents, scopeDependabotSecrets, scopeCodespaces,
 	scopeReactions, scopeProjects, scopePages, scopePATRequests, scopePATs, scopeCopilotSpaces,
 }
 

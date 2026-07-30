@@ -54,7 +54,11 @@ func TestLiveSearch_IssuesAndReposAndUsers(t *testing.T) {
 func TestLiveNotifications_Threads(t *testing.T) {
 	admin := testServer.store.UsersByLogin["admin"]
 	repo := testServer.store.CreateRepo(admin, "live-notif-repo", "", false)
-	testServer.store.CreateIssue(repo.ID, admin.ID, "live notif issue", "body", nil, nil, 0)
+	if !testServer.store.SetRepoSubscription(admin.ID, repo.ID, true) {
+		t.Fatal("subscribe to notification fixture repository")
+	}
+	author := createTestUser(t, "live-notif-author")
+	testServer.store.CreateIssue(repo.ID, author.ID, "live notif issue", "body", nil, nil, 0)
 
 	resp := authedGet(t, "/api/v3/notifications")
 	if resp.StatusCode != http.StatusOK {

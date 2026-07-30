@@ -1339,6 +1339,7 @@ func issueToJSON(issue *Issue, st *Store, baseURL, repoFullName string) map[stri
 }
 
 func commentToJSON(c *Comment, st *Store, baseURL, repoFullName string, issueNumber int) map[string]interface{} {
+	c = st.snapComment(c)
 	var authorJSON map[string]interface{}
 	st.mu.RLock()
 	if u, ok := st.Users[c.AuthorID]; ok {

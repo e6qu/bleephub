@@ -176,6 +176,10 @@ func (ds *DeploymentStore) DeleteDeployment(id int) bool {
 }
 
 func (ds *DeploymentStore) deleteDeploymentLocked(d *Deployment) {
+	ds.deleteDeploymentBatchLocked(d, nil)
+}
+
+func (ds *DeploymentStore) deleteDeploymentBatchLocked(d *Deployment, batch *persistBatch) {
 	delete(ds.deployments, d.ID)
 	src := ds.byRepo[d.RepoID]
 	for i, x := range src {
@@ -187,12 +191,16 @@ func (ds *DeploymentStore) deleteDeploymentLocked(d *Deployment) {
 	for id, status := range ds.statuses {
 		if status.DeploymentID == d.ID {
 			delete(ds.statuses, id)
-			if ds.persist != nil {
+			if batch != nil {
+				batch.Delete("deployment_statuses", strconv.Itoa(id))
+			} else if ds.persist != nil {
 				ds.persist.MustDelete("deployment_statuses", strconv.Itoa(id))
 			}
 		}
 	}
-	if ds.persist != nil {
+	if batch != nil {
+		batch.Delete("deployments", strconv.Itoa(d.ID))
+	} else if ds.persist != nil {
 		ds.persist.MustDelete("deployments", strconv.Itoa(d.ID))
 	}
 }
@@ -367,11 +375,15 @@ func (ds *DeploymentStore) DeleteEnvironment(repoID int, name string) bool {
 }
 
 func (ds *DeploymentStore) DeleteRepo(repoID int) []int {
+	return ds.DeleteRepoBatch(repoID, nil)
+}
+
+func (ds *DeploymentStore) DeleteRepoBatch(repoID int, batch *persistBatch) []int {
 	ds.mu.Lock()
 	defer ds.mu.Unlock()
 
 	for _, d := range append([]*Deployment(nil), ds.byRepo[repoID]...) {
-		ds.deleteDeploymentLocked(d)
+		ds.deleteDeploymentBatchLocked(d, batch)
 	}
 	delete(ds.byRepo, repoID)
 
@@ -380,7 +392,9 @@ func (ds *DeploymentStore) DeleteRepo(repoID int) []int {
 		envIDs = append(envIDs, env.ID)
 		key := fmt.Sprintf("%d:%s", repoID, env.Name)
 		delete(ds.environments, key)
-		if ds.persist != nil {
+		if batch != nil {
+			batch.Delete("environments", key)
+		} else if ds.persist != nil {
 			ds.persist.MustDelete("environments", key)
 		}
 	}

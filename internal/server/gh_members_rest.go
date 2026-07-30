@@ -1,20 +1,21 @@
 package bleephub
 
 import (
+	"context"
 	"net/http"
 )
 
 func (s *Server) registerGHMemberRoutes() {
 	s.route("GET /api/v3/orgs/{org}/members", s.handleListOrgMembers)
 	s.route("GET /api/v3/orgs/{org}/members/{username}", s.handleCheckOrgMember)
-	s.route("DELETE /api/v3/orgs/{org}/members/{username}", s.handleRemoveOrgMember)
+	s.route("DELETE /api/v3/orgs/{org}/members/{username}", s.requirePerm(scopeMembers, permWrite, s.handleRemoveOrgMember))
 	s.route("GET /api/v3/orgs/{org}/public_members", s.handleListPublicOrgMembers)
 	s.route("GET /api/v3/orgs/{org}/public_members/{username}", s.handleCheckPublicOrgMember)
 	s.route("PUT /api/v3/orgs/{org}/public_members/{username}", s.handlePublicizeOrgMembership)
 	s.route("DELETE /api/v3/orgs/{org}/public_members/{username}", s.handleConcealOrgMembership)
-	s.route("GET /api/v3/orgs/{org}/memberships/{username}", s.handleGetOrgMembership)
-	s.route("PUT /api/v3/orgs/{org}/memberships/{username}", s.handleSetOrgMembership)
-	s.route("DELETE /api/v3/orgs/{org}/memberships/{username}", s.handleRemoveOrgMembership)
+	s.route("GET /api/v3/orgs/{org}/memberships/{username}", s.requirePerm(scopeMembers, permRead, s.handleGetOrgMembership))
+	s.route("PUT /api/v3/orgs/{org}/memberships/{username}", s.requirePerm(scopeMembers, permWrite, s.handleSetOrgMembership))
+	s.route("DELETE /api/v3/orgs/{org}/memberships/{username}", s.requirePerm(scopeMembers, permWrite, s.handleRemoveOrgMembership))
 
 	// The authenticated user's own memberships (the invitee side of the
 	// PUT-membership invitation flow: list, inspect, accept).
@@ -36,7 +37,7 @@ func (s *Server) handleListOrgMembers(w http.ResponseWriter, r *http.Request) {
 	// members. This mirrors the behaviour of GET /orgs/{org}/members vs
 	// /orgs/{org}/public_members.
 	var members []*User
-	if s.viewerIsOrgMember(r.Context(), orgLogin) {
+	if s.viewerCanReadOrgMembers(r.Context(), orgLogin) {
 		members = s.store.ListOrgMembers(orgLogin)
 	} else {
 		members = s.store.ListPublicOrgMembers(orgLogin)
@@ -46,6 +47,17 @@ func (s *Server) handleListOrgMembers(w http.ResponseWriter, r *http.Request) {
 		result = append(result, userToJSON(u))
 	}
 	writeJSON(w, http.StatusOK, paginateAndLink(w, r, result))
+}
+
+// viewerCanReadOrgMembers preserves the public fallback for anonymous and
+// unrelated human callers while allowing an installation holding Members:read
+// to see the full organization-member collection. The App's synthetic bot is
+// intentionally not inserted into the organization's membership table.
+func (s *Server) viewerCanReadOrgMembers(ctx context.Context, orgLogin string) bool {
+	if ghInstallationTokenFromContext(ctx) != nil {
+		return s.credentialGrantsAccount(ctx, organizationAccount, orgLogin, scopeMembers, permRead)
+	}
+	return s.viewerIsOrgMember(ctx, orgLogin)
 }
 
 func (s *Server) handleGetOrgMembership(w http.ResponseWriter, r *http.Request) {

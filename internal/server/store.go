@@ -488,6 +488,7 @@ type Store struct {
 	OrgActionsPermissions        map[string]*OrgActionsPermissions
 	RepoActionsPermissions       map[string]*RepoActionsPermissions
 	actionsKeyPair               *SecretsKeyPair // lazily generated sealed-box keypair (persisted)
+	actionsArtifacts             *ArtifactStore
 	persist                      *Persistence
 	persistenceRevision          int64
 	persistenceRecoveryRequired  bool
@@ -3467,9 +3468,23 @@ func (st *Store) loadFromPersistence() error {
 const pendingDeletionsBucket = "pending_deletions"
 
 type pendingDeletion struct {
-	Kind      string    `json:"kind"`
-	Name      string    `json:"name"`
-	StartedAt time.Time `json:"started_at"`
+	Kind                string                    `json:"kind"`
+	Name                string                    `json:"name"`
+	StartedAt           time.Time                 `json:"started_at"`
+	ObjectKeys          []string                  `json:"object_keys,omitempty"`
+	LocalFiles          []string                  `json:"local_files,omitempty"`
+	CodespaceRuntimes   []pendingCodespaceRuntime `json:"codespace_runtimes,omitempty"`
+	ReleaseAssetObjects []string                  `json:"release_asset_objects,omitempty"`
+	ReleaseAssetFiles   []string                  `json:"release_asset_files,omitempty"`
+	ActionsObjectKeys   []string                  `json:"actions_object_keys,omitempty"`
+	ActionsDirectories  []string                  `json:"actions_directories,omitempty"`
+}
+
+// pendingCodespaceRuntime is the minimum immutable state needed to retry a
+// runtime cleanup after the codespace metadata itself has been committed away.
+type pendingCodespaceRuntime struct {
+	ContainerID    string `json:"container_id,omitempty"`
+	WorkspaceMount string `json:"workspace_mount,omitempty"`
 }
 
 func pendingRepoDeletionKey(fullName string) string { return "repo:" + fullName }
@@ -3520,11 +3535,8 @@ func (st *Store) finishInterruptedDeletions() error {
 			if existed {
 				continue
 			}
-			if err := deleteRepoGitStorage(record.Name); err != nil {
+			if err := st.purgeDeletedRepoBytes(record.Name, record); err != nil {
 				return fmt.Errorf("resume repository delete %s: %w", record.Name, err)
-			}
-			if err := st.persist.Delete(pendingDeletionsBucket, key); err != nil {
-				return fmt.Errorf("resume repository delete %s: clear intent: %w", record.Name, err)
 			}
 		case "org":
 			existed, err := st.DeleteOrgWithError(record.Name)
@@ -3678,7 +3690,7 @@ func (st *Store) SeedDefaultUser() {
 	t := &Token{
 		Value:     AdminToken(),
 		UserID:    u.ID,
-		Scopes:    "repo, workflow, read:org, admin:org, gist",
+		Scopes:    "repo, workflow, read:org, admin:org, admin:org_hook, gist",
 		CreatedAt: now,
 	}
 	st.Tokens[t.Value] = t

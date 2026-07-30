@@ -23,8 +23,12 @@ func (s *Server) registerGHTeamRoutes() {
 
 	s.route("GET /api/v3/orgs/{org}/teams/{team_slug}/repos", s.requirePerm(scopeMembers, permRead, s.handleListTeamRepos))
 	s.route("GET /api/v3/orgs/{org}/teams/{team_slug}/repos/{owner}/{repo}", s.requirePerm(scopeMembers, permRead, s.handleCheckTeamRepo))
-	s.route("PUT /api/v3/orgs/{org}/teams/{team_slug}/repos/{owner}/{repo}", s.requirePerm(scopeMembers, permWrite, s.handleAddTeamRepo))
-	s.route("DELETE /api/v3/orgs/{org}/teams/{team_slug}/repos/{owner}/{repo}", s.requirePerm(scopeMembers, permWrite, s.handleRemoveTeamRepo))
+	teamRepoWrite := []permissionGrant{
+		{scope: scopeMembers, level: permRead},
+		{scope: scopeAdministration, level: permWrite},
+	}
+	s.route("PUT /api/v3/orgs/{org}/teams/{team_slug}/repos/{owner}/{repo}", s.requirePerms(teamRepoWrite, s.handleAddTeamRepo))
+	s.route("DELETE /api/v3/orgs/{org}/teams/{team_slug}/repos/{owner}/{repo}", s.requirePerms(teamRepoWrite, s.handleRemoveTeamRepo))
 }
 
 // validTeamEnums checks the privacy / permission / notification_setting
@@ -62,8 +66,8 @@ func (s *Server) handleCreateTeam(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if !s.viewerCanAdminOrg(r.Context(), org.Login) {
-		writeGHError(w, http.StatusForbidden, "Must be an organization owner.")
+	if !s.viewerCanCreateTeam(r.Context(), org.Login) {
+		writeGHError(w, http.StatusForbidden, "Must be an organization member.")
 		return
 	}
 
@@ -130,7 +134,9 @@ func (s *Server) handleCreateTeam(w http.ResponseWriter, r *http.Request) {
 	}
 	// Real GitHub makes the authenticated creator a team maintainer
 	// automatically, even when the request omits them from maintainers.
-	s.store.SetTeamMembership(orgLogin, team.Slug, user.ID, TeamRoleMaintainer)
+	if ghInstallationTokenFromContext(r.Context()) == nil {
+		s.store.SetTeamMembership(orgLogin, team.Slug, user.ID, TeamRoleMaintainer)
+	}
 	for _, id := range maintainerIDs {
 		if id != user.ID {
 			s.store.SetTeamMembership(orgLogin, team.Slug, id, TeamRoleMaintainer)
@@ -157,7 +163,7 @@ func (s *Server) handleListTeams(w http.ResponseWriter, r *http.Request) {
 		writeGHError(w, http.StatusNotFound, "Not Found")
 		return
 	}
-	if !s.viewerIsOrgMember(r.Context(), orgLogin) {
+	if !s.viewerCanReadOrgTeams(r.Context(), orgLogin) {
 		writeGHError(w, http.StatusNotFound, "Not Found")
 		return
 	}
@@ -184,7 +190,7 @@ func (s *Server) handleGetTeam(w http.ResponseWriter, r *http.Request) {
 		writeGHError(w, http.StatusNotFound, "Not Found")
 		return
 	}
-	if !s.viewerIsOrgMember(r.Context(), orgLogin) {
+	if !s.viewerCanReadOrgTeams(r.Context(), orgLogin) {
 		writeGHError(w, http.StatusNotFound, "Not Found")
 		return
 	}
@@ -213,15 +219,14 @@ func (s *Server) handleUpdateTeam(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if !s.viewerCanAdminOrg(r.Context(), org.Login) {
-		writeGHError(w, http.StatusForbidden, "Must be an organization owner.")
-		return
-	}
-
 	slug := r.PathValue("team_slug")
 	team := s.store.GetTeam(orgLogin, slug)
 	if team == nil {
 		writeGHError(w, http.StatusNotFound, "Not Found")
+		return
+	}
+	if !s.canManageTeam(r.Context(), user, org, team, false) {
+		writeGHError(w, http.StatusForbidden, "Must be an organization owner or team maintainer.")
 		return
 	}
 
@@ -346,12 +351,16 @@ func (s *Server) handleDeleteTeam(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if !s.viewerCanAdminOrg(r.Context(), org.Login) {
-		writeGHError(w, http.StatusForbidden, "Must be an organization owner.")
+	slug := r.PathValue("team_slug")
+	team := s.store.GetTeam(orgLogin, slug)
+	if team == nil {
+		writeGHError(w, http.StatusNotFound, "Not Found")
 		return
 	}
-
-	slug := r.PathValue("team_slug")
+	if !s.canManageTeam(r.Context(), user, org, team, false) {
+		writeGHError(w, http.StatusForbidden, "Must be an organization owner or team maintainer.")
+		return
+	}
 	if !s.store.DeleteTeam(orgLogin, slug) {
 		writeGHError(w, http.StatusNotFound, "Not Found")
 		return
@@ -385,16 +394,56 @@ func (s *Server) handleListAuthUserTeams(w http.ResponseWriter, r *http.Request)
 	writeJSON(w, http.StatusOK, paginateAndLink(w, r, result))
 }
 
-// canManageTeam reports whether a user may mutate team membership or repo
-// grants. Organization owners always can; team maintainers can too, except
-// only owners may promote another user to maintainer.
+// viewerCanReadOrgTeams keeps human visibility and App authorization separate:
+// an installation token represents the installation, not the synthetic bot
+// user placed in ctxUser. Its Members grant and organization installation are
+// the complete standing GitHub requires for the team API.
+func (s *Server) viewerCanReadOrgTeams(ctx context.Context, orgLogin string) bool {
+	if ghInstallationTokenFromContext(ctx) != nil {
+		return s.credentialGrantsAccount(ctx, organizationAccount, orgLogin, scopeMembers, permRead)
+	}
+	return s.viewerIsOrgMember(ctx, orgLogin)
+}
+
+// viewerCanCreateTeam reflects GitHub's default organization policy: members
+// may create teams. Installation tokens instead act through Members:write and
+// are not made into a synthetic team membership after creation.
+func (s *Server) viewerCanCreateTeam(ctx context.Context, orgLogin string) bool {
+	if ghInstallationTokenFromContext(ctx) != nil {
+		return s.credentialGrantsAccount(ctx, organizationAccount, orgLogin, scopeMembers, permWrite)
+	}
+	return s.viewerIsOrgMember(ctx, orgLogin)
+}
+
+// canManageTeam reports whether the request may mutate a team, its membership,
+// or its repository grants. An installation token is authorized by its
+// Members:write grant over the organization; human credentials retain the
+// owner/maintainer rules, including the rule that only owners promote another
+// human to maintainer.
 func (s *Server) canManageTeam(ctx context.Context, user *User, org *Org, team *Team, addingMaintainer bool) bool {
+	if ghInstallationTokenFromContext(ctx) != nil {
+		return s.credentialGrantsAccount(ctx, organizationAccount, org.Login, scopeMembers, permWrite)
+	}
 	ctx = contextWithUser(ctx, user)
 	if s.viewerCanAdminOrg(ctx, org.Login) {
 		return true
 	}
 	role, isMember := team.roleOf(user.ID)
 	return isMember && role == TeamRoleMaintainer && !addingMaintainer
+}
+
+// canManageTeamRepository keeps the human owner/maintainer rule while using
+// the endpoint's documented Members:read organization half for installation
+// tokens. The Administration:write repository half is enforced by
+// requirePerms before this handler is entered.
+func (s *Server) canManageTeamRepository(ctx context.Context, user *User, org *Org, team *Team, repo *Repo) bool {
+	if !s.viewerHasRepoPermission(ctx, repo, scopeAdministration, permWrite) {
+		return false
+	}
+	if ghInstallationTokenFromContext(ctx) != nil {
+		return s.credentialGrantsAccount(ctx, organizationAccount, org.Login, scopeMembers, permRead)
+	}
+	return s.canManageTeam(ctx, user, org, team, false)
 }
 
 func (s *Server) handleListTeamMembers(w http.ResponseWriter, r *http.Request) {
@@ -409,7 +458,7 @@ func (s *Server) handleListTeamMembers(w http.ResponseWriter, r *http.Request) {
 		writeGHError(w, http.StatusNotFound, "Not Found")
 		return
 	}
-	if !s.viewerIsOrgMember(r.Context(), orgLogin) {
+	if !s.viewerCanReadOrgTeams(r.Context(), orgLogin) {
 		writeGHError(w, http.StatusNotFound, "Not Found")
 		return
 	}
@@ -503,7 +552,7 @@ func (s *Server) handleGetTeamMembership(w http.ResponseWriter, r *http.Request)
 		writeGHError(w, http.StatusNotFound, "Not Found")
 		return
 	}
-	if !s.viewerIsOrgMember(r.Context(), orgLogin) {
+	if !s.viewerCanReadOrgTeams(r.Context(), orgLogin) {
 		writeGHError(w, http.StatusNotFound, "Not Found")
 		return
 	}
@@ -592,7 +641,7 @@ func (s *Server) handleListTeamRepos(w http.ResponseWriter, r *http.Request) {
 		writeGHError(w, http.StatusNotFound, "Not Found")
 		return
 	}
-	if !s.viewerIsOrgMember(r.Context(), orgLogin) {
+	if !s.viewerCanReadOrgTeams(r.Context(), orgLogin) {
 		writeGHError(w, http.StatusNotFound, "Not Found")
 		return
 	}
@@ -631,7 +680,7 @@ func (s *Server) handleCheckTeamRepo(w http.ResponseWriter, r *http.Request) {
 		writeGHError(w, http.StatusNotFound, "Not Found")
 		return
 	}
-	if !s.viewerIsOrgMember(r.Context(), orgLogin) {
+	if !s.viewerCanReadOrgTeams(r.Context(), orgLogin) {
 		writeGHError(w, http.StatusNotFound, "Not Found")
 		return
 	}
@@ -696,19 +745,18 @@ func (s *Server) handleAddTeamRepo(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if !s.canManageTeam(r.Context(), user, org, team, false) {
-		writeGHError(w, http.StatusForbidden, "Must be an organization owner or team maintainer.")
-		return
-	}
-
 	owner := r.PathValue("owner")
-	repo := r.PathValue("repo")
-	fullName := owner + "/" + repo
-
-	if s.store.GetRepo(owner, repo) == nil {
+	repoName := r.PathValue("repo")
+	repo := s.store.GetRepo(owner, repoName)
+	if repo == nil {
 		writeGHError(w, http.StatusNotFound, "Not Found")
 		return
 	}
+	if !s.canManageTeamRepository(r.Context(), user, org, team, repo) {
+		writeGHError(w, http.StatusForbidden, "Must be an organization owner or team maintainer.")
+		return
+	}
+	fullName := owner + "/" + repoName
 
 	var req struct {
 		Permission string `json:"permission"`
@@ -749,14 +797,18 @@ func (s *Server) handleRemoveTeamRepo(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if !s.canManageTeam(r.Context(), user, org, team, false) {
+	owner := r.PathValue("owner")
+	repoName := r.PathValue("repo")
+	repo := s.store.GetRepo(owner, repoName)
+	if repo == nil {
+		writeGHError(w, http.StatusNotFound, "Not Found")
+		return
+	}
+	if !s.canManageTeamRepository(r.Context(), user, org, team, repo) {
 		writeGHError(w, http.StatusForbidden, "Must be an organization owner or team maintainer.")
 		return
 	}
-
-	owner := r.PathValue("owner")
-	repo := r.PathValue("repo")
-	fullName := owner + "/" + repo
+	fullName := owner + "/" + repoName
 
 	if !s.store.RemoveTeamRepo(orgLogin, slug, fullName) {
 		writeGHError(w, http.StatusNotFound, "Not Found")

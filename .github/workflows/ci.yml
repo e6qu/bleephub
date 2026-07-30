@@ -17,9 +17,9 @@ concurrency:
 
 jobs:
   server:
-    name: Go server
+    name: Go server (full race + coverage)
     runs-on: ubuntu-latest
-    timeout-minutes: 25
+    timeout-minutes: 45
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
@@ -34,7 +34,9 @@ jobs:
       # hung test rather than a slow one, and sends whoever is on the PR looking
       # for a deadlock that isn't there.
       - name: Run the complete server suite against MinIO S3
-        run: go test -tags noui -count=1 -timeout 20m ./...
+        run: go test -race -tags noui -count=1 -timeout 40m -coverprofile=coverage.out ./...
+      - name: Enforce the Go coverage floor
+        run: bash ./scripts/check-go-coverage.sh coverage.out
 
   quality:
     name: Go static analysis
@@ -48,13 +50,9 @@ jobs:
         with:
           go-version-file: go.mod
           cache: true
-      # There was no static analysis of any kind: no vet, no format check, no
-      # linter, across roughly 180 non-test Go files. This is the first gate,
-      # deliberately limited to checks the tree already passes so it starts
-      # green and stays meaningful. golangci-lint, -race, coverage and
-      # govulncheck are tracked separately — each needs real defects fixed
-      # before it can be switched on, and a gate that is red on arrival gets
-      # ignored.
+      # Keep deterministic source checks separate from the full race/coverage
+      # suite above, and from the age-qualified security analyzers below, so a
+      # failure names the contract that regressed.
       - name: Check formatting
         run: |
           unformatted=$(gofmt -l . | grep -v '^web/' || true)
@@ -66,23 +64,6 @@ jobs:
         run: go vet ./...
       - name: Vet without the UI
         run: go vet -tags noui ./...
-      # The race detector was absent entirely, while five tests name it as
-      # their assertion mechanism in their own doc comments — without it,
-      # TestStressPRSerializerRace and its siblings cannot fail for any reason
-      # short of a panic. That matters here because a concurrent map write in
-      # Go is a fatal error that kills the process, not a recoverable panic a
-      # handler could turn into a 500.
-      #
-      # This is a subset, not the whole suite: -race is several times slower,
-      # and the Docker-backed tests would push the job past its budget. It
-      # covers the tests written for the detector plus the authorization and
-      # workflow paths, and reports zero races today. Widening it to the full
-      # suite is worth doing once the runtime is measured on a real runner.
-      - name: Race detector over the concurrency and authorization paths
-        run: |
-          go test -race -tags noui -count=1 -timeout 15m \
-            -run 'Stress|Race|Concurren|PrivateRepo|RequirePerm|AuthHardening|GraphQLDelete|Workflow' \
-            ./internal/server/
       # Keep the product checks on the supported Go version above, then use
       # the independently locked tool module's minimum toolchain for analyzers.
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
@@ -395,7 +376,7 @@ jobs:
       - name: Audit the locked web dependency graph
         run: cd web && bun audit
       - name: Type-check and test the web application
-        run: cd web && bun run typecheck && bun run test
+        run: cd web && bun run typecheck && bun run test:coverage
       - name: Build the embedded web application
         run: cd web && bun run build
       # The web counterparts of the same two orphaned gates. knip reported

@@ -29,4 +29,17 @@ func TestHookLastResponseRace(t *testing.T) {
 		}()
 	}
 	wg.Wait()
+
+	last := s.store.HookLastResp(hook)
+	if last == nil {
+		t.Fatal("concurrent updates left the hook without a last response")
+	}
+	if last.Code < 200 || last.Code > 249 || last.Status != "ok" {
+		t.Fatalf("last response = %+v, want one complete writer value", last)
+	}
+	rendered := hookToJSON(hook, last, httptest.NewRequest("GET", "/api/v3/repos/octo/repo/hooks", nil), "octo", "repo")
+	got, ok := rendered["last_response"].(map[string]interface{})
+	if !ok || got["status"] != "ok" || got["code"] != last.Code {
+		t.Fatalf("rendered last_response = %#v, want code=%d status=ok", rendered["last_response"], last.Code)
+	}
 }

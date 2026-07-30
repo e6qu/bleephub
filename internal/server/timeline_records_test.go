@@ -427,7 +427,7 @@ func TestLogfilesUpload_WritesObjectStore(t *testing.T) {
 	fs := newS3FSForTest(t)
 	objectFS := &s3FS{client: fs.client, bucket: fs.bucket, prefix: "objects"}
 	s := newTimelineTestServer()
-	s.artifactStore = NewArtifactStoreWithByteStore("", &s3ActionsByteStore{fs: objectFS})
+	s.setArtifactStore(NewArtifactStoreWithByteStore("", &s3ActionsByteStore{fs: objectFS}))
 	planID := uuid.New().String()
 	logID := createLogFile(t, s, planID)
 
@@ -443,7 +443,7 @@ func TestLogfilesUpload_ObjectStoreFailurePreservesState(t *testing.T) {
 	fs := newS3FSForTest(t)
 	objectFS := &s3FS{client: fs.client, bucket: "missing-bucket", prefix: "objects"}
 	s := newTimelineTestServer()
-	s.artifactStore = NewArtifactStoreWithByteStore("", &s3ActionsByteStore{fs: objectFS})
+	s.setArtifactStore(NewArtifactStoreWithByteStore("", &s3ActionsByteStore{fs: objectFS}))
 	planID := uuid.New().String()
 	logID := createLogFile(t, s, planID)
 
@@ -473,7 +473,7 @@ func TestJobLogs_ReadsUploadedLogFilesFromObjectStore(t *testing.T) {
 	fs := newS3FSForTest(t)
 	objectFS := &s3FS{client: fs.client, bucket: fs.bucket, prefix: "objects"}
 	s := newTimelineTestServer()
-	s.artifactStore = NewArtifactStoreWithByteStore("", &s3ActionsByteStore{fs: objectFS})
+	s.setArtifactStore(NewArtifactStoreWithByteStore("", &s3ActionsByteStore{fs: objectFS}))
 	_, wfJob := seedRun(t, s, "octo/repo", "completed", "success")
 	planID, timelineID := linkJobToPlan(t, s, wfJob)
 
@@ -512,7 +512,7 @@ func TestJobLogs_SurviveServiceReloadWithObjectStore(t *testing.T) {
 	if err := s1.store.SetPersistence(p1); err != nil {
 		t.Fatalf("attach first persistence: %v", err)
 	}
-	s1.artifactStore = NewArtifactStoreWithByteStore("", byteStore)
+	s1.setArtifactStore(NewArtifactStoreWithByteStore("", byteStore))
 	wf, wfJob := seedRun(t, s1, "octo/repo", "completed", "success")
 	planID, timelineID := linkJobToPlan(t, s1, wfJob)
 	s1.store.persistWorkflowRecord(wf)
@@ -537,7 +537,7 @@ func TestJobLogs_SurviveServiceReloadWithObjectStore(t *testing.T) {
 	if err := s2.store.SetPersistence(p2); err != nil {
 		t.Fatalf("reload persistence: %v", err)
 	}
-	s2.artifactStore = NewArtifactStoreWithByteStore("", byteStore)
+	s2.setArtifactStore(NewArtifactStoreWithByteStore("", byteStore))
 
 	w := runRequest(s2, "GET", fmt.Sprintf("/api/v3/repos/octo/repo/actions/jobs/%d/logs", stableJobID(wfJob.JobID)))
 	if w.Code != http.StatusOK {
@@ -553,7 +553,7 @@ func TestRunLogsDelete_ObjectStoreFailurePreservesState(t *testing.T) {
 	objectFS := &s3FS{client: fs.client, bucket: "missing-bucket", prefix: "objects"}
 	s := newTimelineTestServer()
 	s.registerGHActionsPermissionsRoutes()
-	s.artifactStore = NewArtifactStoreWithByteStore("", &s3ActionsByteStore{fs: objectFS})
+	s.setArtifactStore(NewArtifactStoreWithByteStore("", &s3ActionsByteStore{fs: objectFS}))
 	wf, wfJob := seedRun(t, s, "octo/repo", "completed", "success")
 	planID, timelineID := linkJobToPlan(t, s, wfJob)
 

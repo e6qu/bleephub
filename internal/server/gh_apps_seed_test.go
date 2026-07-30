@@ -51,7 +51,7 @@ func TestSeedPreRegisteredApp(t *testing.T) {
 	useFixedTestClock(srv)
 	// Mirror ListenAndServe's handler chain so /api/ auth (the app-JWT
 	// middleware) runs — httptest serves the bare mux otherwise.
-	handler := srv.ghHeadersMiddleware(srv.prefixStripMiddleware(srv.internalAuthMiddleware(srv.mux)))
+	handler := srv.requestHandler()
 	ts := httptest.NewServer(handler)
 	defer ts.Close()
 

@@ -469,18 +469,30 @@ func (st *Store) moveNotificationRepoKeyLocked(oldFull, newFull string) {
 }
 
 func (st *Store) deleteNotificationRepoKeyLocked(fullName string) {
+	st.deleteNotificationRepoKeyBatchLocked(nil, fullName)
+}
+
+func (st *Store) deleteNotificationRepoKeyBatchLocked(batch *persistBatch, fullName string) {
 	for userID, state := range st.NotificationsState {
 		if state == nil || state.RepoLastReadAt == nil {
 			continue
 		}
 		if _, ok := state.RepoLastReadAt[fullName]; ok {
 			delete(state.RepoLastReadAt, fullName)
-			st.persistNotificationsState(userID, state)
+			if batch != nil {
+				batch.Put("notifications_state", strconv.Itoa(userID), state)
+			} else {
+				st.persistNotificationsState(userID, state)
+			}
 		}
 	}
 }
 
 func (st *Store) deleteNotificationThreadStateLocked(threadIDs []string) {
+	st.deleteNotificationThreadStateBatchLocked(nil, threadIDs)
+}
+
+func (st *Store) deleteNotificationThreadStateBatchLocked(batch *persistBatch, threadIDs []string) {
 	if len(threadIDs) == 0 {
 		return
 	}
@@ -510,7 +522,11 @@ func (st *Store) deleteNotificationThreadStateLocked(threadIDs []string) {
 			}
 		}
 		if changed {
-			st.persistNotificationsState(userID, state)
+			if batch != nil {
+				batch.Put("notifications_state", strconv.Itoa(userID), state)
+			} else {
+				st.persistNotificationsState(userID, state)
+			}
 		}
 	}
 }

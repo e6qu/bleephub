@@ -157,6 +157,10 @@ func (rs *ReactionStore) DeleteParent(parentType string, parentID int) {
 
 // DeleteParents removes every reaction attached to the given parent entities.
 func (rs *ReactionStore) DeleteParents(parentType string, parentIDs map[int]bool) {
+	rs.DeleteParentsBatch(parentType, parentIDs, nil)
+}
+
+func (rs *ReactionStore) DeleteParentsBatch(parentType string, parentIDs map[int]bool, batch *persistBatch) {
 	if len(parentIDs) == 0 {
 		return
 	}
@@ -168,7 +172,9 @@ func (rs *ReactionStore) DeleteParents(parentType string, parentIDs map[int]bool
 			delete(rs.byID, r.ID)
 		}
 		delete(rs.byParent, key)
-		if rs.persist != nil {
+		if batch != nil {
+			batch.Delete("reactions", key)
+		} else if rs.persist != nil {
 			rs.persist.MustDelete("reactions", key)
 		}
 	}

@@ -112,6 +112,34 @@ func TestWebhookTargetURLValidation(t *testing.T) {
 	}
 }
 
+func TestRepositoryImportChecksTheDialedAddress(t *testing.T) {
+	var reached atomic.Int32
+	receiver := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		reached.Add(1)
+		http.Error(w, "must not be reached", http.StatusInternalServerError)
+	}))
+	defer receiver.Close()
+
+	s := ssrfTestServer()
+	owner := s.store.LookupUserByLogin("admin")
+	repo := s.store.CreateRepo(owner, "ssrf-import-dial", "", false)
+	if repo == nil {
+		t.Fatal("could not create import target")
+	}
+	imp := &RepoImport{RepoID: repo.ID, VCS: "git", VCSURL: receiver.URL + "/repo.git"}
+	s.runRepoImport(imp, repo)
+
+	if got := reached.Load(); got != 0 {
+		t.Fatalf("private import receiver was reached %d time(s)", got)
+	}
+	if imp.Status != "error" {
+		t.Fatalf("private import status = %q, want error", imp.Status)
+	}
+	if !strings.Contains(imp.ErrorMessage, "not a public address") {
+		t.Fatalf("private import error = %q, want dial-time address refusal", imp.ErrorMessage)
+	}
+}
+
 func parseWebhookTargetURLErr(raw string, allowPrivate bool) error {
 	_, err := parseWebhookTargetURL(raw, allowPrivate)
 	return err

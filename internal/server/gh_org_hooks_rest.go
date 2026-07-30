@@ -14,17 +14,17 @@ import (
 // table, so delivery introspection works identically.
 
 func (s *Server) registerGHOrgHookRoutes() {
-	s.route("POST /api/v3/orgs/{org}/hooks", s.handleCreateOrgHook)
-	s.route("GET /api/v3/orgs/{org}/hooks", s.handleListOrgHooks)
-	s.route("GET /api/v3/orgs/{org}/hooks/{id}", s.handleGetOrgHook)
-	s.route("PATCH /api/v3/orgs/{org}/hooks/{id}", s.handleUpdateOrgHook)
-	s.route("DELETE /api/v3/orgs/{org}/hooks/{id}", s.handleDeleteOrgHook)
-	s.route("GET /api/v3/orgs/{org}/hooks/{hook_id}/config", s.handleGetOrgHookConfig)
-	s.route("PATCH /api/v3/orgs/{org}/hooks/{hook_id}/config", s.handleUpdateOrgHookConfig)
-	s.route("GET /api/v3/orgs/{org}/hooks/{id}/deliveries", s.handleListOrgHookDeliveries)
-	s.route("GET /api/v3/orgs/{org}/hooks/{id}/deliveries/{delivery_id}", s.handleGetOrgHookDelivery)
-	s.route("POST /api/v3/orgs/{org}/hooks/{id}/deliveries/{delivery_id}/attempts", s.handleRedeliverOrgHookDelivery)
-	s.route("POST /api/v3/orgs/{org}/hooks/{id}/pings", s.handlePingOrgHook)
+	s.route("POST /api/v3/orgs/{org}/hooks", s.requirePerm(scopeOrganizationHooks, permWrite, s.handleCreateOrgHook))
+	s.route("GET /api/v3/orgs/{org}/hooks", s.requirePerm(scopeOrganizationHooks, permRead, s.handleListOrgHooks))
+	s.route("GET /api/v3/orgs/{org}/hooks/{id}", s.requirePerm(scopeOrganizationHooks, permRead, s.handleGetOrgHook))
+	s.route("PATCH /api/v3/orgs/{org}/hooks/{id}", s.requirePerm(scopeOrganizationHooks, permWrite, s.handleUpdateOrgHook))
+	s.route("DELETE /api/v3/orgs/{org}/hooks/{id}", s.requirePerm(scopeOrganizationHooks, permWrite, s.handleDeleteOrgHook))
+	s.route("GET /api/v3/orgs/{org}/hooks/{hook_id}/config", s.requirePerm(scopeOrganizationHooks, permRead, s.handleGetOrgHookConfig))
+	s.route("PATCH /api/v3/orgs/{org}/hooks/{hook_id}/config", s.requirePerm(scopeOrganizationHooks, permWrite, s.handleUpdateOrgHookConfig))
+	s.route("GET /api/v3/orgs/{org}/hooks/{id}/deliveries", s.requirePerm(scopeOrganizationHooks, permRead, s.handleListOrgHookDeliveries))
+	s.route("GET /api/v3/orgs/{org}/hooks/{id}/deliveries/{delivery_id}", s.requirePerm(scopeOrganizationHooks, permRead, s.handleGetOrgHookDelivery))
+	s.route("POST /api/v3/orgs/{org}/hooks/{id}/deliveries/{delivery_id}/attempts", s.requirePerm(scopeOrganizationHooks, permWrite, s.handleRedeliverOrgHookDelivery))
+	s.route("POST /api/v3/orgs/{org}/hooks/{id}/pings", s.requirePerm(scopeOrganizationHooks, permWrite, s.handlePingOrgHook))
 }
 
 // orgHookGate resolves the org and enforces the org-admin requirement

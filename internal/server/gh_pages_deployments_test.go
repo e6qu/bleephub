@@ -194,10 +194,10 @@ func TestPagesDeployments_CreateStatusCancel(t *testing.T) {
 	_, byteStore := newObjectByteStoreForTest(t)
 	originalArtifactStore := testServer.artifactStore
 	originalObjectByteStore := testServer.store.ObjectByteStore
-	testServer.artifactStore = NewArtifactStoreWithByteStore("", byteStore)
+	testServer.setArtifactStore(NewArtifactStoreWithByteStore("", byteStore))
 	testServer.store.ObjectByteStore = byteStore
 	t.Cleanup(func() {
-		testServer.artifactStore = originalArtifactStore
+		testServer.setArtifactStore(originalArtifactStore)
 		testServer.store.ObjectByteStore = originalObjectByteStore
 	})
 	invalidArtifact := []byte("not an archive")

@@ -80,6 +80,18 @@ type Comment struct {
 	Pinned          bool       // pinned comments appear first in some GitHub UIs
 }
 
+func cloneComment(comment *Comment) *Comment {
+	if comment == nil {
+		return nil
+	}
+	copy := *comment
+	if comment.LastEditedAt != nil {
+		edited := *comment.LastEditedAt
+		copy.LastEditedAt = &edited
+	}
+	return &copy
+}
+
 // IssueEvent represents an event in an issue's or a pull request's
 // timeline. The Event field matches the GitHub issue-event type names used
 // by the REST API ("opened", "closed", "reopened", "locked", "unlocked",
@@ -863,7 +875,7 @@ func (st *Store) ListIssueComments(repoKey string, issueNumber int) []*Comment {
 	var comments []*Comment
 	for _, c := range st.Comments {
 		if c.ParentType == "issue" && c.IssueID == issue.ID {
-			comments = append(comments, c)
+			comments = append(comments, cloneComment(c))
 		}
 	}
 	return comments
@@ -887,7 +899,7 @@ func (st *Store) ListRepoIssueComments(repoID int) []*Comment {
 	var comments []*Comment
 	for _, c := range st.Comments {
 		if c.ParentType == "issue" && st.Issues[c.IssueID] != nil && st.Issues[c.IssueID].RepoID == repoID {
-			comments = append(comments, c)
+			comments = append(comments, cloneComment(c))
 		}
 	}
 	sort.Slice(comments, func(i, j int) bool { return comments[i].CreatedAt.Before(comments[j].CreatedAt) })
@@ -1045,7 +1057,7 @@ func (st *Store) CreateCommentFor(parentType string, parentID, authorID int, bod
 			st.recordIssueEventWithIDsLocked(issue.RepoID, issue.ID, authorID, "commented", 0, 0, 0, 0, c.ID)
 		}
 	}
-	return c
+	return cloneComment(c)
 }
 
 // ListComments returns all conversation comments for an issue.
@@ -1057,7 +1069,7 @@ func (st *Store) ListComments(issueID int) []*Comment {
 func (st *Store) GetComment(id int) *Comment {
 	st.mu.RLock()
 	defer st.mu.RUnlock()
-	return st.Comments[id]
+	return cloneComment(st.Comments[id])
 }
 
 // CommentRepoID returns the ID of the repository owning the comment's parent
@@ -1221,7 +1233,7 @@ func (st *Store) UpdateCommentBody(id, editorID int, body string) *Comment {
 	if st.persist != nil {
 		st.persist.MustPut("comments", strconv.Itoa(c.ID), c)
 	}
-	return c
+	return cloneComment(c)
 }
 
 // LookupCommentByNodeID returns the comment with the given GraphQL node ID,
@@ -1232,7 +1244,7 @@ func (st *Store) LookupCommentByNodeID(nodeID string) *Comment {
 	defer st.mu.RUnlock()
 	for _, c := range st.Comments {
 		if c.NodeID == nodeID {
-			return c
+			return cloneComment(c)
 		}
 	}
 	return nil
@@ -1259,7 +1271,7 @@ func (st *Store) SetCommentMinimization(id, minimizerID int, reason string) *Com
 	if st.persist != nil {
 		st.persist.MustPut("comments", strconv.Itoa(c.ID), c)
 	}
-	return c
+	return cloneComment(c)
 }
 
 // ListCommentsFor returns all conversation comments for an issue
@@ -1270,7 +1282,7 @@ func (st *Store) ListCommentsFor(parentType string, parentID int) []*Comment {
 	var comments []*Comment
 	for _, c := range st.Comments {
 		if c.ParentType == parentType && c.IssueID == parentID {
-			comments = append(comments, c)
+			comments = append(comments, cloneComment(c))
 		}
 	}
 	return comments

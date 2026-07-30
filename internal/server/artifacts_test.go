@@ -167,7 +167,7 @@ func TestActionsArtifactAndCacheMetadataPersistence(t *testing.T) {
 	}
 
 	s := newTestServer()
-	s.artifactStore = renamedReload
+	s.setArtifactStore(renamedReload)
 	if err := s.deleteRepositoryActionsData(t.Context(), "octo/renamed"); err != nil {
 		t.Fatalf("delete repository Actions data: %v", err)
 	}
@@ -185,7 +185,7 @@ func TestArtifactUploadWritesObjectStore(t *testing.T) {
 	fs := newS3FSForTest(t)
 	objectFS := &s3FS{client: fs.client, bucket: fs.bucket, prefix: "objects"}
 	s := newTestServer()
-	s.artifactStore = NewArtifactStoreWithByteStore("", &s3ActionsByteStore{fs: objectFS})
+	s.setArtifactStore(NewArtifactStoreWithByteStore("", &s3ActionsByteStore{fs: objectFS}))
 	token := seedRunJobToken(t, s, "octo/repo", "run-1")
 
 	req := httptest.NewRequest("POST", "/twirp/github.actions.results.api.v1.ArtifactService/CreateArtifact", bytes.NewBufferString(`{"name":"object-artifact","version":4,"workflow_run_backend_id":"run-1"}`))
