@@ -499,14 +499,6 @@ func (s *Server) applyBranchProtectionRequest(bp *BranchProtection, req *bpReque
 	return bp
 }
 
-func (s *Server) isEmptyStatusChecks(sc *BPStatusChecks) bool {
-	return sc == nil || (!sc.Strict && len(sc.Contexts) == 0 && len(sc.Checks) == 0)
-}
-
-func (s *Server) isEmptyRestrictions(r *BPRestrictions) bool {
-	return r == nil || (len(r.Users) == 0 && len(r.Teams) == 0 && len(r.Apps) == 0)
-}
-
 func (s *Server) hydrateBranchProtectionURLs(bp *BranchProtection, repo *Repo, branch, baseURL string) *BranchProtection {
 	if bp == nil {
 		return nil
