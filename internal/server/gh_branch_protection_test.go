@@ -65,7 +65,8 @@ func TestBranchProtection_CRUD(t *testing.T) {
 	require.True(t, bp.EnforceAdmins.Enabled)
 	require.NotNil(t, bp.AllowForcePushes)
 	require.True(t, bp.AllowForcePushes.Enabled)
-	require.Nil(t, bp.AllowDeletions)
+	require.NotNil(t, bp.AllowDeletions)
+	require.False(t, bp.AllowDeletions.Enabled)
 
 	w = doBPReq(s, adminPAT, "GET", "/api/v3/repos/"+repo.FullName+"/branches/main/protection", "")
 	require.Equal(t, http.StatusOK, w.Code)
@@ -106,7 +107,12 @@ func TestBranchProtection_RequiredStatusChecksSubresource(t *testing.T) {
 	w = doBPReq(s, adminPAT, "POST", "/api/v3/repos/"+repo.FullName+"/branches/main/protection/required_status_checks/contexts", `["build"]`)
 	require.Equal(t, http.StatusOK, w.Code)
 	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &contexts))
-	require.Equal(t, []string{"build"}, contexts)
+	require.Equal(t, []string{"ci", "lint", "build"}, contexts)
+
+	w = doBPReq(s, adminPAT, "DELETE", "/api/v3/repos/"+repo.FullName+"/branches/main/protection/required_status_checks/contexts", `{"contexts":["lint"]}`)
+	require.Equal(t, http.StatusOK, w.Code)
+	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &contexts))
+	require.Equal(t, []string{"ci", "build"}, contexts)
 
 	w = doBPReq(s, adminPAT, "DELETE", "/api/v3/repos/"+repo.FullName+"/branches/main/protection/required_status_checks", "")
 	require.Equal(t, http.StatusNoContent, w.Code)
@@ -117,7 +123,7 @@ func TestBranchProtection_RequiredReviewsSubresource(t *testing.T) {
 	admin := s.store.UsersByLogin["admin"]
 	repo := s.store.CreateRepo(admin, "bp-reviews", "", false)
 
-	doBPReq(s, adminPAT, "PUT", "/api/v3/repos/"+repo.FullName+"/branches/main/protection", `{}`)
+	doBPReq(s, adminPAT, "PUT", "/api/v3/repos/"+repo.FullName+"/branches/main/protection", `{"enforce_admins":false}`)
 
 	w := doBPReq(s, adminPAT, "PATCH", "/api/v3/repos/"+repo.FullName+"/branches/main/protection/required_pull_request_reviews", `{"required_approving_review_count": 1, "dismiss_stale_reviews": true}`)
 	require.Equal(t, http.StatusOK, w.Code)
@@ -137,7 +143,7 @@ func TestBranchProtection_EnforceAdminsSubresource(t *testing.T) {
 	admin := s.store.UsersByLogin["admin"]
 	repo := s.store.CreateRepo(admin, "bp-admins", "", false)
 
-	doBPReq(s, adminPAT, "PUT", "/api/v3/repos/"+repo.FullName+"/branches/main/protection", `{}`)
+	doBPReq(s, adminPAT, "PUT", "/api/v3/repos/"+repo.FullName+"/branches/main/protection", `{"enforce_admins":false}`)
 
 	w := doBPReq(s, adminPAT, "POST", "/api/v3/repos/"+repo.FullName+"/branches/main/protection/enforce_admins", ``)
 	require.Equal(t, http.StatusOK, w.Code)
@@ -159,7 +165,7 @@ func TestBranchProtection_RestrictionsSubresource(t *testing.T) {
 	admin := s.store.UsersByLogin["admin"]
 	repo := s.store.CreateRepo(admin, "bp-restrict", "", false)
 
-	doBPReq(s, adminPAT, "PUT", "/api/v3/repos/"+repo.FullName+"/branches/main/protection", `{}`)
+	doBPReq(s, adminPAT, "PUT", "/api/v3/repos/"+repo.FullName+"/branches/main/protection", `{"enforce_admins":false}`)
 
 	body := `{"restrictions":{"users":[{"login":"admin","id":1,"type":"User"}]}}`
 	w := doBPReq(s, adminPAT, "PUT", "/api/v3/repos/"+repo.FullName+"/branches/main/protection", body)

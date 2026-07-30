@@ -1,6 +1,7 @@
 package bleephub
 
 import (
+	"errors"
 	"fmt"
 	"net/http"
 	"net/url"
@@ -9,6 +10,7 @@ import (
 	"time"
 
 	"github.com/go-git/go-git/v5/plumbing"
+	gitStorage "github.com/go-git/go-git/v5/storage"
 )
 
 func (s *Server) registerGHRepoRoutes() {
@@ -202,6 +204,11 @@ func (s *Server) handleMergeUpstream(w http.ResponseWriter, r *http.Request) {
 	if repo == nil {
 		return
 	}
+	user := ghUserFromContext(r.Context())
+	if user == nil {
+		writeGHError(w, http.StatusUnauthorized, "Bad credentials")
+		return
+	}
 	var req struct {
 		Branch string `json:"branch"`
 	}
@@ -241,20 +248,60 @@ func (s *Server) handleMergeUpstream(w http.ResponseWriter, r *http.Request) {
 		writeGHError(w, http.StatusUnprocessableEntity, "Branch not found")
 		return
 	}
-	if _, err := targetStor.Reference(plumbing.NewBranchReferenceName(branch)); err != nil {
-		if err := targetStor.SetReference(plumbing.NewHashReference(plumbing.NewBranchReferenceName(branch), srcRef.Hash())); err != nil {
+	if err := copyGitObjects(srcStor, targetStor); err != nil {
+		writeGHError(w, http.StatusInternalServerError, "Upstream objects could not be copied")
+		return
+	}
+
+	branchRef := plumbing.NewBranchReferenceName(branch)
+	oldRef, err := targetStor.Reference(branchRef)
+	if err != nil {
+		if err := targetStor.SetReference(plumbing.NewHashReference(branchRef, srcRef.Hash())); err != nil {
 			writeGHError(w, http.StatusUnprocessableEntity, "Merge failed")
 			return
 		}
+		s.afterCommittedRefUpdate(repo, user, branchRef.String(), plumbing.ZeroHash.String(), srcRef.Hash().String(), s.baseURL(r))
+		writeJSON(w, http.StatusOK, map[string]interface{}{
+			"message":     fmt.Sprintf("Successfully merged upstream branch %s into %s", branch, branch),
+			"merge_type":  "fast-forward",
+			"base_branch": branch,
+		})
+		return
+	}
+
+	email := user.Email
+	if email == "" {
+		email = user.Login + "@users.noreply.bleephub.local"
+	}
+	signature := repoSignature(coalesceStr(user.Name, user.Login), email)
+	newHash, fastForward, err := performMerge(targetStor, branchRef, srcRef.Hash(), source.FullName+":"+branch, "", signature)
+	if err != nil {
+		if errors.Is(err, gitStorage.ErrReferenceHasChanged) {
+			writeGHError(w, http.StatusConflict, "Branch changed while the merge was being prepared")
+			return
+		}
+		if strings.Contains(err.Error(), "merge conflict") {
+			writeGHError(w, http.StatusConflict, "Merge conflict")
+			return
+		}
+		writeGHError(w, http.StatusUnprocessableEntity, "Merge failed")
+		return
+	}
+	mergeType := "merge"
+	if fastForward {
+		mergeType = "fast-forward"
+	}
+	if newHash == oldRef.Hash() {
+		mergeType = "none"
 	} else {
-		if err := targetStor.SetReference(plumbing.NewHashReference(plumbing.NewBranchReferenceName(branch), srcRef.Hash())); err != nil {
-			writeGHError(w, http.StatusUnprocessableEntity, "Merge failed")
-			return
-		}
+		s.store.UpdateRepo(owner, name, func(updated *Repo) {
+			updated.PushedAt = time.Now().UTC()
+		})
+		s.afterCommittedRefUpdate(repo, user, branchRef.String(), oldRef.Hash().String(), newHash.String(), s.baseURL(r))
 	}
 	writeJSON(w, http.StatusOK, map[string]interface{}{
 		"message":     fmt.Sprintf("Successfully merged upstream branch %s into %s", branch, branch),
-		"merge_type":  "fast-forward",
+		"merge_type":  mergeType,
 		"base_branch": branch,
 	})
 }

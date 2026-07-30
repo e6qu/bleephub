@@ -17,3 +17,10 @@
 # one. bleephub reports installed_version 3.21.0 and gh CLI's feature
 # detection resolves the host version from it.
 GET /meta -> 200	unknown-field	$.installed_version
+
+# VERIFIED: GitHub's official "Get repository content"
+# documentation says that submodule responses carry submodule_git_url,
+# including when a directory response returns one object per entry. The
+# vendored dotcom schema models only the common directory-entry members
+# and omits this documented discriminator-specific field.
+GET /repos/{}/{}/contents/{} -> 200	unknown-field	$[].submodule_git_url

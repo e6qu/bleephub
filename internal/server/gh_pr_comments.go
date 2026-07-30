@@ -761,7 +761,7 @@ func prReviewCommentToJSON(c *PRReviewComment, st *Store, baseURL string, repo *
 		"created_at":             c.CreatedAt.UTC().Format(time.RFC3339),
 		"updated_at":             c.UpdatedAt.UTC().Format(time.RFC3339),
 		"reactions":              reactions,
-		"author_association":     "OWNER",
+		"author_association":     authorAssociation(st, c.AuthorID, repo),
 	}
 	if c.InReplyToID > 0 {
 		out["in_reply_to_id"] = c.InReplyToID

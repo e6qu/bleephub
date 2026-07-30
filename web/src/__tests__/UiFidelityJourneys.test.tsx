@@ -173,6 +173,68 @@ describe("security journey fidelity", () => {
     ).toBe(false);
   });
 
+  it("saves the complete branch protection journey including zero reviews and push restrictions", async () => {
+    const protection = {
+      required_status_checks: null,
+      required_pull_request_reviews: null,
+      restrictions: null,
+      enforce_admins: { enabled: false },
+      allow_force_pushes: { enabled: false },
+      allow_deletions: { enabled: false },
+      required_linear_history: { enabled: false },
+      required_conversation_resolution: { enabled: false },
+      block_creations: { enabled: false },
+      required_signatures: { enabled: false },
+    };
+    mockFetch.mockImplementation((input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      if (url.endsWith("/restrictions/users") || url.endsWith("/restrictions/teams")) {
+        return Promise.resolve(jsonResponse([]));
+      }
+      if (url.endsWith("/branches/main/protection")) {
+        return Promise.resolve(jsonResponse(protection));
+      }
+      if (url.endsWith("/branches")) {
+        return Promise.resolve(jsonResponse([{ name: "main", protected: true, commit: { sha: "a".repeat(40) } }]));
+      }
+      if (url.endsWith("/repos/admin/repo")) {
+        return Promise.resolve(jsonResponse({ name: "repo", full_name: "admin/repo", default_branch: "main" }));
+      }
+      return Promise.resolve(jsonResponse({ method: init?.method }));
+    });
+
+    renderAt(
+      "/ui/repos/:owner/:repo/settings/branches",
+      "/ui/repos/admin/repo/settings/branches",
+      <BranchProtectionPage />,
+    );
+
+    await waitFor(() => {
+      expect(screen.getByRole("checkbox", { name: "Protect this branch" })).toBeChecked();
+    });
+    fireEvent.click(screen.getByRole("checkbox", { name: "Require a pull request before merging" }));
+    fireEvent.change(screen.getByLabelText("Required approving reviews"), { target: { value: "0" } });
+    fireEvent.click(screen.getByRole("checkbox", { name: "Restrict who can push to this branch" }));
+    fireEvent.change(screen.getByLabelText("Users (one login per line)"), { target: { value: "admin\nreviewer" } });
+    fireEvent.change(screen.getByLabelText("Teams (one slug per line)"), { target: { value: "platform" } });
+    fireEvent.click(screen.getByRole("checkbox", { name: "Require signed commits" }));
+    fireEvent.click(screen.getByRole("button", { name: "Save changes" }));
+
+    await screen.findByText("Protection rules saved.");
+    const writes = mockFetch.mock.calls.filter(([, init]) => init?.method === "PUT");
+    const topLevel = writes.find(([input]) => String(input).endsWith("/branches/main/protection"));
+    expect(JSON.parse(String(topLevel?.[1]?.body))).toMatchObject({
+      required_pull_request_reviews: { required_approving_review_count: 0 },
+      restrictions: { users: [], teams: [], apps: [] },
+      enforce_admins: { enabled: false },
+      required_signatures: { enabled: true },
+    });
+    const userWrite = writes.find(([input]) => String(input).endsWith("/restrictions/users"));
+    const teamWrite = writes.find(([input]) => String(input).endsWith("/restrictions/teams"));
+    expect(JSON.parse(String(userWrite?.[1]?.body))).toEqual({ users: ["admin", "reviewer"] });
+    expect(JSON.parse(String(teamWrite?.[1]?.body))).toEqual({ teams: ["platform"] });
+  });
+
   it("uses a keyboard-operable Dependabot alert control and surfaces detail failures", async () => {
     const alert = {
       number: 7,

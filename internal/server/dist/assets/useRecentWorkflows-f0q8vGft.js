@@ -1,0 +1,1 @@
+import{l as e}from"./vendor-tanstack-Ci9-Zjko.js";import{Zo as t}from"./index-KlZH8yfH.js";function n(n){return e({queryKey:[`workflows`,n],queryFn:()=>t(n),refetchInterval:1e4})}export{n as t};

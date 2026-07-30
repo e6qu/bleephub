@@ -299,21 +299,7 @@ func (s *Server) handleCompareRefs(w http.ResponseWriter, r *http.Request) {
 
 	stor := s.store.GetGitStorage(owner, name)
 	if stor == nil {
-		writeJSON(w, http.StatusOK, map[string]interface{}{
-			"url":               "",
-			"html_url":          "",
-			"permalink_url":     "",
-			"diff_url":          "",
-			"patch_url":         "",
-			"base_commit":       nil,
-			"merge_base_commit": nil,
-			"status":            "identical",
-			"ahead_by":          0,
-			"behind_by":         0,
-			"total_commits":     0,
-			"commits":           []interface{}{},
-			"files":             []interface{}{},
-		})
+		writeGHError(w, http.StatusInternalServerError, "Git storage unavailable")
 		return
 	}
 
@@ -339,15 +325,31 @@ func (s *Server) handleCompareRefs(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	baseCommit, _ := object.GetCommit(stor, baseHash)
-	headCommit, _ := object.GetCommit(stor, headHash)
+	baseCommit, err := object.GetCommit(stor, baseHash)
+	if err != nil {
+		writeGHError(w, http.StatusInternalServerError, "Git object unavailable")
+		return
+	}
+	headCommit, err := object.GetCommit(stor, headHash)
+	if err != nil {
+		writeGHError(w, http.StatusInternalServerError, "Git object unavailable")
+		return
+	}
 
 	mergeBase, err := findMergeBase(stor, baseHash, headHash)
 	if err != nil {
 		writeGHError(w, http.StatusInternalServerError, "merge base lookup failed")
 		return
 	}
-	mergeBaseCommit, _ := object.GetCommit(stor, mergeBase)
+	if mergeBase.IsZero() {
+		writeGHError(w, http.StatusNotFound, "No common ancestor between the compared refs")
+		return
+	}
+	mergeBaseCommit, err := object.GetCommit(stor, mergeBase)
+	if err != nil {
+		writeGHError(w, http.StatusInternalServerError, "Git object unavailable")
+		return
+	}
 
 	status := "diverged"
 	aheadBy, behindBy := 0, 0
@@ -355,43 +357,96 @@ func (s *Server) handleCompareRefs(w http.ResponseWriter, r *http.Request) {
 		status = "identical"
 	} else if mergeBase == headHash {
 		status = "behind"
-		aheadCommits, _ := commitsBetween(stor, headHash, baseHash)
+		aheadCommits, err := commitsBetween(stor, headHash, baseHash)
+		if err != nil {
+			writeGHError(w, http.StatusInternalServerError, "Commit traversal failed")
+			return
+		}
 		behindBy = len(aheadCommits)
 	} else if mergeBase == baseHash {
 		status = "ahead"
-		aheadCommits, _ := commitsBetween(stor, baseHash, headHash)
+		aheadCommits, err := commitsBetween(stor, baseHash, headHash)
+		if err != nil {
+			writeGHError(w, http.StatusInternalServerError, "Commit traversal failed")
+			return
+		}
 		aheadBy = len(aheadCommits)
 	} else {
-		aheadCommits, _ := commitsBetween(stor, mergeBase, headHash)
-		behindCommits, _ := commitsBetween(stor, mergeBase, baseHash)
+		aheadCommits, err := commitsBetween(stor, mergeBase, headHash)
+		if err != nil {
+			writeGHError(w, http.StatusInternalServerError, "Commit traversal failed")
+			return
+		}
+		behindCommits, err := commitsBetween(stor, mergeBase, baseHash)
+		if err != nil {
+			writeGHError(w, http.StatusInternalServerError, "Commit traversal failed")
+			return
+		}
 		aheadBy = len(aheadCommits)
 		behindBy = len(behindCommits)
 	}
 
-	var commits []map[string]interface{}
+	commits := make([]map[string]interface{}, 0)
 	if status == "ahead" || status == "diverged" {
-		commitObjs, _ := commitsBetween(stor, baseHash, headHash)
+		commitObjs, err := commitsBetween(stor, baseHash, headHash)
+		if err != nil {
+			writeGHError(w, http.StatusInternalServerError, "Commit traversal failed")
+			return
+		}
 		for _, c := range commitObjs {
 			commits = append(commits, commitToJSON(c, repo, s.baseURL(r)))
 		}
 	}
 
-	var files []map[string]interface{}
-	if mergeBaseCommit != nil && headCommit != nil {
-		baseTree, _ := mergeBaseCommit.Tree()
-		headTree, _ := headCommit.Tree()
-		if baseTree != nil && headTree != nil {
-			files, _, _, _, _ = compareFiles(baseTree, headTree, headCommit, repo, s.baseURL(r))
+	baseTree, err := mergeBaseCommit.Tree()
+	if err != nil {
+		writeGHError(w, http.StatusInternalServerError, "Git object unavailable")
+		return
+	}
+	headTree, err := headCommit.Tree()
+	if err != nil {
+		writeGHError(w, http.StatusInternalServerError, "Git object unavailable")
+		return
+	}
+	files, _, _, _, err := compareFiles(baseTree, headTree, headCommit, repo, s.baseURL(r))
+	if err != nil {
+		writeGHError(w, http.StatusInternalServerError, "Diff computation failed")
+		return
+	}
+	accept := r.Header.Get("Accept")
+	if strings.Contains(accept, "application/vnd.github.diff") || strings.Contains(accept, "application/vnd.github.patch") {
+		changes, err := object.DiffTree(baseTree, headTree)
+		if err != nil {
+			writeGHError(w, http.StatusInternalServerError, "Diff computation failed")
+			return
 		}
+		var diff strings.Builder
+		for _, change := range changes {
+			patch, err := change.Patch()
+			if err != nil {
+				writeGHError(w, http.StatusInternalServerError, "Diff computation failed")
+				return
+			}
+			diff.WriteString(patch.String())
+		}
+		mediaType := "application/vnd.github.diff"
+		if strings.Contains(accept, "application/vnd.github.patch") {
+			mediaType = "application/vnd.github.patch"
+		}
+		w.Header().Set("Content-Type", mediaType+"; charset=utf-8")
+		w.WriteHeader(http.StatusOK)
+		_, _ = io.WriteString(w, diff.String())
+		return
 	}
 
-	url := s.baseURL(r) + "/" + repo.FullName + "/compare/" + baseRef + "..." + headRef
+	apiURL := s.baseURL(r) + "/api/v3/repos/" + repo.FullName + "/compare/" + baseRef + "..." + headRef
+	htmlURL := s.baseURL(r) + "/" + repo.FullName + "/compare/" + baseRef + "..." + headRef
 	out := map[string]interface{}{
-		"url":               url,
-		"html_url":          url,
-		"permalink_url":     url,
-		"diff_url":          url + ".diff",
-		"patch_url":         url + ".patch",
+		"url":               apiURL,
+		"html_url":          htmlURL,
+		"permalink_url":     htmlURL,
+		"diff_url":          htmlURL + ".diff",
+		"patch_url":         htmlURL + ".patch",
 		"base_commit":       commitToJSON(baseCommit, repo, s.baseURL(r)),
 		"merge_base_commit": commitToJSON(mergeBaseCommit, repo, s.baseURL(r)),
 		"status":            status,
@@ -896,7 +951,11 @@ func (s *Server) handleMergeRefs(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	sig := repoSignature("GitHub", "noreply@github.com")
+	email := user.Email
+	if email == "" {
+		email = user.Login + "@users.noreply.bleephub.local"
+	}
+	sig := repoSignature(coalesceStr(user.Name, user.Login), email)
 	commitHash, _, err := performMerge(stor, baseRef, headHash, req.Head, req.CommitMessage, sig)
 	if err != nil {
 		if errors.Is(err, gitStorage.ErrReferenceHasChanged) {

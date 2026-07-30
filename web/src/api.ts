@@ -18,7 +18,10 @@ import type {
   GithubPR,
   GithubBranch,
   GithubBranchProtection,
+  GithubActor,
+  GithubTeamRef,
   GithubCommit,
+  GithubComparison,
   GithubWebhook,
   GithubSecret,
   GithubEnvironment,
@@ -1349,13 +1352,6 @@ export const fetchBranchProtection = async (
   }
 };
 
-export const createBranchProtection = (
-  owner: string,
-  repo: string,
-  branch: string,
-  payload: Partial<GithubBranchProtection>,
-) => ghPostJSON<GithubBranchProtection>(`/api/v3/repos/${owner}/${repo}/branches/${encodeURIComponent(branch)}/protection`, payload);
-
 export const updateBranchProtection = (
   owner: string,
   repo: string,
@@ -1366,9 +1362,29 @@ export const updateBranchProtection = (
 export const deleteBranchProtection = (owner: string, repo: string, branch: string) =>
   ghDeleteJSON<void>(`/api/v3/repos/${owner}/${repo}/branches/${encodeURIComponent(branch)}/protection`, {});
 
-export const fetchRepoCommits = (owner: string, repo: string, ref?: string) => {
-  const query = new URLSearchParams({ per_page: "100" });
-  if (ref) query.set("sha", ref);
+export interface RepoCommitListOptions {
+  sha?: string;
+  path?: string;
+  author?: string;
+  since?: string;
+  until?: string;
+  page?: number;
+  perPage?: number;
+}
+
+export const fetchRepoCommits = (
+  owner: string,
+  repo: string,
+  options: string | RepoCommitListOptions = {},
+) => {
+  const normalized = typeof options === "string" ? { sha: options } : options;
+  const query = new URLSearchParams({ per_page: String(normalized.perPage ?? 100) });
+  if (normalized.sha) query.set("sha", normalized.sha);
+  if (normalized.path) query.set("path", normalized.path);
+  if (normalized.author) query.set("author", normalized.author);
+  if (normalized.since) query.set("since", normalized.since);
+  if (normalized.until) query.set("until", normalized.until);
+  if (normalized.page && normalized.page > 1) query.set("page", String(normalized.page));
   return ghFetch<GithubCommit[]>(
     `/api/v3/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/commits?${query}`,
   );
@@ -1378,6 +1394,31 @@ export const fetchRepoCommit = (owner: string, repo: string, ref: string) =>
   ghFetch<GithubCommit>(
     `/api/v3/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/commits/${encodeURIComponent(ref)}`,
   );
+
+export const fetchRepoComparison = (owner: string, repo: string, base: string, head: string) =>
+  ghFetch<GithubComparison>(
+    `/api/v3/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/compare/${encodeURIComponent(base)}...${encodeURIComponent(head)}`,
+  );
+
+export const setBranchRestrictionUsers = (
+  owner: string,
+  repo: string,
+  branch: string,
+  users: string[],
+) => ghPutJSON<GithubActor[]>(
+  `/api/v3/repos/${owner}/${repo}/branches/${encodeURIComponent(branch)}/protection/restrictions/users`,
+  { users },
+);
+
+export const setBranchRestrictionTeams = (
+  owner: string,
+  repo: string,
+  branch: string,
+  teams: string[],
+) => ghPutJSON<GithubTeamRef[]>(
+  `/api/v3/repos/${owner}/${repo}/branches/${encodeURIComponent(branch)}/protection/restrictions/teams`,
+  { teams },
+);
 
 export async function createIssue(
   owner: string,

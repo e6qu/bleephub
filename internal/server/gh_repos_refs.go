@@ -31,7 +31,7 @@ func (s *Server) handleListTags(w http.ResponseWriter, r *http.Request) {
 
 	stor := s.store.GetGitStorage(owner, repoName)
 	if stor == nil {
-		writeJSON(w, http.StatusOK, []interface{}{})
+		writeGHError(w, http.StatusInternalServerError, "Git storage unavailable")
 		return
 	}
 
@@ -39,7 +39,7 @@ func (s *Server) handleListTags(w http.ResponseWriter, r *http.Request) {
 	var tags []map[string]interface{}
 	refs, err := stor.IterReferences()
 	if err != nil {
-		writeJSON(w, http.StatusOK, []interface{}{})
+		writeGHError(w, http.StatusInternalServerError, "Git reference lookup failed")
 		return
 	}
 	_ = refs.ForEach(func(ref *plumbing.Reference) error {
@@ -142,11 +142,7 @@ func (s *Server) handleGetRefs(w http.ResponseWriter, r *http.Request) {
 
 	refs, err := stor.IterReferences()
 	if err != nil {
-		if looksLikeSingleRef {
-			writeGHError(w, http.StatusNotFound, "Not Found")
-		} else {
-			writeJSON(w, http.StatusOK, []interface{}{})
-		}
+		writeGHError(w, http.StatusInternalServerError, "Git reference lookup failed")
 		return
 	}
 
@@ -175,7 +171,7 @@ func (s *Server) handleGetRefs(w http.ResponseWriter, r *http.Request) {
 func (s *Server) listRefs(w http.ResponseWriter, r *http.Request, baseURL, fullName string, stor gitStorage.Storer, prefix string) {
 	refs, err := stor.IterReferences()
 	if err != nil {
-		writeJSON(w, http.StatusOK, []interface{}{})
+		writeGHError(w, http.StatusInternalServerError, "Git reference lookup failed")
 		return
 	}
 
@@ -250,13 +246,13 @@ func (s *Server) handleListBranches(w http.ResponseWriter, r *http.Request) {
 
 	stor := s.store.GetGitStorage(owner, repoName)
 	if stor == nil {
-		writeJSON(w, http.StatusOK, []interface{}{})
+		writeGHError(w, http.StatusInternalServerError, "Git storage unavailable")
 		return
 	}
 
 	refs, err := stor.IterReferences()
 	if err != nil {
-		writeJSON(w, http.StatusOK, []interface{}{})
+		writeGHError(w, http.StatusInternalServerError, "Git reference lookup failed")
 		return
 	}
 
@@ -329,7 +325,7 @@ func (s *Server) handleGetBranch(w http.ResponseWriter, r *http.Request) {
 
 	stor := s.store.GetGitStorage(owner, repoName)
 	if stor == nil {
-		writeGHError(w, http.StatusNotFound, "Branch not found")
+		writeGHError(w, http.StatusInternalServerError, "Git storage unavailable")
 		return
 	}
 

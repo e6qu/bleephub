@@ -18,6 +18,7 @@ export type RepoCodeDestination =
   | { kind: "commits" }
   | { kind: "branches" }
   | { kind: "tags" }
+  | { kind: "compare"; base: string; head: string }
   | { kind: "tree"; ref: string; path?: string }
   | { kind: "blob"; ref: string; path: string };
 
@@ -36,6 +37,8 @@ export function repoCodeRoute(
       return `${base}/branches`;
     case "tags":
       return `${base}/tags`;
+    case "compare":
+      return `${base}/compare/${segment(destination.base)}...${segment(destination.head)}`;
     case "tree":
       return `${base}/tree/${segment(destination.ref)}${
         destination.path ? `/${filePath(destination.path)}` : ""

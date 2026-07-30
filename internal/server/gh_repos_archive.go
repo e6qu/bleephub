@@ -3,8 +3,10 @@ package bleephub
 import (
 	"archive/tar"
 	"archive/zip"
+	"bytes"
 	"compress/gzip"
 	"fmt"
+	"io"
 	"net/http"
 	"os"
 	"sort"
@@ -126,20 +128,28 @@ func (s *Server) serveArchive(w http.ResponseWriter, r *http.Request, format, ow
 	filename := strings.TrimSuffix(prefix, "/") + "." + format
 	when := commit.Committer.When.UTC()
 
+	var archive bytes.Buffer
 	switch format {
 	case "tar.gz":
+		if err := writeTarGz(&archive, prefix, entries, when); err != nil {
+			writeGHError(w, http.StatusInternalServerError, "Archive generation failed")
+			return
+		}
 		w.Header().Set("Content-Type", "application/x-gzip")
-		w.Header().Set("Content-Disposition", `attachment; filename=`+filename)
-		if err := writeTarGz(w, prefix, entries, when); err != nil {
-			s.logger.Error().Err(err).Str("repo", repo.FullName).Msg("tarball stream failed")
-		}
 	case "zip":
-		w.Header().Set("Content-Type", "application/zip")
-		w.Header().Set("Content-Disposition", `attachment; filename=`+filename)
-		if err := writeZip(w, prefix, entries, when); err != nil {
-			s.logger.Error().Err(err).Str("repo", repo.FullName).Msg("zipball stream failed")
+		if err := writeZip(&archive, prefix, entries, when); err != nil {
+			writeGHError(w, http.StatusInternalServerError, "Archive generation failed")
+			return
 		}
+		w.Header().Set("Content-Type", "application/zip")
+	default:
+		writeGHError(w, http.StatusNotFound, "Not Found")
+		return
 	}
+	w.Header().Set("Content-Disposition", `attachment; filename=`+filename)
+	w.Header().Set("Content-Length", fmt.Sprintf("%d", archive.Len()))
+	w.WriteHeader(http.StatusOK)
+	_, _ = w.Write(archive.Bytes())
 }
 
 // collectArchiveEntries flattens a git tree into archive entries, sorted by
@@ -166,7 +176,7 @@ func collectArchiveEntries(stor gitStorage.Storer, tree *object.Tree) ([]archive
 	return entries, nil
 }
 
-func writeTarGz(w http.ResponseWriter, prefix string, entries []archiveEntry, when time.Time) error {
+func writeTarGz(w io.Writer, prefix string, entries []archiveEntry, when time.Time) error {
 	gz := gzip.NewWriter(w)
 	tw := tar.NewWriter(gz)
 	if err := tw.WriteHeader(&tar.Header{
@@ -214,7 +224,7 @@ func writeTarGz(w http.ResponseWriter, prefix string, entries []archiveEntry, wh
 	return gz.Close()
 }
 
-func writeZip(w http.ResponseWriter, prefix string, entries []archiveEntry, when time.Time) error {
+func writeZip(w io.Writer, prefix string, entries []archiveEntry, when time.Time) error {
 	zw := zip.NewWriter(w)
 	dirHdr := &zip.FileHeader{Name: prefix, Modified: when}
 	dirHdr.SetMode(0o755 | os.ModeDir)
@@ -223,9 +233,12 @@ func writeZip(w http.ResponseWriter, prefix string, entries []archiveEntry, when
 	}
 	for _, e := range entries {
 		hdr := &zip.FileHeader{Name: prefix + e.path, Method: zip.Deflate, Modified: when}
-		if e.mode == filemode.Executable {
+		switch e.mode {
+		case filemode.Executable:
 			hdr.SetMode(0o755)
-		} else {
+		case filemode.Symlink:
+			hdr.SetMode(os.ModeSymlink | 0o777)
+		default:
 			hdr.SetMode(0o644)
 		}
 		fw, err := zw.CreateHeader(hdr)

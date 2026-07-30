@@ -549,6 +549,9 @@ func (s *Server) handleSearchIssues(w http.ResponseWriter, r *http.Request) {
 	render := func(row searchIssueRow) map[string]interface{} {
 		if row.issue != nil {
 			item := issueToJSON(row.issue, s.store, base, row.repo.FullName)
+			// Search returns issue-search-result-item rather than the richer
+			// issue response used by single-issue operations.
+			delete(item, "closed_by")
 			item["score"] = 1.0
 			item["author_association"] = row.assoc
 			item["draft"] = false
@@ -557,6 +560,7 @@ func (s *Server) handleSearchIssues(w http.ResponseWriter, r *http.Request) {
 			return item
 		}
 		item := issueToJSONForPR(row.pr, s.store, base, row.repo.FullName)
+		delete(item, "closed_by")
 		item["score"] = 1.0
 		item["author_association"] = row.assoc
 		item["repository"] = repoToJSON(row.repo, s.store, base)
@@ -688,8 +692,10 @@ func issueToJSONForPR(pr *PullRequest, st *Store, baseURL, repoFullName string) 
 // Must not be called with st.mu held: it takes the read lock itself and
 // derives milestone issue counts via milestoneToJSON, which locks too.
 func issueToJSONForPullRequest(pr *PullRequest, st *Store, baseURL, repoFullName string) map[string]interface{} {
+	pr = st.snapPR(pr)
 	st.mu.RLock()
 	authorJSON := userToJSON(actorUserLocked(st, pr.AuthorID))
+	repo := st.Repos[pr.RepoID]
 
 	labels := make([]map[string]interface{}, 0)
 	for _, lid := range pr.LabelIDs {
@@ -738,6 +744,7 @@ func issueToJSONForPullRequest(pr *PullRequest, st *Store, baseURL, repoFullName
 		"repository_url":     baseURL + "/api/v3/repos/" + repoFullName,
 		"comments_url":       api + "/comments",
 		"events_url":         api + "/events",
+		"timeline_url":       api + "/timeline",
 		"labels_url":         api + "/labels{/name}",
 		"number":             pr.Number,
 		"title":              pr.Title,
@@ -755,8 +762,33 @@ func issueToJSONForPullRequest(pr *PullRequest, st *Store, baseURL, repoFullName
 		"created_at":         pr.CreatedAt.Format(time.RFC3339),
 		"updated_at":         pr.UpdatedAt.Format(time.RFC3339),
 		"closed_at":          closedAt,
+		"closed_by":          pullRequestClosedByJSON(st, pr),
+		"author_association": authorAssociation(st, pr.AuthorID, repo),
 		"draft":              pr.IsDraft,
 	}
+}
+
+func pullRequestClosedByJSON(st *Store, pr *PullRequest) interface{} {
+	if pr == nil || (pr.State != "CLOSED" && pr.State != "MERGED") {
+		return nil
+	}
+	actorID := pr.MergedByID
+	if actorID == 0 {
+		events := st.ListPullRequestEvents(pr.RepoID, pr.ID)
+		for i := len(events) - 1; i >= 0; i-- {
+			if events[i].Event == "closed" {
+				actorID = events[i].ActorID
+				break
+			}
+		}
+	}
+	st.mu.RLock()
+	defer st.mu.RUnlock()
+	actor := actorUserLocked(st, actorID)
+	if actor == nil {
+		return nil
+	}
+	return userToJSON(actor)
 }
 
 // authorAssociation returns the author_association value for the author of
@@ -778,7 +810,23 @@ func authorAssociationLocked(st *Store, authorID int, repo *Repo) string {
 	if repo.Owner != nil && repo.Owner.ID == author.ID {
 		return "OWNER"
 	}
-	return "CONTRIBUTOR"
+	if repo.Owner != nil && repo.Owner.Type == "Organization" {
+		if membership := st.Memberships[membershipKey(repo.Owner.Login, author.ID)]; membership != nil &&
+			membership.State == MembershipStateActive {
+			return "MEMBER"
+		}
+	}
+	if collaborators := st.RepoCollaborators[repo.FullName]; collaborators != nil {
+		if collaborators[author.Login] != "" {
+			return "COLLABORATOR"
+		}
+	}
+	for _, pr := range st.PullRequests {
+		if pr.RepoID == repo.ID && pr.AuthorID == author.ID && pr.State == "MERGED" {
+			return "CONTRIBUTOR"
+		}
+	}
+	return "NONE"
 }
 
 // issueHasLabelNames reports whether the issue carries every named label.

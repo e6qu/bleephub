@@ -33,6 +33,28 @@ func (s *Server) handleGetSingleCommit(w http.ResponseWriter, r *http.Request) {
 		writeGHError(w, http.StatusNotFound, "Not Found")
 		return
 	}
+	accept := r.Header.Get("Accept")
+	if strings.Contains(accept, "application/vnd.github.sha") {
+		w.Header().Set("Content-Type", "text/plain; charset=utf-8")
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(commit.Hash.String()))
+		return
+	}
+	if strings.Contains(accept, "application/vnd.github.diff") || strings.Contains(accept, "application/vnd.github.patch") {
+		diff, err := commitUnifiedDiff(commit)
+		if err != nil {
+			writeGHError(w, http.StatusInternalServerError, "diff computation failed")
+			return
+		}
+		mediaType := "application/vnd.github.diff"
+		if strings.Contains(accept, "application/vnd.github.patch") {
+			mediaType = "application/vnd.github.patch"
+		}
+		w.Header().Set("Content-Type", mediaType+"; charset=utf-8")
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(diff))
+		return
+	}
 
 	base := s.baseURL(r)
 	out := commitToJSON(commit, repo, base)
@@ -51,6 +73,37 @@ func (s *Server) handleGetSingleCommit(w http.ResponseWriter, r *http.Request) {
 		"total":     additions + deletions,
 	}
 	writeJSON(w, http.StatusOK, out)
+}
+
+func commitUnifiedDiff(commit *object.Commit) (string, error) {
+	parentTree := &object.Tree{}
+	if commit.NumParents() > 0 {
+		parent, err := commit.Parent(0)
+		if err != nil {
+			return "", err
+		}
+		parentTree, err = parent.Tree()
+		if err != nil {
+			return "", err
+		}
+	}
+	headTree, err := commit.Tree()
+	if err != nil {
+		return "", err
+	}
+	changes, err := object.DiffTree(parentTree, headTree)
+	if err != nil {
+		return "", err
+	}
+	var out strings.Builder
+	for _, change := range changes {
+		patch, err := change.Patch()
+		if err != nil {
+			return "", err
+		}
+		out.WriteString(patch.String())
+	}
+	return out.String(), nil
 }
 
 // commitSignatureUser resolves a git signature to a real bleephub account by
