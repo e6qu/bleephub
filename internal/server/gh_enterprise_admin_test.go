@@ -1,8 +1,10 @@
 package bleephub
 
 import (
+	"encoding/json"
 	"net/http"
 	"testing"
+	"time"
 )
 
 func TestEnterpriseAnnouncementLifecycle(t *testing.T) {
@@ -132,5 +134,69 @@ func TestEnterpriseCredentialRevocationValidationAndResponses(t *testing.T) {
 	})
 	if rec.Code != http.StatusUnprocessableEntity {
 		t.Fatalf("EMU-only revoke_credentials = %d %q, want 422", rec.Code, rec.Body.String())
+	}
+}
+
+func TestEnterpriseAuditLogAndStreamLifecycle(t *testing.T) {
+	s := newTestServer()
+	s.registerGHEnterpriseAdminRoutes()
+	base := "/api/v3/enterprises/bleephub/audit-log"
+	s.replaceClockNow(func() time.Time { return fixedTestTime })
+	s.recordAuditEvent("repo.create", "admin", "audit-a", map[string]interface{}{"repo": "audit-a/one"})
+	s.recordAuditEvent("team.add_member", "admin", "audit-b", nil)
+
+	rec := enterpriseActionsRequest(t, s, http.MethodGet, base+"?phrase=audit-a&order=asc", nil)
+	var entries []map[string]interface{}
+	if err := json.Unmarshal(rec.Body.Bytes(), &entries); err != nil {
+		t.Fatalf("decode audit log: %v", err)
+	}
+	if rec.Code != http.StatusOK || len(entries) != 1 || entries[0]["action"] != "repo.create" {
+		t.Fatalf("enterprise audit log = %d %#v", rec.Code, entries)
+	}
+	rec = enterpriseActionsRequest(t, s, http.MethodGet, base+"?include=unknown", nil)
+	if rec.Code != http.StatusUnprocessableEntity {
+		t.Fatalf("invalid audit include = %d %q, want 422", rec.Code, rec.Body.String())
+	}
+
+	key := decodeRecorderObject(t, enterpriseActionsRequest(t, s, http.MethodGet, base+"/stream-key", nil))
+	if key["key_id"] == nil || key["key"] == nil {
+		t.Fatalf("audit stream key = %#v", key)
+	}
+
+	streams := base + "/streams"
+	rec = enterpriseActionsRequest(t, s, http.MethodPost, streams, map[string]interface{}{
+		"enabled": false, "stream_type": "Datadog",
+		"vendor_specific": map[string]interface{}{"site": "EU1", "key_id": key["key_id"], "encrypted_token": "sealed"},
+	})
+	stream := decodeRecorderObject(t, rec)
+	if rec.Code != http.StatusOK || stream["id"] != float64(1) || stream["stream_details"] != "EU1" ||
+		stream["enabled"] != false || stream["paused_at"] == nil {
+		t.Fatalf("create audit stream = %d %#v", rec.Code, stream)
+	}
+	if _, leaked := stream["vendor_specific"]; leaked {
+		t.Fatalf("audit stream leaked vendor credentials: %#v", stream)
+	}
+
+	rec = enterpriseActionsRequest(t, s, http.MethodPut, streams+"/1", map[string]interface{}{
+		"enabled": true, "stream_type": "Amazon S3",
+		"vendor_specific": map[string]interface{}{"bucket": "audit-bucket", "region": "eu-central-1"},
+	})
+	stream = decodeRecorderObject(t, rec)
+	if rec.Code != http.StatusOK || stream["stream_type"] != "Amazon S3" ||
+		stream["stream_details"] != "eu-central-1" || stream["paused_at"] != nil {
+		t.Fatalf("update audit stream = %d %#v", rec.Code, stream)
+	}
+	rec = enterpriseActionsRequest(t, s, http.MethodGet, streams, nil)
+	var listed []map[string]interface{}
+	if err := json.Unmarshal(rec.Body.Bytes(), &listed); err != nil || len(listed) != 1 {
+		t.Fatalf("list audit streams = %d %q: %v", rec.Code, rec.Body.String(), err)
+	}
+	rec = enterpriseActionsRequest(t, s, http.MethodDelete, streams+"/1", nil)
+	if rec.Code != http.StatusNoContent {
+		t.Fatalf("delete audit stream = %d %q", rec.Code, rec.Body.String())
+	}
+	rec = enterpriseActionsRequest(t, s, http.MethodGet, streams+"/1", nil)
+	if rec.Code != http.StatusNotFound {
+		t.Fatalf("get deleted audit stream = %d %q, want 404", rec.Code, rec.Body.String())
 	}
 }

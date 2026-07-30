@@ -80,9 +80,11 @@ type EnterpriseCodeSecurityAttachment struct {
 // first access paths that seed them in NewStore.
 type EnterpriseSettings struct {
 	// Enterprise administration settings.
-	Announcement              *EnterpriseAnnouncement `json:"announcement,omitempty"`
-	AccessRestrictionsEnabled bool                    `json:"access_restrictions_enabled"`
-	CodeSecurityAndAnalysis   EnterpriseCodeSecurity  `json:"code_security_and_analysis"`
+	Announcement              *EnterpriseAnnouncement     `json:"announcement,omitempty"`
+	AccessRestrictionsEnabled bool                        `json:"access_restrictions_enabled"`
+	CodeSecurityAndAnalysis   EnterpriseCodeSecurity      `json:"code_security_and_analysis"`
+	AuditLogStreams           []*EnterpriseAuditLogStream `json:"audit_log_streams,omitempty"`
+	NextAuditLogStreamID      int                         `json:"next_audit_log_stream_id"`
 
 	// Dependabot repository access across organizations.
 	DependabotAccessibleRepoIDs []int  `json:"dependabot_accessible_repo_ids"`
@@ -139,6 +141,20 @@ type EnterpriseCodeSecurity struct {
 	SecretScanningNonProviderPatternsEnabledForNewRepositories bool    `json:"secret_scanning_non_provider_patterns_enabled_for_new_repositories"`
 }
 
+// EnterpriseAuditLogStream is a durable audit-log delivery configuration.
+// VendorSpecific contains encrypted/opaque connection settings and is never
+// rendered back to clients.
+type EnterpriseAuditLogStream struct {
+	ID             int                    `json:"id"`
+	StreamType     string                 `json:"stream_type"`
+	StreamDetails  string                 `json:"stream_details"`
+	Enabled        bool                   `json:"enabled"`
+	VendorSpecific map[string]interface{} `json:"vendor_specific,omitempty"`
+	CreatedAt      time.Time              `json:"created_at"`
+	UpdatedAt      time.Time              `json:"updated_at"`
+	PausedAt       *time.Time             `json:"paused_at"`
+}
+
 func defaultEnterpriseSettings() *EnterpriseSettings {
 	return normalizeEnterpriseSettings(&EnterpriseSettings{
 		ActionsCacheRetentionDays: 14,
@@ -147,6 +163,9 @@ func defaultEnterpriseSettings() *EnterpriseSettings {
 }
 
 func normalizeEnterpriseSettings(settings *EnterpriseSettings) *EnterpriseSettings {
+	if settings.NextAuditLogStreamID == 0 {
+		settings.NextAuditLogStreamID = 1
+	}
 	if settings.ActionsCacheRetentionDays == 0 {
 		settings.ActionsCacheRetentionDays = 14
 	}

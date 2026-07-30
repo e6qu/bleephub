@@ -17805,7 +17805,6 @@
           "documented_operations": 1458,
           "missing_operations": [
             "DELETE /enterprises/{}/apps/organizations/{}/installations/{}",
-            "DELETE /enterprises/{}/audit-log/streams/{}",
             "DELETE /enterprises/{}/copilot/billing/selected_enterprise_teams",
             "DELETE /enterprises/{}/copilot/billing/selected_users",
             "DELETE /enterprises/{}/copilot/custom-agents/source",
@@ -17839,10 +17838,6 @@
             "GET /enterprises/{}/apps/installable_organizations/{}/accessible_repositories",
             "GET /enterprises/{}/apps/organizations/{}/installations",
             "GET /enterprises/{}/apps/organizations/{}/installations/{}/repositories",
-            "GET /enterprises/{}/audit-log",
-            "GET /enterprises/{}/audit-log/stream-key",
-            "GET /enterprises/{}/audit-log/streams",
-            "GET /enterprises/{}/audit-log/streams/{}",
             "GET /enterprises/{}/bypass-requests/push-rules",
             "GET /enterprises/{}/bypass-requests/secret-scanning",
             "GET /enterprises/{}/code-scanning/alerts",
@@ -17953,7 +17948,6 @@
             "PATCH /scim/v2/organizations/{}/Users/{}",
             "PATCH /teams/{}/team-sync/group-mappings",
             "POST /enterprises/{}/apps/organizations/{}/installations",
-            "POST /enterprises/{}/audit-log/streams",
             "POST /enterprises/{}/copilot/billing/selected_enterprise_teams",
             "POST /enterprises/{}/copilot/billing/selected_users",
             "POST /enterprises/{}/innersource-vulnerabilities/sync",
@@ -17971,7 +17965,6 @@
             "POST /scim/v2/enterprises/{}/Groups",
             "POST /scim/v2/enterprises/{}/Users",
             "POST /scim/v2/organizations/{}/Users",
-            "PUT /enterprises/{}/audit-log/streams/{}",
             "PUT /enterprises/{}/copilot/content_exclusion",
             "PUT /enterprises/{}/copilot/custom-agents/source",
             "PUT /enterprises/{}/enterprise-roles/teams/{}/{}",
@@ -17986,7 +17979,7 @@
             "PUT /scim/v2/enterprises/{}/Users/{}",
             "PUT /scim/v2/organizations/{}/Users/{}"
           ],
-          "represented_operations": 1277
+          "represented_operations": 1284
         },
         "ghes-2.22": {
           "documented_operations": 642,
@@ -18188,7 +18181,6 @@
             "GET /enterprise/stats/security-products",
             "GET /enterprise/stats/users",
             "GET /enterprises/{}/actions/cache/usage-policy",
-            "GET /enterprises/{}/audit-log",
             "GET /enterprises/{}/code-scanning/alerts",
             "GET /enterprises/{}/secret-scanning/alerts",
             "GET /enterprises/{}/settings/billing/advanced-security",
@@ -18321,7 +18313,7 @@
             "PUT /setup/api/settings",
             "PUT /teams/{}/projects/{}"
           ],
-          "represented_operations": 783
+          "represented_operations": 784
         },
         "ghes-3.21": {
           "documented_operations": 1092,
@@ -18336,7 +18328,6 @@
             "DELETE /authorizations/{}",
             "DELETE /enterprise/announcement",
             "DELETE /enterprises/{}/apps/organizations/{}/installations/{}",
-            "DELETE /enterprises/{}/audit-log/streams/{}",
             "DELETE /enterprises/{}/org-properties/schema/{}",
             "DELETE /enterprises/{}/properties/schema/{}",
             "DELETE /manage/v1/access/ssh",
@@ -18383,10 +18374,6 @@
             "GET /enterprises/{}/apps/installable_organizations/{}/accessible_repositories",
             "GET /enterprises/{}/apps/organizations/{}/installations",
             "GET /enterprises/{}/apps/organizations/{}/installations/{}/repositories",
-            "GET /enterprises/{}/audit-log",
-            "GET /enterprises/{}/audit-log/stream-key",
-            "GET /enterprises/{}/audit-log/streams",
-            "GET /enterprises/{}/audit-log/streams/{}",
             "GET /enterprises/{}/bypass-requests/push-rules",
             "GET /enterprises/{}/bypass-requests/secret-scanning",
             "GET /enterprises/{}/code-scanning/alerts",
@@ -18490,7 +18477,6 @@
             "POST /admin/users/{}/authorizations",
             "POST /authorizations",
             "POST /enterprises/{}/apps/organizations/{}/installations",
-            "POST /enterprises/{}/audit-log/streams",
             "POST /manage/v1/access/ssh",
             "POST /manage/v1/config/apply",
             "POST /manage/v1/config/init",
@@ -18502,7 +18488,6 @@
             "POST /scim/v2/enterprises/{}/Users",
             "PUT /authorizations/clients/{}",
             "PUT /authorizations/clients/{}/{}",
-            "PUT /enterprises/{}/audit-log/streams/{}",
             "PUT /enterprises/{}/org-properties/schema/{}",
             "PUT /enterprises/{}/properties/schema/organizations/{}/{}/promote",
             "PUT /enterprises/{}/properties/schema/{}",
@@ -18512,7 +18497,7 @@
             "PUT /scim/v2/enterprises/{}/Groups/{}",
             "PUT /scim/v2/enterprises/{}/Users/{}"
           ],
-          "represented_operations": 907
+          "represented_operations": 914
         }
       },
       "dispatch_covered_operations": [
@@ -18664,9 +18649,15 @@
         "source": "internal/server/gh_enterprise_actions.go"
       },
       {
-        "line": 19,
+        "line": 20,
         "method": "DELETE",
         "path": "/api/v3/enterprises/{enterprise}/announcement",
+        "source": "internal/server/gh_enterprise_admin.go"
+      },
+      {
+        "line": 40,
+        "method": "DELETE",
+        "path": "/api/v3/enterprises/{enterprise}/audit-log/streams/{stream_id}",
         "source": "internal/server/gh_enterprise_admin.go"
       },
       {
@@ -20092,9 +20083,33 @@
         "source": "internal/server/gh_enterprise_actions.go"
       },
       {
-        "line": 17,
+        "line": 18,
         "method": "GET",
         "path": "/api/v3/enterprises/{enterprise}/announcement",
+        "source": "internal/server/gh_enterprise_admin.go"
+      },
+      {
+        "line": 34,
+        "method": "GET",
+        "path": "/api/v3/enterprises/{enterprise}/audit-log",
+        "source": "internal/server/gh_enterprise_admin.go"
+      },
+      {
+        "line": 35,
+        "method": "GET",
+        "path": "/api/v3/enterprises/{enterprise}/audit-log/stream-key",
+        "source": "internal/server/gh_enterprise_admin.go"
+      },
+      {
+        "line": 36,
+        "method": "GET",
+        "path": "/api/v3/enterprises/{enterprise}/audit-log/streams",
+        "source": "internal/server/gh_enterprise_admin.go"
+      },
+      {
+        "line": 38,
+        "method": "GET",
+        "path": "/api/v3/enterprises/{enterprise}/audit-log/streams/{stream_id}",
         "source": "internal/server/gh_enterprise_admin.go"
       },
       {
@@ -20122,7 +20137,7 @@
         "source": "internal/server/gh_enterprise_code_security.go"
       },
       {
-        "line": 24,
+        "line": 25,
         "method": "GET",
         "path": "/api/v3/enterprises/{enterprise}/code_security_and_analysis",
         "source": "internal/server/gh_enterprise_admin.go"
@@ -23710,7 +23725,7 @@
         "source": "internal/server/gh_enterprise_actions.go"
       },
       {
-        "line": 18,
+        "line": 19,
         "method": "PATCH",
         "path": "/api/v3/enterprises/{enterprise}/announcement",
         "source": "internal/server/gh_enterprise_admin.go"
@@ -23722,7 +23737,7 @@
         "source": "internal/server/gh_enterprise_code_security.go"
       },
       {
-        "line": 25,
+        "line": 26,
         "method": "PATCH",
         "path": "/api/v3/enterprises/{enterprise}/code_security_and_analysis",
         "source": "internal/server/gh_enterprise_admin.go"
@@ -24202,13 +24217,13 @@
         "source": "internal/server/gh_meta_extras.go"
       },
       {
-        "line": 22,
+        "line": 23,
         "method": "POST",
         "path": "/api/v3/enterprises/{enterprise}/access-restrictions/disable",
         "source": "internal/server/gh_enterprise_admin.go"
       },
       {
-        "line": 21,
+        "line": 22,
         "method": "POST",
         "path": "/api/v3/enterprises/{enterprise}/access-restrictions/enable",
         "source": "internal/server/gh_enterprise_admin.go"
@@ -24256,6 +24271,12 @@
         "source": "internal/server/gh_enterprise_actions.go"
       },
       {
+        "line": 37,
+        "method": "POST",
+        "path": "/api/v3/enterprises/{enterprise}/audit-log/streams",
+        "source": "internal/server/gh_enterprise_admin.go"
+      },
+      {
         "line": 13,
         "method": "POST",
         "path": "/api/v3/enterprises/{enterprise}/code-security/configurations",
@@ -24274,25 +24295,25 @@
         "source": "internal/server/gh_enterprise_copilot.go"
       },
       {
-        "line": 28,
+        "line": 29,
         "method": "POST",
         "path": "/api/v3/enterprises/{enterprise}/credential-authorizations/revoke-all",
         "source": "internal/server/gh_enterprise_admin.go"
       },
       {
-        "line": 29,
+        "line": 30,
         "method": "POST",
         "path": "/api/v3/enterprises/{enterprise}/credential-authorizations/revoke-credential-type",
         "source": "internal/server/gh_enterprise_admin.go"
       },
       {
-        "line": 30,
+        "line": 31,
         "method": "POST",
         "path": "/api/v3/enterprises/{enterprise}/credential-authorizations/{username}/revoke",
         "source": "internal/server/gh_enterprise_admin.go"
       },
       {
-        "line": 31,
+        "line": 32,
         "method": "POST",
         "path": "/api/v3/enterprises/{enterprise}/credential-authorizations/{username}/revoke-credential-type",
         "source": "internal/server/gh_enterprise_admin.go"
@@ -24328,7 +24349,7 @@
         "source": "internal/server/gh_enterprise_teams.go"
       },
       {
-        "line": 26,
+        "line": 27,
         "method": "POST",
         "path": "/api/v3/enterprises/{enterprise}/{security_product}/{enablement}",
         "source": "internal/server/gh_enterprise_admin.go"
@@ -25526,6 +25547,12 @@
         "method": "PUT",
         "path": "/api/v3/enterprises/{enterprise}/actions/runners/{runner_id}/labels",
         "source": "internal/server/gh_enterprise_actions.go"
+      },
+      {
+        "line": 39,
+        "method": "PUT",
+        "path": "/api/v3/enterprises/{enterprise}/audit-log/streams/{stream_id}",
+        "source": "internal/server/gh_enterprise_admin.go"
       },
       {
         "line": 19,

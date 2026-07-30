@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -29,6 +30,14 @@ func (s *Server) registerGHEnterpriseAdminRoutes() {
 	s.route("POST /api/v3/enterprises/{enterprise}/credential-authorizations/revoke-credential-type", s.requireEnterpriseOwner(s.handleRevokeEnterpriseCredentialType))
 	s.route("POST /api/v3/enterprises/{enterprise}/credential-authorizations/{username}/revoke", s.requireEnterpriseOwner(s.handleRevokeUserCredentials))
 	s.route("POST /api/v3/enterprises/{enterprise}/credential-authorizations/{username}/revoke-credential-type", s.requireEnterpriseOwner(s.handleRevokeUserCredentialType))
+
+	s.route("GET /api/v3/enterprises/{enterprise}/audit-log", s.requireEnterpriseOwner(s.handleEnterpriseAuditLog))
+	s.route("GET /api/v3/enterprises/{enterprise}/audit-log/stream-key", s.requireEnterpriseOwner(s.handleEnterpriseAuditLogStreamKey))
+	s.route("GET /api/v3/enterprises/{enterprise}/audit-log/streams", s.requireEnterpriseOwner(s.handleListEnterpriseAuditLogStreams))
+	s.route("POST /api/v3/enterprises/{enterprise}/audit-log/streams", s.requireEnterpriseOwner(s.handleCreateEnterpriseAuditLogStream))
+	s.route("GET /api/v3/enterprises/{enterprise}/audit-log/streams/{stream_id}", s.requireEnterpriseOwner(s.handleGetEnterpriseAuditLogStream))
+	s.route("PUT /api/v3/enterprises/{enterprise}/audit-log/streams/{stream_id}", s.requireEnterpriseOwner(s.handleUpdateEnterpriseAuditLogStream))
+	s.route("DELETE /api/v3/enterprises/{enterprise}/audit-log/streams/{stream_id}", s.requireEnterpriseOwner(s.handleDeleteEnterpriseAuditLogStream))
 }
 
 func (s *Server) handleGetEnterpriseAnnouncement(w http.ResponseWriter, _ *http.Request) {
@@ -262,4 +271,215 @@ func (s *Server) handleRevokeUserCredentialType(w http.ResponseWriter, r *http.R
 	writeJSON(w, http.StatusAccepted, map[string]string{
 		"message": fmt.Sprintf("Credential type revocation for user '%s' has been queued", username),
 	})
+}
+
+func (s *Server) handleEnterpriseAuditLog(w http.ResponseWriter, r *http.Request) {
+	order := r.URL.Query().Get("order")
+	if order != "" && order != "asc" && order != "desc" {
+		writeGHValidationError(w, "AuditLog", "order", "invalid")
+		return
+	}
+	include := r.URL.Query().Get("include")
+	if include != "" && include != "web" && include != "git" && include != "all" {
+		writeGHValidationError(w, "AuditLog", "include", "invalid")
+		return
+	}
+	s.store.Misc.mu.RLock()
+	entries := make([]*AuditEntry, 0, len(s.store.Misc.auditLog))
+	for _, entry := range s.store.Misc.auditLog {
+		if phrase := r.URL.Query().Get("phrase"); phrase != "" && !auditEntryMatchesPhrase(entry, phrase) {
+			continue
+		}
+		entries = append(entries, entry)
+	}
+	s.store.Misc.mu.RUnlock()
+	if order == "asc" {
+		for i, j := 0, len(entries)-1; i < j; i, j = i+1, j-1 {
+			entries[i], entries[j] = entries[j], entries[i]
+		}
+	}
+	writeJSON(w, http.StatusOK, paginateAndLink(w, r, entries))
+}
+
+func (s *Server) handleEnterpriseAuditLogStreamKey(w http.ResponseWriter, _ *http.Request) {
+	s.writeActionsPublicKey(w)
+}
+
+func enterpriseAuditLogStreamJSON(stream *EnterpriseAuditLogStream) map[string]interface{} {
+	return map[string]interface{}{
+		"id":             stream.ID,
+		"stream_type":    stream.StreamType,
+		"stream_details": stream.StreamDetails,
+		"enabled":        stream.Enabled,
+		"created_at":     stream.CreatedAt.Format(time.RFC3339),
+		"updated_at":     stream.UpdatedAt.Format(time.RFC3339),
+		"paused_at":      stream.PausedAt,
+	}
+}
+
+func (s *Server) handleListEnterpriseAuditLogStreams(w http.ResponseWriter, r *http.Request) {
+	s.store.mu.RLock()
+	out := make([]map[string]interface{}, 0, len(s.store.EnterpriseSettings.AuditLogStreams))
+	for _, stream := range s.store.EnterpriseSettings.AuditLogStreams {
+		out = append(out, enterpriseAuditLogStreamJSON(stream))
+	}
+	s.store.mu.RUnlock()
+	writeJSON(w, http.StatusOK, paginateAndLink(w, r, out))
+}
+
+func enterpriseAuditLogStreamID(w http.ResponseWriter, r *http.Request) (int, bool) {
+	id, err := strconv.Atoi(r.PathValue("stream_id"))
+	if err != nil || id < 1 {
+		writeGHError(w, http.StatusNotFound, "Not Found")
+		return 0, false
+	}
+	return id, true
+}
+
+func (s *Server) enterpriseAuditLogStreamLocked(id int) *EnterpriseAuditLogStream {
+	for _, stream := range s.store.EnterpriseSettings.AuditLogStreams {
+		if stream.ID == id {
+			return stream
+		}
+	}
+	return nil
+}
+
+func (s *Server) handleGetEnterpriseAuditLogStream(w http.ResponseWriter, r *http.Request) {
+	id, ok := enterpriseAuditLogStreamID(w, r)
+	if !ok {
+		return
+	}
+	s.store.mu.RLock()
+	stream := s.enterpriseAuditLogStreamLocked(id)
+	if stream == nil {
+		s.store.mu.RUnlock()
+		writeGHError(w, http.StatusNotFound, "Not Found")
+		return
+	}
+	out := enterpriseAuditLogStreamJSON(stream)
+	s.store.mu.RUnlock()
+	writeJSON(w, http.StatusOK, out)
+}
+
+type enterpriseAuditLogStreamRequest struct {
+	Enabled        *bool                  `json:"enabled"`
+	StreamType     string                 `json:"stream_type"`
+	VendorSpecific map[string]interface{} `json:"vendor_specific"`
+}
+
+func validEnterpriseAuditLogStreamType(streamType string) bool {
+	switch streamType {
+	case "Azure Blob Storage", "Azure Event Hubs", "Amazon S3", "Splunk",
+		"HTTPS Event Collector", "Google Cloud Storage", "Datadog":
+		return true
+	default:
+		return false
+	}
+}
+
+func enterpriseAuditLogStreamDetails(streamType string, vendor map[string]interface{}) string {
+	for _, field := range []string{"site", "region", "domain", "bucket", "container", "name"} {
+		if value, ok := vendor[field].(string); ok && value != "" {
+			return value
+		}
+	}
+	return streamType
+}
+
+func decodeEnterpriseAuditLogStreamRequest(w http.ResponseWriter, r *http.Request) (enterpriseAuditLogStreamRequest, bool) {
+	var req enterpriseAuditLogStreamRequest
+	if !decodeJSONBody(w, r, &req) {
+		return req, false
+	}
+	if req.Enabled == nil {
+		writeGHValidationError(w, "AuditLogStream", "enabled", "missing_field")
+		return req, false
+	}
+	if !validEnterpriseAuditLogStreamType(req.StreamType) {
+		writeGHValidationError(w, "AuditLogStream", "stream_type", "invalid")
+		return req, false
+	}
+	if len(req.VendorSpecific) == 0 {
+		writeGHValidationError(w, "AuditLogStream", "vendor_specific", "missing_field")
+		return req, false
+	}
+	return req, true
+}
+
+func (s *Server) handleCreateEnterpriseAuditLogStream(w http.ResponseWriter, r *http.Request) {
+	req, ok := decodeEnterpriseAuditLogStreamRequest(w, r)
+	if !ok {
+		return
+	}
+	now := s.store.currentTime()
+	stream := &EnterpriseAuditLogStream{
+		StreamType: req.StreamType, StreamDetails: enterpriseAuditLogStreamDetails(req.StreamType, req.VendorSpecific),
+		Enabled: *req.Enabled, VendorSpecific: req.VendorSpecific, CreatedAt: now, UpdatedAt: now,
+	}
+	if !stream.Enabled {
+		stream.PausedAt = &now
+	}
+	s.store.mu.Lock()
+	stream.ID = s.store.EnterpriseSettings.NextAuditLogStreamID
+	s.store.EnterpriseSettings.NextAuditLogStreamID++
+	s.store.EnterpriseSettings.AuditLogStreams = append(s.store.EnterpriseSettings.AuditLogStreams, stream)
+	s.store.persistEnterpriseSettings()
+	s.store.mu.Unlock()
+	writeJSON(w, http.StatusOK, enterpriseAuditLogStreamJSON(stream))
+}
+
+func (s *Server) handleUpdateEnterpriseAuditLogStream(w http.ResponseWriter, r *http.Request) {
+	id, ok := enterpriseAuditLogStreamID(w, r)
+	if !ok {
+		return
+	}
+	req, ok := decodeEnterpriseAuditLogStreamRequest(w, r)
+	if !ok {
+		return
+	}
+	now := s.store.currentTime()
+	s.store.mu.Lock()
+	stream := s.enterpriseAuditLogStreamLocked(id)
+	if stream == nil {
+		s.store.mu.Unlock()
+		writeGHError(w, http.StatusNotFound, "Not Found")
+		return
+	}
+	stream.StreamType = req.StreamType
+	stream.StreamDetails = enterpriseAuditLogStreamDetails(req.StreamType, req.VendorSpecific)
+	stream.VendorSpecific = req.VendorSpecific
+	stream.Enabled = *req.Enabled
+	stream.UpdatedAt = now
+	if stream.Enabled {
+		stream.PausedAt = nil
+	} else {
+		stream.PausedAt = &now
+	}
+	s.store.persistEnterpriseSettings()
+	out := enterpriseAuditLogStreamJSON(stream)
+	s.store.mu.Unlock()
+	writeJSON(w, http.StatusOK, out)
+}
+
+func (s *Server) handleDeleteEnterpriseAuditLogStream(w http.ResponseWriter, r *http.Request) {
+	id, ok := enterpriseAuditLogStreamID(w, r)
+	if !ok {
+		return
+	}
+	s.store.mu.Lock()
+	for i, stream := range s.store.EnterpriseSettings.AuditLogStreams {
+		if stream.ID == id {
+			s.store.EnterpriseSettings.AuditLogStreams = append(
+				s.store.EnterpriseSettings.AuditLogStreams[:i],
+				s.store.EnterpriseSettings.AuditLogStreams[i+1:]...,
+			)
+			s.store.persistEnterpriseSettings()
+			s.store.mu.Unlock()
+			w.WriteHeader(http.StatusNoContent)
+			return
+		}
+	}
+	s.store.mu.Unlock()
+	writeGHError(w, http.StatusNotFound, "Not Found")
 }

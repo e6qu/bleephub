@@ -73,6 +73,13 @@ func TestEnterpriseStatePersistenceReload(t *testing.T) {
 		AdvancedSecurityEnabledForNewRepositories: true,
 		SecretScanningPushProtectionCustomLink:    &customLink,
 	}
+	pausedAt := st1.currentTime()
+	st1.EnterpriseSettings.AuditLogStreams = []*EnterpriseAuditLogStream{{
+		ID: 7, StreamType: "Datadog", StreamDetails: "EU1", Enabled: false,
+		VendorSpecific: map[string]interface{}{"site": "EU1", "encrypted_token": "sealed"},
+		CreatedAt:      pausedAt, UpdatedAt: pausedAt, PausedAt: &pausedAt,
+	}}
+	st1.EnterpriseSettings.NextAuditLogStreamID = 8
 	st1.EnterpriseSettings.OIDCIncludeEnterpriseSlug = true
 	st1.EnterpriseSettings.ActionsEnabledOrganizations = "selected"
 	st1.EnterpriseSettings.ActionsAllowedActions = "selected"
@@ -169,6 +176,12 @@ func TestEnterpriseStatePersistenceReload(t *testing.T) {
 		s.CodeSecurityAndAnalysis.SecretScanningPushProtectionCustomLink == nil ||
 		*s.CodeSecurityAndAnalysis.SecretScanningPushProtectionCustomLink != "https://example.test/security" {
 		t.Errorf("enterprise administration settings = %+v", s)
+	}
+	if len(s.AuditLogStreams) != 1 || s.AuditLogStreams[0].ID != 7 ||
+		s.AuditLogStreams[0].StreamType != "Datadog" ||
+		s.AuditLogStreams[0].VendorSpecific["encrypted_token"] != "sealed" ||
+		s.NextAuditLogStreamID != 8 {
+		t.Errorf("enterprise audit streams = %+v, next=%d", s.AuditLogStreams, s.NextAuditLogStreamID)
 	}
 	if len(s.DependabotAccessibleRepoIDs) != 1 || s.DependabotAccessibleRepoIDs[0] != repo.ID {
 		t.Errorf("dependabot access = %v", s.DependabotAccessibleRepoIDs)

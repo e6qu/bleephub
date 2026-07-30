@@ -15,6 +15,7 @@ DELETE /api/v3/enterprises/{enterprise}/actions/runners/{runner_id}
 DELETE /api/v3/enterprises/{enterprise}/actions/runners/{runner_id}/labels
 DELETE /api/v3/enterprises/{enterprise}/actions/runners/{runner_id}/labels/{name}
 DELETE /api/v3/enterprises/{enterprise}/announcement
+DELETE /api/v3/enterprises/{enterprise}/audit-log/streams/{stream_id}
 DELETE /api/v3/enterprises/{enterprise}/code-security/configurations/{configuration_id}
 DELETE /api/v3/enterprises/{enterprise}/copilot/policies/coding_agent/organizations
 DELETE /api/v3/enterprises/{enterprise}/teams/{team_slug}
@@ -253,6 +254,10 @@ GET /api/v3/enterprises/{enterprise}/actions/runners/downloads
 GET /api/v3/enterprises/{enterprise}/actions/runners/{runner_id}
 GET /api/v3/enterprises/{enterprise}/actions/runners/{runner_id}/labels
 GET /api/v3/enterprises/{enterprise}/announcement
+GET /api/v3/enterprises/{enterprise}/audit-log
+GET /api/v3/enterprises/{enterprise}/audit-log/stream-key
+GET /api/v3/enterprises/{enterprise}/audit-log/streams
+GET /api/v3/enterprises/{enterprise}/audit-log/streams/{stream_id}
 GET /api/v3/enterprises/{enterprise}/code-security/configurations
 GET /api/v3/enterprises/{enterprise}/code-security/configurations/defaults
 GET /api/v3/enterprises/{enterprise}/code-security/configurations/{configuration_id}
@@ -946,6 +951,7 @@ POST /api/v3/enterprises/{enterprise}/actions/runners/generate-jitconfig
 POST /api/v3/enterprises/{enterprise}/actions/runners/registration-token
 POST /api/v3/enterprises/{enterprise}/actions/runners/remove-token
 POST /api/v3/enterprises/{enterprise}/actions/runners/{runner_id}/labels
+POST /api/v3/enterprises/{enterprise}/audit-log/streams
 POST /api/v3/enterprises/{enterprise}/code-security/configurations
 POST /api/v3/enterprises/{enterprise}/code-security/configurations/{configuration_id}/attach
 POST /api/v3/enterprises/{enterprise}/copilot/policies/coding_agent/organizations
@@ -1158,6 +1164,7 @@ PUT /api/v3/enterprises/{enterprise}/actions/runner-groups/{runner_group_id}/org
 PUT /api/v3/enterprises/{enterprise}/actions/runner-groups/{runner_group_id}/runners
 PUT /api/v3/enterprises/{enterprise}/actions/runner-groups/{runner_group_id}/runners/{runner_id}
 PUT /api/v3/enterprises/{enterprise}/actions/runners/{runner_id}/labels
+PUT /api/v3/enterprises/{enterprise}/audit-log/streams/{stream_id}
 PUT /api/v3/enterprises/{enterprise}/code-security/configurations/{configuration_id}/defaults
 PUT /api/v3/enterprises/{enterprise}/copilot/policies/coding_agent
 PUT /api/v3/enterprises/{enterprise}/dependabot/repository-access/default-level

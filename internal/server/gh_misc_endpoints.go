@@ -1400,7 +1400,7 @@ func (s *Server) recordAuditEvent(action, actor, org string, data map[string]int
 	s.store.Misc.nextAuditID++
 	entry := &AuditEntry{
 		ID:        s.store.Misc.nextAuditID,
-		Timestamp: time.Now().UTC().Format(time.RFC3339Nano),
+		Timestamp: s.store.currentTime().Format(time.RFC3339Nano),
 		Action:    action,
 		Actor:     actor,
 		Org:       org,
