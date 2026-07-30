@@ -94,7 +94,7 @@ def main() -> int:
                 print(f"  - {entry}", file=sys.stderr)
         print(f"Run {sys.argv[0]} --write only after reviewing the dependency change.", file=sys.stderr)
         return 1
-    print(f"test clock dependency ratchet: OK ({len(actual)} reviewable reads)")
+    print(f"test clock dependency gate: OK ({len(actual)} direct wall-clock reads)")
     return 0
 
 
