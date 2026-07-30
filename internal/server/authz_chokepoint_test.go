@@ -51,7 +51,6 @@ var userScopedPredicateCallers = map[string]bool{
 // predicate that replaces it.
 var userScopedPredicates = map[string]string{
 	"canReadRepoAsUser":       "(*Server).viewerCanReadRepo",
-	"canReadRepoLocked":       "(*Server).viewerCanReadRepo",
 	"canPushRepo":             "(*Server).viewerCanPushRepo or (*Server).viewerHasRepoPermission",
 	"canAdminRepo":            "(*Server).viewerCanAdminRepo or (*Server).viewerHasRepoPermission",
 	"canAdminOrgAsUser":       "(*Server).viewerCanAdminOrg",

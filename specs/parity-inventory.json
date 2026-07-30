@@ -1065,7 +1065,7 @@
         "id": "AUTH-091",
         "location": "authz_chokepoint_test.go",
         "severity": "m",
-        "status": "fixed \u2014 the ratchet scans every identifier reference rather than only direct call expressions, so aliases are caught, and `canReadRepoLocked` is in the banned family with no callers outside RBAC",
+        "status": "fixed \u2014 the ratchet scans every identifier reference rather than only direct call expressions, so aliases are caught, and the duplicate locked predicate was removed entirely",
         "status_kind": "fixed"
       },
       {
