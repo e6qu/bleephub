@@ -44,12 +44,13 @@ func TestEveryUIRouteHasAnExecutableJourney(t *testing.T) {
 		if component == "Navigate" || component == "LoginRedirect" {
 			continue
 		}
-		if !strings.Contains(testSources.String(), component) {
+		renderedComponent := regexp.MustCompile(`<` + regexp.QuoteMeta(component) + `(?:\s|/|>)`)
+		if !renderedComponent.MatchString(testSources.String()) {
 			missing = append(missing, path+" → "+component)
 		}
 	}
 	if len(missing) != 0 {
-		t.Fatalf("UI routes without a unit or browser journey:\n  %s", strings.Join(missing, "\n  "))
+		t.Fatalf("UI routes without a test that renders their page component:\n  %s", strings.Join(missing, "\n  "))
 	}
 }
 

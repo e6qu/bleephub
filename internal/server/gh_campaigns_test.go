@@ -5,13 +5,23 @@ import (
 	"time"
 )
 
+var fixedCampaignTestTime = time.Date(2035, time.June, 15, 12, 0, 0, 0, time.UTC)
+
+func useFixedCampaignClock(t *testing.T) {
+	t.Helper()
+	previous := testServer.clockNow
+	testServer.clockNow = func() time.Time { return fixedCampaignTestTime }
+	t.Cleanup(func() { testServer.clockNow = previous })
+}
+
 func TestOrgCampaigns_CRUD(t *testing.T) {
+	useFixedCampaignClock(t)
 	org := createTestOrg(t)
 	repoName, repoID := createOrgRepoForGovernance(t, org)
 
 	alert := seedCodeScanningAlert(t, org, repoName, "campaign-rule", "error", "CodeQL")
 	alertNumber := int(alert["number"].(float64))
-	endsAt := time.Now().Add(30 * 24 * time.Hour).UTC().Format(time.RFC3339)
+	endsAt := fixedCampaignTestTime.Add(30 * 24 * time.Hour).Format(time.RFC3339)
 
 	// Create.
 	resp := ghPost(t, "/api/v3/orgs/"+org+"/campaigns", defaultToken, map[string]interface{}{
@@ -112,11 +122,12 @@ func TestOrgCampaigns_CRUD(t *testing.T) {
 }
 
 func TestOrgCampaigns_Validation(t *testing.T) {
+	useFixedCampaignClock(t)
 	org := createTestOrg(t)
 	repoName, repoID := createOrgRepoForGovernance(t, org)
 	alert := seedCodeScanningAlert(t, org, repoName, "v-rule", "warning", "CodeQL")
 	alertNumber := int(alert["number"].(float64))
-	future := time.Now().Add(24 * time.Hour).UTC().Format(time.RFC3339)
+	future := fixedCampaignTestTime.Add(24 * time.Hour).Format(time.RFC3339)
 	alerts := []map[string]interface{}{
 		{"repository_id": repoID, "alert_numbers": []int{alertNumber}},
 	}
@@ -125,7 +136,7 @@ func TestOrgCampaigns_Validation(t *testing.T) {
 	resp := ghPost(t, "/api/v3/orgs/"+org+"/campaigns", defaultToken, map[string]interface{}{
 		"name":                 "past",
 		"description":          "d",
-		"ends_at":              time.Now().Add(-time.Hour).UTC().Format(time.RFC3339),
+		"ends_at":              fixedCampaignTestTime.Add(-time.Hour).Format(time.RFC3339),
 		"code_scanning_alerts": alerts,
 	})
 	resp.Body.Close()

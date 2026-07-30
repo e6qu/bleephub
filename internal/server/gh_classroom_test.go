@@ -13,6 +13,10 @@ import (
 )
 
 func TestGitHubClassroomSurface(t *testing.T) {
+	fixedNow := time.Date(2035, time.June, 15, 12, 0, 0, 0, time.UTC)
+	previousClock := testServer.clockNow
+	testServer.clockNow = func() time.Time { return fixedNow }
+	t.Cleanup(func() { testServer.clockNow = previousClock })
 	org := createTestOrg(t)
 	starterRepo := createTestRepo(t)
 	starterOwner, starterName, _ := strings.Cut(starterRepo, "/")
@@ -22,7 +26,7 @@ func TestGitHubClassroomSurface(t *testing.T) {
 	}
 	student := createTestUser(t, "classroom-student")
 	studentToken := testServer.store.CreateToken(student.ID, "repo,read:org").Value
-	deadline := time.Now().UTC().Add(-time.Minute)
+	deadline := fixedNow.Add(-time.Minute)
 
 	classroom := decodeJSONWithStatus(t, ghPost(t, "/classroom-data/classrooms", defaultToken, map[string]interface{}{
 		"name": "Programming Go", "organization": org,
@@ -384,7 +388,7 @@ func TestGitHubClassroomPersistenceReloadPreservesTransitionState(t *testing.T) 
 		current.Roster = []ClassroomStudent{{UserID: student.ID, RosterIdentifier: "student-42"}}
 	})
 	assignment := st1.CreateClassroomAssignment(&ClassroomAssignment{ClassroomID: classroom.ID, Title: "Persistent Assignment", Type: "individual", Slug: "persistent-assignment", InviteCode: "persistent-code", InvitationsEnabled: true, StarterCodeRepoID: starter.ID, AutogradingTests: []ClassroomAutogradingTest{{Name: "Tests", Command: "go test ./...", Points: 25}}})
-	acceptedAt := time.Now().UTC().Truncate(time.Second)
+	acceptedAt := time.Date(2035, time.June, 15, 12, 0, 0, 0, time.UTC)
 	accepted := st1.CreateClassroomAcceptedAssignment(&ClassroomAcceptedAssignment{AssignmentID: assignment.ID, Students: []ClassroomStudent{{UserID: student.ID, RosterIdentifier: "student-42"}}, RepoID: studentRepo.ID, AcceptedAt: acceptedAt, BaselineSHA: strings.Repeat("a", 40)})
 	if err := p1.Close(); err != nil {
 		t.Fatalf("close persistence: %v", err)

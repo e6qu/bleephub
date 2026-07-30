@@ -355,7 +355,7 @@ func (s *Server) classroomAcceptedState(a *ClassroomAssignment, aa *ClassroomAcc
 			}
 		}
 	}
-	state.submitted = a.Deadline != nil && !time.Now().UTC().Before(*a.Deadline)
+	state.submitted = a.Deadline != nil && !s.currentTime().Before(*a.Deadline)
 
 	jobResults := map[string]Result{}
 	s.store.mu.RLock()

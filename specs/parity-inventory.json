@@ -1,6 +1,163 @@
 {
   "actions": {
-    "literal_event_producers": [],
+    "literal_event_producers": [
+      {
+        "event": "check_run",
+        "line": 322,
+        "producer": "emitWebhookEvent",
+        "source": "internal/server/actions_events.go"
+      },
+      {
+        "event": "check_suite",
+        "line": 341,
+        "producer": "emitWebhookEvent",
+        "source": "internal/server/actions_events.go"
+      },
+      {
+        "event": "deployment",
+        "line": 449,
+        "producer": "emitWebhookEvent",
+        "source": "internal/server/gh_deployments.go"
+      },
+      {
+        "event": "deployment_status",
+        "line": 544,
+        "producer": "emitWebhookEvent",
+        "source": "internal/server/gh_deployments.go"
+      },
+      {
+        "event": "issue_comment",
+        "line": 72,
+        "producer": "emitWebhookEvent",
+        "source": "internal/server/gh_issue_moderation.go"
+      },
+      {
+        "event": "issue_comment",
+        "line": 107,
+        "producer": "emitWebhookEvent",
+        "source": "internal/server/gh_issue_moderation.go"
+      },
+      {
+        "event": "issue_comment",
+        "line": 604,
+        "producer": "emitWebhookEvent",
+        "source": "internal/server/gh_issues_rest.go"
+      },
+      {
+        "event": "issues",
+        "line": 93,
+        "producer": "emitWebhookEvent",
+        "source": "internal/server/gh_issues_rest.go"
+      },
+      {
+        "event": "issues",
+        "line": 544,
+        "producer": "emitWebhookEvent",
+        "source": "internal/server/gh_issues_rest.go"
+      },
+      {
+        "event": "organization",
+        "line": 464,
+        "producer": "emitOrgWebhookEvent",
+        "source": "internal/server/gh_org_hooks_rest.go"
+      },
+      {
+        "event": "pull_request",
+        "line": 1763,
+        "producer": "emitWebhookEvent",
+        "source": "internal/server/gh_pulls_graphql.go"
+      },
+      {
+        "event": "pull_request",
+        "line": 122,
+        "producer": "emitWebhookEvent",
+        "source": "internal/server/gh_pulls_rest.go"
+      },
+      {
+        "event": "pull_request",
+        "line": 431,
+        "producer": "emitWebhookEvent",
+        "source": "internal/server/gh_pulls_rest.go"
+      },
+      {
+        "event": "pull_request",
+        "line": 528,
+        "producer": "emitWebhookEvent",
+        "source": "internal/server/gh_pulls_rest.go"
+      },
+      {
+        "event": "pull_request",
+        "line": 473,
+        "producer": "emitWebhookEvent",
+        "source": "internal/server/workflow_triggers.go"
+      },
+      {
+        "event": "pull_request_review",
+        "line": 695,
+        "producer": "emitWebhookEvent",
+        "source": "internal/server/gh_pulls_rest.go"
+      },
+      {
+        "event": "pull_request_review",
+        "line": 952,
+        "producer": "emitWebhookEvent",
+        "source": "internal/server/gh_pulls_rest.go"
+      },
+      {
+        "event": "pull_request_review",
+        "line": 1006,
+        "producer": "emitWebhookEvent",
+        "source": "internal/server/gh_pulls_rest.go"
+      },
+      {
+        "event": "pull_request_review_comment",
+        "line": 489,
+        "producer": "emitWebhookEvent",
+        "source": "internal/server/gh_pr_comments.go"
+      },
+      {
+        "event": "push",
+        "line": 29,
+        "producer": "emitWebhookEvent",
+        "source": "internal/server/committed_ref_events.go"
+      },
+      {
+        "event": "release",
+        "line": 851,
+        "producer": "emitWebhookEvent",
+        "source": "internal/server/gh_releases.go"
+      },
+      {
+        "event": "release",
+        "line": 873,
+        "producer": "emitWebhookEvent",
+        "source": "internal/server/gh_releases.go"
+      },
+      {
+        "event": "repository_dispatch",
+        "line": 77,
+        "producer": "emitWebhookEvent",
+        "source": "internal/server/gh_actions_extras.go"
+      },
+      {
+        "event": "status",
+        "line": 271,
+        "producer": "emitWebhookEvent",
+        "source": "internal/server/gh_statuses_rest.go"
+      },
+      {
+        "event": "workflow_job",
+        "line": 303,
+        "producer": "emitWebhookEvent",
+        "source": "internal/server/actions_events.go"
+      },
+      {
+        "event": "workflow_run",
+        "line": 286,
+        "producer": "emitWebhookEvent",
+        "source": "internal/server/actions_events.go"
+      }
+    ],
     "scheduled_workflows": {
       "implemented": true,
       "test": "internal/server/workflow_schedule_test.go"
@@ -17,7 +174,7 @@
       "shared_types": 210,
       "signature_exact_fields": 546
     },
-    "introspection_snapshot_sha256": "2893d3fbda66e22eb750b606b13830e98109fc81f52bd504d4490c1a627f82cb",
+    "introspection_snapshot_sha256": "4a7e860f9580b380d88fe61d6c190817a8c25e07a6dd78045dea44081850b041",
     "official_schema": {
       "content_sha256": "f7a98392e2281c215810c5ac648c3a6940bcd49db74beb2502143f244fdb4da3",
       "source": "https://docs.github.com/public/fpt/schema.docs.graphql"
@@ -1259,8 +1416,8 @@
         "id": "REST-039",
         "location": "gh_issues_rest.go:112-166",
         "severity": "M",
-        "status": "open",
-        "status_kind": "open"
+        "status": "fixed \u2014 issue and PR rows share the documented filters, valid-but-unresolved owners select an empty set, malformed enum/date inputs 422, and stable created/updated/comment ordering is covered in both directions",
+        "status_kind": "fixed"
       },
       {
         "category": "REST",
@@ -1313,8 +1470,8 @@
         "id": "REST-045",
         "location": "gh_issues_rest.go:440, gh_pr_comments.go:460, gh_commit_comments_rest.go:213",
         "severity": "M",
-        "status": "open",
-        "status_kind": "open"
+        "status": "fixed \u2014 issue, pull-request review and commit comment lists share an inclusive RFC3339 updated-time filter; malformed timestamps consistently return 422 before pagination",
+        "status_kind": "fixed"
       },
       {
         "category": "REST",
@@ -2015,8 +2172,8 @@
         "id": "GQL-008",
         "location": "4 connections",
         "severity": "M",
-        "status": "open",
-        "status_kind": "open"
+        "status": "partial \u2014 Repository.issues now honors CREATED_AT, UPDATED_AT and COMMENTS in both directions with a behavioral vector; the other accepting connections remain open",
+        "status_kind": "partial"
       },
       {
         "category": "GQL",
@@ -2033,8 +2190,8 @@
         "id": "GQL-010",
         "location": "gh_pulls_graphql.go:937",
         "severity": "M",
-        "status": "open",
-        "status_kind": "open"
+        "status": "fixed \u2014 commits resolves through the shared four-direction Relay window, so `last:1` selects the tail and supports before/after bounds",
+        "status_kind": "fixed"
       },
       {
         "category": "GQL",
@@ -2042,8 +2199,8 @@
         "id": "GQL-011",
         "location": "gh_pulls_graphql.go:842-1153",
         "severity": "M",
-        "status": "open",
-        "status_kind": "open"
+        "status": "fixed \u2014 labels, assignees, reviews, review requests, comments, review threads, commits, latest reviews and files all re-page their complete source through the shared Relay implementation",
+        "status_kind": "fixed"
       },
       {
         "category": "GQL",
@@ -2078,8 +2235,8 @@
         "id": "GQL-015",
         "location": "gh_issues_graphql.go:583",
         "severity": "M",
-        "status": "open",
-        "status_kind": "open"
+        "status": "fixed \u2014 assignee, creator, mentioned, labels and states are all behavioral, compose with top-level filters, and have compatibility tests",
+        "status_kind": "fixed"
       },
       {
         "category": "GQL",
@@ -2087,8 +2244,8 @@
         "id": "GQL-016",
         "location": "gh_issues_graphql.go:761, gh_discussions_graphql.go:537",
         "severity": "M",
-        "status": "open",
-        "status_kind": "open"
+        "status": "partial \u2014 issue assignee/creator resolution now produces an empty connection; the discussion category lookup remains open",
+        "status_kind": "partial"
       },
       {
         "category": "GQL",
@@ -2123,8 +2280,8 @@
         "id": "GQL-020",
         "location": "gh_pagination.go:106,134",
         "severity": "M",
-        "status": "open",
-        "status_kind": "open"
+        "status": "partial \u2014 embedded connections now use the shared four-bound window and honor first+before/last+after; rejecting the invalid simultaneous first+last combination remains open",
+        "status_kind": "partial"
       },
       {
         "category": "GQL",
@@ -2708,7 +2865,7 @@
         "id": "ACT-026",
         "location": "webhooks.go:249",
         "severity": "M",
-        "status": "partial \u2014 webhook emission is now the single event-production choke point and every event emitted by an implemented mutation automatically feeds Actions, with push/PR/release/deployment ref selection. Event families for which Bleephub still has no producer remain open rather than being fabricated",
+        "status": "partial \u2014 webhook emission is the single event-production choke point and every implemented mutation event automatically feeds Actions. Issue-comment create/edit/delete and pull-request-review submit/dismiss now join push, PR, issue, review-comment, release, deployment, status/check and workflow lifecycle producers; families with no real mutation producer remain open",
         "status_kind": "partial"
       },
       {
@@ -5616,8 +5773,9 @@
         },
         "GQL": {
           "status": {
-            "fixed": 14,
-            "open": 44
+            "fixed": 17,
+            "open": 38,
+            "partial": 3
           },
           "total": 58
         },
@@ -5631,8 +5789,8 @@
         },
         "REST": {
           "status": {
-            "fixed": 41,
-            "open": 66,
+            "fixed": 43,
+            "open": 64,
             "partial": 9
           },
           "total": 116
@@ -5669,9 +5827,9 @@
       },
       "status": {
         "deferred": 1,
-        "fixed": 282,
-        "open": 290,
-        "partial": 41
+        "fixed": 287,
+        "open": 282,
+        "partial": 44
       },
       "total": 614
     }
@@ -17600,6 +17758,956 @@
         ]
       }
     ],
+    "official_route_indexes": {
+      "descriptions": {
+        "api-2022": {
+          "documented_operations": 1190,
+          "missing_operations": [],
+          "represented_operations": 1190
+        },
+        "ghec": {
+          "documented_operations": 1458,
+          "missing_operations": [
+            "DELETE /enterprises/{}/actions/hosted-runners/images/custom/{}",
+            "DELETE /enterprises/{}/actions/hosted-runners/images/custom/{}/versions/{}",
+            "DELETE /enterprises/{}/actions/hosted-runners/{}",
+            "DELETE /enterprises/{}/actions/permissions/organizations/{}",
+            "DELETE /enterprises/{}/actions/runner-groups/{}",
+            "DELETE /enterprises/{}/actions/runner-groups/{}/organizations/{}",
+            "DELETE /enterprises/{}/actions/runner-groups/{}/runners/{}",
+            "DELETE /enterprises/{}/actions/runners/{}",
+            "DELETE /enterprises/{}/actions/runners/{}/labels",
+            "DELETE /enterprises/{}/actions/runners/{}/labels/{}",
+            "DELETE /enterprises/{}/announcement",
+            "DELETE /enterprises/{}/apps/organizations/{}/installations/{}",
+            "DELETE /enterprises/{}/audit-log/streams/{}",
+            "DELETE /enterprises/{}/copilot/billing/selected_enterprise_teams",
+            "DELETE /enterprises/{}/copilot/billing/selected_users",
+            "DELETE /enterprises/{}/copilot/custom-agents/source",
+            "DELETE /enterprises/{}/enterprise-roles/teams/{}",
+            "DELETE /enterprises/{}/enterprise-roles/teams/{}/{}",
+            "DELETE /enterprises/{}/enterprise-roles/users/{}",
+            "DELETE /enterprises/{}/enterprise-roles/users/{}/{}",
+            "DELETE /enterprises/{}/network-configurations/{}",
+            "DELETE /enterprises/{}/org-properties/schema/{}",
+            "DELETE /enterprises/{}/properties/schema/{}",
+            "DELETE /enterprises/{}/rulesets/{}",
+            "DELETE /enterprises/{}/secret-scanning/custom-patterns",
+            "DELETE /enterprises/{}/settings/billing/budgets/{}",
+            "DELETE /enterprises/{}/settings/billing/cost-centers/{}",
+            "DELETE /enterprises/{}/settings/billing/cost-centers/{}/resource",
+            "DELETE /enterprises/{}/visual-studio-subscriptions/{}",
+            "DELETE /orgs/{}/announcement",
+            "DELETE /orgs/{}/credential-authorizations/{}",
+            "DELETE /orgs/{}/custom-repository-roles/{}",
+            "DELETE /orgs/{}/custom_roles/{}",
+            "DELETE /orgs/{}/organization-roles/{}",
+            "DELETE /orgs/{}/teams/{}/external-groups",
+            "DELETE /repos/{}/{}/bypass-responses/secret-scanning/{}",
+            "DELETE /repos/{}/{}/dismissal-requests/dependabot/{}",
+            "DELETE /repos/{}/{}/lfs",
+            "DELETE /scim/v2/enterprises/{}/Groups/{}",
+            "DELETE /scim/v2/enterprises/{}/Users/{}",
+            "DELETE /scim/v2/organizations/{}/Users/{}",
+            "GET /enterprise-installation/{}/server-statistics",
+            "GET /enterprises/{}/actions/cache/usage",
+            "GET /enterprises/{}/actions/hosted-runners",
+            "GET /enterprises/{}/actions/hosted-runners/images/custom",
+            "GET /enterprises/{}/actions/hosted-runners/images/custom/{}",
+            "GET /enterprises/{}/actions/hosted-runners/images/custom/{}/versions",
+            "GET /enterprises/{}/actions/hosted-runners/images/custom/{}/versions/{}",
+            "GET /enterprises/{}/actions/hosted-runners/images/github-owned",
+            "GET /enterprises/{}/actions/hosted-runners/images/partner",
+            "GET /enterprises/{}/actions/hosted-runners/limits",
+            "GET /enterprises/{}/actions/hosted-runners/machine-sizes",
+            "GET /enterprises/{}/actions/hosted-runners/platforms",
+            "GET /enterprises/{}/actions/hosted-runners/{}",
+            "GET /enterprises/{}/actions/permissions",
+            "GET /enterprises/{}/actions/permissions/artifact-and-log-retention",
+            "GET /enterprises/{}/actions/permissions/fork-pr-contributor-approval",
+            "GET /enterprises/{}/actions/permissions/fork-pr-workflows-private-repos",
+            "GET /enterprises/{}/actions/permissions/organizations",
+            "GET /enterprises/{}/actions/permissions/selected-actions",
+            "GET /enterprises/{}/actions/permissions/self-hosted-runners",
+            "GET /enterprises/{}/actions/permissions/workflow",
+            "GET /enterprises/{}/actions/runner-groups",
+            "GET /enterprises/{}/actions/runner-groups/{}",
+            "GET /enterprises/{}/actions/runner-groups/{}/organizations",
+            "GET /enterprises/{}/actions/runner-groups/{}/runners",
+            "GET /enterprises/{}/actions/runners",
+            "GET /enterprises/{}/actions/runners/downloads",
+            "GET /enterprises/{}/actions/runners/{}",
+            "GET /enterprises/{}/actions/runners/{}/labels",
+            "GET /enterprises/{}/announcement",
+            "GET /enterprises/{}/apps/installable_organizations",
+            "GET /enterprises/{}/apps/installable_organizations/{}/accessible_repositories",
+            "GET /enterprises/{}/apps/organizations/{}/installations",
+            "GET /enterprises/{}/apps/organizations/{}/installations/{}/repositories",
+            "GET /enterprises/{}/audit-log",
+            "GET /enterprises/{}/audit-log/stream-key",
+            "GET /enterprises/{}/audit-log/streams",
+            "GET /enterprises/{}/audit-log/streams/{}",
+            "GET /enterprises/{}/bypass-requests/push-rules",
+            "GET /enterprises/{}/bypass-requests/secret-scanning",
+            "GET /enterprises/{}/code-scanning/alerts",
+            "GET /enterprises/{}/code_security_and_analysis",
+            "GET /enterprises/{}/consumed-licenses",
+            "GET /enterprises/{}/copilot/billing/seats",
+            "GET /enterprises/{}/copilot/content_exclusion",
+            "GET /enterprises/{}/copilot/custom-agents",
+            "GET /enterprises/{}/copilot/custom-agents/source",
+            "GET /enterprises/{}/copilot/usage-records",
+            "GET /enterprises/{}/dismissal-requests/secret-scanning",
+            "GET /enterprises/{}/enterprise-roles",
+            "GET /enterprises/{}/enterprise-roles/{}",
+            "GET /enterprises/{}/enterprise-roles/{}/teams",
+            "GET /enterprises/{}/enterprise-roles/{}/users",
+            "GET /enterprises/{}/innersource-vulnerabilities/sync/status/{}",
+            "GET /enterprises/{}/installation",
+            "GET /enterprises/{}/license-sync-status",
+            "GET /enterprises/{}/members/{}/copilot",
+            "GET /enterprises/{}/network-configurations",
+            "GET /enterprises/{}/network-configurations/{}",
+            "GET /enterprises/{}/network-settings/{}",
+            "GET /enterprises/{}/org-properties/schema",
+            "GET /enterprises/{}/org-properties/schema/{}",
+            "GET /enterprises/{}/org-properties/values",
+            "GET /enterprises/{}/properties/schema",
+            "GET /enterprises/{}/properties/schema/{}",
+            "GET /enterprises/{}/rulesets/{}",
+            "GET /enterprises/{}/rulesets/{}/history",
+            "GET /enterprises/{}/rulesets/{}/history/{}",
+            "GET /enterprises/{}/secret-scanning/alerts",
+            "GET /enterprises/{}/secret-scanning/custom-patterns",
+            "GET /enterprises/{}/secret-scanning/pattern-configurations",
+            "GET /enterprises/{}/settings/billing/advanced-security",
+            "GET /enterprises/{}/settings/billing/ai_credit/usage",
+            "GET /enterprises/{}/settings/billing/budgets",
+            "GET /enterprises/{}/settings/billing/budgets/{}",
+            "GET /enterprises/{}/settings/billing/budgets/{}/user-states",
+            "GET /enterprises/{}/settings/billing/cost-centers",
+            "GET /enterprises/{}/settings/billing/cost-centers/{}",
+            "GET /enterprises/{}/settings/billing/premium_request/usage",
+            "GET /enterprises/{}/settings/billing/reports",
+            "GET /enterprises/{}/settings/billing/reports/{}",
+            "GET /enterprises/{}/settings/billing/usage",
+            "GET /enterprises/{}/settings/billing/usage/summary",
+            "GET /enterprises/{}/visual-studio-subscriptions",
+            "GET /organizations/{}/custom_roles",
+            "GET /organizations/{}/org-properties/values",
+            "GET /orgs/{}/announcement",
+            "GET /orgs/{}/bypass-requests/push-rules",
+            "GET /orgs/{}/bypass-requests/secret-scanning",
+            "GET /orgs/{}/credential-authorizations",
+            "GET /orgs/{}/custom-repository-roles",
+            "GET /orgs/{}/custom-repository-roles/{}",
+            "GET /orgs/{}/custom_roles/{}",
+            "GET /orgs/{}/dismissal-requests/code-scanning",
+            "GET /orgs/{}/dismissal-requests/dependabot",
+            "GET /orgs/{}/dismissal-requests/secret-scanning",
+            "GET /orgs/{}/external-group/{}",
+            "GET /orgs/{}/external-groups",
+            "GET /orgs/{}/fine_grained_permissions",
+            "GET /orgs/{}/organization-fine-grained-permissions",
+            "GET /orgs/{}/repository-fine-grained-permissions",
+            "GET /orgs/{}/settings/billing/advanced-security",
+            "GET /orgs/{}/team-sync/groups",
+            "GET /orgs/{}/teams/{}/external-groups",
+            "GET /orgs/{}/teams/{}/team-sync/group-mappings",
+            "GET /repos/{}/{}/bypass-requests/push-rules",
+            "GET /repos/{}/{}/bypass-requests/push-rules/{}",
+            "GET /repos/{}/{}/bypass-requests/secret-scanning",
+            "GET /repos/{}/{}/bypass-requests/secret-scanning/{}",
+            "GET /repos/{}/{}/dismissal-requests/code-scanning",
+            "GET /repos/{}/{}/dismissal-requests/code-scanning/{}",
+            "GET /repos/{}/{}/dismissal-requests/dependabot",
+            "GET /repos/{}/{}/dismissal-requests/dependabot/{}",
+            "GET /repos/{}/{}/dismissal-requests/secret-scanning",
+            "GET /repos/{}/{}/dismissal-requests/secret-scanning/{}",
+            "GET /scim/v2/enterprises/{}/Groups",
+            "GET /scim/v2/enterprises/{}/Groups/{}",
+            "GET /scim/v2/enterprises/{}/Users",
+            "GET /scim/v2/enterprises/{}/Users/{}",
+            "GET /scim/v2/organizations/{}/Users",
+            "GET /scim/v2/organizations/{}/Users/{}",
+            "GET /teams/{}/team-sync/group-mappings",
+            "PATCH /enterprises/{}/actions/hosted-runners/{}",
+            "PATCH /enterprises/{}/actions/runner-groups/{}",
+            "PATCH /enterprises/{}/announcement",
+            "PATCH /enterprises/{}/apps/organizations/{}/installations/{}/repositories",
+            "PATCH /enterprises/{}/apps/organizations/{}/installations/{}/repositories/add",
+            "PATCH /enterprises/{}/apps/organizations/{}/installations/{}/repositories/remove",
+            "PATCH /enterprises/{}/code_security_and_analysis",
+            "PATCH /enterprises/{}/network-configurations/{}",
+            "PATCH /enterprises/{}/org-properties/schema",
+            "PATCH /enterprises/{}/org-properties/values",
+            "PATCH /enterprises/{}/properties/schema",
+            "PATCH /enterprises/{}/secret-scanning/custom-patterns/{}",
+            "PATCH /enterprises/{}/secret-scanning/pattern-configurations",
+            "PATCH /enterprises/{}/settings/billing/budgets/{}",
+            "PATCH /enterprises/{}/settings/billing/cost-centers/{}",
+            "PATCH /organizations/{}/org-properties/values",
+            "PATCH /orgs/{}/announcement",
+            "PATCH /orgs/{}/custom-repository-roles/{}",
+            "PATCH /orgs/{}/custom_roles/{}",
+            "PATCH /orgs/{}/organization-roles/{}",
+            "PATCH /orgs/{}/teams/{}/external-groups",
+            "PATCH /orgs/{}/teams/{}/team-sync/group-mappings",
+            "PATCH /repos/{}/{}/bypass-requests/secret-scanning/{}",
+            "PATCH /repos/{}/{}/dismissal-requests/code-scanning/{}",
+            "PATCH /repos/{}/{}/dismissal-requests/dependabot/{}",
+            "PATCH /repos/{}/{}/dismissal-requests/secret-scanning/{}",
+            "PATCH /scim/v2/enterprises/{}/Groups/{}",
+            "PATCH /scim/v2/enterprises/{}/Users/{}",
+            "PATCH /scim/v2/organizations/{}/Users/{}",
+            "PATCH /teams/{}/team-sync/group-mappings",
+            "POST /enterprises/{}/access-restrictions/disable",
+            "POST /enterprises/{}/access-restrictions/enable",
+            "POST /enterprises/{}/actions/hosted-runners",
+            "POST /enterprises/{}/actions/runner-groups",
+            "POST /enterprises/{}/actions/runners/generate-jitconfig",
+            "POST /enterprises/{}/actions/runners/registration-token",
+            "POST /enterprises/{}/actions/runners/remove-token",
+            "POST /enterprises/{}/actions/runners/{}/labels",
+            "POST /enterprises/{}/apps/organizations/{}/installations",
+            "POST /enterprises/{}/audit-log/streams",
+            "POST /enterprises/{}/copilot/billing/selected_enterprise_teams",
+            "POST /enterprises/{}/copilot/billing/selected_users",
+            "POST /enterprises/{}/credential-authorizations/revoke-all",
+            "POST /enterprises/{}/credential-authorizations/revoke-credential-type",
+            "POST /enterprises/{}/credential-authorizations/{}/revoke",
+            "POST /enterprises/{}/credential-authorizations/{}/revoke-credential-type",
+            "POST /enterprises/{}/innersource-vulnerabilities/sync",
+            "POST /enterprises/{}/network-configurations",
+            "POST /enterprises/{}/rulesets",
+            "POST /enterprises/{}/secret-scanning/custom-patterns",
+            "POST /enterprises/{}/settings/billing/budgets",
+            "POST /enterprises/{}/settings/billing/cost-centers",
+            "POST /enterprises/{}/settings/billing/cost-centers/{}/resource",
+            "POST /enterprises/{}/settings/billing/reports",
+            "POST /enterprises/{}/{}/{}",
+            "POST /orgs/{}/custom-repository-roles",
+            "POST /orgs/{}/custom_roles",
+            "POST /orgs/{}/organization-roles",
+            "POST /repos/{}/{}/dismissal-requests/dependabot/{}",
+            "POST /scim/v2/enterprises/{}/Groups",
+            "POST /scim/v2/enterprises/{}/Users",
+            "POST /scim/v2/organizations/{}/Users",
+            "PUT /enterprises/{}/actions/oidc/customization/issuer",
+            "PUT /enterprises/{}/actions/permissions",
+            "PUT /enterprises/{}/actions/permissions/artifact-and-log-retention",
+            "PUT /enterprises/{}/actions/permissions/fork-pr-contributor-approval",
+            "PUT /enterprises/{}/actions/permissions/fork-pr-workflows-private-repos",
+            "PUT /enterprises/{}/actions/permissions/organizations",
+            "PUT /enterprises/{}/actions/permissions/organizations/{}",
+            "PUT /enterprises/{}/actions/permissions/selected-actions",
+            "PUT /enterprises/{}/actions/permissions/self-hosted-runners",
+            "PUT /enterprises/{}/actions/permissions/workflow",
+            "PUT /enterprises/{}/actions/runner-groups/{}/organizations",
+            "PUT /enterprises/{}/actions/runner-groups/{}/organizations/{}",
+            "PUT /enterprises/{}/actions/runner-groups/{}/runners",
+            "PUT /enterprises/{}/actions/runner-groups/{}/runners/{}",
+            "PUT /enterprises/{}/actions/runners/{}/labels",
+            "PUT /enterprises/{}/audit-log/streams/{}",
+            "PUT /enterprises/{}/copilot/content_exclusion",
+            "PUT /enterprises/{}/copilot/custom-agents/source",
+            "PUT /enterprises/{}/enterprise-roles/teams/{}/{}",
+            "PUT /enterprises/{}/enterprise-roles/users/{}/{}",
+            "PUT /enterprises/{}/org-properties/schema/{}",
+            "PUT /enterprises/{}/properties/schema/organizations/{}/{}/promote",
+            "PUT /enterprises/{}/properties/schema/{}",
+            "PUT /enterprises/{}/rulesets/{}",
+            "PUT /enterprises/{}/visual-studio-subscriptions/{}",
+            "PUT /repos/{}/{}/lfs",
+            "PUT /scim/v2/enterprises/{}/Groups/{}",
+            "PUT /scim/v2/enterprises/{}/Users/{}",
+            "PUT /scim/v2/organizations/{}/Users/{}"
+          ],
+          "represented_operations": 1204
+        },
+        "ghes-2.22": {
+          "documented_operations": 642,
+          "missing_operations": [
+            "DELETE /admin/hooks/{}",
+            "DELETE /admin/keys/{}",
+            "DELETE /admin/pre-receive-environments/{}",
+            "DELETE /admin/pre-receive-hooks/{}",
+            "DELETE /admin/tokens/{}",
+            "DELETE /admin/users/{}/authorizations",
+            "DELETE /applications/grants/{}",
+            "DELETE /applications/{}/grants/{}",
+            "DELETE /applications/{}/tokens/{}",
+            "DELETE /authorizations/{}",
+            "DELETE /enterprises/{}/actions/runner-groups/{}",
+            "DELETE /enterprises/{}/actions/runner-groups/{}/organizations/{}",
+            "DELETE /enterprises/{}/actions/runner-groups/{}/runners/{}",
+            "DELETE /enterprises/{}/actions/runners/{}",
+            "DELETE /orgs/{}/pre-receive-hooks/{}",
+            "DELETE /orgs/{}/teams/{}/discussions/{}",
+            "DELETE /orgs/{}/teams/{}/discussions/{}/comments/{}",
+            "DELETE /orgs/{}/teams/{}/discussions/{}/comments/{}/reactions/{}",
+            "DELETE /orgs/{}/teams/{}/discussions/{}/reactions/{}",
+            "DELETE /orgs/{}/teams/{}/projects/{}",
+            "DELETE /projects/columns/cards/{}",
+            "DELETE /projects/columns/{}",
+            "DELETE /projects/{}/collaborators/{}",
+            "DELETE /reactions/{}",
+            "DELETE /repos/{}/{}/pre-receive-hooks/{}",
+            "DELETE /setup/api/settings/authorized-keys",
+            "DELETE /teams/{}/discussions/{}",
+            "DELETE /teams/{}/discussions/{}/comments/{}",
+            "DELETE /teams/{}/projects/{}",
+            "GET /admin/hooks",
+            "GET /admin/hooks/{}",
+            "GET /admin/keys",
+            "GET /admin/pre-receive-environments",
+            "GET /admin/pre-receive-environments/{}",
+            "GET /admin/pre-receive-environments/{}/downloads/latest",
+            "GET /admin/pre-receive-hooks",
+            "GET /admin/pre-receive-hooks/{}",
+            "GET /admin/tokens",
+            "GET /applications/grants",
+            "GET /applications/grants/{}",
+            "GET /applications/{}/tokens/{}",
+            "GET /authorizations",
+            "GET /authorizations/{}",
+            "GET /enterprise/settings/license",
+            "GET /enterprise/stats/all",
+            "GET /enterprise/stats/comments",
+            "GET /enterprise/stats/gists",
+            "GET /enterprise/stats/hooks",
+            "GET /enterprise/stats/issues",
+            "GET /enterprise/stats/milestones",
+            "GET /enterprise/stats/orgs",
+            "GET /enterprise/stats/pages",
+            "GET /enterprise/stats/pulls",
+            "GET /enterprise/stats/repos",
+            "GET /enterprise/stats/users",
+            "GET /enterprises/{}/actions/runner-groups",
+            "GET /enterprises/{}/actions/runner-groups/{}",
+            "GET /enterprises/{}/actions/runner-groups/{}/organizations",
+            "GET /enterprises/{}/actions/runner-groups/{}/runners",
+            "GET /enterprises/{}/actions/runners",
+            "GET /enterprises/{}/actions/runners/downloads",
+            "GET /enterprises/{}/actions/runners/{}",
+            "GET /orgs/{}/pre-receive-hooks",
+            "GET /orgs/{}/pre-receive-hooks/{}",
+            "GET /orgs/{}/projects",
+            "GET /orgs/{}/teams/{}/discussions",
+            "GET /orgs/{}/teams/{}/discussions/{}",
+            "GET /orgs/{}/teams/{}/discussions/{}/comments",
+            "GET /orgs/{}/teams/{}/discussions/{}/comments/{}",
+            "GET /orgs/{}/teams/{}/discussions/{}/comments/{}/reactions",
+            "GET /orgs/{}/teams/{}/discussions/{}/reactions",
+            "GET /orgs/{}/teams/{}/projects",
+            "GET /orgs/{}/teams/{}/projects/{}",
+            "GET /projects/columns/cards/{}",
+            "GET /projects/columns/{}",
+            "GET /projects/columns/{}/cards",
+            "GET /projects/{}/collaborators",
+            "GET /projects/{}/collaborators/{}/permission",
+            "GET /projects/{}/columns",
+            "GET /repos/{}/{}/pre-receive-hooks",
+            "GET /repos/{}/{}/pre-receive-hooks/{}",
+            "GET /setup/api/configcheck",
+            "GET /setup/api/maintenance",
+            "GET /setup/api/settings",
+            "GET /setup/api/settings/authorized-keys",
+            "GET /teams/{}/discussions",
+            "GET /teams/{}/discussions/{}",
+            "GET /teams/{}/discussions/{}/comments",
+            "GET /teams/{}/discussions/{}/comments/{}",
+            "GET /teams/{}/discussions/{}/comments/{}/reactions",
+            "GET /teams/{}/discussions/{}/reactions",
+            "GET /teams/{}/projects",
+            "GET /teams/{}/projects/{}",
+            "GET /users/{}/projects",
+            "PATCH /admin/hooks/{}",
+            "PATCH /admin/ldap/teams/{}/mapping",
+            "PATCH /admin/ldap/users/{}/mapping",
+            "PATCH /admin/organizations/{}",
+            "PATCH /admin/pre-receive-environments/{}",
+            "PATCH /admin/pre-receive-hooks/{}",
+            "PATCH /authorizations/{}",
+            "PATCH /enterprises/{}/actions/runner-groups/{}",
+            "PATCH /orgs/{}/pre-receive-hooks/{}",
+            "PATCH /orgs/{}/teams/{}/discussions/{}",
+            "PATCH /orgs/{}/teams/{}/discussions/{}/comments/{}",
+            "PATCH /projects/columns/cards/{}",
+            "PATCH /projects/columns/{}",
+            "PATCH /repos/{}/{}/pre-receive-hooks/{}",
+            "PATCH /teams/{}/discussions/{}",
+            "PATCH /teams/{}/discussions/{}/comments/{}",
+            "POST /admin/hooks",
+            "POST /admin/hooks/{}/pings",
+            "POST /admin/ldap/teams/{}/sync",
+            "POST /admin/ldap/users/{}/sync",
+            "POST /admin/pre-receive-environments",
+            "POST /admin/pre-receive-environments/{}/downloads",
+            "POST /admin/pre-receive-hooks",
+            "POST /admin/users/{}/authorizations",
+            "POST /applications/{}/tokens/{}",
+            "POST /authorizations",
+            "POST /enterprises/{}/actions/runner-groups",
+            "POST /enterprises/{}/actions/runners/registration-token",
+            "POST /enterprises/{}/actions/runners/remove-token",
+            "POST /orgs/{}/projects",
+            "POST /orgs/{}/teams/{}/discussions",
+            "POST /orgs/{}/teams/{}/discussions/{}/comments",
+            "POST /orgs/{}/teams/{}/discussions/{}/comments/{}/reactions",
+            "POST /orgs/{}/teams/{}/discussions/{}/reactions",
+            "POST /projects/columns/{}/cards",
+            "POST /projects/{}/columns",
+            "POST /repos/{}/{}/content_references/{}/attachments",
+            "POST /setup/api/configure",
+            "POST /setup/api/maintenance",
+            "POST /setup/api/settings/authorized-keys",
+            "POST /setup/api/start",
+            "POST /setup/api/upgrade",
+            "POST /teams/{}/discussions",
+            "POST /teams/{}/discussions/{}/comments",
+            "POST /teams/{}/discussions/{}/comments/{}/reactions",
+            "POST /teams/{}/discussions/{}/reactions",
+            "POST /user/projects",
+            "PUT /authorizations/clients/{}",
+            "PUT /authorizations/clients/{}/{}",
+            "PUT /enterprises/{}/actions/runner-groups/{}/organizations",
+            "PUT /enterprises/{}/actions/runner-groups/{}/organizations/{}",
+            "PUT /enterprises/{}/actions/runner-groups/{}/runners",
+            "PUT /enterprises/{}/actions/runner-groups/{}/runners/{}",
+            "PUT /orgs/{}/teams/{}/projects/{}",
+            "PUT /projects/{}/collaborators/{}",
+            "PUT /setup/api/settings",
+            "PUT /teams/{}/projects/{}"
+          ],
+          "represented_operations": 491
+        },
+        "ghes-3.13": {
+          "documented_operations": 974,
+          "missing_operations": [
+            "DELETE /admin/hooks/{}",
+            "DELETE /admin/keys/{}",
+            "DELETE /admin/pre-receive-environments/{}",
+            "DELETE /admin/pre-receive-hooks/{}",
+            "DELETE /admin/tokens/{}",
+            "DELETE /admin/users/{}/authorizations",
+            "DELETE /applications/grants/{}",
+            "DELETE /authorizations/{}",
+            "DELETE /enterprise/announcement",
+            "DELETE /enterprises/{}/actions/permissions/organizations/{}",
+            "DELETE /enterprises/{}/actions/runner-groups/{}",
+            "DELETE /enterprises/{}/actions/runner-groups/{}/organizations/{}",
+            "DELETE /enterprises/{}/actions/runner-groups/{}/runners/{}",
+            "DELETE /enterprises/{}/actions/runners/{}",
+            "DELETE /enterprises/{}/actions/runners/{}/labels",
+            "DELETE /enterprises/{}/actions/runners/{}/labels/{}",
+            "DELETE /manage/v1/access/ssh",
+            "DELETE /orgs/{}/announcement",
+            "DELETE /orgs/{}/custom-repository-roles/{}",
+            "DELETE /orgs/{}/pre-receive-hooks/{}",
+            "DELETE /orgs/{}/teams/{}/discussions/{}",
+            "DELETE /orgs/{}/teams/{}/discussions/{}/comments/{}",
+            "DELETE /orgs/{}/teams/{}/discussions/{}/comments/{}/reactions/{}",
+            "DELETE /orgs/{}/teams/{}/discussions/{}/reactions/{}",
+            "DELETE /orgs/{}/teams/{}/external-groups",
+            "DELETE /orgs/{}/teams/{}/projects/{}",
+            "DELETE /projects/columns/cards/{}",
+            "DELETE /projects/columns/{}",
+            "DELETE /projects/{}/collaborators/{}",
+            "DELETE /repos/{}/{}/lfs",
+            "DELETE /repos/{}/{}/pre-receive-hooks/{}",
+            "DELETE /repos/{}/{}/tags/protection/{}",
+            "DELETE /scim/v2/enterprises/{}/Groups/{}",
+            "DELETE /scim/v2/enterprises/{}/Users/{}",
+            "DELETE /setup/api/settings/authorized-keys",
+            "DELETE /teams/{}/discussions/{}",
+            "DELETE /teams/{}/discussions/{}/comments/{}",
+            "DELETE /teams/{}/projects/{}",
+            "GET /admin/hooks",
+            "GET /admin/hooks/{}",
+            "GET /admin/keys",
+            "GET /admin/pre-receive-environments",
+            "GET /admin/pre-receive-environments/{}",
+            "GET /admin/pre-receive-environments/{}/downloads/latest",
+            "GET /admin/pre-receive-hooks",
+            "GET /admin/pre-receive-hooks/{}",
+            "GET /admin/tokens",
+            "GET /applications/grants",
+            "GET /applications/grants/{}",
+            "GET /authorizations",
+            "GET /authorizations/{}",
+            "GET /enterprise/announcement",
+            "GET /enterprise/settings/license",
+            "GET /enterprise/stats/all",
+            "GET /enterprise/stats/comments",
+            "GET /enterprise/stats/gists",
+            "GET /enterprise/stats/hooks",
+            "GET /enterprise/stats/issues",
+            "GET /enterprise/stats/milestones",
+            "GET /enterprise/stats/orgs",
+            "GET /enterprise/stats/pages",
+            "GET /enterprise/stats/pulls",
+            "GET /enterprise/stats/repos",
+            "GET /enterprise/stats/security-products",
+            "GET /enterprise/stats/users",
+            "GET /enterprises/{}/actions/cache/usage",
+            "GET /enterprises/{}/actions/cache/usage-policy",
+            "GET /enterprises/{}/actions/permissions",
+            "GET /enterprises/{}/actions/permissions/organizations",
+            "GET /enterprises/{}/actions/permissions/selected-actions",
+            "GET /enterprises/{}/actions/permissions/workflow",
+            "GET /enterprises/{}/actions/runner-groups",
+            "GET /enterprises/{}/actions/runner-groups/{}",
+            "GET /enterprises/{}/actions/runner-groups/{}/organizations",
+            "GET /enterprises/{}/actions/runner-groups/{}/runners",
+            "GET /enterprises/{}/actions/runners",
+            "GET /enterprises/{}/actions/runners/downloads",
+            "GET /enterprises/{}/actions/runners/{}",
+            "GET /enterprises/{}/actions/runners/{}/labels",
+            "GET /enterprises/{}/audit-log",
+            "GET /enterprises/{}/code-scanning/alerts",
+            "GET /enterprises/{}/code_security_and_analysis",
+            "GET /enterprises/{}/secret-scanning/alerts",
+            "GET /enterprises/{}/settings/billing/advanced-security",
+            "GET /manage/v1/access/ssh",
+            "GET /manage/v1/checks/system-requirements",
+            "GET /manage/v1/cluster/status",
+            "GET /manage/v1/config/apply",
+            "GET /manage/v1/config/apply/events",
+            "GET /manage/v1/config/license",
+            "GET /manage/v1/config/license/check",
+            "GET /manage/v1/config/nodes",
+            "GET /manage/v1/config/settings",
+            "GET /manage/v1/maintenance",
+            "GET /manage/v1/replication/status",
+            "GET /manage/v1/version",
+            "GET /organizations/{}/custom_roles",
+            "GET /orgs/{}/announcement",
+            "GET /orgs/{}/custom-repository-roles",
+            "GET /orgs/{}/custom-repository-roles/{}",
+            "GET /orgs/{}/external-group/{}",
+            "GET /orgs/{}/external-groups",
+            "GET /orgs/{}/pre-receive-hooks",
+            "GET /orgs/{}/pre-receive-hooks/{}",
+            "GET /orgs/{}/projects",
+            "GET /orgs/{}/repository-fine-grained-permissions",
+            "GET /orgs/{}/settings/billing/advanced-security",
+            "GET /orgs/{}/teams/{}/discussions",
+            "GET /orgs/{}/teams/{}/discussions/{}",
+            "GET /orgs/{}/teams/{}/discussions/{}/comments",
+            "GET /orgs/{}/teams/{}/discussions/{}/comments/{}",
+            "GET /orgs/{}/teams/{}/discussions/{}/comments/{}/reactions",
+            "GET /orgs/{}/teams/{}/discussions/{}/reactions",
+            "GET /orgs/{}/teams/{}/external-groups",
+            "GET /orgs/{}/teams/{}/projects",
+            "GET /orgs/{}/teams/{}/projects/{}",
+            "GET /projects/columns/cards/{}",
+            "GET /projects/columns/{}",
+            "GET /projects/columns/{}/cards",
+            "GET /projects/{}/collaborators",
+            "GET /projects/{}/collaborators/{}/permission",
+            "GET /projects/{}/columns",
+            "GET /repos/{}/{}/actions/cache/usage-policy",
+            "GET /repos/{}/{}/pre-receive-hooks",
+            "GET /repos/{}/{}/pre-receive-hooks/{}",
+            "GET /repos/{}/{}/replicas/caches",
+            "GET /repos/{}/{}/tags/protection",
+            "GET /scim/v2/enterprises/{}/Groups",
+            "GET /scim/v2/enterprises/{}/Groups/{}",
+            "GET /scim/v2/enterprises/{}/Users",
+            "GET /scim/v2/enterprises/{}/Users/{}",
+            "GET /setup/api/configcheck",
+            "GET /setup/api/maintenance",
+            "GET /setup/api/settings",
+            "GET /setup/api/settings/authorized-keys",
+            "GET /teams/{}/discussions",
+            "GET /teams/{}/discussions/{}",
+            "GET /teams/{}/discussions/{}/comments",
+            "GET /teams/{}/discussions/{}/comments/{}",
+            "GET /teams/{}/discussions/{}/comments/{}/reactions",
+            "GET /teams/{}/discussions/{}/reactions",
+            "GET /teams/{}/projects",
+            "GET /teams/{}/projects/{}",
+            "GET /users/{}/projects",
+            "PATCH /admin/hooks/{}",
+            "PATCH /admin/ldap/teams/{}/mapping",
+            "PATCH /admin/ldap/users/{}/mapping",
+            "PATCH /admin/organizations/{}",
+            "PATCH /admin/pre-receive-environments/{}",
+            "PATCH /admin/pre-receive-hooks/{}",
+            "PATCH /authorizations/{}",
+            "PATCH /enterprise/announcement",
+            "PATCH /enterprises/{}/actions/cache/usage-policy",
+            "PATCH /enterprises/{}/actions/runner-groups/{}",
+            "PATCH /enterprises/{}/code_security_and_analysis",
+            "PATCH /orgs/{}/announcement",
+            "PATCH /orgs/{}/custom-repository-roles/{}",
+            "PATCH /orgs/{}/pre-receive-hooks/{}",
+            "PATCH /orgs/{}/teams/{}/discussions/{}",
+            "PATCH /orgs/{}/teams/{}/discussions/{}/comments/{}",
+            "PATCH /orgs/{}/teams/{}/external-groups",
+            "PATCH /projects/columns/cards/{}",
+            "PATCH /projects/columns/{}",
+            "PATCH /repos/{}/{}/actions/cache/usage-policy",
+            "PATCH /repos/{}/{}/pre-receive-hooks/{}",
+            "PATCH /scim/v2/enterprises/{}/Groups/{}",
+            "PATCH /scim/v2/enterprises/{}/Users/{}",
+            "PATCH /teams/{}/discussions/{}",
+            "PATCH /teams/{}/discussions/{}/comments/{}",
+            "POST /admin/hooks",
+            "POST /admin/hooks/{}/pings",
+            "POST /admin/ldap/teams/{}/sync",
+            "POST /admin/ldap/users/{}/sync",
+            "POST /admin/pre-receive-environments",
+            "POST /admin/pre-receive-environments/{}/downloads",
+            "POST /admin/pre-receive-hooks",
+            "POST /admin/users/{}/authorizations",
+            "POST /authorizations",
+            "POST /enterprises/{}/actions/runner-groups",
+            "POST /enterprises/{}/actions/runners/generate-jitconfig",
+            "POST /enterprises/{}/actions/runners/registration-token",
+            "POST /enterprises/{}/actions/runners/remove-token",
+            "POST /enterprises/{}/actions/runners/{}/labels",
+            "POST /enterprises/{}/{}/{}",
+            "POST /manage/v1/access/ssh",
+            "POST /manage/v1/config/apply",
+            "POST /manage/v1/config/init",
+            "POST /manage/v1/maintenance",
+            "POST /orgs/{}/custom-repository-roles",
+            "POST /orgs/{}/projects",
+            "POST /orgs/{}/teams/{}/discussions",
+            "POST /orgs/{}/teams/{}/discussions/{}/comments",
+            "POST /orgs/{}/teams/{}/discussions/{}/comments/{}/reactions",
+            "POST /orgs/{}/teams/{}/discussions/{}/reactions",
+            "POST /projects/columns/{}/cards",
+            "POST /projects/{}/columns",
+            "POST /repos/{}/{}/tags/protection",
+            "POST /scim/v2/enterprises/{}/Groups",
+            "POST /scim/v2/enterprises/{}/Users",
+            "POST /setup/api/configure",
+            "POST /setup/api/maintenance",
+            "POST /setup/api/settings/authorized-keys",
+            "POST /setup/api/start",
+            "POST /setup/api/upgrade",
+            "POST /teams/{}/discussions",
+            "POST /teams/{}/discussions/{}/comments",
+            "POST /teams/{}/discussions/{}/comments/{}/reactions",
+            "POST /teams/{}/discussions/{}/reactions",
+            "POST /user/projects",
+            "PUT /authorizations/clients/{}",
+            "PUT /authorizations/clients/{}/{}",
+            "PUT /enterprises/{}/actions/permissions",
+            "PUT /enterprises/{}/actions/permissions/organizations",
+            "PUT /enterprises/{}/actions/permissions/organizations/{}",
+            "PUT /enterprises/{}/actions/permissions/selected-actions",
+            "PUT /enterprises/{}/actions/permissions/workflow",
+            "PUT /enterprises/{}/actions/runner-groups/{}/organizations",
+            "PUT /enterprises/{}/actions/runner-groups/{}/organizations/{}",
+            "PUT /enterprises/{}/actions/runner-groups/{}/runners",
+            "PUT /enterprises/{}/actions/runner-groups/{}/runners/{}",
+            "PUT /enterprises/{}/actions/runners/{}/labels",
+            "PUT /manage/v1/config/license",
+            "PUT /manage/v1/config/settings",
+            "PUT /orgs/{}/teams/{}/projects/{}",
+            "PUT /projects/{}/collaborators/{}",
+            "PUT /repos/{}/{}/lfs",
+            "PUT /scim/v2/enterprises/{}/Groups/{}",
+            "PUT /scim/v2/enterprises/{}/Users/{}",
+            "PUT /setup/api/settings",
+            "PUT /teams/{}/projects/{}"
+          ],
+          "represented_operations": 744
+        },
+        "ghes-3.21": {
+          "documented_operations": 1092,
+          "missing_operations": [
+            "DELETE /admin/hooks/{}",
+            "DELETE /admin/keys/{}",
+            "DELETE /admin/pre-receive-environments/{}",
+            "DELETE /admin/pre-receive-hooks/{}",
+            "DELETE /admin/tokens/{}",
+            "DELETE /admin/users/{}/authorizations",
+            "DELETE /applications/grants/{}",
+            "DELETE /authorizations/{}",
+            "DELETE /enterprise/announcement",
+            "DELETE /enterprises/{}/actions/permissions/organizations/{}",
+            "DELETE /enterprises/{}/actions/runner-groups/{}",
+            "DELETE /enterprises/{}/actions/runner-groups/{}/organizations/{}",
+            "DELETE /enterprises/{}/actions/runner-groups/{}/runners/{}",
+            "DELETE /enterprises/{}/actions/runners/{}",
+            "DELETE /enterprises/{}/actions/runners/{}/labels",
+            "DELETE /enterprises/{}/actions/runners/{}/labels/{}",
+            "DELETE /enterprises/{}/apps/organizations/{}/installations/{}",
+            "DELETE /enterprises/{}/audit-log/streams/{}",
+            "DELETE /enterprises/{}/org-properties/schema/{}",
+            "DELETE /enterprises/{}/properties/schema/{}",
+            "DELETE /manage/v1/access/ssh",
+            "DELETE /orgs/{}/announcement",
+            "DELETE /orgs/{}/custom-repository-roles/{}",
+            "DELETE /orgs/{}/organization-roles/{}",
+            "DELETE /orgs/{}/pre-receive-hooks/{}",
+            "DELETE /orgs/{}/teams/{}/external-groups",
+            "DELETE /repos/{}/{}/bypass-responses/secret-scanning/{}",
+            "DELETE /repos/{}/{}/dismissal-requests/dependabot/{}",
+            "DELETE /repos/{}/{}/lfs",
+            "DELETE /repos/{}/{}/pre-receive-hooks/{}",
+            "DELETE /scim/v2/enterprises/{}/Groups/{}",
+            "DELETE /scim/v2/enterprises/{}/Users/{}",
+            "GET /admin/hooks",
+            "GET /admin/hooks/{}",
+            "GET /admin/keys",
+            "GET /admin/pre-receive-environments",
+            "GET /admin/pre-receive-environments/{}",
+            "GET /admin/pre-receive-environments/{}/downloads/latest",
+            "GET /admin/pre-receive-hooks",
+            "GET /admin/pre-receive-hooks/{}",
+            "GET /admin/tokens",
+            "GET /applications/grants",
+            "GET /applications/grants/{}",
+            "GET /authorizations",
+            "GET /authorizations/{}",
+            "GET /enterprise/announcement",
+            "GET /enterprise/settings/license",
+            "GET /enterprise/stats/all",
+            "GET /enterprise/stats/comments",
+            "GET /enterprise/stats/gists",
+            "GET /enterprise/stats/hooks",
+            "GET /enterprise/stats/issues",
+            "GET /enterprise/stats/milestones",
+            "GET /enterprise/stats/orgs",
+            "GET /enterprise/stats/pages",
+            "GET /enterprise/stats/pulls",
+            "GET /enterprise/stats/repos",
+            "GET /enterprise/stats/security-products",
+            "GET /enterprise/stats/users",
+            "GET /enterprises/{}/actions/cache/usage",
+            "GET /enterprises/{}/actions/cache/usage-policy",
+            "GET /enterprises/{}/actions/permissions",
+            "GET /enterprises/{}/actions/permissions/artifact-and-log-retention",
+            "GET /enterprises/{}/actions/permissions/fork-pr-contributor-approval",
+            "GET /enterprises/{}/actions/permissions/fork-pr-workflows-private-repos",
+            "GET /enterprises/{}/actions/permissions/organizations",
+            "GET /enterprises/{}/actions/permissions/selected-actions",
+            "GET /enterprises/{}/actions/permissions/self-hosted-runners",
+            "GET /enterprises/{}/actions/permissions/workflow",
+            "GET /enterprises/{}/actions/runner-groups",
+            "GET /enterprises/{}/actions/runner-groups/{}",
+            "GET /enterprises/{}/actions/runner-groups/{}/organizations",
+            "GET /enterprises/{}/actions/runner-groups/{}/runners",
+            "GET /enterprises/{}/actions/runners",
+            "GET /enterprises/{}/actions/runners/downloads",
+            "GET /enterprises/{}/actions/runners/{}",
+            "GET /enterprises/{}/actions/runners/{}/labels",
+            "GET /enterprises/{}/apps/installable_organizations",
+            "GET /enterprises/{}/apps/installable_organizations/{}/accessible_repositories",
+            "GET /enterprises/{}/apps/organizations/{}/installations",
+            "GET /enterprises/{}/apps/organizations/{}/installations/{}/repositories",
+            "GET /enterprises/{}/audit-log",
+            "GET /enterprises/{}/audit-log/stream-key",
+            "GET /enterprises/{}/audit-log/streams",
+            "GET /enterprises/{}/audit-log/streams/{}",
+            "GET /enterprises/{}/bypass-requests/push-rules",
+            "GET /enterprises/{}/bypass-requests/secret-scanning",
+            "GET /enterprises/{}/code-scanning/alerts",
+            "GET /enterprises/{}/code_security_and_analysis",
+            "GET /enterprises/{}/dismissal-requests/secret-scanning",
+            "GET /enterprises/{}/installation",
+            "GET /enterprises/{}/org-properties/schema",
+            "GET /enterprises/{}/org-properties/schema/{}",
+            "GET /enterprises/{}/org-properties/values",
+            "GET /enterprises/{}/properties/schema",
+            "GET /enterprises/{}/properties/schema/{}",
+            "GET /enterprises/{}/rulesets/{}/history",
+            "GET /enterprises/{}/rulesets/{}/history/{}",
+            "GET /enterprises/{}/secret-scanning/alerts",
+            "GET /enterprises/{}/secret-scanning/pattern-configurations",
+            "GET /enterprises/{}/settings/billing/advanced-security",
+            "GET /manage/v1/access/ssh",
+            "GET /manage/v1/checks/system-requirements",
+            "GET /manage/v1/cluster/status",
+            "GET /manage/v1/config/apply",
+            "GET /manage/v1/config/apply/events",
+            "GET /manage/v1/config/license",
+            "GET /manage/v1/config/license/check",
+            "GET /manage/v1/config/nodes",
+            "GET /manage/v1/config/settings",
+            "GET /manage/v1/maintenance",
+            "GET /manage/v1/replication/status",
+            "GET /manage/v1/version",
+            "GET /organizations/{}/custom_roles",
+            "GET /organizations/{}/org-properties/values",
+            "GET /orgs/{}/announcement",
+            "GET /orgs/{}/bypass-requests/push-rules",
+            "GET /orgs/{}/bypass-requests/secret-scanning",
+            "GET /orgs/{}/custom-repository-roles",
+            "GET /orgs/{}/custom-repository-roles/{}",
+            "GET /orgs/{}/dismissal-requests/code-scanning",
+            "GET /orgs/{}/dismissal-requests/dependabot",
+            "GET /orgs/{}/dismissal-requests/secret-scanning",
+            "GET /orgs/{}/external-group/{}",
+            "GET /orgs/{}/external-groups",
+            "GET /orgs/{}/organization-fine-grained-permissions",
+            "GET /orgs/{}/pre-receive-hooks",
+            "GET /orgs/{}/pre-receive-hooks/{}",
+            "GET /orgs/{}/repository-fine-grained-permissions",
+            "GET /orgs/{}/settings/billing/advanced-security",
+            "GET /orgs/{}/teams/{}/external-groups",
+            "GET /repos/{}/{}/actions/cache/usage-policy",
+            "GET /repos/{}/{}/bypass-requests/push-rules",
+            "GET /repos/{}/{}/bypass-requests/push-rules/{}",
+            "GET /repos/{}/{}/bypass-requests/secret-scanning",
+            "GET /repos/{}/{}/bypass-requests/secret-scanning/{}",
+            "GET /repos/{}/{}/dismissal-requests/code-scanning",
+            "GET /repos/{}/{}/dismissal-requests/code-scanning/{}",
+            "GET /repos/{}/{}/dismissal-requests/dependabot",
+            "GET /repos/{}/{}/dismissal-requests/dependabot/{}",
+            "GET /repos/{}/{}/dismissal-requests/secret-scanning",
+            "GET /repos/{}/{}/dismissal-requests/secret-scanning/{}",
+            "GET /repos/{}/{}/pre-receive-hooks",
+            "GET /repos/{}/{}/pre-receive-hooks/{}",
+            "GET /repos/{}/{}/replicas/caches",
+            "GET /scim/v2/enterprises/{}/Groups",
+            "GET /scim/v2/enterprises/{}/Groups/{}",
+            "GET /scim/v2/enterprises/{}/Users",
+            "GET /scim/v2/enterprises/{}/Users/{}",
+            "PATCH /admin/hooks/{}",
+            "PATCH /admin/ldap/teams/{}/mapping",
+            "PATCH /admin/ldap/users/{}/mapping",
+            "PATCH /admin/organizations/{}",
+            "PATCH /admin/pre-receive-environments/{}",
+            "PATCH /admin/pre-receive-hooks/{}",
+            "PATCH /authorizations/{}",
+            "PATCH /enterprise/announcement",
+            "PATCH /enterprises/{}/actions/cache/usage-policy",
+            "PATCH /enterprises/{}/actions/runner-groups/{}",
+            "PATCH /enterprises/{}/apps/organizations/{}/installations/{}/repositories",
+            "PATCH /enterprises/{}/apps/organizations/{}/installations/{}/repositories/add",
+            "PATCH /enterprises/{}/apps/organizations/{}/installations/{}/repositories/remove",
+            "PATCH /enterprises/{}/code_security_and_analysis",
+            "PATCH /enterprises/{}/org-properties/schema",
+            "PATCH /enterprises/{}/org-properties/values",
+            "PATCH /enterprises/{}/properties/schema",
+            "PATCH /enterprises/{}/secret-scanning/pattern-configurations",
+            "PATCH /organizations/{}/org-properties/values",
+            "PATCH /orgs/{}/announcement",
+            "PATCH /orgs/{}/custom-repository-roles/{}",
+            "PATCH /orgs/{}/organization-roles/{}",
+            "PATCH /orgs/{}/pre-receive-hooks/{}",
+            "PATCH /orgs/{}/teams/{}/external-groups",
+            "PATCH /repos/{}/{}/actions/cache/usage-policy",
+            "PATCH /repos/{}/{}/bypass-requests/secret-scanning/{}",
+            "PATCH /repos/{}/{}/dismissal-requests/code-scanning/{}",
+            "PATCH /repos/{}/{}/dismissal-requests/dependabot/{}",
+            "PATCH /repos/{}/{}/dismissal-requests/secret-scanning/{}",
+            "PATCH /repos/{}/{}/pre-receive-hooks/{}",
+            "PATCH /scim/v2/enterprises/{}/Groups/{}",
+            "PATCH /scim/v2/enterprises/{}/Users/{}",
+            "POST /admin/hooks",
+            "POST /admin/hooks/{}/pings",
+            "POST /admin/ldap/teams/{}/sync",
+            "POST /admin/ldap/users/{}/sync",
+            "POST /admin/pre-receive-environments",
+            "POST /admin/pre-receive-environments/{}/downloads",
+            "POST /admin/pre-receive-hooks",
+            "POST /admin/users/{}/authorizations",
+            "POST /authorizations",
+            "POST /enterprises/{}/actions/runner-groups",
+            "POST /enterprises/{}/actions/runners/generate-jitconfig",
+            "POST /enterprises/{}/actions/runners/registration-token",
+            "POST /enterprises/{}/actions/runners/remove-token",
+            "POST /enterprises/{}/actions/runners/{}/labels",
+            "POST /enterprises/{}/apps/organizations/{}/installations",
+            "POST /enterprises/{}/audit-log/streams",
+            "POST /enterprises/{}/{}/{}",
+            "POST /manage/v1/access/ssh",
+            "POST /manage/v1/config/apply",
+            "POST /manage/v1/config/init",
+            "POST /manage/v1/maintenance",
+            "POST /orgs/{}/custom-repository-roles",
+            "POST /orgs/{}/organization-roles",
+            "POST /repos/{}/{}/dismissal-requests/dependabot/{}",
+            "POST /scim/v2/enterprises/{}/Groups",
+            "POST /scim/v2/enterprises/{}/Users",
+            "PUT /authorizations/clients/{}",
+            "PUT /authorizations/clients/{}/{}",
+            "PUT /enterprises/{}/actions/permissions",
+            "PUT /enterprises/{}/actions/permissions/artifact-and-log-retention",
+            "PUT /enterprises/{}/actions/permissions/fork-pr-contributor-approval",
+            "PUT /enterprises/{}/actions/permissions/fork-pr-workflows-private-repos",
+            "PUT /enterprises/{}/actions/permissions/organizations",
+            "PUT /enterprises/{}/actions/permissions/organizations/{}",
+            "PUT /enterprises/{}/actions/permissions/selected-actions",
+            "PUT /enterprises/{}/actions/permissions/self-hosted-runners",
+            "PUT /enterprises/{}/actions/permissions/workflow",
+            "PUT /enterprises/{}/actions/runner-groups/{}/organizations",
+            "PUT /enterprises/{}/actions/runner-groups/{}/organizations/{}",
+            "PUT /enterprises/{}/actions/runner-groups/{}/runners",
+            "PUT /enterprises/{}/actions/runner-groups/{}/runners/{}",
+            "PUT /enterprises/{}/actions/runners/{}/labels",
+            "PUT /enterprises/{}/audit-log/streams/{}",
+            "PUT /enterprises/{}/org-properties/schema/{}",
+            "PUT /enterprises/{}/properties/schema/organizations/{}/{}/promote",
+            "PUT /enterprises/{}/properties/schema/{}",
+            "PUT /manage/v1/config/license",
+            "PUT /manage/v1/config/settings",
+            "PUT /repos/{}/{}/lfs",
+            "PUT /scim/v2/enterprises/{}/Groups/{}",
+            "PUT /scim/v2/enterprises/{}/Users/{}"
+          ],
+          "represented_operations": 860
+        }
+      },
+      "dispatch_covered_operations": [
+        "DELETE /repos/{}/{}/issues/comments/{}",
+        "DELETE /repos/{}/{}/issues/comments/{}/pin",
+        "DELETE /repos/{}/{}/issues/{}/issue-field-values/{}",
+        "DELETE /repos/{}/{}/issues/{}/labels/{}",
+        "DELETE /repos/{}/{}/issues/{}/lock",
+        "DELETE /repos/{}/{}/issues/{}/reactions/{}",
+        "DELETE /repos/{}/{}/issues/{}/sub_issue",
+        "DELETE /repos/{}/{}/pulls/comments/{}",
+        "DELETE /repos/{}/{}/pulls/{}/reviews/{}",
+        "DELETE /repos/{}/{}/releases/assets/{}",
+        "DELETE /repos/{}/{}/releases/{}/reactions/{}",
+        "GET /orgs/{}/rulesets/rule-suites/{}",
+        "GET /orgs/{}/rulesets/{}/history",
+        "GET /orgs/{}/rulesets/{}/history/{}",
+        "GET /repos/{}/{}/issues/comments/{}",
+        "GET /repos/{}/{}/issues/comments/{}/reactions",
+        "GET /repos/{}/{}/issues/events/{}",
+        "GET /repos/{}/{}/issues/{}/assignees/{}",
+        "GET /repos/{}/{}/issues/{}/comments",
+        "GET /repos/{}/{}/issues/{}/dependencies/blocked_by",
+        "GET /repos/{}/{}/issues/{}/dependencies/blocking",
+        "GET /repos/{}/{}/issues/{}/events",
+        "GET /repos/{}/{}/issues/{}/issue-field-values",
+        "GET /repos/{}/{}/issues/{}/labels",
+        "GET /repos/{}/{}/issues/{}/parent",
+        "GET /repos/{}/{}/issues/{}/reactions",
+        "GET /repos/{}/{}/issues/{}/sub_issues",
+        "GET /repos/{}/{}/issues/{}/timeline",
+        "GET /repos/{}/{}/pulls/comments/{}",
+        "GET /repos/{}/{}/pulls/comments/{}/reactions",
+        "GET /repos/{}/{}/pulls/{}/files",
+        "GET /repos/{}/{}/pulls/{}/reviews/{}",
+        "GET /repos/{}/{}/releases/assets/{}",
+        "GET /repos/{}/{}/releases/tags/{}",
+        "GET /repos/{}/{}/releases/{}/assets",
+        "GET /repos/{}/{}/releases/{}/reactions",
+        "GET /repos/{}/{}/rulesets/rule-suites/{}",
+        "GET /repos/{}/{}/rulesets/{}/history",
+        "GET /user/codespaces/{}/exports/{}",
+        "GET /user/codespaces/{}/machines",
+        "PATCH /repos/{}/{}/pulls/comments/{}",
+        "PATCH /repos/{}/{}/releases/assets/{}",
+        "POST /repos/{}/{}/pulls/comments/{}/reactions",
+        "POST /repos/{}/{}/releases/{}/assets",
+        "POST /repos/{}/{}/releases/{}/reactions",
+        "POST /repos/{}/{}/security-advisories/reports",
+        "PUT /repos/{}/{}/pulls/{}/reviews/{}"
+      ],
+      "source": "internal/server/testdata/github-openapi-routes.txt.gz"
+    },
     "registered_routes": [
       {
         "line": 56,
@@ -24926,11 +26034,276 @@
     "web_router": "web/src/App.tsx"
   },
   "ui": {
+    "browser_navigations": [
+      {
+        "line": 101,
+        "source": "web/e2e/bleephub.spec.ts",
+        "target": "/"
+      },
+      {
+        "line": 114,
+        "source": "web/e2e/bleephub.spec.ts",
+        "target": "/ui/admin"
+      },
+      {
+        "line": 122,
+        "source": "web/e2e/bleephub.spec.ts",
+        "target": "/ui/admin"
+      },
+      {
+        "line": 134,
+        "source": "web/e2e/bleephub.spec.ts",
+        "target": "/ui/"
+      },
+      {
+        "line": 149,
+        "source": "web/e2e/bleephub.spec.ts",
+        "target": "/ui/"
+      },
+      {
+        "line": 193,
+        "source": "web/e2e/bleephub.spec.ts",
+        "target": "/ui/"
+      },
+      {
+        "line": 204,
+        "source": "web/e2e/bleephub.spec.ts",
+        "target": "/ui/search?q=${encodeURIComponent(marker)}&type=repositories"
+      },
+      {
+        "line": 223,
+        "source": "web/e2e/bleephub.spec.ts",
+        "target": "/ui/"
+      },
+      {
+        "line": 247,
+        "source": "web/e2e/bleephub.spec.ts",
+        "target": "/ui/packages"
+      },
+      {
+        "line": 266,
+        "source": "web/e2e/bleephub.spec.ts",
+        "target": "/ui/"
+      },
+      {
+        "line": 303,
+        "source": "web/e2e/bleephub.spec.ts",
+        "target": "/ui/account"
+      },
+      {
+        "line": 327,
+        "source": "web/e2e/bleephub.spec.ts",
+        "target": "/ui/"
+      },
+      {
+        "line": 333,
+        "source": "web/e2e/bleephub.spec.ts",
+        "target": "/ui/classrooms/${classroom.id}"
+      },
+      {
+        "line": 357,
+        "source": "web/e2e/bleephub.spec.ts",
+        "target": "/ui/repos"
+      },
+      {
+        "line": 363,
+        "source": "web/e2e/bleephub.spec.ts",
+        "target": "/ui/"
+      },
+      {
+        "line": 371,
+        "source": "web/e2e/bleephub.spec.ts",
+        "target": "/ui/repos"
+      },
+      {
+        "line": 393,
+        "source": "web/e2e/bleephub.spec.ts",
+        "target": "/ui/repos"
+      },
+      {
+        "line": 412,
+        "source": "web/e2e/bleephub.spec.ts",
+        "target": "/ui/"
+      },
+      {
+        "line": 423,
+        "source": "web/e2e/bleephub.spec.ts",
+        "target": "/ui/repos/${owner}/detail-test"
+      },
+      {
+        "line": 437,
+        "source": "web/e2e/bleephub.spec.ts",
+        "target": "/ui/"
+      },
+      {
+        "line": 448,
+        "source": "web/e2e/bleephub.spec.ts",
+        "target": "/ui/repos/${owner}/readme-test"
+      },
+      {
+        "line": 458,
+        "source": "web/e2e/bleephub.spec.ts",
+        "target": "/ui/"
+      },
+      {
+        "line": 472,
+        "source": "web/e2e/bleephub.spec.ts",
+        "target": "/ui/repos/admin/${repo}"
+      },
+      {
+        "line": 482,
+        "source": "web/e2e/bleephub.spec.ts",
+        "target": "/ui/"
+      },
+      {
+        "line": 496,
+        "source": "web/e2e/bleephub.spec.ts",
+        "target": "/ui/repos/${owner}/issues-test"
+      },
+      {
+        "line": 511,
+        "source": "web/e2e/bleephub.spec.ts",
+        "target": "/ui/"
+      },
+      {
+        "line": 526,
+        "source": "web/e2e/bleephub.spec.ts",
+        "target": "/ui/repos/${owner}/issues-direct/issues"
+      },
+      {
+        "line": 548,
+        "source": "web/e2e/bleephub.spec.ts",
+        "target": "/ui/"
+      },
+      {
+        "line": 558,
+        "source": "web/e2e/bleephub.spec.ts",
+        "target": "/ui/repos/${owner}/pulls-direct/pulls"
+      },
+      {
+        "line": 566,
+        "source": "web/e2e/bleephub.spec.ts",
+        "target": "/ui/"
+      },
+      {
+        "line": 590,
+        "source": "web/e2e/bleephub.spec.ts",
+        "target": "/ui/repos/admin/${repo}/pulls/${pull.number}/files"
+      },
+      {
+        "line": 618,
+        "source": "web/e2e/bleephub.spec.ts",
+        "target": "/ui/apps"
+      },
+      {
+        "line": 626,
+        "source": "web/e2e/bleephub.spec.ts",
+        "target": "/ui/apps"
+      },
+      {
+        "line": 637,
+        "source": "web/e2e/bleephub.spec.ts",
+        "target": "/ui/apps"
+      },
+      {
+        "line": 647,
+        "source": "web/e2e/bleephub.spec.ts",
+        "target": "/ui/oauth"
+      },
+      {
+        "line": 658,
+        "source": "web/e2e/bleephub.spec.ts",
+        "target": "/ui/"
+      },
+      {
+        "line": 690,
+        "source": "web/e2e/bleephub.spec.ts",
+        "target": "/ui/workflows"
+      },
+      {
+        "line": 709,
+        "source": "web/e2e/bleephub.spec.ts",
+        "target": "/ui/metrics"
+      },
+      {
+        "line": 720,
+        "source": "web/e2e/bleephub.spec.ts",
+        "target": "/ui/"
+      },
+      {
+        "line": 726,
+        "source": "web/e2e/bleephub.spec.ts",
+        "target": "/ui/repos/${owner}/${repo}/releases"
+      },
+      {
+        "line": 770,
+        "source": "web/e2e/bleephub.spec.ts",
+        "target": "/ui/"
+      },
+      {
+        "line": 777,
+        "source": "web/e2e/bleephub.spec.ts",
+        "target": "/ui/repos/${owner}/${repo}/security/code-scanning"
+      },
+      {
+        "line": 825,
+        "source": "web/e2e/bleephub.spec.ts",
+        "target": "/ui/apps"
+      },
+      {
+        "line": 859,
+        "source": "web/e2e/bleephub.spec.ts",
+        "target": "/ui/marketplace"
+      },
+      {
+        "line": 909,
+        "source": "web/e2e/bleephub.spec.ts",
+        "target": "/ui/admin"
+      },
+      {
+        "line": 914,
+        "source": "web/e2e/bleephub.spec.ts",
+        "target": "/ui/repos"
+      },
+      {
+        "line": 926,
+        "source": "web/e2e/bleephub.spec.ts",
+        "target": "/ui/repos/${owner}/dark-theme-repo"
+      },
+      {
+        "line": 939,
+        "source": "web/e2e/bleephub.spec.ts",
+        "target": "/health"
+      },
+      {
+        "line": 21,
+        "source": "web/e2e/errorPaths.spec.ts",
+        "target": "/ui/repos/admin/this-repo-does-not-exist-xyz/insights"
+      },
+      {
+        "line": 44,
+        "source": "web/e2e/errorPaths.spec.ts",
+        "target": "/ui/repos"
+      },
+      {
+        "line": 64,
+        "source": "web/e2e/errorPaths.spec.ts",
+        "target": "/ui/admin"
+      },
+      {
+        "line": 82,
+        "source": "web/e2e/errorPaths.spec.ts",
+        "target": "/ui/admin"
+      }
+    ],
     "routes": [
       {
         "component": "DashboardPage",
         "line": 176,
         "path": "/ui/",
+        "rendered_tests": [
+          "web/src/__tests__/DashboardPage.test.tsx"
+        ],
         "source": "web/src/App.tsx",
         "tests": [
           "web/src/__tests__/DashboardPage.test.tsx"
@@ -24940,20 +26313,25 @@
         "component": "LoginRedirect",
         "line": 161,
         "path": "/ui/*",
+        "rendered_tests": [],
         "source": "web/src/App.tsx",
         "tests": []
       },
       {
         "component": "Navigate",
-        "line": 262,
+        "line": 265,
         "path": "/ui/*",
+        "rendered_tests": [],
         "source": "web/src/App.tsx",
         "tests": []
       },
       {
         "component": "ProfilePage",
-        "line": 261,
+        "line": 264,
         "path": "/ui/:login",
+        "rendered_tests": [
+          "web/src/__tests__/ProfilePage.test.tsx"
+        ],
         "source": "web/src/App.tsx",
         "tests": [
           "web/src/__tests__/ProfilePage.test.tsx"
@@ -24961,8 +26339,12 @@
       },
       {
         "component": "AccountPage",
-        "line": 246,
+        "line": 249,
         "path": "/ui/account",
+        "rendered_tests": [
+          "web/src/__tests__/AccountPage.test.tsx",
+          "web/src/__tests__/pageErrorPaths.test.tsx"
+        ],
         "source": "web/src/App.tsx",
         "tests": [
           "web/src/__tests__/AccountPage.test.tsx",
@@ -24971,8 +26353,11 @@
       },
       {
         "component": "OverviewPage",
-        "line": 233,
+        "line": 236,
         "path": "/ui/admin",
+        "rendered_tests": [
+          "web/src/__tests__/OverviewPage.test.tsx"
+        ],
         "source": "web/src/App.tsx",
         "tests": [
           "web/src/__tests__/OverviewPage.test.tsx"
@@ -24980,8 +26365,11 @@
       },
       {
         "component": "AuditLogPage",
-        "line": 238,
+        "line": 241,
         "path": "/ui/admin/audit-log",
+        "rendered_tests": [
+          "web/src/__tests__/pageErrorPaths.test.tsx"
+        ],
         "source": "web/src/App.tsx",
         "tests": [
           "web/src/__tests__/pageErrorPaths.test.tsx"
@@ -24989,8 +26377,12 @@
       },
       {
         "component": "EnterprisePage",
-        "line": 237,
+        "line": 240,
         "path": "/ui/admin/enterprise",
+        "rendered_tests": [
+          "web/src/__tests__/EnterprisePage.test.tsx",
+          "web/src/__tests__/pageErrorPaths.test.tsx"
+        ],
         "source": "web/src/App.tsx",
         "tests": [
           "web/src/__tests__/EnterprisePage.test.tsx",
@@ -24999,8 +26391,12 @@
       },
       {
         "component": "OrgsPage",
-        "line": 235,
+        "line": 238,
         "path": "/ui/admin/orgs",
+        "rendered_tests": [
+          "web/src/__tests__/UiFidelityJourneys.test.tsx",
+          "web/src/__tests__/pageErrorPaths.test.tsx"
+        ],
         "source": "web/src/App.tsx",
         "tests": [
           "web/src/__tests__/UiFidelityJourneys.test.tsx",
@@ -25009,8 +26405,11 @@
       },
       {
         "component": "TeamsPage",
-        "line": 236,
+        "line": 239,
         "path": "/ui/admin/teams",
+        "rendered_tests": [
+          "web/src/__tests__/TeamsPage.test.tsx"
+        ],
         "source": "web/src/App.tsx",
         "tests": [
           "web/src/__tests__/TeamsPage.test.tsx"
@@ -25018,8 +26417,11 @@
       },
       {
         "component": "UsersPage",
-        "line": 234,
+        "line": 237,
         "path": "/ui/admin/users",
+        "rendered_tests": [
+          "web/src/__tests__/pageErrorPaths.test.tsx"
+        ],
         "source": "web/src/App.tsx",
         "tests": [
           "web/src/__tests__/pageErrorPaths.test.tsx"
@@ -25027,8 +26429,11 @@
       },
       {
         "component": "AppsPage",
-        "line": 214,
+        "line": 217,
         "path": "/ui/apps",
+        "rendered_tests": [
+          "web/src/__tests__/AppsPage.test.tsx"
+        ],
         "source": "web/src/App.tsx",
         "tests": [
           "web/src/__tests__/AppsPage.test.tsx"
@@ -25036,8 +26441,11 @@
       },
       {
         "component": "MarketplacePublisherPage",
-        "line": 215,
+        "line": 218,
         "path": "/ui/apps/:publisher/marketplace",
+        "rendered_tests": [
+          "web/src/__tests__/MarketplacePublisherPage.test.tsx"
+        ],
         "source": "web/src/App.tsx",
         "tests": [
           "web/src/__tests__/MarketplacePublisherPage.test.tsx"
@@ -25045,8 +26453,11 @@
       },
       {
         "component": "ClassroomPage",
-        "line": 228,
+        "line": 231,
         "path": "/ui/classrooms",
+        "rendered_tests": [
+          "web/src/__tests__/ClassroomPage.test.tsx"
+        ],
         "source": "web/src/App.tsx",
         "tests": [
           "web/src/__tests__/ClassroomPage.test.tsx"
@@ -25054,8 +26465,11 @@
       },
       {
         "component": "ClassroomPage",
-        "line": 229,
+        "line": 232,
         "path": "/ui/classrooms/:classroomId",
+        "rendered_tests": [
+          "web/src/__tests__/ClassroomPage.test.tsx"
+        ],
         "source": "web/src/App.tsx",
         "tests": [
           "web/src/__tests__/ClassroomPage.test.tsx"
@@ -25063,8 +26477,11 @@
       },
       {
         "component": "ClassroomPage",
-        "line": 230,
+        "line": 233,
         "path": "/ui/classrooms/accept/:inviteCode",
+        "rendered_tests": [
+          "web/src/__tests__/ClassroomPage.test.tsx"
+        ],
         "source": "web/src/App.tsx",
         "tests": [
           "web/src/__tests__/ClassroomPage.test.tsx"
@@ -25072,8 +26489,11 @@
       },
       {
         "component": "CodespacesPage",
-        "line": 224,
+        "line": 227,
         "path": "/ui/codespaces",
+        "rendered_tests": [
+          "web/src/__tests__/CodespacesPage.test.tsx"
+        ],
         "source": "web/src/App.tsx",
         "tests": [
           "web/src/__tests__/CodespacesPage.test.tsx"
@@ -25081,8 +26501,11 @@
       },
       {
         "component": "CodespacesPage",
-        "line": 225,
+        "line": 228,
         "path": "/ui/codespaces/:codespaceName",
+        "rendered_tests": [
+          "web/src/__tests__/CodespacesPage.test.tsx"
+        ],
         "source": "web/src/App.tsx",
         "tests": [
           "web/src/__tests__/CodespacesPage.test.tsx"
@@ -25090,8 +26513,11 @@
       },
       {
         "component": "PersonalCopilotSpacesPage",
-        "line": 227,
+        "line": 230,
         "path": "/ui/copilot/spaces",
+        "rendered_tests": [
+          "web/src/__tests__/CopilotPage.test.tsx"
+        ],
         "source": "web/src/App.tsx",
         "tests": [
           "web/src/__tests__/CopilotPage.test.tsx"
@@ -25099,8 +26525,11 @@
       },
       {
         "component": "GistsPage",
-        "line": 218,
+        "line": 221,
         "path": "/ui/gists",
+        "rendered_tests": [
+          "web/src/__tests__/GistsPage.test.tsx"
+        ],
         "source": "web/src/App.tsx",
         "tests": [
           "web/src/__tests__/GistsPage.test.tsx"
@@ -25110,6 +26539,9 @@
         "component": "LoginPage",
         "line": 160,
         "path": "/ui/login",
+        "rendered_tests": [
+          "web/src/__tests__/LoginPage.test.tsx"
+        ],
         "source": "web/src/App.tsx",
         "tests": [
           "web/src/__tests__/App.test.tsx",
@@ -25118,15 +26550,19 @@
       },
       {
         "component": "Navigate",
-        "line": 260,
+        "line": 263,
         "path": "/ui/login",
+        "rendered_tests": [],
         "source": "web/src/App.tsx",
         "tests": []
       },
       {
         "component": "MarketplacePage",
-        "line": 231,
+        "line": 234,
         "path": "/ui/marketplace",
+        "rendered_tests": [
+          "web/src/__tests__/MarketplacePage.test.tsx"
+        ],
         "source": "web/src/App.tsx",
         "tests": [
           "web/src/__tests__/MarketplacePage.test.tsx"
@@ -25134,8 +26570,11 @@
       },
       {
         "component": "MarketplacePage",
-        "line": 232,
+        "line": 235,
         "path": "/ui/marketplace/:slug",
+        "rendered_tests": [
+          "web/src/__tests__/MarketplacePage.test.tsx"
+        ],
         "source": "web/src/App.tsx",
         "tests": [
           "web/src/__tests__/MarketplacePage.test.tsx"
@@ -25143,8 +26582,11 @@
       },
       {
         "component": "MetricsPage",
-        "line": 217,
+        "line": 220,
         "path": "/ui/metrics",
+        "rendered_tests": [
+          "web/src/__tests__/MetricsPage.test.tsx"
+        ],
         "source": "web/src/App.tsx",
         "tests": [
           "web/src/__tests__/MetricsPage.test.tsx"
@@ -25152,8 +26594,11 @@
       },
       {
         "component": "MigrationsPage",
-        "line": 223,
+        "line": 226,
         "path": "/ui/migrations",
+        "rendered_tests": [
+          "web/src/__tests__/MigrationsPage.test.tsx"
+        ],
         "source": "web/src/App.tsx",
         "tests": [
           "web/src/__tests__/MigrationsPage.test.tsx"
@@ -25161,8 +26606,11 @@
       },
       {
         "component": "NotificationsPage",
-        "line": 219,
+        "line": 222,
         "path": "/ui/notifications",
+        "rendered_tests": [
+          "web/src/__tests__/NotificationsPage.test.tsx"
+        ],
         "source": "web/src/App.tsx",
         "tests": [
           "web/src/__tests__/NotificationsPage.test.tsx"
@@ -25170,8 +26618,11 @@
       },
       {
         "component": "OAuthPage",
-        "line": 216,
+        "line": 219,
         "path": "/ui/oauth",
+        "rendered_tests": [
+          "web/src/__tests__/OAuthPage.test.tsx"
+        ],
         "source": "web/src/App.tsx",
         "tests": [
           "web/src/__tests__/OAuthPage.test.tsx"
@@ -25179,8 +26630,11 @@
       },
       {
         "component": "OrgOverviewPage",
-        "line": 254,
+        "line": 257,
         "path": "/ui/orgs/:org",
+        "rendered_tests": [
+          "web/src/__tests__/OrgOverviewPage.test.tsx"
+        ],
         "source": "web/src/App.tsx",
         "tests": [
           "web/src/__tests__/OrgOverviewPage.test.tsx"
@@ -25190,6 +26644,10 @@
         "component": "CopilotPage",
         "line": 184,
         "path": "/ui/orgs/:org/copilot",
+        "rendered_tests": [
+          "web/src/__tests__/CopilotPage.test.tsx",
+          "web/src/__tests__/pageErrorPaths.test.tsx"
+        ],
         "source": "web/src/App.tsx",
         "tests": [
           "web/src/__tests__/CopilotPage.test.tsx",
@@ -25200,6 +26658,10 @@
         "component": "OrgGovernancePage",
         "line": 183,
         "path": "/ui/orgs/:org/governance",
+        "rendered_tests": [
+          "web/src/__tests__/OrgGovernancePage.test.tsx",
+          "web/src/__tests__/pageErrorPaths.test.tsx"
+        ],
         "source": "web/src/App.tsx",
         "tests": [
           "web/src/__tests__/OrgGovernancePage.test.tsx",
@@ -25208,8 +26670,11 @@
       },
       {
         "component": "OrgHooksPage",
-        "line": 242,
+        "line": 245,
         "path": "/ui/orgs/:org/hooks",
+        "rendered_tests": [
+          "web/src/__tests__/OrgHooksPage.test.tsx"
+        ],
         "source": "web/src/App.tsx",
         "tests": [
           "web/src/__tests__/OrgHooksPage.test.tsx"
@@ -25217,8 +26682,12 @@
       },
       {
         "component": "WebhookDeliveriesPage",
-        "line": 243,
+        "line": 246,
         "path": "/ui/orgs/:org/hooks/:hookId/deliveries",
+        "rendered_tests": [
+          "web/src/__tests__/WebhookDeliveriesPage.test.tsx",
+          "web/src/__tests__/pageErrorPaths.test.tsx"
+        ],
         "source": "web/src/App.tsx",
         "tests": [
           "web/src/__tests__/WebhookDeliveriesPage.test.tsx",
@@ -25227,8 +26696,11 @@
       },
       {
         "component": "PackagesPage",
-        "line": 221,
+        "line": 224,
         "path": "/ui/orgs/:org/packages",
+        "rendered_tests": [
+          "web/src/__tests__/mutationErrors.test.tsx"
+        ],
         "source": "web/src/App.tsx",
         "tests": [
           "web/src/__tests__/mutationErrors.test.tsx"
@@ -25236,8 +26708,11 @@
       },
       {
         "component": "OrgPeoplePage",
-        "line": 255,
+        "line": 258,
         "path": "/ui/orgs/:org/people",
+        "rendered_tests": [
+          "web/src/__tests__/OrgPeopleTeamsPage.test.tsx"
+        ],
         "source": "web/src/App.tsx",
         "tests": [
           "web/src/__tests__/OrgPeopleTeamsPage.test.tsx"
@@ -25247,6 +26722,9 @@
         "component": "OrgReposPage",
         "line": 181,
         "path": "/ui/orgs/:org/repos",
+        "rendered_tests": [
+          "web/src/__tests__/OrgReposPage.test.tsx"
+        ],
         "source": "web/src/App.tsx",
         "tests": [
           "web/src/__tests__/OrgReposPage.test.tsx"
@@ -25256,6 +26734,10 @@
         "component": "RulesetsPage",
         "line": 182,
         "path": "/ui/orgs/:org/rulesets",
+        "rendered_tests": [
+          "web/src/__tests__/RulesetsPage.test.tsx",
+          "web/src/__tests__/pageErrorPaths.test.tsx"
+        ],
         "source": "web/src/App.tsx",
         "tests": [
           "web/src/__tests__/RulesetsPage.test.tsx",
@@ -25264,8 +26746,11 @@
       },
       {
         "component": "OrgTeamsPage",
-        "line": 256,
+        "line": 259,
         "path": "/ui/orgs/:org/teams",
+        "rendered_tests": [
+          "web/src/__tests__/OrgPeopleTeamsPage.test.tsx"
+        ],
         "source": "web/src/App.tsx",
         "tests": [
           "web/src/__tests__/OrgPeopleTeamsPage.test.tsx"
@@ -25273,8 +26758,11 @@
       },
       {
         "component": "PackagesPage",
-        "line": 220,
+        "line": 223,
         "path": "/ui/packages",
+        "rendered_tests": [
+          "web/src/__tests__/mutationErrors.test.tsx"
+        ],
         "source": "web/src/App.tsx",
         "tests": [
           "web/src/__tests__/mutationErrors.test.tsx"
@@ -25284,6 +26772,9 @@
         "component": "ReposPage",
         "line": 180,
         "path": "/ui/repos",
+        "rendered_tests": [
+          "web/src/__tests__/ReposPage.test.tsx"
+        ],
         "source": "web/src/App.tsx",
         "tests": [
           "web/src/__tests__/ReposPage.test.tsx"
@@ -25293,6 +26784,10 @@
         "component": "RepoDetailPage",
         "line": 185,
         "path": "/ui/repos/:owner/:repo",
+        "rendered_tests": [
+          "web/src/__tests__/RepoDetailPage.test.tsx",
+          "web/src/__tests__/RepoDetailSocial.test.tsx"
+        ],
         "source": "web/src/App.tsx",
         "tests": [
           "web/src/__tests__/RepoDetailPage.test.tsx",
@@ -25301,8 +26796,11 @@
       },
       {
         "component": "ActionsPage",
-        "line": 204,
+        "line": 207,
         "path": "/ui/repos/:owner/:repo/actions",
+        "rendered_tests": [
+          "web/src/__tests__/ActionsPage.test.tsx"
+        ],
         "source": "web/src/App.tsx",
         "tests": [
           "web/src/__tests__/ActionsPage.test.tsx"
@@ -25310,8 +26808,11 @@
       },
       {
         "component": "RunDetailPage",
-        "line": 205,
+        "line": 208,
         "path": "/ui/repos/:owner/:repo/actions/runs/:runId",
+        "rendered_tests": [
+          "web/src/__tests__/RunDetailPage.test.tsx"
+        ],
         "source": "web/src/App.tsx",
         "tests": [
           "web/src/__tests__/RunDetailPage.test.tsx"
@@ -25321,6 +26822,9 @@
         "component": "RepoFilePage",
         "line": 191,
         "path": "/ui/repos/:owner/:repo/blob/:ref/*",
+        "rendered_tests": [
+          "web/src/__tests__/RepoDetailPage.test.tsx"
+        ],
         "source": "web/src/App.tsx",
         "tests": [
           "web/src/__tests__/RepoDetailPage.test.tsx"
@@ -25330,6 +26834,10 @@
         "component": "RepoDetailPage",
         "line": 187,
         "path": "/ui/repos/:owner/:repo/branches",
+        "rendered_tests": [
+          "web/src/__tests__/RepoDetailPage.test.tsx",
+          "web/src/__tests__/RepoDetailSocial.test.tsx"
+        ],
         "source": "web/src/App.tsx",
         "tests": [
           "web/src/__tests__/RepoDetailPage.test.tsx",
@@ -25338,8 +26846,11 @@
       },
       {
         "component": "CodespacesPage",
-        "line": 226,
+        "line": 229,
         "path": "/ui/repos/:owner/:repo/codespaces",
+        "rendered_tests": [
+          "web/src/__tests__/CodespacesPage.test.tsx"
+        ],
         "source": "web/src/App.tsx",
         "tests": [
           "web/src/__tests__/CodespacesPage.test.tsx"
@@ -25349,6 +26860,10 @@
         "component": "RepoDetailPage",
         "line": 186,
         "path": "/ui/repos/:owner/:repo/commits",
+        "rendered_tests": [
+          "web/src/__tests__/RepoDetailPage.test.tsx",
+          "web/src/__tests__/RepoDetailSocial.test.tsx"
+        ],
         "source": "web/src/App.tsx",
         "tests": [
           "web/src/__tests__/RepoDetailPage.test.tsx",
@@ -25359,6 +26874,9 @@
         "component": "RepoCommitPage",
         "line": 190,
         "path": "/ui/repos/:owner/:repo/commits/:sha",
+        "rendered_tests": [
+          "web/src/__tests__/RepoDetailPage.test.tsx"
+        ],
         "source": "web/src/App.tsx",
         "tests": [
           "web/src/__tests__/RepoDetailPage.test.tsx"
@@ -25366,8 +26884,12 @@
       },
       {
         "component": "DeploymentsPage",
-        "line": 240,
+        "line": 243,
         "path": "/ui/repos/:owner/:repo/deployments",
+        "rendered_tests": [
+          "web/src/__tests__/DeploymentsPage.test.tsx",
+          "web/src/__tests__/pageErrorPaths.test.tsx"
+        ],
         "source": "web/src/App.tsx",
         "tests": [
           "web/src/__tests__/DeploymentsPage.test.tsx",
@@ -25376,8 +26898,11 @@
       },
       {
         "component": "DiscussionsPage",
-        "line": 202,
+        "line": 205,
         "path": "/ui/repos/:owner/:repo/discussions",
+        "rendered_tests": [
+          "web/src/__tests__/DiscussionsPage.test.tsx"
+        ],
         "source": "web/src/App.tsx",
         "tests": [
           "web/src/__tests__/DiscussionsPage.test.tsx"
@@ -25385,8 +26910,11 @@
       },
       {
         "component": "DiscussionsPage",
-        "line": 203,
+        "line": 206,
         "path": "/ui/repos/:owner/:repo/discussions/:number",
+        "rendered_tests": [
+          "web/src/__tests__/DiscussionsPage.test.tsx"
+        ],
         "source": "web/src/App.tsx",
         "tests": [
           "web/src/__tests__/DiscussionsPage.test.tsx"
@@ -25394,8 +26922,12 @@
       },
       {
         "component": "RepoSocialPage",
-        "line": 249,
+        "line": 252,
         "path": "/ui/repos/:owner/:repo/forks",
+        "rendered_tests": [
+          "web/src/__tests__/RepoSocialPage.test.tsx",
+          "web/src/__tests__/pageErrorPaths.test.tsx"
+        ],
         "source": "web/src/App.tsx",
         "tests": [
           "web/src/__tests__/RepoSocialPage.test.tsx",
@@ -25404,8 +26936,12 @@
       },
       {
         "component": "WebhookDeliveriesPage",
-        "line": 241,
+        "line": 244,
         "path": "/ui/repos/:owner/:repo/hooks/:hookId/deliveries",
+        "rendered_tests": [
+          "web/src/__tests__/WebhookDeliveriesPage.test.tsx",
+          "web/src/__tests__/pageErrorPaths.test.tsx"
+        ],
         "source": "web/src/App.tsx",
         "tests": [
           "web/src/__tests__/WebhookDeliveriesPage.test.tsx",
@@ -25416,6 +26952,10 @@
         "component": "InsightsPage",
         "line": 199,
         "path": "/ui/repos/:owner/:repo/insights",
+        "rendered_tests": [
+          "web/src/__tests__/InsightsPage.test.tsx",
+          "web/src/__tests__/pageErrorPaths.test.tsx"
+        ],
         "source": "web/src/App.tsx",
         "tests": [
           "web/src/__tests__/InsightsPage.test.tsx",
@@ -25426,6 +26966,9 @@
         "component": "IssuesPage",
         "line": 195,
         "path": "/ui/repos/:owner/:repo/issues",
+        "rendered_tests": [
+          "web/src/__tests__/IssuesPage.test.tsx"
+        ],
         "source": "web/src/App.tsx",
         "tests": [
           "web/src/__tests__/IssuesPage.test.tsx"
@@ -25435,6 +26978,9 @@
         "component": "IssuesPage",
         "line": 196,
         "path": "/ui/repos/:owner/:repo/issues/:number",
+        "rendered_tests": [
+          "web/src/__tests__/IssuesPage.test.tsx"
+        ],
         "source": "web/src/App.tsx",
         "tests": [
           "web/src/__tests__/IssuesPage.test.tsx"
@@ -25444,6 +26990,9 @@
         "component": "IssuesPage",
         "line": 197,
         "path": "/ui/repos/:owner/:repo/labels",
+        "rendered_tests": [
+          "web/src/__tests__/IssuesPage.test.tsx"
+        ],
         "source": "web/src/App.tsx",
         "tests": [
           "web/src/__tests__/IssuesPage.test.tsx"
@@ -25453,6 +27002,9 @@
         "component": "IssuesPage",
         "line": 198,
         "path": "/ui/repos/:owner/:repo/milestones",
+        "rendered_tests": [
+          "web/src/__tests__/IssuesPage.test.tsx"
+        ],
         "source": "web/src/App.tsx",
         "tests": [
           "web/src/__tests__/IssuesPage.test.tsx"
@@ -25460,8 +27012,11 @@
       },
       {
         "component": "PackagesPage",
-        "line": 222,
+        "line": 225,
         "path": "/ui/repos/:owner/:repo/packages",
+        "rendered_tests": [
+          "web/src/__tests__/mutationErrors.test.tsx"
+        ],
         "source": "web/src/App.tsx",
         "tests": [
           "web/src/__tests__/mutationErrors.test.tsx"
@@ -25469,8 +27024,11 @@
       },
       {
         "component": "ProjectsClassicPage",
-        "line": 212,
+        "line": 215,
         "path": "/ui/repos/:owner/:repo/projects-classic",
+        "rendered_tests": [
+          "web/src/__tests__/pageErrorPaths.test.tsx"
+        ],
         "source": "web/src/App.tsx",
         "tests": [
           "web/src/__tests__/UiFidelityJourneys.test.tsx",
@@ -25481,6 +27039,10 @@
         "component": "PullsPage",
         "line": 200,
         "path": "/ui/repos/:owner/:repo/pulls",
+        "rendered_tests": [
+          "web/src/__tests__/PullsPage.test.tsx",
+          "web/src/__tests__/pageErrorPaths.test.tsx"
+        ],
         "source": "web/src/App.tsx",
         "tests": [
           "web/src/__tests__/PullsPage.test.tsx",
@@ -25491,6 +27053,52 @@
         "component": "PullsPage",
         "line": 201,
         "path": "/ui/repos/:owner/:repo/pulls/:number",
+        "rendered_tests": [
+          "web/src/__tests__/PullsPage.test.tsx",
+          "web/src/__tests__/pageErrorPaths.test.tsx"
+        ],
+        "source": "web/src/App.tsx",
+        "tests": [
+          "web/src/__tests__/PullsPage.test.tsx",
+          "web/src/__tests__/pageErrorPaths.test.tsx"
+        ]
+      },
+      {
+        "component": "PullsPage",
+        "line": 204,
+        "path": "/ui/repos/:owner/:repo/pulls/:number/checks",
+        "rendered_tests": [
+          "web/src/__tests__/PullsPage.test.tsx",
+          "web/src/__tests__/pageErrorPaths.test.tsx"
+        ],
+        "source": "web/src/App.tsx",
+        "tests": [
+          "web/src/__tests__/PullsPage.test.tsx",
+          "web/src/__tests__/pageErrorPaths.test.tsx"
+        ]
+      },
+      {
+        "component": "PullsPage",
+        "line": 202,
+        "path": "/ui/repos/:owner/:repo/pulls/:number/commits",
+        "rendered_tests": [
+          "web/src/__tests__/PullsPage.test.tsx",
+          "web/src/__tests__/pageErrorPaths.test.tsx"
+        ],
+        "source": "web/src/App.tsx",
+        "tests": [
+          "web/src/__tests__/PullsPage.test.tsx",
+          "web/src/__tests__/pageErrorPaths.test.tsx"
+        ]
+      },
+      {
+        "component": "PullsPage",
+        "line": 203,
+        "path": "/ui/repos/:owner/:repo/pulls/:number/files",
+        "rendered_tests": [
+          "web/src/__tests__/PullsPage.test.tsx",
+          "web/src/__tests__/pageErrorPaths.test.tsx"
+        ],
         "source": "web/src/App.tsx",
         "tests": [
           "web/src/__tests__/PullsPage.test.tsx",
@@ -25501,6 +27109,9 @@
         "component": "ReleasesPage",
         "line": 192,
         "path": "/ui/repos/:owner/:repo/releases",
+        "rendered_tests": [
+          "web/src/__tests__/ReleasesPage.test.tsx"
+        ],
         "source": "web/src/App.tsx",
         "tests": [
           "web/src/__tests__/ReleasesPage.test.tsx"
@@ -25510,6 +27121,9 @@
         "component": "ReleasesPage",
         "line": 194,
         "path": "/ui/repos/:owner/:repo/releases/:releaseId",
+        "rendered_tests": [
+          "web/src/__tests__/ReleasesPage.test.tsx"
+        ],
         "source": "web/src/App.tsx",
         "tests": [
           "web/src/__tests__/ReleasesPage.test.tsx"
@@ -25519,6 +27133,9 @@
         "component": "ReleasesPage",
         "line": 193,
         "path": "/ui/repos/:owner/:repo/releases/new",
+        "rendered_tests": [
+          "web/src/__tests__/ReleasesPage.test.tsx"
+        ],
         "source": "web/src/App.tsx",
         "tests": [
           "web/src/__tests__/ReleasesPage.test.tsx"
@@ -25526,8 +27143,12 @@
       },
       {
         "component": "SecurityAdvisoriesPage",
-        "line": 211,
+        "line": 214,
         "path": "/ui/repos/:owner/:repo/security/advisories",
+        "rendered_tests": [
+          "web/src/__tests__/UiFidelityJourneys.test.tsx",
+          "web/src/__tests__/pageErrorPaths.test.tsx"
+        ],
         "source": "web/src/App.tsx",
         "tests": [
           "web/src/__tests__/UiFidelityJourneys.test.tsx",
@@ -25536,8 +27157,11 @@
       },
       {
         "component": "CodeScanningPage",
-        "line": 209,
+        "line": 212,
         "path": "/ui/repos/:owner/:repo/security/code-scanning",
+        "rendered_tests": [
+          "web/src/__tests__/CodeScanningPage.test.tsx"
+        ],
         "source": "web/src/App.tsx",
         "tests": [
           "web/src/__tests__/CodeScanningPage.test.tsx"
@@ -25545,8 +27169,12 @@
       },
       {
         "component": "DependabotPage",
-        "line": 210,
+        "line": 213,
         "path": "/ui/repos/:owner/:repo/security/dependabot",
+        "rendered_tests": [
+          "web/src/__tests__/UiFidelityJourneys.test.tsx",
+          "web/src/__tests__/pageErrorPaths.test.tsx"
+        ],
         "source": "web/src/App.tsx",
         "tests": [
           "web/src/__tests__/UiFidelityJourneys.test.tsx",
@@ -25555,8 +27183,13 @@
       },
       {
         "component": "SecretScanningPage",
-        "line": 208,
+        "line": 211,
         "path": "/ui/repos/:owner/:repo/security/secret-scanning",
+        "rendered_tests": [
+          "web/src/__tests__/UiFidelityJourneys.test.tsx",
+          "web/src/__tests__/mutationErrors.test.tsx",
+          "web/src/__tests__/pageErrorPaths.test.tsx"
+        ],
         "source": "web/src/App.tsx",
         "tests": [
           "web/src/__tests__/UiFidelityJourneys.test.tsx",
@@ -25566,8 +27199,13 @@
       },
       {
         "component": "RepoSettingsPage",
-        "line": 206,
+        "line": 209,
         "path": "/ui/repos/:owner/:repo/settings",
+        "rendered_tests": [
+          "web/src/__tests__/RepoCollaboratorsTab.test.tsx",
+          "web/src/__tests__/RepoSettingsPage.test.tsx",
+          "web/src/__tests__/RepoSettingsPagesPanel.test.tsx"
+        ],
         "source": "web/src/App.tsx",
         "tests": [
           "web/src/__tests__/RepoCollaboratorsTab.test.tsx",
@@ -25577,8 +27215,12 @@
       },
       {
         "component": "BranchProtectionPage",
-        "line": 207,
+        "line": 210,
         "path": "/ui/repos/:owner/:repo/settings/branch-protection",
+        "rendered_tests": [
+          "web/src/__tests__/UiFidelityJourneys.test.tsx",
+          "web/src/__tests__/pageErrorPaths.test.tsx"
+        ],
         "source": "web/src/App.tsx",
         "tests": [
           "web/src/__tests__/UiFidelityJourneys.test.tsx",
@@ -25587,8 +27229,11 @@
       },
       {
         "component": "RepoSecretsPage",
-        "line": 213,
+        "line": 216,
         "path": "/ui/repos/:owner/:repo/settings/secrets",
+        "rendered_tests": [
+          "web/src/__tests__/RepoSecretsPage.test.tsx"
+        ],
         "source": "web/src/App.tsx",
         "tests": [
           "web/src/__tests__/RepoSecretsPage.test.tsx"
@@ -25596,8 +27241,12 @@
       },
       {
         "component": "RepoSocialPage",
-        "line": 247,
+        "line": 250,
         "path": "/ui/repos/:owner/:repo/stargazers",
+        "rendered_tests": [
+          "web/src/__tests__/RepoSocialPage.test.tsx",
+          "web/src/__tests__/pageErrorPaths.test.tsx"
+        ],
         "source": "web/src/App.tsx",
         "tests": [
           "web/src/__tests__/RepoSocialPage.test.tsx",
@@ -25608,6 +27257,10 @@
         "component": "RepoDetailPage",
         "line": 188,
         "path": "/ui/repos/:owner/:repo/tags",
+        "rendered_tests": [
+          "web/src/__tests__/RepoDetailPage.test.tsx",
+          "web/src/__tests__/RepoDetailSocial.test.tsx"
+        ],
         "source": "web/src/App.tsx",
         "tests": [
           "web/src/__tests__/RepoDetailPage.test.tsx",
@@ -25618,6 +27271,10 @@
         "component": "RepoDetailPage",
         "line": 189,
         "path": "/ui/repos/:owner/:repo/tree/:ref/*",
+        "rendered_tests": [
+          "web/src/__tests__/RepoDetailPage.test.tsx",
+          "web/src/__tests__/RepoDetailSocial.test.tsx"
+        ],
         "source": "web/src/App.tsx",
         "tests": [
           "web/src/__tests__/RepoDetailPage.test.tsx",
@@ -25626,8 +27283,12 @@
       },
       {
         "component": "RepoSocialPage",
-        "line": 248,
+        "line": 251,
         "path": "/ui/repos/:owner/:repo/watchers",
+        "rendered_tests": [
+          "web/src/__tests__/RepoSocialPage.test.tsx",
+          "web/src/__tests__/pageErrorPaths.test.tsx"
+        ],
         "source": "web/src/App.tsx",
         "tests": [
           "web/src/__tests__/RepoSocialPage.test.tsx",
@@ -25638,6 +27299,9 @@
         "component": "RunnersPage",
         "line": 179,
         "path": "/ui/runners",
+        "rendered_tests": [
+          "web/src/__tests__/RunnersPage.test.tsx"
+        ],
         "source": "web/src/App.tsx",
         "tests": [
           "web/src/__tests__/RunnersPage.test.tsx"
@@ -25645,8 +27309,12 @@
       },
       {
         "component": "SearchPage",
-        "line": 245,
+        "line": 248,
         "path": "/ui/search",
+        "rendered_tests": [
+          "web/src/__tests__/SearchPage.test.tsx",
+          "web/src/__tests__/pageErrorPaths.test.tsx"
+        ],
         "source": "web/src/App.tsx",
         "tests": [
           "web/src/__tests__/SearchPage.test.tsx",
@@ -25655,8 +27323,11 @@
       },
       {
         "component": "ProfilePage",
-        "line": 257,
+        "line": 260,
         "path": "/ui/users/:login",
+        "rendered_tests": [
+          "web/src/__tests__/ProfilePage.test.tsx"
+        ],
         "source": "web/src/App.tsx",
         "tests": [
           "web/src/__tests__/ProfilePage.test.tsx"
@@ -25666,6 +27337,9 @@
         "component": "WorkflowsPage",
         "line": 177,
         "path": "/ui/workflows",
+        "rendered_tests": [
+          "web/src/__tests__/WorkflowsPage.test.tsx"
+        ],
         "source": "web/src/App.tsx",
         "tests": [
           "web/src/__tests__/WorkflowsPage.test.tsx"
@@ -25675,11 +27349,20 @@
         "component": "WorkflowDetailPage",
         "line": 178,
         "path": "/ui/workflows/:id",
+        "rendered_tests": [
+          "web/src/__tests__/WorkflowDetailPage.test.tsx"
+        ],
         "source": "web/src/App.tsx",
         "tests": [
           "web/src/__tests__/WorkflowDetailPage.test.tsx"
         ]
       }
-    ]
+    ],
+    "summary": {
+      "browser_navigations": 52,
+      "routes": 84,
+      "routes_with_direct_render": 81,
+      "routes_with_test_reference": 81
+    }
   }
 }

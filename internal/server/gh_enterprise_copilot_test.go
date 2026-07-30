@@ -72,7 +72,11 @@ func TestEnterpriseCopilotCodingAgentPolicy(t *testing.T) {
 }
 
 func TestEnterpriseCopilotMetricsReports(t *testing.T) {
-	yesterday := time.Now().UTC().AddDate(0, 0, -1).Format("2006-01-02")
+	fixedNow := time.Date(2035, time.June, 15, 12, 0, 0, 0, time.UTC)
+	previousClock := testServer.clockNow
+	testServer.clockNow = func() time.Time { return fixedNow }
+	t.Cleanup(func() { testServer.clockNow = previousClock })
+	yesterday := fixedNow.AddDate(0, 0, -1).Format("2006-01-02")
 
 	for _, path := range []string{
 		"/copilot/metrics/reports/enterprise-1-day",
@@ -92,7 +96,7 @@ func TestEnterpriseCopilotMetricsReports(t *testing.T) {
 		}
 
 		// A report can only exist for days that have already happened.
-		future := time.Now().UTC().AddDate(0, 0, 7).Format("2006-01-02")
+		future := fixedNow.AddDate(0, 0, 7).Format("2006-01-02")
 		resp = ghGet(t, enterpriseAPI+path+"?day="+future, defaultToken)
 		resp.Body.Close()
 		if resp.StatusCode != http.StatusNotFound {

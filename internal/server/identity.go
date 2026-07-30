@@ -215,7 +215,10 @@ func (s *Server) handleShauthCallback(w http.ResponseWriter, r *http.Request) {
 		writeGHError(w, http.StatusUnauthorized, "Shauth did not return an ID token")
 		return
 	}
-	idToken, err := provider.Verifier(&oidc.Config{ClientID: s.identity.shauthClientID}).Verify(r.Context(), rawIDToken)
+	idToken, err := provider.Verifier(&oidc.Config{
+		ClientID: s.identity.shauthClientID,
+		Now:      s.currentTime,
+	}).Verify(r.Context(), rawIDToken)
 	if err != nil {
 		writeGHError(w, http.StatusUnauthorized, "Shauth ID token verification failed")
 		return
@@ -836,7 +839,10 @@ func (s *Server) handleShauthBackChannelLogout(w http.ResponseWriter, r *http.Re
 		writeGHError(w, http.StatusBadGateway, "Shauth discovery failed")
 		return
 	}
-	logoutToken, err := provider.Verifier(&oidc.Config{ClientID: s.identity.shauthClientID}).Verify(r.Context(), rawLogoutToken)
+	logoutToken, err := provider.Verifier(&oidc.Config{
+		ClientID: s.identity.shauthClientID,
+		Now:      s.currentTime,
+	}).Verify(r.Context(), rawLogoutToken)
 	if err != nil {
 		writeGHError(w, http.StatusBadRequest, "logout token verification failed")
 		return
@@ -855,7 +861,7 @@ func (s *Server) handleShauthBackChannelLogout(w http.ResponseWriter, r *http.Re
 		writeGHError(w, http.StatusBadRequest, "logout token event is invalid")
 		return
 	}
-	now := time.Now()
+	now := s.currentTime()
 	issuedAt := time.Unix(claims.Issued, 0)
 	if issuedAt.Before(now.Add(-5*time.Minute)) || issuedAt.After(now.Add(time.Minute)) {
 		writeGHError(w, http.StatusBadRequest, "logout token is stale")

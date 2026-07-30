@@ -7,12 +7,38 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"time"
 )
 
 // PaginationParams holds parsed pagination query parameters.
 type PaginationParams struct {
 	Page    int
 	PerPage int
+}
+
+func filterSince[T any](
+	w http.ResponseWriter,
+	r *http.Request,
+	resource string,
+	items []T,
+	updatedAt func(T) time.Time,
+) ([]T, bool) {
+	raw := r.URL.Query().Get("since")
+	if raw == "" {
+		return items, true
+	}
+	since, err := time.Parse(time.RFC3339, raw)
+	if err != nil {
+		writeGHValidationError(w, resource, "since", "invalid")
+		return nil, false
+	}
+	filtered := make([]T, 0, len(items))
+	for _, item := range items {
+		if !updatedAt(item).Before(since) {
+			filtered = append(filtered, item)
+		}
+	}
+	return filtered, true
 }
 
 func invalidRESTPaginationQuery(r *http.Request) string {
@@ -109,49 +135,10 @@ func repaginateConnection(src interface{}, args map[string]interface{}) interfac
 		// them untouched rather than guess at a node shape.
 		return src
 	}
-	total := len(nodes)
-
-	first, hasFirst := intArg(args, "first")
-	last, hasLast := intArg(args, "last")
-	after, _ := args["after"].(string)
-	before, _ := args["before"].(string)
-
-	// Backward pagination: `last` (optionally bounded by `before`).
-	if hasLast && !hasFirst {
-		if last <= 0 {
-			last = 30
-		}
-		if last > 100 {
-			last = 100
-		}
-		endIdx := total
-		if before != "" {
-			endIdx = decodeCursor(before)
-			if endIdx < 0 {
-				endIdx = 0
-			}
-			if endIdx > total {
-				endIdx = total
-			}
-		}
-		startIdx := endIdx - last
-		if startIdx < 0 {
-			startIdx = 0
-		}
-		return buildConnectionWindow(nodes, startIdx, endIdx, total)
-	}
-
-	// Forward pagination via the shared helper. paginateGQL clamps first to
-	// (0,100] and defaults an absent first to 30 — identical to real GitHub
-	// and to the top-level connections. The identity toGQL keeps the
-	// already-rendered node maps as-is.
-	f := 0
-	if hasFirst {
-		f = first
-	}
-	return paginateGQL(nodes, f, after, func(n map[string]interface{}) map[string]interface{} {
-		return n
-	})
+	// Keep one implementation of the four Relay window arguments. The old
+	// forward-only path dropped `before` whenever `first` was present, so
+	// clients walking a bounded window received nodes outside that window.
+	return paginateGQLMaps(nodes, args)
 }
 
 // sortGQLNodesByCreatedAt orders already-rendered connection nodes oldest

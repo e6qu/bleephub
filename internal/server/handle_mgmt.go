@@ -453,7 +453,7 @@ func (s *Server) handleCreateUserInternal(w http.ResponseWriter, r *http.Request
 		return
 	}
 
-	now := time.Now().UTC()
+	now := s.currentTime()
 	siteAdmin := false
 	if req.SiteAdmin != nil {
 		siteAdmin = *req.SiteAdmin
@@ -892,7 +892,7 @@ func (s *Server) recordInternalAuditEvent(actor, action, targetType, targetID, o
 	s.store.Misc.mu.Lock()
 	defer s.store.Misc.mu.Unlock()
 	s.store.Misc.nextAdminAuditID++
-	now := time.Now().UTC()
+	now := s.currentTime()
 	e := &AuditLogEvent{
 		ID:         s.store.Misc.nextAdminAuditID,
 		Timestamp:  now.Format(time.RFC3339Nano),

@@ -1,5 +1,5 @@
 import { useMemo, useState, type ReactNode } from "react";
-import { useParams, Link, useNavigate } from "react-router";
+import { useParams, Link, useLocation, useNavigate } from "react-router";
 import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Spinner, InlineError } from "@bleephub/ui-core/components";
 import {
@@ -210,7 +210,11 @@ type PRTab = "conversation" | "commits" | "files" | "checks";
 
 function PRDetail({ owner, repo, number }: { owner: string; repo: string; number: number }) {
   const counts = useOpenCounts(owner, repo);
-  const [tab, setTab] = useState<PRTab>("conversation");
+  const location = useLocation();
+  const navigate = useNavigate();
+  const suffix = location.pathname.split(`/pulls/${number}`)[1]?.split("/")[1];
+  const tab: PRTab =
+    suffix === "commits" || suffix === "files" || suffix === "checks" ? suffix : "conversation";
   const { data: pr, isLoading, isError, error } = useQuery({
     queryKey: ["pr", owner, repo, number],
     queryFn: () => fetchPRDetail(owner, repo, number),
@@ -260,7 +264,10 @@ function PRDetail({ owner, repo, number }: { owner: string; repo: string; number
 
       <Tabs
         active={tab}
-        onChange={(k) => setTab(k as PRTab)}
+        onChange={(next) => {
+          const base = `/ui/repos/${owner}/${repo}/pulls/${number}`;
+          navigate(next === "conversation" ? base : `${base}/${next}`);
+        }}
         items={[
           { key: "conversation", label: "Conversation" },
           { key: "commits", label: "Commits" },
@@ -314,7 +321,9 @@ function PRDetail({ owner, repo, number }: { owner: string; repo: string; number
       )}
 
       {tab === "commits" && <PRCommitsTab owner={owner} repo={repo} number={number} />}
-      {tab === "files" && <PRFilesView owner={owner} repo={repo} number={number} />}
+      {tab === "files" && (
+        <PRFilesView owner={owner} repo={repo} number={number} headSha={pr.head.sha} />
+      )}
       {tab === "checks" && <ChecksSection owner={owner} repo={repo} sha={pr.head.sha} standalone />}
     </div>
   );

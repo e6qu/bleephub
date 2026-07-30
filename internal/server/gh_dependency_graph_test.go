@@ -5,7 +5,6 @@ import (
 	"net/http"
 	"strings"
 	"testing"
-	"time"
 )
 
 func headShaForTest(t *testing.T, repo string) string {
@@ -42,7 +41,7 @@ func submitSnapshotForRepoPath(t *testing.T, repoFullName, manifestPath, ref, sh
 		"detector": map[string]interface{}{
 			"name": "bleephub-test-detector", "version": "1.0.0", "url": "https://example.com/detector",
 		},
-		"scanned": time.Now().UTC().Format(time.RFC3339),
+		"scanned": "2035-06-15T12:00:00Z",
 		"manifests": map[string]interface{}{
 			manifestPath: map[string]interface{}{
 				"name":     manifestPath,
@@ -95,7 +94,7 @@ func TestDependencyGraphSnapshots_SubmitAndSBOM(t *testing.T) {
 		"detector": map[string]interface{}{
 			"name": "bleephub-test-detector", "version": "1.0.0", "url": "https://example.com/detector",
 		},
-		"scanned": time.Now().UTC().Format(time.RFC3339),
+		"scanned": "2035-06-15T12:00:00Z",
 	})
 	invalid := decodeJSONWithStatus(t, resp, 201)
 	if invalid["result"] != "INVALID" {

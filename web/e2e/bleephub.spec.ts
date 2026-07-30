@@ -1,6 +1,7 @@
 import { test, expect, type Page } from "@playwright/test";
 import fs from "fs";
 import path from "path";
+import { randomUUID } from "crypto";
 
 // Fail e2e tests on browser console errors or uncaught page exceptions.
 // Warnings are logged to stdout for audit visibility but do not fail the test.
@@ -186,7 +187,7 @@ test.describe("Global navigation", () => {
 
 test.describe("Repository search", () => {
   test("excludes a topic through shareable GitHub-compatible filters", async ({ page }) => {
-    const marker = `search-${Date.now().toString(36)}`;
+    const marker = `search-${randomUUID().slice(0, 12)}`;
     const included = `${marker}-current`;
     const excluded = `${marker}-legacy`;
     await page.goto("/ui/");
@@ -305,7 +306,7 @@ test.describe("Fine-grained personal access token settings", () => {
     await expect(heading).toBeVisible();
     const hero = heading.locator("..");
     expect(await hero.evaluate((node) => getComputedStyle(node).backgroundImage)).toContain("gradient");
-    await page.getByLabel("Token name").fill(`Playwright token ${Date.now().toString(36)}`);
+    await page.getByLabel("Token name").fill(`Playwright token ${randomUUID().slice(0, 12)}`);
     await page.getByRole("button", { name: "Generate token" }).click();
     await expect(page.getByText("Your new token")).toBeVisible();
     await expect(page.getByText(/^github_pat_/)).toBeVisible();
@@ -324,7 +325,7 @@ test.describe("Fine-grained personal access token settings", () => {
 test.describe("GitHub Classroom transition product", () => {
   test("creates and renders a classroom with saturated light and dark organization", async ({ page }) => {
     await page.goto("/ui/");
-    const suffix = Date.now().toString(36);
+    const suffix = randomUUID().slice(0, 12);
     const org = `classroom-e2e-${suffix}`;
     await apiPost(page, "/api/v3/admin/organizations", { login: org, admin: "admin", profile_name: "Classroom E2E" });
     const classroom = await apiPost(page, "/classroom-data/classrooms", { name: "Software Construction", organization: org }) as { id: number };
@@ -453,7 +454,7 @@ test.describe("Repo detail page", () => {
   });
 
   test("shows configured branch protection and links to its settings", async ({ page }) => {
-    const repo = `protected-branch-${Date.now().toString(36)}`;
+    const repo = `protected-branch-${randomUUID().slice(0, 12)}`;
     await page.goto("/ui/");
     await apiPost(page, "/api/v3/user/repos", {
       name: repo,
@@ -559,6 +560,55 @@ test.describe("Pull Requests page", () => {
     await expect(page.getByText(/no open pull requests/i)).toBeVisible();
     await shot(page, "20-pulls-empty");
   });
+
+  test("deep-links to changed files and creates an inline review comment", async ({ page }) => {
+    const repo = `pull-review-${randomUUID().slice(0, 12)}`;
+    await page.goto("/ui/");
+    await apiPost(page, "/api/v3/user/repos", {
+      name: repo,
+      private: false,
+      auto_init: true,
+    });
+    const main = (await apiGet(page, `/api/v3/repos/admin/${repo}/git/ref/heads/main`)) as {
+      object: { sha: string };
+    };
+    await apiPost(page, `/api/v3/repos/admin/${repo}/git/refs`, {
+      ref: "refs/heads/review-me",
+      sha: main.object.sha,
+    });
+    await apiPut(page, `/api/v3/repos/admin/${repo}/contents/review.txt`, {
+      message: "Add review target",
+      content: btoa("review this line\n"),
+      branch: "review-me",
+    });
+    const pull = (await apiPost(page, `/api/v3/repos/admin/${repo}/pulls`, {
+      title: "Review this change",
+      head: "review-me",
+      base: "main",
+    })) as { number: number };
+
+    await page.goto(`/ui/repos/admin/${repo}/pulls/${pull.number}/files`);
+    await expect(page).toHaveURL(new RegExp(`/pulls/${pull.number}/files$`));
+    await expect(page.getByText("review.txt")).toBeVisible();
+    await page.getByRole("button", { name: "Comment on review.txt line 1" }).click();
+    await page.getByLabel("Review comment").fill("A browser-authored inline comment.");
+    await page.getByRole("button", { name: "Add single comment" }).click();
+    await expect(page.getByText(/Comment on review.txt/)).not.toBeVisible();
+
+    const comments = (await apiGet(
+      page,
+      `/api/v3/repos/admin/${repo}/pulls/${pull.number}/comments`,
+    )) as Array<{ body: string; path: string; line: number }>;
+    expect(comments).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          body: "A browser-authored inline comment.",
+          path: "review.txt",
+          line: 1,
+        }),
+      ]),
+    );
+  });
 });
 
 // ─── Apps page ───────────────────────────────────────────────────────────────
@@ -606,7 +656,7 @@ test.describe("OAuth page", () => {
 test.describe("Actions UI", () => {
   test("submits a workflow and renders the run detail (jobs + logs section)", async ({ page }) => {
     await page.goto("/ui/");
-    const repoName = `ci-demo-${Date.now()}`;
+    const repoName = `ci-demo-${randomUUID().slice(0, 12)}`;
     const repoFullName = `admin/${repoName}`;
     await apiPost(page, "/api/v3/user/repos", { name: repoName, auto_init: true });
 
@@ -720,7 +770,7 @@ test.describe("Code security", () => {
     await page.goto("/ui/");
     const user = await apiGet(page, "/api/v3/user");
     const owner = (user as { login: string }).login;
-    const repo = `code-security-${Date.now()}`;
+    const repo = `code-security-${randomUUID().slice(0, 12)}`;
     await apiPost(page, "/api/v3/user/repos", { name: repo, auto_init: true });
     const branch = await apiGet(page, `/api/v3/repos/${owner}/${repo}/branches/main`) as { commit: { sha: string } };
 

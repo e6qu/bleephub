@@ -199,6 +199,9 @@ export function App() {
               <Route path="/ui/repos/:owner/:repo/insights" element={<InsightsPage />} />
               <Route path="/ui/repos/:owner/:repo/pulls" element={<PullsPage />} />
               <Route path="/ui/repos/:owner/:repo/pulls/:number" element={<PullsPage />} />
+              <Route path="/ui/repos/:owner/:repo/pulls/:number/commits" element={<PullsPage />} />
+              <Route path="/ui/repos/:owner/:repo/pulls/:number/files" element={<PullsPage />} />
+              <Route path="/ui/repos/:owner/:repo/pulls/:number/checks" element={<PullsPage />} />
               <Route path="/ui/repos/:owner/:repo/discussions" element={<DiscussionsPage />} />
               <Route path="/ui/repos/:owner/:repo/discussions/:number" element={<DiscussionsPage />} />
               <Route path="/ui/repos/:owner/:repo/actions" element={<ActionsPage />} />

@@ -1,1 +1,0 @@
-import{r as e}from"./vendor-misc-BfjYhoV4.js";import{zo as t}from"./index-D_OmGhsR.js";import{t as n}from"./RepoListPage-B5yN_79c.js";var r=e();function i(){return(0,r.jsx)(n,{title:`Repositories`,fetchPage:t,queryKey:[`user-repos`],allowCreate:!0,createTarget:`user`})}export{i as ReposPage};

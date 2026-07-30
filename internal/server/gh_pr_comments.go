@@ -396,6 +396,12 @@ func (s *Server) handleListRepoPRComments(w http.ResponseWriter, r *http.Request
 		}
 	}
 	sort.Slice(rows, func(i, j int) bool { return rows[i].comment.ID < rows[j].comment.ID })
+	rows, ok := filterSince(w, r, "PullRequestReviewComment", rows, func(item row) time.Time {
+		return item.comment.UpdatedAt
+	})
+	if !ok {
+		return
+	}
 	page := paginateAndLink(w, r, rows)
 	out := make([]map[string]interface{}, 0, len(page))
 	for _, item := range page {
@@ -501,6 +507,12 @@ func (s *Server) handleListPRComments(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	comments := s.store.PRReviewComments.ListForPR(pr.ID)
+	comments, ok := filterSince(w, r, "PullRequestReviewComment", comments, func(comment *PRReviewComment) time.Time {
+		return comment.UpdatedAt
+	})
+	if !ok {
+		return
+	}
 	page := paginateAndLink(w, r, comments)
 	out := make([]map[string]interface{}, 0, len(page))
 	for _, c := range page {

@@ -31,6 +31,8 @@ func (st *Store) snapIssue(i *Issue) *Issue {
 	st.mu.RLock()
 	defer st.mu.RUnlock()
 	cp := *i
+	cp.AssigneeIDs = append([]int(nil), i.AssigneeIDs...)
+	cp.LabelIDs = append([]int(nil), i.LabelIDs...)
 	return &cp
 }
 
@@ -41,6 +43,30 @@ func (st *Store) snapPR(pr *PullRequest) *PullRequest {
 	st.mu.RLock()
 	defer st.mu.RUnlock()
 	cp := *pr
+	cp.AssigneeIDs = append([]int(nil), pr.AssigneeIDs...)
+	cp.LabelIDs = append([]int(nil), pr.LabelIDs...)
+	cp.RequestedReviewerIDs = append([]int(nil), pr.RequestedReviewerIDs...)
+	cp.RequestedTeamIDs = append([]int(nil), pr.RequestedTeamIDs...)
+	return &cp
+}
+
+func (st *Store) snapComment(comment *Comment) *Comment {
+	if comment == nil {
+		return nil
+	}
+	st.mu.RLock()
+	defer st.mu.RUnlock()
+	cp := *comment
+	return &cp
+}
+
+func (st *Store) snapPullRequestReview(review *PullRequestReview) *PullRequestReview {
+	if review == nil {
+		return nil
+	}
+	st.mu.RLock()
+	defer st.mu.RUnlock()
+	cp := *review
 	return &cp
 }
 
@@ -215,6 +241,54 @@ func buildIssuesPayload(st *Store, repo *Repo, issue *Issue, sender *User, actio
 		"repository": repoPayload(repo),
 		"sender":     senderPayload(sender),
 	}, nil)
+}
+
+func buildIssueCommentPayload(
+	st *Store,
+	repo *Repo,
+	comment *Comment,
+	sender *User,
+	action, baseURL string,
+	parentNumber int,
+) map[string]interface{} {
+	repo = st.snapRepo(repo)
+	comment = st.snapComment(comment)
+	sender = st.snapUser(sender)
+	var issueJSON map[string]interface{}
+	switch comment.ParentType {
+	case "pull_request":
+		if pr := st.GetPullRequest(comment.IssueID); pr != nil {
+			issueJSON = issueToJSONForPR(st.snapPR(pr), st, baseURL, repo.FullName)
+		}
+	default:
+		if issue := st.GetIssue(comment.IssueID); issue != nil {
+			issueJSON = issueToJSON(st.snapIssue(issue), st, baseURL, repo.FullName)
+		}
+	}
+	return attachInstallationBlock(map[string]interface{}{
+		"action":     action,
+		"issue":      issueJSON,
+		"comment":    commentToJSON(comment, st, baseURL, repo.FullName, parentNumber),
+		"repository": repoPayload(repo),
+		"sender":     senderPayload(sender),
+	}, nil)
+}
+
+func buildPullRequestReviewPayload(
+	st *Store,
+	repo *Repo,
+	pr *PullRequest,
+	review *PullRequestReview,
+	sender *User,
+	action, baseURL string,
+) map[string]interface{} {
+	repo = st.snapRepo(repo)
+	pr = st.snapPR(pr)
+	review = st.snapPullRequestReview(review)
+	sender = st.snapUser(sender)
+	payload := buildPullRequestPayload(st, repo, pr, sender, action)
+	payload["review"] = reviewToJSON(review, st, baseURL, repo.FullName, pr.Number)
+	return payload
 }
 
 func buildPingPayload(repo *Repo, hook *Webhook) map[string]interface{} {

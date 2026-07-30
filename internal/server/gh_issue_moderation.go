@@ -69,6 +69,8 @@ func (s *Server) handleUpdateIssueComment(w http.ResponseWriter, r *http.Request
 
 	// Resolve the parent number for the URL portion of the JSON.
 	parentNumber := commentParentNumber(s.store, updated)
+	s.emitWebhookEvent(repo.FullName, "issue_comment", "edited",
+		buildIssueCommentPayload(s.store, repo, updated, user, "edited", s.baseURL(r), parentNumber))
 	writeJSON(w, http.StatusOK, commentToJSON(updated, s.store, s.baseURL(r), repo.FullName, parentNumber))
 }
 
@@ -96,10 +98,13 @@ func (s *Server) handleDeleteIssueComment(w http.ResponseWriter, r *http.Request
 	if !requireRepoOwns(w, repo, s.store.CommentRepoID(c)) {
 		return
 	}
+	parentNumber := commentParentNumber(s.store, c)
+	payload := buildIssueCommentPayload(s.store, repo, c, user, "deleted", s.baseURL(r), parentNumber)
 	if !s.store.DeleteComment(id) {
 		writeGHError(w, http.StatusNotFound, "Not Found")
 		return
 	}
+	s.emitWebhookEvent(repo.FullName, "issue_comment", "deleted", payload)
 	w.WriteHeader(http.StatusNoContent)
 }
 

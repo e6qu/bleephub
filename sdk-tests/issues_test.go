@@ -2,6 +2,7 @@ package sdktests
 
 import (
 	"testing"
+	"time"
 
 	github "github.com/google/go-github/v88/github"
 )
@@ -94,6 +95,16 @@ func TestIssuesLifecycle(t *testing.T) {
 	if len(comments) != 1 {
 		t.Errorf("ListComments len = %d, want 1", len(comments))
 	}
+	since := time.Date(2000, time.January, 1, 0, 0, 0, 0, time.UTC)
+	comments, _, err = client.Issues.ListComments(ctx(), "admin", name, num, &github.IssueListCommentsOptions{
+		Since: &since,
+	})
+	if err != nil {
+		t.Fatalf("ListComments(since): %v", err)
+	}
+	if len(comments) != 1 {
+		t.Errorf("ListComments(since) len = %d, want 1", len(comments))
+	}
 
 	edited, _, err := client.Issues.EditComment(ctx(), "admin", name, comment.GetID(), &github.IssueComment{
 		Body: github.Ptr("edited comment"),
@@ -120,6 +131,65 @@ func TestIssuesLifecycle(t *testing.T) {
 	}
 	if _, err := client.Issues.Unlock(ctx(), "admin", name, num); err != nil {
 		t.Fatalf("Unlock: %v", err)
+	}
+}
+
+func TestIssuesListByRepoHonorsOfficialClientFilters(t *testing.T) {
+	name := uniqueName("issue-filters")
+	createRepo(t, name)
+	mentioned, _, err := client.Issues.Create(ctx(), "admin", name, &github.IssueRequest{
+		Title: github.Ptr("mentioned"),
+		Body:  github.Ptr("Please ask @alice"),
+	})
+	if err != nil {
+		t.Fatalf("create mentioned issue: %v", err)
+	}
+	discussed, _, err := client.Issues.Create(ctx(), "admin", name, &github.IssueRequest{
+		Title: github.Ptr("discussed"),
+	})
+	if err != nil {
+		t.Fatalf("create discussed issue: %v", err)
+	}
+	for _, body := range []string{"one", "two"} {
+		if _, _, err := client.Issues.CreateComment(ctx(), "admin", name, discussed.GetNumber(), &github.IssueComment{
+			Body: github.Ptr(body),
+		}); err != nil {
+			t.Fatalf("create comment %q: %v", body, err)
+		}
+	}
+
+	rows, _, err := client.Issues.ListByRepo(ctx(), "admin", name, &github.IssueListByRepoOptions{
+		Mentioned: "alice",
+		State:     "all",
+	})
+	if err != nil {
+		t.Fatalf("ListByRepo mentioned: %v", err)
+	}
+	if len(rows) != 1 || rows[0].GetNumber() != mentioned.GetNumber() {
+		t.Fatalf("mentioned rows = %v, want issue %d", rows, mentioned.GetNumber())
+	}
+
+	rows, _, err = client.Issues.ListByRepo(ctx(), "admin", name, &github.IssueListByRepoOptions{
+		Assignee: "does-not-exist",
+		State:    "all",
+	})
+	if err != nil {
+		t.Fatalf("ListByRepo unknown assignee: %v", err)
+	}
+	if len(rows) != 0 {
+		t.Fatalf("unknown assignee widened to %d rows", len(rows))
+	}
+
+	rows, _, err = client.Issues.ListByRepo(ctx(), "admin", name, &github.IssueListByRepoOptions{
+		Sort:      "comments",
+		Direction: "desc",
+		State:     "all",
+	})
+	if err != nil {
+		t.Fatalf("ListByRepo comments sort: %v", err)
+	}
+	if len(rows) != 2 || rows[0].GetNumber() != discussed.GetNumber() {
+		t.Fatalf("comments-desc rows = %v, want issue %d first", rows, discussed.GetNumber())
 	}
 }
 

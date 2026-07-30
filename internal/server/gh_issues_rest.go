@@ -124,25 +124,37 @@ func (s *Server) handleListIssues(w http.ResponseWriter, r *http.Request) {
 	case "all":
 		stateFilter = "all"
 	default:
-		stateFilter = "OPEN"
+		writeGHValidationError(w, "Issue", "state", "invalid")
+		return
 	}
 
+	query := r.URL.Query()
 	var labelNames []string
-	if labelsParam := r.URL.Query().Get("labels"); labelsParam != "" {
+	if labelsParam := query.Get("labels"); labelsParam != "" {
 		labelNames = strings.Split(labelsParam, ",")
 	}
+	assignee := query.Get("assignee")
 	var assigneeID int
-	if assignee := r.URL.Query().Get("assignee"); assignee != "" {
+	if assignee != "" && assignee != "*" && assignee != "none" {
 		if u := s.store.LookupUserByLogin(assignee); u != nil {
 			assigneeID = u.ID
+		} else {
+			// An unknown assignee is a valid filter with no matches. Treating
+			// zero as "no filter" widened the result to every issue.
+			assigneeID = -1
 		}
 	}
 	selected := func(labelIDs, assigneeIDs []int) bool {
 		if !labelIDsCoverNames(s.store, labelIDs, labelNames) {
 			return false
 		}
-		if assigneeID == 0 {
+		switch assignee {
+		case "":
 			return true
+		case "*":
+			return len(assigneeIDs) > 0
+		case "none":
+			return len(assigneeIDs) == 0
 		}
 		for _, aid := range assigneeIDs {
 			if aid == assigneeID {
@@ -152,38 +164,159 @@ func (s *Server) handleListIssues(w http.ResponseWriter, r *http.Request) {
 		return false
 	}
 
+	var creatorID int
+	if creator := query.Get("creator"); creator != "" {
+		if u := s.store.LookupUserByLogin(creator); u != nil {
+			creatorID = u.ID
+		} else {
+			creatorID = -1
+		}
+	}
+	milestoneFilter := query.Get("milestone")
+	var milestoneID int
+	if milestoneFilter != "" && milestoneFilter != "*" && milestoneFilter != "none" {
+		number, err := strconv.Atoi(milestoneFilter)
+		if err != nil || number < 1 {
+			writeGHValidationError(w, "Issue", "milestone", "invalid")
+			return
+		}
+		milestone := s.store.GetMilestoneByNumber(repo.ID, number)
+		if milestone == nil {
+			// Like an unknown assignee, a valid but absent milestone number
+			// selects an empty set rather than dropping the filter.
+			milestoneID = -1
+		} else {
+			milestoneID = milestone.ID
+		}
+	}
+	var since time.Time
+	if rawSince := query.Get("since"); rawSince != "" {
+		parsed, err := time.Parse(time.RFC3339, rawSince)
+		if err != nil {
+			writeGHValidationError(w, "Issue", "since", "invalid")
+			return
+		}
+		since = parsed
+	}
+	sortField := query.Get("sort")
+	if sortField == "" {
+		sortField = "created"
+	}
+	if sortField != "created" && sortField != "updated" && sortField != "comments" {
+		writeGHValidationError(w, "Issue", "sort", "invalid")
+		return
+	}
+	direction := query.Get("direction")
+	if direction == "" {
+		direction = "desc"
+	}
+	if direction != "asc" && direction != "desc" {
+		writeGHValidationError(w, "Issue", "direction", "invalid")
+		return
+	}
+	mentioned := strings.ToLower(strings.TrimSpace(query.Get("mentioned")))
+	matchesMention := func(body, parentType string, parentID int) bool {
+		if mentioned == "" {
+			return true
+		}
+		needle := "@" + mentioned
+		if strings.Contains(strings.ToLower(body), needle) {
+			return true
+		}
+		for _, comment := range s.store.ListCommentsFor(parentType, parentID) {
+			if strings.Contains(strings.ToLower(comment.Body), needle) {
+				return true
+			}
+		}
+		return false
+	}
+	matchesCommon := func(authorID, itemMilestoneID int, updatedAt time.Time, body, parentType string, parentID int) bool {
+		if creatorID != 0 && authorID != creatorID {
+			return false
+		}
+		switch milestoneFilter {
+		case "":
+		case "*":
+			if itemMilestoneID == 0 {
+				return false
+			}
+		case "none":
+			if itemMilestoneID != 0 {
+				return false
+			}
+		default:
+			if itemMilestoneID != milestoneID {
+				return false
+			}
+		}
+		return (since.IsZero() || !updatedAt.Before(since)) &&
+			matchesMention(body, parentType, parentID)
+	}
+
 	// Every pull request is also an issue on GitHub, so this listing returns
 	// both and the `pull_request` member is what tells them apart. Omitting
 	// them made pull requests invisible to any client that reaches for
 	// issues — `gh issue list` among them.
 	base := s.baseURL(r)
 	type issueRow struct {
-		number    int
-		createdAt time.Time
-		json      map[string]interface{}
+		number       int
+		createdAt    time.Time
+		updatedAt    time.Time
+		commentCount int
+		json         map[string]interface{}
 	}
 	var rows []issueRow
-	for _, issue := range s.store.ListIssues(repo.ID, stateFilter) {
-		if !selected(issue.LabelIDs, issue.AssigneeIDs) {
+	for _, storedIssue := range s.store.ListIssues(repo.ID, stateFilter) {
+		issue := s.store.snapIssue(storedIssue)
+		if !selected(issue.LabelIDs, issue.AssigneeIDs) ||
+			!matchesCommon(issue.AuthorID, issue.MilestoneID, issue.UpdatedAt, issue.Body, "issue", issue.ID) {
 			continue
 		}
-		rows = append(rows, issueRow{issue.Number, issue.CreatedAt, issueToJSON(issue, s.store, base, repo.FullName)})
+		rows = append(rows, issueRow{
+			number: issue.Number, createdAt: issue.CreatedAt, updatedAt: issue.UpdatedAt,
+			commentCount: len(s.store.ListCommentsFor("issue", issue.ID)),
+			json:         issueToJSON(issue, s.store, base, repo.FullName),
+		})
 	}
-	for _, pr := range s.store.ListPullRequests(repo.ID, stateFilter) {
-		if !selected(pr.LabelIDs, pr.AssigneeIDs) {
+	for _, storedPR := range s.store.ListPullRequests(repo.ID, stateFilter) {
+		pr := s.store.snapPR(storedPR)
+		if !selected(pr.LabelIDs, pr.AssigneeIDs) ||
+			!matchesCommon(pr.AuthorID, pr.MilestoneID, pr.UpdatedAt, pr.Body, "pull_request", pr.ID) {
 			continue
 		}
-		rows = append(rows, issueRow{pr.Number, pr.CreatedAt, issueToJSONForPR(pr, s.store, base, repo.FullName)})
+		rows = append(rows, issueRow{
+			number: pr.Number, createdAt: pr.CreatedAt, updatedAt: pr.UpdatedAt,
+			commentCount: len(s.store.ListCommentsFor("pull_request", pr.ID)),
+			json:         issueToJSONForPR(pr, s.store, base, repo.FullName),
+		})
 	}
 
 	// Newest first, GitHub's default sort. Both stores iterate a map, so
 	// without this the page a caller gets back is a different subset each
 	// time they ask.
 	sort.Slice(rows, func(i, j int) bool {
-		if !rows[i].createdAt.Equal(rows[j].createdAt) {
-			return rows[i].createdAt.After(rows[j].createdAt)
+		var less bool
+		switch sortField {
+		case "updated":
+			less = rows[i].updatedAt.Before(rows[j].updatedAt)
+			if rows[i].updatedAt.Equal(rows[j].updatedAt) {
+				less = rows[i].number < rows[j].number
+			}
+		case "comments":
+			less = rows[i].commentCount < rows[j].commentCount
+			if rows[i].commentCount == rows[j].commentCount {
+				less = rows[i].number < rows[j].number
+			}
+		default:
+			less = rows[i].createdAt.Before(rows[j].createdAt)
+			if rows[i].createdAt.Equal(rows[j].createdAt) {
+				less = rows[i].number < rows[j].number
+			}
 		}
-		return rows[i].number > rows[j].number
+		if direction == "desc" {
+			return !less && rows[i].number != rows[j].number
+		}
+		return less
 	})
 
 	result := make([]map[string]interface{}, 0, len(rows))
@@ -468,6 +601,8 @@ func (s *Server) handleCreateIssueComment(w http.ResponseWriter, r *http.Request
 		return
 	}
 
+	s.emitWebhookEvent(repo.FullName, "issue_comment", "created",
+		buildIssueCommentPayload(s.store, repo, comment, user, "created", s.baseURL(r), parentNumber))
 	writeJSON(w, http.StatusCreated, commentToJSON(comment, s.store, s.baseURL(r), repo.FullName, parentNumber))
 }
 
@@ -504,6 +639,12 @@ func (s *Server) handleListIssueComments(w http.ResponseWriter, r *http.Request)
 	}
 
 	comments := s.store.ListCommentsFor(parentType, parentID)
+	comments, ok := filterSince(w, r, "IssueComment", comments, func(comment *Comment) time.Time {
+		return comment.UpdatedAt
+	})
+	if !ok {
+		return
+	}
 	base := s.baseURL(r)
 	result := make([]map[string]interface{}, 0, len(comments))
 	for _, c := range comments {
@@ -673,6 +814,12 @@ func (s *Server) handleListRepoIssueComments(w http.ResponseWriter, r *http.Requ
 	}
 
 	comments := s.store.ListRepoIssueComments(repo.ID)
+	comments, ok := filterSince(w, r, "IssueComment", comments, func(comment *Comment) time.Time {
+		return comment.UpdatedAt
+	})
+	if !ok {
+		return
+	}
 	base := s.baseURL(r)
 	result := make([]map[string]interface{}, 0, len(comments))
 	for _, c := range comments {

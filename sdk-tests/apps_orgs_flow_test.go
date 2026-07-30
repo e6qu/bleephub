@@ -29,7 +29,16 @@ func signAppJWT(t *testing.T, privateKeyPEM string, appID int64) string {
 		t.Fatalf("parse app key: %v", err)
 	}
 	b64 := func(b []byte) string { return base64.RawURLEncoding.EncodeToString(b) }
-	now := time.Now().Unix()
+	response, err := rawHTTP.Get(baseURL + "/health")
+	if err != nil {
+		t.Fatalf("read server clock: %v", err)
+	}
+	response.Body.Close()
+	serverDate, err := time.Parse(http.TimeFormat, response.Header.Get("Date"))
+	if err != nil {
+		t.Fatalf("parse server Date header: %v", err)
+	}
+	now := serverDate.Unix()
 	// iat backdated 60s for clock drift — the convention real app clients use.
 	header := b64([]byte(`{"alg":"RS256","typ":"JWT"}`))
 	payload := b64([]byte(fmt.Sprintf(`{"iss":"%d","iat":%d,"exp":%d}`, appID, now-60, now+540)))

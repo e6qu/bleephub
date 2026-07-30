@@ -691,6 +691,10 @@ func (s *Server) handleCreatePRReview(w http.ResponseWriter, r *http.Request) {
 		s.store.PRReviewComments.AttachToReview(c.ID, review.ID)
 	}
 
+	if review.State != "PENDING" {
+		s.emitWebhookEvent(repo.FullName, "pull_request_review", "submitted",
+			buildPullRequestReviewPayload(s.store, repo, pr, review, user, "submitted", s.baseURL(r)))
+	}
 	writeJSON(w, http.StatusOK, reviewToJSON(review, s.store, s.baseURL(r), repo.FullName, pr.Number))
 }
 
@@ -893,6 +897,11 @@ func (s *Server) handleDeletePRReview(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleSubmitPRReview(w http.ResponseWriter, r *http.Request) {
+	user := ghUserFromContext(r.Context())
+	if user == nil {
+		writeGHError(w, http.StatusUnauthorized, "Bad credentials")
+		return
+	}
 	repo := s.lookupRepoFromPath(r)
 	if repo == nil {
 		writeGHError(w, http.StatusNotFound, "Not Found")
@@ -940,10 +949,17 @@ func (s *Server) handleSubmitPRReview(w http.ResponseWriter, r *http.Request) {
 	}
 
 	review = s.store.GetPullRequestReview(reviewID)
+	s.emitWebhookEvent(repo.FullName, "pull_request_review", "submitted",
+		buildPullRequestReviewPayload(s.store, repo, pr, review, user, "submitted", s.baseURL(r)))
 	writeJSON(w, http.StatusOK, reviewToJSON(review, s.store, s.baseURL(r), repo.FullName, pr.Number))
 }
 
 func (s *Server) handleDismissPRReview(w http.ResponseWriter, r *http.Request) {
+	user := ghUserFromContext(r.Context())
+	if user == nil {
+		writeGHError(w, http.StatusUnauthorized, "Bad credentials")
+		return
+	}
 	repo := s.lookupRepoFromPath(r)
 	if repo == nil {
 		writeGHError(w, http.StatusNotFound, "Not Found")
@@ -987,6 +1003,8 @@ func (s *Server) handleDismissPRReview(w http.ResponseWriter, r *http.Request) {
 	}
 
 	review = s.store.GetPullRequestReview(reviewID)
+	s.emitWebhookEvent(repo.FullName, "pull_request_review", "dismissed",
+		buildPullRequestReviewPayload(s.store, repo, pr, review, user, "dismissed", s.baseURL(r)))
 	writeJSON(w, http.StatusOK, reviewToJSON(review, s.store, s.baseURL(r), repo.FullName, pr.Number))
 }
 

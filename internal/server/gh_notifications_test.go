@@ -376,9 +376,9 @@ func TestNotifications_SinceAndBefore(t *testing.T) {
 	admin := s.store.UsersByLogin["admin"]
 	repo := s.store.CreateRepo(admin, "since-repo", "", false)
 	oldIssue := s.store.CreateIssue(repo.ID, admin.ID, "old", "body", nil, nil, 0)
-	oldIssue.UpdatedAt = time.Now().UTC().Add(-48 * time.Hour)
+	oldIssue.UpdatedAt = time.Date(2035, time.June, 13, 12, 0, 0, 0, time.UTC)
 	newIssue := s.store.CreateIssue(repo.ID, admin.ID, "new", "body", nil, nil, 0)
-	newIssue.UpdatedAt = time.Now().UTC().Add(-1 * time.Hour)
+	newIssue.UpdatedAt = time.Date(2035, time.June, 15, 11, 0, 0, 0, time.UTC)
 
 	do := func(method, path string, body []byte) *httptest.ResponseRecorder {
 		var req *http.Request
@@ -393,7 +393,7 @@ func TestNotifications_SinceAndBefore(t *testing.T) {
 		return w
 	}
 
-	since := time.Now().UTC().Add(-24 * time.Hour).Format(time.RFC3339)
+	since := "2035-06-14T12:00:00Z"
 	w := do("GET", "/api/v3/notifications?since="+since, nil)
 	if w.Code != http.StatusOK {
 		t.Fatalf("list since: %d body=%s", w.Code, w.Body.String())

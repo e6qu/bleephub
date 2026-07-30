@@ -33,7 +33,7 @@ func TestListWorkflowsWithData(t *testing.T) {
 		RunID:     42,
 		Status:    "completed",
 		Result:    "success",
-		CreatedAt: time.Now(),
+		CreatedAt: time.Date(2035, time.June, 15, 12, 0, 0, 0, time.UTC),
 		EventName: "push",
 		Jobs: map[string]*WorkflowJob{
 			"build": {Key: "build", JobID: "j1", DisplayName: "Build", Status: "completed", Result: "success"},
@@ -130,7 +130,7 @@ func TestGetWorkflowLogs(t *testing.T) {
 		RunID:     99,
 		Status:    "completed",
 		Result:    "success",
-		CreatedAt: time.Now(),
+		CreatedAt: time.Date(2035, time.June, 15, 12, 0, 0, 0, time.UTC),
 		Jobs: map[string]*WorkflowJob{
 			"test": {Key: "test", JobID: "j-log-1", DisplayName: "Test", Status: "completed", Result: "success"},
 		},
@@ -424,6 +424,10 @@ func TestInternalTeamsCRUD(t *testing.T) {
 }
 
 func TestInternalAuditLog(t *testing.T) {
+	fixedNow := time.Date(2035, time.June, 15, 12, 0, 0, 0, time.UTC)
+	previousClock := testServer.clockNow
+	testServer.clockNow = func() time.Time { return fixedNow }
+	t.Cleanup(func() { testServer.clockNow = previousClock })
 	e1 := ghPost(t, "/internal/audit-log/events", defaultToken, map[string]interface{}{
 		"actor":       "admin",
 		"action":      "user.login",
@@ -495,8 +499,8 @@ func TestInternalAuditLog(t *testing.T) {
 		t.Errorf("actor/action filter returned %d entries, want 1", len(actorEntries))
 	}
 
-	from := time.Now().Add(-time.Hour).Format(time.RFC3339)
-	to := time.Now().Add(time.Hour).Format(time.RFC3339)
+	from := fixedNow.Add(-time.Hour).Format(time.RFC3339)
+	to := fixedNow.Add(time.Hour).Format(time.RFC3339)
 	timeFilter := ghGet(t, fmt.Sprintf("/internal/audit-log?from=%s&to=%s", from, to), defaultToken)
 	if timeFilter.StatusCode != 200 {
 		body, _ := io.ReadAll(timeFilter.Body)

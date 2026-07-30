@@ -10,7 +10,6 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
-	"time"
 
 	"golang.org/x/crypto/ssh"
 )
@@ -18,7 +17,7 @@ import (
 func TestGitSSHTransportPushAndClone(t *testing.T) {
 	t.Helper()
 	admin := testServer.store.LookupUserByLogin("admin")
-	name := "ssh-transport-" + strings.ReplaceAll(time.Now().UTC().Format("150405.000000000"), ".", "")
+	name := "ssh-transport"
 	testServer.store.CreateRepo(admin, name, "", true)
 
 	public, err := ssh.NewPublicKey(testSSHKey.Public())

@@ -723,8 +723,13 @@ func (s *Server) addIssueFieldsToSchema(userType, repoType, mutationType, queryT
 				return nil, fmt.Errorf("resolve source: unexpected type %T", p.Source)
 			}
 			repoID, _ := repo["databaseId"].(int)
+			repoFullName, _ := repo["nameWithOwner"].(string)
 
-			issues := s.store.ListIssues(repoID, "")
+			storedIssues := s.store.ListIssues(repoID, "")
+			issues := make([]*Issue, 0, len(storedIssues))
+			for _, issue := range storedIssues {
+				issues = append(issues, s.store.snapIssue(issue))
+			}
 
 			// Filter by states arg
 			if states, ok := p.Args["states"].([]interface{}); ok && len(states) > 0 {
@@ -760,8 +765,8 @@ func (s *Server) addIssueFieldsToSchema(userType, repoType, mutationType, queryT
 			if filterBy, ok := p.Args["filterBy"].(map[string]interface{}); ok {
 				if assignee, ok := filterBy["assignee"].(string); ok && assignee != "" {
 					u := s.store.LookupUserByLogin(assignee)
+					var filtered []*Issue
 					if u != nil {
-						var filtered []*Issue
 						for _, i := range issues {
 							for _, aid := range i.AssigneeIDs {
 								if aid == u.ID {
@@ -770,14 +775,103 @@ func (s *Server) addIssueFieldsToSchema(userType, repoType, mutationType, queryT
 								}
 							}
 						}
-						issues = filtered
 					}
+					// An unresolved login means no issue can match. Keeping the
+					// old list silently widened a typo to every issue.
+					issues = filtered
+				}
+				if creator, ok := filterBy["createdBy"].(string); ok && creator != "" {
+					u := s.store.LookupUserByLogin(creator)
+					var filtered []*Issue
+					if u != nil {
+						for _, issue := range issues {
+							if issue.AuthorID == u.ID {
+								filtered = append(filtered, issue)
+							}
+						}
+					}
+					issues = filtered
+				}
+				if states, ok := filterBy["states"].([]interface{}); ok && len(states) > 0 {
+					allowed := map[string]bool{}
+					for _, state := range states {
+						allowed[fmt.Sprint(state)] = true
+					}
+					var filtered []*Issue
+					for _, issue := range issues {
+						if allowed[issue.State] {
+							filtered = append(filtered, issue)
+						}
+					}
+					issues = filtered
+				}
+				if labels, ok := filterBy["labels"].([]interface{}); ok && len(labels) > 0 {
+					names := make([]string, 0, len(labels))
+					for _, label := range labels {
+						names = append(names, fmt.Sprint(label))
+					}
+					var filtered []*Issue
+					for _, issue := range issues {
+						if issueHasAllLabels(s.store, issue, names, repoID) {
+							filtered = append(filtered, issue)
+						}
+					}
+					issues = filtered
+				}
+				if mentioned, ok := filterBy["mentioned"].(string); ok && mentioned != "" {
+					needle := "@" + strings.ToLower(mentioned)
+					var filtered []*Issue
+					for _, issue := range issues {
+						found := strings.Contains(strings.ToLower(issue.Body), needle)
+						if !found {
+							for _, comment := range s.store.ListIssueComments(repoFullName, issue.Number) {
+								if strings.Contains(strings.ToLower(comment.Body), needle) {
+									found = true
+									break
+								}
+							}
+						}
+						if found {
+							filtered = append(filtered, issue)
+						}
+					}
+					issues = filtered
 				}
 			}
 
-			// Sort newest first
-			sort.Slice(issues, func(a, b int) bool {
-				return issues[a].CreatedAt.After(issues[b].CreatedAt)
+			orderField, orderDirection := "CREATED_AT", "DESC"
+			if order, ok := p.Args["orderBy"].(map[string]interface{}); ok {
+				if field, ok := order["field"].(string); ok && field != "" {
+					orderField = field
+				}
+				if direction, ok := order["direction"].(string); ok && direction != "" {
+					orderDirection = direction
+				}
+			}
+			sort.SliceStable(issues, func(a, b int) bool {
+				var comparison int
+				switch orderField {
+				case "UPDATED_AT":
+					comparison = issues[a].UpdatedAt.Compare(issues[b].UpdatedAt)
+				case "COMMENTS":
+					left := len(s.store.ListComments(issues[a].ID))
+					right := len(s.store.ListComments(issues[b].ID))
+					switch {
+					case left < right:
+						comparison = -1
+					case left > right:
+						comparison = 1
+					}
+				default:
+					comparison = issues[a].CreatedAt.Compare(issues[b].CreatedAt)
+				}
+				if comparison == 0 {
+					comparison = issues[a].Number - issues[b].Number
+				}
+				if orderDirection == "DESC" {
+					return comparison > 0
+				}
+				return comparison < 0
 			})
 
 			first := 30

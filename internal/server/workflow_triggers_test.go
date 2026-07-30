@@ -390,6 +390,90 @@ jobs:
 	}
 }
 
+func TestIssueCommentMutationProducesWebhookAndActionsEvent(t *testing.T) {
+	s := newTestServer()
+	s.registerRoutes()
+	repoKey := "eventbridge/comment-repo"
+	commitWorkflowYAMLToStorage(t, s, repoKey, ".github/workflows/comments.yml", `name: comments
+on:
+  issue_comment:
+    types: [created]
+jobs:
+  observe:
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo comment
+`)
+
+	created := doMiscReq(s, "POST", "/api/v3/repos/"+repoKey+"/issues", `{"title":"event source"}`)
+	if created.Code != 201 {
+		t.Fatalf("create issue status = %d body=%s", created.Code, created.Body.String())
+	}
+	commented := doMiscReq(s, "POST", "/api/v3/repos/"+repoKey+"/issues/1/comments", `{"body":"hello"}`)
+	if commented.Code != 201 {
+		t.Fatalf("create comment status = %d body=%s", commented.Code, commented.Body.String())
+	}
+
+	s.store.mu.RLock()
+	defer s.store.mu.RUnlock()
+	for _, workflow := range s.store.Workflows {
+		if workflow.RepoFullName == repoKey && workflow.Name == "comments" {
+			if workflow.EventName != "issue_comment" ||
+				workflow.EventPayload["action"] != "created" {
+				t.Fatalf("comment run event/payload = %q/%v", workflow.EventName, workflow.EventPayload)
+			}
+			return
+		}
+	}
+	t.Fatal("issue comment mutation did not produce its Actions run")
+}
+
+func TestPullRequestReviewMutationProducesWebhookAndActionsEvent(t *testing.T) {
+	s := newTestServer()
+	s.registerRoutes()
+	repoKey := "eventbridge/review-repo"
+	commitWorkflowYAMLToStorage(t, s, repoKey, ".github/workflows/reviews.yml", `name: reviews
+on:
+  pull_request_review:
+    types: [submitted]
+jobs:
+  observe:
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo review
+`)
+	repo := s.store.GetRepoByFullName(repoKey)
+	seedPullRequestBranches(t, s, repo, "feature")
+	admin := s.store.UsersByLogin["admin"]
+	pr := s.store.CreatePullRequest(repo.ID, admin.ID, "Review source", "", "feature", "main", false, nil, nil, 0)
+	if pr == nil {
+		t.Fatal("create pull request failed")
+	}
+
+	reviewed := doMiscReq(s, "POST", "/api/v3/repos/"+repoKey+"/pulls/1/reviews",
+		`{"body":"ship it","event":"APPROVE"}`)
+	if reviewed.Code != 200 {
+		t.Fatalf("create review status = %d body=%s", reviewed.Code, reviewed.Body.String())
+	}
+	review := assertJSON(t, reviewed)
+	if review["state"] != "APPROVED" {
+		t.Fatalf("created review state = %v, want APPROVED", review["state"])
+	}
+
+	s.store.mu.RLock()
+	defer s.store.mu.RUnlock()
+	for _, workflow := range s.store.Workflows {
+		if workflow.RepoFullName == repoKey && workflow.Name == "reviews" {
+			if workflow.EventName != "pull_request_review" ||
+				workflow.EventPayload["action"] != "submitted" {
+				t.Fatalf("review run event/payload = %q/%v", workflow.EventName, workflow.EventPayload)
+			}
+			return
+		}
+	}
+	t.Fatalf("pull request review mutation did not produce its Actions run: %#v", s.store.Workflows)
+}
+
 func TestWorkflowTriggerRejectsUnresolvedRef(t *testing.T) {
 	s := newTestServer()
 	repoKey := "missingref/repo"

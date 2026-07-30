@@ -24,16 +24,16 @@ type scheduleFiredKeys struct {
 func (s *Server) startScheduleDispatcher(ctx context.Context) {
 	s.goBackground(func() {
 		for {
-			now := time.Now().UTC()
+			now := s.currentTime()
 			next := now.Truncate(time.Minute).Add(time.Minute)
-			timer := time.NewTimer(time.Until(next))
+			timer := time.NewTimer(next.Sub(now))
 			select {
 			case <-ctx.Done():
 				timer.Stop()
 				return
 			case <-timer.C:
 			}
-			s.fireDueSchedules(time.Now().UTC())
+			s.fireDueSchedules(s.currentTime())
 		}
 	})
 }

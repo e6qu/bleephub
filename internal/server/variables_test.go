@@ -259,7 +259,7 @@ func TestSecretsVariablesPersistenceReload(t *testing.T) {
 	t.Setenv("BLEEPHUB_PERSIST", "true")
 	t.Setenv("BLEEPHUB_DATA_DIR", dir)
 
-	now := time.Now().UTC().Truncate(time.Second)
+	now := time.Date(2035, time.June, 15, 12, 0, 0, 0, time.UTC)
 	repoKey := "o/r"
 	envKey := envScopeKey(repoKey, "production")
 
