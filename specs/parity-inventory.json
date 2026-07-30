@@ -3,13 +3,13 @@
     "literal_event_producers": [
       {
         "event": "check_run",
-        "line": 322,
+        "line": 406,
         "producer": "emitWebhookEvent",
         "source": "internal/server/actions_events.go"
       },
       {
         "event": "check_suite",
-        "line": 341,
+        "line": 425,
         "producer": "emitWebhookEvent",
         "source": "internal/server/actions_events.go"
       },
@@ -147,13 +147,13 @@
       },
       {
         "event": "workflow_job",
-        "line": 303,
+        "line": 387,
         "producer": "emitWebhookEvent",
         "source": "internal/server/actions_events.go"
       },
       {
         "event": "workflow_run",
-        "line": 286,
+        "line": 370,
         "producer": "emitWebhookEvent",
         "source": "internal/server/actions_events.go"
       }
@@ -2919,8 +2919,8 @@
         "id": "ACT-031",
         "location": "broker.go:318, actions_events.go:62",
         "severity": "M",
-        "status": "open",
-        "status_kind": "open"
+        "status": "fixed \u2014 lifecycle admission is lossless and non-blocking under the store lock; the unbounded condition queue cannot deadlock on its consumer or silently discard a transition",
+        "status_kind": "fixed"
       },
       {
         "category": "ACT",
@@ -2928,8 +2928,8 @@
         "id": "ACT-032",
         "location": "actions_events.go:27,100",
         "severity": "M",
-        "status": "open",
-        "status_kind": "open"
+        "status": "fixed \u2014 every transition deep-snapshots workflow inputs/event payloads and job outputs/matrix state at admission; webhook rendering uses that immutable snapshot while check mutations retain the live identity",
+        "status_kind": "fixed"
       },
       {
         "category": "ACT",
@@ -5744,8 +5744,8 @@
       "categories": {
         "ACT": {
           "status": {
-            "fixed": 29,
-            "open": 21,
+            "fixed": 31,
+            "open": 19,
             "partial": 6
           },
           "total": 56
@@ -5836,8 +5836,8 @@
       },
       "status": {
         "deferred": 1,
-        "fixed": 345,
-        "open": 236,
+        "fixed": 347,
+        "open": 234,
         "partial": 33
       },
       "total": 615

@@ -24,14 +24,15 @@ const (
 	evJobCompleted
 )
 
-// actionsEvent is one queued lifecycle transition. Payloads render the
-// CURRENT state of the run/job at drain time (drain follows the
-// transition within milliseconds; the action string is what carries the
-// transition itself).
+// actionsEvent is one queued lifecycle transition. The live pointers are used
+// only for check-state mutations; webhook payloads render the immutable
+// snapshots captured when the transition occurred.
 type actionsEvent struct {
-	kind actionsEventKind
-	wf   *Workflow
-	job  *WorkflowJob
+	kind        actionsEventKind
+	wf          *Workflow
+	job         *WorkflowJob
+	wfSnapshot  *Workflow
+	jobSnapshot *WorkflowJob
 }
 
 // actionsEventLoop fans workflow/job transitions out to the checks
@@ -42,12 +43,70 @@ type actionsEvent struct {
 // store/webhook work outside those locks.
 type actionsEventLoop struct {
 	once sync.Once
-	ch   chan actionsEvent
+	mu   sync.Mutex
+	cond *sync.Cond
+	// queue is deliberately unbounded. Producers call queueActionsEvent while
+	// holding the store lock, and the consumer needs that same lock to create
+	// checks and render webhook payloads. Blocking a producer on a bounded
+	// channel would therefore deadlock; dropping a transition makes the
+	// checks/webhook view disagree with the run. The consumer clears slots as
+	// it drains so processed events do not retain workflow payloads.
+	queue []actionsEvent
 }
 
-// queueActionsEvent enqueues a transition; safe to call while holding
-// the store lock (channel send only). A full queue drops the event with
-// an error log — that's a 4096-deep burst, not a designed failure path.
+func cloneWorkflowEventSnapshot(wf *Workflow) *Workflow {
+	if wf == nil {
+		return nil
+	}
+	snapshot := *wf
+	snapshot.Jobs = nil
+	snapshot.Env = cloneStringMap(wf.Env)
+	snapshot.Inputs = cloneStringMap(wf.Inputs)
+	snapshot.TypedInputs = cloneActionsMap(wf.TypedInputs)
+	snapshot.EventPayload = cloneActionsMap(wf.EventPayload)
+	return &snapshot
+}
+
+func cloneWorkflowJobEventSnapshot(job *WorkflowJob) *WorkflowJob {
+	if job == nil {
+		return nil
+	}
+	snapshot := *job
+	snapshot.Needs = append([]string(nil), job.Needs...)
+	snapshot.Outputs = cloneStringMap(job.Outputs)
+	snapshot.MatrixValues = cloneActionsMap(job.MatrixValues)
+	return &snapshot
+}
+
+func cloneActionsMap(values map[string]interface{}) map[string]interface{} {
+	if values == nil {
+		return nil
+	}
+	cloned := make(map[string]interface{}, len(values))
+	for key, value := range values {
+		cloned[key] = cloneActionsValue(value)
+	}
+	return cloned
+}
+
+func cloneActionsValue(value interface{}) interface{} {
+	switch typed := value.(type) {
+	case map[string]interface{}:
+		return cloneActionsMap(typed)
+	case []interface{}:
+		cloned := make([]interface{}, len(typed))
+		for index, item := range typed {
+			cloned[index] = cloneActionsValue(item)
+		}
+		return cloned
+	default:
+		return typed
+	}
+}
+
+// queueActionsEvent snapshots and enqueues a transition. It is safe to call
+// while holding the store lock: admission takes only the event-loop mutex and
+// never waits for the consumer.
 func (s *Server) queueActionsEvent(kind actionsEventKind, wf *Workflow, job *WorkflowJob) {
 	if wf == nil || wf.RepoFullName == "" {
 		return // runs without a repository have no checks surface
@@ -56,40 +115,57 @@ func (s *Server) queueActionsEvent(kind actionsEventKind, wf *Workflow, job *Wor
 		return // synthetic reusable-workflow nodes have no checks
 	}
 	s.actionsEvents.once.Do(func() {
-		s.actionsEvents.ch = make(chan actionsEvent, 4096)
+		s.actionsEvents.cond = sync.NewCond(&s.actionsEvents.mu)
 		go s.drainActionsEvents()
 	})
-	select {
-	case s.actionsEvents.ch <- actionsEvent{kind: kind, wf: wf, job: job}:
-	default:
-		s.logger.Error().Str("repo", wf.RepoFullName).Int("run", wf.RunID).
-			Msg("actions event queue full — event dropped")
+	event := actionsEvent{
+		kind:        kind,
+		wf:          wf,
+		job:         job,
+		wfSnapshot:  cloneWorkflowEventSnapshot(wf),
+		jobSnapshot: cloneWorkflowJobEventSnapshot(job),
 	}
+	s.actionsEvents.mu.Lock()
+	s.actionsEvents.queue = append(s.actionsEvents.queue, event)
+	s.actionsEvents.cond.Signal()
+	s.actionsEvents.mu.Unlock()
 }
 
 func (s *Server) drainActionsEvents() {
 	runInProgress := map[string]bool{} // workflow UUID → workflow_run in_progress emitted
-	for ev := range s.actionsEvents.ch {
+	for {
+		s.actionsEvents.mu.Lock()
+		for len(s.actionsEvents.queue) == 0 {
+			s.actionsEvents.cond.Wait()
+		}
+		ev := s.actionsEvents.queue[0]
+		s.actionsEvents.queue[0] = actionsEvent{}
+		s.actionsEvents.queue = s.actionsEvents.queue[1:]
+		if len(s.actionsEvents.queue) == 0 {
+			s.actionsEvents.queue = nil
+		}
+		s.actionsEvents.mu.Unlock()
+
 		switch ev.kind {
 		case evRunRequested:
-			s.onActionsRunRequested(ev.wf)
+			s.onActionsRunRequestedSnapshot(ev.wf, ev.wfSnapshot)
 		case evRunCompleted:
 			delete(runInProgress, ev.wf.ID)
-			s.onActionsRunCompleted(ev.wf)
+			s.onActionsRunCompletedSnapshot(ev.wf, ev.wfSnapshot)
 		case evJobQueued:
-			s.emitWorkflowJobEvent(ev.wf, ev.job, "queued")
+			s.emitWorkflowJobEvent(ev.wfSnapshot, ev.jobSnapshot, "queued")
 		case evJobWaiting:
-			s.emitWorkflowJobEvent(ev.wf, ev.job, "waiting")
+			s.emitWorkflowJobEvent(ev.wfSnapshot, ev.jobSnapshot, "waiting")
 		case evJobInProgress:
 			s.updateJobCheckRun(ev.wf, ev.job, "in_progress", "")
 			if !runInProgress[ev.wf.ID] {
 				runInProgress[ev.wf.ID] = true
-				s.emitWorkflowRunEvent(ev.wf, "in_progress")
+				s.emitWorkflowRunEvent(ev.wfSnapshot, "in_progress")
 			}
-			s.emitWorkflowJobEvent(ev.wf, ev.job, "in_progress")
+			s.emitWorkflowJobEvent(ev.wfSnapshot, ev.jobSnapshot, "in_progress")
 		case evJobCompleted:
 			s.completeJobCheckRun(ev.wf, ev.job)
-			s.emitWorkflowJobEvent(ev.wf, ev.job, "completed")
+			s.emitWorkflowJobEvent(ev.wfSnapshot, ev.jobSnapshot, "completed")
 		}
 	}
 }
@@ -98,6 +174,10 @@ func (s *Server) drainActionsEvents() {
 // run per visible job, then emits check_suite + workflow_run
 // "requested" events.
 func (s *Server) onActionsRunRequested(wf *Workflow) {
+	s.onActionsRunRequestedSnapshot(wf, cloneWorkflowEventSnapshot(wf))
+}
+
+func (s *Server) onActionsRunRequestedSnapshot(wf, snapshot *Workflow) {
 	repoKey := wf.RepoFullName
 	branch := refShortName(wf.Ref)
 
@@ -143,12 +223,16 @@ func (s *Server) onActionsRunRequested(wf *Workflow) {
 	}
 
 	s.emitCheckSuiteEvent(repoKey, suite.ID, "requested")
-	s.emitWorkflowRunEvent(wf, "requested")
+	s.emitWorkflowRunEvent(snapshot, "requested")
 }
 
 // onActionsRunCompleted rolls the suite up and emits the completed
 // events.
 func (s *Server) onActionsRunCompleted(wf *Workflow) {
+	s.onActionsRunCompletedSnapshot(wf, cloneWorkflowEventSnapshot(wf))
+}
+
+func (s *Server) onActionsRunCompletedSnapshot(wf, snapshot *Workflow) {
 	repoKey := wf.RepoFullName
 
 	s.store.mu.RLock()
@@ -178,7 +262,7 @@ func (s *Server) onActionsRunCompleted(wf *Workflow) {
 		s.store.mu.Unlock()
 		s.emitCheckSuiteEvent(repoKey, suiteID, "completed")
 	}
-	s.emitWorkflowRunEvent(wf, "completed")
+	s.emitWorkflowRunEvent(snapshot, "completed")
 }
 
 // updateJobCheckRun moves a job's check run to a new status.
