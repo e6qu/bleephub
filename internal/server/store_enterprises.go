@@ -80,28 +80,34 @@ type EnterpriseCodeSecurityAttachment struct {
 // first access paths that seed them in NewStore.
 type EnterpriseSettings struct {
 	// Enterprise administration settings.
-	Announcement                   *EnterpriseAnnouncement                  `json:"announcement,omitempty"`
-	AccessRestrictionsEnabled      bool                                     `json:"access_restrictions_enabled"`
-	CodeSecurityAndAnalysis        EnterpriseCodeSecurity                   `json:"code_security_and_analysis"`
-	AuditLogStreams                []*EnterpriseAuditLogStream              `json:"audit_log_streams,omitempty"`
-	NextAuditLogStreamID           int                                      `json:"next_audit_log_stream_id"`
-	RepositoryCustomProperties     map[string]*CustomProperty               `json:"repository_custom_properties,omitempty"`
-	OrganizationCustomProperties   map[string]*CustomProperty               `json:"organization_custom_properties,omitempty"`
-	OrganizationPropertyValues     map[string]map[string]interface{}        `json:"organization_property_values,omitempty"`
-	SCIMUsers                      map[string]*EnterpriseSCIMUser           `json:"scim_users,omitempty"`
-	SCIMGroups                     map[string]*EnterpriseSCIMGroup          `json:"scim_groups,omitempty"`
-	EnterpriseRoleTeamAssignments  map[int][]int                            `json:"enterprise_role_team_assignments,omitempty"`
-	EnterpriseRoleUserAssignments  map[int][]int                            `json:"enterprise_role_user_assignments,omitempty"`
-	VisualStudioSubscriptions      map[string]*VisualStudioSubscription     `json:"visual_studio_subscriptions,omitempty"`
-	InnerSourceSyncJobs            map[string]*EnterpriseInnerSourceSyncJob `json:"innersource_sync_jobs,omitempty"`
-	EnterpriseCopilotSeats         map[string]*CopilotSeat                  `json:"enterprise_copilot_seats,omitempty"`
-	CopilotCustomAgentsSourceOrgID int                                      `json:"copilot_custom_agents_source_org_id,omitempty"`
-	CopilotCustomAgentsRulesetID   int                                      `json:"copilot_custom_agents_ruleset_id,omitempty"`
-	EnterpriseBudgets              map[string]*OrgBudget                    `json:"enterprise_budgets,omitempty"`
-	EnterpriseCostCenters          map[string]*EnterpriseCostCenter         `json:"enterprise_cost_centers,omitempty"`
-	EnterpriseBillingReports       map[string]*EnterpriseBillingReport      `json:"enterprise_billing_reports,omitempty"`
-	GHESManagement                 *GHESManagementState                     `json:"ghes_management,omitempty"`
-	GHESGlobalHooks                []*Webhook                               `json:"ghes_global_hooks,omitempty"`
+	Announcement                    *EnterpriseAnnouncement                    `json:"announcement,omitempty"`
+	AccessRestrictionsEnabled       bool                                       `json:"access_restrictions_enabled"`
+	CodeSecurityAndAnalysis         EnterpriseCodeSecurity                     `json:"code_security_and_analysis"`
+	AuditLogStreams                 []*EnterpriseAuditLogStream                `json:"audit_log_streams,omitempty"`
+	NextAuditLogStreamID            int                                        `json:"next_audit_log_stream_id"`
+	RepositoryCustomProperties      map[string]*CustomProperty                 `json:"repository_custom_properties,omitempty"`
+	OrganizationCustomProperties    map[string]*CustomProperty                 `json:"organization_custom_properties,omitempty"`
+	OrganizationPropertyValues      map[string]map[string]interface{}          `json:"organization_property_values,omitempty"`
+	SCIMUsers                       map[string]*EnterpriseSCIMUser             `json:"scim_users,omitempty"`
+	SCIMGroups                      map[string]*EnterpriseSCIMGroup            `json:"scim_groups,omitempty"`
+	EnterpriseRoleTeamAssignments   map[int][]int                              `json:"enterprise_role_team_assignments,omitempty"`
+	EnterpriseRoleUserAssignments   map[int][]int                              `json:"enterprise_role_user_assignments,omitempty"`
+	VisualStudioSubscriptions       map[string]*VisualStudioSubscription       `json:"visual_studio_subscriptions,omitempty"`
+	InnerSourceSyncJobs             map[string]*EnterpriseInnerSourceSyncJob   `json:"innersource_sync_jobs,omitempty"`
+	EnterpriseCopilotSeats          map[string]*CopilotSeat                    `json:"enterprise_copilot_seats,omitempty"`
+	CopilotCustomAgentsSourceOrgID  int                                        `json:"copilot_custom_agents_source_org_id,omitempty"`
+	CopilotCustomAgentsRulesetID    int                                        `json:"copilot_custom_agents_ruleset_id,omitempty"`
+	EnterpriseBudgets               map[string]*OrgBudget                      `json:"enterprise_budgets,omitempty"`
+	EnterpriseCostCenters           map[string]*EnterpriseCostCenter           `json:"enterprise_cost_centers,omitempty"`
+	EnterpriseBillingReports        map[string]*EnterpriseBillingReport        `json:"enterprise_billing_reports,omitempty"`
+	GHESManagement                  *GHESManagementState                       `json:"ghes_management,omitempty"`
+	GHESGlobalHooks                 []*Webhook                                 `json:"ghes_global_hooks,omitempty"`
+	GHESPreReceiveEnvironments      map[int]*GHESPreReceiveEnvironment         `json:"ghes_pre_receive_environments,omitempty"`
+	GHESPreReceiveHooks             map[int]*GHESPreReceiveHook                `json:"ghes_pre_receive_hooks,omitempty"`
+	GHESOrgPreReceiveOverrides      map[string]map[int]*GHESPreReceiveOverride `json:"ghes_org_pre_receive_overrides,omitempty"`
+	GHESRepoPreReceiveOverrides     map[string]map[int]*GHESPreReceiveOverride `json:"ghes_repo_pre_receive_overrides,omitempty"`
+	NextGHESPreReceiveEnvironmentID int                                        `json:"next_ghes_pre_receive_environment_id"`
+	NextGHESPreReceiveHookID        int                                        `json:"next_ghes_pre_receive_hook_id"`
 
 	// Dependabot repository access across organizations.
 	DependabotAccessibleRepoIDs []int  `json:"dependabot_accessible_repo_ids"`
@@ -182,6 +188,24 @@ func defaultEnterpriseSettings() *EnterpriseSettings {
 func normalizeEnterpriseSettings(settings *EnterpriseSettings) *EnterpriseSettings {
 	for _, hook := range settings.GHESGlobalHooks {
 		hook.Global = true
+	}
+	if settings.GHESPreReceiveEnvironments == nil {
+		settings.GHESPreReceiveEnvironments = map[int]*GHESPreReceiveEnvironment{}
+	}
+	if settings.GHESPreReceiveHooks == nil {
+		settings.GHESPreReceiveHooks = map[int]*GHESPreReceiveHook{}
+	}
+	if settings.GHESOrgPreReceiveOverrides == nil {
+		settings.GHESOrgPreReceiveOverrides = map[string]map[int]*GHESPreReceiveOverride{}
+	}
+	if settings.GHESRepoPreReceiveOverrides == nil {
+		settings.GHESRepoPreReceiveOverrides = map[string]map[int]*GHESPreReceiveOverride{}
+	}
+	if settings.NextGHESPreReceiveEnvironmentID == 0 {
+		settings.NextGHESPreReceiveEnvironmentID = 1
+	}
+	if settings.NextGHESPreReceiveHookID == 0 {
+		settings.NextGHESPreReceiveHookID = 1
 	}
 	if settings.NextAuditLogStreamID == 0 {
 		settings.NextAuditLogStreamID = 1
