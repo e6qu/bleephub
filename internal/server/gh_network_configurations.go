@@ -77,8 +77,11 @@ func newHostedComputeIDFromReader(random io.Reader) (string, error) {
 }
 
 func (s *Server) handleListOrgNetworkConfigurations(w http.ResponseWriter, r *http.Request) {
-	org := r.PathValue("org")
-	configs := s.store.ListNetworkConfigurations(org)
+	s.handleListNetworkConfigurationsForScope(w, r, r.PathValue("org"))
+}
+
+func (s *Server) handleListNetworkConfigurationsForScope(w http.ResponseWriter, r *http.Request, scope string) {
+	configs := s.store.ListNetworkConfigurations(scope)
 	total := len(configs)
 	configs = paginateAndLink(w, r, configs)
 	out := make([]map[string]interface{}, 0, len(configs))
@@ -128,7 +131,10 @@ func (s *Server) validateNetworkConfigurationRequest(w http.ResponseWriter, org 
 }
 
 func (s *Server) handleCreateOrgNetworkConfiguration(w http.ResponseWriter, r *http.Request) {
-	org := r.PathValue("org")
+	s.handleCreateNetworkConfigurationForScope(w, r, r.PathValue("org"))
+}
+
+func (s *Server) handleCreateNetworkConfigurationForScope(w http.ResponseWriter, r *http.Request, scope string) {
 	var req networkConfigurationRequest
 	if !decodeJSONBody(w, r, &req) {
 		return
@@ -137,10 +143,10 @@ func (s *Server) handleCreateOrgNetworkConfiguration(w http.ResponseWriter, r *h
 		writeGHValidationError(w, "NetworkConfiguration", "name", "missing_field")
 		return
 	}
-	if !s.validateNetworkConfigurationRequest(w, org, &req, true) {
+	if !s.validateNetworkConfigurationRequest(w, scope, &req, true) {
 		return
 	}
-	c, err := s.store.CreateNetworkConfiguration(org, &req)
+	c, err := s.store.CreateNetworkConfiguration(scope, &req)
 	if err != nil {
 		writeGHError(w, http.StatusInternalServerError, err.Error())
 		return
@@ -149,7 +155,11 @@ func (s *Server) handleCreateOrgNetworkConfiguration(w http.ResponseWriter, r *h
 }
 
 func (s *Server) handleGetOrgNetworkConfiguration(w http.ResponseWriter, r *http.Request) {
-	c := s.store.GetNetworkConfiguration(r.PathValue("org"), r.PathValue("network_configuration_id"))
+	s.handleGetNetworkConfigurationForScope(w, r, r.PathValue("org"))
+}
+
+func (s *Server) handleGetNetworkConfigurationForScope(w http.ResponseWriter, r *http.Request, scope string) {
+	c := s.store.GetNetworkConfiguration(scope, r.PathValue("network_configuration_id"))
 	if c == nil {
 		writeGHError(w, http.StatusNotFound, "Not Found")
 		return
@@ -158,8 +168,11 @@ func (s *Server) handleGetOrgNetworkConfiguration(w http.ResponseWriter, r *http
 }
 
 func (s *Server) handleUpdateOrgNetworkConfiguration(w http.ResponseWriter, r *http.Request) {
-	org := r.PathValue("org")
-	c := s.store.GetNetworkConfiguration(org, r.PathValue("network_configuration_id"))
+	s.handleUpdateNetworkConfigurationForScope(w, r, r.PathValue("org"))
+}
+
+func (s *Server) handleUpdateNetworkConfigurationForScope(w http.ResponseWriter, r *http.Request, scope string) {
+	c := s.store.GetNetworkConfiguration(scope, r.PathValue("network_configuration_id"))
 	if c == nil {
 		writeGHError(w, http.StatusNotFound, "Not Found")
 		return
@@ -168,10 +181,10 @@ func (s *Server) handleUpdateOrgNetworkConfiguration(w http.ResponseWriter, r *h
 	if !decodeJSONBody(w, r, &req) {
 		return
 	}
-	if !s.validateNetworkConfigurationRequest(w, org, &req, false) {
+	if !s.validateNetworkConfigurationRequest(w, scope, &req, false) {
 		return
 	}
-	updated := s.store.UpdateNetworkConfiguration(org, c.ID, &req)
+	updated := s.store.UpdateNetworkConfiguration(scope, c.ID, &req)
 	if !mutated(w, updated) {
 		return
 	}
@@ -179,8 +192,11 @@ func (s *Server) handleUpdateOrgNetworkConfiguration(w http.ResponseWriter, r *h
 }
 
 func (s *Server) handleDeleteOrgNetworkConfiguration(w http.ResponseWriter, r *http.Request) {
-	org := r.PathValue("org")
-	if !s.store.DeleteNetworkConfiguration(org, r.PathValue("network_configuration_id")) {
+	s.handleDeleteNetworkConfigurationForScope(w, r, r.PathValue("org"))
+}
+
+func (s *Server) handleDeleteNetworkConfigurationForScope(w http.ResponseWriter, r *http.Request, scope string) {
+	if !s.store.DeleteNetworkConfiguration(scope, r.PathValue("network_configuration_id")) {
 		writeGHError(w, http.StatusNotFound, "Not Found")
 		return
 	}
@@ -188,7 +204,11 @@ func (s *Server) handleDeleteOrgNetworkConfiguration(w http.ResponseWriter, r *h
 }
 
 func (s *Server) handleGetOrgNetworkSettings(w http.ResponseWriter, r *http.Request) {
-	res := s.store.GetNetworkSettings(r.PathValue("org"), r.PathValue("network_settings_id"))
+	s.handleGetNetworkSettingsForScope(w, r, r.PathValue("org"))
+}
+
+func (s *Server) handleGetNetworkSettingsForScope(w http.ResponseWriter, r *http.Request, scope string) {
+	res := s.store.GetNetworkSettings(scope, r.PathValue("network_settings_id"))
 	if res == nil {
 		writeGHError(w, http.StatusNotFound, "Not Found")
 		return
@@ -317,7 +337,7 @@ func (st *Store) CreateNetworkConfiguration(orgLogin string, req *networkConfigu
 		ComputeService:             "none",
 		NetworkSettingsIDs:         req.NetworkSettingsIDs,
 		FailoverNetworkSettingsIDs: req.FailoverNetworkSettingsIDs,
-		CreatedOn:                  time.Now().UTC(),
+		CreatedOn:                  st.currentTime(),
 	}
 	if req.ComputeService != nil {
 		c.ComputeService = *req.ComputeService

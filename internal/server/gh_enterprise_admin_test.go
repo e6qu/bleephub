@@ -200,3 +200,59 @@ func TestEnterpriseAuditLogAndStreamLifecycle(t *testing.T) {
 		t.Fatalf("get deleted audit stream = %d %q, want 404", rec.Code, rec.Body.String())
 	}
 }
+
+func TestEnterpriseNetworkConfigurationsArePersistentAndScopeIsolated(t *testing.T) {
+	s := newTestServer()
+	s.registerGHEnterpriseAdminRoutes()
+	s.replaceClockNow(func() time.Time { return fixedTestTime })
+	scope := s.enterpriseNetworkScope()
+	settings, err := s.store.CreateNetworkSettings(scope, "enterprise-private-network", "/subscriptions/enterprise/subnets/actions", "eastus")
+	if err != nil {
+		t.Fatalf("create enterprise network settings: %v", err)
+	}
+	orgSettings, err := s.store.CreateNetworkSettings("network-scope-org", "org-private-network", "/subscriptions/org/subnets/actions", "westus")
+	if err != nil {
+		t.Fatalf("create org network settings: %v", err)
+	}
+	base := "/api/v3/enterprises/bleephub/network-configurations"
+	rec := enterpriseActionsRequest(t, s, http.MethodPost, base, map[string]interface{}{
+		"name": "enterprise_network", "compute_service": "actions",
+		"network_settings_ids": []string{settings.ID},
+	})
+	created := decodeRecorderObject(t, rec)
+	if rec.Code != http.StatusCreated || created["name"] != "enterprise_network" ||
+		created["created_on"] != fixedTestTime.Format(time.RFC3339) {
+		t.Fatalf("create enterprise network configuration = %d %#v", rec.Code, created)
+	}
+	id, _ := created["id"].(string)
+	if id == "" {
+		t.Fatalf("enterprise network configuration has no id: %#v", created)
+	}
+	rec = enterpriseActionsRequest(t, s, http.MethodGet, base, nil)
+	listed := decodeRecorderObject(t, rec)
+	if listed["total_count"] != float64(1) {
+		t.Fatalf("enterprise network configurations = %#v", listed)
+	}
+	rec = enterpriseActionsRequest(t, s, http.MethodGet,
+		"/api/v3/enterprises/bleephub/network-settings/"+settings.ID, nil)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("get enterprise settings = %d %q", rec.Code, rec.Body.String())
+	}
+	rec = enterpriseActionsRequest(t, s, http.MethodGet,
+		"/api/v3/enterprises/bleephub/network-settings/"+orgSettings.ID, nil)
+	if rec.Code != http.StatusNotFound {
+		t.Fatalf("cross-scope org settings = %d %q, want 404", rec.Code, rec.Body.String())
+	}
+	rec = enterpriseActionsRequest(t, s, http.MethodPatch, base+"/"+id, map[string]interface{}{
+		"name": "enterprise_network_updated", "failover_network_enabled": true,
+	})
+	updated := decodeRecorderObject(t, rec)
+	if rec.Code != http.StatusOK || updated["name"] != "enterprise_network_updated" ||
+		updated["failover_network_enabled"] != true {
+		t.Fatalf("update enterprise network configuration = %d %#v", rec.Code, updated)
+	}
+	rec = enterpriseActionsRequest(t, s, http.MethodDelete, base+"/"+id, nil)
+	if rec.Code != http.StatusNoContent {
+		t.Fatalf("delete enterprise network configuration = %d %q", rec.Code, rec.Body.String())
+	}
+}

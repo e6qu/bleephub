@@ -80,6 +80,13 @@ func TestEnterpriseStatePersistenceReload(t *testing.T) {
 		CreatedAt:      pausedAt, UpdatedAt: pausedAt, PausedAt: &pausedAt,
 	}}
 	st1.EnterpriseSettings.NextAuditLogStreamID = 8
+	st1.EnterpriseSettings.RepositoryCustomProperties["environment"] = &CustomProperty{
+		PropertyName: "environment", ValueType: "single_select", AllowedValues: []string{"prod", "dev"},
+	}
+	st1.EnterpriseSettings.OrganizationCustomProperties["cost_center"] = &CustomProperty{
+		PropertyName: "cost_center", ValueType: "string", ValuesEditableBy: "enterprise_actors",
+	}
+	st1.EnterpriseSettings.OrganizationPropertyValues["reload-org"] = map[string]interface{}{"cost_center": "CC-42"}
 	st1.EnterpriseSettings.OIDCIncludeEnterpriseSlug = true
 	st1.EnterpriseSettings.ActionsEnabledOrganizations = "selected"
 	st1.EnterpriseSettings.ActionsAllowedActions = "selected"
@@ -101,6 +108,21 @@ func TestEnterpriseStatePersistenceReload(t *testing.T) {
 	st1.EnterpriseSettings.ActionsDisableSelfHostedRunners = true
 	st1.persistEnterpriseSettings()
 	st1.mu.Unlock()
+	enterpriseNetworkScope := "enterprise:bleephub"
+	enterpriseNetworkSettings, err := st1.CreateNetworkSettings(
+		enterpriseNetworkScope, "reload-enterprise-network", "/subscriptions/reload/subnets/actions", "eastus")
+	if err != nil {
+		t.Fatalf("CreateNetworkSettings: %v", err)
+	}
+	enterpriseNetworkName := "reload_enterprise_network"
+	enterpriseComputeService := "actions"
+	enterpriseNetwork, err := st1.CreateNetworkConfiguration(enterpriseNetworkScope, &networkConfigurationRequest{
+		Name: &enterpriseNetworkName, ComputeService: &enterpriseComputeService,
+		NetworkSettingsIDs: []string{enterpriseNetworkSettings.ID},
+	})
+	if err != nil {
+		t.Fatalf("CreateNetworkConfiguration: %v", err)
+	}
 	enterpriseImage := st1.CreateEnterpriseHostedRunnerCustomImage(
 		"bleephub", "Reload Enterprise Image", "linux-x64")
 	if !st1.AddHostedRunnerCustomImageVersion(enterpriseImage.ID, "1.0.0", 30) {
@@ -167,6 +189,10 @@ func TestEnterpriseStatePersistenceReload(t *testing.T) {
 	if st2.NextEnterpriseCodeSecurityConfigID <= cfg.ID {
 		t.Errorf("configuration ID counter = %d, want > %d", st2.NextEnterpriseCodeSecurityConfigID, cfg.ID)
 	}
+	if st2.GetNetworkConfiguration(enterpriseNetworkScope, enterpriseNetwork.ID) == nil ||
+		st2.GetNetworkSettings(enterpriseNetworkScope, enterpriseNetworkSettings.ID) == nil {
+		t.Error("enterprise network configuration did not persist")
+	}
 
 	s := st2.EnterpriseSettings
 	if s.Announcement == nil || s.Announcement.Announcement != "Persistent announcement" ||
@@ -182,6 +208,13 @@ func TestEnterpriseStatePersistenceReload(t *testing.T) {
 		s.AuditLogStreams[0].VendorSpecific["encrypted_token"] != "sealed" ||
 		s.NextAuditLogStreamID != 8 {
 		t.Errorf("enterprise audit streams = %+v, next=%d", s.AuditLogStreams, s.NextAuditLogStreamID)
+	}
+	if s.RepositoryCustomProperties["environment"] == nil ||
+		len(s.RepositoryCustomProperties["environment"].AllowedValues) != 2 ||
+		s.OrganizationCustomProperties["cost_center"] == nil ||
+		s.OrganizationPropertyValues["reload-org"]["cost_center"] != "CC-42" {
+		t.Errorf("enterprise custom properties = repo:%+v org:%+v values:%+v",
+			s.RepositoryCustomProperties, s.OrganizationCustomProperties, s.OrganizationPropertyValues)
 	}
 	if len(s.DependabotAccessibleRepoIDs) != 1 || s.DependabotAccessibleRepoIDs[0] != repo.ID {
 		t.Errorf("dependabot access = %v", s.DependabotAccessibleRepoIDs)

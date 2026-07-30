@@ -80,11 +80,14 @@ type EnterpriseCodeSecurityAttachment struct {
 // first access paths that seed them in NewStore.
 type EnterpriseSettings struct {
 	// Enterprise administration settings.
-	Announcement              *EnterpriseAnnouncement     `json:"announcement,omitempty"`
-	AccessRestrictionsEnabled bool                        `json:"access_restrictions_enabled"`
-	CodeSecurityAndAnalysis   EnterpriseCodeSecurity      `json:"code_security_and_analysis"`
-	AuditLogStreams           []*EnterpriseAuditLogStream `json:"audit_log_streams,omitempty"`
-	NextAuditLogStreamID      int                         `json:"next_audit_log_stream_id"`
+	Announcement                 *EnterpriseAnnouncement           `json:"announcement,omitempty"`
+	AccessRestrictionsEnabled    bool                              `json:"access_restrictions_enabled"`
+	CodeSecurityAndAnalysis      EnterpriseCodeSecurity            `json:"code_security_and_analysis"`
+	AuditLogStreams              []*EnterpriseAuditLogStream       `json:"audit_log_streams,omitempty"`
+	NextAuditLogStreamID         int                               `json:"next_audit_log_stream_id"`
+	RepositoryCustomProperties   map[string]*CustomProperty        `json:"repository_custom_properties,omitempty"`
+	OrganizationCustomProperties map[string]*CustomProperty        `json:"organization_custom_properties,omitempty"`
+	OrganizationPropertyValues   map[string]map[string]interface{} `json:"organization_property_values,omitempty"`
 
 	// Dependabot repository access across organizations.
 	DependabotAccessibleRepoIDs []int  `json:"dependabot_accessible_repo_ids"`
@@ -165,6 +168,15 @@ func defaultEnterpriseSettings() *EnterpriseSettings {
 func normalizeEnterpriseSettings(settings *EnterpriseSettings) *EnterpriseSettings {
 	if settings.NextAuditLogStreamID == 0 {
 		settings.NextAuditLogStreamID = 1
+	}
+	if settings.RepositoryCustomProperties == nil {
+		settings.RepositoryCustomProperties = map[string]*CustomProperty{}
+	}
+	if settings.OrganizationCustomProperties == nil {
+		settings.OrganizationCustomProperties = map[string]*CustomProperty{}
+	}
+	if settings.OrganizationPropertyValues == nil {
+		settings.OrganizationPropertyValues = map[string]map[string]interface{}{}
 	}
 	if settings.ActionsCacheRetentionDays == 0 {
 		settings.ActionsCacheRetentionDays = 14

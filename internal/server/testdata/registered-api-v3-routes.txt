@@ -18,6 +18,9 @@ DELETE /api/v3/enterprises/{enterprise}/announcement
 DELETE /api/v3/enterprises/{enterprise}/audit-log/streams/{stream_id}
 DELETE /api/v3/enterprises/{enterprise}/code-security/configurations/{configuration_id}
 DELETE /api/v3/enterprises/{enterprise}/copilot/policies/coding_agent/organizations
+DELETE /api/v3/enterprises/{enterprise}/network-configurations/{network_configuration_id}
+DELETE /api/v3/enterprises/{enterprise}/org-properties/schema/{custom_property_name}
+DELETE /api/v3/enterprises/{enterprise}/properties/schema/{custom_property_name}
 DELETE /api/v3/enterprises/{enterprise}/teams/{team_slug}
 DELETE /api/v3/enterprises/{enterprise}/teams/{team_slug}/memberships/{username}
 DELETE /api/v3/enterprises/{enterprise}/teams/{team_slug}/organizations/{org}
@@ -271,6 +274,14 @@ GET /api/v3/enterprises/{enterprise}/copilot/metrics/reports/users-1-day
 GET /api/v3/enterprises/{enterprise}/copilot/metrics/reports/users-28-day/latest
 GET /api/v3/enterprises/{enterprise}/dependabot/alerts
 GET /api/v3/enterprises/{enterprise}/dependabot/repository-access
+GET /api/v3/enterprises/{enterprise}/network-configurations
+GET /api/v3/enterprises/{enterprise}/network-configurations/{network_configuration_id}
+GET /api/v3/enterprises/{enterprise}/network-settings/{network_settings_id}
+GET /api/v3/enterprises/{enterprise}/org-properties/schema
+GET /api/v3/enterprises/{enterprise}/org-properties/schema/{custom_property_name}
+GET /api/v3/enterprises/{enterprise}/org-properties/values
+GET /api/v3/enterprises/{enterprise}/properties/schema
+GET /api/v3/enterprises/{enterprise}/properties/schema/{custom_property_name}
 GET /api/v3/enterprises/{enterprise}/teams
 GET /api/v3/enterprises/{enterprise}/teams/{team_slug}
 GET /api/v3/enterprises/{enterprise}/teams/{team_slug}/memberships
@@ -864,6 +875,10 @@ PATCH /api/v3/enterprises/{enterprise}/announcement
 PATCH /api/v3/enterprises/{enterprise}/code-security/configurations/{configuration_id}
 PATCH /api/v3/enterprises/{enterprise}/code_security_and_analysis
 PATCH /api/v3/enterprises/{enterprise}/dependabot/repository-access
+PATCH /api/v3/enterprises/{enterprise}/network-configurations/{network_configuration_id}
+PATCH /api/v3/enterprises/{enterprise}/org-properties/schema
+PATCH /api/v3/enterprises/{enterprise}/org-properties/values
+PATCH /api/v3/enterprises/{enterprise}/properties/schema
 PATCH /api/v3/enterprises/{enterprise}/teams/{team_slug}
 PATCH /api/v3/gists/{gist_id}
 PATCH /api/v3/gists/{gist_id}/comments/{comment_id}
@@ -959,6 +974,7 @@ POST /api/v3/enterprises/{enterprise}/credential-authorizations/revoke-all
 POST /api/v3/enterprises/{enterprise}/credential-authorizations/revoke-credential-type
 POST /api/v3/enterprises/{enterprise}/credential-authorizations/{username}/revoke
 POST /api/v3/enterprises/{enterprise}/credential-authorizations/{username}/revoke-credential-type
+POST /api/v3/enterprises/{enterprise}/network-configurations
 POST /api/v3/enterprises/{enterprise}/teams
 POST /api/v3/enterprises/{enterprise}/teams/{team_slug}/memberships/add
 POST /api/v3/enterprises/{enterprise}/teams/{team_slug}/memberships/remove
@@ -1168,6 +1184,9 @@ PUT /api/v3/enterprises/{enterprise}/audit-log/streams/{stream_id}
 PUT /api/v3/enterprises/{enterprise}/code-security/configurations/{configuration_id}/defaults
 PUT /api/v3/enterprises/{enterprise}/copilot/policies/coding_agent
 PUT /api/v3/enterprises/{enterprise}/dependabot/repository-access/default-level
+PUT /api/v3/enterprises/{enterprise}/org-properties/schema/{custom_property_name}
+PUT /api/v3/enterprises/{enterprise}/properties/schema/organizations/{org}/{custom_property_name}/promote
+PUT /api/v3/enterprises/{enterprise}/properties/schema/{custom_property_name}
 PUT /api/v3/enterprises/{enterprise}/teams/{team_slug}/memberships/{username}
 PUT /api/v3/enterprises/{enterprise}/teams/{team_slug}/organizations/{org}
 PUT /api/v3/gists/{gist_id}/star

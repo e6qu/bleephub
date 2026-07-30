@@ -38,6 +38,13 @@ func (s *Server) registerGHEnterpriseAdminRoutes() {
 	s.route("GET /api/v3/enterprises/{enterprise}/audit-log/streams/{stream_id}", s.requireEnterpriseOwner(s.handleGetEnterpriseAuditLogStream))
 	s.route("PUT /api/v3/enterprises/{enterprise}/audit-log/streams/{stream_id}", s.requireEnterpriseOwner(s.handleUpdateEnterpriseAuditLogStream))
 	s.route("DELETE /api/v3/enterprises/{enterprise}/audit-log/streams/{stream_id}", s.requireEnterpriseOwner(s.handleDeleteEnterpriseAuditLogStream))
+
+	s.route("GET /api/v3/enterprises/{enterprise}/network-configurations", s.requireEnterpriseOwner(s.handleListEnterpriseNetworkConfigurations))
+	s.route("POST /api/v3/enterprises/{enterprise}/network-configurations", s.requireEnterpriseOwner(s.handleCreateEnterpriseNetworkConfiguration))
+	s.route("GET /api/v3/enterprises/{enterprise}/network-configurations/{network_configuration_id}", s.requireEnterpriseOwner(s.handleGetEnterpriseNetworkConfiguration))
+	s.route("PATCH /api/v3/enterprises/{enterprise}/network-configurations/{network_configuration_id}", s.requireEnterpriseOwner(s.handleUpdateEnterpriseNetworkConfiguration))
+	s.route("DELETE /api/v3/enterprises/{enterprise}/network-configurations/{network_configuration_id}", s.requireEnterpriseOwner(s.handleDeleteEnterpriseNetworkConfiguration))
+	s.route("GET /api/v3/enterprises/{enterprise}/network-settings/{network_settings_id}", s.requireEnterpriseOwner(s.handleGetEnterpriseNetworkSettings))
 }
 
 func (s *Server) handleGetEnterpriseAnnouncement(w http.ResponseWriter, _ *http.Request) {
@@ -482,4 +489,32 @@ func (s *Server) handleDeleteEnterpriseAuditLogStream(w http.ResponseWriter, r *
 	}
 	s.store.mu.Unlock()
 	writeGHError(w, http.StatusNotFound, "Not Found")
+}
+
+func (s *Server) enterpriseNetworkScope() string {
+	return "enterprise:" + s.enterpriseSlug()
+}
+
+func (s *Server) handleListEnterpriseNetworkConfigurations(w http.ResponseWriter, r *http.Request) {
+	s.handleListNetworkConfigurationsForScope(w, r, s.enterpriseNetworkScope())
+}
+
+func (s *Server) handleCreateEnterpriseNetworkConfiguration(w http.ResponseWriter, r *http.Request) {
+	s.handleCreateNetworkConfigurationForScope(w, r, s.enterpriseNetworkScope())
+}
+
+func (s *Server) handleGetEnterpriseNetworkConfiguration(w http.ResponseWriter, r *http.Request) {
+	s.handleGetNetworkConfigurationForScope(w, r, s.enterpriseNetworkScope())
+}
+
+func (s *Server) handleUpdateEnterpriseNetworkConfiguration(w http.ResponseWriter, r *http.Request) {
+	s.handleUpdateNetworkConfigurationForScope(w, r, s.enterpriseNetworkScope())
+}
+
+func (s *Server) handleDeleteEnterpriseNetworkConfiguration(w http.ResponseWriter, r *http.Request) {
+	s.handleDeleteNetworkConfigurationForScope(w, r, s.enterpriseNetworkScope())
+}
+
+func (s *Server) handleGetEnterpriseNetworkSettings(w http.ResponseWriter, r *http.Request) {
+	s.handleGetNetworkSettingsForScope(w, r, s.enterpriseNetworkScope())
 }

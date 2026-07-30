@@ -17812,9 +17812,6 @@
             "DELETE /enterprises/{}/enterprise-roles/teams/{}/{}",
             "DELETE /enterprises/{}/enterprise-roles/users/{}",
             "DELETE /enterprises/{}/enterprise-roles/users/{}/{}",
-            "DELETE /enterprises/{}/network-configurations/{}",
-            "DELETE /enterprises/{}/org-properties/schema/{}",
-            "DELETE /enterprises/{}/properties/schema/{}",
             "DELETE /enterprises/{}/rulesets/{}",
             "DELETE /enterprises/{}/secret-scanning/custom-patterns",
             "DELETE /enterprises/{}/settings/billing/budgets/{}",
@@ -17856,14 +17853,6 @@
             "GET /enterprises/{}/installation",
             "GET /enterprises/{}/license-sync-status",
             "GET /enterprises/{}/members/{}/copilot",
-            "GET /enterprises/{}/network-configurations",
-            "GET /enterprises/{}/network-configurations/{}",
-            "GET /enterprises/{}/network-settings/{}",
-            "GET /enterprises/{}/org-properties/schema",
-            "GET /enterprises/{}/org-properties/schema/{}",
-            "GET /enterprises/{}/org-properties/values",
-            "GET /enterprises/{}/properties/schema",
-            "GET /enterprises/{}/properties/schema/{}",
             "GET /enterprises/{}/rulesets/{}",
             "GET /enterprises/{}/rulesets/{}/history",
             "GET /enterprises/{}/rulesets/{}/history/{}",
@@ -17924,10 +17913,6 @@
             "PATCH /enterprises/{}/apps/organizations/{}/installations/{}/repositories",
             "PATCH /enterprises/{}/apps/organizations/{}/installations/{}/repositories/add",
             "PATCH /enterprises/{}/apps/organizations/{}/installations/{}/repositories/remove",
-            "PATCH /enterprises/{}/network-configurations/{}",
-            "PATCH /enterprises/{}/org-properties/schema",
-            "PATCH /enterprises/{}/org-properties/values",
-            "PATCH /enterprises/{}/properties/schema",
             "PATCH /enterprises/{}/secret-scanning/custom-patterns/{}",
             "PATCH /enterprises/{}/secret-scanning/pattern-configurations",
             "PATCH /enterprises/{}/settings/billing/budgets/{}",
@@ -17951,7 +17936,6 @@
             "POST /enterprises/{}/copilot/billing/selected_enterprise_teams",
             "POST /enterprises/{}/copilot/billing/selected_users",
             "POST /enterprises/{}/innersource-vulnerabilities/sync",
-            "POST /enterprises/{}/network-configurations",
             "POST /enterprises/{}/rulesets",
             "POST /enterprises/{}/secret-scanning/custom-patterns",
             "POST /enterprises/{}/settings/billing/budgets",
@@ -17969,9 +17953,6 @@
             "PUT /enterprises/{}/copilot/custom-agents/source",
             "PUT /enterprises/{}/enterprise-roles/teams/{}/{}",
             "PUT /enterprises/{}/enterprise-roles/users/{}/{}",
-            "PUT /enterprises/{}/org-properties/schema/{}",
-            "PUT /enterprises/{}/properties/schema/organizations/{}/{}/promote",
-            "PUT /enterprises/{}/properties/schema/{}",
             "PUT /enterprises/{}/rulesets/{}",
             "PUT /enterprises/{}/visual-studio-subscriptions/{}",
             "PUT /repos/{}/{}/lfs",
@@ -17979,7 +17960,7 @@
             "PUT /scim/v2/enterprises/{}/Users/{}",
             "PUT /scim/v2/organizations/{}/Users/{}"
           ],
-          "represented_operations": 1284
+          "represented_operations": 1303
         },
         "ghes-2.22": {
           "documented_operations": 642,
@@ -18328,8 +18309,6 @@
             "DELETE /authorizations/{}",
             "DELETE /enterprise/announcement",
             "DELETE /enterprises/{}/apps/organizations/{}/installations/{}",
-            "DELETE /enterprises/{}/org-properties/schema/{}",
-            "DELETE /enterprises/{}/properties/schema/{}",
             "DELETE /manage/v1/access/ssh",
             "DELETE /orgs/{}/announcement",
             "DELETE /orgs/{}/custom-repository-roles/{}",
@@ -18379,11 +18358,6 @@
             "GET /enterprises/{}/code-scanning/alerts",
             "GET /enterprises/{}/dismissal-requests/secret-scanning",
             "GET /enterprises/{}/installation",
-            "GET /enterprises/{}/org-properties/schema",
-            "GET /enterprises/{}/org-properties/schema/{}",
-            "GET /enterprises/{}/org-properties/values",
-            "GET /enterprises/{}/properties/schema",
-            "GET /enterprises/{}/properties/schema/{}",
             "GET /enterprises/{}/rulesets/{}/history",
             "GET /enterprises/{}/rulesets/{}/history/{}",
             "GET /enterprises/{}/secret-scanning/alerts",
@@ -18449,9 +18423,6 @@
             "PATCH /enterprises/{}/apps/organizations/{}/installations/{}/repositories",
             "PATCH /enterprises/{}/apps/organizations/{}/installations/{}/repositories/add",
             "PATCH /enterprises/{}/apps/organizations/{}/installations/{}/repositories/remove",
-            "PATCH /enterprises/{}/org-properties/schema",
-            "PATCH /enterprises/{}/org-properties/values",
-            "PATCH /enterprises/{}/properties/schema",
             "PATCH /enterprises/{}/secret-scanning/pattern-configurations",
             "PATCH /organizations/{}/org-properties/values",
             "PATCH /orgs/{}/announcement",
@@ -18488,16 +18459,13 @@
             "POST /scim/v2/enterprises/{}/Users",
             "PUT /authorizations/clients/{}",
             "PUT /authorizations/clients/{}/{}",
-            "PUT /enterprises/{}/org-properties/schema/{}",
-            "PUT /enterprises/{}/properties/schema/organizations/{}/{}/promote",
-            "PUT /enterprises/{}/properties/schema/{}",
             "PUT /manage/v1/config/license",
             "PUT /manage/v1/config/settings",
             "PUT /repos/{}/{}/lfs",
             "PUT /scim/v2/enterprises/{}/Groups/{}",
             "PUT /scim/v2/enterprises/{}/Users/{}"
           ],
-          "represented_operations": 914
+          "represented_operations": 927
         }
       },
       "dispatch_covered_operations": [
@@ -18671,6 +18639,24 @@
         "method": "DELETE",
         "path": "/api/v3/enterprises/{enterprise}/copilot/policies/coding_agent/organizations",
         "source": "internal/server/gh_enterprise_copilot.go"
+      },
+      {
+        "line": 46,
+        "method": "DELETE",
+        "path": "/api/v3/enterprises/{enterprise}/network-configurations/{network_configuration_id}",
+        "source": "internal/server/gh_enterprise_admin.go"
+      },
+      {
+        "line": 20,
+        "method": "DELETE",
+        "path": "/api/v3/enterprises/{enterprise}/org-properties/schema/{custom_property_name}",
+        "source": "internal/server/gh_enterprise_properties.go"
+      },
+      {
+        "line": 13,
+        "method": "DELETE",
+        "path": "/api/v3/enterprises/{enterprise}/properties/schema/{custom_property_name}",
+        "source": "internal/server/gh_enterprise_properties.go"
       },
       {
         "line": 15,
@@ -20189,6 +20175,54 @@
         "method": "GET",
         "path": "/api/v3/enterprises/{enterprise}/dependabot/repository-access",
         "source": "internal/server/gh_enterprise_dependabot.go"
+      },
+      {
+        "line": 42,
+        "method": "GET",
+        "path": "/api/v3/enterprises/{enterprise}/network-configurations",
+        "source": "internal/server/gh_enterprise_admin.go"
+      },
+      {
+        "line": 44,
+        "method": "GET",
+        "path": "/api/v3/enterprises/{enterprise}/network-configurations/{network_configuration_id}",
+        "source": "internal/server/gh_enterprise_admin.go"
+      },
+      {
+        "line": 47,
+        "method": "GET",
+        "path": "/api/v3/enterprises/{enterprise}/network-settings/{network_settings_id}",
+        "source": "internal/server/gh_enterprise_admin.go"
+      },
+      {
+        "line": 16,
+        "method": "GET",
+        "path": "/api/v3/enterprises/{enterprise}/org-properties/schema",
+        "source": "internal/server/gh_enterprise_properties.go"
+      },
+      {
+        "line": 18,
+        "method": "GET",
+        "path": "/api/v3/enterprises/{enterprise}/org-properties/schema/{custom_property_name}",
+        "source": "internal/server/gh_enterprise_properties.go"
+      },
+      {
+        "line": 21,
+        "method": "GET",
+        "path": "/api/v3/enterprises/{enterprise}/org-properties/values",
+        "source": "internal/server/gh_enterprise_properties.go"
+      },
+      {
+        "line": 9,
+        "method": "GET",
+        "path": "/api/v3/enterprises/{enterprise}/properties/schema",
+        "source": "internal/server/gh_enterprise_properties.go"
+      },
+      {
+        "line": 11,
+        "method": "GET",
+        "path": "/api/v3/enterprises/{enterprise}/properties/schema/{custom_property_name}",
+        "source": "internal/server/gh_enterprise_properties.go"
       },
       {
         "line": 11,
@@ -23749,6 +23783,30 @@
         "source": "internal/server/gh_enterprise_dependabot.go"
       },
       {
+        "line": 45,
+        "method": "PATCH",
+        "path": "/api/v3/enterprises/{enterprise}/network-configurations/{network_configuration_id}",
+        "source": "internal/server/gh_enterprise_admin.go"
+      },
+      {
+        "line": 17,
+        "method": "PATCH",
+        "path": "/api/v3/enterprises/{enterprise}/org-properties/schema",
+        "source": "internal/server/gh_enterprise_properties.go"
+      },
+      {
+        "line": 22,
+        "method": "PATCH",
+        "path": "/api/v3/enterprises/{enterprise}/org-properties/values",
+        "source": "internal/server/gh_enterprise_properties.go"
+      },
+      {
+        "line": 10,
+        "method": "PATCH",
+        "path": "/api/v3/enterprises/{enterprise}/properties/schema",
+        "source": "internal/server/gh_enterprise_properties.go"
+      },
+      {
         "line": 14,
         "method": "PATCH",
         "path": "/api/v3/enterprises/{enterprise}/teams/{team_slug}",
@@ -24316,6 +24374,12 @@
         "line": 32,
         "method": "POST",
         "path": "/api/v3/enterprises/{enterprise}/credential-authorizations/{username}/revoke-credential-type",
+        "source": "internal/server/gh_enterprise_admin.go"
+      },
+      {
+        "line": 43,
+        "method": "POST",
+        "path": "/api/v3/enterprises/{enterprise}/network-configurations",
         "source": "internal/server/gh_enterprise_admin.go"
       },
       {
@@ -25571,6 +25635,24 @@
         "method": "PUT",
         "path": "/api/v3/enterprises/{enterprise}/dependabot/repository-access/default-level",
         "source": "internal/server/gh_enterprise_dependabot.go"
+      },
+      {
+        "line": 19,
+        "method": "PUT",
+        "path": "/api/v3/enterprises/{enterprise}/org-properties/schema/{custom_property_name}",
+        "source": "internal/server/gh_enterprise_properties.go"
+      },
+      {
+        "line": 14,
+        "method": "PUT",
+        "path": "/api/v3/enterprises/{enterprise}/properties/schema/organizations/{org}/{custom_property_name}/promote",
+        "source": "internal/server/gh_enterprise_properties.go"
+      },
+      {
+        "line": 12,
+        "method": "PUT",
+        "path": "/api/v3/enterprises/{enterprise}/properties/schema/{custom_property_name}",
+        "source": "internal/server/gh_enterprise_properties.go"
       },
       {
         "line": 21,
