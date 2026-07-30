@@ -354,6 +354,17 @@ export interface GithubCommit {
   }>;
 }
 
+export interface GithubComparison {
+  url: string;
+  html_url: string;
+  status: "ahead" | "behind" | "diverged" | "identical";
+  ahead_by: number;
+  behind_by: number;
+  total_commits: number;
+  commits: GithubCommit[];
+  files?: NonNullable<GithubCommit["files"]>;
+}
+
 /** Git branch. */
 export interface GithubBranch {
   name: string;
@@ -424,9 +435,9 @@ export interface GithubBranchProtectionBypassAllowances {
 }
 
 export interface GithubBranchProtectionRestrictions {
-  url: string;
-  users_url: string;
-  teams_url: string;
+  url?: string;
+  users_url?: string;
+  teams_url?: string;
   apps_url?: string;
   users: GithubActor[];
   teams: GithubTeamRef[];
@@ -644,8 +655,11 @@ export interface GithubContentItem {
   name: string;
   path: string;
   sha: string;
-  type: "file" | "dir";
+  type: "file" | "dir" | "symlink" | "submodule";
   size?: number;
+  target?: string;
+  submodule_git_url?: string;
+  download_url?: string | null;
 }
 
 /** `on.workflow_dispatch.inputs.<name>` entry parsed from workflow YAML. */

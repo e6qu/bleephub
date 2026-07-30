@@ -492,6 +492,9 @@ func (s *Server) handleUpdateIssue(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	s.store.mu.RLock()
+	previousState := issue.State
+	s.store.mu.RUnlock()
 	s.store.UpdateIssue(issue.ID, func(i *Issue) {
 		if v, ok := req["title"].(string); ok {
 			i.Title = v
@@ -535,10 +538,12 @@ func (s *Server) handleUpdateIssue(w http.ResponseWriter, r *http.Request) {
 
 	if v, ok := req["state"].(string); ok {
 		action := "edited"
-		if v == "closed" {
+		if v == "closed" && previousState != "CLOSED" {
 			action = "closed"
-		} else if v == "open" {
+			s.store.RecordIssueEvent(repo.ID, issue.ID, user.ID, action, nil)
+		} else if v == "open" && previousState != "OPEN" {
 			action = "reopened"
+			s.store.RecordIssueEvent(repo.ID, issue.ID, user.ID, action, nil)
 		}
 		repoKey := owner + "/" + repoName
 		s.emitWebhookEvent(repoKey, "issues", action, buildIssuesPayload(s.store, repo, updated, user, action))
@@ -1258,11 +1263,19 @@ func issueToJSON(issue *Issue, st *Store, baseURL, repoFullName string) map[stri
 	if issue.MilestoneID > 0 {
 		milestone = st.Milestones[issue.MilestoneID]
 	}
+	repo := st.Repos[issue.RepoID]
+	var issueType *IssueType
+	if storedType := st.issueTypeForIssueLocked(issue); storedType != nil {
+		copied := *storedType
+		issueType = &copied
+	}
 	// Count comments via the maintained index while holding the lock.
 	commentCount := st.countCommentsForLocked("issue", issue.ID)
 
 	// Snapshot the mutable scalar fields before releasing the lock.
 	issueID := issue.ID
+	repoID := issue.RepoID
+	authorID := issue.AuthorID
 	issueNumber := issue.Number
 	nodeID := issue.NodeID
 	title := issue.Title
@@ -1309,7 +1322,19 @@ func issueToJSON(issue *Issue, st *Store, baseURL, repoFullName string) map[stri
 
 	numStr := strconv.Itoa(issueNumber)
 	api := baseURL + "/api/v3/repos/" + repoFullName + "/issues/" + numStr
-	return map[string]interface{}{
+	subIssueIDs := st.ListSubIssues(issueID)
+	completedSubIssues := 0
+	for _, childID := range subIssueIDs {
+		if child := st.GetIssue(childID); child != nil && child.State == "CLOSED" {
+			completedSubIssues++
+		}
+	}
+	percentComplete := 0
+	if len(subIssueIDs) > 0 {
+		percentComplete = completedSubIssues * 100 / len(subIssueIDs)
+	}
+
+	out := map[string]interface{}{
 		"id":                 issueID,
 		"node_id":            nodeID,
 		"url":                api,
@@ -1317,6 +1342,7 @@ func issueToJSON(issue *Issue, st *Store, baseURL, repoFullName string) map[stri
 		"repository_url":     baseURL + "/api/v3/repos/" + repoFullName,
 		"comments_url":       api + "/comments",
 		"events_url":         api + "/events",
+		"timeline_url":       api + "/timeline",
 		"labels_url":         api + "/labels{/name}",
 		"number":             issueNumber,
 		"title":              title,
@@ -1334,8 +1360,41 @@ func issueToJSON(issue *Issue, st *Store, baseURL, repoFullName string) map[stri
 		"created_at":         createdAt.Format(time.RFC3339),
 		"updated_at":         updatedAt.Format(time.RFC3339),
 		"closed_at":          closedAt,
-		"reactions":          reactions,
+		"closed_by":          issueClosedByJSON(st, repoID, issueID, rawState),
+		"author_association": authorAssociation(st, authorID, repo),
+		"draft":              false,
+		"sub_issues_summary": map[string]interface{}{
+			"total":             len(subIssueIDs),
+			"completed":         completedSubIssues,
+			"percent_completed": percentComplete,
+		},
+		"reactions": reactions,
 	}
+	if issueType != nil {
+		out["type"] = issueTypeJSON(issueType)
+	}
+	return out
+}
+
+func issueClosedByJSON(st *Store, repoID, issueID int, state string) interface{} {
+	if state != "CLOSED" {
+		return nil
+	}
+	events := st.ListIssueEvents(repoID, issueID)
+	for i := len(events) - 1; i >= 0; i-- {
+		if events[i].Event != "closed" {
+			continue
+		}
+		st.mu.RLock()
+		actor := actorUserLocked(st, events[i].ActorID)
+		var out interface{}
+		if actor != nil {
+			out = userToJSON(actor)
+		}
+		st.mu.RUnlock()
+		return out
+	}
+	return nil
 }
 
 func commentToJSON(c *Comment, st *Store, baseURL, repoFullName string, issueNumber int) map[string]interface{} {

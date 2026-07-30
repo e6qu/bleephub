@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	pathpkg "path"
 	"strings"
 	"time"
 
@@ -41,7 +42,11 @@ func (s *Server) handleListCommits(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	commits, err := s.listRepoCommits(repo, owner, repoName, r.URL.Query().Get("sha"), s.baseURL(r))
+	options, ok := parseListCommitsOptions(w, r)
+	if !ok {
+		return
+	}
+	commits, err := s.listRepoCommits(repo, owner, repoName, options, s.baseURL(r))
 	if err != nil {
 		switch {
 		case errors.Is(err, errRepoGitRepositoryEmpty):
@@ -58,12 +63,47 @@ func (s *Server) handleListCommits(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, paginateAndLink(w, r, commits))
 }
 
-func (s *Server) listRepoCommits(repo *Repo, owner, repoName, refName, baseURL string) ([]map[string]interface{}, error) {
+type listCommitsOptions struct {
+	Ref    string
+	Path   string
+	Author string
+	Since  *time.Time
+	Until  *time.Time
+}
+
+func parseListCommitsOptions(w http.ResponseWriter, r *http.Request) (listCommitsOptions, bool) {
+	query := r.URL.Query()
+	options := listCommitsOptions{
+		Ref:    query.Get("sha"),
+		Path:   strings.Trim(query.Get("path"), "/"),
+		Author: strings.TrimSpace(query.Get("author")),
+	}
+	for name, target := range map[string]**time.Time{
+		"since": &options.Since,
+		"until": &options.Until,
+	} {
+		raw := query.Get(name)
+		if raw == "" {
+			continue
+		}
+		parsed, err := time.Parse(time.RFC3339, raw)
+		if err != nil {
+			writeGHValidationError(w, "Commit", name, "invalid")
+			return listCommitsOptions{}, false
+		}
+		parsed = parsed.UTC()
+		*target = &parsed
+	}
+	return options, true
+}
+
+func (s *Server) listRepoCommits(repo *Repo, owner, repoName string, options listCommitsOptions, baseURL string) ([]map[string]interface{}, error) {
 	stor := s.store.GetGitStorage(owner, repoName)
 	if stor == nil {
 		return nil, errRepoGitStorageUnavailable
 	}
 
+	refName := options.Ref
 	usingDefault := refName == ""
 	if usingDefault {
 		refName = repo.DefaultBranch
@@ -76,26 +116,94 @@ func (s *Server) listRepoCommits(repo *Repo, owner, repoName, refName, baseURL s
 		return nil, fmt.Errorf("%w: %v", errRepoGitRefUnavailable, err)
 	}
 
-	// Walk commits
-	var commits []map[string]interface{}
-	for i := 0; i < 1000; i++ {
-		commit, err := object.GetCommit(stor, hash)
-		if err != nil {
-			return nil, errRepoGitObjectUnavailable
-		}
-
-		commits = append(commits, commitToJSON(commit, repo, baseURL))
-
-		if commit.NumParents() == 0 {
-			break
-		}
-		hash = commit.ParentHashes[0]
+	head, err := object.GetCommit(stor, hash)
+	if err != nil {
+		return nil, errRepoGitObjectUnavailable
 	}
+	iter := object.NewCommitPreorderIter(head, nil, nil)
+	defer iter.Close()
 
-	if commits == nil {
-		commits = []map[string]interface{}{}
+	commits := make([]map[string]interface{}, 0)
+	err = iter.ForEach(func(commit *object.Commit) error {
+		when := commit.Committer.When.UTC()
+		if options.Since != nil && when.Before(*options.Since) {
+			return nil
+		}
+		if options.Until != nil && when.After(*options.Until) {
+			return nil
+		}
+		if options.Author != "" && !s.commitMatchesAuthor(commit, options.Author) {
+			return nil
+		}
+		if options.Path != "" {
+			touches, err := commitTouchesPath(commit, options.Path)
+			if err != nil {
+				return err
+			}
+			if !touches {
+				return nil
+			}
+		}
+		commits = append(commits, commitToJSON(commit, repo, baseURL))
+		return nil
+	})
+	if err != nil {
+		return nil, errRepoGitObjectUnavailable
 	}
 	return commits, nil
+}
+
+func (s *Server) commitMatchesAuthor(commit *object.Commit, author string) bool {
+	if strings.EqualFold(commit.Author.Name, author) || strings.EqualFold(commit.Author.Email, author) {
+		return true
+	}
+	user := s.store.ResolveUserBySignature(commit.Author.Name, commit.Author.Email)
+	return user != nil && strings.EqualFold(user.Login, author)
+}
+
+func commitTouchesPath(commit *object.Commit, requested string) (bool, error) {
+	matches := func(candidate string) bool {
+		return candidate == requested || strings.HasPrefix(candidate, requested+"/")
+	}
+	tree, err := commit.Tree()
+	if err != nil {
+		return false, err
+	}
+	if commit.NumParents() == 0 {
+		found := false
+		walker := object.NewTreeWalker(tree, true, nil)
+		defer walker.Close()
+		for {
+			name, _, err := walker.Next()
+			if errors.Is(err, io.EOF) {
+				return found, nil
+			}
+			if err != nil {
+				return false, err
+			}
+			if matches(name) {
+				found = true
+			}
+		}
+	}
+	parent, err := commit.Parent(0)
+	if err != nil {
+		return false, err
+	}
+	parentTree, err := parent.Tree()
+	if err != nil {
+		return false, err
+	}
+	changes, err := object.DiffTree(parentTree, tree)
+	if err != nil {
+		return false, err
+	}
+	for _, change := range changes {
+		if matches(change.From.Name) || matches(change.To.Name) {
+			return true, nil
+		}
+	}
+	return false, nil
 }
 
 func (s *Server) handleGetTree(w http.ResponseWriter, r *http.Request) {
@@ -797,6 +905,46 @@ func contentFileJSON(baseURL string, repo *Repo, ref, path, sha string, size int
 	}
 }
 
+func contentDirectoryEntryJSON(baseURL string, repo *Repo, ref, path string, entry object.TreeEntry, size int64) map[string]interface{} {
+	selfURL := baseURL + "/api/v3/repos/" + repo.FullName + "/contents/" + path + "?ref=" + ref
+	htmlKind := "blob"
+	gitKind := "blobs"
+	entryType := "file"
+	var downloadURL interface{} = baseURL + "/" + repo.FullName + "/raw/" + ref + "/" + path
+	var gitURL interface{} = baseURL + "/api/v3/repos/" + repo.FullName + "/git/" + gitKind + "/" + entry.Hash.String()
+	switch entry.Mode {
+	case filemode.Dir:
+		entryType = "dir"
+		htmlKind = "tree"
+		gitKind = "trees"
+		gitURL = baseURL + "/api/v3/repos/" + repo.FullName + "/git/" + gitKind + "/" + entry.Hash.String()
+		downloadURL = nil
+	case filemode.Symlink:
+		entryType = "symlink"
+	case filemode.Submodule:
+		entryType = "submodule"
+		gitURL = nil
+		downloadURL = nil
+	}
+	htmlURL := baseURL + "/" + repo.FullName + "/" + htmlKind + "/" + ref + "/" + path
+	return map[string]interface{}{
+		"name":         path[strings.LastIndex(path, "/")+1:],
+		"path":         path,
+		"sha":          entry.Hash.String(),
+		"size":         size,
+		"type":         entryType,
+		"url":          selfURL,
+		"git_url":      gitURL,
+		"html_url":     htmlURL,
+		"download_url": downloadURL,
+		"_links": map[string]interface{}{
+			"self": selfURL,
+			"git":  gitURL,
+			"html": htmlURL,
+		},
+	}
+}
+
 func (s *Server) handleGetContents(w http.ResponseWriter, r *http.Request) {
 	path := r.PathValue("path")
 
@@ -821,7 +969,7 @@ func (s *Server) handleGetContents(w http.ResponseWriter, r *http.Request) {
 
 	// Empty path means list the root tree.
 	if path == "" {
-		writeTreeListing(w, tree, "")
+		s.writeTreeListing(w, r, stor, repo, refName, tree, tree, "")
 		return
 	}
 
@@ -832,30 +980,32 @@ func (s *Server) handleGetContents(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if entry.Mode.IsFile() {
-		blob, err := object.GetBlob(stor, entry.Hash)
+	if entry.Mode == filemode.Symlink {
+		target, err := readBlob(stor, entry.Hash)
 		if err != nil {
-			writeGHError(w, http.StatusNotFound, "Not Found")
+			writeGHError(w, http.StatusInternalServerError, "Git object unavailable")
 			return
 		}
-
-		reader, err := blob.Reader()
-		if err != nil {
-			http.Error(w, err.Error(), http.StatusInternalServerError)
-			return
+		targetPath := pathpkg.Clean(pathpkg.Join(pathpkg.Dir(path), string(target)))
+		if targetPath != "." && targetPath != ".." && !strings.HasPrefix(targetPath, "../") {
+			if targetEntry, targetErr := tree.FindEntry(targetPath); targetErr == nil && targetEntry.Mode.IsFile() {
+				s.writeContentsFile(w, r, stor, repo, refName, path, targetEntry.Hash)
+				return
+			}
 		}
-		defer reader.Close()
-
-		content, err := io.ReadAll(reader)
-		if err != nil {
-			http.Error(w, err.Error(), http.StatusInternalServerError)
-			return
-		}
-
-		out := contentFileJSON(s.baseURL(r), repo, refName, path, entry.Hash.String(), blob.Size)
-		out["encoding"] = "base64"
-		out["content"] = base64.StdEncoding.EncodeToString(content)
+		out := contentDirectoryEntryJSON(s.baseURL(r), repo, refName, path, *entry, int64(len(target)))
+		out["target"] = string(target)
 		writeJSON(w, http.StatusOK, out)
+		return
+	}
+	if entry.Mode == filemode.Submodule {
+		out := contentDirectoryEntryJSON(s.baseURL(r), repo, refName, path, *entry, 0)
+		out["submodule_git_url"] = submoduleGitURL(stor, tree, path)
+		writeJSON(w, http.StatusOK, out)
+		return
+	}
+	if entry.Mode.IsFile() {
+		s.writeContentsFile(w, r, stor, repo, refName, path, entry.Hash)
 		return
 	}
 
@@ -866,29 +1016,135 @@ func (s *Server) handleGetContents(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeTreeListing(w, subTree, path)
+	s.writeTreeListing(w, r, stor, repo, refName, tree, subTree, path)
 }
 
-func writeTreeListing(w http.ResponseWriter, tree *object.Tree, prefix string) {
-	var items []map[string]interface{}
-	for _, e := range tree.Entries {
-		entryType := "file"
-		if !e.Mode.IsFile() {
-			entryType = "dir"
+func (s *Server) writeContentsFile(
+	w http.ResponseWriter,
+	r *http.Request,
+	stor gitStorage.Storer,
+	repo *Repo,
+	refName string,
+	requestedPath string,
+	hash plumbing.Hash,
+) {
+	blob, err := object.GetBlob(stor, hash)
+	if err != nil {
+		writeGHError(w, http.StatusInternalServerError, "Git object unavailable")
+		return
+	}
+	reader, err := blob.Reader()
+	if err != nil {
+		writeGHError(w, http.StatusInternalServerError, "Git object unavailable")
+		return
+	}
+	defer reader.Close()
+	content, err := io.ReadAll(reader)
+	if err != nil {
+		writeGHError(w, http.StatusInternalServerError, "Git object unavailable")
+		return
+	}
+
+	accept := r.Header.Get("Accept")
+	if strings.Contains(accept, "application/vnd.github.raw") {
+		w.Header().Set("Content-Type", "application/octet-stream")
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write(content)
+		return
+	}
+	if strings.Contains(accept, "application/vnd.github.html") {
+		rendered, err := s.renderMarkdown(string(content), "gfm", repo.FullName, s.baseURL(r))
+		if err != nil {
+			writeGHError(w, http.StatusInternalServerError, "Markdown rendering failed")
+			return
 		}
+		w.Header().Set("Content-Type", "text/html; charset=utf-8")
+		w.WriteHeader(http.StatusOK)
+		_, _ = io.WriteString(w, rendered)
+		return
+	}
+	out := contentFileJSON(s.baseURL(r), repo, refName, requestedPath, hash.String(), blob.Size)
+	out["encoding"] = "base64"
+	out["content"] = base64.StdEncoding.EncodeToString(content)
+	writeJSON(w, http.StatusOK, out)
+}
+
+func (s *Server) writeTreeListing(
+	w http.ResponseWriter,
+	r *http.Request,
+	stor gitStorage.Storer,
+	repo *Repo,
+	ref string,
+	root *object.Tree,
+	tree *object.Tree,
+	prefix string,
+) {
+	items := make([]map[string]interface{}, 0, len(tree.Entries))
+	for _, e := range tree.Entries {
 		itemPath := e.Name
 		if prefix != "" {
 			itemPath = prefix + "/" + e.Name
 		}
-		items = append(items, map[string]interface{}{
-			"name": e.Name,
-			"path": itemPath,
-			"sha":  e.Hash.String(),
-			"type": entryType,
-		})
+		var size int64
+		if e.Mode.IsFile() || e.Mode == filemode.Symlink {
+			blob, err := object.GetBlob(stor, e.Hash)
+			if err != nil {
+				writeGHError(w, http.StatusInternalServerError, "Git object unavailable")
+				return
+			}
+			size = blob.Size
+		}
+		item := contentDirectoryEntryJSON(s.baseURL(r), repo, ref, itemPath, e, size)
+		switch e.Mode {
+		case filemode.Symlink:
+			target, err := readBlob(stor, e.Hash)
+			if err != nil {
+				writeGHError(w, http.StatusInternalServerError, "Git object unavailable")
+				return
+			}
+			item["target"] = string(target)
+		case filemode.Submodule:
+			item["submodule_git_url"] = submoduleGitURL(stor, root, itemPath)
+		}
+		items = append(items, item)
 	}
-
+	if strings.Contains(r.Header.Get("Accept"), "application/vnd.github.object") {
+		writeJSON(w, http.StatusOK, map[string]interface{}{"type": "dir", "entries": items})
+		return
+	}
 	writeJSON(w, http.StatusOK, items)
+}
+
+func submoduleGitURL(stor gitStorage.Storer, root *object.Tree, requestedPath string) string {
+	entry, err := root.FindEntry(".gitmodules")
+	if err != nil || !entry.Mode.IsFile() {
+		return ""
+	}
+	raw, err := readBlob(stor, entry.Hash)
+	if err != nil {
+		return ""
+	}
+	var currentPath string
+	for _, line := range strings.Split(string(raw), "\n") {
+		line = strings.TrimSpace(line)
+		if strings.HasPrefix(line, "[submodule ") {
+			currentPath = ""
+			continue
+		}
+		key, value, ok := strings.Cut(line, "=")
+		if !ok {
+			continue
+		}
+		switch strings.TrimSpace(key) {
+		case "path":
+			currentPath = strings.TrimSpace(value)
+		case "url":
+			if currentPath == requestedPath {
+				return strings.TrimSpace(value)
+			}
+		}
+	}
+	return ""
 }
 
 // repoHasAnyBranch reports whether the repository has at least one branch.

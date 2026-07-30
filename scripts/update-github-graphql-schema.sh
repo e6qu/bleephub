@@ -2,11 +2,16 @@
 # Refresh GitHub's official public GraphQL schema behind an explicit digest pin.
 set -euo pipefail
 
-PIN_SHA256="f7a98392e2281c215810c5ac648c3a6940bcd49db74beb2502143f244fdb4da3"
+PIN_SHA256="c504a0ed454276c878d5a873b782fa9824f2dec3205de3370845d40977e41322"
+# GitHub's rolling docs endpoint currently alternates between two reviewed
+# feature-flag variants during the ProjectV2 multi-select/view rollout. Keep
+# the richer contract vendored, while letting the drift check recognize the
+# other official variant. Any third digest remains blocking.
+ROLLOUT_SHA256="0c5ad89a426609cf1b79679155a17609cd04d7a09914eee9c56894eea18bb031"
 SOURCE_URL="https://docs.github.com/public/fpt/schema.docs.graphql"
 
 usage() {
-  echo "usage: $0 [--sha256 <hex>] [--print-pin]" >&2
+  echo "usage: $0 [--sha256 <hex>] [--print-pin] [--print-accepted-sha256]" >&2
 }
 
 while [[ $# -gt 0 ]]; do
@@ -17,6 +22,10 @@ while [[ $# -gt 0 ]]; do
       ;;
     --print-pin)
       echo "sha256=$PIN_SHA256 source=$SOURCE_URL"
+      exit 0
+      ;;
+    --print-accepted-sha256)
+      echo "$PIN_SHA256 $ROLLOUT_SHA256"
       exit 0
       ;;
     -h|--help)
@@ -35,6 +44,13 @@ if [[ ! "$PIN_SHA256" =~ ^[0-9a-f]{64}$ ]]; then
   echo "error: sha256 pin must be 64 lowercase hex characters" >&2
   exit 2
 fi
+read -r -a rollout_sha256 <<< "$ROLLOUT_SHA256"
+for digest in "${rollout_sha256[@]}"; do
+  if [[ ! "$digest" =~ ^[0-9a-f]{64}$ ]]; then
+    echo "error: rollout sha256 must be 64 lowercase hex characters" >&2
+    exit 2
+  fi
+done
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 DEST="$ROOT/internal/server/testdata/github-graphql-schema.graphql.gz"

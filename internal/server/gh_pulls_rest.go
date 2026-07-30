@@ -1869,9 +1869,9 @@ func pullRequestToJSON(pr *PullRequest, st *Store, baseURL, repoFullName string)
 	// Snapshot before reading the mutable merge/diff fields off the pointer.
 	pr = st.snapPR(pr)
 	st.mu.RLock()
-	reviewCount := len(st.PRReviewsByPR[pr.ID])
 	commentCount := st.countCommentsForLocked("pull_request", pr.ID)
 	st.mu.RUnlock()
+	reviewCommentCount := len(st.PRReviewComments.ListForPR(pr.ID))
 
 	merged := pr.State == "MERGED"
 	mergeableState := "unknown"
@@ -1892,7 +1892,14 @@ func pullRequestToJSON(pr *PullRequest, st *Store, baseURL, repoFullName string)
 	}
 
 	out["merged"] = merged
-	out["mergeable"] = pr.Mergeable == "MERGEABLE"
+	var mergeable interface{}
+	switch pr.Mergeable {
+	case "MERGEABLE":
+		mergeable = true
+	case "CONFLICTING":
+		mergeable = false
+	}
+	out["mergeable"] = mergeable
 	out["mergeable_state"] = mergeableState
 	out["maintainer_can_modify"] = pr.MaintainerCanModify
 	out["merged_by"] = mergedByJSON
@@ -1900,7 +1907,7 @@ func pullRequestToJSON(pr *PullRequest, st *Store, baseURL, repoFullName string)
 	out["deletions"] = pr.Deletions
 	out["changed_files"] = pr.ChangedFiles
 	out["comments"] = commentCount
-	out["review_comments"] = reviewCount
+	out["review_comments"] = reviewCommentCount
 	commitCount := 0
 	if repo := st.GetRepoByID(pr.RepoID); repo != nil {
 		if commits, err := pullRequestCommitObjects(st, repo, pr); err == nil {

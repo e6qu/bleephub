@@ -396,8 +396,22 @@ func (s *Server) handleBranchProtectionPut(w http.ResponseWriter, r *http.Reques
 	}
 	branch := r.PathValue("branch")
 
+	raw, err := io.ReadAll(r.Body)
+	if err != nil || len(strings.TrimSpace(string(raw))) == 0 {
+		writeGHError(w, http.StatusBadRequest, "Problems parsing JSON")
+		return
+	}
+	var fields map[string]json.RawMessage
+	if err := json.Unmarshal(raw, &fields); err != nil {
+		writeGHError(w, http.StatusBadRequest, "Problems parsing JSON")
+		return
+	}
+	if len(fields) == 0 {
+		writeGHValidationError(w, "BranchProtection", "body", "missing_field")
+		return
+	}
 	var req bpRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil && !errors.Is(err, io.EOF) {
+	if err := json.Unmarshal(raw, &req); err != nil {
 		writeGHError(w, http.StatusBadRequest, "Problems parsing JSON")
 		return
 	}
@@ -409,9 +423,25 @@ func (s *Server) handleBranchProtectionPut(w http.ResponseWriter, r *http.Reques
 		bp = &BranchProtection{}
 	}
 	bp = s.applyBranchProtectionRequest(bp, &req)
-	s.store.Misc.branchProtection[key] = cloneBranchProtection(bp)
-	if s.store.Misc.persist != nil {
-		s.store.Misc.persist.MustPut("branch_protection", key, bp)
+	for name, clear := range map[string]func(){
+		"required_status_checks":        func() { bp.RequiredStatusChecks = nil },
+		"required_pull_request_reviews": func() { bp.RequiredPullRequestReviews = nil },
+		"restrictions":                  func() { bp.Restrictions = nil },
+	} {
+		if value, present := fields[name]; present && string(value) == "null" {
+			clear()
+		}
+	}
+	if bp.IsProtected() {
+		s.store.Misc.branchProtection[key] = cloneBranchProtection(bp)
+		if s.store.Misc.persist != nil {
+			s.store.Misc.persist.MustPut("branch_protection", key, bp)
+		}
+	} else {
+		delete(s.store.Misc.branchProtection, key)
+		if s.store.Misc.persist != nil {
+			s.store.Misc.persist.MustDelete("branch_protection", key)
+		}
 	}
 	s.store.Misc.mu.Unlock()
 
@@ -434,11 +464,7 @@ func (s *Server) handleBranchProtectionDelete(w http.ResponseWriter, r *http.Req
 // A present but null field clears the rule; an absent field leaves it unchanged.
 func (s *Server) applyBranchProtectionRequest(bp *BranchProtection, req *bpRequest) *BranchProtection {
 	if req.RequiredStatusChecks != nil {
-		if !s.isEmptyStatusChecks(req.RequiredStatusChecks) {
-			bp.RequiredStatusChecks = req.RequiredStatusChecks
-		} else {
-			bp.RequiredStatusChecks = nil
-		}
+		bp.RequiredStatusChecks = req.RequiredStatusChecks
 	}
 	if req.RequiredPullRequestReviews != nil {
 		// An explicit review-policy object enables the rule even when its
@@ -447,70 +473,30 @@ func (s *Server) applyBranchProtectionRequest(bp *BranchProtection, req *bpReque
 		bp.RequiredPullRequestReviews = req.RequiredPullRequestReviews
 	}
 	if req.EnforceAdmins != nil {
-		if bool(*req.EnforceAdmins) {
-			bp.EnforceAdmins = &BPEnforceAdmins{Enabled: true}
-		} else {
-			bp.EnforceAdmins = nil
-		}
+		bp.EnforceAdmins = &BPEnforceAdmins{Enabled: bool(*req.EnforceAdmins)}
 	}
 	if req.Restrictions != nil {
-		if !s.isEmptyRestrictions(req.Restrictions) {
-			bp.Restrictions = req.Restrictions
-		} else {
-			bp.Restrictions = nil
-		}
+		bp.Restrictions = req.Restrictions
 	}
 	if req.RequiredLinearHistory != nil {
-		if bool(*req.RequiredLinearHistory) {
-			bp.RequiredLinearHistory = &BPEnabled{Enabled: true}
-		} else {
-			bp.RequiredLinearHistory = nil
-		}
+		bp.RequiredLinearHistory = &BPEnabled{Enabled: bool(*req.RequiredLinearHistory)}
 	}
 	if req.AllowForcePushes != nil {
-		if bool(*req.AllowForcePushes) {
-			bp.AllowForcePushes = &BPEnabled{Enabled: true}
-		} else {
-			bp.AllowForcePushes = nil
-		}
+		bp.AllowForcePushes = &BPEnabled{Enabled: bool(*req.AllowForcePushes)}
 	}
 	if req.AllowDeletions != nil {
-		if bool(*req.AllowDeletions) {
-			bp.AllowDeletions = &BPEnabled{Enabled: true}
-		} else {
-			bp.AllowDeletions = nil
-		}
+		bp.AllowDeletions = &BPEnabled{Enabled: bool(*req.AllowDeletions)}
 	}
 	if req.BlockCreations != nil {
-		if bool(*req.BlockCreations) {
-			bp.BlockCreations = &BPEnabled{Enabled: true}
-		} else {
-			bp.BlockCreations = nil
-		}
+		bp.BlockCreations = &BPEnabled{Enabled: bool(*req.BlockCreations)}
 	}
 	if req.RequiredConversationResolution != nil {
-		if bool(*req.RequiredConversationResolution) {
-			bp.RequiredConversationResolution = &BPEnabled{Enabled: true}
-		} else {
-			bp.RequiredConversationResolution = nil
-		}
+		bp.RequiredConversationResolution = &BPEnabled{Enabled: bool(*req.RequiredConversationResolution)}
 	}
 	if req.RequiredSignatures != nil {
-		if bool(*req.RequiredSignatures) {
-			bp.RequiredSignatures = &BPEnabledURL{Enabled: true}
-		} else {
-			bp.RequiredSignatures = nil
-		}
+		bp.RequiredSignatures = &BPEnabledURL{Enabled: bool(*req.RequiredSignatures)}
 	}
 	return bp
-}
-
-func (s *Server) isEmptyStatusChecks(sc *BPStatusChecks) bool {
-	return sc == nil || (!sc.Strict && len(sc.Contexts) == 0 && len(sc.Checks) == 0)
-}
-
-func (s *Server) isEmptyRestrictions(r *BPRestrictions) bool {
-	return r == nil || (len(r.Users) == 0 && len(r.Teams) == 0 && len(r.Apps) == 0)
 }
 
 func (s *Server) hydrateBranchProtectionURLs(bp *BranchProtection, repo *Repo, branch, baseURL string) *BranchProtection {
@@ -667,7 +653,26 @@ func (s *Server) handleBPContextsGet(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleBPContextsPost(w http.ResponseWriter, r *http.Request) {
-	s.handleBPContextsPut(w, r)
+	repo, branch, bp := s.getBranchProtection(r)
+	if repo == nil {
+		writeGHError(w, http.StatusNotFound, "Not Found")
+		return
+	}
+	if bp == nil || bp.RequiredStatusChecks == nil {
+		s.branchProtectionNotFound(w)
+		return
+	}
+	var contexts []string
+	if !decodeStringArrayBody(w, r, &contexts) {
+		return
+	}
+	for _, context := range contexts {
+		if !stringSliceContains(bp.RequiredStatusChecks.Contexts, context) {
+			bp.RequiredStatusChecks.Contexts = append(bp.RequiredStatusChecks.Contexts, context)
+		}
+	}
+	s.setBranchProtection(repo, branch, bp)
+	writeJSON(w, http.StatusOK, bp.RequiredStatusChecks.Contexts)
 }
 
 func (s *Server) handleBPContextsPut(w http.ResponseWriter, r *http.Request) {
@@ -699,9 +704,32 @@ func (s *Server) handleBPContextsDelete(w http.ResponseWriter, r *http.Request) 
 		s.branchProtectionNotFound(w)
 		return
 	}
-	bp.RequiredStatusChecks.Contexts = nil
+	var contexts []string
+	if !decodeStringArrayBody(w, r, &contexts) {
+		return
+	}
+	bp.RequiredStatusChecks.Contexts = removeStrings(bp.RequiredStatusChecks.Contexts, contexts)
 	s.setBranchProtection(repo, branch, bp)
-	w.WriteHeader(http.StatusNoContent)
+	writeJSON(w, http.StatusOK, bp.RequiredStatusChecks.Contexts)
+}
+
+func stringSliceContains(values []string, candidate string) bool {
+	for _, value := range values {
+		if value == candidate {
+			return true
+		}
+	}
+	return false
+}
+
+func removeStrings(values, removed []string) []string {
+	out := make([]string, 0, len(values))
+	for _, value := range values {
+		if !stringSliceContains(removed, value) {
+			out = append(out, value)
+		}
+	}
+	return out
 }
 
 // --- Required pull request reviews ---
@@ -807,11 +835,30 @@ func (s *Server) handleBPRestrictionsUsersGet(w http.ResponseWriter, r *http.Req
 		s.branchProtectionNotFound(w)
 		return
 	}
-	writeJSON(w, http.StatusOK, bp.Restrictions.Users)
+	writeJSON(w, http.StatusOK, s.bpRestrictedUsersJSON(bp.Restrictions.Users))
 }
 
 func (s *Server) handleBPRestrictionsUsersPost(w http.ResponseWriter, r *http.Request) {
-	s.handleBPRestrictionsUsersPut(w, r)
+	repo, branch, bp := s.getBranchProtection(r)
+	if repo == nil {
+		writeGHError(w, http.StatusNotFound, "Not Found")
+		return
+	}
+	if bp == nil || bp.Restrictions == nil {
+		s.branchProtectionNotFound(w)
+		return
+	}
+	users, ok := s.decodeBPUserLogins(w, r)
+	if !ok {
+		return
+	}
+	for _, user := range users {
+		if !bpActorSliceContains(bp.Restrictions.Users, user.ID) {
+			bp.Restrictions.Users = append(bp.Restrictions.Users, user)
+		}
+	}
+	s.setBranchProtection(repo, branch, bp)
+	writeJSON(w, http.StatusOK, s.bpRestrictedUsersJSON(bp.Restrictions.Users))
 }
 
 func (s *Server) handleBPRestrictionsUsersPut(w http.ResponseWriter, r *http.Request) {
@@ -824,13 +871,13 @@ func (s *Server) handleBPRestrictionsUsersPut(w http.ResponseWriter, r *http.Req
 		s.branchProtectionNotFound(w)
 		return
 	}
-	var users []BPActor
-	if !decodeJSONBody(w, r, &users) {
+	users, ok := s.decodeBPUserLogins(w, r)
+	if !ok {
 		return
 	}
 	bp.Restrictions.Users = users
 	s.setBranchProtection(repo, branch, bp)
-	writeJSON(w, http.StatusOK, users)
+	writeJSON(w, http.StatusOK, s.bpRestrictedUsersJSON(users))
 }
 
 func (s *Server) handleBPRestrictionsUsersDelete(w http.ResponseWriter, r *http.Request) {
@@ -843,9 +890,13 @@ func (s *Server) handleBPRestrictionsUsersDelete(w http.ResponseWriter, r *http.
 		s.branchProtectionNotFound(w)
 		return
 	}
-	bp.Restrictions.Users = nil
+	users, ok := s.decodeBPUserLogins(w, r)
+	if !ok {
+		return
+	}
+	bp.Restrictions.Users = removeBPActors(bp.Restrictions.Users, users)
 	s.setBranchProtection(repo, branch, bp)
-	w.WriteHeader(http.StatusNoContent)
+	writeJSON(w, http.StatusOK, s.bpRestrictedUsersJSON(bp.Restrictions.Users))
 }
 
 // --- Restrictions teams ---
@@ -860,11 +911,30 @@ func (s *Server) handleBPRestrictionsTeamsGet(w http.ResponseWriter, r *http.Req
 		s.branchProtectionNotFound(w)
 		return
 	}
-	writeJSON(w, http.StatusOK, bp.Restrictions.Teams)
+	writeJSON(w, http.StatusOK, s.bpRestrictedTeamsJSON(repo, bp.Restrictions.Teams, s.baseURL(r)))
 }
 
 func (s *Server) handleBPRestrictionsTeamsPost(w http.ResponseWriter, r *http.Request) {
-	s.handleBPRestrictionsTeamsPut(w, r)
+	repo, branch, bp := s.getBranchProtection(r)
+	if repo == nil {
+		writeGHError(w, http.StatusNotFound, "Not Found")
+		return
+	}
+	if bp == nil || bp.Restrictions == nil {
+		s.branchProtectionNotFound(w)
+		return
+	}
+	teams, ok := s.decodeBPTeamSlugs(w, r, repo)
+	if !ok {
+		return
+	}
+	for _, team := range teams {
+		if !bpActorSliceContains(bp.Restrictions.Teams, team.ID) {
+			bp.Restrictions.Teams = append(bp.Restrictions.Teams, team)
+		}
+	}
+	s.setBranchProtection(repo, branch, bp)
+	writeJSON(w, http.StatusOK, s.bpRestrictedTeamsJSON(repo, bp.Restrictions.Teams, s.baseURL(r)))
 }
 
 func (s *Server) handleBPRestrictionsTeamsPut(w http.ResponseWriter, r *http.Request) {
@@ -877,13 +947,13 @@ func (s *Server) handleBPRestrictionsTeamsPut(w http.ResponseWriter, r *http.Req
 		s.branchProtectionNotFound(w)
 		return
 	}
-	var teams []BPActor
-	if !decodeJSONBody(w, r, &teams) {
+	teams, ok := s.decodeBPTeamSlugs(w, r, repo)
+	if !ok {
 		return
 	}
 	bp.Restrictions.Teams = teams
 	s.setBranchProtection(repo, branch, bp)
-	writeJSON(w, http.StatusOK, teams)
+	writeJSON(w, http.StatusOK, s.bpRestrictedTeamsJSON(repo, teams, s.baseURL(r)))
 }
 
 func (s *Server) handleBPRestrictionsTeamsDelete(w http.ResponseWriter, r *http.Request) {
@@ -896,9 +966,117 @@ func (s *Server) handleBPRestrictionsTeamsDelete(w http.ResponseWriter, r *http.
 		s.branchProtectionNotFound(w)
 		return
 	}
-	bp.Restrictions.Teams = nil
+	teams, ok := s.decodeBPTeamSlugs(w, r, repo)
+	if !ok {
+		return
+	}
+	bp.Restrictions.Teams = removeBPActors(bp.Restrictions.Teams, teams)
 	s.setBranchProtection(repo, branch, bp)
-	w.WriteHeader(http.StatusNoContent)
+	writeJSON(w, http.StatusOK, s.bpRestrictedTeamsJSON(repo, bp.Restrictions.Teams, s.baseURL(r)))
+}
+
+func bpActorSliceContains(actors []BPActor, id int) bool {
+	for _, actor := range actors {
+		if actor.ID == id {
+			return true
+		}
+	}
+	return false
+}
+
+func removeBPActors(current, removed []BPActor) []BPActor {
+	out := make([]BPActor, 0, len(current))
+	for _, actor := range current {
+		if !bpActorSliceContains(removed, actor.ID) {
+			out = append(out, actor)
+		}
+	}
+	return out
+}
+
+func (s *Server) decodeBPUserLogins(w http.ResponseWriter, r *http.Request) ([]BPActor, bool) {
+	var req struct {
+		Users *[]string `json:"users"`
+	}
+	if !decodeJSONBody(w, r, &req) {
+		return nil, false
+	}
+	if req.Users == nil {
+		writeGHValidationError(w, "BranchRestriction", "users", "missing_field")
+		return nil, false
+	}
+	actors := make([]BPActor, 0, len(*req.Users))
+	for _, login := range *req.Users {
+		s.store.mu.RLock()
+		user := s.store.UsersByLogin[login]
+		s.store.mu.RUnlock()
+		if user == nil {
+			writeGHError(w, http.StatusUnprocessableEntity, "Could not resolve to a user: "+login)
+			return nil, false
+		}
+		actors = append(actors, BPActor{Login: user.Login, ID: user.ID, Type: "User"})
+	}
+	return actors, true
+}
+
+func (s *Server) bpRestrictedUsersJSON(actors []BPActor) []map[string]interface{} {
+	out := make([]map[string]interface{}, 0, len(actors))
+	for _, actor := range actors {
+		s.store.mu.RLock()
+		user := s.store.Users[actor.ID]
+		var rendered map[string]interface{}
+		if user != nil {
+			rendered = userToJSON(user)
+		}
+		s.store.mu.RUnlock()
+		if rendered != nil {
+			out = append(out, rendered)
+		}
+	}
+	return out
+}
+
+func (s *Server) decodeBPTeamSlugs(w http.ResponseWriter, r *http.Request, repo *Repo) ([]BPActor, bool) {
+	var req struct {
+		Teams *[]string `json:"teams"`
+	}
+	if !decodeJSONBody(w, r, &req) {
+		return nil, false
+	}
+	if req.Teams == nil {
+		writeGHValidationError(w, "BranchRestriction", "teams", "missing_field")
+		return nil, false
+	}
+	orgLogin := ownerFromRepoFullName(repo.FullName)
+	if s.store.GetOrg(orgLogin) == nil {
+		writeGHError(w, http.StatusUnprocessableEntity, "Team restrictions require an organization repository")
+		return nil, false
+	}
+	actors := make([]BPActor, 0, len(*req.Teams))
+	for _, slug := range *req.Teams {
+		team := s.store.GetTeam(orgLogin, slug)
+		if team == nil {
+			writeGHError(w, http.StatusUnprocessableEntity, "Could not resolve to a team: "+slug)
+			return nil, false
+		}
+		actors = append(actors, BPActor{Login: team.Slug, ID: team.ID, Type: "Team"})
+	}
+	return actors, true
+}
+
+func (s *Server) bpRestrictedTeamsJSON(repo *Repo, actors []BPActor, baseURL string) []map[string]interface{} {
+	out := make([]map[string]interface{}, 0, len(actors))
+	orgLogin := ownerFromRepoFullName(repo.FullName)
+	org := s.store.GetOrg(orgLogin)
+	if org == nil {
+		return out
+	}
+	for _, actor := range actors {
+		if team := s.store.GetTeam(orgLogin, actor.Login); team != nil {
+			out = append(out, teamSimpleJSON(team, org, s.store, baseURL))
+		}
+	}
+	return out
 }
 
 // --- Enforce admins ---
@@ -1151,8 +1329,8 @@ func decodeStringArrayBody(w http.ResponseWriter, r *http.Request, out *[]string
 	}
 	trimmed := strings.TrimSpace(string(raw))
 	if len(trimmed) == 0 {
-		*out = nil
-		return true
+		writeGHError(w, http.StatusBadRequest, "Problems parsing JSON")
+		return false
 	}
 	if trimmed[0] == '[' {
 		if err := json.Unmarshal([]byte(trimmed), out); err != nil {

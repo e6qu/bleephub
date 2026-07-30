@@ -111,6 +111,78 @@ func TestRepositoriesBranches(t *testing.T) {
 	}
 }
 
+// TestRepositoryCodeAndComparisonSemantics drives the commit selectors,
+// pagination, ref-aware contents and comparison response through the official
+// typed client. OpenAPI checks the shapes, but not that these selectors
+// identify the same git graph and tree.
+func TestRepositoryCodeAndComparisonSemantics(t *testing.T) {
+	name := uniqueName("repo-code-semantics")
+	createRepo(t, name)
+	base := createSDKDefaultBranch(t, name)
+	head := createSDKCommit(t, name, "add guide", "guide.md", "# Guide\n", []*github.Commit{base})
+	if _, _, err := client.Git.UpdateRef(ctx(), "admin", name, "heads/main", github.UpdateRef{
+		SHA: head.GetSHA(),
+	}); err != nil {
+		t.Fatalf("Git.UpdateRef(main): %v", err)
+	}
+
+	filtered, _, err := client.Repositories.ListCommits(ctx(), "admin", name, &github.CommitsListOptions{
+		SHA:    "main",
+		Path:   "guide.md",
+		Author: "sdk@example.test",
+	})
+	if err != nil {
+		t.Fatalf("Repositories.ListCommits(filtered): %v", err)
+	}
+	if len(filtered) != 1 || filtered[0].GetSHA() != head.GetSHA() {
+		t.Fatalf("filtered commits = %+v, want only %s", filtered, head.GetSHA())
+	}
+
+	secondPage, response, err := client.Repositories.ListCommits(ctx(), "admin", name, &github.CommitsListOptions{
+		SHA: "main",
+		ListOptions: github.ListOptions{
+			Page:    2,
+			PerPage: 1,
+		},
+	})
+	if err != nil {
+		t.Fatalf("Repositories.ListCommits(page 2): %v", err)
+	}
+	if len(secondPage) != 1 || secondPage[0].GetSHA() != base.GetSHA() || response.PrevPage != 1 {
+		t.Fatalf("page 2 = %+v response=%+v, want base %s and previous page", secondPage, response, base.GetSHA())
+	}
+
+	comparison, _, err := client.Repositories.CompareCommits(ctx(), "admin", name, base.GetSHA(), head.GetSHA(), nil)
+	if err != nil {
+		t.Fatalf("Repositories.CompareCommits: %v", err)
+	}
+	hasGuide := false
+	for _, file := range comparison.Files {
+		if file.GetFilename() == "guide.md" && file.GetStatus() == "added" {
+			hasGuide = true
+		}
+	}
+	if comparison.GetStatus() != "ahead" || comparison.GetAheadBy() != 1 ||
+		len(comparison.Commits) != 1 || !hasGuide {
+		t.Fatalf("comparison = %+v", comparison)
+	}
+
+	file, directory, _, err := client.Repositories.GetContents(
+		ctx(),
+		"admin",
+		name,
+		"guide.md",
+		&github.RepositoryContentGetOptions{Ref: head.GetSHA()},
+	)
+	if err != nil {
+		t.Fatalf("Repositories.GetContents(commit ref): %v", err)
+	}
+	content, err := file.GetContent()
+	if err != nil || content != "# Guide\n" || len(directory) != 0 {
+		t.Fatalf("contents file=%+v directory=%+v decoded=%q err=%v", file, directory, content, err)
+	}
+}
+
 // TestRepositoryBranchProtectionState pins the cross-endpoint contract that
 // the official client relies on after it updates a branch protection resource.
 func TestRepositoryBranchProtectionState(t *testing.T) {

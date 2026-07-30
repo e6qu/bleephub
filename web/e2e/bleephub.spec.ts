@@ -218,6 +218,54 @@ test.describe("Repository search", () => {
   });
 });
 
+test.describe("Repository code and collaboration", () => {
+  test("navigates commit filters, ref comparisons, and source archives", async ({ page }) => {
+    const name = `code-${randomUUID().slice(0, 12)}`;
+    await page.goto("/ui/");
+    await apiPost(page, "/api/v3/user/repos", { name, auto_init: true });
+    const mainRef = await apiGet(page, `/api/v3/repos/admin/${name}/git/ref/heads/main`);
+    await apiPost(page, `/api/v3/repos/admin/${name}/git/refs`, {
+      ref: "refs/heads/feature",
+      sha: mainRef.object.sha,
+    });
+    await apiPut(page, `/api/v3/repos/admin/${name}/contents/guide.md`, {
+      message: "add guide",
+      content: Buffer.from("# Guide\n").toString("base64"),
+      branch: "feature",
+    });
+
+    await page.goto(`/ui/repos/admin/${name}`);
+    await page.getByRole("button", { name: /Code/ }).click();
+    await expect(page.getByRole("link", { name: "Download ZIP" })).toHaveAttribute(
+      "href",
+      `/api/v3/repos/admin/${name}/zipball/main`,
+    );
+    await expect(page.getByRole("link", { name: "Download TAR.GZ" })).toHaveAttribute(
+      "href",
+      `/api/v3/repos/admin/${name}/tarball/main`,
+    );
+
+    await page.goto(`/ui/repos/admin/${name}/commits`);
+    await page.getByLabel("Branch or ref").fill("feature");
+    await page.getByLabel("Path").fill("guide.md");
+    const filtered = page.waitForResponse((response) => {
+      const url = new URL(response.url());
+      return url.pathname.endsWith(`/repos/admin/${name}/commits`) &&
+        url.searchParams.get("sha") === "feature" &&
+        url.searchParams.get("path") === "guide.md";
+    });
+    await page.getByRole("button", { name: "Apply filters" }).click();
+    expect((await filtered).status()).toBe(200);
+    await expect(page.getByRole("link", { name: "add guide" })).toBeVisible();
+
+    await page.goto(`/ui/repos/admin/${name}/branches`);
+    await page.getByRole("link", { name: "Compare" }).click();
+    await expect(page).toHaveURL(new RegExp(`/ui/repos/admin/${name}/compare/main\\.\\.\\.feature`));
+    await expect(page.getByText("guide.md")).toBeVisible();
+    await expect(page.getByText("ahead", { exact: true })).toBeVisible();
+  });
+});
+
 test.describe("User menu and packages", () => {
   test("labels personal destinations consistently and submits sign-out", async ({ page }) => {
     await page.goto("/ui/");

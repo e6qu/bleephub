@@ -7,9 +7,9 @@ import {
   fetchRepoBranches,
   fetchBranchProtection,
   updateBranchProtection,
-  createBranchProtection,
   deleteBranchProtection,
-  isNotFound,
+  setBranchRestrictionTeams,
+  setBranchRestrictionUsers,
 } from "../api.js";
 import type { GithubBranch, GithubBranchProtection } from "../types.js";
 import { RepoHeader } from "../components/Shell.js";
@@ -18,13 +18,22 @@ import { PageTitle, Button, Box } from "../components/ui.js";
 interface FormState {
   enabled: boolean;
   requiredStatusChecks: boolean;
+  strictStatusChecks: boolean;
   contexts: string;
+  requirePullRequestReviews: boolean;
   requiredApprovingReviewCount: number;
   requireCodeOwnerReviews: boolean;
   dismissStaleReviews: boolean;
   enforceAdmins: boolean;
   allowForcePushes: boolean;
   allowDeletions: boolean;
+  requiredLinearHistory: boolean;
+  requiredConversationResolution: boolean;
+  blockCreations: boolean;
+  requiredSignatures: boolean;
+  restrictPushes: boolean;
+  restrictedUsers: string;
+  restrictedTeams: string;
 }
 
 function protectionToForm(bp: GithubBranchProtection | null): FormState {
@@ -32,25 +41,43 @@ function protectionToForm(bp: GithubBranchProtection | null): FormState {
     return {
       enabled: false,
       requiredStatusChecks: false,
+      strictStatusChecks: false,
       contexts: "",
+      requirePullRequestReviews: false,
       requiredApprovingReviewCount: 1,
       requireCodeOwnerReviews: false,
       dismissStaleReviews: false,
       enforceAdmins: false,
       allowForcePushes: false,
       allowDeletions: false,
+      requiredLinearHistory: false,
+      requiredConversationResolution: false,
+      blockCreations: false,
+      requiredSignatures: false,
+      restrictPushes: false,
+      restrictedUsers: "",
+      restrictedTeams: "",
     };
   }
   return {
     enabled: true,
     requiredStatusChecks: !!bp.required_status_checks,
+    strictStatusChecks: bp.required_status_checks?.strict ?? false,
     contexts: bp.required_status_checks?.contexts.join("\n") ?? "",
+    requirePullRequestReviews: !!bp.required_pull_request_reviews,
     requiredApprovingReviewCount: bp.required_pull_request_reviews?.required_approving_review_count ?? 1,
     requireCodeOwnerReviews: bp.required_pull_request_reviews?.require_code_owner_reviews ?? false,
     dismissStaleReviews: bp.required_pull_request_reviews?.dismiss_stale_reviews ?? false,
     enforceAdmins: !!bp.enforce_admins?.enabled,
     allowForcePushes: !!bp.allow_force_pushes?.enabled,
     allowDeletions: !!bp.allow_deletions?.enabled,
+    requiredLinearHistory: !!bp.required_linear_history?.enabled,
+    requiredConversationResolution: !!bp.required_conversation_resolution?.enabled,
+    blockCreations: !!bp.block_creations?.enabled,
+    requiredSignatures: !!bp.required_signatures?.enabled,
+    restrictPushes: !!bp.restrictions,
+    restrictedUsers: bp.restrictions?.users.map((user) => user.login).join("\n") ?? "",
+    restrictedTeams: bp.restrictions?.teams.map((team) => team.slug).join("\n") ?? "",
   };
 }
 
@@ -95,39 +122,43 @@ export function BranchProtectionPage() {
         .split("\n")
         .map((c) => c.trim())
         .filter(Boolean);
+      const restrictedUsers = next.restrictedUsers.split("\n").map((value) => value.trim()).filter(Boolean);
+      const restrictedTeams = next.restrictedTeams.split("\n").map((value) => value.trim()).filter(Boolean);
       if (!next.enabled) {
         if (protectionQuery.data) {
           await deleteBranchProtection(owner, repo, branch);
         }
         return null;
       }
-        const payload: Partial<GithubBranchProtection> = {
+      const payload: Partial<GithubBranchProtection> = {
           required_status_checks: next.requiredStatusChecks
             ? {
-                strict: true,
+                strict: next.strictStatusChecks,
                 enforcement_level: "non_admins",
                 contexts: contextList,
                 checks: contextList.map((context) => ({ context, app_id: null })),
               }
             : null,
-        required_pull_request_reviews: {
-          required_approving_review_count: next.requiredApprovingReviewCount,
-          require_code_owner_reviews: next.requireCodeOwnerReviews,
-          dismiss_stale_reviews: next.dismissStaleReviews,
-        },
-        restrictions: null,
-        enforce_admins: next.enforceAdmins ? { enabled: true } : null,
+        required_pull_request_reviews: next.requirePullRequestReviews ? {
+            required_approving_review_count: next.requiredApprovingReviewCount,
+            require_code_owner_reviews: next.requireCodeOwnerReviews,
+            dismiss_stale_reviews: next.dismissStaleReviews,
+          } : null,
+        restrictions: next.restrictPushes ? { users: [], teams: [], apps: [] } : null,
+        enforce_admins: { enabled: next.enforceAdmins },
         allow_force_pushes: { enabled: next.allowForcePushes },
         allow_deletions: { enabled: next.allowDeletions },
+        required_linear_history: { enabled: next.requiredLinearHistory },
+        required_conversation_resolution: { enabled: next.requiredConversationResolution },
+        block_creations: { enabled: next.blockCreations },
+        required_signatures: { enabled: next.requiredSignatures },
       };
-      try {
-        return await updateBranchProtection(owner, repo, branch, payload);
-      } catch (err) {
-        if (isNotFound(err)) {
-          return await createBranchProtection(owner, repo, branch, payload);
-        }
-        throw err;
+      const saved = await updateBranchProtection(owner, repo, branch, payload);
+      if (next.restrictPushes) {
+        await setBranchRestrictionUsers(owner, repo, branch, restrictedUsers);
+        await setBranchRestrictionTeams(owner, repo, branch, restrictedTeams);
       }
+      return saved;
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["branch-protection", owner, repo, branch] });
@@ -213,53 +244,107 @@ export function BranchProtectionPage() {
                         checked={form.requiredStatusChecks}
                         onChange={(e) => setForm((f) => ({ ...f, requiredStatusChecks: e.target.checked }))}
                       />
-                      Require branches to be up to date before merging
+                      Require status checks before merging
                     </label>
                     {form.requiredStatusChecks && (
-                      <label style={{ display: "flex", flexDirection: "column", gap: "0.25rem" }}>
-                        <span style={{ fontSize: "0.8rem" }}>Status checks (one per line)</span>
-                        <textarea
-                          value={form.contexts}
-                          onChange={(e) => setForm((f) => ({ ...f, contexts: e.target.value }))}
-                          rows={4}
-                          placeholder="ci/build&#10;ci/test"
-                          style={{ fontSize: "0.85rem", padding: "0.4rem 0.5rem" }}
-                        />
-                      </label>
+                      <>
+                        <label style={{ display: "flex", alignItems: "center", gap: "0.5rem", fontSize: "0.85rem" }}>
+                          <input
+                            type="checkbox"
+                            checked={form.strictStatusChecks}
+                            onChange={(e) => setForm((f) => ({ ...f, strictStatusChecks: e.target.checked }))}
+                          />
+                          Require branches to be up to date before merging
+                        </label>
+                        <label style={{ display: "flex", flexDirection: "column", gap: "0.25rem" }}>
+                          <span style={{ fontSize: "0.8rem" }}>Status checks (one per line)</span>
+                          <textarea
+                            value={form.contexts}
+                            onChange={(e) => setForm((f) => ({ ...f, contexts: e.target.value }))}
+                            rows={4}
+                            placeholder="ci/build&#10;ci/test"
+                            style={{ fontSize: "0.85rem", padding: "0.4rem 0.5rem" }}
+                          />
+                        </label>
+                      </>
                     )}
                   </fieldset>
 
                   <fieldset style={{ border: "none", padding: 0, margin: 0, display: "flex", flexDirection: "column", gap: "0.75rem" }}>
                     <legend style={{ fontSize: "0.85rem", fontWeight: 500 }}>Pull request reviews</legend>
-                    <label style={{ display: "flex", flexDirection: "column", gap: "0.25rem" }}>
-                      <span style={{ fontSize: "0.8rem" }}>Required approving reviews</span>
-                      <input
-                        type="number"
-                        min={1}
-                        max={6}
-                        value={form.requiredApprovingReviewCount}
-                        onChange={(e) =>
-                          setForm((f) => ({ ...f, requiredApprovingReviewCount: parseInt(e.target.value, 10) || 0 }))
-                        }
-                        style={{ fontSize: "0.9rem", padding: "0.4rem 0.5rem", maxWidth: "6rem" }}
-                      />
-                    </label>
                     <label style={{ display: "flex", alignItems: "center", gap: "0.5rem", fontSize: "0.85rem" }}>
                       <input
                         type="checkbox"
-                        checked={form.dismissStaleReviews}
-                        onChange={(e) => setForm((f) => ({ ...f, dismissStaleReviews: e.target.checked }))}
+                        checked={form.requirePullRequestReviews}
+                        onChange={(e) => setForm((f) => ({ ...f, requirePullRequestReviews: e.target.checked }))}
                       />
-                      Dismiss stale reviews when new commits are pushed
+                      Require a pull request before merging
                     </label>
+                    {form.requirePullRequestReviews && (
+                      <>
+                        <label style={{ display: "flex", flexDirection: "column", gap: "0.25rem" }}>
+                          <span style={{ fontSize: "0.8rem" }}>Required approving reviews</span>
+                          <input
+                            type="number"
+                            min={0}
+                            max={6}
+                            value={form.requiredApprovingReviewCount}
+                            onChange={(e) =>
+                              setForm((f) => ({ ...f, requiredApprovingReviewCount: parseInt(e.target.value, 10) || 0 }))
+                            }
+                            style={{ fontSize: "0.9rem", padding: "0.4rem 0.5rem", maxWidth: "6rem" }}
+                          />
+                        </label>
+                        <label style={{ display: "flex", alignItems: "center", gap: "0.5rem", fontSize: "0.85rem" }}>
+                          <input
+                            type="checkbox"
+                            checked={form.dismissStaleReviews}
+                            onChange={(e) => setForm((f) => ({ ...f, dismissStaleReviews: e.target.checked }))}
+                          />
+                          Dismiss stale reviews when new commits are pushed
+                        </label>
+                        <label style={{ display: "flex", alignItems: "center", gap: "0.5rem", fontSize: "0.85rem" }}>
+                          <input
+                            type="checkbox"
+                            checked={form.requireCodeOwnerReviews}
+                            onChange={(e) => setForm((f) => ({ ...f, requireCodeOwnerReviews: e.target.checked }))}
+                          />
+                          Require review from code owners
+                        </label>
+                      </>
+                    )}
+                  </fieldset>
+
+                  <fieldset style={{ border: "none", padding: 0, margin: 0, display: "flex", flexDirection: "column", gap: "0.75rem" }}>
+                    <legend style={{ fontSize: "0.85rem", fontWeight: 500 }}>Restrict pushes</legend>
                     <label style={{ display: "flex", alignItems: "center", gap: "0.5rem", fontSize: "0.85rem" }}>
                       <input
                         type="checkbox"
-                        checked={form.requireCodeOwnerReviews}
-                        onChange={(e) => setForm((f) => ({ ...f, requireCodeOwnerReviews: e.target.checked }))}
+                        checked={form.restrictPushes}
+                        onChange={(e) => setForm((f) => ({ ...f, restrictPushes: e.target.checked }))}
                       />
-                      Require review from code owners
+                      Restrict who can push to this branch
                     </label>
+                    {form.restrictPushes && (
+                      <div className="grid gap-3 md:grid-cols-2">
+                        <label style={{ display: "flex", flexDirection: "column", gap: "0.25rem" }}>
+                          <span style={{ fontSize: "0.8rem" }}>Users (one login per line)</span>
+                          <textarea
+                            value={form.restrictedUsers}
+                            onChange={(e) => setForm((f) => ({ ...f, restrictedUsers: e.target.value }))}
+                            rows={3}
+                          />
+                        </label>
+                        <label style={{ display: "flex", flexDirection: "column", gap: "0.25rem" }}>
+                          <span style={{ fontSize: "0.8rem" }}>Teams (one slug per line)</span>
+                          <textarea
+                            value={form.restrictedTeams}
+                            onChange={(e) => setForm((f) => ({ ...f, restrictedTeams: e.target.value }))}
+                            rows={3}
+                          />
+                        </label>
+                      </div>
+                    )}
                   </fieldset>
 
                   <fieldset style={{ border: "none", padding: 0, margin: 0, display: "flex", flexDirection: "column", gap: "0.5rem" }}>
@@ -288,6 +373,21 @@ export function BranchProtectionPage() {
                       />
                       Allow deletions
                     </label>
+                    {[
+                      ["requiredLinearHistory", "Require linear history"],
+                      ["requiredConversationResolution", "Require conversation resolution before merging"],
+                      ["blockCreations", "Block branch creation"],
+                      ["requiredSignatures", "Require signed commits"],
+                    ].map(([key, label]) => (
+                      <label key={key} style={{ display: "flex", alignItems: "center", gap: "0.5rem", fontSize: "0.85rem" }}>
+                        <input
+                          type="checkbox"
+                          checked={form[key as keyof FormState] as boolean}
+                          onChange={(e) => setForm((current) => ({ ...current, [key]: e.target.checked }))}
+                        />
+                        {label}
+                      </label>
+                    ))}
                   </fieldset>
                 </>
               )}

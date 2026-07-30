@@ -392,7 +392,7 @@ func commitCommentToJSON(c *CommitComment, st *Store, baseURL string, repo *Repo
 		"updated_at":         c.UpdatedAt.UTC().Format(time.RFC3339),
 		"url":                fmt.Sprintf("%s/api/v3/repos/%s/comments/%d", baseURL, repo.FullName, c.ID),
 		"html_url":           fmt.Sprintf("%s/%s/commit/%s#commitcomment-%d", baseURL, repo.FullName, c.CommitID, c.ID),
-		"author_association": "OWNER",
+		"author_association": authorAssociation(st, c.AuthorID, repo),
 	}
 	if c.Path != "" {
 		out["path"] = c.Path

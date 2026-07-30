@@ -39,7 +39,7 @@
       },
       {
         "event": "issue_comment",
-        "line": 604,
+        "line": 609,
         "producer": "emitWebhookEvent",
         "source": "internal/server/gh_issues_rest.go"
       },
@@ -51,7 +51,7 @@
       },
       {
         "event": "issues",
-        "line": 544,
+        "line": 549,
         "producer": "emitWebhookEvent",
         "source": "internal/server/gh_issues_rest.go"
       },
@@ -169,14 +169,14 @@
       "bleephub_types": 276,
       "compatibility_gap_count": 319,
       "implemented_fields": 782,
-      "official_fields": 8285,
-      "official_types": 1794,
+      "official_fields": 8341,
+      "official_types": 1806,
       "shared_types": 210,
       "signature_exact_fields": 546
     },
     "introspection_snapshot_sha256": "4a7e860f9580b380d88fe61d6c190817a8c25e07a6dd78045dea44081850b041",
     "official_schema": {
-      "content_sha256": "f7a98392e2281c215810c5ac648c3a6940bcd49db74beb2502143f244fdb4da3",
+      "content_sha256": "c504a0ed454276c878d5a873b782fa9824f2dec3205de3370845d40977e41322",
       "source": "https://docs.github.com/public/fpt/schema.docs.graphql"
     },
     "resolver_files": [
@@ -1425,8 +1425,8 @@
         "id": "REST-040",
         "location": "gh_repos_objects.go:41-93",
         "severity": "M",
-        "status": "open",
-        "status_kind": "open"
+        "status": "fixed \u2014 the list walks the full reachable commit graph, honors ref/path/author/since/until selectors, validates timestamps, and delegates stable page slicing and absolute Link headers to the shared paginator; the browser exposes the same selectors and page journey",
+        "status_kind": "fixed"
       },
       {
         "category": "REST",
@@ -1560,8 +1560,8 @@
         "id": "REST-055",
         "location": "gh_branch_protection.go:1195",
         "severity": "M",
-        "status": "open",
-        "status_kind": "open"
+        "status": "fixed \u2014 empty transport bodies return 400 and empty objects return 422 before mutation; explicit null remains the only sparse top-level clear, and an empty subresource body cannot erase status contexts or restrictions",
+        "status_kind": "fixed"
       },
       {
         "category": "REST",
@@ -1569,8 +1569,8 @@
         "id": "REST-056",
         "location": "gh_branch_protection.go:104,720",
         "severity": "M",
-        "status": "open",
-        "status_kind": "open"
+        "status": "fixed \u2014 user/team/app subresources accept their documented named string arrays, resolve every name before mutation, reject unknown actors atomically, and return complete simple-user/team/app shapes",
+        "status_kind": "fixed"
       },
       {
         "category": "REST",
@@ -1578,8 +1578,8 @@
         "id": "REST-057",
         "location": "gh_branch_protection.go:596,619",
         "severity": "M",
-        "status": "open",
-        "status_kind": "open"
+        "status": "fixed \u2014 POST now adds uniquely, PUT replaces, and DELETE removes only the requested contexts/users/teams/apps and returns the surviving collection; the branch-protection UI drives the same set semantics",
+        "status_kind": "fixed"
       },
       {
         "category": "REST",
@@ -1632,8 +1632,8 @@
         "id": "REST-063",
         "location": "gh_repos_compare.go:299",
         "severity": "M",
-        "status": "open",
-        "status_kind": "open"
+        "status": "fixed \u2014 compare resolves and reads every required object before rendering, returns 500 for unavailable storage/objects instead of a fabricated identical result, and the browser comparison journey exposes status, commits and patches",
+        "status_kind": "fixed"
       },
       {
         "category": "REST",
@@ -1641,8 +1641,8 @@
         "id": "REST-064",
         "location": "gh_repos_refs.go:32,245",
         "severity": "M",
-        "status": "open",
-        "status_kind": "open"
+        "status": "fixed \u2014 branch, tag and git-ref collections distinguish absent storage and iterator failure from a real empty repository and return a server error; single-branch reads use the same rule",
+        "status_kind": "fixed"
       },
       {
         "category": "REST",
@@ -1668,8 +1668,8 @@
         "id": "REST-067",
         "location": "gh_pr_comments.go:656, gh_commit_comments_rest.go:381",
         "severity": "M",
-        "status": "open",
-        "status_kind": "open"
+        "status": "fixed \u2014 issue, PR, review-comment and commit-comment renderers share relationship-derived OWNER/MEMBER/COLLABORATOR/CONTRIBUTOR/NONE classification, including active organization membership and prior merged contribution",
+        "status_kind": "fixed"
       },
       {
         "category": "REST",
@@ -1686,8 +1686,8 @@
         "id": "REST-069",
         "location": "gh_pulls_rest.go:1577",
         "severity": "M",
-        "status": "open",
-        "status_kind": "open"
+        "status": "fixed \u2014 UNKNOWN renders JSON null while MERGEABLE and CONFLICTING render their documented boolean values, preserving the client's polling state",
+        "status_kind": "fixed"
       },
       {
         "category": "REST",
@@ -1695,8 +1695,8 @@
         "id": "REST-070",
         "location": "gh_pulls_rest.go:1573",
         "severity": "M",
-        "status": "open",
-        "status_kind": "open"
+        "status": "fixed \u2014 the value comes from the review-comment store for the pull request, independently of submitted review count",
+        "status_kind": "fixed"
       },
       {
         "category": "REST",
@@ -1704,8 +1704,8 @@
         "id": "REST-071",
         "location": "gh_issues_rest.go:1131",
         "severity": "M",
-        "status": "open",
-        "status_kind": "open"
+        "status": "partial \u2014 association, timeline, PR discriminator, draft, actor-attributed closure events, sub-issue completion summary and issue type now render; parent remains available through the documented `/issues/{number}/parent` resource rather than embedded in the pinned issue schema",
+        "status_kind": "partial"
       },
       {
         "category": "REST",
@@ -1713,8 +1713,8 @@
         "id": "REST-072",
         "location": "gh_branch_protection.go:17",
         "severity": "M",
-        "status": "open",
-        "status_kind": "open"
+        "status": "fixed \u2014 presence is stored independently from enabled state, so explicit false toggles survive PUT, persistence and GET; the browser editor also sends false rather than conflating it with null deletion",
+        "status_kind": "fixed"
       },
       {
         "category": "REST",
@@ -1722,8 +1722,8 @@
         "id": "REST-073",
         "location": "gh_repos_objects.go:663",
         "severity": "M",
-        "status": "open",
-        "status_kind": "open"
+        "status": "fixed \u2014 directory entries carry the full hypermedia shape, empty directories are `[]`, symlinks and submodules have their documented types and metadata, normal-file symlink targets resolve to file content, and the UI gives submodules and symlinks truthful navigation",
+        "status_kind": "fixed"
       },
       {
         "category": "REST",
@@ -1731,8 +1731,8 @@
         "id": "REST-074",
         "location": "gh_repos_compare.go:158",
         "severity": "M",
-        "status": "open",
-        "status_kind": "open"
+        "status": "fixed \u2014 commit and parent API URLs use `/api/v3/repos/.../commits/{sha}` while HTML URLs use the repository web route; compare and commit-detail regressions consume those shapes",
+        "status_kind": "fixed"
       },
       {
         "category": "REST",
@@ -1875,8 +1875,8 @@
         "id": "REST-090",
         "location": "gh_repos_objects.go:589",
         "severity": "M",
-        "status": "open",
-        "status_kind": "open"
+        "status": "fixed \u2014 contents and tree reads share the treeish resolver for branches, tags, full refs, commit SHAs and tree SHAs; the browser keeps detached refs visible while navigating their trees",
+        "status_kind": "fixed"
       },
       {
         "category": "REST",
@@ -1884,8 +1884,8 @@
         "id": "REST-091",
         "location": "gh_repos_objects.go, gh_repos_commit_reads.go",
         "severity": "M",
-        "status": "open",
-        "status_kind": "open"
+        "status": "fixed \u2014 contents implements raw/html/object variants, commit reads implement sha/diff/patch, and comparison implements diff/patch without wrapping bytes in JSON",
+        "status_kind": "fixed"
       },
       {
         "category": "REST",
@@ -1902,8 +1902,8 @@
         "id": "REST-093",
         "location": "gh_repos_archive.go:128",
         "severity": "M",
-        "status": "open",
-        "status_kind": "open"
+        "status": "fixed \u2014 tree collection and archive generation finish into a private buffer before headers commit; generation failures return an error response and successful downloads carry their exact content length",
+        "status_kind": "fixed"
       },
       {
         "category": "REST",
@@ -1974,8 +1974,8 @@
         "id": "REST-101",
         "location": "gh_repos_archive.go:216",
         "severity": "M",
-        "status": "open",
-        "status_kind": "open"
+        "status": "fixed \u2014 zip entries carry symlink mode and contain the link target, matching tar semantics; a fixed-tree archive regression reopens and verifies the produced ZIP",
+        "status_kind": "fixed"
       },
       {
         "category": "REST",
@@ -1983,8 +1983,8 @@
         "id": "REST-102",
         "location": "gh_repos_compare.go:898",
         "severity": "M",
-        "status": "open",
-        "status_kind": "open"
+        "status": "fixed \u2014 merge commits use the authenticated user's display name/login and email for author and committer identity",
+        "status_kind": "fixed"
       },
       {
         "category": "REST",
@@ -2037,8 +2037,8 @@
         "id": "REST-108",
         "location": "gh_repos_rest.go:200",
         "severity": "M",
-        "status": "open",
-        "status_kind": "open"
+        "status": "fixed \u2014 fork sync copies upstream objects, fast-forwards when possible, creates an authenticated three-way merge when histories diverge, reports conflicts and reference races without moving the branch, and fans successful ref updates into repository activity",
+        "status_kind": "fixed"
       },
       {
         "category": "REST",
@@ -5798,9 +5798,9 @@
         },
         "REST": {
           "status": {
-            "fixed": 71,
-            "open": 44,
-            "partial": 2
+            "fixed": 89,
+            "open": 25,
+            "partial": 3
           },
           "total": 117
         },
@@ -5836,9 +5836,9 @@
       },
       "status": {
         "deferred": 1,
-        "fixed": 327,
-        "open": 255,
-        "partial": 32
+        "fixed": 345,
+        "open": 236,
+        "partial": 33
       },
       "total": 615
     }
@@ -19247,7 +19247,7 @@
         "source": "internal/server/gh_projects_classic.go"
       },
       {
-        "line": 19,
+        "line": 21,
         "method": "DELETE",
         "path": "/api/v3/repos/{owner}/{repo}",
         "source": "internal/server/gh_repos_rest.go"
@@ -19331,7 +19331,7 @@
         "source": "internal/server/gh_repos_autolinks.go"
       },
       {
-        "line": 59,
+        "line": 61,
         "method": "DELETE",
         "path": "/api/v3/repos/{owner}/{repo}/automated-security-fixes",
         "source": "internal/server/gh_repos_rest.go"
@@ -19415,7 +19415,7 @@
         "source": "internal/server/gh_codespaces.go"
       },
       {
-        "line": 37,
+        "line": 39,
         "method": "DELETE",
         "path": "/api/v3/repos/{owner}/{repo}/collaborators/{username}",
         "source": "internal/server/gh_repos_rest.go"
@@ -19433,7 +19433,7 @@
         "source": "internal/server/gh_reactions.go"
       },
       {
-        "line": 32,
+        "line": 33,
         "method": "DELETE",
         "path": "/api/v3/repos/{owner}/{repo}/contents/{path...}",
         "source": "internal/server/gh_repos_objects.go"
@@ -19505,7 +19505,7 @@
         "source": "internal/server/gh_import.go"
       },
       {
-        "line": 65,
+        "line": 67,
         "method": "DELETE",
         "path": "/api/v3/repos/{owner}/{repo}/interaction-limits",
         "source": "internal/server/gh_repos_rest.go"
@@ -19559,7 +19559,7 @@
         "source": "internal/server/gh_labels_rest.go"
       },
       {
-        "line": 48,
+        "line": 50,
         "method": "DELETE",
         "path": "/api/v3/repos/{owner}/{repo}/keys/{key_id}",
         "source": "internal/server/gh_repos_rest.go"
@@ -19583,7 +19583,7 @@
         "source": "internal/server/gh_misc_endpoints.go"
       },
       {
-        "line": 61,
+        "line": 63,
         "method": "DELETE",
         "path": "/api/v3/repos/{owner}/{repo}/private-vulnerability-reporting",
         "source": "internal/server/gh_repos_rest.go"
@@ -19643,13 +19643,13 @@
         "source": "internal/server/gh_secret_scanning.go"
       },
       {
-        "line": 53,
+        "line": 55,
         "method": "DELETE",
         "path": "/api/v3/repos/{owner}/{repo}/subscription",
         "source": "internal/server/gh_repos_rest.go"
       },
       {
-        "line": 63,
+        "line": 65,
         "method": "DELETE",
         "path": "/api/v3/repos/{owner}/{repo}/vulnerability-alerts",
         "source": "internal/server/gh_repos_rest.go"
@@ -19781,7 +19781,7 @@
         "source": "internal/server/gh_misc_endpoints.go"
       },
       {
-        "line": 31,
+        "line": 33,
         "method": "DELETE",
         "path": "/api/v3/user/starred/{owner}/{repo}",
         "source": "internal/server/gh_repos_rest.go"
@@ -21269,7 +21269,7 @@
         "source": "internal/server/gh_members_rest.go"
       },
       {
-        "line": 21,
+        "line": 23,
         "method": "GET",
         "path": "/api/v3/orgs/{org}/repos",
         "source": "internal/server/gh_repos_rest.go"
@@ -21443,7 +21443,7 @@
         "source": "internal/server/gh_rest.go"
       },
       {
-        "line": 17,
+        "line": 19,
         "method": "GET",
         "path": "/api/v3/repos/{owner}/{repo}",
         "source": "internal/server/gh_repos_rest.go"
@@ -21803,7 +21803,7 @@
         "source": "internal/server/gh_repos_autolinks.go"
       },
       {
-        "line": 54,
+        "line": 56,
         "method": "GET",
         "path": "/api/v3/repos/{owner}/{repo}/automated-security-fixes",
         "source": "internal/server/gh_repos_rest.go"
@@ -22055,7 +22055,7 @@
         "source": "internal/server/gh_codespaces.go"
       },
       {
-        "line": 34,
+        "line": 36,
         "method": "GET",
         "path": "/api/v3/repos/{owner}/{repo}/collaborators",
         "source": "internal/server/gh_repos_rest.go"
@@ -22067,7 +22067,7 @@
         "source": "internal/server/gh_repos_reads.go"
       },
       {
-        "line": 35,
+        "line": 37,
         "method": "GET",
         "path": "/api/v3/repos/{owner}/{repo}/collaborators/{username}/permission",
         "source": "internal/server/gh_repos_rest.go"
@@ -22091,7 +22091,7 @@
         "source": "internal/server/gh_reactions.go"
       },
       {
-        "line": 28,
+        "line": 29,
         "method": "GET",
         "path": "/api/v3/repos/{owner}/{repo}/commits",
         "source": "internal/server/gh_repos_objects.go"
@@ -22151,13 +22151,13 @@
         "source": "internal/server/gh_repos_reads.go"
       },
       {
-        "line": 25,
+        "line": 27,
         "method": "GET",
         "path": "/api/v3/repos/{owner}/{repo}/compare/{range...}",
         "source": "internal/server/gh_repos_rest.go"
       },
       {
-        "line": 30,
+        "line": 31,
         "method": "GET",
         "path": "/api/v3/repos/{owner}/{repo}/contents/{path...}",
         "source": "internal/server/gh_repos_objects.go"
@@ -22331,7 +22331,7 @@
         "source": "internal/server/gh_repos_reads.go"
       },
       {
-        "line": 28,
+        "line": 30,
         "method": "GET",
         "path": "/api/v3/repos/{owner}/{repo}/forks",
         "source": "internal/server/gh_repos_rest.go"
@@ -22445,7 +22445,7 @@
         "source": "internal/server/gh_apps_rest.go"
       },
       {
-        "line": 57,
+        "line": 59,
         "method": "GET",
         "path": "/api/v3/repos/{owner}/{repo}/interaction-limits",
         "source": "internal/server/gh_repos_rest.go"
@@ -22517,13 +22517,13 @@
         "source": "internal/server/gh_labels_rest.go"
       },
       {
-        "line": 45,
+        "line": 47,
         "method": "GET",
         "path": "/api/v3/repos/{owner}/{repo}/keys",
         "source": "internal/server/gh_repos_rest.go"
       },
       {
-        "line": 47,
+        "line": 49,
         "method": "GET",
         "path": "/api/v3/repos/{owner}/{repo}/keys/{key_id}",
         "source": "internal/server/gh_repos_rest.go"
@@ -22541,7 +22541,7 @@
         "source": "internal/server/gh_labels_rest.go"
       },
       {
-        "line": 24,
+        "line": 26,
         "method": "GET",
         "path": "/api/v3/repos/{owner}/{repo}/languages",
         "source": "internal/server/gh_repos_rest.go"
@@ -22613,7 +22613,7 @@
         "source": "internal/server/gh_pages_deployments.go"
       },
       {
-        "line": 55,
+        "line": 57,
         "method": "GET",
         "path": "/api/v3/repos/{owner}/{repo}/private-vulnerability-reporting",
         "source": "internal/server/gh_repos_rest.go"
@@ -22697,7 +22697,7 @@
         "source": "internal/server/gh_reactions.go"
       },
       {
-        "line": 29,
+        "line": 30,
         "method": "GET",
         "path": "/api/v3/repos/{owner}/{repo}/readme",
         "source": "internal/server/gh_repos_objects.go"
@@ -22823,7 +22823,7 @@
         "source": "internal/server/gh_pull_extensions.go"
       },
       {
-        "line": 29,
+        "line": 31,
         "method": "GET",
         "path": "/api/v3/repos/{owner}/{repo}/stargazers",
         "source": "internal/server/gh_repos_rest.go"
@@ -22889,7 +22889,7 @@
         "source": "internal/server/gh_repos_reads.go"
       },
       {
-        "line": 22,
+        "line": 24,
         "method": "GET",
         "path": "/api/v3/repos/{owner}/{repo}/topics",
         "source": "internal/server/gh_repos_rest.go"
@@ -22919,7 +22919,7 @@
         "source": "internal/server/gh_repos_reads.go"
       },
       {
-        "line": 56,
+        "line": 58,
         "method": "GET",
         "path": "/api/v3/repos/{owner}/{repo}/vulnerability-alerts",
         "source": "internal/server/gh_repos_rest.go"
@@ -23255,7 +23255,7 @@
         "source": "internal/server/gh_user_surface.go"
       },
       {
-        "line": 16,
+        "line": 18,
         "method": "GET",
         "path": "/api/v3/user/repos",
         "source": "internal/server/gh_repos_rest.go"
@@ -23285,7 +23285,7 @@
         "source": "internal/server/gh_user_surface.go"
       },
       {
-        "line": 32,
+        "line": 34,
         "method": "GET",
         "path": "/api/v3/user/starred",
         "source": "internal/server/gh_repos_rest.go"
@@ -23519,7 +23519,7 @@
         "source": "internal/server/gh_misc_endpoints.go"
       },
       {
-        "line": 20,
+        "line": 22,
         "method": "GET",
         "path": "/api/v3/users/{username}/repos",
         "source": "internal/server/gh_repos_rest.go"
@@ -23561,7 +23561,7 @@
         "source": "internal/server/gh_misc_endpoints.go"
       },
       {
-        "line": 33,
+        "line": 35,
         "method": "GET",
         "path": "/api/v3/users/{username}/starred",
         "source": "internal/server/gh_repos_rest.go"
@@ -23777,7 +23777,7 @@
         "source": "internal/server/gh_projects_classic.go"
       },
       {
-        "line": 18,
+        "line": 20,
         "method": "PATCH",
         "path": "/api/v3/repos/{owner}/{repo}",
         "source": "internal/server/gh_repos_rest.go"
@@ -24629,7 +24629,7 @@
         "source": "internal/server/gh_branch_protection.go"
       },
       {
-        "line": 51,
+        "line": 53,
         "method": "POST",
         "path": "/api/v3/repos/{owner}/{repo}/branches/{branch}/rename",
         "source": "internal/server/gh_repos_rest.go"
@@ -24743,7 +24743,7 @@
         "source": "internal/server/variables.go"
       },
       {
-        "line": 27,
+        "line": 29,
         "method": "POST",
         "path": "/api/v3/repos/{owner}/{repo}/forks",
         "source": "internal/server/gh_repos_rest.go"
@@ -24869,7 +24869,7 @@
         "source": "internal/server/gh_labels_rest.go"
       },
       {
-        "line": 46,
+        "line": 48,
         "method": "POST",
         "path": "/api/v3/repos/{owner}/{repo}/keys",
         "source": "internal/server/gh_repos_rest.go"
@@ -24881,13 +24881,13 @@
         "source": "internal/server/gh_labels_rest.go"
       },
       {
-        "line": 50,
+        "line": 52,
         "method": "POST",
         "path": "/api/v3/repos/{owner}/{repo}/merge-upstream",
         "source": "internal/server/gh_repos_rest.go"
       },
       {
-        "line": 26,
+        "line": 28,
         "method": "POST",
         "path": "/api/v3/repos/{owner}/{repo}/merges",
         "source": "internal/server/gh_repos_rest.go"
@@ -25061,7 +25061,7 @@
         "source": "internal/server/gh_statuses_rest.go"
       },
       {
-        "line": 49,
+        "line": 51,
         "method": "POST",
         "path": "/api/v3/repos/{owner}/{repo}/transfer",
         "source": "internal/server/gh_repos_rest.go"
@@ -25139,7 +25139,7 @@
         "source": "internal/server/gh_packages.go"
       },
       {
-        "line": 15,
+        "line": 17,
         "method": "POST",
         "path": "/api/v3/user/repos",
         "source": "internal/server/gh_repos_rest.go"
@@ -25745,7 +25745,7 @@
         "source": "internal/server/gh_agents_secrets.go"
       },
       {
-        "line": 58,
+        "line": 60,
         "method": "PUT",
         "path": "/api/v3/repos/{owner}/{repo}/automated-security-fixes",
         "source": "internal/server/gh_repos_rest.go"
@@ -25787,13 +25787,13 @@
         "source": "internal/server/gh_codespaces.go"
       },
       {
-        "line": 36,
+        "line": 38,
         "method": "PUT",
         "path": "/api/v3/repos/{owner}/{repo}/collaborators/{username}",
         "source": "internal/server/gh_repos_rest.go"
       },
       {
-        "line": 31,
+        "line": 32,
         "method": "PUT",
         "path": "/api/v3/repos/{owner}/{repo}/contents/{path...}",
         "source": "internal/server/gh_repos_objects.go"
@@ -25835,7 +25835,7 @@
         "source": "internal/server/gh_import.go"
       },
       {
-        "line": 64,
+        "line": 66,
         "method": "PUT",
         "path": "/api/v3/repos/{owner}/{repo}/interaction-limits",
         "source": "internal/server/gh_repos_rest.go"
@@ -25883,7 +25883,7 @@
         "source": "internal/server/gh_misc_endpoints.go"
       },
       {
-        "line": 60,
+        "line": 62,
         "method": "PUT",
         "path": "/api/v3/repos/{owner}/{repo}/private-vulnerability-reporting",
         "source": "internal/server/gh_repos_rest.go"
@@ -25919,19 +25919,19 @@
         "source": "internal/server/gh_rulesets.go"
       },
       {
-        "line": 52,
+        "line": 54,
         "method": "PUT",
         "path": "/api/v3/repos/{owner}/{repo}/subscription",
         "source": "internal/server/gh_repos_rest.go"
       },
       {
-        "line": 23,
+        "line": 25,
         "method": "PUT",
         "path": "/api/v3/repos/{owner}/{repo}/topics",
         "source": "internal/server/gh_repos_rest.go"
       },
       {
-        "line": 62,
+        "line": 64,
         "method": "PUT",
         "path": "/api/v3/repos/{owner}/{repo}/vulnerability-alerts",
         "source": "internal/server/gh_repos_rest.go"
@@ -25997,7 +25997,7 @@
         "source": "internal/server/gh_user_surface.go"
       },
       {
-        "line": 30,
+        "line": 32,
         "method": "PUT",
         "path": "/api/v3/user/starred/{owner}/{repo}",
         "source": "internal/server/gh_repos_rest.go"
@@ -26080,207 +26080,227 @@
         "target": "/ui/search?q=${encodeURIComponent(marker)}&type=repositories"
       },
       {
-        "line": 223,
+        "line": 224,
         "source": "web/e2e/bleephub.spec.ts",
         "target": "/ui/"
       },
       {
-        "line": 247,
+        "line": 237,
+        "source": "web/e2e/bleephub.spec.ts",
+        "target": "/ui/repos/admin/${name}"
+      },
+      {
+        "line": 248,
+        "source": "web/e2e/bleephub.spec.ts",
+        "target": "/ui/repos/admin/${name}/commits"
+      },
+      {
+        "line": 261,
+        "source": "web/e2e/bleephub.spec.ts",
+        "target": "/ui/repos/admin/${name}/branches"
+      },
+      {
+        "line": 271,
+        "source": "web/e2e/bleephub.spec.ts",
+        "target": "/ui/"
+      },
+      {
+        "line": 295,
         "source": "web/e2e/bleephub.spec.ts",
         "target": "/ui/packages"
       },
       {
-        "line": 266,
+        "line": 314,
         "source": "web/e2e/bleephub.spec.ts",
         "target": "/ui/"
       },
       {
-        "line": 303,
+        "line": 351,
         "source": "web/e2e/bleephub.spec.ts",
         "target": "/ui/account"
       },
       {
-        "line": 327,
+        "line": 375,
         "source": "web/e2e/bleephub.spec.ts",
         "target": "/ui/"
       },
       {
-        "line": 333,
+        "line": 381,
         "source": "web/e2e/bleephub.spec.ts",
         "target": "/ui/classrooms/${classroom.id}"
       },
       {
-        "line": 357,
+        "line": 405,
         "source": "web/e2e/bleephub.spec.ts",
         "target": "/ui/repos"
       },
       {
-        "line": 363,
+        "line": 411,
         "source": "web/e2e/bleephub.spec.ts",
         "target": "/ui/"
       },
       {
-        "line": 371,
+        "line": 419,
         "source": "web/e2e/bleephub.spec.ts",
         "target": "/ui/repos"
       },
       {
-        "line": 393,
+        "line": 441,
         "source": "web/e2e/bleephub.spec.ts",
         "target": "/ui/repos"
       },
       {
-        "line": 412,
+        "line": 460,
         "source": "web/e2e/bleephub.spec.ts",
         "target": "/ui/"
       },
       {
-        "line": 423,
+        "line": 471,
         "source": "web/e2e/bleephub.spec.ts",
         "target": "/ui/repos/${owner}/detail-test"
       },
       {
-        "line": 437,
-        "source": "web/e2e/bleephub.spec.ts",
-        "target": "/ui/"
-      },
-      {
-        "line": 448,
-        "source": "web/e2e/bleephub.spec.ts",
-        "target": "/ui/repos/${owner}/readme-test"
-      },
-      {
-        "line": 458,
-        "source": "web/e2e/bleephub.spec.ts",
-        "target": "/ui/"
-      },
-      {
-        "line": 472,
-        "source": "web/e2e/bleephub.spec.ts",
-        "target": "/ui/repos/admin/${repo}"
-      },
-      {
-        "line": 482,
+        "line": 485,
         "source": "web/e2e/bleephub.spec.ts",
         "target": "/ui/"
       },
       {
         "line": 496,
         "source": "web/e2e/bleephub.spec.ts",
-        "target": "/ui/repos/${owner}/issues-test"
+        "target": "/ui/repos/${owner}/readme-test"
       },
       {
-        "line": 511,
+        "line": 506,
         "source": "web/e2e/bleephub.spec.ts",
         "target": "/ui/"
       },
       {
-        "line": 526,
+        "line": 520,
+        "source": "web/e2e/bleephub.spec.ts",
+        "target": "/ui/repos/admin/${repo}"
+      },
+      {
+        "line": 530,
+        "source": "web/e2e/bleephub.spec.ts",
+        "target": "/ui/"
+      },
+      {
+        "line": 544,
+        "source": "web/e2e/bleephub.spec.ts",
+        "target": "/ui/repos/${owner}/issues-test"
+      },
+      {
+        "line": 559,
+        "source": "web/e2e/bleephub.spec.ts",
+        "target": "/ui/"
+      },
+      {
+        "line": 574,
         "source": "web/e2e/bleephub.spec.ts",
         "target": "/ui/repos/${owner}/issues-direct/issues"
       },
       {
-        "line": 548,
+        "line": 596,
         "source": "web/e2e/bleephub.spec.ts",
         "target": "/ui/"
       },
       {
-        "line": 558,
+        "line": 606,
         "source": "web/e2e/bleephub.spec.ts",
         "target": "/ui/repos/${owner}/pulls-direct/pulls"
       },
       {
-        "line": 566,
+        "line": 614,
         "source": "web/e2e/bleephub.spec.ts",
         "target": "/ui/"
       },
       {
-        "line": 590,
+        "line": 638,
         "source": "web/e2e/bleephub.spec.ts",
         "target": "/ui/repos/admin/${repo}/pulls/${pull.number}/files"
       },
       {
-        "line": 618,
+        "line": 666,
         "source": "web/e2e/bleephub.spec.ts",
         "target": "/ui/apps"
       },
       {
-        "line": 626,
+        "line": 674,
         "source": "web/e2e/bleephub.spec.ts",
         "target": "/ui/apps"
       },
       {
-        "line": 637,
+        "line": 685,
         "source": "web/e2e/bleephub.spec.ts",
         "target": "/ui/apps"
       },
       {
-        "line": 647,
+        "line": 695,
         "source": "web/e2e/bleephub.spec.ts",
         "target": "/ui/oauth"
       },
       {
-        "line": 658,
+        "line": 706,
         "source": "web/e2e/bleephub.spec.ts",
         "target": "/ui/"
       },
       {
-        "line": 690,
+        "line": 738,
         "source": "web/e2e/bleephub.spec.ts",
         "target": "/ui/workflows"
       },
       {
-        "line": 709,
+        "line": 757,
         "source": "web/e2e/bleephub.spec.ts",
         "target": "/ui/metrics"
       },
       {
-        "line": 720,
+        "line": 768,
         "source": "web/e2e/bleephub.spec.ts",
         "target": "/ui/"
       },
       {
-        "line": 726,
+        "line": 774,
         "source": "web/e2e/bleephub.spec.ts",
         "target": "/ui/repos/${owner}/${repo}/releases"
       },
       {
-        "line": 770,
+        "line": 818,
         "source": "web/e2e/bleephub.spec.ts",
         "target": "/ui/"
       },
       {
-        "line": 777,
+        "line": 825,
         "source": "web/e2e/bleephub.spec.ts",
         "target": "/ui/repos/${owner}/${repo}/security/code-scanning"
       },
       {
-        "line": 825,
+        "line": 873,
         "source": "web/e2e/bleephub.spec.ts",
         "target": "/ui/apps"
       },
       {
-        "line": 859,
+        "line": 907,
         "source": "web/e2e/bleephub.spec.ts",
         "target": "/ui/marketplace"
       },
       {
-        "line": 909,
+        "line": 957,
         "source": "web/e2e/bleephub.spec.ts",
         "target": "/ui/admin"
       },
       {
-        "line": 914,
+        "line": 962,
         "source": "web/e2e/bleephub.spec.ts",
         "target": "/ui/repos"
       },
       {
-        "line": 926,
+        "line": 974,
         "source": "web/e2e/bleephub.spec.ts",
         "target": "/ui/repos/${owner}/dark-theme-repo"
       },
       {
-        "line": 939,
+        "line": 987,
         "source": "web/e2e/bleephub.spec.ts",
         "target": "/health"
       },
@@ -26308,7 +26328,7 @@
     "routes": [
       {
         "component": "DashboardPage",
-        "line": 176,
+        "line": 177,
         "path": "/ui/",
         "rendered_tests": [
           "web/src/__tests__/DashboardPage.test.tsx"
@@ -26320,7 +26340,7 @@
       },
       {
         "component": "LoginRedirect",
-        "line": 161,
+        "line": 162,
         "path": "/ui/*",
         "rendered_tests": [],
         "source": "web/src/App.tsx",
@@ -26328,7 +26348,7 @@
       },
       {
         "component": "Navigate",
-        "line": 265,
+        "line": 267,
         "path": "/ui/*",
         "rendered_tests": [],
         "source": "web/src/App.tsx",
@@ -26336,7 +26356,7 @@
       },
       {
         "component": "ProfilePage",
-        "line": 264,
+        "line": 266,
         "path": "/ui/:login",
         "rendered_tests": [
           "web/src/__tests__/ProfilePage.test.tsx"
@@ -26348,7 +26368,7 @@
       },
       {
         "component": "AccountPage",
-        "line": 249,
+        "line": 251,
         "path": "/ui/account",
         "rendered_tests": [
           "web/src/__tests__/AccountPage.test.tsx",
@@ -26362,7 +26382,7 @@
       },
       {
         "component": "OverviewPage",
-        "line": 236,
+        "line": 238,
         "path": "/ui/admin",
         "rendered_tests": [
           "web/src/__tests__/OverviewPage.test.tsx"
@@ -26374,7 +26394,7 @@
       },
       {
         "component": "AuditLogPage",
-        "line": 241,
+        "line": 243,
         "path": "/ui/admin/audit-log",
         "rendered_tests": [
           "web/src/__tests__/pageErrorPaths.test.tsx"
@@ -26386,7 +26406,7 @@
       },
       {
         "component": "EnterprisePage",
-        "line": 240,
+        "line": 242,
         "path": "/ui/admin/enterprise",
         "rendered_tests": [
           "web/src/__tests__/EnterprisePage.test.tsx",
@@ -26400,7 +26420,7 @@
       },
       {
         "component": "OrgsPage",
-        "line": 238,
+        "line": 240,
         "path": "/ui/admin/orgs",
         "rendered_tests": [
           "web/src/__tests__/UiFidelityJourneys.test.tsx",
@@ -26414,7 +26434,7 @@
       },
       {
         "component": "TeamsPage",
-        "line": 239,
+        "line": 241,
         "path": "/ui/admin/teams",
         "rendered_tests": [
           "web/src/__tests__/TeamsPage.test.tsx"
@@ -26426,7 +26446,7 @@
       },
       {
         "component": "UsersPage",
-        "line": 237,
+        "line": 239,
         "path": "/ui/admin/users",
         "rendered_tests": [
           "web/src/__tests__/pageErrorPaths.test.tsx"
@@ -26438,7 +26458,7 @@
       },
       {
         "component": "AppsPage",
-        "line": 217,
+        "line": 219,
         "path": "/ui/apps",
         "rendered_tests": [
           "web/src/__tests__/AppsPage.test.tsx"
@@ -26450,7 +26470,7 @@
       },
       {
         "component": "MarketplacePublisherPage",
-        "line": 218,
+        "line": 220,
         "path": "/ui/apps/:publisher/marketplace",
         "rendered_tests": [
           "web/src/__tests__/MarketplacePublisherPage.test.tsx"
@@ -26462,7 +26482,7 @@
       },
       {
         "component": "ClassroomPage",
-        "line": 231,
+        "line": 233,
         "path": "/ui/classrooms",
         "rendered_tests": [
           "web/src/__tests__/ClassroomPage.test.tsx"
@@ -26474,7 +26494,7 @@
       },
       {
         "component": "ClassroomPage",
-        "line": 232,
+        "line": 234,
         "path": "/ui/classrooms/:classroomId",
         "rendered_tests": [
           "web/src/__tests__/ClassroomPage.test.tsx"
@@ -26486,7 +26506,7 @@
       },
       {
         "component": "ClassroomPage",
-        "line": 233,
+        "line": 235,
         "path": "/ui/classrooms/accept/:inviteCode",
         "rendered_tests": [
           "web/src/__tests__/ClassroomPage.test.tsx"
@@ -26498,7 +26518,7 @@
       },
       {
         "component": "CodespacesPage",
-        "line": 227,
+        "line": 229,
         "path": "/ui/codespaces",
         "rendered_tests": [
           "web/src/__tests__/CodespacesPage.test.tsx"
@@ -26510,7 +26530,7 @@
       },
       {
         "component": "CodespacesPage",
-        "line": 228,
+        "line": 230,
         "path": "/ui/codespaces/:codespaceName",
         "rendered_tests": [
           "web/src/__tests__/CodespacesPage.test.tsx"
@@ -26522,7 +26542,7 @@
       },
       {
         "component": "PersonalCopilotSpacesPage",
-        "line": 230,
+        "line": 232,
         "path": "/ui/copilot/spaces",
         "rendered_tests": [
           "web/src/__tests__/CopilotPage.test.tsx"
@@ -26534,7 +26554,7 @@
       },
       {
         "component": "GistsPage",
-        "line": 221,
+        "line": 223,
         "path": "/ui/gists",
         "rendered_tests": [
           "web/src/__tests__/GistsPage.test.tsx"
@@ -26546,7 +26566,7 @@
       },
       {
         "component": "LoginPage",
-        "line": 160,
+        "line": 161,
         "path": "/ui/login",
         "rendered_tests": [
           "web/src/__tests__/LoginPage.test.tsx"
@@ -26559,7 +26579,7 @@
       },
       {
         "component": "Navigate",
-        "line": 263,
+        "line": 265,
         "path": "/ui/login",
         "rendered_tests": [],
         "source": "web/src/App.tsx",
@@ -26567,7 +26587,7 @@
       },
       {
         "component": "MarketplacePage",
-        "line": 234,
+        "line": 236,
         "path": "/ui/marketplace",
         "rendered_tests": [
           "web/src/__tests__/MarketplacePage.test.tsx"
@@ -26579,7 +26599,7 @@
       },
       {
         "component": "MarketplacePage",
-        "line": 235,
+        "line": 237,
         "path": "/ui/marketplace/:slug",
         "rendered_tests": [
           "web/src/__tests__/MarketplacePage.test.tsx"
@@ -26591,7 +26611,7 @@
       },
       {
         "component": "MetricsPage",
-        "line": 220,
+        "line": 222,
         "path": "/ui/metrics",
         "rendered_tests": [
           "web/src/__tests__/MetricsPage.test.tsx"
@@ -26603,7 +26623,7 @@
       },
       {
         "component": "MigrationsPage",
-        "line": 226,
+        "line": 228,
         "path": "/ui/migrations",
         "rendered_tests": [
           "web/src/__tests__/MigrationsPage.test.tsx"
@@ -26615,7 +26635,7 @@
       },
       {
         "component": "NotificationsPage",
-        "line": 222,
+        "line": 224,
         "path": "/ui/notifications",
         "rendered_tests": [
           "web/src/__tests__/NotificationsPage.test.tsx"
@@ -26627,7 +26647,7 @@
       },
       {
         "component": "OAuthPage",
-        "line": 219,
+        "line": 221,
         "path": "/ui/oauth",
         "rendered_tests": [
           "web/src/__tests__/OAuthPage.test.tsx"
@@ -26639,7 +26659,7 @@
       },
       {
         "component": "OrgOverviewPage",
-        "line": 257,
+        "line": 259,
         "path": "/ui/orgs/:org",
         "rendered_tests": [
           "web/src/__tests__/OrgOverviewPage.test.tsx"
@@ -26651,7 +26671,7 @@
       },
       {
         "component": "CopilotPage",
-        "line": 184,
+        "line": 185,
         "path": "/ui/orgs/:org/copilot",
         "rendered_tests": [
           "web/src/__tests__/CopilotPage.test.tsx",
@@ -26665,7 +26685,7 @@
       },
       {
         "component": "OrgGovernancePage",
-        "line": 183,
+        "line": 184,
         "path": "/ui/orgs/:org/governance",
         "rendered_tests": [
           "web/src/__tests__/OrgGovernancePage.test.tsx",
@@ -26679,7 +26699,7 @@
       },
       {
         "component": "OrgHooksPage",
-        "line": 245,
+        "line": 247,
         "path": "/ui/orgs/:org/hooks",
         "rendered_tests": [
           "web/src/__tests__/OrgHooksPage.test.tsx"
@@ -26691,7 +26711,7 @@
       },
       {
         "component": "WebhookDeliveriesPage",
-        "line": 246,
+        "line": 248,
         "path": "/ui/orgs/:org/hooks/:hookId/deliveries",
         "rendered_tests": [
           "web/src/__tests__/WebhookDeliveriesPage.test.tsx",
@@ -26705,7 +26725,7 @@
       },
       {
         "component": "PackagesPage",
-        "line": 224,
+        "line": 226,
         "path": "/ui/orgs/:org/packages",
         "rendered_tests": [
           "web/src/__tests__/mutationErrors.test.tsx"
@@ -26717,7 +26737,7 @@
       },
       {
         "component": "OrgPeoplePage",
-        "line": 258,
+        "line": 260,
         "path": "/ui/orgs/:org/people",
         "rendered_tests": [
           "web/src/__tests__/OrgPeopleTeamsPage.test.tsx"
@@ -26729,7 +26749,7 @@
       },
       {
         "component": "OrgReposPage",
-        "line": 181,
+        "line": 182,
         "path": "/ui/orgs/:org/repos",
         "rendered_tests": [
           "web/src/__tests__/OrgReposPage.test.tsx"
@@ -26741,7 +26761,7 @@
       },
       {
         "component": "RulesetsPage",
-        "line": 182,
+        "line": 183,
         "path": "/ui/orgs/:org/rulesets",
         "rendered_tests": [
           "web/src/__tests__/RulesetsPage.test.tsx",
@@ -26755,7 +26775,7 @@
       },
       {
         "component": "OrgTeamsPage",
-        "line": 259,
+        "line": 261,
         "path": "/ui/orgs/:org/teams",
         "rendered_tests": [
           "web/src/__tests__/OrgPeopleTeamsPage.test.tsx"
@@ -26767,7 +26787,7 @@
       },
       {
         "component": "PackagesPage",
-        "line": 223,
+        "line": 225,
         "path": "/ui/packages",
         "rendered_tests": [
           "web/src/__tests__/mutationErrors.test.tsx"
@@ -26779,7 +26799,7 @@
       },
       {
         "component": "ReposPage",
-        "line": 180,
+        "line": 181,
         "path": "/ui/repos",
         "rendered_tests": [
           "web/src/__tests__/ReposPage.test.tsx"
@@ -26791,21 +26811,23 @@
       },
       {
         "component": "RepoDetailPage",
-        "line": 185,
+        "line": 186,
         "path": "/ui/repos/:owner/:repo",
         "rendered_tests": [
           "web/src/__tests__/RepoDetailPage.test.tsx",
-          "web/src/__tests__/RepoDetailSocial.test.tsx"
+          "web/src/__tests__/RepoDetailSocial.test.tsx",
+          "web/src/__tests__/RepositoryCollaborationJourneys.test.tsx"
         ],
         "source": "web/src/App.tsx",
         "tests": [
           "web/src/__tests__/RepoDetailPage.test.tsx",
-          "web/src/__tests__/RepoDetailSocial.test.tsx"
+          "web/src/__tests__/RepoDetailSocial.test.tsx",
+          "web/src/__tests__/RepositoryCollaborationJourneys.test.tsx"
         ]
       },
       {
         "component": "ActionsPage",
-        "line": 207,
+        "line": 209,
         "path": "/ui/repos/:owner/:repo/actions",
         "rendered_tests": [
           "web/src/__tests__/ActionsPage.test.tsx"
@@ -26817,7 +26839,7 @@
       },
       {
         "component": "RunDetailPage",
-        "line": 208,
+        "line": 210,
         "path": "/ui/repos/:owner/:repo/actions/runs/:runId",
         "rendered_tests": [
           "web/src/__tests__/RunDetailPage.test.tsx"
@@ -26829,7 +26851,7 @@
       },
       {
         "component": "RepoFilePage",
-        "line": 191,
+        "line": 193,
         "path": "/ui/repos/:owner/:repo/blob/:ref/*",
         "rendered_tests": [
           "web/src/__tests__/RepoDetailPage.test.tsx"
@@ -26841,21 +26863,23 @@
       },
       {
         "component": "RepoDetailPage",
-        "line": 187,
+        "line": 188,
         "path": "/ui/repos/:owner/:repo/branches",
         "rendered_tests": [
           "web/src/__tests__/RepoDetailPage.test.tsx",
-          "web/src/__tests__/RepoDetailSocial.test.tsx"
+          "web/src/__tests__/RepoDetailSocial.test.tsx",
+          "web/src/__tests__/RepositoryCollaborationJourneys.test.tsx"
         ],
         "source": "web/src/App.tsx",
         "tests": [
           "web/src/__tests__/RepoDetailPage.test.tsx",
-          "web/src/__tests__/RepoDetailSocial.test.tsx"
+          "web/src/__tests__/RepoDetailSocial.test.tsx",
+          "web/src/__tests__/RepositoryCollaborationJourneys.test.tsx"
         ]
       },
       {
         "component": "CodespacesPage",
-        "line": 229,
+        "line": 231,
         "path": "/ui/repos/:owner/:repo/codespaces",
         "rendered_tests": [
           "web/src/__tests__/CodespacesPage.test.tsx"
@@ -26867,21 +26891,23 @@
       },
       {
         "component": "RepoDetailPage",
-        "line": 186,
+        "line": 187,
         "path": "/ui/repos/:owner/:repo/commits",
         "rendered_tests": [
           "web/src/__tests__/RepoDetailPage.test.tsx",
-          "web/src/__tests__/RepoDetailSocial.test.tsx"
+          "web/src/__tests__/RepoDetailSocial.test.tsx",
+          "web/src/__tests__/RepositoryCollaborationJourneys.test.tsx"
         ],
         "source": "web/src/App.tsx",
         "tests": [
           "web/src/__tests__/RepoDetailPage.test.tsx",
-          "web/src/__tests__/RepoDetailSocial.test.tsx"
+          "web/src/__tests__/RepoDetailSocial.test.tsx",
+          "web/src/__tests__/RepositoryCollaborationJourneys.test.tsx"
         ]
       },
       {
         "component": "RepoCommitPage",
-        "line": 190,
+        "line": 191,
         "path": "/ui/repos/:owner/:repo/commits/:sha",
         "rendered_tests": [
           "web/src/__tests__/RepoDetailPage.test.tsx"
@@ -26892,8 +26918,20 @@
         ]
       },
       {
+        "component": "RepoComparePage",
+        "line": 192,
+        "path": "/ui/repos/:owner/:repo/compare/:range",
+        "rendered_tests": [
+          "web/src/__tests__/RepositoryCollaborationJourneys.test.tsx"
+        ],
+        "source": "web/src/App.tsx",
+        "tests": [
+          "web/src/__tests__/RepositoryCollaborationJourneys.test.tsx"
+        ]
+      },
+      {
         "component": "DeploymentsPage",
-        "line": 243,
+        "line": 245,
         "path": "/ui/repos/:owner/:repo/deployments",
         "rendered_tests": [
           "web/src/__tests__/DeploymentsPage.test.tsx",
@@ -26907,7 +26945,7 @@
       },
       {
         "component": "DiscussionsPage",
-        "line": 205,
+        "line": 207,
         "path": "/ui/repos/:owner/:repo/discussions",
         "rendered_tests": [
           "web/src/__tests__/DiscussionsPage.test.tsx"
@@ -26919,7 +26957,7 @@
       },
       {
         "component": "DiscussionsPage",
-        "line": 206,
+        "line": 208,
         "path": "/ui/repos/:owner/:repo/discussions/:number",
         "rendered_tests": [
           "web/src/__tests__/DiscussionsPage.test.tsx"
@@ -26931,7 +26969,7 @@
       },
       {
         "component": "RepoSocialPage",
-        "line": 252,
+        "line": 254,
         "path": "/ui/repos/:owner/:repo/forks",
         "rendered_tests": [
           "web/src/__tests__/RepoSocialPage.test.tsx",
@@ -26945,7 +26983,7 @@
       },
       {
         "component": "WebhookDeliveriesPage",
-        "line": 244,
+        "line": 246,
         "path": "/ui/repos/:owner/:repo/hooks/:hookId/deliveries",
         "rendered_tests": [
           "web/src/__tests__/WebhookDeliveriesPage.test.tsx",
@@ -26959,7 +26997,7 @@
       },
       {
         "component": "InsightsPage",
-        "line": 199,
+        "line": 201,
         "path": "/ui/repos/:owner/:repo/insights",
         "rendered_tests": [
           "web/src/__tests__/InsightsPage.test.tsx",
@@ -26973,7 +27011,7 @@
       },
       {
         "component": "IssuesPage",
-        "line": 195,
+        "line": 197,
         "path": "/ui/repos/:owner/:repo/issues",
         "rendered_tests": [
           "web/src/__tests__/IssuesPage.test.tsx"
@@ -26985,7 +27023,7 @@
       },
       {
         "component": "IssuesPage",
-        "line": 196,
+        "line": 198,
         "path": "/ui/repos/:owner/:repo/issues/:number",
         "rendered_tests": [
           "web/src/__tests__/IssuesPage.test.tsx"
@@ -26997,7 +27035,7 @@
       },
       {
         "component": "IssuesPage",
-        "line": 197,
+        "line": 199,
         "path": "/ui/repos/:owner/:repo/labels",
         "rendered_tests": [
           "web/src/__tests__/IssuesPage.test.tsx"
@@ -27009,7 +27047,7 @@
       },
       {
         "component": "IssuesPage",
-        "line": 198,
+        "line": 200,
         "path": "/ui/repos/:owner/:repo/milestones",
         "rendered_tests": [
           "web/src/__tests__/IssuesPage.test.tsx"
@@ -27021,7 +27059,7 @@
       },
       {
         "component": "PackagesPage",
-        "line": 225,
+        "line": 227,
         "path": "/ui/repos/:owner/:repo/packages",
         "rendered_tests": [
           "web/src/__tests__/mutationErrors.test.tsx"
@@ -27033,7 +27071,7 @@
       },
       {
         "component": "ProjectsClassicPage",
-        "line": 215,
+        "line": 217,
         "path": "/ui/repos/:owner/:repo/projects-classic",
         "rendered_tests": [
           "web/src/__tests__/pageErrorPaths.test.tsx"
@@ -27046,7 +27084,7 @@
       },
       {
         "component": "PullsPage",
-        "line": 200,
+        "line": 202,
         "path": "/ui/repos/:owner/:repo/pulls",
         "rendered_tests": [
           "web/src/__tests__/PullsPage.test.tsx",
@@ -27060,7 +27098,7 @@
       },
       {
         "component": "PullsPage",
-        "line": 201,
+        "line": 203,
         "path": "/ui/repos/:owner/:repo/pulls/:number",
         "rendered_tests": [
           "web/src/__tests__/PullsPage.test.tsx",
@@ -27074,7 +27112,7 @@
       },
       {
         "component": "PullsPage",
-        "line": 204,
+        "line": 206,
         "path": "/ui/repos/:owner/:repo/pulls/:number/checks",
         "rendered_tests": [
           "web/src/__tests__/PullsPage.test.tsx",
@@ -27088,7 +27126,7 @@
       },
       {
         "component": "PullsPage",
-        "line": 202,
+        "line": 204,
         "path": "/ui/repos/:owner/:repo/pulls/:number/commits",
         "rendered_tests": [
           "web/src/__tests__/PullsPage.test.tsx",
@@ -27102,7 +27140,7 @@
       },
       {
         "component": "PullsPage",
-        "line": 203,
+        "line": 205,
         "path": "/ui/repos/:owner/:repo/pulls/:number/files",
         "rendered_tests": [
           "web/src/__tests__/PullsPage.test.tsx",
@@ -27116,7 +27154,7 @@
       },
       {
         "component": "ReleasesPage",
-        "line": 192,
+        "line": 194,
         "path": "/ui/repos/:owner/:repo/releases",
         "rendered_tests": [
           "web/src/__tests__/ReleasesPage.test.tsx"
@@ -27128,7 +27166,7 @@
       },
       {
         "component": "ReleasesPage",
-        "line": 194,
+        "line": 196,
         "path": "/ui/repos/:owner/:repo/releases/:releaseId",
         "rendered_tests": [
           "web/src/__tests__/ReleasesPage.test.tsx"
@@ -27140,7 +27178,7 @@
       },
       {
         "component": "ReleasesPage",
-        "line": 193,
+        "line": 195,
         "path": "/ui/repos/:owner/:repo/releases/new",
         "rendered_tests": [
           "web/src/__tests__/ReleasesPage.test.tsx"
@@ -27152,7 +27190,7 @@
       },
       {
         "component": "SecurityAdvisoriesPage",
-        "line": 214,
+        "line": 216,
         "path": "/ui/repos/:owner/:repo/security/advisories",
         "rendered_tests": [
           "web/src/__tests__/UiFidelityJourneys.test.tsx",
@@ -27166,7 +27204,7 @@
       },
       {
         "component": "CodeScanningPage",
-        "line": 212,
+        "line": 214,
         "path": "/ui/repos/:owner/:repo/security/code-scanning",
         "rendered_tests": [
           "web/src/__tests__/CodeScanningPage.test.tsx"
@@ -27178,7 +27216,7 @@
       },
       {
         "component": "DependabotPage",
-        "line": 213,
+        "line": 215,
         "path": "/ui/repos/:owner/:repo/security/dependabot",
         "rendered_tests": [
           "web/src/__tests__/UiFidelityJourneys.test.tsx",
@@ -27192,7 +27230,7 @@
       },
       {
         "component": "SecretScanningPage",
-        "line": 211,
+        "line": 213,
         "path": "/ui/repos/:owner/:repo/security/secret-scanning",
         "rendered_tests": [
           "web/src/__tests__/UiFidelityJourneys.test.tsx",
@@ -27208,7 +27246,7 @@
       },
       {
         "component": "RepoSettingsPage",
-        "line": 209,
+        "line": 211,
         "path": "/ui/repos/:owner/:repo/settings",
         "rendered_tests": [
           "web/src/__tests__/RepoCollaboratorsTab.test.tsx",
@@ -27224,7 +27262,7 @@
       },
       {
         "component": "BranchProtectionPage",
-        "line": 210,
+        "line": 212,
         "path": "/ui/repos/:owner/:repo/settings/branch-protection",
         "rendered_tests": [
           "web/src/__tests__/UiFidelityJourneys.test.tsx",
@@ -27238,7 +27276,7 @@
       },
       {
         "component": "RepoSecretsPage",
-        "line": 216,
+        "line": 218,
         "path": "/ui/repos/:owner/:repo/settings/secrets",
         "rendered_tests": [
           "web/src/__tests__/RepoSecretsPage.test.tsx"
@@ -27250,7 +27288,7 @@
       },
       {
         "component": "RepoSocialPage",
-        "line": 250,
+        "line": 252,
         "path": "/ui/repos/:owner/:repo/stargazers",
         "rendered_tests": [
           "web/src/__tests__/RepoSocialPage.test.tsx",
@@ -27264,35 +27302,39 @@
       },
       {
         "component": "RepoDetailPage",
-        "line": 188,
+        "line": 189,
         "path": "/ui/repos/:owner/:repo/tags",
         "rendered_tests": [
           "web/src/__tests__/RepoDetailPage.test.tsx",
-          "web/src/__tests__/RepoDetailSocial.test.tsx"
+          "web/src/__tests__/RepoDetailSocial.test.tsx",
+          "web/src/__tests__/RepositoryCollaborationJourneys.test.tsx"
         ],
         "source": "web/src/App.tsx",
         "tests": [
           "web/src/__tests__/RepoDetailPage.test.tsx",
-          "web/src/__tests__/RepoDetailSocial.test.tsx"
+          "web/src/__tests__/RepoDetailSocial.test.tsx",
+          "web/src/__tests__/RepositoryCollaborationJourneys.test.tsx"
         ]
       },
       {
         "component": "RepoDetailPage",
-        "line": 189,
+        "line": 190,
         "path": "/ui/repos/:owner/:repo/tree/:ref/*",
         "rendered_tests": [
           "web/src/__tests__/RepoDetailPage.test.tsx",
-          "web/src/__tests__/RepoDetailSocial.test.tsx"
+          "web/src/__tests__/RepoDetailSocial.test.tsx",
+          "web/src/__tests__/RepositoryCollaborationJourneys.test.tsx"
         ],
         "source": "web/src/App.tsx",
         "tests": [
           "web/src/__tests__/RepoDetailPage.test.tsx",
-          "web/src/__tests__/RepoDetailSocial.test.tsx"
+          "web/src/__tests__/RepoDetailSocial.test.tsx",
+          "web/src/__tests__/RepositoryCollaborationJourneys.test.tsx"
         ]
       },
       {
         "component": "RepoSocialPage",
-        "line": 251,
+        "line": 253,
         "path": "/ui/repos/:owner/:repo/watchers",
         "rendered_tests": [
           "web/src/__tests__/RepoSocialPage.test.tsx",
@@ -27306,7 +27348,7 @@
       },
       {
         "component": "RunnersPage",
-        "line": 179,
+        "line": 180,
         "path": "/ui/runners",
         "rendered_tests": [
           "web/src/__tests__/RunnersPage.test.tsx"
@@ -27318,7 +27360,7 @@
       },
       {
         "component": "SearchPage",
-        "line": 248,
+        "line": 250,
         "path": "/ui/search",
         "rendered_tests": [
           "web/src/__tests__/SearchPage.test.tsx",
@@ -27332,7 +27374,7 @@
       },
       {
         "component": "ProfilePage",
-        "line": 260,
+        "line": 262,
         "path": "/ui/users/:login",
         "rendered_tests": [
           "web/src/__tests__/ProfilePage.test.tsx"
@@ -27344,7 +27386,7 @@
       },
       {
         "component": "WorkflowsPage",
-        "line": 177,
+        "line": 178,
         "path": "/ui/workflows",
         "rendered_tests": [
           "web/src/__tests__/WorkflowsPage.test.tsx"
@@ -27356,7 +27398,7 @@
       },
       {
         "component": "WorkflowDetailPage",
-        "line": 178,
+        "line": 179,
         "path": "/ui/workflows/:id",
         "rendered_tests": [
           "web/src/__tests__/WorkflowDetailPage.test.tsx"
@@ -27368,10 +27410,10 @@
       }
     ],
     "summary": {
-      "browser_navigations": 52,
-      "routes": 84,
-      "routes_with_direct_render": 81,
-      "routes_with_test_reference": 81
+      "browser_navigations": 56,
+      "routes": 85,
+      "routes_with_direct_render": 82,
+      "routes_with_test_reference": 82
     }
   }
 }

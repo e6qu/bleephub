@@ -9,6 +9,7 @@ import {
   fetchRepoBranches,
   fetchRepoCommit,
   fetchRepoCommits,
+  fetchRepoComparison,
   fetchRepoContents,
   fetchRepoFile,
   fetchRepoLanguages,
@@ -30,6 +31,7 @@ import type {
   BleephubRepo,
   GithubBranch,
   GithubCommit,
+  GithubComparison,
   GithubContentFile,
   GithubContentItem,
   GithubTag,
@@ -40,7 +42,7 @@ import type {
   GithubRepoSocialCounts,
 } from "../types.js";
 import { RepoHeader } from "../components/Shell.js";
-import { Box, Blankslate, CodeBlock, SectionLabel } from "../components/ui.js";
+import { Box, Blankslate, Button, CodeBlock, SectionLabel } from "../components/ui.js";
 import {
   BranchIcon,
   TagIcon,
@@ -104,12 +106,12 @@ export function RepoDetailPage({ initialTab = "code" }: { initialTab?: SubTab })
     error: commitsErr,
   } = useQuery({
     queryKey: ["commits", owner, repo, routeRef],
-    queryFn: () => fetchRepoCommits(owner, repo, routeRef || undefined),
+    queryFn: () => fetchRepoCommits(owner, repo, routeRef ? { sha: routeRef } : {}),
     // GitHub returns 409 for the commits endpoint on an empty repository.
     // `pushed_at` is the reliable emptiness signal here; `size` is not,
     // because in-memory and S3-backed repositories legitimately report zero.
     enabled:
-      (tab === "commits" || tab === "code")
+      tab === "code"
       && repoData !== undefined
       && repoData.pushed_at !== null,
   });
@@ -263,11 +265,12 @@ export function RepoDetailPage({ initialTab = "code" }: { initialTab?: SubTab })
         )
       )}
       {tab === "commits" &&
-        (commitsError ? (
-          <InlineError title="Failed to load commits" detail={String(commitsErr)} />
-        ) : (
-          <CommitsList owner={owner} repo={repo} commits={commits} loading={commitsLoading} />
-        ))}
+        <CommitHistory
+          owner={owner}
+          repo={repo}
+          branches={branches.map((branch) => branch.name)}
+          defaultBranch={repoData.default_branch}
+        />}
       {tab === "branches" && (
         <BranchesList
           owner={owner}
@@ -400,6 +403,9 @@ function CodeView({
           }}
           style={{ fontSize: "0.85rem", padding: "0.35rem 0.5rem" }}
         >
+          {!branches.includes(branch) && (
+            <option value={branch}>{branch} (detached)</option>
+          )}
           {branches.map((b) => (
             <option key={b} value={b}>
               {b}
@@ -419,7 +425,7 @@ function CodeView({
           </button>
         )}
         <span style={{ fontSize: "0.85rem", color: "var(--color-fg-muted)", flex: 1 }}>{path}</span>
-        <CloneButton owner={owner} repo={repo} sshUrl={sshUrl} />
+        <CloneButton owner={owner} repo={repo} sshUrl={sshUrl} archiveRef={branch} />
       </div>
 
       {fileList.length > 0 && (
@@ -510,7 +516,17 @@ function LatestCommitBanner({
 }
 
 /** GitHub's green "Code" clone dropdown — HTTPS and configured SSH URLs. */
-function CloneButton({ owner, repo, sshUrl }: { owner: string; repo: string; sshUrl?: string }) {
+function CloneButton({
+  owner,
+  repo,
+  sshUrl,
+  archiveRef,
+}: {
+  owner: string;
+  repo: string;
+  sshUrl?: string;
+  archiveRef: string;
+}) {
   const [open, setOpen] = useState(false);
   const [copied, setCopied] = useState(false);
   const [copyError, setCopyError] = useState(false);
@@ -634,6 +650,23 @@ function CloneButton({ owner, repo, sshUrl }: { owner: string; repo: string; ssh
               Clipboard access failed. Select the URL above and copy it manually.
             </p>
           )}
+          <div
+            className="mt-3 flex gap-3"
+            style={{ paddingTop: "0.7rem", borderTop: "1px solid var(--color-border)", fontSize: "0.78rem" }}
+          >
+            <a
+              href={`/api/v3/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/zipball/${encodeURIComponent(archiveRef)}`}
+              style={{ color: "var(--color-accent)", textDecoration: "none" }}
+            >
+              Download ZIP
+            </a>
+            <a
+              href={`/api/v3/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/tarball/${encodeURIComponent(archiveRef)}`}
+              style={{ color: "var(--color-accent)", textDecoration: "none" }}
+            >
+              Download TAR.GZ
+            </a>
+          </div>
         </div>
       )}
     </div>
@@ -827,6 +860,9 @@ function FileRow({
       <span style={{ color: "var(--color-fg)", fontWeight: 400, flex: 1, textAlign: "left" }}>
         {item.name}
       </span>
+      {(item.type === "symlink" || item.type === "submodule") && (
+        <span style={{ color: "var(--color-fg-muted)", fontSize: "0.72rem" }}>{item.type}</span>
+      )}
     </>
   );
   const style = {
@@ -839,6 +875,9 @@ function FileRow({
     background: "transparent",
     textDecoration: "none",
   } as const;
+  if (item.type === "submodule" && item.submodule_git_url) {
+    return <a href={item.submodule_git_url} className="flex items-center gap-2" style={style}>{content}</a>;
+  }
   return <Link to={href} className="flex items-center gap-2" style={style}>{content}</Link>;
 }
 
@@ -904,6 +943,147 @@ function EmptyRepoSetup({
         <CodeBlock>{snippets[activeTab]}</CodeBlock>
       )}
     </Blankslate>
+  );
+}
+
+interface CommitHistoryFilters {
+  sha: string;
+  path: string;
+  author: string;
+  since: string;
+  until: string;
+}
+
+const commitDateBoundary = (date: string, endOfDay: boolean) =>
+  date ? new Date(`${date}T${endOfDay ? "23:59:59.999" : "00:00:00.000"}Z`).toISOString() : undefined;
+
+function CommitHistory({
+  owner,
+  repo,
+  branches,
+  defaultBranch,
+}: {
+  owner: string;
+  repo: string;
+  branches: string[];
+  defaultBranch: string;
+}) {
+  const emptyFilters: CommitHistoryFilters = {
+    sha: defaultBranch,
+    path: "",
+    author: "",
+    since: "",
+    until: "",
+  };
+  const [draft, setDraft] = useState<CommitHistoryFilters>(emptyFilters);
+  const [filters, setFilters] = useState<CommitHistoryFilters>(emptyFilters);
+  const [page, setPage] = useState(1);
+  const perPage = 30;
+  const query = useQuery({
+    queryKey: ["commit-history", owner, repo, filters, page],
+    queryFn: () => fetchRepoCommits(owner, repo, {
+      sha: filters.sha || undefined,
+      path: filters.path.trim() || undefined,
+      author: filters.author.trim() || undefined,
+      since: commitDateBoundary(filters.since, false),
+      until: commitDateBoundary(filters.until, true),
+      page,
+      perPage,
+    }),
+  });
+
+  return (
+    <div className="flex flex-col gap-4">
+      <Box header={<span style={{ fontWeight: 600 }}>Filter commit history</span>}>
+        <form
+          onSubmit={(event) => {
+            event.preventDefault();
+            setFilters(draft);
+            setPage(1);
+          }}
+          className="grid gap-3 md:grid-cols-2 xl:grid-cols-5"
+          style={{ padding: "1rem" }}
+        >
+          <label className="flex flex-col gap-1" style={{ fontSize: "0.78rem" }}>
+            Branch or ref
+            <input
+              list="commit-history-refs"
+              value={draft.sha}
+              onChange={(event) => setDraft((current) => ({ ...current, sha: event.target.value }))}
+              placeholder={defaultBranch}
+            />
+            <datalist id="commit-history-refs">
+              {branches.map((branch) => <option key={branch} value={branch} />)}
+            </datalist>
+          </label>
+          <label className="flex flex-col gap-1" style={{ fontSize: "0.78rem" }}>
+            Path
+            <input
+              value={draft.path}
+              onChange={(event) => setDraft((current) => ({ ...current, path: event.target.value }))}
+              placeholder="src/server.go"
+            />
+          </label>
+          <label className="flex flex-col gap-1" style={{ fontSize: "0.78rem" }}>
+            Author
+            <input
+              value={draft.author}
+              onChange={(event) => setDraft((current) => ({ ...current, author: event.target.value }))}
+              placeholder="login or email"
+            />
+          </label>
+          <label className="flex flex-col gap-1" style={{ fontSize: "0.78rem" }}>
+            Since
+            <input
+              type="date"
+              value={draft.since}
+              onChange={(event) => setDraft((current) => ({ ...current, since: event.target.value }))}
+            />
+          </label>
+          <label className="flex flex-col gap-1" style={{ fontSize: "0.78rem" }}>
+            Until
+            <input
+              type="date"
+              value={draft.until}
+              onChange={(event) => setDraft((current) => ({ ...current, until: event.target.value }))}
+            />
+          </label>
+          <div className="flex gap-2 md:col-span-2 xl:col-span-5">
+            <Button type="submit" variant="primary">Apply filters</Button>
+            <Button
+              type="button"
+              onClick={() => {
+                setDraft(emptyFilters);
+                setFilters(emptyFilters);
+                setPage(1);
+              }}
+            >
+              Clear
+            </Button>
+          </div>
+        </form>
+      </Box>
+      {query.isError ? (
+        <InlineError title="Failed to load commits" detail={String(query.error)} />
+      ) : (
+        <CommitsList owner={owner} repo={repo} commits={query.data ?? []} loading={query.isLoading} />
+      )}
+      {!query.isError && !query.isLoading && ((query.data?.length ?? 0) > 0 || page > 1) && (
+        <nav className="flex items-center justify-between" aria-label="Commit history pages">
+          <Button type="button" disabled={page === 1} onClick={() => setPage((current) => Math.max(1, current - 1))}>
+            Previous
+          </Button>
+          <span style={{ color: "var(--color-fg-muted)", fontSize: "0.8rem" }}>Page {page}</span>
+          <Button
+            type="button"
+            disabled={(query.data?.length ?? 0) < perPage}
+            onClick={() => setPage((current) => current + 1)}
+          >
+            Next
+          </Button>
+        </nav>
+      )}
+    </div>
   );
 }
 
@@ -1235,6 +1415,97 @@ export function RepoCommitPage() {
   );
 }
 
+export function RepoComparePage() {
+  const { owner = "", repo = "", range = "" } = useParams<{
+    owner: string;
+    repo: string;
+    range: string;
+  }>();
+  const navigate = useNavigate();
+  const separator = range.indexOf("...");
+  const base = separator >= 0 ? range.slice(0, separator) : "";
+  const head = separator >= 0 ? range.slice(separator + 3) : "";
+  const [draftBase, setDraftBase] = useState(base);
+  const [draftHead, setDraftHead] = useState(head);
+  const counts = useOpenCounts(owner, repo);
+  const branchesQuery = useQuery({
+    queryKey: ["branches", owner, repo],
+    queryFn: () => fetchRepoBranches(owner, repo),
+    enabled: !!owner && !!repo,
+  });
+  const query = useQuery<GithubComparison>({
+    queryKey: ["comparison", owner, repo, base, head],
+    queryFn: () => fetchRepoComparison(owner, repo, base, head),
+    enabled: !!owner && !!repo && !!base && !!head,
+  });
+
+  return (
+    <div>
+      <RepoHeader owner={owner} repo={repo} active="code" {...counts} />
+      <Box header={<span style={{ fontWeight: 600 }}>Compare changes</span>}>
+        <form
+          className="flex flex-wrap items-end gap-3"
+          style={{ padding: "1rem" }}
+          onSubmit={(event) => {
+            event.preventDefault();
+            if (draftBase && draftHead) {
+              navigate(repoCodeRoute(owner, repo, { kind: "compare", base: draftBase, head: draftHead }));
+            }
+          }}
+        >
+          <label className="flex flex-col gap-1" style={{ fontSize: "0.8rem" }}>
+            Base
+            <input list="compare-refs" value={draftBase} onChange={(event) => setDraftBase(event.target.value)} />
+          </label>
+          <span style={{ paddingBottom: "0.45rem", color: "var(--color-fg-muted)" }}>…</span>
+          <label className="flex flex-col gap-1" style={{ fontSize: "0.8rem" }}>
+            Compare
+            <input list="compare-refs" value={draftHead} onChange={(event) => setDraftHead(event.target.value)} />
+          </label>
+          <datalist id="compare-refs">
+            {(branchesQuery.data ?? []).map((branch) => <option key={branch.name} value={branch.name} />)}
+          </datalist>
+          <Button type="submit" variant="primary" disabled={!draftBase || !draftHead}>Compare</Button>
+        </form>
+      </Box>
+      {query.isLoading && <Spinner label={`comparing ${base} and ${head}`} />}
+      {query.isError && <div className="mt-4"><InlineError title="Failed to compare refs" detail={String(query.error)} /></div>}
+      {query.data && (
+        <div className="mt-4 flex flex-col gap-4">
+          <Box>
+            <div style={{ padding: "1rem" }}>
+              <b>{query.data.status}</b>
+              <span style={{ color: "var(--color-fg-muted)" }}>
+                {" "}· {query.data.ahead_by} ahead · {query.data.behind_by} behind · {query.data.total_commits} commits
+              </span>
+            </div>
+          </Box>
+          <CommitsList owner={owner} repo={repo} commits={query.data.commits} loading={false} />
+          {query.data.files?.map((file) => (
+            <Box
+              key={file.filename}
+              header={
+                <div className="flex w-full items-center gap-2">
+                  <span className="font-mono min-w-0 flex-1 truncate">{file.filename}</span>
+                  <span style={{ color: "var(--color-status-ok)" }}>+{file.additions}</span>
+                  <span style={{ color: "var(--color-status-error)" }}>−{file.deletions}</span>
+                </div>
+              }
+            >
+              <pre
+                className="font-mono"
+                style={{ margin: 0, padding: "1rem", overflowX: "auto", fontSize: ".76rem", whiteSpace: "pre" }}
+              >
+                {file.patch ?? "Binary file or patch unavailable."}
+              </pre>
+            </Box>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 export function RepoFilePage() {
   const params = useParams<{
     owner: string;
@@ -1415,6 +1686,14 @@ function BranchesList({
           <span className="font-mono" style={{ fontSize: "0.74rem", color: "var(--color-fg-muted)" }}>
             {b.commit.sha.slice(0, 7)}
           </span>
+          {b.name !== defaultBranch && (
+            <Link
+              to={repoCodeRoute(owner, repo, { kind: "compare", base: defaultBranch, head: b.name })}
+              style={{ color: "var(--color-accent)", fontSize: "0.78rem", textDecoration: "none" }}
+            >
+              Compare
+            </Link>
+          )}
         </div>
       ))}
     </Box>
