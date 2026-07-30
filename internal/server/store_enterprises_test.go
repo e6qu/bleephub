@@ -123,6 +123,20 @@ func TestEnterpriseStatePersistenceReload(t *testing.T) {
 	}
 	st1.EnterpriseSettings.CopilotCustomAgentsSourceOrgID = 42
 	st1.EnterpriseSettings.CopilotCustomAgentsRulesetID = 73
+	st1.EnterpriseSettings.EnterpriseBudgets["reload-budget"] = &OrgBudget{
+		ID: "reload-budget", BudgetScope: "enterprise", BudgetAmount: 500,
+		BudgetProductSKU: "actions", BudgetType: "ProductPricing", CreatedAt: st1.currentTime(),
+	}
+	st1.EnterpriseSettings.EnterpriseCostCenters["reload-cost-center"] = &EnterpriseCostCenter{
+		ID: "reload-cost-center", Name: "Reload Engineering", State: "active",
+		Resources: []EnterpriseCostCenterResource{{Type: "User", Name: admin.Login}},
+		CreatedAt: st1.currentTime(), UpdatedAt: st1.currentTime(),
+	}
+	st1.EnterpriseSettings.EnterpriseBillingReports["reload-report"] = &EnterpriseBillingReport{
+		ID: "reload-report", ReportType: "summarized", StartDate: "2026-01-01",
+		EndDate: "2026-01-31", Status: "completed", Actor: admin.Login,
+		CreatedAt: st1.currentTime(), DownloadURLs: []string{"https://example.test/report.csv"},
+	}
 	st1.EnterpriseSettings.OIDCIncludeEnterpriseSlug = true
 	st1.EnterpriseSettings.ActionsEnabledOrganizations = "selected"
 	st1.EnterpriseSettings.ActionsAllowedActions = "selected"
@@ -286,6 +300,15 @@ func TestEnterpriseStatePersistenceReload(t *testing.T) {
 		s.CopilotCustomAgentsSourceOrgID != 42 || s.CopilotCustomAgentsRulesetID != 73 {
 		t.Errorf("enterprise Copilot state did not persist: seats=%+v source=%d ruleset=%d",
 			s.EnterpriseCopilotSeats, s.CopilotCustomAgentsSourceOrgID, s.CopilotCustomAgentsRulesetID)
+	}
+	if s.EnterpriseBudgets["reload-budget"] == nil ||
+		s.EnterpriseBudgets["reload-budget"].BudgetAmount != 500 ||
+		s.EnterpriseCostCenters["reload-cost-center"] == nil ||
+		len(s.EnterpriseCostCenters["reload-cost-center"].Resources) != 1 ||
+		s.EnterpriseBillingReports["reload-report"] == nil ||
+		len(s.EnterpriseBillingReports["reload-report"].DownloadURLs) != 1 {
+		t.Errorf("enterprise billing state did not persist: budgets=%+v centers=%+v reports=%+v",
+			s.EnterpriseBudgets, s.EnterpriseCostCenters, s.EnterpriseBillingReports)
 	}
 	if len(s.DependabotAccessibleRepoIDs) != 1 || s.DependabotAccessibleRepoIDs[0] != repo.ID {
 		t.Errorf("dependabot access = %v", s.DependabotAccessibleRepoIDs)

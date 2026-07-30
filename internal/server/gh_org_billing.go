@@ -145,6 +145,7 @@ type orgBudgetBody struct {
 	BudgetEntityName    *string `json:"budget_entity_name"`
 	BudgetType          *string `json:"budget_type"`
 	BudgetProductSKU    *string `json:"budget_product_sku"`
+	User                *string `json:"user"`
 	BudgetAlerting      *struct {
 		WillAlert       *bool    `json:"will_alert"`
 		AlertRecipients []string `json:"alert_recipients"`
@@ -156,7 +157,7 @@ func budgetJSON(b *OrgBudget) map[string]interface{} {
 	if recipients == nil {
 		recipients = []string{}
 	}
-	return map[string]interface{}{
+	out := map[string]interface{}{
 		"id":                    b.ID,
 		"budget_scope":          b.BudgetScope,
 		"budget_entity_name":    b.BudgetEntityName,
@@ -169,6 +170,10 @@ func budgetJSON(b *OrgBudget) map[string]interface{} {
 			"alert_recipients": recipients,
 		},
 	}
+	if b.BudgetScope == "user" {
+		out["user"] = b.BudgetEntityName
+	}
+	return out
 }
 
 func (s *Server) handleListOrgBudgets(w http.ResponseWriter, r *http.Request) {
@@ -224,7 +229,7 @@ func (s *Server) handleCreateOrgBudget(w http.ResponseWriter, r *http.Request) {
 		ID:          uuid.New().String(),
 		BudgetScope: "organization",
 		BudgetType:  "ProductPricing",
-		CreatedAt:   time.Now().UTC(),
+		CreatedAt:   s.currentTime(),
 	}
 	if req.BudgetScope != nil {
 		if !budgetScopes[*req.BudgetScope] {
@@ -373,6 +378,7 @@ func (s *Server) handleDeleteOrgBudget(w http.ResponseWriter, r *http.Request) {
 // by workflow jobs of one repository on one date.
 type actionsUsageLine struct {
 	date     string
+	orgName  string
 	repoName string
 	minutes  int
 }
@@ -432,7 +438,7 @@ func (st *Store) orgActionsUsageLines(orgLogin string, year, month, day int) []a
 
 	out := make([]actionsUsageLine, 0, len(minutes))
 	for k, mins := range minutes {
-		out = append(out, actionsUsageLine{date: k.date, repoName: k.repo, minutes: mins})
+		out = append(out, actionsUsageLine{date: k.date, orgName: orgLogin, repoName: k.repo, minutes: mins})
 	}
 	sort.Slice(out, func(i, j int) bool {
 		if out[i].date != out[j].date {
@@ -445,8 +451,8 @@ func (st *Store) orgActionsUsageLines(orgLogin string, year, month, day int) []a
 
 // billingPeriod parses the year/month/day query parameters. defaultMonth
 // selects the month-defaulting behavior of the summary/premium/AI reports.
-func billingPeriod(w http.ResponseWriter, r *http.Request, defaultMonth bool) (year, month, day int, ok bool) {
-	now := time.Now().UTC()
+func billingPeriod(w http.ResponseWriter, r *http.Request, defaultMonth bool, now time.Time) (year, month, day int, ok bool) {
+	now = now.UTC()
 	year = now.Year()
 	if defaultMonth {
 		month = int(now.Month())
@@ -481,7 +487,7 @@ func billingPeriod(w http.ResponseWriter, r *http.Request, defaultMonth bool) (y
 
 func (s *Server) handleOrgBillingUsage(w http.ResponseWriter, r *http.Request) {
 	orgLogin := r.PathValue("org")
-	year, month, day, ok := billingPeriod(w, r, false)
+	year, month, day, ok := billingPeriod(w, r, false, s.currentTime())
 	if !ok {
 		return
 	}
@@ -519,7 +525,7 @@ func billingTimePeriodJSON(year, month, day int) map[string]interface{} {
 
 func (s *Server) handleOrgBillingUsageSummary(w http.ResponseWriter, r *http.Request) {
 	orgLogin := r.PathValue("org")
-	year, month, day, ok := billingPeriod(w, r, true)
+	year, month, day, ok := billingPeriod(w, r, true, s.currentTime())
 	if !ok {
 		return
 	}
@@ -589,7 +595,7 @@ func (s *Server) handleOrgBillingAICreditUsage(w http.ResponseWriter, r *http.Re
 
 func (s *Server) writeOrgBillingMeteredAIUsage(w http.ResponseWriter, r *http.Request) {
 	orgLogin := r.PathValue("org")
-	year, month, day, ok := billingPeriod(w, r, true)
+	year, month, day, ok := billingPeriod(w, r, true, s.currentTime())
 	if !ok {
 		return
 	}

@@ -17804,9 +17804,6 @@
         "ghec": {
           "documented_operations": 1458,
           "missing_operations": [
-            "DELETE /enterprises/{}/settings/billing/budgets/{}",
-            "DELETE /enterprises/{}/settings/billing/cost-centers/{}",
-            "DELETE /enterprises/{}/settings/billing/cost-centers/{}/resource",
             "DELETE /orgs/{}/announcement",
             "DELETE /orgs/{}/credential-authorizations/{}",
             "DELETE /orgs/{}/custom-repository-roles/{}",
@@ -17817,18 +17814,6 @@
             "DELETE /repos/{}/{}/dismissal-requests/dependabot/{}",
             "DELETE /repos/{}/{}/lfs",
             "DELETE /scim/v2/organizations/{}/Users/{}",
-            "GET /enterprises/{}/settings/billing/advanced-security",
-            "GET /enterprises/{}/settings/billing/ai_credit/usage",
-            "GET /enterprises/{}/settings/billing/budgets",
-            "GET /enterprises/{}/settings/billing/budgets/{}",
-            "GET /enterprises/{}/settings/billing/budgets/{}/user-states",
-            "GET /enterprises/{}/settings/billing/cost-centers",
-            "GET /enterprises/{}/settings/billing/cost-centers/{}",
-            "GET /enterprises/{}/settings/billing/premium_request/usage",
-            "GET /enterprises/{}/settings/billing/reports",
-            "GET /enterprises/{}/settings/billing/reports/{}",
-            "GET /enterprises/{}/settings/billing/usage",
-            "GET /enterprises/{}/settings/billing/usage/summary",
             "GET /organizations/{}/custom_roles",
             "GET /organizations/{}/org-properties/values",
             "GET /orgs/{}/announcement",
@@ -17863,8 +17848,6 @@
             "GET /scim/v2/organizations/{}/Users",
             "GET /scim/v2/organizations/{}/Users/{}",
             "GET /teams/{}/team-sync/group-mappings",
-            "PATCH /enterprises/{}/settings/billing/budgets/{}",
-            "PATCH /enterprises/{}/settings/billing/cost-centers/{}",
             "PATCH /organizations/{}/org-properties/values",
             "PATCH /orgs/{}/announcement",
             "PATCH /orgs/{}/custom-repository-roles/{}",
@@ -17878,10 +17861,6 @@
             "PATCH /repos/{}/{}/dismissal-requests/secret-scanning/{}",
             "PATCH /scim/v2/organizations/{}/Users/{}",
             "PATCH /teams/{}/team-sync/group-mappings",
-            "POST /enterprises/{}/settings/billing/budgets",
-            "POST /enterprises/{}/settings/billing/cost-centers",
-            "POST /enterprises/{}/settings/billing/cost-centers/{}/resource",
-            "POST /enterprises/{}/settings/billing/reports",
             "POST /orgs/{}/custom-repository-roles",
             "POST /orgs/{}/custom_roles",
             "POST /orgs/{}/organization-roles",
@@ -17890,7 +17869,7 @@
             "PUT /repos/{}/{}/lfs",
             "PUT /scim/v2/organizations/{}/Users/{}"
           ],
-          "represented_operations": 1373
+          "represented_operations": 1394
         },
         "ghes-2.22": {
           "documented_operations": 642,
@@ -18090,7 +18069,6 @@
             "GET /enterprise/stats/security-products",
             "GET /enterprise/stats/users",
             "GET /enterprises/{}/actions/cache/usage-policy",
-            "GET /enterprises/{}/settings/billing/advanced-security",
             "GET /manage/v1/access/ssh",
             "GET /manage/v1/checks/system-requirements",
             "GET /manage/v1/cluster/status",
@@ -18210,7 +18188,7 @@
             "PUT /setup/api/settings",
             "PUT /teams/{}/projects/{}"
           ],
-          "represented_operations": 798
+          "represented_operations": 799
         },
         "ghes-3.21": {
           "documented_operations": 1092,
@@ -18262,7 +18240,6 @@
             "GET /enterprise/stats/security-products",
             "GET /enterprise/stats/users",
             "GET /enterprises/{}/actions/cache/usage-policy",
-            "GET /enterprises/{}/settings/billing/advanced-security",
             "GET /manage/v1/access/ssh",
             "GET /manage/v1/checks/system-requirements",
             "GET /manage/v1/cluster/status",
@@ -18350,7 +18327,7 @@
             "PUT /manage/v1/config/settings",
             "PUT /repos/{}/{}/lfs"
           ],
-          "represented_operations": 958
+          "represented_operations": 959
         }
       },
       "dispatch_covered_operations": [
@@ -18602,6 +18579,24 @@
         "method": "DELETE",
         "path": "/api/v3/enterprises/{enterprise}/secret-scanning/custom-patterns",
         "source": "internal/server/gh_enterprise_security.go"
+      },
+      {
+        "line": 53,
+        "method": "DELETE",
+        "path": "/api/v3/enterprises/{enterprise}/settings/billing/budgets/{budget_id}",
+        "source": "internal/server/gh_enterprise_billing.go"
+      },
+      {
+        "line": 60,
+        "method": "DELETE",
+        "path": "/api/v3/enterprises/{enterprise}/settings/billing/cost-centers/{cost_center_id}",
+        "source": "internal/server/gh_enterprise_billing.go"
+      },
+      {
+        "line": 62,
+        "method": "DELETE",
+        "path": "/api/v3/enterprises/{enterprise}/settings/billing/cost-centers/{cost_center_id}/resource",
+        "source": "internal/server/gh_enterprise_billing.go"
       },
       {
         "line": 15,
@@ -20360,6 +20355,78 @@
         "method": "GET",
         "path": "/api/v3/enterprises/{enterprise}/secret-scanning/pattern-configurations",
         "source": "internal/server/gh_enterprise_security.go"
+      },
+      {
+        "line": 64,
+        "method": "GET",
+        "path": "/api/v3/enterprises/{enterprise}/settings/billing/advanced-security",
+        "source": "internal/server/gh_enterprise_billing.go"
+      },
+      {
+        "line": 68,
+        "method": "GET",
+        "path": "/api/v3/enterprises/{enterprise}/settings/billing/ai_credit/usage",
+        "source": "internal/server/gh_enterprise_billing.go"
+      },
+      {
+        "line": 49,
+        "method": "GET",
+        "path": "/api/v3/enterprises/{enterprise}/settings/billing/budgets",
+        "source": "internal/server/gh_enterprise_billing.go"
+      },
+      {
+        "line": 51,
+        "method": "GET",
+        "path": "/api/v3/enterprises/{enterprise}/settings/billing/budgets/{budget_id}",
+        "source": "internal/server/gh_enterprise_billing.go"
+      },
+      {
+        "line": 54,
+        "method": "GET",
+        "path": "/api/v3/enterprises/{enterprise}/settings/billing/budgets/{budget_id}/user-states",
+        "source": "internal/server/gh_enterprise_billing.go"
+      },
+      {
+        "line": 56,
+        "method": "GET",
+        "path": "/api/v3/enterprises/{enterprise}/settings/billing/cost-centers",
+        "source": "internal/server/gh_enterprise_billing.go"
+      },
+      {
+        "line": 58,
+        "method": "GET",
+        "path": "/api/v3/enterprises/{enterprise}/settings/billing/cost-centers/{cost_center_id}",
+        "source": "internal/server/gh_enterprise_billing.go"
+      },
+      {
+        "line": 67,
+        "method": "GET",
+        "path": "/api/v3/enterprises/{enterprise}/settings/billing/premium_request/usage",
+        "source": "internal/server/gh_enterprise_billing.go"
+      },
+      {
+        "line": 73,
+        "method": "GET",
+        "path": "/api/v3/enterprises/{enterprise}/settings/billing/reports",
+        "source": "internal/server/gh_enterprise_billing.go"
+      },
+      {
+        "line": 75,
+        "method": "GET",
+        "path": "/api/v3/enterprises/{enterprise}/settings/billing/reports/{report_id}",
+        "source": "internal/server/gh_enterprise_billing.go"
+      },
+      {
+        "line": 65,
+        "method": "GET",
+        "path": "/api/v3/enterprises/{enterprise}/settings/billing/usage",
+        "source": "internal/server/gh_enterprise_billing.go"
+      },
+      {
+        "line": 66,
+        "method": "GET",
+        "path": "/api/v3/enterprises/{enterprise}/settings/billing/usage/summary",
+        "source": "internal/server/gh_enterprise_billing.go"
       },
       {
         "line": 11,
@@ -24004,6 +24071,18 @@
         "source": "internal/server/gh_enterprise_security.go"
       },
       {
+        "line": 52,
+        "method": "PATCH",
+        "path": "/api/v3/enterprises/{enterprise}/settings/billing/budgets/{budget_id}",
+        "source": "internal/server/gh_enterprise_billing.go"
+      },
+      {
+        "line": 59,
+        "method": "PATCH",
+        "path": "/api/v3/enterprises/{enterprise}/settings/billing/cost-centers/{cost_center_id}",
+        "source": "internal/server/gh_enterprise_billing.go"
+      },
+      {
         "line": 14,
         "method": "PATCH",
         "path": "/api/v3/enterprises/{enterprise}/teams/{team_slug}",
@@ -24626,6 +24705,30 @@
         "method": "POST",
         "path": "/api/v3/enterprises/{enterprise}/secret-scanning/custom-patterns",
         "source": "internal/server/gh_enterprise_security.go"
+      },
+      {
+        "line": 50,
+        "method": "POST",
+        "path": "/api/v3/enterprises/{enterprise}/settings/billing/budgets",
+        "source": "internal/server/gh_enterprise_billing.go"
+      },
+      {
+        "line": 57,
+        "method": "POST",
+        "path": "/api/v3/enterprises/{enterprise}/settings/billing/cost-centers",
+        "source": "internal/server/gh_enterprise_billing.go"
+      },
+      {
+        "line": 61,
+        "method": "POST",
+        "path": "/api/v3/enterprises/{enterprise}/settings/billing/cost-centers/{cost_center_id}/resource",
+        "source": "internal/server/gh_enterprise_billing.go"
+      },
+      {
+        "line": 74,
+        "method": "POST",
+        "path": "/api/v3/enterprises/{enterprise}/settings/billing/reports",
+        "source": "internal/server/gh_enterprise_billing.go"
       },
       {
         "line": 12,

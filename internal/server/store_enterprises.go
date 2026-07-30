@@ -97,6 +97,9 @@ type EnterpriseSettings struct {
 	EnterpriseCopilotSeats         map[string]*CopilotSeat                  `json:"enterprise_copilot_seats,omitempty"`
 	CopilotCustomAgentsSourceOrgID int                                      `json:"copilot_custom_agents_source_org_id,omitempty"`
 	CopilotCustomAgentsRulesetID   int                                      `json:"copilot_custom_agents_ruleset_id,omitempty"`
+	EnterpriseBudgets              map[string]*OrgBudget                    `json:"enterprise_budgets,omitempty"`
+	EnterpriseCostCenters          map[string]*EnterpriseCostCenter         `json:"enterprise_cost_centers,omitempty"`
+	EnterpriseBillingReports       map[string]*EnterpriseBillingReport      `json:"enterprise_billing_reports,omitempty"`
 
 	// Dependabot repository access across organizations.
 	DependabotAccessibleRepoIDs []int  `json:"dependabot_accessible_repo_ids"`
@@ -207,6 +210,15 @@ func normalizeEnterpriseSettings(settings *EnterpriseSettings) *EnterpriseSettin
 	}
 	if settings.EnterpriseCopilotSeats == nil {
 		settings.EnterpriseCopilotSeats = map[string]*CopilotSeat{}
+	}
+	if settings.EnterpriseBudgets == nil {
+		settings.EnterpriseBudgets = map[string]*OrgBudget{}
+	}
+	if settings.EnterpriseCostCenters == nil {
+		settings.EnterpriseCostCenters = map[string]*EnterpriseCostCenter{}
+	}
+	if settings.EnterpriseBillingReports == nil {
+		settings.EnterpriseBillingReports = map[string]*EnterpriseBillingReport{}
 	}
 	if settings.ActionsCacheRetentionDays == 0 {
 		settings.ActionsCacheRetentionDays = 14
