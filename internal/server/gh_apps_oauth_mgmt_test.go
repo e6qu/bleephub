@@ -182,10 +182,15 @@ func TestOAuthScopeToken_MintsFreshNarrowedToken(t *testing.T) {
 	s.store.SeedDefaultUser()
 	s.registerGHAppsRoutes()
 	s.registerGHAppsOAuthMgmtRoutes()
+	s.registerGHRepoRoutes()
+	s.registerGHIssueRoutes()
 
 	user := s.store.UsersByLogin["admin"]
-	app := s.store.CreateApp(user.ID, "Scoped App", "", map[string]string{"contents": "read"}, nil)
-	inst := s.store.CreateInstallation(app.ID, "User", user.ID, "admin", map[string]string{"contents": "read"}, nil)
+	repo := s.store.CreateRepo(user, "scoped-token-repo", "", true)
+	outside := s.store.CreateRepo(user, "scoped-token-outside", "", true)
+	appPermissions := map[string]string{"contents": "write", "issues": "write"}
+	app := s.store.CreateApp(user.ID, "Scoped App", "", appPermissions, nil)
+	inst := s.store.CreateInstallation(app.ID, "User", user.ID, "admin", appPermissions, nil)
 	// GitHub-App user-to-server token (ghu_).
 	tok, _ := s.store.CreateUserToServerToken(user.ID, app.ID, "", "", 8*time.Hour, false)
 
@@ -193,6 +198,7 @@ func TestOAuthScopeToken_MintsFreshNarrowedToken(t *testing.T) {
 		"access_token": tok.Token,
 		"target":       "admin",
 		"permissions":  map[string]string{"contents": "read"},
+		"repositories": []string{repo.Name},
 	})
 	req := httptest.NewRequest("POST", "/api/v3/applications/"+app.ClientID+"/token/scoped", bytes.NewReader(body))
 	req.Header.Set("Authorization", "Basic "+basicHeader(app.ClientID, app.ClientSecret))
@@ -211,8 +217,19 @@ func TestOAuthScopeToken_MintsFreshNarrowedToken(t *testing.T) {
 		t.Errorf("scoped token = %q, want ghu_ prefix", newToken)
 	}
 	// The fresh token resolves to a valid user-to-server token.
-	if fresh, u := s.store.LookupUserToServerToken(newToken); fresh == nil || u == nil {
+	fresh, u := s.store.LookupUserToServerToken(newToken)
+	if fresh == nil || u == nil {
 		t.Error("scoped token not valid in store")
+	} else {
+		if len(fresh.InstallationIDs) != 1 || fresh.InstallationIDs[0] != inst.ID {
+			t.Errorf("installation scope = %v, want [%d]", fresh.InstallationIDs, inst.ID)
+		}
+		if len(fresh.RepositoryIDs) != 1 || fresh.RepositoryIDs[0] != repo.ID {
+			t.Errorf("repository scope = %v, want [%d]", fresh.RepositoryIDs, repo.ID)
+		}
+		if len(fresh.Permissions) != 1 || fresh.Permissions["contents"] != "read" {
+			t.Errorf("permission scope = %v, want contents:read", fresh.Permissions)
+		}
 	}
 	// Original token is NOT revoked (GitHub leaves it intact).
 	if orig, _ := s.store.LookupUserToServerToken(tok.Token); orig == nil {
@@ -222,7 +239,57 @@ func TestOAuthScopeToken_MintsFreshNarrowedToken(t *testing.T) {
 	if got["installation"] == nil {
 		t.Error("expected installation object for GitHub-App scoped token")
 	}
-	_ = inst
+
+	if allowed := tokenRequest(s, http.MethodGet, "/api/v3/repos/"+repo.FullName, newToken); allowed.Code != http.StatusOK {
+		t.Errorf("selected repository read = %d: %s", allowed.Code, allowed.Body.String())
+	}
+	if denied := tokenRequest(s, http.MethodGet, "/api/v3/repos/"+outside.FullName, newToken); denied.Code != http.StatusNotFound {
+		t.Errorf("unselected private repository read = %d: %s", denied.Code, denied.Body.String())
+	}
+	if denied := tokenRequest(s, http.MethodPost, "/api/v3/repos/"+repo.FullName+"/issues", newToken); denied.Code != http.StatusForbidden {
+		t.Errorf("unrequested issues permission = %d: %s", denied.Code, denied.Body.String())
+	}
+
+	widenBody, _ := json.Marshal(map[string]any{
+		"access_token": newToken,
+		"target":       "admin",
+		"permissions":  map[string]string{"contents": "write"},
+	})
+	widenReq := httptest.NewRequest("POST", "/api/v3/applications/"+app.ClientID+"/token/scoped", bytes.NewReader(widenBody))
+	widenReq.Header.Set("Authorization", "Basic "+basicHeader(app.ClientID, app.ClientSecret))
+	widen := httptest.NewRecorder()
+	s.ghHeadersMiddleware(s.mux).ServeHTTP(widen, widenReq)
+	if widen.Code != http.StatusUnprocessableEntity {
+		t.Errorf("permission widening = %d: %s", widen.Code, widen.Body.String())
+	}
+
+	for name, invalidBody := range map[string]map[string]any{
+		"conflicting target identity": {
+			"access_token": tok.Token,
+			"target":       "admin",
+			"target_id":    user.ID + 1,
+		},
+		"both repository selectors present": {
+			"access_token":   tok.Token,
+			"target":         "admin",
+			"repositories":   []string{},
+			"repository_ids": []int{},
+		},
+	} {
+		t.Run(name, func(t *testing.T) {
+			body, err := json.Marshal(invalidBody)
+			if err != nil {
+				t.Fatal(err)
+			}
+			req := httptest.NewRequest("POST", "/api/v3/applications/"+app.ClientID+"/token/scoped", bytes.NewReader(body))
+			req.Header.Set("Authorization", "Basic "+basicHeader(app.ClientID, app.ClientSecret))
+			got := httptest.NewRecorder()
+			s.ghHeadersMiddleware(s.mux).ServeHTTP(got, req)
+			if got.Code != http.StatusUnprocessableEntity {
+				t.Errorf("status = %d: %s", got.Code, got.Body.String())
+			}
+		})
+	}
 }
 
 func TestOAuthAppBrowserSettingsCreateAndList(t *testing.T) {

@@ -49,6 +49,10 @@ func persistRoundTrip(t *testing.T, open func() (*Persistence, error)) {
 	oapp := st1.CreateOAuthApp(user.ID, "Persist OAuth", "", "", "")
 	utsTok, refreshTok := st1.CreateUserToServerToken(user.ID, 0, oapp.ClientID, "repo", 60_000_000_000, true)
 	repo := st1.CreateRepo(user, "persist-target", "", false)
+	scopedTok, _ := st1.CreateUserToServerToken(user.ID, app.ID, "", "", 60_000_000_000, false)
+	if !st1.ScopeUserToServerToken(scopedTok.Token, []int{inst.ID}, map[string]string{"issues": "read"}, []int{repo.ID}) {
+		t.Fatal("scope persisted user-to-server token")
+	}
 	repoSecret := &Secret{Name: "DATABASE_PASSWORD", Value: "persisted-database-password", CreatedAt: fixedTestTime.UTC(), UpdatedAt: fixedTestTime.UTC()}
 	st1.RepoSecrets[repo.FullName] = map[string]*Secret{repoSecret.Name: repoSecret}
 	p1.MustPut("repo_secrets", repo.FullName, st1.RepoSecrets[repo.FullName])
@@ -205,6 +209,13 @@ func persistRoundTrip(t *testing.T, open func() (*Persistence, error)) {
 
 	if gotUts, _ := st2.LookupUserToServerToken(utsTok.Token); gotUts == nil {
 		t.Error("user-to-server token did not persist")
+	}
+	if gotScoped, _ := st2.LookupUserToServerToken(scopedTok.Token); gotScoped == nil {
+		t.Error("scoped user-to-server token did not persist")
+	} else if len(gotScoped.InstallationIDs) != 1 || gotScoped.InstallationIDs[0] != inst.ID ||
+		len(gotScoped.RepositoryIDs) != 1 || gotScoped.RepositoryIDs[0] != repo.ID ||
+		gotScoped.Permissions["issues"] != "read" {
+		t.Errorf("scoped user-to-server token constraints did not persist: %+v", gotScoped)
 	}
 
 	if got := st2.GetRepo(user.Login, "persist-target"); got == nil {

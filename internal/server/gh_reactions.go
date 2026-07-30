@@ -122,13 +122,14 @@ func (rs *ReactionStore) ListReactions(parentType string, parentID int, contentF
 	return out
 }
 
-// DeleteReaction removes the reaction with the given id from its parent.
-// Returns true if removed.
-func (rs *ReactionStore) DeleteReaction(parentType string, parentID, reactionID int) bool {
+// DeleteReactionByUser removes a reaction only when it belongs to userID.
+// The ownership comparison and deletion happen under one lock so a request
+// cannot pass a stale authorization check and delete a replaced record.
+func (rs *ReactionStore) DeleteReactionByUser(parentType string, parentID, reactionID, userID int) bool {
 	rs.mu.Lock()
 	defer rs.mu.Unlock()
 	r := rs.byID[reactionID]
-	if r == nil || r.ParentType != parentType || r.ParentID != parentID {
+	if r == nil || r.ParentType != parentType || r.ParentID != parentID || r.UserID != userID {
 		return false
 	}
 	key := reactionParentKey(parentType, parentID)
@@ -357,7 +358,7 @@ func (s *Server) handleDeleteReaction(parentType, pathParam string) http.Handler
 			writeGHError(w, http.StatusBadRequest, "invalid reaction id")
 			return
 		}
-		if !s.store.Reactions.DeleteReaction(effType, parentID, reactionID) {
+		if !s.store.Reactions.DeleteReactionByUser(effType, parentID, reactionID, user.ID) {
 			writeGHError(w, http.StatusNotFound, "Not Found")
 			return
 		}

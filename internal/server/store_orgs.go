@@ -1,12 +1,18 @@
 package bleephub
 
 import (
+	"errors"
 	"fmt"
 	"slices"
 	"sort"
 	"strconv"
 	"strings"
 	"time"
+)
+
+var (
+	ErrTeamNotFound     = errors.New("team not found")
+	ErrTeamSlugConflict = errors.New("team slug already exists")
 )
 
 // OrgRole is a user's role in an organization. The values are GitHub's
@@ -325,9 +331,24 @@ func (st *Store) ListOrgsByUser(userID int) []*Org {
 	st.mu.RLock()
 	defer st.mu.RUnlock()
 
+	return st.listOrgsByUserLocked(userID, false)
+}
+
+// ListPublicOrgsByUser returns only active organization memberships that the
+// user has explicitly publicized. This is the visibility contract behind
+// GET /users/{username}/orgs; the authenticated /user/orgs endpoint uses
+// ListOrgsByUser and therefore continues to include concealed memberships.
+func (st *Store) ListPublicOrgsByUser(userID int) []*Org {
+	st.mu.RLock()
+	defer st.mu.RUnlock()
+
+	return st.listOrgsByUserLocked(userID, true)
+}
+
+func (st *Store) listOrgsByUserLocked(userID int, publicOnly bool) []*Org {
 	var orgs []*Org
 	for _, m := range st.Memberships {
-		if m.UserID == userID && m.State == "active" {
+		if m.UserID == userID && m.State == MembershipStateActive && (!publicOnly || m.Public) {
 			if org, ok := st.Orgs[m.OrgID]; ok {
 				orgs = append(orgs, org)
 			}
@@ -595,24 +616,45 @@ func (st *Store) GetTeamByID(id int) *Team {
 // changes the slug (team rename), the slug index is re-keyed so the old
 // slug stops resolving and the new one does.
 func (st *Store) UpdateTeam(orgLogin, slug string, fn func(*Team)) bool {
+	return st.UpdateTeamChecked(orgLogin, slug, fn) == nil
+}
+
+// UpdateTeamChecked applies a team mutation atomically and refuses a rename
+// whose derived slug is already occupied. The callback receives a detached
+// copy, so validation failure cannot partially mutate the live team or its
+// secondary slug index.
+func (st *Store) UpdateTeamChecked(orgLogin, slug string, fn func(*Team)) error {
 	st.mu.Lock()
 	defer st.mu.Unlock()
 
 	key := teamSlugKey(orgLogin, slug)
 	team, ok := st.TeamsBySlug[key]
 	if !ok {
-		return false
+		return ErrTeamNotFound
 	}
-	fn(team)
-	if team.Slug != slug {
+	updated := *team
+	updated.MemberIDs = append([]int(nil), team.MemberIDs...)
+	updated.MaintainerIDs = append([]int(nil), team.MaintainerIDs...)
+	updated.RepoNames = append([]string(nil), team.RepoNames...)
+	updated.RepoPermissions = make(map[string]TeamPermission, len(team.RepoPermissions))
+	for name, permission := range team.RepoPermissions {
+		updated.RepoPermissions[name] = permission
+	}
+	fn(&updated)
+	if updated.Slug != slug {
+		newKey := teamSlugKey(orgLogin, updated.Slug)
+		if occupied := st.TeamsBySlug[newKey]; occupied != nil && occupied.ID != team.ID {
+			return ErrTeamSlugConflict
+		}
 		delete(st.TeamsBySlug, key)
-		st.TeamsBySlug[teamSlugKey(orgLogin, team.Slug)] = team
+		st.TeamsBySlug[newKey] = team
 	}
-	team.UpdatedAt = time.Now().UTC()
+	updated.UpdatedAt = time.Now().UTC()
+	*team = updated
 	if st.persist != nil {
 		st.persist.MustPut("teams", strconv.Itoa(team.ID), team)
 	}
-	return true
+	return nil
 }
 
 // TeamParentWouldCycle reports whether re-parenting team `teamID` under

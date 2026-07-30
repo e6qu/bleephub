@@ -245,7 +245,10 @@ func (s *Server) handleListUserOrgs(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	orgs := s.store.ListOrgsByUser(user.ID)
+	// This public profile surface exposes only memberships the subject has
+	// publicized. GET /user/orgs above is the authenticated all-memberships
+	// view.
+	orgs := s.store.ListPublicOrgsByUser(user.ID)
 	result := make([]map[string]interface{}, 0, len(orgs))
 	base := s.baseURL(r)
 	for _, org := range orgs {
@@ -278,9 +281,16 @@ func (s *Server) handleCreateOrgRepo(w http.ResponseWriter, r *http.Request) {
 			writeGHError(w, http.StatusForbidden, "Resource not accessible by integration")
 			return
 		}
-	} else if !s.viewerIsOrgMember(r.Context(), orgLogin) {
-		writeGHError(w, http.StatusForbidden, "Must be a member of the organization.")
-		return
+	} else {
+		if !s.viewerIsOrgMember(r.Context(), orgLogin) {
+			writeGHError(w, http.StatusForbidden, "Must be a member of the organization.")
+			return
+		}
+		membersMayCreate := org.MembersCanCreateRepositories == nil || *org.MembersCanCreateRepositories
+		if !s.viewerCanAdminOrg(r.Context(), orgLogin) && !membersMayCreate {
+			writeGHError(w, http.StatusForbidden, "Members are not allowed to create repositories for this organization.")
+			return
+		}
 	}
 
 	var req struct {

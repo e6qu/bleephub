@@ -56,7 +56,8 @@ func (s *Server) registerGHNetworkConfigurationRoutes() {
 
 	// Seed endpoint standing in for the Azure private networking onboarding
 	// flow that provisions network settings resources on real GitHub.
-	s.route("POST /internal/orgs/{org}/network-settings", s.orgGated(s.handleSeedOrgNetworkSettings))
+	s.route("POST /internal/orgs/{org}/network-settings",
+		s.requireSiteAdminHandler(s.orgGated(s.handleSeedOrgNetworkSettings)))
 }
 
 var networkConfigurationNameRE = regexp.MustCompile(`^[a-zA-Z0-9._-]{1,100}$`)

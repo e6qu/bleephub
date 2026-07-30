@@ -303,12 +303,14 @@ func (a *Agent) SetLabels(names []string) {
 			custom = append(custom, l)
 		}
 	}
+	nextID := a.nextLabelID()
 	for _, name := range names {
 		custom = append(custom, Label{
-			ID:   a.nextLabelID(),
+			ID:   nextID,
 			Name: name,
 			Type: a.labelTypeForName(name),
 		})
+		nextID++
 	}
 	a.Labels = custom
 }
@@ -981,15 +983,19 @@ func (s *Server) handleGetRepoActionsPermissions(w http.ResponseWriter, r *http.
 
 func (s *Server) handleSetRepoActionsPermissions(w http.ResponseWriter, r *http.Request) {
 	var req struct {
-		Enabled        bool   `json:"enabled"`
+		Enabled        *bool  `json:"enabled"`
 		AllowedActions string `json:"allowed_actions"`
 	}
 	if !decodeJSONBody(w, r, &req) {
 		return
 	}
+	if req.Enabled == nil {
+		writeGHValidationError(w, "ActionsPermissions", "enabled", "missing_field")
+		return
+	}
 	repo := repoFullName(r)
 	p := s.store.GetRepoActionsPermissions(repo)
-	p.Enabled = req.Enabled
+	p.Enabled = *req.Enabled
 	if req.AllowedActions != "" {
 		p.AllowedActions = req.AllowedActions
 	}

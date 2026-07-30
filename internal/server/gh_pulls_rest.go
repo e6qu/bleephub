@@ -661,12 +661,26 @@ func (s *Server) handleCreatePRReview(w http.ResponseWriter, r *http.Request) {
 
 	state := "PENDING"
 	switch strings.ToUpper(req.Event) {
+	case "":
 	case "APPROVE":
 		state = "APPROVED"
 	case "REQUEST_CHANGES":
 		state = "CHANGES_REQUESTED"
 	case "COMMENT":
 		state = "COMMENTED"
+	default:
+		writeGHValidationError(w, "PullRequestReview", "event", "invalid")
+		return
+	}
+
+	// Validate the complete comment batch before creating either the review
+	// or its first comment. A malformed later entry must not leave a partial
+	// draft behind.
+	for _, rc := range req.Comments {
+		if rc.Path == "" || rc.Body == "" {
+			writeGHValidationError(w, "PullRequestReviewComment", "comments", "invalid")
+			return
+		}
 	}
 
 	review := s.store.CreatePullRequestReview(repo.FullName, pr.Number, user.ID, req.Body, state)
@@ -679,10 +693,6 @@ func (s *Server) handleCreatePRReview(w http.ResponseWriter, r *http.Request) {
 	// surface through GET /pulls/{number}/reviews/{review_id}/comments and
 	// the regular review-comment endpoints.
 	for _, rc := range req.Comments {
-		if rc.Path == "" || rc.Body == "" {
-			writeGHValidationError(w, "PullRequestReviewComment", "comments", "invalid")
-			return
-		}
 		line := int(rc.Line)
 		if line == 0 {
 			line = int(rc.Position)

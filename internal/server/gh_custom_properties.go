@@ -488,11 +488,33 @@ func (st *Store) SetRepoCustomPropertyValues(repoKey string, values []customProp
 		if v.Value == nil {
 			delete(st.RepoCustomPropertyValues[repoKey], v.PropertyName)
 		} else {
-			st.RepoCustomPropertyValues[repoKey][v.PropertyName] = v.Value
+			// Request arrays/maps are mutable. Adopt a deep copy at the store
+			// boundary so applying one batch to several repositories cannot
+			// make those repositories share a caller-owned backing array.
+			st.RepoCustomPropertyValues[repoKey][v.PropertyName] = cloneCustomPropertyValue(v.Value)
 		}
 	}
 	if st.persist != nil {
 		st.persist.MustPut("repo_custom_property_values", repoKey, st.RepoCustomPropertyValues[repoKey])
+	}
+}
+
+func cloneCustomPropertyValue(value interface{}) interface{} {
+	switch typed := value.(type) {
+	case []interface{}:
+		cloned := make([]interface{}, len(typed))
+		for index, item := range typed {
+			cloned[index] = cloneCustomPropertyValue(item)
+		}
+		return cloned
+	case map[string]interface{}:
+		cloned := make(map[string]interface{}, len(typed))
+		for key, item := range typed {
+			cloned[key] = cloneCustomPropertyValue(item)
+		}
+		return cloned
+	default:
+		return value
 	}
 }
 

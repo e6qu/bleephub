@@ -3,6 +3,7 @@ package bleephub
 import (
 	"context"
 	"net/http"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -350,6 +351,9 @@ func (s *Server) userToServerReachesAccount(tok *UserToServerToken, kind account
 func (s *Server) userToServerReachesRepo(tok *UserToServerToken, repo *Repo) bool {
 	if tok == nil || tok.AppID == 0 || repo == nil {
 		return true
+	}
+	if tok.RepositoryIDs != nil && !slices.Contains(tok.RepositoryIDs, repo.ID) {
+		return false
 	}
 	for _, inst := range s.store.ListAppInstallations(tok.AppID) {
 		if len(tok.InstallationIDs) > 0 && !containsRepoID(tok.InstallationIDs, inst.ID) {
@@ -1086,11 +1090,17 @@ func fineGrainedPATPermissionForPattern(pattern, method string) (permScope, perm
 		{"/pages", scopePages}, {"/codespaces", scopeCodespaces}, {"/secret-scanning", scopeSecurityEvents}, {"/code-scanning", scopeSecurityEvents},
 		{"/dependabot", scopeDependabotSecrets}, {"/reactions", scopeReactions}, {"/projects", scopeProjects},
 		{"/contents", scopeContents}, {"/git/", scopeContents}, {"/commits", scopeContents}, {"/branches", scopeContents}, {"/tags", scopeContents}, {"/releases", scopeContents},
-		{"/collaborators", scopeAdministration}, {"/hooks", scopeAdministration}, {"/keys", scopeAdministration}, {"/rules", scopeAdministration},
+		{"/hooks", scopeAdministration}, {"/keys", scopeAdministration}, {"/rules", scopeAdministration},
 	} {
 		if strings.Contains(lower, candidate.fragment) {
 			return candidate.scope, level
 		}
+	}
+	if strings.Contains(lower, "/collaborators") {
+		if level == permRead {
+			return scopeMetadata, level
+		}
+		return scopeAdministration, level
 	}
 	if level == permRead {
 		return scopeMetadata, level
@@ -1142,6 +1152,9 @@ func hasPerm(perms map[string]string, scope permScope, level permLevel) bool {
 // installation permissions map (ghu_) or the classic OAuth scopes (gho_).
 func userToServerHasPerm(tok *UserToServerToken, scope permScope, level permLevel, st *Store) bool {
 	if tok.AppID > 0 {
+		if tok.Permissions != nil && !hasPerm(tok.Permissions, scope, level) {
+			return false
+		}
 		// ghu_: use the installation's permissions. A token scoped to
 		// specific installations (POST /applications/{cid}/token/scoped)
 		// must be checked against exactly those; an unscoped token checks
