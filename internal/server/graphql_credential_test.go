@@ -16,7 +16,7 @@ import (
 // else intersects the credential. The write half has to do it itself.
 func TestGraphQLWriteMutationsIntersectTheCredential(t *testing.T) {
 	store := testServer.store
-	now := time.Now().UTC()
+	now := fixedTestTime.UTC()
 
 	mkUser := func(login string) *User {
 		store.mu.Lock()

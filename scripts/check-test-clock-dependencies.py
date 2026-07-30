@@ -1,11 +1,9 @@
 #!/usr/bin/env python3
-"""Ratchet direct wall-clock reads out of tests.
+"""Forbid direct wall-clock reads in tests.
 
-Timing loops may still need elapsed time, and authentication vectors may need a
-currently-valid timestamp, but every such dependency must be reviewable. The
-allowlist is an exact multiset of source lines: a new read cannot hide behind a
-per-file count, and deleting one makes the snapshot stale until the reduction
-is accepted.
+Logical timestamps come from fixed fixtures or an injected clock. Polling and
+timeouts use timers, tickers, or contexts. This keeps tests independent of the
+day, month, year, timezone, and calendar rollover.
 """
 
 from __future__ import annotations
@@ -66,10 +64,6 @@ def dependencies() -> list[str]:
             "calendar-sensitive wall-clock data is forbidden in tests:\n  "
             + "\n  ".join(forbidden)
         )
-    if len(entries) < 100:
-        raise RuntimeError(
-            f"only {len(entries)} direct test clock reads found; discovery is truncated"
-        )
     return entries
 
 
@@ -78,7 +72,7 @@ def main() -> int:
     parser.add_argument("--write", action="store_true")
     args = parser.parse_args()
     actual = dependencies()
-    body = "\n".join(actual) + "\n"
+    body = ("\n".join(actual) + "\n") if actual else ""
     if args.write:
         ALLOWLIST.write_text(body, encoding="utf-8")
         print(f"wrote {ALLOWLIST.relative_to(ROOT)} ({len(actual)} dependencies)")
@@ -100,7 +94,7 @@ def main() -> int:
                 print(f"  - {entry}", file=sys.stderr)
         print(f"Run {sys.argv[0]} --write only after reviewing the dependency change.", file=sys.stderr)
         return 1
-    print(f"test clock dependency ratchet: OK ({len(actual)} reviewable reads)")
+    print(f"test clock dependency gate: OK ({len(actual)} direct wall-clock reads)")
     return 0
 
 

@@ -43,7 +43,7 @@ type ghuFixture struct {
 func newGhuFixture(t *testing.T, tag string) *ghuFixture {
 	t.Helper()
 	store := testServer.store
-	now := time.Now().UTC()
+	now := fixedTestTime.UTC()
 
 	mkUser := func(login string) *User {
 		store.mu.Lock()
@@ -352,7 +352,7 @@ var fabricatedRepoRoutesStillServed = map[string]bool{}
 
 func TestNoRegisteredRouteServesAFabricatedRepository(t *testing.T) {
 	f := newGhuFixture(t, "sweep")
-	appJWT, err := signAppJWT(f.outsideApp.PEMPrivateKey, f.outsideApp.ID, time.Now())
+	appJWT, err := signAppJWT(f.outsideApp.PEMPrivateKey, f.outsideApp.ID, fixedTestTime)
 	if err != nil {
 		t.Fatalf("signing app JWT for credential-specific route: %v", err)
 	}

@@ -101,7 +101,7 @@ func TestMaxParallelLimitsDispatch(t *testing.T) {
 		MaxParallel: 2,
 		Env:         map[string]string{"__serverURL": "http://localhost", "__defaultImage": "alpine:latest"},
 		Jobs:        make(map[string]*WorkflowJob),
-		CreatedAt:   time.Now(),
+		CreatedAt:   fixedTestTime,
 	}
 
 	for i := 0; i < 4; i++ {
@@ -146,7 +146,7 @@ func TestMaxParallelZeroMeansUnlimited(t *testing.T) {
 		MaxParallel: 0, // no limit
 		Env:         map[string]string{"__serverURL": "http://localhost", "__defaultImage": "alpine:latest"},
 		Jobs:        make(map[string]*WorkflowJob),
-		CreatedAt:   time.Now(),
+		CreatedAt:   fixedTestTime,
 	}
 
 	for i := 0; i < 4; i++ {
@@ -192,7 +192,7 @@ func TestJobTimeoutFailsJobFromExecutionStart(t *testing.T) {
 		Status:    "running",
 		Env:       map[string]string{"__serverURL": "http://localhost", "__defaultImage": "alpine:latest"},
 		Jobs:      make(map[string]*WorkflowJob),
-		CreatedAt: time.Now(),
+		CreatedAt: fixedTestTime,
 	}
 
 	// Job with 1-minute timeout, started 2 minutes ago
@@ -200,7 +200,7 @@ func TestJobTimeoutFailsJobFromExecutionStart(t *testing.T) {
 		Key:       "slow",
 		JobID:     "j-slow",
 		Status:    "running",
-		StartedAt: time.Now().Add(-2 * time.Minute),
+		StartedAt: fixedTestTime.Add(-2 * time.Minute),
 		Outputs:   make(map[string]string),
 		Def:       &JobDef{TimeoutMinutes: 1, Steps: []StepDef{{Run: "sleep 999"}}},
 	}
@@ -629,7 +629,7 @@ func TestFailFastCancelsSiblings(t *testing.T) {
 		Status:    "running",
 		Env:       map[string]string{"__serverURL": "http://localhost", "__defaultImage": "alpine:latest"},
 		Jobs:      make(map[string]*WorkflowJob),
-		CreatedAt: time.Now(),
+		CreatedAt: fixedTestTime,
 	}
 
 	for i := 0; i < 4; i++ {
@@ -677,7 +677,7 @@ func TestFailFastFalseNoCancel(t *testing.T) {
 		Status:    "running",
 		Env:       map[string]string{"__serverURL": "http://localhost", "__defaultImage": "alpine:latest"},
 		Jobs:      make(map[string]*WorkflowJob),
-		CreatedAt: time.Now(),
+		CreatedAt: fixedTestTime,
 	}
 
 	for i := 0; i < 3; i++ {
@@ -725,7 +725,7 @@ func TestFailFastDefaultTrue(t *testing.T) {
 		Status:    "running",
 		Env:       map[string]string{"__serverURL": "http://localhost", "__defaultImage": "alpine:latest"},
 		Jobs:      make(map[string]*WorkflowJob),
-		CreatedAt: time.Now(),
+		CreatedAt: fixedTestTime,
 	}
 
 	for i := 0; i < 3; i++ {
@@ -773,7 +773,7 @@ func TestFailFastOnlySameGroup(t *testing.T) {
 		Status:    "running",
 		Env:       map[string]string{"__serverURL": "http://localhost", "__defaultImage": "alpine:latest"},
 		Jobs:      make(map[string]*WorkflowJob),
-		CreatedAt: time.Now(),
+		CreatedAt: fixedTestTime,
 	}
 
 	// Group "test": test_0 (will fail), test_1 (pending)

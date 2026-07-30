@@ -84,18 +84,17 @@ func TestOnlyTheRBACLayerAsksWhetherAUserCanReadARepo(t *testing.T) {
 			continue
 		}
 		ast.Inspect(file, func(node ast.Node) bool {
-			call, ok := node.(*ast.CallExpr)
-			if !ok {
-				return true
-			}
-			ident, ok := call.Fun.(*ast.Ident)
+			ident, ok := node.(*ast.Ident)
 			if !ok {
 				return true
 			}
 			if _, banned := userScopedPredicates[ident.Name]; !banned {
 				return true
 			}
-			offenders[name] = append(offenders[name], offence{callee: ident.Name, line: fset.Position(call.Pos()).Line})
+			// Scan every reference, not only a direct CallExpr callee. A
+			// function alias (`f := canPushRepo; f(...)`) is the same bypass
+			// and must not make the ratchet green.
+			offenders[name] = append(offenders[name], offence{callee: ident.Name, line: fset.Position(ident.Pos()).Line})
 			return true
 		})
 	}

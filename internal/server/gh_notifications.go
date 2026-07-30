@@ -51,6 +51,18 @@ func parseNotificationListOptions(w http.ResponseWriter, r *http.Request) (Notif
 	return opts, true
 }
 
+func (s *Server) notificationRows(r *http.Request, user *User, opts NotificationListOptions) []notificationThreadRow {
+	return s.store.NotificationRowsFor(user, opts, func(repo *Repo) bool {
+		return s.viewerCanReadRepo(r.Context(), repo)
+	})
+}
+
+func (s *Server) notificationThread(r *http.Request, user *User, threadID string) *NotificationThread {
+	return s.store.GetNotificationThreadFor(user, s.baseURL(r), threadID, func(repo *Repo) bool {
+		return s.viewerCanReadRepo(r.Context(), repo)
+	})
+}
+
 func (s *Server) handleListNotifications(w http.ResponseWriter, r *http.Request) {
 	user := ghUserFromContext(r.Context())
 	if user == nil {
@@ -62,7 +74,7 @@ func (s *Server) handleListNotifications(w http.ResponseWriter, r *http.Request)
 	if !ok {
 		return
 	}
-	rows := s.store.NotificationRows(user, opts)
+	rows := s.notificationRows(r, user, opts)
 	rows = paginateAndLink(w, r, rows)
 	threads := s.store.BuildNotificationThreads(rows, s.baseURL(r))
 	out := make([]map[string]interface{}, len(threads))
@@ -117,7 +129,7 @@ func (s *Server) handleListRepoNotifications(w http.ResponseWriter, r *http.Requ
 		return
 	}
 	opts.RepoScope = repo.FullName
-	rows := s.store.NotificationRows(user, opts)
+	rows := s.notificationRows(r, user, opts)
 	rows = paginateAndLink(w, r, rows)
 	threads := s.store.BuildNotificationThreads(rows, s.baseURL(r))
 	out := make([]map[string]interface{}, len(threads))
@@ -167,7 +179,7 @@ func (s *Server) handleGetThread(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	thread := s.store.GetNotificationThread(user, s.baseURL(r), r.PathValue("thread_id"))
+	thread := s.notificationThread(r, user, r.PathValue("thread_id"))
 	if thread == nil {
 		writeGHError(w, http.StatusNotFound, "Not Found")
 		return
@@ -183,7 +195,7 @@ func (s *Server) handlePatchThread(w http.ResponseWriter, r *http.Request) {
 	}
 
 	threadID := r.PathValue("thread_id")
-	thread := s.store.GetNotificationThread(user, s.baseURL(r), threadID)
+	thread := s.notificationThread(r, user, threadID)
 	if thread == nil {
 		writeGHError(w, http.StatusNotFound, "Not Found")
 		return
@@ -206,7 +218,7 @@ func (s *Server) handleGetThreadSubscription(w http.ResponseWriter, r *http.Requ
 	}
 
 	threadID := r.PathValue("thread_id")
-	thread := s.store.GetNotificationThread(user, s.baseURL(r), threadID)
+	thread := s.notificationThread(r, user, threadID)
 	if thread == nil {
 		writeGHError(w, http.StatusNotFound, "Not Found")
 		return
@@ -229,7 +241,7 @@ func (s *Server) handleSetThreadSubscription(w http.ResponseWriter, r *http.Requ
 	}
 
 	threadID := r.PathValue("thread_id")
-	thread := s.store.GetNotificationThread(user, s.baseURL(r), threadID)
+	thread := s.notificationThread(r, user, threadID)
 	if thread == nil {
 		writeGHError(w, http.StatusNotFound, "Not Found")
 		return
@@ -261,7 +273,7 @@ func (s *Server) handleDeleteThreadSubscription(w http.ResponseWriter, r *http.R
 	}
 
 	threadID := r.PathValue("thread_id")
-	if s.store.GetNotificationThread(user, s.baseURL(r), threadID) == nil {
+	if s.notificationThread(r, user, threadID) == nil {
 		writeGHError(w, http.StatusNotFound, "Not Found")
 		return
 	}
@@ -315,7 +327,7 @@ func (s *Server) handleDeleteThread(w http.ResponseWriter, r *http.Request) {
 	}
 
 	threadID := r.PathValue("thread_id")
-	thread := s.store.GetNotificationThread(user, s.baseURL(r), threadID)
+	thread := s.notificationThread(r, user, threadID)
 	if thread == nil {
 		writeGHError(w, http.StatusNotFound, "Not Found")
 		return

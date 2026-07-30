@@ -397,7 +397,7 @@ func TestFineGrainedPATBrowserSessionCreatesFirstCredential(t *testing.T) {
 
 func TestFineGrainedPATExpirationStopsAuthentication(t *testing.T) {
 	user := createTestUser(t, "pat-expiration-owner")
-	expiresAt := time.Now().UTC().Add(time.Hour)
+	expiresAt := fixedTestTime.UTC().Add(time.Hour)
 	token, err := testServer.store.CreateUserFineGrainedPAT(user.ID, createPersonalAccessTokenWebRequest{
 		Name: "expiring token", ResourceOwner: user.Login, RepositorySelection: "none", ExpiresAt: &expiresAt,
 	})
@@ -410,7 +410,7 @@ func TestFineGrainedPATExpirationStopsAuthentication(t *testing.T) {
 		t.Fatalf("unexpired token status = %d", resp.StatusCode)
 	}
 	resp.Body.Close()
-	past := time.Now().UTC().Add(-time.Second)
+	past := fixedTestTime.UTC().Add(-time.Second)
 	testServer.store.mu.Lock()
 	testServer.store.Tokens[token.Value].ExpiresAt = &past
 	testServer.store.mu.Unlock()

@@ -6,7 +6,6 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
-	"time"
 
 	"github.com/stretchr/testify/require"
 )
@@ -221,7 +220,7 @@ func TestBranchProtection_MergeEnforcesRequestedChanges(t *testing.T) {
 		"title": "To merge", "head": "feat", "base": "main",
 	}).Body.Close()
 
-	reviewer := &User{ID: 1000, Login: "reviewer", Type: "User", CreatedAt: time.Now(), UpdatedAt: time.Now()}
+	reviewer := &User{ID: 1000, Login: "reviewer", Type: "User", CreatedAt: fixedTestTime, UpdatedAt: fixedTestTime}
 	testServer.store.Users[reviewer.ID] = reviewer
 	testServer.store.UsersByLogin[reviewer.Login] = reviewer
 	tok := testServer.store.CreateToken(reviewer.ID, "repo")

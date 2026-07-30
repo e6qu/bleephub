@@ -9,7 +9,6 @@ import (
 	"strconv"
 	"strings"
 	"testing"
-	"time"
 
 	"github.com/go-git/go-billy/v5/memfs"
 	git "github.com/go-git/go-git/v5"
@@ -87,7 +86,7 @@ func newFuzzFixture(t *testing.T) *fuzzFixture {
 	// with a credential that is valid but limited.
 	scoped := "fuzz-scoped-token-000000000000000000000000"
 	s.store.mu.Lock()
-	s.store.Tokens[scoped] = &Token{Value: scoped, UserID: admin.ID, Scopes: "public_repo", CreatedAt: time.Now().UTC()}
+	s.store.Tokens[scoped] = &Token{Value: scoped, UserID: admin.ID, Scopes: "public_repo", CreatedAt: fixedTestTime.UTC()}
 	s.store.mu.Unlock()
 
 	handler := s.ghHeadersMiddleware(s.prefixStripMiddleware(s.internalAuthMiddleware(s.mux)))
@@ -147,7 +146,7 @@ func seedGitContent(tb testing.TB, s *Server, repoFullName string, files map[str
 			tb.Fatalf("seed git add %s: %v", path, err)
 		}
 	}
-	sig := &object.Signature{Name: "admin", Email: "admin@bleephub.local", When: time.Now()}
+	sig := &object.Signature{Name: "admin", Email: "admin@bleephub.local", When: fixedTestTime}
 	if _, err := wt.Commit("seed", &git.CommitOptions{Author: sig, Committer: sig}); err != nil {
 		tb.Fatalf("seed git commit: %v", err)
 	}

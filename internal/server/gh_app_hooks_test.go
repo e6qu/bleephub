@@ -23,7 +23,7 @@ func TestAppHookConfig_GetPatch(t *testing.T) {
 	s.registerGHAppHookRoutes()
 	app := s.store.CreateApp(1, "Hook Cfg App", "", nil, nil)
 
-	jwt, err := signAppJWT(app.PEMPrivateKey, app.ID, time.Now())
+	jwt, err := signAppJWT(app.PEMPrivateKey, app.ID, fixedTestTime)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -104,11 +104,11 @@ func TestAppHookDeliveries_ListGetRedeliver(t *testing.T) {
 		Duration:    0.01,
 		Request:     &DeliveryRequest{Headers: map[string]string{"X-GitHub-Event": "installation"}, Payload: json.RawMessage(`{"action":"created"}`)},
 		Response:    &DeliveryResponse{StatusCode: 200, Body: "ok"},
-		DeliveredAt: time.Now(),
+		DeliveredAt: fixedTestTime,
 	}
 	s.store.AddAppDelivery(app.ID, original)
 
-	jwt, err := signAppJWT(app.PEMPrivateKey, app.ID, time.Now())
+	jwt, err := signAppJWT(app.PEMPrivateKey, app.ID, fixedTestTime)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -161,10 +161,7 @@ func TestAppHookDeliveries_ListGetRedeliver(t *testing.T) {
 		t.Errorf("REDELIVER body = %q, want empty", w.Body.String())
 	}
 	// Sink fires async — quick poll.
-	deadline := time.Now().Add(2 * time.Second)
-	for gotLen() == 0 && time.Now().Before(deadline) {
-		time.Sleep(20 * time.Millisecond)
-	}
+	testEventually(2*time.Second, 20*time.Millisecond, func() bool { return gotLen() > 0 })
 
 	// Store now has 2 deliveries (the original + the redelivery).
 	deliveries := s.store.ListAppDeliveries(app.ID)

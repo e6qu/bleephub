@@ -54,16 +54,15 @@ func decodeHookList(t *testing.T, resp *http.Response) []hookResp {
 // and the delivery appearing in the store.
 func pollDeliveries(t *testing.T, path string, minCount int) []map[string]interface{} {
 	t.Helper()
-	deadline := time.Now().Add(3 * time.Second)
-	for time.Now().Before(deadline) {
+	var list []map[string]interface{}
+	if testEventually(3*time.Second, 50*time.Millisecond, func() bool {
 		resp := ghGet(t, path, defaultToken)
-		var list []map[string]interface{}
+		list = nil
 		json.NewDecoder(resp.Body).Decode(&list)
 		resp.Body.Close()
-		if len(list) >= minCount {
-			return list
-		}
-		time.Sleep(50 * time.Millisecond)
+		return len(list) >= minCount
+	}) {
+		return list
 	}
 	t.Fatalf("pollDeliveries: wanted %d entries at %s within 3s", minCount, path)
 	return nil
@@ -402,19 +401,14 @@ func TestHooks_Deliveries_Redeliver(t *testing.T) {
 	// Poll until a redelivery=true entry is persisted (the create-time
 	// auto-ping and the explicit ping also produce deliveries, so a fixed
 	// count isn't a reliable signal — wait for the redelivery flag itself).
-	foundRedelivery := false
-	deadline := time.Now().Add(3 * time.Second)
-	for time.Now().Before(deadline) && !foundRedelivery {
+	foundRedelivery := testEventually(3*time.Second, 50*time.Millisecond, func() bool {
 		for _, d := range pollDeliveries(t, "/api/v3/repos/"+repo+"/hooks/"+strconv.Itoa(hookID)+"/deliveries", 1) {
 			if r, ok := d["redelivery"].(bool); ok && r {
-				foundRedelivery = true
-				break
+				return true
 			}
 		}
-		if !foundRedelivery {
-			time.Sleep(50 * time.Millisecond)
-		}
-	}
+		return false
+	})
 	if !foundRedelivery {
 		t.Error("no delivery with redelivery=true found after redeliver attempt")
 	}
@@ -591,8 +585,7 @@ func TestHooks_LastResponseAfterDelivery(t *testing.T) {
 	pollDeliveries(t, "/api/v3/repos/"+repo+"/hooks/"+strconv.Itoa(hookID)+"/deliveries", 1)
 
 	// Poll the hook until last_response reflects the OK delivery.
-	deadline := time.Now().Add(3 * time.Second)
-	for time.Now().Before(deadline) {
+	ok := testEventually(3*time.Second, 50*time.Millisecond, func() bool {
 		got := decodeHook(t, ghGet(t, "/api/v3/repos/"+repo+"/hooks/"+strconv.Itoa(hookID), defaultToken))
 		if got.LastResponse["status"] == "OK" {
 			if code, _ := got.LastResponse["code"].(float64); int(code) != 200 {
@@ -601,9 +594,12 @@ func TestHooks_LastResponseAfterDelivery(t *testing.T) {
 			if got.LastResponse["message"] != "OK" {
 				t.Errorf("last_response.message = %v, want OK", got.LastResponse["message"])
 			}
-			return
+			return true
 		}
-		time.Sleep(50 * time.Millisecond)
+		return false
+	})
+	if ok {
+		return
 	}
 	t.Error("last_response never reflected the OK delivery within 3s")
 }

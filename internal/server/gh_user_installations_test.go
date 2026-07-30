@@ -89,16 +89,9 @@ func TestUserInstallationRepos_List(t *testing.T) {
 	user := s.store.UsersByLogin["admin"]
 	app := s.store.CreateApp(user.ID, "test-app", "", nil, nil)
 
-	// Create a separate user "octocat" + a repo owned by them.
-	s.store.mu.Lock()
-	octo := &User{ID: s.store.NextUser, Login: "octocat", Type: "User"}
-	s.store.NextUser++
-	s.store.Users[octo.ID] = octo
-	s.store.UsersByLogin[octo.Login] = octo
-	s.store.mu.Unlock()
-	s.store.CreateRepo(octo, "test-repo", "", false)
+	s.store.CreateRepo(user, "test-repo", "", false)
 
-	inst := s.store.CreateInstallation(app.ID, "User", octo.ID, "octocat", nil, nil)
+	inst := s.store.CreateInstallation(app.ID, "User", user.ID, user.Login, nil, nil)
 
 	w := runWithUser(s, "GET", fmt.Sprintf("/api/v3/user/installations/%d/repositories", inst.ID), user)
 	if w.Code != http.StatusOK {
@@ -120,6 +113,45 @@ func TestUserInstallationRepos_List(t *testing.T) {
 	}
 	if len(resp.Repositories) > 0 && resp.Repositories[0]["name"] != "test-repo" {
 		t.Errorf("repo name = %v", resp.Repositories[0]["name"])
+	}
+}
+
+func TestUserInstallationRepos_ListBindsUserAndSelection(t *testing.T) {
+	s := newTestServer()
+	s.store.SeedDefaultUser()
+	s.registerGHAppsRoutes()
+	user := s.store.UsersByLogin["admin"]
+	app := s.store.CreateApp(user.ID, "selected-list-app", "", nil, nil)
+	selected := s.store.CreateRepo(user, "selected-repo", "", false)
+	s.store.CreateRepo(user, "unselected-repo", "", false)
+	inst := s.store.CreateInstallation(app.ID, "User", user.ID, user.Login, nil, nil)
+	s.store.SetInstallationRepositorySelection(inst.ID, "selected", []int{selected.ID})
+
+	w := runWithUser(s, "GET", fmt.Sprintf("/api/v3/user/installations/%d/repositories", inst.ID), user)
+	if w.Code != http.StatusOK {
+		t.Fatalf("selected list status = %d, body = %s", w.Code, w.Body.String())
+	}
+	var response struct {
+		TotalCount   int `json:"total_count"`
+		Repositories []struct {
+			ID int `json:"id"`
+		} `json:"repositories"`
+	}
+	if err := json.Unmarshal(w.Body.Bytes(), &response); err != nil {
+		t.Fatal(err)
+	}
+	if response.TotalCount != 1 || len(response.Repositories) != 1 || response.Repositories[0].ID != selected.ID {
+		t.Fatalf("selected list = %#v, want only repository %d", response, selected.ID)
+	}
+
+	s.store.mu.Lock()
+	outsider := &User{ID: s.store.NextUser, Login: "list-outsider", Type: "User"}
+	s.store.NextUser++
+	s.store.Users[outsider.ID] = outsider
+	s.store.UsersByLogin[outsider.Login] = outsider
+	s.store.mu.Unlock()
+	if denied := runWithUser(s, "GET", fmt.Sprintf("/api/v3/user/installations/%d/repositories", inst.ID), outsider); denied.Code != http.StatusNotFound {
+		t.Fatalf("foreign user list status = %d, want 404", denied.Code)
 	}
 }
 

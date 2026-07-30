@@ -8,7 +8,6 @@ import (
 	"strconv"
 	"strings"
 	"testing"
-	"time"
 )
 
 // seedOIDCRepoOwner creates a user with the given login so a repo can be
@@ -16,7 +15,7 @@ import (
 func seedOIDCRepoOwner(s *Server, login string) *User {
 	s.store.mu.Lock()
 	defer s.store.mu.Unlock()
-	u := &User{ID: s.store.NextUser, Login: login, Type: "User", CreatedAt: time.Now().UTC(), UpdatedAt: time.Now().UTC()}
+	u := &User{ID: s.store.NextUser, Login: login, Type: "User", CreatedAt: fixedTestTime.UTC(), UpdatedAt: fixedTestTime.UTC()}
 	s.store.NextUser++
 	s.store.Users[u.ID] = u
 	s.store.UsersByLogin[login] = u

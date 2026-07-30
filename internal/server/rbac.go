@@ -66,16 +66,7 @@ func canReadRepoAsUser(st *Store, user *User, repo *Repo) bool {
 	}
 	st.mu.RLock()
 	defer st.mu.RUnlock()
-	return canPullRepoLocked(st, user, repo)
-}
-
-// canReadRepoLocked is canReadRepoAsUser for callers that already hold st.mu
-// (read or write); it never acquires the lock itself.
-func canReadRepoLocked(st *Store, user *User, repo *Repo) bool {
-	if !repo.Private {
-		return true
-	}
-	return canPullRepoLocked(st, user, repo)
+	return canAccessRepoLocked(st, user, repo, "pull")
 }
 
 // canAdminRepo checks if a user has admin rights to a repository.
@@ -83,98 +74,77 @@ func canAdminRepo(st *Store, user *User, repo *Repo) bool {
 	if user == nil {
 		return false
 	}
-	if user.SiteAdmin {
-		return true
-	}
-	// Owner can always admin
-	if repo.Owner != nil && repo.Owner.ID == user.ID {
-		return true
-	}
-	parts := strings.SplitN(repo.FullName, "/", 2)
-	if len(parts) != 2 {
-		return false
-	}
-	orgLogin := parts[0]
-	org := st.GetOrg(orgLogin)
-	if org != nil && canAdminOrgAsUser(st, user, org) {
-		return true
-	}
-	return repoCollaboratorPermissionAtLeast(st, repo.FullName, user.Login, "admin")
+	st.mu.RLock()
+	defer st.mu.RUnlock()
+	return canAccessRepoLocked(st, user, repo, "admin")
 }
 
 // canPushRepo checks if a user can push to a repository.
-// Push requires ownership, org membership, team push permission, or
-// collaborator push/admin access.
+// Push requires ownership, a sufficient organization base permission, team
+// push permission, or collaborator push/admin access.
 func canPushRepo(st *Store, user *User, repo *Repo) bool {
 	if user == nil {
 		return false
 	}
-	if user.SiteAdmin {
-		return true
-	}
-	if repo.Owner != nil && repo.Owner.ID == user.ID {
-		return true
-	}
-	parts := strings.SplitN(repo.FullName, "/", 2)
-	if len(parts) != 2 {
-		return false
-	}
-	orgLogin := parts[0]
-	org := st.GetOrg(orgLogin)
-	if org != nil {
-		m := st.GetMembership(orgLogin, user.ID)
-		if m != nil && m.State == "active" {
-			return true
-		}
-		if hasTeamAccess(st, orgLogin, user.ID, repo.FullName, "push") {
-			return true
-		}
-	}
-	return repoCollaboratorPermissionAtLeast(st, repo.FullName, user.Login, "push")
-}
-
-// canPullRepoLocked checks if a user can pull (read) from a repository.
-// Callers already hold st.mu (read or write); it never acquires the lock
-// itself.
-func canPullRepoLocked(st *Store, user *User, repo *Repo) bool {
-	if !repo.Private {
-		return true
-	}
-	if user == nil {
-		return false
-	}
-	if repo.Owner != nil && repo.Owner.ID == user.ID {
-		return true
-	}
-	parts := strings.SplitN(repo.FullName, "/", 2)
-	if len(parts) != 2 {
-		return false
-	}
-	orgLogin := parts[0]
-	org := st.OrgsByLogin[orgLogin]
-	if org != nil {
-		m := st.Memberships[membershipKey(orgLogin, user.ID)]
-		if m != nil && m.State == "active" {
-			return true
-		}
-		if hasTeamAccessLocked(st, orgLogin, user.ID, repo.FullName, "pull") {
-			return true
-		}
-	}
-	return repoCollaboratorPermissionAtLeastLocked(st, repo.FullName, user.Login, "pull")
-}
-
-// repoCollaboratorPermissionAtLeast reports whether login has at least the
-// requested permission level on the repo via direct collaboration.
-// Must not be called with st.mu held; it takes the read lock itself.
-func repoCollaboratorPermissionAtLeast(st *Store, repoFullName, login, minPerm string) bool {
 	st.mu.RLock()
 	defer st.mu.RUnlock()
-	return repoCollaboratorPermissionAtLeastLocked(st, repoFullName, login, minPerm)
+	return canAccessRepoLocked(st, user, repo, "push")
 }
 
-// repoCollaboratorPermissionAtLeastLocked is repoCollaboratorPermissionAtLeast
-// for callers that already hold st.mu; it never acquires the lock itself.
+// canAccessRepoLocked is the single human-principal repository capability
+// calculation. Callers already hold st.mu. Keeping the organization base role,
+// team role, and direct-collaborator role in one lattice prevents read and
+// write surfaces from assigning different rights to the same principal.
+func canAccessRepoLocked(st *Store, user *User, repo *Repo, required string) bool {
+	if user == nil || repo == nil {
+		return false
+	}
+	if user.SiteAdmin || (repo.Owner != nil && repo.Owner.ID == user.ID) {
+		return true
+	}
+	parts := strings.SplitN(repo.FullName, "/", 2)
+	if len(parts) != 2 {
+		return false
+	}
+	orgLogin := parts[0]
+	if org := st.OrgsByLogin[orgLogin]; org != nil {
+		if membership := st.Memberships[membershipKey(orgLogin, user.ID)]; membership != nil &&
+			membership.State == MembershipStateActive {
+			// Organization owners administer every repository regardless of
+			// the base permission assigned to ordinary members.
+			if membership.Role == OrgRoleAdmin ||
+				repositoryPermissionAtLeast(org.DefaultRepositoryPermission, required) {
+				return true
+			}
+		}
+		if hasTeamAccessLocked(st, orgLogin, user.ID, repo.FullName, TeamPermission(required)) {
+			return true
+		}
+	}
+	return repoCollaboratorPermissionAtLeastLocked(st, repo.FullName, user.Login, required)
+}
+
+// repositoryPermissionAtLeast compares GitHub's organization base-repository
+// permission values with repository capability names. An empty stored value is
+// GitHub's default "read"; "pull" and "push" are the collaborator/team wire
+// names for the same read/write levels.
+func repositoryPermissionAtLeast(granted, required string) bool {
+	levels := map[string]int{
+		"none":  0,
+		"read":  1,
+		"pull":  1,
+		"write": 2,
+		"push":  2,
+		"admin": 3,
+	}
+	if granted == "" {
+		granted = "read"
+	}
+	return levels[granted] >= levels[required]
+}
+
+// repoCollaboratorPermissionAtLeastLocked checks direct collaboration while
+// the caller holds st.mu.
 func repoCollaboratorPermissionAtLeastLocked(st *Store, repoFullName, login, minPerm string) bool {
 	parts := strings.SplitN(repoFullName, "/", 2)
 	if len(parts) != 2 {
@@ -187,21 +157,10 @@ func repoCollaboratorPermissionAtLeastLocked(st *Store, repoFullName, login, min
 	if perm == "" {
 		return false
 	}
-	levels := map[string]int{"pull": 1, "push": 2, "admin": 3}
-	return levels[perm] >= levels[minPerm]
+	return repositoryPermissionAtLeast(perm, minPerm)
 }
 
-// hasTeamAccess checks if a user has at least the given permission level
-// on a repo via team membership.
-// Must not be called with st.mu held; it takes the read lock itself.
-func hasTeamAccess(st *Store, orgLogin string, userID int, repoFullName string, minPermission TeamPermission) bool {
-	st.mu.RLock()
-	defer st.mu.RUnlock()
-	return hasTeamAccessLocked(st, orgLogin, userID, repoFullName, minPermission)
-}
-
-// hasTeamAccessLocked is hasTeamAccess for callers that already hold st.mu;
-// it never acquires the lock itself.
+// hasTeamAccessLocked checks team grants while the caller holds st.mu.
 func hasTeamAccessLocked(st *Store, orgLogin string, userID int, repoFullName string, minPermission TeamPermission) bool {
 	org := st.OrgsByLogin[orgLogin]
 	if org == nil {

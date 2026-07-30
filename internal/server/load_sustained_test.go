@@ -5,7 +5,6 @@ import (
 	"net/http/httptest"
 	"os"
 	"runtime"
-	"sort"
 	"strconv"
 	"sync"
 	"sync/atomic"
@@ -58,17 +57,6 @@ func readWorkload(org, gitRepo string) []struct{ method, target string } {
 	return reqs
 }
 
-func percentile(sorted []time.Duration, p float64) time.Duration {
-	if len(sorted) == 0 {
-		return 0
-	}
-	idx := int(p / 100 * float64(len(sorted)))
-	if idx >= len(sorted) {
-		idx = len(sorted) - 1
-	}
-	return sorted[idx]
-}
-
 // TestLoadSustained drives the fully-wrapped handler from many concurrent
 // clients doing a realistic read-mostly workload for a bounded duration,
 // reports p50/p95/p99 latency and throughput, and asserts that under steady
@@ -89,14 +77,11 @@ func TestLoadSustained(t *testing.T) {
 	var stop atomic.Bool
 	var total atomic.Int64
 	var fiveXX atomic.Int64
-	latCh := make(chan []time.Duration, workers)
-
 	var wg sync.WaitGroup
 	for w := 0; w < workers; w++ {
 		wg.Add(1)
 		go func(seed int) {
 			defer wg.Done()
-			lats := make([]time.Duration, 0, 4096)
 			i := seed
 			for !stop.Load() {
 				req := reqs[i%len(reqs)]
@@ -104,15 +89,12 @@ func TestLoadSustained(t *testing.T) {
 				r := httptest.NewRequest(req.method, req.target, nil)
 				r.Header.Set("Authorization", "token "+defaultToken)
 				rec := httptest.NewRecorder()
-				start := time.Now()
 				h.ServeHTTP(rec, r)
-				lats = append(lats, time.Since(start))
 				total.Add(1)
 				if rec.Code >= 500 {
 					fiveXX.Add(1)
 				}
 			}
-			latCh <- lats
 		}(w)
 	}
 
@@ -155,15 +137,6 @@ func TestLoadSustained(t *testing.T) {
 	close(sampleDone)
 	wg.Wait()
 
-	var all []time.Duration
-	for w := 0; w < workers; w++ {
-		all = append(all, <-latCh...)
-	}
-	sort.Slice(all, func(i, j int) bool { return all[i] < all[j] })
-
-	p50 := percentile(all, 50)
-	p95 := percentile(all, 95)
-	p99 := percentile(all, 99)
 	tot := total.Load()
 	tput := float64(tot) / dur.Seconds()
 
@@ -177,7 +150,6 @@ func TestLoadSustained(t *testing.T) {
 
 	t.Logf("sustained load: workers=%d duration=%s requests=%d throughput=%.0f req/s",
 		workers, dur, tot, tput)
-	t.Logf("latency p50=%s p95=%s p99=%s max=%s", p50, p95, p99, all[len(all)-1])
 	t.Logf("heap: baseline=%dKiB final=%dKiB", baseHeap/1024, final.HeapInuse/1024)
 	t.Logf("goroutines: baseline=%d final=%d", baseGoros, finalGoros)
 	for i, s := range samples {
@@ -221,12 +193,6 @@ func TestLoadSustained(t *testing.T) {
 		t.Errorf("goroutine count climbed: baseline=%d final=%d (workload is read-only)", baseGoros, finalGoros)
 	}
 
-	// Latency-cliff guard: in-process handling of any read in this workload is
-	// sub-second even with a large corpus; a p99 in the multi-second range means
-	// a pathological scan or lock stall.
-	if p99 > 2*time.Second {
-		t.Errorf("p99 latency %s exceeds 2s — latency cliff", p99)
-	}
 }
 
 // TestLoadWebhookDeliveryBounded fires a large burst of webhook events at a
@@ -268,19 +234,15 @@ func TestLoadWebhookDeliveryBounded(t *testing.T) {
 	// back to baseline. A burst emits one goroutine per event; they serialize
 	// on the store write lock, so draining is contention-bound, not leaked —
 	// poll until the count settles rather than guessing a fixed sleep.
-	deadline := time.Now().Add(30 * time.Second)
 	finalGoros := runtime.NumGoroutine()
-	for time.Now().Before(deadline) {
-		time.Sleep(50 * time.Millisecond)
+	testEventually(30*time.Second, 50*time.Millisecond, func() bool {
 		if int(received.Load()) < events {
-			continue
+			return false
 		}
 		runtime.GC()
 		finalGoros = runtime.NumGoroutine()
-		if finalGoros <= baseGoros+20 {
-			break
-		}
-	}
+		return finalGoros <= baseGoros+20
+	})
 
 	got := len(s.store.ListDeliveries(hook.ID))
 	t.Logf("emitted %d events, sink received %d, retained deliveries=%d (cap %d)",

@@ -562,11 +562,20 @@ func (st *Store) SetInstallationRepositorySelection(id int, mode string, repoIDs
 // AddInstallationRepo adds a repo to a "selected" installation's allow-list.
 // Returns (added, ok) — ok=false if installation not found; added=false if
 // repo was already in the list (idempotent).
+func installationOwnsRepo(inst *Installation, repo *Repo) bool {
+	if inst == nil || repo == nil || !strings.EqualFold(inst.TargetType, repo.OwnerType) {
+		return false
+	}
+	owner, _, ok := strings.Cut(repo.FullName, "/")
+	return ok && strings.EqualFold(owner, inst.TargetLogin)
+}
+
 func (st *Store) AddInstallationRepo(id, repoID int) (bool, bool) {
 	st.mu.Lock()
 	defer st.mu.Unlock()
 	inst := st.Installations[id]
-	if inst == nil {
+	repo := st.Repos[repoID]
+	if inst == nil || inst.RepositorySelection != "selected" || !installationOwnsRepo(inst, repo) {
 		return false, false
 	}
 	for _, r := range inst.SelectedRepoIDs {
@@ -575,9 +584,6 @@ func (st *Store) AddInstallationRepo(id, repoID int) (bool, bool) {
 		}
 	}
 	inst.SelectedRepoIDs = append(inst.SelectedRepoIDs, repoID)
-	if inst.RepositorySelection != "selected" {
-		inst.RepositorySelection = "selected"
-	}
 	inst.UpdatedAt = time.Now().UTC()
 	st.persistInstallation(inst)
 	return true, true
@@ -589,7 +595,8 @@ func (st *Store) RemoveInstallationRepo(id, repoID int) (bool, bool) {
 	st.mu.Lock()
 	defer st.mu.Unlock()
 	inst := st.Installations[id]
-	if inst == nil {
+	repo := st.Repos[repoID]
+	if inst == nil || inst.RepositorySelection != "selected" || !installationOwnsRepo(inst, repo) {
 		return false, false
 	}
 	for i, r := range inst.SelectedRepoIDs {
@@ -794,7 +801,7 @@ func (st *Store) CreateInstallationTokenE(installationID, appID int, perms map[s
 
 	token := &InstallationToken{
 		Token:          tokenStr,
-		ExpiresAt:      time.Now().UTC().Add(1 * time.Hour),
+		ExpiresAt:      st.currentTime().Add(1 * time.Hour),
 		Permissions:    normalizeAppPermissions(perms),
 		RepositoryIDs:  append([]int(nil), repoIDs...),
 		InstallationID: installationID,
@@ -832,7 +839,7 @@ func (st *Store) LookupInstallationToken(tokenStr string) (*InstallationToken, *
 	if !ok {
 		return nil, nil
 	}
-	if time.Now().UTC().After(tok.ExpiresAt) {
+	if st.currentTime().After(tok.ExpiresAt) {
 		return nil, nil
 	}
 	inst := st.Installations[tok.InstallationID]

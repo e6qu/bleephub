@@ -94,7 +94,7 @@ func (st *Store) CreateOrgInvitation(org *Org, inviter *User, invitee *User, ema
 		InviterID: inviter.ID,
 		TeamIDs:   append([]int{}, teamIDs...),
 		Source:    "member",
-		CreatedAt: time.Now().UTC(),
+		CreatedAt: st.currentTime(),
 	}
 	st.NextOrgInvitationID++
 	if invitee != nil {
@@ -175,7 +175,7 @@ func (st *Store) consumeOrgInvitationLocked(inv *OrgInvitation) {
 		}
 		if !slices.Contains(team.MemberIDs, inv.UserID) {
 			team.MemberIDs = append(team.MemberIDs, inv.UserID)
-			team.UpdatedAt = time.Now().UTC()
+			team.UpdatedAt = st.currentTime()
 			if st.persist != nil {
 				st.persist.MustPut("teams", strconv.Itoa(team.ID), team)
 			}
@@ -213,7 +213,7 @@ func (st *Store) ListPendingOrgInvitations(orgLogin string) []*OrgInvitation {
 	if org == nil {
 		return nil
 	}
-	st.reconcileOrgInvitationsLocked(org, time.Now().UTC())
+	st.reconcileOrgInvitationsLocked(org, st.currentTime())
 	var out []*OrgInvitation
 	for _, inv := range st.OrgInvitations {
 		if inv.OrgID == org.ID && inv.FailedAt == nil {
@@ -234,7 +234,7 @@ func (st *Store) ListFailedOrgInvitations(orgLogin string) []*OrgInvitation {
 	if org == nil {
 		return nil
 	}
-	st.reconcileOrgInvitationsLocked(org, time.Now().UTC())
+	st.reconcileOrgInvitationsLocked(org, st.currentTime())
 	var out []*OrgInvitation
 	for _, inv := range st.OrgInvitations {
 		if inv.OrgID == org.ID && inv.FailedAt != nil {
@@ -254,7 +254,7 @@ func (st *Store) GetOrgInvitation(orgLogin string, id int) *OrgInvitation {
 	if org == nil {
 		return nil
 	}
-	st.reconcileOrgInvitationsLocked(org, time.Now().UTC())
+	st.reconcileOrgInvitationsLocked(org, st.currentTime())
 	inv := st.OrgInvitations[id]
 	if inv == nil || inv.OrgID != org.ID || inv.FailedAt != nil {
 		return nil
@@ -317,7 +317,7 @@ func (st *Store) BlockUserForOrg(orgLogin string, userID int) {
 		st.OrgBlocks[orgLogin] = map[int]time.Time{}
 	}
 	if _, ok := st.OrgBlocks[orgLogin][userID]; !ok {
-		st.OrgBlocks[orgLogin][userID] = time.Now().UTC()
+		st.OrgBlocks[orgLogin][userID] = st.currentTime()
 	}
 	if st.persist != nil {
 		st.persist.MustPut("org_blocks", orgLogin, st.OrgBlocks[orgLogin])
@@ -380,7 +380,7 @@ func (st *Store) GetOrgInteractionLimit(orgLogin string) *OrgInteractionLimit {
 	if lim == nil {
 		return nil
 	}
-	if time.Now().UTC().After(lim.ExpiresAt) {
+	if st.currentTime().After(lim.ExpiresAt) {
 		delete(st.OrgInteractionLimits, orgLogin)
 		if st.persist != nil {
 			st.persist.MustDelete("org_interaction_limits", orgLogin)

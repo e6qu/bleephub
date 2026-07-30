@@ -40,7 +40,7 @@ func newEntitlementFixture(t *testing.T, tag string, private bool) *entitlementF
 	owner := st.LookupUserByLogin("entitle-owner-" + tag)
 	if owner == nil {
 		st.mu.Lock()
-		now := time.Now().UTC()
+		now := fixedTestTime.UTC()
 		owner = &User{
 			ID:        st.NextUser,
 			NodeID:    fmt.Sprintf("U_entitle%08d", st.NextUser),
@@ -162,7 +162,7 @@ func TestAuthorExemptionDoesNotBypassTheCredential(t *testing.T) {
 	f := newEntitlementFixture(t, "author", false)
 
 	st.mu.Lock()
-	now := time.Now().UTC()
+	now := fixedTestTime.UTC()
 	author := &User{
 		ID:        st.NextUser,
 		NodeID:    fmt.Sprintf("U_entitleauth%08d", st.NextUser),
@@ -269,7 +269,7 @@ func TestOrgMemberListingIntersectsTheCredential(t *testing.T) {
 	org := seedTestOrg(t, "entitle-members-org")
 
 	st.mu.Lock()
-	now := time.Now().UTC()
+	now := fixedTestTime.UTC()
 	member := &User{
 		ID:        st.NextUser,
 		NodeID:    fmt.Sprintf("U_entitlemem%08d", st.NextUser),

@@ -24,7 +24,7 @@ func testUser(t *testing.T, s *Server, login string) *User {
 		return u
 	}
 	s.store.mu.Lock()
-	user := &User{ID: s.store.NextUser, Login: login, Type: "User", CreatedAt: time.Now(), UpdatedAt: time.Now()}
+	user := &User{ID: s.store.NextUser, Login: login, Type: "User", CreatedAt: fixedTestTime, UpdatedAt: fixedTestTime}
 	s.store.NextUser++
 	s.store.Users[user.ID] = user
 	s.store.UsersByLogin[user.Login] = user
@@ -113,7 +113,7 @@ func testAgentSession(t *testing.T, s *Server, scope runnerScope, labels ...stri
 	if err != nil {
 		t.Fatalf("newAgentClientID: %v", err)
 	}
-	agent := &Agent{Enabled: true, Status: "online", CreatedOn: time.Now(),
+	agent := &Agent{Enabled: true, Status: "online", CreatedOn: fixedTestTime,
 		Scope:         scope,
 		Authorization: &AgentAuthorization{ClientID: clientID}}
 	for _, l := range labels {
@@ -183,7 +183,7 @@ func TestRunnerTokenRejectsForgedAlgNone(t *testing.T) {
 	_, scopeID := testJobToken(t, s, "octo/private-repo")
 
 	header := base64url([]byte(`{"alg":"none","typ":"JWT"}`))
-	payload := base64url([]byte(fmt.Sprintf(`{"sub":%q,"aud":"actions","exp":%d}`, scopeID, time.Now().Add(time.Hour).Unix())))
+	payload := base64url([]byte(fmt.Sprintf(`{"sub":%q,"aud":"actions","exp":%d}`, scopeID, fixedTestTime.Add(time.Hour).Unix())))
 	forged := header + "." + payload + "."
 
 	if _, err := parseRunnerToken(forged); err == nil {
@@ -223,7 +223,7 @@ func TestRunnerTokenRejectsTamperedPayload(t *testing.T) {
 	if len(parts) != 3 {
 		t.Fatalf("token has %d parts", len(parts))
 	}
-	tampered := parts[0] + "." + base64url([]byte(fmt.Sprintf(`{"sub":"scope-b","aud":"actions","exp":%d}`, time.Now().Add(time.Hour).Unix()))) + "." + parts[2]
+	tampered := parts[0] + "." + base64url([]byte(fmt.Sprintf(`{"sub":"scope-b","aud":"actions","exp":%d}`, fixedTestTime.Add(time.Hour).Unix()))) + "." + parts[2]
 	if _, err := parseRunnerToken(tampered); err == nil {
 		t.Fatal("parseRunnerToken accepted a token whose payload was swapped")
 	}
@@ -449,7 +449,7 @@ func TestArtifactDownloadRejectsCrossRepository(t *testing.T) {
 	s.artifactStore.mu.Lock()
 	s.artifactStore.artifacts[1] = &Artifact{
 		ID: 1, Name: "build", Data: []byte("secret bytes"), Size: 12,
-		Finalized: true, RepoFullName: "octo/owner-repo", CreatedAt: time.Now(),
+		Finalized: true, RepoFullName: "octo/owner-repo", CreatedAt: fixedTestTime,
 	}
 	s.artifactStore.mu.Unlock()
 
@@ -479,7 +479,7 @@ func TestArtifactUploadRejectsCrossRepository(t *testing.T) {
 	testRepo(t, s, "octo", "other-repo", true)
 
 	s.artifactStore.mu.Lock()
-	s.artifactStore.artifacts[1] = &Artifact{ID: 1, Name: "build", RepoFullName: "octo/owner-repo", CreatedAt: time.Now()}
+	s.artifactStore.artifacts[1] = &Artifact{ID: 1, Name: "build", RepoFullName: "octo/owner-repo", CreatedAt: fixedTestTime}
 	s.artifactStore.mu.Unlock()
 
 	otherToken, _ := testJobToken(t, s, "octo/other-repo")

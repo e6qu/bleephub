@@ -648,7 +648,7 @@ func TestEphemeralRunnerTeardownStaysAuthenticated(t *testing.T) {
 	testServer.store.mu.Lock()
 	testServer.store.Jobs[jobID] = &Job{
 		ID: jobID, RequestID: requestID, PlanID: planID, Status: "queued", Message: message,
-		LockedUntil: time.Now().Add(time.Hour),
+		LockedUntil: fixedTestTime.Add(time.Hour),
 	}
 	testServer.store.mu.Unlock()
 	testServer.queueJobMessage(&TaskAgentMessage{
@@ -754,7 +754,7 @@ func TestRunnerActionDownloadCarriesTheCredentialItIsGiven(t *testing.T) {
 	if err != nil {
 		t.Fatalf("action download expiresAt %q is not a timestamp: %v", info.Authentication.ExpiresAt, err)
 	}
-	if !expiry.After(time.Now()) || expiry.After(time.Now().Add(48*time.Hour)) {
+	if !expiry.After(fixedTestTime) || expiry.After(fixedTestTime.Add(48*time.Hour)) {
 		t.Errorf("action download expiresAt = %s, want the real near-term expiry of the token it describes", expiry)
 	}
 

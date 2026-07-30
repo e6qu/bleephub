@@ -137,7 +137,7 @@ func publishMarketplaceGitHubApp(t *testing.T, name, webhookURL string) marketpl
 	if published["slug"] != slug || published["published"] != true {
 		t.Fatalf("published Marketplace listing = %v", published)
 	}
-	appJWT, err := signAppJWT(app["pem"].(string), int(app["id"].(float64)), time.Now())
+	appJWT, err := signAppJWT(app["pem"].(string), int(app["id"].(float64)), fixedTestTime)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -241,16 +241,12 @@ func TestMarketplacePublisherBuyerAndBillingLifecycle(t *testing.T) {
 		t.Fatalf("change webhook = %+v", got)
 	}
 	var deliveryRows []map[string]interface{}
-	deadline := time.Now().Add(2 * time.Second)
-	for time.Now().Before(deadline) {
+	testEventually(2*time.Second, 10*time.Millisecond, func() bool {
 		resp := marketplaceRequest(t, http.MethodGet,
 			"/settings/apps/"+listing.slug+"/marketplace/deliveries", "token "+defaultToken, nil)
 		deliveryRows = decodeJSONArray(t, resp)
-		if len(deliveryRows) >= 3 {
-			break
-		}
-		time.Sleep(10 * time.Millisecond)
-	}
+		return len(deliveryRows) >= 3
+	})
 	if len(deliveryRows) < 3 || deliveryRows[0]["event"] != "marketplace_purchase" {
 		t.Fatalf("Marketplace delivery history = %v", deliveryRows)
 	}
@@ -295,7 +291,7 @@ func TestMarketplaceOrganizationIdentityDoesNotCollideWithUserID(t *testing.T) {
 	if org.ID != admin.ID {
 		t.Fatalf("test requires colliding user/organization ids, got user=%d org=%d", admin.ID, org.ID)
 	}
-	now := time.Now().UTC()
+	now := fixedTestTime
 	listing := &MarketplaceListing{Slug: "identity-app", Name: "Identity App", Description: "Identity", CreatedAt: now, UpdatedAt: now}
 	if err := server.store.SaveMarketplaceListing(listing); err != nil {
 		t.Fatal(err)

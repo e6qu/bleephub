@@ -86,7 +86,7 @@ func (st *Store) GetLoginSession(id string) (*LoginSession, error) {
 	if err := json.Unmarshal(raw, &session); err != nil {
 		return nil, fmt.Errorf("decode login session: %w", err)
 	}
-	if !session.ExpiresAt.After(time.Now()) {
+	if !session.ExpiresAt.After(st.currentTime()) {
 		if err := st.DeleteLoginSession(id); err != nil {
 			return nil, err
 		}

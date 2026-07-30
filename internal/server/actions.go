@@ -72,7 +72,7 @@ func (s *Server) handleActionDownloadInfo(w http.ResponseWriter, r *http.Request
 		return
 	}
 	downloadToken := makeJWT(caller.Claims.Sub, runnerAudJob)
-	downloadExpiry := time.Now().Add(runnerTokenTTL).UTC().Format(time.RFC3339)
+	downloadExpiry := s.currentTime().Add(runnerTokenTTL).Format(time.RFC3339)
 
 	var body struct {
 		Actions []struct {

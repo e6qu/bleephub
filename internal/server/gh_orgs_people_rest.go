@@ -545,7 +545,7 @@ func (s *Server) handleSetOrgInteractionLimits(w http.ResponseWriter, r *http.Re
 		writeGHValidationError(w, "InteractionLimit", "expiry", "invalid")
 		return
 	}
-	lim := s.store.SetOrgInteractionLimit(org.Login, req.Limit, time.Now().UTC().Add(duration))
+	lim := s.store.SetOrgInteractionLimit(org.Login, req.Limit, s.currentTime().Add(duration))
 	writeJSON(w, http.StatusOK, orgInteractionLimitJSON(lim))
 }
 

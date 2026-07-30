@@ -5,7 +5,6 @@ import (
 	"net/http/httptest"
 	"sync"
 	"testing"
-	"time"
 )
 
 // TestGistAndCodespaceResponseSnapshotRace drives the live-pointer readers
@@ -18,7 +17,7 @@ func TestGistAndCodespaceResponseSnapshotRace(t *testing.T) {
 	gist := s.store.CreateGist(admin, "initial", false, map[string]*GistFile{
 		"note.txt": {Filename: "note.txt", Content: "initial"},
 	})
-	now := time.Now().UTC()
+	now := fixedTestTime.UTC()
 	codespace := &Codespace{
 		ID:          1,
 		Name:        "snapshot-race",

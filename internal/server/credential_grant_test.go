@@ -124,7 +124,7 @@ func newCredGrantFixture(t *testing.T, tag string) *credGrantFixture {
 	st := testServer.store
 
 	st.mu.Lock()
-	now := time.Now().UTC()
+	now := fixedTestTime.UTC()
 	owner := &User{
 		ID:        st.NextUser,
 		NodeID:    fmt.Sprintf("U_credgrant%08d", st.NextUser),
@@ -230,7 +230,7 @@ func (f *credGrantFixture) session(t *testing.T) credGrantCaller {
 	id := fmt.Sprintf("credgrant-sess-%s-%d", f.owner.Login, f.seq)
 	if err := testServer.store.PutLoginSession(id, &LoginSession{
 		UserID:    f.owner.ID,
-		ExpiresAt: time.Now().Add(time.Hour),
+		ExpiresAt: fixedTestTime.Add(time.Hour),
 	}); err != nil {
 		t.Fatalf("could not open the browser session: %v", err)
 	}

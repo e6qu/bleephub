@@ -1306,7 +1306,7 @@ const jobLeaseDuration = 1 * time.Hour
 // there is nothing to reclaim; its lease is simply extended. Callers must not
 // hold the store lock.
 func (s *Server) reclaimExpiredJobLeases(wf *Workflow) {
-	now := time.Now()
+	now := s.currentTime()
 	var redeliver []*TaskAgentMessage
 	var reclaimed []string
 
@@ -1366,7 +1366,7 @@ func (s *Server) checkJobTimeouts(wf *Workflow) {
 		s.store.mu.Unlock()
 		return
 	}
-	now := time.Now()
+	now := s.currentTime()
 	var timedOut bool
 	var timedOutJobIDs []string
 	for _, wfJob := range wf.Jobs {

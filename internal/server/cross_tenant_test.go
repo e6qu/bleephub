@@ -4,7 +4,6 @@ import (
 	"net/http"
 	"strconv"
 	"testing"
-	"time"
 )
 
 func itoa64(i int64) string { return strconv.FormatInt(i, 10) }
@@ -34,7 +33,7 @@ type crossTenantFixture struct {
 func newCrossTenantFixture(t *testing.T, tag string) *crossTenantFixture {
 	t.Helper()
 	store := testServer.store
-	now := time.Now().UTC()
+	now := fixedTestTime.UTC()
 
 	mkUser := func(login string) *User {
 		store.mu.Lock()

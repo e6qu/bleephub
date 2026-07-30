@@ -88,7 +88,7 @@ func TestActionsArtifactAndCacheMetadataPersistence(t *testing.T) {
 	artifact := &Artifact{
 		ID: artifactID, Name: "release", Data: []byte("release archive"), Size: int64(len("release archive")), Finalized: true,
 		RepoFullName: "octo/repo", WorkflowRunBackendID: "run-1", GitHubRunID: 17,
-		CreatedAt: time.Now().UTC(),
+		CreatedAt: fixedTestTime.UTC(),
 	}
 	first.populateArtifactDigest(artifact)
 	first.artifacts[artifact.ID] = artifact
@@ -103,8 +103,8 @@ func TestActionsArtifactAndCacheMetadataPersistence(t *testing.T) {
 	}
 	cache := &CacheEntry{
 		ID: cacheID, Repo: "octo/repo", Key: "linux-go", Version: "v1",
-		Size: 456, Finalized: true, DownloadToken: "opaque", CreatedAt: time.Now().UTC(),
-		LastAccessedAt: time.Now().UTC().Add(time.Minute),
+		Size: 456, Finalized: true, DownloadToken: "opaque", CreatedAt: fixedTestTime.UTC(),
+		LastAccessedAt: fixedTestTime.UTC().Add(time.Minute),
 	}
 	first.caches[cache.ID] = cache
 	first.cacheIndex[cacheLookupKey(cache.Repo, cache.Key, cache.Version)] = cache.ID
@@ -371,7 +371,7 @@ func TestArtifactDownloadNotFound(t *testing.T) {
 // scopeIdentifier recorded in the job message.
 func seedCacheRunJob(t *testing.T, s *Server, repo string) string {
 	t.Helper()
-	scopeID := fmt.Sprintf("scope-%s-%d", repo, time.Now().UnixNano())
+	scopeID := fmt.Sprintf("scope-%s-%d", repo, int64(nextTestID()))
 	msg := map[string]interface{}{
 		"plan": map[string]interface{}{
 			"scopeIdentifier": scopeID,
@@ -479,7 +479,7 @@ func seedFinalizedCache(s *Server, id int64, repo, key, version string, size int
 	s.artifactStore.mu.Lock()
 	entry := &CacheEntry{
 		ID: id, Repo: repo, Key: key, Version: version,
-		Size: size, Data: make([]byte, size), Finalized: true, CreatedAt: time.Now(),
+		Size: size, Data: make([]byte, size), Finalized: true, CreatedAt: fixedTestTime,
 	}
 	s.artifactStore.caches[id] = entry
 	s.artifactStore.cacheIndex[cacheLookupKey(repo, key, version)] = id
@@ -685,8 +685,8 @@ func TestCacheRestoreKeyUsesNewestPrefixMatch(t *testing.T) {
 	s := newTestServer()
 	token := seedCacheRunJob(t, s, "octo/prefix")
 
-	old := &CacheEntry{ID: 1, Repo: "octo/prefix", Key: "linux-go-old", Version: "abc", Data: []byte("old"), Finalized: true, CreatedAt: time.Now().Add(-time.Hour)}
-	newer := &CacheEntry{ID: 2, Repo: "octo/prefix", Key: "linux-go-main", Version: "abc", Data: []byte("new"), Finalized: true, CreatedAt: time.Now()}
+	old := &CacheEntry{ID: 1, Repo: "octo/prefix", Key: "linux-go-old", Version: "abc", Data: []byte("old"), Finalized: true, CreatedAt: fixedTestTime.Add(-time.Hour)}
+	newer := &CacheEntry{ID: 2, Repo: "octo/prefix", Key: "linux-go-main", Version: "abc", Data: []byte("new"), Finalized: true, CreatedAt: fixedTestTime}
 	s.artifactStore.mu.Lock()
 	s.artifactStore.caches[old.ID] = old
 	s.artifactStore.caches[newer.ID] = newer

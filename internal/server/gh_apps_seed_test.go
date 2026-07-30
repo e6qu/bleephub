@@ -10,7 +10,6 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
-	"time"
 
 	"github.com/rs/zerolog"
 )
@@ -49,6 +48,7 @@ func TestSeedPreRegisteredApp(t *testing.T) {
 	t.Setenv("BLEEPHUB_SEED_APPS", string(seed))
 
 	srv := NewServer("127.0.0.1:0", zerolog.Nop())
+	useFixedTestClock(srv)
 	// Mirror ListenAndServe's handler chain so /api/ auth (the app-JWT
 	// middleware) runs — httptest serves the bare mux otherwise.
 	handler := srv.ghHeadersMiddleware(srv.prefixStripMiddleware(srv.internalAuthMiddleware(srv.mux)))
@@ -60,7 +60,7 @@ func TestSeedPreRegisteredApp(t *testing.T) {
 	}
 
 	// ---- From here on, act ONLY as a coordinate-only client. ----
-	jwt, err := signAppJWT(pemKey, appID, time.Now())
+	jwt, err := signAppJWT(pemKey, appID, fixedTestTime)
 	if err != nil {
 		t.Fatal(err)
 	}

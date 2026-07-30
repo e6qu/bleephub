@@ -13,14 +13,9 @@ import (
 // deliveries are asynchronous).
 func waitFor(t *testing.T, cond func() bool, msg string) {
 	t.Helper()
-	deadline := time.Now().Add(15 * time.Second)
-	for time.Now().Before(deadline) {
-		if cond() {
-			return
-		}
-		time.Sleep(100 * time.Millisecond)
+	if !testEventually(15*time.Second, 100*time.Millisecond, cond) {
+		t.Fatal(msg)
 	}
-	t.Fatal(msg)
 }
 
 // Integration flows over the shared test server for the Organizations

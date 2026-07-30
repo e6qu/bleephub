@@ -3,7 +3,6 @@ package bleephub
 import (
 	"net/http"
 	"testing"
-	"time"
 )
 
 // TestAppInstallationRequests exercises GET /app/installation-requests with
@@ -12,7 +11,7 @@ import (
 // empty; unauthenticated callers get 401.
 func TestAppInstallationRequests(t *testing.T) {
 	app := testServer.store.CreateApp(1, "Installation Requests App", "", nil, nil)
-	jwt, err := signAppJWT(app.PEMPrivateKey, app.ID, time.Now())
+	jwt, err := signAppJWT(app.PEMPrivateKey, app.ID, fixedTestTime)
 	if err != nil {
 		t.Fatal(err)
 	}

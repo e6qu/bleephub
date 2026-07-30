@@ -8,7 +8,6 @@ import (
 	"io"
 	"net/http"
 	"testing"
-	"time"
 
 	"github.com/go-git/go-git/v5/plumbing"
 )
@@ -26,7 +25,7 @@ func seedCodespaceRecord(t *testing.T, ownerLogin, repoKey string) *Codespace {
 	st := testServer.store
 	st.mu.Lock()
 	m := codespaceDefaultMachine()
-	now := time.Now().UTC()
+	now := fixedTestTime.UTC()
 	cs := &Codespace{
 		ID:                 st.NextCodespaceID,
 		Name:               name,

@@ -8,7 +8,6 @@ import (
 	"net/url"
 	"strings"
 	"testing"
-	"time"
 )
 
 // Integration flows over the shared test server for the GitHub Apps
@@ -230,7 +229,7 @@ func TestAppManifestFlowEndToEnd(t *testing.T) {
 
 	// 3. The returned Privacy Enhanced Mail key signs a JSON Web Token that
 	// authenticates GET /app.
-	jwt, err := signAppJWT(pemKey, appID, time.Now())
+	jwt, err := signAppJWT(pemKey, appID, fixedTestTime)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -278,7 +277,7 @@ func installAppOnOrg(t *testing.T, orgLogin, repoName string, perms map[string]s
 func TestInstallationTokenDownscoping(t *testing.T) {
 	appID, _, pemKey, instID := installAppOnOrg(t, "downscope-org", "scoped-repo",
 		map[string]string{"contents": "read", "issues": "write"})
-	jwt, err := signAppJWT(pemKey, appID, time.Now())
+	jwt, err := signAppJWT(pemKey, appID, fixedTestTime)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -404,7 +403,7 @@ func TestInstallationTokenCreatesOrganizationRepositoryWithAdministrationPermiss
 	appSlug := appData["slug"].(string)
 	instData := installGitHubAppViaBrowser(t, appSlug, orgLogin, "all")
 	instID := int(instData["id"].(float64))
-	jwt, err := signAppJWT(pemKey, appID, time.Now())
+	jwt, err := signAppJWT(pemKey, appID, fixedTestTime)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -448,7 +447,7 @@ func TestInstallationTokenCreateOrganizationRepositoryRequiresAdministrationWrit
 	appSlug := appData["slug"].(string)
 	instData := installGitHubAppViaBrowser(t, appSlug, orgLogin, "all")
 	instID := int(instData["id"].(float64))
-	jwt, err := signAppJWT(pemKey, appID, time.Now())
+	jwt, err := signAppJWT(pemKey, appID, fixedTestTime)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -482,7 +481,7 @@ func TestInstallationTokenCreateOrganizationRepositoryRequiresAdministrationWrit
 func TestInstallationSuspensionBlocksTokens(t *testing.T) {
 	appID, _, pemKey, instID := installAppOnOrg(t, "suspend-org", "suspend-repo",
 		map[string]string{"contents": "read"})
-	jwt, err := signAppJWT(pemKey, appID, time.Now())
+	jwt, err := signAppJWT(pemKey, appID, fixedTestTime)
 	if err != nil {
 		t.Fatal(err)
 	}

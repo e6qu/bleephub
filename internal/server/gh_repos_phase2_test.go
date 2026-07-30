@@ -8,7 +8,6 @@ import (
 	"io"
 	"net/http"
 	"testing"
-	"time"
 
 	"github.com/go-git/go-git/v5/plumbing"
 )
@@ -621,11 +620,11 @@ func TestRepoForksREST(t *testing.T) {
 
 	// Create a second user to fork into.
 	testServer.store.mu.Lock()
-	forker := &User{ID: testServer.store.NextUser, Login: "forker", Type: "User", CreatedAt: time.Now(), UpdatedAt: time.Now()}
+	forker := &User{ID: testServer.store.NextUser, Login: "forker", Type: "User", CreatedAt: fixedTestTime, UpdatedAt: fixedTestTime}
 	testServer.store.NextUser++
 	testServer.store.Users[forker.ID] = forker
 	testServer.store.UsersByLogin[forker.Login] = forker
-	tok := &Token{Value: "forker-token", UserID: forker.ID, Scopes: "repo", CreatedAt: time.Now()}
+	tok := &Token{Value: "forker-token", UserID: forker.ID, Scopes: "repo", CreatedAt: fixedTestTime}
 	testServer.store.Tokens[tok.Value] = tok
 	testServer.store.mu.Unlock()
 

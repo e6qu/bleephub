@@ -264,7 +264,7 @@ func reloadedStore(t *testing.T, build func(p *Persistence, st *Store)) *Store {
 // addTestUser inserts (and persists) a non-admin user the way the user
 // management surface does.
 func addTestUser(p *Persistence, st *Store, login string) *User {
-	now := time.Now().UTC()
+	now := fixedTestTime.UTC()
 	u := &User{ID: st.NextUser, Login: login, Name: login, Type: "User", CreatedAt: now, UpdatedAt: now}
 	st.Users[u.ID] = u
 	st.UsersByLogin[u.Login] = u
@@ -382,7 +382,7 @@ func TestPersistenceReload_DeleteRepoPurgesIssueAndPullChildren(t *testing.T) {
 		child := st.CreateIssue(repo.ID, admin.ID, "child", "", nil, nil, 0)
 		blocker := st.CreateIssue(repo.ID, admin.ID, "blocker", "", nil, nil, 0)
 		oldIssueID = parent.ID
-		now := time.Now().UTC()
+		now := fixedTestTime.UTC()
 		issueComment := st.CreateComment(parent.ID, admin.ID, "stale issue comment")
 		if issueComment == nil {
 			t.Fatal("CreateComment returned nil")
@@ -613,7 +613,9 @@ func TestPersistenceReload_DeleteRepoPurgesIssueAndPullChildren(t *testing.T) {
 	if got := st2.CountCommentsFor("issue", fresh.ID); got != 0 {
 		t.Fatalf("fresh issue inherited stale comment count = %d", got)
 	}
-	if thread := st2.GetNotificationThread(admin, "http://example.test", notificationThreadID("Issue", fresh.ID)); thread == nil {
+	if thread := st2.GetNotificationThreadFor(admin, "http://example.test", notificationThreadID("Issue", fresh.ID), func(repo *Repo) bool {
+		return canReadRepoAsUser(st2, admin, repo)
+	}); thread == nil {
 		t.Fatal("fresh issue did not create a notification thread")
 	} else if !thread.Unread {
 		t.Fatalf("fresh issue inherited stale read notification state: %#v", thread)
@@ -804,7 +806,7 @@ func TestPersistenceReload_SecretValue(t *testing.T) {
 			t.Fatal("CreateRepo returned nil")
 		}
 		// Mirror handlePutSecret's store mutation + write-through.
-		now := time.Now().UTC()
+		now := fixedTestTime.UTC()
 		st.RepoSecrets[repoKey] = map[string]*Secret{
 			"TOKEN": {Name: "TOKEN", Value: "hunter2", CreatedAt: now, UpdatedAt: now},
 		}
@@ -1091,7 +1093,7 @@ func TestPersistenceReload_CheckRunsAndSuites(t *testing.T) {
 
 func TestPersistenceReload_WorkflowRunsAndAttempts(t *testing.T) {
 	const repoKey = "admin/actions-persist"
-	now := time.Now().UTC()
+	now := fixedTestTime.UTC()
 	var completedRunID, runningRunID int
 	st2 := reloadedStore(t, func(p *Persistence, st *Store) {
 		st.SeedDefaultUser()
@@ -1388,7 +1390,7 @@ func TestPersistenceReload_AppHookDeliveries(t *testing.T) {
 			Event:       "installation",
 			Action:      "created",
 			StatusCode:  200,
-			DeliveredAt: time.Now().UTC(),
+			DeliveredAt: fixedTestTime.UTC(),
 		})
 	})
 
@@ -1478,7 +1480,7 @@ func TestPersistenceReload_DeleteRepoLeavesNoResidue(t *testing.T) {
 		repo := st.CreateRepo(user, repoName, "", false)
 		controller := st.CreateRepo(user, "variant-controller", "", false)
 		oldRepoID = repo.ID
-		now := time.Now().UTC()
+		now := fixedTestTime.UTC()
 
 		org := st.CreateOrg(user, "delete-cascade-org", "Delete Cascade Org", "")
 		team := st.CreateTeam(org.Login, "Reviewers", TeamOptions{Permission: TeamPermissionPull})
@@ -1506,7 +1508,7 @@ func TestPersistenceReload_DeleteRepoLeavesNoResidue(t *testing.T) {
 		st.SetEnterpriseDependabotRepoAccess([]int{repo.ID})
 
 		hook := st.CreateHook(repoKey, "http://sink.localhost/h", "sec", "json", "0", []string{"push"}, true)
-		st.AddDelivery(&WebhookDelivery{HookID: hook.ID, Event: "push", DeliveredAt: time.Now().UTC()})
+		st.AddDelivery(&WebhookDelivery{HookID: hook.ID, Event: "push", DeliveredAt: fixedTestTime.UTC()})
 		st.RepoSecrets[repoKey] = map[string]*Secret{"TOKEN": {Name: "TOKEN", Value: "v", CreatedAt: now, UpdatedAt: now}}
 		p.MustPut("repo_secrets", repoKey, st.RepoSecrets[repoKey])
 		st.RepoVariables[repoKey] = map[string]*ActionsVariable{"VAR": {Name: "VAR", Value: "v", CreatedAt: now, UpdatedAt: now}}
@@ -1763,7 +1765,7 @@ func TestPersistenceReload_DeleteDeploymentPurgesStatuses(t *testing.T) {
 func TestPersistenceReload_RenameRepoMovesRepoScopedMetadata(t *testing.T) {
 	const oldKey = "admin/rename-source"
 	const newKey = "admin/rename-target"
-	now := time.Now().UTC()
+	now := fixedTestTime.UTC()
 
 	st2 := reloadedStore(t, func(p *Persistence, st *Store) {
 		_, objectStore := newObjectByteStoreForTest(t)
@@ -1855,7 +1857,7 @@ func TestPersistenceReload_RenameRepoMovesRepoScopedMetadata(t *testing.T) {
 func TestPersistenceReload_TransferRepoMovesRepoScopedMetadata(t *testing.T) {
 	const oldKey = "admin/transfer-source"
 	const newKey = "bob/transfer-source"
-	now := time.Now().UTC()
+	now := fixedTestTime.UTC()
 
 	st2 := reloadedStore(t, func(p *Persistence, st *Store) {
 		st.SeedDefaultUser()

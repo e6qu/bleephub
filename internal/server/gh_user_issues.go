@@ -2,6 +2,7 @@ package bleephub
 
 import (
 	"net/http"
+	"slices"
 	"sort"
 	"strings"
 	"time"
@@ -64,7 +65,7 @@ func (s *Server) handleListGlobalUserIssues(w http.ResponseWriter, r *http.Reque
 	rows := make([]row, 0)
 	for _, issue := range s.store.Issues {
 		repo := s.store.Repos[issue.RepoID]
-		if repo == nil || !canReadRepoLocked(s.store, user, repo) {
+		if repo == nil {
 			continue
 		}
 		if !issueMatchesUserFilter(s.store, issue, repo, user, filter) {
@@ -82,6 +83,10 @@ func (s *Server) handleListGlobalUserIssues(w http.ResponseWriter, r *http.Reque
 		rows = append(rows, row{issue, repo})
 	}
 	s.store.mu.RUnlock()
+
+	rows = slices.DeleteFunc(rows, func(candidate row) bool {
+		return !s.viewerCanReadRepo(r.Context(), candidate.repo)
+	})
 
 	sortKey := q.Get("sort")
 	direction := q.Get("direction")

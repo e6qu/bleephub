@@ -11,7 +11,6 @@ import (
 	"strings"
 	"sync/atomic"
 	"testing"
-	"time"
 )
 
 // --- shared fixtures ---
@@ -19,7 +18,7 @@ import (
 var authflowSeq int64
 
 func authflowName(prefix string) string {
-	return fmt.Sprintf("%s-%d-%d", prefix, time.Now().UnixNano(), atomic.AddInt64(&authflowSeq, 1))
+	return fmt.Sprintf("%s-%d-%d", prefix, int64(nextTestID()), atomic.AddInt64(&authflowSeq, 1))
 }
 
 // authflowStranger seeds a user with no relationship to anything and returns
@@ -27,7 +26,7 @@ func authflowName(prefix string) string {
 func authflowStranger(t *testing.T, s *Server, login string) (*User, string) {
 	t.Helper()
 	s.store.mu.Lock()
-	now := time.Now().UTC()
+	now := fixedTestTime.UTC()
 	user := &User{ID: s.store.NextUser, Login: login, Type: "User", StarredRepos: map[string]bool{}, CreatedAt: now, UpdatedAt: now}
 	s.store.Users[user.ID] = user
 	s.store.UsersByLogin[login] = user

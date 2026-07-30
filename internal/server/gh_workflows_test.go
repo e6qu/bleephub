@@ -8,7 +8,6 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
-	"time"
 
 	memfs "github.com/go-git/go-billy/v5/memfs"
 	git "github.com/go-git/go-git/v5"
@@ -40,7 +39,7 @@ func commitWorkflowYAMLToStorage(t *testing.T, s *Server, repoFullName, path, bo
 	// Login matches the test-fixture owner instead of using the default
 	// admin user.
 	s.store.mu.Lock()
-	user := &User{ID: s.store.NextUser, Login: parts[0], Type: "User", CreatedAt: time.Now(), UpdatedAt: time.Now()}
+	user := &User{ID: s.store.NextUser, Login: parts[0], Type: "User", CreatedAt: fixedTestTime, UpdatedAt: fixedTestTime}
 	s.store.NextUser++
 	s.store.Users[user.ID] = user
 	s.store.UsersByLogin[user.Login] = user
@@ -76,7 +75,7 @@ func commitWorkflowYAMLToStorage(t *testing.T, s *Server, repoFullName, path, bo
 		t.Fatalf("git add %s: %v", path, err)
 	}
 	commitHash, err := wt.Commit("add "+path, &git.CommitOptions{
-		Author: &object.Signature{Name: "t", Email: "t@t", When: time.Now()},
+		Author: &object.Signature{Name: "t", Email: "t@t", When: fixedTestTime},
 	})
 	if err != nil {
 		t.Fatalf("git commit: %v", err)

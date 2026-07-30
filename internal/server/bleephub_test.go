@@ -19,6 +19,7 @@ import (
 	"net/url"
 	"os"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -31,7 +32,39 @@ var (
 	testServer  *Server
 	testSSHAddr string
 	testSSHKey  ed25519.PrivateKey
+	testID      atomic.Uint64
 )
+
+var fixedTestTime = time.Date(2042, time.July, 15, 12, 0, 0, 0, time.UTC)
+
+func nextTestID() uint64 {
+	return testID.Add(1)
+}
+
+func testEventually(timeout, interval time.Duration, condition func() bool) bool {
+	if condition() {
+		return true
+	}
+	timer := time.NewTimer(timeout)
+	defer timer.Stop()
+	ticker := time.NewTicker(interval)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-timer.C:
+			return condition()
+		case <-ticker.C:
+			if condition() {
+				return true
+			}
+		}
+	}
+}
+
+func useFixedTestClock(server *Server) {
+	server.clockNow = func() time.Time { return fixedTestTime }
+	server.store.clockNow = server.clockNow
+}
 
 // authedGet issues a GET against the live test server with the admin
 // token, the way the bleephub UI authenticates against /internal/*.
@@ -132,6 +165,7 @@ func TestMain(m *testing.M) {
 
 	srv := NewServer(addr, logger)
 	testServer = srv
+	useFixedTestClock(testServer)
 	// The package-wide fixture intentionally reuses one credential across
 	// thousands of otherwise independent tests. Keep that synthetic principal
 	// from coupling late tests to early request volume; dedicated rate-limit
@@ -359,7 +393,7 @@ func signTestAssertion(t *testing.T, key *rsa.PrivateKey, clientID string) strin
 func signTestAssertionWithAlgorithm(t *testing.T, key *rsa.PrivateKey, clientID, algorithm string) string {
 	t.Helper()
 	header := base64.RawURLEncoding.EncodeToString([]byte(fmt.Sprintf(`{"alg":%q,"typ":"JWT"}`, algorithm)))
-	now := time.Now().Unix()
+	now := fixedTestTime.Unix()
 	payload := base64.RawURLEncoding.EncodeToString([]byte(fmt.Sprintf(
 		`{"iss":%q,"iat":%d,"exp":%d}`, clientID, now, now+300,
 	)))

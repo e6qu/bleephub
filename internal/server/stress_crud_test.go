@@ -85,7 +85,9 @@ func TestStressCRUDStorm(t *testing.T) {
 
 	nWorkers := stressWorkers(24)
 	dur := stressDuration(3 * time.Second)
-	deadline := time.Now().Add(dur)
+	var stop atomic.Bool
+	stopTimer := time.AfterFunc(dur, func() { stop.Store(true) })
+	defer stopTimer.Stop()
 
 	var uniq atomic.Int64
 	var badStatus atomic.Int64
@@ -116,9 +118,9 @@ func TestStressCRUDStorm(t *testing.T) {
 		wg.Add(1)
 		go func(seed int) {
 			defer wg.Done()
-			rng := rand.New(rand.NewSource(int64(seed) + time.Now().UnixNano()))
+			rng := rand.New(rand.NewSource(int64(seed) + int64(nextTestID())))
 			reactions := []string{"+1", "-1", "laugh", "heart", "hooray", "rocket", "eyes", "confused"}
-			for time.Now().Before(deadline) {
+			for !stop.Load() {
 				pr := pool[rng.Intn(len(pool))]
 				repoPath := fmt.Sprintf("/api/v3/repos/%s/%s", pr.owner, pr.name)
 				issueNo := pr.issues[rng.Intn(len(pr.issues))]
