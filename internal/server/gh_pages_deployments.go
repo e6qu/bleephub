@@ -286,11 +286,11 @@ func (s *Server) verifyPagesOIDCToken(r *http.Request, token string, repo *Repo,
 	if err := json.Unmarshal(payloadBytes, &claims); err != nil {
 		return fmt.Errorf("decode JWT claims: %w", err)
 	}
-	now := time.Now().Unix()
+	now := s.currentTime().Unix()
 	if claims.ExpiresAt <= now || claims.NotBefore > now || claims.IssuedAt > now {
 		return errors.New("token is expired or not yet valid")
 	}
-	if claims.Issuer != s.baseURL(r) {
+	if claims.Issuer != s.actionsOIDCIssuer(r) {
 		return fmt.Errorf("issuer %q does not match Bleephub", claims.Issuer)
 	}
 	wantAudience := "https://github.com/" + repo.FullName

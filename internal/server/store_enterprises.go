@@ -90,7 +90,23 @@ type EnterpriseSettings struct {
 
 	// GitHub Actions OIDC custom property inclusions (repository custom
 	// properties included in OIDC token claims), in insertion order.
-	OIDCCustomProperties []string `json:"oidc_custom_properties"`
+	OIDCCustomProperties      []string `json:"oidc_custom_properties"`
+	OIDCIncludeEnterpriseSlug bool     `json:"oidc_include_enterprise_slug"`
+
+	// Enterprise-wide Actions policy. These settings are intentionally stored
+	// independently from organization policy: organization settings may
+	// narrow an enterprise policy but cannot replace its persisted source of
+	// truth.
+	ActionsEnabledOrganizations     string                       `json:"actions_enabled_organizations"`
+	ActionsAllowedActions           string                       `json:"actions_allowed_actions"`
+	ActionsSHAPinningRequired       bool                         `json:"actions_sha_pinning_required"`
+	ActionsSelectedOrganizationIDs  []int                        `json:"actions_selected_organization_ids"`
+	ActionsAllowed                  *ActionsAllowed              `json:"actions_allowed,omitempty"`
+	ActionsWorkflowPermissions      *WorkflowPermissions         `json:"actions_workflow_permissions,omitempty"`
+	ActionsArtifactRetentionDays    int                          `json:"actions_artifact_retention_days"`
+	ActionsForkPRApprovalPolicy     string                       `json:"actions_fork_pr_approval_policy"`
+	ActionsForkPRWorkflowsPrivate   *ForkPRWorkflowsPrivateRepos `json:"actions_fork_pr_workflows_private,omitempty"`
+	ActionsDisableSelfHostedRunners bool                         `json:"actions_disable_self_hosted_runners"`
 
 	// Copilot coding agent policy. "" = never set.
 	CopilotCodingAgentPolicy string   `json:"copilot_coding_agent_policy"`
@@ -98,10 +114,43 @@ type EnterpriseSettings struct {
 }
 
 func defaultEnterpriseSettings() *EnterpriseSettings {
-	return &EnterpriseSettings{
+	return normalizeEnterpriseSettings(&EnterpriseSettings{
 		ActionsCacheRetentionDays: 14,
 		ActionsCacheSizeGB:        10,
+	})
+}
+
+func normalizeEnterpriseSettings(settings *EnterpriseSettings) *EnterpriseSettings {
+	if settings.ActionsCacheRetentionDays == 0 {
+		settings.ActionsCacheRetentionDays = 14
 	}
+	if settings.ActionsCacheSizeGB == 0 {
+		settings.ActionsCacheSizeGB = 10
+	}
+	if settings.ActionsEnabledOrganizations == "" {
+		settings.ActionsEnabledOrganizations = "all"
+	}
+	if settings.ActionsAllowedActions == "" {
+		settings.ActionsAllowedActions = "all"
+	}
+	if settings.ActionsWorkflowPermissions == nil {
+		settings.ActionsWorkflowPermissions = &WorkflowPermissions{
+			DefaultWorkflowPermissions: "read",
+		}
+	}
+	if settings.ActionsWorkflowPermissions.DefaultWorkflowPermissions == "" {
+		settings.ActionsWorkflowPermissions.DefaultWorkflowPermissions = "read"
+	}
+	if settings.ActionsArtifactRetentionDays == 0 {
+		settings.ActionsArtifactRetentionDays = 90
+	}
+	if settings.ActionsForkPRApprovalPolicy == "" {
+		settings.ActionsForkPRApprovalPolicy = "first_time_contributors"
+	}
+	if settings.ActionsForkPRWorkflowsPrivate == nil {
+		settings.ActionsForkPRWorkflowsPrivate = &ForkPRWorkflowsPrivateRepos{}
+	}
+	return settings
 }
 
 func (st *Store) persistEnterpriseSettings() {

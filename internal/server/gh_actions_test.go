@@ -633,8 +633,12 @@ func TestActionsRunners_List(t *testing.T) {
 	s.store.Agents[1] = &Agent{
 		ID: 1, Name: "runner-a", OSDescription: "Linux", Status: "online",
 		Labels: []Label{{ID: 10, Name: "self-hosted", Type: "system"}, {ID: 11, Name: "linux", Type: "custom"}},
+		Scope:  runnerScope{Repo: "octo/repo"},
 	}
-	s.store.Agents[2] = &Agent{ID: 2, Name: "runner-b", OSDescription: "Darwin", Status: "offline"}
+	s.store.Agents[2] = &Agent{
+		ID: 2, Name: "runner-b", OSDescription: "Darwin", Status: "offline",
+		Scope: runnerScope{Repo: "octo/repo"},
+	}
 	s.store.mu.Unlock()
 
 	// The runner list requires administration:read — authenticate.
@@ -689,7 +693,9 @@ func TestActionsRunners_Delete(t *testing.T) {
 	s.registerGHActionsRoutes()
 	ensureSeededRepo(s, "octo/repo")
 	s.store.mu.Lock()
-	s.store.Agents[42] = &Agent{ID: 42, Name: "to-delete", Status: "online"}
+	s.store.Agents[42] = &Agent{
+		ID: 42, Name: "to-delete", Status: "online", Scope: runnerScope{Repo: "octo/repo"},
+	}
 	s.store.mu.Unlock()
 
 	w := runAuthedRequest(s, "DELETE", "/api/v3/repos/octo/repo/actions/runners/42")
@@ -843,7 +849,10 @@ func TestActionsRunners_ExtraFields(t *testing.T) {
 	s.registerGHActionsRoutes()
 	ensureSeededRepo(s, "octo/repo")
 	s.store.mu.Lock()
-	s.store.Agents[7] = &Agent{ID: 7, Name: "r", OSDescription: "Linux", Status: "online", Version: "2.300.0"}
+	s.store.Agents[7] = &Agent{
+		ID: 7, Name: "r", OSDescription: "Linux", Status: "online", Version: "2.300.0",
+		Scope: runnerScope{Repo: "octo/repo"},
+	}
 	s.store.mu.Unlock()
 
 	w := runAuthedRequest(s, "GET", "/api/v3/repos/octo/repo/actions/runners")

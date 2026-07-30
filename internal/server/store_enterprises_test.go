@@ -62,6 +62,43 @@ func TestEnterpriseStatePersistenceReload(t *testing.T) {
 	}
 	st1.SetEnterpriseCopilotCodingAgentPolicy("enabled_for_selected_orgs")
 	st1.AddEnterpriseCopilotCodingAgentOrgs([]string{"reload-org"})
+	st1.mu.Lock()
+	st1.EnterpriseSettings.OIDCIncludeEnterpriseSlug = true
+	st1.EnterpriseSettings.ActionsEnabledOrganizations = "selected"
+	st1.EnterpriseSettings.ActionsAllowedActions = "selected"
+	st1.EnterpriseSettings.ActionsSHAPinningRequired = true
+	st1.EnterpriseSettings.ActionsSelectedOrganizationIDs = []int{17}
+	st1.EnterpriseSettings.ActionsAllowed = &ActionsAllowed{
+		GithubOwnedAllowed: true,
+		PatternsAllowed:    []string{"actions/*"},
+	}
+	st1.EnterpriseSettings.ActionsWorkflowPermissions = &WorkflowPermissions{
+		DefaultWorkflowPermissions:   "write",
+		CanApprovePullRequestReviews: true,
+	}
+	st1.EnterpriseSettings.ActionsArtifactRetentionDays = 120
+	st1.EnterpriseSettings.ActionsForkPRApprovalPolicy = "all_external_contributors"
+	st1.EnterpriseSettings.ActionsForkPRWorkflowsPrivate = &ForkPRWorkflowsPrivateRepos{
+		RunWorkflowsFromForkPullRequests: true,
+	}
+	st1.EnterpriseSettings.ActionsDisableSelfHostedRunners = true
+	st1.persistEnterpriseSettings()
+	st1.mu.Unlock()
+	enterpriseImage := st1.CreateEnterpriseHostedRunnerCustomImage(
+		"bleephub", "Reload Enterprise Image", "linux-x64")
+	if !st1.AddHostedRunnerCustomImageVersion(enterpriseImage.ID, "1.0.0", 30) {
+		t.Fatal("add enterprise custom image version")
+	}
+	st1.mu.Lock()
+	hostedRunnerID := st1.NextHostedRunnerID
+	st1.NextHostedRunnerID++
+	st1.HostedRunners[hostedRunnerID] = &HostedRunner{
+		ID: hostedRunnerID, Enterprise: "bleephub", Name: "reload-enterprise-hosted",
+		RunnerGroupID: 47, ImageID: "ubuntu-24.04", ImageSource: "github",
+		MachineSizeID: "4-core", MaximumRunners: 3, CreatedAt: st1.currentTime(),
+	}
+	st1.persistHostedRunnerLocked(st1.HostedRunners[hostedRunnerID])
+	st1.mu.Unlock()
 
 	if err := p1.Close(); err != nil {
 		t.Fatalf("close: %v", err)
@@ -127,10 +164,39 @@ func TestEnterpriseStatePersistenceReload(t *testing.T) {
 	if len(s.OIDCCustomProperties) != 1 || s.OIDCCustomProperties[0] != "cost_center" {
 		t.Errorf("OIDC custom properties = %v", s.OIDCCustomProperties)
 	}
+	if !s.OIDCIncludeEnterpriseSlug || s.ActionsEnabledOrganizations != "selected" ||
+		s.ActionsAllowedActions != "selected" || !s.ActionsSHAPinningRequired ||
+		len(s.ActionsSelectedOrganizationIDs) != 1 || s.ActionsSelectedOrganizationIDs[0] != 17 {
+		t.Errorf("enterprise Actions base policy = %+v", s)
+	}
+	if s.ActionsAllowed == nil || !s.ActionsAllowed.GithubOwnedAllowed ||
+		len(s.ActionsAllowed.PatternsAllowed) != 1 {
+		t.Errorf("enterprise selected actions = %+v", s.ActionsAllowed)
+	}
+	if s.ActionsWorkflowPermissions == nil ||
+		s.ActionsWorkflowPermissions.DefaultWorkflowPermissions != "write" ||
+		!s.ActionsWorkflowPermissions.CanApprovePullRequestReviews {
+		t.Errorf("enterprise workflow permissions = %+v", s.ActionsWorkflowPermissions)
+	}
+	if s.ActionsArtifactRetentionDays != 120 ||
+		s.ActionsForkPRApprovalPolicy != "all_external_contributors" ||
+		s.ActionsForkPRWorkflowsPrivate == nil ||
+		!s.ActionsForkPRWorkflowsPrivate.RunWorkflowsFromForkPullRequests ||
+		!s.ActionsDisableSelfHostedRunners {
+		t.Errorf("enterprise extended Actions policy = %+v", s)
+	}
 	if s.CopilotCodingAgentPolicy != "enabled_for_selected_orgs" {
 		t.Errorf("copilot policy = %q", s.CopilotCodingAgentPolicy)
 	}
 	if len(s.CopilotCodingAgentOrgs) != 1 || s.CopilotCodingAgentOrgs[0] != "reload-org" {
 		t.Errorf("copilot orgs = %v", s.CopilotCodingAgentOrgs)
+	}
+	if runner := st2.HostedRunners[hostedRunnerID]; runner == nil ||
+		runner.Enterprise != "bleephub" || runner.Org != "" {
+		t.Errorf("enterprise hosted runner did not retain ownership: %+v", runner)
+	}
+	if image := st2.HostedRunnerCustomImages[enterpriseImage.ID]; image == nil ||
+		image.Enterprise != "bleephub" || image.Org != "" || len(image.Versions) != 1 {
+		t.Errorf("enterprise hosted runner image did not retain ownership: %+v", image)
 	}
 }

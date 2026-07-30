@@ -14,6 +14,7 @@ import (
 	"net"
 	"net/http"
 	"net/url"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -691,6 +692,11 @@ func (s *Server) triggerWorkflowsForEvent(repoKey, eventType, action, ref string
 	if parts[0] == "" {
 		return
 	}
+	if !s.actionsEnabledForRepo(repoKey) {
+		s.logger.Info().Str("repo", repoKey).Str("event", eventType).
+			Msg("workflow trigger skipped by Actions permissions")
+		return
+	}
 
 	stor := s.store.GetGitStorage(parts[0], parts[1])
 	if stor == nil {
@@ -754,6 +760,45 @@ func (s *Server) triggerWorkflowsForEvent(repoKey, eventType, action, ref string
 			Str("file", name).
 			Msg("workflow triggered by event")
 	}
+}
+
+// actionsEnabledForRepo applies the enterprise → organization → repository
+// enablement chain. Each narrower scope may further restrict its parent; none
+// can re-enable Actions when a broader scope disabled it.
+func (s *Server) actionsEnabledForRepo(repoKey string) bool {
+	owner, name := splitRepoFull(repoKey)
+	repo := s.store.GetRepo(owner, name)
+	if repo == nil {
+		return false
+	}
+
+	s.store.mu.RLock()
+	defer s.store.mu.RUnlock()
+	if repo.OwnerType == "Organization" {
+		enterprise := s.store.EnterpriseSettings
+		switch enterprise.ActionsEnabledOrganizations {
+		case "none":
+			return false
+		case "selected":
+			if !slices.Contains(enterprise.ActionsSelectedOrganizationIDs, repo.OwnerID) {
+				return false
+			}
+		}
+		if orgPolicy := s.store.lookupOrgActionsPermissionsLocked(owner); orgPolicy != nil {
+			switch orgPolicy.EnabledRepositories {
+			case "none":
+				return false
+			case "selected":
+				if !slices.Contains(orgPolicy.SelectedRepositoryIDs, repo.ID) {
+					return false
+				}
+			}
+		}
+	}
+	if repoPolicy := s.store.RepoActionsPermissions[repo.FullName]; repoPolicy != nil {
+		return repoPolicy.Enabled
+	}
+	return true
 }
 
 // submitTriggeredWorkflow parses, expands, and submits one workflow file

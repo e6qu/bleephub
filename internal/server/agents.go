@@ -9,6 +9,7 @@ import (
 	"io"
 	"math/big"
 	"net/http"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -74,6 +75,10 @@ func (s *Server) mintRunnerToken(w http.ResponseWriter, r *http.Request, purpose
 		writeGHError(w, http.StatusNotFound, "Not Found")
 		return
 	}
+	if purpose == runnerPurposeRegistration && !s.repositoryRunnerRegistrationAllowed(scope) {
+		writeGHError(w, http.StatusForbidden, "Repository-level self-hosted runners are disabled by policy.")
+		return
+	}
 	token, err := newRunnerRegistrationToken(scope, purpose)
 	if err != nil {
 		writeGHError(w, http.StatusInternalServerError, err.Error())
@@ -109,6 +114,10 @@ func (s *Server) handleGenerateJITConfig(w http.ResponseWriter, r *http.Request)
 	scope, err := s.runnerScopeFromRequest(r)
 	if err != nil {
 		writeGHError(w, http.StatusNotFound, "Not Found")
+		return
+	}
+	if !s.repositoryRunnerRegistrationAllowed(scope) {
+		writeGHError(w, http.StatusForbidden, "Repository-level self-hosted runners are disabled by policy.")
 		return
 	}
 
@@ -204,6 +213,34 @@ func (s *Server) handleGenerateJITConfig(w http.ResponseWriter, r *http.Request)
 		"runner":             runnerJSON(&agent, false),
 		"encoded_jit_config": encoded,
 	})
+}
+
+func (s *Server) repositoryRunnerRegistrationAllowed(scope runnerScope) bool {
+	if scope.Repo == "" {
+		return true
+	}
+	owner, repoName := splitRepoFull(scope.Repo)
+	repo := s.store.GetRepo(owner, repoName)
+	if repo == nil || repo.OwnerType != "Organization" {
+		return true
+	}
+	s.store.mu.RLock()
+	defer s.store.mu.RUnlock()
+	if s.store.EnterpriseSettings.ActionsDisableSelfHostedRunners {
+		return false
+	}
+	policy := s.store.lookupOrgActionsPermissionsLocked(owner)
+	if policy == nil {
+		return true
+	}
+	switch policy.SelfHostedRunnersEnabledRepositories {
+	case "none":
+		return false
+	case "selected":
+		return slices.Contains(policy.SelfHostedRunnersSelectedRepoIDs, repo.ID)
+	default:
+		return true
+	}
 }
 
 // encodeJITConfig renders the runner's just-in-time configuration: the runner

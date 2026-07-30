@@ -735,7 +735,7 @@ func (s *Server) handleActionsOIDCToken(w http.ResponseWriter, r *http.Request) 
 func (s *Server) handleOIDCDiscovery(w http.ResponseWriter, r *http.Request) {
 	base := s.baseURL(r)
 	writeJSON(w, http.StatusOK, map[string]interface{}{
-		"issuer":   base + "/",
+		"issuer":   s.actionsOIDCIssuer(r),
 		"jwks_uri": base + "/.well-known/jwks",
 		// bleephub is both a GitHub Actions OIDC token issuer (id_token) and a
 		// standard OAuth2/OIDC provider with a web authorization-code flow.
@@ -820,7 +820,7 @@ func (s *Server) oidcKeyE() (*rsa.PrivateKey, error) {
 }
 
 func (s *Server) mintOIDCToken(r *http.Request, audience string) (string, error) {
-	now := time.Now()
+	now := s.currentTime()
 	q := r.URL.Query()
 	// An OIDC token is minted FOR a specific workflow run; GitHub derives every
 	// claim from that run and never invents one. bleephub conveys the run
@@ -925,7 +925,7 @@ func (s *Server) mintOIDCToken(r *http.Request, audience string) (string, error)
 	}
 
 	payload := map[string]interface{}{
-		"iss":                   s.baseURL(r),
+		"iss":                   s.actionsOIDCIssuer(r),
 		"aud":                   audience,
 		"sub":                   sub,
 		"iat":                   now.Unix(),
@@ -961,6 +961,17 @@ func (s *Server) mintOIDCToken(r *http.Request, audience string) (string, error)
 		return "", err
 	}
 	return signRS256JWT(payload, key, "bleephub-oidc")
+}
+
+func (s *Server) actionsOIDCIssuer(r *http.Request) string {
+	issuer := s.baseURL(r)
+	s.store.mu.RLock()
+	includeEnterpriseSlug := s.store.EnterpriseSettings.OIDCIncludeEnterpriseSlug
+	s.store.mu.RUnlock()
+	if includeEnterpriseSlug {
+		return strings.TrimRight(issuer, "/") + "/" + s.enterpriseSlug()
+	}
+	return issuer
 }
 
 // splitRepoFull splits an "owner/repo" full name into its owner and repo

@@ -2715,7 +2715,7 @@ func (st *Store) loadFromPersistence() error {
 		if err := loadJSON(raw, &s); err != nil {
 			return err
 		}
-		st.EnterpriseSettings = &s
+		st.EnterpriseSettings = normalizeEnterpriseSettings(&s)
 		return nil
 	}); err != nil {
 		return err

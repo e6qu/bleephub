@@ -17804,16 +17804,6 @@
         "ghec": {
           "documented_operations": 1458,
           "missing_operations": [
-            "DELETE /enterprises/{}/actions/hosted-runners/images/custom/{}",
-            "DELETE /enterprises/{}/actions/hosted-runners/images/custom/{}/versions/{}",
-            "DELETE /enterprises/{}/actions/hosted-runners/{}",
-            "DELETE /enterprises/{}/actions/permissions/organizations/{}",
-            "DELETE /enterprises/{}/actions/runner-groups/{}",
-            "DELETE /enterprises/{}/actions/runner-groups/{}/organizations/{}",
-            "DELETE /enterprises/{}/actions/runner-groups/{}/runners/{}",
-            "DELETE /enterprises/{}/actions/runners/{}",
-            "DELETE /enterprises/{}/actions/runners/{}/labels",
-            "DELETE /enterprises/{}/actions/runners/{}/labels/{}",
             "DELETE /enterprises/{}/announcement",
             "DELETE /enterprises/{}/apps/organizations/{}/installations/{}",
             "DELETE /enterprises/{}/audit-log/streams/{}",
@@ -17846,34 +17836,6 @@
             "DELETE /scim/v2/enterprises/{}/Users/{}",
             "DELETE /scim/v2/organizations/{}/Users/{}",
             "GET /enterprise-installation/{}/server-statistics",
-            "GET /enterprises/{}/actions/cache/usage",
-            "GET /enterprises/{}/actions/hosted-runners",
-            "GET /enterprises/{}/actions/hosted-runners/images/custom",
-            "GET /enterprises/{}/actions/hosted-runners/images/custom/{}",
-            "GET /enterprises/{}/actions/hosted-runners/images/custom/{}/versions",
-            "GET /enterprises/{}/actions/hosted-runners/images/custom/{}/versions/{}",
-            "GET /enterprises/{}/actions/hosted-runners/images/github-owned",
-            "GET /enterprises/{}/actions/hosted-runners/images/partner",
-            "GET /enterprises/{}/actions/hosted-runners/limits",
-            "GET /enterprises/{}/actions/hosted-runners/machine-sizes",
-            "GET /enterprises/{}/actions/hosted-runners/platforms",
-            "GET /enterprises/{}/actions/hosted-runners/{}",
-            "GET /enterprises/{}/actions/permissions",
-            "GET /enterprises/{}/actions/permissions/artifact-and-log-retention",
-            "GET /enterprises/{}/actions/permissions/fork-pr-contributor-approval",
-            "GET /enterprises/{}/actions/permissions/fork-pr-workflows-private-repos",
-            "GET /enterprises/{}/actions/permissions/organizations",
-            "GET /enterprises/{}/actions/permissions/selected-actions",
-            "GET /enterprises/{}/actions/permissions/self-hosted-runners",
-            "GET /enterprises/{}/actions/permissions/workflow",
-            "GET /enterprises/{}/actions/runner-groups",
-            "GET /enterprises/{}/actions/runner-groups/{}",
-            "GET /enterprises/{}/actions/runner-groups/{}/organizations",
-            "GET /enterprises/{}/actions/runner-groups/{}/runners",
-            "GET /enterprises/{}/actions/runners",
-            "GET /enterprises/{}/actions/runners/downloads",
-            "GET /enterprises/{}/actions/runners/{}",
-            "GET /enterprises/{}/actions/runners/{}/labels",
             "GET /enterprises/{}/announcement",
             "GET /enterprises/{}/apps/installable_organizations",
             "GET /enterprises/{}/apps/installable_organizations/{}/accessible_repositories",
@@ -17967,8 +17929,6 @@
             "GET /scim/v2/organizations/{}/Users",
             "GET /scim/v2/organizations/{}/Users/{}",
             "GET /teams/{}/team-sync/group-mappings",
-            "PATCH /enterprises/{}/actions/hosted-runners/{}",
-            "PATCH /enterprises/{}/actions/runner-groups/{}",
             "PATCH /enterprises/{}/announcement",
             "PATCH /enterprises/{}/apps/organizations/{}/installations/{}/repositories",
             "PATCH /enterprises/{}/apps/organizations/{}/installations/{}/repositories/add",
@@ -17999,12 +17959,6 @@
             "PATCH /teams/{}/team-sync/group-mappings",
             "POST /enterprises/{}/access-restrictions/disable",
             "POST /enterprises/{}/access-restrictions/enable",
-            "POST /enterprises/{}/actions/hosted-runners",
-            "POST /enterprises/{}/actions/runner-groups",
-            "POST /enterprises/{}/actions/runners/generate-jitconfig",
-            "POST /enterprises/{}/actions/runners/registration-token",
-            "POST /enterprises/{}/actions/runners/remove-token",
-            "POST /enterprises/{}/actions/runners/{}/labels",
             "POST /enterprises/{}/apps/organizations/{}/installations",
             "POST /enterprises/{}/audit-log/streams",
             "POST /enterprises/{}/copilot/billing/selected_enterprise_teams",
@@ -18029,21 +17983,6 @@
             "POST /scim/v2/enterprises/{}/Groups",
             "POST /scim/v2/enterprises/{}/Users",
             "POST /scim/v2/organizations/{}/Users",
-            "PUT /enterprises/{}/actions/oidc/customization/issuer",
-            "PUT /enterprises/{}/actions/permissions",
-            "PUT /enterprises/{}/actions/permissions/artifact-and-log-retention",
-            "PUT /enterprises/{}/actions/permissions/fork-pr-contributor-approval",
-            "PUT /enterprises/{}/actions/permissions/fork-pr-workflows-private-repos",
-            "PUT /enterprises/{}/actions/permissions/organizations",
-            "PUT /enterprises/{}/actions/permissions/organizations/{}",
-            "PUT /enterprises/{}/actions/permissions/selected-actions",
-            "PUT /enterprises/{}/actions/permissions/self-hosted-runners",
-            "PUT /enterprises/{}/actions/permissions/workflow",
-            "PUT /enterprises/{}/actions/runner-groups/{}/organizations",
-            "PUT /enterprises/{}/actions/runner-groups/{}/organizations/{}",
-            "PUT /enterprises/{}/actions/runner-groups/{}/runners",
-            "PUT /enterprises/{}/actions/runner-groups/{}/runners/{}",
-            "PUT /enterprises/{}/actions/runners/{}/labels",
             "PUT /enterprises/{}/audit-log/streams/{}",
             "PUT /enterprises/{}/copilot/content_exclusion",
             "PUT /enterprises/{}/copilot/custom-agents/source",
@@ -18059,7 +17998,7 @@
             "PUT /scim/v2/enterprises/{}/Users/{}",
             "PUT /scim/v2/organizations/{}/Users/{}"
           ],
-          "represented_operations": 1204
+          "represented_operations": 1265
         },
         "ghes-2.22": {
           "documented_operations": 642,
@@ -18074,10 +18013,6 @@
             "DELETE /applications/{}/grants/{}",
             "DELETE /applications/{}/tokens/{}",
             "DELETE /authorizations/{}",
-            "DELETE /enterprises/{}/actions/runner-groups/{}",
-            "DELETE /enterprises/{}/actions/runner-groups/{}/organizations/{}",
-            "DELETE /enterprises/{}/actions/runner-groups/{}/runners/{}",
-            "DELETE /enterprises/{}/actions/runners/{}",
             "DELETE /orgs/{}/pre-receive-hooks/{}",
             "DELETE /orgs/{}/teams/{}/discussions/{}",
             "DELETE /orgs/{}/teams/{}/discussions/{}/comments/{}",
@@ -18119,13 +18054,6 @@
             "GET /enterprise/stats/pulls",
             "GET /enterprise/stats/repos",
             "GET /enterprise/stats/users",
-            "GET /enterprises/{}/actions/runner-groups",
-            "GET /enterprises/{}/actions/runner-groups/{}",
-            "GET /enterprises/{}/actions/runner-groups/{}/organizations",
-            "GET /enterprises/{}/actions/runner-groups/{}/runners",
-            "GET /enterprises/{}/actions/runners",
-            "GET /enterprises/{}/actions/runners/downloads",
-            "GET /enterprises/{}/actions/runners/{}",
             "GET /orgs/{}/pre-receive-hooks",
             "GET /orgs/{}/pre-receive-hooks/{}",
             "GET /orgs/{}/projects",
@@ -18165,7 +18093,6 @@
             "PATCH /admin/pre-receive-environments/{}",
             "PATCH /admin/pre-receive-hooks/{}",
             "PATCH /authorizations/{}",
-            "PATCH /enterprises/{}/actions/runner-groups/{}",
             "PATCH /orgs/{}/pre-receive-hooks/{}",
             "PATCH /orgs/{}/teams/{}/discussions/{}",
             "PATCH /orgs/{}/teams/{}/discussions/{}/comments/{}",
@@ -18184,9 +18111,6 @@
             "POST /admin/users/{}/authorizations",
             "POST /applications/{}/tokens/{}",
             "POST /authorizations",
-            "POST /enterprises/{}/actions/runner-groups",
-            "POST /enterprises/{}/actions/runners/registration-token",
-            "POST /enterprises/{}/actions/runners/remove-token",
             "POST /orgs/{}/projects",
             "POST /orgs/{}/teams/{}/discussions",
             "POST /orgs/{}/teams/{}/discussions/{}/comments",
@@ -18207,16 +18131,12 @@
             "POST /user/projects",
             "PUT /authorizations/clients/{}",
             "PUT /authorizations/clients/{}/{}",
-            "PUT /enterprises/{}/actions/runner-groups/{}/organizations",
-            "PUT /enterprises/{}/actions/runner-groups/{}/organizations/{}",
-            "PUT /enterprises/{}/actions/runner-groups/{}/runners",
-            "PUT /enterprises/{}/actions/runner-groups/{}/runners/{}",
             "PUT /orgs/{}/teams/{}/projects/{}",
             "PUT /projects/{}/collaborators/{}",
             "PUT /setup/api/settings",
             "PUT /teams/{}/projects/{}"
           ],
-          "represented_operations": 491
+          "represented_operations": 510
         },
         "ghes-3.13": {
           "documented_operations": 974,
@@ -18230,13 +18150,6 @@
             "DELETE /applications/grants/{}",
             "DELETE /authorizations/{}",
             "DELETE /enterprise/announcement",
-            "DELETE /enterprises/{}/actions/permissions/organizations/{}",
-            "DELETE /enterprises/{}/actions/runner-groups/{}",
-            "DELETE /enterprises/{}/actions/runner-groups/{}/organizations/{}",
-            "DELETE /enterprises/{}/actions/runner-groups/{}/runners/{}",
-            "DELETE /enterprises/{}/actions/runners/{}",
-            "DELETE /enterprises/{}/actions/runners/{}/labels",
-            "DELETE /enterprises/{}/actions/runners/{}/labels/{}",
             "DELETE /manage/v1/access/ssh",
             "DELETE /orgs/{}/announcement",
             "DELETE /orgs/{}/custom-repository-roles/{}",
@@ -18286,20 +18199,7 @@
             "GET /enterprise/stats/repos",
             "GET /enterprise/stats/security-products",
             "GET /enterprise/stats/users",
-            "GET /enterprises/{}/actions/cache/usage",
             "GET /enterprises/{}/actions/cache/usage-policy",
-            "GET /enterprises/{}/actions/permissions",
-            "GET /enterprises/{}/actions/permissions/organizations",
-            "GET /enterprises/{}/actions/permissions/selected-actions",
-            "GET /enterprises/{}/actions/permissions/workflow",
-            "GET /enterprises/{}/actions/runner-groups",
-            "GET /enterprises/{}/actions/runner-groups/{}",
-            "GET /enterprises/{}/actions/runner-groups/{}/organizations",
-            "GET /enterprises/{}/actions/runner-groups/{}/runners",
-            "GET /enterprises/{}/actions/runners",
-            "GET /enterprises/{}/actions/runners/downloads",
-            "GET /enterprises/{}/actions/runners/{}",
-            "GET /enterprises/{}/actions/runners/{}/labels",
             "GET /enterprises/{}/audit-log",
             "GET /enterprises/{}/code-scanning/alerts",
             "GET /enterprises/{}/code_security_and_analysis",
@@ -18374,7 +18274,6 @@
             "PATCH /authorizations/{}",
             "PATCH /enterprise/announcement",
             "PATCH /enterprises/{}/actions/cache/usage-policy",
-            "PATCH /enterprises/{}/actions/runner-groups/{}",
             "PATCH /enterprises/{}/code_security_and_analysis",
             "PATCH /orgs/{}/announcement",
             "PATCH /orgs/{}/custom-repository-roles/{}",
@@ -18399,11 +18298,6 @@
             "POST /admin/pre-receive-hooks",
             "POST /admin/users/{}/authorizations",
             "POST /authorizations",
-            "POST /enterprises/{}/actions/runner-groups",
-            "POST /enterprises/{}/actions/runners/generate-jitconfig",
-            "POST /enterprises/{}/actions/runners/registration-token",
-            "POST /enterprises/{}/actions/runners/remove-token",
-            "POST /enterprises/{}/actions/runners/{}/labels",
             "POST /enterprises/{}/{}/{}",
             "POST /manage/v1/access/ssh",
             "POST /manage/v1/config/apply",
@@ -18432,16 +18326,6 @@
             "POST /user/projects",
             "PUT /authorizations/clients/{}",
             "PUT /authorizations/clients/{}/{}",
-            "PUT /enterprises/{}/actions/permissions",
-            "PUT /enterprises/{}/actions/permissions/organizations",
-            "PUT /enterprises/{}/actions/permissions/organizations/{}",
-            "PUT /enterprises/{}/actions/permissions/selected-actions",
-            "PUT /enterprises/{}/actions/permissions/workflow",
-            "PUT /enterprises/{}/actions/runner-groups/{}/organizations",
-            "PUT /enterprises/{}/actions/runner-groups/{}/organizations/{}",
-            "PUT /enterprises/{}/actions/runner-groups/{}/runners",
-            "PUT /enterprises/{}/actions/runner-groups/{}/runners/{}",
-            "PUT /enterprises/{}/actions/runners/{}/labels",
             "PUT /manage/v1/config/license",
             "PUT /manage/v1/config/settings",
             "PUT /orgs/{}/teams/{}/projects/{}",
@@ -18452,7 +18336,7 @@
             "PUT /setup/api/settings",
             "PUT /teams/{}/projects/{}"
           ],
-          "represented_operations": 744
+          "represented_operations": 780
         },
         "ghes-3.21": {
           "documented_operations": 1092,
@@ -18466,13 +18350,6 @@
             "DELETE /applications/grants/{}",
             "DELETE /authorizations/{}",
             "DELETE /enterprise/announcement",
-            "DELETE /enterprises/{}/actions/permissions/organizations/{}",
-            "DELETE /enterprises/{}/actions/runner-groups/{}",
-            "DELETE /enterprises/{}/actions/runner-groups/{}/organizations/{}",
-            "DELETE /enterprises/{}/actions/runner-groups/{}/runners/{}",
-            "DELETE /enterprises/{}/actions/runners/{}",
-            "DELETE /enterprises/{}/actions/runners/{}/labels",
-            "DELETE /enterprises/{}/actions/runners/{}/labels/{}",
             "DELETE /enterprises/{}/apps/organizations/{}/installations/{}",
             "DELETE /enterprises/{}/audit-log/streams/{}",
             "DELETE /enterprises/{}/org-properties/schema/{}",
@@ -18516,24 +18393,7 @@
             "GET /enterprise/stats/repos",
             "GET /enterprise/stats/security-products",
             "GET /enterprise/stats/users",
-            "GET /enterprises/{}/actions/cache/usage",
             "GET /enterprises/{}/actions/cache/usage-policy",
-            "GET /enterprises/{}/actions/permissions",
-            "GET /enterprises/{}/actions/permissions/artifact-and-log-retention",
-            "GET /enterprises/{}/actions/permissions/fork-pr-contributor-approval",
-            "GET /enterprises/{}/actions/permissions/fork-pr-workflows-private-repos",
-            "GET /enterprises/{}/actions/permissions/organizations",
-            "GET /enterprises/{}/actions/permissions/selected-actions",
-            "GET /enterprises/{}/actions/permissions/self-hosted-runners",
-            "GET /enterprises/{}/actions/permissions/workflow",
-            "GET /enterprises/{}/actions/runner-groups",
-            "GET /enterprises/{}/actions/runner-groups/{}",
-            "GET /enterprises/{}/actions/runner-groups/{}/organizations",
-            "GET /enterprises/{}/actions/runner-groups/{}/runners",
-            "GET /enterprises/{}/actions/runners",
-            "GET /enterprises/{}/actions/runners/downloads",
-            "GET /enterprises/{}/actions/runners/{}",
-            "GET /enterprises/{}/actions/runners/{}/labels",
             "GET /enterprises/{}/apps/installable_organizations",
             "GET /enterprises/{}/apps/installable_organizations/{}/accessible_repositories",
             "GET /enterprises/{}/apps/organizations/{}/installations",
@@ -18615,7 +18475,6 @@
             "PATCH /authorizations/{}",
             "PATCH /enterprise/announcement",
             "PATCH /enterprises/{}/actions/cache/usage-policy",
-            "PATCH /enterprises/{}/actions/runner-groups/{}",
             "PATCH /enterprises/{}/apps/organizations/{}/installations/{}/repositories",
             "PATCH /enterprises/{}/apps/organizations/{}/installations/{}/repositories/add",
             "PATCH /enterprises/{}/apps/organizations/{}/installations/{}/repositories/remove",
@@ -18647,11 +18506,6 @@
             "POST /admin/pre-receive-hooks",
             "POST /admin/users/{}/authorizations",
             "POST /authorizations",
-            "POST /enterprises/{}/actions/runner-groups",
-            "POST /enterprises/{}/actions/runners/generate-jitconfig",
-            "POST /enterprises/{}/actions/runners/registration-token",
-            "POST /enterprises/{}/actions/runners/remove-token",
-            "POST /enterprises/{}/actions/runners/{}/labels",
             "POST /enterprises/{}/apps/organizations/{}/installations",
             "POST /enterprises/{}/audit-log/streams",
             "POST /enterprises/{}/{}/{}",
@@ -18666,20 +18520,6 @@
             "POST /scim/v2/enterprises/{}/Users",
             "PUT /authorizations/clients/{}",
             "PUT /authorizations/clients/{}/{}",
-            "PUT /enterprises/{}/actions/permissions",
-            "PUT /enterprises/{}/actions/permissions/artifact-and-log-retention",
-            "PUT /enterprises/{}/actions/permissions/fork-pr-contributor-approval",
-            "PUT /enterprises/{}/actions/permissions/fork-pr-workflows-private-repos",
-            "PUT /enterprises/{}/actions/permissions/organizations",
-            "PUT /enterprises/{}/actions/permissions/organizations/{}",
-            "PUT /enterprises/{}/actions/permissions/selected-actions",
-            "PUT /enterprises/{}/actions/permissions/self-hosted-runners",
-            "PUT /enterprises/{}/actions/permissions/workflow",
-            "PUT /enterprises/{}/actions/runner-groups/{}/organizations",
-            "PUT /enterprises/{}/actions/runner-groups/{}/organizations/{}",
-            "PUT /enterprises/{}/actions/runner-groups/{}/runners",
-            "PUT /enterprises/{}/actions/runner-groups/{}/runners/{}",
-            "PUT /enterprises/{}/actions/runners/{}/labels",
             "PUT /enterprises/{}/audit-log/streams/{}",
             "PUT /enterprises/{}/org-properties/schema/{}",
             "PUT /enterprises/{}/properties/schema/organizations/{}/{}/promote",
@@ -18690,7 +18530,7 @@
             "PUT /scim/v2/enterprises/{}/Groups/{}",
             "PUT /scim/v2/enterprises/{}/Users/{}"
           ],
-          "represented_operations": 860
+          "represented_operations": 904
         }
       },
       "dispatch_covered_operations": [
@@ -18776,9 +18616,69 @@
         "source": "internal/server/gh_apps_oauth_mgmt.go"
       },
       {
+        "line": 71,
+        "method": "DELETE",
+        "path": "/api/v3/enterprises/{enterprise}/actions/hosted-runners/images/custom/{image_definition_id}",
+        "source": "internal/server/gh_enterprise_actions.go"
+      },
+      {
+        "line": 74,
+        "method": "DELETE",
+        "path": "/api/v3/enterprises/{enterprise}/actions/hosted-runners/images/custom/{image_definition_id}/versions/{version}",
+        "source": "internal/server/gh_enterprise_actions.go"
+      },
+      {
+        "line": 80,
+        "method": "DELETE",
+        "path": "/api/v3/enterprises/{enterprise}/actions/hosted-runners/{hosted_runner_id}",
+        "source": "internal/server/gh_enterprise_actions.go"
+      },
+      {
         "line": 15,
         "method": "DELETE",
         "path": "/api/v3/enterprises/{enterprise}/actions/oidc/customization/properties/repo/{custom_property_name}",
+        "source": "internal/server/gh_enterprise_actions.go"
+      },
+      {
+        "line": 49,
+        "method": "DELETE",
+        "path": "/api/v3/enterprises/{enterprise}/actions/permissions/organizations/{org_id}",
+        "source": "internal/server/gh_enterprise_actions.go"
+      },
+      {
+        "line": 34,
+        "method": "DELETE",
+        "path": "/api/v3/enterprises/{enterprise}/actions/runner-groups/{runner_group_id}",
+        "source": "internal/server/gh_enterprise_actions.go"
+      },
+      {
+        "line": 38,
+        "method": "DELETE",
+        "path": "/api/v3/enterprises/{enterprise}/actions/runner-groups/{runner_group_id}/organizations/{org_id}",
+        "source": "internal/server/gh_enterprise_actions.go"
+      },
+      {
+        "line": 42,
+        "method": "DELETE",
+        "path": "/api/v3/enterprises/{enterprise}/actions/runner-groups/{runner_group_id}/runners/{runner_id}",
+        "source": "internal/server/gh_enterprise_actions.go"
+      },
+      {
+        "line": 20,
+        "method": "DELETE",
+        "path": "/api/v3/enterprises/{enterprise}/actions/runners/{runner_id}",
+        "source": "internal/server/gh_enterprise_actions.go"
+      },
+      {
+        "line": 27,
+        "method": "DELETE",
+        "path": "/api/v3/enterprises/{enterprise}/actions/runners/{runner_id}/labels",
+        "source": "internal/server/gh_enterprise_actions.go"
+      },
+      {
+        "line": 28,
+        "method": "DELETE",
+        "path": "/api/v3/enterprises/{enterprise}/actions/runners/{runner_id}/labels/{name}",
         "source": "internal/server/gh_enterprise_actions.go"
       },
       {
@@ -18860,19 +18760,19 @@
         "source": "internal/server/gh_orgs_rest.go"
       },
       {
-        "line": 127,
+        "line": 129,
         "method": "DELETE",
         "path": "/api/v3/orgs/{org}/actions/hosted-runners/images/custom/{image_definition_id}",
         "source": "internal/server/gh_actions_hosted_runners.go"
       },
       {
-        "line": 133,
+        "line": 135,
         "method": "DELETE",
         "path": "/api/v3/orgs/{org}/actions/hosted-runners/images/custom/{image_definition_id}/versions/{version}",
         "source": "internal/server/gh_actions_hosted_runners.go"
       },
       {
-        "line": 145,
+        "line": 147,
         "method": "DELETE",
         "path": "/api/v3/orgs/{org}/actions/hosted-runners/{hosted_runner_id}",
         "source": "internal/server/gh_actions_hosted_runners.go"
@@ -18896,19 +18796,19 @@
         "source": "internal/server/gh_actions_permissions.go"
       },
       {
-        "line": 37,
+        "line": 44,
         "method": "DELETE",
         "path": "/api/v3/orgs/{org}/actions/runner-groups/{runner_group_id}",
         "source": "internal/server/gh_runner_groups.go"
       },
       {
-        "line": 53,
+        "line": 60,
         "method": "DELETE",
         "path": "/api/v3/orgs/{org}/actions/runner-groups/{runner_group_id}/repositories/{repository_id}",
         "source": "internal/server/gh_runner_groups.go"
       },
       {
-        "line": 45,
+        "line": 52,
         "method": "DELETE",
         "path": "/api/v3/orgs/{org}/actions/runner-groups/{runner_group_id}/runners/{runner_id}",
         "source": "internal/server/gh_runner_groups.go"
@@ -20030,9 +19930,177 @@
         "source": "internal/server/gh_enterprise_actions.go"
       },
       {
+        "line": 62,
+        "method": "GET",
+        "path": "/api/v3/enterprises/{enterprise}/actions/cache/usage",
+        "source": "internal/server/gh_enterprise_actions.go"
+      },
+      {
+        "line": 65,
+        "method": "GET",
+        "path": "/api/v3/enterprises/{enterprise}/actions/hosted-runners",
+        "source": "internal/server/gh_enterprise_actions.go"
+      },
+      {
+        "line": 69,
+        "method": "GET",
+        "path": "/api/v3/enterprises/{enterprise}/actions/hosted-runners/images/custom",
+        "source": "internal/server/gh_enterprise_actions.go"
+      },
+      {
+        "line": 70,
+        "method": "GET",
+        "path": "/api/v3/enterprises/{enterprise}/actions/hosted-runners/images/custom/{image_definition_id}",
+        "source": "internal/server/gh_enterprise_actions.go"
+      },
+      {
+        "line": 72,
+        "method": "GET",
+        "path": "/api/v3/enterprises/{enterprise}/actions/hosted-runners/images/custom/{image_definition_id}/versions",
+        "source": "internal/server/gh_enterprise_actions.go"
+      },
+      {
+        "line": 73,
+        "method": "GET",
+        "path": "/api/v3/enterprises/{enterprise}/actions/hosted-runners/images/custom/{image_definition_id}/versions/{version}",
+        "source": "internal/server/gh_enterprise_actions.go"
+      },
+      {
+        "line": 67,
+        "method": "GET",
+        "path": "/api/v3/enterprises/{enterprise}/actions/hosted-runners/images/github-owned",
+        "source": "internal/server/gh_enterprise_actions.go"
+      },
+      {
+        "line": 68,
+        "method": "GET",
+        "path": "/api/v3/enterprises/{enterprise}/actions/hosted-runners/images/partner",
+        "source": "internal/server/gh_enterprise_actions.go"
+      },
+      {
+        "line": 75,
+        "method": "GET",
+        "path": "/api/v3/enterprises/{enterprise}/actions/hosted-runners/limits",
+        "source": "internal/server/gh_enterprise_actions.go"
+      },
+      {
+        "line": 76,
+        "method": "GET",
+        "path": "/api/v3/enterprises/{enterprise}/actions/hosted-runners/machine-sizes",
+        "source": "internal/server/gh_enterprise_actions.go"
+      },
+      {
+        "line": 77,
+        "method": "GET",
+        "path": "/api/v3/enterprises/{enterprise}/actions/hosted-runners/platforms",
+        "source": "internal/server/gh_enterprise_actions.go"
+      },
+      {
+        "line": 78,
+        "method": "GET",
+        "path": "/api/v3/enterprises/{enterprise}/actions/hosted-runners/{hosted_runner_id}",
+        "source": "internal/server/gh_enterprise_actions.go"
+      },
+      {
         "line": 13,
         "method": "GET",
         "path": "/api/v3/enterprises/{enterprise}/actions/oidc/customization/properties/repo",
+        "source": "internal/server/gh_enterprise_actions.go"
+      },
+      {
+        "line": 44,
+        "method": "GET",
+        "path": "/api/v3/enterprises/{enterprise}/actions/permissions",
+        "source": "internal/server/gh_enterprise_actions.go"
+      },
+      {
+        "line": 54,
+        "method": "GET",
+        "path": "/api/v3/enterprises/{enterprise}/actions/permissions/artifact-and-log-retention",
+        "source": "internal/server/gh_enterprise_actions.go"
+      },
+      {
+        "line": 56,
+        "method": "GET",
+        "path": "/api/v3/enterprises/{enterprise}/actions/permissions/fork-pr-contributor-approval",
+        "source": "internal/server/gh_enterprise_actions.go"
+      },
+      {
+        "line": 58,
+        "method": "GET",
+        "path": "/api/v3/enterprises/{enterprise}/actions/permissions/fork-pr-workflows-private-repos",
+        "source": "internal/server/gh_enterprise_actions.go"
+      },
+      {
+        "line": 46,
+        "method": "GET",
+        "path": "/api/v3/enterprises/{enterprise}/actions/permissions/organizations",
+        "source": "internal/server/gh_enterprise_actions.go"
+      },
+      {
+        "line": 50,
+        "method": "GET",
+        "path": "/api/v3/enterprises/{enterprise}/actions/permissions/selected-actions",
+        "source": "internal/server/gh_enterprise_actions.go"
+      },
+      {
+        "line": 60,
+        "method": "GET",
+        "path": "/api/v3/enterprises/{enterprise}/actions/permissions/self-hosted-runners",
+        "source": "internal/server/gh_enterprise_actions.go"
+      },
+      {
+        "line": 52,
+        "method": "GET",
+        "path": "/api/v3/enterprises/{enterprise}/actions/permissions/workflow",
+        "source": "internal/server/gh_enterprise_actions.go"
+      },
+      {
+        "line": 30,
+        "method": "GET",
+        "path": "/api/v3/enterprises/{enterprise}/actions/runner-groups",
+        "source": "internal/server/gh_enterprise_actions.go"
+      },
+      {
+        "line": 32,
+        "method": "GET",
+        "path": "/api/v3/enterprises/{enterprise}/actions/runner-groups/{runner_group_id}",
+        "source": "internal/server/gh_enterprise_actions.go"
+      },
+      {
+        "line": 35,
+        "method": "GET",
+        "path": "/api/v3/enterprises/{enterprise}/actions/runner-groups/{runner_group_id}/organizations",
+        "source": "internal/server/gh_enterprise_actions.go"
+      },
+      {
+        "line": 39,
+        "method": "GET",
+        "path": "/api/v3/enterprises/{enterprise}/actions/runner-groups/{runner_group_id}/runners",
+        "source": "internal/server/gh_enterprise_actions.go"
+      },
+      {
+        "line": 17,
+        "method": "GET",
+        "path": "/api/v3/enterprises/{enterprise}/actions/runners",
+        "source": "internal/server/gh_enterprise_actions.go"
+      },
+      {
+        "line": 18,
+        "method": "GET",
+        "path": "/api/v3/enterprises/{enterprise}/actions/runners/downloads",
+        "source": "internal/server/gh_enterprise_actions.go"
+      },
+      {
+        "line": 19,
+        "method": "GET",
+        "path": "/api/v3/enterprises/{enterprise}/actions/runners/{runner_id}",
+        "source": "internal/server/gh_enterprise_actions.go"
+      },
+      {
+        "line": 24,
+        "method": "GET",
+        "path": "/api/v3/enterprises/{enterprise}/actions/runners/{runner_id}/labels",
         "source": "internal/server/gh_enterprise_actions.go"
       },
       {
@@ -20396,67 +20464,67 @@
         "source": "internal/server/gh_actions_permissions.go"
       },
       {
-        "line": 115,
+        "line": 117,
         "method": "GET",
         "path": "/api/v3/orgs/{org}/actions/hosted-runners",
         "source": "internal/server/gh_actions_hosted_runners.go"
       },
       {
-        "line": 123,
+        "line": 125,
         "method": "GET",
         "path": "/api/v3/orgs/{org}/actions/hosted-runners/images/custom",
         "source": "internal/server/gh_actions_hosted_runners.go"
       },
       {
-        "line": 125,
+        "line": 127,
         "method": "GET",
         "path": "/api/v3/orgs/{org}/actions/hosted-runners/images/custom/{image_definition_id}",
         "source": "internal/server/gh_actions_hosted_runners.go"
       },
       {
-        "line": 129,
+        "line": 131,
         "method": "GET",
         "path": "/api/v3/orgs/{org}/actions/hosted-runners/images/custom/{image_definition_id}/versions",
         "source": "internal/server/gh_actions_hosted_runners.go"
       },
       {
-        "line": 131,
+        "line": 133,
         "method": "GET",
         "path": "/api/v3/orgs/{org}/actions/hosted-runners/images/custom/{image_definition_id}/versions/{version}",
         "source": "internal/server/gh_actions_hosted_runners.go"
       },
       {
-        "line": 119,
+        "line": 121,
         "method": "GET",
         "path": "/api/v3/orgs/{org}/actions/hosted-runners/images/github-owned",
         "source": "internal/server/gh_actions_hosted_runners.go"
       },
       {
-        "line": 121,
+        "line": 123,
         "method": "GET",
         "path": "/api/v3/orgs/{org}/actions/hosted-runners/images/partner",
         "source": "internal/server/gh_actions_hosted_runners.go"
       },
       {
-        "line": 135,
+        "line": 137,
         "method": "GET",
         "path": "/api/v3/orgs/{org}/actions/hosted-runners/limits",
         "source": "internal/server/gh_actions_hosted_runners.go"
       },
       {
-        "line": 137,
+        "line": 139,
         "method": "GET",
         "path": "/api/v3/orgs/{org}/actions/hosted-runners/machine-sizes",
         "source": "internal/server/gh_actions_hosted_runners.go"
       },
       {
-        "line": 139,
+        "line": 141,
         "method": "GET",
         "path": "/api/v3/orgs/{org}/actions/hosted-runners/platforms",
         "source": "internal/server/gh_actions_hosted_runners.go"
       },
       {
-        "line": 141,
+        "line": 143,
         "method": "GET",
         "path": "/api/v3/orgs/{org}/actions/hosted-runners/{hosted_runner_id}",
         "source": "internal/server/gh_actions_hosted_runners.go"
@@ -20528,31 +20596,31 @@
         "source": "internal/server/gh_actions_permissions.go"
       },
       {
-        "line": 29,
+        "line": 36,
         "method": "GET",
         "path": "/api/v3/orgs/{org}/actions/runner-groups",
         "source": "internal/server/gh_runner_groups.go"
       },
       {
-        "line": 33,
+        "line": 40,
         "method": "GET",
         "path": "/api/v3/orgs/{org}/actions/runner-groups/{runner_group_id}",
         "source": "internal/server/gh_runner_groups.go"
       },
       {
-        "line": 147,
+        "line": 149,
         "method": "GET",
         "path": "/api/v3/orgs/{org}/actions/runner-groups/{runner_group_id}/hosted-runners",
         "source": "internal/server/gh_actions_hosted_runners.go"
       },
       {
-        "line": 47,
+        "line": 54,
         "method": "GET",
         "path": "/api/v3/orgs/{org}/actions/runner-groups/{runner_group_id}/repositories",
         "source": "internal/server/gh_runner_groups.go"
       },
       {
-        "line": 39,
+        "line": 46,
         "method": "GET",
         "path": "/api/v3/orgs/{org}/actions/runner-groups/{runner_group_id}/runners",
         "source": "internal/server/gh_runner_groups.go"
@@ -23630,6 +23698,18 @@
         "source": "internal/server/gh_apps_oauth_mgmt.go"
       },
       {
+        "line": 79,
+        "method": "PATCH",
+        "path": "/api/v3/enterprises/{enterprise}/actions/hosted-runners/{hosted_runner_id}",
+        "source": "internal/server/gh_enterprise_actions.go"
+      },
+      {
+        "line": 33,
+        "method": "PATCH",
+        "path": "/api/v3/enterprises/{enterprise}/actions/runner-groups/{runner_group_id}",
+        "source": "internal/server/gh_enterprise_actions.go"
+      },
+      {
         "line": 16,
         "method": "PATCH",
         "path": "/api/v3/enterprises/{enterprise}/code-security/configurations/{configuration_id}",
@@ -23678,13 +23758,13 @@
         "source": "internal/server/gh_orgs_rest.go"
       },
       {
-        "line": 143,
+        "line": 145,
         "method": "PATCH",
         "path": "/api/v3/orgs/{org}/actions/hosted-runners/{hosted_runner_id}",
         "source": "internal/server/gh_actions_hosted_runners.go"
       },
       {
-        "line": 35,
+        "line": 42,
         "method": "PATCH",
         "path": "/api/v3/orgs/{org}/actions/runner-groups/{runner_group_id}",
         "source": "internal/server/gh_runner_groups.go"
@@ -24110,9 +24190,45 @@
         "source": "internal/server/gh_meta_extras.go"
       },
       {
+        "line": 66,
+        "method": "POST",
+        "path": "/api/v3/enterprises/{enterprise}/actions/hosted-runners",
+        "source": "internal/server/gh_enterprise_actions.go"
+      },
+      {
         "line": 14,
         "method": "POST",
         "path": "/api/v3/enterprises/{enterprise}/actions/oidc/customization/properties/repo",
+        "source": "internal/server/gh_enterprise_actions.go"
+      },
+      {
+        "line": 31,
+        "method": "POST",
+        "path": "/api/v3/enterprises/{enterprise}/actions/runner-groups",
+        "source": "internal/server/gh_enterprise_actions.go"
+      },
+      {
+        "line": 23,
+        "method": "POST",
+        "path": "/api/v3/enterprises/{enterprise}/actions/runners/generate-jitconfig",
+        "source": "internal/server/gh_enterprise_actions.go"
+      },
+      {
+        "line": 21,
+        "method": "POST",
+        "path": "/api/v3/enterprises/{enterprise}/actions/runners/registration-token",
+        "source": "internal/server/gh_enterprise_actions.go"
+      },
+      {
+        "line": 22,
+        "method": "POST",
+        "path": "/api/v3/enterprises/{enterprise}/actions/runners/remove-token",
+        "source": "internal/server/gh_enterprise_actions.go"
+      },
+      {
+        "line": 25,
+        "method": "POST",
+        "path": "/api/v3/enterprises/{enterprise}/actions/runners/{runner_id}/labels",
         "source": "internal/server/gh_enterprise_actions.go"
       },
       {
@@ -24200,7 +24316,7 @@
         "source": "internal/server/gh_org_billing.go"
       },
       {
-        "line": 117,
+        "line": 119,
         "method": "POST",
         "path": "/api/v3/orgs/{org}/actions/hosted-runners",
         "source": "internal/server/gh_actions_hosted_runners.go"
@@ -24212,7 +24328,7 @@
         "source": "internal/server/gh_actions_oidc_properties.go"
       },
       {
-        "line": 31,
+        "line": 38,
         "method": "POST",
         "path": "/api/v3/orgs/{org}/actions/runner-groups",
         "source": "internal/server/gh_runner_groups.go"
@@ -24524,19 +24640,19 @@
         "source": "internal/server/gh_actions_run_control.go"
       },
       {
-        "line": 26,
+        "line": 27,
         "method": "POST",
         "path": "/api/v3/repos/{owner}/{repo}/actions/runners/generate-jitconfig",
         "source": "internal/server/agents.go"
       },
       {
-        "line": 20,
+        "line": 21,
         "method": "POST",
         "path": "/api/v3/repos/{owner}/{repo}/actions/runners/registration-token",
         "source": "internal/server/agents.go"
       },
       {
-        "line": 23,
+        "line": 24,
         "method": "POST",
         "path": "/api/v3/repos/{owner}/{repo}/actions/runners/remove-token",
         "source": "internal/server/agents.go"
@@ -25268,6 +25384,96 @@
         "source": "internal/server/gh_enterprise_actions.go"
       },
       {
+        "line": 63,
+        "method": "PUT",
+        "path": "/api/v3/enterprises/{enterprise}/actions/oidc/customization/issuer",
+        "source": "internal/server/gh_enterprise_actions.go"
+      },
+      {
+        "line": 45,
+        "method": "PUT",
+        "path": "/api/v3/enterprises/{enterprise}/actions/permissions",
+        "source": "internal/server/gh_enterprise_actions.go"
+      },
+      {
+        "line": 55,
+        "method": "PUT",
+        "path": "/api/v3/enterprises/{enterprise}/actions/permissions/artifact-and-log-retention",
+        "source": "internal/server/gh_enterprise_actions.go"
+      },
+      {
+        "line": 57,
+        "method": "PUT",
+        "path": "/api/v3/enterprises/{enterprise}/actions/permissions/fork-pr-contributor-approval",
+        "source": "internal/server/gh_enterprise_actions.go"
+      },
+      {
+        "line": 59,
+        "method": "PUT",
+        "path": "/api/v3/enterprises/{enterprise}/actions/permissions/fork-pr-workflows-private-repos",
+        "source": "internal/server/gh_enterprise_actions.go"
+      },
+      {
+        "line": 47,
+        "method": "PUT",
+        "path": "/api/v3/enterprises/{enterprise}/actions/permissions/organizations",
+        "source": "internal/server/gh_enterprise_actions.go"
+      },
+      {
+        "line": 48,
+        "method": "PUT",
+        "path": "/api/v3/enterprises/{enterprise}/actions/permissions/organizations/{org_id}",
+        "source": "internal/server/gh_enterprise_actions.go"
+      },
+      {
+        "line": 51,
+        "method": "PUT",
+        "path": "/api/v3/enterprises/{enterprise}/actions/permissions/selected-actions",
+        "source": "internal/server/gh_enterprise_actions.go"
+      },
+      {
+        "line": 61,
+        "method": "PUT",
+        "path": "/api/v3/enterprises/{enterprise}/actions/permissions/self-hosted-runners",
+        "source": "internal/server/gh_enterprise_actions.go"
+      },
+      {
+        "line": 53,
+        "method": "PUT",
+        "path": "/api/v3/enterprises/{enterprise}/actions/permissions/workflow",
+        "source": "internal/server/gh_enterprise_actions.go"
+      },
+      {
+        "line": 36,
+        "method": "PUT",
+        "path": "/api/v3/enterprises/{enterprise}/actions/runner-groups/{runner_group_id}/organizations",
+        "source": "internal/server/gh_enterprise_actions.go"
+      },
+      {
+        "line": 37,
+        "method": "PUT",
+        "path": "/api/v3/enterprises/{enterprise}/actions/runner-groups/{runner_group_id}/organizations/{org_id}",
+        "source": "internal/server/gh_enterprise_actions.go"
+      },
+      {
+        "line": 40,
+        "method": "PUT",
+        "path": "/api/v3/enterprises/{enterprise}/actions/runner-groups/{runner_group_id}/runners",
+        "source": "internal/server/gh_enterprise_actions.go"
+      },
+      {
+        "line": 41,
+        "method": "PUT",
+        "path": "/api/v3/enterprises/{enterprise}/actions/runner-groups/{runner_group_id}/runners/{runner_id}",
+        "source": "internal/server/gh_enterprise_actions.go"
+      },
+      {
+        "line": 26,
+        "method": "PUT",
+        "path": "/api/v3/enterprises/{enterprise}/actions/runners/{runner_id}/labels",
+        "source": "internal/server/gh_enterprise_actions.go"
+      },
+      {
         "line": 19,
         "method": "PUT",
         "path": "/api/v3/enterprises/{enterprise}/code-security/configurations/{configuration_id}/defaults",
@@ -25400,25 +25606,25 @@
         "source": "internal/server/gh_actions_permissions.go"
       },
       {
-        "line": 49,
+        "line": 56,
         "method": "PUT",
         "path": "/api/v3/orgs/{org}/actions/runner-groups/{runner_group_id}/repositories",
         "source": "internal/server/gh_runner_groups.go"
       },
       {
-        "line": 51,
+        "line": 58,
         "method": "PUT",
         "path": "/api/v3/orgs/{org}/actions/runner-groups/{runner_group_id}/repositories/{repository_id}",
         "source": "internal/server/gh_runner_groups.go"
       },
       {
-        "line": 41,
+        "line": 48,
         "method": "PUT",
         "path": "/api/v3/orgs/{org}/actions/runner-groups/{runner_group_id}/runners",
         "source": "internal/server/gh_runner_groups.go"
       },
       {
-        "line": 43,
+        "line": 50,
         "method": "PUT",
         "path": "/api/v3/orgs/{org}/actions/runner-groups/{runner_group_id}/runners/{runner_id}",
         "source": "internal/server/gh_runner_groups.go"

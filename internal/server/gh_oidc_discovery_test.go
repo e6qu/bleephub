@@ -179,9 +179,10 @@ func TestOIDCDiscovery_AdvertisesOAuthEndpoints(t *testing.T) {
 	base := "http://" + req.Host
 
 	// OpenID Connect Discovery 1.0 § 3 REQUIRED metadata for an OP supporting
-	// the authorization-code flow.
+	// the authorization-code flow. issuer must exactly match the iss claim;
+	// adding a cosmetic trailing slash here creates a different issuer.
 	wantString := map[string]string{
-		"issuer":                 base + "/",
+		"issuer":                 base,
 		"authorization_endpoint": base + "/login/oauth/authorize",
 		"token_endpoint":         base + "/login/oauth/access_token",
 		"userinfo_endpoint":      base + "/api/v3/user",

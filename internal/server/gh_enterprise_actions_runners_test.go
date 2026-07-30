@@ -287,3 +287,98 @@ func TestEnterpriseRunnerGroupsAreOwnedAndManageOrganizations(t *testing.T) {
 		t.Fatalf("duplicate enterprise group: got %d %q, want 422", rec.Code, rec.Body.String())
 	}
 }
+
+func TestEnterpriseHostedRunnersCRUDAndScopeIsolation(t *testing.T) {
+	s := newTestServer()
+	s.registerGHHostedRunnerRoutes()
+	s.registerRunnerGroupRoutes()
+	s.registerGHEnterpriseActionsRoutes()
+	admin := s.store.LookupUserByLogin("admin")
+	org := s.store.CreateOrg(admin, "enterprise-hosted-org", "Enterprise Hosted Org", "")
+
+	groupList := decodeRecorderObject(t, enterpriseActionsRequest(t, s, http.MethodGet,
+		"/api/v3/enterprises/bleephub/actions/runner-groups", nil))
+	groups := groupList["runner_groups"].([]interface{})
+	var groupID int
+	for _, raw := range groups {
+		group := raw.(map[string]interface{})
+		if group["default"] == true {
+			groupID = int(group["id"].(float64))
+		}
+	}
+	if groupID == 0 {
+		t.Fatalf("enterprise default runner group missing: %#v", groupList)
+	}
+
+	base := "/api/v3/enterprises/bleephub/actions/hosted-runners"
+	rec := enterpriseActionsRequest(t, s, http.MethodPost, base, map[string]interface{}{
+		"name":             "enterprise-hosted",
+		"image":            map[string]interface{}{"id": "ubuntu-24.04", "source": "github"},
+		"size":             "8-core",
+		"runner_group_id":  groupID,
+		"maximum_runners":  4,
+		"enable_static_ip": true,
+	})
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("create enterprise hosted runner: got %d %q, want 201", rec.Code, rec.Body.String())
+	}
+	created := decodeRecorderObject(t, rec)
+	runnerID := int(created["id"].(float64))
+	if created["runner_group_id"] != float64(groupID) || created["maximum_runners"] != float64(4) {
+		t.Fatalf("created enterprise hosted runner = %#v", created)
+	}
+
+	rec = enterpriseActionsRequest(t, s, http.MethodGet, base, nil)
+	list := decodeRecorderObject(t, rec)
+	if list["total_count"] != float64(1) {
+		t.Fatalf("enterprise hosted runners = %#v", list)
+	}
+	rec = enterpriseActionsRequest(t, s, http.MethodGet,
+		"/api/v3/orgs/"+org.Login+"/actions/hosted-runners/"+strconv.Itoa(runnerID), nil)
+	if rec.Code != http.StatusNotFound {
+		t.Fatalf("org read of enterprise hosted runner: got %d %q, want 404", rec.Code, rec.Body.String())
+	}
+
+	rec = enterpriseActionsRequest(t, s, http.MethodPatch,
+		base+"/"+strconv.Itoa(runnerID), map[string]interface{}{
+			"name":            "enterprise-hosted-renamed",
+			"maximum_runners": 6,
+		})
+	if rec.Code != http.StatusOK {
+		t.Fatalf("patch enterprise hosted runner: got %d %q", rec.Code, rec.Body.String())
+	}
+	patched := decodeRecorderObject(t, rec)
+	if patched["name"] != "enterprise-hosted-renamed" || patched["maximum_runners"] != float64(6) {
+		t.Fatalf("patched enterprise hosted runner = %#v", patched)
+	}
+
+	limits := decodeRecorderObject(t,
+		enterpriseActionsRequest(t, s, http.MethodGet, base+"/limits", nil))
+	publicIPs := limits["public_ips"].(map[string]interface{})
+	if publicIPs["current_usage"] != float64(6) {
+		t.Fatalf("enterprise static IP usage = %#v, want 6", publicIPs)
+	}
+
+	image := s.store.CreateEnterpriseHostedRunnerCustomImage("bleephub", "Enterprise Image", "linux-x64")
+	if !s.store.AddHostedRunnerCustomImageVersion(image.ID, "1.0.0", 30) {
+		t.Fatal("add enterprise hosted-runner image version")
+	}
+	rec = enterpriseActionsRequest(t, s, http.MethodGet, base+"/images/custom", nil)
+	images := decodeRecorderObject(t, rec)
+	if images["total_count"] != float64(1) {
+		t.Fatalf("enterprise custom images = %#v", images)
+	}
+	rec = enterpriseActionsRequest(t, s, http.MethodGet,
+		"/api/v3/orgs/"+org.Login+"/actions/hosted-runners/images/custom/"+strconv.Itoa(image.ID), nil)
+	if rec.Code != http.StatusNotFound {
+		t.Fatalf("org read of enterprise custom image: got %d %q, want 404", rec.Code, rec.Body.String())
+	}
+
+	rec = enterpriseActionsRequest(t, s, http.MethodDelete, base+"/"+strconv.Itoa(runnerID), nil)
+	if rec.Code != http.StatusAccepted {
+		t.Fatalf("delete enterprise hosted runner: got %d %q, want 202", rec.Code, rec.Body.String())
+	}
+	if deleted := decodeRecorderObject(t, rec); deleted["status"] != "Deleting" {
+		t.Fatalf("deleted enterprise hosted runner = %#v", deleted)
+	}
+}
