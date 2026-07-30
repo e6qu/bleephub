@@ -136,6 +136,8 @@ jobs:
         run: ./scripts/check-bugs-ledger.sh
       - name: Check the generated parity inventory
         run: ./scripts/parity_inventory.py --check
+      - name: Prevent new wall-clock dependencies in tests
+        run: ./scripts/check-test-clock-dependencies.py
       - name: Require the current official GitHub REST definition
         run: ./scripts/check-github-openapi-drift.sh
       - name: Require the current official GitHub GraphQL schema

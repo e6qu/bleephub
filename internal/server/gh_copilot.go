@@ -441,7 +441,7 @@ func (s *Server) handleCopilotLatest28DayReport(w http.ResponseWriter, r *http.R
 	if org == nil {
 		return
 	}
-	end := time.Now().UTC().AddDate(0, 0, -1)
+	end := s.currentTime().AddDate(0, 0, -1)
 	start := end.AddDate(0, 0, -27)
 	writeJSON(w, http.StatusOK, map[string]interface{}{
 		"download_links":   []string{},

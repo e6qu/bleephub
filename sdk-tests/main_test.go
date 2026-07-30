@@ -59,7 +59,7 @@ var uniqueCounter int64
 // use as a repo or other resource name.
 func uniqueName(prefix string) string {
 	n := atomic.AddInt64(&uniqueCounter, 1)
-	return fmt.Sprintf("%s-%d-%d", prefix, time.Now().UnixNano()%1_000_000, n)
+	return fmt.Sprintf("%s-%d", prefix, n)
 }
 
 func TestMain(m *testing.M) {
@@ -110,8 +110,11 @@ func run(m *testing.M) (int, error) {
 
 	// Poll /health until ready.
 	ready := false
-	deadline := time.Now().Add(10 * time.Second)
-	for time.Now().Before(deadline) {
+	deadline := time.NewTimer(10 * time.Second)
+	defer deadline.Stop()
+	retry := time.NewTicker(50 * time.Millisecond)
+	defer retry.Stop()
+	for !ready {
 		resp, err := http.Get(baseURL + "/health")
 		if err == nil {
 			resp.Body.Close()
@@ -120,10 +123,11 @@ func run(m *testing.M) (int, error) {
 				break
 			}
 		}
-		time.Sleep(50 * time.Millisecond)
-	}
-	if !ready {
-		return 1, fmt.Errorf("Bleephub did not become ready at %s/health", baseURL)
+		select {
+		case <-deadline.C:
+			return 1, fmt.Errorf("Bleephub did not become ready at %s/health", baseURL)
+		case <-retry.C:
+		}
 	}
 
 	// Build the authenticated go-github client. Bleephub is GitHub Enterprise

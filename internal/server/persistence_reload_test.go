@@ -2,6 +2,7 @@ package bleephub
 
 import (
 	"encoding/json"
+	"fmt"
 	"os"
 	"slices"
 	"strconv"
@@ -1410,7 +1411,7 @@ func TestPersistenceReload_AuditLogOrdering(t *testing.T) {
 			st.Misc.nextAuditID++
 			entry := &AuditEntry{
 				ID:        st.Misc.nextAuditID,
-				Timestamp: time.Now().UTC().Format(time.RFC3339Nano),
+				Timestamp: fmt.Sprintf("2035-06-15T12:00:%02dZ", i),
 				Action:    "repo.create",
 				Actor:     "admin",
 				Version:   "1.1",
@@ -1447,7 +1448,7 @@ func TestPersistenceReload_PagesBuildIDSequence(t *testing.T) {
 		}
 		p.MustPut("pages_builds", repo.FullName, st.Misc.pagesBuilds[repo.FullName])
 		st.Misc.nextAuditID = 7
-		p.MustPut("audit_log", "7", &AuditEntry{ID: 7, Timestamp: time.Now().UTC().Format(time.RFC3339Nano), Action: "repo.create", Actor: "admin", Version: "1.1"})
+		p.MustPut("audit_log", "7", &AuditEntry{ID: 7, Timestamp: "2035-06-15T12:00:00Z", Action: "repo.create", Actor: "admin", Version: "1.1"})
 	})
 
 	if st2.Misc.nextPagesBuildID != 42 {

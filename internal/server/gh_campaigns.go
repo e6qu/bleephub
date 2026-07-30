@@ -118,7 +118,7 @@ func (s *Server) handleCreateOrgCampaign(w http.ResponseWriter, r *http.Request)
 		writeGHError(w, http.StatusUnprocessableEntity, "Validation failed: ends_at is required")
 		return
 	}
-	if !req.EndsAt.After(time.Now()) {
+	if !req.EndsAt.After(s.currentTime()) {
 		writeGHError(w, http.StatusUnprocessableEntity, "Validation failed: ends_at must be in the future")
 		return
 	}
@@ -263,7 +263,7 @@ func (s *Server) handleUpdateOrgCampaign(w http.ResponseWriter, r *http.Request)
 		if req.State != nil && *req.State != c.State {
 			c.State = *req.State
 			if c.State == "closed" {
-				now := time.Now().UTC()
+				now := s.currentTime()
 				c.ClosedAt = &now
 			} else {
 				c.ClosedAt = nil

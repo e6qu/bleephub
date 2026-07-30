@@ -121,7 +121,7 @@ func (s *Server) handleEnterpriseCopilotOneDayReport(w http.ResponseWriter, r *h
 		return
 	}
 	// A report can only exist for days that have already happened.
-	if parsed.After(time.Now().UTC().Truncate(24 * time.Hour)) {
+	if parsed.After(s.currentTime().Truncate(24 * time.Hour)) {
 		writeGHError(w, http.StatusNotFound, "Not Found")
 		return
 	}
@@ -133,7 +133,7 @@ func (s *Server) handleEnterpriseCopilotOneDayReport(w http.ResponseWriter, r *h
 
 func (s *Server) handleEnterpriseCopilotLatest28DayReport(w http.ResponseWriter, r *http.Request) {
 	// The latest 28-day report covers the 28 full days ending yesterday.
-	end := time.Now().UTC().Truncate(24*time.Hour).AddDate(0, 0, -1)
+	end := s.currentTime().Truncate(24*time.Hour).AddDate(0, 0, -1)
 	start := end.AddDate(0, 0, -27)
 	writeJSON(w, http.StatusOK, map[string]interface{}{
 		"download_links":   []string{},

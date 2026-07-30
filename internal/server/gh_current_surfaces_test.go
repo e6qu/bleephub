@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"net/http"
 	"testing"
-	"time"
 )
 
 func requireHTTPStatus(t *testing.T, resp *http.Response, want int) {
@@ -133,7 +132,7 @@ func TestCurrentArtifactCodeQualityIssueTypeAndCopilotREST(t *testing.T) {
 		t.Fatalf("artifact deployment job = %#v", got)
 	}
 
-	day := time.Now().UTC().AddDate(0, 0, -1).Format("2006-01-02")
+	day := "2000-06-14"
 	resp = ghGet(t, "/api/v3/orgs/"+org.Login+"/copilot/metrics/reports/repos-1-day?day="+day, defaultToken)
 	requireHTTPStatus(t, resp, http.StatusNoContent)
 	resp.Body.Close()

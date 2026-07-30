@@ -12,6 +12,11 @@ import (
 // dedicated member's classic personal access token and asserts every API
 // insights aggregation reports it.
 func TestAPIInsights_StatsFromObservedTraffic(t *testing.T) {
+	fixedNow := time.Date(2035, time.June, 15, 12, 0, 0, 0, time.UTC)
+	previousClock := testServer.clockNow
+	testServer.clockNow = func() time.Time { return fixedNow }
+	t.Cleanup(func() { testServer.clockNow = previousClock })
+
 	admin := testServer.store.UsersByLogin["admin"]
 	org := testServer.store.CreateOrg(admin, "insights-org", "Insights Org", "")
 	if org == nil {
@@ -22,7 +27,7 @@ func TestAPIInsights_StatsFromObservedTraffic(t *testing.T) {
 	memberToken := "ghp_insights_member_token"
 	testServer.store.Tokens[memberToken] = &Token{Value: memberToken, UserID: member.ID}
 
-	minTS := time.Now().UTC().Add(-time.Minute).Format(time.RFC3339)
+	minTS := fixedNow.Add(-time.Hour).Format(time.RFC3339)
 
 	// Real observed traffic: three authenticated requests by the member.
 	for _, path := range []string{"/api/v3/user", "/api/v3/user", "/api/v3/users/insights-member"} {
@@ -178,7 +183,7 @@ func TestAPIInsights_ParameterValidation(t *testing.T) {
 	}
 
 	// timestamp_increment is required for time stats.
-	minTS := url.QueryEscape(time.Now().UTC().Add(-time.Minute).Format(time.RFC3339))
+	minTS := url.QueryEscape("2000-01-01T00:00:00Z")
 	resp = ghGet(t, "/api/v3/orgs/insights-val-org/insights/api/time-stats?min_timestamp="+minTS, defaultToken)
 	resp.Body.Close()
 	if resp.StatusCode != http.StatusUnprocessableEntity {

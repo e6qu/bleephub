@@ -5,6 +5,50 @@ import (
 	"testing"
 )
 
+func TestIssueGraphQLFiltersAndOrderByAreBehavioral(t *testing.T) {
+	owner, repo := sweepRepo(t, "gql-issue-filter-fidelity")
+	first := decodeJSON(t, ghPost(t, "/api/v3/repos/"+owner+"/"+repo+"/issues", defaultToken,
+		map[string]interface{}{"title": "mentioned", "body": "cc @alice"}))
+	second := decodeJSON(t, ghPost(t, "/api/v3/repos/"+owner+"/"+repo+"/issues", defaultToken,
+		map[string]interface{}{"title": "discussed"}))
+	firstNumber := int(first["number"].(float64))
+	secondNumber := int(second["number"].(float64))
+	ghPatch(t, "/api/v3/repos/"+owner+"/"+repo+"/issues/"+itoa(secondNumber), defaultToken,
+		map[string]interface{}{"state": "closed"}).Body.Close()
+	for _, body := range []string{"one", "two"} {
+		ghPost(t, "/api/v3/repos/"+owner+"/"+repo+"/issues/"+itoa(secondNumber)+"/comments",
+			defaultToken, map[string]interface{}{"body": body}).Body.Close()
+	}
+
+	queryNumbers := func(selection string) []int {
+		t.Helper()
+		query := `query($owner:String!,$repo:String!){repository(owner:$owner,name:$repo){issues(first:10,` +
+			selection + `){nodes{number}}}}`
+		data := gqlData(t, query, map[string]interface{}{"owner": owner, "repo": repo})
+		repository := data["repository"].(map[string]interface{})
+		connection := repository["issues"].(map[string]interface{})
+		rawNodes := connection["nodes"].([]interface{})
+		numbers := make([]int, 0, len(rawNodes))
+		for _, raw := range rawNodes {
+			numbers = append(numbers, int(raw.(map[string]interface{})["number"].(float64)))
+		}
+		return numbers
+	}
+
+	if got := queryNumbers(`filterBy:{states:[CLOSED]}`); len(got) != 1 || got[0] != secondNumber {
+		t.Fatalf("filterBy states = %v, want [%d]", got, secondNumber)
+	}
+	if got := queryNumbers(`filterBy:{mentioned:"alice"}`); len(got) != 1 || got[0] != firstNumber {
+		t.Fatalf("filterBy mentioned = %v, want [%d]", got, firstNumber)
+	}
+	if got := queryNumbers(`filterBy:{assignee:"does-not-exist"}`); len(got) != 0 {
+		t.Fatalf("unknown assignee widened result: %v", got)
+	}
+	if got := queryNumbers(`orderBy:{field:COMMENTS,direction:DESC}`); len(got) != 2 || got[0] != secondNumber {
+		t.Fatalf("comments DESC = %v, want %d first", got, secondNumber)
+	}
+}
+
 // TestIssueGraphQL_SubIssueFields exercises the exact selections the gh CLI's
 // `gh issue view` sends on `...on Issue` for issue-types and sub-issues.
 // Sub-issue fields are backed by the same ordered issue links as the REST API.

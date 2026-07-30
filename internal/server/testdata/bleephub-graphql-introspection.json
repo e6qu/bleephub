@@ -2875,7 +2875,9 @@
           "type": "PRUserConnection",
           "args": {
             "after": "String",
-            "first": "Int"
+            "before": "String",
+            "first": "Int",
+            "last": "Int"
           }
         },
         "author": {
@@ -2924,6 +2926,8 @@
         "commits": {
           "type": "PullRequestCommitConnection",
           "args": {
+            "after": "String",
+            "before": "String",
             "first": "Int",
             "last": "Int"
           }
@@ -2972,13 +2976,18 @@
           "type": "PRLabelConnection",
           "args": {
             "after": "String",
-            "first": "Int"
+            "before": "String",
+            "first": "Int",
+            "last": "Int"
           }
         },
         "latestReviews": {
           "type": "LatestReviewConnection",
           "args": {
-            "first": "Int"
+            "after": "String",
+            "before": "String",
+            "first": "Int",
+            "last": "Int"
           }
         },
         "locked": {
@@ -3032,12 +3041,17 @@
         "reviewRequests": {
           "type": "ReviewRequestConnection",
           "args": {
-            "first": "Int"
+            "after": "String",
+            "before": "String",
+            "first": "Int",
+            "last": "Int"
           }
         },
         "reviewThreads": {
           "type": "PullRequestReviewThreadConnection",
           "args": {
+            "after": "String",
+            "before": "String",
             "first": "Int",
             "last": "Int"
           }

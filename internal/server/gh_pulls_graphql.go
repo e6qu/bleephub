@@ -799,10 +799,7 @@ func (s *Server) addPullRequestFieldsToSchema(userType, issueType, repoType, mut
 			},
 			"labels": &graphql.Field{
 				Type: prLabelConnectionType,
-				Args: graphql.FieldConfigArgument{
-					"first": &graphql.ArgumentConfig{Type: graphql.Int},
-					"after": &graphql.ArgumentConfig{Type: graphql.String},
-				},
+				Args: relayConnectionArgs(),
 				Resolve: func(p graphql.ResolveParams) (interface{}, error) {
 					pr, ok := p.Source.(map[string]interface{})
 					if !ok {
@@ -813,10 +810,7 @@ func (s *Server) addPullRequestFieldsToSchema(userType, issueType, repoType, mut
 			},
 			"assignees": &graphql.Field{
 				Type: prAssigneeConnectionType,
-				Args: graphql.FieldConfigArgument{
-					"first": &graphql.ArgumentConfig{Type: graphql.Int},
-					"after": &graphql.ArgumentConfig{Type: graphql.String},
-				},
+				Args: relayConnectionArgs(),
 				Resolve: func(p graphql.ResolveParams) (interface{}, error) {
 					pr, ok := p.Source.(map[string]interface{})
 					if !ok {
@@ -843,15 +837,13 @@ func (s *Server) addPullRequestFieldsToSchema(userType, issueType, repoType, mut
 			},
 			"reviewRequests": &graphql.Field{
 				Type: reviewRequestConnectionType,
-				Args: graphql.FieldConfigArgument{
-					"first": &graphql.ArgumentConfig{Type: graphql.Int},
-				},
+				Args: relayConnectionArgs(),
 				Resolve: func(p graphql.ResolveParams) (interface{}, error) {
 					pr, ok := p.Source.(map[string]interface{})
 					if !ok {
 						return nil, fmt.Errorf("resolve source: unexpected type %T", p.Source)
 					}
-					return pr["reviewRequests"], nil
+					return repaginateConnection(pr["reviewRequests"], p.Args), nil
 				},
 			},
 			"comments": &graphql.Field{
@@ -872,16 +864,13 @@ func (s *Server) addPullRequestFieldsToSchema(userType, issueType, repoType, mut
 			},
 			"reviewThreads": &graphql.Field{
 				Type: prReviewThreadConnectionType,
-				Args: graphql.FieldConfigArgument{
-					"first": &graphql.ArgumentConfig{Type: graphql.Int},
-					"last":  &graphql.ArgumentConfig{Type: graphql.Int},
-				},
+				Args: relayConnectionArgs(),
 				Resolve: func(p graphql.ResolveParams) (interface{}, error) {
 					pr, ok := p.Source.(map[string]interface{})
 					if !ok {
 						return nil, fmt.Errorf("resolve source: unexpected type %T", p.Source)
 					}
-					return pr["reviewThreads"], nil
+					return repaginateConnection(pr["reviewThreads"], p.Args), nil
 				},
 			},
 			// ProjectV2 items — gh pr view fetches PullRequest.projectItems
@@ -938,16 +927,13 @@ func (s *Server) addPullRequestFieldsToSchema(userType, issueType, repoType, mut
 			// the REST surface reports.
 			"commits": &graphql.Field{
 				Type: prCommitConnectionType,
-				Args: graphql.FieldConfigArgument{
-					"first": &graphql.ArgumentConfig{Type: graphql.Int},
-					"last":  &graphql.ArgumentConfig{Type: graphql.Int},
-				},
+				Args: relayConnectionArgs(),
 				Resolve: func(p graphql.ResolveParams) (interface{}, error) {
 					pr, ok := p.Source.(map[string]interface{})
 					if !ok {
 						return nil, fmt.Errorf("resolve source: unexpected type %T", p.Source)
 					}
-					return pr["commits"], nil
+					return repaginateConnection(pr["commits"], p.Args), nil
 				},
 			},
 			"reactionGroups": &graphql.Field{
@@ -1142,15 +1128,13 @@ func (s *Server) addPullRequestFieldsToSchema(userType, issueType, repoType, mut
 						"totalCount": &graphql.Field{Type: graphql.NewNonNull(graphql.Int)},
 					},
 				}),
-				Args: graphql.FieldConfigArgument{
-					"first": &graphql.ArgumentConfig{Type: graphql.Int},
-				},
+				Args: relayConnectionArgs(),
 				Resolve: func(p graphql.ResolveParams) (interface{}, error) {
 					pr, ok := p.Source.(map[string]interface{})
 					if !ok {
 						return nil, fmt.Errorf("resolve source: unexpected type %T", p.Source)
 					}
-					return pr["latestReviews"], nil
+					return repaginateConnection(pr["latestReviews"], p.Args), nil
 				},
 			},
 			"mergeStateStatus": &graphql.Field{

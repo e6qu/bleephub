@@ -3561,6 +3561,21 @@ export const dismissPRReview = (
 export const fetchPRReviewComments = (owner: string, repo: string, number: number) =>
   ghFetch<GithubPRReviewComment[]>(`/api/v3/repos/${owner}/${repo}/pulls/${number}/comments`);
 
+/** Add one immediate inline review comment to a changed-file line. */
+export const createPRReviewComment = (
+  owner: string,
+  repo: string,
+  number: number,
+  payload: {
+    body: string;
+    commit_id: string;
+    path: string;
+    line: number;
+    side: "LEFT" | "RIGHT";
+  },
+): Promise<GithubPRReviewComment> =>
+  ghPostJSON(`/api/v3/repos/${owner}/${repo}/pulls/${number}/comments`, payload);
+
 export const replyToPRReviewComment = (
   owner: string,
   repo: string,

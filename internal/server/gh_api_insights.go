@@ -131,7 +131,7 @@ func (w *apiInsightsStatusRecorder) Hijack() (net.Conn, *bufio.ReadWriter, error
 func (s *Server) recordAPIInsightsRequest(r *http.Request, method, route string, status int) {
 	ctx := r.Context()
 	rec := &APIRequestRecord{
-		Timestamp:   time.Now().UTC(),
+		Timestamp:   s.currentTime(),
 		Method:      method,
 		Route:       route,
 		StatusCode:  status,
@@ -267,7 +267,7 @@ func (st *Store) RecordAPIRequest(rec *APIRequestRecord) {
 // apiInsightsWindow parses the min_timestamp (required) and max_timestamp
 // (optional, default now) query parameters. On failure it writes a 422
 // validation error and returns ok=false.
-func apiInsightsWindow(w http.ResponseWriter, r *http.Request) (minT, maxT time.Time, ok bool) {
+func (s *Server) apiInsightsWindow(w http.ResponseWriter, r *http.Request) (minT, maxT time.Time, ok bool) {
 	minRaw := r.URL.Query().Get("min_timestamp")
 	if minRaw == "" {
 		writeGHValidationError(w, "ApiInsights", "min_timestamp", "missing_field")
@@ -278,7 +278,7 @@ func apiInsightsWindow(w http.ResponseWriter, r *http.Request) (minT, maxT time.
 		writeGHValidationError(w, "ApiInsights", "min_timestamp", "invalid")
 		return time.Time{}, time.Time{}, false
 	}
-	maxT = time.Now().UTC()
+	maxT = s.currentTime()
 	if maxRaw := r.URL.Query().Get("max_timestamp"); maxRaw != "" {
 		maxT, err = time.Parse(time.RFC3339, maxRaw)
 		if err != nil {
@@ -416,7 +416,7 @@ func (s *Server) handleAPIInsightsRouteStats(w http.ResponseWriter, r *http.Requ
 		writeGHError(w, http.StatusNotFound, "Not Found")
 		return
 	}
-	minT, maxT, ok := apiInsightsWindow(w, r)
+	minT, maxT, ok := s.apiInsightsWindow(w, r)
 	if !ok {
 		return
 	}
@@ -453,7 +453,7 @@ func (s *Server) handleAPIInsightsRouteStats(w http.ResponseWriter, r *http.Requ
 }
 
 func (s *Server) handleAPIInsightsSubjectStats(w http.ResponseWriter, r *http.Request) {
-	minT, maxT, ok := apiInsightsWindow(w, r)
+	minT, maxT, ok := s.apiInsightsWindow(w, r)
 	if !ok {
 		return
 	}
@@ -510,7 +510,7 @@ func writeAPIInsightsSummary(w http.ResponseWriter, records []*APIRequestRecord)
 }
 
 func (s *Server) handleAPIInsightsSummaryStats(w http.ResponseWriter, r *http.Request) {
-	minT, maxT, ok := apiInsightsWindow(w, r)
+	minT, maxT, ok := s.apiInsightsWindow(w, r)
 	if !ok {
 		return
 	}
@@ -523,7 +523,7 @@ func (s *Server) handleAPIInsightsSummaryStatsByUser(w http.ResponseWriter, r *h
 		writeGHError(w, http.StatusNotFound, "Not Found")
 		return
 	}
-	minT, maxT, ok := apiInsightsWindow(w, r)
+	minT, maxT, ok := s.apiInsightsWindow(w, r)
 	if !ok {
 		return
 	}
@@ -541,7 +541,7 @@ func (s *Server) handleAPIInsightsSummaryStatsByActor(w http.ResponseWriter, r *
 		writeGHError(w, http.StatusNotFound, "Not Found")
 		return
 	}
-	minT, maxT, ok := apiInsightsWindow(w, r)
+	minT, maxT, ok := s.apiInsightsWindow(w, r)
 	if !ok {
 		return
 	}
@@ -613,7 +613,7 @@ func writeAPIInsightsTimeStats(w http.ResponseWriter, r *http.Request, records [
 }
 
 func (s *Server) handleAPIInsightsTimeStats(w http.ResponseWriter, r *http.Request) {
-	minT, maxT, ok := apiInsightsWindow(w, r)
+	minT, maxT, ok := s.apiInsightsWindow(w, r)
 	if !ok {
 		return
 	}
@@ -626,7 +626,7 @@ func (s *Server) handleAPIInsightsTimeStatsByUser(w http.ResponseWriter, r *http
 		writeGHError(w, http.StatusNotFound, "Not Found")
 		return
 	}
-	minT, maxT, ok := apiInsightsWindow(w, r)
+	minT, maxT, ok := s.apiInsightsWindow(w, r)
 	if !ok {
 		return
 	}
@@ -645,7 +645,7 @@ func (s *Server) handleAPIInsightsTimeStatsByActor(w http.ResponseWriter, r *htt
 		writeGHError(w, http.StatusNotFound, "Not Found")
 		return
 	}
-	minT, maxT, ok := apiInsightsWindow(w, r)
+	minT, maxT, ok := s.apiInsightsWindow(w, r)
 	if !ok {
 		return
 	}
@@ -659,7 +659,7 @@ func (s *Server) handleAPIInsightsUserStats(w http.ResponseWriter, r *http.Reque
 		writeGHError(w, http.StatusNotFound, "Not Found")
 		return
 	}
-	minT, maxT, ok := apiInsightsWindow(w, r)
+	minT, maxT, ok := s.apiInsightsWindow(w, r)
 	if !ok {
 		return
 	}

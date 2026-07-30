@@ -21,6 +21,10 @@ REST_CONTRACT_PATH = ROOT / "specs" / "rest-semantic-contracts.json"
 REST_ROUTE_SNAPSHOT_PATH = (
     ROOT / "internal" / "server" / "testdata" / "registered-api-v3-routes.txt"
 )
+REST_ROUTE_INDEX_PATH = (
+    ROOT / "internal" / "server" / "testdata" / "github-openapi-routes.txt.gz"
+)
+REST_DEFINITION_TEST_PATH = ROOT / "internal" / "server" / "gh_api_definition_test.go"
 HTTP_METHODS = {"get", "post", "put", "patch", "delete", "head"}
 LEDGER_ID = re.compile(r"^(AUTH|REST|GQL|ACT|STORE|CORE|WEB|TEST|PAR|CI|ARCH)-\d+$")
 LEDGER_HEADER = re.compile(
@@ -31,9 +35,11 @@ ROUTE = re.compile(r's\.route\(\s*"([A-Z]+) (/api/v3[^"]*)"')
 UI_ROUTE = re.compile(
     r'<Route\s+path="([^"]+)"\s+element=\{<([A-Za-z][A-Za-z0-9]*)'
 )
-ACTION_TRIGGER = re.compile(
-    r'triggerWorkflowsForEvent\(\s*[^,\n]+,\s*"([a-z_]+)"'
+ACTION_PRODUCER = re.compile(
+    r'\b(emitWebhookEvent|emitOrgWebhookEvent)\(\s*[^,\n]+,\s*"([a-z_]+)"'
 )
+BROWSER_NAVIGATION = re.compile(r'\bpage\.goto\(\s*([`"\'])(.+?)\1')
+PARAM_SEGMENT = re.compile(r"\{[^}]+\}")
 
 
 class InventoryError(RuntimeError):
@@ -230,6 +236,70 @@ def registered_rest_routes() -> list[dict[str, Any]]:
     if len(routes) < 1000:
         raise InventoryError(f"only {len(routes)} runtime REST routes found")
     return routes
+
+
+def normalize_rest_operation(method: str, path: str) -> str:
+    if path.startswith("/api/v3"):
+        path = path[len("/api/v3") :]
+    return f"{method.upper()} {PARAM_SEGMENT.sub('{}', path)}"
+
+
+def dispatch_covered_rest_operations() -> set[str]:
+    source = REST_DEFINITION_TEST_PATH.read_text(encoding="utf-8")
+    start = source.find("var dispatchCoveredOperations = map[string]bool{")
+    if start < 0:
+        raise InventoryError("dispatchCoveredOperations is missing")
+    end = source.find("\n}", start)
+    if end < 0:
+        raise InventoryError("dispatchCoveredOperations is malformed")
+    operations = set(
+        re.findall(r'^\s*"([A-Z]+ /[^"]+)":\s+true,', source[start:end], re.MULTILINE)
+    )
+    if len(operations) < 40:
+        raise InventoryError(
+            f"only {len(operations)} dispatch-covered REST operations found"
+        )
+    return operations
+
+
+def official_rest_route_indexes(
+    routes: list[dict[str, Any]],
+) -> dict[str, Any]:
+    represented = {
+        normalize_rest_operation(route["method"], route["path"]) for route in routes
+    }
+    dispatch_covered = dispatch_covered_rest_operations()
+    represented.update(dispatch_covered)
+
+    indexes: dict[str, set[str]] = collections.defaultdict(set)
+    with gzip.open(REST_ROUTE_INDEX_PATH, "rt", encoding="utf-8") as source:
+        for line_number, line in enumerate(source, 1):
+            line = line.rstrip("\n")
+            if not line:
+                continue
+            description, separator, operation = line.partition("\t")
+            if not separator or " " not in operation:
+                raise InventoryError(
+                    f"{REST_ROUTE_INDEX_PATH.relative_to(ROOT)}:{line_number}: "
+                    f"malformed indexed operation {line!r}"
+                )
+            indexes[description].add(operation)
+    if not indexes or any(len(operations) < 300 for operations in indexes.values()):
+        raise InventoryError("official REST route index is missing or truncated")
+
+    descriptions: dict[str, Any] = {}
+    for description, operations in sorted(indexes.items()):
+        missing = sorted(operations - represented)
+        descriptions[description] = {
+            "documented_operations": len(operations),
+            "represented_operations": len(operations) - len(missing),
+            "missing_operations": missing,
+        }
+    return {
+        "source": str(REST_ROUTE_INDEX_PATH.relative_to(ROOT)),
+        "dispatch_covered_operations": sorted(dispatch_covered),
+        "descriptions": descriptions,
+    }
 
 
 def documented_rest_operations() -> tuple[str, list[dict[str, Any]]]:
@@ -535,10 +605,15 @@ def ui_inventory() -> dict[str, Any]:
     routes: list[dict[str, Any]] = []
     for match in UI_ROUTE.finditer(source):
         component = match.group(2)
-        evidence = [
+        references = [
             str(path.relative_to(ROOT))
             for path, test_source in test_sources.items()
             if re.search(rf"\b{re.escape(component)}\b", test_source)
+        ]
+        rendered = [
+            str(path.relative_to(ROOT))
+            for path, test_source in test_sources.items()
+            if re.search(rf"<{re.escape(component)}(?:\s|/|>)", test_source)
         ]
         routes.append(
             {
@@ -546,7 +621,8 @@ def ui_inventory() -> dict[str, Any]:
                 "component": component,
                 "source": str(app_path.relative_to(ROOT)),
                 "line": source_line(source, match.start()),
-                "tests": evidence,
+                "tests": references,
+                "rendered_tests": rendered,
             }
         )
     routes.sort(key=lambda row: (row["path"], row["component"]))
@@ -561,7 +637,29 @@ def ui_inventory() -> dict[str, Any]:
         )
     if len(routes) < 70:
         raise InventoryError(f"only {len(routes)} UI routes found")
-    return {"routes": routes}
+    browser_navigations: list[dict[str, Any]] = []
+    for path in sorted((ROOT / "web" / "e2e").glob("*.spec.ts")):
+        test_source = path.read_text(encoding="utf-8")
+        for match in BROWSER_NAVIGATION.finditer(test_source):
+            browser_navigations.append(
+                {
+                    "target": match.group(2),
+                    "source": str(path.relative_to(ROOT)),
+                    "line": source_line(test_source, match.start()),
+                }
+            )
+    return {
+        "summary": {
+            "routes": len(routes),
+            "routes_with_test_reference": sum(bool(route["tests"]) for route in routes),
+            "routes_with_direct_render": sum(
+                bool(route["rendered_tests"]) for route in routes
+            ),
+            "browser_navigations": len(browser_navigations),
+        },
+        "routes": routes,
+        "browser_navigations": browser_navigations,
+    }
 
 
 def actions_inventory() -> dict[str, Any]:
@@ -571,15 +669,20 @@ def actions_inventory() -> dict[str, Any]:
             continue
         source = path.read_text(encoding="utf-8")
         searchable = mask_go_comments(source)
-        for match in ACTION_TRIGGER.finditer(searchable):
+        for match in ACTION_PRODUCER.finditer(searchable):
             producers.append(
                 {
-                    "event": match.group(1),
+                    "event": match.group(2),
+                    "producer": match.group(1),
                     "source": str(path.relative_to(ROOT)),
                     "line": source_line(source, match.start()),
                 }
             )
     producers.sort(key=lambda row: (row["event"], row["source"], row["line"]))
+    if len({producer["event"] for producer in producers}) < 10:
+        raise InventoryError(
+            "fewer than ten literal webhook/Actions event families were discovered"
+        )
     schedule_source = ROOT / "internal" / "server" / "workflow_schedule.go"
     schedule_test = ROOT / "internal" / "server" / "workflow_schedule_test.go"
     return {
@@ -608,6 +711,7 @@ def build_inventory() -> dict[str, Any]:
             "vendored_openapi_sha256": openapi_sha256,
             "documented_operations": operations,
             "registered_routes": routes,
+            "official_route_indexes": official_rest_route_indexes(routes),
         },
         "graphql": graphql_inventory(),
         "ui": ui_inventory(),

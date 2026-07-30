@@ -29,6 +29,9 @@ function renderAt(path: string) {
         <Routes>
           <Route path="/ui/repos/:owner/:repo/pulls" element={<PullsPage />} />
           <Route path="/ui/repos/:owner/:repo/pulls/:number" element={<PullsPage />} />
+          <Route path="/ui/repos/:owner/:repo/pulls/:number/commits" element={<PullsPage />} />
+          <Route path="/ui/repos/:owner/:repo/pulls/:number/files" element={<PullsPage />} />
+          <Route path="/ui/repos/:owner/:repo/pulls/:number/checks" element={<PullsPage />} />
         </Routes>
       </MemoryRouter>
     </QueryClientProvider>,
@@ -615,6 +618,48 @@ describe("PullsPage detail sub-tabs", () => {
     fireEvent.click(screen.getByRole("button", { name: "Files changed" }));
     expect(await screen.findByText("main.go")).toBeInTheDocument();
     expect(screen.getByText(/@@ -1,2 \+1,2 @@/)).toBeInTheDocument();
+  });
+
+  it("deep-links to Files changed and adds a correctly addressed inline comment", async () => {
+    mockPRApis((u, init) => {
+      if (u.endsWith("/pulls/9/files")) {
+        return jsonResponse([
+          {
+            sha: "abc",
+            filename: "main.go",
+            status: "modified",
+            additions: 2,
+            deletions: 1,
+            changes: 3,
+            patch: "@@ -7,2 +8,2 @@\n-old\n+new",
+          },
+        ]);
+      }
+      if (u.endsWith("/pulls/9/comments") && init?.method === "POST") {
+        return jsonResponse({ id: 41, body: "Please explain this.", path: "main.go", line: 8 }, 201);
+      }
+      return undefined;
+    });
+
+    renderAt("/ui/repos/admin/test/pulls/9/files");
+    await screen.findByText("main.go");
+    expect(screen.getByRole("button", { name: "Files changed" })).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "Comment on main.go line 8" }));
+    fireEvent.change(screen.getByLabelText("Review comment"), {
+      target: { value: "Please explain this." },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Add single comment" }));
+
+    await waitFor(() => expect(findCall("/pulls/9/comments", "POST")).toBeDefined());
+    const init = findCall("/pulls/9/comments", "POST");
+    expect(JSON.parse(String(init?.body))).toEqual({
+      body: "Please explain this.",
+      commit_id: "abc",
+      path: "main.go",
+      line: 8,
+      side: "RIGHT",
+    });
   });
 });
 

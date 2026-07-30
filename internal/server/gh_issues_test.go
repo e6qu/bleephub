@@ -258,6 +258,60 @@ func TestListIssuesREST(t *testing.T) {
 	}
 }
 
+func TestListIssuesRESTHonorsDocumentedFiltersAndOrdering(t *testing.T) {
+	const repo = "issue-list-fidelity"
+	createTestIssueRepo(t, repo)
+	ghPost(t, "/api/v3/repos/admin/"+repo+"/milestones", defaultToken, map[string]interface{}{
+		"title": "v1",
+	}).Body.Close()
+	ghPost(t, "/api/v3/repos/admin/"+repo+"/issues", defaultToken, map[string]interface{}{
+		"title": "target", "body": "Please ask @alice", "milestone": 1,
+		"assignees": []string{"admin"},
+	}).Body.Close()
+	ghPost(t, "/api/v3/repos/admin/"+repo+"/issues", defaultToken, map[string]interface{}{
+		"title": "most discussed",
+	}).Body.Close()
+	for _, body := range []string{"one", "two"} {
+		ghPost(t, "/api/v3/repos/admin/"+repo+"/issues/2/comments", defaultToken, map[string]interface{}{
+			"body": body,
+		}).Body.Close()
+	}
+
+	assertNumbers := func(query string, want ...int) {
+		t.Helper()
+		resp := ghGet(t, "/api/v3/repos/admin/"+repo+"/issues?"+query, defaultToken)
+		if resp.StatusCode != 200 {
+			resp.Body.Close()
+			t.Fatalf("%s: status = %d, want 200", query, resp.StatusCode)
+		}
+		rows := decodeJSONArray(t, resp)
+		if len(rows) != len(want) {
+			t.Fatalf("%s: got %d rows, want %d: %v", query, len(rows), len(want), rows)
+		}
+		for index, number := range want {
+			if got := int(rows[index]["number"].(float64)); got != number {
+				t.Fatalf("%s: row %d number = %d, want %d", query, index, got, number)
+			}
+		}
+	}
+
+	assertNumbers("milestone=1", 1)
+	assertNumbers("mentioned=alice", 1)
+	assertNumbers("assignee=does-not-exist")
+	assertNumbers("creator=does-not-exist")
+	assertNumbers("since=2999-01-01T00:00:00Z")
+	assertNumbers("sort=comments&direction=desc", 2, 1)
+	assertNumbers("sort=comments&direction=asc", 1, 2)
+
+	for _, query := range []string{"state=wat", "sort=wat", "direction=wat", "since=yesterday"} {
+		resp := ghGet(t, "/api/v3/repos/admin/"+repo+"/issues?"+query, defaultToken)
+		resp.Body.Close()
+		if resp.StatusCode != 422 {
+			t.Fatalf("%s: status = %d, want 422", query, resp.StatusCode)
+		}
+	}
+}
+
 func TestGetIssueREST(t *testing.T) {
 	createTestIssueRepo(t, "issue-get")
 	ghPost(t, "/api/v3/repos/admin/issue-get/issues", defaultToken, map[string]interface{}{

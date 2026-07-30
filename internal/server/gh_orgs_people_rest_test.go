@@ -619,7 +619,7 @@ func TestTeamsPeoplePersistenceReload(t *testing.T) {
 	st1.BlockUserForOrg(org.Login, invitee.ID)
 	// A blocked invitee is a handler-level rejection; the store-level
 	// combination here just exercises both buckets.
-	expiry := time.Now().UTC().Add(24 * time.Hour).Truncate(time.Second)
+	expiry := time.Date(2035, time.June, 16, 12, 0, 0, 0, time.UTC)
 	st1.SetOrgInteractionLimit(org.Login, "contributors_only", expiry)
 	st1.AssignOrgRoleToTeam(org.Login, securityManagerOrgRoleID, team.ID)
 	st1.AssignOrgRoleToUser(org.Login, 140, admin.ID)

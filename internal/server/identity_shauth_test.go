@@ -26,6 +26,12 @@ type shaAuthTestProvider struct {
 	tokenIssuer string
 }
 
+var fixedShauthTestTime = time.Date(2090, time.June, 15, 12, 0, 0, 0, time.UTC)
+
+func useFixedShauthServerClock(server *Server) {
+	server.clockNow = func() time.Time { return fixedShauthTestTime }
+}
+
 func newShaAuthTestProvider(t *testing.T) *shaAuthTestProvider {
 	return newShaAuthTestProviderWithIssuerSuffix(t, "")
 }
@@ -62,7 +68,7 @@ func newShaAuthTestProviderWithIssuerSuffix(t *testing.T, suffix string) *shaAut
 			}
 			rawIDToken := provider.sign(t, map[string]any{
 				"iss": tokenIssuer, "aud": "bleephub", "sub": "subject-1", "sid": "sid-1",
-				"iat": time.Now().Unix(), "exp": time.Now().Add(time.Hour).Unix(), "nonce": provider.nonce,
+				"iat": fixedShauthTestTime.Unix(), "exp": fixedShauthTestTime.Add(time.Hour).Unix(), "nonce": provider.nonce,
 				"preferred_username": "octocat", "name": "Octo Cat", "email": "octocat@example.com",
 				"picture": "https://avatars.example.com/octocat.png", "role": "developer",
 			})
@@ -175,7 +181,7 @@ func TestIdentitySessionReportsAuthenticationWithoutExpectedNetworkErrors(t *tes
 		t.Fatal("anonymous session reported authenticated")
 	}
 
-	s.store.LoginSessions["browser-session"] = &LoginSession{UserID: 1, ExpiresAt: time.Now().Add(time.Hour)}
+	s.store.LoginSessions["browser-session"] = &LoginSession{UserID: 1, ExpiresAt: fixedShauthTestTime.Add(time.Hour)}
 	request = httptest.NewRequest(http.MethodGet, "/auth/session", nil)
 	request.AddCookie(&http.Cookie{Name: "_gh_sess", Value: "browser-session"})
 	response = httptest.NewRecorder()
@@ -209,7 +215,7 @@ func TestIdentityValidationRequiresAuthenticationAndExposesSignOut(t *testing.T)
 		t.Fatalf("anonymous validation = %d location %q", response.Code, response.Header().Get("Location"))
 	}
 
-	if err := s.store.PutLoginSession("browser-session", &LoginSession{UserID: 1, ExpiresAt: time.Now().Add(time.Hour)}); err != nil {
+	if err := s.store.PutLoginSession("browser-session", &LoginSession{UserID: 1, ExpiresAt: fixedShauthTestTime.Add(time.Hour)}); err != nil {
 		t.Fatal(err)
 	}
 	request = httptest.NewRequest(http.MethodGet, "/auth/validation", nil)
@@ -245,7 +251,7 @@ func TestShauthLogoutClearsLocalSessionAndStartsIssuerLogout(t *testing.T) {
 	s := NewServer("127.0.0.1:0", zerolog.Nop())
 	s.externalURL = "https://bleephub.example.test"
 	s.identity = completeShauthIdentityConfig(provider.server.URL)
-	s.store.LoginSessions["browser-session"] = &LoginSession{UserID: 1, ExpiresAt: time.Now().Add(time.Hour), OIDCProvider: "shauth", OIDCIssuer: provider.server.URL, OIDCSubject: "subject-1", OIDCSID: "sid-1", OIDCIDToken: "signed.id.token"}
+	s.store.LoginSessions["browser-session"] = &LoginSession{UserID: 1, ExpiresAt: fixedShauthTestTime.Add(time.Hour), OIDCProvider: "shauth", OIDCIssuer: provider.server.URL, OIDCSubject: "subject-1", OIDCSID: "sid-1", OIDCIDToken: "signed.id.token"}
 	request := httptest.NewRequest(http.MethodPost, "/auth/logout", nil)
 	request.Header.Set("Origin", s.externalURL)
 	request.AddCookie(&http.Cookie{Name: "_gh_sess", Value: "browser-session"})
@@ -309,7 +315,7 @@ func TestShauthLogoutRevokesLocalSessionBeforeDiscoveryFailure(t *testing.T) {
 	s := NewServer("127.0.0.1:0", zerolog.Nop())
 	s.externalURL = "https://bleephub.example.test"
 	s.identity = completeShauthIdentityConfig(provider.server.URL)
-	if err := s.store.PutLoginSession("browser-session", &LoginSession{UserID: 1, ExpiresAt: time.Now().Add(time.Hour), OIDCProvider: "shauth"}); err != nil {
+	if err := s.store.PutLoginSession("browser-session", &LoginSession{UserID: 1, ExpiresAt: fixedShauthTestTime.Add(time.Hour), OIDCProvider: "shauth"}); err != nil {
 		t.Fatal(err)
 	}
 	request := httptest.NewRequest(http.MethodPost, "/auth/logout", nil)
@@ -440,7 +446,7 @@ func TestShauthCallbackPersistsVerifiedOIDCSession(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	pending := identityState{Provider: "shauth", State: state, ReturnTo: "/ui/repositories", Nonce: provider.nonce, PKCE: "verifier", ExpiresAt: time.Now().Add(time.Minute)}
+	pending := identityState{Provider: "shauth", State: state, ReturnTo: "/ui/repositories", Nonce: provider.nonce, PKCE: "verifier", ExpiresAt: fixedShauthTestTime.Add(time.Minute)}
 	stateResponse := httptest.NewRecorder()
 	if err := s.setIdentityState(stateResponse, pending); err != nil {
 		t.Fatal(err)
@@ -509,8 +515,9 @@ func TestShauthCallbackRejectsOIDCArtifactFromAnotherIssuer(t *testing.T) {
 func TestShauthBackChannelLogoutVerifiesAndRevokesSessions(t *testing.T) {
 	provider := newShaAuthTestProvider(t)
 	s := NewServer("127.0.0.1:0", zerolog.Nop())
+	useFixedShauthServerClock(s)
 	s.identity = completeShauthIdentityConfig(provider.server.URL)
-	base := LoginSession{UserID: 1, ExpiresAt: time.Now().Add(time.Hour), OIDCProvider: "shauth", OIDCIssuer: provider.server.URL, OIDCSubject: "subject-1"}
+	base := LoginSession{UserID: 1, ExpiresAt: fixedShauthTestTime.Add(time.Hour), OIDCProvider: "shauth", OIDCIssuer: provider.server.URL, OIDCSubject: "subject-1"}
 	revoked := base
 	revoked.OIDCSID = "sid-1"
 	kept := base
@@ -521,10 +528,10 @@ func TestShauthBackChannelLogoutVerifiesAndRevokesSessions(t *testing.T) {
 	if err := s.store.PutLoginSession("kept", &kept); err != nil {
 		t.Fatal(err)
 	}
-	logoutExpiry := time.Now().Add(30 * time.Minute).Truncate(time.Second)
+	logoutExpiry := fixedShauthTestTime.Add(30 * time.Minute)
 	logoutToken := provider.sign(t, map[string]any{
 		"iss": provider.server.URL, "aud": "bleephub", "sub": "subject-1", "sid": "sid-1",
-		"iat": time.Now().Unix(), "exp": logoutExpiry.Unix(), "jti": "logout-sid",
+		"iat": fixedShauthTestTime.Unix(), "exp": logoutExpiry.Unix(), "jti": "logout-sid",
 		"events": map[string]any{backChannelLogoutEvent: map[string]any{}},
 	})
 	form := url.Values{"logout_token": {logoutToken}}
@@ -559,7 +566,7 @@ func TestShauthBackChannelLogoutVerifiesAndRevokesSessions(t *testing.T) {
 	}
 	subjectToken := provider.sign(t, map[string]any{
 		"iss": provider.server.URL, "aud": "bleephub", "sub": "subject-1",
-		"iat": time.Now().Unix(), "exp": time.Now().Add(5 * time.Minute).Unix(), "jti": "logout-subject",
+		"iat": fixedShauthTestTime.Unix(), "exp": fixedShauthTestTime.Add(5 * time.Minute).Unix(), "jti": "logout-subject",
 		"events": map[string]any{backChannelLogoutEvent: map[string]any{}},
 	})
 	subjectForm := url.Values{"logout_token": {subjectToken}}
@@ -590,6 +597,7 @@ func TestShauthBackChannelLogoutVerifiesAndRevokesSessions(t *testing.T) {
 func TestShauthBackChannelLogoutRejectsNonObjectEventValues(t *testing.T) {
 	provider := newShaAuthTestProvider(t)
 	s := NewServer("127.0.0.1:0", zerolog.Nop())
+	useFixedShauthServerClock(s)
 	s.identity = completeShauthIdentityConfig(provider.server.URL)
 	for name, event := range map[string]any{
 		"null":   nil,
@@ -599,7 +607,7 @@ func TestShauthBackChannelLogoutRejectsNonObjectEventValues(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			logoutToken := provider.sign(t, map[string]any{
 				"iss": provider.server.URL, "aud": "bleephub", "sub": "subject-1", "sid": "sid-1",
-				"iat": time.Now().Unix(), "exp": time.Now().Add(5 * time.Minute).Unix(), "jti": "invalid-event-" + name,
+				"iat": fixedShauthTestTime.Unix(), "exp": fixedShauthTestTime.Add(5 * time.Minute).Unix(), "jti": "invalid-event-" + name,
 				"events": map[string]any{backChannelLogoutEvent: event},
 			})
 			form := url.Values{"logout_token": {logoutToken}}
@@ -617,12 +625,13 @@ func TestShauthBackChannelLogoutRejectsNonObjectEventValues(t *testing.T) {
 func TestShauthBackChannelLogoutRequiresAndValidatesExpiry(t *testing.T) {
 	provider := newShaAuthTestProvider(t)
 	s := NewServer("127.0.0.1:0", zerolog.Nop())
+	useFixedShauthServerClock(s)
 	s.identity = completeShauthIdentityConfig(provider.server.URL)
-	for name, expiry := range map[string]any{"missing": nil, "expired": time.Now().Add(-time.Minute).Unix()} {
+	for name, expiry := range map[string]any{"missing": nil, "expired": fixedShauthTestTime.Add(-time.Minute).Unix()} {
 		t.Run(name, func(t *testing.T) {
 			claims := map[string]any{
 				"iss": provider.server.URL, "aud": "bleephub", "sub": "subject-1", "sid": "sid-1",
-				"iat": time.Now().Unix(), "jti": "expiry-" + name,
+				"iat": fixedShauthTestTime.Unix(), "jti": "expiry-" + name,
 				"events": map[string]any{backChannelLogoutEvent: map[string]any{}},
 			}
 			if expiry != nil {
@@ -644,10 +653,11 @@ func TestShauthBackChannelLogoutRequiresAndValidatesExpiry(t *testing.T) {
 func TestShauthBackChannelLogoutRejectsNonEmptyLogoutEvent(t *testing.T) {
 	provider := newShaAuthTestProvider(t)
 	s := NewServer("127.0.0.1:0", zerolog.Nop())
+	useFixedShauthServerClock(s)
 	s.identity = completeShauthIdentityConfig(provider.server.URL)
 	logoutToken := provider.sign(t, map[string]any{
 		"iss": provider.server.URL, "aud": "bleephub", "sub": "subject-1", "sid": "sid-1",
-		"iat": time.Now().Unix(), "exp": time.Now().Add(5 * time.Minute).Unix(), "jti": "event-members",
+		"iat": fixedShauthTestTime.Unix(), "exp": fixedShauthTestTime.Add(5 * time.Minute).Unix(), "jti": "event-members",
 		"events": map[string]any{
 			backChannelLogoutEvent:     map[string]any{"extension": true},
 			"https://example.test/evt": map[string]any{},
@@ -667,7 +677,7 @@ func TestShauthFrontChannelLogoutRevokesOnlyTrustedSession(t *testing.T) {
 	s := NewServer("127.0.0.1:0", zerolog.Nop())
 	s.identity = completeShauthIdentityConfig("https://auth.example.test")
 	for id, sid := range map[string]string{"revoked": "sid-1", "kept": "sid-2"} {
-		if err := s.store.PutLoginSession(id, &LoginSession{UserID: 1, ExpiresAt: time.Now().Add(time.Hour), OIDCProvider: "shauth", OIDCIssuer: s.identity.shauthIssuer, OIDCSID: sid}); err != nil {
+		if err := s.store.PutLoginSession(id, &LoginSession{UserID: 1, ExpiresAt: fixedShauthTestTime.Add(time.Hour), OIDCProvider: "shauth", OIDCIssuer: s.identity.shauthIssuer, OIDCSID: sid}); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -697,7 +707,7 @@ func TestShauthFrontChannelLogoutRevokesOnlyTrustedSession(t *testing.T) {
 
 func TestShauthFrontChannelLogoutDoesNothingWhenShauthIsDisabled(t *testing.T) {
 	s := NewServer("127.0.0.1:0", zerolog.Nop())
-	if err := s.store.PutLoginSession("kept", &LoginSession{UserID: 1, ExpiresAt: time.Now().Add(time.Hour), OIDCProvider: "shauth", OIDCSID: "sid-1"}); err != nil {
+	if err := s.store.PutLoginSession("kept", &LoginSession{UserID: 1, ExpiresAt: fixedShauthTestTime.Add(time.Hour), OIDCProvider: "shauth", OIDCSID: "sid-1"}); err != nil {
 		t.Fatal(err)
 	}
 	request := httptest.NewRequest(http.MethodGet, "/auth/shauth/frontchannel-logout?iss=&sid=sid-1", nil)
@@ -714,12 +724,13 @@ func TestShauthFrontChannelLogoutDoesNothingWhenShauthIsDisabled(t *testing.T) {
 func TestShauthBackChannelLogoutRejectsNonceByPresence(t *testing.T) {
 	provider := newShaAuthTestProvider(t)
 	s := NewServer("127.0.0.1:0", zerolog.Nop())
+	useFixedShauthServerClock(s)
 	s.identity = completeShauthIdentityConfig(provider.server.URL)
 	for name, nonce := range map[string]any{"empty": "", "null": nil} {
 		t.Run(name, func(t *testing.T) {
 			logoutToken := provider.sign(t, map[string]any{
 				"iss": provider.server.URL, "aud": "bleephub", "sub": "subject-1", "sid": "sid-1",
-				"iat": time.Now().Unix(), "exp": time.Now().Add(5 * time.Minute).Unix(), "jti": "nonce-" + name,
+				"iat": fixedShauthTestTime.Unix(), "exp": fixedShauthTestTime.Add(5 * time.Minute).Unix(), "jti": "nonce-" + name,
 				"nonce": nonce, "events": map[string]any{backChannelLogoutEvent: map[string]any{}},
 			})
 			form := url.Values{"logout_token": {logoutToken}}
@@ -737,9 +748,10 @@ func TestShauthBackChannelLogoutRejectsNonceByPresence(t *testing.T) {
 func TestShauthBackChannelLogoutPreservesTrailingSlashIssuer(t *testing.T) {
 	provider := newShaAuthTestProviderWithIssuerSuffix(t, "/")
 	s := NewServer("127.0.0.1:0", zerolog.Nop())
+	useFixedShauthServerClock(s)
 	s.identity = completeShauthIdentityConfig(provider.issuer)
 	session := &LoginSession{
-		UserID: 1, ExpiresAt: time.Now().Add(time.Hour), OIDCProvider: "shauth",
+		UserID: 1, ExpiresAt: fixedShauthTestTime.Add(time.Hour), OIDCProvider: "shauth",
 		OIDCIssuer: provider.issuer, OIDCSubject: "subject-1", OIDCSID: "sid-1",
 	}
 	if err := s.store.PutLoginSession("trailing-slash", session); err != nil {
@@ -747,7 +759,7 @@ func TestShauthBackChannelLogoutPreservesTrailingSlashIssuer(t *testing.T) {
 	}
 	logoutToken := provider.sign(t, map[string]any{
 		"iss": provider.issuer, "aud": "bleephub", "sub": "subject-1", "sid": "sid-1",
-		"iat": time.Now().Unix(), "exp": time.Now().Add(5 * time.Minute).Unix(), "jti": "trailing-slash",
+		"iat": fixedShauthTestTime.Unix(), "exp": fixedShauthTestTime.Add(5 * time.Minute).Unix(), "jti": "trailing-slash",
 		"events": map[string]any{backChannelLogoutEvent: map[string]any{}},
 	})
 	form := url.Values{"logout_token": {logoutToken}}
@@ -766,10 +778,11 @@ func TestShauthBackChannelLogoutPreservesTrailingSlashIssuer(t *testing.T) {
 func TestShauthBackChannelLogoutRejectsTamperedSignature(t *testing.T) {
 	provider := newShaAuthTestProvider(t)
 	s := NewServer("127.0.0.1:0", zerolog.Nop())
+	useFixedShauthServerClock(s)
 	s.identity = completeShauthIdentityConfig(provider.server.URL)
 	logoutToken := provider.sign(t, map[string]any{
 		"iss": provider.server.URL, "aud": "bleephub", "sub": "subject-1", "sid": "sid-1",
-		"iat": time.Now().Unix(), "exp": time.Now().Add(5 * time.Minute).Unix(), "jti": "tampered",
+		"iat": fixedShauthTestTime.Unix(), "exp": fixedShauthTestTime.Add(5 * time.Minute).Unix(), "jti": "tampered",
 		"events": map[string]any{backChannelLogoutEvent: map[string]any{}},
 	})
 	parts := strings.Split(logoutToken, ".")
@@ -796,7 +809,7 @@ func TestSignedOutLandingRevokesLocalSessionWithoutStartingLogin(t *testing.T) {
 	s := NewServer("127.0.0.1:0", zerolog.Nop())
 	s.externalURL = "https://bleephub.example.test"
 	s.identity = completeShauthIdentityConfig("https://auth.example.test")
-	if err := s.store.PutLoginSession("browser-session", &LoginSession{UserID: 1, ExpiresAt: time.Now().Add(time.Hour)}); err != nil {
+	if err := s.store.PutLoginSession("browser-session", &LoginSession{UserID: 1, ExpiresAt: fixedShauthTestTime.Add(time.Hour)}); err != nil {
 		t.Fatal(err)
 	}
 	request := httptest.NewRequest(http.MethodGet, "/ui/signed-out", nil)
@@ -861,7 +874,7 @@ func TestIdentityStateIsBrowserBoundAndTamperEvident(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	pending := identityState{Provider: "shauth", State: state, ReturnTo: "/ui/", ExpiresAt: time.Now().Add(time.Minute)}
+	pending := identityState{Provider: "shauth", State: state, ReturnTo: "/ui/", ExpiresAt: fixedShauthTestTime.Add(time.Minute)}
 	if err := s.setIdentityState(response, pending); err != nil {
 		t.Fatal(err)
 	}
@@ -894,7 +907,7 @@ func TestIdentityStateSupportsConcurrentBrowserFlows(t *testing.T) {
 		}
 		states[index] = state
 		response := httptest.NewRecorder()
-		if err := s.setIdentityState(response, identityState{Provider: "shauth", State: state, ReturnTo: "/ui/", ExpiresAt: time.Now().Add(time.Minute)}); err != nil {
+		if err := s.setIdentityState(response, identityState{Provider: "shauth", State: state, ReturnTo: "/ui/", ExpiresAt: fixedShauthTestTime.Add(time.Minute)}); err != nil {
 			t.Fatal(err)
 		}
 		cookies[index] = response.Result().Cookies()[0]

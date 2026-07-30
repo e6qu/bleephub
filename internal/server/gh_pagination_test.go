@@ -3,8 +3,10 @@ package bleephub
 import (
 	"encoding/json"
 	"net/http"
+	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestPaginationDefaults(t *testing.T) {
@@ -211,5 +213,61 @@ func TestPaginationRepoList(t *testing.T) {
 	link := resp.Header.Get("Link")
 	if !strings.Contains(link, `rel="next"`) {
 		t.Fatalf("expected Link header with next, got %s", link)
+	}
+}
+
+func TestRelayPaginationCombinesDirectionalBounds(t *testing.T) {
+	nodes := make([]map[string]interface{}, 8)
+	for index := range nodes {
+		nodes[index] = map[string]interface{}{"index": index}
+	}
+
+	connection := repaginateConnection(
+		map[string]interface{}{"nodes": nodes},
+		map[string]interface{}{"first": 2, "after": encodeCursor(1), "before": encodeCursor(6)},
+	).(map[string]interface{})
+	page := connection["nodes"].([]map[string]interface{})
+	if len(page) != 2 || page[0]["index"] != 2 || page[1]["index"] != 3 {
+		t.Fatalf("first/after/before window = %v, want indexes 2 and 3", page)
+	}
+	pageInfo := connection["pageInfo"].(map[string]interface{})
+	if pageInfo["hasPreviousPage"] != true || pageInfo["hasNextPage"] != true {
+		t.Fatalf("bounded forward pageInfo = %v, want both directions", pageInfo)
+	}
+
+	connection = repaginateConnection(
+		map[string]interface{}{"nodes": nodes},
+		map[string]interface{}{"last": 2, "after": encodeCursor(1), "before": encodeCursor(6)},
+	).(map[string]interface{})
+	page = connection["nodes"].([]map[string]interface{})
+	if len(page) != 2 || page[0]["index"] != 4 || page[1]["index"] != 5 {
+		t.Fatalf("last/after/before window = %v, want indexes 4 and 5", page)
+	}
+}
+
+func TestCommentSinceFilterIsSharedAndStrict(t *testing.T) {
+	type item struct {
+		id      int
+		updated time.Time
+	}
+	items := []item{
+		{id: 1, updated: time.Date(2035, time.June, 14, 11, 59, 59, 0, time.UTC)},
+		{id: 2, updated: time.Date(2035, time.June, 14, 12, 0, 0, 0, time.UTC)},
+	}
+	request := httptest.NewRequest(http.MethodGet, "/comments?since=2035-06-14T12:00:00Z", nil)
+	response := httptest.NewRecorder()
+	filtered, ok := filterSince(response, request, "Comment", items, func(value item) time.Time {
+		return value.updated
+	})
+	if !ok || len(filtered) != 1 || filtered[0].id != 2 {
+		t.Fatalf("inclusive since filter = %v, %v; want item 2", filtered, ok)
+	}
+
+	request = httptest.NewRequest(http.MethodGet, "/comments?since=not-a-timestamp", nil)
+	response = httptest.NewRecorder()
+	if _, ok := filterSince(response, request, "Comment", items, func(value item) time.Time {
+		return value.updated
+	}); ok || response.Code != http.StatusUnprocessableEntity {
+		t.Fatalf("invalid since = ok %v status %d, want false/422", ok, response.Code)
 	}
 }

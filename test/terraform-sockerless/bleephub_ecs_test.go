@@ -50,16 +50,26 @@ func TestMain(m *testing.M) {
 		panic(err)
 	}
 	simulatorURL = fmt.Sprintf("http://127.0.0.1:%d", port)
-	for deadline := time.Now().Add(10 * time.Second); time.Now().Before(deadline); time.Sleep(100 * time.Millisecond) {
+	deadline := time.NewTimer(10 * time.Second)
+	retry := time.NewTicker(100 * time.Millisecond)
+ready:
+	for {
 		response, err := http.Get(simulatorURL + "/health") // #nosec G107 -- test-local simulator coordinate
 		if err == nil && response.StatusCode == http.StatusOK {
 			_ = response.Body.Close()
-			break
+			break ready
 		}
 		if response != nil {
 			_ = response.Body.Close()
 		}
+		select {
+		case <-deadline.C:
+			break ready
+		case <-retry.C:
+		}
 	}
+	deadline.Stop()
+	retry.Stop()
 	code := m.Run()
 	_ = simulator.Process.Kill()
 	_, _ = simulator.Process.Wait()

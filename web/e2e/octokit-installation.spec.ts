@@ -1,6 +1,7 @@
 import { expect, test } from "@playwright/test";
 import { createAppAuth } from "@octokit/auth-app";
 import { Octokit } from "octokit";
+import { randomUUID } from "crypto";
 
 const BASE_URL = "http://localhost:15555";
 const ADMIN_TOKEN = "bleephub-admin-token-00000000000000000000";
@@ -12,7 +13,7 @@ async function adminRequest(path: string, init: RequestInit = {}): Promise<Respo
 }
 
 test("Octokit app auth searches the private repositories selected by its installation", async () => {
-  const suffix = `${Date.now()}-${Math.random().toString(16).slice(2)}`;
+  const suffix = randomUUID().slice(0, 18);
   const repositoryName = `octokit-installation-${suffix}`;
   const marker = `octokit-private-search-${suffix}`;
 

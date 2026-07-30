@@ -216,6 +216,12 @@ func (s *Server) handleListRepoCommitComments(w http.ResponseWriter, r *http.Req
 		return
 	}
 	comments := s.store.CommitComments.ListForRepo(repo.ID)
+	comments, ok := filterSince(w, r, "CommitComment", comments, func(comment *CommitComment) time.Time {
+		return comment.UpdatedAt
+	})
+	if !ok {
+		return
+	}
 	page := paginateAndLink(w, r, comments)
 	out := make([]map[string]interface{}, 0, len(page))
 	for _, c := range page {
@@ -231,6 +237,12 @@ func (s *Server) handleListCommitComments(w http.ResponseWriter, r *http.Request
 	}
 	sha := r.PathValue("commit_sha")
 	comments := s.store.CommitComments.ListForCommit(repo.ID, sha)
+	comments, ok := filterSince(w, r, "CommitComment", comments, func(comment *CommitComment) time.Time {
+		return comment.UpdatedAt
+	})
+	if !ok {
+		return
+	}
 	page := paginateAndLink(w, r, comments)
 	out := make([]map[string]interface{}, 0, len(page))
 	for _, c := range page {
