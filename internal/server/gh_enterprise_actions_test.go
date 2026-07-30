@@ -88,6 +88,75 @@ func TestEnterpriseActionsCacheLimits(t *testing.T) {
 	resp.Body.Close()
 }
 
+func TestEnterpriseAndRepositoryActionsCacheUsagePolicy(t *testing.T) {
+	enterprisePolicy := enterpriseAPI + "/actions/cache/usage-policy"
+	resp := ghPatch(t, enterprisePolicy, defaultToken, map[string]interface{}{
+		"repo_cache_size_limit_in_gb":     8,
+		"max_repo_cache_size_limit_in_gb": 20,
+	})
+	resp.Body.Close()
+	if resp.StatusCode != http.StatusNoContent {
+		t.Fatalf("patch enterprise policy: got %d, want 204", resp.StatusCode)
+	}
+	policy := decodeJSONWithStatus(t, ghGet(t, enterprisePolicy, defaultToken), http.StatusOK)
+	if policy["repo_cache_size_limit_in_gb"] != float64(8) ||
+		policy["max_repo_cache_size_limit_in_gb"] != float64(20) {
+		t.Fatalf("enterprise policy = %#v", policy)
+	}
+
+	repoName := "cache-usage-policy"
+	created := ghPost(t, "/api/v3/user/repos", defaultToken, map[string]interface{}{
+		"name": repoName,
+	})
+	created.Body.Close()
+	if created.StatusCode != http.StatusCreated {
+		t.Fatalf("create repository: got %d, want 201", created.StatusCode)
+	}
+	repoPolicy := "/api/v3/repos/admin/" + repoName + "/actions/cache/usage-policy"
+	policy = decodeJSONWithStatus(t, ghGet(t, repoPolicy, defaultToken), http.StatusOK)
+	if policy["repo_cache_size_limit_in_gb"] != float64(8) {
+		t.Fatalf("inherited repository policy = %#v, want 8 GB", policy)
+	}
+
+	resp = ghPatch(t, repoPolicy, defaultToken, map[string]interface{}{
+		"repo_cache_size_limit_in_gb": 12,
+	})
+	resp.Body.Close()
+	if resp.StatusCode != http.StatusNoContent {
+		t.Fatalf("patch repository policy: got %d, want 204", resp.StatusCode)
+	}
+	policy = decodeJSONWithStatus(t, ghGet(t, repoPolicy, defaultToken), http.StatusOK)
+	if policy["repo_cache_size_limit_in_gb"] != float64(12) {
+		t.Fatalf("repository policy = %#v, want 12 GB", policy)
+	}
+
+	resp = ghPatch(t, repoPolicy, defaultToken, map[string]interface{}{
+		"repo_cache_size_limit_in_gb": 21,
+	})
+	resp.Body.Close()
+	if resp.StatusCode != http.StatusBadRequest {
+		t.Fatalf("repository policy above maximum: got %d, want 400", resp.StatusCode)
+	}
+	resp = ghPatch(t, enterprisePolicy, defaultToken, map[string]interface{}{
+		"repo_cache_size_limit_in_gb":     11,
+		"max_repo_cache_size_limit_in_gb": 10,
+	})
+	resp.Body.Close()
+	if resp.StatusCode != http.StatusBadRequest {
+		t.Fatalf("enterprise default above maximum: got %d, want 400", resp.StatusCode)
+	}
+
+	// Restore global defaults for the shared API test server.
+	resp = ghPatch(t, enterprisePolicy, defaultToken, map[string]interface{}{
+		"repo_cache_size_limit_in_gb":     10,
+		"max_repo_cache_size_limit_in_gb": 10,
+	})
+	resp.Body.Close()
+	if resp.StatusCode != http.StatusNoContent {
+		t.Fatalf("restore enterprise policy: got %d, want 204", resp.StatusCode)
+	}
+}
+
 func TestEnterpriseActionsOIDCCustomProperties(t *testing.T) {
 	base := enterpriseAPI + "/actions/oidc/customization/properties/repo"
 

@@ -64,6 +64,7 @@ func TestEnterpriseStatePersistenceReload(t *testing.T) {
 	st1.SetEnterpriseDependabotDefaultLevel("internal")
 	st1.SetEnterpriseActionsCacheRetentionDays(21)
 	st1.SetEnterpriseActionsCacheSizeGB(42)
+	st1.SetEnterpriseActionsCacheUsagePolicy(24, 42)
 	if !st1.AddEnterpriseOIDCCustomProperty("cost_center") {
 		t.Fatal("AddEnterpriseOIDCCustomProperty returned false for a fresh property")
 	}
@@ -327,8 +328,9 @@ func TestEnterpriseStatePersistenceReload(t *testing.T) {
 	if s.DependabotDefaultLevel != "internal" {
 		t.Errorf("dependabot default level = %q", s.DependabotDefaultLevel)
 	}
-	if s.ActionsCacheRetentionDays != 21 || s.ActionsCacheSizeGB != 42 {
-		t.Errorf("actions cache limits = %d days / %d GB, want 21 / 42", s.ActionsCacheRetentionDays, s.ActionsCacheSizeGB)
+	if s.ActionsCacheRetentionDays != 21 || s.ActionsCacheSizeGB != 42 || s.ActionsDefaultCacheSizeGB != 24 {
+		t.Errorf("actions cache limits = %d days / %d default GB / %d max GB, want 21 / 24 / 42",
+			s.ActionsCacheRetentionDays, s.ActionsDefaultCacheSizeGB, s.ActionsCacheSizeGB)
 	}
 	if len(s.OIDCCustomProperties) != 1 || s.OIDCCustomProperties[0] != "cost_center" {
 		t.Errorf("OIDC custom properties = %v", s.OIDCCustomProperties)

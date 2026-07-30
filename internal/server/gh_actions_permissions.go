@@ -478,6 +478,10 @@ func (s *Server) registerGHActionsPermissionsRoutes() {
 		s.requirePerm(scopeActions, permRead, s.handleGetRepoCacheStorageLimit))
 	s.route("PUT /api/v3/repos/{owner}/{repo}/actions/cache/storage-limit",
 		s.requirePerm(scopeActions, permWrite, s.handleSetRepoCacheStorageLimit))
+	s.route("GET /api/v3/repos/{owner}/{repo}/actions/cache/usage-policy",
+		s.requirePerm(scopeActions, permRead, s.handleGetRepoCacheUsagePolicy))
+	s.route("PATCH /api/v3/repos/{owner}/{repo}/actions/cache/usage-policy",
+		s.requirePerm(scopeActions, permWrite, s.handleUpdateRepoCacheUsagePolicy))
 
 	// Run logs delete.
 	s.route("DELETE /api/v3/repos/{owner}/{repo}/actions/runs/{run_id}/logs",
@@ -1198,6 +1202,40 @@ func (s *Server) handleSetRepoCacheStorageLimit(w http.ResponseWriter, r *http.R
 	repo := repoFullName(r)
 	p := s.store.GetRepoActionsPermissions(repo)
 	p.CacheStorageLimitGB = req.MaxCacheSizeGB
+	s.store.SetRepoActionsPermissions(repo, p)
+	w.WriteHeader(http.StatusNoContent)
+}
+
+func (s *Server) handleGetRepoCacheUsagePolicy(w http.ResponseWriter, r *http.Request) {
+	p := s.store.GetRepoActionsPermissions(repoFullName(r))
+	cacheSizeGB := p.CacheStorageLimitGB
+	if cacheSizeGB == 0 {
+		s.store.mu.RLock()
+		cacheSizeGB = int64(s.store.EnterpriseSettings.ActionsDefaultCacheSizeGB)
+		s.store.mu.RUnlock()
+	}
+	writeJSON(w, http.StatusOK, map[string]int64{
+		"repo_cache_size_limit_in_gb": cacheSizeGB,
+	})
+}
+
+func (s *Server) handleUpdateRepoCacheUsagePolicy(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		RepoCacheSizeLimitGB *int64 `json:"repo_cache_size_limit_in_gb"`
+	}
+	if !decodeJSONBody(w, r, &req) {
+		return
+	}
+	s.store.mu.RLock()
+	maxGB := int64(s.store.EnterpriseSettings.ActionsCacheSizeGB)
+	s.store.mu.RUnlock()
+	if req.RepoCacheSizeLimitGB == nil || *req.RepoCacheSizeLimitGB <= 0 || *req.RepoCacheSizeLimitGB > maxGB {
+		writeGHError(w, http.StatusBadRequest, "Invalid cache usage policy.")
+		return
+	}
+	repo := repoFullName(r)
+	p := s.store.GetRepoActionsPermissions(repo)
+	p.CacheStorageLimitGB = *req.RepoCacheSizeLimitGB
 	s.store.SetRepoActionsPermissions(repo, p)
 	w.WriteHeader(http.StatusNoContent)
 }

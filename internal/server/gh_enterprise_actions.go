@@ -9,6 +9,8 @@ func (s *Server) registerGHEnterpriseActionsRoutes() {
 	s.route("PUT /api/v3/enterprises/{enterprise}/actions/cache/retention-limit", s.requireEnterpriseOwner(s.handleSetEnterpriseActionsCacheRetentionLimit))
 	s.route("GET /api/v3/enterprises/{enterprise}/actions/cache/storage-limit", s.requireEnterpriseOwner(s.handleGetEnterpriseActionsCacheStorageLimit))
 	s.route("PUT /api/v3/enterprises/{enterprise}/actions/cache/storage-limit", s.requireEnterpriseOwner(s.handleSetEnterpriseActionsCacheStorageLimit))
+	s.route("GET /api/v3/enterprises/{enterprise}/actions/cache/usage-policy", s.requireEnterpriseOwner(s.handleGetEnterpriseActionsCacheUsagePolicy))
+	s.route("PATCH /api/v3/enterprises/{enterprise}/actions/cache/usage-policy", s.requireEnterpriseOwner(s.handleUpdateEnterpriseActionsCacheUsagePolicy))
 
 	s.route("GET /api/v3/enterprises/{enterprise}/actions/oidc/customization/properties/repo", s.requireEnterpriseOwner(s.handleListEnterpriseOIDCCustomProperties))
 	s.route("POST /api/v3/enterprises/{enterprise}/actions/oidc/customization/properties/repo", s.requireEnterpriseOwner(s.handleCreateEnterpriseOIDCCustomProperty))
@@ -127,6 +129,43 @@ func (s *Server) handleSetEnterpriseActionsCacheStorageLimit(w http.ResponseWrit
 		return
 	}
 	s.store.SetEnterpriseActionsCacheSizeGB(*req.MaxCacheSizeGB)
+	w.WriteHeader(http.StatusNoContent)
+}
+
+func (s *Server) handleGetEnterpriseActionsCacheUsagePolicy(w http.ResponseWriter, r *http.Request) {
+	s.store.mu.RLock()
+	defaultGB := s.store.EnterpriseSettings.ActionsDefaultCacheSizeGB
+	maxGB := s.store.EnterpriseSettings.ActionsCacheSizeGB
+	s.store.mu.RUnlock()
+	writeJSON(w, http.StatusOK, map[string]int{
+		"repo_cache_size_limit_in_gb":     defaultGB,
+		"max_repo_cache_size_limit_in_gb": maxGB,
+	})
+}
+
+func (s *Server) handleUpdateEnterpriseActionsCacheUsagePolicy(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		RepoCacheSizeLimitGB    *int `json:"repo_cache_size_limit_in_gb"`
+		MaxRepoCacheSizeLimitGB *int `json:"max_repo_cache_size_limit_in_gb"`
+	}
+	if !decodeJSONBody(w, r, &req) {
+		return
+	}
+	s.store.mu.RLock()
+	defaultGB := s.store.EnterpriseSettings.ActionsDefaultCacheSizeGB
+	maxGB := s.store.EnterpriseSettings.ActionsCacheSizeGB
+	s.store.mu.RUnlock()
+	if req.RepoCacheSizeLimitGB != nil {
+		defaultGB = *req.RepoCacheSizeLimitGB
+	}
+	if req.MaxRepoCacheSizeLimitGB != nil {
+		maxGB = *req.MaxRepoCacheSizeLimitGB
+	}
+	if defaultGB <= 0 || maxGB <= 0 || defaultGB > maxGB {
+		writeGHError(w, http.StatusBadRequest, "Invalid cache usage policy.")
+		return
+	}
+	s.store.SetEnterpriseActionsCacheUsagePolicy(defaultGB, maxGB)
 	w.WriteHeader(http.StatusNoContent)
 }
 

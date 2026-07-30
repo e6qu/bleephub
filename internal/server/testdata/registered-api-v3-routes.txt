@@ -291,6 +291,7 @@ GET /api/v3/enterprise/stats/users
 GET /api/v3/enterprises/{enterprise}/actions/cache/retention-limit
 GET /api/v3/enterprises/{enterprise}/actions/cache/storage-limit
 GET /api/v3/enterprises/{enterprise}/actions/cache/usage
+GET /api/v3/enterprises/{enterprise}/actions/cache/usage-policy
 GET /api/v3/enterprises/{enterprise}/actions/hosted-runners
 GET /api/v3/enterprises/{enterprise}/actions/hosted-runners/images/custom
 GET /api/v3/enterprises/{enterprise}/actions/hosted-runners/images/custom/{image_definition_id}
@@ -643,6 +644,7 @@ GET /api/v3/repos/{owner}/{repo}/actions/artifacts/{artifact_id}/{archive_format
 GET /api/v3/repos/{owner}/{repo}/actions/cache/retention-limit
 GET /api/v3/repos/{owner}/{repo}/actions/cache/storage-limit
 GET /api/v3/repos/{owner}/{repo}/actions/cache/usage
+GET /api/v3/repos/{owner}/{repo}/actions/cache/usage-policy
 GET /api/v3/repos/{owner}/{repo}/actions/caches
 GET /api/v3/repos/{owner}/{repo}/actions/concurrency_groups
 GET /api/v3/repos/{owner}/{repo}/actions/concurrency_groups/{concurrency_group_name}
@@ -1024,6 +1026,7 @@ PATCH /api/v3/app/hook/config
 PATCH /api/v3/applications/{client_id}/token
 PATCH /api/v3/authorizations/{authorization_id}
 PATCH /api/v3/enterprise/announcement
+PATCH /api/v3/enterprises/{enterprise}/actions/cache/usage-policy
 PATCH /api/v3/enterprises/{enterprise}/actions/hosted-runners/{hosted_runner_id}
 PATCH /api/v3/enterprises/{enterprise}/actions/runner-groups/{runner_group_id}
 PATCH /api/v3/enterprises/{enterprise}/announcement
@@ -1077,6 +1080,7 @@ PATCH /api/v3/projects/columns/{p1}/{p2}
 PATCH /api/v3/projects/{p1}/{p2}
 PATCH /api/v3/projects/{project_id}
 PATCH /api/v3/repos/{owner}/{repo}
+PATCH /api/v3/repos/{owner}/{repo}/actions/cache/usage-policy
 PATCH /api/v3/repos/{owner}/{repo}/actions/variables/{name}
 PATCH /api/v3/repos/{owner}/{repo}/agents/variables/{name}
 PATCH /api/v3/repos/{owner}/{repo}/branches/{branch}/protection/required_pull_request_reviews

@@ -119,6 +119,7 @@ type EnterpriseSettings struct {
 	// 14-day retention limit and a 10 GB per-repository storage limit.
 	ActionsCacheRetentionDays int `json:"actions_cache_retention_days"`
 	ActionsCacheSizeGB        int `json:"actions_cache_size_gb"`
+	ActionsDefaultCacheSizeGB int `json:"actions_default_cache_size_gb"`
 
 	// GitHub Actions OIDC custom property inclusions (repository custom
 	// properties included in OIDC token claims), in insertion order.
@@ -184,6 +185,7 @@ func defaultEnterpriseSettings() *EnterpriseSettings {
 	return normalizeEnterpriseSettings(&EnterpriseSettings{
 		ActionsCacheRetentionDays: 14,
 		ActionsCacheSizeGB:        10,
+		ActionsDefaultCacheSizeGB: 10,
 	})
 }
 
@@ -271,6 +273,9 @@ func normalizeEnterpriseSettings(settings *EnterpriseSettings) *EnterpriseSettin
 	}
 	if settings.ActionsCacheSizeGB == 0 {
 		settings.ActionsCacheSizeGB = 10
+	}
+	if settings.ActionsDefaultCacheSizeGB == 0 {
+		settings.ActionsDefaultCacheSizeGB = settings.ActionsCacheSizeGB
 	}
 	if settings.ActionsEnabledOrganizations == "" {
 		settings.ActionsEnabledOrganizations = "all"
@@ -706,6 +711,19 @@ func (st *Store) SetEnterpriseActionsCacheSizeGB(gb int) {
 	st.mu.Lock()
 	defer st.mu.Unlock()
 	st.EnterpriseSettings.ActionsCacheSizeGB = gb
+	if st.EnterpriseSettings.ActionsDefaultCacheSizeGB > gb {
+		st.EnterpriseSettings.ActionsDefaultCacheSizeGB = gb
+	}
+	st.persistEnterpriseSettings()
+}
+
+// SetEnterpriseActionsCacheUsagePolicy atomically updates the default and
+// maximum per-repository cache sizes.
+func (st *Store) SetEnterpriseActionsCacheUsagePolicy(defaultGB, maxGB int) {
+	st.mu.Lock()
+	defer st.mu.Unlock()
+	st.EnterpriseSettings.ActionsDefaultCacheSizeGB = defaultGB
+	st.EnterpriseSettings.ActionsCacheSizeGB = maxGB
 	st.persistEnterpriseSettings()
 }
 
