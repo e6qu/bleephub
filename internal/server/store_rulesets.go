@@ -15,6 +15,7 @@ type Ruleset struct {
 	NodeID               string                 `json:"node_id"`
 	RepoID               int                    `json:"repo_id"`
 	OrgID                int                    `json:"org_id"`
+	Enterprise           string                 `json:"enterprise,omitempty"`
 	Name                 string                 `json:"name"`
 	Target               string                 `json:"target"` // branch, tag
 	SourceType           string                 `json:"source_type"`
@@ -291,6 +292,47 @@ func (st *Store) CreateOrgRuleset(orgID int, name string, target string, enforce
 	return cloneRuleset(rs)
 }
 
+// CreateEnterpriseRuleset creates a ruleset that applies across every
+// repository in the enterprise.
+func (st *Store) CreateEnterpriseRuleset(enterprise string, input *Ruleset) *Ruleset {
+	st.mu.Lock()
+	defer st.mu.Unlock()
+	rs := cloneRuleset(input)
+	rs.ID = st.NextRulesetID
+	st.NextRulesetID++
+	rs.NodeID = rulesetNodeID(rs.ID)
+	rs.RepoID = 0
+	rs.OrgID = 0
+	rs.Enterprise = enterprise
+	rs.SourceType = "Enterprise"
+	rs.Source = enterprise
+	rs.CurrentUserCanBypass = "never"
+	if rs.Target == "" {
+		rs.Target = "branch"
+	}
+	if rs.Enforcement == "" {
+		rs.Enforcement = "active"
+	}
+	now := st.currentTime()
+	rs.CreatedAt = now
+	rs.UpdatedAt = now
+	rs.Versions = map[int]RulesetVersion{}
+	rs.NextVersionID = 1
+	st.Rulesets[rs.ID] = rs
+	st.persistRuleset(rs)
+	return cloneRuleset(rs)
+}
+
+func (st *Store) GetEnterpriseRuleset(enterprise string, id int) *Ruleset {
+	st.mu.RLock()
+	defer st.mu.RUnlock()
+	ruleset := st.Rulesets[id]
+	if ruleset == nil || ruleset.Enterprise != enterprise {
+		return nil
+	}
+	return cloneRuleset(ruleset)
+}
+
 // ListOrgRulesets returns all rulesets for an organization, sorted by ID.
 func (st *Store) ListOrgRulesets(orgID int) []*Ruleset {
 	st.mu.RLock()
@@ -447,7 +489,8 @@ func (st *Store) ListRulesetsForRepository(repo *Repo, includeParents bool) []*R
 	var out []*Ruleset
 	for _, rs := range st.Rulesets {
 		if rs.RepoID == repo.ID ||
-			(includeParents && repo.OwnerType == "Organization" && rs.OrgID != 0 && rs.OrgID == repo.OwnerID) {
+			(includeParents && ((repo.OwnerType == "Organization" && rs.OrgID != 0 && rs.OrgID == repo.OwnerID) ||
+				rs.Enterprise != "")) {
 			out = append(out, cloneRuleset(rs))
 		}
 	}
@@ -552,7 +595,7 @@ func (st *Store) BranchProtectedByRuleset(repo *Repo, branch string) bool {
 }
 
 func rulesetAppliesToRepo(rs *Ruleset, repo *Repo) bool {
-	return rs.RepoID == repo.ID ||
+	return rs.Enterprise != "" || rs.RepoID == repo.ID ||
 		(repo.OwnerType == "Organization" && rs.OrgID != 0 && rs.OrgID == repo.OwnerID)
 }
 

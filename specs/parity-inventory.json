@@ -17812,7 +17812,6 @@
             "DELETE /enterprises/{}/enterprise-roles/teams/{}/{}",
             "DELETE /enterprises/{}/enterprise-roles/users/{}",
             "DELETE /enterprises/{}/enterprise-roles/users/{}/{}",
-            "DELETE /enterprises/{}/rulesets/{}",
             "DELETE /enterprises/{}/secret-scanning/custom-patterns",
             "DELETE /enterprises/{}/settings/billing/budgets/{}",
             "DELETE /enterprises/{}/settings/billing/cost-centers/{}",
@@ -17853,9 +17852,6 @@
             "GET /enterprises/{}/installation",
             "GET /enterprises/{}/license-sync-status",
             "GET /enterprises/{}/members/{}/copilot",
-            "GET /enterprises/{}/rulesets/{}",
-            "GET /enterprises/{}/rulesets/{}/history",
-            "GET /enterprises/{}/rulesets/{}/history/{}",
             "GET /enterprises/{}/secret-scanning/alerts",
             "GET /enterprises/{}/secret-scanning/custom-patterns",
             "GET /enterprises/{}/secret-scanning/pattern-configurations",
@@ -17936,7 +17932,6 @@
             "POST /enterprises/{}/copilot/billing/selected_enterprise_teams",
             "POST /enterprises/{}/copilot/billing/selected_users",
             "POST /enterprises/{}/innersource-vulnerabilities/sync",
-            "POST /enterprises/{}/rulesets",
             "POST /enterprises/{}/secret-scanning/custom-patterns",
             "POST /enterprises/{}/settings/billing/budgets",
             "POST /enterprises/{}/settings/billing/cost-centers",
@@ -17953,14 +17948,13 @@
             "PUT /enterprises/{}/copilot/custom-agents/source",
             "PUT /enterprises/{}/enterprise-roles/teams/{}/{}",
             "PUT /enterprises/{}/enterprise-roles/users/{}/{}",
-            "PUT /enterprises/{}/rulesets/{}",
             "PUT /enterprises/{}/visual-studio-subscriptions/{}",
             "PUT /repos/{}/{}/lfs",
             "PUT /scim/v2/enterprises/{}/Groups/{}",
             "PUT /scim/v2/enterprises/{}/Users/{}",
             "PUT /scim/v2/organizations/{}/Users/{}"
           ],
-          "represented_operations": 1303
+          "represented_operations": 1309
         },
         "ghes-2.22": {
           "documented_operations": 642,
@@ -18358,8 +18352,6 @@
             "GET /enterprises/{}/code-scanning/alerts",
             "GET /enterprises/{}/dismissal-requests/secret-scanning",
             "GET /enterprises/{}/installation",
-            "GET /enterprises/{}/rulesets/{}/history",
-            "GET /enterprises/{}/rulesets/{}/history/{}",
             "GET /enterprises/{}/secret-scanning/alerts",
             "GET /enterprises/{}/secret-scanning/pattern-configurations",
             "GET /enterprises/{}/settings/billing/advanced-security",
@@ -18465,7 +18457,7 @@
             "PUT /scim/v2/enterprises/{}/Groups/{}",
             "PUT /scim/v2/enterprises/{}/Users/{}"
           ],
-          "represented_operations": 927
+          "represented_operations": 929
         }
       },
       "dispatch_covered_operations": [
@@ -18657,6 +18649,12 @@
         "method": "DELETE",
         "path": "/api/v3/enterprises/{enterprise}/properties/schema/{custom_property_name}",
         "source": "internal/server/gh_enterprise_properties.go"
+      },
+      {
+        "line": 12,
+        "method": "DELETE",
+        "path": "/api/v3/enterprises/{enterprise}/rulesets/{ruleset_id}",
+        "source": "internal/server/gh_enterprise_rulesets.go"
       },
       {
         "line": 15,
@@ -20223,6 +20221,24 @@
         "method": "GET",
         "path": "/api/v3/enterprises/{enterprise}/properties/schema/{custom_property_name}",
         "source": "internal/server/gh_enterprise_properties.go"
+      },
+      {
+        "line": 10,
+        "method": "GET",
+        "path": "/api/v3/enterprises/{enterprise}/rulesets/{ruleset_id}",
+        "source": "internal/server/gh_enterprise_rulesets.go"
+      },
+      {
+        "line": 13,
+        "method": "GET",
+        "path": "/api/v3/enterprises/{enterprise}/rulesets/{ruleset_id}/history",
+        "source": "internal/server/gh_enterprise_rulesets.go"
+      },
+      {
+        "line": 14,
+        "method": "GET",
+        "path": "/api/v3/enterprises/{enterprise}/rulesets/{ruleset_id}/history/{version_id}",
+        "source": "internal/server/gh_enterprise_rulesets.go"
       },
       {
         "line": 11,
@@ -24383,6 +24399,12 @@
         "source": "internal/server/gh_enterprise_admin.go"
       },
       {
+        "line": 9,
+        "method": "POST",
+        "path": "/api/v3/enterprises/{enterprise}/rulesets",
+        "source": "internal/server/gh_enterprise_rulesets.go"
+      },
+      {
         "line": 12,
         "method": "POST",
         "path": "/api/v3/enterprises/{enterprise}/teams",
@@ -25653,6 +25675,12 @@
         "method": "PUT",
         "path": "/api/v3/enterprises/{enterprise}/properties/schema/{custom_property_name}",
         "source": "internal/server/gh_enterprise_properties.go"
+      },
+      {
+        "line": 11,
+        "method": "PUT",
+        "path": "/api/v3/enterprises/{enterprise}/rulesets/{ruleset_id}",
+        "source": "internal/server/gh_enterprise_rulesets.go"
       },
       {
         "line": 21,

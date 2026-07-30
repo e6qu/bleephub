@@ -41,6 +41,10 @@ func TestEnterpriseStatePersistenceReload(t *testing.T) {
 		Enforcement:     "enforced",
 	})
 	st1.SetEnterpriseCodeSecurityConfigDefault(cfg, "public")
+	enterpriseRuleset := st1.CreateEnterpriseRuleset("bleephub", &Ruleset{
+		Name: "reload-enterprise-ruleset", Target: "branch", Enforcement: "active",
+		Rules: []Rule{{Type: "deletion"}},
+	})
 	repo := st1.CreateRepo(admin, "ent-reload-repo", "", false)
 	if repo == nil {
 		t.Fatal("CreateRepo returned nil")
@@ -188,6 +192,10 @@ func TestEnterpriseStatePersistenceReload(t *testing.T) {
 	}
 	if st2.NextEnterpriseCodeSecurityConfigID <= cfg.ID {
 		t.Errorf("configuration ID counter = %d, want > %d", st2.NextEnterpriseCodeSecurityConfigID, cfg.ID)
+	}
+	if gotRuleset := st2.GetEnterpriseRuleset("bleephub", enterpriseRuleset.ID); gotRuleset == nil ||
+		gotRuleset.Name != "reload-enterprise-ruleset" || len(gotRuleset.Rules) != 1 {
+		t.Errorf("enterprise ruleset did not persist: %+v", gotRuleset)
 	}
 	if st2.GetNetworkConfiguration(enterpriseNetworkScope, enterpriseNetwork.ID) == nil ||
 		st2.GetNetworkSettings(enterpriseNetworkScope, enterpriseNetworkSettings.ID) == nil {
