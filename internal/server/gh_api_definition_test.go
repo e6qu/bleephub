@@ -186,6 +186,18 @@ func loadOfficialRouteIndex(t *testing.T) map[string]map[string]bool {
 // trusted: TestRouteAllowlistCitationsHold fails if the named description
 // does not carry the route.
 var describedOutsideDotcom = map[string]string{
+	"DELETE /admin/hooks/{}":                                                           "ghes-3.21",
+	"DELETE /admin/keys/{}":                                                            "ghes-3.21",
+	"DELETE /admin/tokens/{}":                                                          "ghes-3.21",
+	"DELETE /admin/users/{}/authorizations":                                            "ghes-3.21",
+	"GET /admin/hooks":                                                                 "ghes-3.21",
+	"GET /admin/hooks/{}":                                                              "ghes-3.21",
+	"GET /admin/keys":                                                                  "ghes-3.21",
+	"GET /admin/tokens":                                                                "ghes-3.21",
+	"PATCH /admin/hooks/{}":                                                            "ghes-3.21",
+	"POST /admin/hooks":                                                                "ghes-3.21",
+	"POST /admin/hooks/{}/pings":                                                       "ghes-3.21",
+	"POST /admin/users/{}/authorizations":                                              "ghes-3.21",
 	"GET /organizations/{}/custom_roles":                                               "ghec",
 	"GET /organizations/{}/org-properties/values":                                      "ghec",
 	"PATCH /organizations/{}/org-properties/values":                                    "ghec",

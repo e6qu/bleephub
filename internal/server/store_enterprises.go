@@ -101,6 +101,7 @@ type EnterpriseSettings struct {
 	EnterpriseCostCenters          map[string]*EnterpriseCostCenter         `json:"enterprise_cost_centers,omitempty"`
 	EnterpriseBillingReports       map[string]*EnterpriseBillingReport      `json:"enterprise_billing_reports,omitempty"`
 	GHESManagement                 *GHESManagementState                     `json:"ghes_management,omitempty"`
+	GHESGlobalHooks                []*Webhook                               `json:"ghes_global_hooks,omitempty"`
 
 	// Dependabot repository access across organizations.
 	DependabotAccessibleRepoIDs []int  `json:"dependabot_accessible_repo_ids"`
@@ -179,6 +180,9 @@ func defaultEnterpriseSettings() *EnterpriseSettings {
 }
 
 func normalizeEnterpriseSettings(settings *EnterpriseSettings) *EnterpriseSettings {
+	for _, hook := range settings.GHESGlobalHooks {
+		hook.Global = true
+	}
 	if settings.NextAuditLogStreamID == 0 {
 		settings.NextAuditLogStreamID = 1
 	}

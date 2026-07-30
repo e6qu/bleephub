@@ -1,4 +1,8 @@
+DELETE /api/v3/admin/hooks/{hook_id}
+DELETE /api/v3/admin/keys/{key_ids}
+DELETE /api/v3/admin/tokens/{token_id}
 DELETE /api/v3/admin/users/{username}
+DELETE /api/v3/admin/users/{username}/authorizations
 DELETE /api/v3/app/installations/{id}
 DELETE /api/v3/app/installations/{id}/suspended
 DELETE /api/v3/applications/{client_id}/grant
@@ -229,6 +233,10 @@ DELETE /api/v3/users/{username}/projectsV2/{project_number}/items/{item_id}
 DELETE /api/v3/users/{username}/site_admin
 DELETE /api/v3/users/{username}/suspended
 GET /api/v3/
+GET /api/v3/admin/hooks
+GET /api/v3/admin/hooks/{hook_id}
+GET /api/v3/admin/keys
+GET /api/v3/admin/tokens
 GET /api/v3/advisories
 GET /api/v3/advisories/{ghsa_id}
 GET /api/v3/agents/repos/{owner}/{repo}/tasks
@@ -987,6 +995,7 @@ GET /api/v3/users/{username}/starred
 GET /api/v3/users/{username}/subscriptions
 GET /api/v3/versions
 GET /api/v3/zen
+PATCH /api/v3/admin/hooks/{hook_id}
 PATCH /api/v3/admin/users/{username}
 PATCH /api/v3/app/hook/config
 PATCH /api/v3/applications/{client_id}/token
@@ -1092,8 +1101,11 @@ PATCH /api/v3/user/memberships/orgs/{org}
 PATCH /api/v3/user/repository_invitations/{invitation_id}
 PATCH /api/v3/users/{username}/projectsV2/{project_number}/items/{item_id}
 POST /api/v3/actions/runner-registration
+POST /api/v3/admin/hooks
+POST /api/v3/admin/hooks/{hook_id}/pings
 POST /api/v3/admin/organizations
 POST /api/v3/admin/users
+POST /api/v3/admin/users/{username}/authorizations
 POST /api/v3/agents/repos/{owner}/{repo}/tasks
 POST /api/v3/app-manifests/{code}/conversions
 POST /api/v3/app/hook/deliveries/{delivery_id}/attempts

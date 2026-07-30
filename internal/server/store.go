@@ -173,6 +173,10 @@ type Token struct {
 	RepositoryIDs       []int             `json:"repository_ids,omitempty"`
 	Permissions         OrgPATPermissions `json:"permissions,omitempty"`
 	ExpiresAt           *time.Time        `json:"expires_at,omitempty"`
+	// Impersonation marks a GHES site-admin impersonation OAuth token. GHES
+	// permits at most one active impersonation authorization per user and
+	// exposes it through /admin/users/{username}/authorizations.
+	Impersonation bool `json:"impersonation,omitempty"`
 }
 
 func (st *Store) tokenMapKey(value string) string {
@@ -2738,6 +2742,11 @@ func (st *Store) loadFromPersistence() error {
 			return err
 		}
 		st.EnterpriseSettings = normalizeEnterpriseSettings(&s)
+		for _, hook := range st.EnterpriseSettings.GHESGlobalHooks {
+			if hook.ID >= st.NextHookID {
+				st.NextHookID = hook.ID + 1
+			}
+		}
 		return nil
 	}); err != nil {
 		return err

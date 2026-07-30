@@ -10,6 +10,18 @@ import (
 // enterprise slug: they address the appliance itself.
 func (s *Server) registerGHESAdminStatsRoutes() {
 	admin := s.requireGHESSiteAdmin
+	s.route("GET /api/v3/admin/hooks", admin(s.handleListGHESGlobalHooks))
+	s.route("POST /api/v3/admin/hooks", admin(s.handleCreateGHESGlobalHook))
+	s.route("GET /api/v3/admin/hooks/{hook_id}", admin(s.handleGetGHESGlobalHook))
+	s.route("PATCH /api/v3/admin/hooks/{hook_id}", admin(s.handleUpdateGHESGlobalHook))
+	s.route("DELETE /api/v3/admin/hooks/{hook_id}", admin(s.handleDeleteGHESGlobalHook))
+	s.route("POST /api/v3/admin/hooks/{hook_id}/pings", admin(s.handlePingGHESGlobalHook))
+	s.route("GET /api/v3/admin/keys", admin(s.handleListGHESPublicKeys))
+	s.route("DELETE /api/v3/admin/keys/{key_ids}", admin(s.handleDeleteGHESPublicKeys))
+	s.route("GET /api/v3/admin/tokens", admin(s.handleListGHESPersonalAccessTokens))
+	s.route("DELETE /api/v3/admin/tokens/{token_id}", admin(s.handleDeleteGHESPersonalAccessToken))
+	s.route("POST /api/v3/admin/users/{username}/authorizations", admin(s.handleCreateGHESImpersonationToken))
+	s.route("DELETE /api/v3/admin/users/{username}/authorizations", admin(s.handleDeleteGHESImpersonationToken))
 	s.route("GET /api/v3/enterprise/announcement", admin(s.handleGetEnterpriseAnnouncement))
 	s.route("PATCH /api/v3/enterprise/announcement", admin(s.handleSetEnterpriseAnnouncement))
 	s.route("DELETE /api/v3/enterprise/announcement", admin(s.handleDeleteEnterpriseAnnouncement))

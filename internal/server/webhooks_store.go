@@ -35,6 +35,9 @@ type Webhook struct {
 	// MarketplaceSlug marks the listing-owned Marketplace webhook. It is an
 	// ephemeral delivery coordinate; listing persistence owns the configuration.
 	MarketplaceSlug string `json:"-"`
+	// Global marks an appliance-wide GHES webhook. Its durable owner is
+	// EnterpriseSettings rather than a repository or organization.
+	Global bool `json:"-"`
 	// LastResponse mirrors GitHub's hook.last_response: the outcome of the most
 	// recent delivery. Nil until a delivery has occurred (rendered "unused").
 	LastResponse *HookLastResponse `json:"last_response,omitempty"`

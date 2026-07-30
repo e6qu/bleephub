@@ -17809,12 +17809,8 @@
         "ghes-2.22": {
           "documented_operations": 642,
           "missing_operations": [
-            "DELETE /admin/hooks/{}",
-            "DELETE /admin/keys/{}",
             "DELETE /admin/pre-receive-environments/{}",
             "DELETE /admin/pre-receive-hooks/{}",
-            "DELETE /admin/tokens/{}",
-            "DELETE /admin/users/{}/authorizations",
             "DELETE /applications/grants/{}",
             "DELETE /applications/{}/grants/{}",
             "DELETE /applications/{}/tokens/{}",
@@ -17834,15 +17830,11 @@
             "DELETE /teams/{}/discussions/{}",
             "DELETE /teams/{}/discussions/{}/comments/{}",
             "DELETE /teams/{}/projects/{}",
-            "GET /admin/hooks",
-            "GET /admin/hooks/{}",
-            "GET /admin/keys",
             "GET /admin/pre-receive-environments",
             "GET /admin/pre-receive-environments/{}",
             "GET /admin/pre-receive-environments/{}/downloads/latest",
             "GET /admin/pre-receive-hooks",
             "GET /admin/pre-receive-hooks/{}",
-            "GET /admin/tokens",
             "GET /applications/grants",
             "GET /applications/grants/{}",
             "GET /applications/{}/tokens/{}",
@@ -17880,7 +17872,6 @@
             "GET /teams/{}/projects",
             "GET /teams/{}/projects/{}",
             "GET /users/{}/projects",
-            "PATCH /admin/hooks/{}",
             "PATCH /admin/ldap/teams/{}/mapping",
             "PATCH /admin/ldap/users/{}/mapping",
             "PATCH /admin/organizations/{}",
@@ -17895,14 +17886,11 @@
             "PATCH /repos/{}/{}/pre-receive-hooks/{}",
             "PATCH /teams/{}/discussions/{}",
             "PATCH /teams/{}/discussions/{}/comments/{}",
-            "POST /admin/hooks",
-            "POST /admin/hooks/{}/pings",
             "POST /admin/ldap/teams/{}/sync",
             "POST /admin/ldap/users/{}/sync",
             "POST /admin/pre-receive-environments",
             "POST /admin/pre-receive-environments/{}/downloads",
             "POST /admin/pre-receive-hooks",
-            "POST /admin/users/{}/authorizations",
             "POST /applications/{}/tokens/{}",
             "POST /authorizations",
             "POST /orgs/{}/projects",
@@ -17930,17 +17918,13 @@
             "PUT /setup/api/settings",
             "PUT /teams/{}/projects/{}"
           ],
-          "represented_operations": 522
+          "represented_operations": 534
         },
         "ghes-3.13": {
           "documented_operations": 974,
           "missing_operations": [
-            "DELETE /admin/hooks/{}",
-            "DELETE /admin/keys/{}",
             "DELETE /admin/pre-receive-environments/{}",
             "DELETE /admin/pre-receive-hooks/{}",
-            "DELETE /admin/tokens/{}",
-            "DELETE /admin/users/{}/authorizations",
             "DELETE /applications/grants/{}",
             "DELETE /authorizations/{}",
             "DELETE /manage/v1/access/ssh",
@@ -17959,15 +17943,11 @@
             "DELETE /teams/{}/discussions/{}",
             "DELETE /teams/{}/discussions/{}/comments/{}",
             "DELETE /teams/{}/projects/{}",
-            "GET /admin/hooks",
-            "GET /admin/hooks/{}",
-            "GET /admin/keys",
             "GET /admin/pre-receive-environments",
             "GET /admin/pre-receive-environments/{}",
             "GET /admin/pre-receive-environments/{}/downloads/latest",
             "GET /admin/pre-receive-hooks",
             "GET /admin/pre-receive-hooks/{}",
-            "GET /admin/tokens",
             "GET /applications/grants",
             "GET /applications/grants/{}",
             "GET /authorizations",
@@ -18020,7 +18000,6 @@
             "GET /teams/{}/projects",
             "GET /teams/{}/projects/{}",
             "GET /users/{}/projects",
-            "PATCH /admin/hooks/{}",
             "PATCH /admin/ldap/teams/{}/mapping",
             "PATCH /admin/ldap/users/{}/mapping",
             "PATCH /admin/organizations/{}",
@@ -18037,14 +18016,11 @@
             "PATCH /repos/{}/{}/pre-receive-hooks/{}",
             "PATCH /teams/{}/discussions/{}",
             "PATCH /teams/{}/discussions/{}/comments/{}",
-            "POST /admin/hooks",
-            "POST /admin/hooks/{}/pings",
             "POST /admin/ldap/teams/{}/sync",
             "POST /admin/ldap/users/{}/sync",
             "POST /admin/pre-receive-environments",
             "POST /admin/pre-receive-environments/{}/downloads",
             "POST /admin/pre-receive-hooks",
-            "POST /admin/users/{}/authorizations",
             "POST /authorizations",
             "POST /manage/v1/access/ssh",
             "POST /manage/v1/config/apply",
@@ -18077,31 +18053,23 @@
             "PUT /setup/api/settings",
             "PUT /teams/{}/projects/{}"
           ],
-          "represented_operations": 833
+          "represented_operations": 845
         },
         "ghes-3.21": {
           "documented_operations": 1092,
           "missing_operations": [
-            "DELETE /admin/hooks/{}",
-            "DELETE /admin/keys/{}",
             "DELETE /admin/pre-receive-environments/{}",
             "DELETE /admin/pre-receive-hooks/{}",
-            "DELETE /admin/tokens/{}",
-            "DELETE /admin/users/{}/authorizations",
             "DELETE /applications/grants/{}",
             "DELETE /authorizations/{}",
             "DELETE /manage/v1/access/ssh",
             "DELETE /orgs/{}/pre-receive-hooks/{}",
             "DELETE /repos/{}/{}/pre-receive-hooks/{}",
-            "GET /admin/hooks",
-            "GET /admin/hooks/{}",
-            "GET /admin/keys",
             "GET /admin/pre-receive-environments",
             "GET /admin/pre-receive-environments/{}",
             "GET /admin/pre-receive-environments/{}/downloads/latest",
             "GET /admin/pre-receive-hooks",
             "GET /admin/pre-receive-hooks/{}",
-            "GET /admin/tokens",
             "GET /applications/grants",
             "GET /applications/grants/{}",
             "GET /authorizations",
@@ -18125,7 +18093,6 @@
             "GET /repos/{}/{}/pre-receive-hooks",
             "GET /repos/{}/{}/pre-receive-hooks/{}",
             "GET /repos/{}/{}/replicas/caches",
-            "PATCH /admin/hooks/{}",
             "PATCH /admin/ldap/teams/{}/mapping",
             "PATCH /admin/ldap/users/{}/mapping",
             "PATCH /admin/organizations/{}",
@@ -18136,14 +18103,11 @@
             "PATCH /orgs/{}/pre-receive-hooks/{}",
             "PATCH /repos/{}/{}/actions/cache/usage-policy",
             "PATCH /repos/{}/{}/pre-receive-hooks/{}",
-            "POST /admin/hooks",
-            "POST /admin/hooks/{}/pings",
             "POST /admin/ldap/teams/{}/sync",
             "POST /admin/ldap/users/{}/sync",
             "POST /admin/pre-receive-environments",
             "POST /admin/pre-receive-environments/{}/downloads",
             "POST /admin/pre-receive-hooks",
-            "POST /admin/users/{}/authorizations",
             "POST /authorizations",
             "POST /manage/v1/access/ssh",
             "POST /manage/v1/config/apply",
@@ -18154,7 +18118,7 @@
             "PUT /manage/v1/config/license",
             "PUT /manage/v1/config/settings"
           ],
-          "represented_operations": 1021
+          "represented_operations": 1033
         }
       },
       "dispatch_covered_operations": [
@@ -18210,10 +18174,34 @@
     },
     "registered_routes": [
       {
+        "line": 17,
+        "method": "DELETE",
+        "path": "/api/v3/admin/hooks/{hook_id}",
+        "source": "internal/server/gh_ghes_admin_stats.go"
+      },
+      {
+        "line": 20,
+        "method": "DELETE",
+        "path": "/api/v3/admin/keys/{key_ids}",
+        "source": "internal/server/gh_ghes_admin_stats.go"
+      },
+      {
+        "line": 22,
+        "method": "DELETE",
+        "path": "/api/v3/admin/tokens/{token_id}",
+        "source": "internal/server/gh_ghes_admin_stats.go"
+      },
+      {
         "line": 56,
         "method": "DELETE",
         "path": "/api/v3/admin/users/{username}",
         "source": "internal/server/gh_misc_endpoints.go"
+      },
+      {
+        "line": 24,
+        "method": "DELETE",
+        "path": "/api/v3/admin/users/{username}/authorizations",
+        "source": "internal/server/gh_ghes_admin_stats.go"
       },
       {
         "line": 27,
@@ -18240,7 +18228,7 @@
         "source": "internal/server/gh_apps_oauth_mgmt.go"
       },
       {
-        "line": 15,
+        "line": 27,
         "method": "DELETE",
         "path": "/api/v3/enterprise/announcement",
         "source": "internal/server/gh_ghes_admin_stats.go"
@@ -19596,6 +19584,30 @@
         "source": "internal/server/gh_rest.go"
       },
       {
+        "line": 13,
+        "method": "GET",
+        "path": "/api/v3/admin/hooks",
+        "source": "internal/server/gh_ghes_admin_stats.go"
+      },
+      {
+        "line": 15,
+        "method": "GET",
+        "path": "/api/v3/admin/hooks/{hook_id}",
+        "source": "internal/server/gh_ghes_admin_stats.go"
+      },
+      {
+        "line": 19,
+        "method": "GET",
+        "path": "/api/v3/admin/keys",
+        "source": "internal/server/gh_ghes_admin_stats.go"
+      },
+      {
+        "line": 21,
+        "method": "GET",
+        "path": "/api/v3/admin/tokens",
+        "source": "internal/server/gh_ghes_admin_stats.go"
+      },
+      {
         "line": 19,
         "method": "GET",
         "path": "/api/v3/advisories",
@@ -19740,13 +19752,13 @@
         "source": "internal/server/gh_enterprise_licensing.go"
       },
       {
-        "line": 13,
+        "line": 25,
         "method": "GET",
         "path": "/api/v3/enterprise/announcement",
         "source": "internal/server/gh_ghes_admin_stats.go"
       },
       {
-        "line": 16,
+        "line": 28,
         "method": "GET",
         "path": "/api/v3/enterprise/settings/license",
         "source": "internal/server/gh_ghes_admin_stats.go"
@@ -24144,6 +24156,12 @@
         "source": "internal/server/gh_meta_extras.go"
       },
       {
+        "line": 16,
+        "method": "PATCH",
+        "path": "/api/v3/admin/hooks/{hook_id}",
+        "source": "internal/server/gh_ghes_admin_stats.go"
+      },
+      {
         "line": 55,
         "method": "PATCH",
         "path": "/api/v3/admin/users/{username}",
@@ -24162,7 +24180,7 @@
         "source": "internal/server/gh_apps_oauth_mgmt.go"
       },
       {
-        "line": 14,
+        "line": 26,
         "method": "PATCH",
         "path": "/api/v3/enterprise/announcement",
         "source": "internal/server/gh_ghes_admin_stats.go"
@@ -24774,6 +24792,18 @@
         "source": "internal/server/auth.go"
       },
       {
+        "line": 14,
+        "method": "POST",
+        "path": "/api/v3/admin/hooks",
+        "source": "internal/server/gh_ghes_admin_stats.go"
+      },
+      {
+        "line": 18,
+        "method": "POST",
+        "path": "/api/v3/admin/hooks/{hook_id}/pings",
+        "source": "internal/server/gh_ghes_admin_stats.go"
+      },
+      {
         "line": 11,
         "method": "POST",
         "path": "/api/v3/admin/organizations",
@@ -24784,6 +24814,12 @@
         "method": "POST",
         "path": "/api/v3/admin/users",
         "source": "internal/server/gh_misc_endpoints.go"
+      },
+      {
+        "line": 23,
+        "method": "POST",
+        "path": "/api/v3/admin/users/{username}/authorizations",
+        "source": "internal/server/gh_ghes_admin_stats.go"
       },
       {
         "line": 58,

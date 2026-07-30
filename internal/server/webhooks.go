@@ -342,7 +342,11 @@ func (s *Server) webhookDispatch() *webhookDispatcher {
 // Hook ids are unique across repository, organization and app hooks, but the
 // owner is included so a reloaded hook cannot collide with a live one.
 func webhookQueueKey(h *Webhook) string {
-	return h.RepoKey + "\x00" + h.OrgLogin + "\x00" + h.MarketplaceSlug + "\x00" + strconv.Itoa(h.ID)
+	global := ""
+	if h.Global {
+		global = "global"
+	}
+	return h.RepoKey + "\x00" + h.OrgLogin + "\x00" + h.MarketplaceSlug + "\x00" + global + "\x00" + strconv.Itoa(h.ID)
 }
 
 // SnapshotHook copies the configuration a delivery reads, under the store
@@ -411,6 +415,17 @@ func (s *Server) recordHookLastResponse(hook *Webhook, delivery *WebhookDelivery
 		s.store.SetHookLastResponse(hook.RepoKey, hook.ID, deliveryLastResponse(delivery))
 	case hook.OrgLogin != "":
 		s.store.SetOrgHookLastResponse(hook.OrgLogin, hook.ID, deliveryLastResponse(delivery))
+	case hook.Global:
+		s.store.mu.Lock()
+		for _, stored := range s.store.EnterpriseSettings.GHESGlobalHooks {
+			if stored.ID == hook.ID {
+				stored.LastResponse = deliveryLastResponse(delivery)
+				stored.UpdatedAt = s.store.currentTime()
+				break
+			}
+		}
+		s.store.persistEnterpriseSettings()
+		s.store.mu.Unlock()
 	}
 }
 
