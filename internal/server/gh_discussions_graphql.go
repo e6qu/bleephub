@@ -1102,13 +1102,26 @@ func paginateGQLMaps(nodes []map[string]interface{}, args map[string]interface{}
 	end := total
 
 	if after, ok := args["after"].(string); ok && after != "" {
-		start = decodeCursor(after) + 1
+		afterIndex := decodeCursor(after)
+		// Saturate before adding one: cursor:<MaxInt> must describe an empty
+		// window, not wrap start negative and unexpectedly return page one.
+		if afterIndex >= total {
+			start = total
+		} else {
+			start = afterIndex + 1
+		}
 	}
 	if before, ok := args["before"].(string); ok && before != "" {
 		end = decodeCursor(before)
 	}
 	if start < 0 {
 		start = 0
+	}
+	if start > total {
+		start = total
+	}
+	if end < 0 {
+		end = 0
 	}
 	if end > total {
 		end = total

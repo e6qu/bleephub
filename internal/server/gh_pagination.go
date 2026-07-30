@@ -182,6 +182,24 @@ func intArg(args map[string]interface{}, key string) (int, bool) {
 // buildConnectionWindow renders nodes[startIdx:endIdx] into a connection map
 // with edges/cursors and a correct pageInfo, matching paginateGQL's shape.
 func buildConnectionWindow(nodes []map[string]interface{}, startIdx, endIdx, total int) map[string]interface{} {
+	// Keep this final rendering boundary safe even when a new caller computes
+	// a malformed window. Cursor values are untrusted client input, and both
+	// addition and conversion can otherwise produce an out-of-range slice.
+	if total < 0 || total > len(nodes) {
+		total = len(nodes)
+	}
+	if startIdx < 0 {
+		startIdx = 0
+	}
+	if startIdx > total {
+		startIdx = total
+	}
+	if endIdx < startIdx {
+		endIdx = startIdx
+	}
+	if endIdx > total {
+		endIdx = total
+	}
 	page := nodes[startIdx:endIdx]
 	outNodes := make([]map[string]interface{}, 0, len(page))
 	edges := make([]map[string]interface{}, 0, len(page))

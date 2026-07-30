@@ -113,6 +113,9 @@ func FuzzRepaginateConnection(f *testing.F) {
 	f.Add(10, "", 0, "")
 	f.Add(-1, "", 5, "Y3Vyc29yOjM=")
 	f.Add(1<<31, "Y3Vyc29yOjU=", 0, "")
+	// Regression: an after cursor beyond the source used to move both window
+	// bounds past len(nodes), panicking in buildConnectionWindow.
+	f.Add(1<<31, "Y3Vyc29yOjY0", -92, "")
 	f.Add(0, "", 200, "")
 	f.Add(0, "garbage", 0, "garbage")
 	f.Add(5, "", 5, "") // both first and last present
