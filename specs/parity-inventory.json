@@ -3,13 +3,13 @@
     "literal_event_producers": [
       {
         "event": "check_run",
-        "line": 404,
+        "line": 409,
         "producer": "emitWebhookEvent",
         "source": "internal/server/actions_events.go"
       },
       {
         "event": "check_suite",
-        "line": 423,
+        "line": 428,
         "producer": "emitWebhookEvent",
         "source": "internal/server/actions_events.go"
       },
@@ -147,13 +147,13 @@
       },
       {
         "event": "workflow_job",
-        "line": 385,
+        "line": 390,
         "producer": "emitWebhookEvent",
         "source": "internal/server/actions_events.go"
       },
       {
         "event": "workflow_run",
-        "line": 368,
+        "line": 373,
         "producer": "emitWebhookEvent",
         "source": "internal/server/actions_events.go"
       }
