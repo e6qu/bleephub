@@ -104,7 +104,7 @@ func (s *Server) handleListUserMigrations(w http.ResponseWriter, r *http.Request
 			out[i]["exclude"] = exclude
 		}
 	}
-	writeJSON(w, http.StatusOK, out)
+	writeJSON(w, http.StatusOK, paginateAndLink(w, r, out))
 }
 
 func (s *Server) handleGetUserMigration(w http.ResponseWriter, r *http.Request) {
@@ -253,7 +253,7 @@ func (s *Server) handleListOrgMigrations(w http.ResponseWriter, r *http.Request)
 			out[i]["exclude"] = exclude
 		}
 	}
-	writeJSON(w, http.StatusOK, out)
+	writeJSON(w, http.StatusOK, paginateAndLink(w, r, out))
 }
 
 func (s *Server) handleGetOrgMigration(w http.ResponseWriter, r *http.Request) {

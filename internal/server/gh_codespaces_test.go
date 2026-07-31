@@ -773,3 +773,201 @@ func TestCodespaces_OrgSecretSelectedRepoAddRemove(t *testing.T) {
 		t.Fatalf("unknown secret add repo: %d, want 404", resp.StatusCode)
 	}
 }
+
+func createPaginationTestCodespace(t *testing.T, s *Server, path string, body map[string]any) string {
+	t.Helper()
+	w := pagedJSONRequest(t, s, http.MethodPost, path, defaultToken, body)
+	if w.Code != http.StatusCreated {
+		t.Fatalf("create codespace: %d %s", w.Code, w.Body.String())
+	}
+	var cs map[string]any
+	if err := json.Unmarshal(w.Body.Bytes(), &cs); err != nil {
+		t.Fatalf("decode codespace: %v", err)
+	}
+	return cs["name"].(string)
+}
+
+func createPaginationCodespaceRepo(t *testing.T, s *Server, name string) *Repo {
+	t.Helper()
+	admin := s.store.UsersByLogin["admin"]
+	repo := s.store.CreateRepo(admin, name, "codespace test repo", false)
+	if repo == nil {
+		t.Fatalf("failed to create repo %s", name)
+	}
+	stor := s.store.GitStorages[repo.FullName]
+	if _, err := initRepoWithFiles(stor, repo.DefaultBranch, "init", map[string]string{
+		".devcontainer/devcontainer.json": fmt.Sprintf(`{"image":"%s"}`, codespaceTestImage),
+	}, repoSignature(admin.Login, "bleephub@local")); err != nil {
+		t.Fatalf("init repo files: %v", err)
+	}
+	return repo
+}
+
+func assertCodespaceWrapperPage(t *testing.T, s *Server, path, key string, wantItems, wantTotal int, wantNext bool) map[string]interface{} {
+	t.Helper()
+	w := tokenRequest(s, http.MethodGet, path, defaultToken)
+	if w.Code != http.StatusOK {
+		t.Fatalf("GET %s: %d %s, want 200", path, w.Code, w.Body.String())
+	}
+	link := w.Header().Get("Link")
+	var listing map[string]interface{}
+	if err := json.Unmarshal(w.Body.Bytes(), &listing); err != nil {
+		t.Fatalf("GET %s decode: %v", path, err)
+	}
+	if got := int(listing["total_count"].(float64)); got != wantTotal {
+		t.Fatalf("GET %s total_count = %d, want %d", path, got, wantTotal)
+	}
+	items, ok := listing[key].([]interface{})
+	if !ok {
+		t.Fatalf("GET %s missing %q array: %v", path, key, listing)
+	}
+	if len(items) != wantItems {
+		t.Fatalf("GET %s returned %d %s, want %d", path, len(items), key, wantItems)
+	}
+	if hasNext := strings.Contains(link, `rel="next"`); hasNext != wantNext {
+		t.Fatalf("GET %s Link = %q, want rel=\"next\" presence %v", path, link, wantNext)
+	}
+	return listing
+}
+
+func putPaginationSealedSecret(t *testing.T, s *Server, path, plain string, want int) {
+	t.Helper()
+	enc, keyID, err := s.store.SealSecretValue(plain)
+	if err != nil {
+		t.Fatalf("seal: %v", err)
+	}
+	w := pagedJSONRequest(t, s, http.MethodPut, path, defaultToken, map[string]any{
+		"encrypted_value": enc,
+		"key_id":          keyID,
+	})
+	if w.Code != want {
+		t.Fatalf("put %s: %d %s, want %d", path, w.Code, w.Body.String(), want)
+	}
+}
+
+func TestCodespaces_UserListPagination(t *testing.T) {
+	s := newTestServer()
+	s.registerRoutes()
+	repo := createPaginationCodespaceRepo(t, s, "cs-pg-user-repo")
+	t.Setenv("PATH", t.TempDir())
+
+	base := tokenRequest(s, http.MethodGet, "/api/v3/user/codespaces?per_page=100", defaultToken)
+	var baseListing map[string]interface{}
+	if err := json.Unmarshal(base.Body.Bytes(), &baseListing); err != nil {
+		t.Fatalf("decode base codespaces listing: %v", err)
+	}
+	total := int(baseListing["total_count"].(float64)) + 2
+
+	first := createPaginationTestCodespace(t, s, "/api/v3/user/codespaces", map[string]any{
+		"repository_id": repo.ID,
+		"machine":       "basicLinux32",
+	})
+	second := createPaginationTestCodespace(t, s, "/api/v3/user/codespaces", map[string]any{
+		"repository_id": repo.ID,
+		"machine":       "basicLinux32",
+	})
+
+	page1 := assertCodespaceWrapperPage(t, s, "/api/v3/user/codespaces?per_page=1", "codespaces", 1, total, true)
+	page2 := assertCodespaceWrapperPage(t, s, "/api/v3/user/codespaces?per_page=1&page=2", "codespaces", 1, total, false)
+	name1 := page1["codespaces"].([]interface{})[0].(map[string]interface{})["name"]
+	name2 := page2["codespaces"].([]interface{})[0].(map[string]interface{})["name"]
+	if name1 == name2 {
+		t.Fatalf("pages 1 and 2 returned the same codespace %v", name1)
+	}
+	seen := map[string]bool{first: true, second: true}
+	if !seen[name1.(string)] || !seen[name2.(string)] {
+		t.Fatalf("paginated names %v, %v not in seeded set %v", name1, name2, seen)
+	}
+}
+
+func TestCodespaces_RepoListPagination(t *testing.T) {
+	s := newTestServer()
+	s.registerRoutes()
+	repo := createPaginationCodespaceRepo(t, s, "cs-pg-repo-repo")
+	t.Setenv("PATH", t.TempDir())
+
+	createPaginationTestCodespace(t, s, fmt.Sprintf("/api/v3/repos/%s/codespaces", repo.FullName), map[string]any{
+		"machine": "basicLinux32",
+	})
+	createPaginationTestCodespace(t, s, fmt.Sprintf("/api/v3/repos/%s/codespaces", repo.FullName), map[string]any{
+		"machine": "basicLinux32",
+	})
+
+	assertCodespaceWrapperPage(t, s, fmt.Sprintf("/api/v3/repos/%s/codespaces?per_page=1", repo.FullName), "codespaces", 1, 2, true)
+	assertCodespaceWrapperPage(t, s, fmt.Sprintf("/api/v3/repos/%s/codespaces?per_page=1&page=2", repo.FullName), "codespaces", 1, 2, false)
+}
+
+func TestCodespaces_UserSecretsListPagination(t *testing.T) {
+	s := newTestServer()
+	s.registerRoutes()
+
+	base := tokenRequest(s, http.MethodGet, "/api/v3/user/codespaces/secrets?per_page=100", defaultToken)
+	var baseListing map[string]interface{}
+	if err := json.Unmarshal(base.Body.Bytes(), &baseListing); err != nil {
+		t.Fatalf("decode base secrets listing: %v", err)
+	}
+	total := int(baseListing["total_count"].(float64)) + 2
+
+	for _, name := range []string{"PG_SECRET_ONE", "PG_SECRET_TWO"} {
+		putPaginationSealedSecret(t, s, "/api/v3/user/codespaces/secrets/"+name, "value-"+name, http.StatusNoContent)
+	}
+
+	assertCodespaceWrapperPage(t, s, "/api/v3/user/codespaces/secrets?per_page=1", "secrets", 1, total, true)
+	assertCodespaceWrapperPage(t, s, "/api/v3/user/codespaces/secrets?per_page=1&page=2", "secrets", 1, total, false)
+}
+
+func TestCodespaces_RepoSecretsListPagination(t *testing.T) {
+	s := newTestServer()
+	s.registerRoutes()
+	repo := createPaginationCodespaceRepo(t, s, "cs-pg-repo-secrets")
+	for _, name := range []string{"PG_REPO_SECRET_ONE", "PG_REPO_SECRET_TWO"} {
+		putPaginationSealedSecret(t, s, fmt.Sprintf("/api/v3/repos/%s/codespaces/secrets/%s", repo.FullName, name), "value-"+name, http.StatusNoContent)
+	}
+
+	assertCodespaceWrapperPage(t, s, fmt.Sprintf("/api/v3/repos/%s/codespaces/secrets?per_page=1", repo.FullName), "secrets", 1, 2, true)
+	assertCodespaceWrapperPage(t, s, fmt.Sprintf("/api/v3/repos/%s/codespaces/secrets?per_page=1&page=2", repo.FullName), "secrets", 1, 2, false)
+}
+
+func TestCodespaces_OrgSecretReposListPagination(t *testing.T) {
+	s := newTestServer()
+	s.registerRoutes()
+	admin := s.store.UsersByLogin["admin"]
+	org := s.store.CreateOrg(admin, "cs-pg-secret-repo-org", "Codespaces Pagination Secret Repo Org", "")
+	if org == nil {
+		t.Fatal("create org failed")
+	}
+	r1 := s.store.CreateOrgRepo(org, admin, "cs-pg-secret-repo-1", "", false)
+	r2 := s.store.CreateOrgRepo(org, admin, "cs-pg-secret-repo-2", "", false)
+	if r1 == nil || r2 == nil {
+		t.Fatal("create org repos failed")
+	}
+
+	enc, keyID, err := s.store.SealSecretValue("paginated org secret value")
+	if err != nil {
+		t.Fatalf("seal: %v", err)
+	}
+	w := pagedJSONRequest(t, s, http.MethodPut, "/api/v3/orgs/cs-pg-secret-repo-org/codespaces/secrets/PG_SELECTED", defaultToken, map[string]any{
+		"encrypted_value":         enc,
+		"key_id":                  keyID,
+		"visibility":              "selected",
+		"selected_repository_ids": []int{r1.ID, r2.ID},
+	})
+	if w.Code != http.StatusNoContent {
+		t.Fatalf("put org codespace secret: %d, want 204", w.Code)
+	}
+
+	page1 := assertCodespaceWrapperPage(t, s, "/api/v3/orgs/cs-pg-secret-repo-org/codespaces/secrets/PG_SELECTED/repositories?per_page=1", "repositories", 1, 2, true)
+	page2 := assertCodespaceWrapperPage(t, s, "/api/v3/orgs/cs-pg-secret-repo-org/codespaces/secrets/PG_SELECTED/repositories?per_page=1&page=2", "repositories", 1, 2, false)
+	id1 := page1["repositories"].([]interface{})[0].(map[string]interface{})["id"]
+	id2 := page2["repositories"].([]interface{})[0].(map[string]interface{})["id"]
+	if id1 == id2 {
+		t.Fatalf("pages 1 and 2 returned the same repository %v", id1)
+	}
+}
+
+func TestCodespaces_RepoDevcontainersPagination(t *testing.T) {
+	s := newTestServer()
+	s.registerRoutes()
+	repo := createPaginationCodespaceRepo(t, s, "cs-pg-devcontainers")
+	assertCodespaceWrapperPage(t, s, fmt.Sprintf("/api/v3/repos/%s/codespaces/devcontainers?per_page=1", repo.FullName), "devcontainers", 0, 0, false)
+}

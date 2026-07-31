@@ -147,6 +147,71 @@ func TestRulesets_FullLifecycle(t *testing.T) {
 	}
 }
 
+func TestListBranchRulesPagination(t *testing.T) {
+	s := newTestServer()
+	s.registerGHRulesetRoutes()
+
+	admin := s.store.UsersByLogin["admin"]
+	s.store.CreateRepo(admin, "rules-pg-repo", "", false)
+
+	create, _ := json.Marshal(map[string]any{
+		"name":        "protect-main-pg",
+		"target":      "branch",
+		"enforcement": "active",
+		"conditions": map[string]any{
+			"ref_name": map[string]any{
+				"include": []string{"~DEFAULT_BRANCH"},
+			},
+		},
+		"rules": []map[string]any{
+			{"type": "creation"},
+			{"type": "deletion"},
+		},
+	})
+	do := func(method, path string, body []byte) *httptest.ResponseRecorder {
+		var req *http.Request
+		if body != nil {
+			req = httptest.NewRequest(method, path, bytes.NewReader(body))
+		} else {
+			req = httptest.NewRequest(method, path, nil)
+		}
+		req.Header.Set("Authorization", "Bearer bleephub-admin-token-00000000000000000000")
+		w := httptest.NewRecorder()
+		s.requestHandler().ServeHTTP(w, req)
+		return w
+	}
+	w := do("POST", "/api/v3/repos/admin/rules-pg-repo/rulesets", create)
+	if w.Code != http.StatusCreated {
+		t.Fatalf("create ruleset: %d body=%s", w.Code, w.Body.String())
+	}
+
+	w = do("GET", "/api/v3/repos/admin/rules-pg-repo/rules/branches/main?per_page=1", nil)
+	if w.Code != http.StatusOK {
+		t.Fatalf("branch rules page 1: %d body=%s", w.Code, w.Body.String())
+	}
+	var page1 []map[string]any
+	json.Unmarshal(w.Body.Bytes(), &page1)
+	if len(page1) != 1 {
+		t.Fatalf("expected 1 rule on page 1, got %d", len(page1))
+	}
+	if link := w.Header().Get("Link"); !strings.Contains(link, `rel="next"`) {
+		t.Fatalf("expected rel=next in Link, got %s", link)
+	}
+
+	w = do("GET", "/api/v3/repos/admin/rules-pg-repo/rules/branches/main?per_page=1&page=2", nil)
+	if w.Code != http.StatusOK {
+		t.Fatalf("branch rules page 2: %d body=%s", w.Code, w.Body.String())
+	}
+	var page2 []map[string]any
+	json.Unmarshal(w.Body.Bytes(), &page2)
+	if len(page2) != 1 {
+		t.Fatalf("expected 1 rule on page 2, got %d", len(page2))
+	}
+	if page2[0]["type"] == page1[0]["type"] {
+		t.Fatalf("expected distinct rules across pages, got %v twice", page1[0]["type"])
+	}
+}
+
 func TestRulesets_ListIncludesParentsTargetsAndPagination(t *testing.T) {
 	s := newTestServer()
 	s.registerGHRulesetRoutes()

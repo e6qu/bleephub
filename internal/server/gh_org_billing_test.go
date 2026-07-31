@@ -1,10 +1,72 @@
 package bleephub
 
 import (
+	"encoding/json"
 	"net/http"
+	"strings"
 	"testing"
 	"time"
 )
+
+func TestOrgBillingBudgets_Pagination(t *testing.T) {
+	s := newTestServer()
+	s.registerRoutes()
+	admin := s.store.UsersByLogin["admin"]
+	org := s.store.CreateOrg(admin, "billing-budgets-page-org", "billing-budgets-page-org", "")
+
+	for i := 0; i < 2; i++ {
+		resp := pagedJSONRequest(t, s, http.MethodPost, "/api/v3/organizations/"+org.Login+"/settings/billing/budgets", defaultToken, map[string]interface{}{
+			"budget_amount":      100 + i,
+			"budget_scope":       "organization",
+			"budget_type":        "ProductPricing",
+			"budget_product_sku": "actions",
+		})
+		if resp.Code != http.StatusOK {
+			t.Fatalf("create budget %d: %d", i, resp.Code)
+		}
+	}
+
+	resp := tokenRequest(s, http.MethodGet, "/api/v3/organizations/"+org.Login+"/settings/billing/budgets?per_page=1", defaultToken)
+	if resp.Code != http.StatusOK {
+		t.Fatalf("page 1: %d", resp.Code)
+	}
+	link := resp.Header().Get("Link")
+	var page1 map[string]interface{}
+	if err := json.Unmarshal(resp.Body.Bytes(), &page1); err != nil {
+		t.Fatal(err)
+	}
+	budgets1, _ := page1["budgets"].([]interface{})
+	if len(budgets1) != 1 {
+		t.Fatalf("page 1 budgets = %d, want 1", len(budgets1))
+	}
+	if page1["total_count"] != float64(2) || page1["has_next_page"] != true {
+		t.Fatalf("page 1 pagination fields wrong: %v", page1)
+	}
+	if !strings.Contains(link, `rel="next"`) {
+		t.Fatalf("page 1 Link = %q, want rel=next", link)
+	}
+
+	resp = tokenRequest(s, http.MethodGet, "/api/v3/organizations/"+org.Login+"/settings/billing/budgets?per_page=1&page=2", defaultToken)
+	if resp.Code != http.StatusOK {
+		t.Fatalf("page 2: %d", resp.Code)
+	}
+	var page2 map[string]interface{}
+	if err := json.Unmarshal(resp.Body.Bytes(), &page2); err != nil {
+		t.Fatal(err)
+	}
+	budgets2, _ := page2["budgets"].([]interface{})
+	if len(budgets2) != 1 {
+		t.Fatalf("page 2 budgets = %d, want 1", len(budgets2))
+	}
+	if page2["total_count"] != float64(2) || page2["has_next_page"] != false {
+		t.Fatalf("page 2 pagination fields wrong: %v", page2)
+	}
+	id1 := budgets1[0].(map[string]interface{})["id"]
+	id2 := budgets2[0].(map[string]interface{})["id"]
+	if id1 == id2 {
+		t.Fatalf("page 1 and page 2 returned the same budget: %v", id1)
+	}
+}
 
 func TestOrgBillingBudgets_CRUDRoundTrip(t *testing.T) {
 	admin := testServer.store.UsersByLogin["admin"]

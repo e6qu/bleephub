@@ -458,7 +458,7 @@ func (s *Server) handleListCodeSecurityConfigurationRepositories(w http.Response
 			"repository": simpleRepoJSON(repo, s.store, base),
 		})
 	}
-	writeJSON(w, http.StatusOK, out)
+	writeJSON(w, http.StatusOK, paginateAndLink(w, r, out))
 }
 
 func (s *Server) handleGetRepoCodeSecurityConfiguration(w http.ResponseWriter, r *http.Request) {

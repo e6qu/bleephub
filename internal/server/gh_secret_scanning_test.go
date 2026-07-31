@@ -246,6 +246,54 @@ func TestSecretScanning_GetAndLocations(t *testing.T) {
 	}
 }
 
+func TestSecretScanning_AlertLocationsPagination(t *testing.T) {
+	s := newTestServer()
+	s.registerRoutes()
+	admin := s.store.UsersByLogin["admin"]
+	repo := s.store.CreateRepo(admin, "ss-locations-pg", "", false)
+	if repo == nil {
+		t.Fatal("create repo failed")
+	}
+
+	alert := s.store.CreateSecretScanningAlert(repo.FullName, "github_personal_access_token", []SecretScanningLocation{
+		{Type: "commit", Details: SecretScanningLocationDetails{Path: "first.txt", StartLine: 1, EndLine: 1}},
+		{Type: "commit", Details: SecretScanningLocationDetails{Path: "second.txt", StartLine: 2, EndLine: 2}},
+	})
+
+	base := "/api/v3/repos/admin/ss-locations-pg/secret-scanning/alerts/" + itoa(alert.Number) + "/locations"
+	resp := tokenRequest(s, http.MethodGet, base+"?per_page=1", defaultToken)
+	if resp.Code != http.StatusOK {
+		t.Fatalf("locations page 1: %d body=%s", resp.Code, resp.Body.String())
+	}
+	var page1 []map[string]any
+	if err := json.Unmarshal(resp.Body.Bytes(), &page1); err != nil {
+		t.Fatalf("decode page 1: %v", err)
+	}
+	if len(page1) != 1 {
+		t.Fatalf("page 1 locations = %d, want 1", len(page1))
+	}
+	if link := resp.Header().Get("Link"); !strings.Contains(link, `rel="next"`) {
+		t.Fatalf("page 1 Link = %q, want rel=next", link)
+	}
+
+	resp = tokenRequest(s, http.MethodGet, base+"?per_page=1&page=2", defaultToken)
+	if resp.Code != http.StatusOK {
+		t.Fatalf("locations page 2: %d body=%s", resp.Code, resp.Body.String())
+	}
+	var page2 []map[string]any
+	if err := json.Unmarshal(resp.Body.Bytes(), &page2); err != nil {
+		t.Fatalf("decode page 2: %v", err)
+	}
+	if len(page2) != 1 {
+		t.Fatalf("page 2 locations = %d, want 1", len(page2))
+	}
+	path1, _ := page1[0]["details"].(map[string]any)["path"].(string)
+	path2, _ := page2[0]["details"].(map[string]any)["path"].(string)
+	if path1 == path2 {
+		t.Fatalf("page 2 returned the same location %q as page 1", path2)
+	}
+}
+
 func TestSecretScanning_GitDatabaseRefCreatesAlert(t *testing.T) {
 	admin := testServer.store.UsersByLogin["admin"]
 	repo := testServer.store.CreateRepo(admin, "ss-git-database", "", false)

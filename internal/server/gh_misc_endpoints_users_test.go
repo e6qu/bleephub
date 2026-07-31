@@ -2,7 +2,11 @@ package bleephub
 
 import (
 	"bytes"
+	"encoding/json"
 	"io"
+	"net/http"
+	"reflect"
+	"strings"
 	"testing"
 	"time"
 )
@@ -227,6 +231,170 @@ func TestUserExtras_Following(t *testing.T) {
 	publicCheck.Body.Close()
 	if publicCheck.StatusCode != 204 {
 		t.Fatalf("expected 204, got %d", publicCheck.StatusCode)
+	}
+}
+
+func assertPaginatedList(t *testing.T, s *Server, path, token string) {
+	t.Helper()
+	w := tokenRequest(s, http.MethodGet, path+"?per_page=1", token)
+	if w.Code != 200 {
+		t.Fatalf("%s page 1 status = %d, want 200", path, w.Code)
+	}
+	var first []map[string]interface{}
+	if err := json.Unmarshal(w.Body.Bytes(), &first); err != nil {
+		t.Fatalf("%s page 1 decode: %v", path, err)
+	}
+	if len(first) != 1 {
+		t.Fatalf("%s page 1 items = %d, want 1", path, len(first))
+	}
+	if link := w.Header().Get("Link"); !strings.Contains(link, `rel="next"`) {
+		t.Fatalf("%s page 1 Link = %q, want rel=\"next\"", path, link)
+	}
+
+	w = tokenRequest(s, http.MethodGet, path+"?per_page=1&page=2", token)
+	if w.Code != 200 {
+		t.Fatalf("%s page 2 status = %d, want 200", path, w.Code)
+	}
+	var second []map[string]interface{}
+	if err := json.Unmarshal(w.Body.Bytes(), &second); err != nil {
+		t.Fatalf("%s page 2 decode: %v", path, err)
+	}
+	if len(second) != 1 {
+		t.Fatalf("%s page 2 items = %d, want 1", path, len(second))
+	}
+	if reflect.DeepEqual(second[0], first[0]) {
+		t.Fatalf("%s page 2 returned the same item as page 1: %v", path, second[0])
+	}
+}
+
+func TestUserExtras_FollowersFollowingPagination(t *testing.T) {
+	s := newTestServer()
+	s.registerRoutes()
+	userA := seedTestUser(s, "pg-follow-a")
+	userB := seedTestUser(s, "pg-follow-b")
+	tokenA := s.store.CreateToken(userA.ID, "user repo")
+	tokenB := s.store.CreateToken(userB.ID, "user repo")
+
+	follows := []struct{ token, target string }{
+		{defaultToken, "pg-follow-a"},
+		{defaultToken, "pg-follow-b"},
+		{tokenA.Value, "admin"},
+		{tokenB.Value, "admin"},
+		{tokenB.Value, "pg-follow-a"},
+	}
+	for _, f := range follows {
+		w := pagedJSONRequest(t, s, http.MethodPut, "/api/v3/user/following/"+f.target, f.token, nil)
+		if w.Code != 204 {
+			t.Fatalf("follow %s status = %d, want 204", f.target, w.Code)
+		}
+	}
+
+	for _, path := range []string{
+		"/api/v3/users/admin/following",
+		"/api/v3/users/pg-follow-a/followers",
+		"/api/v3/user/following",
+		"/api/v3/user/followers",
+	} {
+		w := tokenRequest(s, http.MethodGet, path+"?per_page=1", defaultToken)
+		if w.Code != 200 {
+			t.Fatalf("%s page 1 status = %d, want 200", path, w.Code)
+		}
+		var first []map[string]interface{}
+		if err := json.Unmarshal(w.Body.Bytes(), &first); err != nil {
+			t.Fatalf("%s page 1 decode: %v", path, err)
+		}
+		if len(first) != 1 {
+			t.Fatalf("%s page 1 items = %d, want 1", path, len(first))
+		}
+		if link := w.Header().Get("Link"); !strings.Contains(link, `rel="next"`) {
+			t.Fatalf("%s page 1 Link = %q, want rel=\"next\"", path, link)
+		}
+		w = tokenRequest(s, http.MethodGet, path+"?per_page=1&page=2", defaultToken)
+		if w.Code != 200 {
+			t.Fatalf("%s page 2 status = %d, want 200", path, w.Code)
+		}
+		var second []map[string]interface{}
+		if err := json.Unmarshal(w.Body.Bytes(), &second); err != nil {
+			t.Fatalf("%s page 2 decode: %v", path, err)
+		}
+		if len(second) != 1 {
+			t.Fatalf("%s page 2 items = %d, want 1", path, len(second))
+		}
+		if link := w.Header().Get("Link"); !strings.Contains(link, `rel="prev"`) {
+			t.Fatalf("%s page 2 Link = %q, want rel=\"prev\"", path, link)
+		}
+	}
+}
+
+func TestUserExtras_BlocksPagination(t *testing.T) {
+	s := newTestServer()
+	s.registerRoutes()
+	seedTestUser(s, "pg-block-a")
+	seedTestUser(s, "pg-block-b")
+	for _, login := range []string{"pg-block-a", "pg-block-b"} {
+		w := pagedJSONRequest(t, s, http.MethodPut, "/api/v3/user/blocks/"+login, defaultToken, nil)
+		if w.Code != 204 {
+			t.Fatalf("block %s status = %d, want 204", login, w.Code)
+		}
+	}
+
+	assertPaginatedList(t, s, "/api/v3/user/blocks", defaultToken)
+
+	for _, login := range []string{"pg-block-a", "pg-block-b"} {
+		w := pagedJSONRequest(t, s, http.MethodDelete, "/api/v3/user/blocks/"+login, defaultToken, nil)
+		if w.Code != 204 {
+			t.Fatalf("unblock %s status = %d, want 204", login, w.Code)
+		}
+	}
+}
+
+func TestUserExtras_SocialAccountsPagination(t *testing.T) {
+	s := newTestServer()
+	s.registerRoutes()
+	w := pagedJSONRequest(t, s, http.MethodPost, "/api/v3/user/social_accounts", defaultToken, []map[string]interface{}{
+		{"url": "https://example.com/pg-one"},
+		{"url": "https://example.com/pg-two"},
+	})
+	if w.Code != 201 {
+		t.Fatalf("create social accounts status = %d, want 201", w.Code)
+	}
+
+	assertPaginatedList(t, s, "/api/v3/user/social_accounts", defaultToken)
+	assertPaginatedList(t, s, "/api/v3/users/admin/social_accounts", defaultToken)
+
+	del := pagedJSONRequest(t, s, http.MethodDelete, "/api/v3/user/social_accounts", defaultToken, nil)
+	if del.Code != 204 {
+		t.Fatalf("clear social accounts status = %d, want 204", del.Code)
+	}
+}
+
+func TestUserExtras_SSHSigningKeysPagination(t *testing.T) {
+	s := newTestServer()
+	s.registerRoutes()
+	var ids []int
+	for _, key := range []string{
+		"ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIDIhz2GK/XCUj4i6Q5yQJNL1MXMY0RxzPV2QrBqfHrDp",
+		"ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIDIhz2GK/XCUj4i6Q5yQJNL1MXMY0RxzPV2QrBqfHrDr",
+	} {
+		w := pagedJSONRequest(t, s, http.MethodPost, "/api/v3/user/ssh_signing_keys", defaultToken, map[string]interface{}{"key": key})
+		if w.Code != 201 {
+			t.Fatalf("create ssh signing key status = %d, want 201", w.Code)
+		}
+		var created map[string]interface{}
+		if err := json.Unmarshal(w.Body.Bytes(), &created); err != nil {
+			t.Fatalf("decode ssh signing key: %v", err)
+		}
+		ids = append(ids, int(created["id"].(float64)))
+	}
+
+	assertPaginatedList(t, s, "/api/v3/user/ssh_signing_keys", defaultToken)
+	assertPaginatedList(t, s, "/api/v3/users/admin/ssh_signing_keys", defaultToken)
+
+	for _, id := range ids {
+		w := pagedJSONRequest(t, s, http.MethodDelete, "/api/v3/user/ssh_signing_keys/"+itoa(id), defaultToken, nil)
+		if w.Code != 204 {
+			t.Fatalf("delete ssh signing key %d status = %d, want 204", id, w.Code)
+		}
 	}
 }
 

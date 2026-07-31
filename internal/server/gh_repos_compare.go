@@ -441,6 +441,23 @@ func (s *Server) handleCompareRefs(w http.ResponseWriter, r *http.Request) {
 
 	apiURL := s.baseURL(r) + "/api/v3/repos/" + repo.FullName + "/compare/" + baseRef + "..." + headRef
 	htmlURL := s.baseURL(r) + "/" + repo.FullName + "/compare/" + baseRef + "..." + headRef
+	// GitHub caps an unpaginated comparison at 250 commits and shows up to
+	// 300 changed files; once the caller pages, commits come in per_page
+	// windows and the file list only rides along on the first page.
+	totalCommits := len(commits)
+	if len(files) > 300 {
+		files = files[:300]
+	}
+	if r.URL.Query().Get("page") == "" && r.URL.Query().Get("per_page") == "" {
+		if len(commits) > 250 {
+			commits = commits[:250]
+		}
+	} else {
+		commits = paginateAndLink(w, r, commits)
+		if parsePagination(r).Page > 1 {
+			files = []map[string]interface{}{}
+		}
+	}
 	out := map[string]interface{}{
 		"url":               apiURL,
 		"html_url":          htmlURL,
@@ -452,7 +469,7 @@ func (s *Server) handleCompareRefs(w http.ResponseWriter, r *http.Request) {
 		"status":            status,
 		"ahead_by":          aheadBy,
 		"behind_by":         behindBy,
-		"total_commits":     len(commits),
+		"total_commits":     totalCommits,
 		"commits":           commits,
 		"files":             files,
 	}

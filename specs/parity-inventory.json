@@ -141,7 +141,7 @@
       },
       {
         "event": "status",
-        "line": 273,
+        "line": 274,
         "producer": "emitWebhookEvent",
         "source": "internal/server/gh_statuses_rest.go"
       },
@@ -1408,8 +1408,8 @@
         "id": "REST-038",
         "location": "~60 handlers",
         "severity": "M",
-        "status": "open",
-        "status_kind": "open"
+        "status": "fixed \u2014 a spec-driven AST ratchet (`TestGitHubPaginatedRoutesPaginate`) cross-references every registered GET route against the vendored OpenAPI description's `per_page` declarations and fails when a handler cannot reach a pagination primitive transitively; the 69 routes it caught now slice through `paginateAndLink` (wrapper responses keep `total_count` at the pre-pagination total), the object-shaped endpoints follow their documented semantics (commit and compare page their `files`/`commits`, compare caps unpaginated at 250 commits/300 files and shows files only on page one, combined status and topics page their inner arrays), and the map-iteration feeds the new tests exposed (`ListAppInstallations`, `ListCheckSuitesForCommit`, license keys, follower/following sets) now sort deterministically. Verified by reversion: dropping one handler's pagination fails the gate naming the route. Per-endpoint regressions assert page slicing, `rel=\"next\"`, and stable `total_count`",
+        "status_kind": "fixed"
       },
       {
         "category": "REST",
@@ -5826,8 +5826,8 @@
         },
         "REST": {
           "status": {
-            "fixed": 90,
-            "open": 25,
+            "fixed": 91,
+            "open": 24,
             "partial": 3
           },
           "total": 118
@@ -5864,8 +5864,8 @@
       },
       "status": {
         "deferred": 1,
-        "fixed": 415,
-        "open": 162,
+        "fixed": 416,
+        "open": 161,
         "partial": 40
       },
       "total": 618
@@ -20488,13 +20488,13 @@
         "source": "internal/server/gh_gists_rest.go"
       },
       {
-        "line": 10,
+        "line": 11,
         "method": "GET",
         "path": "/api/v3/gitignore/templates",
         "source": "internal/server/gh_repos_templates.go"
       },
       {
-        "line": 11,
+        "line": 12,
         "method": "GET",
         "path": "/api/v3/gitignore/templates/{name}",
         "source": "internal/server/gh_repos_templates.go"
@@ -20512,13 +20512,13 @@
         "source": "internal/server/gh_user_issues.go"
       },
       {
-        "line": 12,
+        "line": 13,
         "method": "GET",
         "path": "/api/v3/licenses",
         "source": "internal/server/gh_repos_templates.go"
       },
       {
-        "line": 13,
+        "line": 14,
         "method": "GET",
         "path": "/api/v3/licenses/{license}",
         "source": "internal/server/gh_repos_templates.go"

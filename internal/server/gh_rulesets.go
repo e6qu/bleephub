@@ -319,7 +319,7 @@ func (s *Server) handleListBranchRules(w http.ResponseWriter, r *http.Request) {
 
 	branch := r.PathValue("branch")
 	out := s.store.ListRulesForBranch(repo, branch)
-	writeJSON(w, http.StatusOK, out)
+	writeJSON(w, http.StatusOK, paginateAndLink(w, r, out))
 }
 
 func (s *Server) handleListRulesetHistory(w http.ResponseWriter, r *http.Request) {

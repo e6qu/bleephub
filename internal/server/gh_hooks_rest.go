@@ -131,7 +131,7 @@ func (s *Server) handleListHooks(w http.ResponseWriter, r *http.Request) {
 	for _, h := range hooks {
 		result = append(result, hookToJSON(h, s.store.HookLastResp(h), r, ownerName, repoName))
 	}
-	writeJSON(w, http.StatusOK, result)
+	writeJSON(w, http.StatusOK, paginateAndLink(w, r, result))
 }
 
 func (s *Server) handleGetHook(w http.ResponseWriter, r *http.Request) {

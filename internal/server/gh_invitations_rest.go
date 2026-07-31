@@ -37,7 +37,7 @@ func (s *Server) handleListRepoInvitations(w http.ResponseWriter, r *http.Reques
 	for _, inv := range invitations {
 		out = append(out, invitationJSON(inv, repo, s.store, base))
 	}
-	writeJSON(w, http.StatusOK, out)
+	writeJSON(w, http.StatusOK, paginateAndLink(w, r, out))
 }
 
 func (s *Server) handleUpdateRepoInvitation(w http.ResponseWriter, r *http.Request) {
@@ -118,7 +118,7 @@ func (s *Server) handleListUserRepoInvitations(w http.ResponseWriter, r *http.Re
 			out = append(out, invitationJSON(inv, repo, s.store, base))
 		}
 	}
-	writeJSON(w, http.StatusOK, out)
+	writeJSON(w, http.StatusOK, paginateAndLink(w, r, out))
 }
 
 func (s *Server) handleAcceptRepoInvitation(w http.ResponseWriter, r *http.Request) {

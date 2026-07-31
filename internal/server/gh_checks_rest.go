@@ -232,7 +232,7 @@ func (s *Server) handleListCheckRunAnnotations(w http.ResponseWriter, r *http.Re
 	if cr.Output != nil {
 		out = cr.Output.Annotations
 	}
-	writeJSON(w, http.StatusOK, out)
+	writeJSON(w, http.StatusOK, paginateAndLink(w, r, out))
 }
 
 func (s *Server) handleListCheckRunsForCommit(w http.ResponseWriter, r *http.Request) {
@@ -295,8 +295,9 @@ func (s *Server) handleListCheckSuitesForCommit(w http.ResponseWriter, r *http.R
 	repoKey := r.PathValue("owner") + "/" + r.PathValue("repo")
 	sha := r.PathValue("sha")
 	suites := s.store.ListCheckSuitesForCommit(repoKey, sha, 0)
-	out := make([]map[string]interface{}, 0, len(suites))
-	for _, ss := range suites {
+	page := paginateAndLink(w, r, suites)
+	out := make([]map[string]interface{}, 0, len(page))
+	for _, ss := range page {
 		out = append(out, s.checkSuiteToJSON(ss, s.baseURL(r)))
 	}
 	writeJSON(w, http.StatusOK, map[string]interface{}{

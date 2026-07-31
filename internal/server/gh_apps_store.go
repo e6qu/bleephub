@@ -7,6 +7,7 @@ import (
 	"encoding/pem"
 	"fmt"
 	"net/url"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -502,6 +503,7 @@ func (st *Store) ListAppInstallations(appID int) []*Installation {
 			result = append(result, cloneInstallation(inst))
 		}
 	}
+	sort.Slice(result, func(i, j int) bool { return result[i].ID < result[j].ID })
 	return result
 }
 

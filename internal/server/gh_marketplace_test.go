@@ -269,6 +269,62 @@ func TestMarketplacePublisherBuyerAndBillingLifecycle(t *testing.T) {
 	}
 }
 
+func TestMarketplacePlansPagination(t *testing.T) {
+	s := newTestServer()
+	s.registerRoutes()
+	admin := s.store.UsersByLogin["admin"]
+	app := s.store.CreateApp(admin.ID, "Marketplace Plans Pagination App", "", map[string]string{}, nil)
+	listing := &MarketplaceListing{
+		Slug: app.Slug, Name: app.Name, Description: "Pagination listing",
+		GitHubAppID: app.ID, Published: true,
+		CreatedAt: fixedTestTime, UpdatedAt: fixedTestTime,
+	}
+	if err := s.store.SaveMarketplaceListing(listing); err != nil {
+		t.Fatal(err)
+	}
+	for _, name := range []string{"Community", "Team"} {
+		if _, err := s.store.CreateMarketplacePlan(&MarketplacePlan{
+			ListingSlug: app.Slug, Name: name, PriceModel: "FREE", State: "published",
+		}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	appJWT, err := signAppJWT(app.PEMPrivateKey, app.ID, fixedTestTime)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	first := tokenRequest(s, http.MethodGet, "/api/v3/marketplace_listing/plans?per_page=1", appJWT)
+	if first.Code != http.StatusOK {
+		t.Fatalf("page 1 status = %d: %s", first.Code, first.Body.String())
+	}
+	var plans []map[string]interface{}
+	if err := json.Unmarshal(first.Body.Bytes(), &plans); err != nil {
+		t.Fatal(err)
+	}
+	if len(plans) != 1 {
+		t.Fatalf("page 1 plans = %d, want 1", len(plans))
+	}
+	if link := first.Header().Get("Link"); !strings.Contains(link, `rel="next"`) {
+		t.Fatalf("page 1 Link = %q, want rel=\"next\"", link)
+	}
+
+	second := tokenRequest(s, http.MethodGet, "/api/v3/marketplace_listing/plans?per_page=1&page=2", appJWT)
+	if second.Code != http.StatusOK {
+		t.Fatalf("page 2 status = %d: %s", second.Code, second.Body.String())
+	}
+	var paged []map[string]interface{}
+	if err := json.Unmarshal(second.Body.Bytes(), &paged); err != nil {
+		t.Fatal(err)
+	}
+	if len(paged) != 1 {
+		t.Fatalf("page 2 plans = %d, want 1", len(paged))
+	}
+	if paged[0]["id"] == plans[0]["id"] {
+		t.Fatalf("page 2 returned the same plan as page 1: %v", paged[0])
+	}
+}
+
 func TestMarketplacePublicWorkflowsHaveNoOperatorIngress(t *testing.T) {
 	for _, route := range testServer.routePatterns {
 		if strings.Contains(route, "/internal/marketplace") {

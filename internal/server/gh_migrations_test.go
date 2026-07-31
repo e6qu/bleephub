@@ -211,6 +211,99 @@ func TestMigrations_OrgCRUD(t *testing.T) {
 	resp.Body.Close()
 }
 
+func TestMigrations_UserListPagination(t *testing.T) {
+	repo := createTestRepo(t)
+	for i := 0; i < 2; i++ {
+		resp := ghPost(t, "/api/v3/user/migrations", defaultToken, map[string]any{
+			"repositories": []string{repo},
+		})
+		if resp.StatusCode != http.StatusCreated {
+			b, _ := io.ReadAll(resp.Body)
+			resp.Body.Close()
+			t.Fatalf("create migration %d: %d %s", i, resp.StatusCode, b)
+		}
+		resp.Body.Close()
+	}
+
+	resp := ghGet(t, "/api/v3/user/migrations?per_page=1", defaultToken)
+	if resp.StatusCode != http.StatusOK {
+		resp.Body.Close()
+		t.Fatalf("page 1: %d", resp.StatusCode)
+	}
+	link := resp.Header.Get("Link")
+	var page1 []map[string]any
+	json.NewDecoder(resp.Body).Decode(&page1)
+	resp.Body.Close()
+	if len(page1) != 1 {
+		t.Fatalf("page 1 len = %d, want 1", len(page1))
+	}
+	if !strings.Contains(link, `rel="next"`) {
+		t.Fatalf("page 1 Link = %q, want rel=next", link)
+	}
+
+	resp = ghGet(t, "/api/v3/user/migrations?per_page=1&page=2", defaultToken)
+	if resp.StatusCode != http.StatusOK {
+		resp.Body.Close()
+		t.Fatalf("page 2: %d", resp.StatusCode)
+	}
+	var page2 []map[string]any
+	json.NewDecoder(resp.Body).Decode(&page2)
+	resp.Body.Close()
+	if len(page2) != 1 {
+		t.Fatalf("page 2 len = %d, want 1", len(page2))
+	}
+	if page1[0]["id"] == page2[0]["id"] {
+		t.Fatalf("page 1 and page 2 returned the same migration: %v", page1[0]["id"])
+	}
+}
+
+func TestMigrations_OrgListPagination(t *testing.T) {
+	org := seedTestOrg(t, "migration-page-org")
+	repo := seedOrgRepo(t, org, "migration-page-org-repo", false)
+	for i := 0; i < 2; i++ {
+		resp := ghPost(t, "/api/v3/orgs/"+org.Login+"/migrations", defaultToken, map[string]any{
+			"repositories": []string{repo.FullName},
+		})
+		if resp.StatusCode != http.StatusCreated {
+			b, _ := io.ReadAll(resp.Body)
+			resp.Body.Close()
+			t.Fatalf("create migration %d: %d %s", i, resp.StatusCode, b)
+		}
+		resp.Body.Close()
+	}
+
+	resp := ghGet(t, "/api/v3/orgs/"+org.Login+"/migrations?per_page=1", defaultToken)
+	if resp.StatusCode != http.StatusOK {
+		resp.Body.Close()
+		t.Fatalf("page 1: %d", resp.StatusCode)
+	}
+	link := resp.Header.Get("Link")
+	var page1 []map[string]any
+	json.NewDecoder(resp.Body).Decode(&page1)
+	resp.Body.Close()
+	if len(page1) != 1 {
+		t.Fatalf("page 1 len = %d, want 1", len(page1))
+	}
+	if !strings.Contains(link, `rel="next"`) {
+		t.Fatalf("page 1 Link = %q, want rel=next", link)
+	}
+
+	resp = ghGet(t, "/api/v3/orgs/"+org.Login+"/migrations?per_page=1&page=2", defaultToken)
+	if resp.StatusCode != http.StatusOK {
+		resp.Body.Close()
+		t.Fatalf("page 2: %d", resp.StatusCode)
+	}
+	var page2 []map[string]any
+	json.NewDecoder(resp.Body).Decode(&page2)
+	resp.Body.Close()
+	if len(page2) != 1 {
+		t.Fatalf("page 2 len = %d, want 1", len(page2))
+	}
+	if page1[0]["id"] == page2[0]["id"] {
+		t.Fatalf("page 1 and page 2 returned the same migration: %v", page1[0]["id"])
+	}
+}
+
 func TestMigrations_404s(t *testing.T) {
 	// Missing user migration
 	resp := ghGet(t, "/api/v3/user/migrations/999999", defaultToken)

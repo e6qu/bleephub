@@ -42,6 +42,55 @@ func waitForWebhookCount(t *testing.T, received *atomic.Int32, want int32) {
 	}
 }
 
+func TestWebhookListPagination(t *testing.T) {
+	createWebhookTestRepo(t, "wh-paged")
+
+	for i := 0; i < 2; i++ {
+		resp := ghPost(t, "/api/v3/repos/admin/wh-paged/hooks", defaultToken, map[string]interface{}{
+			"config": map[string]interface{}{
+				"url": fmt.Sprintf("http://example.com/hook-%d", i),
+			},
+			"events": []string{"push"},
+		})
+		if resp.StatusCode != 201 {
+			resp.Body.Close()
+			t.Fatalf("create hook %d: expected 201, got %d", i, resp.StatusCode)
+		}
+		resp.Body.Close()
+	}
+
+	resp := ghGet(t, "/api/v3/repos/admin/wh-paged/hooks?per_page=1", defaultToken)
+	if resp.StatusCode != 200 {
+		resp.Body.Close()
+		t.Fatalf("page 1: expected 200, got %d", resp.StatusCode)
+	}
+	link := resp.Header.Get("Link")
+	var page1 []map[string]interface{}
+	json.NewDecoder(resp.Body).Decode(&page1)
+	resp.Body.Close()
+	if len(page1) != 1 {
+		t.Fatalf("page 1 len = %d, want 1", len(page1))
+	}
+	if !strings.Contains(link, `rel="next"`) {
+		t.Fatalf("page 1 Link = %q, want rel=next", link)
+	}
+
+	resp = ghGet(t, "/api/v3/repos/admin/wh-paged/hooks?per_page=1&page=2", defaultToken)
+	if resp.StatusCode != 200 {
+		resp.Body.Close()
+		t.Fatalf("page 2: expected 200, got %d", resp.StatusCode)
+	}
+	var page2 []map[string]interface{}
+	json.NewDecoder(resp.Body).Decode(&page2)
+	resp.Body.Close()
+	if len(page2) != 1 {
+		t.Fatalf("page 2 len = %d, want 1", len(page2))
+	}
+	if page1[0]["id"] == page2[0]["id"] {
+		t.Fatalf("page 1 and page 2 returned the same hook: %v", page1[0]["id"])
+	}
+}
+
 func TestWebhookCRUD(t *testing.T) {
 	createWebhookTestRepo(t, "wh-crud")
 

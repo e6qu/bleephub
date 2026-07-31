@@ -392,7 +392,7 @@ func (s *Server) handleListUserKeys(w http.ResponseWriter, r *http.Request) {
 	for _, k := range s.store.Misc.keysByUser[user.ID] {
 		out = append(out, userKeyToJSON(k, s.baseURL(r)))
 	}
-	writeJSON(w, http.StatusOK, out)
+	writeJSON(w, http.StatusOK, paginateAndLink(w, r, out))
 }
 
 func (s *Server) handleCreateUserKey(w http.ResponseWriter, r *http.Request) {
@@ -473,7 +473,7 @@ func (s *Server) handleListGPGKeys(w http.ResponseWriter, r *http.Request) {
 		out = append(out, gpgKeyToJSON(k))
 	}
 	s.store.Misc.mu.RUnlock()
-	writeJSON(w, http.StatusOK, out)
+	writeJSON(w, http.StatusOK, paginateAndLink(w, r, out))
 }
 
 func (s *Server) handleCreateGPGKey(w http.ResponseWriter, r *http.Request) {
@@ -566,7 +566,7 @@ func (s *Server) handleListGPGKeysByLogin(w http.ResponseWriter, r *http.Request
 		out = append(out, gpgKeyToJSON(k))
 	}
 	s.store.Misc.mu.RUnlock()
-	writeJSON(w, http.StatusOK, out)
+	writeJSON(w, http.StatusOK, paginateAndLink(w, r, out))
 }
 
 func gpgKeyToJSON(k *GPGKey) map[string]interface{} {
@@ -613,7 +613,7 @@ func (s *Server) handleListUserKeysByLogin(w http.ResponseWriter, r *http.Reques
 	for _, k := range s.store.Misc.keysByUser[user.ID] {
 		out = append(out, map[string]interface{}{"id": k.ID, "key": k.Key})
 	}
-	writeJSON(w, http.StatusOK, out)
+	writeJSON(w, http.StatusOK, paginateAndLink(w, r, out))
 }
 
 // resolveLoginsJSON converts a list of logins to user JSON, skipping logins
@@ -641,6 +641,7 @@ func (s *Server) followerLogins(target string) []string {
 			logins = append(logins, user)
 		}
 	}
+	sort.Strings(logins)
 	return logins
 }
 
@@ -653,14 +654,15 @@ func (s *Server) followingLogins(login string) []string {
 	for target := range s.store.Misc.follows[login] {
 		logins = append(logins, target)
 	}
+	sort.Strings(logins)
 	return logins
 }
 
 func (s *Server) handleListFollowers(w http.ResponseWriter, r *http.Request) {
-	writeJSON(w, http.StatusOK, s.resolveLoginsJSON(s.followerLogins(r.PathValue("username"))))
+	writeJSON(w, http.StatusOK, paginateAndLink(w, r, s.resolveLoginsJSON(s.followerLogins(r.PathValue("username")))))
 }
 func (s *Server) handleListFollowing(w http.ResponseWriter, r *http.Request) {
-	writeJSON(w, http.StatusOK, s.resolveLoginsJSON(s.followingLogins(r.PathValue("username"))))
+	writeJSON(w, http.StatusOK, paginateAndLink(w, r, s.resolveLoginsJSON(s.followingLogins(r.PathValue("username")))))
 }
 func (s *Server) handleListMyFollowers(w http.ResponseWriter, r *http.Request) {
 	user := ghUserFromContext(r.Context())
@@ -668,7 +670,7 @@ func (s *Server) handleListMyFollowers(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusOK, []map[string]interface{}{})
 		return
 	}
-	writeJSON(w, http.StatusOK, s.resolveLoginsJSON(s.followerLogins(user.Login)))
+	writeJSON(w, http.StatusOK, paginateAndLink(w, r, s.resolveLoginsJSON(s.followerLogins(user.Login))))
 }
 func (s *Server) handleListMyFollowing(w http.ResponseWriter, r *http.Request) {
 	user := ghUserFromContext(r.Context())
@@ -676,7 +678,7 @@ func (s *Server) handleListMyFollowing(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusOK, []map[string]interface{}{})
 		return
 	}
-	writeJSON(w, http.StatusOK, s.resolveLoginsJSON(s.followingLogins(user.Login)))
+	writeJSON(w, http.StatusOK, paginateAndLink(w, r, s.resolveLoginsJSON(s.followingLogins(user.Login))))
 }
 
 func (s *Server) handleFollowUser(w http.ResponseWriter, r *http.Request) {
@@ -1211,7 +1213,7 @@ func (s *Server) handlePagesListBuilds(w http.ResponseWriter, r *http.Request) {
 	if builds == nil {
 		builds = []*PagesBuild{}
 	}
-	writeJSON(w, http.StatusOK, builds)
+	writeJSON(w, http.StatusOK, paginateAndLink(w, r, builds))
 }
 
 func (s *Server) handlePagesTriggerBuild(w http.ResponseWriter, r *http.Request) {
@@ -1514,7 +1516,7 @@ func (s *Server) handleMarketplacePlans(w http.ResponseWriter, r *http.Request) 
 	for _, p := range plans {
 		out = append(out, marketplacePlanToJSON(p, base))
 	}
-	writeJSON(w, http.StatusOK, out)
+	writeJSON(w, http.StatusOK, paginateAndLink(w, r, out))
 }
 
 func (s *Server) handleMarketplaceAccount(w http.ResponseWriter, r *http.Request) {

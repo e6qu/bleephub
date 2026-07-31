@@ -174,7 +174,7 @@ func (s *Server) handleListCodeScanningAlertInstances(w http.ResponseWriter, r *
 	for i, inst := range a.Instances {
 		out[i] = codeScanningInstanceToJSON(inst)
 	}
-	writeJSON(w, http.StatusOK, out)
+	writeJSON(w, http.StatusOK, paginateAndLink(w, r, out))
 }
 
 func (s *Server) handleListCodeScanningAnalyses(w http.ResponseWriter, r *http.Request) {

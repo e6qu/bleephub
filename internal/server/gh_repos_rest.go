@@ -89,7 +89,7 @@ func (s *Server) handleListRepoDeployKeys(w http.ResponseWriter, r *http.Request
 	for _, k := range keys {
 		out = append(out, deployKeyToJSON(k, repo.FullName, base))
 	}
-	writeJSON(w, http.StatusOK, out)
+	writeJSON(w, http.StatusOK, paginateAndLink(w, r, out))
 }
 
 func (s *Server) handleCreateRepoDeployKey(w http.ResponseWriter, r *http.Request) {
@@ -883,7 +883,7 @@ func (s *Server) handleGetRepoTopics(w http.ResponseWriter, r *http.Request) {
 	}
 
 	writeJSON(w, http.StatusOK, map[string]interface{}{
-		"names": names,
+		"names": paginateAndLink(w, r, names),
 	})
 }
 
@@ -1282,7 +1282,7 @@ func (s *Server) handleListStargazers(w http.ResponseWriter, r *http.Request) {
 			out = append(out, userToJSON(u))
 		}
 	}
-	writeJSON(w, http.StatusOK, out)
+	writeJSON(w, http.StatusOK, paginateAndLink(w, r, out))
 }
 
 func (s *Server) handleStarRepo(w http.ResponseWriter, r *http.Request) {
@@ -1388,7 +1388,7 @@ func (s *Server) handleListCollaborators(w http.ResponseWriter, r *http.Request)
 			out = append(out, collaboratorJSON(u, perm))
 		}
 	}
-	writeJSON(w, http.StatusOK, out)
+	writeJSON(w, http.StatusOK, paginateAndLink(w, r, out))
 }
 
 func (s *Server) handleGetCollaboratorPermission(w http.ResponseWriter, r *http.Request) {

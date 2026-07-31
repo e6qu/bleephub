@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 )
 
@@ -171,5 +172,77 @@ func TestInvitations_UserEndpointsRequireAuth(t *testing.T) {
 	w := doInvitationReq(s, "", "GET", "/api/v3/user/repository_invitations", nil)
 	if w.Code != http.StatusUnauthorized {
 		t.Fatalf("unauthed user list status = %d, want 401", w.Code)
+	}
+}
+
+func TestInvitations_RepoListPagination(t *testing.T) {
+	s := invitationsTestServer(t)
+	admin := s.store.UsersByLogin["admin"]
+	repo := s.store.CreateRepo(admin, "invite-page-repo", "", false)
+	u1, _ := makeOtherUser(s, "invitee-one")
+	u2, _ := makeOtherUser(s, "invitee-two")
+	s.store.CreateRepoInvitation(repo.FullName, u1.Login, "", admin.ID, "pull")
+	s.store.CreateRepoInvitation(repo.FullName, u2.Login, "", admin.ID, "pull")
+
+	w := doInvitationReq(s, adminPAT, "GET", "/api/v3/repos/"+repo.FullName+"/invitations?per_page=1", nil)
+	if w.Code != http.StatusOK {
+		t.Fatalf("page 1 status = %d, body = %s", w.Code, w.Body.String())
+	}
+	var page1 []map[string]interface{}
+	json.Unmarshal(w.Body.Bytes(), &page1)
+	if len(page1) != 1 {
+		t.Fatalf("page 1 len = %d, want 1", len(page1))
+	}
+	if link := w.Header().Get("Link"); !strings.Contains(link, `rel="next"`) {
+		t.Fatalf("page 1 Link = %q, want rel=next", link)
+	}
+
+	w = doInvitationReq(s, adminPAT, "GET", "/api/v3/repos/"+repo.FullName+"/invitations?per_page=1&page=2", nil)
+	if w.Code != http.StatusOK {
+		t.Fatalf("page 2 status = %d, body = %s", w.Code, w.Body.String())
+	}
+	var page2 []map[string]interface{}
+	json.Unmarshal(w.Body.Bytes(), &page2)
+	if len(page2) != 1 {
+		t.Fatalf("page 2 len = %d, want 1", len(page2))
+	}
+	if page1[0]["id"] == page2[0]["id"] {
+		t.Fatalf("page 1 and page 2 returned the same invitation: %v", page1[0]["id"])
+	}
+}
+
+func TestInvitations_UserListPagination(t *testing.T) {
+	s := invitationsTestServer(t)
+	admin := s.store.UsersByLogin["admin"]
+	r1 := s.store.CreateRepo(admin, "invite-user-page-1", "", false)
+	r2 := s.store.CreateRepo(admin, "invite-user-page-2", "", false)
+	other, otherToken := makeOtherUser(s, "paged-invitee")
+	s.store.CreateRepoInvitation(r1.FullName, other.Login, "", admin.ID, "pull")
+	s.store.CreateRepoInvitation(r2.FullName, other.Login, "", admin.ID, "pull")
+
+	w := doInvitationReq(s, otherToken, "GET", "/api/v3/user/repository_invitations?per_page=1", nil)
+	if w.Code != http.StatusOK {
+		t.Fatalf("page 1 status = %d, body = %s", w.Code, w.Body.String())
+	}
+	var page1 []map[string]interface{}
+	json.Unmarshal(w.Body.Bytes(), &page1)
+	if len(page1) != 1 {
+		t.Fatalf("page 1 len = %d, want 1", len(page1))
+	}
+	if link := w.Header().Get("Link"); !strings.Contains(link, `rel="next"`) {
+		t.Fatalf("page 1 Link = %q, want rel=next", link)
+	}
+
+	w = doInvitationReq(s, otherToken, "GET", "/api/v3/user/repository_invitations?per_page=1&page=2", nil)
+	if w.Code != http.StatusOK {
+		t.Fatalf("page 2 status = %d, body = %s", w.Code, w.Body.String())
+	}
+	var page2 []map[string]interface{}
+	json.Unmarshal(w.Body.Bytes(), &page2)
+	if len(page2) != 1 {
+		t.Fatalf("page 2 len = %d, want 1", len(page2))
+	}
+	if page1[0]["id"] == page2[0]["id"] {
+		t.Fatalf("page 1 and page 2 returned the same invitation: %v", page1[0]["id"])
 	}
 }

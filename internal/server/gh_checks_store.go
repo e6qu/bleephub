@@ -1,6 +1,7 @@
 package bleephub
 
 import (
+	"sort"
 	"strconv"
 	"time"
 )
@@ -148,6 +149,7 @@ func (st *Store) ListCheckSuitesForCommit(repoKey, headSHA string, appID int) []
 		cp := *s
 		out = append(out, &cp)
 	}
+	sort.Slice(out, func(i, j int) bool { return out[i].ID < out[j].ID })
 	return out
 }
 

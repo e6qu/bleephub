@@ -624,9 +624,10 @@ func (s *Server) handleListEnvironments(w http.ResponseWriter, r *http.Request) 
 	for _, e := range envs {
 		out = append(out, environmentToJSON(e, s.store, s.baseURL(r), repo))
 	}
+	paged := paginateAndLink(w, r, out)
 	writeJSON(w, http.StatusOK, map[string]interface{}{
 		"total_count":  len(envs),
-		"environments": out,
+		"environments": paged,
 	})
 }
 

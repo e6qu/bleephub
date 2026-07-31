@@ -792,3 +792,210 @@ func TestDependabot_OrgSecretSelectedRepoAddRemove(t *testing.T) {
 		t.Fatalf("unknown secret add repo: %d, want 404", resp.StatusCode)
 	}
 }
+
+func dependabotPublicKeyID(t *testing.T, s *Server, path string) string {
+	t.Helper()
+	w := tokenRequest(s, http.MethodGet, path, defaultToken)
+	if w.Code != http.StatusOK {
+		t.Fatalf("public key: %d body=%s", w.Code, w.Body.String())
+	}
+	var pk map[string]any
+	if err := json.Unmarshal(w.Body.Bytes(), &pk); err != nil {
+		t.Fatalf("decode public key: %v", err)
+	}
+	keyID, _ := pk["key_id"].(string)
+	if keyID == "" {
+		t.Fatal("public key response missing key_id")
+	}
+	return keyID
+}
+
+func putDependabotSecret(t *testing.T, s *Server, path, keyID string, body map[string]any) {
+	t.Helper()
+	if body == nil {
+		body = map[string]any{}
+	}
+	body["encrypted_value"] = base64.StdEncoding.EncodeToString([]byte("encrypted-value"))
+	body["key_id"] = keyID
+	w := pagedJSONRequest(t, s, http.MethodPut, path, defaultToken, body)
+	if w.Code != http.StatusCreated {
+		t.Fatalf("put secret %s: %d, want 201", path, w.Code)
+	}
+}
+
+func dependabotSecretsPage(t *testing.T, s *Server, path string) map[string]any {
+	t.Helper()
+	w := tokenRequest(s, http.MethodGet, path, defaultToken)
+	if w.Code != http.StatusOK {
+		t.Fatalf("GET %s: %d body=%s", path, w.Code, w.Body.String())
+	}
+	var page map[string]any
+	if err := json.Unmarshal(w.Body.Bytes(), &page); err != nil {
+		t.Fatalf("decode %s: %v", path, err)
+	}
+	if link := w.Header().Get("Link"); strings.HasSuffix(path, "per_page=1") && !strings.Contains(link, `rel="next"`) {
+		t.Fatalf("GET %s Link = %q, want rel=next", path, link)
+	}
+	return page
+}
+
+func TestDependabot_RepoSecretsPagination(t *testing.T) {
+	s := newTestServer()
+	s.registerRoutes()
+	admin := s.store.UsersByLogin["admin"]
+	repo := s.store.CreateRepo(admin, "dependabot-repo-secrets-pg", "", false)
+	if repo == nil {
+		t.Fatal("create repo failed")
+	}
+
+	base := "/api/v3/repos/admin/dependabot-repo-secrets-pg/dependabot/secrets"
+	keyID := dependabotPublicKeyID(t, s, base+"/public-key")
+	putDependabotSecret(t, s, base+"/SECRET_A", keyID, nil)
+	putDependabotSecret(t, s, base+"/SECRET_B", keyID, nil)
+
+	page1 := dependabotSecretsPage(t, s, base+"?per_page=1")
+	if page1["total_count"] != float64(2) {
+		t.Fatalf("page 1 total_count = %v, want 2", page1["total_count"])
+	}
+	secrets1 := page1["secrets"].([]any)
+	if len(secrets1) != 1 {
+		t.Fatalf("page 1 secrets = %d, want 1", len(secrets1))
+	}
+
+	page2 := dependabotSecretsPage(t, s, base+"?per_page=1&page=2")
+	if page2["total_count"] != float64(2) {
+		t.Fatalf("page 2 total_count = %v, want 2", page2["total_count"])
+	}
+	secrets2 := page2["secrets"].([]any)
+	if len(secrets2) != 1 {
+		t.Fatalf("page 2 secrets = %d, want 1", len(secrets2))
+	}
+	name1 := secrets1[0].(map[string]any)["name"]
+	name2 := secrets2[0].(map[string]any)["name"]
+	if name1 == name2 {
+		t.Fatalf("page 2 returned the same secret %v as page 1", name2)
+	}
+}
+
+func TestDependabot_OrgSecretsPagination(t *testing.T) {
+	s := newTestServer()
+	s.registerRoutes()
+	admin := s.store.UsersByLogin["admin"]
+	org := s.store.CreateOrg(admin, "dependabot-org-pg", "Dependabot Org PG", "")
+	if org == nil {
+		t.Fatal("create org failed")
+	}
+
+	base := "/api/v3/orgs/dependabot-org-pg/dependabot/secrets"
+	keyID := dependabotPublicKeyID(t, s, base+"/public-key")
+	putDependabotSecret(t, s, base+"/ORG_SECRET_A", keyID, map[string]any{"visibility": "all"})
+	putDependabotSecret(t, s, base+"/ORG_SECRET_B", keyID, map[string]any{"visibility": "all"})
+
+	page1 := dependabotSecretsPage(t, s, base+"?per_page=1")
+	if page1["total_count"] != float64(2) {
+		t.Fatalf("page 1 total_count = %v, want 2", page1["total_count"])
+	}
+	secrets1 := page1["secrets"].([]any)
+	if len(secrets1) != 1 {
+		t.Fatalf("page 1 secrets = %d, want 1", len(secrets1))
+	}
+
+	page2 := dependabotSecretsPage(t, s, base+"?per_page=1&page=2")
+	if page2["total_count"] != float64(2) {
+		t.Fatalf("page 2 total_count = %v, want 2", page2["total_count"])
+	}
+	secrets2 := page2["secrets"].([]any)
+	if len(secrets2) != 1 {
+		t.Fatalf("page 2 secrets = %d, want 1", len(secrets2))
+	}
+	name1 := secrets1[0].(map[string]any)["name"]
+	name2 := secrets2[0].(map[string]any)["name"]
+	if name1 == name2 {
+		t.Fatalf("page 2 returned the same secret %v as page 1", name2)
+	}
+}
+
+func TestDependabot_OrgSecretReposPagination(t *testing.T) {
+	s := newTestServer()
+	s.registerRoutes()
+	admin := s.store.UsersByLogin["admin"]
+	org := s.store.CreateOrg(admin, "dependabot-repo-pg", "Dependabot Repo PG", "")
+	if org == nil {
+		t.Fatal("create org failed")
+	}
+	r1 := s.store.CreateOrgRepo(org, admin, "dependabot-repo-pg-1", "", false)
+	r2 := s.store.CreateOrgRepo(org, admin, "dependabot-repo-pg-2", "", false)
+	if r1 == nil || r2 == nil {
+		t.Fatal("create org repos failed")
+	}
+
+	base := "/api/v3/orgs/dependabot-repo-pg/dependabot/secrets"
+	keyID := dependabotPublicKeyID(t, s, base+"/public-key")
+	putDependabotSecret(t, s, base+"/PG_SECRET", keyID, map[string]any{
+		"visibility":              "selected",
+		"selected_repository_ids": []int{r1.ID, r2.ID},
+	})
+
+	page1 := dependabotSecretsPage(t, s, base+"/PG_SECRET/repositories?per_page=1")
+	if page1["total_count"] != float64(2) {
+		t.Fatalf("page 1 total_count = %v, want 2", page1["total_count"])
+	}
+	repos1 := page1["repositories"].([]any)
+	if len(repos1) != 1 {
+		t.Fatalf("page 1 repositories = %d, want 1", len(repos1))
+	}
+
+	page2 := dependabotSecretsPage(t, s, base+"/PG_SECRET/repositories?per_page=1&page=2")
+	if page2["total_count"] != float64(2) {
+		t.Fatalf("page 2 total_count = %v, want 2", page2["total_count"])
+	}
+	repos2 := page2["repositories"].([]any)
+	if len(repos2) != 1 {
+		t.Fatalf("page 2 repositories = %d, want 1", len(repos2))
+	}
+	id1 := repos1[0].(map[string]any)["id"]
+	id2 := repos2[0].(map[string]any)["id"]
+	if id1 == id2 {
+		t.Fatalf("page 2 returned the same repository %v as page 1", id2)
+	}
+}
+
+func TestDependabot_RepositoryAccessPagination(t *testing.T) {
+	s := newTestServer()
+	s.registerRoutes()
+	admin := s.store.UsersByLogin["admin"]
+	org := s.store.CreateOrg(admin, "dependabot-access-pg", "Dependabot Access PG", "")
+	if org == nil {
+		t.Fatal("create org failed")
+	}
+	r1 := s.store.CreateOrgRepo(org, admin, "dependabot-access-pg-1", "", false)
+	r2 := s.store.CreateOrgRepo(org, admin, "dependabot-access-pg-2", "", false)
+	if r1 == nil || r2 == nil {
+		t.Fatal("create org repos failed")
+	}
+
+	w := pagedJSONRequest(t, s, http.MethodPatch, "/api/v3/orgs/dependabot-access-pg/dependabot/repository-access", defaultToken, map[string]any{
+		"repository_ids_to_add": []int{r1.ID, r2.ID},
+	})
+	if w.Code != http.StatusNoContent {
+		t.Fatalf("patch repository access: %d, want 204", w.Code)
+	}
+
+	base := "/api/v3/orgs/dependabot-access-pg/dependabot/repository-access"
+	page1 := dependabotSecretsPage(t, s, base+"?per_page=1")
+	repos1 := page1["accessible_repositories"].([]any)
+	if len(repos1) != 1 {
+		t.Fatalf("page 1 accessible_repositories = %d, want 1", len(repos1))
+	}
+
+	page2 := dependabotSecretsPage(t, s, base+"?per_page=1&page=2")
+	repos2 := page2["accessible_repositories"].([]any)
+	if len(repos2) != 1 {
+		t.Fatalf("page 2 accessible_repositories = %d, want 1", len(repos2))
+	}
+	id1 := repos1[0].(map[string]any)["id"]
+	id2 := repos2[0].(map[string]any)["id"]
+	if id1 == id2 {
+		t.Fatalf("page 2 returned the same repository %v as page 1", id2)
+	}
+}

@@ -93,9 +93,11 @@ func (s *Server) handleListRepoDevcontainers(w http.ResponseWriter, r *http.Requ
 	if s.lookupReadableRepoFromPath(w, r) == nil {
 		return
 	}
+	devcontainers := []map[string]interface{}{}
+	paged := paginateAndLink(w, r, devcontainers)
 	writeJSON(w, http.StatusOK, map[string]interface{}{
-		"total_count":   0,
-		"devcontainers": []map[string]interface{}{},
+		"total_count":   len(devcontainers),
+		"devcontainers": paged,
 	})
 }
 
@@ -168,7 +170,8 @@ func (s *Server) handleListUserCodespaces(w http.ResponseWriter, r *http.Request
 	for i, cs := range list {
 		out[i] = s.codespaceToJSON(cs, s.baseURL(r))
 	}
-	writeJSON(w, http.StatusOK, map[string]interface{}{"codespaces": out, "total_count": len(out)})
+	paged := paginateAndLink(w, r, out)
+	writeJSON(w, http.StatusOK, map[string]interface{}{"codespaces": paged, "total_count": len(out)})
 }
 
 func (s *Server) handleCreateUserCodespace(w http.ResponseWriter, r *http.Request) {
@@ -306,7 +309,8 @@ func (s *Server) handleListRepoCodespaces(w http.ResponseWriter, r *http.Request
 	for i, cs := range list {
 		out[i] = s.codespaceToJSON(cs, s.baseURL(r))
 	}
-	writeJSON(w, http.StatusOK, map[string]interface{}{"codespaces": out, "total_count": len(out)})
+	paged := paginateAndLink(w, r, out)
+	writeJSON(w, http.StatusOK, map[string]interface{}{"codespaces": paged, "total_count": len(out)})
 }
 
 func (s *Server) handleCreateRepoCodespace(w http.ResponseWriter, r *http.Request) {
@@ -619,7 +623,8 @@ func (s *Server) handleListOrgMemberCodespaces(w http.ResponseWriter, r *http.Re
 		}
 		out = append(out, s.codespaceToJSON(cs, base))
 	}
-	writeJSON(w, http.StatusOK, map[string]interface{}{"codespaces": out, "total_count": len(out)})
+	paged := paginateAndLink(w, r, out)
+	writeJSON(w, http.StatusOK, map[string]interface{}{"codespaces": paged, "total_count": len(out)})
 }
 
 // resolveOrgMemberCodespace resolves {codespace_name} to a codespace the
@@ -681,7 +686,8 @@ func (s *Server) handleListUserCodespaceSecrets(w http.ResponseWriter, r *http.R
 	user := ghUserFromContext(r.Context())
 	scope := codespaceSecretScopeKey("user", user.Login)
 	secs := s.snapshotCodespaceSecrets(s.store.ListCodespaceSecrets(scope))
-	writeJSON(w, http.StatusOK, codespaceSecretsListJSON(secs, s.baseURL(r)))
+	paged := paginateAndLink(w, r, secs)
+	writeJSON(w, http.StatusOK, codespaceSecretsListJSON(paged, len(secs), s.baseURL(r)))
 }
 
 func (s *Server) handleGetUserCodespaceSecret(w http.ResponseWriter, r *http.Request) {
@@ -726,7 +732,8 @@ func (s *Server) handleListRepoCodespaceSecrets(w http.ResponseWriter, r *http.R
 	for i, sec := range secs {
 		out[i] = codespaceRepoSecretJSON(sec)
 	}
-	writeJSON(w, http.StatusOK, map[string]interface{}{"secrets": out, "total_count": len(out)})
+	paged := paginateAndLink(w, r, out)
+	writeJSON(w, http.StatusOK, map[string]interface{}{"secrets": paged, "total_count": len(out)})
 }
 
 func (s *Server) handleGetRepoCodespaceSecret(w http.ResponseWriter, r *http.Request) {
@@ -779,7 +786,8 @@ func (s *Server) handleListOrgCodespaceSecrets(w http.ResponseWriter, r *http.Re
 	for i, sec := range secs {
 		out[i] = codespaceOrgSecretJSON(sec, org, s.baseURL(r))
 	}
-	writeJSON(w, http.StatusOK, map[string]interface{}{"secrets": out, "total_count": len(out)})
+	paged := paginateAndLink(w, r, out)
+	writeJSON(w, http.StatusOK, map[string]interface{}{"secrets": paged, "total_count": len(out)})
 }
 
 func (s *Server) handleGetOrgCodespaceSecret(w http.ResponseWriter, r *http.Request) {
@@ -838,7 +846,8 @@ func (s *Server) handleListOrgCodespaceSecretRepos(w http.ResponseWriter, r *htt
 			repos = append(repos, repoToJSON(repo, s.store, s.baseURL(r)))
 		}
 	}
-	writeJSON(w, http.StatusOK, map[string]interface{}{"repositories": repos, "total_count": len(repos)})
+	paged := paginateAndLink(w, r, repos)
+	writeJSON(w, http.StatusOK, map[string]interface{}{"repositories": paged, "total_count": len(repos)})
 }
 
 func (s *Server) handleSetOrgCodespaceSecretRepos(w http.ResponseWriter, r *http.Request) {
@@ -1060,12 +1069,12 @@ func codespaceOrgSecretJSON(sec *CodespaceSecret, orgLogin, baseURL string) map[
 	return out
 }
 
-func codespaceSecretsListJSON(secs []*CodespaceSecret, baseURL string) map[string]interface{} {
+func codespaceSecretsListJSON(secs []*CodespaceSecret, total int, baseURL string) map[string]interface{} {
 	out := make([]map[string]interface{}, len(secs))
 	for i, sec := range secs {
 		out[i] = codespaceUserSecretJSON(sec, baseURL)
 	}
-	return map[string]interface{}{"secrets": out, "total_count": len(out)}
+	return map[string]interface{}{"secrets": out, "total_count": total}
 }
 
 // ─── organization codespaces + access controls ───────────────────────────
@@ -1203,7 +1212,8 @@ func (s *Server) handleListOrgCodespaces(w http.ResponseWriter, r *http.Request)
 	for i, cs := range list {
 		out[i] = s.codespaceToJSON(cs, base)
 	}
-	writeJSON(w, http.StatusOK, map[string]interface{}{"codespaces": out, "total_count": len(out)})
+	paged := paginateAndLink(w, r, out)
+	writeJSON(w, http.StatusOK, map[string]interface{}{"codespaces": paged, "total_count": len(out)})
 }
 
 func (s *Server) handleSetOrgCodespacesAccess(w http.ResponseWriter, r *http.Request) {

@@ -122,6 +122,83 @@ func TestGPGKeyCRUD(t *testing.T) {
 	}
 }
 
+func TestGPGKeysPagination(t *testing.T) {
+	s := newTestServer()
+	s.registerGHMiscEndpoints()
+
+	for i := 0; i < 2; i++ {
+		w := doMiscReq(s, "POST", "/api/v3/user/gpg_keys", `{
+			"armored_public_key": "-----BEGIN PGP PUBLIC KEY BLOCK-----\npagination-key-`+strconv.Itoa(i)+`\n-----END PGP PUBLIC KEY BLOCK-----"
+		}`)
+		if w.Code != 201 {
+			t.Fatalf("create key %d status = %d, want 201", i, w.Code)
+		}
+	}
+
+	for _, path := range []string{"/api/v3/user/gpg_keys", "/api/v3/users/admin/gpg_keys"} {
+		w := doMiscReq(s, "GET", path+"?per_page=1", "")
+		if w.Code != 200 {
+			t.Fatalf("%s page 1 status = %d, want 200", path, w.Code)
+		}
+		var page []interface{}
+		json.Unmarshal(w.Body.Bytes(), &page)
+		if len(page) != 1 {
+			t.Fatalf("%s page 1 items = %d, want 1", path, len(page))
+		}
+		if link := w.Header().Get("Link"); !strings.Contains(link, `rel="next"`) {
+			t.Fatalf("%s page 1 Link = %q, want rel=\"next\"", path, link)
+		}
+
+		w = doMiscReq(s, "GET", path+"?per_page=1&page=2", "")
+		if w.Code != 200 {
+			t.Fatalf("%s page 2 status = %d, want 200", path, w.Code)
+		}
+		json.Unmarshal(w.Body.Bytes(), &page)
+		if len(page) != 1 {
+			t.Fatalf("%s page 2 items = %d, want 1", path, len(page))
+		}
+	}
+}
+
+func TestUserKeysPagination(t *testing.T) {
+	s := newTestServer()
+	s.registerGHMiscEndpoints()
+
+	for i := 0; i < 2; i++ {
+		w := doMiscReq(s, "POST", "/api/v3/user/keys", `{
+			"title": "pagination-key-`+strconv.Itoa(i)+`",
+			"key": "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIDIhz2GK/XCUj4i6Q5yQJNL1MXMY0RxzPV2QrBqfHrD`+strconv.Itoa(i)+`"
+		}`)
+		if w.Code != 201 {
+			t.Fatalf("create key %d status = %d, want 201", i, w.Code)
+		}
+	}
+
+	for _, path := range []string{"/api/v3/user/keys", "/api/v3/users/admin/keys"} {
+		w := doMiscReq(s, "GET", path+"?per_page=1", "")
+		if w.Code != 200 {
+			t.Fatalf("%s page 1 status = %d, want 200", path, w.Code)
+		}
+		var page []interface{}
+		json.Unmarshal(w.Body.Bytes(), &page)
+		if len(page) != 1 {
+			t.Fatalf("%s page 1 items = %d, want 1", path, len(page))
+		}
+		if link := w.Header().Get("Link"); !strings.Contains(link, `rel="next"`) {
+			t.Fatalf("%s page 1 Link = %q, want rel=\"next\"", path, link)
+		}
+
+		w = doMiscReq(s, "GET", path+"?per_page=1&page=2", "")
+		if w.Code != 200 {
+			t.Fatalf("%s page 2 status = %d, want 200", path, w.Code)
+		}
+		json.Unmarshal(w.Body.Bytes(), &page)
+		if len(page) != 1 {
+			t.Fatalf("%s page 2 items = %d, want 1", path, len(page))
+		}
+	}
+}
+
 func TestGPGKeyDeleteOwnership(t *testing.T) {
 	s := newTestServer()
 	s.registerGHMiscEndpoints()
@@ -639,6 +716,42 @@ func TestAuditLogFromRepoCreate(t *testing.T) {
 	}
 	if !found {
 		t.Fatal("no repo.create audit event found")
+	}
+}
+
+func TestPagesListBuildsPagination(t *testing.T) {
+	s := newTestServer()
+	s.registerGHMiscEndpoints()
+	admin := s.store.UsersByLogin["admin"]
+	repo := s.store.CreateRepo(admin, "pages-build-pagination", "", false)
+	s.store.Misc.mu.Lock()
+	s.store.Misc.pagesBuilds[repo.FullName] = []*PagesBuild{
+		{ID: 2, URL: "http://127.0.0.1/api/v3/repos/" + repo.FullName + "/pages/builds/2", Status: "built"},
+		{ID: 1, URL: "http://127.0.0.1/api/v3/repos/" + repo.FullName + "/pages/builds/1", Status: "built"},
+	}
+	s.store.Misc.mu.Unlock()
+
+	path := "/api/v3/repos/" + repo.FullName + "/pages/builds"
+	w := doMiscReq(s, "GET", path+"?per_page=1", "")
+	if w.Code != 200 {
+		t.Fatalf("page 1 status = %d, want 200", w.Code)
+	}
+	var page []interface{}
+	json.Unmarshal(w.Body.Bytes(), &page)
+	if len(page) != 1 {
+		t.Fatalf("page 1 builds = %d, want 1", len(page))
+	}
+	if link := w.Header().Get("Link"); !strings.Contains(link, `rel="next"`) {
+		t.Fatalf("page 1 Link = %q, want rel=\"next\"", link)
+	}
+
+	w = doMiscReq(s, "GET", path+"?per_page=1&page=2", "")
+	if w.Code != 200 {
+		t.Fatalf("page 2 status = %d, want 200", w.Code)
+	}
+	json.Unmarshal(w.Body.Bytes(), &page)
+	if len(page) != 1 {
+		t.Fatalf("page 2 builds = %d, want 1", len(page))
 	}
 }
 

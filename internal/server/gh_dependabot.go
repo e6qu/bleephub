@@ -250,9 +250,10 @@ func (s *Server) handleListDependabotRepoSecrets(w http.ResponseWriter, r *http.
 	list := sortedDependabotSecretsJSON(s.store.DependabotSecrets[repo.FullName])
 	s.store.mu.RUnlock()
 
+	paged := paginateAndLink(w, r, list)
 	writeJSON(w, http.StatusOK, map[string]interface{}{
 		"total_count": len(list),
-		"secrets":     list,
+		"secrets":     paged,
 	})
 }
 
@@ -379,9 +380,10 @@ func (s *Server) handleListDependabotOrgSecrets(w http.ResponseWriter, r *http.R
 	}
 	s.store.mu.RUnlock()
 
+	paged := paginateAndLink(w, r, list)
 	writeJSON(w, http.StatusOK, map[string]interface{}{
 		"total_count": len(list),
-		"secrets":     list,
+		"secrets":     paged,
 	})
 }
 
@@ -608,9 +610,10 @@ func (s *Server) writeDependabotSelectedReposResponse(w http.ResponseWriter, r *
 	for _, repo := range repos {
 		out = append(out, dependabotMinimalRepoJSON(repo, s.store, base))
 	}
+	paged := paginateAndLink(w, r, out)
 	writeJSON(w, http.StatusOK, map[string]interface{}{
 		"total_count":  len(out),
-		"repositories": out,
+		"repositories": paged,
 	})
 }
 
@@ -653,6 +656,7 @@ func (s *Server) handleGetDependabotRepositoryAccess(w http.ResponseWriter, r *h
 	}
 	ids := s.store.GetDependabotRepositoryAccess(org.Login)
 	repos := s.dependabotAccessibleRepos(r, ids)
+	repos = paginateAndLink(w, r, repos)
 	writeJSON(w, http.StatusOK, map[string]interface{}{
 		"default_level":           s.store.GetDependabotRepositoryAccessDefaultLevel(org.Login),
 		"accessible_repositories": repos,

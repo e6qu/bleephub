@@ -3,7 +3,10 @@ package bleephub
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"fmt"
+	"net/http"
+	"strings"
 	"testing"
 )
 
@@ -61,6 +64,49 @@ func TestAgentsRepoSecrets_RoundTrip(t *testing.T) {
 	mustStatus(t, ghDelete(t, base+"/AGENT_TOKEN", defaultToken), 204, "delete secret")
 	mustStatus(t, ghGet(t, base+"/AGENT_TOKEN", defaultToken), 404, "get deleted secret")
 	mustStatus(t, ghDelete(t, base+"/AGENT_TOKEN", defaultToken), 404, "delete deleted secret")
+}
+
+func TestAgentsRepoSecrets_ListPagination(t *testing.T) {
+	s := newTestServer()
+	s.registerRoutes()
+	admin := s.store.UsersByLogin["admin"]
+	repo := s.store.CreateRepo(admin, "agents-sec-pg", "", false)
+	base := "/api/v3/repos/" + repo.FullName + "/agents/secrets"
+
+	putPaginationSealedSecret(t, s, base+"/AAA_FIRST", "v", 201)
+	putPaginationSealedSecret(t, s, base+"/BBB_SECOND", "v", 201)
+
+	resp := tokenRequest(s, http.MethodGet, base+"?per_page=1", defaultToken)
+	if resp.Code != http.StatusOK {
+		t.Fatalf("page 1 = %d: %s", resp.Code, resp.Body.String())
+	}
+	var list map[string]interface{}
+	if err := json.Unmarshal(resp.Body.Bytes(), &list); err != nil {
+		t.Fatal(err)
+	}
+	if list["total_count"] != float64(2) {
+		t.Fatalf("total_count = %v, want 2", list["total_count"])
+	}
+	page1 := list["secrets"].([]interface{})
+	if len(page1) != 1 || page1[0].(map[string]interface{})["name"] != "AAA_FIRST" {
+		t.Fatalf("page 1 = %v, want [AAA_FIRST]", page1)
+	}
+	if link := resp.Header().Get("Link"); !strings.Contains(link, `rel="next"`) {
+		t.Fatalf("Link = %q, want rel=next", link)
+	}
+
+	resp = tokenRequest(s, http.MethodGet, base+"?per_page=1&page=2", defaultToken)
+	if resp.Code != http.StatusOK {
+		t.Fatalf("page 2 = %d: %s", resp.Code, resp.Body.String())
+	}
+	list = nil
+	if err := json.Unmarshal(resp.Body.Bytes(), &list); err != nil {
+		t.Fatal(err)
+	}
+	page2 := list["secrets"].([]interface{})
+	if len(page2) != 1 || page2[0].(map[string]interface{})["name"] != "BBB_SECOND" {
+		t.Fatalf("page 2 = %v, want [BBB_SECOND]", page2)
+	}
 }
 
 func TestAgentsRepoSecrets_Validation(t *testing.T) {

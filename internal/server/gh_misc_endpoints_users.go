@@ -360,7 +360,7 @@ func (s *Server) handleListUserSocialAccounts(w http.ResponseWriter, r *http.Req
 		writeGHError(w, http.StatusNotFound, "Not Found")
 		return
 	}
-	writeJSON(w, http.StatusOK, s.store.ListUserSocialAccounts(user.ID))
+	writeJSON(w, http.StatusOK, paginateAndLink(w, r, s.store.ListUserSocialAccounts(user.ID)))
 }
 
 func (s *Server) handleListUserSSHSigningKeys(w http.ResponseWriter, r *http.Request) {
@@ -369,7 +369,7 @@ func (s *Server) handleListUserSSHSigningKeys(w http.ResponseWriter, r *http.Req
 		writeGHError(w, http.StatusNotFound, "Not Found")
 		return
 	}
-	writeJSON(w, http.StatusOK, s.store.ListUserSSHSigningKeys(user.ID))
+	writeJSON(w, http.StatusOK, paginateAndLink(w, r, s.store.ListUserSSHSigningKeys(user.ID)))
 }
 
 func (s *Server) handleListUserSubscriptions(w http.ResponseWriter, r *http.Request) {
@@ -400,7 +400,7 @@ func (s *Server) handleListUserBlocks(w http.ResponseWriter, r *http.Request) {
 			out = append(out, userToJSON(u))
 		}
 	}
-	writeJSON(w, http.StatusOK, out)
+	writeJSON(w, http.StatusOK, paginateAndLink(w, r, out))
 }
 
 func (s *Server) handleCheckUserBlocked(w http.ResponseWriter, r *http.Request) {
@@ -474,7 +474,7 @@ func (s *Server) handleListMySocialAccounts(w http.ResponseWriter, r *http.Reque
 		writeGHError(w, http.StatusUnauthorized, "Bad credentials")
 		return
 	}
-	writeJSON(w, http.StatusOK, s.store.ListUserSocialAccounts(user.ID))
+	writeJSON(w, http.StatusOK, paginateAndLink(w, r, s.store.ListUserSocialAccounts(user.ID)))
 }
 
 func (s *Server) handleCreateMySocialAccounts(w http.ResponseWriter, r *http.Request) {
@@ -562,7 +562,7 @@ func (s *Server) handleListMySSHSigningKeys(w http.ResponseWriter, r *http.Reque
 		writeGHError(w, http.StatusUnauthorized, "Bad credentials")
 		return
 	}
-	writeJSON(w, http.StatusOK, s.store.ListUserSSHSigningKeys(user.ID))
+	writeJSON(w, http.StatusOK, paginateAndLink(w, r, s.store.ListUserSSHSigningKeys(user.ID)))
 }
 
 func (s *Server) handleCreateMySSHSigningKey(w http.ResponseWriter, r *http.Request) {

@@ -9,6 +9,8 @@ import (
 	"encoding/pem"
 	"fmt"
 	"net/http"
+	"net/http/httptest"
+	"net/url"
 	"strings"
 	"testing"
 	"time"
@@ -511,6 +513,87 @@ func TestListAppInstallationsHTTP(t *testing.T) {
 	json.NewDecoder(httpResp.Body).Decode(&list)
 	if len(list) < 1 {
 		t.Fatal("expected at least 1 installation")
+	}
+}
+
+func TestListAppInstallationsPagination(t *testing.T) {
+	s := newTestServer()
+	s.registerRoutes()
+
+	manifest := map[string]interface{}{
+		"name":         "Paged Inst App",
+		"url":          "https://example.test/app",
+		"redirect_url": "https://example.test/callback",
+	}
+	manifestJSON, _ := json.Marshal(manifest)
+	form := url.Values{"manifest": {string(manifestJSON)}}
+	manifestReq := httptest.NewRequest(http.MethodPost, "/settings/apps/new", strings.NewReader(form.Encode()))
+	manifestReq.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	manifestReq.Header.Set("Authorization", "token "+defaultToken)
+	manifestRec := httptest.NewRecorder()
+	s.requestHandler().ServeHTTP(manifestRec, manifestReq)
+	if manifestRec.Code != http.StatusFound {
+		t.Fatalf("manifest submission: got %d, want 302", manifestRec.Code)
+	}
+	loc, err := url.Parse(manifestRec.Header().Get("Location"))
+	if err != nil {
+		t.Fatalf("parse manifest redirect: %v", err)
+	}
+	code := loc.Query().Get("code")
+	if code == "" {
+		t.Fatal("manifest redirect carries no code")
+	}
+	conv := tokenRequest(s, http.MethodPost, "/api/v3/app-manifests/"+code+"/conversions", "")
+	if conv.Code != http.StatusCreated {
+		t.Fatalf("manifest conversion: got %d, want 201", conv.Code)
+	}
+	var appData map[string]interface{}
+	if err := json.Unmarshal(conv.Body.Bytes(), &appData); err != nil {
+		t.Fatalf("decode manifest conversion: %v", err)
+	}
+	appID := int(appData["id"].(float64))
+	pem := appData["pem"].(string)
+
+	admin := s.store.UsersByLogin["admin"]
+	org := s.store.CreateOrg(admin, "paged-inst-org", "paged-inst-org", "")
+	if org == nil {
+		t.Fatal("create org failed")
+	}
+	s.store.CreateInstallation(appID, "User", admin.ID, admin.Login, map[string]string{}, nil)
+	s.store.CreateInstallation(appID, "Organization", org.ID, org.Login, map[string]string{}, nil)
+
+	jwt, _ := signAppJWT(pem, appID, fixedTestTime)
+	get := func(path string) *httptest.ResponseRecorder {
+		w := tokenRequest(s, http.MethodGet, path, jwt)
+		if w.Code != http.StatusOK {
+			t.Fatalf("GET %s: got %d, want 200", path, w.Code)
+		}
+		return w
+	}
+
+	resp := get("/api/v3/app/installations?per_page=1")
+	link := resp.Header().Get("Link")
+	var page1 []map[string]interface{}
+	if err := json.Unmarshal(resp.Body.Bytes(), &page1); err != nil {
+		t.Fatalf("decode page 1: %v", err)
+	}
+	if len(page1) != 1 {
+		t.Fatalf("page 1 len = %d, want 1", len(page1))
+	}
+	if !strings.Contains(link, `rel="next"`) {
+		t.Fatalf("page 1 Link = %q, want rel=next", link)
+	}
+
+	resp = get("/api/v3/app/installations?per_page=1&page=2")
+	var page2 []map[string]interface{}
+	if err := json.Unmarshal(resp.Body.Bytes(), &page2); err != nil {
+		t.Fatalf("decode page 2: %v", err)
+	}
+	if len(page2) != 1 {
+		t.Fatalf("page 2 len = %d, want 1", len(page2))
+	}
+	if page1[0]["id"] == page2[0]["id"] {
+		t.Fatalf("page 1 and page 2 returned the same installation: %v", page1[0]["id"])
 	}
 }
 
