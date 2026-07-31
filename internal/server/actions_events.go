@@ -45,13 +45,12 @@ type actionsEventLoop struct {
 	once sync.Once
 	mu   sync.Mutex
 	cond *sync.Cond
-	// queue is deliberately unbounded. Producers call queueActionsEvent while
-	// holding the store lock, and the consumer needs that same lock to create
-	// checks and render webhook payloads. Blocking a producer on a bounded
-	// channel would therefore deadlock; dropping a transition makes the
-	// checks/webhook view disagree with the run. The consumer clears slots as
-	// it drains so processed events do not retain workflow payloads.
-	queue []actionsEvent
+	// snapshotMu guards the struct-value copies in cloneWorkflowEventSnapshot
+	// and cloneWorkflowJobEventSnapshot against concurrent field writes by the
+	// drain goroutine (CheckSuiteID on the workflow, CheckRunID on jobs).
+	// Lock order is always store.mu before snapshotMu.
+	snapshotMu sync.RWMutex
+	queue      []actionsEvent
 }
 
 func cloneWorkflowEventSnapshot(wf *Workflow) *Workflow {
@@ -118,6 +117,7 @@ func (s *Server) queueActionsEvent(kind actionsEventKind, wf *Workflow, job *Wor
 		s.actionsEvents.cond = sync.NewCond(&s.actionsEvents.mu)
 		go s.drainActionsEvents()
 	})
+	s.actionsEvents.snapshotMu.RLock()
 	event := actionsEvent{
 		kind:        kind,
 		wf:          wf,
@@ -125,6 +125,7 @@ func (s *Server) queueActionsEvent(kind actionsEventKind, wf *Workflow, job *Wor
 		wfSnapshot:  cloneWorkflowEventSnapshot(wf),
 		jobSnapshot: cloneWorkflowJobEventSnapshot(job),
 	}
+	s.actionsEvents.snapshotMu.RUnlock()
 	s.actionsEvents.mu.Lock()
 	s.actionsEvents.queue = append(s.actionsEvents.queue, event)
 	s.actionsEvents.cond.Signal()
@@ -186,7 +187,9 @@ func (s *Server) onActionsRunRequestedSnapshot(wf, snapshot *Workflow) {
 		cs.WorkflowFilePath = wf.WorkflowFilePath
 	})
 	s.store.mu.Lock()
+	s.actionsEvents.snapshotMu.Lock()
 	wf.CheckSuiteID = suite.ID
+	s.actionsEvents.snapshotMu.Unlock()
 	s.store.persistWorkflowRecord(wf)
 	s.store.mu.Unlock()
 
@@ -217,7 +220,9 @@ func (s *Server) onActionsRunRequestedSnapshot(wf, snapshot *Workflow) {
 			}
 		})
 		s.store.mu.Lock()
+		s.actionsEvents.snapshotMu.Lock()
 		j.CheckRunID = cr.ID
+		s.actionsEvents.snapshotMu.Unlock()
 		s.store.mu.Unlock()
 		s.emitCheckRunEvent(repoKey, cr.ID, "created")
 	}
