@@ -3,13 +3,13 @@
     "literal_event_producers": [
       {
         "event": "check_run",
-        "line": 406,
+        "line": 412,
         "producer": "emitWebhookEvent",
         "source": "internal/server/actions_events.go"
       },
       {
         "event": "check_suite",
-        "line": 425,
+        "line": 431,
         "producer": "emitWebhookEvent",
         "source": "internal/server/actions_events.go"
       },
@@ -63,7 +63,7 @@
       },
       {
         "event": "pull_request",
-        "line": 1763,
+        "line": 1734,
         "producer": "emitWebhookEvent",
         "source": "internal/server/gh_pulls_graphql.go"
       },
@@ -147,13 +147,13 @@
       },
       {
         "event": "workflow_job",
-        "line": 387,
+        "line": 393,
         "producer": "emitWebhookEvent",
         "source": "internal/server/actions_events.go"
       },
       {
         "event": "workflow_run",
-        "line": 370,
+        "line": 376,
         "producer": "emitWebhookEvent",
         "source": "internal/server/actions_events.go"
       }
@@ -164,17 +164,17 @@
     }
   },
   "graphql": {
-    "compatibility_gap_count": 319,
+    "compatibility_gap_count": 79,
     "coverage": {
-      "bleephub_types": 276,
-      "compatibility_gap_count": 319,
-      "implemented_fields": 782,
+      "bleephub_types": 272,
+      "compatibility_gap_count": 79,
+      "implemented_fields": 834,
       "official_fields": 8341,
       "official_types": 1806,
-      "shared_types": 210,
-      "signature_exact_fields": 546
+      "shared_types": 231,
+      "signature_exact_fields": 801
     },
-    "introspection_snapshot_sha256": "4a7e860f9580b380d88fe61d6c190817a8c25e07a6dd78045dea44081850b041",
+    "introspection_snapshot_sha256": "424d5bf5d87d8605bae3730a223c5c5d07cd780ee7f1fd5fa3469821a9b78fd3",
     "official_schema": {
       "content_sha256": "c504a0ed454276c878d5a873b782fa9824f2dec3205de3370845d40977e41322",
       "source": "https://docs.github.com/public/fpt/schema.docs.graphql"
@@ -197,6 +197,7 @@
       "internal/server/gh_projects_v2_graphql_test.go",
       "internal/server/gh_sweep_graphql_test.go",
       "internal/server/graphql_authz_test.go",
+      "internal/server/graphql_cost_test.go",
       "internal/server/graphql_credential_test.go",
       "internal/server/graphql_schema_parity_test.go",
       "internal/server/org_pr_graphql_test.go"
@@ -1038,8 +1039,8 @@
         "id": "TEST-090",
         "location": "runner_handshake_test.go:559",
         "severity": "M",
-        "status": "open",
-        "status_kind": "open"
+        "status": "fixed \u2014 the test puts its uniquely labelled message first in the shared fixture and decodes the envelope to require both the exact message type and its own plan marker; ten shuffled repeated runs pass",
+        "status_kind": "fixed"
       },
       {
         "category": "AUTH",
@@ -2181,8 +2182,8 @@
         "id": "GQL-008",
         "location": "4 connections",
         "severity": "M",
-        "status": "partial \u2014 Repository.issues now honors CREATED_AT, UPDATED_AT and COMMENTS in both directions with a behavioral vector; the other accepting connections remain open",
-        "status_kind": "partial"
+        "status": "fixed \u2014 repository, issue, pull-request, discussion and label connections apply their declared field/direction with deterministic tie-breaking; release/repository input signatures share the official order enums",
+        "status_kind": "fixed"
       },
       {
         "category": "GQL",
@@ -2190,8 +2191,8 @@
         "id": "GQL-009",
         "location": "gh_repos_graphql.go:684",
         "severity": "M",
-        "status": "open",
-        "status_kind": "open"
+        "status": "fixed \u2014 OWNER, COLLABORATOR and ORGANIZATION_MEMBER select from the durable ownership, collaborator and membership graphs before visibility and Relay pagination",
+        "status_kind": "fixed"
       },
       {
         "category": "GQL",
@@ -2217,8 +2218,8 @@
         "id": "GQL-012",
         "location": "gh_pulls_graphql.go:1488",
         "severity": "M",
-        "status": "open",
-        "status_kind": "open"
+        "status": "fixed \u2014 search declares and applies all four Relay bounds and honors the ISSUE search type",
+        "status_kind": "fixed"
       },
       {
         "category": "GQL",
@@ -2226,8 +2227,8 @@
         "id": "GQL-013",
         "location": "gh_pulls_graphql.go:2931",
         "severity": "M",
-        "status": "open",
-        "status_kind": "open"
+        "status": "fixed \u2014 created/updated ascending and descending orders are parsed and applied with stable ties; unsupported sorts honestly match nothing",
+        "status_kind": "fixed"
       },
       {
         "category": "GQL",
@@ -2235,8 +2236,8 @@
         "id": "GQL-014",
         "location": "gh_pulls_graphql.go:2928",
         "severity": "M",
-        "status": "open",
-        "status_kind": "open"
+        "status": "fixed \u2014 the qualifier resolves requested users from the persisted reviewer graph",
+        "status_kind": "fixed"
       },
       {
         "category": "GQL",
@@ -2253,8 +2254,8 @@
         "id": "GQL-016",
         "location": "gh_issues_graphql.go:761, gh_discussions_graphql.go:537",
         "severity": "M",
-        "status": "partial \u2014 issue assignee/creator resolution now produces an empty connection; the discussion category lookup remains open",
-        "status_kind": "partial"
+        "status": "fixed \u2014 unresolved issue principals and discussion categories produce empty connections rather than removing the predicate",
+        "status_kind": "fixed"
       },
       {
         "category": "GQL",
@@ -2262,8 +2263,8 @@
         "id": "GQL-017",
         "location": "gh_issues_graphql.go:1025",
         "severity": "M",
-        "status": "open",
-        "status_kind": "open"
+        "status": "fixed \u2014 create/update resolve every supplied id strictly and reject missing or cross-repository objects before mutating",
+        "status_kind": "fixed"
       },
       {
         "category": "GQL",
@@ -2271,8 +2272,8 @@
         "id": "GQL-018",
         "location": "gh_repos_graphql.go:1174",
         "severity": "M",
-        "status": "open",
-        "status_kind": "open"
+        "status": "fixed \u2014 request validation rejects malformed cursors; the legacy total decoder saturates invalid input past the result set rather than returning page one",
+        "status_kind": "fixed"
       },
       {
         "category": "GQL",
@@ -2289,8 +2290,8 @@
         "id": "GQL-020",
         "location": "gh_pagination.go:106,134",
         "severity": "M",
-        "status": "partial \u2014 embedded connections now use the shared four-bound window and honor first+before/last+after; rejecting the invalid simultaneous first+last combination remains open",
-        "status_kind": "partial"
+        "status": "fixed \u2014 one four-bound window handles valid combinations and the document guard rejects simultaneous first+last",
+        "status_kind": "fixed"
       },
       {
         "category": "GQL",
@@ -2298,8 +2299,8 @@
         "id": "GQL-021",
         "location": "gh_pagination.go:216",
         "severity": "M",
-        "status": "open",
-        "status_kind": "open"
+        "status": "fixed \u2014 literal and variable page sizes outside 1\u2026100 are rejected before execution",
+        "status_kind": "fixed"
       },
       {
         "category": "GQL",
@@ -2334,8 +2335,8 @@
         "id": "GQL-025",
         "location": "gh_graphql.go:165",
         "severity": "M",
-        "status": "open",
-        "status_kind": "open"
+        "status": "fixed \u2014 the authenticated endpoint enforces bounded depth, expanded fragment field cost and Relay window size before resolver execution",
+        "status_kind": "fixed"
       },
       {
         "category": "GQL",
@@ -2361,8 +2362,8 @@
         "id": "GQL-028",
         "location": "gh_issues_graphql.go:1630",
         "severity": "M",
-        "status": "open",
-        "status_kind": "open"
+        "status": "fixed \u2014 every scalar, enum, interface and ProjectV2/PageInfo memo belongs to one Server schema registry; parallel independent schema builds are a regression test",
+        "status_kind": "fixed"
       },
       {
         "category": "GQL",
@@ -2388,8 +2389,8 @@
         "id": "GQL-031",
         "location": "gh_graphql.go:95, gh_orgs_graphql.go:103",
         "severity": "M",
-        "status": "open",
-        "status_kind": "open"
+        "status": "fixed \u2014 user, organization, repositoryOwner and repository entity misses return typed NOT_FOUND errors",
+        "status_kind": "fixed"
       },
       {
         "category": "GQL",
@@ -2397,8 +2398,8 @@
         "id": "GQL-032",
         "location": "gh_graphql.go:80",
         "severity": "M",
-        "status": "open",
-        "status_kind": "open"
+        "status": "fixed \u2014 viewer is `User!` and the GraphQL endpoint rejects anonymous requests before execution",
+        "status_kind": "fixed"
       },
       {
         "category": "GQL",
@@ -2406,8 +2407,8 @@
         "id": "GQL-033",
         "location": "gh_graphql.go:215",
         "severity": "M",
-        "status": "open",
-        "status_kind": "open"
+        "status": "fixed \u2014 parsing and validation produce one AST which the guarded execution path reuses",
+        "status_kind": "fixed"
       },
       {
         "category": "GQL",
@@ -2424,8 +2425,8 @@
         "id": "GQL-035",
         "location": "11 types",
         "severity": "M",
-        "status": "open",
-        "status_kind": "open"
+        "status": "partial \u2014 `IssueOrder2`, order-direction forks and every PageInfo fork are gone; the official-schema ratchet reduced compatibility gaps from 319 to 79, with the remaining deliberately enumerated legacy object names still open",
+        "status_kind": "partial"
       },
       {
         "category": "GQL",
@@ -2433,8 +2434,8 @@
         "id": "GQL-036",
         "location": "18 sites",
         "severity": "M",
-        "status": "open",
-        "status_kind": "open"
+        "status": "fixed \u2014 all implemented Relay connections expose the singleton official `PageInfo` type and complete four-field values",
+        "status_kind": "fixed"
       },
       {
         "category": "GQL",
@@ -2451,8 +2452,8 @@
         "id": "GQL-038",
         "location": "12 payloads",
         "severity": "M",
-        "status": "open",
-        "status_kind": "open"
+        "status": "fixed \u2014 the mutation registrar guarantees the official input/payload echo for every registered mutation",
+        "status_kind": "fixed"
       },
       {
         "category": "GQL",
@@ -2460,8 +2461,8 @@
         "id": "GQL-039",
         "location": "gh_issues_graphql.go:1191",
         "severity": "M",
-        "status": "open",
-        "status_kind": "open"
+        "status": "fixed \u2014 subject is the Node interface and returns the concrete Issue or PullRequest",
+        "status_kind": "fixed"
       },
       {
         "category": "GQL",
@@ -2469,8 +2470,8 @@
         "id": "GQL-040",
         "location": "gh_issues_graphql.go:1877, gh_pulls_graphql.go:2517",
         "severity": "M",
-        "status": "open",
-        "status_kind": "open"
+        "status": "fixed \u2014 OWNER/MEMBER/COLLABORATOR/NONE derive from repository ownership, organization membership and collaborator grants",
+        "status_kind": "fixed"
       },
       {
         "category": "GQL",
@@ -2478,8 +2479,8 @@
         "id": "GQL-041",
         "location": "gh_issues_graphql.go:1872",
         "severity": "M",
-        "status": "open",
-        "status_kind": "open"
+        "status": "fixed \u2014 comments expose a non-empty typed URI path",
+        "status_kind": "fixed"
       },
       {
         "category": "GQL",
@@ -2496,8 +2497,8 @@
         "id": "GQL-043",
         "location": "gh_pulls_graphql.go:2529",
         "severity": "M",
-        "status": "open",
-        "status_kind": "open"
+        "status": "fixed \u2014 only each author's latest decisive review participates",
+        "status_kind": "fixed"
       },
       {
         "category": "GQL",
@@ -2505,8 +2506,8 @@
         "id": "GQL-044",
         "location": "gh_issues_graphql.go:935",
         "severity": "M",
-        "status": "open",
-        "status_kind": "open"
+        "status": "fixed \u2014 results are the repository owner, owning-organization members and repository collaborators only",
+        "status_kind": "fixed"
       },
       {
         "category": "GQL",
@@ -2514,8 +2515,8 @@
         "id": "GQL-045",
         "location": "gh_pulls_graphql.go:1034",
         "severity": "M",
-        "status": "open",
-        "status_kind": "open"
+        "status": "partial \u2014 mergeCommit resolves the persisted merge SHA and git object; auto-merge, resolution actor and pin persistence remain open",
+        "status_kind": "partial"
       },
       {
         "category": "GQL",
@@ -2523,8 +2524,8 @@
         "id": "GQL-046",
         "location": "gh_repos_graphql.go:104",
         "severity": "m",
-        "status": "open",
-        "status_kind": "open"
+        "status": "fixed \u2014 the field has one typed registration",
+        "status_kind": "fixed"
       },
       {
         "category": "GQL",
@@ -2532,8 +2533,8 @@
         "id": "GQL-047",
         "location": "gh_repos_graphql.go:1008",
         "severity": "m",
-        "status": "open",
-        "status_kind": "open"
+        "status": "fixed \u2014 optional boolean inputs are comma-ok decoded and malformed values are rejected by GraphQL coercion",
+        "status_kind": "fixed"
       },
       {
         "category": "GQL",
@@ -2541,8 +2542,8 @@
         "id": "GQL-048",
         "location": "gh_pagination.go:163",
         "severity": "m",
-        "status": "open",
-        "status_kind": "open"
+        "status": "partial \u2014 shared connection/window and `intArg` helpers cover every modified lane; remaining legacy forward-only helpers are enumerated for follow-up",
+        "status_kind": "partial"
       },
       {
         "category": "GQL",
@@ -2550,8 +2551,8 @@
         "id": "GQL-049",
         "location": "gh_projects_v2_graphql.go:402",
         "severity": "m",
-        "status": "open",
-        "status_kind": "open"
+        "status": "fixed \u2014 all project-owner resolution locks defer their unlock",
+        "status_kind": "fixed"
       },
       {
         "category": "GQL",
@@ -2559,8 +2560,8 @@
         "id": "GQL-050",
         "location": "gh_discussions_graphql.go:1071",
         "severity": "m",
-        "status": "open",
-        "status_kind": "open"
+        "status": "fixed \u2014 discussion Markdown renders through Goldmark",
+        "status_kind": "fixed"
       },
       {
         "category": "GQL",
@@ -2568,8 +2569,8 @@
         "id": "GQL-051",
         "location": "gh_graphql.go:174",
         "severity": "m",
-        "status": "open",
-        "status_kind": "open"
+        "status": "fixed \u2014 error logs record only operation, query SHA-256, byte length and formatted errors",
+        "status_kind": "fixed"
       },
       {
         "category": "GQL",
@@ -2784,7 +2785,7 @@
         "id": "ACT-014",
         "location": "workflow.go:137-161",
         "severity": "M",
-        "status": "partial \u2014 all four declarations are now strongly parsed and validated; workflow/job run defaults reach script steps, and expression-backed `run-name` is exposed as the run's `display_title`. Job concurrency is retained for scheduling and token permissions are retained for least-privilege issuance, but those two execution gates are not yet wired",
+        "status": "partial \u2014 declarations are strongly parsed and validated; run defaults and expression-backed run names execute; job concurrency is now evaluated, persisted, case-insensitive, enforced across runs, replaces stale pending jobs, and delivers cancellation to an active holder. Least-privilege GITHUB_TOKEN API scopes remain open",
         "status_kind": "partial"
       },
       {
@@ -2865,8 +2866,8 @@
         "id": "ACT-023",
         "location": "workflow_call.go:374,461",
         "severity": "M",
-        "status": "open",
-        "status_kind": "open"
+        "status": "fixed \u2014 input/secret template errors fail closed before runner dispatch and an invalid output fails the collector",
+        "status_kind": "fixed"
       },
       {
         "category": "ACT",
@@ -2874,8 +2875,8 @@
         "id": "ACT-024",
         "location": "workflow_call.go:398",
         "severity": "M",
-        "status": "open",
-        "status_kind": "open"
+        "status": "fixed \u2014 strict full-value boolean/number parsing and choice membership validation",
+        "status_kind": "fixed"
       },
       {
         "category": "ACT",
@@ -2883,8 +2884,8 @@
         "id": "ACT-025",
         "location": "workflow_call.go:197",
         "severity": "M",
-        "status": "open",
-        "status_kind": "open"
+        "status": "fixed \u2014 called-workflow environment is merged into each child with job-level precedence",
+        "status_kind": "fixed"
       },
       {
         "category": "ACT",
@@ -2901,8 +2902,8 @@
         "id": "ACT-027",
         "location": "webhooks.go:290",
         "severity": "M",
-        "status": "open",
-        "status_kind": "open"
+        "status": "partial \u2014 runs now report `refs/pull/<number>/merge` and prefer `merge_commit_sha`; until Bleephub materializes synthetic merge commits, an event without that field falls back to the head SHA",
+        "status_kind": "partial"
       },
       {
         "category": "ACT",
@@ -2955,8 +2956,8 @@
         "id": "ACT-033",
         "location": "webhooks_payloads.go:120",
         "severity": "M",
-        "status": "open",
-        "status_kind": "open"
+        "status": "fixed \u2014 object-graph force detection, bounded commit vectors, head commit, compare and pusher payloads; all documented skip directives suppress Actions",
+        "status_kind": "fixed"
       },
       {
         "category": "ACT",
@@ -2973,8 +2974,8 @@
         "id": "ACT-035",
         "location": "broker.go:148,289",
         "severity": "M",
-        "status": "open",
-        "status_kind": "open"
+        "status": "fixed \u2014 session creation and polling require an authenticated registered agent, and the broker independently refuses nil/zero agents",
+        "status_kind": "fixed"
       },
       {
         "category": "ACT",
@@ -2982,8 +2983,8 @@
         "id": "ACT-036",
         "location": "expressions.go:427",
         "severity": "M",
-        "status": "open",
-        "status_kind": "open"
+        "status": "fixed \u2014 both filter spellings project arrays and objects through chained properties, with declaration order for arrays and deterministic key order for objects",
+        "status_kind": "fixed"
       },
       {
         "category": "ACT",
@@ -2991,8 +2992,8 @@
         "id": "ACT-037",
         "location": "webhooks_store.go:26",
         "severity": "m",
-        "status": "open",
-        "status_kind": "open"
+        "status": "fixed \u2014 the dispatcher selects a shared TLS transport with verification disabled only for hooks explicitly configured with `insecure_ssl=1`; address and redirect controls remain enforced",
+        "status_kind": "fixed"
       },
       {
         "category": "ACT",
@@ -3000,8 +3001,8 @@
         "id": "ACT-038",
         "location": "webhooks.go:79",
         "severity": "m",
-        "status": "open",
-        "status_kind": "open"
+        "status": "fixed \u2014 delivery queues receive a deep hook snapshot, including events and last response, captured under the store lock",
+        "status_kind": "fixed"
       },
       {
         "category": "ACT",
@@ -3009,8 +3010,8 @@
         "id": "ACT-039",
         "location": "actions.go:65",
         "severity": "m",
-        "status": "open",
-        "status_kind": "open"
+        "status": "fixed \u2014 malformed JSON and incomplete action entries return 400 at the download-info boundary",
+        "status_kind": "fixed"
       },
       {
         "category": "ACT",
@@ -3018,8 +3019,8 @@
         "id": "ACT-040",
         "location": "actions.go:20,147",
         "severity": "m",
-        "status": "open",
-        "status_kind": "open"
+        "status": "fixed \u2014 cache identity is the resolved immutable commit SHA, returned bytes are detached, and insertion is bounded to 128 archives",
+        "status_kind": "fixed"
       },
       {
         "category": "ACT",
@@ -3045,8 +3046,8 @@
         "id": "ACT-043",
         "location": "workflows.go:1248",
         "severity": "m",
-        "status": "open",
-        "status_kind": "open"
+        "status": "fixed \u2014 a dedicated mutex serializes watcher replacement/stop and replacing a watcher cancels the previous goroutine",
+        "status_kind": "fixed"
       },
       {
         "category": "ACT",
@@ -3072,8 +3073,8 @@
         "id": "ACT-046",
         "location": "matrix.go:135",
         "severity": "m",
-        "status": "open",
-        "status_kind": "open"
+        "status": "fixed \u2014 YAML mapping order is retained and drives Cartesian expansion and display names",
+        "status_kind": "fixed"
       },
       {
         "category": "ACT",
@@ -3081,8 +3082,8 @@
         "id": "ACT-047",
         "location": "matrix.go:110",
         "severity": "m",
-        "status": "open",
-        "status_kind": "open"
+        "status": "fixed \u2014 normalized values are compared with type-preserving equality",
+        "status_kind": "fixed"
       },
       {
         "category": "ACT",
@@ -3090,8 +3091,8 @@
         "id": "ACT-048",
         "location": "actions_events.go:151,389",
         "severity": "m",
-        "status": "open",
-        "status_kind": "open"
+        "status": "fixed \u2014 jobless startup failures enqueue requested/completed lifecycle events, persist their suite id, and conclude the suite `startup_failure`",
+        "status_kind": "fixed"
       },
       {
         "category": "ACT",
@@ -3108,8 +3109,8 @@
         "id": "ACT-050",
         "location": "dependabot_ingest.go:148",
         "severity": "m",
-        "status": "open",
-        "status_kind": "open"
+        "status": "fixed \u2014 package-style prerelease/build identifiers participate in comparison and an unknown dialect fails safe by retaining the advisory rather than suppressing it",
+        "status_kind": "fixed"
       },
       {
         "category": "ACT",
@@ -3117,8 +3118,8 @@
         "id": "ACT-051",
         "location": "workflows_msg.go:280",
         "severity": "m",
-        "status": "open",
-        "status_kind": "open"
+        "status": "partial \u2014 workflow/job workflow ref and SHA fields now reach the runner context, including reusable-workflow identity; runner OS/architecture/name still need late binding to the agent that actually leases the queued message",
+        "status_kind": "partial"
       },
       {
         "category": "ACT",
@@ -3144,8 +3145,8 @@
         "id": "ACT-092",
         "location": "auth.go",
         "severity": "m",
-        "status": "open",
-        "status_kind": "open"
+        "status": "fixed \u2014 absent, malformed and unsupported-scheme credentials are distinct failures with regression coverage",
+        "status_kind": "fixed"
       },
       {
         "category": "ACT",
@@ -3315,8 +3316,8 @@
         "id": "STORE-018",
         "location": "s3fs.go:211,369",
         "severity": "M",
-        "status": "open",
-        "status_kind": "open"
+        "status": "fixed \u2014 failure to delete the source now compensates by deleting the copied destination, and reports a combined error if compensation itself fails",
+        "status_kind": "fixed"
       },
       {
         "category": "STORE",
@@ -3396,8 +3397,8 @@
         "id": "STORE-027",
         "location": "store_secret_scanning.go:228 + 3",
         "severity": "M",
-        "status": "open",
-        "status_kind": "open"
+        "status": "fixed \u2014 the remaining store-level bulk alert update validates and builds detached copies first, commits every durable row in one transaction, then publishes the result to memory",
+        "status_kind": "fixed"
       },
       {
         "category": "STORE",
@@ -3450,8 +3451,8 @@
         "id": "STORE-033",
         "location": "store_secret_scanning.go:253",
         "severity": "M",
-        "status": "open",
-        "status_kind": "open"
+        "status": "fixed \u2014 only same-state, open-to-resolved, resolved-to-resolved, and resolved-to-open transitions pass; every other state pair returns a validation error",
+        "status_kind": "fixed"
       },
       {
         "category": "STORE",
@@ -3495,8 +3496,8 @@
         "id": "STORE-038",
         "location": "s3fs.go:181,261",
         "severity": "M",
-        "status": "open",
-        "status_kind": "open"
+        "status": "fixed \u2014 `Stat` reports staged size, `ReadDir` merges and deduplicates the shared staging namespace with S3, and `Close` removes the staging entry whether its flush succeeds or fails",
+        "status_kind": "fixed"
       },
       {
         "category": "STORE",
@@ -4125,8 +4126,8 @@
         "id": "WEB-011",
         "location": "api.ts:148, DiscussionsPage.tsx:490",
         "severity": "M",
-        "status": "open",
-        "status_kind": "open"
+        "status": "fixed \u2014 pasted PAT/OAuth credentials are exchanged once at `POST /auth/token` for an opaque HttpOnly browser session and never persisted or read from browser storage; Discussions renders the Markdown source through react-markdown/GFM instead of trusting any `bodyHTML`. Source-invariant tests reject both regressions",
+        "status_kind": "fixed"
       },
       {
         "category": "WEB",
@@ -4152,8 +4153,8 @@
         "id": "WEB-014",
         "location": "api.ts:172",
         "severity": "M",
-        "status": "open",
-        "status_kind": "open"
+        "status": "fixed \u2014 the API choke point emits one idempotent signed-out state event; the application switches to its existing login redirect inside the router, which retains pathname, query, and fragment as `return_to`, without a fetch helper racing full-page assignments",
+        "status_kind": "fixed"
       },
       {
         "category": "WEB",
@@ -4161,8 +4162,8 @@
         "id": "WEB-015",
         "location": "LoginPage.tsx:16",
         "severity": "M",
-        "status": "open",
-        "status_kind": "open"
+        "status": "fixed with WEB-048 \u2014 configured, empty, transport-failed, and non-2xx provider discovery are distinct states; the token exchange remains available because it is a real supported server route, and failures are explained rather than hidden",
+        "status_kind": "fixed"
       },
       {
         "category": "WEB",
@@ -4206,8 +4207,8 @@
         "id": "WEB-020",
         "location": "AppHeader.tsx:43",
         "severity": "M",
-        "status": "open",
-        "status_kind": "open"
+        "status": "fixed \u2014 opening moves focus to the first item; Up/Down wrap, Home/End jump, Escape closes and restores the trigger, and separators carry their semantic role. The create menu is keyboard-tested end to end",
+        "status_kind": "fixed"
       },
       {
         "category": "WEB",
@@ -4224,8 +4225,8 @@
         "id": "WEB-022",
         "location": "App.tsx:107",
         "severity": "M",
-        "status": "open",
-        "status_kind": "open"
+        "status": "partial \u2014 a location-keyed route boundary now sits inside the persistent shell, so a page crash preserves navigation and navigating resets the failure. A global unhandled-rejection reporter remains open",
+        "status_kind": "partial"
       },
       {
         "category": "WEB",
@@ -4269,8 +4270,8 @@
         "id": "WEB-027",
         "location": "components/ui.tsx:439",
         "severity": "m",
-        "status": "open",
-        "status_kind": "open"
+        "status": "fixed \u2014 an associated id renders a real label; headings for grouped/display-only content render a span instead of an invalid unassociated label",
+        "status_kind": "fixed"
       },
       {
         "category": "WEB",
@@ -4278,8 +4279,8 @@
         "id": "WEB-028",
         "location": "ui.tsx:322, StateToggle.tsx:26",
         "severity": "m",
-        "status": "open",
-        "status_kind": "open"
+        "status": "fixed \u2014 segmented state controls are a named button group with explicit button type and `aria-pressed`; tabs are a tablist with selected/tab-stop semantics and Left/Right/Home/End keyboard movement",
+        "status_kind": "fixed"
       },
       {
         "category": "WEB",
@@ -4323,8 +4324,8 @@
         "id": "WEB-033",
         "location": "OAuthPage.tsx:51",
         "severity": "m",
-        "status": "open",
-        "status_kind": "open"
+        "status": "fixed \u2014 the device-code response is runtime-validated before use and result rendering redacts access, refresh, and device credentials while preserving the non-secret flow metadata",
+        "status_kind": "fixed"
       },
       {
         "category": "WEB",
@@ -4341,8 +4342,8 @@
         "id": "WEB-035",
         "location": "LoginPage.tsx:58",
         "severity": "m",
-        "status": "open",
-        "status_kind": "open"
+        "status": "fixed \u2014 both token and local login use one origin-aware parser that accepts only `/ui`, `/ui/*`, or `/control` on the current origin and preserves safe query/fragment components",
+        "status_kind": "fixed"
       },
       {
         "category": "WEB",
@@ -4350,8 +4351,8 @@
         "id": "WEB-036",
         "location": "Shell.tsx:82",
         "severity": "m",
-        "status": "open",
-        "status_kind": "open"
+        "status": "fixed \u2014 the shared footer hydrates version and publication time from the public `/health` build identity, retaining compile-time values only as the unreachable-health fallback",
+        "status_kind": "fixed"
       },
       {
         "category": "WEB",
@@ -4359,8 +4360,8 @@
         "id": "WEB-037",
         "location": "web/README.md:38",
         "severity": "m",
-        "status": "open",
-        "status_kind": "open"
+        "status": "fixed \u2014 removed the nonexistent `/ui/admin/storage` route from the documented inventory",
+        "status_kind": "fixed"
       },
       {
         "category": "WEB",
@@ -4386,8 +4387,8 @@
         "id": "WEB-040",
         "location": "vite.config.ts:8",
         "severity": "m",
-        "status": "open",
-        "status_kind": "open"
+        "status": "fixed \u2014 the production build now fails above 160 KiB for the entry or 450 KiB for any lazy/vendor chunk; current entry is 142 KiB and the largest isolated crypto chunk is 432 KiB",
+        "status_kind": "fixed"
       },
       {
         "category": "WEB",
@@ -4809,8 +4810,8 @@
         "id": "TEST-036",
         "location": "gh_org_pat_admin_test.go:132",
         "severity": "M",
-        "status": "open",
-        "status_kind": "open"
+        "status": "fixed \u2014 each run now derives unique organization, owner, and repository names from the suite's monotonic test ID; both tests pass ten repeated shuffled runs alongside the runner regression",
+        "status_kind": "fixed"
       },
       {
         "category": "TEST",
@@ -5771,9 +5772,9 @@
       "categories": {
         "ACT": {
           "status": {
-            "fixed": 31,
-            "open": 19,
-            "partial": 6
+            "fixed": 47,
+            "open": 1,
+            "partial": 8
           },
           "total": 56
         },
@@ -5809,8 +5810,8 @@
         },
         "GQL": {
           "status": {
-            "fixed": 18,
-            "open": 38,
+            "fixed": 45,
+            "open": 11,
             "partial": 3
           },
           "total": 59
@@ -5833,25 +5834,25 @@
         },
         "STORE": {
           "status": {
-            "fixed": 23,
-            "open": 35,
+            "fixed": 27,
+            "open": 31,
             "partial": 7
           },
           "total": 65
         },
         "TEST": {
           "status": {
-            "fixed": 12,
-            "open": 25,
+            "fixed": 14,
+            "open": 23,
             "partial": 2
           },
           "total": 39
         },
         "WEB": {
           "status": {
-            "fixed": 25,
-            "open": 23,
-            "partial": 3
+            "fixed": 36,
+            "open": 11,
+            "partial": 4
           },
           "total": 51
         }
@@ -5863,9 +5864,9 @@
       },
       "status": {
         "deferred": 1,
-        "fixed": 351,
-        "open": 233,
-        "partial": 33
+        "fixed": 411,
+        "open": 170,
+        "partial": 36
       },
       "total": 618
     }
@@ -27574,7 +27575,7 @@
     "routes": [
       {
         "component": "DashboardPage",
-        "line": 177,
+        "line": 188,
         "path": "/ui/",
         "rendered_tests": [
           "web/src/__tests__/DashboardPage.test.tsx"
@@ -27586,7 +27587,7 @@
       },
       {
         "component": "LoginRedirect",
-        "line": 162,
+        "line": 172,
         "path": "/ui/*",
         "rendered_tests": [],
         "source": "web/src/App.tsx",
@@ -27594,7 +27595,7 @@
       },
       {
         "component": "Navigate",
-        "line": 267,
+        "line": 278,
         "path": "/ui/*",
         "rendered_tests": [],
         "source": "web/src/App.tsx",
@@ -27602,7 +27603,7 @@
       },
       {
         "component": "ProfilePage",
-        "line": 266,
+        "line": 277,
         "path": "/ui/:login",
         "rendered_tests": [
           "web/src/__tests__/ProfilePage.test.tsx"
@@ -27614,7 +27615,7 @@
       },
       {
         "component": "AccountPage",
-        "line": 251,
+        "line": 262,
         "path": "/ui/account",
         "rendered_tests": [
           "web/src/__tests__/AccountPage.test.tsx",
@@ -27628,7 +27629,7 @@
       },
       {
         "component": "OverviewPage",
-        "line": 238,
+        "line": 249,
         "path": "/ui/admin",
         "rendered_tests": [
           "web/src/__tests__/OverviewPage.test.tsx"
@@ -27640,7 +27641,7 @@
       },
       {
         "component": "AuditLogPage",
-        "line": 243,
+        "line": 254,
         "path": "/ui/admin/audit-log",
         "rendered_tests": [
           "web/src/__tests__/pageErrorPaths.test.tsx"
@@ -27652,7 +27653,7 @@
       },
       {
         "component": "EnterprisePage",
-        "line": 242,
+        "line": 253,
         "path": "/ui/admin/enterprise",
         "rendered_tests": [
           "web/src/__tests__/EnterprisePage.test.tsx",
@@ -27666,7 +27667,7 @@
       },
       {
         "component": "OrgsPage",
-        "line": 240,
+        "line": 251,
         "path": "/ui/admin/orgs",
         "rendered_tests": [
           "web/src/__tests__/UiFidelityJourneys.test.tsx",
@@ -27680,7 +27681,7 @@
       },
       {
         "component": "TeamsPage",
-        "line": 241,
+        "line": 252,
         "path": "/ui/admin/teams",
         "rendered_tests": [
           "web/src/__tests__/TeamsPage.test.tsx"
@@ -27692,7 +27693,7 @@
       },
       {
         "component": "UsersPage",
-        "line": 239,
+        "line": 250,
         "path": "/ui/admin/users",
         "rendered_tests": [
           "web/src/__tests__/pageErrorPaths.test.tsx"
@@ -27704,7 +27705,7 @@
       },
       {
         "component": "AppsPage",
-        "line": 219,
+        "line": 230,
         "path": "/ui/apps",
         "rendered_tests": [
           "web/src/__tests__/AppsPage.test.tsx"
@@ -27716,7 +27717,7 @@
       },
       {
         "component": "MarketplacePublisherPage",
-        "line": 220,
+        "line": 231,
         "path": "/ui/apps/:publisher/marketplace",
         "rendered_tests": [
           "web/src/__tests__/MarketplacePublisherPage.test.tsx"
@@ -27728,7 +27729,7 @@
       },
       {
         "component": "ClassroomPage",
-        "line": 233,
+        "line": 244,
         "path": "/ui/classrooms",
         "rendered_tests": [
           "web/src/__tests__/ClassroomPage.test.tsx"
@@ -27740,7 +27741,7 @@
       },
       {
         "component": "ClassroomPage",
-        "line": 234,
+        "line": 245,
         "path": "/ui/classrooms/:classroomId",
         "rendered_tests": [
           "web/src/__tests__/ClassroomPage.test.tsx"
@@ -27752,7 +27753,7 @@
       },
       {
         "component": "ClassroomPage",
-        "line": 235,
+        "line": 246,
         "path": "/ui/classrooms/accept/:inviteCode",
         "rendered_tests": [
           "web/src/__tests__/ClassroomPage.test.tsx"
@@ -27764,7 +27765,7 @@
       },
       {
         "component": "CodespacesPage",
-        "line": 229,
+        "line": 240,
         "path": "/ui/codespaces",
         "rendered_tests": [
           "web/src/__tests__/CodespacesPage.test.tsx"
@@ -27776,7 +27777,7 @@
       },
       {
         "component": "CodespacesPage",
-        "line": 230,
+        "line": 241,
         "path": "/ui/codespaces/:codespaceName",
         "rendered_tests": [
           "web/src/__tests__/CodespacesPage.test.tsx"
@@ -27788,7 +27789,7 @@
       },
       {
         "component": "PersonalCopilotSpacesPage",
-        "line": 232,
+        "line": 243,
         "path": "/ui/copilot/spaces",
         "rendered_tests": [
           "web/src/__tests__/CopilotPage.test.tsx"
@@ -27800,7 +27801,7 @@
       },
       {
         "component": "GistsPage",
-        "line": 223,
+        "line": 234,
         "path": "/ui/gists",
         "rendered_tests": [
           "web/src/__tests__/GistsPage.test.tsx"
@@ -27812,7 +27813,7 @@
       },
       {
         "component": "LoginPage",
-        "line": 161,
+        "line": 171,
         "path": "/ui/login",
         "rendered_tests": [
           "web/src/__tests__/LoginPage.test.tsx"
@@ -27825,7 +27826,7 @@
       },
       {
         "component": "Navigate",
-        "line": 265,
+        "line": 276,
         "path": "/ui/login",
         "rendered_tests": [],
         "source": "web/src/App.tsx",
@@ -27833,7 +27834,7 @@
       },
       {
         "component": "MarketplacePage",
-        "line": 236,
+        "line": 247,
         "path": "/ui/marketplace",
         "rendered_tests": [
           "web/src/__tests__/MarketplacePage.test.tsx"
@@ -27845,7 +27846,7 @@
       },
       {
         "component": "MarketplacePage",
-        "line": 237,
+        "line": 248,
         "path": "/ui/marketplace/:slug",
         "rendered_tests": [
           "web/src/__tests__/MarketplacePage.test.tsx"
@@ -27857,7 +27858,7 @@
       },
       {
         "component": "MetricsPage",
-        "line": 222,
+        "line": 233,
         "path": "/ui/metrics",
         "rendered_tests": [
           "web/src/__tests__/MetricsPage.test.tsx"
@@ -27869,7 +27870,7 @@
       },
       {
         "component": "MigrationsPage",
-        "line": 228,
+        "line": 239,
         "path": "/ui/migrations",
         "rendered_tests": [
           "web/src/__tests__/MigrationsPage.test.tsx"
@@ -27881,7 +27882,7 @@
       },
       {
         "component": "NotificationsPage",
-        "line": 224,
+        "line": 235,
         "path": "/ui/notifications",
         "rendered_tests": [
           "web/src/__tests__/NotificationsPage.test.tsx"
@@ -27893,7 +27894,7 @@
       },
       {
         "component": "OAuthPage",
-        "line": 221,
+        "line": 232,
         "path": "/ui/oauth",
         "rendered_tests": [
           "web/src/__tests__/OAuthPage.test.tsx"
@@ -27905,7 +27906,7 @@
       },
       {
         "component": "OrgOverviewPage",
-        "line": 259,
+        "line": 270,
         "path": "/ui/orgs/:org",
         "rendered_tests": [
           "web/src/__tests__/OrgOverviewPage.test.tsx"
@@ -27917,7 +27918,7 @@
       },
       {
         "component": "CopilotPage",
-        "line": 185,
+        "line": 196,
         "path": "/ui/orgs/:org/copilot",
         "rendered_tests": [
           "web/src/__tests__/CopilotPage.test.tsx",
@@ -27931,7 +27932,7 @@
       },
       {
         "component": "OrgGovernancePage",
-        "line": 184,
+        "line": 195,
         "path": "/ui/orgs/:org/governance",
         "rendered_tests": [
           "web/src/__tests__/OrgGovernancePage.test.tsx",
@@ -27945,7 +27946,7 @@
       },
       {
         "component": "OrgHooksPage",
-        "line": 247,
+        "line": 258,
         "path": "/ui/orgs/:org/hooks",
         "rendered_tests": [
           "web/src/__tests__/OrgHooksPage.test.tsx"
@@ -27957,7 +27958,7 @@
       },
       {
         "component": "WebhookDeliveriesPage",
-        "line": 248,
+        "line": 259,
         "path": "/ui/orgs/:org/hooks/:hookId/deliveries",
         "rendered_tests": [
           "web/src/__tests__/WebhookDeliveriesPage.test.tsx",
@@ -27971,7 +27972,7 @@
       },
       {
         "component": "PackagesPage",
-        "line": 226,
+        "line": 237,
         "path": "/ui/orgs/:org/packages",
         "rendered_tests": [
           "web/src/__tests__/mutationErrors.test.tsx"
@@ -27983,7 +27984,7 @@
       },
       {
         "component": "OrgPeoplePage",
-        "line": 260,
+        "line": 271,
         "path": "/ui/orgs/:org/people",
         "rendered_tests": [
           "web/src/__tests__/OrgPeopleTeamsPage.test.tsx"
@@ -27995,7 +27996,7 @@
       },
       {
         "component": "OrgReposPage",
-        "line": 182,
+        "line": 193,
         "path": "/ui/orgs/:org/repos",
         "rendered_tests": [
           "web/src/__tests__/OrgReposPage.test.tsx"
@@ -28007,7 +28008,7 @@
       },
       {
         "component": "RulesetsPage",
-        "line": 183,
+        "line": 194,
         "path": "/ui/orgs/:org/rulesets",
         "rendered_tests": [
           "web/src/__tests__/RulesetsPage.test.tsx",
@@ -28021,7 +28022,7 @@
       },
       {
         "component": "OrgTeamsPage",
-        "line": 261,
+        "line": 272,
         "path": "/ui/orgs/:org/teams",
         "rendered_tests": [
           "web/src/__tests__/OrgPeopleTeamsPage.test.tsx"
@@ -28033,7 +28034,7 @@
       },
       {
         "component": "PackagesPage",
-        "line": 225,
+        "line": 236,
         "path": "/ui/packages",
         "rendered_tests": [
           "web/src/__tests__/mutationErrors.test.tsx"
@@ -28045,7 +28046,7 @@
       },
       {
         "component": "ReposPage",
-        "line": 181,
+        "line": 192,
         "path": "/ui/repos",
         "rendered_tests": [
           "web/src/__tests__/ReposPage.test.tsx"
@@ -28057,7 +28058,7 @@
       },
       {
         "component": "RepoDetailPage",
-        "line": 186,
+        "line": 197,
         "path": "/ui/repos/:owner/:repo",
         "rendered_tests": [
           "web/src/__tests__/RepoDetailPage.test.tsx",
@@ -28073,7 +28074,7 @@
       },
       {
         "component": "ActionsPage",
-        "line": 209,
+        "line": 220,
         "path": "/ui/repos/:owner/:repo/actions",
         "rendered_tests": [
           "web/src/__tests__/ActionsPage.test.tsx"
@@ -28085,7 +28086,7 @@
       },
       {
         "component": "RunDetailPage",
-        "line": 210,
+        "line": 221,
         "path": "/ui/repos/:owner/:repo/actions/runs/:runId",
         "rendered_tests": [
           "web/src/__tests__/RunDetailPage.test.tsx"
@@ -28097,7 +28098,7 @@
       },
       {
         "component": "RepoFilePage",
-        "line": 193,
+        "line": 204,
         "path": "/ui/repos/:owner/:repo/blob/:ref/*",
         "rendered_tests": [
           "web/src/__tests__/RepoDetailPage.test.tsx"
@@ -28109,7 +28110,7 @@
       },
       {
         "component": "RepoDetailPage",
-        "line": 188,
+        "line": 199,
         "path": "/ui/repos/:owner/:repo/branches",
         "rendered_tests": [
           "web/src/__tests__/RepoDetailPage.test.tsx",
@@ -28125,7 +28126,7 @@
       },
       {
         "component": "CodespacesPage",
-        "line": 231,
+        "line": 242,
         "path": "/ui/repos/:owner/:repo/codespaces",
         "rendered_tests": [
           "web/src/__tests__/CodespacesPage.test.tsx"
@@ -28137,7 +28138,7 @@
       },
       {
         "component": "RepoDetailPage",
-        "line": 187,
+        "line": 198,
         "path": "/ui/repos/:owner/:repo/commits",
         "rendered_tests": [
           "web/src/__tests__/RepoDetailPage.test.tsx",
@@ -28153,7 +28154,7 @@
       },
       {
         "component": "RepoCommitPage",
-        "line": 191,
+        "line": 202,
         "path": "/ui/repos/:owner/:repo/commits/:sha",
         "rendered_tests": [
           "web/src/__tests__/RepoDetailPage.test.tsx"
@@ -28165,7 +28166,7 @@
       },
       {
         "component": "RepoComparePage",
-        "line": 192,
+        "line": 203,
         "path": "/ui/repos/:owner/:repo/compare/:range",
         "rendered_tests": [
           "web/src/__tests__/RepositoryCollaborationJourneys.test.tsx"
@@ -28177,7 +28178,7 @@
       },
       {
         "component": "DeploymentsPage",
-        "line": 245,
+        "line": 256,
         "path": "/ui/repos/:owner/:repo/deployments",
         "rendered_tests": [
           "web/src/__tests__/DeploymentsPage.test.tsx",
@@ -28191,31 +28192,33 @@
       },
       {
         "component": "DiscussionsPage",
-        "line": 207,
+        "line": 218,
         "path": "/ui/repos/:owner/:repo/discussions",
         "rendered_tests": [
           "web/src/__tests__/DiscussionsPage.test.tsx"
         ],
         "source": "web/src/App.tsx",
         "tests": [
-          "web/src/__tests__/DiscussionsPage.test.tsx"
+          "web/src/__tests__/DiscussionsPage.test.tsx",
+          "web/src/__tests__/securityInvariants.test.ts"
         ]
       },
       {
         "component": "DiscussionsPage",
-        "line": 208,
+        "line": 219,
         "path": "/ui/repos/:owner/:repo/discussions/:number",
         "rendered_tests": [
           "web/src/__tests__/DiscussionsPage.test.tsx"
         ],
         "source": "web/src/App.tsx",
         "tests": [
-          "web/src/__tests__/DiscussionsPage.test.tsx"
+          "web/src/__tests__/DiscussionsPage.test.tsx",
+          "web/src/__tests__/securityInvariants.test.ts"
         ]
       },
       {
         "component": "RepoSocialPage",
-        "line": 254,
+        "line": 265,
         "path": "/ui/repos/:owner/:repo/forks",
         "rendered_tests": [
           "web/src/__tests__/RepoSocialPage.test.tsx",
@@ -28229,7 +28232,7 @@
       },
       {
         "component": "WebhookDeliveriesPage",
-        "line": 246,
+        "line": 257,
         "path": "/ui/repos/:owner/:repo/hooks/:hookId/deliveries",
         "rendered_tests": [
           "web/src/__tests__/WebhookDeliveriesPage.test.tsx",
@@ -28243,7 +28246,7 @@
       },
       {
         "component": "InsightsPage",
-        "line": 201,
+        "line": 212,
         "path": "/ui/repos/:owner/:repo/insights",
         "rendered_tests": [
           "web/src/__tests__/InsightsPage.test.tsx",
@@ -28257,7 +28260,7 @@
       },
       {
         "component": "IssuesPage",
-        "line": 197,
+        "line": 208,
         "path": "/ui/repos/:owner/:repo/issues",
         "rendered_tests": [
           "web/src/__tests__/IssuesPage.test.tsx"
@@ -28269,7 +28272,7 @@
       },
       {
         "component": "IssuesPage",
-        "line": 198,
+        "line": 209,
         "path": "/ui/repos/:owner/:repo/issues/:number",
         "rendered_tests": [
           "web/src/__tests__/IssuesPage.test.tsx"
@@ -28281,7 +28284,7 @@
       },
       {
         "component": "IssuesPage",
-        "line": 199,
+        "line": 210,
         "path": "/ui/repos/:owner/:repo/labels",
         "rendered_tests": [
           "web/src/__tests__/IssuesPage.test.tsx"
@@ -28293,7 +28296,7 @@
       },
       {
         "component": "IssuesPage",
-        "line": 200,
+        "line": 211,
         "path": "/ui/repos/:owner/:repo/milestones",
         "rendered_tests": [
           "web/src/__tests__/IssuesPage.test.tsx"
@@ -28305,7 +28308,7 @@
       },
       {
         "component": "PackagesPage",
-        "line": 227,
+        "line": 238,
         "path": "/ui/repos/:owner/:repo/packages",
         "rendered_tests": [
           "web/src/__tests__/mutationErrors.test.tsx"
@@ -28317,7 +28320,7 @@
       },
       {
         "component": "ProjectsClassicPage",
-        "line": 217,
+        "line": 228,
         "path": "/ui/repos/:owner/:repo/projects-classic",
         "rendered_tests": [
           "web/src/__tests__/pageErrorPaths.test.tsx"
@@ -28330,7 +28333,7 @@
       },
       {
         "component": "PullsPage",
-        "line": 202,
+        "line": 213,
         "path": "/ui/repos/:owner/:repo/pulls",
         "rendered_tests": [
           "web/src/__tests__/PullsPage.test.tsx",
@@ -28344,7 +28347,7 @@
       },
       {
         "component": "PullsPage",
-        "line": 203,
+        "line": 214,
         "path": "/ui/repos/:owner/:repo/pulls/:number",
         "rendered_tests": [
           "web/src/__tests__/PullsPage.test.tsx",
@@ -28358,7 +28361,7 @@
       },
       {
         "component": "PullsPage",
-        "line": 206,
+        "line": 217,
         "path": "/ui/repos/:owner/:repo/pulls/:number/checks",
         "rendered_tests": [
           "web/src/__tests__/PullsPage.test.tsx",
@@ -28372,7 +28375,7 @@
       },
       {
         "component": "PullsPage",
-        "line": 204,
+        "line": 215,
         "path": "/ui/repos/:owner/:repo/pulls/:number/commits",
         "rendered_tests": [
           "web/src/__tests__/PullsPage.test.tsx",
@@ -28386,7 +28389,7 @@
       },
       {
         "component": "PullsPage",
-        "line": 205,
+        "line": 216,
         "path": "/ui/repos/:owner/:repo/pulls/:number/files",
         "rendered_tests": [
           "web/src/__tests__/PullsPage.test.tsx",
@@ -28400,7 +28403,7 @@
       },
       {
         "component": "ReleasesPage",
-        "line": 194,
+        "line": 205,
         "path": "/ui/repos/:owner/:repo/releases",
         "rendered_tests": [
           "web/src/__tests__/ReleasesPage.test.tsx"
@@ -28412,7 +28415,7 @@
       },
       {
         "component": "ReleasesPage",
-        "line": 196,
+        "line": 207,
         "path": "/ui/repos/:owner/:repo/releases/:releaseId",
         "rendered_tests": [
           "web/src/__tests__/ReleasesPage.test.tsx"
@@ -28424,7 +28427,7 @@
       },
       {
         "component": "ReleasesPage",
-        "line": 195,
+        "line": 206,
         "path": "/ui/repos/:owner/:repo/releases/new",
         "rendered_tests": [
           "web/src/__tests__/ReleasesPage.test.tsx"
@@ -28436,7 +28439,7 @@
       },
       {
         "component": "SecurityAdvisoriesPage",
-        "line": 216,
+        "line": 227,
         "path": "/ui/repos/:owner/:repo/security/advisories",
         "rendered_tests": [
           "web/src/__tests__/UiFidelityJourneys.test.tsx",
@@ -28450,7 +28453,7 @@
       },
       {
         "component": "CodeScanningPage",
-        "line": 214,
+        "line": 225,
         "path": "/ui/repos/:owner/:repo/security/code-scanning",
         "rendered_tests": [
           "web/src/__tests__/CodeScanningPage.test.tsx"
@@ -28462,7 +28465,7 @@
       },
       {
         "component": "DependabotPage",
-        "line": 215,
+        "line": 226,
         "path": "/ui/repos/:owner/:repo/security/dependabot",
         "rendered_tests": [
           "web/src/__tests__/UiFidelityJourneys.test.tsx",
@@ -28476,7 +28479,7 @@
       },
       {
         "component": "SecretScanningPage",
-        "line": 213,
+        "line": 224,
         "path": "/ui/repos/:owner/:repo/security/secret-scanning",
         "rendered_tests": [
           "web/src/__tests__/UiFidelityJourneys.test.tsx",
@@ -28492,7 +28495,7 @@
       },
       {
         "component": "RepoSettingsPage",
-        "line": 211,
+        "line": 222,
         "path": "/ui/repos/:owner/:repo/settings",
         "rendered_tests": [
           "web/src/__tests__/RepoCollaboratorsTab.test.tsx",
@@ -28508,7 +28511,7 @@
       },
       {
         "component": "BranchProtectionPage",
-        "line": 212,
+        "line": 223,
         "path": "/ui/repos/:owner/:repo/settings/branch-protection",
         "rendered_tests": [
           "web/src/__tests__/UiFidelityJourneys.test.tsx",
@@ -28522,7 +28525,7 @@
       },
       {
         "component": "RepoSecretsPage",
-        "line": 218,
+        "line": 229,
         "path": "/ui/repos/:owner/:repo/settings/secrets",
         "rendered_tests": [
           "web/src/__tests__/RepoSecretsPage.test.tsx"
@@ -28534,7 +28537,7 @@
       },
       {
         "component": "RepoSocialPage",
-        "line": 252,
+        "line": 263,
         "path": "/ui/repos/:owner/:repo/stargazers",
         "rendered_tests": [
           "web/src/__tests__/RepoSocialPage.test.tsx",
@@ -28548,7 +28551,7 @@
       },
       {
         "component": "RepoDetailPage",
-        "line": 189,
+        "line": 200,
         "path": "/ui/repos/:owner/:repo/tags",
         "rendered_tests": [
           "web/src/__tests__/RepoDetailPage.test.tsx",
@@ -28564,7 +28567,7 @@
       },
       {
         "component": "RepoDetailPage",
-        "line": 190,
+        "line": 201,
         "path": "/ui/repos/:owner/:repo/tree/:ref/*",
         "rendered_tests": [
           "web/src/__tests__/RepoDetailPage.test.tsx",
@@ -28580,7 +28583,7 @@
       },
       {
         "component": "RepoSocialPage",
-        "line": 253,
+        "line": 264,
         "path": "/ui/repos/:owner/:repo/watchers",
         "rendered_tests": [
           "web/src/__tests__/RepoSocialPage.test.tsx",
@@ -28594,7 +28597,7 @@
       },
       {
         "component": "RunnersPage",
-        "line": 180,
+        "line": 191,
         "path": "/ui/runners",
         "rendered_tests": [
           "web/src/__tests__/RunnersPage.test.tsx"
@@ -28606,7 +28609,7 @@
       },
       {
         "component": "SearchPage",
-        "line": 250,
+        "line": 261,
         "path": "/ui/search",
         "rendered_tests": [
           "web/src/__tests__/SearchPage.test.tsx",
@@ -28620,7 +28623,7 @@
       },
       {
         "component": "ProfilePage",
-        "line": 262,
+        "line": 273,
         "path": "/ui/users/:login",
         "rendered_tests": [
           "web/src/__tests__/ProfilePage.test.tsx"
@@ -28632,7 +28635,7 @@
       },
       {
         "component": "WorkflowsPage",
-        "line": 178,
+        "line": 189,
         "path": "/ui/workflows",
         "rendered_tests": [
           "web/src/__tests__/WorkflowsPage.test.tsx"
@@ -28644,7 +28647,7 @@
       },
       {
         "component": "WorkflowDetailPage",
-        "line": 179,
+        "line": 190,
         "path": "/ui/workflows/:id",
         "rendered_tests": [
           "web/src/__tests__/WorkflowDetailPage.test.tsx"
