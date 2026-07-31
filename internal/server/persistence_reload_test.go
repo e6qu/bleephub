@@ -2152,7 +2152,7 @@ func TestPersistenceReload_CodespacesAndSecrets(t *testing.T) {
 		var err error
 		cs, err = st.CreateCodespace(user.Login, repo.FullName, "", "local", codespaceCreateOptions{
 			MachineName: "basicLinux32",
-			DisplayName:  "Reload Codespace",
+			DisplayName: "Reload Codespace",
 		})
 		if err != nil {
 			t.Fatalf("CreateCodespace: %v", err)

@@ -426,9 +426,9 @@ func TestDeployments_AutoInactive(t *testing.T) {
 	token := adminTokenFor(s)
 
 	w := pagedJSONRequest(t, s, "POST", "/api/v3/repos/"+repo.FullName+"/deployments", token, map[string]any{
-		"ref":       "main",
+		"ref":         "main",
 		"environment": "production",
-		"payload":   map[string]any{},
+		"payload":     map[string]any{},
 	})
 	if w.Code != http.StatusCreated {
 		t.Fatalf("create deployment 1: %d", w.Code)
@@ -438,9 +438,9 @@ func TestDeployments_AutoInactive(t *testing.T) {
 	dep1ID := int(dep1["id"].(float64))
 
 	w = pagedJSONRequest(t, s, "POST", "/api/v3/repos/"+repo.FullName+"/deployments", token, map[string]any{
-		"ref":       "main",
+		"ref":         "main",
 		"environment": "production",
-		"payload":   map[string]any{},
+		"payload":     map[string]any{},
 	})
 	if w.Code != http.StatusCreated {
 		t.Fatalf("create deployment 2: %d", w.Code)

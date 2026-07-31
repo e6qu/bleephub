@@ -95,7 +95,6 @@ type DeploymentBranchPolicy struct {
 type autoInactiveDeployment struct {
 	deploymentID int
 	status       *DeploymentStatus
-	repoFullName string
 	environment  string
 }
 
@@ -281,16 +280,16 @@ func (ds *DeploymentStore) AddStatus(deploymentID, creatorID int, state, descrip
 			ds.nextStatusID++
 			snow := time.Now().UTC()
 			inactiveStatus := &DeploymentStatus{
-				ID:             sid,
-				NodeID:         fmt.Sprintf("DS_kgDO%08d", sid),
-				State:          "inactive",
-				CreatorID:      creatorID,
-				DeploymentID:   prior.ID,
-				Description:    fmt.Sprintf("Auto-inactivated by deployment #%d", d.ID),
-				Environment:    prior.Environment,
-				AutoInactive:   false,
-				CreatedAt:      snow,
-				UpdatedAt:      snow,
+				ID:           sid,
+				NodeID:       fmt.Sprintf("DS_kgDO%08d", sid),
+				State:        "inactive",
+				CreatorID:    creatorID,
+				DeploymentID: prior.ID,
+				Description:  fmt.Sprintf("Auto-inactivated by deployment #%d", d.ID),
+				Environment:  prior.Environment,
+				AutoInactive: false,
+				CreatedAt:    snow,
+				UpdatedAt:    snow,
 			}
 			ds.statuses[sid] = inactiveStatus
 			prior.Statuses = append(prior.Statuses, inactiveStatus)
