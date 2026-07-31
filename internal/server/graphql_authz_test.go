@@ -211,7 +211,7 @@ var gqlMutationCases = []gqlMutationCase{
 		name: "deleteDiscussion",
 		doc:  `mutation($input:DeleteDiscussionInput!){deleteDiscussion(input:$input){clientMutationId}}`,
 		input: func(f *gqlAuthzFixture) map[string]interface{} {
-			return map[string]interface{}{"discussionId": f.discussion.NodeID}
+			return map[string]interface{}{"id": f.discussion.NodeID}
 		},
 	},
 	{
@@ -225,21 +225,21 @@ var gqlMutationCases = []gqlMutationCase{
 		name: "deleteDiscussionComment",
 		doc:  `mutation($input:DeleteDiscussionCommentInput!){deleteDiscussionComment(input:$input){clientMutationId}}`,
 		input: func(f *gqlAuthzFixture) map[string]interface{} {
-			return map[string]interface{}{"commentId": f.discComment.NodeID}
+			return map[string]interface{}{"id": f.discComment.NodeID}
 		},
 	},
 	{
 		name: "markDiscussionCommentAsAnswer",
 		doc:  `mutation($input:MarkDiscussionCommentAsAnswerInput!){markDiscussionCommentAsAnswer(input:$input){discussion{id}}}`,
 		input: func(f *gqlAuthzFixture) map[string]interface{} {
-			return map[string]interface{}{"commentId": f.discComment.NodeID}
+			return map[string]interface{}{"id": f.discComment.NodeID}
 		},
 	},
 	{
 		name: "unmarkDiscussionCommentAsAnswer",
 		doc:  `mutation($input:UnmarkDiscussionCommentAsAnswerInput!){unmarkDiscussionCommentAsAnswer(input:$input){discussion{id}}}`,
 		input: func(f *gqlAuthzFixture) map[string]interface{} {
-			return map[string]interface{}{"commentId": f.discComment.NodeID}
+			return map[string]interface{}{"id": f.discComment.NodeID}
 		},
 	},
 	{
@@ -449,7 +449,7 @@ func TestGraphQLDiscussionAnswerMutationsRequireAViewer(t *testing.T) {
 			Schema:        testServer.graphqlSchema,
 			RequestString: doc,
 			VariableValues: map[string]interface{}{
-				"input": map[string]interface{}{"commentId": f.discComment.NodeID},
+				"input": map[string]interface{}{"id": f.discComment.NodeID},
 			},
 			Context: context.Background(),
 		})
@@ -463,7 +463,7 @@ func TestGraphQLDiscussionAnswerMutationsRequireAViewer(t *testing.T) {
 
 	// And the endpoint itself still answers 401 without a credential.
 	resp := ghPost(t, "/api/graphql", "", map[string]interface{}{
-		"query": `mutation{markDiscussionCommentAsAnswer(input:{commentId:"x"}){discussion{id}}}`,
+		"query": `mutation{markDiscussionCommentAsAnswer(input:{id:"x"}){discussion{id}}}`,
 	})
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusUnauthorized {

@@ -26,12 +26,24 @@ func stringScalar(name string) *graphql.Scalar {
 	})
 }
 
+func (s *Server) graphQLStringScalar(name string) *graphql.Scalar {
+	if s.graphqlTypes.scalars == nil {
+		s.graphqlTypes.scalars = map[string]*graphql.Scalar{}
+	}
+	if scalar := s.graphqlTypes.scalars[name]; scalar != nil {
+		return scalar
+	}
+	scalar := stringScalar(name)
+	s.graphqlTypes.scalars[name] = scalar
+	return scalar
+}
+
 // addMetaFieldsToSchema implements the small, widely-used root family that
 // Octokit and schema-aware clients use for capability discovery.
 func (s *Server) addMetaFieldsToSchema(queryType *graphql.Object) {
-	dateTime := stringScalar("DateTime")
-	uri := stringScalar("URI")
-	gitObjectID := stringScalar("GitObjectID")
+	dateTime := s.graphQLStringScalar("DateTime")
+	uri := s.graphQLStringScalar("URI")
+	gitObjectID := s.graphQLStringScalar("GitObjectID")
 
 	rateLimitType := graphql.NewObject(graphql.ObjectConfig{
 		Name: "RateLimit",

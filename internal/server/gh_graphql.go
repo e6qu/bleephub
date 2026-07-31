@@ -2,13 +2,17 @@ package bleephub
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"fmt"
 	"net/http"
+	"strconv"
 	"strings"
 	"time"
 
 	"github.com/graphql-go/graphql"
 	"github.com/graphql-go/graphql/gqlerrors"
+	"github.com/graphql-go/graphql/language/ast"
 	"github.com/graphql-go/graphql/language/parser"
 	"github.com/graphql-go/graphql/language/source"
 )
@@ -49,7 +53,50 @@ func ghErrorIsNotFound(err error) bool {
 
 // initGraphQLSchema builds the GraphQL schema with all types and resolvers.
 func (s *Server) initGraphQLSchema() {
+	s.graphqlTypes = graphQLTypeRegistry{}
+	dateTime := s.graphQLStringScalar("DateTime")
+	uri := s.graphQLStringScalar("URI")
 	nodeTypes := map[string]*graphql.Object{}
+	actorTypes := map[string]*graphql.Object{}
+	repositoryOwnerTypes := map[string]*graphql.Object{}
+	actorInterface := graphql.NewInterface(graphql.InterfaceConfig{
+		Name: "Actor",
+		Fields: graphql.Fields{
+			"login": &graphql.Field{Type: graphql.NewNonNull(graphql.String)},
+			"avatarUrl": &graphql.Field{
+				Type: graphql.NewNonNull(uri),
+				Args: graphql.FieldConfigArgument{"size": &graphql.ArgumentConfig{Type: graphql.Int}},
+			},
+			"resourcePath": &graphql.Field{Type: graphql.NewNonNull(uri)},
+			"url":          &graphql.Field{Type: graphql.NewNonNull(uri)},
+		},
+		ResolveType: func(p graphql.ResolveTypeParams) *graphql.Object {
+			source, _ := p.Value.(map[string]interface{})
+			if name, _ := source["__typename"].(string); name != "" {
+				return actorTypes[name]
+			}
+			return actorTypes["User"]
+		},
+	})
+	s.graphqlTypes.actor = actorInterface
+	repositoryOwnerInterface := graphql.NewInterface(graphql.InterfaceConfig{
+		Name: "RepositoryOwner",
+		Fields: graphql.Fields{
+			"login": &graphql.Field{Type: graphql.NewNonNull(graphql.String)},
+		},
+		ResolveType: func(p graphql.ResolveTypeParams) *graphql.Object {
+			source, _ := p.Value.(map[string]interface{})
+			if name, _ := source["__typename"].(string); name != "" {
+				return repositoryOwnerTypes[name]
+			}
+			nodeID, _ := source["nodeID"].(string)
+			if strings.HasPrefix(nodeID, "O_") {
+				return repositoryOwnerTypes["Organization"]
+			}
+			return repositoryOwnerTypes["User"]
+		},
+	})
+	s.graphqlTypes.repositoryOwner = repositoryOwnerInterface
 	nodeInterface := graphql.NewInterface(graphql.InterfaceConfig{
 		Name: "Node",
 		Fields: graphql.Fields{
@@ -79,7 +126,7 @@ func (s *Server) initGraphQLSchema() {
 	})
 	userType := graphql.NewObject(graphql.ObjectConfig{
 		Name:       "User",
-		Interfaces: []*graphql.Interface{nodeInterface},
+		Interfaces: []*graphql.Interface{nodeInterface, actorInterface, repositoryOwnerInterface},
 		Fields: graphql.Fields{
 			"id": &graphql.Field{
 				Type: graphql.NewNonNull(graphql.ID),
@@ -95,24 +142,30 @@ func (s *Server) initGraphQLSchema() {
 			"login":      &graphql.Field{Type: graphql.NewNonNull(graphql.String)},
 			"name":       &graphql.Field{Type: graphql.String},
 			"email":      &graphql.Field{Type: graphql.NewNonNull(graphql.String)},
-			"avatarUrl":  &graphql.Field{Type: graphql.String},
-			"bio":        &graphql.Field{Type: graphql.String},
-			"url":        &graphql.Field{Type: graphql.NewNonNull(graphql.String)},
-			"createdAt":  &graphql.Field{Type: graphql.NewNonNull(graphql.String)},
-			"updatedAt":  &graphql.Field{Type: graphql.NewNonNull(graphql.String)},
+			"avatarUrl": &graphql.Field{
+				Type: graphql.NewNonNull(uri),
+				Args: graphql.FieldConfigArgument{"size": &graphql.ArgumentConfig{Type: graphql.Int}},
+			},
+			"bio":          &graphql.Field{Type: graphql.String},
+			"url":          &graphql.Field{Type: graphql.NewNonNull(uri)},
+			"resourcePath": &graphql.Field{Type: graphql.NewNonNull(uri)},
+			"createdAt":    &graphql.Field{Type: graphql.NewNonNull(dateTime)},
+			"updatedAt":    &graphql.Field{Type: graphql.NewNonNull(dateTime)},
 		},
 	})
 	nodeTypes["User"] = userType
+	actorTypes["User"] = userType
+	repositoryOwnerTypes["User"] = userType
 
 	queryType := graphql.NewObject(graphql.ObjectConfig{
 		Name: "Query",
 		Fields: graphql.Fields{
 			"viewer": &graphql.Field{
-				Type: userType,
+				Type: graphql.NewNonNull(userType),
 				Resolve: func(p graphql.ResolveParams) (interface{}, error) {
 					user := ghUserFromContext(p.Context)
 					if user == nil {
-						return nil, nil
+						return nil, fmt.Errorf("authentication required")
 					}
 					return userToGraphQL(user), nil
 				},
@@ -128,7 +181,9 @@ func (s *Server) initGraphQLSchema() {
 					login, _ := p.Args["login"].(string)
 					u := s.store.LookupUserByLogin(login)
 					if u == nil {
-						return nil, nil
+						return nil, &ghNotFoundError{
+							message: fmt.Sprintf("Could not resolve to a User with the login of '%s'.", login),
+						}
 					}
 					return userToGraphQL(u), nil
 				},
@@ -144,6 +199,7 @@ func (s *Server) initGraphQLSchema() {
 	// Add organization types and queries
 	orgType := s.addOrgFieldsToSchema(userType, queryType, nodeInterface)
 	nodeTypes["Organization"] = orgType
+	repositoryOwnerTypes["Organization"] = orgType
 
 	// Add issue types, queries, and mutations
 	issueType := s.addIssueFieldsToSchema(userType, repoType, mutationType, queryType, nodeInterface)
@@ -275,32 +331,35 @@ func (s *Server) handleGraphQL(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// graphql-go panics on some syntactically-parsed-but-invalid variable
-	// definitions (e.g. `query($A:){A}` — an empty Named type). Pre-validate
-	// the parsed AST so malformed queries return a GraphQL errors[] envelope
-	// instead of crashing the handler.
-	if err := graphqlValidateNoPanic(s.graphqlSchema, req.Query); err != nil {
+	document, validationErrors, err := graphqlPrepareDocument(s.graphqlSchema, req.Query)
+	if err != nil {
 		writeJSON(w, http.StatusOK, map[string]interface{}{
 			"data":   nil,
 			"errors": []map[string]interface{}{{"message": err.Error()}},
 		})
 		return
 	}
+	var result *graphql.Result
+	if len(validationErrors) != 0 {
+		result = &graphql.Result{Errors: validationErrors}
+	} else if err := graphqlCheckDocumentLimits(document, req.Variables, 20, 5000); err != nil {
+		result = &graphql.Result{Errors: []gqlerrors.FormattedError{gqlerrors.NewFormattedError(err.Error())}}
+	} else {
+		result = graphql.Execute(graphql.ExecuteParams{
+			Schema:        s.graphqlSchema,
+			AST:           document,
+			OperationName: req.OperationName,
+			Args:          req.Variables,
+			Context:       r.Context(),
+		})
+	}
 
-	result := graphql.Do(graphql.Params{
-		Schema:         s.graphqlSchema,
-		RequestString:  req.Query,
-		VariableValues: req.Variables,
-		OperationName:  req.OperationName,
-		Context:        r.Context(),
-	})
-
-	// Debug: log the query + any errors so the harness can diagnose which
-	// gh CLI queries hit unimplemented fields.
 	if len(result.Errors) > 0 {
+		digest := sha256.Sum256([]byte(req.Query))
 		s.logger.Debug().
 			Str("operation", req.OperationName).
-			Str("query", req.Query).
+			Str("query_sha256", hex.EncodeToString(digest[:])).
+			Int("query_bytes", len(req.Query)).
 			Interface("errors", result.Errors).
 			Msg("graphql errors")
 	}
@@ -338,37 +397,181 @@ func (s *Server) handleGraphQL(w http.ResponseWriter, r *http.Request) {
 // malformed documents that would otherwise crash the library; syntactically
 // invalid but safe documents are left to graphql.Do to report normally.
 func graphqlValidateNoPanic(schema graphql.Schema, query string) (err error) {
+	_, _, err = graphqlPrepareDocument(schema, query)
+	return err
+}
+
+func graphqlPrepareDocument(schema graphql.Schema, query string) (document *ast.Document, validationErrors []gqlerrors.FormattedError, err error) {
 	defer func() {
 		if r := recover(); r != nil {
 			err = fmt.Errorf("graphql validation panic: %v", r)
 		}
 	}()
 	src := source.NewSource(&source.Source{Body: []byte(query), Name: "GraphQL request"})
-	AST, parseErr := parser.Parse(parser.ParseParams{Source: src})
+	var parseErr error
+	document, parseErr = parser.Parse(parser.ParseParams{Source: src})
 	if parseErr != nil {
-		return fmt.Errorf("graphql parse error: %w", parseErr)
+		return nil, nil, fmt.Errorf("graphql parse error: %w", parseErr)
 	}
-	validationResult := graphql.ValidateDocument(&schema, AST, nil)
+	validationResult := graphql.ValidateDocument(&schema, document, nil)
 	if !validationResult.IsValid {
-		// Validation errors are normal GraphQL failures; let graphql.Do return
-		// them in its standard errors[] envelope.
+		return document, validationResult.Errors, nil
+	}
+	return document, nil, nil
+}
+
+func graphqlCheckDocumentCost(document *ast.Document, maxDepth, maxFields int) error {
+	return graphqlCheckDocumentLimits(document, nil, maxDepth, maxFields)
+}
+
+func graphqlCheckDocumentLimits(document *ast.Document, variables map[string]interface{}, maxDepth, maxFields int) error {
+	fragments := map[string]*ast.FragmentDefinition{}
+	for _, definition := range document.Definitions {
+		if fragment, ok := definition.(*ast.FragmentDefinition); ok && fragment.Name != nil {
+			fragments[fragment.Name.Value] = fragment
+		}
+	}
+	fields := 0
+	var walk func(*ast.SelectionSet, int, map[string]bool) error
+	walk = func(selectionSet *ast.SelectionSet, depth int, stack map[string]bool) error {
+		if selectionSet == nil {
+			return nil
+		}
+		if depth > maxDepth {
+			return fmt.Errorf("query exceeds maximum depth of %d", maxDepth)
+		}
+		for _, selection := range selectionSet.Selections {
+			switch node := selection.(type) {
+			case *ast.Field:
+				arguments := map[string]ast.Value{}
+				for _, argument := range node.Arguments {
+					if argument != nil && argument.Name != nil {
+						arguments[argument.Name.Value] = argument.Value
+					}
+				}
+				if arguments["first"] != nil && arguments["last"] != nil &&
+					!graphqlVariableIsNull(arguments["first"], variables) &&
+					!graphqlVariableIsNull(arguments["last"], variables) {
+					return fmt.Errorf("fields may not specify both first and last")
+				}
+				for _, name := range []string{"first", "last"} {
+					if value := arguments[name]; value != nil {
+						if graphqlVariableIsNull(value, variables) {
+							continue
+						}
+						size, ok := graphqlIntegerValue(value, variables)
+						if !ok || size < 1 || size > 100 {
+							return fmt.Errorf("%s must be between 1 and 100", name)
+						}
+					}
+				}
+				for _, name := range []string{"after", "before"} {
+					if value := arguments[name]; value != nil {
+						if graphqlVariableIsNull(value, variables) {
+							continue
+						}
+						cursor, ok := graphqlStringValue(value, variables)
+						if !ok {
+							return fmt.Errorf("%s must be a cursor string", name)
+						}
+						if _, err := decodeCursorStrict(cursor); err != nil {
+							return fmt.Errorf("%s is not a valid cursor", name)
+						}
+					}
+				}
+				fields++
+				if fields > maxFields {
+					return fmt.Errorf("query exceeds maximum field count of %d", maxFields)
+				}
+				if err := walk(node.SelectionSet, depth+1, stack); err != nil {
+					return err
+				}
+			case *ast.InlineFragment:
+				if err := walk(node.SelectionSet, depth, stack); err != nil {
+					return err
+				}
+			case *ast.FragmentSpread:
+				if node.Name == nil || stack[node.Name.Value] {
+					continue
+				}
+				fragment := fragments[node.Name.Value]
+				if fragment == nil {
+					continue
+				}
+				next := make(map[string]bool, len(stack)+1)
+				for name := range stack {
+					next[name] = true
+				}
+				next[node.Name.Value] = true
+				if err := walk(fragment.SelectionSet, depth, next); err != nil {
+					return err
+				}
+			}
+		}
 		return nil
 	}
+	for _, definition := range document.Definitions {
+		if operation, ok := definition.(*ast.OperationDefinition); ok {
+			if err := walk(operation.SelectionSet, 1, map[string]bool{}); err != nil {
+				return err
+			}
+		}
+	}
 	return nil
+}
+
+func graphqlVariableIsNull(value ast.Value, variables map[string]interface{}) bool {
+	variable, ok := value.(*ast.Variable)
+	if !ok || variable.Name == nil {
+		return false
+	}
+	raw, present := variables[variable.Name.Value]
+	return !present || raw == nil
+}
+
+func graphqlIntegerValue(value ast.Value, variables map[string]interface{}) (int, bool) {
+	switch value := value.(type) {
+	case *ast.IntValue:
+		number, err := strconv.Atoi(value.Value)
+		return number, err == nil
+	case *ast.Variable:
+		if value.Name == nil {
+			return 0, false
+		}
+		return intArg(variables, value.Name.Value)
+	default:
+		return 0, false
+	}
+}
+
+func graphqlStringValue(value ast.Value, variables map[string]interface{}) (string, bool) {
+	switch value := value.(type) {
+	case *ast.StringValue:
+		return value.Value, true
+	case *ast.Variable:
+		if value.Name == nil {
+			return "", false
+		}
+		text, ok := variables[value.Name.Value].(string)
+		return text, ok
+	default:
+		return "", false
+	}
 }
 
 // userToGraphQL converts a User to a map with camelCase keys for GraphQL resolvers.
 func userToGraphQL(u *User) map[string]interface{} {
 	return map[string]interface{}{
-		"nodeID":     u.NodeID,
-		"databaseId": u.ID,
-		"login":      u.Login,
-		"name":       u.Name,
-		"email":      u.Email,
-		"avatarUrl":  u.AvatarURL,
-		"bio":        u.Bio,
-		"url":        "/" + u.Login,
-		"createdAt":  u.CreatedAt.Format(time.RFC3339),
-		"updatedAt":  u.UpdatedAt.Format(time.RFC3339),
+		"nodeID":       u.NodeID,
+		"databaseId":   u.ID,
+		"login":        u.Login,
+		"name":         u.Name,
+		"email":        u.Email,
+		"avatarUrl":    u.AvatarURL,
+		"bio":          u.Bio,
+		"url":          "/" + u.Login,
+		"resourcePath": "/" + u.Login,
+		"createdAt":    u.CreatedAt.Format(time.RFC3339),
+		"updatedAt":    u.UpdatedAt.Format(time.RFC3339),
 	}
 }

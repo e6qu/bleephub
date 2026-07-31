@@ -292,7 +292,7 @@ func TestGraphQLViewerRepos(t *testing.T) {
 // TestGraphQLCreateRepo verifies the createRepository mutation.
 func TestGraphQLCreateRepo(t *testing.T) {
 	resp := ghPost(t, "/api/graphql", defaultToken, map[string]string{
-		"query": `mutation{createRepository(input:{name:"gql-created",visibility:"PUBLIC",hasIssuesEnabled:false,hasWikiEnabled:true}){repository{name,owner{login},isPrivate,hasIssuesEnabled,hasWikiEnabled}}}`,
+		"query": `mutation{createRepository(input:{name:"gql-created",visibility:PUBLIC,hasIssuesEnabled:false,hasWikiEnabled:true}){repository{name,owner{login},isPrivate,hasIssuesEnabled,hasWikiEnabled}}}`,
 	})
 	if resp.StatusCode != 200 {
 		resp.Body.Close()

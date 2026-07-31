@@ -9,12 +9,47 @@ import (
 	"strings"
 	"time"
 
+	git "github.com/go-git/go-git/v5"
+	"github.com/go-git/go-git/v5/plumbing"
 	"github.com/go-git/go-git/v5/plumbing/object"
 	"github.com/graphql-go/graphql"
 )
 
 // addPullRequestFieldsToSchema adds PR types, queries, and mutations to the schema.
 func (s *Server) addPullRequestFieldsToSchema(userType, issueType, repoType, mutationType, queryType *graphql.Object, nodeInterface *graphql.Interface) *graphql.Object {
+	dateTime := s.graphQLStringScalar("DateTime")
+	uri := s.graphQLStringScalar("URI")
+	gitObjectID := s.graphQLStringScalar("GitObjectID")
+	commentAuthorAssociationEnum := s.graphQLEnum(
+		"CommentAuthorAssociation",
+		"COLLABORATOR", "CONTRIBUTOR", "FIRST_TIMER", "FIRST_TIME_CONTRIBUTOR",
+		"MANNEQUIN", "MEMBER", "NONE", "OWNER",
+	)
+	statusStateEnum := s.graphQLEnum("StatusState", "ERROR", "EXPECTED", "FAILURE", "PENDING", "SUCCESS")
+	checkStatusStateEnum := s.graphQLEnum("CheckStatusState", "COMPLETED", "IN_PROGRESS", "PENDING", "QUEUED", "REQUESTED", "WAITING")
+	checkConclusionStateEnum := s.graphQLEnum(
+		"CheckConclusionState",
+		"ACTION_REQUIRED", "CANCELLED", "FAILURE", "NEUTRAL", "SKIPPED", "STALE",
+		"STARTUP_FAILURE", "SUCCESS", "TIMED_OUT",
+	)
+	checkRunStateEnum := s.graphQLEnum(
+		"CheckRunState",
+		"ACTION_REQUIRED", "CANCELLED", "COMPLETED", "FAILURE", "IN_PROGRESS",
+		"NEUTRAL", "PENDING", "QUEUED", "SKIPPED", "STALE", "STARTUP_FAILURE",
+		"SUCCESS", "TIMED_OUT", "WAITING",
+	)
+	pullRequestReviewStateEnum := s.graphQLEnum(
+		"PullRequestReviewState",
+		"APPROVED", "CHANGES_REQUESTED", "COMMENTED", "DISMISSED", "PENDING",
+	)
+	pullRequestReviewCommentStateEnum := s.graphQLEnum(
+		"PullRequestReviewCommentState",
+		"PENDING", "SUBMITTED",
+	)
+	patchStatusEnum := s.graphQLEnum(
+		"PatchStatus",
+		"ADDED", "CHANGED", "COPIED", "DELETED", "MODIFIED", "RENAMED",
+	)
 	// --- Enums ---
 	pullRequestStateEnum := graphql.NewEnum(graphql.EnumConfig{
 		Name: "PullRequestState",
@@ -89,42 +124,22 @@ func (s *Server) addPullRequestFieldsToSchema(userType, issueType, repoType, mut
 		},
 	})
 
-	prLabelPageInfoType := graphql.NewObject(graphql.ObjectConfig{
-		Name: "PRLabelPageInfo",
-		Fields: graphql.Fields{
-			"hasNextPage":     &graphql.Field{Type: graphql.NewNonNull(graphql.Boolean)},
-			"hasPreviousPage": &graphql.Field{Type: graphql.NewNonNull(graphql.Boolean)},
-			"startCursor":     &graphql.Field{Type: graphql.String},
-			"endCursor":       &graphql.Field{Type: graphql.String},
-		},
-	})
-
 	prLabelConnectionType := graphql.NewObject(graphql.ObjectConfig{
 		Name: "PRLabelConnection",
 		Fields: graphql.Fields{
 			"nodes":      &graphql.Field{Type: graphql.NewList(prLabelType)},
 			"totalCount": &graphql.Field{Type: graphql.NewNonNull(graphql.Int)},
-			"pageInfo":   &graphql.Field{Type: graphql.NewNonNull(prLabelPageInfoType)},
+			"pageInfo":   &graphql.Field{Type: graphql.NewNonNull(s.gqlPageInfoType())},
 		},
 	})
 
 	// --- PR Assignee connection ---
-	prAssigneePageInfoType := graphql.NewObject(graphql.ObjectConfig{
-		Name: "PRAssigneePageInfo",
-		Fields: graphql.Fields{
-			"hasNextPage":     &graphql.Field{Type: graphql.NewNonNull(graphql.Boolean)},
-			"hasPreviousPage": &graphql.Field{Type: graphql.NewNonNull(graphql.Boolean)},
-			"startCursor":     &graphql.Field{Type: graphql.String},
-			"endCursor":       &graphql.Field{Type: graphql.String},
-		},
-	})
-
 	prAssigneeConnectionType := graphql.NewObject(graphql.ObjectConfig{
 		Name: "PRUserConnection",
 		Fields: graphql.Fields{
 			"nodes":      &graphql.Field{Type: graphql.NewList(userType)},
 			"totalCount": &graphql.Field{Type: graphql.NewNonNull(graphql.Int)},
-			"pageInfo":   &graphql.Field{Type: graphql.NewNonNull(prAssigneePageInfoType)},
+			"pageInfo":   &graphql.Field{Type: graphql.NewNonNull(s.gqlPageInfoType())},
 		},
 	})
 
@@ -155,9 +170,9 @@ func (s *Server) addPullRequestFieldsToSchema(userType, issueType, repoType, mut
 		Name: "StatusContext",
 		Fields: graphql.Fields{
 			"context":     &graphql.Field{Type: graphql.NewNonNull(graphql.String)},
-			"state":       &graphql.Field{Type: graphql.NewNonNull(graphql.String)},
-			"targetUrl":   &graphql.Field{Type: graphql.String},
-			"createdAt":   &graphql.Field{Type: graphql.NewNonNull(graphql.String)},
+			"state":       &graphql.Field{Type: graphql.NewNonNull(statusStateEnum)},
+			"targetUrl":   &graphql.Field{Type: uri},
+			"createdAt":   &graphql.Field{Type: graphql.NewNonNull(dateTime)},
 			"description": &graphql.Field{Type: graphql.String},
 		},
 	})
@@ -166,11 +181,11 @@ func (s *Server) addPullRequestFieldsToSchema(userType, issueType, repoType, mut
 		Name: "CheckRun",
 		Fields: graphql.Fields{
 			"name":       &graphql.Field{Type: graphql.NewNonNull(graphql.String)},
-			"status":     &graphql.Field{Type: graphql.NewNonNull(graphql.String)},
-			"conclusion": &graphql.Field{Type: graphql.String},
-			"startedAt":  &graphql.Field{Type: graphql.String},
+			"status":     &graphql.Field{Type: graphql.NewNonNull(checkStatusStateEnum)},
+			"conclusion": &graphql.Field{Type: checkConclusionStateEnum},
+			"startedAt":  &graphql.Field{Type: dateTime},
 			"completedAt": &graphql.Field{
-				Type: graphql.String,
+				Type: dateTime,
 				Resolve: func(p graphql.ResolveParams) (interface{}, error) {
 					cr, ok := p.Source.(map[string]interface{})
 					if !ok {
@@ -179,7 +194,7 @@ func (s *Server) addPullRequestFieldsToSchema(userType, issueType, repoType, mut
 					return cr["completedAt"], nil
 				},
 			},
-			"detailsUrl": &graphql.Field{Type: graphql.String},
+			"detailsUrl": &graphql.Field{Type: uri},
 			"checkSuite": &graphql.Field{
 				Type: graphql.NewObject(graphql.ObjectConfig{
 					Name: "CheckSuiteRef",
@@ -233,10 +248,14 @@ func (s *Server) addPullRequestFieldsToSchema(userType, issueType, repoType, mut
 	})
 
 	statusCheckStateCountType := func(name string) *graphql.Object {
+		stateType := graphql.Output(statusStateEnum)
+		if name == "CheckRunStateCount" {
+			stateType = checkRunStateEnum
+		}
 		return graphql.NewObject(graphql.ObjectConfig{
 			Name: name,
 			Fields: graphql.Fields{
-				"state": &graphql.Field{Type: graphql.NewNonNull(graphql.String)},
+				"state": &graphql.Field{Type: graphql.NewNonNull(stateType)},
 				"count": &graphql.Field{Type: graphql.NewNonNull(graphql.Int)},
 			},
 		})
@@ -248,23 +267,17 @@ func (s *Server) addPullRequestFieldsToSchema(userType, issueType, repoType, mut
 			"nodes":                      &graphql.Field{Type: graphql.NewList(statusCheckRollupContextUnion)},
 			"totalCount":                 &graphql.Field{Type: graphql.NewNonNull(graphql.Int)},
 			"checkRunCount":              &graphql.Field{Type: graphql.NewNonNull(graphql.Int)},
-			"checkRunCountsByState":      &graphql.Field{Type: graphql.NewNonNull(graphql.NewList(graphql.NewNonNull(statusCheckStateCountType("CheckRunStateCount"))))},
+			"checkRunCountsByState":      &graphql.Field{Type: graphql.NewList(graphql.NewNonNull(statusCheckStateCountType("CheckRunStateCount")))},
 			"statusContextCount":         &graphql.Field{Type: graphql.NewNonNull(graphql.Int)},
-			"statusContextCountsByState": &graphql.Field{Type: graphql.NewNonNull(graphql.NewList(graphql.NewNonNull(statusCheckStateCountType("StatusContextStateCount"))))},
-			"pageInfo": &graphql.Field{Type: graphql.NewNonNull(graphql.NewObject(graphql.ObjectConfig{
-				Name: "StatusCheckRollupContextPageInfo",
-				Fields: graphql.Fields{
-					"hasNextPage": &graphql.Field{Type: graphql.NewNonNull(graphql.Boolean)},
-					"endCursor":   &graphql.Field{Type: graphql.String},
-				},
-			}))},
+			"statusContextCountsByState": &graphql.Field{Type: graphql.NewList(graphql.NewNonNull(statusCheckStateCountType("StatusContextStateCount")))},
+			"pageInfo":                   &graphql.Field{Type: graphql.NewNonNull(s.gqlPageInfoType())},
 		},
 	})
 
 	statusCheckRollupType := graphql.NewObject(graphql.ObjectConfig{
 		Name: "StatusCheckRollup",
 		Fields: graphql.Fields{
-			"state": &graphql.Field{Type: graphql.NewNonNull(graphql.String)},
+			"state": &graphql.Field{Type: graphql.NewNonNull(statusStateEnum)},
 			"contexts": &graphql.Field{
 				Type: graphql.NewNonNull(statusCheckRollupContextConnectionType),
 				Args: graphql.FieldConfigArgument{
@@ -309,13 +322,13 @@ func (s *Server) addPullRequestFieldsToSchema(userType, issueType, repoType, mut
 	commitType := graphql.NewObject(graphql.ObjectConfig{
 		Name: "Commit",
 		Fields: graphql.Fields{
-			"oid":             &graphql.Field{Type: graphql.NewNonNull(graphql.String)},
-			"messageHeadline": &graphql.Field{Type: graphql.String},
-			"messageBody":     &graphql.Field{Type: graphql.String},
-			"committedDate":   &graphql.Field{Type: graphql.String},
-			"authoredDate":    &graphql.Field{Type: graphql.String},
+			"oid":             &graphql.Field{Type: graphql.NewNonNull(gitObjectID)},
+			"messageHeadline": &graphql.Field{Type: graphql.NewNonNull(graphql.String)},
+			"messageBody":     &graphql.Field{Type: graphql.NewNonNull(graphql.String)},
+			"committedDate":   &graphql.Field{Type: graphql.NewNonNull(dateTime)},
+			"authoredDate":    &graphql.Field{Type: graphql.NewNonNull(dateTime)},
 			"authors": &graphql.Field{
-				Type: gitActorConnectionType,
+				Type: graphql.NewNonNull(gitActorConnectionType),
 				Args: graphql.FieldConfigArgument{
 					"first": &graphql.ArgumentConfig{Type: graphql.Int},
 				},
@@ -372,10 +385,10 @@ func (s *Server) addPullRequestFieldsToSchema(userType, issueType, repoType, mut
 					return r["nodeID"], nil
 				},
 			},
-			"body":  &graphql.Field{Type: graphql.String},
-			"state": &graphql.Field{Type: graphql.NewNonNull(graphql.String)},
+			"body":  &graphql.Field{Type: graphql.NewNonNull(graphql.String)},
+			"state": &graphql.Field{Type: graphql.NewNonNull(pullRequestReviewStateEnum)},
 			"author": &graphql.Field{
-				Type: userType,
+				Type: s.graphqlTypes.actor,
 				Resolve: func(p graphql.ResolveParams) (interface{}, error) {
 					r, ok := p.Source.(map[string]interface{})
 					if !ok {
@@ -384,15 +397,15 @@ func (s *Server) addPullRequestFieldsToSchema(userType, issueType, repoType, mut
 					return r["author"], nil
 				},
 			},
-			"authorAssociation": &graphql.Field{Type: graphql.String},
-			"createdAt":         &graphql.Field{Type: graphql.NewNonNull(graphql.String)},
-			"updatedAt":         &graphql.Field{Type: graphql.NewNonNull(graphql.String)},
+			"authorAssociation": &graphql.Field{Type: graphql.NewNonNull(commentAuthorAssociationEnum)},
+			"createdAt":         &graphql.Field{Type: graphql.NewNonNull(dateTime)},
+			"updatedAt":         &graphql.Field{Type: graphql.NewNonNull(dateTime)},
 			// gh's reviews fragment selects submittedAt, commit{oid}, and
 			// reactionGroups. Bleephub reviews are submitted on creation, so
 			// submittedAt == createdAt; commit is the PR head the review was
 			// recorded against (same derivation as REST's commit_id).
 			"submittedAt": &graphql.Field{
-				Type: graphql.String,
+				Type: dateTime,
 				Resolve: func(p graphql.ResolveParams) (interface{}, error) {
 					r, ok := p.Source.(map[string]interface{})
 					if !ok {
@@ -424,22 +437,12 @@ func (s *Server) addPullRequestFieldsToSchema(userType, issueType, repoType, mut
 		},
 	})
 
-	prReviewPageInfoType := graphql.NewObject(graphql.ObjectConfig{
-		Name: "PRReviewPageInfo",
-		Fields: graphql.Fields{
-			"hasNextPage":     &graphql.Field{Type: graphql.NewNonNull(graphql.Boolean)},
-			"hasPreviousPage": &graphql.Field{Type: graphql.NewNonNull(graphql.Boolean)},
-			"startCursor":     &graphql.Field{Type: graphql.String},
-			"endCursor":       &graphql.Field{Type: graphql.String},
-		},
-	})
-
 	prReviewConnectionType := graphql.NewObject(graphql.ObjectConfig{
 		Name: "PullRequestReviewConnection",
 		Fields: graphql.Fields{
 			"nodes":      &graphql.Field{Type: graphql.NewList(prReviewType)},
 			"totalCount": &graphql.Field{Type: graphql.NewNonNull(graphql.Int)},
-			"pageInfo":   &graphql.Field{Type: graphql.NewNonNull(prReviewPageInfoType)},
+			"pageInfo":   &graphql.Field{Type: graphql.NewNonNull(s.gqlPageInfoType())},
 		},
 	})
 
@@ -507,16 +510,6 @@ func (s *Server) addPullRequestFieldsToSchema(userType, issueType, repoType, mut
 	})
 
 	// --- PR Comment connection ---
-	prCommentPageInfoType := graphql.NewObject(graphql.ObjectConfig{
-		Name: "PRCommentPageInfo",
-		Fields: graphql.Fields{
-			"hasNextPage":     &graphql.Field{Type: graphql.NewNonNull(graphql.Boolean)},
-			"hasPreviousPage": &graphql.Field{Type: graphql.NewNonNull(graphql.Boolean)},
-			"startCursor":     &graphql.Field{Type: graphql.String},
-			"endCursor":       &graphql.Field{Type: graphql.String},
-		},
-	})
-
 	// PRComment type — must match IssueComment's nullability for shared
 	// fields (body, createdAt). gh CLI's `gh issue view` and `gh pr view`
 	// queries union Issue|PR with shared `comments.nodes` field
@@ -546,7 +539,7 @@ func (s *Server) addPullRequestFieldsToSchema(userType, issueType, repoType, mut
 				},
 			},
 			"createdAt": &graphql.Field{
-				Type: graphql.NewNonNull(graphql.String),
+				Type: graphql.NewNonNull(dateTime),
 				Resolve: func(p graphql.ResolveParams) (interface{}, error) {
 					c, ok := p.Source.(map[string]interface{})
 					if !ok {
@@ -556,7 +549,7 @@ func (s *Server) addPullRequestFieldsToSchema(userType, issueType, repoType, mut
 				},
 			},
 			"authorAssociation": &graphql.Field{
-				Type: graphql.String,
+				Type: graphql.NewNonNull(commentAuthorAssociationEnum),
 				Resolve: func(p graphql.ResolveParams) (interface{}, error) {
 					c, ok := p.Source.(map[string]interface{})
 					if !ok {
@@ -566,7 +559,7 @@ func (s *Server) addPullRequestFieldsToSchema(userType, issueType, repoType, mut
 				},
 			},
 			"url": &graphql.Field{
-				Type: graphql.String,
+				Type: graphql.NewNonNull(uri),
 				Resolve: func(p graphql.ResolveParams) (interface{}, error) {
 					c, ok := p.Source.(map[string]interface{})
 					if !ok {
@@ -588,7 +581,7 @@ func (s *Server) addPullRequestFieldsToSchema(userType, issueType, repoType, mut
 				},
 			},
 			"author": &graphql.Field{
-				Type: userType,
+				Type: s.graphqlTypes.actor,
 				Resolve: func(p graphql.ResolveParams) (interface{}, error) {
 					c, ok := p.Source.(map[string]interface{})
 					if !ok {
@@ -608,7 +601,7 @@ func (s *Server) addPullRequestFieldsToSchema(userType, issueType, repoType, mut
 				},
 			},
 			"lastEditedAt": &graphql.Field{
-				Type: graphql.String,
+				Type: dateTime,
 				Resolve: func(p graphql.ResolveParams) (interface{}, error) {
 					c, ok := p.Source.(map[string]interface{})
 					if !ok {
@@ -665,7 +658,7 @@ func (s *Server) addPullRequestFieldsToSchema(userType, issueType, repoType, mut
 		Fields: graphql.Fields{
 			"nodes":      &graphql.Field{Type: graphql.NewList(prCommentType)},
 			"totalCount": &graphql.Field{Type: graphql.NewNonNull(graphql.Int)},
-			"pageInfo":   &graphql.Field{Type: graphql.NewNonNull(prCommentPageInfoType)},
+			"pageInfo":   &graphql.Field{Type: graphql.NewNonNull(s.gqlPageInfoType())},
 		},
 	})
 
@@ -686,14 +679,14 @@ func (s *Server) addPullRequestFieldsToSchema(userType, issueType, repoType, mut
 			"databaseId": &graphql.Field{Type: graphql.Int},
 			"body":       &graphql.Field{Type: graphql.NewNonNull(graphql.String)},
 			"path":       &graphql.Field{Type: graphql.NewNonNull(graphql.String)},
-			"diffHunk":   &graphql.Field{Type: graphql.String},
+			"diffHunk":   &graphql.Field{Type: graphql.NewNonNull(graphql.String)},
 			"line":       &graphql.Field{Type: graphql.Int},
 			"position":   &graphql.Field{Type: graphql.Int},
-			"createdAt":  &graphql.Field{Type: graphql.NewNonNull(graphql.String)},
-			"updatedAt":  &graphql.Field{Type: graphql.NewNonNull(graphql.String)},
-			"state":      &graphql.Field{Type: graphql.NewNonNull(graphql.String)},
+			"createdAt":  &graphql.Field{Type: graphql.NewNonNull(dateTime)},
+			"updatedAt":  &graphql.Field{Type: graphql.NewNonNull(dateTime)},
+			"state":      &graphql.Field{Type: graphql.NewNonNull(pullRequestReviewCommentStateEnum)},
 			"author": &graphql.Field{
-				Type: userType,
+				Type: s.graphqlTypes.actor,
 				Resolve: func(p graphql.ResolveParams) (interface{}, error) {
 					c, ok := p.Source.(map[string]interface{})
 					if !ok {
@@ -709,6 +702,7 @@ func (s *Server) addPullRequestFieldsToSchema(userType, issueType, repoType, mut
 		Fields: graphql.Fields{
 			"nodes":      &graphql.Field{Type: graphql.NewList(prReviewCommentType)},
 			"totalCount": &graphql.Field{Type: graphql.NewNonNull(graphql.Int)},
+			"pageInfo":   &graphql.Field{Type: graphql.NewNonNull(s.gqlPageInfoType())},
 		},
 	})
 	prReviewThreadType := graphql.NewObject(graphql.ObjectConfig{
@@ -718,7 +712,7 @@ func (s *Server) addPullRequestFieldsToSchema(userType, issueType, repoType, mut
 			"isResolved": &graphql.Field{Type: graphql.NewNonNull(graphql.Boolean)},
 			"isOutdated": &graphql.Field{Type: graphql.NewNonNull(graphql.Boolean)},
 			"resolvedBy": &graphql.Field{Type: userType},
-			"path":       &graphql.Field{Type: graphql.String},
+			"path":       &graphql.Field{Type: graphql.NewNonNull(graphql.String)},
 			"line":       &graphql.Field{Type: graphql.Int},
 			"comments":   &graphql.Field{Type: graphql.NewNonNull(prReviewCommentConnectionType)},
 		},
@@ -728,6 +722,7 @@ func (s *Server) addPullRequestFieldsToSchema(userType, issueType, repoType, mut
 		Fields: graphql.Fields{
 			"nodes":      &graphql.Field{Type: graphql.NewList(prReviewThreadType)},
 			"totalCount": &graphql.Field{Type: graphql.NewNonNull(graphql.Int)},
+			"pageInfo":   &graphql.Field{Type: graphql.NewNonNull(s.gqlPageInfoType())},
 		},
 	})
 
@@ -737,6 +732,7 @@ func (s *Server) addPullRequestFieldsToSchema(userType, issueType, repoType, mut
 		Fields: graphql.Fields{
 			"totalCount": &graphql.Field{Type: graphql.NewNonNull(graphql.Int)},
 			"nodes":      &graphql.Field{Type: graphql.NewList(pullRequestCommitType)},
+			"pageInfo":   &graphql.Field{Type: graphql.NewNonNull(s.gqlPageInfoType())},
 		},
 	})
 
@@ -758,27 +754,27 @@ func (s *Server) addPullRequestFieldsToSchema(userType, issueType, repoType, mut
 			"databaseId":       &graphql.Field{Type: graphql.Int},
 			"number":           &graphql.Field{Type: graphql.NewNonNull(graphql.Int)},
 			"title":            &graphql.Field{Type: graphql.NewNonNull(graphql.String)},
-			"body":             &graphql.Field{Type: graphql.String},
-			"state":            &graphql.Field{Type: graphql.NewNonNull(graphql.String)},
+			"body":             &graphql.Field{Type: graphql.NewNonNull(graphql.String)},
+			"state":            &graphql.Field{Type: graphql.NewNonNull(pullRequestStateEnum)},
 			"isDraft":          &graphql.Field{Type: graphql.NewNonNull(graphql.Boolean)},
-			"url":              &graphql.Field{Type: graphql.NewNonNull(graphql.String)},
+			"url":              &graphql.Field{Type: graphql.NewNonNull(uri)},
 			"headRefName":      &graphql.Field{Type: graphql.NewNonNull(graphql.String)},
 			"baseRefName":      &graphql.Field{Type: graphql.NewNonNull(graphql.String)},
-			"headRefOid":       &graphql.Field{Type: graphql.NewNonNull(graphql.String)},
+			"headRefOid":       &graphql.Field{Type: graphql.NewNonNull(gitObjectID)},
 			"mergeable":        &graphql.Field{Type: graphql.NewNonNull(mergeableStateEnum)},
 			"merged":           &graphql.Field{Type: graphql.NewNonNull(graphql.Boolean)},
-			"mergedAt":         &graphql.Field{Type: graphql.String},
+			"mergedAt":         &graphql.Field{Type: dateTime},
 			"additions":        &graphql.Field{Type: graphql.NewNonNull(graphql.Int)},
 			"deletions":        &graphql.Field{Type: graphql.NewNonNull(graphql.Int)},
 			"changedFiles":     &graphql.Field{Type: graphql.NewNonNull(graphql.Int)},
 			"locked":           &graphql.Field{Type: graphql.NewNonNull(graphql.Boolean)},
-			"activeLockReason": &graphql.Field{Type: graphql.String},
-			"createdAt":        &graphql.Field{Type: graphql.NewNonNull(graphql.String)},
-			"updatedAt":        &graphql.Field{Type: graphql.NewNonNull(graphql.String)},
-			"closedAt":         &graphql.Field{Type: graphql.String},
+			"activeLockReason": &graphql.Field{Type: s.graphQLEnum("LockReason", "OFF_TOPIC", "RESOLVED", "SPAM", "TOO_HEATED")},
+			"createdAt":        &graphql.Field{Type: graphql.NewNonNull(dateTime)},
+			"updatedAt":        &graphql.Field{Type: graphql.NewNonNull(dateTime)},
+			"closedAt":         &graphql.Field{Type: dateTime},
 			"reviewDecision":   &graphql.Field{Type: pullRequestReviewDecisionEnum},
 			"author": &graphql.Field{
-				Type: userType,
+				Type: s.graphqlTypes.actor,
 				Resolve: func(p graphql.ResolveParams) (interface{}, error) {
 					pr, ok := p.Source.(map[string]interface{})
 					if !ok {
@@ -788,7 +784,7 @@ func (s *Server) addPullRequestFieldsToSchema(userType, issueType, repoType, mut
 				},
 			},
 			"mergedBy": &graphql.Field{
-				Type: userType,
+				Type: s.graphqlTypes.actor,
 				Resolve: func(p graphql.ResolveParams) (interface{}, error) {
 					pr, ok := p.Source.(map[string]interface{})
 					if !ok {
@@ -863,7 +859,7 @@ func (s *Server) addPullRequestFieldsToSchema(userType, issueType, repoType, mut
 				},
 			},
 			"reviewThreads": &graphql.Field{
-				Type: prReviewThreadConnectionType,
+				Type: graphql.NewNonNull(prReviewThreadConnectionType),
 				Args: relayConnectionArgs(),
 				Resolve: func(p graphql.ResolveParams) (interface{}, error) {
 					pr, ok := p.Source.(map[string]interface{})
@@ -878,7 +874,7 @@ func (s *Server) addPullRequestFieldsToSchema(userType, issueType, repoType, mut
 			// Returns the real items the PR was added to via
 			// addProjectV2ItemById.
 			"projectItems": &graphql.Field{
-				Type: projectV2ItemConnectionType(),
+				Type: s.projectV2ItemConnectionType(),
 				Args: relayConnectionArgs(),
 				Resolve: func(p graphql.ResolveParams) (interface{}, error) {
 					pr, ok := p.Source.(map[string]interface{})
@@ -926,7 +922,7 @@ func (s *Server) addPullRequestFieldsToSchema(userType, issueType, repoType, mut
 			// connection instead. The nodes carry the same real git commits
 			// the REST surface reports.
 			"commits": &graphql.Field{
-				Type: prCommitConnectionType,
+				Type: graphql.NewNonNull(prCommitConnectionType),
 				Args: relayConnectionArgs(),
 				Resolve: func(p graphql.ResolveParams) (interface{}, error) {
 					pr, ok := p.Source.(map[string]interface{})
@@ -937,7 +933,7 @@ func (s *Server) addPullRequestFieldsToSchema(userType, issueType, repoType, mut
 				},
 			},
 			"reactionGroups": &graphql.Field{
-				Type: graphql.NewList(prReactionGroupType),
+				Type: graphql.NewList(graphql.NewNonNull(prReactionGroupType)),
 				Resolve: func(p graphql.ResolveParams) (interface{}, error) {
 					pr, ok := p.Source.(map[string]interface{})
 					if !ok {
@@ -968,7 +964,7 @@ func (s *Server) addPullRequestFieldsToSchema(userType, issueType, repoType, mut
 				},
 			},
 			"headRepositoryOwner": &graphql.Field{
-				Type: userType,
+				Type: s.graphqlTypes.repositoryOwner,
 				Resolve: func(p graphql.ResolveParams) (interface{}, error) {
 					pr, ok := p.Source.(map[string]interface{})
 					if !ok {
@@ -1014,19 +1010,19 @@ func (s *Server) addPullRequestFieldsToSchema(userType, issueType, repoType, mut
 						"authorEmail":    &graphql.Field{Type: graphql.String},
 						"commitBody":     &graphql.Field{Type: graphql.String},
 						"commitHeadline": &graphql.Field{Type: graphql.String},
-						"mergeMethod":    &graphql.Field{Type: graphql.NewNonNull(graphql.String)},
-						"enabledAt":      &graphql.Field{Type: graphql.String},
-						"enabledBy":      &graphql.Field{Type: userType},
+						"mergeMethod":    &graphql.Field{Type: graphql.NewNonNull(pullRequestMergeMethodEnum)},
+						"enabledAt":      &graphql.Field{Type: dateTime},
+						"enabledBy":      &graphql.Field{Type: s.graphqlTypes.actor},
 					},
 				}),
 				Resolve: func(p graphql.ResolveParams) (interface{}, error) {
 					return nil, nil
 				},
 			},
-			"baseRefOid": &graphql.Field{Type: graphql.NewNonNull(graphql.String)},
+			"baseRefOid": &graphql.Field{Type: graphql.NewNonNull(gitObjectID)},
 			"fullDatabaseId": &graphql.Field{
 				// BigInt scalar on real GitHub — serializes as a string.
-				Type: graphql.String,
+				Type: s.graphQLStringScalar("BigInt"),
 				Resolve: func(p graphql.ResolveParams) (interface{}, error) {
 					pr, ok := p.Source.(map[string]interface{})
 					if !ok {
@@ -1046,7 +1042,7 @@ func (s *Server) addPullRequestFieldsToSchema(userType, issueType, repoType, mut
 								"additions":  &graphql.Field{Type: graphql.NewNonNull(graphql.Int)},
 								"deletions":  &graphql.Field{Type: graphql.NewNonNull(graphql.Int)},
 								"path":       &graphql.Field{Type: graphql.NewNonNull(graphql.String)},
-								"changeType": &graphql.Field{Type: graphql.NewNonNull(graphql.String)},
+								"changeType": &graphql.Field{Type: graphql.NewNonNull(patchStatusEnum)},
 							},
 						}))},
 						"totalCount": &graphql.Field{Type: graphql.NewNonNull(graphql.Int)},
@@ -1076,14 +1072,8 @@ func (s *Server) addPullRequestFieldsToSchema(userType, issueType, repoType, mut
 				Type: graphql.NewObject(graphql.ObjectConfig{
 					Name: "ClosingIssuesReferencesConnection",
 					Fields: graphql.Fields{
-						"nodes": &graphql.Field{Type: graphql.NewList(issueType)},
-						"pageInfo": &graphql.Field{Type: graphql.NewNonNull(graphql.NewObject(graphql.ObjectConfig{
-							Name: "ClosingIssuesReferencesPageInfo",
-							Fields: graphql.Fields{
-								"hasNextPage": &graphql.Field{Type: graphql.NewNonNull(graphql.Boolean)},
-								"endCursor":   &graphql.Field{Type: graphql.String},
-							},
-						}))},
+						"nodes":      &graphql.Field{Type: graphql.NewList(issueType)},
+						"pageInfo":   &graphql.Field{Type: graphql.NewNonNull(s.gqlPageInfoType())},
 						"totalCount": &graphql.Field{Type: graphql.NewNonNull(graphql.Int)},
 					},
 				}),
@@ -1105,11 +1095,13 @@ func (s *Server) addPullRequestFieldsToSchema(userType, issueType, repoType, mut
 				},
 			},
 			"mergeCommit": &graphql.Field{
-				// Merges aren't materialised as git commits; null matches
-				// REST's merge_commit_sha staying null.
 				Type: commitType,
 				Resolve: func(p graphql.ResolveParams) (interface{}, error) {
-					return nil, nil
+					source, ok := p.Source.(map[string]interface{})
+					if !ok {
+						return nil, fmt.Errorf("resolve source: unexpected type %T", p.Source)
+					}
+					return source["mergeCommit"], nil
 				},
 			},
 			"potentialMergeCommit": &graphql.Field{
@@ -1194,16 +1186,6 @@ func (s *Server) addPullRequestFieldsToSchema(userType, issueType, repoType, mut
 	})
 
 	// --- PR Connection ---
-	prPageInfoType := graphql.NewObject(graphql.ObjectConfig{
-		Name: "PullRequestPageInfo",
-		Fields: graphql.Fields{
-			"hasNextPage":     &graphql.Field{Type: graphql.NewNonNull(graphql.Boolean)},
-			"hasPreviousPage": &graphql.Field{Type: graphql.NewNonNull(graphql.Boolean)},
-			"startCursor":     &graphql.Field{Type: graphql.String},
-			"endCursor":       &graphql.Field{Type: graphql.String},
-		},
-	})
-
 	prEdgeType := graphql.NewObject(graphql.ObjectConfig{
 		Name: "PullRequestEdge",
 		Fields: graphql.Fields{
@@ -1218,44 +1200,28 @@ func (s *Server) addPullRequestFieldsToSchema(userType, issueType, repoType, mut
 			"nodes":      &graphql.Field{Type: graphql.NewList(pullRequestType)},
 			"edges":      &graphql.Field{Type: graphql.NewList(prEdgeType)},
 			"totalCount": &graphql.Field{Type: graphql.NewNonNull(graphql.Int)},
-			"pageInfo":   &graphql.Field{Type: graphql.NewNonNull(prPageInfoType)},
+			"pageInfo":   &graphql.Field{Type: graphql.NewNonNull(s.gqlPageInfoType())},
 		},
 	})
 
 	// --- Add fields to Repository type ---
 
 	repoType.AddFieldConfig("pullRequests", &graphql.Field{
-		Type: prConnectionType,
+		Type: graphql.NewNonNull(prConnectionType),
 		Args: graphql.FieldConfigArgument{
 			"first":       &graphql.ArgumentConfig{Type: graphql.Int},
 			"after":       &graphql.ArgumentConfig{Type: graphql.String},
-			"states":      &graphql.ArgumentConfig{Type: graphql.NewList(pullRequestStateEnum)},
-			"labels":      &graphql.ArgumentConfig{Type: graphql.NewList(graphql.String)},
+			"last":        &graphql.ArgumentConfig{Type: graphql.Int},
+			"before":      &graphql.ArgumentConfig{Type: graphql.String},
+			"states":      &graphql.ArgumentConfig{Type: graphql.NewList(graphql.NewNonNull(pullRequestStateEnum))},
+			"labels":      &graphql.ArgumentConfig{Type: graphql.NewList(graphql.NewNonNull(graphql.String))},
 			"headRefName": &graphql.ArgumentConfig{Type: graphql.String},
 			"baseRefName": &graphql.ArgumentConfig{Type: graphql.String},
 			// gh sends orderBy as literal enum names — `orderBy: {field:
 			// CREATED_AT, direction: DESC}` — so field/direction must be
 			// enums (string-typed inputs fail validation), exactly like the
 			// issues connection's IssueOrder.
-			"orderBy": &graphql.ArgumentConfig{Type: graphql.NewInputObject(graphql.InputObjectConfig{
-				Name: "IssueOrder2",
-				Fields: graphql.InputObjectConfigFieldMap{
-					"field": &graphql.InputObjectFieldConfig{Type: graphql.NewEnum(graphql.EnumConfig{
-						Name: "PullRequestOrderField",
-						Values: graphql.EnumValueConfigMap{
-							"CREATED_AT": &graphql.EnumValueConfig{Value: "CREATED_AT"},
-							"UPDATED_AT": &graphql.EnumValueConfig{Value: "UPDATED_AT"},
-						},
-					})},
-					"direction": &graphql.InputObjectFieldConfig{Type: graphql.NewEnum(graphql.EnumConfig{
-						Name: "PullRequestOrderDirection",
-						Values: graphql.EnumValueConfigMap{
-							"ASC":  &graphql.EnumValueConfig{Value: "ASC"},
-							"DESC": &graphql.EnumValueConfig{Value: "DESC"},
-						},
-					})},
-				},
-			})},
+			"orderBy": &graphql.ArgumentConfig{Type: s.graphqlTypes.issueOrder},
 		},
 		Resolve: func(p graphql.ResolveParams) (interface{}, error) {
 			repo, ok := p.Source.(map[string]interface{})
@@ -1318,18 +1284,37 @@ func (s *Server) addPullRequestFieldsToSchema(userType, issueType, repoType, mut
 				prs = filtered
 			}
 
-			// Sort newest first
-			sort.Slice(prs, func(a, b int) bool {
-				return prs[a].CreatedAt.After(prs[b].CreatedAt)
-			})
-
-			first := 30
-			if f, ok := p.Args["first"].(int); ok && f > 0 {
-				first = f
+			sortField := "CREATED_AT"
+			sortDescending := true
+			if order, ok := p.Args["orderBy"].(map[string]interface{}); ok {
+				if field, ok := order["field"].(string); ok && field != "" {
+					sortField = field
+				}
+				if direction, ok := order["direction"].(string); ok {
+					sortDescending = direction != "ASC"
+				}
 			}
-			after, _ := p.Args["after"].(string)
-
-			return paginatePullRequestsGQL(prs, s.store, first, after), nil
+			sort.Slice(prs, func(a, b int) bool {
+				left, right := prs[a].CreatedAt, prs[b].CreatedAt
+				if sortField == "UPDATED_AT" {
+					left, right = prs[a].UpdatedAt, prs[b].UpdatedAt
+				}
+				if left.Equal(right) {
+					if sortDescending {
+						return prs[a].ID > prs[b].ID
+					}
+					return prs[a].ID < prs[b].ID
+				}
+				if sortDescending {
+					return left.After(right)
+				}
+				return left.Before(right)
+			})
+			nodes := make([]map[string]interface{}, 0, len(prs))
+			for _, pr := range prs {
+				nodes = append(nodes, pullRequestToGQL(pr, s.store))
+			}
+			return paginateGQLMaps(nodes, p.Args), nil
 		},
 	})
 
@@ -1449,44 +1434,30 @@ func (s *Server) addPullRequestFieldsToSchema(userType, issueType, repoType, mut
 					return c["totalCount"], nil
 				},
 			},
-			"nodes": &graphql.Field{Type: graphql.NewList(searchResultItemUnion)},
-			"edges": &graphql.Field{Type: graphql.NewList(searchResultEdgeType)},
-			"pageInfo": &graphql.Field{Type: graphql.NewNonNull(graphql.NewObject(graphql.ObjectConfig{
-				Name: "SearchPageInfo",
-				Fields: graphql.Fields{
-					"hasNextPage":     &graphql.Field{Type: graphql.NewNonNull(graphql.Boolean)},
-					"hasPreviousPage": &graphql.Field{Type: graphql.NewNonNull(graphql.Boolean)},
-					"startCursor":     &graphql.Field{Type: graphql.String},
-					"endCursor":       &graphql.Field{Type: graphql.String},
-				},
-			}))},
+			"nodes":    &graphql.Field{Type: graphql.NewList(searchResultItemUnion)},
+			"edges":    &graphql.Field{Type: graphql.NewList(searchResultEdgeType)},
+			"pageInfo": &graphql.Field{Type: graphql.NewNonNull(s.gqlPageInfoType())},
 		},
 	})
 	queryType.AddFieldConfig("search", &graphql.Field{
-		Type: searchResultConnectionType,
+		Type: graphql.NewNonNull(searchResultConnectionType),
 		Args: graphql.FieldConfigArgument{
-			"query": &graphql.ArgumentConfig{Type: graphql.NewNonNull(graphql.String)},
-			"type":  &graphql.ArgumentConfig{Type: graphql.NewNonNull(searchTypeEnum)},
-			"first": &graphql.ArgumentConfig{Type: graphql.Int},
-			"last":  &graphql.ArgumentConfig{Type: graphql.Int},
-			"after": &graphql.ArgumentConfig{Type: graphql.String},
+			"query":  &graphql.ArgumentConfig{Type: graphql.NewNonNull(graphql.String)},
+			"type":   &graphql.ArgumentConfig{Type: graphql.NewNonNull(searchTypeEnum)},
+			"first":  &graphql.ArgumentConfig{Type: graphql.Int},
+			"last":   &graphql.ArgumentConfig{Type: graphql.Int},
+			"after":  &graphql.ArgumentConfig{Type: graphql.String},
+			"before": &graphql.ArgumentConfig{Type: graphql.String},
 		},
 		Resolve: func(p graphql.ResolveParams) (interface{}, error) {
 			q, _ := p.Args["query"].(string)
-
-			limit := 30
-			if f, ok := p.Args["first"].(int); ok && f > 0 {
-				limit = f
-			} else if l, ok := p.Args["last"].(int); ok && l > 0 {
-				// gh's issue-search query passes the page size as `last`.
-				limit = l
+			searchType, _ := p.Args["type"].(string)
+			if searchType != "ISSUE" {
+				return paginateGQLMaps(nil, p.Args), nil
 			}
-			after, _ := p.Args["after"].(string)
 
 			nodes := s.searchIssuesAndPRs(q, ghUserFromContext(p.Context))
-			return paginateGQL(nodes, limit, after, func(n map[string]interface{}) map[string]interface{} {
-				return n
-			}), nil
+			return paginateGQLMaps(nodes, p.Args), nil
 		},
 	})
 
@@ -1662,7 +1633,7 @@ func (s *Server) addPullRequestFieldsToSchema(userType, issueType, repoType, mut
 			// gh sets authorEmail (--author-email) and expectedHeadOid
 			// (--match-head-commit).
 			"authorEmail":      &graphql.InputObjectFieldConfig{Type: graphql.String},
-			"expectedHeadOid":  &graphql.InputObjectFieldConfig{Type: graphql.String},
+			"expectedHeadOid":  &graphql.InputObjectFieldConfig{Type: gitObjectID},
 			"clientMutationId": &graphql.InputObjectFieldConfig{Type: graphql.String},
 		},
 	})
@@ -1794,7 +1765,7 @@ func (s *Server) addPullRequestFieldsToSchema(userType, issueType, repoType, mut
 			"pullRequestId":    &graphql.InputObjectFieldConfig{Type: graphql.NewNonNull(graphql.ID)},
 			"event":            &graphql.InputObjectFieldConfig{Type: pullRequestReviewEventEnum},
 			"body":             &graphql.InputObjectFieldConfig{Type: graphql.String},
-			"commitOID":        &graphql.InputObjectFieldConfig{Type: graphql.String},
+			"commitOID":        &graphql.InputObjectFieldConfig{Type: gitObjectID},
 			"clientMutationId": &graphql.InputObjectFieldConfig{Type: graphql.String},
 		},
 	})
@@ -1917,8 +1888,8 @@ func (s *Server) addPullRequestFieldsToSchema(userType, issueType, repoType, mut
 			"title":         &graphql.InputObjectFieldConfig{Type: graphql.String},
 			"body":          &graphql.InputObjectFieldConfig{Type: graphql.String},
 			"baseRefName":   &graphql.InputObjectFieldConfig{Type: graphql.String},
-			"labelIds":      &graphql.InputObjectFieldConfig{Type: graphql.NewList(graphql.ID)},
-			"assigneeIds":   &graphql.InputObjectFieldConfig{Type: graphql.NewList(graphql.ID)},
+			"labelIds":      &graphql.InputObjectFieldConfig{Type: graphql.NewList(graphql.NewNonNull(graphql.ID))},
+			"assigneeIds":   &graphql.InputObjectFieldConfig{Type: graphql.NewList(graphql.NewNonNull(graphql.ID))},
 			"milestoneId":   &graphql.InputObjectFieldConfig{Type: graphql.ID},
 		},
 	})
@@ -2029,7 +2000,7 @@ func pullRequestChangedFileToGQL(file map[string]interface{}) map[string]interfa
 	case "renamed":
 		changeType = "RENAMED"
 	case "modified", "changed":
-		changeType = "CHANGED"
+		changeType = "MODIFIED"
 	}
 	path, _ := file["filename"].(string)
 	additions, _ := file["additions"].(int)
@@ -2106,9 +2077,15 @@ func pullRequestToGQL(pr *PullRequest, st *Store) map[string]interface{} {
 	baseRepo := st.GetRepoByID(pr.RepoID)
 	stor, repoFullNameForCommits := pullRequestGitStorage(st, baseRepo, pr)
 	realCommits := []*object.Commit(nil)
+	var realMergeCommit *object.Commit
 	if stor != nil {
 		if commits, err := pullRequestCommitObjectsFromStorage(stor, pr); err == nil {
 			realCommits = commits
+		}
+		if pr.MergeCommitSHA != "" {
+			if repository, err := git.Open(stor, nil); err == nil {
+				realMergeCommit, _ = repository.CommitObject(plumbing.NewHash(pr.MergeCommitSHA))
+			}
 		}
 	}
 
@@ -2227,7 +2204,7 @@ func pullRequestToGQL(pr *PullRequest, st *Store) map[string]interface{} {
 	}
 	headRepositoryOwner := repoOwnerGraphQLLocked(headRepo, st)
 
-	commitNodes := make([]interface{}, 0)
+	commitNodes := make([]map[string]interface{}, 0)
 	var commitAuthors []interface{}
 	if u := actorUserLocked(st, pr.AuthorID); u != nil {
 		commitAuthors = append(commitAuthors, map[string]interface{}{
@@ -2250,13 +2227,17 @@ func pullRequestToGQL(pr *PullRequest, st *Store) map[string]interface{} {
 		headCommit := map[string]interface{}{
 			"oid":               sha,
 			"messageHeadline":   pr.Title,
-			"messageBody":       nil,
+			"messageBody":       "",
 			"committedDate":     pr.CreatedAt.Format(time.RFC3339),
 			"authoredDate":      pr.CreatedAt.Format(time.RFC3339),
 			"authors":           map[string]interface{}{"nodes": commitAuthors, "totalCount": len(commitAuthors)},
 			"statusCheckRollup": statusCheckRollupSourceLocked(st, repoFullName, sha),
 		}
 		commitNodes = append(commitNodes, map[string]interface{}{"commit": headCommit})
+	}
+	var mergeCommit interface{}
+	if realMergeCommit != nil {
+		mergeCommit = gitCommitToGQLLocked(realMergeCommit, st, repoFullName)
 	}
 
 	return map[string]interface{}{
@@ -2279,6 +2260,7 @@ func pullRequestToGQL(pr *PullRequest, st *Store) map[string]interface{} {
 		"merged":           pr.State == "MERGED",
 		"mergedAt":         mergedAt,
 		"mergedBy":         mergedBy,
+		"mergeCommit":      mergeCommit,
 		"additions":        pr.Additions,
 		"deletions":        pr.Deletions,
 		"changedFiles":     pr.ChangedFiles,
@@ -2288,7 +2270,7 @@ func pullRequestToGQL(pr *PullRequest, st *Store) map[string]interface{} {
 		"updatedAt":        pr.UpdatedAt.Format(time.RFC3339),
 		"closedAt":         closedAt,
 		"locked":           pr.Locked,
-		"activeLockReason": nilStr(pr.ActiveLockReason),
+		"activeLockReason": graphQLLockReason(pr.ActiveLockReason),
 		"milestone":        prMilestoneToGQLLocked(pr, st),
 		"labels": map[string]interface{}{
 			"nodes":      labelNodes,
@@ -2409,6 +2391,10 @@ func reviewThreadsForGraphQL(threads []*ReviewThread, st *Store) []map[string]in
 			"comments": map[string]interface{}{
 				"nodes":      commentNodes,
 				"totalCount": len(commentNodes),
+				"pageInfo": map[string]interface{}{
+					"hasNextPage": false, "hasPreviousPage": false,
+					"startCursor": nil, "endCursor": nil,
+				},
 			},
 		})
 	}
@@ -2511,11 +2497,11 @@ func prCommentToGQLLocked(c *Comment, st *Store) map[string]interface{} {
 		"_dbID":               c.ID,
 		"nodeID":              c.NodeID,
 		"body":                c.Body,
-		"url":                 "",
+		"url":                 commentURLLocked(c, st),
 		"authorID":            c.AuthorID,
 		"createdAt":           c.CreatedAt.Format(time.RFC3339),
 		"author":              author,
-		"authorAssociation":   "OWNER",
+		"authorAssociation":   commentAuthorAssociationLocked(c, st),
 		"includesCreatedEdit": c.LastEditedAt != nil,
 		"lastEditedAt":        lastEditedAt,
 		"editor":              editor,
@@ -2528,10 +2514,23 @@ func prCommentToGQLLocked(c *Comment, st *Store) map[string]interface{} {
 // deriveReviewDecisionLocked derives the review decision from reviews.
 // Must be called while holding st.mu.RLock().
 func deriveReviewDecisionLocked(st *Store, prID int) string {
+	latest := map[int]*PullRequestReview{}
+	for _, review := range st.PRReviewsByPR[prID] {
+		switch review.State {
+		case "APPROVED", "CHANGES_REQUESTED", "DISMISSED":
+		default:
+			continue
+		}
+		current := latest[review.AuthorID]
+		if current == nil || review.UpdatedAt.After(current.UpdatedAt) ||
+			(review.UpdatedAt.Equal(current.UpdatedAt) && review.ID > current.ID) {
+			latest[review.AuthorID] = review
+		}
+	}
 	hasApproved := false
 	hasChangesRequested := false
-	for _, r := range st.PRReviewsByPR[prID] {
-		switch r.State {
+	for _, review := range latest {
+		switch review.State {
 		case "APPROVED":
 			hasApproved = true
 		case "CHANGES_REQUESTED":
@@ -2575,13 +2574,6 @@ func prHasAllLabels(st *Store, pr *PullRequest, labelNames []string) bool {
 	return true
 }
 
-// paginatePullRequestsGQL implements Relay-style cursor pagination for PRs.
-func paginatePullRequestsGQL(prs []*PullRequest, st *Store, first int, after string) map[string]interface{} {
-	return paginateGQL(prs, first, after, func(pr *PullRequest) map[string]interface{} {
-		return pullRequestToGQL(pr, st)
-	})
-}
-
 // prReviewSourceLocked builds the GraphQL source map for a single PR review.
 // Caller must hold st.mu.RLock. submittedAt mirrors createdAt (bleephub
 // reviews are submitted on creation) and commit carries the PR head the
@@ -2592,8 +2584,10 @@ func prReviewSourceLocked(r *PullRequestReview, st *Store) map[string]interface{
 		reviewAuthor = userToGraphQL(u)
 	}
 	commitSHA := ""
+	repoID := 0
 	if pr := st.PullRequests[r.PRID]; pr != nil {
 		commitSHA = pullRequestHeadSHALocked(pr, st)
+		repoID = pr.RepoID
 	}
 	return map[string]interface{}{
 		"_dbID":             r.ID,
@@ -2601,7 +2595,7 @@ func prReviewSourceLocked(r *PullRequestReview, st *Store) map[string]interface{
 		"body":              r.Body,
 		"state":             r.State,
 		"author":            reviewAuthor,
-		"authorAssociation": "OWNER",
+		"authorAssociation": authorAssociationForRepoLocked(st, repoID, r.AuthorID),
 		"createdAt":         r.CreatedAt.Format(time.RFC3339),
 		"updatedAt":         r.UpdatedAt.Format(time.RFC3339),
 		"submittedAt":       r.CreatedAt.Format(time.RFC3339),
@@ -2650,15 +2644,12 @@ func userGraphQLByEmailLocked(st *Store, email string) map[string]interface{} {
 	return nil
 }
 
-func commitMessageBody(message string) interface{} {
+func commitMessageBody(message string) string {
 	parts := strings.SplitN(message, "\n", 2)
 	if len(parts) < 2 {
-		return nil
+		return ""
 	}
 	body := strings.TrimSpace(parts[1])
-	if body == "" {
-		return nil
-	}
 	return body
 }
 
@@ -2767,7 +2758,12 @@ func statusCheckRollupSourceLocked(st *Store, repoKey, sha string) interface{} {
 			"checkRunCountsByState":      stateCountNodes(checkRunStatesForCounts(), checkRunCounts),
 			"statusContextCount":         len(statuses),
 			"statusContextCountsByState": stateCountNodes(statusContextStatesForCounts(), statusContextCounts),
-			"pageInfo":                   map[string]interface{}{"hasNextPage": false, "endCursor": nil},
+			"pageInfo": map[string]interface{}{
+				"hasNextPage":     false,
+				"hasPreviousPage": false,
+				"startCursor":     nil,
+				"endCursor":       nil,
+			},
 		},
 	}
 }
@@ -2850,10 +2846,10 @@ func checkSuiteWorkflowRunSourceLocked(st *Store, suite *CheckSuite) map[string]
 // Query.search (type: ISSUE) against the real issue/PR stores. Supported
 // qualifiers are evaluated for real: repo:, state:/is:/type:, author:,
 // assignee:, label:, mentions:, involves: (author OR assignee OR commenter).
-// review-requested: matches nothing — bleephub stores no review requests, so
-// zero results IS the true answer. A qualifier bleephub cannot evaluate at
-// all yields honest empty results (never an over-matching ignore). Bare
-// keywords match title/body substrings. Results are newest-first.
+// review-requested: is evaluated from the pull request's durable reviewer
+// graph. A qualifier bleephub cannot evaluate at all yields honest empty
+// results (never an over-matching ignore). Bare keywords match title/body
+// substrings.
 func (s *Server) searchIssuesAndPRs(query string, viewer *User) []map[string]interface{} {
 	type searchSpec struct {
 		repos      []string // repo full names; empty = all
@@ -2863,9 +2859,12 @@ func (s *Server) searchIssuesAndPRs(query string, viewer *User) []map[string]int
 		assignee   string
 		mentions   string
 		involves   string
+		reviewer   string
 		labels     []string
 		keywords   []string
 		draft      *bool
+		sortField  string
+		sortAsc    bool
 		impossible bool
 	}
 	spec := searchSpec{}
@@ -2927,10 +2926,25 @@ func (s *Server) searchIssuesAndPRs(query string, viewer *User) []map[string]int
 		case "label":
 			spec.labels = append(spec.labels, val)
 		case "review-requested", "user-review-requested":
-			// No review-request store: nothing can match.
-			spec.impossible = true
+			spec.entity = "pr"
+			spec.reviewer = val
 		case "sort":
-			// Default newest-first ordering is the only one modeled.
+			sortParts := strings.Split(strings.ToLower(val), "-")
+			switch sortParts[0] {
+			case "created", "updated":
+				spec.sortField = sortParts[0]
+			default:
+				spec.impossible = true
+			}
+			if len(sortParts) > 1 {
+				switch sortParts[1] {
+				case "asc":
+					spec.sortAsc = true
+				case "desc":
+				default:
+					spec.impossible = true
+				}
+			}
 		default:
 			spec.impossible = true
 		}
@@ -3108,6 +3122,22 @@ func (s *Server) searchIssuesAndPRs(query string, viewer *User) []map[string]int
 			if spec.author != "" && loginOf(pr.AuthorID) != spec.author {
 				continue
 			}
+			if spec.reviewer != "" {
+				reviewer := spec.reviewer
+				if reviewer == "@me" && viewer != nil {
+					reviewer = viewer.Login
+				}
+				found := false
+				for _, reviewerID := range pr.RequestedReviewerIDs {
+					if strings.EqualFold(loginOf(reviewerID), reviewer) {
+						found = true
+						break
+					}
+				}
+				if !found {
+					continue
+				}
+			}
 			if spec.assignee != "" && !assigneeMatch(pr.AssigneeIDs, spec.assignee) {
 				continue
 			}
@@ -3132,19 +3162,32 @@ func (s *Server) searchIssuesAndPRs(query string, viewer *User) []map[string]int
 	// newest-first across both entity kinds.
 	type dated struct {
 		created time.Time
+		updated time.Time
 		node    map[string]interface{}
 	}
 	out := make([]dated, 0, len(matchedIssues)+len(matchedPRs))
 	for _, issue := range matchedIssues {
 		node := issueToGQL(issue, s.store)
 		node["__typename"] = "Issue"
-		out = append(out, dated{issue.CreatedAt, node})
+		out = append(out, dated{created: issue.CreatedAt, updated: issue.UpdatedAt, node: node})
 	}
 	for _, pr := range matchedPRs {
 		node := pullRequestToGQL(pr, s.store)
-		out = append(out, dated{pr.CreatedAt, node})
+		out = append(out, dated{created: pr.CreatedAt, updated: pr.UpdatedAt, node: node})
 	}
-	sort.Slice(out, func(a, b int) bool { return out[a].created.After(out[b].created) })
+	sort.SliceStable(out, func(a, b int) bool {
+		left, right := out[a].created, out[b].created
+		if spec.sortField == "updated" {
+			left, right = out[a].updated, out[b].updated
+		}
+		if left.Equal(right) {
+			return false
+		}
+		if spec.sortAsc {
+			return left.Before(right)
+		}
+		return left.After(right)
+	})
 
 	nodes := make([]map[string]interface{}, 0, len(out))
 	for _, d := range out {

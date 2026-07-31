@@ -1,317 +1,77 @@
-argument-type	Repository.issues(labels)	[String]	[String!]
-argument-type	Repository.issues(states)	[IssueState]	[IssueState!]
-argument-type	Repository.milestones(states)	[MilestoneState]	[MilestoneState!]
-argument-type	Repository.pullRequests(labels)	[String]	[String!]
-argument-type	Repository.pullRequests(orderBy)	IssueOrder2	IssueOrder
-argument-type	Repository.pullRequests(states)	[PullRequestState]	[PullRequestState!]
-enum-value	RepositoryPrivacy.INTERNAL	absent from GitHub
-field	Discussion.lockedReason	absent from GitHub
 field	Mutation.deleteRepository	absent from GitHub
 field	ProjectV2Field.iterationConfiguration	absent from GitHub
 field	ProjectV2Field.options	absent from GitHub
 field	ProjectV2View.visibleFieldIds	absent from GitHub
-field-type	AddCommentPayload.subject	Issue	Node
 field-type	AddProjectV2ItemByIdPayload.item	AddProjectV2ItemByIdPayloadItem	ProjectV2Item
-field-type	AutoMergeRequest.enabledAt	String	DateTime
-field-type	AutoMergeRequest.enabledBy	User	Actor
-field-type	AutoMergeRequest.mergeMethod	String!	PullRequestMergeMethod!
 field-type	CheckRun.checkSuite	CheckSuiteRef	CheckSuite!
-field-type	CheckRun.completedAt	String	DateTime
-field-type	CheckRun.conclusion	String	CheckConclusionState
-field-type	CheckRun.detailsUrl	String	URI
-field-type	CheckRun.startedAt	String	DateTime
-field-type	CheckRun.status	String!	CheckStatusState!
-field-type	CheckRunStateCount.state	String!	CheckRunState!
-field-type	Commit.authoredDate	String	DateTime!
-field-type	Commit.authors	GitActorConnection	GitActorConnection!
-field-type	Commit.committedDate	String	DateTime!
-field-type	Commit.messageBody	String	String!
-field-type	Commit.messageHeadline	String	String!
-field-type	Commit.oid	String!	GitObjectID!
 field-type	CreateProjectV2FieldPayload.projectV2Field	ProjectV2FieldSummary	ProjectV2FieldConfiguration
-field-type	Discussion.author	User	Actor
-field-type	Discussion.body	String	String!
-field-type	Discussion.bodyHTML	String!	HTML!
-field-type	Discussion.category	DiscussionCategory	DiscussionCategory!
-field-type	Discussion.comments	DiscussionCommentConnection	DiscussionCommentConnection!
-field-type	Discussion.createdAt	String!	DateTime!
-field-type	Discussion.lastEditedAt	String	DateTime
-field-type	Discussion.publishedAt	String	DateTime
 field-type	Discussion.reactionGroups	[DiscussionReactionGroup]	[ReactionGroup!]
 field-type	Discussion.reactions	DiscussionReactionConnection	ReactionConnection!
-field-type	Discussion.updatedAt	String!	DateTime!
-field-type	Discussion.url	String!	URI!
-field-type	DiscussionCategory.createdAt	String!	DateTime!
-field-type	DiscussionCategory.emoji	String	String!
-field-type	DiscussionCategory.updatedAt	String!	DateTime!
-field-type	DiscussionCategoryConnection.pageInfo	DiscussionCategoryPageInfo!	PageInfo!
-field-type	DiscussionComment.author	User	Actor
-field-type	DiscussionComment.bodyHTML	String!	HTML!
-field-type	DiscussionComment.createdAt	String!	DateTime!
-field-type	DiscussionComment.lastEditedAt	String	DateTime
 field-type	DiscussionComment.reactionGroups	[DiscussionReactionGroup]	[ReactionGroup!]
 field-type	DiscussionComment.reactions	DiscussionReactionConnection	ReactionConnection!
-field-type	DiscussionComment.replies	DiscussionCommentConnection	DiscussionCommentConnection!
-field-type	DiscussionComment.updatedAt	String!	DateTime!
-field-type	DiscussionCommentConnection.pageInfo	DiscussionCommentPageInfo!	PageInfo!
-field-type	DiscussionConnection.pageInfo	DiscussionPageInfo!	PageInfo!
-field-type	Issue.activeLockReason	String	LockReason
-field-type	Issue.assignees	UserConnection	UserConnection!
-field-type	Issue.author	User	Actor
-field-type	Issue.body	String	String!
-field-type	Issue.closedAt	String	DateTime
-field-type	Issue.comments	IssueCommentConnection	IssueCommentConnection!
-field-type	Issue.createdAt	String!	DateTime!
 field-type	Issue.parent	RelatedIssue	Issue
-field-type	Issue.reactionGroups	[ReactionGroup]	[ReactionGroup!]
-field-type	Issue.state	String!	IssueState!
-field-type	Issue.stateReason	String	IssueStateReason
 field-type	Issue.subIssues	SubIssueConnection	IssueConnection!
-field-type	Issue.subIssuesSummary	SubIssuesSummary	SubIssuesSummary!
-field-type	Issue.updatedAt	String!	DateTime!
-field-type	Issue.url	String!	URI!
-field-type	IssueComment.author	User	Actor
-field-type	IssueComment.authorAssociation	String	CommentAuthorAssociation!
-field-type	IssueComment.createdAt	String!	DateTime!
-field-type	IssueComment.editor	User	Actor
-field-type	IssueComment.includesCreatedEdit	Boolean	Boolean!
-field-type	IssueComment.isMinimized	Boolean	Boolean!
-field-type	IssueComment.lastEditedAt	String	DateTime
 field-type	IssueComment.reactionGroups	[ReactionGroup]	[ReactionGroup!]
-field-type	IssueComment.updatedAt	String!	DateTime!
-field-type	IssueComment.url	String	URI!
-field-type	IssueComment.viewerDidAuthor	Boolean	Boolean!
-field-type	IssueCommentConnection.pageInfo	IssueCommentPageInfo!	PageInfo!
-field-type	IssueConnection.pageInfo	IssuePageInfo!	PageInfo!
-field-type	IssueFieldDate.createdAt	String!	DateTime!
-field-type	IssueFieldDate.fullDatabaseId	String	BigInt
-field-type	IssueFieldMultiSelect.createdAt	String!	DateTime!
-field-type	IssueFieldMultiSelect.fullDatabaseId	String	BigInt
-field-type	IssueFieldNumber.createdAt	String!	DateTime!
-field-type	IssueFieldNumber.fullDatabaseId	String	BigInt
-field-type	IssueFieldSingleSelect.createdAt	String!	DateTime!
-field-type	IssueFieldSingleSelect.fullDatabaseId	String	BigInt
-field-type	IssueFieldSingleSelectOption.fullDatabaseId	String	BigInt
-field-type	IssueFieldText.createdAt	String!	DateTime!
-field-type	IssueFieldText.fullDatabaseId	String	BigInt
-field-type	IssueType.color	String	IssueTypeColor!
-field-type	LabelConnection.pageInfo	LabelPageInfo!	PageInfo!
 field-type	LockLockablePayload.lockedRecord	LockableSummary	Lockable
-field-type	Milestone.dueOn	String	DateTime
-field-type	Milestone.state	String!	MilestoneState!
-field-type	MilestoneConnection.pageInfo	MilestonePageInfo!	PageInfo!
 field-type	MinimizeCommentPayload.minimizedComment	MinimizableComment	Minimizable
-field-type	Organization.avatarUrl	String	URI!
-field-type	Organization.createdAt	String!	DateTime!
-field-type	Organization.updatedAt	String!	DateTime!
-field-type	Organization.url	String!	URI!
-field-type	OrganizationConnection.pageInfo	OrgPageInfo!	PageInfo!
-field-type	ProjectV2.fields	ProjectV2FieldConnection	ProjectV2FieldConfigurationConnection!
-field-type	ProjectV2.items	ProjectV2ItemConnection	ProjectV2ItemConnection!
-field-type	ProjectV2.url	String	URI!
-field-type	ProjectV2.views	ProjectV2ViewConnection	ProjectV2ViewConnection!
-field-type	ProjectV2Field.createdAt	String!	DateTime!
-field-type	ProjectV2Field.dataType	String!	ProjectV2FieldType!
-field-type	ProjectV2Field.updatedAt	String!	DateTime!
-field-type	ProjectV2Item.project	ProjectV2	ProjectV2!
-field-type	ProjectV2ItemFieldDateValue.date	String	Date
-field-type	ProjectV2ItemFieldIterationValue.duration	Int	Int!
-field-type	ProjectV2ItemFieldIterationValue.iterationId	String	String!
-field-type	ProjectV2ItemFieldIterationValue.startDate	String	Date!
-field-type	ProjectV2ItemFieldIterationValue.title	String	String!
-field-type	ProjectV2SingleSelectFieldOption.color	String	ProjectV2SingleSelectFieldOptionColor!
-field-type	ProjectV2SingleSelectFieldOption.description	String	String!
-field-type	ProjectV2View.createdAt	String!	DateTime!
-field-type	ProjectV2View.layout	String!	ProjectV2ViewLayout!
-field-type	ProjectV2View.updatedAt	String!	DateTime!
-field-type	PullRequest.activeLockReason	String	LockReason
+field-type	ProjectV2.fields	ProjectV2FieldConnection!	ProjectV2FieldConfigurationConnection!
 field-type	PullRequest.assignees	PRUserConnection	UserConnection!
-field-type	PullRequest.author	User	Actor
 field-type	PullRequest.baseRef	PRBaseRef	Ref
-field-type	PullRequest.baseRefOid	String!	GitObjectID!
-field-type	PullRequest.body	String	String!
-field-type	PullRequest.closedAt	String	DateTime
 field-type	PullRequest.closingIssuesReferences	ClosingIssuesReferencesConnection	IssueConnection
 field-type	PullRequest.comments	PRCommentConnection	IssueCommentConnection!
-field-type	PullRequest.commits	PullRequestCommitConnection	PullRequestCommitConnection!
-field-type	PullRequest.createdAt	String!	DateTime!
-field-type	PullRequest.fullDatabaseId	String	BigInt
-field-type	PullRequest.headRefOid	String!	GitObjectID!
-field-type	PullRequest.headRepositoryOwner	User	RepositoryOwner
 field-type	PullRequest.labels	PRLabelConnection	LabelConnection
 field-type	PullRequest.latestReviews	LatestReviewConnection	PullRequestReviewConnection
-field-type	PullRequest.mergedAt	String	DateTime
-field-type	PullRequest.mergedBy	User	Actor
 field-type	PullRequest.milestone	PRMilestone	Milestone
-field-type	PullRequest.reactionGroups	[PRReactionGroup]	[ReactionGroup!]
-field-type	PullRequest.reviewThreads	PullRequestReviewThreadConnection	PullRequestReviewThreadConnection!
-field-type	PullRequest.state	String!	PullRequestState!
-field-type	PullRequest.updatedAt	String!	DateTime!
-field-type	PullRequest.url	String!	URI!
-field-type	PullRequestChangedFile.changeType	String!	PatchStatus!
-field-type	PullRequestConnection.pageInfo	PullRequestPageInfo!	PageInfo!
-field-type	PullRequestReview.author	User	Actor
-field-type	PullRequestReview.authorAssociation	String	CommentAuthorAssociation!
-field-type	PullRequestReview.body	String	String!
-field-type	PullRequestReview.createdAt	String!	DateTime!
+field-type	PullRequest.reactionGroups	[PRReactionGroup!]	[ReactionGroup!]
 field-type	PullRequestReview.reactionGroups	[PRReactionGroup]	[ReactionGroup!]
-field-type	PullRequestReview.state	String!	PullRequestReviewState!
-field-type	PullRequestReview.submittedAt	String	DateTime
-field-type	PullRequestReview.updatedAt	String!	DateTime!
-field-type	PullRequestReviewComment.author	User	Actor
-field-type	PullRequestReviewComment.createdAt	String!	DateTime!
-field-type	PullRequestReviewComment.diffHunk	String	String!
-field-type	PullRequestReviewComment.state	String!	PullRequestReviewCommentState!
-field-type	PullRequestReviewComment.updatedAt	String!	DateTime!
-field-type	PullRequestReviewConnection.pageInfo	PRReviewPageInfo!	PageInfo!
-field-type	PullRequestReviewThread.path	String	String!
-field-type	Query.repositoryOwner	User	RepositoryOwner
-field-type	Query.search	SearchResultItemConnection	SearchResultItemConnection!
-field-type	Query.viewer	User	User!
 field-type	ReactionGroup.content	String!	ReactionContent!
 field-type	ReactionGroup.users	ReactingUserConnection	ReactingUserConnection!
-field-type	Ref.name	String	String!
-field-type	Ref.prefix	String	String!
-field-type	Release.createdAt	String!	DateTime!
-field-type	Release.publishedAt	String	DateTime
-field-type	Release.url	String!	URI!
-field-type	ReleaseConnection.pageInfo	ReleasePageInfo!	PageInfo!
-field-type	Repository.archivedAt	String	DateTime
-field-type	Repository.assignableUsers	UserConnection	UserConnection!
-field-type	Repository.createdAt	String!	DateTime!
-field-type	Repository.discussionCategories	DiscussionCategoryConnection	DiscussionCategoryConnection!
-field-type	Repository.discussions	DiscussionConnection	DiscussionConnection!
-field-type	Repository.homepageUrl	String	URI
-field-type	Repository.issues	IssueConnection	IssueConnection!
 field-type	Repository.licenseInfo	RepositoryLicense	License
-field-type	Repository.mergeCommitAllowed	Boolean	Boolean!
-field-type	Repository.owner	User	RepositoryOwner!
-field-type	Repository.pullRequests	PullRequestConnection	PullRequestConnection!
-field-type	Repository.pushedAt	String	DateTime
-field-type	Repository.rebaseMergeAllowed	Boolean	Boolean!
-field-type	Repository.releases	ReleaseConnection	ReleaseConnection!
-field-type	Repository.repositoryTopics	RepositoryTopicConnection	RepositoryTopicConnection!
-field-type	Repository.squashMergeAllowed	Boolean	Boolean!
-field-type	Repository.sshUrl	String	GitSSHRemote!
-field-type	Repository.stargazerCount	Int	Int!
-field-type	Repository.updatedAt	String!	DateTime!
-field-type	Repository.url	String!	URI!
-field-type	Repository.viewerPermission	String	RepositoryPermission
-field-type	Repository.visibility	String!	RepositoryVisibility!
 field-type	Repository.watchers	RepoWatcherConnection	UserConnection!
-field-type	SearchResultItemConnection.pageInfo	SearchPageInfo!	PageInfo!
-field-type	StatusCheckRollup.state	String!	StatusState!
-field-type	StatusCheckRollupContextConnection.checkRunCountsByState	[CheckRunStateCount!]!	[CheckRunStateCount!]
-field-type	StatusCheckRollupContextConnection.pageInfo	StatusCheckRollupContextPageInfo!	PageInfo!
-field-type	StatusCheckRollupContextConnection.statusContextCountsByState	[StatusContextStateCount!]!	[StatusContextStateCount!]
-field-type	StatusContext.createdAt	String!	DateTime!
-field-type	StatusContext.state	String!	StatusState!
-field-type	StatusContext.targetUrl	String	URI
-field-type	StatusContextStateCount.state	String!	StatusState!
 field-type	Team.name	String	String!
 field-type	Team.organization	TeamOrganization!	Organization!
 field-type	UnlockLockablePayload.unlockedRecord	LockableSummary	Lockable
 field-type	UnminimizeCommentPayload.unminimizedComment	MinimizableComment	Minimizable
 field-type	UpdateProjectV2ItemFieldValuePayload.projectV2Item	UpdateProjectV2ItemFieldValuePayloadItem	ProjectV2Item
-field-type	User.avatarUrl	String	URI!
-field-type	User.createdAt	String!	DateTime!
-field-type	User.organizations	OrganizationConnection	OrganizationConnection!
-field-type	User.repositories	RepositoryConnection	RepositoryConnection!
-field-type	User.updatedAt	String!	DateTime!
-field-type	User.url	String!	URI!
-field-type	UserConnection.pageInfo	AssigneePageInfo!	PageInfo!
-input-field	DeleteDiscussionCommentInput.commentId	absent from GitHub
-input-field	DeleteDiscussionInput.discussionId	absent from GitHub
-input-field	MarkDiscussionCommentAsAnswerInput.commentId	absent from GitHub
-input-field	UnmarkDiscussionCommentAsAnswerInput.commentId	absent from GitHub
-input-field-type	AddPullRequestReviewInput.commitOID	String	GitObjectID
-input-field-type	CreateDiscussionInput.body	String	String!
-input-field-type	CreateIssueInput.assigneeIds	[ID]	[ID!]
-input-field-type	CreateIssueInput.labelIds	[ID]	[ID!]
-input-field-type	CreateIssueInput.projectIds	[ID]	[ID!]
 input-field-type	CreateProjectV2FieldInput.iterationConfiguration	ProjectV2IterationConfigurationInput	ProjectV2IterationFieldConfigurationInput
-input-field-type	CreateRepositoryInput.visibility	String	RepositoryVisibility!
-input-field-type	DiscussionOrder.direction	DiscussionOrderDirection	OrderDirection!
-input-field-type	DiscussionOrder.field	DiscussionOrderField	DiscussionOrderField!
-input-field-type	IssueFilters.labels	[String]	[String!]
-input-field-type	IssueFilters.states	[IssueState]	[IssueState!]
-input-field-type	IssueOrder.direction	IssueOrderDirection	OrderDirection!
-input-field-type	IssueOrder.field	IssueOrderField	IssueOrderField!
-input-field-type	LabelOrder.direction	LabelOrderDirection	OrderDirection!
-input-field-type	LabelOrder.field	LabelOrderField	LabelOrderField!
-input-field-type	MergePullRequestInput.expectedHeadOid	String	GitObjectID
-input-field-type	MinimizeCommentInput.classifier	ReportedContentClassifier!	ReportedContentClassifiers!
-input-field-type	ReleaseOrder.direction	OrderDirection	OrderDirection!
-input-field-type	ReleaseOrder.field	ReleaseOrderField	ReleaseOrderField!
-input-field-type	RepositoryOrder.direction	OrderDirection	OrderDirection!
-input-field-type	RepositoryOrder.field	RepositoryOrderField	RepositoryOrderField!
-input-field-type	UpdateIssueInput.assigneeIds	[ID]	[ID!]
-input-field-type	UpdateIssueInput.labelIds	[ID]	[ID!]
 input-field-type	UpdateProjectV2ItemFieldValueInput.value	ProjectV2FieldValueInput!	ProjectV2FieldValue!
-input-field-type	UpdatePullRequestInput.assigneeIds	[ID]	[ID!]
-input-field-type	UpdatePullRequestInput.labelIds	[ID]	[ID!]
 type	AddProjectV2ItemByIdPayloadItem	OBJECT is absent from GitHub
-type	AssigneePageInfo	OBJECT is absent from GitHub
 type	Boolean	SCALAR is absent from GitHub
 type	CheckSuiteRef	OBJECT is absent from GitHub
 type	CheckWorkflow	OBJECT is absent from GitHub
 type	CheckWorkflowRun	OBJECT is absent from GitHub
 type	ClosingIssuesReferencesConnection	OBJECT is absent from GitHub
-type	ClosingIssuesReferencesPageInfo	OBJECT is absent from GitHub
 type	DeleteRepositoryInput	INPUT_OBJECT is absent from GitHub
 type	DeleteRepositoryPayload	OBJECT is absent from GitHub
-type	DiscussionCategoryPageInfo	OBJECT is absent from GitHub
-type	DiscussionCommentPageInfo	OBJECT is absent from GitHub
-type	DiscussionOrderDirection	ENUM is absent from GitHub
-type	DiscussionPageInfo	OBJECT is absent from GitHub
 type	DiscussionReactingUserConnection	OBJECT is absent from GitHub
 type	DiscussionReaction	OBJECT is absent from GitHub
 type	DiscussionReactionConnection	OBJECT is absent from GitHub
 type	DiscussionReactionEdge	OBJECT is absent from GitHub
 type	DiscussionReactionGroup	OBJECT is absent from GitHub
-type	DiscussionReactionPageInfo	OBJECT is absent from GitHub
 type	Float	SCALAR is absent from GitHub
 type	ID	SCALAR is absent from GitHub
 type	Int	SCALAR is absent from GitHub
-type	IssueCommentPageInfo	OBJECT is absent from GitHub
-type	IssueOrder2	INPUT_OBJECT is absent from GitHub
-type	IssueOrderDirection	ENUM is absent from GitHub
-type	IssuePageInfo	OBJECT is absent from GitHub
-type	LabelOrderDirection	ENUM is absent from GitHub
-type	LabelPageInfo	OBJECT is absent from GitHub
 type	LatestReviewConnection	OBJECT is absent from GitHub
 type	LockableSummary	OBJECT is absent from GitHub
-type	MilestonePageInfo	OBJECT is absent from GitHub
 type	MinimizableComment	OBJECT is absent from GitHub
-type	OrgPageInfo	OBJECT is absent from GitHub
-type	PRAssigneePageInfo	OBJECT is absent from GitHub
 type	PRBaseRef	OBJECT is absent from GitHub
 type	PRComment	OBJECT is absent from GitHub
 type	PRCommentConnection	OBJECT is absent from GitHub
-type	PRCommentPageInfo	OBJECT is absent from GitHub
 type	PRLabel	OBJECT is absent from GitHub
 type	PRLabelConnection	OBJECT is absent from GitHub
-type	PRLabelPageInfo	OBJECT is absent from GitHub
 type	PRMilestone	OBJECT is absent from GitHub
 type	PRReactingUserConnection	OBJECT is absent from GitHub
 type	PRReactionGroup	OBJECT is absent from GitHub
-type	PRReviewPageInfo	OBJECT is absent from GitHub
 type	PRUserConnection	OBJECT is absent from GitHub
 type	ProjectV2FieldSummary	OBJECT is absent from GitHub
 type	ProjectV2FieldValueInput	INPUT_OBJECT is absent from GitHub
 type	ProjectV2IterationConfiguration	OBJECT is absent from GitHub
 type	ProjectV2IterationConfigurationInput	INPUT_OBJECT is absent from GitHub
 type	ProjectV2IterationInput	INPUT_OBJECT is absent from GitHub
-type	PullRequestOrderDirection	ENUM is absent from GitHub
-type	PullRequestPageInfo	OBJECT is absent from GitHub
 type	RelatedIssue	OBJECT is absent from GitHub
 type	RelatedIssueRepository	OBJECT is absent from GitHub
-type	ReleasePageInfo	OBJECT is absent from GitHub
 type	RepoWatcherConnection	OBJECT is absent from GitHub
-type	ReportedContentClassifier	ENUM is absent from GitHub
 type	RepositoryLicense	OBJECT is absent from GitHub
-type	SearchPageInfo	OBJECT is absent from GitHub
-type	StatusCheckRollupContextPageInfo	OBJECT is absent from GitHub
 type	String	SCALAR is absent from GitHub
 type	SubIssueConnection	OBJECT is absent from GitHub
 type	TeamOrganization	OBJECT is absent from GitHub

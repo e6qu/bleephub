@@ -34,6 +34,7 @@ type Server struct {
 	logger                 zerolog.Logger
 	store                  *Store
 	graphqlSchema          graphql.Schema
+	graphqlTypes           graphQLTypeRegistry
 	actionCache            *ActionCache
 	artifactStore          *ArtifactStore
 	metrics                *Metrics

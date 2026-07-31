@@ -27,7 +27,7 @@ func (s *Server) addModerationMutationsToSchema(mutationType *graphql.Object) {
 	// --- minimizeComment / unminimizeComment ---
 
 	classifierEnum := graphql.NewEnum(graphql.EnumConfig{
-		Name: "ReportedContentClassifier",
+		Name: "ReportedContentClassifiers",
 		Values: graphql.EnumValueConfigMap{
 			"OFF_TOPIC": &graphql.EnumValueConfig{Value: "OFF_TOPIC"},
 			"OUTDATED":  &graphql.EnumValueConfig{Value: "OUTDATED"},
@@ -151,15 +151,7 @@ func (s *Server) addModerationMutationsToSchema(mutationType *graphql.Object) {
 
 	// --- lockLockable / unlockLockable ---
 
-	lockReasonEnum := graphql.NewEnum(graphql.EnumConfig{
-		Name: "LockReason",
-		Values: graphql.EnumValueConfigMap{
-			"OFF_TOPIC":  &graphql.EnumValueConfig{Value: "OFF_TOPIC"},
-			"RESOLVED":   &graphql.EnumValueConfig{Value: "RESOLVED"},
-			"SPAM":       &graphql.EnumValueConfig{Value: "SPAM"},
-			"TOO_HEATED": &graphql.EnumValueConfig{Value: "TOO_HEATED"},
-		},
-	})
+	lockReasonEnum := s.graphQLEnum("LockReason", "OFF_TOPIC", "RESOLVED", "SPAM", "TOO_HEATED")
 
 	lockInputType := graphql.NewInputObject(graphql.InputObjectConfig{
 		Name: "LockLockableInput",

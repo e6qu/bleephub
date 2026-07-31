@@ -501,14 +501,14 @@ func TestGraphQLSchemaMatchesIntrospectionAndOfficialRatchets(t *testing.T) {
 	// able to bless less coverage or more incompatibility. These monotonic
 	// floors make "update the generated files" incapable of hiding a schema
 	// regression.
-	if report.ImplementedFields < 779 {
-		t.Fatalf("GraphQL implemented fields regressed to %d; floor is 779", report.ImplementedFields)
+	if report.ImplementedFields < 834 {
+		t.Fatalf("GraphQL implemented fields regressed to %d; floor is 834", report.ImplementedFields)
 	}
-	if report.SignatureExactFields < 543 {
-		t.Fatalf("GraphQL exact-signature fields regressed to %d; floor is 543", report.SignatureExactFields)
+	if report.SignatureExactFields < 801 {
+		t.Fatalf("GraphQL exact-signature fields regressed to %d; floor is 801", report.SignatureExactFields)
 	}
-	if report.CompatibilityGapCount > 319 {
-		t.Fatalf("GraphQL compatibility gaps grew to %d; ceiling is 319", report.CompatibilityGapCount)
+	if report.CompatibilityGapCount > 79 {
+		t.Fatalf("GraphQL compatibility gaps grew to %d; ceiling is 79", report.CompatibilityGapCount)
 	}
 	snapshot := canonicalJSON(t, bleephub)
 	coverage := canonicalJSON(t, report)
