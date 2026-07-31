@@ -1868,8 +1868,8 @@ func TestPullRequestGraphQLFilesAndClosingIssuesUseRealState(t *testing.T) {
 	if byPath["added.txt"]["changeType"] != "ADDED" {
 		t.Fatalf("added.txt GraphQL file = %v, want ADDED", byPath["added.txt"])
 	}
-	if byPath["greeting.txt"]["changeType"] != "CHANGED" {
-		t.Fatalf("greeting.txt GraphQL file = %v, want CHANGED", byPath["greeting.txt"])
+	if byPath["greeting.txt"]["changeType"] != "MODIFIED" {
+		t.Fatalf("greeting.txt GraphQL file = %v, want MODIFIED", byPath["greeting.txt"])
 	}
 	closing, _ := pr["closingIssuesReferences"].(map[string]interface{})
 	if closing["totalCount"] != float64(1) {

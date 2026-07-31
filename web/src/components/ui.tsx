@@ -1,6 +1,7 @@
 import {
   type ButtonHTMLAttributes,
   type CSSProperties,
+  type KeyboardEvent as ReactKeyboardEvent,
   type ReactNode,
   forwardRef,
   useEffect,
@@ -331,13 +332,36 @@ export function Tabs<K extends string>({
   active: K;
   onChange: (key: K) => void;
 }) {
+  const move = (event: ReactKeyboardEvent<HTMLButtonElement>, index: number) => {
+    let next: number;
+    if (event.key === "ArrowRight") next = (index + 1) % items.length;
+    else if (event.key === "ArrowLeft") next = (index - 1 + items.length) % items.length;
+    else if (event.key === "Home") next = 0;
+    else if (event.key === "End") next = items.length - 1;
+    else return;
+    event.preventDefault();
+    onChange(items[next].key);
+    event.currentTarget.parentElement
+      ?.querySelectorAll<HTMLButtonElement>('[role="tab"]')
+      .item(next)
+      .focus();
+  };
   return (
-    <div className="mb-5 flex flex-wrap gap-1" style={{ borderBottom: "1px solid var(--color-border)" }}>
-      {items.map((t) => (
+    <div
+      role="tablist"
+      aria-label="Page sections"
+      className="mb-5 flex flex-wrap gap-1"
+      style={{ borderBottom: "1px solid var(--color-border)" }}
+    >
+      {items.map((t, index) => (
         <button
           key={t.key}
           type="button"
+          role="tab"
+          aria-selected={active === t.key}
+          tabIndex={active === t.key ? 0 : -1}
           onClick={() => onChange(t.key)}
+          onKeyDown={(event) => move(event, index)}
           style={{
             padding: "0.45rem 0.7rem",
             marginBottom: "-1px",
@@ -543,6 +567,16 @@ export function Modal({
 }
 
 export function FormLabel({ id, children }: { id?: string; children: ReactNode }) {
+  if (!id) {
+    return (
+      <span
+        className="mb-1 block"
+        style={{ fontSize: "0.82rem", fontWeight: 600, color: "var(--color-fg)" }}
+      >
+        {children}
+      </span>
+    );
+  }
   return (
     <label
       htmlFor={id}

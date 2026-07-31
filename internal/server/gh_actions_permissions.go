@@ -478,6 +478,10 @@ func (s *Server) registerGHActionsPermissionsRoutes() {
 		s.requirePerm(scopeActions, permRead, s.handleGetRepoCacheStorageLimit))
 	s.route("PUT /api/v3/repos/{owner}/{repo}/actions/cache/storage-limit",
 		s.requirePerm(scopeActions, permWrite, s.handleSetRepoCacheStorageLimit))
+	s.route("GET /api/v3/repos/{owner}/{repo}/actions/cache/usage-policy",
+		s.requirePerm(scopeActions, permRead, s.handleGetRepoCacheUsagePolicy))
+	s.route("PATCH /api/v3/repos/{owner}/{repo}/actions/cache/usage-policy",
+		s.requirePerm(scopeActions, permWrite, s.handleUpdateRepoCacheUsagePolicy))
 
 	// Run logs delete.
 	s.route("DELETE /api/v3/repos/{owner}/{repo}/actions/runs/{run_id}/logs",
@@ -1202,6 +1206,40 @@ func (s *Server) handleSetRepoCacheStorageLimit(w http.ResponseWriter, r *http.R
 	w.WriteHeader(http.StatusNoContent)
 }
 
+func (s *Server) handleGetRepoCacheUsagePolicy(w http.ResponseWriter, r *http.Request) {
+	p := s.store.GetRepoActionsPermissions(repoFullName(r))
+	cacheSizeGB := p.CacheStorageLimitGB
+	if cacheSizeGB == 0 {
+		s.store.mu.RLock()
+		cacheSizeGB = int64(s.store.EnterpriseSettings.ActionsDefaultCacheSizeGB)
+		s.store.mu.RUnlock()
+	}
+	writeJSON(w, http.StatusOK, map[string]int64{
+		"repo_cache_size_limit_in_gb": cacheSizeGB,
+	})
+}
+
+func (s *Server) handleUpdateRepoCacheUsagePolicy(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		RepoCacheSizeLimitGB *int64 `json:"repo_cache_size_limit_in_gb"`
+	}
+	if !decodeJSONBody(w, r, &req) {
+		return
+	}
+	s.store.mu.RLock()
+	maxGB := int64(s.store.EnterpriseSettings.ActionsCacheSizeGB)
+	s.store.mu.RUnlock()
+	if req.RepoCacheSizeLimitGB == nil || *req.RepoCacheSizeLimitGB <= 0 || *req.RepoCacheSizeLimitGB > maxGB {
+		writeGHError(w, http.StatusBadRequest, "Invalid cache usage policy.")
+		return
+	}
+	repo := repoFullName(r)
+	p := s.store.GetRepoActionsPermissions(repo)
+	p.CacheStorageLimitGB = *req.RepoCacheSizeLimitGB
+	s.store.SetRepoActionsPermissions(repo, p)
+	w.WriteHeader(http.StatusNoContent)
+}
+
 // --- Run logs ---
 
 func (s *Server) handleDeleteRunLogs(w http.ResponseWriter, r *http.Request) {
@@ -1265,8 +1303,8 @@ func (s *Server) handleDeleteRunLogs(w http.ResponseWriter, r *http.Request) {
 // --- Runner labels ---
 
 func (s *Server) handleListRunnerLabels(w http.ResponseWriter, r *http.Request) {
-	if org := r.PathValue("org"); org != "" && s.store.GetOrg(org) == nil {
-		writeGHError(w, http.StatusNotFound, "Not Found")
+	target, ok := s.runnerTargetFromRequest(w, r)
+	if !ok {
 		return
 	}
 	id, err := strconv.Atoi(r.PathValue("runner_id"))
@@ -1277,7 +1315,7 @@ func (s *Server) handleListRunnerLabels(w http.ResponseWriter, r *http.Request) 
 	s.store.mu.RLock()
 	a := s.store.Agents[id]
 	s.store.mu.RUnlock()
-	if a == nil {
+	if a == nil || !runnerVisibleAt(a.Scope, target) {
 		writeGHError(w, http.StatusNotFound, "Not Found")
 		return
 	}
@@ -1285,8 +1323,8 @@ func (s *Server) handleListRunnerLabels(w http.ResponseWriter, r *http.Request) 
 }
 
 func (s *Server) handleSetRunnerLabels(w http.ResponseWriter, r *http.Request) {
-	if org := r.PathValue("org"); org != "" && s.store.GetOrg(org) == nil {
-		writeGHError(w, http.StatusNotFound, "Not Found")
+	target, ok := s.runnerTargetFromRequest(w, r)
+	if !ok {
 		return
 	}
 	id, err := strconv.Atoi(r.PathValue("runner_id"))
@@ -1302,8 +1340,10 @@ func (s *Server) handleSetRunnerLabels(w http.ResponseWriter, r *http.Request) {
 	}
 	s.store.mu.Lock()
 	a := s.store.Agents[id]
-	if a != nil {
+	if a != nil && runnerVisibleAt(a.Scope, target) {
 		a.SetLabels(req.Labels)
+	} else {
+		a = nil
 	}
 	s.store.mu.Unlock()
 	if a == nil {
@@ -1314,8 +1354,8 @@ func (s *Server) handleSetRunnerLabels(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleRemoveAllRunnerLabels(w http.ResponseWriter, r *http.Request) {
-	if org := r.PathValue("org"); org != "" && s.store.GetOrg(org) == nil {
-		writeGHError(w, http.StatusNotFound, "Not Found")
+	target, ok := s.runnerTargetFromRequest(w, r)
+	if !ok {
 		return
 	}
 	id, err := strconv.Atoi(r.PathValue("runner_id"))
@@ -1325,8 +1365,10 @@ func (s *Server) handleRemoveAllRunnerLabels(w http.ResponseWriter, r *http.Requ
 	}
 	s.store.mu.Lock()
 	a := s.store.Agents[id]
-	if a != nil {
+	if a != nil && runnerVisibleAt(a.Scope, target) {
 		a.ClearLabels()
+	} else {
+		a = nil
 	}
 	s.store.mu.Unlock()
 	if a == nil {
@@ -1340,8 +1382,8 @@ func (s *Server) handleRemoveAllRunnerLabels(w http.ResponseWriter, r *http.Requ
 // (repo + org scope): appends custom labels to the runner, returning
 // the full label set.
 func (s *Server) handleAddRunnerLabels(w http.ResponseWriter, r *http.Request) {
-	if org := r.PathValue("org"); org != "" && s.store.GetOrg(org) == nil {
-		writeGHError(w, http.StatusNotFound, "Not Found")
+	target, ok := s.runnerTargetFromRequest(w, r)
+	if !ok {
 		return
 	}
 	id, err := strconv.Atoi(r.PathValue("runner_id"))
@@ -1361,8 +1403,10 @@ func (s *Server) handleAddRunnerLabels(w http.ResponseWriter, r *http.Request) {
 	}
 	s.store.mu.Lock()
 	a := s.store.Agents[id]
-	if a != nil {
+	if a != nil && runnerVisibleAt(a.Scope, target) {
 		a.AddLabels(req.Labels)
+	} else {
+		a = nil
 	}
 	s.store.mu.Unlock()
 	if a == nil {
@@ -1376,8 +1420,8 @@ func (s *Server) handleAddRunnerLabels(w http.ResponseWriter, r *http.Request) {
 // (repo + org scope): removes one custom label. Read-only (system)
 // labels cannot be removed (422); an absent label is 404.
 func (s *Server) handleRemoveRunnerLabel(w http.ResponseWriter, r *http.Request) {
-	if org := r.PathValue("org"); org != "" && s.store.GetOrg(org) == nil {
-		writeGHError(w, http.StatusNotFound, "Not Found")
+	target, ok := s.runnerTargetFromRequest(w, r)
+	if !ok {
 		return
 	}
 	id, err := strconv.Atoi(r.PathValue("runner_id"))
@@ -1390,7 +1434,7 @@ func (s *Server) handleRemoveRunnerLabel(w http.ResponseWriter, r *http.Request)
 	a := s.store.Agents[id]
 	found := false
 	readOnly := false
-	if a != nil {
+	if a != nil && runnerVisibleAt(a.Scope, target) {
 		for _, l := range a.Labels {
 			if l.Name == name {
 				found = true
@@ -1401,6 +1445,8 @@ func (s *Server) handleRemoveRunnerLabel(w http.ResponseWriter, r *http.Request)
 		if found && !readOnly {
 			a.RemoveLabels([]string{name})
 		}
+	} else {
+		a = nil
 	}
 	s.store.mu.Unlock()
 	if a == nil || !found {

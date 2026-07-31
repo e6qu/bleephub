@@ -188,16 +188,20 @@ function apiFetch(input: RequestInfo | URL, init?: RequestInit): Promise<Respons
 }
 
 const TOKEN_KEY = "bleephub_token";
+let transientToken: string | null = null;
 
 export function getToken(): string | null {
-  return localStorage.getItem(TOKEN_KEY);
+  return transientToken;
 }
 
 export function setToken(token: string): void {
-  localStorage.setItem(TOKEN_KEY, token);
+  transientToken = token;
 }
 
 export function clearToken(): void {
+  transientToken = null;
+  // Remove credentials written by versions that predate HttpOnly session
+  // exchange. Never read them back into JavaScript.
   localStorage.removeItem(TOKEN_KEY);
 }
 
@@ -232,13 +236,28 @@ export function authHeaders(): Record<string, string> {
   return { Authorization: `Bearer ${token}` };
 }
 
-// A 401 means the stored token is no longer valid (e.g. the server
-// restarted with in-memory persistence) — clear it and send the user
-// back to the login form instead of spinning forever.
+/** Exchange a pasted user token for a cookie session without persisting it. */
+export async function createTokenBrowserSession(token: string): Promise<void> {
+  const response = await apiFetch("/auth/token", {
+    method: "POST",
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  if (!response.ok) {
+    const text = await response.text();
+    throw new ApiError(response.status, text || `${response.status} ${response.statusText}`);
+  }
+}
+
+export const UNAUTHORIZED_EVENT = "bleephub:unauthorized";
+
+// A 401 means the browser credential is no longer valid. Tell the application
+// session state rather than navigating from a background request: the router
+// can preserve the exact return location and concurrent polls collapse into
+// the same idempotent signed-out transition.
 function handleUnauthorized(res: Response): void {
   if (res.status === 401) {
     clearToken();
-    window.location.href = "/ui/login";
+    window.dispatchEvent(new CustomEvent(UNAUTHORIZED_EVENT));
   }
 }
 
@@ -480,14 +499,6 @@ export async function fetchInstallations(): Promise<BleephubInstallation[]> {
   );
   return raw.installations.map(normalizeInstallation);
 }
-// Verify identity through GitHub's REST user endpoint.
-export async function verifyToken(token: string): Promise<boolean> {
-  const res = await apiFetch("/api/v3/user", {
-    headers: { Authorization: `Bearer ${token}` },
-  });
-  return res.ok;
-}
-
 // The browser settings and GitHub REST surfaces return snake_case wire shapes.
 // The user interface types are camelCase, so normalize at this boundary.
 // Fields are mapped 1:1 from the server contract, with no defaults, so a
@@ -2744,7 +2755,6 @@ export async function fetchDiscussionDetail(
           number
           title
           body
-          bodyHTML
           bodyText
           author { login avatarUrl }
           category { id name emoji isAnswerable }
@@ -2756,7 +2766,6 @@ export async function fetchDiscussionDetail(
               databaseId
               author { login avatarUrl }
               body
-              bodyHTML
               createdAt
               updatedAt
               isAnswer
@@ -2766,7 +2775,6 @@ export async function fetchDiscussionDetail(
                   databaseId
                   author { login avatarUrl }
                   body
-                  bodyHTML
                   createdAt
                   updatedAt
                   isAnswer

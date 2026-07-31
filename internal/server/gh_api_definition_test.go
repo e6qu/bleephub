@@ -15,9 +15,10 @@ import (
 )
 
 const (
-	vendoredSpecFile            = "testdata/github-openapi.json.gz"
-	vendoredSpecVersion         = "testdata/github-openapi.VERSION"
-	registeredRouteSnapshotFile = "testdata/registered-api-v3-routes.txt"
+	vendoredSpecFile             = "testdata/github-openapi.json.gz"
+	vendoredSpecVersion          = "testdata/github-openapi.VERSION"
+	registeredRouteSnapshotFile  = "testdata/registered-api-v3-routes.txt"
+	registeredManageSnapshotFile = "testdata/registered-ghes-manage-routes.txt"
 )
 
 // TestVendoredOpenAPIMatchesRecordedPin makes the provenance record
@@ -185,24 +186,346 @@ func loadOfficialRouteIndex(t *testing.T) map[string]map[string]bool {
 // trusted: TestRouteAllowlistCitationsHold fails if the named description
 // does not carry the route.
 var describedOutsideDotcom = map[string]string{
-	"POST /admin/organizations":             "ghes-3.21",
-	"POST /admin/users":                     "ghes-3.21",
-	"PATCH /admin/users/{}":                 "ghes-3.21",
-	"DELETE /admin/users/{}":                "ghes-3.21",
-	"PUT /users/{}/site_admin":              "ghes-3.21",
-	"DELETE /users/{}/site_admin":           "ghes-3.21",
-	"PUT /users/{}/suspended":               "ghes-3.21",
-	"DELETE /users/{}/suspended":            "ghes-3.21",
-	"GET /orgs/{}/audit-log":                "ghes-3.21",
-	"GET /orgs/{}/copilot/metrics":          "api-2022",
-	"GET /orgs/{}/team/{}/copilot/metrics":  "api-2022",
-	"GET /repos/{}/{}/projects":             "ghes-3.13",
-	"POST /repos/{}/{}/projects":            "ghes-3.13",
-	"GET /projects/{}":                      "ghes-3.13",
-	"PATCH /projects/{}":                    "ghes-3.13",
-	"DELETE /projects/{}":                   "ghes-3.13",
-	"POST /projects/columns/{}/moves":       "ghes-3.13",
-	"POST /projects/columns/cards/{}/moves": "ghes-3.13",
+	"DELETE /admin/hooks/{}":                                                           "ghes-3.21",
+	"DELETE /admin/keys/{}":                                                            "ghes-3.21",
+	"DELETE /admin/tokens/{}":                                                          "ghes-3.21",
+	"DELETE /admin/users/{}/authorizations":                                            "ghes-3.21",
+	"GET /admin/hooks":                                                                 "ghes-3.21",
+	"GET /admin/hooks/{}":                                                              "ghes-3.21",
+	"GET /admin/keys":                                                                  "ghes-3.21",
+	"GET /admin/tokens":                                                                "ghes-3.21",
+	"PATCH /admin/hooks/{}":                                                            "ghes-3.21",
+	"POST /admin/hooks":                                                                "ghes-3.21",
+	"POST /admin/hooks/{}/pings":                                                       "ghes-3.21",
+	"POST /admin/users/{}/authorizations":                                              "ghes-3.21",
+	"DELETE /admin/pre-receive-environments/{}":                                        "ghes-3.21",
+	"DELETE /admin/pre-receive-hooks/{}":                                               "ghes-3.21",
+	"DELETE /orgs/{}/pre-receive-hooks/{}":                                             "ghes-3.21",
+	"DELETE /repos/{}/{}/pre-receive-hooks/{}":                                         "ghes-3.21",
+	"GET /admin/pre-receive-environments":                                              "ghes-3.21",
+	"GET /admin/pre-receive-environments/{}":                                           "ghes-3.21",
+	"GET /admin/pre-receive-environments/{}/downloads/latest":                          "ghes-3.21",
+	"GET /admin/pre-receive-hooks":                                                     "ghes-3.21",
+	"GET /admin/pre-receive-hooks/{}":                                                  "ghes-3.21",
+	"GET /orgs/{}/pre-receive-hooks":                                                   "ghes-3.21",
+	"GET /orgs/{}/pre-receive-hooks/{}":                                                "ghes-3.21",
+	"GET /repos/{}/{}/pre-receive-hooks":                                               "ghes-3.21",
+	"GET /repos/{}/{}/pre-receive-hooks/{}":                                            "ghes-3.21",
+	"PATCH /admin/pre-receive-environments/{}":                                         "ghes-3.21",
+	"PATCH /admin/pre-receive-hooks/{}":                                                "ghes-3.21",
+	"PATCH /orgs/{}/pre-receive-hooks/{}":                                              "ghes-3.21",
+	"PATCH /repos/{}/{}/pre-receive-hooks/{}":                                          "ghes-3.21",
+	"POST /admin/pre-receive-environments":                                             "ghes-3.21",
+	"POST /admin/pre-receive-environments/{}/downloads":                                "ghes-3.21",
+	"POST /admin/pre-receive-hooks":                                                    "ghes-3.21",
+	"PATCH /admin/ldap/teams/{}/mapping":                                               "ghes-3.21",
+	"PATCH /admin/ldap/users/{}/mapping":                                               "ghes-3.21",
+	"PATCH /admin/organizations/{}":                                                    "ghes-3.21",
+	"POST /admin/ldap/teams/{}/sync":                                                   "ghes-3.21",
+	"POST /admin/ldap/users/{}/sync":                                                   "ghes-3.21",
+	"GET /repos/{}/{}/replicas/caches":                                                 "ghes-3.21",
+	"DELETE /applications/grants/{}":                                                   "ghes-3.21",
+	"DELETE /authorizations/{}":                                                        "ghes-3.21",
+	"GET /applications/grants":                                                         "ghes-3.21",
+	"GET /applications/grants/{}":                                                      "ghes-3.21",
+	"GET /authorizations":                                                              "ghes-3.21",
+	"GET /authorizations/{}":                                                           "ghes-3.21",
+	"PATCH /authorizations/{}":                                                         "ghes-3.21",
+	"POST /authorizations":                                                             "ghes-3.21",
+	"PUT /authorizations/clients/{}":                                                   "ghes-3.21",
+	"PUT /authorizations/clients/{}/{}":                                                "ghes-3.21",
+	"GET /enterprises/{}/actions/cache/usage-policy":                                   "ghes-3.21",
+	"PATCH /enterprises/{}/actions/cache/usage-policy":                                 "ghes-3.21",
+	"GET /repos/{}/{}/actions/cache/usage-policy":                                      "ghes-3.21",
+	"PATCH /repos/{}/{}/actions/cache/usage-policy":                                    "ghes-3.21",
+	"GET /organizations/{}/custom_roles":                                               "ghec",
+	"GET /organizations/{}/org-properties/values":                                      "ghec",
+	"PATCH /organizations/{}/org-properties/values":                                    "ghec",
+	"DELETE /orgs/{}/announcement":                                                     "ghec",
+	"GET /orgs/{}/announcement":                                                        "ghec",
+	"PATCH /orgs/{}/announcement":                                                      "ghec",
+	"DELETE /orgs/{}/custom-repository-roles/{}":                                       "ghec",
+	"GET /orgs/{}/custom-repository-roles":                                             "ghec",
+	"GET /orgs/{}/custom-repository-roles/{}":                                          "ghec",
+	"PATCH /orgs/{}/custom-repository-roles/{}":                                        "ghec",
+	"POST /orgs/{}/custom-repository-roles":                                            "ghec",
+	"DELETE /orgs/{}/custom_roles/{}":                                                  "ghec",
+	"GET /orgs/{}/custom_roles/{}":                                                     "ghec",
+	"PATCH /orgs/{}/custom_roles/{}":                                                   "ghec",
+	"POST /orgs/{}/custom_roles":                                                       "ghec",
+	"GET /orgs/{}/fine_grained_permissions":                                            "ghec",
+	"GET /orgs/{}/organization-fine-grained-permissions":                               "ghec",
+	"GET /orgs/{}/repository-fine-grained-permissions":                                 "ghec",
+	"DELETE /orgs/{}/organization-roles/{}":                                            "ghec",
+	"PATCH /orgs/{}/organization-roles/{}":                                             "ghec",
+	"POST /orgs/{}/organization-roles":                                                 "ghec",
+	"DELETE /orgs/{}/credential-authorizations/{}":                                     "ghec",
+	"GET /orgs/{}/credential-authorizations":                                           "ghec",
+	"GET /orgs/{}/settings/billing/advanced-security":                                  "ghec",
+	"GET /orgs/{}/bypass-requests/push-rules":                                          "ghec",
+	"GET /orgs/{}/bypass-requests/secret-scanning":                                     "ghec",
+	"GET /orgs/{}/dismissal-requests/code-scanning":                                    "ghec",
+	"GET /orgs/{}/dismissal-requests/dependabot":                                       "ghec",
+	"GET /orgs/{}/dismissal-requests/secret-scanning":                                  "ghec",
+	"GET /repos/{}/{}/bypass-requests/push-rules":                                      "ghec",
+	"GET /repos/{}/{}/bypass-requests/push-rules/{}":                                   "ghec",
+	"GET /repos/{}/{}/bypass-requests/secret-scanning":                                 "ghec",
+	"GET /repos/{}/{}/bypass-requests/secret-scanning/{}":                              "ghec",
+	"PATCH /repos/{}/{}/bypass-requests/secret-scanning/{}":                            "ghec",
+	"DELETE /repos/{}/{}/bypass-responses/secret-scanning/{}":                          "ghec",
+	"GET /repos/{}/{}/dismissal-requests/code-scanning":                                "ghec",
+	"GET /repos/{}/{}/dismissal-requests/code-scanning/{}":                             "ghec",
+	"PATCH /repos/{}/{}/dismissal-requests/code-scanning/{}":                           "ghec",
+	"GET /repos/{}/{}/dismissal-requests/dependabot":                                   "ghec",
+	"GET /repos/{}/{}/dismissal-requests/dependabot/{}":                                "ghec",
+	"POST /repos/{}/{}/dismissal-requests/dependabot/{}":                               "ghec",
+	"PATCH /repos/{}/{}/dismissal-requests/dependabot/{}":                              "ghec",
+	"DELETE /repos/{}/{}/dismissal-requests/dependabot/{}":                             "ghec",
+	"GET /repos/{}/{}/dismissal-requests/secret-scanning":                              "ghec",
+	"GET /repos/{}/{}/dismissal-requests/secret-scanning/{}":                           "ghec",
+	"PATCH /repos/{}/{}/dismissal-requests/secret-scanning/{}":                         "ghec",
+	"GET /orgs/{}/external-group/{}":                                                   "ghec",
+	"GET /orgs/{}/external-groups":                                                     "ghec",
+	"GET /orgs/{}/team-sync/groups":                                                    "ghec",
+	"DELETE /orgs/{}/teams/{}/external-groups":                                         "ghec",
+	"GET /orgs/{}/teams/{}/external-groups":                                            "ghec",
+	"PATCH /orgs/{}/teams/{}/external-groups":                                          "ghec",
+	"GET /orgs/{}/teams/{}/team-sync/group-mappings":                                   "ghec",
+	"PATCH /orgs/{}/teams/{}/team-sync/group-mappings":                                 "ghec",
+	"GET /teams/{}/team-sync/group-mappings":                                           "ghec",
+	"PATCH /teams/{}/team-sync/group-mappings":                                         "ghec",
+	"DELETE /scim/v2/organizations/{}/Users/{}":                                        "ghec",
+	"GET /scim/v2/organizations/{}/Users":                                              "ghec",
+	"GET /scim/v2/organizations/{}/Users/{}":                                           "ghec",
+	"PATCH /scim/v2/organizations/{}/Users/{}":                                         "ghec",
+	"POST /scim/v2/organizations/{}/Users":                                             "ghec",
+	"PUT /scim/v2/organizations/{}/Users/{}":                                           "ghec",
+	"DELETE /repos/{}/{}/lfs":                                                          "ghec",
+	"PUT /repos/{}/{}/lfs":                                                             "ghec",
+	"POST /admin/organizations":                                                        "ghes-3.21",
+	"POST /admin/users":                                                                "ghes-3.21",
+	"PATCH /admin/users/{}":                                                            "ghes-3.21",
+	"DELETE /admin/users/{}":                                                           "ghes-3.21",
+	"PUT /users/{}/site_admin":                                                         "ghes-3.21",
+	"DELETE /users/{}/site_admin":                                                      "ghes-3.21",
+	"PUT /users/{}/suspended":                                                          "ghes-3.21",
+	"DELETE /users/{}/suspended":                                                       "ghes-3.21",
+	"GET /orgs/{}/audit-log":                                                           "ghes-3.21",
+	"GET /orgs/{}/copilot/metrics":                                                     "api-2022",
+	"GET /orgs/{}/team/{}/copilot/metrics":                                             "api-2022",
+	"DELETE /enterprise/announcement":                                                  "ghes-3.21",
+	"GET /enterprise/announcement":                                                     "ghes-3.21",
+	"GET /enterprise/settings/license":                                                 "ghes-3.21",
+	"GET /enterprise/stats/all":                                                        "ghes-3.21",
+	"GET /enterprise/stats/comments":                                                   "ghes-3.21",
+	"GET /enterprise/stats/gists":                                                      "ghes-3.21",
+	"GET /enterprise/stats/hooks":                                                      "ghes-3.21",
+	"GET /enterprise/stats/issues":                                                     "ghes-3.21",
+	"GET /enterprise/stats/milestones":                                                 "ghes-3.21",
+	"GET /enterprise/stats/orgs":                                                       "ghes-3.21",
+	"GET /enterprise/stats/pages":                                                      "ghes-3.21",
+	"GET /enterprise/stats/pulls":                                                      "ghes-3.21",
+	"GET /enterprise/stats/repos":                                                      "ghes-3.21",
+	"GET /enterprise/stats/security-products":                                          "ghes-3.21",
+	"GET /enterprise/stats/users":                                                      "ghes-3.21",
+	"PATCH /enterprise/announcement":                                                   "ghes-3.21",
+	"DELETE /enterprises/{}/actions/hosted-runners/images/custom/{}":                   "ghec",
+	"DELETE /enterprises/{}/actions/hosted-runners/images/custom/{}/versions/{}":       "ghec",
+	"DELETE /enterprises/{}/actions/hosted-runners/{}":                                 "ghec",
+	"GET /enterprises/{}/actions/hosted-runners":                                       "ghec",
+	"GET /enterprises/{}/actions/hosted-runners/images/custom":                         "ghec",
+	"GET /enterprises/{}/actions/hosted-runners/images/custom/{}":                      "ghec",
+	"GET /enterprises/{}/actions/hosted-runners/images/custom/{}/versions":             "ghec",
+	"GET /enterprises/{}/actions/hosted-runners/images/custom/{}/versions/{}":          "ghec",
+	"GET /enterprises/{}/actions/hosted-runners/images/github-owned":                   "ghec",
+	"GET /enterprises/{}/actions/hosted-runners/images/partner":                        "ghec",
+	"GET /enterprises/{}/actions/hosted-runners/limits":                                "ghec",
+	"GET /enterprises/{}/actions/hosted-runners/machine-sizes":                         "ghec",
+	"GET /enterprises/{}/actions/hosted-runners/platforms":                             "ghec",
+	"GET /enterprises/{}/actions/hosted-runners/{}":                                    "ghec",
+	"PATCH /enterprises/{}/actions/hosted-runners/{}":                                  "ghec",
+	"POST /enterprises/{}/actions/hosted-runners":                                      "ghec",
+	"DELETE /enterprises/{}/actions/permissions/organizations/{}":                      "ghec",
+	"GET /enterprises/{}/actions/cache/usage":                                          "ghec",
+	"GET /enterprises/{}/actions/permissions":                                          "ghec",
+	"GET /enterprises/{}/actions/permissions/artifact-and-log-retention":               "ghec",
+	"GET /enterprises/{}/actions/permissions/fork-pr-contributor-approval":             "ghec",
+	"GET /enterprises/{}/actions/permissions/fork-pr-workflows-private-repos":          "ghec",
+	"GET /enterprises/{}/actions/permissions/organizations":                            "ghec",
+	"GET /enterprises/{}/actions/permissions/selected-actions":                         "ghec",
+	"GET /enterprises/{}/actions/permissions/self-hosted-runners":                      "ghec",
+	"GET /enterprises/{}/actions/permissions/workflow":                                 "ghec",
+	"PUT /enterprises/{}/actions/oidc/customization/issuer":                            "ghec",
+	"PUT /enterprises/{}/actions/permissions":                                          "ghec",
+	"PUT /enterprises/{}/actions/permissions/artifact-and-log-retention":               "ghec",
+	"PUT /enterprises/{}/actions/permissions/fork-pr-contributor-approval":             "ghec",
+	"PUT /enterprises/{}/actions/permissions/fork-pr-workflows-private-repos":          "ghec",
+	"PUT /enterprises/{}/actions/permissions/organizations":                            "ghec",
+	"PUT /enterprises/{}/actions/permissions/organizations/{}":                         "ghec",
+	"PUT /enterprises/{}/actions/permissions/selected-actions":                         "ghec",
+	"PUT /enterprises/{}/actions/permissions/self-hosted-runners":                      "ghec",
+	"PUT /enterprises/{}/actions/permissions/workflow":                                 "ghec",
+	"DELETE /enterprises/{}/actions/runner-groups/{}":                                  "ghec",
+	"DELETE /enterprises/{}/actions/runner-groups/{}/organizations/{}":                 "ghec",
+	"DELETE /enterprises/{}/actions/runner-groups/{}/runners/{}":                       "ghec",
+	"GET /enterprises/{}/actions/runner-groups":                                        "ghec",
+	"GET /enterprises/{}/actions/runner-groups/{}":                                     "ghec",
+	"GET /enterprises/{}/actions/runner-groups/{}/organizations":                       "ghec",
+	"GET /enterprises/{}/actions/runner-groups/{}/runners":                             "ghec",
+	"PATCH /enterprises/{}/actions/runner-groups/{}":                                   "ghec",
+	"POST /enterprises/{}/actions/runner-groups":                                       "ghec",
+	"PUT /enterprises/{}/actions/runner-groups/{}/organizations":                       "ghec",
+	"PUT /enterprises/{}/actions/runner-groups/{}/organizations/{}":                    "ghec",
+	"PUT /enterprises/{}/actions/runner-groups/{}/runners":                             "ghec",
+	"PUT /enterprises/{}/actions/runner-groups/{}/runners/{}":                          "ghec",
+	"DELETE /enterprises/{}/actions/runners/{}":                                        "ghec",
+	"DELETE /enterprises/{}/actions/runners/{}/labels":                                 "ghec",
+	"DELETE /enterprises/{}/actions/runners/{}/labels/{}":                              "ghec",
+	"GET /enterprises/{}/actions/runners":                                              "ghec",
+	"GET /enterprises/{}/actions/runners/downloads":                                    "ghec",
+	"GET /enterprises/{}/actions/runners/{}":                                           "ghec",
+	"GET /enterprises/{}/actions/runners/{}/labels":                                    "ghec",
+	"POST /enterprises/{}/actions/runners/generate-jitconfig":                          "ghec",
+	"POST /enterprises/{}/actions/runners/registration-token":                          "ghec",
+	"POST /enterprises/{}/actions/runners/remove-token":                                "ghec",
+	"POST /enterprises/{}/actions/runners/{}/labels":                                   "ghec",
+	"PUT /enterprises/{}/actions/runners/{}/labels":                                    "ghec",
+	"DELETE /enterprises/{}/announcement":                                              "ghec",
+	"DELETE /enterprises/{}/apps/organizations/{}/installations/{}":                    "ghec",
+	"DELETE /enterprises/{}/audit-log/streams/{}":                                      "ghec",
+	"DELETE /enterprises/{}/copilot/billing/selected_enterprise_teams":                 "ghec",
+	"DELETE /enterprises/{}/copilot/billing/selected_users":                            "ghec",
+	"DELETE /enterprises/{}/copilot/custom-agents/source":                              "ghec",
+	"DELETE /enterprises/{}/enterprise-roles/teams/{}":                                 "ghec",
+	"DELETE /enterprises/{}/enterprise-roles/teams/{}/{}":                              "ghec",
+	"DELETE /enterprises/{}/enterprise-roles/users/{}":                                 "ghec",
+	"DELETE /enterprises/{}/enterprise-roles/users/{}/{}":                              "ghec",
+	"DELETE /enterprises/{}/visual-studio-subscriptions/{}":                            "ghec",
+	"DELETE /enterprises/{}/settings/billing/budgets/{}":                               "ghec",
+	"DELETE /enterprises/{}/settings/billing/cost-centers/{}":                          "ghec",
+	"DELETE /enterprises/{}/settings/billing/cost-centers/{}/resource":                 "ghec",
+	"DELETE /enterprises/{}/network-configurations/{}":                                 "ghec",
+	"DELETE /enterprises/{}/org-properties/schema/{}":                                  "ghec",
+	"DELETE /enterprises/{}/properties/schema/{}":                                      "ghec",
+	"DELETE /enterprises/{}/rulesets/{}":                                               "ghec",
+	"DELETE /enterprises/{}/secret-scanning/custom-patterns":                           "ghec",
+	"GET /enterprises/{}/announcement":                                                 "ghec",
+	"GET /enterprises/{}/apps/installable_organizations":                               "ghec",
+	"GET /enterprises/{}/apps/installable_organizations/{}/accessible_repositories":    "ghec",
+	"GET /enterprises/{}/apps/organizations/{}/installations":                          "ghec",
+	"GET /enterprises/{}/apps/organizations/{}/installations/{}/repositories":          "ghec",
+	"GET /enterprises/{}/audit-log":                                                    "ghec",
+	"GET /enterprises/{}/audit-log/stream-key":                                         "ghec",
+	"GET /enterprises/{}/audit-log/streams":                                            "ghec",
+	"GET /enterprises/{}/audit-log/streams/{}":                                         "ghec",
+	"GET /enterprises/{}/settings/billing/advanced-security":                           "ghec",
+	"GET /enterprises/{}/settings/billing/ai_credit/usage":                             "ghec",
+	"GET /enterprises/{}/settings/billing/budgets":                                     "ghec",
+	"GET /enterprises/{}/settings/billing/budgets/{}":                                  "ghec",
+	"GET /enterprises/{}/settings/billing/budgets/{}/user-states":                      "ghec",
+	"GET /enterprises/{}/settings/billing/cost-centers":                                "ghec",
+	"GET /enterprises/{}/settings/billing/cost-centers/{}":                             "ghec",
+	"GET /enterprises/{}/settings/billing/premium_request/usage":                       "ghec",
+	"GET /enterprises/{}/settings/billing/reports":                                     "ghec",
+	"GET /enterprises/{}/settings/billing/reports/{}":                                  "ghec",
+	"GET /enterprises/{}/settings/billing/usage":                                       "ghec",
+	"GET /enterprises/{}/settings/billing/usage/summary":                               "ghec",
+	"PATCH /enterprises/{}/settings/billing/budgets/{}":                                "ghec",
+	"PATCH /enterprises/{}/settings/billing/cost-centers/{}":                           "ghec",
+	"POST /enterprises/{}/settings/billing/budgets":                                    "ghec",
+	"POST /enterprises/{}/settings/billing/cost-centers":                               "ghec",
+	"POST /enterprises/{}/settings/billing/cost-centers/{}/resource":                   "ghec",
+	"POST /enterprises/{}/settings/billing/reports":                                    "ghec",
+	"GET /enterprises/{}/bypass-requests/push-rules":                                   "ghec",
+	"GET /enterprises/{}/bypass-requests/secret-scanning":                              "ghec",
+	"GET /enterprises/{}/code-scanning/alerts":                                         "ghec",
+	"GET /enterprises/{}/code_security_and_analysis":                                   "ghec",
+	"GET /enterprises/{}/copilot/billing/seats":                                        "ghec",
+	"GET /enterprises/{}/copilot/content_exclusion":                                    "ghec",
+	"GET /enterprises/{}/copilot/custom-agents":                                        "ghec",
+	"GET /enterprises/{}/copilot/custom-agents/source":                                 "ghec",
+	"GET /enterprises/{}/copilot/usage-records":                                        "ghec",
+	"GET /enterprises/{}/dismissal-requests/secret-scanning":                           "ghec",
+	"GET /enterprises/{}/enterprise-roles":                                             "ghec",
+	"GET /enterprises/{}/enterprise-roles/{}":                                          "ghec",
+	"GET /enterprises/{}/enterprise-roles/{}/teams":                                    "ghec",
+	"GET /enterprises/{}/enterprise-roles/{}/users":                                    "ghec",
+	"GET /enterprise-installation/{}/server-statistics":                                "ghec",
+	"GET /enterprises/{}/consumed-licenses":                                            "ghec",
+	"GET /enterprises/{}/innersource-vulnerabilities/sync/status/{}":                   "ghec",
+	"GET /enterprises/{}/installation":                                                 "ghec",
+	"GET /enterprises/{}/license-sync-status":                                          "ghec",
+	"GET /enterprises/{}/members/{}/copilot":                                           "ghec",
+	"GET /enterprises/{}/visual-studio-subscriptions":                                  "ghec",
+	"GET /enterprises/{}/network-configurations":                                       "ghec",
+	"GET /enterprises/{}/network-configurations/{}":                                    "ghec",
+	"GET /enterprises/{}/network-settings/{}":                                          "ghec",
+	"GET /enterprises/{}/org-properties/schema":                                        "ghec",
+	"GET /enterprises/{}/org-properties/schema/{}":                                     "ghec",
+	"GET /enterprises/{}/org-properties/values":                                        "ghec",
+	"GET /enterprises/{}/properties/schema":                                            "ghec",
+	"GET /enterprises/{}/properties/schema/{}":                                         "ghec",
+	"GET /enterprises/{}/rulesets/{}":                                                  "ghec",
+	"GET /enterprises/{}/rulesets/{}/history":                                          "ghec",
+	"GET /enterprises/{}/rulesets/{}/history/{}":                                       "ghec",
+	"GET /enterprises/{}/secret-scanning/alerts":                                       "ghec",
+	"GET /enterprises/{}/secret-scanning/custom-patterns":                              "ghec",
+	"GET /enterprises/{}/secret-scanning/pattern-configurations":                       "ghec",
+	"PATCH /enterprises/{}/announcement":                                               "ghec",
+	"PATCH /enterprises/{}/apps/organizations/{}/installations/{}/repositories":        "ghec",
+	"PATCH /enterprises/{}/apps/organizations/{}/installations/{}/repositories/add":    "ghec",
+	"PATCH /enterprises/{}/apps/organizations/{}/installations/{}/repositories/remove": "ghec",
+	"PATCH /enterprises/{}/code_security_and_analysis":                                 "ghec",
+	"PATCH /enterprises/{}/network-configurations/{}":                                  "ghec",
+	"PATCH /enterprises/{}/org-properties/schema":                                      "ghec",
+	"PATCH /enterprises/{}/org-properties/values":                                      "ghec",
+	"PATCH /enterprises/{}/properties/schema":                                          "ghec",
+	"PATCH /enterprises/{}/secret-scanning/custom-patterns/{}":                         "ghec",
+	"PATCH /enterprises/{}/secret-scanning/pattern-configurations":                     "ghec",
+	"POST /enterprises/{}/access-restrictions/disable":                                 "ghec",
+	"POST /enterprises/{}/access-restrictions/enable":                                  "ghec",
+	"POST /enterprises/{}/apps/organizations/{}/installations":                         "ghec",
+	"POST /enterprises/{}/audit-log/streams":                                           "ghec",
+	"POST /enterprises/{}/copilot/billing/selected_enterprise_teams":                   "ghec",
+	"POST /enterprises/{}/copilot/billing/selected_users":                              "ghec",
+	"POST /enterprises/{}/credential-authorizations/revoke-all":                        "ghec",
+	"POST /enterprises/{}/credential-authorizations/revoke-credential-type":            "ghec",
+	"POST /enterprises/{}/credential-authorizations/{}/revoke":                         "ghec",
+	"POST /enterprises/{}/credential-authorizations/{}/revoke-credential-type":         "ghec",
+	"POST /enterprises/{}/innersource-vulnerabilities/sync":                            "ghec",
+	"POST /enterprises/{}/network-configurations":                                      "ghec",
+	"POST /enterprises/{}/rulesets":                                                    "ghec",
+	"POST /enterprises/{}/secret-scanning/custom-patterns":                             "ghec",
+	"POST /enterprises/{}/{}/{}":                                                       "ghec",
+	"PUT /enterprises/{}/audit-log/streams/{}":                                         "ghec",
+	"PUT /enterprises/{}/copilot/content_exclusion":                                    "ghec",
+	"PUT /enterprises/{}/copilot/custom-agents/source":                                 "ghec",
+	"PUT /enterprises/{}/enterprise-roles/teams/{}/{}":                                 "ghec",
+	"PUT /enterprises/{}/enterprise-roles/users/{}/{}":                                 "ghec",
+	"PUT /enterprises/{}/visual-studio-subscriptions/{}":                               "ghec",
+	"PUT /enterprises/{}/org-properties/schema/{}":                                     "ghec",
+	"PUT /enterprises/{}/properties/schema/organizations/{}/{}/promote":                "ghec",
+	"PUT /enterprises/{}/properties/schema/{}":                                         "ghec",
+	"PUT /enterprises/{}/rulesets/{}":                                                  "ghec",
+	"DELETE /scim/v2/enterprises/{}/Groups/{}":                                         "ghec",
+	"DELETE /scim/v2/enterprises/{}/Users/{}":                                          "ghec",
+	"GET /scim/v2/enterprises/{}/Groups":                                               "ghec",
+	"GET /scim/v2/enterprises/{}/Groups/{}":                                            "ghec",
+	"GET /scim/v2/enterprises/{}/Users":                                                "ghec",
+	"GET /scim/v2/enterprises/{}/Users/{}":                                             "ghec",
+	"PATCH /scim/v2/enterprises/{}/Groups/{}":                                          "ghec",
+	"PATCH /scim/v2/enterprises/{}/Users/{}":                                           "ghec",
+	"POST /scim/v2/enterprises/{}/Groups":                                              "ghec",
+	"POST /scim/v2/enterprises/{}/Users":                                               "ghec",
+	"PUT /scim/v2/enterprises/{}/Groups/{}":                                            "ghec",
+	"PUT /scim/v2/enterprises/{}/Users/{}":                                             "ghec",
+	"GET /repos/{}/{}/projects":                                                        "ghes-3.13",
+	"POST /repos/{}/{}/projects":                                                       "ghes-3.13",
+	"GET /projects/{}":                                                                 "ghes-3.13",
+	"PATCH /projects/{}":                                                               "ghes-3.13",
+	"DELETE /projects/{}":                                                              "ghes-3.13",
+	"POST /projects/columns/{}/moves":                                                  "ghes-3.13",
+	"POST /projects/columns/cards/{}/moves":                                            "ghes-3.13",
 }
 
 // uncitedRoutes must stay empty. A public /api/v3 operation without an
@@ -277,6 +600,7 @@ func TestRouteAllowlistCitationsHold(t *testing.T) {
 // out to the real GitHub paths listed; it is a routing implementation detail,
 // not an invented path. Keyed by the normalized wildcard pattern.
 var dispatchRoutes = map[string]string{
+	"DELETE /applications/{}/{}":               "→ DELETE /applications/{client_id}/token, /applications/{client_id}/grant, or /applications/grants/{grant_id}",
 	"DELETE /repos/{}/{}/issues/{}/{}":         "→ DELETE /repos/{}/{}/issues/{}/labels/{} (remove a label)",
 	"GET /repos/{}/{}/issues/{}/{}":            "→ GET /repos/{}/{}/issues/comments/{comment_id}, /issues/{number}/reactions, or /issues/events/{event_id}",
 	"GET /repos/{}/{}/issues/{}/{}/{}":         "→ GET /repos/{}/{}/issues/comments/{comment_id}/reactions or /issues/{number}/dependencies/blocked_by",
@@ -367,7 +691,7 @@ func TestRegisteredRoutesHaveCompleteFuzzInventory(t *testing.T) {
 	registered := make(map[string]int, len(s.routePatterns))
 	for _, pattern := range s.routePatterns {
 		_, path, found := strings.Cut(pattern, " ")
-		if !found || !strings.HasPrefix(path, "/api/v3/") {
+		if !found || !(strings.HasPrefix(path, "/api/v3/") || strings.HasPrefix(path, "/manage/v1/")) {
 			continue
 		}
 		registered[pattern]++
@@ -375,7 +699,7 @@ func TestRegisteredRoutesHaveCompleteFuzzInventory(t *testing.T) {
 	inventory := make(map[string]int, len(fuzzRoutePatterns))
 	for _, pattern := range fuzzRoutePatterns {
 		_, path, found := strings.Cut(pattern, " ")
-		if !found || !strings.HasPrefix(path, "/api/v3/") {
+		if !found || !(strings.HasPrefix(path, "/api/v3/") || strings.HasPrefix(path, "/manage/v1/")) {
 			continue
 		}
 		inventory[pattern]++
@@ -426,6 +750,9 @@ func TestFuzzRouteSelectorCanReachEveryRegisteredAPIOperation(t *testing.T) {
 }
 
 var dispatchCoveredOperations = map[string]bool{
+	"DELETE /applications/{}/grant":                       true,
+	"DELETE /applications/{}/token":                       true,
+	"DELETE /applications/grants/{}":                      true,
 	"DELETE /repos/{}/{}/issues/comments/{}":              true,
 	"DELETE /repos/{}/{}/issues/comments/{}/pin":          true,
 	"DELETE /repos/{}/{}/issues/{}/issue-field-values/{}": true,
@@ -492,6 +819,7 @@ func TestEveryDocumentedGitHubRESTOperationIsRegistered(t *testing.T) {
 		registered[operation] = true
 	}
 	documented := loadGitHubOperations(t)
+	official := loadOfficialRouteIndex(t)
 	var missing []string
 	for operation := range documented {
 		if !registered[operation] && !dispatchCoveredOperations[operation] {
@@ -500,7 +828,10 @@ func TestEveryDocumentedGitHubRESTOperationIsRegistered(t *testing.T) {
 	}
 	for operation := range dispatchCoveredOperations {
 		if !documented[operation] {
-			t.Errorf("dispatch coverage entry is not in the pinned GitHub definition: %s", operation)
+			citation, cited := describedOutsideDotcom[operation]
+			if !cited || !official[citation][operation] {
+				t.Errorf("dispatch coverage entry is not in a pinned GitHub description: %s", operation)
+			}
 		}
 		if registered[operation] {
 			t.Errorf("dispatch coverage entry now has a direct route and must be removed: %s", operation)
@@ -540,6 +871,33 @@ func TestRegisteredAPIRouteSnapshot(t *testing.T) {
 	}
 	assertFileBytes(t, registeredRouteSnapshotFile, body,
 		"the runtime REST route table changed; review it and run BLEEPHUB_UPDATE_REST_ROUTE_SNAPSHOT=1 go test ./internal/server -run TestRegisteredAPIRouteSnapshot")
+}
+
+func TestRegisteredGHESManageRoutesMatchOfficialDescriptionAndSnapshot(t *testing.T) {
+	s := newTestServer()
+	s.registerRoutes()
+	official := loadOfficialRouteIndex(t)["ghes-3.21"]
+	var routes []string
+	for _, pattern := range s.routePatterns {
+		method, path, found := strings.Cut(pattern, " ")
+		if !found || !strings.HasPrefix(path, "/manage/v1/") {
+			continue
+		}
+		if normalized := method + " " + normalizePath(path); !official[normalized] {
+			t.Errorf("GHES Manage route is not in the pinned official description: %s", normalized)
+		}
+		routes = append(routes, pattern)
+	}
+	sort.Strings(routes)
+	body := []byte(strings.Join(routes, "\n") + "\n")
+	if os.Getenv("BLEEPHUB_UPDATE_REST_ROUTE_SNAPSHOT") == "1" {
+		if err := os.WriteFile(registeredManageSnapshotFile, body, 0o644); err != nil {
+			t.Fatal(err)
+		}
+		return
+	}
+	assertFileBytes(t, registeredManageSnapshotFile, body,
+		"the GHES Manage route table changed; review it and update the REST route snapshots")
 }
 
 // TestUncitedRoutesAreStillRegistered keeps the defect ledger from

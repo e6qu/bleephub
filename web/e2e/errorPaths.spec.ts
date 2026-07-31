@@ -1,4 +1,4 @@
-import { test, expect } from "@playwright/test";
+import { test, expect } from "./fixtures.js";
 
 // Graceful-degradation e2e: drive the real bleephub app against real error
 // responses (a 404 for a repo that does not exist) and against a fault

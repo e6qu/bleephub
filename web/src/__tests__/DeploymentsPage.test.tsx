@@ -171,7 +171,7 @@ describe("DeploymentsPage", () => {
     });
     renderPage();
 
-    fireEvent.click(await screen.findByRole("button", { name: "Environments" }));
+    fireEvent.click(await screen.findByRole("tab", { name: "Environments" }));
     await waitFor(() => expect(screen.getByText("production")).toBeInTheDocument());
     expect(screen.getByText(/2 protection rules/)).toBeInTheDocument();
     expect(screen.getByText(/custom branch policies/)).toBeInTheDocument();
@@ -227,7 +227,7 @@ describe("DeploymentsPage", () => {
     });
     renderPage();
 
-    fireEvent.click(await screen.findByRole("button", { name: "Pending approvals" }));
+    fireEvent.click(await screen.findByRole("tab", { name: "Pending approvals" }));
     await waitFor(() => expect(screen.getByText(/Waiting to deploy to/)).toBeInTheDocument());
     expect(mockFetch).toHaveBeenCalledWith(
       expect.stringContaining("/actions/runs?per_page=30&status=waiting"),

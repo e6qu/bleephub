@@ -9,6 +9,7 @@ import (
 	"io"
 	"math/big"
 	"net/http"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -64,14 +65,18 @@ func randomRunnerTokenFromReader(random io.Reader) (string, error) {
 }
 
 // mintRunnerToken issues the opaque registration/removal token in the shape
-// real GitHub returns ("A" + base64-ish blob), scoped to the repository or
-// organization the request addresses. The token is signed, so the scope it
-// carries survives the round-trip through config.sh without a server-side
-// registry, and a forged one cannot register a runner.
+// real GitHub returns ("A" + base64-ish blob), scoped to the repository,
+// organization, or enterprise the request addresses. The token is signed, so
+// the scope it carries survives the round-trip through config.sh without a
+// server-side registry, and a forged one cannot register a runner.
 func (s *Server) mintRunnerToken(w http.ResponseWriter, r *http.Request, purpose string) {
 	scope, err := s.runnerScopeFromRequest(r)
 	if err != nil {
 		writeGHError(w, http.StatusNotFound, "Not Found")
+		return
+	}
+	if purpose == runnerPurposeRegistration && !s.repositoryRunnerRegistrationAllowed(scope) {
+		writeGHError(w, http.StatusForbidden, "Repository-level self-hosted runners are disabled by policy.")
 		return
 	}
 	token, err := newRunnerRegistrationToken(scope, purpose)
@@ -111,6 +116,10 @@ func (s *Server) handleGenerateJITConfig(w http.ResponseWriter, r *http.Request)
 		writeGHError(w, http.StatusNotFound, "Not Found")
 		return
 	}
+	if !s.repositoryRunnerRegistrationAllowed(scope) {
+		writeGHError(w, http.StatusForbidden, "Repository-level self-hosted runners are disabled by policy.")
+		return
+	}
 
 	var req struct {
 		Name          string   `json:"name"`
@@ -141,7 +150,7 @@ func (s *Server) handleGenerateJITConfig(w http.ResponseWriter, r *http.Request)
 		agent.Labels = append(agent.Labels, Label{Name: l, Type: "custom"})
 	}
 
-	jitScope := coalesceStr(scope.Repo, scope.Org)
+	jitScope := coalesceStr(coalesceStr(scope.Repo, scope.Org), scope.Enterprise)
 	clientID, err := newAgentClientID(scope)
 	if err != nil {
 		writeGHError(w, http.StatusInternalServerError, err.Error())
@@ -204,6 +213,34 @@ func (s *Server) handleGenerateJITConfig(w http.ResponseWriter, r *http.Request)
 		"runner":             runnerJSON(&agent, false),
 		"encoded_jit_config": encoded,
 	})
+}
+
+func (s *Server) repositoryRunnerRegistrationAllowed(scope runnerScope) bool {
+	if scope.Repo == "" {
+		return true
+	}
+	owner, repoName := splitRepoFull(scope.Repo)
+	repo := s.store.GetRepo(owner, repoName)
+	if repo == nil || repo.OwnerType != "Organization" {
+		return true
+	}
+	s.store.mu.RLock()
+	defer s.store.mu.RUnlock()
+	if s.store.EnterpriseSettings.ActionsDisableSelfHostedRunners {
+		return false
+	}
+	policy := s.store.lookupOrgActionsPermissionsLocked(owner)
+	if policy == nil {
+		return true
+	}
+	switch policy.SelfHostedRunnersEnabledRepositories {
+	case "none":
+		return false
+	case "selected":
+		return slices.Contains(policy.SelfHostedRunnersSelectedRepoIDs, repo.ID)
+	default:
+		return true
+	}
 }
 
 // encodeJITConfig renders the runner's just-in-time configuration: the runner

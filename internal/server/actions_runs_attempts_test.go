@@ -404,7 +404,7 @@ func TestOrgRunnerEndpoints(t *testing.T) {
 	agentID := testServer.store.NextAgent
 	testServer.store.NextAgent++
 	testServer.store.Agents[agentID] = &Agent{ID: agentID, Name: "org-agent", Status: "online",
-		Labels: []Label{{Name: "self-hosted"}}}
+		Labels: []Label{{Name: "self-hosted"}}, Scope: runnerScope{Org: "runner-org"}}
 	testServer.store.mu.Unlock()
 
 	get := func(path string) (int, map[string]interface{}) {

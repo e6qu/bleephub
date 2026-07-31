@@ -34,6 +34,7 @@ type Server struct {
 	logger                 zerolog.Logger
 	store                  *Store
 	graphqlSchema          graphql.Schema
+	graphqlTypes           graphQLTypeRegistry
 	actionCache            *ActionCache
 	artifactStore          *ArtifactStore
 	metrics                *Metrics
@@ -45,6 +46,7 @@ type Server struct {
 	classroomMu            sync.Mutex // serializes multi-resource Classroom browser transactions
 	marketplaceMu          sync.Mutex // serializes Marketplace billing transitions and webhook emission
 	workflowConcurrencyMu  sync.Mutex // serializes concurrency-group admission and queue promotion
+	workflowTimeoutMu      sync.Mutex // serializes timeout watcher replacement and cancellation
 	rateLimitsMu           sync.Mutex
 	rateLimits             map[string]*apiRateWindow // hashed credential + resource -> current primary-limit window
 	routePatterns          []string                  // every pattern registered via route(), for fidelity enumeration
@@ -471,6 +473,8 @@ func (s *Server) registerRoutes() {
 	s.registerRunnerGroupRoutes()
 
 	s.registerGHEnterpriseRoutes()
+	s.registerGHESAdminStatsRoutes()
+	s.registerGHESManageRoutes()
 	s.registerGHProjectsV2Routes()
 	s.registerGHAttestationsRoutes()
 	s.registerGHOrgArtifactMetadataRoutes()
@@ -501,6 +505,7 @@ func (s *Server) registerRoutes() {
 	// Org people: invitations, outside collaborators, blocks, interaction
 	// limits, organization roles, security managers (gh_orgs_people_rest.go)
 	s.registerGHOrgsPeopleRoutes()
+	s.registerGHEnterpriseRemainderRoutes()
 
 	// Legacy ID-addressed team endpoints (gh_teams_legacy_rest.go)
 	s.registerGHLegacyTeamRoutes()
@@ -949,7 +954,9 @@ func writeJSON(w http.ResponseWriter, status int, v interface{}) {
 		}
 		current = unwrapper.Unwrap()
 	}
-	w.Header().Set("Content-Type", "application/json")
+	if w.Header().Get("Content-Type") == "" {
+		w.Header().Set("Content-Type", "application/json")
+	}
 	w.WriteHeader(status)
 	_, _ = w.Write(append(body, '\n'))
 }

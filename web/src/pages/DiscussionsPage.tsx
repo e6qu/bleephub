@@ -1,4 +1,6 @@
 import { useState } from "react";
+import Markdown from "react-markdown";
+import remarkGfm from "remark-gfm";
 import { useParams, Link, useNavigate } from "react-router";
 import { useMutation, useQuery, useQueryClient, useInfiniteQuery } from "@tanstack/react-query";
 import { Spinner, InlineError } from "@bleephub/ui-core/components";
@@ -390,7 +392,7 @@ function DiscussionDetail({
         </Button>
       </div>
 
-      <DiscussionPost bodyHTML={discussion.bodyHTML} bodyText={discussion.bodyText} />
+      <DiscussionPost body={discussion.body} bodyText={discussion.bodyText} />
 
       <div className="mt-6">
         <h2 style={{ fontSize: "1rem", fontWeight: 600, marginBottom: "1rem" }}>Comments</h2>
@@ -480,7 +482,7 @@ function DiscussionDetail({
   );
 }
 
-function DiscussionPost({ bodyHTML, bodyText }: { bodyHTML: string; bodyText: string }) {
+function DiscussionPost({ body, bodyText }: { body: string; bodyText: string }) {
   if (!bodyText.trim()) {
     return (
       <div style={{ color: "var(--color-fg-muted)", fontStyle: "italic", padding: "0.5rem 0" }}>
@@ -489,11 +491,9 @@ function DiscussionPost({ bodyHTML, bodyText }: { bodyHTML: string; bodyText: st
     );
   }
   return (
-    <div
-      className="markdown-body"
-      style={{ fontSize: "0.92rem", lineHeight: 1.6 }}
-      dangerouslySetInnerHTML={{ __html: bodyHTML }}
-    />
+    <div className="markdown-body" style={{ fontSize: "0.92rem", lineHeight: 1.6 }}>
+      <Markdown remarkPlugins={[remarkGfm]}>{body}</Markdown>
+    </div>
   );
 }
 
@@ -551,14 +551,16 @@ function DiscussionCommentCard({
         )}
       </div>
       <div
+        className="markdown-body"
         style={{
           padding: "0.85rem 1rem",
           fontSize: "0.9rem",
           lineHeight: 1.6,
           color: "var(--color-fg)",
         }}
-        dangerouslySetInnerHTML={{ __html: comment.bodyHTML }}
-      />
+      >
+        <Markdown remarkPlugins={[remarkGfm]}>{comment.body}</Markdown>
+      </div>
       <div className="flex items-center gap-2 px-3 pb-2">
         <button
           type="button"
@@ -599,10 +601,9 @@ function DiscussionCommentCard({
                 <strong style={{ color: "var(--color-fg)" }}>{reply.author?.login ?? "unknown"}</strong> ·{" "}
                 {new Date(reply.createdAt).toLocaleString()}
               </div>
-              <div
-                style={{ fontSize: "0.85rem", lineHeight: 1.5 }}
-                dangerouslySetInnerHTML={{ __html: reply.bodyHTML }}
-              />
+              <div className="markdown-body" style={{ fontSize: "0.85rem", lineHeight: 1.5 }}>
+                <Markdown remarkPlugins={[remarkGfm]}>{reply.body}</Markdown>
+              </div>
             </div>
           ))}
         </div>

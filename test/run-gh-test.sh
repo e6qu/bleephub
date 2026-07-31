@@ -279,17 +279,16 @@ ISSUE_STATE=$(echo "$ISSUE_GET" | jq -r '.state')
 assert_eq "issue 1 state after gh issue create" "open" "$ISSUE_STATE"
 
 # ============================================================
-# Test: View issue via real `gh issue view` (Representational State Transfer-backed, --json optional)
+# Test: View issue via real `gh issue view`
 # ============================================================
 log "Test: gh issue view"
-# `gh issue view N --repo ...` uses the Representational State Transfer
-# application programming interface directly; --json args go through GraphQL on
-# real GitHub. This checks the Representational State Transfer-only path by not
-# passing --json; gh prints a human-readable summary on success.
-if gh issue view 1 --repo admin/gh-test-repo >/dev/null 2>&1; then
+# Current gh releases use the polymorphic GraphQL issueOrPullRequest query even
+# for the human-readable view. Preserve the diagnostic output because failures
+# here commonly expose schema-shape drift that an HTTP 200 alone cannot show.
+if ISSUE_VIEW_OUTPUT=$(gh issue view 1 --repo admin/gh-test-repo 2>&1); then
     pass "gh issue view"
 else
-    fail "gh issue view returned non-zero"
+    fail "gh issue view returned non-zero: $ISSUE_VIEW_OUTPUT"
 fi
 
 # ============================================================

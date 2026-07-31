@@ -132,7 +132,7 @@ func (st *Store) recordIssueEventLocked(repoID, issueID, actorID int, event stri
 		IssueID:    issueID,
 		ActorID:    actorID,
 		Event:      event,
-		CreatedAt:  time.Now().UTC(),
+		CreatedAt:  st.currentTime(),
 	}
 	st.NextIssueEventID++
 	st.IssueEvents[e.ID] = e
@@ -300,7 +300,7 @@ func (st *Store) CreateLabel(repoID int, name, description, color string) *Issue
 		}
 	}
 
-	now := time.Now().UTC()
+	now := st.currentTime()
 	label := &IssueLabel{
 		ID:          st.NextLabel,
 		NodeID:      fmt.Sprintf("LA_kgDO%08d", st.NextLabel),
@@ -408,7 +408,7 @@ func (st *Store) CreateMilestone(repoID, creatorID int, title, description, stat
 		state = "open"
 	}
 
-	now := time.Now().UTC()
+	now := st.currentTime()
 	ms := &Milestone{
 		ID:          st.NextMilestone,
 		NodeID:      fmt.Sprintf("MI_kgDO%08d", st.NextMilestone),
@@ -476,7 +476,7 @@ func (st *Store) UpdateMilestone(id int, fn func(*Milestone)) bool {
 		return false
 	}
 	fn(ms)
-	ms.UpdatedAt = time.Now().UTC()
+	ms.UpdatedAt = st.currentTime()
 	if st.persist != nil {
 		st.persist.MustPut("milestones", strconv.Itoa(ms.ID), ms)
 	}
@@ -525,7 +525,7 @@ func (st *Store) CreateIssue(repoID, authorID int, title, body string, labelIDs,
 		assigneeIDs = []int{}
 	}
 
-	now := time.Now().UTC()
+	now := st.currentTime()
 	issue := &Issue{
 		ID:          st.NextIssue,
 		NodeID:      fmt.Sprintf("I_kgDO%08d", st.NextIssue),
@@ -615,7 +615,7 @@ func (st *Store) UpdateIssue(id int, fn func(*Issue)) bool {
 		return false
 	}
 	fn(issue)
-	issue.UpdatedAt = time.Now().UTC()
+	issue.UpdatedAt = st.currentTime()
 	if st.persist != nil {
 		st.persist.MustPut("issues", strconv.Itoa(issue.ID), issue)
 	}
@@ -663,7 +663,7 @@ func (st *Store) AddIssueAssignees(repoID int, issueNumber int, assigneeIDs []in
 		}
 	}
 	if added {
-		issue.UpdatedAt = time.Now().UTC()
+		issue.UpdatedAt = st.currentTime()
 		if st.persist != nil {
 			st.persist.MustPut("issues", strconv.Itoa(issue.ID), issue)
 		}
@@ -692,7 +692,7 @@ func (st *Store) RemoveIssueAssignees(repoID int, issueNumber int, assigneeIDs [
 		}
 	}
 	if removed {
-		issue.UpdatedAt = time.Now().UTC()
+		issue.UpdatedAt = st.currentTime()
 		if st.persist != nil {
 			st.persist.MustPut("issues", strconv.Itoa(issue.ID), issue)
 		}
@@ -728,7 +728,7 @@ func (st *Store) SetIssueLabels(repoID int, issueNumber int, labelIDs []int, act
 		}
 	}
 	issue.LabelIDs = labelIDs
-	issue.UpdatedAt = time.Now().UTC()
+	issue.UpdatedAt = st.currentTime()
 	if st.persist != nil {
 		st.persist.MustPut("issues", strconv.Itoa(issue.ID), issue)
 	}
@@ -751,7 +751,7 @@ func (st *Store) ClearIssueLabels(repoID int, issueNumber int, actorID int) bool
 		st.recordIssueEventWithIDsLocked(repoID, issue.ID, actorID, "unlabeled", lid, 0, 0, 0, 0)
 	}
 	issue.LabelIDs = nil
-	issue.UpdatedAt = time.Now().UTC()
+	issue.UpdatedAt = st.currentTime()
 	if st.persist != nil {
 		st.persist.MustPut("issues", strconv.Itoa(issue.ID), issue)
 	}
@@ -784,7 +784,7 @@ func (st *Store) AddIssueLabels(repoKey string, issueNumber int, labelIDs []int)
 		}
 	}
 	if added {
-		issue.UpdatedAt = time.Now().UTC()
+		issue.UpdatedAt = st.currentTime()
 		if st.persist != nil {
 			st.persist.MustPut("issues", strconv.Itoa(issue.ID), issue)
 		}
@@ -815,7 +815,7 @@ func (st *Store) RemoveIssueLabel(repoKey string, issueNumber int, labelName str
 	for idx, lid := range issue.LabelIDs {
 		if lid == label.ID {
 			issue.LabelIDs = append(issue.LabelIDs[:idx], issue.LabelIDs[idx+1:]...)
-			issue.UpdatedAt = time.Now().UTC()
+			issue.UpdatedAt = st.currentTime()
 			if st.persist != nil {
 				st.persist.MustPut("issues", strconv.Itoa(issue.ID), issue)
 			}
@@ -837,7 +837,7 @@ func (st *Store) LockIssue(repoKey string, issueNumber int, lockReason string) b
 	}
 	issue.Locked = true
 	issue.ActiveLockReason = lockReason
-	issue.UpdatedAt = time.Now().UTC()
+	issue.UpdatedAt = st.currentTime()
 	if st.persist != nil {
 		st.persist.MustPut("issues", strconv.Itoa(issue.ID), issue)
 	}
@@ -855,7 +855,7 @@ func (st *Store) UnlockIssue(repoKey string, issueNumber int) bool {
 	}
 	issue.Locked = false
 	issue.ActiveLockReason = ""
-	issue.UpdatedAt = time.Now().UTC()
+	issue.UpdatedAt = st.currentTime()
 	if st.persist != nil {
 		st.persist.MustPut("issues", strconv.Itoa(issue.ID), issue)
 	}
@@ -916,7 +916,7 @@ func (st *Store) PinIssueComment(commentID int) bool {
 		return false
 	}
 	c.Pinned = true
-	c.UpdatedAt = time.Now().UTC()
+	c.UpdatedAt = st.currentTime()
 	if st.persist != nil {
 		st.persist.MustPut("comments", strconv.Itoa(c.ID), c)
 	}
@@ -933,7 +933,7 @@ func (st *Store) UnpinIssueComment(commentID int) bool {
 		return false
 	}
 	c.Pinned = false
-	c.UpdatedAt = time.Now().UTC()
+	c.UpdatedAt = st.currentTime()
 	if st.persist != nil {
 		st.persist.MustPut("comments", strconv.Itoa(c.ID), c)
 	}
@@ -1033,7 +1033,7 @@ func (st *Store) CreateCommentFor(parentType string, parentID, authorID int, bod
 		return nil
 	}
 
-	now := time.Now().UTC()
+	now := st.currentTime()
 	c := &Comment{
 		ID:         st.NextComment,
 		NodeID:     fmt.Sprintf("IC_kgDO%08d", st.NextComment),
@@ -1225,7 +1225,7 @@ func (st *Store) UpdateCommentBody(id, editorID int, body string) *Comment {
 	if !ok {
 		return nil
 	}
-	now := time.Now().UTC()
+	now := st.currentTime()
 	c.Body = body
 	c.UpdatedAt = now
 	c.LastEditedAt = &now

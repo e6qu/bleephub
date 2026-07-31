@@ -100,7 +100,7 @@ func (s *Server) handleGetCopilotOrganizationDetails(w http.ResponseWriter, r *h
 		return
 	}
 	seats := s.store.ListCopilotSeats(org.Login)
-	now := time.Now().UTC()
+	now := s.currentTime()
 	total := len(seats)
 	pendingCancellation := 0
 	addedThisCycle := 0

@@ -47,6 +47,45 @@ func gqlData(t *testing.T, query string, variables map[string]interface{}) map[s
 	return d
 }
 
+func TestGHCLIIssueLookupAcceptsExclusiveStateEnums(t *testing.T) {
+	// gh v2.96 builds this exact polymorphic shape for `gh issue view`,
+	// `gh issue close`, and `gh issue reopen`. GitHub executes it even though
+	// Issue.state and PullRequest.state use different enum types.
+	query := `
+query IssueByNumber($owner: String!, $repo: String!, $number: Int!) {
+  repository(owner: $owner, name: $repo) {
+    issue: issueOrPullRequest(number: $number) {
+      __typename
+      ... on Issue { id number title state milestone { number title description dueOn } }
+      ... on PullRequest { id number title state milestone { number title description dueOn } }
+    }
+  }
+}`
+	_, validationErrors, err := graphqlPrepareDocument(testServer.graphqlSchema, query)
+	if err != nil {
+		t.Fatalf("prepare official gh issue lookup: %v", err)
+	}
+	if len(validationErrors) != 0 {
+		t.Fatalf("official gh issue lookup validation errors: %v", validationErrors)
+	}
+
+	// The exception must not disable the overlap rule generally. These two
+	// selections can execute on the same Issue and name different fields.
+	conflicting := `
+query($owner: String!, $repo: String!, $number: Int!) {
+  repository(owner: $owner, name: $repo) {
+    issue(number: $number) { value: state value: title }
+  }
+}`
+	_, validationErrors, err = graphqlPrepareDocument(testServer.graphqlSchema, conflicting)
+	if err != nil {
+		t.Fatalf("prepare genuine field conflict: %v", err)
+	}
+	if len(validationErrors) == 0 {
+		t.Fatal("genuine overlapping fields were accepted")
+	}
+}
+
 func TestRepoGraphQLURLUsesConfiguredExternalURL(t *testing.T) {
 	t.Setenv("BLEEPHUB_EXTERNAL_URL", "https://bleephub.example.test/")
 	repo := &Repo{FullName: "octo/example", Name: "example"}
@@ -240,6 +279,10 @@ func TestRepoGraphQL_RepositoryOwnerOrg(t *testing.T) {
 	if org == nil {
 		t.Fatal("failed to create org")
 	}
+	repo := testServer.store.CreateOrgRepo(org, testServer.store.UsersByLogin["admin"], "owner-interface-repo", "", false)
+	if repo == nil {
+		t.Fatal("failed to create organization repository")
+	}
 	defer func() {
 		testServer.store.mu.Lock()
 		delete(testServer.store.Orgs, org.ID)
@@ -252,10 +295,19 @@ func TestRepoGraphQL_RepositoryOwnerOrg(t *testing.T) {
 		repositoryOwner(login: $login) {
 			id
 			login
-			name
 			url
-			createdAt
-			updatedAt
+			... on Organization {
+				name
+				createdAt
+				updatedAt
+			}
+			repository(name: "owner-interface-repo") {
+				nameWithOwner
+			}
+			repositories(first: 10, affiliations: [ORGANIZATION_MEMBER], hasIssuesEnabled: true, isArchived: false, isLocked: false, visibility: PUBLIC) {
+				totalCount
+				nodes { nameWithOwner }
+			}
 		}
 	}`
 	d := gqlData(t, query, map[string]interface{}{"login": orgLogin})
@@ -274,6 +326,14 @@ func TestRepoGraphQL_RepositoryOwnerOrg(t *testing.T) {
 	}
 	if owner["createdAt"] == nil || owner["updatedAt"] == nil {
 		t.Errorf("createdAt/updatedAt missing: %v", owner)
+	}
+	if got := owner["repository"].(map[string]interface{})["nameWithOwner"]; got != repo.FullName {
+		t.Errorf("repository.nameWithOwner = %v, want %q", got, repo.FullName)
+	}
+	repositories := owner["repositories"].(map[string]interface{})
+	if repositories["totalCount"] != float64(1) ||
+		repositories["nodes"].([]interface{})[0].(map[string]interface{})["nameWithOwner"] != repo.FullName {
+		t.Errorf("repositories = %v, want only %q", repositories, repo.FullName)
 	}
 }
 
@@ -587,7 +647,7 @@ func TestPRGraphQL_ViewDefaultFields(t *testing.T) {
 	testServer.store.mu.Lock()
 	testServer.store.Workflows[wf.ID] = wf
 	testServer.store.mu.Unlock()
-	testServer.onActionsRunRequested(wf)
+	testServer.onActionsRunRequestedSnapshot(wf, cloneWorkflowEventSnapshot(wf))
 	statusResp := ghPost(t, "/api/v3/repos/"+owner+"/"+name+"/statuses/"+headSHA, defaultToken,
 		map[string]interface{}{
 			"state":       "failure",

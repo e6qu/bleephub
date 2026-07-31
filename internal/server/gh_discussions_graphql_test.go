@@ -128,14 +128,14 @@ func TestDiscussionsGraphQL_Lifecycle(t *testing.T) {
 	}
 
 	// 8. Mark reply as answer.
-	markQuery := `mutation($cid:ID!){markDiscussionCommentAsAnswer(input:{commentId:$cid}){discussion{number}}}`
+	markQuery := `mutation($cid:ID!){markDiscussionCommentAsAnswer(input:{id:$cid}){discussion{number}}}`
 	markRes := runDiscussionGQL(t, markQuery, map[string]interface{}{"cid": replyNodeID})
 	if _, ok := markRes["markDiscussionCommentAsAnswer"]; !ok {
 		t.Fatalf("expected mark answer payload, got %v", markRes)
 	}
 
 	// 9. Unmark answer.
-	unmarkQuery := `mutation($cid:ID!){unmarkDiscussionCommentAsAnswer(input:{commentId:$cid}){discussion{number}}}`
+	unmarkQuery := `mutation($cid:ID!){unmarkDiscussionCommentAsAnswer(input:{id:$cid}){discussion{number}}}`
 	unmarkRes := runDiscussionGQL(t, unmarkQuery, map[string]interface{}{"cid": replyNodeID})
 	if _, ok := unmarkRes["unmarkDiscussionCommentAsAnswer"]; !ok {
 		t.Fatalf("expected unmark answer payload, got %v", unmarkRes)
@@ -151,7 +151,7 @@ func TestDiscussionsGraphQL_Lifecycle(t *testing.T) {
 	}
 
 	// 11. Delete comment.
-	delComment := `mutation($cid:ID!){deleteDiscussionComment(input:{commentId:$cid}){clientMutationId}}`
+	delComment := `mutation($cid:ID!){deleteDiscussionComment(input:{id:$cid}){clientMutationId}}`
 	delCommentRes := runDiscussionGQL(t, delComment, map[string]interface{}{"cid": commentNodeID})
 	if _, ok := delCommentRes["deleteDiscussionComment"]; !ok {
 		t.Fatalf("expected delete comment payload, got %v", delCommentRes)
@@ -167,7 +167,7 @@ func TestDiscussionsGraphQL_Lifecycle(t *testing.T) {
 	}
 
 	// 13. Delete discussion.
-	delDisc := `mutation($did:ID!){deleteDiscussion(input:{discussionId:$did}){clientMutationId}}`
+	delDisc := `mutation($did:ID!){deleteDiscussion(input:{id:$did}){clientMutationId}}`
 	delDiscRes := runDiscussionGQL(t, delDisc, map[string]interface{}{"did": discNodeID})
 	if _, ok := delDiscRes["deleteDiscussion"]; !ok {
 		t.Fatalf("expected delete discussion payload, got %v", delDiscRes)

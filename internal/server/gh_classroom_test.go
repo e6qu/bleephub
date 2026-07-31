@@ -342,6 +342,12 @@ func TestGitHubClassroomGroupAcceptanceLinksRosterIdentifiers(t *testing.T) {
 }
 
 func TestGitHubClassroomTransitionExportImportAndNoOperatorSeeds(t *testing.T) {
+	org := createTestOrg(t)
+	classroomName := "Transition Export " + strconv.FormatUint(nextTestID(), 10)
+	decodeJSONWithStatus(t, ghPost(t, "/classroom-data/classrooms", defaultToken, map[string]interface{}{
+		"name": classroomName, "organization": org,
+	}), http.StatusCreated)
+
 	exported := decodeJSONWithStatus(t, ghGet(t, "/classroom-data/export", defaultToken), http.StatusOK)
 	if exported["format"] != "bleephub-classroom-transition-v1" {
 		t.Fatalf("transition format = %v", exported["format"])
@@ -349,6 +355,16 @@ func TestGitHubClassroomTransitionExportImportAndNoOperatorSeeds(t *testing.T) {
 	classrooms := exported["classrooms"].([]interface{})
 	if len(classrooms) == 0 {
 		t.Fatal("transition export omitted classrooms")
+	}
+	found := 0
+	for _, raw := range classrooms {
+		item, _ := raw.(map[string]interface{})
+		if item != nil && item["name"] == classroomName {
+			found++
+		}
+	}
+	if found != 1 {
+		t.Fatalf("transition export contains classroom %q %d times, want exactly once", classroomName, found)
 	}
 	imported := decodeJSONWithStatus(t, ghPost(t, "/classroom-data/import", defaultToken, exported), http.StatusCreated)
 	if got := len(imported["classrooms"].([]interface{})); got != len(classrooms) {

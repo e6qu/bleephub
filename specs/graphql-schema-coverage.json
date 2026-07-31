@@ -1,11 +1,11 @@
 {
   "official_types": 1806,
-  "bleephub_types": 276,
-  "shared_types": 210,
+  "bleephub_types": 271,
+  "shared_types": 231,
   "official_fields": 8341,
-  "implemented_fields": 782,
-  "signature_exact_fields": 546,
-  "compatibility_gap_count": 319,
+  "implemented_fields": 844,
+  "signature_exact_fields": 812,
+  "compatibility_gap_count": 77,
   "missing_types": [
     "AbortQueuedMigrationsInput",
     "AbortQueuedMigrationsPayload",
@@ -19,7 +19,6 @@
     "AcceptTopicSuggestionPayload",
     "AccessUserNamespaceRepositoryInput",
     "AccessUserNamespaceRepositoryPayload",
-    "Actor",
     "ActorConnection",
     "ActorEdge",
     "ActorLocation",
@@ -99,7 +98,6 @@
     "BaseRefChangedEvent",
     "BaseRefDeletedEvent",
     "BaseRefForcePushedEvent",
-    "BigInt",
     "Blame",
     "BlameRange",
     "Blob",
@@ -143,16 +141,13 @@
     "CheckAnnotationPosition",
     "CheckAnnotationRange",
     "CheckAnnotationSpan",
-    "CheckConclusionState",
     "CheckRunAction",
     "CheckRunConnection",
     "CheckRunEdge",
     "CheckRunFilter",
     "CheckRunOutput",
     "CheckRunOutputImage",
-    "CheckRunState",
     "CheckRunType",
-    "CheckStatusState",
     "CheckStep",
     "CheckStepConnection",
     "CheckStepEdge",
@@ -181,7 +176,6 @@
     "CodeScanningToolInput",
     "CollaboratorAffiliation",
     "Comment",
-    "CommentAuthorAssociation",
     "CommentCannotUpdateReason",
     "CommentDeletedEvent",
     "CommitAuthor",
@@ -312,7 +306,6 @@
     "CustomPropertyValueInput",
     "CustomPropertyValueType",
     "CvssSeverities",
-    "Date",
     "DeclineTopicSuggestionInput",
     "DeclineTopicSuggestionPayload",
     "DefaultRepositoryPermissionField",
@@ -570,7 +563,6 @@
     "GitActorEdge",
     "GitObject",
     "GitRefname",
-    "GitSSHRemote",
     "GitSignature",
     "GitSignatureState",
     "GitTimestamp",
@@ -579,7 +571,6 @@
     "GrantEnterpriseOrganizationsMigratorRolePayload",
     "GrantMigratorRoleInput",
     "GrantMigratorRolePayload",
-    "HTML",
     "HeadRefDeletedEvent",
     "HeadRefForcePushedEvent",
     "HeadRefRestoredEvent",
@@ -626,7 +617,6 @@
     "IssueFieldsConnection",
     "IssueFieldsEdge",
     "IssueSearchType",
-    "IssueStateReason",
     "IssueStateUpdateInput",
     "IssueTemplate",
     "IssueTimelineConnection",
@@ -638,7 +628,6 @@
     "IssueTimelineItemsItemType",
     "IssueTypeAddedEvent",
     "IssueTypeChangedEvent",
-    "IssueTypeColor",
     "IssueTypeConnection",
     "IssueTypeEdge",
     "IssueTypeOrder",
@@ -823,7 +812,6 @@
     "PackageVersionStatistics",
     "ParentIssueAddedEvent",
     "ParentIssueRemovedEvent",
-    "PatchStatus",
     "PendingAssigneeSuggestion",
     "PendingCloseSuggestion",
     "PendingFieldSuggestion",
@@ -899,7 +887,6 @@
     "ProjectV2FieldConfigurationEdge",
     "ProjectV2FieldOrder",
     "ProjectV2FieldOrderField",
-    "ProjectV2FieldType",
     "ProjectV2FieldValue",
     "ProjectV2Filters",
     "ProjectV2IssueFieldValues",
@@ -936,7 +923,6 @@
     "ProjectV2Recent",
     "ProjectV2Roles",
     "ProjectV2SingleSelectField",
-    "ProjectV2SingleSelectFieldOptionColor",
     "ProjectV2SortBy",
     "ProjectV2SortByConnection",
     "ProjectV2SortByEdge",
@@ -952,7 +938,6 @@
     "ProjectV2StatusUpdateStatus",
     "ProjectV2ViewConfiguration",
     "ProjectV2ViewConfigurationInput",
-    "ProjectV2ViewLayout",
     "ProjectV2ViewOrder",
     "ProjectV2ViewOrderField",
     "ProjectV2Workflow",
@@ -979,13 +964,12 @@
     "PullRequestCreationCapConfig",
     "PullRequestCreationPolicy",
     "PullRequestOrder",
+    "PullRequestOrderField",
     "PullRequestParameters",
     "PullRequestParametersInput",
     "PullRequestReviewCommentEdge",
-    "PullRequestReviewCommentState",
     "PullRequestReviewContributionsByRepository",
     "PullRequestReviewEdge",
-    "PullRequestReviewState",
     "PullRequestReviewThreadEdge",
     "PullRequestReviewThreadSubjectType",
     "PullRequestRevisionMarker",
@@ -1108,7 +1092,6 @@
     "RepoRemoveMemberAuditEntry",
     "RepoRemoveMemberAuditEntryVisibility",
     "RepoRemoveTopicAuditEntry",
-    "ReportedContentClassifiers",
     "RepositoryAuditEntryData",
     "RepositoryCodeowners",
     "RepositoryCodeownersError",
@@ -1147,8 +1130,6 @@
     "RepositoryNameConditionTarget",
     "RepositoryNameConditionTargetInput",
     "RepositoryNode",
-    "RepositoryOwner",
-    "RepositoryPermission",
     "RepositoryPlanFeatures",
     "RepositoryPropertyConditionTarget",
     "RepositoryPropertyConditionTargetInput",
@@ -1172,7 +1153,6 @@
     "RepositoryRulesetTarget",
     "RepositorySuggestedActorFilter",
     "RepositoryTopicEdge",
-    "RepositoryVisibility",
     "RepositoryVisibilityChangeDisableAuditEntry",
     "RepositoryVisibilityChangeEnableAuditEntry",
     "RepositoryVulnerabilityAlert",
@@ -1333,7 +1313,6 @@
     "StatusCheckConfiguration",
     "StatusCheckConfigurationInput",
     "StatusCheckRollupContextEdge",
-    "StatusState",
     "StripeConnectAccount",
     "SubIssueAddedEvent",
     "SubIssueRemovedEvent",
@@ -1605,18 +1584,8 @@
     "X509Certificate"
   ],
   "missing_fields": {
-    "AddCommentInput": [
-      "clientMutationId"
-    ],
     "AddCommentPayload": [
-      "clientMutationId",
       "timelineEdge"
-    ],
-    "AddProjectV2ItemByIdInput": [
-      "clientMutationId"
-    ],
-    "AddProjectV2ItemByIdPayload": [
-      "clientMutationId"
     ],
     "AddPullRequestReviewInput": [
       "comments",
@@ -1687,20 +1656,10 @@
       "url"
     ],
     "CloseIssueInput": [
-      "clientMutationId",
       "confidence",
       "duplicateIssueId",
       "isSuggestion",
       "rationale"
-    ],
-    "CloseIssuePayload": [
-      "clientMutationId"
-    ],
-    "ClosePullRequestInput": [
-      "clientMutationId"
-    ],
-    "ClosePullRequestPayload": [
-      "clientMutationId"
     ],
     "Commit": [
       "abbreviatedOid",
@@ -1744,56 +1703,26 @@
     ],
     "CreateIssueInput": [
       "agentAssignment",
-      "clientMutationId",
       "issueFields",
       "parentIssueId",
       "projectV2Ids"
     ],
-    "CreateIssuePayload": [
-      "clientMutationId"
-    ],
     "CreateProjectV2FieldInput": [
-      "clientMutationId",
       "multiSelectOptions"
     ],
-    "CreateProjectV2FieldPayload": [
-      "clientMutationId"
-    ],
     "CreateProjectV2Input": [
-      "clientMutationId",
       "repositoryId",
       "teamId"
     ],
-    "CreateProjectV2Payload": [
-      "clientMutationId"
-    ],
     "CreatePullRequestInput": [
-      "clientMutationId",
       "headRepositoryId"
     ],
-    "CreatePullRequestPayload": [
-      "clientMutationId"
-    ],
     "CreateRepositoryInput": [
-      "clientMutationId",
       "homepageUrl",
       "teamId",
       "template"
     ],
-    "CreateRepositoryPayload": [
-      "clientMutationId"
-    ],
-    "DeleteDiscussionCommentInput": [
-      "id"
-    ],
-    "DeleteDiscussionInput": [
-      "id"
-    ],
-    "DeleteDiscussionPayload": [
-      "discussion"
-    ],
     "Discussion": [
-      "activeLockReason",
       "answer",
       "answerChosenAt",
       "answerChosenBy",
@@ -1986,15 +1915,8 @@
     "LanguageEdge": [
       "cursor"
     ],
-    "LockLockableInput": [
-      "clientMutationId"
-    ],
     "LockLockablePayload": [
-      "actor",
-      "clientMutationId"
-    ],
-    "MarkDiscussionCommentAsAnswerInput": [
-      "id"
+      "actor"
     ],
     "MergePullRequestPayload": [
       "actor"
@@ -2019,12 +1941,6 @@
     ],
     "MilestoneConnection": [
       "edges"
-    ],
-    "MinimizeCommentInput": [
-      "clientMutationId"
-    ],
-    "MinimizeCommentPayload": [
-      "clientMutationId"
     ],
     "Mutation": [
       "abortQueuedMigrations",
@@ -2315,15 +2231,12 @@
       "projectsUrl",
       "projectsV2",
       "recentProjects",
-      "repositories",
-      "repository",
       "repositoryCustomProperties",
       "repositoryCustomProperty",
       "repositoryDiscussionComments",
       "repositoryDiscussions",
       "repositoryMigrations",
       "requiresTwoFactorAuthentication",
-      "resourcePath",
       "ruleset",
       "rulesets",
       "samlIdentityProvider",
@@ -2549,8 +2462,7 @@
       "url"
     ],
     "PullRequestCommitConnection": [
-      "edges",
-      "pageInfo"
+      "edges"
     ],
     "PullRequestReview": [
       "authorCanPushToRepository",
@@ -2620,8 +2532,7 @@
       "viewerDidAuthor"
     ],
     "PullRequestReviewCommentConnection": [
-      "edges",
-      "pageInfo"
+      "edges"
     ],
     "PullRequestReviewConnection": [
       "edges"
@@ -2641,8 +2552,7 @@
       "viewerCanUnresolve"
     ],
     "PullRequestReviewThreadConnection": [
-      "edges",
-      "pageInfo"
+      "edges"
     ],
     "Query": [
       "enterprise",
@@ -2699,18 +2609,6 @@
     ],
     "ReleaseConnection": [
       "edges"
-    ],
-    "ReopenIssueInput": [
-      "clientMutationId"
-    ],
-    "ReopenIssuePayload": [
-      "clientMutationId"
-    ],
-    "ReopenPullRequestInput": [
-      "clientMutationId"
-    ],
-    "ReopenPullRequestPayload": [
-      "clientMutationId"
     ],
     "Repository": [
       "allowUpdateBranch",
@@ -2816,8 +2714,7 @@
       "url"
     ],
     "RepositoryTopicConnection": [
-      "edges",
-      "pageInfo"
+      "edges"
     ],
     "ReviewRequest": [
       "asCodeOwner",
@@ -2902,50 +2799,27 @@
       "stargazers",
       "viewerHasStarred"
     ],
-    "UnlockLockableInput": [
-      "clientMutationId"
-    ],
     "UnlockLockablePayload": [
-      "actor",
-      "clientMutationId"
-    ],
-    "UnmarkDiscussionCommentAsAnswerInput": [
-      "id"
-    ],
-    "UnminimizeCommentInput": [
-      "clientMutationId"
-    ],
-    "UnminimizeCommentPayload": [
-      "clientMutationId"
+      "actor"
     ],
     "UpdateIssueInput": [
       "agentAssignment",
       "assignees",
-      "clientMutationId",
       "issueType",
       "labels",
       "projectIds",
       "stateInput"
     ],
     "UpdateIssuePayload": [
-      "actor",
-      "clientMutationId"
-    ],
-    "UpdateProjectV2ItemFieldValueInput": [
-      "clientMutationId"
-    ],
-    "UpdateProjectV2ItemFieldValuePayload": [
-      "clientMutationId"
+      "actor"
     ],
     "UpdatePullRequestInput": [
-      "clientMutationId",
       "maintainerCanModify",
       "projectIds",
       "state"
     ],
     "UpdatePullRequestPayload": [
-      "actor",
-      "clientMutationId"
+      "actor"
     ],
     "User": [
       "anyPinnableItems",
@@ -3001,10 +2875,8 @@
       "pullRequests",
       "recentProjects",
       "repositoriesContributedTo",
-      "repository",
       "repositoryDiscussionComments",
       "repositoryDiscussions",
-      "resourcePath",
       "savedReplies",
       "socialAccounts",
       "sponsoring",

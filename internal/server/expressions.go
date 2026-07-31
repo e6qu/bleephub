@@ -448,7 +448,8 @@ func (p *exprParser) parsePostfix() (interface{}, error) {
 			p.next()
 			t := p.next()
 			if t.kind == tokStar {
-				return nil, fmt.Errorf("object filters (.*) are not supported in server-evaluated expressions")
+				v = exprFilterValues(v)
+				continue
 			}
 			if t.kind != tokIdent {
 				return nil, fmt.Errorf("expected property name after '.', got %q", t.text)
@@ -456,6 +457,15 @@ func (p *exprParser) parsePostfix() (interface{}, error) {
 			v = exprDeref(v, t.text)
 		case tokLBracket:
 			p.next()
+			if p.peek().kind == tokStar {
+				p.next()
+				if p.peek().kind != tokRBracket {
+					return nil, fmt.Errorf("expected ']' after '*'")
+				}
+				p.next()
+				v = exprFilterValues(v)
+				continue
+			}
 			idx, err := p.parseOr()
 			if err != nil {
 				return nil, err
@@ -683,6 +693,13 @@ func exprFormat(f string, args []interface{}) (string, error) {
 // exprDeref resolves a property access (case-insensitively, like GitHub
 // context keys). Missing properties yield null, not an error.
 func exprDeref(v interface{}, key string) interface{} {
+	if values, ok := v.([]interface{}); ok {
+		projected := make([]interface{}, 0, len(values))
+		for _, value := range values {
+			projected = append(projected, exprDeref(value, key))
+		}
+		return projected
+	}
 	m, ok := v.(map[string]interface{})
 	if !ok {
 		return nil
@@ -703,6 +720,29 @@ func exprDeref(v interface{}, key string) interface{} {
 	}
 	sort.Strings(keys)
 	return m[keys[0]]
+}
+
+// exprFilterValues implements GitHub's object-filter syntax (`.*` and
+// `[*]`). Arrays retain declaration order; object values use sorted keys so a
+// server-evaluated expression cannot vary with Go map iteration order.
+func exprFilterValues(v interface{}) interface{} {
+	switch value := v.(type) {
+	case []interface{}:
+		return append([]interface{}(nil), value...)
+	case map[string]interface{}:
+		keys := make([]string, 0, len(value))
+		for key := range value {
+			keys = append(keys, key)
+		}
+		sort.Strings(keys)
+		values := make([]interface{}, 0, len(keys))
+		for _, key := range keys {
+			values = append(values, value[key])
+		}
+		return values
+	default:
+		return nil
+	}
 }
 
 // exprIndex resolves an ['key'] or [N] access.

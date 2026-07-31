@@ -79,6 +79,38 @@ type EnterpriseCodeSecurityAttachment struct {
 // bucket; zero-value fields fall back to defaultEnterpriseSettings values on
 // first access paths that seed them in NewStore.
 type EnterpriseSettings struct {
+	// Enterprise administration settings.
+	Announcement                    *EnterpriseAnnouncement                    `json:"announcement,omitempty"`
+	AccessRestrictionsEnabled       bool                                       `json:"access_restrictions_enabled"`
+	CodeSecurityAndAnalysis         EnterpriseCodeSecurity                     `json:"code_security_and_analysis"`
+	AuditLogStreams                 []*EnterpriseAuditLogStream                `json:"audit_log_streams,omitempty"`
+	NextAuditLogStreamID            int                                        `json:"next_audit_log_stream_id"`
+	RepositoryCustomProperties      map[string]*CustomProperty                 `json:"repository_custom_properties,omitempty"`
+	OrganizationCustomProperties    map[string]*CustomProperty                 `json:"organization_custom_properties,omitempty"`
+	OrganizationPropertyValues      map[string]map[string]interface{}          `json:"organization_property_values,omitempty"`
+	SCIMUsers                       map[string]*EnterpriseSCIMUser             `json:"scim_users,omitempty"`
+	SCIMGroups                      map[string]*EnterpriseSCIMGroup            `json:"scim_groups,omitempty"`
+	EnterpriseRoleTeamAssignments   map[int][]int                              `json:"enterprise_role_team_assignments,omitempty"`
+	EnterpriseRoleUserAssignments   map[int][]int                              `json:"enterprise_role_user_assignments,omitempty"`
+	VisualStudioSubscriptions       map[string]*VisualStudioSubscription       `json:"visual_studio_subscriptions,omitempty"`
+	InnerSourceSyncJobs             map[string]*EnterpriseInnerSourceSyncJob   `json:"innersource_sync_jobs,omitempty"`
+	EnterpriseCopilotSeats          map[string]*CopilotSeat                    `json:"enterprise_copilot_seats,omitempty"`
+	CopilotCustomAgentsSourceOrgID  int                                        `json:"copilot_custom_agents_source_org_id,omitempty"`
+	CopilotCustomAgentsRulesetID    int                                        `json:"copilot_custom_agents_ruleset_id,omitempty"`
+	EnterpriseBudgets               map[string]*OrgBudget                      `json:"enterprise_budgets,omitempty"`
+	EnterpriseCostCenters           map[string]*EnterpriseCostCenter           `json:"enterprise_cost_centers,omitempty"`
+	EnterpriseBillingReports        map[string]*EnterpriseBillingReport        `json:"enterprise_billing_reports,omitempty"`
+	GHESManagement                  *GHESManagementState                       `json:"ghes_management,omitempty"`
+	GHESGlobalHooks                 []*Webhook                                 `json:"ghes_global_hooks,omitempty"`
+	GHESPreReceiveEnvironments      map[int]*GHESPreReceiveEnvironment         `json:"ghes_pre_receive_environments,omitempty"`
+	GHESPreReceiveHooks             map[int]*GHESPreReceiveHook                `json:"ghes_pre_receive_hooks,omitempty"`
+	GHESOrgPreReceiveOverrides      map[string]map[int]*GHESPreReceiveOverride `json:"ghes_org_pre_receive_overrides,omitempty"`
+	GHESRepoPreReceiveOverrides     map[string]map[int]*GHESPreReceiveOverride `json:"ghes_repo_pre_receive_overrides,omitempty"`
+	NextGHESPreReceiveEnvironmentID int                                        `json:"next_ghes_pre_receive_environment_id"`
+	NextGHESPreReceiveHookID        int                                        `json:"next_ghes_pre_receive_hook_id"`
+	GHESLDAPUserMappings            map[string]string                          `json:"ghes_ldap_user_mappings,omitempty"`
+	GHESLDAPTeamMappings            map[int]string                             `json:"ghes_ldap_team_mappings,omitempty"`
+
 	// Dependabot repository access across organizations.
 	DependabotAccessibleRepoIDs []int  `json:"dependabot_accessible_repo_ids"`
 	DependabotDefaultLevel      string `json:"dependabot_default_level"` // "" = never set (null), else public|internal
@@ -87,21 +119,188 @@ type EnterpriseSettings struct {
 	// 14-day retention limit and a 10 GB per-repository storage limit.
 	ActionsCacheRetentionDays int `json:"actions_cache_retention_days"`
 	ActionsCacheSizeGB        int `json:"actions_cache_size_gb"`
+	ActionsDefaultCacheSizeGB int `json:"actions_default_cache_size_gb"`
 
 	// GitHub Actions OIDC custom property inclusions (repository custom
 	// properties included in OIDC token claims), in insertion order.
-	OIDCCustomProperties []string `json:"oidc_custom_properties"`
+	OIDCCustomProperties      []string `json:"oidc_custom_properties"`
+	OIDCIncludeEnterpriseSlug bool     `json:"oidc_include_enterprise_slug"`
+
+	// Enterprise-wide Actions policy. These settings are intentionally stored
+	// independently from organization policy: organization settings may
+	// narrow an enterprise policy but cannot replace its persisted source of
+	// truth.
+	ActionsEnabledOrganizations     string                       `json:"actions_enabled_organizations"`
+	ActionsAllowedActions           string                       `json:"actions_allowed_actions"`
+	ActionsSHAPinningRequired       bool                         `json:"actions_sha_pinning_required"`
+	ActionsSelectedOrganizationIDs  []int                        `json:"actions_selected_organization_ids"`
+	ActionsAllowed                  *ActionsAllowed              `json:"actions_allowed,omitempty"`
+	ActionsWorkflowPermissions      *WorkflowPermissions         `json:"actions_workflow_permissions,omitempty"`
+	ActionsArtifactRetentionDays    int                          `json:"actions_artifact_retention_days"`
+	ActionsForkPRApprovalPolicy     string                       `json:"actions_fork_pr_approval_policy"`
+	ActionsForkPRWorkflowsPrivate   *ForkPRWorkflowsPrivateRepos `json:"actions_fork_pr_workflows_private,omitempty"`
+	ActionsDisableSelfHostedRunners bool                         `json:"actions_disable_self_hosted_runners"`
 
 	// Copilot coding agent policy. "" = never set.
 	CopilotCodingAgentPolicy string   `json:"copilot_coding_agent_policy"`
 	CopilotCodingAgentOrgs   []string `json:"copilot_coding_agent_orgs"`
 }
 
+// EnterpriseAnnouncement is the enterprise-wide banner returned by the
+// announcement API. ExpiresAt is kept as the caller's RFC3339 representation
+// because GitHub returns an ISO-8601 string and null has distinct semantics.
+type EnterpriseAnnouncement struct {
+	Announcement    string  `json:"announcement"`
+	ExpiresAt       *string `json:"expires_at"`
+	UserDismissible bool    `json:"user_dismissible"`
+}
+
+// EnterpriseCodeSecurity is the legacy enterprise security policy. GitHub
+// keeps this API for compatibility alongside code-security configurations.
+type EnterpriseCodeSecurity struct {
+	AdvancedSecurityEnabledForNewRepositories                  bool    `json:"advanced_security_enabled_for_new_repositories"`
+	AdvancedSecurityEnabledNewUserNamespaceRepos               bool    `json:"advanced_security_enabled_new_user_namespace_repos"`
+	DependabotAlertsEnabledForNewRepositories                  bool    `json:"dependabot_alerts_enabled_for_new_repositories"`
+	SecretScanningEnabledForNewRepositories                    bool    `json:"secret_scanning_enabled_for_new_repositories"`
+	SecretScanningPushProtectionEnabledForNewRepositories      bool    `json:"secret_scanning_push_protection_enabled_for_new_repositories"`
+	SecretScanningPushProtectionCustomLink                     *string `json:"secret_scanning_push_protection_custom_link"`
+	SecretScanningNonProviderPatternsEnabledForNewRepositories bool    `json:"secret_scanning_non_provider_patterns_enabled_for_new_repositories"`
+}
+
+// EnterpriseAuditLogStream is a durable audit-log delivery configuration.
+// VendorSpecific contains encrypted/opaque connection settings and is never
+// rendered back to clients.
+type EnterpriseAuditLogStream struct {
+	ID             int                    `json:"id"`
+	StreamType     string                 `json:"stream_type"`
+	StreamDetails  string                 `json:"stream_details"`
+	Enabled        bool                   `json:"enabled"`
+	VendorSpecific map[string]interface{} `json:"vendor_specific,omitempty"`
+	CreatedAt      time.Time              `json:"created_at"`
+	UpdatedAt      time.Time              `json:"updated_at"`
+	PausedAt       *time.Time             `json:"paused_at"`
+}
+
 func defaultEnterpriseSettings() *EnterpriseSettings {
-	return &EnterpriseSettings{
+	return normalizeEnterpriseSettings(&EnterpriseSettings{
 		ActionsCacheRetentionDays: 14,
 		ActionsCacheSizeGB:        10,
+		ActionsDefaultCacheSizeGB: 10,
+	})
+}
+
+func normalizeEnterpriseSettings(settings *EnterpriseSettings) *EnterpriseSettings {
+	for _, hook := range settings.GHESGlobalHooks {
+		hook.Global = true
 	}
+	if settings.GHESPreReceiveEnvironments == nil {
+		settings.GHESPreReceiveEnvironments = map[int]*GHESPreReceiveEnvironment{}
+	}
+	if settings.GHESPreReceiveHooks == nil {
+		settings.GHESPreReceiveHooks = map[int]*GHESPreReceiveHook{}
+	}
+	if settings.GHESOrgPreReceiveOverrides == nil {
+		settings.GHESOrgPreReceiveOverrides = map[string]map[int]*GHESPreReceiveOverride{}
+	}
+	if settings.GHESRepoPreReceiveOverrides == nil {
+		settings.GHESRepoPreReceiveOverrides = map[string]map[int]*GHESPreReceiveOverride{}
+	}
+	if settings.NextGHESPreReceiveEnvironmentID == 0 {
+		settings.NextGHESPreReceiveEnvironmentID = 1
+	}
+	if settings.NextGHESPreReceiveHookID == 0 {
+		settings.NextGHESPreReceiveHookID = 1
+	}
+	if settings.GHESLDAPUserMappings == nil {
+		settings.GHESLDAPUserMappings = map[string]string{}
+	}
+	if settings.GHESLDAPTeamMappings == nil {
+		settings.GHESLDAPTeamMappings = map[int]string{}
+	}
+	if settings.NextAuditLogStreamID == 0 {
+		settings.NextAuditLogStreamID = 1
+	}
+	if settings.RepositoryCustomProperties == nil {
+		settings.RepositoryCustomProperties = map[string]*CustomProperty{}
+	}
+	if settings.OrganizationCustomProperties == nil {
+		settings.OrganizationCustomProperties = map[string]*CustomProperty{}
+	}
+	if settings.OrganizationPropertyValues == nil {
+		settings.OrganizationPropertyValues = map[string]map[string]interface{}{}
+	}
+	if settings.SCIMUsers == nil {
+		settings.SCIMUsers = map[string]*EnterpriseSCIMUser{}
+	}
+	if settings.SCIMGroups == nil {
+		settings.SCIMGroups = map[string]*EnterpriseSCIMGroup{}
+	}
+	if settings.EnterpriseRoleTeamAssignments == nil {
+		settings.EnterpriseRoleTeamAssignments = map[int][]int{}
+	}
+	if settings.EnterpriseRoleUserAssignments == nil {
+		settings.EnterpriseRoleUserAssignments = map[int][]int{}
+	}
+	if settings.VisualStudioSubscriptions == nil {
+		settings.VisualStudioSubscriptions = map[string]*VisualStudioSubscription{}
+	}
+	if settings.InnerSourceSyncJobs == nil {
+		settings.InnerSourceSyncJobs = map[string]*EnterpriseInnerSourceSyncJob{}
+	}
+	if settings.EnterpriseCopilotSeats == nil {
+		settings.EnterpriseCopilotSeats = map[string]*CopilotSeat{}
+	}
+	if settings.EnterpriseBudgets == nil {
+		settings.EnterpriseBudgets = map[string]*OrgBudget{}
+	}
+	if settings.EnterpriseCostCenters == nil {
+		settings.EnterpriseCostCenters = map[string]*EnterpriseCostCenter{}
+	}
+	if settings.EnterpriseBillingReports == nil {
+		settings.EnterpriseBillingReports = map[string]*EnterpriseBillingReport{}
+	}
+	if settings.GHESManagement == nil {
+		settings.GHESManagement = defaultGHESManagementState()
+	}
+	if settings.GHESManagement.Settings == nil {
+		settings.GHESManagement.Settings = map[string]interface{}{}
+	}
+	if settings.GHESManagement.SSHKeys == nil {
+		settings.GHESManagement.SSHKeys = []string{}
+	}
+	if settings.ActionsCacheRetentionDays == 0 {
+		settings.ActionsCacheRetentionDays = 14
+	}
+	if settings.ActionsCacheSizeGB == 0 {
+		settings.ActionsCacheSizeGB = 10
+	}
+	if settings.ActionsDefaultCacheSizeGB == 0 {
+		settings.ActionsDefaultCacheSizeGB = settings.ActionsCacheSizeGB
+	}
+	if settings.ActionsEnabledOrganizations == "" {
+		settings.ActionsEnabledOrganizations = "all"
+	}
+	if settings.ActionsAllowedActions == "" {
+		settings.ActionsAllowedActions = "all"
+	}
+	if settings.ActionsWorkflowPermissions == nil {
+		settings.ActionsWorkflowPermissions = &WorkflowPermissions{
+			DefaultWorkflowPermissions: "read",
+		}
+	}
+	if settings.ActionsWorkflowPermissions.DefaultWorkflowPermissions == "" {
+		settings.ActionsWorkflowPermissions.DefaultWorkflowPermissions = "read"
+	}
+	if settings.ActionsArtifactRetentionDays == 0 {
+		settings.ActionsArtifactRetentionDays = 90
+	}
+	if settings.ActionsForkPRApprovalPolicy == "" {
+		settings.ActionsForkPRApprovalPolicy = "first_time_contributors"
+	}
+	if settings.ActionsForkPRWorkflowsPrivate == nil {
+		settings.ActionsForkPRWorkflowsPrivate = &ForkPRWorkflowsPrivateRepos{}
+	}
+	return settings
 }
 
 func (st *Store) persistEnterpriseSettings() {
@@ -140,7 +339,7 @@ func (st *Store) CreateEnterpriseTeam(name, description, selectionType string, g
 	if notificationSetting == "" {
 		notificationSetting = "notifications_enabled"
 	}
-	now := time.Now().UTC()
+	now := st.currentTime()
 	t := &EnterpriseTeam{
 		ID:                        st.NextEnterpriseTeamID,
 		Name:                      name,
@@ -209,7 +408,7 @@ func (st *Store) UpdateEnterpriseTeam(t *EnterpriseTeam, name, description, sele
 	if groupID != nil {
 		t.GroupID = *groupID
 	}
-	t.UpdatedAt = time.Now().UTC()
+	t.UpdatedAt = st.currentTime()
 	st.persistEnterpriseTeam(t)
 	return true
 }
@@ -243,7 +442,7 @@ func (st *Store) AddEnterpriseTeamMember(t *EnterpriseTeam, userID int) {
 		}
 	}
 	t.MemberIDs = append(t.MemberIDs, userID)
-	t.UpdatedAt = time.Now().UTC()
+	t.UpdatedAt = st.currentTime()
 	st.persistEnterpriseTeam(t)
 }
 
@@ -256,7 +455,7 @@ func (st *Store) RemoveEnterpriseTeamMember(t *EnterpriseTeam, userID int) bool 
 	for i, id := range t.MemberIDs {
 		if id == userID {
 			t.MemberIDs = append(t.MemberIDs[:i], t.MemberIDs[i+1:]...)
-			t.UpdatedAt = time.Now().UTC()
+			t.UpdatedAt = st.currentTime()
 			st.persistEnterpriseTeam(t)
 			return true
 		}
@@ -302,7 +501,7 @@ func (st *Store) AddEnterpriseTeamOrg(t *EnterpriseTeam, orgLogin string) {
 	}
 	t.SelectedOrgLogins = append(t.SelectedOrgLogins, orgLogin)
 	sort.Strings(t.SelectedOrgLogins)
-	t.UpdatedAt = time.Now().UTC()
+	t.UpdatedAt = st.currentTime()
 	st.persistEnterpriseTeam(t)
 }
 
@@ -315,7 +514,7 @@ func (st *Store) RemoveEnterpriseTeamOrg(t *EnterpriseTeam, orgLogin string) boo
 	for i, l := range t.SelectedOrgLogins {
 		if l == orgLogin {
 			t.SelectedOrgLogins = append(t.SelectedOrgLogins[:i], t.SelectedOrgLogins[i+1:]...)
-			t.UpdatedAt = time.Now().UTC()
+			t.UpdatedAt = st.currentTime()
 			st.persistEnterpriseTeam(t)
 			return true
 		}
@@ -354,7 +553,7 @@ func (st *Store) CreateEnterpriseCodeSecurityConfig(c *EnterpriseCodeSecurityCon
 	st.mu.Lock()
 	defer st.mu.Unlock()
 
-	now := time.Now().UTC()
+	now := st.currentTime()
 	c.ID = st.NextEnterpriseCodeSecurityConfigID
 	st.NextEnterpriseCodeSecurityConfigID++
 	c.CreatedAt = now
@@ -392,7 +591,7 @@ func (st *Store) TouchEnterpriseCodeSecurityConfig(c *EnterpriseCodeSecurityConf
 	st.mu.Lock()
 	defer st.mu.Unlock()
 	mutate()
-	c.UpdatedAt = time.Now().UTC()
+	c.UpdatedAt = st.currentTime()
 	st.persistEnterpriseCodeSecurityConfig(c)
 }
 
@@ -474,7 +673,7 @@ func (st *Store) SetEnterpriseCodeSecurityConfigDefault(c *EnterpriseCodeSecurit
 	st.mu.Lock()
 	defer st.mu.Unlock()
 	c.DefaultForNewRepos = defaultForNewRepos
-	c.UpdatedAt = time.Now().UTC()
+	c.UpdatedAt = st.currentTime()
 	st.persistEnterpriseCodeSecurityConfig(c)
 }
 
@@ -512,6 +711,19 @@ func (st *Store) SetEnterpriseActionsCacheSizeGB(gb int) {
 	st.mu.Lock()
 	defer st.mu.Unlock()
 	st.EnterpriseSettings.ActionsCacheSizeGB = gb
+	if st.EnterpriseSettings.ActionsDefaultCacheSizeGB > gb {
+		st.EnterpriseSettings.ActionsDefaultCacheSizeGB = gb
+	}
+	st.persistEnterpriseSettings()
+}
+
+// SetEnterpriseActionsCacheUsagePolicy atomically updates the default and
+// maximum per-repository cache sizes.
+func (st *Store) SetEnterpriseActionsCacheUsagePolicy(defaultGB, maxGB int) {
+	st.mu.Lock()
+	defer st.mu.Unlock()
+	st.EnterpriseSettings.ActionsDefaultCacheSizeGB = defaultGB
+	st.EnterpriseSettings.ActionsCacheSizeGB = maxGB
 	st.persistEnterpriseSettings()
 }
 

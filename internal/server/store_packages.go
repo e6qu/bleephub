@@ -149,7 +149,7 @@ func (st *Store) CreatePackage(ownerType, ownerKey, pkgType, name, visibility st
 	if p := st.PackagesByOwnerKey[ownerKey][key]; p != nil {
 		return p, false
 	}
-	now := time.Now().UTC()
+	now := st.currentTime()
 	id := st.NextPackageID
 	p := &Package{
 		ID:          id,
@@ -204,7 +204,7 @@ func (st *Store) DeletePackage(ownerKey, pkgType, name string) bool {
 	if p == nil {
 		return false
 	}
-	now := time.Now().UTC()
+	now := st.currentTime()
 	p.Deleted = true
 	p.DeletedAt = &now
 	p.UpdatedAt = now
@@ -249,7 +249,7 @@ func (st *Store) RestorePackage(ownerKey, pkgType, name string) bool {
 	}
 	p.Deleted = false
 	p.DeletedAt = nil
-	p.UpdatedAt = time.Now().UTC()
+	p.UpdatedAt = st.currentTime()
 	if st.PackagesByOwnerKey[ownerKey] == nil {
 		st.PackagesByOwnerKey[ownerKey] = map[string]*Package{}
 	}
@@ -288,7 +288,7 @@ func (st *Store) CreatePackageVersion(ownerType, ownerKey, pkgType, pkgName, ver
 			Data:        data,
 		})
 	}
-	now := time.Now().UTC()
+	now := st.currentTime()
 	id := st.NextPackageVersionID
 	v := &PackageVersion{
 		ID:          id,
@@ -389,7 +389,7 @@ func (st *Store) DeletePackageVersion(id int) bool {
 	if v == nil || v.Deleted {
 		return false
 	}
-	now := time.Now().UTC()
+	now := st.currentTime()
 	v.Deleted = true
 	v.DeletedAt = &now
 	v.UpdatedAt = now
@@ -411,7 +411,7 @@ func (st *Store) RestorePackageVersion(id int) bool {
 	}
 	v.Deleted = false
 	v.DeletedAt = nil
-	v.UpdatedAt = time.Now().UTC()
+	v.UpdatedAt = st.currentTime()
 	if p := st.Packages[v.PackageID]; p != nil {
 		st.recomputeVersionCountLocked(p)
 		st.persistPackage(p)
@@ -428,7 +428,7 @@ func (st *Store) SetPackageVersionRegistryManifestDigest(id int, digest string) 
 		return false
 	}
 	v.RegistryManifestDigest = digest
-	v.UpdatedAt = time.Now().UTC()
+	v.UpdatedAt = st.currentTime()
 	st.persistPackageVersion(v)
 	return true
 }
@@ -460,7 +460,7 @@ func (st *Store) recomputeVersionCountLocked(p *Package) {
 		}
 	}
 	p.VersionCount = count
-	p.UpdatedAt = time.Now().UTC()
+	p.UpdatedAt = st.currentTime()
 }
 
 func (st *Store) persistPackage(p *Package) {

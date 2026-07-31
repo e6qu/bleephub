@@ -257,6 +257,9 @@ func TestForkPullRequestTriggersWithTheBaseWorkflowDefinition(t *testing.T) {
 	if runs[0].Sha != forkHeadSha {
 		t.Fatalf("run sha = %q, want the pull request head %q", runs[0].Sha, forkHeadSha)
 	}
+	if runs[0].Ref != "refs/pull/1/merge" {
+		t.Fatalf("run ref = %q, want refs/pull/1/merge", runs[0].Ref)
+	}
 
 	// And the approval machinery below the trigger, which was unreachable
 	// while no fork pull request ever produced a run, now engages.

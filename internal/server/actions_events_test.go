@@ -49,6 +49,58 @@ func waitUntil(t *testing.T, what string, cond func() bool) {
 	}
 }
 
+func TestActionsEventSnapshotsAreImmutable(t *testing.T) {
+	wf := &Workflow{
+		ID:           "snapshot-run",
+		Name:         "snapshot",
+		DisplayTitle: "before",
+		Status:       WorkflowStatusRunning,
+		EventPayload: map[string]interface{}{
+			"action": "queued",
+			"issue":  map[string]interface{}{"number": float64(1)},
+		},
+		TypedInputs: map[string]interface{}{"deploy": true},
+		Inputs:      map[string]string{"target": "staging"},
+	}
+	job := &WorkflowJob{
+		JobID:        "snapshot-job",
+		Status:       JobStatusQueued,
+		Outputs:      map[string]string{"url": "before"},
+		MatrixValues: map[string]interface{}{"os": "linux"},
+	}
+
+	wfSnapshot := cloneWorkflowEventSnapshot(wf)
+	jobSnapshot := cloneWorkflowJobEventSnapshot(job)
+
+	wf.DisplayTitle = "after"
+	wf.Status = WorkflowStatusCompleted
+	wf.EventPayload["action"] = "completed"
+	wf.EventPayload["issue"].(map[string]interface{})["number"] = float64(2)
+	wf.TypedInputs["deploy"] = false
+	wf.Inputs["target"] = "production"
+	job.Status = JobStatusCompleted
+	job.Outputs["url"] = "after"
+	job.MatrixValues["os"] = "windows"
+
+	if wfSnapshot.DisplayTitle != "before" || wfSnapshot.Status != WorkflowStatusRunning {
+		t.Fatalf("workflow scalar snapshot mutated: %+v", wfSnapshot)
+	}
+	if got := wfSnapshot.EventPayload["action"]; got != "queued" {
+		t.Fatalf("event action snapshot = %v, want queued", got)
+	}
+	if got := wfSnapshot.EventPayload["issue"].(map[string]interface{})["number"]; got != float64(1) {
+		t.Fatalf("nested event snapshot = %v, want 1", got)
+	}
+	if wfSnapshot.TypedInputs["deploy"] != true || wfSnapshot.Inputs["target"] != "staging" {
+		t.Fatalf("input snapshots mutated: typed=%v string=%v", wfSnapshot.TypedInputs, wfSnapshot.Inputs)
+	}
+	if jobSnapshot.Status != JobStatusQueued ||
+		jobSnapshot.Outputs["url"] != "before" ||
+		jobSnapshot.MatrixValues["os"] != "linux" {
+		t.Fatalf("job snapshot mutated: %+v", jobSnapshot)
+	}
+}
+
 func TestActionsChecksLifecycle(t *testing.T) {
 	repoKey := "checksowner/checks-repo"
 	cancelRepoRunsCleanup(t, repoKey)

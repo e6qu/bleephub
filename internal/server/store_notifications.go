@@ -177,7 +177,13 @@ func (st *Store) NotificationRowsFor(user *User, opts NotificationListOptions, c
 		return !canRead(row.repo)
 	})
 	sort.Slice(rows, func(i, j int) bool {
-		return rows[i].src.UpdatedAt.After(rows[j].src.UpdatedAt)
+		if !rows[i].src.UpdatedAt.Equal(rows[j].src.UpdatedAt) {
+			return rows[i].src.UpdatedAt.After(rows[j].src.UpdatedAt)
+		}
+		if rows[i].src.ID != rows[j].src.ID {
+			return rows[i].src.ID > rows[j].src.ID
+		}
+		return rows[i].src.Type < rows[j].src.Type
 	})
 
 	return rows

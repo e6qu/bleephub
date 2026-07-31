@@ -2,6 +2,7 @@ package bleephub
 
 import (
 	"fmt"
+	"reflect"
 	"sort"
 	"strings"
 )
@@ -17,7 +18,7 @@ func ExpandMatrix(m *MatrixDef) []map[string]interface{} {
 		return nil
 	}
 
-	combos := expandCartesian(m.Values)
+	combos := expandCartesian(m.Values, m.Order)
 	// Exclude first, then include. GitHub documents this order precisely so
 	// that an include entry can add back a combination exclude removed;
 	// running them the other way round lets the exclude delete what the
@@ -30,13 +31,20 @@ func ExpandMatrix(m *MatrixDef) []map[string]interface{} {
 
 // expandCartesian computes the Cartesian product of matrix values.
 // Keys are sorted for deterministic ordering.
-func expandCartesian(values map[string][]interface{}) []map[string]interface{} {
-	// Sort keys for deterministic order
-	keys := make([]string, 0, len(values))
-	for k := range values {
-		keys = append(keys, k)
+func expandCartesian(values map[string][]interface{}, declaredOrder []string) []map[string]interface{} {
+	keys := append([]string(nil), declaredOrder...)
+	seen := make(map[string]bool, len(keys))
+	for _, key := range keys {
+		seen[key] = true
 	}
-	sort.Strings(keys)
+	var remaining []string
+	for key := range values {
+		if !seen[key] {
+			remaining = append(remaining, key)
+		}
+	}
+	sort.Strings(remaining)
+	keys = append(keys, remaining...)
 
 	// Start with a single empty combination
 	result := []map[string]interface{}{make(map[string]interface{})}
@@ -115,7 +123,7 @@ func applyExcludes(combos []map[string]interface{}, excludes []map[string]interf
 func matchesSharedKeys(combo, entry map[string]interface{}) bool {
 	for k, v := range entry {
 		if cv, ok := combo[k]; ok {
-			if fmt.Sprintf("%v", cv) != fmt.Sprintf("%v", v) {
+			if !matrixValuesEqual(cv, v) {
 				return false
 			}
 		}
@@ -130,7 +138,7 @@ func matchesAllKeys(combo, entry map[string]interface{}) bool {
 		if !ok {
 			return false
 		}
-		if fmt.Sprintf("%v", cv) != fmt.Sprintf("%v", v) {
+		if !matrixValuesEqual(cv, v) {
 			return false
 		}
 	}
@@ -138,21 +146,39 @@ func matchesAllKeys(combo, entry map[string]interface{}) bool {
 }
 
 // MatrixJobName generates a display name like "test (ubuntu, 3.9)".
-func MatrixJobName(baseKey string, values map[string]interface{}) string {
+func MatrixJobName(baseKey string, values map[string]interface{}, declarationOrder ...[]string) string {
 	if len(values) == 0 {
 		return baseKey
 	}
 
-	// Sort keys for deterministic ordering
-	keys := make([]string, 0, len(values))
-	for k := range values {
-		keys = append(keys, k)
+	var keys []string
+	if len(declarationOrder) > 0 {
+		for _, key := range declarationOrder[0] {
+			if _, ok := values[key]; ok {
+				keys = append(keys, key)
+			}
+		}
 	}
-	sort.Strings(keys)
+	seen := make(map[string]bool, len(keys))
+	for _, key := range keys {
+		seen[key] = true
+	}
+	var remaining []string
+	for key := range values {
+		if !seen[key] {
+			remaining = append(remaining, key)
+		}
+	}
+	sort.Strings(remaining)
+	keys = append(keys, remaining...)
 
 	parts := make([]string, 0, len(keys))
 	for _, k := range keys {
 		parts = append(parts, fmt.Sprintf("%v", values[k]))
 	}
 	return fmt.Sprintf("%s (%s)", baseKey, strings.Join(parts, ", "))
+}
+
+func matrixValuesEqual(left, right interface{}) bool {
+	return reflect.DeepEqual(normalizeYAMLValue(left), normalizeYAMLValue(right))
 }

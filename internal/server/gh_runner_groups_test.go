@@ -6,20 +6,20 @@ import (
 	"testing"
 )
 
-func registerRunnerForLabels(t *testing.T) int {
+func registerRunnerForLabels(t *testing.T, scope runnerScope) int {
 	t.Helper()
 	// Agent registration presents the scoped registration token config.sh is
 	// given, not a personal access token.
 	body := `{"name":"label-runner","labels":[{"name":"self-hosted","type":"system"},{"name":"linux","type":"system"}]}`
-	token := mustRunnerRegistrationToken(t, runnerScope{Repo: "labels-owner/labels-repo"})
+	token := mustRunnerRegistrationToken(t, scope)
 	resp := runnerDo(t, "POST", testBaseURL+"/_apis/v1/Agent/1", token, body)
 	agent := decodeJSONWithStatus(t, resp, 200)
 	return int(agent["id"].(float64))
 }
 
 func TestRunnerLabels_Repo_ListSetDelete(t *testing.T) {
-	agentID := registerRunnerForLabels(t)
 	repo := createTestRepo(t)
+	agentID := registerRunnerForLabels(t, runnerScope{Repo: repo})
 
 	// List labels: should include the two system labels.
 	listResp := ghGet(t, fmt.Sprintf("/api/v3/repos/%s/actions/runners/%d/labels", repo, agentID), defaultToken)
@@ -53,8 +53,8 @@ func TestRunnerLabels_Repo_ListSetDelete(t *testing.T) {
 }
 
 func TestRunnerLabels_Org_ListSet(t *testing.T) {
-	agentID := registerRunnerForLabels(t)
 	org := createTestOrg(t)
+	agentID := registerRunnerForLabels(t, runnerScope{Org: org})
 
 	listResp := ghGet(t, fmt.Sprintf("/api/v3/orgs/%s/actions/runners/%d/labels", org, agentID), defaultToken)
 	listData := decodeJSONWithStatus(t, listResp, 200)
@@ -72,7 +72,7 @@ func TestRunnerLabels_Org_ListSet(t *testing.T) {
 }
 
 func TestRunnerLabels_Org_UnknownOrg(t *testing.T) {
-	agentID := registerRunnerForLabels(t)
+	agentID := registerRunnerForLabels(t, runnerScope{Org: "different-org"})
 	listResp := ghGet(t, fmt.Sprintf("/api/v3/orgs/no-such-org-999/actions/runners/%d/labels", agentID), defaultToken)
 	if listResp.StatusCode != 404 {
 		body, _ := io.ReadAll(listResp.Body)

@@ -1,7 +1,7 @@
 package bleephub
 
-// GitHub-hosted runners REST surface for organizations
-// (/orgs/{org}/actions/hosted-runners): runner CRUD, the GitHub-owned /
+// GitHub-hosted runners REST surface for organizations and enterprises:
+// runner CRUD, the GitHub-owned /
 // partner image catalogs, custom image definitions + versions, machine
 // sizes, platforms, static-IP limits, and the runner-group hosted-runner
 // listing. Hosted runners are org-scoped configuration resources backed
@@ -17,11 +17,12 @@ import (
 	"time"
 )
 
-// HostedRunner models one GitHub-hosted runner configured in an
-// organization (the actions-hosted-runner resource).
+// HostedRunner models one GitHub-hosted runner configured in an organization
+// or enterprise (the actions-hosted-runner resource).
 type HostedRunner struct {
 	ID               int        `json:"id"`
 	Org              string     `json:"org"`
+	Enterprise       string     `json:"enterprise,omitempty"`
 	Name             string     `json:"name"`
 	RunnerGroupID    int        `json:"runner_group_id"`
 	ImageID          string     `json:"image_id"`
@@ -41,12 +42,13 @@ type HostedRunner struct {
 // HostedRunnerCustomImage models one custom runner image definition
 // (the actions-hosted-runner-custom-image resource) with its versions.
 type HostedRunnerCustomImage struct {
-	ID       int                               `json:"id"`
-	Org      string                            `json:"org"`
-	Name     string                            `json:"name"`
-	Platform string                            `json:"platform"`
-	State    string                            `json:"state"`
-	Versions []*HostedRunnerCustomImageVersion `json:"versions"`
+	ID         int                               `json:"id"`
+	Org        string                            `json:"org"`
+	Enterprise string                            `json:"enterprise,omitempty"`
+	Name       string                            `json:"name"`
+	Platform   string                            `json:"platform"`
+	State      string                            `json:"state"`
+	Versions   []*HostedRunnerCustomImageVersion `json:"versions"`
 }
 
 // HostedRunnerCustomImageVersion is one version of a custom image.
@@ -168,15 +170,24 @@ func (st *Store) persistHostedRunnerCustomImageLocked(img *HostedRunnerCustomIma
 // with image_gen enabled; the REST v3 surface only lists, reads, and
 // deletes them, so this is the store-level creation entry point.
 func (st *Store) CreateHostedRunnerCustomImage(org, name, platform string) *HostedRunnerCustomImage {
+	return st.createHostedRunnerCustomImage(runnerScope{Org: org}, name, platform)
+}
+
+func (st *Store) CreateEnterpriseHostedRunnerCustomImage(enterprise, name, platform string) *HostedRunnerCustomImage {
+	return st.createHostedRunnerCustomImage(runnerScope{Enterprise: enterprise}, name, platform)
+}
+
+func (st *Store) createHostedRunnerCustomImage(target runnerScope, name, platform string) *HostedRunnerCustomImage {
 	st.mu.Lock()
 	defer st.mu.Unlock()
 	img := &HostedRunnerCustomImage{
-		ID:       st.NextHostedRunnerImageID,
-		Org:      org,
-		Name:     name,
-		Platform: platform,
-		State:    "Ready",
-		Versions: []*HostedRunnerCustomImageVersion{},
+		ID:         st.NextHostedRunnerImageID,
+		Org:        target.Org,
+		Enterprise: target.Enterprise,
+		Name:       name,
+		Platform:   platform,
+		State:      "Ready",
+		Versions:   []*HostedRunnerCustomImageVersion{},
 	}
 	st.NextHostedRunnerImageID++
 	if st.HostedRunnerCustomImages == nil {
@@ -206,7 +217,7 @@ func (st *Store) AddHostedRunnerCustomImageVersion(imageID int, version string, 
 		Version:      version,
 		State:        "Ready",
 		SizeGB:       sizeGB,
-		CreatedOn:    time.Now().UTC(),
+		CreatedOn:    st.currentTime(),
 		StateDetails: "None",
 	})
 	st.persistHostedRunnerCustomImageLocked(img)
@@ -326,12 +337,34 @@ func hostedRunnerCustomImageVersionJSON(v *HostedRunnerCustomImageVersion) map[s
 
 // --- Runner handlers ---
 
-// orgHostedRunnersLocked returns the org's hosted runners sorted by id.
+func hostedRunnerMatchesTarget(runner *HostedRunner, target runnerScope) bool {
+	switch {
+	case target.Org != "":
+		return strings.EqualFold(runner.Org, target.Org) && runner.Enterprise == ""
+	case target.Enterprise != "":
+		return strings.EqualFold(runner.Enterprise, target.Enterprise) && runner.Org == ""
+	default:
+		return false
+	}
+}
+
+func customImageMatchesTarget(image *HostedRunnerCustomImage, target runnerScope) bool {
+	switch {
+	case target.Org != "":
+		return strings.EqualFold(image.Org, target.Org) && image.Enterprise == ""
+	case target.Enterprise != "":
+		return strings.EqualFold(image.Enterprise, target.Enterprise) && image.Org == ""
+	default:
+		return false
+	}
+}
+
+// hostedRunnersLocked returns the target's hosted runners sorted by id.
 // Callers hold the store lock.
-func (st *Store) orgHostedRunnersLocked(org string) []*HostedRunner {
+func (st *Store) hostedRunnersLocked(target runnerScope) []*HostedRunner {
 	out := make([]*HostedRunner, 0)
 	for _, hr := range st.HostedRunners {
-		if strings.EqualFold(hr.Org, org) {
+		if hostedRunnerMatchesTarget(hr, target) {
 			out = append(out, hr)
 		}
 	}
@@ -340,9 +373,12 @@ func (st *Store) orgHostedRunnersLocked(org string) []*HostedRunner {
 }
 
 func (s *Server) handleListHostedRunners(w http.ResponseWriter, r *http.Request) {
-	org := r.PathValue("org")
+	target, ok := s.runnerGroupTarget(w, r)
+	if !ok {
+		return
+	}
 	s.store.mu.RLock()
-	all := s.store.orgHostedRunnersLocked(org)
+	all := s.store.hostedRunnersLocked(target)
 	s.store.mu.RUnlock()
 	page := paginateAndLink(w, r, all)
 	runners := make([]map[string]any, 0, len(page))
@@ -356,11 +392,11 @@ func (s *Server) handleListHostedRunners(w http.ResponseWriter, r *http.Request)
 }
 
 // staticIPUsageLocked counts the static public IP addresses reserved by
-// the org's hosted runners: each static-IP runner reserves one address
+// the target's hosted runners: each static-IP runner reserves one address
 // per concurrent runner (maximum_runners). Callers hold the store lock.
-func (st *Store) staticIPUsageLocked(org string) int {
+func (st *Store) staticIPUsageLocked(target runnerScope) int {
 	usage := 0
-	for _, hr := range st.orgHostedRunnersLocked(org) {
+	for _, hr := range st.hostedRunnersLocked(target) {
 		if hr.PublicIPEnabled {
 			usage += hr.MaximumRunners
 		}
@@ -371,7 +407,7 @@ func (st *Store) staticIPUsageLocked(org string) int {
 // resolveHostedRunnerImage resolves an image reference (id + source +
 // optional version) against the catalogs / the org's custom image
 // definitions. Returns a filled-in template or an error message.
-func (s *Server) resolveHostedRunnerImage(org, id, source, version string) (*HostedRunner, string) {
+func (s *Server) resolveHostedRunnerImage(target runnerScope, id, source, version string) (*HostedRunner, string) {
 	out := &HostedRunner{ImageID: id, ImageSource: source, ImageVersion: version}
 	switch source {
 	case "github":
@@ -394,7 +430,7 @@ func (s *Server) resolveHostedRunnerImage(org, id, source, version string) (*Hos
 		s.store.mu.RLock()
 		img := s.store.HostedRunnerCustomImages[imgID]
 		var ver *HostedRunnerCustomImageVersion
-		if img != nil && strings.EqualFold(img.Org, org) {
+		if img != nil && customImageMatchesTarget(img, target) {
 			for _, v := range img.Versions {
 				if version == "" || version == "latest" || v.Version == version {
 					// Versions append in generation order, so on equal
@@ -406,7 +442,7 @@ func (s *Server) resolveHostedRunnerImage(org, id, source, version string) (*Hos
 			}
 		}
 		s.store.mu.RUnlock()
-		if img == nil || !strings.EqualFold(img.Org, org) {
+		if img == nil || !customImageMatchesTarget(img, target) {
 			return nil, fmt.Sprintf("custom image definition %q not found", id)
 		}
 		if ver == nil {
@@ -421,7 +457,10 @@ func (s *Server) resolveHostedRunnerImage(org, id, source, version string) (*Hos
 }
 
 func (s *Server) handleCreateHostedRunner(w http.ResponseWriter, r *http.Request) {
-	org := r.PathValue("org")
+	target, ok := s.runnerGroupTarget(w, r)
+	if !ok {
+		return
+	}
 	var req struct {
 		Name  string `json:"name"`
 		Image struct {
@@ -458,7 +497,7 @@ func (s *Server) handleCreateHostedRunner(w http.ResponseWriter, r *http.Request
 	if source == "" {
 		source = "github"
 	}
-	resolved, errMsg := s.resolveHostedRunnerImage(org, req.Image.ID, source, req.Image.Version)
+	resolved, errMsg := s.resolveHostedRunnerImage(target, req.Image.ID, source, req.Image.Version)
 	if errMsg != "" {
 		writeGHError(w, http.StatusUnprocessableEntity, errMsg)
 		return
@@ -469,21 +508,23 @@ func (s *Server) handleCreateHostedRunner(w http.ResponseWriter, r *http.Request
 	}
 
 	s.store.mu.Lock()
-	s.ensureDefaultRunnerGroupLocked()
-	if s.store.RunnerGroups[*req.RunnerGroupID] == nil {
+	s.ensureDefaultRunnerGroupLocked(target)
+	group := s.store.RunnerGroups[*req.RunnerGroupID]
+	if group == nil || !runnerGroupMatchesTarget(group, target) {
 		s.store.mu.Unlock()
 		writeGHValidationError(w, "HostedRunner", "runner_group_id", "invalid")
 		return
 	}
-	if req.EnableStaticIP && s.store.staticIPUsageLocked(org)+maxRunners > hostedRunnerStaticIPMaximum {
+	if req.EnableStaticIP && s.store.staticIPUsageLocked(target)+maxRunners > hostedRunnerStaticIPMaximum {
 		s.store.mu.Unlock()
 		writeGHError(w, http.StatusUnprocessableEntity,
-			fmt.Sprintf("enabling static IPs would exceed the organization's %d static public IP address limit", hostedRunnerStaticIPMaximum))
+			fmt.Sprintf("enabling static IPs would exceed the target's %d static public IP address limit", hostedRunnerStaticIPMaximum))
 		return
 	}
 	hr := &HostedRunner{
 		ID:               s.store.NextHostedRunnerID,
-		Org:              org,
+		Org:              target.Org,
+		Enterprise:       target.Enterprise,
 		Name:             req.Name,
 		RunnerGroupID:    *req.RunnerGroupID,
 		ImageID:          resolved.ImageID,
@@ -496,7 +537,7 @@ func (s *Server) handleCreateHostedRunner(w http.ResponseWriter, r *http.Request
 		MaximumRunners:   maxRunners,
 		PublicIPEnabled:  req.EnableStaticIP,
 		ImageGen:         req.ImageGen,
-		CreatedAt:        time.Now().UTC(),
+		CreatedAt:        s.store.currentTime(),
 	}
 	s.store.NextHostedRunnerID++
 	s.store.HostedRunners[hr.ID] = hr
@@ -506,9 +547,13 @@ func (s *Server) handleCreateHostedRunner(w http.ResponseWriter, r *http.Request
 	writeJSON(w, http.StatusCreated, hostedRunnerJSON(hr, ""))
 }
 
-// lookupHostedRunner resolves the path's hosted_runner_id within the
-// org; nil + handled response when missing.
+// lookupHostedRunner resolves the path's hosted_runner_id within the owning
+// organization or enterprise; nil + handled response when missing.
 func (s *Server) lookupHostedRunner(w http.ResponseWriter, r *http.Request) *HostedRunner {
+	target, ok := s.runnerGroupTarget(w, r)
+	if !ok {
+		return nil
+	}
 	id, err := strconv.Atoi(r.PathValue("hosted_runner_id"))
 	if err != nil {
 		writeGHError(w, http.StatusNotFound, "Not Found")
@@ -517,7 +562,7 @@ func (s *Server) lookupHostedRunner(w http.ResponseWriter, r *http.Request) *Hos
 	s.store.mu.RLock()
 	hr := s.store.HostedRunners[id]
 	s.store.mu.RUnlock()
-	if hr == nil || !strings.EqualFold(hr.Org, r.PathValue("org")) {
+	if hr == nil || !hostedRunnerMatchesTarget(hr, target) {
 		writeGHError(w, http.StatusNotFound, "Not Found")
 		return nil
 	}
@@ -537,7 +582,10 @@ func (s *Server) handleUpdateHostedRunner(w http.ResponseWriter, r *http.Request
 	if hr == nil {
 		return
 	}
-	org := r.PathValue("org")
+	target, ok := s.runnerGroupTarget(w, r)
+	if !ok {
+		return
+	}
 	var req struct {
 		Name           *string `json:"name"`
 		Size           *string `json:"size"`
@@ -568,7 +616,7 @@ func (s *Server) handleUpdateHostedRunner(w http.ResponseWriter, r *http.Request
 		if req.ImageVersion != nil {
 			version = *req.ImageVersion
 		}
-		resolved, errMsg := s.resolveHostedRunnerImage(org, *req.ImageID, source, version)
+		resolved, errMsg := s.resolveHostedRunnerImage(target, *req.ImageID, source, version)
 		if errMsg != "" {
 			writeGHError(w, http.StatusUnprocessableEntity, errMsg)
 			return
@@ -578,8 +626,9 @@ func (s *Server) handleUpdateHostedRunner(w http.ResponseWriter, r *http.Request
 
 	s.store.mu.Lock()
 	if req.RunnerGroupID != nil {
-		s.ensureDefaultRunnerGroupLocked()
-		if s.store.RunnerGroups[*req.RunnerGroupID] == nil {
+		s.ensureDefaultRunnerGroupLocked(target)
+		group := s.store.RunnerGroups[*req.RunnerGroupID]
+		if group == nil || !runnerGroupMatchesTarget(group, target) {
 			s.store.mu.Unlock()
 			writeGHValidationError(w, "HostedRunner", "runner_group_id", "invalid")
 			return
@@ -591,10 +640,10 @@ func (s *Server) handleUpdateHostedRunner(w http.ResponseWriter, r *http.Request
 		if req.MaximumRunners != nil && *req.MaximumRunners > 0 {
 			max = *req.MaximumRunners
 		}
-		if s.store.staticIPUsageLocked(org)+max > hostedRunnerStaticIPMaximum {
+		if s.store.staticIPUsageLocked(target)+max > hostedRunnerStaticIPMaximum {
 			s.store.mu.Unlock()
 			writeGHError(w, http.StatusUnprocessableEntity,
-				fmt.Sprintf("enabling static IPs would exceed the organization's %d static public IP address limit", hostedRunnerStaticIPMaximum))
+				fmt.Sprintf("enabling static IPs would exceed the target's %d static public IP address limit", hostedRunnerStaticIPMaximum))
 			return
 		}
 	}
@@ -648,10 +697,9 @@ func (s *Server) handleListRunnerGroupHostedRunners(w http.ResponseWriter, r *ht
 	if g == nil {
 		return
 	}
-	org := r.PathValue("org")
 	s.store.mu.RLock()
 	members := make([]*HostedRunner, 0)
-	for _, hr := range s.store.orgHostedRunnersLocked(org) {
+	for _, hr := range s.store.hostedRunnersLocked(g.Scope) {
 		if hr.RunnerGroupID == g.ID {
 			members = append(members, hr)
 		}
@@ -711,9 +759,12 @@ func (s *Server) handleHostedRunnerPlatforms(w http.ResponseWriter, r *http.Requ
 }
 
 func (s *Server) handleHostedRunnerLimits(w http.ResponseWriter, r *http.Request) {
-	org := r.PathValue("org")
+	target, ok := s.runnerGroupTarget(w, r)
+	if !ok {
+		return
+	}
 	s.store.mu.RLock()
-	usage := s.store.staticIPUsageLocked(org)
+	usage := s.store.staticIPUsageLocked(target)
 	s.store.mu.RUnlock()
 	writeJSON(w, http.StatusOK, map[string]any{
 		"public_ips": map[string]any{
@@ -725,12 +776,12 @@ func (s *Server) handleHostedRunnerLimits(w http.ResponseWriter, r *http.Request
 
 // --- Custom image handlers ---
 
-// orgCustomImagesLocked returns the org's custom image definitions
-// sorted by id. Callers hold the store lock.
-func (st *Store) orgCustomImagesLocked(org string) []*HostedRunnerCustomImage {
+// customImagesLocked returns the target's custom image definitions sorted by
+// id. Callers hold the store lock.
+func (st *Store) customImagesLocked(target runnerScope) []*HostedRunnerCustomImage {
 	out := make([]*HostedRunnerCustomImage, 0)
 	for _, img := range st.HostedRunnerCustomImages {
-		if strings.EqualFold(img.Org, org) {
+		if customImageMatchesTarget(img, target) {
 			out = append(out, img)
 		}
 	}
@@ -739,9 +790,12 @@ func (st *Store) orgCustomImagesLocked(org string) []*HostedRunnerCustomImage {
 }
 
 func (s *Server) handleListHostedRunnerCustomImages(w http.ResponseWriter, r *http.Request) {
-	org := r.PathValue("org")
+	target, ok := s.runnerGroupTarget(w, r)
+	if !ok {
+		return
+	}
 	s.store.mu.RLock()
-	all := s.store.orgCustomImagesLocked(org)
+	all := s.store.customImagesLocked(target)
 	images := make([]map[string]any, 0, len(all))
 	for _, img := range all {
 		images = append(images, hostedRunnerCustomImageJSON(img))
@@ -753,9 +807,13 @@ func (s *Server) handleListHostedRunnerCustomImages(w http.ResponseWriter, r *ht
 	})
 }
 
-// lookupCustomImage resolves the path's image_definition_id within the
-// org; nil + handled response when missing.
+// lookupCustomImage resolves the path's image_definition_id within the owning
+// organization or enterprise; nil + handled response when missing.
 func (s *Server) lookupCustomImage(w http.ResponseWriter, r *http.Request) *HostedRunnerCustomImage {
+	target, ok := s.runnerGroupTarget(w, r)
+	if !ok {
+		return nil
+	}
 	id, err := strconv.Atoi(r.PathValue("image_definition_id"))
 	if err != nil {
 		writeGHError(w, http.StatusNotFound, "Not Found")
@@ -764,7 +822,7 @@ func (s *Server) lookupCustomImage(w http.ResponseWriter, r *http.Request) *Host
 	s.store.mu.RLock()
 	img := s.store.HostedRunnerCustomImages[id]
 	s.store.mu.RUnlock()
-	if img == nil || !strings.EqualFold(img.Org, r.PathValue("org")) {
+	if img == nil || !customImageMatchesTarget(img, target) {
 		writeGHError(w, http.StatusNotFound, "Not Found")
 		return nil
 	}

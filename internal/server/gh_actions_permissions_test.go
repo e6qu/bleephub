@@ -2,6 +2,7 @@ package bleephub
 
 import (
 	"fmt"
+	"net/http"
 	"strconv"
 	"testing"
 )
@@ -247,7 +248,14 @@ func TestOrgCacheUsage_ComputedFromRealCacheStore(t *testing.T) {
 
 func TestRunnerLabels_AddAndRemoveSingle(t *testing.T) {
 	org := createTestOrg(t)
-	ensureSeededRepo(testServer, "octo/repo")
+	repoResp := ghPost(t, "/api/v3/orgs/"+org+"/repos", defaultToken,
+		map[string]interface{}{"name": "labels-repo"})
+	if repoResp.StatusCode != http.StatusCreated {
+		repoResp.Body.Close()
+		t.Fatalf("create labels repository: got %d, want 201", repoResp.StatusCode)
+	}
+	repoResp.Body.Close()
+	repo := org + "/labels-repo"
 
 	// Register a runner with a system label through the real agent
 	// registration path.
@@ -257,13 +265,14 @@ func TestRunnerLabels_AddAndRemoveSingle(t *testing.T) {
 		Name:   "labels-test-runner",
 		Status: "online",
 		Labels: []Label{{ID: 1, Name: "self-hosted", Type: "system"}},
+		Scope:  runnerScope{Org: org},
 	}
 	testServer.store.NextAgent++
 	testServer.store.Agents[agent.ID] = agent
 	testServer.store.mu.Unlock()
 
 	orgPath := fmt.Sprintf("/api/v3/orgs/%s/actions/runners/%d/labels", org, agent.ID)
-	repoPath := fmt.Sprintf("/api/v3/repos/octo/repo/actions/runners/%d/labels", agent.ID)
+	repoPath := fmt.Sprintf("/api/v3/repos/%s/actions/runners/%d/labels", repo, agent.ID)
 
 	// POST adds labels (org scope).
 	data := decodeJSONWithStatus(t, ghPost(t, orgPath, defaultToken, map[string][]string{

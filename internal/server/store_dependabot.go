@@ -77,7 +77,7 @@ func (st *Store) createDependabotAlertLocked(repoKey, pkgName, ecosystem, manife
 		st.DependabotNextNumber[repoKey] = 1
 	}
 
-	now := time.Now().UTC()
+	now := st.currentTime()
 	if state == "" {
 		state = "open"
 	}
@@ -179,7 +179,7 @@ func (st *Store) UpdateDependabotAlert(a *DependabotAlert, state, dismissedReaso
 		return err
 	}
 
-	now := time.Now().UTC()
+	now := st.currentTime()
 	switch state {
 	case "dismissed":
 		a.State = "dismissed"
@@ -241,7 +241,7 @@ func (st *Store) UpsertDependabotSecret(repoKey, name, value, keyID string) bool
 	st.mu.Lock()
 	defer st.mu.Unlock()
 
-	now := time.Now().UTC()
+	now := st.currentTime()
 	m := st.DependabotSecrets[repoKey]
 	if m == nil {
 		m = make(map[string]*DependabotSecret)
@@ -286,7 +286,7 @@ func (st *Store) UpsertDependabotOrgSecret(orgLogin, name, value, keyID, visibil
 	st.mu.Lock()
 	defer st.mu.Unlock()
 
-	now := time.Now().UTC()
+	now := st.currentTime()
 	m := st.DependabotOrgSecrets[orgLogin]
 	if m == nil {
 		m = make(map[string]*DependabotOrgSecret)
@@ -347,7 +347,7 @@ func (st *Store) SetDependabotOrgSecretSelectedRepos(orgLogin, name string, ids 
 	}
 	sec := m[name]
 	sec.SelectedRepoIDs = append([]int(nil), ids...)
-	sec.UpdatedAt = time.Now().UTC()
+	sec.UpdatedAt = st.currentTime()
 	if st.persist != nil {
 		st.persist.MustPut("dependabot_org_secrets", orgLogin, m)
 	}
@@ -366,7 +366,7 @@ func (st *Store) UpsertDependabotUserSecret(userLogin, name, value, keyID string
 	st.mu.Lock()
 	defer st.mu.Unlock()
 
-	now := time.Now().UTC()
+	now := st.currentTime()
 	m := st.DependabotUserSecrets[userLogin]
 	if m == nil {
 		m = make(map[string]*DependabotUserSecret)

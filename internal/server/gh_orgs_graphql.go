@@ -10,9 +10,11 @@ import (
 
 // addOrgFieldsToSchema adds Organization types, queries, and viewer.organizations to the schema.
 func (s *Server) addOrgFieldsToSchema(userType, queryType *graphql.Object, nodeInterface *graphql.Interface) *graphql.Object {
+	dateTime := s.graphQLStringScalar("DateTime")
+	uri := s.graphQLStringScalar("URI")
 	orgType := graphql.NewObject(graphql.ObjectConfig{
 		Name:       "Organization",
-		Interfaces: []*graphql.Interface{nodeInterface},
+		Interfaces: []*graphql.Interface{nodeInterface, s.graphqlTypes.repositoryOwner},
 		Fields: graphql.Fields{
 			"id": &graphql.Field{
 				Type: graphql.NewNonNull(graphql.ID),
@@ -24,25 +26,19 @@ func (s *Server) addOrgFieldsToSchema(userType, queryType *graphql.Object, nodeI
 					return o["nodeID"], nil
 				},
 			},
-			"databaseId":  &graphql.Field{Type: graphql.Int},
-			"login":       &graphql.Field{Type: graphql.NewNonNull(graphql.String)},
-			"name":        &graphql.Field{Type: graphql.String},
-			"description": &graphql.Field{Type: graphql.String},
-			"email":       &graphql.Field{Type: graphql.String},
-			"url":         &graphql.Field{Type: graphql.NewNonNull(graphql.String)},
-			"avatarUrl":   &graphql.Field{Type: graphql.String},
-			"createdAt":   &graphql.Field{Type: graphql.NewNonNull(graphql.String)},
-			"updatedAt":   &graphql.Field{Type: graphql.NewNonNull(graphql.String)},
-		},
-	})
-
-	orgPageInfoType := graphql.NewObject(graphql.ObjectConfig{
-		Name: "OrgPageInfo",
-		Fields: graphql.Fields{
-			"hasNextPage":     &graphql.Field{Type: graphql.NewNonNull(graphql.Boolean)},
-			"hasPreviousPage": &graphql.Field{Type: graphql.NewNonNull(graphql.Boolean)},
-			"startCursor":     &graphql.Field{Type: graphql.String},
-			"endCursor":       &graphql.Field{Type: graphql.String},
+			"databaseId":   &graphql.Field{Type: graphql.Int},
+			"login":        &graphql.Field{Type: graphql.NewNonNull(graphql.String)},
+			"name":         &graphql.Field{Type: graphql.String},
+			"description":  &graphql.Field{Type: graphql.String},
+			"email":        &graphql.Field{Type: graphql.String},
+			"url":          &graphql.Field{Type: graphql.NewNonNull(uri)},
+			"resourcePath": &graphql.Field{Type: graphql.NewNonNull(uri)},
+			"avatarUrl": &graphql.Field{
+				Type: graphql.NewNonNull(uri),
+				Args: graphql.FieldConfigArgument{"size": &graphql.ArgumentConfig{Type: graphql.Int}},
+			},
+			"createdAt": &graphql.Field{Type: graphql.NewNonNull(dateTime)},
+			"updatedAt": &graphql.Field{Type: graphql.NewNonNull(dateTime)},
 		},
 	})
 
@@ -60,17 +56,14 @@ func (s *Server) addOrgFieldsToSchema(userType, queryType *graphql.Object, nodeI
 			"nodes":      &graphql.Field{Type: graphql.NewList(orgType)},
 			"edges":      &graphql.Field{Type: graphql.NewList(orgEdgeType)},
 			"totalCount": &graphql.Field{Type: graphql.NewNonNull(graphql.Int)},
-			"pageInfo":   &graphql.Field{Type: graphql.NewNonNull(orgPageInfoType)},
+			"pageInfo":   &graphql.Field{Type: graphql.NewNonNull(s.gqlPageInfoType())},
 		},
 	})
 
 	// Add organizations field to User type (for viewer.organizations)
 	userType.AddFieldConfig("organizations", &graphql.Field{
-		Type: orgConnectionType,
-		Args: graphql.FieldConfigArgument{
-			"first": &graphql.ArgumentConfig{Type: graphql.Int},
-			"after": &graphql.ArgumentConfig{Type: graphql.String},
-		},
+		Type: graphql.NewNonNull(orgConnectionType),
+		Args: relayConnectionArgs(),
 		Resolve: func(p graphql.ResolveParams) (interface{}, error) {
 			u, ok := p.Source.(map[string]interface{})
 			if !ok {
@@ -82,16 +75,17 @@ func (s *Server) addOrgFieldsToSchema(userType, queryType *graphql.Object, nodeI
 
 			// Sort by creation time (newest first)
 			sort.Slice(orgs, func(i, j int) bool {
-				return orgs[i].CreatedAt.After(orgs[j].CreatedAt)
+				if !orgs[i].CreatedAt.Equal(orgs[j].CreatedAt) {
+					return orgs[i].CreatedAt.After(orgs[j].CreatedAt)
+				}
+				return orgs[i].ID > orgs[j].ID
 			})
 
-			first := 30
-			if f, ok := p.Args["first"].(int); ok && f > 0 {
-				first = f
+			nodes := make([]map[string]interface{}, 0, len(orgs))
+			for _, org := range orgs {
+				nodes = append(nodes, orgToGraphQL(org))
 			}
-			after, _ := p.Args["after"].(string)
-
-			return paginateOrgs(orgs, first, after), nil
+			return paginateGQLMaps(nodes, p.Args), nil
 		},
 	})
 
@@ -105,7 +99,9 @@ func (s *Server) addOrgFieldsToSchema(userType, queryType *graphql.Object, nodeI
 			login, _ := p.Args["login"].(string)
 			org := s.store.GetOrg(login)
 			if org == nil {
-				return nil, nil
+				return nil, &ghNotFoundError{
+					message: fmt.Sprintf("Could not resolve to an Organization with the login of '%s'.", login),
+				}
 			}
 			return orgToGraphQL(org), nil
 		},
@@ -116,20 +112,16 @@ func (s *Server) addOrgFieldsToSchema(userType, queryType *graphql.Object, nodeI
 // orgToGraphQL converts an Org to a map for GraphQL resolvers.
 func orgToGraphQL(org *Org) map[string]interface{} {
 	return map[string]interface{}{
-		"nodeID":      org.NodeID,
-		"databaseId":  org.ID,
-		"login":       org.Login,
-		"name":        org.Name,
-		"description": org.Description,
-		"email":       org.Email,
-		"url":         "/" + org.Login,
-		"avatarUrl":   org.AvatarURL,
-		"createdAt":   org.CreatedAt.Format(time.RFC3339),
-		"updatedAt":   org.UpdatedAt.Format(time.RFC3339),
+		"nodeID":       org.NodeID,
+		"databaseId":   org.ID,
+		"login":        org.Login,
+		"name":         org.Name,
+		"description":  org.Description,
+		"email":        org.Email,
+		"url":          "/" + org.Login,
+		"resourcePath": "/" + org.Login,
+		"avatarUrl":    org.AvatarURL,
+		"createdAt":    org.CreatedAt.Format(time.RFC3339),
+		"updatedAt":    org.UpdatedAt.Format(time.RFC3339),
 	}
-}
-
-// paginateOrgs implements Relay-style cursor pagination for organizations.
-func paginateOrgs(orgs []*Org, first int, after string) map[string]interface{} {
-	return paginateGQL(orgs, first, after, orgToGraphQL)
 }

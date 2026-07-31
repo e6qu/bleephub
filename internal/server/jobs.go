@@ -376,7 +376,7 @@ func expandMatrixJobs(wf *WorkflowDef) *WorkflowDef {
 		for i, combo := range combos {
 			newKey := fmt.Sprintf("%s_%d", key, i)
 			newJD := *jd
-			newJD.Name = MatrixJobName(key, combo)
+			newJD.Name = MatrixJobName(key, combo, jd.Strategy.Matrix.Order)
 			newJD.Needs = append([]string(nil), jd.Needs...)
 			newJD.MatrixGroup = key
 			newJD.MatrixMaxParallel = jd.Strategy.MaxParallel

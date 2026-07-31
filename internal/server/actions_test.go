@@ -5,6 +5,7 @@ import (
 	"bytes"
 	"compress/gzip"
 	"encoding/json"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -64,6 +65,16 @@ func TestActionDownloadInfoReturnsFormat(t *testing.T) {
 	tarURL, _ := info["tarballUrl"].(string)
 	if tarURL == "" {
 		t.Error("tarballUrl is empty")
+	}
+}
+
+func TestActionDownloadInfoRejectsMalformedRequests(t *testing.T) {
+	s := newTestServer()
+	for _, body := range []string{"{", `{"actions":[{"nameWithOwner":"","ref":"v1"}]}`} {
+		w := actionDownloadInfoRequest(t, s, body)
+		if w.Code != http.StatusBadRequest {
+			t.Errorf("body %q: status = %d, want 400", body, w.Code)
+		}
 	}
 }
 
@@ -171,8 +182,8 @@ func TestActionTarball404ForMissing(t *testing.T) {
 	w := httptest.NewRecorder()
 	s.handleActionTarball(w, req)
 
-	if w.Code != http.StatusBadGateway {
-		t.Errorf("status = %d, want 502 for an unresolved local action ref", w.Code)
+	if w.Code != http.StatusNotFound {
+		t.Errorf("status = %d, want 404 for an unresolved local action ref", w.Code)
 	}
 }
 
@@ -198,18 +209,21 @@ func TestActionTarballServesFromCache(t *testing.T) {
 	s := newTestServer()
 	// The tarball route resolves the action repository's visibility before it
 	// serves anything, cache hit included.
-	testRepo(t, s, "actions", "checkout", false)
+	commitFilesToStorage(t, s, "actions/checkout", map[string]string{
+		"action.yml": "name: checkout\nruns:\n  using: composite\n  steps: []\n",
+	})
 	cachedTarball := testActionTarball(t)
+	sha := s.resolveActionSha("actions/checkout", "main")
 
-	s.actionCache.Put("actions/checkout@v4", &ActionCacheEntry{
+	s.actionCache.Put("actions/checkout@"+sha, &ActionCacheEntry{
 		Data:        cachedTarball,
-		ResolvedSha: "abcdef0123456789abcdef0123456789abcdef01",
+		ResolvedSha: sha,
 	})
 
-	req := httptest.NewRequest("GET", "/_apis/v1/actions/tarball/actions/checkout/v4", nil)
+	req := httptest.NewRequest("GET", "/_apis/v1/actions/tarball/actions/checkout/main", nil)
 	req.SetPathValue("owner", "actions")
 	req.SetPathValue("repo", "checkout")
-	req.SetPathValue("ref", "v4")
+	req.SetPathValue("ref", "main")
 	w := httptest.NewRecorder()
 	s.handleActionTarball(w, req)
 
@@ -251,6 +265,20 @@ func TestActionCacheGetPut(t *testing.T) {
 	}
 	if string(entry.Data) != "data" {
 		t.Errorf("data = %q", string(entry.Data))
+	}
+	entry.Data[0] = 'X'
+	if got := string(ac.Get("foo@v1").Data); got != "data" {
+		t.Errorf("cache returned mutable bytes: %q", got)
+	}
+
+	for i := 0; i <= maxActionCacheEntries; i++ {
+		ac.Put(fmt.Sprintf("key-%d", i), &ActionCacheEntry{Data: []byte{byte(i)}})
+	}
+	if len(ac.entries) != maxActionCacheEntries {
+		t.Fatalf("cache holds %d entries, want bounded %d", len(ac.entries), maxActionCacheEntries)
+	}
+	if ac.Get("foo@v1") != nil {
+		t.Fatal("oldest cache entry was not evicted")
 	}
 }
 

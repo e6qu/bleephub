@@ -1,7 +1,7 @@
 package bleephub
 
 import (
-	"strings"
+	"strconv"
 	"testing"
 	"time"
 )
@@ -390,6 +390,29 @@ jobs:
 	}
 }
 
+func TestPushCommitDirectiveSkipsWorkflow(t *testing.T) {
+	s := newTestServer()
+	repoKey := "skip-owner/skip-repo"
+	commitWorkflowYAMLToStorage(t, s, repoKey, ".github/workflows/ci.yml", `name: ci
+on: [push]
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo build
+`)
+	s.triggerWorkflowsForEvent(repoKey, "push", "", "refs/heads/main", map[string]interface{}{
+		"head_commit": map[string]interface{}{"message": "docs: update [skip ci]"},
+	})
+	s.store.mu.RLock()
+	defer s.store.mu.RUnlock()
+	for _, workflow := range s.store.Workflows {
+		if workflow.RepoFullName == repoKey {
+			t.Fatalf("skip directive created workflow %#v", workflow)
+		}
+	}
+}
+
 func TestIssueCommentMutationProducesWebhookAndActionsEvent(t *testing.T) {
 	s := newTestServer()
 	s.registerRoutes()
@@ -537,7 +560,7 @@ jobs:
 	if !ok {
 		t.Fatal("no pull_request run created by synchronize")
 	}
-	if !strings.HasPrefix(found.Ref, "refs/heads/feature-x") {
+	if found.Ref != "refs/pull/"+strconv.Itoa(pr.Number)+"/merge" {
 		t.Fatalf("synchronize run ref = %q", found.Ref)
 	}
 }

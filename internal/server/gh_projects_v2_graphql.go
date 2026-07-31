@@ -138,7 +138,7 @@ func (s *Server) viewerCanReadProjectContent(ctx context.Context, contentType st
 //   - createProjectV2Field(input{projectId, dataType, name}) → ProjectV2Field
 //   - updateProjectV2ItemFieldValue(input{projectId,itemId,fieldId,value}) → ProjectV2Item
 func (s *Server) addProjectV2MutationsToSchema(mutationType *graphql.Object) {
-	projectV2Type := projectV2GraphQLTypes()
+	projectV2Type := s.projectV2GraphQLTypes()
 
 	// createProjectV2
 	createProjectInputType := graphql.NewInputObject(graphql.InputObjectConfig{
@@ -516,21 +516,20 @@ func projectV2GraphQLFieldValueInput(field *ProjectV2Field, value map[string]int
 // resolveProjectOwner maps a GraphQL node ID to (ownerID, ownerType).
 // Supports User + Organization nodes.
 func resolveProjectOwner(st *Store, nodeID string) (int, string, bool) {
-	if nodeID != "" {
-		st.mu.RLock()
-		for _, u := range st.Users {
-			if u.NodeID == nodeID {
-				st.mu.RUnlock()
-				return u.ID, "User", true
-			}
+	if nodeID == "" {
+		return 0, "", false
+	}
+	st.mu.RLock()
+	defer st.mu.RUnlock()
+	for _, u := range st.Users {
+		if u.NodeID == nodeID {
+			return u.ID, "User", true
 		}
-		for _, org := range st.Orgs {
-			if org.NodeID == nodeID {
-				st.mu.RUnlock()
-				return org.ID, "Organization", true
-			}
+	}
+	for _, org := range st.Orgs {
+		if org.NodeID == nodeID {
+			return org.ID, "Organization", true
 		}
-		st.mu.RUnlock()
 	}
 	return 0, "", false
 }

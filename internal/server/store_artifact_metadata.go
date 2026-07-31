@@ -73,7 +73,7 @@ func (st *Store) CreateArtifactStorageRecord(rec *ArtifactStorageRecord) *Artifa
 	defer st.mu.Unlock()
 	rec.ID = st.NextArtifactStorageRecordID
 	st.NextArtifactStorageRecordID++
-	now := time.Now().UTC()
+	now := st.currentTime()
 	rec.CreatedAt = now
 	rec.UpdatedAt = now
 	st.ArtifactStorageRecords[rec.ID] = rec
@@ -108,7 +108,7 @@ func (st *Store) ListArtifactStorageRecords(orgID int, digest string) []*Artifac
 func (st *Store) UpsertArtifactDeploymentRecord(rec *ArtifactDeploymentRecord) *ArtifactDeploymentRecord {
 	st.mu.Lock()
 	defer st.mu.Unlock()
-	now := time.Now().UTC()
+	now := st.currentTime()
 	for _, existing := range st.ArtifactDeploymentRecords {
 		if existing.OrgID == rec.OrgID &&
 			existing.LogicalEnvironment == rec.LogicalEnvironment &&
@@ -165,7 +165,7 @@ func (st *Store) CreateArtifactDeploymentJob(job *ArtifactDeploymentJob) *Artifa
 	job.ID = st.NextArtifactDeploymentJobID
 	st.NextArtifactDeploymentJobID++
 	if job.StartedAt.IsZero() {
-		job.StartedAt = time.Now().UTC()
+		job.StartedAt = st.currentTime()
 	}
 	if job.Status == "" {
 		job.Status = "completed"

@@ -95,6 +95,9 @@ func TestExprTruthTable(t *testing.T) {
 		{"github.event.pull_request.base.ref == 'main'", true},
 		{"github.event.pull_request.labels[1].name == 'urgent'", true},
 		{"github.event.commits[0].message == 'fix: thing'", true},
+		{"contains(github.event.pull_request.labels.*.name, 'urgent')", true},
+		{"join(github.event.pull_request.labels[*].name, ',') == 'bug,urgent'", true},
+		{"join(fromJSON('{\"b\":{\"name\":\"two\"},\"a\":{\"name\":\"one\"}}').*.name, ',') == 'one,two'", true},
 		// Missing properties are null, not errors
 		{"github.event.no_such_thing == null", true},
 		{"github.event.no.such.thing == null", true},

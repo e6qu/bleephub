@@ -155,7 +155,7 @@ func (st *Store) CreateCodespace(ownerLogin, repoKey, gitRef, machineName, displ
 		}
 		live.Runtime = "workspace"
 		live.State = "Available"
-		live.UpdatedAt = time.Now().UTC()
+		live.UpdatedAt = st.currentTime()
 		st.persistCodespaceLocked(live)
 		st.mu.Unlock()
 		return live, nil
@@ -172,7 +172,7 @@ func (st *Store) CreateCodespace(ownerLogin, repoKey, gitRef, machineName, displ
 	live.ContainerName = containerName
 	live.Runtime = "docker"
 	live.State = state
-	live.UpdatedAt = time.Now().UTC()
+	live.UpdatedAt = st.currentTime()
 	st.persistCodespaceLocked(live)
 	return live, nil
 }
@@ -215,9 +215,9 @@ func (st *Store) reserveCodespace(ownerLogin, repoKey, gitRef, machineName, disp
 		MachineDisplayName: machine.DisplayName,
 		MachineType:        machine.Type,
 		DisplayName:        displayName,
-		CreatedAt:          time.Now().UTC(),
-		UpdatedAt:          time.Now().UTC(),
-		LastUsedAt:         time.Now().UTC(),
+		CreatedAt:          st.currentTime(),
+		UpdatedAt:          st.currentTime(),
+		LastUsedAt:         st.currentTime(),
 		State:              "Provisioning",
 		ImageName:          image,
 		DevcontainerPath:   devcontainerPath,
@@ -385,8 +385,8 @@ func (st *Store) UpdateCodespace(id int, displayName, machineName string, retent
 	if retention > 0 {
 		cs.RetentionPeriodMinutes = retention
 	}
-	cs.UpdatedAt = time.Now().UTC()
-	cs.LastUsedAt = time.Now().UTC()
+	cs.UpdatedAt = st.currentTime()
+	cs.LastUsedAt = st.currentTime()
 	st.persistCodespaceLocked(cs)
 	return cs, true
 }
@@ -436,7 +436,7 @@ func (st *Store) SetCodespaceState(id int, state string, markUsed bool) {
 	}
 	cs.State = state
 	if markUsed {
-		cs.LastUsedAt = time.Now().UTC()
+		cs.LastUsedAt = st.currentTime()
 	}
 	st.persistCodespaceLocked(cs)
 }
@@ -454,7 +454,7 @@ func (st *Store) CreateCodespaceSecret(scope, name, value, visibility string, se
 		m = make(map[string]*CodespaceSecret)
 		st.CodespaceSecrets[scope] = m
 	}
-	now := time.Now().UTC()
+	now := st.currentTime()
 	key := strings.ToUpper(name)
 	if existing := m[name]; existing != nil {
 		existing.UpdatedAt = now
@@ -525,7 +525,7 @@ func (st *Store) SetCodespaceSecretSelectedRepos(scope, name string, ids []int) 
 		return false
 	}
 	m[name].SelectedRepoIDs = ids
-	m[name].UpdatedAt = time.Now().UTC()
+	m[name].UpdatedAt = st.currentTime()
 	st.persistCodespaceSecretScopeLocked(scope)
 	return true
 }
@@ -546,7 +546,7 @@ func (st *Store) AddCodespaceSecretSelectedRepo(scope, name string, repoID int) 
 		}
 	}
 	sec.SelectedRepoIDs = append(sec.SelectedRepoIDs, repoID)
-	sec.UpdatedAt = time.Now().UTC()
+	sec.UpdatedAt = st.currentTime()
 	st.persistCodespaceSecretScopeLocked(scope)
 	return true
 }
@@ -564,7 +564,7 @@ func (st *Store) RemoveCodespaceSecretSelectedRepo(scope, name string, repoID in
 	for i, id := range sec.SelectedRepoIDs {
 		if id == repoID {
 			sec.SelectedRepoIDs = append(sec.SelectedRepoIDs[:i], sec.SelectedRepoIDs[i+1:]...)
-			sec.UpdatedAt = time.Now().UTC()
+			sec.UpdatedAt = st.currentTime()
 			st.persistCodespaceSecretScopeLocked(scope)
 			return true
 		}
@@ -621,10 +621,10 @@ func (st *Store) ExportCodespace(id int) (*CodespaceExport, error) {
 		State:       "succeeded",
 		Branch:      branch,
 		SHA:         ref.Hash().String(),
-		CompletedAt: time.Now().UTC(),
+		CompletedAt: st.currentTime(),
 	}
 	cs.LatestExport = export
-	cs.UpdatedAt = time.Now().UTC()
+	cs.UpdatedAt = st.currentTime()
 	st.persistCodespaceLocked(cs)
 	return export, nil
 }
@@ -649,7 +649,7 @@ func (st *Store) PublishCodespace(id int, owner *User, name string, private bool
 		return nil, errRepoNameTaken
 	}
 	cs.RepoKey = repo.FullName
-	cs.UpdatedAt = time.Now().UTC()
+	cs.UpdatedAt = st.currentTime()
 	st.persistCodespaceLocked(cs)
 	return cs, nil
 }

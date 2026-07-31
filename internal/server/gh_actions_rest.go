@@ -68,12 +68,7 @@ func (s *Server) registerGHActionsRoutes() {
 }
 
 func (s *Server) handleListRunnerApplications(w http.ResponseWriter, r *http.Request) {
-	if org := r.PathValue("org"); org != "" {
-		if s.store.GetOrg(org) == nil {
-			writeGHError(w, http.StatusNotFound, "Not Found")
-			return
-		}
-	} else if s.lookupReadableRepoFromPath(w, r) == nil {
+	if _, ok := s.runnerTargetFromRequest(w, r); !ok {
 		return
 	}
 	// Bleephub runners are distributed as container images, not downloadable
@@ -1005,9 +1000,7 @@ func (s *Server) rerunWorkflowAsNewAttempt(r *http.Request, old *Workflow, file 
 	s.store.persistWorkflowAttemptsRecord(old.RunID)
 	s.store.deleteWorkflowRecord(old.ID)
 	s.store.mu.Unlock()
-	if old.cancelTimeout != nil {
-		old.cancelTimeout()
-	}
+	s.stopTimeoutWatcher(old)
 
 	meta := WorkflowEventMeta{
 		EventName:      eventOf(old),
@@ -1156,25 +1149,25 @@ func (s *Server) handleDeleteWorkflowRun(w http.ResponseWriter, r *http.Request)
 	w.WriteHeader(http.StatusNoContent)
 }
 
-// handleListRunners — GET .../actions/runners
-// Returns every registered agent. Real GitHub scopes runners to the
-// repo (or org); bleephub's agents are global today, so all are
-// returned regardless of repo path. The path scoping is preserved for
-// future per-repo runner pools.
+// handleListRunners serves repository, organization, and enterprise runner
+// inventories. Repository inventories include runners registered directly to
+// the repository and runners shared by its organization; the broader
+// inventories only include runners registered at that exact scope.
 func (s *Server) handleListRunners(w http.ResponseWriter, r *http.Request) {
-	// Org-scoped listings 404 for unknown orgs; the pool itself is
-	// global (bleephub has a single runner pool).
-	if org := r.PathValue("org"); org != "" && s.store.GetOrg(org) == nil {
-		writeGHError(w, http.StatusNotFound, "Not Found")
+	target, ok := s.runnerTargetFromRequest(w, r)
+	if !ok {
 		return
 	}
 	s.store.mu.RLock()
 	all := make([]*Agent, 0, len(s.store.Agents))
 	for _, a := range s.store.Agents {
-		all = append(all, a)
+		if runnerVisibleAt(a.Scope, target) {
+			all = append(all, a)
+		}
 	}
 	busy := s.busyAgentIDsLocked()
 	s.store.mu.RUnlock()
+	sort.Slice(all, func(i, j int) bool { return all[i].ID < all[j].ID })
 
 	page := paginateAndLink(w, r, all)
 	runners := make([]map[string]any, 0, len(page))
@@ -1189,8 +1182,8 @@ func (s *Server) handleListRunners(w http.ResponseWriter, r *http.Request) {
 
 // handleGetRunner — GET .../actions/runners/{runner_id} (repo + org scope).
 func (s *Server) handleGetRunner(w http.ResponseWriter, r *http.Request) {
-	if org := r.PathValue("org"); org != "" && s.store.GetOrg(org) == nil {
-		writeGHError(w, http.StatusNotFound, "Not Found")
+	target, ok := s.runnerTargetFromRequest(w, r)
+	if !ok {
 		return
 	}
 	id, err := strconv.Atoi(r.PathValue("runner_id"))
@@ -1202,7 +1195,7 @@ func (s *Server) handleGetRunner(w http.ResponseWriter, r *http.Request) {
 	a := s.store.Agents[id]
 	busy := s.busyAgentIDsLocked()
 	s.store.mu.RUnlock()
-	if a == nil {
+	if a == nil || !runnerVisibleAt(a.Scope, target) {
 		writeGHError(w, http.StatusNotFound, "Not Found")
 		return
 	}
@@ -1213,8 +1206,8 @@ func (s *Server) handleGetRunner(w http.ResponseWriter, r *http.Request) {
 // Real GitHub returns 204 No Content. Symmetric with the existing
 // agent-CRUD path on `_apis/v1/Agent/{poolId}/{agentId}`.
 func (s *Server) handleDeleteRunner(w http.ResponseWriter, r *http.Request) {
-	if org := r.PathValue("org"); org != "" && s.store.GetOrg(org) == nil {
-		writeGHError(w, http.StatusNotFound, "Not Found")
+	target, ok := s.runnerTargetFromRequest(w, r)
+	if !ok {
 		return
 	}
 	runnerID, err := strconv.Atoi(r.PathValue("runner_id"))
@@ -1223,7 +1216,8 @@ func (s *Server) handleDeleteRunner(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	s.store.mu.Lock()
-	if _, ok := s.store.Agents[runnerID]; !ok {
+	agent := s.store.Agents[runnerID]
+	if agent == nil || !runnerVisibleAt(agent.Scope, target) {
 		s.store.mu.Unlock()
 		writeGHError(w, http.StatusNotFound, "Not Found")
 		return
@@ -1231,4 +1225,34 @@ func (s *Server) handleDeleteRunner(w http.ResponseWriter, r *http.Request) {
 	delete(s.store.Agents, runnerID)
 	s.store.mu.Unlock()
 	w.WriteHeader(http.StatusNoContent)
+}
+
+// runnerTargetFromRequest resolves the runner inventory named by a REST path.
+// A repository inventory can see its own repository runner and runners
+// registered at its organization; organization and enterprise inventories
+// contain only runners registered at that exact level.
+func (s *Server) runnerTargetFromRequest(w http.ResponseWriter, r *http.Request) (runnerScope, bool) {
+	target, err := s.runnerScopeFromRequest(r)
+	if err != nil {
+		writeGHError(w, http.StatusNotFound, "Not Found")
+		return runnerScope{}, false
+	}
+	return target, true
+}
+
+func runnerVisibleAt(agentScope, target runnerScope) bool {
+	switch {
+	case target.Repo != "":
+		if strings.EqualFold(agentScope.Repo, target.Repo) {
+			return true
+		}
+		owner, _, ok := strings.Cut(target.Repo, "/")
+		return ok && strings.EqualFold(agentScope.Org, owner)
+	case target.Org != "":
+		return strings.EqualFold(agentScope.Org, target.Org)
+	case target.Enterprise != "":
+		return strings.EqualFold(agentScope.Enterprise, target.Enterprise)
+	default:
+		return false
+	}
 }

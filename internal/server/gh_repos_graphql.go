@@ -16,12 +16,26 @@ import (
 
 // addRepoFieldsToSchema adds repository types, queries, and mutations to the schema.
 // Called from initGraphQLSchema after userType and queryType are created.
-func (s *Server) addRepoFieldsToSchema(userType, queryType *graphql.Object, nodeInterface *graphql.Interface) (*graphql.Object, *graphql.Object) {
+func (s *Server) addRepoFieldsToSchema(
+	userType, queryType *graphql.Object,
+	nodeInterface *graphql.Interface,
+) (*graphql.Object, *graphql.Object, *graphql.Field, *graphql.Field) {
+	dateTime := s.graphQLStringScalar("DateTime")
+	uri := s.graphQLStringScalar("URI")
+	gitSSHRemote := s.graphQLStringScalar("GitSSHRemote")
+	repositoryVisibilityEnum := graphql.NewEnum(graphql.EnumConfig{
+		Name: "RepositoryVisibility",
+		Values: graphql.EnumValueConfigMap{
+			"PUBLIC":   &graphql.EnumValueConfig{Value: "PUBLIC"},
+			"PRIVATE":  &graphql.EnumValueConfig{Value: "PRIVATE"},
+			"INTERNAL": &graphql.EnumValueConfig{Value: "INTERNAL"},
+		},
+	})
 	refType := graphql.NewObject(graphql.ObjectConfig{
 		Name: "Ref",
 		Fields: graphql.Fields{
-			"name":   &graphql.Field{Type: graphql.String},
-			"prefix": &graphql.Field{Type: graphql.String},
+			"name":   &graphql.Field{Type: graphql.NewNonNull(graphql.String)},
+			"prefix": &graphql.Field{Type: graphql.NewNonNull(graphql.String)},
 		},
 	})
 
@@ -43,18 +57,18 @@ func (s *Server) addRepoFieldsToSchema(userType, queryType *graphql.Object, node
 			"name":           &graphql.Field{Type: graphql.NewNonNull(graphql.String)},
 			"nameWithOwner":  &graphql.Field{Type: graphql.NewNonNull(graphql.String)},
 			"description":    &graphql.Field{Type: graphql.String},
-			"url":            &graphql.Field{Type: graphql.NewNonNull(graphql.String)},
-			"sshUrl":         &graphql.Field{Type: graphql.String},
+			"url":            &graphql.Field{Type: graphql.NewNonNull(uri)},
+			"sshUrl":         &graphql.Field{Type: graphql.NewNonNull(gitSSHRemote)},
 			"isPrivate":      &graphql.Field{Type: graphql.NewNonNull(graphql.Boolean)},
 			"isFork":         &graphql.Field{Type: graphql.NewNonNull(graphql.Boolean)},
 			"isArchived":     &graphql.Field{Type: graphql.NewNonNull(graphql.Boolean)},
-			"visibility":     &graphql.Field{Type: graphql.NewNonNull(graphql.String)},
-			"createdAt":      &graphql.Field{Type: graphql.NewNonNull(graphql.String)},
-			"updatedAt":      &graphql.Field{Type: graphql.NewNonNull(graphql.String)},
-			"pushedAt":       &graphql.Field{Type: graphql.String},
-			"stargazerCount": &graphql.Field{Type: graphql.Int},
+			"visibility":     &graphql.Field{Type: graphql.NewNonNull(repositoryVisibilityEnum)},
+			"createdAt":      &graphql.Field{Type: graphql.NewNonNull(dateTime)},
+			"updatedAt":      &graphql.Field{Type: graphql.NewNonNull(dateTime)},
+			"pushedAt":       &graphql.Field{Type: dateTime},
+			"stargazerCount": &graphql.Field{Type: graphql.NewNonNull(graphql.Int)},
 			"owner": &graphql.Field{
-				Type: userType,
+				Type: graphql.NewNonNull(s.graphqlTypes.repositoryOwner),
 				Resolve: func(p graphql.ResolveParams) (interface{}, error) {
 					r, ok := p.Source.(map[string]interface{})
 					if !ok {
@@ -160,7 +174,7 @@ func (s *Server) addRepoFieldsToSchema(userType, queryType *graphql.Object, node
 		},
 	})
 	repoType.AddFieldConfig("homepageUrl", &graphql.Field{
-		Type: graphql.String,
+		Type: uri,
 		Resolve: func(p graphql.ResolveParams) (interface{}, error) {
 			r, ok := p.Source.(map[string]interface{})
 			if !ok {
@@ -355,7 +369,7 @@ func (s *Server) addRepoFieldsToSchema(userType, queryType *graphql.Object, node
 	})
 	repoType.AddFieldConfig("repositoryTopics", &graphql.Field{
 		// Backed by Repo.Topics (REST PUT /repos/{o}/{r}/topics).
-		Type: graphql.NewObject(graphql.ObjectConfig{
+		Type: graphql.NewNonNull(graphql.NewObject(graphql.ObjectConfig{
 			Name: "RepositoryTopicConnection",
 			Fields: graphql.Fields{
 				"nodes": &graphql.Field{Type: graphql.NewList(graphql.NewObject(graphql.ObjectConfig{
@@ -370,8 +384,9 @@ func (s *Server) addRepoFieldsToSchema(userType, queryType *graphql.Object, node
 					},
 				}))},
 				"totalCount": &graphql.Field{Type: graphql.NewNonNull(graphql.Int)},
+				"pageInfo":   &graphql.Field{Type: graphql.NewNonNull(s.gqlPageInfoType())},
 			},
-		}),
+		})),
 		Args: graphql.FieldConfigArgument{
 			"first": &graphql.ArgumentConfig{Type: graphql.Int},
 		},
@@ -387,7 +402,13 @@ func (s *Server) addRepoFieldsToSchema(userType, queryType *graphql.Object, node
 					"topic": map[string]interface{}{"name": tp},
 				})
 			}
-			return map[string]interface{}{"nodes": nodes, "totalCount": len(nodes)}, nil
+			return map[string]interface{}{
+				"nodes": nodes, "totalCount": len(nodes),
+				"pageInfo": map[string]interface{}{
+					"hasNextPage": false, "hasPreviousPage": false,
+					"startCursor": nil, "endCursor": nil,
+				},
+			}, nil
 		},
 	})
 	repoType.AddFieldConfig("deleteBranchOnMerge", &graphql.Field{
@@ -436,7 +457,7 @@ func (s *Server) addRepoFieldsToSchema(userType, queryType *graphql.Object, node
 		},
 	})
 	repoType.AddFieldConfig("archivedAt", &graphql.Field{
-		Type: graphql.String,
+		Type: dateTime,
 		Resolve: func(p graphql.ResolveParams) (interface{}, error) {
 			r, ok := p.Source.(map[string]interface{})
 			if !ok {
@@ -446,7 +467,7 @@ func (s *Server) addRepoFieldsToSchema(userType, queryType *graphql.Object, node
 		},
 	})
 
-	pageInfoType := gqlPageInfoType()
+	pageInfoType := s.gqlPageInfoType()
 
 	repoEdgeType := graphql.NewObject(graphql.ObjectConfig{
 		Name: "RepositoryEdge",
@@ -472,9 +493,8 @@ func (s *Server) addRepoFieldsToSchema(userType, queryType *graphql.Object, node
 	repositoryPrivacyEnum := graphql.NewEnum(graphql.EnumConfig{
 		Name: "RepositoryPrivacy",
 		Values: graphql.EnumValueConfigMap{
-			"PUBLIC":   &graphql.EnumValueConfig{Value: "PUBLIC"},
-			"PRIVATE":  &graphql.EnumValueConfig{Value: "PRIVATE"},
-			"INTERNAL": &graphql.EnumValueConfig{Value: "INTERNAL"},
+			"PUBLIC":  &graphql.EnumValueConfig{Value: "PUBLIC"},
+			"PRIVATE": &graphql.EnumValueConfig{Value: "PRIVATE"},
 		},
 	})
 	repositoryAffiliationEnum := graphql.NewEnum(graphql.EnumConfig{
@@ -495,11 +515,12 @@ func (s *Server) addRepoFieldsToSchema(userType, queryType *graphql.Object, node
 			"NAME":       &graphql.EnumValueConfig{Value: "NAME"},
 		},
 	})
-	orderDirectionEnum := graphql.NewEnum(graphql.EnumConfig{
-		Name: "OrderDirection",
-		Values: graphql.EnumValueConfigMap{
-			"ASC":  &graphql.EnumValueConfig{Value: "ASC"},
-			"DESC": &graphql.EnumValueConfig{Value: "DESC"},
+	orderDirectionEnum := s.graphQLEnum("OrderDirection", "ASC", "DESC")
+	repositoryOrderInput := graphql.NewInputObject(graphql.InputObjectConfig{
+		Name: "RepositoryOrder",
+		Fields: graphql.InputObjectConfigFieldMap{
+			"field":     &graphql.InputObjectFieldConfig{Type: graphql.NewNonNull(repositoryOrderFieldEnum)},
+			"direction": &graphql.InputObjectFieldConfig{Type: graphql.NewNonNull(orderDirectionEnum)},
 		},
 	})
 
@@ -531,20 +552,10 @@ func (s *Server) addRepoFieldsToSchema(userType, queryType *graphql.Object, node
 			"immutable":    &graphql.Field{Type: graphql.NewNonNull(graphql.Boolean)},
 			"isLatest":     &graphql.Field{Type: graphql.NewNonNull(graphql.Boolean)},
 			"isPrerelease": &graphql.Field{Type: graphql.NewNonNull(graphql.Boolean)},
-			"createdAt":    &graphql.Field{Type: graphql.NewNonNull(graphql.String)},
-			"publishedAt":  &graphql.Field{Type: graphql.String},
-			"url":          &graphql.Field{Type: graphql.NewNonNull(graphql.String)},
+			"createdAt":    &graphql.Field{Type: graphql.NewNonNull(dateTime)},
+			"publishedAt":  &graphql.Field{Type: dateTime},
+			"url":          &graphql.Field{Type: graphql.NewNonNull(uri)},
 			"description":  &graphql.Field{Type: graphql.String},
-		},
-	})
-
-	releasePageInfoType := graphql.NewObject(graphql.ObjectConfig{
-		Name: "ReleasePageInfo",
-		Fields: graphql.Fields{
-			"hasNextPage":     &graphql.Field{Type: graphql.NewNonNull(graphql.Boolean)},
-			"hasPreviousPage": &graphql.Field{Type: graphql.NewNonNull(graphql.Boolean)},
-			"startCursor":     &graphql.Field{Type: graphql.String},
-			"endCursor":       &graphql.Field{Type: graphql.String},
 		},
 	})
 
@@ -553,7 +564,7 @@ func (s *Server) addRepoFieldsToSchema(userType, queryType *graphql.Object, node
 		Fields: graphql.Fields{
 			"nodes":      &graphql.Field{Type: graphql.NewList(releaseType)},
 			"totalCount": &graphql.Field{Type: graphql.NewNonNull(graphql.Int)},
-			"pageInfo":   &graphql.Field{Type: graphql.NewNonNull(releasePageInfoType)},
+			"pageInfo":   &graphql.Field{Type: graphql.NewNonNull(s.gqlPageInfoType())},
 		},
 	})
 
@@ -566,15 +577,15 @@ func (s *Server) addRepoFieldsToSchema(userType, queryType *graphql.Object, node
 	})
 
 	repoType.AddFieldConfig("releases", &graphql.Field{
-		Type: releaseConnectionType,
+		Type: graphql.NewNonNull(releaseConnectionType),
 		Args: graphql.FieldConfigArgument{
 			"first": &graphql.ArgumentConfig{Type: graphql.Int},
 			"after": &graphql.ArgumentConfig{Type: graphql.String},
 			"orderBy": &graphql.ArgumentConfig{Type: graphql.NewInputObject(graphql.InputObjectConfig{
 				Name: "ReleaseOrder",
 				Fields: graphql.InputObjectConfigFieldMap{
-					"field":     &graphql.InputObjectFieldConfig{Type: releaseOrderFieldEnum},
-					"direction": &graphql.InputObjectFieldConfig{Type: orderDirectionEnum},
+					"field":     &graphql.InputObjectFieldConfig{Type: graphql.NewNonNull(releaseOrderFieldEnum)},
+					"direction": &graphql.InputObjectFieldConfig{Type: graphql.NewNonNull(orderDirectionEnum)},
 				},
 			})},
 		},
@@ -675,41 +686,76 @@ func (s *Server) addRepoFieldsToSchema(userType, queryType *graphql.Object, node
 		},
 	})
 
-	// Add repositories field to User type
-	userType.AddFieldConfig("repositories", &graphql.Field{
-		Type: repoConnectionType,
+	// RepositoryOwner declares these fields directly. Keeping one field
+	// definition for the interface and both implementors prevents the subtle
+	// argument/signature drift that breaks gh and Octokit introspection.
+	ownerRepositoriesField := &graphql.Field{
+		Type: graphql.NewNonNull(repoConnectionType),
 		Args: graphql.FieldConfigArgument{
-			"first":             &graphql.ArgumentConfig{Type: graphql.Int},
+			"affiliations":      &graphql.ArgumentConfig{Type: graphql.NewList(repositoryAffiliationEnum)},
 			"after":             &graphql.ArgumentConfig{Type: graphql.String},
-			"privacy":           &graphql.ArgumentConfig{Type: repositoryPrivacyEnum},
+			"before":            &graphql.ArgumentConfig{Type: graphql.String},
+			"first":             &graphql.ArgumentConfig{Type: graphql.Int},
+			"hasIssuesEnabled":  &graphql.ArgumentConfig{Type: graphql.Boolean},
+			"isArchived":        &graphql.ArgumentConfig{Type: graphql.Boolean},
 			"isFork":            &graphql.ArgumentConfig{Type: graphql.Boolean},
-			"ownerAffiliations": &graphql.ArgumentConfig{Type: graphql.NewList(repositoryAffiliationEnum)},
-			"orderBy": &graphql.ArgumentConfig{Type: graphql.NewInputObject(graphql.InputObjectConfig{
-				Name: "RepositoryOrder",
-				Fields: graphql.InputObjectConfigFieldMap{
-					"field":     &graphql.InputObjectFieldConfig{Type: repositoryOrderFieldEnum},
-					"direction": &graphql.InputObjectFieldConfig{Type: orderDirectionEnum},
-				},
-			})},
+			"isLocked":          &graphql.ArgumentConfig{Type: graphql.Boolean},
+			"last":              &graphql.ArgumentConfig{Type: graphql.Int},
+			"orderBy":           &graphql.ArgumentConfig{Type: repositoryOrderInput},
+			"ownerAffiliations": &graphql.ArgumentConfig{Type: graphql.NewList(repositoryAffiliationEnum), DefaultValue: []interface{}{"OWNER", "COLLABORATOR"}},
+			"privacy":           &graphql.ArgumentConfig{Type: repositoryPrivacyEnum},
+			"visibility":        &graphql.ArgumentConfig{Type: repositoryVisibilityEnum},
 		},
 		Resolve: func(p graphql.ResolveParams) (interface{}, error) {
-			u, ok := p.Source.(map[string]interface{})
+			owner, ok := p.Source.(map[string]interface{})
 			if !ok {
 				return nil, fmt.Errorf("resolve source: unexpected type %T", p.Source)
 			}
-			login, _ := u["login"].(string)
-			repos := s.store.ListReposByOwner(login)
+			login, _ := owner["login"].(string)
+			user := s.store.LookupUserByLogin(login)
+			org := s.store.GetOrg(login)
+			if user == nil && org == nil {
+				return nil, fmt.Errorf("repository owner not found")
+			}
+			ownerAffiliations := []string{"owner", "collaborator"}
+			if values := graphQLRepositoryAffiliations(p.Args["ownerAffiliations"]); len(values) != 0 {
+				ownerAffiliations = values
+			}
+			var repos []*Repo
+			if user != nil {
+				repos = s.store.ListReposForAuthUser(user, RepoListOptions{
+					Affiliation: strings.Join(ownerAffiliations, ","),
+					NoPaginate:  true,
+				})
+			} else {
+				repos = s.store.ListReposForOrg(org.Login, RepoListOptions{NoPaginate: true})
+			}
 
 			// Drop what the viewer cannot see, before any other filter.
-			// ListReposByOwner is a bare prefix match over the repo index with
-			// no visibility check, and Query.repository gates readability while
-			// this connection did not — so listing a user enumerated their
-			// private repositories, and each node returned here is a live
-			// handle into that repository's issues, pull requests, discussions
-			// and releases, none of which re-check.
 			repos = s.visibleRepos(p.Context, repos)
+			if affiliations := graphQLRepositoryAffiliations(p.Args["affiliations"]); len(affiliations) != 0 {
+				viewer := ghUserFromContext(p.Context)
+				if viewer == nil {
+					repos = nil
+				} else {
+					visibleByAffiliation := s.store.ListReposForAuthUser(viewer, RepoListOptions{
+						Affiliation: strings.Join(affiliations, ","),
+						NoPaginate:  true,
+					})
+					allowed := make(map[int]bool, len(visibleByAffiliation))
+					for _, repo := range visibleByAffiliation {
+						allowed[repo.ID] = true
+					}
+					repos = filterRepos(repos, func(repo *Repo) bool { return allowed[repo.ID] })
+				}
+			}
 
 			// Filter by privacy
+			if _, hasPrivacy := p.Args["privacy"]; hasPrivacy {
+				if _, hasVisibility := p.Args["visibility"]; hasVisibility {
+					return nil, fmt.Errorf("privacy and visibility cannot be combined")
+				}
+			}
 			if privacy, ok := p.Args["privacy"].(string); ok {
 				var filtered []*Repo
 				for _, r := range repos {
@@ -737,21 +783,88 @@ func (s *Server) addRepoFieldsToSchema(userType, queryType *graphql.Object, node
 				}
 				repos = filtered
 			}
-
-			// Sort by creation time (newest first by default)
-			sort.Slice(repos, func(i, j int) bool {
-				return repos[i].CreatedAt.After(repos[j].CreatedAt)
-			})
-
-			first := 30
-			if f, ok := p.Args["first"].(int); ok && f > 0 {
-				first = f
+			if archived, ok := p.Args["isArchived"].(bool); ok {
+				repos = filterRepos(repos, func(repo *Repo) bool { return repo.Archived == archived })
 			}
-			after, _ := p.Args["after"].(string)
+			if hasIssues, ok := p.Args["hasIssuesEnabled"].(bool); ok {
+				repos = filterRepos(repos, func(repo *Repo) bool { return repo.HasIssues == hasIssues })
+			}
+			if locked, ok := p.Args["isLocked"].(bool); ok && locked {
+				// Bleephub does not currently create locked repositories.
+				repos = nil
+			}
+			if visibility, ok := p.Args["visibility"].(string); ok {
+				repos = filterRepos(repos, func(repo *Repo) bool {
+					return strings.EqualFold(repo.Visibility, visibility)
+				})
+			}
 
-			return paginateRepos(s.store, repos, first, after), nil
+			sortField := "CREATED_AT"
+			sortDescending := true
+			if order, ok := p.Args["orderBy"].(map[string]interface{}); ok {
+				if field, ok := order["field"].(string); ok && field != "" {
+					sortField = field
+				}
+				if direction, ok := order["direction"].(string); ok {
+					sortDescending = direction != "ASC"
+				}
+			}
+			sort.Slice(repos, func(i, j int) bool {
+				cmp := 0
+				switch sortField {
+				case "NAME":
+					cmp = strings.Compare(strings.ToLower(repos[i].Name), strings.ToLower(repos[j].Name))
+				case "STARGAZERS":
+					cmp = repos[i].StargazersCount - repos[j].StargazersCount
+				default:
+					left, right := repos[i].CreatedAt, repos[j].CreatedAt
+					if sortField == "UPDATED_AT" {
+						left, right = repos[i].UpdatedAt, repos[j].UpdatedAt
+					} else if sortField == "PUSHED_AT" {
+						left, right = repos[i].PushedAt, repos[j].PushedAt
+					}
+					cmp = left.Compare(right)
+				}
+				if cmp == 0 {
+					cmp = repos[i].ID - repos[j].ID
+				}
+				if sortDescending {
+					return cmp > 0
+				}
+				return cmp < 0
+			})
+			nodes := make([]map[string]interface{}, 0, len(repos))
+			for _, repo := range repos {
+				nodes = append(nodes, repoToGraphQL(s.store, repo))
+			}
+			return paginateGQLMaps(nodes, p.Args), nil
 		},
-	})
+	}
+	userType.AddFieldConfig("repositories", ownerRepositoriesField)
+	s.graphqlTypes.repositoryOwner.AddFieldConfig("repositories", ownerRepositoriesField)
+
+	ownerRepositoryField := &graphql.Field{
+		Type: repoType,
+		Args: graphql.FieldConfigArgument{
+			"followRenames": &graphql.ArgumentConfig{Type: graphql.Boolean, DefaultValue: true},
+			"name":          &graphql.ArgumentConfig{Type: graphql.NewNonNull(graphql.String)},
+		},
+		Resolve: func(p graphql.ResolveParams) (interface{}, error) {
+			owner, ok := p.Source.(map[string]interface{})
+			if !ok {
+				return nil, fmt.Errorf("resolve source: unexpected type %T", p.Source)
+			}
+			login, _ := owner["login"].(string)
+			name, _ := p.Args["name"].(string)
+			repo := s.store.GetRepo(login, name)
+			if repo == nil || (repo.Private && !s.viewerCanReadRepo(p.Context, repo)) {
+				return nil, nil
+			}
+			return repoToGraphQL(s.store, s.store.snapRepo(repo)), nil
+		},
+	}
+	userType.AddFieldConfig("repository", ownerRepositoryField)
+	s.graphqlTypes.repositoryOwner.AddFieldConfig("repository", ownerRepositoryField)
 
 	// Add repository query to queryType
 	queryType.AddFieldConfig("repository", &graphql.Field{
@@ -782,13 +895,8 @@ func (s *Server) addRepoFieldsToSchema(userType, queryType *graphql.Object, node
 
 	// `repositoryOwner(login)` is the interface real GitHub exposes for "user or
 	// organization that owns repos". gh CLI's `gh repo list <login>` queries it.
-	// Bleephub's GraphQL schema does not yet model a RepositoryOwner union,
-	// so repositoryOwner returns the existing User-shaped type for both users
-	// and organizations. Organizations are converted with orgToGraphQL so all
-	// shared fields (login, name, email, url, avatarUrl, createdAt, updatedAt)
-	// carry real org data instead of a synthetic partial object.
 	queryType.AddFieldConfig("repositoryOwner", &graphql.Field{
-		Type: userType,
+		Type: s.graphqlTypes.repositoryOwner,
 		Args: graphql.FieldConfigArgument{
 			"login": &graphql.ArgumentConfig{Type: graphql.NewNonNull(graphql.String)},
 		},
@@ -803,7 +911,9 @@ func (s *Server) addRepoFieldsToSchema(userType, queryType *graphql.Object, node
 			if org != nil {
 				return orgToGraphQL(org), nil
 			}
-			return nil, nil
+			return nil, &ghNotFoundError{
+				message: fmt.Sprintf("Could not resolve to a RepositoryOwner with the login of '%s'.", login),
+			}
 		},
 	})
 
@@ -813,7 +923,7 @@ func (s *Server) addRepoFieldsToSchema(userType, queryType *graphql.Object, node
 		Fields: graphql.InputObjectConfigFieldMap{
 			"name":             &graphql.InputObjectFieldConfig{Type: graphql.NewNonNull(graphql.String)},
 			"ownerId":          &graphql.InputObjectFieldConfig{Type: graphql.ID},
-			"visibility":       &graphql.InputObjectFieldConfig{Type: graphql.String},
+			"visibility":       &graphql.InputObjectFieldConfig{Type: graphql.NewNonNull(repositoryVisibilityEnum), DefaultValue: "PUBLIC"},
 			"description":      &graphql.InputObjectFieldConfig{Type: graphql.String},
 			"hasIssuesEnabled": &graphql.InputObjectFieldConfig{Type: graphql.Boolean},
 			"hasWikiEnabled":   &graphql.InputObjectFieldConfig{Type: graphql.Boolean},
@@ -922,7 +1032,32 @@ func (s *Server) addRepoFieldsToSchema(userType, queryType *graphql.Object, node
 		},
 	})
 
-	return repoType, mutationType
+	return repoType, mutationType, ownerRepositoriesField, ownerRepositoryField
+}
+
+func filterRepos(repos []*Repo, keep func(*Repo) bool) []*Repo {
+	filtered := make([]*Repo, 0, len(repos))
+	for _, repo := range repos {
+		if keep(repo) {
+			filtered = append(filtered, repo)
+		}
+	}
+	return filtered
+}
+
+func graphQLRepositoryAffiliations(value interface{}) []string {
+	var affiliations []string
+	switch values := value.(type) {
+	case []interface{}:
+		for _, item := range values {
+			affiliations = append(affiliations, strings.ToLower(fmt.Sprint(item)))
+		}
+	case []string:
+		for _, item := range values {
+			affiliations = append(affiliations, strings.ToLower(item))
+		}
+	}
+	return affiliations
 }
 
 // --- Mutation authorization ---
@@ -1100,11 +1235,11 @@ var graphqlMutationAuthz = map[string]mutationRule{
 	"createDiscussion":                repoRule{scope: scopeDiscussions, level: mutationReadRepo, target: mutationTargetRepo("repositoryId")},
 	"addDiscussionComment":            repoRule{scope: scopeDiscussions, level: mutationReadRepo, target: mutationTargetDiscussion("discussionId")},
 	"updateDiscussion":                repoRule{scope: scopeDiscussions, level: mutationAdminRepo, authorMayAct: true, target: mutationTargetDiscussion("discussionId")},
-	"deleteDiscussion":                repoRule{scope: scopeDiscussions, level: mutationAdminRepo, authorMayAct: true, target: mutationTargetDiscussion("discussionId")},
+	"deleteDiscussion":                repoRule{scope: scopeDiscussions, level: mutationAdminRepo, authorMayAct: true, target: mutationTargetDiscussion("id")},
 	"updateDiscussionComment":         repoRule{scope: scopeDiscussions, level: mutationAdminRepo, authorMayAct: true, target: mutationTargetDiscussionComment("commentId")},
-	"deleteDiscussionComment":         repoRule{scope: scopeDiscussions, level: mutationAdminRepo, authorMayAct: true, target: mutationTargetDiscussionComment("commentId")},
-	"markDiscussionCommentAsAnswer":   repoRule{scope: scopeDiscussions, level: mutationPushRepo, authorMayAct: true, target: mutationTargetAnsweredDiscussion("commentId")},
-	"unmarkDiscussionCommentAsAnswer": repoRule{scope: scopeDiscussions, level: mutationPushRepo, authorMayAct: true, target: mutationTargetAnsweredDiscussion("commentId")},
+	"deleteDiscussionComment":         repoRule{scope: scopeDiscussions, level: mutationAdminRepo, authorMayAct: true, target: mutationTargetDiscussionComment("id")},
+	"markDiscussionCommentAsAnswer":   repoRule{scope: scopeDiscussions, level: mutationPushRepo, authorMayAct: true, target: mutationTargetAnsweredDiscussion("id")},
+	"unmarkDiscussionCommentAsAnswer": repoRule{scope: scopeDiscussions, level: mutationPushRepo, authorMayAct: true, target: mutationTargetAnsweredDiscussion("id")},
 
 	"minimizeComment":   repoRule{scope: scopeIssues, level: mutationPushRepo, authorMayAct: true, target: mutationTargetIssueComment("subjectId")},
 	"unminimizeComment": repoRule{scope: scopeIssues, level: mutationPushRepo, authorMayAct: true, target: mutationTargetIssueComment("subjectId")},
@@ -1151,6 +1286,18 @@ func (s *Server) registerMutation(mutationType *graphql.Object, name string, fie
 	if field.Resolve == nil {
 		panic(fmt.Sprintf("graphql mutation %q has no resolver", name))
 	}
+	if inputArg := field.Args["input"]; inputArg != nil {
+		if inputType, ok := unwrapGraphQLType(inputArg.Type).(*graphql.InputObject); ok {
+			if _, exists := inputType.Fields()["clientMutationId"]; !exists {
+				inputType.AddFieldConfig("clientMutationId", &graphql.InputObjectFieldConfig{Type: graphql.String})
+			}
+		}
+	}
+	if payloadType, ok := unwrapGraphQLType(field.Type).(*graphql.Object); ok {
+		if _, exists := payloadType.Fields()["clientMutationId"]; !exists {
+			payloadType.AddFieldConfig("clientMutationId", &graphql.Field{Type: graphql.String})
+		}
+	}
 	resolve := field.Resolve
 	field.Resolve = func(p graphql.ResolveParams) (interface{}, error) {
 		// Authentication is common to every rule and is asked here so no rule
@@ -1162,7 +1309,14 @@ func (s *Server) registerMutation(mutationType *graphql.Object, name string, fie
 		if err := rule.authorize(s, p, input); err != nil {
 			return nil, err
 		}
-		return resolve(p)
+		result, err := resolve(p)
+		if err != nil {
+			return nil, err
+		}
+		if payload, ok := result.(map[string]interface{}); ok {
+			payload["clientMutationId"] = input["clientMutationId"]
+		}
+		return result, nil
 	}
 	mutationType.AddFieldConfig(name, field)
 
@@ -1172,6 +1326,16 @@ func (s *Server) registerMutation(mutationType *graphql.Object, name string, fie
 		guardedMutations.byType[mutationType] = map[string]bool{}
 	}
 	guardedMutations.byType[mutationType][name] = true
+}
+
+func unwrapGraphQLType(value graphql.Type) graphql.Type {
+	for {
+		nonNull, ok := value.(*graphql.NonNull)
+		if !ok {
+			return value
+		}
+		value = nonNull.OfType
+	}
 }
 
 // assertMutationsAuthorized fails schema construction unless every field on the
@@ -1376,12 +1540,12 @@ func repoToGraphQLLocked(st *Store, repo *Repo) map[string]interface{} {
 
 func repoToGraphQLWithOrg(repo *Repo, getOrg func(int) *Org) map[string]interface{} {
 	var ownerMap map[string]interface{}
-	if repo.Owner != nil {
-		ownerMap = userToGraphQL(repo.Owner)
-	} else if repo.OwnerType == "Organization" {
+	if repo.OwnerType == "Organization" {
 		if org := getOrg(repo.OwnerID); org != nil {
 			ownerMap = orgToGraphQL(org)
 		}
+	} else if repo.Owner != nil {
+		ownerMap = userToGraphQL(repo.Owner)
 	}
 	webURL := "/" + repo.FullName
 	if externalURL := strings.TrimRight(os.Getenv("BLEEPHUB_EXTERNAL_URL"), "/"); externalURL != "" {
@@ -1441,16 +1605,16 @@ func graphQLInputBool(input map[string]interface{}, key string) (bool, bool) {
 		}
 		return *b, true
 	default:
-		panic(fmt.Sprintf("GraphQL input %s decoded as %T, want bool", key, v))
+		// graphql-go validates public requests before resolver execution. Keep
+		// this store-facing helper total as well: a direct resolver test or a
+		// future decoder must not turn an invalid optional value into a
+		// process panic.
+		return false, false
 	}
 }
 
-// repoOwnerGraphQLLocked returns a User-shaped map for the owner of repo.
-// For org-owned repositories it resolves the organization from the repo's
-// full name and converts it with the same field names userToGraphQL uses, so
-// callers that embed the owner under REST/GraphQL repo shapes get a
-// consistent User-type object. Callers already hold st.mu; it never acquires
-// the lock itself.
+// repoOwnerGraphQLLocked returns the concrete User or Organization source for
+// the RepositoryOwner interface. Callers already hold st.mu.
 func repoOwnerGraphQLLocked(repo *Repo, st *Store) map[string]interface{} {
 	if repo == nil {
 		return nil
@@ -1458,18 +1622,7 @@ func repoOwnerGraphQLLocked(repo *Repo, st *Store) map[string]interface{} {
 	ownerLogin, _, _ := strings.Cut(repo.FullName, "/")
 	org := st.OrgsByLogin[ownerLogin]
 	if org != nil {
-		return map[string]interface{}{
-			"nodeID":     org.NodeID,
-			"databaseId": org.ID,
-			"login":      org.Login,
-			"name":       org.Name,
-			"email":      org.Email,
-			"avatarUrl":  org.AvatarURL,
-			"bio":        org.Description,
-			"url":        "/" + org.Login,
-			"createdAt":  org.CreatedAt.Format(time.RFC3339),
-			"updatedAt":  org.UpdatedAt.Format(time.RFC3339),
-		}
+		return orgToGraphQL(org)
 	}
 	if repo.Owner != nil {
 		return userToGraphQL(repo.Owner)
@@ -1580,31 +1733,30 @@ func (s *Server) repoHasNoCommits(owner, name string) bool {
 	return headRef.Hash().IsZero()
 }
 
-// paginateRepos implements Relay-style cursor pagination. Each page element is
-// rendered from a private snapshot so repoToGraphQL never reads a shared repo
-// pointer off the store lock.
-func paginateRepos(st *Store, repos []*Repo, first int, after string) map[string]interface{} {
-	return paginateGQL(repos, first, after, func(r *Repo) map[string]interface{} {
-		return repoToGraphQL(st, st.snapRepo(r))
-	})
-}
-
 func encodeCursor(idx int) string {
 	return base64.StdEncoding.EncodeToString([]byte(fmt.Sprintf("cursor:%d", idx)))
 }
 
 func decodeCursor(s string) int {
+	n, err := decodeCursorStrict(s)
+	if err != nil {
+		return int(^uint(0) >> 1)
+	}
+	return n
+}
+
+func decodeCursorStrict(s string) (int, error) {
 	b, err := base64.StdEncoding.DecodeString(s)
 	if err != nil {
-		return 0
+		return 0, err
 	}
 	str := string(b)
 	if !strings.HasPrefix(str, "cursor:") {
-		return 0
+		return 0, fmt.Errorf("cursor prefix")
 	}
 	n, err := strconv.Atoi(strings.TrimPrefix(str, "cursor:"))
-	if err != nil {
-		return 0
+	if err != nil || n < 0 {
+		return 0, fmt.Errorf("cursor index")
 	}
-	return n
+	return n, nil
 }

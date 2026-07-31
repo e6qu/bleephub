@@ -293,7 +293,7 @@ describe("EnterprisePage settings tab", () => {
   it("shows the Actions cache limit and Dependabot access, and updates the limit", async () => {
     mockSettings();
     renderPage();
-    fireEvent.click(screen.getByRole("button", { name: "Settings" }));
+    fireEvent.click(screen.getByRole("tab", { name: "Settings" }));
 
     await waitFor(() => {
       expect(screen.getByText("10 GB")).toBeInTheDocument();
@@ -326,7 +326,7 @@ describe("EnterprisePage settings tab", () => {
       return Promise.resolve(jsonResponse([]));
     });
     renderPage();
-    fireEvent.click(screen.getByRole("button", { name: "Settings" }));
+    fireEvent.click(screen.getByRole("tab", { name: "Settings" }));
     await waitFor(() => {
       expect(screen.getByText(/failed to load actions cache limit/i)).toBeInTheDocument();
     });

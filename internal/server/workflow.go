@@ -147,6 +147,7 @@ func (j *JobDef) FailFast() bool {
 // MatrixDef represents a matrix strategy configuration.
 type MatrixDef struct {
 	Values  map[string][]interface{} // non-reserved keys
+	Order   []string                 // value keys in YAML declaration order
 	Include []map[string]interface{} // include entries
 	Exclude []map[string]interface{} // exclude entries
 }
@@ -450,6 +451,14 @@ func parseMatrixNode(node *yaml.Node) (MatrixDef, error) {
 	var raw map[string]interface{}
 	if err := node.Decode(&raw); err != nil {
 		return md, fmt.Errorf("parse matrix: %w", err)
+	}
+	if node.Kind == yaml.MappingNode {
+		for i := 0; i+1 < len(node.Content); i += 2 {
+			key := node.Content[i].Value
+			if key != "include" && key != "exclude" {
+				md.Order = append(md.Order, key)
+			}
+		}
 	}
 
 	for key, val := range raw {

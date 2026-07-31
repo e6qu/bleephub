@@ -82,6 +82,15 @@ type customPropertyPayload struct {
 // toCustomProperty validates the payload and materializes the definition.
 // Missing optional values fall back to their documented defaults.
 func (p *customPropertyPayload) toCustomProperty(w http.ResponseWriter, name string) *CustomProperty {
+	return p.toCustomPropertyFor(w, name, "org_actors", "org_actors", "org_and_repo_actors")
+}
+
+func (p *customPropertyPayload) toCustomPropertyFor(
+	w http.ResponseWriter,
+	name string,
+	defaultEditableBy string,
+	editableValues ...string,
+) *CustomProperty {
 	if name == "" {
 		writeGHValidationError(w, "CustomProperty", "property_name", "missing_field")
 		return nil
@@ -113,9 +122,16 @@ func (p *customPropertyPayload) toCustomProperty(w http.ResponseWriter, name str
 			return nil
 		}
 	}
-	editableBy := "org_actors"
+	editableBy := defaultEditableBy
 	if p.ValuesEditableBy != nil {
-		if *p.ValuesEditableBy != "org_actors" && *p.ValuesEditableBy != "org_and_repo_actors" {
+		valid := false
+		for _, value := range editableValues {
+			if *p.ValuesEditableBy == value {
+				valid = true
+				break
+			}
+		}
+		if !valid {
 			writeGHValidationError(w, "CustomProperty", "values_editable_by", "invalid")
 			return nil
 		}
@@ -139,7 +155,7 @@ func (s *Server) handleGetOrgCustomProperties(w http.ResponseWriter, r *http.Req
 	base := s.baseURL(r)
 	out := make([]map[string]interface{}, 0, len(props))
 	for _, p := range props {
-		out = append(out, customPropertyJSON(p, org, base))
+		out = append(out, s.customPropertyJSONForOrg(p, org, base))
 	}
 	writeJSON(w, http.StatusOK, out)
 }
@@ -183,7 +199,7 @@ func (s *Server) handleGetOrgCustomProperty(w http.ResponseWriter, r *http.Reque
 		writeGHError(w, http.StatusNotFound, "Not Found")
 		return
 	}
-	writeJSON(w, http.StatusOK, customPropertyJSON(p, org, s.baseURL(r)))
+	writeJSON(w, http.StatusOK, s.customPropertyJSONForOrg(p, org, s.baseURL(r)))
 }
 
 func (s *Server) handleUpsertOrgCustomProperty(w http.ResponseWriter, r *http.Request) {
@@ -414,6 +430,17 @@ func customPropertyJSON(p *CustomProperty, org, baseURL string) map[string]inter
 	return out
 }
 
+func (s *Server) customPropertyJSONForOrg(p *CustomProperty, org, baseURL string) map[string]interface{} {
+	s.store.mu.RLock()
+	enterpriseOwned := s.store.OrgCustomProperties[org][p.PropertyName] == nil &&
+		s.store.EnterpriseSettings.RepositoryCustomProperties[p.PropertyName] != nil
+	s.store.mu.RUnlock()
+	if enterpriseOwned {
+		return enterprisePropertyJSON(p, baseURL, s.enterpriseSlug(), "properties")
+	}
+	return customPropertyJSON(p, org, baseURL)
+}
+
 // --- store ---
 
 // ListCustomProperties returns the org's property definitions sorted by name.
@@ -421,9 +448,14 @@ func (st *Store) ListCustomProperties(orgLogin string) []*CustomProperty {
 	st.mu.RLock()
 	defer st.mu.RUnlock()
 	m := st.OrgCustomProperties[orgLogin]
-	out := make([]*CustomProperty, 0, len(m))
+	out := make([]*CustomProperty, 0, len(m)+len(st.EnterpriseSettings.RepositoryCustomProperties))
 	for _, p := range m {
 		out = append(out, p)
+	}
+	for name, p := range st.EnterpriseSettings.RepositoryCustomProperties {
+		if m[name] == nil {
+			out = append(out, p)
+		}
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].PropertyName < out[j].PropertyName })
 	return out
@@ -433,7 +465,10 @@ func (st *Store) ListCustomProperties(orgLogin string) []*CustomProperty {
 func (st *Store) GetCustomProperty(orgLogin, name string) *CustomProperty {
 	st.mu.RLock()
 	defer st.mu.RUnlock()
-	return st.OrgCustomProperties[orgLogin][name]
+	if property := st.OrgCustomProperties[orgLogin][name]; property != nil {
+		return property
+	}
+	return st.EnterpriseSettings.RepositoryCustomProperties[name]
 }
 
 // UpsertCustomProperty creates or replaces a property definition.
@@ -525,7 +560,13 @@ func cloneCustomPropertyValue(value interface{}) interface{} {
 func (st *Store) EffectiveRepoCustomPropertyValues(orgLogin, repoKey string) []map[string]interface{} {
 	st.mu.RLock()
 	defer st.mu.RUnlock()
-	defs := st.OrgCustomProperties[orgLogin]
+	defs := make(map[string]*CustomProperty, len(st.EnterpriseSettings.RepositoryCustomProperties)+len(st.OrgCustomProperties[orgLogin]))
+	for name, definition := range st.EnterpriseSettings.RepositoryCustomProperties {
+		defs[name] = definition
+	}
+	for name, definition := range st.OrgCustomProperties[orgLogin] {
+		defs[name] = definition
+	}
 	names := make([]string, 0, len(defs))
 	for name := range defs {
 		names = append(names, name)

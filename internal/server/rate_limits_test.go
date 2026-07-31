@@ -118,6 +118,24 @@ func TestUnauthenticatedCoreRateLimitIsSixty(t *testing.T) {
 	}
 }
 
+func TestBrowserSessionGetsAuthenticatedUserBudget(t *testing.T) {
+	server := &Server{rateLimits: map[string]*apiRateWindow{}}
+	user := &User{ID: 42, Login: "browser-user"}
+	first := httptest.NewRequest(http.MethodGet, "/api/v3/user", nil)
+	first = first.WithContext(contextWithUser(first.Context(), user))
+	second := httptest.NewRequest(http.MethodGet, "/api/v3/notifications", nil)
+	second = second.WithContext(contextWithUser(second.Context(), user))
+
+	got := server.rateLimitSnapshot(first, "core", true)
+	if got.Limit != 5000 || got.Remaining != 4999 {
+		t.Fatalf("browser session core snapshot = %+v, want authenticated budget", got)
+	}
+	got = server.rateLimitSnapshot(second, "core", true)
+	if got.Used != 2 || got.Remaining != 4998 {
+		t.Fatalf("same user in another browser request did not share its budget: %+v", got)
+	}
+}
+
 func TestRateLimitResponseContainsEveryDocumentedResource(t *testing.T) {
 	server := &Server{rateLimits: map[string]*apiRateWindow{}}
 	request := httptest.NewRequest("GET", "/api/v3/rate_limit", nil)

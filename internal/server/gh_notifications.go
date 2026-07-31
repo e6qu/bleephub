@@ -91,7 +91,7 @@ func (s *Server) handleMarkNotificationsRead(w http.ResponseWriter, r *http.Requ
 		return
 	}
 
-	at := time.Now().UTC()
+	at := s.currentTime()
 	var body struct {
 		LastReadAt string `json:"last_read_at"`
 	}
@@ -153,7 +153,7 @@ func (s *Server) handleMarkRepoNotificationsRead(w http.ResponseWriter, r *http.
 		return
 	}
 
-	at := time.Now().UTC()
+	at := s.currentTime()
 	var body struct {
 		LastReadAt string `json:"last_read_at"`
 	}
@@ -206,7 +206,7 @@ func (s *Server) handlePatchThread(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	s.store.MarkThreadRead(user.ID, threadID, time.Now().UTC())
+	s.store.MarkThreadRead(user.ID, threadID, s.currentTime())
 	w.WriteHeader(http.StatusResetContent)
 }
 
@@ -259,7 +259,7 @@ func (s *Server) handleSetThreadSubscription(w http.ResponseWriter, r *http.Requ
 		Subscribed: body.Subscribed,
 		Ignored:    body.Ignored,
 		Reason:     thread.Reason,
-		CreatedAt:  time.Now().UTC(),
+		CreatedAt:  s.currentTime(),
 	}
 	s.store.SetThreadSubscription(user.ID, threadID, sub)
 	writeJSON(w, http.StatusOK, threadSubscriptionToJSON(sub, thread.SubscriptionURL))

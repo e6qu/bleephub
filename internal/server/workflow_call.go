@@ -3,6 +3,7 @@ package bleephub
 import (
 	"fmt"
 	"io"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -25,6 +26,7 @@ const maxWorkflowCallDepth = 4
 type WorkflowCallBinding struct {
 	// CalledPath identifies the called workflow (for errors/logging).
 	CalledPath string
+	CalledRepo string
 	// With holds the caller's raw input templates; InputDefs the called
 	// workflow's declarations (typing + defaults).
 	With      map[string]string
@@ -174,6 +176,7 @@ func (s *Server) expandOneCall(out *WorkflowDef, callerKey string, caller *JobDe
 	binding := &WorkflowCallBinding{
 		CallerKey:      callerKey,
 		CalledPath:     calledPath,
+		CalledRepo:     calledRepo,
 		With:           caller.With,
 		InputDefs:      inputDefs,
 		SecretsMap:     caller.SecretsMap,
@@ -219,6 +222,7 @@ func (s *Server) expandOneCall(out *WorkflowDef, callerKey string, caller *JobDe
 		if child.Call == nil {
 			child.Call = binding
 		}
+		child.Env = mergedCallEnvironment(calledDef.Env, child.Env)
 		out.Jobs[childKey] = &child
 		binding.CalledJobKeys = append(binding.CalledJobKeys, childKey)
 		collectorNeeds = append(collectorNeeds, childKey)
@@ -378,10 +382,16 @@ func (s *Server) resolveCallInputsLocked(wf *Workflow, gate *WorkflowJob) bool {
 		val, err := EvalTemplate(tmpl, ctx)
 		if err != nil {
 			s.logger.Warn().Err(err).Str("input", name).Str("workflow", binding.CalledPath).
-				Msg("workflow_call input template failed — passing empty")
-			val = ""
+				Msg("workflow_call input template failed")
+			return false
 		}
-		resolved[name] = typedCallInput(binding.InputDefs[name], val)
+		typed, err := typedCallInput(binding.InputDefs[name], val)
+		if err != nil {
+			s.logger.Warn().Err(err).Str("input", name).Str("workflow", binding.CalledPath).
+				Msg("workflow_call input validation failed")
+			return false
+		}
+		resolved[name] = typed
 	}
 	for name, def := range binding.InputDefs {
 		if _, ok := resolved[name]; ok || def == nil {
@@ -397,21 +407,37 @@ func (s *Server) resolveCallInputsLocked(wf *Workflow, gate *WorkflowJob) bool {
 	return true
 }
 
-// typedCallInput converts a resolved string input to the declared type.
-func typedCallInput(def *WorkflowInputDef, val string) interface{} {
+// typedCallInput converts a resolved string input to the declared type without
+// accepting prefixes or truthy spellings that GitHub's input contract rejects.
+func typedCallInput(def *WorkflowInputDef, val string) (interface{}, error) {
 	if def == nil {
-		return val
+		return val, nil
 	}
 	switch def.Type {
 	case "boolean":
-		return val == "true"
-	case "number":
-		if f, err := parseJSONNumber(val); err == nil {
-			return f
+		switch strings.ToLower(strings.TrimSpace(val)) {
+		case "true":
+			return true, nil
+		case "false":
+			return false, nil
+		default:
+			return nil, fmt.Errorf("%q is not a boolean", val)
 		}
-		return val
+	case "number":
+		f, err := parseJSONNumber(val)
+		if err != nil {
+			return nil, fmt.Errorf("%q is not a number: %w", val, err)
+		}
+		return f, nil
+	case "choice":
+		for _, option := range def.Options {
+			if fmt.Sprint(normalizeYAMLValue(option)) == val {
+				return val, nil
+			}
+		}
+		return nil, fmt.Errorf("%q is not one of the declared options", val)
 	default:
-		return val
+		return val, nil
 	}
 }
 
@@ -465,7 +491,9 @@ func (s *Server) collectCallOutputsLocked(wf *Workflow, collector *WorkflowJob) 
 		val, err := EvalTemplate(tmpl, ctx)
 		if err != nil {
 			s.logger.Warn().Err(err).Str("output", name).Msg("workflow_call output template failed")
-			continue
+			collector.Status = JobStatusCompleted
+			collector.Result = ResultFailure
+			return
 		}
 		collector.Outputs[name] = val
 	}
@@ -473,7 +501,19 @@ func (s *Server) collectCallOutputsLocked(wf *Workflow, collector *WorkflowJob) 
 
 // parseJSONNumber parses a numeric string the way expression numbers work.
 func parseJSONNumber(s string) (float64, error) {
-	var f float64
-	_, err := fmt.Sscanf(strings.TrimSpace(s), "%g", &f)
-	return f, err
+	return strconv.ParseFloat(strings.TrimSpace(s), 64)
+}
+
+func mergedCallEnvironment(workflowEnv, jobEnv map[string]string) map[string]string {
+	if len(workflowEnv) == 0 && len(jobEnv) == 0 {
+		return nil
+	}
+	merged := make(map[string]string, len(workflowEnv)+len(jobEnv))
+	for name, value := range workflowEnv {
+		merged[name] = value
+	}
+	for name, value := range jobEnv {
+		merged[name] = value
+	}
+	return merged
 }

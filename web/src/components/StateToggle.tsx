@@ -16,6 +16,8 @@ export function StateToggle<T extends string>({
 }) {
   return (
     <div
+      role="group"
+      aria-label="State filter"
       className="inline-flex items-center"
       style={{
         border: "1px solid var(--color-border)",
@@ -28,6 +30,8 @@ export function StateToggle<T extends string>({
         return (
           <button
             key={opt}
+            type="button"
+            aria-pressed={active}
             onClick={() => onChange(opt)}
             className="inline-flex items-center gap-1.5"
             style={{

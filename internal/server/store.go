@@ -173,6 +173,13 @@ type Token struct {
 	RepositoryIDs       []int             `json:"repository_ids,omitempty"`
 	Permissions         OrgPATPermissions `json:"permissions,omitempty"`
 	ExpiresAt           *time.Time        `json:"expires_at,omitempty"`
+	// Impersonation marks a GHES site-admin impersonation OAuth token. GHES
+	// permits at most one active impersonation authorization per user and
+	// exposes it through /admin/users/{username}/authorizations.
+	Impersonation bool   `json:"impersonation,omitempty"`
+	Note          string `json:"note,omitempty"`
+	NoteURL       string `json:"note_url,omitempty"`
+	Fingerprint   string `json:"fingerprint,omitempty"`
 }
 
 func (st *Store) tokenMapKey(value string) string {
@@ -509,6 +516,7 @@ type Store struct {
 	//     sub-store mutex (Misc.mu, Reactions.mu, Releases.mu, persistence),
 	//     never the reverse.
 	mu       sync.RWMutex
+	clockMu  sync.RWMutex
 	clockNow func() time.Time
 	// enterprises
 	EnterpriseTeams                    map[int]*EnterpriseTeam
@@ -598,6 +606,14 @@ type Store struct {
 	OrgInteractionLimits   map[string]*OrgInteractionLimit // orgLogin → active interaction limit
 	OrgRoleTeamAssignments map[string]map[int][]int        // orgLogin → roleID → team IDs
 	OrgRoleUserAssignments map[string]map[int][]int        // orgLogin → roleID → user IDs
+	OrgAnnouncements       map[string]*EnterpriseAnnouncement
+	OrgCustomRepoRoles     map[string]map[int]*OrgCustomRepositoryRole // orgLogin → role ID → role
+	OrgCustomRoles         map[string]map[int]*OrgCustomOrganizationRole
+	NextOrgCustomRoleID    int
+	OrgSCIMUsers           map[string]map[string]*EnterpriseSCIMUser // orgLogin → SCIM ID → identity
+	OrgExternalGroups      map[string]map[string]*OrgExternalIdentityGroup
+	TeamExternalGroupIDs   map[int][]string // team ID → external group IDs
+	NextOrgExternalGroupID int
 	// org billing budgets (gh_org_billing.go)
 	OrgBudgets map[string]map[string]*OrgBudget // org login → budget ID → budget
 	// API insights (gh_api_insights.go)
@@ -617,6 +633,9 @@ type Store struct {
 	SecretScanningPatternConfigs   map[string]*OrgSecretScanningPatternConfig                     // org login → config
 	SecretScanningPushPlaceholders map[string]map[string]*SecretScanningPushProtectionPlaceholder // repoKey → placeholder ID → placeholder
 	SecretScanningPushBypasses     map[string][]*SecretScanningPushProtectionBypass               // repoKey → bypasses
+	SecurityReviewRequests         map[string]map[int]*SecurityReviewRequest                      // "repo|kind" → number → request
+	NextSecurityReviewRequestID    int
+	NextSecurityReviewResponseID   int
 
 	// repo-write surfaces
 	PagesDeployments         map[int]map[int]*PagesDeploymentRecord // repoID → deployment ID → record
@@ -648,8 +667,13 @@ type Store struct {
 }
 
 func (st *Store) currentTime() time.Time {
-	if st != nil && st.clockNow != nil {
-		return st.clockNow().UTC()
+	if st != nil {
+		st.clockMu.RLock()
+		clockNow := st.clockNow
+		st.clockMu.RUnlock()
+		if clockNow != nil {
+			return clockNow().UTC()
+		}
 	}
 	return time.Now().UTC()
 }
@@ -978,6 +1002,14 @@ func NewStore() *Store {
 		OrgInteractionLimits:   map[string]*OrgInteractionLimit{},
 		OrgRoleTeamAssignments: map[string]map[int][]int{},
 		OrgRoleUserAssignments: map[string]map[int][]int{},
+		OrgAnnouncements:       map[string]*EnterpriseAnnouncement{},
+		OrgCustomRepoRoles:     map[string]map[int]*OrgCustomRepositoryRole{},
+		OrgCustomRoles:         map[string]map[int]*OrgCustomOrganizationRole{},
+		NextOrgCustomRoleID:    1000,
+		OrgSCIMUsers:           map[string]map[string]*EnterpriseSCIMUser{},
+		OrgExternalGroups:      map[string]map[string]*OrgExternalIdentityGroup{},
+		TeamExternalGroupIDs:   map[int][]string{},
+		NextOrgExternalGroupID: 1,
 		// org billing budgets
 		OrgBudgets: map[string]map[string]*OrgBudget{},
 		// API insights
@@ -996,6 +1028,9 @@ func NewStore() *Store {
 		SecretScanningPatternConfigs:   map[string]*OrgSecretScanningPatternConfig{},
 		SecretScanningPushPlaceholders: map[string]map[string]*SecretScanningPushProtectionPlaceholder{},
 		SecretScanningPushBypasses:     map[string][]*SecretScanningPushProtectionBypass{},
+		SecurityReviewRequests:         map[string]map[int]*SecurityReviewRequest{},
+		NextSecurityReviewRequestID:    1,
+		NextSecurityReviewResponseID:   1,
 		// repo-write surfaces
 		PagesDeployments:         map[int]map[int]*PagesDeploymentRecord{},
 		NextPagesDeploymentID:    1,
@@ -2695,7 +2730,12 @@ func (st *Store) loadFromPersistence() error {
 		if err := loadJSON(raw, &s); err != nil {
 			return err
 		}
-		st.EnterpriseSettings = &s
+		st.EnterpriseSettings = normalizeEnterpriseSettings(&s)
+		for _, hook := range st.EnterpriseSettings.GHESGlobalHooks {
+			if hook.ID >= st.NextHookID {
+				st.NextHookID = hook.ID + 1
+			}
+		}
 		return nil
 	}); err != nil {
 		return err
@@ -3204,6 +3244,121 @@ func (st *Store) loadFromPersistence() error {
 			st.OrgInteractionLimits[orgLogin] = &lim
 		}
 	}
+	if rows, err := st.persist.List("org_announcements"); err != nil {
+		return fmt.Errorf("load org_announcements: %w", err)
+	} else {
+		for orgLogin, raw := range rows {
+			var announcement EnterpriseAnnouncement
+			if err := loadJSON(raw, &announcement); err != nil {
+				return fmt.Errorf("decode org_announcements row: %w", err)
+			}
+			st.OrgAnnouncements[orgLogin] = &announcement
+		}
+	}
+	if rows, err := st.persist.List("org_scim_users"); err != nil {
+		return fmt.Errorf("load org_scim_users: %w", err)
+	} else {
+		for orgLogin, raw := range rows {
+			users := map[string]*EnterpriseSCIMUser{}
+			if err := loadJSON(raw, &users); err != nil {
+				return fmt.Errorf("decode org_scim_users row: %w", err)
+			}
+			st.OrgSCIMUsers[orgLogin] = users
+		}
+	}
+	if rows, err := st.persist.List("org_external_groups"); err != nil {
+		return fmt.Errorf("load org_external_groups: %w", err)
+	} else {
+		for orgLogin, raw := range rows {
+			groups := map[string]*OrgExternalIdentityGroup{}
+			if err := loadJSON(raw, &groups); err != nil {
+				return fmt.Errorf("decode org_external_groups row: %w", err)
+			}
+			st.OrgExternalGroups[orgLogin] = groups
+			for _, group := range groups {
+				if group.NumericID >= st.NextOrgExternalGroupID {
+					st.NextOrgExternalGroupID = group.NumericID + 1
+				}
+			}
+		}
+	}
+	if rows, err := st.persist.List("team_external_group_ids"); err != nil {
+		return fmt.Errorf("load team_external_group_ids: %w", err)
+	} else {
+		for teamIDRaw, raw := range rows {
+			teamID, err := strconv.Atoi(teamIDRaw)
+			if err != nil {
+				return fmt.Errorf("decode team_external_group_ids key %q: %w", teamIDRaw, err)
+			}
+			var groupIDs []string
+			if err := loadJSON(raw, &groupIDs); err != nil {
+				return fmt.Errorf("decode team_external_group_ids row: %w", err)
+			}
+			st.TeamExternalGroupIDs[teamID] = groupIDs
+		}
+	}
+	if rows, err := st.persist.List("security_review_requests"); err != nil {
+		return fmt.Errorf("load security_review_requests: %w", err)
+	} else {
+		for scope, raw := range rows {
+			requests := map[int]*SecurityReviewRequest{}
+			if err := loadJSON(raw, &requests); err != nil {
+				return fmt.Errorf("decode security_review_requests row: %w", err)
+			}
+			st.SecurityReviewRequests[scope] = requests
+			for _, request := range requests {
+				if request.ID >= st.NextSecurityReviewRequestID {
+					st.NextSecurityReviewRequestID = request.ID + 1
+				}
+				for _, response := range request.Responses {
+					if response.ID >= st.NextSecurityReviewResponseID {
+						st.NextSecurityReviewResponseID = response.ID + 1
+					}
+				}
+			}
+		}
+	}
+	for bucket, dst := range map[string]map[string]map[int]json.RawMessage{
+		"org_custom_repo_roles": {},
+		"org_custom_roles":      {},
+	} {
+		rows, err := st.persist.List(bucket)
+		if err != nil {
+			return fmt.Errorf("load %s: %w", bucket, err)
+		}
+		for orgLogin, raw := range rows {
+			var records map[int]json.RawMessage
+			if err := loadJSON(raw, &records); err != nil {
+				return fmt.Errorf("decode %s row: %w", bucket, err)
+			}
+			dst[orgLogin] = records
+			for id, record := range records {
+				switch bucket {
+				case "org_custom_repo_roles":
+					var role OrgCustomRepositoryRole
+					if err := loadJSON(record, &role); err != nil {
+						return fmt.Errorf("decode %s role: %w", bucket, err)
+					}
+					if st.OrgCustomRepoRoles[orgLogin] == nil {
+						st.OrgCustomRepoRoles[orgLogin] = map[int]*OrgCustomRepositoryRole{}
+					}
+					st.OrgCustomRepoRoles[orgLogin][id] = &role
+				case "org_custom_roles":
+					var role OrgCustomOrganizationRole
+					if err := loadJSON(record, &role); err != nil {
+						return fmt.Errorf("decode %s role: %w", bucket, err)
+					}
+					if st.OrgCustomRoles[orgLogin] == nil {
+						st.OrgCustomRoles[orgLogin] = map[int]*OrgCustomOrganizationRole{}
+					}
+					st.OrgCustomRoles[orgLogin][id] = &role
+				}
+				if id >= st.NextOrgCustomRoleID {
+					st.NextOrgCustomRoleID = id + 1
+				}
+			}
+		}
+	}
 	for bucket, dst := range map[string]map[string]map[int][]int{
 		"org_role_team_assignments": st.OrgRoleTeamAssignments,
 		"org_role_user_assignments": st.OrgRoleUserAssignments,
@@ -3665,7 +3820,7 @@ func (st *Store) SeedDefaultUser() {
 	st.mu.Lock()
 	defer st.mu.Unlock()
 
-	now := time.Now().UTC()
+	now := st.currentTime()
 	u := &User{
 		ID:           st.NextUser,
 		NodeID:       "U_kgDOBdefault",
@@ -3884,7 +4039,7 @@ func (st *Store) CreateGistE(owner *User, description string, public bool, files
 			return nil, err
 		}
 	}
-	now := time.Now().UTC()
+	now := st.currentTime()
 	g := &Gist{
 		ID:          id,
 		NodeID:      fmt.Sprintf("G_kwDOB%06d", st.NextGistID),
@@ -3953,7 +4108,7 @@ func (st *Store) UpdateGistE(id string, description *string, files map[string]*G
 			delete(g.Files, name)
 		}
 	}
-	g.UpdatedAt = time.Now().UTC()
+	g.UpdatedAt = st.currentTime()
 
 	version, err := generateGistID()
 	if err != nil {
@@ -4140,7 +4295,7 @@ func (st *Store) ForkGistE(user *User, gistID string) (*Gist, bool, error) {
 		cp := *f
 		files[name] = &cp
 	}
-	now := time.Now().UTC()
+	now := st.currentTime()
 	id, err := generateGistID()
 	if err != nil {
 		return nil, false, err
@@ -4197,7 +4352,7 @@ func (st *Store) CreateGistComment(gistID string, user *User, body string) *Gist
 	if g == nil {
 		return nil
 	}
-	now := time.Now().UTC()
+	now := st.currentTime()
 	c := &GistComment{
 		ID:                st.NextGistCommentID,
 		NodeID:            fmt.Sprintf("GC_kwDOB%06d", st.NextGistCommentID),
@@ -4232,7 +4387,7 @@ func (st *Store) UpdateGistComment(id int, body string) (*GistComment, bool) {
 		return nil, false
 	}
 	c.Body = body
-	c.UpdatedAt = time.Now().UTC()
+	c.UpdatedAt = st.currentTime()
 	st.persistGistCommentLocked(c)
 	return c, true
 }
@@ -4407,7 +4562,7 @@ func (st *Store) AddUserSSHSigningKey(userID int, key string) map[string]interfa
 		"id":         id,
 		"key":        key,
 		"title":      "",
-		"created_at": time.Now().UTC().Format(time.RFC3339),
+		"created_at": st.currentTime().Format(time.RFC3339),
 	}
 	st.Misc.sshSigningKeys[userID] = append(st.Misc.sshSigningKeys[userID], entry)
 	if st.Misc.persist != nil {

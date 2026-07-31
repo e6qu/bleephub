@@ -25,6 +25,9 @@ type UserToServerToken struct {
 	ExpiresAt         time.Time         `json:"expires_at"`
 	RefreshTokenValue string            `json:"refresh_token_value,omitempty"`
 	CreatedAt         time.Time         `json:"created_at"`
+	Note              string            `json:"note,omitempty"`
+	NoteURL           string            `json:"note_url,omitempty"`
+	Fingerprint       string            `json:"fingerprint,omitempty"`
 }
 
 // RefreshToken pairs with a UserToServerToken. Used to mint a fresh user token

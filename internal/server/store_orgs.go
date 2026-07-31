@@ -147,7 +147,7 @@ func (st *Store) CreateOrg(creator *User, login, name, description string) *Org 
 		return nil
 	}
 
-	now := time.Now().UTC()
+	now := st.currentTime()
 	org := &Org{
 		ID:          st.NextOrg,
 		NodeID:      fmt.Sprintf("O_kgDO%08d", st.NextOrg),
@@ -222,7 +222,7 @@ func (st *Store) UpdateOrg(login string, fn func(*Org)) bool {
 		return false
 	}
 	fn(org)
-	org.UpdatedAt = time.Now().UTC()
+	org.UpdatedAt = st.currentTime()
 	if st.persist != nil {
 		st.persist.MustPut("orgs", strconv.Itoa(org.ID), org)
 	}
@@ -273,7 +273,7 @@ func (st *Store) deleteOrgMetadata(login string) ([]pendingDeletion, bool, error
 	if err := st.persist.Put(pendingDeletionsBucket, pendingOrgDeletionKey(login), pendingDeletion{
 		Kind:      "org",
 		Name:      login,
-		StartedAt: time.Now().UTC(),
+		StartedAt: st.currentTime(),
 	}); err != nil {
 		return nil, true, fmt.Errorf("delete organization %s: record deletion intent: %w", login, err)
 	}
@@ -569,7 +569,7 @@ func (st *Store) CreateTeam(orgLogin, name string, opts TeamOptions) *Team {
 		}
 	}
 
-	now := time.Now().UTC()
+	now := st.currentTime()
 	team := &Team{
 		ID:                  st.NextTeam,
 		NodeID:              fmt.Sprintf("T_kgDO%08d", st.NextTeam),
@@ -649,7 +649,7 @@ func (st *Store) UpdateTeamChecked(orgLogin, slug string, fn func(*Team)) error 
 		delete(st.TeamsBySlug, key)
 		st.TeamsBySlug[newKey] = team
 	}
-	updated.UpdatedAt = time.Now().UTC()
+	updated.UpdatedAt = st.currentTime()
 	*team = updated
 	if st.persist != nil {
 		st.persist.MustPut("teams", strconv.Itoa(team.ID), team)
@@ -796,7 +796,7 @@ func (st *Store) SetTeamMembership(orgLogin, slug string, userID int, role TeamR
 	default:
 		team.MaintainerIDs = intSliceRemove(team.MaintainerIDs, userID)
 	}
-	team.UpdatedAt = time.Now().UTC()
+	team.UpdatedAt = st.currentTime()
 	if st.persist != nil {
 		st.persist.MustPut("teams", strconv.Itoa(team.ID), team)
 	}
@@ -817,7 +817,7 @@ func (st *Store) RemoveTeamMembership(orgLogin, slug string, userID int) bool {
 	}
 	team.MemberIDs = intSliceRemove(team.MemberIDs, userID)
 	team.MaintainerIDs = intSliceRemove(team.MaintainerIDs, userID)
-	team.UpdatedAt = time.Now().UTC()
+	team.UpdatedAt = st.currentTime()
 	if st.persist != nil {
 		st.persist.MustPut("teams", strconv.Itoa(team.ID), team)
 	}
@@ -899,7 +899,7 @@ func (st *Store) SetTeamRepoPermission(orgLogin, slug, fullName string, perm Tea
 		}
 		team.RepoPermissions[fullName] = perm
 	}
-	team.UpdatedAt = time.Now().UTC()
+	team.UpdatedAt = st.currentTime()
 	if st.persist != nil {
 		st.persist.MustPut("teams", strconv.Itoa(team.ID), team)
 	}
@@ -944,7 +944,7 @@ func (st *Store) AddTeamRepo(orgLogin, slug, repoFullName string) bool {
 	if team.RepoPermissions == nil {
 		team.RepoPermissions = map[string]TeamPermission{}
 	}
-	team.UpdatedAt = time.Now().UTC()
+	team.UpdatedAt = st.currentTime()
 	if st.persist != nil {
 		st.persist.MustPut("teams", strconv.Itoa(team.ID), team)
 	}
@@ -967,7 +967,7 @@ func (st *Store) RemoveTeamRepo(orgLogin, slug, repoFullName string) bool {
 			if team.RepoPermissions != nil {
 				delete(team.RepoPermissions, repoFullName)
 			}
-			team.UpdatedAt = time.Now().UTC()
+			team.UpdatedAt = st.currentTime()
 			if st.persist != nil {
 				st.persist.MustPut("teams", strconv.Itoa(team.ID), team)
 			}

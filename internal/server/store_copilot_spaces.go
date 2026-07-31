@@ -59,7 +59,7 @@ func (st *Store) CreateCopilotSpace(ownerType, ownerLogin string, creatorID int,
 			number = sp.Number
 		}
 	}
-	now := time.Now().UTC()
+	now := st.currentTime()
 	space := &CopilotSpace{
 		ID:                  st.NextCopilotSpaceID,
 		Number:              number + 1,
@@ -93,7 +93,7 @@ func (st *Store) persistCopilotSpaceLocked(space *CopilotSpace) {
 func (st *Store) SaveCopilotSpace(space *CopilotSpace) {
 	st.mu.Lock()
 	defer st.mu.Unlock()
-	space.UpdatedAt = time.Now().UTC()
+	space.UpdatedAt = st.currentTime()
 	st.persistCopilotSpaceLocked(space)
 }
 

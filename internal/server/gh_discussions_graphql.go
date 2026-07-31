@@ -1,8 +1,8 @@
 package bleephub
 
 import (
+	"bytes"
 	"fmt"
-	"html"
 	"sort"
 	"strconv"
 	"strings"
@@ -14,46 +14,9 @@ import (
 // addDiscussionFieldsToSchema adds Discussion, DiscussionCategory,
 // DiscussionComment types and their connections/mutations to the GraphQL schema.
 func (s *Server) addDiscussionFieldsToSchema(userType, repoType, mutationType *graphql.Object) {
-	// --- Page info types ---
-	discussionCategoryPageInfoType := graphql.NewObject(graphql.ObjectConfig{
-		Name: "DiscussionCategoryPageInfo",
-		Fields: graphql.Fields{
-			"hasNextPage":     &graphql.Field{Type: graphql.NewNonNull(graphql.Boolean)},
-			"hasPreviousPage": &graphql.Field{Type: graphql.NewNonNull(graphql.Boolean)},
-			"startCursor":     &graphql.Field{Type: graphql.String},
-			"endCursor":       &graphql.Field{Type: graphql.String},
-		},
-	})
-
-	discussionPageInfoType := graphql.NewObject(graphql.ObjectConfig{
-		Name: "DiscussionPageInfo",
-		Fields: graphql.Fields{
-			"hasNextPage":     &graphql.Field{Type: graphql.NewNonNull(graphql.Boolean)},
-			"hasPreviousPage": &graphql.Field{Type: graphql.NewNonNull(graphql.Boolean)},
-			"startCursor":     &graphql.Field{Type: graphql.String},
-			"endCursor":       &graphql.Field{Type: graphql.String},
-		},
-	})
-
-	discussionCommentPageInfoType := graphql.NewObject(graphql.ObjectConfig{
-		Name: "DiscussionCommentPageInfo",
-		Fields: graphql.Fields{
-			"hasNextPage":     &graphql.Field{Type: graphql.NewNonNull(graphql.Boolean)},
-			"hasPreviousPage": &graphql.Field{Type: graphql.NewNonNull(graphql.Boolean)},
-			"startCursor":     &graphql.Field{Type: graphql.String},
-			"endCursor":       &graphql.Field{Type: graphql.String},
-		},
-	})
-
-	discussionReactionPageInfoType := graphql.NewObject(graphql.ObjectConfig{
-		Name: "DiscussionReactionPageInfo",
-		Fields: graphql.Fields{
-			"hasNextPage":     &graphql.Field{Type: graphql.NewNonNull(graphql.Boolean)},
-			"hasPreviousPage": &graphql.Field{Type: graphql.NewNonNull(graphql.Boolean)},
-			"startCursor":     &graphql.Field{Type: graphql.String},
-			"endCursor":       &graphql.Field{Type: graphql.String},
-		},
-	})
+	dateTime := s.graphQLStringScalar("DateTime")
+	uri := s.graphQLStringScalar("URI")
+	htmlScalar := s.graphQLStringScalar("HTML")
 
 	// --- Reaction types ---
 	discussionReactionGroupType := graphql.NewObject(graphql.ObjectConfig{
@@ -105,7 +68,7 @@ func (s *Server) addDiscussionFieldsToSchema(userType, repoType, mutationType *g
 			"nodes":      &graphql.Field{Type: graphql.NewList(discussionReactionType)},
 			"edges":      &graphql.Field{Type: graphql.NewList(graphql.NewObject(graphql.ObjectConfig{Name: "DiscussionReactionEdge", Fields: graphql.Fields{"node": &graphql.Field{Type: discussionReactionType}, "cursor": &graphql.Field{Type: graphql.NewNonNull(graphql.String)}}}))},
 			"totalCount": &graphql.Field{Type: graphql.NewNonNull(graphql.Int)},
-			"pageInfo":   &graphql.Field{Type: graphql.NewNonNull(discussionReactionPageInfoType)},
+			"pageInfo":   &graphql.Field{Type: graphql.NewNonNull(s.gqlPageInfoType())},
 		},
 	})
 
@@ -124,11 +87,11 @@ func (s *Server) addDiscussionFieldsToSchema(userType, repoType, mutationType *g
 				},
 			},
 			"name":         &graphql.Field{Type: graphql.NewNonNull(graphql.String)},
-			"emoji":        &graphql.Field{Type: graphql.String},
+			"emoji":        &graphql.Field{Type: graphql.NewNonNull(graphql.String)},
 			"description":  &graphql.Field{Type: graphql.String},
 			"isAnswerable": &graphql.Field{Type: graphql.NewNonNull(graphql.Boolean)},
-			"createdAt":    &graphql.Field{Type: graphql.NewNonNull(graphql.String)},
-			"updatedAt":    &graphql.Field{Type: graphql.NewNonNull(graphql.String)},
+			"createdAt":    &graphql.Field{Type: graphql.NewNonNull(dateTime)},
+			"updatedAt":    &graphql.Field{Type: graphql.NewNonNull(dateTime)},
 		},
 	})
 
@@ -146,7 +109,7 @@ func (s *Server) addDiscussionFieldsToSchema(userType, repoType, mutationType *g
 			"nodes":      &graphql.Field{Type: graphql.NewList(discussionCategoryType)},
 			"edges":      &graphql.Field{Type: graphql.NewList(discussionCategoryEdgeType)},
 			"totalCount": &graphql.Field{Type: graphql.NewNonNull(graphql.Int)},
-			"pageInfo":   &graphql.Field{Type: graphql.NewNonNull(discussionCategoryPageInfoType)},
+			"pageInfo":   &graphql.Field{Type: graphql.NewNonNull(s.gqlPageInfoType())},
 		},
 	})
 
@@ -185,7 +148,7 @@ func (s *Server) addDiscussionFieldsToSchema(userType, repoType, mutationType *g
 					},
 				},
 				"author": &graphql.Field{
-					Type: userType,
+					Type: s.graphqlTypes.actor,
 					Resolve: func(p graphql.ResolveParams) (interface{}, error) {
 						c, ok := p.Source.(map[string]interface{})
 						if !ok {
@@ -195,11 +158,11 @@ func (s *Server) addDiscussionFieldsToSchema(userType, repoType, mutationType *g
 					},
 				},
 				"body":         &graphql.Field{Type: graphql.NewNonNull(graphql.String)},
-				"bodyHTML":     &graphql.Field{Type: graphql.NewNonNull(graphql.String)},
+				"bodyHTML":     &graphql.Field{Type: graphql.NewNonNull(htmlScalar)},
 				"bodyText":     &graphql.Field{Type: graphql.NewNonNull(graphql.String)},
-				"createdAt":    &graphql.Field{Type: graphql.NewNonNull(graphql.String)},
-				"updatedAt":    &graphql.Field{Type: graphql.NewNonNull(graphql.String)},
-				"lastEditedAt": &graphql.Field{Type: graphql.String},
+				"createdAt":    &graphql.Field{Type: graphql.NewNonNull(dateTime)},
+				"updatedAt":    &graphql.Field{Type: graphql.NewNonNull(dateTime)},
+				"lastEditedAt": &graphql.Field{Type: dateTime},
 				"isAnswer":     &graphql.Field{Type: graphql.NewNonNull(graphql.Boolean)},
 				"reactionGroups": &graphql.Field{
 					Type: graphql.NewList(discussionReactionGroupType),
@@ -230,7 +193,7 @@ func (s *Server) addDiscussionFieldsToSchema(userType, repoType, mutationType *g
 					},
 				},
 				"replies": &graphql.Field{
-					Type: discussionCommentConnectionType,
+					Type: graphql.NewNonNull(discussionCommentConnectionType),
 					Args: graphql.FieldConfigArgument{
 						"first":  &graphql.ArgumentConfig{Type: graphql.Int},
 						"last":   &graphql.ArgumentConfig{Type: graphql.Int},
@@ -273,7 +236,7 @@ func (s *Server) addDiscussionFieldsToSchema(userType, repoType, mutationType *g
 				"nodes":      &graphql.Field{Type: graphql.NewList(discussionCommentType)},
 				"edges":      &graphql.Field{Type: graphql.NewList(discussionCommentEdgeType)},
 				"totalCount": &graphql.Field{Type: graphql.NewNonNull(graphql.Int)},
-				"pageInfo":   &graphql.Field{Type: graphql.NewNonNull(discussionCommentPageInfoType)},
+				"pageInfo":   &graphql.Field{Type: graphql.NewNonNull(s.gqlPageInfoType())},
 			}
 		}),
 	})
@@ -293,9 +256,9 @@ func (s *Server) addDiscussionFieldsToSchema(userType, repoType, mutationType *g
 			},
 			"number": &graphql.Field{Type: graphql.NewNonNull(graphql.Int)},
 			"title":  &graphql.Field{Type: graphql.NewNonNull(graphql.String)},
-			"body":   &graphql.Field{Type: graphql.String},
+			"body":   &graphql.Field{Type: graphql.NewNonNull(graphql.String)},
 			"bodyHTML": &graphql.Field{
-				Type: graphql.NewNonNull(graphql.String),
+				Type: graphql.NewNonNull(htmlScalar),
 				Resolve: func(p graphql.ResolveParams) (interface{}, error) {
 					d, ok := p.Source.(map[string]interface{})
 					if !ok {
@@ -317,7 +280,7 @@ func (s *Server) addDiscussionFieldsToSchema(userType, repoType, mutationType *g
 				},
 			},
 			"author": &graphql.Field{
-				Type: userType,
+				Type: s.graphqlTypes.actor,
 				Resolve: func(p graphql.ResolveParams) (interface{}, error) {
 					d, ok := p.Source.(map[string]interface{})
 					if !ok {
@@ -327,7 +290,7 @@ func (s *Server) addDiscussionFieldsToSchema(userType, repoType, mutationType *g
 				},
 			},
 			"category": &graphql.Field{
-				Type: discussionCategoryType,
+				Type: graphql.NewNonNull(discussionCategoryType),
 				Resolve: func(p graphql.ResolveParams) (interface{}, error) {
 					d, ok := p.Source.(map[string]interface{})
 					if !ok {
@@ -336,13 +299,13 @@ func (s *Server) addDiscussionFieldsToSchema(userType, repoType, mutationType *g
 					return d["category"], nil
 				},
 			},
-			"createdAt":    &graphql.Field{Type: graphql.NewNonNull(graphql.String)},
-			"updatedAt":    &graphql.Field{Type: graphql.NewNonNull(graphql.String)},
-			"lastEditedAt": &graphql.Field{Type: graphql.String},
-			"locked":       &graphql.Field{Type: graphql.NewNonNull(graphql.Boolean)},
-			"lockedReason": &graphql.Field{Type: graphql.String},
-			"publishedAt":  &graphql.Field{Type: graphql.String},
-			"url":          &graphql.Field{Type: graphql.NewNonNull(graphql.String)},
+			"createdAt":        &graphql.Field{Type: graphql.NewNonNull(dateTime)},
+			"updatedAt":        &graphql.Field{Type: graphql.NewNonNull(dateTime)},
+			"lastEditedAt":     &graphql.Field{Type: dateTime},
+			"locked":           &graphql.Field{Type: graphql.NewNonNull(graphql.Boolean)},
+			"activeLockReason": &graphql.Field{Type: s.graphQLEnum("LockReason", "OFF_TOPIC", "RESOLVED", "SPAM", "TOO_HEATED")},
+			"publishedAt":      &graphql.Field{Type: dateTime},
+			"url":              &graphql.Field{Type: graphql.NewNonNull(uri)},
 			"viewerCanDelete": &graphql.Field{
 				Type: graphql.NewNonNull(graphql.Boolean),
 				Resolve: func(p graphql.ResolveParams) (interface{}, error) {
@@ -428,7 +391,7 @@ func (s *Server) addDiscussionFieldsToSchema(userType, repoType, mutationType *g
 				},
 			},
 			"comments": &graphql.Field{
-				Type: discussionCommentConnectionType,
+				Type: graphql.NewNonNull(discussionCommentConnectionType),
 				Args: graphql.FieldConfigArgument{
 					"first":  &graphql.ArgumentConfig{Type: graphql.Int},
 					"last":   &graphql.ArgumentConfig{Type: graphql.Int},
@@ -466,7 +429,7 @@ func (s *Server) addDiscussionFieldsToSchema(userType, repoType, mutationType *g
 			"nodes":      &graphql.Field{Type: graphql.NewList(discussionType)},
 			"edges":      &graphql.Field{Type: graphql.NewList(discussionEdgeType)},
 			"totalCount": &graphql.Field{Type: graphql.NewNonNull(graphql.Int)},
-			"pageInfo":   &graphql.Field{Type: graphql.NewNonNull(discussionPageInfoType)},
+			"pageInfo":   &graphql.Field{Type: graphql.NewNonNull(s.gqlPageInfoType())},
 		},
 	})
 
@@ -479,17 +442,11 @@ func (s *Server) addDiscussionFieldsToSchema(userType, repoType, mutationType *g
 		},
 	})
 
-	discussionOrderDirectionEnum := graphql.NewEnum(graphql.EnumConfig{
-		Name: "DiscussionOrderDirection",
-		Values: graphql.EnumValueConfigMap{
-			"ASC":  &graphql.EnumValueConfig{Value: "ASC"},
-			"DESC": &graphql.EnumValueConfig{Value: "DESC"},
-		},
-	})
+	discussionOrderDirectionEnum := s.graphQLEnum("OrderDirection", "ASC", "DESC")
 
 	// --- Repository fields ---
 	repoType.AddFieldConfig("discussionCategories", &graphql.Field{
-		Type: discussionCategoryConnectionType,
+		Type: graphql.NewNonNull(discussionCategoryConnectionType),
 		Args: graphql.FieldConfigArgument{
 			"first":  &graphql.ArgumentConfig{Type: graphql.Int},
 			"last":   &graphql.ArgumentConfig{Type: graphql.Int},
@@ -512,7 +469,7 @@ func (s *Server) addDiscussionFieldsToSchema(userType, repoType, mutationType *g
 	})
 
 	repoType.AddFieldConfig("discussions", &graphql.Field{
-		Type: discussionConnectionType,
+		Type: graphql.NewNonNull(discussionConnectionType),
 		Args: graphql.FieldConfigArgument{
 			"first":      &graphql.ArgumentConfig{Type: graphql.Int},
 			"last":       &graphql.ArgumentConfig{Type: graphql.Int},
@@ -522,8 +479,8 @@ func (s *Server) addDiscussionFieldsToSchema(userType, repoType, mutationType *g
 			"orderBy": &graphql.ArgumentConfig{Type: graphql.NewInputObject(graphql.InputObjectConfig{
 				Name: "DiscussionOrder",
 				Fields: graphql.InputObjectConfigFieldMap{
-					"field":     &graphql.InputObjectFieldConfig{Type: discussionOrderFieldEnum},
-					"direction": &graphql.InputObjectFieldConfig{Type: discussionOrderDirectionEnum},
+					"field":     &graphql.InputObjectFieldConfig{Type: graphql.NewNonNull(discussionOrderFieldEnum)},
+					"direction": &graphql.InputObjectFieldConfig{Type: graphql.NewNonNull(discussionOrderDirectionEnum)},
 				},
 			})},
 		},
@@ -536,9 +493,11 @@ func (s *Server) addDiscussionFieldsToSchema(userType, repoType, mutationType *g
 
 			categoryID := 0
 			if catNodeID, ok := p.Args["categoryId"].(string); ok && catNodeID != "" {
-				if cat := findDiscussionCategoryByNodeID(s.store, catNodeID); cat != nil {
-					categoryID = cat.ID
+				cat := findDiscussionCategoryByNodeID(s.store, catNodeID)
+				if cat == nil || cat.RepoID != repoID {
+					return paginateGQLMaps(nil, p.Args), nil
 				}
+				categoryID = cat.ID
 			}
 
 			discussions := s.store.ListDiscussions(repoID, categoryID)
@@ -600,7 +559,7 @@ func (s *Server) addDiscussionFieldsToSchema(userType, repoType, mutationType *g
 			"repositoryId":     &graphql.InputObjectFieldConfig{Type: graphql.NewNonNull(graphql.ID)},
 			"categoryId":       &graphql.InputObjectFieldConfig{Type: graphql.NewNonNull(graphql.ID)},
 			"title":            &graphql.InputObjectFieldConfig{Type: graphql.NewNonNull(graphql.String)},
-			"body":             &graphql.InputObjectFieldConfig{Type: graphql.String},
+			"body":             &graphql.InputObjectFieldConfig{Type: graphql.NewNonNull(graphql.String)},
 			"clientMutationId": &graphql.InputObjectFieldConfig{Type: graphql.String},
 		},
 	})
@@ -635,7 +594,7 @@ func (s *Server) addDiscussionFieldsToSchema(userType, repoType, mutationType *g
 	deleteDiscussionInputType := graphql.NewInputObject(graphql.InputObjectConfig{
 		Name: "DeleteDiscussionInput",
 		Fields: graphql.InputObjectConfigFieldMap{
-			"discussionId":     &graphql.InputObjectFieldConfig{Type: graphql.NewNonNull(graphql.ID)},
+			"id":               &graphql.InputObjectFieldConfig{Type: graphql.NewNonNull(graphql.ID)},
 			"clientMutationId": &graphql.InputObjectFieldConfig{Type: graphql.String},
 		},
 	})
@@ -643,6 +602,7 @@ func (s *Server) addDiscussionFieldsToSchema(userType, repoType, mutationType *g
 	deleteDiscussionPayloadType := graphql.NewObject(graphql.ObjectConfig{
 		Name: "DeleteDiscussionPayload",
 		Fields: graphql.Fields{
+			"discussion":       &graphql.Field{Type: discussionType},
 			"clientMutationId": &graphql.Field{Type: graphql.String},
 		},
 	})
@@ -685,7 +645,7 @@ func (s *Server) addDiscussionFieldsToSchema(userType, repoType, mutationType *g
 	deleteDiscussionCommentInputType := graphql.NewInputObject(graphql.InputObjectConfig{
 		Name: "DeleteDiscussionCommentInput",
 		Fields: graphql.InputObjectConfigFieldMap{
-			"commentId":        &graphql.InputObjectFieldConfig{Type: graphql.NewNonNull(graphql.ID)},
+			"id":               &graphql.InputObjectFieldConfig{Type: graphql.NewNonNull(graphql.ID)},
 			"clientMutationId": &graphql.InputObjectFieldConfig{Type: graphql.String},
 		},
 	})
@@ -701,7 +661,7 @@ func (s *Server) addDiscussionFieldsToSchema(userType, repoType, mutationType *g
 	markDiscussionCommentAsAnswerInputType := graphql.NewInputObject(graphql.InputObjectConfig{
 		Name: "MarkDiscussionCommentAsAnswerInput",
 		Fields: graphql.InputObjectConfigFieldMap{
-			"commentId":        &graphql.InputObjectFieldConfig{Type: graphql.NewNonNull(graphql.ID)},
+			"id":               &graphql.InputObjectFieldConfig{Type: graphql.NewNonNull(graphql.ID)},
 			"clientMutationId": &graphql.InputObjectFieldConfig{Type: graphql.String},
 		},
 	})
@@ -717,7 +677,7 @@ func (s *Server) addDiscussionFieldsToSchema(userType, repoType, mutationType *g
 	unmarkDiscussionCommentAsAnswerInputType := graphql.NewInputObject(graphql.InputObjectConfig{
 		Name: "UnmarkDiscussionCommentAsAnswerInput",
 		Fields: graphql.InputObjectConfigFieldMap{
-			"commentId":        &graphql.InputObjectFieldConfig{Type: graphql.NewNonNull(graphql.ID)},
+			"id":               &graphql.InputObjectFieldConfig{Type: graphql.NewNonNull(graphql.ID)},
 			"clientMutationId": &graphql.InputObjectFieldConfig{Type: graphql.String},
 		},
 	})
@@ -801,13 +761,15 @@ func (s *Server) addDiscussionFieldsToSchema(userType, repoType, mutationType *g
 		},
 		Resolve: func(p graphql.ResolveParams) (interface{}, error) {
 			input, _ := p.Args["input"].(map[string]interface{})
-			discussionNodeID, _ := input["discussionId"].(string)
+			discussionNodeID, _ := input["id"].(string)
 			d := findDiscussionByNodeID(s.store, discussionNodeID)
 			if d == nil {
 				return nil, fmt.Errorf("could not resolve to a Discussion")
 			}
+			source := discussionToGQL(d, s.store)
 			s.store.DeleteDiscussion(d.ID)
 			return map[string]interface{}{
+				"discussion":       source,
 				"clientMutationId": input["clientMutationId"],
 			}, nil
 		},
@@ -873,7 +835,7 @@ func (s *Server) addDiscussionFieldsToSchema(userType, repoType, mutationType *g
 		},
 		Resolve: func(p graphql.ResolveParams) (interface{}, error) {
 			input, _ := p.Args["input"].(map[string]interface{})
-			commentNodeID, _ := input["commentId"].(string)
+			commentNodeID, _ := input["id"].(string)
 			c := findDiscussionCommentByNodeID(s.store, commentNodeID)
 			if c == nil {
 				return nil, fmt.Errorf("could not resolve to a DiscussionComment")
@@ -893,7 +855,7 @@ func (s *Server) addDiscussionFieldsToSchema(userType, repoType, mutationType *g
 		},
 		Resolve: func(p graphql.ResolveParams) (interface{}, error) {
 			input, _ := p.Args["input"].(map[string]interface{})
-			commentNodeID, _ := input["commentId"].(string)
+			commentNodeID, _ := input["id"].(string)
 			c := findDiscussionCommentByNodeID(s.store, commentNodeID)
 			if c == nil {
 				return nil, fmt.Errorf("could not resolve to a DiscussionComment")
@@ -921,7 +883,7 @@ func (s *Server) addDiscussionFieldsToSchema(userType, repoType, mutationType *g
 		},
 		Resolve: func(p graphql.ResolveParams) (interface{}, error) {
 			input, _ := p.Args["input"].(map[string]interface{})
-			commentNodeID, _ := input["commentId"].(string)
+			commentNodeID, _ := input["id"].(string)
 			c := findDiscussionCommentByNodeID(s.store, commentNodeID)
 			if c == nil {
 				return nil, fmt.Errorf("could not resolve to a DiscussionComment")
@@ -984,24 +946,24 @@ func discussionToGQL(d *Discussion, st *Store) map[string]interface{} {
 	}
 
 	return map[string]interface{}{
-		"nodeID":       d.NodeID,
-		"databaseId":   d.ID,
-		"repoID":       d.RepoID,
-		"number":       d.Number,
-		"title":        d.Title,
-		"body":         d.Body,
-		"bodyHTML":     discussionBodyToHTML(d.Body),
-		"bodyText":     discussionBodyToText(d.Body),
-		"author":       author,
-		"authorID":     d.AuthorID,
-		"category":     category,
-		"createdAt":    d.CreatedAt.Format(time.RFC3339),
-		"updatedAt":    d.UpdatedAt.Format(time.RFC3339),
-		"lastEditedAt": lastEditedAt,
-		"locked":       d.Locked,
-		"lockedReason": nilStr(d.LockedReason),
-		"publishedAt":  publishedAt,
-		"url":          url,
+		"nodeID":           d.NodeID,
+		"databaseId":       d.ID,
+		"repoID":           d.RepoID,
+		"number":           d.Number,
+		"title":            d.Title,
+		"body":             d.Body,
+		"bodyHTML":         discussionBodyToHTML(d.Body),
+		"bodyText":         discussionBodyToText(d.Body),
+		"author":           author,
+		"authorID":         d.AuthorID,
+		"category":         category,
+		"createdAt":        d.CreatedAt.Format(time.RFC3339),
+		"updatedAt":        d.UpdatedAt.Format(time.RFC3339),
+		"lastEditedAt":     lastEditedAt,
+		"locked":           d.Locked,
+		"activeLockReason": graphQLLockReason(d.LockedReason),
+		"publishedAt":      publishedAt,
+		"url":              url,
 	}
 }
 
@@ -1038,17 +1000,11 @@ func discussionBodyToHTML(body string) string {
 	if body == "" {
 		return ""
 	}
-	paragraphs := strings.Split(strings.TrimSpace(body), "\n\n")
-	var out strings.Builder
-	for _, para := range paragraphs {
-		if strings.TrimSpace(para) == "" {
-			continue
-		}
-		escaped := html.EscapeString(strings.TrimSpace(para))
-		escaped = strings.ReplaceAll(escaped, "\n", "<br>")
-		out.WriteString("<p>" + escaped + "</p>")
+	var rendered bytes.Buffer
+	if err := markdownModeRenderer.Convert([]byte(body), &rendered); err != nil {
+		return ""
 	}
-	return out.String()
+	return rendered.String()
 }
 
 func discussionBodyToText(body string) string {

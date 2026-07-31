@@ -6,6 +6,29 @@ import (
 	"time"
 )
 
+func (s *ProjectV2Store) replaceClockNow(clockNow func() time.Time) {
+	if s == nil {
+		return
+	}
+	s.clockMu.Lock()
+	s.clockNow = clockNow
+	s.clockMu.Unlock()
+}
+
+func (st *Store) replaceClockNow(clockNow func() time.Time) func() time.Time {
+	if st == nil {
+		return nil
+	}
+	st.clockMu.Lock()
+	previous := st.clockNow
+	st.clockNow = clockNow
+	st.clockMu.Unlock()
+	if st.ProjectsV2 != nil {
+		st.ProjectsV2.replaceClockNow(clockNow)
+	}
+	return previous
+}
+
 // replaceClockNow atomically installs a deterministic test clock and returns
 // the previous source so callers can restore it. Servers own concurrent
 // schedulers and timeout watchers that may still read the clock during cleanup,
@@ -18,6 +41,9 @@ func (s *Server) replaceClockNow(clockNow func() time.Time) func() time.Time {
 	previous := s.clockNow
 	s.clockNow = clockNow
 	s.clockMu.Unlock()
+	if s.store != nil {
+		s.store.replaceClockNow(clockNow)
+	}
 	return previous
 }
 

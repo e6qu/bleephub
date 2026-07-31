@@ -224,7 +224,7 @@ describe("RepoSecretsPage org scope", () => {
     const keypair = await installMocks();
     renderPage();
     await screen.findByText("NPM_TOKEN");
-    fireEvent.click(screen.getByRole("button", { name: /organization \(admin\)/i }));
+    fireEvent.click(screen.getByRole("tab", { name: /organization \(admin\)/i }));
     expect(await screen.findByText("ORG_TOKEN")).toBeInTheDocument();
     expect(screen.getByText("all")).toBeInTheDocument();
 

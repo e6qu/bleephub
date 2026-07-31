@@ -476,11 +476,12 @@ func runnerMAC(data string) []byte {
 	return mac.Sum(nil)
 }
 
-// runnerScope names the repository or organization a runner credential acts
-// for. Exactly one field is set.
+// runnerScope names the repository, organization, or enterprise a runner
+// credential acts for. Exactly one field is set.
 type runnerScope struct {
-	Repo string `json:"repo,omitempty"` // owner/repo
-	Org  string `json:"org,omitempty"`
+	Repo       string `json:"repo,omitempty"` // owner/repo
+	Org        string `json:"org,omitempty"`
+	Enterprise string `json:"enterprise,omitempty"`
 }
 
 func (sc runnerScope) String() string {
@@ -489,11 +490,15 @@ func (sc runnerScope) String() string {
 		return "repo:" + sc.Repo
 	case sc.Org != "":
 		return "org:" + sc.Org
+	case sc.Enterprise != "":
+		return "enterprise:" + sc.Enterprise
 	}
 	return "unscoped"
 }
 
-func (sc runnerScope) empty() bool { return sc.Repo == "" && sc.Org == "" }
+func (sc runnerScope) empty() bool {
+	return sc.Repo == "" && sc.Org == "" && sc.Enterprise == ""
+}
 
 // coversRepo reports whether the scope entitles its holder to act for
 // repoFullName. Repository names are case-insensitive on GitHub.
@@ -508,14 +513,17 @@ func (sc runnerScope) coversRepo(repoFullName string) bool {
 		owner, _, ok := strings.Cut(repoFullName, "/")
 		return ok && strings.EqualFold(sc.Org, owner)
 	}
+	if sc.Enterprise != "" {
+		return true
+	}
 	return false
 }
 
 // runnerScopeFromRequest reads the scope a registration/JIT request acts for
 // off its path parameters: {owner}/{repo} for the repository surface, {org}
-// for the organization surface. The named target must exist — a runner
-// credential for a repository that is not there would be a credential for
-// nothing, and real GitHub answers 404.
+// for the organization surface, or {enterprise} for the enterprise surface.
+// The named target must exist — a runner credential for a target that is not
+// there would be a credential for nothing, and real GitHub answers 404.
 func (s *Server) runnerScopeFromRequest(r *http.Request) (runnerScope, error) {
 	owner, repo := r.PathValue("owner"), r.PathValue("repo")
 	if owner != "" && repo != "" {
@@ -531,7 +539,13 @@ func (s *Server) runnerScopeFromRequest(r *http.Request) (runnerScope, error) {
 		}
 		return runnerScope{Org: org}, nil
 	}
-	return runnerScope{}, fmt.Errorf("request path names neither a repository nor an organization")
+	if enterprise := r.PathValue("enterprise"); enterprise != "" {
+		if enterprise != s.enterpriseSlug() {
+			return runnerScope{}, fmt.Errorf("enterprise %s not found", enterprise)
+		}
+		return runnerScope{Enterprise: enterprise}, nil
+	}
+	return runnerScope{}, fmt.Errorf("request path names neither a repository, organization, nor enterprise")
 }
 
 // signedBlob encodes payload and appends its MAC, producing an opaque
@@ -586,7 +600,7 @@ type runnerRegistrationClaims struct {
 
 func newRunnerRegistrationToken(scope runnerScope, purpose string) (string, error) {
 	if scope.empty() {
-		return "", fmt.Errorf("runner registration token needs a repository or organization scope")
+		return "", fmt.Errorf("runner registration token needs a repository, organization, or enterprise scope")
 	}
 	nonce, err := randomRunnerToken()
 	if err != nil {
@@ -634,7 +648,7 @@ func parseRunnerRegistrationToken(token string, purposes []string) (runnerRegist
 // cannot produce without the runner's private key.
 func newAgentClientID(scope runnerScope) (string, error) {
 	if scope.empty() {
-		return "", fmt.Errorf("agent clientId needs a repository or organization scope")
+		return "", fmt.Errorf("agent clientId needs a repository, organization, or enterprise scope")
 	}
 	return uuid.New().String(), nil
 }
@@ -791,9 +805,16 @@ func actionArchiveCredential(r *http.Request) (string, bool) {
 // authenticateRunner resolves the caller of a runner protocol route to a
 // verified principal.
 func (s *Server) authenticateRunner(r *http.Request) (*runnerPrincipal, error) {
-	token, ok := bearerCredential(r)
-	if !ok {
+	raw := r.Header.Get("Authorization")
+	if raw == "" {
 		return nil, fmt.Errorf("missing runner bearer token")
+	}
+	scheme, token := authScheme(raw)
+	if scheme == "" || token == "" {
+		return nil, fmt.Errorf("malformed runner authorization header")
+	}
+	if scheme != "bearer" {
+		return nil, fmt.Errorf("unsupported runner authorization scheme %q", scheme)
 	}
 	return s.runnerPrincipalForToken(token)
 }

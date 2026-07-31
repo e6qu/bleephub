@@ -95,7 +95,7 @@ func (st *Store) CreateCodeScanningAlert(repoKey, ruleID, severity, description,
 		st.CodeScanningNextNumber[repoKey] = 1
 	}
 
-	now := time.Now().UTC()
+	now := st.currentTime()
 	if state == "" {
 		state = "open"
 	}
@@ -190,7 +190,7 @@ func (st *Store) UpdateCodeScanningAlert(a *CodeScanningAlert, state, dismissedR
 		return err
 	}
 
-	now := time.Now().UTC()
+	now := st.currentTime()
 	switch state {
 	case "dismissed":
 		a.State = "dismissed"
@@ -255,7 +255,7 @@ func (st *Store) CreateCodeScanningAnalysis(repoKey, ref, commitSHA, analysisKey
 		st.CodeScanningAnalysesByRepo[repoKey] = make(map[int]*CodeScanningAnalysis)
 	}
 
-	now := time.Now().UTC()
+	now := st.currentTime()
 	analysis := &CodeScanningAnalysis{
 		ID:          st.NextCodeScanningAnalysisID,
 		NodeID:      fmt.Sprintf("CSWA%d", st.NextCodeScanningAnalysisID),
@@ -356,7 +356,7 @@ func (st *Store) CreateSARIFUpload(repoKey string, payload map[string]interface{
 		return nil, fmt.Errorf("sarif is required")
 	}
 
-	now := time.Now().UTC()
+	now := st.currentTime()
 	uploadID := fmt.Sprintf("%s-%d", strings.ReplaceAll(repoKey, "/", "-"), now.UnixNano())
 	upload := &SARIFUpload{
 		ID:        uploadID,
@@ -409,7 +409,7 @@ func (st *Store) createAnalysisAndAlertsLocked(repoKey, ref, commitSHA, analysis
 		st.CodeScanningAnalysesByRepo[repoKey] = make(map[int]*CodeScanningAnalysis)
 	}
 
-	now := time.Now().UTC()
+	now := st.currentTime()
 	analysis := &CodeScanningAnalysis{
 		ID:          st.NextCodeScanningAnalysisID,
 		NodeID:      fmt.Sprintf("CSWA%d", st.NextCodeScanningAnalysisID),
@@ -637,7 +637,7 @@ func (st *Store) GetCodeScanningDefaultSetup(repoKey string) *CodeScanningDefaul
 func (st *Store) SetCodeScanningDefaultSetup(setup *CodeScanningDefaultSetup) {
 	st.mu.Lock()
 	defer st.mu.Unlock()
-	setup.UpdatedAt = time.Now().UTC()
+	setup.UpdatedAt = st.currentTime()
 	st.CodeScanningDefaultSetups[setup.RepoKey] = setup
 	if st.persist != nil {
 		st.persist.MustPut("code_scanning_default_setups", setup.RepoKey, setup)
@@ -835,7 +835,7 @@ func (st *Store) CreateCodeScanningAutofix(a *CodeScanningAlert) (*CodeScanningA
 		AlertNumber: a.Number,
 		Status:      "success",
 		Description: fmt.Sprintf("Remediates %s at %s:%d.", a.RuleID, inst.Path, inst.StartLine),
-		StartedAt:   time.Now().UTC(),
+		StartedAt:   st.currentTime(),
 	}
 	st.CodeScanningAutofixes[key] = fix
 	if st.persist != nil {
@@ -875,7 +875,7 @@ func (st *Store) UpsertCodeQLDatabase(repoKey, language, name, contentType, comm
 		return nil, fmt.Errorf("CodeQL database byte storage requires BLEEPHUB_OBJECT_S3_BUCKET when persistence is enabled")
 	}
 
-	now := time.Now().UTC()
+	now := st.currentTime()
 	if st.CodeQLDatabasesByRepo[repoKey] == nil {
 		st.CodeQLDatabasesByRepo[repoKey] = make(map[string]*CodeQLDatabase)
 	}
@@ -1069,7 +1069,7 @@ func (st *Store) CreateCodeQLVariantAnalysis(controllerRepoKey string, actorID i
 		return nil, fmt.Errorf("CodeQL variant-analysis query-pack byte storage requires BLEEPHUB_OBJECT_S3_BUCKET when persistence is enabled")
 	}
 
-	now := time.Now().UTC()
+	now := st.currentTime()
 	id := st.NextCodeQLVariantAnalysisID
 	storagePath := codeQLVariantAnalysisQueryPackDataKey(id)
 	if st.ObjectByteStore != nil {

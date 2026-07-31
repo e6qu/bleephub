@@ -112,7 +112,7 @@ func (st *Store) CreateAttestation(repoID int, bundle json.RawMessage, subjects 
 		SubjectDigests: subjects,
 		PredicateType:  predicateType,
 		Initiator:      initiator,
-		CreatedAt:      time.Now().UTC(),
+		CreatedAt:      st.currentTime(),
 	}
 	if st.ObjectByteStore == nil {
 		a.Bundle = append(json.RawMessage(nil), bundle...)

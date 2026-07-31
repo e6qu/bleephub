@@ -95,7 +95,7 @@ func (st *Store) CreateDiscussionCategory(repoID int, name, emoji, description s
 
 // createDiscussionCategoryLocked creates a category while the caller already holds st.mu.
 func (st *Store) createDiscussionCategoryLocked(repoID int, name, emoji, description string, isAnswerable bool) *DiscussionCategory {
-	now := time.Now().UTC()
+	now := st.currentTime()
 	cat := &DiscussionCategory{
 		ID:           st.NextDiscussionCategoryID,
 		NodeID:       discussionCategoryNodeID(st.NextDiscussionCategoryID),
@@ -162,7 +162,7 @@ func (st *Store) CreateDiscussion(repoID, categoryID, authorID int, title, body 
 	st.mu.Lock()
 	defer st.mu.Unlock()
 
-	now := time.Now().UTC()
+	now := st.currentTime()
 	d := &Discussion{
 		ID:          st.NextDiscussionID,
 		NodeID:      discussionNodeID(st.NextDiscussionID),
@@ -228,7 +228,7 @@ func (st *Store) UpdateDiscussion(id int, fn func(*Discussion)) bool {
 		return false
 	}
 	fn(d)
-	now := time.Now().UTC()
+	now := st.currentTime()
 	if d.LastEditedAt == nil {
 		d.LastEditedAt = &now
 	} else {
@@ -248,7 +248,7 @@ func (st *Store) DeleteDiscussion(id int) bool {
 		return false
 	}
 	d.Deleted = true
-	d.UpdatedAt = time.Now().UTC()
+	d.UpdatedAt = st.currentTime()
 	st.persistDiscussion(d)
 	return true
 }
@@ -258,7 +258,7 @@ func (st *Store) CreateDiscussionComment(discussionID, authorID int, body string
 	st.mu.Lock()
 	defer st.mu.Unlock()
 
-	now := time.Now().UTC()
+	now := st.currentTime()
 	c := &DiscussionComment{
 		ID:           st.NextDiscussionCommentID,
 		NodeID:       discussionCommentNodeID(st.NextDiscussionCommentID),
@@ -309,7 +309,7 @@ func (st *Store) UpdateDiscussionComment(id int, fn func(*DiscussionComment)) bo
 		return false
 	}
 	fn(c)
-	now := time.Now().UTC()
+	now := st.currentTime()
 	if c.LastEditedAt == nil {
 		c.LastEditedAt = &now
 	} else {
@@ -329,7 +329,7 @@ func (st *Store) DeleteDiscussionComment(id int) bool {
 		return false
 	}
 	c.Deleted = true
-	c.UpdatedAt = time.Now().UTC()
+	c.UpdatedAt = st.currentTime()
 	st.persistDiscussionComment(c)
 	return true
 }
@@ -345,12 +345,12 @@ func (st *Store) MarkDiscussionCommentAsAnswer(id int) bool {
 	for _, other := range st.DiscussionComments {
 		if other.DiscussionID == c.DiscussionID && other.IsAnswer {
 			other.IsAnswer = false
-			other.UpdatedAt = time.Now().UTC()
+			other.UpdatedAt = st.currentTime()
 			st.persistDiscussionComment(other)
 		}
 	}
 	c.IsAnswer = true
-	c.UpdatedAt = time.Now().UTC()
+	c.UpdatedAt = st.currentTime()
 	st.persistDiscussionComment(c)
 	return true
 }
@@ -364,7 +364,7 @@ func (st *Store) UnmarkDiscussionCommentAsAnswer(id int) bool {
 		return false
 	}
 	c.IsAnswer = false
-	c.UpdatedAt = time.Now().UTC()
+	c.UpdatedAt = st.currentTime()
 	st.persistDiscussionComment(c)
 	return true
 }

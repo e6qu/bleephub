@@ -87,9 +87,9 @@ describe("AppsPage", () => {
     mockFetch.mockImplementation((url: RequestInfo | URL) => routedFetch(url));
     renderPage();
     await waitFor(() => {
-      expect(screen.getByRole("button", { name: "GitHub Apps" })).toBeInTheDocument();
-      expect(screen.getByRole("button", { name: "Installations" })).toBeInTheDocument();
-      expect(screen.getByRole("button", { name: "OAuth Apps" })).toBeInTheDocument();
+      expect(screen.getByRole("tab", { name: "GitHub Apps" })).toBeInTheDocument();
+      expect(screen.getByRole("tab", { name: "Installations" })).toBeInTheDocument();
+      expect(screen.getByRole("tab", { name: "OAuth Apps" })).toBeInTheDocument();
     });
   });
 
@@ -108,7 +108,7 @@ describe("AppsPage", () => {
     await waitFor(() => {
       expect(screen.getByText("ci-bot")).toBeInTheDocument();
     });
-    fireEvent.click(screen.getByRole("button", { name: "Installations" }));
+    fireEvent.click(screen.getByRole("tab", { name: "Installations" }));
     await waitFor(() => {
       expect(screen.getByText("octocat")).toBeInTheDocument();
     });

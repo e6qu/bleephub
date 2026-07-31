@@ -29,12 +29,35 @@ import (
 func (s *Server) registerGHAppsOAuthMgmtRoutes() {
 	s.route("POST /api/v3/applications/{client_id}/token", s.handleCheckOAuthToken)
 	s.route("PATCH /api/v3/applications/{client_id}/token", s.handleResetOAuthToken)
-	s.route("DELETE /api/v3/applications/{client_id}/token", s.handleRevokeOAuthToken)
+	s.route("DELETE /api/v3/applications/{client_id}/{operation}", s.handleDeleteApplicationDispatch)
 	s.route("POST /api/v3/applications/{client_id}/token/scoped", s.handleScopeOAuthToken)
-	s.route("DELETE /api/v3/applications/{client_id}/grant", s.handleRevokeOAuthGrant)
+	s.route("GET /api/v3/applications/grants", s.handleListLegacyOAuthGrants)
+	s.route("GET /api/v3/applications/grants/{grant_id}", s.handleGetLegacyOAuthGrant)
+	s.route("GET /api/v3/authorizations", s.handleListLegacyAuthorizations)
+	s.route("POST /api/v3/authorizations", s.handleCreateLegacyAuthorization)
+	s.route("GET /api/v3/authorizations/{authorization_id}", s.handleGetLegacyAuthorization)
+	s.route("PATCH /api/v3/authorizations/{authorization_id}", s.handleUpdateLegacyAuthorization)
+	s.route("DELETE /api/v3/authorizations/{authorization_id}", s.handleDeleteLegacyAuthorization)
+	s.route("PUT /api/v3/authorizations/clients/{client_id}", s.handleGetOrCreateLegacyAuthorization)
+	s.route("PUT /api/v3/authorizations/clients/{client_id}/{fingerprint}", s.handleGetOrCreateLegacyAuthorization)
 	s.route("GET /settings/oauth-apps", s.handleListBrowserOAuthApps)
 	s.route("POST /settings/oauth-apps/new", s.handleCreateBrowserOAuthApp)
 
+}
+
+func (s *Server) handleDeleteApplicationDispatch(w http.ResponseWriter, r *http.Request) {
+	clientID, operation := r.PathValue("client_id"), r.PathValue("operation")
+	switch {
+	case clientID == "grants":
+		r.SetPathValue("grant_id", operation)
+		s.handleDeleteLegacyOAuthGrant(w, r)
+	case operation == "token":
+		s.handleRevokeOAuthToken(w, r)
+	case operation == "grant":
+		s.handleRevokeOAuthGrant(w, r)
+	default:
+		writeGHError(w, http.StatusNotFound, "Not Found")
+	}
 }
 
 // authenticateClientCreds reads + verifies HTTP Basic auth carrying

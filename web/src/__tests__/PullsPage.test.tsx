@@ -216,7 +216,7 @@ describe("PullsPage checks section", () => {
     // The Conversation merge box shows the aggregate summary…
     expect(await screen.findByText(/all checks have passed/i)).toBeInTheDocument();
     // …and the Checks tab lists the per-check rows.
-    fireEvent.click(screen.getByRole("button", { name: "Checks" }));
+    fireEvent.click(screen.getByRole("tab", { name: "Checks" }));
     expect(await screen.findByText("build")).toBeInTheDocument();
     expect(screen.getByText("lint")).toBeInTheDocument();
     // 42s duration from started/completed timestamps.
@@ -261,7 +261,7 @@ describe("PullsPage checks section", () => {
       ],
     });
     renderAt("/ui/repos/admin/test/pulls/9");
-    fireEvent.click(await screen.findByRole("button", { name: "Checks" }));
+    fireEvent.click(await screen.findByRole("tab", { name: "Checks" }));
     const link = await screen.findByRole("link", { name: /build/i });
     expect(link).toHaveAttribute("href", "/ui/repos/admin/test/actions/runs/42");
   });
@@ -530,7 +530,7 @@ describe("PullsPage combined status merge box", () => {
     // The merge box shows the shared failure summary on Conversation…
     expect(await screen.findByText(/some checks were not successful/i)).toBeInTheDocument();
     // …and the Checks tab lists the commit-status contexts + check runs.
-    fireEvent.click(screen.getByRole("button", { name: "Checks" }));
+    fireEvent.click(screen.getByRole("tab", { name: "Checks" }));
     expect(await screen.findByText(/ci\/lint/)).toBeInTheDocument();
     expect(screen.getByText(/lint failed/)).toBeInTheDocument();
     expect(screen.getByText("build")).toBeInTheDocument();
@@ -588,10 +588,10 @@ describe("PullsPage detail sub-tabs", () => {
     mockPRApis();
     renderAt("/ui/repos/admin/test/pulls/9");
     await screen.findByText("Feature PR");
-    expect(screen.getByRole("button", { name: "Conversation" })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Commits" })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Files changed" })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Checks" })).toBeInTheDocument();
+    expect(screen.getByRole("tab", { name: "Conversation" })).toBeInTheDocument();
+    expect(screen.getByRole("tab", { name: "Commits" })).toBeInTheDocument();
+    expect(screen.getByRole("tab", { name: "Files changed" })).toBeInTheDocument();
+    expect(screen.getByRole("tab", { name: "Checks" })).toBeInTheDocument();
     // The Reviewers section lives in the sidebar on the Conversation tab.
     expect(screen.getByText("Reviewers")).toBeInTheDocument();
   });
@@ -615,7 +615,7 @@ describe("PullsPage detail sub-tabs", () => {
     });
     renderAt("/ui/repos/admin/test/pulls/9");
     await screen.findByText("Feature PR");
-    fireEvent.click(screen.getByRole("button", { name: "Files changed" }));
+    fireEvent.click(screen.getByRole("tab", { name: "Files changed" }));
     expect(await screen.findByText("main.go")).toBeInTheDocument();
     expect(screen.getByText(/@@ -1,2 \+1,2 @@/)).toBeInTheDocument();
   });
@@ -643,7 +643,7 @@ describe("PullsPage detail sub-tabs", () => {
 
     renderAt("/ui/repos/admin/test/pulls/9/files");
     await screen.findByText("main.go");
-    expect(screen.getByRole("button", { name: "Files changed" })).toBeInTheDocument();
+    expect(screen.getByRole("tab", { name: "Files changed" })).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole("button", { name: "Comment on main.go line 8" }));
     fireEvent.change(screen.getByLabelText("Review comment"), {

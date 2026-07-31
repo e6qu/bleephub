@@ -21,6 +21,9 @@ REST_CONTRACT_PATH = ROOT / "specs" / "rest-semantic-contracts.json"
 REST_ROUTE_SNAPSHOT_PATH = (
     ROOT / "internal" / "server" / "testdata" / "registered-api-v3-routes.txt"
 )
+GHES_MANAGE_ROUTE_SNAPSHOT_PATH = (
+    ROOT / "internal" / "server" / "testdata" / "registered-ghes-manage-routes.txt"
+)
 REST_ROUTE_INDEX_PATH = (
     ROOT / "internal" / "server" / "testdata" / "github-openapi-routes.txt.gz"
 )
@@ -262,6 +265,31 @@ def dispatch_covered_rest_operations() -> set[str]:
     return operations
 
 
+def ghes_manage_rest_operations() -> set[str]:
+    if not GHES_MANAGE_ROUTE_SNAPSHOT_PATH.exists():
+        raise InventoryError(
+            f"{GHES_MANAGE_ROUTE_SNAPSHOT_PATH.relative_to(ROOT)} is missing"
+        )
+    operations: set[str] = set()
+    for line_number, line in enumerate(
+        GHES_MANAGE_ROUTE_SNAPSHOT_PATH.read_text(encoding="utf-8").splitlines(), 1
+    ):
+        method, separator, route_path = line.partition(" ")
+        if (
+            not separator
+            or method.lower() not in HTTP_METHODS
+            or not route_path.startswith("/manage/v1/")
+        ):
+            raise InventoryError(
+                f"{GHES_MANAGE_ROUTE_SNAPSHOT_PATH.relative_to(ROOT)}:"
+                f"{line_number}: malformed route {line!r}"
+            )
+        operations.add(normalize_rest_operation(method, route_path))
+    if len(operations) < 10:
+        raise InventoryError("GHES Manage route snapshot is missing or truncated")
+    return operations
+
+
 def official_rest_route_indexes(
     routes: list[dict[str, Any]],
 ) -> dict[str, Any]:
@@ -270,6 +298,8 @@ def official_rest_route_indexes(
     }
     dispatch_covered = dispatch_covered_rest_operations()
     represented.update(dispatch_covered)
+    ghes_manage = ghes_manage_rest_operations()
+    represented.update(ghes_manage)
 
     indexes: dict[str, set[str]] = collections.defaultdict(set)
     with gzip.open(REST_ROUTE_INDEX_PATH, "rt", encoding="utf-8") as source:
@@ -298,6 +328,10 @@ def official_rest_route_indexes(
     return {
         "source": str(REST_ROUTE_INDEX_PATH.relative_to(ROOT)),
         "dispatch_covered_operations": sorted(dispatch_covered),
+        "ghes_manage_snapshot": str(
+            GHES_MANAGE_ROUTE_SNAPSHOT_PATH.relative_to(ROOT)
+        ),
+        "ghes_manage_operations": sorted(ghes_manage),
         "descriptions": descriptions,
     }
 

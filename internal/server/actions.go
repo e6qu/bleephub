@@ -21,7 +21,10 @@ import (
 type ActionCache struct {
 	mu      sync.RWMutex
 	entries map[string]*ActionCacheEntry
+	order   []string
 }
+
+const maxActionCacheEntries = 128
 
 type ActionCacheEntry struct {
 	Data        []byte
@@ -38,13 +41,32 @@ func NewActionCache() *ActionCache {
 func (ac *ActionCache) Get(key string) *ActionCacheEntry {
 	ac.mu.RLock()
 	defer ac.mu.RUnlock()
-	return ac.entries[key]
+	entry := ac.entries[key]
+	if entry == nil {
+		return nil
+	}
+	clone := *entry
+	clone.Data = append([]byte(nil), entry.Data...)
+	return &clone
 }
 
 func (ac *ActionCache) Put(key string, entry *ActionCacheEntry) {
+	if entry == nil {
+		return
+	}
 	ac.mu.Lock()
 	defer ac.mu.Unlock()
-	ac.entries[key] = entry
+	if _, exists := ac.entries[key]; !exists {
+		ac.order = append(ac.order, key)
+	}
+	clone := *entry
+	clone.Data = append([]byte(nil), entry.Data...)
+	ac.entries[key] = &clone
+	for len(ac.entries) > maxActionCacheEntries {
+		oldest := ac.order[0]
+		ac.order = ac.order[1:]
+		delete(ac.entries, oldest)
+	}
 }
 
 func (s *Server) registerActionRoutes() {
@@ -81,10 +103,8 @@ func (s *Server) handleActionDownloadInfo(w http.ResponseWriter, r *http.Request
 		} `json:"actions"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
-		s.logger.Debug().Err(err).Msg("action download info: no body or empty")
-		writeJSON(w, http.StatusOK, map[string]interface{}{
-			"actions": map[string]interface{}{},
-		})
+		s.logger.Debug().Err(err).Msg("action download info: malformed body")
+		writeGHError(w, http.StatusBadRequest, "Invalid JSON body")
 		return
 	}
 
@@ -97,12 +117,13 @@ func (s *Server) handleActionDownloadInfo(w http.ResponseWriter, r *http.Request
 
 	actions := make(map[string]interface{}, len(body.Actions))
 	for _, a := range body.Actions {
+		if a.NameWithOwner == "" || a.Ref == "" {
+			writeGHError(w, http.StatusBadRequest, "Each action requires nameWithOwner and ref")
+			return
+		}
 		key := a.NameWithOwner + "@" + a.Ref
 
 		resolvedSha := s.resolveActionSha(a.NameWithOwner, a.Ref)
-		if entry := s.actionCache.Get(key); entry != nil {
-			resolvedSha = entry.ResolvedSha
-		}
 		if resolvedSha == "0000000000000000000000000000000000000000" {
 			writeGHError(w, http.StatusUnprocessableEntity,
 				"action "+key+" is not resolvable from bleephub git storage")
@@ -162,8 +183,6 @@ func (s *Server) handleActionTarball(w http.ResponseWriter, r *http.Request) {
 	}
 
 	nameWithOwner := owner + "/" + repo
-	key := nameWithOwner + "@" + ref
-
 	// Resolve the action's repository before anything is served, including a
 	// cache hit: a private repository's tree only goes to a job entitled to
 	// it. Repositories bleephub does not host are 404, never a passthrough.
@@ -181,6 +200,12 @@ func (s *Server) handleActionTarball(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	resolvedSHA := s.resolveActionSha(nameWithOwner, ref)
+	if resolvedSHA == "0000000000000000000000000000000000000000" {
+		http.Error(w, "action ref "+ref+" is not resolvable in "+nameWithOwner, http.StatusNotFound)
+		return
+	}
+	key := nameWithOwner + "@" + resolvedSHA
 	if entry := s.actionCache.Get(key); entry != nil {
 		s.logger.Debug().Str("key", key).Msg("serving cached action tarball")
 		w.Header().Set("Content-Type", "application/gzip")
@@ -194,6 +219,7 @@ func (s *Server) handleActionTarball(w http.ResponseWriter, r *http.Request) {
 	// Repositories that are not present locally fail loudly instead of
 	// reaching out to github.com behind the runner's back.
 	if entry, err := s.localActionTarball(owner, repo, ref); err == nil && entry != nil {
+		entry.FetchedAt = s.currentTime()
 		s.actionCache.Put(key, entry)
 		w.Header().Set("Content-Type", "application/gzip")
 		w.Header().Set("Content-Length", fmt.Sprintf("%d", len(entry.Data)))

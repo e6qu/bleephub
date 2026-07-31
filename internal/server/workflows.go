@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -117,6 +118,7 @@ type Workflow struct {
 	// known yet (resolved lazily in workflowRunJSON).
 	WorkflowFileID   int64  `json:"workflowFileId,omitempty"`
 	WorkflowFilePath string `json:"workflowFilePath,omitempty"`
+	CheckSuiteID     int64  `json:"checkSuiteId,omitempty"`
 }
 
 // WorkflowJob represents a single job within a workflow.
@@ -142,6 +144,11 @@ type WorkflowJob struct {
 	Hidden bool `json:"hidden,omitempty"`
 	// CheckRunID links the job to the check run mirroring it.
 	CheckRunID int64 `json:"checkRunId,omitempty"`
+	// ConcurrencyGroup is the evaluated jobs.<id>.concurrency.group. It is
+	// persisted separately from Def so a waiting job survives a restart
+	// without re-evaluating against changed dependency outputs.
+	ConcurrencyGroup string `json:"concurrencyGroup,omitempty"`
+	CancelInProgress bool   `json:"cancelInProgress,omitempty"`
 }
 
 func (wf *Workflow) RunDisplayTitle() string {
@@ -526,6 +533,8 @@ func (s *Server) dispatchReadyJobs(ctx context.Context, wf *Workflow, serverURL 
 		s.store.mu.Lock()
 		changed := false
 		var toDispatch []*WorkflowJob
+		var jobsToCancel []string
+		affectedWorkflows := map[*Workflow]bool{}
 		for _, wfJob := range wf.Jobs {
 			if wfJob.Status != JobStatusPending {
 				continue
@@ -632,6 +641,94 @@ func (s *Server) dispatchReadyJobs(ctx context.Context, wf *Workflow, serverURL 
 				continue
 			}
 
+			if wfJob.Def != nil && wfJob.Def.Concurrency != nil {
+				if wfJob.ConcurrencyGroup == "" {
+					group := wfJob.Def.Concurrency.Group
+					if strings.Contains(group, "${{") {
+						exprCtx, err := s.jobExprContext(wf, wfJob)
+						if err == nil {
+							group, err = EvalTemplate(group, exprCtx)
+						}
+						if err != nil {
+							wfJob.Status = JobStatusCompleted
+							wfJob.Result = ResultFailure
+							wfJob.CompletedAt = s.currentTime()
+							s.queueActionsEvent(evJobCompleted, wf, wfJob)
+							s.logger.Warn().Err(err).Str("job", wfJob.Key).
+								Msg("job concurrency expression failed")
+							changed = true
+							continue
+						}
+					}
+					wfJob.ConcurrencyGroup = strings.ToLower(strings.TrimSpace(group))
+					wfJob.CancelInProgress = wfJob.Def.Concurrency.CancelInProgress
+					changed = true
+					if wfJob.ConcurrencyGroup == "" {
+						wfJob.Status = JobStatusCompleted
+						wfJob.Result = ResultFailure
+						wfJob.CompletedAt = s.currentTime()
+						s.queueActionsEvent(evJobCompleted, wf, wfJob)
+						changed = true
+						continue
+					}
+				}
+				blocked := false
+				for _, otherWorkflow := range s.store.Workflows {
+					for _, other := range otherWorkflow.Jobs {
+						if other == wfJob || other.ConcurrencyGroup != wfJob.ConcurrencyGroup {
+							continue
+						}
+						if other.Status == JobStatusPending {
+							currentIsNewer := wf.CreatedAt.After(otherWorkflow.CreatedAt) ||
+								(wf.CreatedAt.Equal(otherWorkflow.CreatedAt) && wf.ID > otherWorkflow.ID)
+							if !currentIsNewer {
+								blocked = true
+								continue
+							}
+							other.Status = JobStatusCompleted
+							other.Result = ResultCancelled
+							other.CompletedAt = s.currentTime()
+							s.queueActionsEvent(evJobCompleted, otherWorkflow, other)
+							affectedWorkflows[otherWorkflow] = true
+							s.store.persistWorkflowRecord(otherWorkflow)
+							changed = true
+							continue
+						}
+						if other.Status != JobStatusQueued && other.Status != JobStatusRunning {
+							continue
+						}
+						if !wfJob.CancelInProgress {
+							blocked = true
+							continue
+						}
+						other.Status = JobStatusCompleted
+						other.Result = ResultCancelled
+						other.CompletedAt = s.currentTime()
+						s.queueActionsEvent(evJobCompleted, otherWorkflow, other)
+						jobsToCancel = append(jobsToCancel, other.JobID)
+						affectedWorkflows[otherWorkflow] = true
+						s.store.persistWorkflowRecord(otherWorkflow)
+						changed = true
+					}
+				}
+				if blocked {
+					continue
+				}
+				if wfJob.CancelInProgress {
+					cancelled := make(map[string]bool, len(jobsToCancel))
+					for _, id := range jobsToCancel {
+						cancelled[id] = true
+					}
+					filtered := s.store.PendingMessages[:0]
+					for _, message := range s.store.PendingMessages {
+						if !cancelled[message.JobID] {
+							filtered = append(filtered, message)
+						}
+					}
+					s.store.PendingMessages = filtered
+				}
+			}
+
 			// Enforce max-parallel: count running/queued jobs in same matrix group
 			maxParallel := wf.MaxParallel
 			if wfJob.MatrixGroup != "" && wf.MatrixMaxParallel[wfJob.MatrixGroup] > 0 {
@@ -682,6 +779,17 @@ func (s *Server) dispatchReadyJobs(ctx context.Context, wf *Workflow, serverURL 
 		}
 		s.store.mu.Unlock()
 
+		for _, jobID := range jobsToCancel {
+			s.sendJobCancellation(jobID)
+		}
+		for affected := range affectedWorkflows {
+			if affected == wf {
+				continue
+			}
+			serverURL, defaultImage := workflowDispatchCoordinates(affected)
+			s.dispatchReadyJobs(ctx, affected, serverURL, defaultImage)
+		}
+
 		// Dispatch collected jobs outside the lock (dispatchWorkflowJob acquires its own locks)
 		for _, wfJob := range toDispatch {
 			s.dispatchWorkflowJob(ctx, wf, wfJob, serverURL, defaultImage)
@@ -696,6 +804,14 @@ func (s *Server) dispatchReadyJobs(ctx context.Context, wf *Workflow, serverURL 
 	// completion event (server-completed collector as the final node);
 	// finalize is idempotent.
 	s.finalizeWorkflowIfDone(wf)
+}
+
+func workflowDispatchCoordinates(wf *Workflow) (serverURL, defaultImage string) {
+	if wf != nil && wf.Env != nil {
+		serverURL = wf.Env["__serverURL"]
+		defaultImage = wf.Env["__defaultImage"]
+	}
+	return serverURL, defaultImage
 }
 
 // dispatchWorkflowJob builds and sends a job message to the runner.
@@ -865,6 +981,9 @@ func (s *Server) onJobCompleted(ctx context.Context, jobID, result string) {
 			s.dispatchReadyJobs(ctx, foundWf, serverURL, defaultImage)
 		}
 	}
+	if foundJob.ConcurrencyGroup != "" {
+		s.startPendingJobConcurrency(ctx, foundJob.ConcurrencyGroup)
+	}
 
 	// Check if all jobs are done (after dispatch, which may skip dependents)
 	s.store.mu.Lock()
@@ -895,9 +1014,7 @@ func (s *Server) onJobCompleted(ctx context.Context, jobID, result string) {
 		if s.metrics != nil {
 			s.metrics.RecordWorkflowComplete()
 		}
-		if foundWf.cancelTimeout != nil {
-			foundWf.cancelTimeout()
-		}
+		s.stopTimeoutWatcher(foundWf)
 		s.queueActionsEvent(evRunCompleted, foundWf, nil)
 		duration := time.Since(foundWf.CreatedAt)
 		s.logger.Info().
@@ -911,6 +1028,30 @@ func (s *Server) onJobCompleted(ctx context.Context, jobID, result string) {
 		if concurrencyGroup != "" {
 			s.startPendingConcurrencyWorkflow(concurrencyGroup)
 		}
+	}
+}
+
+func (s *Server) startPendingJobConcurrency(ctx context.Context, group string) {
+	s.store.mu.RLock()
+	pending := make([]*Workflow, 0)
+	for _, workflow := range s.store.Workflows {
+		for _, job := range workflow.Jobs {
+			if job.Status == JobStatusPending && job.ConcurrencyGroup == group {
+				pending = append(pending, workflow)
+				break
+			}
+		}
+	}
+	s.store.mu.RUnlock()
+	sort.Slice(pending, func(i, j int) bool {
+		if pending[i].CreatedAt.Equal(pending[j].CreatedAt) {
+			return pending[i].ID > pending[j].ID
+		}
+		return pending[i].CreatedAt.After(pending[j].CreatedAt)
+	})
+	for _, workflow := range pending {
+		serverURL, defaultImage := workflowDispatchCoordinates(workflow)
+		s.dispatchReadyJobs(ctx, workflow, serverURL, defaultImage)
 	}
 }
 
@@ -1085,9 +1226,7 @@ func (s *Server) finalizeWorkflowIfDone(wf *Workflow) {
 		if s.metrics != nil {
 			s.metrics.RecordWorkflowComplete()
 		}
-		if wf.cancelTimeout != nil {
-			wf.cancelTimeout()
-		}
+		s.stopTimeoutWatcher(wf)
 		s.queueActionsEvent(evRunCompleted, wf, nil)
 		if concurrencyGroup != "" {
 			s.startPendingConcurrencyWorkflow(concurrencyGroup)
@@ -1276,7 +1415,13 @@ func normalizeResult(result string) string {
 // startTimeoutWatcher starts a goroutine that periodically checks for timed-out jobs.
 func (s *Server) startTimeoutWatcher(wf *Workflow) {
 	ctx, cancel := context.WithCancel(context.Background())
+	s.workflowTimeoutMu.Lock()
+	previous := wf.cancelTimeout
 	wf.cancelTimeout = cancel
+	s.workflowTimeoutMu.Unlock()
+	if previous != nil {
+		previous()
+	}
 
 	go func() {
 		ticker := time.NewTicker(30 * time.Second)
@@ -1290,6 +1435,16 @@ func (s *Server) startTimeoutWatcher(wf *Workflow) {
 			}
 		}
 	}()
+}
+
+func (s *Server) stopTimeoutWatcher(wf *Workflow) {
+	s.workflowTimeoutMu.Lock()
+	cancel := wf.cancelTimeout
+	wf.cancelTimeout = nil
+	s.workflowTimeoutMu.Unlock()
+	if cancel != nil {
+		cancel()
+	}
 }
 
 // jobLeaseDuration is how long a dispatched job stays leased to the runner
@@ -1527,6 +1682,10 @@ func (s *Server) githubContextMap(wf *Workflow) map[string]interface{} {
 		"run_number":       strconv.Itoa(wf.RunNumber),
 		"run_attempt":      strconv.Itoa(wf.AttemptNumber()),
 		"workflow":         wf.Name,
+		"workflow_sha":     sha,
+	}
+	if repoFullName != "" && wf.WorkflowFilePath != "" {
+		m["workflow_ref"] = repoFullName + "/" + wf.WorkflowFilePath + "@" + ref
 	}
 	if wf.EventPayload != nil {
 		m["event"] = wf.EventPayload

@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { getToken, setToken, verifyToken } from "../api.js";
+import { ApiError, createTokenBrowserSession } from "../api.js";
 import { Mark } from "../components/octicons.js";
 import { Button, ErrorBanner } from "../components/ui.js";
 import { BleephubBuildFooter } from "../components/Shell.js";
@@ -8,8 +8,23 @@ function describeFailure(err: unknown): string {
   return err instanceof Error ? err.message : String(err);
 }
 
+function returnDestination(): string {
+  const candidate = new URLSearchParams(window.location.search).get("return_to");
+  if (!candidate) return "/ui/";
+  try {
+    const parsed = new URL(candidate, window.location.origin);
+    if (parsed.origin !== window.location.origin) return "/ui/";
+    if (parsed.pathname === "/control" || parsed.pathname === "/ui" || parsed.pathname.startsWith("/ui/")) {
+      return parsed.pathname + parsed.search + parsed.hash;
+    }
+  } catch {
+    // Invalid input falls through to the dashboard.
+  }
+  return "/ui/";
+}
+
 export function LoginPage() {
-  const [token, setTokenValue] = useState(getToken() ?? "");
+  const [token, setTokenValue] = useState("");
   const [error, setError] = useState("");
   const [verifying, setVerifying] = useState(false);
   const [providers, setProviders] = useState<{ github?: boolean; shauth?: boolean } | null>(null);
@@ -42,16 +57,16 @@ export function LoginPage() {
     setError("");
     setVerifying(true);
     try {
-      const valid = await verifyToken(token);
-      if (valid) {
-        setToken(token);
-        const requested = new URLSearchParams(window.location.search).get("return_to");
-        window.location.href = requested?.startsWith("/ui/") ? requested : "/ui/";
-        return;
-      }
-      setError("Token rejected. Bleephub could not authenticate it through the GitHub REST user endpoint.");
+      await createTokenBrowserSession(token);
+      setTokenValue("");
+      window.location.href = returnDestination();
+      return;
     } catch (err) {
-      setError(`Could not reach Bleephub to verify the token: ${describeFailure(err)}`);
+      setError(
+        err instanceof ApiError && (err.status === 401 || err.status === 403)
+          ? "Token rejected. Bleephub accepts only an active user access token."
+          : `Could not reach Bleephub to exchange the token: ${describeFailure(err)}`,
+      );
     }
     setVerifying(false);
   }
@@ -67,9 +82,7 @@ export function LoginPage() {
         body: JSON.stringify({ login, password }),
       });
       if (response.ok) {
-        const requested = new URLSearchParams(window.location.search).get("return_to");
-        window.location.href =
-          requested?.startsWith("/ui/") || requested === "/control" ? requested : "/ui/";
+        window.location.href = returnDestination();
         return;
       }
       setError("Local credentials were not accepted.");

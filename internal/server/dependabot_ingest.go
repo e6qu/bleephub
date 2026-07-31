@@ -3,6 +3,7 @@ package bleephub
 import (
 	"strconv"
 	"strings"
+	"unicode"
 )
 
 func (s *Server) deriveDependabotAlertsForRepository(repo *Repo) {
@@ -95,7 +96,11 @@ func dependabotVersionMatchesConstraint(version, constraint string) bool {
 			want := strings.TrimSpace(strings.TrimPrefix(constraint, op))
 			cmp, ok := compareDependencyVersions(version, want)
 			if !ok {
-				return false
+				// A package-version dialect we do not understand must not
+				// silently turn a published vulnerability into "safe".
+				// Dependabot can later reconcile a conservative alert, while
+				// suppressing it here hides the advisory entirely.
+				return true
 			}
 			switch op {
 			case "<":
@@ -112,15 +117,15 @@ func dependabotVersionMatchesConstraint(version, constraint string) bool {
 		}
 	}
 	cmp, ok := compareDependencyVersions(version, constraint)
-	return ok && cmp == 0
+	return !ok || cmp == 0
 }
 
 func compareDependencyVersions(left, right string) (int, bool) {
-	leftParts, ok := dependencyVersionParts(left)
+	leftParts, leftPrerelease, ok := dependencyVersionParts(left)
 	if !ok {
 		return 0, false
 	}
-	rightParts, ok := dependencyVersionParts(right)
+	rightParts, rightPrerelease, ok := dependencyVersionParts(right)
 	if !ok {
 		return 0, false
 	}
@@ -129,41 +134,147 @@ func compareDependencyVersions(left, right string) (int, bool) {
 		max = len(rightParts)
 	}
 	for len(leftParts) < max {
-		leftParts = append(leftParts, 0)
+		leftParts = append(leftParts, dependencyVersionPart{numeric: true})
 	}
 	for len(rightParts) < max {
-		rightParts = append(rightParts, 0)
+		rightParts = append(rightParts, dependencyVersionPart{numeric: true})
 	}
 	for i := 0; i < max; i++ {
-		switch {
-		case leftParts[i] < rightParts[i]:
-			return -1, true
-		case leftParts[i] > rightParts[i]:
+		leftPart, rightPart := leftParts[i], rightParts[i]
+		if leftPart.numeric && rightPart.numeric {
+			switch {
+			case leftPart.number < rightPart.number:
+				return -1, true
+			case leftPart.number > rightPart.number:
+				return 1, true
+			}
+			continue
+		}
+		if leftPart.numeric != rightPart.numeric {
+			if leftPart.numeric {
+				return -1, true
+			}
 			return 1, true
+		}
+		switch {
+		case leftPart.text < rightPart.text:
+			return -1, true
+		case leftPart.text > rightPart.text:
+			return 1, true
+		}
+	}
+	// SemVer and the package ecosystems Dependabot supports all order a
+	// prerelease below the corresponding final release.
+	if len(leftPrerelease) != 0 || len(rightPrerelease) != 0 {
+		if len(leftPrerelease) == 0 {
+			return 1, true
+		}
+		if len(rightPrerelease) == 0 {
+			return -1, true
+		}
+		max = len(leftPrerelease)
+		if len(rightPrerelease) > max {
+			max = len(rightPrerelease)
+		}
+		for i := 0; i < max; i++ {
+			if i >= len(leftPrerelease) {
+				return -1, true
+			}
+			if i >= len(rightPrerelease) {
+				return 1, true
+			}
+			leftPart, rightPart := leftPrerelease[i], rightPrerelease[i]
+			if leftPart.numeric && rightPart.numeric {
+				switch {
+				case leftPart.number < rightPart.number:
+					return -1, true
+				case leftPart.number > rightPart.number:
+					return 1, true
+				}
+				continue
+			}
+			// SemVer numeric prerelease identifiers have lower precedence
+			// than non-numeric identifiers.
+			if leftPart.numeric != rightPart.numeric {
+				if leftPart.numeric {
+					return -1, true
+				}
+				return 1, true
+			}
+			switch {
+			case leftPart.text < rightPart.text:
+				return -1, true
+			case leftPart.text > rightPart.text:
+				return 1, true
+			}
 		}
 	}
 	return 0, true
 }
 
-func dependencyVersionParts(version string) ([]int, bool) {
+type dependencyVersionPart struct {
+	numeric bool
+	number  int
+	text    string
+}
+
+func dependencyVersionParts(version string) ([]dependencyVersionPart, []dependencyVersionPart, bool) {
 	version = strings.TrimPrefix(strings.TrimSpace(version), "v")
-	if i := strings.IndexAny(version, "-+"); i >= 0 {
+	if i := strings.IndexByte(version, '+'); i >= 0 {
 		version = version[:i]
 	}
-	raw := strings.Split(version, ".")
-	if len(raw) == 0 {
-		return nil, false
-	}
-	parts := make([]int, 0, len(raw))
-	for _, part := range raw {
-		if part == "" {
-			return nil, false
+	preAt := strings.IndexAny(version, "-~")
+	for i, r := range version {
+		if unicode.IsLetter(r) && (preAt < 0 || i < preAt) {
+			preAt = i
+			break
 		}
-		n, err := strconv.Atoi(part)
-		if err != nil {
-			return nil, false
-		}
-		parts = append(parts, n)
 	}
-	return parts, true
+	core, prerelease := version, ""
+	if preAt >= 0 {
+		core, prerelease = version[:preAt], version[preAt:]
+	}
+	parse := func(value string) ([]dependencyVersionPart, bool) {
+		var parts []dependencyVersionPart
+		for i := 0; i < len(value); {
+			r := rune(value[i])
+			if !unicode.IsLetter(r) && !unicode.IsDigit(r) {
+				i++
+				continue
+			}
+			start := i
+			isNumber := unicode.IsDigit(r)
+			for i < len(value) {
+				current := rune(value[i])
+				if unicode.IsDigit(current) != isNumber ||
+					(!unicode.IsLetter(current) && !unicode.IsDigit(current)) {
+					break
+				}
+				i++
+			}
+			token := strings.ToLower(value[start:i])
+			if isNumber {
+				number, err := strconv.Atoi(token)
+				if err != nil {
+					return nil, false
+				}
+				parts = append(parts, dependencyVersionPart{numeric: true, number: number})
+			} else {
+				parts = append(parts, dependencyVersionPart{text: token})
+			}
+		}
+		return parts, len(parts) != 0
+	}
+	coreParts, ok := parse(core)
+	if !ok {
+		return nil, nil, false
+	}
+	var prereleaseParts []dependencyVersionPart
+	if prerelease != "" {
+		prereleaseParts, ok = parse(prerelease)
+		if !ok {
+			return nil, nil, false
+		}
+	}
+	return coreParts, prereleaseParts, true
 }

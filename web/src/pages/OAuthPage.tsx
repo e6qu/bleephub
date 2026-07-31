@@ -5,6 +5,32 @@ import { InlineError, Spinner } from "@bleephub/ui-core/components";
 import { PageTitle, Button, Box, CodeBlock, ErrorBanner } from "../components/ui.js";
 import { confirmAction } from "../components/confirmAction.js";
 
+interface DeviceCodeResponse {
+  device_code: string;
+  user_code?: string;
+  verification_uri?: string;
+  verification_uri_complete?: string;
+  expires_in?: number;
+  interval?: number;
+}
+
+function isDeviceCodeResponse(value: unknown): value is DeviceCodeResponse {
+  return (
+    typeof value === "object" &&
+    value !== null &&
+    typeof (value as Record<string, unknown>).device_code === "string"
+  );
+}
+
+function safeOAuthResult(value: unknown): string {
+  if (typeof value !== "object" || value === null) return JSON.stringify(value, null, 2);
+  const redacted = { ...(value as Record<string, unknown>) };
+  for (const key of ["access_token", "refresh_token", "device_code"]) {
+    if (key in redacted) redacted[key] = "[redacted]";
+  }
+  return JSON.stringify(redacted, null, 2);
+}
+
 export function OAuthPage() {
   return (
     <div>
@@ -122,11 +148,12 @@ function FlowSimulator() {
         body,
       });
       if (!res.ok) throw new Error(`${res.status} ${res.statusText}`);
-      const json = await res.json();
-      if (typeof json.device_code === "string") {
-        setDeviceCode(json.device_code);
+      const json: unknown = await res.json();
+      if (!isDeviceCodeResponse(json)) {
+        throw new Error("Device flow response did not include a device_code");
       }
-      setResult(JSON.stringify(json, null, 2));
+      setDeviceCode(json.device_code);
+      setResult(safeOAuthResult(json));
     } catch (e) {
       setError(String(e));
     }
@@ -149,7 +176,7 @@ function FlowSimulator() {
         body,
       });
       if (!res.ok) throw new Error(`${res.status} ${res.statusText}`);
-      setResult(JSON.stringify(await res.json(), null, 2));
+      setResult(safeOAuthResult(await res.json()));
     } catch (e) {
       setError(String(e));
     }

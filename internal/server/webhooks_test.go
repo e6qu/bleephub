@@ -836,6 +836,34 @@ func pushTestCommit(t *testing.T, owner, repoName string) {
 
 // Org-owned repos carry a top-level `organization` object on event
 // payloads; user-owned repos must not.
+func TestPushPayloadCarriesCommitDetails(t *testing.T) {
+	s := newTestServer()
+	const repoKey = "push-payload/repo"
+	sha := commitWorkflowYAMLToStorage(t, s, repoKey, "docs/README.md", "payload")
+	repo := s.store.GetRepoByFullName(repoKey)
+	payload := buildPushPayload(s.store, repo, s.store.LookupUserByLogin("push-payload"),
+		"refs/heads/main", zeroCommitSha, sha)
+
+	if payload["created"] != true || payload["forced"] != false {
+		t.Fatalf("push flags = created:%v forced:%v", payload["created"], payload["forced"])
+	}
+	commits, ok := payload["commits"].([]map[string]interface{})
+	if !ok || len(commits) != 1 {
+		t.Fatalf("commits = %#v", payload["commits"])
+	}
+	if commits[0]["id"] != sha || commits[0]["message"] == "" {
+		t.Fatalf("commit payload = %#v", commits[0])
+	}
+	head, ok := payload["head_commit"].(map[string]interface{})
+	if !ok || head["id"] != sha {
+		t.Fatalf("head_commit = %#v", payload["head_commit"])
+	}
+	pusher, ok := payload["pusher"].(map[string]interface{})
+	if !ok || pusher["name"] != "push-payload" {
+		t.Fatalf("pusher = %#v", payload["pusher"])
+	}
+}
+
 func TestWebhookOrganizationBlock(t *testing.T) {
 	var mu sync.Mutex
 	type recvd struct {

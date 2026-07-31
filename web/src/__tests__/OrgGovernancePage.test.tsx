@@ -157,7 +157,7 @@ describe("OrgGovernancePage roles tab", () => {
     });
     renderAt("/ui/orgs/acme/governance");
 
-    fireEvent.click(screen.getByRole("button", { name: "Roles" }));
+    fireEvent.click(screen.getByRole("tab", { name: "Roles" }));
     await waitFor(() => {
       expect(screen.getByText("security_manager")).toBeInTheDocument();
     });
@@ -194,7 +194,7 @@ describe("OrgGovernancePage custom properties tab", () => {
     });
     renderAt("/ui/orgs/acme/governance");
 
-    fireEvent.click(screen.getByRole("button", { name: "Custom properties" }));
+    fireEvent.click(screen.getByRole("tab", { name: "Custom properties" }));
     await waitFor(() => {
       expect(
         screen.getByText(/single_select · required · default: dev · \[dev, prod\]/),
@@ -224,7 +224,7 @@ describe("OrgGovernancePage custom properties tab", () => {
     });
     renderAt("/ui/orgs/acme/governance");
 
-    fireEvent.click(screen.getByRole("button", { name: "Custom properties" }));
+    fireEvent.click(screen.getByRole("tab", { name: "Custom properties" }));
     await waitFor(() => {
       expect(screen.getByRole("button", { name: "edit" })).toBeInTheDocument();
     });
@@ -280,7 +280,7 @@ describe("OrgGovernancePage custom properties tab", () => {
     });
     renderAt("/ui/orgs/acme/governance");
 
-    fireEvent.click(screen.getByRole("button", { name: "Custom properties" }));
+    fireEvent.click(screen.getByRole("tab", { name: "Custom properties" }));
     await waitFor(() => {
       expect(screen.getByText("acme/api")).toBeInTheDocument();
     });
@@ -341,7 +341,7 @@ describe("OrgGovernancePage issue types tab", () => {
     });
     renderAt("/ui/orgs/acme/governance");
 
-    fireEvent.click(screen.getByRole("button", { name: "Issue types" }));
+    fireEvent.click(screen.getByRole("tab", { name: "Issue types" }));
     await waitFor(() => {
       expect(screen.getByText("Bug")).toBeInTheDocument();
     });

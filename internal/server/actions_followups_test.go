@@ -220,6 +220,11 @@ jobs:
 	if run["name"] != "broken-call" {
 		t.Errorf("API name = %v, want broken-call", run["name"])
 	}
+	waitUntil(t, "startup failure check suite", func() bool {
+		suites := testServer.store.ListCheckSuitesForCommit(repoKey, wf.Sha, githubActionsAppID)
+		return len(suites) == 1 && suites[0].Status == "completed" &&
+			suites[0].Conclusion == "startup_failure"
+	})
 }
 
 // TestRunnerGroupsCRUD covers BUG-1746.
@@ -231,7 +236,9 @@ func TestRunnerGroupsCRUD(t *testing.T) {
 	testServer.store.mu.Lock()
 	agentID := testServer.store.NextAgent
 	testServer.store.NextAgent++
-	testServer.store.Agents[agentID] = &Agent{ID: agentID, Name: "rg-agent", Status: "online"}
+	testServer.store.Agents[agentID] = &Agent{
+		ID: agentID, Name: "rg-agent", Status: "online", Scope: runnerScope{Org: "rg-org"},
+	}
 	testServer.store.mu.Unlock()
 
 	do := func(method, path string, body interface{}) (int, map[string]interface{}) {

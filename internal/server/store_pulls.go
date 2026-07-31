@@ -126,7 +126,7 @@ func (st *Store) CreatePullRequestChecked(repoID, authorID int, title, body, hea
 		return nil, nil
 	}
 
-	now := time.Now().UTC()
+	now := st.currentTime()
 	pr := &PullRequest{
 		ID:                  st.NextPR,
 		NodeID:              fmt.Sprintf("PR_kgDO%08d", st.NextPR),
@@ -230,7 +230,7 @@ func (st *Store) UpdatePullRequest(id int, fn func(*PullRequest)) bool {
 		return false
 	}
 	fn(pr)
-	pr.UpdatedAt = time.Now().UTC()
+	pr.UpdatedAt = st.currentTime()
 	if st.persist != nil {
 		st.persist.MustPut("pull_requests", strconv.Itoa(pr.ID), pr)
 	}
@@ -275,7 +275,7 @@ func (st *Store) AddPullRequestLabels(repoID, prNumber int, labelIDs []int, acto
 		}
 	}
 	if added {
-		pr.UpdatedAt = time.Now().UTC()
+		pr.UpdatedAt = st.currentTime()
 		if st.persist != nil {
 			st.persist.MustPut("pull_requests", strconv.Itoa(pr.ID), pr)
 		}
@@ -311,7 +311,7 @@ func (st *Store) SetPullRequestLabels(repoID, prNumber int, labelIDs []int, acto
 		}
 	}
 	pr.LabelIDs = labelIDs
-	pr.UpdatedAt = time.Now().UTC()
+	pr.UpdatedAt = st.currentTime()
 	if st.persist != nil {
 		st.persist.MustPut("pull_requests", strconv.Itoa(pr.ID), pr)
 	}
@@ -335,7 +335,7 @@ func (st *Store) ClearPullRequestLabels(repoID, prNumber, actorID int) bool {
 		st.recordPullRequestLabelEventLocked(repoID, pr.ID, actorID, lid, "unlabeled")
 	}
 	pr.LabelIDs = nil
-	pr.UpdatedAt = time.Now().UTC()
+	pr.UpdatedAt = st.currentTime()
 	if st.persist != nil {
 		st.persist.MustPut("pull_requests", strconv.Itoa(pr.ID), pr)
 	}
@@ -355,7 +355,7 @@ func (st *Store) RemovePullRequestLabel(repoID, prNumber, labelID, actorID int) 
 	for idx, lid := range pr.LabelIDs {
 		if lid == labelID {
 			pr.LabelIDs = append(pr.LabelIDs[:idx], pr.LabelIDs[idx+1:]...)
-			pr.UpdatedAt = time.Now().UTC()
+			pr.UpdatedAt = st.currentTime()
 			if st.persist != nil {
 				st.persist.MustPut("pull_requests", strconv.Itoa(pr.ID), pr)
 			}
@@ -379,7 +379,7 @@ func (st *Store) createPRReviewLocked(prID, authorID int, state, body string) *P
 		return nil
 	}
 
-	now := time.Now().UTC()
+	now := st.currentTime()
 	var submittedAt *time.Time
 	if state != "PENDING" {
 		submittedAt = &now
@@ -452,7 +452,7 @@ func (st *Store) UpdatePullRequestReview(id int, body string) bool {
 		return false
 	}
 	r.Body = body
-	r.UpdatedAt = time.Now().UTC()
+	r.UpdatedAt = st.currentTime()
 	if st.persist != nil {
 		st.persist.MustPut("pr_reviews", strconv.Itoa(r.ID), r)
 	}
@@ -504,7 +504,7 @@ func (st *Store) SubmitPullRequestReview(id int, event string) bool {
 	if r.State != "PENDING" {
 		return false
 	}
-	now := time.Now().UTC()
+	now := st.currentTime()
 	switch strings.ToUpper(event) {
 	case "APPROVE":
 		r.State = "APPROVED"
@@ -531,7 +531,7 @@ func (st *Store) DismissPullRequestReview(id int, message string) bool {
 	if !ok {
 		return false
 	}
-	now := time.Now().UTC()
+	now := st.currentTime()
 	r.State = "DISMISSED"
 	r.DismissalMessage = message
 	r.DismissedAt = &now
@@ -576,7 +576,7 @@ func (st *Store) RequestReviewers(repoKey string, pullNumber int, reviewerIDs []
 			st.recordPullRequestEventLocked(pr.RepoID, pr.ID, actorID, "review_requested", "", id)
 		}
 	}
-	pr.UpdatedAt = time.Now().UTC()
+	pr.UpdatedAt = st.currentTime()
 	if st.persist != nil {
 		st.persist.MustPut("pull_requests", strconv.Itoa(pr.ID), pr)
 	}
@@ -606,7 +606,7 @@ func (st *Store) RemoveRequestedReviewers(repoKey string, pullNumber int, review
 		st.recordPullRequestEventLocked(pr.RepoID, pr.ID, actorID, "review_request_removed", "", id)
 	}
 	pr.RequestedReviewerIDs = kept
-	pr.UpdatedAt = time.Now().UTC()
+	pr.UpdatedAt = st.currentTime()
 	if st.persist != nil {
 		st.persist.MustPut("pull_requests", strconv.Itoa(pr.ID), pr)
 	}
@@ -634,7 +634,7 @@ func (st *Store) RequestTeamReviewers(repoKey string, pullNumber int, teamIDs []
 		pr.RequestedTeamIDs = append(pr.RequestedTeamIDs, id)
 		existing[id] = struct{}{}
 	}
-	pr.UpdatedAt = time.Now().UTC()
+	pr.UpdatedAt = st.currentTime()
 	if st.persist != nil {
 		st.persist.MustPut("pull_requests", strconv.Itoa(pr.ID), pr)
 	}
@@ -659,7 +659,7 @@ func (st *Store) RemoveRequestedTeamReviewers(repoKey string, pullNumber int, te
 		}
 	}
 	pr.RequestedTeamIDs = kept
-	pr.UpdatedAt = time.Now().UTC()
+	pr.UpdatedAt = st.currentTime()
 	if st.persist != nil {
 		st.persist.MustPut("pull_requests", strconv.Itoa(pr.ID), pr)
 	}

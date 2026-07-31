@@ -68,7 +68,7 @@ func (st *Store) createSecretScanningAlertLocked(repoKey, secretType string, loc
 		st.SecretScanningNextNumber[repoKey] = 1
 	}
 
-	now := time.Now().UTC()
+	now := st.currentTime()
 	number := st.SecretScanningNextNumber[repoKey]
 	st.SecretScanningNextNumber[repoKey] = number + 1
 
@@ -193,7 +193,7 @@ func (st *Store) UpdateSecretScanningAlert(a *SecretScanningAlert, state, resolu
 		return err
 	}
 
-	now := time.Now().UTC()
+	now := st.currentTime()
 	if state != "" {
 		a.State = state
 	}
@@ -217,7 +217,7 @@ func (st *Store) BulkUpdateSecretScanningAlerts(repoKey, stateFilter, secretType
 	defer st.mu.Unlock()
 
 	byRepo := st.SecretScanningAlertsByRepo[repoKey]
-	now := time.Now().UTC()
+	now := st.currentTime()
 	var updated []*SecretScanningAlert
 	for _, a := range byRepo {
 		if stateFilter != "" && a.State != stateFilter {
@@ -232,13 +232,28 @@ func (st *Store) BulkUpdateSecretScanningAlerts(repoKey, stateFilter, secretType
 		if err := validateSecretScanningTransition(a.State, "resolved", newResolution); err != nil {
 			return nil, err
 		}
-		a.State = "resolved"
-		a.Resolution = newResolution
-		a.ResolutionComment = resolutionComment
-		a.ResolvedAt = &now
-		a.UpdatedAt = now
-		updated = append(updated, a)
-		st.persistSecretScanningAlert(a)
+		next := *a
+		next.State = "resolved"
+		next.Resolution = newResolution
+		next.ResolutionComment = resolutionComment
+		next.ResolvedAt = &now
+		next.UpdatedAt = now
+		updated = append(updated, &next)
+	}
+
+	// Validate and stage the complete result before changing either memory or
+	// persistence. Map iteration order must never decide which subset survives
+	// a rejected or failed bulk operation.
+	batch := newPersistBatch(st.persist)
+	for _, a := range updated {
+		batch.Put("secret_scanning_alerts", strconv.Itoa(a.ID), a)
+	}
+	if err := batch.Commit(); err != nil {
+		return nil, err
+	}
+	for _, a := range updated {
+		st.SecretScanningAlerts[a.ID] = a
+		st.SecretScanningAlertsByRepo[repoKey][a.Number] = a
 	}
 	sort.SliceStable(updated, func(i, j int) bool { return updated[i].Number < updated[j].Number })
 	return updated, nil
@@ -256,7 +271,13 @@ func validateSecretScanningTransition(currentState, newState, resolution string)
 	if newState == "open" && currentState == "resolved" {
 		return nil
 	}
-	return nil
+	if newState == "resolved" && (currentState == "open" || currentState == "resolved") {
+		return nil
+	}
+	if newState == currentState {
+		return nil
+	}
+	return fmt.Errorf("invalid transition from %q to %q", currentState, newState)
 }
 
 func isValidResolution(r string) bool {
@@ -459,7 +480,7 @@ func (st *Store) UpdateSecretScanningPatternConfig(orgLogin string, expectedVers
 		cfg.CustomSettings[tokenType] = setting
 	}
 	cfg.Version = uuid.New().String()
-	cfg.UpdatedAt = time.Now().UTC()
+	cfg.UpdatedAt = st.currentTime()
 	if st.persist != nil {
 		st.persist.MustPut("secret_scanning_pattern_configs", orgLogin, cfg)
 	}
@@ -512,7 +533,7 @@ func (st *Store) CreateSecretScanningPushProtectionPlaceholder(repoKey, tokenTyp
 		ID:        uuid.New().String(),
 		RepoKey:   repoKey,
 		TokenType: tokenType,
-		CreatedAt: time.Now().UTC(),
+		CreatedAt: st.currentTime(),
 	}
 	if st.SecretScanningPushPlaceholders[repoKey] == nil {
 		st.SecretScanningPushPlaceholders[repoKey] = map[string]*SecretScanningPushProtectionPlaceholder{}
@@ -539,7 +560,7 @@ func (st *Store) CreateSecretScanningPushProtectionBypass(repoKey, placeholderID
 		return nil
 	}
 	delete(st.SecretScanningPushPlaceholders[repoKey], placeholderID)
-	now := time.Now().UTC()
+	now := st.currentTime()
 	bypass := &SecretScanningPushProtectionBypass{
 		PlaceholderID: placeholderID,
 		RepoKey:       repoKey,
