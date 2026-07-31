@@ -333,7 +333,7 @@ export function Tabs<K extends string>({
   onChange: (key: K) => void;
 }) {
   const move = (event: ReactKeyboardEvent<HTMLButtonElement>, index: number) => {
-    let next = index;
+    let next: number;
     if (event.key === "ArrowRight") next = (index + 1) % items.length;
     else if (event.key === "ArrowLeft") next = (index - 1 + items.length) % items.length;
     else if (event.key === "Home") next = 0;
