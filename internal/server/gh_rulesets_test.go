@@ -33,7 +33,7 @@ func TestRulesets_FullLifecycle(t *testing.T) {
 		}
 		req.Header.Set("Authorization", "Bearer bleephub-admin-token-00000000000000000000")
 		w := httptest.NewRecorder()
-		s.ghHeadersMiddleware(s.mux).ServeHTTP(w, req)
+		s.requestHandler().ServeHTTP(w, req)
 		return w
 	}
 
@@ -163,7 +163,7 @@ func TestRulesets_ListIncludesParentsTargetsAndPagination(t *testing.T) {
 		req := httptest.NewRequest(http.MethodGet, "/api/v3/repos/ruleset-list-org/ruleset-list-repo/rulesets?"+query, nil)
 		req.Header.Set("Authorization", "Bearer bleephub-admin-token-00000000000000000000")
 		w := httptest.NewRecorder()
-		s.ghHeadersMiddleware(s.mux).ServeHTTP(w, req)
+		s.requestHandler().ServeHTTP(w, req)
 		return w
 	}
 	decode := func(w *httptest.ResponseRecorder) []map[string]interface{} {
@@ -212,7 +212,7 @@ func TestRulesets_CreateMissingName(t *testing.T) {
 	req := httptest.NewRequest("POST", "/api/v3/repos/admin/rules-repo2/rulesets", bytes.NewReader(body))
 	req.Header.Set("Authorization", "Bearer bleephub-admin-token-00000000000000000000")
 	w := httptest.NewRecorder()
-	s.ghHeadersMiddleware(s.mux).ServeHTTP(w, req)
+	s.requestHandler().ServeHTTP(w, req)
 	if w.Code != http.StatusUnprocessableEntity {
 		t.Errorf("expected 422, got %d body=%s", w.Code, w.Body.String())
 	}
@@ -237,7 +237,7 @@ func TestRulesets_OrgFullLifecycle(t *testing.T) {
 		}
 		req.Header.Set("Authorization", "Bearer bleephub-admin-token-00000000000000000000")
 		w := httptest.NewRecorder()
-		s.ghHeadersMiddleware(s.mux).ServeHTTP(w, req)
+		s.requestHandler().ServeHTTP(w, req)
 		return w
 	}
 
@@ -376,7 +376,7 @@ func TestRulesets_OrgNonAdminCannotCreate(t *testing.T) {
 	req := httptest.NewRequest("POST", "/api/v3/orgs/rules-org2/rulesets", bytes.NewReader(body))
 	req.Header.Set("Authorization", "Bearer "+tok.Value)
 	w := httptest.NewRecorder()
-	s.ghHeadersMiddleware(s.mux).ServeHTTP(w, req)
+	s.requestHandler().ServeHTTP(w, req)
 	if w.Code != http.StatusForbidden {
 		t.Errorf("expected 403, got %d body=%s", w.Code, w.Body.String())
 	}
@@ -407,7 +407,7 @@ func TestRulesets_BranchRuleExclusion(t *testing.T) {
 	req := httptest.NewRequest("POST", "/api/v3/repos/admin/rules-repo3/rulesets", bytes.NewReader(create))
 	req.Header.Set("Authorization", "Bearer bleephub-admin-token-00000000000000000000")
 	w := httptest.NewRecorder()
-	s.ghHeadersMiddleware(s.mux).ServeHTTP(w, req)
+	s.requestHandler().ServeHTTP(w, req)
 	if w.Code != http.StatusCreated {
 		t.Fatalf("create: %d body=%s", w.Code, w.Body.String())
 	}
@@ -415,7 +415,7 @@ func TestRulesets_BranchRuleExclusion(t *testing.T) {
 	w = httptest.NewRecorder()
 	req = httptest.NewRequest("GET", "/api/v3/repos/admin/rules-repo3/rules/branches/release/v1", nil)
 	req.Header.Set("Authorization", "Bearer bleephub-admin-token-00000000000000000000")
-	s.ghHeadersMiddleware(s.mux).ServeHTTP(w, req)
+	s.requestHandler().ServeHTTP(w, req)
 	var rules []map[string]any
 	json.Unmarshal(w.Body.Bytes(), &rules)
 	if len(rules) != 0 {
@@ -425,7 +425,7 @@ func TestRulesets_BranchRuleExclusion(t *testing.T) {
 	w = httptest.NewRecorder()
 	req = httptest.NewRequest("GET", "/api/v3/repos/admin/rules-repo3/rules/branches/main", nil)
 	req.Header.Set("Authorization", "Bearer bleephub-admin-token-00000000000000000000")
-	s.ghHeadersMiddleware(s.mux).ServeHTTP(w, req)
+	s.requestHandler().ServeHTTP(w, req)
 	json.Unmarshal(w.Body.Bytes(), &rules)
 	if len(rules) != 1 {
 		t.Errorf("expected 1 rule on main, got %+v", rules)
@@ -464,7 +464,7 @@ func TestRulesets_ActiveRulesBlockRefWritesAndRecordOfficialSuiteShape(t *testin
 	req.Header.Set("Authorization", "Bearer bleephub-admin-token-00000000000000000000")
 	w := httptest.NewRecorder()
 	s.registerGHGitDataRoutes()
-	s.ghHeadersMiddleware(s.mux).ServeHTTP(w, req)
+	s.requestHandler().ServeHTTP(w, req)
 	if w.Code != http.StatusForbidden {
 		t.Fatalf("active creation rule admitted a matching branch creation: %d body=%s", w.Code, w.Body.String())
 	}
@@ -488,7 +488,7 @@ func TestRulesets_ActiveRulesBlockRefWritesAndRecordOfficialSuiteShape(t *testin
 	req = httptest.NewRequest(http.MethodGet, "/api/v3/repos/admin/ruleset-evaluation/rulesets/rule-suites", nil)
 	req.Header.Set("Authorization", "Bearer bleephub-admin-token-00000000000000000000")
 	w = httptest.NewRecorder()
-	s.ghHeadersMiddleware(s.mux).ServeHTTP(w, req)
+	s.requestHandler().ServeHTTP(w, req)
 	if w.Code != http.StatusOK {
 		t.Fatalf("list suites = %d body=%s", w.Code, w.Body.String())
 	}
@@ -513,7 +513,7 @@ func TestRulesets_ActiveRulesBlockRefWritesAndRecordOfficialSuiteShape(t *testin
 	req = httptest.NewRequest(http.MethodGet, "/api/v3/repos/admin/ruleset-evaluation/rulesets/rule-suites/"+itoa(suite.ID), nil)
 	req.Header.Set("Authorization", "Bearer bleephub-admin-token-00000000000000000000")
 	w = httptest.NewRecorder()
-	s.ghHeadersMiddleware(s.mux).ServeHTTP(w, req)
+	s.requestHandler().ServeHTTP(w, req)
 	if w.Code != http.StatusOK {
 		t.Fatalf("get suite = %d body=%s", w.Code, w.Body.String())
 	}
@@ -542,7 +542,7 @@ func TestRulesets_InstallationTokenRequiresAdministrationGrant(t *testing.T) {
 		req := httptest.NewRequest(method, "/api/v3/repos/admin/ruleset-installation-auth/rulesets", bytes.NewReader(payload))
 		req.Header.Set("Authorization", "Bearer "+token)
 		w := httptest.NewRecorder()
-		s.ghHeadersMiddleware(s.mux).ServeHTTP(w, req)
+		s.requestHandler().ServeHTTP(w, req)
 		return w
 	}
 	if got := request(http.MethodGet, metadataOnly.Token, nil); got.Code != http.StatusForbidden {
@@ -597,7 +597,7 @@ func TestRulesets_ContentsAPIUsesTheSameRefWriteGate(t *testing.T) {
 	req := httptest.NewRequest(http.MethodPut, "/api/v3/repos/admin/ruleset-contents-gate/contents/README.md", bytes.NewReader(body))
 	req.Header.Set("Authorization", "Bearer bleephub-admin-token-00000000000000000000")
 	w := httptest.NewRecorder()
-	s.ghHeadersMiddleware(s.mux).ServeHTTP(w, req)
+	s.requestHandler().ServeHTTP(w, req)
 	if w.Code != http.StatusForbidden {
 		t.Fatalf("contents update bypassed active ruleset: %d body=%s", w.Code, w.Body.String())
 	}
@@ -696,7 +696,7 @@ func TestRulesets_SuiteFiltersAndPaginationAreValidated(t *testing.T) {
 		req := httptest.NewRequest(http.MethodGet, "/api/v3/repos/admin/ruleset-suite-filtering/rulesets/rule-suites?"+query, nil)
 		req.Header.Set("Authorization", "Bearer bleephub-admin-token-00000000000000000000")
 		w := httptest.NewRecorder()
-		s.ghHeadersMiddleware(s.mux).ServeHTTP(w, req)
+		s.requestHandler().ServeHTTP(w, req)
 		return w
 	}
 	w := request("ref=release&evaluate_status=evaluate&rule_suite_result=pass&per_page=1")

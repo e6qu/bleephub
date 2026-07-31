@@ -28,7 +28,7 @@ func TestNotifications_ListAndRead(t *testing.T) {
 		}
 		req.Header.Set("Authorization", "Bearer bleephub-admin-token-00000000000000000000")
 		w := httptest.NewRecorder()
-		s.ghHeadersMiddleware(s.mux).ServeHTTP(w, req)
+		s.requestHandler().ServeHTTP(w, req)
 		return w
 	}
 
@@ -132,7 +132,7 @@ func TestNotifications_ThreadIDsSeparateIssuesAndPullRequests(t *testing.T) {
 		}
 		req.Header.Set("Authorization", "Bearer bleephub-admin-token-00000000000000000000")
 		w := httptest.NewRecorder()
-		s.ghHeadersMiddleware(s.mux).ServeHTTP(w, req)
+		s.requestHandler().ServeHTTP(w, req)
 		return w
 	}
 
@@ -235,7 +235,7 @@ func TestNotifications_ParticipatingFilter(t *testing.T) {
 		}
 		req.Header.Set("Authorization", "Bearer "+token)
 		w := httptest.NewRecorder()
-		s.ghHeadersMiddleware(s.mux).ServeHTTP(w, req)
+		s.requestHandler().ServeHTTP(w, req)
 		return w
 	}
 
@@ -290,7 +290,7 @@ func TestNotifications_RepoScoped(t *testing.T) {
 		}
 		req.Header.Set("Authorization", "Bearer bleephub-admin-token-00000000000000000000")
 		w := httptest.NewRecorder()
-		s.ghHeadersMiddleware(s.mux).ServeHTTP(w, req)
+		s.requestHandler().ServeHTTP(w, req)
 		return w
 	}
 
@@ -329,7 +329,7 @@ func TestNotifications_ThreadSubscription(t *testing.T) {
 		}
 		req.Header.Set("Authorization", "Bearer bleephub-admin-token-00000000000000000000")
 		w := httptest.NewRecorder()
-		s.ghHeadersMiddleware(s.mux).ServeHTTP(w, req)
+		s.requestHandler().ServeHTTP(w, req)
 		return w
 	}
 
@@ -389,7 +389,7 @@ func TestNotifications_SinceAndBefore(t *testing.T) {
 		}
 		req.Header.Set("Authorization", "Bearer bleephub-admin-token-00000000000000000000")
 		w := httptest.NewRecorder()
-		s.ghHeadersMiddleware(s.mux).ServeHTTP(w, req)
+		s.requestHandler().ServeHTTP(w, req)
 		return w
 	}
 

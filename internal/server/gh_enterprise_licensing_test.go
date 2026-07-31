@@ -30,7 +30,7 @@ func enterpriseBearerRequest(
 		req.Header.Set("Content-Type", "application/json")
 	}
 	rec := httptest.NewRecorder()
-	s.ghHeadersMiddleware(s.mux).ServeHTTP(rec, req)
+	s.requestHandler().ServeHTTP(rec, req)
 	return rec
 }
 

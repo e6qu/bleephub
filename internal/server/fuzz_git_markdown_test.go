@@ -62,7 +62,7 @@ func FuzzGitRefUpdate(f *testing.F) {
 		req.Header.Set("Authorization", "token "+defaultToken)
 		req.Header.Set("Content-Type", "application/json")
 		w := httptest.NewRecorder()
-		s.ghHeadersMiddleware(s.mux).ServeHTTP(w, req)
+		s.requestHandler().ServeHTTP(w, req)
 
 		if w.Code >= 500 {
 			t.Fatalf("ref update ref=%q sha=%q force=%v -> %d: %s", ref, sha, force, w.Code, w.Body.String())
@@ -128,7 +128,7 @@ func FuzzContentPut(f *testing.F) {
 		req.Header.Set("Authorization", "token "+defaultToken)
 		req.Header.Set("Content-Type", "application/json")
 		w := httptest.NewRecorder()
-		s.ghHeadersMiddleware(s.mux).ServeHTTP(w, req)
+		s.requestHandler().ServeHTTP(w, req)
 
 		if w.Code >= 500 {
 			t.Fatalf("content PUT path=%q branch=%q -> %d: %s", path, branch, w.Code, w.Body.String())

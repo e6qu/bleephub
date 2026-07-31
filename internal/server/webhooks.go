@@ -205,9 +205,13 @@ func webhookDialControl(allowPrivate bool) func(network, address string, c sysca
 
 // newWebhookClient builds the HTTP client webhook deliveries use.
 func newWebhookClient(allowPrivate, insecureTLS bool) *http.Client {
+	return newWebhookClientWithTimeout(allowPrivate, insecureTLS, webhookRequestTimeout)
+}
+
+func newWebhookClientWithTimeout(allowPrivate, insecureTLS bool, timeout time.Duration) *http.Client {
 	transport := newAddressCheckedHTTPTransport(allowPrivate, insecureTLS)
 	return &http.Client{
-		Timeout:   webhookRequestTimeout,
+		Timeout:   timeout,
 		Transport: otelhttp.NewTransport(transport),
 		// GitHub does not follow redirects on webhook delivery. Returning the
 		// 3xx as the outcome keeps a redirect from reaching a second

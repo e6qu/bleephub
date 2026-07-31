@@ -32,7 +32,7 @@ func TestOAuthAppCreate_AndCheckTokenWithBasicAuth(t *testing.T) {
 	req := httptest.NewRequest("POST", "/api/v3/applications/"+oapp.ClientID+"/token", bytes.NewReader(body))
 	req.Header.Set("Authorization", "Basic "+basicHeader(oapp.ClientID, oapp.ClientSecret))
 	w := httptest.NewRecorder()
-	s.ghHeadersMiddleware(s.mux).ServeHTTP(w, req)
+	s.requestHandler().ServeHTTP(w, req)
 	if w.Code != http.StatusOK {
 		t.Fatalf("status = %d body = %s", w.Code, w.Body.String())
 	}
@@ -81,7 +81,7 @@ func TestOAuthCheckToken_BadCreds(t *testing.T) {
 	req := httptest.NewRequest("POST", "/api/v3/applications/"+oapp.ClientID+"/token", bytes.NewReader(body))
 	req.Header.Set("Authorization", "Basic "+basicHeader(oapp.ClientID, "wrong"))
 	w := httptest.NewRecorder()
-	s.ghHeadersMiddleware(s.mux).ServeHTTP(w, req)
+	s.requestHandler().ServeHTTP(w, req)
 	if w.Code != http.StatusUnauthorized {
 		t.Errorf("wrong-secret status = %d, want 401", w.Code)
 	}
@@ -89,7 +89,7 @@ func TestOAuthCheckToken_BadCreds(t *testing.T) {
 	// No Authorization header → 401
 	req = httptest.NewRequest("POST", "/api/v3/applications/"+oapp.ClientID+"/token", bytes.NewReader(body))
 	w = httptest.NewRecorder()
-	s.ghHeadersMiddleware(s.mux).ServeHTTP(w, req)
+	s.requestHandler().ServeHTTP(w, req)
 	if w.Code != http.StatusUnauthorized {
 		t.Errorf("no-auth status = %d, want 401", w.Code)
 	}
@@ -110,7 +110,7 @@ func TestOAuthResetToken_RotatesAndRevokesOld(t *testing.T) {
 	req := httptest.NewRequest("PATCH", "/api/v3/applications/"+oapp.ClientID+"/token", bytes.NewReader(body))
 	req.Header.Set("Authorization", "Basic "+basicHeader(oapp.ClientID, oapp.ClientSecret))
 	w := httptest.NewRecorder()
-	s.ghHeadersMiddleware(s.mux).ServeHTTP(w, req)
+	s.requestHandler().ServeHTTP(w, req)
 	if w.Code != http.StatusOK {
 		t.Fatalf("status = %d body = %s", w.Code, w.Body.String())
 	}
@@ -140,7 +140,7 @@ func TestOAuthRevokeToken_204(t *testing.T) {
 	req := httptest.NewRequest("DELETE", "/api/v3/applications/"+oapp.ClientID+"/token", bytes.NewReader(body))
 	req.Header.Set("Authorization", "Basic "+basicHeader(oapp.ClientID, oapp.ClientSecret))
 	w := httptest.NewRecorder()
-	s.ghHeadersMiddleware(s.mux).ServeHTTP(w, req)
+	s.requestHandler().ServeHTTP(w, req)
 	if w.Code != http.StatusNoContent {
 		t.Fatalf("status = %d body = %s", w.Code, w.Body.String())
 	}
@@ -164,7 +164,7 @@ func TestOAuthRevokeGrant_KillsAllUserToServerTokensForClient(t *testing.T) {
 	req := httptest.NewRequest("DELETE", "/api/v3/applications/"+oapp.ClientID+"/grant", bytes.NewReader(body))
 	req.Header.Set("Authorization", "Basic "+basicHeader(oapp.ClientID, oapp.ClientSecret))
 	w := httptest.NewRecorder()
-	s.ghHeadersMiddleware(s.mux).ServeHTTP(w, req)
+	s.requestHandler().ServeHTTP(w, req)
 	if w.Code != http.StatusNoContent {
 		t.Fatalf("status = %d body = %s", w.Code, w.Body.String())
 	}
@@ -203,7 +203,7 @@ func TestOAuthScopeToken_MintsFreshNarrowedToken(t *testing.T) {
 	req := httptest.NewRequest("POST", "/api/v3/applications/"+app.ClientID+"/token/scoped", bytes.NewReader(body))
 	req.Header.Set("Authorization", "Basic "+basicHeader(app.ClientID, app.ClientSecret))
 	w := httptest.NewRecorder()
-	s.ghHeadersMiddleware(s.mux).ServeHTTP(w, req)
+	s.requestHandler().ServeHTTP(w, req)
 	if w.Code != http.StatusOK {
 		t.Fatalf("status = %d body = %s", w.Code, w.Body.String())
 	}
@@ -258,7 +258,7 @@ func TestOAuthScopeToken_MintsFreshNarrowedToken(t *testing.T) {
 	widenReq := httptest.NewRequest("POST", "/api/v3/applications/"+app.ClientID+"/token/scoped", bytes.NewReader(widenBody))
 	widenReq.Header.Set("Authorization", "Basic "+basicHeader(app.ClientID, app.ClientSecret))
 	widen := httptest.NewRecorder()
-	s.ghHeadersMiddleware(s.mux).ServeHTTP(widen, widenReq)
+	s.requestHandler().ServeHTTP(widen, widenReq)
 	if widen.Code != http.StatusUnprocessableEntity {
 		t.Errorf("permission widening = %d: %s", widen.Code, widen.Body.String())
 	}
@@ -284,7 +284,7 @@ func TestOAuthScopeToken_MintsFreshNarrowedToken(t *testing.T) {
 			req := httptest.NewRequest("POST", "/api/v3/applications/"+app.ClientID+"/token/scoped", bytes.NewReader(body))
 			req.Header.Set("Authorization", "Basic "+basicHeader(app.ClientID, app.ClientSecret))
 			got := httptest.NewRecorder()
-			s.ghHeadersMiddleware(s.mux).ServeHTTP(got, req)
+			s.requestHandler().ServeHTTP(got, req)
 			if got.Code != http.StatusUnprocessableEntity {
 				t.Errorf("status = %d: %s", got.Code, got.Body.String())
 			}

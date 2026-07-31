@@ -589,7 +589,7 @@ func TestGitDataReadRequiresContentsRead(t *testing.T) {
 	req, _ := http.NewRequest("GET", "/api/v3/repos/"+repo.FullName+"/git/commits/"+commitHash.String(), nil)
 	req.Header.Set("Authorization", "Bearer ghs_notallowed")
 	w := httptest.NewRecorder()
-	s.ghHeadersMiddleware(s.mux).ServeHTTP(w, req)
+	s.requestHandler().ServeHTTP(w, req)
 	if w.Code != http.StatusForbidden {
 		t.Errorf("status = %d, want 403 for metadata-only token", w.Code)
 	}

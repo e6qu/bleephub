@@ -351,6 +351,7 @@ func validatePersistentServerStorage(serviceByteStoreReady bool) error {
 func (s *Server) registerRoutes() {
 	// Health check
 	s.route("GET /health", s.handleHealth)
+	s.route("GET /ready", s.handleReady)
 
 	// Auth + connection data (auth.go)
 	s.registerAuthRoutes()
@@ -600,6 +601,17 @@ func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
 		"commit":          s.build.Commit,
 		"published_at":    s.build.PublishedAt,
 	})
+}
+
+func (s *Server) handleReady(w http.ResponseWriter, r *http.Request) {
+	ctx, cancel := context.WithTimeout(r.Context(), 2*time.Second)
+	defer cancel()
+	if err := s.store.persistenceReady(ctx); err != nil {
+		s.logger.Warn().Err(err).Msg("readiness check failed")
+		writeJSON(w, http.StatusServiceUnavailable, map[string]string{"status": "unavailable"})
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]string{"status": "ready"})
 }
 
 func (s *Server) handleInternalMetrics(w http.ResponseWriter, r *http.Request) {

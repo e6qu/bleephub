@@ -92,7 +92,7 @@ func TestPrivateRepoMutationsRejectAnUnrelatedUser(t *testing.T) {
 		t.Fatalf("could not create the fixture organization")
 	}
 
-	handler := testServer.ghHeadersMiddleware(testServer.mux)
+	handler := testServer.requestHandler()
 
 	var admitted []string
 	for _, pattern := range testServer.routePatterns {
@@ -210,7 +210,7 @@ func TestPrivateRepoReadsRejectAnUnrelatedUser(t *testing.T) {
 	}
 	_, strangerToken := authflowStranger(t, testServer, authflowName("authzread-stranger"))
 
-	handler := testServer.ghHeadersMiddleware(testServer.mux)
+	handler := testServer.requestHandler()
 
 	// Anonymous, which is the sharpest case: no credential at all.
 	base := "/api/v3/repos/" + ownerLogin + "/" + repoName
@@ -385,7 +385,7 @@ func TestInstallationTokenCannotReachAnotherAccountsRepo(t *testing.T) {
 		t.Fatalf("could not mint an installation token")
 	}
 
-	handler := testServer.ghHeadersMiddleware(testServer.mux)
+	handler := testServer.requestHandler()
 
 	do := func(method, path string) int {
 		req := httptest.NewRequest(method, path, bytes.NewReader([]byte("{}")))
@@ -454,7 +454,7 @@ func TestOrgMutationsRejectAnUnrelatedUser(t *testing.T) {
 	}
 	strangerToken := store.CreateToken(stranger.ID, "repo, workflow, read:org, admin:org, gist")
 
-	handler := testServer.ghHeadersMiddleware(testServer.mux)
+	handler := testServer.requestHandler()
 	ownRepoID := strconv.Itoa(ownRepo.ID)
 
 	var admitted []string
@@ -549,7 +549,7 @@ func TestPublicRepositoryBypassIsKeyedOnTheScope(t *testing.T) {
 	tok.RepositorySelection = "subset"
 	store.mu.Unlock()
 
-	handler := testServer.ghHeadersMiddleware(testServer.mux)
+	handler := testServer.requestHandler()
 	base := "/api/v3/repos/" + owner.Login + "/" + repo.Name
 
 	// The first three are the discriminating probes: scopeActions is neither

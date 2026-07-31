@@ -25,7 +25,7 @@ func TestPRReviewComments_RootAndReply(t *testing.T) {
 		req := httptest.NewRequest("POST", path, bytes.NewReader(body))
 		req.Header.Set("Authorization", "Bearer bleephub-admin-token-00000000000000000000")
 		w := httptest.NewRecorder()
-		s.ghHeadersMiddleware(s.mux).ServeHTTP(w, req)
+		s.requestHandler().ServeHTTP(w, req)
 		return w
 	}
 
@@ -74,7 +74,7 @@ func TestPRReviewComments_RootAndReply(t *testing.T) {
 	req := httptest.NewRequest("GET", "/api/v3/repos/admin/rc-repo/pulls/"+itoa(pr.Number)+"/comments", nil)
 	req.Header.Set("Authorization", "Bearer bleephub-admin-token-00000000000000000000")
 	w = httptest.NewRecorder()
-	s.ghHeadersMiddleware(s.mux).ServeHTTP(w, req)
+	s.requestHandler().ServeHTTP(w, req)
 	var list []map[string]any
 	_ = json.Unmarshal(w.Body.Bytes(), &list)
 	if len(list) != 3 {
@@ -85,7 +85,7 @@ func TestPRReviewComments_RootAndReply(t *testing.T) {
 	req = httptest.NewRequest("GET", "/api/v3/repos/admin/rc-repo/pulls/comments/"+itoa(rootID), nil)
 	req.Header.Set("Authorization", "Bearer bleephub-admin-token-00000000000000000000")
 	w = httptest.NewRecorder()
-	s.ghHeadersMiddleware(s.mux).ServeHTTP(w, req)
+	s.requestHandler().ServeHTTP(w, req)
 	if w.Code != http.StatusOK {
 		t.Fatalf("get by id: %d body=%s", w.Code, w.Body.String())
 	}
@@ -95,7 +95,7 @@ func TestPRReviewComments_RootAndReply(t *testing.T) {
 	req = httptest.NewRequest("PATCH", "/api/v3/repos/admin/rc-repo/pulls/comments/"+itoa(rootID), bytes.NewReader(patch))
 	req.Header.Set("Authorization", "Bearer bleephub-admin-token-00000000000000000000")
 	w = httptest.NewRecorder()
-	s.ghHeadersMiddleware(s.mux).ServeHTTP(w, req)
+	s.requestHandler().ServeHTTP(w, req)
 	if w.Code != http.StatusOK {
 		t.Fatalf("patch: %d body=%s", w.Code, w.Body.String())
 	}
@@ -130,7 +130,7 @@ func TestPRReviewComments_MissingBody422(t *testing.T) {
 	req := httptest.NewRequest("POST", "/api/v3/repos/admin/rc2/pulls/"+itoa(pr.Number)+"/comments", bytes.NewReader(bad))
 	req.Header.Set("Authorization", "Bearer bleephub-admin-token-00000000000000000000")
 	w := httptest.NewRecorder()
-	s.ghHeadersMiddleware(s.mux).ServeHTTP(w, req)
+	s.requestHandler().ServeHTTP(w, req)
 	if w.Code != http.StatusUnprocessableEntity {
 		t.Errorf("missing body: %d", w.Code)
 	}

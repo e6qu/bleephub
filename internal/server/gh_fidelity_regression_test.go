@@ -21,7 +21,7 @@ func authedReqScheme(s *Server, method, path, authHeader, body string) *httptest
 		r.Header.Set("Authorization", authHeader)
 	}
 	w := httptest.NewRecorder()
-	s.ghHeadersMiddleware(s.mux).ServeHTTP(w, r)
+	s.requestHandler().ServeHTTP(w, r)
 	return w
 }
 

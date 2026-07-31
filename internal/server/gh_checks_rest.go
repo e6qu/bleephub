@@ -321,6 +321,11 @@ func (s *Server) handleCreateCheckSuite(w http.ResponseWriter, r *http.Request) 
 
 func (s *Server) handleUpdateCheckSuitePrefs(w http.ResponseWriter, r *http.Request) {
 	repoKey := r.PathValue("owner") + "/" + r.PathValue("repo")
+	repo := s.store.GetRepo(r.PathValue("owner"), r.PathValue("repo"))
+	if repo == nil {
+		writeGHError(w, http.StatusNotFound, "Not Found")
+		return
+	}
 	var req struct {
 		AutoTriggerChecks []*CheckSuitePref `json:"auto_trigger_checks"`
 	}
@@ -332,6 +337,7 @@ func (s *Server) handleUpdateCheckSuitePrefs(w http.ResponseWriter, r *http.Requ
 		"preferences": map[string]interface{}{
 			"auto_trigger_checks": req.AutoTriggerChecks,
 		},
+		"repository": repoToJSONForViewer(repo, s.store, s.baseURL(r), ghUserFromContext(r.Context())),
 	})
 }
 

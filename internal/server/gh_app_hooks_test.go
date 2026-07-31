@@ -40,7 +40,7 @@ func TestAppHookConfig_GetPatch(t *testing.T) {
 		}
 		req.Header.Set("Authorization", "Bearer "+jwt)
 		w := httptest.NewRecorder()
-		s.ghHeadersMiddleware(s.mux).ServeHTTP(w, req)
+		s.requestHandler().ServeHTTP(w, req)
 		return w
 	}
 
@@ -116,7 +116,7 @@ func TestAppHookDeliveries_ListGetRedeliver(t *testing.T) {
 		req := httptest.NewRequest(method, path, nil)
 		req.Header.Set("Authorization", "Bearer "+jwt)
 		w := httptest.NewRecorder()
-		s.ghHeadersMiddleware(s.mux).ServeHTTP(w, req)
+		s.requestHandler().ServeHTTP(w, req)
 		return w
 	}
 

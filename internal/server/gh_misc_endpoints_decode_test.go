@@ -41,7 +41,7 @@ func doMiscReq(s *Server, method, path string, body string) *httptest.ResponseRe
 	}
 	req.Header.Set("Authorization", "token "+adminPAT)
 	w := httptest.NewRecorder()
-	s.ghHeadersMiddleware(s.mux).ServeHTTP(w, req)
+	s.requestHandler().ServeHTTP(w, req)
 	return w
 }
 

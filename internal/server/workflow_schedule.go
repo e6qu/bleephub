@@ -33,7 +33,11 @@ func (s *Server) startScheduleDispatcher(ctx context.Context) {
 				return
 			case <-timer.C:
 			}
-			s.fireDueSchedules(s.currentTime())
+			tickTime := s.currentTime()
+			if err := s.store.ReapExpiredLoginSessions(tickTime); err != nil {
+				s.logger.Error().Err(err).Msg("expired login-session reap failed")
+			}
+			s.fireDueSchedules(tickTime)
 		}
 	})
 }

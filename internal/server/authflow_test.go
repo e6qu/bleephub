@@ -457,7 +457,7 @@ func TestRepositorySecretWriteRefusesAStranger(t *testing.T) {
 	req.Header.Set("Authorization", "token "+strangerToken)
 	req.Header.Set("Content-Type", "application/json")
 	w := httptest.NewRecorder()
-	s.ghHeadersMiddleware(s.mux).ServeHTTP(w, req)
+	s.requestHandler().ServeHTTP(w, req)
 	if w.Code == http.StatusCreated || w.Code == http.StatusNoContent {
 		t.Errorf("stranger PUT repository secret status = %d, want a denial", w.Code)
 	}
@@ -543,7 +543,7 @@ func TestRepositorySecretHandlersKeyOffTheResolvedRepository(t *testing.T) {
 	req.Header.Set("Authorization", "token "+AdminToken())
 	req.Header.Set("Content-Type", "application/json")
 	w := httptest.NewRecorder()
-	s.ghHeadersMiddleware(s.mux).ServeHTTP(w, req)
+	s.requestHandler().ServeHTTP(w, req)
 	if w.Code != http.StatusCreated {
 		t.Fatalf("owner PUT repository secret status = %d, want 201; body=%s", w.Code, w.Body.String())
 	}
@@ -706,7 +706,7 @@ func TestSourceImportRefusesNonPublicSources(t *testing.T) {
 		req.Header.Set("Authorization", "token "+AdminToken())
 		req.Header.Set("Content-Type", "application/json")
 		w := httptest.NewRecorder()
-		s.ghHeadersMiddleware(s.mux).ServeHTTP(w, req)
+		s.requestHandler().ServeHTTP(w, req)
 		if w.Code != http.StatusUnprocessableEntity {
 			t.Errorf("PUT import vcs_url=%q status = %d, want 422; body=%s", hostile, w.Code, w.Body.String())
 		}
@@ -735,7 +735,7 @@ func TestPrivateOutboundOptOutCoversBothTransports(t *testing.T) {
 		req.Header.Set("Authorization", "token "+AdminToken())
 		req.Header.Set("Content-Type", "application/json")
 		w := httptest.NewRecorder()
-		s.ghHeadersMiddleware(s.mux).ServeHTTP(w, req)
+		s.requestHandler().ServeHTTP(w, req)
 		return w.Code
 	}
 

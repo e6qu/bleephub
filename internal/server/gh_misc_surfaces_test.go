@@ -148,7 +148,7 @@ func TestGPGKeyDeleteOwnership(t *testing.T) {
 	req.Header.Set("Authorization", "token ghp_other")
 	req.Header.Set("Content-Type", "application/json")
 	rw := httptest.NewRecorder()
-	s.ghHeadersMiddleware(s.mux).ServeHTTP(rw, req)
+	s.requestHandler().ServeHTTP(rw, req)
 	if rw.Code != 404 {
 		t.Fatalf("other user delete status = %d, want 404", rw.Code)
 	}

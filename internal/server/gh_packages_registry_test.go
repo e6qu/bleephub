@@ -116,7 +116,7 @@ func TestPackageAndRegistryBytesUseObjectStore(t *testing.T) {
 	req := httptest.NewRequest("GET", "/ui-data/users/admin/packages/container/object-package/versions/"+itoa(version.ID)+"/files/"+itoa(files[0].ID), nil)
 	req.Header.Set("Authorization", "Bearer "+defaultToken)
 	rec := httptest.NewRecorder()
-	s.ghHeadersMiddleware(s.mux).ServeHTTP(rec, req)
+	s.requestHandler().ServeHTTP(rec, req)
 	if rec.Code != http.StatusOK {
 		t.Fatalf("download package object file status = %d, body = %s", rec.Code, rec.Body.String())
 	}

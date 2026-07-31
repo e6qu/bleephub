@@ -174,6 +174,16 @@ type Persistence struct {
 	keyHighWater map[string]int64
 }
 
+func (p *Persistence) Ready(ctx context.Context) error {
+	if p == nil {
+		return nil
+	}
+	if err := p.db.PingContext(ctx); err != nil {
+		return fmt.Errorf("persistence ping: %w", err)
+	}
+	return nil
+}
+
 // persistenceFailure is raised by the Must* helpers. It aborts the request
 // that was mid-write instead of the process: killing the process from inside a
 // handler leaves the mutation half-applied everywhere else with no chance to

@@ -172,7 +172,7 @@ func TestEnterpriseBillingUsageAndReportExportJourney(t *testing.T) {
 	download := httptest.NewRequest(http.MethodGet,
 		"/enterprises/bleephub/billing/reports/"+reportID+"/download", nil)
 	rec = httptest.NewRecorder()
-	s.ghHeadersMiddleware(s.mux).ServeHTTP(rec, download)
+	s.requestHandler().ServeHTTP(rec, download)
 	if rec.Code != http.StatusOK || rec.Header().Get("Content-Type") != "text/csv; charset=utf-8" ||
 		!strings.Contains(rec.Body.String(), repo.FullName) {
 		t.Fatalf("download report = %d %q", rec.Code, rec.Body.String())

@@ -61,7 +61,7 @@ func TestListAuthUserTeams_RequiresAuthNotReadOrgScope(t *testing.T) {
 	req := httptest.NewRequest("GET", "/api/v3/user/teams", nil)
 	req.Header.Set("Authorization", "Bearer "+tokRepoOnly.Token)
 	w := httptest.NewRecorder()
-	s.ghHeadersMiddleware(s.mux).ServeHTTP(w, req)
+	s.requestHandler().ServeHTTP(w, req)
 	if w.Code != http.StatusOK {
 		t.Fatalf("GET /user/teams with repo-only OAuth token = %d, want 200; body=%s", w.Code, w.Body.String())
 	}
@@ -80,7 +80,7 @@ func TestListAuthUserTeams_RequiresAuthNotReadOrgScope(t *testing.T) {
 	// Unauthenticated requests still get 401.
 	req2 := httptest.NewRequest("GET", "/api/v3/user/teams", nil)
 	w2 := httptest.NewRecorder()
-	s.ghHeadersMiddleware(s.mux).ServeHTTP(w2, req2)
+	s.requestHandler().ServeHTTP(w2, req2)
 	if w2.Code != http.StatusUnauthorized {
 		t.Fatalf("GET /user/teams without token = %d, want 401", w2.Code)
 	}
@@ -117,7 +117,7 @@ func TestListAuthUserTeams_ViaOAuthWebFlow(t *testing.T) {
 	req2.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	req2.Header.Set("Accept", "application/json")
 	w2 := httptest.NewRecorder()
-	s.ghHeadersMiddleware(s.mux).ServeHTTP(w2, req2)
+	s.requestHandler().ServeHTTP(w2, req2)
 	if w2.Code != http.StatusOK {
 		t.Fatalf("access_token status = %d, want 200; body=%s", w2.Code, w2.Body.String())
 	}
@@ -134,7 +134,7 @@ func TestListAuthUserTeams_ViaOAuthWebFlow(t *testing.T) {
 	req3 := httptest.NewRequest("GET", "/api/v3/user/teams?per_page=100", nil)
 	req3.Header.Set("Authorization", "Bearer "+accessToken)
 	w3 := httptest.NewRecorder()
-	s.ghHeadersMiddleware(s.mux).ServeHTTP(w3, req3)
+	s.requestHandler().ServeHTTP(w3, req3)
 	if w3.Code != http.StatusOK {
 		t.Fatalf("GET /user/teams status = %d, want 200; body=%s", w3.Code, w3.Body.String())
 	}
@@ -174,7 +174,7 @@ func TestListAuthUserTeams_ViaOAuthWebFlow_ReadOrgScope(t *testing.T) {
 	reqCreate.Header.Set("Authorization", "Bearer "+s.store.CreateToken(admin.ID, "admin:org").Value)
 	reqCreate.Header.Set("Content-Type", "application/json")
 	wCreate := httptest.NewRecorder()
-	s.ghHeadersMiddleware(s.mux).ServeHTTP(wCreate, reqCreate)
+	s.requestHandler().ServeHTTP(wCreate, reqCreate)
 	if wCreate.Code != http.StatusCreated {
 		t.Fatalf("create team status = %d, want 201; body=%s", wCreate.Code, wCreate.Body.String())
 	}
@@ -202,7 +202,7 @@ func TestListAuthUserTeams_ViaOAuthWebFlow_ReadOrgScope(t *testing.T) {
 	req2.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	req2.Header.Set("Accept", "application/json")
 	w2 := httptest.NewRecorder()
-	s.ghHeadersMiddleware(s.mux).ServeHTTP(w2, req2)
+	s.requestHandler().ServeHTTP(w2, req2)
 	if w2.Code != http.StatusOK {
 		t.Fatalf("access_token status = %d, want 200; body=%s", w2.Code, w2.Body.String())
 	}
@@ -219,7 +219,7 @@ func TestListAuthUserTeams_ViaOAuthWebFlow_ReadOrgScope(t *testing.T) {
 	req3 := httptest.NewRequest("GET", "/api/v3/user/teams?per_page=100", nil)
 	req3.Header.Set("Authorization", "Bearer "+accessToken)
 	w3 := httptest.NewRecorder()
-	s.ghHeadersMiddleware(s.mux).ServeHTTP(w3, req3)
+	s.requestHandler().ServeHTTP(w3, req3)
 	if w3.Code != http.StatusOK {
 		t.Fatalf("GET /user/teams status = %d, want 200; body=%s", w3.Code, w3.Body.String())
 	}
@@ -447,6 +447,6 @@ func httptestPost(s *Server, path, token string, body []byte) *httptest.Response
 		r.Header.Set("Authorization", "Bearer "+token)
 	}
 	w := httptest.NewRecorder()
-	s.ghHeadersMiddleware(s.mux).ServeHTTP(w, r)
+	s.requestHandler().ServeHTTP(w, r)
 	return w
 }

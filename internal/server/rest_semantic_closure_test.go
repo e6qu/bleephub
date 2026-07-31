@@ -185,7 +185,7 @@ func TestInternalNetworkSettingsSeedRequiresSiteAdmin(t *testing.T) {
 	nonAdminToken := s.store.CreateToken(nonAdmin.ID, "repo")
 	path := "/internal/orgs/" + org.Login + "/network-settings"
 
-	if got := tokenRequest(s, http.MethodPost, path, ""); got.Code != http.StatusForbidden {
+	if got := tokenRequest(s, http.MethodPost, path, ""); got.Code != http.StatusUnauthorized {
 		t.Fatalf("anonymous network settings seed = %d: %s", got.Code, got.Body.String())
 	}
 	if got := tokenRequest(s, http.MethodPost, path, nonAdminToken.Value); got.Code != http.StatusForbidden {

@@ -275,6 +275,7 @@ func (s *Server) handleStartUserCodespace(w http.ResponseWriter, r *http.Request
 		writeGHError(w, http.StatusInternalServerError, "codespace start failed: "+err.Error())
 		return
 	}
+	cs = s.store.GetCodespace(cs.ID)
 	writeJSON(w, http.StatusOK, s.codespaceToJSON(cs, s.baseURL(r)))
 }
 
@@ -288,6 +289,7 @@ func (s *Server) handleStopUserCodespace(w http.ResponseWriter, r *http.Request)
 		writeGHError(w, http.StatusInternalServerError, "codespace stop failed: "+err.Error())
 		return
 	}
+	cs = s.store.GetCodespace(cs.ID)
 	writeJSON(w, http.StatusOK, s.codespaceToJSON(cs, s.baseURL(r)))
 }
 
@@ -669,6 +671,7 @@ func (s *Server) handleStopOrgMemberCodespace(w http.ResponseWriter, r *http.Req
 		writeGHError(w, http.StatusInternalServerError, "codespace stop failed: "+err.Error())
 		return
 	}
+	cs = s.store.GetCodespace(cs.ID)
 	writeJSON(w, http.StatusOK, s.codespaceToJSON(cs, s.baseURL(r)))
 }
 

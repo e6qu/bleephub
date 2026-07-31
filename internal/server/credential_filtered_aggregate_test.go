@@ -34,7 +34,7 @@ func TestAggregateIssueAndNotificationReadsHonorAppRepositorySelection(t *testin
 		req := httptest.NewRequest(http.MethodGet, path, nil)
 		req.Header.Set("Authorization", "Bearer "+token.Token)
 		w := httptest.NewRecorder()
-		s.ghHeadersMiddleware(s.mux).ServeHTTP(w, req)
+		s.requestHandler().ServeHTTP(w, req)
 		return w
 	}
 

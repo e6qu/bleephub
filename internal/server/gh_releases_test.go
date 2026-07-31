@@ -43,7 +43,7 @@ func TestReleases_FullLifecycle(t *testing.T) {
 		}
 		req.Header.Set("Authorization", "Bearer bleephub-admin-token-00000000000000000000")
 		w := httptest.NewRecorder()
-		s.ghHeadersMiddleware(s.mux).ServeHTTP(w, req)
+		s.requestHandler().ServeHTTP(w, req)
 		return w
 	}
 
@@ -214,7 +214,7 @@ func TestReleases_GenerateNotes(t *testing.T) {
 	req := httptest.NewRequest("POST", "/api/v3/repos/admin/r/releases/generate-notes", bytes.NewReader(body))
 	req.Header.Set("Authorization", "Bearer bleephub-admin-token-00000000000000000000")
 	w := httptest.NewRecorder()
-	s.ghHeadersMiddleware(s.mux).ServeHTTP(w, req)
+	s.requestHandler().ServeHTTP(w, req)
 	if w.Code != http.StatusOK {
 		t.Fatalf("generate-notes: %d body=%s", w.Code, w.Body.String())
 	}
@@ -314,7 +314,7 @@ func TestReleases_AssetLifecycle(t *testing.T) {
 		req.Header.Set("Authorization", "Bearer bleephub-admin-token-00000000000000000000")
 		req.Header.Set("Content-Type", "application/gzip")
 		rec := httptest.NewRecorder()
-		s.ghHeadersMiddleware(s.mux).ServeHTTP(rec, req)
+		s.requestHandler().ServeHTTP(rec, req)
 		return rec
 	}
 
@@ -338,7 +338,7 @@ func TestReleases_AssetLifecycle(t *testing.T) {
 	missingName := httptest.NewRequest("POST", "/api/uploads/repos/admin/asset-repo/releases/"+itoa(relID)+"/assets", strings.NewReader("ignored"))
 	missingName.Header.Set("Authorization", "Bearer bleephub-admin-token-00000000000000000000")
 	missingNameRec := httptest.NewRecorder()
-	s.ghHeadersMiddleware(s.mux).ServeHTTP(missingNameRec, missingName)
+	s.requestHandler().ServeHTTP(missingNameRec, missingName)
 	if missingNameRec.Code != http.StatusUnprocessableEntity {
 		t.Fatalf("missing-name upload: %d body=%s", missingNameRec.Code, missingNameRec.Body.String())
 	}
@@ -365,7 +365,7 @@ func TestReleases_AssetLifecycle(t *testing.T) {
 	req.Header.Set("Authorization", "Bearer bleephub-admin-token-00000000000000000000")
 	req.Header.Set("Accept", "application/octet-stream")
 	rec := httptest.NewRecorder()
-	s.ghHeadersMiddleware(s.mux).ServeHTTP(rec, req)
+	s.requestHandler().ServeHTTP(rec, req)
 	if rec.Code != http.StatusOK {
 		t.Fatalf("download asset: %d body=%s", rec.Code, rec.Body.String())
 	}
@@ -426,7 +426,7 @@ func TestReleases_AssetBytesUseObjectStore(t *testing.T) {
 	req.Header.Set("Authorization", "Bearer bleephub-admin-token-00000000000000000000")
 	req.Header.Set("Content-Type", "application/gzip")
 	rec := httptest.NewRecorder()
-	s.ghHeadersMiddleware(s.mux).ServeHTTP(rec, req)
+	s.requestHandler().ServeHTTP(rec, req)
 	if rec.Code != http.StatusCreated {
 		t.Fatalf("upload asset: %d body=%s", rec.Code, rec.Body.String())
 	}
@@ -443,7 +443,7 @@ func TestReleases_AssetBytesUseObjectStore(t *testing.T) {
 	download.Header.Set("Authorization", "Bearer bleephub-admin-token-00000000000000000000")
 	download.Header.Set("Accept", "application/octet-stream")
 	out := httptest.NewRecorder()
-	s.ghHeadersMiddleware(s.mux).ServeHTTP(out, download)
+	s.requestHandler().ServeHTTP(out, download)
 	if out.Code != http.StatusOK || out.Body.String() != "release object bytes" {
 		t.Fatalf("download asset: status=%d body=%q", out.Code, out.Body.String())
 	}
@@ -525,6 +525,6 @@ func doAuthReq(s *Server, method, path string, body []byte) *httptest.ResponseRe
 		req.Header.Set("Content-Type", "application/json")
 	}
 	w := httptest.NewRecorder()
-	s.ghHeadersMiddleware(s.mux).ServeHTTP(w, req)
+	s.requestHandler().ServeHTTP(w, req)
 	return w
 }

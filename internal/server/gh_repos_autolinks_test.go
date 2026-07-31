@@ -29,7 +29,7 @@ func doAutolinkReq(s *Server, token, method, path string, body []byte) *httptest
 		req.Header.Set("Authorization", "Bearer "+token)
 	}
 	w := httptest.NewRecorder()
-	s.ghHeadersMiddleware(s.mux).ServeHTTP(w, req)
+	s.requestHandler().ServeHTTP(w, req)
 	return w
 }
 

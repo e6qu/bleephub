@@ -3,7 +3,9 @@ package bleephub
 import (
 	"bytes"
 	"context"
+	"crypto/hmac"
 	"crypto/sha256"
+	"encoding/base64"
 	"fmt"
 	"io"
 	"os"
@@ -14,6 +16,8 @@ import (
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
 )
+
+const objectChecksumMetadataKey = "bleephub-sha256"
 
 type actionsByteStore interface {
 	Put(ctx context.Context, key string, data []byte) error
@@ -53,10 +57,14 @@ func newActionsByteStoreFromEnv(ctx context.Context) (actionsByteStore, error) {
 func (s *s3ActionsByteStore) Put(ctx context.Context, key string, data []byte) error {
 	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
 	defer cancel()
+	checksum := sha256.Sum256(data)
 	_, err := s.fs.client.PutObject(ctx, &s3.PutObjectInput{
 		Bucket: aws.String(s.fs.bucket),
 		Key:    aws.String(s.key(key)),
 		Body:   bytes.NewReader(data),
+		Metadata: map[string]string{
+			objectChecksumMetadataKey: base64.RawStdEncoding.EncodeToString(checksum[:]),
+		},
 	})
 	if err != nil {
 		return fmt.Errorf("s3 put %s: %w", s.key(key), err)
@@ -79,7 +87,27 @@ func (s *s3ActionsByteStore) Get(ctx context.Context, key string) ([]byte, error
 	if err != nil {
 		return nil, fmt.Errorf("s3 read %s: %w", s.key(key), err)
 	}
+	if err := verifyObjectChecksum(resp.Metadata, data); err != nil {
+		return nil, fmt.Errorf("s3 read %s: %w", s.key(key), err)
+	}
 	return data, nil
+}
+
+func verifyObjectChecksum(metadata map[string]string, data []byte) error {
+	encoded := metadata[objectChecksumMetadataKey]
+	if encoded == "" {
+		// Existing objects predate checksummed writes and remain readable.
+		return nil
+	}
+	want, err := base64.RawStdEncoding.DecodeString(encoded)
+	if err != nil || len(want) != sha256.Size {
+		return fmt.Errorf("invalid stored SHA-256 checksum")
+	}
+	got := sha256.Sum256(data)
+	if !hmac.Equal(want, got[:]) {
+		return fmt.Errorf("stored SHA-256 checksum does not match object bytes")
+	}
+	return nil
 }
 
 func (s *s3ActionsByteStore) Delete(ctx context.Context, key string) error {

@@ -41,7 +41,7 @@ func serveWithConcurrentDelete(s *Server, method, path string, body interface{},
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Authorization", "token "+defaultToken)
 	w := httptest.NewRecorder()
-	s.ghHeadersMiddleware(s.mux).ServeHTTP(w, req)
+	s.requestHandler().ServeHTTP(w, req)
 	return w
 }
 

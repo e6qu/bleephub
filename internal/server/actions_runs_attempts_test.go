@@ -369,8 +369,10 @@ jobs:
 	// Push trigger while disabled → no run.
 	before := countRepoRuns(repoKey)
 	testServer.triggerWorkflowsForEvent(repoKey, "push", "", "refs/heads/main", nil)
-	time.Sleep(100 * time.Millisecond)
-	if got := countRepoRuns(repoKey); got != before {
+	changed := testEventually(200*time.Millisecond, 10*time.Millisecond, func() bool {
+		return countRepoRuns(repoKey) != before
+	})
+	if got := countRepoRuns(repoKey); changed {
 		t.Errorf("disabled workflow triggered: runs %d → %d", before, got)
 	}
 
