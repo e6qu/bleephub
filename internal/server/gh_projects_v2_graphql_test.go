@@ -289,7 +289,7 @@ func TestProjectsV2GraphQL_ProjectLevelConnections(t *testing.T) {
 		t.Fatalf("views.totalCount = %d, want 1: %v", got, views)
 	}
 	viewNode := views["nodes"].([]interface{})[0].(map[string]interface{})
-	if viewNode["id"] != view.NodeID || viewNode["name"] != "Issues board" || viewNode["layout"] != "board" || viewNode["filter"] != "is:issue" {
+	if viewNode["id"] != view.NodeID || viewNode["name"] != "Issues board" || viewNode["layout"] != "BOARD_LAYOUT" || viewNode["filter"] != "is:issue" {
 		t.Fatalf("view node = %v", viewNode)
 	}
 	visible := viewNode["visibleFieldIds"].([]interface{})

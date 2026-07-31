@@ -2463,9 +2463,23 @@ func (s *Server) projectV2ViewConnectionType() *graphql.Object {
 					return src["nodeID"], nil
 				},
 			},
-			"number":    &graphql.Field{Type: graphql.NewNonNull(graphql.Int)},
-			"name":      &graphql.Field{Type: graphql.NewNonNull(graphql.String)},
-			"layout":    &graphql.Field{Type: graphql.NewNonNull(s.graphQLEnum("ProjectV2ViewLayout", "BOARD_LAYOUT", "ROADMAP_LAYOUT", "TABLE_LAYOUT"))},
+			"number": &graphql.Field{Type: graphql.NewNonNull(graphql.Int)},
+			"name":   &graphql.Field{Type: graphql.NewNonNull(graphql.String)},
+			"layout": &graphql.Field{
+				Type: graphql.NewNonNull(s.graphQLEnum("ProjectV2ViewLayout", "BOARD_LAYOUT", "ROADMAP_LAYOUT", "TABLE_LAYOUT")),
+				Resolve: func(p graphql.ResolveParams) (interface{}, error) {
+					src, ok := p.Source.(map[string]interface{})
+					if !ok {
+						return nil, fmt.Errorf("resolve source: unexpected type %T", p.Source)
+					}
+					layout, _ := src["layout"].(string)
+					layout = strings.ToUpper(layout)
+					if !strings.HasSuffix(layout, "_LAYOUT") {
+						layout += "_LAYOUT"
+					}
+					return layout, nil
+				},
+			},
 			"filter":    &graphql.Field{Type: graphql.String},
 			"createdAt": &graphql.Field{Type: graphql.NewNonNull(s.graphQLStringScalar("DateTime"))},
 			"updatedAt": &graphql.Field{Type: graphql.NewNonNull(s.graphQLStringScalar("DateTime"))},

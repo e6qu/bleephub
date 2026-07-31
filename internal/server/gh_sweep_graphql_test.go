@@ -240,6 +240,10 @@ func TestRepoGraphQL_RepositoryOwnerOrg(t *testing.T) {
 	if org == nil {
 		t.Fatal("failed to create org")
 	}
+	repo := testServer.store.CreateOrgRepo(org, testServer.store.UsersByLogin["admin"], "owner-interface-repo", "", false)
+	if repo == nil {
+		t.Fatal("failed to create organization repository")
+	}
 	defer func() {
 		testServer.store.mu.Lock()
 		delete(testServer.store.Orgs, org.ID)
@@ -252,10 +256,19 @@ func TestRepoGraphQL_RepositoryOwnerOrg(t *testing.T) {
 		repositoryOwner(login: $login) {
 			id
 			login
-			name
 			url
-			createdAt
-			updatedAt
+			... on Organization {
+				name
+				createdAt
+				updatedAt
+			}
+			repository(name: "owner-interface-repo") {
+				nameWithOwner
+			}
+			repositories(first: 10, affiliations: [ORGANIZATION_MEMBER], hasIssuesEnabled: true, isArchived: false, isLocked: false, visibility: PUBLIC) {
+				totalCount
+				nodes { nameWithOwner }
+			}
 		}
 	}`
 	d := gqlData(t, query, map[string]interface{}{"login": orgLogin})
@@ -274,6 +287,14 @@ func TestRepoGraphQL_RepositoryOwnerOrg(t *testing.T) {
 	}
 	if owner["createdAt"] == nil || owner["updatedAt"] == nil {
 		t.Errorf("createdAt/updatedAt missing: %v", owner)
+	}
+	if got := owner["repository"].(map[string]interface{})["nameWithOwner"]; got != repo.FullName {
+		t.Errorf("repository.nameWithOwner = %v, want %q", got, repo.FullName)
+	}
+	repositories := owner["repositories"].(map[string]interface{})
+	if repositories["totalCount"] != float64(1) ||
+		repositories["nodes"].([]interface{})[0].(map[string]interface{})["nameWithOwner"] != repo.FullName {
+		t.Errorf("repositories = %v, want only %q", repositories, repo.FullName)
 	}
 }
 
@@ -587,7 +608,7 @@ func TestPRGraphQL_ViewDefaultFields(t *testing.T) {
 	testServer.store.mu.Lock()
 	testServer.store.Workflows[wf.ID] = wf
 	testServer.store.mu.Unlock()
-	testServer.onActionsRunRequested(wf)
+	testServer.onActionsRunRequestedSnapshot(wf, cloneWorkflowEventSnapshot(wf))
 	statusResp := ghPost(t, "/api/v3/repos/"+owner+"/"+name+"/statuses/"+headSHA, defaultToken,
 		map[string]interface{}{
 			"state":       "failure",

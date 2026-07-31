@@ -215,7 +215,7 @@ func TestIssueGraphQL_IssueTypeAssignment(t *testing.T) {
 	gqlRepo := gqlData["repository"].(map[string]interface{})
 	gqlIssue := gqlRepo["issue"].(map[string]interface{})
 	gqlType := gqlIssue["issueType"].(map[string]interface{})
-	if gqlType == nil || gqlType["id"] != createdType["node_id"] || gqlType["name"] != "Epic" || gqlType["color"] != "purple" {
+	if gqlType == nil || gqlType["id"] != createdType["node_id"] || gqlType["name"] != "Epic" || gqlType["color"] != "PURPLE" {
 		t.Fatalf("GraphQL issueType = %v", gqlIssue["issueType"])
 	}
 }

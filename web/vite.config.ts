@@ -1,7 +1,6 @@
-import { defineConfig } from "vite";
+import { defineConfig, type Plugin } from "vite";
 import react from "@vitejs/plugin-react";
 import tailwindcss from "@tailwindcss/vite";
-import type { OutputBundle, Plugin } from "rollup";
 
 const MAX_ENTRY_BYTES = 160 * 1024;
 const MAX_CHUNK_BYTES = 450 * 1024;
@@ -9,7 +8,7 @@ const MAX_CHUNK_BYTES = 450 * 1024;
 function bundleBudget(): Plugin {
   return {
     name: "bleephub-bundle-budget",
-    generateBundle(_options, bundle: OutputBundle) {
+    generateBundle(_options, bundle) {
       for (const item of Object.values(bundle)) {
         if (item.type !== "chunk") continue;
         const limit = item.isEntry ? MAX_ENTRY_BYTES : MAX_CHUNK_BYTES;

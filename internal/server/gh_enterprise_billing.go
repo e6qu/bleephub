@@ -73,7 +73,11 @@ func (s *Server) registerGHEnterpriseBillingRoutes() {
 	s.route("GET /api/v3/enterprises/{enterprise}/settings/billing/reports", reports(s.handleListEnterpriseBillingReports))
 	s.route("POST /api/v3/enterprises/{enterprise}/settings/billing/reports", reports(s.handleCreateEnterpriseBillingReport))
 	s.route("GET /api/v3/enterprises/{enterprise}/settings/billing/reports/{report_id}", reports(s.handleGetEnterpriseBillingReport))
-	s.route("GET /enterprises/{enterprise}/billing/reports/{report_id}/download", reports(s.handleDownloadEnterpriseBillingReport))
+	// GitHub returns a short-lived download URL rather than another API
+	// endpoint. The UUID report id is the bearer capability in this local
+	// implementation, so browser and SDK downloads must not require the API
+	// token to be forwarded to a different URL namespace.
+	s.route("GET /enterprises/{enterprise}/billing/reports/{report_id}/download", s.handleDownloadEnterpriseBillingReport)
 }
 
 var enterpriseBudgetScopes = map[string]bool{

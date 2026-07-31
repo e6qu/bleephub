@@ -26,15 +26,19 @@ func (s *Server) addOrgFieldsToSchema(userType, queryType *graphql.Object, nodeI
 					return o["nodeID"], nil
 				},
 			},
-			"databaseId":  &graphql.Field{Type: graphql.Int},
-			"login":       &graphql.Field{Type: graphql.NewNonNull(graphql.String)},
-			"name":        &graphql.Field{Type: graphql.String},
-			"description": &graphql.Field{Type: graphql.String},
-			"email":       &graphql.Field{Type: graphql.String},
-			"url":         &graphql.Field{Type: graphql.NewNonNull(uri)},
-			"avatarUrl":   &graphql.Field{Type: graphql.NewNonNull(uri)},
-			"createdAt":   &graphql.Field{Type: graphql.NewNonNull(dateTime)},
-			"updatedAt":   &graphql.Field{Type: graphql.NewNonNull(dateTime)},
+			"databaseId":   &graphql.Field{Type: graphql.Int},
+			"login":        &graphql.Field{Type: graphql.NewNonNull(graphql.String)},
+			"name":         &graphql.Field{Type: graphql.String},
+			"description":  &graphql.Field{Type: graphql.String},
+			"email":        &graphql.Field{Type: graphql.String},
+			"url":          &graphql.Field{Type: graphql.NewNonNull(uri)},
+			"resourcePath": &graphql.Field{Type: graphql.NewNonNull(uri)},
+			"avatarUrl": &graphql.Field{
+				Type: graphql.NewNonNull(uri),
+				Args: graphql.FieldConfigArgument{"size": &graphql.ArgumentConfig{Type: graphql.Int}},
+			},
+			"createdAt": &graphql.Field{Type: graphql.NewNonNull(dateTime)},
+			"updatedAt": &graphql.Field{Type: graphql.NewNonNull(dateTime)},
 		},
 	})
 
@@ -108,20 +112,16 @@ func (s *Server) addOrgFieldsToSchema(userType, queryType *graphql.Object, nodeI
 // orgToGraphQL converts an Org to a map for GraphQL resolvers.
 func orgToGraphQL(org *Org) map[string]interface{} {
 	return map[string]interface{}{
-		"nodeID":      org.NodeID,
-		"databaseId":  org.ID,
-		"login":       org.Login,
-		"name":        org.Name,
-		"description": org.Description,
-		"email":       org.Email,
-		"url":         "/" + org.Login,
-		"avatarUrl":   org.AvatarURL,
-		"createdAt":   org.CreatedAt.Format(time.RFC3339),
-		"updatedAt":   org.UpdatedAt.Format(time.RFC3339),
+		"nodeID":       org.NodeID,
+		"databaseId":   org.ID,
+		"login":        org.Login,
+		"name":         org.Name,
+		"description":  org.Description,
+		"email":        org.Email,
+		"url":          "/" + org.Login,
+		"resourcePath": "/" + org.Login,
+		"avatarUrl":    org.AvatarURL,
+		"createdAt":    org.CreatedAt.Format(time.RFC3339),
+		"updatedAt":    org.UpdatedAt.Format(time.RFC3339),
 	}
-}
-
-// paginateOrgs implements Relay-style cursor pagination for organizations.
-func paginateOrgs(orgs []*Org, first int, after string) map[string]interface{} {
-	return paginateGQL(orgs, first, after, orgToGraphQL)
 }

@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"os"
 	"strings"
 	"testing"
 	"time"
@@ -15,6 +16,11 @@ const codespaceTestImage = "alpine:latest"
 
 func cleanupCodespaceContainer(t *testing.T, name string) {
 	t.Helper()
+	if cs := testServer.store.GetCodespaceByName(name); cs != nil {
+		if _, err := testServer.store.DeleteCodespace(cs.ID); err == nil {
+			return
+		}
+	}
 	ctx, cancel := contextWithTimeout(30 * time.Second)
 	defer cancel()
 	_ = dockerRemoveContainer(ctx, codespaceContainerName(name))
@@ -595,6 +601,22 @@ func TestCodespaces_OrgList(t *testing.T) {
 	resp.Body.Close()
 	if resp.StatusCode != http.StatusForbidden {
 		t.Fatalf("non-admin org codespaces: %d, want 403", resp.StatusCode)
+	}
+
+	cs := testServer.store.GetCodespaceByName(name)
+	if cs == nil {
+		t.Fatalf("created codespace %s disappeared before cleanup", name)
+	}
+	workspace := cs.WorkspaceMount
+	resp = ghDelete(t, "/api/v3/user/codespaces/"+name, defaultToken)
+	resp.Body.Close()
+	if resp.StatusCode != http.StatusAccepted {
+		t.Fatalf("delete codespace: %d, want 202", resp.StatusCode)
+	}
+	if workspace != "" {
+		if _, err := os.Stat(workspace); !os.IsNotExist(err) {
+			t.Fatalf("deleted codespace workspace still exists at %q: %v", workspace, err)
+		}
 	}
 }
 

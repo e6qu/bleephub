@@ -499,14 +499,6 @@ export async function fetchInstallations(): Promise<BleephubInstallation[]> {
   );
   return raw.installations.map(normalizeInstallation);
 }
-// Verify identity through GitHub's REST user endpoint.
-export async function verifyToken(token: string): Promise<boolean> {
-  const res = await apiFetch("/api/v3/user", {
-    headers: { Authorization: `Bearer ${token}` },
-  });
-  return res.ok;
-}
-
 // The browser settings and GitHub REST surfaces return snake_case wire shapes.
 // The user interface types are camelCase, so normalize at this boundary.
 // Fields are mapped 1:1 from the server contract, with no defaults, so a

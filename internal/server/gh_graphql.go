@@ -82,7 +82,14 @@ func (s *Server) initGraphQLSchema() {
 	repositoryOwnerInterface := graphql.NewInterface(graphql.InterfaceConfig{
 		Name: "RepositoryOwner",
 		Fields: graphql.Fields{
-			"login": &graphql.Field{Type: graphql.NewNonNull(graphql.String)},
+			"avatarUrl": &graphql.Field{
+				Type: graphql.NewNonNull(uri),
+				Args: graphql.FieldConfigArgument{"size": &graphql.ArgumentConfig{Type: graphql.Int}},
+			},
+			"id":           &graphql.Field{Type: graphql.NewNonNull(graphql.ID)},
+			"login":        &graphql.Field{Type: graphql.NewNonNull(graphql.String)},
+			"resourcePath": &graphql.Field{Type: graphql.NewNonNull(uri)},
+			"url":          &graphql.Field{Type: graphql.NewNonNull(uri)},
 		},
 		ResolveType: func(p graphql.ResolveTypeParams) *graphql.Object {
 			source, _ := p.Value.(map[string]interface{})
@@ -193,11 +200,13 @@ func (s *Server) initGraphQLSchema() {
 	s.addMetaFieldsToSchema(queryType)
 
 	// Add repository types, queries, and mutations
-	repoType, mutationType := s.addRepoFieldsToSchema(userType, queryType, nodeInterface)
+	repoType, mutationType, ownerRepositoriesField, ownerRepositoryField := s.addRepoFieldsToSchema(userType, queryType, nodeInterface)
 	nodeTypes["Repository"] = repoType
 
 	// Add organization types and queries
 	orgType := s.addOrgFieldsToSchema(userType, queryType, nodeInterface)
+	orgType.AddFieldConfig("repositories", ownerRepositoriesField)
+	orgType.AddFieldConfig("repository", ownerRepositoryField)
 	nodeTypes["Organization"] = orgType
 	repositoryOwnerTypes["Organization"] = orgType
 
@@ -392,15 +401,6 @@ func (s *Server) handleGraphQL(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, out)
 }
 
-// graphqlValidateNoPanic parses and validates a GraphQL query against schema
-// without letting graphql-go's panics escape. It returns an error only for
-// malformed documents that would otherwise crash the library; syntactically
-// invalid but safe documents are left to graphql.Do to report normally.
-func graphqlValidateNoPanic(schema graphql.Schema, query string) (err error) {
-	_, _, err = graphqlPrepareDocument(schema, query)
-	return err
-}
-
 func graphqlPrepareDocument(schema graphql.Schema, query string) (document *ast.Document, validationErrors []gqlerrors.FormattedError, err error) {
 	defer func() {
 		if r := recover(); r != nil {
@@ -418,10 +418,6 @@ func graphqlPrepareDocument(schema graphql.Schema, query string) (document *ast.
 		return document, validationResult.Errors, nil
 	}
 	return document, nil, nil
-}
-
-func graphqlCheckDocumentCost(document *ast.Document, maxDepth, maxFields int) error {
-	return graphqlCheckDocumentLimits(document, nil, maxDepth, maxFields)
 }
 
 func graphqlCheckDocumentLimits(document *ast.Document, variables map[string]interface{}, maxDepth, maxFields int) error {

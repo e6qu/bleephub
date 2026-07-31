@@ -6,7 +6,6 @@ import (
 	"encoding/hex"
 	"net/http"
 	"os"
-	"sort"
 	"strings"
 	"time"
 
@@ -407,10 +406,4 @@ func (s *Server) handleManageVersion(w http.ResponseWriter, _ *http.Request) {
 			"build_date": s.currentTime().Format("2006-01-02"),
 		},
 	}})
-}
-
-func sortedManagementKeys(state *GHESManagementState) []string {
-	keys := append([]string(nil), state.SSHKeys...)
-	sort.Strings(keys)
-	return keys
 }

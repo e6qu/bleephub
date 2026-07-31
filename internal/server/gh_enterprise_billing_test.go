@@ -2,6 +2,7 @@ package bleephub
 
 import (
 	"net/http"
+	"net/http/httptest"
 	"strings"
 	"testing"
 	"time"
@@ -168,8 +169,10 @@ func TestEnterpriseBillingUsageAndReportExportJourney(t *testing.T) {
 		len(report["download_urls"].([]interface{})) != 1 {
 		t.Fatalf("complete report = %d %#v", rec.Code, report)
 	}
-	rec = enterpriseActionsRequest(t, s, http.MethodGet,
+	download := httptest.NewRequest(http.MethodGet,
 		"/enterprises/bleephub/billing/reports/"+reportID+"/download", nil)
+	rec = httptest.NewRecorder()
+	s.ghHeadersMiddleware(s.mux).ServeHTTP(rec, download)
 	if rec.Code != http.StatusOK || rec.Header().Get("Content-Type") != "text/csv; charset=utf-8" ||
 		!strings.Contains(rec.Body.String(), repo.FullName) {
 		t.Fatalf("download report = %d %q", rec.Code, rec.Body.String())

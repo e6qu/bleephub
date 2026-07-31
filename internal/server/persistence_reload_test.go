@@ -2158,7 +2158,11 @@ func TestPersistenceReload_CodespacesAndSecrets(t *testing.T) {
 		st.CreateCodespaceSecret(userScope, "RELOAD_TOKEN", "v1", "", nil)
 		st.CreateCodespaceSecret(orgScope, "ORG_TOKEN", "v2", "selected", []int{repo.ID})
 	})
-	t.Cleanup(func() { cleanupCodespaceContainer(t, cs.Name) })
+	t.Cleanup(func() {
+		if _, err := st2.DeleteCodespace(cs.ID); err != nil {
+			t.Errorf("delete persisted codespace runtime: %v", err)
+		}
+	})
 
 	got := st2.GetCodespace(cs.ID)
 	if got == nil {
@@ -2177,21 +2181,26 @@ func TestPersistenceReload_CodespacesAndSecrets(t *testing.T) {
 		t.Errorf("NextCodespaceID after reload = %d, want > %d (counter must not restart)", st2.NextCodespaceID, cs.ID)
 	}
 
-	// The backing container survived the restart, so the codespace
-	// reports its real Docker state.
+	// Runtime state survives the restart. Docker-backed codespaces refresh
+	// from the container engine; the built-in workspace runtime remains
+	// available on hosts where Docker is intentionally absent.
 	if state := st2.RefreshCodespaceState(cs.ID); state != "Available" {
-		t.Errorf("reloaded codespace state = %q, want Available (container still running)", state)
+		t.Errorf("reloaded codespace state = %q, want Available", state)
 	}
-	// Once the container is gone the codespace honestly reports the
-	// container-lost state instead of the stale persisted one.
-	ctx, cancel := contextWithTimeout(30 * time.Second)
-	err := dockerRemoveContainer(ctx, got.ContainerID)
-	cancel()
-	if err != nil {
-		t.Fatalf("remove container: %v", err)
-	}
-	if state := st2.RefreshCodespaceState(cs.ID); state != "Unavailable" {
-		t.Errorf("state after container removal = %q, want Unavailable", state)
+	if got.ContainerID != "" {
+		// Once the container is gone the codespace honestly reports the
+		// container-lost state instead of the stale persisted one.
+		ctx, cancel := contextWithTimeout(30 * time.Second)
+		err := dockerRemoveContainer(ctx, got.ContainerID)
+		cancel()
+		if err != nil {
+			t.Fatalf("remove container: %v", err)
+		}
+		if state := st2.RefreshCodespaceState(cs.ID); state != "Unavailable" {
+			t.Errorf("state after container removal = %q, want Unavailable", state)
+		}
+	} else if got.Runtime != "workspace" {
+		t.Errorf("codespace without container uses runtime %q, want workspace", got.Runtime)
 	}
 
 	if st2.GetCodespaceSecret(userScope, "RELOAD_TOKEN") == nil {

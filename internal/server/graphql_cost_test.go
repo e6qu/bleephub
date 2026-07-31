@@ -51,13 +51,13 @@ func TestGraphQLDocumentCostLimitsDepthAndFields(t *testing.T) {
 
 	deep := "{ viewer" + strings.Repeat(" { viewer", 21) + " { login }" + strings.Repeat(" }", 22)
 	deepDocument := parse(deep)
-	if err := graphqlCheckDocumentCost(deepDocument, 20, 5000); err == nil {
+	if err := graphqlCheckDocumentLimits(deepDocument, nil, 20, 5000); err == nil {
 		t.Fatal("deep query passed the depth limit")
 	}
 
 	wide := "{ viewer { " + strings.Repeat("login ", 101) + "} }"
 	wideDocument := parse(wide)
-	if err := graphqlCheckDocumentCost(wideDocument, 20, 100); err == nil {
+	if err := graphqlCheckDocumentLimits(wideDocument, nil, 20, 100); err == nil {
 		t.Fatal("wide query passed the field-count limit")
 	}
 }

@@ -2145,7 +2145,10 @@
       "kind": "OBJECT",
       "fields": {
         "avatarUrl": {
-          "type": "URI!"
+          "type": "URI!",
+          "args": {
+            "size": "Int"
+          }
         },
         "createdAt": {
           "type": "DateTime!"
@@ -2167,6 +2170,34 @@
         },
         "name": {
           "type": "String"
+        },
+        "repositories": {
+          "type": "RepositoryConnection!",
+          "args": {
+            "affiliations": "[RepositoryAffiliation]",
+            "after": "String",
+            "before": "String",
+            "first": "Int",
+            "hasIssuesEnabled": "Boolean",
+            "isArchived": "Boolean",
+            "isFork": "Boolean",
+            "isLocked": "Boolean",
+            "last": "Int",
+            "orderBy": "RepositoryOrder",
+            "ownerAffiliations": "[RepositoryAffiliation]",
+            "privacy": "RepositoryPrivacy",
+            "visibility": "RepositoryVisibility"
+          }
+        },
+        "repository": {
+          "type": "Repository",
+          "args": {
+            "followRenames": "Boolean",
+            "name": "String!"
+          }
+        },
+        "resourcePath": {
+          "type": "URI!"
         },
         "updatedAt": {
           "type": "DateTime!"
@@ -3899,8 +3930,48 @@
     "RepositoryOwner": {
       "kind": "INTERFACE",
       "fields": {
+        "avatarUrl": {
+          "type": "URI!",
+          "args": {
+            "size": "Int"
+          }
+        },
+        "id": {
+          "type": "ID!"
+        },
         "login": {
           "type": "String!"
+        },
+        "repositories": {
+          "type": "RepositoryConnection!",
+          "args": {
+            "affiliations": "[RepositoryAffiliation]",
+            "after": "String",
+            "before": "String",
+            "first": "Int",
+            "hasIssuesEnabled": "Boolean",
+            "isArchived": "Boolean",
+            "isFork": "Boolean",
+            "isLocked": "Boolean",
+            "last": "Int",
+            "orderBy": "RepositoryOrder",
+            "ownerAffiliations": "[RepositoryAffiliation]",
+            "privacy": "RepositoryPrivacy",
+            "visibility": "RepositoryVisibility"
+          }
+        },
+        "repository": {
+          "type": "Repository",
+          "args": {
+            "followRenames": "Boolean",
+            "name": "String!"
+          }
+        },
+        "resourcePath": {
+          "type": "URI!"
+        },
+        "url": {
+          "type": "URI!"
         }
       },
       "possible_types": [
@@ -4426,14 +4497,26 @@
         "repositories": {
           "type": "RepositoryConnection!",
           "args": {
+            "affiliations": "[RepositoryAffiliation]",
             "after": "String",
             "before": "String",
             "first": "Int",
+            "hasIssuesEnabled": "Boolean",
+            "isArchived": "Boolean",
             "isFork": "Boolean",
+            "isLocked": "Boolean",
             "last": "Int",
             "orderBy": "RepositoryOrder",
             "ownerAffiliations": "[RepositoryAffiliation]",
-            "privacy": "RepositoryPrivacy"
+            "privacy": "RepositoryPrivacy",
+            "visibility": "RepositoryVisibility"
+          }
+        },
+        "repository": {
+          "type": "Repository",
+          "args": {
+            "followRenames": "Boolean",
+            "name": "String!"
           }
         },
         "resourcePath": {

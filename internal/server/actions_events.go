@@ -170,13 +170,9 @@ func (s *Server) drainActionsEvents() {
 	}
 }
 
-// onActionsRunRequested creates the run's check suite plus one check
-// run per visible job, then emits check_suite + workflow_run
-// "requested" events.
-func (s *Server) onActionsRunRequested(wf *Workflow) {
-	s.onActionsRunRequestedSnapshot(wf, cloneWorkflowEventSnapshot(wf))
-}
-
+// onActionsRunRequestedSnapshot creates the run's check suite plus one check
+// run per visible job, then emits check_suite + workflow_run "requested"
+// events from the immutable transition snapshot queued by the scheduler.
 func (s *Server) onActionsRunRequestedSnapshot(wf, snapshot *Workflow) {
 	repoKey := wf.RepoFullName
 	branch := refShortName(wf.Ref)
@@ -230,12 +226,8 @@ func (s *Server) onActionsRunRequestedSnapshot(wf, snapshot *Workflow) {
 	s.emitWorkflowRunEvent(snapshot, "requested")
 }
 
-// onActionsRunCompleted rolls the suite up and emits the completed
-// events.
-func (s *Server) onActionsRunCompleted(wf *Workflow) {
-	s.onActionsRunCompletedSnapshot(wf, cloneWorkflowEventSnapshot(wf))
-}
-
+// onActionsRunCompletedSnapshot rolls the suite up and emits completed events
+// from the immutable transition snapshot queued by the scheduler.
 func (s *Server) onActionsRunCompletedSnapshot(wf, snapshot *Workflow) {
 	repoKey := wf.RepoFullName
 

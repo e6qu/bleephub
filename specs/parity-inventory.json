@@ -3,13 +3,13 @@
     "literal_event_producers": [
       {
         "event": "check_run",
-        "line": 412,
+        "line": 404,
         "producer": "emitWebhookEvent",
         "source": "internal/server/actions_events.go"
       },
       {
         "event": "check_suite",
-        "line": 431,
+        "line": 423,
         "producer": "emitWebhookEvent",
         "source": "internal/server/actions_events.go"
       },
@@ -147,13 +147,13 @@
       },
       {
         "event": "workflow_job",
-        "line": 393,
+        "line": 385,
         "producer": "emitWebhookEvent",
         "source": "internal/server/actions_events.go"
       },
       {
         "event": "workflow_run",
-        "line": 376,
+        "line": 368,
         "producer": "emitWebhookEvent",
         "source": "internal/server/actions_events.go"
       }
@@ -168,13 +168,13 @@
     "coverage": {
       "bleephub_types": 272,
       "compatibility_gap_count": 79,
-      "implemented_fields": 834,
+      "implemented_fields": 844,
       "official_fields": 8341,
       "official_types": 1806,
       "shared_types": 231,
-      "signature_exact_fields": 801
+      "signature_exact_fields": 811
     },
-    "introspection_snapshot_sha256": "424d5bf5d87d8605bae3730a223c5c5d07cd780ee7f1fd5fa3469821a9b78fd3",
+    "introspection_snapshot_sha256": "35e5d5a8ad50310e7a0e3baeaa4c4d2c62926b0e7f51bcbae7216b16136a37ea",
     "official_schema": {
       "content_sha256": "c504a0ed454276c878d5a873b782fa9824f2dec3205de3370845d40977e41322",
       "source": "https://docs.github.com/public/fpt/schema.docs.graphql"

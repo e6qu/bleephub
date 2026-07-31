@@ -165,15 +165,6 @@ func (s *ProjectV2Store) currentTime() time.Time {
 	return time.Now().UTC()
 }
 
-func (s *ProjectV2Store) replaceClockNow(clockNow func() time.Time) {
-	if s == nil {
-		return
-	}
-	s.clockMu.Lock()
-	s.clockNow = clockNow
-	s.clockMu.Unlock()
-}
-
 func newProjectV2Store(p *Persistence) *ProjectV2Store {
 	return &ProjectV2Store{
 		projects:       map[int]*ProjectV2{},

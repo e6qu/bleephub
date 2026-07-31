@@ -678,20 +678,6 @@ func (st *Store) currentTime() time.Time {
 	return time.Now().UTC()
 }
 
-func (st *Store) replaceClockNow(clockNow func() time.Time) func() time.Time {
-	if st == nil {
-		return nil
-	}
-	st.clockMu.Lock()
-	previous := st.clockNow
-	st.clockNow = clockNow
-	st.clockMu.Unlock()
-	if st.ProjectsV2 != nil {
-		st.ProjectsV2.replaceClockNow(clockNow)
-	}
-	return previous
-}
-
 // Agent represents a registered runner agent.
 type Agent struct {
 	ID             int                 `json:"id"`

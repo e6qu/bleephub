@@ -3,8 +3,8 @@
   "bleephub_types": 272,
   "shared_types": 231,
   "official_fields": 8341,
-  "implemented_fields": 834,
-  "signature_exact_fields": 801,
+  "implemented_fields": 844,
+  "signature_exact_fields": 811,
   "compatibility_gap_count": 79,
   "missing_types": [
     "AbortQueuedMigrationsInput",
@@ -2231,15 +2231,12 @@
       "projectsUrl",
       "projectsV2",
       "recentProjects",
-      "repositories",
-      "repository",
       "repositoryCustomProperties",
       "repositoryCustomProperty",
       "repositoryDiscussionComments",
       "repositoryDiscussions",
       "repositoryMigrations",
       "requiresTwoFactorAuthentication",
-      "resourcePath",
       "ruleset",
       "rulesets",
       "samlIdentityProvider",
@@ -2711,14 +2708,6 @@
     "RepositoryConnection": [
       "totalDiskUsage"
     ],
-    "RepositoryOwner": [
-      "avatarUrl",
-      "id",
-      "repositories",
-      "repository",
-      "resourcePath",
-      "url"
-    ],
     "RepositoryTopic": [
       "id",
       "resourcePath",
@@ -2886,7 +2875,6 @@
       "pullRequests",
       "recentProjects",
       "repositoriesContributedTo",
-      "repository",
       "repositoryDiscussionComments",
       "repositoryDiscussions",
       "savedReplies",
