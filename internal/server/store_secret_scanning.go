@@ -141,6 +141,31 @@ func (st *Store) GetSecretScanningAlert(repoKey string, number int) *SecretScann
 	return st.SecretScanningAlertsByRepo[repoKey][number]
 }
 
+// sortAlertList orders a slice of alert records by created/updated time,
+// defaulting to created descending. Shared by the secret-scanning,
+// code-scanning, and dependabot org-level list endpoints.
+func sortAlertList[T any](out []*T, sortField, direction string, createdAt, updatedAt func(*T) time.Time) {
+	if sortField == "" {
+		sortField = "created"
+	}
+	if direction == "" {
+		direction = "desc"
+	}
+	sort.SliceStable(out, func(i, j int) bool {
+		var less bool
+		switch sortField {
+		case "updated":
+			less = updatedAt(out[i]).Before(updatedAt(out[j]))
+		default:
+			less = createdAt(out[i]).Before(createdAt(out[j]))
+		}
+		if direction == "asc" {
+			return less
+		}
+		return !less
+	})
+}
+
 // ListSecretScanningAlerts returns repo alerts filtered/sorted per GitHub's list endpoint.
 func (st *Store) ListSecretScanningAlerts(repoKey, state, secretType, resolution, sortField, direction string) []*SecretScanningAlert {
 	st.mu.RLock()
@@ -161,26 +186,9 @@ func (st *Store) ListSecretScanningAlerts(repoKey, state, secretType, resolution
 		out = append(out, a)
 	}
 
-	if sortField == "" {
-		sortField = "created"
-	}
-	if direction == "" {
-		direction = "desc"
-	}
-
-	sort.SliceStable(out, func(i, j int) bool {
-		var less bool
-		switch sortField {
-		case "updated":
-			less = out[i].UpdatedAt.Before(out[j].UpdatedAt)
-		default:
-			less = out[i].CreatedAt.Before(out[j].CreatedAt)
-		}
-		if direction == "asc" {
-			return less
-		}
-		return !less
-	})
+	sortAlertList(out, sortField, direction,
+		func(a *SecretScanningAlert) time.Time { return a.CreatedAt },
+		func(a *SecretScanningAlert) time.Time { return a.UpdatedAt })
 	return out
 }
 
@@ -329,19 +337,9 @@ func (st *Store) ListSecretScanningAlertsByOrg(orgID int, state, secretType, res
 	if direction == "" {
 		direction = "desc"
 	}
-	sort.SliceStable(out, func(i, j int) bool {
-		var less bool
-		switch sortField {
-		case "updated":
-			less = out[i].UpdatedAt.Before(out[j].UpdatedAt)
-		default:
-			less = out[i].CreatedAt.Before(out[j].CreatedAt)
-		}
-		if direction == "asc" {
-			return less
-		}
-		return !less
-	})
+	sortAlertList(out, sortField, direction,
+		func(a *SecretScanningAlert) time.Time { return a.CreatedAt },
+		func(a *SecretScanningAlert) time.Time { return a.UpdatedAt })
 	return out
 }
 

@@ -787,23 +787,11 @@ func (st *Store) ListCodeScanningAlertsByOrg(orgID int, state, severity, toolNam
 	if direction == "" {
 		direction = "desc"
 	}
-	sort.SliceStable(out, func(i, j int) bool {
-		var less bool
-		switch sortField {
-		case "updated":
-			less = out[i].UpdatedAt.Before(out[j].UpdatedAt)
-		default:
-			less = out[i].CreatedAt.Before(out[j].CreatedAt)
-		}
-		if direction == "asc" {
-			return less
-		}
-		return !less
-	})
+	sortAlertList(out, sortField, direction,
+		func(a *CodeScanningAlert) time.Time { return a.CreatedAt },
+		func(a *CodeScanningAlert) time.Time { return a.UpdatedAt })
 	return out
 }
-
-// --- Copilot Autofix ---
 
 // CodeScanningAutofix is a Copilot Autofix suggestion for one code
 // scanning alert. Real GitHub generates the fix asynchronously; bleephub
