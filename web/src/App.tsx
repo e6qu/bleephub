@@ -1,7 +1,7 @@
-import { lazy, Suspense, useCallback, useEffect, useState } from "react";
+import { lazy, Suspense, useCallback, useEffect, useState, type ReactNode } from "react";
 import { BrowserRouter, Routes, Route, Navigate, useLocation } from "react-router";
 import { ErrorBoundary, InlineError, Spinner, ToastProvider } from "@bleephub/ui-core/components";
-import { fetchBrowserSession, isLoggedIn } from "./api.js";
+import { fetchBrowserSession, isLoggedIn, UNAUTHORIZED_EVENT } from "./api.js";
 import { BleephubShell } from "./components/Shell.js";
 import { Button } from "./components/ui.js";
 
@@ -106,6 +106,11 @@ function SessionUnavailable({ detail, onRetry }: { detail: Error; onRetry: () =>
   );
 }
 
+function RouteErrorBoundary({ children }: { children: ReactNode }) {
+  const location = useLocation();
+  return <ErrorBoundary key={location.key}>{children}</ErrorBoundary>;
+}
+
 function useSessionState() {
   const [state, setState] = useState<SessionState>(() =>
     isLoggedIn() ? { status: "signed-in" } : { status: "probing" },
@@ -132,6 +137,11 @@ function useSessionState() {
       current = false;
     };
   }, [attempt]);
+  useEffect(() => {
+    const signedOut = () => setState({ status: "signed-out" });
+    window.addEventListener(UNAUTHORIZED_EVENT, signedOut);
+    return () => window.removeEventListener(UNAUTHORIZED_EVENT, signedOut);
+  }, []);
 
   const retry = useCallback(() => setAttempt((n) => n + 1), []);
   return { state, retry };
@@ -172,7 +182,8 @@ export function App() {
       <ToastProvider>
         <BrowserRouter>
           <BleephubShell>
-            <Suspense fallback={<Spinner label="Loading page" />}>
+            <RouteErrorBoundary>
+              <Suspense fallback={<Spinner label="Loading page" />}>
               <Routes>
                 <Route path="/ui/" element={<DashboardPage />} />
               <Route path="/ui/workflows" element={<WorkflowsPage />} />
@@ -266,7 +277,8 @@ export function App() {
               <Route path="/ui/:login" element={<ProfilePage />} />
                 <Route path="/ui/*" element={<Navigate to="/ui/" replace />} />
               </Routes>
-            </Suspense>
+              </Suspense>
+            </RouteErrorBoundary>
           </BleephubShell>
         </BrowserRouter>
       </ToastProvider>

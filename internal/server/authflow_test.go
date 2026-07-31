@@ -405,6 +405,37 @@ func TestBrowserSessionCSRFTokenIsIndependent(t *testing.T) {
 	}
 }
 
+func TestTokenLoginExchangesUserCredentialForHttpOnlySession(t *testing.T) {
+	s := newTestServer()
+	s.store.SeedDefaultUser()
+	user := s.store.LookupUserByLogin("admin")
+	token := s.store.CreateToken(user.ID, "repo")
+	request := httptest.NewRequest(http.MethodPost, "/auth/token", nil)
+	request.Header.Set("Authorization", "Bearer "+token.Value)
+	response := httptest.NewRecorder()
+
+	s.handleTokenLogin(response, request)
+
+	if response.Code != http.StatusOK {
+		t.Fatalf("token login status = %d, want 200; body=%s", response.Code, response.Body.String())
+	}
+	cookies := response.Result().Cookies()
+	if len(cookies) != 1 {
+		t.Fatalf("token login cookies = %d, want 1", len(cookies))
+	}
+	if !cookies[0].HttpOnly || cookies[0].Value == "" {
+		t.Fatalf("token login cookie is not an opaque HttpOnly session: %+v", cookies[0])
+	}
+
+	invalid := httptest.NewRequest(http.MethodPost, "/auth/token", nil)
+	invalid.Header.Set("Authorization", "Bearer ghs_not-a-user-token")
+	rejected := httptest.NewRecorder()
+	s.handleTokenLogin(rejected, invalid)
+	if rejected.Code != http.StatusUnauthorized {
+		t.Fatalf("installation-shaped token login status = %d, want 401", rejected.Code)
+	}
+}
+
 // --- repository secrets: resolved scope, administrator only ---
 
 func TestRepositorySecretWriteRefusesAStranger(t *testing.T) {

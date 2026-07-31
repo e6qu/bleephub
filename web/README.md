@@ -35,7 +35,7 @@ GitHub surfaces:
   `/ui/search`, `/ui/account`
 
 Operations (`/ui/admin*`) — bleephub-server surfaces with no github.com equivalent:
-- `/ui/admin` — system-status console; `/ui/admin/{users,orgs,teams,enterprise,audit-log,storage}`
+- `/ui/admin` — system-status console; `/ui/admin/{users,orgs,teams,enterprise,audit-log}`
 - `/ui/workflows[/:id]` — cross-repo workflow runs; `/ui/runners`; `/ui/metrics`;
   `/ui/apps` (GitHub Apps); `/ui/oauth` (OAuth Apps)
 

@@ -151,6 +151,9 @@ export interface BleephubHealth {
   status: string;
   service: string;
   enterprise_slug: string;
+  version: string;
+  commit: string;
+  published_at: string;
 }
 
 /** WorkflowFile is the file-level workflow YAML entity. */
@@ -892,7 +895,6 @@ export interface GithubDiscussion {
   number: number;
   title: string;
   body: string;
-  bodyHTML: string;
   bodyText: string;
   author: GithubDiscussionAuthor | null;
   category: GithubDiscussionCategory;
@@ -906,7 +908,6 @@ export interface GithubDiscussionComment {
   databaseId: number;
   author: GithubDiscussionAuthor | null;
   body: string;
-  bodyHTML: string;
   createdAt: string;
   updatedAt: string;
   isAnswer: boolean;

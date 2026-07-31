@@ -3,6 +3,8 @@ import { render, cleanup, screen, waitFor, fireEvent } from "@testing-library/re
 import { LoginPage } from "../pages/LoginPage.js";
 import { clearToken, getToken } from "../api.js";
 
+vi.mock("../components/Shell.js", () => ({ BleephubBuildFooter: () => null }));
+
 const mockFetch = vi.fn();
 globalThis.fetch = mockFetch;
 
@@ -46,7 +48,7 @@ describe("LoginPage", () => {
     expect(screen.queryByLabelText(/access token/i)).not.toBeInTheDocument();
   });
 
-  it("verifies against GitHub REST identity and signs in on success", async () => {
+  it("exchanges the token for an HttpOnly browser session and retains no bearer", async () => {
     mockFetch
       .mockResolvedValueOnce(new Response(JSON.stringify({ github: true }), { status: 200 }))
       .mockResolvedValue(new Response(JSON.stringify({ login: "octocat" }), { status: 200 }));
@@ -54,10 +56,10 @@ describe("LoginPage", () => {
     await waitFor(() => {
       expect(window.location.href).toBe("/ui/");
     });
-    const [url, opts] = mockFetch.mock.calls.find(([url]) => url.toString() === "/api/v3/user")!;
-    expect(url.toString()).toBe("/api/v3/user");
+    const [url, opts] = mockFetch.mock.calls.find(([url]) => url.toString() === "/auth/token")!;
+    expect(url.toString()).toBe("/auth/token");
     expect((opts.headers as Record<string, string>).Authorization).toBe("Bearer ghp_validpat");
-    expect(getToken()).toBe("ghp_validpat");
+    expect(getToken()).toBeNull();
   });
 
   it("accepts an OAuth token when GitHub REST identity accepts it", async () => {
@@ -68,8 +70,8 @@ describe("LoginPage", () => {
     await waitFor(() => {
       expect(window.location.href).toBe("/ui/");
     });
-    expect(mockFetch.mock.calls.some(([url]) => url.toString() === "/api/v3/user")).toBe(true);
-    expect(getToken()).toBe("gho_oauthtoken");
+    expect(mockFetch.mock.calls.some(([url]) => url.toString() === "/auth/token")).toBe(true);
+    expect(getToken()).toBeNull();
   });
 
   it("an instance with no providers configured shows the token form and no error", async () => {
@@ -107,7 +109,7 @@ describe("LoginPage", () => {
       .mockResolvedValue(new Response(JSON.stringify({ message: "Requires authentication" }), { status: 401 }));
     await submitToken("bad-token");
     await waitFor(() => {
-      expect(screen.getByText(/GitHub REST user endpoint/i)).toBeInTheDocument();
+      expect(screen.getByText(/active user access token/i)).toBeInTheDocument();
     });
     expect(window.location.href).toBe("");
     expect(getToken()).toBeNull();

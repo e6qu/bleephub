@@ -86,6 +86,7 @@ func (s *Server) registerExternalIdentityRoutes() {
 	s.route("GET /auth/shauth/logout/complete", s.handleShauthLogoutComplete)
 	s.route("GET /ui/signed-out", s.handleIdentitySignedOut)
 	s.route("POST /auth/local", s.handleLocalLogin)
+	s.route("POST /auth/token", s.handleTokenLogin)
 	s.route("POST /auth/logout", s.handleIdentityLogout)
 	s.route("GET /control", s.handlePrivateControl)
 }
@@ -628,6 +629,34 @@ func (s *Server) handleLocalLogin(w http.ResponseWriter, r *http.Request) {
 	}
 	if err := s.createBrowserSession(w, user); err != nil {
 		s.logger.Error().Err(err).Msg("create browser session")
+		writeGHError(w, http.StatusServiceUnavailable, "browser session is unavailable")
+		return
+	}
+	writeJSON(w, http.StatusOK, s.fullUserJSON(user))
+}
+
+// handleTokenLogin exchanges a user access token for an HttpOnly browser
+// session. The SPA must not retain a bearer credential in web storage: any
+// script executing in the origin could read it and use it outside the browser.
+func (s *Server) handleTokenLogin(w http.ResponseWriter, r *http.Request) {
+	ctx := s.authenticateRequest(r)
+	if invalid, _ := ctx.Value(ctxInvalidCredential).(bool); invalid {
+		writeGHError(w, http.StatusUnauthorized, "Bad credentials")
+		return
+	}
+	if suspended, _ := ctx.Value(ctxSuspendedUser).(bool); suspended {
+		writeGHError(w, http.StatusForbidden, "This account has been suspended")
+		return
+	}
+	user := ghUserFromContext(ctx)
+	isPAT := ghPersonalAccessTokenFromContext(ctx) != nil
+	isUserToken := ghUserToServerTokenFromContext(ctx) != nil
+	if user == nil || (!isPAT && !isUserToken) {
+		writeGHError(w, http.StatusUnauthorized, "A user access token is required")
+		return
+	}
+	if err := s.createBrowserSession(w, user); err != nil {
+		s.logger.Error().Err(err).Msg("create token browser session")
 		writeGHError(w, http.StatusServiceUnavailable, "browser session is unavailable")
 		return
 	}

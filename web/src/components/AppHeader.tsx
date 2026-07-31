@@ -1,4 +1,12 @@
-import { useEffect, useRef, useState, type ReactNode, type CSSProperties, type FormEvent } from "react";
+import {
+  useEffect,
+  useRef,
+  useState,
+  type ReactNode,
+  type CSSProperties,
+  type FormEvent,
+  type KeyboardEvent as ReactKeyboardEvent,
+} from "react";
 import { Link, NavLink, useNavigate } from "react-router";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useTheme } from "@bleephub/ui-core/hooks";
@@ -79,11 +87,47 @@ function HeaderMenu({
   children: (close: () => void) => ReactNode;
 }) {
   const [open, setOpen] = useState(false);
+  const triggerRef = useRef<HTMLButtonElement>(null);
+  const menuRef = useRef<HTMLDivElement>(null);
   const close = () => setOpen(false);
   const ref = useDismiss(open, close);
+  useEffect(() => {
+    if (!open) return;
+    menuRef.current?.querySelector<HTMLElement>('[role="menuitem"]')?.focus();
+  }, [open]);
+  const onMenuKeyDown = (event: ReactKeyboardEvent<HTMLDivElement>) => {
+    const items = Array.from(menuRef.current?.querySelectorAll<HTMLElement>('[role="menuitem"]') ?? []);
+    if (items.length === 0) return;
+    const current = Math.max(items.indexOf(document.activeElement as HTMLElement), 0);
+    let target: HTMLElement | undefined;
+    switch (event.key) {
+      case "ArrowDown":
+        target = items[(current + 1) % items.length];
+        break;
+      case "ArrowUp":
+        target = items[(current - 1 + items.length) % items.length];
+        break;
+      case "Home":
+        target = items[0];
+        break;
+      case "End":
+        target = items.at(-1);
+        break;
+      case "Escape":
+        event.preventDefault();
+        close();
+        triggerRef.current?.focus();
+        return;
+      default:
+        return;
+    }
+    event.preventDefault();
+    target?.focus();
+  };
   return (
     <div ref={ref} style={{ position: "relative" }}>
       <button
+        ref={triggerRef}
         type="button"
         aria-label={label}
         aria-haspopup="menu"
@@ -104,7 +148,10 @@ function HeaderMenu({
       </button>
       {open && (
         <div
+          ref={menuRef}
           role="menu"
+          aria-label={label}
+          onKeyDown={onMenuKeyDown}
           style={{
             position: "absolute",
             top: "calc(100% + 6px)",
@@ -172,7 +219,7 @@ function MenuButton({ icon, children, onClick, type = "button", shauthSignOut }:
 }
 
 function MenuSeparator() {
-  return <div style={{ height: 1, background: "var(--color-border)", margin: "0.35rem 0" }} />;
+  return <div role="separator" style={{ height: 1, background: "var(--color-border)", margin: "0.35rem 0" }} />;
 }
 
 // ─── global-nav drawer (hamburger) ──────────────────────────────────────────

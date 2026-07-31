@@ -115,7 +115,7 @@ describe("SearchPage", () => {
     });
     expect(String(mockFetch.mock.calls[0][0])).toContain("/api/v3/search/issues?");
 
-    fireEvent.click(screen.getByRole("button", { name: "Commits" }));
+    fireEvent.click(screen.getByRole("tab", { name: "Commits" }));
     await waitFor(() => {
       const urls = mockFetch.mock.calls.map((c) => String(c[0]));
       expect(urls.some((u) => u.includes("/api/v3/search/commits?"))).toBe(true);

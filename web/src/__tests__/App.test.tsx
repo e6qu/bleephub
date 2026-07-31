@@ -1,7 +1,8 @@
 import { render, screen, waitFor } from "@testing-library/react";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { App } from "../App.js";
-import { fetchBrowserSession, isLoggedIn } from "../api.js";
+import { fetchBrowserSession, isLoggedIn, UNAUTHORIZED_EVENT } from "../api.js";
 
 vi.mock("../api.js", async (importOriginal) => {
   const actual = await importOriginal<typeof import("../api.js")>();
@@ -28,7 +29,12 @@ afterEach(() => {
 describe("App session states", () => {
   it("renders a loading state while the session probe is in flight", () => {
     mockedProbe.mockReturnValue(new Promise<boolean>(() => {}));
-    render(<App />);
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    render(
+      <QueryClientProvider client={client}>
+        <App />
+      </QueryClientProvider>,
+    );
 
     expect(screen.getByRole("status")).toHaveTextContent(/checking your session/i);
     expect(screen.queryByRole("alert")).not.toBeInTheDocument();
@@ -76,5 +82,33 @@ describe("App session states", () => {
     // Called with no explicit argument: the module's bounded default applies.
     expect(mockedProbe).toHaveBeenCalledTimes(1);
     expect(mockedProbe.mock.calls[0]).toHaveLength(0);
+  });
+
+  it("handles a background 401 inside the router and preserves the return location", async () => {
+    mockedIsLoggedIn.mockReturnValue(true);
+    Object.defineProperty(window, "matchMedia", {
+      configurable: true,
+      value: vi.fn(() => ({
+        matches: false,
+        addEventListener: vi.fn(),
+        removeEventListener: vi.fn(),
+      })),
+    });
+    window.history.pushState({}, "", "/ui/metrics?period=day#jobs");
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    render(
+      <QueryClientProvider client={client}>
+        <App />
+      </QueryClientProvider>,
+    );
+
+    window.dispatchEvent(new CustomEvent(UNAUTHORIZED_EVENT));
+
+    await waitFor(() => {
+      expect(window.location.pathname).toBe("/ui/login");
+    });
+    expect(new URLSearchParams(window.location.search).get("return_to")).toBe(
+      "/ui/metrics?period=day#jobs",
+    );
   });
 });
