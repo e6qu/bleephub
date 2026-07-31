@@ -456,9 +456,11 @@ func (st *Store) GetDependabotRepositoryAccess(orgLogin string) []int {
 
 // --- org alerts ---
 
-// ListDependabotAlertsByOrg returns all Dependabot alerts for repositories owned
-// by the given organization, sorted by creation time descending.
-func (st *Store) ListDependabotAlertsByOrg(orgID int) []*DependabotAlert {
+// ListDependabotAlertsByOrg returns alerts for repos owned by the given
+// organization, filtered by state, ecosystem, and/or package-name prefix, then
+// sorted per GitHub's query parameters. Unknown filter values are accepted
+// but produce no matches rather than a 400.
+func (st *Store) ListDependabotAlertsByOrg(orgID int, state, ecosystem, packageName, sortField, direction string) []*DependabotAlert {
 	st.mu.RLock()
 	defer st.mu.RUnlock()
 
@@ -469,11 +471,37 @@ func (st *Store) ListDependabotAlertsByOrg(orgID int) []*DependabotAlert {
 			continue
 		}
 		for _, a := range byNumber {
+			if state != "" && a.State != state {
+				continue
+			}
+			if ecosystem != "" && !strings.EqualFold(a.PackageEcosystem, ecosystem) {
+				continue
+			}
+			if packageName != "" && !strings.HasPrefix(a.PackageName, packageName) {
+				continue
+			}
 			out = append(out, a)
 		}
 	}
+
+	if sortField == "" {
+		sortField = "created"
+	}
+	if direction == "" {
+		direction = "desc"
+	}
 	sort.SliceStable(out, func(i, j int) bool {
-		return out[i].CreatedAt.After(out[j].CreatedAt)
+		var less bool
+		switch sortField {
+		case "updated":
+			less = out[i].UpdatedAt.Before(out[j].UpdatedAt)
+		default:
+			less = out[i].CreatedAt.Before(out[j].CreatedAt)
+		}
+		if direction == "asc" {
+			return less
+		}
+		return !less
 	})
 	return out
 }

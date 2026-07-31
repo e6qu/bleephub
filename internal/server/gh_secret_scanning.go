@@ -155,7 +155,13 @@ func (s *Server) handleListSecretScanningOrgAlerts(w http.ResponseWriter, r *htt
 		return
 	}
 
-	alerts := s.store.ListSecretScanningAlertsByOrg(org.ID)
+	state := r.URL.Query().Get("state")
+	secretType := r.URL.Query().Get("secret_type")
+	resolution := r.URL.Query().Get("resolution")
+	sortField := r.URL.Query().Get("sort")
+	direction := r.URL.Query().Get("direction")
+
+	alerts := s.store.ListSecretScanningAlertsByOrg(org.ID, state, secretType, resolution, sortField, direction)
 	page := paginateAndLink(w, r, alerts)
 	baseURL := s.baseURL(r)
 	out := make([]map[string]interface{}, 0, len(page))

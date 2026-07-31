@@ -868,7 +868,6 @@ func TestPersistenceReload_DeploymentsStatusesEnvironments(t *testing.T) {
 		st.Deployments.AddStatus(d.ID, user.ID, "in_progress", "", "", "", "", "production", false)
 		st.Deployments.AddStatus(d.ID, user.ID, "success", "", "", "", "", "production", false)
 	})
-
 	deps := st2.Deployments.ListDeployments(repoID)
 	if len(deps) != 1 || deps[0].ID != depID {
 		t.Fatalf("deployments for repo %d after reload = %d entries, want exactly deployment %d", repoID, len(deps), depID)
@@ -1806,7 +1805,7 @@ func TestPersistenceReload_RenameRepoMovesRepoScopedMetadata(t *testing.T) {
 		st.MarkNotificationsRead(user.ID, now, oldKey)
 
 		st.SetCodeScanningDefaultSetup(&CodeScanningDefaultSetup{RepoKey: oldKey, State: "configured", QuerySuite: "default", Languages: []string{"go"}})
-		alert := st.CreateCodeScanningAlert(oldKey, "rule", "error", "desc", "CodeQL", "open", []CodeScanningAlertInstance{{Path: "main.go", StartLine: 1}})
+		alert := st.CreateCodeScanningAlert(oldKey, "rule", "error", "desc", "CodeQL", "", "open", []CodeScanningAlertInstance{{Path: "main.go", StartLine: 1}})
 		st.CreateCodeScanningAutofix(alert)
 		upload := &SARIFUpload{ID: "sarif-rename", RepoKey: oldKey, Status: "complete", CreatedAt: now}
 		st.SARIFUploads[upload.ID] = upload
@@ -2151,7 +2150,10 @@ func TestPersistenceReload_CodespacesAndSecrets(t *testing.T) {
 			t.Fatalf("init repo files: %v", err)
 		}
 		var err error
-		cs, err = st.CreateCodespace(user.Login, repo.FullName, "", "basicLinux32", "Reload Codespace")
+		cs, err = st.CreateCodespace(user.Login, repo.FullName, "", "local", codespaceCreateOptions{
+			MachineName: "basicLinux32",
+			DisplayName: "Reload Codespace",
+		})
 		if err != nil {
 			t.Fatalf("CreateCodespace: %v", err)
 		}

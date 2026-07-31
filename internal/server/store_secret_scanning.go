@@ -141,6 +141,31 @@ func (st *Store) GetSecretScanningAlert(repoKey string, number int) *SecretScann
 	return st.SecretScanningAlertsByRepo[repoKey][number]
 }
 
+// sortAlertList orders a slice of alert records by created/updated time,
+// defaulting to created descending. Shared by the secret-scanning,
+// code-scanning, and dependabot org-level list endpoints.
+func sortAlertList[T any](out []*T, sortField, direction string, createdAt, updatedAt func(*T) time.Time) {
+	if sortField == "" {
+		sortField = "created"
+	}
+	if direction == "" {
+		direction = "desc"
+	}
+	sort.SliceStable(out, func(i, j int) bool {
+		var less bool
+		switch sortField {
+		case "updated":
+			less = updatedAt(out[i]).Before(updatedAt(out[j]))
+		default:
+			less = createdAt(out[i]).Before(createdAt(out[j]))
+		}
+		if direction == "asc" {
+			return less
+		}
+		return !less
+	})
+}
+
 // ListSecretScanningAlerts returns repo alerts filtered/sorted per GitHub's list endpoint.
 func (st *Store) ListSecretScanningAlerts(repoKey, state, secretType, resolution, sortField, direction string) []*SecretScanningAlert {
 	st.mu.RLock()
@@ -161,26 +186,9 @@ func (st *Store) ListSecretScanningAlerts(repoKey, state, secretType, resolution
 		out = append(out, a)
 	}
 
-	if sortField == "" {
-		sortField = "created"
-	}
-	if direction == "" {
-		direction = "desc"
-	}
-
-	sort.SliceStable(out, func(i, j int) bool {
-		var less bool
-		switch sortField {
-		case "updated":
-			less = out[i].UpdatedAt.Before(out[j].UpdatedAt)
-		default:
-			less = out[i].CreatedAt.Before(out[j].CreatedAt)
-		}
-		if direction == "asc" {
-			return less
-		}
-		return !less
-	})
+	sortAlertList(out, sortField, direction,
+		func(a *SecretScanningAlert) time.Time { return a.CreatedAt },
+		func(a *SecretScanningAlert) time.Time { return a.UpdatedAt })
 	return out
 }
 
@@ -295,8 +303,11 @@ func (st *Store) persistSecretScanningAlert(a *SecretScanningAlert) {
 }
 
 // ListSecretScanningAlertsByOrg returns all secret scanning alerts for
-// repositories owned by the given organization, sorted by creation time descending.
-func (st *Store) ListSecretScanningAlertsByOrg(orgID int) []*SecretScanningAlert {
+// repositories owned by the given organization, filtered and sorted per
+// GitHub's org-alerts query parameters (state, secret_type, resolution,
+// sort, direction). Unknown filter values are accepted but produce no
+// matches rather than a 400, matching GitHub's lenient list behavior.
+func (st *Store) ListSecretScanningAlertsByOrg(orgID int, state, secretType, resolution, sortField, direction string) []*SecretScanningAlert {
 	st.mu.RLock()
 	defer st.mu.RUnlock()
 
@@ -307,12 +318,28 @@ func (st *Store) ListSecretScanningAlertsByOrg(orgID int) []*SecretScanningAlert
 			continue
 		}
 		for _, a := range byNumber {
+			if state != "" && a.State != state {
+				continue
+			}
+			if secretType != "" && a.SecretType != secretType {
+				continue
+			}
+			if resolution != "" && a.Resolution != resolution {
+				continue
+			}
 			out = append(out, a)
 		}
 	}
-	sort.SliceStable(out, func(i, j int) bool {
-		return out[i].CreatedAt.After(out[j].CreatedAt)
-	})
+
+	if sortField == "" {
+		sortField = "created"
+	}
+	if direction == "" {
+		direction = "desc"
+	}
+	sortAlertList(out, sortField, direction,
+		func(a *SecretScanningAlert) time.Time { return a.CreatedAt },
+		func(a *SecretScanningAlert) time.Time { return a.UpdatedAt })
 	return out
 }
 

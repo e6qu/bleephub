@@ -21,7 +21,7 @@ func (s *Server) handleListEnterpriseDependabotAlerts(w http.ResponseWriter, r *
 		if !s.viewerCanAdminOrg(r.Context(), org.Login) {
 			continue
 		}
-		alerts = append(alerts, s.store.ListDependabotAlertsByOrg(org.ID)...)
+		alerts = append(alerts, s.store.ListDependabotAlertsByOrg(org.ID, "", "", "", "", "")...)
 	}
 
 	q := r.URL.Query()

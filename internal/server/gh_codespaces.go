@@ -180,6 +180,9 @@ func (s *Server) handleCreateUserCodespace(w http.ResponseWriter, r *http.Reques
 	if !decodeJSONBody(w, r, &req) {
 		return
 	}
+	if !validateCodespaceCreate(w, req) {
+		return
+	}
 	hasRepository := req.RepositoryID > 0
 	hasPullRequest := req.PullRequest != nil
 	if hasRepository == hasPullRequest {
@@ -213,7 +216,16 @@ func (s *Server) handleCreateUserCodespace(w http.ResponseWriter, r *http.Reques
 		gitRef = pr.HeadRefName
 	}
 	repoKey := repo.FullName
-	cs, err := s.store.CreateCodespace(user.Login, repoKey, gitRef, req.Machine, req.DisplayName)
+	opts := codespaceCreateOptions{
+		MachineName:            req.Machine,
+		DisplayName:            req.DisplayName,
+		WorkingDirectory:       req.WorkingDirectory,
+		DevcontainerPath:       req.DevcontainerPath,
+		Geolocation:            req.Geolocation,
+		IdleTimeoutMinutes:     req.IdleTimeoutMinutes,
+		RetentionPeriodMinutes: req.RetentionPeriodMinutes,
+	}
+	cs, err := s.store.CreateCodespace(user.Login, repoKey, gitRef, req.Location, opts)
 	if err != nil {
 		writeGHError(w, http.StatusInternalServerError, "codespace create failed: "+err.Error())
 		return
@@ -330,7 +342,16 @@ func (s *Server) handleCreateRepoCodespace(w http.ResponseWriter, r *http.Reques
 		writeGHValidationError(w, "Codespace", "repository_id", "invalid")
 		return
 	}
-	cs, err := s.store.CreateCodespace(user.Login, repo.FullName, req.Ref, req.Machine, req.DisplayName)
+	opts := codespaceCreateOptions{
+		MachineName:            req.Machine,
+		DisplayName:            req.DisplayName,
+		WorkingDirectory:       req.WorkingDirectory,
+		DevcontainerPath:       req.DevcontainerPath,
+		Geolocation:            req.Geolocation,
+		IdleTimeoutMinutes:     req.IdleTimeoutMinutes,
+		RetentionPeriodMinutes: req.RetentionPeriodMinutes,
+	}
+	cs, err := s.store.CreateCodespace(user.Login, repo.FullName, req.Ref, req.Location, opts)
 	if err != nil {
 		writeGHError(w, http.StatusInternalServerError, "codespace create failed: "+err.Error())
 		return
@@ -503,7 +524,16 @@ func (s *Server) handleCreatePullRequestCodespace(w http.ResponseWriter, r *http
 	if !decodeJSONBodyOptional(w, r, &req) {
 		return
 	}
-	cs, err := s.store.CreateCodespace(user.Login, repo.FullName, pr.HeadRefName, req.Machine, req.DisplayName)
+	opts := codespaceCreateOptions{
+		MachineName:            req.Machine,
+		DisplayName:            req.DisplayName,
+		WorkingDirectory:       req.WorkingDirectory,
+		DevcontainerPath:       req.DevcontainerPath,
+		Geolocation:            req.Geolocation,
+		IdleTimeoutMinutes:     req.IdleTimeoutMinutes,
+		RetentionPeriodMinutes: req.RetentionPeriodMinutes,
+	}
+	cs, err := s.store.CreateCodespace(user.Login, repo.FullName, pr.HeadRefName, req.Location, opts)
 	if err != nil {
 		writeGHError(w, http.StatusInternalServerError, "codespace create failed: "+err.Error())
 		return
@@ -924,12 +954,28 @@ func (s *Server) stopCodespace(cs *Codespace) error {
 // --- request/response shapes ---
 
 type codespaceCreateRequest struct {
-	RepositoryID int                   `json:"repository_id"`
-	PullRequest  *codespacePullRequest `json:"pull_request"`
-	Ref          string                `json:"ref"`
-	Machine      string                `json:"machine"`
-	DisplayName  string                `json:"display_name"`
-	Location     string                `json:"location"`
+	RepositoryID           int                   `json:"repository_id"`
+	PullRequest            *codespacePullRequest `json:"pull_request"`
+	Ref                    string                `json:"ref"`
+	Machine                string                `json:"machine"`
+	DisplayName            string                `json:"display_name"`
+	Location               string                `json:"location"`
+	WorkingDirectory       string                `json:"working_directory"`
+	DevcontainerPath       string                `json:"devcontainer_path"`
+	Geolocation            string                `json:"geolocation"`
+	IdleTimeoutMinutes     int                   `json:"idle_timeout_minutes"`
+	RetentionPeriodMinutes int                   `json:"retention_period_minutes"`
+}
+
+// validateCodespaceCreate applies shared create-request checks that every
+// create endpoint runs before reserving a codespace. It writes the error
+// response and returns false when the request is rejected.
+func validateCodespaceCreate(w http.ResponseWriter, req codespaceCreateRequest) bool {
+	if req.Machine != "" && !codespaceMachineExists(req.Machine) {
+		writeGHValidationError(w, "Codespace", "machine", "invalid")
+		return false
+	}
+	return true
 }
 
 type codespacePullRequest struct {

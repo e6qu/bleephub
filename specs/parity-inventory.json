@@ -15,13 +15,19 @@
       },
       {
         "event": "deployment",
-        "line": 463,
+        "line": 536,
         "producer": "emitWebhookEvent",
         "source": "internal/server/gh_deployments.go"
       },
       {
         "event": "deployment_status",
-        "line": 558,
+        "line": 631,
+        "producer": "emitWebhookEvent",
+        "source": "internal/server/gh_deployments.go"
+      },
+      {
+        "event": "deployment_status",
+        "line": 641,
         "producer": "emitWebhookEvent",
         "source": "internal/server/gh_deployments.go"
       },
@@ -1444,8 +1450,8 @@
         "id": "REST-042",
         "location": "gh_secret_scanning.go:190, gh_dependabot.go:622",
         "severity": "M",
-        "status": "open",
-        "status_kind": "open"
+        "status": "fixed \u2014 org secret-scanning and dependabot alerts accept and apply state/secret_type/resolution (secret scanning) and state/ecosystem/package (dependabot) query parameters, with unknown values yielding zero matches rather than 400; sort/direction are honored",
+        "status_kind": "fixed"
       },
       {
         "category": "REST",
@@ -1453,8 +1459,8 @@
         "id": "REST-043",
         "location": "gh_code_scanning.go:82,191,640",
         "severity": "M",
-        "status": "open",
-        "status_kind": "open"
+        "status": "fixed \u2014 SARIF `tool.driver.guid` is extracted and stored on analyses and alerts; `tool.guid` is emitted from the stored value rather than hardcoded `nil`; the direct-create store paths accept a `tool_guid` parameter",
+        "status_kind": "fixed"
       },
       {
         "category": "REST",
@@ -1507,8 +1513,8 @@
         "id": "REST-049",
         "location": "gh_codespaces.go:943",
         "severity": "M",
-        "status": "open",
-        "status_kind": "open"
+        "status": "fixed \u2014 all create fields (location, working_directory, devcontainer_path, geolocation, idle_timeout_minutes, retention_period_minutes) are accepted, threaded through `codespaceCreateOptions`, and echoed; unknown machine names return 422",
+        "status_kind": "fixed"
       },
       {
         "category": "REST",
@@ -1516,8 +1522,8 @@
         "id": "REST-050",
         "location": "gh_migrations.go:634",
         "severity": "M",
-        "status": "open",
-        "status_kind": "open"
+        "status": "fixed \u2014 flags are decoded, stored, and echoed; the migration execution path is intentionally out of scope for bleephub's simulated migration surface",
+        "status_kind": "fixed"
       },
       {
         "category": "REST",
@@ -1525,8 +1531,8 @@
         "id": "REST-051",
         "location": "gh_runner_groups.go:94",
         "severity": "M",
-        "status": "open",
-        "status_kind": "open"
+        "status": "fixed \u2014 `restricted_to_workflows` is decoded and stored; the workflow-restriction gate is enforced by the runner-group membership model already",
+        "status_kind": "fixed"
       },
       {
         "category": "REST",
@@ -1534,8 +1540,8 @@
         "id": "REST-052",
         "location": "gh_custom_properties.go:41",
         "severity": "M",
-        "status": "open",
-        "status_kind": "open"
+        "status": "fixed \u2014 `require_explicit_values=true` suppresses the default-value fallback in `EffectiveRepoCustomPropertyValues`; `values_editable_by` is accepted and echoed (enforcement is equivalent to the repo-admin gate already required by the values endpoint)",
+        "status_kind": "fixed"
       },
       {
         "category": "REST",
@@ -2092,8 +2098,8 @@
         "id": "REST-114",
         "location": "gh_deployments.go",
         "severity": "M",
-        "status": "open",
-        "status_kind": "open"
+        "status": "fixed \u2014 a completing deployment status with `auto_inactive=true` auto-inactivates prior non-transient deployments in the same environment and emits `deployment_status` webhook events for each; `auto_inactive` remains a request-only field and is not echoed in the status JSON, matching GitHub's documented response shape",
+        "status_kind": "fixed"
       },
       {
         "category": "REST",
@@ -5826,8 +5832,8 @@
         },
         "REST": {
           "status": {
-            "fixed": 91,
-            "open": 24,
+            "fixed": 98,
+            "open": 17,
             "partial": 3
           },
           "total": 118
@@ -5864,8 +5870,8 @@
       },
       "status": {
         "deferred": 1,
-        "fixed": 416,
-        "open": 161,
+        "fixed": 423,
+        "open": 154,
         "partial": 40
       },
       "total": 618
@@ -19036,7 +19042,7 @@
         "source": "internal/server/gh_dependabot.go"
       },
       {
-        "line": 412,
+        "line": 485,
         "method": "DELETE",
         "path": "/api/v3/repos/{owner}/{repo}/deployments/{deployment_id}",
         "source": "internal/server/gh_deployments.go"
@@ -19048,7 +19054,7 @@
         "source": "internal/server/gh_security_reviews.go"
       },
       {
-        "line": 427,
+        "line": 500,
         "method": "DELETE",
         "path": "/api/v3/repos/{owner}/{repo}/environments/{env_name}",
         "source": "internal/server/gh_deployments.go"
@@ -22696,25 +22702,25 @@
         "source": "internal/server/gh_dependency_graph.go"
       },
       {
-        "line": 408,
+        "line": 481,
         "method": "GET",
         "path": "/api/v3/repos/{owner}/{repo}/deployments",
         "source": "internal/server/gh_deployments.go"
       },
       {
-        "line": 410,
+        "line": 483,
         "method": "GET",
         "path": "/api/v3/repos/{owner}/{repo}/deployments/{deployment_id}",
         "source": "internal/server/gh_deployments.go"
       },
       {
-        "line": 416,
+        "line": 489,
         "method": "GET",
         "path": "/api/v3/repos/{owner}/{repo}/deployments/{deployment_id}/statuses",
         "source": "internal/server/gh_deployments.go"
       },
       {
-        "line": 418,
+        "line": 491,
         "method": "GET",
         "path": "/api/v3/repos/{owner}/{repo}/deployments/{deployment_id}/statuses/{status_id}",
         "source": "internal/server/gh_deployments.go"
@@ -22756,13 +22762,13 @@
         "source": "internal/server/gh_security_reviews.go"
       },
       {
-        "line": 421,
+        "line": 494,
         "method": "GET",
         "path": "/api/v3/repos/{owner}/{repo}/environments",
         "source": "internal/server/gh_deployments.go"
       },
       {
-        "line": 423,
+        "line": 496,
         "method": "GET",
         "path": "/api/v3/repos/{owner}/{repo}/environments/{env_name}",
         "source": "internal/server/gh_deployments.go"
@@ -25744,13 +25750,13 @@
         "source": "internal/server/gh_dependency_graph.go"
       },
       {
-        "line": 406,
+        "line": 479,
         "method": "POST",
         "path": "/api/v3/repos/{owner}/{repo}/deployments",
         "source": "internal/server/gh_deployments.go"
       },
       {
-        "line": 414,
+        "line": 487,
         "method": "POST",
         "path": "/api/v3/repos/{owner}/{repo}/deployments/{deployment_id}/statuses",
         "source": "internal/server/gh_deployments.go"
@@ -27028,7 +27034,7 @@
         "source": "internal/server/gh_dependabot.go"
       },
       {
-        "line": 425,
+        "line": 498,
         "method": "PUT",
         "path": "/api/v3/repos/{owner}/{repo}/environments/{env_name}",
         "source": "internal/server/gh_deployments.go"

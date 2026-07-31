@@ -32,6 +32,10 @@ type Codespace struct {
 	MachineDisplayName     string    `json:"machine_display_name"`
 	MachineType            string    `json:"machine_type"`
 	DisplayName            string    `json:"display_name"`
+	Location               string    `json:"location,omitempty"`
+	WorkingDirectory       string    `json:"working_directory,omitempty"`
+	Geolocation            string    `json:"geolocation,omitempty"`
+	IdleTimeoutMinutes     int       `json:"idle_timeout_minutes"`
 	CreatedAt              time.Time `json:"created_at"`
 	UpdatedAt              time.Time `json:"updated_at"`
 	LastUsedAt             time.Time `json:"last_used_at"`
@@ -100,6 +104,18 @@ func codespaceMachineByName(name string) codespaceMachine {
 	return codespaceDefaultMachine()
 }
 
+// codespaceMachineExists reports whether name matches a known catalog
+// machine exactly; unlike codespaceMachineByName it does not fall back to
+// the default, so the create handlers can reject unknown names with 422.
+func codespaceMachineExists(name string) bool {
+	for _, m := range codespaceMachines {
+		if m.Name == name {
+			return true
+		}
+	}
+	return false
+}
+
 const (
 	codespaceContainerPrefix = "bleephub-codespace-"
 	codespaceWorkspacePrefix = "bleephub-codespace-"
@@ -129,13 +145,25 @@ func (st *Store) persistCodespaceSecretScopeLocked(scope string) {
 	st.persist.MustPut("codespace_secrets", scope, m)
 }
 
+// codespaceCreateOptions carries the caller-supplied create fields that
+// CreateCodespace threads onto the codespace record beyond identity/ref.
+type codespaceCreateOptions struct {
+	MachineName            string
+	DisplayName            string
+	WorkingDirectory       string
+	DevcontainerPath       string
+	Geolocation            string
+	IdleTimeoutMinutes     int
+	RetentionPeriodMinutes int
+}
+
 // CreateCodespace records a new codespace and starts its runtime. A Docker
 // image pull and container start can take minutes, so the codespace is
 // registered in the Creating state first and the store lock is released for
 // the duration. If Docker cannot provision the requested image, the prepared
 // workspace is retained and promoted to the built-in lifecycle runtime.
-func (st *Store) CreateCodespace(ownerLogin, repoKey, gitRef, machineName, displayName string) (*Codespace, error) {
-	cs, workspace, cleanup, err := st.reserveCodespace(ownerLogin, repoKey, gitRef, machineName, displayName)
+func (st *Store) CreateCodespace(ownerLogin, repoKey, gitRef, location string, opts codespaceCreateOptions) (*Codespace, error) {
+	cs, workspace, cleanup, err := st.reserveCodespace(ownerLogin, repoKey, gitRef, location, opts)
 	if err != nil {
 		return nil, err
 	}
@@ -177,7 +205,7 @@ func (st *Store) CreateCodespace(ownerLogin, repoKey, gitRef, machineName, displ
 	return cloneCodespace(live), nil
 }
 
-func (st *Store) reserveCodespace(ownerLogin, repoKey, gitRef, machineName, displayName string) (*Codespace, string, func(), error) {
+func (st *Store) reserveCodespace(ownerLogin, repoKey, gitRef, location string, opts codespaceCreateOptions) (*Codespace, string, func(), error) {
 	name, err := generateCodespaceName(repoKey)
 	if err != nil {
 		return nil, "", nil, err
@@ -233,32 +261,48 @@ func (st *Store) reserveCodespace(ownerLogin, repoKey, gitRef, machineName, disp
 
 	machine := codespaceDefaultMachine()
 	for _, m := range codespaceMachines {
-		if m.Name == machineName {
+		if m.Name == opts.MachineName {
 			machine = m
 			break
 		}
 	}
+	displayName := opts.DisplayName
 	if displayName == "" {
 		displayName = name
 	}
+	if location == "" {
+		location = "local"
+	}
+	idleTimeout := opts.IdleTimeoutMinutes
+	if idleTimeout == 0 {
+		idleTimeout = 30
+	}
+	if opts.DevcontainerPath != "" {
+		devcontainerPath = opts.DevcontainerPath
+	}
 
 	cs := &Codespace{
-		ID:                 st.NextCodespaceID,
-		Name:               name,
-		OwnerLogin:         ownerLogin,
-		RepoKey:            repoKey,
-		GitRef:             gitRef,
-		MachineName:        machine.Name,
-		MachineDisplayName: machine.DisplayName,
-		MachineType:        machine.Type,
-		DisplayName:        displayName,
-		CreatedAt:          st.currentTime(),
-		UpdatedAt:          st.currentTime(),
-		LastUsedAt:         st.currentTime(),
-		State:              "Provisioning",
-		ImageName:          image,
-		DevcontainerPath:   devcontainerPath,
-		Runtime:            "docker",
+		ID:                     st.NextCodespaceID,
+		Name:                   name,
+		OwnerLogin:             ownerLogin,
+		RepoKey:                repoKey,
+		GitRef:                 gitRef,
+		MachineName:            machine.Name,
+		MachineDisplayName:     machine.DisplayName,
+		MachineType:            machine.Type,
+		DisplayName:            displayName,
+		Location:               location,
+		WorkingDirectory:       opts.WorkingDirectory,
+		Geolocation:            opts.Geolocation,
+		IdleTimeoutMinutes:     idleTimeout,
+		RetentionPeriodMinutes: opts.RetentionPeriodMinutes,
+		CreatedAt:              st.currentTime(),
+		UpdatedAt:              st.currentTime(),
+		LastUsedAt:             st.currentTime(),
+		State:                  "Provisioning",
+		ImageName:              image,
+		DevcontainerPath:       devcontainerPath,
+		Runtime:                "docker",
 	}
 	cs.WorkspaceMount = repoDir
 

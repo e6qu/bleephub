@@ -673,7 +673,7 @@ func TestCodeScanning_Analyses(t *testing.T) {
 		t.Fatal("create repo failed")
 	}
 
-	analysis := testServer.store.CreateCodeScanningAnalysis(repo.FullName, "refs/heads/main", "deadbeefdeadbeefdeadbeefdeadbeefdeadbeef", "key", "cat", "CodeQL")
+	analysis := testServer.store.CreateCodeScanningAnalysis(repo.FullName, "refs/heads/main", "deadbeefdeadbeefdeadbeefdeadbeefdeadbeef", "key", "cat", "CodeQL", "c7a7c45a-8a3c-4f6e-9b5c-1d3c01234567")
 
 	resp := authedGet(t, "/api/v3/repos/admin/cs-analyses/code-scanning/analyses")
 	if resp.StatusCode != http.StatusOK {

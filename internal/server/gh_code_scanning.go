@@ -594,7 +594,7 @@ func codeScanningAlertToJSON(a *CodeScanningAlert, baseURL string, repo *Repo) m
 		},
 		"tool": map[string]interface{}{
 			"name":    nullOrString(a.ToolName),
-			"guid":    nil,
+			"guid":    nullOrString(a.ToolGUID),
 			"version": nil,
 		},
 		"most_recent_instance": mostRecent,
@@ -1390,7 +1390,7 @@ func codeScanningAnalysisToJSON(a *CodeScanningAnalysis, baseURL string, repo *R
 		"sarif_id":      a.SARIFUploadID,
 		"tool": map[string]interface{}{
 			"name":    nullOrString(a.ToolName),
-			"guid":    nil,
+			"guid":    nullOrString(a.ToolGUID),
 			"version": nil,
 		},
 		"deletable": true,

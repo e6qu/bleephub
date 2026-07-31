@@ -413,7 +413,7 @@ func TestAgentsCodeScanPersistenceReload(t *testing.T) {
 
 	task := st1.CreateAgentTask(repo, user, "reload prompt", "claude-sonnet-4.6", false, "", "")
 
-	alert := st1.CreateCodeScanningAlert(repo.FullName, "reload-rule", "error", "d", "CodeQL", "open",
+	alert := st1.CreateCodeScanningAlert(repo.FullName, "reload-rule", "error", "d", "CodeQL", "c7a7c45a-8a3c-4f6e-9b5c-1d3c01234567", "open",
 		[]CodeScanningAlertInstance{{Ref: "refs/heads/main", Path: "f.go", StartLine: 1, State: "open"}})
 	if _, created := st1.CreateCodeScanningAutofix(alert); !created {
 		t.Fatal("autofix not created")
