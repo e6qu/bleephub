@@ -45,24 +45,30 @@ func orgPATAdminAppToken(t *testing.T, org *Org) string {
 }
 
 func TestOrgPATGrantRequests_ApproveRevokeLifecycle(t *testing.T) {
+	suffix := fmt.Sprintf("%d", nextTestID())
+	orgLogin := "pat-org-" + suffix
+	ownerLogin := "pat-owner-" + suffix
+	repoName := "pat-repo-" + suffix
+	otherRepoName := "pat-other-" + suffix
+	publicRepoName := "pat-public-" + suffix
 	admin := testServer.store.UsersByLogin["admin"]
-	org := testServer.store.CreateOrg(admin, "pat-org", "PAT Org", "")
+	org := testServer.store.CreateOrg(admin, orgLogin, "PAT Org", "")
 	if org == nil {
 		t.Fatal("create org failed")
 	}
-	owner := createTestUser(t, "pat-owner")
+	owner := createTestUser(t, ownerLogin)
 	testServer.store.SetMembership(org.Login, owner.ID, OrgRoleMember, MembershipStateActive)
 	ownerToken := testServer.store.CreateToken(owner.ID, "repo").Value
 	appToken := orgPATAdminAppToken(t, org)
-	repo := testServer.store.CreateOrgRepo(org, admin, "pat-repo", "", true)
+	repo := testServer.store.CreateOrgRepo(org, admin, repoName, "", true)
 	if repo == nil {
 		t.Fatal("create org repo failed")
 	}
-	otherRepo := testServer.store.CreateOrgRepo(org, admin, "pat-other", "", true)
-	publicRepo := testServer.store.CreateOrgRepo(org, admin, "pat-public", "", false)
+	otherRepo := testServer.store.CreateOrgRepo(org, admin, otherRepoName, "", true)
+	publicRepo := testServer.store.CreateOrgRepo(org, admin, publicRepoName, "", false)
 
-	seeded := createPATGrantRequest(t, "pat-org", ownerToken, map[string]interface{}{
-		"owner":                "pat-owner",
+	seeded := createPATGrantRequest(t, orgLogin, ownerToken, map[string]interface{}{
+		"owner":                ownerLogin,
 		"token_name":           "ci-token",
 		"reason":               "deploy pipeline",
 		"repository_selection": "subset",
@@ -82,10 +88,10 @@ func TestOrgPATGrantRequests_ApproveRevokeLifecycle(t *testing.T) {
 		t.Fatalf("fine-grained token auth: %d", resp.StatusCode)
 	}
 	me := decodeJSON(t, resp)
-	if me["login"] != "pat-owner" {
-		t.Fatalf("fine-grained token user = %v, want pat-owner", me["login"])
+	if me["login"] != ownerLogin {
+		t.Fatalf("fine-grained token user = %v, want %s", me["login"], ownerLogin)
 	}
-	resp = ghGet(t, "/api/v3/repos/pat-org/pat-repo", tokenValue)
+	resp = ghGet(t, "/api/v3/repos/"+orgLogin+"/"+repoName, tokenValue)
 	if resp.StatusCode != http.StatusForbidden {
 		resp.Body.Close()
 		t.Fatalf("pending token private repository status = %d, want 403", resp.StatusCode)
@@ -98,14 +104,14 @@ func TestOrgPATGrantRequests_ApproveRevokeLifecycle(t *testing.T) {
 	}
 
 	// GitHub's organization administration endpoints are GitHub App-only.
-	resp = ghGet(t, "/api/v3/orgs/pat-org/personal-access-token-requests", defaultToken)
+	resp = ghGet(t, "/api/v3/orgs/"+orgLogin+"/personal-access-token-requests", defaultToken)
 	if resp.StatusCode != http.StatusForbidden {
 		resp.Body.Close()
 		t.Fatalf("classic PAT organization review status = %d, want 403", resp.StatusCode)
 	}
 	resp.Body.Close()
 	// Pending request appears in the admin listing.
-	resp = ghGet(t, "/api/v3/orgs/pat-org/personal-access-token-requests", appToken)
+	resp = ghGet(t, "/api/v3/orgs/"+orgLogin+"/personal-access-token-requests", appToken)
 	if resp.StatusCode != http.StatusOK {
 		resp.Body.Close()
 		t.Fatalf("list PAT grant requests: %d", resp.StatusCode)
@@ -118,7 +124,7 @@ func TestOrgPATGrantRequests_ApproveRevokeLifecycle(t *testing.T) {
 	if row["token_name"] != "ci-token" || row["repository_selection"] != "subset" || row["reason"] != "deploy pipeline" {
 		t.Fatalf("pending request row wrong: %v", row)
 	}
-	if ownerJSON, _ := row["owner"].(map[string]interface{}); ownerJSON == nil || ownerJSON["login"] != "pat-owner" {
+	if ownerJSON, _ := row["owner"].(map[string]interface{}); ownerJSON == nil || ownerJSON["login"] != ownerLogin {
 		t.Fatalf("pending request owner wrong: %v", row["owner"])
 	}
 	if row["token_expired"] != false || row["token_expires_at"] != nil || row["token_last_used_at"] != nil {
@@ -126,28 +132,28 @@ func TestOrgPATGrantRequests_ApproveRevokeLifecycle(t *testing.T) {
 	}
 
 	// The requested repositories are listed in minimal-repository shape.
-	resp = ghGet(t, fmt.Sprintf("/api/v3/orgs/pat-org/personal-access-token-requests/%d/repositories", requestID), appToken)
+	resp = ghGet(t, fmt.Sprintf("/api/v3/orgs/%s/personal-access-token-requests/%d/repositories", orgLogin, requestID), appToken)
 	if resp.StatusCode != http.StatusOK {
 		resp.Body.Close()
 		t.Fatalf("list request repositories: %d", resp.StatusCode)
 	}
 	reqRepos := decodeJSONArray(t, resp)
-	if len(reqRepos) != 1 || reqRepos[0]["full_name"] != "pat-org/pat-repo" {
+	if len(reqRepos) != 1 || reqRepos[0]["full_name"] != orgLogin+"/"+repoName {
 		t.Fatalf("request repositories wrong: %v", reqRepos)
 	}
 
 	// Approve: the request becomes an active grant.
-	resp = ghPost(t, fmt.Sprintf("/api/v3/orgs/pat-org/personal-access-token-requests/%d", requestID), appToken, map[string]interface{}{"action": "approve"})
+	resp = ghPost(t, fmt.Sprintf("/api/v3/orgs/%s/personal-access-token-requests/%d", orgLogin, requestID), appToken, map[string]interface{}{"action": "approve"})
 	resp.Body.Close()
 	if resp.StatusCode != http.StatusNoContent {
 		t.Fatalf("approve request: %d, want 204", resp.StatusCode)
 	}
-	resp = ghGet(t, "/api/v3/orgs/pat-org/personal-access-token-requests", appToken)
+	resp = ghGet(t, "/api/v3/orgs/"+orgLogin+"/personal-access-token-requests", appToken)
 	if remaining := decodeJSONArray(t, resp); len(remaining) != 0 {
 		t.Fatalf("request not consumed by approval: %v", remaining)
 	}
 
-	resp = ghGet(t, "/api/v3/orgs/pat-org/personal-access-tokens", appToken)
+	resp = ghGet(t, "/api/v3/orgs/"+orgLogin+"/personal-access-tokens", appToken)
 	if resp.StatusCode != http.StatusOK {
 		resp.Body.Close()
 		t.Fatalf("list PAT grants: %d", resp.StatusCode)
@@ -164,7 +170,7 @@ func TestOrgPATGrantRequests_ApproveRevokeLifecycle(t *testing.T) {
 		t.Fatalf("grant missing access_granted_at: %v", grant)
 	}
 	grantID := int(grant["id"].(float64))
-	resp = ghGet(t, "/api/v3/repos/pat-org/pat-repo", tokenValue)
+	resp = ghGet(t, "/api/v3/repos/"+orgLogin+"/"+repoName, tokenValue)
 	if resp.StatusCode != http.StatusOK {
 		resp.Body.Close()
 		t.Fatalf("approved selected repository status = %d, want 200", resp.StatusCode)
@@ -179,19 +185,19 @@ func TestOrgPATGrantRequests_ApproveRevokeLifecycle(t *testing.T) {
 	if !approvedIDs[repo.ID] || !approvedIDs[publicRepo.ID] || approvedIDs[otherRepo.ID] {
 		t.Fatalf("approved token repository inventory = %v", approvedRepos)
 	}
-	resp = ghGet(t, "/api/v3/repos/pat-org/"+otherRepo.Name, tokenValue)
+	resp = ghGet(t, "/api/v3/repos/"+orgLogin+"/"+otherRepo.Name, tokenValue)
 	if resp.StatusCode != http.StatusForbidden {
 		resp.Body.Close()
 		t.Fatalf("unselected repository status = %d, want 403", resp.StatusCode)
 	}
 	resp.Body.Close()
-	resp = ghPatch(t, "/api/v3/repos/pat-org/pat-repo", tokenValue, map[string]interface{}{"description": "forbidden"})
+	resp = ghPatch(t, "/api/v3/repos/"+orgLogin+"/"+repoName, tokenValue, map[string]interface{}{"description": "forbidden"})
 	if resp.StatusCode != http.StatusForbidden {
 		resp.Body.Close()
 		t.Fatalf("ungranted administration status = %d, want 403", resp.StatusCode)
 	}
 	resp.Body.Close()
-	resp = ghGet(t, "/api/v3/repos/pat-org/pat-repo/issues", tokenValue)
+	resp = ghGet(t, "/api/v3/repos/"+orgLogin+"/"+repoName+"/issues", tokenValue)
 	if resp.StatusCode != http.StatusForbidden {
 		resp.Body.Close()
 		t.Fatalf("ungranted issues read status = %d, want 403", resp.StatusCode)
@@ -199,27 +205,27 @@ func TestOrgPATGrantRequests_ApproveRevokeLifecycle(t *testing.T) {
 	resp.Body.Close()
 
 	// Grant repositories round-trip.
-	resp = ghGet(t, fmt.Sprintf("/api/v3/orgs/pat-org/personal-access-tokens/%d/repositories", grantID), appToken)
+	resp = ghGet(t, fmt.Sprintf("/api/v3/orgs/%s/personal-access-tokens/%d/repositories", orgLogin, grantID), appToken)
 	if resp.StatusCode != http.StatusOK {
 		resp.Body.Close()
 		t.Fatalf("list grant repositories: %d", resp.StatusCode)
 	}
 	grantRepos := decodeJSONArray(t, resp)
-	if len(grantRepos) != 1 || grantRepos[0]["full_name"] != "pat-org/pat-repo" {
+	if len(grantRepos) != 1 || grantRepos[0]["full_name"] != orgLogin+"/"+repoName {
 		t.Fatalf("grant repositories wrong: %v", grantRepos)
 	}
 
 	// Revoke the single grant.
-	resp = ghPost(t, fmt.Sprintf("/api/v3/orgs/pat-org/personal-access-tokens/%d", grantID), appToken, map[string]interface{}{"action": "revoke"})
+	resp = ghPost(t, fmt.Sprintf("/api/v3/orgs/%s/personal-access-tokens/%d", orgLogin, grantID), appToken, map[string]interface{}{"action": "revoke"})
 	resp.Body.Close()
 	if resp.StatusCode != http.StatusNoContent {
 		t.Fatalf("revoke grant: %d, want 204", resp.StatusCode)
 	}
-	resp = ghGet(t, "/api/v3/orgs/pat-org/personal-access-tokens", appToken)
+	resp = ghGet(t, "/api/v3/orgs/"+orgLogin+"/personal-access-tokens", appToken)
 	if remaining := decodeJSONArray(t, resp); len(remaining) != 0 {
 		t.Fatalf("grant not removed by revoke: %v", remaining)
 	}
-	resp = ghGet(t, "/api/v3/repos/pat-org/pat-repo", tokenValue)
+	resp = ghGet(t, "/api/v3/repos/"+orgLogin+"/"+repoName, tokenValue)
 	if resp.StatusCode != http.StatusForbidden {
 		resp.Body.Close()
 		t.Fatalf("revoked token private repository status = %d, want 403", resp.StatusCode)
@@ -228,19 +234,22 @@ func TestOrgPATGrantRequests_ApproveRevokeLifecycle(t *testing.T) {
 }
 
 func TestOrgPATGrantRequests_BulkReviewAndBulkRevoke(t *testing.T) {
+	suffix := fmt.Sprintf("%d", nextTestID())
+	orgLogin := "pat-bulk-org-" + suffix
+	ownerLogin := "pat-bulk-owner-" + suffix
 	admin := testServer.store.UsersByLogin["admin"]
-	org := testServer.store.CreateOrg(admin, "pat-bulk-org", "PAT Bulk Org", "")
+	org := testServer.store.CreateOrg(admin, orgLogin, "PAT Bulk Org", "")
 	if org == nil {
 		t.Fatal("create org failed")
 	}
-	owner := createTestUser(t, "pat-bulk-owner")
+	owner := createTestUser(t, ownerLogin)
 	testServer.store.SetMembership(org.Login, owner.ID, OrgRoleMember, MembershipStateActive)
 	ownerToken := testServer.store.CreateToken(owner.ID, "repo").Value
 	appToken := orgPATAdminAppToken(t, org)
 
 	seed := func(name string) int {
-		seeded := createPATGrantRequest(t, "pat-bulk-org", ownerToken, map[string]interface{}{
-			"owner":      "pat-bulk-owner",
+		seeded := createPATGrantRequest(t, orgLogin, ownerToken, map[string]interface{}{
+			"owner":      ownerLogin,
 			"token_name": name,
 		})
 		return int(seeded["id"].(float64))
@@ -248,7 +257,7 @@ func TestOrgPATGrantRequests_BulkReviewAndBulkRevoke(t *testing.T) {
 
 	// Bulk deny removes both requests without creating grants.
 	a, b := seed("bulk-a"), seed("bulk-b")
-	resp := ghPost(t, "/api/v3/orgs/pat-bulk-org/personal-access-token-requests", appToken, map[string]interface{}{
+	resp := ghPost(t, "/api/v3/orgs/"+orgLogin+"/personal-access-token-requests", appToken, map[string]interface{}{
 		"pat_request_ids": []int{a, b},
 		"action":          "deny",
 	})
@@ -256,18 +265,18 @@ func TestOrgPATGrantRequests_BulkReviewAndBulkRevoke(t *testing.T) {
 	if resp.StatusCode != http.StatusAccepted {
 		t.Fatalf("bulk deny: %d, want 202", resp.StatusCode)
 	}
-	resp = ghGet(t, "/api/v3/orgs/pat-bulk-org/personal-access-token-requests", appToken)
+	resp = ghGet(t, "/api/v3/orgs/"+orgLogin+"/personal-access-token-requests", appToken)
 	if remaining := decodeJSONArray(t, resp); len(remaining) != 0 {
 		t.Fatalf("bulk deny left requests: %v", remaining)
 	}
-	resp = ghGet(t, "/api/v3/orgs/pat-bulk-org/personal-access-tokens", appToken)
+	resp = ghGet(t, "/api/v3/orgs/"+orgLogin+"/personal-access-tokens", appToken)
 	if grants := decodeJSONArray(t, resp); len(grants) != 0 {
 		t.Fatalf("bulk deny created grants: %v", grants)
 	}
 
 	// Bulk approve, then bulk revoke.
 	c := seed("bulk-c")
-	resp = ghPost(t, "/api/v3/orgs/pat-bulk-org/personal-access-token-requests", appToken, map[string]interface{}{
+	resp = ghPost(t, "/api/v3/orgs/"+orgLogin+"/personal-access-token-requests", appToken, map[string]interface{}{
 		"pat_request_ids": []int{c},
 		"action":          "approve",
 	})
@@ -275,13 +284,13 @@ func TestOrgPATGrantRequests_BulkReviewAndBulkRevoke(t *testing.T) {
 	if resp.StatusCode != http.StatusAccepted {
 		t.Fatalf("bulk approve: %d, want 202", resp.StatusCode)
 	}
-	resp = ghGet(t, "/api/v3/orgs/pat-bulk-org/personal-access-tokens", appToken)
+	resp = ghGet(t, "/api/v3/orgs/"+orgLogin+"/personal-access-tokens", appToken)
 	grants := decodeJSONArray(t, resp)
 	if len(grants) != 1 {
 		t.Fatalf("bulk approve grants = %v, want 1", grants)
 	}
 	grantID := int(grants[0]["id"].(float64))
-	resp = ghPost(t, "/api/v3/orgs/pat-bulk-org/personal-access-tokens", appToken, map[string]interface{}{
+	resp = ghPost(t, "/api/v3/orgs/"+orgLogin+"/personal-access-tokens", appToken, map[string]interface{}{
 		"action":  "revoke",
 		"pat_ids": []int{grantID},
 	})
@@ -289,13 +298,13 @@ func TestOrgPATGrantRequests_BulkReviewAndBulkRevoke(t *testing.T) {
 	if resp.StatusCode != http.StatusAccepted {
 		t.Fatalf("bulk revoke: %d, want 202", resp.StatusCode)
 	}
-	resp = ghGet(t, "/api/v3/orgs/pat-bulk-org/personal-access-tokens", appToken)
+	resp = ghGet(t, "/api/v3/orgs/"+orgLogin+"/personal-access-tokens", appToken)
 	if remaining := decodeJSONArray(t, resp); len(remaining) != 0 {
 		t.Fatalf("bulk revoke left grants: %v", remaining)
 	}
 
 	// Validation: bad action, unknown request, unknown grant.
-	resp = ghPost(t, "/api/v3/orgs/pat-bulk-org/personal-access-token-requests", appToken, map[string]interface{}{
+	resp = ghPost(t, "/api/v3/orgs/"+orgLogin+"/personal-access-token-requests", appToken, map[string]interface{}{
 		"pat_request_ids": []int{1},
 		"action":          "escalate",
 	})
@@ -303,12 +312,12 @@ func TestOrgPATGrantRequests_BulkReviewAndBulkRevoke(t *testing.T) {
 	if resp.StatusCode != http.StatusUnprocessableEntity {
 		t.Fatalf("invalid bulk action: %d, want 422", resp.StatusCode)
 	}
-	resp = ghPost(t, "/api/v3/orgs/pat-bulk-org/personal-access-token-requests/999999", appToken, map[string]interface{}{"action": "approve"})
+	resp = ghPost(t, "/api/v3/orgs/"+orgLogin+"/personal-access-token-requests/999999", appToken, map[string]interface{}{"action": "approve"})
 	resp.Body.Close()
 	if resp.StatusCode != http.StatusNotFound {
 		t.Fatalf("review unknown request: %d, want 404", resp.StatusCode)
 	}
-	resp = ghPost(t, "/api/v3/orgs/pat-bulk-org/personal-access-tokens/999999", appToken, map[string]interface{}{"action": "revoke"})
+	resp = ghPost(t, "/api/v3/orgs/"+orgLogin+"/personal-access-tokens/999999", appToken, map[string]interface{}{"action": "revoke"})
 	resp.Body.Close()
 	if resp.StatusCode != http.StatusNotFound {
 		t.Fatalf("revoke unknown grant: %d, want 404", resp.StatusCode)

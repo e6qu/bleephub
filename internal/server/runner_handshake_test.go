@@ -372,10 +372,19 @@ func (h *handshakeRunner) messagePath() string {
 // pollForMessage takes the job waiting for this runner. It is only called
 // where one has been queued: an empty queue makes the listener's long poll
 // block for its full timeout, which is correct behaviour and a useless wait.
-func (h *handshakeRunner) pollForMessage() []byte {
+func (h *handshakeRunner) pollForMessage(messageType, bodyMarker string) []byte {
 	h.t.Helper()
-	return handshakeStep(h.t, "poll for messages", "GET", h.messagePath(),
+	payload := handshakeStep(h.t, "poll for messages", "GET", h.messagePath(),
 		"Bearer "+h.session, "", "", http.StatusOK)
+	var delivered TaskAgentMessage
+	if err := json.Unmarshal(payload, &delivered); err != nil {
+		h.t.Fatalf("decode polled message: %v; body=%s", err, payload)
+	}
+	if delivered.MessageType != messageType || !strings.Contains(delivered.Body, bodyMarker) {
+		h.t.Fatalf("polled foreign message type=%q body=%q, want type=%q body containing %q",
+			delivered.MessageType, delivered.Body, messageType, bodyMarker)
+	}
+	return payload
 }
 
 func (h *handshakeRunner) deleteSession() {
@@ -652,18 +661,21 @@ func TestEphemeralRunnerTeardownStaysAuthenticated(t *testing.T) {
 		LockedUntil: fixedTestTime.Add(time.Hour),
 	}
 	testServer.store.mu.Unlock()
-	testServer.queueJobMessage(&TaskAgentMessage{
+	queued := &TaskAgentMessage{
 		MessageID:   testServer.nextMessageID(),
 		MessageType: "PipelineAgentJobRequest",
 		Body:        message,
 		JobID:       jobID,
 		Labels:      []string{"self-hosted", runner.name},
-	})
-
-	delivered := runner.pollForMessage()
-	if !strings.Contains(string(delivered), "PipelineAgentJobRequest") {
-		t.Fatalf("ephemeral runner did not receive its job: %s", delivered)
 	}
+	// This suite intentionally shares one server. Put this test's explicitly
+	// targeted message first so an unrelated test's generic self-hosted job
+	// cannot be claimed and mistaken for this one after shuffled execution.
+	testServer.store.mu.Lock()
+	testServer.store.PendingMessages = append([]*TaskAgentMessage{queued}, testServer.store.PendingMessages...)
+	testServer.store.mu.Unlock()
+
+	runner.pollForMessage("PipelineAgentJobRequest", planID)
 
 	// The listener renews the job request while the worker runs.
 	requestPath := fmt.Sprintf("/_apis/v1/AgentRequest/1/%d", requestID)

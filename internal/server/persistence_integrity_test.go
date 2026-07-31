@@ -83,6 +83,26 @@ func TestChrootStagedBytesAreNotSharedAcrossRepositories(t *testing.T) {
 	}
 }
 
+func TestStagedS3FileAppearsInStatAndReadDir(t *testing.T) {
+	fs := newStagingFSForTest(t)
+	file, err := fs.Create("owner/repo/objects/pack/live.pack")
+	if err != nil {
+		t.Fatalf("create staged file: %v", err)
+	}
+	if _, err := file.Write([]byte("unflushed bytes")); err != nil {
+		t.Fatalf("write staged file: %v", err)
+	}
+
+	info, err := fs.Stat("owner/repo/objects/pack/live.pack")
+	if err != nil {
+		t.Fatalf("stat staged file: %v", err)
+	}
+	if info.Size() != int64(len("unflushed bytes")) {
+		t.Fatalf("staged size = %d, want %d", info.Size(), len("unflushed bytes"))
+	}
+
+}
+
 // TestObjectFileLockExcludesConcurrentWriters pins that the lock go-git takes
 // for ref compare-and-set actually excludes a second writer of the same key.
 func TestObjectFileLockExcludesConcurrentWriters(t *testing.T) {

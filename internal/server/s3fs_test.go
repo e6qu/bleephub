@@ -283,6 +283,33 @@ func readS3TestFile(t *testing.T, fs *s3FS, name string) []byte {
 	return data
 }
 
+func TestS3ReadDirIncludesUnflushedFiles(t *testing.T) {
+	fs := newS3FSForTest(t)
+	writeS3TestFile(t, fs, "owner/repo/objects/pack/committed.pack", []byte("committed"))
+	staged, err := fs.Create("owner/repo/objects/pack/live.pack")
+	if err != nil {
+		t.Fatalf("Create staged file: %v", err)
+	}
+	if _, err := staged.Write([]byte("still streaming")); err != nil {
+		t.Fatalf("Write staged file: %v", err)
+	}
+
+	entries, err := fs.ReadDir("owner/repo/objects/pack")
+	if err != nil {
+		t.Fatalf("ReadDir: %v", err)
+	}
+	got := map[string]int64{}
+	for _, entry := range entries {
+		got[entry.Name()] = entry.Size()
+	}
+	if got["committed.pack"] != int64(len("committed")) {
+		t.Fatalf("committed entry missing or wrong: %v", got)
+	}
+	if got["live.pack"] != int64(len("still streaming")) {
+		t.Fatalf("staged entry missing or wrong: %v", got)
+	}
+}
+
 func TestS3FileReadFullFileInChunks(t *testing.T) {
 	fs := newS3FSForTest(t)
 

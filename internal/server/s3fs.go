@@ -280,6 +280,18 @@ func (f *s3FS) activeFiles() *s3ActiveFiles {
 }
 
 func (f *s3FS) Stat(filename string) (os.FileInfo, error) {
+	if state := f.activeFile(filename); state != nil {
+		state.mu.Lock()
+		size := int64(len(state.data))
+		state.mu.Unlock()
+		return &s3FileInfo{
+			name:    path.Base(filename),
+			size:    size,
+			mode:    0o644,
+			modTime: time.Time{},
+		}, nil
+	}
+
 	key := f.key(filename)
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 	defer cancel()
@@ -329,7 +341,17 @@ func (f *s3FS) Rename(oldpath, newpath string) error {
 		Key:    aws.String(srcKey),
 	})
 	if err != nil {
-		return fmt.Errorf("s3 delete %s after copy: %w", srcKey, err)
+		// A rename that returns an error must leave the destination absent.
+		// Otherwise a caller retry observes two names and may treat the copy as
+		// a committed move. Report both failures if compensation also fails.
+		_, rollbackErr := f.client.DeleteObject(ctx, &s3.DeleteObjectInput{
+			Bucket: aws.String(f.bucket),
+			Key:    aws.String(dstKey),
+		})
+		if rollbackErr != nil {
+			return fmt.Errorf("s3 delete %s after copy: %w (rollback destination %s: %v)", srcKey, err, dstKey, rollbackErr)
+		}
+		return fmt.Errorf("s3 delete %s after copy (destination rolled back): %w", srcKey, err)
 	}
 
 	return nil
@@ -389,7 +411,7 @@ func (f *s3FS) ReadDir(dirname string) ([]os.FileInfo, error) {
 		continuation = resp.NextContinuationToken
 	}
 
-	var entries []os.FileInfo
+	entriesByName := map[string]os.FileInfo{}
 	baseLen := len(f.prefix)
 	if f.prefix != "" {
 		baseLen++
@@ -401,13 +423,14 @@ func (f *s3FS) ReadDir(dirname string) ([]os.FileInfo, error) {
 			continue
 		}
 		relKey := key[baseLen:]
-		entries = append(entries, &s3FileInfo{
+		info := &s3FileInfo{
 			name:    path.Base(relKey),
 			size:    aws.ToInt64(obj.Size),
 			mode:    0o644,
 			modTime: aws.ToTime(obj.LastModified),
 			isDir:   false,
-		})
+		}
+		entriesByName[info.name] = info
 	}
 
 	for _, cp := range commonPrefixes {
@@ -416,15 +439,45 @@ func (f *s3FS) ReadDir(dirname string) ([]os.FileInfo, error) {
 			continue
 		}
 		relKey := p[baseLen:]
-		entries = append(entries, &s3FileInfo{
+		info := &s3FileInfo{
 			name:    path.Base(relKey),
 			size:    0,
 			mode:    0o755 | os.ModeDir,
 			modTime: time.Time{},
 			isDir:   true,
-		})
+		}
+		entriesByName[info.name] = info
 	}
 
+	// S3 cannot list an object until its upload completes. Billy users,
+	// notably go-git, expect the filesystem namespace to include an open file,
+	// so merge the process-wide staging namespace into the remote listing.
+	active := f.activeFiles()
+	active.mu.Lock()
+	for key, state := range active.files {
+		if !strings.HasPrefix(key, prefix) {
+			continue
+		}
+		relative := strings.TrimPrefix(key, prefix)
+		if relative == "" {
+			continue
+		}
+		name, rest, _ := strings.Cut(relative, "/")
+		if rest != "" {
+			entriesByName[name] = &s3FileInfo{name: name, mode: 0o755 | os.ModeDir, isDir: true}
+			continue
+		}
+		state.mu.Lock()
+		size := int64(len(state.data))
+		state.mu.Unlock()
+		entriesByName[name] = &s3FileInfo{name: name, size: size, mode: 0o644}
+	}
+	active.mu.Unlock()
+
+	entries := make([]os.FileInfo, 0, len(entriesByName))
+	for _, entry := range entriesByName {
+		entries = append(entries, entry)
+	}
 	slices.SortFunc(entries, func(a, b os.FileInfo) int {
 		if a.IsDir() != b.IsDir() {
 			if a.IsDir() {
