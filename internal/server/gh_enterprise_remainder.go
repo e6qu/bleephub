@@ -121,10 +121,7 @@ func credentialAuthorizationJSON(record credentialAuthorizationRecord) map[strin
 		result["authorized_credential_title"] = record.UserKey.Title
 		return result
 	}
-	scopes := []string{}
-	for _, scope := range strings.Fields(strings.ReplaceAll(record.Token.Scopes, ",", " ")) {
-		scopes = append(scopes, scope)
-	}
+	scopes := append([]string(nil), strings.Fields(strings.ReplaceAll(record.Token.Scopes, ",", " "))...)
 	result["credential_type"] = "personal access token"
 	result["credential_authorized_at"] = record.Token.CreatedAt.UTC().Format("2006-01-02T15:04:05Z")
 	result["token_last_eight"] = tokenLastEight(record.Token, record.MapKey)

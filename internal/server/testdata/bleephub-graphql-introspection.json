@@ -2339,23 +2339,6 @@
         }
       }
     },
-    "PRMilestone": {
-      "kind": "OBJECT",
-      "fields": {
-        "description": {
-          "type": "String"
-        },
-        "dueOn": {
-          "type": "String"
-        },
-        "number": {
-          "type": "Int!"
-        },
-        "title": {
-          "type": "String!"
-        }
-      }
-    },
     "PRReactingUserConnection": {
       "kind": "OBJECT",
       "fields": {
@@ -2982,7 +2965,7 @@
           "type": "Actor"
         },
         "milestone": {
-          "type": "PRMilestone"
+          "type": "Milestone"
         },
         "number": {
           "type": "Int!"

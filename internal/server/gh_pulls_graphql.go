@@ -16,7 +16,7 @@ import (
 )
 
 // addPullRequestFieldsToSchema adds PR types, queries, and mutations to the schema.
-func (s *Server) addPullRequestFieldsToSchema(userType, issueType, repoType, mutationType, queryType *graphql.Object, nodeInterface *graphql.Interface) *graphql.Object {
+func (s *Server) addPullRequestFieldsToSchema(userType, issueType, milestoneType, repoType, mutationType, queryType *graphql.Object, nodeInterface *graphql.Interface) *graphql.Object {
 	dateTime := s.graphQLStringScalar("DateTime")
 	uri := s.graphQLStringScalar("URI")
 	gitObjectID := s.graphQLStringScalar("GitObjectID")
@@ -895,15 +895,7 @@ func (s *Server) addPullRequestFieldsToSchema(userType, issueType, repoType, mut
 			// resolved milestone map in pr["milestone"] (or nil when the
 			// PR has no milestone assigned).
 			"milestone": &graphql.Field{
-				Type: graphql.NewObject(graphql.ObjectConfig{
-					Name: "PRMilestone",
-					Fields: graphql.Fields{
-						"number":      &graphql.Field{Type: graphql.NewNonNull(graphql.Int)},
-						"title":       &graphql.Field{Type: graphql.NewNonNull(graphql.String)},
-						"description": &graphql.Field{Type: graphql.String},
-						"dueOn":       &graphql.Field{Type: graphql.String},
-					},
-				}),
+				Type: milestoneType,
 				Resolve: func(p graphql.ResolveParams) (interface{}, error) {
 					pr, ok := p.Source.(map[string]interface{})
 					if !ok {

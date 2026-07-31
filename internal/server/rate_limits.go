@@ -110,6 +110,14 @@ func apiRateIdentity(r *http.Request) string {
 		sum := sha256.Sum256([]byte(identity))
 		return fmt.Sprintf("auth:%x", sum)
 	}
+	// A browser session is an authenticated user credential even though its
+	// opaque HttpOnly cookie deliberately never becomes an Authorization
+	// header. Key it by the resolved principal, not by the cookie secret: this
+	// gives every browser session the authenticated budget and prevents a user
+	// from multiplying that budget by opening more sessions.
+	if user := ghUserFromContext(r.Context()); user != nil {
+		return fmt.Sprintf("user:%d", user.ID)
+	}
 	host := r.RemoteAddr
 	if parsed, _, err := net.SplitHostPort(host); err == nil {
 		host = parsed
@@ -127,7 +135,7 @@ func (s *Server) rateLimitSnapshot(r *http.Request, resource string, consume boo
 	}
 	// GitHub's unauthenticated core budget is IP-scoped and deliberately much
 	// smaller than an authenticated user's budget.
-	if resource == "core" && r.Header.Get("Authorization") == "" {
+	if resource == "core" && r.Header.Get("Authorization") == "" && ghUserFromContext(r.Context()) == nil {
 		limit = 60
 	}
 	key := apiRateIdentity(r) + "\x1f" + resource

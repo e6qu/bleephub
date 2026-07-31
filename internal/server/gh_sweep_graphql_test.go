@@ -47,6 +47,45 @@ func gqlData(t *testing.T, query string, variables map[string]interface{}) map[s
 	return d
 }
 
+func TestGHCLIIssueLookupAcceptsExclusiveStateEnums(t *testing.T) {
+	// gh v2.96 builds this exact polymorphic shape for `gh issue view`,
+	// `gh issue close`, and `gh issue reopen`. GitHub executes it even though
+	// Issue.state and PullRequest.state use different enum types.
+	query := `
+query IssueByNumber($owner: String!, $repo: String!, $number: Int!) {
+  repository(owner: $owner, name: $repo) {
+    issue: issueOrPullRequest(number: $number) {
+      __typename
+      ... on Issue { id number title state milestone { number title description dueOn } }
+      ... on PullRequest { id number title state milestone { number title description dueOn } }
+    }
+  }
+}`
+	_, validationErrors, err := graphqlPrepareDocument(testServer.graphqlSchema, query)
+	if err != nil {
+		t.Fatalf("prepare official gh issue lookup: %v", err)
+	}
+	if len(validationErrors) != 0 {
+		t.Fatalf("official gh issue lookup validation errors: %v", validationErrors)
+	}
+
+	// The exception must not disable the overlap rule generally. These two
+	// selections can execute on the same Issue and name different fields.
+	conflicting := `
+query($owner: String!, $repo: String!, $number: Int!) {
+  repository(owner: $owner, name: $repo) {
+    issue(number: $number) { value: state value: title }
+  }
+}`
+	_, validationErrors, err = graphqlPrepareDocument(testServer.graphqlSchema, conflicting)
+	if err != nil {
+		t.Fatalf("prepare genuine field conflict: %v", err)
+	}
+	if len(validationErrors) == 0 {
+		t.Fatal("genuine overlapping fields were accepted")
+	}
+}
+
 func TestRepoGraphQLURLUsesConfiguredExternalURL(t *testing.T) {
 	t.Setenv("BLEEPHUB_EXTERNAL_URL", "https://bleephub.example.test/")
 	repo := &Repo{FullName: "octo/example", Name: "example"}

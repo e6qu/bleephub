@@ -1,4 +1,4 @@
-import { test, expect, type Page } from "@playwright/test";
+import { test, expect, type Page } from "./fixtures.js";
 import fs from "fs";
 import path from "path";
 import { randomUUID } from "crypto";
@@ -301,7 +301,7 @@ test.describe("User menu and packages", () => {
       const requestURL = new URL(response.url());
       return requestURL.pathname.endsWith("/user/packages") && requestURL.searchParams.get("package_type") === "npm";
     });
-    await page.getByRole("button", { name: "npm" }).click();
+    await page.getByRole("tab", { name: "npm" }).click();
     expect((await npmResponse).status()).toBe(200);
     await expect(page.getByText("No packages yet.")).toBeVisible();
   });
@@ -666,7 +666,7 @@ test.describe("Apps page", () => {
     await page.goto("/ui/apps");
     await expect(page.getByRole("heading", { level: 1 }).filter({ hasText: "Apps" })).toBeVisible();
     // Tabs: GitHub Apps, Installations, OAuth Apps
-    await expect(page.getByRole("button", { name: "GitHub Apps" })).toBeVisible();
+    await expect(page.getByRole("tab", { name: "GitHub Apps" })).toBeVisible();
     await shot(page, "21-apps-page");
   });
 
@@ -683,7 +683,7 @@ test.describe("Apps page", () => {
 
   test("switches to OAuth Apps tab", async ({ page }) => {
     await page.goto("/ui/apps");
-    await page.getByRole("button", { name: "OAuth Apps" }).click();
+    await page.getByRole("tab", { name: "OAuth Apps" }).click();
     await shot(page, "23-oauth-apps-tab");
   });
 });
@@ -737,7 +737,7 @@ test.describe("Actions UI", () => {
     // contains the word "runs", so target the button role explicitly).
     await page.goto("/ui/workflows");
     await page.waitForLoadState("networkidle");
-    await page.getByRole("button", { name: "Runs" }).click();
+    await page.getByRole("tab", { name: "Runs" }).click();
     await expect(page.getByText("CI Pipeline").first()).toBeVisible();
     await shot(page, "29-actions-runs");
 

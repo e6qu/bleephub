@@ -404,7 +404,9 @@ func githubRunnerContext(s *Server, wf *Workflow, wfJob *WorkflowJob, serverURL,
 	m := s.githubContextMap(wf)
 	m["server_url"] = serverURL
 	m["api_url"] = serverURL
-	m["job"] = wfJob.Key
+	if wfJob != nil {
+		m["job"] = wfJob.Key
+	}
 	m["action"] = "__run"
 	m["workspace"] = "/github/workspace"
 	m["token"] = jobToken

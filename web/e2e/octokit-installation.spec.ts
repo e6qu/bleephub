@@ -1,4 +1,4 @@
-import { expect, test } from "@playwright/test";
+import { expect, test } from "./fixtures.js";
 import { createAppAuth } from "@octokit/auth-app";
 import { Octokit } from "octokit";
 import { randomUUID } from "crypto";

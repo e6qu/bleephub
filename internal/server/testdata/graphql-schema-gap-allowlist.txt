@@ -21,7 +21,6 @@ field-type	PullRequest.closingIssuesReferences	ClosingIssuesReferencesConnection
 field-type	PullRequest.comments	PRCommentConnection	IssueCommentConnection!
 field-type	PullRequest.labels	PRLabelConnection	LabelConnection
 field-type	PullRequest.latestReviews	LatestReviewConnection	PullRequestReviewConnection
-field-type	PullRequest.milestone	PRMilestone	Milestone
 field-type	PullRequest.reactionGroups	[PRReactionGroup!]	[ReactionGroup!]
 field-type	PullRequestReview.reactionGroups	[PRReactionGroup]	[ReactionGroup!]
 field-type	ReactionGroup.content	String!	ReactionContent!
@@ -59,7 +58,6 @@ type	PRComment	OBJECT is absent from GitHub
 type	PRCommentConnection	OBJECT is absent from GitHub
 type	PRLabel	OBJECT is absent from GitHub
 type	PRLabelConnection	OBJECT is absent from GitHub
-type	PRMilestone	OBJECT is absent from GitHub
 type	PRReactingUserConnection	OBJECT is absent from GitHub
 type	PRReactionGroup	OBJECT is absent from GitHub
 type	PRUserConnection	OBJECT is absent from GitHub

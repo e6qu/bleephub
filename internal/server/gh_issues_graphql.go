@@ -11,7 +11,7 @@ import (
 )
 
 // addIssueFieldsToSchema adds Issue types, queries, and mutations to the schema.
-func (s *Server) addIssueFieldsToSchema(userType, repoType, mutationType, queryType *graphql.Object, nodeInterface *graphql.Interface) *graphql.Object {
+func (s *Server) addIssueFieldsToSchema(userType, repoType, mutationType, queryType *graphql.Object, nodeInterface *graphql.Interface) (*graphql.Object, *graphql.Object) {
 	dateTime := s.graphQLStringScalar("DateTime")
 	uri := s.graphQLStringScalar("URI")
 	commentAuthorAssociationEnum := s.graphQLEnum(
@@ -1407,7 +1407,7 @@ func (s *Server) addIssueFieldsToSchema(userType, repoType, mutationType, queryT
 		},
 	})
 
-	return issueType
+	return issueType, issueMilestoneType
 }
 
 // --- GraphQL converter helpers ---

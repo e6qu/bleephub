@@ -13,6 +13,7 @@ import (
 	"github.com/graphql-go/graphql"
 	"github.com/graphql-go/graphql/gqlerrors"
 	"github.com/graphql-go/graphql/language/ast"
+	"github.com/graphql-go/graphql/language/location"
 	"github.com/graphql-go/graphql/language/parser"
 	"github.com/graphql-go/graphql/language/source"
 )
@@ -211,11 +212,11 @@ func (s *Server) initGraphQLSchema() {
 	repositoryOwnerTypes["Organization"] = orgType
 
 	// Add issue types, queries, and mutations
-	issueType := s.addIssueFieldsToSchema(userType, repoType, mutationType, queryType, nodeInterface)
+	issueType, milestoneType := s.addIssueFieldsToSchema(userType, repoType, mutationType, queryType, nodeInterface)
 	nodeTypes["Issue"] = issueType
 
 	// Add pull request types, queries, and mutations
-	pullRequestType := s.addPullRequestFieldsToSchema(userType, issueType, repoType, mutationType, queryType, nodeInterface)
+	pullRequestType := s.addPullRequestFieldsToSchema(userType, issueType, milestoneType, repoType, mutationType, queryType, nodeInterface)
 	nodeTypes["PullRequest"] = pullRequestType
 	s.addNodeFieldsToSchema(queryType, nodeInterface)
 
@@ -415,9 +416,137 @@ func graphqlPrepareDocument(schema graphql.Schema, query string) (document *ast.
 	}
 	validationResult := graphql.ValidateDocument(&schema, document, nil)
 	if !validationResult.IsValid {
-		return document, validationResult.Errors, nil
+		return document, githubCompatibleValidationErrors(schema, document, validationResult.Errors), nil
 	}
 	return document, nil, nil
+}
+
+// githubCompatibleValidationErrors removes the one validation result where
+// GitHub's production GraphQL service is deliberately more permissive than
+// graphql-go: fields with the same response name and different leaf enum types
+// are accepted when they live below mutually exclusive concrete-object
+// fragments.
+//
+// The official gh client depends on this behavior. Its issue lookup selects
+// `state: IssueState!` below `... on Issue` and `state: PullRequestState!`
+// below `... on PullRequest` without aliases. GitHub accepts and executes that
+// query because only one concrete branch can exist; graphql-go reports an
+// OverlappingFieldsCanBeMerged error before execution.
+//
+// This is intentionally a narrow post-validation exception, not removal of the
+// overlap rule. Different fields, arguments, nullability, or selections whose
+// concrete branches can coincide keep their original validation errors.
+func githubCompatibleValidationErrors(schema graphql.Schema, document *ast.Document, errors []gqlerrors.FormattedError) []gqlerrors.FormattedError {
+	if len(errors) == 0 {
+		return nil
+	}
+	contexts := concreteFieldContexts(schema, document)
+	filtered := make([]gqlerrors.FormattedError, 0, len(errors))
+	for _, validationError := range errors {
+		if !isExclusiveLeafTypeConflict(validationError, contexts) {
+			filtered = append(filtered, validationError)
+		}
+	}
+	return filtered
+}
+
+type graphqlSourcePosition struct {
+	line   int
+	column int
+}
+
+func isExclusiveLeafTypeConflict(validationError gqlerrors.FormattedError, contexts map[graphqlSourcePosition]map[string]struct{}) bool {
+	if len(validationError.Locations) != 2 ||
+		!strings.HasPrefix(validationError.Message, `Fields "`) ||
+		!strings.Contains(validationError.Message, "conflict because they return conflicting types ") {
+		return false
+	}
+	left := contexts[graphqlSourcePosition{
+		line: validationError.Locations[0].Line, column: validationError.Locations[0].Column,
+	}]
+	right := contexts[graphqlSourcePosition{
+		line: validationError.Locations[1].Line, column: validationError.Locations[1].Column,
+	}]
+	if len(left) == 0 || len(right) == 0 {
+		return false
+	}
+	for leftType := range left {
+		for rightType := range right {
+			if leftType == rightType {
+				return false
+			}
+		}
+	}
+	return true
+}
+
+// concreteFieldContexts maps each selected field to the concrete object type
+// condition that makes it reachable. A location may have multiple contexts
+// when a named fragment is spread more than once; the validation exception is
+// safe only when every left/right pairing is disjoint.
+func concreteFieldContexts(schema graphql.Schema, document *ast.Document) map[graphqlSourcePosition]map[string]struct{} {
+	fragments := map[string]*ast.FragmentDefinition{}
+	for _, definition := range document.Definitions {
+		if fragment, ok := definition.(*ast.FragmentDefinition); ok && fragment.Name != nil {
+			fragments[fragment.Name.Value] = fragment
+		}
+	}
+
+	result := map[graphqlSourcePosition]map[string]struct{}{}
+	var walk func(*ast.SelectionSet, string, map[string]bool)
+	walk = func(selectionSet *ast.SelectionSet, concrete string, fragmentStack map[string]bool) {
+		if selectionSet == nil {
+			return
+		}
+		for _, selection := range selectionSet.Selections {
+			switch node := selection.(type) {
+			case *ast.Field:
+				if concrete != "" && node.Loc != nil {
+					position := location.GetLocation(node.Loc.Source, node.Loc.Start)
+					key := graphqlSourcePosition{line: position.Line, column: position.Column}
+					if result[key] == nil {
+						result[key] = map[string]struct{}{}
+					}
+					result[key][concrete] = struct{}{}
+				}
+				walk(node.SelectionSet, concrete, fragmentStack)
+			case *ast.InlineFragment:
+				next := concreteObjectCondition(schema, node.TypeCondition, concrete)
+				walk(node.SelectionSet, next, fragmentStack)
+			case *ast.FragmentSpread:
+				if node.Name == nil || fragmentStack[node.Name.Value] {
+					continue
+				}
+				fragment := fragments[node.Name.Value]
+				if fragment == nil {
+					continue
+				}
+				nextStack := make(map[string]bool, len(fragmentStack)+1)
+				for name, active := range fragmentStack {
+					nextStack[name] = active
+				}
+				nextStack[node.Name.Value] = true
+				next := concreteObjectCondition(schema, fragment.TypeCondition, concrete)
+				walk(fragment.SelectionSet, next, nextStack)
+			}
+		}
+	}
+	for _, definition := range document.Definitions {
+		if operation, ok := definition.(*ast.OperationDefinition); ok {
+			walk(operation.SelectionSet, "", map[string]bool{})
+		}
+	}
+	return result
+}
+
+func concreteObjectCondition(schema graphql.Schema, condition *ast.Named, fallback string) string {
+	if condition == nil || condition.Name == nil {
+		return fallback
+	}
+	if _, ok := schema.Type(condition.Name.Value).(*graphql.Object); ok {
+		return condition.Name.Value
+	}
+	return fallback
 }
 
 func graphqlCheckDocumentLimits(document *ast.Document, variables map[string]interface{}, maxDepth, maxFields int) error {

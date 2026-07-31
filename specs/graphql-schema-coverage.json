@@ -1,11 +1,11 @@
 {
   "official_types": 1806,
-  "bleephub_types": 272,
+  "bleephub_types": 271,
   "shared_types": 231,
   "official_fields": 8341,
   "implemented_fields": 844,
-  "signature_exact_fields": 811,
-  "compatibility_gap_count": 79,
+  "signature_exact_fields": 812,
+  "compatibility_gap_count": 77,
   "missing_types": [
     "AbortQueuedMigrationsInput",
     "AbortQueuedMigrationsPayload",

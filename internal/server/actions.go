@@ -65,9 +65,7 @@ func (ac *ActionCache) Put(key string, entry *ActionCacheEntry) {
 	for len(ac.entries) > maxActionCacheEntries {
 		oldest := ac.order[0]
 		ac.order = ac.order[1:]
-		if _, exists := ac.entries[oldest]; exists {
-			delete(ac.entries, oldest)
-		}
+		delete(ac.entries, oldest)
 	}
 }
 
