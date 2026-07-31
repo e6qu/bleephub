@@ -413,7 +413,7 @@ func (s *Server) handleListAuthUserPackageVersions(w http.ResponseWriter, r *htt
 	if !ok {
 		return
 	}
-	writeJSON(w, http.StatusOK, s.listVersionsJSON(p, r))
+	writeJSON(w, http.StatusOK, paginateAndLink(w, r, s.listVersionsJSON(p, r)))
 }
 
 func (s *Server) resolveAuthUserPackageVersion(w http.ResponseWriter, r *http.Request, user *User) (*Package, *PackageVersion, bool) {
@@ -668,7 +668,7 @@ func (s *Server) handleListOrgPackageVersions(w http.ResponseWriter, r *http.Req
 	if !ok || !s.canViewPackage(r.Context(), user, p) {
 		return
 	}
-	writeJSON(w, http.StatusOK, s.listVersionsJSON(p, r))
+	writeJSON(w, http.StatusOK, paginateAndLink(w, r, s.listVersionsJSON(p, r)))
 }
 
 func (s *Server) handleGetOrgPackageVersion(w http.ResponseWriter, r *http.Request) {

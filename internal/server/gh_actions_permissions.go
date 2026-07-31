@@ -551,9 +551,10 @@ func (s *Server) handleListOrgSelectedRepos(w http.ResponseWriter, r *http.Reque
 			repos = append(repos, repoToJSON(repo, s.store, base))
 		}
 	}
+	paged := paginateAndLink(w, r, repos)
 	writeJSON(w, http.StatusOK, map[string]any{
 		"total_count":  len(repos),
-		"repositories": repos,
+		"repositories": paged,
 	})
 }
 
@@ -794,9 +795,10 @@ func (s *Server) handleListOrgSelfHostedRunnerRepos(w http.ResponseWriter, r *ht
 			repos = append(repos, repoToJSON(repo, s.store, base))
 		}
 	}
+	paged := paginateAndLink(w, r, repos)
 	writeJSON(w, http.StatusOK, map[string]any{
 		"total_count":  len(repos),
-		"repositories": repos,
+		"repositories": paged,
 	})
 }
 

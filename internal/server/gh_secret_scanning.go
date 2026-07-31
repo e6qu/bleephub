@@ -146,7 +146,7 @@ func (s *Server) handleListSecretScanningAlertLocations(w http.ResponseWriter, r
 	for i, loc := range a.Locations {
 		out[i] = secretScanningLocationToJSON(loc)
 	}
-	writeJSON(w, http.StatusOK, out)
+	writeJSON(w, http.StatusOK, paginateAndLink(w, r, out))
 }
 
 func (s *Server) handleListSecretScanningOrgAlerts(w http.ResponseWriter, r *http.Request) {

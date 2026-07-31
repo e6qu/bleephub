@@ -2,9 +2,11 @@ package bleephub
 
 import (
 	"bytes"
+	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
+	"strings"
 	"testing"
 )
 
@@ -201,6 +203,55 @@ func TestSecretsListAndCaseInsensitiveGet(t *testing.T) {
 	}
 }
 
+func TestSecretsListPagination(t *testing.T) {
+	s := newTestServer()
+	s.registerRoutes()
+	admin := s.store.LookupUserByLogin("admin")
+	repo := s.store.CreateRepo(admin, "sec-pg", "", false)
+	if repo == nil {
+		t.Fatal("create repo failed")
+	}
+	base := "/api/v3/repos/" + repo.FullName + "/actions/secrets"
+	putPaginationSealedSecret(t, s, base+"/AAA_FIRST", "v", http.StatusCreated)
+	putPaginationSealedSecret(t, s, base+"/BBB_SECOND", "v", http.StatusCreated)
+
+	resp := tokenRequest(s, http.MethodGet, base+"?per_page=1", defaultToken)
+	if resp.Code != http.StatusOK {
+		t.Fatalf("page 1: %d %s", resp.Code, resp.Body.String())
+	}
+	link := resp.Header().Get("Link")
+	var list map[string]interface{}
+	if err := json.Unmarshal(resp.Body.Bytes(), &list); err != nil {
+		t.Fatalf("decode page 1: %v", err)
+	}
+	if int(list["total_count"].(float64)) != 2 {
+		t.Fatalf("total_count = %v, want 2", list["total_count"])
+	}
+	page1 := list["secrets"].([]interface{})
+	if len(page1) != 1 || page1[0].(map[string]interface{})["name"] != "AAA_FIRST" {
+		t.Fatalf("page 1 = %v, want [AAA_FIRST]", page1)
+	}
+	if !strings.Contains(link, `rel="next"`) {
+		t.Fatalf("Link = %q, want rel=next", link)
+	}
+
+	resp = tokenRequest(s, http.MethodGet, base+"?per_page=1&page=2", defaultToken)
+	if resp.Code != http.StatusOK {
+		t.Fatalf("page 2: %d %s", resp.Code, resp.Body.String())
+	}
+	list = nil
+	if err := json.Unmarshal(resp.Body.Bytes(), &list); err != nil {
+		t.Fatalf("decode page 2: %v", err)
+	}
+	if int(list["total_count"].(float64)) != 2 {
+		t.Fatalf("page 2 total_count = %v, want 2", list["total_count"])
+	}
+	page2 := list["secrets"].([]interface{})
+	if len(page2) != 1 || page2[0].(map[string]interface{})["name"] != "BBB_SECOND" {
+		t.Fatalf("page 2 = %v, want [BBB_SECOND]", page2)
+	}
+}
+
 func TestSecretsValueNotExposed(t *testing.T) {
 	repo := seedTestRepo(t, "sec-hidden", false)
 	path := "/api/v3/repos/" + repo.FullName + "/actions/secrets/HIDDEN_VAL"
@@ -338,6 +389,127 @@ func TestOrgSecretsLifecycle(t *testing.T) {
 	mustStatus(t, ghDelete(t, base+"/ORG_ALL", defaultToken), 404, "delete again")
 }
 
+func TestOrgSecretsListPagination(t *testing.T) {
+	s := newTestServer()
+	s.registerRoutes()
+	admin := s.store.LookupUserByLogin("admin")
+	org := s.store.CreateOrg(admin, "secorg-pg", "secorg-pg", "")
+	if org == nil {
+		t.Fatal("create org failed")
+	}
+	base := "/api/v3/orgs/" + org.Login + "/actions/secrets"
+
+	putOrgPaginationSecret := func(name string) {
+		t.Helper()
+		enc, keyID, err := s.store.SealSecretValue("v")
+		if err != nil {
+			t.Fatalf("seal: %v", err)
+		}
+		w := pagedJSONRequest(t, s, http.MethodPut, base+"/"+name, defaultToken, map[string]interface{}{
+			"encrypted_value": enc, "key_id": keyID, "visibility": "all",
+		})
+		if w.Code != http.StatusCreated {
+			t.Fatalf("create %s: %d %s, want 201", name, w.Code, w.Body.String())
+		}
+	}
+	putOrgPaginationSecret("AAA_FIRST")
+	putOrgPaginationSecret("BBB_SECOND")
+
+	resp := tokenRequest(s, http.MethodGet, base+"?per_page=1", defaultToken)
+	if resp.Code != http.StatusOK {
+		t.Fatalf("page 1: %d %s", resp.Code, resp.Body.String())
+	}
+	link := resp.Header().Get("Link")
+	var list map[string]interface{}
+	if err := json.Unmarshal(resp.Body.Bytes(), &list); err != nil {
+		t.Fatalf("decode page 1: %v", err)
+	}
+	if int(list["total_count"].(float64)) != 2 {
+		t.Fatalf("total_count = %v, want 2", list["total_count"])
+	}
+	page1 := list["secrets"].([]interface{})
+	if len(page1) != 1 || page1[0].(map[string]interface{})["name"] != "AAA_FIRST" {
+		t.Fatalf("page 1 = %v, want [AAA_FIRST]", page1)
+	}
+	if !strings.Contains(link, `rel="next"`) {
+		t.Fatalf("Link = %q, want rel=next", link)
+	}
+
+	resp = tokenRequest(s, http.MethodGet, base+"?per_page=1&page=2", defaultToken)
+	if resp.Code != http.StatusOK {
+		t.Fatalf("page 2: %d %s", resp.Code, resp.Body.String())
+	}
+	list = nil
+	if err := json.Unmarshal(resp.Body.Bytes(), &list); err != nil {
+		t.Fatalf("decode page 2: %v", err)
+	}
+	page2 := list["secrets"].([]interface{})
+	if len(page2) != 1 || page2[0].(map[string]interface{})["name"] != "BBB_SECOND" {
+		t.Fatalf("page 2 = %v, want [BBB_SECOND]", page2)
+	}
+}
+
+func TestOrgSecretReposListPagination(t *testing.T) {
+	s := newTestServer()
+	s.registerRoutes()
+	admin := s.store.LookupUserByLogin("admin")
+	org := s.store.CreateOrg(admin, "secorg-repo-pg", "secorg-repo-pg", "")
+	if org == nil {
+		t.Fatal("create org failed")
+	}
+	repo1 := s.store.CreateOrgRepo(org, admin, "pg-one", "", false)
+	repo2 := s.store.CreateOrgRepo(org, admin, "pg-two", "", false)
+	if repo1 == nil || repo2 == nil {
+		t.Fatal("create org repos failed")
+	}
+	base := "/api/v3/orgs/" + org.Login + "/actions/secrets"
+
+	enc, keyID, err := s.store.SealSecretValue("v")
+	if err != nil {
+		t.Fatalf("seal: %v", err)
+	}
+	w := pagedJSONRequest(t, s, http.MethodPut, base+"/PG_SEL", defaultToken, map[string]interface{}{
+		"encrypted_value": enc, "key_id": keyID, "visibility": "selected",
+		"selected_repository_ids": []int{repo1.ID, repo2.ID},
+	})
+	if w.Code != http.StatusCreated {
+		t.Fatalf("create selected: %d %s, want 201", w.Code, w.Body.String())
+	}
+
+	resp := tokenRequest(s, http.MethodGet, base+"/PG_SEL/repositories?per_page=1", defaultToken)
+	if resp.Code != http.StatusOK {
+		t.Fatalf("page 1: %d %s", resp.Code, resp.Body.String())
+	}
+	link := resp.Header().Get("Link")
+	var list map[string]interface{}
+	if err := json.Unmarshal(resp.Body.Bytes(), &list); err != nil {
+		t.Fatalf("decode page 1: %v", err)
+	}
+	if int(list["total_count"].(float64)) != 2 {
+		t.Fatalf("total_count = %v, want 2", list["total_count"])
+	}
+	page1 := list["repositories"].([]interface{})
+	if len(page1) != 1 || int(page1[0].(map[string]interface{})["id"].(float64)) != repo1.ID {
+		t.Fatalf("page 1 = %v, want [%d]", page1, repo1.ID)
+	}
+	if !strings.Contains(link, `rel="next"`) {
+		t.Fatalf("Link = %q, want rel=next", link)
+	}
+
+	resp = tokenRequest(s, http.MethodGet, base+"/PG_SEL/repositories?per_page=1&page=2", defaultToken)
+	if resp.Code != http.StatusOK {
+		t.Fatalf("page 2: %d %s", resp.Code, resp.Body.String())
+	}
+	list = nil
+	if err := json.Unmarshal(resp.Body.Bytes(), &list); err != nil {
+		t.Fatalf("decode page 2: %v", err)
+	}
+	page2 := list["repositories"].([]interface{})
+	if len(page2) != 1 || int(page2[0].(map[string]interface{})["id"].(float64)) != repo2.ID {
+		t.Fatalf("page 2 = %v, want [%d]", page2, repo2.ID)
+	}
+}
+
 // --- environment secrets ---
 
 func TestEnvSecretsMissingEnv404(t *testing.T) {
@@ -385,6 +557,54 @@ func TestEnvSecretsLifecycle(t *testing.T) {
 
 	mustStatus(t, ghDelete(t, base+"/ENV_ONLY", defaultToken), 204, "delete")
 	mustStatus(t, ghDelete(t, base+"/ENV_ONLY", defaultToken), 404, "delete again")
+}
+
+func TestEnvSecretsListPagination(t *testing.T) {
+	s := newTestServer()
+	s.registerRoutes()
+	admin := s.store.LookupUserByLogin("admin")
+	repo := s.store.CreateRepo(admin, "env-pg", "", false)
+	if repo == nil {
+		t.Fatal("create repo failed")
+	}
+	s.store.Deployments.UpsertEnvironment(repo.ID, "staging")
+	base := "/api/v3/repos/" + repo.FullName + "/environments/staging/secrets"
+
+	putPaginationSealedSecret(t, s, base+"/AAA_FIRST", "v", http.StatusCreated)
+	putPaginationSealedSecret(t, s, base+"/BBB_SECOND", "v", http.StatusCreated)
+
+	resp := tokenRequest(s, http.MethodGet, base+"?per_page=1", defaultToken)
+	if resp.Code != http.StatusOK {
+		t.Fatalf("page 1: %d %s", resp.Code, resp.Body.String())
+	}
+	link := resp.Header().Get("Link")
+	var list map[string]interface{}
+	if err := json.Unmarshal(resp.Body.Bytes(), &list); err != nil {
+		t.Fatalf("decode page 1: %v", err)
+	}
+	if int(list["total_count"].(float64)) != 2 {
+		t.Fatalf("total_count = %v, want 2", list["total_count"])
+	}
+	page1 := list["secrets"].([]interface{})
+	if len(page1) != 1 || page1[0].(map[string]interface{})["name"] != "AAA_FIRST" {
+		t.Fatalf("page 1 = %v, want [AAA_FIRST]", page1)
+	}
+	if !strings.Contains(link, `rel="next"`) {
+		t.Fatalf("Link = %q, want rel=next", link)
+	}
+
+	resp = tokenRequest(s, http.MethodGet, base+"?per_page=1&page=2", defaultToken)
+	if resp.Code != http.StatusOK {
+		t.Fatalf("page 2: %d %s", resp.Code, resp.Body.String())
+	}
+	list = nil
+	if err := json.Unmarshal(resp.Body.Bytes(), &list); err != nil {
+		t.Fatalf("decode page 2: %v", err)
+	}
+	page2 := list["secrets"].([]interface{})
+	if len(page2) != 1 || page2[0].(map[string]interface{})["name"] != "BBB_SECOND" {
+		t.Fatalf("page 2 = %v, want [BBB_SECOND]", page2)
+	}
 }
 
 // --- repo-visible organization secrets ---

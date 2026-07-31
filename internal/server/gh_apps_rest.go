@@ -404,7 +404,7 @@ func (s *Server) handleListAppInstallations(w http.ResponseWriter, r *http.Reque
 	for _, inst := range installations {
 		result = append(result, installationToJSON(inst))
 	}
-	writeJSON(w, http.StatusOK, result)
+	writeJSON(w, http.StatusOK, paginateAndLink(w, r, result))
 }
 
 func (s *Server) handleGetAppInstallation(w http.ResponseWriter, r *http.Request) {
@@ -1226,5 +1226,5 @@ func (s *Server) handleListAppInstallationRequests(w http.ResponseWriter, r *htt
 		writeGHError(w, http.StatusUnauthorized, "A JSON web token could not be decoded")
 		return
 	}
-	writeJSON(w, http.StatusOK, []map[string]interface{}{})
+	writeJSON(w, http.StatusOK, paginateAndLink(w, r, []map[string]interface{}{}))
 }

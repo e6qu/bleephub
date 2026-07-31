@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 )
 
@@ -23,6 +24,52 @@ func do(s *Server, method, path string, body []byte) *httptest.ResponseRecorder 
 	w := httptest.NewRecorder()
 	s.requestHandler().ServeHTTP(w, req)
 	return w
+}
+
+func TestEnvironments_Pagination(t *testing.T) {
+	s := newTestServer()
+	s.store.SeedDefaultUser()
+	s.registerGHDeploymentsRoutes()
+
+	user := s.store.UsersByLogin["admin"]
+	_ = s.store.CreateRepo(user, "env-page-repo", "", false)
+
+	for _, name := range []string{"staging", "production"} {
+		w := do(s, "PUT", "/api/v3/repos/admin/env-page-repo/environments/"+name, []byte("{}"))
+		if w.Code != http.StatusOK {
+			t.Fatalf("put env %s: %d", name, w.Code)
+		}
+	}
+
+	w := do(s, "GET", "/api/v3/repos/admin/env-page-repo/environments?per_page=1", nil)
+	var page1 map[string]any
+	_ = json.Unmarshal(w.Body.Bytes(), &page1)
+	if page1["total_count"].(float64) != 2 {
+		t.Fatalf("page 1 total_count = %v, want 2", page1["total_count"])
+	}
+	envs1, _ := page1["environments"].([]any)
+	if len(envs1) != 1 {
+		t.Fatalf("page 1 envs = %d, want 1", len(envs1))
+	}
+	if link := w.Header().Get("Link"); !strings.Contains(link, `rel="next"`) {
+		t.Fatalf("page 1 Link = %q, want rel=next", link)
+	}
+
+	w = do(s, "GET", "/api/v3/repos/admin/env-page-repo/environments?per_page=1&page=2", nil)
+	var page2 map[string]any
+	_ = json.Unmarshal(w.Body.Bytes(), &page2)
+	if page2["total_count"].(float64) != 2 {
+		t.Fatalf("page 2 total_count = %v, want 2", page2["total_count"])
+	}
+	envs2, _ := page2["environments"].([]any)
+	if len(envs2) != 1 {
+		t.Fatalf("page 2 envs = %d, want 1", len(envs2))
+	}
+	name1 := envs1[0].(map[string]any)["name"]
+	name2 := envs2[0].(map[string]any)["name"]
+	if name1 == name2 {
+		t.Fatalf("page 1 and page 2 returned the same environment: %v", name1)
+	}
 }
 
 func TestDeployments_Lifecycle(t *testing.T) {

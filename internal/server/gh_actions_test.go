@@ -1168,6 +1168,92 @@ func TestActionsPermissions_Org_SelectedRepos(t *testing.T) {
 	}
 }
 
+func TestActionsPermissions_Org_SelectedReposPagination(t *testing.T) {
+	org := createTestOrg(t)
+	repoIDs := make([]int, 0, 2)
+	for i := 0; i < 2; i++ {
+		repoResp := ghGet(t, "/api/v3/repos/"+createTestRepo(t), defaultToken)
+		repoData := decodeJSONWithStatus(t, repoResp, 200)
+		repoIDs = append(repoIDs, int(repoData["id"].(float64)))
+	}
+
+	setResp := ghPut(t, "/api/v3/orgs/"+org+"/actions/permissions/repositories", defaultToken, map[string]interface{}{
+		"selected_repository_ids": repoIDs,
+	})
+	requireStatus(t, setResp, 204)
+
+	resp := ghGet(t, "/api/v3/orgs/"+org+"/actions/permissions/repositories?per_page=1", defaultToken)
+	link := resp.Header.Get("Link")
+	page1 := decodeJSONWithStatus(t, resp, 200)
+	repos1, _ := page1["repositories"].([]interface{})
+	if int(page1["total_count"].(float64)) != 2 {
+		t.Fatalf("page 1 total_count = %v, want 2", page1["total_count"])
+	}
+	if len(repos1) != 1 {
+		t.Fatalf("page 1 repos = %d, want 1", len(repos1))
+	}
+	if !strings.Contains(link, `rel="next"`) {
+		t.Fatalf("page 1 Link = %q, want rel=next", link)
+	}
+
+	page2 := decodeJSONWithStatus(t, ghGet(t, "/api/v3/orgs/"+org+"/actions/permissions/repositories?per_page=1&page=2", defaultToken), 200)
+	repos2, _ := page2["repositories"].([]interface{})
+	if int(page2["total_count"].(float64)) != 2 {
+		t.Fatalf("page 2 total_count = %v, want 2", page2["total_count"])
+	}
+	if len(repos2) != 1 {
+		t.Fatalf("page 2 repos = %d, want 1", len(repos2))
+	}
+	id1 := int(repos1[0].(map[string]interface{})["id"].(float64))
+	id2 := int(repos2[0].(map[string]interface{})["id"].(float64))
+	if id1 == id2 {
+		t.Fatalf("page 1 and page 2 returned the same repository: %d", id1)
+	}
+}
+
+func TestActionsPermissions_Org_SelfHostedRunnerReposPagination(t *testing.T) {
+	org := createTestOrg(t)
+	repoIDs := make([]int, 0, 2)
+	for i := 0; i < 2; i++ {
+		repoResp := ghGet(t, "/api/v3/repos/"+createTestRepo(t), defaultToken)
+		repoData := decodeJSONWithStatus(t, repoResp, 200)
+		repoIDs = append(repoIDs, int(repoData["id"].(float64)))
+	}
+
+	setResp := ghPut(t, "/api/v3/orgs/"+org+"/actions/permissions/self-hosted-runners/repositories", defaultToken, map[string]interface{}{
+		"selected_repository_ids": repoIDs,
+	})
+	requireStatus(t, setResp, 204)
+
+	resp := ghGet(t, "/api/v3/orgs/"+org+"/actions/permissions/self-hosted-runners/repositories?per_page=1", defaultToken)
+	link := resp.Header.Get("Link")
+	page1 := decodeJSONWithStatus(t, resp, 200)
+	repos1, _ := page1["repositories"].([]interface{})
+	if int(page1["total_count"].(float64)) != 2 {
+		t.Fatalf("page 1 total_count = %v, want 2", page1["total_count"])
+	}
+	if len(repos1) != 1 {
+		t.Fatalf("page 1 repos = %d, want 1", len(repos1))
+	}
+	if !strings.Contains(link, `rel="next"`) {
+		t.Fatalf("page 1 Link = %q, want rel=next", link)
+	}
+
+	page2 := decodeJSONWithStatus(t, ghGet(t, "/api/v3/orgs/"+org+"/actions/permissions/self-hosted-runners/repositories?per_page=1&page=2", defaultToken), 200)
+	repos2, _ := page2["repositories"].([]interface{})
+	if int(page2["total_count"].(float64)) != 2 {
+		t.Fatalf("page 2 total_count = %v, want 2", page2["total_count"])
+	}
+	if len(repos2) != 1 {
+		t.Fatalf("page 2 repos = %d, want 1", len(repos2))
+	}
+	id1 := int(repos1[0].(map[string]interface{})["id"].(float64))
+	id2 := int(repos2[0].(map[string]interface{})["id"].(float64))
+	if id1 == id2 {
+		t.Fatalf("page 1 and page 2 returned the same repository: %d", id1)
+	}
+}
+
 func TestActionsPermissions_Org_AllowedActions(t *testing.T) {
 	org := createTestOrg(t)
 

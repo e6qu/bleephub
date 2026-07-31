@@ -66,7 +66,7 @@ func (s *Server) handleGetSingleCommit(w http.ResponseWriter, r *http.Request) {
 		writeGHError(w, http.StatusInternalServerError, "diff computation failed")
 		return
 	}
-	out["files"] = files
+	out["files"] = paginateAndLink(w, r, files)
 	out["stats"] = map[string]interface{}{
 		"additions": additions,
 		"deletions": deletions,

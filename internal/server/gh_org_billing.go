@@ -189,33 +189,22 @@ func (s *Server) handleListOrgBudgets(w http.ResponseWriter, r *http.Request) {
 		budgets = filtered
 	}
 
-	// Each page returns up to 10 budgets; has_next_page carries the
-	// pagination signal in the response body.
-	page, perPage := 1, 10
-	if v, err := strconv.Atoi(r.URL.Query().Get("page")); err == nil && v > 0 {
-		page = v
-	}
-	if v, err := strconv.Atoi(r.URL.Query().Get("per_page")); err == nil && v > 0 && v <= 10 {
-		perPage = v
-	}
 	total := len(budgets)
-	start := (page - 1) * perPage
-	if start > total {
-		start = total
-	}
-	end := start + perPage
-	if end > total {
-		end = total
+	pp := parsePagination(r)
+	lastPage := 1
+	if total > 0 {
+		lastPage = (total + pp.PerPage - 1) / pp.PerPage
 	}
 
-	out := make([]map[string]interface{}, 0, end-start)
-	for _, b := range budgets[start:end] {
+	out := make([]map[string]interface{}, 0, total)
+	for _, b := range budgets {
 		out = append(out, budgetJSON(b))
 	}
+	paged := paginateAndLink(w, r, out)
 	writeJSON(w, http.StatusOK, map[string]interface{}{
-		"budgets":       out,
+		"budgets":       paged,
 		"total_count":   total,
-		"has_next_page": end < total,
+		"has_next_page": pp.Page < lastPage,
 	})
 }
 

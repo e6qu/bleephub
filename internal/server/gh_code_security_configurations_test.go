@@ -1,8 +1,62 @@
 package bleephub
 
 import (
+	"strings"
 	"testing"
 )
+
+func TestCodeSecurityConfigurations_RepositoriesPagination(t *testing.T) {
+	org := createTestOrg(t)
+	base := "/api/v3/orgs/" + org + "/code-security/configurations"
+	_, repoID1 := createOrgRepoForGovernance(t, org)
+	_, repoID2 := createOrgRepoForGovernance(t, org)
+
+	resp := ghPost(t, base, defaultToken, map[string]interface{}{
+		"name": "paged-config", "description": "pagination",
+	})
+	if resp.StatusCode != 201 {
+		t.Fatalf("create configuration: %d", resp.StatusCode)
+	}
+	id := itoa(int(decodeJSON(t, resp)["id"].(float64)))
+
+	resp = ghPost(t, base+"/"+id+"/attach", defaultToken, map[string]interface{}{
+		"scope":                   "selected",
+		"selected_repository_ids": []int{repoID1, repoID2},
+	})
+	resp.Body.Close()
+	if resp.StatusCode != 202 {
+		t.Fatalf("attach: %d", resp.StatusCode)
+	}
+
+	resp = ghGet(t, base+"/"+id+"/repositories?per_page=1", defaultToken)
+	if resp.StatusCode != 200 {
+		resp.Body.Close()
+		t.Fatalf("page 1: %d", resp.StatusCode)
+	}
+	link := resp.Header.Get("Link")
+	page1 := decodeJSONArray(t, resp)
+	if len(page1) != 1 {
+		t.Fatalf("page 1 len = %d, want 1", len(page1))
+	}
+	if !strings.Contains(link, `rel="next"`) {
+		t.Fatalf("page 1 Link = %q, want rel=next", link)
+	}
+
+	resp = ghGet(t, base+"/"+id+"/repositories?per_page=1&page=2", defaultToken)
+	if resp.StatusCode != 200 {
+		resp.Body.Close()
+		t.Fatalf("page 2: %d", resp.StatusCode)
+	}
+	page2 := decodeJSONArray(t, resp)
+	if len(page2) != 1 {
+		t.Fatalf("page 2 len = %d, want 1", len(page2))
+	}
+	repo1 := page1[0]["repository"].(map[string]interface{})
+	repo2 := page2[0]["repository"].(map[string]interface{})
+	if repo1["id"] == repo2["id"] {
+		t.Fatalf("page 1 and page 2 returned the same repository: %v", repo1["id"])
+	}
+}
 
 func TestCodeSecurityConfigurations_CRUD(t *testing.T) {
 	org := createTestOrg(t)

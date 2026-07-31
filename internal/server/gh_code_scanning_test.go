@@ -219,6 +219,121 @@ func TestCodeScanning_GetAndInstances(t *testing.T) {
 	}
 }
 
+func TestCodeScanning_AlertInstancesPagination(t *testing.T) {
+	s := newTestServer()
+	s.registerRoutes()
+
+	admin := s.store.UsersByLogin["admin"]
+	repo := s.store.CreateRepo(admin, "cs-instances-pg", "", false)
+	if repo == nil {
+		t.Fatal("create repo failed")
+	}
+
+	sarif := map[string]any{
+		"version": "2.1.0",
+		"runs": []map[string]any{
+			{
+				"tool": map[string]any{
+					"driver": map[string]any{
+						"name": "CodeQL",
+						"rules": []map[string]any{
+							{
+								"id":              "rule-pg",
+								"fullDescription": map[string]any{"text": "test description for rule-pg"},
+								"properties":      map[string]any{"problem.severity": "error"},
+							},
+						},
+					},
+				},
+				"results": []map[string]any{
+					{
+						"ruleId":  "rule-pg",
+						"message": map[string]any{"text": "problem here"},
+						"locations": []map[string]any{
+							{
+								"physicalLocation": map[string]any{
+									"artifactLocation": map[string]any{"uri": "src/one.js"},
+									"region":           map[string]any{"startLine": 10, "endLine": 10, "startColumn": 5, "endColumn": 15},
+								},
+							},
+							{
+								"physicalLocation": map[string]any{
+									"artifactLocation": map[string]any{"uri": "src/two.js"},
+									"region":           map[string]any{"startLine": 20, "endLine": 20, "startColumn": 5, "endColumn": 15},
+								},
+							},
+						},
+					},
+				},
+			},
+		},
+	}
+	sarifBytes, _ := json.Marshal(sarif)
+	putFile := pagedJSONRequest(t, s, http.MethodPut, "/api/v3/repos/admin/cs-instances-pg/contents/src/rule-pg.js", defaultToken, map[string]any{
+		"message": "add rule-pg source",
+		"content": base64.StdEncoding.EncodeToString([]byte("const finding = true;\n")),
+	})
+	if putFile.Code != http.StatusCreated {
+		t.Fatalf("put contents src/rule-pg.js: %d body=%s", putFile.Code, putFile.Body.String())
+	}
+	var putOut map[string]any
+	if err := json.Unmarshal(putFile.Body.Bytes(), &putOut); err != nil {
+		t.Fatalf("decode put contents: %v", err)
+	}
+	commitSHA := putOut["commit"].(map[string]any)["sha"].(string)
+	upload := pagedJSONRequest(t, s, http.MethodPost, "/api/v3/repos/admin/cs-instances-pg/code-scanning/sarifs", defaultToken, map[string]any{
+		"commit_sha": commitSHA,
+		"ref":        "refs/heads/main",
+		"sarif":      base64.StdEncoding.EncodeToString(sarifBytes),
+	})
+	if upload.Code != http.StatusAccepted {
+		t.Fatalf("upload SARIF: %d, want 202", upload.Code)
+	}
+
+	alertsResp := tokenRequest(s, http.MethodGet, "/api/v3/repos/admin/cs-instances-pg/code-scanning/alerts?rule=rule-pg", defaultToken)
+	var alerts []map[string]any
+	if err := json.Unmarshal(alertsResp.Body.Bytes(), &alerts); err != nil {
+		t.Fatalf("decode alerts: %v", err)
+	}
+	if len(alerts) != 1 {
+		t.Fatalf("uploaded SARIF produced %d alerts, want 1", len(alerts))
+	}
+	number := int(alerts[0]["number"].(float64))
+
+	base := "/api/v3/repos/admin/cs-instances-pg/code-scanning/alerts/" + itoa(number) + "/instances"
+	resp := tokenRequest(s, http.MethodGet, base+"?per_page=1", defaultToken)
+	if resp.Code != http.StatusOK {
+		t.Fatalf("instances page 1: %d body=%s", resp.Code, resp.Body.String())
+	}
+	var page1 []map[string]any
+	if err := json.Unmarshal(resp.Body.Bytes(), &page1); err != nil {
+		t.Fatalf("decode page 1: %v", err)
+	}
+	if len(page1) != 1 {
+		t.Fatalf("page 1 instances = %d, want 1", len(page1))
+	}
+	if link := resp.Header().Get("Link"); !strings.Contains(link, `rel="next"`) {
+		t.Fatalf("page 1 Link = %q, want rel=next", link)
+	}
+
+	resp = tokenRequest(s, http.MethodGet, base+"?per_page=1&page=2", defaultToken)
+	if resp.Code != http.StatusOK {
+		t.Fatalf("instances page 2: %d body=%s", resp.Code, resp.Body.String())
+	}
+	var page2 []map[string]any
+	if err := json.Unmarshal(resp.Body.Bytes(), &page2); err != nil {
+		t.Fatalf("decode page 2: %v", err)
+	}
+	if len(page2) != 1 {
+		t.Fatalf("page 2 instances = %d, want 1", len(page2))
+	}
+	path1, _ := page1[0]["location"].(map[string]any)["path"].(string)
+	path2, _ := page2[0]["location"].(map[string]any)["path"].(string)
+	if path1 == path2 {
+		t.Fatalf("page 2 returned the same instance %q as page 1", path2)
+	}
+}
+
 func TestCodeScanning_PatchDismiss(t *testing.T) {
 	admin := testServer.store.UsersByLogin["admin"]
 	repo := testServer.store.CreateRepo(admin, "cs-patch", "", false)

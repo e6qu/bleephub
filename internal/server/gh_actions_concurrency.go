@@ -286,8 +286,9 @@ func (s *Server) handleRunConcurrencyGroups(w http.ResponseWriter, r *http.Reque
 			"group_members": memberOut,
 		})
 	}
+	paged := paginateAndLink(w, r, groupsOut)
 	writeJSON(w, http.StatusOK, map[string]any{
 		"total_count":        len(groupsOut),
-		"concurrency_groups": groupsOut,
+		"concurrency_groups": paged,
 	})
 }

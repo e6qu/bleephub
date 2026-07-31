@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"strings"
 	"testing"
 
 	"github.com/go-git/go-git/v5/plumbing"
@@ -362,6 +363,62 @@ func TestRepoStargazersREST(t *testing.T) {
 	}
 }
 
+// TestRepoStargazersPagination verifies per_page/page slicing and Link headers.
+func TestRepoStargazersPagination(t *testing.T) {
+	s := newTestServer()
+	s.registerRoutes()
+	pagedJSONRequest(t, s, http.MethodPost, "/api/v3/user/repos", defaultToken, map[string]interface{}{
+		"name": "stargazers-pg",
+	})
+
+	st := s.store
+	st.mu.Lock()
+	other := &User{ID: st.NextUser, Login: "stargazer-user", Type: "User", StarredRepos: map[string]bool{}}
+	st.NextUser++
+	st.Users[other.ID] = other
+	st.UsersByLogin[other.Login] = other
+	otherTok := &Token{Value: "ghp_stargazerusertoken00000000000000000", UserID: other.ID, Scopes: "repo"}
+	st.Tokens[otherTok.Value] = otherTok
+	st.mu.Unlock()
+
+	for _, tok := range []string{defaultToken, otherTok.Value} {
+		w := pagedJSONRequest(t, s, http.MethodPut, "/api/v3/user/starred/admin/stargazers-pg", tok, nil)
+		if w.Code != 204 {
+			t.Fatalf("expected 204 for star, got %d", w.Code)
+		}
+	}
+
+	resp := tokenRequest(s, http.MethodGet, "/api/v3/repos/admin/stargazers-pg/stargazers?per_page=1", defaultToken)
+	if resp.Code != 200 {
+		t.Fatalf("expected 200, got %d", resp.Code)
+	}
+	var page1 []map[string]interface{}
+	if err := json.Unmarshal(resp.Body.Bytes(), &page1); err != nil {
+		t.Fatalf("decode page 1: %v", err)
+	}
+	if len(page1) != 1 {
+		t.Fatalf("expected 1 stargazer on page 1, got %d", len(page1))
+	}
+	if link := resp.Header().Get("Link"); !strings.Contains(link, `rel="next"`) {
+		t.Fatalf("expected rel=next in Link, got %s", link)
+	}
+
+	resp2 := tokenRequest(s, http.MethodGet, "/api/v3/repos/admin/stargazers-pg/stargazers?per_page=1&page=2", defaultToken)
+	if resp2.Code != 200 {
+		t.Fatalf("expected 200, got %d", resp2.Code)
+	}
+	var page2 []map[string]interface{}
+	if err := json.Unmarshal(resp2.Body.Bytes(), &page2); err != nil {
+		t.Fatalf("decode page 2: %v", err)
+	}
+	if len(page2) != 1 {
+		t.Fatalf("expected 1 stargazer on page 2, got %d", len(page2))
+	}
+	if page2[0]["login"] == page1[0]["login"] {
+		t.Fatalf("expected distinct stargazers across pages, got %v twice", page1[0]["login"])
+	}
+}
+
 // TestRepoCollaboratorsREST verifies collaborator add/list/remove and permission check.
 func TestRepoCollaboratorsREST(t *testing.T) {
 	ghPost(t, "/api/v3/user/repos", defaultToken, map[string]interface{}{
@@ -476,6 +533,73 @@ func TestRepoCollaboratorsREST(t *testing.T) {
 	}
 	if len(collabs2) != 1 {
 		t.Fatalf("expected 1 collaborator after removal, got %d", len(collabs2))
+	}
+}
+
+// TestRepoCollaboratorsPagination verifies per_page/page slicing and Link headers.
+func TestRepoCollaboratorsPagination(t *testing.T) {
+	s := newTestServer()
+	s.registerRoutes()
+	pagedJSONRequest(t, s, http.MethodPost, "/api/v3/user/repos", defaultToken, map[string]interface{}{
+		"name": "collab-pg",
+	})
+
+	st := s.store
+	st.mu.Lock()
+	other := &User{ID: st.NextUser, Login: "collab-pg-user", Type: "User", StarredRepos: map[string]bool{}}
+	st.NextUser++
+	st.Users[other.ID] = other
+	st.UsersByLogin[other.Login] = other
+	otherTok := &Token{Value: "ghp_collabpgusertoken000000000000000000", UserID: other.ID, Scopes: "repo"}
+	st.Tokens[otherTok.Value] = otherTok
+	st.mu.Unlock()
+
+	addResp := pagedJSONRequest(t, s, http.MethodPut, "/api/v3/repos/admin/collab-pg/collaborators/collab-pg-user", defaultToken, map[string]interface{}{
+		"permission": "push",
+	})
+	if addResp.Code != 201 && addResp.Code != 204 {
+		t.Fatalf("expected 201 or 204 for add collaborator, got %d", addResp.Code)
+	}
+	if addResp.Code == 201 {
+		var invitation map[string]interface{}
+		if err := json.Unmarshal(addResp.Body.Bytes(), &invitation); err != nil {
+			t.Fatalf("decode invitation: %v", err)
+		}
+		invID, _ := invitation["id"].(float64)
+		acceptResp := pagedJSONRequest(t, s, http.MethodPatch, fmt.Sprintf("/api/v3/user/repository_invitations/%d", int(invID)), otherTok.Value, nil)
+		if acceptResp.Code != 204 {
+			t.Fatalf("expected 204 for accept invitation, got %d", acceptResp.Code)
+		}
+	}
+
+	resp := tokenRequest(s, http.MethodGet, "/api/v3/repos/admin/collab-pg/collaborators?per_page=1", defaultToken)
+	if resp.Code != 200 {
+		t.Fatalf("expected 200, got %d", resp.Code)
+	}
+	var page1 []map[string]interface{}
+	if err := json.Unmarshal(resp.Body.Bytes(), &page1); err != nil {
+		t.Fatalf("decode page 1: %v", err)
+	}
+	if len(page1) != 1 {
+		t.Fatalf("expected 1 collaborator on page 1, got %d", len(page1))
+	}
+	if page1[0]["login"] != "admin" {
+		t.Fatalf("expected owner first on page 1, got %v", page1[0]["login"])
+	}
+	if link := resp.Header().Get("Link"); !strings.Contains(link, `rel="next"`) {
+		t.Fatalf("expected rel=next in Link, got %s", link)
+	}
+
+	resp2 := tokenRequest(s, http.MethodGet, "/api/v3/repos/admin/collab-pg/collaborators?per_page=1&page=2", defaultToken)
+	if resp2.Code != 200 {
+		t.Fatalf("expected 200, got %d", resp2.Code)
+	}
+	var page2 []map[string]interface{}
+	if err := json.Unmarshal(resp2.Body.Bytes(), &page2); err != nil {
+		t.Fatalf("decode page 2: %v", err)
+	}
+	if len(page2) != 1 || page2[0]["login"] != "collab-pg-user" {
+		t.Fatalf("expected collab-pg-user on page 2, got %+v", page2)
 	}
 }
 

@@ -322,6 +322,75 @@ func TestRunnerGroupsCRUD(t *testing.T) {
 	}
 }
 
+// TestRunnerGroupReposPagination covers per_page/page slicing of a runner
+// group's repository list with a stable total_count.
+func TestRunnerGroupReposPagination(t *testing.T) {
+	s := newTestServer()
+	s.registerRoutes()
+	admin := s.store.UsersByLogin["admin"]
+	org := s.store.CreateOrg(admin, "rg-page-org", "rg-page-org", "")
+	r1 := s.store.CreateOrgRepo(org, admin, "rg-page-repo-1", "", false)
+	r2 := s.store.CreateOrgRepo(org, admin, "rg-page-repo-2", "", false)
+
+	created := pagedJSONRequest(t, s, http.MethodPost, "/api/v3/orgs/"+org.Login+"/actions/runner-groups", defaultToken,
+		map[string]interface{}{"name": "paged-pool", "visibility": "selected"})
+	if created.Code != http.StatusCreated {
+		t.Fatalf("create group = %d: %s", created.Code, created.Body.String())
+	}
+	var group map[string]interface{}
+	if err := json.Unmarshal(created.Body.Bytes(), &group); err != nil {
+		t.Fatal(err)
+	}
+	gid := int(group["id"].(float64))
+
+	setResp := pagedJSONRequest(t, s, http.MethodPut, fmt.Sprintf("/api/v3/orgs/%s/actions/runner-groups/%d/repositories", org.Login, gid), defaultToken,
+		map[string]interface{}{"selected_repository_ids": []int{r1.ID, r2.ID}})
+	if setResp.Code != http.StatusNoContent {
+		t.Fatalf("set group repos = %d: %s", setResp.Code, setResp.Body.String())
+	}
+
+	resp := tokenRequest(s, http.MethodGet, fmt.Sprintf("/api/v3/orgs/%s/actions/runner-groups/%d/repositories?per_page=1", org.Login, gid), defaultToken)
+	if resp.Code != http.StatusOK {
+		t.Fatalf("page 1 = %d: %s", resp.Code, resp.Body.String())
+	}
+	link := resp.Header().Get("Link")
+	var page1 map[string]interface{}
+	if err := json.Unmarshal(resp.Body.Bytes(), &page1); err != nil {
+		t.Fatal(err)
+	}
+	repos1, _ := page1["repositories"].([]interface{})
+	if int(page1["total_count"].(float64)) != 2 {
+		t.Fatalf("page 1 total_count = %v, want 2", page1["total_count"])
+	}
+	if len(repos1) != 1 {
+		t.Fatalf("page 1 repos = %d, want 1", len(repos1))
+	}
+	if !strings.Contains(link, `rel="next"`) {
+		t.Fatalf("page 1 Link = %q, want rel=next", link)
+	}
+
+	resp = tokenRequest(s, http.MethodGet, fmt.Sprintf("/api/v3/orgs/%s/actions/runner-groups/%d/repositories?per_page=1&page=2", org.Login, gid), defaultToken)
+	if resp.Code != http.StatusOK {
+		t.Fatalf("page 2 = %d: %s", resp.Code, resp.Body.String())
+	}
+	var page2 map[string]interface{}
+	if err := json.Unmarshal(resp.Body.Bytes(), &page2); err != nil {
+		t.Fatal(err)
+	}
+	repos2, _ := page2["repositories"].([]interface{})
+	if int(page2["total_count"].(float64)) != 2 {
+		t.Fatalf("page 2 total_count = %v, want 2", page2["total_count"])
+	}
+	if len(repos2) != 1 {
+		t.Fatalf("page 2 repos = %d, want 1", len(repos2))
+	}
+	id1 := int(repos1[0].(map[string]interface{})["id"].(float64))
+	id2 := int(repos2[0].(map[string]interface{})["id"].(float64))
+	if id1 == id2 {
+		t.Fatalf("page 1 and page 2 returned the same repository: %d", id1)
+	}
+}
+
 // bytesReader tolerates nil bodies for request construction.
 func bytesReader(b []byte) *bytes.Reader {
 	if b == nil {

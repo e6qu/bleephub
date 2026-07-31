@@ -582,9 +582,10 @@ func (s *Server) handleListGroupRepos(w http.ResponseWriter, r *http.Request) {
 			repos = append(repos, repoToJSON(repo, s.store, base))
 		}
 	}
+	paged := paginateAndLink(w, r, repos)
 	writeJSON(w, http.StatusOK, map[string]any{
 		"total_count":  len(repos),
-		"repositories": repos,
+		"repositories": paged,
 	})
 }
 

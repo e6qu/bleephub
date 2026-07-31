@@ -210,8 +210,9 @@ func (s *Server) handleGetCombinedStatus(w http.ResponseWriter, r *http.Request)
 	}
 	ref := s.canonicalCommitStatusRef(repo, r.PathValue("ref"))
 	state, total, statuses := s.store.CommitStatuses.Combined(repo.FullName, ref)
-	out := make([]map[string]interface{}, 0, len(statuses))
-	for _, st := range statuses {
+	page := paginateAndLink(w, r, statuses)
+	out := make([]map[string]interface{}, 0, len(page))
+	for _, st := range page {
 		out = append(out, commitStatusToJSON(st, s.store, s.baseURL(r), repo.FullName))
 	}
 	writeJSON(w, http.StatusOK, map[string]interface{}{

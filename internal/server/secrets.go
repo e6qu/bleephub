@@ -237,9 +237,10 @@ func (s *Server) handleListSecrets(w http.ResponseWriter, r *http.Request) {
 	list := sortedSecretsJSON(s.store.RepoSecrets[repo.FullName])
 	s.store.mu.RUnlock()
 
+	paged := paginateAndLink(w, r, list)
 	writeJSON(w, http.StatusOK, map[string]interface{}{
 		"total_count": len(list),
-		"secrets":     list,
+		"secrets":     paged,
 	})
 }
 
@@ -341,9 +342,10 @@ func (s *Server) handleListRepoOrgSecrets(w http.ResponseWriter, r *http.Request
 		s.store.mu.RUnlock()
 	}
 
+	paged := paginateAndLink(w, r, list)
 	writeJSON(w, http.StatusOK, map[string]interface{}{
 		"total_count": len(list),
-		"secrets":     list,
+		"secrets":     paged,
 	})
 }
 
@@ -380,9 +382,10 @@ func (s *Server) handleListEnvSecrets(w http.ResponseWriter, r *http.Request) {
 	list := sortedSecretsJSON(s.store.EnvSecrets[scopeKey])
 	s.store.mu.RUnlock()
 
+	paged := paginateAndLink(w, r, list)
 	writeJSON(w, http.StatusOK, map[string]interface{}{
 		"total_count": len(list),
-		"secrets":     list,
+		"secrets":     paged,
 	})
 }
 
@@ -508,9 +511,10 @@ func (s *Server) handleListOrgSecrets(w http.ResponseWriter, r *http.Request) {
 	}
 	s.store.mu.RUnlock()
 
+	paged := paginateAndLink(w, r, list)
 	writeJSON(w, http.StatusOK, map[string]interface{}{
 		"total_count": len(list),
-		"secrets":     list,
+		"secrets":     paged,
 	})
 }
 
@@ -668,9 +672,10 @@ func (s *Server) writeSelectedReposResponse(w http.ResponseWriter, r *http.Reque
 	for _, repo := range repos {
 		out = append(out, repoToJSON(repo, s.store, base))
 	}
+	paged := paginateAndLink(w, r, out)
 	writeJSON(w, http.StatusOK, map[string]interface{}{
 		"total_count":  len(out),
-		"repositories": out,
+		"repositories": paged,
 	})
 }
 

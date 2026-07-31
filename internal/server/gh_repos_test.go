@@ -1154,6 +1154,44 @@ func TestLicenseTemplates(t *testing.T) {
 	}
 }
 
+// TestLicenseTemplatesPagination verifies /licenses honors per_page/page.
+func TestLicenseTemplatesPagination(t *testing.T) {
+	resp := ghGet(t, "/api/v3/licenses?per_page=1", defaultToken)
+	if resp.StatusCode != 200 {
+		resp.Body.Close()
+		t.Fatalf("page 1: expected 200, got %d", resp.StatusCode)
+	}
+	link := resp.Header.Get("Link")
+	var page1 []map[string]interface{}
+	if err := json.NewDecoder(resp.Body).Decode(&page1); err != nil {
+		t.Fatal(err)
+	}
+	resp.Body.Close()
+	if len(page1) != 1 {
+		t.Fatalf("page 1 len = %d, want 1", len(page1))
+	}
+	if !strings.Contains(link, `rel="next"`) {
+		t.Fatalf("page 1 Link = %q, want rel=next", link)
+	}
+
+	resp = ghGet(t, "/api/v3/licenses?per_page=1&page=2", defaultToken)
+	if resp.StatusCode != 200 {
+		resp.Body.Close()
+		t.Fatalf("page 2: expected 200, got %d", resp.StatusCode)
+	}
+	var page2 []map[string]interface{}
+	if err := json.NewDecoder(resp.Body).Decode(&page2); err != nil {
+		t.Fatal(err)
+	}
+	resp.Body.Close()
+	if len(page2) != 1 {
+		t.Fatalf("page 2 len = %d, want 1", len(page2))
+	}
+	if page1[0]["key"] == page2[0]["key"] {
+		t.Fatalf("page 1 and page 2 returned the same license: %v", page1[0]["key"])
+	}
+}
+
 // TestRepoDeployKeys exercises deploy key CRUD.
 func TestRepoDeployKeys(t *testing.T) {
 	repoName := "deploy-keys-repo"
@@ -1208,6 +1246,50 @@ func TestRepoDeployKeys(t *testing.T) {
 	defer getAfter.Body.Close()
 	if getAfter.StatusCode != 404 {
 		t.Fatalf("expected 404 after delete, got %d", getAfter.StatusCode)
+	}
+}
+
+// TestRepoDeployKeysPagination verifies per_page/page slicing and Link headers.
+func TestRepoDeployKeysPagination(t *testing.T) {
+	repoName := "deploy-keys-pg"
+	ghPost(t, "/api/v3/user/repos", defaultToken, map[string]interface{}{"name": repoName}).Body.Close()
+
+	for _, title := range []string{"first", "second"} {
+		resp := ghPost(t, "/api/v3/repos/admin/"+repoName+"/keys", defaultToken, map[string]interface{}{
+			"title": title,
+			"key":   "ssh-rsa AAAA " + title,
+		})
+		if resp.StatusCode != 201 {
+			resp.Body.Close()
+			t.Fatalf("expected 201 creating key %s, got %d", title, resp.StatusCode)
+		}
+		resp.Body.Close()
+	}
+
+	resp := ghGet(t, "/api/v3/repos/admin/"+repoName+"/keys?per_page=1", defaultToken)
+	if resp.StatusCode != 200 {
+		resp.Body.Close()
+		t.Fatalf("expected 200, got %d", resp.StatusCode)
+	}
+	keys := decodeJSONArray(t, resp)
+	if len(keys) != 1 {
+		t.Fatalf("expected 1 key on page 1, got %d", len(keys))
+	}
+	if link := resp.Header.Get("Link"); !strings.Contains(link, `rel="next"`) {
+		t.Fatalf("expected rel=next in Link, got %s", link)
+	}
+
+	resp2 := ghGet(t, "/api/v3/repos/admin/"+repoName+"/keys?per_page=1&page=2", defaultToken)
+	if resp2.StatusCode != 200 {
+		resp2.Body.Close()
+		t.Fatalf("expected 200, got %d", resp2.StatusCode)
+	}
+	keys2 := decodeJSONArray(t, resp2)
+	if len(keys2) != 1 {
+		t.Fatalf("expected 1 key on page 2, got %d", len(keys2))
+	}
+	if keys2[0]["title"] == keys[0]["title"] {
+		t.Fatalf("expected distinct keys across pages, got %v twice", keys[0]["title"])
 	}
 }
 

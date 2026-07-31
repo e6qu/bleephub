@@ -277,6 +277,110 @@ func TestPackages_UserCRUD(t *testing.T) {
 	_ = pkgID
 }
 
+func TestPackages_UserVersionsPagination(t *testing.T) {
+	s := newTestServer()
+	s.registerRoutes()
+	_, byteStore := newObjectByteStoreForTest(t)
+	s.store.ObjectByteStore = byteStore
+	seedIsolatedPackageVersion(t, s, "user", "admin", "npm", "paged-user-pkg", "1.0.0")
+	seedIsolatedPackageVersion(t, s, "user", "admin", "npm", "paged-user-pkg", "2.0.0")
+
+	resp := tokenRequest(s, http.MethodGet, "/api/v3/user/packages/npm/paged-user-pkg/versions?per_page=1", defaultToken)
+	if resp.Code != http.StatusOK {
+		t.Fatalf("page 1: %d %s", resp.Code, resp.Body.String())
+	}
+	link := resp.Header().Get("Link")
+	var page1 []map[string]any
+	if err := json.Unmarshal(resp.Body.Bytes(), &page1); err != nil {
+		t.Fatal(err)
+	}
+	if len(page1) != 1 {
+		t.Fatalf("page 1 len = %d, want 1", len(page1))
+	}
+	if !strings.Contains(link, `rel="next"`) {
+		t.Fatalf("page 1 Link = %q, want rel=next", link)
+	}
+
+	resp = tokenRequest(s, http.MethodGet, "/api/v3/user/packages/npm/paged-user-pkg/versions?per_page=1&page=2", defaultToken)
+	if resp.Code != http.StatusOK {
+		t.Fatalf("page 2: %d", resp.Code)
+	}
+	var page2 []map[string]any
+	if err := json.Unmarshal(resp.Body.Bytes(), &page2); err != nil {
+		t.Fatal(err)
+	}
+	if len(page2) != 1 {
+		t.Fatalf("page 2 len = %d, want 1", len(page2))
+	}
+	if page1[0]["id"] == page2[0]["id"] {
+		t.Fatalf("page 1 and page 2 returned the same version: %v", page1[0]["id"])
+	}
+}
+
+func TestPackages_OrgVersionsPagination(t *testing.T) {
+	s := newTestServer()
+	s.registerRoutes()
+	_, byteStore := newObjectByteStoreForTest(t)
+	s.store.ObjectByteStore = byteStore
+	admin := s.store.UsersByLogin["admin"]
+	org := s.store.CreateOrg(admin, "pkg-page-org", "pkg-page-org", "")
+	seedIsolatedPackageVersion(t, s, "org", org.Login, "npm", "paged-org-pkg", "1.0.0")
+	seedIsolatedPackageVersion(t, s, "org", org.Login, "npm", "paged-org-pkg", "2.0.0")
+
+	resp := tokenRequest(s, http.MethodGet, "/api/v3/orgs/"+org.Login+"/packages/npm/paged-org-pkg/versions?per_page=1", defaultToken)
+	if resp.Code != http.StatusOK {
+		t.Fatalf("page 1: %d %s", resp.Code, resp.Body.String())
+	}
+	link := resp.Header().Get("Link")
+	var page1 []map[string]any
+	if err := json.Unmarshal(resp.Body.Bytes(), &page1); err != nil {
+		t.Fatal(err)
+	}
+	if len(page1) != 1 {
+		t.Fatalf("page 1 len = %d, want 1", len(page1))
+	}
+	if !strings.Contains(link, `rel="next"`) {
+		t.Fatalf("page 1 Link = %q, want rel=next", link)
+	}
+
+	resp = tokenRequest(s, http.MethodGet, "/api/v3/orgs/"+org.Login+"/packages/npm/paged-org-pkg/versions?per_page=1&page=2", defaultToken)
+	if resp.Code != http.StatusOK {
+		t.Fatalf("page 2: %d", resp.Code)
+	}
+	var page2 []map[string]any
+	if err := json.Unmarshal(resp.Body.Bytes(), &page2); err != nil {
+		t.Fatal(err)
+	}
+	if len(page2) != 1 {
+		t.Fatalf("page 2 len = %d, want 1", len(page2))
+	}
+	if page1[0]["id"] == page2[0]["id"] {
+		t.Fatalf("page 1 and page 2 returned the same version: %v", page1[0]["id"])
+	}
+}
+
+func seedIsolatedPackageVersion(t *testing.T, s *Server, ownerType, owner, pkgType, pkgName, version string) {
+	t.Helper()
+	resp := pagedJSONRequest(t, s, http.MethodPost, "/internal/packages/"+ownerType+"/"+owner+"/"+pkgType+"/"+pkgName+"/versions", defaultToken, map[string]any{
+		"version":     version,
+		"description": "test version",
+		"metadata": map[string]any{
+			"package_type": pkgType,
+			"container":    map[string]any{"tags": []string{"latest"}},
+		},
+		"files": []map[string]any{
+			{
+				"name":           "package.tgz",
+				"content_type":   "application/gzip",
+				"content_base64": base64.StdEncoding.EncodeToString([]byte("hello package")),
+			},
+		},
+	})
+	if resp.Code != http.StatusCreated {
+		t.Fatalf("seed package version: %d %s", resp.Code, resp.Body.String())
+	}
+}
+
 func TestPackages_OrgCRUD(t *testing.T) {
 	admin := testServer.store.UsersByLogin["admin"]
 	org := testServer.store.CreateOrg(admin, "pkg-org", "Pkg Org", "")

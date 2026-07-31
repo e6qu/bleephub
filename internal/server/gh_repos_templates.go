@@ -3,6 +3,7 @@ package bleephub
 import (
 	"fmt"
 	"net/http"
+	"sort"
 	"strings"
 )
 
@@ -43,7 +44,7 @@ func (s *Server) handleListLicenses(w http.ResponseWriter, r *http.Request) {
 			"node_id": "MDc6TGljZW5zZ" + k,
 		})
 	}
-	writeJSON(w, http.StatusOK, out)
+	writeJSON(w, http.StatusOK, paginateAndLink(w, r, out))
 }
 
 func (s *Server) handleGetLicense(w http.ResponseWriter, r *http.Request) {
@@ -431,6 +432,7 @@ func listLicenseKeys() []string {
 	for k := range licenseTemplates {
 		keys = append(keys, k)
 	}
+	sort.Strings(keys)
 	return keys
 }
 
