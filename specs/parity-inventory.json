@@ -15,19 +15,19 @@
       },
       {
         "event": "deployment",
-        "line": 537,
+        "line": 536,
         "producer": "emitWebhookEvent",
         "source": "internal/server/gh_deployments.go"
       },
       {
         "event": "deployment_status",
-        "line": 632,
+        "line": 631,
         "producer": "emitWebhookEvent",
         "source": "internal/server/gh_deployments.go"
       },
       {
         "event": "deployment_status",
-        "line": 642,
+        "line": 641,
         "producer": "emitWebhookEvent",
         "source": "internal/server/gh_deployments.go"
       },
@@ -19042,7 +19042,7 @@
         "source": "internal/server/gh_dependabot.go"
       },
       {
-        "line": 486,
+        "line": 485,
         "method": "DELETE",
         "path": "/api/v3/repos/{owner}/{repo}/deployments/{deployment_id}",
         "source": "internal/server/gh_deployments.go"
@@ -19054,7 +19054,7 @@
         "source": "internal/server/gh_security_reviews.go"
       },
       {
-        "line": 501,
+        "line": 500,
         "method": "DELETE",
         "path": "/api/v3/repos/{owner}/{repo}/environments/{env_name}",
         "source": "internal/server/gh_deployments.go"
@@ -22702,25 +22702,25 @@
         "source": "internal/server/gh_dependency_graph.go"
       },
       {
-        "line": 482,
+        "line": 481,
         "method": "GET",
         "path": "/api/v3/repos/{owner}/{repo}/deployments",
         "source": "internal/server/gh_deployments.go"
       },
       {
-        "line": 484,
+        "line": 483,
         "method": "GET",
         "path": "/api/v3/repos/{owner}/{repo}/deployments/{deployment_id}",
         "source": "internal/server/gh_deployments.go"
       },
       {
-        "line": 490,
+        "line": 489,
         "method": "GET",
         "path": "/api/v3/repos/{owner}/{repo}/deployments/{deployment_id}/statuses",
         "source": "internal/server/gh_deployments.go"
       },
       {
-        "line": 492,
+        "line": 491,
         "method": "GET",
         "path": "/api/v3/repos/{owner}/{repo}/deployments/{deployment_id}/statuses/{status_id}",
         "source": "internal/server/gh_deployments.go"
@@ -22762,13 +22762,13 @@
         "source": "internal/server/gh_security_reviews.go"
       },
       {
-        "line": 495,
+        "line": 494,
         "method": "GET",
         "path": "/api/v3/repos/{owner}/{repo}/environments",
         "source": "internal/server/gh_deployments.go"
       },
       {
-        "line": 497,
+        "line": 496,
         "method": "GET",
         "path": "/api/v3/repos/{owner}/{repo}/environments/{env_name}",
         "source": "internal/server/gh_deployments.go"
@@ -25750,13 +25750,13 @@
         "source": "internal/server/gh_dependency_graph.go"
       },
       {
-        "line": 480,
+        "line": 479,
         "method": "POST",
         "path": "/api/v3/repos/{owner}/{repo}/deployments",
         "source": "internal/server/gh_deployments.go"
       },
       {
-        "line": 488,
+        "line": 487,
         "method": "POST",
         "path": "/api/v3/repos/{owner}/{repo}/deployments/{deployment_id}/statuses",
         "source": "internal/server/gh_deployments.go"
@@ -27034,7 +27034,7 @@
         "source": "internal/server/gh_dependabot.go"
       },
       {
-        "line": 499,
+        "line": 498,
         "method": "PUT",
         "path": "/api/v3/repos/{owner}/{repo}/environments/{env_name}",
         "source": "internal/server/gh_deployments.go"
