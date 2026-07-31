@@ -23,7 +23,7 @@ type PrivateRegistryConfiguration struct {
 	ReplacesBase             bool      `json:"replaces_base"`
 	Visibility               string    `json:"visibility"`
 	SelectedRepositoryIDs    []int     `json:"selected_repository_ids"`
-	EncryptedValue           string    `json:"encrypted_value"` // opaque sealed box; never emitted
+	EncryptedValue           string    `json:"-"` // opaque sealed box; never emitted
 	KeyID                    string    `json:"key_id"`
 	TenantID                 string    `json:"tenant_id"`
 	ClientID                 string    `json:"client_id"`
@@ -305,6 +305,104 @@ func privateRegistryJSON(reg *PrivateRegistryConfiguration, withSelected bool) m
 	return out
 }
 
+// privateRegistryConfigurationPersist is the persistence shape of a private
+// registry configuration. It mirrors PrivateRegistryConfiguration but includes
+// the EncryptedValue so persistence round-trips it, while the API struct's
+// json:"-" keeps it out of every response.
+type privateRegistryConfigurationPersist struct {
+	Name                     string    `json:"name"`
+	RegistryType             string    `json:"registry_type"`
+	AuthType                 string    `json:"auth_type"`
+	URL                      string    `json:"url"`
+	Username                 *string   `json:"username"`
+	ReplacesBase             bool      `json:"replaces_base"`
+	Visibility               string    `json:"visibility"`
+	SelectedRepositoryIDs    []int     `json:"selected_repository_ids"`
+	EncryptedValue           string    `json:"encrypted_value"`
+	KeyID                    string    `json:"key_id"`
+	TenantID                 string    `json:"tenant_id"`
+	ClientID                 string    `json:"client_id"`
+	AWSRegion                string    `json:"aws_region"`
+	AccountID                string    `json:"account_id"`
+	RoleName                 string    `json:"role_name"`
+	Domain                   string    `json:"domain"`
+	DomainOwner              string    `json:"domain_owner"`
+	JfrogOIDCProviderName    string    `json:"jfrog_oidc_provider_name"`
+	Audience                 string    `json:"audience"`
+	IdentityMappingName      string    `json:"identity_mapping_name"`
+	Namespace                string    `json:"namespace"`
+	ServiceSlug              string    `json:"service_slug"`
+	APIHost                  string    `json:"api_host"`
+	WorkloadIdentityProvider string    `json:"workload_identity_provider"`
+	ServiceAccount           string    `json:"service_account"`
+	CreatedAt                time.Time `json:"created_at"`
+	UpdatedAt                time.Time `json:"updated_at"`
+}
+
+func privateRegistryToPersist(reg *PrivateRegistryConfiguration) *privateRegistryConfigurationPersist {
+	return &privateRegistryConfigurationPersist{
+		Name:                     reg.Name,
+		RegistryType:             reg.RegistryType,
+		AuthType:                 reg.AuthType,
+		URL:                      reg.URL,
+		Username:                 reg.Username,
+		ReplacesBase:             reg.ReplacesBase,
+		Visibility:               reg.Visibility,
+		SelectedRepositoryIDs:    reg.SelectedRepositoryIDs,
+		EncryptedValue:           reg.EncryptedValue,
+		KeyID:                    reg.KeyID,
+		TenantID:                 reg.TenantID,
+		ClientID:                 reg.ClientID,
+		AWSRegion:                reg.AWSRegion,
+		AccountID:                reg.AccountID,
+		RoleName:                 reg.RoleName,
+		Domain:                   reg.Domain,
+		DomainOwner:              reg.DomainOwner,
+		JfrogOIDCProviderName:    reg.JfrogOIDCProviderName,
+		Audience:                 reg.Audience,
+		IdentityMappingName:      reg.IdentityMappingName,
+		Namespace:                reg.Namespace,
+		ServiceSlug:              reg.ServiceSlug,
+		APIHost:                  reg.APIHost,
+		WorkloadIdentityProvider: reg.WorkloadIdentityProvider,
+		ServiceAccount:           reg.ServiceAccount,
+		CreatedAt:                reg.CreatedAt,
+		UpdatedAt:                reg.UpdatedAt,
+	}
+}
+
+func privateRegistryFromPersist(p *privateRegistryConfigurationPersist) *PrivateRegistryConfiguration {
+	return &PrivateRegistryConfiguration{
+		Name:                     p.Name,
+		RegistryType:             p.RegistryType,
+		AuthType:                 p.AuthType,
+		URL:                      p.URL,
+		Username:                 p.Username,
+		ReplacesBase:             p.ReplacesBase,
+		Visibility:               p.Visibility,
+		SelectedRepositoryIDs:    p.SelectedRepositoryIDs,
+		EncryptedValue:           p.EncryptedValue,
+		KeyID:                    p.KeyID,
+		TenantID:                 p.TenantID,
+		ClientID:                 p.ClientID,
+		AWSRegion:                p.AWSRegion,
+		AccountID:                p.AccountID,
+		RoleName:                 p.RoleName,
+		Domain:                   p.Domain,
+		DomainOwner:              p.DomainOwner,
+		JfrogOIDCProviderName:    p.JfrogOIDCProviderName,
+		Audience:                 p.Audience,
+		IdentityMappingName:      p.IdentityMappingName,
+		Namespace:                p.Namespace,
+		ServiceSlug:              p.ServiceSlug,
+		APIHost:                  p.APIHost,
+		WorkloadIdentityProvider: p.WorkloadIdentityProvider,
+		ServiceAccount:           p.ServiceAccount,
+		CreatedAt:                p.CreatedAt,
+		UpdatedAt:                p.UpdatedAt,
+	}
+}
+
 // --- store ---
 
 // ListPrivateRegistries returns the org's registries sorted by name.
@@ -380,6 +478,25 @@ func applyPrivateRegistryRequest(reg *PrivateRegistryConfiguration, req *private
 	}
 }
 
+// persistPrivateRegistries saves the org's private registry map to
+// persistence, converting each entry to the persist shape so the
+// EncryptedValue round-trips while staying out of API responses.
+func (st *Store) persistPrivateRegistries(orgLogin string) {
+	if st.persist == nil {
+		return
+	}
+	m := st.OrgPrivateRegistries[orgLogin]
+	if len(m) == 0 {
+		st.persist.MustDelete("org_private_registries", orgLogin)
+		return
+	}
+	out := make(map[string]*privateRegistryConfigurationPersist, len(m))
+	for name, reg := range m {
+		out[name] = privateRegistryToPersist(reg)
+	}
+	st.persist.MustPut("org_private_registries", orgLogin, out)
+}
+
 // CreatePrivateRegistry materializes a configuration. The configuration name
 // is derived from the registry type the way real GitHub names them
 // (MAVEN_REPOSITORY_SECRET, ...), suffixed on collision.
@@ -403,9 +520,7 @@ func (st *Store) CreatePrivateRegistry(orgLogin string, req *privateRegistryRequ
 	}
 	applyPrivateRegistryRequest(reg, req)
 	st.OrgPrivateRegistries[orgLogin][name] = reg
-	if st.persist != nil {
-		st.persist.MustPut("org_private_registries", orgLogin, st.OrgPrivateRegistries[orgLogin])
-	}
+	st.persistPrivateRegistries(orgLogin)
 	return reg
 }
 
@@ -419,9 +534,7 @@ func (st *Store) UpdatePrivateRegistry(orgLogin, name string, req *privateRegist
 	}
 	applyPrivateRegistryRequest(reg, req)
 	reg.UpdatedAt = time.Now().UTC()
-	if st.persist != nil {
-		st.persist.MustPut("org_private_registries", orgLogin, st.OrgPrivateRegistries[orgLogin])
-	}
+	st.persistPrivateRegistries(orgLogin)
 }
 
 // DeletePrivateRegistry removes a configuration. Returns true when it
@@ -433,8 +546,6 @@ func (st *Store) DeletePrivateRegistry(orgLogin, name string) bool {
 		return false
 	}
 	delete(st.OrgPrivateRegistries[orgLogin], name)
-	if st.persist != nil {
-		st.persist.MustPut("org_private_registries", orgLogin, st.OrgPrivateRegistries[orgLogin])
-	}
+	st.persistPrivateRegistries(orgLogin)
 	return true
 }

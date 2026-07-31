@@ -2898,11 +2898,15 @@ func (st *Store) loadFromPersistence() error {
 			return nil
 		}},
 		{"org_private_registries", func(key string, raw []byte) error {
-			var m map[string]*PrivateRegistryConfiguration
+			var m map[string]*privateRegistryConfigurationPersist
 			if err := loadJSON(raw, &m); err != nil {
 				return err
 			}
-			st.OrgPrivateRegistries[key] = m
+			out := make(map[string]*PrivateRegistryConfiguration, len(m))
+			for name, p := range m {
+				out[name] = privateRegistryFromPersist(p)
+			}
+			st.OrgPrivateRegistries[key] = out
 			return nil
 		}},
 		{"org_network_configurations", func(key string, raw []byte) error {

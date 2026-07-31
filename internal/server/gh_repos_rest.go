@@ -1248,8 +1248,17 @@ func licenseJSON(repo *Repo) interface{} {
 		"name":    repo.LicenseName,
 		"spdx_id": repo.LicenseSPDX,
 		"url":     nil,
-		"node_id": "MDc6TGljZW5zZQ==" + repo.LicenseKey,
+		"node_id": licenseNodeID(repo.LicenseKey),
 	}
+}
+
+// licenseNodeID returns the GitHub node ID for a license key, or a
+// deterministic fallback for keys outside the catalog.
+func licenseNodeID(key string) string {
+	if tmpl, ok := licenseTemplates[key]; ok {
+		return tmpl.nodeID
+	}
+	return "MDc6TGljZW5zZTA="
 }
 
 func repoOrganizationJSON(repo *Repo, st *Store) interface{} {

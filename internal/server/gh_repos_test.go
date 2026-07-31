@@ -1192,6 +1192,75 @@ func TestLicenseTemplatesPagination(t *testing.T) {
 	}
 }
 
+// TestLicenseNodeIDsAreValid verifies that every license endpoint emits a
+// valid GitHub node ID: a proper base64-encoded `06:License{number}` string,
+// not the key appended to a base64 prefix. This regresses the previously
+// broken `"MDc6TGljZW5zZ" + key` and `"MDc6TGljZW5zZQ==" + key` forms.
+func TestLicenseNodeIDsAreValid(t *testing.T) {
+	// List endpoint: every license carries a valid node_id.
+	listResp := ghGet(t, "/api/v3/licenses", defaultToken)
+	if listResp.StatusCode != 200 {
+		listResp.Body.Close()
+		t.Fatalf("list licenses: %d", listResp.StatusCode)
+	}
+	var items []map[string]interface{}
+	if err := json.NewDecoder(listResp.Body).Decode(&items); err != nil {
+		t.Fatal(err)
+	}
+	listResp.Body.Close()
+	if len(items) == 0 {
+		t.Fatal("expected at least one license")
+	}
+	for _, item := range items {
+		nodeID, _ := item["node_id"].(string)
+		if nodeID == "" {
+			t.Errorf("license %v has empty node_id", item["key"])
+			continue
+		}
+		if !isValidLicenseNodeID(nodeID) {
+			t.Errorf("license %v has invalid node_id %q", item["key"], nodeID)
+		}
+	}
+
+	// Single-license endpoint.
+	getResp := ghGet(t, "/api/v3/licenses/mit", defaultToken)
+	if getResp.StatusCode != 200 {
+		getResp.Body.Close()
+		t.Fatalf("get mit license: %d", getResp.StatusCode)
+	}
+	data := decodeJSON(t, getResp)
+	if !isValidLicenseNodeID(data["node_id"].(string)) {
+		t.Errorf("get mit license node_id = %q, want valid base64", data["node_id"])
+	}
+
+	// Repo license endpoint (via detected license).
+	createReadsRepo(t, "reads-license-nodeid", map[string]interface{}{
+		"auto_init": true, "license_template": "mit",
+	})
+	repoResp := ghGet(t, "/api/v3/repos/admin/reads-license-nodeid/license", defaultToken)
+	if repoResp.StatusCode != 200 {
+		repoResp.Body.Close()
+		t.Fatalf("get repo license: %d", repoResp.StatusCode)
+	}
+	repoData := decodeJSON(t, repoResp)
+	lic, _ := repoData["license"].(map[string]interface{})
+	if lic != nil {
+		if !isValidLicenseNodeID(lic["node_id"].(string)) {
+			t.Errorf("repo license node_id = %q, want valid base64", lic["node_id"])
+		}
+	}
+}
+
+// isValidLicenseNodeID reports whether s is a valid GitHub license node ID:
+// base64-decodable to "07:License{number}".
+func isValidLicenseNodeID(s string) bool {
+	decoded, err := base64.StdEncoding.DecodeString(s)
+	if err != nil {
+		return false
+	}
+	return strings.HasPrefix(string(decoded), "07:License")
+}
+
 // TestRepoDeployKeys exercises deploy key CRUD.
 func TestRepoDeployKeys(t *testing.T) {
 	repoName := "deploy-keys-repo"

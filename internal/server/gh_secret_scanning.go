@@ -343,22 +343,6 @@ func (s *Server) handleGetSecretScanningScanHistory(w http.ResponseWriter, r *ht
 	})
 }
 
-// func (s *Server) handleListSecretScanningUserAlerts(w http.ResponseWriter, r *http.Request) {
-// 	user := ghUserFromContext(r.Context())
-// 	alerts := s.store.ListSecretScanningAlertsByUser(user.ID)
-// 	page := paginateAndLink(w, r, alerts)
-// 	baseURL := s.baseURL(r)
-// 	out := make([]map[string]interface{}, 0, len(page))
-// 	for _, a := range page {
-// 		repo := s.store.ReposByName[a.RepoKey]
-// 		if repo == nil {
-// 			continue
-// 		}
-// 		out = append(out, secretScanningAlertToJSON(a, baseURL, repo))
-// 	}
-// 	writeJSON(w, http.StatusOK, out)
-// }
-
 func (s *Server) lookupSecretScanningAlert(w http.ResponseWriter, r *http.Request, repo *Repo) *SecretScanningAlert {
 	number, err := strconv.Atoi(r.PathValue("alert_number"))
 	if err != nil {

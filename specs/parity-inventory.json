@@ -2035,8 +2035,8 @@
         "id": "REST-107",
         "location": "gh_org_events.go:216",
         "severity": "M",
-        "status": "open",
-        "status_kind": "open"
+        "status": "fixed \u2014 `GET /orgs/{org}/events` now requires authentication (401 for anonymous); `GET /events` was already registered in `gh_events_feeds.go` and remains the public feed",
+        "status_kind": "fixed"
       },
       {
         "category": "REST",
@@ -2071,8 +2071,8 @@
         "id": "REST-111",
         "location": "gh_org_pat_admin.go:42, gh_private_registries.go:26",
         "severity": "m",
-        "status": "open",
-        "status_kind": "open"
+        "status": "fixed \u2014 `PrivateRegistryConfiguration.EncryptedValue` now uses `json:\"-\"` so it never serializes to API responses; persistence uses a separate `privateRegistryConfigurationPersist` struct that round-trips the sealed value",
+        "status_kind": "fixed"
       },
       {
         "category": "REST",
@@ -2080,8 +2080,8 @@
         "id": "REST-112",
         "location": "gh_secret_scanning.go:369, gh_dependabot.go:770",
         "severity": "m",
-        "status": "open",
-        "status_kind": "open"
+        "status": "fixed \u2014 removed the commented-out `handleListSecretScanningUserAlerts` and user-scoped Dependabot secret handlers",
+        "status_kind": "fixed"
       },
       {
         "category": "REST",
@@ -5832,8 +5832,8 @@
         },
         "REST": {
           "status": {
-            "fixed": 98,
-            "open": 17,
+            "fixed": 101,
+            "open": 14,
             "partial": 3
           },
           "total": 118
@@ -5870,8 +5870,8 @@
       },
       "status": {
         "deferred": 1,
-        "fixed": 423,
-        "open": 154,
+        "fixed": 426,
+        "open": 151,
         "partial": 40
       },
       "total": 618
