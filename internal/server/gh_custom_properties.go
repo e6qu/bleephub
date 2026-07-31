@@ -576,7 +576,7 @@ func (st *Store) EffectiveRepoCustomPropertyValues(orgLogin, repoKey string) []m
 	out := make([]map[string]interface{}, 0, len(names))
 	for _, name := range names {
 		value, ok := set[name]
-		if !ok {
+		if !ok && !defs[name].RequireExplicitValues {
 			value = defs[name].DefaultValue
 		}
 		if value == nil {

@@ -50,7 +50,7 @@ func (s *Server) handleUpdateEnterpriseSecretScanningPatternConfigurations(w htt
 func (s *Server) handleListEnterpriseSecretScanningAlerts(w http.ResponseWriter, r *http.Request) {
 	var alerts []*SecretScanningAlert
 	for _, org := range s.store.ListOrgsAll(0) {
-		alerts = append(alerts, s.store.ListSecretScanningAlertsByOrg(org.ID)...)
+		alerts = append(alerts, s.store.ListSecretScanningAlertsByOrg(org.ID, "", "", "", "", "")...)
 	}
 	sort.Slice(alerts, func(i, j int) bool {
 		if alerts[i].CreatedAt.Equal(alerts[j].CreatedAt) {

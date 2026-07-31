@@ -89,7 +89,7 @@ func TestCodespaceWorkspacePreparationDoesNotHoldStoreLock(t *testing.T) {
 
 	created := make(chan error, 1)
 	go func() {
-		_, _, cleanup, err := store.reserveCodespace(user.Login, repo.FullName, "main", "", "")
+		_, _, cleanup, err := store.reserveCodespace(user.Login, repo.FullName, "main", "", codespaceCreateOptions{})
 		if cleanup != nil {
 			cleanup()
 		}

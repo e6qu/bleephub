@@ -633,7 +633,8 @@ func (s *Server) handleListDependabotOrgAlerts(w http.ResponseWriter, r *http.Re
 		return
 	}
 
-	alerts := s.store.ListDependabotAlertsByOrg(org.ID)
+	q := r.URL.Query()
+	alerts := s.store.ListDependabotAlertsByOrg(org.ID, q.Get("state"), q.Get("ecosystem"), q.Get("package"), q.Get("sort"), q.Get("direction"))
 	page := paginateAndLink(w, r, alerts)
 	baseURL := s.baseURL(r)
 	out := make([]map[string]interface{}, 0, len(page))

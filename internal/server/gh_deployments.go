@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net/http"
 	"strconv"
+	"strings"
 	"sync"
 	"time"
 )
@@ -89,6 +90,21 @@ type Environment struct {
 type DeploymentBranchPolicy struct {
 	ProtectedBranches    bool `json:"protected_branches"`
 	CustomBranchPolicies bool `json:"custom_branch_policies"`
+}
+
+type autoInactiveDeployment struct {
+	deploymentID int
+	status       *DeploymentStatus
+	repoFullName string
+	environment  string
+}
+
+func isCompletingDeploymentState(state string) bool {
+	switch state {
+	case "in_progress", "queued", "pending", "success", "failure", "error":
+		return true
+	}
+	return false
 }
 
 // DeploymentStore wraps deployment + status + environment CRUD with a mutex.
@@ -205,12 +221,12 @@ func (ds *DeploymentStore) deleteDeploymentBatchLocked(d *Deployment, batch *per
 	}
 }
 
-func (ds *DeploymentStore) AddStatus(deploymentID, creatorID int, state, description, targetURL, logURL, envURL, env string, autoInactive bool) *DeploymentStatus {
+func (ds *DeploymentStore) AddStatus(deploymentID, creatorID int, state, description, targetURL, logURL, envURL, env string, autoInactive bool) (*DeploymentStatus, []autoInactiveDeployment) {
 	ds.mu.Lock()
 	defer ds.mu.Unlock()
 	d := ds.deployments[deploymentID]
 	if d == nil {
-		return nil
+		return nil, nil
 	}
 	id := ds.nextStatusID
 	ds.nextStatusID++
@@ -233,11 +249,69 @@ func (ds *DeploymentStore) AddStatus(deploymentID, creatorID int, state, descrip
 	ds.statuses[id] = status
 	d.Statuses = append(d.Statuses, status)
 	d.UpdatedAt = now
+	var batch *persistBatch
 	if ds.persist != nil {
-		ds.persist.MustPut("deployment_statuses", strconv.Itoa(id), status)
-		ds.persist.MustPut("deployments", strconv.Itoa(deploymentID), d)
+		batch = newPersistBatch(ds.persist)
+		batch.Put("deployment_statuses", strconv.Itoa(id), status)
+		batch.Put("deployments", strconv.Itoa(deploymentID), d)
 	}
-	return status
+	var auto []autoInactiveDeployment
+	if autoInactive && isCompletingDeploymentState(state) {
+		for _, prior := range ds.byRepo[d.RepoID] {
+			if prior.ID == d.ID {
+				continue
+			}
+			if prior.TransientEnv {
+				continue
+			}
+			if !strings.EqualFold(prior.Environment, d.Environment) {
+				continue
+			}
+			alreadyInactive := false
+			for _, st := range prior.Statuses {
+				if st.State == "inactive" {
+					alreadyInactive = true
+					break
+				}
+			}
+			if alreadyInactive {
+				continue
+			}
+			sid := ds.nextStatusID
+			ds.nextStatusID++
+			snow := time.Now().UTC()
+			inactiveStatus := &DeploymentStatus{
+				ID:             sid,
+				NodeID:         fmt.Sprintf("DS_kgDO%08d", sid),
+				State:          "inactive",
+				CreatorID:      creatorID,
+				DeploymentID:   prior.ID,
+				Description:    fmt.Sprintf("Auto-inactivated by deployment #%d", d.ID),
+				Environment:    prior.Environment,
+				AutoInactive:   false,
+				CreatedAt:      snow,
+				UpdatedAt:      snow,
+			}
+			ds.statuses[sid] = inactiveStatus
+			prior.Statuses = append(prior.Statuses, inactiveStatus)
+			prior.UpdatedAt = snow
+			if batch != nil {
+				batch.Put("deployment_statuses", strconv.Itoa(sid), inactiveStatus)
+				batch.Put("deployments", strconv.Itoa(prior.ID), prior)
+			}
+			auto = append(auto, autoInactiveDeployment{
+				deploymentID: prior.ID,
+				status:       inactiveStatus,
+				environment:  prior.Environment,
+			})
+		}
+	}
+	if batch != nil {
+		if err := batch.Commit(); err != nil {
+			panic(fmt.Sprintf("persistence commit failed: %v", err))
+		}
+	}
+	return status, auto
 }
 
 func (ds *DeploymentStore) ListStatuses(deploymentID int) []*DeploymentStatus {
@@ -554,8 +628,19 @@ func (s *Server) handleCreateDeploymentStatus(w http.ResponseWriter, r *http.Req
 	if env == "" {
 		env = d.Environment
 	}
-	status := s.store.Deployments.AddStatus(id, user.ID, req.State, req.Description, "", req.LogURL, req.EnvironmentURL, env, bool(req.AutoInactive))
+	status, autoInactivated := s.store.Deployments.AddStatus(id, user.ID, req.State, req.Description, "", req.LogURL, req.EnvironmentURL, env, bool(req.AutoInactive))
 	s.emitWebhookEvent(repo.FullName, "deployment_status", req.State, buildDeploymentStatusEventPayload(repo, d, status, user))
+	for _, ai := range autoInactivated {
+		priorDep := s.store.Deployments.GetDeployment(ai.deploymentID)
+		if priorDep == nil {
+			continue
+		}
+		priorRepo := s.store.GetRepoByID(priorDep.RepoID)
+		if priorRepo == nil {
+			continue
+		}
+		s.emitWebhookEvent(priorRepo.FullName, "deployment_status", "inactive", buildDeploymentStatusEventPayload(priorRepo, priorDep, ai.status, user))
+	}
 	writeJSON(w, http.StatusCreated, deploymentStatusToJSON(status, s.store, s.baseURL(r), repo))
 }
 

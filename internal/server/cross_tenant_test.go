@@ -119,7 +119,7 @@ func TestCrossTenantDeploymentStatusIsNotReachableByID(t *testing.T) {
 	deployments := testServer.store.Deployments
 
 	victimDep := deployments.CreateDeployment(f.victimRepo.ID, f.victim.ID, "main", "sha", "deploy", "production", "victim", nil, true, false)
-	victimStatus := deployments.AddStatus(victimDep.ID, f.victim.ID, "success", "victim-only", "", "", "", "production", false)
+	victimStatus, _ := deployments.AddStatus(victimDep.ID, f.victim.ID, "success", "victim-only", "", "", "", "production", false)
 	attackerDep := deployments.CreateDeployment(f.attackerRepo.ID, f.attacker.ID, "main", "sha", "deploy", "production", "attacker", nil, true, false)
 	if victimStatus == nil || attackerDep == nil {
 		t.Fatalf("could not create the deployment fixtures")

@@ -41,6 +41,7 @@ type CodeScanningAlert struct {
 	RuleSeverity     string                      `json:"rule_severity"`
 	RuleDescription  string                      `json:"rule_description"`
 	ToolName         string                      `json:"tool_name"`
+	ToolGUID         string                      `json:"tool_guid"`
 	State            string                      `json:"state"`
 	DismissedReason  string                      `json:"dismissed_reason"`
 	DismissedComment string                      `json:"dismissed_comment"`
@@ -64,6 +65,7 @@ type CodeScanningAnalysis struct {
 	AnalysisKey   string    `json:"analysis_key"`
 	Category      string    `json:"category"`
 	ToolName      string    `json:"tool_name"`
+	ToolGUID      string    `json:"tool_guid"`
 	ResultsCount  int       `json:"results_count"`
 	RulesCount    int       `json:"rules_count"`
 	SARIFUploadID string    `json:"sarif_upload_id,omitempty"`
@@ -84,7 +86,7 @@ type SARIFUpload struct {
 
 // CreateCodeScanningAlert seeds a code-scanning alert directly through the
 // operator surface.
-func (st *Store) CreateCodeScanningAlert(repoKey, ruleID, severity, description, toolName, state string, instances []CodeScanningAlertInstance) *CodeScanningAlert {
+func (st *Store) CreateCodeScanningAlert(repoKey, ruleID, severity, description, toolName, toolGUID, state string, instances []CodeScanningAlertInstance) *CodeScanningAlert {
 	st.mu.Lock()
 	defer st.mu.Unlock()
 
@@ -247,7 +249,7 @@ func isValidDismissedReason(r string) bool {
 }
 
 // CreateCodeScanningAnalysis records a new analysis run for a repo.
-func (st *Store) CreateCodeScanningAnalysis(repoKey, ref, commitSHA, analysisKey, category, toolName string) *CodeScanningAnalysis {
+func (st *Store) CreateCodeScanningAnalysis(repoKey, ref, commitSHA, analysisKey, category, toolName, toolGUID string) *CodeScanningAnalysis {
 	st.mu.Lock()
 	defer st.mu.Unlock()
 
@@ -265,6 +267,7 @@ func (st *Store) CreateCodeScanningAnalysis(repoKey, ref, commitSHA, analysisKey
 		AnalysisKey: analysisKey,
 		Category:    category,
 		ToolName:    toolName,
+		ToolGUID:    toolGUID,
 		CreatedAt:   now,
 	}
 	st.NextCodeScanningAnalysisID++
@@ -373,10 +376,11 @@ func (st *Store) CreateSARIFUpload(repoKey string, payload map[string]interface{
 	for _, rawRun := range runs {
 		run, _ := rawRun.(map[string]interface{})
 		toolName := extractSARIFToolName(run, toolNameOverride)
+		toolGUID := extractSARIFToolGUID(run)
 		results, _ := run["results"].([]interface{})
 		analysisKey := fmt.Sprintf("%s:%s", toolName, ref)
 		category := fmt.Sprintf("%s/%s", toolName, ref)
-		analysis := st.createAnalysisAndAlertsLocked(repoKey, ref, commitSHA, analysisKey, category, toolName, run, results)
+		analysis := st.createAnalysisAndAlertsLocked(repoKey, ref, commitSHA, analysisKey, category, toolName, toolGUID, run, results)
 		analysis.SARIFUploadID = uploadID
 		st.persistCodeScanningAnalysis(analysis)
 	}
@@ -398,7 +402,14 @@ func extractSARIFToolName(run map[string]interface{}, fallback string) string {
 	return fallback
 }
 
-func (st *Store) createAnalysisAndAlertsLocked(repoKey, ref, commitSHA, analysisKey, category, toolName string, run map[string]interface{}, results []interface{}) *CodeScanningAnalysis {
+func extractSARIFToolGUID(run map[string]interface{}) string {
+	tool, _ := run["tool"].(map[string]interface{})
+	driver, _ := tool["driver"].(map[string]interface{})
+	guid, _ := driver["guid"].(string)
+	return guid
+}
+
+func (st *Store) createAnalysisAndAlertsLocked(repoKey, ref, commitSHA, analysisKey, category, toolName, toolGUID string, run map[string]interface{}, results []interface{}) *CodeScanningAnalysis {
 	if st.CodeScanningAlertsByRepo[repoKey] == nil {
 		st.CodeScanningAlertsByRepo[repoKey] = make(map[int]*CodeScanningAlert)
 	}
@@ -419,6 +430,7 @@ func (st *Store) createAnalysisAndAlertsLocked(repoKey, ref, commitSHA, analysis
 		AnalysisKey: analysisKey,
 		Category:    category,
 		ToolName:    toolName,
+		ToolGUID:    toolGUID,
 		CreatedAt:   now,
 	}
 	st.NextCodeScanningAnalysisID++
@@ -487,6 +499,7 @@ func (st *Store) createAnalysisAndAlertsLocked(repoKey, ref, commitSHA, analysis
 			RuleSeverity:    ruleSeverity,
 			RuleDescription: ruleDescription,
 			ToolName:        toolName,
+			ToolGUID:        toolGUID,
 			State:           "open",
 			Instances:       instances,
 			CreatedAt:       now,
