@@ -53,7 +53,7 @@ func TestFocusedRouteTestsUseTheProductionPipeline(t *testing.T) {
 // fails before review.
 func TestReliabilityDebtOnlyShrinks(t *testing.T) {
 	const (
-		maxDirectPersistenceWrites = 574
+		maxDirectPersistenceWrites = 568
 		minBatchedMutations        = 24
 		maxSharedHarnessFiles      = 127
 		maxSharedHarnessReferences = 1436

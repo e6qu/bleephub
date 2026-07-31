@@ -4002,12 +4002,6 @@ func generateGistID() (string, error) {
 	return h, nil
 }
 
-func (st *Store) persistGistLocked(g *Gist) {
-	if st.persist != nil {
-		st.persist.MustPut("gists", g.ID, g)
-	}
-}
-
 func cloneGist(g *Gist) *Gist {
 	if g == nil {
 		return nil
@@ -4050,36 +4044,6 @@ func cloneGistStars(stars map[string]bool) map[string]bool {
 func (st *Store) commitGistBatchLocked(batch *persistBatch) {
 	if err := batch.Commit(); err != nil {
 		panic(&persistenceFailure{op: "batch", bucket: "gists", err: err})
-	}
-}
-
-func (st *Store) deleteGistPersistenceLocked(id string) {
-	if st.persist != nil {
-		st.persist.MustDelete("gists", id)
-	}
-}
-
-func (st *Store) persistGistCommentLocked(c *GistComment) {
-	if st.persist != nil {
-		st.persist.MustPut("gist_comments", strconv.Itoa(c.ID), c)
-	}
-}
-
-func (st *Store) deleteGistCommentPersistenceLocked(id int) {
-	if st.persist != nil {
-		st.persist.MustDelete("gist_comments", strconv.Itoa(id))
-	}
-}
-
-func (st *Store) persistStarredGistsLocked(userID int) {
-	if st.persist == nil {
-		return
-	}
-	key := strconv.Itoa(userID)
-	if stars := st.StarredGists[userID]; len(stars) > 0 {
-		st.persist.MustPut("starred_gists", key, persistedStarredGists{UserID: userID, Stars: stars})
-	} else {
-		st.persist.MustDelete("starred_gists", key)
 	}
 }
 
