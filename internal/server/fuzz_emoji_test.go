@@ -56,7 +56,7 @@ func FuzzEmojiPathResolver(f *testing.F) {
 		}
 		req.Header.Set("Authorization", "token "+defaultToken)
 		w := httptest.NewRecorder()
-		s.ghHeadersMiddleware(s.mux).ServeHTTP(w, req)
+		s.requestHandler().ServeHTTP(w, req)
 
 		switch w.Code {
 		case http.StatusOK:

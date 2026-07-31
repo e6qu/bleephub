@@ -22,7 +22,7 @@ func TestCommitStatuses_CreateListCombined(t *testing.T) {
 		req := httptest.NewRequest("POST", "/api/v3/repos/admin/status-repo/statuses/"+sha, bytes.NewReader(body))
 		req.Header.Set("Authorization", "Bearer bleephub-admin-token-00000000000000000000")
 		w := httptest.NewRecorder()
-		s.ghHeadersMiddleware(s.mux).ServeHTTP(w, req)
+		s.requestHandler().ServeHTTP(w, req)
 		return w
 	}
 
@@ -76,7 +76,7 @@ func TestCommitStatuses_CreateListCombined(t *testing.T) {
 	req := httptest.NewRequest("GET", "/api/v3/repos/admin/status-repo/commits/"+sha+"/statuses", nil)
 	req.Header.Set("Authorization", "Bearer bleephub-admin-token-00000000000000000000")
 	w = httptest.NewRecorder()
-	s.ghHeadersMiddleware(s.mux).ServeHTTP(w, req)
+	s.requestHandler().ServeHTTP(w, req)
 	if w.Code != http.StatusOK {
 		t.Fatalf("list statuses: %d body=%s", w.Code, w.Body.String())
 	}
@@ -93,7 +93,7 @@ func TestCommitStatuses_CreateListCombined(t *testing.T) {
 	req = httptest.NewRequest("GET", "/api/v3/repos/admin/status-repo/commits/"+sha+"/status", nil)
 	req.Header.Set("Authorization", "Bearer bleephub-admin-token-00000000000000000000")
 	w = httptest.NewRecorder()
-	s.ghHeadersMiddleware(s.mux).ServeHTTP(w, req)
+	s.requestHandler().ServeHTTP(w, req)
 	if w.Code != http.StatusOK {
 		t.Fatalf("combined status: %d body=%s", w.Code, w.Body.String())
 	}
@@ -126,7 +126,7 @@ func TestCommitStatuses_MissingState422(t *testing.T) {
 	req := httptest.NewRequest("POST", "/api/v3/repos/admin/status-repo2/statuses/abc", bytes.NewReader(body))
 	req.Header.Set("Authorization", "Bearer bleephub-admin-token-00000000000000000000")
 	w := httptest.NewRecorder()
-	s.ghHeadersMiddleware(s.mux).ServeHTTP(w, req)
+	s.requestHandler().ServeHTTP(w, req)
 	if w.Code != http.StatusUnprocessableEntity {
 		t.Errorf("missing state: %d", w.Code)
 	}
@@ -135,7 +135,7 @@ func TestCommitStatuses_MissingState422(t *testing.T) {
 	req = httptest.NewRequest("POST", "/api/v3/repos/admin/status-repo2/statuses/abc", bytes.NewReader(body))
 	req.Header.Set("Authorization", "Bearer bleephub-admin-token-00000000000000000000")
 	w = httptest.NewRecorder()
-	s.ghHeadersMiddleware(s.mux).ServeHTTP(w, req)
+	s.requestHandler().ServeHTTP(w, req)
 	if w.Code != http.StatusUnprocessableEntity {
 		t.Errorf("invalid state: %d body=%s", w.Code, w.Body.String())
 	}

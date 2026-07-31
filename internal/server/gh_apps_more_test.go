@@ -62,7 +62,7 @@ func TestSuspendUnsuspendInstallation(t *testing.T) {
 		req.Header.Set("Authorization", "Bearer "+jwt)
 		w := httptest.NewRecorder()
 		// Run through the same middleware the real server uses so JWT lands in ctx.
-		s.ghHeadersMiddleware(s.mux).ServeHTTP(w, req)
+		s.requestHandler().ServeHTTP(w, req)
 		return w
 	}
 
@@ -340,7 +340,7 @@ func TestListInstallationRepositories_GhsToken(t *testing.T) {
 	req := httptest.NewRequest("GET", "/api/v3/installation/repositories", nil)
 	req.Header.Set("Authorization", "Bearer "+tok.Token)
 	w := httptest.NewRecorder()
-	s.ghHeadersMiddleware(s.mux).ServeHTTP(w, req)
+	s.requestHandler().ServeHTTP(w, req)
 	if w.Code != http.StatusOK {
 		t.Fatalf("status = %d body = %s", w.Code, w.Body.String())
 	}

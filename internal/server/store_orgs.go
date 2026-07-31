@@ -979,7 +979,5 @@ func (st *Store) RemoveTeamRepo(orgLogin, slug, repoFullName string) bool {
 
 // CreateOrgRepo creates a repository owned by an organization.
 func (st *Store) CreateOrgRepo(org *Org, creator *User, name, description string, private bool) *Repo {
-	st.mu.Lock()
-	defer st.mu.Unlock()
-	return st.createRepoLocked(org.Login+"/"+name, name, description, private, org.ID, "Organization", nil)
+	return st.createRepo(org.Login+"/"+name, name, description, private, org.ID, "Organization", nil)
 }

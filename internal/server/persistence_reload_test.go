@@ -2174,8 +2174,8 @@ func TestPersistenceReload_CodespacesAndSecrets(t *testing.T) {
 	if got.MachineName != "basicLinux32" || got.DisplayName != "Reload Codespace" || got.ContainerID != cs.ContainerID {
 		t.Errorf("codespace metadata did not round-trip: %+v", got)
 	}
-	if st2.GetCodespaceByName(cs.Name) != got {
-		t.Error("CodespacesByName index not rebuilt on reload")
+	if byName := st2.GetCodespaceByName(cs.Name); byName == nil || byName.ID != got.ID {
+		t.Errorf("CodespacesByName index not rebuilt on reload: %#v", byName)
 	}
 	if st2.NextCodespaceID <= cs.ID {
 		t.Errorf("NextCodespaceID after reload = %d, want > %d (counter must not restart)", st2.NextCodespaceID, cs.ID)

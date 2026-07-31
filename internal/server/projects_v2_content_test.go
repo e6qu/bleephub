@@ -48,7 +48,7 @@ func TestProjectItemAddRefusesContentTheCallerCannotRead(t *testing.T) {
 	}
 	token := store.CreateToken(snooper.ID, "repo, project")
 
-	handler := testServer.ghHeadersMiddleware(testServer.mux)
+	handler := testServer.requestHandler()
 	add := func(body map[string]any) *httptest.ResponseRecorder {
 		raw, err := json.Marshal(body)
 		if err != nil {

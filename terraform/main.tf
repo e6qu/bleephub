@@ -42,7 +42,7 @@ locals {
   # from a working one. The start period covers a cold wake, where the listener
   # only opens once the dqlite quorum has formed.
   app_health_check = {
-    command     = ["CMD", "bash", "-c", "exec 3<>/dev/tcp/127.0.0.1/5555 && printf 'GET /health HTTP/1.0\\r\\n\\r\\n' >&3 && grep -q '^HTTP/1.[01] 200' <&3"]
+    command     = ["CMD", "bash", "-c", "exec 3<>/dev/tcp/127.0.0.1/5555 && printf 'GET /ready HTTP/1.0\\r\\n\\r\\n' >&3 && grep -q '^HTTP/1.[01] 200' <&3"]
     interval    = 15
     timeout     = 5
     retries     = 5

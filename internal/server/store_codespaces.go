@@ -158,7 +158,7 @@ func (st *Store) CreateCodespace(ownerLogin, repoKey, gitRef, machineName, displ
 		live.UpdatedAt = st.currentTime()
 		st.persistCodespaceLocked(live)
 		st.mu.Unlock()
-		return live, nil
+		return cloneCodespace(live), nil
 	}
 	state := dockerStateToCodespaceState(containerID)
 
@@ -174,17 +174,63 @@ func (st *Store) CreateCodespace(ownerLogin, repoKey, gitRef, machineName, displ
 	live.State = state
 	live.UpdatedAt = st.currentTime()
 	st.persistCodespaceLocked(live)
-	return live, nil
+	return cloneCodespace(live), nil
 }
 
 func (st *Store) reserveCodespace(ownerLogin, repoKey, gitRef, machineName, displayName string) (*Codespace, string, func(), error) {
-	st.mu.Lock()
-	defer st.mu.Unlock()
-
 	name, err := generateCodespaceName(repoKey)
 	if err != nil {
 		return nil, "", nil, err
 	}
+
+	// Snapshot repository identity and storage under the lock, then perform
+	// object/filesystem reads without blocking unrelated store operations.
+	// The identity check before publication rejects a workspace prepared from
+	// a repository that was deleted or replaced in the meantime.
+	var repo *Repo
+	var stor gitStorage.Storer
+	st.mu.RLock()
+	if repoKey != "" {
+		repo = st.ReposByName[repoKey]
+		stor = st.GitStorages[repoKey]
+		if repo == nil {
+			st.mu.RUnlock()
+			return nil, "", nil, fmt.Errorf("repo not found")
+		}
+		if gitRef == "" {
+			gitRef = repo.DefaultBranch
+		}
+	}
+	st.mu.RUnlock()
+
+	image := codespaceDefaultImage
+	devcontainerPath := ""
+	if repoKey != "" {
+		if img, path, ok := resolveDevcontainer(stor, gitRef); ok {
+			image = img
+			devcontainerPath = path
+		}
+	}
+	prepareWorkspace := st.codespaceWorkspacePrepare
+	if prepareWorkspace == nil {
+		prepareWorkspace = prepareCodespaceWorkspace
+	}
+	repoDir, cleanup, err := prepareWorkspace(repoKey, repo, stor, gitRef)
+	if err != nil {
+		return nil, "", nil, fmt.Errorf("prepare workspace: %w", err)
+	}
+
+	st.mu.Lock()
+	defer st.mu.Unlock()
+	if repoKey != "" && st.ReposByName[repoKey] != repo {
+		cleanup()
+		return nil, "", nil, fmt.Errorf("repository changed while preparing workspace")
+	}
+	if st.CodespacesByName[name] != nil {
+		cleanup()
+		return nil, "", nil, fmt.Errorf("codespace name already exists")
+	}
+
 	machine := codespaceDefaultMachine()
 	for _, m := range codespaceMachines {
 		if m.Name == machineName {
@@ -194,15 +240,6 @@ func (st *Store) reserveCodespace(ownerLogin, repoKey, gitRef, machineName, disp
 	}
 	if displayName == "" {
 		displayName = name
-	}
-
-	image := codespaceDefaultImage
-	devcontainerPath := ""
-	if repoKey != "" {
-		if img, path, ok := st.resolveDevcontainerLocked(repoKey, gitRef); ok {
-			image = img
-			devcontainerPath = path
-		}
 	}
 
 	cs := &Codespace{
@@ -223,32 +260,32 @@ func (st *Store) reserveCodespace(ownerLogin, repoKey, gitRef, machineName, disp
 		DevcontainerPath:   devcontainerPath,
 		Runtime:            "docker",
 	}
-
-	repoDir, cleanup, err := st.prepareWorkspaceLocked(repoKey, gitRef)
-	if err != nil {
-		return nil, "", nil, fmt.Errorf("prepare workspace: %w", err)
-	}
 	cs.WorkspaceMount = repoDir
 
+	batch := newPersistBatch(st.persist)
+	batch.Put("codespaces", strconv.Itoa(cs.ID), cs)
+	if err := batch.Commit(); err != nil {
+		cleanup()
+		return nil, "", nil, fmt.Errorf("persist codespace reservation: %w", err)
+	}
 	st.Codespaces[cs.ID] = cs
 	st.CodespacesByName[cs.Name] = cs
 	st.NextCodespaceID++
-	st.persistCodespaceLocked(cs)
-	return cs, repoDir, cleanup, nil
+	return cloneCodespace(cs), repoDir, cleanup, nil
 }
 
 // GetCodespace returns a codespace by ID.
 func (st *Store) GetCodespace(id int) *Codespace {
 	st.mu.RLock()
 	defer st.mu.RUnlock()
-	return st.Codespaces[id]
+	return cloneCodespace(st.Codespaces[id])
 }
 
 // GetCodespaceByName returns a codespace by its unique name.
 func (st *Store) GetCodespaceByName(name string) *Codespace {
 	st.mu.RLock()
 	defer st.mu.RUnlock()
-	return st.CodespacesByName[name]
+	return cloneCodespace(st.CodespacesByName[name])
 }
 
 // ListCodespacesByOwner returns all codespaces owned by a user.
@@ -258,7 +295,7 @@ func (st *Store) ListCodespacesByOwner(ownerLogin string) []*Codespace {
 	var out []*Codespace
 	for _, cs := range st.Codespaces {
 		if cs.OwnerLogin == ownerLogin {
-			out = append(out, cs)
+			out = append(out, cloneCodespace(cs))
 		}
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].ID > out[j].ID })
@@ -272,7 +309,7 @@ func (st *Store) ListCodespacesByRepo(repoKey string) []*Codespace {
 	var out []*Codespace
 	for _, cs := range st.Codespaces {
 		if cs.RepoKey == repoKey {
-			out = append(out, cs)
+			out = append(out, cloneCodespace(cs))
 		}
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].ID > out[j].ID })
@@ -282,23 +319,54 @@ func (st *Store) ListCodespacesByRepo(repoKey string) []*Codespace {
 // DeleteCodespace stops and removes the backing container and deletes the record.
 func (st *Store) DeleteCodespace(id int) (bool, error) {
 	st.mu.Lock()
-	defer st.mu.Unlock()
-	cs := st.Codespaces[id]
-	if cs == nil {
+	live := st.Codespaces[id]
+	if live == nil {
+		st.mu.Unlock()
 		return false, nil
 	}
-	if err := st.deleteCodespaceRuntimeLocked(cs); err != nil {
+	if live.State == "Deleting" {
+		st.mu.Unlock()
+		return true, fmt.Errorf("codespace deletion is already in progress")
+	}
+	snapshot := cloneCodespace(live)
+	live.State = "Deleting"
+	live.UpdatedAt = st.currentTime()
+	deleteRuntime := st.codespaceRuntimeDelete
+	if deleteRuntime == nil {
+		deleteRuntime = st.deleteCodespaceRuntime
+	}
+	st.mu.Unlock()
+
+	if err := deleteRuntime(snapshot); err != nil {
+		st.mu.Lock()
+		if current := st.Codespaces[id]; current != nil && current.State == "Deleting" {
+			current.State = snapshot.State
+			current.UpdatedAt = snapshot.UpdatedAt
+		}
+		st.mu.Unlock()
 		return true, err
 	}
-	delete(st.Codespaces, id)
-	delete(st.CodespacesByName, cs.Name)
-	if st.persist != nil {
-		st.persist.MustDelete("codespaces", strconv.Itoa(id))
+
+	st.mu.Lock()
+	defer st.mu.Unlock()
+	current := st.Codespaces[id]
+	if current == nil {
+		return true, nil
 	}
+	if current.Name != snapshot.Name || current.State != "Deleting" {
+		return true, fmt.Errorf("codespace %d changed while its runtime was removed", id)
+	}
+	batch := newPersistBatch(st.persist)
+	batch.Delete("codespaces", strconv.Itoa(id))
+	if err := batch.Commit(); err != nil {
+		return true, fmt.Errorf("persist codespace deletion: %w", err)
+	}
+	delete(st.Codespaces, id)
+	delete(st.CodespacesByName, snapshot.Name)
 	return true, nil
 }
 
-func (st *Store) deleteCodespaceRuntimeLocked(cs *Codespace) error {
+func (st *Store) deleteCodespaceRuntime(cs *Codespace) error {
 	if cs.ContainerID != "" {
 		ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 		err := dockerRemoveContainer(ctx, cs.ContainerID)
@@ -365,10 +433,11 @@ func pathIsUnderDir(path, dir string) bool {
 func (st *Store) UpdateCodespace(id int, displayName, machineName string, retention int) (*Codespace, bool) {
 	st.mu.Lock()
 	defer st.mu.Unlock()
-	cs := st.Codespaces[id]
-	if cs == nil {
+	current := st.Codespaces[id]
+	if current == nil || current.State == "Deleting" {
 		return nil, false
 	}
+	cs := cloneCodespace(current)
 	if displayName != "" {
 		cs.DisplayName = displayName
 	}
@@ -387,8 +456,14 @@ func (st *Store) UpdateCodespace(id int, displayName, machineName string, retent
 	}
 	cs.UpdatedAt = st.currentTime()
 	cs.LastUsedAt = st.currentTime()
-	st.persistCodespaceLocked(cs)
-	return cs, true
+	batch := newPersistBatch(st.persist)
+	batch.Put("codespaces", strconv.Itoa(cs.ID), cs)
+	if err := batch.Commit(); err != nil {
+		panic(&persistenceFailure{op: "batch", bucket: "codespaces", key: strconv.Itoa(cs.ID), err: err})
+	}
+	st.Codespaces[id] = cs
+	st.CodespacesByName[cs.Name] = cs
+	return cloneCodespace(cs), true
 }
 
 // RefreshCodespaceState queries Docker for the current state of a codespace.
@@ -644,7 +719,7 @@ func (st *Store) PublishCodespace(id int, owner *User, name string, private bool
 	if name == "" {
 		name = cs.Name
 	}
-	repo := st.createRepoLocked(owner.Login+"/"+name, name, "", private, owner.ID, "User", owner)
+	repo := st.createRepoLocked(owner.Login+"/"+name, name, "", private, owner.ID, "User", owner, nil)
 	if repo == nil {
 		return nil, errRepoNameTaken
 	}
@@ -708,20 +783,14 @@ func dockerStateToCodespaceState(containerID string) string {
 	}
 }
 
-// resolveDevcontainerLocked reads .devcontainer/devcontainer.json from the
-// repo's default branch (or gitRef) and extracts the image if present.
-// Caller must hold st.mu (reads GitStorages).
-func (st *Store) resolveDevcontainerLocked(repoKey, gitRef string) (image, path string, ok bool) {
-	stor := st.GitStorages[repoKey]
+// resolveDevcontainer reads .devcontainer/devcontainer.json from a repository
+// storage snapshot and extracts the image if present.
+func resolveDevcontainer(stor gitStorage.Storer, gitRef string) (image, path string, ok bool) {
 	if stor == nil {
 		return "", "", false
 	}
 	if gitRef == "" {
-		if repo := st.ReposByName[repoKey]; repo != nil {
-			gitRef = repo.DefaultBranch
-		} else {
-			gitRef = "main"
-		}
+		gitRef = "main"
 	}
 
 	for _, p := range []string{".devcontainer/devcontainer.json", ".devcontainer.json"} {
@@ -742,17 +811,16 @@ func (st *Store) resolveDevcontainerLocked(repoKey, gitRef string) (image, path 
 	return "", "", false
 }
 
-// prepareWorkspaceLocked returns a host directory that can be mounted as
+// prepareCodespaceWorkspace returns a host directory that can be mounted as
 // /workspaces/<repo>. For filesystem-backed git storage it returns the git
 // directory directly; for in-memory storage it exports the ref into a temp dir.
 // The returned cleanup func removes any temp directory created.
-func (st *Store) prepareWorkspaceLocked(repoKey, gitRef string) (dir string, cleanup func(), err error) {
+func prepareCodespaceWorkspace(repoKey string, repo *Repo, stor gitStorage.Storer, gitRef string) (dir string, cleanup func(), err error) {
 	cleanup = func() {}
 	if repoKey == "" {
 		return "", cleanup, nil
 	}
 
-	repo := st.ReposByName[repoKey]
 	if repo == nil {
 		return "", cleanup, fmt.Errorf("repo not found")
 	}
@@ -770,7 +838,6 @@ func (st *Store) prepareWorkspaceLocked(repoKey, gitRef string) (dir string, cle
 		}
 	}
 
-	stor := st.GitStorages[repoKey]
 	if stor == nil {
 		return "", cleanup, fmt.Errorf("git storage not found")
 	}

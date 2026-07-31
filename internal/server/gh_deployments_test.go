@@ -21,7 +21,7 @@ func do(s *Server, method, path string, body []byte) *httptest.ResponseRecorder 
 	}
 	req.Header.Set("Authorization", "Bearer bleephub-admin-token-00000000000000000000")
 	w := httptest.NewRecorder()
-	s.ghHeadersMiddleware(s.mux).ServeHTTP(w, req)
+	s.requestHandler().ServeHTTP(w, req)
 	return w
 }
 

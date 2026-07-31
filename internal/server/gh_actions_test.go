@@ -99,7 +99,7 @@ func runAuthedRequest(s *Server, method, path string) *httptest.ResponseRecorder
 	req := httptest.NewRequest(method, path, nil)
 	req.Header.Set("Authorization", "Bearer "+defaultToken)
 	w := httptest.NewRecorder()
-	s.ghHeadersMiddleware(s.mux).ServeHTTP(w, req)
+	s.requestHandler().ServeHTTP(w, req)
 	return w
 }
 

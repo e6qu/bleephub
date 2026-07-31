@@ -39,7 +39,7 @@ func TestRequirePerm_GhsToken_PermsGate(t *testing.T) {
 	req := httptest.NewRequest("POST", "/api/v3/repos/admin/perms-target/issues", bytes.NewReader(body))
 	req.Header.Set("Authorization", "Bearer "+tok.Token)
 	w := httptest.NewRecorder()
-	s.ghHeadersMiddleware(s.mux).ServeHTTP(w, req)
+	s.requestHandler().ServeHTTP(w, req)
 	if w.Code != http.StatusForbidden {
 		t.Fatalf("expected 403 (issues:read can't create issues), got %d body=%s", w.Code, w.Body.String())
 	}
@@ -55,7 +55,7 @@ func TestRequirePerm_GhsToken_PermsGate(t *testing.T) {
 	req = httptest.NewRequest("POST", "/api/v3/repos/admin/perms-target/issues", bytes.NewReader(body))
 	req.Header.Set("Authorization", "Bearer "+fresh.Token)
 	w = httptest.NewRecorder()
-	s.ghHeadersMiddleware(s.mux).ServeHTTP(w, req)
+	s.requestHandler().ServeHTTP(w, req)
 	if w.Code != http.StatusCreated {
 		t.Fatalf("expected 201 with issues:write, got %d body=%s", w.Code, w.Body.String())
 	}
@@ -75,7 +75,7 @@ func TestRequirePerm_PATBypass(t *testing.T) {
 	req := httptest.NewRequest("POST", "/api/v3/repos/admin/pat-target/issues", bytes.NewReader(body))
 	req.Header.Set("Authorization", "Bearer bleephub-admin-token-00000000000000000000")
 	w := httptest.NewRecorder()
-	s.ghHeadersMiddleware(s.mux).ServeHTTP(w, req)
+	s.requestHandler().ServeHTTP(w, req)
 	if w.Code != http.StatusCreated {
 		t.Fatalf("PAT bypass failed: %d body=%s", w.Code, w.Body.String())
 	}
@@ -99,7 +99,7 @@ func TestRequirePerm_GhuToken_AppInstallationPerms(t *testing.T) {
 	req := httptest.NewRequest("POST", "/api/v3/repos/admin/ghu-target/issues", bytes.NewReader(body))
 	req.Header.Set("Authorization", "Bearer "+tok.Token)
 	w := httptest.NewRecorder()
-	s.ghHeadersMiddleware(s.mux).ServeHTTP(w, req)
+	s.requestHandler().ServeHTTP(w, req)
 	if w.Code != http.StatusCreated {
 		t.Fatalf("ghu_ token with issues:write installation expected 201, got %d body=%s", w.Code, w.Body.String())
 	}
@@ -124,7 +124,7 @@ func TestRequirePerm_GhoToken_ClassicScopesMap(t *testing.T) {
 	req := httptest.NewRequest("POST", "/api/v3/repos/admin/gho-target/issues", bytes.NewReader(body))
 	req.Header.Set("Authorization", "Bearer "+tokRepo.Token)
 	w := httptest.NewRecorder()
-	s.ghHeadersMiddleware(s.mux).ServeHTTP(w, req)
+	s.requestHandler().ServeHTTP(w, req)
 	if w.Code != http.StatusCreated {
 		t.Fatalf("repo scope expected 201, got %d body=%s", w.Code, w.Body.String())
 	}
@@ -133,7 +133,7 @@ func TestRequirePerm_GhoToken_ClassicScopesMap(t *testing.T) {
 	req = httptest.NewRequest("POST", "/api/v3/repos/admin/gho-target/issues", bytes.NewReader(body))
 	req.Header.Set("Authorization", "Bearer "+tokReadOrg.Token)
 	w = httptest.NewRecorder()
-	s.ghHeadersMiddleware(s.mux).ServeHTTP(w, req)
+	s.requestHandler().ServeHTTP(w, req)
 	if w.Code != http.StatusForbidden {
 		t.Fatalf("read:org expected 403, got %d body=%s", w.Code, w.Body.String())
 	}

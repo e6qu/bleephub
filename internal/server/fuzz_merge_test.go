@@ -43,7 +43,7 @@ func fuzzServe(s *Server, method, path string, body []byte) *httptest.ResponseRe
 	}
 	req.Header.Set("Authorization", "token "+defaultToken)
 	w := httptest.NewRecorder()
-	s.ghHeadersMiddleware(s.mux).ServeHTTP(w, req)
+	s.requestHandler().ServeHTTP(w, req)
 	return w
 }
 

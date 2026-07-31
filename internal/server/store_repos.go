@@ -74,13 +74,50 @@ type Repo struct {
 }
 
 func (st *Store) CreateRepo(owner *User, name, description string, private bool) *Repo {
-	st.mu.Lock()
-	defer st.mu.Unlock()
-	return st.createRepoLocked(owner.Login+"/"+name, name, description, private, owner.ID, "User", owner)
+	return st.createRepo(owner.Login+"/"+name, name, description, private, owner.ID, "User", owner)
 }
 
-// createRepoLocked creates a repo record and its git storage. Caller must hold st.mu.
-func (st *Store) createRepoLocked(fullName, name, description string, private bool, ownerID int, ownerType string, owner *User) *Repo {
+func (st *Store) createRepo(fullName, name, description string, private bool, ownerID int, ownerType string, owner *User) *Repo {
+	st.mu.Lock()
+	if st.pendingRepoCreations == nil {
+		st.pendingRepoCreations = make(map[string]bool)
+	}
+	if st.ReposByName[fullName] != nil || st.pendingRepoCreations[fullName] {
+		st.mu.Unlock()
+		return nil
+	}
+	st.pendingRepoCreations[fullName] = true
+	st.mu.Unlock()
+
+	// Storage initialization can include filesystem or S3 I/O. The pending
+	// name reservation preserves duplicate-create atomicity while ordinary
+	// reads and unrelated mutations continue.
+	openStorage := st.repoStorageOpen
+	if openStorage == nil {
+		openStorage = openOrInitGitStorage
+	}
+	stor, err := openStorage(context.Background(), fullName)
+	if err != nil {
+		st.mu.Lock()
+		delete(st.pendingRepoCreations, fullName)
+		st.mu.Unlock()
+		log.Printf("bleephub: create repo %s: open git storage: %s", safeLogText(fullName), safeLogError(err))
+		return nil
+	}
+
+	st.mu.Lock()
+	defer st.mu.Unlock()
+	delete(st.pendingRepoCreations, fullName)
+	if st.ReposByName[fullName] != nil {
+		return nil
+	}
+	return st.createRepoLocked(fullName, name, description, private, ownerID, ownerType, owner, stor)
+}
+
+// createRepoLocked creates a repo record around prepared git storage. Caller
+// must hold st.mu. A nil storer is retained only for the Codespaces publish
+// transaction, whose broader two-entity conversion is tracked separately.
+func (st *Store) createRepoLocked(fullName, name, description string, private bool, ownerID int, ownerType string, owner *User, stor gitStorage.Storer) *Repo {
 	if _, exists := st.ReposByName[fullName]; exists {
 		return nil
 	}
@@ -119,26 +156,30 @@ func (st *Store) createRepoLocked(fullName, name, description string, private bo
 		CreatedAt:                 now,
 		UpdatedAt:                 now,
 	}
-	st.NextRepo++
-
-	// Open git storage before registering the repo so a failure leaves no
-	// half-created entry behind, and log the cause — a bare nil return reads
-	// as "name taken" at the call sites, hiding storage misconfiguration.
-	stor, err := openOrInitGitStorage(context.Background(), fullName)
-	if err != nil {
-		log.Printf("bleephub: create repo %s: open git storage: %s", safeLogText(fullName), safeLogError(err))
-		return nil
+	if stor == nil {
+		var err error
+		openStorage := st.repoStorageOpen
+		if openStorage == nil {
+			openStorage = openOrInitGitStorage
+		}
+		stor, err = openStorage(context.Background(), fullName)
+		if err != nil {
+			log.Printf("bleephub: create repo %s: open git storage: %s", safeLogText(fullName), safeLogError(err))
+			return nil
+		}
 	}
 
+	batch := newPersistBatch(st.persist)
+	batch.Put("repos", strconv.Itoa(repo.ID), repo)
+	if err := batch.Commit(); err != nil {
+		panic(&persistenceFailure{op: "batch", bucket: "repos", key: strconv.Itoa(repo.ID), err: err})
+	}
+	st.NextRepo++
 	st.Repos[repo.ID] = repo
 	st.ReposByName[fullName] = repo
 	st.GitStorages[fullName] = stor
 
 	st.ensureDefaultDiscussionCategoriesLocked(repo.ID)
-
-	if st.persist != nil {
-		st.persist.MustPut("repos", strconv.Itoa(repo.ID), repo)
-	}
 
 	return repo
 }
@@ -172,15 +213,21 @@ func (st *Store) UpdateRepo(owner, name string, fn func(*Repo)) bool {
 	st.mu.Lock()
 	defer st.mu.Unlock()
 
-	repo, ok := st.ReposByName[owner+"/"+name]
+	repoKey := owner + "/" + name
+	current, ok := st.ReposByName[repoKey]
 	if !ok {
 		return false
 	}
+	repo := cloneRepoForMutation(current)
 	fn(repo)
 	repo.UpdatedAt = st.currentTime()
-	if st.persist != nil {
-		st.persist.MustPut("repos", strconv.Itoa(repo.ID), repo)
+	batch := newPersistBatch(st.persist)
+	batch.Put("repos", strconv.Itoa(repo.ID), repo)
+	if err := batch.Commit(); err != nil {
+		panic(&persistenceFailure{op: "batch", bucket: "repos", key: strconv.Itoa(repo.ID), err: err})
 	}
+	st.Repos[repo.ID] = repo
+	st.ReposByName[repoKey] = repo
 	return true
 }
 
@@ -189,91 +236,124 @@ func (st *Store) UpdateRepo(owner, name string, fn func(*Repo)) bool {
 // does not exist or the target name is already taken.
 func (st *Store) ForkRepo(owner *User, sourceRepo *Repo, name string) *Repo {
 	st.mu.Lock()
-	defer st.mu.Unlock()
-
 	fullName := owner.Login + "/" + name
-	if _, exists := st.ReposByName[fullName]; exists {
+	if st.pendingRepoCreations == nil {
+		st.pendingRepoCreations = make(map[string]bool)
+	}
+	if st.ReposByName[fullName] != nil || st.pendingRepoCreations[fullName] {
+		st.mu.Unlock()
 		return nil
 	}
-
 	srcStor, ok := st.GitStorages[sourceRepo.FullName]
 	if !ok {
+		st.mu.Unlock()
+		return nil
+	}
+	liveSource := st.Repos[sourceRepo.ID]
+	if liveSource == nil || liveSource.FullName != sourceRepo.FullName {
+		st.mu.Unlock()
+		return nil
+	}
+	source := cloneRepoForMutation(liveSource)
+	st.pendingRepoCreations[fullName] = true
+	st.mu.Unlock()
+
+	// Opening a backend and copying the complete object graph may involve S3
+	// and must not hold the global store lock. The target reservation prevents
+	// a create/fork race from publishing the same full name.
+	openStorage := st.repoStorageOpen
+	if openStorage == nil {
+		openStorage = openOrInitGitStorage
+	}
+	stor, err := openStorage(context.Background(), fullName)
+	if err == nil {
+		err = copyGitStorage(srcStor, stor)
+	}
+	if err != nil {
+		st.mu.Lock()
+		delete(st.pendingRepoCreations, fullName)
+		st.mu.Unlock()
+		log.Printf("bleephub: fork repo %s: copy git storage: %s", safeLogText(fullName), safeLogError(err))
 		return nil
 	}
 
-	sourceID := sourceRepo.ID
-	if sourceRepo.SourceID != 0 {
-		sourceID = sourceRepo.SourceID
+	st.mu.Lock()
+	if st.Repos[source.ID] != liveSource || st.ReposByName[fullName] != nil {
+		st.mu.Unlock()
+		_ = deleteRepoGitStorage(fullName)
+		st.mu.Lock()
+		delete(st.pendingRepoCreations, fullName)
+		st.mu.Unlock()
+		return nil
+	}
+	defer st.mu.Unlock()
+	delete(st.pendingRepoCreations, fullName)
+
+	sourceID := source.ID
+	if source.SourceID != 0 {
+		sourceID = source.SourceID
 	}
 
+	now := st.currentTime()
 	repo := &Repo{
 		ID:                        st.NextRepo,
 		NodeID:                    fmt.Sprintf("R_kgDO%08d", st.NextRepo),
 		Name:                      name,
 		FullName:                  fullName,
-		Description:               sourceRepo.Description,
-		Homepage:                  sourceRepo.Homepage,
-		DefaultBranch:             sourceRepo.DefaultBranch,
-		Visibility:                sourceRepo.Visibility,
-		Language:                  sourceRepo.Language,
+		Description:               source.Description,
+		Homepage:                  source.Homepage,
+		DefaultBranch:             source.DefaultBranch,
+		Visibility:                source.Visibility,
+		Language:                  source.Language,
 		Owner:                     owner,
 		OwnerID:                   owner.ID,
 		OwnerType:                 "User",
-		Private:                   sourceRepo.Private,
+		Private:                   source.Private,
 		Fork:                      true,
-		Archived:                  sourceRepo.Archived,
-		ArchivedAt:                cloneTimePtr(sourceRepo.ArchivedAt),
-		ParentID:                  sourceRepo.ID,
+		Archived:                  source.Archived,
+		ArchivedAt:                cloneTimePtr(source.ArchivedAt),
+		ParentID:                  source.ID,
 		SourceID:                  sourceID,
-		HasIssues:                 sourceRepo.HasIssues,
-		HasProjects:               sourceRepo.HasProjects,
-		HasWiki:                   sourceRepo.HasWiki,
-		HasDiscussions:            boolPointer(repoHasDiscussions(sourceRepo)),
-		HasPullRequests:           sourceRepo.HasPullRequests,
-		AllowSquashMerge:          sourceRepo.AllowSquashMerge,
-		AllowMergeCommit:          sourceRepo.AllowMergeCommit,
-		AllowRebaseMerge:          sourceRepo.AllowRebaseMerge,
-		AllowAutoMerge:            sourceRepo.AllowAutoMerge,
-		AllowUpdateBranch:         sourceRepo.AllowUpdateBranch,
-		DeleteBranchOnMerge:       sourceRepo.DeleteBranchOnMerge,
-		UseSquashPRTitleAsDefault: sourceRepo.UseSquashPRTitleAsDefault,
-		SquashMergeCommitTitle:    sourceRepo.SquashMergeCommitTitle,
-		SquashMergeCommitMessage:  sourceRepo.SquashMergeCommitMessage,
-		MergeCommitTitle:          sourceRepo.MergeCommitTitle,
-		MergeCommitMessage:        sourceRepo.MergeCommitMessage,
-		PullRequestCreationPolicy: sourceRepo.PullRequestCreationPolicy,
-		LicenseKey:                sourceRepo.LicenseKey,
-		LicenseName:               sourceRepo.LicenseName,
-		LicenseSPDX:               sourceRepo.LicenseSPDX,
-		Topics:                    append([]string(nil), sourceRepo.Topics...),
+		HasIssues:                 source.HasIssues,
+		HasProjects:               source.HasProjects,
+		HasWiki:                   source.HasWiki,
+		HasDiscussions:            boolPointer(repoHasDiscussions(source)),
+		HasPullRequests:           source.HasPullRequests,
+		AllowSquashMerge:          source.AllowSquashMerge,
+		AllowMergeCommit:          source.AllowMergeCommit,
+		AllowRebaseMerge:          source.AllowRebaseMerge,
+		AllowAutoMerge:            source.AllowAutoMerge,
+		AllowUpdateBranch:         source.AllowUpdateBranch,
+		DeleteBranchOnMerge:       source.DeleteBranchOnMerge,
+		UseSquashPRTitleAsDefault: source.UseSquashPRTitleAsDefault,
+		SquashMergeCommitTitle:    source.SquashMergeCommitTitle,
+		SquashMergeCommitMessage:  source.SquashMergeCommitMessage,
+		MergeCommitTitle:          source.MergeCommitTitle,
+		MergeCommitMessage:        source.MergeCommitMessage,
+		PullRequestCreationPolicy: source.PullRequestCreationPolicy,
+		LicenseKey:                source.LicenseKey,
+		LicenseName:               source.LicenseName,
+		LicenseSPDX:               source.LicenseSPDX,
+		Topics:                    append([]string(nil), source.Topics...),
 		Stargazers:                map[int]bool{},
 		NextIssueNumber:           1,
 		NextMilestoneNumber:       1,
-		CreatedAt:                 st.currentTime(),
-		UpdatedAt:                 st.currentTime(),
-		PushedAt:                  sourceRepo.PushedAt,
+		CreatedAt:                 now,
+		UpdatedAt:                 now,
+		PushedAt:                  source.PushedAt,
 	}
+	batch := newPersistBatch(st.persist)
+	batch.Put("repos", strconv.Itoa(repo.ID), repo)
+	if err := batch.Commit(); err != nil {
+		panic(&persistenceFailure{op: "batch", bucket: "repos", key: strconv.Itoa(repo.ID), err: err})
+	}
+
 	st.NextRepo++
-
-	stor, err := openOrInitGitStorage(context.Background(), fullName)
-	if err != nil {
-		log.Printf("bleephub: fork repo %s: open git storage: %s", safeLogText(fullName), safeLogError(err))
-		return nil
-	}
-	if err := copyGitStorage(srcStor, stor); err != nil {
-		log.Printf("bleephub: fork repo %s: copy git storage: %s", safeLogText(fullName), safeLogError(err))
-		return nil
-	}
-
 	st.Repos[repo.ID] = repo
 	st.ReposByName[fullName] = repo
 	st.GitStorages[fullName] = stor
 
 	st.ensureDefaultDiscussionCategoriesLocked(repo.ID)
-
-	if st.persist != nil {
-		st.persist.MustPut("repos", strconv.Itoa(repo.ID), repo)
-	}
 	return repo
 }
 
@@ -293,6 +373,21 @@ func cloneTimePtr(t *time.Time) *time.Time {
 		return nil
 	}
 	clone := t.UTC()
+	return &clone
+}
+
+func cloneRepoForMutation(repo *Repo) *Repo {
+	if repo == nil {
+		return nil
+	}
+	clone := *repo
+	clone.ArchivedAt = cloneTimePtr(repo.ArchivedAt)
+	clone.InteractionLimitExpiry = cloneTimePtr(repo.InteractionLimitExpiry)
+	clone.Topics = append([]string(nil), repo.Topics...)
+	clone.Stargazers = make(map[int]bool, len(repo.Stargazers))
+	for userID, starred := range repo.Stargazers {
+		clone.Stargazers[userID] = starred
+	}
 	return &clone
 }
 

@@ -10,6 +10,7 @@ import (
 const (
 	loginSessionsBucket    = "login_sessions"
 	oidcLogoutClaimsBucket = "oidc_logout_claims"
+	loginSessionReapPeriod = time.Hour
 )
 
 type oidcLogoutReplayMarker struct {
@@ -58,6 +59,63 @@ func (st *Store) PutLoginSession(id string, session *LoginSession) error {
 	st.LoginSessions[loginSessionMapKey(persist, id)] = &copy
 	st.mu.Unlock()
 	return nil
+}
+
+// ReapExpiredLoginSessions bounds both the in-memory session index and its
+// durable bucket. It is safe across replicas: every deletion is idempotent and
+// the persistence batch commits all selected rows together. The caller
+// supplies time so tests and scheduler execution remain deterministic.
+func (st *Store) ReapExpiredLoginSessions(now time.Time) error {
+	now = now.UTC()
+	st.mu.Lock()
+	if !st.nextLoginSessionReap.IsZero() && now.Before(st.nextLoginSessionReap) {
+		st.mu.Unlock()
+		return nil
+	}
+	st.nextLoginSessionReap = now.Add(loginSessionReapPeriod)
+	persist := st.persist
+	st.mu.Unlock()
+
+	expired := make(map[string]struct{})
+	if persist != nil {
+		rows, err := persist.List(loginSessionsBucket)
+		if err != nil {
+			st.resetLoginSessionReap()
+			return fmt.Errorf("list expired login sessions: %w", err)
+		}
+		entries := make([]persistencePut, 0)
+		for id, raw := range rows {
+			var session LoginSession
+			if err := json.Unmarshal(raw, &session); err != nil {
+				st.resetLoginSessionReap()
+				return fmt.Errorf("decode login session %s: %w", id, err)
+			}
+			if session.ExpiresAt.After(now) {
+				continue
+			}
+			expired[id] = struct{}{}
+			entries = append(entries, persistencePut{bucket: loginSessionsBucket, key: id})
+		}
+		if err := persist.DeleteBatch(entries...); err != nil {
+			st.resetLoginSessionReap()
+			return fmt.Errorf("delete expired login sessions: %w", err)
+		}
+	}
+
+	st.mu.Lock()
+	for id, session := range st.LoginSessions {
+		if _, selected := expired[id]; selected || !session.ExpiresAt.After(now) {
+			delete(st.LoginSessions, id)
+		}
+	}
+	st.mu.Unlock()
+	return nil
+}
+
+func (st *Store) resetLoginSessionReap() {
+	st.mu.Lock()
+	st.nextLoginSessionReap = time.Time{}
+	st.mu.Unlock()
 }
 
 func (st *Store) GetLoginSession(id string) (*LoginSession, error) {

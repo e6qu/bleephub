@@ -32,7 +32,7 @@ func doBPReq(s *Server, token, method, path, body string) *httptest.ResponseReco
 	}
 	req.Header.Set("Authorization", "Bearer "+token)
 	w := httptest.NewRecorder()
-	s.ghHeadersMiddleware(s.mux).ServeHTTP(w, req)
+	s.requestHandler().ServeHTTP(w, req)
 	return w
 }
 

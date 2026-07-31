@@ -129,7 +129,7 @@ func FuzzRESTMapBody(f *testing.F) {
 			req.Header.Set("Authorization", "Bearer "+defaultToken)
 			req.Header.Set("Content-Type", "application/json")
 			w := httptest.NewRecorder()
-			s.ghHeadersMiddleware(s.mux).ServeHTTP(w, req)
+			s.requestHandler().ServeHTTP(w, req)
 		}
 	})
 }

@@ -33,6 +33,15 @@ func createWebhookTestRepo(t *testing.T, name string) {
 	resp.Body.Close()
 }
 
+func waitForWebhookCount(t *testing.T, received *atomic.Int32, want int32) {
+	t.Helper()
+	if !testEventually(5*time.Second, 10*time.Millisecond, func() bool {
+		return received.Load() >= want
+	}) {
+		t.Fatalf("webhook deliveries = %d, want at least %d", received.Load(), want)
+	}
+}
+
 func TestWebhookCRUD(t *testing.T) {
 	createWebhookTestRepo(t, "wh-crud")
 
@@ -215,12 +224,7 @@ func TestWebhookDeliverySuccess(t *testing.T) {
 		t.Fatalf("ping: expected 204, got %d", pingResp.StatusCode)
 	}
 
-	// Wait for delivery
-	time.Sleep(200 * time.Millisecond)
-
-	if received.Load() < 1 {
-		t.Fatal("expected at least 1 delivery")
-	}
+	waitForWebhookCount(t, &received, 1)
 
 	mu.Lock()
 	defer mu.Unlock()
@@ -282,46 +286,28 @@ func TestWebhookDeliveryRetry(t *testing.T) {
 	resp2.Body.Close()
 
 	// Wait for retries (1s + 5s backoff = ~6s, use generous timeout)
-	testEventually(15*time.Second, 200*time.Millisecond, func() bool { return attempts.Load() >= 3 })
-
-	if attempts.Load() < 3 {
+	if !testEventually(15*time.Second, 200*time.Millisecond, func() bool { return attempts.Load() >= 3 }) {
 		t.Fatalf("expected at least 3 delivery attempts, got %d", attempts.Load())
 	}
 }
 
 func TestWebhookDeliveryTimeout(t *testing.T) {
-	var received atomic.Int32
-
+	release := make(chan struct{})
 	url, cleanup := startWebhookReceiver(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		received.Add(1)
-		// Hang longer than the 10s client timeout
-		time.Sleep(15 * time.Second)
-		w.WriteHeader(200)
+		<-release
 	}))
 	defer cleanup()
+	defer close(release)
 
-	createWebhookTestRepo(t, "wh-timeout")
-
-	resp := ghPost(t, "/api/v3/repos/admin/wh-timeout/hooks", defaultToken, map[string]interface{}{
-		"config": map[string]interface{}{
-			"url": url,
-		},
-		"events": []string{"issues"},
-		"active": true,
-	})
-	resp.Body.Close()
-
-	// Create an issue to trigger
-	resp2 := ghPost(t, "/api/v3/repos/admin/wh-timeout/issues", defaultToken, map[string]interface{}{
-		"title": "timeout test",
-	})
-	resp2.Body.Close()
-
-	// Wait enough for at least one timeout attempt
-	time.Sleep(12 * time.Second)
-
-	if received.Load() < 1 {
-		t.Fatal("expected at least 1 delivery attempt")
+	client := newWebhookClientWithTimeout(true, false, 50*time.Millisecond)
+	request, err := http.NewRequest(http.MethodPost, url, strings.NewReader("{}"))
+	if err != nil {
+		t.Fatalf("build webhook request: %v", err)
+	}
+	if _, err := client.Do(request); err == nil {
+		t.Fatal("webhook client accepted a response that exceeded its deadline")
+	} else if timeout, ok := err.(net.Error); !ok || !timeout.Timeout() {
+		t.Fatalf("webhook timeout error = %T %v", err, err)
 	}
 }
 
@@ -355,11 +341,12 @@ func TestWebhookPushEvent(t *testing.T) {
 	// Push via git (use go-git)
 	pushTestCommit(t, "admin", "wh-push")
 
-	// Wait for delivery
-	time.Sleep(500 * time.Millisecond)
-
-	if received.Load() < 1 {
-		t.Fatal("expected push webhook delivery")
+	if !testEventually(5*time.Second, 10*time.Millisecond, func() bool {
+		mu.Lock()
+		defer mu.Unlock()
+		return lastEvent == "push" && lastPayload["ref"] != nil
+	}) {
+		t.Fatalf("push webhook did not arrive; deliveries = %d", received.Load())
 	}
 
 	mu.Lock()
@@ -474,8 +461,7 @@ func TestWebhookPREvent(t *testing.T) {
 	resp3 := ghPut(t, fmt.Sprintf("/api/v3/repos/admin/wh-pr/pulls/%d/merge", prNum), defaultToken, nil)
 	resp3.Body.Close()
 
-	// Wait for deliveries
-	time.Sleep(300 * time.Millisecond)
+	waitForWebhookCount(t, &received, 2)
 
 	mu.Lock()
 	defer mu.Unlock()
@@ -540,8 +526,7 @@ func TestWebhookIssuesEvent(t *testing.T) {
 	})
 	resp3.Body.Close()
 
-	// Wait for deliveries
-	time.Sleep(300 * time.Millisecond)
+	waitForWebhookCount(t, &received, 2)
 
 	mu.Lock()
 	defer mu.Unlock()
@@ -612,12 +597,7 @@ func TestWebhookPing(t *testing.T) {
 		t.Fatalf("ping: expected 204, got %d", pingResp.StatusCode)
 	}
 
-	// Wait for delivery
-	time.Sleep(300 * time.Millisecond)
-
-	if received.Load() < 1 {
-		t.Fatal("expected ping delivery")
-	}
+	waitForWebhookCount(t, &received, 1)
 
 	mu.Lock()
 	defer mu.Unlock()
@@ -653,8 +633,7 @@ func TestWebhookDeliveryLog(t *testing.T) {
 	pingResp := ghPost(t, fmt.Sprintf("/api/v3/repos/admin/wh-log/hooks/%d/pings", hookID), defaultToken, nil)
 	pingResp.Body.Close()
 
-	// Wait for delivery
-	time.Sleep(300 * time.Millisecond)
+	waitForWebhookCount(t, &received, 1)
 
 	// List deliveries
 	delResp := ghGet(t, fmt.Sprintf("/api/v3/repos/admin/wh-log/hooks/%d/deliveries", hookID), defaultToken)
@@ -684,9 +663,14 @@ func TestWebhookDeliveryLog(t *testing.T) {
 
 func TestWebhookInactiveSkipped(t *testing.T) {
 	var received atomic.Int32
+	delivered := make(chan struct{}, 1)
 
 	url, cleanup := startWebhookReceiver(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		received.Add(1)
+		select {
+		case delivered <- struct{}{}:
+		default:
+		}
 		w.WriteHeader(200)
 	}))
 	defer cleanup()
@@ -708,8 +692,13 @@ func TestWebhookInactiveSkipped(t *testing.T) {
 	})
 	resp2.Body.Close()
 
-	// Wait to ensure no delivery happens
-	time.Sleep(300 * time.Millisecond)
+	// An absence assertion needs a bounded observation window, but it does not
+	// need a blind sleep: fail immediately if a delivery arrives.
+	select {
+	case <-delivered:
+		t.Fatal("inactive webhook received a delivery")
+	case <-time.After(300 * time.Millisecond):
+	}
 
 	if received.Load() != 0 {
 		t.Fatalf("expected 0 deliveries for inactive webhook, got %d", received.Load())
@@ -924,7 +913,26 @@ func TestWebhookOrganizationBlock(t *testing.T) {
 	resp = ghPost(t, "/api/v3/repos/admin/wh-userrepo/issues", defaultToken, map[string]interface{}{"title": "user evt"})
 	resp.Body.Close()
 
-	time.Sleep(300 * time.Millisecond)
+	if !testEventually(5*time.Second, 10*time.Millisecond, func() bool {
+		mu.Lock()
+		defer mu.Unlock()
+		orgSeen, userSeen := false, false
+		for _, record := range payloads {
+			if record.event != "issues" {
+				continue
+			}
+			repo, _ := record.payload["repository"].(map[string]interface{})
+			switch repo["full_name"] {
+			case "wh-org/wh-orgrepo":
+				orgSeen = true
+			case "admin/wh-userrepo":
+				userSeen = true
+			}
+		}
+		return orgSeen && userSeen
+	}) {
+		t.Fatal("organization and user webhook deliveries did not both arrive")
+	}
 
 	mu.Lock()
 	defer mu.Unlock()

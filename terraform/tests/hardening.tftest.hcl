@@ -176,8 +176,8 @@ run "the_application_container_reports_its_own_health" {
   }
 
   assert {
-    condition     = anytrue([for word in jsondecode(aws_ecs_task_definition.this.container_definitions)[0].healthCheck.command : strcontains(word, "/health")])
-    error_message = "the container health check must probe the application health endpoint"
+    condition     = anytrue([for word in jsondecode(aws_ecs_task_definition.this.container_definitions)[0].healthCheck.command : strcontains(word, "/ready")])
+    error_message = "the container health check must probe the dependency-aware application readiness endpoint"
   }
 
   assert {

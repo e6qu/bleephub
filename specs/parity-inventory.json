@@ -427,8 +427,8 @@
         "id": "AUTH-025",
         "location": "git_ssh.go:52-71",
         "severity": "M",
-        "status": "open",
-        "status_kind": "open"
+        "status": "fixed \u2014 the listener owns a 64-slot connection semaphore, bounds the handshake with a ten-second deadline, and serves each accepted channel inline so a client cannot fan out unbounded session goroutines",
+        "status_kind": "fixed"
       },
       {
         "category": "AUTH",
@@ -436,8 +436,8 @@
         "id": "AUTH-026",
         "location": "ssh-gateway/main.go:60-95",
         "severity": "M",
-        "status": "open",
-        "status_kind": "open"
+        "status": "fixed \u2014 proxied connections carry an activity-renewed idle deadline for their complete lifetime, and rate-limit identities are evicted after their window rather than accumulating forever; focused tests cover both",
+        "status_kind": "fixed"
       },
       {
         "category": "AUTH",
@@ -3271,7 +3271,7 @@
         "id": "STORE-013",
         "location": "store_codespaces.go:182, timeline.go:210, store_repos.go:249",
         "severity": "B",
-        "status": "partial \u2014 codespace creation reserves under the lock, runs Docker unlocked and re-acquires briefly to commit. Repository deletion snapshots containers, workspaces, package/CodeQL/attestation/Pages/release objects into its durable intent and performs every external cleanup after the metadata transaction and lock release; a blocking-object-store regression proves ordinary reads continue. Fork and rename still need per-repository storage locking before their git object I/O can move safely",
+        "status": "partial \u2014 Codespace creation, workspace export, runtime deletion, repository storage creation, fork copying and repository deletion now perform external work outside the global lock behind identity/name reservations, with blocking-backend regressions proving unrelated reads continue. Rename still needs a per-repository lifecycle reservation before its filesystem/S3 prefix move can safely leave the lock, and older mutations still perform persistence rounds while holding it",
         "status_kind": "partial"
       },
       {
@@ -3334,8 +3334,8 @@
         "id": "STORE-020",
         "location": "object_bytes.go:56, persistence.go:255",
         "severity": "M",
-        "status": "open",
-        "status_kind": "open"
+        "status": "partial \u2014 new S3 objects carry a SHA-256 metadata checksum and reads verify it before returning bytes, while legacy checksum-less objects remain readable for migration. The SQLite acknowledgement/durability contract remains to be strengthened and documented",
+        "status_kind": "partial"
       },
       {
         "category": "STORE",
@@ -3343,8 +3343,8 @@
         "id": "STORE-021",
         "location": "store_copilot_spaces.go:93 + 9 more",
         "severity": "M",
-        "status": "open",
-        "status_kind": "open"
+        "status": "partial \u2014 Gist and Codespace reads now return deep snapshots, their mutations persist a clone before publishing it, and repository updates clone nested maps/slices before persistence. The architecture ratchet prevents backsliding, but the same ownership conversion remains for several older Store families",
+        "status_kind": "partial"
       },
       {
         "category": "STORE",
@@ -3379,8 +3379,8 @@
         "id": "STORE-025",
         "location": "store.go:958, persistence.go:211",
         "severity": "M",
-        "status": "open",
-        "status_kind": "open"
+        "status": "partial \u2014 the scheduler now reaps expired login sessions hourly through a deterministic-clock, transactional deletion pass that survives restart and retries after persistence failure. Per-user logout still scans the bounded session bucket rather than using a secondary user index",
+        "status_kind": "partial"
       },
       {
         "category": "STORE",
@@ -3820,8 +3820,8 @@
         "id": "CORE-009",
         "location": "server.go:532",
         "severity": "M",
-        "status": "open",
-        "status_kind": "open"
+        "status": "partial \u2014 the production listener now caps headers and the shared request pipeline applies a structured 32 MiB body limit to every JSON and form request, with a GitHub-shaped 413 regression. Streaming upload routes retain their endpoint-specific limits and still need one auditable registry",
+        "status_kind": "partial"
       },
       {
         "category": "CORE",
@@ -3883,8 +3883,8 @@
         "id": "CORE-016",
         "location": "server.go:445",
         "severity": "M",
-        "status": "open",
-        "status_kind": "open"
+        "status": "partial \u2014 `/ready` now rejects a poisoned recovery state or failed persistence ping and ECS probes that dependency-aware endpoint, while `/health` remains a liveness endpoint. The unauthenticated metadata in the legacy health response remains to be removed without breaking its UI consumer",
+        "status_kind": "partial"
       },
       {
         "category": "CORE",
@@ -4567,8 +4567,8 @@
         "id": "TEST-009",
         "location": "actions_test.go:276",
         "severity": "B",
-        "status": "partial \u2014 production and tests share `newServerState`, which initializes every Server dependency; production exposes one `requestHandler` pipeline used by the listener and by stress, fuzz, benchmark and seed fixtures. Focused route-unit tests still call the narrower GitHub-header wrapper directly and need mechanical migration before this can honestly close",
-        "status_kind": "partial"
+        "status": "fixed \u2014 production and tests share `newServerState`, and every HTTP fixture now enters the same `requestHandler` pipeline as the listener: prefix routing, internal authentication, replica refresh, recovery, body limits, response observation, logging and telemetry. An architecture test rejects any return to the narrow middleware-only fixture",
+        "status_kind": "fixed"
       },
       {
         "category": "TEST",
@@ -4603,8 +4603,8 @@
         "id": "TEST-013",
         "location": "webhooks_test.go:304-909",
         "severity": "M",
-        "status": "open",
-        "status_kind": "open"
+        "status": "fixed \u2014 webhook assertions synchronize on deliveries or poll explicit predicates with deadlines; the timeout case uses an injected short client timeout rather than sleeping twelve seconds. No test reads `time.Now`, and the only remaining sleeps are deliberate settling windows in named load/stress tests",
+        "status_kind": "fixed"
       },
       {
         "category": "TEST",
@@ -5786,8 +5786,8 @@
         },
         "AUTH": {
           "status": {
-            "fixed": 73,
-            "open": 17,
+            "fixed": 75,
+            "open": 15,
             "partial": 3
           },
           "total": 93
@@ -5803,8 +5803,8 @@
         "CORE": {
           "status": {
             "fixed": 12,
-            "open": 19,
-            "partial": 1
+            "open": 17,
+            "partial": 3
           },
           "total": 32
         },
@@ -5835,16 +5835,16 @@
         "STORE": {
           "status": {
             "fixed": 27,
-            "open": 31,
-            "partial": 7
+            "open": 28,
+            "partial": 10
           },
           "total": 65
         },
         "TEST": {
           "status": {
-            "fixed": 14,
-            "open": 23,
-            "partial": 2
+            "fixed": 16,
+            "open": 22,
+            "partial": 1
           },
           "total": 39
         },
@@ -5864,9 +5864,9 @@
       },
       "status": {
         "deferred": 1,
-        "fixed": 411,
-        "open": 170,
-        "partial": 36
+        "fixed": 415,
+        "open": 162,
+        "partial": 40
       },
       "total": 618
     }

@@ -43,7 +43,7 @@ func decodeOIDCToken(t *testing.T, s *Server, query string) map[string]any {
 	req := httptest.NewRequest("GET", "/token?"+query, nil)
 	req.Header.Set("Authorization", "token "+adminPAT)
 	w := httptest.NewRecorder()
-	s.ghHeadersMiddleware(s.mux).ServeHTTP(w, req)
+	s.requestHandler().ServeHTTP(w, req)
 	if w.Code != http.StatusOK {
 		t.Fatalf("/token status = %d, body = %s", w.Code, w.Body.String())
 	}
@@ -167,7 +167,7 @@ func TestOIDCDiscovery_AdvertisesOAuthEndpoints(t *testing.T) {
 
 	req := httptest.NewRequest("GET", "/.well-known/openid-configuration", nil)
 	w := httptest.NewRecorder()
-	s.ghHeadersMiddleware(s.mux).ServeHTTP(w, req)
+	s.requestHandler().ServeHTTP(w, req)
 	if w.Code != http.StatusOK {
 		t.Fatalf("discovery status = %d, want 200; body = %s", w.Code, w.Body.String())
 	}
@@ -222,7 +222,7 @@ func TestOIDCDiscovery_AdvertisesOAuthEndpoints(t *testing.T) {
 		path := strings.TrimPrefix(url, base)
 		r := httptest.NewRequest(ep.method, path, nil)
 		rec := httptest.NewRecorder()
-		s.ghHeadersMiddleware(s.mux).ServeHTTP(rec, r)
+		s.requestHandler().ServeHTTP(rec, r)
 		if rec.Code == http.StatusNotFound {
 			t.Errorf("advertised %s (%s %s) is not a registered route (404)", ep.field, ep.method, path)
 		}

@@ -37,7 +37,7 @@ func TestReactions_IssueLifecycle(t *testing.T) {
 		}
 		req.Header.Set("Authorization", "Bearer bleephub-admin-token-00000000000000000000")
 		w := httptest.NewRecorder()
-		s.ghHeadersMiddleware(s.mux).ServeHTTP(w, req)
+		s.requestHandler().ServeHTTP(w, req)
 		return w
 	}
 
@@ -124,7 +124,7 @@ func TestReactions_PullRequestLifecycle(t *testing.T) {
 	issue := s.store.CreateIssue(repo.ID, admin.ID, "an issue", "", nil, nil, 0)
 	pr := s.store.CreatePullRequest(repo.ID, admin.ID, "a pull request", "", "feat", "main", false, nil, nil, 0)
 
-	handler := s.ghHeadersMiddleware(s.prefixStripMiddleware(s.internalAuthMiddleware(s.mux)))
+	handler := s.requestHandler()
 	do := func(method, path string, body []byte) *httptest.ResponseRecorder {
 		var req *http.Request
 		if body != nil {
@@ -191,7 +191,7 @@ func TestIssueLabels_PullRequestNumbers(t *testing.T) {
 	s.store.CreateLabel(repo.ID, "bug", "", "ff0000")
 	s.store.CreateLabel(repo.ID, "enhancement", "", "00ff00")
 
-	handler := s.ghHeadersMiddleware(s.prefixStripMiddleware(s.internalAuthMiddleware(s.mux)))
+	handler := s.requestHandler()
 	do := func(method, path string, body []byte) *httptest.ResponseRecorder {
 		var req *http.Request
 		if body != nil {
@@ -278,7 +278,7 @@ func TestReactions_AllParentTypes(t *testing.T) {
 		req := httptest.NewRequest("POST", p, bytes.NewReader(body))
 		req.Header.Set("Authorization", "Bearer bleephub-admin-token-00000000000000000000")
 		w := httptest.NewRecorder()
-		s.ghHeadersMiddleware(s.mux).ServeHTTP(w, req)
+		s.requestHandler().ServeHTTP(w, req)
 		if w.Code != http.StatusCreated {
 			t.Errorf("%s: status %d body %s", p, w.Code, w.Body.String())
 		}
@@ -302,7 +302,7 @@ func TestReactions_AllParentTypes(t *testing.T) {
 	missReq := httptest.NewRequest("POST", "/api/v3/repos/admin/r/issues/9999/reactions", bytes.NewReader(body))
 	missReq.Header.Set("Authorization", "Bearer bleephub-admin-token-00000000000000000000")
 	mw := httptest.NewRecorder()
-	s.ghHeadersMiddleware(s.mux).ServeHTTP(mw, missReq)
+	s.requestHandler().ServeHTTP(mw, missReq)
 	if mw.Code != http.StatusNotFound {
 		t.Errorf("reaction on nonexistent issue: status %d, want 404", mw.Code)
 	}

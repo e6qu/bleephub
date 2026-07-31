@@ -260,7 +260,7 @@ jobs:
 		bytes.NewReader(body))
 	req.Header.Set("Authorization", "Bearer "+defaultToken)
 	w := httptest.NewRecorder()
-	s.ghHeadersMiddleware(s.mux).ServeHTTP(w, req)
+	s.requestHandler().ServeHTTP(w, req)
 	if w.Code != http.StatusNoContent {
 		t.Fatalf("status = %d, body = %s", w.Code, w.Body.String())
 	}
@@ -354,7 +354,7 @@ jobs:
 				bytes.NewReader(body))
 			req.Header.Set("Authorization", "Bearer "+defaultToken)
 			w := httptest.NewRecorder()
-			s.ghHeadersMiddleware(s.mux).ServeHTTP(w, req)
+			s.requestHandler().ServeHTTP(w, req)
 			if w.Code != http.StatusNoContent {
 				t.Fatalf("status = %d, body = %s", w.Code, w.Body.String())
 			}
@@ -402,7 +402,7 @@ jobs:
 		bytes.NewReader(body))
 	req.Header.Set("Authorization", "Bearer "+defaultToken)
 	w := httptest.NewRecorder()
-	s.ghHeadersMiddleware(s.mux).ServeHTTP(w, req)
+	s.requestHandler().ServeHTTP(w, req)
 	if w.Code != http.StatusUnprocessableEntity {
 		t.Fatalf("status = %d, body = %s", w.Code, w.Body.String())
 	}

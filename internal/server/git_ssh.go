@@ -9,12 +9,18 @@ import (
 	"net"
 	"os"
 	"strings"
+	"time"
 
 	"github.com/go-git/go-git/v5/plumbing/format/pktline"
 	"github.com/go-git/go-git/v5/plumbing/protocol/packp"
 	"github.com/go-git/go-git/v5/plumbing/transport"
 	gitserver "github.com/go-git/go-git/v5/plumbing/transport/server"
 	"golang.org/x/crypto/ssh"
+)
+
+const (
+	maxConcurrentGitSSHConnections = 64
+	gitSSHHandshakeTimeout         = 10 * time.Second
 )
 
 // startGitSSH serves the standard SSH Git transport when BLEEPHUB_SSH_ADDR
@@ -48,6 +54,7 @@ func (s *Server) startGitSSH(ctx context.Context) error {
 		},
 	}
 	config.AddHostKey(signer)
+	connectionSlots := make(chan struct{}, maxConcurrentGitSSHConnections)
 	s.logger.Info().Str("addr", addr).Msg("bleephub SSH Git transport listening")
 	// Closing the listener is what unblocks Accept, so shutdown closes it and
 	// the accept loop reports a clean stop rather than an error.
@@ -66,7 +73,18 @@ func (s *Server) startGitSSH(ctx context.Context) error {
 				}
 				return
 			}
-			go s.serveGitSSHConn(conn, config)
+			select {
+			case connectionSlots <- struct{}{}:
+				s.goBackground(func() {
+					defer func() { <-connectionSlots }()
+					s.serveGitSSHConn(conn, config)
+				})
+			default:
+				s.logger.Warn().
+					Str("remote_addr", conn.RemoteAddr().String()).
+					Msg("SSH Git connection limit reached")
+				_ = conn.Close()
+			}
 		}
 	})
 	return nil
@@ -74,9 +92,17 @@ func (s *Server) startGitSSH(ctx context.Context) error {
 
 func (s *Server) serveGitSSHConn(conn net.Conn, config *ssh.ServerConfig) {
 	defer func() { _ = conn.Close() }()
+	if err := conn.SetDeadline(s.currentTime().Add(gitSSHHandshakeTimeout)); err != nil {
+		s.logger.Debug().Err(err).Msg("set SSH Git handshake deadline")
+		return
+	}
 	serverConn, channels, requests, err := ssh.NewServerConn(conn, config)
 	if err != nil {
 		s.logger.Debug().Err(err).Msg("SSH Git handshake rejected")
+		return
+	}
+	if err := conn.SetDeadline(time.Time{}); err != nil {
+		s.logger.Debug().Err(err).Msg("clear SSH Git handshake deadline")
 		return
 	}
 	defer func() { _ = serverConn.Close() }()
@@ -95,7 +121,11 @@ func (s *Server) serveGitSSHConn(conn net.Conn, config *ssh.ServerConfig) {
 		if openErr != nil {
 			continue
 		}
-		go s.serveGitSSHSession(channel, requests, user)
+		// A Git SSH connection uses one session channel. Serving it inline
+		// keeps the listener's connection bound meaningful: a client cannot
+		// open an unbounded number of channel goroutines behind one admitted
+		// TCP connection.
+		s.serveGitSSHSession(channel, requests, user)
 	}
 }
 

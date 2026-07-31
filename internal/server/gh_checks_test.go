@@ -40,7 +40,7 @@ func TestCheckRunLifecycle(t *testing.T) {
 		}
 		req.Header.Set("Authorization", "Bearer "+tok.Token)
 		w := httptest.NewRecorder()
-		s.ghHeadersMiddleware(s.mux).ServeHTTP(w, req)
+		s.requestHandler().ServeHTTP(w, req)
 		return w
 	}
 
@@ -145,8 +145,39 @@ func TestCheckRunRequiresChecksScope(t *testing.T) {
 	req := httptest.NewRequest("POST", "/api/v3/repos/admin/scope-target/check-runs", bytes.NewReader(body))
 	req.Header.Set("Authorization", "Bearer "+tok.Token)
 	w := httptest.NewRecorder()
-	s.ghHeadersMiddleware(s.mux).ServeHTTP(w, req)
+	s.requestHandler().ServeHTTP(w, req)
 	if w.Code != http.StatusForbidden {
 		t.Fatalf("expected 403 without checks:write, got %d body=%s", w.Code, w.Body.String())
+	}
+}
+
+func TestCheckSuitePreferencesIncludeRepository(t *testing.T) {
+	s := newTestServer()
+	s.registerGHRepoRoutes()
+	s.registerGHChecksRoutes()
+	admin := s.store.LookupUserByLogin("admin")
+	repo := s.store.CreateRepo(admin, "check-preferences", "", false)
+
+	req := httptest.NewRequest(http.MethodPatch,
+		"/api/v3/repos/admin/check-preferences/check-suites/preferences",
+		bytes.NewBufferString(`{"auto_trigger_checks":[]}`))
+	req.Header.Set("Authorization", "Bearer "+AdminToken())
+	req.Header.Set("Content-Type", "application/json")
+	recorder := httptest.NewRecorder()
+	s.requestHandler().ServeHTTP(recorder, req)
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("update preferences = %d: %s", recorder.Code, recorder.Body.String())
+	}
+	var response struct {
+		Repository struct {
+			ID       int    `json:"id"`
+			FullName string `json:"full_name"`
+		} `json:"repository"`
+	}
+	if err := json.Unmarshal(recorder.Body.Bytes(), &response); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if response.Repository.ID != repo.ID || response.Repository.FullName != repo.FullName {
+		t.Fatalf("repository = %#v, want %d %q", response.Repository, repo.ID, repo.FullName)
 	}
 }

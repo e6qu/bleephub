@@ -220,14 +220,19 @@ func TestMain(m *testing.M) {
 	// against its own server in lifecycle_test.go rather than here.
 	go srv.ListenAndServe(context.Background())
 
-	// Wait for server to be ready
-	for i := 0; i < 50; i++ {
+	// Wait for server to be ready without coupling correctness to one fixed
+	// sleep that is either unnecessarily slow or too short on a loaded host.
+	ready := testEventually(2500*time.Millisecond, 50*time.Millisecond, func() bool {
 		resp, err := http.Get(testBaseURL + "/health")
 		if err == nil {
-			resp.Body.Close()
-			break
+			_ = resp.Body.Close()
+			return resp.StatusCode == http.StatusOK
 		}
-		time.Sleep(50 * time.Millisecond)
+		return false
+	})
+	if !ready {
+		fmt.Fprintln(os.Stderr, "shared test server did not become ready")
+		os.Exit(1)
 	}
 
 	code := m.Run()

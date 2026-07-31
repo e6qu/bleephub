@@ -351,6 +351,7 @@ func validatePersistentServerStorage(serviceByteStoreReady bool) error {
 func (s *Server) registerRoutes() {
 	// Health check
 	s.route("GET /health", s.handleHealth)
+	s.route("GET /ready", s.handleReady)
 
 	// Auth + connection data (auth.go)
 	s.registerAuthRoutes()
@@ -602,6 +603,17 @@ func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+func (s *Server) handleReady(w http.ResponseWriter, r *http.Request) {
+	ctx, cancel := context.WithTimeout(r.Context(), 2*time.Second)
+	defer cancel()
+	if err := s.store.persistenceReady(ctx); err != nil {
+		s.logger.Warn().Err(err).Msg("readiness check failed")
+		writeJSON(w, http.StatusServiceUnavailable, map[string]string{"status": "unavailable"})
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]string{"status": "ready"})
+}
+
 func (s *Server) handleInternalMetrics(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, s.metrics.Snapshot())
 }
@@ -680,8 +692,9 @@ func (s *Server) ListenAndServe(ctx context.Context) error {
 	handler := s.requestHandler()
 
 	srv := &http.Server{
-		Addr:    s.addr,
-		Handler: handler,
+		Addr:           s.addr,
+		Handler:        handler,
+		MaxHeaderBytes: 1 << 20,
 		// Bound only the header read (slowloris protection). A fixed
 		// ReadTimeout/WriteTimeout caps the WHOLE body, which cuts off large
 		// git push/pull + artifact uploads/downloads under load.
@@ -757,7 +770,28 @@ func (s *Server) requestHandler() http.Handler {
 	if s.responseObserver != nil {
 		observed = s.observeMiddleware(ghWrapped)
 	}
-	return otelhttp.NewHandler(s.recoverMiddleware(s.loggingMiddleware(s.adminHostMiddleware(observed))), "bleephub")
+	bounded := s.requestBodyLimitMiddleware(observed)
+	return otelhttp.NewHandler(s.recoverMiddleware(s.loggingMiddleware(s.adminHostMiddleware(bounded))), "bleephub")
+}
+
+const maxStructuredRequestBody = 32 << 20
+
+// requestBodyLimitMiddleware bounds structured request bodies at the shared
+// production pipeline. Byte-transfer protocols (Git, artifacts, packages and
+// registry uploads) deliberately keep their route-specific streaming limits;
+// applying one whole-request timeout or cap to them would truncate legitimate
+// large transfers. JSON and form handlers have no reason to accept an
+// unbounded body, and MaxBytesReader returns GitHub's ordinary 413 response
+// rather than letting a slow or malicious peer consume memory indefinitely.
+func (s *Server) requestBodyLimitMiddleware(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		contentType := strings.ToLower(strings.TrimSpace(strings.SplitN(r.Header.Get("Content-Type"), ";", 2)[0]))
+		switch contentType {
+		case "application/json", "application/graphql", "application/x-www-form-urlencoded", "multipart/form-data":
+			r.Body = http.MaxBytesReader(w, r.Body, maxStructuredRequestBody)
+		}
+		next.ServeHTTP(w, r)
+	})
 }
 
 // shutdownGrace bounds the drain. Long enough for an ordinary request or a

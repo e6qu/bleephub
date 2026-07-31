@@ -15,7 +15,7 @@ import (
 
 func TestJSONReadsHonorIfNoneMatch(t *testing.T) {
 	s := fuzzRoutedServer(t)
-	handler := s.ghHeadersMiddleware(s.mux)
+	handler := s.requestHandler()
 	path := "/api/v3/user"
 
 	request := func(ifNoneMatch string) *httptest.ResponseRecorder {

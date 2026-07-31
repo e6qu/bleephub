@@ -17,7 +17,7 @@ func tokenRequest(s *Server, method, path, token string) *httptest.ResponseRecor
 		req.Header.Set("Authorization", "Bearer "+token)
 	}
 	w := httptest.NewRecorder()
-	s.ghHeadersMiddleware(s.mux).ServeHTTP(w, req)
+	s.requestHandler().ServeHTTP(w, req)
 	return w
 }
 

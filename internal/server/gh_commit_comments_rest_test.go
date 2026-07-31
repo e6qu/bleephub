@@ -24,7 +24,7 @@ func TestCommitComments_CRUD(t *testing.T) {
 		req := httptest.NewRequest("POST", "/api/v3/repos/admin/cc-repo/commits/"+sha+"/comments", bytes.NewReader(body))
 		req.Header.Set("Authorization", "Bearer bleephub-admin-token-00000000000000000000")
 		w := httptest.NewRecorder()
-		s.ghHeadersMiddleware(s.mux).ServeHTTP(w, req)
+		s.requestHandler().ServeHTTP(w, req)
 		return w
 	}
 
@@ -52,7 +52,7 @@ func TestCommitComments_CRUD(t *testing.T) {
 	req := httptest.NewRequest("POST", "/api/v3/repos/admin/cc-repo/commits/"+sha2+"/comments", bytes.NewReader(b2))
 	req.Header.Set("Authorization", "Bearer bleephub-admin-token-00000000000000000000")
 	w = httptest.NewRecorder()
-	s.ghHeadersMiddleware(s.mux).ServeHTTP(w, req)
+	s.requestHandler().ServeHTTP(w, req)
 	if w.Code != http.StatusCreated {
 		t.Fatalf("create2: %d body=%s", w.Code, w.Body.String())
 	}
@@ -64,7 +64,7 @@ func TestCommitComments_CRUD(t *testing.T) {
 	req = httptest.NewRequest("GET", "/api/v3/repos/admin/cc-repo/commits/"+sha+"/comments", nil)
 	req.Header.Set("Authorization", "Bearer bleephub-admin-token-00000000000000000000")
 	w = httptest.NewRecorder()
-	s.ghHeadersMiddleware(s.mux).ServeHTTP(w, req)
+	s.requestHandler().ServeHTTP(w, req)
 	if w.Code != http.StatusOK {
 		t.Fatalf("list commit comments: %d body=%s", w.Code, w.Body.String())
 	}
@@ -78,7 +78,7 @@ func TestCommitComments_CRUD(t *testing.T) {
 	req = httptest.NewRequest("GET", "/api/v3/repos/admin/cc-repo/comments", nil)
 	req.Header.Set("Authorization", "Bearer bleephub-admin-token-00000000000000000000")
 	w = httptest.NewRecorder()
-	s.ghHeadersMiddleware(s.mux).ServeHTTP(w, req)
+	s.requestHandler().ServeHTTP(w, req)
 	if w.Code != http.StatusOK {
 		t.Fatalf("list repo comments: %d body=%s", w.Code, w.Body.String())
 	}
@@ -92,7 +92,7 @@ func TestCommitComments_CRUD(t *testing.T) {
 	req = httptest.NewRequest("GET", "/api/v3/repos/admin/cc-repo/comments/"+strconv.Itoa(id1), nil)
 	req.Header.Set("Authorization", "Bearer bleephub-admin-token-00000000000000000000")
 	w = httptest.NewRecorder()
-	s.ghHeadersMiddleware(s.mux).ServeHTTP(w, req)
+	s.requestHandler().ServeHTTP(w, req)
 	if w.Code != http.StatusOK {
 		t.Fatalf("get comment: %d body=%s", w.Code, w.Body.String())
 	}
@@ -107,7 +107,7 @@ func TestCommitComments_CRUD(t *testing.T) {
 	req = httptest.NewRequest("PATCH", "/api/v3/repos/admin/cc-repo/comments/"+strconv.Itoa(id1), bytes.NewReader(patch))
 	req.Header.Set("Authorization", "Bearer bleephub-admin-token-00000000000000000000")
 	w = httptest.NewRecorder()
-	s.ghHeadersMiddleware(s.mux).ServeHTTP(w, req)
+	s.requestHandler().ServeHTTP(w, req)
 	if w.Code != http.StatusOK {
 		t.Fatalf("patch comment: %d body=%s", w.Code, w.Body.String())
 	}
@@ -121,7 +121,7 @@ func TestCommitComments_CRUD(t *testing.T) {
 	req = httptest.NewRequest("DELETE", "/api/v3/repos/admin/cc-repo/comments/"+strconv.Itoa(id2), nil)
 	req.Header.Set("Authorization", "Bearer bleephub-admin-token-00000000000000000000")
 	w = httptest.NewRecorder()
-	s.ghHeadersMiddleware(s.mux).ServeHTTP(w, req)
+	s.requestHandler().ServeHTTP(w, req)
 	if w.Code != http.StatusNoContent {
 		t.Fatalf("delete comment: %d body=%s", w.Code, w.Body.String())
 	}
@@ -130,7 +130,7 @@ func TestCommitComments_CRUD(t *testing.T) {
 	req = httptest.NewRequest("GET", "/api/v3/repos/admin/cc-repo/comments", nil)
 	req.Header.Set("Authorization", "Bearer bleephub-admin-token-00000000000000000000")
 	w = httptest.NewRecorder()
-	s.ghHeadersMiddleware(s.mux).ServeHTTP(w, req)
+	s.requestHandler().ServeHTTP(w, req)
 	_ = json.Unmarshal(w.Body.Bytes(), &repoList)
 	if len(repoList) != 1 {
 		t.Errorf("repo list after delete len = %d, want 1", len(repoList))
@@ -149,7 +149,7 @@ func TestCommitComments_MissingBody422(t *testing.T) {
 	req := httptest.NewRequest("POST", "/api/v3/repos/admin/cc-repo2/commits/abc/comments", bytes.NewReader(body))
 	req.Header.Set("Authorization", "Bearer bleephub-admin-token-00000000000000000000")
 	w := httptest.NewRecorder()
-	s.ghHeadersMiddleware(s.mux).ServeHTTP(w, req)
+	s.requestHandler().ServeHTTP(w, req)
 	if w.Code != http.StatusUnprocessableEntity {
 		t.Errorf("missing body: %d", w.Code)
 	}

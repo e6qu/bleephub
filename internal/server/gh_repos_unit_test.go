@@ -126,7 +126,7 @@ func TestUnitGetRepo_PrivateNoAuth(t *testing.T) {
 	s.store.CreateRepo(admin, "secret-repo", "secret", true)
 	req := httptest.NewRequest("GET", "/api/v3/repos/admin/secret-repo", nil)
 	w := httptest.NewRecorder()
-	s.ghHeadersMiddleware(s.mux).ServeHTTP(w, req)
+	s.requestHandler().ServeHTTP(w, req)
 	if w.Code != 404 {
 		t.Fatalf("unauthed private repo status = %d, want 404", w.Code)
 	}
@@ -314,7 +314,7 @@ func TestUnitListUserRepos_NoAuth(t *testing.T) {
 	s.store.CreateRepo(admin, "pub-repo", "", false)
 	req := httptest.NewRequest("GET", "/api/v3/users/admin/repos", nil)
 	w := httptest.NewRecorder()
-	s.ghHeadersMiddleware(s.mux).ServeHTTP(w, req)
+	s.requestHandler().ServeHTTP(w, req)
 	if w.Code != 200 {
 		t.Fatalf("status = %d, body = %s", w.Code, w.Body.String())
 	}

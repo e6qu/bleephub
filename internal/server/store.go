@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log"
 	"os"
@@ -499,6 +500,11 @@ type Store struct {
 	persist                      *Persistence
 	persistenceRevision          int64
 	persistenceRecoveryRequired  bool
+	nextLoginSessionReap         time.Time
+	codespaceRuntimeDelete       func(*Codespace) error
+	codespaceWorkspacePrepare    func(string, *Repo, gitStorage.Storer, string) (string, func(), error)
+	repoStorageOpen              func(context.Context, string) (gitStorage.Storer, error)
+	pendingRepoCreations         map[string]bool
 	replicaRefreshMu             sync.Mutex
 	// mu guards the Store's maps and counters. sync.RWMutex read locks are
 	// NOT reentrant: once a writer queues on Lock, new RLock calls block, so
@@ -678,6 +684,17 @@ func (st *Store) currentTime() time.Time {
 	return time.Now().UTC()
 }
 
+func (st *Store) persistenceReady(ctx context.Context) error {
+	st.mu.RLock()
+	persist := st.persist
+	recoveryRequired := st.persistenceRecoveryRequired
+	st.mu.RUnlock()
+	if recoveryRequired {
+		return errors.New("persistence recovery is required")
+	}
+	return persist.Ready(ctx)
+}
+
 // Agent represents a registered runner agent.
 type Agent struct {
 	ID             int                 `json:"id"`
@@ -755,7 +772,7 @@ type Job struct {
 
 // NewStore creates an initialized store.
 func NewStore() *Store {
-	return &Store{
+	store := &Store{
 		Agents:                       make(map[int]*Agent),
 		Sessions:                     make(map[string]*Session),
 		Jobs:                         make(map[string]*Job),
@@ -769,6 +786,7 @@ func NewStore() *Store {
 		Repos:                        make(map[int]*Repo),
 		ReposByName:                  make(map[string]*Repo),
 		GitStorages:                  make(map[string]gitStorage.Storer),
+		pendingRepoCreations:         make(map[string]bool),
 		Orgs:                         make(map[int]*Org),
 		OrgsByLogin:                  make(map[string]*Org),
 		Teams:                        make(map[int]*Team),
@@ -1058,6 +1076,10 @@ func NewStore() *Store {
 		NextRepoActivity: 1,
 		RepoCloneTraffic: make(map[string]*RepoTrafficBucket),
 	}
+	store.codespaceRuntimeDelete = store.deleteCodespaceRuntime
+	store.codespaceWorkspacePrepare = prepareCodespaceWorkspace
+	store.repoStorageOpen = openOrInitGitStorage
+	return store
 }
 
 // SetPersistence wires a Persistence layer onto the Store. Call once at
@@ -3980,39 +4002,48 @@ func generateGistID() (string, error) {
 	return h, nil
 }
 
-func (st *Store) persistGistLocked(g *Gist) {
-	if st.persist != nil {
-		st.persist.MustPut("gists", g.ID, g)
+func cloneGist(g *Gist) *Gist {
+	if g == nil {
+		return nil
 	}
+	clone := *g
+	clone.Files = make(map[string]*GistFile, len(g.Files))
+	for name, file := range g.Files {
+		if file == nil {
+			clone.Files[name] = nil
+			continue
+		}
+		fileClone := *file
+		clone.Files[name] = &fileClone
+	}
+	clone.History = make([]*GistHistory, 0, len(g.History))
+	for _, history := range g.History {
+		if history == nil {
+			clone.History = append(clone.History, nil)
+			continue
+		}
+		historyClone := *history
+		historyClone.ChangeStatus = make(map[string]int, len(history.ChangeStatus))
+		for key, value := range history.ChangeStatus {
+			historyClone.ChangeStatus[key] = value
+		}
+		clone.History = append(clone.History, &historyClone)
+	}
+	clone.ForkIDs = append([]string(nil), g.ForkIDs...)
+	return &clone
 }
 
-func (st *Store) deleteGistPersistenceLocked(id string) {
-	if st.persist != nil {
-		st.persist.MustDelete("gists", id)
+func cloneGistStars(stars map[string]bool) map[string]bool {
+	clone := make(map[string]bool, len(stars))
+	for id, starred := range stars {
+		clone[id] = starred
 	}
+	return clone
 }
 
-func (st *Store) persistGistCommentLocked(c *GistComment) {
-	if st.persist != nil {
-		st.persist.MustPut("gist_comments", strconv.Itoa(c.ID), c)
-	}
-}
-
-func (st *Store) deleteGistCommentPersistenceLocked(id int) {
-	if st.persist != nil {
-		st.persist.MustDelete("gist_comments", strconv.Itoa(id))
-	}
-}
-
-func (st *Store) persistStarredGistsLocked(userID int) {
-	if st.persist == nil {
-		return
-	}
-	key := strconv.Itoa(userID)
-	if stars := st.StarredGists[userID]; len(stars) > 0 {
-		st.persist.MustPut("starred_gists", key, persistedStarredGists{UserID: userID, Stars: stars})
-	} else {
-		st.persist.MustDelete("starred_gists", key)
+func (st *Store) commitGistBatchLocked(batch *persistBatch) {
+	if err := batch.Commit(); err != nil {
+		panic(&persistenceFailure{op: "batch", bucket: "gists", err: err})
 	}
 }
 
@@ -4046,7 +4077,7 @@ func (st *Store) CreateGistE(owner *User, description string, public bool, files
 		Description: description,
 		Public:      public,
 		OwnerID:     owner.ID,
-		Files:       files,
+		Files:       cloneGist(&Gist{Files: files}).Files,
 		CreatedAt:   now,
 		UpdatedAt:   now,
 		Comments:    0,
@@ -4060,17 +4091,21 @@ func (st *Store) CreateGistE(owner *User, description string, public bool, files
 			},
 		}},
 	}
+	batch := newPersistBatch(st.persist)
+	batch.Put("gists", g.ID, g)
+	if err := batch.Commit(); err != nil {
+		return nil, err
+	}
 	st.Gists[id] = g
 	st.NextGistID++
-	st.persistGistLocked(g)
-	return g, nil
+	return cloneGist(g), nil
 }
 
 // GetGist returns the gist with the given ID, or nil.
 func (st *Store) GetGist(id string) *Gist {
 	st.mu.RLock()
 	defer st.mu.RUnlock()
-	return st.Gists[id]
+	return cloneGist(st.Gists[id])
 }
 
 // UpdateGist replaces the gist fields and records a history entry.
@@ -4085,10 +4120,11 @@ func (st *Store) UpdateGist(id string, description *string, files map[string]*Gi
 func (st *Store) UpdateGistE(id string, description *string, files map[string]*GistFile, deleteFiles []string) (*Gist, bool, error) {
 	st.mu.Lock()
 	defer st.mu.Unlock()
-	g := st.Gists[id]
-	if g == nil {
+	current := st.Gists[id]
+	if current == nil {
 		return nil, false, nil
 	}
+	g := cloneGist(current)
 
 	additions, deletions := 0, 0
 	if description != nil {
@@ -4100,7 +4136,12 @@ func (st *Store) UpdateGistE(id string, description *string, files map[string]*G
 		} else {
 			additions += len(f.Content)
 		}
-		g.Files[name] = f
+		if f == nil {
+			g.Files[name] = nil
+		} else {
+			fileClone := *f
+			g.Files[name] = &fileClone
+		}
 	}
 	for _, name := range deleteFiles {
 		if f, ok := g.Files[name]; ok {
@@ -4123,8 +4164,13 @@ func (st *Store) UpdateGistE(id string, description *string, files map[string]*G
 			"deletions": deletions,
 		},
 	})
-	st.persistGistLocked(g)
-	return g, true, nil
+	batch := newPersistBatch(st.persist)
+	batch.Put("gists", g.ID, g)
+	if err := batch.Commit(); err != nil {
+		return nil, false, err
+	}
+	st.Gists[id] = g
+	return cloneGist(g), true, nil
 }
 
 // DeleteGist deletes a gist and all its comments.
@@ -4134,21 +4180,41 @@ func (st *Store) DeleteGist(id string) bool {
 	if st.Gists[id] == nil {
 		return false
 	}
-	delete(st.Gists, id)
-	st.deleteGistPersistenceLocked(id)
-	for cid, c := range st.GistComments {
-		if c.GistID == id {
-			delete(st.GistComments, cid)
-			st.deleteGistCommentPersistenceLocked(cid)
+	batch := newPersistBatch(st.persist)
+	batch.Delete("gists", id)
+	var commentIDs []int
+	for cid, comment := range st.GistComments {
+		if comment.GistID == id {
+			commentIDs = append(commentIDs, cid)
+			batch.Delete("gist_comments", strconv.Itoa(cid))
 		}
 	}
-	for uid, stars := range st.StarredGists {
-		if stars[id] {
-			delete(stars, id)
-			if len(stars) == 0 {
-				delete(st.StarredGists, uid)
-			}
-			st.persistStarredGistsLocked(uid)
+	updatedStars := make(map[int]map[string]bool)
+	for userID, stars := range st.StarredGists {
+		if !stars[id] {
+			continue
+		}
+		clone := cloneGistStars(stars)
+		delete(clone, id)
+		updatedStars[userID] = clone
+		key := strconv.Itoa(userID)
+		if len(clone) == 0 {
+			batch.Delete("starred_gists", key)
+		} else {
+			batch.Put("starred_gists", key, persistedStarredGists{UserID: userID, Stars: clone})
+		}
+	}
+	st.commitGistBatchLocked(batch)
+
+	delete(st.Gists, id)
+	for _, commentID := range commentIDs {
+		delete(st.GistComments, commentID)
+	}
+	for userID, stars := range updatedStars {
+		if len(stars) == 0 {
+			delete(st.StarredGists, userID)
+		} else {
+			st.StarredGists[userID] = stars
 		}
 	}
 	return true
@@ -4161,7 +4227,7 @@ func (st *Store) ListGistsForUser(userID int, since time.Time) []*Gist {
 	var out []*Gist
 	for _, g := range st.Gists {
 		if g.OwnerID == userID && !g.UpdatedAt.Before(since) {
-			out = append(out, g)
+			out = append(out, cloneGist(g))
 		}
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].UpdatedAt.After(out[j].UpdatedAt) })
@@ -4207,7 +4273,7 @@ func (st *Store) ListPublicGists(since time.Time) []*Gist {
 	var out []*Gist
 	for _, g := range st.Gists {
 		if g.Public && !g.UpdatedAt.Before(since) {
-			out = append(out, g)
+			out = append(out, cloneGist(g))
 		}
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].UpdatedAt.After(out[j].UpdatedAt) })
@@ -4225,7 +4291,7 @@ func (st *Store) ListStarredGists(userID int) []*Gist {
 	var out []*Gist
 	for id := range stars {
 		if g := st.Gists[id]; g != nil {
-			out = append(out, g)
+			out = append(out, cloneGist(g))
 		}
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].UpdatedAt.After(out[j].UpdatedAt) })
@@ -4239,11 +4305,12 @@ func (st *Store) StarGist(userID int, gistID string) bool {
 	if st.Gists[gistID] == nil {
 		return false
 	}
-	if st.StarredGists[userID] == nil {
-		st.StarredGists[userID] = make(map[string]bool)
-	}
-	st.StarredGists[userID][gistID] = true
-	st.persistStarredGistsLocked(userID)
+	stars := cloneGistStars(st.StarredGists[userID])
+	stars[gistID] = true
+	batch := newPersistBatch(st.persist)
+	batch.Put("starred_gists", strconv.Itoa(userID), persistedStarredGists{UserID: userID, Stars: stars})
+	st.commitGistBatchLocked(batch)
+	st.StarredGists[userID] = stars
 	return true
 }
 
@@ -4254,13 +4321,20 @@ func (st *Store) UnstarGist(userID int, gistID string) bool {
 	if st.Gists[gistID] == nil {
 		return false
 	}
-	if st.StarredGists[userID] != nil {
-		delete(st.StarredGists[userID], gistID)
-		if len(st.StarredGists[userID]) == 0 {
-			delete(st.StarredGists, userID)
-		}
+	stars := cloneGistStars(st.StarredGists[userID])
+	delete(stars, gistID)
+	batch := newPersistBatch(st.persist)
+	if len(stars) == 0 {
+		batch.Delete("starred_gists", strconv.Itoa(userID))
+	} else {
+		batch.Put("starred_gists", strconv.Itoa(userID), persistedStarredGists{UserID: userID, Stars: stars})
 	}
-	st.persistStarredGistsLocked(userID)
+	st.commitGistBatchLocked(batch)
+	if len(stars) == 0 {
+		delete(st.StarredGists, userID)
+	} else {
+		st.StarredGists[userID] = stars
+	}
 	return true
 }
 
@@ -4286,10 +4360,11 @@ func (st *Store) ForkGist(user *User, gistID string) (*Gist, bool) {
 func (st *Store) ForkGistE(user *User, gistID string) (*Gist, bool, error) {
 	st.mu.Lock()
 	defer st.mu.Unlock()
-	orig := st.Gists[gistID]
-	if orig == nil {
+	current := st.Gists[gistID]
+	if current == nil {
 		return nil, false, nil
 	}
+	orig := cloneGist(current)
 	files := make(map[string]*GistFile, len(orig.Files))
 	for name, f := range orig.Files {
 		cp := *f
@@ -4318,12 +4393,17 @@ func (st *Store) ForkGistE(user *User, gistID string) (*Gist, bool, error) {
 		Comments:    0,
 		ForkOfID:    orig.ID,
 	}
-	st.Gists[id] = fork
 	orig.ForkIDs = append(orig.ForkIDs, id)
+	batch := newPersistBatch(st.persist)
+	batch.Put("gists", orig.ID, orig)
+	batch.Put("gists", fork.ID, fork)
+	if err := batch.Commit(); err != nil {
+		return nil, false, err
+	}
+	st.Gists[orig.ID] = orig
+	st.Gists[id] = fork
 	st.NextGistID++
-	st.persistGistLocked(orig)
-	st.persistGistLocked(fork)
-	return fork, true, nil
+	return cloneGist(fork), true, nil
 }
 
 // ListGistForks returns forks of a gist.
@@ -4337,7 +4417,7 @@ func (st *Store) ListGistForks(gistID string) []*Gist {
 	var out []*Gist
 	for _, fid := range orig.ForkIDs {
 		if f := st.Gists[fid]; f != nil {
-			out = append(out, f)
+			out = append(out, cloneGist(f))
 		}
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].CreatedAt.After(out[j].CreatedAt) })
@@ -4363,33 +4443,48 @@ func (st *Store) CreateGistComment(gistID string, user *User, body string) *Gist
 		UpdatedAt:         now,
 		AuthorAssociation: "OWNER",
 	}
+	updatedGist := cloneGist(g)
+	updatedGist.Comments++
+	batch := newPersistBatch(st.persist)
+	batch.Put("gist_comments", strconv.Itoa(c.ID), c)
+	batch.Put("gists", updatedGist.ID, updatedGist)
+	st.commitGistBatchLocked(batch)
 	st.GistComments[c.ID] = c
+	st.Gists[gistID] = updatedGist
 	st.NextGistCommentID++
-	g.Comments++
-	st.persistGistCommentLocked(c)
-	st.persistGistLocked(g)
-	return c
+	commentClone := *c
+	return &commentClone
 }
 
 // GetGistComment returns a comment by ID.
 func (st *Store) GetGistComment(id int) *GistComment {
 	st.mu.RLock()
 	defer st.mu.RUnlock()
-	return st.GistComments[id]
+	comment := st.GistComments[id]
+	if comment == nil {
+		return nil
+	}
+	clone := *comment
+	return &clone
 }
 
 // UpdateGistComment updates a comment body.
 func (st *Store) UpdateGistComment(id int, body string) (*GistComment, bool) {
 	st.mu.Lock()
 	defer st.mu.Unlock()
-	c := st.GistComments[id]
-	if c == nil {
+	current := st.GistComments[id]
+	if current == nil {
 		return nil, false
 	}
+	c := *current
 	c.Body = body
 	c.UpdatedAt = st.currentTime()
-	st.persistGistCommentLocked(c)
-	return c, true
+	batch := newPersistBatch(st.persist)
+	batch.Put("gist_comments", strconv.Itoa(c.ID), &c)
+	st.commitGistBatchLocked(batch)
+	st.GistComments[id] = &c
+	result := c
+	return &result, true
 }
 
 // DeleteGistComment deletes a comment and decrements the gist comment count.
@@ -4400,12 +4495,19 @@ func (st *Store) DeleteGistComment(id int) bool {
 	if c == nil {
 		return false
 	}
-	if g := st.Gists[c.GistID]; g != nil {
-		g.Comments--
-		st.persistGistLocked(g)
+	batch := newPersistBatch(st.persist)
+	var updatedGist *Gist
+	if gist := st.Gists[c.GistID]; gist != nil {
+		updatedGist = cloneGist(gist)
+		updatedGist.Comments--
+		batch.Put("gists", updatedGist.ID, updatedGist)
+	}
+	batch.Delete("gist_comments", strconv.Itoa(id))
+	st.commitGistBatchLocked(batch)
+	if updatedGist != nil {
+		st.Gists[updatedGist.ID] = updatedGist
 	}
 	delete(st.GistComments, id)
-	st.deleteGistCommentPersistenceLocked(id)
 	return true
 }
 
@@ -4416,7 +4518,8 @@ func (st *Store) ListGistComments(gistID string) []*GistComment {
 	var out []*GistComment
 	for _, c := range st.GistComments {
 		if c.GistID == gistID {
-			out = append(out, c)
+			clone := *c
+			out = append(out, &clone)
 		}
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].CreatedAt.Before(out[j].CreatedAt) })

@@ -802,7 +802,7 @@ func (s *Server) handleOIDCCustomSubPut(w http.ResponseWriter, r *http.Request) 
 		s.store.persist.MustPut("misc", "oidc_claim_keys", req.IncludeClaimKeys)
 	}
 	s.store.Misc.mu.Unlock()
-	writeJSON(w, http.StatusCreated, map[string]interface{}{"include_claim_keys": req.IncludeClaimKeys, "use_default": false})
+	writeJSON(w, http.StatusCreated, map[string]interface{}{})
 }
 
 func (s *Server) oidcKeyE() (*rsa.PrivateKey, error) {
