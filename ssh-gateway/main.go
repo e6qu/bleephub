@@ -20,11 +20,15 @@ const (
 	maxConcurrentConnections = 32
 	maxConnectionsPerMinute  = 10
 	startupTimeout           = 90 * time.Second
+	bannerTimeout            = 5 * time.Second
+	connectionIdleTimeout    = 10 * time.Minute
+	rateLimiterSweepInterval = time.Minute
 )
 
 type sourceRateLimiter struct {
-	mu       sync.Mutex
-	requests map[string][]time.Time
+	mu        sync.Mutex
+	requests  map[string][]time.Time
+	lastSweep time.Time
 }
 
 func (l *sourceRateLimiter) allow(address string, now time.Time) bool {
@@ -35,6 +39,20 @@ func (l *sourceRateLimiter) allow(address string, now time.Time) bool {
 	cutoff := now.Add(-time.Minute)
 	l.mu.Lock()
 	defer l.mu.Unlock()
+	if l.lastSweep.IsZero() || now.Sub(l.lastSweep) >= rateLimiterSweepInterval {
+		for source, timestamps := range l.requests {
+			firstLive := 0
+			for firstLive < len(timestamps) && timestamps[firstLive].Before(cutoff) {
+				firstLive++
+			}
+			if firstLive == len(timestamps) {
+				delete(l.requests, source)
+				continue
+			}
+			l.requests[source] = append([]time.Time(nil), timestamps[firstLive:]...)
+		}
+		l.lastSweep = now
+	}
 	recent := l.requests[host]
 	start := 0
 	for start < len(recent) && recent[start].Before(cutoff) {
@@ -83,7 +101,7 @@ func main() {
 
 func handle(client net.Conn) {
 	defer func() { _ = client.Close() }()
-	if err := client.SetReadDeadline(time.Now().Add(5 * time.Second)); err != nil {
+	if err := client.SetReadDeadline(time.Now().Add(bannerTimeout)); err != nil {
 		return
 	}
 	reader := bufio.NewReaderSize(client, 1024)
@@ -104,8 +122,57 @@ func handle(client net.Conn) {
 	if _, err := io.WriteString(upstream, banner); err != nil {
 		return
 	}
-	go func() { _, _ = io.Copy(upstream, reader) }()
-	_, _ = io.Copy(client, upstream)
+	idleClient := &idleDeadlineConn{Conn: client, timeout: connectionIdleTimeout}
+	idleUpstream := &idleDeadlineConn{Conn: upstream, timeout: connectionIdleTimeout}
+	copyDone := make(chan struct{})
+	go func() {
+		_, _ = io.Copy(idleUpstream, &idleDeadlineReader{
+			reader:  reader,
+			conn:    client,
+			timeout: connectionIdleTimeout,
+		})
+		_ = upstream.Close()
+		close(copyDone)
+	}()
+	_, _ = io.Copy(idleClient, idleUpstream)
+	_ = client.Close()
+	<-copyDone
+}
+
+type idleDeadlineReader struct {
+	reader  io.Reader
+	conn    net.Conn
+	timeout time.Duration
+}
+
+func (r *idleDeadlineReader) Read(p []byte) (int, error) {
+	if err := r.conn.SetReadDeadline(time.Now().Add(r.timeout)); err != nil {
+		return 0, err
+	}
+	return r.reader.Read(p)
+}
+
+// idleDeadlineConn refreshes the transport deadline on actual activity. A
+// fixed deadline would terminate a healthy large clone, while no deadline lets
+// an authenticated but idle peer occupy one of the bounded gateway slots
+// forever.
+type idleDeadlineConn struct {
+	net.Conn
+	timeout time.Duration
+}
+
+func (c *idleDeadlineConn) Read(p []byte) (int, error) {
+	if err := c.SetReadDeadline(time.Now().Add(c.timeout)); err != nil {
+		return 0, err
+	}
+	return c.Conn.Read(p)
+}
+
+func (c *idleDeadlineConn) Write(p []byte) (int, error) {
+	if err := c.SetWriteDeadline(time.Now().Add(c.timeout)); err != nil {
+		return 0, err
+	}
+	return c.Conn.Write(p)
 }
 
 func wakeAndConnect(ctx context.Context) (net.Conn, error) {
