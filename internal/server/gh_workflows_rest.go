@@ -148,10 +148,10 @@ func (s *Server) resolveWorkflowFile(repoFullName, idOrPath string) *WorkflowFil
 }
 
 // handleListWorkflowFileRuns — GET .../actions/workflows/{id}/runs.
-// Filters the existing run-level Workflows by repo + workflow name
-// (matching the WorkflowFile's name). Reuses workflowRunJSON from
-// gh_actions_rest.go so the response shape matches the run-list
-// endpoint's exactly.
+// Filters the existing run-level Workflows by repo + workflow file path
+// (falling back to the workflow name for runs with no recorded file).
+// Reuses workflowRunJSON from gh_actions_rest.go so the response shape
+// matches the run-list endpoint's exactly.
 func (s *Server) handleListWorkflowFileRuns(w http.ResponseWriter, r *http.Request) {
 	repo := repoFullName(r)
 	s.store.DiscoverWorkflowFilesFromGit(repo)
@@ -169,7 +169,16 @@ func (s *Server) handleListWorkflowFileRuns(w http.ResponseWriter, r *http.Reque
 		if run.RepoFullName != "" && run.RepoFullName != repo {
 			continue
 		}
-		if run.Name != wf.Name {
+		// Attribute by the workflow FILE path, not the human-authored
+		// name: two files both named `CI` are different workflows, and
+		// merging their runs cross-contaminates per-workflow totals.
+		// The name comparison remains only for runs submitted before a
+		// backing file was registered (no recorded path).
+		if run.WorkflowFilePath != "" {
+			if run.WorkflowFilePath != wf.Path {
+				continue
+			}
+		} else if run.Name != wf.Name {
 			continue
 		}
 		if statusFilter != "" && runStatus(run) != statusFilter {

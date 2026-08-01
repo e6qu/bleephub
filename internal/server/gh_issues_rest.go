@@ -93,7 +93,8 @@ func (s *Server) handleCreateIssue(w http.ResponseWriter, r *http.Request) {
 	s.emitWebhookEvent(repoKey, "issues", "opened", buildIssuesPayload(s.store, repo, issue, user, "opened"))
 
 	s.recordAuditEvent("issues.create", user.Login, "", map[string]interface{}{"repo": repoKey, "issue_id": issue.ID, "title": issue.Title})
-	writeJSON(w, http.StatusCreated, issueToJSON(issue, s.store, s.baseURL(r), repo.FullName))
+	issueJSON := issueToJSON(issue, s.store, s.baseURL(r), repo.FullName)
+	writeJSONCreated(w, jsonStringField(issueJSON, "url"), issueJSON)
 }
 
 func (s *Server) handleListIssues(w http.ResponseWriter, r *http.Request) {
@@ -608,7 +609,8 @@ func (s *Server) handleCreateIssueComment(w http.ResponseWriter, r *http.Request
 
 	s.emitWebhookEvent(repo.FullName, "issue_comment", "created",
 		buildIssueCommentPayload(s.store, repo, comment, user, "created", s.baseURL(r), parentNumber))
-	writeJSON(w, http.StatusCreated, commentToJSON(comment, s.store, s.baseURL(r), repo.FullName, parentNumber))
+	commentJSON := commentToJSON(comment, s.store, s.baseURL(r), repo.FullName, parentNumber)
+	writeJSONCreated(w, jsonStringField(commentJSON, "url"), commentJSON)
 }
 
 func (s *Server) handleListIssueComments(w http.ResponseWriter, r *http.Request) {
@@ -982,7 +984,8 @@ func (s *Server) handleAddIssueAssignees(w http.ResponseWriter, r *http.Request)
 	assigneeIDs := resolveUserIDs(s.store, req.Assignees)
 	s.store.AddIssueAssignees(repo.ID, issue.Number, assigneeIDs, user.ID)
 	// Real GitHub responds 201 Created when adding assignees.
-	writeJSON(w, http.StatusCreated, issueToJSON(s.store.GetIssue(issue.ID), s.store, s.baseURL(r), repo.FullName))
+	issueJSON := issueToJSON(s.store.GetIssue(issue.ID), s.store, s.baseURL(r), repo.FullName)
+	writeJSONCreated(w, jsonStringField(issueJSON, "url"), issueJSON)
 }
 
 func (s *Server) handleRemoveIssueAssignees(w http.ResponseWriter, r *http.Request) {

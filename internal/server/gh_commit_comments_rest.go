@@ -279,7 +279,8 @@ func (s *Server) handleCreateCommitComment(w http.ResponseWriter, r *http.Reques
 	}
 	sha := r.PathValue("commit_sha")
 	c := s.store.CommitComments.Create(repo.ID, sha, user.ID, req.Body, req.Path, req.Position, req.Line)
-	writeJSON(w, http.StatusCreated, commitCommentToJSON(c, s.store, s.baseURL(r), repo))
+	commitCommentJSON := commitCommentToJSON(c, s.store, s.baseURL(r), repo)
+	writeJSONCreated(w, jsonStringField(commitCommentJSON, "url"), commitCommentJSON)
 }
 
 func (s *Server) handleGetCommitComment(w http.ResponseWriter, r *http.Request) {

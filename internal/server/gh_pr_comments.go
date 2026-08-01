@@ -518,7 +518,8 @@ func (s *Server) handleCreatePRComment(w http.ResponseWriter, r *http.Request) {
 	}
 	s.emitWebhookEvent(repo.FullName, "pull_request_review_comment", "created",
 		buildPRReviewCommentEventPayload(repo, pr, c, user, "created"))
-	writeJSON(w, http.StatusCreated, prReviewCommentToJSON(c, s.store, s.baseURL(r), repo, pr))
+	prCommentJSON := prReviewCommentToJSON(c, s.store, s.baseURL(r), repo, pr)
+	writeJSONCreated(w, jsonStringField(prCommentJSON, "url"), prCommentJSON)
 }
 
 func (s *Server) handleListPRComments(w http.ResponseWriter, r *http.Request) {
@@ -686,7 +687,8 @@ func (s *Server) handleReplyPRComment(w http.ResponseWriter, r *http.Request) {
 		writeGHError(w, http.StatusNotFound, "Reply target not found")
 		return
 	}
-	writeJSON(w, http.StatusCreated, prReviewCommentToJSON(c, s.store, s.baseURL(r), repo, pr))
+	replyJSON := prReviewCommentToJSON(c, s.store, s.baseURL(r), repo, pr)
+	writeJSONCreated(w, jsonStringField(replyJSON, "url"), replyJSON)
 }
 
 // handleListPRReviewCommentsForReview serves

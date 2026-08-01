@@ -260,7 +260,8 @@ func (s *Server) handleCreateEnterpriseCodeSecurityConfig(w http.ResponseWriter,
 	}
 	req.apply(c)
 	s.store.CreateEnterpriseCodeSecurityConfig(c)
-	writeJSON(w, http.StatusCreated, s.enterpriseCodeSecurityConfigJSON(c, s.baseURL(r)))
+	escsJSON := s.enterpriseCodeSecurityConfigJSON(c, s.baseURL(r))
+	writeJSONCreated(w, jsonStringField(escsJSON, "url"), escsJSON)
 }
 
 // lookupEnterpriseCodeSecurityConfig resolves {configuration_id}, writing 404

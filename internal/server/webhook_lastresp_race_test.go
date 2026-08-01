@@ -25,7 +25,7 @@ func TestHookLastResponseRace(t *testing.T) {
 		go func() {
 			defer wg.Done()
 			r := httptest.NewRequest("GET", "/api/v3/repos/octo/repo/hooks", nil)
-			_ = hookToJSON(hook, s.store.HookLastResp(hook), r, "octo", "repo")
+			_ = s.hookToJSON(hook, s.store.HookLastResp(hook), r, "octo", "repo")
 		}()
 	}
 	wg.Wait()
@@ -37,7 +37,7 @@ func TestHookLastResponseRace(t *testing.T) {
 	if last.Code < 200 || last.Code > 249 || last.Status != "ok" {
 		t.Fatalf("last response = %+v, want one complete writer value", last)
 	}
-	rendered := hookToJSON(hook, last, httptest.NewRequest("GET", "/api/v3/repos/octo/repo/hooks", nil), "octo", "repo")
+	rendered := s.hookToJSON(hook, last, httptest.NewRequest("GET", "/api/v3/repos/octo/repo/hooks", nil), "octo", "repo")
 	got, ok := rendered["last_response"].(map[string]interface{})
 	if !ok || got["status"] != "ok" || got["code"] != last.Code {
 		t.Fatalf("rendered last_response = %#v, want code=%d status=ok", rendered["last_response"], last.Code)

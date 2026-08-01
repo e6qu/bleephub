@@ -148,7 +148,8 @@ func (s *Server) handleCreateTeam(w http.ResponseWriter, r *http.Request) {
 	}
 
 	s.recordAuditEvent("team.create", user.Login, orgLogin, map[string]interface{}{"team_id": team.ID, "team_slug": team.Slug})
-	writeJSON(w, http.StatusCreated, teamToJSON(team, org, s.store, s.baseURL(r)))
+	teamJSON := teamToJSON(team, org, s.store, s.baseURL(r))
+	writeJSONCreated(w, jsonStringField(teamJSON, "url"), teamJSON)
 }
 
 func (s *Server) handleListTeams(w http.ResponseWriter, r *http.Request) {

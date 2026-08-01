@@ -67,7 +67,24 @@ func (s *Server) registerGHRepoSettingsRoutes() {
 	s.route("DELETE /api/v3/repos/{owner}/{repo}/interaction-limits", s.requirePerm(scopeAdministration, permWrite, s.handleDeleteInteractionLimits))
 }
 
-func (s *Server) repoFromRequest(w http.ResponseWriter, r *http.Request) *Repo {
+// repoAccessLevel names the repository standing repoFromRequest enforces
+// before handing the repo to its handler. Handlers whose route or body
+// already authorizes the caller pass repoAccessNone.
+type repoAccessLevel int
+
+const (
+	repoAccessNone repoAccessLevel = iota
+	repoAccessRead
+	repoAccessWrite
+	repoAccessAdmin
+)
+
+// repoFromRequest resolves the {owner}/{repo} path and enforces the
+// requested access level. A private repo the caller cannot read answers 404
+// at every level, matching real GitHub (which hides private repos behind
+// 404, never 403, on read paths); a readable repo the caller may not change
+// answers 403.
+func (s *Server) repoFromRequest(w http.ResponseWriter, r *http.Request, access repoAccessLevel) *Repo {
 	owner := r.PathValue("owner")
 	name := r.PathValue("repo")
 	repo := s.store.GetRepo(owner, name)
@@ -75,11 +92,30 @@ func (s *Server) repoFromRequest(w http.ResponseWriter, r *http.Request) *Repo {
 		writeGHError(w, http.StatusNotFound, "Not Found")
 		return nil
 	}
+	if access == repoAccessNone {
+		return repo
+	}
+	if repo.Private && !s.viewerCanReadRepo(r.Context(), repo) {
+		writeGHError(w, http.StatusNotFound, "Not Found")
+		return nil
+	}
+	switch access {
+	case repoAccessWrite:
+		if !s.viewerCanPushRepo(r.Context(), repo) {
+			writeGHError(w, http.StatusForbidden, "Resource not accessible by integration")
+			return nil
+		}
+	case repoAccessAdmin:
+		if !s.viewerCanAdminRepo(r.Context(), repo) {
+			writeGHError(w, http.StatusForbidden, "Must have admin rights to Repository.")
+			return nil
+		}
+	}
 	return repo
 }
 
 func (s *Server) handleListRepoDeployKeys(w http.ResponseWriter, r *http.Request) {
-	repo := s.repoFromRequest(w, r)
+	repo := s.repoFromRequest(w, r, repoAccessAdmin)
 	if repo == nil {
 		return
 	}
@@ -93,7 +129,7 @@ func (s *Server) handleListRepoDeployKeys(w http.ResponseWriter, r *http.Request
 }
 
 func (s *Server) handleCreateRepoDeployKey(w http.ResponseWriter, r *http.Request) {
-	repo := s.repoFromRequest(w, r)
+	repo := s.repoFromRequest(w, r, repoAccessAdmin)
 	if repo == nil {
 		return
 	}
@@ -110,11 +146,12 @@ func (s *Server) handleCreateRepoDeployKey(w http.ResponseWriter, r *http.Reques
 		return
 	}
 	key := s.store.CreateRepoDeployKey(repo.ID, req.Title, req.Key, req.ReadOnly)
-	writeJSON(w, http.StatusCreated, deployKeyToJSON(key, repo.FullName, s.baseURL(r)))
+	keyJSON := deployKeyToJSON(key, repo.FullName, s.baseURL(r))
+	writeJSONCreated(w, jsonStringField(keyJSON, "url"), keyJSON)
 }
 
 func (s *Server) handleGetRepoDeployKey(w http.ResponseWriter, r *http.Request) {
-	repo := s.repoFromRequest(w, r)
+	repo := s.repoFromRequest(w, r, repoAccessAdmin)
 	if repo == nil {
 		return
 	}
@@ -132,7 +169,7 @@ func (s *Server) handleGetRepoDeployKey(w http.ResponseWriter, r *http.Request) 
 }
 
 func (s *Server) handleDeleteRepoDeployKey(w http.ResponseWriter, r *http.Request) {
-	repo := s.repoFromRequest(w, r)
+	repo := s.repoFromRequest(w, r, repoAccessAdmin)
 	if repo == nil {
 		return
 	}
@@ -171,7 +208,7 @@ func (s *Server) handleTransferRepo(w http.ResponseWriter, r *http.Request) {
 		writeGHError(w, http.StatusUnauthorized, "Bad credentials")
 		return
 	}
-	repo := s.repoFromRequest(w, r)
+	repo := s.repoFromRequest(w, r, repoAccessNone)
 	if repo == nil {
 		return
 	}
@@ -200,7 +237,7 @@ func (s *Server) handleTransferRepo(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleMergeUpstream(w http.ResponseWriter, r *http.Request) {
-	repo := s.repoFromRequest(w, r)
+	repo := s.repoFromRequest(w, r, repoAccessWrite)
 	if repo == nil {
 		return
 	}
@@ -307,7 +344,7 @@ func (s *Server) handleMergeUpstream(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleRenameBranch(w http.ResponseWriter, r *http.Request) {
-	repo := s.repoFromRequest(w, r)
+	repo := s.repoFromRequest(w, r, repoAccessAdmin)
 	if repo == nil {
 		return
 	}
@@ -352,7 +389,7 @@ func (s *Server) handleRenameBranch(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 	}
-	writeJSON(w, http.StatusCreated, result)
+	writeJSONCreated(w, branchURL, result)
 }
 
 func (s *Server) handleSetRepoSubscription(w http.ResponseWriter, r *http.Request) {
@@ -361,7 +398,7 @@ func (s *Server) handleSetRepoSubscription(w http.ResponseWriter, r *http.Reques
 		writeGHError(w, http.StatusUnauthorized, "Bad credentials")
 		return
 	}
-	repo := s.repoFromRequest(w, r)
+	repo := s.repoFromRequest(w, r, repoAccessNone)
 	if repo == nil {
 		return
 	}
@@ -389,7 +426,7 @@ func (s *Server) handleDeleteRepoSubscription(w http.ResponseWriter, r *http.Req
 		writeGHError(w, http.StatusUnauthorized, "Bad credentials")
 		return
 	}
-	repo := s.repoFromRequest(w, r)
+	repo := s.repoFromRequest(w, r, repoAccessRead)
 	if repo == nil {
 		return
 	}
@@ -444,7 +481,7 @@ func (s *Server) handleDisableVulnerabilityAlerts(w http.ResponseWriter, r *http
 }
 
 func (s *Server) setRepoFlag(w http.ResponseWriter, r *http.Request, field string, value bool) {
-	repo := s.repoFromRequest(w, r)
+	repo := s.repoFromRequest(w, r, repoAccessAdmin)
 	if repo == nil {
 		return
 	}
@@ -457,7 +494,7 @@ func (s *Server) setRepoFlag(w http.ResponseWriter, r *http.Request, field strin
 
 // handleCheckAutomatedSecurityFixes — GET /repos/{o}/{r}/automated-security-fixes.
 func (s *Server) handleCheckAutomatedSecurityFixes(w http.ResponseWriter, r *http.Request) {
-	repo := s.repoFromRequest(w, r)
+	repo := s.repoFromRequest(w, r, repoAccessAdmin)
 	if repo == nil {
 		return
 	}
@@ -469,7 +506,7 @@ func (s *Server) handleCheckAutomatedSecurityFixes(w http.ResponseWriter, r *htt
 
 // handleCheckPrivateVulnerabilityReporting — GET /repos/{o}/{r}/private-vulnerability-reporting.
 func (s *Server) handleCheckPrivateVulnerabilityReporting(w http.ResponseWriter, r *http.Request) {
-	repo := s.repoFromRequest(w, r)
+	repo := s.repoFromRequest(w, r, repoAccessNone)
 	if repo == nil {
 		return
 	}
@@ -486,7 +523,7 @@ func (s *Server) handleCheckPrivateVulnerabilityReporting(w http.ResponseWriter,
 // The check is a status code, not a body: 204 when Dependabot alerts are
 // enabled, 404 when disabled.
 func (s *Server) handleCheckVulnerabilityAlerts(w http.ResponseWriter, r *http.Request) {
-	repo := s.repoFromRequest(w, r)
+	repo := s.repoFromRequest(w, r, repoAccessAdmin)
 	if repo == nil {
 		return
 	}
@@ -501,7 +538,7 @@ func (s *Server) handleCheckVulnerabilityAlerts(w http.ResponseWriter, r *http.R
 // Returns the active restriction, or an empty object when none is in
 // effect (an expired restriction is no longer in effect).
 func (s *Server) handleGetInteractionLimits(w http.ResponseWriter, r *http.Request) {
-	repo := s.repoFromRequest(w, r)
+	repo := s.repoFromRequest(w, r, repoAccessAdmin)
 	if repo == nil {
 		return
 	}
@@ -517,7 +554,7 @@ func (s *Server) handleGetInteractionLimits(w http.ResponseWriter, r *http.Reque
 }
 
 func (s *Server) handleSetInteractionLimits(w http.ResponseWriter, r *http.Request) {
-	repo := s.repoFromRequest(w, r)
+	repo := s.repoFromRequest(w, r, repoAccessAdmin)
 	if repo == nil {
 		return
 	}
@@ -553,7 +590,7 @@ func (s *Server) handleSetInteractionLimits(w http.ResponseWriter, r *http.Reque
 }
 
 func (s *Server) handleDeleteInteractionLimits(w http.ResponseWriter, r *http.Request) {
-	repo := s.repoFromRequest(w, r)
+	repo := s.repoFromRequest(w, r, repoAccessAdmin)
 	if repo == nil {
 		return
 	}
@@ -681,7 +718,8 @@ func (s *Server) handleCreateRepo(w http.ResponseWriter, r *http.Request) {
 
 	repo = s.store.GetRepo(user.Login, req.Name)
 	s.recordAuditEvent("repo.create", user.Login, "", map[string]interface{}{"repo": repo.FullName, "repo_id": repo.ID})
-	writeJSON(w, http.StatusCreated, fullRepoJSONForViewer(repo, s.store, s.baseURL(r), user))
+	repoJSON := fullRepoJSONForViewer(repo, s.store, s.baseURL(r), user)
+	writeJSONCreated(w, jsonStringField(repoJSON, "url"), repoJSON)
 }
 
 func (s *Server) handleGetRepo(w http.ResponseWriter, r *http.Request) {
@@ -1487,7 +1525,8 @@ func (s *Server) handleAddCollaborator(w http.ResponseWriter, r *http.Request) {
 	if inv == nil {
 		inv = s.store.CreateRepoInvitation(repo.FullName, u.Login, "", inviterID, req.Permission)
 	}
-	writeJSON(w, http.StatusCreated, invitationJSON(inv, repo, s.store, s.baseURL(r)))
+	invJSON := invitationJSON(inv, repo, s.store, s.baseURL(r))
+	writeJSONCreated(w, jsonStringField(invJSON, "url"), invJSON)
 }
 
 func githubRoleName(perm string) string {

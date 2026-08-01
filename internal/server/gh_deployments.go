@@ -535,7 +535,8 @@ func (s *Server) handleCreateDeployment(w http.ResponseWriter, r *http.Request) 
 	d := s.store.Deployments.CreateDeployment(repo.ID, user.ID, req.Ref, req.Ref, req.Task, env, req.Description, req.Payload, bool(req.ProductionEnvironment), bool(req.TransientEnvironment))
 	s.emitWebhookEvent(repo.FullName, "deployment", "created", buildDeploymentEventPayload(repo, d, user, "created"))
 	s.recordAuditEvent("deployment.create", user.Login, "", map[string]interface{}{"repo": repo.FullName, "deployment_id": d.ID})
-	writeJSON(w, http.StatusCreated, deploymentToJSON(d, s.store, s.baseURL(r), repo))
+	deployJSON := deploymentToJSON(d, s.store, s.baseURL(r), repo)
+	writeJSONCreated(w, jsonStringField(deployJSON, "url"), deployJSON)
 }
 
 func (s *Server) handleListDeployments(w http.ResponseWriter, r *http.Request) {
@@ -640,7 +641,8 @@ func (s *Server) handleCreateDeploymentStatus(w http.ResponseWriter, r *http.Req
 		}
 		s.emitWebhookEvent(priorRepo.FullName, "deployment_status", "inactive", buildDeploymentStatusEventPayload(priorRepo, priorDep, ai.status, user))
 	}
-	writeJSON(w, http.StatusCreated, deploymentStatusToJSON(status, s.store, s.baseURL(r), repo))
+	statusJSON := deploymentStatusToJSON(status, s.store, s.baseURL(r), repo)
+	writeJSONCreated(w, jsonStringField(statusJSON, "url"), statusJSON)
 }
 
 func (s *Server) handleListDeploymentStatuses(w http.ResponseWriter, r *http.Request) {

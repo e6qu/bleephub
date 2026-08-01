@@ -154,7 +154,8 @@ func (s *Server) handleCreateProjectClassic(w http.ResponseWriter, r *http.Reque
 	}
 	proj := s.store.CreateProjectClassic(repo, user.ID, body.Name, body.Body, body.State)
 	s.recordAuditEvent("project.create", user.Login, "", map[string]interface{}{"repo": repo.FullName, "project_id": proj.ID})
-	writeJSON(w, http.StatusCreated, projectClassicToJSON(proj, s.store, s.baseURL(r), repo.FullName))
+	projJSON := projectClassicToJSON(proj, s.store, s.baseURL(r), repo.FullName)
+	writeJSONCreated(w, jsonStringField(projJSON, "url"), projJSON)
 }
 
 func (s *Server) handleGetProjectClassic(w http.ResponseWriter, r *http.Request) {
@@ -270,7 +271,8 @@ func (s *Server) handleCreateProjectColumn(w http.ResponseWriter, r *http.Reques
 		return
 	}
 	col := s.store.CreateProjectColumn(proj.ID, body.Name)
-	writeJSON(w, http.StatusCreated, projectColumnToJSON(col, s.store, s.baseURL(r)))
+	colJSON := projectColumnToJSON(col, s.store, s.baseURL(r))
+	writeJSONCreated(w, jsonStringField(colJSON, "url"), colJSON)
 }
 
 func (s *Server) handleGetProjectColumn(w http.ResponseWriter, r *http.Request) {
@@ -363,7 +365,8 @@ func (s *Server) handleMoveProjectColumn(w http.ResponseWriter, r *http.Request)
 		writeGHValidationError(w, "ProjectColumn", "position", "invalid")
 		return
 	}
-	writeJSON(w, http.StatusCreated, map[string]interface{}{"id": col.ID, "url": projectColumnURL(col, s.baseURL(r))})
+	colMoveURL := projectColumnURL(col, s.baseURL(r))
+	writeJSONCreated(w, colMoveURL, map[string]interface{}{"id": col.ID, "url": colMoveURL})
 }
 
 func (s *Server) handleListProjectCards(w http.ResponseWriter, r *http.Request) {
@@ -442,7 +445,7 @@ func (s *Server) handleCreateProjectCard(w http.ResponseWriter, r *http.Request)
 		writeGHError(w, http.StatusNotFound, "Not Found")
 		return
 	}
-	writeJSON(w, http.StatusCreated, item)
+	writeJSONCreated(w, jsonStringField(item, "url"), item)
 }
 
 func (s *Server) handleGetProjectCard(w http.ResponseWriter, r *http.Request) {
@@ -546,7 +549,8 @@ func (s *Server) handleMoveProjectCard(w http.ResponseWriter, r *http.Request) {
 		writeGHValidationError(w, "ProjectCard", "position", "invalid")
 		return
 	}
-	writeJSON(w, http.StatusCreated, map[string]interface{}{"id": card.ID, "url": projectCardURL(card, s.baseURL(r))})
+	cardMoveURL := projectCardURL(card, s.baseURL(r))
+	writeJSONCreated(w, cardMoveURL, map[string]interface{}{"id": card.ID, "url": cardMoveURL})
 }
 
 func (s *Server) resolveProjectClassic(w http.ResponseWriter, r *http.Request) (*ProjectClassic, *Repo) {

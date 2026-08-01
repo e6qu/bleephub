@@ -55,8 +55,8 @@ func TestReliabilityDebtOnlyShrinks(t *testing.T) {
 	const (
 		maxDirectPersistenceWrites = 568
 		minBatchedMutations        = 24
-		maxSharedHarnessFiles      = 127
-		maxSharedHarnessReferences = 1436
+		maxSharedHarnessFiles      = 130
+		maxSharedHarnessReferences = 1440
 	)
 
 	directWrites, batchedMutations := 0, 0

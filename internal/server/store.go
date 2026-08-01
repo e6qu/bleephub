@@ -146,6 +146,19 @@ type User struct {
 	InteractionLimit       string      `json:"interaction_limit,omitempty"`
 	InteractionLimitExpiry *time.Time  `json:"interaction_limit_expiry,omitempty"`
 	PasswordHash           string      `json:"password_hash,omitempty"`
+	// ExternalIdentities binds the account to the stable (issuer, subject)
+	// pairs its federated providers guarantee, so a mutable provider username
+	// cannot re-key the account and one provider cannot overwrite another's
+	// grant by logging in last.
+	ExternalIdentities []ExternalIdentity `json:"external_identities,omitempty"`
+}
+
+// ExternalIdentity is one federated provider's stable handle on an account:
+// the issuer and subject pair the provider guarantees immutable, unlike the
+// mutable username it also presents.
+type ExternalIdentity struct {
+	Issuer  string `json:"issuer"`
+	Subject string `json:"subject"`
 }
 
 // UserEmail is one email address on a user account, matching GitHub's
@@ -331,6 +344,7 @@ type Store struct {
 	Jobs                         map[string]*Job
 	Users                        map[int]*User
 	UsersByLogin                 map[string]*User
+	UsersByExternalID            map[string]*User // issuer\x00subject → user (stable federated identity index)
 	Tokens                       map[string]*Token
 	DeviceCodes                  map[string]*DeviceCode
 	AuthCodes                    map[string]*authCode     // OAuth web-flow codes
@@ -524,6 +538,9 @@ type Store struct {
 	mu       sync.RWMutex
 	clockMu  sync.RWMutex
 	clockNow func() time.Time
+	// apiInsightsMu guards APIRequestRecords/NextAPIRequestID so recording
+	// every API request never contends on the main store lock.
+	apiInsightsMu sync.RWMutex
 	// enterprises
 	EnterpriseTeams                    map[int]*EnterpriseTeam
 	EnterpriseTeamsBySlug              map[string]*EnterpriseTeam
@@ -778,6 +795,7 @@ func NewStore() *Store {
 		Jobs:                         make(map[string]*Job),
 		Users:                        make(map[int]*User),
 		UsersByLogin:                 make(map[string]*User),
+		UsersByExternalID:            make(map[string]*User),
 		Tokens:                       make(map[string]*Token),
 		DeviceCodes:                  make(map[string]*DeviceCode),
 		AuthCodes:                    make(map[string]*authCode),
@@ -1169,6 +1187,11 @@ func (st *Store) loadFromPersistence() error {
 		}
 		st.Users[u.ID] = &u
 		st.UsersByLogin[u.Login] = &u
+		for _, identity := range u.ExternalIdentities {
+			if key := externalIdentityKey(identity.Issuer, identity.Subject); key != "" {
+				st.UsersByExternalID[key] = &u
+			}
+		}
 		if u.ID >= st.NextUser {
 			st.NextUser = u.ID + 1
 		}
@@ -2084,6 +2107,9 @@ func (st *Store) loadFromPersistence() error {
 			if err := loadJSON(raw, &k); err != nil {
 				return err
 			}
+			if err := cacheParsedKey(&k); err != nil {
+				log.Printf("bleephub: persisted SSH key does not parse and will never authenticate: %v", err)
+			}
 			st.Misc.userKeys[k.ID] = &k
 			st.Misc.keysByUser[k.UserID] = append(st.Misc.keysByUser[k.UserID], &k)
 			if k.ID >= st.Misc.nextKeyID {
@@ -2656,6 +2682,9 @@ func (st *Store) loadFromPersistence() error {
 	// API request records arrive in map-iteration order; the in-memory log
 	// is oldest-first (RecordAPIRequest appends), so sort by ID ascending.
 	sort.Slice(st.APIRequestRecords, func(i, j int) bool { return st.APIRequestRecords[i].ID < st.APIRequestRecords[j].ID })
+	if overflow := len(st.APIRequestRecords) - maxAPIRequestRecords; overflow > 0 {
+		st.APIRequestRecords = append([]*APIRequestRecord(nil), st.APIRequestRecords[overflow:]...)
+	}
 
 	if v, err := st.persist.GetCounter("next_run_id"); err != nil {
 		return fmt.Errorf("load counter next_run_id: %w", err)
@@ -3841,6 +3870,22 @@ func (st *Store) loadBucket(name string, fn func(raw []byte) error) error {
 	return nil
 }
 
+// forgetExternalIdentitiesLocked removes every (issuer, subject) binding for
+// user from the federated-identity index. Callers hold st.mu. It mirrors the
+// UsersByLogin cleanup at each site that drops a User, so the index cannot
+// resurrect a deleted account when its provider logs in again.
+func (st *Store) forgetExternalIdentitiesLocked(user *User) {
+	if user == nil {
+		return
+	}
+	for _, identity := range user.ExternalIdentities {
+		key := externalIdentityKey(identity.Issuer, identity.Subject)
+		if key != "" && st.UsersByExternalID[key] == user {
+			delete(st.UsersByExternalID, key)
+		}
+	}
+}
+
 // SeedDefaultUser creates the default admin user and token.
 func (st *Store) SeedDefaultUser() {
 	st.mu.Lock()
@@ -3909,14 +3954,16 @@ func (st *Store) GetUserByID(id int) *User {
 
 // LookupUserBySSHKey resolves a registered account SSH authentication key.
 // It compares parsed SSH wire encodings so comments and spacing differences in
-// authorized-key text cannot create a different credential identity.
+// authorized-key text cannot create a different credential identity. The
+// parsed form is cached when the key is registered or loaded; keys whose text
+// never parsed (logged then) carry no cached form and cannot match.
 func (st *Store) LookupUserBySSHKey(key ssh.PublicKey) *User {
 	st.Misc.mu.RLock()
 	defer st.Misc.mu.RUnlock()
+	wire := key.Marshal()
 	for userID, keys := range st.Misc.keysByUser {
 		for _, registered := range keys {
-			parsed, _, _, _, err := ssh.ParseAuthorizedKey([]byte(registered.Key))
-			if err == nil && bytes.Equal(parsed.Marshal(), key.Marshal()) {
+			if registered.parsed != nil && bytes.Equal(registered.parsed.Marshal(), wire) {
 				return st.GetUserByID(userID)
 			}
 		}

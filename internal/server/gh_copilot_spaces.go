@@ -517,7 +517,8 @@ func (s *Server) handleCreateCopilotSpace(w http.ResponseWriter, r *http.Request
 		space.NextResourceID = pendingResources.NextResourceID
 		s.store.SaveCopilotSpace(space)
 	}
-	writeJSON(w, http.StatusCreated, s.copilotSpaceJSON(space, s.baseURL(r)))
+	spaceJSON := s.copilotSpaceJSON(space, s.baseURL(r))
+	writeJSONCreated(w, jsonStringField(spaceJSON, "url"), spaceJSON)
 }
 
 func (s *Server) handleGetCopilotSpace(w http.ResponseWriter, r *http.Request) {

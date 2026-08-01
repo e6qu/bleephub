@@ -515,7 +515,11 @@ func (s *Server) classroomAssignmentForAdmin(w http.ResponseWriter, r *http.Requ
 }
 
 func (s *Server) handleGetClassroom(w http.ResponseWriter, r *http.Request) {
-	id, _ := strconv.Atoi(r.PathValue("classroom_id"))
+	id, err := strconv.Atoi(r.PathValue("classroom_id"))
+	if err != nil {
+		writeGHError(w, http.StatusNotFound, "Not Found")
+		return
+	}
 	c := s.classroomForAdmin(w, r, id)
 	if c == nil {
 		return
@@ -524,7 +528,11 @@ func (s *Server) handleGetClassroom(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleListClassroomAssignments(w http.ResponseWriter, r *http.Request) {
-	id, _ := strconv.Atoi(r.PathValue("classroom_id"))
+	id, err := strconv.Atoi(r.PathValue("classroom_id"))
+	if err != nil {
+		writeGHError(w, http.StatusNotFound, "Not Found")
+		return
+	}
 	c := s.classroomForAdmin(w, r, id)
 	if c == nil {
 		return
@@ -549,7 +557,11 @@ func (s *Server) handleListClassroomAssignments(w http.ResponseWriter, r *http.R
 }
 
 func (s *Server) handleGetClassroomAssignment(w http.ResponseWriter, r *http.Request) {
-	id, _ := strconv.Atoi(r.PathValue("assignment_id"))
+	id, err := strconv.Atoi(r.PathValue("assignment_id"))
+	if err != nil {
+		writeGHError(w, http.StatusNotFound, "Not Found")
+		return
+	}
 	a := s.classroomAssignmentForAdmin(w, r, id)
 	if a == nil {
 		return
@@ -558,7 +570,11 @@ func (s *Server) handleGetClassroomAssignment(w http.ResponseWriter, r *http.Req
 }
 
 func (s *Server) handleListClassroomAcceptedAssignments(w http.ResponseWriter, r *http.Request) {
-	id, _ := strconv.Atoi(r.PathValue("assignment_id"))
+	id, err := strconv.Atoi(r.PathValue("assignment_id"))
+	if err != nil {
+		writeGHError(w, http.StatusNotFound, "Not Found")
+		return
+	}
 	a := s.classroomAssignmentForAdmin(w, r, id)
 	if a == nil {
 		return
@@ -603,7 +619,11 @@ func (s *Server) handleListClassroomAcceptedAssignments(w http.ResponseWriter, r
 }
 
 func (s *Server) handleListClassroomAssignmentGrades(w http.ResponseWriter, r *http.Request) {
-	id, _ := strconv.Atoi(r.PathValue("assignment_id"))
+	id, err := strconv.Atoi(r.PathValue("assignment_id"))
+	if err != nil {
+		writeGHError(w, http.StatusNotFound, "Not Found")
+		return
+	}
 	a := s.classroomAssignmentForAdmin(w, r, id)
 	if a == nil {
 		return

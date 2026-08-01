@@ -3,7 +3,6 @@ package bleephub
 import (
 	"context"
 	"encoding/json"
-	"fmt"
 	"io"
 	"net/http"
 	"path/filepath"
@@ -552,7 +551,7 @@ func (s *Server) handleSearchIssues(w http.ResponseWriter, r *http.Request) {
 			// Search returns issue-search-result-item rather than the richer
 			// issue response used by single-issue operations.
 			delete(item, "closed_by")
-			item["score"] = 1.0
+			item["score"] = searchRelevanceScore(q.Terms, row.issue.Title, row.issue.Body)
 			item["author_association"] = row.assoc
 			item["draft"] = false
 			item["pull_request"] = nil
@@ -561,7 +560,7 @@ func (s *Server) handleSearchIssues(w http.ResponseWriter, r *http.Request) {
 		}
 		item := issueToJSONForPR(row.pr, s.store, base, row.repo.FullName)
 		delete(item, "closed_by")
-		item["score"] = 1.0
+		item["score"] = searchRelevanceScore(q.Terms, row.pr.Title, row.pr.Body)
 		item["author_association"] = row.assoc
 		item["repository"] = repoToJSON(row.repo, s.store, base)
 		return item
@@ -577,7 +576,7 @@ func (s *Server) handleSearchIssues(w http.ResponseWriter, r *http.Request) {
 		for _, row := range rows {
 			results = append(results, render(row))
 		}
-		writeJSON(w, http.StatusOK, searchEnvelope("issues", results, q, sortSearchResults))
+		writeJSON(w, http.StatusOK, searchEnvelope("issues", results, len(results), false, q, sortSearchResults))
 		return
 	}
 
@@ -917,12 +916,12 @@ func (s *Server) handleSearchRepositories(w http.ResponseWriter, r *http.Request
 	var results []map[string]interface{}
 	for _, repo := range matched {
 		item := repoToJSON(repo, s.store, base)
-		item["score"] = 1.0
+		item["score"] = searchRelevanceScore(q.Terms, repo.Name, repo.Description)
 		item["_help_wanted_issues"] = repoIssueLabelCount(s.store, repo.ID, "help wanted")
 		results = append(results, item)
 	}
 
-	writeJSON(w, http.StatusOK, searchEnvelope("", results, q, sortRepoSearchResults))
+	writeJSON(w, http.StatusOK, searchEnvelope("", results, len(results), false, q, sortRepoSearchResults))
 }
 
 func repoIssueLabelCount(st *Store, repoID int, labelName string) int {
@@ -1010,6 +1009,8 @@ func (s *Server) handleSearchCode(w http.ResponseWriter, r *http.Request) {
 
 	base := s.baseURL(r)
 	var results []map[string]interface{}
+	total := 0
+	truncated := false
 
 	for _, sr := range searchRepos {
 		repo := sr.repo
@@ -1077,6 +1078,14 @@ func (s *Server) handleSearchCode(w http.ResponseWriter, r *http.Request) {
 				return nil
 			}
 
+			// Count every match so total_count reflects the full result set;
+			// only the first searchResultCap rows are rendered, and the rest
+			// is reported via incomplete_results.
+			total++
+			if len(results) >= searchResultCap {
+				truncated = true
+				return nil
+			}
 			api := base + "/api/v3/repos/" + repo.FullName
 			item := map[string]interface{}{
 				"name":       name,
@@ -1086,21 +1095,18 @@ func (s *Server) handleSearchCode(w http.ResponseWriter, r *http.Request) {
 				"git_url":    api + "/git/blobs/" + f.Hash.String(),
 				"html_url":   base + "/" + repo.FullName + "/blob/" + repo.DefaultBranch + "/" + path,
 				"repository": repoToJSON(repo, s.store, base),
-				"score":      1.0,
+				"score":      searchRelevanceScore(q.Terms, name, path),
 				"language":   detectLanguage(name),
 			}
 			results = append(results, item)
-			if len(results) >= 1000 {
-				return fmt.Errorf("result limit")
-			}
 			return nil
 		})
-		if err != nil && err.Error() != "result limit" {
+		if err != nil {
 			s.logger.Debug().Err(err).Str("repo", repo.FullName).Msg("code search tree walk")
 		}
 	}
 
-	writeJSON(w, http.StatusOK, searchEnvelope("", results, q, nil))
+	writeJSON(w, http.StatusOK, searchEnvelope("", results, total, truncated, q, nil))
 }
 
 func (s *Server) handleSearchUsers(w http.ResponseWriter, r *http.Request) {
@@ -1148,16 +1154,16 @@ func (s *Server) handleSearchUsers(w http.ResponseWriter, r *http.Request) {
 		item := s.fullUserJSON(u)
 		// user-search-result-item carries no twitter_username member.
 		delete(item, "twitter_username")
-		item["score"] = 1.0
+		item["score"] = searchRelevanceScore(q.Terms, u.Login, u.Name+" "+u.Bio)
 		results = append(results, item)
 	}
 	for _, org := range orgs {
 		item := orgAsSimpleUserJSON(org)
-		item["score"] = 1.0
+		item["score"] = searchRelevanceScore(q.Terms, org.Login, org.Name+" "+org.Description)
 		results = append(results, item)
 	}
 
-	writeJSON(w, http.StatusOK, searchEnvelope("", results, q, sortUserSearchResults))
+	writeJSON(w, http.StatusOK, searchEnvelope("", results, len(results), false, q, sortUserSearchResults))
 }
 
 func pathMatches(text string, terms []string) bool {
@@ -1233,22 +1239,64 @@ func orderSearchItems(items []map[string]interface{}) {
 	})
 }
 
+// searchResultCap bounds the number of items a search collects and renders.
+// GitHub caps code and commit search at 1000 results; once that many rows
+// have been gathered the remaining matches are counted but not rendered, and
+// the response carries incomplete_results=true with a total_count reflecting
+// the full match set rather than the truncated slice.
+const searchResultCap = 1000
+
+// searchRelevanceScore assigns a deterministic relevance score in [0,1] to a
+// free-text search match. A hit in primary — the highest-ranked field, such
+// as a repository name, issue title or user login — outscores one only in
+// secondary (description, body or bio), and exact equality beats substring
+// containment. Multi-term queries average the per-term contributions, so a
+// document matching every term ranks above one matching only some.
+// Qualifier-only queries (no free-text terms) treat every hit as equally
+// relevant and return 1.0.
+func searchRelevanceScore(terms []string, primary, secondary string) float64 {
+	if len(terms) == 0 {
+		return 1.0
+	}
+	p := strings.ToLower(primary)
+	s := strings.ToLower(secondary)
+	var sum float64
+	for _, term := range terms {
+		switch {
+		case term == p:
+			sum += 1.0
+		case strings.Contains(p, term):
+			sum += 0.9
+		case term == s:
+			sum += 0.6
+		case strings.Contains(s, term):
+			sum += 0.5
+		default:
+			sum += 0.3
+		}
+	}
+	return sum / float64(len(terms))
+}
+
 // searchEnvelope orders, sorts and pages a search result set. Ordering is not
 // optional: it happens here so no handler can slice an unordered set.
-func searchEnvelope(searchType string, items []map[string]interface{}, q searchQuery, sortBy searchSorter) map[string]interface{} {
+// totalCount is the size of the full match set (before truncation); items is
+// the rendered slice, which may be shorter when a handler caps collection.
+// incomplete reports whether items was truncated below totalCount.
+func searchEnvelope(searchType string, items []map[string]interface{}, totalCount int, incomplete bool, q searchQuery, sortBy searchSorter) map[string]interface{} {
 	orderSearchItems(items)
 	if sortBy != nil {
 		items = sortBy(items, q.Sort, q.Order)
 	}
 	page, perPage := q.Page, q.PerPage
-	total := len(items)
+	available := len(items)
 	start := (page - 1) * perPage
-	if start < 0 || start > total {
-		start = total
+	if start < 0 || start > available {
+		start = available
 	}
 	end := start + perPage
-	if end > total {
-		end = total
+	if end > available {
+		end = available
 	}
 	// GitHub's search envelope always carries items as an array; an empty
 	// result set is [], never null. Slicing a nil source (no matches) yields a
@@ -1258,8 +1306,8 @@ func searchEnvelope(searchType string, items []map[string]interface{}, q searchQ
 		pageItems = []map[string]interface{}{}
 	}
 	m := map[string]interface{}{
-		"total_count":        total,
-		"incomplete_results": false,
+		"total_count":        totalCount,
+		"incomplete_results": incomplete,
 		"items":              pageItems,
 	}
 	if searchType != "" {
@@ -1448,6 +1496,8 @@ func (s *Server) handleSearchCommits(w http.ResponseWriter, r *http.Request) {
 
 	base := s.baseURL(r)
 	var results []map[string]interface{}
+	total := 0
+	truncated := false
 
 	for _, sr := range searchRepos {
 		repo := sr.repo
@@ -1485,18 +1535,23 @@ func (s *Server) handleSearchCommits(w http.ResponseWriter, r *http.Request) {
 			if q.Author != "" && !commitAuthorMatches(s.store, commit, q.Author) {
 				return nil
 			}
-			results = append(results, s.commitSearchItemJSON(commit, repo, base))
-			if len(results) >= 1000 {
-				return fmt.Errorf("result limit")
+			// Count every match so total_count reflects the full result set;
+			// only the first searchResultCap rows are rendered, and the rest
+			// is reported via incomplete_results.
+			total++
+			if len(results) >= searchResultCap {
+				truncated = true
+				return nil
 			}
+			results = append(results, s.commitSearchItemJSON(commit, repo, base, q.Terms))
 			return nil
 		})
-		if err != nil && err.Error() != "result limit" {
+		if err != nil {
 			s.logger.Debug().Err(err).Str("repo", repo.FullName).Msg("commit search log walk")
 		}
 	}
 
-	writeJSON(w, http.StatusOK, searchEnvelope("", results, q, sortCommitSearchResults))
+	writeJSON(w, http.StatusOK, searchEnvelope("", results, total, truncated, q, sortCommitSearchResults))
 }
 
 // commitAuthorMatches matches the author: qualifier against the commit's
@@ -1523,8 +1578,10 @@ func commitAuthorMatches(st *Store, commit *object.Commit, author string) bool {
 // commitSearchItemJSON renders the spec `commit-search-result-item` shape.
 // Must not be called with the store lock held: it resolves the author under
 // its own read lock and embeds the repository via repoToJSON, which derives
-// counters under the store lock itself.
-func (s *Server) commitSearchItemJSON(commit *object.Commit, repo *Repo, base string) map[string]interface{} {
+// counters under the store lock itself. terms drives the relevance score:
+// the commit subject (first line) is the primary field and the full message
+// the secondary one.
+func (s *Server) commitSearchItemJSON(commit *object.Commit, repo *Repo, base string, terms []string) map[string]interface{} {
 	sha := commit.Hash.String()
 	api := base + "/api/v3/repos/" + repo.FullName
 
@@ -1548,6 +1605,8 @@ func (s *Server) commitSearchItemJSON(commit *object.Commit, repo *Repo, base st
 			"html_url": base + "/" + repo.FullName + "/commit/" + p.String(),
 		})
 	}
+
+	subject, _, _ := strings.Cut(commit.Message, "\n")
 
 	return map[string]interface{}{
 		"sha":          sha,
@@ -1582,7 +1641,7 @@ func (s *Server) commitSearchItemJSON(commit *object.Commit, repo *Repo, base st
 		},
 		"parents":    parents,
 		"repository": repoToJSON(repo, s.store, base),
-		"score":      1.0,
+		"score":      searchRelevanceScore(terms, subject, commit.Message),
 	}
 }
 
@@ -1663,10 +1722,10 @@ func (s *Server) handleSearchLabels(w http.ResponseWriter, r *http.Request) {
 			"color":       l.Color,
 			"default":     l.Default,
 			"description": nullOrString(l.Description),
-			"score":       1.0,
+			"score":       searchRelevanceScore(q.Terms, l.Name, l.Description),
 		})
 	}
-	writeJSON(w, http.StatusOK, searchEnvelope("", items, q, nil))
+	writeJSON(w, http.StatusOK, searchEnvelope("", items, len(items), false, q, nil))
 }
 
 // handleSearchTopics implements GET /search/topics: a real search over the
@@ -1733,9 +1792,9 @@ func (s *Server) handleSearchTopics(w http.ResponseWriter, r *http.Request) {
 			"updated_at":        t.updatedAt.UTC().Format(time.RFC3339),
 			"featured":          false,
 			"curated":           false,
-			"score":             1.0,
+			"score":             searchRelevanceScore(q.Terms, t.name, ""),
 			"repository_count":  t.count,
 		})
 	}
-	writeJSON(w, http.StatusOK, searchEnvelope("", items, q, nil))
+	writeJSON(w, http.StatusOK, searchEnvelope("", items, len(items), false, q, nil))
 }

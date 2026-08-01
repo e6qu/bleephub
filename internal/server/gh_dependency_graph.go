@@ -149,6 +149,11 @@ func (s *Server) handleCreateDependencySnapshot(w http.ResponseWriter, r *http.R
 	}
 	snap.RepoID = repo.ID
 
+	if msg := validateDependencySnapshot(&snap); msg != "" {
+		writeGHError(w, http.StatusUnprocessableEntity, msg)
+		return
+	}
+
 	created := func(result, message string) {
 		snap.Result = result
 		stored := s.store.AddDependencySnapshot(&snap)
@@ -163,10 +168,6 @@ func (s *Server) handleCreateDependencySnapshot(w http.ResponseWriter, r *http.R
 		})
 	}
 
-	if msg := validateDependencySnapshot(&snap); msg != "" {
-		created("INVALID", msg)
-		return
-	}
 	if snap.Ref == "refs/heads/"+repo.DefaultBranch {
 		created("SUCCESS", "Dependency results for the repo have been successfully updated.")
 		return
@@ -186,12 +187,48 @@ func validateDependencySnapshot(snap *DependencySnapshot) string {
 		return "job id and correlator are required"
 	case snap.Ref == "" || !strings.HasPrefix(snap.Ref, "refs/"):
 		return "ref must be a fully qualified git ref (refs/...)"
-	case len(snap.Sha) != 40:
+	case len(snap.Sha) != 40 || !isHexString(snap.Sha):
 		return "sha must be a 40-character commit SHA"
 	case snap.Scanned == "":
 		return "scanned timestamp is required"
 	}
+	if _, err := time.Parse(time.RFC3339, snap.Scanned); err != nil {
+		return "scanned must be an ISO 8601 timestamp"
+	}
+	for key, manifest := range snap.Manifests {
+		if manifest == nil {
+			return "manifest " + key + " must be an object"
+		}
+		for purl, dep := range manifest.Resolved {
+			if dep == nil {
+				return "manifest " + key + " has a null resolved entry for " + purl
+			}
+			if dep.PackageURL == "" || !strings.HasPrefix(dep.PackageURL, "pkg:") {
+				return "resolved dependency package_url must be a package-url (pkg:...)"
+			}
+			switch dep.Relationship {
+			case "", "direct", "indirect":
+			default:
+				return "resolved dependency relationship must be direct or indirect"
+			}
+			switch dep.Scope {
+			case "", "runtime", "development":
+			default:
+				return "resolved dependency scope must be runtime or development"
+			}
+		}
+	}
 	return ""
+}
+
+// isHexString reports whether s contains only lowercase hexadecimal digits.
+func isHexString(s string) bool {
+	for _, c := range s {
+		if !(c >= '0' && c <= '9' || c >= 'a' && c <= 'f') {
+			return false
+		}
+	}
+	return len(s) > 0
 }
 
 // currentDependencies returns the dependency set recorded for a ref+sha:

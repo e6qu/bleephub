@@ -314,7 +314,7 @@ func TestOAuthConsentTokenIsNotTheSessionCookie(t *testing.T) {
 	// The session is established the way the identity provider establishes
 	// one, which is the factory that used the cookie value as the CSRF token.
 	sessionRecorder := httptest.NewRecorder()
-	if err := s.createBrowserSession(sessionRecorder, s.store.LookupUserByLogin("admin")); err != nil {
+	if err := s.createBrowserSession(sessionRecorder, httptest.NewRequest(http.MethodGet, "/", nil), s.store.LookupUserByLogin("admin")); err != nil {
 		t.Fatalf("createBrowserSession: %v", err)
 	}
 	jar, _ := cookiejar.New(nil)
@@ -381,7 +381,7 @@ func TestBrowserSessionCSRFTokenIsIndependent(t *testing.T) {
 	user := s.store.LookupUserByLogin("admin")
 
 	w := httptest.NewRecorder()
-	if err := s.createBrowserSession(w, user); err != nil {
+	if err := s.createBrowserSession(w, httptest.NewRequest(http.MethodGet, "/", nil), user); err != nil {
 		t.Fatalf("createBrowserSession: %v", err)
 	}
 	cookieValue := ""

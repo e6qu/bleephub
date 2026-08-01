@@ -248,7 +248,11 @@ func (s *Server) handleDeleteUserPackageVersion(w http.ResponseWriter, r *http.R
 		writeGHError(w, http.StatusForbidden, "Forbidden")
 		return
 	}
-	id, _ := strconv.Atoi(r.PathValue("package_version_id"))
+	id, err := strconv.Atoi(r.PathValue("package_version_id"))
+	if err != nil {
+		writeGHError(w, http.StatusNotFound, "Not Found")
+		return
+	}
 	if !s.store.DeletePackageVersion(id) {
 		writeGHError(w, http.StatusNotFound, "Not Found")
 		return
@@ -269,7 +273,11 @@ func (s *Server) handleRestoreUserPackageVersion(w http.ResponseWriter, r *http.
 		writeGHError(w, http.StatusForbidden, "Forbidden")
 		return
 	}
-	id, _ := strconv.Atoi(r.PathValue("package_version_id"))
+	id, err := strconv.Atoi(r.PathValue("package_version_id"))
+	if err != nil {
+		writeGHError(w, http.StatusNotFound, "Not Found")
+		return
+	}
 	if !s.store.RestorePackageVersion(id) {
 		writeGHError(w, http.StatusNotFound, "Not Found")
 		return
@@ -696,7 +704,11 @@ func (s *Server) handleDeleteOrgPackageVersion(w http.ResponseWriter, r *http.Re
 		writeGHError(w, http.StatusForbidden, "Forbidden")
 		return
 	}
-	id, _ := strconv.Atoi(r.PathValue("package_version_id"))
+	id, err := strconv.Atoi(r.PathValue("package_version_id"))
+	if err != nil {
+		writeGHError(w, http.StatusNotFound, "Not Found")
+		return
+	}
 	if !s.store.DeletePackageVersion(id) {
 		writeGHError(w, http.StatusNotFound, "Not Found")
 		return
@@ -717,7 +729,11 @@ func (s *Server) handleRestoreOrgPackageVersion(w http.ResponseWriter, r *http.R
 		writeGHError(w, http.StatusForbidden, "Forbidden")
 		return
 	}
-	id, _ := strconv.Atoi(r.PathValue("package_version_id"))
+	id, err := strconv.Atoi(r.PathValue("package_version_id"))
+	if err != nil {
+		writeGHError(w, http.StatusNotFound, "Not Found")
+		return
+	}
 	if !s.store.RestorePackageVersion(id) {
 		writeGHError(w, http.StatusNotFound, "Not Found")
 		return
@@ -854,7 +870,11 @@ func (s *Server) handleDeleteRepoPackageVersion(w http.ResponseWriter, r *http.R
 		writeGHError(w, http.StatusForbidden, "Forbidden")
 		return
 	}
-	id, _ := strconv.Atoi(r.PathValue("package_version_id"))
+	id, err := strconv.Atoi(r.PathValue("package_version_id"))
+	if err != nil {
+		writeGHError(w, http.StatusNotFound, "Not Found")
+		return
+	}
 	if !s.store.DeletePackageVersion(id) {
 		writeGHError(w, http.StatusNotFound, "Not Found")
 		return

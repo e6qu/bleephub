@@ -236,11 +236,11 @@ func TestGitTransportsNeedTheContentsGrant(t *testing.T) {
 	base := "/" + f.owner.Login + "/" + f.repo.Name + ".git/info/refs?service="
 
 	token := f.installationToken(t, metadataOnly)
-	if got := entitlementGitStatus(t, "GET", base+"git-upload-pack", token); got != http.StatusUnauthorized {
-		t.Errorf("upload-pack for a metadata-only installation = %d, want 401", got)
+	if got := entitlementGitStatus(t, "GET", base+"git-upload-pack", token); got != http.StatusNotFound {
+		t.Errorf("upload-pack for a metadata-only installation = %d, want 404 (no existence oracle)", got)
 	}
-	if got := entitlementGitStatus(t, "GET", base+"git-receive-pack", token); got != http.StatusForbidden {
-		t.Errorf("receive-pack for a metadata-only installation = %d, want 403", got)
+	if got := entitlementGitStatus(t, "GET", base+"git-receive-pack", token); got != http.StatusNotFound {
+		t.Errorf("receive-pack for a metadata-only installation = %d, want 404 (no existence oracle)", got)
 	}
 
 	reader := f.installationToken(t, map[string]string{"metadata": "read", "contents": "read"})

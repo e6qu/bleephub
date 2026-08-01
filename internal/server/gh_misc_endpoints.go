@@ -18,6 +18,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"golang.org/x/crypto/ssh"
 )
 
 // long-tail GitHub API surfaces gh CLI / octokit / probot hit.// Users API extras (keys, gpg_keys, emails, followers, following)
@@ -156,6 +158,23 @@ type UserKey struct {
 	Verified  bool      `json:"verified"`
 	UserID    int       `json:"user_id"`
 	CreatedAt time.Time `json:"created_at"`
+	// parsed caches the parsed public key so SSH Git authentication compares
+	// wire encodings without re-parsing the authorized-key text on every
+	// attempt. Not persisted; rebuilt when the row is loaded.
+	parsed ssh.PublicKey
+}
+
+// cacheParsedKey parses a user key's authorized-key text once, at
+// registration or load, so the SSH auth path never re-parses it. An
+// unparseable key stays registered — it is listed and deleted like any
+// other — but with no parsed form it can never authenticate.
+func cacheParsedKey(k *UserKey) error {
+	parsed, _, _, _, err := ssh.ParseAuthorizedKey([]byte(k.Key))
+	if err != nil {
+		return fmt.Errorf("user key %d: %w", k.ID, err)
+	}
+	k.parsed = parsed
+	return nil
 }
 
 type PagesSite struct {
@@ -413,18 +432,28 @@ func (s *Server) handleCreateUserKey(w http.ResponseWriter, r *http.Request) {
 	id := s.store.Misc.nextKeyID
 	s.store.Misc.nextKeyID++
 	k := &UserKey{ID: id, Title: req.Title, Key: req.Key, Verified: true, UserID: user.ID, CreatedAt: time.Now().UTC()}
+	parseErr := cacheParsedKey(k)
 	s.store.Misc.userKeys[id] = k
 	s.store.Misc.keysByUser[user.ID] = append(s.store.Misc.keysByUser[user.ID], k)
 	if s.store.Misc.persist != nil {
 		s.store.Misc.persist.MustPut("user_keys", strconv.Itoa(id), k)
 	}
 	s.store.Misc.mu.Unlock()
+	if parseErr != nil {
+		s.logger.Warn().Err(parseErr).Str("user", user.Login).
+			Msg("registered SSH key does not parse; it will never authenticate")
+	}
 	s.recordAuditEvent("ssh_key.create", user.Login, "", map[string]interface{}{"key_id": k.ID})
-	writeJSON(w, http.StatusCreated, userKeyToJSON(k, s.baseURL(r)))
+	keyJSON := userKeyToJSON(k, s.baseURL(r))
+	writeJSONCreated(w, jsonStringField(keyJSON, "url"), keyJSON)
 }
 
 func (s *Server) handleGetUserKey(w http.ResponseWriter, r *http.Request) {
-	id, _ := strconv.Atoi(r.PathValue("key_id"))
+	id, err := strconv.Atoi(r.PathValue("key_id"))
+	if err != nil {
+		writeGHError(w, http.StatusNotFound, "Not Found")
+		return
+	}
 	s.store.Misc.mu.RLock()
 	k := s.store.Misc.userKeys[id]
 	s.store.Misc.mu.RUnlock()
@@ -437,7 +466,11 @@ func (s *Server) handleGetUserKey(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) handleDeleteUserKey(w http.ResponseWriter, r *http.Request) {
 	user := ghUserFromContext(r.Context())
-	id, _ := strconv.Atoi(r.PathValue("key_id"))
+	id, err := strconv.Atoi(r.PathValue("key_id"))
+	if err != nil {
+		writeGHError(w, http.StatusNotFound, "Not Found")
+		return
+	}
 	s.store.Misc.mu.Lock()
 	k := s.store.Misc.userKeys[id]
 	if k == nil {
@@ -513,7 +546,11 @@ func (s *Server) handleCreateGPGKey(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleGetGPGKey(w http.ResponseWriter, r *http.Request) {
-	id, _ := strconv.Atoi(r.PathValue("gpg_key_id"))
+	id, err := strconv.Atoi(r.PathValue("gpg_key_id"))
+	if err != nil {
+		writeGHError(w, http.StatusNotFound, "Not Found")
+		return
+	}
 	s.store.Misc.mu.RLock()
 	k := s.store.Misc.gpgKeys[id]
 	s.store.Misc.mu.RUnlock()
@@ -530,7 +567,11 @@ func (s *Server) handleDeleteGPGKey(w http.ResponseWriter, r *http.Request) {
 		writeGHError(w, http.StatusUnauthorized, "Bad credentials")
 		return
 	}
-	id, _ := strconv.Atoi(r.PathValue("gpg_key_id"))
+	id, err := strconv.Atoi(r.PathValue("gpg_key_id"))
+	if err != nil {
+		writeGHError(w, http.StatusNotFound, "Not Found")
+		return
+	}
 	s.store.Misc.mu.Lock()
 	k := s.store.Misc.gpgKeys[id]
 	if k == nil || k.UserID != user.ID {
@@ -1525,7 +1566,11 @@ func (s *Server) handleMarketplaceAccount(w http.ResponseWriter, r *http.Request
 		return
 	}
 	s.reconcileMarketplacePurchases(listing.Slug)
-	accountID, _ := strconv.Atoi(r.PathValue("account_id"))
+	accountID, err := strconv.Atoi(r.PathValue("account_id"))
+	if err != nil {
+		writeGHError(w, http.StatusNotFound, "Not Found")
+		return
+	}
 	var purchase *MarketplacePurchase
 	for _, candidate := range s.store.ListMarketplacePurchasesForListing(listing.Slug) {
 		if candidate.AccountID == accountID {
@@ -1556,7 +1601,11 @@ func (s *Server) handleMarketplacePlanAccounts(w http.ResponseWriter, r *http.Re
 		return
 	}
 	s.reconcileMarketplacePurchases(listing.Slug)
-	planID, _ := strconv.Atoi(r.PathValue("plan_id"))
+	planID, err := strconv.Atoi(r.PathValue("plan_id"))
+	if err != nil {
+		writeGHError(w, http.StatusNotFound, "Not Found")
+		return
+	}
 	plan := s.store.GetMarketplacePlanForListing(listing.Slug, planID)
 	purchases := make([]*MarketplacePurchase, 0)
 	for _, pu := range s.store.ListMarketplacePurchasesForListing(listing.Slug) {

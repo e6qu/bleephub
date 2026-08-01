@@ -250,13 +250,22 @@ func (st *Store) PATIdentityByTokenValue(value string) (int, string, bool) {
 	return 0, "", false
 }
 
+// maxAPIRequestRecords caps the durable in-memory request log; once the cap
+// is reached the oldest records are evicted FIFO so unbounded traffic cannot
+// grow the store without limit.
+const maxAPIRequestRecords = 10000
+
 // RecordAPIRequest appends an attributed request record and persists it.
+// The log is capped at maxAPIRequestRecords with FIFO eviction.
 func (st *Store) RecordAPIRequest(rec *APIRequestRecord) {
-	st.mu.Lock()
-	defer st.mu.Unlock()
+	st.apiInsightsMu.Lock()
+	defer st.apiInsightsMu.Unlock()
 	rec.ID = st.NextAPIRequestID
 	st.NextAPIRequestID++
 	st.APIRequestRecords = append(st.APIRequestRecords, rec)
+	if overflow := len(st.APIRequestRecords) - maxAPIRequestRecords; overflow > 0 {
+		st.APIRequestRecords = append([]*APIRequestRecord(nil), st.APIRequestRecords[overflow:]...)
+	}
 	if st.persist != nil {
 		st.persist.MustPut("api_insights_requests", strconv.FormatInt(rec.ID, 10), rec)
 	}
@@ -292,8 +301,8 @@ func (s *Server) apiInsightsWindow(w http.ResponseWriter, r *http.Request) (minT
 // apiInsightsRecords returns the org's attributed records inside [minT, maxT],
 // oldest first.
 func (st *Store) apiInsightsRecords(orgLogin string, minT, maxT time.Time) []*APIRequestRecord {
-	st.mu.RLock()
-	defer st.mu.RUnlock()
+	st.apiInsightsMu.RLock()
+	defer st.apiInsightsMu.RUnlock()
 	var out []*APIRequestRecord
 	for _, rec := range st.APIRequestRecords {
 		if rec.Timestamp.Before(minT) || rec.Timestamp.After(maxT) {

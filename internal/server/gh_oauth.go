@@ -146,12 +146,13 @@ func (s *Server) handleLoginPost(w http.ResponseWriter, r *http.Request) {
 
 	// #nosec G124 -- Secure is required in production and conditional only for
 	// the explicitly supported local HTTP development mode.
+	secure := s.secureCookies(r)
 	http.SetCookie(w, &http.Cookie{
-		Name:     "_gh_sess",
+		Name:     sessionCookieNameFor(secure),
 		Value:    sessionID,
 		Path:     "/",
 		HttpOnly: true,
-		Secure:   strings.HasPrefix(s.externalURL, "https://") || r.TLS != nil,
+		Secure:   secure,
 		SameSite: http.SameSiteLaxMode,
 		Expires:  sess.ExpiresAt,
 	})
@@ -168,6 +169,13 @@ func (s *Server) handleLoginPost(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) browserLoginUser(login, credential string) *User {
+	// Canonicalize the login (NFKC + case fold) before any lookup so "Alice"
+	// authenticates the account stored as "alice", and mixed Latin/Cyrillic
+	// lookalikes cannot resolve to a real account.
+	normalized, err := normalizeLogin(login)
+	if err != nil {
+		return nil
+	}
 	// A PAT is an API capability, not an account password. Turning an
 	// arbitrary scoped PAT into a browser session drops every scope and grants
 	// the bearer's full account privileges. Retain only the explicitly
@@ -175,11 +183,11 @@ func (s *Server) browserLoginUser(login, credential string) *User {
 	// password or an external identity provider.
 	_, user := s.store.LookupToken(credential)
 	adminCredential := AdminToken()
-	if user != nil && user.Login == login && user.SiteAdmin && !user.Suspended &&
+	if user != nil && user.Login == normalized && user.SiteAdmin && !user.Suspended &&
 		subtle.ConstantTimeCompare([]byte(credential), []byte(adminCredential)) == 1 {
 		return user
 	}
-	user = s.store.LookupUserByLogin(login)
+	user = s.store.LookupUserByLogin(normalized)
 	if user == nil || user.Suspended || user.PasswordHash == "" || bcrypt.CompareHashAndPassword([]byte(user.PasswordHash), []byte(credential)) != nil {
 		return nil
 	}
@@ -698,8 +706,8 @@ func (s *Server) consumeConsentToken(r *http.Request, provided string) (bool, er
 // sessionRecordFromRequest returns the session together with the cookie value
 // that keys it, which the CSRF rotation needs and sessionFromRequest drops.
 func (s *Server) sessionRecordFromRequest(r *http.Request) (string, *LoginSession, error) {
-	cookie, err := r.Cookie("_gh_sess")
-	if err != nil {
+	cookie := sessionCookieFromRequest(r)
+	if cookie == nil {
 		return "", nil, nil
 	}
 	sess, err := s.store.GetLoginSession(cookie.Value)
@@ -755,11 +763,11 @@ func (s *Server) completeAuthorize(w http.ResponseWriter, r *http.Request, user 
 	http.Redirect(w, r, dest.String(), http.StatusFound)
 }
 
-// sessionFromRequest reads the _gh_sess cookie and returns the corresponding
+// sessionFromRequest reads the session cookie and returns the corresponding
 // LoginSession, or nil if absent / expired / unknown.
 func (s *Server) sessionFromRequest(r *http.Request) *LoginSession {
-	cookie, err := r.Cookie("_gh_sess")
-	if err != nil {
+	cookie := sessionCookieFromRequest(r)
+	if cookie == nil {
 		return nil
 	}
 	sess, err := s.store.GetLoginSession(cookie.Value)

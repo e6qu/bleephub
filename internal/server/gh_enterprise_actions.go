@@ -85,6 +85,9 @@ func (s *Server) registerGHEnterpriseActionsRoutes() {
 // --- GitHub Actions cache limits ---
 
 func (s *Server) handleGetEnterpriseActionsCacheRetentionLimit(w http.ResponseWriter, r *http.Request) {
+	if _, ok := s.enterpriseFromRequest(w, r); !ok {
+		return
+	}
 	s.store.mu.RLock()
 	days := s.store.EnterpriseSettings.ActionsCacheRetentionDays
 	s.store.mu.RUnlock()
@@ -94,6 +97,9 @@ func (s *Server) handleGetEnterpriseActionsCacheRetentionLimit(w http.ResponseWr
 }
 
 func (s *Server) handleSetEnterpriseActionsCacheRetentionLimit(w http.ResponseWriter, r *http.Request) {
+	if _, ok := s.enterpriseFromRequest(w, r); !ok {
+		return
+	}
 	var req struct {
 		MaxCacheRetentionDays *int `json:"max_cache_retention_days"`
 	}
@@ -109,6 +115,9 @@ func (s *Server) handleSetEnterpriseActionsCacheRetentionLimit(w http.ResponseWr
 }
 
 func (s *Server) handleGetEnterpriseActionsCacheStorageLimit(w http.ResponseWriter, r *http.Request) {
+	if _, ok := s.enterpriseFromRequest(w, r); !ok {
+		return
+	}
 	s.store.mu.RLock()
 	gb := s.store.EnterpriseSettings.ActionsCacheSizeGB
 	s.store.mu.RUnlock()
@@ -118,6 +127,9 @@ func (s *Server) handleGetEnterpriseActionsCacheStorageLimit(w http.ResponseWrit
 }
 
 func (s *Server) handleSetEnterpriseActionsCacheStorageLimit(w http.ResponseWriter, r *http.Request) {
+	if _, ok := s.enterpriseFromRequest(w, r); !ok {
+		return
+	}
 	var req struct {
 		MaxCacheSizeGB *int `json:"max_cache_size_gb"`
 	}
@@ -133,6 +145,9 @@ func (s *Server) handleSetEnterpriseActionsCacheStorageLimit(w http.ResponseWrit
 }
 
 func (s *Server) handleGetEnterpriseActionsCacheUsagePolicy(w http.ResponseWriter, r *http.Request) {
+	if _, ok := s.enterpriseFromRequest(w, r); !ok {
+		return
+	}
 	s.store.mu.RLock()
 	defaultGB := s.store.EnterpriseSettings.ActionsDefaultCacheSizeGB
 	maxGB := s.store.EnterpriseSettings.ActionsCacheSizeGB
@@ -144,6 +159,9 @@ func (s *Server) handleGetEnterpriseActionsCacheUsagePolicy(w http.ResponseWrite
 }
 
 func (s *Server) handleUpdateEnterpriseActionsCacheUsagePolicy(w http.ResponseWriter, r *http.Request) {
+	if _, ok := s.enterpriseFromRequest(w, r); !ok {
+		return
+	}
 	var req struct {
 		RepoCacheSizeLimitGB    *int `json:"repo_cache_size_limit_in_gb"`
 		MaxRepoCacheSizeLimitGB *int `json:"max_repo_cache_size_limit_in_gb"`
@@ -179,6 +197,9 @@ func enterpriseOIDCCustomPropertyJSON(name string) map[string]interface{} {
 }
 
 func (s *Server) handleListEnterpriseOIDCCustomProperties(w http.ResponseWriter, r *http.Request) {
+	if _, ok := s.enterpriseFromRequest(w, r); !ok {
+		return
+	}
 	s.store.mu.RLock()
 	names := append([]string(nil), s.store.EnterpriseSettings.OIDCCustomProperties...)
 	s.store.mu.RUnlock()
@@ -190,6 +211,9 @@ func (s *Server) handleListEnterpriseOIDCCustomProperties(w http.ResponseWriter,
 }
 
 func (s *Server) handleCreateEnterpriseOIDCCustomProperty(w http.ResponseWriter, r *http.Request) {
+	if _, ok := s.enterpriseFromRequest(w, r); !ok {
+		return
+	}
 	var req struct {
 		CustomPropertyName string `json:"custom_property_name"`
 	}
@@ -208,6 +232,9 @@ func (s *Server) handleCreateEnterpriseOIDCCustomProperty(w http.ResponseWriter,
 }
 
 func (s *Server) handleDeleteEnterpriseOIDCCustomProperty(w http.ResponseWriter, r *http.Request) {
+	if _, ok := s.enterpriseFromRequest(w, r); !ok {
+		return
+	}
 	name := r.PathValue("custom_property_name")
 	if !s.store.RemoveEnterpriseOIDCCustomProperty(name) {
 		writeGHError(w, http.StatusNotFound, "Not Found")

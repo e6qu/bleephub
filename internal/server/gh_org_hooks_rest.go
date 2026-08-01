@@ -96,7 +96,8 @@ func (s *Server) handleCreateOrgHook(w http.ResponseWriter, r *http.Request) {
 		s.enqueueWebhookDelivery(hook, "ping", "", mustMarshal(s.orgPingPayload(org, hook, r)))
 	}
 
-	writeJSON(w, http.StatusCreated, orgHookToJSON(hook, org, s.baseURL(r)))
+	orgHookJSON := orgHookToJSON(hook, org, s.baseURL(r))
+	writeJSONCreated(w, jsonStringField(orgHookJSON, "url"), orgHookJSON)
 }
 
 func (s *Server) handleListOrgHooks(w http.ResponseWriter, r *http.Request) {

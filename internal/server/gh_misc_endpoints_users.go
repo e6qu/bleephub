@@ -94,7 +94,8 @@ func (s *Server) handleAdminCreateUser(w http.ResponseWriter, r *http.Request) {
 		s.store.persist.MustPut("users", strconv.Itoa(u.ID), u)
 	}
 	s.store.mu.Unlock()
-	writeJSON(w, http.StatusCreated, userToJSON(u))
+	newUserJSON := userToJSON(u)
+	writeJSONCreated(w, jsonStringField(newUserJSON, "url"), newUserJSON)
 }
 
 func (s *Server) handleAdminRenameUser(w http.ResponseWriter, r *http.Request) {
@@ -159,6 +160,7 @@ func (s *Server) handleAdminDeleteUser(w http.ResponseWriter, r *http.Request) {
 	}
 	delete(s.store.Users, u.ID)
 	delete(s.store.UsersByLogin, u.Login)
+	s.store.forgetExternalIdentitiesLocked(u)
 	for val, t := range s.store.Tokens {
 		if t.UserID == u.ID {
 			s.store.deleteTokenMapKeyLocked(val)
@@ -592,7 +594,11 @@ func (s *Server) handleDeleteMySSHSigningKey(w http.ResponseWriter, r *http.Requ
 		writeGHError(w, http.StatusUnauthorized, "Bad credentials")
 		return
 	}
-	id, _ := strconv.Atoi(r.PathValue("ssh_signing_key_id"))
+	id, err := strconv.Atoi(r.PathValue("ssh_signing_key_id"))
+	if err != nil {
+		writeGHError(w, http.StatusNotFound, "Not Found")
+		return
+	}
 	if !s.store.DeleteUserSSHSigningKey(user.ID, id) {
 		writeGHError(w, http.StatusNotFound, "Not Found")
 		return

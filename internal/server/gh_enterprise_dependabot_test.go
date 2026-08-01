@@ -181,14 +181,13 @@ func TestEnterpriseDependabotAlerts(t *testing.T) {
 	}
 
 	// Alerts only surface for organizations the caller owns: a plain
-	// enterprise member who owns no organization sees none.
+	// enterprise member who owns no organization gets an authorization
+	// failure rather than a deceptively empty list.
 	memberTok := createEnterpriseTestUser(t, "ent-alerts-member")
 	resp = ghGet(t, enterpriseAPI+"/dependabot/alerts", memberTok)
-	if resp.StatusCode != http.StatusOK {
+	if resp.StatusCode != http.StatusForbidden {
 		resp.Body.Close()
-		t.Fatalf("member list: got %d, want 200", resp.StatusCode)
+		t.Fatalf("member list: got %d, want 403", resp.StatusCode)
 	}
-	if got := len(decodeJSONArray(t, resp)); got != 0 {
-		t.Fatalf("non-org-owner sees %d alerts, want 0", got)
-	}
+	resp.Body.Close()
 }

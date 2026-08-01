@@ -368,7 +368,12 @@ func (s *Server) handleUpdateMarketplacePlanSettings(w http.ResponseWriter, r *h
 	if plan == nil {
 		return
 	}
-	plan.ID, _ = strconv.Atoi(r.PathValue("plan_id"))
+	planID, err := strconv.Atoi(r.PathValue("plan_id"))
+	if err != nil {
+		writeGHError(w, http.StatusNotFound, "Marketplace plan not found")
+		return
+	}
+	plan.ID = planID
 	if s.store.GetMarketplacePlanForListing(listing.Slug, plan.ID) == nil {
 		writeGHError(w, http.StatusNotFound, "Marketplace plan not found")
 		return
@@ -402,7 +407,11 @@ func (s *Server) handleDeleteMarketplacePlanSettings(w http.ResponseWriter, r *h
 		return
 	}
 	listing := s.marketplaceListingForSettingsPublisher(publisher)
-	planID, _ := strconv.Atoi(r.PathValue("plan_id"))
+	planID, err := strconv.Atoi(r.PathValue("plan_id"))
+	if err != nil {
+		writeGHError(w, http.StatusNotFound, "Marketplace plan not found")
+		return
+	}
 	if listing == nil || s.store.GetMarketplacePlanForListing(listing.Slug, planID) == nil {
 		writeGHError(w, http.StatusNotFound, "Marketplace plan not found")
 		return

@@ -129,11 +129,24 @@ func (s *Server) handleGitInfoRefs(w http.ResponseWriter, r *http.Request, owner
 	switch service {
 	case "git-upload-pack":
 		if !s.viewerHasRepoPermission(ctx, repo, scopeContents, permRead) {
-			w.Header().Set("WWW-Authenticate", `Basic realm="GitHub"`)
-			http.Error(w, "401 Authorization Required", http.StatusUnauthorized)
+			if user == nil {
+				w.Header().Set("WWW-Authenticate", `Basic realm="GitHub"`)
+				http.Error(w, "401 Authorization Required", http.StatusUnauthorized)
+			} else {
+				http.NotFound(w, r)
+			}
 			return
 		}
 	case "git-receive-pack":
+		if !s.viewerHasRepoPermission(ctx, repo, scopeContents, permRead) {
+			if user == nil {
+				w.Header().Set("WWW-Authenticate", `Basic realm="GitHub"`)
+				http.Error(w, "401 Authorization Required", http.StatusUnauthorized)
+			} else {
+				http.NotFound(w, r)
+			}
+			return
+		}
 		if !s.viewerHasRepoPermission(ctx, repo, scopeContents, permWrite) {
 			w.Header().Set("WWW-Authenticate", `Basic realm="GitHub"`)
 			if user == nil {
@@ -233,8 +246,12 @@ func (s *Server) handleGitUploadPack(w http.ResponseWriter, r *http.Request, own
 
 	ctx, user := s.authenticateGitRequest(r)
 	if !s.viewerHasRepoPermission(ctx, repo, scopeContents, permRead) {
-		w.Header().Set("WWW-Authenticate", `Basic realm="GitHub"`)
-		http.Error(w, "401 Authorization Required", http.StatusUnauthorized)
+		if user == nil {
+			w.Header().Set("WWW-Authenticate", `Basic realm="GitHub"`)
+			http.Error(w, "401 Authorization Required", http.StatusUnauthorized)
+		} else {
+			http.NotFound(w, r)
+		}
 		return
 	}
 
@@ -313,6 +330,15 @@ func (s *Server) handleGitReceivePack(w http.ResponseWriter, r *http.Request, ow
 	}
 
 	ctx, user := s.authenticateGitRequest(r)
+	if !s.viewerHasRepoPermission(ctx, repo, scopeContents, permRead) {
+		if user == nil {
+			w.Header().Set("WWW-Authenticate", `Basic realm="GitHub"`)
+			http.Error(w, "401 Authorization Required", http.StatusUnauthorized)
+		} else {
+			http.NotFound(w, r)
+		}
+		return
+	}
 	if !s.viewerHasRepoPermission(ctx, repo, scopeContents, permWrite) {
 		w.Header().Set("WWW-Authenticate", `Basic realm="GitHub"`)
 		if user == nil {

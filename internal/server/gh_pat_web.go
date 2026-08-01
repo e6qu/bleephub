@@ -306,10 +306,14 @@ func (s *Server) handleReviewPersonalAccessTokenWeb(w http.ResponseWriter, r *ht
 		return
 	}
 	id, err := strconv.Atoi(r.PathValue("pat_request_id"))
+	if err != nil {
+		writeGHError(w, http.StatusNotFound, "Not Found")
+		return
+	}
 	var body struct {
 		Action string `json:"action"`
 	}
-	if err != nil || !decodeJSONBody(w, r, &body) {
+	if !decodeJSONBody(w, r, &body) {
 		return
 	}
 	if !validPATReviewAction(body.Action) {

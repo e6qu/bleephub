@@ -121,7 +121,8 @@ func (s *Server) handleCreateLabel(w http.ResponseWriter, r *http.Request) {
 
 	repoKey := owner + "/" + name
 	s.recordAuditEvent("label.create", user.Login, "", map[string]interface{}{"repo": repoKey, "label_id": label.ID, "name": label.Name})
-	writeJSON(w, http.StatusCreated, issueLabelToJSON(label, s.baseURL(r), repo.FullName))
+	labelJSON := issueLabelToJSON(label, s.baseURL(r), repo.FullName)
+	writeJSONCreated(w, jsonStringField(labelJSON, "url"), labelJSON)
 }
 
 func (s *Server) handleListLabels(w http.ResponseWriter, r *http.Request) {
@@ -276,7 +277,8 @@ func (s *Server) handleCreateMilestone(w http.ResponseWriter, r *http.Request) {
 
 	repoKey := owner + "/" + name
 	s.recordAuditEvent("milestone.create", user.Login, "", map[string]interface{}{"repo": repoKey, "milestone_id": ms.ID, "title": ms.Title})
-	writeJSON(w, http.StatusCreated, milestoneToJSON(ms, s.store, s.baseURL(r), repo.FullName))
+	msJSON := milestoneToJSON(ms, s.store, s.baseURL(r), repo.FullName)
+	writeJSONCreated(w, jsonStringField(msJSON, "url"), msJSON)
 }
 
 func (s *Server) handleListMilestones(w http.ResponseWriter, r *http.Request) {
