@@ -550,7 +550,7 @@
         "id": "AUTH-038",
         "location": "identity.go:759",
         "severity": "m",
-        "status": "fixed \u2014 CSP `frame-ancestors` limited to 'self' plus the configured Shauth issuer origin (the OP frames this endpoint during front-channel logout); session revocation requires POST",
+        "status": "fixed \u2014 CSP `frame-ancestors` limited to 'self' plus the configured Shauth issuer origin (the OP frames this endpoint during front-channel logout); revocation demands an exact issuer match and a non-empty OP `sid`, which a cross-site attacker cannot guess. The earlier POST-only gate broke the spec's GET-in-iframe delivery and left witness sessions alive (issue #112), so it is gone",
         "status_kind": "fixed"
       },
       {
@@ -1073,6 +1073,231 @@
         "location": "authz_chokepoint_test.go",
         "severity": "m",
         "status": "fixed \u2014 the ratchet scans every identifier reference rather than only direct call expressions, so aliases are caught, and the duplicate locked predicate was removed entirely",
+        "status_kind": "fixed"
+      },
+      {
+        "category": "AUTH",
+        "finding": "Federated login resolved a mutable `preferred_username` against `UsersByLogin` when no `(issuer,subject)` binding existed, then bound the attacker's identity to that account. A Shauth principal named `admin` (or a confusable that NFKC-folds to it) thereby seized the seeded SiteAdmin account \u2014 full instance takeover; the primitive claimed any local account",
+        "id": "AUTH-094",
+        "location": "identity.go:809",
+        "severity": "B",
+        "status": "fixed \u2014 `upsertExternalUser` resolves strictly on `(issuer,subject)`, never adopts a pre-existing account by username (a username collision is a fail-closed error), and requires a stable subject. `TestUpsertExternalUserNeverAdoptsAccountByUsername`",
+        "status_kind": "fixed"
+      },
+      {
+        "category": "AUTH",
+        "finding": "`BLEEPHUB_ALLOWED_LOGINS` was enforced only on local login; both SSO callbacks provisioned and authenticated any principal, silently voiding the operator's restriction",
+        "id": "AUTH-095",
+        "location": "identity.go:809",
+        "severity": "M",
+        "status": "fixed \u2014 `upsertExternalUser` consults `loginAllowed` before provisioning or resolving, so the allowlist governs the SSO paths too. `TestUpsertExternalUserHonorsAllowlistAndAuthoritativeRole`",
+        "status_kind": "fixed"
+      },
+      {
+        "category": "AUTH",
+        "finding": "The IdP `role` claim was applied only when creating an account; a later demotion or promotion at the provider never took effect, so de-provisioning failed open (a demoted admin kept SiteAdmin forever)",
+        "id": "AUTH-096",
+        "location": "identity.go:809",
+        "severity": "M",
+        "status": "fixed \u2014 the primary IdP (Shauth) writes SiteAdmin on every login; a secondary provider never writes it, so a second federated identity cannot reshape privileges (preserves AUTH-021). Same test",
+        "status_kind": "fixed"
+      },
+      {
+        "category": "AUTH",
+        "finding": "`POST /api/v3/authorizations` (and the `PATCH`) were plain routes gated only on `ghUserFromContext != nil`, so any bearer \u2014 a `gist`-only PAT, a `ghu_` of an app installed nowhere \u2014 minted itself an arbitrary-scope classic PAT, or rewrote its own scopes wider. A concurrent DELETE also nil-dereferenced under the store lock, deadlocking the server",
+        "id": "AUTH-097",
+        "location": "gh_ghes_oauth_authorizations.go:105",
+        "severity": "B",
+        "status": "fixed \u2014 the authorizations API demands a browser session (password-equivalent authority) and refuses every derived bearer; the update/create paths re-check the credential under the write lock before dereferencing. `TestLegacyAuthorizationsRefuseBearerCredentials`",
+        "status_kind": "fixed"
+      },
+      {
+        "category": "AUTH",
+        "finding": "`GET /token` minted a signed Actions OIDC JWT from query parameters after checking only `user != nil`, so any authenticated principal (even a zero-scope PAT) forged a `sub` like `repo:victim/prod:environment:production` and defeated a cloud trust policy \u2014 cross-tenant credential takeover",
+        "id": "AUTH-098",
+        "location": "gh_misc_endpoints.go:865",
+        "severity": "B",
+        "status": "fixed \u2014 the route is gated on the per-job runtime token, and the mint refuses unless that token is scoped to the requested repository. `TestOIDCToken_RequiresJobTokenScopedToRepo`",
+        "status_kind": "fixed"
+      },
+      {
+        "category": "AUTH",
+        "finding": "`authenticateRequest` set `ctxUser` before the suspension check (a suspended `ghu_`/`gho_` kept git-HTTP and registry access), rejected `ghs_`/`ghu_`/`gho_` Basic passwords (the `x-access-token` convention), and fell back to the session cookie when a token was offered (a revoked token served as the cookie's user)",
+        "id": "AUTH-099",
+        "location": "gh_middleware.go:247",
+        "severity": "M",
+        "status": "fixed \u2014 a shared `resolveBearerCredential` handles every token shape without placing a suspended user on the context, Basic passwords resolve through the same switch, and the session is consulted only when no Authorization header was offered",
+        "status_kind": "fixed"
+      },
+      {
+        "category": "AUTH",
+        "finding": "Authorization resolved `(owner,repo)` with one `.git` trim while `storeLoader.Load` trimmed `.git` again, so a request to `owner/app.git.git` authorized against `owner/app.git` but streamed the private `owner/app` packfile (SSH shared the shape; receive-pack mixed two repos' storage)",
+        "id": "AUTH-100",
+        "location": "git_http.go:38",
+        "severity": "B",
+        "status": "fixed \u2014 sessions are built from the already-authorized storer via a fixed loader, never re-derived from a string; repo creation rejects names with separators, whitespace, or a trailing `.git`. `TestCreateRepoRejectsAmbiguousNames`",
+        "status_kind": "fixed"
+      },
+      {
+        "category": "AUTH",
+        "finding": "The site-admin / enterprise-owner gates checked only `user.SiteAdmin`, and the fine-grained-PAT gate skipped patterns without `{repo}`/`{org}`. A site admin's fine-grained PAT, OAuth/App user token, installation token, or app JWT thereby administered the whole appliance (e.g. minting impersonation tokens for any account)",
+        "id": "AUTH-101",
+        "location": "handle_mgmt.go:383, gh_ghes_admin_stats.go:39, gh_enterprises.go:68",
+        "severity": "B",
+        "status": "fixed \u2014 the gates require a broad credential shape (browser session or classic PAT) via `credentialConveysSiteAdmin`. `TestGHESAdminSurfaceRejectsNarrowCredentials`",
+        "status_kind": "fixed"
+      },
+      {
+        "category": "AUTH",
+        "finding": "`GET/DELETE /user/keys/{id}` acted on any key by id: GET had no auth wrapper and no ownership check, DELETE checked no ownership, so any caller read or revoked any user's SSH key (locking them out of the SSH transport)",
+        "id": "AUTH-102",
+        "location": "gh_misc_endpoints.go:452",
+        "severity": "M",
+        "status": "fixed \u2014 both are owner-scoped, returning 404 for a key that is not the caller's (no read, no revoke, no existence oracle); GET requires a caller. `TestUserSSHKeyIsOwnerScoped`",
+        "status_kind": "fixed"
+      },
+      {
+        "category": "AUTH",
+        "finding": "Org SCIM bound a new record to any pre-existing global account by username and force-enrolled it, then `replace`/`patch` rewrote that account's global login/name/email \u2014 so an owner of one org took over or renamed any account instance-wide",
+        "id": "AUTH-103",
+        "location": "gh_org_scim.go:97",
+        "severity": "M",
+        "status": "fixed \u2014 SCIM only creates or mutates accounts its own org provisioned (new `User.SCIMManagedByOrg`); a collision with an unmanaged account is a 409. `TestOrganizationSCIMCannotHijackExistingAccount`",
+        "status_kind": "fixed"
+      },
+      {
+        "category": "AUTH",
+        "finding": "`POST /login` redirected to a `return_to` validated only by a non-empty path, so `https://evil/x` and `//evil/x` were honored \u2014 an open redirect landing the just-authenticated victim on an attacker page",
+        "id": "AUTH-104",
+        "location": "gh_oauth.go:160",
+        "severity": "M",
+        "status": "fixed \u2014 only a same-origin path-relative destination is honored (`safeIdentityReturnTo`)",
+        "status_kind": "fixed"
+      },
+      {
+        "category": "AUTH",
+        "finding": "An OAuth authorize request with no `scope` silently minted a `repo read:org gist` token \u2014 full private-repo read/write the user consented to nothing for",
+        "id": "AUTH-105",
+        "location": "gh_oauth.go:737",
+        "severity": "M",
+        "status": "fixed \u2014 an omitted scope carries the minimal read-only grant, never a silent upgrade",
+        "status_kind": "fixed"
+      },
+      {
+        "category": "AUTH",
+        "finding": "The `hmac:v1:` row key under which a token or session was persisted was itself accepted as the credential: in-memory tokens were keyed raw at mint but by digest after restore, and the lookup passed an already-`hmac:v1:` value through. A leaked backup/replica/query-log of row keys was a credential compromise",
+        "id": "AUTH-106",
+        "location": "store.go:214, persistence.go:685",
+        "severity": "M",
+        "status": "fixed \u2014 mint and restore both key by the digest, lookups always digest the presented value (never pass an `hmac:v1:` input through), and session Get/Delete pass the digested key to the persistence layer. `TestPersistedRowKeyIsNotACredential`",
+        "status_kind": "fixed"
+      },
+      {
+        "category": "AUTH",
+        "finding": "The unprefixed `_gh_sess` shadowed `__Host-_gh_sess`: after logout cleared only the `__Host-` name, a planted `_gh_sess` survived and the next request adopted it (logout bypass / fixation)",
+        "id": "AUTH-107",
+        "location": "identity.go:59",
+        "severity": "M",
+        "status": "fixed \u2014 over HTTPS only the `__Host-` cookie is honored, and logout/sign-out expire BOTH names and revoke both records. `TestSecureDeploymentIgnoresUnprefixedSessionCookie`",
+        "status_kind": "fixed"
+      },
+      {
+        "category": "AUTH",
+        "finding": "`GetLoginSession` returned the pointer it also stored in the map, so a caller rotating the CSRF token raced a locked reader (`-race` failure; torn CSRF token)",
+        "id": "AUTH-108",
+        "location": "store_login_sessions.go:158",
+        "severity": "M",
+        "status": "fixed \u2014 it returns a distinct copy",
+        "status_kind": "fixed"
+      },
+      {
+        "category": "AUTH",
+        "finding": "Signing out of a locally- or token-authenticated session started a global RP-initiated logout, tearing down the user's shared Shauth SSO session used by every other relying party",
+        "id": "AUTH-109",
+        "location": "identity.go:988",
+        "severity": "m",
+        "status": "fixed \u2014 the global logout runs only when the current session was itself established through Shauth. `TestLogoutOfNonShauthSessionDoesNotStartGlobalLogout`",
+        "status_kind": "fixed"
+      },
+      {
+        "category": "AUTH",
+        "finding": "`orgIDGated` set `{org}` only inside the handler, after `requirePerm` had already run its (empty-target) org check, so any authenticated caller \u2014 even a zero-scope PAT \u2014 rewrote another organization's Actions cache policy",
+        "id": "AUTH-110",
+        "location": "gh_runner_groups.go:77",
+        "severity": "m",
+        "status": "fixed \u2014 it re-checks org-admin against the resolved `{org_id}`",
+        "status_kind": "fixed"
+      },
+      {
+        "category": "AUTH",
+        "finding": "The org-PAT-admin `ghu_` branch checked only that the app's installation held the scope, never that the token owner was an org owner, so any account that authorized a suitably-scoped app could approve or revoke the org's PAT grants",
+        "id": "AUTH-111",
+        "location": "gh_org_pat_admin.go:102",
+        "severity": "m",
+        "status": "fixed \u2014 the branch also requires `canAdminOrgAsUser`",
+        "status_kind": "fixed"
+      },
+      {
+        "category": "AUTH",
+        "finding": "The SSH transport ran outside recovery (a decoder panic crashed the whole process), leaked a private-repo existence oracle (distinct stderr for missing vs unreadable), and the anonymous upload-pack request body was uncapped (OOM)",
+        "id": "AUTH-112",
+        "location": "git_ssh.go:88, git_http.go:239",
+        "severity": "m",
+        "status": "fixed \u2014 per-connection panic recovery, unreadable repos answered as not-found, and a bounded upload-pack negotiation body",
+        "status_kind": "fixed"
+      },
+      {
+        "category": "AUTH",
+        "finding": "Actions OIDC subject customization lived in one process-wide slice, so one repo's admin clobbered every tenant's `include_claim_keys` and an anonymous caller read the org configuration",
+        "id": "AUTH-113",
+        "location": "gh_misc_endpoints.go:360",
+        "severity": "m",
+        "status": "fixed \u2014 stored per repository/org; the org GET requires org membership. `TestOIDCCustomSubIsScopedPerRepository`",
+        "status_kind": "fixed"
+      },
+      {
+        "category": "AUTH",
+        "finding": "git HTTP sits outside `ghHeadersMiddleware`, so a presented-but-invalid credential was downgraded to anonymous and served a public repo 200 (a PAT-guessing oracle)",
+        "id": "AUTH-114",
+        "location": "git_http.go:114",
+        "severity": "m",
+        "status": "fixed \u2014 `authorizeGitHTTP` returns 401 for an invalid credential. `TestGitHTTPInvalidCredentialIs401`",
+        "status_kind": "fixed"
+      },
+      {
+        "category": "AUTH",
+        "finding": "Every OpenID Connect discovery and token verification ran its outbound HTTP over `http.DefaultClient` with no timeout, so a slow or hung IdP pinned a goroutine and socket per request \u2014 an anonymous DoS/amplification on the unauthenticated `/auth/*` endpoints. The ID token `azp` was also unchecked (OIDC Core \u00a73.1.3.7)",
+        "id": "AUTH-115",
+        "location": "identity.go:305, 383",
+        "severity": "m",
+        "status": "fixed \u2014 a 10s-timeout client bounds every discovery/JWKS fetch, and `azp` is validated (reject multi-audience without azp; azp must equal this client)",
+        "status_kind": "fixed"
+      },
+      {
+        "category": "AUTH",
+        "finding": "Local login returned 403 for a disallowed login and 401 for a wrong password, letting an anonymous caller enumerate `BLEEPHUB_ALLOWED_LOGINS` membership from the status code",
+        "id": "AUTH-116",
+        "location": "identity.go:849",
+        "severity": "m",
+        "status": "fixed \u2014 both return the identical 401. `TestLocalLoginAllowlistRejectsLoginsNotListed`",
+        "status_kind": "fixed"
+      },
+      {
+        "category": "AUTH",
+        "finding": "The per-flow OAuth state cookie carried no cookie prefix, so a sibling-subdomain or network attacker could transplant a server-signed state cookie into the victim's jar and log the victim in as the attacker",
+        "id": "AUTH-117",
+        "location": "identity.go:643",
+        "severity": "m",
+        "status": "fixed \u2014 the state cookie carries the `__Host-` prefix (Secure, Path=/, no Domain) over HTTPS; plain-HTTP dev keeps the unprefixed name. The per-process HMAC key across replicas remains open",
+        "status_kind": "fixed"
+      },
+      {
+        "category": "AUTH",
+        "finding": "Anonymous clone counting recorded the remote host in an unbounded `Actors` map and re-serialized the whole bucket on every request, so a public-repo clone flood (or a large IPv6 range) was a persisted memory/disk sink",
+        "id": "AUTH-118",
+        "location": "store_repo_reads.go:76",
+        "severity": "m",
+        "status": "fixed \u2014 the distinct-actor set is capped at 10k; clone counts keep incrementing past the cap",
         "status_kind": "fixed"
       },
       {
@@ -5792,11 +6017,11 @@
         },
         "AUTH": {
           "status": {
-            "fixed": 88,
+            "fixed": 113,
             "open": 2,
             "partial": 3
           },
-          "total": 93
+          "total": 118
         },
         "CI": {
           "status": {
@@ -5863,17 +6088,17 @@
         }
       },
       "severity": {
-        "blocker": 155,
-        "major": 346,
-        "minor": 117
+        "blocker": 160,
+        "major": 356,
+        "minor": 127
       },
       "status": {
         "deferred": 1,
-        "fixed": 453,
+        "fixed": 478,
         "open": 124,
         "partial": 40
       },
-      "total": 618
+      "total": 643
     }
   },
   "rest": {
@@ -19176,7 +19401,7 @@
         "source": "internal/server/gh_labels_rest.go"
       },
       {
-        "line": 105,
+        "line": 106,
         "method": "DELETE",
         "path": "/api/v3/repos/{owner}/{repo}/pages",
         "source": "internal/server/gh_misc_endpoints.go"
@@ -20520,43 +20745,43 @@
         "source": "internal/server/gh_repos_templates.go"
       },
       {
-        "line": 120,
+        "line": 121,
         "method": "GET",
         "path": "/api/v3/marketplace_listing/accounts/{account_id}",
         "source": "internal/server/gh_misc_endpoints.go"
       },
       {
-        "line": 119,
+        "line": 120,
         "method": "GET",
         "path": "/api/v3/marketplace_listing/plans",
         "source": "internal/server/gh_misc_endpoints.go"
       },
       {
-        "line": 121,
+        "line": 122,
         "method": "GET",
         "path": "/api/v3/marketplace_listing/plans/{plan_id}/accounts",
         "source": "internal/server/gh_misc_endpoints.go"
       },
       {
-        "line": 124,
+        "line": 125,
         "method": "GET",
         "path": "/api/v3/marketplace_listing/stubbed/accounts/{account_id}",
         "source": "internal/server/gh_misc_endpoints.go"
       },
       {
-        "line": 122,
+        "line": 123,
         "method": "GET",
         "path": "/api/v3/marketplace_listing/stubbed/plans",
         "source": "internal/server/gh_misc_endpoints.go"
       },
       {
-        "line": 123,
+        "line": 124,
         "method": "GET",
         "path": "/api/v3/marketplace_listing/stubbed/plans/{plan_id}/accounts",
         "source": "internal/server/gh_misc_endpoints.go"
       },
       {
-        "line": 129,
+        "line": 130,
         "method": "GET",
         "path": "/api/v3/meta",
         "source": "internal/server/gh_misc_endpoints.go"
@@ -20748,7 +20973,7 @@
         "source": "internal/server/gh_actions_oidc_properties.go"
       },
       {
-        "line": 95,
+        "line": 96,
         "method": "GET",
         "path": "/api/v3/orgs/{org}/actions/oidc/customization/sub",
         "source": "internal/server/gh_misc_endpoints.go"
@@ -20982,7 +21207,7 @@
         "source": "internal/server/gh_attestations.go"
       },
       {
-        "line": 115,
+        "line": 116,
         "method": "GET",
         "path": "/api/v3/orgs/{org}/audit-log",
         "source": "internal/server/gh_misc_endpoints.go"
@@ -21954,7 +22179,7 @@
         "source": "internal/server/gh_actions_rest.go"
       },
       {
-        "line": 92,
+        "line": 93,
         "method": "GET",
         "path": "/api/v3/repos/{owner}/{repo}/actions/oidc/customization/sub",
         "source": "internal/server/gh_misc_endpoints.go"
@@ -23076,25 +23301,25 @@
         "source": "internal/server/gh_notifications.go"
       },
       {
-        "line": 100,
+        "line": 101,
         "method": "GET",
         "path": "/api/v3/repos/{owner}/{repo}/pages",
         "source": "internal/server/gh_misc_endpoints.go"
       },
       {
-        "line": 107,
+        "line": 108,
         "method": "GET",
         "path": "/api/v3/repos/{owner}/{repo}/pages/builds",
         "source": "internal/server/gh_misc_endpoints.go"
       },
       {
-        "line": 110,
+        "line": 111,
         "method": "GET",
         "path": "/api/v3/repos/{owner}/{repo}/pages/builds/latest",
         "source": "internal/server/gh_misc_endpoints.go"
       },
       {
-        "line": 111,
+        "line": 112,
         "method": "GET",
         "path": "/api/v3/repos/{owner}/{repo}/pages/builds/{build_id}",
         "source": "internal/server/gh_misc_endpoints.go"
@@ -25956,13 +26181,13 @@
         "source": "internal/server/gh_labels_rest.go"
       },
       {
-        "line": 101,
+        "line": 102,
         "method": "POST",
         "path": "/api/v3/repos/{owner}/{repo}/pages",
         "source": "internal/server/gh_misc_endpoints.go"
       },
       {
-        "line": 108,
+        "line": 109,
         "method": "POST",
         "path": "/api/v3/repos/{owner}/{repo}/pages/builds",
         "source": "internal/server/gh_misc_endpoints.go"
@@ -26544,7 +26769,7 @@
         "source": "internal/server/gh_actions_permissions.go"
       },
       {
-        "line": 96,
+        "line": 97,
         "method": "PUT",
         "path": "/api/v3/orgs/{org}/actions/oidc/customization/sub",
         "source": "internal/server/gh_misc_endpoints.go"
@@ -26910,7 +27135,7 @@
         "source": "internal/server/gh_actions_permissions.go"
       },
       {
-        "line": 93,
+        "line": 94,
         "method": "PUT",
         "path": "/api/v3/repos/{owner}/{repo}/actions/oidc/customization/sub",
         "source": "internal/server/gh_misc_endpoints.go"
@@ -27126,7 +27351,7 @@
         "source": "internal/server/gh_notifications.go"
       },
       {
-        "line": 103,
+        "line": 104,
         "method": "PUT",
         "path": "/api/v3/repos/{owner}/{repo}/pages",
         "source": "internal/server/gh_misc_endpoints.go"

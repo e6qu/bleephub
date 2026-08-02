@@ -124,6 +124,7 @@ func (s *Server) clearSessionCookies(w http.ResponseWriter, r *http.Request) err
 		}
 		// The __Host- deletion must itself carry Secure so the browser accepts
 		// the overwrite; the unprefixed one mirrors the deployment's policy.
+		// #nosec G124 -- Secure is conditional only for the supported local-HTTP mode.
 		http.SetCookie(w, &http.Cookie{
 			Name: name, Value: "", Path: "/", MaxAge: -1, HttpOnly: true,
 			Secure: secure || name == secureSessionCookieName, SameSite: http.SameSiteLaxMode,
@@ -653,6 +654,7 @@ func identityStateCookie(secure bool, state, value string, maxAge int, expires t
 		name = "__Host-" + name
 		path = "/" // __Host- requires Path=/
 	}
+	// #nosec G124 -- Secure is conditional only for the supported local-HTTP mode.
 	return &http.Cookie{Name: name, Value: value, Path: path, MaxAge: maxAge, Expires: expires, HttpOnly: true, Secure: secure, SameSite: http.SameSiteLaxMode}
 }
 
