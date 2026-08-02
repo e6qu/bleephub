@@ -382,7 +382,7 @@ func (s *Server) handleAgentRefreshMessage(w http.ResponseWriter, r *http.Reques
 
 func (s *Server) requireSiteAdmin(w http.ResponseWriter, r *http.Request) *User {
 	user := ghUserFromContext(r.Context())
-	if user == nil || !user.SiteAdmin {
+	if user == nil || !user.SiteAdmin || !credentialConveysSiteAdmin(r.Context()) {
 		writeGHError(w, http.StatusForbidden, "Must be a site administrator.")
 		return nil
 	}

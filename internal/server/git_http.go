@@ -30,25 +30,20 @@ func (s *Server) authenticateGitRequest(r *http.Request) (context.Context, *User
 	return ctx, ghUserFromContext(ctx)
 }
 
-// storeLoader implements transport.Loader to look up go-git storages from the Store.
-type storeLoader struct {
-	store *Store
+// fixedGitLoader serves exactly one already-authorized storer, ignoring the
+// endpoint path. The transport must never re-resolve storage from a string:
+// authorization ran against a specific (owner, repo), and a second string
+// normalization (e.g. trimming a trailing ".git" again) could hand the session
+// a different repository than the one the caller was cleared for.
+type fixedGitLoader struct {
+	storer storer.Storer
 }
 
-func (l *storeLoader) Load(ep *transport.Endpoint) (storer.Storer, error) {
-	path := strings.TrimPrefix(ep.Path, "/")
-	path = strings.TrimSuffix(path, ".git")
-
-	parts := strings.SplitN(path, "/", 2)
-	if len(parts) != 2 {
+func (l fixedGitLoader) Load(*transport.Endpoint) (storer.Storer, error) { //nolint:ireturn
+	if l.storer == nil {
 		return nil, transport.ErrRepositoryNotFound
 	}
-
-	s := l.store.GetGitStorage(parts[0], parts[1])
-	if s == nil {
-		return nil, transport.ErrRepositoryNotFound
-	}
-	return s, nil
+	return l.storer, nil
 }
 
 // tryHandleGitRequest checks if the request is a git smart HTTP request and handles it.
@@ -147,12 +142,12 @@ func (s *Server) handleGitInfoRefs(w http.ResponseWriter, r *http.Request, owner
 		return
 	}
 
-	if _, _, _, _, ok := s.authorizeGitHTTP(w, r, owner, repoName, service == "git-receive-pack"); !ok {
+	_, _, _, stor, ok := s.authorizeGitHTTP(w, r, owner, repoName, service == "git-receive-pack")
+	if !ok {
 		return
 	}
 
-	loader := &storeLoader{store: s.store}
-	server := gitserver.NewServer(loader)
+	server := gitserver.NewServer(fixedGitLoader{storer: stor})
 
 	ep, err := transport.NewEndpoint(fmt.Sprintf("/%s/%s", owner, repoName))
 	if err != nil {
@@ -222,13 +217,12 @@ func (s *Server) handleGitInfoRefs(w http.ResponseWriter, r *http.Request, owner
 }
 
 func (s *Server) handleGitUploadPack(w http.ResponseWriter, r *http.Request, owner, repoName string) {
-	_, user, repo, _, ok := s.authorizeGitHTTP(w, r, owner, repoName, false)
+	_, user, repo, stor, ok := s.authorizeGitHTTP(w, r, owner, repoName, false)
 	if !ok {
 		return
 	}
 
-	loader := &storeLoader{store: s.store}
-	server := gitserver.NewServer(loader)
+	server := gitserver.NewServer(fixedGitLoader{storer: stor})
 
 	ep, err := transport.NewEndpoint(fmt.Sprintf("/%s/%s", owner, repoName))
 	if err != nil {
@@ -294,8 +288,7 @@ func (s *Server) handleGitReceivePack(w http.ResponseWriter, r *http.Request, ow
 		return
 	}
 
-	loader := &storeLoader{store: s.store}
-	server := gitserver.NewServer(loader)
+	server := gitserver.NewServer(fixedGitLoader{storer: stor})
 
 	ep, err := transport.NewEndpoint(fmt.Sprintf("/%s/%s", owner, repoName))
 	if err != nil {

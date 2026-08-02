@@ -18,6 +18,39 @@ func decodeGHESRecorderArray(t *testing.T, rec *httptest.ResponseRecorder) []map
 	return value
 }
 
+// TestGHESAdminSurfaceRejectsNarrowCredentials pins AUTH-101: a site admin's
+// fine-grained PAT or OAuth/GitHub-App user token must NOT administer the
+// appliance, even though the user record is a SiteAdmin. Only broad credentials
+// (a browser session or a classic PAT) may.
+func TestGHESAdminSurfaceRejectsNarrowCredentials(t *testing.T) {
+	s := newTestServer()
+	s.registerGHESAdminStatsRoutes()
+	admin := s.store.LookupUserByLogin("admin") // SiteAdmin
+
+	// A fine-grained PAT owned by the site admin.
+	fg := s.store.CreateToken(admin.ID, "")
+	s.store.mu.Lock()
+	fg.FineGrained = true
+	s.store.mu.Unlock()
+
+	// An OAuth-App user-to-server token owned by the site admin.
+	app := s.store.CreateOAuthApp(admin.ID, "Narrow", "", "https://x.test", "https://x.test/cb")
+	uts, _ := s.store.CreateUserToServerToken(admin.ID, 0, app.ClientID, "", time.Hour, false)
+
+	for _, tc := range []struct{ name, auth string }{
+		{"fine-grained PAT", "token " + fg.Value},
+		{"user-to-server token", "Bearer " + uts.Token},
+	} {
+		req := httptest.NewRequest(http.MethodGet, "/api/v3/admin/hooks", nil)
+		req.Header.Set("Authorization", tc.auth)
+		rec := httptest.NewRecorder()
+		s.requestHandler().ServeHTTP(rec, req)
+		if rec.Code == http.StatusOK {
+			t.Fatalf("%s reached the admin surface: %d %s", tc.name, rec.Code, rec.Body.String())
+		}
+	}
+}
+
 func TestGHESGlobalHooksAndAdministrativeCredentials(t *testing.T) {
 	s := newTestServer()
 	s.registerGHESAdminStatsRoutes()

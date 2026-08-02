@@ -226,7 +226,8 @@ type sshChannelReader struct{ io.Reader }
 
 func (s *Server) runGitSSHService(channel ssh.Channel, service, owner, repoName string, user *User) error {
 	repo := s.store.GetRepo(owner, repoName)
-	if repo == nil || s.resolveGitRepo(owner, repoName) == nil {
+	stor := s.resolveGitRepo(owner, repoName)
+	if repo == nil || stor == nil {
 		return transport.ErrRepositoryNotFound
 	}
 	// SSH authenticates by public key, so the only credential the session can
@@ -244,7 +245,7 @@ func (s *Server) runGitSSHService(channel ssh.Channel, service, owner, repoName 
 	if err != nil {
 		return err
 	}
-	server := gitserver.NewServer(&storeLoader{store: s.store})
+	server := gitserver.NewServer(fixedGitLoader{storer: stor})
 	if service == "git-upload-pack" {
 		session, err := server.NewUploadPackSession(ep, nil)
 		if err != nil {
@@ -298,7 +299,7 @@ func (s *Server) runGitSSHService(channel ssh.Channel, service, owner, repoName 
 	if err := request.Decode(sshChannelReader{Reader: channel}); err != nil {
 		return err
 	}
-	result, err := s.applyReceivePack(ctx, repo, s.resolveGitRepo(owner, repoName), session, request)
+	result, err := s.applyReceivePack(ctx, repo, stor, session, request)
 	if err != nil {
 		return err
 	}

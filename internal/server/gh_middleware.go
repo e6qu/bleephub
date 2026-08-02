@@ -119,6 +119,24 @@ func ghPersonalAccessTokenFromContext(ctx context.Context) *Token {
 	return t
 }
 
+// credentialConveysSiteAdmin reports whether the request's credential SHAPE is
+// allowed to exercise site-administrator (or enterprise-owner) authority. A
+// browser session or a classic PAT — the account's broad credentials — may;
+// a fine-grained PAT, an OAuth/GitHub-App user-to-server token, an installation
+// token, or a bare app JWT is deliberately narrow or delegated and must never
+// confer appliance administration, even when its user record is a SiteAdmin.
+// Without this, a site admin who authorizes any app, or mints a fine-grained
+// PAT scoped to a single repo, would hand that narrow credential full control
+// of the instance (the admin gates check only user.SiteAdmin).
+func credentialConveysSiteAdmin(ctx context.Context) bool {
+	if pat := ghPersonalAccessTokenFromContext(ctx); pat != nil && pat.FineGrained {
+		return false
+	}
+	return ghUserToServerTokenFromContext(ctx) == nil &&
+		ghInstallationTokenFromContext(ctx) == nil &&
+		ghAppFromContext(ctx) == nil
+}
+
 // ghHeadersMiddleware injects GitHub-compatible response headers on /api/ routes
 // and sets the authenticated user in request context.
 func (s *Server) ghHeadersMiddleware(next http.Handler) http.Handler {

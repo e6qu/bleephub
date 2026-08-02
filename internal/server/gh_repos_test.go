@@ -93,6 +93,20 @@ func TestCreateRepo(t *testing.T) {
 	}
 }
 
+// TestCreateRepoRejectsAmbiguousNames pins AUTH-100: a name carrying a path
+// separator or a trailing ".git" would make the storage key ambiguous and feed
+// the git-transport double-suffix confusion, so it is refused at creation.
+func TestCreateRepoRejectsAmbiguousNames(t *testing.T) {
+	for _, name := range []string{"app.git", "a/b", "with space", "back\\slash"} {
+		resp := ghPost(t, "/api/v3/user/repos", defaultToken, map[string]interface{}{"name": name})
+		status := resp.StatusCode
+		resp.Body.Close()
+		if status != 422 {
+			t.Fatalf("create repo %q = %d, want 422", name, status)
+		}
+	}
+}
+
 // TestCreateRepoNoAuth verifies POST /api/v3/user/repos without token → 401.
 func TestCreateRepoNoAuth(t *testing.T) {
 	resp := ghPost(t, "/api/v3/user/repos", "", map[string]interface{}{

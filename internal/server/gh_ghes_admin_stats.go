@@ -43,8 +43,10 @@ func (s *Server) requireGHESSiteAdmin(next http.HandlerFunc) http.HandlerFunc {
 			writeGHError(w, http.StatusUnauthorized, "Requires authentication")
 			return
 		}
-		// GHES deliberately hides this surface from authenticated non-admins.
-		if !user.SiteAdmin {
+		// GHES deliberately hides this surface from authenticated non-admins,
+		// and from a site admin's narrow/delegated credentials (fine-grained
+		// PAT, app or installation token) — those must not administer the box.
+		if !user.SiteAdmin || !credentialConveysSiteAdmin(r.Context()) {
 			writeGHError(w, http.StatusNotFound, "Not Found")
 			return
 		}

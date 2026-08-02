@@ -601,6 +601,22 @@ func (s *Server) handleDeleteInteractionLimits(w http.ResponseWriter, r *http.Re
 	w.WriteHeader(http.StatusNoContent)
 }
 
+// isValidNewRepoName reports whether name is usable as a repository name: no
+// path separator, backslash, colon, or whitespace, and no trailing ".git"
+// (which would collide with the transport's ".git" trimming).
+func isValidNewRepoName(name string) bool {
+	if name == "" || len(name) > 100 {
+		return false
+	}
+	if strings.HasSuffix(name, ".git") {
+		return false
+	}
+	if strings.ContainsAny(name, " \t\r\n/\\:") {
+		return false
+	}
+	return name == strings.TrimSpace(name)
+}
+
 func (s *Server) handleCreateRepo(w http.ResponseWriter, r *http.Request) {
 	user := ghUserFromContext(r.Context())
 	if user == nil {
@@ -635,6 +651,13 @@ func (s *Server) handleCreateRepo(w http.ResponseWriter, r *http.Request) {
 	}
 	if req.Name == "" {
 		writeGHValidationError(w, "Repository", "name", "missing_field")
+		return
+	}
+	// A name carrying a path separator, whitespace, or a trailing ".git" makes
+	// the storage key ambiguous (GitHub rejects these). It is also the input to
+	// the git-transport double-suffix confusion, so refuse it at the source.
+	if !isValidNewRepoName(req.Name) {
+		writeGHValidationError(w, "Repository", "name", "invalid")
 		return
 	}
 
