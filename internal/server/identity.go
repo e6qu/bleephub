@@ -1,6 +1,7 @@
 package bleephub
 
 import (
+	"context"
 	"crypto/hmac"
 	"crypto/rand"
 	"crypto/sha256"
@@ -22,6 +23,44 @@ import (
 	"golang.org/x/oauth2"
 	"golang.org/x/text/unicode/norm"
 )
+
+// oidcHTTPTimeout bounds every outbound OpenID Connect discovery / JWKS fetch.
+const oidcHTTPTimeout = 10 * time.Second
+
+// audience decodes an OpenID Connect "aud" claim, which may be a single string
+// or an array of strings.
+type audience []string
+
+func (a *audience) UnmarshalJSON(b []byte) error {
+	var single string
+	if json.Unmarshal(b, &single) == nil {
+		*a = audience{single}
+		return nil
+	}
+	var multi []string
+	if err := json.Unmarshal(b, &multi); err != nil {
+		return err
+	}
+	*a = multi
+	return nil
+}
+
+// oidcClientProvidedKey marks a context that already carries an OpenID Connect
+// HTTP client (e.g. a test injecting one that trusts a self-signed issuer), so
+// oidcClientContext leaves it in place instead of overriding it.
+type oidcClientProvidedKey struct{}
+
+// oidcClientContext returns a context whose OpenID Connect HTTP client carries a
+// timeout, so a slow or hung identity provider cannot pin a goroutine and socket
+// per request — otherwise an anonymous flood of /auth/* requests, each blocking
+// on an unbounded outbound fetch, is a fd/goroutine-exhaustion vector. A client
+// already provided on the context is preserved.
+func oidcClientContext(ctx context.Context) context.Context {
+	if ctx.Value(oidcClientProvidedKey{}) != nil {
+		return ctx
+	}
+	return oidc.ClientContext(ctx, &http.Client{Timeout: oidcHTTPTimeout})
+}
 
 const (
 	githubAdminTeam           = "e6qu-org-admins"
@@ -56,12 +95,42 @@ func sessionCookieNameFor(secure bool) string {
 	return sessionCookieName
 }
 
-func sessionCookieFromRequest(r *http.Request) *http.Cookie {
+func (s *Server) sessionCookieFromRequest(r *http.Request) *http.Cookie {
 	if cookie, err := r.Cookie(secureSessionCookieName); err == nil {
 		return cookie
 	}
+	// Over HTTPS a real session is carried by the __Host- cookie; an unprefixed
+	// _gh_sess present here is a shadow a related-domain or network attacker
+	// planted (the unprefixed name has no Secure/Host guarantees), so it is not
+	// honored. Plain-HTTP local development keeps the unprefixed cookie.
+	if s.secureCookies(r) {
+		return nil
+	}
 	cookie, _ := r.Cookie(sessionCookieName)
 	return cookie
+}
+
+// clearSessionCookies revokes the session behind every cookie the browser might
+// hold under EITHER name and unsets both. Clearing only the name just written
+// would leave a shadow _gh_sess (planted before login, or before this logout)
+// live, and the next request would silently adopt it.
+func (s *Server) clearSessionCookies(w http.ResponseWriter, r *http.Request) error {
+	secure := s.secureCookies(r)
+	for _, name := range []string{secureSessionCookieName, sessionCookieName} {
+		if c, err := r.Cookie(name); err == nil && c.Value != "" {
+			if err := s.store.DeleteLoginSession(c.Value); err != nil {
+				return err
+			}
+		}
+		// The __Host- deletion must itself carry Secure so the browser accepts
+		// the overwrite; the unprefixed one mirrors the deployment's policy.
+		// #nosec G124 -- Secure is conditional only for the supported local-HTTP mode.
+		http.SetCookie(w, &http.Cookie{
+			Name: name, Value: "", Path: "/", MaxAge: -1, HttpOnly: true,
+			Secure: secure || name == secureSessionCookieName, SameSite: http.SameSiteLaxMode,
+		})
+	}
+	return nil
 }
 
 type oidcProviderMetadata struct {
@@ -273,7 +342,7 @@ func (s *Server) handleShauthLogin(w http.ResponseWriter, r *http.Request) {
 		writeGHError(w, http.StatusServiceUnavailable, "Shauth sign-in is not configured")
 		return
 	}
-	provider, err := oidc.NewProvider(r.Context(), s.identity.shauthIssuer)
+	provider, err := oidc.NewProvider(oidcClientContext(r.Context()), s.identity.shauthIssuer)
 	if err != nil {
 		s.logger.Warn().Err(err).Msg("Shauth discovery failed")
 		writeGHError(w, http.StatusBadGateway, "Shauth discovery failed")
@@ -312,7 +381,7 @@ func (s *Server) handleShauthCallback(w http.ResponseWriter, r *http.Request) {
 		writeGHError(w, http.StatusBadRequest, "invalid or expired Shauth sign-in state")
 		return
 	}
-	provider, err := oidc.NewProvider(r.Context(), s.identity.shauthIssuer)
+	provider, err := oidc.NewProvider(oidcClientContext(r.Context()), s.identity.shauthIssuer)
 	if err != nil {
 		writeGHError(w, http.StatusBadGateway, "Shauth discovery failed")
 		return
@@ -333,21 +402,39 @@ func (s *Server) handleShauthCallback(w http.ResponseWriter, r *http.Request) {
 	idToken, err := provider.Verifier(&oidc.Config{
 		ClientID: s.identity.shauthClientID,
 		Now:      s.currentTime,
-	}).Verify(r.Context(), rawIDToken)
+	}).Verify(oidcClientContext(r.Context()), rawIDToken)
 	if err != nil {
 		writeGHError(w, http.StatusUnauthorized, "Shauth ID token verification failed")
 		return
 	}
 	var claims struct {
-		Nonce             string `json:"nonce"`
-		SID               string `json:"sid"`
-		Email             string `json:"email"`
-		PreferredUsername string `json:"preferred_username"`
-		Name              string `json:"name"`
-		Picture           string `json:"picture"`
-		Role              string `json:"role"`
+		Nonce             string   `json:"nonce"`
+		SID               string   `json:"sid"`
+		Email             string   `json:"email"`
+		PreferredUsername string   `json:"preferred_username"`
+		Name              string   `json:"name"`
+		Picture           string   `json:"picture"`
+		Role              string   `json:"role"`
+		Audience          audience `json:"aud"`
+		AuthorizedParty   string   `json:"azp"`
 	}
-	if err := idToken.Claims(&claims); err != nil || claims.Nonce != pending.Nonce || claims.SID == "" || (claims.Role != "admin" && claims.Role != "developer") {
+	if err := idToken.Claims(&claims); err != nil {
+		writeGHError(w, http.StatusUnauthorized, "Shauth ID token claims were invalid")
+		return
+	}
+	// go-oidc's Verify only checks that aud CONTAINS the client id. OIDC Core
+	// §3.1.3.7 additionally requires rejecting a multi-audience token that omits
+	// azp, and requiring azp == client id when present, so another registered
+	// client cannot replay its token here.
+	if len(claims.Audience) > 1 && claims.AuthorizedParty == "" {
+		writeGHError(w, http.StatusUnauthorized, "Shauth ID token has multiple audiences without azp")
+		return
+	}
+	if claims.AuthorizedParty != "" && claims.AuthorizedParty != s.identity.shauthClientID {
+		writeGHError(w, http.StatusUnauthorized, "Shauth ID token azp is not this client")
+		return
+	}
+	if claims.Nonce != pending.Nonce || claims.SID == "" || (claims.Role != "admin" && claims.Role != "developer") {
 		writeGHError(w, http.StatusUnauthorized, "Shauth ID token claims were invalid")
 		return
 	}
@@ -356,7 +443,11 @@ func (s *Server) handleShauthCallback(w http.ResponseWriter, r *http.Request) {
 		writeGHError(w, http.StatusUnauthorized, "Shauth ID token did not carry a preferred_username")
 		return
 	}
-	user := s.upsertExternalUser(s.identity.shauthIssuer, idToken.Subject, login, strings.TrimSpace(claims.Name), strings.TrimSpace(claims.Email), strings.TrimSpace(claims.Picture), claims.Role == "admin")
+	user, err := s.upsertExternalUser(s.identity.shauthIssuer, idToken.Subject, login, strings.TrimSpace(claims.Name), strings.TrimSpace(claims.Email), strings.TrimSpace(claims.Picture), claims.Role == "admin", true)
+	if err != nil {
+		writeGHError(w, http.StatusForbidden, "Shauth account cannot be provisioned on this instance")
+		return
+	}
 	expiresAt := idToken.Expiry
 	if maximum := time.Now().Add(12 * time.Hour); expiresAt.After(maximum) {
 		expiresAt = maximum
@@ -385,6 +476,10 @@ func safeIdentityReturnTo(value string) string {
 }
 
 func (s *Server) handleIdentitySession(w http.ResponseWriter, r *http.Request) {
+	// The response reflects the caller's own identity, so it must never be
+	// served from a shared cache to another user.
+	w.Header().Set("Cache-Control", "no-store")
+	w.Header().Set("Vary", "Cookie")
 	session := s.sessionFromRequest(r)
 	if session == nil {
 		writeJSON(w, http.StatusOK, map[string]any{"authenticated": false})
@@ -533,13 +628,34 @@ func (s *Server) handleGitHubCallback(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
-	user := s.upsertExternalUser(githubExternalIssuer, profile.ExternalSubject(), profile.Login, profile.Name, profile.Email, profile.AvatarURL, admin)
+	user, err := s.upsertExternalUser(githubExternalIssuer, profile.ExternalSubject(), profile.Login, profile.Name, profile.Email, profile.AvatarURL, admin, false)
+	if err != nil {
+		writeGHError(w, http.StatusForbidden, "GitHub account cannot be provisioned on this instance")
+		return
+	}
 	if err := s.createBrowserSession(w, r, user); err != nil {
 		s.logger.Error().Err(err).Msg("create browser session")
 		writeGHError(w, http.StatusServiceUnavailable, "browser session is unavailable")
 		return
 	}
 	http.Redirect(w, r, pending.ReturnTo, http.StatusFound)
+}
+
+// identityStateCookie names, paths, and secures the per-flow OAuth state cookie.
+// When the deployment is HTTPS it carries the __Host- prefix (Secure, Path=/,
+// no Domain), which prevents a sibling-subdomain or network attacker from
+// transplanting a server-signed state cookie into the victim's jar and logging
+// the victim in as the attacker. Plain-HTTP local development keeps the
+// unprefixed name because browsers reject an insecure __Host- cookie.
+func identityStateCookie(secure bool, state, value string, maxAge int, expires time.Time) *http.Cookie {
+	name := identityStateCookiePrefix + state
+	path := "/auth/"
+	if secure {
+		name = "__Host-" + name
+		path = "/" // __Host- requires Path=/
+	}
+	// #nosec G124 -- Secure is conditional only for the supported local-HTTP mode.
+	return &http.Cookie{Name: name, Value: value, Path: path, MaxAge: maxAge, Expires: expires, HttpOnly: true, Secure: secure, SameSite: http.SameSiteLaxMode}
 }
 
 func (s *Server) setIdentityState(w http.ResponseWriter, r *http.Request, pending identityState) error {
@@ -552,7 +668,7 @@ func (s *Server) setIdentityState(w http.ResponseWriter, r *http.Request, pendin
 	value := base64.RawURLEncoding.EncodeToString(payload) + "." + base64.RawURLEncoding.EncodeToString(mac.Sum(nil))
 	// #nosec G124 -- Secure is conditional only because explicitly enabled local
 	// HTTP development is supported; production external URLs are HTTPS.
-	http.SetCookie(w, &http.Cookie{Name: identityStateCookiePrefix + pending.State, Value: value, Path: "/auth/", MaxAge: 600, Expires: pending.ExpiresAt, HttpOnly: true, Secure: s.secureCookies(r), SameSite: http.SameSiteLaxMode})
+	http.SetCookie(w, identityStateCookie(s.secureCookies(r), pending.State, value, 600, pending.ExpiresAt))
 	return nil
 }
 
@@ -565,9 +681,13 @@ func (s *Server) consumeIdentityState(w http.ResponseWriter, r *http.Request, pr
 			return identityState{}, errors.New("invalid identity state")
 		}
 	}
-	cookieName := identityStateCookiePrefix + state
+	secure := s.secureCookies(r)
 	// #nosec G124 -- see setIdentityState; deletion must use the same Secure policy.
-	http.SetCookie(w, &http.Cookie{Name: cookieName, Value: "", Path: "/auth/", MaxAge: -1, HttpOnly: true, Secure: s.secureCookies(r), SameSite: http.SameSiteLaxMode})
+	http.SetCookie(w, identityStateCookie(secure, state, "", -1, time.Time{}))
+	cookieName := identityStateCookiePrefix + state
+	if secure {
+		cookieName = "__Host-" + cookieName
+	}
 	cookie, err := r.Cookie(cookieName)
 	if err != nil {
 		return identityState{}, err
@@ -748,11 +868,13 @@ func (s *Server) handleLocalLogin(w http.ResponseWriter, r *http.Request) {
 		writeGHError(w, http.StatusBadRequest, "login mixes confusable scripts")
 		return
 	}
-	if !s.identity.loginAllowed(login) {
-		writeGHError(w, http.StatusForbidden, "login is not permitted on this instance")
-		return
+	// A disallowed login and a wrong credential return the identical 401 so an
+	// anonymous caller cannot enumerate BLEEPHUB_ALLOWED_LOGINS membership from
+	// the status code.
+	var user *User
+	if s.identity.loginAllowed(login) {
+		user = s.browserLoginUser(login, request.Password)
 	}
-	user := s.browserLoginUser(login, request.Password)
 	if user == nil {
 		writeGHError(w, http.StatusUnauthorized, "invalid local credentials")
 		return
@@ -779,10 +901,18 @@ func (s *Server) handleTokenLogin(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	user := ghUserFromContext(ctx)
-	isPAT := ghPersonalAccessTokenFromContext(ctx) != nil
+	pat := ghPersonalAccessTokenFromContext(ctx)
 	isUserToken := ghUserToServerTokenFromContext(ctx) != nil
-	if user == nil || (!isPAT && !isUserToken) {
+	if user == nil || (pat == nil && !isUserToken) {
 		writeGHError(w, http.StatusUnauthorized, "A user access token is required")
+		return
+	}
+	// A fine-grained PAT is deliberately narrow (specific repositories and
+	// permissions); a browser session carries the account's full authority.
+	// Exchanging one for the other would silently widen a scoped credential, so
+	// refuse it — the classic-PAT SPA flow is unaffected.
+	if pat != nil && pat.FineGrained {
+		writeGHError(w, http.StatusForbidden, "A fine-grained token cannot be exchanged for a browser session")
 		return
 	}
 	if err := s.createBrowserSession(w, r, user); err != nil {
@@ -806,45 +936,75 @@ func externalIdentityKey(issuer, subject string) string {
 	return issuer + "\x00" + subject
 }
 
-func (s *Server) upsertExternalUser(issuer, subject, login, name, email, avatarURL string, siteAdmin bool) *User {
+// errFederatedLogin marks a federated sign-in that must not provision or resolve
+// a local account. Callers surface it as a 403 without disclosing which of the
+// closed conditions applied, so it is not a login-enumeration oracle.
+var errFederatedLogin = errors.New("federated login is not permitted on this instance")
+
+// upsertExternalUser resolves (or creates) the local account for a verified
+// federated identity. It resolves on the stable (issuer, subject) key first,
+// never the mutable provider username. Only the primary IdP (roleAuthoritative)
+// may then adopt a same-named LOCAL account — SSO taking ownership of the seeded
+// bootstrap account — and privileges always come from the role claim, so a
+// principal cannot escalate by claiming "admin": a developer-role login lands on
+// a non-SiteAdmin account regardless of what it adopted. A secondary provider,
+// and any account already bound to a different federated identity, are refused,
+// so no one can seize another's account (preserves AUTH-021).
+func (s *Server) upsertExternalUser(issuer, subject, login, name, email, avatarURL string, siteAdmin, roleAuthoritative bool) (*User, error) {
 	login, err := normalizeLogin(login)
 	if err != nil || login == "" {
-		return nil
+		return nil, errFederatedLogin
+	}
+	if !s.identity.loginAllowed(login) {
+		return nil, errFederatedLogin
 	}
 	externalKey := externalIdentityKey(issuer, subject)
+	if externalKey == "" {
+		// Without a stable subject there is no safe federated key; adopting by
+		// username is exactly what must not happen, so fail closed.
+		return nil, errFederatedLogin
+	}
 	s.store.mu.Lock()
 	defer s.store.mu.Unlock()
-	// Resolve the stable federated identity first; only when no (issuer,
-	// subject) binding is known does the mutable provider username get a
-	// vote, so a renamed account or a colliding username cannot re-key an
-	// established account.
-	var user *User
-	if externalKey != "" {
-		user = s.store.UsersByExternalID[externalKey]
-	}
-	if user == nil {
-		user = s.store.UsersByLogin[login]
-	}
-	if user != nil {
+	if user := s.store.UsersByExternalID[externalKey]; user != nil {
 		user.Name, user.Email, user.AvatarURL, user.UpdatedAt = name, email, avatarURL, time.Now().UTC()
-		// SiteAdmin is provisioned at first login and changed only through the
-		// explicit admin surface; re-authentication must never grant or revoke
-		// it, so whichever provider logged in last cannot reshape privileges.
+		if roleAuthoritative {
+			user.SiteAdmin = siteAdmin
+		}
 		s.bindExternalIdentityLocked(user, externalKey)
 		if s.store.persist != nil {
 			s.store.persist.MustPut("users", fmt.Sprint(user.ID), user)
 		}
-		return user
+		return user, nil
+	}
+	// No federated binding yet. Resolve a same-username account carefully. The
+	// primary IdP may adopt a purely LOCAL account (e.g. the seeded bootstrap
+	// admin) — that is SSO legitimately taking ownership of it — but privileges
+	// then come from the role claim below, not from the account being adopted,
+	// so a principal cannot escalate by claiming a privileged username. A
+	// non-primary provider, or an account that already belongs to a DIFFERENT
+	// federated identity, is refused: neither may seize an existing account.
+	if existing := s.store.UsersByLogin[login]; existing != nil {
+		if !roleAuthoritative || len(existing.ExternalIdentities) > 0 {
+			return nil, errFederatedLogin
+		}
+		existing.Name, existing.Email, existing.AvatarURL, existing.UpdatedAt = name, email, avatarURL, time.Now().UTC()
+		existing.SiteAdmin = siteAdmin
+		s.bindExternalIdentityLocked(existing, externalKey)
+		if s.store.persist != nil {
+			s.store.persist.MustPut("users", fmt.Sprint(existing.ID), existing)
+		}
+		return existing, nil
 	}
 	now := time.Now().UTC()
-	user = &User{ID: s.store.NextUser, NodeID: "U_bleephub_" + login, Login: login, Name: name, Email: email, AvatarURL: avatarURL, Type: "User", SiteAdmin: siteAdmin, StarredRepos: map[string]bool{}, CreatedAt: now, UpdatedAt: now}
+	user := &User{ID: s.store.NextUser, NodeID: "U_bleephub_" + login, Login: login, Name: name, Email: email, AvatarURL: avatarURL, Type: "User", SiteAdmin: siteAdmin, StarredRepos: map[string]bool{}, CreatedAt: now, UpdatedAt: now}
 	s.store.NextUser++
 	s.store.Users[user.ID], s.store.UsersByLogin[user.Login] = user, user
 	s.bindExternalIdentityLocked(user, externalKey)
 	if s.store.persist != nil {
 		s.store.persist.MustPut("users", fmt.Sprint(user.ID), user)
 	}
-	return user
+	return user, nil
 }
 
 // bindExternalIdentityLocked records the (issuer, subject) binding on user and
@@ -875,11 +1035,14 @@ func (s *Server) createBrowserSession(w http.ResponseWriter, r *http.Request, us
 // value made every page that prints an authenticity_token a disclosure of the
 // session identifier, which is the one thing HttpOnly exists to withhold.
 func (s *Server) createOIDCBrowserSession(w http.ResponseWriter, r *http.Request, user *User, session LoginSession) error {
+	if user == nil {
+		return errors.New("cannot issue a browser session for a nil user")
+	}
 	// Rotate the session on every successful authentication. A cookie value an
 	// attacker planted before credentials were verified (session fixation) is
 	// revoked the moment a real identity is established, and a privilege change
 	// is reflected immediately instead of lingering for the old session's TTL.
-	if cookie := sessionCookieFromRequest(r); cookie != nil {
+	if cookie := s.sessionCookieFromRequest(r); cookie != nil {
 		if err := s.store.DeleteLoginSession(cookie.Value); err != nil {
 			return err
 		}
@@ -927,19 +1090,19 @@ func (s *Server) handleIdentityLogout(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	session := s.sessionFromRequest(r)
-	if cookie := sessionCookieFromRequest(r); cookie != nil {
-		if err := s.store.DeleteLoginSession(cookie.Value); err != nil {
-			s.logger.Error().Err(err).Msg("delete browser session")
-			writeGHError(w, http.StatusServiceUnavailable, "browser session could not be revoked")
-			return
-		}
-	}
-	secure := s.secureCookies(r)
 	// #nosec G124 -- deletion mirrors the session's conditional local-HTTP policy.
-	http.SetCookie(w, &http.Cookie{Name: sessionCookieNameFor(secure), Value: "", Path: "/", MaxAge: -1, HttpOnly: true, Secure: secure, SameSite: http.SameSiteLaxMode})
+	if err := s.clearSessionCookies(w, r); err != nil {
+		s.logger.Error().Err(err).Msg("delete browser session")
+		writeGHError(w, http.StatusServiceUnavailable, "browser session could not be revoked")
+		return
+	}
 	logoutTarget := ""
-	if s.identity.shauthConfigured() {
-		provider, err := oidc.NewProvider(r.Context(), s.identity.shauthIssuer)
+	// Only start a global RP-initiated logout when THIS session was itself
+	// established through Shauth. A user who signed in locally (or via a token)
+	// must not have their shared Shauth SSO session — used by every other
+	// relying party — torn down by signing out of this app.
+	if s.identity.shauthConfigured() && session != nil && session.OIDCProvider == "shauth" && session.OIDCIDToken != "" {
+		provider, err := oidc.NewProvider(oidcClientContext(r.Context()), s.identity.shauthIssuer)
 		if err != nil {
 			writeGHError(w, http.StatusBadGateway, "Shauth discovery failed")
 			return
@@ -955,11 +1118,7 @@ func (s *Server) handleIdentityLogout(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		query := endpoint.Query()
-		if session != nil && session.OIDCProvider == "shauth" && session.OIDCIDToken != "" {
-			query.Set("id_token_hint", session.OIDCIDToken)
-		} else {
-			query.Set("client_id", s.identity.shauthClientID)
-		}
+		query.Set("id_token_hint", session.OIDCIDToken)
 		query.Set("post_logout_redirect_uri", s.identity.shauthPostLogoutURL)
 		endpoint.RawQuery = query.Encode()
 		logoutTarget = endpoint.String()
@@ -973,16 +1132,12 @@ func (s *Server) handleIdentityLogout(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) handleIdentitySignedOut(w http.ResponseWriter, r *http.Request) {
 	if r.Method == http.MethodPost {
-		if cookie := sessionCookieFromRequest(r); cookie != nil {
-			if err := s.store.DeleteLoginSession(cookie.Value); err != nil {
-				s.logger.Error().Err(err).Msg("delete browser session on signed-out landing")
-				writeGHError(w, http.StatusServiceUnavailable, "browser session could not be revoked")
-				return
-			}
-		}
-		secure := s.secureCookies(r)
 		// #nosec G124 -- deletion mirrors the session's conditional local-HTTP policy.
-		http.SetCookie(w, &http.Cookie{Name: sessionCookieNameFor(secure), Value: "", Path: "/", MaxAge: -1, HttpOnly: true, Secure: secure, SameSite: http.SameSiteLaxMode})
+		if err := s.clearSessionCookies(w, r); err != nil {
+			s.logger.Error().Err(err).Msg("delete browser session on signed-out landing")
+			writeGHError(w, http.StatusServiceUnavailable, "browser session could not be revoked")
+			return
+		}
 	}
 	w.Header().Set("Cache-Control", "no-store")
 	w.Header().Set("Content-Security-Policy", "default-src 'none'; style-src 'unsafe-inline'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'")
@@ -1056,7 +1211,12 @@ func (s *Server) handleShauthFrontChannelLogout(w http.ResponseWriter, r *http.R
 	}
 	w.Header().Set("Content-Security-Policy", "default-src 'none'; frame-ancestors "+frameAncestors)
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	if r.Method == http.MethodPost && s.identity.shauthConfigured() && r.URL.Query().Get("iss") == s.identity.shauthIssuer && r.URL.Query().Get("sid") != "" {
+	// The OIDC front-channel logout spec delivers this as a GET in an
+	// OP-rendered iframe, so revocation cannot be gated on POST. The iss must
+	// match the configured issuer exactly and the sid names the OP session —
+	// unguessable to a cross-site attacker — so a forged request cannot revoke
+	// anything (issue #112).
+	if s.identity.shauthConfigured() && r.URL.Query().Get("iss") == s.identity.shauthIssuer && r.URL.Query().Get("sid") != "" {
 		if err := s.store.DeleteLoginSessionsForOIDC("shauth", s.identity.shauthIssuer, r.URL.Query().Get("sid"), ""); err != nil {
 			s.logger.Error().Err(err).Msg("revoke browser sessions from Shauth front-channel logout")
 			writeGHError(w, http.StatusServiceUnavailable, "browser sessions could not be revoked")
@@ -1079,7 +1239,7 @@ func (s *Server) handleShauthBackChannelLogout(w http.ResponseWriter, r *http.Re
 		writeGHError(w, http.StatusBadRequest, "logout_token is required")
 		return
 	}
-	provider, err := oidc.NewProvider(r.Context(), s.identity.shauthIssuer)
+	provider, err := oidc.NewProvider(oidcClientContext(r.Context()), s.identity.shauthIssuer)
 	if err != nil {
 		writeGHError(w, http.StatusBadGateway, "Shauth discovery failed")
 		return
@@ -1087,7 +1247,7 @@ func (s *Server) handleShauthBackChannelLogout(w http.ResponseWriter, r *http.Re
 	logoutToken, err := provider.Verifier(&oidc.Config{
 		ClientID: s.identity.shauthClientID,
 		Now:      s.currentTime,
-	}).Verify(r.Context(), rawLogoutToken)
+	}).Verify(oidcClientContext(r.Context()), rawLogoutToken)
 	if err != nil {
 		writeGHError(w, http.StatusBadRequest, "logout token verification failed")
 		return
@@ -1133,10 +1293,18 @@ func (s *Server) handlePrivateControl(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	session := s.sessionFromRequest(r)
-	if session == nil || !s.store.GetUserByID(session.UserID).SiteAdmin {
+	var user *User
+	if session != nil {
+		user = s.store.GetUserByID(session.UserID)
+	}
+	if user == nil || !user.SiteAdmin {
 		http.NotFound(w, r)
 		return
 	}
+	w.Header().Set("Cache-Control", "no-store")
+	w.Header().Set("Vary", "Cookie")
+	w.Header().Set("Referrer-Policy", "no-referrer")
+	w.Header().Set("X-Content-Type-Options", "nosniff")
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	_, _ = w.Write([]byte(`<!doctype html><html><head><meta name="viewport" content="width=device-width,initial-scale=1"><title>Bleephub control</title><style>body{margin:0;background:#111827;color:#f8fafc;font:16px system-ui}main{max-width:960px;margin:3rem auto;padding:2rem;background:#1e293b;border:1px solid #334155;border-radius:18px}h1{color:#67e8f9}table{width:100%;border-collapse:collapse}td,th{padding:.7rem;border-bottom:1px solid #334155;text-align:left}form{display:grid;grid-template-columns:1fr 1fr 1fr 1fr auto;gap:.6rem;margin:1.5rem 0}input,select,button{padding:.7rem;border-radius:8px;border:1px solid #475569}button{background:#a855f7;color:white;font-weight:700;cursor:pointer}.stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:.7rem}.stat{padding:1rem;background:#0f172a;border:1px solid #334155;border-radius:10px}.stat b{display:block;color:#67e8f9;font-size:1.3rem}</style></head><body><main><h1>Bleephub private control</h1><p>Instance-only identity, storage, and runtime administration. This surface is intentionally separate from GitHub-compatible routes.</p><section><h2>Live service monitoring</h2><div class="stats" id="stats"><div class="stat">Loading…</div></div></section><form id="new-user"><input name="login" placeholder="login" required><input name="email" type="email" placeholder="email" required><input name="password" type="password" placeholder="temporary password" required><select name="role"><option value="developer">developer</option><option value="admin">admin</option></select><button>Create local user</button></form><table><thead><tr><th>Login</th><th>Email</th><th>Role</th></tr></thead><tbody id="users"></tbody></table></main><script>const users=document.querySelector('#users'),stats=document.querySelector('#stats');const esc=v=>String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));async function load(){const [u,m,s,t]=await Promise.all([fetch('/internal/users'),fetch('/internal/metrics'),fetch('/internal/status'),fetch('/internal/storage')]);if(u.ok)users.innerHTML=(await u.json()).map(x=>'<tr><td>@'+esc(x.login)+'</td><td>'+esc(x.email)+'</td><td>'+ (x.site_admin?'admin':'developer')+'</td></tr>').join('');if(m.ok&&s.ok&&t.ok){const metrics=await m.json(),status=await s.json(),storage=await t.json();stats.innerHTML='<div class="stat">Workflows<b>'+esc(status.active_workflows)+'</b></div><div class="stat">Connected runners<b>'+esc(status.connected_runners)+'</b></div><div class="stat">Uptime<b>'+esc(status.uptime_seconds)+'s</b></div><div class="stat">Git storage<b>'+esc(storage.git)+'</b></div><div class="stat">Persistence<b>'+esc(storage.persistence)+'</b></div><div class="stat">Active sessions<b>'+esc(metrics.active_sessions)+'</b></div>'}}document.querySelector('#new-user').onsubmit=async e=>{e.preventDefault();const f=new FormData(e.target);const body=Object.fromEntries(f);body.site_admin=body.role==='admin';const r=await fetch('/internal/users',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});if(!r.ok){alert('Could not create local user');return}e.target.reset();load()};load();setInterval(load,15000)</script></body></html>`))
 }

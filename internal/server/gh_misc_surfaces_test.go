@@ -231,6 +231,64 @@ func TestGPGKeyDeleteOwnership(t *testing.T) {
 	}
 }
 
+// TestUserSSHKeyIsOwnerScoped pins AUTH-102: GET/DELETE on /user/keys/{id} act
+// only on the caller's own key. A stranger gets 404 (no read, no revoke, no
+// existence oracle), and an anonymous GET is refused.
+func TestUserSSHKeyIsOwnerScoped(t *testing.T) {
+	s := newTestServer()
+	s.registerGHMiscEndpoints()
+
+	s.store.mu.Lock()
+	other := &User{ID: s.store.NextUser, Login: "other-user", Type: "User"}
+	s.store.NextUser++
+	s.store.Users[other.ID] = other
+	s.store.UsersByLogin[other.Login] = other
+	s.store.Tokens["ghp_other"] = &Token{Value: "ghp_other", UserID: other.ID}
+	s.store.mu.Unlock()
+
+	// admin creates a key.
+	w := doMiscReq(s, "POST", "/api/v3/user/keys", `{"title":"laptop","key":"ssh-ed25519 AAAAKEYADMIN admin@host"}`)
+	if w.Code != 201 {
+		t.Fatalf("admin create key = %d %s", w.Code, w.Body.String())
+	}
+	var created map[string]interface{}
+	if err := json.Unmarshal(w.Body.Bytes(), &created); err != nil {
+		t.Fatal(err)
+	}
+	keyID := strconv.Itoa(int(created["id"].(float64)))
+
+	// A stranger cannot read it.
+	getReq := httptest.NewRequest("GET", "/api/v3/user/keys/"+keyID, nil)
+	getReq.Header.Set("Authorization", "token ghp_other")
+	getRec := httptest.NewRecorder()
+	s.requestHandler().ServeHTTP(getRec, getReq)
+	if getRec.Code != 404 {
+		t.Fatalf("stranger GET key = %d, want 404", getRec.Code)
+	}
+
+	// An anonymous caller cannot read it.
+	anonRec := httptest.NewRecorder()
+	s.requestHandler().ServeHTTP(anonRec, httptest.NewRequest("GET", "/api/v3/user/keys/"+keyID, nil))
+	if anonRec.Code == 200 {
+		t.Fatalf("anonymous GET key = 200, want auth error")
+	}
+
+	// A stranger cannot delete it.
+	delReq := httptest.NewRequest("DELETE", "/api/v3/user/keys/"+keyID, nil)
+	delReq.Header.Set("Authorization", "token ghp_other")
+	delRec := httptest.NewRecorder()
+	s.requestHandler().ServeHTTP(delRec, delReq)
+	if delRec.Code != 404 {
+		t.Fatalf("stranger DELETE key = %d, want 404", delRec.Code)
+	}
+	s.store.Misc.mu.RLock()
+	stillThere := s.store.Misc.userKeys[int(created["id"].(float64))] != nil
+	s.store.Misc.mu.RUnlock()
+	if !stillThere {
+		t.Fatal("stranger DELETE revoked the owner's key")
+	}
+}
+
 func TestPagesBuildsCRUD(t *testing.T) {
 	s := newTestServer()
 	s.registerGHMiscEndpoints()

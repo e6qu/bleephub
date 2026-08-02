@@ -83,3 +83,39 @@ func TestOrganizationSCIMUserLifecycle(t *testing.T) {
 	// family is selected in isolation.
 	expectStatus(t, ghGet(t, "/api/v3/user", defaultToken), http.StatusOK, "shape-ratchet control")
 }
+
+// TestOrganizationSCIMCannotHijackExistingAccount pins AUTH-103: an org's SCIM
+// may not bind to, force-enroll, or rewrite a global account it does not
+// manage. Provisioning a SCIM user whose userName collides with a pre-existing
+// account is a conflict, and the victim is neither renamed nor made a member.
+func TestOrganizationSCIMCannotHijackExistingAccount(t *testing.T) {
+	createOrgViaAdminAPI(t, "evilcorp")
+
+	// A pre-existing, non-SCIM account.
+	testServer.store.mu.Lock()
+	victim := &User{ID: testServer.store.NextUser, Login: "victim", Name: "Victim", Email: "victim@real.test", Type: "User", StarredRepos: map[string]bool{}}
+	testServer.store.NextUser++
+	testServer.store.Users[victim.ID] = victim
+	testServer.store.UsersByLogin["victim"] = victim
+	testServer.store.mu.Unlock()
+
+	base := "/api/v3/scim/v2/organizations/evilcorp/Users"
+	resp := ghPost(t, base, defaultToken, map[string]interface{}{
+		"schemas": []string{scimUserSchema}, "userName": "victim",
+		"displayName": "Pwned", "active": true,
+		"emails": []map[string]interface{}{{"value": "attacker@evil.test", "primary": true}},
+	})
+	if resp.StatusCode != http.StatusConflict {
+		resp.Body.Close()
+		t.Fatalf("SCIM provisioning of an existing account = %d, want 409", resp.StatusCode)
+	}
+	resp.Body.Close()
+
+	after := testServer.store.LookupUserByLogin("victim")
+	if after == nil || after.ID != victim.ID || after.Name != "Victim" || after.Email != "victim@real.test" {
+		t.Fatalf("victim account was mutated by SCIM: %#v", after)
+	}
+	if m := testServer.store.GetMembership("evilcorp", victim.ID); m != nil && m.State == MembershipStateActive {
+		t.Fatal("victim was force-enrolled into the org via SCIM")
+	}
+}

@@ -686,10 +686,27 @@ func (p *Persistence) storageKey(bucket, key string) string {
 	if !isOpaquePersistenceKeyBucket(bucket) || strings.HasPrefix(key, opaquePersistenceKeyPrefix) {
 		return key
 	}
+	return p.opaqueDigestKey(bucket, key)
+}
+
+// opaqueLookupKey derives the storage key for a value presented by a client
+// (a bearer token or session id). Unlike storageKey it NEVER passes an already
+// "hmac:v1:"-prefixed value through: the stored row keys are those digests, so
+// honoring a client-supplied digest as a key would let anyone who read a row
+// key (a backup, a replica, a leaked query) use it as the credential itself.
+// A non-opaque bucket keeps the raw value.
+func (p *Persistence) opaqueLookupKey(bucket, value string) string {
+	if !isOpaquePersistenceKeyBucket(bucket) {
+		return value
+	}
+	return p.opaqueDigestKey(bucket, value)
+}
+
+func (p *Persistence) opaqueDigestKey(bucket, value string) string {
 	mac := hmac.New(sha256.New, p.keyDigestKey)
 	_, _ = mac.Write([]byte(bucket))
 	_, _ = mac.Write([]byte{0})
-	_, _ = mac.Write([]byte(key))
+	_, _ = mac.Write([]byte(value))
 	return opaquePersistenceKeyPrefix + hex.EncodeToString(mac.Sum(nil))
 }
 

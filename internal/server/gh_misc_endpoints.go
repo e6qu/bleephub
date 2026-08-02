@@ -84,8 +84,9 @@ func (s *Server) registerGHMiscEndpoints() {
 	s.route("GET /api/v3/user/starred/{owner}/{repo}", s.handleCheckMyStarredRepo)
 	s.route("GET /api/v3/user/subscriptions", s.handleListMySubscriptions)
 
-	// Actions OIDC
-	s.route("GET /token", s.handleActionsOIDCToken)
+	// Actions OIDC — minted for the requesting job, so gated on that job's
+	// runtime token (the credential the runner holds while executing the job).
+	s.route("GET /token", s.requireJobToken(s.handleActionsOIDCToken))
 	s.route("GET /.well-known/openid-configuration", s.handleOIDCDiscovery)
 	s.route("GET /.well-known/jwks", s.handleJWKS)
 	// OIDC subject customization is scoped to a repo or an org on real GitHub.
@@ -356,18 +357,22 @@ type MiscStore struct {
 	marketplaceDeliveries     map[string][]*WebhookDelivery
 	nextMarketplaceDeliveryID int
 	nextMarketplacePlanID     int
-	oidcClaimKeys             []string
-	nextKeyID                 int
-	nextGPGKeyID              int
-	nextPagesBuildID          int64
-	nextAuditID               int64
-	nextAdminAuditID          int64
-	oidcKey                   *rsa.PrivateKey
-	persist                   *Persistence
-	blockedUsers              map[int]map[int]bool // userID -> targetID -> blocked
-	socialAccounts            map[int][]map[string]interface{}
-	sshSigningKeys            map[int][]map[string]interface{}
-	nextSSHSigningKeyID       int
+	// oidcClaimKeys maps an OIDC-subject-customization scope ("repo:owner/name"
+	// or "org:login") to its include_claim_keys. A single shared slice let one
+	// repository's admin clobber every tenant's configuration and be read by an
+	// anonymous caller.
+	oidcClaimKeys       map[string][]string
+	nextKeyID           int
+	nextGPGKeyID        int
+	nextPagesBuildID    int64
+	nextAuditID         int64
+	nextAdminAuditID    int64
+	oidcKey             *rsa.PrivateKey
+	persist             *Persistence
+	blockedUsers        map[int]map[int]bool // userID -> targetID -> blocked
+	socialAccounts      map[int][]map[string]interface{}
+	sshSigningKeys      map[int][]map[string]interface{}
+	nextSSHSigningKeyID int
 }
 
 func newMiscStore() *MiscStore {
@@ -449,6 +454,14 @@ func (s *Server) handleCreateUserKey(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleGetUserKey(w http.ResponseWriter, r *http.Request) {
+	// This is the authenticated user's OWN key by id, so it demands a caller and
+	// returns 404 for a key that is not theirs — never disclosing another
+	// account's key material or even its existence.
+	user := ghUserFromContext(r.Context())
+	if user == nil {
+		writeGHError(w, http.StatusUnauthorized, "Requires authentication")
+		return
+	}
 	id, err := strconv.Atoi(r.PathValue("key_id"))
 	if err != nil {
 		writeGHError(w, http.StatusNotFound, "Not Found")
@@ -457,7 +470,7 @@ func (s *Server) handleGetUserKey(w http.ResponseWriter, r *http.Request) {
 	s.store.Misc.mu.RLock()
 	k := s.store.Misc.userKeys[id]
 	s.store.Misc.mu.RUnlock()
-	if k == nil {
+	if k == nil || k.UserID != user.ID {
 		writeGHError(w, http.StatusNotFound, "Not Found")
 		return
 	}
@@ -466,6 +479,10 @@ func (s *Server) handleGetUserKey(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) handleDeleteUserKey(w http.ResponseWriter, r *http.Request) {
 	user := ghUserFromContext(r.Context())
+	if user == nil {
+		writeGHError(w, http.StatusUnauthorized, "Requires authentication")
+		return
+	}
 	id, err := strconv.Atoi(r.PathValue("key_id"))
 	if err != nil {
 		writeGHError(w, http.StatusNotFound, "Not Found")
@@ -473,7 +490,10 @@ func (s *Server) handleDeleteUserKey(w http.ResponseWriter, r *http.Request) {
 	}
 	s.store.Misc.mu.Lock()
 	k := s.store.Misc.userKeys[id]
-	if k == nil {
+	// A key that is not the caller's is 404 — the same answer as a nonexistent
+	// one — so this endpoint cannot revoke another account's SSH access or probe
+	// which key ids exist.
+	if k == nil || k.UserID != user.ID {
 		s.store.Misc.mu.Unlock()
 		writeGHError(w, http.StatusNotFound, "Not Found")
 		return
@@ -818,20 +838,44 @@ func (s *Server) handleJWKS(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+// oidcCustomSubScopeKey derives the tenant scope the OIDC subject-customization
+// request targets, from the org or owner/repo path values. An empty result
+// means the path named neither, which the callers reject.
+func oidcCustomSubScopeKey(r *http.Request) string {
+	if org := r.PathValue("org"); org != "" {
+		return "org:" + strings.ToLower(org)
+	}
+	owner, repo := r.PathValue("owner"), r.PathValue("repo")
+	if owner != "" && repo != "" {
+		return "repo:" + strings.ToLower(owner+"/"+repo)
+	}
+	return ""
+}
+
 func (s *Server) handleOIDCCustomSubGet(w http.ResponseWriter, r *http.Request) {
-	if !s.enforceRepoReadable(w, r) {
+	if org := r.PathValue("org"); org != "" {
+		// The org route carries no repo, so enforceRepoReadable would wave it
+		// through to anonymous callers. Require org membership instead.
+		if !s.viewerIsOrgMember(r.Context(), org) {
+			writeGHError(w, http.StatusNotFound, "Not Found")
+			return
+		}
+	} else if !s.enforceRepoReadable(w, r) {
 		return
 	}
+	scope := oidcCustomSubScopeKey(r)
 	s.store.Misc.mu.RLock()
-	keys := s.store.Misc.oidcClaimKeys
-	if keys == nil {
-		keys = []string{}
-	}
+	keys := append([]string(nil), s.store.Misc.oidcClaimKeys[scope]...)
 	s.store.Misc.mu.RUnlock()
 	writeJSON(w, http.StatusOK, map[string]interface{}{"include_claim_keys": keys})
 }
 
 func (s *Server) handleOIDCCustomSubPut(w http.ResponseWriter, r *http.Request) {
+	scope := oidcCustomSubScopeKey(r)
+	if scope == "" {
+		writeGHError(w, http.StatusNotFound, "Not Found")
+		return
+	}
 	var req struct {
 		IncludeClaimKeys []string `json:"include_claim_keys"`
 	}
@@ -840,9 +884,12 @@ func (s *Server) handleOIDCCustomSubPut(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 	s.store.Misc.mu.Lock()
-	s.store.Misc.oidcClaimKeys = req.IncludeClaimKeys
+	if s.store.Misc.oidcClaimKeys == nil {
+		s.store.Misc.oidcClaimKeys = map[string][]string{}
+	}
+	s.store.Misc.oidcClaimKeys[scope] = req.IncludeClaimKeys
 	if s.store.persist != nil {
-		s.store.persist.MustPut("misc", "oidc_claim_keys", req.IncludeClaimKeys)
+		s.store.persist.MustPut("misc", "oidc_claim_keys", s.store.Misc.oidcClaimKeys)
 	}
 	s.store.Misc.mu.Unlock()
 	writeJSON(w, http.StatusCreated, map[string]interface{}{})
@@ -871,9 +918,22 @@ func (s *Server) mintOIDCToken(r *http.Request, audience string) (string, error)
 	// to mint for, so we fail loudly rather than fabricate a placeholder claim
 	// (a fabricated repository/ref/run_id would silently defeat OIDC trust
 	// policies, which is worse than an error).
+	// The OIDC token is minted for the job that requests it, so the caller must
+	// present that job's runtime token — not any authenticated user. Without
+	// this binding any authenticated principal (even a zero-scope PAT) could
+	// forge a signed subject like repo:victim/prod:environment:production and
+	// defeat a cloud trust policy. The requested repo must be the one the job
+	// token is scoped to.
+	principal := runnerFromContext(r.Context())
+	if principal == nil || !principal.IsJobToken() {
+		return "", fmt.Errorf("oidc: a job runtime token is required")
+	}
 	repoFull := q.Get("repo")
 	if repoFull == "" {
 		return "", fmt.Errorf("oidc: 'repo' (owner/name) is required")
+	}
+	if !principal.Scope.coversRepo(repoFull) {
+		return "", fmt.Errorf("oidc: job token is not scoped to %q", repoFull)
 	}
 	owner, repoName := splitRepoFull(repoFull)
 	repo := s.store.GetRepo(owner, repoName)
@@ -908,14 +968,16 @@ func (s *Server) mintOIDCToken(r *http.Request, audience string) (string, error)
 	if eventName == "" {
 		return "", fmt.Errorf("oidc: 'event_name' is required")
 	}
-	// The actor is the authenticated user who triggered the run. /token sits
-	// outside the /api middleware, so resolve the caller's token directly.
-	r, user := s.authenticatedBrowserRequest(r)
-	if user == nil {
-		return "", fmt.Errorf("oidc: unauthenticated — no actor for the token")
+	// The actor is the user who triggered the run; the runner reports it for its
+	// own run. It is an informational claim (the security-critical binding is
+	// the repository, enforced above), so resolve the id best-effort.
+	actor := q.Get("actor")
+	actorID := 0
+	if actor != "" {
+		if u := s.store.LookupUserByLogin(actor); u != nil {
+			actorID = u.ID
+		}
 	}
-	actor := user.Login
-	actorID := user.ID
 
 	repoID := repo.ID
 	ownerID := repo.OwnerID

@@ -8,6 +8,7 @@ import (
 	"io"
 	"net"
 	"os"
+	"strconv"
 	"strings"
 	"time"
 
@@ -87,6 +88,15 @@ func (s *Server) startGitSSH(ctx context.Context) error {
 
 func (s *Server) serveGitSSHConn(conn net.Conn, signer ssh.Signer) {
 	defer func() { _ = conn.Close() }()
+	// The SSH path runs outside recoverMiddleware and drives third-party
+	// decoders (packp/packfile) over attacker-controlled bytes. A panic there
+	// would unwind through the accept goroutine and kill the whole process,
+	// taking every tenant's traffic down — so contain it to this connection.
+	defer func() {
+		if rec := recover(); rec != nil {
+			s.logger.Error().Interface("panic", rec).Str("remote_addr", conn.RemoteAddr().String()).Msg("recovered panic in SSH Git connection")
+		}
+	}()
 	if err := conn.SetDeadline(s.currentTime().Add(gitSSHHandshakeTimeout)); err != nil {
 		s.logger.Debug().Err(err).Msg("set SSH Git handshake deadline")
 		return
@@ -149,13 +159,11 @@ func (s *Server) serveGitSSHConn(conn net.Conn, signer ssh.Signer) {
 }
 
 func parseGitSSHUserID(value string) (int, error) {
-	var result int
-	n, err := fmt.Sscanf(value, "%d", &result)
+	// strconv.Atoi is the fail-closed primitive: unlike fmt.Sscanf("%d"), it
+	// rejects trailing garbage such as "12abc" rather than accepting 12.
+	result, err := strconv.Atoi(value)
 	if err != nil {
 		return 0, fmt.Errorf("parse SSH user ID %q: %w", value, err)
-	}
-	if n != 1 {
-		return 0, fmt.Errorf("parse SSH user ID %q: scanned %d values, want 1", value, n)
 	}
 	return result, nil
 }
@@ -226,7 +234,8 @@ type sshChannelReader struct{ io.Reader }
 
 func (s *Server) runGitSSHService(channel ssh.Channel, service, owner, repoName string, user *User) error {
 	repo := s.store.GetRepo(owner, repoName)
-	if repo == nil || s.resolveGitRepo(owner, repoName) == nil {
+	stor := s.resolveGitRepo(owner, repoName)
+	if repo == nil || stor == nil {
 		return transport.ErrRepositoryNotFound
 	}
 	// SSH authenticates by public key, so the only credential the session can
@@ -234,8 +243,15 @@ func (s *Server) runGitSSHService(channel ssh.Channel, service, owner, repoName 
 	// token to intersect. The read decision still goes through the one choke
 	// point, so a new arm added there cannot be missed here.
 	ctx := contextWithUser(context.Background(), user)
-	if service == "git-upload-pack" && !s.viewerCanReadRepo(ctx, repo) {
-		return errors.New("repository access denied")
+	// A caller who cannot read the repository is answered exactly as for a
+	// nonexistent one, so SSH does not become a private-repository existence
+	// oracle (matching the git-HTTP behavior). A write refusal is only
+	// distinguishable once read access is established.
+	// Cloning reads repository CONTENTS, so gate on contents:read (matching the
+	// git-HTTP path) rather than metadata:read — a caller with only metadata
+	// visibility must not be able to pull the code.
+	if !s.viewerHasRepoPermission(ctx, repo, scopeContents, permRead) {
+		return transport.ErrRepositoryNotFound
 	}
 	if service == "git-receive-pack" && !s.viewerCanPushRepo(ctx, repo) {
 		return errors.New("repository write access denied")
@@ -244,7 +260,7 @@ func (s *Server) runGitSSHService(channel ssh.Channel, service, owner, repoName 
 	if err != nil {
 		return err
 	}
-	server := gitserver.NewServer(&storeLoader{store: s.store})
+	server := gitserver.NewServer(fixedGitLoader{storer: stor})
 	if service == "git-upload-pack" {
 		session, err := server.NewUploadPackSession(ep, nil)
 		if err != nil {
@@ -298,7 +314,7 @@ func (s *Server) runGitSSHService(channel ssh.Channel, service, owner, repoName 
 	if err := request.Decode(sshChannelReader{Reader: channel}); err != nil {
 		return err
 	}
-	result, err := s.applyReceivePack(ctx, repo, s.resolveGitRepo(owner, repoName), session, request)
+	result, err := s.applyReceivePack(ctx, repo, stor, session, request)
 	if err != nil {
 		return err
 	}

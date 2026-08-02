@@ -100,8 +100,16 @@ func (s *Server) requireOrgPATApp(scope permScope, level permLevel, next http.Ha
 			return
 		}
 		if token := ghUserToServerTokenFromContext(r.Context()); token != nil && token.AppID > 0 && s.userAccessTokenCanAdminPATs(token, org.Login, scope, level) {
-			next(w, r)
-			return
+			// A ghu_ token is the intersection of the app's grant AND the token
+			// owner's own standing. userAccessTokenCanAdminPATs proves only the
+			// app half; require the owner to actually be an org owner too (via the
+			// credential-aware chokepoint), or any account that authorized a
+			// suitably-scoped app could approve or revoke the org's PAT grants
+			// without being a member.
+			if s.viewerCanAdminOrg(r.Context(), org.Login) {
+				next(w, r)
+				return
+			}
 		}
 		writeGHError(w, http.StatusForbidden, "Resource not accessible by integration")
 	}
@@ -173,7 +181,7 @@ func (st *Store) createOrgPATGrantRequestWithRandom(orgLogin string, ownerUserID
 		RepositorySelection: repositorySelection, RepositoryIDs: append([]int(nil), repositoryIDs...),
 		Permissions: perms, ExpiresAt: expiresAt,
 	}
-	st.Tokens[value] = tok
+	st.Tokens[st.tokenMapKey(value)] = tok
 	st.persistTokenLocked(tok)
 
 	req := &OrgPATGrantRequest{

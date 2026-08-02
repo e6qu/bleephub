@@ -22,6 +22,10 @@ import (
 // Applies to both success and error bodies, and to both the web and device
 // flows that share the endpoint.
 func writeOAuthTokenResponse(w http.ResponseWriter, r *http.Request, fields map[string]string) {
+	// RFC 6749 §5.1: the token endpoint response carries a credential and must
+	// never be cached by any intermediary.
+	w.Header().Set("Cache-Control", "no-store")
+	w.Header().Set("Pragma", "no-cache")
 	if strings.Contains(r.Header.Get("Accept"), "application/json") {
 		obj := make(map[string]any, len(fields))
 		for k, v := range fields {
@@ -112,7 +116,6 @@ func (s *Server) handleLoginPost(w http.ResponseWriter, r *http.Request) {
 	}
 	login := r.FormValue("login")
 	credential := r.FormValue("password")
-	returnTo := r.FormValue("return_to")
 
 	if login == "" {
 		writeGHError(w, http.StatusUnprocessableEntity, "login is required")
@@ -131,6 +134,13 @@ func (s *Server) handleLoginPost(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Rotate: revoke any session the browser already held before issuing a new
+	// one, so a fixation cookie planted before authentication cannot outlive it.
+	if cookie := s.sessionCookieFromRequest(r); cookie != nil {
+		if err := s.store.DeleteLoginSession(cookie.Value); err != nil {
+			s.logger.Error().Err(err).Msg("revoke prior session on login")
+		}
+	}
 	sessionID := uuid.New().String()
 	csrf := uuid.New().String()
 	sess := &LoginSession{
@@ -157,13 +167,10 @@ func (s *Server) handleLoginPost(w http.ResponseWriter, r *http.Request) {
 		Expires:  sess.ExpiresAt,
 	})
 
-	if returnTo != "" {
-		parsed, err := url.Parse(returnTo)
-		if err == nil && parsed.Path != "" {
-			http.Redirect(w, r, returnTo, http.StatusFound)
-			return
-		}
-	}
+	// The legacy PAT login (only reachable when Shauth is not configured)
+	// deliberately does not honor a caller-supplied return_to: redirecting to it
+	// was an open-redirect vector (AUTH-104), and this fallback path has no need
+	// to deep-link. Render the signed-in confirmation instead.
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	_, _ = w.Write([]byte(`<!DOCTYPE html><html><body><p>Signed in successfully.</p></body></html>`))
 }
@@ -326,12 +333,12 @@ func (s *Server) handleDeviceCode(w http.ResponseWriter, r *http.Request) {
 	s.store.DeviceCodes[dc.Code] = dc
 	s.store.mu.Unlock()
 
-	s.logger.Info().Str("device_code", dc.Code).Msg("device code issued")
+	s.logger.Info().Str("user_code", dc.UserCode).Msg("device code issued")
 
 	writeJSON(w, http.StatusOK, map[string]interface{}{
 		"device_code":      dc.Code,
 		"user_code":        dc.UserCode,
-		"verification_uri": "http://" + r.Host + "/login/device",
+		"verification_uri": s.baseURL(r) + "/login/device",
 		"expires_in":       900,
 		"interval":         1,
 	})
@@ -396,7 +403,7 @@ func (s *Server) handleDeviceTokenForm(w http.ResponseWriter, r *http.Request) {
 	delete(s.store.DeviceCodes, deviceCode)
 	s.store.mu.Unlock()
 
-	s.logger.Info().Str("device_code", deviceCode).Msg("device token granted")
+	s.logger.Info().Msg("device token granted")
 
 	writeOAuthTokenResponse(w, r, map[string]string{
 		"access_token": token,
@@ -454,7 +461,7 @@ func (s *Server) handleWebFlowTokenForm(w http.ResponseWriter, r *http.Request) 
 	}
 	s.store.mu.Unlock()
 
-	s.logger.Info().Str("auth_code", code).Int("user_id", user.ID).Msg("web flow token granted")
+	s.logger.Info().Int("user_id", user.ID).Msg("web flow token granted")
 	writeOAuthTokenResponse(w, r, map[string]string{
 		"access_token": tok.Token,
 		"token_type":   "bearer",
@@ -706,7 +713,7 @@ func (s *Server) consumeConsentToken(r *http.Request, provided string) (bool, er
 // sessionRecordFromRequest returns the session together with the cookie value
 // that keys it, which the CSRF rotation needs and sessionFromRequest drops.
 func (s *Server) sessionRecordFromRequest(r *http.Request) (string, *LoginSession, error) {
-	cookie := sessionCookieFromRequest(r)
+	cookie := s.sessionCookieFromRequest(r)
 	if cookie == nil {
 		return "", nil, nil
 	}
@@ -734,9 +741,10 @@ func (s *Server) completeAuthorize(w http.ResponseWriter, r *http.Request, user 
 		s.store.AuthCodes = map[string]*authCode{}
 	}
 	code := uuid.New().String()
-	if scopes == "" {
-		scopes = "repo read:org gist"
-	}
+	// An omitted scope grants read-only access to public information (GitHub's
+	// documented default) — never a silent upgrade to `repo`, which the user
+	// consented to nothing for. An empty scope string carries that minimal grant
+	// through classicScopeCovers.
 	s.store.AuthCodes[code] = &authCode{
 		Code:        code,
 		ClientID:    clientID,
@@ -766,7 +774,7 @@ func (s *Server) completeAuthorize(w http.ResponseWriter, r *http.Request, user 
 // sessionFromRequest reads the session cookie and returns the corresponding
 // LoginSession, or nil if absent / expired / unknown.
 func (s *Server) sessionFromRequest(r *http.Request) *LoginSession {
-	cookie := sessionCookieFromRequest(r)
+	cookie := s.sessionCookieFromRequest(r)
 	if cookie == nil {
 		return nil
 	}
@@ -799,7 +807,7 @@ func (st *Store) createTokenLocked(userID int, scopes string) *Token {
 		Scopes:    scopes,
 		CreatedAt: time.Now(),
 	}
-	st.Tokens[t.Value] = t
+	st.Tokens[st.tokenMapKey(t.Value)] = t
 	st.persistTokenLocked(t)
 	return t
 }

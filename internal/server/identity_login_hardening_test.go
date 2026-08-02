@@ -7,6 +7,7 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
 	"golang.org/x/crypto/bcrypt"
 )
@@ -186,10 +187,18 @@ func TestLocalLoginAllowlistRejectsLoginsNotListed(t *testing.T) {
 		t.Fatalf("allowlisted login = %d, want 200", w.Code)
 	}
 
+	// A non-allowlisted login is refused with the SAME 401 as a wrong password
+	// (AUTH-116), so the status code cannot enumerate allowlist membership.
 	w = httptest.NewRecorder()
 	s.handleLocalLogin(w, localLoginRequest(t, "bob", password))
-	if w.Code != http.StatusForbidden {
-		t.Fatalf("non-allowlisted login = %d, want 403", w.Code)
+	if w.Code != http.StatusUnauthorized {
+		t.Fatalf("non-allowlisted login = %d, want 401", w.Code)
+	}
+	// And a wrong password for an allowlisted login returns the identical 401.
+	w = httptest.NewRecorder()
+	s.handleLocalLogin(w, localLoginRequest(t, "alice", "wrong-password"))
+	if w.Code != http.StatusUnauthorized {
+		t.Fatalf("wrong password = %d, want 401", w.Code)
 	}
 }
 
@@ -243,5 +252,101 @@ func TestInternalUserCreationAllowlistEnforced(t *testing.T) {
 	s.handleCreateUserInternal(denied, createInternalUserRequest(t, s, "dave"))
 	if denied.Code != http.StatusForbidden {
 		t.Fatalf("non-allowlisted create = %d, want 403", denied.Code)
+	}
+}
+
+// TestUpsertExternalUserNeverEscalatesByUsername pins the AUTH-094 fix: a
+// federated identity is resolved on (issuer, subject), and a principal cannot
+// gain privileges by claiming a taken username. The primary IdP may adopt a
+// LOCAL account (SSO ownership of the seeded bootstrap admin), but the role
+// claim — not the account adopted — decides SiteAdmin, so a developer-role
+// "admin" lands on a NON-admin account. Non-primary providers and accounts
+// already bound to a different federated identity cannot be seized.
+func TestUpsertExternalUserNeverEscalatesByUsername(t *testing.T) {
+	s := newTestServer() // seeds admin/SiteAdmin, no external identity
+	const issuer = "https://auth.example.test"
+
+	// A developer-role principal claiming "admin" adopts the seeded account but
+	// is NOT a SiteAdmin — the escalation the finding was about is closed.
+	adopted, err := s.upsertExternalUser(issuer, "dev-subject", "admin", "A", "a@x", "", false, true)
+	if err != nil || adopted == nil {
+		t.Fatalf("primary-IdP adoption of the local admin failed: %+v err=%v", adopted, err)
+	}
+	if adopted.SiteAdmin {
+		t.Fatal("a developer-role federated 'admin' became SiteAdmin — escalation")
+	}
+
+	// A SECONDARY provider may not adopt an existing account by username.
+	if u, err := s.upsertExternalUser(issuer, "other-subject", "admin", "A", "a@x", "", true, false); err == nil {
+		t.Fatalf("a secondary provider adopted an existing account: %+v", u)
+	}
+	// Nor may anyone seize the account now bound to dev-subject.
+	if u, err := s.upsertExternalUser(issuer, "thief-subject", "admin", "A", "a@x", "", true, true); err == nil {
+		t.Fatalf("a second identity seized an already-federated account: %+v", u)
+	}
+
+	// A fresh federated identity with a free login provisions normally.
+	fresh, err := s.upsertExternalUser(issuer, "s-1", "octo", "Octo", "o@x", "", false, true)
+	if err != nil || fresh == nil || fresh.SiteAdmin {
+		t.Fatalf("fresh federated provisioning failed: user=%+v err=%v", fresh, err)
+	}
+	// Re-login on the same (issuer, subject) resolves the same account.
+	again, err := s.upsertExternalUser(issuer, "s-1", "octo", "Octo Renamed", "o@x", "", false, true)
+	if err != nil || again == nil || again.ID != fresh.ID {
+		t.Fatalf("re-login did not resolve the same account: %+v/%+v err=%v", fresh, again, err)
+	}
+}
+
+// TestUpsertExternalUserHonorsAllowlistAndAuthoritativeRole covers the AUTH-095
+// allowlist enforcement on the SSO path and the AUTH-096 role-authority rule:
+// the primary IdP writes SiteAdmin on every login (so a demotion takes effect),
+// while a secondary provider never reshapes privileges.
+func TestUpsertExternalUserHonorsAllowlistAndAuthoritativeRole(t *testing.T) {
+	s := newTestServer()
+	s.identity.allowedLogins = map[string]struct{}{"alice": {}}
+	const issuer = "https://auth.example.test"
+
+	if _, err := s.upsertExternalUser(issuer, "s-bob", "bob", "Bob", "b@x", "", false, true); err == nil {
+		t.Fatal("allowlist did not block a federated login on the SSO path")
+	}
+
+	// alice is admitted and, as a primary-IdP admin, becomes SiteAdmin.
+	alice, err := s.upsertExternalUser(issuer, "s-alice", "alice", "Alice", "a@x", "", true, true)
+	if err != nil || alice == nil || !alice.SiteAdmin {
+		t.Fatalf("authoritative admin login: user=%+v err=%v", alice, err)
+	}
+	// Demoted at the IdP: the next authoritative login revokes SiteAdmin.
+	if again, err := s.upsertExternalUser(issuer, "s-alice", "alice", "Alice", "a@x", "", false, true); err != nil || again.SiteAdmin {
+		t.Fatalf("authoritative demotion not honored: user=%+v err=%v", again, err)
+	}
+	// A non-authoritative (secondary) provider must never grant it back.
+	if again, err := s.upsertExternalUser(issuer, "s-alice", "alice", "Alice", "a@x", "", true, false); err != nil || again.SiteAdmin {
+		t.Fatalf("secondary provider reshaped privileges: user=%+v err=%v", again, err)
+	}
+}
+
+// TestSecureDeploymentIgnoresUnprefixedSessionCookie pins AUTH-107: over HTTPS
+// only the __Host- session cookie is honored, so a shadow _gh_sess planted by a
+// related-domain or network attacker cannot authenticate — and logout expires
+// both names so no shadow survives it.
+func TestSecureDeploymentIgnoresUnprefixedSessionCookie(t *testing.T) {
+	s := newTestServer()
+	s.externalURL = "https://bleephub.example.test" // secureCookies(r) == true
+	s.store.LoginSessions["attacker-session"] = &LoginSession{UserID: 1, ExpiresAt: s.currentTime().Add(time.Hour)}
+
+	req := httptest.NewRequest(http.MethodGet, "/", nil)
+	req.AddCookie(&http.Cookie{Name: "_gh_sess", Value: "attacker-session"})
+	if s.sessionCookieFromRequest(req) != nil {
+		t.Fatal("unprefixed _gh_sess was honored over HTTPS")
+	}
+	if s.sessionFromRequest(req) != nil {
+		t.Fatal("a planted _gh_sess resolved to a session over HTTPS")
+	}
+
+	// The __Host- cookie is honored.
+	secureReq := httptest.NewRequest(http.MethodGet, "/", nil)
+	secureReq.AddCookie(&http.Cookie{Name: secureSessionCookieName, Value: "attacker-session"})
+	if s.sessionCookieFromRequest(secureReq) == nil {
+		t.Fatal("__Host- session cookie was not honored over HTTPS")
 	}
 }

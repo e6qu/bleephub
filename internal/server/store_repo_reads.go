@@ -84,7 +84,15 @@ func (st *Store) RecordRepoClone(repoID int, actor string) {
 		st.RepoCloneTraffic[key] = b
 	}
 	b.Count++
-	b.Actors[actor] = true
+	// Bound the distinct-actor set. Anonymous clones record the remote host, so
+	// on a public repo an attacker (or a large IPv6 range) could otherwise grow
+	// this map without limit and re-serialize the whole bucket on every request.
+	// GitHub's traffic API reports uniques as a count, so once the cap is hit we
+	// keep counting clones but stop accumulating new identities.
+	const maxTrafficActors = 10000
+	if b.Actors[actor] || len(b.Actors) < maxTrafficActors {
+		b.Actors[actor] = true
+	}
 	if st.persist != nil {
 		st.persist.MustPut("repo_traffic_clones", key, b)
 	}

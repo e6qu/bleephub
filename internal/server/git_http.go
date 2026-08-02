@@ -20,6 +20,11 @@ import (
 	gitserver "github.com/go-git/go-git/v5/plumbing/transport/server"
 )
 
+// uploadPackRequestCap bounds the pkt-line want/have negotiation body an
+// (possibly anonymous) fetch may send. Real negotiations are kilobytes; this is
+// generous headroom while still refusing an unbounded stream.
+const uploadPackRequestCap = 50 << 20 // 50 MiB
+
 // authenticateGitRequest resolves the credential on a git smart-HTTP request.
 // It returns the context rather than only the user because the git routes sit
 // outside the /api middleware and the credential shape — installation token,
@@ -30,25 +35,20 @@ func (s *Server) authenticateGitRequest(r *http.Request) (context.Context, *User
 	return ctx, ghUserFromContext(ctx)
 }
 
-// storeLoader implements transport.Loader to look up go-git storages from the Store.
-type storeLoader struct {
-	store *Store
+// fixedGitLoader serves exactly one already-authorized storer, ignoring the
+// endpoint path. The transport must never re-resolve storage from a string:
+// authorization ran against a specific (owner, repo), and a second string
+// normalization (e.g. trimming a trailing ".git" again) could hand the session
+// a different repository than the one the caller was cleared for.
+type fixedGitLoader struct {
+	storer storer.Storer
 }
 
-func (l *storeLoader) Load(ep *transport.Endpoint) (storer.Storer, error) {
-	path := strings.TrimPrefix(ep.Path, "/")
-	path = strings.TrimSuffix(path, ".git")
-
-	parts := strings.SplitN(path, "/", 2)
-	if len(parts) != 2 {
+func (l fixedGitLoader) Load(*transport.Endpoint) (storer.Storer, error) { //nolint:ireturn
+	if l.storer == nil {
 		return nil, transport.ErrRepositoryNotFound
 	}
-
-	s := l.store.GetGitStorage(parts[0], parts[1])
-	if s == nil {
-		return nil, transport.ErrRepositoryNotFound
-	}
-	return s, nil
+	return l.storer, nil
 }
 
 // tryHandleGitRequest checks if the request is a git smart HTTP request and handles it.
@@ -113,6 +113,15 @@ func (s *Server) resolveGitRepo(owner, repoName string) storer.Storer { //nolint
 // has already been written.
 func (s *Server) authorizeGitHTTP(w http.ResponseWriter, r *http.Request, owner, repoName string, wantWrite bool) (context.Context, *User, *Repo, storer.Storer, bool) {
 	ctx, user := s.authenticateGitRequest(r)
+	// git HTTP sits outside ghHeadersMiddleware, so an invalid or revoked
+	// credential would otherwise be silently downgraded to anonymous and, on a
+	// public repo, served 200. A presented-but-invalid credential earns a 401,
+	// matching GitHub, rather than being treated as if no credential was given.
+	if invalid, _ := ctx.Value(ctxInvalidCredential).(bool); invalid {
+		w.Header().Set("WWW-Authenticate", `Basic realm="GitHub"`)
+		http.Error(w, "401 Authorization Required", http.StatusUnauthorized)
+		return ctx, user, nil, nil, false
+	}
 	stor := s.resolveGitRepo(owner, repoName)
 	repo := s.store.GetRepo(owner, repoName)
 	if stor == nil || repo == nil || !s.viewerHasRepoPermission(ctx, repo, scopeContents, permRead) {
@@ -147,12 +156,12 @@ func (s *Server) handleGitInfoRefs(w http.ResponseWriter, r *http.Request, owner
 		return
 	}
 
-	if _, _, _, _, ok := s.authorizeGitHTTP(w, r, owner, repoName, service == "git-receive-pack"); !ok {
+	_, _, _, stor, ok := s.authorizeGitHTTP(w, r, owner, repoName, service == "git-receive-pack")
+	if !ok {
 		return
 	}
 
-	loader := &storeLoader{store: s.store}
-	server := gitserver.NewServer(loader)
+	server := gitserver.NewServer(fixedGitLoader{storer: stor})
 
 	ep, err := transport.NewEndpoint(fmt.Sprintf("/%s/%s", owner, repoName))
 	if err != nil {
@@ -222,13 +231,12 @@ func (s *Server) handleGitInfoRefs(w http.ResponseWriter, r *http.Request, owner
 }
 
 func (s *Server) handleGitUploadPack(w http.ResponseWriter, r *http.Request, owner, repoName string) {
-	_, user, repo, _, ok := s.authorizeGitHTTP(w, r, owner, repoName, false)
+	_, user, repo, stor, ok := s.authorizeGitHTTP(w, r, owner, repoName, false)
 	if !ok {
 		return
 	}
 
-	loader := &storeLoader{store: s.store}
-	server := gitserver.NewServer(loader)
+	server := gitserver.NewServer(fixedGitLoader{storer: stor})
 
 	ep, err := transport.NewEndpoint(fmt.Sprintf("/%s/%s", owner, repoName))
 	if err != nil {
@@ -242,7 +250,10 @@ func (s *Server) handleGitUploadPack(w http.ResponseWriter, r *http.Request, own
 		return
 	}
 
-	requestReader := bufio.NewReader(r.Body)
+	// The upload-pack negotiation (a pkt-line want/have list) is small; a public
+	// repo serves it to anonymous callers, so cap the request body to keep an
+	// unbounded stream from exhausting memory. Real negotiations are kilobytes.
+	requestReader := bufio.NewReader(http.MaxBytesReader(w, r.Body, uploadPackRequestCap))
 	empty, err := flushOnlyGitRequest(requestReader)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
@@ -294,8 +305,7 @@ func (s *Server) handleGitReceivePack(w http.ResponseWriter, r *http.Request, ow
 		return
 	}
 
-	loader := &storeLoader{store: s.store}
-	server := gitserver.NewServer(loader)
+	server := gitserver.NewServer(fixedGitLoader{storer: stor})
 
 	ep, err := transport.NewEndpoint(fmt.Sprintf("/%s/%s", owner, repoName))
 	if err != nil {

@@ -157,10 +157,45 @@ for port in "$primary_port" "$secondary_port"; do
   curl --fail --silent --show-error "http://localhost:$port/health" >/dev/null
 done
 
-(
-  cd "$root/web"
-  SHAUTH_VALIDATOR_USERNAME="$SHAUTH_VALIDATOR_USERNAME" \
-    SHAUTH_BOOTSTRAP_ADMIN_PASSWORD="$SHAUTH_BOOTSTRAP_ADMIN_PASSWORD" \
-    BLEEPHUB_NON_AUTHENTIC_CREDENTIAL_SENTINEL="$BLEEPHUB_NON_AUTHENTIC_CREDENTIAL_SENTINEL" \
-    bun e2e/shauth-sso.mjs
-)
+# Hydra answers /health/ready before it can actually serve an authorization
+# request for a freshly-registered client: its OpenID signing keys are generated
+# lazily on first use and the bootstrapped OAuth clients take a moment to
+# propagate. A real /oauth2/auth issued during that window is aborted, and the
+# browser flow then times out at its first waitForURL. Probe the authorization
+# endpoint until Hydra redirects to its login UI (the ready signal), so the test
+# starts only once the OP genuinely serves the flow. Bounded and non-fatal: if
+# it never becomes ready the test proceeds and fails as before.
+warm_redirect="http://localhost:${primary_port}/auth/shauth/callback"
+# Hydra requires state to be at least 8 characters, and the redirect to the
+# login UI is what proves the client is registered and the signing keys exist.
+warm_auth_url="http://localhost:8080/oauth2/auth?client_id=bleephub-primary&response_type=code&scope=openid&state=warmup-readiness-probe&redirect_uri=$(jq -rn --arg u "$warm_redirect" '$u|@uri')"
+for _ in $(seq 1 120); do
+  warm_location="$(curl --silent --output /dev/null --write-out '%{redirect_url}' "$warm_auth_url" 2>/dev/null || true)"
+  case "$warm_location" in
+  */oauth/login*) break ;;
+  esac
+  sleep 1
+done
+
+run_shauth_contract() {
+  (
+    cd "$root/web"
+    SHAUTH_VALIDATOR_USERNAME="$SHAUTH_VALIDATOR_USERNAME" \
+      SHAUTH_BOOTSTRAP_ADMIN_PASSWORD="$SHAUTH_BOOTSTRAP_ADMIN_PASSWORD" \
+      BLEEPHUB_NON_AUTHENTIC_CREDENTIAL_SENTINEL="$BLEEPHUB_NON_AUTHENTIC_CREDENTIAL_SENTINEL" \
+      bun e2e/shauth-sso.mjs
+  )
+}
+
+# Ory Hydra generates its OpenID/JWT signing keys lazily across the first full
+# authorization + consent + token exchange; under CI load that first pass can
+# race key creation and time the flow out at its first waitForURL. The warmup
+# probe above pre-generates the authorization-time key, but the consent/token
+# step can still race. Each run uses a fresh browser context (no carried-over
+# identity-provider session) against the same, now-warmed stack, so retry once:
+# a cold-start race clears on the second attempt, while a genuine contract
+# regression fails both.
+if ! run_shauth_contract; then
+  echo "Shauth SSO contract failed on the first attempt; retrying once against the warmed Hydra" >&2
+  run_shauth_contract
+fi

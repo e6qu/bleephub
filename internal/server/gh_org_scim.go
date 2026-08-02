@@ -94,7 +94,7 @@ func (s *Server) handleListOrganizationSCIMUsers(w http.ResponseWriter, r *http.
 	})
 }
 
-func (s *Server) createOrResolveOrganizationSCIMBackingUser(w http.ResponseWriter, req *scimUserRequest) (*User, bool) {
+func (s *Server) createOrResolveOrganizationSCIMBackingUser(w http.ResponseWriter, org *Org, req *scimUserRequest) (*User, bool) {
 	login := normalizeGitHubLogin(req.UserName)
 	if login == "" {
 		writeSCIMError(w, http.StatusBadRequest, "userName is required")
@@ -102,6 +102,15 @@ func (s *Server) createOrResolveOrganizationSCIMBackingUser(w http.ResponseWrite
 	}
 	s.store.mu.Lock()
 	if existing := s.store.UsersByLogin[login]; existing != nil {
+		// Only reuse an account this same org's SCIM already provisioned.
+		// Adopting any other pre-existing account would let an org owner bind a
+		// SCIM record to a victim's global account, force-enroll them, and then
+		// rewrite their login/email — so refuse with a conflict instead.
+		if existing.SCIMManagedByOrg != org.Login {
+			s.store.mu.Unlock()
+			writeSCIMError(w, http.StatusConflict, "userName already exists")
+			return nil, false
+		}
 		copy := *existing
 		s.store.mu.Unlock()
 		return &copy, true
@@ -110,7 +119,8 @@ func (s *Server) createOrResolveOrganizationSCIMBackingUser(w http.ResponseWrite
 	user := &User{
 		ID: s.store.NextUser, NodeID: fmt.Sprintf("U_kgDO%08d", s.store.NextUser),
 		Login: login, Name: req.DisplayName, Email: primarySCIMEmail(req.Emails), Type: "User",
-		StarredRepos: map[string]bool{}, CreatedAt: now, UpdatedAt: now,
+		SCIMManagedByOrg: org.Login,
+		StarredRepos:     map[string]bool{}, CreatedAt: now, UpdatedAt: now,
 	}
 	s.store.NextUser++
 	s.store.Users[user.ID] = user
@@ -152,7 +162,7 @@ func (s *Server) handleCreateOrganizationSCIMUser(w http.ResponseWriter, r *http
 	if !decodeSCIMBody(w, r, &req) {
 		return
 	}
-	backing, ok := s.createOrResolveOrganizationSCIMBackingUser(w, &req)
+	backing, ok := s.createOrResolveOrganizationSCIMBackingUser(w, org, &req)
 	if !ok {
 		return
 	}
@@ -232,6 +242,14 @@ func (s *Server) replaceOrganizationSCIMUser(w http.ResponseWriter, r *http.Requ
 	if backing == nil {
 		s.store.mu.Unlock()
 		writeSCIMError(w, http.StatusInternalServerError, "Backing user is missing")
+		return nil
+	}
+	// Never rewrite the global identity of an account this org's SCIM does not
+	// own — an org owner must not be able to rename or re-home an arbitrary
+	// account through its SCIM surface.
+	if backing.SCIMManagedByOrg != org.Login {
+		s.store.mu.Unlock()
+		writeSCIMError(w, http.StatusConflict, "userName is not managed by this organization")
 		return nil
 	}
 	if other := s.store.UsersByLogin[login]; other != nil && other.ID != backing.ID {

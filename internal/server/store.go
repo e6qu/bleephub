@@ -151,6 +151,12 @@ type User struct {
 	// cannot re-key the account and one provider cannot overwrite another's
 	// grant by logging in last.
 	ExternalIdentities []ExternalIdentity `json:"external_identities,omitempty"`
+	// SCIMManagedByOrg names the organization whose SCIM provisioning owns this
+	// account, when set. Only that org's SCIM may mutate the account's global
+	// login/name/email; an account provisioned outside SCIM (empty) is never
+	// adopted or rewritten by an org's SCIM, which would otherwise let any org
+	// owner rename or re-home an arbitrary global account.
+	SCIMManagedByOrg string `json:"scim_managed_by_org,omitempty"`
 }
 
 // ExternalIdentity is one federated provider's stable handle on an account:
@@ -200,15 +206,17 @@ func (st *Store) tokenMapKey(value string) string {
 	if st.persist == nil {
 		return value
 	}
-	return st.persist.storageKey("tokens", value)
+	return st.persist.opaqueLookupKey("tokens", value)
 }
 
 // tokenByValueLocked resolves a presented bearer without retaining or
 // persisting a reversible copy. Callers must hold at least st.mu.RLock.
+//
+// It looks up only under the derived digest key. The presented value is never
+// probed raw: mint and restore both index the token by tokenMapKey(value), so
+// a raw probe would only ever match a stored digest — i.e. it would let the
+// persisted row key be presented as the credential.
 func (st *Store) tokenByValueLocked(value string) (*Token, string) {
-	if token := st.Tokens[value]; token != nil {
-		return token, value // newly minted in this process
-	}
 	key := st.tokenMapKey(value)
 	return st.Tokens[key], key
 }
@@ -2070,7 +2078,7 @@ func (st *Store) loadFromPersistence() error {
 		{"misc", func(key string, raw []byte) error {
 			switch key {
 			case "oidc_claim_keys":
-				var keys []string
+				var keys map[string][]string
 				if err := loadJSON(raw, &keys); err != nil {
 					return err
 				}
@@ -3919,7 +3927,7 @@ func (st *Store) SeedDefaultUser() {
 		Scopes:    "repo, workflow, read:org, admin:org, admin:org_hook, gist",
 		CreatedAt: now,
 	}
-	st.Tokens[t.Value] = t
+	st.Tokens[st.tokenMapKey(t.Value)] = t
 	st.persistTokenLocked(t)
 }
 

@@ -87,6 +87,15 @@ func (s *Server) orgIDGated(h http.HandlerFunc) http.HandlerFunc {
 			return
 		}
 		r.SetPathValue("org", org.Login)
+		// requirePerm resolved its org target from an empty {org} (this handler
+		// sets it only now), so its organization half was skipped. Re-check the
+		// credential against the resolved org here — these are org-administration
+		// settings — or any authenticated caller could rewrite another org's
+		// Actions cache policy.
+		if !s.viewerCanAdminOrg(r.Context(), org.Login) {
+			writeGHError(w, http.StatusForbidden, "Must have admin access to the organization.")
+			return
+		}
 		h(w, r)
 	}
 }

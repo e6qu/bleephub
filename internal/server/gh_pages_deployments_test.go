@@ -68,7 +68,18 @@ func mintPagesOIDCTokenForAudience(t *testing.T, repo, sha, ref, environment, au
 	if audience != "" {
 		q.Set("audience", audience)
 	}
-	resp := ghGet(t, "/token?"+q.Encode(), defaultToken)
+	// The OIDC mint is gated on the job runtime token (AUTH-098) — the very
+	// credential the Pages deploy job holds — so present that, scoped to repo.
+	jobToken, _ := testJobToken(t, testServer, repo)
+	req, err := http.NewRequest("GET", testBaseURL+"/token?"+q.Encode(), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	req.Header.Set("Authorization", "Bearer "+jobToken)
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
 	data := decodeJSONWithStatus(t, resp, http.StatusOK)
 	token, ok := data["value"].(string)
 	if !ok || token == "" {

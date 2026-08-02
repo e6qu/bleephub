@@ -1,6 +1,7 @@
 package bleephub
 
 import (
+	"context"
 	"crypto/rand"
 	"crypto/rsa"
 	"encoding/json"
@@ -96,7 +97,11 @@ func (provider *shaAuthTestProvider) sign(t *testing.T, claims map[string]any) s
 }
 
 func (provider *shaAuthTestProvider) withClient(request *http.Request) *http.Request {
-	return request.WithContext(oidc.ClientContext(request.Context(), provider.server.Client()))
+	ctx := oidc.ClientContext(request.Context(), provider.server.Client())
+	// Mark the client as provided so oidcClientContext preserves this
+	// cert-trusting client rather than overriding it with the timeout client.
+	ctx = context.WithValue(ctx, oidcClientProvidedKey{}, true)
+	return request.WithContext(ctx)
 }
 
 func completeShauthIdentityConfig(issuer string) identityConfig {
@@ -258,7 +263,8 @@ func TestShauthLogoutClearsLocalSessionAndStartsIssuerLogout(t *testing.T) {
 	s.store.LoginSessions["browser-session"] = &LoginSession{UserID: 1, ExpiresAt: fixedShauthTestTime.Add(time.Hour), OIDCProvider: "shauth", OIDCIssuer: provider.server.URL, OIDCSubject: "subject-1", OIDCSID: "sid-1", OIDCIDToken: "signed.id.token"}
 	request := httptest.NewRequest(http.MethodPost, "/auth/logout", nil)
 	request.Header.Set("Origin", s.externalURL)
-	request.AddCookie(&http.Cookie{Name: "_gh_sess", Value: "browser-session"})
+	// A secure (HTTPS) deployment carries the session in the __Host- cookie.
+	request.AddCookie(&http.Cookie{Name: secureSessionCookieName, Value: "browser-session"})
 	request = provider.withClient(request)
 	response := httptest.NewRecorder()
 
@@ -313,18 +319,46 @@ func TestShauthLogoutCompletionBridgeFailsClosedWhenShauthIsDisabled(t *testing.
 	}
 }
 
+// TestLogoutOfNonShauthSessionDoesNotStartGlobalLogout pins AUTH-109: signing
+// out of a session that was NOT established through Shauth must not tear down
+// the user's shared Shauth SSO session. Even with a broken issuer (discovery
+// would 502 if attempted), a local session logs out to /ui/login.
+func TestLogoutOfNonShauthSessionDoesNotStartGlobalLogout(t *testing.T) {
+	provider := newShaAuthTestProvider(t)
+	provider.server.Close() // discovery would fail if RP-logout were attempted
+	s := NewServer("127.0.0.1:0", zerolog.Nop())
+	s.externalURL = "https://bleephub.example.test"
+	s.identity = completeShauthIdentityConfig(provider.server.URL)
+	// A local (non-OIDC) browser session.
+	if err := s.store.PutLoginSession("local-session", &LoginSession{UserID: 1, ExpiresAt: fixedShauthTestTime.Add(time.Hour)}); err != nil {
+		t.Fatal(err)
+	}
+	request := httptest.NewRequest(http.MethodPost, "/auth/logout", nil)
+	request.Header.Set("Origin", s.externalURL)
+	request.AddCookie(&http.Cookie{Name: secureSessionCookieName, Value: "local-session"})
+	response := httptest.NewRecorder()
+	s.handleIdentityLogout(response, request)
+	if response.Code != http.StatusSeeOther || response.Header().Get("Location") != "/ui/login" {
+		t.Fatalf("local logout = %d location %q, want 303 /ui/login", response.Code, response.Header().Get("Location"))
+	}
+	if session, _ := s.store.GetLoginSession("local-session"); session != nil {
+		t.Fatal("local session survived logout")
+	}
+}
+
 func TestShauthLogoutRevokesLocalSessionBeforeDiscoveryFailure(t *testing.T) {
 	provider := newShaAuthTestProvider(t)
 	provider.server.Close()
 	s := NewServer("127.0.0.1:0", zerolog.Nop())
 	s.externalURL = "https://bleephub.example.test"
 	s.identity = completeShauthIdentityConfig(provider.server.URL)
-	if err := s.store.PutLoginSession("browser-session", &LoginSession{UserID: 1, ExpiresAt: fixedShauthTestTime.Add(time.Hour), OIDCProvider: "shauth"}); err != nil {
+	if err := s.store.PutLoginSession("browser-session", &LoginSession{UserID: 1, ExpiresAt: fixedShauthTestTime.Add(time.Hour), OIDCProvider: "shauth", OIDCIDToken: "signed.id.token"}); err != nil {
 		t.Fatal(err)
 	}
 	request := httptest.NewRequest(http.MethodPost, "/auth/logout", nil)
 	request.Header.Set("Origin", s.externalURL)
-	request.AddCookie(&http.Cookie{Name: "_gh_sess", Value: "browser-session"})
+	// A secure deployment carries the Shauth session in the __Host- cookie.
+	request.AddCookie(&http.Cookie{Name: secureSessionCookieName, Value: "browser-session"})
 	request = provider.withClient(request)
 	response := httptest.NewRecorder()
 	s.handleIdentityLogout(response, request)
@@ -701,27 +735,41 @@ func TestShauthFrontChannelLogoutRevokesOnlyTrustedSession(t *testing.T) {
 		t.Fatal("untrusted front-channel request revoked a session")
 	}
 
+	// A GET with an sid the issuer never coined must stay a no-op.
+	request = httptest.NewRequest(http.MethodGet, "/auth/shauth/frontchannel-logout?iss=https%3A%2F%2Fauth.example.test&sid=", nil)
+	response = httptest.NewRecorder()
+	s.handleShauthFrontChannelLogout(response, request)
+	if response.Code != http.StatusOK {
+		t.Fatalf("sid-less front-channel GET response = %d", response.Code)
+	}
+	if session, _ := s.store.GetLoginSession("revoked"); session == nil {
+		t.Fatal("sid-less front-channel GET revoked a session")
+	}
+
+	// The OP delivers front-channel logout as a GET in an iframe (OIDC
+	// Front-Channel Logout 1.0); a validated iss+sid must revoke (issue #112).
 	request = httptest.NewRequest(http.MethodGet, "/auth/shauth/frontchannel-logout?iss=https%3A%2F%2Fauth.example.test&sid=sid-1", nil)
 	response = httptest.NewRecorder()
 	s.handleShauthFrontChannelLogout(response, request)
 	if response.Code != http.StatusOK {
-		t.Fatalf("front-channel GET response = %d", response.Code)
-	}
-	if session, _ := s.store.GetLoginSession("revoked"); session == nil {
-		t.Fatal("front-channel GET revoked a session")
-	}
-
-	request = httptest.NewRequest(http.MethodPost, "/auth/shauth/frontchannel-logout?iss=https%3A%2F%2Fauth.example.test&sid=sid-1", nil)
-	response = httptest.NewRecorder()
-	s.handleShauthFrontChannelLogout(response, request)
-	if response.Code != http.StatusOK {
-		t.Fatalf("trusted front-channel response = %d", response.Code)
+		t.Fatalf("trusted front-channel GET response = %d", response.Code)
 	}
 	if session, _ := s.store.GetLoginSession("revoked"); session != nil {
-		t.Fatal("trusted sid-matched session remained")
+		t.Fatal("trusted sid-matched session remained after front-channel GET")
 	}
 	if session, _ := s.store.GetLoginSession("kept"); session == nil {
 		t.Fatal("unrelated provider session was revoked")
+	}
+
+	// POST remains accepted for OPs that deliver it that way.
+	request = httptest.NewRequest(http.MethodPost, "/auth/shauth/frontchannel-logout?iss=https%3A%2F%2Fauth.example.test&sid=sid-2", nil)
+	response = httptest.NewRecorder()
+	s.handleShauthFrontChannelLogout(response, request)
+	if response.Code != http.StatusOK {
+		t.Fatalf("trusted front-channel POST response = %d", response.Code)
+	}
+	if session, _ := s.store.GetLoginSession("kept"); session != nil {
+		t.Fatal("trusted sid-matched session remained after front-channel POST")
 	}
 }
 
@@ -863,8 +911,16 @@ func TestSignedOutLandingRevokesLocalSessionWithoutStartingLogin(t *testing.T) {
 	if response.Header().Get("Cache-Control") != "no-store" || !strings.Contains(response.Header().Get("Content-Security-Policy"), "frame-ancestors 'none'") {
 		t.Fatalf("signed-out security headers = %#v", response.Header())
 	}
-	if cookies := response.Result().Cookies(); len(cookies) != 1 || !isSessionCookieName(cookies[0].Name) || cookies[0].MaxAge >= 0 {
-		t.Fatalf("signed-out cookies = %#v", cookies)
+	// Both session cookie names are expired, so a shadow _gh_sess planted
+	// alongside the __Host- cookie cannot survive the sign-out.
+	clearedNames := map[string]bool{}
+	for _, c := range response.Result().Cookies() {
+		if isSessionCookieName(c.Name) && c.MaxAge < 0 {
+			clearedNames[c.Name] = true
+		}
+	}
+	if !clearedNames[sessionCookieName] || !clearedNames[secureSessionCookieName] {
+		t.Fatalf("signed-out did not expire both session cookie names: %#v", response.Result().Cookies())
 	}
 
 	reload := httptest.NewRecorder()

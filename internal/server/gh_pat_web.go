@@ -232,7 +232,7 @@ func (st *Store) CreateUserFineGrainedPAT(userID int, body createPersonalAccessT
 	defer st.mu.Unlock()
 	token := &Token{Value: value, UserID: userID, CreatedAt: time.Now().UTC(), FineGrained: true, FineGrainedID: st.NextPATTokenID, Name: body.Name, ResourceOwner: body.ResourceOwner, RepositorySelection: body.RepositorySelection, RepositoryIDs: append([]int(nil), body.RepositoryIDs...), Permissions: body.Permissions, ExpiresAt: body.ExpiresAt}
 	st.NextPATTokenID++
-	st.Tokens[value] = token
+	st.Tokens[st.tokenMapKey(value)] = token
 	st.persistTokenLocked(token)
 	return token, nil
 }

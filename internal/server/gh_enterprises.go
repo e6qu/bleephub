@@ -75,7 +75,7 @@ func (s *Server) requireEnterpriseOwner(next http.HandlerFunc) http.HandlerFunc 
 		if !s.resolveEnterprise(w, r) {
 			return
 		}
-		if !user.SiteAdmin {
+		if !user.SiteAdmin || !credentialConveysSiteAdmin(r.Context()) {
 			writeGHError(w, http.StatusForbidden, "Must be an enterprise owner.")
 			return
 		}
