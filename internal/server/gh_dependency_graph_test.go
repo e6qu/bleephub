@@ -85,7 +85,7 @@ func TestDependencyGraphSnapshots_SubmitAndSBOM(t *testing.T) {
 		t.Fatalf("feature-branch snapshot result = %v, want ACCEPTED", result)
 	}
 
-	// A malformed snapshot is stored with an honest INVALID result.
+	// A schema-invalid snapshot is rejected with 422 and never persisted.
 	resp = ghPost(t, "/api/v3/repos/admin/"+repo+"/dependency-graph/snapshots", defaultToken, map[string]interface{}{
 		"version": 0,
 		"ref":     "refs/heads/main",
@@ -96,10 +96,7 @@ func TestDependencyGraphSnapshots_SubmitAndSBOM(t *testing.T) {
 		},
 		"scanned": "2035-06-15T12:00:00Z",
 	})
-	invalid := decodeJSONWithStatus(t, resp, 201)
-	if invalid["result"] != "INVALID" {
-		t.Fatalf("malformed snapshot result = %v, want INVALID", invalid)
-	}
+	decodeJSONWithStatus(t, resp, 422)
 
 	// The SBOM now includes the recorded default-branch dependency as a real
 	// SPDX package with a purl external reference.

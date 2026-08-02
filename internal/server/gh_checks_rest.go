@@ -125,7 +125,8 @@ func (s *Server) handleCreateCheckRun(w http.ResponseWriter, r *http.Request) {
 		actor = user.Login
 	}
 	s.recordAuditEvent("check_run.create", actor, "", map[string]interface{}{"repo": repoKey, "check_run_id": cr.ID})
-	writeJSON(w, http.StatusCreated, s.checkRunToJSON(s.store.GetCheckRun(cr.ID), s.baseURL(r)))
+	checkRunJSON := s.checkRunToJSON(s.store.GetCheckRun(cr.ID), s.baseURL(r))
+	writeJSONCreated(w, jsonStringField(checkRunJSON, "url"), checkRunJSON)
 }
 
 // checkRunInRepo resolves the check run named by {id}, answering 404 unless it
@@ -317,7 +318,8 @@ func (s *Server) handleCreateCheckSuite(w http.ResponseWriter, r *http.Request) 
 	}
 	appID := appIDFromContext(r.Context())
 	suite := s.store.CreateCheckSuite(repoKey, "", req.HeadSHA, appID)
-	writeJSON(w, http.StatusCreated, s.checkSuiteToJSON(suite, s.baseURL(r)))
+	suiteJSON := s.checkSuiteToJSON(suite, s.baseURL(r))
+	writeJSONCreated(w, jsonStringField(suiteJSON, "url"), suiteJSON)
 }
 
 func (s *Server) handleUpdateCheckSuitePrefs(w http.ResponseWriter, r *http.Request) {

@@ -167,7 +167,11 @@ func (s *Server) handleCreateClassroom(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleUpdateClassroom(w http.ResponseWriter, r *http.Request) {
-	id, _ := strconv.Atoi(r.PathValue("classroom_id"))
+	id, err := strconv.Atoi(r.PathValue("classroom_id"))
+	if err != nil {
+		writeGHError(w, http.StatusNotFound, "Not Found")
+		return
+	}
 	if s.classroomForAdmin(w, r, id) == nil {
 		return
 	}
@@ -190,7 +194,11 @@ func (s *Server) handleUpdateClassroom(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleDeleteClassroom(w http.ResponseWriter, r *http.Request) {
-	id, _ := strconv.Atoi(r.PathValue("classroom_id"))
+	id, err := strconv.Atoi(r.PathValue("classroom_id"))
+	if err != nil {
+		writeGHError(w, http.StatusNotFound, "Not Found")
+		return
+	}
 	if s.classroomForAdmin(w, r, id) == nil {
 		return
 	}
@@ -202,7 +210,11 @@ func (s *Server) handleDeleteClassroom(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleReplaceClassroomRoster(w http.ResponseWriter, r *http.Request) {
-	id, _ := strconv.Atoi(r.PathValue("classroom_id"))
+	id, err := strconv.Atoi(r.PathValue("classroom_id"))
+	if err != nil {
+		writeGHError(w, http.StatusNotFound, "Not Found")
+		return
+	}
 	if s.classroomForAdmin(w, r, id) == nil {
 		return
 	}
@@ -263,7 +275,11 @@ type classroomAssignmentRequest struct {
 }
 
 func (s *Server) handleCreateClassroomAssignment(w http.ResponseWriter, r *http.Request) {
-	classroomID, _ := strconv.Atoi(r.PathValue("classroom_id"))
+	classroomID, err := strconv.Atoi(r.PathValue("classroom_id"))
+	if err != nil {
+		writeGHError(w, http.StatusNotFound, "Not Found")
+		return
+	}
 	classroom := s.classroomForAdmin(w, r, classroomID)
 	if classroom == nil {
 		return
@@ -365,7 +381,11 @@ func validAutogradingTests(tests []ClassroomAutogradingTest) bool {
 }
 
 func (s *Server) handleUpdateClassroomAssignment(w http.ResponseWriter, r *http.Request) {
-	id, _ := strconv.Atoi(r.PathValue("assignment_id"))
+	id, err := strconv.Atoi(r.PathValue("assignment_id"))
+	if err != nil {
+		writeGHError(w, http.StatusNotFound, "Not Found")
+		return
+	}
 	existing := s.classroomAssignmentForAdmin(w, r, id)
 	if existing == nil {
 		return
@@ -401,7 +421,11 @@ func (s *Server) handleUpdateClassroomAssignment(w http.ResponseWriter, r *http.
 }
 
 func (s *Server) handleDeleteClassroomAssignment(w http.ResponseWriter, r *http.Request) {
-	id, _ := strconv.Atoi(r.PathValue("assignment_id"))
+	id, err := strconv.Atoi(r.PathValue("assignment_id"))
+	if err != nil {
+		writeGHError(w, http.StatusNotFound, "Not Found")
+		return
+	}
 	if s.classroomAssignmentForAdmin(w, r, id) == nil {
 		return
 	}

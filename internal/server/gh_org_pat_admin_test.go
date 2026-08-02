@@ -372,7 +372,7 @@ func TestFineGrainedPATBrowserCreationShowsCredentialOnceAndDeletesIt(t *testing
 func TestFineGrainedPATBrowserSessionCreatesFirstCredential(t *testing.T) {
 	user := createTestUser(t, "pat-browser-session-owner")
 	loginResponse := httptest.NewRecorder()
-	if err := testServer.createBrowserSession(loginResponse, user); err != nil {
+	if err := testServer.createBrowserSession(loginResponse, httptest.NewRequest(http.MethodGet, "/", nil), user); err != nil {
 		t.Fatal(err)
 	}
 	cookies := loginResponse.Result().Cookies()

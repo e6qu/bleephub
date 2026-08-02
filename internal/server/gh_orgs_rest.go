@@ -72,7 +72,8 @@ func (s *Server) handleAdminCreateOrg(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, http.StatusCreated, orgToJSON(org, s.store, s.baseURL(r)))
+	orgJSON := orgToJSON(org, s.store, s.baseURL(r))
+	writeJSONCreated(w, jsonStringField(orgJSON, "url"), orgJSON)
 }
 
 func (s *Server) handleCreateOrg(w http.ResponseWriter, r *http.Request) {
@@ -102,7 +103,8 @@ func (s *Server) handleCreateOrg(w http.ResponseWriter, r *http.Request) {
 	}
 
 	s.recordAuditEvent("org.create", user.Login, org.Login, map[string]interface{}{"org_id": org.ID})
-	writeJSON(w, http.StatusCreated, orgToJSON(org, s.store, s.baseURL(r)))
+	orgJSON := orgToJSON(org, s.store, s.baseURL(r))
+	writeJSONCreated(w, jsonStringField(orgJSON, "url"), orgJSON)
 }
 
 func (s *Server) handleGetOrg(w http.ResponseWriter, r *http.Request) {

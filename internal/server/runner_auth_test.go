@@ -258,52 +258,75 @@ func TestRunnerTokenLifetimeIsBoundedToAJob(t *testing.T) {
 
 // --- the runner protocol is authenticated ---
 
+// TestRunnerProtocolRejectsUnauthenticatedCalls sweeps the registered route
+// table rather than a remembered list of paths: every /_apis/ and /twirp/
+// route outside the runner protocol allowlist must refuse an unauthenticated
+// call, so a route added without an authentication decorator fails here
+// instead of shipping open.
 func TestRunnerProtocolRejectsUnauthenticatedCalls(t *testing.T) {
 	s := newTestServer()
 	s.registerRoutes()
 
-	for _, tc := range []struct{ method, path, body string }{
-		{"GET", "/_apis/v1/AgentPools", ""},
-		{"GET", "/_apis/v1/Agent/1", ""},
-		{"GET", "/_apis/v1/Agent/1/1", ""},
-		{"PUT", "/_apis/v1/Agent/1/1", "{}"},
-		{"DELETE", "/_apis/v1/Agent/1/1", ""},
-		{"POST", "/_apis/v1/Agent/1", "{}"},
-		{"POST", "/_apis/v1/AgentSession/1", "{}"},
-		{"GET", "/_apis/v1/Message/1?sessionId=x", ""},
-		{"DELETE", "/_apis/v1/Message/1/1", ""},
-		{"PATCH", "/_apis/v1/Timeline/scope/build/plan/timeline", "{}"},
-		{"POST", "/_apis/v1/Logfiles/scope/build/plan", "{}"},
-		{"POST", "/_apis/v1/Logfiles/scope/build/plan/1", "log line"},
-		{"POST", "/_apis/v1/TimeLineWebConsoleLog/scope/build/plan/timeline/record", "[]"},
-		{"PUT", "/_apis/v1/artifacts/1/upload", "data"},
-		{"POST", "/_apis/artifactcache/caches", `{"key":"k","version":"v"}`},
-		{"GET", "/_apis/artifactcache/cache?keys=k&version=v", ""},
-		{"PATCH", "/_apis/artifactcache/caches/1", "x"},
-		{"POST", "/_apis/artifactcache/caches/1", "{}"},
-		{"GET", "/_apis/v1/actions/tarball/octo/action/v1", ""},
-		{"POST", "/twirp/github.actions.results.api.v1.ArtifactService/CreateArtifact", "{}"},
-		{"POST", "/twirp/github.actions.results.api.v1.ArtifactService/ListArtifacts", "{}"},
-		{"POST", "/twirp/github.actions.results.api.v1.ArtifactService/FinalizeArtifact", "{}"},
-		{"POST", "/twirp/github.actions.results.api.v1.ArtifactService/GetSignedArtifactURL", "{}"},
-	} {
-		w := runnerRequest(s, tc.method, tc.path, "", tc.body)
+	// The runner protocol allowlist (see registerAuthRoutes): routes
+	// registered without an authentication decorator because they carry their
+	// own credential — or, for connectionData, none at all. Their anonymous
+	// behavior is asserted by TestRunnerProtocolAllowlistStaysOpen and
+	// TestAgentRegistrationRequiresRegistrationToken.
+	allowlist := map[string]bool{
+		"GET /_apis/connectionData":                     true,
+		"POST /_apis/v1/auth/":                          true,
+		"POST /_apis/v1/auth":                           true,
+		"POST /_apis/v1/Agent/{poolId}":                 true,
+		"GET /_apis/v1/artifacts/{artifactId}/download": true,
+		"GET /_apis/artifactcache/caches/{cacheId}":     true,
+	}
+
+	swept := 0
+	for _, pattern := range s.routePatterns {
+		method, path, ok := strings.Cut(pattern, " ")
+		if !ok || (!strings.HasPrefix(path, "/_apis/") && !strings.HasPrefix(path, "/twirp/")) {
+			continue
+		}
+		if allowlist[pattern] {
+			continue
+		}
+		swept++
+		path = runnerPatternPath(path)
+		w := runnerRequest(s, method, path, "", "")
 		if w.Code != http.StatusUnauthorized {
-			t.Errorf("%s %s: status = %d, want 401; body=%s", tc.method, tc.path, w.Code, w.Body.String())
+			t.Errorf("%s: status = %d, want 401; body=%s", pattern, w.Code, w.Body.String())
 			continue
 		}
 		// Refusing is half of it. The runner's HTTP stack opens a session with
 		// an uncredentialed request and asks for a token only when the refusal
 		// names the Bearer scheme, so a 401 without that challenge locks a
 		// runner out of a route it is entitled to reach.
-		if !runnerRouteChallenges(tc.method, tc.path) {
+		if !runnerRouteChallenges(method, path) {
 			continue
 		}
 		if challenge := w.Header().Get("WWW-Authenticate"); !strings.Contains(challenge, "Bearer") {
-			t.Errorf("%s %s: 401 carried WWW-Authenticate %q, which names no Bearer challenge",
-				tc.method, tc.path, challenge)
+			t.Errorf("%s: 401 carried WWW-Authenticate %q, which names no Bearer challenge",
+				pattern, challenge)
 		}
 	}
+	// A floor on the sweep: if route registration changes so the sweep covers
+	// far fewer routes, the test quietly stops proving anything, so it fails.
+	if swept < 30 {
+		t.Errorf("swept %d runner protocol routes, want at least 30; the sweep is no longer covering the route table", swept)
+	}
+}
+
+// runnerPatternPath fills a registered route pattern's wildcards with an
+// innocuous literal. Resolvability does not matter: the authentication
+// decorator refuses before the handler ever looks a value up.
+func runnerPatternPath(pattern string) string {
+	segments := strings.Split(pattern, "/")
+	for i, seg := range segments {
+		if strings.HasPrefix(seg, "{") {
+			segments[i] = "1"
+		}
+	}
+	return strings.Join(segments, "/")
 }
 
 func TestRunnerProtocolAllowlistStaysOpen(t *testing.T) {

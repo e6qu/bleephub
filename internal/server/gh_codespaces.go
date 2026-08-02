@@ -230,7 +230,8 @@ func (s *Server) handleCreateUserCodespace(w http.ResponseWriter, r *http.Reques
 		writeGHError(w, http.StatusInternalServerError, "codespace create failed: "+err.Error())
 		return
 	}
-	writeJSON(w, http.StatusCreated, s.codespaceToJSON(cs, s.baseURL(r)))
+	csJSON := s.codespaceToJSON(cs, s.baseURL(r))
+	writeJSONCreated(w, jsonStringField(csJSON, "url"), csJSON)
 }
 
 func (s *Server) handleGetUserCodespace(w http.ResponseWriter, r *http.Request) {
@@ -356,7 +357,8 @@ func (s *Server) handleCreateRepoCodespace(w http.ResponseWriter, r *http.Reques
 		writeGHError(w, http.StatusInternalServerError, "codespace create failed: "+err.Error())
 		return
 	}
-	writeJSON(w, http.StatusCreated, s.codespaceToJSON(cs, s.baseURL(r)))
+	csJSON := s.codespaceToJSON(cs, s.baseURL(r))
+	writeJSONCreated(w, jsonStringField(csJSON, "url"), csJSON)
 }
 
 // --- machines ---
@@ -498,7 +500,7 @@ func (s *Server) handlePublishUserCodespace(w http.ResponseWriter, r *http.Reque
 	if repo := s.store.GetRepoByFullName(published.RepoKey); repo != nil {
 		out["repository"] = fullRepoJSON(repo, s.store, baseURL)
 	}
-	writeJSON(w, http.StatusCreated, out)
+	writeJSONCreated(w, jsonStringField(out, "url"), out)
 }
 
 // --- pull-request codespaces ---
@@ -538,7 +540,8 @@ func (s *Server) handleCreatePullRequestCodespace(w http.ResponseWriter, r *http
 		writeGHError(w, http.StatusInternalServerError, "codespace create failed: "+err.Error())
 		return
 	}
-	writeJSON(w, http.StatusCreated, s.codespaceToJSON(cs, s.baseURL(r)))
+	prJSON := s.codespaceToJSON(cs, s.baseURL(r))
+	writeJSONCreated(w, jsonStringField(prJSON, "url"), prJSON)
 }
 
 // --- user-secret selected repositories ---

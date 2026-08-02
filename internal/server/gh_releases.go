@@ -499,23 +499,35 @@ func (s *Server) registerGHReleasesRoutes() {
 	//   p1=="assets"    → GET/PATCH/DELETE asset by id
 	//   p2=="assets"    → POST upload / GET list assets for release {p1}
 	//   p2=="reactions" → GET/POST reactions on release {p1}
-	// Go 1.22's mux refuses to register the two distinct patterns directly,
-	// so a single dispatcher handles all real-GH paths under this prefix.
-	s.route("GET /api/v3/repos/{owner}/{repo}/releases/{p1}/{p2}",
-		s.handleReleaseTwoSegDispatch("GET"))
-	s.route("POST /api/v3/repos/{owner}/{repo}/releases/{p1}/{p2}",
-		s.handleReleaseTwoSegDispatch("POST"))
+	// Go 1.22's mux refuses to register the two distinct patterns directly
+	// (`/releases/tags/{tag}` and `/releases/{release_id}/assets` overlap
+	// without either being more specific), so a single dispatcher handles
+	// all real-GH paths under this prefix. routeDispatch records the real
+	// endpoints in the route table so RegisteredRoutes() enumerates them.
+	s.routeDispatch("GET /api/v3/repos/{owner}/{repo}/releases/{p1}/{p2}",
+		s.handleReleaseTwoSegDispatch("GET"),
+		"GET /api/v3/repos/{owner}/{repo}/releases/tags/{tag}",
+		"GET /api/v3/repos/{owner}/{repo}/releases/assets/{asset_id}",
+		"GET /api/v3/repos/{owner}/{repo}/releases/{release_id}/assets",
+		"GET /api/v3/repos/{owner}/{repo}/releases/{release_id}/reactions")
+	s.routeDispatch("POST /api/v3/repos/{owner}/{repo}/releases/{p1}/{p2}",
+		s.handleReleaseTwoSegDispatch("POST"),
+		"POST /api/v3/repos/{owner}/{repo}/releases/{release_id}/assets",
+		"POST /api/v3/repos/{owner}/{repo}/releases/{release_id}/reactions")
 	s.route("POST /api/uploads/repos/{owner}/{repo}/releases/{release_id}/assets",
 		s.requirePerm(scopeContents, permWrite, s.handleUploadReleaseAsset))
-	s.route("PATCH /api/v3/repos/{owner}/{repo}/releases/{p1}/{p2}",
-		s.handleReleaseTwoSegDispatch("PATCH"))
-	s.route("DELETE /api/v3/repos/{owner}/{repo}/releases/{p1}/{p2}",
-		s.handleReleaseTwoSegDispatch("DELETE"))
+	s.routeDispatch("PATCH /api/v3/repos/{owner}/{repo}/releases/{p1}/{p2}",
+		s.handleReleaseTwoSegDispatch("PATCH"),
+		"PATCH /api/v3/repos/{owner}/{repo}/releases/assets/{asset_id}")
+	s.routeDispatch("DELETE /api/v3/repos/{owner}/{repo}/releases/{p1}/{p2}",
+		s.handleReleaseTwoSegDispatch("DELETE"),
+		"DELETE /api/v3/repos/{owner}/{repo}/releases/assets/{asset_id}")
 
 	// `/releases/{p1}/{p2}/{p3}` is only used for release-reaction deletion
 	// (reactions have a three-segment path while assets stop at two).
-	s.route("DELETE /api/v3/repos/{owner}/{repo}/releases/{p1}/{p2}/{p3}",
-		s.handleReleaseThreeSegDispatch("DELETE"))
+	s.routeDispatch("DELETE /api/v3/repos/{owner}/{repo}/releases/{p1}/{p2}/{p3}",
+		s.handleReleaseThreeSegDispatch("DELETE"),
+		"DELETE /api/v3/repos/{owner}/{repo}/releases/{release_id}/reactions/{reaction_id}")
 }
 
 // handleReleaseTwoSegDispatch resolves
@@ -681,7 +693,8 @@ func (s *Server) handleCreateRelease(w http.ResponseWriter, r *http.Request) {
 	release := s.store.Releases.Create(repo.ID, user.ID, req.TagName, target, req.Name, req.Body, bool(req.Draft), bool(req.Prerelease))
 	s.emitReleaseEvent(repo, release, user, "created", s.baseURL(r))
 	s.recordAuditEvent("release.create", user.Login, "", map[string]interface{}{"repo": repo.FullName, "release_id": release.ID, "tag": release.TagName})
-	writeJSON(w, http.StatusCreated, releaseToJSON(release, s.store, s.baseURL(r), repo))
+	releaseJSON := releaseToJSON(release, s.store, s.baseURL(r), repo)
+	writeJSONCreated(w, jsonStringField(releaseJSON, "url"), releaseJSON)
 }
 
 func (s *Server) handleListReleases(w http.ResponseWriter, r *http.Request) {
@@ -969,7 +982,8 @@ func (s *Server) handleUploadReleaseAsset(w http.ResponseWriter, r *http.Request
 		writeGHError(w, http.StatusNotFound, "Not Found")
 		return
 	}
-	writeJSON(w, http.StatusCreated, releaseAssetToJSON(asset, s.store, s.baseURL(r), repo, rel))
+	assetJSON := releaseAssetToJSON(asset, s.store, s.baseURL(r), repo, rel)
+	writeJSONCreated(w, jsonStringField(assetJSON, "url"), assetJSON)
 }
 
 func (s *Server) handleListReleaseAssets(w http.ResponseWriter, r *http.Request) {

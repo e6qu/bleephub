@@ -666,6 +666,9 @@ func (s *Server) doDeliverAttempt(hook *Webhook, event, action, guid string, pay
 		httpReq.Header.Set(k, v)
 	}
 
+	// #nosec G704 -- webhooks deliver to operator-configured URLs by design;
+	// parseWebhookTargetURL above refuses private targets unless the instance
+	// explicitly opted out (BLEEPHUB_ALLOW_PRIVATE_OUTBOUND_TARGETS).
 	resp, err := s.webhookDeliveryClient(hook.InsecureSSL == "1").Do(httpReq)
 	elapsed := time.Since(start).Seconds()
 

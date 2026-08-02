@@ -21,6 +21,9 @@ import (
 const (
 	maxConcurrentGitSSHConnections = 64
 	gitSSHHandshakeTimeout         = 10 * time.Second
+	// maxGitSSHAuthTries bounds how many key offers one connection may make
+	// before the handshake is refused, matching OpenSSH's default of 6.
+	maxGitSSHAuthTries = 6
 )
 
 // startGitSSH serves the standard SSH Git transport when BLEEPHUB_SSH_ADDR
@@ -44,16 +47,8 @@ func (s *Server) startGitSSH(ctx context.Context) error {
 	if err != nil {
 		return fmt.Errorf("listen for SSH Git transport on %s: %w", addr, err)
 	}
-	config := &ssh.ServerConfig{
-		PublicKeyCallback: func(metadata ssh.ConnMetadata, key ssh.PublicKey) (*ssh.Permissions, error) {
-			user := s.store.LookupUserBySSHKey(key)
-			if user == nil || user.Suspended {
-				return nil, errors.New("unknown SSH key")
-			}
-			return &ssh.Permissions{Extensions: map[string]string{"bleephub-user-id": fmt.Sprintf("%d", user.ID)}}, nil
-		},
-	}
-	config.AddHostKey(signer)
+	// The server config is built per connection in serveGitSSHConn so the
+	// failed-attempt counter the callback closes over is per connection too.
 	connectionSlots := make(chan struct{}, maxConcurrentGitSSHConnections)
 	s.logger.Info().Str("addr", addr).Msg("bleephub SSH Git transport listening")
 	// Closing the listener is what unblocks Accept, so shutdown closes it and
@@ -77,7 +72,7 @@ func (s *Server) startGitSSH(ctx context.Context) error {
 			case connectionSlots <- struct{}{}:
 				s.goBackground(func() {
 					defer func() { <-connectionSlots }()
-					s.serveGitSSHConn(conn, config)
+					s.serveGitSSHConn(conn, signer)
 				})
 			default:
 				s.logger.Warn().
@@ -90,12 +85,29 @@ func (s *Server) startGitSSH(ctx context.Context) error {
 	return nil
 }
 
-func (s *Server) serveGitSSHConn(conn net.Conn, config *ssh.ServerConfig) {
+func (s *Server) serveGitSSHConn(conn net.Conn, signer ssh.Signer) {
 	defer func() { _ = conn.Close() }()
 	if err := conn.SetDeadline(s.currentTime().Add(gitSSHHandshakeTimeout)); err != nil {
 		s.logger.Debug().Err(err).Msg("set SSH Git handshake deadline")
 		return
 	}
+	config := &ssh.ServerConfig{
+		// MaxAuthTries makes the ssh library disconnect after too many
+		// attempts; the callback itself stays stateless so the granted
+		// permissions derive only from the key in the current invocation.
+		MaxAuthTries: maxGitSSHAuthTries,
+		PublicKeyCallback: func(metadata ssh.ConnMetadata, key ssh.PublicKey) (*ssh.Permissions, error) {
+			user := s.store.LookupUserBySSHKey(key)
+			if user == nil || user.Suspended {
+				s.logger.Warn().
+					Str("remote_addr", metadata.RemoteAddr().String()).
+					Msg("SSH Git auth failed")
+				return nil, errors.New("unknown SSH key")
+			}
+			return &ssh.Permissions{Extensions: map[string]string{"bleephub-user-id": fmt.Sprintf("%d", user.ID)}}, nil
+		},
+	}
+	config.AddHostKey(signer)
 	serverConn, channels, requests, err := ssh.NewServerConn(conn, config)
 	if err != nil {
 		s.logger.Debug().Err(err).Msg("SSH Git handshake rejected")
@@ -107,8 +119,15 @@ func (s *Server) serveGitSSHConn(conn net.Conn, config *ssh.ServerConfig) {
 	}
 	defer func() { _ = serverConn.Close() }()
 	go ssh.DiscardRequests(requests)
-	userID := serverConn.Permissions.Extensions["bleephub-user-id"]
-	user := s.store.GetUserByID(mustAtoi(userID))
+	// The user ID extension was stamped by the public-key callback below, so
+	// an unparseable value means the connection state is corrupt; fail closed
+	// rather than resolve whatever user happens to hold ID 0.
+	userID, err := parseGitSSHUserID(serverConn.Permissions.Extensions["bleephub-user-id"])
+	if err != nil {
+		s.logger.Warn().Err(err).Msg("SSH Git connection dropped")
+		return
+	}
+	user := s.store.GetUserByID(userID)
 	if user == nil {
 		return
 	}
@@ -129,10 +148,16 @@ func (s *Server) serveGitSSHConn(conn net.Conn, config *ssh.ServerConfig) {
 	}
 }
 
-func mustAtoi(value string) int {
+func parseGitSSHUserID(value string) (int, error) {
 	var result int
-	_, _ = fmt.Sscanf(value, "%d", &result)
-	return result
+	n, err := fmt.Sscanf(value, "%d", &result)
+	if err != nil {
+		return 0, fmt.Errorf("parse SSH user ID %q: %w", value, err)
+	}
+	if n != 1 {
+		return 0, fmt.Errorf("parse SSH user ID %q: scanned %d values, want 1", value, n)
+	}
+	return result, nil
 }
 
 func (s *Server) serveGitSSHSession(channel ssh.Channel, requests <-chan *ssh.Request, user *User) {

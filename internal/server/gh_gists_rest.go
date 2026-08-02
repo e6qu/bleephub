@@ -165,7 +165,8 @@ func (s *Server) handleCreateGist(w http.ResponseWriter, r *http.Request) {
 		writeGHError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
-	writeJSON(w, http.StatusCreated, s.gistToJSON(g, r, true))
+	gistJSON := s.gistToJSON(g, r, true)
+	writeJSONCreated(w, jsonStringField(gistJSON, "url"), gistJSON)
 }
 
 func (s *Server) handleGetGist(w http.ResponseWriter, r *http.Request) {
@@ -325,7 +326,8 @@ func (s *Server) handleForkGist(w http.ResponseWriter, r *http.Request) {
 		writeGHError(w, http.StatusNotFound, "Not Found")
 		return
 	}
-	writeJSON(w, http.StatusCreated, s.gistToJSON(fork, r, false))
+	forkJSON := s.gistToJSON(fork, r, false)
+	writeJSONCreated(w, jsonStringField(forkJSON, "url"), forkJSON)
 }
 
 func (s *Server) handleListGistForks(w http.ResponseWriter, r *http.Request) {
@@ -379,7 +381,8 @@ func (s *Server) handleCreateGistComment(w http.ResponseWriter, r *http.Request)
 		writeGHError(w, http.StatusNotFound, "Not Found")
 		return
 	}
-	writeJSON(w, http.StatusCreated, s.gistCommentToJSON(c, r))
+	gistCommentJSON := s.gistCommentToJSON(c, r)
+	writeJSONCreated(w, jsonStringField(gistCommentJSON, "url"), gistCommentJSON)
 }
 
 func (s *Server) handleGetGistComment(w http.ResponseWriter, r *http.Request) {

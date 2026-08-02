@@ -271,7 +271,8 @@ func (s *Server) handleCreateCodeSecurityConfiguration(w http.ResponseWriter, r 
 		return
 	}
 	c := s.store.CreateCodeSecurityConfiguration(org, &req)
-	writeJSON(w, http.StatusCreated, codeSecurityConfigurationJSON(c, s.baseURL(r)))
+	cscJSON := codeSecurityConfigurationJSON(c, s.baseURL(r))
+	writeJSONCreated(w, jsonStringField(cscJSON, "url"), cscJSON)
 }
 
 func (s *Server) handleGetDefaultCodeSecurityConfigurations(w http.ResponseWriter, r *http.Request) {

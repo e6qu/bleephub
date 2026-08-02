@@ -281,7 +281,8 @@ func (s *Server) handleCreateCommitStatus(w http.ResponseWriter, r *http.Request
 		"repository":  repoToJSON(repo, s.store, s.baseURL(r)),
 		"sender":      userToJSON(user),
 	})
-	writeJSON(w, http.StatusCreated, commitStatusToJSON(st, s.store, s.baseURL(r), repo.FullName))
+	statusJSON := commitStatusToJSON(st, s.store, s.baseURL(r), repo.FullName)
+	writeJSONCreated(w, jsonStringField(statusJSON, "url"), statusJSON)
 }
 
 func (s *Server) canonicalCommitStatusRef(repo *Repo, ref string) string {

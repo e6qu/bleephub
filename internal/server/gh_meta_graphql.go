@@ -139,7 +139,7 @@ func (s *Server) addMetaFieldsToSchema(queryType *graphql.Object) {
 		}
 		return map[string]interface{}{
 			"body": tmpl.body, "conditions": []interface{}{}, "description": nil,
-			"featured": false, "hidden": false, "id": "L_" + strings.ToLower(key),
+			"featured": false, "hidden": false, "id": tmpl.nodeID,
 			"implementation": nil, "key": strings.ToLower(key), "limitations": []interface{}{},
 			"name": tmpl.name, "nickname": nil, "permissions": []interface{}{},
 			"pseudoLicense": false, "spdxId": tmpl.spdxID,

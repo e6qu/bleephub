@@ -170,7 +170,8 @@ func (s *Server) handleCreateSecurityAdvisory(w http.ResponseWriter, r *http.Req
 		return
 	}
 	s.deriveDependabotAlertsForPublishedAdvisory(adv)
-	writeJSON(w, http.StatusCreated, securityAdvisoryToJSON(adv, repo, s.baseURL(r), s.store))
+	advJSON := securityAdvisoryToJSON(adv, repo, s.baseURL(r), s.store)
+	writeJSONCreated(w, jsonStringField(advJSON, "url"), advJSON)
 }
 
 func (s *Server) handleGetSecurityAdvisory(w http.ResponseWriter, r *http.Request) {
@@ -392,7 +393,8 @@ func (s *Server) handleSecurityAdvisoryReportsDispatch(w http.ResponseWriter, r 
 		CreatedAt:              time.Now().UTC(),
 	})
 	adv.SubmissionAccepted = true
-	writeJSON(w, http.StatusCreated, securityAdvisoryToJSON(adv, repo, s.baseURL(r), s.store))
+	advJSON := securityAdvisoryToJSON(adv, repo, s.baseURL(r), s.store)
+	writeJSONCreated(w, jsonStringField(advJSON, "url"), advJSON)
 }
 
 func securityAdvisoryToJSON(a *SecurityAdvisory, repo *Repo, baseURL string, st *Store) map[string]interface{} {

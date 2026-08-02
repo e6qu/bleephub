@@ -431,10 +431,20 @@ func (s *Server) handleCreateUserInternal(w http.ResponseWriter, r *http.Request
 	if !decodeJSONBody(w, r, &req) {
 		return
 	}
-	if req.Login == "" {
+	normalizedLogin, err := normalizeLogin(strings.TrimSpace(req.Login))
+	if err != nil {
+		writeGHError(w, http.StatusBadRequest, "login mixes confusable scripts")
+		return
+	}
+	if normalizedLogin == "" {
 		writeGHValidationError(w, "User", "login", "missing_field")
 		return
 	}
+	if !s.identity.loginAllowed(normalizedLogin) {
+		writeGHError(w, http.StatusForbidden, "login is not permitted on this instance")
+		return
+	}
+	req.Login = normalizedLogin
 	passwordHash := ""
 	if req.Password != "" {
 		var err error
@@ -481,7 +491,8 @@ func (s *Server) handleCreateUserInternal(w http.ResponseWriter, r *http.Request
 	}
 	s.store.mu.Unlock()
 
-	writeJSON(w, http.StatusCreated, s.fullUserJSON(u))
+	userJSON := s.fullUserJSON(u)
+	writeJSONCreated(w, jsonStringField(userJSON, "url"), userJSON)
 }
 
 func (s *Server) handleGetUserInternal(w http.ResponseWriter, r *http.Request) {
@@ -563,6 +574,7 @@ func (s *Server) handleDeleteUserInternal(w http.ResponseWriter, r *http.Request
 	}
 	delete(s.store.Users, u.ID)
 	delete(s.store.UsersByLogin, u.Login)
+	s.store.forgetExternalIdentitiesLocked(u)
 	for val, t := range s.store.Tokens {
 		if t.UserID == u.ID {
 			s.store.deleteTokenMapKeyLocked(val)

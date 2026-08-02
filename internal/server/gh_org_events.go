@@ -214,6 +214,11 @@ func (s *Server) publicReposByID() map[int]*Repo {
 }
 
 func (s *Server) handleListOrgEvents(w http.ResponseWriter, r *http.Request) {
+	// GitHub requires authentication for the per-org activity feed.
+	if ghUserFromContext(r.Context()) == nil {
+		writeGHError(w, http.StatusUnauthorized, "Bad credentials")
+		return
+	}
 	org := s.store.GetOrg(r.PathValue("org"))
 	if org == nil {
 		writeGHError(w, http.StatusNotFound, "Not Found")

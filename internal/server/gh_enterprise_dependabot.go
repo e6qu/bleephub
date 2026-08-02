@@ -17,11 +17,17 @@ func (s *Server) registerGHEnterpriseDependabotRoutes() {
 // alerts surface only for organizations the caller owns.
 func (s *Server) handleListEnterpriseDependabotAlerts(w http.ResponseWriter, r *http.Request) {
 	var alerts []*DependabotAlert
+	adminAny := false
 	for _, org := range s.store.ListOrgsAll(0) {
 		if !s.viewerCanAdminOrg(r.Context(), org.Login) {
 			continue
 		}
+		adminAny = true
 		alerts = append(alerts, s.store.ListDependabotAlertsByOrg(org.ID, "", "", "", "", "")...)
+	}
+	if !adminAny {
+		writeGHError(w, http.StatusForbidden, "You must administer at least one organization to list its Dependabot alerts.")
+		return
 	}
 
 	q := r.URL.Query()

@@ -14,11 +14,13 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"strconv"
 	"strings"
 	"time"
 
 	"github.com/coreos/go-oidc/v3/oidc"
 	"golang.org/x/oauth2"
+	"golang.org/x/text/unicode/norm"
 )
 
 const (
@@ -26,7 +28,41 @@ const (
 	githubDeveloperTeam       = "e6qu-org-members"
 	identityStateCookiePrefix = "_bleephub_identity_state_"
 	backChannelLogoutEvent    = "http://schemas.openid.net/event/backchannel-logout"
+	sessionCookieName         = "_gh_sess"
+	secureSessionCookieName   = "__Host-_gh_sess"
 )
+
+// isSecureRequest reports whether the request arrived over HTTPS, directly or
+// behind a TLS-terminating proxy that sets X-Forwarded-Proto.
+func isSecureRequest(r *http.Request) bool {
+	return r != nil && (r.TLS != nil || r.Header.Get("X-Forwarded-Proto") == "https")
+}
+
+// secureCookies reports whether cookies must carry the Secure attribute:
+// required in production and conditional only for the explicitly supported
+// local HTTP development mode.
+func (s *Server) secureCookies(r *http.Request) bool {
+	return strings.HasPrefix(s.externalURL, "https://") || isSecureRequest(r)
+}
+
+// sessionCookieNameFor returns the __Host- prefixed name when the cookie can
+// satisfy the prefix rules (Secure, Path=/, no Domain); plain HTTP local
+// development keeps the unprefixed name because browsers reject insecure
+// __Host- cookies.
+func sessionCookieNameFor(secure bool) string {
+	if secure {
+		return secureSessionCookieName
+	}
+	return sessionCookieName
+}
+
+func sessionCookieFromRequest(r *http.Request) *http.Cookie {
+	if cookie, err := r.Cookie(secureSessionCookieName); err == nil {
+		return cookie
+	}
+	cookie, _ := r.Cookie(sessionCookieName)
+	return cookie
+}
 
 type oidcProviderMetadata struct {
 	EndSessionEndpoint string `json:"end_session_endpoint"`
@@ -50,6 +86,7 @@ type identityConfig struct {
 	shauthClientSecret  string
 	shauthPostLogoutURL string
 	allowInsecureOIDC   bool
+	allowedLogins       map[string]struct{}
 }
 
 type identityState struct {
@@ -70,7 +107,82 @@ func identityConfigFromEnv() identityConfig {
 		shauthClientSecret:  strings.TrimSpace(os.Getenv("BLEEPHUB_SHAUTH_CLIENT_SECRET")),
 		shauthPostLogoutURL: strings.TrimSpace(os.Getenv("BLEEPHUB_SHAUTH_POST_LOGOUT_URL")),
 		allowInsecureOIDC:   strings.EqualFold(strings.TrimSpace(os.Getenv("BLEEPHUB_ALLOW_INSECURE_OIDC")), "true"),
+		allowedLogins:       parseAllowedLogins(os.Getenv("BLEEPHUB_ALLOWED_LOGINS")),
 	}
+}
+
+// normalizeLogin canonicalizes a username before it is stored or looked up:
+// NFKC compatibility normalization collapses lookalike compatibility forms
+// (fullwidth, ligatures) and case folding makes "Alice" and "alice" the same
+// account. A name that mixes Latin and Cyrillic letters is rejected outright
+// as a basic confusable/homoglyph guard, so Cyrillic "аlice" cannot shadow a
+// Latin login. The empty string normalizes to itself and carries no error.
+func normalizeLogin(login string) (string, error) {
+	if login == "" {
+		return "", nil
+	}
+	if mixesLatinAndCyrillic(login) {
+		return "", errMixedScriptLogin
+	}
+	return strings.ToLower(norm.NFKC.String(login)), nil
+}
+
+var errMixedScriptLogin = errors.New("login mixes Latin and Cyrillic characters")
+
+// mixesLatinAndCyrillic reports whether the string contains at least one Basic
+// Latin letter and at least one Cyrillic letter — the simplest shape of a
+// homoglyph spoof. Ranges are checked on the raw runes because they are stable
+// under NFKC for these scripts.
+func mixesLatinAndCyrillic(login string) bool {
+	var hasLatin, hasCyrillic bool
+	for _, r := range login {
+		switch {
+		case (r >= 'A' && r <= 'Z') || (r >= 'a' && r <= 'z'):
+			hasLatin = true
+		case r >= '\u0400' && r <= '\u04FF':
+			hasCyrillic = true
+		}
+	}
+	return hasLatin && hasCyrillic
+}
+
+// parseAllowedLogins splits the comma-separated BLEEPHUB_ALLOWED_LOGINS value
+// into a normalized lookup set. Entries are canonicalized with normalizeLogin
+// so the operator may write them in any case; a blank or mixed-script entry is
+// dropped. A nil map means "no allowlist configured" (admit any normalized
+// login); an empty non-nil map would admit nothing, so it collapses to nil.
+func parseAllowedLogins(value string) map[string]struct{} {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return nil
+	}
+	out := make(map[string]struct{})
+	for _, raw := range strings.Split(value, ",") {
+		normalized, err := normalizeLogin(strings.TrimSpace(raw))
+		if err != nil || normalized == "" {
+			continue
+		}
+		out[normalized] = struct{}{}
+	}
+	if len(out) == 0 {
+		return nil
+	}
+	return out
+}
+
+// loginAllowed reports whether a login may authenticate or be created. With
+// no allowlist configured every login is permitted. The argument is normalized
+// defensively so a caller that passes a non-canonical form still matches.
+func (c identityConfig) loginAllowed(login string) bool {
+	if c.allowedLogins == nil {
+		return true
+	}
+	normalized, err := normalizeLogin(login)
+	if err != nil {
+		return false
+	}
+	_, ok := c.allowedLogins[normalized]
+	return ok
 }
 
 func (s *Server) registerExternalIdentityRoutes() {
@@ -83,8 +195,10 @@ func (s *Server) registerExternalIdentityRoutes() {
 	s.route("GET /auth/validation", s.handleIdentityValidation)
 	s.route("POST /auth/shauth/backchannel-logout", s.handleShauthBackChannelLogout)
 	s.route("GET /auth/shauth/frontchannel-logout", s.handleShauthFrontChannelLogout)
+	s.route("POST /auth/shauth/frontchannel-logout", s.handleShauthFrontChannelLogout)
 	s.route("GET /auth/shauth/logout/complete", s.handleShauthLogoutComplete)
 	s.route("GET /ui/signed-out", s.handleIdentitySignedOut)
+	s.route("POST /ui/signed-out", s.handleIdentitySignedOut)
 	s.route("POST /auth/local", s.handleLocalLogin)
 	s.route("POST /auth/token", s.handleTokenLogin)
 	s.route("POST /auth/logout", s.handleIdentityLogout)
@@ -181,7 +295,7 @@ func (s *Server) handleShauthLogin(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	returnTo := safeIdentityReturnTo(r.URL.Query().Get("return_to"))
-	if err := s.setIdentityState(w, identityState{Provider: "shauth", State: state, ReturnTo: returnTo, Nonce: nonce, PKCE: pkce, ExpiresAt: time.Now().Add(10 * time.Minute)}); err != nil {
+	if err := s.setIdentityState(w, r, identityState{Provider: "shauth", State: state, ReturnTo: returnTo, Nonce: nonce, PKCE: pkce, ExpiresAt: time.Now().Add(10 * time.Minute)}); err != nil {
 		writeGHError(w, http.StatusInternalServerError, "could not start Shauth sign-in")
 		return
 	}
@@ -237,22 +351,17 @@ func (s *Server) handleShauthCallback(w http.ResponseWriter, r *http.Request) {
 		writeGHError(w, http.StatusUnauthorized, "Shauth ID token claims were invalid")
 		return
 	}
-	// The login is the identity the provider asserted, never one we invent.
-	// Deriving it from the subject would create an account under a username
-	// Shauth never issued, and would publish that username to anything reading
-	// the signed-in identity. A provider that omits it is a broken
-	// registration, so reject it here instead of papering over it.
 	login := strings.TrimSpace(claims.PreferredUsername)
 	if login == "" {
 		writeGHError(w, http.StatusUnauthorized, "Shauth ID token did not carry a preferred_username")
 		return
 	}
-	user := s.upsertExternalUser(login, strings.TrimSpace(claims.Name), strings.TrimSpace(claims.Email), strings.TrimSpace(claims.Picture), claims.Role == "admin")
+	user := s.upsertExternalUser(s.identity.shauthIssuer, idToken.Subject, login, strings.TrimSpace(claims.Name), strings.TrimSpace(claims.Email), strings.TrimSpace(claims.Picture), claims.Role == "admin")
 	expiresAt := idToken.Expiry
 	if maximum := time.Now().Add(12 * time.Hour); expiresAt.After(maximum) {
 		expiresAt = maximum
 	}
-	if err := s.createOIDCBrowserSession(w, user, LoginSession{
+	if err := s.createOIDCBrowserSession(w, r, user, LoginSession{
 		OIDCProvider: "shauth",
 		OIDCIssuer:   s.identity.shauthIssuer,
 		OIDCSubject:  idToken.Subject,
@@ -375,7 +484,7 @@ func (s *Server) handleGitHubLogin(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	returnTo := safeIdentityReturnTo(r.URL.Query().Get("return_to"))
-	if err := s.setIdentityState(w, identityState{Provider: "github", State: state, ReturnTo: returnTo, ExpiresAt: time.Now().Add(10 * time.Minute)}); err != nil {
+	if err := s.setIdentityState(w, r, identityState{Provider: "github", State: state, ReturnTo: returnTo, ExpiresAt: time.Now().Add(10 * time.Minute)}); err != nil {
 		writeGHError(w, http.StatusInternalServerError, "could not start GitHub sign-in")
 		return
 	}
@@ -424,8 +533,8 @@ func (s *Server) handleGitHubCallback(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
-	user := s.upsertExternalUser(profile.Login, profile.Name, profile.Email, profile.AvatarURL, admin)
-	if err := s.createBrowserSession(w, user); err != nil {
+	user := s.upsertExternalUser(githubExternalIssuer, profile.ExternalSubject(), profile.Login, profile.Name, profile.Email, profile.AvatarURL, admin)
+	if err := s.createBrowserSession(w, r, user); err != nil {
 		s.logger.Error().Err(err).Msg("create browser session")
 		writeGHError(w, http.StatusServiceUnavailable, "browser session is unavailable")
 		return
@@ -433,17 +542,17 @@ func (s *Server) handleGitHubCallback(w http.ResponseWriter, r *http.Request) {
 	http.Redirect(w, r, pending.ReturnTo, http.StatusFound)
 }
 
-func (s *Server) setIdentityState(w http.ResponseWriter, pending identityState) error {
+func (s *Server) setIdentityState(w http.ResponseWriter, r *http.Request, pending identityState) error {
 	payload, err := json.Marshal(pending)
 	if err != nil {
 		return err
 	}
-	mac := hmac.New(sha256.New, []byte(s.identityStateSecret(pending.Provider)))
+	mac := hmac.New(sha256.New, s.identityStateKey)
 	_, _ = mac.Write(payload)
 	value := base64.RawURLEncoding.EncodeToString(payload) + "." + base64.RawURLEncoding.EncodeToString(mac.Sum(nil))
 	// #nosec G124 -- Secure is conditional only because explicitly enabled local
 	// HTTP development is supported; production external URLs are HTTPS.
-	http.SetCookie(w, &http.Cookie{Name: identityStateCookiePrefix + pending.State, Value: value, Path: "/auth/", MaxAge: 600, Expires: pending.ExpiresAt, HttpOnly: true, Secure: strings.HasPrefix(s.externalURL, "https://"), SameSite: http.SameSiteLaxMode})
+	http.SetCookie(w, &http.Cookie{Name: identityStateCookiePrefix + pending.State, Value: value, Path: "/auth/", MaxAge: 600, Expires: pending.ExpiresAt, HttpOnly: true, Secure: s.secureCookies(r), SameSite: http.SameSiteLaxMode})
 	return nil
 }
 
@@ -458,7 +567,7 @@ func (s *Server) consumeIdentityState(w http.ResponseWriter, r *http.Request, pr
 	}
 	cookieName := identityStateCookiePrefix + state
 	// #nosec G124 -- see setIdentityState; deletion must use the same Secure policy.
-	http.SetCookie(w, &http.Cookie{Name: cookieName, Value: "", Path: "/auth/", MaxAge: -1, HttpOnly: true, Secure: strings.HasPrefix(s.externalURL, "https://"), SameSite: http.SameSiteLaxMode})
+	http.SetCookie(w, &http.Cookie{Name: cookieName, Value: "", Path: "/auth/", MaxAge: -1, HttpOnly: true, Secure: s.secureCookies(r), SameSite: http.SameSiteLaxMode})
 	cookie, err := r.Cookie(cookieName)
 	if err != nil {
 		return identityState{}, err
@@ -481,7 +590,7 @@ func (s *Server) consumeIdentityState(w http.ResponseWriter, r *http.Request, pr
 	if base64.RawURLEncoding.EncodeToString(signature) != parts[1] {
 		return identityState{}, errors.New("invalid identity state encoding")
 	}
-	mac := hmac.New(sha256.New, []byte(s.identityStateSecret(provider)))
+	mac := hmac.New(sha256.New, s.identityStateKey)
 	_, _ = mac.Write(payload)
 	if subtle.ConstantTimeCompare(signature, mac.Sum(nil)) != 1 {
 		return identityState{}, errors.New("invalid identity state signature")
@@ -496,14 +605,25 @@ func (s *Server) consumeIdentityState(w http.ResponseWriter, r *http.Request, pr
 	return pending, nil
 }
 
-func (s *Server) identityStateSecret(provider string) string {
-	if provider == "shauth" {
-		return s.identity.shauthClientSecret
-	}
-	return s.identity.githubClientSecret
+// githubExternalIssuer is the stable issuer for accounts brought in by the
+// GitHub OAuth flow. The subject is the GitHub user's numeric id, which is
+// immutable; the login is not.
+const githubExternalIssuer = "https://github.com"
+
+type githubIdentity struct {
+	ID                            int64
+	Login, Name, Email, AvatarURL string
 }
 
-type githubIdentity struct{ Login, Name, Email, AvatarURL string }
+// ExternalSubject returns the stable subject for this GitHub identity — the
+// numeric account id — or "" when the profile did not carry one, in which case
+// upsertExternalUser falls back to the username index.
+func (g githubIdentity) ExternalSubject() string {
+	if g.ID == 0 {
+		return ""
+	}
+	return strconv.FormatInt(g.ID, 10)
+}
 
 func (s *Server) exchangeGitHubCode(code string) (string, error) {
 	form := url.Values{"client_id": {s.identity.githubClientID}, "client_secret": {s.identity.githubClientSecret}, "code": {code}, "redirect_uri": {s.externalAuthCallback("github")}}
@@ -542,6 +662,7 @@ func githubProfile(token string) (githubIdentity, error) {
 	}
 	defer response.Body.Close()
 	var profile struct {
+		ID        int64  `json:"id"`
 		Login     string `json:"login"`
 		Name      string `json:"name"`
 		Email     string `json:"email"`
@@ -553,7 +674,7 @@ func githubProfile(token string) (githubIdentity, error) {
 	if response.StatusCode != http.StatusOK || profile.Login == "" {
 		return githubIdentity{}, fmt.Errorf("GitHub user lookup status %d", response.StatusCode)
 	}
-	return githubIdentity{profile.Login, profile.Name, profile.Email, profile.AvatarURL}, nil
+	return githubIdentity{ID: profile.ID, Login: profile.Login, Name: profile.Name, Email: profile.Email, AvatarURL: profile.AvatarURL}, nil
 }
 
 func githubPrimaryEmail(token string) (string, error) {
@@ -622,12 +743,21 @@ func (s *Server) handleLocalLogin(w http.ResponseWriter, r *http.Request) {
 	if !decodeJSONBody(w, r, &request) {
 		return
 	}
-	user := s.browserLoginUser(strings.TrimSpace(request.Login), request.Password)
+	login, err := normalizeLogin(strings.TrimSpace(request.Login))
+	if err != nil {
+		writeGHError(w, http.StatusBadRequest, "login mixes confusable scripts")
+		return
+	}
+	if !s.identity.loginAllowed(login) {
+		writeGHError(w, http.StatusForbidden, "login is not permitted on this instance")
+		return
+	}
+	user := s.browserLoginUser(login, request.Password)
 	if user == nil {
 		writeGHError(w, http.StatusUnauthorized, "invalid local credentials")
 		return
 	}
-	if err := s.createBrowserSession(w, user); err != nil {
+	if err := s.createBrowserSession(w, r, user); err != nil {
 		s.logger.Error().Err(err).Msg("create browser session")
 		writeGHError(w, http.StatusServiceUnavailable, "browser session is unavailable")
 		return
@@ -655,7 +785,7 @@ func (s *Server) handleTokenLogin(w http.ResponseWriter, r *http.Request) {
 		writeGHError(w, http.StatusUnauthorized, "A user access token is required")
 		return
 	}
-	if err := s.createBrowserSession(w, user); err != nil {
+	if err := s.createBrowserSession(w, r, user); err != nil {
 		s.logger.Error().Err(err).Msg("create token browser session")
 		writeGHError(w, http.StatusServiceUnavailable, "browser session is unavailable")
 		return
@@ -663,28 +793,80 @@ func (s *Server) handleTokenLogin(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, s.fullUserJSON(user))
 }
 
-func (s *Server) upsertExternalUser(login, name, email, avatarURL string, siteAdmin bool) *User {
+// externalIdentityKey is the durable key for a federated identity: the
+// (issuer, subject) pair the provider guarantees stable, never the mutable
+// username. An empty issuer or subject collapses to "" so the caller falls
+// back to the username index rather than silently keying on half a pair.
+func externalIdentityKey(issuer, subject string) string {
+	issuer = strings.TrimSpace(issuer)
+	subject = strings.TrimSpace(subject)
+	if issuer == "" || subject == "" {
+		return ""
+	}
+	return issuer + "\x00" + subject
+}
+
+func (s *Server) upsertExternalUser(issuer, subject, login, name, email, avatarURL string, siteAdmin bool) *User {
+	login, err := normalizeLogin(login)
+	if err != nil || login == "" {
+		return nil
+	}
+	externalKey := externalIdentityKey(issuer, subject)
 	s.store.mu.Lock()
 	defer s.store.mu.Unlock()
-	if user := s.store.UsersByLogin[login]; user != nil {
-		user.Name, user.Email, user.AvatarURL, user.SiteAdmin, user.UpdatedAt = name, email, avatarURL, siteAdmin, time.Now().UTC()
+	// Resolve the stable federated identity first; only when no (issuer,
+	// subject) binding is known does the mutable provider username get a
+	// vote, so a renamed account or a colliding username cannot re-key an
+	// established account.
+	var user *User
+	if externalKey != "" {
+		user = s.store.UsersByExternalID[externalKey]
+	}
+	if user == nil {
+		user = s.store.UsersByLogin[login]
+	}
+	if user != nil {
+		user.Name, user.Email, user.AvatarURL, user.UpdatedAt = name, email, avatarURL, time.Now().UTC()
+		// SiteAdmin is provisioned at first login and changed only through the
+		// explicit admin surface; re-authentication must never grant or revoke
+		// it, so whichever provider logged in last cannot reshape privileges.
+		s.bindExternalIdentityLocked(user, externalKey)
 		if s.store.persist != nil {
 			s.store.persist.MustPut("users", fmt.Sprint(user.ID), user)
 		}
 		return user
 	}
 	now := time.Now().UTC()
-	user := &User{ID: s.store.NextUser, NodeID: "U_bleephub_" + login, Login: login, Name: name, Email: email, AvatarURL: avatarURL, Type: "User", SiteAdmin: siteAdmin, StarredRepos: map[string]bool{}, CreatedAt: now, UpdatedAt: now}
+	user = &User{ID: s.store.NextUser, NodeID: "U_bleephub_" + login, Login: login, Name: name, Email: email, AvatarURL: avatarURL, Type: "User", SiteAdmin: siteAdmin, StarredRepos: map[string]bool{}, CreatedAt: now, UpdatedAt: now}
 	s.store.NextUser++
 	s.store.Users[user.ID], s.store.UsersByLogin[user.Login] = user, user
+	s.bindExternalIdentityLocked(user, externalKey)
 	if s.store.persist != nil {
 		s.store.persist.MustPut("users", fmt.Sprint(user.ID), user)
 	}
 	return user
 }
 
-func (s *Server) createBrowserSession(w http.ResponseWriter, user *User) error {
-	return s.createOIDCBrowserSession(w, user, LoginSession{ExpiresAt: time.Now().Add(12 * time.Hour)})
+// bindExternalIdentityLocked records the (issuer, subject) binding on user and
+// indexes it. Callers hold st.mu. A binding already present is a no-op, so the
+// same provider re-authenticating does not accumulate duplicate entries.
+func (s *Server) bindExternalIdentityLocked(user *User, externalKey string) {
+	if externalKey == "" || user == nil {
+		return
+	}
+	for _, identity := range user.ExternalIdentities {
+		if externalIdentityKey(identity.Issuer, identity.Subject) == externalKey {
+			s.store.UsersByExternalID[externalKey] = user
+			return
+		}
+	}
+	issuer, subject, _ := strings.Cut(externalKey, "\x00")
+	user.ExternalIdentities = append(user.ExternalIdentities, ExternalIdentity{Issuer: issuer, Subject: subject})
+	s.store.UsersByExternalID[externalKey] = user
+}
+
+func (s *Server) createBrowserSession(w http.ResponseWriter, r *http.Request, user *User) error {
+	return s.createOIDCBrowserSession(w, r, user, LoginSession{ExpiresAt: time.Now().Add(12 * time.Hour)})
 }
 
 // createOIDCBrowserSession issues the browser session cookie.
@@ -692,7 +874,16 @@ func (s *Server) createBrowserSession(w http.ResponseWriter, user *User) error {
 // The CSRF token is drawn separately from the cookie value. Reusing the cookie
 // value made every page that prints an authenticity_token a disclosure of the
 // session identifier, which is the one thing HttpOnly exists to withhold.
-func (s *Server) createOIDCBrowserSession(w http.ResponseWriter, user *User, session LoginSession) error {
+func (s *Server) createOIDCBrowserSession(w http.ResponseWriter, r *http.Request, user *User, session LoginSession) error {
+	// Rotate the session on every successful authentication. A cookie value an
+	// attacker planted before credentials were verified (session fixation) is
+	// revoked the moment a real identity is established, and a privilege change
+	// is reflected immediately instead of lingering for the old session's TTL.
+	if cookie := sessionCookieFromRequest(r); cookie != nil {
+		if err := s.store.DeleteLoginSession(cookie.Value); err != nil {
+			return err
+		}
+	}
 	id, err := randomIdentityState()
 	if err != nil {
 		return err
@@ -709,29 +900,43 @@ func (s *Server) createOIDCBrowserSession(w http.ResponseWriter, user *User, ses
 	if err := s.store.PutLoginSession(id, &session); err != nil {
 		return err
 	}
+	secure := s.secureCookies(r)
 	// #nosec G124 -- Secure is conditional only for explicitly enabled local HTTP.
-	http.SetCookie(w, &http.Cookie{Name: "_gh_sess", Value: id, Path: "/", HttpOnly: true, Secure: strings.HasPrefix(s.externalURL, "https://"), SameSite: http.SameSiteLaxMode, Expires: session.ExpiresAt})
+	http.SetCookie(w, &http.Cookie{Name: sessionCookieNameFor(secure), Value: id, Path: "/", HttpOnly: true, Secure: secure, SameSite: http.SameSiteLaxMode, Expires: session.ExpiresAt})
 	return nil
 }
 
 func (s *Server) externalAuthCallback(provider string) string {
 	return strings.TrimRight(s.externalURL, "/") + "/auth/" + provider + "/callback"
 }
+
+// requestOrigin reconstructs the origin a browser computes for this request,
+// so same-origin POSTs pass the logout Origin check even when
+// BLEEPHUB_EXTERNAL_URL is unset and URLs derive from the request Host.
+func requestOrigin(r *http.Request) string {
+	scheme := "http"
+	if isSecureRequest(r) {
+		scheme = "https"
+	}
+	return scheme + "://" + r.Host
+}
+
 func (s *Server) handleIdentityLogout(w http.ResponseWriter, r *http.Request) {
-	if s.identity.shauthConfigured() && r.Header.Get("Origin") != s.externalURL {
+	if origin := r.Header.Get("Origin"); origin != "" && origin != s.externalURL && origin != requestOrigin(r) {
 		writeGHError(w, http.StatusForbidden, "cross-origin logout denied")
 		return
 	}
 	session := s.sessionFromRequest(r)
-	if cookie, err := r.Cookie("_gh_sess"); err == nil {
+	if cookie := sessionCookieFromRequest(r); cookie != nil {
 		if err := s.store.DeleteLoginSession(cookie.Value); err != nil {
 			s.logger.Error().Err(err).Msg("delete browser session")
 			writeGHError(w, http.StatusServiceUnavailable, "browser session could not be revoked")
 			return
 		}
 	}
+	secure := s.secureCookies(r)
 	// #nosec G124 -- deletion mirrors the session's conditional local-HTTP policy.
-	http.SetCookie(w, &http.Cookie{Name: "_gh_sess", Value: "", Path: "/", MaxAge: -1, HttpOnly: true, Secure: strings.HasPrefix(s.externalURL, "https://"), SameSite: http.SameSiteLaxMode})
+	http.SetCookie(w, &http.Cookie{Name: sessionCookieNameFor(secure), Value: "", Path: "/", MaxAge: -1, HttpOnly: true, Secure: secure, SameSite: http.SameSiteLaxMode})
 	logoutTarget := ""
 	if s.identity.shauthConfigured() {
 		provider, err := oidc.NewProvider(r.Context(), s.identity.shauthIssuer)
@@ -767,15 +972,18 @@ func (s *Server) handleIdentityLogout(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleIdentitySignedOut(w http.ResponseWriter, r *http.Request) {
-	if cookie, err := r.Cookie("_gh_sess"); err == nil {
-		if err := s.store.DeleteLoginSession(cookie.Value); err != nil {
-			s.logger.Error().Err(err).Msg("delete browser session on signed-out landing")
-			writeGHError(w, http.StatusServiceUnavailable, "browser session could not be revoked")
-			return
+	if r.Method == http.MethodPost {
+		if cookie := sessionCookieFromRequest(r); cookie != nil {
+			if err := s.store.DeleteLoginSession(cookie.Value); err != nil {
+				s.logger.Error().Err(err).Msg("delete browser session on signed-out landing")
+				writeGHError(w, http.StatusServiceUnavailable, "browser session could not be revoked")
+				return
+			}
 		}
+		secure := s.secureCookies(r)
+		// #nosec G124 -- deletion mirrors the session's conditional local-HTTP policy.
+		http.SetCookie(w, &http.Cookie{Name: sessionCookieNameFor(secure), Value: "", Path: "/", MaxAge: -1, HttpOnly: true, Secure: secure, SameSite: http.SameSiteLaxMode})
 	}
-	// #nosec G124 -- deletion mirrors the session's conditional local-HTTP policy.
-	http.SetCookie(w, &http.Cookie{Name: "_gh_sess", Value: "", Path: "/", MaxAge: -1, HttpOnly: true, Secure: strings.HasPrefix(s.externalURL, "https://"), SameSite: http.SameSiteLaxMode})
 	w.Header().Set("Cache-Control", "no-store")
 	w.Header().Set("Content-Security-Policy", "default-src 'none'; style-src 'unsafe-inline'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'")
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
@@ -838,9 +1046,17 @@ main{width:min(31rem,100%);overflow:hidden;border:1px solid color-mix(in srgb,va
 
 func (s *Server) handleShauthFrontChannelLogout(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Cache-Control", "no-store")
-	w.Header().Set("Content-Security-Policy", "default-src 'none'; frame-ancestors *")
+	// The OP renders this endpoint in an iframe during front-channel logout,
+	// so the issuer origin must be allowed to frame it alongside 'self'.
+	frameAncestors := "'self'"
+	if s.identity.shauthConfigured() {
+		if issuer, err := url.Parse(s.identity.shauthIssuer); err == nil && issuer.Scheme != "" && issuer.Host != "" {
+			frameAncestors += " " + issuer.Scheme + "://" + issuer.Host
+		}
+	}
+	w.Header().Set("Content-Security-Policy", "default-src 'none'; frame-ancestors "+frameAncestors)
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	if s.identity.shauthConfigured() && r.URL.Query().Get("iss") == s.identity.shauthIssuer && r.URL.Query().Get("sid") != "" {
+	if r.Method == http.MethodPost && s.identity.shauthConfigured() && r.URL.Query().Get("iss") == s.identity.shauthIssuer && r.URL.Query().Get("sid") != "" {
 		if err := s.store.DeleteLoginSessionsForOIDC("shauth", s.identity.shauthIssuer, r.URL.Query().Get("sid"), ""); err != nil {
 			s.logger.Error().Err(err).Msg("revoke browser sessions from Shauth front-channel logout")
 			writeGHError(w, http.StatusServiceUnavailable, "browser sessions could not be revoked")

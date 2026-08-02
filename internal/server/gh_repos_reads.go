@@ -265,7 +265,7 @@ func (s *Server) licenseSimpleJSON(key, base string) map[string]interface{} {
 			"name":    tmpl.name,
 			"spdx_id": tmpl.spdxID,
 			"url":     base + "/api/v3/licenses/" + key,
-			"node_id": "MDc6TGljZW5zZ" + key,
+			"node_id": tmpl.nodeID,
 		}
 	}
 	return map[string]interface{}{

@@ -33,6 +33,19 @@ func (s *Server) resolveEnterprise(w http.ResponseWriter, r *http.Request) bool 
 	return true
 }
 
+// enterpriseFromRequest keys an enterprise-settings handler on the
+// {enterprise} path parameter and returns it as the tenant key. bleephub is
+// single-tenant: a slug other than the configured one is a 404, like real
+// GitHub for an unknown enterprise.
+func (s *Server) enterpriseFromRequest(w http.ResponseWriter, r *http.Request) (string, bool) {
+	enterprise := r.PathValue("enterprise")
+	if enterprise != s.enterpriseSlug() {
+		writeGHError(w, http.StatusNotFound, "Not Found")
+		return "", false
+	}
+	return enterprise, true
+}
+
 // requireEnterpriseMember gates an enterprise endpoint on an authenticated
 // user of the instance (every user belongs to the single enterprise) and on
 // the {enterprise} path parameter naming the configured enterprise.

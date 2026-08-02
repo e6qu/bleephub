@@ -105,7 +105,8 @@ func (s *Server) handleCreateEnterpriseTeam(w http.ResponseWriter, r *http.Reque
 		writeGHValidationError(w, "EnterpriseTeam", "name", "already_exists")
 		return
 	}
-	writeJSON(w, http.StatusCreated, s.enterpriseTeamJSON(team, s.baseURL(r)))
+	teamJSON := s.enterpriseTeamJSON(team, s.baseURL(r))
+	writeJSONCreated(w, jsonStringField(teamJSON, "url"), teamJSON)
 }
 
 // lookupEnterpriseTeam resolves {team_slug}, writing 404 when absent.

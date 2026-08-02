@@ -41,7 +41,7 @@ func (s *Server) handleListLicenses(w http.ResponseWriter, r *http.Request) {
 			"name":    tmpl.name,
 			"spdx_id": tmpl.spdxID,
 			"url":     s.baseURL(r) + "/api/v3/licenses/" + k,
-			"node_id": "MDc6TGljZW5zZ" + k,
+			"node_id": tmpl.nodeID,
 		})
 	}
 	writeJSON(w, http.StatusOK, paginateAndLink(w, r, out))
@@ -66,7 +66,7 @@ func (s *Server) handleGetLicense(w http.ResponseWriter, r *http.Request) {
 		"limitations":    []string{},
 		"featured":       true,
 		"html_url":       "https://choosealicense.com/licenses/" + key + "/",
-		"node_id":        "MDc6TGljZW5zZTEz",
+		"node_id":        tmpl.nodeID,
 		"url":            s.baseURL(r) + "/api/v3/licenses/" + key,
 	})
 }
@@ -254,11 +254,13 @@ func listGitignoreNames() []string {
 var licenseTemplates = map[string]struct {
 	name   string
 	spdxID string
+	nodeID string
 	body   string
 }{
 	"mit": {
 		name:   "MIT License",
 		spdxID: "MIT",
+		nodeID: "MDc6TGljZW5zZTEz",
 		body: `MIT License
 
 Copyright (c) [year] [fullname]
@@ -285,6 +287,7 @@ SOFTWARE.
 	"apache-2.0": {
 		name:   "Apache License 2.0",
 		spdxID: "Apache-2.0",
+		nodeID: "MDc6TGljZW5zZTE=",
 		body: `Apache License
 Version 2.0, January 2004
 http://www.apache.org/licenses/
@@ -305,6 +308,7 @@ limitations under the License.
 	"gpl-3.0": {
 		name:   "GNU General Public License v3.0",
 		spdxID: "GPL-3.0",
+		nodeID: "MDc6TGljZW5zZTE1",
 		body: `GNU GENERAL PUBLIC LICENSE
 Version 3, 29 June 2007
 
@@ -326,6 +330,7 @@ GNU General Public License for more details.
 	"bsd-2-clause": {
 		name:   "BSD 2-Clause \"Simplified\" License",
 		spdxID: "BSD-2-Clause",
+		nodeID: "MDc6TGljZW5zZTQ=",
 		body: `BSD 2-Clause License
 
 Copyright (c) [year], [fullname]
@@ -356,6 +361,7 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 	"bsd-3-clause": {
 		name:   "BSD 3-Clause \"New\" or \"Revised\" License",
 		spdxID: "BSD-3-Clause",
+		nodeID: "MDc6TGljZW5zZTU=",
 		body: `BSD 3-Clause License
 
 Copyright (c) [year], [fullname]
@@ -390,6 +396,7 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 	"mpl-2.0": {
 		name:   "Mozilla Public License 2.0",
 		spdxID: "MPL-2.0",
+		nodeID: "MDc6TGljZW5zZTE2",
 		body: `Mozilla Public License Version 2.0
 ==================================
 
@@ -401,6 +408,7 @@ file, You can obtain one at https://mozilla.org/MPL/2.0/.
 	"unlicense": {
 		name:   "The Unlicense",
 		spdxID: "Unlicense",
+		nodeID: "MDc6TGljZW5zZTE4",
 		body: `This is free and unencumbered software released into the public domain.
 
 Anyone is free to copy, modify, publish, use, compile, sell, or

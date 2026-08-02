@@ -21,13 +21,13 @@
       },
       {
         "event": "deployment_status",
-        "line": 631,
+        "line": 632,
         "producer": "emitWebhookEvent",
         "source": "internal/server/gh_deployments.go"
       },
       {
         "event": "deployment_status",
-        "line": 641,
+        "line": 642,
         "producer": "emitWebhookEvent",
         "source": "internal/server/gh_deployments.go"
       },
@@ -45,7 +45,7 @@
       },
       {
         "event": "issue_comment",
-        "line": 609,
+        "line": 610,
         "producer": "emitWebhookEvent",
         "source": "internal/server/gh_issues_rest.go"
       },
@@ -57,13 +57,13 @@
       },
       {
         "event": "issues",
-        "line": 549,
+        "line": 550,
         "producer": "emitWebhookEvent",
         "source": "internal/server/gh_issues_rest.go"
       },
       {
         "event": "organization",
-        "line": 464,
+        "line": 465,
         "producer": "emitOrgWebhookEvent",
         "source": "internal/server/gh_org_hooks_rest.go"
       },
@@ -81,13 +81,13 @@
       },
       {
         "event": "pull_request",
-        "line": 431,
+        "line": 432,
         "producer": "emitWebhookEvent",
         "source": "internal/server/gh_pulls_rest.go"
       },
       {
         "event": "pull_request",
-        "line": 528,
+        "line": 529,
         "producer": "emitWebhookEvent",
         "source": "internal/server/gh_pulls_rest.go"
       },
@@ -99,19 +99,19 @@
       },
       {
         "event": "pull_request_review",
-        "line": 705,
+        "line": 706,
         "producer": "emitWebhookEvent",
         "source": "internal/server/gh_pulls_rest.go"
       },
       {
         "event": "pull_request_review",
-        "line": 962,
+        "line": 963,
         "producer": "emitWebhookEvent",
         "source": "internal/server/gh_pulls_rest.go"
       },
       {
         "event": "pull_request_review",
-        "line": 1016,
+        "line": 1017,
         "producer": "emitWebhookEvent",
         "source": "internal/server/gh_pulls_rest.go"
       },
@@ -129,13 +129,13 @@
       },
       {
         "event": "release",
-        "line": 898,
+        "line": 911,
         "producer": "emitWebhookEvent",
         "source": "internal/server/gh_releases.go"
       },
       {
         "event": "release",
-        "line": 920,
+        "line": 933,
         "producer": "emitWebhookEvent",
         "source": "internal/server/gh_releases.go"
       },
@@ -397,8 +397,8 @@
         "id": "AUTH-021",
         "location": "identity.go:598, store.go:70",
         "severity": "M",
-        "status": "open",
-        "status_kind": "open"
+        "status": "fixed \u2014 external identities now keyed on `(issuer, subject)` via `UsersByExternalID`; `SiteAdmin` is never overwritten on existing accounts by login",
+        "status_kind": "fixed"
       },
       {
         "category": "AUTH",
@@ -415,8 +415,8 @@
         "id": "AUTH-023",
         "location": "git_http.go:98-229",
         "severity": "M",
-        "status": "open",
-        "status_kind": "open"
+        "status": "fixed \u2014 authentication now precedes repository resolution: anonymous requests get a 401 challenge (required by the git HTTP protocol) whether or not the repo exists; authenticated-but-unauthorized requests get 404, indistinguishable from a nonexistent repo",
+        "status_kind": "fixed"
       },
       {
         "category": "AUTH",
@@ -460,8 +460,8 @@
         "id": "AUTH-028",
         "location": "handle_mgmt.go:410, identity.go:240",
         "severity": "M",
-        "status": "open",
-        "status_kind": "open"
+        "status": "fixed \u2014 NFKC normalization and case folding applied; Latin/Cyrillic mixing rejected; `BLEEPHUB_ALLOWED_LOGINS` env var enforces a login allowlist; user creation and external login normalized",
+        "status_kind": "fixed"
       },
       {
         "category": "AUTH",
@@ -478,8 +478,8 @@
         "id": "AUTH-030",
         "location": "identity.go:459",
         "severity": "m",
-        "status": "open",
-        "status_kind": "open"
+        "status": "fixed \u2014 a dedicated 32-byte CSPRNG key is generated at startup and used for state-cookie HMAC; the client secret is no longer reused as a cryptographic key",
+        "status_kind": "fixed"
       },
       {
         "category": "AUTH",
@@ -487,8 +487,8 @@
         "id": "AUTH-031",
         "location": "identity.go:642,690",
         "severity": "m",
-        "status": "open",
-        "status_kind": "open"
+        "status": "fixed \u2014 logout always validates Origin when the header is present; session destruction requires POST; GET renders the page without side effects",
+        "status_kind": "fixed"
       },
       {
         "category": "AUTH",
@@ -496,8 +496,8 @@
         "id": "AUTH-032",
         "location": "identity.go:635",
         "severity": "m",
-        "status": "open",
-        "status_kind": "open"
+        "status": "fixed \u2014 `isSecureRequest` checks `r.TLS` or `X-Forwarded-Proto`; session cookies get `__Host-` prefix when Secure; all five copy-pasted sites use the shared helper",
+        "status_kind": "fixed"
       },
       {
         "category": "AUTH",
@@ -514,8 +514,8 @@
         "id": "AUTH-034",
         "location": "git_ssh.go:74-96",
         "severity": "m",
-        "status": "open",
-        "status_kind": "open"
+        "status": "fixed \u2014 `parseGitSSHUserID` checks both `Sscanf` returns and returns an error; the caller drops the connection on parse failure (fail closed)",
+        "status_kind": "fixed"
       },
       {
         "category": "AUTH",
@@ -523,8 +523,8 @@
         "id": "AUTH-035",
         "location": "store.go:3222",
         "severity": "m",
-        "status": "open",
-        "status_kind": "open"
+        "status": "fixed \u2014 parsed keys cached at registration and persistence load; lookup compares cached wire encodings; `MaxAuthTries: 6` enforced per connection",
+        "status_kind": "fixed"
       },
       {
         "category": "AUTH",
@@ -532,8 +532,8 @@
         "id": "AUTH-036",
         "location": "secrets.go:295",
         "severity": "m",
-        "status": "open",
-        "status_kind": "open"
+        "status": "fixed \u2014 delete returns 404 when the secret never existed; audit event only written when it did",
+        "status_kind": "fixed"
       },
       {
         "category": "AUTH",
@@ -541,8 +541,8 @@
         "id": "AUTH-037",
         "location": "identity.go:250",
         "severity": "m",
-        "status": "open",
-        "status_kind": "open"
+        "status": "fixed \u2014 successful login invalidates the presented session and mints a new one, preventing session fixation",
+        "status_kind": "fixed"
       },
       {
         "category": "AUTH",
@@ -550,8 +550,8 @@
         "id": "AUTH-038",
         "location": "identity.go:759",
         "severity": "m",
-        "status": "open",
-        "status_kind": "open"
+        "status": "fixed \u2014 CSP `frame-ancestors` limited to 'self' plus the configured Shauth issuer origin (the OP frames this endpoint during front-channel logout); session revocation requires POST",
+        "status_kind": "fixed"
       },
       {
         "category": "AUTH",
@@ -559,8 +559,8 @@
         "id": "AUTH-039",
         "location": "identity.go:235-244",
         "severity": "m",
-        "status": "open",
-        "status_kind": "open"
+        "status": "fixed \u2014 removed the comment",
+        "status_kind": "fixed"
       },
       {
         "category": "AUTH",
@@ -874,8 +874,8 @@
         "id": "AUTH-074",
         "location": "auth.go:34",
         "severity": "m",
-        "status": "open",
-        "status_kind": "open"
+        "status": "fixed \u2014 comment now documents the full five-route allowlist; test rewritten as a sweep over routePatterns with a 30-route floor",
+        "status_kind": "fixed"
       },
       {
         "category": "AUTH",
@@ -1621,8 +1621,8 @@
         "id": "REST-061",
         "location": "30+ sites",
         "severity": "M",
-        "status": "open",
-        "status_kind": "open"
+        "status": "fixed \u2014 23 discarded-error sites now check the error: invalid query params return 400, invalid path params return 404",
+        "status_kind": "fixed"
       },
       {
         "category": "REST",
@@ -1657,8 +1657,8 @@
         "id": "REST-065",
         "location": "gh_dependency_graph.go:152",
         "severity": "M",
-        "status": "open",
-        "status_kind": "open"
+        "status": "fixed \u2014 invalid snapshots now return 422 and are never persisted; strengthened validation checks SHA format, RFC3339 timestamps, package URLs, relationship/scope enums",
+        "status_kind": "fixed"
       },
       {
         "category": "REST",
@@ -1666,8 +1666,8 @@
         "id": "REST-066",
         "location": "gh_enterprise_dependabot.go:22",
         "severity": "M",
-        "status": "open",
-        "status_kind": "open"
+        "status": "fixed \u2014 callers who admin no org now get 403 instead of a deceptive `200 []`",
+        "status_kind": "fixed"
       },
       {
         "category": "REST",
@@ -1684,8 +1684,8 @@
         "id": "REST-068",
         "location": "gh_search.go:742,860",
         "severity": "M",
-        "status": "open",
-        "status_kind": "open"
+        "status": "fixed \u2014 truncated results now set `incomplete_results: true` and report the true pre-truncation `total_count`; relevance-based scoring replaces hardcoded 1.0 across all search families",
+        "status_kind": "fixed"
       },
       {
         "category": "REST",
@@ -1747,8 +1747,8 @@
         "id": "REST-075",
         "location": "gh_hooks_rest.go:468",
         "severity": "M",
-        "status": "open",
-        "status_kind": "open"
+        "status": "fixed \u2014 `hookToJSON` now uses `s.baseURL(r)` which honors TLS and externalURL",
+        "status_kind": "fixed"
       },
       {
         "category": "REST",
@@ -1756,8 +1756,8 @@
         "id": "REST-076",
         "location": "8 endpoints",
         "severity": "M",
-        "status": "open",
-        "status_kind": "open"
+        "status": "fixed \u2014 already closed by the earlier PAR-031 fix; all 22 actions-permissions/settings PUTs return 204",
+        "status_kind": "fixed"
       },
       {
         "category": "REST",
@@ -1765,8 +1765,8 @@
         "id": "REST-077",
         "location": "gh_pat_web.go:313",
         "severity": "M",
-        "status": "open",
-        "status_kind": "open"
+        "status": "fixed \u2014 split the `err != nil || !decodeJSONBody(...)` short-circuit; bad `pat_request_id` now explicitly returns 404",
+        "status_kind": "fixed"
       },
       {
         "category": "REST",
@@ -1783,8 +1783,8 @@
         "id": "REST-079",
         "location": "gh_api_insights.go:77-275",
         "severity": "M",
-        "status": "open",
-        "status_kind": "open"
+        "status": "fixed \u2014 dedicated `apiInsightsMu` so request recording no longer takes the main store write lock; 10,000-row cap with FIFO eviction",
+        "status_kind": "fixed"
       },
       {
         "category": "REST",
@@ -1828,8 +1828,8 @@
         "id": "REST-084",
         "location": "gh_repos_rest.go:45-65",
         "severity": "M",
-        "status": "open",
-        "status_kind": "open"
+        "status": "fixed \u2014 added `repoAccessLevel` (None/Read/Write/Admin); read hides unreadable private repos behind 404, Write/Admin answer 403; all 16 call sites updated",
+        "status_kind": "fixed"
       },
       {
         "category": "REST",
@@ -1873,8 +1873,8 @@
         "id": "REST-089",
         "location": "gh_workflows_rest.go:166",
         "severity": "M",
-        "status": "open",
-        "status_kind": "open"
+        "status": "fixed \u2014 runs now match by workflow file path as the primary key; human `name:` comparison is only a fallback for runs with no recorded backing file",
+        "status_kind": "fixed"
       },
       {
         "category": "REST",
@@ -1918,8 +1918,8 @@
         "id": "REST-094",
         "location": "server.go:666",
         "severity": "M",
-        "status": "open",
-        "status_kind": "open"
+        "status": "fixed \u2014 marshal happens before WriteHeader; on failure the error is logged and 500 is written",
+        "status_kind": "fixed"
       },
       {
         "category": "REST",
@@ -1936,8 +1936,8 @@
         "id": "REST-096",
         "location": "gh_enterprise_actions.go:20",
         "severity": "M",
-        "status": "open",
-        "status_kind": "open"
+        "status": "fixed \u2014 added `enterpriseFromRequest` which returns the `{enterprise}` path value as the tenant key and 404s when it isn't the configured slug; all 9 settings handlers now key on it",
+        "status_kind": "fixed"
       },
       {
         "category": "REST",
@@ -1954,8 +1954,8 @@
         "id": "REST-098",
         "location": "server.go:69, gh_releases.go:464",
         "severity": "M",
-        "status": "open",
-        "status_kind": "open"
+        "status": "fixed \u2014 added `routeDispatch` which records the 9 real release endpoints in routePatterns while keeping the wildcard mux patterns; fuzz inventory and API definition tests updated",
+        "status_kind": "fixed"
       },
       {
         "category": "REST",
@@ -2035,8 +2035,8 @@
         "id": "REST-107",
         "location": "gh_org_events.go:216",
         "severity": "M",
-        "status": "open",
-        "status_kind": "open"
+        "status": "fixed \u2014 `GET /orgs/{org}/events` now requires authentication (401 for anonymous); `GET /events` was already registered in `gh_events_feeds.go` and remains the public feed",
+        "status_kind": "fixed"
       },
       {
         "category": "REST",
@@ -2062,8 +2062,8 @@
         "id": "REST-110",
         "location": "125 sites",
         "severity": "m",
-        "status": "open",
-        "status_kind": "open"
+        "status": "fixed \u2014 54 resource-creating endpoints now set a `Location` header via `writeJSONCreated`; batch operations and token exchanges excluded",
+        "status_kind": "fixed"
       },
       {
         "category": "REST",
@@ -2071,8 +2071,8 @@
         "id": "REST-111",
         "location": "gh_org_pat_admin.go:42, gh_private_registries.go:26",
         "severity": "m",
-        "status": "open",
-        "status_kind": "open"
+        "status": "fixed \u2014 `PrivateRegistryConfiguration.EncryptedValue` now uses `json:\"-\"` so it never serializes to API responses; persistence uses a separate `privateRegistryConfigurationPersist` struct that round-trips the sealed value",
+        "status_kind": "fixed"
       },
       {
         "category": "REST",
@@ -2080,8 +2080,8 @@
         "id": "REST-112",
         "location": "gh_secret_scanning.go:369, gh_dependabot.go:770",
         "severity": "m",
-        "status": "open",
-        "status_kind": "open"
+        "status": "fixed \u2014 removed the commented-out `handleListSecretScanningUserAlerts` and user-scoped Dependabot secret handlers",
+        "status_kind": "fixed"
       },
       {
         "category": "REST",
@@ -5792,8 +5792,8 @@
         },
         "AUTH": {
           "status": {
-            "fixed": 75,
-            "open": 15,
+            "fixed": 88,
+            "open": 2,
             "partial": 3
           },
           "total": 93
@@ -5832,8 +5832,7 @@
         },
         "REST": {
           "status": {
-            "fixed": 98,
-            "open": 17,
+            "fixed": 115,
             "partial": 3
           },
           "total": 118
@@ -5870,8 +5869,8 @@
       },
       "status": {
         "deferred": 1,
-        "fixed": 423,
-        "open": 154,
+        "fixed": 453,
+        "open": 124,
         "partial": 40
       },
       "total": 618
@@ -17987,8 +17986,6 @@
         "DELETE /repos/{}/{}/issues/{}/sub_issue",
         "DELETE /repos/{}/{}/pulls/comments/{}",
         "DELETE /repos/{}/{}/pulls/{}/reviews/{}",
-        "DELETE /repos/{}/{}/releases/assets/{}",
-        "DELETE /repos/{}/{}/releases/{}/reactions/{}",
         "GET /orgs/{}/rulesets/rule-suites/{}",
         "GET /orgs/{}/rulesets/{}/history",
         "GET /orgs/{}/rulesets/{}/history/{}",
@@ -18010,19 +18007,12 @@
         "GET /repos/{}/{}/pulls/comments/{}/reactions",
         "GET /repos/{}/{}/pulls/{}/files",
         "GET /repos/{}/{}/pulls/{}/reviews/{}",
-        "GET /repos/{}/{}/releases/assets/{}",
-        "GET /repos/{}/{}/releases/tags/{}",
-        "GET /repos/{}/{}/releases/{}/assets",
-        "GET /repos/{}/{}/releases/{}/reactions",
         "GET /repos/{}/{}/rulesets/rule-suites/{}",
         "GET /repos/{}/{}/rulesets/{}/history",
         "GET /user/codespaces/{}/exports/{}",
         "GET /user/codespaces/{}/machines",
         "PATCH /repos/{}/{}/pulls/comments/{}",
-        "PATCH /repos/{}/{}/releases/assets/{}",
         "POST /repos/{}/{}/pulls/comments/{}/reactions",
-        "POST /repos/{}/{}/releases/{}/assets",
-        "POST /repos/{}/{}/releases/{}/reactions",
         "POST /repos/{}/{}/security-advisories/reports",
         "PUT /repos/{}/{}/pulls/{}/reviews/{}"
       ],
@@ -18082,7 +18072,7 @@
         "source": "internal/server/gh_ghes_admin_stats.go"
       },
       {
-        "line": 56,
+        "line": 58,
         "method": "DELETE",
         "path": "/api/v3/admin/users/{username}",
         "source": "internal/server/gh_misc_endpoints.go"
@@ -19186,7 +19176,7 @@
         "source": "internal/server/gh_labels_rest.go"
       },
       {
-        "line": 103,
+        "line": 105,
         "method": "DELETE",
         "path": "/api/v3/repos/{owner}/{repo}/pages",
         "source": "internal/server/gh_misc_endpoints.go"
@@ -19228,22 +19218,22 @@
         "source": "internal/server/gh_reactions.go"
       },
       {
-        "line": 512,
+        "line": 0,
         "method": "DELETE",
-        "path": "/api/v3/repos/{owner}/{repo}/releases/{p1}/{p2}",
-        "source": "internal/server/gh_releases.go"
-      },
-      {
-        "line": 517,
-        "method": "DELETE",
-        "path": "/api/v3/repos/{owner}/{repo}/releases/{p1}/{p2}/{p3}",
-        "source": "internal/server/gh_releases.go"
+        "path": "/api/v3/repos/{owner}/{repo}/releases/assets/{asset_id}",
+        "source": "runtime route table (programmatic registration)"
       },
       {
         "line": 494,
         "method": "DELETE",
         "path": "/api/v3/repos/{owner}/{repo}/releases/{release_id}",
         "source": "internal/server/gh_releases.go"
+      },
+      {
+        "line": 0,
+        "method": "DELETE",
+        "path": "/api/v3/repos/{owner}/{repo}/releases/{release_id}/reactions/{reaction_id}",
+        "source": "runtime route table (programmatic registration)"
       },
       {
         "line": 16,
@@ -19312,7 +19302,7 @@
         "source": "internal/server/gh_teams_legacy_rest.go"
       },
       {
-        "line": 74,
+        "line": 76,
         "method": "DELETE",
         "path": "/api/v3/user/blocks/{username}",
         "source": "internal/server/gh_misc_endpoints.go"
@@ -19342,13 +19332,13 @@
         "source": "internal/server/gh_user_surface.go"
       },
       {
-        "line": 50,
+        "line": 52,
         "method": "DELETE",
         "path": "/api/v3/user/following/{username}",
         "source": "internal/server/gh_misc_endpoints.go"
       },
       {
-        "line": 41,
+        "line": 43,
         "method": "DELETE",
         "path": "/api/v3/user/gpg_keys/{gpg_key_id}",
         "source": "internal/server/gh_misc_endpoints.go"
@@ -19366,7 +19356,7 @@
         "source": "internal/server/gh_user_surface.go"
       },
       {
-        "line": 37,
+        "line": 39,
         "method": "DELETE",
         "path": "/api/v3/user/keys/{key_id}",
         "source": "internal/server/gh_misc_endpoints.go"
@@ -19402,13 +19392,13 @@
         "source": "internal/server/gh_invitations_rest.go"
       },
       {
-        "line": 78,
+        "line": 80,
         "method": "DELETE",
         "path": "/api/v3/user/social_accounts",
         "source": "internal/server/gh_misc_endpoints.go"
       },
       {
-        "line": 81,
+        "line": 83,
         "method": "DELETE",
         "path": "/api/v3/user/ssh_signing_keys/{ssh_signing_key_id}",
         "source": "internal/server/gh_misc_endpoints.go"
@@ -19468,13 +19458,13 @@
         "source": "internal/server/gh_projects_v2_rest.go"
       },
       {
-        "line": 58,
+        "line": 60,
         "method": "DELETE",
         "path": "/api/v3/users/{username}/site_admin",
         "source": "internal/server/gh_misc_endpoints.go"
       },
       {
-        "line": 60,
+        "line": 62,
         "method": "DELETE",
         "path": "/api/v3/users/{username}/suspended",
         "source": "internal/server/gh_misc_endpoints.go"
@@ -20530,43 +20520,43 @@
         "source": "internal/server/gh_repos_templates.go"
       },
       {
-        "line": 118,
+        "line": 120,
         "method": "GET",
         "path": "/api/v3/marketplace_listing/accounts/{account_id}",
         "source": "internal/server/gh_misc_endpoints.go"
       },
       {
-        "line": 117,
+        "line": 119,
         "method": "GET",
         "path": "/api/v3/marketplace_listing/plans",
         "source": "internal/server/gh_misc_endpoints.go"
       },
       {
-        "line": 119,
+        "line": 121,
         "method": "GET",
         "path": "/api/v3/marketplace_listing/plans/{plan_id}/accounts",
         "source": "internal/server/gh_misc_endpoints.go"
       },
       {
-        "line": 122,
+        "line": 124,
         "method": "GET",
         "path": "/api/v3/marketplace_listing/stubbed/accounts/{account_id}",
         "source": "internal/server/gh_misc_endpoints.go"
       },
       {
-        "line": 120,
+        "line": 122,
         "method": "GET",
         "path": "/api/v3/marketplace_listing/stubbed/plans",
         "source": "internal/server/gh_misc_endpoints.go"
       },
       {
-        "line": 121,
+        "line": 123,
         "method": "GET",
         "path": "/api/v3/marketplace_listing/stubbed/plans/{plan_id}/accounts",
         "source": "internal/server/gh_misc_endpoints.go"
       },
       {
-        "line": 127,
+        "line": 129,
         "method": "GET",
         "path": "/api/v3/meta",
         "source": "internal/server/gh_misc_endpoints.go"
@@ -20758,7 +20748,7 @@
         "source": "internal/server/gh_actions_oidc_properties.go"
       },
       {
-        "line": 93,
+        "line": 95,
         "method": "GET",
         "path": "/api/v3/orgs/{org}/actions/oidc/customization/sub",
         "source": "internal/server/gh_misc_endpoints.go"
@@ -20992,7 +20982,7 @@
         "source": "internal/server/gh_attestations.go"
       },
       {
-        "line": 113,
+        "line": 115,
         "method": "GET",
         "path": "/api/v3/orgs/{org}/audit-log",
         "source": "internal/server/gh_misc_endpoints.go"
@@ -21964,7 +21954,7 @@
         "source": "internal/server/gh_actions_rest.go"
       },
       {
-        "line": 90,
+        "line": 92,
         "method": "GET",
         "path": "/api/v3/repos/{owner}/{repo}/actions/oidc/customization/sub",
         "source": "internal/server/gh_misc_endpoints.go"
@@ -23086,25 +23076,25 @@
         "source": "internal/server/gh_notifications.go"
       },
       {
-        "line": 98,
+        "line": 100,
         "method": "GET",
         "path": "/api/v3/repos/{owner}/{repo}/pages",
         "source": "internal/server/gh_misc_endpoints.go"
       },
       {
-        "line": 105,
+        "line": 107,
         "method": "GET",
         "path": "/api/v3/repos/{owner}/{repo}/pages/builds",
         "source": "internal/server/gh_misc_endpoints.go"
       },
       {
-        "line": 108,
+        "line": 110,
         "method": "GET",
         "path": "/api/v3/repos/{owner}/{repo}/pages/builds/latest",
         "source": "internal/server/gh_misc_endpoints.go"
       },
       {
-        "line": 109,
+        "line": 111,
         "method": "GET",
         "path": "/api/v3/repos/{owner}/{repo}/pages/builds/{build_id}",
         "source": "internal/server/gh_misc_endpoints.go"
@@ -23236,22 +23226,40 @@
         "source": "internal/server/gh_releases.go"
       },
       {
+        "line": 0,
+        "method": "GET",
+        "path": "/api/v3/repos/{owner}/{repo}/releases/assets/{asset_id}",
+        "source": "runtime route table (programmatic registration)"
+      },
+      {
         "line": 483,
         "method": "GET",
         "path": "/api/v3/repos/{owner}/{repo}/releases/latest",
         "source": "internal/server/gh_releases.go"
       },
       {
-        "line": 504,
+        "line": 0,
         "method": "GET",
-        "path": "/api/v3/repos/{owner}/{repo}/releases/{p1}/{p2}",
-        "source": "internal/server/gh_releases.go"
+        "path": "/api/v3/repos/{owner}/{repo}/releases/tags/{tag}",
+        "source": "runtime route table (programmatic registration)"
       },
       {
         "line": 490,
         "method": "GET",
         "path": "/api/v3/repos/{owner}/{repo}/releases/{release_id}",
         "source": "internal/server/gh_releases.go"
+      },
+      {
+        "line": 0,
+        "method": "GET",
+        "path": "/api/v3/repos/{owner}/{repo}/releases/{release_id}/assets",
+        "source": "runtime route table (programmatic registration)"
+      },
+      {
+        "line": 0,
+        "method": "GET",
+        "path": "/api/v3/repos/{owner}/{repo}/releases/{release_id}/reactions",
+        "source": "runtime route table (programmatic registration)"
       },
       {
         "line": 19,
@@ -23500,43 +23508,43 @@
         "source": "internal/server/gh_org_scim.go"
       },
       {
-        "line": 24,
+        "line": 23,
         "method": "GET",
         "path": "/api/v3/search/code",
         "source": "internal/server/gh_search.go"
       },
       {
-        "line": 26,
+        "line": 25,
         "method": "GET",
         "path": "/api/v3/search/commits",
         "source": "internal/server/gh_search.go"
       },
       {
-        "line": 22,
+        "line": 21,
         "method": "GET",
         "path": "/api/v3/search/issues",
         "source": "internal/server/gh_search.go"
       },
       {
-        "line": 27,
+        "line": 26,
         "method": "GET",
         "path": "/api/v3/search/labels",
         "source": "internal/server/gh_search.go"
       },
       {
-        "line": 23,
+        "line": 22,
         "method": "GET",
         "path": "/api/v3/search/repositories",
         "source": "internal/server/gh_search.go"
       },
       {
-        "line": 28,
+        "line": 27,
         "method": "GET",
         "path": "/api/v3/search/topics",
         "source": "internal/server/gh_search.go"
       },
       {
-        "line": 25,
+        "line": 24,
         "method": "GET",
         "path": "/api/v3/search/users",
         "source": "internal/server/gh_search.go"
@@ -23602,13 +23610,13 @@
         "source": "internal/server/gh_rest.go"
       },
       {
-        "line": 71,
+        "line": 73,
         "method": "GET",
         "path": "/api/v3/user/blocks",
         "source": "internal/server/gh_misc_endpoints.go"
       },
       {
-        "line": 72,
+        "line": 74,
         "method": "GET",
         "path": "/api/v3/user/blocks/{username}",
         "source": "internal/server/gh_misc_endpoints.go"
@@ -23668,37 +23676,37 @@
         "source": "internal/server/gh_packages.go"
       },
       {
-        "line": 42,
+        "line": 44,
         "method": "GET",
         "path": "/api/v3/user/emails",
         "source": "internal/server/gh_misc_endpoints.go"
       },
       {
-        "line": 47,
+        "line": 49,
         "method": "GET",
         "path": "/api/v3/user/followers",
         "source": "internal/server/gh_misc_endpoints.go"
       },
       {
-        "line": 48,
+        "line": 50,
         "method": "GET",
         "path": "/api/v3/user/following",
         "source": "internal/server/gh_misc_endpoints.go"
       },
       {
-        "line": 75,
+        "line": 77,
         "method": "GET",
         "path": "/api/v3/user/following/{username}",
         "source": "internal/server/gh_misc_endpoints.go"
       },
       {
-        "line": 38,
+        "line": 40,
         "method": "GET",
         "path": "/api/v3/user/gpg_keys",
         "source": "internal/server/gh_misc_endpoints.go"
       },
       {
-        "line": 40,
+        "line": 42,
         "method": "GET",
         "path": "/api/v3/user/gpg_keys/{gpg_key_id}",
         "source": "internal/server/gh_misc_endpoints.go"
@@ -23728,13 +23736,13 @@
         "source": "internal/server/gh_user_surface.go"
       },
       {
-        "line": 34,
+        "line": 36,
         "method": "GET",
         "path": "/api/v3/user/keys",
         "source": "internal/server/gh_misc_endpoints.go"
       },
       {
-        "line": 36,
+        "line": 38,
         "method": "GET",
         "path": "/api/v3/user/keys/{key_id}",
         "source": "internal/server/gh_misc_endpoints.go"
@@ -23836,13 +23844,13 @@
         "source": "internal/server/gh_invitations_rest.go"
       },
       {
-        "line": 76,
+        "line": 78,
         "method": "GET",
         "path": "/api/v3/user/social_accounts",
         "source": "internal/server/gh_misc_endpoints.go"
       },
       {
-        "line": 79,
+        "line": 81,
         "method": "GET",
         "path": "/api/v3/user/ssh_signing_keys",
         "source": "internal/server/gh_misc_endpoints.go"
@@ -23860,13 +23868,13 @@
         "source": "internal/server/gh_repos_rest.go"
       },
       {
-        "line": 82,
+        "line": 84,
         "method": "GET",
         "path": "/api/v3/user/starred/{owner}/{repo}",
         "source": "internal/server/gh_misc_endpoints.go"
       },
       {
-        "line": 83,
+        "line": 85,
         "method": "GET",
         "path": "/api/v3/user/subscriptions",
         "source": "internal/server/gh_misc_endpoints.go"
@@ -23884,7 +23892,7 @@
         "source": "internal/server/gh_user_surface.go"
       },
       {
-        "line": 53,
+        "line": 55,
         "method": "GET",
         "path": "/api/v3/users",
         "source": "internal/server/gh_misc_endpoints.go"
@@ -23938,49 +23946,49 @@
         "source": "internal/server/gh_packages.go"
       },
       {
-        "line": 62,
+        "line": 64,
         "method": "GET",
         "path": "/api/v3/users/{username}/events",
         "source": "internal/server/gh_misc_endpoints.go"
       },
       {
-        "line": 64,
+        "line": 66,
         "method": "GET",
         "path": "/api/v3/users/{username}/events/orgs/{org}",
         "source": "internal/server/gh_misc_endpoints.go"
       },
       {
-        "line": 63,
+        "line": 65,
         "method": "GET",
         "path": "/api/v3/users/{username}/events/public",
         "source": "internal/server/gh_misc_endpoints.go"
       },
       {
-        "line": 45,
+        "line": 47,
         "method": "GET",
         "path": "/api/v3/users/{username}/followers",
         "source": "internal/server/gh_misc_endpoints.go"
       },
       {
-        "line": 46,
+        "line": 48,
         "method": "GET",
         "path": "/api/v3/users/{username}/following",
         "source": "internal/server/gh_misc_endpoints.go"
       },
       {
-        "line": 67,
+        "line": 69,
         "method": "GET",
         "path": "/api/v3/users/{username}/following/{target_user}",
         "source": "internal/server/gh_misc_endpoints.go"
       },
       {
-        "line": 61,
+        "line": 63,
         "method": "GET",
         "path": "/api/v3/users/{username}/gists",
         "source": "internal/server/gh_misc_endpoints.go"
       },
       {
-        "line": 44,
+        "line": 46,
         "method": "GET",
         "path": "/api/v3/users/{username}/gpg_keys",
         "source": "internal/server/gh_misc_endpoints.go"
@@ -23998,7 +24006,7 @@
         "source": "internal/server/gh_apps_rest.go"
       },
       {
-        "line": 43,
+        "line": 45,
         "method": "GET",
         "path": "/api/v3/users/{username}/keys",
         "source": "internal/server/gh_misc_endpoints.go"
@@ -24076,13 +24084,13 @@
         "source": "internal/server/gh_projects_v2_rest.go"
       },
       {
-        "line": 65,
+        "line": 67,
         "method": "GET",
         "path": "/api/v3/users/{username}/received_events",
         "source": "internal/server/gh_misc_endpoints.go"
       },
       {
-        "line": 66,
+        "line": 68,
         "method": "GET",
         "path": "/api/v3/users/{username}/received_events/public",
         "source": "internal/server/gh_misc_endpoints.go"
@@ -24118,13 +24126,13 @@
         "source": "internal/server/gh_user_surface.go"
       },
       {
-        "line": 68,
+        "line": 70,
         "method": "GET",
         "path": "/api/v3/users/{username}/social_accounts",
         "source": "internal/server/gh_misc_endpoints.go"
       },
       {
-        "line": 69,
+        "line": 71,
         "method": "GET",
         "path": "/api/v3/users/{username}/ssh_signing_keys",
         "source": "internal/server/gh_misc_endpoints.go"
@@ -24136,7 +24144,7 @@
         "source": "internal/server/gh_repos_rest.go"
       },
       {
-        "line": 70,
+        "line": 72,
         "method": "GET",
         "path": "/api/v3/users/{username}/subscriptions",
         "source": "internal/server/gh_misc_endpoints.go"
@@ -24190,7 +24198,7 @@
         "source": "internal/server/gh_ghes_pre_receive.go"
       },
       {
-        "line": 55,
+        "line": 57,
         "method": "PATCH",
         "path": "/api/v3/admin/users/{username}",
         "source": "internal/server/gh_misc_endpoints.go"
@@ -24748,10 +24756,10 @@
         "source": "internal/server/gh_pr_comments.go"
       },
       {
-        "line": 510,
+        "line": 0,
         "method": "PATCH",
-        "path": "/api/v3/repos/{owner}/{repo}/releases/{p1}/{p2}",
-        "source": "internal/server/gh_releases.go"
+        "path": "/api/v3/repos/{owner}/{repo}/releases/assets/{asset_id}",
+        "source": "runtime route table (programmatic registration)"
       },
       {
         "line": 492,
@@ -24898,7 +24906,7 @@
         "source": "internal/server/gh_ghes_pre_receive.go"
       },
       {
-        "line": 54,
+        "line": 56,
         "method": "POST",
         "path": "/api/v3/admin/users",
         "source": "internal/server/gh_misc_endpoints.go"
@@ -25948,13 +25956,13 @@
         "source": "internal/server/gh_labels_rest.go"
       },
       {
-        "line": 99,
+        "line": 101,
         "method": "POST",
         "path": "/api/v3/repos/{owner}/{repo}/pages",
         "source": "internal/server/gh_misc_endpoints.go"
       },
       {
-        "line": 106,
+        "line": 108,
         "method": "POST",
         "path": "/api/v3/repos/{owner}/{repo}/pages/builds",
         "source": "internal/server/gh_misc_endpoints.go"
@@ -26038,10 +26046,16 @@
         "source": "internal/server/gh_releases.go"
       },
       {
-        "line": 506,
+        "line": 0,
         "method": "POST",
-        "path": "/api/v3/repos/{owner}/{repo}/releases/{p1}/{p2}",
-        "source": "internal/server/gh_releases.go"
+        "path": "/api/v3/repos/{owner}/{repo}/releases/{release_id}/assets",
+        "source": "runtime route table (programmatic registration)"
+      },
+      {
+        "line": 0,
+        "method": "POST",
+        "path": "/api/v3/repos/{owner}/{repo}/releases/{release_id}/reactions",
+        "source": "runtime route table (programmatic registration)"
       },
       {
         "line": 13,
@@ -26176,13 +26190,13 @@
         "source": "internal/server/gh_user_surface.go"
       },
       {
-        "line": 39,
+        "line": 41,
         "method": "POST",
         "path": "/api/v3/user/gpg_keys",
         "source": "internal/server/gh_misc_endpoints.go"
       },
       {
-        "line": 35,
+        "line": 37,
         "method": "POST",
         "path": "/api/v3/user/keys",
         "source": "internal/server/gh_misc_endpoints.go"
@@ -26212,13 +26226,13 @@
         "source": "internal/server/gh_repos_rest.go"
       },
       {
-        "line": 77,
+        "line": 79,
         "method": "POST",
         "path": "/api/v3/user/social_accounts",
         "source": "internal/server/gh_misc_endpoints.go"
       },
       {
-        "line": 80,
+        "line": 82,
         "method": "POST",
         "path": "/api/v3/user/ssh_signing_keys",
         "source": "internal/server/gh_misc_endpoints.go"
@@ -26530,7 +26544,7 @@
         "source": "internal/server/gh_actions_permissions.go"
       },
       {
-        "line": 94,
+        "line": 96,
         "method": "PUT",
         "path": "/api/v3/orgs/{org}/actions/oidc/customization/sub",
         "source": "internal/server/gh_misc_endpoints.go"
@@ -26896,7 +26910,7 @@
         "source": "internal/server/gh_actions_permissions.go"
       },
       {
-        "line": 91,
+        "line": 93,
         "method": "PUT",
         "path": "/api/v3/repos/{owner}/{repo}/actions/oidc/customization/sub",
         "source": "internal/server/gh_misc_endpoints.go"
@@ -27112,7 +27126,7 @@
         "source": "internal/server/gh_notifications.go"
       },
       {
-        "line": 101,
+        "line": 103,
         "method": "PUT",
         "path": "/api/v3/repos/{owner}/{repo}/pages",
         "source": "internal/server/gh_misc_endpoints.go"
@@ -27208,7 +27222,7 @@
         "source": "internal/server/gh_teams_legacy_rest.go"
       },
       {
-        "line": 73,
+        "line": 75,
         "method": "PUT",
         "path": "/api/v3/user/blocks/{username}",
         "source": "internal/server/gh_misc_endpoints.go"
@@ -27232,7 +27246,7 @@
         "source": "internal/server/gh_codespaces.go"
       },
       {
-        "line": 49,
+        "line": 51,
         "method": "PUT",
         "path": "/api/v3/user/following/{username}",
         "source": "internal/server/gh_misc_endpoints.go"
@@ -27274,13 +27288,13 @@
         "source": "runtime route table (programmatic registration)"
       },
       {
-        "line": 57,
+        "line": 59,
         "method": "PUT",
         "path": "/api/v3/users/{username}/site_admin",
         "source": "internal/server/gh_misc_endpoints.go"
       },
       {
-        "line": 59,
+        "line": 61,
         "method": "PUT",
         "path": "/api/v3/users/{username}/suspended",
         "source": "internal/server/gh_misc_endpoints.go"

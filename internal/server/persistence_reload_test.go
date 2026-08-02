@@ -484,7 +484,7 @@ func TestPersistenceReload_DeleteRepoPurgesIssueAndPullChildren(t *testing.T) {
 			st.persist.MustPut("dependabot_org_secrets", org.Login, st.DependabotOrgSecrets[org.Login])
 			st.persist.MustPut("codespace_secrets", codespaceScope, st.CodespaceSecrets[codespaceScope])
 			st.persist.MustPut("copilot_coding_agent_permissions", org.Login, st.CopilotCodingAgentPerms[org.Login])
-			st.persist.MustPut("org_private_registries", org.Login, st.OrgPrivateRegistries[org.Login])
+			st.persistPrivateRegistries(org.Login)
 			st.persist.MustPut("org_immutable_releases", org.Login, st.OrgImmutableReleases[org.Login])
 			st.persist.MustPut("code_security_repo_attachments", org.Login, st.CodeSecurityRepoAttachments[org.Login])
 			st.persist.MustPut("enterprise_code_security_attachments", strconv.Itoa(repo.ID), &EnterpriseCodeSecurityAttachment{RepoID: repo.ID, ConfigID: 654})

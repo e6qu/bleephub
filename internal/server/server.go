@@ -2,6 +2,7 @@ package bleephub
 
 import (
 	"context"
+	"crypto/rand"
 	"crypto/sha256"
 	"crypto/tls"
 	"encoding/json"
@@ -53,6 +54,7 @@ type Server struct {
 	externalURL            string                    // BLEEPHUB_EXTERNAL_URL; when set, overrides request-Host URL derivation (job messages, action URLs) — the GHES "external URL" knob
 	pagesJekyllExecutable  string
 	identity               identityConfig
+	identityStateKey       []byte // random per-process HMAC key for OAuth state cookies
 	build                  BuildInfo
 	// clockNow is injected by deterministic tests and simulators. Production
 	// leaves it nil and currentTime uses the process clock. clockMu makes
@@ -141,6 +143,10 @@ type serverConstruction struct {
 }
 
 func newServerState(addr string, logger zerolog.Logger, construction serverConstruction) *Server {
+	identityStateKey := make([]byte, 32)
+	if _, err := rand.Read(identityStateKey); err != nil {
+		panic(fmt.Sprintf("generate identity state HMAC key: %v", err))
+	}
 	s := &Server{
 		addr:                        addr,
 		mux:                         http.NewServeMux(),
@@ -155,6 +161,7 @@ func newServerState(addr string, logger zerolog.Logger, construction serverConst
 		externalURL:                 construction.externalURL,
 		pagesJekyllExecutable:       construction.pagesJekyllExecutable,
 		identity:                    construction.identity,
+		identityStateKey:            identityStateKey,
 		build:                       construction.build,
 		allowPrivateOutboundTargets: construction.allowPrivateOutboundTarget,
 	}
@@ -176,6 +183,18 @@ func (s *Server) route(pattern string, handler http.HandlerFunc) {
 	// /api/v3 routes are instrumented so served requests feed the API
 	// insights stats (gh_api_insights.go); other patterns pass through.
 	s.mux.HandleFunc(pattern, s.instrumentAPIRoute(pattern, s.enforceFineGrainedPATResource(pattern, handler)))
+}
+
+// routeDispatch registers a dispatcher whose mux pattern is a wildcard Go's
+// ServeMux cannot disambiguate into the real GitHub endpoint shapes it
+// serves (e.g. `/releases/{p1}/{p2}` covering both `/releases/tags/{tag}`
+// and `/releases/{release_id}/assets`). The mux matches dispatchPattern,
+// while routePatterns records the real endpoints, so RegisteredRoutes()
+// enumerates the operations a caller can actually use instead of the
+// routing implementation detail.
+func (s *Server) routeDispatch(dispatchPattern string, handler http.HandlerFunc, servedPatterns ...string) {
+	s.routePatterns = append(s.routePatterns, servedPatterns...)
+	s.mux.HandleFunc(dispatchPattern, s.instrumentAPIRoute(dispatchPattern, s.enforceFineGrainedPATResource(dispatchPattern, handler)))
 }
 
 // authenticateUIData gives every browser-only adapter the same credential
@@ -963,6 +982,7 @@ func (rw *responseWriter) WriteHeader(code int) {
 func writeJSON(w http.ResponseWriter, status int, v interface{}) {
 	body, err := json.Marshal(v)
 	if err != nil {
+		stdlog.Printf("writeJSON: json.Marshal of response body failed: %v", err)
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusInternalServerError)
 		_, _ = w.Write([]byte(`{"message":"Internal Server Error","documentation_url":"https://docs.github.com/rest"}` + "\n"))
@@ -993,6 +1013,32 @@ func writeJSON(w http.ResponseWriter, status int, v interface{}) {
 	}
 	w.WriteHeader(status)
 	_, _ = w.Write(append(body, '\n'))
+}
+
+// writeJSONCreated writes a 201 Created response carrying a Location header
+// pointing at the newly created resource, mirroring GitHub's REST behaviour.
+// GitHub attaches Location to every resource-creating 201, so callers pass the
+// canonical API URL of the new resource (typically the same value as the JSON
+// body's "url" field). The header must be set before writeJSON, since that
+// function commits the status line and body in one shot.
+func writeJSONCreated(w http.ResponseWriter, location string, v interface{}) {
+	if location != "" {
+		w.Header().Set("Location", location)
+	}
+	writeJSON(w, http.StatusCreated, v)
+}
+
+// jsonStringField pulls a string field back out of a JSON-shaped map built by a
+// handler. It is used to feed writeJSONCreated a Location from the same map that
+// becomes the response body, keeping the header and the "url" field in lockstep
+// without handlers having to recompute the URL twice.
+func jsonStringField(v interface{}, key string) string {
+	m, ok := v.(map[string]interface{})
+	if !ok {
+		return ""
+	}
+	s, _ := m[key].(string)
+	return s
 }
 
 // recoverMiddleware turns a panicking handler into a 500 instead of a silently

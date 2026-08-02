@@ -483,9 +483,10 @@ func (s *Server) handleCreateBlob(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	base := s.baseURL(r)
-	writeJSON(w, http.StatusCreated, map[string]interface{}{
+	blobURL := base + "/api/v3/repos/" + repo.FullName + "/git/blobs/" + hash.String()
+	writeJSONCreated(w, blobURL, map[string]interface{}{
 		"sha": hash.String(),
-		"url": base + "/api/v3/repos/" + repo.FullName + "/git/blobs/" + hash.String(),
+		"url": blobURL,
 	})
 }
 
@@ -677,9 +678,10 @@ func (s *Server) handleCreateTree(w http.ResponseWriter, r *http.Request) {
 	for _, e := range tree.Entries {
 		entries = append(entries, gitTreeEntryJSON(stor, s.baseURL(r), repo.FullName, e.Name, e))
 	}
-	writeJSON(w, http.StatusCreated, map[string]interface{}{
+	treeURL := s.baseURL(r) + "/api/v3/repos/" + repo.FullName + "/git/trees/" + hash.String()
+	writeJSONCreated(w, treeURL, map[string]interface{}{
 		"sha":       hash.String(),
-		"url":       s.baseURL(r) + "/api/v3/repos/" + repo.FullName + "/git/trees/" + hash.String(),
+		"url":       treeURL,
 		"tree":      entries,
 		"truncated": false,
 	})
@@ -827,7 +829,8 @@ func (s *Server) handleCreateCommit(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	writeJSON(w, http.StatusCreated, gitCommitToJSON(s.baseURL(r), repo.FullName, hash.String(), commit))
+	commitJSON := gitCommitToJSON(s.baseURL(r), repo.FullName, hash.String(), commit)
+	writeJSONCreated(w, jsonStringField(commitJSON, "url"), commitJSON)
 }
 
 func (s *Server) handleGetCommit(w http.ResponseWriter, r *http.Request) {
@@ -905,7 +908,8 @@ func (s *Server) handleCreateTag(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	writeJSON(w, http.StatusCreated, gitTagToJSON(s.baseURL(r), repo.FullName, hash.String(), tag))
+	tagJSON := gitTagToJSON(s.baseURL(r), repo.FullName, hash.String(), tag)
+	writeJSONCreated(w, jsonStringField(tagJSON, "url"), tagJSON)
 }
 
 func (s *Server) handleGetTag(w http.ResponseWriter, r *http.Request) {
@@ -979,7 +983,8 @@ func (s *Server) handleCreateRef(w http.ResponseWriter, r *http.Request) {
 		s.afterCommittedRefUpdate(repo, ghUserFromContext(r.Context()), fullRef.String(), plumbing.ZeroHash.String(), target.String(), s.baseURL(r))
 	}
 	ref, _ := stor.Reference(fullRef)
-	writeJSON(w, http.StatusCreated, refToJSON(stor, s.baseURL(r), repo.FullName, ref))
+	refJSON := refToJSON(stor, s.baseURL(r), repo.FullName, ref)
+	writeJSONCreated(w, jsonStringField(refJSON, "url"), refJSON)
 }
 
 func (s *Server) handleUpdateRef(w http.ResponseWriter, r *http.Request) {

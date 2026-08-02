@@ -81,13 +81,25 @@ func (s *Server) handleListForks(w http.ResponseWriter, r *http.Request) {
 	}
 
 	opts := RepoListOptions{Sort: sort, Direction: "desc", NoPaginate: true}
-	perPage, _ := strconv.Atoi(r.URL.Query().Get("per_page"))
-	page, _ := strconv.Atoi(r.URL.Query().Get("page"))
-	if perPage > 0 {
-		opts.PerPage = perPage
+	if raw := r.URL.Query().Get("per_page"); raw != "" {
+		perPage, err := strconv.Atoi(raw)
+		if err != nil {
+			writeGHError(w, http.StatusBadRequest, "Invalid per_page parameter")
+			return
+		}
+		if perPage > 0 {
+			opts.PerPage = perPage
+		}
 	}
-	if page > 0 {
-		opts.Page = page
+	if raw := r.URL.Query().Get("page"); raw != "" {
+		page, err := strconv.Atoi(raw)
+		if err != nil {
+			writeGHError(w, http.StatusBadRequest, "Invalid page parameter")
+			return
+		}
+		if page > 0 {
+			opts.Page = page
+		}
 	}
 
 	forks := s.store.ListForks(sourceRepo.ID, opts)

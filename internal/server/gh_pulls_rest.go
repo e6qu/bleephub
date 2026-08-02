@@ -122,7 +122,8 @@ func (s *Server) handleCreatePullRequest(w http.ResponseWriter, r *http.Request)
 	s.emitWebhookEvent(repoKey, "pull_request", "opened", openedPayload)
 
 	s.recordAuditEvent("pull_request.create", user.Login, "", map[string]interface{}{"repo": repoKey, "pr_id": pr.ID})
-	writeJSON(w, http.StatusCreated, pullRequestToJSON(pr, s.store, s.baseURL(r), repo.FullName))
+	prJSON := pullRequestToJSON(pr, s.store, s.baseURL(r), repo.FullName)
+	writeJSONCreated(w, jsonStringField(prJSON, "url"), prJSON)
 }
 
 func writePullRequestAlreadyExists(w http.ResponseWriter) {
@@ -1074,7 +1075,8 @@ func (s *Server) handleRequestReviewers(w http.ResponseWriter, r *http.Request) 
 	}
 
 	updated := s.store.GetPullRequestByNumber(repo.ID, num)
-	writeJSON(w, http.StatusCreated, pullRequestSimpleJSON(updated, s.store, s.baseURL(r), repo.FullName))
+	updatedJSON := pullRequestSimpleJSON(updated, s.store, s.baseURL(r), repo.FullName)
+	writeJSONCreated(w, jsonStringField(updatedJSON, "url"), updatedJSON)
 }
 
 func (s *Server) handleRemoveRequestedReviewers(w http.ResponseWriter, r *http.Request) {

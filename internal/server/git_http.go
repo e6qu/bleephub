@@ -105,46 +105,49 @@ func (s *Server) resolveGitRepo(owner, repoName string) storer.Storer { //nolint
 	return s.store.GetGitStorage(owner, repoName)
 }
 
-func (s *Server) handleGitInfoRefs(w http.ResponseWriter, r *http.Request, owner, repoName string) {
+// authorizeGitHTTP authenticates the request before resolving the repository:
+// anonymous requests receive the same 401 challenge whether or not the
+// repository exists, and authenticated-but-unauthorized requests receive the
+// same 404 as a nonexistent repository, so neither response discloses whether
+// a private repository name is taken. When it returns ok=false the response
+// has already been written.
+func (s *Server) authorizeGitHTTP(w http.ResponseWriter, r *http.Request, owner, repoName string, wantWrite bool) (context.Context, *User, *Repo, storer.Storer, bool) {
+	ctx, user := s.authenticateGitRequest(r)
 	stor := s.resolveGitRepo(owner, repoName)
-	if stor == nil {
-		http.NotFound(w, r)
-		return
-	}
-
 	repo := s.store.GetRepo(owner, repoName)
-	if repo == nil {
-		http.NotFound(w, r)
-		return
+	if stor == nil || repo == nil || !s.viewerHasRepoPermission(ctx, repo, scopeContents, permRead) {
+		if user == nil {
+			w.Header().Set("WWW-Authenticate", `Basic realm="GitHub"`)
+			http.Error(w, "401 Authorization Required", http.StatusUnauthorized)
+		} else {
+			http.NotFound(w, r)
+		}
+		return ctx, user, nil, nil, false
 	}
+	if wantWrite && !s.viewerHasRepoPermission(ctx, repo, scopeContents, permWrite) {
+		if user == nil {
+			w.Header().Set("WWW-Authenticate", `Basic realm="GitHub"`)
+			http.Error(w, "401 Authorization Required", http.StatusUnauthorized)
+		} else {
+			http.Error(w, "403 Forbidden", http.StatusForbidden)
+		}
+		return ctx, user, nil, nil, false
+	}
+	return ctx, user, repo, stor, true
+}
 
+func (s *Server) handleGitInfoRefs(w http.ResponseWriter, r *http.Request, owner, repoName string) {
 	service := r.URL.Query().Get("service")
 	if service == "" {
 		http.Error(w, "service parameter required", http.StatusBadRequest)
 		return
 	}
-
-	ctx, user := s.authenticateGitRequest(r)
-
-	switch service {
-	case "git-upload-pack":
-		if !s.viewerHasRepoPermission(ctx, repo, scopeContents, permRead) {
-			w.Header().Set("WWW-Authenticate", `Basic realm="GitHub"`)
-			http.Error(w, "401 Authorization Required", http.StatusUnauthorized)
-			return
-		}
-	case "git-receive-pack":
-		if !s.viewerHasRepoPermission(ctx, repo, scopeContents, permWrite) {
-			w.Header().Set("WWW-Authenticate", `Basic realm="GitHub"`)
-			if user == nil {
-				http.Error(w, "401 Authorization Required", http.StatusUnauthorized)
-			} else {
-				http.Error(w, "403 Forbidden", http.StatusForbidden)
-			}
-			return
-		}
-	default:
+	if service != "git-upload-pack" && service != "git-receive-pack" {
 		http.Error(w, "unsupported service", http.StatusBadRequest)
+		return
+	}
+
+	if _, _, _, _, ok := s.authorizeGitHTTP(w, r, owner, repoName, service == "git-receive-pack"); !ok {
 		return
 	}
 
@@ -219,22 +222,8 @@ func (s *Server) handleGitInfoRefs(w http.ResponseWriter, r *http.Request, owner
 }
 
 func (s *Server) handleGitUploadPack(w http.ResponseWriter, r *http.Request, owner, repoName string) {
-	stor := s.resolveGitRepo(owner, repoName)
-	if stor == nil {
-		http.NotFound(w, r)
-		return
-	}
-
-	repo := s.store.GetRepo(owner, repoName)
-	if repo == nil {
-		http.NotFound(w, r)
-		return
-	}
-
-	ctx, user := s.authenticateGitRequest(r)
-	if !s.viewerHasRepoPermission(ctx, repo, scopeContents, permRead) {
-		w.Header().Set("WWW-Authenticate", `Basic realm="GitHub"`)
-		http.Error(w, "401 Authorization Required", http.StatusUnauthorized)
+	_, user, repo, _, ok := s.authorizeGitHTTP(w, r, owner, repoName, false)
+	if !ok {
 		return
 	}
 
@@ -300,26 +289,8 @@ func (s *Server) handleGitUploadPack(w http.ResponseWriter, r *http.Request, own
 }
 
 func (s *Server) handleGitReceivePack(w http.ResponseWriter, r *http.Request, owner, repoName string) {
-	stor := s.resolveGitRepo(owner, repoName)
-	if stor == nil {
-		http.NotFound(w, r)
-		return
-	}
-
-	repo := s.store.GetRepo(owner, repoName)
-	if repo == nil {
-		http.NotFound(w, r)
-		return
-	}
-
-	ctx, user := s.authenticateGitRequest(r)
-	if !s.viewerHasRepoPermission(ctx, repo, scopeContents, permWrite) {
-		w.Header().Set("WWW-Authenticate", `Basic realm="GitHub"`)
-		if user == nil {
-			http.Error(w, "401 Authorization Required", http.StatusUnauthorized)
-		} else {
-			http.Error(w, "403 Forbidden", http.StatusForbidden)
-		}
+	ctx, user, repo, stor, ok := s.authorizeGitHTTP(w, r, owner, repoName, true)
+	if !ok {
 		return
 	}
 

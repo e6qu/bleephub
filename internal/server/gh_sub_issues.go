@@ -309,7 +309,8 @@ func (s *Server) handleCreateSubIssue(w http.ResponseWriter, r *http.Request) {
 		writeGHError(w, http.StatusUnprocessableEntity, err.Error())
 		return
 	}
-	writeJSON(w, http.StatusCreated, issueToJSON(s.store.GetIssue(issue.ID), s.store, s.baseURL(r), repo.FullName))
+	subJSON := issueToJSON(s.store.GetIssue(issue.ID), s.store, s.baseURL(r), repo.FullName)
+	writeJSONCreated(w, jsonStringField(subJSON, "url"), subJSON)
 }
 
 func (s *Server) handleRemoveSubIssue(w http.ResponseWriter, r *http.Request) {
@@ -439,7 +440,8 @@ func (s *Server) handleAddIssueDependencyBlockedBy(w http.ResponseWriter, r *htt
 		writeGHError(w, http.StatusUnprocessableEntity, "The issue dependency already exists")
 		return
 	}
-	writeJSON(w, http.StatusCreated, issueToJSON(blocker, s.store, s.baseURL(r), repo.FullName))
+	blockerJSON := issueToJSON(blocker, s.store, s.baseURL(r), repo.FullName)
+	writeJSONCreated(w, jsonStringField(blockerJSON, "url"), blockerJSON)
 }
 
 func (s *Server) handleRemoveIssueDependencyBlockedBy(w http.ResponseWriter, r *http.Request) {

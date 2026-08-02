@@ -17,6 +17,10 @@ import (
 	"github.com/rs/zerolog"
 )
 
+func isSessionCookieName(name string) bool {
+	return name == sessionCookieName || name == secureSessionCookieName
+}
+
 type shaAuthTestProvider struct {
 	server      *httptest.Server
 	signer      jose.Signer
@@ -274,7 +278,7 @@ func TestShauthLogoutClearsLocalSessionAndStartsIssuerLogout(t *testing.T) {
 		t.Fatal("local browser session remained after logout")
 	}
 	for _, cookie := range response.Result().Cookies() {
-		if cookie.Name == "_gh_sess" && cookie.MaxAge < 0 {
+		if isSessionCookieName(cookie.Name) && cookie.MaxAge < 0 {
 			return
 		}
 	}
@@ -332,7 +336,7 @@ func TestShauthLogoutRevokesLocalSessionBeforeDiscoveryFailure(t *testing.T) {
 	}
 	foundExpired := false
 	for _, cookie := range response.Result().Cookies() {
-		foundExpired = foundExpired || (cookie.Name == "_gh_sess" && cookie.MaxAge < 0)
+		foundExpired = foundExpired || (isSessionCookieName(cookie.Name) && cookie.MaxAge < 0)
 	}
 	if !foundExpired {
 		t.Fatal("provider failure response did not expire the local browser cookie")
@@ -424,6 +428,7 @@ func TestShauthCallbackUsesClientSecretPost(t *testing.T) {
 	callbackServer := NewServer("127.0.0.1:0", zerolog.Nop())
 	callbackServer.externalURL = s.externalURL
 	callbackServer.identity = s.identity
+	callbackServer.identityStateKey = s.identityStateKey
 	callbackServer.handleShauthCallback(httptest.NewRecorder(), callback)
 
 	if got, want := tokenForm.Get("client_id"), "bleephub"; got != want {
@@ -448,7 +453,7 @@ func TestShauthCallbackPersistsVerifiedOIDCSession(t *testing.T) {
 	}
 	pending := identityState{Provider: "shauth", State: state, ReturnTo: "/ui/repositories", Nonce: provider.nonce, PKCE: "verifier", ExpiresAt: fixedShauthTestTime.Add(time.Minute)}
 	stateResponse := httptest.NewRecorder()
-	if err := s.setIdentityState(stateResponse, pending); err != nil {
+	if err := s.setIdentityState(stateResponse, httptest.NewRequest(http.MethodGet, "/auth/shauth", nil), pending); err != nil {
 		t.Fatal(err)
 	}
 	request := httptest.NewRequest(http.MethodGet, "/auth/shauth/callback?state="+url.QueryEscape(state)+"&code=code", nil)
@@ -461,7 +466,7 @@ func TestShauthCallbackPersistsVerifiedOIDCSession(t *testing.T) {
 	}
 	var browserCookie *http.Cookie
 	for _, cookie := range response.Result().Cookies() {
-		if cookie.Name == "_gh_sess" && cookie.MaxAge >= 0 {
+		if isSessionCookieName(cookie.Name) && cookie.MaxAge >= 0 {
 			browserCookie = cookie
 		}
 	}
@@ -506,7 +511,7 @@ func TestShauthCallbackRejectsOIDCArtifactFromAnotherIssuer(t *testing.T) {
 		t.Fatalf("foreign-issuer callback created %d browser sessions", sessions)
 	}
 	for _, cookie := range response.Result().Cookies() {
-		if cookie.Name == "_gh_sess" && cookie.Value != "" && cookie.MaxAge >= 0 {
+		if isSessionCookieName(cookie.Name) && cookie.Value != "" && cookie.MaxAge >= 0 {
 			t.Fatalf("foreign-issuer callback set browser session cookie %#v", cookie)
 		}
 	}
@@ -681,17 +686,32 @@ func TestShauthFrontChannelLogoutRevokesOnlyTrustedSession(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	request := httptest.NewRequest(http.MethodGet, "/auth/shauth/frontchannel-logout?iss=https%3A%2F%2Fattacker.example&sid=sid-1", nil)
+	request := httptest.NewRequest(http.MethodPost, "/auth/shauth/frontchannel-logout?iss=https%3A%2F%2Fattacker.example&sid=sid-1", nil)
 	response := httptest.NewRecorder()
 	s.handleShauthFrontChannelLogout(response, request)
 	if response.Code != http.StatusOK || response.Header().Get("Cache-Control") != "no-store" {
 		t.Fatalf("untrusted front-channel response = %d headers=%v", response.Code, response.Header())
+	}
+	// The OP loads this endpoint in an iframe during front-channel logout, so
+	// the CSP must allow the issuer origin to frame it — and nothing else.
+	if csp := response.Header().Get("Content-Security-Policy"); csp != "default-src 'none'; frame-ancestors 'self' https://auth.example.test" {
+		t.Fatalf("front-channel CSP = %q", csp)
 	}
 	if session, _ := s.store.GetLoginSession("revoked"); session == nil {
 		t.Fatal("untrusted front-channel request revoked a session")
 	}
 
 	request = httptest.NewRequest(http.MethodGet, "/auth/shauth/frontchannel-logout?iss=https%3A%2F%2Fauth.example.test&sid=sid-1", nil)
+	response = httptest.NewRecorder()
+	s.handleShauthFrontChannelLogout(response, request)
+	if response.Code != http.StatusOK {
+		t.Fatalf("front-channel GET response = %d", response.Code)
+	}
+	if session, _ := s.store.GetLoginSession("revoked"); session == nil {
+		t.Fatal("front-channel GET revoked a session")
+	}
+
+	request = httptest.NewRequest(http.MethodPost, "/auth/shauth/frontchannel-logout?iss=https%3A%2F%2Fauth.example.test&sid=sid-1", nil)
 	response = httptest.NewRecorder()
 	s.handleShauthFrontChannelLogout(response, request)
 	if response.Code != http.StatusOK {
@@ -715,6 +735,9 @@ func TestShauthFrontChannelLogoutDoesNothingWhenShauthIsDisabled(t *testing.T) {
 	s.handleShauthFrontChannelLogout(response, request)
 	if response.Code != http.StatusOK {
 		t.Fatalf("disabled front-channel response = %d", response.Code)
+	}
+	if csp := response.Header().Get("Content-Security-Policy"); csp != "default-src 'none'; frame-ancestors 'self'" {
+		t.Fatalf("disabled front-channel CSP = %q", csp)
 	}
 	if session, _ := s.store.GetLoginSession("kept"); session == nil {
 		t.Fatal("disabled Shauth configuration revoked a session")
@@ -812,7 +835,7 @@ func TestSignedOutLandingRevokesLocalSessionWithoutStartingLogin(t *testing.T) {
 	if err := s.store.PutLoginSession("browser-session", &LoginSession{UserID: 1, ExpiresAt: fixedShauthTestTime.Add(time.Hour)}); err != nil {
 		t.Fatal(err)
 	}
-	request := httptest.NewRequest(http.MethodGet, "/ui/signed-out", nil)
+	request := httptest.NewRequest(http.MethodPost, "/ui/signed-out", nil)
 	request.AddCookie(&http.Cookie{Name: "_gh_sess", Value: "browser-session"})
 	response := httptest.NewRecorder()
 	s.handleIdentitySignedOut(response, request)
@@ -840,7 +863,7 @@ func TestSignedOutLandingRevokesLocalSessionWithoutStartingLogin(t *testing.T) {
 	if response.Header().Get("Cache-Control") != "no-store" || !strings.Contains(response.Header().Get("Content-Security-Policy"), "frame-ancestors 'none'") {
 		t.Fatalf("signed-out security headers = %#v", response.Header())
 	}
-	if cookies := response.Result().Cookies(); len(cookies) != 1 || cookies[0].Name != "_gh_sess" || cookies[0].MaxAge >= 0 {
+	if cookies := response.Result().Cookies(); len(cookies) != 1 || !isSessionCookieName(cookies[0].Name) || cookies[0].MaxAge >= 0 {
 		t.Fatalf("signed-out cookies = %#v", cookies)
 	}
 
@@ -864,6 +887,23 @@ func TestShauthLogoutRejectsCrossOriginPost(t *testing.T) {
 	}
 }
 
+func TestLogoutAcceptsSameOriginPostWithoutExternalURL(t *testing.T) {
+	// The e2e harness runs without BLEEPHUB_EXTERNAL_URL, so the Origin check
+	// must accept the origin browsers derive from the request Host — every
+	// browser sends Origin on POST.
+	s := NewServer("127.0.0.1:0", zerolog.Nop())
+	request := httptest.NewRequest(http.MethodPost, "/auth/logout", nil)
+	request.Header.Set("Origin", "http://"+request.Host)
+	response := httptest.NewRecorder()
+	s.handleIdentityLogout(response, request)
+	if response.Code != http.StatusSeeOther {
+		t.Fatalf("same-origin logout = %d, want 303", response.Code)
+	}
+	if location := response.Header().Get("Location"); location != "/ui/login" {
+		t.Fatalf("same-origin logout redirected to %q, want /ui/login", location)
+	}
+}
+
 func TestIdentityStateIsBrowserBoundAndTamperEvident(t *testing.T) {
 	s := NewServer("127.0.0.1:0", zerolog.Nop())
 	s.externalURL = "https://bleephub.example.test"
@@ -875,7 +915,7 @@ func TestIdentityStateIsBrowserBoundAndTamperEvident(t *testing.T) {
 		t.Fatal(err)
 	}
 	pending := identityState{Provider: "shauth", State: state, ReturnTo: "/ui/", ExpiresAt: fixedShauthTestTime.Add(time.Minute)}
-	if err := s.setIdentityState(response, pending); err != nil {
+	if err := s.setIdentityState(response, httptest.NewRequest(http.MethodGet, "/auth/shauth", nil), pending); err != nil {
 		t.Fatal(err)
 	}
 	cookies := response.Result().Cookies()
@@ -907,7 +947,7 @@ func TestIdentityStateSupportsConcurrentBrowserFlows(t *testing.T) {
 		}
 		states[index] = state
 		response := httptest.NewRecorder()
-		if err := s.setIdentityState(response, identityState{Provider: "shauth", State: state, ReturnTo: "/ui/", ExpiresAt: fixedShauthTestTime.Add(time.Minute)}); err != nil {
+		if err := s.setIdentityState(response, httptest.NewRequest(http.MethodGet, "/auth/shauth", nil), identityState{Provider: "shauth", State: state, ReturnTo: "/ui/", ExpiresAt: fixedShauthTestTime.Add(time.Minute)}); err != nil {
 			t.Fatal(err)
 		}
 		cookies[index] = response.Result().Cookies()[0]

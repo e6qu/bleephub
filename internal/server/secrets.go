@@ -312,7 +312,10 @@ func (s *Server) handleDeleteSecret(w http.ResponseWriter, r *http.Request) {
 	}
 	name := strings.ToUpper(r.PathValue("secret_name"))
 
-	s.deleteSecret(s.store.RepoSecrets, "repo_secrets", repo.FullName, name)
+	if !s.deleteSecret(s.store.RepoSecrets, "repo_secrets", repo.FullName, name) {
+		writeGHError(w, http.StatusNotFound, "Not Found")
+		return
+	}
 	s.recordAuditEvent("secret.destroy", auditActor(r), "", map[string]interface{}{
 		"scope": "repository", "repo": repo.FullName, "secret_name": name,
 	})

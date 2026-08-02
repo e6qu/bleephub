@@ -36,6 +36,37 @@ func (s *Server) registerAuthRoutes() {
 	// administration:write-minted registration token here.
 	s.route("POST /api/v3/actions/runner-registration", s.handleRunnerRegistration)
 
+	// Five runner protocol routes stand outside the authentication decorators
+	// (requireRunnerAuth and the wrappers built on it) — the runner protocol
+	// allowlist. Two are registered here; the other three are registered next
+	// to their handlers:
+	//
+	//   - GET /_apis/connectionData (below): service discovery. The runner
+	//     reads it before it holds any credential, and the response is a fixed
+	//     table of service GUIDs and paths carrying no tenant state.
+	//   - POST /_apis/v1/auth (below, plus the trailing-slash variant): the
+	//     OAuth token exchange. It carries its own credential — an RSA
+	//     client_assertion verified against the public key the agent
+	//     registered — so it cannot take a bearer token it has yet to be
+	//     issued.
+	//   - POST /_apis/v1/Agent/{poolId} (agents.go): agent registration,
+	//     reached before an agent session exists. It authenticates on the
+	//     registration token config.sh was given rather than on a bearer
+	//     session token.
+	//   - GET /_apis/v1/artifacts/{artifactId}/download (artifacts.go): the
+	//     blob URL the REST `.../artifacts/{id}/zip` redirect lands on. It
+	//     additionally accepts a GitHub credential with read access to the
+	//     owning repository.
+	//   - GET /_apis/artifactcache/caches/{cacheId} (artifacts.go): the cache
+	//     archiveLocation the toolkit fetches with an unauthenticated client,
+	//     exactly as it fetches real GitHub's pre-signed blob URL; the
+	//     unguessable `sig` query parameter is its credential.
+	//
+	// TestRunnerProtocolRejectsUnauthenticatedCalls sweeps the registered
+	// route table and fails if any other /_apis/ or /twirp/ route answers an
+	// unauthenticated call with anything but 401, so a sixth undecorated
+	// route cannot be added by accident.
+
 	// Connection data (service discovery). Runner-protocol allowlist entry:
 	// the runner reads it before it holds any credential, and the response is
 	// a fixed table of service GUIDs and paths carrying no tenant state.
@@ -864,8 +895,9 @@ func (s *Server) challengeRunnerAuth(w http.ResponseWriter, r *http.Request, err
 
 // requireRunnerAuth gates a runner protocol route on a verified runner
 // credential and hands the principal to the handler through the request
-// context. Every /_apis/ and /twirp/ route registered outside the
-// registerAuthRoutes allowlist goes through here.
+// context. Every /_apis/ and /twirp/ route outside the five-entry runner
+// protocol allowlist (see registerAuthRoutes) goes through here or one of
+// the wrappers built on it.
 func (s *Server) requireRunnerAuth(next http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		principal, err := s.authenticateRunner(r)
