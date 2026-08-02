@@ -157,12 +157,12 @@ func (s *Server) handleLoginPost(w http.ResponseWriter, r *http.Request) {
 		Expires:  sess.ExpiresAt,
 	})
 
-	if returnTo != "" {
-		parsed, err := url.Parse(returnTo)
-		if err == nil && parsed.Path != "" {
-			http.Redirect(w, r, returnTo, http.StatusFound)
-			return
-		}
+	// Only a same-origin, path-relative destination is honored; an absolute or
+	// protocol-relative return_to would land the just-authenticated victim on an
+	// attacker page (open redirect / phishing).
+	if safe := safeIdentityReturnTo(returnTo); safe != "" {
+		http.Redirect(w, r, safe, http.StatusFound)
+		return
 	}
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	_, _ = w.Write([]byte(`<!DOCTYPE html><html><body><p>Signed in successfully.</p></body></html>`))
@@ -734,9 +734,10 @@ func (s *Server) completeAuthorize(w http.ResponseWriter, r *http.Request, user 
 		s.store.AuthCodes = map[string]*authCode{}
 	}
 	code := uuid.New().String()
-	if scopes == "" {
-		scopes = "repo read:org gist"
-	}
+	// An omitted scope grants read-only access to public information (GitHub's
+	// documented default) — never a silent upgrade to `repo`, which the user
+	// consented to nothing for. An empty scope string carries that minimal grant
+	// through classicScopeCovers.
 	s.store.AuthCodes[code] = &authCode{
 		Code:        code,
 		ClientID:    clientID,

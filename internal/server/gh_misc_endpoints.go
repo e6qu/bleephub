@@ -450,6 +450,14 @@ func (s *Server) handleCreateUserKey(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleGetUserKey(w http.ResponseWriter, r *http.Request) {
+	// This is the authenticated user's OWN key by id, so it demands a caller and
+	// returns 404 for a key that is not theirs — never disclosing another
+	// account's key material or even its existence.
+	user := ghUserFromContext(r.Context())
+	if user == nil {
+		writeGHError(w, http.StatusUnauthorized, "Requires authentication")
+		return
+	}
 	id, err := strconv.Atoi(r.PathValue("key_id"))
 	if err != nil {
 		writeGHError(w, http.StatusNotFound, "Not Found")
@@ -458,7 +466,7 @@ func (s *Server) handleGetUserKey(w http.ResponseWriter, r *http.Request) {
 	s.store.Misc.mu.RLock()
 	k := s.store.Misc.userKeys[id]
 	s.store.Misc.mu.RUnlock()
-	if k == nil {
+	if k == nil || k.UserID != user.ID {
 		writeGHError(w, http.StatusNotFound, "Not Found")
 		return
 	}
@@ -467,6 +475,10 @@ func (s *Server) handleGetUserKey(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) handleDeleteUserKey(w http.ResponseWriter, r *http.Request) {
 	user := ghUserFromContext(r.Context())
+	if user == nil {
+		writeGHError(w, http.StatusUnauthorized, "Requires authentication")
+		return
+	}
 	id, err := strconv.Atoi(r.PathValue("key_id"))
 	if err != nil {
 		writeGHError(w, http.StatusNotFound, "Not Found")
@@ -474,7 +486,10 @@ func (s *Server) handleDeleteUserKey(w http.ResponseWriter, r *http.Request) {
 	}
 	s.store.Misc.mu.Lock()
 	k := s.store.Misc.userKeys[id]
-	if k == nil {
+	// A key that is not the caller's is 404 — the same answer as a nonexistent
+	// one — so this endpoint cannot revoke another account's SSH access or probe
+	// which key ids exist.
+	if k == nil || k.UserID != user.ID {
 		s.store.Misc.mu.Unlock()
 		writeGHError(w, http.StatusNotFound, "Not Found")
 		return

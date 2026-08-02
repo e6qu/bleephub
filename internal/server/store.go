@@ -151,6 +151,12 @@ type User struct {
 	// cannot re-key the account and one provider cannot overwrite another's
 	// grant by logging in last.
 	ExternalIdentities []ExternalIdentity `json:"external_identities,omitempty"`
+	// SCIMManagedByOrg names the organization whose SCIM provisioning owns this
+	// account, when set. Only that org's SCIM may mutate the account's global
+	// login/name/email; an account provisioned outside SCIM (empty) is never
+	// adopted or rewritten by an org's SCIM, which would otherwise let any org
+	// owner rename or re-home an arbitrary global account.
+	SCIMManagedByOrg string `json:"scim_managed_by_org,omitempty"`
 }
 
 // ExternalIdentity is one federated provider's stable handle on an account:
