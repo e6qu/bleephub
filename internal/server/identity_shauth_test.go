@@ -701,27 +701,41 @@ func TestShauthFrontChannelLogoutRevokesOnlyTrustedSession(t *testing.T) {
 		t.Fatal("untrusted front-channel request revoked a session")
 	}
 
+	// A GET with an sid the issuer never coined must stay a no-op.
+	request = httptest.NewRequest(http.MethodGet, "/auth/shauth/frontchannel-logout?iss=https%3A%2F%2Fauth.example.test&sid=", nil)
+	response = httptest.NewRecorder()
+	s.handleShauthFrontChannelLogout(response, request)
+	if response.Code != http.StatusOK {
+		t.Fatalf("sid-less front-channel GET response = %d", response.Code)
+	}
+	if session, _ := s.store.GetLoginSession("revoked"); session == nil {
+		t.Fatal("sid-less front-channel GET revoked a session")
+	}
+
+	// The OP delivers front-channel logout as a GET in an iframe (OIDC
+	// Front-Channel Logout 1.0); a validated iss+sid must revoke (issue #112).
 	request = httptest.NewRequest(http.MethodGet, "/auth/shauth/frontchannel-logout?iss=https%3A%2F%2Fauth.example.test&sid=sid-1", nil)
 	response = httptest.NewRecorder()
 	s.handleShauthFrontChannelLogout(response, request)
 	if response.Code != http.StatusOK {
-		t.Fatalf("front-channel GET response = %d", response.Code)
-	}
-	if session, _ := s.store.GetLoginSession("revoked"); session == nil {
-		t.Fatal("front-channel GET revoked a session")
-	}
-
-	request = httptest.NewRequest(http.MethodPost, "/auth/shauth/frontchannel-logout?iss=https%3A%2F%2Fauth.example.test&sid=sid-1", nil)
-	response = httptest.NewRecorder()
-	s.handleShauthFrontChannelLogout(response, request)
-	if response.Code != http.StatusOK {
-		t.Fatalf("trusted front-channel response = %d", response.Code)
+		t.Fatalf("trusted front-channel GET response = %d", response.Code)
 	}
 	if session, _ := s.store.GetLoginSession("revoked"); session != nil {
-		t.Fatal("trusted sid-matched session remained")
+		t.Fatal("trusted sid-matched session remained after front-channel GET")
 	}
 	if session, _ := s.store.GetLoginSession("kept"); session == nil {
 		t.Fatal("unrelated provider session was revoked")
+	}
+
+	// POST remains accepted for OPs that deliver it that way.
+	request = httptest.NewRequest(http.MethodPost, "/auth/shauth/frontchannel-logout?iss=https%3A%2F%2Fauth.example.test&sid=sid-2", nil)
+	response = httptest.NewRecorder()
+	s.handleShauthFrontChannelLogout(response, request)
+	if response.Code != http.StatusOK {
+		t.Fatalf("trusted front-channel POST response = %d", response.Code)
+	}
+	if session, _ := s.store.GetLoginSession("kept"); session != nil {
+		t.Fatal("trusted sid-matched session remained after front-channel POST")
 	}
 }
 

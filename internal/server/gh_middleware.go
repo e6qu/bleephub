@@ -244,67 +244,75 @@ func authScheme(auth string) (scheme, credential string) {
 // the 401 the caller earned. Callers outside that middleware must consult the
 // flag themselves — resolving to no principal is not the same answer as
 // "no credential was offered".
+// resolveBearerCredential resolves one token string (from an Authorization
+// "token"/"bearer" scheme, or from the password half of Basic — the
+// x-access-token convention) to a credential. It returns the augmented context,
+// the human principal the token belongs to (nil for app/installation/runner
+// credentials, which carry no personal user), and whether the token resolved to
+// anything. It deliberately does NOT place a resolved user on the context: a
+// suspended user must not gain a principal, so the sole caller decides that
+// after checking user.Suspended.
+func (s *Server) resolveBearerCredential(ctx context.Context, tokenStr string) (context.Context, *User, bool) {
+	switch {
+	case looksLikeJWT(tokenStr):
+		if app, err := s.store.parseAndVerifyAppJWT(tokenStr); err == nil {
+			return context.WithValue(ctx, ctxApp, app), nil, true
+		}
+		return ctx, nil, false
+	case strings.HasPrefix(tokenStr, tokenPrefixInstallation):
+		instToken, inst := s.store.LookupInstallationToken(tokenStr)
+		if instToken == nil {
+			return ctx, nil, false
+		}
+		if inst != nil && inst.SuspendedAt != nil {
+			return context.WithValue(ctx, ctxSuspendedInstallation, true), nil, true
+		}
+		ctx = context.WithValue(ctx, ctxInstallation, inst)
+		ctx = context.WithValue(ctx, ctxInstallationToken, instToken)
+		if app := s.store.GetApp(instToken.AppID); app != nil {
+			ctx = context.WithValue(ctx, ctxUser, appBotUser(app))
+		}
+		return ctx, nil, true
+	case strings.HasPrefix(tokenStr, tokenPrefixOAuthUser), strings.HasPrefix(tokenStr, tokenPrefixAppUser):
+		if utsTok, u := s.store.LookupUserToServerToken(tokenStr); utsTok != nil {
+			return context.WithValue(ctx, ctxUserToServerToken, utsTok), u, true
+		}
+		return ctx, nil, false
+	case strings.HasPrefix(tokenStr, tokenPrefixRefresh):
+		// A refresh token is never an access credential.
+		return ctx, nil, false
+	default:
+		if token, resolved := s.store.LookupToken(tokenStr); token != nil {
+			return context.WithValue(ctx, ctxPersonalAccessToken, token), resolved, true
+		}
+		return ctx, nil, false
+	}
+}
+
 func (s *Server) authenticateRequest(r *http.Request) context.Context {
 	ctx := r.Context()
 	var user *User
+	authOffered := false
 	if auth := r.Header.Get("Authorization"); auth != "" {
+		authOffered = true
 		credentialResolved := false
 		scheme, cred := authScheme(auth)
-		var tokenStr string
-		if scheme == "token" || scheme == "bearer" {
-			tokenStr = cred
-		}
-		if tokenStr != "" {
-			switch {
-			case looksLikeJWT(tokenStr):
-				if app, err := s.store.parseAndVerifyAppJWT(tokenStr); err == nil {
-					ctx = context.WithValue(ctx, ctxApp, app)
-					credentialResolved = true
-				}
-			case strings.HasPrefix(tokenStr, tokenPrefixInstallation):
-				if instToken, inst := s.store.LookupInstallationToken(tokenStr); instToken != nil {
-					credentialResolved = true
-					if inst != nil && inst.SuspendedAt != nil {
-						ctx = context.WithValue(ctx, ctxSuspendedInstallation, true)
-						break
-					}
-					ctx = context.WithValue(ctx, ctxInstallation, inst)
-					ctx = context.WithValue(ctx, ctxInstallationToken, instToken)
-					app := s.store.GetApp(instToken.AppID)
-					if app != nil {
-						ctx = context.WithValue(ctx, ctxUser, appBotUser(app))
-					}
-				}
-			case strings.HasPrefix(tokenStr, tokenPrefixOAuthUser), strings.HasPrefix(tokenStr, tokenPrefixAppUser):
-				if utsTok, u := s.store.LookupUserToServerToken(tokenStr); utsTok != nil {
-					credentialResolved = true
-					ctx = context.WithValue(ctx, ctxUserToServerToken, utsTok)
-					if u != nil {
-						ctx = context.WithValue(ctx, ctxUser, u)
-						user = u
-					}
-				}
-			case strings.HasPrefix(tokenStr, tokenPrefixRefresh):
-				// A refresh token is never an access credential.
-			default:
-				if token, resolved := s.store.LookupToken(tokenStr); token != nil {
-					credentialResolved = true
-					user = resolved
-					ctx = context.WithValue(ctx, ctxPersonalAccessToken, token)
-				}
-			}
-		} else if scheme == "basic" {
-			decoded, err := base64.StdEncoding.DecodeString(cred)
-			if err == nil {
+		switch {
+		case (scheme == "token" || scheme == "bearer") && cred != "":
+			ctx, user, credentialResolved = s.resolveBearerCredential(ctx, cred)
+		case scheme == "basic":
+			if decoded, err := base64.StdEncoding.DecodeString(cred); err == nil {
 				parts := strings.SplitN(string(decoded), ":", 2)
 				// An empty password is the anonymous Basic form the OCI
 				// registry clients send; it offers no credential to reject.
 				credentialResolved = len(parts) == 2 && parts[1] == ""
 				if len(parts) == 2 && parts[1] != "" {
-					if token, resolved := s.store.LookupToken(parts[1]); token != nil {
-						credentialResolved = true
-						user = resolved
-						ctx = context.WithValue(ctx, ctxPersonalAccessToken, token)
+					// The password half carries the bearer token (git and OCI
+					// clients send `x-access-token:<token>` or `<anything>:<pat>`),
+					// so resolve it through the same switch as the token scheme —
+					// ghs_/ghu_/gho_ passwords authenticate identically here.
+					if c2, u, ok := s.resolveBearerCredential(ctx, parts[1]); ok {
+						ctx, user, credentialResolved = c2, u, true
 					} else if s.clientCredentialsVerify(parts[0], parts[1]) {
 						// client_id:client_secret for the OAuth app management
 						// endpoints. It authenticates an app, not a user, and
@@ -324,7 +332,11 @@ func (s *Server) authenticateRequest(r *http.Request) context.Context {
 			ctx = context.WithValue(ctx, ctxInvalidCredential, true)
 		}
 	}
-	if user == nil {
+	// A browser session augments the request only when NO Authorization header
+	// was offered. A request that presents an explicit (even invalid) token is
+	// judged on that token alone: falling back to the cookie would let a revoked
+	// or expired bearer be silently served as the cookie's user.
+	if user == nil && !authOffered {
 		if session := s.sessionFromRequest(r); session != nil {
 			user = s.store.GetUserByID(session.UserID)
 		}

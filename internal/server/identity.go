@@ -356,7 +356,11 @@ func (s *Server) handleShauthCallback(w http.ResponseWriter, r *http.Request) {
 		writeGHError(w, http.StatusUnauthorized, "Shauth ID token did not carry a preferred_username")
 		return
 	}
-	user := s.upsertExternalUser(s.identity.shauthIssuer, idToken.Subject, login, strings.TrimSpace(claims.Name), strings.TrimSpace(claims.Email), strings.TrimSpace(claims.Picture), claims.Role == "admin")
+	user, err := s.upsertExternalUser(s.identity.shauthIssuer, idToken.Subject, login, strings.TrimSpace(claims.Name), strings.TrimSpace(claims.Email), strings.TrimSpace(claims.Picture), claims.Role == "admin", true)
+	if err != nil {
+		writeGHError(w, http.StatusForbidden, "Shauth account cannot be provisioned on this instance")
+		return
+	}
 	expiresAt := idToken.Expiry
 	if maximum := time.Now().Add(12 * time.Hour); expiresAt.After(maximum) {
 		expiresAt = maximum
@@ -533,7 +537,11 @@ func (s *Server) handleGitHubCallback(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
-	user := s.upsertExternalUser(githubExternalIssuer, profile.ExternalSubject(), profile.Login, profile.Name, profile.Email, profile.AvatarURL, admin)
+	user, err := s.upsertExternalUser(githubExternalIssuer, profile.ExternalSubject(), profile.Login, profile.Name, profile.Email, profile.AvatarURL, admin, false)
+	if err != nil {
+		writeGHError(w, http.StatusForbidden, "GitHub account cannot be provisioned on this instance")
+		return
+	}
 	if err := s.createBrowserSession(w, r, user); err != nil {
 		s.logger.Error().Err(err).Msg("create browser session")
 		writeGHError(w, http.StatusServiceUnavailable, "browser session is unavailable")
@@ -779,10 +787,18 @@ func (s *Server) handleTokenLogin(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	user := ghUserFromContext(ctx)
-	isPAT := ghPersonalAccessTokenFromContext(ctx) != nil
+	pat := ghPersonalAccessTokenFromContext(ctx)
 	isUserToken := ghUserToServerTokenFromContext(ctx) != nil
-	if user == nil || (!isPAT && !isUserToken) {
+	if user == nil || (pat == nil && !isUserToken) {
 		writeGHError(w, http.StatusUnauthorized, "A user access token is required")
+		return
+	}
+	// A fine-grained PAT is deliberately narrow (specific repositories and
+	// permissions); a browser session carries the account's full authority.
+	// Exchanging one for the other would silently widen a scoped credential, so
+	// refuse it — the classic-PAT SPA flow is unaffected.
+	if pat != nil && pat.FineGrained {
+		writeGHError(w, http.StatusForbidden, "A fine-grained token cannot be exchanged for a browser session")
 		return
 	}
 	if err := s.createBrowserSession(w, r, user); err != nil {
@@ -806,45 +822,61 @@ func externalIdentityKey(issuer, subject string) string {
 	return issuer + "\x00" + subject
 }
 
-func (s *Server) upsertExternalUser(issuer, subject, login, name, email, avatarURL string, siteAdmin bool) *User {
+// errFederatedLogin marks a federated sign-in that must not provision or resolve
+// a local account. Callers surface it as a 403 without disclosing which of the
+// closed conditions applied, so it is not a login-enumeration oracle.
+var errFederatedLogin = errors.New("federated login is not permitted on this instance")
+
+// upsertExternalUser resolves (or creates) the local account for a verified
+// federated identity. It resolves strictly on the stable (issuer, subject) key:
+// a mutable provider username is NEVER used to adopt a pre-existing account,
+// because that is the account-takeover primitive — a Shauth principal whose
+// preferred_username is "admin" would otherwise seize the seeded SiteAdmin
+// account. roleAuthoritative is true only for the primary IdP (Shauth), which
+// alone may write SiteAdmin on each login so a demotion at the IdP takes effect;
+// a secondary provider can never reshape privileges (preserves AUTH-021).
+func (s *Server) upsertExternalUser(issuer, subject, login, name, email, avatarURL string, siteAdmin, roleAuthoritative bool) (*User, error) {
 	login, err := normalizeLogin(login)
 	if err != nil || login == "" {
-		return nil
+		return nil, errFederatedLogin
+	}
+	if !s.identity.loginAllowed(login) {
+		return nil, errFederatedLogin
 	}
 	externalKey := externalIdentityKey(issuer, subject)
+	if externalKey == "" {
+		// Without a stable subject there is no safe federated key; adopting by
+		// username is exactly what must not happen, so fail closed.
+		return nil, errFederatedLogin
+	}
 	s.store.mu.Lock()
 	defer s.store.mu.Unlock()
-	// Resolve the stable federated identity first; only when no (issuer,
-	// subject) binding is known does the mutable provider username get a
-	// vote, so a renamed account or a colliding username cannot re-key an
-	// established account.
-	var user *User
-	if externalKey != "" {
-		user = s.store.UsersByExternalID[externalKey]
-	}
-	if user == nil {
-		user = s.store.UsersByLogin[login]
-	}
-	if user != nil {
+	if user := s.store.UsersByExternalID[externalKey]; user != nil {
 		user.Name, user.Email, user.AvatarURL, user.UpdatedAt = name, email, avatarURL, time.Now().UTC()
-		// SiteAdmin is provisioned at first login and changed only through the
-		// explicit admin surface; re-authentication must never grant or revoke
-		// it, so whichever provider logged in last cannot reshape privileges.
+		if roleAuthoritative {
+			user.SiteAdmin = siteAdmin
+		}
 		s.bindExternalIdentityLocked(user, externalKey)
 		if s.store.persist != nil {
 			s.store.persist.MustPut("users", fmt.Sprint(user.ID), user)
 		}
-		return user
+		return user, nil
+	}
+	// No federated binding yet. A username already taken by some other account
+	// (local, or federated to a different subject) fails closed rather than
+	// being adopted.
+	if s.store.UsersByLogin[login] != nil {
+		return nil, errFederatedLogin
 	}
 	now := time.Now().UTC()
-	user = &User{ID: s.store.NextUser, NodeID: "U_bleephub_" + login, Login: login, Name: name, Email: email, AvatarURL: avatarURL, Type: "User", SiteAdmin: siteAdmin, StarredRepos: map[string]bool{}, CreatedAt: now, UpdatedAt: now}
+	user := &User{ID: s.store.NextUser, NodeID: "U_bleephub_" + login, Login: login, Name: name, Email: email, AvatarURL: avatarURL, Type: "User", SiteAdmin: siteAdmin, StarredRepos: map[string]bool{}, CreatedAt: now, UpdatedAt: now}
 	s.store.NextUser++
 	s.store.Users[user.ID], s.store.UsersByLogin[user.Login] = user, user
 	s.bindExternalIdentityLocked(user, externalKey)
 	if s.store.persist != nil {
 		s.store.persist.MustPut("users", fmt.Sprint(user.ID), user)
 	}
-	return user
+	return user, nil
 }
 
 // bindExternalIdentityLocked records the (issuer, subject) binding on user and
@@ -875,6 +907,9 @@ func (s *Server) createBrowserSession(w http.ResponseWriter, r *http.Request, us
 // value made every page that prints an authenticity_token a disclosure of the
 // session identifier, which is the one thing HttpOnly exists to withhold.
 func (s *Server) createOIDCBrowserSession(w http.ResponseWriter, r *http.Request, user *User, session LoginSession) error {
+	if user == nil {
+		return errors.New("cannot issue a browser session for a nil user")
+	}
 	// Rotate the session on every successful authentication. A cookie value an
 	// attacker planted before credentials were verified (session fixation) is
 	// revoked the moment a real identity is established, and a privilege change
@@ -1056,7 +1091,12 @@ func (s *Server) handleShauthFrontChannelLogout(w http.ResponseWriter, r *http.R
 	}
 	w.Header().Set("Content-Security-Policy", "default-src 'none'; frame-ancestors "+frameAncestors)
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	if r.Method == http.MethodPost && s.identity.shauthConfigured() && r.URL.Query().Get("iss") == s.identity.shauthIssuer && r.URL.Query().Get("sid") != "" {
+	// The OIDC front-channel logout spec delivers this as a GET in an
+	// OP-rendered iframe, so revocation cannot be gated on POST. The iss must
+	// match the configured issuer exactly and the sid names the OP session —
+	// unguessable to a cross-site attacker — so a forged request cannot revoke
+	// anything (issue #112).
+	if s.identity.shauthConfigured() && r.URL.Query().Get("iss") == s.identity.shauthIssuer && r.URL.Query().Get("sid") != "" {
 		if err := s.store.DeleteLoginSessionsForOIDC("shauth", s.identity.shauthIssuer, r.URL.Query().Get("sid"), ""); err != nil {
 			s.logger.Error().Err(err).Msg("revoke browser sessions from Shauth front-channel logout")
 			writeGHError(w, http.StatusServiceUnavailable, "browser sessions could not be revoked")

@@ -84,8 +84,9 @@ func (s *Server) registerGHMiscEndpoints() {
 	s.route("GET /api/v3/user/starred/{owner}/{repo}", s.handleCheckMyStarredRepo)
 	s.route("GET /api/v3/user/subscriptions", s.handleListMySubscriptions)
 
-	// Actions OIDC
-	s.route("GET /token", s.handleActionsOIDCToken)
+	// Actions OIDC — minted for the requesting job, so gated on that job's
+	// runtime token (the credential the runner holds while executing the job).
+	s.route("GET /token", s.requireJobToken(s.handleActionsOIDCToken))
 	s.route("GET /.well-known/openid-configuration", s.handleOIDCDiscovery)
 	s.route("GET /.well-known/jwks", s.handleJWKS)
 	// OIDC subject customization is scoped to a repo or an org on real GitHub.
@@ -871,9 +872,22 @@ func (s *Server) mintOIDCToken(r *http.Request, audience string) (string, error)
 	// to mint for, so we fail loudly rather than fabricate a placeholder claim
 	// (a fabricated repository/ref/run_id would silently defeat OIDC trust
 	// policies, which is worse than an error).
+	// The OIDC token is minted for the job that requests it, so the caller must
+	// present that job's runtime token — not any authenticated user. Without
+	// this binding any authenticated principal (even a zero-scope PAT) could
+	// forge a signed subject like repo:victim/prod:environment:production and
+	// defeat a cloud trust policy. The requested repo must be the one the job
+	// token is scoped to.
+	principal := runnerFromContext(r.Context())
+	if principal == nil || !principal.IsJobToken() {
+		return "", fmt.Errorf("oidc: a job runtime token is required")
+	}
 	repoFull := q.Get("repo")
 	if repoFull == "" {
 		return "", fmt.Errorf("oidc: 'repo' (owner/name) is required")
+	}
+	if !principal.Scope.coversRepo(repoFull) {
+		return "", fmt.Errorf("oidc: job token is not scoped to %q", repoFull)
 	}
 	owner, repoName := splitRepoFull(repoFull)
 	repo := s.store.GetRepo(owner, repoName)
@@ -908,14 +922,16 @@ func (s *Server) mintOIDCToken(r *http.Request, audience string) (string, error)
 	if eventName == "" {
 		return "", fmt.Errorf("oidc: 'event_name' is required")
 	}
-	// The actor is the authenticated user who triggered the run. /token sits
-	// outside the /api middleware, so resolve the caller's token directly.
-	r, user := s.authenticatedBrowserRequest(r)
-	if user == nil {
-		return "", fmt.Errorf("oidc: unauthenticated — no actor for the token")
+	// The actor is the user who triggered the run; the runner reports it for its
+	// own run. It is an informational claim (the security-critical binding is
+	// the repository, enforced above), so resolve the id best-effort.
+	actor := q.Get("actor")
+	actorID := 0
+	if actor != "" {
+		if u := s.store.LookupUserByLogin(actor); u != nil {
+			actorID = u.ID
+		}
 	}
-	actor := user.Login
-	actorID := user.ID
 
 	repoID := repo.ID
 	ownerID := repo.OwnerID

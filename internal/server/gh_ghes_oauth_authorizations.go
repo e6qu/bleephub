@@ -29,9 +29,24 @@ type legacyAuthorizationRef struct {
 }
 
 func (s *Server) legacyAuthorizationUser(w http.ResponseWriter, r *http.Request) *User {
-	user := ghUserFromContext(r.Context())
+	ctx := r.Context()
+	user := ghUserFromContext(ctx)
 	if user == nil {
 		writeGHError(w, http.StatusUnauthorized, "Requires authentication")
+		return nil
+	}
+	// The authorizations API mints and rewrites the account's own credentials,
+	// so — like GitHub — it demands account-password-equivalent authority: a
+	// browser session. A derived bearer (classic/fine-grained PAT, OAuth or
+	// GitHub-App user token, installation token, app JWT) is refused; otherwise
+	// a leaked scoped token could POST an arbitrary-scope classic PAT for its
+	// owner, or PATCH its own scopes wider.
+	if ghPersonalAccessTokenFromContext(ctx) != nil ||
+		ghUserToServerTokenFromContext(ctx) != nil ||
+		ghInstallationTokenFromContext(ctx) != nil ||
+		ghAppFromContext(ctx) != nil {
+		writeGHError(w, http.StatusForbidden, "The authorizations API requires username/password authentication")
+		return nil
 	}
 	return user
 }
@@ -178,6 +193,13 @@ func (s *Server) createLegacyOAuthAuthorization(
 	}
 	s.store.mu.Lock()
 	stored := s.store.UserToServerTokens[token.Token]
+	if stored == nil {
+		// A concurrent grant revoke removed the freshly minted token; do not
+		// deref it under the lock.
+		s.store.mu.Unlock()
+		writeGHError(w, http.StatusInternalServerError, "authorization could not be persisted")
+		return
+	}
 	stored.Note = valueOrEmpty(req.Note)
 	stored.NoteURL = valueOrEmpty(req.NoteURL)
 	stored.Fingerprint = fingerprint
@@ -246,14 +268,28 @@ func (s *Server) handleUpdateLegacyAuthorization(w http.ResponseWriter, r *http.
 		return
 	}
 	s.store.mu.Lock()
+	// The ref was resolved under a separate RLock, so the credential may have
+	// been deleted by a concurrent DELETE in between. A nil deref here would
+	// panic while holding st.mu — which recoverMiddleware cannot release —
+	// deadlocking every later request. Re-check under the write lock.
 	if ref.kind == "pat" {
 		stored := s.store.Tokens[ref.mapKey]
+		if stored == nil {
+			s.store.mu.Unlock()
+			writeGHError(w, http.StatusNotFound, "Not Found")
+			return
+		}
 		applyLegacyAuthorizationUpdate(&stored.Scopes, &stored.Note, &stored.NoteURL, &stored.Fingerprint, req)
 		s.store.persistTokenLocked(stored)
 		copy := *stored
 		ref.pat = &copy
 	} else {
 		stored := s.store.UserToServerTokens[ref.mapKey]
+		if stored == nil {
+			s.store.mu.Unlock()
+			writeGHError(w, http.StatusNotFound, "Not Found")
+			return
+		}
 		applyLegacyAuthorizationUpdate(&stored.Scopes, &stored.Note, &stored.NoteURL, &stored.Fingerprint, req)
 		if s.store.persist != nil {
 			s.store.persist.MustPut("user_to_server_tokens", stored.Token, stored)

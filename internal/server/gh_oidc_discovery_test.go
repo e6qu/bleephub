@@ -37,11 +37,13 @@ func fullOIDCQuery(repo string, extra ...string) string {
 }
 
 // decodeOIDCToken mints a token via GET /token with the given query and returns
-// the decoded JWT payload claims.
-func decodeOIDCToken(t *testing.T, s *Server, query string) map[string]any {
+// the decoded JWT payload claims. The endpoint is gated on the job runtime
+// token for repoFull, so a faithful caller presents exactly that.
+func decodeOIDCToken(t *testing.T, s *Server, repoFull, query string) map[string]any {
 	t.Helper()
+	jobToken, _ := testJobToken(t, s, repoFull)
 	req := httptest.NewRequest("GET", "/token?"+query, nil)
-	req.Header.Set("Authorization", "token "+adminPAT)
+	req.Header.Set("Authorization", "Bearer "+jobToken)
 	w := httptest.NewRecorder()
 	s.requestHandler().ServeHTTP(w, req)
 	if w.Code != http.StatusOK {
@@ -77,7 +79,7 @@ func TestOIDCToken_RepositoryOwnerDerived(t *testing.T) {
 	owner := seedOIDCRepoOwner(s, "octo-org")
 	s.store.CreateRepo(owner, "octo-repo", "", false)
 
-	claims := decodeOIDCToken(t, s, fullOIDCQuery("octo-org/octo-repo"))
+	claims := decodeOIDCToken(t, s, "octo-org/octo-repo", fullOIDCQuery("octo-org/octo-repo"))
 	if claims["repository"] != "octo-org/octo-repo" {
 		t.Fatalf("repository = %v, want octo-org/octo-repo", claims["repository"])
 	}
@@ -89,6 +91,38 @@ func TestOIDCToken_RepositoryOwnerDerived(t *testing.T) {
 	}
 }
 
+// TestOIDCToken_RequiresJobTokenScopedToRepo pins AUTH-098: the OIDC mint is
+// gated on a job runtime token, and that token may only mint for the repository
+// it is scoped to — a job for repo A cannot forge a signed subject for repo B,
+// and a plain user credential is refused outright.
+func TestOIDCToken_RequiresJobTokenScopedToRepo(t *testing.T) {
+	s := newTestServer()
+	s.registerGHMiscEndpoints()
+	victim := seedOIDCRepoOwner(s, "victim-org")
+	s.store.CreateRepo(victim, "prod", "", false)
+	attacker := seedOIDCRepoOwner(s, "attacker")
+	s.store.CreateRepo(attacker, "junk", "", false)
+
+	// A plain user PAT cannot mint at all.
+	patReq := httptest.NewRequest("GET", "/token?"+fullOIDCQuery("victim-org/prod"), nil)
+	patReq.Header.Set("Authorization", "token "+adminPAT)
+	patRec := httptest.NewRecorder()
+	s.requestHandler().ServeHTTP(patRec, patReq)
+	if patRec.Code == http.StatusOK {
+		t.Fatalf("a user PAT minted an OIDC token: %s", patRec.Body.String())
+	}
+
+	// A job token scoped to attacker/junk cannot mint for victim-org/prod.
+	attackerJob, _ := testJobToken(t, s, "attacker/junk")
+	crossReq := httptest.NewRequest("GET", "/token?"+fullOIDCQuery("victim-org/prod"), nil)
+	crossReq.Header.Set("Authorization", "Bearer "+attackerJob)
+	crossRec := httptest.NewRecorder()
+	s.requestHandler().ServeHTTP(crossRec, crossReq)
+	if crossRec.Code == http.StatusOK {
+		t.Fatalf("a cross-repo job token forged an OIDC subject: %s", crossRec.Body.String())
+	}
+}
+
 // sub reflects the environment when supplied, else the ref form.
 func TestOIDCToken_SubReflectsEnvironment(t *testing.T) {
 	s := newTestServer()
@@ -97,12 +131,12 @@ func TestOIDCToken_SubReflectsEnvironment(t *testing.T) {
 	owner := seedOIDCRepoOwner(s, "acme")
 	s.store.CreateRepo(owner, "app", "", false)
 
-	noEnv := decodeOIDCToken(t, s, fullOIDCQuery("acme/app"))
+	noEnv := decodeOIDCToken(t, s, "acme/app", fullOIDCQuery("acme/app"))
 	if noEnv["sub"] != "repo:acme/app:ref:refs/heads/main" {
 		t.Fatalf("sub (no env) = %v, want repo:acme/app:ref:refs/heads/main", noEnv["sub"])
 	}
 
-	withEnv := decodeOIDCToken(t, s, fullOIDCQuery("acme/app", "environment=production"))
+	withEnv := decodeOIDCToken(t, s, "acme/app", fullOIDCQuery("acme/app", "environment=production"))
 	if withEnv["sub"] != "repo:acme/app:environment:production" {
 		t.Fatalf("sub (env) = %v, want repo:acme/app:environment:production", withEnv["sub"])
 	}
@@ -115,7 +149,7 @@ func TestOIDCToken_StandardClaimsPresent(t *testing.T) {
 	admin := s.store.UsersByLogin["admin"]
 	repo := s.store.CreateRepo(admin, "claims-repo", "", false)
 
-	claims := decodeOIDCToken(t, s, "repo="+repo.FullName+
+	claims := decodeOIDCToken(t, s, repo.FullName, "repo="+repo.FullName+
 		"&ref=refs/heads/main&sha=0123456789abcdef0123456789abcdef01234567"+
 		"&run_id=42&run_number=7&run_attempt=2&workflow=Deploy&workflow_file=deploy.yml&event_name=push")
 
