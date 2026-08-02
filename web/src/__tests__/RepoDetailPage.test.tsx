@@ -170,6 +170,20 @@ describe("RepoDetailPage code", () => {
     expect(screen.getAllByText("test").length).toBeGreaterThan(0);
   });
 
+  it("hides the top-level README when browsing a subdirectory", async () => {
+    mockFetch.mockImplementation((url: RequestInfo | URL) => routedFetch(url));
+    renderPage();
+    // "nextra detail" is text unique to the rendered README markdown body.
+    expect(await screen.findByText("nextra detail")).toBeInTheDocument();
+
+    // Navigate into a subdirectory. The readme query cache (keyed by branch,
+    // not path) is retained, so the panel must be gated on path === "".
+    fireEvent.click(screen.getByRole("link", { name: "src" }));
+    await waitFor(() => {
+      expect(screen.queryByText("nextra detail")).not.toBeInTheDocument();
+    });
+  });
+
   it("shows only supported empty-repository transport setup", async () => {
     const calls: string[] = [];
     mockFetch.mockImplementation((url: RequestInfo | URL) => {

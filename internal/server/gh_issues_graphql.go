@@ -1130,6 +1130,11 @@ func (s *Server) addIssueFieldsToSchema(userType, repoType, mutationType, queryT
 				issue = s.store.GetIssue(issue.ID)
 			}
 
+			// Parity with the REST create path: deliver the issues/opened
+			// webhook so `on: issues` workflows fire for GraphQL-created issues
+			// (the gh CLI uses GraphQL).
+			s.emitWebhookEvent(repo.FullName, "issues", "opened", buildIssuesPayload(s.store, repo, issue, user, "opened"))
+
 			return map[string]interface{}{
 				"issue": issueToGQL(issue, s.store),
 			}, nil
@@ -1157,6 +1162,7 @@ func (s *Server) addIssueFieldsToSchema(userType, repoType, mutationType, queryT
 			"input": &graphql.ArgumentConfig{Type: graphql.NewNonNull(closeIssueInputType)},
 		},
 		Resolve: func(p graphql.ResolveParams) (interface{}, error) {
+			user := ghUserFromContext(p.Context)
 			input, _ := p.Args["input"].(map[string]interface{})
 			issueNodeID, _ := input["issueId"].(string)
 			stateReason, _ := input["stateReason"].(string)
@@ -1168,6 +1174,7 @@ func (s *Server) addIssueFieldsToSchema(userType, repoType, mutationType, queryT
 			if issue == nil {
 				return nil, fmt.Errorf("could not resolve to an Issue")
 			}
+			previousState := issue.State
 
 			s.store.UpdateIssue(issue.ID, func(i *Issue) {
 				i.State = "CLOSED"
@@ -1177,6 +1184,7 @@ func (s *Server) addIssueFieldsToSchema(userType, repoType, mutationType, queryT
 			})
 
 			updated := s.store.GetIssue(issue.ID)
+			s.emitIssueStateChange(updated, user, previousState, "closed")
 			return map[string]interface{}{
 				"issue": issueToGQL(updated, s.store),
 			}, nil
@@ -1203,6 +1211,7 @@ func (s *Server) addIssueFieldsToSchema(userType, repoType, mutationType, queryT
 			"input": &graphql.ArgumentConfig{Type: graphql.NewNonNull(reopenIssueInputType)},
 		},
 		Resolve: func(p graphql.ResolveParams) (interface{}, error) {
+			user := ghUserFromContext(p.Context)
 			input, _ := p.Args["input"].(map[string]interface{})
 			issueNodeID, _ := input["issueId"].(string)
 
@@ -1210,6 +1219,7 @@ func (s *Server) addIssueFieldsToSchema(userType, repoType, mutationType, queryT
 			if issue == nil {
 				return nil, fmt.Errorf("could not resolve to an Issue")
 			}
+			previousState := issue.State
 
 			s.store.UpdateIssue(issue.ID, func(i *Issue) {
 				i.State = "OPEN"
@@ -1218,6 +1228,7 @@ func (s *Server) addIssueFieldsToSchema(userType, repoType, mutationType, queryT
 			})
 
 			updated := s.store.GetIssue(issue.ID)
+			s.emitIssueStateChange(updated, user, previousState, "reopened")
 			return map[string]interface{}{
 				"issue": issueToGQL(updated, s.store),
 			}, nil
@@ -2865,4 +2876,32 @@ func projectItemsConnectionForIssue(st *Store, issueID int, args map[string]inte
 		nodes = append(nodes, projectV2ItemToGQL(it, st))
 	}
 	return paginateGQLMaps(nodes, args)
+}
+
+// emitIssueStateChange mirrors the REST issue-update path for a GraphQL-driven
+// close/reopen: it records the timeline event and delivers the issues webhook,
+// but only when the state actually transitioned (so `on: issues` workflows fire
+// for the gh CLI, which mutates over GraphQL).
+func (s *Server) emitIssueStateChange(issue *Issue, user *User, previousState, action string) {
+	if issue == nil || user == nil {
+		return
+	}
+	switch action {
+	case "closed":
+		if previousState == "CLOSED" {
+			return
+		}
+	case "reopened":
+		if previousState == "OPEN" {
+			return
+		}
+	default:
+		return
+	}
+	repo := s.store.GetRepoByID(issue.RepoID)
+	if repo == nil {
+		return
+	}
+	s.store.RecordIssueEvent(repo.ID, issue.ID, user.ID, action, nil)
+	s.emitWebhookEvent(repo.FullName, "issues", action, buildIssuesPayload(s.store, repo, issue, user, action))
 }

@@ -58,9 +58,9 @@ func TestWorkflowRunsListNewestFirst(t *testing.T) {
 func TestReleaseListNewestFirst(t *testing.T) {
 	s := newTestServer()
 	rs := s.store.Releases
-	r1 := rs.Create(1, 1, "v1.0.0", "main", "v1", "", false, false)
-	r2 := rs.Create(1, 1, "v1.1.0", "main", "v1.1", "", false, false)
-	r3 := rs.Create(1, 1, "v2.0.0", "main", "v2", "", false, false)
+	r1 := rs.Create(1, 1, "v1.0.0", "main", "v1", "", false, false, false)
+	r2 := rs.Create(1, 1, "v1.1.0", "main", "v1.1", "", false, false, false)
+	r3 := rs.Create(1, 1, "v2.0.0", "main", "v2", "", false, false, false)
 
 	list := rs.List(1)
 	if len(list) != 3 {

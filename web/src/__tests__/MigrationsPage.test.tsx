@@ -139,4 +139,17 @@ describe("MigrationsPage", () => {
     expect(calls).toContain("/api/v3/user/repos?per_page=100");
     expect(calls).not.toContain("/internal/repos");
   });
+
+  it("pluralizes the repository count in the details dialog without doubling the suffix", async () => {
+    const secondRepo = { ...baseRepo, id: 11, name: "repo2", full_name: "admin/repo2" };
+    const multiRepoMigration = { ...userMigration, repositories: [baseRepo, secondRepo] };
+    mockFetch.mockImplementation((url: string) => {
+      if (url === "/api/v3/user/migrations") return Promise.resolve(jsonResponse([multiRepoMigration]));
+      return Promise.resolve(jsonResponse({}));
+    });
+    renderPage();
+    fireEvent.click(await screen.findByText("Details"));
+    expect(await screen.findByText(/2 repositories/)).toBeInTheDocument();
+    expect(screen.queryByText(/repositoryies/)).not.toBeInTheDocument();
+  });
 });

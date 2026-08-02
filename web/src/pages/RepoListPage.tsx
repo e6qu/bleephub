@@ -7,6 +7,7 @@ import { PageTitle, Blankslate, Button } from "../components/ui.js";
 import { RepoIcon, BranchIcon } from "../components/octicons.js";
 import { RepoCreateDialog } from "../components/RepoCreateDialog.js";
 import type { Page } from "../api.js";
+import { isForbidden, isRateLimited } from "../api.js";
 
 interface RepoListPageProps {
   title: string;
@@ -53,7 +54,8 @@ export function RepoListPage({
   const { data, isLoading, isError, error } = useQuery({
     queryKey: [...queryKey, filters, pageUrl ?? "first"],
     queryFn: () => fetchPage(filters, pageUrl),
-    refetchInterval: 10000,
+    refetchInterval: (query) =>
+      isRateLimited(query.state.error) || isForbidden(query.state.error) ? false : 10000,
   });
 
   const filtered = useMemo(() => {

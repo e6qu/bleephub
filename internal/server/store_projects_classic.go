@@ -31,7 +31,7 @@ type ProjectColumn struct {
 	Name      string    `json:"name"`
 	CreatedAt time.Time `json:"created_at"`
 	UpdatedAt time.Time `json:"updated_at"`
-	Position  int64     `json:"-"` // ordering within the project
+	Position  int64     `json:"position"` // ordering within the project; persisted, not surfaced by the API mapper
 }
 
 // ProjectCard is a card inside a ProjectColumn. It is either a note card
@@ -45,7 +45,7 @@ type ProjectCard struct {
 	CreatorID int       `json:"creator_id"`
 	CreatedAt time.Time `json:"created_at"`
 	UpdatedAt time.Time `json:"updated_at"`
-	Position  int64     `json:"-"` // ordering within the column
+	Position  int64     `json:"position"` // ordering within the column; persisted, not surfaced by the API mapper
 }
 
 const (

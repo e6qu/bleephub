@@ -92,6 +92,7 @@ export function SecretScanningPage() {
       <div className="mb-4 flex flex-wrap items-center gap-2">
         <label style={{ fontSize: "0.85rem", color: "var(--color-fg-muted)" }}>State:</label>
         <select
+          aria-label="State"
           value={filter}
           onChange={(e) => setFilter(e.target.value as FilterState)}
           style={{ fontSize: "0.85rem", padding: "0.35rem 0.5rem" }}

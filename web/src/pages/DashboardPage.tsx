@@ -5,6 +5,8 @@ import {
   fetchCurrentUser,
   fetchUserReposPage,
   fetchDashboardIssues,
+  isForbidden,
+  isRateLimited,
 } from "../api.js";
 import type { BleephubRepo, GithubFeedIssue } from "../types.js";
 import { Avatar } from "../components/Avatar.js";
@@ -26,12 +28,14 @@ export function DashboardPage() {
   const repos = useQuery({
     queryKey: ["dashboard-repos"],
     queryFn: () => fetchUserReposPage({ sort: "pushed" }),
-    refetchInterval: 30000,
+    refetchInterval: (query) =>
+      isRateLimited(query.state.error) || isForbidden(query.state.error) ? false : 30000,
   });
   const issues = useQuery({
     queryKey: ["dashboard-issues"],
     queryFn: fetchDashboardIssues,
-    refetchInterval: 30000,
+    refetchInterval: (query) =>
+      isRateLimited(query.state.error) || isForbidden(query.state.error) ? false : 30000,
   });
 
   const topRepos = repos.data?.items.slice(0, 8) ?? [];

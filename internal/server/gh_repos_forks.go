@@ -75,12 +75,21 @@ func (s *Server) handleListForks(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	sort := r.URL.Query().Get("sort")
-	if sort == "" {
-		sort = "newest"
+	// GitHub's forks endpoint takes newest|oldest|stargazers|watchers (default
+	// newest) — a different vocabulary from the repo-list sort. Translate it so
+	// `oldest` is not silently reversed and `stargazers`/`watchers` are not
+	// dropped and returned in created order.
+	repoSort, direction := "created", "desc"
+	switch r.URL.Query().Get("sort") {
+	case "", "newest":
+		// created, descending
+	case "oldest":
+		direction = "asc"
+	case "stargazers", "watchers": // watchers_count mirrors stargazers_count
+		repoSort = "stargazers"
 	}
 
-	opts := RepoListOptions{Sort: sort, Direction: "desc", NoPaginate: true}
+	opts := RepoListOptions{Sort: repoSort, Direction: direction, NoPaginate: true}
 	if raw := r.URL.Query().Get("per_page"); raw != "" {
 		perPage, err := strconv.Atoi(raw)
 		if err != nil {

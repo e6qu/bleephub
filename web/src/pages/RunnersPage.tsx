@@ -1,7 +1,7 @@
 import { useQuery } from "@tanstack/react-query";
 import { DataTable, InlineError, Spinner, StatusBadge } from "@bleephub/ui-core/components";
 import { createColumnHelper } from "@tanstack/react-table";
-import { fetchRepos, fetchActionsRunners } from "../api.js";
+import { fetchRepos, fetchActionsRunners, isForbidden, isRateLimited } from "../api.js";
 import type { GithubRunner } from "../types.js";
 import { PageTitle, StatCard } from "../components/ui.js";
 
@@ -77,7 +77,8 @@ export function RunnersPage() {
     queryKey: ["gh-runners", firstRepo],
     queryFn: () => fetchActionsRunners(owner, repo),
     enabled: !!firstRepo,
-    refetchInterval: 5000,
+    refetchInterval: (query) =>
+      isRateLimited(query.state.error) || isForbidden(query.state.error) ? false : 5000,
   });
 
   if (reposQ.isError) {

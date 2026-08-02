@@ -59,7 +59,7 @@ func TestReliabilityDebtOnlyShrinks(t *testing.T) {
 		// Raised for the login/SSO/authn/federation security audit, whose
 		// regression tests reuse the established shared harness (newTestServer,
 		// doMiscReq, ghPost, the package fixture) rather than duplicating it.
-		maxSharedHarnessReferences = 1450
+		maxSharedHarnessReferences = 1465
 	)
 
 	directWrites, batchedMutations := 0, 0

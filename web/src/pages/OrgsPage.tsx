@@ -8,6 +8,8 @@ import {
   deleteOrg,
   fetchOrgs,
   updateOrg,
+  isForbidden,
+  isRateLimited,
 } from "../api.js";
 import type { BleephubOrg } from "../types.js";
 import { confirmAction } from "../components/confirmAction.js";
@@ -66,7 +68,8 @@ function OrgsTable() {
   const { data, isLoading, isError } = useQuery({
     queryKey: ["orgs"],
     queryFn: fetchOrgs,
-    refetchInterval: 5000,
+    refetchInterval: (query) =>
+      isRateLimited(query.state.error) || isForbidden(query.state.error) ? false : 5000,
   });
 
   const deleteMut = useMutation({

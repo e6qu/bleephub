@@ -21,7 +21,7 @@ func TestPrivateRepoReadVisibility(t *testing.T) {
 		t.Fatal("repo should be private")
 	}
 	// Seed a release + an issue so the list/get handlers have content to leak.
-	s.store.Releases.Create(repo.ID, owner.ID, "v1", "main", "First", "notes", false, false)
+	s.store.Releases.Create(repo.ID, owner.ID, "v1", "main", "First", "notes", false, false, false)
 
 	readPaths := []string{
 		"/api/v3/repos/admin/secret/releases",
@@ -54,7 +54,7 @@ func TestPublicRepoReadStillWorks(t *testing.T) {
 	s.registerRoutes()
 	owner := s.store.LookupUserByLogin("admin")
 	repo := s.store.CreateRepo(owner, "pub", "", false) // public
-	s.store.Releases.Create(repo.ID, owner.ID, "v1", "main", "First", "notes", false, false)
+	s.store.Releases.Create(repo.ID, owner.ID, "v1", "main", "First", "notes", false, false, false)
 
 	w := runRequest(s, "GET", "/api/v3/repos/admin/pub/releases")
 	if w.Code != http.StatusOK {

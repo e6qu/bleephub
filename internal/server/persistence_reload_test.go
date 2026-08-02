@@ -830,7 +830,7 @@ func TestPersistenceReload_ReleasesByRepo(t *testing.T) {
 		user := st.UsersByLogin["admin"]
 		repo := st.CreateRepo(user, "released", "", false)
 		repoID, authorID = repo.ID, user.ID
-		rel := st.Releases.Create(repo.ID, user.ID, "v1.0.0", "main", "First", "notes", false, false)
+		rel := st.Releases.Create(repo.ID, user.ID, "v1.0.0", "main", "First", "notes", false, false, false)
 		relID = rel.ID
 	})
 
@@ -1581,7 +1581,7 @@ func TestPersistenceReload_DeleteRepoLeavesNoResidue(t *testing.T) {
 		st.CreateIssue(repo.ID, user.ID, "stale", "", nil, nil, 0)
 		seedStorePullRequestBranches(t, st, repo, "f")
 		st.CreatePullRequest(repo.ID, user.ID, "stale pr", "", "f", "main", false, nil, nil, 0)
-		release := st.Releases.Create(repo.ID, user.ID, "v0.0.1", "main", "", "", false, false)
+		release := st.Releases.Create(repo.ID, user.ID, "v0.0.1", "main", "", "", false, false, false)
 		if release == nil {
 			t.Fatal("Create release returned nil")
 		}

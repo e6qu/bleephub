@@ -1762,6 +1762,8 @@ func filterSortRepos(repos []*Repo, opts RepoListOptions) []*Repo {
 			less = repos[i].PushedAt.Before(repos[j].PushedAt)
 		case "full_name":
 			less = repos[i].FullName < repos[j].FullName
+		case "stargazers": // forks endpoint: stargazers/watchers both order by star count
+			less = repos[i].StargazersCount < repos[j].StargazersCount
 		default: // "created"
 			less = repos[i].CreatedAt.Before(repos[j].CreatedAt)
 		}

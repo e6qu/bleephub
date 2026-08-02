@@ -51,6 +51,25 @@ type Release struct {
 	Assets          []*ReleaseAsset `json:"-"`
 	CreatedAt       time.Time       `json:"created_at"`
 	PublishedAt     *time.Time      `json:"published_at"`
+	// ExcludeFromLatest reflects make_latest:"false" — the release is never
+	// returned by Latest(). Persisted, but absent from the API response (which
+	// GitHub does not echo make_latest on either).
+	ExcludeFromLatest bool `json:"exclude_from_latest,omitempty"`
+}
+
+// releaseExcludedFromLatest interprets the make_latest body field, which GitHub
+// accepts as the strings "true"|"false"|"legacy" (and, from some clients, a
+// bool). Only an explicit false excludes the release from "latest"; the default
+// and every other value leave it eligible.
+func releaseExcludedFromLatest(v interface{}) bool {
+	switch t := v.(type) {
+	case string:
+		return t == "false"
+	case bool:
+		return !t
+	default:
+		return false
+	}
 }
 
 // ReleaseAsset attaches to a release.
@@ -99,24 +118,25 @@ func newReleaseStore(p *Persistence) *ReleaseStore {
 	return rs
 }
 
-func (rs *ReleaseStore) Create(repoID, authorID int, tagName, target, name, body string, draft, prerelease bool) *Release {
+func (rs *ReleaseStore) Create(repoID, authorID int, tagName, target, name, body string, draft, prerelease, excludeFromLatest bool) *Release {
 	rs.mu.Lock()
 	defer rs.mu.Unlock()
 	now := time.Now().UTC()
 	id := rs.nextID
 	rs.nextID++
 	r := &Release{
-		ID:              id,
-		NodeID:          fmt.Sprintf("RE_kgDO%08d", id),
-		TagName:         tagName,
-		TargetCommitish: target,
-		Name:            name,
-		Body:            body,
-		Draft:           draft,
-		Prerelease:      prerelease,
-		AuthorID:        authorID,
-		RepoID:          repoID,
-		CreatedAt:       now,
+		ID:                id,
+		NodeID:            fmt.Sprintf("RE_kgDO%08d", id),
+		TagName:           tagName,
+		TargetCommitish:   target,
+		Name:              name,
+		Body:              body,
+		Draft:             draft,
+		Prerelease:        prerelease,
+		AuthorID:          authorID,
+		RepoID:            repoID,
+		CreatedAt:         now,
+		ExcludeFromLatest: excludeFromLatest,
 	}
 	if !draft {
 		r.PublishedAt = &now
@@ -152,7 +172,7 @@ func (rs *ReleaseStore) Latest(repoID int) *Release {
 	defer rs.mu.RUnlock()
 	var latest *Release
 	for _, r := range rs.byRepo[repoID] {
-		if r.Draft || r.Prerelease {
+		if r.Draft || r.Prerelease || r.ExcludeFromLatest {
 			continue
 		}
 		if latest == nil || r.CreatedAt.After(latest.CreatedAt) {
@@ -664,12 +684,13 @@ func (s *Server) handleCreateRelease(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var req struct {
-		TagName         string   `json:"tag_name"`
-		TargetCommitish string   `json:"target_commitish"`
-		Name            string   `json:"name"`
-		Body            string   `json:"body"`
-		Draft           flexBool `json:"draft"`
-		Prerelease      flexBool `json:"prerelease"`
+		TagName         string      `json:"tag_name"`
+		TargetCommitish string      `json:"target_commitish"`
+		Name            string      `json:"name"`
+		Body            string      `json:"body"`
+		Draft           flexBool    `json:"draft"`
+		Prerelease      flexBool    `json:"prerelease"`
+		MakeLatest      interface{} `json:"make_latest"`
 	}
 	if !decodeJSONBody(w, r, &req) {
 		return
@@ -690,7 +711,7 @@ func (s *Server) handleCreateRelease(w http.ResponseWriter, r *http.Request) {
 		writeGHError(w, http.StatusUnprocessableEntity, err.Error())
 		return
 	}
-	release := s.store.Releases.Create(repo.ID, user.ID, req.TagName, target, req.Name, req.Body, bool(req.Draft), bool(req.Prerelease))
+	release := s.store.Releases.Create(repo.ID, user.ID, req.TagName, target, req.Name, req.Body, bool(req.Draft), bool(req.Prerelease), releaseExcludedFromLatest(req.MakeLatest))
 	s.emitReleaseEvent(repo, release, user, "created", s.baseURL(r))
 	s.recordAuditEvent("release.create", user.Login, "", map[string]interface{}{"repo": repo.FullName, "release_id": release.ID, "tag": release.TagName})
 	releaseJSON := releaseToJSON(release, s.store, s.baseURL(r), repo)
@@ -780,12 +801,13 @@ func (s *Server) handleUpdateRelease(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var req struct {
-		TagName         *string   `json:"tag_name"`
-		TargetCommitish *string   `json:"target_commitish"`
-		Name            *string   `json:"name"`
-		Body            *string   `json:"body"`
-		Draft           *flexBool `json:"draft"`
-		Prerelease      *flexBool `json:"prerelease"`
+		TagName         *string     `json:"tag_name"`
+		TargetCommitish *string     `json:"target_commitish"`
+		Name            *string     `json:"name"`
+		Body            *string     `json:"body"`
+		Draft           *flexBool   `json:"draft"`
+		Prerelease      *flexBool   `json:"prerelease"`
+		MakeLatest      interface{} `json:"make_latest"`
 	}
 	if !decodeJSONBody(w, r, &req) {
 		return
@@ -833,6 +855,9 @@ func (s *Server) handleUpdateRelease(w http.ResponseWriter, r *http.Request) {
 		}
 		if req.Prerelease != nil {
 			rel.Prerelease = bool(*req.Prerelease)
+		}
+		if req.MakeLatest != nil {
+			rel.ExcludeFromLatest = releaseExcludedFromLatest(req.MakeLatest)
 		}
 	})
 	if !ok {

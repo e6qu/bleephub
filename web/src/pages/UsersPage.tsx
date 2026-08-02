@@ -7,6 +7,8 @@ import {
   deleteUser,
   fetchUsers,
   updateUser,
+  isForbidden,
+  isRateLimited,
 } from "../api.js";
 import type { BleephubUser } from "../types.js";
 import { confirmAction } from "../components/confirmAction.js";
@@ -48,7 +50,8 @@ function UsersTable() {
   const { data, isLoading, isError } = useQuery({
     queryKey: ["users"],
     queryFn: fetchUsers,
-    refetchInterval: 5000,
+    refetchInterval: (query) =>
+      isRateLimited(query.state.error) || isForbidden(query.state.error) ? false : 5000,
   });
 
   const updateMut = useMutation({

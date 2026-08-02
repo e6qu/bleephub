@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"sort"
 	"strconv"
 	"strings"
 	"sync"
@@ -176,6 +177,10 @@ func (ds *DeploymentStore) ListDeployments(repoID int) []*Deployment {
 	defer ds.mu.RUnlock()
 	out := make([]*Deployment, len(ds.byRepo[repoID]))
 	copy(out, ds.byRepo[repoID])
+	// Deterministic, GitHub-faithful order: most-recent first (highest ID).
+	// The reload path repopulates byRepo in arbitrary map-iteration order, so
+	// without this sort pagination boundaries would shift across restarts.
+	sort.Slice(out, func(i, j int) bool { return out[i].ID > out[j].ID })
 	return out
 }
 

@@ -257,8 +257,8 @@ func TestReleaseListingHidesDraftsFromReaders(t *testing.T) {
 	s.registerGHReleasesRoutes()
 	admin := s.store.LookupUserByLogin("admin")
 	repo := s.store.CreateRepo(admin, "draft-release-privacy", "", false)
-	s.store.Releases.Create(repo.ID, admin.ID, "v1-draft", "main", "Draft", "", true, false)
-	s.store.Releases.Create(repo.ID, admin.ID, "v1", "main", "Published", "", false, false)
+	s.store.Releases.Create(repo.ID, admin.ID, "v1-draft", "main", "Draft", "", true, false, false)
+	s.store.Releases.Create(repo.ID, admin.ID, "v1", "main", "Published", "", false, false, false)
 	path := "/api/v3/repos/" + repo.FullName + "/releases"
 
 	got := tokenRequest(s, http.MethodGet, path, "")

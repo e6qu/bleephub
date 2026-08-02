@@ -1,5 +1,5 @@
 import { useQuery } from "@tanstack/react-query";
-import { fetchWorkflows } from "../api.js";
+import { fetchWorkflows, isForbidden, isRateLimited } from "../api.js";
 
 /** Rows the Operations console's "Recent workflows" panel shows. */
 export const OVERVIEW_RUNS_LIMIT = 10;
@@ -20,6 +20,7 @@ export function useRecentWorkflows(limit: number) {
   return useQuery({
     queryKey: ["workflows", limit],
     queryFn: () => fetchWorkflows(limit),
-    refetchInterval: 10_000,
+    refetchInterval: (query) =>
+      isRateLimited(query.state.error) || isForbidden(query.state.error) ? false : 10_000,
   });
 }

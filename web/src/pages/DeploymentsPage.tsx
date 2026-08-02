@@ -12,6 +12,8 @@ import {
   fetchPendingDeployments,
   fetchWorkflowRunsPage,
   reviewPendingDeployments,
+  isForbidden,
+  isRateLimited,
 } from "../api.js";
 import type {
   GithubDeployment,
@@ -513,7 +515,8 @@ function ApprovalsTab({ owner, repo }: { owner: string; repo: string }) {
     queryKey: ["waiting-runs", owner, repo],
     queryFn: () => fetchWorkflowRunsPage(owner, repo, { status: "waiting" }),
     enabled: !!owner && !!repo,
-    refetchInterval: 5000,
+    refetchInterval: (query) =>
+      isRateLimited(query.state.error) || isForbidden(query.state.error) ? false : 5000,
   });
 
   if (runsQ.isLoading) return <Spinner label="loading waiting runs" />;

@@ -358,9 +358,13 @@ func (st *Store) DeleteApp(appID int) bool {
 	delete(st.Apps, appID)
 	delete(st.AppsBySlug, app.Slug)
 	delete(st.AppsByClientID, app.ClientID)
-	if st.persist != nil {
-		st.persist.MustDelete("apps", strconv.Itoa(appID))
-	}
+	// Stage every durable delete into ONE batch so the cascade is atomic. A
+	// crash mid-delete must never leave live ghu_/ghs_/ghr_ bearer tokens
+	// durable and still resolving on reload for an app that no longer exists.
+	// Child credentials are staged first and the parent apps row is staged
+	// last (mirroring the org/repo cascade in DeleteOrg), so even under a
+	// partial-transaction reload the app cannot be gone while its tokens live.
+	batch := newPersistBatch(st.persist)
 	for code, id := range st.ManifestCodes {
 		if id == appID {
 			delete(st.ManifestCodes, code)
@@ -381,32 +385,24 @@ func (st *Store) DeleteApp(appID int) bool {
 			continue
 		}
 		delete(st.Installations, id)
-		if st.persist != nil {
-			st.persist.MustDelete("installations", strconv.Itoa(id))
-		}
+		batch.Delete("installations", strconv.Itoa(id))
 	}
 	for token, installationToken := range st.InstallationTokens {
 		if installationToken.AppID != appID {
 			continue
 		}
 		delete(st.InstallationTokens, token)
-		if st.persist != nil {
-			st.persist.MustDelete("installation_tokens", token)
-		}
+		batch.Delete("installation_tokens", token)
 	}
 	for token, userToken := range st.UserToServerTokens {
 		if userToken.AppID != appID {
 			continue
 		}
 		delete(st.UserToServerTokens, token)
-		if st.persist != nil {
-			st.persist.MustDelete("user_to_server_tokens", token)
-		}
+		batch.Delete("user_to_server_tokens", token)
 		if userToken.RefreshTokenValue != "" {
 			delete(st.RefreshTokens, userToken.RefreshTokenValue)
-			if st.persist != nil {
-				st.persist.MustDelete("refresh_tokens", userToken.RefreshTokenValue)
-			}
+			batch.Delete("refresh_tokens", userToken.RefreshTokenValue)
 		}
 	}
 	for token, refresh := range st.RefreshTokens {
@@ -414,13 +410,15 @@ func (st *Store) DeleteApp(appID int) bool {
 			continue
 		}
 		delete(st.RefreshTokens, token)
-		if st.persist != nil {
-			st.persist.MustDelete("refresh_tokens", token)
-		}
+		batch.Delete("refresh_tokens", token)
 	}
 	delete(st.AppHookDeliveries, appID)
-	if st.persist != nil {
-		st.persist.MustDelete("app_hook_deliveries", strconv.Itoa(appID))
+	batch.Delete("app_hook_deliveries", strconv.Itoa(appID))
+	// Parent apps row last: a reader recovering from a partially applied
+	// cascade never sees the app absent while a credential remains.
+	batch.Delete("apps", strconv.Itoa(appID))
+	if err := batch.Commit(); err != nil {
+		panic(&persistenceFailure{op: "batch", bucket: "apps", err: err})
 	}
 	return true
 }
