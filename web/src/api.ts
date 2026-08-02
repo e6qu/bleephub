@@ -187,6 +187,27 @@ function apiFetch(input: RequestInfo | URL, init?: RequestInit): Promise<Respons
   return fetch(input, { ...init, signal });
 }
 
+/**
+ * Default deadline for a single HTTP request the query layer makes. It bounds a
+ * hung connection so a poll or a page navigation cannot wait forever on a
+ * socket the server will never answer. It is applied by the JSON read helpers
+ * only; long-poll and download paths (job logs, blob exports) call apiFetch
+ * directly and are deliberately left unbounded.
+ */
+const DEFAULT_REQUEST_TIMEOUT_MS = 30_000;
+
+/**
+ * Builds the signal a read helper hands to apiFetch: the caller's per-request
+ * signal — the one TanStack Query passes into a queryFn and aborts on unmount,
+ * key change, or a superseding refetch — combined with a default timeout.
+ * apiFetch folds the module-wide sign-out signal in on top, so any of the three
+ * aborts the in-flight request.
+ */
+function readSignal(signal?: AbortSignal): AbortSignal {
+  const timeout = AbortSignal.timeout(DEFAULT_REQUEST_TIMEOUT_MS);
+  return signal ? AbortSignal.any([signal, timeout]) : timeout;
+}
+
 const TOKEN_KEY = "bleephub_token";
 let transientToken: string | null = null;
 
@@ -319,8 +340,8 @@ export function isRateLimited(err: unknown): boolean {
   return err instanceof ApiError && err.status === 403 && err.retryAfterSeconds !== undefined;
 }
 
-async function fetchJSON<T>(url: string): Promise<T> {
-  const res = await apiFetch(url, { headers: authHeaders() });
+async function fetchJSON<T>(url: string, signal?: AbortSignal): Promise<T> {
+  const res = await apiFetch(url, { headers: authHeaders(), signal: readSignal(signal) });
   if (!res.ok) {
     handleUnauthorized(res);
     throw new ApiError(res.status, `${res.status} ${res.statusText}`);
@@ -352,11 +373,11 @@ function parseWorkflowRouteID(id: string): { owner: string; repo: string; repoFu
   return { owner, repo, repoFullName: `${owner}/${repo}`, runID };
 }
 
-async function fetchAllUserRepos(): Promise<BleephubRepo[]> {
+async function fetchAllUserRepos(signal?: AbortSignal): Promise<BleephubRepo[]> {
   const repos: BleephubRepo[] = [];
   let nextUrl: string | null = "/api/v3/user/repos?per_page=100";
   while (nextUrl) {
-    const repoPage: Page<BleephubRepo> = await ghFetchPage<BleephubRepo>(nextUrl);
+    const repoPage: Page<BleephubRepo> = await ghFetchPage<BleephubRepo>(nextUrl, signal);
     repos.push(...repoPage.items);
     nextUrl = repoPage.nextUrl;
   }
@@ -416,12 +437,12 @@ function mapWorkflowRun(repoFullName: string, run: GithubWorkflowRun, jobs: Gith
  * merged and trimmed to `limit` first, so the job requests are bounded by
  * what the caller actually renders.
  */
-export async function fetchWorkflows(limit: number): Promise<BleephubWorkflow[]> {
-  const repos = await fetchAllUserRepos();
+export async function fetchWorkflows(limit: number, signal?: AbortSignal): Promise<BleephubWorkflow[]> {
+  const repos = await fetchAllUserRepos(signal);
   const perRepo = await Promise.all(
     repos.map(async (repo) => {
       const [owner, repoName] = splitRepoFullName(repo.full_name);
-      const runsPage = await fetchWorkflowRunsPage(owner, repoName, {});
+      const runsPage = await fetchWorkflowRunsPage(owner, repoName, {}, undefined, signal);
       return runsPage.items.map((run) => ({ repoFullName: repo.full_name, owner, repoName, run }));
     }),
   );
@@ -432,17 +453,17 @@ export async function fetchWorkflows(limit: number): Promise<BleephubWorkflow[]>
 
   return Promise.all(
     newestFirst.map(async ({ repoFullName, owner, repoName, run }) => {
-      const jobsPage = await fetchRunJobs(owner, repoName, run.id);
+      const jobsPage = await fetchRunJobs(owner, repoName, run.id, signal);
       return mapWorkflowRun(repoFullName, run, jobsPage.items);
     }),
   );
 }
 
-export async function fetchWorkflowDetail(id: string): Promise<BleephubWorkflow> {
+export async function fetchWorkflowDetail(id: string, signal?: AbortSignal): Promise<BleephubWorkflow> {
   const { owner, repo, repoFullName, runID } = parseWorkflowRouteID(id);
   const [run, jobsPage] = await Promise.all([
-    fetchWorkflowRun(owner, repo, runID),
-    fetchRunJobs(owner, repo, runID),
+    fetchWorkflowRun(owner, repo, runID, signal),
+    fetchRunJobs(owner, repo, runID, signal),
   ]);
   return mapWorkflowRun(repoFullName, run, jobsPage.items);
 }
@@ -492,10 +513,10 @@ interface WireInternalStatus {
  * `jobs_by_status` and `connected_runners` live on /internal/status; the rest
  * on /internal/metrics. Two requests, not several hundred.
  */
-export async function fetchMetrics(): Promise<BleephubMetrics> {
+export async function fetchMetrics(signal?: AbortSignal): Promise<BleephubMetrics> {
   const [metrics, status] = await Promise.all([
-    fetchJSON<WireInternalMetrics>("/internal/metrics"),
-    fetchJSON<WireInternalStatus>("/internal/status"),
+    fetchJSON<WireInternalMetrics>("/internal/metrics", signal),
+    fetchJSON<WireInternalStatus>("/internal/status", signal),
   ]);
   return {
     workflow_submissions: metrics.workflow_submissions,
@@ -854,8 +875,8 @@ export async function dispatchWorkflow(
   }
 }
 
-async function ghFetch<T>(path: string): Promise<T> {
-  const res = await apiFetch(path, { headers: authHeaders() });
+async function ghFetch<T>(path: string, signal?: AbortSignal): Promise<T> {
+  const res = await apiFetch(path, { headers: authHeaders(), signal: readSignal(signal) });
   if (!res.ok) {
     handleUnauthorized(res);
     throw new ApiError(res.status, `${res.status} ${res.statusText}`);
@@ -893,8 +914,8 @@ export function parseLinkNext(link: string | null): string | null {
 // The server paginates list endpoints (per_page max 100) and advertises the
 // follow-up page via the Link header — honor it instead of silently showing
 // only the first 50 items.
-async function ghFetchPage<T>(url: string): Promise<Page<T>> {
-  const res = await apiFetch(url, { headers: authHeaders() });
+async function ghFetchPage<T>(url: string, signal?: AbortSignal): Promise<Page<T>> {
+  const res = await apiFetch(url, { headers: authHeaders(), signal: readSignal(signal) });
   if (!res.ok) {
     handleUnauthorized(res);
     throw new ApiError(res.status, `${res.status} ${res.statusText}`);
@@ -912,8 +933,8 @@ async function ghFetchPage<T>(url: string): Promise<Page<T>> {
   return { items, nextUrl: parseLinkNext(link), lastPage: parseLinkLast(link) };
 }
 
-export const fetchRepoDetail = (owner: string, repo: string) =>
-  ghFetch<BleephubRepo>(`/api/v3/repos/${owner}/${repo}`);
+export const fetchRepoDetail = (owner: string, repo: string, signal?: AbortSignal) =>
+  ghFetch<BleephubRepo>(`/api/v3/repos/${owner}/${repo}`, signal);
 
 function buildRepoListURL(
   base: string,
@@ -934,9 +955,11 @@ function buildRepoListURL(
 export const fetchUserReposPage = (
   filters: RepoListFilters = {},
   pageUrl?: string,
+  signal?: AbortSignal,
 ): Promise<Page<BleephubRepo>> =>
   ghFetchPage<BleephubRepo>(
     buildRepoListURL("/api/v3/user/repos", filters, 30, pageUrl),
+    signal,
   );
 
 /** First page of an organization's repos; follow pages via Link header. */
@@ -944,9 +967,11 @@ export const fetchOrgReposPage = (
   org: string,
   filters: RepoListFilters = {},
   pageUrl?: string,
+  signal?: AbortSignal,
 ): Promise<Page<BleephubRepo>> =>
   ghFetchPage<BleephubRepo>(
     buildRepoListURL(`/api/v3/orgs/${org}/repos`, filters, 30, pageUrl),
+    signal,
   );
 
 export const createRepo = (payload: {
@@ -1351,13 +1376,15 @@ export const fetchRepoIssuesPage = (
   repo: string,
   state = "open",
   pageUrl?: string,
+  signal?: AbortSignal,
 ) =>
   ghFetchPage<GithubIssue>(
-    pageUrl ?? `/api/v3/repos/${owner}/${repo}/issues?state=${state}&per_page=50`
+    pageUrl ?? `/api/v3/repos/${owner}/${repo}/issues?state=${state}&per_page=50`,
+    signal,
   );
 
-export const fetchIssueDetail = (owner: string, repo: string, number: number) =>
-  ghFetch<GithubIssue>(`/api/v3/repos/${owner}/${repo}/issues/${number}`);
+export const fetchIssueDetail = (owner: string, repo: string, number: number, signal?: AbortSignal) =>
+  ghFetch<GithubIssue>(`/api/v3/repos/${owner}/${repo}/issues/${number}`, signal);
 
 export const fetchIssueComments = (owner: string, repo: string, number: number) =>
   ghFetch<GithubComment[]>(
@@ -1370,13 +1397,15 @@ export const fetchRepoPRsPage = (
   repo: string,
   state = "open",
   pageUrl?: string,
+  signal?: AbortSignal,
 ) =>
   ghFetchPage<GithubPR>(
-    pageUrl ?? `/api/v3/repos/${owner}/${repo}/pulls?state=${state}&per_page=50`
+    pageUrl ?? `/api/v3/repos/${owner}/${repo}/pulls?state=${state}&per_page=50`,
+    signal,
   );
 
-export const fetchPRDetail = (owner: string, repo: string, number: number) =>
-  ghFetch<GithubPR>(`/api/v3/repos/${owner}/${repo}/pulls/${number}`);
+export const fetchPRDetail = (owner: string, repo: string, number: number, signal?: AbortSignal) =>
+  ghFetch<GithubPR>(`/api/v3/repos/${owner}/${repo}/pulls/${number}`, signal);
 
 export const fetchRepoBranches = (owner: string, repo: string) =>
   ghFetch<GithubBranch[]>(`/api/v3/repos/${owner}/${repo}/branches`);
@@ -1629,8 +1658,9 @@ async function ghFetchEnvelope<T>(
   url: string,
   key: string,
   decode?: (value: unknown, index: number) => T,
+  signal?: AbortSignal,
 ): Promise<EnvelopePage<T>> {
-  const res = await apiFetch(url, { headers: authHeaders() });
+  const res = await apiFetch(url, { headers: authHeaders(), signal: readSignal(signal) });
   if (!res.ok) {
     handleUnauthorized(res);
     throw new ApiError(res.status, `${res.status} ${res.statusText}`);
@@ -1672,10 +1702,12 @@ async function ghSend(method: string, path: string, body?: unknown): Promise<voi
   }
 }
 
-export const fetchActionsWorkflows = (owner: string, repo: string) =>
+export const fetchActionsWorkflows = (owner: string, repo: string, signal?: AbortSignal) =>
   ghFetchEnvelope<GithubWorkflow>(
     `/api/v3/repos/${owner}/${repo}/actions/workflows?per_page=100`,
     "workflows",
+    undefined,
+    signal,
   );
 
 /** Filters the runs-list endpoint supports server-side. */
@@ -1693,8 +1725,9 @@ export function fetchWorkflowRunsPage(
   repo: string,
   filters: RunFilters,
   pageUrl?: string,
+  signal?: AbortSignal,
 ): Promise<EnvelopePage<GithubWorkflowRun>> {
-  if (pageUrl) return ghFetchEnvelope<GithubWorkflowRun>(pageUrl, "workflow_runs");
+  if (pageUrl) return ghFetchEnvelope<GithubWorkflowRun>(pageUrl, "workflow_runs", undefined, signal);
   const base = filters.workflowId
     ? `/api/v3/repos/${owner}/${repo}/actions/workflows/${filters.workflowId}/runs`
     : `/api/v3/repos/${owner}/${repo}/actions/runs`;
@@ -1702,11 +1735,11 @@ export function fetchWorkflowRunsPage(
   if (filters.status) params.set("status", filters.status);
   if (filters.branch) params.set("branch", filters.branch);
   if (filters.event) params.set("event", filters.event);
-  return ghFetchEnvelope<GithubWorkflowRun>(`${base}?${params}`, "workflow_runs");
+  return ghFetchEnvelope<GithubWorkflowRun>(`${base}?${params}`, "workflow_runs", undefined, signal);
 }
 
-export const fetchWorkflowRun = (owner: string, repo: string, runId: number) =>
-  ghFetch<GithubWorkflowRun>(`/api/v3/repos/${owner}/${repo}/actions/runs/${runId}`);
+export const fetchWorkflowRun = (owner: string, repo: string, runId: number, signal?: AbortSignal) =>
+  ghFetch<GithubWorkflowRun>(`/api/v3/repos/${owner}/${repo}/actions/runs/${runId}`, signal);
 
 /**
  * Run shape for a specific attempt. 404s on servers that don't model
@@ -1722,10 +1755,12 @@ export const fetchWorkflowRunAttempt = (
     `/api/v3/repos/${owner}/${repo}/actions/runs/${runId}/attempts/${attempt}`,
   );
 
-export const fetchRunJobs = (owner: string, repo: string, runId: number) =>
+export const fetchRunJobs = (owner: string, repo: string, runId: number, signal?: AbortSignal) =>
   ghFetchEnvelope<GithubJob>(
     `/api/v3/repos/${owner}/${repo}/actions/runs/${runId}/jobs?per_page=100`,
     "jobs",
+    undefined,
+    signal,
   );
 
 /** Job logs are text/plain, not JSON. */
@@ -2048,8 +2083,8 @@ export const fetchAuditLog = (filters: {
   );
 };
 
-export const fetchAuthenticatedUserOrgs = () =>
-  ghFetch<BleephubOrg[]>("/api/v3/user/orgs?per_page=100");
+export const fetchAuthenticatedUserOrgs = (signal?: AbortSignal) =>
+  ghFetch<BleephubOrg[]>("/api/v3/user/orgs?per_page=100", signal);
 
 export const fetchAuditLogOrgs = async (): Promise<BleephubOrg[]> => {
   const orgs = await fetchAuthenticatedUserOrgs();
@@ -2075,14 +2110,14 @@ export interface NotificationFilters {
   before?: string;
 }
 
-export const fetchNotifications = (filters: NotificationFilters = {}) => {
+export const fetchNotifications = (filters: NotificationFilters = {}, signal?: AbortSignal) => {
   const query = new URLSearchParams();
   if (filters.all) query.set("all", "true");
   if (filters.participating) query.set("participating", "true");
   if (filters.since) query.set("since", filters.since);
   if (filters.before) query.set("before", filters.before);
   const suffix = query.size ? `?${query}` : "";
-  return ghFetch<GithubNotificationThread[]>(`/api/v3/notifications${suffix}`);
+  return ghFetch<GithubNotificationThread[]>(`/api/v3/notifications${suffix}`, signal);
 };
 
 export const markAllNotificationsRead = () =>
@@ -2620,7 +2655,7 @@ export const fetchCodespaceMachines = (owner: string, repo: string) =>
     decodeCodespaceMachine,
   );
 
-export const fetchCurrentUser = () => ghFetch<BleephubUser>("/api/v3/user");
+export const fetchCurrentUser = (signal?: AbortSignal) => ghFetch<BleephubUser>("/api/v3/user", signal);
 
 // ─── GitHub Packages Representational State Transfer ────────────────────
 
@@ -3990,11 +4025,11 @@ export const fetchRepoTags = (owner: string, repo: string) =>
   ghFetch<GithubTag[]>(`/api/v3/repos/${owner}/${repo}/tags`);
 
 /** Star/watch/fork counters from the full-repository shape. */
-export const fetchRepoSocialCounts = (owner: string, repo: string) =>
-  ghFetch<GithubRepoSocialCounts>(`/api/v3/repos/${owner}/${repo}`);
+export const fetchRepoSocialCounts = (owner: string, repo: string, signal?: AbortSignal) =>
+  ghFetch<GithubRepoSocialCounts>(`/api/v3/repos/${owner}/${repo}`, signal);
 
-export const fetchRepoViewerState = (owner: string, repo: string) =>
-  ghFetch<GithubRepoViewerState>(`/ui-data/repos/${owner}/${repo}/viewer`);
+export const fetchRepoViewerState = (owner: string, repo: string, signal?: AbortSignal) =>
+  ghFetch<GithubRepoViewerState>(`/ui-data/repos/${owner}/${repo}/viewer`, signal);
 
 export const starRepo = (owner: string, repo: string) =>
   ghSend("PUT", `/api/v3/user/starred/${owner}/${repo}`);
@@ -4096,9 +4131,10 @@ export const fetchOrgTeams = (org: string) =>
  * they created, are assigned to, or are involved in, most-recently
  * updated first. Powers the dashboard's activity feed.
  */
-export const fetchDashboardIssues = () =>
+export const fetchDashboardIssues = (signal?: AbortSignal) =>
   ghFetch<GithubFeedIssue[]>(
     "/api/v3/issues?filter=all&state=all&sort=updated&per_page=15",
+    signal,
   );
 
 // ─── GitHub Marketplace browser workflow ──────────────────────────────
@@ -4189,10 +4225,11 @@ export const fetchRepoIssuesFilteredPage = (
   repo: string,
   opts: { state?: string },
   pageUrl?: string,
+  signal?: AbortSignal,
 ) => {
-  if (pageUrl) return ghFetchPage<GithubIssue>(pageUrl);
+  if (pageUrl) return ghFetchPage<GithubIssue>(pageUrl, signal);
   const params = new URLSearchParams({ state: opts.state ?? "open", per_page: "50" });
-  return ghFetchPage<GithubIssue>(`/api/v3/repos/${owner}/${repo}/issues?${params}`);
+  return ghFetchPage<GithubIssue>(`/api/v3/repos/${owner}/${repo}/issues?${params}`, signal);
 };
 
 /**
@@ -4205,10 +4242,11 @@ export const fetchRepoPRsFilteredPage = (
   repo: string,
   opts: { state?: string },
   pageUrl?: string,
+  signal?: AbortSignal,
 ) => {
-  if (pageUrl) return ghFetchPage<GithubPR>(pageUrl);
+  if (pageUrl) return ghFetchPage<GithubPR>(pageUrl, signal);
   const params = new URLSearchParams({ state: opts.state ?? "open", per_page: "50" });
-  return ghFetchPage<GithubPR>(`/api/v3/repos/${owner}/${repo}/pulls?${params}`);
+  return ghFetchPage<GithubPR>(`/api/v3/repos/${owner}/${repo}/pulls?${params}`, signal);
 };
 
 /** The changed-file list + per-file diff for a pull request. */

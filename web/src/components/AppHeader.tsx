@@ -400,14 +400,14 @@ export function AppHeader() {
   // of spinning, so a rate-limited session fails visibly.
   const { data: user, error: userError } = useQuery({
     queryKey: ["current-user"],
-    queryFn: fetchCurrentUser,
+    queryFn: ({ signal }) => fetchCurrentUser(signal),
     staleTime: 60_000,
     retry: (failureCount, err) => !isRateLimited(err) && failureCount < 1,
   });
   useToastQueryErrors(isRateLimited(userError) ? userError : undefined, "API rate limit exceeded");
   const { data: notifications } = useQuery({
     queryKey: ["notifications", "header"],
-    queryFn: () => fetchNotifications(),
+    queryFn: ({ signal }) => fetchNotifications({}, signal),
     refetchInterval: (query) => (isRateLimited(query.state.error) ? false : 30_000),
   });
   const unread = notifications?.filter((n) => n.unread !== false).length ?? 0;

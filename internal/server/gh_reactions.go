@@ -373,7 +373,7 @@ func reactionToJSON(r *Reaction, user *User) map[string]interface{} {
 	}
 	return map[string]interface{}{
 		"id":         r.ID,
-		"node_id":    fmt.Sprintf("RE_kgDO%08d", r.ID),
+		"node_id":    fmt.Sprintf("REA_kgDO%08d", r.ID),
 		"content":    r.Content,
 		"created_at": r.CreatedAt.UTC().Format(time.RFC3339),
 		"user":       userJSON,

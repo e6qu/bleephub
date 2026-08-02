@@ -396,7 +396,7 @@ func (s *Server) handleBranchProtectionPut(w http.ResponseWriter, r *http.Reques
 	}
 	branch := r.PathValue("branch")
 
-	raw, err := io.ReadAll(r.Body)
+	raw, err := io.ReadAll(http.MaxBytesReader(w, r.Body, maxJSONBodyBytes))
 	if err != nil || len(strings.TrimSpace(string(raw))) == 0 {
 		writeGHError(w, http.StatusBadRequest, "Problems parsing JSON")
 		return
@@ -1322,7 +1322,7 @@ func (s *Server) handleBPRestrictionsAppsDelete(w http.ResponseWriter, r *http.R
 
 // decodeStringArrayBody decodes either a bare JSON array or {"contexts":[...]}.
 func decodeStringArrayBody(w http.ResponseWriter, r *http.Request, out *[]string) bool {
-	raw, err := io.ReadAll(r.Body)
+	raw, err := io.ReadAll(http.MaxBytesReader(w, r.Body, maxJSONBodyBytes))
 	if err != nil {
 		writeGHError(w, http.StatusBadRequest, "Problems parsing JSON")
 		return false

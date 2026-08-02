@@ -15,7 +15,7 @@ export function OrgReposPage() {
       <OrgHeader org={org} active="repos" />
       <RepoListPage
         title="Repositories"
-        fetchPage={(filters, pageUrl) => fetchOrgReposPage(org, filters, pageUrl)}
+        fetchPage={(filters, pageUrl, signal) => fetchOrgReposPage(org, filters, pageUrl, signal)}
         queryKey={["org-repos", org]}
         allowCreate
         createTarget={{ org }}

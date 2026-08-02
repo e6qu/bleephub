@@ -65,7 +65,7 @@ const issueAccessors: ListItemAccessors<GithubIssue> = {
 function useClosedIssueCount(owner: string, repo: string): number | string | undefined {
   const { data } = useQuery({
     queryKey: ["issues", owner, repo, "closed", "count"],
-    queryFn: () => fetchRepoIssuesPage(owner, repo, "closed"),
+    queryFn: ({ signal }) => fetchRepoIssuesPage(owner, repo, "closed", undefined, signal),
     enabled: !!owner && !!repo,
   });
   if (!data) return undefined;
@@ -106,8 +106,8 @@ function IssueList({ owner, repo }: { owner: string; repo: string }) {
   // picking a facet narrows instantly without a full reload.
   const query = useInfiniteQuery({
     queryKey: ["issues", owner, repo, state, "paged"],
-    queryFn: ({ pageParam }) =>
-      fetchRepoIssuesFilteredPage(owner, repo, { state }, pageParam),
+    queryFn: ({ pageParam, signal }) =>
+      fetchRepoIssuesFilteredPage(owner, repo, { state }, pageParam, signal),
     initialPageParam: undefined as string | undefined,
     getNextPageParam: (last) => last.nextUrl ?? undefined,
     enabled: !!owner && !!repo,
@@ -264,11 +264,11 @@ function IssueDetail({ owner, repo, number }: { owner: string; repo: string; num
   const counts = useOpenCounts(owner, repo);
   const { data: issue, isLoading, isError, error } = useQuery({
     queryKey: ["issue", owner, repo, number],
-    queryFn: () => fetchIssueDetail(owner, repo, number),
+    queryFn: ({ signal }) => fetchIssueDetail(owner, repo, number, signal),
   });
   const { data: repoDetail } = useQuery({
     queryKey: ["repo", owner, repo],
-    queryFn: () => fetchRepoDetail(owner, repo),
+    queryFn: ({ signal }) => fetchRepoDetail(owner, repo, signal),
   });
   const { data: comments = [], isError: commentsError, error: commentsErr } = useQuery({
     queryKey: ["issue-comments", owner, repo, number],

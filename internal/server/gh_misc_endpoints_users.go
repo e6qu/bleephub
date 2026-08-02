@@ -485,7 +485,7 @@ func (s *Server) handleCreateMySocialAccounts(w http.ResponseWriter, r *http.Req
 		writeGHError(w, http.StatusUnauthorized, "Bad credentials")
 		return
 	}
-	body, err := io.ReadAll(r.Body)
+	body, err := io.ReadAll(http.MaxBytesReader(w, r.Body, maxJSONBodyBytes))
 	if err != nil {
 		writeGHValidationError(w, "accounts", "accounts", "missing_field")
 		return
@@ -517,7 +517,7 @@ func (s *Server) handleDeleteMySocialAccounts(w http.ResponseWriter, r *http.Req
 		writeGHError(w, http.StatusUnauthorized, "Bad credentials")
 		return
 	}
-	body, err := io.ReadAll(r.Body)
+	body, err := io.ReadAll(http.MaxBytesReader(w, r.Body, maxJSONBodyBytes))
 	if err != nil {
 		w.WriteHeader(http.StatusNoContent)
 		return

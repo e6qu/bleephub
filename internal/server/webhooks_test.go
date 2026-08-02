@@ -682,6 +682,56 @@ func TestWebhookIssuesEventFromGraphQL(t *testing.T) {
 	}
 }
 
+// Label CRUD must deliver the `label` webhook so `on: label` workflows fire
+// (ACT-026): before the fix the mutation never produced the event.
+func TestWebhookLabelEvent(t *testing.T) {
+	var mu sync.Mutex
+	actions := map[string]bool{}
+	url, cleanup := startWebhookReceiver(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Header.Get("X-GitHub-Event") == "label" {
+			body, _ := io.ReadAll(r.Body)
+			p := webhookEventJSON(t, r.Header.Get("Content-Type"), body)
+			if a, ok := p["action"].(string); ok {
+				mu.Lock()
+				actions[a] = true
+				mu.Unlock()
+			}
+		}
+		w.WriteHeader(200)
+	}))
+	defer cleanup()
+
+	createWebhookTestRepo(t, "wh-label")
+	hook := ghPost(t, "/api/v3/repos/admin/wh-label/hooks", defaultToken, map[string]interface{}{
+		"config": map[string]interface{}{"url": url},
+		"events": []string{"label"},
+		"active": true,
+	})
+	hook.Body.Close()
+
+	created := ghPost(t, "/api/v3/repos/admin/wh-label/labels", defaultToken, map[string]interface{}{
+		"name": "triage", "color": "ededed",
+	})
+	if created.StatusCode != http.StatusCreated {
+		created.Body.Close()
+		t.Fatalf("create label status = %d", created.StatusCode)
+	}
+	created.Body.Close()
+	del := ghDelete(t, "/api/v3/repos/admin/wh-label/labels/triage", defaultToken)
+	del.Body.Close()
+
+	if !testEventually(5*time.Second, 10*time.Millisecond, func() bool {
+		mu.Lock()
+		defer mu.Unlock()
+		return actions["created"] && actions["deleted"]
+	}) {
+		mu.Lock()
+		got := fmt.Sprint(actions)
+		mu.Unlock()
+		t.Fatalf("label CRUD did not deliver created+deleted webhooks; got %s", got)
+	}
+}
+
 func TestWebhookPing(t *testing.T) {
 	var received atomic.Int32
 	var mu sync.Mutex

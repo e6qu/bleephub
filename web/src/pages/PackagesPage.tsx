@@ -53,7 +53,7 @@ export function PackagesPage() {
     error: userErrorObj,
   } = useQuery({
     queryKey: ["current-user"],
-    queryFn: fetchCurrentUser,
+    queryFn: ({ signal }) => fetchCurrentUser(signal),
     enabled: !params.org && !(params.owner && params.repo),
   });
 

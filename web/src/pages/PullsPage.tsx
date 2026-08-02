@@ -105,7 +105,7 @@ function PRStateIcon({ pr, size }: { pr: GithubPR; size?: number }) {
 function usePRClosedCount(owner: string, repo: string): number | string | undefined {
   const { data } = useQuery({
     queryKey: ["prs", owner, repo, "closed", "count"],
-    queryFn: () => fetchRepoPRsFilteredPage(owner, repo, { state: "closed" }),
+    queryFn: ({ signal }) => fetchRepoPRsFilteredPage(owner, repo, { state: "closed" }, undefined, signal),
     enabled: !!owner && !!repo,
   });
   if (!data) return undefined;
@@ -120,7 +120,7 @@ function PRList({ owner, repo }: { owner: string; repo: string }) {
 
   const query = useInfiniteQuery({
     queryKey: ["prs", owner, repo, state, "paged"],
-    queryFn: ({ pageParam }) => fetchRepoPRsFilteredPage(owner, repo, { state }, pageParam),
+    queryFn: ({ pageParam, signal }) => fetchRepoPRsFilteredPage(owner, repo, { state }, pageParam, signal),
     initialPageParam: undefined as string | undefined,
     getNextPageParam: (last) => last.nextUrl ?? undefined,
     enabled: !!owner && !!repo,
@@ -217,7 +217,7 @@ function PRDetail({ owner, repo, number }: { owner: string; repo: string; number
     suffix === "commits" || suffix === "files" || suffix === "checks" ? suffix : "conversation";
   const { data: pr, isLoading, isError, error } = useQuery({
     queryKey: ["pr", owner, repo, number],
-    queryFn: () => fetchPRDetail(owner, repo, number),
+    queryFn: ({ signal }) => fetchPRDetail(owner, repo, number, signal),
   });
   const viewerQ = useQuery({ queryKey: ["viewer"], queryFn: fetchAuthenticatedUser });
   const viewerLogin = typeof viewerQ.data?.login === "string" ? viewerQ.data.login : null;

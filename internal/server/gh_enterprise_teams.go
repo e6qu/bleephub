@@ -133,7 +133,7 @@ func (s *Server) handleUpdateEnterpriseTeam(w http.ResponseWriter, r *http.Reque
 		return
 	}
 
-	body, err := io.ReadAll(r.Body)
+	body, err := io.ReadAll(http.MaxBytesReader(w, r.Body, maxJSONBodyBytes))
 	if err != nil {
 		writeGHError(w, http.StatusBadRequest, "Problems parsing JSON")
 		return

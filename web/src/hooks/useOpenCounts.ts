@@ -15,12 +15,12 @@ export function useOpenCounts(
 ): { issueCount?: number | string; prCount?: number | string } {
   const { data: issuePage } = useQuery({
     queryKey: ["issues", owner, repo, "open", "count"],
-    queryFn: () => fetchRepoIssuesPage(owner, repo, "open"),
+    queryFn: ({ signal }) => fetchRepoIssuesPage(owner, repo, "open", undefined, signal),
     enabled: !!owner && !!repo,
   });
   const { data: prPage } = useQuery({
     queryKey: ["prs", owner, repo, "open", "count"],
-    queryFn: () => fetchRepoPRsPage(owner, repo, "open"),
+    queryFn: ({ signal }) => fetchRepoPRsPage(owner, repo, "open", undefined, signal),
     enabled: !!owner && !!repo,
   });
   const badge = (page?: { items: unknown[]; nextUrl: string | null }) => {

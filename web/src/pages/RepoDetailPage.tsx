@@ -91,7 +91,7 @@ export function RepoDetailPage({ initialTab = "code" }: { initialTab?: SubTab })
 
   const { data: repoData, isLoading, isError, error } = useQuery({
     queryKey: ["repo", owner, repo],
-    queryFn: () => fetchRepoDetail(owner, repo),
+    queryFn: ({ signal }) => fetchRepoDetail(owner, repo, signal),
     enabled: !!owner && !!repo,
   });
   const { data: branches = [] } = useQuery({

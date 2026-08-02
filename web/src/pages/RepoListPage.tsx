@@ -11,7 +11,11 @@ import { isForbidden, isRateLimited } from "../api.js";
 
 interface RepoListPageProps {
   title: string;
-  fetchPage: (filters: RepoListFilters, pageUrl?: string) => Promise<Page<BleephubRepo>>;
+  fetchPage: (
+    filters: RepoListFilters,
+    pageUrl?: string,
+    signal?: AbortSignal,
+  ) => Promise<Page<BleephubRepo>>;
   queryKey: string[];
   allowCreate?: boolean;
   createTarget?: "user" | { org: string };
@@ -53,7 +57,7 @@ export function RepoListPage({
 
   const { data, isLoading, isError, error } = useQuery({
     queryKey: [...queryKey, filters, pageUrl ?? "first"],
-    queryFn: () => fetchPage(filters, pageUrl),
+    queryFn: ({ signal }) => fetchPage(filters, pageUrl, signal),
     refetchInterval: (query) =>
       isRateLimited(query.state.error) || isForbidden(query.state.error) ? false : 10000,
   });

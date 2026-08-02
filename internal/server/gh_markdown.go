@@ -74,7 +74,7 @@ func (s *Server) handleRenderMarkdown(w http.ResponseWriter, r *http.Request) {
 // handleRenderMarkdownRaw renders the raw request body (text/plain or
 // text/x-markdown) in `markdown` mode.
 func (s *Server) handleRenderMarkdownRaw(w http.ResponseWriter, r *http.Request) {
-	body, err := io.ReadAll(r.Body)
+	body, err := io.ReadAll(http.MaxBytesReader(w, r.Body, maxJSONBodyBytes))
 	if err != nil {
 		writeGHError(w, http.StatusBadRequest, "Could not read request body")
 		return
