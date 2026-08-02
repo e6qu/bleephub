@@ -468,19 +468,11 @@ func (s *Server) handleShauthCallback(w http.ResponseWriter, r *http.Request) {
 }
 
 func safeIdentityReturnTo(value string) string {
-	// Validate the raw input: it must be a rooted, same-origin path — beginning
-	// with a single "/" (not the protocol-relative "//host" form) and holding no
-	// backslash a browser could fold into "//host".
-	if !strings.HasPrefix(value, "/") || strings.HasPrefix(value, "//") || strings.Contains(value, `\`) {
-		return "/ui/"
-	}
 	parsed, err := url.Parse(value)
-	if err != nil || parsed.IsAbs() || parsed.Host != "" || parsed.User != nil {
+	if err != nil || !strings.HasPrefix(value, "/") || strings.HasPrefix(value, "//") || strings.Contains(value, `\`) || parsed.IsAbs() || parsed.Host != "" {
 		return "/ui/"
 	}
-	// Rebuild the target from only its path and query. The result has an empty
-	// host by construction, so it cannot redirect off-site.
-	return (&url.URL{Path: parsed.Path, RawQuery: parsed.RawQuery}).String()
+	return parsed.RequestURI()
 }
 
 func (s *Server) handleIdentitySession(w http.ResponseWriter, r *http.Request) {

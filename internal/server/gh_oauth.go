@@ -116,7 +116,6 @@ func (s *Server) handleLoginPost(w http.ResponseWriter, r *http.Request) {
 	}
 	login := r.FormValue("login")
 	credential := r.FormValue("password")
-	returnTo := r.FormValue("return_to")
 
 	if login == "" {
 		writeGHError(w, http.StatusUnprocessableEntity, "login is required")
@@ -168,14 +167,10 @@ func (s *Server) handleLoginPost(w http.ResponseWriter, r *http.Request) {
 		Expires:  sess.ExpiresAt,
 	})
 
-	// Redirect only when a return_to was supplied, and sanitize it: an absolute
-	// or protocol-relative destination is rewritten to the safe default rather
-	// than landing the just-authenticated victim on an attacker page (open
-	// redirect / phishing). With no return_to, render the success page as before.
-	if returnTo != "" {
-		http.Redirect(w, r, safeIdentityReturnTo(returnTo), http.StatusFound)
-		return
-	}
+	// The legacy PAT login (only reachable when Shauth is not configured)
+	// deliberately does not honor a caller-supplied return_to: redirecting to it
+	// was an open-redirect vector (AUTH-104), and this fallback path has no need
+	// to deep-link. Render the signed-in confirmation instead.
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	_, _ = w.Write([]byte(`<!DOCTYPE html><html><body><p>Signed in successfully.</p></body></html>`))
 }
