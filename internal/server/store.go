@@ -2065,7 +2065,9 @@ func (st *Store) loadFromPersistence() error {
 			// Option IDs are hex renderings of nextOptionSeed; resume the
 			// seed past every loaded option so new options can't collide.
 			for _, opt := range f.Options {
-				if n, err := strconv.ParseInt(opt.ID, 16, 64); err == nil && int(n) >= st.ProjectsV2.nextOptionSeed {
+				// Upper-bound the parsed value before narrowing to int so a
+				// tampered persisted ID can't truncate on a 32-bit build.
+				if n, err := strconv.ParseInt(opt.ID, 16, 64); err == nil && n >= 0 && n < 1<<31 && int(n) >= st.ProjectsV2.nextOptionSeed {
 					st.ProjectsV2.nextOptionSeed = int(n) + 1
 				}
 			}
@@ -2854,7 +2856,8 @@ func (st *Store) loadFromPersistence() error {
 			continue
 		}
 		for _, iter := range f.Iteration.Iterations {
-			if n, err := strconv.ParseInt(iter.ID, 16, 64); err == nil && int(n) >= st.ProjectsV2.nextOptionSeed {
+			// Upper-bound the parsed value before narrowing to int (see above).
+			if n, err := strconv.ParseInt(iter.ID, 16, 64); err == nil && n >= 0 && n < 1<<31 && int(n) >= st.ProjectsV2.nextOptionSeed {
 				st.ProjectsV2.nextOptionSeed = int(n) + 1
 			}
 		}

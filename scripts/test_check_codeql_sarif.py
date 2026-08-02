@@ -57,6 +57,40 @@ class CodeQLSarifPolicyTest(unittest.TestCase):
                 MODULE.sarif_findings(pathlib.Path(raw_directory))
             self.assertEqual(MODULE.main(["check-codeql-sarif.py", raw_directory]), 1)
 
+    def _finding(self, rule: str, path: str) -> dict:
+        return {
+            "ruleId": rule,
+            "level": "warning",
+            "message": {"text": "x"},
+            "locations": [
+                {"physicalLocation": {"artifactLocation": {"uri": path}, "region": {"startLine": 1}}}
+            ],
+        }
+
+    def test_accepted_finding_passes(self) -> None:
+        (rule, path), _ = next(iter(MODULE.ACCEPTED_FINDINGS.items()))
+        with tempfile.TemporaryDirectory() as raw_directory:
+            directory = pathlib.Path(raw_directory)
+            self.write_sarif(directory, [self._finding(rule, path)])
+            self.assertEqual(MODULE.main(["check-codeql-sarif.py", raw_directory]), 0)
+
+    def test_same_rule_in_unaccepted_file_still_fails(self) -> None:
+        (rule, _accepted_path), _ = next(iter(MODULE.ACCEPTED_FINDINGS.items()))
+        with tempfile.TemporaryDirectory() as raw_directory:
+            directory = pathlib.Path(raw_directory)
+            self.write_sarif(directory, [self._finding(rule, "internal/server/somewhere_else.go")])
+            self.assertEqual(MODULE.main(["check-codeql-sarif.py", raw_directory]), 1)
+
+    def test_accepted_plus_new_finding_still_fails(self) -> None:
+        (rule, path), _ = next(iter(MODULE.ACCEPTED_FINDINGS.items()))
+        with tempfile.TemporaryDirectory() as raw_directory:
+            directory = pathlib.Path(raw_directory)
+            self.write_sarif(
+                directory,
+                [self._finding(rule, path), self._finding("go/log-injection", "internal/server/new.go")],
+            )
+            self.assertEqual(MODULE.main(["check-codeql-sarif.py", raw_directory]), 1)
+
 
 if __name__ == "__main__":
     unittest.main()
