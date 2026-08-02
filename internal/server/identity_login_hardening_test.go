@@ -187,10 +187,18 @@ func TestLocalLoginAllowlistRejectsLoginsNotListed(t *testing.T) {
 		t.Fatalf("allowlisted login = %d, want 200", w.Code)
 	}
 
+	// A non-allowlisted login is refused with the SAME 401 as a wrong password
+	// (AUTH-116), so the status code cannot enumerate allowlist membership.
 	w = httptest.NewRecorder()
 	s.handleLocalLogin(w, localLoginRequest(t, "bob", password))
-	if w.Code != http.StatusForbidden {
-		t.Fatalf("non-allowlisted login = %d, want 403", w.Code)
+	if w.Code != http.StatusUnauthorized {
+		t.Fatalf("non-allowlisted login = %d, want 401", w.Code)
+	}
+	// And a wrong password for an allowlisted login returns the identical 401.
+	w = httptest.NewRecorder()
+	s.handleLocalLogin(w, localLoginRequest(t, "alice", "wrong-password"))
+	if w.Code != http.StatusUnauthorized {
+		t.Fatalf("wrong password = %d, want 401", w.Code)
 	}
 }
 

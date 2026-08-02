@@ -8,6 +8,7 @@ import (
 	"io"
 	"net"
 	"os"
+	"strconv"
 	"strings"
 	"time"
 
@@ -158,13 +159,11 @@ func (s *Server) serveGitSSHConn(conn net.Conn, signer ssh.Signer) {
 }
 
 func parseGitSSHUserID(value string) (int, error) {
-	var result int
-	n, err := fmt.Sscanf(value, "%d", &result)
+	// strconv.Atoi is the fail-closed primitive: unlike fmt.Sscanf("%d"), it
+	// rejects trailing garbage such as "12abc" rather than accepting 12.
+	result, err := strconv.Atoi(value)
 	if err != nil {
 		return 0, fmt.Errorf("parse SSH user ID %q: %w", value, err)
-	}
-	if n != 1 {
-		return 0, fmt.Errorf("parse SSH user ID %q: scanned %d values, want 1", value, n)
 	}
 	return result, nil
 }
@@ -248,7 +247,10 @@ func (s *Server) runGitSSHService(channel ssh.Channel, service, owner, repoName 
 	// nonexistent one, so SSH does not become a private-repository existence
 	// oracle (matching the git-HTTP behavior). A write refusal is only
 	// distinguishable once read access is established.
-	if !s.viewerCanReadRepo(ctx, repo) {
+	// Cloning reads repository CONTENTS, so gate on contents:read (matching the
+	// git-HTTP path) rather than metadata:read — a caller with only metadata
+	// visibility must not be able to pull the code.
+	if !s.viewerHasRepoPermission(ctx, repo, scopeContents, permRead) {
 		return transport.ErrRepositoryNotFound
 	}
 	if service == "git-receive-pack" && !s.viewerCanPushRepo(ctx, repo) {

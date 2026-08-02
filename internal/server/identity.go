@@ -27,6 +27,24 @@ import (
 // oidcHTTPTimeout bounds every outbound OpenID Connect discovery / JWKS fetch.
 const oidcHTTPTimeout = 10 * time.Second
 
+// audience decodes an OpenID Connect "aud" claim, which may be a single string
+// or an array of strings.
+type audience []string
+
+func (a *audience) UnmarshalJSON(b []byte) error {
+	var single string
+	if json.Unmarshal(b, &single) == nil {
+		*a = audience{single}
+		return nil
+	}
+	var multi []string
+	if err := json.Unmarshal(b, &multi); err != nil {
+		return err
+	}
+	*a = multi
+	return nil
+}
+
 // oidcClientProvidedKey marks a context that already carries an OpenID Connect
 // HTTP client (e.g. a test injecting one that trusts a self-signed issuer), so
 // oidcClientContext leaves it in place instead of overriding it.
@@ -389,15 +407,33 @@ func (s *Server) handleShauthCallback(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var claims struct {
-		Nonce             string `json:"nonce"`
-		SID               string `json:"sid"`
-		Email             string `json:"email"`
-		PreferredUsername string `json:"preferred_username"`
-		Name              string `json:"name"`
-		Picture           string `json:"picture"`
-		Role              string `json:"role"`
+		Nonce             string   `json:"nonce"`
+		SID               string   `json:"sid"`
+		Email             string   `json:"email"`
+		PreferredUsername string   `json:"preferred_username"`
+		Name              string   `json:"name"`
+		Picture           string   `json:"picture"`
+		Role              string   `json:"role"`
+		Audience          audience `json:"aud"`
+		AuthorizedParty   string   `json:"azp"`
 	}
-	if err := idToken.Claims(&claims); err != nil || claims.Nonce != pending.Nonce || claims.SID == "" || (claims.Role != "admin" && claims.Role != "developer") {
+	if err := idToken.Claims(&claims); err != nil {
+		writeGHError(w, http.StatusUnauthorized, "Shauth ID token claims were invalid")
+		return
+	}
+	// go-oidc's Verify only checks that aud CONTAINS the client id. OIDC Core
+	// §3.1.3.7 additionally requires rejecting a multi-audience token that omits
+	// azp, and requiring azp == client id when present, so another registered
+	// client cannot replay its token here.
+	if len(claims.Audience) > 1 && claims.AuthorizedParty == "" {
+		writeGHError(w, http.StatusUnauthorized, "Shauth ID token has multiple audiences without azp")
+		return
+	}
+	if claims.AuthorizedParty != "" && claims.AuthorizedParty != s.identity.shauthClientID {
+		writeGHError(w, http.StatusUnauthorized, "Shauth ID token azp is not this client")
+		return
+	}
+	if claims.Nonce != pending.Nonce || claims.SID == "" || (claims.Role != "admin" && claims.Role != "developer") {
 		writeGHError(w, http.StatusUnauthorized, "Shauth ID token claims were invalid")
 		return
 	}
@@ -439,6 +475,10 @@ func safeIdentityReturnTo(value string) string {
 }
 
 func (s *Server) handleIdentitySession(w http.ResponseWriter, r *http.Request) {
+	// The response reflects the caller's own identity, so it must never be
+	// served from a shared cache to another user.
+	w.Header().Set("Cache-Control", "no-store")
+	w.Header().Set("Vary", "Cookie")
 	session := s.sessionFromRequest(r)
 	if session == nil {
 		writeJSON(w, http.StatusOK, map[string]any{"authenticated": false})
@@ -806,11 +846,13 @@ func (s *Server) handleLocalLogin(w http.ResponseWriter, r *http.Request) {
 		writeGHError(w, http.StatusBadRequest, "login mixes confusable scripts")
 		return
 	}
-	if !s.identity.loginAllowed(login) {
-		writeGHError(w, http.StatusForbidden, "login is not permitted on this instance")
-		return
+	// A disallowed login and a wrong credential return the identical 401 so an
+	// anonymous caller cannot enumerate BLEEPHUB_ALLOWED_LOGINS membership from
+	// the status code.
+	var user *User
+	if s.identity.loginAllowed(login) {
+		user = s.browserLoginUser(login, request.Password)
 	}
-	user := s.browserLoginUser(login, request.Password)
 	if user == nil {
 		writeGHError(w, http.StatusUnauthorized, "invalid local credentials")
 		return
@@ -1215,10 +1257,18 @@ func (s *Server) handlePrivateControl(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	session := s.sessionFromRequest(r)
-	if session == nil || !s.store.GetUserByID(session.UserID).SiteAdmin {
+	var user *User
+	if session != nil {
+		user = s.store.GetUserByID(session.UserID)
+	}
+	if user == nil || !user.SiteAdmin {
 		http.NotFound(w, r)
 		return
 	}
+	w.Header().Set("Cache-Control", "no-store")
+	w.Header().Set("Vary", "Cookie")
+	w.Header().Set("Referrer-Policy", "no-referrer")
+	w.Header().Set("X-Content-Type-Options", "nosniff")
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	_, _ = w.Write([]byte(`<!doctype html><html><head><meta name="viewport" content="width=device-width,initial-scale=1"><title>Bleephub control</title><style>body{margin:0;background:#111827;color:#f8fafc;font:16px system-ui}main{max-width:960px;margin:3rem auto;padding:2rem;background:#1e293b;border:1px solid #334155;border-radius:18px}h1{color:#67e8f9}table{width:100%;border-collapse:collapse}td,th{padding:.7rem;border-bottom:1px solid #334155;text-align:left}form{display:grid;grid-template-columns:1fr 1fr 1fr 1fr auto;gap:.6rem;margin:1.5rem 0}input,select,button{padding:.7rem;border-radius:8px;border:1px solid #475569}button{background:#a855f7;color:white;font-weight:700;cursor:pointer}.stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:.7rem}.stat{padding:1rem;background:#0f172a;border:1px solid #334155;border-radius:10px}.stat b{display:block;color:#67e8f9;font-size:1.3rem}</style></head><body><main><h1>Bleephub private control</h1><p>Instance-only identity, storage, and runtime administration. This surface is intentionally separate from GitHub-compatible routes.</p><section><h2>Live service monitoring</h2><div class="stats" id="stats"><div class="stat">Loading…</div></div></section><form id="new-user"><input name="login" placeholder="login" required><input name="email" type="email" placeholder="email" required><input name="password" type="password" placeholder="temporary password" required><select name="role"><option value="developer">developer</option><option value="admin">admin</option></select><button>Create local user</button></form><table><thead><tr><th>Login</th><th>Email</th><th>Role</th></tr></thead><tbody id="users"></tbody></table></main><script>const users=document.querySelector('#users'),stats=document.querySelector('#stats');const esc=v=>String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));async function load(){const [u,m,s,t]=await Promise.all([fetch('/internal/users'),fetch('/internal/metrics'),fetch('/internal/status'),fetch('/internal/storage')]);if(u.ok)users.innerHTML=(await u.json()).map(x=>'<tr><td>@'+esc(x.login)+'</td><td>'+esc(x.email)+'</td><td>'+ (x.site_admin?'admin':'developer')+'</td></tr>').join('');if(m.ok&&s.ok&&t.ok){const metrics=await m.json(),status=await s.json(),storage=await t.json();stats.innerHTML='<div class="stat">Workflows<b>'+esc(status.active_workflows)+'</b></div><div class="stat">Connected runners<b>'+esc(status.connected_runners)+'</b></div><div class="stat">Uptime<b>'+esc(status.uptime_seconds)+'s</b></div><div class="stat">Git storage<b>'+esc(storage.git)+'</b></div><div class="stat">Persistence<b>'+esc(storage.persistence)+'</b></div><div class="stat">Active sessions<b>'+esc(metrics.active_sessions)+'</b></div>'}}document.querySelector('#new-user').onsubmit=async e=>{e.preventDefault();const f=new FormData(e.target);const body=Object.fromEntries(f);body.site_admin=body.role==='admin';const r=await fetch('/internal/users',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});if(!r.ok){alert('Could not create local user');return}e.target.reset();load()};load();setInterval(load,15000)</script></body></html>`))
 }
