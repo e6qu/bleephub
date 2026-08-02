@@ -1,6 +1,7 @@
 package bleephub
 
 import (
+	"context"
 	"crypto/rand"
 	"crypto/rsa"
 	"encoding/json"
@@ -96,7 +97,11 @@ func (provider *shaAuthTestProvider) sign(t *testing.T, claims map[string]any) s
 }
 
 func (provider *shaAuthTestProvider) withClient(request *http.Request) *http.Request {
-	return request.WithContext(oidc.ClientContext(request.Context(), provider.server.Client()))
+	ctx := oidc.ClientContext(request.Context(), provider.server.Client())
+	// Mark the client as provided so oidcClientContext preserves this
+	// cert-trusting client rather than overriding it with the timeout client.
+	ctx = context.WithValue(ctx, oidcClientProvidedKey{}, true)
+	return request.WithContext(ctx)
 }
 
 func completeShauthIdentityConfig(issuer string) identityConfig {

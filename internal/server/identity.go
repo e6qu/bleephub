@@ -1,6 +1,7 @@
 package bleephub
 
 import (
+	"context"
 	"crypto/hmac"
 	"crypto/rand"
 	"crypto/sha256"
@@ -22,6 +23,26 @@ import (
 	"golang.org/x/oauth2"
 	"golang.org/x/text/unicode/norm"
 )
+
+// oidcHTTPTimeout bounds every outbound OpenID Connect discovery / JWKS fetch.
+const oidcHTTPTimeout = 10 * time.Second
+
+// oidcClientProvidedKey marks a context that already carries an OpenID Connect
+// HTTP client (e.g. a test injecting one that trusts a self-signed issuer), so
+// oidcClientContext leaves it in place instead of overriding it.
+type oidcClientProvidedKey struct{}
+
+// oidcClientContext returns a context whose OpenID Connect HTTP client carries a
+// timeout, so a slow or hung identity provider cannot pin a goroutine and socket
+// per request — otherwise an anonymous flood of /auth/* requests, each blocking
+// on an unbounded outbound fetch, is a fd/goroutine-exhaustion vector. A client
+// already provided on the context is preserved.
+func oidcClientContext(ctx context.Context) context.Context {
+	if ctx.Value(oidcClientProvidedKey{}) != nil {
+		return ctx
+	}
+	return oidc.ClientContext(ctx, &http.Client{Timeout: oidcHTTPTimeout})
+}
 
 const (
 	githubAdminTeam           = "e6qu-org-admins"
@@ -302,7 +323,7 @@ func (s *Server) handleShauthLogin(w http.ResponseWriter, r *http.Request) {
 		writeGHError(w, http.StatusServiceUnavailable, "Shauth sign-in is not configured")
 		return
 	}
-	provider, err := oidc.NewProvider(r.Context(), s.identity.shauthIssuer)
+	provider, err := oidc.NewProvider(oidcClientContext(r.Context()), s.identity.shauthIssuer)
 	if err != nil {
 		s.logger.Warn().Err(err).Msg("Shauth discovery failed")
 		writeGHError(w, http.StatusBadGateway, "Shauth discovery failed")
@@ -341,7 +362,7 @@ func (s *Server) handleShauthCallback(w http.ResponseWriter, r *http.Request) {
 		writeGHError(w, http.StatusBadRequest, "invalid or expired Shauth sign-in state")
 		return
 	}
-	provider, err := oidc.NewProvider(r.Context(), s.identity.shauthIssuer)
+	provider, err := oidc.NewProvider(oidcClientContext(r.Context()), s.identity.shauthIssuer)
 	if err != nil {
 		writeGHError(w, http.StatusBadGateway, "Shauth discovery failed")
 		return
@@ -362,7 +383,7 @@ func (s *Server) handleShauthCallback(w http.ResponseWriter, r *http.Request) {
 	idToken, err := provider.Verifier(&oidc.Config{
 		ClientID: s.identity.shauthClientID,
 		Now:      s.currentTime,
-	}).Verify(r.Context(), rawIDToken)
+	}).Verify(oidcClientContext(r.Context()), rawIDToken)
 	if err != nil {
 		writeGHError(w, http.StatusUnauthorized, "Shauth ID token verification failed")
 		return
@@ -1003,7 +1024,7 @@ func (s *Server) handleIdentityLogout(w http.ResponseWriter, r *http.Request) {
 	// must not have their shared Shauth SSO session — used by every other
 	// relying party — torn down by signing out of this app.
 	if s.identity.shauthConfigured() && session != nil && session.OIDCProvider == "shauth" && session.OIDCIDToken != "" {
-		provider, err := oidc.NewProvider(r.Context(), s.identity.shauthIssuer)
+		provider, err := oidc.NewProvider(oidcClientContext(r.Context()), s.identity.shauthIssuer)
 		if err != nil {
 			writeGHError(w, http.StatusBadGateway, "Shauth discovery failed")
 			return
@@ -1140,7 +1161,7 @@ func (s *Server) handleShauthBackChannelLogout(w http.ResponseWriter, r *http.Re
 		writeGHError(w, http.StatusBadRequest, "logout_token is required")
 		return
 	}
-	provider, err := oidc.NewProvider(r.Context(), s.identity.shauthIssuer)
+	provider, err := oidc.NewProvider(oidcClientContext(r.Context()), s.identity.shauthIssuer)
 	if err != nil {
 		writeGHError(w, http.StatusBadGateway, "Shauth discovery failed")
 		return
@@ -1148,7 +1169,7 @@ func (s *Server) handleShauthBackChannelLogout(w http.ResponseWriter, r *http.Re
 	logoutToken, err := provider.Verifier(&oidc.Config{
 		ClientID: s.identity.shauthClientID,
 		Now:      s.currentTime,
-	}).Verify(r.Context(), rawLogoutToken)
+	}).Verify(oidcClientContext(r.Context()), rawLogoutToken)
 	if err != nil {
 		writeGHError(w, http.StatusBadRequest, "logout token verification failed")
 		return
