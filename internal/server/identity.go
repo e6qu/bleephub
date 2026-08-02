@@ -468,11 +468,20 @@ func (s *Server) handleShauthCallback(w http.ResponseWriter, r *http.Request) {
 }
 
 func safeIdentityReturnTo(value string) string {
-	parsed, err := url.Parse(value)
-	if err != nil || !strings.HasPrefix(value, "/") || strings.HasPrefix(value, "//") || strings.Contains(value, `\`) || parsed.IsAbs() || parsed.Host != "" {
+	// The prefix guard is a redirect-safety barrier: a destination beginning
+	// with a single "/" (not "//"), holding no backslash, and parsing to a URL
+	// with no scheme or host is same-origin and path-relative. Return the
+	// guarded input itself (rather than a re-derived string) so the barrier
+	// applies to the exact value that reaches http.Redirect — which is also what
+	// static taint analysis recognizes as sanitized.
+	if !strings.HasPrefix(value, "/") || strings.HasPrefix(value, "//") || strings.Contains(value, `\`) {
 		return "/ui/"
 	}
-	return parsed.RequestURI()
+	parsed, err := url.Parse(value)
+	if err != nil || parsed.IsAbs() || parsed.Host != "" {
+		return "/ui/"
+	}
+	return value
 }
 
 func (s *Server) handleIdentitySession(w http.ResponseWriter, r *http.Request) {
