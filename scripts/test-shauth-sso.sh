@@ -157,6 +157,24 @@ for port in "$primary_port" "$secondary_port"; do
   curl --fail --silent --show-error "http://localhost:$port/health" >/dev/null
 done
 
+# Hydra answers /health/ready before it can actually serve an authorization
+# request for a freshly-registered client: its OpenID signing keys are generated
+# lazily on first use and the bootstrapped OAuth clients take a moment to
+# propagate. A real /oauth2/auth issued during that window is aborted, and the
+# browser flow then times out at its first waitForURL. Probe the authorization
+# endpoint until Hydra redirects to its login UI (the ready signal), so the test
+# starts only once the OP genuinely serves the flow. Bounded and non-fatal: if
+# it never becomes ready the test proceeds and fails as before.
+warm_redirect="http://localhost:${primary_port}/auth/shauth/callback"
+warm_auth_url="http://localhost:8080/oauth2/auth?client_id=bleephub-primary&response_type=code&scope=openid&state=warmup&redirect_uri=$(jq -rn --arg u "$warm_redirect" '$u|@uri')"
+for _ in $(seq 1 120); do
+  warm_location="$(curl --silent --output /dev/null --write-out '%{redirect_url}' "$warm_auth_url" 2>/dev/null || true)"
+  case "$warm_location" in
+  */oauth/login*) break ;;
+  esac
+  sleep 1
+done
+
 (
   cd "$root/web"
   SHAUTH_VALIDATOR_USERNAME="$SHAUTH_VALIDATOR_USERNAME" \
