@@ -166,7 +166,9 @@ done
 # starts only once the OP genuinely serves the flow. Bounded and non-fatal: if
 # it never becomes ready the test proceeds and fails as before.
 warm_redirect="http://localhost:${primary_port}/auth/shauth/callback"
-warm_auth_url="http://localhost:8080/oauth2/auth?client_id=bleephub-primary&response_type=code&scope=openid&state=warmup&redirect_uri=$(jq -rn --arg u "$warm_redirect" '$u|@uri')"
+# Hydra requires state to be at least 8 characters, and the redirect to the
+# login UI is what proves the client is registered and the signing keys exist.
+warm_auth_url="http://localhost:8080/oauth2/auth?client_id=bleephub-primary&response_type=code&scope=openid&state=warmup-readiness-probe&redirect_uri=$(jq -rn --arg u "$warm_redirect" '$u|@uri')"
 for _ in $(seq 1 120); do
   warm_location="$(curl --silent --output /dev/null --write-out '%{redirect_url}' "$warm_auth_url" 2>/dev/null || true)"
   case "$warm_location" in
