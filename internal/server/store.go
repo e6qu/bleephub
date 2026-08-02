@@ -53,6 +53,27 @@ func (st *Store) ReserveRunID() int {
 	return id
 }
 
+// reserveGlobalID hands out the next value of a durable global-entity ID
+// counter, mirroring ReserveRunID. Core entities (orgs, users, repos, teams,
+// issues) previously minted their global ID from the in-memory NextX field
+// alone, so two dqlite replicas could mint the same ID and the second write
+// would silently overwrite the first. Routing allocation through
+// AllocateCounterValue makes the sequence agree across replicas. The in-memory
+// NextX (rebuilt as max+1 on load) supplies the minimum, so single-node and
+// in-memory stores keep their sequential NextX++ semantics. Caller holds st.mu.
+func (st *Store) reserveGlobalID(name string, next *int) int {
+	id := *next
+	if st.persist != nil {
+		reserved, err := st.persist.AllocateCounterValue(name, int64(id))
+		if err != nil {
+			panic(&persistenceFailure{op: "counter", bucket: "counters", key: name, err: err})
+		}
+		id = int(reserved)
+	}
+	*next = id + 1
+	return id
+}
+
 // ReserveLogID returns an object-store-safe log identifier. The counter is
 // durable so a service replacement cannot reuse an existing logs/{id} key and
 // overwrite a completed job's bytes.
@@ -3901,7 +3922,7 @@ func (st *Store) SeedDefaultUser() {
 
 	now := st.currentTime()
 	u := &User{
-		ID:           st.NextUser,
+		ID:           st.reserveGlobalID("next_user", &st.NextUser),
 		NodeID:       "U_kgDOBdefault",
 		Login:        "admin",
 		Name:         "Admin",
@@ -3916,7 +3937,6 @@ func (st *Store) SeedDefaultUser() {
 	}
 	st.Users[u.ID] = u
 	st.UsersByLogin[u.Login] = u
-	st.NextUser++
 	if st.persist != nil {
 		st.persist.MustPut("users", strconv.Itoa(u.ID), u)
 	}

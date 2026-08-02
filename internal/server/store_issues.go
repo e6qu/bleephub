@@ -526,9 +526,10 @@ func (st *Store) CreateIssue(repoID, authorID int, title, body string, labelIDs,
 	}
 
 	now := st.currentTime()
+	issueID := st.reserveGlobalID("next_issue_id", &st.NextIssue)
 	issue := &Issue{
-		ID:          st.NextIssue,
-		NodeID:      fmt.Sprintf("I_kgDO%08d", st.NextIssue),
+		ID:          issueID,
+		NodeID:      fmt.Sprintf("I_kgDO%08d", issueID),
 		Number:      repo.NextIssueNumber,
 		RepoID:      repoID,
 		Title:       title,
@@ -542,7 +543,6 @@ func (st *Store) CreateIssue(repoID, authorID int, title, body string, labelIDs,
 		UpdatedAt:   now,
 	}
 	repo.NextIssueNumber++
-	st.NextIssue++
 	st.Issues[issue.ID] = issue
 	st.indexIssueLocked(issue)
 	if st.persist != nil {

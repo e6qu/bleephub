@@ -74,9 +74,10 @@ func (s *Server) handleAdminCreateUser(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	now := time.Now().UTC()
+	userID := s.store.reserveGlobalID("next_user", &s.store.NextUser)
 	u := &User{
-		ID:           s.store.NextUser,
-		NodeID:       fmt.Sprintf("U_kgDO%08d", s.store.NextUser),
+		ID:           userID,
+		NodeID:       fmt.Sprintf("U_kgDO%08d", userID),
 		Login:        login,
 		Email:        req.Email,
 		AvatarURL:    "",
@@ -87,7 +88,6 @@ func (s *Server) handleAdminCreateUser(w http.ResponseWriter, r *http.Request) {
 		CreatedAt:    now,
 		UpdatedAt:    now,
 	}
-	s.store.NextUser++
 	s.store.Users[u.ID] = u
 	s.store.UsersByLogin[u.Login] = u
 	if s.store.persist != nil {

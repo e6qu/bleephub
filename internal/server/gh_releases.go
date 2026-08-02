@@ -55,6 +55,10 @@ type Release struct {
 	// returned by Latest(). Persisted, but absent from the API response (which
 	// GitHub does not echo make_latest on either).
 	ExcludeFromLatest bool `json:"exclude_from_latest,omitempty"`
+	// DiscussionNumber links the release to a repository discussion created via
+	// discussion_category_name; zero when the release has none. Surfaced as
+	// discussion_url in the response, matching GitHub.
+	DiscussionNumber int `json:"discussion_number,omitempty"`
 }
 
 // releaseExcludedFromLatest interprets the make_latest body field, which GitHub
@@ -684,13 +688,15 @@ func (s *Server) handleCreateRelease(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var req struct {
-		TagName         string      `json:"tag_name"`
-		TargetCommitish string      `json:"target_commitish"`
-		Name            string      `json:"name"`
-		Body            string      `json:"body"`
-		Draft           flexBool    `json:"draft"`
-		Prerelease      flexBool    `json:"prerelease"`
-		MakeLatest      interface{} `json:"make_latest"`
+		TagName                string      `json:"tag_name"`
+		TargetCommitish        string      `json:"target_commitish"`
+		Name                   string      `json:"name"`
+		Body                   string      `json:"body"`
+		Draft                  flexBool    `json:"draft"`
+		Prerelease             flexBool    `json:"prerelease"`
+		MakeLatest             interface{} `json:"make_latest"`
+		GenerateReleaseNotes   flexBool    `json:"generate_release_notes"`
+		DiscussionCategoryName string      `json:"discussion_category_name"`
 	}
 	if !decodeJSONBody(w, r, &req) {
 		return
@@ -711,7 +717,33 @@ func (s *Server) handleCreateRelease(w http.ResponseWriter, r *http.Request) {
 		writeGHError(w, http.StatusUnprocessableEntity, err.Error())
 		return
 	}
+	// discussion_category_name must name a category that already exists, or
+	// GitHub rejects the request; validate before the release is created.
+	var discussionCategory *DiscussionCategory
+	if req.DiscussionCategoryName != "" {
+		if discussionCategory = s.store.GetDiscussionCategoryByName(repo.ID, req.DiscussionCategoryName); discussionCategory == nil {
+			writeGHValidationError(w, "Release", "discussion_category_name", "invalid")
+			return
+		}
+	}
+	// generate_release_notes autogenerates the name (when absent) and appends
+	// notes to any supplied body, matching GitHub. The previous release's tag
+	// bounds the changelog range.
+	if bool(req.GenerateReleaseNotes) {
+		if req.Name == "" {
+			req.Name = req.TagName
+		}
+		notes := s.generatedReleaseNotes(repo, req.TagName, target, s.previousReleaseTag(repo, req.TagName))
+		if req.Body == "" {
+			req.Body = notes
+		} else {
+			req.Body = req.Body + "\n\n" + notes
+		}
+	}
 	release := s.store.Releases.Create(repo.ID, user.ID, req.TagName, target, req.Name, req.Body, bool(req.Draft), bool(req.Prerelease), releaseExcludedFromLatest(req.MakeLatest))
+	if discussionCategory != nil {
+		s.linkReleaseDiscussion(repo, release, user, discussionCategory)
+	}
 	s.emitReleaseEvent(repo, release, user, "created", s.baseURL(r))
 	s.recordAuditEvent("release.create", user.Login, "", map[string]interface{}{"repo": repo.FullName, "release_id": release.ID, "tag": release.TagName})
 	releaseJSON := releaseToJSON(release, s.store, s.baseURL(r), repo)
@@ -801,16 +833,26 @@ func (s *Server) handleUpdateRelease(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var req struct {
-		TagName         *string     `json:"tag_name"`
-		TargetCommitish *string     `json:"target_commitish"`
-		Name            *string     `json:"name"`
-		Body            *string     `json:"body"`
-		Draft           *flexBool   `json:"draft"`
-		Prerelease      *flexBool   `json:"prerelease"`
-		MakeLatest      interface{} `json:"make_latest"`
+		TagName                *string     `json:"tag_name"`
+		TargetCommitish        *string     `json:"target_commitish"`
+		Name                   *string     `json:"name"`
+		Body                   *string     `json:"body"`
+		Draft                  *flexBool   `json:"draft"`
+		Prerelease             *flexBool   `json:"prerelease"`
+		MakeLatest             interface{} `json:"make_latest"`
+		DiscussionCategoryName *string     `json:"discussion_category_name"`
 	}
 	if !decodeJSONBody(w, r, &req) {
 		return
+	}
+	// A discussion_category_name that names a missing category is rejected;
+	// validate before mutating.
+	var discussionCategory *DiscussionCategory
+	if req.DiscussionCategoryName != nil && *req.DiscussionCategoryName != "" && release.DiscussionNumber == 0 {
+		if discussionCategory = s.store.GetDiscussionCategoryByName(repo.ID, *req.DiscussionCategoryName); discussionCategory == nil {
+			writeGHValidationError(w, "Release", "discussion_category_name", "invalid")
+			return
+		}
 	}
 	wasDraft := release.Draft
 	wasPrerelease := release.Prerelease
@@ -865,6 +907,9 @@ func (s *Server) handleUpdateRelease(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	updated := s.store.Releases.Get(id)
+	if discussionCategory != nil {
+		s.linkReleaseDiscussion(repo, updated, ghUserFromContext(r.Context()), discussionCategory)
+	}
 	action := releaseUpdateAction(wasDraft, wasPrerelease, updated.Draft, updated.Prerelease)
 	s.emitReleaseEvent(repo, updated, ghUserFromContext(r.Context()), action, s.baseURL(r))
 	writeJSON(w, http.StatusOK, releaseToJSON(updated, s.store, s.baseURL(r), repo))
@@ -1193,6 +1238,33 @@ func (s *Server) handleGenerateReleaseNotes(w http.ResponseWriter, r *http.Reque
 	writeJSON(w, http.StatusOK, out)
 }
 
+// previousReleaseTag returns the tag of the newest existing published release
+// (excluding excludeTag), used to bound generated release notes.
+func (s *Server) previousReleaseTag(repo *Repo, excludeTag string) string {
+	if prev := s.store.Releases.Latest(repo.ID); prev != nil && prev.TagName != excludeTag {
+		return prev.TagName
+	}
+	return ""
+}
+
+// linkReleaseDiscussion creates a repository discussion in the given category
+// and links it to the release (discussion_category_name).
+func (s *Server) linkReleaseDiscussion(repo *Repo, release *Release, user *User, category *DiscussionCategory) {
+	if category == nil {
+		return
+	}
+	title := release.Name
+	if title == "" {
+		title = release.TagName
+	}
+	disc := s.store.CreateDiscussion(repo.ID, category.ID, user.ID, title, release.Body)
+	if disc == nil {
+		return
+	}
+	s.store.Releases.Update(release.ID, func(rel *Release) { rel.DiscussionNumber = disc.Number })
+	release.DiscussionNumber = disc.Number
+}
+
 func (s *Server) generatedReleaseNotes(repo *Repo, tagName, targetCommitish, previousTagName string) string {
 	var lines []string
 	lines = append(lines, "## What's Changed", "")
@@ -1303,6 +1375,10 @@ func releaseToJSON(rel *Release, st *Store, baseURL string, repo *Repo) map[stri
 	}
 	reactions := st.Reactions.SummarizeReactions("release", rel.ID)
 	reactions["url"] = fmt.Sprintf("%s/api/v3/repos/%s/releases/%d/reactions", baseURL, repo.FullName, rel.ID)
+	var discussionURL interface{}
+	if rel.DiscussionNumber > 0 {
+		discussionURL = fmt.Sprintf("%s/%s/discussions/%d", baseURL, repo.FullName, rel.DiscussionNumber)
+	}
 	assets := make([]interface{}, 0, len(rel.Assets))
 	for _, a := range rel.Assets {
 		assets = append(assets, releaseAssetToJSON(a, st, baseURL, repo, rel))
@@ -1327,6 +1403,7 @@ func releaseToJSON(rel *Release, st *Store, baseURL string, repo *Repo) map[stri
 		"zipball_url":      fmt.Sprintf("%s/api/v3/repos/%s/zipball/%s", baseURL, repo.FullName, rel.TagName),
 		"assets":           assets,
 		"reactions":        reactions,
+		"discussion_url":   discussionURL,
 	}
 }
 

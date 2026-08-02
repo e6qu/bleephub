@@ -317,9 +317,10 @@ func (st *Store) CreateTemporaryFork(repoID int, ghsaID string) *Repo {
 		sourceID = repo.SourceID
 	}
 
+	forkID := st.reserveGlobalID("next_repo", &st.NextRepo)
 	fork := &Repo{
-		ID:                        st.NextRepo,
-		NodeID:                    fmt.Sprintf("R_kgDO%08d", st.NextRepo),
+		ID:                        forkID,
+		NodeID:                    fmt.Sprintf("R_kgDO%08d", forkID),
 		Name:                      name,
 		FullName:                  fullName,
 		Description:               repo.Description,
@@ -362,7 +363,6 @@ func (st *Store) CreateTemporaryFork(repoID int, ghsaID string) *Repo {
 		UpdatedAt:                 st.currentTime(),
 		PushedAt:                  st.currentTime(),
 	}
-	st.NextRepo++
 
 	srcStor := st.GitStorages[repo.FullName]
 	if srcStor == nil {

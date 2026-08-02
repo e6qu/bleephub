@@ -52,7 +52,7 @@ func (s *Server) registerGHOAuthRoutes() {
 	s.route("POST /login/device", s.handleDeviceApprove)
 	// Session login (required before the web-flow authorize step).
 	s.route("GET /login", s.handleLoginPage)
-	s.route("POST /login", s.handleLoginPost)
+	s.route("POST /login", s.rateLimitAuthFlow(s.handleLoginPost))
 	// OAuth web flow.
 	s.route("GET /login/oauth/authorize", s.handleOAuthAuthorize)
 	s.route("POST /login/oauth/authorize", s.handleOAuthAuthorizeApprove)
