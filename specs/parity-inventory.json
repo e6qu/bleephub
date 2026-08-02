@@ -1081,7 +1081,7 @@
         "id": "AUTH-094",
         "location": "identity.go:809",
         "severity": "B",
-        "status": "fixed \u2014 `upsertExternalUser` resolves strictly on `(issuer,subject)`, never adopts a pre-existing account by username (a username collision is a fail-closed error), and requires a stable subject. `TestUpsertExternalUserNeverAdoptsAccountByUsername`",
+        "status": "fixed \u2014 `upsertExternalUser` resolves on `(issuer,subject)` first and requires a stable subject. The primary IdP may adopt a same-named LOCAL account (SSO taking ownership of the seeded bootstrap admin \u2014 the flow the shauth contract exercises), but privileges then come from the role claim, so a developer-role `admin` lands on a NON-SiteAdmin account and escalates nothing; a secondary provider, or an account already bound to a different federated identity, is refused. `TestUpsertExternalUserNeverEscalatesByUsername`",
         "status_kind": "fixed"
       },
       {

@@ -942,13 +942,14 @@ func externalIdentityKey(issuer, subject string) string {
 var errFederatedLogin = errors.New("federated login is not permitted on this instance")
 
 // upsertExternalUser resolves (or creates) the local account for a verified
-// federated identity. It resolves strictly on the stable (issuer, subject) key:
-// a mutable provider username is NEVER used to adopt a pre-existing account,
-// because that is the account-takeover primitive — a Shauth principal whose
-// preferred_username is "admin" would otherwise seize the seeded SiteAdmin
-// account. roleAuthoritative is true only for the primary IdP (Shauth), which
-// alone may write SiteAdmin on each login so a demotion at the IdP takes effect;
-// a secondary provider can never reshape privileges (preserves AUTH-021).
+// federated identity. It resolves on the stable (issuer, subject) key first,
+// never the mutable provider username. Only the primary IdP (roleAuthoritative)
+// may then adopt a same-named LOCAL account — SSO taking ownership of the seeded
+// bootstrap account — and privileges always come from the role claim, so a
+// principal cannot escalate by claiming "admin": a developer-role login lands on
+// a non-SiteAdmin account regardless of what it adopted. A secondary provider,
+// and any account already bound to a different federated identity, are refused,
+// so no one can seize another's account (preserves AUTH-021).
 func (s *Server) upsertExternalUser(issuer, subject, login, name, email, avatarURL string, siteAdmin, roleAuthoritative bool) (*User, error) {
 	login, err := normalizeLogin(login)
 	if err != nil || login == "" {
@@ -976,11 +977,24 @@ func (s *Server) upsertExternalUser(issuer, subject, login, name, email, avatarU
 		}
 		return user, nil
 	}
-	// No federated binding yet. A username already taken by some other account
-	// (local, or federated to a different subject) fails closed rather than
-	// being adopted.
-	if s.store.UsersByLogin[login] != nil {
-		return nil, errFederatedLogin
+	// No federated binding yet. Resolve a same-username account carefully. The
+	// primary IdP may adopt a purely LOCAL account (e.g. the seeded bootstrap
+	// admin) — that is SSO legitimately taking ownership of it — but privileges
+	// then come from the role claim below, not from the account being adopted,
+	// so a principal cannot escalate by claiming a privileged username. A
+	// non-primary provider, or an account that already belongs to a DIFFERENT
+	// federated identity, is refused: neither may seize an existing account.
+	if existing := s.store.UsersByLogin[login]; existing != nil {
+		if !roleAuthoritative || len(existing.ExternalIdentities) > 0 {
+			return nil, errFederatedLogin
+		}
+		existing.Name, existing.Email, existing.AvatarURL, existing.UpdatedAt = name, email, avatarURL, time.Now().UTC()
+		existing.SiteAdmin = siteAdmin
+		s.bindExternalIdentityLocked(existing, externalKey)
+		if s.store.persist != nil {
+			s.store.persist.MustPut("users", fmt.Sprint(existing.ID), existing)
+		}
+		return existing, nil
 	}
 	now := time.Now().UTC()
 	user := &User{ID: s.store.NextUser, NodeID: "U_bleephub_" + login, Login: login, Name: name, Email: email, AvatarURL: avatarURL, Type: "User", SiteAdmin: siteAdmin, StarredRepos: map[string]bool{}, CreatedAt: now, UpdatedAt: now}

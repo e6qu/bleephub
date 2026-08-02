@@ -255,20 +255,34 @@ func TestInternalUserCreationAllowlistEnforced(t *testing.T) {
 	}
 }
 
-// TestUpsertExternalUserNeverAdoptsAccountByUsername pins the AUTH-094 fix: a
-// federated identity is resolved strictly on (issuer, subject), so a Shauth
-// principal whose preferred_username collides with a pre-existing account —
-// notably the seeded "admin" SiteAdmin — is refused rather than adopting it.
-func TestUpsertExternalUserNeverAdoptsAccountByUsername(t *testing.T) {
+// TestUpsertExternalUserNeverEscalatesByUsername pins the AUTH-094 fix: a
+// federated identity is resolved on (issuer, subject), and a principal cannot
+// gain privileges by claiming a taken username. The primary IdP may adopt a
+// LOCAL account (SSO ownership of the seeded bootstrap admin), but the role
+// claim — not the account adopted — decides SiteAdmin, so a developer-role
+// "admin" lands on a NON-admin account. Non-primary providers and accounts
+// already bound to a different federated identity cannot be seized.
+func TestUpsertExternalUserNeverEscalatesByUsername(t *testing.T) {
 	s := newTestServer() // seeds admin/SiteAdmin, no external identity
 	const issuer = "https://auth.example.test"
 
-	if u, err := s.upsertExternalUser(issuer, "attacker-subject", "admin", "A", "a@x", "", true, true); err == nil {
-		t.Fatalf("federated 'admin' adopted the seeded account: got user %+v", u)
+	// A developer-role principal claiming "admin" adopts the seeded account but
+	// is NOT a SiteAdmin — the escalation the finding was about is closed.
+	adopted, err := s.upsertExternalUser(issuer, "dev-subject", "admin", "A", "a@x", "", false, true)
+	if err != nil || adopted == nil {
+		t.Fatalf("primary-IdP adoption of the local admin failed: %+v err=%v", adopted, err)
 	}
-	admin := s.store.LookupUserByLogin("admin")
-	if admin == nil || len(admin.ExternalIdentities) != 0 {
-		t.Fatalf("seeded admin was mutated: %+v", admin)
+	if adopted.SiteAdmin {
+		t.Fatal("a developer-role federated 'admin' became SiteAdmin — escalation")
+	}
+
+	// A SECONDARY provider may not adopt an existing account by username.
+	if u, err := s.upsertExternalUser(issuer, "other-subject", "admin", "A", "a@x", "", true, false); err == nil {
+		t.Fatalf("a secondary provider adopted an existing account: %+v", u)
+	}
+	// Nor may anyone seize the account now bound to dev-subject.
+	if u, err := s.upsertExternalUser(issuer, "thief-subject", "admin", "A", "a@x", "", true, true); err == nil {
+		t.Fatalf("a second identity seized an already-federated account: %+v", u)
 	}
 
 	// A fresh federated identity with a free login provisions normally.
@@ -276,8 +290,7 @@ func TestUpsertExternalUserNeverAdoptsAccountByUsername(t *testing.T) {
 	if err != nil || fresh == nil || fresh.SiteAdmin {
 		t.Fatalf("fresh federated provisioning failed: user=%+v err=%v", fresh, err)
 	}
-	// Re-login on the same (issuer, subject) resolves the same account, never a
-	// second one, even if the display fields change.
+	// Re-login on the same (issuer, subject) resolves the same account.
 	again, err := s.upsertExternalUser(issuer, "s-1", "octo", "Octo Renamed", "o@x", "", false, true)
 	if err != nil || again == nil || again.ID != fresh.ID {
 		t.Fatalf("re-login did not resolve the same account: %+v/%+v err=%v", fresh, again, err)
