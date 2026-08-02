@@ -93,7 +93,7 @@ func (s *Server) handleContainerRegistryPatchBlobUpload(w http.ResponseWriter, r
 	if s.requireRegistryUser(w, r) == nil {
 		return
 	}
-	chunk, err := io.ReadAll(r.Body)
+	chunk, err := io.ReadAll(http.MaxBytesReader(w, r.Body, maxUploadBytes))
 	if err != nil {
 		s.writeRegistryError(w, http.StatusBadRequest, "BLOB_UPLOAD_INVALID", "read upload body: "+err.Error())
 		return
@@ -131,7 +131,7 @@ func (s *Server) handleContainerRegistryPutBlobUpload(w http.ResponseWriter, r *
 		s.writeRegistryError(w, http.StatusBadRequest, "DIGEST_INVALID", "digest query parameter is required")
 		return
 	}
-	tail, err := io.ReadAll(r.Body)
+	tail, err := io.ReadAll(http.MaxBytesReader(w, r.Body, maxUploadBytes))
 	if err != nil {
 		s.writeRegistryError(w, http.StatusBadRequest, "BLOB_UPLOAD_INVALID", "read upload body: "+err.Error())
 		return
@@ -193,7 +193,7 @@ func (s *Server) handleContainerRegistryPutManifest(w http.ResponseWriter, r *ht
 		s.writeRegistryError(w, http.StatusForbidden, "DENIED", "requested access to the resource is denied")
 		return
 	}
-	manifestBytes, err := io.ReadAll(r.Body)
+	manifestBytes, err := io.ReadAll(http.MaxBytesReader(w, r.Body, maxJSONBodyBytes))
 	if err != nil {
 		s.writeRegistryError(w, http.StatusBadRequest, "MANIFEST_INVALID", "read manifest body: "+err.Error())
 		return

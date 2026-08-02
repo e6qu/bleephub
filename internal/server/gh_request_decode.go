@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
-	"io"
 	"net/http"
 	"strconv"
 )
@@ -15,9 +14,8 @@ import (
 // label names, or false (after writing a 400) on malformed JSON. An empty body
 // is treated as no labels.
 func decodeIssueLabelsBody(w http.ResponseWriter, r *http.Request) ([]string, bool) {
-	raw, err := io.ReadAll(r.Body)
-	if err != nil {
-		writeGHError(w, http.StatusBadRequest, "Problems parsing JSON")
+	raw, ok := readLimitedBody(w, r, maxJSONBodyBytes)
+	if !ok {
 		return nil, false
 	}
 	trimmed := bytes.TrimSpace(raw)

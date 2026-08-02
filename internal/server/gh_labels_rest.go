@@ -85,6 +85,17 @@ func (s *Server) registerGHIssueRoutes() {
 
 // --- Label handlers ---
 
+// buildLabelPayload assembles the GitHub `label` webhook event body so that
+// `on: label` workflows fire for label create/edit/delete.
+func buildLabelPayload(repo *Repo, labelJSON map[string]interface{}, sender *User, action string) map[string]interface{} {
+	return map[string]interface{}{
+		"action":     action,
+		"label":      labelJSON,
+		"repository": repoPayload(repo),
+		"sender":     userToJSON(sender),
+	}
+}
+
 func (s *Server) handleCreateLabel(w http.ResponseWriter, r *http.Request) {
 	user := ghUserFromContext(r.Context())
 	if user == nil {
@@ -122,6 +133,7 @@ func (s *Server) handleCreateLabel(w http.ResponseWriter, r *http.Request) {
 	repoKey := owner + "/" + name
 	s.recordAuditEvent("label.create", user.Login, "", map[string]interface{}{"repo": repoKey, "label_id": label.ID, "name": label.Name})
 	labelJSON := issueLabelToJSON(label, s.baseURL(r), repo.FullName)
+	s.emitWebhookEvent(repoKey, "label", "created", buildLabelPayload(repo, labelJSON, user, "created"))
 	writeJSONCreated(w, jsonStringField(labelJSON, "url"), labelJSON)
 }
 
@@ -199,7 +211,9 @@ func (s *Server) handleUpdateLabel(w http.ResponseWriter, r *http.Request) {
 	})
 
 	updated := s.store.GetLabel(label.ID)
-	writeJSON(w, http.StatusOK, issueLabelToJSON(updated, s.baseURL(r), repo.FullName))
+	updatedJSON := issueLabelToJSON(updated, s.baseURL(r), repo.FullName)
+	s.emitWebhookEvent(owner+"/"+repoName, "label", "edited", buildLabelPayload(repo, updatedJSON, user, "edited"))
+	writeJSON(w, http.StatusOK, updatedJSON)
 }
 
 func (s *Server) handleDeleteLabel(w http.ResponseWriter, r *http.Request) {
@@ -225,8 +239,10 @@ func (s *Server) handleDeleteLabel(w http.ResponseWriter, r *http.Request) {
 	}
 
 	repoKey := owner + "/" + repoName
+	labelJSON := issueLabelToJSON(label, s.baseURL(r), repo.FullName)
 	s.store.DeleteLabel(label.ID)
 	s.recordAuditEvent("label.delete", user.Login, "", map[string]interface{}{"repo": repoKey, "label_id": label.ID})
+	s.emitWebhookEvent(repoKey, "label", "deleted", buildLabelPayload(repo, labelJSON, user, "deleted"))
 	w.WriteHeader(http.StatusNoContent)
 }
 

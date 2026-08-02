@@ -2,6 +2,7 @@ package bleephub
 
 import (
 	"encoding/json"
+	"errors"
 	"io"
 	"net/http"
 	"sort"
@@ -9,13 +10,22 @@ import (
 	"time"
 )
 
-// decodeJSONBody decodes the JSON request body into v.
-// On failure it writes a GitHub-style 400 response and returns false.
-// Usage: if !decodeJSONBody(w, r, &req) { return }
+// maxJSONBodyBytes caps a JSON API request body. Real payloads are kilobytes;
+// this only stops an unbounded body from exhausting memory during decode.
+const maxJSONBodyBytes = 25 << 20 // 25 MiB
+
+// maxUploadBytes caps a binary upload body (release assets, container blobs,
+// CodeQL databases) that a handler buffers in memory. Generous but bounded, so
+// no single request can exhaust the process.
+const maxUploadBytes = 2 << 30 // 2 GiB
+
+// decodeJSONBody decodes the JSON request body into v, refusing a body larger
+// than maxJSONBodyBytes. On failure it writes a GitHub-style response and
+// returns false. Usage: if !decodeJSONBody(w, r, &req) { return }
 func decodeJSONBody(w http.ResponseWriter, r *http.Request, v interface{}) bool {
+	r.Body = http.MaxBytesReader(w, r.Body, maxJSONBodyBytes)
 	if err := json.NewDecoder(r.Body).Decode(v); err != nil {
-		writeGHError(w, http.StatusBadRequest, "Problems parsing JSON")
-		return false
+		return jsonDecodeFailed(w, err)
 	}
 	return true
 }
@@ -25,11 +35,41 @@ func decodeJSONBody(w http.ResponseWriter, r *http.Request, v interface{}) bool 
 // real GitHub (PUT membership endpoints: go-github sends no body at all
 // when called without options).
 func decodeJSONBodyOptional(w http.ResponseWriter, r *http.Request, v interface{}) bool {
+	r.Body = http.MaxBytesReader(w, r.Body, maxJSONBodyBytes)
 	if err := json.NewDecoder(r.Body).Decode(v); err != nil && err != io.EOF {
-		writeGHError(w, http.StatusBadRequest, "Problems parsing JSON")
-		return false
+		return jsonDecodeFailed(w, err)
 	}
 	return true
+}
+
+// jsonDecodeFailed maps a decode error to the right response: 413 when the body
+// exceeded the cap, 400 otherwise.
+func jsonDecodeFailed(w http.ResponseWriter, err error) bool {
+	var maxErr *http.MaxBytesError
+	if errors.As(err, &maxErr) {
+		writeGHError(w, http.StatusRequestEntityTooLarge, "Request body too large")
+		return false
+	}
+	writeGHError(w, http.StatusBadRequest, "Problems parsing JSON")
+	return false
+}
+
+// readLimitedBody reads the whole request body, refusing more than limit bytes.
+// Use for the binary/blob upload routes that consume r.Body directly rather
+// than through decodeJSONBody. Returns false (after writing 413) when the body
+// exceeds the limit.
+func readLimitedBody(w http.ResponseWriter, r *http.Request, limit int64) ([]byte, bool) {
+	data, err := io.ReadAll(http.MaxBytesReader(w, r.Body, limit))
+	if err != nil {
+		var maxErr *http.MaxBytesError
+		if errors.As(err, &maxErr) {
+			writeGHError(w, http.StatusRequestEntityTooLarge, "Request body too large")
+			return nil, false
+		}
+		writeGHError(w, http.StatusBadRequest, "Could not read request body")
+		return nil, false
+	}
+	return data, true
 }
 
 func (s *Server) registerGHRestRoutes() {

@@ -24,16 +24,16 @@ import {
 } from "../components/octicons.js";
 
 export function DashboardPage() {
-  const user = useQuery({ queryKey: ["current-user"], queryFn: fetchCurrentUser });
+  const user = useQuery({ queryKey: ["current-user"], queryFn: ({ signal }) => fetchCurrentUser(signal) });
   const repos = useQuery({
     queryKey: ["dashboard-repos"],
-    queryFn: () => fetchUserReposPage({ sort: "pushed" }),
+    queryFn: ({ signal }) => fetchUserReposPage({ sort: "pushed" }, undefined, signal),
     refetchInterval: (query) =>
       isRateLimited(query.state.error) || isForbidden(query.state.error) ? false : 30000,
   });
   const issues = useQuery({
     queryKey: ["dashboard-issues"],
-    queryFn: fetchDashboardIssues,
+    queryFn: ({ signal }) => fetchDashboardIssues(signal),
     refetchInterval: (query) =>
       isRateLimited(query.state.error) || isForbidden(query.state.error) ? false : 30000,
   });

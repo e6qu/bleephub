@@ -1014,7 +1014,7 @@ func readUploadAssetBody(r *http.Request) (name, label, contentType string, data
 	if name == "" {
 		return "", "", "", nil, false, nil
 	}
-	data, err = io.ReadAll(r.Body)
+	data, err = io.ReadAll(http.MaxBytesReader(nil, r.Body, maxUploadBytes))
 	if err != nil {
 		return "", "", "", nil, false, err
 	}

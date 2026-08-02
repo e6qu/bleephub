@@ -60,7 +60,7 @@ export function CopilotPage() {
 export function PersonalCopilotSpacesPage() {
   const { data: user, isLoading, isError, error } = useQuery({
     queryKey: ["current-user"],
-    queryFn: fetchCurrentUser,
+    queryFn: ({ signal }) => fetchCurrentUser(signal),
     staleTime: 60_000,
   });
 

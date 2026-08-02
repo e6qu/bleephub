@@ -1020,7 +1020,7 @@ func discussionReactionConnection(st *Store, parentType string, parentID int, ar
 			userMap = userToGraphQL(u)
 		}
 		nodes = append(nodes, map[string]interface{}{
-			"id":      fmt.Sprintf("RE_kgDO%08d", r.ID),
+			"id":      fmt.Sprintf("REA_kgDO%08d", r.ID),
 			"content": r.Content,
 			"user":    userMap,
 		})

@@ -992,7 +992,7 @@ func (s *Server) handleUploadCodeQLDatabase(w http.ResponseWriter, r *http.Reque
 		writeGHError(w, http.StatusUnsupportedMediaType, "Content-Type must be application/zip")
 		return
 	}
-	content, err := io.ReadAll(r.Body)
+	content, err := io.ReadAll(http.MaxBytesReader(w, r.Body, maxUploadBytes))
 	if err != nil {
 		writeGHError(w, http.StatusBadRequest, "Unable to read CodeQL database bundle")
 		return

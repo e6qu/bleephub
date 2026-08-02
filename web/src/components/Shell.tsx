@@ -150,16 +150,16 @@ export function RepoHeader({
   const [forkOwner, setForkOwner] = useState("");
   const socialKey = ["repo-social-counts", owner, repo] as const;
   const viewerKey = ["repo-viewer", owner, repo] as const;
-  const social = useQuery({ queryKey: socialKey, queryFn: () => fetchRepoSocialCounts(owner, repo) });
-  const viewer = useQuery({ queryKey: viewerKey, queryFn: () => fetchRepoViewerState(owner, repo) });
+  const social = useQuery({ queryKey: socialKey, queryFn: ({ signal }) => fetchRepoSocialCounts(owner, repo, signal) });
+  const viewer = useQuery({ queryKey: viewerKey, queryFn: ({ signal }) => fetchRepoViewerState(owner, repo, signal) });
   const repository = useQuery({
     queryKey: ["repo", owner, repo],
-    queryFn: () => fetchRepoDetail(owner, repo),
+    queryFn: ({ signal }) => fetchRepoDetail(owner, repo, signal),
   });
-  const currentUser = useQuery({ queryKey: ["current-user"], queryFn: fetchCurrentUser, staleTime: 60_000 });
+  const currentUser = useQuery({ queryKey: ["current-user"], queryFn: ({ signal }) => fetchCurrentUser(signal), staleTime: 60_000 });
   const organizations = useQuery({
     queryKey: ["viewer-organizations"],
-    queryFn: fetchAuthenticatedUserOrgs,
+    queryFn: ({ signal }) => fetchAuthenticatedUserOrgs(signal),
     staleTime: 60_000,
     enabled: forkOpen,
   });

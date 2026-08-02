@@ -74,6 +74,24 @@
         "source": "internal/server/gh_issues_rest.go"
       },
       {
+        "event": "label",
+        "line": 136,
+        "producer": "emitWebhookEvent",
+        "source": "internal/server/gh_labels_rest.go"
+      },
+      {
+        "event": "label",
+        "line": 215,
+        "producer": "emitWebhookEvent",
+        "source": "internal/server/gh_labels_rest.go"
+      },
+      {
+        "event": "label",
+        "line": 245,
+        "producer": "emitWebhookEvent",
+        "source": "internal/server/gh_labels_rest.go"
+      },
+      {
         "event": "organization",
         "line": 465,
         "producer": "emitOrgWebhookEvent",
@@ -2587,8 +2605,8 @@
         "id": "GQL-023",
         "location": "gh_discussions_graphql.go:1101, gh_releases.go:110",
         "severity": "M",
-        "status": "open",
-        "status_kind": "open"
+        "status": "fixed \u2014 reactions mint a distinct `REA_` node-ID prefix in both the REST and GraphQL surfaces while releases keep GitHub's `RE_`, so a release and a reaction with the same numeric id no longer share a global object id",
+        "status_kind": "fixed"
       },
       {
         "category": "GQL",
@@ -3181,7 +3199,7 @@
         "id": "ACT-026",
         "location": "webhooks.go:249",
         "severity": "M",
-        "status": "partial \u2014 webhook emission is the single event-production choke point and every implemented mutation event automatically feeds Actions. Issue-comment create/edit/delete and pull-request-review submit/dismiss now join push, PR, issue, review-comment, release, deployment, status/check and workflow lifecycle producers; families with no real mutation producer remain open",
+        "status": "partial \u2014 webhook emission is the single event-production choke point and every implemented mutation event automatically feeds Actions. Issue-comment create/edit/delete and pull-request-review submit/dismiss now join push, PR, issue, review-comment, release, deployment, status/check and workflow lifecycle producers; families with no real mutation producer remain open, though the set keeps shrinking \u2014 label create/edit/delete now produces the `label` event (regression `TestWebhookLabelEvent`)",
         "status_kind": "partial"
       },
       {
@@ -3649,8 +3667,8 @@
         "id": "STORE-019",
         "location": "object_bytes.go:18",
         "severity": "M",
-        "status": "open",
-        "status_kind": "open"
+        "status": "partial \u2014 every request-body read is now bounded: the shared JSON decode path (`decodeJSONBody`/`decodeJSONBodyOptional` and the label decoder) caps at 25 MiB, and the binary-upload routes (release assets, container blobs/manifests, CodeQL databases, SARIF, markdown, branch protection, enterprise/user endpoints) wrap `r.Body` in `http.MaxBytesReader`, so no route buffers an unbounded body and an oversized one gets 413; the byte-store interface is still `[]byte`-buffered rather than streaming",
+        "status_kind": "partial"
       },
       {
         "category": "STORE",
@@ -4513,7 +4531,7 @@
         "id": "WEB-010",
         "location": "api.ts, ~64 sites",
         "severity": "M",
-        "status": "partial \u2014 a module-wide abort controller now backs cancellation, which sign-out uses; per-request signals threaded from queryFn contexts are still open",
+        "status": "partial \u2014 a module-wide abort controller backs cancellation (sign-out); per-request abort signals from react-query queryFn contexts are now threaded through the fetch helpers (`fetchJSON`/`ghFetch`/`ghFetchPage`/`ghFetchEnvelope`) and the high-traffic query call sites, combined via `AbortSignal.any` with the sign-out controller and a 30s default request timeout, so a cancelled/unmounted query aborts its in-flight request; secondary query sites remain un-threaded",
         "status_kind": "partial"
       },
       {
@@ -6323,8 +6341,8 @@
         },
         "GQL": {
           "status": {
-            "fixed": 47,
-            "open": 11,
+            "fixed": 48,
+            "open": 10,
             "partial": 3
           },
           "total": 61
@@ -6347,8 +6365,8 @@
         "STORE": {
           "status": {
             "fixed": 35,
-            "open": 28,
-            "partial": 10
+            "open": 27,
+            "partial": 11
           },
           "total": 73
         },
@@ -6376,9 +6394,9 @@
       },
       "status": {
         "deferred": 1,
-        "fixed": 509,
-        "open": 123,
-        "partial": 40
+        "fixed": 510,
+        "open": 121,
+        "partial": 41
       },
       "total": 673
     }
@@ -19977,7 +19995,7 @@
         "source": "internal/server/gh_misc_endpoints.go"
       },
       {
-        "line": 36,
+        "line": 76,
         "method": "GET",
         "path": "/api/v3/",
         "source": "internal/server/gh_rest.go"
@@ -22377,7 +22395,7 @@
         "source": "internal/server/gh_projects_classic.go"
       },
       {
-        "line": 39,
+        "line": 79,
         "method": "GET",
         "path": "/api/v3/rate_limit",
         "source": "internal/server/gh_rest.go"
@@ -24111,7 +24129,7 @@
         "source": "internal/server/gh_teams_legacy_rest.go"
       },
       {
-        "line": 37,
+        "line": 77,
         "method": "GET",
         "path": "/api/v3/user",
         "source": "internal/server/gh_rest.go"
@@ -24405,7 +24423,7 @@
         "source": "internal/server/gh_misc_endpoints.go"
       },
       {
-        "line": 38,
+        "line": 78,
         "method": "GET",
         "path": "/api/v3/users/{username}",
         "source": "internal/server/gh_rest.go"

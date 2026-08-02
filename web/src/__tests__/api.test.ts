@@ -72,6 +72,8 @@ import {
   deleteInstallation,
   fetchDiscussionCategories,
   fetchCurrentUser,
+  fetchRepoDetail,
+  abortPendingRequests,
   isNotFound,
   isForbidden,
   isRateLimited,
@@ -991,6 +993,64 @@ describe("fetchBrowserSession", () => {
       }),
     );
     await expect(fetchBrowserSession(10)).rejects.toThrow(/aborted/);
+  });
+});
+
+describe("per-request cancellation", () => {
+  // Reject the moment fetch's signal aborts, mirroring how the browser fails an
+  // aborted request. The read helpers hand apiFetch a combined signal, so this
+  // exercises the whole plumbing rather than a stubbed-out shortcut.
+  function rejectOnAbort() {
+    mockFetch.mockImplementation(
+      (_url: RequestInfo | URL, init?: RequestInit) =>
+        new Promise((_resolve, reject) => {
+          init?.signal?.addEventListener("abort", () => reject(new Error("aborted")));
+        }),
+    );
+  }
+
+  it("forwards a real AbortSignal to fetch even without a caller signal", async () => {
+    rejectOnAbort();
+    // Swallow the eventual rejection: this request stays in flight and a later
+    // test's global sign-out will abort the shared controller behind it.
+    fetchCurrentUser().catch(() => {});
+    const [, init] = mockFetch.mock.calls[0] as [unknown, RequestInit];
+    expect(init.signal).toBeInstanceOf(AbortSignal);
+    expect(init.signal?.aborted).toBe(false);
+  });
+
+  it("aborts the in-flight request when the react-query signal is cancelled", async () => {
+    rejectOnAbort();
+    const controller = new AbortController();
+    const pending = fetchRepoDetail("admin", "repo", controller.signal);
+    const [, init] = mockFetch.mock.calls[0] as [unknown, RequestInit];
+    expect(init.signal?.aborted).toBe(false);
+    controller.abort();
+    await expect(pending).rejects.toThrow(/aborted/);
+  });
+
+  it("still cancels every in-flight request on global sign-out", async () => {
+    rejectOnAbort();
+    const pending = fetchCurrentUser();
+    abortPendingRequests();
+    await expect(pending).rejects.toThrow(/aborted/);
+  });
+
+  it("composes both: either the per-request cancel or sign-out aborts the fetch", async () => {
+    rejectOnAbort();
+
+    // A per-request cancel fires even while sign-out stays quiet.
+    const perRequest = new AbortController();
+    const p1 = fetchRepoDetail("admin", "repo", perRequest.signal);
+    perRequest.abort();
+    await expect(p1).rejects.toThrow(/aborted/);
+
+    // Sign-out fires even while the per-request signal is still live.
+    const live = new AbortController();
+    const p2 = fetchRepoDetail("admin", "repo", live.signal);
+    abortPendingRequests();
+    await expect(p2).rejects.toThrow(/aborted/);
+    expect(live.signal.aborted).toBe(false);
   });
 });
 

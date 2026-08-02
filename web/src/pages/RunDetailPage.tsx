@@ -48,7 +48,7 @@ export function RunDetailPage() {
 
   const runQ = useQuery({
     queryKey: ["run", owner, repo, id],
-    queryFn: () => fetchWorkflowRun(owner, repo, id),
+    queryFn: ({ signal }) => fetchWorkflowRun(owner, repo, id, signal),
     enabled: !!owner && !!repo && Number.isFinite(id),
     refetchInterval: (query) => (runIsActive(query.state.data) ? 2000 : false),
   });
@@ -57,7 +57,7 @@ export function RunDetailPage() {
 
   const jobsQ = useQuery({
     queryKey: ["run-jobs", owner, repo, id],
-    queryFn: () => fetchRunJobs(owner, repo, id),
+    queryFn: ({ signal }) => fetchRunJobs(owner, repo, id, signal),
     enabled: !!run,
     refetchInterval: active ? 2000 : false,
   });

@@ -20,7 +20,7 @@ export function useMetricsData(): {
 } {
   const { data: metrics, isLoading, isError, error } = useQuery({
     queryKey: ["metrics"],
-    queryFn: fetchMetrics,
+    queryFn: ({ signal }) => fetchMetrics(signal),
     retry: (failureCount, err) => !isForbidden(err) && failureCount < 1,
     refetchInterval: (query) => (isForbidden(query.state.error) ? false : 5000),
   });

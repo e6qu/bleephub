@@ -19,7 +19,7 @@ export const RUNS_TAB_LIMIT = 50;
 export function useRecentWorkflows(limit: number) {
   return useQuery({
     queryKey: ["workflows", limit],
-    queryFn: () => fetchWorkflows(limit),
+    queryFn: ({ signal }) => fetchWorkflows(limit, signal),
     refetchInterval: (query) =>
       isRateLimited(query.state.error) || isForbidden(query.state.error) ? false : 10_000,
   });
