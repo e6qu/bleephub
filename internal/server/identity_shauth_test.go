@@ -258,7 +258,8 @@ func TestShauthLogoutClearsLocalSessionAndStartsIssuerLogout(t *testing.T) {
 	s.store.LoginSessions["browser-session"] = &LoginSession{UserID: 1, ExpiresAt: fixedShauthTestTime.Add(time.Hour), OIDCProvider: "shauth", OIDCIssuer: provider.server.URL, OIDCSubject: "subject-1", OIDCSID: "sid-1", OIDCIDToken: "signed.id.token"}
 	request := httptest.NewRequest(http.MethodPost, "/auth/logout", nil)
 	request.Header.Set("Origin", s.externalURL)
-	request.AddCookie(&http.Cookie{Name: "_gh_sess", Value: "browser-session"})
+	// A secure (HTTPS) deployment carries the session in the __Host- cookie.
+	request.AddCookie(&http.Cookie{Name: secureSessionCookieName, Value: "browser-session"})
 	request = provider.withClient(request)
 	response := httptest.NewRecorder()
 
@@ -877,8 +878,16 @@ func TestSignedOutLandingRevokesLocalSessionWithoutStartingLogin(t *testing.T) {
 	if response.Header().Get("Cache-Control") != "no-store" || !strings.Contains(response.Header().Get("Content-Security-Policy"), "frame-ancestors 'none'") {
 		t.Fatalf("signed-out security headers = %#v", response.Header())
 	}
-	if cookies := response.Result().Cookies(); len(cookies) != 1 || !isSessionCookieName(cookies[0].Name) || cookies[0].MaxAge >= 0 {
-		t.Fatalf("signed-out cookies = %#v", cookies)
+	// Both session cookie names are expired, so a shadow _gh_sess planted
+	// alongside the __Host- cookie cannot survive the sign-out.
+	clearedNames := map[string]bool{}
+	for _, c := range response.Result().Cookies() {
+		if isSessionCookieName(c.Name) && c.MaxAge < 0 {
+			clearedNames[c.Name] = true
+		}
+	}
+	if !clearedNames[sessionCookieName] || !clearedNames[secureSessionCookieName] {
+		t.Fatalf("signed-out did not expire both session cookie names: %#v", response.Result().Cookies())
 	}
 
 	reload := httptest.NewRecorder()

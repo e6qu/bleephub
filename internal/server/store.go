@@ -206,15 +206,17 @@ func (st *Store) tokenMapKey(value string) string {
 	if st.persist == nil {
 		return value
 	}
-	return st.persist.storageKey("tokens", value)
+	return st.persist.opaqueLookupKey("tokens", value)
 }
 
 // tokenByValueLocked resolves a presented bearer without retaining or
 // persisting a reversible copy. Callers must hold at least st.mu.RLock.
+//
+// It looks up only under the derived digest key. The presented value is never
+// probed raw: mint and restore both index the token by tokenMapKey(value), so
+// a raw probe would only ever match a stored digest — i.e. it would let the
+// persisted row key be presented as the credential.
 func (st *Store) tokenByValueLocked(value string) (*Token, string) {
-	if token := st.Tokens[value]; token != nil {
-		return token, value // newly minted in this process
-	}
 	key := st.tokenMapKey(value)
 	return st.Tokens[key], key
 }
@@ -3925,7 +3927,7 @@ func (st *Store) SeedDefaultUser() {
 		Scopes:    "repo, workflow, read:org, admin:org, admin:org_hook, gist",
 		CreatedAt: now,
 	}
-	st.Tokens[t.Value] = t
+	st.Tokens[st.tokenMapKey(t.Value)] = t
 	st.persistTokenLocked(t)
 }
 

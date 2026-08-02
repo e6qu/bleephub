@@ -2244,3 +2244,42 @@ func TestPersistenceReload_CodeScanningDefaultSetup(t *testing.T) {
 		t.Error("default setup UpdatedAt did not persist")
 	}
 }
+
+// TestPersistedRowKeyIsNotACredential pins AUTH-106: the "hmac:v1:" row key
+// under which a token or session is persisted must never authenticate when
+// presented as the credential itself — so a leaked backup, replica, or query
+// log of only the row keys is not a credential compromise.
+func TestPersistedRowKeyIsNotACredential(t *testing.T) {
+	var tokenValue, sessionID, tokenRowKey, sessionRowKey string
+	st := reloadedStore(t, func(p *Persistence, st *Store) {
+		st.SeedDefaultUser()
+		admin := st.UsersByLogin["admin"]
+		tok := st.CreateToken(admin.ID, "repo")
+		tokenValue = tok.Value
+		tokenRowKey = p.storageKey("tokens", tok.Value)
+		sessionID = "session-secret-value"
+		if err := st.PutLoginSession(sessionID, &LoginSession{UserID: admin.ID, ExpiresAt: st.currentTime().Add(time.Hour)}); err != nil {
+			t.Fatal(err)
+		}
+		sessionRowKey = p.storageKey(loginSessionsBucket, sessionID)
+	})
+
+	// The real credentials still resolve after reload.
+	if tok, _ := st.LookupToken(tokenValue); tok == nil {
+		t.Fatal("real token did not survive reload")
+	}
+	if sess, _ := st.GetLoginSession(sessionID); sess == nil {
+		t.Fatal("real session did not survive reload")
+	}
+
+	// The persisted digest row keys must not be usable as credentials.
+	if !strings.HasPrefix(tokenRowKey, opaquePersistenceKeyPrefix) || !strings.HasPrefix(sessionRowKey, opaquePersistenceKeyPrefix) {
+		t.Fatalf("expected digested row keys, got token=%q session=%q", tokenRowKey, sessionRowKey)
+	}
+	if tok, _ := st.LookupToken(tokenRowKey); tok != nil {
+		t.Fatal("the persisted token row key authenticated as the token")
+	}
+	if sess, _ := st.GetLoginSession(sessionRowKey); sess != nil {
+		t.Fatal("the persisted session row key authenticated as the session")
+	}
+}

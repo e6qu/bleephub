@@ -173,7 +173,7 @@ func (st *Store) createOrgPATGrantRequestWithRandom(orgLogin string, ownerUserID
 		RepositorySelection: repositorySelection, RepositoryIDs: append([]int(nil), repositoryIDs...),
 		Permissions: perms, ExpiresAt: expiresAt,
 	}
-	st.Tokens[value] = tok
+	st.Tokens[st.tokenMapKey(value)] = tok
 	st.persistTokenLocked(tok)
 
 	req := &OrgPATGrantRequest{

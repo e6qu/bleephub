@@ -39,7 +39,9 @@ func loginSessionMapKey(persist *Persistence, id string) string {
 	if persist == nil {
 		return id
 	}
-	return persist.storageKey(loginSessionsBucket, id)
+	// Always digest — never honor a client-supplied "hmac:v1:" cookie value as a
+	// storage key, or a leaked session-row key could be presented as the cookie.
+	return persist.opaqueLookupKey(loginSessionsBucket, id)
 }
 
 func (st *Store) PutLoginSession(id string, session *LoginSession) error {
@@ -121,7 +123,8 @@ func (st *Store) resetLoginSessionReap() {
 func (st *Store) GetLoginSession(id string) (*LoginSession, error) {
 	st.mu.RLock()
 	persist := st.persist
-	local := st.LoginSessions[loginSessionMapKey(persist, id)]
+	mapKey := loginSessionMapKey(persist, id)
+	local := st.LoginSessions[mapKey]
 	st.mu.RUnlock()
 	if persist == nil {
 		if local == nil {
@@ -130,13 +133,15 @@ func (st *Store) GetLoginSession(id string) (*LoginSession, error) {
 		copy := *local
 		return &copy, nil
 	}
-	raw, err := persist.Get(loginSessionsBucket, id)
+	// Read by the already-digested key: passing the raw client value would let
+	// persist.Get honor a leaked "hmac:v1:" row key presented as the cookie.
+	raw, err := persist.Get(loginSessionsBucket, mapKey)
 	if err != nil {
 		return nil, fmt.Errorf("read login session: %w", err)
 	}
 	if raw == nil {
 		st.mu.Lock()
-		delete(st.LoginSessions, loginSessionMapKey(persist, id))
+		delete(st.LoginSessions, mapKey)
 		st.mu.Unlock()
 		return nil, nil
 	}
@@ -151,22 +156,30 @@ func (st *Store) GetLoginSession(id string) (*LoginSession, error) {
 		return nil, nil
 	}
 	st.mu.Lock()
-	st.LoginSessions[loginSessionMapKey(persist, id)] = &session
+	cached := session
+	st.LoginSessions[mapKey] = &cached
 	st.mu.Unlock()
-	return &session, nil
+	// Return a distinct copy, never the pointer now living in the map: a caller
+	// that mutates the result (e.g. rotating the CSRF token) must not race a
+	// concurrent locked reader of the map entry.
+	result := session
+	return &result, nil
 }
 
 func (st *Store) DeleteLoginSession(id string) error {
 	st.mu.RLock()
 	persist := st.persist
 	st.mu.RUnlock()
+	mapKey := loginSessionMapKey(persist, id)
 	if persist != nil {
-		if err := persist.Delete(loginSessionsBucket, id); err != nil {
+		// Delete by the digested key so a client cannot delete an arbitrary
+		// session by presenting its stored "hmac:v1:" row key.
+		if err := persist.Delete(loginSessionsBucket, mapKey); err != nil {
 			return fmt.Errorf("delete login session: %w", err)
 		}
 	}
 	st.mu.Lock()
-	delete(st.LoginSessions, loginSessionMapKey(persist, id))
+	delete(st.LoginSessions, mapKey)
 	st.mu.Unlock()
 	return nil
 }

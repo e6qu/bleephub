@@ -7,6 +7,7 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
 	"golang.org/x/crypto/bcrypt"
 )
@@ -300,5 +301,31 @@ func TestUpsertExternalUserHonorsAllowlistAndAuthoritativeRole(t *testing.T) {
 	// A non-authoritative (secondary) provider must never grant it back.
 	if again, err := s.upsertExternalUser(issuer, "s-alice", "alice", "Alice", "a@x", "", true, false); err != nil || again.SiteAdmin {
 		t.Fatalf("secondary provider reshaped privileges: user=%+v err=%v", again, err)
+	}
+}
+
+// TestSecureDeploymentIgnoresUnprefixedSessionCookie pins AUTH-107: over HTTPS
+// only the __Host- session cookie is honored, so a shadow _gh_sess planted by a
+// related-domain or network attacker cannot authenticate — and logout expires
+// both names so no shadow survives it.
+func TestSecureDeploymentIgnoresUnprefixedSessionCookie(t *testing.T) {
+	s := newTestServer()
+	s.externalURL = "https://bleephub.example.test" // secureCookies(r) == true
+	s.store.LoginSessions["attacker-session"] = &LoginSession{UserID: 1, ExpiresAt: s.currentTime().Add(time.Hour)}
+
+	req := httptest.NewRequest(http.MethodGet, "/", nil)
+	req.AddCookie(&http.Cookie{Name: "_gh_sess", Value: "attacker-session"})
+	if s.sessionCookieFromRequest(req) != nil {
+		t.Fatal("unprefixed _gh_sess was honored over HTTPS")
+	}
+	if s.sessionFromRequest(req) != nil {
+		t.Fatal("a planted _gh_sess resolved to a session over HTTPS")
+	}
+
+	// The __Host- cookie is honored.
+	secureReq := httptest.NewRequest(http.MethodGet, "/", nil)
+	secureReq.AddCookie(&http.Cookie{Name: secureSessionCookieName, Value: "attacker-session"})
+	if s.sessionCookieFromRequest(secureReq) == nil {
+		t.Fatal("__Host- session cookie was not honored over HTTPS")
 	}
 }

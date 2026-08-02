@@ -706,7 +706,7 @@ func (s *Server) consumeConsentToken(r *http.Request, provided string) (bool, er
 // sessionRecordFromRequest returns the session together with the cookie value
 // that keys it, which the CSRF rotation needs and sessionFromRequest drops.
 func (s *Server) sessionRecordFromRequest(r *http.Request) (string, *LoginSession, error) {
-	cookie := sessionCookieFromRequest(r)
+	cookie := s.sessionCookieFromRequest(r)
 	if cookie == nil {
 		return "", nil, nil
 	}
@@ -767,7 +767,7 @@ func (s *Server) completeAuthorize(w http.ResponseWriter, r *http.Request, user 
 // sessionFromRequest reads the session cookie and returns the corresponding
 // LoginSession, or nil if absent / expired / unknown.
 func (s *Server) sessionFromRequest(r *http.Request) *LoginSession {
-	cookie := sessionCookieFromRequest(r)
+	cookie := s.sessionCookieFromRequest(r)
 	if cookie == nil {
 		return nil
 	}
@@ -800,7 +800,7 @@ func (st *Store) createTokenLocked(userID int, scopes string) *Token {
 		Scopes:    scopes,
 		CreatedAt: time.Now(),
 	}
-	st.Tokens[t.Value] = t
+	st.Tokens[st.tokenMapKey(t.Value)] = t
 	st.persistTokenLocked(t)
 	return t
 }

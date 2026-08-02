@@ -56,12 +56,41 @@ func sessionCookieNameFor(secure bool) string {
 	return sessionCookieName
 }
 
-func sessionCookieFromRequest(r *http.Request) *http.Cookie {
+func (s *Server) sessionCookieFromRequest(r *http.Request) *http.Cookie {
 	if cookie, err := r.Cookie(secureSessionCookieName); err == nil {
 		return cookie
 	}
+	// Over HTTPS a real session is carried by the __Host- cookie; an unprefixed
+	// _gh_sess present here is a shadow a related-domain or network attacker
+	// planted (the unprefixed name has no Secure/Host guarantees), so it is not
+	// honored. Plain-HTTP local development keeps the unprefixed cookie.
+	if s.secureCookies(r) {
+		return nil
+	}
 	cookie, _ := r.Cookie(sessionCookieName)
 	return cookie
+}
+
+// clearSessionCookies revokes the session behind every cookie the browser might
+// hold under EITHER name and unsets both. Clearing only the name just written
+// would leave a shadow _gh_sess (planted before login, or before this logout)
+// live, and the next request would silently adopt it.
+func (s *Server) clearSessionCookies(w http.ResponseWriter, r *http.Request) error {
+	secure := s.secureCookies(r)
+	for _, name := range []string{secureSessionCookieName, sessionCookieName} {
+		if c, err := r.Cookie(name); err == nil && c.Value != "" {
+			if err := s.store.DeleteLoginSession(c.Value); err != nil {
+				return err
+			}
+		}
+		// The __Host- deletion must itself carry Secure so the browser accepts
+		// the overwrite; the unprefixed one mirrors the deployment's policy.
+		http.SetCookie(w, &http.Cookie{
+			Name: name, Value: "", Path: "/", MaxAge: -1, HttpOnly: true,
+			Secure: secure || name == secureSessionCookieName, SameSite: http.SameSiteLaxMode,
+		})
+	}
+	return nil
 }
 
 type oidcProviderMetadata struct {
@@ -914,7 +943,7 @@ func (s *Server) createOIDCBrowserSession(w http.ResponseWriter, r *http.Request
 	// attacker planted before credentials were verified (session fixation) is
 	// revoked the moment a real identity is established, and a privilege change
 	// is reflected immediately instead of lingering for the old session's TTL.
-	if cookie := sessionCookieFromRequest(r); cookie != nil {
+	if cookie := s.sessionCookieFromRequest(r); cookie != nil {
 		if err := s.store.DeleteLoginSession(cookie.Value); err != nil {
 			return err
 		}
@@ -962,16 +991,12 @@ func (s *Server) handleIdentityLogout(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	session := s.sessionFromRequest(r)
-	if cookie := sessionCookieFromRequest(r); cookie != nil {
-		if err := s.store.DeleteLoginSession(cookie.Value); err != nil {
-			s.logger.Error().Err(err).Msg("delete browser session")
-			writeGHError(w, http.StatusServiceUnavailable, "browser session could not be revoked")
-			return
-		}
-	}
-	secure := s.secureCookies(r)
 	// #nosec G124 -- deletion mirrors the session's conditional local-HTTP policy.
-	http.SetCookie(w, &http.Cookie{Name: sessionCookieNameFor(secure), Value: "", Path: "/", MaxAge: -1, HttpOnly: true, Secure: secure, SameSite: http.SameSiteLaxMode})
+	if err := s.clearSessionCookies(w, r); err != nil {
+		s.logger.Error().Err(err).Msg("delete browser session")
+		writeGHError(w, http.StatusServiceUnavailable, "browser session could not be revoked")
+		return
+	}
 	logoutTarget := ""
 	if s.identity.shauthConfigured() {
 		provider, err := oidc.NewProvider(r.Context(), s.identity.shauthIssuer)
@@ -1008,16 +1033,12 @@ func (s *Server) handleIdentityLogout(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) handleIdentitySignedOut(w http.ResponseWriter, r *http.Request) {
 	if r.Method == http.MethodPost {
-		if cookie := sessionCookieFromRequest(r); cookie != nil {
-			if err := s.store.DeleteLoginSession(cookie.Value); err != nil {
-				s.logger.Error().Err(err).Msg("delete browser session on signed-out landing")
-				writeGHError(w, http.StatusServiceUnavailable, "browser session could not be revoked")
-				return
-			}
-		}
-		secure := s.secureCookies(r)
 		// #nosec G124 -- deletion mirrors the session's conditional local-HTTP policy.
-		http.SetCookie(w, &http.Cookie{Name: sessionCookieNameFor(secure), Value: "", Path: "/", MaxAge: -1, HttpOnly: true, Secure: secure, SameSite: http.SameSiteLaxMode})
+		if err := s.clearSessionCookies(w, r); err != nil {
+			s.logger.Error().Err(err).Msg("delete browser session on signed-out landing")
+			writeGHError(w, http.StatusServiceUnavailable, "browser session could not be revoked")
+			return
+		}
 	}
 	w.Header().Set("Cache-Control", "no-store")
 	w.Header().Set("Content-Security-Policy", "default-src 'none'; style-src 'unsafe-inline'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'")
