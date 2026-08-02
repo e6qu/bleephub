@@ -640,6 +640,22 @@ func (s *Server) handleGitHubCallback(w http.ResponseWriter, r *http.Request) {
 	http.Redirect(w, r, pending.ReturnTo, http.StatusFound)
 }
 
+// identityStateCookie names, paths, and secures the per-flow OAuth state cookie.
+// When the deployment is HTTPS it carries the __Host- prefix (Secure, Path=/,
+// no Domain), which prevents a sibling-subdomain or network attacker from
+// transplanting a server-signed state cookie into the victim's jar and logging
+// the victim in as the attacker. Plain-HTTP local development keeps the
+// unprefixed name because browsers reject an insecure __Host- cookie.
+func identityStateCookie(secure bool, state, value string, maxAge int, expires time.Time) *http.Cookie {
+	name := identityStateCookiePrefix + state
+	path := "/auth/"
+	if secure {
+		name = "__Host-" + name
+		path = "/" // __Host- requires Path=/
+	}
+	return &http.Cookie{Name: name, Value: value, Path: path, MaxAge: maxAge, Expires: expires, HttpOnly: true, Secure: secure, SameSite: http.SameSiteLaxMode}
+}
+
 func (s *Server) setIdentityState(w http.ResponseWriter, r *http.Request, pending identityState) error {
 	payload, err := json.Marshal(pending)
 	if err != nil {
@@ -650,7 +666,7 @@ func (s *Server) setIdentityState(w http.ResponseWriter, r *http.Request, pendin
 	value := base64.RawURLEncoding.EncodeToString(payload) + "." + base64.RawURLEncoding.EncodeToString(mac.Sum(nil))
 	// #nosec G124 -- Secure is conditional only because explicitly enabled local
 	// HTTP development is supported; production external URLs are HTTPS.
-	http.SetCookie(w, &http.Cookie{Name: identityStateCookiePrefix + pending.State, Value: value, Path: "/auth/", MaxAge: 600, Expires: pending.ExpiresAt, HttpOnly: true, Secure: s.secureCookies(r), SameSite: http.SameSiteLaxMode})
+	http.SetCookie(w, identityStateCookie(s.secureCookies(r), pending.State, value, 600, pending.ExpiresAt))
 	return nil
 }
 
@@ -663,9 +679,13 @@ func (s *Server) consumeIdentityState(w http.ResponseWriter, r *http.Request, pr
 			return identityState{}, errors.New("invalid identity state")
 		}
 	}
-	cookieName := identityStateCookiePrefix + state
+	secure := s.secureCookies(r)
 	// #nosec G124 -- see setIdentityState; deletion must use the same Secure policy.
-	http.SetCookie(w, &http.Cookie{Name: cookieName, Value: "", Path: "/auth/", MaxAge: -1, HttpOnly: true, Secure: s.secureCookies(r), SameSite: http.SameSiteLaxMode})
+	http.SetCookie(w, identityStateCookie(secure, state, "", -1, time.Time{}))
+	cookieName := identityStateCookiePrefix + state
+	if secure {
+		cookieName = "__Host-" + cookieName
+	}
 	cookie, err := r.Cookie(cookieName)
 	if err != nil {
 		return identityState{}, err
