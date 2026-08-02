@@ -18,6 +18,8 @@ import {
   starGist,
   unstarGist,
   updateGist,
+  isForbidden,
+  isRateLimited,
 } from "../api.js";
 import type { BleephubGist, BleephubGistFile, GithubGistCommit } from "../types.js";
 import {
@@ -108,7 +110,8 @@ function GistsTable({ scope, onSelect }: { scope: GistScope; onSelect: (id: stri
   const { data, isLoading, isError } = useQuery({
     queryKey: ["gists", scope],
     queryFn: gistsQueryFn(scope),
-    refetchInterval: 5000,
+    refetchInterval: (query) =>
+      isRateLimited(query.state.error) || isForbidden(query.state.error) ? false : 5000,
   });
 
   const deleteMut = useMutation({
@@ -479,12 +482,14 @@ function CreateGistDialog({ onClose }: { onClose: () => void }) {
         <div key={idx} className="mb-3 rounded border p-3" style={{ borderColor: "var(--color-border)" }}>
           <input
             type="text"
+            aria-label="File name"
             value={file.filename}
             onChange={(e) => updateFile(idx, { filename: e.target.value })}
             placeholder="filename.ext"
             className="mb-2 w-full"
           />
           <textarea
+            aria-label="File content"
             value={file.content}
             onChange={(e) => updateFile(idx, { content: e.target.value })}
             rows={4}
@@ -595,12 +600,14 @@ function EditGistDialog({
         <div key={idx} className="mb-3 rounded border p-3" style={{ borderColor: "var(--color-border)" }}>
           <input
             type="text"
+            aria-label="File name"
             value={file.filename}
             onChange={(e) => updateFile(idx, { filename: e.target.value })}
             placeholder="filename.ext"
             className="mb-2 w-full"
           />
           <textarea
+            aria-label="File content"
             value={file.content || ""}
             onChange={(e) => updateFile(idx, { content: e.target.value })}
             rows={4}

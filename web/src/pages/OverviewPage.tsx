@@ -2,7 +2,7 @@ import { useQuery } from "@tanstack/react-query";
 import { DataTable, InlineError, Spinner, StatusBadge } from "@bleephub/ui-core/components";
 import { createColumnHelper } from "@tanstack/react-table";
 import { useNavigate } from "react-router";
-import { fetchHealth } from "../api.js";
+import { fetchHealth, isForbidden, isRateLimited } from "../api.js";
 import { useMetricsData } from "../hooks/useMetricsData.js";
 import { OVERVIEW_RUNS_LIMIT, useRecentWorkflows } from "../hooks/useRecentWorkflows.js";
 import type { BleephubWorkflow } from "../types.js";
@@ -23,7 +23,8 @@ export function OverviewPage() {
   const { data: health } = useQuery({
     queryKey: ["health"],
     queryFn: fetchHealth,
-    refetchInterval: 5000,
+    refetchInterval: (query) =>
+      isRateLimited(query.state.error) || isForbidden(query.state.error) ? false : 5000,
   });
   // Shared with MetricsPage: one ["metrics"] query at one interval. This page
   // used to declare the same key with its own 3s interval, so the two fought.

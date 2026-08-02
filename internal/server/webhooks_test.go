@@ -538,12 +538,17 @@ func TestWebhookIssuesEvent(t *testing.T) {
 	var payloads []map[string]interface{}
 
 	url, cleanup := startWebhookReceiver(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		received.Add(1)
-		body, _ := io.ReadAll(r.Body)
-		p := webhookEventJSON(t, r.Header.Get("Content-Type"), body)
-		mu.Lock()
-		payloads = append(payloads, p)
-		mu.Unlock()
+		// Count only issues deliveries: active-hook creation also fires a ping,
+		// and counting it could satisfy waitForWebhookCount(2) with ping+opened
+		// before the closed delivery arrives — a race under -race load.
+		if r.Header.Get("X-GitHub-Event") == "issues" {
+			body, _ := io.ReadAll(r.Body)
+			p := webhookEventJSON(t, r.Header.Get("Content-Type"), body)
+			mu.Lock()
+			received.Add(1)
+			payloads = append(payloads, p)
+			mu.Unlock()
+		}
 		w.WriteHeader(200)
 	}))
 	defer cleanup()
@@ -606,6 +611,74 @@ func TestWebhookIssuesEvent(t *testing.T) {
 	}
 	if !hasClosed {
 		t.Fatalf("missing 'closed' action in payloads, got %v", actions)
+	}
+}
+
+// The gh CLI opens and closes issues over GraphQL; those mutations must deliver
+// the same issues webhooks the REST path does, or `on: issues` workflows never
+// fire for gh-driven changes.
+func TestWebhookIssuesEventFromGraphQL(t *testing.T) {
+	var mu sync.Mutex
+	actions := map[string]bool{}
+
+	// Only collect issues deliveries: the hook may also receive an unrelated
+	// (e.g. ping) delivery, and waiting on a raw count could be satisfied by
+	// it before the closed event arrives — a delivery-ordering race under -race.
+	url, cleanup := startWebhookReceiver(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Header.Get("X-GitHub-Event") == "issues" {
+			body, _ := io.ReadAll(r.Body)
+			p := webhookEventJSON(t, r.Header.Get("Content-Type"), body)
+			if a, ok := p["action"].(string); ok {
+				mu.Lock()
+				actions[a] = true
+				mu.Unlock()
+			}
+		}
+		w.WriteHeader(200)
+	}))
+	defer cleanup()
+
+	createWebhookTestRepo(t, "wh-issues-gql")
+	hookResp := ghPost(t, "/api/v3/repos/admin/wh-issues-gql/hooks", defaultToken, map[string]interface{}{
+		"config": map[string]interface{}{"url": url},
+		"events": []string{"issues"},
+		"active": true,
+	})
+	hookResp.Body.Close()
+
+	repoData := decodeJSON(t, ghGet(t, "/api/v3/repos/admin/wh-issues-gql", defaultToken))
+	repoNodeID, _ := repoData["node_id"].(string)
+	if repoNodeID == "" {
+		t.Fatal("repo node_id missing")
+	}
+
+	created := decodeJSON(t, ghPost(t, "/api/graphql", defaultToken, map[string]interface{}{
+		"query":     `mutation($input: CreateIssueInput!){ createIssue(input:$input){ issue { id number } } }`,
+		"variables": map[string]interface{}{"input": map[string]interface{}{"repositoryId": repoNodeID, "title": "gql issue"}},
+	}))
+	data, _ := created["data"].(map[string]interface{})
+	ci, _ := data["createIssue"].(map[string]interface{})
+	iss, _ := ci["issue"].(map[string]interface{})
+	issueNodeID, _ := iss["id"].(string)
+	if issueNodeID == "" {
+		t.Fatalf("createIssue returned no issue id: %v", created)
+	}
+
+	closeResp := ghPost(t, "/api/graphql", defaultToken, map[string]interface{}{
+		"query":     `mutation($input: CloseIssueInput!){ closeIssue(input:$input){ issue { state } } }`,
+		"variables": map[string]interface{}{"input": map[string]interface{}{"issueId": issueNodeID}},
+	})
+	closeResp.Body.Close()
+
+	if !testEventually(5*time.Second, 10*time.Millisecond, func() bool {
+		mu.Lock()
+		defer mu.Unlock()
+		return actions["opened"] && actions["closed"]
+	}) {
+		mu.Lock()
+		got := fmt.Sprint(actions)
+		mu.Unlock()
+		t.Fatalf("GraphQL issue mutations did not deliver opened+closed webhooks; got %s", got)
 	}
 }
 

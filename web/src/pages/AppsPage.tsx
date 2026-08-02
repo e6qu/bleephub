@@ -26,6 +26,8 @@ import {
   suspendInstallation,
   updateAppSettings,
   updateOAuthApp,
+  isForbidden,
+  isRateLimited,
 } from "../api.js";
 import type {
   BleephubApp,
@@ -96,7 +98,8 @@ function AppsTab() {
   const { data, isLoading, isError } = useQuery({
     queryKey: ["apps"],
     queryFn: fetchApps,
-    refetchInterval: 5000,
+    refetchInterval: (query) =>
+      isRateLimited(query.state.error) || isForbidden(query.state.error) ? false : 5000,
   });
   if (isError) return <InlineError title="Failed to load apps" />;
   if (isLoading || !data) return <Spinner label="loading apps" />;
@@ -178,7 +181,8 @@ function InstallationsTab() {
   const { data, isLoading, isError } = useQuery({
     queryKey: ["installations"],
     queryFn: fetchInstallations,
-    refetchInterval: 5000,
+    refetchInterval: (query) =>
+      isRateLimited(query.state.error) || isForbidden(query.state.error) ? false : 5000,
   });
 
   const suspendMut = useMutation({
@@ -312,7 +316,8 @@ function OAuthAppsTab() {
   const { data, isLoading, isError } = useQuery({
     queryKey: ["oauth-apps"],
     queryFn: fetchOAuthApps,
-    refetchInterval: 5000,
+    refetchInterval: (query) =>
+      isRateLimited(query.state.error) || isForbidden(query.state.error) ? false : 5000,
   });
   if (isError) return <InlineError title="Failed to load oauth apps" />;
   if (isLoading || !data) return <Spinner label="loading oauth apps" />;

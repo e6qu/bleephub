@@ -3,7 +3,7 @@ import { DataTable, InlineError, Spinner, StatusBadge } from "@bleephub/ui-core/
 import { createColumnHelper } from "@tanstack/react-table";
 import { useNavigate } from "react-router";
 import { useState } from "react";
-import { dispatchWorkflow, fetchWorkflowFiles } from "../api.js";
+import { dispatchWorkflow, fetchWorkflowFiles, isForbidden, isRateLimited } from "../api.js";
 import { RUNS_TAB_LIMIT, useRecentWorkflows } from "../hooks/useRecentWorkflows.js";
 import type { BleephubWorkflow, BleephubWorkflowFile } from "../types.js";
 import {
@@ -49,7 +49,8 @@ function WorkflowsTab() {
   const { data, isLoading, isError } = useQuery({
     queryKey: ["workflow_files"],
     queryFn: fetchWorkflowFiles,
-    refetchInterval: 5000,
+    refetchInterval: (query) =>
+      isRateLimited(query.state.error) || isForbidden(query.state.error) ? false : 5000,
   });
   const [dispatchTarget, setDispatchTarget] = useState<BleephubWorkflowFile | null>(null);
 

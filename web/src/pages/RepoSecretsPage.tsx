@@ -16,6 +16,7 @@ import {
 } from "../api.js";
 import type { GithubOrgVisibility, GithubVariable } from "../types.js";
 import { sealSecret } from "../utils/sealedBox.js";
+import { confirmAction } from "../components/confirmAction.js";
 import { useOpenCounts } from "../hooks/useOpenCounts.js";
 import { RepoHeader } from "../components/Shell.js";
 import {
@@ -199,7 +200,9 @@ function SecretsSection({ scope }: { scope: SecretsScope }) {
                   variant="danger"
                   size="sm"
                   disabled={deleteMutation.isPending}
-                  onClick={() => deleteMutation.mutate(s.name)}
+                  onClick={async () => {
+                    if (await confirmAction(`Delete secret ${s.name}?`)) deleteMutation.mutate(s.name);
+                  }}
                 >
                   Delete
                 </Button>
@@ -384,7 +387,9 @@ function VariablesSection({ scope }: { scope: SecretsScope }) {
                   variant="danger"
                   size="sm"
                   disabled={deleteMutation.isPending}
-                  onClick={() => deleteMutation.mutate(v.name)}
+                  onClick={async () => {
+                    if (await confirmAction(`Delete variable ${v.name}?`)) deleteMutation.mutate(v.name);
+                  }}
                 >
                   Delete
                 </Button>

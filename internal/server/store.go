@@ -3966,17 +3966,31 @@ func (st *Store) GetUserByID(id int) *User {
 // parsed form is cached when the key is registered or loaded; keys whose text
 // never parsed (logged then) carry no cached form and cannot match.
 func (st *Store) LookupUserBySSHKey(key ssh.PublicKey) *User {
-	st.Misc.mu.RLock()
-	defer st.Misc.mu.RUnlock()
 	wire := key.Marshal()
-	for userID, keys := range st.Misc.keysByUser {
+	// Resolve the matching user id under Misc.mu, then release it before
+	// taking st.mu via GetUserByID. Calling GetUserByID while holding
+	// Misc.mu would invert the Store→Misc lock order the reentrancy gate
+	// depends on.
+	userID := 0
+	found := false
+	st.Misc.mu.RLock()
+	for uid, keys := range st.Misc.keysByUser {
 		for _, registered := range keys {
 			if registered.parsed != nil && bytes.Equal(registered.parsed.Marshal(), wire) {
-				return st.GetUserByID(userID)
+				userID = uid
+				found = true
+				break
 			}
 		}
+		if found {
+			break
+		}
 	}
-	return nil
+	st.Misc.mu.RUnlock()
+	if !found {
+		return nil
+	}
+	return st.GetUserByID(userID)
 }
 
 // CountFollowers returns how many users follow the given login.
@@ -4652,11 +4666,19 @@ func (st *Store) UnblockUser(userID, targetID int) bool {
 
 // ListUserBlocks returns users blocked by userID.
 func (st *Store) ListUserBlocks(userID int) []*User {
+	// Snapshot the blocked ids under Misc.mu, then resolve users via the
+	// st.mu-guarded accessor after releasing it. st.Users is guarded by
+	// st.mu everywhere else, so reading it under Misc.mu alone races
+	// CreateUser/upsertExternalUser.
 	st.Misc.mu.RLock()
-	defer st.Misc.mu.RUnlock()
-	var out []*User
+	targetIDs := make([]int, 0, len(st.Misc.blockedUsers[userID]))
 	for targetID := range st.Misc.blockedUsers[userID] {
-		if u := st.Users[targetID]; u != nil {
+		targetIDs = append(targetIDs, targetID)
+	}
+	st.Misc.mu.RUnlock()
+	var out []*User
+	for _, targetID := range targetIDs {
+		if u := st.GetUserByID(targetID); u != nil {
 			out = append(out, u)
 		}
 	}
@@ -4665,13 +4687,16 @@ func (st *Store) ListUserBlocks(userID int) []*User {
 
 // IsUserFollowing reports whether userID follows targetID.
 func (st *Store) IsUserFollowing(userID, targetID int) bool {
-	st.Misc.mu.RLock()
-	defer st.Misc.mu.RUnlock()
-	user := st.Users[userID]
-	target := st.Users[targetID]
+	// Resolve users via the st.mu-guarded accessor first (Store→Misc order),
+	// then read the follow graph under Misc.mu. Dereferencing st.Users under
+	// Misc.mu alone races concurrent user writes.
+	user := st.GetUserByID(userID)
+	target := st.GetUserByID(targetID)
 	if user == nil || target == nil {
 		return false
 	}
+	st.Misc.mu.RLock()
+	defer st.Misc.mu.RUnlock()
 	return st.Misc.follows[user.Login][target.Login]
 }
 

@@ -14,6 +14,8 @@ import {
   removeTeamMember,
   removeTeamRepo,
   updateTeam,
+  isForbidden,
+  isRateLimited,
 } from "../api.js";
 import type { BleephubTeam, GithubTeamMember, GithubTeamRepo } from "../types.js";
 import { confirmAction } from "../components/confirmAction.js";
@@ -59,7 +61,8 @@ function TeamsTable() {
   const { data, isLoading, isError } = useQuery({
     queryKey: ["teams"],
     queryFn: fetchTeams,
-    refetchInterval: 5000,
+    refetchInterval: (query) =>
+      isRateLimited(query.state.error) || isForbidden(query.state.error) ? false : 5000,
   });
 
   const deleteMut = useMutation({
@@ -377,12 +380,13 @@ function TeamMembersPanel({ org, slug }: { org: string; slug: string }) {
           <div className="flex gap-2">
             <input
               type="text"
+              aria-label="Username"
               placeholder="Username"
               value={username}
               onChange={(e) => setUsername(e.target.value)}
               className="w-full"
             />
-            <select value={role} onChange={(e) => setRole(e.target.value)}>
+            <select aria-label="Role" value={role} onChange={(e) => setRole(e.target.value)}>
               <option value="member">member</option>
               <option value="maintainer">maintainer</option>
             </select>
@@ -492,12 +496,13 @@ function TeamReposPanel({ org, slug }: { org: string; slug: string }) {
           <div className="flex gap-2">
             <input
               type="text"
+              aria-label="Repository"
               placeholder="owner/name"
               value={repoInput}
               onChange={(e) => setRepoInput(e.target.value)}
               className="w-full"
             />
-            <select value={permission} onChange={(e) => setPermission(e.target.value)}>
+            <select aria-label="Permission" value={permission} onChange={(e) => setPermission(e.target.value)}>
               <option value="pull">pull</option>
               <option value="triage">triage</option>
               <option value="push">push</option>

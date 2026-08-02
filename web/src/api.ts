@@ -1993,6 +1993,14 @@ export async function setRepoFlag(owner: string, repo: string, flag: string, ena
   await ghPatchJSON<void>(path, body);
 }
 
+/**
+ * Reads the repo's current interaction limit. The endpoint returns `{}` (no
+ * active limit) or an object whose `limit` field matches the values accepted by
+ * {@link setRepoInteractionLimit}.
+ */
+export const fetchRepoInteractionLimit = (owner: string, repo: string) =>
+  ghFetch<{ limit?: string }>(`/api/v3/repos/${owner}/${repo}/interaction-limits`);
+
 export const setRepoInteractionLimit = (owner: string, repo: string, limit: string | null) => {
   const path = `/api/v3/repos/${owner}/${repo}/interaction-limits`;
   if (limit === null) {

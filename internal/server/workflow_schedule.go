@@ -18,11 +18,22 @@ type scheduleFiredKeys struct {
 	seen map[string]time.Time
 }
 
+// maxScheduleCatchup bounds how many missed minutes one tick replays. A scan
+// that overran the minute boundary used to silently skip every intervening
+// minute (their schedules never fired); the dispatcher now replays them,
+// deduped by the per-minute firing claim. The bound keeps a longer stall from
+// unleashing an unbounded burst of scans.
+const maxScheduleCatchup = 10 * time.Minute
+
 // startScheduleDispatcher launches the minute-aligned loop that fires
 // `on: schedule:` workflows, the server-side clock real GitHub runs for
 // cron triggers.
 func (s *Server) startScheduleDispatcher(ctx context.Context) {
 	s.goBackground(func() {
+		// Seed the cursor at the current minute so a fresh process does not
+		// replay history; catch-up only covers minutes skipped by an overrun
+		// scan within this process's lifetime.
+		lastFired := s.currentTime().Truncate(time.Minute)
 		for {
 			now := s.currentTime()
 			next := now.Truncate(time.Minute).Add(time.Minute)
@@ -37,9 +48,28 @@ func (s *Server) startScheduleDispatcher(ctx context.Context) {
 			if err := s.store.ReapExpiredLoginSessions(tickTime); err != nil {
 				s.logger.Error().Err(err).Msg("expired login-session reap failed")
 			}
-			s.fireDueSchedules(tickTime)
+			lastFired = s.fireSchedulesThrough(lastFired, tickTime)
 		}
 	})
+}
+
+// fireSchedulesThrough replays every whole minute in (lastFired, now] so a scan
+// that overran a minute boundary does not drop the minutes it skipped. Catch-up
+// is bounded by maxScheduleCatchup, and the returned cursor (the last minute
+// processed) is threaded into the next tick.
+func (s *Server) fireSchedulesThrough(lastFired, now time.Time) time.Time {
+	current := now.Truncate(time.Minute)
+	if current.Before(lastFired) { // clock skew: never move the cursor backwards
+		return lastFired
+	}
+	minute := lastFired.Truncate(time.Minute).Add(time.Minute)
+	if earliest := current.Add(-maxScheduleCatchup); minute.Before(earliest) {
+		minute = earliest
+	}
+	for ; !minute.After(current); minute = minute.Add(time.Minute) {
+		s.fireDueSchedules(minute)
+	}
+	return current
 }
 
 // fireDueSchedules triggers every schedule-bearing workflow from each
@@ -102,6 +132,7 @@ func (s *Server) fireDueSchedules(now time.Time) {
 					continue
 				}
 				scheduledMinute := minute
+				claimMinute := minute
 				if entry.Timezone != "" {
 					location, err := time.LoadLocation(entry.Timezone)
 					if err != nil {
@@ -109,12 +140,19 @@ func (s *Server) fireDueSchedules(now time.Time) {
 						continue
 					}
 					scheduledMinute = minute.In(location)
+					// Dedup on the wall-clock minute rather than the UTC instant:
+					// on a DST fall-back the same local minute recurs at two UTC
+					// instants and must fire once, not twice. Reconstructing the
+					// civil minute collapses both to one canonical claim. (A
+					// spring-forward gap simply never matches, as with any
+					// wall-clock cron.)
+					claimMinute = time.Date(scheduledMinute.Year(), scheduledMinute.Month(), scheduledMinute.Day(), scheduledMinute.Hour(), scheduledMinute.Minute(), 0, 0, location)
 				}
 				if !cs.matches(scheduledMinute) {
 					continue
 				}
 				claimKey := repoKey + "\x00" + name + "\x00" + entry.Cron + "\x00" + entry.Timezone
-				claimed, err := s.markScheduleFired(claimKey, minute)
+				claimed, err := s.markScheduleFired(claimKey, claimMinute)
 				if err != nil {
 					s.logger.Error().Err(err).Str("repo", repoKey).Str("file", name).Str("cron", entry.Cron).Msg("failed to claim scheduled workflow firing")
 					continue
@@ -122,7 +160,15 @@ func (s *Server) fireDueSchedules(now time.Time) {
 				if !claimed {
 					continue
 				}
-				s.fireScheduledWorkflow(repoKey, name, content, entry.Cron)
+				if err := s.fireScheduledWorkflow(repoKey, name, content, entry.Cron); err != nil {
+					// The claim was taken before firing; a transient submit
+					// failure would otherwise consume this occurrence with no
+					// run and no retry. Release it so another replica or a
+					// later attempt can pick it up.
+					if relErr := s.releaseScheduleFiring(claimKey, claimMinute); relErr != nil {
+						s.logger.Error().Err(relErr).Str("repo", repoKey).Str("file", name).Str("cron", entry.Cron).Msg("failed to release scheduled workflow claim after firing error")
+					}
+				}
 			}
 		}
 	}
@@ -160,13 +206,34 @@ func (s *Server) markScheduleFired(key string, minute time.Time) (bool, error) {
 	return true, nil
 }
 
+// releaseScheduleFiring undoes a claim taken by markScheduleFired when the
+// firing it guarded failed, so the occurrence can be retried rather than lost.
+func (s *Server) releaseScheduleFiring(key string, minute time.Time) error {
+	s.store.mu.RLock()
+	persist := s.store.persist
+	s.store.mu.RUnlock()
+	if persist != nil {
+		return persist.ReleaseScheduleFiring(key, minute)
+	}
+	s.scheduleFired.mu.Lock()
+	defer s.scheduleFired.mu.Unlock()
+	if last, ok := s.scheduleFired.seen[key]; ok && last.Equal(minute) {
+		delete(s.scheduleFired.seen, key)
+	}
+	return nil
+}
+
 // fireScheduledWorkflow submits one schedule-triggered run. The schedule
 // event has no webhook delivery on real GitHub — it only starts the run;
 // its payload carries the matching cron line.
-func (s *Server) fireScheduledWorkflow(repoKey, fileName string, content []byte, cron string) {
+// fireScheduledWorkflow returns a non-nil error only for a *transient* failure
+// whose claim the caller should release for retry. Permanent conditions (repo
+// or git storage gone, ref that does not resolve) are logged and swallowed —
+// releasing their claim would only thrash.
+func (s *Server) fireScheduledWorkflow(repoKey, fileName string, content []byte, cron string) error {
 	repo := s.store.GetRepoByFullName(repoKey)
 	if repo == nil {
-		return
+		return nil
 	}
 	defaultBranch := repo.DefaultBranch
 	if defaultBranch == "" {
@@ -176,6 +243,12 @@ func (s *Server) fireScheduledWorkflow(repoKey, fileName string, content []byte,
 
 	parts := splitRepoKeyParts(repoKey)
 	stor := s.store.GetGitStorage(parts[0], parts[1])
+	if stor == nil {
+		// A concurrent persistence refresh can drop the storer between the
+		// scan and here; resolveRefSha would dereference a nil storer.
+		s.logger.Error().Str("repo", repoKey).Str("cron", cron).Msg("scheduled workflow rejected because git storage is unavailable")
+		return nil
+	}
 
 	payload := map[string]interface{}{
 		"schedule":   cron,
@@ -188,7 +261,7 @@ func (s *Server) fireScheduledWorkflow(repoKey, fileName string, content []byte,
 			Str("ref", ref).
 			Str("cron", cron).
 			Msg("scheduled workflow rejected because the default-branch git ref did not resolve to a commit")
-		return
+		return nil
 	}
 	meta := &WorkflowEventMeta{
 		EventName: "schedule",
@@ -200,13 +273,14 @@ func (s *Server) fireScheduledWorkflow(repoKey, fileName string, content []byte,
 	workflow, err := s.submitTriggeredWorkflow(fileName, content, meta)
 	if err != nil {
 		s.logger.Error().Err(err).Str("file", fileName).Str("cron", cron).Msg("failed to fire scheduled workflow")
-		return
+		return err
 	}
 	s.logger.Info().
 		Str("workflow_id", workflow.ID).
 		Str("file", fileName).
 		Str("cron", cron).
 		Msg("workflow fired by schedule")
+	return nil
 }
 
 // ── Cron parsing (POSIX 5-field, with JAN-DEC / SUN-SAT names) ──────

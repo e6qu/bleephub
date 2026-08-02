@@ -394,6 +394,9 @@ func (s *Server) handleUpdatePullRequest(w http.ResponseWriter, r *http.Request)
 		if v, ok := req["base"].(string); ok {
 			p.BaseRefName = v
 		}
+		if v, ok := coerceBool(req["maintainer_can_modify"]); ok {
+			p.MaintainerCanModify = v
+		}
 		if v, ok := req["state"].(string); ok {
 			switch v {
 			case "closed":

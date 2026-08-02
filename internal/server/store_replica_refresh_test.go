@@ -100,6 +100,33 @@ func TestScheduleClaimIsDurableAndExclusiveAcrossReplicas(t *testing.T) {
 	}
 }
 
+// A released claim (firing failed) can be re-taken, so a transient failure does
+// not permanently drop the occurrence.
+func TestReleasedScheduleClaimCanBeRetaken(t *testing.T) {
+	t.Setenv("BLEEPHUB_PERSIST", "true")
+	t.Setenv("BLEEPHUB_DATA_DIR", t.TempDir())
+	p, err := NewPersistence()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer p.Close()
+	key := "owner/repo\x00workflow.yml\x000 12 * * *"
+	minute := time.Date(2026, 7, 29, 12, 30, 0, 0, time.UTC)
+
+	if claimed, err := p.ClaimScheduleFiring(key, minute); err != nil || !claimed {
+		t.Fatalf("initial claim = %v, err=%v", claimed, err)
+	}
+	if claimed, err := p.ClaimScheduleFiring(key, minute); err != nil || claimed {
+		t.Fatalf("duplicate claim before release = %v, err=%v (want false)", claimed, err)
+	}
+	if err := p.ReleaseScheduleFiring(key, minute); err != nil {
+		t.Fatalf("release: %v", err)
+	}
+	if claimed, err := p.ClaimScheduleFiring(key, minute); err != nil || !claimed {
+		t.Fatalf("re-claim after release = %v, err=%v (want true)", claimed, err)
+	}
+}
+
 func TestStoreRefreshPropagatesPeerWritesAndPreservesRuntimeState(t *testing.T) {
 	t.Setenv("BLEEPHUB_PERSIST", "true")
 	t.Setenv("BLEEPHUB_DATA_DIR", t.TempDir())

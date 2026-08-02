@@ -127,7 +127,7 @@ function FlowSimulator() {
       `&redirect_uri=${encodeURIComponent(redirectURI)}` +
       `&scope=${encodeURIComponent(scope)}` +
       `&state=${encodeURIComponent(state)}`;
-    const popup = window.open(url, "_blank", "noopener");
+    const popup = window.open(url, "_blank");
     if (!popup) {
       setError("Your browser blocked the OAuth window. Allow pop-ups for this site and try again.");
       return;

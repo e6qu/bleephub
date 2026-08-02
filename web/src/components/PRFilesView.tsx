@@ -234,7 +234,7 @@ export function PRFilesView({
       setBody("");
       qc.invalidateQueries({ queryKey: ["pr-review-comments", owner, repo, number] });
       qc.invalidateQueries({ queryKey: ["pr-review-threads", owner, repo, number] });
-      qc.invalidateQueries({ queryKey: ["issue-timeline", owner, repo, number] });
+      qc.invalidateQueries({ queryKey: ["pr-timeline", owner, repo, number] });
     },
   });
 

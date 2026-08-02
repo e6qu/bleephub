@@ -14,6 +14,8 @@ import {
   fetchUserCodespaces,
   startCodespace,
   stopCodespace,
+  isForbidden,
+  isRateLimited,
 } from "../api.js";
 import type { BleephubRepo, GithubCodespace, GithubCodespaceState } from "../types.js";
 import { confirmAction } from "../components/confirmAction.js";
@@ -110,7 +112,8 @@ function CodespacesList({ repoScope }: { repoScope: string | null }) {
       repoScope
         ? fetchRepoCodespaces(repoScope.split("/")[0], repoScope.split("/")[1])
         : fetchUserCodespaces(),
-    refetchInterval: 10000,
+    refetchInterval: (query) =>
+      isRateLimited(query.state.error) || isForbidden(query.state.error) ? false : 10000,
   });
 
   const startMut = useMutation({
@@ -221,7 +224,12 @@ function CodespaceDetail({ name }: { name: string }) {
   const navigate = useNavigate();
   const client = useQueryClient();
   const queryKey = ["codespaces", "detail", name] as const;
-  const query = useQuery({ queryKey, queryFn: () => fetchCodespace(name), refetchInterval: 10_000 });
+  const query = useQuery({
+    queryKey,
+    queryFn: () => fetchCodespace(name),
+    refetchInterval: (query) =>
+      isRateLimited(query.state.error) || isForbidden(query.state.error) ? false : 10_000,
+  });
   const start = useMutation({
     mutationFn: () => startCodespace(name),
     onSuccess: (codespace) => client.setQueryData(queryKey, codespace),

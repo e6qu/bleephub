@@ -1031,6 +1031,22 @@ func (p *Persistence) ClaimScheduleFiring(key string, minute time.Time) (bool, e
 	return inserted == 1, nil
 }
 
+// ReleaseScheduleFiring drops a claim taken by ClaimScheduleFiring when the
+// firing it guarded failed transiently, so another replica or a later attempt
+// can retry rather than silently dropping the occurrence. The digest mirrors
+// ClaimScheduleFiring exactly.
+func (p *Persistence) ReleaseScheduleFiring(key string, minute time.Time) error {
+	if p == nil {
+		return fmt.Errorf("release scheduled workflow: persistence is disabled")
+	}
+	digest := sha256.Sum256([]byte(key + "\x00" + minute.UTC().Truncate(time.Minute).Format(time.RFC3339)))
+	claimKey := hex.EncodeToString(digest[:])
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	_, err := p.db.Exec(`DELETE FROM schedule_claims WHERE key = ?`, claimKey)
+	return err
+}
+
 func (p *Persistence) Delete(bucket, key string) error {
 	if p == nil {
 		return nil

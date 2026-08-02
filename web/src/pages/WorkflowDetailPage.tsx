@@ -2,7 +2,7 @@ import { useParams } from "react-router";
 import { useQuery } from "@tanstack/react-query";
 import { DataTable, InlineError, LogViewer, Spinner, StatusBadge } from "@bleephub/ui-core/components";
 import { createColumnHelper } from "@tanstack/react-table";
-import { fetchWorkflowDetail, fetchWorkflowLogs } from "../api.js";
+import { fetchWorkflowDetail, fetchWorkflowLogs, isForbidden, isRateLimited } from "../api.js";
 import type { BleephubWorkflowJob } from "../types.js";
 import { PageTitle, SectionLabel } from "../components/ui.js";
 
@@ -14,7 +14,13 @@ export function WorkflowDetailPage() {
     queryKey: ["workflow", id],
     queryFn: () => fetchWorkflowDetail(id!),
     enabled: !!id,
-    refetchInterval: 3000,
+    // Stop polling once the run is terminal or the request is throttled/forbidden.
+    refetchInterval: (query) =>
+      isRateLimited(query.state.error) ||
+      isForbidden(query.state.error) ||
+      query.state.data?.status === "completed"
+        ? false
+        : 3000,
   });
   const {
     data: logs,
@@ -24,7 +30,11 @@ export function WorkflowDetailPage() {
     queryKey: ["workflow-logs", id],
     queryFn: () => fetchWorkflowLogs(id!),
     enabled: !!id,
-    refetchInterval: 5000,
+    // Logs stop changing once the run completes; also back off on throttle/forbid.
+    refetchInterval: (query) =>
+      isRateLimited(query.state.error) || isForbidden(query.state.error) || wf?.status === "completed"
+        ? false
+        : 5000,
   });
 
   if (!id) {

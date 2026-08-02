@@ -3,7 +3,7 @@ ARG RUNNER_SOURCE_COMMIT=98aabcd429c4e8402406c56ce2d26387fed3b9ce
 ARG DOTNET_SDK_VERSION=8.0.423
 ARG DOTNET_RUNTIME_VERSION=8.0.29
 
-FROM --platform=$BUILDPLATFORM mcr.microsoft.com/dotnet/sdk:9.0.316-bookworm-slim@sha256:cb9d975bf57fd1b0915858d1db1184bea20f7f746f0536323fcab49673144e8c AS actions-runner-builder
+FROM --platform=$BUILDPLATFORM mcr.microsoft.com/dotnet/sdk:8.0.423-bookworm-slim@sha256:3c0edbfe1549dd93fb789dc96299a40df865ad7bffefcaf38e8c05940686d641 AS actions-runner-builder
 ARG TARGETARCH
 ARG RUNNER_VERSION
 ARG RUNNER_SOURCE_COMMIT

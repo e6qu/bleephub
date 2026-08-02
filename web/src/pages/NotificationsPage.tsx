@@ -11,6 +11,8 @@ import {
   markThreadDone,
   markThreadRead,
   setThreadSubscription,
+  isForbidden,
+  isRateLimited,
 } from "../api.js";
 import type { GithubNotificationThread, GithubThreadSubscription } from "../types.js";
 import {
@@ -60,7 +62,8 @@ function ThreadsTable({ all }: { all: boolean }) {
   const { data, isLoading, isError } = useQuery({
     queryKey: ["notifications", all],
     queryFn: () => fetchNotifications({ all }),
-    refetchInterval: 10000,
+    refetchInterval: (query) =>
+      isRateLimited(query.state.error) || isForbidden(query.state.error) ? false : 10000,
   });
 
   const readMut = useMutation({

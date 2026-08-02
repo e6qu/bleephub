@@ -432,7 +432,13 @@ function CodeView({
         <Box
           header={
             latestCommit ? (
-              <LatestCommitBanner owner={owner} repo={repo} commit={latestCommit} total={commits.length} />
+              <LatestCommitBanner
+                owner={owner}
+                repo={repo}
+                commit={latestCommit}
+                total={commits.length}
+                hasMore={commits.length >= 100}
+              />
             ) : undefined
           }
         >
@@ -449,7 +455,7 @@ function CodeView({
         </Box>
       )}
 
-      {readmeError ? null : readme ? (
+      {path === "" && !readmeError && readme ? (
         <Box
           header={
             <span style={{ fontSize: "0.9rem", fontWeight: 600 }}>
@@ -477,11 +483,16 @@ function LatestCommitBanner({
   repo,
   commit,
   total,
+  hasMore = false,
 }: {
   owner: string;
   repo: string;
   commit: GithubCommit;
   total: number;
+  // The commits query fetches a single page (per_page=100); when it comes back
+  // full there are likely more, so render "100+" rather than assert an exact
+  // count we did not fetch. A precise total would need a dedicated count endpoint.
+  hasMore?: boolean;
 }) {
   return (
     <div className="flex w-full min-w-0 items-center gap-2">
@@ -509,7 +520,8 @@ function LatestCommitBanner({
         className="inline-flex items-center gap-1"
         style={{ color: "var(--color-fg-muted)", textDecoration: "none", whiteSpace: "nowrap" }}
       >
-        <CommentIcon size={14} /> {total} {total === 1 ? "commit" : "commits"}
+        <CommentIcon size={14} /> {total}
+        {hasMore ? "+" : ""} {total === 1 ? "commit" : "commits"}
       </Link>
     </div>
   );

@@ -12,6 +12,8 @@ import {
   fetchRepos,
   fetchUserMigrations,
   unlockMigrationRepo,
+  isForbidden,
+  isRateLimited,
 } from "../api.js";
 import type { BleephubRepo, GithubMigration, GithubMigrationState } from "../types.js";
 import { confirmAction } from "../components/confirmAction.js";
@@ -140,7 +142,8 @@ function MigrationsList({ scope }: { scope: Scope }) {
     queryKey,
     queryFn: () =>
       scope.kind === "user" ? fetchUserMigrations() : fetchOrgMigrations(scope.org),
-    refetchInterval: 10000,
+    refetchInterval: (query) =>
+      isRateLimited(query.state.error) || isForbidden(query.state.error) ? false : 10000,
   });
 
   const deleteMut = useMutation({
@@ -297,8 +300,8 @@ function MigrationDetailDialog({
 
       <div className="mb-4 text-sm" style={{ color: "var(--color-fg-muted)" }}>
         Exported {new Date(migration.exported_at).toLocaleString()} ·{" "}
-        {migration.repositories.length} repository
-        {migration.repositories.length === 1 ? "" : "ies"}
+        {migration.repositories.length} repositor
+        {migration.repositories.length === 1 ? "y" : "ies"}
       </div>
 
       {error && <ErrorBanner>{error}</ErrorBanner>}

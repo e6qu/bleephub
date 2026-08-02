@@ -424,6 +424,7 @@ function DiscussionDetail({
       {editingComment && (
         <Modal title="Edit comment" onClose={() => setEditingComment(null)}>
           <textarea
+            aria-label="Comment"
             value={editBody}
             onChange={(e) => setEditBody(e.target.value)}
             rows={5}
@@ -451,6 +452,7 @@ function DiscussionDetail({
           {replyTo ? `Replying to ${replyTo.login ?? "comment"}` : "Add a comment"}
         </div>
         <textarea
+          aria-label="Comment"
           value={commentBody}
           onChange={(e) => setCommentBody(e.target.value)}
           rows={4}

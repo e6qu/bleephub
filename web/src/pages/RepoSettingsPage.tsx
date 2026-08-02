@@ -17,6 +17,7 @@ import {
   fetchRepoCollaborators,
   fetchRepoDeployKeys,
   fetchRepoDetail,
+  fetchRepoInteractionLimit,
   fetchRepoInvitations,
   fetchRepoTopics,
   inviteRepoCollaborator,
@@ -720,6 +721,24 @@ function SecurityTab({ owner, repo }: { owner: string; repo: string }) {
     vulnerability_alerts: false,
   });
 
+  // Seed the checkboxes from the repo's real security_and_analysis state. The
+  // nested keys mirror the PATCH shape in setRepoFlag; a status of "enabled"
+  // means the toggle is on. Shares the ["repo", ...] cache with the parent tab.
+  const repoQuery = useQuery({
+    queryKey: ["repo", owner, repo],
+    queryFn: () => fetchRepoDetail(owner, repo),
+    enabled: !!owner && !!repo,
+  });
+  const sa = repoQuery.data?.security_and_analysis;
+  useEffect(() => {
+    if (!sa) return;
+    setFlags({
+      automated_security_fixes: sa.automated_security_fixes?.status === "enabled",
+      vulnerability_alerts: sa.advanced_security?.status === "enabled",
+      private_vulnerability_reporting: sa.secret_scanning_non_provider_patterns?.status === "enabled",
+    });
+  }, [sa]);
+
   const mutation = useMutation({
     mutationFn: ({ flag, enabled }: { flag: FlagKey; enabled: boolean }) => setRepoFlag(owner, repo, flag, enabled),
     onSuccess: (_, vars) => {
@@ -742,6 +761,11 @@ function SecurityTab({ owner, repo }: { owner: string; repo: string }) {
 
   return (
     <Box header={<span style={{ fontWeight: 600 }}>Security settings</span>}>
+      {repoQuery.isLoading ? (
+        <div style={{ padding: "1rem" }}>
+          <Spinner label="loading security settings" />
+        </div>
+      ) : (
       <div style={{ padding: "1rem", display: "flex", flexDirection: "column", gap: "0.75rem" }}>
         {error && <ErrorBanner>{error}</ErrorBanner>}
         {success && <div style={{ color: "var(--gh-open)" }}>{success}</div>}
@@ -773,6 +797,7 @@ function SecurityTab({ owner, repo }: { owner: string; repo: string }) {
           Vulnerability alerts
         </label>
       </div>
+      )}
     </Box>
   );
 }
@@ -782,6 +807,18 @@ function InteractionTab({ owner, repo }: { owner: string; repo: string }) {
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
   const [limit, setLimit] = useState<string | null>(null);
+
+  // Load the repo's current interaction limit so the select reflects server
+  // state; this is also the reader that makes the onSuccess invalidation live.
+  const limitQuery = useQuery({
+    queryKey: ["repo-interaction-limit", owner, repo],
+    queryFn: () => fetchRepoInteractionLimit(owner, repo),
+    enabled: !!owner && !!repo,
+  });
+  const loadedLimit = limitQuery.data?.limit;
+  useEffect(() => {
+    setLimit(loadedLimit ?? null);
+  }, [loadedLimit]);
 
   const mutation = useMutation({
     mutationFn: () => setRepoInteractionLimit(owner, repo, limit),
