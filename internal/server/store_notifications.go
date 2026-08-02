@@ -461,7 +461,10 @@ func (st *Store) SetThreadSubscription(userID int, threadID string, sub *ThreadS
 	st.persistNotificationsState(userID, state)
 }
 
-func (st *Store) moveNotificationRepoKeyLocked(oldFull, newFull string) {
+// moveNotificationRepoKeyBatchLocked re-keys per-user notification read state
+// from oldFull to newFull on a repo rename/transfer, staging its durable writes
+// into batch so they commit with the rest of the re-key. Caller holds st.mu.
+func (st *Store) moveNotificationRepoKeyBatchLocked(batch *persistBatch, oldFull, newFull string) {
 	for userID, state := range st.NotificationsState {
 		if state == nil || state.RepoLastReadAt == nil {
 			continue
@@ -469,7 +472,7 @@ func (st *Store) moveNotificationRepoKeyLocked(oldFull, newFull string) {
 		if at, ok := state.RepoLastReadAt[oldFull]; ok {
 			state.RepoLastReadAt[newFull] = at
 			delete(state.RepoLastReadAt, oldFull)
-			st.persistNotificationsState(userID, state)
+			batch.Put("notifications_state", strconv.Itoa(userID), state)
 		}
 	}
 }

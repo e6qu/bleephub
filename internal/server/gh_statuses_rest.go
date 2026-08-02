@@ -163,7 +163,10 @@ func (s *CommitStatusStore) persistStatuses(key string) {
 	s.persist.MustPut("commit_statuses", key, s.byKey[key])
 }
 
-func (s *CommitStatusStore) moveRepoKey(oldFull, newFull string) {
+// moveRepoKeyBatch re-keys a repository's commit-status entries from oldFull to
+// newFull on a rename/transfer, staging its durable re-key into batch so it
+// commits in the same transaction as the rest of the move.
+func (s *CommitStatusStore) moveRepoKeyBatch(oldFull, newFull string, batch *persistBatch) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	prefix := oldFull + ":"
@@ -174,10 +177,8 @@ func (s *CommitStatusStore) moveRepoKey(oldFull, newFull string) {
 		newKey := newFull + strings.TrimPrefix(key, oldFull)
 		s.byKey[newKey] = statuses
 		delete(s.byKey, key)
-		if s.persist != nil {
-			s.persist.MustPut("commit_statuses", newKey, statuses)
-			s.persist.MustDelete("commit_statuses", key)
-		}
+		batch.Put("commit_statuses", newKey, statuses)
+		batch.Delete("commit_statuses", key)
 	}
 }
 

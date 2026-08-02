@@ -440,10 +440,13 @@ func (st *Store) RenameRepo(owner, name, newName string) bool {
 		st.GitStorages[newFull] = stor
 		delete(st.GitStorages, oldFull)
 	}
-	st.moveRepoKeyLocked(oldFull, newFull)
-
-	if st.persist != nil {
-		st.persist.MustPut("repos", strconv.Itoa(repo.ID), repo)
+	// Re-key the repos row and every subresource bucket in one transaction, so a
+	// crash can never leave the repository split across its old and new names.
+	batch := newPersistBatch(st.persist)
+	batch.Put("repos", strconv.Itoa(repo.ID), repo)
+	st.moveRepoKeyLocked(batch, oldFull, newFull)
+	if err := batch.Commit(); err != nil {
+		panic(&persistenceFailure{op: "batch", bucket: "repos", err: err})
 	}
 
 	return true
@@ -1950,9 +1953,13 @@ func (st *Store) StarRepo(userID int, owner, name string) bool {
 	repo.UpdatedAt = st.currentTime()
 	user.StarredRepos[fullName] = true
 	user.UpdatedAt = st.currentTime()
-	if st.persist != nil {
-		st.persist.MustPut("repos", strconv.Itoa(repo.ID), repo)
-		st.persist.MustPut("users", strconv.Itoa(user.ID), user)
+	// One transaction: the repo's stargazer count and the user's starred list
+	// must never disagree across a crash mid-persist.
+	batch := newPersistBatch(st.persist)
+	batch.Put("repos", strconv.Itoa(repo.ID), repo)
+	batch.Put("users", strconv.Itoa(user.ID), user)
+	if err := batch.Commit(); err != nil {
+		panic(&persistenceFailure{op: "batch", bucket: "repos", err: err})
 	}
 	return true
 }
@@ -1982,9 +1989,13 @@ func (st *Store) UnstarRepo(userID int, owner, name string) bool {
 		delete(user.StarredRepos, fullName)
 	}
 	user.UpdatedAt = st.currentTime()
-	if st.persist != nil {
-		st.persist.MustPut("repos", strconv.Itoa(repo.ID), repo)
-		st.persist.MustPut("users", strconv.Itoa(user.ID), user)
+	// One transaction: the repo's stargazer count and the user's starred list
+	// must never disagree across a crash mid-persist.
+	batch := newPersistBatch(st.persist)
+	batch.Put("repos", strconv.Itoa(repo.ID), repo)
+	batch.Put("users", strconv.Itoa(user.ID), user)
+	if err := batch.Commit(); err != nil {
+		panic(&persistenceFailure{op: "batch", bucket: "repos", err: err})
 	}
 	return true
 }
@@ -2282,40 +2293,44 @@ func (st *Store) TransferRepo(owner, name, newOwner string) bool {
 		delete(st.GitStorages, oldFull)
 	}
 
-	st.moveRepoKeyLocked(oldFull, newFull)
-
-	if st.persist != nil {
-		st.persist.MustPut("repos", strconv.Itoa(repo.ID), repo)
+	// Re-key the repos row and every subresource bucket in one transaction, so a
+	// crash can never leave the repository split across its old and new names.
+	batch := newPersistBatch(st.persist)
+	batch.Put("repos", strconv.Itoa(repo.ID), repo)
+	st.moveRepoKeyLocked(batch, oldFull, newFull)
+	if err := batch.Commit(); err != nil {
+		panic(&persistenceFailure{op: "batch", bucket: "repos", err: err})
 	}
 	return true
 }
 
 // moveRepoKeyLocked renames all in-memory maps keyed by repo full name from
-// oldFull to newFull. Caller must hold st.mu.
-func (st *Store) moveRepoKeyLocked(oldFull, newFull string) {
-	st.moveNotificationRepoKeyLocked(oldFull, newFull)
+// oldFull to newFull, staging every durable re-key into batch so the whole move
+// commits in one transaction. Caller must hold st.mu.
+func (st *Store) moveRepoKeyLocked(batch *persistBatch, oldFull, newFull string) {
+	st.moveNotificationRepoKeyBatchLocked(batch, oldFull, newFull)
 	if v := st.RepoSecrets[oldFull]; v != nil {
 		st.RepoSecrets[newFull] = v
 		delete(st.RepoSecrets, oldFull)
 		if st.persist != nil {
-			st.persist.MustPut("repo_secrets", newFull, v)
-			st.persist.MustDelete("repo_secrets", oldFull)
+			batch.Put("repo_secrets", newFull, v)
+			batch.Delete("repo_secrets", oldFull)
 		}
 	}
 	if v := st.RepoVariables[oldFull]; v != nil {
 		st.RepoVariables[newFull] = v
 		delete(st.RepoVariables, oldFull)
 		if st.persist != nil {
-			st.persist.MustPut("repo_variables", newFull, v)
-			st.persist.MustDelete("repo_variables", oldFull)
+			batch.Put("repo_variables", newFull, v)
+			batch.Delete("repo_variables", oldFull)
 		}
 	}
 	if v := st.RepoCollaborators[oldFull]; v != nil {
 		st.RepoCollaborators[newFull] = v
 		delete(st.RepoCollaborators, oldFull)
 		if st.persist != nil {
-			st.persist.MustPut("repo_collaborators", newFull, v)
-			st.persist.MustDelete("repo_collaborators", oldFull)
+			batch.Put("repo_collaborators", newFull, v)
+			batch.Delete("repo_collaborators", oldFull)
 		}
 	}
 	for _, team := range st.Teams {
@@ -2336,7 +2351,7 @@ func (st *Store) moveRepoKeyLocked(oldFull, newFull string) {
 		if changed {
 			team.UpdatedAt = st.currentTime()
 			if st.persist != nil {
-				st.persist.MustPut("teams", strconv.Itoa(team.ID), team)
+				batch.Put("teams", strconv.Itoa(team.ID), team)
 			}
 		}
 	}
@@ -2345,7 +2360,7 @@ func (st *Store) moveRepoKeyLocked(oldFull, newFull string) {
 			rec.GitHubRepository = newFull
 			rec.UpdatedAt = st.currentTime()
 			if st.persist != nil {
-				st.persist.MustPut("artifact_storage_records", strconv.Itoa(rec.ID), rec)
+				batch.Put("artifact_storage_records", strconv.Itoa(rec.ID), rec)
 			}
 		}
 	}
@@ -2354,7 +2369,7 @@ func (st *Store) moveRepoKeyLocked(oldFull, newFull string) {
 			rec.GitHubRepository = newFull
 			rec.UpdatedAt = st.currentTime()
 			if st.persist != nil {
-				st.persist.MustPut("artifact_deployment_records", strconv.Itoa(rec.ID), rec)
+				batch.Put("artifact_deployment_records", strconv.Itoa(rec.ID), rec)
 			}
 		}
 	}
@@ -2362,23 +2377,23 @@ func (st *Store) moveRepoKeyLocked(oldFull, newFull string) {
 		st.Hooks[newFull] = v
 		delete(st.Hooks, oldFull)
 		if st.persist != nil {
-			st.persist.MustPut("hooks", newFull, v)
-			st.persist.MustDelete("hooks", oldFull)
+			batch.Put("hooks", newFull, v)
+			batch.Delete("hooks", oldFull)
 		}
 	}
 	if v := st.CheckSuitePrefs[oldFull]; v != nil {
 		st.CheckSuitePrefs[newFull] = v
 		delete(st.CheckSuitePrefs, oldFull)
 		if st.persist != nil {
-			st.persist.MustPut("check_suite_prefs", newFull, v)
-			st.persist.MustDelete("check_suite_prefs", oldFull)
+			batch.Put("check_suite_prefs", newFull, v)
+			batch.Delete("check_suite_prefs", oldFull)
 		}
 	}
 	for _, suite := range st.CheckSuites {
 		if suite.RepoKey == oldFull {
 			suite.RepoKey = newFull
 			if st.persist != nil {
-				st.persist.MustPut("check_suites", strconv.FormatInt(suite.ID, 10), suite)
+				batch.Put("check_suites", strconv.FormatInt(suite.ID, 10), suite)
 			}
 		}
 	}
@@ -2386,14 +2401,14 @@ func (st *Store) moveRepoKeyLocked(oldFull, newFull string) {
 		if run.RepoKey == oldFull {
 			run.RepoKey = newFull
 			if st.persist != nil {
-				st.persist.MustPut("check_runs", strconv.FormatInt(run.ID, 10), run)
+				batch.Put("check_runs", strconv.FormatInt(run.ID, 10), run)
 			}
 		}
 	}
 	for _, wf := range st.Workflows {
 		if wf.RepoFullName == oldFull {
 			wf.RepoFullName = newFull
-			st.persistWorkflowRecord(wf)
+			batch.Put("workflows", wf.ID, wf)
 		}
 	}
 	for runID, attempts := range st.WorkflowAttempts {
@@ -2405,10 +2420,14 @@ func (st *Store) moveRepoKeyLocked(oldFull, newFull string) {
 			}
 		}
 		if changed {
-			st.persistWorkflowAttemptsRecord(runID)
+			if len(attempts) == 0 {
+				batch.Delete("workflow_attempts", strconv.Itoa(runID))
+			} else {
+				batch.Put("workflow_attempts", strconv.Itoa(runID), attempts)
+			}
 		}
 	}
-	st.CommitStatuses.moveRepoKey(oldFull, newFull)
+	st.CommitStatuses.moveRepoKeyBatch(oldFull, newFull, batch)
 	if v := st.RepoAutolinks[oldFull]; v != nil {
 		for _, a := range v {
 			a.RepoKey = newFull
@@ -2416,8 +2435,8 @@ func (st *Store) moveRepoKeyLocked(oldFull, newFull string) {
 		st.RepoAutolinks[newFull] = v
 		delete(st.RepoAutolinks, oldFull)
 		if st.persist != nil {
-			st.persist.MustPut("repo_autolinks", newFull, v)
-			st.persist.MustDelete("repo_autolinks", oldFull)
+			batch.Put("repo_autolinks", newFull, v)
+			batch.Delete("repo_autolinks", oldFull)
 		}
 	}
 	if v := st.RepoInvitations[oldFull]; v != nil {
@@ -2427,16 +2446,16 @@ func (st *Store) moveRepoKeyLocked(oldFull, newFull string) {
 		st.RepoInvitations[newFull] = v
 		delete(st.RepoInvitations, oldFull)
 		if st.persist != nil {
-			st.persist.MustPut("repo_invitations", newFull, v)
-			st.persist.MustDelete("repo_invitations", oldFull)
+			batch.Put("repo_invitations", newFull, v)
+			batch.Delete("repo_invitations", oldFull)
 		}
 	}
 	if v := st.RepoDeployKeys[oldFull]; v != nil {
 		st.RepoDeployKeys[newFull] = v
 		delete(st.RepoDeployKeys, oldFull)
 		if st.persist != nil {
-			st.persist.MustPut("repo_deploy_keys", newFull, v)
-			st.persist.MustDelete("repo_deploy_keys", oldFull)
+			batch.Put("repo_deploy_keys", newFull, v)
+			batch.Delete("repo_deploy_keys", oldFull)
 		}
 	}
 	if v := st.SecretScanningAlertsByRepo[oldFull]; v != nil {
@@ -2444,12 +2463,12 @@ func (st *Store) moveRepoKeyLocked(oldFull, newFull string) {
 		for _, alert := range v {
 			alert.RepoKey = newFull
 			if st.persist != nil {
-				st.persist.MustPut("secret_scanning_alerts", strconv.Itoa(alert.ID), alert)
+				batch.Put("secret_scanning_alerts", strconv.Itoa(alert.ID), alert)
 			}
 		}
 		delete(st.SecretScanningAlertsByRepo, oldFull)
 		if st.persist != nil {
-			st.persist.MustDelete("secret_scanning_alerts", oldFull)
+			batch.Delete("secret_scanning_alerts", oldFull)
 		}
 	}
 	if v := st.SecretScanningNextNumber[oldFull]; v != 0 {
@@ -2461,12 +2480,12 @@ func (st *Store) moveRepoKeyLocked(oldFull, newFull string) {
 		for _, alert := range v {
 			alert.RepoKey = newFull
 			if st.persist != nil {
-				st.persist.MustPut("code_scanning_alerts", strconv.Itoa(alert.ID), alert)
+				batch.Put("code_scanning_alerts", strconv.Itoa(alert.ID), alert)
 			}
 		}
 		delete(st.CodeScanningAlertsByRepo, oldFull)
 		if st.persist != nil {
-			st.persist.MustDelete("code_scanning_alerts", oldFull)
+			batch.Delete("code_scanning_alerts", oldFull)
 		}
 	}
 	if v := st.CodeScanningNextNumber[oldFull]; v != 0 {
@@ -2478,12 +2497,12 @@ func (st *Store) moveRepoKeyLocked(oldFull, newFull string) {
 		for _, a := range v {
 			a.RepoKey = newFull
 			if st.persist != nil {
-				st.persist.MustPut("code_scanning_analyses", strconv.Itoa(a.ID), a)
+				batch.Put("code_scanning_analyses", strconv.Itoa(a.ID), a)
 			}
 		}
 		delete(st.CodeScanningAnalysesByRepo, oldFull)
 		if st.persist != nil {
-			st.persist.MustDelete("code_scanning_analyses", oldFull)
+			batch.Delete("code_scanning_analyses", oldFull)
 		}
 	}
 	if v := st.DependabotAlertsByRepo[oldFull]; v != nil {
@@ -2491,12 +2510,12 @@ func (st *Store) moveRepoKeyLocked(oldFull, newFull string) {
 		for _, alert := range v {
 			alert.RepoKey = newFull
 			if st.persist != nil {
-				st.persist.MustPut("dependabot_alerts", strconv.Itoa(alert.ID), alert)
+				batch.Put("dependabot_alerts", strconv.Itoa(alert.ID), alert)
 			}
 		}
 		delete(st.DependabotAlertsByRepo, oldFull)
 		if st.persist != nil {
-			st.persist.MustDelete("dependabot_alerts", oldFull)
+			batch.Delete("dependabot_alerts", oldFull)
 		}
 	}
 	if v := st.DependabotNextNumber[oldFull]; v != 0 {
@@ -2507,8 +2526,8 @@ func (st *Store) moveRepoKeyLocked(oldFull, newFull string) {
 		st.DependabotSecrets[newFull] = v
 		delete(st.DependabotSecrets, oldFull)
 		if st.persist != nil {
-			st.persist.MustPut("dependabot_secrets", newFull, v)
-			st.persist.MustDelete("dependabot_secrets", oldFull)
+			batch.Put("dependabot_secrets", newFull, v)
+			batch.Delete("dependabot_secrets", oldFull)
 		}
 	}
 	if v := st.CodeScanningDefaultSetups[oldFull]; v != nil {
@@ -2516,8 +2535,8 @@ func (st *Store) moveRepoKeyLocked(oldFull, newFull string) {
 		st.CodeScanningDefaultSetups[newFull] = v
 		delete(st.CodeScanningDefaultSetups, oldFull)
 		if st.persist != nil {
-			st.persist.MustPut("code_scanning_default_setups", newFull, v)
-			st.persist.MustDelete("code_scanning_default_setups", oldFull)
+			batch.Put("code_scanning_default_setups", newFull, v)
+			batch.Delete("code_scanning_default_setups", oldFull)
 		}
 	}
 	if v := st.CodeQualitySetups[oldFull]; v != nil {
@@ -2525,40 +2544,40 @@ func (st *Store) moveRepoKeyLocked(oldFull, newFull string) {
 		st.CodeQualitySetups[newFull] = v
 		delete(st.CodeQualitySetups, oldFull)
 		if st.persist != nil {
-			st.persist.MustPut("code_quality_setups", newFull, v)
-			st.persist.MustDelete("code_quality_setups", oldFull)
+			batch.Put("code_quality_setups", newFull, v)
+			batch.Delete("code_quality_setups", oldFull)
 		}
 	}
 	if v := st.RepoCustomPropertyValues[oldFull]; v != nil {
 		st.RepoCustomPropertyValues[newFull] = v
 		delete(st.RepoCustomPropertyValues, oldFull)
 		if st.persist != nil {
-			st.persist.MustPut("repo_custom_property_values", newFull, v)
-			st.persist.MustDelete("repo_custom_property_values", oldFull)
+			batch.Put("repo_custom_property_values", newFull, v)
+			batch.Delete("repo_custom_property_values", oldFull)
 		}
 	}
 	if enabled, ok := st.RepoImmutableReleases[oldFull]; ok {
 		st.RepoImmutableReleases[newFull] = enabled
 		delete(st.RepoImmutableReleases, oldFull)
 		if st.persist != nil {
-			st.persist.MustPut("repo_immutable_releases", newFull, enabled)
-			st.persist.MustDelete("repo_immutable_releases", oldFull)
+			batch.Put("repo_immutable_releases", newFull, enabled)
+			batch.Delete("repo_immutable_releases", oldFull)
 		}
 	}
 	if v := st.AgentsRepoSecrets[oldFull]; v != nil {
 		st.AgentsRepoSecrets[newFull] = v
 		delete(st.AgentsRepoSecrets, oldFull)
 		if st.persist != nil {
-			st.persist.MustPut("agents_repo_secrets", newFull, v)
-			st.persist.MustDelete("agents_repo_secrets", oldFull)
+			batch.Put("agents_repo_secrets", newFull, v)
+			batch.Delete("agents_repo_secrets", oldFull)
 		}
 	}
 	if v := st.AgentsRepoVariables[oldFull]; v != nil {
 		st.AgentsRepoVariables[newFull] = v
 		delete(st.AgentsRepoVariables, oldFull)
 		if st.persist != nil {
-			st.persist.MustPut("agents_repo_variables", newFull, v)
-			st.persist.MustDelete("agents_repo_variables", oldFull)
+			batch.Put("agents_repo_variables", newFull, v)
+			batch.Delete("agents_repo_variables", oldFull)
 		}
 	}
 	if v := st.SecretScanningPushPlaceholders[oldFull]; v != nil {
@@ -2568,8 +2587,8 @@ func (st *Store) moveRepoKeyLocked(oldFull, newFull string) {
 		st.SecretScanningPushPlaceholders[newFull] = v
 		delete(st.SecretScanningPushPlaceholders, oldFull)
 		if st.persist != nil {
-			st.persist.MustPut("secret_scanning_push_placeholders", newFull, v)
-			st.persist.MustDelete("secret_scanning_push_placeholders", oldFull)
+			batch.Put("secret_scanning_push_placeholders", newFull, v)
+			batch.Delete("secret_scanning_push_placeholders", oldFull)
 		}
 	}
 	if v := st.SecretScanningPushBypasses[oldFull]; v != nil {
@@ -2579,8 +2598,8 @@ func (st *Store) moveRepoKeyLocked(oldFull, newFull string) {
 		st.SecretScanningPushBypasses[newFull] = v
 		delete(st.SecretScanningPushBypasses, oldFull)
 		if st.persist != nil {
-			st.persist.MustPut("secret_scanning_push_bypasses", newFull, v)
-			st.persist.MustDelete("secret_scanning_push_bypasses", oldFull)
+			batch.Put("secret_scanning_push_bypasses", newFull, v)
+			batch.Delete("secret_scanning_push_bypasses", oldFull)
 		}
 	}
 
@@ -2588,12 +2607,12 @@ func (st *Store) moveRepoKeyLocked(oldFull, newFull string) {
 		st.SecurityAdvisoriesByRepo[newFull] = v
 		for _, a := range v {
 			if st.persist != nil {
-				st.persist.MustPut("security_advisories", strconv.Itoa(a.ID), a)
+				batch.Put("security_advisories", strconv.Itoa(a.ID), a)
 			}
 		}
 		delete(st.SecurityAdvisoriesByRepo, oldFull)
 		if st.persist != nil {
-			st.persist.MustDelete("security_advisories", oldFull)
+			batch.Delete("security_advisories", oldFull)
 		}
 	}
 	for key, fix := range st.CodeScanningAutofixes {
@@ -2603,8 +2622,8 @@ func (st *Store) moveRepoKeyLocked(oldFull, newFull string) {
 			st.CodeScanningAutofixes[newKey] = fix
 			delete(st.CodeScanningAutofixes, key)
 			if st.persist != nil {
-				st.persist.MustPut("code_scanning_autofixes", newKey, fix)
-				st.persist.MustDelete("code_scanning_autofixes", key)
+				batch.Put("code_scanning_autofixes", newKey, fix)
+				batch.Delete("code_scanning_autofixes", key)
 			}
 		}
 	}
@@ -2612,7 +2631,7 @@ func (st *Store) moveRepoKeyLocked(oldFull, newFull string) {
 		if up.RepoKey == oldFull {
 			up.RepoKey = newFull
 			if st.persist != nil {
-				st.persist.MustPut("sarif_uploads", up.ID, up)
+				batch.Put("sarif_uploads", up.ID, up)
 			}
 		}
 	}
@@ -2621,7 +2640,7 @@ func (st *Store) moveRepoKeyLocked(oldFull, newFull string) {
 		for _, db := range v {
 			db.RepoKey = newFull
 			if st.persist != nil {
-				st.persist.MustPut("codeql_databases", strconv.Itoa(db.ID), db)
+				batch.Put("codeql_databases", strconv.Itoa(db.ID), db)
 			}
 		}
 		delete(st.CodeQLDatabasesByRepo, oldFull)
@@ -2645,7 +2664,7 @@ func (st *Store) moveRepoKeyLocked(oldFull, newFull string) {
 			}
 		}
 		if changed {
-			st.persist.MustPut("codeql_variant_analyses", strconv.Itoa(va.ID), va)
+			batch.Put("codeql_variant_analyses", strconv.Itoa(va.ID), va)
 		}
 	}
 	for _, rs := range st.Rulesets {
@@ -2654,7 +2673,7 @@ func (st *Store) moveRepoKeyLocked(oldFull, newFull string) {
 		}
 		rs.Source = newFull
 		if st.persist != nil {
-			st.persist.MustPut("repo_rulesets", strconv.Itoa(rs.ID), rs)
+			batch.Put("repo_rulesets", strconv.Itoa(rs.ID), rs)
 		}
 	}
 	renamedRepo := st.ReposByName[newFull]
@@ -2662,7 +2681,7 @@ func (st *Store) moveRepoKeyLocked(oldFull, newFull string) {
 		if renamedRepo != nil && suite.RepositoryID == renamedRepo.ID {
 			suite.RepositoryName = renamedRepo.Name
 			if st.persist != nil {
-				st.persist.MustPut("ruleset_suites", strconv.Itoa(suite.ID), suite)
+				batch.Put("ruleset_suites", strconv.Itoa(suite.ID), suite)
 			}
 		}
 	}
@@ -2670,7 +2689,7 @@ func (st *Store) moveRepoKeyLocked(oldFull, newFull string) {
 		if project.RepoKey == oldFull {
 			project.RepoKey = newFull
 			if st.persist != nil {
-				st.persist.MustPut("projects_classic", strconv.Itoa(project.ID), project)
+				batch.Put("projects_classic", strconv.Itoa(project.ID), project)
 			}
 		}
 	}
@@ -2679,7 +2698,7 @@ func (st *Store) moveRepoKeyLocked(oldFull, newFull string) {
 			cs.RepoKey = newFull
 			cs.UpdatedAt = st.currentTime()
 			if st.persist != nil {
-				st.persist.MustPut("codespaces", strconv.Itoa(cs.ID), cs)
+				batch.Put("codespaces", strconv.Itoa(cs.ID), cs)
 			}
 		}
 	}
@@ -2690,7 +2709,7 @@ func (st *Store) moveRepoKeyLocked(oldFull, newFull string) {
 			pkg.OwnerKey = newFull
 			pkg.UpdatedAt = st.currentTime()
 			if st.persist != nil {
-				st.persist.MustPut("packages", strconv.Itoa(pkg.ID), pkg)
+				batch.Put("packages", strconv.Itoa(pkg.ID), pkg)
 			}
 		}
 	}
@@ -2702,8 +2721,8 @@ func (st *Store) moveRepoKeyLocked(oldFull, newFull string) {
 			st.EnvSecrets[newKey] = v
 			delete(st.EnvSecrets, k)
 			if st.persist != nil {
-				st.persist.MustPut("env_secrets", newKey, v)
-				st.persist.MustDelete("env_secrets", k)
+				batch.Put("env_secrets", newKey, v)
+				batch.Delete("env_secrets", k)
 			}
 		}
 	}
@@ -2714,8 +2733,8 @@ func (st *Store) moveRepoKeyLocked(oldFull, newFull string) {
 			st.EnvVariables[newKey] = v
 			delete(st.EnvVariables, k)
 			if st.persist != nil {
-				st.persist.MustPut("env_variables", newKey, v)
-				st.persist.MustDelete("env_variables", k)
+				batch.Put("env_variables", newKey, v)
+				batch.Delete("env_variables", k)
 			}
 		}
 	}
@@ -2729,7 +2748,7 @@ func (st *Store) moveRepoKeyLocked(oldFull, newFull string) {
 		if wf.RepoFullName == oldFull {
 			wf.RepoFullName = newFull
 			if st.persist != nil {
-				st.persist.MustPut("workflow_files", strconv.FormatInt(wf.ID, 10), wf)
+				batch.Put("workflow_files", strconv.FormatInt(wf.ID, 10), wf)
 			}
 		}
 	}
@@ -2739,8 +2758,8 @@ func (st *Store) moveRepoKeyLocked(oldFull, newFull string) {
 		st.Misc.pagesBuilds[newFull] = v
 		delete(st.Misc.pagesBuilds, oldFull)
 		if st.persist != nil {
-			st.persist.MustPut("pages_builds", newFull, v)
-			st.persist.MustDelete("pages_builds", oldFull)
+			batch.Put("pages_builds", newFull, v)
+			batch.Delete("pages_builds", oldFull)
 		}
 	}
 	st.Misc.mu.Unlock()

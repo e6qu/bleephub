@@ -372,21 +372,22 @@ func (st *Store) DeleteLabel(id int) bool {
 	if _, ok := st.Labels[id]; !ok {
 		return false
 	}
+	// One transaction: the label delete and every issue it is removed from
+	// commit together, so no issue can persist referencing a deleted label.
+	batch := newPersistBatch(st.persist)
 	delete(st.Labels, id)
-	if st.persist != nil {
-		st.persist.MustDelete("labels", strconv.Itoa(id))
-	}
-	// Remove from any issues
+	batch.Delete("labels", strconv.Itoa(id))
 	for _, issue := range st.Issues {
 		for i, lid := range issue.LabelIDs {
 			if lid == id {
 				issue.LabelIDs = append(issue.LabelIDs[:i], issue.LabelIDs[i+1:]...)
-				if st.persist != nil {
-					st.persist.MustPut("issues", strconv.Itoa(issue.ID), issue)
-				}
+				batch.Put("issues", strconv.Itoa(issue.ID), issue)
 				break
 			}
 		}
+	}
+	if err := batch.Commit(); err != nil {
+		panic(&persistenceFailure{op: "batch", bucket: "labels", err: err})
 	}
 	return true
 }
@@ -490,18 +491,19 @@ func (st *Store) DeleteMilestone(id int) bool {
 	if _, ok := st.Milestones[id]; !ok {
 		return false
 	}
+	// One transaction: the milestone delete and every issue it is detached from
+	// commit together, so no issue can persist referencing a deleted milestone.
+	batch := newPersistBatch(st.persist)
 	delete(st.Milestones, id)
-	if st.persist != nil {
-		st.persist.MustDelete("milestones", strconv.Itoa(id))
-	}
-	// Detach from issues
+	batch.Delete("milestones", strconv.Itoa(id))
 	for _, issue := range st.Issues {
 		if issue.MilestoneID == id {
 			issue.MilestoneID = 0
-			if st.persist != nil {
-				st.persist.MustPut("issues", strconv.Itoa(issue.ID), issue)
-			}
+			batch.Put("issues", strconv.Itoa(issue.ID), issue)
 		}
+	}
+	if err := batch.Commit(); err != nil {
+		panic(&persistenceFailure{op: "batch", bucket: "milestones", err: err})
 	}
 	return true
 }
