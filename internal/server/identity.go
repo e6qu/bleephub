@@ -468,20 +468,20 @@ func (s *Server) handleShauthCallback(w http.ResponseWriter, r *http.Request) {
 }
 
 func safeIdentityReturnTo(value string) string {
-	// The prefix guard is a redirect-safety barrier: a destination beginning
-	// with a single "/" (not "//"), holding no backslash, and parsing to a URL
-	// with no scheme or host is same-origin and path-relative. Return the
-	// guarded input itself (rather than a re-derived string) so the barrier
-	// applies to the exact value that reaches http.Redirect — which is also what
-	// static taint analysis recognizes as sanitized.
-	if !strings.HasPrefix(value, "/") || strings.HasPrefix(value, "//") || strings.Contains(value, `\`) {
-		return "/ui/"
-	}
+	// A safe same-origin destination has no scheme, host, or userinfo (a
+	// protocol-relative //host form parses to a Host and is rejected), no
+	// backslash a browser could fold into "//host", and a rooted path.
 	parsed, err := url.Parse(value)
-	if err != nil || parsed.IsAbs() || parsed.Host != "" {
+	if err != nil || parsed.IsAbs() || parsed.Host != "" || parsed.User != nil || strings.Contains(value, `\`) {
 		return "/ui/"
 	}
-	return value
+	if !strings.HasPrefix(parsed.Path, "/") {
+		return "/ui/"
+	}
+	// Rebuild the target from only its path and query. The result has an empty
+	// host by construction, so it cannot redirect off-site — the form redirect
+	// analysis recognizes as sanitized, and never the checked input verbatim.
+	return (&url.URL{Path: parsed.Path, RawQuery: parsed.RawQuery}).String()
 }
 
 func (s *Server) handleIdentitySession(w http.ResponseWriter, r *http.Request) {
