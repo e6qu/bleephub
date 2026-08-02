@@ -456,3 +456,27 @@ func TestPersistentOIDCLogoutClaimIsExclusiveAcrossConnections(t *testing.T) {
 		t.Fatalf("successful concurrent claims = %d, want exactly 1", claims)
 	}
 }
+
+// The single-node store must fsync the WAL at every commit so acknowledged
+// writes survive power loss, not only a process crash (STORE-020).
+func TestSQLiteDurabilityIsSynchronousFull(t *testing.T) {
+	db, err := openSQLite(t.TempDir())
+	if err != nil {
+		t.Fatalf("openSQLite: %v", err)
+	}
+	defer db.Close()
+	var sync int
+	if err := db.QueryRow("PRAGMA synchronous").Scan(&sync); err != nil {
+		t.Fatalf("read synchronous pragma: %v", err)
+	}
+	if sync != 2 { // 2 == FULL
+		t.Fatalf("synchronous = %d, want 2 (FULL)", sync)
+	}
+	var mode string
+	if err := db.QueryRow("PRAGMA journal_mode").Scan(&mode); err != nil {
+		t.Fatalf("read journal_mode: %v", err)
+	}
+	if mode != "wal" {
+		t.Fatalf("journal_mode = %q, want wal", mode)
+	}
+}
