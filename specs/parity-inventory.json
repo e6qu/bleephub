@@ -1171,7 +1171,7 @@
         "id": "AUTH-104",
         "location": "gh_oauth.go:160",
         "severity": "M",
-        "status": "fixed \u2014 only a same-origin path-relative destination is honored (`safeIdentityReturnTo`)",
+        "status": "fixed \u2014 the legacy PAT login (only reachable when Shauth is unconfigured) no longer redirects to a caller-supplied `return_to` at all; it renders the signed-in page. The Shauth flow's `return_to` stays sanitized by `safeIdentityReturnTo` and laundered through the signed state cookie",
         "status_kind": "fixed"
       },
       {
