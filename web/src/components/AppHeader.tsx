@@ -10,7 +10,7 @@ import {
 import { Link, NavLink, useNavigate } from "react-router";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useTheme } from "@bleephub/ui-core/hooks";
-import { useReportError } from "@bleephub/ui-core/components";
+import { useReportError, useToastQueryErrors } from "@bleephub/ui-core/components";
 import {
   Mark,
   ThreeBarsIcon,
@@ -38,7 +38,7 @@ import {
   GraphIcon,
   CommentIcon,
 } from "./octicons.js";
-import { abortPendingRequests, clearToken, fetchCurrentUser, fetchNotifications } from "../api.js";
+import { abortPendingRequests, clearToken, fetchCurrentUser, fetchNotifications, isRateLimited } from "../api.js";
 
 /**
  * GitHub-faithful global header: hamburger → global-nav drawer, brand, a
@@ -395,11 +395,20 @@ export function AppHeader() {
   const [drawer, setDrawer] = useState(false);
   const [q, setQ] = useState("");
 
-  const { data: user } = useQuery({ queryKey: ["current-user"], queryFn: fetchCurrentUser, staleTime: 60_000 });
+  // A throttled 403 is final for the current window: retrying it only deepens
+  // the exhaustion (same guard pattern as useMetricsData). Surface it instead
+  // of spinning, so a rate-limited session fails visibly.
+  const { data: user, error: userError } = useQuery({
+    queryKey: ["current-user"],
+    queryFn: fetchCurrentUser,
+    staleTime: 60_000,
+    retry: (failureCount, err) => !isRateLimited(err) && failureCount < 1,
+  });
+  useToastQueryErrors(isRateLimited(userError) ? userError : undefined, "API rate limit exceeded");
   const { data: notifications } = useQuery({
     queryKey: ["notifications", "header"],
     queryFn: () => fetchNotifications(),
-    refetchInterval: 30_000,
+    refetchInterval: (query) => (isRateLimited(query.state.error) ? false : 30_000),
   });
   const unread = notifications?.filter((n) => n.unread !== false).length ?? 0;
   const login = user?.login ?? "";

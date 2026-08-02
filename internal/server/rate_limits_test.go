@@ -118,6 +118,35 @@ func TestUnauthenticatedCoreRateLimitIsSixty(t *testing.T) {
 	}
 }
 
+func TestAnonymousRateBucketUsesForwardedClientBehindPrivateProxy(t *testing.T) {
+	makeRequest := func(forwardedFor string) *http.Request {
+		request := httptest.NewRequest("GET", "/api/v3/users/octocat", nil)
+		request.RemoteAddr = "172.18.0.2:39104" // the reverse proxy on the container network
+		request.Header.Set("X-Forwarded-For", forwardedFor)
+		return request
+	}
+	clientA := apiRateIdentity(makeRequest("203.0.113.7"))
+	clientB := apiRateIdentity(makeRequest("203.0.113.8"))
+	if clientA == clientB {
+		t.Fatal("distinct forwarded clients behind the proxy shared one anonymous bucket")
+	}
+	if clientA != "anonymous:203.0.113.7" {
+		t.Fatalf("forwarded client identity = %q, want anonymous:203.0.113.7", clientA)
+	}
+	if again := apiRateIdentity(makeRequest("203.0.113.7")); again != clientA {
+		t.Fatalf("same forwarded client resolved to a different bucket: %q vs %q", again, clientA)
+	}
+}
+
+func TestAnonymousRateBucketIgnoresForwardedHeaderFromPublicPeer(t *testing.T) {
+	request := httptest.NewRequest("GET", "/api/v3/users/octocat", nil)
+	request.RemoteAddr = "198.51.100.9:50000" // a direct public peer, not our proxy
+	request.Header.Set("X-Forwarded-For", "203.0.113.7")
+	if got := apiRateIdentity(request); got != "anonymous:198.51.100.9" {
+		t.Fatalf("public peer identity = %q, want anonymous:198.51.100.9 (spoofable header must not mint budgets)", got)
+	}
+}
+
 func TestBrowserSessionGetsAuthenticatedUserBudget(t *testing.T) {
 	server := &Server{rateLimits: map[string]*apiRateWindow{}}
 	user := &User{ID: 42, Login: "browser-user"}

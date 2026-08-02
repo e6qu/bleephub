@@ -71,7 +71,10 @@ import {
   suspendInstallation,
   deleteInstallation,
   fetchDiscussionCategories,
+  fetchCurrentUser,
   isNotFound,
+  isForbidden,
+  isRateLimited,
 } from "../api.js";
 
 const mockFetch = vi.fn();
@@ -87,6 +90,47 @@ function jsonResponse(data: unknown, status = 200) {
 afterEach(() => {
   mockFetch.mockReset();
   clearToken();
+});
+
+describe("rate-limit throttle detection", () => {
+  it("surfaces a 403 with exhausted rate-limit headers as rate limited", async () => {
+    mockFetch.mockResolvedValue(
+      new Response(JSON.stringify({ message: "API rate limit exceeded" }), {
+        status: 403,
+        headers: { "Content-Type": "application/json", "Retry-After": "2151", "X-RateLimit-Remaining": "0" },
+      }),
+    );
+    const err: unknown = await fetchCurrentUser().then(
+      () => null,
+      (e: unknown) => e,
+    );
+    expect(isRateLimited(err)).toBe(true);
+    expect(err).toMatchObject({ status: 403, retryAfterSeconds: 2151 });
+  });
+
+  it("treats X-RateLimit-Remaining: 0 without Retry-After as a throttle", async () => {
+    mockFetch.mockResolvedValue(
+      new Response(JSON.stringify({ message: "API rate limit exceeded" }), {
+        status: 403,
+        headers: { "Content-Type": "application/json", "X-RateLimit-Remaining": "0" },
+      }),
+    );
+    const err: unknown = await fetchCurrentUser().then(
+      () => null,
+      (e: unknown) => e,
+    );
+    expect(isRateLimited(err)).toBe(true);
+  });
+
+  it("does not mistake an ordinary forbidden answer for a throttle", async () => {
+    mockFetch.mockResolvedValue(jsonResponse({ message: "Forbidden" }, 403));
+    const err: unknown = await fetchCurrentUser().then(
+      () => null,
+      (e: unknown) => e,
+    );
+    expect(isRateLimited(err)).toBe(false);
+    expect(isForbidden(err)).toBe(true);
+  });
 });
 
 describe("api wire-shape normalization", () => {

@@ -254,20 +254,46 @@ export const UNAUTHORIZED_EVENT = "bleephub:unauthorized";
 // session state rather than navigating from a background request: the router
 // can preserve the exact return location and concurrent polls collapse into
 // the same idempotent signed-out transition.
+//
+// A 403 whose headers say the budget is spent (Retry-After or
+// X-RateLimit-Remaining: 0) is a throttle, not an authorization answer. Throw
+// it here — ahead of the call sites' generic throw — as an ApiError carrying
+// retryAfterSeconds, so callers can tell it apart (isRateLimited) and back
+// off instead of hot-looping against an exhausted window.
 function handleUnauthorized(res: Response): void {
   if (res.status === 401) {
     clearToken();
     window.dispatchEvent(new CustomEvent(UNAUTHORIZED_EVENT));
+    return;
   }
+  const retryAfterSeconds = rateLimitRetryAfterSeconds(res);
+  if (retryAfterSeconds !== undefined) {
+    throw new ApiError(res.status, `${res.status} API rate limit exceeded, retry after ${retryAfterSeconds}s`, {
+      retryAfterSeconds,
+    });
+  }
+}
+
+/** Seconds to wait when a 403 is a rate-limit refusal; undefined otherwise. */
+function rateLimitRetryAfterSeconds(res: Response): number | undefined {
+  if (res.status !== 403) return undefined;
+  const retryAfter = Number(res.headers.get("Retry-After"));
+  if (Number.isFinite(retryAfter) && retryAfter > 0) return retryAfter;
+  // Remaining 0 without Retry-After still means the window is exhausted.
+  if (res.headers.get("X-RateLimit-Remaining") === "0") return 60;
+  return undefined;
 }
 
 /** Error carrying the HTTP status so callers can branch on 404 vs failure. */
 export class ApiError extends Error {
   status: number;
-  constructor(status: number, message: string) {
+  /** Present when the server throttled the request (see isRateLimited). */
+  retryAfterSeconds?: number;
+  constructor(status: number, message: string, options?: { retryAfterSeconds?: number }) {
     super(message);
     this.name = "ApiError";
     this.status = status;
+    this.retryAfterSeconds = options?.retryAfterSeconds;
   }
 }
 
@@ -281,6 +307,16 @@ export function isNotFound(err: unknown): boolean {
  */
 export function isForbidden(err: unknown): boolean {
   return err instanceof ApiError && err.status === 403;
+}
+
+/**
+ * True when the server refused because the rate-limit budget is exhausted
+ * (403 with Retry-After / X-RateLimit-Remaining: 0). Unlike a plain
+ * forbidden answer this is transient, but retrying before the window resets
+ * only deepens the exhaustion — pollers must stop, not spin.
+ */
+export function isRateLimited(err: unknown): boolean {
+  return err instanceof ApiError && err.status === 403 && err.retryAfterSeconds !== undefined;
 }
 
 async function fetchJSON<T>(url: string): Promise<T> {
