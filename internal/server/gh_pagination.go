@@ -295,9 +295,13 @@ func buildLinkHeader(r *http.Request, page, perPage, lastPage int) string {
 		return ""
 	}
 
-	// GitHub emits absolute pagination targets. Respect the first
-	// proxy-forwarded origin when present so clients can follow Link headers
-	// without accidentally switching to an internal listener address.
+	// GitHub emits absolute pagination targets, and clients (octokit, gh)
+	// auto-follow the Link header WITH the Authorization header attached. The
+	// host therefore must not come from a client-supplied X-Forwarded-Host: a
+	// spoofed value would redirect the follow-up request — credentials and all —
+	// to an attacker's host. Derive the host from the request's own Host header.
+	// X-Forwarded-Proto only selects http/https on that same host (no exfil), so
+	// it is still honored for correctness behind a TLS-terminating proxy.
 	scheme := "http"
 	if r.TLS != nil {
 		scheme = "https"
@@ -305,11 +309,7 @@ func buildLinkHeader(r *http.Request, page, perPage, lastPage int) string {
 	if forwarded := strings.TrimSpace(strings.Split(r.Header.Get("X-Forwarded-Proto"), ",")[0]); forwarded == "http" || forwarded == "https" {
 		scheme = forwarded
 	}
-	host := r.Host
-	if forwarded := strings.TrimSpace(strings.Split(r.Header.Get("X-Forwarded-Host"), ",")[0]); forwarded != "" {
-		host = forwarded
-	}
-	base := (&url.URL{Scheme: scheme, Host: host, Path: r.URL.Path}).String()
+	base := (&url.URL{Scheme: scheme, Host: r.Host, Path: r.URL.Path}).String()
 	q := r.URL.Query()
 	q.Del("page")
 

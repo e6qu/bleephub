@@ -87,6 +87,15 @@ func (s *Server) startGitSSH(ctx context.Context) error {
 
 func (s *Server) serveGitSSHConn(conn net.Conn, signer ssh.Signer) {
 	defer func() { _ = conn.Close() }()
+	// The SSH path runs outside recoverMiddleware and drives third-party
+	// decoders (packp/packfile) over attacker-controlled bytes. A panic there
+	// would unwind through the accept goroutine and kill the whole process,
+	// taking every tenant's traffic down — so contain it to this connection.
+	defer func() {
+		if rec := recover(); rec != nil {
+			s.logger.Error().Interface("panic", rec).Str("remote_addr", conn.RemoteAddr().String()).Msg("recovered panic in SSH Git connection")
+		}
+	}()
 	if err := conn.SetDeadline(s.currentTime().Add(gitSSHHandshakeTimeout)); err != nil {
 		s.logger.Debug().Err(err).Msg("set SSH Git handshake deadline")
 		return
@@ -235,8 +244,12 @@ func (s *Server) runGitSSHService(channel ssh.Channel, service, owner, repoName 
 	// token to intersect. The read decision still goes through the one choke
 	// point, so a new arm added there cannot be missed here.
 	ctx := contextWithUser(context.Background(), user)
-	if service == "git-upload-pack" && !s.viewerCanReadRepo(ctx, repo) {
-		return errors.New("repository access denied")
+	// A caller who cannot read the repository is answered exactly as for a
+	// nonexistent one, so SSH does not become a private-repository existence
+	// oracle (matching the git-HTTP behavior). A write refusal is only
+	// distinguishable once read access is established.
+	if !s.viewerCanReadRepo(ctx, repo) {
+		return transport.ErrRepositoryNotFound
 	}
 	if service == "git-receive-pack" && !s.viewerCanPushRepo(ctx, repo) {
 		return errors.New("repository write access denied")

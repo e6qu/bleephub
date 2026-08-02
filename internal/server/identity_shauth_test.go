@@ -314,18 +314,46 @@ func TestShauthLogoutCompletionBridgeFailsClosedWhenShauthIsDisabled(t *testing.
 	}
 }
 
+// TestLogoutOfNonShauthSessionDoesNotStartGlobalLogout pins AUTH-109: signing
+// out of a session that was NOT established through Shauth must not tear down
+// the user's shared Shauth SSO session. Even with a broken issuer (discovery
+// would 502 if attempted), a local session logs out to /ui/login.
+func TestLogoutOfNonShauthSessionDoesNotStartGlobalLogout(t *testing.T) {
+	provider := newShaAuthTestProvider(t)
+	provider.server.Close() // discovery would fail if RP-logout were attempted
+	s := NewServer("127.0.0.1:0", zerolog.Nop())
+	s.externalURL = "https://bleephub.example.test"
+	s.identity = completeShauthIdentityConfig(provider.server.URL)
+	// A local (non-OIDC) browser session.
+	if err := s.store.PutLoginSession("local-session", &LoginSession{UserID: 1, ExpiresAt: fixedShauthTestTime.Add(time.Hour)}); err != nil {
+		t.Fatal(err)
+	}
+	request := httptest.NewRequest(http.MethodPost, "/auth/logout", nil)
+	request.Header.Set("Origin", s.externalURL)
+	request.AddCookie(&http.Cookie{Name: secureSessionCookieName, Value: "local-session"})
+	response := httptest.NewRecorder()
+	s.handleIdentityLogout(response, request)
+	if response.Code != http.StatusSeeOther || response.Header().Get("Location") != "/ui/login" {
+		t.Fatalf("local logout = %d location %q, want 303 /ui/login", response.Code, response.Header().Get("Location"))
+	}
+	if session, _ := s.store.GetLoginSession("local-session"); session != nil {
+		t.Fatal("local session survived logout")
+	}
+}
+
 func TestShauthLogoutRevokesLocalSessionBeforeDiscoveryFailure(t *testing.T) {
 	provider := newShaAuthTestProvider(t)
 	provider.server.Close()
 	s := NewServer("127.0.0.1:0", zerolog.Nop())
 	s.externalURL = "https://bleephub.example.test"
 	s.identity = completeShauthIdentityConfig(provider.server.URL)
-	if err := s.store.PutLoginSession("browser-session", &LoginSession{UserID: 1, ExpiresAt: fixedShauthTestTime.Add(time.Hour), OIDCProvider: "shauth"}); err != nil {
+	if err := s.store.PutLoginSession("browser-session", &LoginSession{UserID: 1, ExpiresAt: fixedShauthTestTime.Add(time.Hour), OIDCProvider: "shauth", OIDCIDToken: "signed.id.token"}); err != nil {
 		t.Fatal(err)
 	}
 	request := httptest.NewRequest(http.MethodPost, "/auth/logout", nil)
 	request.Header.Set("Origin", s.externalURL)
-	request.AddCookie(&http.Cookie{Name: "_gh_sess", Value: "browser-session"})
+	// A secure deployment carries the Shauth session in the __Host- cookie.
+	request.AddCookie(&http.Cookie{Name: secureSessionCookieName, Value: "browser-session"})
 	request = provider.withClient(request)
 	response := httptest.NewRecorder()
 	s.handleIdentityLogout(response, request)

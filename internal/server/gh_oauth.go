@@ -22,6 +22,10 @@ import (
 // Applies to both success and error bodies, and to both the web and device
 // flows that share the endpoint.
 func writeOAuthTokenResponse(w http.ResponseWriter, r *http.Request, fields map[string]string) {
+	// RFC 6749 §5.1: the token endpoint response carries a credential and must
+	// never be cached by any intermediary.
+	w.Header().Set("Cache-Control", "no-store")
+	w.Header().Set("Pragma", "no-cache")
 	if strings.Contains(r.Header.Get("Accept"), "application/json") {
 		obj := make(map[string]any, len(fields))
 		for k, v := range fields {
@@ -326,12 +330,12 @@ func (s *Server) handleDeviceCode(w http.ResponseWriter, r *http.Request) {
 	s.store.DeviceCodes[dc.Code] = dc
 	s.store.mu.Unlock()
 
-	s.logger.Info().Str("device_code", dc.Code).Msg("device code issued")
+	s.logger.Info().Str("user_code", dc.UserCode).Msg("device code issued")
 
 	writeJSON(w, http.StatusOK, map[string]interface{}{
 		"device_code":      dc.Code,
 		"user_code":        dc.UserCode,
-		"verification_uri": "http://" + r.Host + "/login/device",
+		"verification_uri": s.baseURL(r) + "/login/device",
 		"expires_in":       900,
 		"interval":         1,
 	})
@@ -396,7 +400,7 @@ func (s *Server) handleDeviceTokenForm(w http.ResponseWriter, r *http.Request) {
 	delete(s.store.DeviceCodes, deviceCode)
 	s.store.mu.Unlock()
 
-	s.logger.Info().Str("device_code", deviceCode).Msg("device token granted")
+	s.logger.Info().Msg("device token granted")
 
 	writeOAuthTokenResponse(w, r, map[string]string{
 		"access_token": token,
@@ -454,7 +458,7 @@ func (s *Server) handleWebFlowTokenForm(w http.ResponseWriter, r *http.Request) 
 	}
 	s.store.mu.Unlock()
 
-	s.logger.Info().Str("auth_code", code).Int("user_id", user.ID).Msg("web flow token granted")
+	s.logger.Info().Int("user_id", user.ID).Msg("web flow token granted")
 	writeOAuthTokenResponse(w, r, map[string]string{
 		"access_token": tok.Token,
 		"token_type":   "bearer",

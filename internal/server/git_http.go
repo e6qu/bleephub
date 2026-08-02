@@ -20,6 +20,11 @@ import (
 	gitserver "github.com/go-git/go-git/v5/plumbing/transport/server"
 )
 
+// uploadPackRequestCap bounds the pkt-line want/have negotiation body an
+// (possibly anonymous) fetch may send. Real negotiations are kilobytes; this is
+// generous headroom while still refusing an unbounded stream.
+const uploadPackRequestCap = 50 << 20 // 50 MiB
+
 // authenticateGitRequest resolves the credential on a git smart-HTTP request.
 // It returns the context rather than only the user because the git routes sit
 // outside the /api middleware and the credential shape — installation token,
@@ -236,7 +241,10 @@ func (s *Server) handleGitUploadPack(w http.ResponseWriter, r *http.Request, own
 		return
 	}
 
-	requestReader := bufio.NewReader(r.Body)
+	// The upload-pack negotiation (a pkt-line want/have list) is small; a public
+	// repo serves it to anonymous callers, so cap the request body to keep an
+	// unbounded stream from exhausting memory. Real negotiations are kilobytes.
+	requestReader := bufio.NewReader(http.MaxBytesReader(w, r.Body, uploadPackRequestCap))
 	empty, err := flushOnlyGitRequest(requestReader)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)

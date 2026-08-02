@@ -998,7 +998,11 @@ func (s *Server) handleIdentityLogout(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	logoutTarget := ""
-	if s.identity.shauthConfigured() {
+	// Only start a global RP-initiated logout when THIS session was itself
+	// established through Shauth. A user who signed in locally (or via a token)
+	// must not have their shared Shauth SSO session — used by every other
+	// relying party — torn down by signing out of this app.
+	if s.identity.shauthConfigured() && session != nil && session.OIDCProvider == "shauth" && session.OIDCIDToken != "" {
 		provider, err := oidc.NewProvider(r.Context(), s.identity.shauthIssuer)
 		if err != nil {
 			writeGHError(w, http.StatusBadGateway, "Shauth discovery failed")
@@ -1015,11 +1019,7 @@ func (s *Server) handleIdentityLogout(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		query := endpoint.Query()
-		if session != nil && session.OIDCProvider == "shauth" && session.OIDCIDToken != "" {
-			query.Set("id_token_hint", session.OIDCIDToken)
-		} else {
-			query.Set("client_id", s.identity.shauthClientID)
-		}
+		query.Set("id_token_hint", session.OIDCIDToken)
 		query.Set("post_logout_redirect_uri", s.identity.shauthPostLogoutURL)
 		endpoint.RawQuery = query.Encode()
 		logoutTarget = endpoint.String()
