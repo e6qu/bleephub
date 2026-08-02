@@ -3,11 +3,13 @@
 set -euo pipefail
 
 PIN_SHA256="c504a0ed454276c878d5a873b782fa9824f2dec3205de3370845d40977e41322"
-# GitHub's rolling docs endpoint currently alternates between two reviewed
-# feature-flag variants during the ProjectV2 multi-select/view rollout. Keep
-# the richer contract vendored, while letting the drift check recognize the
-# other official variant. Any third digest remains blocking.
-ROLLOUT_SHA256="0c5ad89a426609cf1b79679155a17609cd04d7a09914eee9c56894eea18bb031"
+# GitHub's rolling docs endpoint serves several reviewed feature-flag variants
+# from different CDN edges during the ProjectV2 multi-select/view rollout, so
+# which one a runner sees depends on its region. Keep the richer contract
+# vendored, while letting the drift check recognize the other official variants
+# (0c5ad89a and fc99569d, both observed from docs.github.com). Any further
+# digest remains blocking.
+ROLLOUT_SHA256="0c5ad89a426609cf1b79679155a17609cd04d7a09914eee9c56894eea18bb031 fc99569d6628bfe0176eded638b4797ee64ab50e0bf2b671a660ec717d085dae"
 SOURCE_URL="https://docs.github.com/public/fpt/schema.docs.graphql"
 
 usage() {
