@@ -468,19 +468,18 @@ func (s *Server) handleShauthCallback(w http.ResponseWriter, r *http.Request) {
 }
 
 func safeIdentityReturnTo(value string) string {
-	// A safe same-origin destination has no scheme, host, or userinfo (a
-	// protocol-relative //host form parses to a Host and is rejected), no
-	// backslash a browser could fold into "//host", and a rooted path.
-	parsed, err := url.Parse(value)
-	if err != nil || parsed.IsAbs() || parsed.Host != "" || parsed.User != nil || strings.Contains(value, `\`) {
+	// Validate the raw input: it must be a rooted, same-origin path — beginning
+	// with a single "/" (not the protocol-relative "//host" form) and holding no
+	// backslash a browser could fold into "//host".
+	if !strings.HasPrefix(value, "/") || strings.HasPrefix(value, "//") || strings.Contains(value, `\`) {
 		return "/ui/"
 	}
-	if !strings.HasPrefix(parsed.Path, "/") {
+	parsed, err := url.Parse(value)
+	if err != nil || parsed.IsAbs() || parsed.Host != "" || parsed.User != nil {
 		return "/ui/"
 	}
 	// Rebuild the target from only its path and query. The result has an empty
-	// host by construction, so it cannot redirect off-site — the form redirect
-	// analysis recognizes as sanitized, and never the checked input verbatim.
+	// host by construction, so it cannot redirect off-site.
 	return (&url.URL{Path: parsed.Path, RawQuery: parsed.RawQuery}).String()
 }
 
