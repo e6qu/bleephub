@@ -116,13 +116,13 @@ func (s *Server) createOrResolveOrganizationSCIMBackingUser(w http.ResponseWrite
 		return &copy, true
 	}
 	now := s.store.currentTime()
+	userID := s.store.reserveGlobalID("next_user", &s.store.NextUser)
 	user := &User{
-		ID: s.store.NextUser, NodeID: fmt.Sprintf("U_kgDO%08d", s.store.NextUser),
+		ID: userID, NodeID: fmt.Sprintf("U_kgDO%08d", userID),
 		Login: login, Name: req.DisplayName, Email: primarySCIMEmail(req.Emails), Type: "User",
 		SCIMManagedByOrg: org.Login,
 		StarredRepos:     map[string]bool{}, CreatedAt: now, UpdatedAt: now,
 	}
-	s.store.NextUser++
 	s.store.Users[user.ID] = user
 	s.store.UsersByLogin[user.Login] = user
 	if s.store.persist != nil {

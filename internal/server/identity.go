@@ -268,8 +268,8 @@ func (s *Server) registerExternalIdentityRoutes() {
 	s.route("GET /auth/shauth/logout/complete", s.handleShauthLogoutComplete)
 	s.route("GET /ui/signed-out", s.handleIdentitySignedOut)
 	s.route("POST /ui/signed-out", s.handleIdentitySignedOut)
-	s.route("POST /auth/local", s.handleLocalLogin)
-	s.route("POST /auth/token", s.handleTokenLogin)
+	s.route("POST /auth/local", s.rateLimitAuthFlow(s.handleLocalLogin))
+	s.route("POST /auth/token", s.rateLimitAuthFlow(s.handleTokenLogin))
 	s.route("POST /auth/logout", s.handleIdentityLogout)
 	s.route("GET /control", s.handlePrivateControl)
 }
@@ -997,8 +997,7 @@ func (s *Server) upsertExternalUser(issuer, subject, login, name, email, avatarU
 		return existing, nil
 	}
 	now := time.Now().UTC()
-	user := &User{ID: s.store.NextUser, NodeID: "U_bleephub_" + login, Login: login, Name: name, Email: email, AvatarURL: avatarURL, Type: "User", SiteAdmin: siteAdmin, StarredRepos: map[string]bool{}, CreatedAt: now, UpdatedAt: now}
-	s.store.NextUser++
+	user := &User{ID: s.store.reserveGlobalID("next_user", &s.store.NextUser), NodeID: "U_bleephub_" + login, Login: login, Name: name, Email: email, AvatarURL: avatarURL, Type: "User", SiteAdmin: siteAdmin, StarredRepos: map[string]bool{}, CreatedAt: now, UpdatedAt: now}
 	s.store.Users[user.ID], s.store.UsersByLogin[user.Login] = user, user
 	s.bindExternalIdentityLocked(user, externalKey)
 	if s.store.persist != nil {

@@ -51,13 +51,13 @@
       },
       {
         "event": "issues",
-        "line": 1136,
+        "line": 1153,
         "producer": "emitWebhookEvent",
         "source": "internal/server/gh_issues_graphql.go"
       },
       {
         "event": "issues",
-        "line": 2906,
+        "line": 2923,
         "producer": "emitWebhookEvent",
         "source": "internal/server/gh_issues_graphql.go"
       },
@@ -141,13 +141,13 @@
       },
       {
         "event": "release",
-        "line": 936,
+        "line": 981,
         "producer": "emitWebhookEvent",
         "source": "internal/server/gh_releases.go"
       },
       {
         "event": "release",
-        "line": 958,
+        "line": 1003,
         "producer": "emitWebhookEvent",
         "source": "internal/server/gh_releases.go"
       },
@@ -461,10 +461,10 @@
         "category": "AUTH",
         "finding": "No rate limiting on any auth endpoint; the `X-RateLimit-*` headers are hardcoded constants",
         "id": "AUTH-027",
-        "location": "identity.go:577, gh_middleware.go:249",
+        "location": "identity.go:577, gh_middleware.go:249, rate_limits.go",
         "severity": "M",
-        "status": "partial \u2014 REST and GraphQL requests now consume credential/resource-scoped primary windows, emit live headers, use the 60-request anonymous core budget, and reject the first request beyond the budget with GitHub's 403 shape plus `Retry-After`. Auth flow endpoints and GitHub's secondary/content-creation limits remain open",
-        "status_kind": "partial"
+        "status": "fixed \u2014 REST and GraphQL requests consume credential/resource-scoped primary windows with live headers and the 60-request anonymous core budget, and the credential-verifying auth-flow endpoints (`/login`, `/auth/local`, `/auth/token`) now consume a per-IP per-minute `auth` budget, refusing over-budget attempts with GitHub's 403+`Retry-After` shape (device/OAuth token-exchange endpoints are excluded because they legitimately poll and carry their own slow_down). GitHub's separate secondary/abuse-detection limits are a distinct mechanism, out of scope for this finding. Regression: TestAuthFlowRateLimitBlocksBruteForcePerIP",
+        "status_kind": "fixed"
       },
       {
         "category": "AUTH",
@@ -481,8 +481,8 @@
         "id": "AUTH-029",
         "location": "auth.go:22,34-62",
         "severity": "M",
-        "status": "open",
-        "status_kind": "open"
+        "status": "fixed \u2014 every registration/removal-token minting endpoint (repo/org/enterprise) is gated on `administration:write` or enterprise ownership, and the minted token is an HMAC-signed blob carrying its scope, purpose and ~1h expiry, so it needs no server-side registry; `handleRunnerRegistration` and `handleRegisterAgent` both verify that setup credential (`runnerSetupCredential`) before acting, and its purpose must match the runner_event. Closed alongside the AUTH-003/059 runner-auth chokepoint; regression: TestRunnerProtocolRejectsUnauthenticatedCalls plus the registration-token gating tests",
+        "status_kind": "fixed"
       },
       {
         "category": "AUTH",
@@ -2380,8 +2380,8 @@
         "id": "REST-121",
         "location": "gh_releases.go",
         "severity": "m",
-        "status": "partial \u2014 `make_latest:false` now excludes a release from `Latest()` end to end (persisted, honored on create and update, regression-tested); `generate_release_notes` and `discussion_category_name` remain accepted-and-dropped and are deferred",
-        "status_kind": "partial"
+        "status": "fixed \u2014 `make_latest:false` excludes a release from `Latest()` (persisted, honored on create and update); `generate_release_notes` autogenerates the name when absent and appends the changelog notes bounded by the previous release tag; `discussion_category_name` creates and links a repository discussion surfaced as `discussion_url`, rejecting an unknown category with 422; all three regression-tested",
+        "status_kind": "fixed"
       },
       {
         "category": "GQL",
@@ -2947,8 +2947,8 @@
         "id": "GQL-061",
         "location": "gh_issues_graphql.go",
         "severity": "m",
-        "status": "deferred \u2014 the inputs are declared only so gh's always-serialized null coerces; honoring non-null values needs classic/v2 project association modeling for issue creation that is out of scope here",
-        "status_kind": "deferred"
+        "status": "fixed \u2014 a supplied `projectIds` adds the new issue to each named ProjectV2 board (resolved via `LookupProjectByNodeID`, an unknown id erroring like GitHub); `issueTemplate` is a client hint with no server-side state and is accepted for coercion; regression covers a non-null `projectIds`",
+        "status_kind": "fixed"
       },
       {
         "category": "ACT",
@@ -4117,8 +4117,8 @@
         "id": "STORE-071",
         "location": "store_orgs.go, store.go",
         "severity": "B",
-        "status": "deferred \u2014 routing every core-entity id through the durable counter touches every create and reload path across five entity types and warrants its own change; recorded so it is not lost",
-        "status_kind": "deferred"
+        "status": "fixed \u2014 every core-entity global id is reserved through `reserveGlobalID`, the same durable `AllocateCounterValue` path run/log ids use (the in-memory NextX supplies the minimum and seeds from existing data; per-repo issue Number is untouched); regression asserts ids stay durable and non-colliding across a reload",
+        "status_kind": "fixed"
       },
       {
         "category": "STORE",
@@ -4126,8 +4126,8 @@
         "id": "STORE-072",
         "location": "store_login_sessions.go",
         "severity": "m",
-        "status": "deferred \u2014 folding both writes under `st.mu` is a contained follow-up; recorded here",
-        "status_kind": "deferred"
+        "status": "fixed \u2014 the durable write and the in-memory map update are one critical section under `st.mu`; a `-race` regression writes the same session id concurrently",
+        "status_kind": "fixed"
       },
       {
         "category": "STORE",
@@ -4135,8 +4135,8 @@
         "id": "STORE-073",
         "location": "store.go, store_login_sessions.go",
         "severity": "m",
-        "status": "deferred \u2014 extend the reap predicate (or delete-on-user-removal) in a follow-up; recorded here",
-        "status_kind": "deferred"
+        "status": "fixed \u2014 a deleted user's login sessions are dropped from memory and the durable bucket together; regression asserts none survive the deletion",
+        "status_kind": "fixed"
       },
       {
         "category": "CORE",
@@ -6299,9 +6299,9 @@
         },
         "AUTH": {
           "status": {
-            "fixed": 113,
-            "open": 2,
-            "partial": 3
+            "fixed": 115,
+            "open": 1,
+            "partial": 2
           },
           "total": 118
         },
@@ -6323,8 +6323,7 @@
         },
         "GQL": {
           "status": {
-            "deferred": 1,
-            "fixed": 46,
+            "fixed": 47,
             "open": 11,
             "partial": 3
           },
@@ -6340,15 +6339,14 @@
         },
         "REST": {
           "status": {
-            "fixed": 117,
-            "partial": 4
+            "fixed": 118,
+            "partial": 3
           },
           "total": 121
         },
         "STORE": {
           "status": {
-            "deferred": 3,
-            "fixed": 32,
+            "fixed": 35,
             "open": 28,
             "partial": 10
           },
@@ -6377,10 +6375,10 @@
         "minor": 142
       },
       "status": {
-        "deferred": 5,
-        "fixed": 502,
-        "open": 124,
-        "partial": 42
+        "deferred": 1,
+        "fixed": 509,
+        "open": 123,
+        "partial": 40
       },
       "total": 673
     }
@@ -19733,7 +19731,7 @@
         "source": "runtime route table (programmatic registration)"
       },
       {
-        "line": 514,
+        "line": 518,
         "method": "DELETE",
         "path": "/api/v3/repos/{owner}/{repo}/releases/{release_id}",
         "source": "internal/server/gh_releases.go"
@@ -23729,7 +23727,7 @@
         "source": "internal/server/gh_repos_reads.go"
       },
       {
-        "line": 501,
+        "line": 505,
         "method": "GET",
         "path": "/api/v3/repos/{owner}/{repo}/releases",
         "source": "internal/server/gh_releases.go"
@@ -23741,7 +23739,7 @@
         "source": "runtime route table (programmatic registration)"
       },
       {
-        "line": 503,
+        "line": 507,
         "method": "GET",
         "path": "/api/v3/repos/{owner}/{repo}/releases/latest",
         "source": "internal/server/gh_releases.go"
@@ -23753,7 +23751,7 @@
         "source": "runtime route table (programmatic registration)"
       },
       {
-        "line": 510,
+        "line": 514,
         "method": "GET",
         "path": "/api/v3/repos/{owner}/{repo}/releases/{release_id}",
         "source": "internal/server/gh_releases.go"
@@ -25271,7 +25269,7 @@
         "source": "runtime route table (programmatic registration)"
       },
       {
-        "line": 512,
+        "line": 516,
         "method": "PATCH",
         "path": "/api/v3/repos/{owner}/{repo}/releases/{release_id}",
         "source": "internal/server/gh_releases.go"
@@ -26543,13 +26541,13 @@
         "source": "internal/server/gh_codespaces.go"
       },
       {
-        "line": 499,
+        "line": 503,
         "method": "POST",
         "path": "/api/v3/repos/{owner}/{repo}/releases",
         "source": "internal/server/gh_releases.go"
       },
       {
-        "line": 505,
+        "line": 509,
         "method": "POST",
         "path": "/api/v3/repos/{owner}/{repo}/releases/generate-notes",
         "source": "internal/server/gh_releases.go"

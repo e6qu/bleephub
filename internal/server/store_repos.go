@@ -128,9 +128,10 @@ func (st *Store) createRepoLocked(fullName, name, description string, private bo
 		visibility = "private"
 	}
 
+	repoID := st.reserveGlobalID("next_repo", &st.NextRepo)
 	repo := &Repo{
-		ID:                        st.NextRepo,
-		NodeID:                    fmt.Sprintf("R_kgDO%08d", st.NextRepo),
+		ID:                        repoID,
+		NodeID:                    fmt.Sprintf("R_kgDO%08d", repoID),
 		Name:                      name,
 		FullName:                  fullName,
 		Description:               description,
@@ -174,7 +175,6 @@ func (st *Store) createRepoLocked(fullName, name, description string, private bo
 	if err := batch.Commit(); err != nil {
 		panic(&persistenceFailure{op: "batch", bucket: "repos", key: strconv.Itoa(repo.ID), err: err})
 	}
-	st.NextRepo++
 	st.Repos[repo.ID] = repo
 	st.ReposByName[fullName] = repo
 	st.GitStorages[fullName] = stor
@@ -295,9 +295,10 @@ func (st *Store) ForkRepo(owner *User, sourceRepo *Repo, name string) *Repo {
 	}
 
 	now := st.currentTime()
+	repoID := st.reserveGlobalID("next_repo", &st.NextRepo)
 	repo := &Repo{
-		ID:                        st.NextRepo,
-		NodeID:                    fmt.Sprintf("R_kgDO%08d", st.NextRepo),
+		ID:                        repoID,
+		NodeID:                    fmt.Sprintf("R_kgDO%08d", repoID),
 		Name:                      name,
 		FullName:                  fullName,
 		Description:               source.Description,
@@ -348,7 +349,6 @@ func (st *Store) ForkRepo(owner *User, sourceRepo *Repo, name string) *Repo {
 		panic(&persistenceFailure{op: "batch", bucket: "repos", key: strconv.Itoa(repo.ID), err: err})
 	}
 
-	st.NextRepo++
 	st.Repos[repo.ID] = repo
 	st.ReposByName[fullName] = repo
 	st.GitStorages[fullName] = stor

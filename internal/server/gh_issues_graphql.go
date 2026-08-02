@@ -1052,11 +1052,11 @@ func (s *Server) addIssueFieldsToSchema(userType, repoType, mutationType, queryT
 			"assigneeIds":  &graphql.InputObjectFieldConfig{Type: graphql.NewList(graphql.NewNonNull(graphql.ID))},
 			"issueTypeId":  &graphql.InputObjectFieldConfig{Type: graphql.ID},
 			// gh's IssueCreate mutation always serializes projectIds (null
-			// unless --project) and issueTemplate when a template applies —
-			// the input must declare them or variable coercion rejects the
-			// whole mutation. Classic (v1) projects aren't modeled, and gh
-			// resolves --project against the repo's (empty) project lists
-			// before mutating, so non-null projectIds never arrive.
+			// unless --project) and issueTemplate when a template applies — the
+			// input must declare them or variable coercion rejects the whole
+			// mutation. projectIds, when supplied, add the issue to those
+			// ProjectV2 boards (see the resolver). issueTemplate is a client
+			// hint with no server-side state, accepted for coercion.
 			"projectIds":    &graphql.InputObjectFieldConfig{Type: graphql.NewList(graphql.NewNonNull(graphql.ID))},
 			"issueTemplate": &graphql.InputObjectFieldConfig{Type: graphql.String},
 		},
@@ -1128,6 +1128,23 @@ func (s *Server) addIssueFieldsToSchema(userType, repoType, mutationType, queryT
 					i.IssueTypeID = issueTypeID
 				})
 				issue = s.store.GetIssue(issue.ID)
+			}
+
+			// Honor projectIds: add the new issue to each named ProjectV2 board.
+			// gh sends null unless --project, but a supplied list must not be
+			// silently dropped.
+			if raw, ok := input["projectIds"].([]interface{}); ok {
+				for _, v := range raw {
+					nodeID, _ := v.(string)
+					if nodeID == "" {
+						continue
+					}
+					proj := s.store.ProjectsV2.LookupProjectByNodeID(nodeID)
+					if proj == nil {
+						return nil, fmt.Errorf("could not resolve to a ProjectV2 with the global id of '%s'", nodeID)
+					}
+					s.store.ProjectsV2.AddItem(proj.ID, "Issue", issue.ID, user.ID)
+				}
 			}
 
 			// Parity with the REST create path: deliver the issues/opened

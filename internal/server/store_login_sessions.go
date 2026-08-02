@@ -48,25 +48,31 @@ func (st *Store) PutLoginSession(id string, session *LoginSession) error {
 	if id == "" || session == nil {
 		return fmt.Errorf("login session id and value are required")
 	}
-	st.mu.RLock()
+	// Hold st.mu across both the durable Put and the in-memory map write so the
+	// two land as one critical section. Splitting them lets two concurrent
+	// writers for the same id interleave (A persists v1, B persists v2, B stores
+	// v2 in the map, A stores v1) and leave the durable row and the map
+	// disagreeing on which write won.
+	st.mu.Lock()
+	defer st.mu.Unlock()
 	persist := st.persist
-	st.mu.RUnlock()
 	if persist != nil {
 		if err := persist.Put(loginSessionsBucket, id, session); err != nil {
 			return fmt.Errorf("persist login session: %w", err)
 		}
 	}
-	st.mu.Lock()
 	copy := *session
 	st.LoginSessions[loginSessionMapKey(persist, id)] = &copy
-	st.mu.Unlock()
 	return nil
 }
 
 // ReapExpiredLoginSessions bounds both the in-memory session index and its
-// durable bucket. It is safe across replicas: every deletion is idempotent and
-// the persistence batch commits all selected rows together. The caller
-// supplies time so tests and scheduler execution remain deterministic.
+// durable bucket. It reaps two kinds of dead session: those past their expiry,
+// and those orphaned by user deletion — a deleted user is dropped from the
+// in-memory index on reload, but its durable rows otherwise linger until
+// natural expiry. It is safe across replicas: every deletion is idempotent and
+// the persistence batch commits all selected rows together. The caller supplies
+// time so tests and scheduler execution remain deterministic.
 func (st *Store) ReapExpiredLoginSessions(now time.Time) error {
 	now = now.UTC()
 	st.mu.Lock()
@@ -76,9 +82,26 @@ func (st *Store) ReapExpiredLoginSessions(now time.Time) error {
 	}
 	st.nextLoginSessionReap = now.Add(loginSessionReapPeriod)
 	persist := st.persist
+	// Snapshot the live user IDs under the same lock so orphaned sessions are
+	// reaped alongside expired ones. User IDs are monotonic and never reused, so
+	// a UserID absent from this snapshot belongs to a user that is gone for good;
+	// a concurrently created user can at worst make us retain its session one
+	// extra cycle, never drop a live one.
+	liveUsers := make(map[int]struct{}, len(st.Users))
+	for id := range st.Users {
+		liveUsers[id] = struct{}{}
+	}
 	st.mu.Unlock()
 
-	expired := make(map[string]struct{})
+	dead := func(session *LoginSession) bool {
+		if !session.ExpiresAt.After(now) {
+			return true
+		}
+		_, ok := liveUsers[session.UserID]
+		return !ok
+	}
+
+	reaped := make(map[string]struct{})
 	if persist != nil {
 		rows, err := persist.List(loginSessionsBucket)
 		if err != nil {
@@ -92,10 +115,10 @@ func (st *Store) ReapExpiredLoginSessions(now time.Time) error {
 				st.resetLoginSessionReap()
 				return fmt.Errorf("decode login session %s: %w", id, err)
 			}
-			if session.ExpiresAt.After(now) {
+			if !dead(&session) {
 				continue
 			}
-			expired[id] = struct{}{}
+			reaped[id] = struct{}{}
 			entries = append(entries, persistencePut{bucket: loginSessionsBucket, key: id})
 		}
 		if err := persist.DeleteBatch(entries...); err != nil {
@@ -106,7 +129,7 @@ func (st *Store) ReapExpiredLoginSessions(now time.Time) error {
 
 	st.mu.Lock()
 	for id, session := range st.LoginSessions {
-		if _, selected := expired[id]; selected || !session.ExpiresAt.After(now) {
+		if _, selected := reaped[id]; selected || dead(session) {
 			delete(st.LoginSessions, id)
 		}
 	}

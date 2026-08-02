@@ -148,9 +148,10 @@ func (st *Store) CreateOrg(creator *User, login, name, description string) *Org 
 	}
 
 	now := st.currentTime()
+	orgID := st.reserveGlobalID("next_org", &st.NextOrg)
 	org := &Org{
-		ID:          st.NextOrg,
-		NodeID:      fmt.Sprintf("O_kgDO%08d", st.NextOrg),
+		ID:          orgID,
+		NodeID:      fmt.Sprintf("O_kgDO%08d", orgID),
 		Login:       login,
 		Name:        name,
 		Description: description,
@@ -158,7 +159,6 @@ func (st *Store) CreateOrg(creator *User, login, name, description string) *Org 
 		CreatedAt:   now,
 		UpdatedAt:   now,
 	}
-	st.NextOrg++
 
 	st.Orgs[org.ID] = org
 	st.OrgsByLogin[login] = org
@@ -570,9 +570,10 @@ func (st *Store) CreateTeam(orgLogin, name string, opts TeamOptions) *Team {
 	}
 
 	now := st.currentTime()
+	teamID := st.reserveGlobalID("next_team", &st.NextTeam)
 	team := &Team{
-		ID:                  st.NextTeam,
-		NodeID:              fmt.Sprintf("T_kgDO%08d", st.NextTeam),
+		ID:                  teamID,
+		NodeID:              fmt.Sprintf("T_kgDO%08d", teamID),
 		OrgID:               org.ID,
 		Name:                name,
 		Slug:                slug,
@@ -588,7 +589,6 @@ func (st *Store) CreateTeam(orgLogin, name string, opts TeamOptions) *Team {
 		CreatedAt:           now,
 		UpdatedAt:           now,
 	}
-	st.NextTeam++
 
 	st.Teams[team.ID] = team
 	st.TeamsBySlug[key] = team

@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net"
 	"net/http"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -40,7 +41,17 @@ var apiRateResourceLimits = map[string]int{
 	"scim":                        15000,
 	"search":                      30,
 	"source_import":               100,
+	// auth is an internal, IP-scoped per-minute budget for the unauthenticated
+	// credential-verifying auth-flow endpoints (password and token sign-in). It
+	// throttles brute-force guessing without blocking a human's few attempts. It
+	// is not a GitHub-exposed resource and never appears in /rate_limit.
+	"auth": authFlowRateLimit,
 }
+
+// authFlowRateLimit bounds credential-verifying auth-flow attempts per client
+// IP per minute. Comfortably above any human's retry rate, far below an
+// automated guesser's.
+const authFlowRateLimit = 30
 
 // apiRateResponseResources is the exact object currently described by
 // GitHub's REST schema. code_scanning_upload has a distinct request-header
@@ -90,7 +101,7 @@ func apiRateResource(path string) string {
 
 func apiRateWindowDuration(resource string) time.Duration {
 	switch resource {
-	case "search", "code_search", "dependency_snapshots", "code_scanning_autofix":
+	case "search", "code_search", "dependency_snapshots", "code_scanning_autofix", "auth":
 		return time.Minute
 	default:
 		return time.Hour
@@ -182,6 +193,25 @@ func (s *Server) rateLimitSnapshot(r *http.Request, resource string, consume boo
 	}
 	s.rateLimitsMu.Unlock()
 	return snapshot
+}
+
+// rateLimitAuthFlow throttles the unauthenticated credential-verifying auth
+// endpoints (password and token sign-in) per client IP, so they cannot be
+// brute-forced. It deliberately does not gate the device/OAuth token-exchange
+// endpoints, which legitimately poll and carry their own interval/slow_down
+// handling. The refusal matches the primary-rate-limit shape used elsewhere: a
+// 403 with Retry-After.
+func (s *Server) rateLimitAuthFlow(next http.HandlerFunc) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		snapshot := s.rateLimitSnapshot(r, "auth", true)
+		if snapshot.Exceeded {
+			seconds := max(int(time.Until(time.Unix(snapshot.Reset, 0)).Seconds()), 1)
+			w.Header().Set("Retry-After", strconv.Itoa(seconds))
+			writeGHError(w, http.StatusForbidden, "Too many authentication attempts. Please wait and try again.")
+			return
+		}
+		next(w, r)
+	}
 }
 
 func rateSnapshotJSON(snapshot apiRateSnapshot) map[string]interface{} {
