@@ -463,7 +463,7 @@
         "id": "AUTH-027",
         "location": "identity.go:577, gh_middleware.go:249, rate_limits.go",
         "severity": "M",
-        "status": "fixed \u2014 REST and GraphQL requests consume credential/resource-scoped primary windows with live headers and the 60-request anonymous core budget, and the credential-verifying auth-flow endpoints (`/login`, `/auth/local`, `/auth/token`) now consume a per-IP per-minute `auth` budget, refusing over-budget attempts with GitHub's 403+`Retry-After` shape (device/OAuth token-exchange endpoints are excluded because they legitimately poll and carry their own slow_down). GitHub's separate secondary/abuse-detection limits are a distinct mechanism, out of scope for this finding. Regression: TestAuthFlowRateLimitBlocksBruteForcePerIP",
+        "status": "fixed \u2014 REST and GraphQL requests consume credential/resource-scoped primary windows with live headers and the 60-request anonymous core budget, and the credential-verifying auth-flow endpoints (`/login`, `/auth/local`, `/auth/token`) now consume a per-IP per-minute `auth` budget, refusing over-budget attempts with GitHub's 403+`Retry-After` shape (device/OAuth token-exchange endpoints are excluded because they legitimately poll and carry their own slow_down). Production auth arrives through the reverse proxy, which tags `X-Forwarded-For`, so callers are limited by their real client IP; a direct loopback peer carrying no forwarded client (local binary/dev/e2e) is exempt. GitHub's separate secondary/abuse-detection limits are a distinct mechanism, out of scope for this finding. Regression: TestAuthFlowRateLimitBlocksBruteForcePerIP",
         "status_kind": "fixed"
       },
       {

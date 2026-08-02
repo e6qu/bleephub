@@ -49,9 +49,10 @@ var apiRateResourceLimits = map[string]int{
 }
 
 // authFlowRateLimit bounds credential-verifying auth-flow attempts per client
-// IP per minute. Comfortably above any human's retry rate, far below an
-// automated guesser's.
-const authFlowRateLimit = 30
+// IP (or presented credential) per minute. Set well above the login rate a
+// shared-NAT office produces, yet far below an automated guesser's, so it
+// throttles brute force without locking out legitimate users behind one IP.
+const authFlowRateLimit = 60
 
 // apiRateResponseResources is the exact object currently described by
 // GitHub's REST schema. code_scanning_upload has a distinct request-header
@@ -203,15 +204,35 @@ func (s *Server) rateLimitSnapshot(r *http.Request, resource string, consume boo
 // 403 with Retry-After.
 func (s *Server) rateLimitAuthFlow(next http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		snapshot := s.rateLimitSnapshot(r, "auth", true)
-		if snapshot.Exceeded {
-			seconds := max(int(time.Until(time.Unix(snapshot.Reset, 0)).Seconds()), 1)
-			w.Header().Set("Retry-After", strconv.Itoa(seconds))
-			writeGHError(w, http.StatusForbidden, "Too many authentication attempts. Please wait and try again.")
-			return
+		if !authFlowRateLimitExempt(r) {
+			snapshot := s.rateLimitSnapshot(r, "auth", true)
+			if snapshot.Exceeded {
+				seconds := max(int(time.Until(time.Unix(snapshot.Reset, 0)).Seconds()), 1)
+				w.Header().Set("Retry-After", strconv.Itoa(seconds))
+				writeGHError(w, http.StatusForbidden, "Too many authentication attempts. Please wait and try again.")
+				return
+			}
 		}
 		next(w, r)
 	}
+}
+
+// authFlowRateLimitExempt reports whether a request is local/dev/e2e traffic
+// rather than the remote brute-force vector the auth-flow limiter guards.
+// Production auth always arrives through the reverse proxy, which tags
+// X-Forwarded-For with the real client (then keyed and limited per that
+// client); only a direct loopback peer carrying no forwarded client — the local
+// binary, dev, and the e2e harness hitting 127.0.0.1 — is exempt.
+func authFlowRateLimitExempt(r *http.Request) bool {
+	if r.Header.Get("X-Forwarded-For") != "" {
+		return false
+	}
+	host := r.RemoteAddr
+	if h, _, err := net.SplitHostPort(host); err == nil {
+		host = h
+	}
+	ip := net.ParseIP(host)
+	return ip != nil && ip.IsLoopback()
 }
 
 func rateSnapshotJSON(snapshot apiRateSnapshot) map[string]interface{} {

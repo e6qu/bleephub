@@ -41,6 +41,33 @@ func TestAuthFlowRateLimitBlocksBruteForcePerIP(t *testing.T) {
 	if rec := call("203.0.113.9:1"); rec.Code != http.StatusOK {
 		t.Fatalf("distinct IP got %d, want 200 (budget must be per-IP)", rec.Code)
 	}
+
+	// A direct loopback peer with no forwarded client (local binary / dev /
+	// e2e) is exempt: it never throttles however many attempts it makes.
+	for i := 0; i < authFlowRateLimit+5; i++ {
+		if rec := call("127.0.0.1:9999"); rec.Code != http.StatusOK {
+			t.Fatalf("loopback attempt %d got %d, want 200 (must be exempt)", i+1, rec.Code)
+		}
+	}
+
+	// But a loopback peer that carries a forwarded client — the reverse proxy
+	// in production — is limited, keyed by that forwarded client.
+	proxied := func() *httptest.ResponseRecorder {
+		req := httptest.NewRequest("POST", "/auth/local", nil)
+		req.RemoteAddr = "127.0.0.1:1" // the proxy
+		req.Header.Set("X-Forwarded-For", "198.51.100.7")
+		rec := httptest.NewRecorder()
+		handler(rec, req)
+		return rec
+	}
+	for i := 0; i < authFlowRateLimit; i++ {
+		if rec := proxied(); rec.Code != http.StatusOK {
+			t.Fatalf("proxied attempt %d got %d, want 200", i+1, rec.Code)
+		}
+	}
+	if rec := proxied(); rec.Code != http.StatusForbidden {
+		t.Fatalf("proxied over-budget got %d, want 403 (forwarded client must be limited)", rec.Code)
+	}
 }
 
 func TestPrimaryRateLimitsAreStatefulAndCredentialScoped(t *testing.T) {
