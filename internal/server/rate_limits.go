@@ -122,6 +122,20 @@ func apiRateIdentity(r *http.Request) string {
 	if parsed, _, err := net.SplitHostPort(host); err == nil {
 		host = parsed
 	}
+	// Behind the TLS-terminating reverse proxy every anonymous request
+	// carries the proxy's address as RemoteAddr, which would collapse all
+	// proxy-fronted anonymous callers into one shared budget. There is no
+	// configured trusted-proxy list, so honor the leftmost X-Forwarded-For
+	// entry only when the direct peer is loopback or private — i.e. the
+	// request can only have arrived through our own proxy, which sanitizes
+	// any client-supplied X-Forwarded-For before appending the real client.
+	// A public peer's header stays untrusted: it could mint fresh budgets at
+	// will.
+	if ip := net.ParseIP(host); ip != nil && (ip.IsLoopback() || ip.IsPrivate()) {
+		if forwarded := strings.TrimSpace(strings.Split(r.Header.Get("X-Forwarded-For"), ",")[0]); forwarded != "" {
+			host = forwarded
+		}
+	}
 	if host == "" {
 		host = "unknown"
 	}
