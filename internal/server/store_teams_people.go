@@ -103,16 +103,19 @@ func (st *Store) CreateOrgInvitation(org *Org, inviter *User, invitee *User, ema
 	}
 	st.OrgInvitations[inv.ID] = inv
 
+	// One transaction: the pending membership and its backing invitation commit
+	// together, so a crash cannot leave a pending membership with no invitation
+	// (or vice versa).
+	batch := newPersistBatch(st.persist)
 	if invitee != nil {
 		key := membershipKey(org.Login, invitee.ID)
 		m := &Membership{OrgID: org.ID, UserID: invitee.ID, Role: invitationMembershipRole(role), State: MembershipStatePending}
 		st.Memberships[key] = m
-		if st.persist != nil {
-			st.persist.MustPut("memberships", key, m)
-		}
+		batch.Put("memberships", key, m)
 	}
-	if st.persist != nil {
-		st.persist.MustPut("org_invitations", strconv.Itoa(inv.ID), inv)
+	batch.Put("org_invitations", strconv.Itoa(inv.ID), inv)
+	if err := batch.Commit(); err != nil {
+		panic(&persistenceFailure{op: "batch", bucket: "org_invitations", err: err})
 	}
 	return inv, ""
 }

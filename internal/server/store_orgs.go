@@ -173,9 +173,13 @@ func (st *Store) CreateOrg(creator *User, login, name, description string) *Org 
 	}
 	st.Memberships[key] = m
 
-	if st.persist != nil {
-		st.persist.MustPut("orgs", strconv.Itoa(org.ID), org)
-		st.persist.MustPut("memberships", key, m)
+	// One transaction: an org must never persist without its creator's admin
+	// membership, which would leave it with no administrator.
+	batch := newPersistBatch(st.persist)
+	batch.Put("orgs", strconv.Itoa(org.ID), org)
+	batch.Put("memberships", key, m)
+	if err := batch.Commit(); err != nil {
+		panic(&persistenceFailure{op: "batch", bucket: "orgs", err: err})
 	}
 
 	return org
@@ -479,13 +483,13 @@ func (st *Store) RemoveMembership(orgLogin string, userID int) bool {
 	if _, ok := st.Memberships[key]; !ok {
 		return false
 	}
+	// One transaction: the membership removal and every team it drops the user
+	// from commit together, so a crash cannot leave the user out of the org yet
+	// still listed on its teams.
+	batch := newPersistBatch(st.persist)
 	delete(st.Memberships, key)
-	if st.persist != nil {
-		st.persist.MustDelete("memberships", key)
-	}
+	batch.Delete("memberships", key)
 
-	// Also remove from all teams in this org; re-persist every team whose
-	// member list changed so the removal sticks across restarts.
 	org := st.OrgsByLogin[orgLogin]
 	if org != nil {
 		for _, t := range st.TeamsBySlug {
@@ -493,14 +497,15 @@ func (st *Store) RemoveMembership(orgLogin string, userID int) bool {
 				for i, mid := range t.MemberIDs {
 					if mid == userID {
 						t.MemberIDs = append(t.MemberIDs[:i], t.MemberIDs[i+1:]...)
-						if st.persist != nil {
-							st.persist.MustPut("teams", strconv.Itoa(t.ID), t)
-						}
+						batch.Put("teams", strconv.Itoa(t.ID), t)
 						break
 					}
 				}
 			}
 		}
+	}
+	if err := batch.Commit(); err != nil {
+		panic(&persistenceFailure{op: "batch", bucket: "memberships", err: err})
 	}
 
 	return true
