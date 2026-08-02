@@ -2078,7 +2078,7 @@ func (st *Store) loadFromPersistence() error {
 		{"misc", func(key string, raw []byte) error {
 			switch key {
 			case "oidc_claim_keys":
-				var keys []string
+				var keys map[string][]string
 				if err := loadJSON(raw, &keys); err != nil {
 					return err
 				}

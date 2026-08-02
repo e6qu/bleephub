@@ -79,6 +79,41 @@ func TestOIDCCustomSubPut_EmptyBodyOK(t *testing.T) {
 	}
 }
 
+// TestOIDCCustomSubIsScopedPerRepository pins AUTH-113: OIDC subject
+// customization is stored per repository, so one repo's admin cannot clobber or
+// read another repository's include_claim_keys.
+func TestOIDCCustomSubIsScopedPerRepository(t *testing.T) {
+	s := miscEndpointsTestServer(t)
+	ensureSeededRepo(s, "admin/repo-a")
+	ensureSeededRepo(s, "admin/repo-b")
+
+	if w := doMiscReq(s, "PUT", "/api/v3/repos/admin/repo-a/actions/oidc/customization/sub", `{"include_claim_keys":["repo","ref"]}`); w.Code != http.StatusCreated {
+		t.Fatalf("PUT repo-a = %d %s", w.Code, w.Body.String())
+	}
+	if w := doMiscReq(s, "PUT", "/api/v3/repos/admin/repo-b/actions/oidc/customization/sub", `{"include_claim_keys":["environment"]}`); w.Code != http.StatusCreated {
+		t.Fatalf("PUT repo-b = %d %s", w.Code, w.Body.String())
+	}
+
+	get := func(repo string) []interface{} {
+		w := doMiscReq(s, "GET", "/api/v3/repos/admin/"+repo+"/actions/oidc/customization/sub", "")
+		if w.Code != http.StatusOK {
+			t.Fatalf("GET %s = %d %s", repo, w.Code, w.Body.String())
+		}
+		var body map[string]interface{}
+		if err := json.Unmarshal(w.Body.Bytes(), &body); err != nil {
+			t.Fatal(err)
+		}
+		keys, _ := body["include_claim_keys"].([]interface{})
+		return keys
+	}
+	if a := get("repo-a"); len(a) != 2 {
+		t.Fatalf("repo-a keys = %v, want 2 (its own)", a)
+	}
+	if b := get("repo-b"); len(b) != 1 || b[0] != "environment" {
+		t.Fatalf("repo-b keys = %v, want [environment] — repo-a must not have clobbered it", b)
+	}
+}
+
 func TestPagesCreate_RejectsMalformedJSON(t *testing.T) {
 	s := miscEndpointsTestServer(t)
 	admin := s.store.UsersByLogin["admin"]

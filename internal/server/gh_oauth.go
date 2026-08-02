@@ -135,6 +135,13 @@ func (s *Server) handleLoginPost(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Rotate: revoke any session the browser already held before issuing a new
+	// one, so a fixation cookie planted before authentication cannot outlive it.
+	if cookie := s.sessionCookieFromRequest(r); cookie != nil {
+		if err := s.store.DeleteLoginSession(cookie.Value); err != nil {
+			s.logger.Error().Err(err).Msg("revoke prior session on login")
+		}
+	}
 	sessionID := uuid.New().String()
 	csrf := uuid.New().String()
 	sess := &LoginSession{

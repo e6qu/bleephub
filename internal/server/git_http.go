@@ -113,6 +113,15 @@ func (s *Server) resolveGitRepo(owner, repoName string) storer.Storer { //nolint
 // has already been written.
 func (s *Server) authorizeGitHTTP(w http.ResponseWriter, r *http.Request, owner, repoName string, wantWrite bool) (context.Context, *User, *Repo, storer.Storer, bool) {
 	ctx, user := s.authenticateGitRequest(r)
+	// git HTTP sits outside ghHeadersMiddleware, so an invalid or revoked
+	// credential would otherwise be silently downgraded to anonymous and, on a
+	// public repo, served 200. A presented-but-invalid credential earns a 401,
+	// matching GitHub, rather than being treated as if no credential was given.
+	if invalid, _ := ctx.Value(ctxInvalidCredential).(bool); invalid {
+		w.Header().Set("WWW-Authenticate", `Basic realm="GitHub"`)
+		http.Error(w, "401 Authorization Required", http.StatusUnauthorized)
+		return ctx, user, nil, nil, false
+	}
 	stor := s.resolveGitRepo(owner, repoName)
 	repo := s.store.GetRepo(owner, repoName)
 	if stor == nil || repo == nil || !s.viewerHasRepoPermission(ctx, repo, scopeContents, permRead) {

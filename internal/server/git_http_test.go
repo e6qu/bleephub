@@ -6,6 +6,28 @@ import (
 	"testing"
 )
 
+// TestGitHTTPInvalidCredentialIs401 pins AUTH-114: a presented-but-invalid
+// credential on the git-HTTP surface earns a 401, not a silent downgrade to an
+// anonymous 200 on a public repo.
+func TestGitHTTPInvalidCredentialIs401(t *testing.T) {
+	ghPost(t, "/api/v3/user/repos", defaultToken, map[string]interface{}{"name": "auth114-public", "private": false})
+
+	req, err := http.NewRequest("GET", testBaseURL+"/admin/auth114-public.git/info/refs?service=git-upload-pack", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	req.Header.Set("Authorization", "token ghp_revoked-not-a-real-token")
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	io.Copy(io.Discard, resp.Body)
+	resp.Body.Close()
+	if resp.StatusCode != http.StatusUnauthorized {
+		t.Fatalf("invalid-credential fetch = %d, want 401", resp.StatusCode)
+	}
+}
+
 // TestGitHTTPPrivateRepoExistenceOracle pins AUTH-023. The git HTTP protocol
 // requires a 401 challenge for anonymous requests so the client retries with
 // credentials — and the challenge is issued whether or not the repository

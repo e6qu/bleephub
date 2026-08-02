@@ -357,18 +357,22 @@ type MiscStore struct {
 	marketplaceDeliveries     map[string][]*WebhookDelivery
 	nextMarketplaceDeliveryID int
 	nextMarketplacePlanID     int
-	oidcClaimKeys             []string
-	nextKeyID                 int
-	nextGPGKeyID              int
-	nextPagesBuildID          int64
-	nextAuditID               int64
-	nextAdminAuditID          int64
-	oidcKey                   *rsa.PrivateKey
-	persist                   *Persistence
-	blockedUsers              map[int]map[int]bool // userID -> targetID -> blocked
-	socialAccounts            map[int][]map[string]interface{}
-	sshSigningKeys            map[int][]map[string]interface{}
-	nextSSHSigningKeyID       int
+	// oidcClaimKeys maps an OIDC-subject-customization scope ("repo:owner/name"
+	// or "org:login") to its include_claim_keys. A single shared slice let one
+	// repository's admin clobber every tenant's configuration and be read by an
+	// anonymous caller.
+	oidcClaimKeys       map[string][]string
+	nextKeyID           int
+	nextGPGKeyID        int
+	nextPagesBuildID    int64
+	nextAuditID         int64
+	nextAdminAuditID    int64
+	oidcKey             *rsa.PrivateKey
+	persist             *Persistence
+	blockedUsers        map[int]map[int]bool // userID -> targetID -> blocked
+	socialAccounts      map[int][]map[string]interface{}
+	sshSigningKeys      map[int][]map[string]interface{}
+	nextSSHSigningKeyID int
 }
 
 func newMiscStore() *MiscStore {
@@ -834,20 +838,44 @@ func (s *Server) handleJWKS(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+// oidcCustomSubScopeKey derives the tenant scope the OIDC subject-customization
+// request targets, from the org or owner/repo path values. An empty result
+// means the path named neither, which the callers reject.
+func oidcCustomSubScopeKey(r *http.Request) string {
+	if org := r.PathValue("org"); org != "" {
+		return "org:" + strings.ToLower(org)
+	}
+	owner, repo := r.PathValue("owner"), r.PathValue("repo")
+	if owner != "" && repo != "" {
+		return "repo:" + strings.ToLower(owner+"/"+repo)
+	}
+	return ""
+}
+
 func (s *Server) handleOIDCCustomSubGet(w http.ResponseWriter, r *http.Request) {
-	if !s.enforceRepoReadable(w, r) {
+	if org := r.PathValue("org"); org != "" {
+		// The org route carries no repo, so enforceRepoReadable would wave it
+		// through to anonymous callers. Require org membership instead.
+		if !s.viewerIsOrgMember(r.Context(), org) {
+			writeGHError(w, http.StatusNotFound, "Not Found")
+			return
+		}
+	} else if !s.enforceRepoReadable(w, r) {
 		return
 	}
+	scope := oidcCustomSubScopeKey(r)
 	s.store.Misc.mu.RLock()
-	keys := s.store.Misc.oidcClaimKeys
-	if keys == nil {
-		keys = []string{}
-	}
+	keys := append([]string(nil), s.store.Misc.oidcClaimKeys[scope]...)
 	s.store.Misc.mu.RUnlock()
 	writeJSON(w, http.StatusOK, map[string]interface{}{"include_claim_keys": keys})
 }
 
 func (s *Server) handleOIDCCustomSubPut(w http.ResponseWriter, r *http.Request) {
+	scope := oidcCustomSubScopeKey(r)
+	if scope == "" {
+		writeGHError(w, http.StatusNotFound, "Not Found")
+		return
+	}
 	var req struct {
 		IncludeClaimKeys []string `json:"include_claim_keys"`
 	}
@@ -856,9 +884,12 @@ func (s *Server) handleOIDCCustomSubPut(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 	s.store.Misc.mu.Lock()
-	s.store.Misc.oidcClaimKeys = req.IncludeClaimKeys
+	if s.store.Misc.oidcClaimKeys == nil {
+		s.store.Misc.oidcClaimKeys = map[string][]string{}
+	}
+	s.store.Misc.oidcClaimKeys[scope] = req.IncludeClaimKeys
 	if s.store.persist != nil {
-		s.store.persist.MustPut("misc", "oidc_claim_keys", req.IncludeClaimKeys)
+		s.store.persist.MustPut("misc", "oidc_claim_keys", s.store.Misc.oidcClaimKeys)
 	}
 	s.store.Misc.mu.Unlock()
 	writeJSON(w, http.StatusCreated, map[string]interface{}{})

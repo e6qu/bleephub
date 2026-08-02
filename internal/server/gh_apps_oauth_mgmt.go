@@ -147,6 +147,10 @@ func (s *Server) handleResetOAuthToken(w http.ResponseWriter, r *http.Request) {
 		writeGHError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
+	// Carry the source token's installation/permission/repository restrictions
+	// onto the replacement. Resetting a narrowed token must not silently widen
+	// it back to the installation's full authority.
+	s.store.ScopeUserToServerToken(fresh.Token, tok.InstallationIDs, tok.Permissions, tok.RepositoryIDs)
 	s.store.RevokeUserToServerToken(tok.Token)
 	resp := oauthTokenInspectionJSON(s.store, fresh, s.userByID(fresh.UserID))
 	resp["token"] = fresh.Token
@@ -263,13 +267,20 @@ func (s *Server) handleScopeOAuthToken(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if !s.store.ScopeUserToServerToken(scoped.Token, []int{inst.ID}, body.Permissions, repositoryIDs) {
+	// When the request omits permissions, inherit the source token's own
+	// restriction rather than defaulting to the installation's full permission
+	// map — scoping must only ever narrow, never widen.
+	effectivePermissions := body.Permissions
+	if effectivePermissions == nil {
+		effectivePermissions = tok.Permissions
+	}
+	if !s.store.ScopeUserToServerToken(scoped.Token, []int{inst.ID}, effectivePermissions, repositoryIDs) {
 		s.store.RevokeUserToServerToken(scoped.Token)
 		writeGHError(w, http.StatusInternalServerError, "failed to persist scoped token")
 		return
 	}
 	scoped.InstallationIDs = []int{inst.ID}
-	scoped.Permissions = cloneStringMap(body.Permissions)
+	scoped.Permissions = cloneStringMap(effectivePermissions)
 	scoped.RepositoryIDs = appendOptionalInts(repositoryIDs)
 
 	writeJSON(w, http.StatusOK, oauthTokenInspectionJSON(s.store, scoped, s.userByID(scoped.UserID)))
