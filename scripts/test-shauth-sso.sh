@@ -177,10 +177,25 @@ for _ in $(seq 1 120); do
   sleep 1
 done
 
-(
-  cd "$root/web"
-  SHAUTH_VALIDATOR_USERNAME="$SHAUTH_VALIDATOR_USERNAME" \
-    SHAUTH_BOOTSTRAP_ADMIN_PASSWORD="$SHAUTH_BOOTSTRAP_ADMIN_PASSWORD" \
-    BLEEPHUB_NON_AUTHENTIC_CREDENTIAL_SENTINEL="$BLEEPHUB_NON_AUTHENTIC_CREDENTIAL_SENTINEL" \
-    bun e2e/shauth-sso.mjs
-)
+run_shauth_contract() {
+  (
+    cd "$root/web"
+    SHAUTH_VALIDATOR_USERNAME="$SHAUTH_VALIDATOR_USERNAME" \
+      SHAUTH_BOOTSTRAP_ADMIN_PASSWORD="$SHAUTH_BOOTSTRAP_ADMIN_PASSWORD" \
+      BLEEPHUB_NON_AUTHENTIC_CREDENTIAL_SENTINEL="$BLEEPHUB_NON_AUTHENTIC_CREDENTIAL_SENTINEL" \
+      bun e2e/shauth-sso.mjs
+  )
+}
+
+# Ory Hydra generates its OpenID/JWT signing keys lazily across the first full
+# authorization + consent + token exchange; under CI load that first pass can
+# race key creation and time the flow out at its first waitForURL. The warmup
+# probe above pre-generates the authorization-time key, but the consent/token
+# step can still race. Each run uses a fresh browser context (no carried-over
+# identity-provider session) against the same, now-warmed stack, so retry once:
+# a cold-start race clears on the second attempt, while a genuine contract
+# regression fails both.
+if ! run_shauth_contract; then
+  echo "Shauth SSO contract failed on the first attempt; retrying once against the warmed Hydra" >&2
+  run_shauth_contract
+fi
