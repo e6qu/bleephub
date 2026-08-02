@@ -672,8 +672,11 @@ func TestGitFetchNoAuthPrivateRepo(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer resp.Body.Close()
-	if resp.StatusCode != 404 {
-		t.Fatalf("expected 404 for unauthenticated fetch on private repo (no existence oracle), got %d", resp.StatusCode)
+	if resp.StatusCode != 401 {
+		t.Fatalf("expected 401 challenge for unauthenticated fetch on private repo, got %d", resp.StatusCode)
+	}
+	if resp.Header.Get("WWW-Authenticate") == "" {
+		t.Fatal("expected WWW-Authenticate challenge on anonymous private fetch")
 	}
 }
 

@@ -415,7 +415,7 @@
         "id": "AUTH-023",
         "location": "git_http.go:98-229",
         "severity": "M",
-        "status": "fixed \u2014 anonymous requests get a 401 challenge (required by the git HTTP protocol); authenticated-but-unauthorized requests get 404, indistinguishable from a nonexistent repo",
+        "status": "fixed \u2014 authentication now precedes repository resolution: anonymous requests get a 401 challenge (required by the git HTTP protocol) whether or not the repo exists; authenticated-but-unauthorized requests get 404, indistinguishable from a nonexistent repo",
         "status_kind": "fixed"
       },
       {
@@ -550,7 +550,7 @@
         "id": "AUTH-038",
         "location": "identity.go:759",
         "severity": "m",
-        "status": "fixed \u2014 CSP changed to `frame-ancestors 'self'`; session revocation requires POST",
+        "status": "fixed \u2014 CSP `frame-ancestors` limited to 'self' plus the configured Shauth issuer origin (the OP frames this endpoint during front-channel logout); session revocation requires POST",
         "status_kind": "fixed"
       },
       {

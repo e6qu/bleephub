@@ -91,23 +91,16 @@ func (s *Server) serveGitSSHConn(conn net.Conn, signer ssh.Signer) {
 		s.logger.Debug().Err(err).Msg("set SSH Git handshake deadline")
 		return
 	}
-	authAttempts := 0
 	config := &ssh.ServerConfig{
+		// MaxAuthTries makes the ssh library disconnect after too many
+		// attempts; the callback itself stays stateless so the granted
+		// permissions derive only from the key in the current invocation.
 		MaxAuthTries: maxGitSSHAuthTries,
 		PublicKeyCallback: func(metadata ssh.ConnMetadata, key ssh.PublicKey) (*ssh.Permissions, error) {
-			authAttempts++
-			if authAttempts > maxGitSSHAuthTries {
-				s.logger.Warn().
-					Str("remote_addr", metadata.RemoteAddr().String()).
-					Int("attempts", authAttempts).
-					Msg("SSH Git auth attempt limit exceeded")
-				return nil, errors.New("too many authentication attempts")
-			}
 			user := s.store.LookupUserBySSHKey(key)
 			if user == nil || user.Suspended {
 				s.logger.Warn().
 					Str("remote_addr", metadata.RemoteAddr().String()).
-					Int("attempt", authAttempts).
 					Msg("SSH Git auth failed")
 				return nil, errors.New("unknown SSH key")
 			}

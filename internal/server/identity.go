@@ -64,10 +64,6 @@ func sessionCookieFromRequest(r *http.Request) *http.Cookie {
 	return cookie
 }
 
-func isSessionCookieName(name string) bool {
-	return name == sessionCookieName || name == secureSessionCookieName
-}
-
 type oidcProviderMetadata struct {
 	EndSessionEndpoint string `json:"end_session_endpoint"`
 }
@@ -904,8 +900,8 @@ func (s *Server) createOIDCBrowserSession(w http.ResponseWriter, r *http.Request
 	if err := s.store.PutLoginSession(id, &session); err != nil {
 		return err
 	}
-	// #nosec G124 -- Secure is conditional only for explicitly enabled local HTTP.
 	secure := s.secureCookies(r)
+	// #nosec G124 -- Secure is conditional only for explicitly enabled local HTTP.
 	http.SetCookie(w, &http.Cookie{Name: sessionCookieNameFor(secure), Value: id, Path: "/", HttpOnly: true, Secure: secure, SameSite: http.SameSiteLaxMode, Expires: session.ExpiresAt})
 	return nil
 }
@@ -913,8 +909,20 @@ func (s *Server) createOIDCBrowserSession(w http.ResponseWriter, r *http.Request
 func (s *Server) externalAuthCallback(provider string) string {
 	return strings.TrimRight(s.externalURL, "/") + "/auth/" + provider + "/callback"
 }
+
+// requestOrigin reconstructs the origin a browser computes for this request,
+// so same-origin POSTs pass the logout Origin check even when
+// BLEEPHUB_EXTERNAL_URL is unset and URLs derive from the request Host.
+func requestOrigin(r *http.Request) string {
+	scheme := "http"
+	if isSecureRequest(r) {
+		scheme = "https"
+	}
+	return scheme + "://" + r.Host
+}
+
 func (s *Server) handleIdentityLogout(w http.ResponseWriter, r *http.Request) {
-	if origin := r.Header.Get("Origin"); origin != "" && origin != s.externalURL {
+	if origin := r.Header.Get("Origin"); origin != "" && origin != s.externalURL && origin != requestOrigin(r) {
 		writeGHError(w, http.StatusForbidden, "cross-origin logout denied")
 		return
 	}
@@ -926,8 +934,8 @@ func (s *Server) handleIdentityLogout(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
-	// #nosec G124 -- deletion mirrors the session's conditional local-HTTP policy.
 	secure := s.secureCookies(r)
+	// #nosec G124 -- deletion mirrors the session's conditional local-HTTP policy.
 	http.SetCookie(w, &http.Cookie{Name: sessionCookieNameFor(secure), Value: "", Path: "/", MaxAge: -1, HttpOnly: true, Secure: secure, SameSite: http.SameSiteLaxMode})
 	logoutTarget := ""
 	if s.identity.shauthConfigured() {
@@ -972,8 +980,8 @@ func (s *Server) handleIdentitySignedOut(w http.ResponseWriter, r *http.Request)
 				return
 			}
 		}
-		// #nosec G124 -- deletion mirrors the session's conditional local-HTTP policy.
 		secure := s.secureCookies(r)
+		// #nosec G124 -- deletion mirrors the session's conditional local-HTTP policy.
 		http.SetCookie(w, &http.Cookie{Name: sessionCookieNameFor(secure), Value: "", Path: "/", MaxAge: -1, HttpOnly: true, Secure: secure, SameSite: http.SameSiteLaxMode})
 	}
 	w.Header().Set("Cache-Control", "no-store")
@@ -1038,7 +1046,15 @@ main{width:min(31rem,100%);overflow:hidden;border:1px solid color-mix(in srgb,va
 
 func (s *Server) handleShauthFrontChannelLogout(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Cache-Control", "no-store")
-	w.Header().Set("Content-Security-Policy", "default-src 'none'; frame-ancestors 'self'")
+	// The OP renders this endpoint in an iframe during front-channel logout,
+	// so the issuer origin must be allowed to frame it alongside 'self'.
+	frameAncestors := "'self'"
+	if s.identity.shauthConfigured() {
+		if issuer, err := url.Parse(s.identity.shauthIssuer); err == nil && issuer.Scheme != "" && issuer.Host != "" {
+			frameAncestors += " " + issuer.Scheme + "://" + issuer.Host
+		}
+	}
+	w.Header().Set("Content-Security-Policy", "default-src 'none'; frame-ancestors "+frameAncestors)
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	if r.Method == http.MethodPost && s.identity.shauthConfigured() && r.URL.Query().Get("iss") == s.identity.shauthIssuer && r.URL.Query().Get("sid") != "" {
 		if err := s.store.DeleteLoginSessionsForOIDC("shauth", s.identity.shauthIssuer, r.URL.Query().Get("sid"), ""); err != nil {

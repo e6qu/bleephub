@@ -8,8 +8,10 @@ import (
 
 // TestGitHTTPPrivateRepoExistenceOracle pins AUTH-023. The git HTTP protocol
 // requires a 401 challenge for anonymous requests so the client retries with
-// credentials; once authenticated, a caller who still cannot read a private
-// repository gets 404 — indistinguishable from a nonexistent one.
+// credentials — and the challenge is issued whether or not the repository
+// exists, so an anonymous prober learns nothing from the status code. Once
+// authenticated, a caller who still cannot read a private repository gets
+// 404 — indistinguishable from a nonexistent one.
 func TestGitHTTPPrivateRepoExistenceOracle(t *testing.T) {
 	const owner = "admin"
 
@@ -30,14 +32,14 @@ func TestGitHTTPPrivateRepoExistenceOracle(t *testing.T) {
 		want int
 	}{
 		{
-			name: "nonexistent upload-pack",
+			name: "nonexistent anonymous upload-pack challenges",
 			url:  "/" + owner + "/auth023-missing.git/info/refs?service=git-upload-pack",
-			want: http.StatusNotFound,
+			want: http.StatusUnauthorized,
 		},
 		{
-			name: "nonexistent receive-pack",
+			name: "nonexistent anonymous receive-pack challenges",
 			url:  "/" + owner + "/auth023-missing.git/info/refs?service=git-receive-pack",
-			want: http.StatusNotFound,
+			want: http.StatusUnauthorized,
 		},
 		{
 			name: "private anonymous upload-pack challenges",
@@ -70,8 +72,16 @@ func TestGitHTTPPrivateRepoExistenceOracle(t *testing.T) {
 		})
 	}
 
+	// Once authenticated, a nonexistent repository is a plain 404.
+	resp := ghGet(t, "/"+owner+"/auth023-missing.git/info/refs?service=git-upload-pack", defaultToken)
+	io.Copy(io.Discard, resp.Body)
+	resp.Body.Close()
+	if resp.StatusCode != http.StatusNotFound {
+		t.Errorf("authenticated fetch of nonexistent repo = %d, want 404", resp.StatusCode)
+	}
+
 	// Control: the repo's owner, authenticated, still reads the private repo.
-	resp := ghGet(t, "/"+owner+"/auth023-private.git/info/refs?service=git-upload-pack", defaultToken)
+	resp = ghGet(t, "/"+owner+"/auth023-private.git/info/refs?service=git-upload-pack", defaultToken)
 	io.Copy(io.Discard, resp.Body)
 	resp.Body.Close()
 	if resp.StatusCode != http.StatusOK {

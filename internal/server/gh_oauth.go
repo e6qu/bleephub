@@ -144,9 +144,9 @@ func (s *Server) handleLoginPost(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	secure := s.secureCookies(r)
 	// #nosec G124 -- Secure is required in production and conditional only for
 	// the explicitly supported local HTTP development mode.
-	secure := s.secureCookies(r)
 	http.SetCookie(w, &http.Cookie{
 		Name:     sessionCookieNameFor(secure),
 		Value:    sessionID,

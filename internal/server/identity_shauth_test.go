@@ -17,6 +17,10 @@ import (
 	"github.com/rs/zerolog"
 )
 
+func isSessionCookieName(name string) bool {
+	return name == sessionCookieName || name == secureSessionCookieName
+}
+
 type shaAuthTestProvider struct {
 	server      *httptest.Server
 	signer      jose.Signer
@@ -688,6 +692,11 @@ func TestShauthFrontChannelLogoutRevokesOnlyTrustedSession(t *testing.T) {
 	if response.Code != http.StatusOK || response.Header().Get("Cache-Control") != "no-store" {
 		t.Fatalf("untrusted front-channel response = %d headers=%v", response.Code, response.Header())
 	}
+	// The OP loads this endpoint in an iframe during front-channel logout, so
+	// the CSP must allow the issuer origin to frame it — and nothing else.
+	if csp := response.Header().Get("Content-Security-Policy"); csp != "default-src 'none'; frame-ancestors 'self' https://auth.example.test" {
+		t.Fatalf("front-channel CSP = %q", csp)
+	}
 	if session, _ := s.store.GetLoginSession("revoked"); session == nil {
 		t.Fatal("untrusted front-channel request revoked a session")
 	}
@@ -726,6 +735,9 @@ func TestShauthFrontChannelLogoutDoesNothingWhenShauthIsDisabled(t *testing.T) {
 	s.handleShauthFrontChannelLogout(response, request)
 	if response.Code != http.StatusOK {
 		t.Fatalf("disabled front-channel response = %d", response.Code)
+	}
+	if csp := response.Header().Get("Content-Security-Policy"); csp != "default-src 'none'; frame-ancestors 'self'" {
+		t.Fatalf("disabled front-channel CSP = %q", csp)
 	}
 	if session, _ := s.store.GetLoginSession("kept"); session == nil {
 		t.Fatal("disabled Shauth configuration revoked a session")
@@ -872,6 +884,23 @@ func TestShauthLogoutRejectsCrossOriginPost(t *testing.T) {
 	s.handleIdentityLogout(response, request)
 	if response.Code != http.StatusForbidden {
 		t.Fatalf("cross-origin logout = %d, want 403", response.Code)
+	}
+}
+
+func TestLogoutAcceptsSameOriginPostWithoutExternalURL(t *testing.T) {
+	// The e2e harness runs without BLEEPHUB_EXTERNAL_URL, so the Origin check
+	// must accept the origin browsers derive from the request Host — every
+	// browser sends Origin on POST.
+	s := NewServer("127.0.0.1:0", zerolog.Nop())
+	request := httptest.NewRequest(http.MethodPost, "/auth/logout", nil)
+	request.Header.Set("Origin", "http://"+request.Host)
+	response := httptest.NewRecorder()
+	s.handleIdentityLogout(response, request)
+	if response.Code != http.StatusSeeOther {
+		t.Fatalf("same-origin logout = %d, want 303", response.Code)
+	}
+	if location := response.Header().Get("Location"); location != "/ui/login" {
+		t.Fatalf("same-origin logout redirected to %q, want /ui/login", location)
 	}
 }
 
