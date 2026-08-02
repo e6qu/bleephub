@@ -9,12 +9,12 @@ require (
 	github.com/canonical/go-dqlite/v3 v3.0.4
 	github.com/coreos/go-oidc/v3 v3.20.0
 	github.com/go-git/go-billy/v5 v5.9.1
-	github.com/go-git/go-git/v5 v5.19.1
+	github.com/go-git/go-git/v5 v5.19.2
 	github.com/go-jose/go-jose/v4 v4.1.4
 	github.com/graphql-go/graphql v0.8.1
 	github.com/rs/zerolog v1.35.1
 	github.com/stretchr/testify v1.11.1
-	github.com/yuin/goldmark v1.8.4
+	github.com/yuin/goldmark v1.8.5
 	go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp v0.69.0
 	go.opentelemetry.io/contrib/instrumentation/runtime v0.69.0
 	go.opentelemetry.io/otel v1.44.0
@@ -32,7 +32,7 @@ require (
 	golang.org/x/oauth2 v0.36.0
 	golang.org/x/text v0.40.0
 	gopkg.in/yaml.v3 v3.0.1
-	modernc.org/sqlite v1.54.0
+	modernc.org/sqlite v1.55.0
 )
 
 require (
