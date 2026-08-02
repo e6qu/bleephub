@@ -168,11 +168,12 @@ func (s *Server) handleLoginPost(w http.ResponseWriter, r *http.Request) {
 		Expires:  sess.ExpiresAt,
 	})
 
-	// Only a same-origin, path-relative destination is honored; an absolute or
-	// protocol-relative return_to would land the just-authenticated victim on an
-	// attacker page (open redirect / phishing).
-	if safe := safeIdentityReturnTo(returnTo); safe != "" {
-		http.Redirect(w, r, safe, http.StatusFound)
+	// Redirect only when a return_to was supplied, and sanitize it: an absolute
+	// or protocol-relative destination is rewritten to the safe default rather
+	// than landing the just-authenticated victim on an attacker page (open
+	// redirect / phishing). With no return_to, render the success page as before.
+	if returnTo != "" {
+		http.Redirect(w, r, safeIdentityReturnTo(returnTo), http.StatusFound)
 		return
 	}
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")

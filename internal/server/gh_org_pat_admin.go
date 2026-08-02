@@ -102,10 +102,11 @@ func (s *Server) requireOrgPATApp(scope permScope, level permLevel, next http.Ha
 		if token := ghUserToServerTokenFromContext(r.Context()); token != nil && token.AppID > 0 && s.userAccessTokenCanAdminPATs(token, org.Login, scope, level) {
 			// A ghu_ token is the intersection of the app's grant AND the token
 			// owner's own standing. userAccessTokenCanAdminPATs proves only the
-			// app half; require the owner to actually be an org owner too, or any
-			// account that authorized a suitably-scoped app could approve or
-			// revoke the org's PAT grants without being a member.
-			if canAdminOrgAsUser(s.store, ghUserFromContext(r.Context()), org) {
+			// app half; require the owner to actually be an org owner too (via the
+			// credential-aware chokepoint), or any account that authorized a
+			// suitably-scoped app could approve or revoke the org's PAT grants
+			// without being a member.
+			if s.viewerCanAdminOrg(r.Context(), org.Login) {
 				next(w, r)
 				return
 			}
