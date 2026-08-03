@@ -279,18 +279,21 @@ func (st *Store) CancelOrgInvitation(orgLogin string, id int) bool {
 	if inv == nil || inv.OrgID != org.ID || inv.FailedAt != nil {
 		return false
 	}
+	// One transaction: cancelling the invitation and dropping the pending
+	// membership it created must not disagree across a crash, or a stale pending
+	// membership would outlive the invitation that justified it.
+	batch := newPersistBatch(st.persist)
 	if inv.UserID != 0 {
 		key := membershipKey(org.Login, inv.UserID)
 		if m := st.Memberships[key]; m != nil && m.State == MembershipStatePending {
 			delete(st.Memberships, key)
-			if st.persist != nil {
-				st.persist.MustDelete("memberships", key)
-			}
+			batch.Delete("memberships", key)
 		}
 	}
 	delete(st.OrgInvitations, id)
-	if st.persist != nil {
-		st.persist.MustDelete("org_invitations", strconv.Itoa(id))
+	batch.Delete("org_invitations", strconv.Itoa(id))
+	if err := batch.Commit(); err != nil {
+		panic(&persistenceFailure{op: "batch", bucket: "org_invitations", err: err})
 	}
 	return true
 }
@@ -689,6 +692,10 @@ func (st *Store) RemoveOutsideCollaborator(orgLogin, login string) {
 	st.mu.Lock()
 	defer st.mu.Unlock()
 
+	// One transaction: an outside collaborator is removed from every repo in the
+	// org (and their pending invitations withdrawn) as a single logical act, so a
+	// crash cannot leave them a collaborator on some repos but not others.
+	batch := newPersistBatch(st.persist)
 	prefix := orgLogin + "/"
 	for repoKey, collabs := range st.RepoCollaborators {
 		if !strings.HasPrefix(repoKey, prefix) {
@@ -698,9 +705,7 @@ func (st *Store) RemoveOutsideCollaborator(orgLogin, login string) {
 			continue
 		}
 		delete(collabs, login)
-		if st.persist != nil {
-			st.persist.MustPut("repo_collaborators", repoKey, collabs)
-		}
+		batch.Put("repo_collaborators", repoKey, collabs)
 	}
 	for repoKey, invs := range st.RepoInvitations {
 		if !strings.HasPrefix(repoKey, prefix) {
@@ -713,8 +718,11 @@ func (st *Store) RemoveOutsideCollaborator(orgLogin, login string) {
 				removed = true
 			}
 		}
-		if removed && st.persist != nil {
-			st.persist.MustPut("repo_invitations", repoKey, invs)
+		if removed {
+			batch.Put("repo_invitations", repoKey, invs)
 		}
+	}
+	if err := batch.Commit(); err != nil {
+		panic(&persistenceFailure{op: "batch", bucket: "repo_collaborators", err: err})
 	}
 }

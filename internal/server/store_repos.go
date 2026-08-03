@@ -1854,9 +1854,13 @@ func (st *Store) AddRepoCollaborator(owner, name, login, permission string) bool
 	}
 	st.RepoCollaborators[fullName][login] = perm
 	repo.UpdatedAt = st.currentTime()
-	if st.persist != nil {
-		st.persist.MustPut("repo_collaborators", fullName, st.RepoCollaborators[fullName])
-		st.persist.MustPut("repos", strconv.Itoa(repo.ID), repo)
+	// One transaction: the collaborator set and the repo's updated_at must not
+	// disagree across a crash mid-persist.
+	batch := newPersistBatch(st.persist)
+	batch.Put("repo_collaborators", fullName, st.RepoCollaborators[fullName])
+	batch.Put("repos", strconv.Itoa(repo.ID), repo)
+	if err := batch.Commit(); err != nil {
+		panic(&persistenceFailure{op: "batch", bucket: "repo_collaborators", err: err})
 	}
 	return true
 }
@@ -1880,9 +1884,13 @@ func (st *Store) RemoveRepoCollaborator(owner, name, login string) bool {
 	}
 	delete(st.RepoCollaborators[fullName], login)
 	repo.UpdatedAt = st.currentTime()
-	if st.persist != nil {
-		st.persist.MustPut("repo_collaborators", fullName, st.RepoCollaborators[fullName])
-		st.persist.MustPut("repos", strconv.Itoa(repo.ID), repo)
+	// One transaction: the collaborator set and the repo's updated_at must not
+	// disagree across a crash mid-persist.
+	batch := newPersistBatch(st.persist)
+	batch.Put("repo_collaborators", fullName, st.RepoCollaborators[fullName])
+	batch.Put("repos", strconv.Itoa(repo.ID), repo)
+	if err := batch.Commit(); err != nil {
+		panic(&persistenceFailure{op: "batch", bucket: "repo_collaborators", err: err})
 	}
 	return true
 }
@@ -2117,9 +2125,13 @@ func (st *Store) CreateRepoDeployKey(repoID int, title, key string, readOnly boo
 	st.RepoDeployKeys[repo.FullName][k.ID] = k
 	st.NextDeployKeyID++
 	repo.UpdatedAt = st.currentTime()
-	if st.persist != nil {
-		st.persist.MustPut("repo_deploy_keys", repo.FullName, st.RepoDeployKeys[repo.FullName])
-		st.persist.MustPut("repos", strconv.Itoa(repo.ID), repo)
+	// One transaction: the deploy-key set and the repo's updated_at must not
+	// disagree across a crash mid-persist.
+	batch := newPersistBatch(st.persist)
+	batch.Put("repo_deploy_keys", repo.FullName, st.RepoDeployKeys[repo.FullName])
+	batch.Put("repos", strconv.Itoa(repo.ID), repo)
+	if err := batch.Commit(); err != nil {
+		panic(&persistenceFailure{op: "batch", bucket: "repo_deploy_keys", err: err})
 	}
 	return k
 }
@@ -2132,15 +2144,16 @@ func (st *Store) DeleteRepoDeployKey(id int) bool {
 	for repoKey, keys := range st.RepoDeployKeys {
 		if k := keys[id]; k != nil {
 			delete(keys, id)
-			repo := st.Repos[k.RepoID]
-			if repo != nil {
+			// One transaction: the deploy-key set and the repo's updated_at must
+			// not disagree across a crash mid-persist.
+			batch := newPersistBatch(st.persist)
+			if repo := st.Repos[k.RepoID]; repo != nil {
 				repo.UpdatedAt = st.currentTime()
-				if st.persist != nil {
-					st.persist.MustPut("repos", strconv.Itoa(repo.ID), repo)
-				}
+				batch.Put("repos", strconv.Itoa(repo.ID), repo)
 			}
-			if st.persist != nil {
-				st.persist.MustPut("repo_deploy_keys", repoKey, st.RepoDeployKeys[repoKey])
+			batch.Put("repo_deploy_keys", repoKey, st.RepoDeployKeys[repoKey])
+			if err := batch.Commit(); err != nil {
+				panic(&persistenceFailure{op: "batch", bucket: "repo_deploy_keys", err: err})
 			}
 			return true
 		}

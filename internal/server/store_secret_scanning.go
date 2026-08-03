@@ -597,9 +597,14 @@ func (st *Store) CreateSecretScanningPushProtectionBypass(repoKey, placeholderID
 		CreatedAt:     now,
 	}
 	st.SecretScanningPushBypasses[repoKey] = append(st.SecretScanningPushBypasses[repoKey], bypass)
-	if st.persist != nil {
-		st.persist.MustPut("secret_scanning_push_placeholders", repoKey, st.SecretScanningPushPlaceholders[repoKey])
-		st.persist.MustPut("secret_scanning_push_bypasses", repoKey, st.SecretScanningPushBypasses[repoKey])
+	// One transaction: consuming the placeholder and recording the bypass it
+	// grants must not disagree across a crash, or a protected push could be
+	// bypassed with no record, or a placeholder consumed with no bypass.
+	batch := newPersistBatch(st.persist)
+	batch.Put("secret_scanning_push_placeholders", repoKey, st.SecretScanningPushPlaceholders[repoKey])
+	batch.Put("secret_scanning_push_bypasses", repoKey, st.SecretScanningPushBypasses[repoKey])
+	if err := batch.Commit(); err != nil {
+		panic(&persistenceFailure{op: "batch", bucket: "secret_scanning_push_bypasses", err: err})
 	}
 	return bypass
 }

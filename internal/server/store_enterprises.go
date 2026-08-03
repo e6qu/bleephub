@@ -609,17 +609,20 @@ func (st *Store) DeleteEnterpriseCodeSecurityConfig(id int) (deleted, conflict b
 	if c.DefaultForNewRepos != "none" {
 		return false, true
 	}
+	// One transaction: dropping the config and detaching every repo attached to
+	// it must not disagree across a crash, or a surviving attachment would point
+	// at a config that no longer exists.
+	batch := newPersistBatch(st.persist)
 	delete(st.EnterpriseCodeSecurityConfigs, id)
 	for repoID, cfgID := range st.EnterpriseCodeSecurityRepoConfigs {
 		if cfgID == id {
 			delete(st.EnterpriseCodeSecurityRepoConfigs, repoID)
-			if st.persist != nil {
-				st.persist.MustDelete("enterprise_code_security_attachments", strconv.Itoa(repoID))
-			}
+			batch.Delete("enterprise_code_security_attachments", strconv.Itoa(repoID))
 		}
 	}
-	if st.persist != nil {
-		st.persist.MustDelete("enterprise_code_security_configs", strconv.Itoa(id))
+	batch.Delete("enterprise_code_security_configs", strconv.Itoa(id))
+	if err := batch.Commit(); err != nil {
+		panic(&persistenceFailure{op: "batch", bucket: "enterprise_code_security_configs", err: err})
 	}
 	return true, false
 }

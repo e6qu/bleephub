@@ -1759,6 +1759,14 @@ func (st *Store) loadFromPersistence() error {
 			st.RepoInvitations[key] = invitations
 			return nil
 		}},
+		{"repo_collaborators", func(key string, raw []byte) error {
+			var collabs map[string]string
+			if err := loadJSON(raw, &collabs); err != nil {
+				return err
+			}
+			st.RepoCollaborators[key] = collabs
+			return nil
+		}},
 		{"repo_deploy_keys", func(key string, raw []byte) error {
 			var keys map[int]*RepoDeployKey
 			if err := loadJSON(raw, &keys); err != nil {

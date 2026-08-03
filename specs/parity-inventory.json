@@ -3505,7 +3505,7 @@
         "id": "STORE-001",
         "location": "persistence.go:71",
         "severity": "B",
-        "status": "partial \u2014 a batch executor commits a whole write set in one transaction. `DeleteRepo` stages its whole cascade in that transaction; the repository re-key on `RenameRepo`/`TransferRepo` now stages the repos row and every one of its ~40 subresource buckets (secrets, collaborators, teams, hooks, checks, workflows, commit statuses, notification read state, scanning alerts, packages, env secrets/variables, pages, \u2026) into one `persistBatch` via a batch-aware `moveRepoKeyLocked`, so a crash can no longer split a repository across its old and new names; and `StarRepo`/`UnstarRepo`, `CreateOrg`, `RemoveMembership`, `DeleteLabel`/`DeleteMilestone` and `CreateOrgInvitation` each commit their two-bucket mutation atomically. Other multi-entity mutations still need transaction-by-transaction conversion",
+        "status": "partial \u2014 a batch executor commits a whole write set in one transaction. `DeleteRepo` stages its whole cascade in that transaction; the repository re-key on `RenameRepo`/`TransferRepo` now stages the repos row and every one of its ~40 subresource buckets (secrets, collaborators, teams, hooks, checks, workflows, commit statuses, notification read state, scanning alerts, packages, env secrets/variables, pages, \u2026) into one `persistBatch` via a batch-aware `moveRepoKeyLocked`, so a crash can no longer split a repository across its old and new names; and `StarRepo`/`UnstarRepo`, `CreateOrg`, `RemoveMembership`, `DeleteLabel`/`DeleteMilestone`, `CreateOrgInvitation`, `AddRepoCollaborator`/`RemoveRepoCollaborator`, `CreateRepoDeployKey`/`DeleteRepoDeployKey`, `DeleteTeam` (with child re-parenting), `RemoveOutsideCollaborator`, `CancelOrgInvitation`, `DeleteEnterpriseCodeSecurityConfig` and `CreateSecretScanningPushProtectionBypass` each commit their whole multi-bucket mutation atomically. Other multi-entity mutations still need transaction-by-transaction conversion",
         "status_kind": "partial"
       },
       {
@@ -3514,7 +3514,7 @@
         "id": "STORE-002",
         "location": "persistence.go:400",
         "severity": "B",
-        "status": "partial \u2014 `MustPut`/`MustDelete` panic with a typed failure rather than exiting, and recovery now reloads a revision-stable durable snapshot so an uncommitted memory mutation cannot survive the 500. If rollback cannot reach persistence, the store is poisoned and every later request retries recovery or fails 503 rather than serving half-applied memory. Several such multi-step mutations are now single `persistBatch` commits (repo re-key on rename/transfer, star/unstar, org creation and member removal, label/milestone deletion, org invitation); the remaining independent-transaction handlers still need conversion, and the reload honestly reflects any already-committed rows",
+        "status": "partial \u2014 `MustPut`/`MustDelete` panic with a typed failure rather than exiting, and recovery now reloads a revision-stable durable snapshot so an uncommitted memory mutation cannot survive the 500. If rollback cannot reach persistence, the store is poisoned and every later request retries recovery or fails 503 rather than serving half-applied memory. Several such multi-step mutations are now single `persistBatch` commits (repo re-key on rename/transfer, star/unstar, org creation and member removal, label/milestone deletion, org invitation create/cancel, repo collaborator add/remove, deploy key create/delete, team deletion with child re-parenting, outside-collaborator removal, enterprise code-security config deletion, secret-scanning bypass creation); the remaining independent-transaction handlers still need conversion, and the reload honestly reflects any already-committed rows",
         "status_kind": "partial"
       },
       {
@@ -4037,6 +4037,15 @@
         "location": "store_copilot.go:226",
         "severity": "m",
         "status": "fixed \u2014 `GetCopilotCodingAgentPermissions` now takes the read lock and returns the default posture through a non-mutating read helper, so a pure read neither blocks writers nor writes a phantom entry; the set/add/remove write paths keep materializing on demand. Regression asserts no phantom entry is created",
+        "status_kind": "fixed"
+      },
+      {
+        "category": "STORE",
+        "finding": "The `repo_collaborators` bucket is written on every collaborator change but has no reload loader and is rebuilt from nothing, so every repository's collaborators are silently lost on restart",
+        "id": "STORE-074",
+        "location": "store.go reload path, store_repos.go",
+        "severity": "M",
+        "status": "fixed \u2014 added a `repo_collaborators` loader to the reload path (mirroring `repo_deploy_keys`) so collaborator permissions survive a restart; reload regressions cover both add and remove",
         "status_kind": "fixed"
       },
       {
@@ -6363,11 +6372,11 @@
         },
         "STORE": {
           "status": {
-            "fixed": 39,
+            "fixed": 40,
             "open": 24,
             "partial": 10
           },
-          "total": 73
+          "total": 74
         },
         "TEST": {
           "status": {
@@ -6388,16 +6397,16 @@
       },
       "severity": {
         "blocker": 162,
-        "major": 369,
+        "major": 370,
         "minor": 142
       },
       "status": {
         "deferred": 1,
-        "fixed": 541,
+        "fixed": 542,
         "open": 95,
         "partial": 36
       },
-      "total": 673
+      "total": 674
     }
   },
   "rest": {
