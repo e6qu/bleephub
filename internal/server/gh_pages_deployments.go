@@ -348,7 +348,12 @@ func (s *Server) readPagesDeploymentArtifact(ctx context.Context, repoFullName s
 	if err != nil {
 		return nil, fmt.Errorf("create Pages deployment artifact request: %w", err)
 	}
-	resp, err := http.DefaultClient.Do(req)
+	// Route the artifact fetch through the SSRF address gate rather than
+	// http.DefaultClient: the artifact URL is produced by the deployment run,
+	// but gating the actual dial keeps it from reaching an internal/metadata
+	// address. The request context already bounds the timeout.
+	pagesClient := &http.Client{Transport: newAddressCheckedHTTPTransport(s.allowPrivateOutboundTargets, false)}
+	resp, err := pagesClient.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("fetch Pages deployment artifact: %w", err)
 	}

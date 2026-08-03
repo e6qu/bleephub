@@ -55,11 +55,21 @@ type oidcClientProvidedKey struct{}
 // per request — otherwise an anonymous flood of /auth/* requests, each blocking
 // on an unbounded outbound fetch, is a fd/goroutine-exhaustion vector. A client
 // already provided on the context is preserved.
-func oidcClientContext(ctx context.Context) context.Context {
+func (s *Server) oidcClientContext(ctx context.Context) context.Context {
 	if ctx.Value(oidcClientProvidedKey{}) != nil {
 		return ctx
 	}
-	return oidc.ClientContext(ctx, &http.Client{Timeout: oidcHTTPTimeout})
+	// Route OIDC discovery / JWKS / token / end-session fetches through the same
+	// SSRF address gate as webhook delivery and source imports. The issuer is
+	// operator-configured, but a provider-controlled discovery document can point
+	// the JWKS or end_session_endpoint at an internal/metadata address, so gate
+	// the actual dial (Dialer.Control), not just the configured host. The timeout
+	// still bounds a hung IdP.
+	client := &http.Client{
+		Timeout:   oidcHTTPTimeout,
+		Transport: newAddressCheckedHTTPTransport(s.allowPrivateOutboundTargets, false),
+	}
+	return oidc.ClientContext(ctx, client)
 }
 
 const (
@@ -342,7 +352,7 @@ func (s *Server) handleShauthLogin(w http.ResponseWriter, r *http.Request) {
 		writeGHError(w, http.StatusServiceUnavailable, "Shauth sign-in is not configured")
 		return
 	}
-	provider, err := oidc.NewProvider(oidcClientContext(r.Context()), s.identity.shauthIssuer)
+	provider, err := oidc.NewProvider(s.oidcClientContext(r.Context()), s.identity.shauthIssuer)
 	if err != nil {
 		s.logger.Warn().Err(err).Msg("Shauth discovery failed")
 		writeGHError(w, http.StatusBadGateway, "Shauth discovery failed")
@@ -381,7 +391,7 @@ func (s *Server) handleShauthCallback(w http.ResponseWriter, r *http.Request) {
 		writeGHError(w, http.StatusBadRequest, "invalid or expired Shauth sign-in state")
 		return
 	}
-	provider, err := oidc.NewProvider(oidcClientContext(r.Context()), s.identity.shauthIssuer)
+	provider, err := oidc.NewProvider(s.oidcClientContext(r.Context()), s.identity.shauthIssuer)
 	if err != nil {
 		writeGHError(w, http.StatusBadGateway, "Shauth discovery failed")
 		return
@@ -402,7 +412,7 @@ func (s *Server) handleShauthCallback(w http.ResponseWriter, r *http.Request) {
 	idToken, err := provider.Verifier(&oidc.Config{
 		ClientID: s.identity.shauthClientID,
 		Now:      s.currentTime,
-	}).Verify(oidcClientContext(r.Context()), rawIDToken)
+	}).Verify(s.oidcClientContext(r.Context()), rawIDToken)
 	if err != nil {
 		writeGHError(w, http.StatusUnauthorized, "Shauth ID token verification failed")
 		return
@@ -1101,7 +1111,7 @@ func (s *Server) handleIdentityLogout(w http.ResponseWriter, r *http.Request) {
 	// must not have their shared Shauth SSO session — used by every other
 	// relying party — torn down by signing out of this app.
 	if s.identity.shauthConfigured() && session != nil && session.OIDCProvider == "shauth" && session.OIDCIDToken != "" {
-		provider, err := oidc.NewProvider(oidcClientContext(r.Context()), s.identity.shauthIssuer)
+		provider, err := oidc.NewProvider(s.oidcClientContext(r.Context()), s.identity.shauthIssuer)
 		if err != nil {
 			writeGHError(w, http.StatusBadGateway, "Shauth discovery failed")
 			return
@@ -1238,7 +1248,7 @@ func (s *Server) handleShauthBackChannelLogout(w http.ResponseWriter, r *http.Re
 		writeGHError(w, http.StatusBadRequest, "logout_token is required")
 		return
 	}
-	provider, err := oidc.NewProvider(oidcClientContext(r.Context()), s.identity.shauthIssuer)
+	provider, err := oidc.NewProvider(s.oidcClientContext(r.Context()), s.identity.shauthIssuer)
 	if err != nil {
 		writeGHError(w, http.StatusBadGateway, "Shauth discovery failed")
 		return
@@ -1246,7 +1256,7 @@ func (s *Server) handleShauthBackChannelLogout(w http.ResponseWriter, r *http.Re
 	logoutToken, err := provider.Verifier(&oidc.Config{
 		ClientID: s.identity.shauthClientID,
 		Now:      s.currentTime,
-	}).Verify(oidcClientContext(r.Context()), rawLogoutToken)
+	}).Verify(s.oidcClientContext(r.Context()), rawLogoutToken)
 	if err != nil {
 		writeGHError(w, http.StatusBadRequest, "logout token verification failed")
 		return
