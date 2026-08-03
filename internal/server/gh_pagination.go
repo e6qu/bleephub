@@ -204,7 +204,7 @@ func buildConnectionWindow(nodes []map[string]interface{}, startIdx, endIdx, tot
 	outNodes := make([]map[string]interface{}, 0, len(page))
 	edges := make([]map[string]interface{}, 0, len(page))
 	for i, n := range page {
-		cursor := encodeCursor(startIdx + i)
+		cursor := encodeConnectionCursor(startIdx+i, gqlNodeIdentity(n))
 		outNodes = append(outNodes, n)
 		edges = append(edges, map[string]interface{}{"node": n, "cursor": cursor})
 	}
