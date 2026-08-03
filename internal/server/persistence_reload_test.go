@@ -2283,3 +2283,58 @@ func TestPersistedRowKeyIsNotACredential(t *testing.T) {
 		t.Fatal("the persisted session row key authenticated as the session")
 	}
 }
+
+// The CommentsByParent index must stay consistent with the comment map across
+// create/delete and survive a reload — it backs O(1) comment lookup so
+// rendering a page of issues no longer scans every comment (GQL-027).
+func TestCommentIndexConsistencyAndReload(t *testing.T) {
+	// Cross-check the index against a full scan of st.Comments.
+	scanMatchesIndex := func(t *testing.T, st *Store, parentType string, parentID int) {
+		t.Helper()
+		st.mu.RLock()
+		defer st.mu.RUnlock()
+		want := map[int]bool{}
+		for _, c := range st.Comments {
+			if c.ParentType == parentType && c.IssueID == parentID {
+				want[c.ID] = true
+			}
+		}
+		got := map[int]bool{}
+		for _, c := range st.CommentsByParent[commentCountKey(parentType, parentID)] {
+			got[c.ID] = true
+		}
+		if len(got) != len(want) {
+			t.Fatalf("index has %d comments, scan has %d", len(got), len(want))
+		}
+		for id := range want {
+			if !got[id] {
+				t.Fatalf("comment %d in scan but missing from index", id)
+			}
+		}
+	}
+
+	var issueID int
+	st := reloadedStore(t, func(p *Persistence, st *Store) {
+		owner := addTestUser(p, st, "alice")
+		repo := st.CreateRepo(owner, "proj", "", false)
+		issue := st.CreateIssue(repo.ID, owner.ID, "t", "b", nil, nil, 0)
+		issueID = issue.ID
+		c1 := st.CreateComment(issue.ID, owner.ID, "one")
+		st.CreateComment(issue.ID, owner.ID, "two")
+		st.CreateComment(issue.ID, owner.ID, "three")
+		if n := len(st.ListComments(issue.ID)); n != 3 {
+			t.Fatalf("after 3 creates ListComments = %d, want 3", n)
+		}
+		st.DeleteComment(c1.ID)
+		if n := len(st.ListComments(issue.ID)); n != 2 {
+			t.Fatalf("after delete ListComments = %d, want 2", n)
+		}
+		scanMatchesIndex(t, st, "issue", issue.ID)
+	})
+
+	// After reload the index is rebuilt and still consistent.
+	if n := len(st.ListComments(issueID)); n != 2 {
+		t.Fatalf("after reload ListComments = %d, want 2", n)
+	}
+	scanMatchesIndex(t, st, "issue", issueID)
+}

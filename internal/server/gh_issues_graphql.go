@@ -1630,15 +1630,15 @@ func issueToGQL(issue *Issue, st *Store) map[string]interface{} {
 		}
 	}
 
-	// Comments
-	commentNodes := make([]map[string]interface{}, 0)
-	for _, c := range st.Comments {
-		if c.ParentType == "issue" && c.IssueID == issue.ID {
-			commentNodes = append(commentNodes, commentToGQLLocked(c, st))
-		}
+	// Comments — resolved through the by-parent index so rendering a page of
+	// issues no longer scans every comment in the store once per issue.
+	indexed := st.CommentsByParent[commentCountKey("issue", issue.ID)]
+	commentNodes := make([]map[string]interface{}, 0, len(indexed))
+	for _, c := range indexed {
+		commentNodes = append(commentNodes, commentToGQLLocked(c, st))
 	}
-	// st.Comments is a map, so iteration order is nondeterministic; sort for
-	// stable cursor pagination (oldest first, like GitHub's comments feed).
+	// The index order is nondeterministic across a reload; sort for stable
+	// cursor pagination (oldest first, like GitHub's comments feed).
 	sortGQLNodesByCreatedAt(commentNodes)
 
 	// Resolve repo for URL

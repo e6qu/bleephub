@@ -2641,8 +2641,8 @@
         "id": "GQL-027",
         "location": "gh_issues_graphql.go:1511",
         "severity": "M",
-        "status": "open",
-        "status_kind": "open"
+        "status": "fixed \u2014 comments are resolved through a maintained `CommentsByParent` index (mirroring `CommentCounts`), so `issueToGQL` and `ListComments` look up a parent's comments directly instead of scanning every comment in the store; rendering a page of N issues is no longer O(N\u00b7M). The index is maintained at create/delete/repo-cascade/reload and covered by a consistency+reload regression",
+        "status_kind": "fixed"
       },
       {
         "category": "GQL",
@@ -6341,8 +6341,8 @@
         },
         "GQL": {
           "status": {
-            "fixed": 49,
-            "open": 9,
+            "fixed": 50,
+            "open": 8,
             "partial": 3
           },
           "total": 61
@@ -6394,8 +6394,8 @@
       },
       "status": {
         "deferred": 1,
-        "fixed": 512,
-        "open": 120,
+        "fixed": 513,
+        "open": 119,
         "partial": 40
       },
       "total": 673

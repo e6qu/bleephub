@@ -393,6 +393,7 @@ type Store struct {
 	Milestones                   map[int]*Milestone                     // id → milestone
 	Comments                     map[int]*Comment                       // id → comment
 	CommentCounts                map[string]int                         // "parentType\x1fparentID" → comment count (index)
+	CommentsByParent             map[string][]*Comment                  // "parentType\x1fparentID" → comments (index, avoids scanning every comment per parent)
 	IssueEvents                  map[int]*IssueEvent                    // id → issue event
 	PullRequests                 map[int]*PullRequest                   // id → PR
 	PullsByRepo                  map[int]map[int]*PullRequest           // repoID → number → PR (secondary index)
@@ -845,6 +846,7 @@ func NewStore() *Store {
 		Milestones:                   make(map[int]*Milestone),
 		Comments:                     make(map[int]*Comment),
 		CommentCounts:                make(map[string]int),
+		CommentsByParent:             make(map[string][]*Comment),
 		IssueEvents:                  make(map[int]*IssueEvent),
 		PullRequests:                 make(map[int]*PullRequest),
 		PullsByRepo:                  make(map[int]map[int]*PullRequest),
@@ -1562,6 +1564,7 @@ func (st *Store) loadFromPersistence() error {
 		}
 		st.Comments[c.ID] = &c
 		st.CommentCounts[commentCountKey(c.ParentType, c.IssueID)]++
+		st.indexCommentLocked(&c)
 		if c.ID >= st.NextComment {
 			st.NextComment = c.ID + 1
 		}

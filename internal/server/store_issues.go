@@ -1049,6 +1049,7 @@ func (st *Store) CreateCommentFor(parentType string, parentID, authorID int, bod
 	st.NextComment++
 	st.Comments[c.ID] = c
 	st.CommentCounts[commentCountKey(parentType, parentID)]++
+	st.indexCommentLocked(c)
 	if st.persist != nil {
 		st.persist.MustPut("comments", strconv.Itoa(c.ID), c)
 	}
@@ -1104,6 +1105,7 @@ func (st *Store) DeleteComment(id int) bool {
 		return false
 	}
 	delete(st.Comments, id)
+	st.unindexCommentLocked(c)
 	st.Reactions.DeleteParent(c.ParentType+"_comment", id)
 	key := commentCountKey(c.ParentType, c.IssueID)
 	if st.CommentCounts[key] <= 1 {
@@ -1281,11 +1283,33 @@ func (st *Store) SetCommentMinimization(id, minimizerID int, reason string) *Com
 func (st *Store) ListCommentsFor(parentType string, parentID int) []*Comment {
 	st.mu.RLock()
 	defer st.mu.RUnlock()
-	var comments []*Comment
-	for _, c := range st.Comments {
-		if c.ParentType == parentType && c.IssueID == parentID {
-			comments = append(comments, cloneComment(c))
-		}
+	indexed := st.CommentsByParent[commentCountKey(parentType, parentID)]
+	comments := make([]*Comment, 0, len(indexed))
+	for _, c := range indexed {
+		comments = append(comments, cloneComment(c))
 	}
 	return comments
+}
+
+// indexCommentLocked / unindexCommentLocked maintain CommentsByParent alongside
+// Comments and CommentCounts, so a comment's parent can be resolved without
+// scanning every comment in the store. Comment parents are immutable, so no
+// re-indexing is needed on edit. Caller holds st.mu.
+func (st *Store) indexCommentLocked(c *Comment) {
+	key := commentCountKey(c.ParentType, c.IssueID)
+	st.CommentsByParent[key] = append(st.CommentsByParent[key], c)
+}
+
+func (st *Store) unindexCommentLocked(c *Comment) {
+	key := commentCountKey(c.ParentType, c.IssueID)
+	slice := st.CommentsByParent[key]
+	for i, existing := range slice {
+		if existing.ID == c.ID {
+			st.CommentsByParent[key] = append(slice[:i], slice[i+1:]...)
+			break
+		}
+	}
+	if len(st.CommentsByParent[key]) == 0 {
+		delete(st.CommentsByParent, key)
+	}
 }
