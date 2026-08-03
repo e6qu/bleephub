@@ -482,7 +482,14 @@ func (s *Server) addPullRequestFieldsToSchema(userType, issueType, milestoneType
 		Name:  "RequestedReviewer",
 		Types: []*graphql.Object{userType, botType, teamType},
 		ResolveType: func(p graphql.ResolveTypeParams) *graphql.Object {
-			return userType
+			switch requestedReviewerTypeName(p.Value) {
+			case "Bot":
+				return botType
+			case "Team":
+				return teamType
+			default:
+				return userType
+			}
 		},
 	})
 	reviewRequestType := graphql.NewObject(graphql.ObjectConfig{
@@ -2596,12 +2603,34 @@ func prReviewSourceLocked(r *PullRequestReview, st *Store) map[string]interface{
 	}
 }
 
+// requestedReviewerTypeName maps a requestedReviewer source map to its union
+// member name via the __typename discriminator the producers set. Defaults to
+// User (the only reviewer kind currently produced), so the RequestedReviewer
+// union resolves the right member instead of blindly reporting User for a Bot
+// or Team.
+func requestedReviewerTypeName(source interface{}) string {
+	src, ok := source.(map[string]interface{})
+	if !ok {
+		return "User"
+	}
+	switch src["__typename"] {
+	case "Bot":
+		return "Bot"
+	case "Team":
+		return "Team"
+	default:
+		return "User"
+	}
+}
+
 func pullRequestReviewRequestNodesLocked(pr *PullRequest, st *Store) []interface{} {
 	nodes := make([]interface{}, 0, len(pr.RequestedReviewerIDs))
 	for _, id := range pr.RequestedReviewerIDs {
 		if u := st.Users[id]; u != nil {
+			reviewer := userToGraphQL(u)
+			reviewer["__typename"] = "User"
 			nodes = append(nodes, map[string]interface{}{
-				"requestedReviewer": userToGraphQL(u),
+				"requestedReviewer": reviewer,
 			})
 		}
 	}

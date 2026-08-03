@@ -122,13 +122,17 @@ type IssueEvent struct {
 	RenameTo            string
 }
 
-// recordIssueEventLocked creates an IssueEvent while st.mu is already held.
-func (st *Store) recordIssueEventLocked(repoID, issueID, actorID int, event string) *IssueEvent {
+// buildIssueEventLocked creates and registers an IssueEvent in memory with the
+// given parent type, but does not persist it. Callers set any optional fields
+// and then call persistIssueEventLocked exactly once, so the durable row is
+// never first written under the wrong parent type and rewritten (a crash in
+// that window used to file a pull-request event against an unrelated issue).
+func (st *Store) buildIssueEventLocked(repoID, issueID, actorID int, event, parentType string) *IssueEvent {
 	e := &IssueEvent{
 		ID:         st.NextIssueEventID,
 		NodeID:     fmt.Sprintf("IE_kgDO%08d", st.NextIssueEventID),
 		RepoID:     repoID,
-		ParentType: "issue",
+		ParentType: parentType,
 		IssueID:    issueID,
 		ActorID:    actorID,
 		Event:      event,
@@ -136,9 +140,20 @@ func (st *Store) recordIssueEventLocked(repoID, issueID, actorID int, event stri
 	}
 	st.NextIssueEventID++
 	st.IssueEvents[e.ID] = e
+	return e
+}
+
+func (st *Store) persistIssueEventLocked(e *IssueEvent) {
 	if st.persist != nil {
 		st.persist.MustPut("issue_events", strconv.Itoa(e.ID), e)
 	}
+}
+
+// recordIssueEventLocked creates a plain issue-parented IssueEvent while st.mu
+// is already held.
+func (st *Store) recordIssueEventLocked(repoID, issueID, actorID int, event string) *IssueEvent {
+	e := st.buildIssueEventLocked(repoID, issueID, actorID, event, "issue")
+	st.persistIssueEventLocked(e)
 	return e
 }
 
@@ -146,13 +161,10 @@ func (st *Store) recordIssueEventLocked(repoID, issueID, actorID int, event stri
 // request while st.mu is already held. commitID and requestedReviewerID are
 // optional (zero-valued when the event type carries neither).
 func (st *Store) recordPullRequestEventLocked(repoID, prID, actorID int, event, commitID string, requestedReviewerID int) *IssueEvent {
-	e := st.recordIssueEventLocked(repoID, prID, actorID, event)
-	e.ParentType = "pull_request"
+	e := st.buildIssueEventLocked(repoID, prID, actorID, event, "pull_request")
 	e.CommitID = commitID
 	e.RequestedReviewerID = requestedReviewerID
-	if st.persist != nil {
-		st.persist.MustPut("issue_events", strconv.Itoa(e.ID), e)
-	}
+	st.persistIssueEventLocked(e)
 	return e
 }
 
@@ -167,15 +179,13 @@ func (st *Store) RecordPullRequestEvent(repoID, prID, actorID int, event, commit
 // recordIssueEventWithIDsLocked creates an IssueEvent with optional related IDs
 // while st.mu is already held.
 func (st *Store) recordIssueEventWithIDsLocked(repoID, issueID, actorID int, event string, labelID, assigneeID, assignerID, milestoneID, commentID int) *IssueEvent {
-	e := st.recordIssueEventLocked(repoID, issueID, actorID, event)
+	e := st.buildIssueEventLocked(repoID, issueID, actorID, event, "issue")
 	e.LabelID = labelID
 	e.AssigneeID = assigneeID
 	e.AssignerID = assignerID
 	e.MilestoneID = milestoneID
 	e.CommentID = commentID
-	if st.persist != nil {
-		st.persist.MustPut("issue_events", strconv.Itoa(e.ID), e)
-	}
+	st.persistIssueEventLocked(e)
 	return e
 }
 

@@ -2349,11 +2349,11 @@ func (s *Server) projectV2GraphQLTypes() *graphql.Object {
 		Type: graphql.NewNonNull(s.projectV2FieldConnectionType()),
 		Args: relayConnectionArgs(),
 		Resolve: func(p graphql.ResolveParams) (interface{}, error) {
-			st, projectID, err := projectV2SourceStoreAndID(p.Source)
+			projectID, err := projectV2SourceID(p.Source)
 			if err != nil {
 				return nil, err
 			}
-			fields := st.ProjectsV2.FieldsForProject(projectID)
+			fields := s.store.ProjectsV2.FieldsForProject(projectID)
 			nodes := make([]map[string]interface{}, 0, len(fields))
 			for _, f := range fields {
 				nodes = append(nodes, projectV2FieldToGQL(f))
@@ -2365,11 +2365,11 @@ func (s *Server) projectV2GraphQLTypes() *graphql.Object {
 		Type: graphql.NewNonNull(s.projectV2ViewConnectionType()),
 		Args: relayConnectionArgs(),
 		Resolve: func(p graphql.ResolveParams) (interface{}, error) {
-			st, projectID, err := projectV2SourceStoreAndID(p.Source)
+			projectID, err := projectV2SourceID(p.Source)
 			if err != nil {
 				return nil, err
 			}
-			views := st.ProjectsV2.ViewsForProject(projectID)
+			views := s.store.ProjectsV2.ViewsForProject(projectID)
 			nodes := make([]map[string]interface{}, 0, len(views))
 			for _, v := range views {
 				nodes = append(nodes, projectV2ViewToGQL(v))
@@ -2388,14 +2388,14 @@ func (s *Server) ensureProjectV2ItemsField() {
 		Type: graphql.NewNonNull(s.graphqlTypes.projectV2ItemConnectionTypeMemo),
 		Args: relayConnectionArgs(),
 		Resolve: func(p graphql.ResolveParams) (interface{}, error) {
-			st, projectID, err := projectV2SourceStoreAndID(p.Source)
+			projectID, err := projectV2SourceID(p.Source)
 			if err != nil {
 				return nil, err
 			}
-			items := st.ProjectsV2.ListItemsForProject(projectID)
+			items := s.store.ProjectsV2.ListItemsForProject(projectID)
 			nodes := make([]map[string]interface{}, 0, len(items))
 			for _, it := range items {
-				nodes = append(nodes, projectV2ItemToGQL(it, st))
+				nodes = append(nodes, projectV2ItemToGQL(it, s.store))
 			}
 			return paginateGQLMaps(nodes, p.Args), nil
 		},
@@ -2751,7 +2751,7 @@ func (s *Server) projectV2ItemConnectionType() *graphql.Object {
 func projectV2ItemToGQL(it *ProjectV2Item, st *Store) map[string]interface{} {
 	var projectMap map[string]interface{}
 	if p := st.ProjectsV2.GetProject(it.ProjectID); p != nil {
-		projectMap = projectV2ToGQL(p, st)
+		projectMap = projectV2ToGQL(p)
 	}
 	byName := map[string]interface{}{}
 	for fieldID, val := range it.FieldValues {
@@ -2798,11 +2798,12 @@ func projectV2FieldValueToGQL(v *ProjectV2ItemFieldValue, f *ProjectV2Field) map
 	return out
 }
 
-// projectV2ToGQL renders a project as a GraphQL source map.
-func projectV2ToGQL(p *ProjectV2, st *Store) map[string]interface{} {
+// projectV2ToGQL renders a project as a GraphQL source map. The store is not
+// embedded in the map: resolvers reach it through their *Server closure, so a
+// live *Store never flows through the resolver graph as an untyped entry.
+func projectV2ToGQL(p *ProjectV2) map[string]interface{} {
 	return map[string]interface{}{
 		"id":     p.ID,
-		"store":  st,
 		"nodeID": p.NodeID,
 		"number": p.Number,
 		"title":  p.Title,
@@ -2812,20 +2813,16 @@ func projectV2ToGQL(p *ProjectV2, st *Store) map[string]interface{} {
 	}
 }
 
-func projectV2SourceStoreAndID(source interface{}) (*Store, int, error) {
+func projectV2SourceID(source interface{}) (int, error) {
 	src, ok := source.(map[string]interface{})
 	if !ok {
-		return nil, 0, fmt.Errorf("resolve source: unexpected type %T", source)
-	}
-	st, ok := src["store"].(*Store)
-	if !ok || st == nil {
-		return nil, 0, fmt.Errorf("project source missing store")
+		return 0, fmt.Errorf("resolve source: unexpected type %T", source)
 	}
 	id, ok := src["id"].(int)
 	if !ok || id == 0 {
-		return nil, 0, fmt.Errorf("project source missing id")
+		return 0, fmt.Errorf("project source missing id")
 	}
-	return st, id, nil
+	return id, nil
 }
 
 func projectV2FieldToGQL(f *ProjectV2Field) map[string]interface{} {
