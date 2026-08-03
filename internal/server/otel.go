@@ -84,7 +84,15 @@ func InitObservability(serviceName string) (*Observability, error) {
 	)
 	otel.SetMeterProvider(mp)
 
-	_ = runtime.Start(runtime.WithMinimumReadMemStatsInterval(15 * time.Second))
+	// A runtime-metrics startup failure means the caller asked for OTEL
+	// (endpoint set) but the meter pipeline is broken; surface it and tear down
+	// like every other exporter failure above rather than booting half-wired.
+	if err := runtime.Start(runtime.WithMinimumReadMemStatsInterval(15 * time.Second)); err != nil {
+		_ = tp.Shutdown(context.Background())
+		_ = lp.Shutdown(context.Background())
+		_ = mp.Shutdown(context.Background())
+		return nil, err
+	}
 
 	return &Observability{
 		LogWriter: &OTelLogWriter{logger: lp.Logger(serviceName)},
@@ -106,6 +114,14 @@ func (w *OTelLogWriter) Write(p []byte) (int, error) {
 	}
 	var entry map[string]any
 	if err := json.Unmarshal(p, &entry); err != nil {
+		// A line that isn't the expected zerolog JSON must not silently vanish
+		// from the OTel pipeline: emit it verbatim (no structured attributes)
+		// so it stays observable.
+		var record otellog.Record
+		record.SetObservedTimestamp(time.Now())
+		record.SetBody(otellog.StringValue(strings.TrimRight(string(p), "\n")))
+		record.SetSeverity(otellog.SeverityInfo)
+		w.logger.Emit(context.Background(), record)
 		return len(p), nil
 	}
 	var record otellog.Record

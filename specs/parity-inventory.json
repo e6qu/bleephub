@@ -4234,8 +4234,8 @@
         "id": "CORE-008",
         "location": "otel.go:103,87",
         "severity": "M",
-        "status": "open",
-        "status_kind": "open"
+        "status": "fixed \u2014 the log bridge now emits an unparseable line verbatim (raw body, Info severity) instead of dropping it, so it stays observable; `runtime.Start`'s error is no longer discarded but tears down and returns like every sibling exporter failure in InitObservability. Regression asserts a malformed line still produces an OTel record",
+        "status_kind": "fixed"
       },
       {
         "category": "CORE",
@@ -6342,8 +6342,8 @@
         },
         "CORE": {
           "status": {
-            "fixed": 16,
-            "open": 13,
+            "fixed": 17,
+            "open": 12,
             "partial": 3
           },
           "total": 32
@@ -6402,8 +6402,8 @@
       },
       "status": {
         "deferred": 1,
-        "fixed": 545,
-        "open": 92,
+        "fixed": 546,
+        "open": 91,
         "partial": 36
       },
       "total": 674
