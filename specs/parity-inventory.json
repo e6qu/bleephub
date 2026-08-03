@@ -2668,8 +2668,8 @@
         "id": "GQL-030",
         "location": "gh_discussions_graphql.go:885",
         "severity": "M",
-        "status": "open",
-        "status_kind": "open"
+        "status": "fixed \u2014 `discussionToGQL` now returns nil for a nil discussion rather than dereferencing `d.RepoID`, so the several callers that pass a re-fetched `GetDiscussion` result (which is nil once the discussion is soft-deleted) can no longer panic; unit regression covers the nil input",
+        "status_kind": "fixed"
       },
       {
         "category": "GQL",
@@ -3766,8 +3766,8 @@
         "id": "STORE-030",
         "location": "store_workflow_files.go:180",
         "severity": "M",
-        "status": "open",
-        "status_kind": "open"
+        "status": "fixed \u2014 `DiscoverWorkflowFilesFromGit` now checks the error from `f.Contents()` and skips the file on failure instead of re-registering it with an empty body; a transient content read (e.g. a lazily-fetched S3-backed blob) no longer overwrites the good stored YAML. The next discovery re-reads it",
+        "status_kind": "fixed"
       },
       {
         "category": "STORE",
@@ -6350,8 +6350,8 @@
         },
         "GQL": {
           "status": {
-            "fixed": 51,
-            "open": 7,
+            "fixed": 52,
+            "open": 6,
             "partial": 3
           },
           "total": 61
@@ -6372,8 +6372,8 @@
         },
         "STORE": {
           "status": {
-            "fixed": 40,
-            "open": 24,
+            "fixed": 41,
+            "open": 23,
             "partial": 10
           },
           "total": 74
@@ -6402,8 +6402,8 @@
       },
       "status": {
         "deferred": 1,
-        "fixed": 542,
-        "open": 95,
+        "fixed": 544,
+        "open": 93,
         "partial": 36
       },
       "total": 674
