@@ -53,3 +53,24 @@ func TestGQLConnectionCursorFallbacks(t *testing.T) {
 		t.Fatalf("deleted-node cursor fallback = %v, want [b c]", got)
 	}
 }
+
+// The generic paginateGQL[T] path also resolves cursors by node identity, so a
+// front insert doesn't shift the next page (GQL-019 follow-up).
+func TestPaginateGQLCursorsStableAcrossInserts(t *testing.T) {
+	type item struct{ id string }
+	toGQL := func(i item) map[string]interface{} { return map[string]interface{}{"nodeID": i.id} }
+	identity := func(i item) string { return i.id }
+
+	items := []item{{"a"}, {"b"}, {"c"}, {"d"}}
+	page1 := paginateGQL(items, 2, "", toGQL, identity)
+	if got := gqlConnNodeIDs(page1); !reflect.DeepEqual(got, []string{"a", "b"}) {
+		t.Fatalf("page 1 = %v, want [a b]", got)
+	}
+	endCursor := page1["pageInfo"].(map[string]interface{})["endCursor"].(string)
+
+	shifted := []item{{"z"}, {"a"}, {"b"}, {"c"}, {"d"}}
+	page2 := paginateGQL(shifted, 2, endCursor, toGQL, identity)
+	if got := gqlConnNodeIDs(page2); !reflect.DeepEqual(got, []string{"c", "d"}) {
+		t.Fatalf("page 2 after insert = %v, want [c d]", got)
+	}
+}

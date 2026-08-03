@@ -86,7 +86,7 @@ func FuzzPaginateGQLCursors(f *testing.F) {
 	f.Add(50, "Y3Vyc29yOg==")    // cursor:
 
 	f.Fuzz(func(t *testing.T, first int, after string) {
-		res := paginateGQL(items, first, after, toGQL)
+		res := paginateGQL(items, first, after, toGQL, func(int) string { return "" })
 		nodes, _ := res["nodes"].([]map[string]interface{})
 		if len(nodes) > len(items) {
 			t.Fatalf("first=%d after=%q returned %d > %d nodes", first, after, len(nodes), len(items))

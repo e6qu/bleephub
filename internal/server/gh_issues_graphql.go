@@ -973,7 +973,7 @@ func (s *Server) addIssueFieldsToSchema(userType, repoType, mutationType, queryT
 				first = f
 			}
 			after, _ := p.Args["after"].(string)
-			return paginateGQL(milestones, first, after, milestoneToGQL), nil
+			return paginateGQL(milestones, first, after, milestoneToGQL, func(m *Milestone) string { return m.NodeID }), nil
 		},
 	})
 
@@ -1035,7 +1035,7 @@ func (s *Server) addIssueFieldsToSchema(userType, repoType, mutationType, queryT
 				first = f
 			}
 			after, _ := p.Args["after"].(string)
-			return paginateGQL(users, first, after, userToGraphQL), nil
+			return paginateGQL(users, first, after, userToGraphQL, func(u *User) string { return u.NodeID }), nil
 		},
 	})
 
@@ -1832,7 +1832,7 @@ func issueFieldValuesConnectionLocked(st *Store, issue *Issue) map[string]interf
 		}
 		nodes = append(nodes, issueFieldValueToGQLLocked(field, issue.ID, values[fieldID]))
 	}
-	return paginateGQL(nodes, len(nodes), "", func(n map[string]interface{}) map[string]interface{} { return n })
+	return paginateGQL(nodes, len(nodes), "", func(n map[string]interface{}) map[string]interface{} { return n }, func(n map[string]interface{}) string { return gqlNodeIdentity(n) })
 }
 
 func issueFieldsOrgLocked(st *Store, repo *Repo) string {
@@ -2287,7 +2287,7 @@ func findUserByNodeID(st *Store, nodeID string) *User {
 func paginateIssuesGQL(issues []*Issue, st *Store, first int, after string) map[string]interface{} {
 	return paginateGQL(issues, first, after, func(i *Issue) map[string]interface{} {
 		return issueToGQL(i, st)
-	})
+	}, func(i *Issue) string { return i.NodeID })
 }
 
 // Some GraphQL fields queried by gh CLI are not mutable through the REST

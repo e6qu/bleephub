@@ -1083,7 +1083,7 @@ func (s *Server) addPullRequestFieldsToSchema(userType, issueType, milestoneType
 					after, _ := p.Args["after"].(string)
 					return paginateGQL(issues, first, after, func(issue *Issue) map[string]interface{} {
 						return issueToGQL(issue, s.store)
-					}), nil
+					}, func(issue *Issue) string { return issue.NodeID }), nil
 				},
 			},
 			"mergeCommit": &graphql.Field{
