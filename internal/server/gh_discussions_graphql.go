@@ -930,7 +930,7 @@ func discussionToGQL(d *Discussion, st *Store) map[string]interface{} {
 	repo := st.Repos[d.RepoID]
 	url := ""
 	if repo != nil {
-		url = "/" + repo.FullName + "/discussions/" + strconv.Itoa(d.Number)
+		url = externalURL("/" + repo.FullName + "/discussions/" + strconv.Itoa(d.Number))
 	}
 
 	var author map[string]interface{}

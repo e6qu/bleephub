@@ -1645,7 +1645,7 @@ func issueToGQL(issue *Issue, st *Store) map[string]interface{} {
 	repo := st.Repos[issue.RepoID]
 	url := ""
 	if repo != nil {
-		url = "/" + repo.FullName + "/issues/" + strconv.Itoa(issue.Number)
+		url = externalURL("/" + repo.FullName + "/issues/" + strconv.Itoa(issue.Number))
 	}
 
 	var parent map[string]interface{}
@@ -1974,7 +1974,7 @@ func relatedIssueToGQLLocked(issue *Issue, st *Store) map[string]interface{} {
 	url := ""
 	if repo != nil {
 		nameWithOwner = repo.FullName
-		url = "/" + repo.FullName + "/issues/" + strconv.Itoa(issue.Number)
+		url = externalURL("/" + repo.FullName + "/issues/" + strconv.Itoa(issue.Number))
 	}
 	return map[string]interface{}{
 		"id":     issue.NodeID,
@@ -2071,9 +2071,9 @@ func commentURLLocked(comment *Comment, st *Store) string {
 		}
 	}
 	if repo := st.Repos[repoID]; repo != nil && number > 0 {
-		return fmt.Sprintf("/%s/%s/%d#issuecomment-%d", repo.FullName, lane, number, comment.ID)
+		return externalURL(fmt.Sprintf("/%s/%s/%d#issuecomment-%d", repo.FullName, lane, number, comment.ID))
 	}
-	return fmt.Sprintf("/comments/%d", comment.ID)
+	return externalURL(fmt.Sprintf("/comments/%d", comment.ID))
 }
 
 func authorAssociationForRepoLocked(st *Store, repoID, authorID int) string {

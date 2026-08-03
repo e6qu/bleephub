@@ -694,7 +694,7 @@ func userToGraphQL(u *User) map[string]interface{} {
 		"email":        u.Email,
 		"avatarUrl":    u.AvatarURL,
 		"bio":          u.Bio,
-		"url":          "/" + u.Login,
+		"url":          externalURL("/" + u.Login),
 		"resourcePath": "/" + u.Login,
 		"createdAt":    u.CreatedAt.Format(time.RFC3339),
 		"updatedAt":    u.UpdatedAt.Format(time.RFC3339),

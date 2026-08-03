@@ -2776,8 +2776,8 @@
         "id": "GQL-042",
         "location": "9 sites",
         "severity": "M",
-        "status": "open",
-        "status_kind": "open"
+        "status": "fixed \u2014 a shared externalURL(path) helper prefixes BLEEPHUB_EXTERNAL_URL onto every GraphQL `url` field (repository, user, org, release, issue, pull request, discussion, comment), matching what Repository.url already did; `resourcePath` fields stay relative. Unit regression covers the helper and the broad GraphQL suite passes unchanged",
+        "status_kind": "fixed"
       },
       {
         "category": "GQL",
@@ -3883,8 +3883,8 @@
         "id": "STORE-043",
         "location": "store_projects_v2.go:782",
         "severity": "M",
-        "status": "open",
-        "status_kind": "open"
+        "status": "fixed \u2014 UpdateField now preserves the ID of any single-select option kept by name (the mutation input carries only names), minting fresh IDs only for genuinely new options, so an item's stored OptionID no longer dangles after a field edit. Regression asserts a kept option's ID is stable",
+        "status_kind": "fixed"
       },
       {
         "category": "STORE",
@@ -6350,8 +6350,8 @@
         },
         "GQL": {
           "status": {
-            "fixed": 54,
-            "open": 4,
+            "fixed": 55,
+            "open": 3,
             "partial": 3
           },
           "total": 61
@@ -6372,8 +6372,8 @@
         },
         "STORE": {
           "status": {
-            "fixed": 43,
-            "open": 21,
+            "fixed": 44,
+            "open": 20,
             "partial": 10
           },
           "total": 74
@@ -6402,8 +6402,8 @@
       },
       "status": {
         "deferred": 1,
-        "fixed": 549,
-        "open": 88,
+        "fixed": 551,
+        "open": 86,
         "partial": 36
       },
       "total": 674
