@@ -20,8 +20,10 @@ ACCEPTED_FINDINGS: dict[tuple[str, str], str] = {
         "Webhook delivery targets an operator-configured URL by design; "
         "parseWebhookTargetURL refuses private addresses unless the instance opted in.",
     ("go/request-forgery", "internal/server/gh_pages_deployments.go"):
-        "Fetches the artifact URL the deployment run itself produced, not an "
-        "attacker-chosen destination.",
+        "Fetches the artifact URL the deployment run itself produced, and now routes "
+        "through the same dial-time SSRF address gate as webhook delivery "
+        "(newAddressCheckedHTTPTransport), so it cannot reach an internal or "
+        "cloud-metadata address regardless of the URL.",
     ("go/path-injection", "internal/server/git_storage.go"):
         "Path derives from a repo full name fully sanitised by repoGitDirPath "
         "(validateRepoStorageFullName + filepath.Abs/Join/Rel + IsLocal containment).",
@@ -29,11 +31,13 @@ ACCEPTED_FINDINGS: dict[tuple[str, str], str] = {
         "Same repoGitDirPath containment sanitiser as git_storage.go.",
     ("go/reflected-xss", "internal/server/gh_middleware.go"):
         "Generic ResponseWriter.Write wrapper; API responses are JSON with a "
-        "non-HTML Content-Type, not reflected HTML.",
+        "non-HTML Content-Type, and the global securityHeadersMiddleware sets "
+        "X-Content-Type-Options: nosniff so a response can never be sniffed as HTML.",
     ("go/reflected-xss", "internal/server/observe_middleware.go"):
-        "Observability ResponseWriter wrapper passing bytes through unchanged; JSON responses.",
+        "Observability ResponseWriter wrapper passing bytes through unchanged; JSON "
+        "responses served with the global nosniff header.",
     ("go/reflected-xss", "internal/server/gh_api_insights.go"):
-        "Status-recording ResponseWriter wrapper; JSON responses.",
+        "Status-recording ResponseWriter wrapper; JSON responses served with the global nosniff header.",
     ("go/unvalidated-url-redirection", "internal/server/gh_oauth.go"):
         "OAuth callback redirect target is the app's registered redirect_uri, enforced by "
         "requireRegisteredRedirectURI before the redirect.",

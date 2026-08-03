@@ -76,7 +76,14 @@ type authCode struct {
 // provider has been configured, so an interactive deployment never asks a
 // Shauth user for a Bleephub API credential.
 func (s *Server) handleLoginPage(w http.ResponseWriter, r *http.Request) {
+	// Sanitize return_to at the entry point (relative-path only) rather than
+	// relying solely on the consumer: the value is otherwise forwarded raw into
+	// the /auth/shauth redirect below, so a `//evil` or absolute value must be
+	// neutralized before it can propagate through the login flow.
 	returnTo := r.URL.Query().Get("return_to")
+	if returnTo != "" {
+		returnTo = safeIdentityReturnTo(returnTo)
+	}
 	if s.identity.shauthConfigured() {
 		query := url.Values{}
 		if returnTo != "" {

@@ -23,8 +23,8 @@ const ctxUser contextKey = "gh-user"
 const ctxApp contextKey = "gh-app"
 const ctxInstallation contextKey = "gh-installation"
 const ctxInstallationToken contextKey = "gh-installation-token"
-const ctxUserToServerToken contextKey = "gh-uts-token"
-const ctxPersonalAccessToken contextKey = "gh-personal-access-token"
+const ctxUserToServerToken contextKey = "gh-uts-token"               // #nosec G101 -- typed context key, not a credential.
+const ctxPersonalAccessToken contextKey = "gh-personal-access-token" // #nosec G101 -- typed context key, not a credential.
 const ctxSuspendedInstallation contextKey = "gh-suspended-installation"
 const ctxSuspendedUser contextKey = "gh-suspended-user"
 const ctxGitHubAPIVersion contextKey = "gh-api-version"
@@ -54,7 +54,7 @@ func githubAPIVersionFromContext(ctx context.Context) string {
 // ctxInvalidCredential marks a request that presented an Authorization header
 // which resolved to nothing. Absent credentials are anonymous; presented ones
 // that do not verify are rejected, never downgraded to anonymous.
-const ctxInvalidCredential contextKey = "gh-invalid-credential"
+const ctxInvalidCredential contextKey = "gh-invalid-credential" // #nosec G101 -- typed context key, not a credential.
 
 // GitHub token prefixes. Each prefix selects a different lookup table and
 // auth shape in authenticateRequest; using the named constants keeps the
