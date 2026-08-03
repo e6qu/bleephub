@@ -830,7 +830,12 @@ func (st *Store) CreateCodeScanningAutofix(a *CodeScanningAlert) (*CodeScanningA
 		return existing, false
 	}
 
-	inst := a.Instances[len(a.Instances)-1]
+	// An alert always carries at least one instance, but a malformed or
+	// partially-loaded one must not panic the store under the write lock.
+	var inst CodeScanningAlertInstance
+	if len(a.Instances) > 0 {
+		inst = a.Instances[len(a.Instances)-1]
+	}
 	fix := &CodeScanningAutofix{
 		RepoKey:     a.RepoKey,
 		AlertNumber: a.Number,

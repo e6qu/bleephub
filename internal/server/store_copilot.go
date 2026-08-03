@@ -247,9 +247,25 @@ func (st *Store) persistCopilotCodingAgentPermsLocked(p *CopilotCodingAgentPermi
 // GetCopilotCodingAgentPermissions returns the organization's Copilot
 // coding agent policy, materializing the default on first read.
 func (st *Store) GetCopilotCodingAgentPermissions(orgLogin string) *CopilotCodingAgentPermissions {
-	st.mu.Lock()
-	defer st.mu.Unlock()
-	return st.getCopilotCodingAgentPermsLocked(orgLogin)
+	st.mu.RLock()
+	defer st.mu.RUnlock()
+	return st.copilotCodingAgentPermsReadLocked(orgLogin)
+}
+
+// copilotCodingAgentPermsReadLocked returns the org's stored policy, or the
+// default posture computed on the fly. Unlike getCopilotCodingAgentPermsLocked
+// it never materializes the default into the map, so a pure read neither takes
+// the write lock nor writes a never-persisted phantom entry. Caller holds st.mu
+// (read or write).
+func (st *Store) copilotCodingAgentPermsReadLocked(orgLogin string) *CopilotCodingAgentPermissions {
+	if p, ok := st.CopilotCodingAgentPerms[orgLogin]; ok && p != nil {
+		return p
+	}
+	return &CopilotCodingAgentPermissions{
+		OrgLogin:              orgLogin,
+		EnabledRepositories:   "all",
+		SelectedRepositoryIDs: []int{},
+	}
 }
 
 // SetCopilotCodingAgentPolicy sets the enabled_repositories policy.

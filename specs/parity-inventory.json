@@ -4009,8 +4009,8 @@
         "id": "STORE-057",
         "location": "store_code_scanning.go:832",
         "severity": "m",
-        "status": "open",
-        "status_kind": "open"
+        "status": "fixed \u2014 `CreateCodeScanningAutofix` guards the empty-`Instances` case instead of indexing `len-1`, so a malformed or partially-loaded alert degrades the autofix description gracefully rather than panicking the store under the write lock; regression covers the no-instances alert",
+        "status_kind": "fixed"
       },
       {
         "category": "STORE",
@@ -4036,8 +4036,8 @@
         "id": "STORE-060",
         "location": "store_copilot.go:226",
         "severity": "m",
-        "status": "open",
-        "status_kind": "open"
+        "status": "fixed \u2014 `GetCopilotCodingAgentPermissions` now takes the read lock and returns the default posture through a non-mutating read helper, so a pure read neither blocks writers nor writes a phantom entry; the set/add/remove write paths keep materializing on demand. Regression asserts no phantom entry is created",
+        "status_kind": "fixed"
       },
       {
         "category": "STORE",
@@ -6364,8 +6364,8 @@
         },
         "STORE": {
           "status": {
-            "fixed": 36,
-            "open": 27,
+            "fixed": 38,
+            "open": 25,
             "partial": 10
           },
           "total": 73
@@ -6394,8 +6394,8 @@
       },
       "status": {
         "deferred": 1,
-        "fixed": 513,
-        "open": 119,
+        "fixed": 515,
+        "open": 117,
         "partial": 40
       },
       "total": 673
