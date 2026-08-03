@@ -824,6 +824,12 @@ func (s *Server) requestHandler() http.Handler {
 // covers the crypto bundle if it uses WebAssembly. Avatars/emoji may be remote
 // images, so img-src also permits https:. frame-ancestors 'none' + the DENY
 // header below block clickjacking of the authenticated UI.
+//
+// form-action is deliberately NOT restricted: the sign-out form POSTs to
+// /auth/logout and the server then redirects the browser cross-origin to the
+// OIDC provider's end_session endpoint. Chromium applies form-action to that
+// post-submission redirect chain, so 'self' would break federated (shauth)
+// logout. The SPA's own forms only ever target same-origin endpoints anyway.
 const uiContentSecurityPolicy = "default-src 'self'; " +
 	"script-src 'self' 'wasm-unsafe-eval'; " +
 	"style-src 'self' 'unsafe-inline'; " +
@@ -833,7 +839,6 @@ const uiContentSecurityPolicy = "default-src 'self'; " +
 	"frame-src 'self'; " +
 	"object-src 'none'; " +
 	"base-uri 'self'; " +
-	"form-action 'self'; " +
 	"frame-ancestors 'none'"
 
 // securityHeadersMiddleware sets baseline response security headers on every
