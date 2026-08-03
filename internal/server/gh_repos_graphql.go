@@ -635,7 +635,7 @@ func (s *Server) addRepoFieldsToSchema(
 
 			return paginateGQL(releases, first, after, func(rel *Release) map[string]interface{} {
 				return releaseToGQL(rel, latestID, repoFullName, immutable)
-			}), nil
+			}, func(rel *Release) string { return rel.NodeID }), nil
 		},
 	})
 

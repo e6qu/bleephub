@@ -2569,8 +2569,8 @@
         "id": "GQL-019",
         "location": "gh_repos_graphql.go:1170",
         "severity": "M",
-        "status": "partial \u2014 the shared connection window (`buildConnectionWindow`/`paginateGQLMaps`, ~18 connections) now emits cursors carrying the node's stable identity (`cursor:<idx>:<id>`) and resolves `after`/`before` by locating that identity in the current list, falling back to the recorded index only when the node is gone, so inserting an item before a page boundary no longer shifts the next page; legacy index cursors still decode. The generic `paginateGQL[T]` path (which converts lazily) still uses index cursors. Regression: TestGQLConnectionCursorsStableAcrossInserts",
-        "status_kind": "partial"
+        "status": "fixed \u2014 both GraphQL connection paginators now emit cursors carrying the node's stable identity (`cursor:<idx>:<id>`) and resolve `after`/`before` by locating that identity in the current list, falling back to the recorded index only when the node is gone, so inserting an item before a page boundary no longer shifts the next page: `buildConnectionWindow`/`paginateGQLMaps` (the ~18 map-node connections) and the generic `paginateGQL[T]` (issues, milestones, participants, releases) via a cheap per-item identity extractor. Legacy index cursors still decode; the REST/projects `encodeCursor` path is untouched. Regressions: TestGQLConnectionCursorsStableAcrossInserts, TestPaginateGQLCursorsStableAcrossInserts",
+        "status_kind": "fixed"
       },
       {
         "category": "GQL",
@@ -6341,9 +6341,9 @@
         },
         "GQL": {
           "status": {
-            "fixed": 48,
+            "fixed": 49,
             "open": 9,
-            "partial": 4
+            "partial": 3
           },
           "total": 61
         },
@@ -6394,9 +6394,9 @@
       },
       "status": {
         "deferred": 1,
-        "fixed": 511,
+        "fixed": 512,
         "open": 120,
-        "partial": 41
+        "partial": 40
       },
       "total": 673
     }

@@ -229,7 +229,31 @@ func buildConnectionWindow(nodes []map[string]interface{}, startIdx, endIdx, tot
 // paginateGQL implements Relay-style cursor pagination for GraphQL connections.
 // toGQL converts each item into a map[string]interface{} that becomes the
 // GraphQL node. Use a closure to thread extra state (e.g. *Store) into toGQL.
-func paginateGQL[T any](items []T, first int, after string, toGQL func(T) map[string]interface{}) map[string]interface{} {
+// resolveItemCursorIndex returns the current index of the item a connection
+// cursor identifies (by its stable identity), or the recorded fallback index
+// when the cursor is legacy/index-only or the item is gone. Keeps forward
+// pagination stable when items are inserted before the boundary (GQL-019).
+// identityOr returns the item's stable identity, or "" when no extractor is
+// supplied (the cursor then degrades to an index-only cursor).
+func identityOr[T any](identity func(T) string, item T) string {
+	if identity == nil {
+		return ""
+	}
+	return identity(item)
+}
+
+func resolveItemCursorIndex[T any](items []T, cursor string, identity func(T) string, fallbackIdx int) int {
+	if id := connectionCursorID(cursor); id != "" && identity != nil {
+		for i, item := range items {
+			if identity(item) == id {
+				return i
+			}
+		}
+	}
+	return fallbackIdx
+}
+
+func paginateGQL[T any](items []T, first int, after string, toGQL func(T) map[string]interface{}, identity func(T) string) map[string]interface{} {
 	total := len(items)
 
 	// Real GitHub caps connection page size at 100 and rejects non-positive
@@ -245,7 +269,7 @@ func paginateGQL[T any](items []T, first int, after string, toGQL func(T) map[st
 
 	startIdx := 0
 	if after != "" {
-		startIdx = decodeCursor(after) + 1
+		startIdx = resolveItemCursorIndex(items, after, identity, decodeCursor(after)) + 1
 	}
 	if startIdx < 0 {
 		startIdx = 0
@@ -263,7 +287,7 @@ func paginateGQL[T any](items []T, first int, after string, toGQL func(T) map[st
 	edges := make([]map[string]interface{}, 0, len(page))
 	for i, item := range page {
 		gql := toGQL(item)
-		cursor := encodeCursor(startIdx + i)
+		cursor := encodeConnectionCursor(startIdx+i, identityOr(identity, item))
 		nodes = append(nodes, gql)
 		edges = append(edges, map[string]interface{}{
 			"node":   gql,

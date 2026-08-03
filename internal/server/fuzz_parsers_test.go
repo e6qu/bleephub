@@ -46,7 +46,7 @@ func FuzzPaginateGQL(f *testing.F) {
 
 	f.Fuzz(func(t *testing.T, first int, after string) {
 		// Must not panic regardless of input.
-		res := paginateGQL(items, first, after, toGQL)
+		res := paginateGQL(items, first, after, toGQL, func(int) string { return "" })
 		if res == nil {
 			t.Fatal("nil result")
 		}
