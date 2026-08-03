@@ -208,7 +208,13 @@ func (st *Store) GetCopilotContentExclusion(orgLogin string) map[string][]interf
 func (st *Store) SetCopilotContentExclusion(orgLogin string, rules map[string][]interface{}) {
 	st.mu.Lock()
 	defer st.mu.Unlock()
-	ce := &CopilotContentExclusion{OrgLogin: orgLogin, Rules: rules}
+	// Clone rather than adopt the caller's map (and its slices) by reference:
+	// the request handler owns rules and may mutate it after this returns.
+	cloned := make(map[string][]interface{}, len(rules))
+	for k, v := range rules {
+		cloned[k] = slices.Clone(v)
+	}
+	ce := &CopilotContentExclusion{OrgLogin: orgLogin, Rules: cloned}
 	st.CopilotContentExclusions[orgLogin] = ce
 	if st.persist != nil {
 		st.persist.MustPut("copilot_content_exclusions", orgLogin, ce)
@@ -282,7 +288,8 @@ func (st *Store) SetCopilotCodingAgentSelectedRepos(orgLogin string, repoIDs []i
 	st.mu.Lock()
 	defer st.mu.Unlock()
 	p := st.getCopilotCodingAgentPermsLocked(orgLogin)
-	p.SelectedRepositoryIDs = repoIDs
+	// Clone rather than adopt the caller's slice by reference.
+	p.SelectedRepositoryIDs = append([]int(nil), repoIDs...)
 	st.persistCopilotCodingAgentPermsLocked(p)
 }
 

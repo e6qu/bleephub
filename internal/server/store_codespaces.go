@@ -570,6 +570,9 @@ func codespaceSecretScopeKey(scope, key string) string { return scope + "\x1f" +
 func (st *Store) CreateCodespaceSecret(scope, name, value, visibility string, selectedRepoIDs []int) *CodespaceSecret {
 	st.mu.Lock()
 	defer st.mu.Unlock()
+	// Clone rather than adopt the caller's slice by reference (both the create
+	// and update branches below store it on the secret).
+	selectedRepoIDs = append([]int(nil), selectedRepoIDs...)
 	m := st.CodespaceSecrets[scope]
 	if m == nil {
 		m = make(map[string]*CodespaceSecret)

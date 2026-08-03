@@ -729,7 +729,9 @@ func (st *Store) SetIssueLabels(repoID int, issueNumber int, labelIDs []int, act
 			st.recordIssueEventWithIDsLocked(repoID, issue.ID, actorID, "labeled", lid, 0, 0, 0, 0)
 		}
 	}
-	issue.LabelIDs = labelIDs
+	// Clone rather than adopt the caller's slice by reference: the request
+	// handler owns labelIDs and may reuse or mutate it after this returns.
+	issue.LabelIDs = append([]int(nil), labelIDs...)
 	issue.UpdatedAt = st.currentTime()
 	if st.persist != nil {
 		st.persist.MustPut("issues", strconv.Itoa(issue.ID), issue)

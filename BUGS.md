@@ -439,7 +439,7 @@ source or comments. The reasoning behind a fix belongs in its commit message.
 | STORE-041 | M | store_codespaces.go:175 | Container and workspace created before any durable record exists, with no startup reconciler | open |
 | STORE-042 | M | store_packages.go:275 | Missing the "persistence implies object store" guard its sibling has, so metadata replicates while bytes stay on one node | open |
 | STORE-043 | M | store_projects_v2.go:782 | Field update re-mints every option ID, dangling every item's stored value | open |
-| STORE-044 | M | store_issues.go:718 + 3 | Caller slices and maps adopted by reference across the store boundary | open |
+| STORE-044 | M | store_issues.go:718 + 3 | Caller slices and maps adopted by reference across the store boundary | fixed — the setters now clone rather than adopt caller-owned collections: `SetIssueLabels`/`SetPullRequestLabels` (LabelIDs), `UpsertDependabotOrgSecret`/`CreateCodespaceSecret` (SelectedRepoIDs, cloned once so both create and update branches are safe), `SetCopilotCodingAgentSelectedRepos` (SelectedRepositoryIDs) and `SetCopilotContentExclusion` (the rules map and its nested slices). Regressions mutate the caller's slice/map after the call and assert stored state is unaffected |
 | STORE-045 | M | store_repos.go:1029 + 2 | In-place `s[:0]` filtering rewrites the backing array readers already hold | partial — fixed in gh_actions_permissions.go |
 | STORE-046 | M | store_pulls.go:521 | Full scans where an index exists, giving path-dependent answers between sibling endpoints | open |
 | STORE-047 | m | persistence.go:416 | One process-wide mutex guards every operation and covers marshalling, unlike `PutBatch` | open |

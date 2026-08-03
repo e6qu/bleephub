@@ -3892,8 +3892,8 @@
         "id": "STORE-044",
         "location": "store_issues.go:718 + 3",
         "severity": "M",
-        "status": "open",
-        "status_kind": "open"
+        "status": "fixed \u2014 the setters now clone rather than adopt caller-owned collections: `SetIssueLabels`/`SetPullRequestLabels` (LabelIDs), `UpsertDependabotOrgSecret`/`CreateCodespaceSecret` (SelectedRepoIDs, cloned once so both create and update branches are safe), `SetCopilotCodingAgentSelectedRepos` (SelectedRepositoryIDs) and `SetCopilotContentExclusion` (the rules map and its nested slices). Regressions mutate the caller's slice/map after the call and assert stored state is unaffected",
+        "status_kind": "fixed"
       },
       {
         "category": "STORE",
@@ -6372,8 +6372,8 @@
         },
         "STORE": {
           "status": {
-            "fixed": 41,
-            "open": 23,
+            "fixed": 42,
+            "open": 22,
             "partial": 10
           },
           "total": 74
@@ -6402,8 +6402,8 @@
       },
       "status": {
         "deferred": 1,
-        "fixed": 544,
-        "open": 93,
+        "fixed": 545,
+        "open": 92,
         "partial": 36
       },
       "total": 674
