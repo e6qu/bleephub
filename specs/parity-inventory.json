@@ -6178,8 +6178,8 @@
         "id": "CI-053",
         "location": ".dockerignore",
         "severity": "m",
-        "status": "fixed \u2014 .dockerignore excludes the committed internal/server/dist build output the release image regenerates",
-        "status_kind": "fixed"
+        "status": "open \u2014 the naive fix (dockerignore internal/server/dist) is wrong: a single global .dockerignore also strips it from the shauth-sso-test build, whose `go:embed all:dist` compiles the committed copy directly (no ui-builder regen stage), breaking that image with \"pattern all:dist: no matching files found\". A correct fix needs per-Dockerfile scoping or making every embed build regenerate dist first",
+        "status_kind": "open"
       },
       {
         "category": "CI",
@@ -6325,8 +6325,8 @@
         },
         "CI": {
           "status": {
-            "fixed": 50,
-            "open": 13,
+            "fixed": 49,
+            "open": 14,
             "partial": 2
           },
           "total": 65
@@ -6393,8 +6393,8 @@
       },
       "status": {
         "deferred": 1,
-        "fixed": 542,
-        "open": 94,
+        "fixed": 541,
+        "open": 95,
         "partial": 36
       },
       "total": 673
