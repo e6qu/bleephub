@@ -202,7 +202,15 @@ func (st *Store) DiscoverWorkflowFilesFromGit(repoFullName string) int {
 		if !isWorkflowYAMLPath(f.Name) {
 			return nil
 		}
-		body, _ := f.Contents()
+		body, err := f.Contents()
+		if err != nil {
+			// A transient content read (e.g. a lazily-fetched blob from S3-backed
+			// storage) must not re-register the workflow with an empty body:
+			// RegisterWorkflowFile re-persists on every discovery, and an empty
+			// workflow can never be dispatched (422 forever). Skip this file; the
+			// next discovery re-reads it.
+			return nil
+		}
 		name := workflowDisplayName(body, f.Name)
 		st.RegisterWorkflowFile(repoFullName, f.Name, name, body, "discovered")
 		count++

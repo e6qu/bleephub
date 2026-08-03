@@ -916,6 +916,14 @@ func discussionCategoryToGQL(cat *DiscussionCategory) map[string]interface{} {
 }
 
 func discussionToGQL(d *Discussion, st *Store) map[string]interface{} {
+	// A comment can outlive its soft-deleted discussion, and several callers pass
+	// a re-fetched GetDiscussion result straight through; guarding here keeps a
+	// nil discussion from panicking on d.RepoID below rather than relying on
+	// every call site to check first.
+	if d == nil {
+		return nil
+	}
+
 	st.mu.RLock()
 	defer st.mu.RUnlock()
 
