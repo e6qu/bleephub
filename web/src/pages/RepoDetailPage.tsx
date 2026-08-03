@@ -415,6 +415,7 @@ function CodeView({
         {path && (
           <button
             type="button"
+            aria-label="Go to parent directory"
             onClick={() => {
               const parent = path.split("/").slice(0, -1).join("/");
               navigate(repoCodeRoute(owner, repo, { kind: "tree", ref: branch, path: parent }));

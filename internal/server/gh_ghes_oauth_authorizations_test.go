@@ -11,7 +11,7 @@ import (
 )
 
 // legacyAuthorizationSessionRequest drives the authorizations API the way a
-// real client must after the AUTH-097 fix: with a browser session cookie
+// real client must: with a browser session cookie
 // (password-equivalent authority), never a bearer token.
 func legacyAuthorizationSessionRequest(
 	t *testing.T,
@@ -109,7 +109,7 @@ func TestLegacyOAuthAuthorizationAndGrantJourney(t *testing.T) {
 	}
 }
 
-// TestLegacyAuthorizationsRefuseBearerCredentials pins AUTH-097: the API that
+// TestLegacyAuthorizationsRefuseBearerCredentials pins the rule that the API that
 // mints/rewrites account credentials must reject a bearer token so a leaked
 // scoped PAT cannot POST itself an unrestricted classic PAT.
 func TestLegacyAuthorizationsRefuseBearerCredentials(t *testing.T) {

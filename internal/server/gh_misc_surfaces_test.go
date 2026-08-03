@@ -231,7 +231,7 @@ func TestGPGKeyDeleteOwnership(t *testing.T) {
 	}
 }
 
-// TestUserSSHKeyIsOwnerScoped pins AUTH-102: GET/DELETE on /user/keys/{id} act
+// TestUserSSHKeyIsOwnerScoped pins that GET/DELETE on /user/keys/{id} act
 // only on the caller's own key. A stranger gets 404 (no read, no revoke, no
 // existence oracle), and an anonymous GET is refused.
 func TestUserSSHKeyIsOwnerScoped(t *testing.T) {

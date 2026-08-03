@@ -17,8 +17,8 @@ func unauthedRequest(s *Server, method, path string) *httptest.ResponseRecorder 
 	return w
 }
 
-// TestActionsWriteEndpointsRequireAuth guards BUG-1591: the workflow-run
-// write endpoints were registered without requirePerm, so an anonymous
+// TestActionsWriteEndpointsRequireAuth guards against the workflow-run
+// write endpoints being registered without requirePerm, so an anonymous
 // caller could dispatch / cancel / rerun / delete runs and delete runners.
 // Real GitHub requires actions:write (administration:write for runners);
 // every one of these must reject an unauthenticated request with 401.
@@ -62,8 +62,8 @@ func TestActionsWriteEndpointsRequireAuth(t *testing.T) {
 	}
 }
 
-// TestInternalEndpointsRequireAuth guards BUG-1593: the /internal/* operator
-// surface was served with no server-side token check (the UI login was a
+// TestInternalEndpointsRequireAuth guards against the /internal/* operator
+// surface being served with no server-side token check (the UI login was a
 // client-side guard only). The middleware must 401 anonymous callers and
 // admit the admin token; /health stays open for liveness probes.
 func TestInternalEndpointsRequireAuth(t *testing.T) {
@@ -95,8 +95,8 @@ func TestInternalEndpointsRequireAuth(t *testing.T) {
 			req.Header.Set("Authorization", "Bearer "+defaultToken)
 			w := httptest.NewRecorder()
 			handler.ServeHTTP(w, req)
-			if w.Code == http.StatusUnauthorized {
-				t.Errorf("GET %s with admin token = 401, want admitted", p)
+			if w.Code != http.StatusOK {
+				t.Errorf("GET %s with admin token = %d, want 200 (admitted and served)", p, w.Code)
 			}
 		})
 	}

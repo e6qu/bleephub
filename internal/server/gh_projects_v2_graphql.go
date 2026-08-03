@@ -63,7 +63,7 @@ func projectTargetOwner(key string) func(*Server, map[string]interface{}) projec
 	return func(s *Server, input map[string]interface{}) projectMutationTarget {
 		nodeID, _ := input[key].(string)
 		target := projectMutationTarget{missing: &ghNotFoundError{
-			message: fmt.Sprintf("could not resolve to an owner with the global id of '%s'", nodeID),
+			message: fmt.Sprintf("Could not resolve to an owner with the global id of '%s'.", nodeID),
 		}}
 		ownerID, ownerType, ok := resolveProjectOwner(s.store, nodeID)
 		if !ok {
@@ -80,7 +80,7 @@ func projectTargetProject(key string) func(*Server, map[string]interface{}) proj
 	return func(s *Server, input map[string]interface{}) projectMutationTarget {
 		nodeID, _ := input[key].(string)
 		target := projectMutationTarget{missing: &ghNotFoundError{
-			message: fmt.Sprintf("could not resolve to a project with the global id of '%s'", nodeID),
+			message: fmt.Sprintf("Could not resolve to a project with the global id of '%s'.", nodeID),
 		}}
 		proj := s.store.ProjectsV2.LookupProjectByNodeID(nodeID)
 		if proj == nil {
@@ -168,7 +168,7 @@ func (s *Server) addProjectV2MutationsToSchema(mutationType *graphql.Object) {
 
 			ownerID, ownerType, ok := resolveProjectOwner(s.store, ownerNodeID)
 			if !ok {
-				return nil, fmt.Errorf("could not resolve to an owner with the global id of '%s'", ownerNodeID)
+				return nil, &ghNotFoundError{message: fmt.Sprintf("Could not resolve to an owner with the global id of '%s'.", ownerNodeID)}
 			}
 			proj := s.store.ProjectsV2.CreateProject(ownerID, ownerType, title, user.ID)
 			return map[string]interface{}{
@@ -221,7 +221,7 @@ func (s *Server) addProjectV2MutationsToSchema(mutationType *graphql.Object) {
 
 			proj := s.store.ProjectsV2.LookupProjectByNodeID(projectNodeID)
 			if proj == nil {
-				return nil, fmt.Errorf("could not resolve to a project with the global id of '%s'", projectNodeID)
+				return nil, &ghNotFoundError{message: fmt.Sprintf("Could not resolve to a project with the global id of '%s'.", projectNodeID)}
 			}
 			// Write access to the project is not read access to what is being
 			// pulled into it; content the caller cannot read answers the same
@@ -229,7 +229,7 @@ func (s *Server) addProjectV2MutationsToSchema(mutationType *graphql.Object) {
 			contentType, contentID, ok := resolveContentByNodeID(s.store, contentNodeID)
 			if !ok || !s.viewerCanReadProjectContent(p.Context, contentType, contentID) {
 				return nil, &ghNotFoundError{
-					message: fmt.Sprintf("could not resolve to an issue or pull request with the global id of '%s'", contentNodeID),
+					message: fmt.Sprintf("Could not resolve to an issue or pull request with the global id of '%s'.", contentNodeID),
 				}
 			}
 			item := s.store.ProjectsV2.AddItem(proj.ID, contentType, contentID, user.ID)
@@ -361,7 +361,7 @@ func (s *Server) addProjectV2MutationsToSchema(mutationType *graphql.Object) {
 
 			proj := s.store.ProjectsV2.LookupProjectByNodeID(projectNodeID)
 			if proj == nil {
-				return nil, fmt.Errorf("could not resolve to a project with the global id of '%s'", projectNodeID)
+				return nil, &ghNotFoundError{message: fmt.Sprintf("Could not resolve to a project with the global id of '%s'.", projectNodeID)}
 			}
 			if dataType == string(ProjectV2FieldIteration) && iteration == nil {
 				return nil, fmt.Errorf("iterationConfiguration is required for ITERATION fields")
@@ -436,18 +436,18 @@ func (s *Server) addProjectV2MutationsToSchema(mutationType *graphql.Object) {
 
 			proj := s.store.ProjectsV2.LookupProjectByNodeID(projectNodeID)
 			if proj == nil {
-				return nil, fmt.Errorf("could not resolve to a project with the global id of '%s'", projectNodeID)
+				return nil, &ghNotFoundError{message: fmt.Sprintf("Could not resolve to a project with the global id of '%s'.", projectNodeID)}
 			}
 			item := s.store.ProjectsV2.LookupItemByNodeID(itemNodeID)
 			if item == nil {
-				return nil, fmt.Errorf("could not resolve to an item with the global id of '%s'", itemNodeID)
+				return nil, &ghNotFoundError{message: fmt.Sprintf("Could not resolve to an item with the global id of '%s'.", itemNodeID)}
 			}
 			if item.ProjectID != proj.ID {
 				return nil, fmt.Errorf("project does not contain item with the global id of '%s'", itemNodeID)
 			}
 			field := s.store.ProjectsV2.LookupFieldByNodeID(fieldNodeID)
 			if field == nil {
-				return nil, fmt.Errorf("could not resolve to a field with the global id of '%s'", fieldNodeID)
+				return nil, &ghNotFoundError{message: fmt.Sprintf("Could not resolve to a field with the global id of '%s'.", fieldNodeID)}
 			}
 			if field.ProjectID != proj.ID {
 				return nil, fmt.Errorf("field does not belong to project with the global id of '%s'", projectNodeID)

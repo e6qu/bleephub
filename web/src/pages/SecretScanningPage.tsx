@@ -213,6 +213,7 @@ function AlertDetail({
         <div style={{ marginBottom: "1rem" }}>
           <label style={{ fontSize: "0.85rem" }}>Resolution</label>
           <select
+            aria-label="Resolution"
             value={resolution}
             onChange={(e) => setResolution(e.target.value as GithubSecretScanningResolution)}
             style={{ fontSize: "0.85rem", padding: "0.35rem 0.5rem", display: "block", marginBottom: "0.5rem" }}
@@ -225,6 +226,7 @@ function AlertDetail({
           </select>
           <input
             type="text"
+            aria-label="Resolution comment"
             placeholder="Comment (optional)"
             value={comment}
             onChange={(e) => setComment(e.target.value)}

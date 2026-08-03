@@ -1,6 +1,7 @@
 package sdktests
 
 import (
+	"net/http"
 	"strings"
 	"testing"
 
@@ -77,8 +78,13 @@ func TestRepositoriesCRUD(t *testing.T) {
 	if _, err := client.Repositories.Delete(ctx(), "admin", name); err != nil {
 		t.Fatalf("Delete: %v", err)
 	}
-	if _, resp, err := client.Repositories.Get(ctx(), "admin", name); err == nil {
+	_, resp, err := client.Repositories.Get(ctx(), "admin", name)
+	if err == nil {
 		t.Errorf("Get after delete succeeded, want 404 (resp=%v)", resp)
+	} else if resp == nil {
+		t.Errorf("Get after delete returned no HTTP response, want 404 (err=%v)", err)
+	} else if resp.StatusCode != http.StatusNotFound {
+		t.Errorf("Get after delete status = %d, want 404 (err=%v)", resp.StatusCode, err)
 	}
 }
 

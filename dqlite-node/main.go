@@ -24,7 +24,16 @@ import (
 	"github.com/e6qu/bleephub/internal/dqliteaddr"
 )
 
+// Build-stamp variables, overwritten at release build time via
+// -ldflags "-X main.version=... -X main.commit=... -X main.publishedAt=...".
+var (
+	version     = "development"
+	commit      = "none"
+	publishedAt = "not-yet-published"
+)
+
 func main() {
+	log.Printf("dqlite-node version=%s commit=%s published=%s", version, commit, publishedAt)
 	dataDir := requiredEnv("BLEEPHUB_DQLITE_DATA_DIR")
 	address := requiredEnv("BLEEPHUB_DQLITE_ADVERTISE_ADDR")
 	secret := requiredEnv(dqliteaddr.SecretEnvironment)

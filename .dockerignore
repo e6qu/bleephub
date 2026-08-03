@@ -10,6 +10,11 @@
 **/*.key
 bleephub-server
 bleephub-dqlite-node
+# Committed compiled web assets. Dockerfile.release regenerates these from the
+# ui-builder stage and COPYs the fresh output over ./internal/server/dist before
+# the Go build, so the checked-in copy is stale build output that only bloats the
+# build context; noui image builds embed nothing here at all.
+internal/server/dist
 web/node_modules
 web/core/node_modules
 web/dist

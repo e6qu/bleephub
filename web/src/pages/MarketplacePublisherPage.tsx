@@ -101,9 +101,109 @@ function PlanForm({ publisher, onDone }: { publisher: string; onDone: () => void
   const [trial, setTrial] = useState(false);
   const [unitName, setUnitName] = useState("");
   const mutation = useMutation({
-    mutationFn: () => createMarketplacePlanSettings(publisher, { name, description, price_model: model, monthly_price_in_cents: monthly, yearly_price_in_cents: yearly, has_free_trial: trial, unit_name: unitName, state: "published", bullets: [] }),
-    onSuccess: async () => { await client.invalidateQueries({ queryKey: ["marketplace"] }); onDone(); },
+    mutationFn: () =>
+      createMarketplacePlanSettings(publisher, {
+        name,
+        description,
+        price_model: model,
+        monthly_price_in_cents: monthly,
+        yearly_price_in_cents: yearly,
+        has_free_trial: trial,
+        unit_name: unitName,
+        state: "published",
+        bullets: [],
+      }),
+    onSuccess: async () => {
+      await client.invalidateQueries({ queryKey: ["marketplace"] });
+      onDone();
+    },
   });
-  const submit = (event: FormEvent) => { event.preventDefault(); mutation.mutate(); };
-  return <Box className="mt-4" header={<b>New pricing plan</b>}><form onSubmit={submit} className="grid gap-3" style={{ padding: "1rem" }}><Field label="Name" id="marketplace-plan-name"><input id="marketplace-plan-name" className="w-full" required value={name} onChange={(event) => setName(event.target.value)} /></Field><Field label="Description" id="marketplace-plan-description"><input id="marketplace-plan-description" className="w-full" value={description} onChange={(event) => setDescription(event.target.value)} /></Field><Field label="Pricing model" id="marketplace-plan-model"><select id="marketplace-plan-model" className="w-full" value={model} onChange={(event) => setModel(event.target.value as typeof model)}><option value="FREE">Free</option><option value="FLAT_RATE">Flat rate</option><option value="PER_UNIT">Per unit</option></select></Field>{model !== "FREE" && <div className="grid grid-cols-2 gap-2"><Field label="Monthly (cents)" id="marketplace-plan-monthly"><input id="marketplace-plan-monthly" className="w-full" type="number" min={0} value={monthly} onChange={(event) => setMonthly(Number(event.target.value))} /></Field><Field label="Yearly (cents)" id="marketplace-plan-yearly"><input id="marketplace-plan-yearly" className="w-full" type="number" min={0} value={yearly} onChange={(event) => setYearly(Number(event.target.value))} /></Field></div>}{model === "PER_UNIT" && <Field label="Unit name" id="marketplace-plan-unit"><input id="marketplace-plan-unit" className="w-full" required value={unitName} onChange={(event) => setUnitName(event.target.value)} /></Field>}<label className="flex items-center gap-2" style={{ fontSize: ".78rem" }}><input type="checkbox" checked={trial} onChange={(event) => setTrial(event.target.checked)} disabled={model === "FREE"} /> Offer a 14-day free trial</label>{mutation.error && <ErrorBanner>{String(mutation.error)}</ErrorBanner>}<div className="flex justify-end gap-2"><Button type="button" onClick={onDone}>Cancel</Button><Button type="submit" variant="primary" disabled={mutation.isPending}>Publish plan</Button></div></form></Box>;
+  const submit = (event: FormEvent) => {
+    event.preventDefault();
+    mutation.mutate();
+  };
+  return (
+    <Box className="mt-4" header={<b>New pricing plan</b>}>
+      <form onSubmit={submit} className="grid gap-3" style={{ padding: "1rem" }}>
+        <Field label="Name" id="marketplace-plan-name">
+          <input
+            id="marketplace-plan-name"
+            className="w-full"
+            required
+            value={name}
+            onChange={(event) => setName(event.target.value)}
+          />
+        </Field>
+        <Field label="Description" id="marketplace-plan-description">
+          <input
+            id="marketplace-plan-description"
+            className="w-full"
+            value={description}
+            onChange={(event) => setDescription(event.target.value)}
+          />
+        </Field>
+        <Field label="Pricing model" id="marketplace-plan-model">
+          <select
+            id="marketplace-plan-model"
+            className="w-full"
+            value={model}
+            onChange={(event) => setModel(event.target.value as typeof model)}
+          >
+            <option value="FREE">Free</option>
+            <option value="FLAT_RATE">Flat rate</option>
+            <option value="PER_UNIT">Per unit</option>
+          </select>
+        </Field>
+        {model !== "FREE" && (
+          <div className="grid grid-cols-2 gap-2">
+            <Field label="Monthly (cents)" id="marketplace-plan-monthly">
+              <input
+                id="marketplace-plan-monthly"
+                className="w-full"
+                type="number"
+                min={0}
+                value={monthly}
+                onChange={(event) => setMonthly(Number(event.target.value))}
+              />
+            </Field>
+            <Field label="Yearly (cents)" id="marketplace-plan-yearly">
+              <input
+                id="marketplace-plan-yearly"
+                className="w-full"
+                type="number"
+                min={0}
+                value={yearly}
+                onChange={(event) => setYearly(Number(event.target.value))}
+              />
+            </Field>
+          </div>
+        )}
+        {model === "PER_UNIT" && (
+          <Field label="Unit name" id="marketplace-plan-unit">
+            <input
+              id="marketplace-plan-unit"
+              className="w-full"
+              required
+              value={unitName}
+              onChange={(event) => setUnitName(event.target.value)}
+            />
+          </Field>
+        )}
+        <label className="flex items-center gap-2" style={{ fontSize: ".78rem" }}>
+          <input
+            type="checkbox"
+            checked={trial}
+            onChange={(event) => setTrial(event.target.checked)}
+            disabled={model === "FREE"}
+          />{" "}
+          Offer a 14-day free trial
+        </label>
+        {mutation.error && <ErrorBanner>{String(mutation.error)}</ErrorBanner>}
+        <div className="flex justify-end gap-2">
+          <Button type="button" onClick={onDone}>Cancel</Button>
+          <Button type="submit" variant="primary" disabled={mutation.isPending}>Publish plan</Button>
+        </div>
+      </form>
+    </Box>
+  );
 }

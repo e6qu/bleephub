@@ -13,7 +13,7 @@ import (
 	"testing"
 )
 
-// TestCancellationSignalsRunningJob covers BUG-1745: cancel sends
+// TestCancellationSignalsRunningJob verifies cancel sends
 // JobCancellation to the runner executing a job, leaves always()-gated
 // jobs runnable, and the run concludes cancelled.
 func TestCancellationSignalsRunningJob(t *testing.T) {
@@ -174,7 +174,7 @@ jobs:
 	}
 }
 
-// TestStartupFailureRunShell covers BUG-1747: a matched workflow that
+// TestStartupFailureRunShell verifies a matched workflow that
 // can't start yields a run with conclusion startup_failure, visible on
 // the runs API, with no jobs.
 func TestStartupFailureRunShell(t *testing.T) {
@@ -227,7 +227,7 @@ jobs:
 	})
 }
 
-// TestRunnerGroupsCRUD covers BUG-1746.
+// TestRunnerGroupsCRUD exercises runner-group create/read/update/delete.
 func TestRunnerGroupsCRUD(t *testing.T) {
 	resp := ghPost(t, "/api/v3/admin/organizations", defaultToken,
 		map[string]interface{}{"login": "rg-org", "admin": "admin"})
@@ -399,7 +399,7 @@ func bytesReader(b []byte) *bytes.Reader {
 	return bytes.NewReader(b)
 }
 
-// TestLocalActionTarball covers BUG-1748: actions hosted on bleephub
+// TestLocalActionTarball verifies actions hosted on bleephub
 // itself serve GitHub-layout tarballs from their own git storage.
 func TestLocalActionTarball(t *testing.T) {
 	commitFilesToStorage(t, testServer, "actowner/hello-action", map[string]string{

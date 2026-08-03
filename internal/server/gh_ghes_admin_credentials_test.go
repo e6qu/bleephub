@@ -18,7 +18,7 @@ func decodeGHESRecorderArray(t *testing.T, rec *httptest.ResponseRecorder) []map
 	return value
 }
 
-// TestGHESAdminSurfaceRejectsNarrowCredentials pins AUTH-101: a site admin's
+// TestGHESAdminSurfaceRejectsNarrowCredentials pins the rule that a site admin's
 // fine-grained PAT or OAuth/GitHub-App user token must NOT administer the
 // appliance, even though the user record is a SiteAdmin. Only broad credentials
 // (a browser session or a classic PAT) may.

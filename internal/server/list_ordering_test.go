@@ -6,7 +6,7 @@ import (
 	"testing"
 )
 
-// TestWorkflowRunsListNewestFirst guards BUG-1607: the run-list endpoints
+// TestWorkflowRunsListNewestFirst guards against the run-list endpoints
 // paginated an unsorted map iteration, so order was unstable across requests
 // and never GitHub's newest-first. The response must be sorted by run ID
 // descending and stable across repeated calls.
@@ -53,7 +53,7 @@ func TestWorkflowRunsListNewestFirst(t *testing.T) {
 	}
 }
 
-// TestReleaseListNewestFirst guards BUG-1615: releases were returned in
+// TestReleaseListNewestFirst guards against releases being returned in
 // insertion (oldest-first) order. Real GitHub lists newest-first.
 func TestReleaseListNewestFirst(t *testing.T) {
 	s := newTestServer()

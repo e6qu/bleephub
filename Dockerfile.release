@@ -20,13 +20,16 @@ WORKDIR /src
 COPY . .
 COPY --from=ui-builder /src/web/dist/ ./internal/server/dist/
 RUN CGO_ENABLED=0 go build -trimpath -ldflags="-s -w -X main.version=${BLEEPHUB_VERSION} -X main.commit=${BLEEPHUB_COMMIT} -X main.publishedAt=${BLEEPHUB_PUBLISHED_AT}" -o /bleephub ./cmd/bleephub && \
-    CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" -o /bleephub-ssh-gateway ./ssh-gateway
+    CGO_ENABLED=0 go build -trimpath -ldflags="-s -w -X main.version=${BLEEPHUB_VERSION} -X main.commit=${BLEEPHUB_COMMIT} -X main.publishedAt=${BLEEPHUB_PUBLISHED_AT}" -o /bleephub-ssh-gateway ./ssh-gateway
 
 FROM golang:1.26.5-bookworm@sha256:1ecb7edf62a0408027bd5729dfd6b1b8766e578e8df93995b225dfd0944eb651 AS go-toolchain
 
 FROM ubuntu:26.04@sha256:3131b4cc82a783df6c9df078f86e01819a13594b865c2cad47bd1bca2b7063bb AS dqlite-builder
 COPY --from=go-toolchain /usr/local/go /usr/local/go
 ENV PATH=/usr/local/go/bin:$PATH
+ARG BLEEPHUB_VERSION=development
+ARG BLEEPHUB_COMMIT=none
+ARG BLEEPHUB_PUBLISHED_AT=not-yet-published
 RUN apt_transaction() { rm -rf /var/lib/apt/lists/*; apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends "$@"; }; \
     retry_apt_transaction() { apt_transaction "$@" || apt_transaction "$@"; }; \
     retry_apt_transaction ca-certificates build-essential libdqlite-dev && \
@@ -36,7 +39,7 @@ COPY go.mod go.sum ./
 RUN go mod download
 COPY dqlite-node ./dqlite-node
 COPY internal/dqliteaddr ./internal/dqliteaddr
-RUN CGO_ENABLED=1 go build -trimpath -tags 'nosqlite3,dqlite' -ldflags="-s -w" -o /bleephub-dqlite-node ./dqlite-node
+RUN CGO_ENABLED=1 go build -trimpath -tags 'nosqlite3,dqlite' -ldflags="-s -w -X main.version=${BLEEPHUB_VERSION} -X main.commit=${BLEEPHUB_COMMIT} -X main.publishedAt=${BLEEPHUB_PUBLISHED_AT}" -o /bleephub-dqlite-node ./dqlite-node
 
 FROM ubuntu:26.04@sha256:3131b4cc82a783df6c9df078f86e01819a13594b865c2cad47bd1bca2b7063bb
 COPY docker/pages-gems/Gemfile docker/pages-gems/pinned-gems.sha256 /opt/bleephub-pages/

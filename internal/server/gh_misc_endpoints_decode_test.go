@@ -79,7 +79,7 @@ func TestOIDCCustomSubPut_EmptyBodyOK(t *testing.T) {
 	}
 }
 
-// TestOIDCCustomSubIsScopedPerRepository pins AUTH-113: OIDC subject
+// TestOIDCCustomSubIsScopedPerRepository pins that OIDC subject
 // customization is stored per repository, so one repo's admin cannot clobber or
 // read another repository's include_claim_keys.
 func TestOIDCCustomSubIsScopedPerRepository(t *testing.T) {

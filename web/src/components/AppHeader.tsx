@@ -410,7 +410,7 @@ export function AppHeader() {
     queryFn: ({ signal }) => fetchNotifications({}, signal),
     refetchInterval: (query) => (isRateLimited(query.state.error) ? false : 30_000),
   });
-  const unread = notifications?.filter((n) => n.unread !== false).length ?? 0;
+  const unread = notifications?.filter((n) => n.unread).length ?? 0;
   const login = user?.login ?? "";
 
   const submitSearch = (e: FormEvent) => {

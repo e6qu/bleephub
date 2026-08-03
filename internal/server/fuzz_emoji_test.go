@@ -49,11 +49,10 @@ func FuzzEmojiPathResolver(f *testing.F) {
 	f.Fuzz(func(t *testing.T, p string) {
 		s := fuzzRoutedServer(t)
 		// Route the request so PathValue("path") is populated exactly as the
-		// mux would. Bad request targets (control bytes) are simply not served.
-		req, err := http.NewRequest(http.MethodGet, "http://x/images/icons/emoji/"+p, nil)
-		if err != nil {
-			return
-		}
+		// mux would. buildRequest sets adversarial targets (control bytes,
+		// spaces) straight onto r.URL when http.NewRequest would reject them,
+		// so those inputs still reach the mux instead of being filtered out.
+		req := (&fuzzFixture{}).buildRequest(http.MethodGet, "/images/icons/emoji/"+p, "", nil, false)
 		req.Header.Set("Authorization", "token "+defaultToken)
 		w := httptest.NewRecorder()
 		s.requestHandler().ServeHTTP(w, req)

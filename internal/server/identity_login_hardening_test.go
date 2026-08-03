@@ -63,8 +63,8 @@ func createInternalUserRequest(t *testing.T, s *Server, login string) *http.Requ
 }
 
 // TestNormalizeLoginAppliesNFKCAndCaseFolding is the unit-level guard for the
-// AUTH-028 fix: "Alice", "alice", and fullwidth "ＡＬＩＣＥ" must collapse to a
-// single canonical key, while a Latin/Cyrillic mix is rejected.
+// Username canonicalization: "Alice", "alice", and fullwidth "ＡＬＩＣＥ" must
+// collapse to a single canonical key, while a Latin/Cyrillic mix is rejected.
 func TestNormalizeLoginAppliesNFKCAndCaseFolding(t *testing.T) {
 	cases := []struct {
 		name, in, want string
@@ -129,7 +129,7 @@ func TestParseAllowedLogins(t *testing.T) {
 	}
 }
 
-// TestLocalLoginCaseFoldsBeforeLookup proves AUTH-028's account-collapse
+// TestLocalLoginCaseFoldsBeforeLookup proves the account-collapse
 // property end to end: an account stored as "alice" authenticates when the
 // caller spells the login "ALICE" or with fullwidth letters.
 func TestLocalLoginCaseFoldsBeforeLookup(t *testing.T) {
@@ -188,7 +188,7 @@ func TestLocalLoginAllowlistRejectsLoginsNotListed(t *testing.T) {
 	}
 
 	// A non-allowlisted login is refused with the SAME 401 as a wrong password
-	// (AUTH-116), so the status code cannot enumerate allowlist membership.
+	// so the status code cannot enumerate allowlist membership.
 	w = httptest.NewRecorder()
 	s.handleLocalLogin(w, localLoginRequest(t, "bob", password))
 	if w.Code != http.StatusUnauthorized {
@@ -255,7 +255,7 @@ func TestInternalUserCreationAllowlistEnforced(t *testing.T) {
 	}
 }
 
-// TestUpsertExternalUserNeverEscalatesByUsername pins the AUTH-094 fix: a
+// TestUpsertExternalUserNeverEscalatesByUsername pins that a
 // federated identity is resolved on (issuer, subject), and a principal cannot
 // gain privileges by claiming a taken username. The primary IdP may adopt a
 // LOCAL account (SSO ownership of the seeded bootstrap admin), but the role
@@ -297,8 +297,8 @@ func TestUpsertExternalUserNeverEscalatesByUsername(t *testing.T) {
 	}
 }
 
-// TestUpsertExternalUserHonorsAllowlistAndAuthoritativeRole covers the AUTH-095
-// allowlist enforcement on the SSO path and the AUTH-096 role-authority rule:
+// TestUpsertExternalUserHonorsAllowlistAndAuthoritativeRole covers
+// allowlist enforcement on the SSO path and the role-authority rule:
 // the primary IdP writes SiteAdmin on every login (so a demotion takes effect),
 // while a secondary provider never reshapes privileges.
 func TestUpsertExternalUserHonorsAllowlistAndAuthoritativeRole(t *testing.T) {
@@ -325,7 +325,7 @@ func TestUpsertExternalUserHonorsAllowlistAndAuthoritativeRole(t *testing.T) {
 	}
 }
 
-// TestSecureDeploymentIgnoresUnprefixedSessionCookie pins AUTH-107: over HTTPS
+// TestSecureDeploymentIgnoresUnprefixedSessionCookie pins that over HTTPS
 // only the __Host- session cookie is honored, so a shadow _gh_sess planted by a
 // related-domain or network attacker cannot authenticate — and logout expires
 // both names so no shadow survives it.

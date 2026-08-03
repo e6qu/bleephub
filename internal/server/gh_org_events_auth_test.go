@@ -5,7 +5,7 @@ import (
 	"testing"
 )
 
-// TestOrgEvents_AuthRequired verifies REST-107: GET /orgs/{org}/events
+// TestOrgEvents_AuthRequired verifies GET /orgs/{org}/events
 // requires an authenticated caller (GitHub rejects anonymous access), while
 // GET /events remains a public, no-auth feed. The org feed stays
 // public-repo-only for now; the fix here is the missing authentication gate.

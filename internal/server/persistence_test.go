@@ -458,7 +458,7 @@ func TestPersistentOIDCLogoutClaimIsExclusiveAcrossConnections(t *testing.T) {
 }
 
 // The single-node store must fsync the WAL at every commit so acknowledged
-// writes survive power loss, not only a process crash (STORE-020).
+// writes survive power loss, not only a process crash.
 func TestSQLiteDurabilityIsSynchronousFull(t *testing.T) {
 	db, err := openSQLite(t.TempDir())
 	if err != nil {

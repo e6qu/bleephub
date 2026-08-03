@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useSearchParams } from "react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { DataTable, InlineError, Spinner } from "@bleephub/ui-core/components";
@@ -427,8 +427,9 @@ function CreateGistDialog({ onClose }: { onClose: () => void }) {
   const queryClient = useQueryClient();
   const [description, setDescription] = useState("");
   const [isPublic, setIsPublic] = useState(false);
-  const [files, setFiles] = useState<{ filename: string; content: string }[]>([
-    { filename: "", content: "" },
+  const nextFileId = useRef(0);
+  const [files, setFiles] = useState<{ id: number; filename: string; content: string }[]>(() => [
+    { id: nextFileId.current++, filename: "", content: "" },
   ]);
   const [error, setError] = useState<string | null>(null);
 
@@ -479,7 +480,7 @@ function CreateGistDialog({ onClose }: { onClose: () => void }) {
 
       <FormLabel>Files</FormLabel>
       {files.map((file, idx) => (
-        <div key={idx} className="mb-3 rounded border p-3" style={{ borderColor: "var(--color-border)" }}>
+        <div key={file.id} className="mb-3 rounded border p-3" style={{ borderColor: "var(--color-border)" }}>
           <input
             type="text"
             aria-label="File name"
@@ -511,7 +512,7 @@ function CreateGistDialog({ onClose }: { onClose: () => void }) {
       ))}
 
       <div className="mb-4">
-        <Button size="sm" variant="secondary" onClick={() => setFiles((cur) => [...cur, { filename: "", content: "" }])}>
+        <Button size="sm" variant="secondary" onClick={() => setFiles((cur) => [...cur, { id: nextFileId.current++, filename: "", content: "" }])}>
           Add file
         </Button>
       </div>
@@ -548,8 +549,12 @@ function EditGistDialog({
 }) {
   const queryClient = useQueryClient();
   const [description, setDescription] = useState(gist.description);
-  const [files, setFiles] = useState<{ filename: string; content?: string; original: string }[]>(
+  const nextFileId = useRef(0);
+  const [files, setFiles] = useState<
+    { id: number; filename: string; content?: string; original: string }[]
+  >(() =>
     Object.entries(gist.files).map(([name, file]) => ({
+      id: nextFileId.current++,
       filename: name,
       content: file.content,
       original: name,
@@ -597,7 +602,7 @@ function EditGistDialog({
 
       <FormLabel>Files</FormLabel>
       {files.map((file, idx) => (
-        <div key={idx} className="mb-3 rounded border p-3" style={{ borderColor: "var(--color-border)" }}>
+        <div key={file.id} className="mb-3 rounded border p-3" style={{ borderColor: "var(--color-border)" }}>
           <input
             type="text"
             aria-label="File name"
@@ -632,7 +637,7 @@ function EditGistDialog({
         <Button
           size="sm"
           variant="secondary"
-          onClick={() => setFiles((cur) => [...cur, { filename: "", content: "", original: "" }])}
+          onClick={() => setFiles((cur) => [...cur, { id: nextFileId.current++, filename: "", content: "", original: "" }])}
         >
           Add file
         </Button>

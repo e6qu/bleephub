@@ -682,8 +682,8 @@ func TestWebhookIssuesEventFromGraphQL(t *testing.T) {
 	}
 }
 
-// Label CRUD must deliver the `label` webhook so `on: label` workflows fire
-// (ACT-026): before the fix the mutation never produced the event.
+// Label CRUD must deliver the `label` webhook so `on: label` workflows fire:
+// before the fix the mutation never produced the event.
 func TestWebhookLabelEvent(t *testing.T) {
 	var mu sync.Mutex
 	actions := map[string]bool{}

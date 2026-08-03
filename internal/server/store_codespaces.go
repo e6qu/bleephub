@@ -271,7 +271,9 @@ func (st *Store) reserveCodespace(ownerLogin, repoKey, gitRef, location string, 
 		displayName = name
 	}
 	if location == "" {
-		location = "local"
+		// GitHub reports the Azure region a codespace runs in (e.g. "EastUs",
+		// "WestEurope"); "local" is not a value the real API ever emits.
+		location = "EastUs"
 	}
 	idleTimeout := opts.IdleTimeoutMinutes
 	if idleTimeout == 0 {

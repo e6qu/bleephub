@@ -13,12 +13,12 @@ import (
 
 // TestPersistenceReload_OwnerAndCountersAndState exercises the reload-path
 // fixes:
-//   - BUG-1605: Repo.Owner relinked from FullName; per-repo issue-number
+//   - Repo.Owner relinked from FullName; per-repo issue-number
 //     counter recomputed so post-reload issues don't collide at 0/1.
-//   - BUG-1595: workflow_files restored (incl. RepoFullName/YAML), not dropped.
-//   - BUG-1608: NextRunID survives reload (no artifact-epoch collision).
-//   - BUG-1611: issue lock state persisted.
-//   - BUG-1612: user SSH keys + branch protection persisted.
+//   - workflow_files restored (incl. RepoFullName/YAML), not dropped.
+//   - NextRunID survives reload (no artifact-epoch collision).
+//   - issue lock state persisted.
+//   - user SSH keys + branch protection persisted.
 func TestPersistenceReload_OwnerAndCountersAndState(t *testing.T) {
 	dir := t.TempDir()
 	t.Setenv("BLEEPHUB_PERSIST", "true")
@@ -83,14 +83,14 @@ func TestPersistenceReload_OwnerAndCountersAndState(t *testing.T) {
 	if got == nil {
 		t.Fatal("repo did not persist")
 	}
-	// BUG-1605: owner relinked.
+	// Owner relinked.
 	if got.Owner == nil {
 		t.Fatal("repo Owner is nil after reload (BUG-1605)")
 	}
 	if got.Owner.Login != user.Login {
 		t.Errorf("repo Owner.Login = %q want %q", got.Owner.Login, user.Login)
 	}
-	// BUG-1605: next issue number resumes at 3, not 1.
+	// Next issue number resumes at 3, not 1.
 	i3 := st2.CreateIssue(got.ID, user.ID, "third", "", nil, nil, 0)
 	if i3.Number != 3 {
 		t.Errorf("post-reload issue number = %d want 3 (counter must not restart)", i3.Number)
@@ -98,12 +98,12 @@ func TestPersistenceReload_OwnerAndCountersAndState(t *testing.T) {
 	if st2.GetIssueByNumber(got.ID, 1) == nil || st2.GetIssueByNumber(got.ID, 2) == nil {
 		t.Error("persisted issues #1/#2 not retrievable after reload")
 	}
-	// BUG-1611: lock state survived.
+	// Lock state survived.
 	if locked := st2.GetIssueByNumber(got.ID, 1); locked == nil || !locked.Locked {
 		t.Error("issue lock state did not persist (BUG-1611)")
 	}
 
-	// BUG-1595: workflow file restored with usable RepoFullName + YAML.
+	// Workflow file restored with usable RepoFullName + YAML.
 	gotWF := st2.GetWorkflowFile(repo.FullName, wfFile.ID)
 	if gotWF == nil {
 		t.Fatal("workflow file did not persist (BUG-1595)")
@@ -112,14 +112,14 @@ func TestPersistenceReload_OwnerAndCountersAndState(t *testing.T) {
 		t.Errorf("workflow file restored without RepoFullName/YAML: %+v", gotWF)
 	}
 
-	// BUG-1608: run-ID counter resumed (next reserved ID is strictly greater
+	// Run-ID counter resumed (next reserved ID is strictly greater
 	// than the last one handed out before the restart).
 	nextRun := st2.ReserveRunID()
 	if nextRun <= lastRun {
 		t.Errorf("post-reload run ID = %d, want > %d (counter must not restart)", nextRun, lastRun)
 	}
 
-	// BUG-1612: SSH key + branch protection survived.
+	// SSH key + branch protection survived.
 	if len(st2.Misc.keysByUser[user.ID]) == 0 {
 		t.Error("user SSH key did not persist (BUG-1612)")
 	}
@@ -273,7 +273,7 @@ func addTestUser(p *Persistence, st *Store, login string) *User {
 	return u
 }
 
-// TestPersistenceReload_ExpiredBypassLeavesNoTombstone proves STORE-050: when
+// TestPersistenceReload_ExpiredBypassLeavesNoTombstone proves that when
 // the secret-scanning push-protection pruner drops the last bypass for a repo,
 // it must delete the durable row rather than overwrite it with a nil slice.
 // A nil slice marshals to a literal `null`, which the reload loader would read
@@ -2275,7 +2275,7 @@ func TestPersistenceReload_CodeScanningDefaultSetup(t *testing.T) {
 	}
 }
 
-// TestPersistedRowKeyIsNotACredential pins AUTH-106: the "hmac:v1:" row key
+// TestPersistedRowKeyIsNotACredential pins that the "hmac:v1:" row key
 // under which a token or session is persisted must never authenticate when
 // presented as the credential itself — so a leaked backup, replica, or query
 // log of only the row keys is not a credential compromise.
@@ -2316,7 +2316,7 @@ func TestPersistedRowKeyIsNotACredential(t *testing.T) {
 
 // The CommentsByParent index must stay consistent with the comment map across
 // create/delete and survive a reload — it backs O(1) comment lookup so
-// rendering a page of issues no longer scans every comment (GQL-027).
+// rendering a page of issues no longer scans every comment.
 func TestCommentIndexConsistencyAndReload(t *testing.T) {
 	// Cross-check the index against a full scan of st.Comments.
 	scanMatchesIndex := func(t *testing.T, st *Store, parentType string, parentID int) {

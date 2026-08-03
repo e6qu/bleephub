@@ -93,7 +93,7 @@ func TestCreateRepo(t *testing.T) {
 	}
 }
 
-// TestCreateRepoRejectsAmbiguousNames pins AUTH-100: a name carrying a path
+// TestCreateRepoRejectsAmbiguousNames pins that a name carrying a path
 // separator or a trailing ".git" would make the storage key ambiguous and feed
 // the git-transport double-suffix confusion, so it is refused at creation.
 func TestCreateRepoRejectsAmbiguousNames(t *testing.T) {

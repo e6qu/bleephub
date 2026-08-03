@@ -39,7 +39,7 @@ func TestProjectsV2GraphQL_CreateProjectRequiresResolvedOwner(t *testing.T) {
 	if len(errs) == 0 {
 		t.Fatalf("unknown owner unexpectedly succeeded: %v", resp)
 	}
-	if !strings.Contains(fmt.Sprint(errs[0]), "could not resolve to an owner with the global id of 'PVTI_unknown_owner'") {
+	if !strings.Contains(fmt.Sprint(errs[0]), "Could not resolve to an owner with the global id of 'PVTI_unknown_owner'.") {
 		t.Fatalf("unexpected unknown-owner error: %v", errs[0])
 	}
 	if after := len(testServer.store.ProjectsV2.ListProjectsForOwner(admin.ID, "User")); after != before {
