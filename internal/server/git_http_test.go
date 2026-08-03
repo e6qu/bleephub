@@ -6,7 +6,7 @@ import (
 	"testing"
 )
 
-// TestGitHTTPInvalidCredentialIs401 pins AUTH-114: a presented-but-invalid
+// TestGitHTTPInvalidCredentialIs401 pins that a presented-but-invalid
 // credential on the git-HTTP surface earns a 401, not a silent downgrade to an
 // anonymous 200 on a public repo.
 func TestGitHTTPInvalidCredentialIs401(t *testing.T) {
@@ -28,7 +28,7 @@ func TestGitHTTPInvalidCredentialIs401(t *testing.T) {
 	}
 }
 
-// TestGitHTTPPrivateRepoExistenceOracle pins AUTH-023. The git HTTP protocol
+// TestGitHTTPPrivateRepoExistenceOracle guards the existence oracle. The git HTTP protocol
 // requires a 401 challenge for anonymous requests so the client retries with
 // credentials — and the challenge is issued whether or not the repository
 // exists, so an anonymous prober learns nothing from the status code. Once

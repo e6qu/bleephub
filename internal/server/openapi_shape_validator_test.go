@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"net/url"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -426,11 +427,31 @@ func internalURLFields(v any, field string) []string {
 		}
 		return out
 	case string:
-		if strings.Contains(x, "/internal/") {
+		if isInternalOperatorURL(x) {
 			return []string{field}
 		}
 	}
 	return nil
+}
+
+// isInternalOperatorURL reports whether s leaks bleephub's private
+// /internal/ operator surface. That surface lives at the server root, so a
+// genuine leak is a value whose URL path *begins* with /internal/ — either
+// a bare "/internal/..." path or an absolute URL whose path starts there.
+// An ordinary repository value that merely contains an "internal" path
+// segment is normal content, not a leak: a contents/blob URL such as
+// ".../contents/internal/config.go", a "path" field like "internal/x", or
+// an issue body mentioning such a path must not be flagged. The previous
+// substring test (strings.Contains(x, "/internal/")) mislabeled all of
+// those as internal-URL violations.
+func isInternalOperatorURL(s string) bool {
+	if strings.HasPrefix(s, "/internal/") {
+		return true
+	}
+	if u, err := url.Parse(s); err == nil && u.Host != "" && strings.HasPrefix(u.Path, "/internal/") {
+		return true
+	}
+	return false
 }
 
 func opLabel(op openAPIOperation, status int) string {
@@ -762,8 +783,18 @@ func TestViolationAllowlistIsSingleCopy(t *testing.T) {
 			"the validator reads the package-relative copy; any other copy is unread and will drift",
 			allowlistFile, want, len(found), found)
 	}
+	// The ledger must be readable now, not merely present. A missing or
+	// unreadable allowlist is a hard failure rather than a swallowed error:
+	// treating a read failure as "zero entries" would let the gate proceed
+	// as though the allowlist were empty, and every allowlisted key would
+	// resurface as a spurious "new" violation, burying the real ones. A file
+	// that exists but is genuinely empty is legitimate and parses to zero
+	// entries without error, so it is not failed here.
+	if _, err := os.Stat(want); err != nil {
+		t.Fatalf("allowlist %s is missing or unreadable: %v", want, err)
+	}
 	if _, err := readViolationAllowlist(want); err != nil {
-		t.Errorf("allowlist does not parse: %v", err)
+		t.Fatalf("allowlist %s does not parse: %v", want, err)
 	}
 }
 

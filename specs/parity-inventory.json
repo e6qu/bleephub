@@ -2938,8 +2938,8 @@
         "id": "GQL-058",
         "location": "gh_projects_v2_graphql.go",
         "severity": "m",
-        "status": "open",
-        "status_kind": "open"
+        "status": "fixed \u2014 projects-v2 NOT_FOUND errors now return the typed ghNotFoundError with gqlMissingNode's 'Could not resolve ... .' wording, so the project and repository lanes match (capitalisation + trailing period)",
+        "status_kind": "fixed"
       },
       {
         "category": "GQL",
@@ -4405,8 +4405,8 @@
         "id": "CORE-028",
         "location": "server.go:530",
         "severity": "m",
-        "status": "open",
-        "status_kind": "open"
+        "status": "fixed \u2014 route()/routeDispatch() name each HTTP span by its matched route template and record it as the http.route attribute, replacing the blanket 'bleephub' name",
+        "status_kind": "fixed"
       },
       {
         "category": "CORE",
@@ -4423,8 +4423,8 @@
         "id": "CORE-030",
         "location": "metrics.go:9",
         "severity": "m",
-        "status": "open",
-        "status_kind": "open"
+        "status": "fixed \u2014 removed the JSON tags from the never-marshalled Metrics accumulator; the serialized contract remains MetricsSnapshot",
+        "status_kind": "fixed"
       },
       {
         "category": "CORE",
@@ -4432,8 +4432,8 @@
         "id": "CORE-031",
         "location": "emojiart.go:94",
         "severity": "m",
-        "status": "open",
-        "status_kind": "open"
+        "status": "fixed \u2014 initials() slices by rune via firstRunes(), so multibyte emoji names are never cut mid-rune",
+        "status_kind": "fixed"
       },
       {
         "category": "CORE",
@@ -4441,8 +4441,8 @@
         "id": "CORE-032",
         "location": "ui_embed.go:21",
         "severity": "m",
-        "status": "open",
-        "status_kind": "open"
+        "status": "fixed \u2014 documented /ui/ as a deliberate, explained exception to the route-registry invariant (it cannot join routePatterns without breaking the authz-matrix/api-definition tests)",
+        "status_kind": "fixed"
       },
       {
         "category": "WEB",
@@ -4675,8 +4675,8 @@
         "id": "WEB-026",
         "location": "11 pages",
         "severity": "m",
-        "status": "open",
-        "status_kind": "open"
+        "status": "fixed \u2014 added aria-labels to the 24 genuinely-unlabeled form controls across 8 pages",
+        "status_kind": "fixed"
       },
       {
         "category": "WEB",
@@ -4711,8 +4711,8 @@
         "id": "WEB-030",
         "location": "GistsPage.tsx:461",
         "severity": "m",
-        "status": "open",
-        "status_kind": "open"
+        "status": "fixed \u2014 GistsPage create/edit file rows use a stable client-generated id key instead of the array index",
+        "status_kind": "fixed"
       },
       {
         "category": "WEB",
@@ -4810,8 +4810,8 @@
         "id": "WEB-041",
         "location": "AppHeader.tsx:353",
         "severity": "m",
-        "status": "open",
-        "status_kind": "open"
+        "status": "fixed \u2014 dropped the dead 'unread !== false' guard in AppHeader; unread is a non-optional boolean the server always emits",
+        "status_kind": "fixed"
       },
       {
         "category": "WEB",
@@ -4819,8 +4819,8 @@
         "id": "WEB-042",
         "location": "ClassroomPage.tsx",
         "severity": "m",
-        "status": "open",
-        "status_kind": "open"
+        "status": "fixed \u2014 reformatted the seven minified single-line components to multi-line JSX; no line >=1000 chars remains",
+        "status_kind": "fixed"
       },
       {
         "category": "WEB",
@@ -4828,8 +4828,8 @@
         "id": "WEB-043",
         "location": "api.ts",
         "severity": "m",
-        "status": "open",
-        "status_kind": "open"
+        "status": "fixed \u2014 wrapped single-segment path parameters (logins/org/repo/name/slug) in encodeURIComponent across ~118 api.ts sites, leaving composed multi-segment paths/refs untouched",
+        "status_kind": "fixed"
       },
       {
         "category": "WEB",
@@ -4945,8 +4945,8 @@
         "id": "WEB-056",
         "location": "web/src/pages/RepoDetailPage.tsx",
         "severity": "m",
-        "status": "partial \u2014 a full page now renders \"100+\" rather than a wrong exact count; a precise total needs a count endpoint the client cannot currently reach",
-        "status_kind": "partial"
+        "status": "fixed \u2014 already resolved on main: the latest-commit banner renders '100+' via hasMore rather than a silent cap",
+        "status_kind": "fixed"
       },
       {
         "category": "WEB",
@@ -5278,8 +5278,8 @@
         "id": "TEST-030",
         "location": "sdk-tests/repositories_test.go:79",
         "severity": "m",
-        "status": "open",
-        "status_kind": "open"
+        "status": "fixed \u2014 the post-delete SDK check requires 404 Not Found instead of accepting any error",
+        "status_kind": "fixed"
       },
       {
         "category": "TEST",
@@ -5287,8 +5287,8 @@
         "id": "TEST-031",
         "location": "fuzz_emoji_test.go:54",
         "severity": "m",
-        "status": "open",
-        "status_kind": "open"
+        "status": "fixed \u2014 the emoji fuzz test builds requests via the shared fuzzFixture.buildRequest, so control-byte paths reach the mux instead of being dropped",
+        "status_kind": "fixed"
       },
       {
         "category": "TEST",
@@ -5296,8 +5296,8 @@
         "id": "TEST-032",
         "location": "stress_crud_test.go:119",
         "severity": "m",
-        "status": "open",
-        "status_kind": "open"
+        "status": "fixed \u2014 the stress seed is read from BLEEPHUB_STRESS_SEED (time-based default) and always logged with a replay hint",
+        "status_kind": "fixed"
       },
       {
         "category": "TEST",
@@ -5305,8 +5305,8 @@
         "id": "TEST-033",
         "location": "4 files",
         "severity": "m",
-        "status": "open",
-        "status_kind": "open"
+        "status": "fixed \u2014 removed ledger/bug IDs from comments across 24 test files (string-literal test data preserved)",
+        "status_kind": "fixed"
       },
       {
         "category": "TEST",
@@ -5314,8 +5314,8 @@
         "id": "TEST-034",
         "location": "auth_hardening_test.go:93",
         "severity": "m",
-        "status": "open",
-        "status_kind": "open"
+        "status": "fixed \u2014 the auth-hardening test asserts the expected 200 for authed internal endpoints instead of merely 'not 401'",
+        "status_kind": "fixed"
       },
       {
         "category": "TEST",
@@ -5557,8 +5557,8 @@
         "id": "PAR-023",
         "location": "Dockerfile.gh-test:6",
         "severity": "m",
-        "status": "partial \u2014 the apt signing keyring is pinned by SHA-256 and its two fingerprints are recorded, so a key rotation fails closed; the repository publishes only one `gh` version and the installed package version still floats",
-        "status_kind": "partial"
+        "status": "fixed \u2014 Dockerfile.gh-test pins gh to 2.92.0 via a checksum-verified .deb download instead of the rolling apt repo",
+        "status_kind": "fixed"
       },
       {
         "category": "PAR",
@@ -5566,8 +5566,8 @@
         "id": "PAR-024",
         "location": "emoji assets",
         "severity": "m",
-        "status": "partial \u2014 Twemoji now records and enforces its source commit, source-tarball digest and generated-archive digest. The gemoji catalogue records its source endpoint, derivation date, 1,936-entry count and vendored digest, but the endpoint exposes no immutable revision and no build check enforces that digest",
-        "status_kind": "partial"
+        "status": "fixed \u2014 added internal/server/emoji-assets.PROVENANCE.md recording upstream source, commit/version and SHA-256 for the two vendored emoji artifacts",
+        "status_kind": "fixed"
       },
       {
         "category": "PAR",
@@ -5575,8 +5575,8 @@
         "id": "PAR-025",
         "location": "openapi_shape_validator_test.go:463",
         "severity": "m",
-        "status": "open",
-        "status_kind": "open"
+        "status": "fixed \u2014 an unreadable/missing violation allowlist is now a hard test failure instead of being treated as empty",
+        "status_kind": "fixed"
       },
       {
         "category": "PAR",
@@ -5584,8 +5584,8 @@
         "id": "PAR-026",
         "location": "openapi_shape_validator_test.go:183",
         "severity": "m",
-        "status": "open",
-        "status_kind": "open"
+        "status": "fixed \u2014 internal-URL detection now flags only values whose path first segment is /internal/, so ordinary repository content no longer false-positives",
+        "status_kind": "fixed"
       },
       {
         "category": "PAR",
@@ -5593,8 +5593,8 @@
         "id": "PAR-027",
         "location": "spec:123, gh doc:142",
         "severity": "m",
-        "status": "open",
-        "status_kind": "open"
+        "status": "fixed \u2014 removed the dangling WHAT_WE_DID.md reference and pointed the gh-CLI doc's BUGS.md mention at the real file",
+        "status_kind": "fixed"
       },
       {
         "category": "PAR",
@@ -5602,8 +5602,8 @@
         "id": "PAR-028",
         "location": "gh_codespaces.go:990",
         "severity": "m",
-        "status": "open",
-        "status_kind": "open"
+        "status": "fixed \u2014 codespace serializer emits the stored Location and IdleTimeoutMinutes; the invalid 'local' default is now a real Azure region ('EastUs')",
+        "status_kind": "fixed"
       },
       {
         "category": "PAR",
@@ -6070,8 +6070,8 @@
         "id": "CI-041",
         "location": "Dockerfile.release:22",
         "severity": "m",
-        "status": "partial \u2014 all three shipped Go binaries now build with `-trimpath`; the SSH gateway and dqlite node still carry no version stamp",
-        "status_kind": "partial"
+        "status": "fixed \u2014 Dockerfile.release version-stamps all three binaries; ssh-gateway and dqlite-node gained the main.version/commit/publishedAt vars so the -X stamps are live (trimpath was already present)",
+        "status_kind": "fixed"
       },
       {
         "category": "CI",
@@ -6133,8 +6133,8 @@
         "id": "CI-048",
         "location": "ci.yml:3",
         "severity": "m",
-        "status": "open",
-        "status_kind": "open"
+        "status": "fixed \u2014 ci.yml push/pull_request carry a docs-only paths-ignore; any code/config/spec/workflow/ledger change still runs the full pipeline",
+        "status_kind": "fixed"
       },
       {
         "category": "CI",
@@ -6178,7 +6178,7 @@
         "id": "CI-053",
         "location": ".dockerignore",
         "severity": "m",
-        "status": "open",
+        "status": "open \u2014 the naive fix (dockerignore internal/server/dist) is wrong: a single global .dockerignore also strips it from the shauth-sso-test build, whose `go:embed all:dist` compiles the committed copy directly (no ui-builder regen stage), breaking that image with \"pattern all:dist: no matching files found\". A correct fix needs per-Dockerfile scoping or making every embed build regenerate dist first",
         "status_kind": "open"
       },
       {
@@ -6205,8 +6205,8 @@
         "id": "CI-056",
         "location": "ci.yml:31-103",
         "severity": "m",
-        "status": "open",
-        "status_kind": "open"
+        "status": "fixed \u2014 the web/browser/shauth-sso jobs cache ~/.bun/install/cache keyed on bun.lock, matching the Go jobs and Dockerfile",
+        "status_kind": "fixed"
       },
       {
         "category": "CI",
@@ -6325,33 +6325,32 @@
         },
         "CI": {
           "status": {
-            "fixed": 46,
-            "open": 16,
-            "partial": 3
+            "fixed": 49,
+            "open": 14,
+            "partial": 2
           },
           "total": 65
         },
         "CORE": {
           "status": {
-            "fixed": 12,
-            "open": 17,
+            "fixed": 16,
+            "open": 13,
             "partial": 3
           },
           "total": 32
         },
         "GQL": {
           "status": {
-            "fixed": 50,
-            "open": 8,
+            "fixed": 51,
+            "open": 7,
             "partial": 3
           },
           "total": 61
         },
         "PAR": {
           "status": {
-            "fixed": 21,
-            "open": 16,
-            "partial": 2
+            "fixed": 27,
+            "open": 12
           },
           "total": 39
         },
@@ -6372,17 +6371,17 @@
         },
         "TEST": {
           "status": {
-            "fixed": 17,
-            "open": 22,
+            "fixed": 22,
+            "open": 17,
             "partial": 1
           },
           "total": 40
         },
         "WEB": {
           "status": {
-            "fixed": 47,
-            "open": 11,
-            "partial": 5
+            "fixed": 53,
+            "open": 6,
+            "partial": 4
           },
           "total": 63
         }
@@ -6394,9 +6393,9 @@
       },
       "status": {
         "deferred": 1,
-        "fixed": 516,
-        "open": 116,
-        "partial": 40
+        "fixed": 541,
+        "open": 95,
+        "partial": 36
       },
       "total": 673
     }

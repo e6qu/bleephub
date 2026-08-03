@@ -934,7 +934,7 @@ async function ghFetchPage<T>(url: string, signal?: AbortSignal): Promise<Page<T
 }
 
 export const fetchRepoDetail = (owner: string, repo: string, signal?: AbortSignal) =>
-  ghFetch<BleephubRepo>(`/api/v3/repos/${owner}/${repo}`, signal);
+  ghFetch<BleephubRepo>(`/api/v3/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}`, signal);
 
 function buildRepoListURL(
   base: string,
@@ -970,7 +970,7 @@ export const fetchOrgReposPage = (
   signal?: AbortSignal,
 ): Promise<Page<BleephubRepo>> =>
   ghFetchPage<BleephubRepo>(
-    buildRepoListURL(`/api/v3/orgs/${org}/repos`, filters, 30, pageUrl),
+    buildRepoListURL(`/api/v3/orgs/${encodeURIComponent(org)}/repos`, filters, 30, pageUrl),
     signal,
   );
 
@@ -998,14 +998,14 @@ export const createOrgRepo = (
     gitignore_template?: string;
     license_template?: string;
   },
-): Promise<BleephubRepo> => ghPostJSON(`/api/v3/orgs/${org}/repos`, payload);
+): Promise<BleephubRepo> => ghPostJSON(`/api/v3/orgs/${encodeURIComponent(org)}/repos`, payload);
 
 export async function updateRepo(
   owner: string,
   repo: string,
   payload: Partial<BleephubRepo>,
 ): Promise<BleephubRepo> {
-  const res = await apiFetch(`/api/v3/repos/${owner}/${repo}`, {
+  const res = await apiFetch(`/api/v3/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}`, {
     method: "PATCH",
     headers: { "Content-Type": "application/json", ...authHeaders() },
     body: JSON.stringify(payload),
@@ -1025,7 +1025,7 @@ export const fetchRepoContents = (
   ref?: string,
 ): Promise<GithubContentItem[]> => {
   const qs = ref ? `?ref=${encodeURIComponent(ref)}` : "";
-  return ghFetch<GithubContentItem[]>(`/api/v3/repos/${owner}/${repo}/contents/${path}${qs}`);
+  return ghFetch<GithubContentItem[]>(`/api/v3/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/contents/${path}${qs}`);
 };
 
 export const fetchRepoFile = (
@@ -1043,14 +1043,14 @@ export const fetchRepoFile = (
 
 export const fetchRepoReadme = (owner: string, repo: string, ref?: string): Promise<GithubContentFile> => {
   const qs = ref ? `?ref=${encodeURIComponent(ref)}` : "";
-  return ghFetch<GithubContentFile>(`/api/v3/repos/${owner}/${repo}/readme${qs}`);
+  return ghFetch<GithubContentFile>(`/api/v3/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/readme${qs}`);
 };
 
 export const fetchRepoTopics = (owner: string, repo: string): Promise<{ names: string[] }> =>
-  ghFetch<{ names: string[] }>(`/api/v3/repos/${owner}/${repo}/topics`);
+  ghFetch<{ names: string[] }>(`/api/v3/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/topics`);
 
 export const updateRepoTopics = (owner: string, repo: string, names: string[]): Promise<{ names: string[] }> =>
-  ghPutJSON(`/api/v3/repos/${owner}/${repo}/topics`, { names });
+  ghPutJSON(`/api/v3/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/topics`, { names });
 
 async function ghPutJSON<T>(path: string, body: unknown): Promise<T> {
   const res = await apiFetch(path, {
@@ -1379,16 +1379,16 @@ export const fetchRepoIssuesPage = (
   signal?: AbortSignal,
 ) =>
   ghFetchPage<GithubIssue>(
-    pageUrl ?? `/api/v3/repos/${owner}/${repo}/issues?state=${state}&per_page=50`,
+    pageUrl ?? `/api/v3/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/issues?state=${state}&per_page=50`,
     signal,
   );
 
 export const fetchIssueDetail = (owner: string, repo: string, number: number, signal?: AbortSignal) =>
-  ghFetch<GithubIssue>(`/api/v3/repos/${owner}/${repo}/issues/${number}`, signal);
+  ghFetch<GithubIssue>(`/api/v3/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/issues/${number}`, signal);
 
 export const fetchIssueComments = (owner: string, repo: string, number: number) =>
   ghFetch<GithubComment[]>(
-    `/api/v3/repos/${owner}/${repo}/issues/${number}/comments`
+    `/api/v3/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/issues/${number}/comments`
   );
 
 /** First page by (owner, repo, state); follow-up pages by the Link rel="next" URL. */
@@ -1400,18 +1400,18 @@ export const fetchRepoPRsPage = (
   signal?: AbortSignal,
 ) =>
   ghFetchPage<GithubPR>(
-    pageUrl ?? `/api/v3/repos/${owner}/${repo}/pulls?state=${state}&per_page=50`,
+    pageUrl ?? `/api/v3/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/pulls?state=${state}&per_page=50`,
     signal,
   );
 
 export const fetchPRDetail = (owner: string, repo: string, number: number, signal?: AbortSignal) =>
-  ghFetch<GithubPR>(`/api/v3/repos/${owner}/${repo}/pulls/${number}`, signal);
+  ghFetch<GithubPR>(`/api/v3/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/pulls/${number}`, signal);
 
 export const fetchRepoBranches = (owner: string, repo: string) =>
-  ghFetch<GithubBranch[]>(`/api/v3/repos/${owner}/${repo}/branches`);
+  ghFetch<GithubBranch[]>(`/api/v3/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/branches`);
 
 export const fetchRepoBranch = (owner: string, repo: string, branch: string) =>
-  ghFetch<GithubBranch>(`/api/v3/repos/${owner}/${repo}/branches/${encodeURIComponent(branch)}`);
+  ghFetch<GithubBranch>(`/api/v3/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/branches/${encodeURIComponent(branch)}`);
 
 export const fetchBranchProtection = async (
   owner: string,
@@ -1420,7 +1420,7 @@ export const fetchBranchProtection = async (
 ): Promise<GithubBranchProtection | null> => {
   try {
     return await ghFetch<GithubBranchProtection>(
-      `/api/v3/repos/${owner}/${repo}/branches/${encodeURIComponent(branch)}/protection`,
+      `/api/v3/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/branches/${encodeURIComponent(branch)}/protection`,
     );
   } catch (err) {
     if (isNotFound(err)) return null;
@@ -1433,10 +1433,10 @@ export const updateBranchProtection = (
   repo: string,
   branch: string,
   payload: Partial<GithubBranchProtection>,
-) => ghPutJSON<GithubBranchProtection>(`/api/v3/repos/${owner}/${repo}/branches/${encodeURIComponent(branch)}/protection`, payload);
+) => ghPutJSON<GithubBranchProtection>(`/api/v3/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/branches/${encodeURIComponent(branch)}/protection`, payload);
 
 export const deleteBranchProtection = (owner: string, repo: string, branch: string) =>
-  ghDeleteJSON<void>(`/api/v3/repos/${owner}/${repo}/branches/${encodeURIComponent(branch)}/protection`, {});
+  ghDeleteJSON<void>(`/api/v3/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/branches/${encodeURIComponent(branch)}/protection`, {});
 
 export interface RepoCommitListOptions {
   sha?: string;
@@ -1482,7 +1482,7 @@ export const setBranchRestrictionUsers = (
   branch: string,
   users: string[],
 ) => ghPutJSON<GithubActor[]>(
-  `/api/v3/repos/${owner}/${repo}/branches/${encodeURIComponent(branch)}/protection/restrictions/users`,
+  `/api/v3/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/branches/${encodeURIComponent(branch)}/protection/restrictions/users`,
   { users },
 );
 
@@ -1492,7 +1492,7 @@ export const setBranchRestrictionTeams = (
   branch: string,
   teams: string[],
 ) => ghPutJSON<GithubTeamRef[]>(
-  `/api/v3/repos/${owner}/${repo}/branches/${encodeURIComponent(branch)}/protection/restrictions/teams`,
+  `/api/v3/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/branches/${encodeURIComponent(branch)}/protection/restrictions/teams`,
   { teams },
 );
 
@@ -1501,7 +1501,7 @@ export async function createIssue(
   repo: string,
   payload: { title: string; body?: string },
 ): Promise<GithubIssue> {
-  const res = await apiFetch(`/api/v3/repos/${owner}/${repo}/issues`, {
+  const res = await apiFetch(`/api/v3/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/issues`, {
     method: "POST",
     headers: { "Content-Type": "application/json", ...authHeaders() },
     body: JSON.stringify(payload),
@@ -1519,7 +1519,7 @@ export async function mergePR(
   number: number,
   mergeMethod = "merge",
 ): Promise<void> {
-  const res = await apiFetch(`/api/v3/repos/${owner}/${repo}/pulls/${number}/merge`, {
+  const res = await apiFetch(`/api/v3/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/pulls/${number}/merge`, {
     method: "PUT",
     headers: { "Content-Type": "application/json", ...authHeaders() },
     body: JSON.stringify({ merge_method: mergeMethod }),
@@ -1534,7 +1534,7 @@ export async function mergePR(
 }
 
 export const fetchWebhooks = (owner: string, repo: string) =>
-  ghFetch<GithubWebhook[]>(`/api/v3/repos/${owner}/${repo}/hooks`);
+  ghFetch<GithubWebhook[]>(`/api/v3/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/hooks`);
 
 // Secrets + environments come back in GitHub's list envelope
 // ({secrets:[…], total_count}) — unwrap to the array the user interface renders.
@@ -1542,7 +1542,7 @@ export const fetchWebhooks = (owner: string, repo: string) =>
 // field should surface as an error, not a silent "none configured".
 export const fetchSecrets = (owner: string, repo: string) =>
   ghFetch<{ secrets: GithubSecret[] }>(
-    `/api/v3/repos/${owner}/${repo}/actions/secrets`
+    `/api/v3/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/actions/secrets`
   ).then((r) => {
     if (!Array.isArray(r.secrets)) {
       throw new Error(`malformed response: missing "secrets" array`);
@@ -1552,7 +1552,7 @@ export const fetchSecrets = (owner: string, repo: string) =>
 
 export const fetchEnvironments = (owner: string, repo: string) =>
   ghFetch<{ environments: GithubEnvironment[] }>(
-    `/api/v3/repos/${owner}/${repo}/environments`
+    `/api/v3/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/environments`
   ).then((r) => {
     if (!Array.isArray(r.environments)) {
       throw new Error(`malformed response: missing "environments" array`);
@@ -1561,10 +1561,10 @@ export const fetchEnvironments = (owner: string, repo: string) =>
   });
 
 export const fetchReleases = (owner: string, repo: string) =>
-  ghFetch<GithubRelease[]>(`/api/v3/repos/${owner}/${repo}/releases`);
+  ghFetch<GithubRelease[]>(`/api/v3/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/releases`);
 
 export const fetchRelease = (owner: string, repo: string, releaseId: number) =>
-  ghFetch<GithubRelease>(`/api/v3/repos/${owner}/${repo}/releases/${releaseId}`);
+  ghFetch<GithubRelease>(`/api/v3/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/releases/${releaseId}`);
 
 export interface ReleasePayload {
   tag_name: string;
@@ -1576,7 +1576,7 @@ export interface ReleasePayload {
 }
 
 export const createRelease = (owner: string, repo: string, payload: ReleasePayload) =>
-  ghPostJSON<GithubRelease>(`/api/v3/repos/${owner}/${repo}/releases`, payload);
+  ghPostJSON<GithubRelease>(`/api/v3/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/releases`, payload);
 
 export async function updateRelease(
   owner: string,
@@ -1584,7 +1584,7 @@ export async function updateRelease(
   releaseId: number,
   payload: Partial<ReleasePayload>,
 ): Promise<GithubRelease> {
-  const res = await apiFetch(`/api/v3/repos/${owner}/${repo}/releases/${releaseId}`, {
+  const res = await apiFetch(`/api/v3/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/releases/${releaseId}`, {
     method: "PATCH",
     headers: { "Content-Type": "application/json", ...authHeaders() },
     body: JSON.stringify(payload),
@@ -1598,7 +1598,7 @@ export async function updateRelease(
 }
 
 export async function deleteRelease(owner: string, repo: string, releaseId: number): Promise<void> {
-  await ghSend("DELETE", `/api/v3/repos/${owner}/${repo}/releases/${releaseId}`);
+  await ghSend("DELETE", `/api/v3/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/releases/${releaseId}`);
 }
 
 export async function uploadReleaseAsset(
@@ -1611,7 +1611,7 @@ export async function uploadReleaseAsset(
   const params = new URLSearchParams({ name: file.name });
   if (label) params.set("label", label);
   const res = await apiFetch(
-    `/api/uploads/repos/${owner}/${repo}/releases/${releaseId}/assets?${params}`,
+    `/api/uploads/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/releases/${releaseId}/assets?${params}`,
     {
       method: "POST",
       headers: { "Content-Type": file.type || "application/octet-stream", ...authHeaders() },
@@ -1627,7 +1627,7 @@ export async function uploadReleaseAsset(
 }
 
 export async function downloadReleaseAsset(owner: string, repo: string, assetId: number): Promise<Blob> {
-  const res = await apiFetch(`/api/v3/repos/${owner}/${repo}/releases/assets/${assetId}`, {
+  const res = await apiFetch(`/api/v3/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/releases/assets/${assetId}`, {
     headers: { Accept: "application/octet-stream", ...authHeaders() },
   });
   if (!res.ok) {
@@ -1638,7 +1638,7 @@ export async function downloadReleaseAsset(owner: string, repo: string, assetId:
 }
 
 export async function deleteReleaseAsset(owner: string, repo: string, assetId: number): Promise<void> {
-  await ghSend("DELETE", `/api/v3/repos/${owner}/${repo}/releases/assets/${assetId}`);
+  await ghSend("DELETE", `/api/v3/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/releases/assets/${assetId}`);
 }
 
 // ─── GitHub Actions Representational State Transfer ─────────────────────
@@ -1704,7 +1704,7 @@ async function ghSend(method: string, path: string, body?: unknown): Promise<voi
 
 export const fetchActionsWorkflows = (owner: string, repo: string, signal?: AbortSignal) =>
   ghFetchEnvelope<GithubWorkflow>(
-    `/api/v3/repos/${owner}/${repo}/actions/workflows?per_page=100`,
+    `/api/v3/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/actions/workflows?per_page=100`,
     "workflows",
     undefined,
     signal,
@@ -1729,8 +1729,8 @@ export function fetchWorkflowRunsPage(
 ): Promise<EnvelopePage<GithubWorkflowRun>> {
   if (pageUrl) return ghFetchEnvelope<GithubWorkflowRun>(pageUrl, "workflow_runs", undefined, signal);
   const base = filters.workflowId
-    ? `/api/v3/repos/${owner}/${repo}/actions/workflows/${filters.workflowId}/runs`
-    : `/api/v3/repos/${owner}/${repo}/actions/runs`;
+    ? `/api/v3/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/actions/workflows/${filters.workflowId}/runs`
+    : `/api/v3/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/actions/runs`;
   const params = new URLSearchParams({ per_page: "30" });
   if (filters.status) params.set("status", filters.status);
   if (filters.branch) params.set("branch", filters.branch);
@@ -1739,7 +1739,7 @@ export function fetchWorkflowRunsPage(
 }
 
 export const fetchWorkflowRun = (owner: string, repo: string, runId: number, signal?: AbortSignal) =>
-  ghFetch<GithubWorkflowRun>(`/api/v3/repos/${owner}/${repo}/actions/runs/${runId}`, signal);
+  ghFetch<GithubWorkflowRun>(`/api/v3/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/actions/runs/${runId}`, signal);
 
 /**
  * Run shape for a specific attempt. 404s on servers that don't model
@@ -1752,12 +1752,12 @@ export const fetchWorkflowRunAttempt = (
   attempt: number,
 ) =>
   ghFetch<GithubWorkflowRun>(
-    `/api/v3/repos/${owner}/${repo}/actions/runs/${runId}/attempts/${attempt}`,
+    `/api/v3/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/actions/runs/${runId}/attempts/${attempt}`,
   );
 
 export const fetchRunJobs = (owner: string, repo: string, runId: number, signal?: AbortSignal) =>
   ghFetchEnvelope<GithubJob>(
-    `/api/v3/repos/${owner}/${repo}/actions/runs/${runId}/jobs?per_page=100`,
+    `/api/v3/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/actions/runs/${runId}/jobs?per_page=100`,
     "jobs",
     undefined,
     signal,
@@ -1765,7 +1765,7 @@ export const fetchRunJobs = (owner: string, repo: string, runId: number, signal?
 
 /** Job logs are text/plain, not JSON. */
 export async function fetchJobLogs(owner: string, repo: string, jobId: number): Promise<string> {
-  const res = await apiFetch(`/api/v3/repos/${owner}/${repo}/actions/jobs/${jobId}/logs`, {
+  const res = await apiFetch(`/api/v3/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/actions/jobs/${jobId}/logs`, {
     headers: authHeaders(),
   });
   if (!res.ok) {
@@ -1777,50 +1777,50 @@ export async function fetchJobLogs(owner: string, repo: string, jobId: number): 
 
 export const fetchJobSummary = (owner: string, repo: string, jobId: number) =>
   ghFetch<{ summary: string }>(
-    `/internal/repos/${owner}/${repo}/actions/jobs/${jobId}/summary`,
+    `/internal/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/actions/jobs/${jobId}/summary`,
   ).then((result) => result.summary);
 
 export const cancelRun = (owner: string, repo: string, runId: number) =>
-  ghSend("POST", `/api/v3/repos/${owner}/${repo}/actions/runs/${runId}/cancel`);
+  ghSend("POST", `/api/v3/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/actions/runs/${runId}/cancel`);
 
 export const rerunRun = (owner: string, repo: string, runId: number) =>
-  ghSend("POST", `/api/v3/repos/${owner}/${repo}/actions/runs/${runId}/rerun`);
+  ghSend("POST", `/api/v3/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/actions/runs/${runId}/rerun`);
 
 export const rerunFailedJobs = (owner: string, repo: string, runId: number) =>
-  ghSend("POST", `/api/v3/repos/${owner}/${repo}/actions/runs/${runId}/rerun-failed-jobs`);
+  ghSend("POST", `/api/v3/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/actions/runs/${runId}/rerun-failed-jobs`);
 
 export const fetchRunArtifacts = (owner: string, repo: string, runId: number) =>
   ghFetchEnvelope<GithubArtifact>(
-    `/api/v3/repos/${owner}/${repo}/actions/runs/${runId}/artifacts`,
+    `/api/v3/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/actions/runs/${runId}/artifacts`,
     "artifacts",
   );
 
 export const fetchRepoArtifacts = (owner: string, repo: string) =>
   ghFetchEnvelope<GithubArtifact>(
-    `/api/v3/repos/${owner}/${repo}/actions/artifacts?per_page=100`,
+    `/api/v3/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/actions/artifacts?per_page=100`,
     "artifacts",
   );
 
 export const deleteRepoArtifact = (owner: string, repo: string, artifactId: number) =>
-  ghSend("DELETE", `/api/v3/repos/${owner}/${repo}/actions/artifacts/${artifactId}`);
+  ghSend("DELETE", `/api/v3/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/actions/artifacts/${artifactId}`);
 
 export const fetchRepoActionsCaches = (owner: string, repo: string) =>
   ghFetchEnvelope<GithubActionsCache>(
-    `/api/v3/repos/${owner}/${repo}/actions/caches?per_page=100`,
+    `/api/v3/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/actions/caches?per_page=100`,
     "actions_caches",
   );
 
 export const fetchRepoActionsCacheUsage = (owner: string, repo: string) =>
   ghFetch<GithubActionsCacheUsage>(
-    `/api/v3/repos/${owner}/${repo}/actions/cache/usage`,
+    `/api/v3/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/actions/cache/usage`,
   );
 
 export const deleteRepoActionsCache = (owner: string, repo: string, cacheId: number) =>
-  ghSend("DELETE", `/api/v3/repos/${owner}/${repo}/actions/caches/${cacheId}`);
+  ghSend("DELETE", `/api/v3/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/actions/caches/${cacheId}`);
 
 export const fetchPendingDeployments = (owner: string, repo: string, runId: number) =>
   ghFetch<GithubPendingDeployment[]>(
-    `/api/v3/repos/${owner}/${repo}/actions/runs/${runId}/pending_deployments`,
+    `/api/v3/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/actions/runs/${runId}/pending_deployments`,
   );
 
 export const reviewPendingDeployments = (
@@ -1829,25 +1829,25 @@ export const reviewPendingDeployments = (
   runId: number,
   body: { environment_ids: number[]; state: "approved" | "rejected"; comment: string },
 ) =>
-  ghSend("POST", `/api/v3/repos/${owner}/${repo}/actions/runs/${runId}/pending_deployments`, body);
+  ghSend("POST", `/api/v3/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/actions/runs/${runId}/pending_deployments`, body);
 
 export const enableWorkflow = (owner: string, repo: string, workflowId: number) =>
-  ghSend("PUT", `/api/v3/repos/${owner}/${repo}/actions/workflows/${workflowId}/enable`);
+  ghSend("PUT", `/api/v3/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/actions/workflows/${workflowId}/enable`);
 
 export const disableWorkflow = (owner: string, repo: string, workflowId: number) =>
-  ghSend("PUT", `/api/v3/repos/${owner}/${repo}/actions/workflows/${workflowId}/disable`);
+  ghSend("PUT", `/api/v3/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/actions/workflows/${workflowId}/disable`);
 
 export const fetchFileContent = (owner: string, repo: string, path: string) =>
-  ghFetch<GithubContentFile>(`/api/v3/repos/${owner}/${repo}/contents/${path}`);
+  ghFetch<GithubContentFile>(`/api/v3/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/contents/${path}`);
 
 export const fetchCheckRuns = (owner: string, repo: string, sha: string) =>
   ghFetchEnvelope<GithubCheckRun>(
-    `/api/v3/repos/${owner}/${repo}/commits/${sha}/check-runs`,
+    `/api/v3/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/commits/${sha}/check-runs`,
     "check_runs",
   );
 
 export const fetchActionsRunners = (owner: string, repo: string) =>
-  ghFetchEnvelope<GithubRunner>(`/api/v3/repos/${owner}/${repo}/actions/runners`, "runners");
+  ghFetchEnvelope<GithubRunner>(`/api/v3/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/actions/runners`, "runners");
 
 // ─── Secrets & variables (repo / environment / org scopes) ──────────────
 
@@ -1864,11 +1864,11 @@ export type SecretsScope =
 function scopeBase(s: SecretsScope): string {
   switch (s.kind) {
     case "repo":
-      return `/api/v3/repos/${s.owner}/${s.repo}/actions`;
+      return `/api/v3/repos/${encodeURIComponent(s.owner)}/${encodeURIComponent(s.repo)}/actions`;
     case "env":
-      return `/api/v3/repos/${s.owner}/${s.repo}/environments/${encodeURIComponent(s.env)}`;
+      return `/api/v3/repos/${encodeURIComponent(s.owner)}/${encodeURIComponent(s.repo)}/environments/${encodeURIComponent(s.env)}`;
     case "org":
-      return `/api/v3/orgs/${s.org}/actions`;
+      return `/api/v3/orgs/${encodeURIComponent(s.org)}/actions`;
   }
 }
 
@@ -1909,32 +1909,32 @@ export const deleteScopedVariable = (scope: SecretsScope, name: string) =>
 
 export async function fetchUsers(): Promise<BleephubUser[]> {
   const users = await ghFetch<BleephubUser[]>("/api/v3/users?per_page=100");
-  return Promise.all(users.map((user) => ghFetch<BleephubUser>(`/api/v3/users/${user.login}`)));
+  return Promise.all(users.map((user) => ghFetch<BleephubUser>(`/api/v3/users/${encodeURIComponent(user.login)}`)));
 }
 
 export async function createUser(payload: { login: string; email?: string; site_admin?: boolean }): Promise<BleephubUser> {
   const user = await ghPostJSON<BleephubUser>("/api/v3/admin/users", { login: payload.login, email: payload.email });
   if (payload.site_admin) {
-    await ghSend("PUT", `/api/v3/users/${user.login}/site_admin`);
+    await ghSend("PUT", `/api/v3/users/${encodeURIComponent(user.login)}/site_admin`);
   }
-  return ghFetch<BleephubUser>(`/api/v3/users/${user.login}`);
+  return ghFetch<BleephubUser>(`/api/v3/users/${encodeURIComponent(user.login)}`);
 }
 
 export async function updateUser(login: string, payload: Pick<Partial<BleephubUser>, "site_admin">): Promise<BleephubUser> {
   if (payload.site_admin === true) {
-    await ghSend("PUT", `/api/v3/users/${login}/site_admin`);
+    await ghSend("PUT", `/api/v3/users/${encodeURIComponent(login)}/site_admin`);
   } else if (payload.site_admin === false) {
-    await ghSend("DELETE", `/api/v3/users/${login}/site_admin`);
+    await ghSend("DELETE", `/api/v3/users/${encodeURIComponent(login)}/site_admin`);
   }
-  return ghFetch<BleephubUser>(`/api/v3/users/${login}`);
+  return ghFetch<BleephubUser>(`/api/v3/users/${encodeURIComponent(login)}`);
 }
 
 export const deleteUser = (login: string) =>
-  ghSend("DELETE", `/api/v3/admin/users/${login}`);
+  ghSend("DELETE", `/api/v3/admin/users/${encodeURIComponent(login)}`);
 
 export async function fetchOrgs(): Promise<BleephubOrg[]> {
   const orgs = await ghFetch<GithubOrgSummary[]>("/api/v3/organizations?per_page=100");
-  return Promise.all(orgs.map((org) => ghFetch<BleephubOrg>(`/api/v3/orgs/${org.login}`)));
+  return Promise.all(orgs.map((org) => ghFetch<BleephubOrg>(`/api/v3/orgs/${encodeURIComponent(org.login)}`)));
 }
 
 export async function createOrg(payload: {
@@ -1950,7 +1950,7 @@ export async function createOrg(payload: {
     profile_name: payload.name || payload.login,
   });
   if (payload.description || payload.billing_email) {
-    return ghPatchJSON<BleephubOrg>(`/api/v3/orgs/${org.login}`, {
+    return ghPatchJSON<BleephubOrg>(`/api/v3/orgs/${encodeURIComponent(org.login)}`, {
       description: payload.description,
       billing_email: payload.billing_email,
     });
@@ -1959,58 +1959,58 @@ export async function createOrg(payload: {
 }
 
 export const updateOrg = (login: string, payload: Partial<BleephubOrg>) =>
-  ghPatchJSON<BleephubOrg>(`/api/v3/orgs/${login}`, payload);
+  ghPatchJSON<BleephubOrg>(`/api/v3/orgs/${encodeURIComponent(login)}`, payload);
 
 export const deleteOrg = (login: string) =>
-  ghSend("DELETE", `/api/v3/orgs/${login}`);
+  ghSend("DELETE", `/api/v3/orgs/${encodeURIComponent(login)}`);
 
 export const fetchTeams = () => ghFetch<BleephubTeam[]>("/api/v3/user/teams?per_page=100");
 
 export const createTeam = (payload: { org: string; name: string; description?: string; privacy?: "secret" | "closed" }) =>
-  ghPostJSON<BleephubTeam>(`/api/v3/orgs/${payload.org}/teams`, {
+  ghPostJSON<BleephubTeam>(`/api/v3/orgs/${encodeURIComponent(payload.org)}/teams`, {
     name: payload.name,
     description: payload.description,
     privacy: payload.privacy,
   });
 
 export const updateTeam = (org: string, slug: string, payload: Partial<BleephubTeam>) =>
-  ghPatchJSON<BleephubTeam>(`/api/v3/orgs/${org}/teams/${slug}`, payload);
+  ghPatchJSON<BleephubTeam>(`/api/v3/orgs/${encodeURIComponent(org)}/teams/${encodeURIComponent(slug)}`, payload);
 
 export const deleteTeam = (org: string, slug: string) =>
-  ghSend("DELETE", `/api/v3/orgs/${org}/teams/${slug}`);
+  ghSend("DELETE", `/api/v3/orgs/${encodeURIComponent(org)}/teams/${encodeURIComponent(slug)}`);
 
 export const fetchTeamMembers = (org: string, slug: string) =>
-  ghFetch<GithubTeamMember[]>(`/api/v3/orgs/${org}/teams/${slug}/members`);
+  ghFetch<GithubTeamMember[]>(`/api/v3/orgs/${encodeURIComponent(org)}/teams/${encodeURIComponent(slug)}/members`);
 
 export const addTeamMember = (org: string, slug: string, username: string, role: string) =>
-  ghPutJSON<GithubTeamMembership>(`/api/v3/orgs/${org}/teams/${slug}/memberships/${username}`, { role });
+  ghPutJSON<GithubTeamMembership>(`/api/v3/orgs/${encodeURIComponent(org)}/teams/${encodeURIComponent(slug)}/memberships/${encodeURIComponent(username)}`, { role });
 
 export const removeTeamMember = (org: string, slug: string, username: string) =>
-  ghDeleteJSON<void>(`/api/v3/orgs/${org}/teams/${slug}/memberships/${username}`, {});
+  ghDeleteJSON<void>(`/api/v3/orgs/${encodeURIComponent(org)}/teams/${encodeURIComponent(slug)}/memberships/${encodeURIComponent(username)}`, {});
 
 export const fetchTeamRepos = (org: string, slug: string) =>
-  ghFetch<GithubTeamRepo[]>(`/api/v3/orgs/${org}/teams/${slug}/repos`);
+  ghFetch<GithubTeamRepo[]>(`/api/v3/orgs/${encodeURIComponent(org)}/teams/${encodeURIComponent(slug)}/repos`);
 
 export const addTeamRepo = (org: string, slug: string, owner: string, repo: string, permission: string) =>
-  ghPutJSON<void>(`/api/v3/orgs/${org}/teams/${slug}/repos/${owner}/${repo}`, { permission });
+  ghPutJSON<void>(`/api/v3/orgs/${encodeURIComponent(org)}/teams/${encodeURIComponent(slug)}/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}`, { permission });
 
 export const removeTeamRepo = (org: string, slug: string, owner: string, repo: string) =>
-  ghDeleteJSON<void>(`/api/v3/orgs/${org}/teams/${slug}/repos/${owner}/${repo}`, {});
+  ghDeleteJSON<void>(`/api/v3/orgs/${encodeURIComponent(org)}/teams/${encodeURIComponent(slug)}/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}`, {});
 
 export const fetchChildTeams = (org: string, slug: string) =>
-  ghFetch<BleephubTeam[]>(`/api/v3/orgs/${org}/teams/${slug}/teams`);
+  ghFetch<BleephubTeam[]>(`/api/v3/orgs/${encodeURIComponent(org)}/teams/${encodeURIComponent(slug)}/teams`);
 
 export const fetchRepoDeployKeys = (owner: string, repo: string) =>
-  ghFetch<GithubDeployKey[]>(`/api/v3/repos/${owner}/${repo}/keys`);
+  ghFetch<GithubDeployKey[]>(`/api/v3/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/keys`);
 
 export const addRepoDeployKey = (owner: string, repo: string, title: string, key: string, readOnly: boolean) =>
-  ghPostJSON<GithubDeployKey>(`/api/v3/repos/${owner}/${repo}/keys`, { title, key, read_only: readOnly });
+  ghPostJSON<GithubDeployKey>(`/api/v3/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/keys`, { title, key, read_only: readOnly });
 
 export const deleteRepoDeployKey = (owner: string, repo: string, keyId: number) =>
-  ghDeleteJSON<void>(`/api/v3/repos/${owner}/${repo}/keys/${keyId}`, {});
+  ghDeleteJSON<void>(`/api/v3/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/keys/${keyId}`, {});
 
 export async function setRepoFlag(owner: string, repo: string, flag: string, enabled: boolean): Promise<void> {
-  const path = `/api/v3/repos/${owner}/${repo}`;
+  const path = `/api/v3/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}`;
   let body: Record<string, unknown>;
   switch (flag) {
     case "automated_security_fixes":
@@ -2034,10 +2034,10 @@ export async function setRepoFlag(owner: string, repo: string, flag: string, ena
  * {@link setRepoInteractionLimit}.
  */
 export const fetchRepoInteractionLimit = (owner: string, repo: string) =>
-  ghFetch<{ limit?: string }>(`/api/v3/repos/${owner}/${repo}/interaction-limits`);
+  ghFetch<{ limit?: string }>(`/api/v3/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/interaction-limits`);
 
 export const setRepoInteractionLimit = (owner: string, repo: string, limit: string | null) => {
-  const path = `/api/v3/repos/${owner}/${repo}/interaction-limits`;
+  const path = `/api/v3/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/interaction-limits`;
   if (limit === null) {
     return ghDeleteJSON<void>(path, {});
   }
@@ -2045,10 +2045,10 @@ export const setRepoInteractionLimit = (owner: string, repo: string, limit: stri
 };
 
 export const transferRepo = (owner: string, repo: string, newOwner: string) =>
-  ghPostJSON<BleephubRepo>(`/api/v3/repos/${owner}/${repo}/transfer`, { new_owner: newOwner });
+  ghPostJSON<BleephubRepo>(`/api/v3/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/transfer`, { new_owner: newOwner });
 
 export const renameBranch = (owner: string, repo: string, branch: string, newName: string) =>
-  ghPostJSON<{ url: string }>(`/api/v3/repos/${owner}/${repo}/branches/${encodeURIComponent(branch)}/rename`, { new_name: newName });
+  ghPostJSON<{ url: string }>(`/api/v3/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/branches/${encodeURIComponent(branch)}/rename`, { new_name: newName });
 
 interface GithubAuditEntry {
   _document_id: number | string;
@@ -2197,13 +2197,13 @@ export const deleteGist = (id: string) => ghSend("DELETE", `/api/v3/gists/${id}`
 // ─── GitHub Projects classic (v1) ───────────────────────────────────────
 
 export const fetchProjectsClassic = (owner: string, repo: string) =>
-  ghFetch<GithubProjectClassic[]>(`/api/v3/repos/${owner}/${repo}/projects`);
+  ghFetch<GithubProjectClassic[]>(`/api/v3/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/projects`);
 
 export const createProjectClassic = (
   owner: string,
   repo: string,
   payload: { name: string; body?: string; state?: "open" | "closed" },
-) => ghPostJSON<GithubProjectClassic>(`/api/v3/repos/${owner}/${repo}/projects`, payload);
+) => ghPostJSON<GithubProjectClassic>(`/api/v3/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/projects`, payload);
 
 export const updateProjectClassic = (
   projectId: number,
@@ -2265,21 +2265,21 @@ export const fetchSecretScanningAlerts = (
   if (filters.secret_type) params.set("secret_type", filters.secret_type);
   if (filters.resolution) params.set("resolution", filters.resolution);
   const qs = params.toString();
-  return ghFetch<GithubSecretScanningAlert[]>(`/api/v3/repos/${owner}/${repo}/secret-scanning/alerts${qs ? `?${qs}` : ""}`);
+  return ghFetch<GithubSecretScanningAlert[]>(`/api/v3/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/secret-scanning/alerts${qs ? `?${qs}` : ""}`);
 };
 
 export const fetchSecretScanningAlert = (owner: string, repo: string, number: number) =>
-  ghFetch<GithubSecretScanningAlert>(`/api/v3/repos/${owner}/${repo}/secret-scanning/alerts/${number}`);
+  ghFetch<GithubSecretScanningAlert>(`/api/v3/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/secret-scanning/alerts/${number}`);
 
 export const fetchSecretScanningAlertLocations = (owner: string, repo: string, number: number) =>
-  ghFetch<GithubSecretScanningLocation[]>(`/api/v3/repos/${owner}/${repo}/secret-scanning/alerts/${number}/locations`);
+  ghFetch<GithubSecretScanningLocation[]>(`/api/v3/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/secret-scanning/alerts/${number}/locations`);
 
 export const updateSecretScanningAlert = (
   owner: string,
   repo: string,
   number: number,
   body: { state: "open" | "resolved"; resolution?: GithubSecretScanningResolution; resolution_comment?: string },
-) => ghPatchJSON<GithubSecretScanningAlert>(`/api/v3/repos/${owner}/${repo}/secret-scanning/alerts/${number}`, body);
+) => ghPatchJSON<GithubSecretScanningAlert>(`/api/v3/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/secret-scanning/alerts/${number}`, body);
 
 // ─── Code scanning ──────────────────────────────────────────────────────
 
@@ -2305,44 +2305,44 @@ export const fetchCodeScanningAlerts = (
   if (filters.sort) params.set("sort", filters.sort);
   if (filters.direction) params.set("direction", filters.direction);
   const qs = params.toString();
-  return ghFetch<GithubCodeScanningAlert[]>(`/api/v3/repos/${owner}/${repo}/code-scanning/alerts${qs ? `?${qs}` : ""}`);
+  return ghFetch<GithubCodeScanningAlert[]>(`/api/v3/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/code-scanning/alerts${qs ? `?${qs}` : ""}`);
 };
 
 export const fetchCodeScanningAlertInstances = (owner: string, repo: string, number: number) =>
-  ghFetch<GithubCodeScanningAlertInstance[]>(`/api/v3/repos/${owner}/${repo}/code-scanning/alerts/${number}/instances`);
+  ghFetch<GithubCodeScanningAlertInstance[]>(`/api/v3/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/code-scanning/alerts/${number}/instances`);
 
 export const updateCodeScanningAlert = (
   owner: string,
   repo: string,
   number: number,
   body: { state: GithubCodeScanningAlertState; dismissed_reason?: GithubCodeScanningDismissedReason; dismissed_comment?: string },
-) => ghPatchJSON<GithubCodeScanningAlert>(`/api/v3/repos/${owner}/${repo}/code-scanning/alerts/${number}`, body);
+) => ghPatchJSON<GithubCodeScanningAlert>(`/api/v3/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/code-scanning/alerts/${number}`, body);
 
 export const fetchCodeScanningAnalyses = (owner: string, repo: string) =>
-  ghFetch<GithubCodeScanningAnalysis[]>(`/api/v3/repos/${owner}/${repo}/code-scanning/analyses`);
+  ghFetch<GithubCodeScanningAnalysis[]>(`/api/v3/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/code-scanning/analyses`);
 
 export const deleteCodeScanningAnalysis = (owner: string, repo: string, id: number) =>
-  ghSend("DELETE", `/api/v3/repos/${owner}/${repo}/code-scanning/analyses/${id}`);
+  ghSend("DELETE", `/api/v3/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/code-scanning/analyses/${id}`);
 
 export const uploadSARIF = (
   owner: string,
   repo: string,
   body: { commit_sha: string; ref: string; sarif: string; tool_name?: string },
 ): Promise<GithubCodeScanningSARIFUpload> =>
-  ghPostJSON<GithubCodeScanningSARIFUpload>(`/api/v3/repos/${owner}/${repo}/code-scanning/sarifs`, body);
+  ghPostJSON<GithubCodeScanningSARIFUpload>(`/api/v3/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/code-scanning/sarifs`, body);
 
 export const fetchSARIFStatus = (owner: string, repo: string, id: string) =>
-  ghFetch<GithubCodeScanningSARIFStatus>(`/api/v3/repos/${owner}/${repo}/code-scanning/sarifs/${id}`);
+  ghFetch<GithubCodeScanningSARIFStatus>(`/api/v3/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/code-scanning/sarifs/${id}`);
 
 export const fetchCodeQLDatabases = (owner: string, repo: string) =>
-  ghFetch<GithubCodeQLDatabase[]>(`/api/v3/repos/${owner}/${repo}/code-scanning/codeql/databases`);
+  ghFetch<GithubCodeQLDatabase[]>(`/api/v3/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/code-scanning/codeql/databases`);
 
 export const deleteCodeQLDatabase = (owner: string, repo: string, language: string) =>
-  ghSend("DELETE", `/api/v3/repos/${owner}/${repo}/code-scanning/codeql/databases/${encodeURIComponent(language)}`);
+  ghSend("DELETE", `/api/v3/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/code-scanning/codeql/databases/${encodeURIComponent(language)}`);
 
 export async function downloadCodeQLDatabase(owner: string, repo: string, language: string): Promise<Blob> {
   const response = await apiFetch(
-    `/api/v3/repos/${owner}/${repo}/code-scanning/codeql/databases/${encodeURIComponent(language)}`,
+    `/api/v3/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/code-scanning/codeql/databases/${encodeURIComponent(language)}`,
     { headers: { Accept: "application/zip", ...authHeaders() } },
   );
   if (!response.ok) {
@@ -2392,11 +2392,11 @@ export const fetchDependabotAlerts = (
   if (filters.sort) params.set("sort", filters.sort);
   if (filters.direction) params.set("direction", filters.direction);
   const qs = params.toString();
-  return ghFetch<GithubDependabotAlert[]>(`/api/v3/repos/${owner}/${repo}/dependabot/alerts${qs ? `?${qs}` : ""}`);
+  return ghFetch<GithubDependabotAlert[]>(`/api/v3/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/dependabot/alerts${qs ? `?${qs}` : ""}`);
 };
 
 export const fetchDependabotAlert = (owner: string, repo: string, number: number) =>
-  ghFetch<GithubDependabotAlert>(`/api/v3/repos/${owner}/${repo}/dependabot/alerts/${number}`);
+  ghFetch<GithubDependabotAlert>(`/api/v3/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/dependabot/alerts/${number}`);
 
 export const updateDependabotAlert = (
   owner: string,
@@ -2407,38 +2407,38 @@ export const updateDependabotAlert = (
     dismissed_reason?: GithubDependabotDismissedReason;
     dismissed_comment?: string;
   },
-) => ghPatchJSON<GithubDependabotAlert>(`/api/v3/repos/${owner}/${repo}/dependabot/alerts/${number}`, body);
+) => ghPatchJSON<GithubDependabotAlert>(`/api/v3/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/dependabot/alerts/${number}`, body);
 
 export const fetchDependabotRepoSecrets = (owner: string, repo: string) =>
-  ghFetchEnvelope<GithubDependabotSecret>(`/api/v3/repos/${owner}/${repo}/dependabot/secrets?per_page=100`, "secrets");
+  ghFetchEnvelope<GithubDependabotSecret>(`/api/v3/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/dependabot/secrets?per_page=100`, "secrets");
 
 export const fetchDependabotRepoPublicKey = (owner: string, repo: string) =>
-  ghFetch<GithubPublicKey>(`/api/v3/repos/${owner}/${repo}/dependabot/secrets/public-key`);
+  ghFetch<GithubPublicKey>(`/api/v3/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/dependabot/secrets/public-key`);
 
 export const putDependabotRepoSecret = (
   owner: string,
   repo: string,
   name: string,
   body: { encrypted_value: string; key_id: string },
-) => ghSend("PUT", `/api/v3/repos/${owner}/${repo}/dependabot/secrets/${encodeURIComponent(name)}`, body);
+) => ghSend("PUT", `/api/v3/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/dependabot/secrets/${encodeURIComponent(name)}`, body);
 
 export const deleteDependabotRepoSecret = (owner: string, repo: string, name: string) =>
-  ghSend("DELETE", `/api/v3/repos/${owner}/${repo}/dependabot/secrets/${encodeURIComponent(name)}`);
+  ghSend("DELETE", `/api/v3/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/dependabot/secrets/${encodeURIComponent(name)}`);
 
 // ─── GitHub Security Advisories Representational State Transfer ─────────
 
 export const fetchSecurityAdvisories = (owner: string, repo: string) =>
-  ghFetch<GithubSecurityAdvisory[]>(`/api/v3/repos/${owner}/${repo}/security-advisories`);
+  ghFetch<GithubSecurityAdvisory[]>(`/api/v3/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/security-advisories`);
 
 export const createSecurityAdvisory = (
   owner: string,
   repo: string,
   payload: GithubSecurityAdvisoryCreatePayload,
-) => ghPostJSON<GithubSecurityAdvisory>(`/api/v3/repos/${owner}/${repo}/security-advisories`, payload);
+) => ghPostJSON<GithubSecurityAdvisory>(`/api/v3/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/security-advisories`, payload);
 
 export const fetchSecurityAdvisory = (owner: string, repo: string, ghsaId: string) =>
   ghFetch<GithubSecurityAdvisory>(
-    `/api/v3/repos/${owner}/${repo}/security-advisories/${encodeURIComponent(ghsaId)}`,
+    `/api/v3/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/security-advisories/${encodeURIComponent(ghsaId)}`,
   );
 
 export const updateSecurityAdvisory = (
@@ -2448,7 +2448,7 @@ export const updateSecurityAdvisory = (
   payload: GithubSecurityAdvisoryUpdatePayload,
 ) =>
   ghPatchJSON<GithubSecurityAdvisory>(
-    `/api/v3/repos/${owner}/${repo}/security-advisories/${encodeURIComponent(ghsaId)}`,
+    `/api/v3/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/security-advisories/${encodeURIComponent(ghsaId)}`,
     payload,
   );
 
@@ -2458,18 +2458,18 @@ export const createSecurityAdvisoryTemporaryFork = (
   ghsaId: string,
 ) =>
   ghPostJSON<BleephubRepo>(
-    `/api/v3/repos/${owner}/${repo}/security-advisories/${encodeURIComponent(ghsaId)}/forks`,
+    `/api/v3/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/security-advisories/${encodeURIComponent(ghsaId)}/forks`,
     {},
   );
 
 export const requestCVE = (owner: string, repo: string, ghsaId: string) =>
-  ghPostJSON<GithubSecurityAdvisory>(`/api/v3/repos/${owner}/${repo}/security-advisories/${encodeURIComponent(ghsaId)}/cve`, {});
+  ghPostJSON<GithubSecurityAdvisory>(`/api/v3/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/security-advisories/${encodeURIComponent(ghsaId)}/cve`, {});
 
 export const reportVulnerability = (
   owner: string,
   repo: string,
   payload: GithubVulnerabilityReportPayload,
-) => ghPostJSON<GithubSecurityAdvisory>(`/api/v3/repos/${owner}/${repo}/security-advisories/reports`, payload);
+) => ghPostJSON<GithubSecurityAdvisory>(`/api/v3/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/security-advisories/reports`, payload);
 
 // ─── GitHub Organization Rulesets Representational State Transfer ───────
 
@@ -2519,20 +2519,20 @@ type MigrationScope = { kind: "user" } | { kind: "org"; org: string };
 function migrationBase(scope: MigrationScope): string {
   return scope.kind === "user"
     ? "/api/v3/user/migrations"
-    : `/api/v3/orgs/${scope.org}/migrations`;
+    : `/api/v3/orgs/${encodeURIComponent(scope.org)}/migrations`;
 }
 
 export const fetchUserMigrations = () =>
   ghFetch<GithubMigration[]>("/api/v3/user/migrations");
 
 export const fetchOrgMigrations = (org: string) =>
-  ghFetch<GithubMigration[]>(`/api/v3/orgs/${org}/migrations`);
+  ghFetch<GithubMigration[]>(`/api/v3/orgs/${encodeURIComponent(org)}/migrations`);
 
 export const createUserMigration = (payload: GithubMigrationStartPayload) =>
   ghPostJSON<GithubMigration>("/api/v3/user/migrations", payload);
 
 export const createOrgMigration = (org: string, payload: GithubMigrationStartPayload) =>
-  ghPostJSON<GithubMigration>(`/api/v3/orgs/${org}/migrations`, payload);
+  ghPostJSON<GithubMigration>(`/api/v3/orgs/${encodeURIComponent(org)}/migrations`, payload);
 
 export const deleteMigrationArchive = (scope: MigrationScope, id: number) =>
   ghDeleteJSON<void>(`${migrationBase(scope)}/${id}/archive`, {});
@@ -2542,7 +2542,7 @@ export const unlockMigrationRepo = (scope: MigrationScope, id: number, repoName:
 
 export const fetchOrgMigrationLockStatus = (org: string, id: number, repoName: string) =>
   ghFetch<{ locked: boolean }>(
-    `/api/v3/orgs/${org}/migrations/${id}/repos/${encodeURIComponent(repoName)}/lock`,
+    `/api/v3/orgs/${encodeURIComponent(org)}/migrations/${id}/repos/${encodeURIComponent(repoName)}/lock`,
   );
 
 /** Download a migration archive by fetching the authenticated binary and
@@ -2625,7 +2625,7 @@ export const fetchUserCodespaces = () =>
 
 export const fetchRepoCodespaces = (owner: string, repo: string) =>
   ghFetchEnvelope<GithubCodespace>(
-    `/api/v3/repos/${owner}/${repo}/codespaces`,
+    `/api/v3/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/codespaces`,
     "codespaces",
     decodeCodespace,
   );
@@ -2637,7 +2637,7 @@ export const createUserCodespace = (payload: CodespaceCreatePayload) =>
   ghPostJSON<unknown>("/api/v3/user/codespaces", payload).then(decodeCodespace);
 
 export const createRepoCodespace = (owner: string, repo: string, payload: CodespaceCreatePayload) =>
-  ghPostJSON<unknown>(`/api/v3/repos/${owner}/${repo}/codespaces`, payload).then(decodeCodespace);
+  ghPostJSON<unknown>(`/api/v3/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/codespaces`, payload).then(decodeCodespace);
 
 export const startCodespace = (name: string) =>
   ghPostJSON<unknown>(`/api/v3/user/codespaces/${encodeURIComponent(name)}/start`, {}).then(decodeCodespace);
@@ -2650,7 +2650,7 @@ export const deleteCodespace = (name: string) =>
 
 export const fetchCodespaceMachines = (owner: string, repo: string) =>
   ghFetchEnvelope<GithubCodespaceMachine>(
-    `/api/v3/repos/${owner}/${repo}/codespaces/machines`,
+    `/api/v3/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/codespaces/machines`,
     "machines",
     decodeCodespaceMachine,
   );
@@ -2669,11 +2669,11 @@ function packageBasePath(scope: PackageScope, pkgType: string, pkgName: string):
   const pn = encodeURIComponent(pkgName);
   switch (scope.kind) {
     case "user":
-      return `/api/v3/users/${scope.username}/packages/${pt}/${pn}`;
+      return `/api/v3/users/${encodeURIComponent(scope.username)}/packages/${pt}/${pn}`;
     case "org":
-      return `/api/v3/orgs/${scope.org}/packages/${pt}/${pn}`;
+      return `/api/v3/orgs/${encodeURIComponent(scope.org)}/packages/${pt}/${pn}`;
     case "repo":
-      return `/ui-data/repos/${scope.owner}/${scope.repo}/packages/${pt}/${pn}`;
+      return `/ui-data/repos/${encodeURIComponent(scope.owner)}/${encodeURIComponent(scope.repo)}/packages/${pt}/${pn}`;
   }
 }
 
@@ -2683,9 +2683,9 @@ export function packageListPath(scope: PackageScope, pkgType?: string): string {
     case "user":
       return `/api/v3/user/packages${query}`;
     case "org":
-      return `/api/v3/orgs/${scope.org}/packages${query}`;
+      return `/api/v3/orgs/${encodeURIComponent(scope.org)}/packages${query}`;
     case "repo":
-      return `/ui-data/repos/${scope.owner}/${scope.repo}/packages${query}`;
+      return `/ui-data/repos/${encodeURIComponent(scope.owner)}/${encodeURIComponent(scope.repo)}/packages${query}`;
   }
 }
 
@@ -2704,11 +2704,11 @@ export const fetchPackageFiles = (
   const suffix = `/packages/${encodeURIComponent(pkgType)}/${encodeURIComponent(pkgName)}/versions/${versionID}/files`;
   switch (scope.kind) {
     case "user":
-      return ghFetch<GithubPackageFile[]>(`/ui-data/users/${scope.username}${suffix}`);
+      return ghFetch<GithubPackageFile[]>(`/ui-data/users/${encodeURIComponent(scope.username)}${suffix}`);
     case "org":
-      return ghFetch<GithubPackageFile[]>(`/ui-data/orgs/${scope.org}${suffix}`);
+      return ghFetch<GithubPackageFile[]>(`/ui-data/orgs/${encodeURIComponent(scope.org)}${suffix}`);
     case "repo":
-      return ghFetch<GithubPackageFile[]>(`/ui-data/repos/${scope.owner}/${scope.repo}${suffix}`);
+      return ghFetch<GithubPackageFile[]>(`/ui-data/repos/${encodeURIComponent(scope.owner)}/${encodeURIComponent(scope.repo)}${suffix}`);
   }
 };
 
@@ -2963,7 +2963,7 @@ export async function updateDiscussionComment(commentId: string, body: string): 
 /** GET /contributors returns 204 with an empty body for a repo with no
  * commits — that reads as an honest empty list, not a parse error. */
 export async function fetchRepoContributors(owner: string, repo: string): Promise<GithubContributor[]> {
-  const res = await apiFetch(`/api/v3/repos/${owner}/${repo}/contributors`, { headers: authHeaders() });
+  const res = await apiFetch(`/api/v3/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/contributors`, { headers: authHeaders() });
   if (!res.ok) {
     handleUnauthorized(res);
     throw new ApiError(res.status, `${res.status} ${res.statusText}`);
@@ -2973,33 +2973,33 @@ export async function fetchRepoContributors(owner: string, repo: string): Promis
 }
 
 export const fetchTrafficViews = (owner: string, repo: string) =>
-  ghFetch<GithubTrafficViews>(`/api/v3/repos/${owner}/${repo}/traffic/views`);
+  ghFetch<GithubTrafficViews>(`/api/v3/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/traffic/views`);
 
 export const fetchTrafficClones = (owner: string, repo: string) =>
-  ghFetch<GithubTrafficClones>(`/api/v3/repos/${owner}/${repo}/traffic/clones`);
+  ghFetch<GithubTrafficClones>(`/api/v3/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/traffic/clones`);
 
 export const fetchTrafficPopularPaths = (owner: string, repo: string) =>
-  ghFetch<GithubTrafficPath[]>(`/api/v3/repos/${owner}/${repo}/traffic/popular/paths`);
+  ghFetch<GithubTrafficPath[]>(`/api/v3/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/traffic/popular/paths`);
 
 export const fetchTrafficPopularReferrers = (owner: string, repo: string) =>
-  ghFetch<GithubTrafficReferrer[]>(`/api/v3/repos/${owner}/${repo}/traffic/popular/referrers`);
+  ghFetch<GithubTrafficReferrer[]>(`/api/v3/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/traffic/popular/referrers`);
 
 export const fetchCommitActivity = (owner: string, repo: string) =>
-  ghFetch<GithubCommitActivityWeek[]>(`/api/v3/repos/${owner}/${repo}/stats/commit_activity`);
+  ghFetch<GithubCommitActivityWeek[]>(`/api/v3/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/stats/commit_activity`);
 
 export const fetchCommunityProfile = (owner: string, repo: string) =>
-  ghFetch<GithubCommunityProfile>(`/api/v3/repos/${owner}/${repo}/community/profile`);
+  ghFetch<GithubCommunityProfile>(`/api/v3/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/community/profile`);
 
 // ─── Labels + milestones ────────────────────────────────────────────────
 
 export const fetchRepoLabels = (owner: string, repo: string) =>
-  ghFetch<GithubLabel[]>(`/api/v3/repos/${owner}/${repo}/labels?per_page=100`);
+  ghFetch<GithubLabel[]>(`/api/v3/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/labels?per_page=100`);
 
 export const createRepoLabel = (
   owner: string,
   repo: string,
   payload: { name: string; color?: string; description?: string },
-): Promise<GithubLabel> => ghPostJSON(`/api/v3/repos/${owner}/${repo}/labels`, payload);
+): Promise<GithubLabel> => ghPostJSON(`/api/v3/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/labels`, payload);
 
 export const updateRepoLabel = (
   owner: string,
@@ -3007,19 +3007,19 @@ export const updateRepoLabel = (
   name: string,
   payload: { new_name?: string; color?: string; description?: string },
 ): Promise<GithubLabel> =>
-  ghPatchJSON(`/api/v3/repos/${owner}/${repo}/labels/${encodeURIComponent(name)}`, payload);
+  ghPatchJSON(`/api/v3/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/labels/${encodeURIComponent(name)}`, payload);
 
 export const deleteRepoLabel = (owner: string, repo: string, name: string) =>
-  ghSend("DELETE", `/api/v3/repos/${owner}/${repo}/labels/${encodeURIComponent(name)}`);
+  ghSend("DELETE", `/api/v3/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/labels/${encodeURIComponent(name)}`);
 
 export const fetchRepoMilestones = (owner: string, repo: string, state: "open" | "closed" | "all") =>
-  ghFetch<GithubMilestone[]>(`/api/v3/repos/${owner}/${repo}/milestones?state=${state}&per_page=100`);
+  ghFetch<GithubMilestone[]>(`/api/v3/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/milestones?state=${state}&per_page=100`);
 
 export const createRepoMilestone = (
   owner: string,
   repo: string,
   payload: { title: string; description?: string; due_on?: string },
-): Promise<GithubMilestone> => ghPostJSON(`/api/v3/repos/${owner}/${repo}/milestones`, payload);
+): Promise<GithubMilestone> => ghPostJSON(`/api/v3/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/milestones`, payload);
 
 export const updateRepoMilestone = (
   owner: string,
@@ -3027,10 +3027,10 @@ export const updateRepoMilestone = (
   number: number,
   payload: { title?: string; description?: string; state?: "open" | "closed" },
 ): Promise<GithubMilestone> =>
-  ghPatchJSON(`/api/v3/repos/${owner}/${repo}/milestones/${number}`, payload);
+  ghPatchJSON(`/api/v3/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/milestones/${number}`, payload);
 
 export const deleteRepoMilestone = (owner: string, repo: string, number: number) =>
-  ghSend("DELETE", `/api/v3/repos/${owner}/${repo}/milestones/${number}`);
+  ghSend("DELETE", `/api/v3/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/milestones/${number}`);
 
 export const addIssueLabels = (
   owner: string,
@@ -3038,12 +3038,12 @@ export const addIssueLabels = (
   number: number,
   labels: string[],
 ): Promise<GithubLabel[]> =>
-  ghPostJSON(`/api/v3/repos/${owner}/${repo}/issues/${number}/labels`, { labels });
+  ghPostJSON(`/api/v3/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/issues/${number}/labels`, { labels });
 
 export const removeIssueLabel = (owner: string, repo: string, number: number, name: string) =>
   ghSend(
     "DELETE",
-    `/api/v3/repos/${owner}/${repo}/issues/${number}/labels/${encodeURIComponent(name)}`,
+    `/api/v3/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/issues/${number}/labels/${encodeURIComponent(name)}`,
   );
 
 /** PATCH the issue's milestone: a milestone number sets it, null clears it. */
@@ -3053,7 +3053,7 @@ export const setIssueMilestone = (
  number: number,
  milestone: number | null,
 ): Promise<GithubIssue> =>
-  ghPatchJSON(`/api/v3/repos/${owner}/${repo}/issues/${number}`, { milestone });
+  ghPatchJSON(`/api/v3/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/issues/${number}`, { milestone });
 
 /** PATCH the issue's organization issue type: an ID sets it, null clears it. */
 export const setIssueType = (
@@ -3062,7 +3062,7 @@ export const setIssueType = (
   number: number,
   issueTypeId: number | null,
 ): Promise<GithubIssue> =>
-  ghPatchJSON(`/api/v3/repos/${owner}/${repo}/issues/${number}`, { issue_type_id: issueTypeId });
+  ghPatchJSON(`/api/v3/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/issues/${number}`, { issue_type_id: issueTypeId });
 
 export interface GithubIssueGraphQLIssueType {
   id: string;
@@ -3092,36 +3092,36 @@ export const fetchIssueGraphQLIssueType = async (
 // ─── Organization governance ────────────────────────────────────────────
 
 export const fetchOrgInvitations = (org: string) =>
-  ghFetch<GithubOrgInvitation[]>(`/api/v3/orgs/${org}/invitations`);
+  ghFetch<GithubOrgInvitation[]>(`/api/v3/orgs/${encodeURIComponent(org)}/invitations`);
 
 export const fetchFailedOrgInvitations = (org: string) =>
-  ghFetch<GithubOrgInvitation[]>(`/api/v3/orgs/${org}/failed_invitations`);
+  ghFetch<GithubOrgInvitation[]>(`/api/v3/orgs/${encodeURIComponent(org)}/failed_invitations`);
 
 export const createOrgInvitation = (
   org: string,
   payload: { email: string; role: string },
-): Promise<GithubOrgInvitation> => ghPostJSON(`/api/v3/orgs/${org}/invitations`, payload);
+): Promise<GithubOrgInvitation> => ghPostJSON(`/api/v3/orgs/${encodeURIComponent(org)}/invitations`, payload);
 
 export const cancelOrgInvitation = (org: string, invitationId: number) =>
-  ghSend("DELETE", `/api/v3/orgs/${org}/invitations/${invitationId}`);
+  ghSend("DELETE", `/api/v3/orgs/${encodeURIComponent(org)}/invitations/${invitationId}`);
 
 export const fetchOutsideCollaborators = (org: string) =>
-  ghFetch<GithubAccount[]>(`/api/v3/orgs/${org}/outside_collaborators`);
+  ghFetch<GithubAccount[]>(`/api/v3/orgs/${encodeURIComponent(org)}/outside_collaborators`);
 
 export const removeOutsideCollaborator = (org: string, username: string) =>
-  ghSend("DELETE", `/api/v3/orgs/${org}/outside_collaborators/${encodeURIComponent(username)}`);
+  ghSend("DELETE", `/api/v3/orgs/${encodeURIComponent(org)}/outside_collaborators/${encodeURIComponent(username)}`);
 
 export const fetchOrgBlocks = (org: string) =>
-  ghFetch<GithubAccount[]>(`/api/v3/orgs/${org}/blocks`);
+  ghFetch<GithubAccount[]>(`/api/v3/orgs/${encodeURIComponent(org)}/blocks`);
 
 export const blockOrgUser = (org: string, username: string) =>
-  ghSend("PUT", `/api/v3/orgs/${org}/blocks/${encodeURIComponent(username)}`);
+  ghSend("PUT", `/api/v3/orgs/${encodeURIComponent(org)}/blocks/${encodeURIComponent(username)}`);
 
 export const unblockOrgUser = (org: string, username: string) =>
-  ghSend("DELETE", `/api/v3/orgs/${org}/blocks/${encodeURIComponent(username)}`);
+  ghSend("DELETE", `/api/v3/orgs/${encodeURIComponent(org)}/blocks/${encodeURIComponent(username)}`);
 
 export const fetchOrgCustomProperties = (org: string) =>
-  ghFetch<GithubCustomProperty[]>(`/api/v3/orgs/${org}/properties/schema`);
+  ghFetch<GithubCustomProperty[]>(`/api/v3/orgs/${encodeURIComponent(org)}/properties/schema`);
 
 /** Batch-upsert definitions through the schema PATCH endpoint. */
 export const upsertOrgCustomProperties = (
@@ -3135,49 +3135,49 @@ export const upsertOrgCustomProperties = (
     allowed_values?: string[];
   }[],
 ): Promise<GithubCustomProperty[]> =>
-  ghPatchJSON(`/api/v3/orgs/${org}/properties/schema`, { properties });
+  ghPatchJSON(`/api/v3/orgs/${encodeURIComponent(org)}/properties/schema`, { properties });
 
 export const deleteOrgCustomProperty = (org: string, name: string) =>
-  ghSend("DELETE", `/api/v3/orgs/${org}/properties/schema/${encodeURIComponent(name)}`);
+  ghSend("DELETE", `/api/v3/orgs/${encodeURIComponent(org)}/properties/schema/${encodeURIComponent(name)}`);
 
 export const fetchOrgIssueTypes = (org: string) =>
-  ghFetch<GithubIssueType[]>(`/api/v3/orgs/${org}/issue-types`);
+  ghFetch<GithubIssueType[]>(`/api/v3/orgs/${encodeURIComponent(org)}/issue-types`);
 
 export const createOrgIssueType = (
   org: string,
   payload: { name: string; is_enabled: boolean; description?: string; color?: string },
-): Promise<GithubIssueType> => ghPostJSON(`/api/v3/orgs/${org}/issue-types`, payload);
+): Promise<GithubIssueType> => ghPostJSON(`/api/v3/orgs/${encodeURIComponent(org)}/issue-types`, payload);
 
 export const updateOrgIssueType = (
   org: string,
   issueTypeId: number,
   payload: { name: string; is_enabled: boolean; description?: string; color?: string },
 ): Promise<GithubIssueType> =>
-  ghPutJSON(`/api/v3/orgs/${org}/issue-types/${issueTypeId}`, payload);
+  ghPutJSON(`/api/v3/orgs/${encodeURIComponent(org)}/issue-types/${issueTypeId}`, payload);
 
 export const deleteOrgIssueType = (org: string, issueTypeId: number) =>
-  ghSend("DELETE", `/api/v3/orgs/${org}/issue-types/${issueTypeId}`);
+  ghSend("DELETE", `/api/v3/orgs/${encodeURIComponent(org)}/issue-types/${issueTypeId}`);
 
 export const fetchOrgRoles = (org: string) =>
-  ghFetchEnvelope<GithubOrgRole>(`/api/v3/orgs/${org}/organization-roles`, "roles");
+  ghFetchEnvelope<GithubOrgRole>(`/api/v3/orgs/${encodeURIComponent(org)}/organization-roles`, "roles");
 
 export const fetchOrgRoleTeams = (org: string, roleId: number) =>
-  ghFetch<GithubOrgRoleTeam[]>(`/api/v3/orgs/${org}/organization-roles/${roleId}/teams`);
+  ghFetch<GithubOrgRoleTeam[]>(`/api/v3/orgs/${encodeURIComponent(org)}/organization-roles/${roleId}/teams`);
 
 export const fetchOrgRoleUsers = (org: string, roleId: number) =>
-  ghFetch<GithubOrgRoleUser[]>(`/api/v3/orgs/${org}/organization-roles/${roleId}/users`);
+  ghFetch<GithubOrgRoleUser[]>(`/api/v3/orgs/${encodeURIComponent(org)}/organization-roles/${roleId}/users`);
 
 export const assignOrgRoleToTeam = (org: string, teamSlug: string, roleId: number) =>
-  ghSend("PUT", `/api/v3/orgs/${org}/organization-roles/teams/${encodeURIComponent(teamSlug)}/${roleId}`);
+  ghSend("PUT", `/api/v3/orgs/${encodeURIComponent(org)}/organization-roles/teams/${encodeURIComponent(teamSlug)}/${roleId}`);
 
 export const revokeOrgRoleFromTeam = (org: string, teamSlug: string, roleId: number) =>
-  ghSend("DELETE", `/api/v3/orgs/${org}/organization-roles/teams/${encodeURIComponent(teamSlug)}/${roleId}`);
+  ghSend("DELETE", `/api/v3/orgs/${encodeURIComponent(org)}/organization-roles/teams/${encodeURIComponent(teamSlug)}/${roleId}`);
 
 export const assignOrgRoleToUser = (org: string, username: string, roleId: number) =>
-  ghSend("PUT", `/api/v3/orgs/${org}/organization-roles/users/${encodeURIComponent(username)}/${roleId}`);
+  ghSend("PUT", `/api/v3/orgs/${encodeURIComponent(org)}/organization-roles/users/${encodeURIComponent(username)}/${roleId}`);
 
 export const revokeOrgRoleFromUser = (org: string, username: string, roleId: number) =>
-  ghSend("DELETE", `/api/v3/orgs/${org}/organization-roles/users/${encodeURIComponent(username)}/${roleId}`);
+  ghSend("DELETE", `/api/v3/orgs/${encodeURIComponent(org)}/organization-roles/users/${encodeURIComponent(username)}/${roleId}`);
 
 // ─── Enterprise administration ──────────────────────────────────────────
 
@@ -3263,7 +3263,7 @@ export const setEnterpriseDependabotDefaultLevel = (level: "public" | "internal"
 // ─── Copilot ────────────────────────────────────────────────────────────
 
 export const fetchCopilotBilling = (org: string) =>
-  ghFetch<GithubCopilotBilling>(`/api/v3/orgs/${org}/copilot/billing`);
+  ghFetch<GithubCopilotBilling>(`/api/v3/orgs/${encodeURIComponent(org)}/copilot/billing`);
 
 /** Envelope list ({total_seats, seats}); keyed like ghFetchEnvelope but the
  * endpoint names its count total_seats rather than total_count. */
@@ -3271,7 +3271,7 @@ export async function fetchCopilotSeats(
   org: string,
 ): Promise<{ totalSeats: number; seats: GithubCopilotSeat[] }> {
   const body = await ghFetch<{ total_seats: number; seats: GithubCopilotSeat[] }>(
-    `/api/v3/orgs/${org}/copilot/billing/seats`,
+    `/api/v3/orgs/${encodeURIComponent(org)}/copilot/billing/seats`,
   );
   if (!Array.isArray(body.seats)) {
     throw new Error(`malformed response: missing "seats" array`);
@@ -3280,12 +3280,12 @@ export async function fetchCopilotSeats(
 }
 
 export const addCopilotSeats = (org: string, usernames: string[]): Promise<{ seats_created: number }> =>
-  ghPostJSON(`/api/v3/orgs/${org}/copilot/billing/selected_users`, {
+  ghPostJSON(`/api/v3/orgs/${encodeURIComponent(org)}/copilot/billing/selected_users`, {
     selected_usernames: usernames,
   });
 
 export const cancelCopilotSeats = (org: string, usernames: string[]) =>
-  ghSend("DELETE", `/api/v3/orgs/${org}/copilot/billing/selected_users`, {
+  ghSend("DELETE", `/api/v3/orgs/${encodeURIComponent(org)}/copilot/billing/selected_users`, {
     selected_usernames: usernames,
   });
 
@@ -3442,7 +3442,7 @@ export const fetchOrgRepoCustomPropertyValues = (
   repositoryQuery?: string,
 ): Promise<GithubOrgRepoCustomPropertyValues[]> => {
   const qs = repositoryQuery ? `?repository_query=${encodeURIComponent(repositoryQuery)}` : "";
-  return ghFetch(`/api/v3/orgs/${org}/properties/values${qs}`);
+  return ghFetch(`/api/v3/orgs/${encodeURIComponent(org)}/properties/values${qs}`);
 };
 
 /** A null value unsets the property on each named repository. */
@@ -3451,7 +3451,7 @@ export const setOrgRepoCustomPropertyValues = (
   repositoryNames: string[],
   properties: { property_name: string; value: unknown }[],
 ) =>
-  ghSend("PATCH", `/api/v3/orgs/${org}/properties/values`, {
+  ghSend("PATCH", `/api/v3/orgs/${encodeURIComponent(org)}/properties/values`, {
     repository_names: repositoryNames,
     properties,
   });
@@ -3478,7 +3478,7 @@ import type {
  */
 export const fetchEnvironmentsDetail = (owner: string, repo: string) =>
   ghFetch<{ environments: GithubEnvironmentDetail[] }>(
-    `/api/v3/repos/${owner}/${repo}/environments`,
+    `/api/v3/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/environments`,
   ).then((r) => {
     if (!Array.isArray(r.environments)) {
       throw new Error(`malformed response: missing "environments" array`);
@@ -3488,7 +3488,7 @@ export const fetchEnvironmentsDetail = (owner: string, repo: string) =>
 
 export const fetchEnvBranchPolicies = (owner: string, repo: string, envName: string) =>
   ghFetch<{ total_count: number; branch_policies: GithubDeploymentBranchPolicy[] }>(
-    `/api/v3/repos/${owner}/${repo}/environments/${encodeURIComponent(envName)}/deployment-branch-policies`,
+    `/api/v3/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/environments/${encodeURIComponent(envName)}/deployment-branch-policies`,
   ).then((r) => {
     if (!Array.isArray(r.branch_policies)) {
       throw new Error(`malformed response: missing "branch_policies" array`);
@@ -3501,7 +3501,7 @@ export const fetchEnvProtectionRules = (owner: string, repo: string, envName: st
     total_count: number;
     custom_deployment_protection_rules: GithubEnvCustomProtectionRule[];
   }>(
-    `/api/v3/repos/${owner}/${repo}/environments/${encodeURIComponent(envName)}/deployment_protection_rules`,
+    `/api/v3/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/environments/${encodeURIComponent(envName)}/deployment_protection_rules`,
   ).then((r) => {
     if (!Array.isArray(r.custom_deployment_protection_rules)) {
       throw new Error(
@@ -3518,12 +3518,12 @@ export const fetchDeploymentsPage = (
   pageUrl?: string,
 ): Promise<Page<GithubDeployment>> =>
   ghFetchPage<GithubDeployment>(
-    pageUrl ?? `/api/v3/repos/${owner}/${repo}/deployments?per_page=30`,
+    pageUrl ?? `/api/v3/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/deployments?per_page=30`,
   );
 
 export const fetchDeploymentStatuses = (owner: string, repo: string, deploymentId: number) =>
   ghFetch<GithubDeploymentStatus[]>(
-    `/api/v3/repos/${owner}/${repo}/deployments/${deploymentId}/statuses`,
+    `/api/v3/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/deployments/${deploymentId}/statuses`,
   );
 
 export const createDeploymentStatus = (
@@ -3538,7 +3538,7 @@ export const createDeploymentStatus = (
     log_url?: string;
   },
 ): Promise<GithubDeploymentStatus> =>
-  ghPostJSON(`/api/v3/repos/${owner}/${repo}/deployments/${deploymentId}/statuses`, payload);
+  ghPostJSON(`/api/v3/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/deployments/${deploymentId}/statuses`, payload);
 
 /** Where a webhook lives: a repository or an organization. */
 export type HookScope =
@@ -3547,8 +3547,8 @@ export type HookScope =
 
 function hookBasePath(scope: HookScope, hookId: number): string {
   return scope.kind === "repo"
-    ? `/api/v3/repos/${scope.owner}/${scope.repo}/hooks/${hookId}`
-    : `/api/v3/orgs/${scope.org}/hooks/${hookId}`;
+    ? `/api/v3/repos/${encodeURIComponent(scope.owner)}/${encodeURIComponent(scope.repo)}/hooks/${hookId}`
+    : `/api/v3/orgs/${encodeURIComponent(scope.org)}/hooks/${hookId}`;
 }
 
 /** First page of a hook's deliveries; follow pages via the Link header. */
@@ -3577,7 +3577,7 @@ export const fetchOrgHooksPage = (
   org: string,
   pageUrl?: string,
 ): Promise<Page<GithubOrgWebhook>> =>
-  ghFetchPage<GithubOrgWebhook>(pageUrl ?? `/api/v3/orgs/${org}/hooks?per_page=30`);
+  ghFetchPage<GithubOrgWebhook>(pageUrl ?? `/api/v3/orgs/${encodeURIComponent(org)}/hooks?per_page=30`);
 
 /** Pages site, or null when Pages is not enabled on the repo (404). */
 export async function fetchPagesSite(
@@ -3585,7 +3585,7 @@ export async function fetchPagesSite(
   repo: string,
 ): Promise<GithubPagesSite | null> {
   try {
-    return await ghFetch<GithubPagesSite>(`/api/v3/repos/${owner}/${repo}/pages`);
+    return await ghFetch<GithubPagesSite>(`/api/v3/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/pages`);
   } catch (err) {
     if (isNotFound(err)) return null;
     throw err;
@@ -3600,7 +3600,7 @@ export const createPagesSite = (
     cname?: string;
     build_type?: "legacy" | "workflow";
   },
-): Promise<GithubPagesSite> => ghPostJSON(`/api/v3/repos/${owner}/${repo}/pages`, payload);
+): Promise<GithubPagesSite> => ghPostJSON(`/api/v3/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/pages`, payload);
 
 /** PUT /pages — the server answers 204, no body. */
 export const updatePagesSite = (
@@ -3613,19 +3613,19 @@ export const updatePagesSite = (
     public?: boolean;
     source?: { branch: string; path?: string };
   },
-) => ghSend("PUT", `/api/v3/repos/${owner}/${repo}/pages`, payload);
+) => ghSend("PUT", `/api/v3/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/pages`, payload);
 
 export const deletePagesSite = (owner: string, repo: string) =>
-  ghSend("DELETE", `/api/v3/repos/${owner}/${repo}/pages`);
+  ghSend("DELETE", `/api/v3/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/pages`);
 
 export const fetchPagesBuilds = (owner: string, repo: string) =>
-  ghFetch<GithubPagesBuild[]>(`/api/v3/repos/${owner}/${repo}/pages/builds`);
+  ghFetch<GithubPagesBuild[]>(`/api/v3/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/pages/builds`);
 
 export const requestPagesBuild = (
   owner: string,
   repo: string,
 ): Promise<{ status: string; url: string }> =>
-  ghPostJSON(`/api/v3/repos/${owner}/${repo}/pages/builds`, {});
+  ghPostJSON(`/api/v3/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/pages/builds`, {});
 
 /**
  * Pages custom-domain health check. Unlike ghFetch this surfaces the
@@ -3633,7 +3633,7 @@ export const requestPagesBuild = (
  * ("There isn't a custom domain on this Pages site") the panel must show.
  */
 export async function fetchPagesHealth(owner: string, repo: string): Promise<GithubPagesHealth> {
-  const res = await apiFetch(`/api/v3/repos/${owner}/${repo}/pages/health`, {
+  const res = await apiFetch(`/api/v3/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/pages/health`, {
     headers: authHeaders(),
   });
   if (!res.ok) {
@@ -3657,14 +3657,14 @@ export const fetchPagesDeploymentStatus = (
   repo: string,
   deploymentId: number,
 ): Promise<{ status: string }> =>
-  ghFetch(`/api/v3/repos/${owner}/${repo}/pages/deployments/${deploymentId}`);
+  ghFetch(`/api/v3/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/pages/deployments/${deploymentId}`);
 // ─── PR reviews, statuses, reactions & timeline ─────────────────────────
 
 /** The token's own user — reaction toggles need to know "my" reactions. */
 export const fetchAuthenticatedUser = () => ghFetch<GithubAccount>("/api/v3/user");
 
 export const fetchPRReviews = (owner: string, repo: string, number: number) =>
-  ghFetch<GithubPRReview[]>(`/api/v3/repos/${owner}/${repo}/pulls/${number}/reviews`);
+  ghFetch<GithubPRReview[]>(`/api/v3/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/pulls/${number}/reviews`);
 
 /** Create + submit a review in one call (event APPROVE/REQUEST_CHANGES/COMMENT). */
 export const createPRReview = (
@@ -3673,7 +3673,7 @@ export const createPRReview = (
   number: number,
   payload: { body: string; event: "APPROVE" | "REQUEST_CHANGES" | "COMMENT" },
 ): Promise<GithubPRReview> =>
-  ghPostJSON(`/api/v3/repos/${owner}/${repo}/pulls/${number}/reviews`, payload);
+  ghPostJSON(`/api/v3/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/pulls/${number}/reviews`, payload);
 
 export const dismissPRReview = (
   owner: string,
@@ -3682,12 +3682,12 @@ export const dismissPRReview = (
   reviewId: number,
   message: string,
 ): Promise<GithubPRReview> =>
-  ghPutJSON(`/api/v3/repos/${owner}/${repo}/pulls/${number}/reviews/${reviewId}/dismissals`, {
+  ghPutJSON(`/api/v3/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/pulls/${number}/reviews/${reviewId}/dismissals`, {
     message,
   });
 
 export const fetchPRReviewComments = (owner: string, repo: string, number: number) =>
-  ghFetch<GithubPRReviewComment[]>(`/api/v3/repos/${owner}/${repo}/pulls/${number}/comments`);
+  ghFetch<GithubPRReviewComment[]>(`/api/v3/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/pulls/${number}/comments`);
 
 /** Add one immediate inline review comment to a changed-file line. */
 export const createPRReviewComment = (
@@ -3702,7 +3702,7 @@ export const createPRReviewComment = (
     side: "LEFT" | "RIGHT";
   },
 ): Promise<GithubPRReviewComment> =>
-  ghPostJSON(`/api/v3/repos/${owner}/${repo}/pulls/${number}/comments`, payload);
+  ghPostJSON(`/api/v3/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/pulls/${number}/comments`, payload);
 
 export const replyToPRReviewComment = (
   owner: string,
@@ -3711,7 +3711,7 @@ export const replyToPRReviewComment = (
   inReplyTo: number,
   body: string,
 ): Promise<GithubPRReviewComment> =>
-  ghPostJSON(`/api/v3/repos/${owner}/${repo}/pulls/${number}/comments`, {
+  ghPostJSON(`/api/v3/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/pulls/${number}/comments`, {
     body,
     in_reply_to: inReplyTo,
   });
@@ -3812,7 +3812,7 @@ export async function fetchPRRequestedReviewers(
   number: number,
 ): Promise<GithubReviewRequest> {
   const body = await ghFetch<GithubReviewRequest>(
-    `/api/v3/repos/${owner}/${repo}/pulls/${number}/requested_reviewers`,
+    `/api/v3/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/pulls/${number}/requested_reviewers`,
   );
   // No `?? []`: a missing member is a contract break that must surface.
   if (!Array.isArray(body.users) || !Array.isArray(body.teams)) {
@@ -3827,7 +3827,7 @@ export const requestPRReviewers = (
   number: number,
   logins: string[],
 ): Promise<GithubPR> =>
-  ghPostJSON(`/api/v3/repos/${owner}/${repo}/pulls/${number}/requested_reviewers`, {
+  ghPostJSON(`/api/v3/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/pulls/${number}/requested_reviewers`, {
     reviewers: logins,
   });
 
@@ -3837,7 +3837,7 @@ export const removePRRequestedReviewers = (
   number: number,
   logins: string[],
 ): Promise<GithubPR> =>
-  ghDeleteJSON(`/api/v3/repos/${owner}/${repo}/pulls/${number}/requested_reviewers`, {
+  ghDeleteJSON(`/api/v3/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/pulls/${number}/requested_reviewers`, {
     reviewers: logins,
   });
 
@@ -3847,7 +3847,7 @@ export async function fetchCombinedStatus(
   ref: string,
 ): Promise<GithubCombinedStatus> {
   const body = await ghFetch<GithubCombinedStatus>(
-    `/api/v3/repos/${owner}/${repo}/commits/${ref}/status`,
+    `/api/v3/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/commits/${ref}/status`,
   );
   // No `?? []`: a missing member is a contract break that must surface.
   if (!Array.isArray(body.statuses)) {
@@ -3857,10 +3857,10 @@ export async function fetchCombinedStatus(
 }
 
 export const fetchIssueTimeline = (owner: string, repo: string, number: number) =>
-  ghFetch<GithubTimelineItem[]>(`/api/v3/repos/${owner}/${repo}/issues/${number}/timeline`);
+  ghFetch<GithubTimelineItem[]>(`/api/v3/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/issues/${number}/timeline`);
 
 export const fetchIssueReactions = (owner: string, repo: string, number: number) =>
-  ghFetch<GithubReaction[]>(`/api/v3/repos/${owner}/${repo}/issues/${number}/reactions`);
+  ghFetch<GithubReaction[]>(`/api/v3/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/issues/${number}/reactions`);
 
 export const addIssueReaction = (
   owner: string,
@@ -3868,18 +3868,18 @@ export const addIssueReaction = (
   number: number,
   content: GithubReactionContent,
 ): Promise<GithubReaction> =>
-  ghPostJSON(`/api/v3/repos/${owner}/${repo}/issues/${number}/reactions`, { content });
+  ghPostJSON(`/api/v3/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/issues/${number}/reactions`, { content });
 
 export const removeIssueReaction = (
   owner: string,
   repo: string,
   number: number,
   reactionId: number,
-) => ghSend("DELETE", `/api/v3/repos/${owner}/${repo}/issues/${number}/reactions/${reactionId}`);
+) => ghSend("DELETE", `/api/v3/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/issues/${number}/reactions/${reactionId}`);
 
 export const fetchIssueCommentReactions = (owner: string, repo: string, commentId: number) =>
   ghFetch<GithubReaction[]>(
-    `/api/v3/repos/${owner}/${repo}/issues/comments/${commentId}/reactions`,
+    `/api/v3/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/issues/comments/${commentId}/reactions`,
   );
 
 export const addIssueCommentReaction = (
@@ -3888,7 +3888,7 @@ export const addIssueCommentReaction = (
   commentId: number,
   content: GithubReactionContent,
 ): Promise<GithubReaction> =>
-  ghPostJSON(`/api/v3/repos/${owner}/${repo}/issues/comments/${commentId}/reactions`, {
+  ghPostJSON(`/api/v3/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/issues/comments/${commentId}/reactions`, {
     content,
   });
 
@@ -3900,7 +3900,7 @@ export const removeIssueCommentReaction = (
 ) =>
   ghSend(
     "DELETE",
-    `/api/v3/repos/${owner}/${repo}/issues/comments/${commentId}/reactions/${reactionId}`,
+    `/api/v3/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/issues/comments/${commentId}/reactions/${reactionId}`,
   );
 // ─── Search + repo social + account ─────────────────────────────────────
 
@@ -3967,7 +3967,7 @@ export const searchTopics = (q: string, page = 1) =>
   ghSearch<GithubSearchTopicItem>("topics", q, page);
 
 export const fetchRepoCollaborators = (owner: string, repo: string) =>
-  ghFetch<GithubCollaborator[]>(`/api/v3/repos/${owner}/${repo}/collaborators`);
+  ghFetch<GithubCollaborator[]>(`/api/v3/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/collaborators`);
 
 /**
  * PUT /collaborators/{username}: inviting a new user answers 201 with the
@@ -3981,7 +3981,7 @@ export async function inviteRepoCollaborator(
   permission: string,
 ): Promise<GithubRepoInvitation | null> {
   const res = await apiFetch(
-    `/api/v3/repos/${owner}/${repo}/collaborators/${encodeURIComponent(username)}`,
+    `/api/v3/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/collaborators/${encodeURIComponent(username)}`,
     {
       method: "PUT",
       headers: { "Content-Type": "application/json", ...authHeaders() },
@@ -3998,53 +3998,53 @@ export async function inviteRepoCollaborator(
 }
 
 export const removeRepoCollaborator = (owner: string, repo: string, username: string) =>
-  ghSend("DELETE", `/api/v3/repos/${owner}/${repo}/collaborators/${encodeURIComponent(username)}`);
+  ghSend("DELETE", `/api/v3/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/collaborators/${encodeURIComponent(username)}`);
 
 export const fetchRepoInvitations = (owner: string, repo: string) =>
-  ghFetch<GithubRepoInvitation[]>(`/api/v3/repos/${owner}/${repo}/invitations`);
+  ghFetch<GithubRepoInvitation[]>(`/api/v3/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/invitations`);
 
 export const cancelRepoInvitation = (owner: string, repo: string, invitationId: number) =>
-  ghSend("DELETE", `/api/v3/repos/${owner}/${repo}/invitations/${invitationId}`);
+  ghSend("DELETE", `/api/v3/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/invitations/${invitationId}`);
 
 export const fetchRepoStargazers = (owner: string, repo: string) =>
-  ghFetch<GithubAccount[]>(`/api/v3/repos/${owner}/${repo}/stargazers`);
+  ghFetch<GithubAccount[]>(`/api/v3/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/stargazers`);
 
 /** First page of watchers; follow pages via the Link rel="next" URL. */
 export const fetchRepoSubscribersPage = (owner: string, repo: string, pageUrl?: string) =>
-  ghFetchPage<GithubAccount>(pageUrl ?? `/api/v3/repos/${owner}/${repo}/subscribers?per_page=50`);
+  ghFetchPage<GithubAccount>(pageUrl ?? `/api/v3/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/subscribers?per_page=50`);
 
 /** First page of forks; follow pages via the Link rel="next" URL. */
 export const fetchRepoForksPage = (owner: string, repo: string, pageUrl?: string) =>
-  ghFetchPage<BleephubRepo>(pageUrl ?? `/api/v3/repos/${owner}/${repo}/forks?per_page=50`);
+  ghFetchPage<BleephubRepo>(pageUrl ?? `/api/v3/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/forks?per_page=50`);
 
 /** Language name → byte count, sorted by the server descending by bytes. */
 export const fetchRepoLanguages = (owner: string, repo: string) =>
-  ghFetch<Record<string, number>>(`/api/v3/repos/${owner}/${repo}/languages`);
+  ghFetch<Record<string, number>>(`/api/v3/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/languages`);
 
 export const fetchRepoTags = (owner: string, repo: string) =>
-  ghFetch<GithubTag[]>(`/api/v3/repos/${owner}/${repo}/tags`);
+  ghFetch<GithubTag[]>(`/api/v3/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/tags`);
 
 /** Star/watch/fork counters from the full-repository shape. */
 export const fetchRepoSocialCounts = (owner: string, repo: string, signal?: AbortSignal) =>
-  ghFetch<GithubRepoSocialCounts>(`/api/v3/repos/${owner}/${repo}`, signal);
+  ghFetch<GithubRepoSocialCounts>(`/api/v3/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}`, signal);
 
 export const fetchRepoViewerState = (owner: string, repo: string, signal?: AbortSignal) =>
-  ghFetch<GithubRepoViewerState>(`/ui-data/repos/${owner}/${repo}/viewer`, signal);
+  ghFetch<GithubRepoViewerState>(`/ui-data/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/viewer`, signal);
 
 export const starRepo = (owner: string, repo: string) =>
-  ghSend("PUT", `/api/v3/user/starred/${owner}/${repo}`);
+  ghSend("PUT", `/api/v3/user/starred/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}`);
 
 export const unstarRepo = (owner: string, repo: string) =>
-  ghSend("DELETE", `/api/v3/user/starred/${owner}/${repo}`);
+  ghSend("DELETE", `/api/v3/user/starred/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}`);
 
 export const setRepoSubscription = (owner: string, repo: string, subscribed: boolean) =>
-  ghPutJSON<GithubRepoSubscription>(`/api/v3/repos/${owner}/${repo}/subscription`, {
+  ghPutJSON<GithubRepoSubscription>(`/api/v3/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/subscription`, {
     subscribed,
     ignored: false,
   });
 
 export const forkRepo = (owner: string, repo: string, organization?: string) =>
-  ghPostJSON<BleephubRepo>(`/api/v3/repos/${owner}/${repo}/forks`, organization ? { organization } : {});
+  ghPostJSON<BleephubRepo>(`/api/v3/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/forks`, organization ? { organization } : {});
 
 export const fetchUserSSHKeys = () => ghFetch<GithubSSHKey[]>("/api/v3/user/keys");
 
@@ -4229,7 +4229,7 @@ export const fetchRepoIssuesFilteredPage = (
 ) => {
   if (pageUrl) return ghFetchPage<GithubIssue>(pageUrl, signal);
   const params = new URLSearchParams({ state: opts.state ?? "open", per_page: "50" });
-  return ghFetchPage<GithubIssue>(`/api/v3/repos/${owner}/${repo}/issues?${params}`, signal);
+  return ghFetchPage<GithubIssue>(`/api/v3/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/issues?${params}`, signal);
 };
 
 /**
@@ -4246,13 +4246,13 @@ export const fetchRepoPRsFilteredPage = (
 ) => {
   if (pageUrl) return ghFetchPage<GithubPR>(pageUrl, signal);
   const params = new URLSearchParams({ state: opts.state ?? "open", per_page: "50" });
-  return ghFetchPage<GithubPR>(`/api/v3/repos/${owner}/${repo}/pulls?${params}`, signal);
+  return ghFetchPage<GithubPR>(`/api/v3/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/pulls?${params}`, signal);
 };
 
 /** The changed-file list + per-file diff for a pull request. */
 export const fetchPRFiles = (owner: string, repo: string, number: number) =>
-  ghFetch<GithubPRFile[]>(`/api/v3/repos/${owner}/${repo}/pulls/${number}/files`);
+  ghFetch<GithubPRFile[]>(`/api/v3/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/pulls/${number}/files`);
 
 /** The PR's commits, oldest first. */
 export const fetchPRCommits = (owner: string, repo: string, number: number) =>
-  ghFetch<GithubCommit[]>(`/api/v3/repos/${owner}/${repo}/pulls/${number}/commits`);
+  ghFetch<GithubCommit[]>(`/api/v3/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/pulls/${number}/commits`);

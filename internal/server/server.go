@@ -24,6 +24,7 @@ import (
 	"github.com/rs/zerolog"
 	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
 	"go.opentelemetry.io/otel/codes"
+	semconv "go.opentelemetry.io/otel/semconv/v1.26.0"
 	"go.opentelemetry.io/otel/trace"
 )
 
@@ -182,7 +183,24 @@ func (s *Server) route(pattern string, handler http.HandlerFunc) {
 	}
 	// /api/v3 routes are instrumented so served requests feed the API
 	// insights stats (gh_api_insights.go); other patterns pass through.
-	s.mux.HandleFunc(pattern, s.instrumentAPIRoute(pattern, s.enforceFineGrainedPATResource(pattern, handler)))
+	s.mux.HandleFunc(pattern, s.nameSpan(pattern, s.instrumentAPIRoute(pattern, s.enforceFineGrainedPATResource(pattern, handler))))
+}
+
+// nameSpan replaces the coarse "bleephub" span name otelhttp assigns before
+// routing with the matched route template, and records it as the http.route
+// attribute. Naming by template (not raw path) keeps span cardinality bounded
+// while still telling which operation was served. A no-op when tracing is off.
+func (s *Server) nameSpan(pattern string, next http.HandlerFunc) http.HandlerFunc {
+	_, path, hasMethod := strings.Cut(pattern, " ")
+	return func(w http.ResponseWriter, r *http.Request) {
+		if span := trace.SpanFromContext(r.Context()); span.IsRecording() {
+			span.SetName(pattern)
+			if hasMethod {
+				span.SetAttributes(semconv.HTTPRoute(path))
+			}
+		}
+		next(w, r)
+	}
 }
 
 // routeDispatch registers a dispatcher whose mux pattern is a wildcard Go's
@@ -194,7 +212,7 @@ func (s *Server) route(pattern string, handler http.HandlerFunc) {
 // routing implementation detail.
 func (s *Server) routeDispatch(dispatchPattern string, handler http.HandlerFunc, servedPatterns ...string) {
 	s.routePatterns = append(s.routePatterns, servedPatterns...)
-	s.mux.HandleFunc(dispatchPattern, s.instrumentAPIRoute(dispatchPattern, s.enforceFineGrainedPATResource(dispatchPattern, handler)))
+	s.mux.HandleFunc(dispatchPattern, s.nameSpan(dispatchPattern, s.instrumentAPIRoute(dispatchPattern, s.enforceFineGrainedPATResource(dispatchPattern, handler))))
 }
 
 // authenticateUIData gives every browser-only adapter the same credential

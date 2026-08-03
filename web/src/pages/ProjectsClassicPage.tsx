@@ -146,12 +146,14 @@ function ProjectList({
             style={{ display: "flex", flexDirection: "column", gap: "0.75rem" }}
           >
             <input
+              aria-label="Project name"
               placeholder="Project name"
               value={name}
               onChange={(e) => setName(e.target.value)}
               style={{ fontSize: "0.9rem", padding: "0.4rem 0.5rem" }}
             />
             <textarea
+              aria-label="Project description"
               placeholder="Description"
               value={body}
               onChange={(e) => setBody(e.target.value)}
@@ -226,11 +228,13 @@ function ProjectBoard({
             style={{ padding: "1rem", display: "flex", flexDirection: "column", gap: "0.75rem" }}
           >
             <input
+              aria-label="Project name"
               value={name}
               onChange={(e) => setName(e.target.value)}
               style={{ fontSize: "0.9rem", padding: "0.4rem 0.5rem" }}
             />
             <textarea
+              aria-label="Project description"
               value={body}
               onChange={(e) => setBody(e.target.value)}
               rows={3}
@@ -330,6 +334,7 @@ function ColumnsBoard({
           style={{ padding: "1rem", display: "flex", flexDirection: "column", gap: "0.75rem" }}
         >
           <input
+            aria-label="Column name"
             placeholder="Column name"
             value={newColName}
             onChange={(e) => setNewColName(e.target.value)}
@@ -409,6 +414,7 @@ function ColumnCard({
             style={{ display: "flex", gap: "0.5rem" }}
           >
             <input
+              aria-label="Column name"
               value={name}
               onChange={(e) => setName(e.target.value)}
               style={{ fontSize: "0.85rem", padding: "0.2rem 0.4rem", flex: 1 }}
@@ -424,6 +430,7 @@ function ColumnCard({
               {columns.findIndex((c) => c.id === column.id) > 0 && (
                 <button
                   type="button"
+                  aria-label="Move column left"
                   onClick={() => {
                     const prev = columns[columns.findIndex((c) => c.id === column.id) - 1];
                     move.mutate("after:" + prev.id);
@@ -436,6 +443,7 @@ function ColumnCard({
               {columns.findIndex((c) => c.id === column.id) < columns.length - 1 && (
                 <button
                   type="button"
+                  aria-label="Move column right"
                   onClick={() => {
                     const idx = columns.findIndex((c) => c.id === column.id);
                     const next = columns[idx + 1];
@@ -448,6 +456,7 @@ function ColumnCard({
               )}
               <button
                 type="button"
+                aria-label="Rename column"
                 onClick={() => setIsEditing(true)}
                 style={{ fontSize: "0.7rem", background: "transparent", border: "none", cursor: "pointer" }}
               >
@@ -455,6 +464,7 @@ function ColumnCard({
               </button>
               <button
                 type="button"
+                aria-label="Delete column"
                 onClick={async () => {
                   if (await confirmAction(`Delete column "${column.name}"?`)) {
                     remove.mutate();
@@ -495,6 +505,7 @@ function ColumnCard({
           style={{ display: "flex", flexDirection: "column", gap: "0.5rem" }}
         >
           <textarea
+            aria-label="New note card"
             placeholder="New note card"
             value={newNote}
             onChange={(e) => setNewNote(e.target.value)}
@@ -570,6 +581,7 @@ function ProjectCardItem({
           style={{ display: "flex", flexDirection: "column", gap: "0.5rem" }}
         >
           <textarea
+            aria-label="Card note"
             value={note}
             onChange={(e) => setNote(e.target.value)}
             rows={2}
@@ -598,6 +610,7 @@ function ProjectCardItem({
           </div>
           <div className="mt-2 flex flex-wrap gap-1">
             <select
+              aria-label="Move card"
               value=""
               onChange={(e) => {
                 const [action, target] = e.target.value.split(":");

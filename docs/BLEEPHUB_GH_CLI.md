@@ -139,7 +139,7 @@ For a comprehensive smoke test, run [`make gh-test`](../Makefile), which spins u
 - **`gh` is hitting `github.com` instead of bleephub.** You forgot `--hostname <bleephub-host>` on `gh auth login`, or `GH_HOST` isn't exported. `gh` only routes to bleephub if the hostname is in `~/.config/gh/hosts.yml` AND either `GH_HOST` matches it or every command passes `--hostname` explicitly.
 - **`gh auth login` fails with `dial tcp [::1]:443: connection refused` / `x509: cannot validate ...`.** bleephub is on a plain-HTTP port, or its cert isn't trusted. `gh` is HTTPS-only — run bleephub with `BPH_TLS_CERT` + `BPH_TLS_KEY` and trust the CA system-wide. If you can't bind to `:443`, skip `gh auth login` (it rejects `host:port`) and use `GH_HOST=localhost:8443` + `GH_ENTERPRISE_TOKEN` instead.
 - **`gh repo list` returns empty / 404.** GraphQL queries depend on the `repositoryOwner` resolver — confirm your bleephub binary is current.
-- **`gh issue view` returns "fragment cannot be spread"-style errors.** Should be impossible (the `IssueOrPullRequest` union is wired). File a BUGS.md entry if seen.
+- **`gh issue view` returns "fragment cannot be spread"-style errors.** Should be impossible (the `IssueOrPullRequest` union is wired). File a [BUGS.md](../BUGS.md) entry if seen.
 - **`gh api -f` returns 400.** Should not happen (`flexBool`/`flexInt` decoders handle string-coerced inputs). File a bug.
 - **TLS errors.** When using `BPH_TLS_CERT` with a self-signed cert, either trust the CA system-wide (the Docker harness does this) or pass `--insecure` to `gh api`.
 

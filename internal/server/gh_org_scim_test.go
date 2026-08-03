@@ -84,7 +84,7 @@ func TestOrganizationSCIMUserLifecycle(t *testing.T) {
 	expectStatus(t, ghGet(t, "/api/v3/user", defaultToken), http.StatusOK, "shape-ratchet control")
 }
 
-// TestOrganizationSCIMCannotHijackExistingAccount pins AUTH-103: an org's SCIM
+// TestOrganizationSCIMCannotHijackExistingAccount pins the rule that an org's SCIM
 // may not bind to, force-enroll, or rewrite a global account it does not
 // manage. Provisioning a SCIM user whose userName collides with a pre-existing
 // account is a conflict, and the victim is neither renamed nor made a member.

@@ -94,15 +94,24 @@ func initials(name string) string {
 	var letters string
 	switch {
 	case len(words) >= 2:
-		letters = words[0][:1] + words[1][:1]
-	case len(words) == 1 && len(words[0]) >= 2:
-		letters = words[0][:2]
+		letters = firstRunes(words[0], 1) + firstRunes(words[1], 1)
 	case len(words) == 1:
-		letters = words[0]
+		letters = firstRunes(words[0], 2)
 	default:
-		letters = name[:1]
+		letters = firstRunes(name, 1)
 	}
 	return strings.ToUpper(letters)
+}
+
+// firstRunes returns up to n leading runes of s. Slicing by rune rather than
+// byte keeps names that begin with multibyte characters from being cut
+// mid-rune (which would yield an invalid UTF-8 fragment).
+func firstRunes(s string, n int) string {
+	r := []rune(s)
+	if len(r) > n {
+		r = r[:n]
+	}
+	return string(r)
 }
 
 // fillRoundedSquare fills the whole image with c, leaving pixels outside the

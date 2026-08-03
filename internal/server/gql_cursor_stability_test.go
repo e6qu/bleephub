@@ -17,7 +17,7 @@ func gqlConnNodeIDs(conn map[string]interface{}) []string {
 }
 
 // A connection cursor identifies its node, so inserting an item before a page
-// boundary must not shift the next page (no skip, no duplicate) — GQL-019.
+// boundary must not shift the next page (no skip, no duplicate).
 func TestGQLConnectionCursorsStableAcrossInserts(t *testing.T) {
 	nodes := []map[string]interface{}{gqlNode("a"), gqlNode("b"), gqlNode("c"), gqlNode("d")}
 	page1 := paginateGQLMaps(nodes, map[string]interface{}{"first": 2})
@@ -55,7 +55,7 @@ func TestGQLConnectionCursorFallbacks(t *testing.T) {
 }
 
 // The generic paginateGQL[T] path also resolves cursors by node identity, so a
-// front insert doesn't shift the next page (GQL-019 follow-up).
+// front insert doesn't shift the next page.
 func TestPaginateGQLCursorsStableAcrossInserts(t *testing.T) {
 	type item struct{ id string }
 	toGQL := func(i item) map[string]interface{} { return map[string]interface{}{"nodeID": i.id} }

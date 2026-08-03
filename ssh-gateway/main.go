@@ -16,6 +16,14 @@ import (
 	"time"
 )
 
+// Build-stamp variables, overwritten at release build time via
+// -ldflags "-X main.version=... -X main.commit=... -X main.publishedAt=...".
+var (
+	version     = "development"
+	commit      = "none"
+	publishedAt = "not-yet-published"
+)
+
 const (
 	maxConcurrentConnections = 32
 	maxConnectionsPerMinute  = 10
@@ -68,6 +76,7 @@ func (l *sourceRateLimiter) allow(address string, now time.Time) bool {
 }
 
 func main() {
+	log.Printf("ssh-gateway version=%s commit=%s published=%s", version, commit, publishedAt)
 	listenAddress := valueOr("BLEEPHUB_SSH_GATEWAY_ADDR", ":2222")
 	listener, err := net.Listen("tcp", listenAddress)
 	if err != nil {

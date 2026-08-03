@@ -34,6 +34,28 @@ func stressWorkers(def int) int {
 	return def
 }
 
+// defaultStressSeed is used when BLEEPHUB_STRESS_SEED is unset. It is a fixed
+// constant, not the wall clock: the test-clock guard forbids reading the wall
+// clock in tests, and a fixed default makes every run reproducible by
+// construction. Override the env var to explore a different schedule.
+const defaultStressSeed = 0x5715c0de
+
+// stressSeed returns the base RNG seed for the storm and always logs it.
+// BLEEPHUB_STRESS_SEED pins the seed so a failing run can be replayed
+// deterministically. Per-worker streams are offset from this base, so logging
+// the base seed is enough to reproduce the whole run.
+func stressSeed(t *testing.T) int64 {
+	if v := os.Getenv("BLEEPHUB_STRESS_SEED"); v != "" {
+		if n, err := strconv.ParseInt(v, 10, 64); err == nil {
+			t.Logf("stress seed = %d (from BLEEPHUB_STRESS_SEED)", n)
+			return n
+		}
+		t.Logf("ignoring unparseable BLEEPHUB_STRESS_SEED=%q", v)
+	}
+	t.Logf("stress seed = %d (set BLEEPHUB_STRESS_SEED=%d to replay this run)", defaultStressSeed, defaultStressSeed)
+	return defaultStressSeed
+}
+
 // TestStressCRUDStorm drives many goroutines issuing create/read/update/delete
 // across interacting resources — repos, issues, labels, milestones, comments,
 // reactions, orgs, teams, notifications, projects-v2, search — through the
@@ -85,6 +107,7 @@ func TestStressCRUDStorm(t *testing.T) {
 
 	nWorkers := stressWorkers(24)
 	dur := stressDuration(3 * time.Second)
+	baseSeed := stressSeed(t)
 	var stop atomic.Bool
 	stopTimer := time.AfterFunc(dur, func() { stop.Store(true) })
 	defer stopTimer.Stop()
@@ -118,7 +141,7 @@ func TestStressCRUDStorm(t *testing.T) {
 		wg.Add(1)
 		go func(seed int) {
 			defer wg.Done()
-			rng := rand.New(rand.NewSource(int64(seed) + int64(nextTestID())))
+			rng := rand.New(rand.NewSource(baseSeed + int64(seed)))
 			reactions := []string{"+1", "-1", "laugh", "heart", "hooray", "rocket", "eyes", "confused"}
 			for !stop.Load() {
 				pr := pool[rng.Intn(len(pool))]

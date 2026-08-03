@@ -133,6 +133,7 @@ export function SecurityAdvisoriesPage() {
         <div className="flex flex-wrap items-center gap-2">
           <label style={{ fontSize: "0.85rem", color: "var(--color-fg-muted)" }}>Severity:</label>
           <select
+            aria-label="Filter by severity"
             value={severityFilter}
             onChange={(e) => setSeverityFilter(e.target.value as SeverityFilter)}
             style={{ fontSize: "0.85rem", padding: "0.35rem 0.5rem" }}

@@ -91,7 +91,7 @@ func TestOIDCToken_RepositoryOwnerDerived(t *testing.T) {
 	}
 }
 
-// TestOIDCToken_RequiresJobTokenScopedToRepo pins AUTH-098: the OIDC mint is
+// TestOIDCToken_RequiresJobTokenScopedToRepo pins that the OIDC mint is
 // gated on a job runtime token, and that token may only mint for the repository
 // it is scoped to — a job for repo A cannot forge a signed subject for repo B,
 // and a plain user credential is refused outright.

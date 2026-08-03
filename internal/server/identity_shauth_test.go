@@ -319,7 +319,7 @@ func TestShauthLogoutCompletionBridgeFailsClosedWhenShauthIsDisabled(t *testing.
 	}
 }
 
-// TestLogoutOfNonShauthSessionDoesNotStartGlobalLogout pins AUTH-109: signing
+// TestLogoutOfNonShauthSessionDoesNotStartGlobalLogout pins that signing
 // out of a session that was NOT established through Shauth must not tear down
 // the user's shared Shauth SSO session. Even with a broken issuer (discovery
 // would 502 if attempted), a local session logs out to /ui/login.

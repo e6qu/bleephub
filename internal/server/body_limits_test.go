@@ -8,7 +8,7 @@ import (
 )
 
 // An upload/body read must refuse a body larger than its limit rather than
-// buffering it unbounded (STORE-019).
+// buffering it unbounded.
 func TestReadLimitedBodyRejectsOversizedBody(t *testing.T) {
 	oversized := httptest.NewRequest("POST", "/x", strings.NewReader(strings.Repeat("x", 100)))
 	rec := httptest.NewRecorder()

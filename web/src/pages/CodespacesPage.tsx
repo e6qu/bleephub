@@ -430,7 +430,7 @@ function MachineSelect({
 
   if (!owner || !repo) {
     return (
-      <select value={value} onChange={(e) => onChange(e.target.value)} className="w-full">
+      <select aria-label="Machine type" value={value} onChange={(e) => onChange(e.target.value)} className="w-full">
         <option value="basicLinux32">basicLinux32</option>
         <option value="standardLinux32">standardLinux32</option>
         <option value="premiumLinux64">premiumLinux64</option>
@@ -441,7 +441,7 @@ function MachineSelect({
   if (isLoading) return <Spinner label="Loading machines" />;
 
   return (
-    <select value={value} onChange={(e) => onChange(e.target.value)} className="w-full">
+    <select aria-label="Machine type" value={value} onChange={(e) => onChange(e.target.value)} className="w-full">
       {data?.items.map((m) => (
         <option key={m.name} value={m.name}>
           {m.display_name}

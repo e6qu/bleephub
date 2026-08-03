@@ -90,9 +90,78 @@ function ClassroomManagement({ classroomID }: { classroomID: number | null }) {
 function TransitionPanel() {
   const client = useQueryClient();
   const [error, setError] = useState<unknown>(null);
-  const exportMutation = useMutation({ mutationFn: exportClassroomTransition, onSuccess: (blob) => { const url = URL.createObjectURL(blob); const link = document.createElement("a"); link.href = url; link.download = "bleephub-classroom-transition.json"; link.click(); URL.revokeObjectURL(url); } });
-  const importMutation = useMutation({ mutationFn: importClassroomTransition, onSuccess: () => client.invalidateQueries({ queryKey: ["classrooms"] }) });
-  return <Box className="mb-6" style={{ borderColor: "color-mix(in srgb, var(--color-brand-purple) 45%, var(--color-border))" }}><div className="flex flex-wrap items-center justify-between gap-4" style={{ padding: "1rem", background: "linear-gradient(100deg, color-mix(in srgb, var(--color-brand-purple) 12%, var(--color-surface)), color-mix(in srgb, var(--color-brand-cyan) 10%, var(--color-surface)))" }}><div><b>Transition from GitHub Classroom</b><p className="mt-1" style={{ color: "var(--color-fg-muted)", fontSize: ".8rem" }}>Import or export the lossless JSON bundle after migrating the referenced starter and student repositories.</p></div><div className="flex flex-wrap gap-2"><Button onClick={() => exportMutation.mutate()}>Export classrooms</Button><label className="inline-flex"><input type="file" accept="application/json,.json" className="sr-only" onChange={async (event) => { try { const file = event.target.files?.[0]; if (!file) return; importMutation.mutate(JSON.parse(await file.text())); } catch (cause) { setError(cause); } }} /><span className="inline-flex cursor-pointer items-center" style={{ padding: ".34rem .85rem", border: "1px solid var(--color-border)", borderRadius: "var(--radius-md)", background: "var(--color-bg-subtle)", fontSize: ".82rem", fontWeight: 600 }}>Import transition bundle</span></label></div></div>{(error || exportMutation.error || importMutation.error) && <div style={{ padding: "0 1rem 1rem" }}><ErrorBanner>{String(error || exportMutation.error || importMutation.error)}</ErrorBanner></div>}</Box>;
+  const exportMutation = useMutation({
+    mutationFn: exportClassroomTransition,
+    onSuccess: (blob) => {
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = "bleephub-classroom-transition.json";
+      link.click();
+      URL.revokeObjectURL(url);
+    },
+  });
+  const importMutation = useMutation({
+    mutationFn: importClassroomTransition,
+    onSuccess: () => client.invalidateQueries({ queryKey: ["classrooms"] }),
+  });
+  return (
+    <Box
+      className="mb-6"
+      style={{ borderColor: "color-mix(in srgb, var(--color-brand-purple) 45%, var(--color-border))" }}
+    >
+      <div
+        className="flex flex-wrap items-center justify-between gap-4"
+        style={{
+          padding: "1rem",
+          background:
+            "linear-gradient(100deg, color-mix(in srgb, var(--color-brand-purple) 12%, var(--color-surface)), color-mix(in srgb, var(--color-brand-cyan) 10%, var(--color-surface)))",
+        }}
+      >
+        <div>
+          <b>Transition from GitHub Classroom</b>
+          <p className="mt-1" style={{ color: "var(--color-fg-muted)", fontSize: ".8rem" }}>Import or export the lossless JSON bundle after migrating the referenced starter and student repositories.</p>
+        </div>
+        <div className="flex flex-wrap gap-2">
+          <Button onClick={() => exportMutation.mutate()}>Export classrooms</Button>
+          <label className="inline-flex">
+            <input
+              type="file"
+              accept="application/json,.json"
+              className="sr-only"
+              onChange={async (event) => {
+                try {
+                  const file = event.target.files?.[0];
+                  if (!file) return;
+                  importMutation.mutate(JSON.parse(await file.text()));
+                } catch (cause) {
+                  setError(cause);
+                }
+              }}
+            />
+            <span
+              className="inline-flex cursor-pointer items-center"
+              style={{
+                padding: ".34rem .85rem",
+                border: "1px solid var(--color-border)",
+                borderRadius: "var(--radius-md)",
+                background: "var(--color-bg-subtle)",
+                fontSize: ".82rem",
+                fontWeight: 600,
+              }}
+            >
+              Import transition bundle
+            </span>
+          </label>
+        </div>
+      </div>
+      {(error || exportMutation.error || importMutation.error) && (
+        <div style={{ padding: "0 1rem 1rem" }}>
+          <ErrorBanner>{String(error || exportMutation.error || importMutation.error)}</ErrorBanner>
+        </div>
+      )}
+    </Box>
+  );
 }
 
 function ClassroomGrid({ classrooms }: { classrooms: Classroom[] }) {
@@ -140,7 +209,38 @@ function ClassroomDetail({ classroom }: { classroom: Classroom }) {
       <div className="mb-5 grid gap-3 sm:grid-cols-3">
         {[{ label: "Students", value: classroom.roster.length, color: "#0969da" }, { label: "Accepted repositories", value: classroom.assignments.reduce((n, a) => n + a.accepted, 0), color: "#8250df" }, { label: "Passing", value: classroom.assignments.reduce((n, a) => n + a.passing, 0), color: "#18a957" }].map((stat) => <Box key={stat.label}><div style={{ padding: "1rem", borderLeft: `5px solid ${stat.color}` }}><div style={{ fontSize: "1.5rem", fontWeight: 750 }}>{stat.value}</div><div style={{ color: "var(--color-fg-muted)", fontSize: ".8rem" }}>{stat.label}</div></div></Box>)}
       </div>
-      {classroom.assignments.length === 0 ? <Blankslate icon={<RepoIcon size={34} />} title="No assignments yet">Create an individual or group assignment from a real starter repository.</Blankslate> : <div className="grid gap-3">{classroom.assignments.map((assignment) => <Box key={assignment.id}><div className="flex flex-wrap items-center justify-between gap-4" style={{ padding: "1rem" }}><div><div className="flex items-center gap-2"><RepoIcon size={17} /><b>{assignment.title}</b><span style={{ color: "var(--color-fg-muted)", fontSize: ".76rem" }}>{assignment.type}</span></div><div className="mt-2 flex flex-wrap gap-4" style={{ color: "var(--color-fg-muted)", fontSize: ".8rem" }}><span>{assignment.accepted} accepted</span><span>{assignment.submitted} submitted</span><span style={{ color: "var(--gh-open-solid)" }}>{assignment.passing} passing</span></div></div><div className="text-right"><code style={{ display: "block", color: "var(--color-accent)", fontSize: ".75rem" }}>{assignment.invite_link}</code><span style={{ fontSize: ".72rem", color: "var(--color-fg-muted)" }}>{assignment.autograding_tests?.reduce((n, test) => n + test.points, 0) ?? 0} autograding points</span><div className="mt-2 flex justify-end gap-2"><Button size="sm" onClick={() => setReportingAssignment(assignment)}>View submissions</Button><Button size="sm" disabled={classroom.archived} onClick={() => setEditingAssignment(assignment)}>Edit assignment</Button></div></div></div></Box>)}</div>}
+      {classroom.assignments.length === 0 ? (
+        <Blankslate icon={<RepoIcon size={34} />} title="No assignments yet">Create an individual or group assignment from a real starter repository.</Blankslate>
+      ) : (
+        <div className="grid gap-3">
+          {classroom.assignments.map((assignment) => (
+            <Box key={assignment.id}>
+              <div className="flex flex-wrap items-center justify-between gap-4" style={{ padding: "1rem" }}>
+                <div>
+                  <div className="flex items-center gap-2">
+                    <RepoIcon size={17} />
+                    <b>{assignment.title}</b>
+                    <span style={{ color: "var(--color-fg-muted)", fontSize: ".76rem" }}>{assignment.type}</span>
+                  </div>
+                  <div className="mt-2 flex flex-wrap gap-4" style={{ color: "var(--color-fg-muted)", fontSize: ".8rem" }}>
+                    <span>{assignment.accepted} accepted</span>
+                    <span>{assignment.submitted} submitted</span>
+                    <span style={{ color: "var(--gh-open-solid)" }}>{assignment.passing} passing</span>
+                  </div>
+                </div>
+                <div className="text-right">
+                  <code style={{ display: "block", color: "var(--color-accent)", fontSize: ".75rem" }}>{assignment.invite_link}</code>
+                  <span style={{ fontSize: ".72rem", color: "var(--color-fg-muted)" }}>{assignment.autograding_tests?.reduce((n, test) => n + test.points, 0) ?? 0} autograding points</span>
+                  <div className="mt-2 flex justify-end gap-2">
+                    <Button size="sm" onClick={() => setReportingAssignment(assignment)}>View submissions</Button>
+                    <Button size="sm" disabled={classroom.archived} onClick={() => setEditingAssignment(assignment)}>Edit assignment</Button>
+                  </div>
+                </div>
+              </div>
+            </Box>
+          ))}
+        </div>
+      )}
       {showRoster && <RosterDialog classroom={classroom} onClose={() => setShowRoster(false)} />}
       {showAssignment && <AssignmentDialog classroom={classroom} onClose={() => setShowAssignment(false)} />}
       {editingAssignment && <AssignmentDialog classroom={classroom} assignment={editingAssignment} onClose={() => setEditingAssignment(null)} />}
@@ -304,9 +404,44 @@ function CreateClassroomOrganization({
 }
 
 function RosterDialog({ classroom, onClose }: { classroom: Classroom; onClose: () => void }) {
-  const client = useQueryClient(); const [value, setValue] = useState(classroom.roster.map((entry) => `${entry.login},${entry.roster_identifier}`).join("\n"));
-  const mutation = useMutation({ mutationFn: () => replaceClassroomRoster(classroom.id, value.split("\n").filter(Boolean).map((line) => { const [login, ...identifier] = line.split(","); return { login: login.trim(), roster_identifier: identifier.join(",").trim() }; })), onSuccess: () => { client.invalidateQueries({ queryKey: ["classrooms"] }); onClose(); } });
-  return <Modal title="Manage roster" onClose={onClose}><p className="mb-3" style={{ color: "var(--color-fg-muted)", fontSize: ".82rem" }}>One student per line: <code>github-login,roster-identifier</code>.</p><textarea className="w-full" rows={10} value={value} onChange={(e) => setValue(e.target.value)} />{mutation.error && <ErrorBanner>{String(mutation.error)}</ErrorBanner>}<DialogActions><Button onClick={onClose}>Cancel</Button><Button variant="primary" onClick={() => mutation.mutate()}>Save roster</Button></DialogActions></Modal>;
+  const client = useQueryClient();
+  const [value, setValue] = useState(
+    classroom.roster.map((entry) => `${entry.login},${entry.roster_identifier}`).join("\n"),
+  );
+  const mutation = useMutation({
+    mutationFn: () =>
+      replaceClassroomRoster(
+        classroom.id,
+        value
+          .split("\n")
+          .filter(Boolean)
+          .map((line) => {
+            const [login, ...identifier] = line.split(",");
+            return { login: login.trim(), roster_identifier: identifier.join(",").trim() };
+          }),
+      ),
+    onSuccess: () => {
+      client.invalidateQueries({ queryKey: ["classrooms"] });
+      onClose();
+    },
+  });
+  return (
+    <Modal title="Manage roster" onClose={onClose}>
+      <p className="mb-3" style={{ color: "var(--color-fg-muted)", fontSize: ".82rem" }}>One student per line: <code>github-login,roster-identifier</code>.</p>
+      <textarea
+        aria-label="Roster (one student per line)"
+        className="w-full"
+        rows={10}
+        value={value}
+        onChange={(e) => setValue(e.target.value)}
+      />
+      {mutation.error && <ErrorBanner>{String(mutation.error)}</ErrorBanner>}
+      <DialogActions>
+        <Button onClick={onClose}>Cancel</Button>
+        <Button variant="primary" onClick={() => mutation.mutate()}>Save roster</Button>
+      </DialogActions>
+    </Modal>
+  );
 }
 
 function ClassroomSettingsDialog({ classroom, onClose }: { classroom: Classroom; onClose: () => void }) {
@@ -608,9 +743,53 @@ function AssignmentReportingDialog({
 }
 
 function AcceptAssignment({ code }: { code: string }) {
-  const navigate = useNavigate(); const query = useQuery({ queryKey: ["classroom-invite", code], queryFn: () => fetchClassroomInvitation(code) }); const [group, setGroup] = useState(""); const [rosterIdentifier, setRosterIdentifier] = useState("");
-  const mutation = useMutation({ mutationFn: () => acceptClassroomInvitation(code, query.data?.type === "group" ? group : undefined, rosterIdentifier), onSuccess: (result) => navigate(`/ui/repos/${result.repository.full_name}`) });
-  if (query.isLoading) return <Spinner />; if (query.isError) return <InlineError title="Assignment invitation unavailable" detail={String(query.error)} />;
+  const navigate = useNavigate();
+  const query = useQuery({
+    queryKey: ["classroom-invite", code],
+    queryFn: () => fetchClassroomInvitation(code),
+  });
+  const [group, setGroup] = useState("");
+  const [rosterIdentifier, setRosterIdentifier] = useState("");
+  const mutation = useMutation({
+    mutationFn: () =>
+      acceptClassroomInvitation(
+        code,
+        query.data?.type === "group" ? group : undefined,
+        rosterIdentifier,
+      ),
+    onSuccess: (result) => navigate(`/ui/repos/${result.repository.full_name}`),
+  });
+  if (query.isLoading) return <Spinner />;
+  if (query.isError) return <InlineError title="Assignment invitation unavailable" detail={String(query.error)} />;
   const assignment = query.data!;
-  return <div style={{ maxWidth: 680, margin: "2rem auto" }}><ClassroomHero /><Box><div style={{ padding: "1.4rem" }}><div className="mb-2 flex items-center gap-2"><RepoIcon size={22} /><h1 style={{ fontSize: "1.35rem", fontWeight: 700 }}>{assignment.title}</h1></div><p style={{ color: "var(--color-fg-muted)" }}>Accepting creates your real assignment repository from <b>{assignment.starter_code_repository?.full_name}</b>, grants your access, configures feedback, and installs the autograding workflow.</p>{assignment.roster_identifier_required && <div className="mt-4"><FormLabel id="roster-identifier">Your roster identifier</FormLabel><input id="roster-identifier" className="w-full" value={rosterIdentifier} onChange={(e) => setRosterIdentifier(e.target.value)} placeholder="Student ID or email from your course roster" required /></div>}{assignment.type === "group" && <div className="mt-4"><FormLabel id="group-name">Team name</FormLabel><input id="group-name" className="w-full" value={group} onChange={(e) => setGroup(e.target.value)} required /></div>}{mutation.error && <ErrorBanner>{String(mutation.error)}</ErrorBanner>}<div className="mt-5"><Button variant="primary" onClick={() => mutation.mutate()} disabled={mutation.isPending || (assignment.type === "group" && !group.trim()) || (assignment.roster_identifier_required && !rosterIdentifier.trim())}>Accept this assignment</Button></div></div></Box></div>;
+  return (
+    <div style={{ maxWidth: 680, margin: "2rem auto" }}>
+      <ClassroomHero />
+      <Box>
+        <div style={{ padding: "1.4rem" }}>
+          <div className="mb-2 flex items-center gap-2">
+            <RepoIcon size={22} />
+            <h1 style={{ fontSize: "1.35rem", fontWeight: 700 }}>{assignment.title}</h1>
+          </div>
+          <p style={{ color: "var(--color-fg-muted)" }}>Accepting creates your real assignment repository from <b>{assignment.starter_code_repository?.full_name}</b>, grants your access, configures feedback, and installs the autograding workflow.</p>
+          {assignment.roster_identifier_required && (
+            <div className="mt-4">
+              <FormLabel id="roster-identifier">Your roster identifier</FormLabel>
+              <input id="roster-identifier" className="w-full" value={rosterIdentifier} onChange={(e) => setRosterIdentifier(e.target.value)} placeholder="Student ID or email from your course roster" required />
+            </div>
+          )}
+          {assignment.type === "group" && (
+            <div className="mt-4">
+              <FormLabel id="group-name">Team name</FormLabel>
+              <input id="group-name" className="w-full" value={group} onChange={(e) => setGroup(e.target.value)} required />
+            </div>
+          )}
+          {mutation.error && <ErrorBanner>{String(mutation.error)}</ErrorBanner>}
+          <div className="mt-5">
+            <Button variant="primary" onClick={() => mutation.mutate()} disabled={mutation.isPending || (assignment.type === "group" && !group.trim()) || (assignment.roster_identifier_required && !rosterIdentifier.trim())}>Accept this assignment</Button>
+          </div>
+        </div>
+      </Box>
+    </div>
+  );
 }

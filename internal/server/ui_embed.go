@@ -12,6 +12,17 @@ import (
 //go:embed all:dist
 var uiAssets embed.FS
 
+// registerUI mounts the embedded single-page app under /ui/.
+//
+// This is a deliberate, documented exception to the "every surface goes
+// through s.route() so routePatterns/RegisteredRoutes() enumerates it"
+// invariant. /ui/ is a static asset tree served by an SPA fallback handler,
+// not an enumerable API operation: it has no method, no authz resource, and
+// no OpenAPI/definition shape, so recording it in routePatterns would break
+// the authz-matrix and api-definition tests that assume every registered
+// pattern is a "METHOD /api/v3/..." operation. It is therefore registered
+// directly on the mux and intentionally excluded from the route registry.
+// The only other such exception is the no-embed build's empty stub below.
 func (s *Server) registerUI() {
 	sub, err := fs.Sub(uiAssets, "dist")
 	if err != nil {

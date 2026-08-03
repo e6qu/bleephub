@@ -7,8 +7,8 @@ import (
 	"time"
 )
 
-// TestPutLoginSessionConcurrentSameIDStaysConsistent is the STORE-072
-// regression: concurrent writes to the same session id must not leave the
+// TestPutLoginSessionConcurrentSameIDStaysConsistent is a regression guard:
+// concurrent writes to the same session id must not leave the
 // durable row and the in-memory index disagreeing. Run under -race, it also
 // asserts the map write is serialized. With the durable Put and the map write
 // in one critical section the last writer sets both, so they always agree.
@@ -62,7 +62,7 @@ func TestPutLoginSessionConcurrentSameIDStaysConsistent(t *testing.T) {
 	}
 }
 
-// TestReapDropsLoginSessionsOfDeletedUsers is the STORE-073 regression: a login
+// TestReapDropsLoginSessionsOfDeletedUsers is a regression guard: a login
 // session whose owner no longer resolves must be reaped from both memory and the
 // durable bucket, even though it has not yet expired. A session for a live user
 // must be left untouched.

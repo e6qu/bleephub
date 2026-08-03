@@ -8,7 +8,7 @@ import (
 	"golang.org/x/crypto/ssh"
 )
 
-// TestTokenMatchesClientUsesTheStoreLock covers the final REST-014 map access:
+// TestTokenMatchesClientUsesTheStoreLock covers the final unguarded map access:
 // application-token inspection runs concurrently with App management. The
 // assertion makes the test meaningful without -race; the detector proves the
 // lookup cannot collide with the write.

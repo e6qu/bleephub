@@ -7,15 +7,18 @@ import (
 	"time"
 )
 
+// Metrics is the live, mutable accumulator. It is never marshalled — the
+// serialized contract is MetricsSnapshot, produced by Snapshot() — so these
+// fields deliberately carry no JSON tags.
 type Metrics struct {
 	mu                  sync.Mutex
-	WorkflowSubmissions int64            `json:"workflow_submissions"`
-	JobDispatches       int64            `json:"job_dispatches"`
-	JobCompletions      map[string]int64 `json:"job_completions"` // result → count
-	JobDurations        []time.Duration  `json:"-"`
-	ActiveWorkflows     int64            `json:"active_workflows"`
-	ActiveSessions      int64            `json:"active_sessions"`
-	StartedAt           time.Time        `json:"-"`
+	WorkflowSubmissions int64
+	JobDispatches       int64
+	JobCompletions      map[string]int64 // result → count
+	JobDurations        []time.Duration
+	ActiveWorkflows     int64
+	ActiveSessions      int64
+	StartedAt           time.Time
 }
 
 func NewMetrics() *Metrics {

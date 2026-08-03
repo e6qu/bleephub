@@ -21,7 +21,7 @@ func newReplicaStore(t *testing.T, dataDir string) (*Store, *Persistence) {
 	return store, persistence
 }
 
-// TestCoreEntityIDsDoNotCollideAcrossReplicas is the STORE-071 regression: two
+// TestCoreEntityIDsDoNotCollideAcrossReplicas is a regression guard: two
 // replicas that mint an org/team from the same in-memory NextX must not pick the
 // same global ID, or the second durable write silently overwrites the first.
 // Routing allocation through AllocateCounterValue makes the shared counters
@@ -78,7 +78,7 @@ func TestCoreEntityIDsDoNotCollideAcrossReplicas(t *testing.T) {
 	}
 }
 
-// TestCoreEntityIDsAreDurableAcrossReload is the STORE-071 durability half: once
+// TestCoreEntityIDsAreDurableAcrossReload is the durability half: once
 // a store hands out an org/user/repo/team/issue ID, a fresh store over the same
 // data dir must never re-issue it — the durable counter carries the high-water
 // mark across the reload.

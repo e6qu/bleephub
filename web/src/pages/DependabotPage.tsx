@@ -241,6 +241,7 @@ function AlertDetail({
         <div style={{ marginBottom: "1rem" }}>
           <label style={{ fontSize: "0.85rem" }}>Dismiss reason</label>
           <select
+            aria-label="Dismiss reason"
             value={reason}
             onChange={(e) => setReason(e.target.value as GithubDependabotDismissedReason)}
             style={{ fontSize: "0.85rem", padding: "0.35rem 0.5rem", display: "block", marginBottom: "0.5rem" }}
@@ -253,6 +254,7 @@ function AlertDetail({
           </select>
           <input
             type="text"
+            aria-label="Dismissal comment"
             placeholder="Comment (optional)"
             value={comment}
             onChange={(e) => setComment(e.target.value)}

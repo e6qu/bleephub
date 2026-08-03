@@ -2,8 +2,7 @@ package bleephub
 
 import "testing"
 
-// An alert with no instances must not panic the store under the write lock
-// (STORE-057).
+// An alert with no instances must not panic the store under the write lock.
 func TestCreateCodeScanningAutofixWithoutInstances(t *testing.T) {
 	st := NewStore()
 	fix, created := st.CreateCodeScanningAutofix(&CodeScanningAlert{RepoKey: "a/b", Number: 1, RuleID: "rule"})
@@ -13,7 +12,7 @@ func TestCreateCodeScanningAutofixWithoutInstances(t *testing.T) {
 }
 
 // A pure read of the default Copilot policy must not materialize a phantom
-// (never-persisted) entry, and returns GitHub's default posture (STORE-060).
+// (never-persisted) entry, and returns GitHub's default posture.
 func TestGetCopilotCodingAgentPermsDoesNotMaterializeDefault(t *testing.T) {
 	st := NewStore()
 	p := st.GetCopilotCodingAgentPermissions("acme")
