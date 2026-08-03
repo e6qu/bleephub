@@ -818,7 +818,7 @@ describe("GitHub Enterprise Server user administration application programming i
 // ─── GitHub Enterprise Server organization audit log helpers ────────────
 
 describe("GitHub Enterprise Server organization audit log application programming interface helpers", () => {
-  it("fetchAuditLogOrgs lists organizations through the authenticated-user organizations route", async () => {
+  it("fetchAuditLogOrgs lists every organization on the instance (operator surface), sorted", async () => {
     mockFetch.mockResolvedValue(
       jsonResponse([
         { id: 2, login: "zeta", name: "Zeta", description: "", created_at: "2026-01-01T00:00:00Z" },
@@ -829,7 +829,9 @@ describe("GitHub Enterprise Server organization audit log application programmin
     const orgs = await fetchAuditLogOrgs();
 
     expect(orgs.map((o) => o.login)).toEqual(["acme", "zeta"]);
-    expect(mockFetch.mock.calls[0][0]).toBe("/api/v3/user/orgs?per_page=100");
+    // Site admins viewing the audit log hold no personal membership, so this
+    // must list all orgs, not just the viewer's.
+    expect(mockFetch.mock.calls[0][0]).toBe("/api/v3/organizations?per_page=100");
   });
 
   it("fetchAuditLog uses the GitHub Enterprise Server organization audit-log route", async () => {
@@ -1065,6 +1067,12 @@ describe("fetchMetrics", () => {
               job_dispatches: 5,
               job_completions: { success: 5 },
               active_workflows: 1,
+              uptime_seconds: 3661,
+              goroutines: 42,
+              heap_alloc_mb: 12.5,
+              job_duration_p50_seconds: 1.2,
+              job_duration_p95_seconds: 3.4,
+              job_duration_p99_seconds: 5.6,
             }),
             { status: 200 },
           ),
@@ -1091,6 +1099,12 @@ describe("fetchMetrics", () => {
       jobs_by_status: { completed: 5 },
       active_workflows: 1,
       connected_runners: 2,
+      uptime_seconds: 3661,
+      goroutines: 42,
+      heap_alloc_mb: 12.5,
+      job_duration_p50_seconds: 1.2,
+      job_duration_p95_seconds: 3.4,
+      job_duration_p99_seconds: 5.6,
     });
   });
 

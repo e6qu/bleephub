@@ -147,6 +147,12 @@ export interface BleephubMetrics {
   job_completions: Record<string, number>;
   active_workflows: number;
   connected_runners: number;
+  uptime_seconds: number;
+  goroutines: number;
+  heap_alloc_mb: number;
+  job_duration_p50_seconds: number;
+  job_duration_p95_seconds: number;
+  job_duration_p99_seconds: number;
 }
 
 /** Runtime status reported by the server. */

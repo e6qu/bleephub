@@ -37,6 +37,12 @@ const internalMetrics = {
   job_dispatches: 2,
   job_completions: { success: 1 },
   active_workflows: 1,
+  uptime_seconds: 3661,
+  goroutines: 42,
+  heap_alloc_mb: 12.5,
+  job_duration_p50_seconds: 1.2,
+  job_duration_p95_seconds: 3.4,
+  job_duration_p99_seconds: 5.6,
 };
 const internalStatus = {
   active_workflows: 1,
@@ -97,6 +103,25 @@ describe("MetricsPage", () => {
     await waitFor(() => {
       expect(screen.getByText(/jobs by status/i)).toBeInTheDocument();
     });
+  });
+
+  it("renders job latency percentiles and runtime health from the same two requests", async () => {
+    mockEndpoints();
+    renderPage();
+    await waitFor(() => {
+      expect(screen.getByText(/job latency/i)).toBeInTheDocument();
+    });
+    // Latency percentiles (p95 = 3.4s), formatted.
+    expect(screen.getByText(/p95 duration/i)).toBeInTheDocument();
+    expect(screen.getByText("3.40 s")).toBeInTheDocument();
+    // Runtime health: uptime 3661s -> "1h 1m", goroutines, heap.
+    expect(screen.getByText(/runtime/i)).toBeInTheDocument();
+    expect(screen.getByText("1h 1m")).toBeInTheDocument();
+    expect(screen.getByText(/goroutines/i)).toBeInTheDocument();
+    expect(screen.getByText("12.5 MB")).toBeInTheDocument();
+    // Still only the two internal requests.
+    const urls = mockFetch.mock.calls.map((call) => String(call[0]));
+    expect(urls.filter((url) => url.includes("/internal/"))).toHaveLength(2);
   });
 
   it("costs exactly two requests instead of walking every repository", async () => {

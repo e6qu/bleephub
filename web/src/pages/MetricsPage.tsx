@@ -52,6 +52,28 @@ export function MetricsPage() {
         </section>
       )}
 
+      {metrics && (
+        <section className="mb-8">
+          <SectionLabel>Job latency</SectionLabel>
+          <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+            <StatCard title="p50 duration" value={formatSeconds(metrics.job_duration_p50_seconds)} />
+            <StatCard title="p95 duration" value={formatSeconds(metrics.job_duration_p95_seconds)} />
+            <StatCard title="p99 duration" value={formatSeconds(metrics.job_duration_p99_seconds)} />
+          </div>
+        </section>
+      )}
+
+      {metrics && (
+        <section className="mb-8">
+          <SectionLabel>Runtime</SectionLabel>
+          <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+            <StatCard title="Uptime" value={formatUptime(metrics.uptime_seconds)} />
+            <StatCard title="Goroutines" value={metrics.goroutines} />
+            <StatCard title="Heap allocated" value={`${metrics.heap_alloc_mb.toFixed(1)} MB`} />
+          </div>
+        </section>
+      )}
+
       {status && (
         <section className="mb-8">
           <SectionLabel>Jobs by status</SectionLabel>
@@ -83,6 +105,24 @@ export function MetricsPage() {
       )}
     </div>
   );
+}
+
+function formatSeconds(s: number): string {
+  if (!s || s <= 0) return "—";
+  if (s < 1) return `${Math.round(s * 1000)} ms`;
+  return `${s.toFixed(2)} s`;
+}
+
+function formatUptime(seconds: number): string {
+  const s = Math.max(0, Math.floor(seconds));
+  const d = Math.floor(s / 86400);
+  const h = Math.floor((s % 86400) / 3600);
+  const m = Math.floor((s % 3600) / 60);
+  const parts: string[] = [];
+  if (d) parts.push(`${d}d`);
+  if (h || d) parts.push(`${h}h`);
+  parts.push(`${m}m`);
+  return parts.join(" ");
 }
 
 function EmptyCell({ children }: { children: React.ReactNode }) {
