@@ -1331,6 +1331,15 @@
         "status_kind": "fixed"
       },
       {
+        "category": "AUTH",
+        "finding": "OIDC discovery/JWKS/token/end-session and the Pages deployment artifact fetch were the only server-initiated fetches not routed through the SSRF address gate, so a provider-controlled discovery document or artifact URL could reach an internal or cloud-metadata address",
+        "id": "AUTH-119",
+        "location": "identity.go:58, gh_pages_deployments.go:347",
+        "severity": "M",
+        "status": "fixed \u2014 both now use `newAddressCheckedHTTPTransport` (dial-time `Dialer.Control`); `oidcClientContext` became a `*Server` method to read `allowPrivateOutboundTargets`, and the shauth loopback-issuer browser harness sets `BLEEPHUB_ALLOW_PRIVATE_OUTBOUND_TARGETS=true`",
+        "status_kind": "fixed"
+      },
+      {
         "category": "REST",
         "finding": "Private repo contents, commits and README readable by an anonymous caller; `lookupReadableRepoFromPath` exists and is not used",
         "id": "REST-001",
@@ -4454,6 +4463,15 @@
         "status_kind": "fixed"
       },
       {
+        "category": "CORE",
+        "finding": "The `/ui/` SPA shipped no security headers and there was no global header middleware; CSP / X-Frame-Options / nosniff existed only on individual identity and Pages handlers",
+        "id": "CORE-033",
+        "location": "server.go:816, ui_embed.go:36",
+        "severity": "M",
+        "status": "fixed \u2014 `securityHeadersMiddleware` wraps the whole handler chain, setting `X-Content-Type-Options: nosniff` and `Referrer-Policy` on every response, `Strict-Transport-Security` over TLS, and `X-Frame-Options: DENY` + a `Content-Security-Policy` for `/ui`; stricter per-endpoint CSPs run after and are not clobbered. Unit-tested",
+        "status_kind": "fixed"
+      },
+      {
         "category": "WEB",
         "finding": "Metrics computed client-side by walking every repo, every run page and every run's jobs, re-run every 3 seconds \u2014 one tab self-DoSes the server",
         "id": "WEB-001",
@@ -6326,11 +6344,11 @@
         },
         "AUTH": {
           "status": {
-            "fixed": 115,
+            "fixed": 116,
             "open": 1,
             "partial": 2
           },
-          "total": 118
+          "total": 119
         },
         "CI": {
           "status": {
@@ -6342,11 +6360,11 @@
         },
         "CORE": {
           "status": {
-            "fixed": 18,
+            "fixed": 19,
             "open": 11,
             "partial": 3
           },
-          "total": 32
+          "total": 33
         },
         "GQL": {
           "status": {
@@ -6397,16 +6415,16 @@
       },
       "severity": {
         "blocker": 162,
-        "major": 370,
+        "major": 372,
         "minor": 142
       },
       "status": {
         "deferred": 1,
-        "fixed": 564,
+        "fixed": 566,
         "open": 74,
         "partial": 35
       },
-      "total": 674
+      "total": 676
     }
   },
   "rest": {

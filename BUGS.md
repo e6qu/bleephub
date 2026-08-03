@@ -1,6 +1,6 @@
 # Bleephub bug ledger
 
-674 findings from the continuing full-surface audit: 162 blockers, 370 major, 142 minor. Every
+676 findings from the continuing full-surface audit: 162 blockers, 372 major, 142 minor. Every
 entry carries a location and a one-sentence claim. Severity is `B` blocker, `M` major, `m` minor.
 Status begins with one of `open`, `partial`, `fixed`, or `deferred`; the generated parity
 inventory records the exact counts and fails CI when this summary or a row drifts.
@@ -135,6 +135,7 @@ source or comments. The reasoning behind a fix belongs in its commit message.
 | AUTH-116 | m | identity.go:849 | Local login returned 403 for a disallowed login and 401 for a wrong password, letting an anonymous caller enumerate `BLEEPHUB_ALLOWED_LOGINS` membership from the status code | fixed — both return the identical 401. `TestLocalLoginAllowlistRejectsLoginsNotListed` |
 | AUTH-117 | m | identity.go:643 | The per-flow OAuth state cookie carried no cookie prefix, so a sibling-subdomain or network attacker could transplant a server-signed state cookie into the victim's jar and log the victim in as the attacker | fixed — the state cookie carries the `__Host-` prefix (Secure, Path=/, no Domain) over HTTPS; plain-HTTP dev keeps the unprefixed name. The per-process HMAC key across replicas remains open |
 | AUTH-118 | m | store_repo_reads.go:76 | Anonymous clone counting recorded the remote host in an unbounded `Actors` map and re-serialized the whole bucket on every request, so a public-repo clone flood (or a large IPv6 range) was a persisted memory/disk sink | fixed — the distinct-actor set is capped at 10k; clone counts keep incrementing past the cap |
+| AUTH-119 | M | identity.go:58, gh_pages_deployments.go:347 | OIDC discovery/JWKS/token/end-session and the Pages deployment artifact fetch were the only server-initiated fetches not routed through the SSRF address gate, so a provider-controlled discovery document or artifact URL could reach an internal or cloud-metadata address | fixed — both now use `newAddressCheckedHTTPTransport` (dial-time `Dialer.Control`); `oidcClientContext` became a `*Server` method to read `allowPrivateOutboundTargets`, and the shauth loopback-issuer browser harness sets `BLEEPHUB_ALLOW_PRIVATE_OUTBOUND_TARGETS=true` |
 
 ## REST — the `/api/v3` surface
 
@@ -507,6 +508,7 @@ source or comments. The reasoning behind a fix belongs in its commit message.
 | CORE-030 | m | metrics.go:9 | JSON tags on a struct that is never marshalled, implying a contract that does not exist | fixed — removed the JSON tags from the never-marshalled Metrics accumulator; the serialized contract remains MetricsSnapshot |
 | CORE-031 | m | emojiart.go:94 | Byte-index slicing on names that may be multibyte | fixed — initials() slices by rune via firstRunes(), so multibyte emoji names are never cut mid-rune |
 | CORE-032 | m | ui_embed.go:21 | `/ui/` bypasses the route registry, weakening the enumerable-surface invariant to an undocumented exception | fixed — documented /ui/ as a deliberate, explained exception to the route-registry invariant (it cannot join routePatterns without breaking the authz-matrix/api-definition tests) |
+| CORE-033 | M | server.go:816, ui_embed.go:36 | The `/ui/` SPA shipped no security headers and there was no global header middleware; CSP / X-Frame-Options / nosniff existed only on individual identity and Pages handlers | fixed — `securityHeadersMiddleware` wraps the whole handler chain, setting `X-Content-Type-Options: nosniff` and `Referrer-Policy` on every response, `Strict-Transport-Security` over TLS, and `X-Frame-Options: DENY` + a `Content-Security-Policy` for `/ui`; stricter per-endpoint CSPs run after and are not clobbered. Unit-tested |
 
 ## WEB — frontend
 
