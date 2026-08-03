@@ -495,6 +495,12 @@ interface WireInternalMetrics {
   job_dispatches: number;
   job_completions: Record<string, number>;
   active_workflows: number;
+  uptime_seconds: number;
+  goroutines: number;
+  heap_alloc_mb: number;
+  job_duration_p50_seconds: number;
+  job_duration_p95_seconds: number;
+  job_duration_p99_seconds: number;
 }
 
 interface WireInternalStatus {
@@ -525,6 +531,12 @@ export async function fetchMetrics(signal?: AbortSignal): Promise<BleephubMetric
     jobs_by_status: status.jobs_by_status ?? {},
     active_workflows: status.active_workflows,
     connected_runners: status.connected_runners,
+    uptime_seconds: metrics.uptime_seconds ?? 0,
+    goroutines: metrics.goroutines ?? 0,
+    heap_alloc_mb: metrics.heap_alloc_mb ?? 0,
+    job_duration_p50_seconds: metrics.job_duration_p50_seconds ?? 0,
+    job_duration_p95_seconds: metrics.job_duration_p95_seconds ?? 0,
+    job_duration_p99_seconds: metrics.job_duration_p99_seconds ?? 0,
   };
 }
 
@@ -2086,9 +2098,13 @@ export const fetchAuditLog = (filters: {
 export const fetchAuthenticatedUserOrgs = (signal?: AbortSignal) =>
   ghFetch<BleephubOrg[]>("/api/v3/user/orgs?per_page=100", signal);
 
-export const fetchAuditLogOrgs = async (): Promise<BleephubOrg[]> => {
-  const orgs = await fetchAuthenticatedUserOrgs();
-  return orgs.sort((a, b) => a.login.localeCompare(b.login));
+// The audit log is an operator surface: a site admin viewing it typically holds
+// no personal org membership, so listing only the viewer's memberships (the old
+// behaviour) wrongly reported "you don't belong to an organization". List every
+// organization on the instance instead, which is what an operator can audit.
+export const fetchAuditLogOrgs = async (signal?: AbortSignal): Promise<BleephubOrg[]> => {
+  const orgs = await ghFetch<BleephubOrg[]>("/api/v3/organizations?per_page=100", signal);
+  return [...orgs].sort((a, b) => a.login.localeCompare(b.login));
 };
 
 export const buildAuditLogPhrase = (filters: {

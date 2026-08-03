@@ -24,7 +24,7 @@ export function AuditLogPage() {
 
   const { data: orgs, isLoading: orgsLoading, isError: orgsError } = useQuery({
     queryKey: ["audit-log-orgs"],
-    queryFn: fetchAuditLogOrgs,
+    queryFn: ({ signal }) => fetchAuditLogOrgs(signal),
   });
 
   const effectiveOrg = appliedFilters.org || orgs?.[0]?.login || "";
@@ -173,7 +173,7 @@ export function AuditLogPage() {
       </div>
 
       {!effectiveOrg && !orgsLoading ? (
-        <InlineError title="No organization audit log is available" detail="The authenticated user does not belong to an organization." />
+        <InlineError title="No organization audit log is available" detail="No organizations exist on this instance yet. Create an organization to record and view its audit events." />
       ) : orgsLoading || isLoading || !data ? (
         <Spinner label="loading audit log" />
       ) : (
