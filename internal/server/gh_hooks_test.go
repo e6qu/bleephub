@@ -456,6 +456,14 @@ func TestHooks_ValidationError(t *testing.T) {
 // config.insecure_ssl default correctly and round-trip through create + update,
 // the contract Terraform's github_repository_webhook relies on for idempotency.
 func TestHooks_ConfigContentTypeRoundTrip(t *testing.T) {
+	// Active hooks fire a ping on creation; sink it in-process so the unit test
+	// makes no real outbound request to example.com.
+	sink := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		io.Copy(io.Discard, r.Body)
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer sink.Close()
+
 	repo := "admin/hooks-config-roundtrip"
 	ghPost(t, "/api/v3/user/repos", defaultToken, map[string]interface{}{
 		"name": "hooks-config-roundtrip",
@@ -463,7 +471,7 @@ func TestHooks_ConfigContentTypeRoundTrip(t *testing.T) {
 
 	// Create with no content_type/insecure_ssl → GitHub defaults (form / "0").
 	resp := ghPost(t, "/api/v3/repos/"+repo+"/hooks", defaultToken, map[string]interface{}{
-		"config": map[string]interface{}{"url": "http://example.com/hook"},
+		"config": map[string]interface{}{"url": sink.URL + "/hook"},
 		"events": []string{"push"},
 		"active": true,
 	})
@@ -482,7 +490,7 @@ func TestHooks_ConfigContentTypeRoundTrip(t *testing.T) {
 	// Create with explicit values → echoed back verbatim.
 	resp2 := ghPost(t, "/api/v3/repos/"+repo+"/hooks", defaultToken, map[string]interface{}{
 		"config": map[string]interface{}{
-			"url":          "http://example.com/hook2",
+			"url":          sink.URL + "/hook2",
 			"content_type": "json",
 			"insecure_ssl": "1",
 		},
@@ -523,6 +531,14 @@ func TestHooks_ConfigContentTypeRoundTrip(t *testing.T) {
 
 // TestHooks_NameValidation verifies the optional `name` field must equal "web".
 func TestHooks_NameValidation(t *testing.T) {
+	// The accepted hook is active and fires a ping on creation; sink it
+	// in-process so the unit test makes no real outbound request to example.com.
+	sink := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		io.Copy(io.Discard, r.Body)
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer sink.Close()
+
 	repo := "admin/hooks-name-validation"
 	ghPost(t, "/api/v3/user/repos", defaultToken, map[string]interface{}{
 		"name": "hooks-name-validation",
@@ -531,7 +547,7 @@ func TestHooks_NameValidation(t *testing.T) {
 	// name=web is accepted.
 	ok := ghPost(t, "/api/v3/repos/"+repo+"/hooks", defaultToken, map[string]interface{}{
 		"name":   "web",
-		"config": map[string]interface{}{"url": "http://example.com/hook"},
+		"config": map[string]interface{}{"url": sink.URL + "/hook"},
 		"events": []string{"push"},
 	})
 	if ok.StatusCode != http.StatusCreated {

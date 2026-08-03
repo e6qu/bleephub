@@ -14,9 +14,18 @@ import (
 func TestRepoWebhookConfig_GetAndPatch(t *testing.T) {
 	repo := createRepoWriteRepo(t, false)
 
+	// The active hook fires a ping on creation; sink it in-process so the unit
+	// test makes no real outbound request to example.com.
+	sink := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		io.Copy(io.Discard, r.Body)
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer sink.Close()
+	createURL := sink.URL + "/webhook"
+
 	resp := ghPost(t, "/api/v3/repos/admin/"+repo+"/hooks", defaultToken, map[string]interface{}{
 		"config": map[string]interface{}{
-			"url":          "https://example.com/webhook",
+			"url":          createURL,
 			"content_type": "json",
 			"secret":       "s3cret",
 		},
@@ -28,7 +37,7 @@ func TestRepoWebhookConfig_GetAndPatch(t *testing.T) {
 
 	resp = ghGet(t, base+"/config", defaultToken)
 	config := decodeJSONWithStatus(t, resp, 200)
-	if config["url"] != "https://example.com/webhook" {
+	if config["url"] != createURL {
 		t.Fatalf("config url = %v", config["url"])
 	}
 	if config["content_type"] != "json" {

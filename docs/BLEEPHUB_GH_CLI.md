@@ -51,7 +51,7 @@ and its **Teardown** section.
 
 ## Supported commands
 
-These work natively (no `gh api` workaround needed):
+These work natively (no `gh api` workaround needed) and are each exercised by the `make gh-test` harness (`test/run-gh-test.sh`):
 
 | Command | Endpoint(s) |
 |---|---|
@@ -59,24 +59,20 @@ These work natively (no `gh api` workaround needed):
 | `gh repo view <owner/name>` | `GET /repos/{o}/{r}` + GraphQL `repository` |
 | `gh repo list <owner>` | GraphQL `repositoryOwner(login).repositories` |
 | `gh repo clone <owner/name>` | GraphQL `RepositoryInfo` (`hasWikiEnabled`, `parent`) + smart-HTTP git protocol |
-| `gh repo delete <owner/name>` | `DELETE /repos/{o}/{r}` |
 | `gh issue create --title --body` | GraphQL `createIssue` mutation |
 | `gh issue view <N>` | GraphQL `repository.issueOrPullRequest` (Issue\|PullRequest union) |
 | `gh issue list` | GraphQL `repository.issues` connection; `--label`/`--author`/`--search` route through GraphQL `search(type: ISSUE)` gated on `GET /meta` feature detection |
-| `gh issue comment <N> --body` | GraphQL `addComment` mutation |
 | `gh issue close / reopen <N>` | GraphQL `closeIssue` / `reopenIssue` mutations |
 | `gh pr create` (in a git working dir) | GraphQL `RepositoryInfo` + `createPullRequest` mutation |
 | `gh pr view <N>` | GraphQL `repository.pullRequest` (incl. `statusCheckRollup` via `commits(last:1)`, backed by the checks store) |
 | `gh pr list` | GraphQL `repository.pullRequests` connection (enum `orderBy`) |
-| `gh pr status` | GraphQL `search(type: ISSUE)` + `repository.pullRequests`; needs `GET /meta` |
 | `gh pr merge <N>` | GraphQL `mergePullRequest` mutation (finder reads `mergeStateStatus` + `commits(last:1)`) |
 | `gh pr review --approve` / `--request-changes` / `--comment` | GraphQL `addPullRequestReview` mutation |
 | `gh pr comment <N>` | GraphQL `addComment` mutation |
 | `gh release create <tag>` | `POST /repos/{o}/{r}/releases` |
 | `gh release list` | GraphQL `repository.releases` connection |
 | `gh release view / delete` | `GET`/`DELETE /repos/{o}/{r}/releases*` + GraphQL `repository.release(tagName:)` draft lookup |
-| `gh release download` | `assets_url` redirect (sim returns empty assets) |
-| `gh run list / view / cancel / rerun` | `GET/POST /repos/{o}/{r}/actions/runs*` (push-triggered runs resolve their `workflow_id`) |
+| `gh run list / view` | `GET /repos/{o}/{r}/actions/runs*` (push-triggered runs resolve their `workflow_id`) |
 | `gh workflow run <wf> --ref <branch>` | `POST /repos/{o}/{r}/actions/workflows/{id}/dispatches`; version-gated on `GET /meta` |
 | `gh workflow list / view` | `GET /actions/workflows[/{id}]` |
 | `gh workflow enable / disable` | `PUT /actions/workflows/{id}/{enable,disable}`; disabled workflows don't trigger and dispatch returns 403 |
@@ -84,6 +80,21 @@ These work natively (no `gh api` workaround needed):
 | `gh variable set / get / list / delete` | `POST`/`PATCH`/`GET`/`DELETE /actions/variables[/{name}]` (gh's POST→409→PATCH update fallback works); org + environment scopes too |
 | `gh org list` | GraphQL `user(login:).organizations` connection |
 | `gh api /repos/{o}/{r}/...` | direct REST passthrough |
+
+## Documented but not exercised by the harness
+
+The server routes and resolvers backing these verbs exist, but the `make gh-test`
+suite does not assert on the verb itself, so they are documented rather than
+harness-verified. Treat them as implemented-but-unverified until a harness
+assertion covers them.
+
+| Command | Endpoint(s) | Status |
+|---|---|---|
+| `gh repo delete <owner/name>` | `DELETE /repos/{o}/{r}` | route implemented; no harness assertion |
+| `gh issue comment <N> --body` | GraphQL `addComment` mutation | mutation implemented; the harness covers it via `gh pr comment`, not the issue verb |
+| `gh pr status` | GraphQL `search(type: ISSUE)` + `repository.pullRequests`; needs `GET /meta` | resolvers implemented; the `search(type: ISSUE)` path is exercised through `gh issue list --label`, but the `gh pr status` verb is not |
+| `gh run cancel / rerun` | `POST /repos/{o}/{r}/actions/runs/{id}/cancel`, `.../rerun` | routes implemented; the harness exercises `gh run list / view`, not cancel/rerun |
+| `gh release download` | `GET /repos/{o}/{r}/releases/assets/{asset_id}` (asset upload/list/download all implemented) | partial: the asset endpoints work, but no harness release attaches an asset, so `gh release download` against a harness-created release finds nothing to download |
 
 ## Endpoints with no native `gh` verb
 
@@ -112,7 +123,7 @@ gh api /.well-known/jwks                                       # JWKS for cloud-
 | `ghs_` | `POST /app/installations/{id}/access_tokens` | Installation-scoped perms | Server-to-server |
 | `ghr_` | Paired with `gho_` / `ghu_` | — | Refresh token (6 month TTL) |
 
-`requirePerm(scope, level)` enforces permissions on write-class endpoints. PATs bypass; `ghs_` / `ghu_` / `gho_` get checked against their respective scope tables. See [specs/BLEEPHUB_GITHUB_API_PARITY.md](../specs/BLEEPHUB_GITHUB_API_PARITY.md) § "Permission enforcement on installation tokens" for the exact mapping.
+`requirePerm(scope, level)` enforces permissions on write-class endpoints. PATs bypass; `ghs_` / `ghu_` / `gho_` get checked against their respective scope tables. See the [Authentication, Apps, and events](../specs/BLEEPHUB_GITHUB_API_PARITY.md#authentication-apps-and-events) section of the parity audit for how installation-token permissions and selected-repository downscoping are enforced.
 
 ## Body coercion
 
@@ -143,4 +154,4 @@ For a comprehensive smoke test, run [`make gh-test`](../Makefile), which spins u
 - **`gh api -f` returns 400.** Should not happen (`flexBool`/`flexInt` decoders handle string-coerced inputs). File a bug.
 - **TLS errors.** When using `BPH_TLS_CERT` with a self-signed cert, either trust the CA system-wide (the Docker harness does this) or pass `--insecure` to `gh api`.
 
-See also: [specs/BLEEPHUB_GITHUB_API_PARITY.md](../specs/BLEEPHUB_GITHUB_API_PARITY.md) for the per-endpoint inventory.
+See also: the [Executable inventory](../specs/BLEEPHUB_GITHUB_API_PARITY.md#executable-inventory) section of the parity audit, backed by [`specs/parity-inventory.json`](../specs/parity-inventory.json) — the machine-readable per-endpoint inventory.

@@ -45,10 +45,18 @@ func waitForWebhookCount(t *testing.T, received *atomic.Int32, want int32) {
 func TestWebhookListPagination(t *testing.T) {
 	createWebhookTestRepo(t, "wh-paged")
 
+	// An active hook fires a ping on creation; point it at an in-process sink so
+	// the unit test makes no real outbound request to example.com.
+	sink, cleanup := startWebhookReceiver(t, func(w http.ResponseWriter, r *http.Request) {
+		io.Copy(io.Discard, r.Body)
+		w.WriteHeader(http.StatusOK)
+	})
+	defer cleanup()
+
 	for i := 0; i < 2; i++ {
 		resp := ghPost(t, "/api/v3/repos/admin/wh-paged/hooks", defaultToken, map[string]interface{}{
 			"config": map[string]interface{}{
-				"url": fmt.Sprintf("http://example.com/hook-%d", i),
+				"url": fmt.Sprintf("%s/hook-%d", sink, i),
 			},
 			"events": []string{"push"},
 		})
@@ -94,10 +102,18 @@ func TestWebhookListPagination(t *testing.T) {
 func TestWebhookCRUD(t *testing.T) {
 	createWebhookTestRepo(t, "wh-crud")
 
+	// An active hook fires a ping on creation; point it at an in-process sink so
+	// the unit test makes no real outbound request to example.com.
+	sink, cleanup := startWebhookReceiver(t, func(w http.ResponseWriter, r *http.Request) {
+		io.Copy(io.Discard, r.Body)
+		w.WriteHeader(http.StatusOK)
+	})
+	defer cleanup()
+
 	// Create
 	resp := ghPost(t, "/api/v3/repos/admin/wh-crud/hooks", defaultToken, map[string]interface{}{
 		"config": map[string]interface{}{
-			"url":    "http://example.com/hook",
+			"url":    sink + "/hook",
 			"secret": "s3cret",
 		},
 		"events": []string{"push", "pull_request"},
@@ -215,19 +231,27 @@ func startWebhookReceiver(t *testing.T, handler http.HandlerFunc) (string, func(
 // receiver must: content_type=form (GitHub's default) sends the JSON as
 // the `payload` field of an x-www-form-urlencoded body; content_type=json
 // sends it verbatim.
+// webhookEventJSON runs inside the receiver's HTTP handler goroutine, not the
+// test goroutine, so it must NOT call t.Fatalf: Fatalf calls runtime.Goexit,
+// which would tear down only the handler goroutine and leave the test running
+// (and possibly hanging) without reliably failing. t.Errorf is documented as
+// safe to call from any goroutine and records the failure; on a parse error we
+// report it and return an empty (non-nil) map so callers never dereference nil.
 func webhookEventJSON(t *testing.T, contentType string, body []byte) map[string]interface{} {
 	t.Helper()
 	raw := body
 	if strings.HasPrefix(contentType, "application/x-www-form-urlencoded") {
 		vals, err := url.ParseQuery(string(body))
 		if err != nil {
-			t.Fatalf("parse form webhook body: %v", err)
+			t.Errorf("parse form webhook body: %v", err)
+			return map[string]interface{}{}
 		}
 		raw = []byte(vals.Get("payload"))
 	}
 	var out map[string]interface{}
 	if err := json.Unmarshal(raw, &out); err != nil {
-		t.Fatalf("decode webhook payload: %v", err)
+		t.Errorf("decode webhook payload: %v", err)
+		return map[string]interface{}{}
 	}
 	return out
 }
@@ -415,9 +439,14 @@ func TestWebhookReleaseLifecycleActions(t *testing.T) {
 		body, _ := io.ReadAll(r.Body)
 		payload := webhookEventJSON(t, r.Header.Get("Content-Type"), body)
 		if r.Header.Get("X-GitHub-Event") == "release" {
-			mu.Lock()
-			actions = append(actions, payload["action"].(string))
-			mu.Unlock()
+			// Comma-ok: webhookEventJSON may return an empty map on a decode
+			// error (it no longer Fatalfs from this handler goroutine), so an
+			// unchecked type assertion here could panic instead of failing.
+			if action, ok := payload["action"].(string); ok {
+				mu.Lock()
+				actions = append(actions, action)
+				mu.Unlock()
+			}
 		}
 		w.WriteHeader(http.StatusOK)
 	}))

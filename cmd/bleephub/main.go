@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"flag"
+	"fmt"
 	"net/http"
 	"os"
 	"os/signal"
@@ -44,7 +45,7 @@ func run() error {
 
 	level, err := zerolog.ParseLevel(*logLevel)
 	if err != nil {
-		level = zerolog.InfoLevel
+		return fmt.Errorf("invalid --log-level %q (want debug, info, warn or error): %w", *logLevel, err)
 	}
 
 	obs, err := bleephub.InitObservability("bleephub")

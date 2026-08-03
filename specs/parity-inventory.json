@@ -3343,8 +3343,8 @@
         "id": "ACT-042",
         "location": "timeline.go:202, artifacts.go:548, secret_scanning_ingest.go:57",
         "severity": "m",
-        "status": "partial \u2014 timeline records, console input, attachments, and logs are bounded before allocation; artifact/scanning ingestion still need streaming storage",
-        "status_kind": "partial"
+        "status": "fixed \u2014 the remaining unbounded reads (secret-scanning blob scans in secret_scanning_ingest.go) now read through io.LimitReader capped at 5 MiB; the log/artifact/step-summary paths were already bounded by MaxBytesReader/LimitReader",
+        "status_kind": "fixed"
       },
       {
         "category": "ACT",
@@ -4369,8 +4369,8 @@
         "id": "CORE-023",
         "location": "main.go:23, server.go:122",
         "severity": "M",
-        "status": "open",
-        "status_kind": "open"
+        "status": "fixed \u2014 an invalid --log-level now fails fast with a clear message instead of silently becoming info; an invalid BLEEPHUB_MAX_WORKFLOWS now logs a warning (value + default used) instead of being silently ignored",
+        "status_kind": "fixed"
       },
       {
         "category": "CORE",
@@ -5107,8 +5107,8 @@
         "id": "TEST-010",
         "location": "fuzz_http_helpers_test.go:260",
         "severity": "M",
-        "status": "open",
-        "status_kind": "open"
+        "status": "fixed \u2014 the auth-varying fuzzer now asserts that a request presenting an invalid credential on the authenticated surface returns exactly 401 (via a shared fuzzInvalidToken const), not merely 'not 500'",
+        "status_kind": "fixed"
       },
       {
         "category": "TEST",
@@ -5125,8 +5125,8 @@
         "id": "TEST-012",
         "location": "gh_issues_test.go:10 + 13",
         "severity": "M",
-        "status": "open",
-        "status_kind": "open"
+        "status": "fixed \u2014 a mustPost helper asserts a 2xx setup status (t.Fatalf with body otherwise) and all 49 fire-and-forget ghPost setup sites route through it, so a broken setup fails at the setup point",
+        "status_kind": "fixed"
       },
       {
         "category": "TEST",
@@ -5143,8 +5143,8 @@
         "id": "TEST-014",
         "location": "webhooks_test.go:160",
         "severity": "M",
-        "status": "open",
-        "status_kind": "open"
+        "status": "fixed \u2014 webhookEventJSON's t.Fatalf calls (invoked from receiver-handler goroutines, where they cannot fail the test) became goroutine-safe t.Errorf returning a non-nil map; the downstream assertion is comma-ok guarded",
+        "status_kind": "fixed"
       },
       {
         "category": "TEST",
@@ -5161,8 +5161,8 @@
         "id": "TEST-016",
         "location": "load_sustained_test.go:271",
         "severity": "M",
-        "status": "open",
-        "status_kind": "open"
+        "status": "fixed \u2014 TestLoadWebhookDeliveryBounded now asserts all 1500 emitted events were received (exact count) instead of merely non-zero, so a dropped event fails",
+        "status_kind": "fixed"
       },
       {
         "category": "TEST",
@@ -5170,8 +5170,8 @@
         "id": "TEST-017",
         "location": "stress_lockgraph_test.go:104",
         "severity": "M",
-        "status": "open",
-        "status_kind": "open"
+        "status": "fixed \u2014 transport errors in the lock-graph stress test now increment the bad counter the failure gate reads, so a transport failure actually fails the test instead of being discarded",
+        "status_kind": "fixed"
       },
       {
         "category": "TEST",
@@ -5188,8 +5188,8 @@
         "id": "TEST-019",
         "location": "webhooks_test.go:42 + 5",
         "severity": "M",
-        "status": "open",
-        "status_kind": "open"
+        "status": "fixed \u2014 the 6 webhook unit-test sites that fired real outbound ping POSTs to example.com on every CI run now target in-process httptest sinks; genuinely-non-delivering example.com references were left as-is",
+        "status_kind": "fixed"
       },
       {
         "category": "TEST",
@@ -5530,8 +5530,8 @@
         "id": "PAR-019",
         "location": "BLEEPHUB_GH_CLI.md:115,146",
         "severity": "M",
-        "status": "open",
-        "status_kind": "open"
+        "status": "fixed \u2014 the two dangling cross-references in docs/BLEEPHUB_GH_CLI.md now point at sections/files that exist (#authentication-apps-and-events, #executable-inventory + specs/parity-inventory.json)",
+        "status_kind": "fixed"
       },
       {
         "category": "PAR",
@@ -5539,8 +5539,8 @@
         "id": "PAR-020",
         "location": "BLEEPHUB_GH_CLI.md:62-79",
         "severity": "M",
-        "status": "open",
-        "status_kind": "open"
+        "status": "fixed \u2014 the five 'supported' gh commands with no harness coverage (repo delete, issue comment, pr status, run cancel, run rerun) moved to a 'documented but not exercised by the harness' section that notes the implementation exists but the verb is unverified",
+        "status_kind": "fixed"
       },
       {
         "category": "PAR",
@@ -5548,8 +5548,8 @@
         "id": "PAR-021",
         "location": "BLEEPHUB_GH_CLI.md:78",
         "severity": "M",
-        "status": "open",
-        "status_kind": "open"
+        "status": "fixed \u2014 the stale 'gh release download returns empty assets' claim removed; documented as partial (asset endpoints are implemented, but no harness release attaches an asset)",
+        "status_kind": "fixed"
       },
       {
         "category": "PAR",
@@ -5881,8 +5881,8 @@
         "id": "CI-019",
         "location": "ci.yml:16-116",
         "severity": "M",
-        "status": "open",
-        "status_kind": "open"
+        "status": "fixed \u2014 ci.yml's duplicated checkout step and hardcoded Bun version are deduped via YAML anchors (&checkout aliased across 11 jobs, &setup-bun across the bun jobs), matching the file's existing anchor style; pure DRY refactor, actionlint clean",
+        "status_kind": "fixed"
       },
       {
         "category": "CI",
@@ -6070,8 +6070,8 @@
         "id": "CI-040",
         "location": "repo root",
         "severity": "M",
-        "status": "open",
-        "status_kind": "open"
+        "status": "fixed \u2014 added CONTRIBUTING.md (dev workflow + every CI gate transcribed accurately), .github/PULL_REQUEST_TEMPLATE.md and .github/ISSUE_TEMPLATE/bug_report.md; CODEOWNERS already existed",
+        "status_kind": "fixed"
       },
       {
         "category": "CI",
@@ -6312,9 +6312,9 @@
       "categories": {
         "ACT": {
           "status": {
-            "fixed": 51,
+            "fixed": 52,
             "open": 1,
-            "partial": 8
+            "partial": 7
           },
           "total": 60
         },
@@ -6334,16 +6334,16 @@
         },
         "CI": {
           "status": {
-            "fixed": 49,
-            "open": 14,
+            "fixed": 51,
+            "open": 12,
             "partial": 2
           },
           "total": 65
         },
         "CORE": {
           "status": {
-            "fixed": 17,
-            "open": 12,
+            "fixed": 18,
+            "open": 11,
             "partial": 3
           },
           "total": 32
@@ -6358,8 +6358,8 @@
         },
         "PAR": {
           "status": {
-            "fixed": 27,
-            "open": 12
+            "fixed": 30,
+            "open": 9
           },
           "total": 39
         },
@@ -6380,8 +6380,8 @@
         },
         "TEST": {
           "status": {
-            "fixed": 22,
-            "open": 17,
+            "fixed": 28,
+            "open": 11,
             "partial": 1
           },
           "total": 40
@@ -6402,9 +6402,9 @@
       },
       "status": {
         "deferred": 1,
-        "fixed": 551,
-        "open": 86,
-        "partial": 36
+        "fixed": 564,
+        "open": 74,
+        "partial": 35
       },
       "total": 674
     }
