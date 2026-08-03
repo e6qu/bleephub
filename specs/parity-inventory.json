@@ -3946,8 +3946,8 @@
         "id": "STORE-050",
         "location": "store_secret_scanning.go:586",
         "severity": "m",
-        "status": "open",
-        "status_kind": "open"
+        "status": "fixed \u2014 the push-protection bypass pruner now `MustDelete`s the durable row when the last bypass for a repo expires, instead of `MustPut`ing the now-nil slice (which marshalled to `null` and reloaded as a phantom nil-value key); reload regression added",
+        "status_kind": "fixed"
       },
       {
         "category": "STORE",
@@ -6364,8 +6364,8 @@
         },
         "STORE": {
           "status": {
-            "fixed": 38,
-            "open": 25,
+            "fixed": 39,
+            "open": 24,
             "partial": 10
           },
           "total": 73
@@ -6394,8 +6394,8 @@
       },
       "status": {
         "deferred": 1,
-        "fixed": 515,
-        "open": 117,
+        "fixed": 516,
+        "open": 116,
         "partial": 40
       },
       "total": 673
