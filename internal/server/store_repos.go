@@ -1383,8 +1383,10 @@ func (st *Store) deleteRepoIssueAndPullChildrenLocked(batch *persistBatch, repoI
 	for id, c := range st.Comments {
 		if (c.ParentType == "issue" && issueIDs[c.IssueID]) || (c.ParentType == "pull_request" && prIDs[c.IssueID]) {
 			delete(st.Comments, id)
+			key := commentCountKey(c.ParentType, c.IssueID)
+			delete(st.CommentCounts, key)
+			delete(st.CommentsByParent, key) // whole parent is being deleted
 			st.Reactions.DeleteParent(c.ParentType+"_comment", id)
-			delete(st.CommentCounts, commentCountKey(c.ParentType, c.IssueID))
 			batch.Delete("comments", strconv.Itoa(id))
 		}
 	}
