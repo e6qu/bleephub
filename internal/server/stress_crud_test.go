@@ -35,9 +35,9 @@ func stressWorkers(def int) int {
 }
 
 // defaultStressSeed is used when BLEEPHUB_STRESS_SEED is unset. It is a fixed
-// constant, not the wall clock: the test-clock guard (TestGoTestsDoNotReadWallClock)
-// forbids time.Now() in tests, and a fixed default makes every run reproducible
-// by construction. Override the env var to explore a different schedule.
+// constant, not the wall clock: the test-clock guard forbids reading the wall
+// clock in tests, and a fixed default makes every run reproducible by
+// construction. Override the env var to explore a different schedule.
 const defaultStressSeed = 0x5715c0de
 
 // stressSeed returns the base RNG seed for the storm and always logs it.
