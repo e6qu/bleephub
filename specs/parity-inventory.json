@@ -3676,8 +3676,8 @@
         "id": "STORE-020",
         "location": "object_bytes.go:56, persistence.go:255",
         "severity": "M",
-        "status": "partial \u2014 new S3 objects carry a SHA-256 metadata checksum and reads verify it before returning bytes, while legacy checksum-less objects remain readable for migration. The SQLite acknowledgement/durability contract remains to be strengthened and documented",
-        "status_kind": "partial"
+        "status": "fixed \u2014 new S3 objects carry a SHA-256 metadata checksum and reads verify it before returning bytes (legacy objects stay readable for migration); and the single-node SQLite store now runs journal_mode(WAL) with synchronous(FULL), fsyncing the WAL at every commit so an acknowledged write survives an OS crash or power loss, not only a process crash, with the contract documented at the connection (dqlite deployments get durability from Raft replication). Regression asserts the pragmas",
+        "status_kind": "fixed"
       },
       {
         "category": "STORE",
@@ -6364,9 +6364,9 @@
         },
         "STORE": {
           "status": {
-            "fixed": 35,
+            "fixed": 36,
             "open": 27,
-            "partial": 11
+            "partial": 10
           },
           "total": 73
         },
@@ -6394,9 +6394,9 @@
       },
       "status": {
         "deferred": 1,
-        "fixed": 510,
+        "fixed": 511,
         "open": 121,
-        "partial": 41
+        "partial": 40
       },
       "total": 673
     }

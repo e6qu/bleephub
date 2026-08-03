@@ -484,7 +484,13 @@ func openSQLite(dataDir string) (*sql.DB, error) {
 		return nil, fmt.Errorf("mkdir %s: %w", dataDir, err)
 	}
 	dbPath := filepath.Join(dataDir, "bleephub.db")
-	db, err := sql.Open("sqlite", "file:"+dbPath+"?_pragma=journal_mode(WAL)&_pragma=synchronous(NORMAL)&_pragma=foreign_keys(1)&_pragma=busy_timeout(5000)")
+	// Durability contract for the single-node store: journal_mode(WAL) with
+	// synchronous(FULL) fsyncs the write-ahead log at every commit, so a write
+	// this layer has acknowledged (a returned MustPut/Commit) survives an OS
+	// crash or power loss — not only a process crash, which synchronous(NORMAL)
+	// alone guarantees. dqlite deployments get durability from Raft replication
+	// instead and do not use this path.
+	db, err := sql.Open("sqlite", "file:"+dbPath+"?_pragma=journal_mode(WAL)&_pragma=synchronous(FULL)&_pragma=foreign_keys(1)&_pragma=busy_timeout(5000)")
 	if err != nil {
 		return nil, fmt.Errorf("open sqlite %s: %w", dbPath, err)
 	}
