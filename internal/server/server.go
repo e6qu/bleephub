@@ -306,6 +306,11 @@ func NewServer(addr string, logger zerolog.Logger, options ...ServerOption) *Ser
 	if v := os.Getenv("BLEEPHUB_MAX_WORKFLOWS"); v != "" {
 		if n, err := strconv.Atoi(v); err == nil && n > 0 {
 			maxWF = n
+		} else {
+			// Don't silently fall back to the default: an operator who set an
+			// invalid value wants to know it was ignored.
+			logger.Warn().Str("value", v).Int("using", maxWF).
+				Msg("ignoring invalid BLEEPHUB_MAX_WORKFLOWS (want a positive integer)")
 		}
 	}
 	dataDir := os.Getenv("BLEEPHUB_DATA_DIR")

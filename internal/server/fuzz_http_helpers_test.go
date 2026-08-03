@@ -191,6 +191,13 @@ func (r *fuzzReader) rest() []byte {
 	return v
 }
 
+// fuzzInvalidToken is a well-formed but unregistered credential. Presenting it
+// is a definitively *invalid* credential (as opposed to no credential at all),
+// so the authenticated API surface must reject it — see serveAndCheck. It is a
+// shared constant so the auth-variant that sets it and the assertion that
+// checks the rejection cannot silently drift apart.
+const fuzzInvalidToken = "gho_invalidtokenvalue000000000000000"
+
 var fuzzMethods = []string{"GET", "POST", "PUT", "PATCH", "DELETE", "HEAD"}
 
 var fuzzQueryParams = []string{
@@ -275,13 +282,32 @@ func (fx *fuzzFixture) decodeFuzzRequest(data []byte) *http.Request {
 	case 2:
 		req.Header.Set("Authorization", "token "+fx.scopedToken)
 	case 3:
-		req.Header.Set("Authorization", "token gho_invalidtokenvalue000000000000000")
+		req.Header.Set("Authorization", "token "+fuzzInvalidToken)
 	case 4:
 		// no auth
 	case 5:
 		req.Header.Set("Authorization", "Bearer")
 	}
 	return req
+}
+
+// presentsInvalidCredential reports whether req carries a credential that must
+// be rejected outright: variant 3 (a well-formed but unregistered token) or
+// variant 5 (a "Bearer" header with no credential). These are distinct from an
+// anonymous request (variant 4), which public endpoints may legitimately serve.
+func presentsInvalidCredential(req *http.Request) bool {
+	auth := req.Header.Get("Authorization")
+	return auth == "token "+fuzzInvalidToken || auth == "Bearer"
+}
+
+// isAuthenticatedAPIPath mirrors the prefix set ghHeadersMiddleware guards: on
+// these paths the wrapped chain resolves the credential and rejects an invalid
+// one with 401 before the request is ever routed. Git and other non-API paths
+// run their own auth, so the 401 invariant does not apply there.
+func isAuthenticatedAPIPath(path string) bool {
+	return strings.HasPrefix(path, "/api/") ||
+		strings.HasPrefix(path, "/repos/") ||
+		strings.HasPrefix(path, "/code-scanning/")
 }
 
 // buildRequest constructs a request without ever panicking on an unparseable
@@ -336,6 +362,22 @@ func serveAndCheck(t *testing.T, handler http.Handler, req *http.Request) {
 	if w.Code == http.StatusInternalServerError {
 		t.Fatalf("HTTP 500 for %s %s\nbody: %s", req.Method, req.URL.Path, truncate(w.Body.Bytes(), 512))
 	}
+
+	// Authentication invariant: a request that presents a definitively invalid
+	// credential must be rejected with 401 on the authenticated API surface and
+	// must never be served. The old check only asserted "not 500", so an
+	// invalid-credential request that leaked a 200 (or any 2xx) passed silently.
+	// The wrapped chain rejects invalid credentials in ghHeadersMiddleware
+	// before routing, so 401 holds regardless of which route the fuzzer landed
+	// on. (Anonymous requests — variant 4 — are intentionally not asserted here:
+	// public endpoints may legitimately answer them 2xx.)
+	if presentsInvalidCredential(req) && isAuthenticatedAPIPath(req.URL.Path) {
+		if w.Code != http.StatusUnauthorized {
+			t.Fatalf("invalid credential must be rejected with 401 for %s %s, got %d\nbody: %s",
+				req.Method, req.URL.Path, w.Code, truncate(w.Body.Bytes(), 512))
+		}
+	}
+
 	ct := w.Header().Get("Content-Type")
 	if strings.Contains(ct, "application/json") && w.Body.Len() > 0 {
 		var v interface{}

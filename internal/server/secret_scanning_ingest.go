@@ -12,6 +12,13 @@ import (
 	gitStorage "github.com/go-git/go-git/v5/storage"
 )
 
+// secretScanningMaxFileBytes bounds how much of a single git blob is read into
+// memory when scanning for secrets. A committed file can be arbitrarily large,
+// so an unbounded io.ReadAll here is a memory-exhaustion risk; secrets are short
+// and live near the top of config files, so capping the scanned prefix loses
+// nothing real (GitHub likewise skips very large files).
+const secretScanningMaxFileBytes = 5 << 20 // 5 MiB
+
 type secretScanningPattern struct {
 	patternID  string
 	secretType string
@@ -54,7 +61,7 @@ func (s *Server) scanCommitForSecretScanning(repo *Repo, stor gitStorage.Storer,
 		if err != nil {
 			return fmt.Errorf("read secret scanning blob %s: %w", file.Hash, err)
 		}
-		body, readErr := io.ReadAll(reader)
+		body, readErr := io.ReadAll(io.LimitReader(reader, secretScanningMaxFileBytes))
 		closeErr := reader.Close()
 		if readErr != nil {
 			return fmt.Errorf("read secret scanning blob %s: %w", file.Hash, readErr)
@@ -133,7 +140,7 @@ func (s *Server) secretScanningPushProtectionMatchesForCommit(stor gitStorage.St
 		if err != nil {
 			return nil, fmt.Errorf("read secret scanning push-protection blob %s: %w", file.Hash, err)
 		}
-		body, readErr := io.ReadAll(reader)
+		body, readErr := io.ReadAll(io.LimitReader(reader, secretScanningMaxFileBytes))
 		closeErr := reader.Close()
 		if readErr != nil {
 			return nil, fmt.Errorf("read secret scanning push-protection blob %s: %w", file.Hash, readErr)

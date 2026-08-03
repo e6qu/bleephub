@@ -235,7 +235,7 @@ func TestLoadWebhookDeliveryBounded(t *testing.T) {
 	// on the store write lock, so draining is contention-bound, not leaked —
 	// poll until the count settles rather than guessing a fixed sleep.
 	finalGoros := runtime.NumGoroutine()
-	testEventually(30*time.Second, 50*time.Millisecond, func() bool {
+	settled := testEventually(30*time.Second, 50*time.Millisecond, func() bool {
 		if int(received.Load()) < events {
 			return false
 		}
@@ -248,6 +248,15 @@ func TestLoadWebhookDeliveryBounded(t *testing.T) {
 	t.Logf("emitted %d events, sink received %d, retained deliveries=%d (cap %d)",
 		events, received.Load(), got, maxHookDeliveries)
 	t.Logf("goroutines: baseline=%d final=%d", baseGoros, finalGoros)
+
+	// Every emitted event must reach the sink: it returns 200 on the first
+	// attempt, so there is no retry loss to tolerate and the count must be
+	// exact. Asserting only "received > 0" would let silently dropped events
+	// pass; here a single lost delivery fails the test.
+	if rec := received.Load(); rec != int64(events) {
+		t.Errorf("sink received %d/%d deliveries — %d events dropped (settled=%v)",
+			rec, events, int64(events)-rec, settled)
+	}
 
 	if got > maxHookDeliveries {
 		t.Errorf("retained %d deliveries, expected <= cap %d (unbounded growth)", got, maxHookDeliveries)

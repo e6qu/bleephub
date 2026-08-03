@@ -2,17 +2,33 @@ package bleephub
 
 import (
 	"encoding/json"
+	"io"
+	"net/http"
 	"strconv"
 	"testing"
 )
 
+// mustPost asserts a setup/precondition request returned a 2xx status, then
+// closes its body. Setup helpers that discarded the status let a broken
+// precondition surface later as a misleading assertion failure in the code
+// under test; routing them through mustPost fails loudly at the setup point.
+func mustPost(t *testing.T, resp *http.Response) {
+	t.Helper()
+	defer resp.Body.Close()
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		body, _ := io.ReadAll(resp.Body)
+		t.Fatalf("setup request failed: status %d, body: %s", resp.StatusCode, body)
+	}
+}
+
 // helper: create a repo for issue tests, returns owner/name.
 func createTestIssueRepo(t *testing.T, name string) {
 	t.Helper()
-	resp := ghPost(t, "/api/v3/user/repos", defaultToken, map[string]interface{}{
+	// A failed repo create (e.g. a name collision) must fail here, not later as
+	// a confusing 404 in the test that assumed the repo exists.
+	mustPost(t, ghPost(t, "/api/v3/user/repos", defaultToken, map[string]interface{}{
 		"name": name,
-	})
-	resp.Body.Close()
+	}))
 }
 
 // --- Label tests ---
@@ -44,9 +60,9 @@ func TestCreateLabel(t *testing.T) {
 
 func TestListLabels(t *testing.T) {
 	createTestIssueRepo(t, "label-list")
-	ghPost(t, "/api/v3/repos/admin/label-list/labels", defaultToken, map[string]interface{}{
+	mustPost(t, ghPost(t, "/api/v3/repos/admin/label-list/labels", defaultToken, map[string]interface{}{
 		"name": "enhancement", "color": "a2eeef",
-	}).Body.Close()
+	}))
 
 	resp := ghGet(t, "/api/v3/repos/admin/label-list/labels", "")
 	if resp.StatusCode != 200 {
@@ -61,9 +77,9 @@ func TestListLabels(t *testing.T) {
 
 func TestGetLabel(t *testing.T) {
 	createTestIssueRepo(t, "label-get")
-	ghPost(t, "/api/v3/repos/admin/label-get/labels", defaultToken, map[string]interface{}{
+	mustPost(t, ghPost(t, "/api/v3/repos/admin/label-get/labels", defaultToken, map[string]interface{}{
 		"name": "docs", "color": "0075ca",
-	}).Body.Close()
+	}))
 
 	resp := ghGet(t, "/api/v3/repos/admin/label-get/labels/docs", "")
 	if resp.StatusCode != 200 {
@@ -78,9 +94,9 @@ func TestGetLabel(t *testing.T) {
 
 func TestUpdateLabel(t *testing.T) {
 	createTestIssueRepo(t, "label-update")
-	ghPost(t, "/api/v3/repos/admin/label-update/labels", defaultToken, map[string]interface{}{
+	mustPost(t, ghPost(t, "/api/v3/repos/admin/label-update/labels", defaultToken, map[string]interface{}{
 		"name": "wontfix", "color": "ffffff",
-	}).Body.Close()
+	}))
 
 	resp := ghPatch(t, "/api/v3/repos/admin/label-update/labels/wontfix", defaultToken, map[string]interface{}{
 		"color": "000000",
@@ -97,9 +113,9 @@ func TestUpdateLabel(t *testing.T) {
 
 func TestDeleteLabel(t *testing.T) {
 	createTestIssueRepo(t, "label-delete")
-	ghPost(t, "/api/v3/repos/admin/label-delete/labels", defaultToken, map[string]interface{}{
+	mustPost(t, ghPost(t, "/api/v3/repos/admin/label-delete/labels", defaultToken, map[string]interface{}{
 		"name": "temp", "color": "aaaaaa",
-	}).Body.Close()
+	}))
 
 	resp := ghDelete(t, "/api/v3/repos/admin/label-delete/labels/temp", defaultToken)
 	defer resp.Body.Close()
@@ -142,9 +158,9 @@ func TestCreateMilestone(t *testing.T) {
 
 func TestListMilestones(t *testing.T) {
 	createTestIssueRepo(t, "ms-list")
-	ghPost(t, "/api/v3/repos/admin/ms-list/milestones", defaultToken, map[string]interface{}{
+	mustPost(t, ghPost(t, "/api/v3/repos/admin/ms-list/milestones", defaultToken, map[string]interface{}{
 		"title": "v2.0",
-	}).Body.Close()
+	}))
 
 	resp := ghGet(t, "/api/v3/repos/admin/ms-list/milestones", "")
 	if resp.StatusCode != 200 {
@@ -159,9 +175,9 @@ func TestListMilestones(t *testing.T) {
 
 func TestGetMilestone(t *testing.T) {
 	createTestIssueRepo(t, "ms-get")
-	ghPost(t, "/api/v3/repos/admin/ms-get/milestones", defaultToken, map[string]interface{}{
+	mustPost(t, ghPost(t, "/api/v3/repos/admin/ms-get/milestones", defaultToken, map[string]interface{}{
 		"title": "v3.0",
-	}).Body.Close()
+	}))
 
 	resp := ghGet(t, "/api/v3/repos/admin/ms-get/milestones/1", "")
 	if resp.StatusCode != 200 {
@@ -176,9 +192,9 @@ func TestGetMilestone(t *testing.T) {
 
 func TestUpdateMilestone(t *testing.T) {
 	createTestIssueRepo(t, "ms-update")
-	ghPost(t, "/api/v3/repos/admin/ms-update/milestones", defaultToken, map[string]interface{}{
+	mustPost(t, ghPost(t, "/api/v3/repos/admin/ms-update/milestones", defaultToken, map[string]interface{}{
 		"title": "v4.0",
-	}).Body.Close()
+	}))
 
 	resp := ghPatch(t, "/api/v3/repos/admin/ms-update/milestones/1", defaultToken, map[string]interface{}{
 		"state": "closed",
@@ -195,9 +211,9 @@ func TestUpdateMilestone(t *testing.T) {
 
 func TestDeleteMilestone(t *testing.T) {
 	createTestIssueRepo(t, "ms-delete")
-	ghPost(t, "/api/v3/repos/admin/ms-delete/milestones", defaultToken, map[string]interface{}{
+	mustPost(t, ghPost(t, "/api/v3/repos/admin/ms-delete/milestones", defaultToken, map[string]interface{}{
 		"title": "temp-ms",
-	}).Body.Close()
+	}))
 
 	resp := ghDelete(t, "/api/v3/repos/admin/ms-delete/milestones/1", defaultToken)
 	defer resp.Body.Close()
@@ -243,9 +259,9 @@ func TestCreateIssueREST(t *testing.T) {
 
 func TestListIssuesREST(t *testing.T) {
 	createTestIssueRepo(t, "issue-list")
-	ghPost(t, "/api/v3/repos/admin/issue-list/issues", defaultToken, map[string]interface{}{
+	mustPost(t, ghPost(t, "/api/v3/repos/admin/issue-list/issues", defaultToken, map[string]interface{}{
 		"title": "List test issue",
-	}).Body.Close()
+	}))
 
 	resp := ghGet(t, "/api/v3/repos/admin/issue-list/issues", "")
 	if resp.StatusCode != 200 {
@@ -261,20 +277,20 @@ func TestListIssuesREST(t *testing.T) {
 func TestListIssuesRESTHonorsDocumentedFiltersAndOrdering(t *testing.T) {
 	const repo = "issue-list-fidelity"
 	createTestIssueRepo(t, repo)
-	ghPost(t, "/api/v3/repos/admin/"+repo+"/milestones", defaultToken, map[string]interface{}{
+	mustPost(t, ghPost(t, "/api/v3/repos/admin/"+repo+"/milestones", defaultToken, map[string]interface{}{
 		"title": "v1",
-	}).Body.Close()
-	ghPost(t, "/api/v3/repos/admin/"+repo+"/issues", defaultToken, map[string]interface{}{
+	}))
+	mustPost(t, ghPost(t, "/api/v3/repos/admin/"+repo+"/issues", defaultToken, map[string]interface{}{
 		"title": "target", "body": "Please ask @alice", "milestone": 1,
 		"assignees": []string{"admin"},
-	}).Body.Close()
-	ghPost(t, "/api/v3/repos/admin/"+repo+"/issues", defaultToken, map[string]interface{}{
+	}))
+	mustPost(t, ghPost(t, "/api/v3/repos/admin/"+repo+"/issues", defaultToken, map[string]interface{}{
 		"title": "most discussed",
-	}).Body.Close()
+	}))
 	for _, body := range []string{"one", "two"} {
-		ghPost(t, "/api/v3/repos/admin/"+repo+"/issues/2/comments", defaultToken, map[string]interface{}{
+		mustPost(t, ghPost(t, "/api/v3/repos/admin/"+repo+"/issues/2/comments", defaultToken, map[string]interface{}{
 			"body": body,
-		}).Body.Close()
+		}))
 	}
 
 	assertNumbers := func(query string, want ...int) {
@@ -314,9 +330,9 @@ func TestListIssuesRESTHonorsDocumentedFiltersAndOrdering(t *testing.T) {
 
 func TestGetIssueREST(t *testing.T) {
 	createTestIssueRepo(t, "issue-get")
-	ghPost(t, "/api/v3/repos/admin/issue-get/issues", defaultToken, map[string]interface{}{
+	mustPost(t, ghPost(t, "/api/v3/repos/admin/issue-get/issues", defaultToken, map[string]interface{}{
 		"title": "Get test",
-	}).Body.Close()
+	}))
 
 	resp := ghGet(t, "/api/v3/repos/admin/issue-get/issues/1", "")
 	if resp.StatusCode != 200 {
@@ -331,9 +347,9 @@ func TestGetIssueREST(t *testing.T) {
 
 func TestUpdateIssueREST(t *testing.T) {
 	createTestIssueRepo(t, "issue-update")
-	ghPost(t, "/api/v3/repos/admin/issue-update/issues", defaultToken, map[string]interface{}{
+	mustPost(t, ghPost(t, "/api/v3/repos/admin/issue-update/issues", defaultToken, map[string]interface{}{
 		"title": "Update test",
-	}).Body.Close()
+	}))
 
 	resp := ghPatch(t, "/api/v3/repos/admin/issue-update/issues/1", defaultToken, map[string]interface{}{
 		"state": "closed",
@@ -350,15 +366,15 @@ func TestUpdateIssueREST(t *testing.T) {
 
 func TestUpdateIssueMilestoneLabelsAssigneesREST(t *testing.T) {
 	createTestIssueRepo(t, "issue-update-fields")
-	ghPost(t, "/api/v3/repos/admin/issue-update-fields/labels", defaultToken, map[string]interface{}{
+	mustPost(t, ghPost(t, "/api/v3/repos/admin/issue-update-fields/labels", defaultToken, map[string]interface{}{
 		"name": "bug", "color": "d73a4a",
-	}).Body.Close()
-	ghPost(t, "/api/v3/repos/admin/issue-update-fields/milestones", defaultToken, map[string]interface{}{
+	}))
+	mustPost(t, ghPost(t, "/api/v3/repos/admin/issue-update-fields/milestones", defaultToken, map[string]interface{}{
 		"title": "v1.0",
-	}).Body.Close()
-	ghPost(t, "/api/v3/repos/admin/issue-update-fields/issues", defaultToken, map[string]interface{}{
+	}))
+	mustPost(t, ghPost(t, "/api/v3/repos/admin/issue-update-fields/issues", defaultToken, map[string]interface{}{
 		"title": "Field update test",
-	}).Body.Close()
+	}))
 
 	// PATCH sets milestone (by number), labels, and assignees.
 	resp := ghPatch(t, "/api/v3/repos/admin/issue-update-fields/issues/1", defaultToken, map[string]interface{}{
@@ -416,9 +432,9 @@ func TestUpdateIssueMilestoneLabelsAssigneesREST(t *testing.T) {
 
 func TestCreateCommentREST(t *testing.T) {
 	createTestIssueRepo(t, "comment-create")
-	ghPost(t, "/api/v3/repos/admin/comment-create/issues", defaultToken, map[string]interface{}{
+	mustPost(t, ghPost(t, "/api/v3/repos/admin/comment-create/issues", defaultToken, map[string]interface{}{
 		"title": "Comment test",
-	}).Body.Close()
+	}))
 
 	resp := ghPost(t, "/api/v3/repos/admin/comment-create/issues/1/comments", defaultToken, map[string]interface{}{
 		"body": "A comment",
@@ -438,12 +454,12 @@ func TestCreateCommentREST(t *testing.T) {
 
 func TestListCommentsREST(t *testing.T) {
 	createTestIssueRepo(t, "comment-list")
-	ghPost(t, "/api/v3/repos/admin/comment-list/issues", defaultToken, map[string]interface{}{
+	mustPost(t, ghPost(t, "/api/v3/repos/admin/comment-list/issues", defaultToken, map[string]interface{}{
 		"title": "Comment list test",
-	}).Body.Close()
-	ghPost(t, "/api/v3/repos/admin/comment-list/issues/1/comments", defaultToken, map[string]interface{}{
+	}))
+	mustPost(t, ghPost(t, "/api/v3/repos/admin/comment-list/issues/1/comments", defaultToken, map[string]interface{}{
 		"body": "Comment 1",
-	}).Body.Close()
+	}))
 
 	resp := ghGet(t, "/api/v3/repos/admin/comment-list/issues/1/comments", "")
 	if resp.StatusCode != 200 {
@@ -460,12 +476,12 @@ func TestListCommentsREST(t *testing.T) {
 
 func TestAddIssueLabelsREST(t *testing.T) {
 	createTestIssueRepo(t, "issue-addlabels")
-	ghPost(t, "/api/v3/repos/admin/issue-addlabels/labels", defaultToken, map[string]interface{}{
+	mustPost(t, ghPost(t, "/api/v3/repos/admin/issue-addlabels/labels", defaultToken, map[string]interface{}{
 		"name": "bug", "color": "d73a4a",
-	}).Body.Close()
-	ghPost(t, "/api/v3/repos/admin/issue-addlabels/issues", defaultToken, map[string]interface{}{
+	}))
+	mustPost(t, ghPost(t, "/api/v3/repos/admin/issue-addlabels/issues", defaultToken, map[string]interface{}{
 		"title": "Label test",
-	}).Body.Close()
+	}))
 
 	resp := ghPost(t, "/api/v3/repos/admin/issue-addlabels/issues/1/labels", defaultToken, map[string]interface{}{
 		"labels": []string{"bug"},
@@ -485,15 +501,15 @@ func TestAddIssueLabelsREST(t *testing.T) {
 
 func TestRemoveIssueLabelREST(t *testing.T) {
 	createTestIssueRepo(t, "issue-rmlabel")
-	ghPost(t, "/api/v3/repos/admin/issue-rmlabel/labels", defaultToken, map[string]interface{}{
+	mustPost(t, ghPost(t, "/api/v3/repos/admin/issue-rmlabel/labels", defaultToken, map[string]interface{}{
 		"name": "remove-me", "color": "ffffff",
-	}).Body.Close()
-	ghPost(t, "/api/v3/repos/admin/issue-rmlabel/issues", defaultToken, map[string]interface{}{
+	}))
+	mustPost(t, ghPost(t, "/api/v3/repos/admin/issue-rmlabel/issues", defaultToken, map[string]interface{}{
 		"title": "Remove label test",
-	}).Body.Close()
-	ghPost(t, "/api/v3/repos/admin/issue-rmlabel/issues/1/labels", defaultToken, map[string]interface{}{
+	}))
+	mustPost(t, ghPost(t, "/api/v3/repos/admin/issue-rmlabel/issues/1/labels", defaultToken, map[string]interface{}{
 		"labels": []string{"remove-me"},
-	}).Body.Close()
+	}))
 
 	resp := ghDelete(t, "/api/v3/repos/admin/issue-rmlabel/issues/1/labels/remove-me", defaultToken)
 	defer resp.Body.Close()
@@ -506,16 +522,16 @@ func TestRemoveIssueLabelREST(t *testing.T) {
 
 func TestSetIssueLabelsREST(t *testing.T) {
 	createTestIssueRepo(t, "issue-setlabels")
-	ghPost(t, "/api/v3/repos/admin/issue-setlabels/labels", defaultToken, map[string]interface{}{
+	mustPost(t, ghPost(t, "/api/v3/repos/admin/issue-setlabels/labels", defaultToken, map[string]interface{}{
 		"name": "bug", "color": "d73a4a",
-	}).Body.Close()
-	ghPost(t, "/api/v3/repos/admin/issue-setlabels/labels", defaultToken, map[string]interface{}{
+	}))
+	mustPost(t, ghPost(t, "/api/v3/repos/admin/issue-setlabels/labels", defaultToken, map[string]interface{}{
 		"name": "feature", "color": "a2eeef",
-	}).Body.Close()
-	ghPost(t, "/api/v3/repos/admin/issue-setlabels/issues", defaultToken, map[string]interface{}{
+	}))
+	mustPost(t, ghPost(t, "/api/v3/repos/admin/issue-setlabels/issues", defaultToken, map[string]interface{}{
 		"title":  "Set labels test",
 		"labels": []string{"bug"},
-	}).Body.Close()
+	}))
 
 	resp := ghPut(t, "/api/v3/repos/admin/issue-setlabels/issues/1/labels", defaultToken, map[string]interface{}{
 		"labels": []string{"feature"},
@@ -535,13 +551,13 @@ func TestSetIssueLabelsREST(t *testing.T) {
 
 func TestClearIssueLabelsREST(t *testing.T) {
 	createTestIssueRepo(t, "issue-clearlabels")
-	ghPost(t, "/api/v3/repos/admin/issue-clearlabels/labels", defaultToken, map[string]interface{}{
+	mustPost(t, ghPost(t, "/api/v3/repos/admin/issue-clearlabels/labels", defaultToken, map[string]interface{}{
 		"name": "bug", "color": "d73a4a",
-	}).Body.Close()
-	ghPost(t, "/api/v3/repos/admin/issue-clearlabels/issues", defaultToken, map[string]interface{}{
+	}))
+	mustPost(t, ghPost(t, "/api/v3/repos/admin/issue-clearlabels/issues", defaultToken, map[string]interface{}{
 		"title":  "Clear labels test",
 		"labels": []string{"bug"},
-	}).Body.Close()
+	}))
 
 	resp := ghDelete(t, "/api/v3/repos/admin/issue-clearlabels/issues/1/labels", defaultToken)
 	defer resp.Body.Close()
@@ -560,9 +576,9 @@ func TestClearIssueLabelsREST(t *testing.T) {
 
 func TestAddIssueAssigneesREST(t *testing.T) {
 	createTestIssueRepo(t, "issue-addassignees")
-	ghPost(t, "/api/v3/repos/admin/issue-addassignees/issues", defaultToken, map[string]interface{}{
+	mustPost(t, ghPost(t, "/api/v3/repos/admin/issue-addassignees/issues", defaultToken, map[string]interface{}{
 		"title": "Assignee test",
-	}).Body.Close()
+	}))
 
 	resp := ghPost(t, "/api/v3/repos/admin/issue-addassignees/issues/1/assignees", defaultToken, map[string]interface{}{
 		"assignees": []string{"admin"},
@@ -580,10 +596,10 @@ func TestAddIssueAssigneesREST(t *testing.T) {
 
 func TestRemoveIssueAssigneesREST(t *testing.T) {
 	createTestIssueRepo(t, "issue-rmassignees")
-	ghPost(t, "/api/v3/repos/admin/issue-rmassignees/issues", defaultToken, map[string]interface{}{
+	mustPost(t, ghPost(t, "/api/v3/repos/admin/issue-rmassignees/issues", defaultToken, map[string]interface{}{
 		"title":     "Remove assignee test",
 		"assignees": []string{"admin"},
-	}).Body.Close()
+	}))
 
 	resp := ghDeleteWithBody(t, "/api/v3/repos/admin/issue-rmassignees/issues/1/assignees", defaultToken, map[string]interface{}{
 		"assignees": []string{"admin"},
@@ -598,12 +614,12 @@ func TestRemoveIssueAssigneesREST(t *testing.T) {
 
 func TestListRepoIssueCommentsREST(t *testing.T) {
 	createTestIssueRepo(t, "issue-repo-comments")
-	ghPost(t, "/api/v3/repos/admin/issue-repo-comments/issues", defaultToken, map[string]interface{}{
+	mustPost(t, ghPost(t, "/api/v3/repos/admin/issue-repo-comments/issues", defaultToken, map[string]interface{}{
 		"title": "Repo comments test",
-	}).Body.Close()
-	ghPost(t, "/api/v3/repos/admin/issue-repo-comments/issues/1/comments", defaultToken, map[string]interface{}{
+	}))
+	mustPost(t, ghPost(t, "/api/v3/repos/admin/issue-repo-comments/issues/1/comments", defaultToken, map[string]interface{}{
 		"body": "Comment 1",
-	}).Body.Close()
+	}))
 
 	resp := ghGet(t, "/api/v3/repos/admin/issue-repo-comments/issues/comments", "")
 	if resp.StatusCode != 200 {
@@ -618,9 +634,9 @@ func TestListRepoIssueCommentsREST(t *testing.T) {
 
 func TestGetIssueCommentREST(t *testing.T) {
 	createTestIssueRepo(t, "issue-get-comment")
-	ghPost(t, "/api/v3/repos/admin/issue-get-comment/issues", defaultToken, map[string]interface{}{
+	mustPost(t, ghPost(t, "/api/v3/repos/admin/issue-get-comment/issues", defaultToken, map[string]interface{}{
 		"title": "Get comment test",
-	}).Body.Close()
+	}))
 	resp := ghPost(t, "/api/v3/repos/admin/issue-get-comment/issues/1/comments", defaultToken, map[string]interface{}{
 		"body": "A comment",
 	})
@@ -640,9 +656,9 @@ func TestGetIssueCommentREST(t *testing.T) {
 
 func TestPinIssueCommentREST(t *testing.T) {
 	createTestIssueRepo(t, "issue-pin-comment")
-	ghPost(t, "/api/v3/repos/admin/issue-pin-comment/issues", defaultToken, map[string]interface{}{
+	mustPost(t, ghPost(t, "/api/v3/repos/admin/issue-pin-comment/issues", defaultToken, map[string]interface{}{
 		"title": "Pin comment test",
-	}).Body.Close()
+	}))
 	resp := ghPost(t, "/api/v3/repos/admin/issue-pin-comment/issues/1/comments", defaultToken, map[string]interface{}{
 		"body": "Pin me",
 	})
@@ -660,12 +676,12 @@ func TestPinIssueCommentREST(t *testing.T) {
 
 func TestListIssueTimelineREST(t *testing.T) {
 	createTestIssueRepo(t, "issue-timeline")
-	ghPost(t, "/api/v3/repos/admin/issue-timeline/issues", defaultToken, map[string]interface{}{
+	mustPost(t, ghPost(t, "/api/v3/repos/admin/issue-timeline/issues", defaultToken, map[string]interface{}{
 		"title": "Timeline test",
-	}).Body.Close()
-	ghPost(t, "/api/v3/repos/admin/issue-timeline/issues/1/comments", defaultToken, map[string]interface{}{
+	}))
+	mustPost(t, ghPost(t, "/api/v3/repos/admin/issue-timeline/issues/1/comments", defaultToken, map[string]interface{}{
 		"body": "Timeline comment",
-	}).Body.Close()
+	}))
 
 	resp := ghGet(t, "/api/v3/repos/admin/issue-timeline/issues/1/timeline", "")
 	if resp.StatusCode != 200 {
@@ -680,9 +696,9 @@ func TestListIssueTimelineREST(t *testing.T) {
 
 func TestListIssueEventsREST(t *testing.T) {
 	createTestIssueRepo(t, "issue-events")
-	ghPost(t, "/api/v3/repos/admin/issue-events/issues", defaultToken, map[string]interface{}{
+	mustPost(t, ghPost(t, "/api/v3/repos/admin/issue-events/issues", defaultToken, map[string]interface{}{
 		"title": "Events test",
-	}).Body.Close()
+	}))
 
 	resp := ghGet(t, "/api/v3/repos/admin/issue-events/issues/1/events", "")
 	if resp.StatusCode != 200 {
@@ -697,9 +713,9 @@ func TestListIssueEventsREST(t *testing.T) {
 
 func TestListRepoIssueEventsREST(t *testing.T) {
 	createTestIssueRepo(t, "issue-repo-events")
-	ghPost(t, "/api/v3/repos/admin/issue-repo-events/issues", defaultToken, map[string]interface{}{
+	mustPost(t, ghPost(t, "/api/v3/repos/admin/issue-repo-events/issues", defaultToken, map[string]interface{}{
 		"title": "Repo events test",
-	}).Body.Close()
+	}))
 
 	resp := ghGet(t, "/api/v3/repos/admin/issue-repo-events/issues/events", "")
 	if resp.StatusCode != 200 {
@@ -714,9 +730,9 @@ func TestListRepoIssueEventsREST(t *testing.T) {
 
 func TestGetIssueEventREST(t *testing.T) {
 	createTestIssueRepo(t, "issue-event-get")
-	ghPost(t, "/api/v3/repos/admin/issue-event-get/issues", defaultToken, map[string]interface{}{
+	mustPost(t, ghPost(t, "/api/v3/repos/admin/issue-event-get/issues", defaultToken, map[string]interface{}{
 		"title": "Get event test",
-	}).Body.Close()
+	}))
 
 	listResp := ghGet(t, "/api/v3/repos/admin/issue-event-get/issues/events", "")
 	if listResp.StatusCode != 200 {
@@ -749,9 +765,9 @@ func TestGetIssueEventREST(t *testing.T) {
 
 func TestSubIssuesREST_EmptyList(t *testing.T) {
 	createTestIssueRepo(t, "issue-subissues")
-	ghPost(t, "/api/v3/repos/admin/issue-subissues/issues", defaultToken, map[string]interface{}{
+	mustPost(t, ghPost(t, "/api/v3/repos/admin/issue-subissues/issues", defaultToken, map[string]interface{}{
 		"title": "Sub issues test",
-	}).Body.Close()
+	}))
 
 	resp := ghGet(t, "/api/v3/repos/admin/issue-subissues/issues/1/sub_issues", "")
 	if resp.StatusCode != 200 {
@@ -885,12 +901,12 @@ func TestGraphQLReopenIssue(t *testing.T) {
 	iss, _ := ci["issue"].(map[string]interface{})
 	issueID := iss["id"].(string)
 
-	ghPost(t, "/api/graphql", defaultToken, map[string]interface{}{
+	mustPost(t, ghPost(t, "/api/graphql", defaultToken, map[string]interface{}{
 		"query": `mutation($input: CloseIssueInput!) { closeIssue(input: $input) { issue { state } } }`,
 		"variables": map[string]interface{}{
 			"input": map[string]interface{}{"issueId": issueID},
 		},
-	}).Body.Close()
+	}))
 
 	// Reopen
 	resp3 := ghPost(t, "/api/graphql", defaultToken, map[string]interface{}{
@@ -959,12 +975,12 @@ func TestGraphQLAddComment(t *testing.T) {
 func TestGraphQLListIssues(t *testing.T) {
 	createTestIssueRepo(t, "gql-issue-list")
 
-	ghPost(t, "/api/v3/repos/admin/gql-issue-list/issues", defaultToken, map[string]interface{}{
+	mustPost(t, ghPost(t, "/api/v3/repos/admin/gql-issue-list/issues", defaultToken, map[string]interface{}{
 		"title": "GQL list issue 1",
-	}).Body.Close()
-	ghPost(t, "/api/v3/repos/admin/gql-issue-list/issues", defaultToken, map[string]interface{}{
+	}))
+	mustPost(t, ghPost(t, "/api/v3/repos/admin/gql-issue-list/issues", defaultToken, map[string]interface{}{
 		"title": "GQL list issue 2",
-	}).Body.Close()
+	}))
 
 	resp := ghPost(t, "/api/graphql", defaultToken, map[string]interface{}{
 		"query": `{repository(owner:"admin",name:"gql-issue-list"){issues(first:10,states:[OPEN]){totalCount,nodes{number,title,state}}}}`,
@@ -994,10 +1010,10 @@ func TestGraphQLListIssues(t *testing.T) {
 func TestGraphQLGetIssue(t *testing.T) {
 	createTestIssueRepo(t, "gql-issue-get")
 
-	ghPost(t, "/api/v3/repos/admin/gql-issue-get/issues", defaultToken, map[string]interface{}{
+	mustPost(t, ghPost(t, "/api/v3/repos/admin/gql-issue-get/issues", defaultToken, map[string]interface{}{
 		"title": "GQL get issue",
 		"body":  "Get by number",
-	}).Body.Close()
+	}))
 
 	resp := ghPost(t, "/api/graphql", defaultToken, map[string]interface{}{
 		"query": `{repository(owner:"admin",name:"gql-issue-get"){issue(number:1){title,body,state,author{login},labels(first:10){nodes{name}},comments(first:10){nodes{body}}}}}`,
@@ -1028,9 +1044,9 @@ func TestGraphQLGetIssue(t *testing.T) {
 
 func TestGraphQLRepoLabels(t *testing.T) {
 	createTestIssueRepo(t, "gql-labels")
-	ghPost(t, "/api/v3/repos/admin/gql-labels/labels", defaultToken, map[string]interface{}{
+	mustPost(t, ghPost(t, "/api/v3/repos/admin/gql-labels/labels", defaultToken, map[string]interface{}{
 		"name": "gql-bug", "color": "d73a4a",
-	}).Body.Close()
+	}))
 
 	resp := ghPost(t, "/api/graphql", defaultToken, map[string]interface{}{
 		"query": `{repository(owner:"admin",name:"gql-labels"){labels(first:10){totalCount,nodes{name,color}}}}`,
@@ -1055,9 +1071,9 @@ func TestGraphQLRepoLabels(t *testing.T) {
 
 func TestGraphQLRepoMilestones(t *testing.T) {
 	createTestIssueRepo(t, "gql-milestones")
-	ghPost(t, "/api/v3/repos/admin/gql-milestones/milestones", defaultToken, map[string]interface{}{
+	mustPost(t, ghPost(t, "/api/v3/repos/admin/gql-milestones/milestones", defaultToken, map[string]interface{}{
 		"title": "gql-v1",
-	}).Body.Close()
+	}))
 
 	resp := ghPost(t, "/api/graphql", defaultToken, map[string]interface{}{
 		"query": `{repository(owner:"admin",name:"gql-milestones"){milestones(first:10){totalCount,nodes{title,number,state}}}}`,

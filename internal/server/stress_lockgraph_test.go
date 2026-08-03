@@ -112,6 +112,10 @@ func TestStressReaderWriterLockGraph(t *testing.T) {
 	call := func(method, path string, body interface{}) {
 		resp, err := doReq(h, method, path, tok, body)
 		if err != nil {
+			// A transport/request error must fail the test: increment the same
+			// gate the 5xx path uses, otherwise the error is only buffered into
+			// errCh and silently discarded (the failure gate stays false).
+			bad.Add(1)
 			reportErr(fmt.Errorf("%s %s: %w", method, path, err))
 			return
 		}
@@ -227,6 +231,6 @@ func TestStressReaderWriterLockGraph(t *testing.T) {
 			}
 			t.Error(err)
 		}
-		t.Fatalf("reader/writer storm saw %d server-error (5xx) responses", bad.Load())
+		t.Fatalf("reader/writer storm saw %d server-error (5xx) or transport-error responses", bad.Load())
 	}
 }
