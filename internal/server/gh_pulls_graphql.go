@@ -2171,7 +2171,7 @@ func pullRequestToGQL(pr *PullRequest, st *Store) map[string]interface{} {
 	repo := st.Repos[pr.RepoID]
 	url := ""
 	if repo != nil {
-		url = "/" + repo.FullName + "/pull/" + strconv.Itoa(pr.Number)
+		url = externalURL("/" + repo.FullName + "/pull/" + strconv.Itoa(pr.Number))
 	}
 
 	sha := pullRequestHeadSHALocked(pr, st)

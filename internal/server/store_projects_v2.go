@@ -800,14 +800,25 @@ func (s *ProjectV2Store) UpdateField(id int, name *string, options []*ProjectV2S
 		f.Name = *name
 	}
 	if options != nil && f.DataType == ProjectV2FieldSingleSelect {
+		// Preserve the ID of any option kept by name. The mutation input carries
+		// only names, so re-minting every ID (as this did) dangled every item's
+		// stored OptionID for options that still exist. New names still mint.
+		existingIDByName := make(map[string]string, len(f.Options))
+		for _, old := range f.Options {
+			existingIDByName[old.Name] = old.ID
+		}
 		f.Options = nil
 		for _, opt := range options {
 			color := opt.Color
 			if color == "" {
 				color = "GRAY"
 			}
+			id := existingIDByName[opt.Name]
+			if id == "" {
+				id = s.nextOptionIDLocked()
+			}
 			f.Options = append(f.Options, &ProjectV2SingleSelectOption{
-				ID:          s.nextOptionIDLocked(),
+				ID:          id,
 				Name:        opt.Name,
 				Color:       color,
 				Description: opt.Description,

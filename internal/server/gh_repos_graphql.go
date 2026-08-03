@@ -1369,6 +1369,16 @@ func assertMutationsAuthorized(mutationType *graphql.Object) {
 	panic("graphql mutations reach the store unauthorized: " + strings.Join(offenders, ", "))
 }
 
+// externalURL prefixes a relative resource path with BLEEPHUB_EXTERNAL_URL when
+// configured, producing the absolute URL that GitHub's GraphQL `url` fields
+// return. GraphQL `resourcePath` fields stay relative and must not use this.
+func externalURL(path string) string {
+	if base := strings.TrimRight(os.Getenv("BLEEPHUB_EXTERNAL_URL"), "/"); base != "" {
+		return base + path
+	}
+	return path
+}
+
 // gqlMissingNode is the answer a mutation gives for a node it cannot reach,
 // shaped like the NOT_FOUND errors[] entry real GitHub returns so gh CLI
 // reports "not found" instead of decoding an empty payload.
@@ -1547,10 +1557,7 @@ func repoToGraphQLWithOrg(repo *Repo, getOrg func(int) *Org) map[string]interfac
 	} else if repo.Owner != nil {
 		ownerMap = userToGraphQL(repo.Owner)
 	}
-	webURL := "/" + repo.FullName
-	if externalURL := strings.TrimRight(os.Getenv("BLEEPHUB_EXTERNAL_URL"), "/"); externalURL != "" {
-		webURL = externalURL + webURL
-	}
+	webURL := externalURL("/" + repo.FullName)
 
 	return map[string]interface{}{
 		"nodeID":              repo.NodeID,
@@ -1698,7 +1705,7 @@ func releaseToGQL(rel *Release, latestID int, repoFullName string, immutable boo
 		"isPrerelease": rel.Prerelease,
 		"createdAt":    rel.CreatedAt.Format(time.RFC3339),
 		"publishedAt":  publishedAt,
-		"url":          "/" + repoFullName + "/releases/tag/" + rel.TagName,
+		"url":          externalURL("/" + repoFullName + "/releases/tag/" + rel.TagName),
 		"description":  nilStr(rel.Body),
 	}
 }

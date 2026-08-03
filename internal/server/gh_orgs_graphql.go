@@ -118,7 +118,7 @@ func orgToGraphQL(org *Org) map[string]interface{} {
 		"name":         org.Name,
 		"description":  org.Description,
 		"email":        org.Email,
-		"url":          "/" + org.Login,
+		"url":          externalURL("/" + org.Login),
 		"resourcePath": "/" + org.Login,
 		"avatarUrl":    org.AvatarURL,
 		"createdAt":    org.CreatedAt.Format(time.RFC3339),
