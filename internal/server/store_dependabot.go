@@ -286,6 +286,9 @@ func (st *Store) UpsertDependabotOrgSecret(orgLogin, name, value, keyID, visibil
 	st.mu.Lock()
 	defer st.mu.Unlock()
 
+	// Clone rather than adopt the caller's slice by reference (both the create
+	// and update branches below store it on the secret).
+	selectedRepoIDs = append([]int(nil), selectedRepoIDs...)
 	now := st.currentTime()
 	m := st.DependabotOrgSecrets[orgLogin]
 	if m == nil {

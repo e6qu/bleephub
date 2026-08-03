@@ -310,7 +310,8 @@ func (st *Store) SetPullRequestLabels(repoID, prNumber int, labelIDs []int, acto
 			st.recordPullRequestLabelEventLocked(repoID, pr.ID, actorID, lid, "labeled")
 		}
 	}
-	pr.LabelIDs = labelIDs
+	// Clone rather than adopt the caller's slice by reference.
+	pr.LabelIDs = append([]int(nil), labelIDs...)
 	pr.UpdatedAt = st.currentTime()
 	if st.persist != nil {
 		st.persist.MustPut("pull_requests", strconv.Itoa(pr.ID), pr)
