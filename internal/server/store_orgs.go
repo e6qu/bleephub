@@ -713,19 +713,22 @@ func (st *Store) DeleteTeam(orgLogin, slug string) bool {
 
 	delete(st.Teams, team.ID)
 	delete(st.TeamsBySlug, key)
-	if st.persist != nil {
-		st.persist.MustDelete("teams", strconv.Itoa(team.ID))
-	}
 
+	// One transaction: deleting the team and re-parenting its children must not
+	// disagree across a crash, or a surviving child would point at a team that
+	// no longer exists.
+	batch := newPersistBatch(st.persist)
+	batch.Delete("teams", strconv.Itoa(team.ID))
 	// Children of a deleted team move up to the deleted team's parent
 	// (real GitHub re-parents rather than orphaning).
 	for _, t := range st.Teams {
 		if t.ParentID == team.ID {
 			t.ParentID = team.ParentID
-			if st.persist != nil {
-				st.persist.MustPut("teams", strconv.Itoa(t.ID), t)
-			}
+			batch.Put("teams", strconv.Itoa(t.ID), t)
 		}
+	}
+	if err := batch.Commit(); err != nil {
+		panic(&persistenceFailure{op: "batch", bucket: "teams", err: err})
 	}
 	return true
 }
