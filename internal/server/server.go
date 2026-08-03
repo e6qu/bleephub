@@ -813,7 +813,51 @@ func (s *Server) requestHandler() http.Handler {
 		observed = s.observeMiddleware(ghWrapped)
 	}
 	bounded := s.requestBodyLimitMiddleware(observed)
-	return otelhttp.NewHandler(s.recoverMiddleware(s.loggingMiddleware(s.adminHostMiddleware(bounded))), "bleephub")
+	secured := s.securityHeadersMiddleware(bounded)
+	return otelhttp.NewHandler(s.recoverMiddleware(s.loggingMiddleware(s.adminHostMiddleware(secured))), "bleephub")
+}
+
+// uiContentSecurityPolicy locks the bundled single-page app down to its own
+// origin. The build emits only external, crossorigin module scripts (no inline
+// script), so 'self' is sufficient for script-src; 'unsafe-inline' is allowed
+// for styles because React renders inline style attributes, and 'wasm-unsafe-eval'
+// covers the crypto bundle if it uses WebAssembly. Avatars/emoji may be remote
+// images, so img-src also permits https:. frame-ancestors 'none' + the DENY
+// header below block clickjacking of the authenticated UI.
+const uiContentSecurityPolicy = "default-src 'self'; " +
+	"script-src 'self' 'wasm-unsafe-eval'; " +
+	"style-src 'self' 'unsafe-inline'; " +
+	"img-src 'self' data: blob: https:; " +
+	"font-src 'self' data:; " +
+	"connect-src 'self'; " +
+	"frame-src 'self'; " +
+	"object-src 'none'; " +
+	"base-uri 'self'; " +
+	"form-action 'self'; " +
+	"frame-ancestors 'none'"
+
+// securityHeadersMiddleware sets baseline response security headers on every
+// response — including the /ui/ SPA, which otherwise shipped none. Handlers that
+// need stricter values (the identity pages, the Pages sandbox) set their own
+// Content-Security-Policy / Referrer-Policy afterwards and win, since they run
+// after this middleware.
+func (s *Server) securityHeadersMiddleware(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		h := w.Header()
+		h.Set("X-Content-Type-Options", "nosniff")
+		h.Set("Referrer-Policy", "strict-origin-when-cross-origin")
+		if r.TLS != nil {
+			h.Set("Strict-Transport-Security", "max-age=31536000; includeSubDomains")
+		}
+		// The bundled SPA (and its /ui-data adapters) get a CSP and a framing
+		// lock. Other surfaces — JSON API, Pages sandbox, identity pages —
+		// keep the headers their handlers set.
+		if strings.HasPrefix(r.URL.Path, "/ui") {
+			h.Set("X-Frame-Options", "DENY")
+			h.Set("Content-Security-Policy", uiContentSecurityPolicy)
+		}
+		next.ServeHTTP(w, r)
+	})
 }
 
 const maxStructuredRequestBody = 32 << 20
