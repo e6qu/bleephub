@@ -57,7 +57,7 @@
       },
       {
         "event": "issues",
-        "line": 2923,
+        "line": 2920,
         "producer": "emitWebhookEvent",
         "source": "internal/server/gh_issues_graphql.go"
       },
@@ -99,7 +99,7 @@
       },
       {
         "event": "pull_request",
-        "line": 1726,
+        "line": 1733,
         "producer": "emitWebhookEvent",
         "source": "internal/server/gh_pulls_graphql.go"
       },
@@ -2659,8 +2659,8 @@
         "id": "GQL-029",
         "location": "gh_issues_graphql.go:2484",
         "severity": "M",
-        "status": "open",
-        "status_kind": "open"
+        "status": "fixed \u2014 projectV2ToGQL no longer embeds a live *Store in the source map; the field/view/item resolvers reach the store through their *Server closure and projectV2SourceID extracts only the project id. Regression asserts the source carries no store",
+        "status_kind": "fixed"
       },
       {
         "category": "GQL",
@@ -2731,8 +2731,8 @@
         "id": "GQL-037",
         "location": "gh_pulls_graphql.go:477",
         "severity": "M",
-        "status": "open",
-        "status_kind": "open"
+        "status": "fixed \u2014 the RequestedReviewer union's ResolveType now discriminates on the __typename the producers set (User/Bot/Team) instead of unconditionally returning User; requestedReviewer sources are tagged accordingly. Unit regression covers the mapping",
+        "status_kind": "fixed"
       },
       {
         "category": "GQL",
@@ -3847,8 +3847,8 @@
         "id": "STORE-039",
         "location": "store_issues.go:126",
         "severity": "M",
-        "status": "open",
-        "status_kind": "open"
+        "status": "fixed \u2014 issue events are built with their final ParentType (and extra fields) already set and persisted exactly once via buildIssueEventLocked + persistIssueEventLocked, so a pull-request event is never first written under the issue parent and rewritten. Reload regression asserts the durable parent type",
+        "status_kind": "fixed"
       },
       {
         "category": "STORE",
@@ -6350,8 +6350,8 @@
         },
         "GQL": {
           "status": {
-            "fixed": 52,
-            "open": 6,
+            "fixed": 54,
+            "open": 4,
             "partial": 3
           },
           "total": 61
@@ -6372,8 +6372,8 @@
         },
         "STORE": {
           "status": {
-            "fixed": 42,
-            "open": 22,
+            "fixed": 43,
+            "open": 21,
             "partial": 10
           },
           "total": 74
@@ -6402,8 +6402,8 @@
       },
       "status": {
         "deferred": 1,
-        "fixed": 546,
-        "open": 91,
+        "fixed": 549,
+        "open": 88,
         "partial": 36
       },
       "total": 674
