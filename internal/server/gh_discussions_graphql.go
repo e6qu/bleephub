@@ -1052,13 +1052,44 @@ func reactionContentToGraphQL(content string) string {
 
 // paginateGQLMaps implements Relay pagination over pre-converted node maps,
 // supporting first/last/after/before.
+// gqlNodeIdentity returns a stable identity for a rendered GraphQL node so its
+// connection cursor survives inserts. Prefer the global node id.
+func gqlNodeIdentity(n map[string]interface{}) string {
+	for _, key := range []string{"nodeID", "id", "databaseId"} {
+		switch v := n[key].(type) {
+		case string:
+			if v != "" {
+				return v
+			}
+		case int:
+			return strconv.Itoa(v)
+		}
+	}
+	return ""
+}
+
+// resolveConnectionIndex returns the current position of the node a cursor
+// identifies. If the cursor carries an identity that still exists, its live
+// index is used (stable across inserts before it); otherwise the cursor's
+// recorded index is the fallback.
+func resolveConnectionIndex(nodes []map[string]interface{}, cursor string, fallbackIdx int) int {
+	if id := connectionCursorID(cursor); id != "" {
+		for i, n := range nodes {
+			if gqlNodeIdentity(n) == id {
+				return i
+			}
+		}
+	}
+	return fallbackIdx
+}
+
 func paginateGQLMaps(nodes []map[string]interface{}, args map[string]interface{}) map[string]interface{} {
 	total := len(nodes)
 	start := 0
 	end := total
 
 	if after, ok := args["after"].(string); ok && after != "" {
-		afterIndex := decodeCursor(after)
+		afterIndex := resolveConnectionIndex(nodes, after, decodeCursor(after))
 		// Saturate before adding one: cursor:<MaxInt> must describe an empty
 		// window, not wrap start negative and unexpectedly return page one.
 		if afterIndex >= total {
@@ -1068,7 +1099,7 @@ func paginateGQLMaps(nodes []map[string]interface{}, args map[string]interface{}
 		}
 	}
 	if before, ok := args["before"].(string); ok && before != "" {
-		end = decodeCursor(before)
+		end = resolveConnectionIndex(nodes, before, decodeCursor(before))
 	}
 	if start < 0 {
 		start = 0

@@ -1737,6 +1737,34 @@ func encodeCursor(idx int) string {
 	return base64.StdEncoding.EncodeToString([]byte(fmt.Sprintf("cursor:%d", idx)))
 }
 
+// encodeConnectionCursor encodes a GraphQL connection cursor that carries both
+// the node's position and its stable identity ("cursor:<idx>:<id>"), so a page
+// boundary can be re-resolved by identity and does not shift when items are
+// inserted before it. With no identity it degrades to the plain index cursor.
+func encodeConnectionCursor(idx int, id string) string {
+	if id == "" {
+		return encodeCursor(idx)
+	}
+	return base64.StdEncoding.EncodeToString([]byte(fmt.Sprintf("cursor:%d:%s", idx, id)))
+}
+
+// connectionCursorID returns the node identity embedded in a connection cursor,
+// or "" when the cursor carries only an index (legacy / REST cursors).
+func connectionCursorID(s string) string {
+	b, err := base64.StdEncoding.DecodeString(s)
+	if err != nil {
+		return ""
+	}
+	rest, ok := strings.CutPrefix(string(b), "cursor:")
+	if !ok {
+		return ""
+	}
+	if colon := strings.IndexByte(rest, ':'); colon >= 0 {
+		return rest[colon+1:]
+	}
+	return ""
+}
+
 func decodeCursor(s string) int {
 	n, err := decodeCursorStrict(s)
 	if err != nil {
@@ -1750,11 +1778,16 @@ func decodeCursorStrict(s string) (int, error) {
 	if err != nil {
 		return 0, err
 	}
-	str := string(b)
-	if !strings.HasPrefix(str, "cursor:") {
+	rest, ok := strings.CutPrefix(string(b), "cursor:")
+	if !ok {
 		return 0, fmt.Errorf("cursor prefix")
 	}
-	n, err := strconv.Atoi(strings.TrimPrefix(str, "cursor:"))
+	// A connection cursor is "cursor:<idx>:<id>"; only the leading index is the
+	// numeric position, the rest is the node identity.
+	if colon := strings.IndexByte(rest, ':'); colon >= 0 {
+		rest = rest[:colon]
+	}
+	n, err := strconv.Atoi(rest)
 	if err != nil || n < 0 {
 		return 0, fmt.Errorf("cursor index")
 	}
