@@ -627,12 +627,17 @@ func (st *Store) HasActiveSecretScanningPushProtectionBypass(repoKey, tokenType 
 	}
 	if len(active) != len(bypasses) {
 		if len(active) == 0 {
+			// Delete the row rather than MustPut the now-nil slice, which would
+			// marshal to a literal `null` and reload as a permanent tombstone.
 			delete(st.SecretScanningPushBypasses, repoKey)
+			if st.persist != nil {
+				st.persist.MustDelete("secret_scanning_push_bypasses", repoKey)
+			}
 		} else {
 			st.SecretScanningPushBypasses[repoKey] = active
-		}
-		if st.persist != nil {
-			st.persist.MustPut("secret_scanning_push_bypasses", repoKey, st.SecretScanningPushBypasses[repoKey])
+			if st.persist != nil {
+				st.persist.MustPut("secret_scanning_push_bypasses", repoKey, active)
+			}
 		}
 	}
 	return found

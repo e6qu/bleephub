@@ -273,6 +273,36 @@ func addTestUser(p *Persistence, st *Store, login string) *User {
 	return u
 }
 
+// TestPersistenceReload_ExpiredBypassLeavesNoTombstone proves STORE-050: when
+// the secret-scanning push-protection pruner drops the last bypass for a repo,
+// it must delete the durable row rather than overwrite it with a nil slice.
+// A nil slice marshals to a literal `null`, which the reload loader would read
+// back as a phantom key with a nil value — a permanent tombstone.
+func TestPersistenceReload_ExpiredBypassLeavesNoTombstone(t *testing.T) {
+	const repoKey = "octo/hello"
+
+	st2 := reloadedStore(t, func(p *Persistence, st *Store) {
+		expired := &SecretScanningPushProtectionBypass{
+			PlaceholderID: "ph-1",
+			RepoKey:       repoKey,
+			TokenType:     "github_pat",
+			ExpireAt:      fixedTestTime.Add(-time.Hour),
+			CreatedAt:     fixedTestTime.Add(-3 * time.Hour),
+		}
+		st.SecretScanningPushBypasses[repoKey] = []*SecretScanningPushProtectionBypass{expired}
+		p.MustPut("secret_scanning_push_bypasses", repoKey, st.SecretScanningPushBypasses[repoKey])
+
+		// Pruning the last (expired) bypass must remove the row durably.
+		if st.HasActiveSecretScanningPushProtectionBypass(repoKey, "github_pat", fixedTestTime) {
+			t.Fatalf("expired bypass should not be reported active")
+		}
+	})
+
+	if v, ok := st2.SecretScanningPushBypasses[repoKey]; ok {
+		t.Fatalf("expected no bypass entry for %q after reload; a tombstone survived (value=%v)", repoKey, v)
+	}
+}
+
 func TestPersistenceReload_GistsCommentsStarsAndForks(t *testing.T) {
 	var gistID, forkID string
 	var commentID int
