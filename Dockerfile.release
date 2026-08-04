@@ -24,7 +24,7 @@ RUN CGO_ENABLED=0 go build -trimpath -ldflags="-s -w -X main.version=${BLEEPHUB_
 
 FROM golang:1.26.5-bookworm@sha256:1ecb7edf62a0408027bd5729dfd6b1b8766e578e8df93995b225dfd0944eb651 AS go-toolchain
 
-FROM ubuntu:26.04@sha256:3131b4cc82a783df6c9df078f86e01819a13594b865c2cad47bd1bca2b7063bb AS dqlite-builder
+FROM ubuntu:26.04@sha256:678c6550cc43645e08669028bc177f50be4e7c5b8cca677067b1914d4afc7a03 AS dqlite-builder
 COPY --from=go-toolchain /usr/local/go /usr/local/go
 ENV PATH=/usr/local/go/bin:$PATH
 ARG BLEEPHUB_VERSION=development
@@ -41,7 +41,7 @@ COPY dqlite-node ./dqlite-node
 COPY internal/dqliteaddr ./internal/dqliteaddr
 RUN CGO_ENABLED=1 go build -trimpath -tags 'nosqlite3,dqlite' -ldflags="-s -w -X main.version=${BLEEPHUB_VERSION} -X main.commit=${BLEEPHUB_COMMIT} -X main.publishedAt=${BLEEPHUB_PUBLISHED_AT}" -o /bleephub-dqlite-node ./dqlite-node
 
-FROM ubuntu:26.04@sha256:3131b4cc82a783df6c9df078f86e01819a13594b865c2cad47bd1bca2b7063bb
+FROM ubuntu:26.04@sha256:678c6550cc43645e08669028bc177f50be4e7c5b8cca677067b1914d4afc7a03
 COPY docker/pages-gems/Gemfile docker/pages-gems/pinned-gems.sha256 /opt/bleephub-pages/
 WORKDIR /opt/bleephub-pages/vendor/cache
 # Every gem in the github-pages closure is fetched by exact version, checked
