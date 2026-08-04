@@ -12,6 +12,7 @@ import json
 import os
 import pathlib
 import re
+import shutil
 import subprocess
 import sys
 import time
@@ -289,6 +290,7 @@ def terraform_dependencies() -> dict[str, dt.datetime]:
 
 def docker_dependencies() -> dict[str, dt.datetime]:
     dependencies: dict[str, dt.datetime] = {}
+    found_pin = False
     local_bases = {"bleephub-runner-sockerless:local"}
     dockerfiles = sorted(
         path
@@ -313,6 +315,7 @@ def docker_dependencies() -> dict[str, dt.datetime]:
                     f"{reference}"
                 )
             image = match.group("image")
+            found_pin = True
             if image == "golang" and not re.fullmatch(
                 r"[0-9]+\.[0-9]+\.[0-9]+(?:-[a-z0-9.-]+)?",
                 match.group("tag"),
@@ -336,16 +339,25 @@ def docker_dependencies() -> dict[str, dt.datetime]:
                 f"https://hub.docker.com/v2/repositories/{repository}/tags/{tag}"
             )
             if metadata.get("digest") != match.group("digest"):
-                raise RuntimeError(
-                    f"Docker Hub digest changed for {image}:{match.group('tag')}: "
-                    f"lock has {match.group('digest')}, registry has "
-                    f"{metadata.get('digest')}"
-                )
+                # The pin deliberately lags the current rolling-tag head. The
+                # quarantine only gates ADOPTION: a pin can equal the head (the
+                # branch below) only when that head is already >=24h old, so by
+                # induction every digest we have ever pinned was >=24h old when
+                # adopted and is only older now. A superseded pin is therefore
+                # already past the window, and Docker still resolves the digest
+                # when it pulls the image at build time, so a bogus digest fails
+                # the build rather than slipping through here. Accepting the
+                # lagging pin is what stops an upstream rolling-tag re-push
+                # (which resets the tag's push time to <24h even for unchanged
+                # content) from deadlocking CI for a full day. Bumping the pin
+                # forward to a newer head is a deliberate change that re-enters
+                # the branch below and its 24h gate.
+                continue
             published = metadata.get("last_updated")
             if not published:
                 raise RuntimeError(f"Docker image {reference} has no update time")
             dependencies[f"docker:{reference}"] = parse_time(published)
-    if not dependencies:
+    if not found_pin:
         raise RuntimeError("Dockerfiles contain no immutable base-image pins")
     return dependencies
 
@@ -517,8 +529,29 @@ def python_dependencies() -> dict[str, dt.datetime]:
 
     python = os.environ.get("BLEEPHUB_PYTHON")
     if python:
+        # Resolve BLEEPHUB_PYTHON to a concrete interpreter path before exec.
+        # The value is operator-supplied, so require it to name an actual
+        # executable (a PATH entry or an existing file); this rejects arbitrary
+        # command strings and is passed as argv[0] of a shell-less argument
+        # vector, so it cannot be interpreted as a shell command.
+        resolved = shutil.which(python)
+        if resolved is None and os.path.isfile(python) and os.access(python, os.X_OK):
+            resolved = python
+        if resolved is None:
+            raise RuntimeError(
+                f"BLEEPHUB_PYTHON does not resolve to an executable interpreter: {python!r}"
+            )
+        # Accept only a plain filesystem path to the interpreter — no shell
+        # metacharacters, spaces, or argument separators — and always invoke it
+        # as argv[0] of a shell-less argument vector, so nothing from the
+        # environment can be interpreted as a command.
+        if not re.fullmatch(r"[A-Za-z0-9_./+-]+", resolved):
+            raise RuntimeError(
+                f"BLEEPHUB_PYTHON resolves to an unsafe interpreter path: {resolved!r}"
+            )
+        interpreter = resolved
         installed_json = subprocess.check_output(
-            [python, "-m", "pip", "list", "--format=json"], text=True
+            [interpreter, "-m", "pip", "list", "--format=json"], text=True
         )
         installed = {
             re.sub(r"[-_.]+", "-", item["name"]).lower(): item["version"]

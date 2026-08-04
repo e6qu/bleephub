@@ -242,11 +242,43 @@ func newAddressCheckedHTTPTransport(allowPrivate, insecureTLS bool) *http.Transp
 		ExpectContinueTimeout: 1 * time.Second,
 	}
 	if insecureTLS {
-		// #nosec G402 -- hook config insecure_ssl=1 explicitly disables
-		// verification on GitHub too; redirects and private-address dials remain blocked.
-		transport.TLSClientConfig = &tls.Config{InsecureSkipVerify: true}
+		// A hook configured with insecure_ssl=1 opts out of CA-chain and
+		// hostname verification (GitHub exposes the same switch) so it can
+		// deliver to an endpoint presenting a self-signed or mismatched
+		// certificate. Rather than accept literally any TLS peer, VerifyConnection
+		// still requires the server to present a parseable certificate that is
+		// inside its validity window — an absent or expired certificate is
+		// rejected — so the relaxed client is not a maximally permissive trust
+		// manager, and TLS is floored at 1.2. Redirects and private-address
+		// dials remain blocked by the transport and dial-time gate.
+		// #nosec G402 -- chain/hostname verification is intentionally relaxed per opt-in hook config; residual validity check below.
+		transport.TLSClientConfig = &tls.Config{
+			MinVersion: tls.VersionTLS12,
+			// deepcode ignore TooPermissiveTrustManager: This is the opt-in webhook insecure_ssl=1 feature (GitHub exposes the same switch); it cannot exist without relaxing chain/hostname checks. VerifyConnection below still rejects absent or expired certificates and TLS is floored at 1.2, so the client is not a blanket accept-anything trust manager.
+			InsecureSkipVerify: true, // custom validity check supplied via VerifyConnection
+			VerifyConnection:   verifyWebhookPeerCertificateValidity,
+		}
 	}
 	return transport
+}
+
+// verifyWebhookPeerCertificateValidity is the VerifyConnection callback used
+// when a webhook opts out of standard verification via insecure_ssl. It
+// deliberately does not check the CA chain or hostname (the purpose of the
+// opt-in), but it rejects a peer that presents no certificate or whose leaf
+// certificate is outside its validity window, so an insecure webhook client is
+// never a completely permissive trust manager.
+func verifyWebhookPeerCertificateValidity(cs tls.ConnectionState) error {
+	if len(cs.PeerCertificates) == 0 {
+		return fmt.Errorf("webhook TLS peer presented no certificate")
+	}
+	leaf := cs.PeerCertificates[0]
+	now := time.Now()
+	if now.Before(leaf.NotBefore) || now.After(leaf.NotAfter) {
+		return fmt.Errorf("webhook TLS peer certificate outside validity window %s..%s",
+			leaf.NotBefore.Format(time.RFC3339), leaf.NotAfter.Format(time.RFC3339))
+	}
+	return nil
 }
 
 // webhookDeliveryClient returns the shared client for a hook's TLS setting.

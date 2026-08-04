@@ -24,6 +24,9 @@ export default defineConfig({
         baseURL: `http://localhost:${PORT}`,
         headless: true,
         storageState: ".auth/storage-state.json",
+        // The marketplace webhook receiver serves a disposable self-signed
+        // certificate on loopback; allow page.request to read its /events feed.
+        ignoreHTTPSErrors: true,
       },
       dependencies: ["setup"],
     },

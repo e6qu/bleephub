@@ -223,12 +223,55 @@ module "fck_nat" {
   tags                 = local.common_tags
 }
 
+# Access policy for the S3 gateway endpoint. It grants this instance's own
+# buckets full access and leaves AWS-owned buckets (ECR image layers, etc.)
+# reachable read-only, so container image pulls and other AWS service traffic
+# over the endpoint keep working while the endpoint is no longer wide open for
+# writes to arbitrary buckets.
+data "aws_iam_policy_document" "s3_endpoint" {
+  count = local.uses_existing_network ? 0 : 1
+
+  statement {
+    sid    = "AppBucketsFullAccess"
+    effect = "Allow"
+    principals {
+      type        = "*"
+      identifiers = ["*"]
+    }
+    actions = [
+      "s3:GetObject",
+      "s3:PutObject",
+      "s3:DeleteObject",
+      "s3:ListBucket",
+      "s3:GetBucketLocation",
+    ]
+    resources = [
+      aws_s3_bucket.git.arn,
+      "${aws_s3_bucket.git.arn}/*",
+      aws_s3_bucket.objects.arn,
+      "${aws_s3_bucket.objects.arn}/*",
+    ]
+  }
+
+  statement {
+    sid    = "AwsServiceBucketReads"
+    effect = "Allow"
+    principals {
+      type        = "*"
+      identifiers = ["*"]
+    }
+    actions   = ["s3:GetObject"]
+    resources = ["*"]
+  }
+}
+
 resource "aws_vpc_endpoint" "s3" {
   count             = local.uses_existing_network ? 0 : 1
   vpc_id            = aws_vpc.this[0].id
   service_name      = "com.amazonaws.${var.region}.s3"
   vpc_endpoint_type = "Gateway"
   route_table_ids   = [for route_table in aws_route_table.private : route_table.id]
+  policy            = data.aws_iam_policy_document.s3_endpoint[0].json
   tags              = merge(local.common_tags, { Name = "${var.name}-s3" })
 }
 
@@ -929,7 +972,15 @@ resource "aws_iam_role_policy" "wake_service" {
 resource "aws_ecs_cluster" "this" {
   count = local.uses_existing_network ? 0 : 1
   name  = var.name
-  tags  = local.common_tags
+
+  # Enable CloudWatch Container Insights so task/container CPU, memory, and
+  # network metrics are captured without instrumenting the workload.
+  setting {
+    name  = "containerInsights"
+    value = "enabled"
+  }
+
+  tags = local.common_tags
 }
 
 resource "aws_acm_certificate" "this" {

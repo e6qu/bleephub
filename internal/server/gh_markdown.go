@@ -9,6 +9,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/microcosm-cc/bluemonday"
 	"github.com/yuin/goldmark"
 	"github.com/yuin/goldmark/extension"
 	ghtml "github.com/yuin/goldmark/renderer/html"
@@ -36,7 +37,24 @@ var (
 		goldmark.WithExtensions(extension.GFM),
 		goldmark.WithRendererOptions(ghtml.WithHardWraps()),
 	)
+	// markdownSanitizer is the allowlist HTML sanitizer applied to every
+	// rendered document before it is served as text/html. goldmark already
+	// escapes raw HTML (no WithUnsafe), but it does NOT strip dangerous URL
+	// schemes such as javascript: or data: from link and image destinations —
+	// so `[x](javascript:alert(1))` would otherwise render an executable link.
+	// The UGC policy allows exactly the element/attribute set GitHub's
+	// html-pipeline produces, restricts URLs to safe schemes, and drops event
+	// handlers, matching GitHub's own markdown output sanitization. `class` is
+	// re-permitted because the reference linkifier emits user-mention /
+	// issue-link classes and fenced code carries language-* hints.
+	markdownSanitizer = newMarkdownSanitizer()
 )
+
+func newMarkdownSanitizer() *bluemonday.Policy {
+	p := bluemonday.UGCPolicy()
+	p.AllowAttrs("class").Globally()
+	return p
+}
 
 func (s *Server) registerGHMarkdownRoutes() {
 	s.route("POST /api/v3/markdown", s.handleRenderMarkdown)
@@ -90,7 +108,13 @@ func (s *Server) handleRenderMarkdownRaw(w http.ResponseWriter, r *http.Request)
 func writeRenderedHTML(w http.ResponseWriter, rendered string) {
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	w.WriteHeader(http.StatusOK)
-	_, _ = w.Write([]byte(rendered))
+	// Enforce the allowlist sanitizer at the response boundary itself: the only
+	// bytes written as text/html are those the policy has stripped of unsafe
+	// URL schemes, event handlers, and disallowed elements. Sanitizing here (in
+	// addition to renderMarkdown) keeps this sink safe no matter which caller
+	// produced the HTML.
+	// deepcode ignore XSS: The bytes are allowlist-sanitized by bluemonday (markdownSanitizer), which strips javascript:/data: URLs, inline event handlers, and disallowed elements — GitHub's own approach. Snyk's go/XSS only credits stdlib HTML-escaping, which would defeat markdown rendering. Verified by TestMarkdownSanitizesDangerousSchemes.
+	_, _ = w.Write([]byte(markdownSanitizer.Sanitize(rendered)))
 }
 
 func (s *Server) renderMarkdown(text, mode, context, baseURL string) (string, error) {
@@ -106,7 +130,9 @@ func (s *Server) renderMarkdown(text, mode, context, baseURL string) (string, er
 	if mode == "gfm" {
 		rendered = s.linkifyGFMReferences(rendered, context, baseURL)
 	}
-	return rendered, nil
+	// Sanitize at the render boundary so the request-derived markdown can never
+	// reach the text/html response with an executable URL scheme or attribute.
+	return markdownSanitizer.Sanitize(rendered), nil
 }
 
 var (

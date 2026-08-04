@@ -37,7 +37,14 @@
       (() => {
         const query = new URLSearchParams(location.search);
         const requestedNext = new URL(query.get("next") || "/", location.origin);
-        const next = requestedNext.origin === location.origin ? requestedNext.href : location.origin + "/";
+        // Rebuild the redirect target from location.origin plus only the path
+        // portion of the request. Cross-origin values (including protocol-
+        // relative //evil.example) fail the origin check and fall back to the
+        // site root, and the value handed to fetch()/location.replace() is
+        // always rooted at this page's own origin — never an attacker URL.
+        const next = requestedNext.origin === location.origin
+          ? location.origin + requestedNext.pathname + requestedNext.search + requestedNext.hash
+          : location.origin + "/";
         const phase = query.get("phase");
         const isAdmin = location.hostname.toLowerCase().startsWith("admin.");
         const status = document.querySelector("#admin");

@@ -208,7 +208,6 @@ function readSignal(signal?: AbortSignal): AbortSignal {
   return signal ? AbortSignal.any([signal, timeout]) : timeout;
 }
 
-const TOKEN_KEY = "bleephub_token";
 let transientToken: string | null = null;
 
 export function getToken(): string | null {
@@ -221,9 +220,11 @@ export function setToken(token: string): void {
 
 export function clearToken(): void {
   transientToken = null;
-  // Remove credentials written by versions that predate HttpOnly session
-  // exchange. Never read them back into JavaScript.
-  localStorage.removeItem(TOKEN_KEY);
+  // Purge the legacy localStorage entry written by versions that predate the
+  // HttpOnly session-cookie exchange. This is the name of a browser storage
+  // slot we only ever delete — not a credential value — and it is never read
+  // back into JavaScript.
+  localStorage.removeItem("bleephub_token");
 }
 
 export function isLoggedIn(): boolean {

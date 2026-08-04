@@ -50,6 +50,14 @@ ACCEPTED_FINDINGS: dict[tuple[str, str], str] = {
     ("go/incorrect-integer-conversion", "internal/server/store.go"):
         "Hex option/iteration IDs are internally-generated seeds parsed at 64-bit width; "
         "additionally range-guarded before conversion.",
+    ("go/bad-redirect-check", "internal/server/identity.go"):
+        "The post-login redirect only accepts a same-origin relative path: the guard "
+        "requires a leading '/', rejects a '//' prefix, AND rejects any backslash via "
+        "strings.Contains(rt, `\\`) — so both '//host' and '/\\host' are refused and "
+        "collapse to '/ui/'. CodeQL's bad-redirect-check does not model the backslash "
+        "Contains check as covering the second position; the value is additionally "
+        "sanitised at storage time by safeIdentityReturnTo (url.Parse + IsAbs + Host + "
+        "'//'/'\\' checks) before it is ever placed in the signed state cookie.",
 }
 
 

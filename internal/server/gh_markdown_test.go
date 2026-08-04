@@ -34,6 +34,22 @@ func TestMarkdownRender(t *testing.T) {
 	}
 }
 
+func TestMarkdownSanitizesDangerousSchemes(t *testing.T) {
+	// goldmark escapes raw HTML but leaves link/image destinations alone, so the
+	// output sanitizer must strip executable URL schemes and inline handlers.
+	status, html := postMarkdown(t, map[string]interface{}{
+		"text": "[click](javascript:alert(1)) and ![x](data:text/html;base64,PHNjcmlwdD4=) <img src=x onerror=alert(1)>",
+	})
+	if status != 200 {
+		t.Fatalf("status = %d", status)
+	}
+	for _, forbidden := range []string{"javascript:", "data:text/html", "onerror"} {
+		if strings.Contains(html, forbidden) {
+			t.Fatalf("rendered HTML still contains %q:\n%s", forbidden, html)
+		}
+	}
+}
+
 func TestMarkdownGFMModeReferences(t *testing.T) {
 	createTestUser(t, "md-mention-user")
 	repoKey := createTestRepo(t)

@@ -25739,13 +25739,13 @@
         "source": "internal/server/gh_gists_rest.go"
       },
       {
-        "line": 42,
+        "line": 60,
         "method": "POST",
         "path": "/api/v3/markdown",
         "source": "internal/server/gh_markdown.go"
       },
       {
-        "line": 43,
+        "line": 61,
         "method": "POST",
         "path": "/api/v3/markdown/raw",
         "source": "internal/server/gh_markdown.go"
