@@ -11,8 +11,8 @@ assert.notEqual(nonAuthenticCredentialSentinel, password, "negative-probe sentin
 const primaryPort = requiredPort("BLEEPHUB_SSO_PRIMARY_PORT");
 const secondaryPort = requiredPort("BLEEPHUB_SSO_SECONDARY_PORT");
 assert.notEqual(primaryPort, secondaryPort, "Bleephub SSO ports must be distinct");
-const primaryOrigin = `http://localhost:${primaryPort}`;
-const secondaryOrigin = `http://127.0.0.1:${secondaryPort}`;
+const primaryOrigin = `https://localhost:${primaryPort}`;
+const secondaryOrigin = `https://127.0.0.1:${secondaryPort}`;
 const shauthOrigin = "http://localhost:8080";
 const primaryLogoutBridge = `${primaryOrigin}/auth/shauth/logout/complete`;
 
@@ -24,7 +24,7 @@ const errors = [];
 try {
   await assertCredentialBoundary(browser);
 
-  const context = await browser.newContext();
+  const context = await browser.newContext({ ignoreHTTPSErrors: true });
   const page = await context.newPage();
   const credentialBoundary = await installCredentialBoundary(context, page);
   const logoutBridgeURLs = [];
@@ -227,6 +227,7 @@ try {
 
 async function assertCredentialBoundary(browser) {
   const headerContext = await browser.newContext({
+    ignoreHTTPSErrors: true,
     extraHTTPHeaders: {
       Authorization: `Basic ${Buffer.from(`${validatorUsername}:${password}`).toString("base64")}`,
     },
@@ -241,7 +242,7 @@ async function assertCredentialBoundary(browser) {
     await headerContext.close();
   }
 
-  const mutatedTargetContext = await browser.newContext();
+  const mutatedTargetContext = await browser.newContext({ ignoreHTTPSErrors: true });
   try {
     const page = await mutatedTargetContext.newPage();
     const boundary = await installCredentialBoundary(mutatedTargetContext, page);
@@ -264,7 +265,7 @@ async function assertCredentialBoundary(browser) {
     await mutatedTargetContext.close();
   }
 
-  const redirectContext = await browser.newContext();
+  const redirectContext = await browser.newContext({ ignoreHTTPSErrors: true });
   try {
     const redirectTarget = `${primaryOrigin}/credential-sink?password=${encodeURIComponent(password)}`;
     const page = await redirectContext.newPage();
