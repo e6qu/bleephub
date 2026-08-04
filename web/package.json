@@ -27,7 +27,7 @@
     "yaml": "^2.9.0"
   },
   "devDependencies": {
-    "@octokit/auth-app": "8.2.0",
+    "@octokit/auth-app": "8.3.0",
     "@playwright/test": "^1.62.1",
     "@tailwindcss/vite": "^4.3.3",
     "@testing-library/jest-dom": "^7.0.0",
