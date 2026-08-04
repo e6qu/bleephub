@@ -95,7 +95,7 @@ func TestUserToJSONNilRendersGhostAccount(t *testing.T) {
 	if got["id"] != 10137 {
 		t.Fatalf("id = %v, want 10137", got["id"])
 	}
-	if got["node_id"] != "MDQ6VXNlcjEwMTM3" {
+	if got["node_id"] != "U_bleephub_ghost" {
 		t.Fatalf("node_id = %v", got["node_id"])
 	}
 	if got["url"] != "/api/v3/users/ghost" {

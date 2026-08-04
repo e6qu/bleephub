@@ -20021,7 +20021,7 @@
         "source": "internal/server/gh_misc_endpoints.go"
       },
       {
-        "line": 78,
+        "line": 77,
         "method": "GET",
         "path": "/api/v3/",
         "source": "internal/server/gh_rest.go"
@@ -22421,7 +22421,7 @@
         "source": "internal/server/gh_projects_classic.go"
       },
       {
-        "line": 81,
+        "line": 80,
         "method": "GET",
         "path": "/api/v3/rate_limit",
         "source": "internal/server/gh_rest.go"
@@ -24155,7 +24155,7 @@
         "source": "internal/server/gh_teams_legacy_rest.go"
       },
       {
-        "line": 79,
+        "line": 78,
         "method": "GET",
         "path": "/api/v3/user",
         "source": "internal/server/gh_rest.go"
@@ -24449,7 +24449,7 @@
         "source": "internal/server/gh_misc_endpoints.go"
       },
       {
-        "line": 80,
+        "line": 79,
         "method": "GET",
         "path": "/api/v3/users/{username}",
         "source": "internal/server/gh_rest.go"

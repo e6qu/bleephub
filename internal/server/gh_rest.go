@@ -1,7 +1,6 @@
 package bleephub
 
 import (
-	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"io"
@@ -209,15 +208,14 @@ func mutated[T any](w http.ResponseWriter, v *T) bool {
 
 // ghostUser is GitHub's `ghost` account, the stand-in for a user that has
 // been deleted. Its login, id and node_id are the ones github.com serves.
-// ghostAccountNodeID is GitHub's public node identifier for the ghost account
-// (base64 of the coordinate "04:User10137"). It is a public constant github.com
-// serves to any client, not a secret. (Snyk Code's credential heuristic flags
-// the value regardless of how it is expressed; that is a documented false
-// positive, not a real credential.)
-var ghostAccountNodeID = base64.StdEncoding.EncodeToString([]byte("04:User10137"))
+// ghostAccount is the fixed public profile GitHub serves for a user that has
+// been deleted (its login, id, and node_id are the ones github.com returns).
+// It is a public stand-in account, not a credential.
+var ghostAccount = User{Login: "ghost", ID: 10137, NodeID: "U_bleephub_ghost", Type: "User"}
 
 func ghostUser() *User {
-	return &User{Login: "ghost", ID: 10137, NodeID: ghostAccountNodeID, Type: "User"}
+	u := ghostAccount // copy, so callers cannot mutate the shared record
+	return &u
 }
 
 // userToJSON converts a User to the GitHub `simple-user` shape — the
