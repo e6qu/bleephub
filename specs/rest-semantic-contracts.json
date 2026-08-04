@@ -23283,6 +23283,114 @@
         "state_changing": false,
         "webhook_actions_event_review": false
       },
+      "operation_id": "interactions/get-pull-request-creation-cap-for-org",
+      "pagination": {
+        "parameters": [],
+        "required": false
+      },
+      "path": "/orgs/{org}/interaction-limits/pulls/creation-cap",
+      "request": {
+        "body": {
+          "media_types": {},
+          "required": false
+        },
+        "parameters": [
+          {
+            "in": "path",
+            "name": "org",
+            "required": true,
+            "type": "string"
+          }
+        ]
+      },
+      "responses": {
+        "documented_statuses": [
+          "200",
+          "403",
+          "404",
+          "405"
+        ],
+        "redirect_statuses": []
+      }
+    },
+    {
+      "authorization": {
+        "alternatives": [],
+        "public": true
+      },
+      "conditional_requests": {
+        "documented": false,
+        "headers": []
+      },
+      "method": "PATCH",
+      "mutation_obligations": {
+        "failure_atomicity_review": true,
+        "persistence_reload_review": true,
+        "state_changing": true,
+        "webhook_actions_event_review": true
+      },
+      "operation_id": "interactions/update-pull-request-creation-cap-for-org",
+      "pagination": {
+        "parameters": [],
+        "required": false
+      },
+      "path": "/orgs/{org}/interaction-limits/pulls/creation-cap",
+      "request": {
+        "body": {
+          "media_types": {
+            "application/json": {
+              "properties": {
+                "enabled": {
+                  "type": "boolean"
+                },
+                "max_open_pull_requests": {
+                  "type": "integer"
+                }
+              },
+              "required_fields": [
+                "enabled"
+              ],
+              "type": "object"
+            }
+          },
+          "required": true
+        },
+        "parameters": [
+          {
+            "in": "path",
+            "name": "org",
+            "required": true,
+            "type": "string"
+          }
+        ]
+      },
+      "responses": {
+        "documented_statuses": [
+          "200",
+          "403",
+          "404",
+          "405",
+          "422"
+        ],
+        "redirect_statuses": []
+      }
+    },
+    {
+      "authorization": {
+        "alternatives": [],
+        "public": true
+      },
+      "conditional_requests": {
+        "documented": false,
+        "headers": []
+      },
+      "method": "GET",
+      "mutation_obligations": {
+        "failure_atomicity_review": false,
+        "persistence_reload_review": false,
+        "state_changing": false,
+        "webhook_actions_event_review": false
+      },
       "operation_id": "orgs/list-pending-invitations",
       "pagination": {
         "parameters": [
@@ -31852,6 +31960,9 @@
                 "parent_team_id": {
                   "type": "integer"
                 },
+                "parent_team_slug": {
+                  "type": "string"
+                },
                 "permission": {
                   "enum": [
                     "pull",
@@ -32039,6 +32150,10 @@
                 "parent_team_id": {
                   "nullable": true,
                   "type": "integer"
+                },
+                "parent_team_slug": {
+                  "nullable": true,
+                  "type": "string"
                 },
                 "permission": {
                   "enum": [
@@ -61654,6 +61769,162 @@
         "documented": false,
         "headers": []
       },
+      "method": "PUT",
+      "mutation_obligations": {
+        "failure_atomicity_review": true,
+        "persistence_reload_review": true,
+        "state_changing": true,
+        "webhook_actions_event_review": true
+      },
+      "operation_id": "pulls/merge-async",
+      "pagination": {
+        "parameters": [],
+        "required": false
+      },
+      "path": "/repos/{owner}/{repo}/pulls/{pull_number}/merge-async",
+      "request": {
+        "body": {
+          "media_types": {
+            "application/json": {
+              "properties": {
+                "commit_message": {
+                  "type": "string"
+                },
+                "commit_title": {
+                  "type": "string"
+                },
+                "merge_action": {
+                  "enum": [
+                    "default",
+                    "direct_merge",
+                    "merge_queue"
+                  ],
+                  "type": "string"
+                },
+                "merge_method": {
+                  "enum": [
+                    "merge",
+                    "squash",
+                    "rebase"
+                  ],
+                  "type": "string"
+                },
+                "sha": {
+                  "type": "string"
+                }
+              },
+              "required_fields": [],
+              "type": "object"
+            }
+          },
+          "required": false
+        },
+        "parameters": [
+          {
+            "in": "path",
+            "name": "owner",
+            "required": true,
+            "type": "string"
+          },
+          {
+            "in": "path",
+            "name": "pull_number",
+            "required": true,
+            "type": "integer"
+          },
+          {
+            "in": "path",
+            "name": "repo",
+            "required": true,
+            "type": "string"
+          }
+        ]
+      },
+      "responses": {
+        "documented_statuses": [
+          "200",
+          "202",
+          "400",
+          "403",
+          "404",
+          "409",
+          "422"
+        ],
+        "redirect_statuses": []
+      }
+    },
+    {
+      "authorization": {
+        "alternatives": [],
+        "public": true
+      },
+      "conditional_requests": {
+        "documented": false,
+        "headers": []
+      },
+      "method": "GET",
+      "mutation_obligations": {
+        "failure_atomicity_review": false,
+        "persistence_reload_review": false,
+        "state_changing": false,
+        "webhook_actions_event_review": false
+      },
+      "operation_id": "pulls/get-merge-async-result",
+      "pagination": {
+        "parameters": [],
+        "required": false
+      },
+      "path": "/repos/{owner}/{repo}/pulls/{pull_number}/merge-async/{uuid}",
+      "request": {
+        "body": {
+          "media_types": {},
+          "required": false
+        },
+        "parameters": [
+          {
+            "in": "path",
+            "name": "owner",
+            "required": true,
+            "type": "string"
+          },
+          {
+            "in": "path",
+            "name": "pull_number",
+            "required": true,
+            "type": "integer"
+          },
+          {
+            "in": "path",
+            "name": "repo",
+            "required": true,
+            "type": "string"
+          },
+          {
+            "in": "path",
+            "name": "uuid",
+            "required": true,
+            "type": "string"
+          }
+        ]
+      },
+      "responses": {
+        "documented_statuses": [
+          "200",
+          "403",
+          "404"
+        ],
+        "redirect_statuses": []
+      }
+    },
+    {
+      "authorization": {
+        "alternatives": [],
+        "public": true
+      },
+      "conditional_requests": {
+        "documented": false,
+        "headers": []
+      },
       "method": "DELETE",
       "mutation_obligations": {
         "failure_atomicity_review": true,
@@ -68623,6 +68894,10 @@
                 "parent_team_id": {
                   "nullable": true,
                   "type": "integer"
+                },
+                "parent_team_slug": {
+                  "nullable": true,
+                  "type": "string"
                 },
                 "permission": {
                   "enum": [
@@ -79270,13 +79545,13 @@
   ],
   "schema_version": 1,
   "source": "internal/server/testdata/github-openapi.json.gz",
-  "source_sha256": "8c0234cbced8ed814f6f9a2369f8dadbc647ae9594d30a109995849bd37d66d5",
+  "source_sha256": "cb00b4372f8188c32ee92824e86a8deec61d678bbf3c49372fb6a09dfe8667c1",
   "summary": {
-    "operations": 1216,
-    "state_changing": 582,
+    "operations": 1220,
+    "state_changing": 584,
     "with_conditional_requests": 0,
     "with_pagination": 283,
-    "with_request_body": 342,
-    "with_required_body": 277
+    "with_request_body": 344,
+    "with_required_body": 278
   }
 }

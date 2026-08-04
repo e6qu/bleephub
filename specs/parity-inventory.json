@@ -99,25 +99,31 @@
       },
       {
         "event": "pull_request",
+        "line": 185,
+        "producer": "emitWebhookEvent",
+        "source": "internal/server/gh_pull_merge_async.go"
+      },
+      {
+        "event": "pull_request",
         "line": 1733,
         "producer": "emitWebhookEvent",
         "source": "internal/server/gh_pulls_graphql.go"
       },
       {
         "event": "pull_request",
-        "line": 122,
+        "line": 124,
         "producer": "emitWebhookEvent",
         "source": "internal/server/gh_pulls_rest.go"
       },
       {
         "event": "pull_request",
-        "line": 435,
+        "line": 437,
         "producer": "emitWebhookEvent",
         "source": "internal/server/gh_pulls_rest.go"
       },
       {
         "event": "pull_request",
-        "line": 532,
+        "line": 534,
         "producer": "emitWebhookEvent",
         "source": "internal/server/gh_pulls_rest.go"
       },
@@ -129,19 +135,19 @@
       },
       {
         "event": "pull_request_review",
-        "line": 709,
+        "line": 711,
         "producer": "emitWebhookEvent",
         "source": "internal/server/gh_pulls_rest.go"
       },
       {
         "event": "pull_request_review",
-        "line": 966,
+        "line": 968,
         "producer": "emitWebhookEvent",
         "source": "internal/server/gh_pulls_rest.go"
       },
       {
         "event": "pull_request_review",
-        "line": 1020,
+        "line": 1022,
         "producer": "emitWebhookEvent",
         "source": "internal/server/gh_pulls_rest.go"
       },
@@ -10078,6 +10084,29 @@
       },
       {
         "method": "GET",
+        "operation_id": "interactions/get-pull-request-creation-cap-for-org",
+        "path": "/orgs/{org}/interaction-limits/pulls/creation-cap",
+        "statuses": [
+          "200",
+          "403",
+          "404",
+          "405"
+        ]
+      },
+      {
+        "method": "PATCH",
+        "operation_id": "interactions/update-pull-request-creation-cap-for-org",
+        "path": "/orgs/{org}/interaction-limits/pulls/creation-cap",
+        "statuses": [
+          "200",
+          "403",
+          "404",
+          "405",
+          "422"
+        ]
+      },
+      {
+        "method": "GET",
         "operation_id": "orgs/list-pending-invitations",
         "path": "/orgs/{org}/invitations",
         "statuses": [
@@ -15518,6 +15547,30 @@
         ]
       },
       {
+        "method": "PUT",
+        "operation_id": "pulls/merge-async",
+        "path": "/repos/{owner}/{repo}/pulls/{pull_number}/merge-async",
+        "statuses": [
+          "200",
+          "202",
+          "400",
+          "403",
+          "404",
+          "409",
+          "422"
+        ]
+      },
+      {
+        "method": "GET",
+        "operation_id": "pulls/get-merge-async-result",
+        "path": "/repos/{owner}/{repo}/pulls/{pull_number}/merge-async/{uuid}",
+        "statuses": [
+          "200",
+          "403",
+          "404"
+        ]
+      },
+      {
         "method": "DELETE",
         "operation_id": "pulls/remove-requested-reviewers",
         "path": "/repos/{owner}/{repo}/pulls/{pull_number}/requested_reviewers",
@@ -18359,9 +18412,13 @@
           "represented_operations": 1190
         },
         "ghec": {
-          "documented_operations": 1458,
-          "missing_operations": [],
-          "represented_operations": 1458
+          "documented_operations": 1465,
+          "missing_operations": [
+            "GET /enterprises/{}/actions/runners/deprecations/{}",
+            "GET /orgs/{}/actions/runners/deprecations/{}",
+            "GET /repos/{}/{}/actions/runners/deprecations/{}"
+          ],
+          "represented_operations": 1462
         },
         "ghes-2.22": {
           "documented_operations": 642,
@@ -19655,7 +19712,7 @@
         "source": "internal/server/gh_repos_rest.go"
       },
       {
-        "line": 50,
+        "line": 54,
         "method": "DELETE",
         "path": "/api/v3/repos/{owner}/{repo}/interaction-limits/pulls/bypass-list",
         "source": "internal/server/gh_pull_extensions.go"
@@ -19751,7 +19808,7 @@
         "source": "internal/server/gh_reactions.go"
       },
       {
-        "line": 39,
+        "line": 41,
         "method": "DELETE",
         "path": "/api/v3/repos/{owner}/{repo}/pulls/{number}/requested_reviewers",
         "source": "internal/server/gh_pulls_rest.go"
@@ -21953,6 +22010,12 @@
         "source": "internal/server/gh_orgs_people_rest.go"
       },
       {
+        "line": 46,
+        "method": "GET",
+        "path": "/api/v3/orgs/{org}/interaction-limits/pulls/creation-cap",
+        "source": "internal/server/gh_pull_extensions.go"
+      },
+      {
         "line": 23,
         "method": "GET",
         "path": "/api/v3/orgs/{org}/invitations",
@@ -23501,7 +23564,7 @@
         "source": "internal/server/gh_repos_rest.go"
       },
       {
-        "line": 46,
+        "line": 50,
         "method": "GET",
         "path": "/api/v3/repos/{owner}/{repo}/interaction-limits/pulls/bypass-list",
         "source": "internal/server/gh_pull_extensions.go"
@@ -23543,7 +23606,7 @@
         "source": "internal/server/gh_labels_rest.go"
       },
       {
-        "line": 64,
+        "line": 68,
         "method": "GET",
         "path": "/api/v3/repos/{owner}/{repo}/issues/{issue_number}/suggestions",
         "source": "internal/server/gh_pull_extensions.go"
@@ -23717,7 +23780,7 @@
         "source": "internal/server/gh_pr_comments.go"
       },
       {
-        "line": 42,
+        "line": 44,
         "method": "GET",
         "path": "/api/v3/repos/{owner}/{repo}/pulls/{number}/commits",
         "source": "internal/server/gh_pulls_rest.go"
@@ -23729,13 +23792,19 @@
         "source": "internal/server/gh_pulls_rest.go"
       },
       {
-        "line": 37,
+        "line": 28,
+        "method": "GET",
+        "path": "/api/v3/repos/{owner}/{repo}/pulls/{number}/merge-async/{uuid}",
+        "source": "internal/server/gh_pulls_rest.go"
+      },
+      {
+        "line": 39,
         "method": "GET",
         "path": "/api/v3/repos/{owner}/{repo}/pulls/{number}/requested_reviewers",
         "source": "internal/server/gh_pulls_rest.go"
       },
       {
-        "line": 31,
+        "line": 33,
         "method": "GET",
         "path": "/api/v3/repos/{owner}/{repo}/pulls/{number}/reviews",
         "source": "internal/server/gh_pulls_rest.go"
@@ -23897,13 +23966,13 @@
         "source": "internal/server/gh_security_advisories.go"
       },
       {
-        "line": 53,
+        "line": 57,
         "method": "GET",
         "path": "/api/v3/repos/{owner}/{repo}/stacks",
         "source": "internal/server/gh_pull_extensions.go"
       },
       {
-        "line": 57,
+        "line": 61,
         "method": "GET",
         "path": "/api/v3/repos/{owner}/{repo}/stacks/{stack_number}",
         "source": "internal/server/gh_pull_extensions.go"
@@ -24999,6 +25068,12 @@
         "method": "PATCH",
         "path": "/api/v3/orgs/{org}/hooks/{id}",
         "source": "internal/server/gh_org_hooks_rest.go"
+      },
+      {
+        "line": 48,
+        "method": "PATCH",
+        "path": "/api/v3/orgs/{org}/interaction-limits/pulls/creation-cap",
+        "source": "internal/server/gh_pull_extensions.go"
       },
       {
         "line": 46,
@@ -26423,13 +26498,13 @@
         "source": "internal/server/gh_reactions.go"
       },
       {
-        "line": 66,
+        "line": 70,
         "method": "POST",
         "path": "/api/v3/repos/{owner}/{repo}/issues/{issue_number}/suggestions/{suggestion_id}/approve",
         "source": "internal/server/gh_pull_extensions.go"
       },
       {
-        "line": 68,
+        "line": 72,
         "method": "POST",
         "path": "/api/v3/repos/{owner}/{repo}/issues/{issue_number}/suggestions/{suggestion_id}/dismiss",
         "source": "internal/server/gh_pull_extensions.go"
@@ -26555,19 +26630,19 @@
         "source": "internal/server/gh_pr_comments.go"
       },
       {
-        "line": 38,
+        "line": 40,
         "method": "POST",
         "path": "/api/v3/repos/{owner}/{repo}/pulls/{number}/requested_reviewers",
         "source": "internal/server/gh_pulls_rest.go"
       },
       {
-        "line": 32,
+        "line": 34,
         "method": "POST",
         "path": "/api/v3/repos/{owner}/{repo}/pulls/{number}/reviews",
         "source": "internal/server/gh_pulls_rest.go"
       },
       {
-        "line": 33,
+        "line": 35,
         "method": "POST",
         "path": "/api/v3/repos/{owner}/{repo}/pulls/{number}/reviews/{review_id}/events",
         "source": "internal/server/gh_pulls_rest.go"
@@ -26651,19 +26726,19 @@
         "source": "internal/server/gh_security_advisories.go"
       },
       {
-        "line": 55,
+        "line": 59,
         "method": "POST",
         "path": "/api/v3/repos/{owner}/{repo}/stacks",
         "source": "internal/server/gh_pull_extensions.go"
       },
       {
-        "line": 59,
+        "line": 63,
         "method": "POST",
         "path": "/api/v3/repos/{owner}/{repo}/stacks/{stack_number}/add",
         "source": "internal/server/gh_pull_extensions.go"
       },
       {
-        "line": 61,
+        "line": 65,
         "method": "POST",
         "path": "/api/v3/repos/{owner}/{repo}/stacks/{stack_number}/unstack",
         "source": "internal/server/gh_pull_extensions.go"
@@ -27635,7 +27710,7 @@
         "source": "internal/server/gh_repos_rest.go"
       },
       {
-        "line": 48,
+        "line": 52,
         "method": "PUT",
         "path": "/api/v3/repos/{owner}/{repo}/interaction-limits/pulls/bypass-list",
         "source": "internal/server/gh_pull_extensions.go"
@@ -27695,13 +27770,19 @@
         "source": "internal/server/gh_pulls_rest.go"
       },
       {
-        "line": 34,
+        "line": 27,
+        "method": "PUT",
+        "path": "/api/v3/repos/{owner}/{repo}/pulls/{number}/merge-async",
+        "source": "internal/server/gh_pulls_rest.go"
+      },
+      {
+        "line": 36,
         "method": "PUT",
         "path": "/api/v3/repos/{owner}/{repo}/pulls/{number}/reviews/{review_id}/dismissals",
         "source": "internal/server/gh_pulls_rest.go"
       },
       {
-        "line": 45,
+        "line": 47,
         "method": "PUT",
         "path": "/api/v3/repos/{owner}/{repo}/pulls/{number}/update-branch",
         "source": "internal/server/gh_pulls_rest.go"
@@ -27851,7 +27932,7 @@
         "source": "internal/server/gh_misc_endpoints.go"
       }
     ],
-    "vendored_openapi_sha256": "8c0234cbced8ed814f6f9a2369f8dadbc647ae9594d30a109995849bd37d66d5"
+    "vendored_openapi_sha256": "cb00b4372f8188c32ee92824e86a8deec61d678bbf3c49372fb6a09dfe8667c1"
   },
   "schema_version": 1,
   "sources": {

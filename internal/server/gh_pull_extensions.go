@@ -43,6 +43,10 @@ func (s *Server) registerGHPullExtensionRoutes() {
 		s.requirePerm(scopeAdministration, permRead, s.handleGetPRCreationCap))
 	s.route("PATCH /api/v3/repos/{owner}/{repo}/interaction-limits/pulls/creation-cap",
 		s.requirePerm(scopeAdministration, permWrite, s.handleUpdatePRCreationCap))
+	s.route("GET /api/v3/orgs/{org}/interaction-limits/pulls/creation-cap",
+		s.requirePerm(scopeOrgAdministration, permRead, s.handleGetOrgPRCreationCap))
+	s.route("PATCH /api/v3/orgs/{org}/interaction-limits/pulls/creation-cap",
+		s.requirePerm(scopeOrgAdministration, permWrite, s.handleUpdateOrgPRCreationCap))
 	s.route("GET /api/v3/repos/{owner}/{repo}/interaction-limits/pulls/bypass-list",
 		s.requirePerm(scopeAdministration, permRead, s.handleGetPRCreationBypass))
 	s.route("PUT /api/v3/repos/{owner}/{repo}/interaction-limits/pulls/bypass-list",
@@ -85,6 +89,26 @@ func (st *Store) SetPRCreationCap(repoKey string, cap PRCreationCap) PRCreationC
 	st.PRCreationCaps[repoKey] = &copy
 	if st.persist != nil {
 		st.persist.MustPut("pr_creation_caps", repoKey, &copy)
+	}
+	return copy
+}
+
+func (st *Store) GetOrgPRCreationCap(orgLogin string) PRCreationCap {
+	st.mu.RLock()
+	defer st.mu.RUnlock()
+	if cap := st.OrgPRCreationCaps[orgLogin]; cap != nil {
+		return *cap
+	}
+	return PRCreationCap{Enabled: false, MaxOpenPullRequests: 10}
+}
+
+func (st *Store) SetOrgPRCreationCap(orgLogin string, cap PRCreationCap) PRCreationCap {
+	st.mu.Lock()
+	defer st.mu.Unlock()
+	copy := cap
+	st.OrgPRCreationCaps[orgLogin] = &copy
+	if st.persist != nil {
+		st.persist.MustPut("org_pr_creation_caps", orgLogin, &copy)
 	}
 	return copy
 }
@@ -186,6 +210,42 @@ func (s *Server) handleUpdatePRCreationCap(w http.ResponseWriter, r *http.Reques
 		current.MaxOpenPullRequests = *request.MaxOpenPullRequests
 	}
 	writeJSON(w, http.StatusOK, s.store.SetPRCreationCap(repo.FullName, current))
+}
+
+func (s *Server) handleGetOrgPRCreationCap(w http.ResponseWriter, r *http.Request) {
+	org, _ := s.resolveOrgOwner(w, r)
+	if org == nil {
+		return
+	}
+	writeJSON(w, http.StatusOK, s.store.GetOrgPRCreationCap(org.Login))
+}
+
+func (s *Server) handleUpdateOrgPRCreationCap(w http.ResponseWriter, r *http.Request) {
+	org, _ := s.resolveOrgOwner(w, r)
+	if org == nil {
+		return
+	}
+	var request struct {
+		Enabled             *bool `json:"enabled"`
+		MaxOpenPullRequests *int  `json:"max_open_pull_requests"`
+	}
+	if !decodeJSONBody(w, r, &request) {
+		return
+	}
+	if request.Enabled == nil {
+		writeGHValidationError(w, "PullRequestCreationCap", "enabled", "missing_field")
+		return
+	}
+	current := s.store.GetOrgPRCreationCap(org.Login)
+	current.Enabled = *request.Enabled
+	if request.MaxOpenPullRequests != nil {
+		if *request.MaxOpenPullRequests < 1 || *request.MaxOpenPullRequests > 1000 {
+			writeGHValidationError(w, "PullRequestCreationCap", "max_open_pull_requests", "invalid")
+			return
+		}
+		current.MaxOpenPullRequests = *request.MaxOpenPullRequests
+	}
+	writeJSON(w, http.StatusOK, s.store.SetOrgPRCreationCap(org.Login, current))
 }
 
 func (s *Server) handleGetPRCreationBypass(w http.ResponseWriter, r *http.Request) {

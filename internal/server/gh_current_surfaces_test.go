@@ -225,3 +225,92 @@ func TestCurrentPullRequestControlsStacksAndSuggestionsREST(t *testing.T) {
 		t.Fatalf("dismissed suggestion = %#v", got)
 	}
 }
+
+func TestOrgPRCreationCapAndMergeAsyncREST(t *testing.T) {
+	srv := testServer
+	st := srv.store
+	admin := st.UsersByLogin["admin"]
+	org := st.CreateOrg(admin, "async-merge-org", "Async merge org", "")
+	orgCapBase := "/api/v3/orgs/" + org.Login + "/interaction-limits/pulls/creation-cap"
+
+	// Default org creation cap: disabled, 10.
+	resp := ghGet(t, orgCapBase, defaultToken)
+	requireHTTPStatus(t, resp, http.StatusOK)
+	if cap := decodeJSON(t, resp); cap["enabled"] != false || cap["max_open_pull_requests"].(float64) != 10 {
+		t.Fatalf("default org creation cap = %#v", cap)
+	}
+
+	// Update and read back.
+	resp = ghPatch(t, orgCapBase, defaultToken, map[string]interface{}{"enabled": true, "max_open_pull_requests": 5})
+	requireHTTPStatus(t, resp, http.StatusOK)
+	if cap := decodeJSON(t, resp); cap["enabled"] != true || cap["max_open_pull_requests"].(float64) != 5 {
+		t.Fatalf("updated org creation cap = %#v", cap)
+	}
+	resp = ghGet(t, orgCapBase, defaultToken)
+	requireHTTPStatus(t, resp, http.StatusOK)
+	if cap := decodeJSON(t, resp); cap["max_open_pull_requests"].(float64) != 5 {
+		t.Fatalf("persisted org creation cap = %#v", cap)
+	}
+
+	// Missing enabled and out-of-range max are validation errors.
+	resp = ghPatch(t, orgCapBase, defaultToken, map[string]interface{}{"max_open_pull_requests": 3})
+	requireHTTPStatus(t, resp, http.StatusUnprocessableEntity)
+	resp.Body.Close()
+	resp = ghPatch(t, orgCapBase, defaultToken, map[string]interface{}{"enabled": true, "max_open_pull_requests": 5000})
+	requireHTTPStatus(t, resp, http.StatusUnprocessableEntity)
+	resp.Body.Close()
+
+	// --- Async merge ---
+	owner := "asyncowner"
+	repoName := "async-repo"
+	repoKey := owner + "/" + repoName
+	commitFilesToStorage(t, srv, repoKey, map[string]string{"README.md": "hi"})
+	repo := st.GetRepo(owner, repoName)
+	user := st.UsersByLogin[owner]
+	stor := st.GetGitStorage(owner, repoName)
+	headBranch := "main"
+	if resolveBranchSha(stor, "main") == "" {
+		headBranch = "master"
+	}
+	seedStorePullRequestBranches(t, st, repo, headBranch, "base")
+	pr := st.CreatePullRequest(repo.ID, user.ID, "async", "", headBranch, "base", false, nil, nil, 0)
+	if pr == nil {
+		t.Fatal("PR not created")
+	}
+	st.UpdatePullRequest(pr.ID, func(p *PullRequest) { p.Mergeable = "MERGEABLE" })
+
+	asyncBase := fmt.Sprintf("/api/v3/repos/%s/pulls/%d/merge-async", repoKey, pr.Number)
+	resp = ghPut(t, asyncBase, defaultToken, map[string]interface{}{"merge_method": "squash"})
+	requireHTTPStatus(t, resp, http.StatusAccepted)
+	enq := decodeJSON(t, resp)
+	if enq["status"] != "enqueued" {
+		t.Fatalf("merge-async enqueue = %#v", enq)
+	}
+	mergeUUID, _ := enq["details"].(map[string]interface{})["uuid"].(string)
+	if mergeUUID == "" {
+		t.Fatalf("merge-async enqueue missing uuid: %#v", enq)
+	}
+
+	// Poll the result: merged, with a merge commit sha.
+	resp = ghGet(t, asyncBase+"/"+mergeUUID, defaultToken)
+	requireHTTPStatus(t, resp, http.StatusOK)
+	res := decodeJSON(t, resp)
+	if res["status"] != "merged" {
+		t.Fatalf("merge-async result = %#v", res)
+	}
+	if sha, _ := res["details"].(map[string]interface{})["sha"].(string); sha == "" {
+		t.Fatalf("merge-async result missing sha: %#v", res)
+	}
+
+	// A second async merge reports already-merged (200).
+	resp = ghPut(t, asyncBase, defaultToken, map[string]interface{}{})
+	requireHTTPStatus(t, resp, http.StatusOK)
+	if again := decodeJSON(t, resp); again["status"] != "merged" {
+		t.Fatalf("second merge-async = %#v", again)
+	}
+
+	// Unknown poll uuid is a 404.
+	resp = ghGet(t, asyncBase+"/does-not-exist", defaultToken)
+	requireHTTPStatus(t, resp, http.StatusNotFound)
+	resp.Body.Close()
+}
