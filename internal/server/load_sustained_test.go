@@ -210,7 +210,7 @@ func TestLoadWebhookDeliveryBounded(t *testing.T) {
 	repoKey := repo.FullName
 
 	var received atomic.Int64
-	sink := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	sink := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		received.Add(1)
 		w.WriteHeader(http.StatusOK)
 	}))

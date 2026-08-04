@@ -122,6 +122,9 @@ func TestMain(m *testing.M) {
 	// Webhook receivers in this suite are httptest servers on loopback, which
 	// delivery refuses unless the instance opts in.
 	os.Setenv("BLEEPHUB_ALLOW_PRIVATE_OUTBOUND_TARGETS", "true")
+	// Webhook delivery is https-only; trust the shared httptest TLS certificate
+	// so loopback httptest.NewTLSServer receivers verify without insecure_ssl.
+	installWebhookTestTLSRoots()
 	_, hostKey, err := ed25519.GenerateKey(rand.Reader)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "generate SSH host key: %v\n", err)

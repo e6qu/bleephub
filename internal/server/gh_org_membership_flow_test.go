@@ -459,7 +459,7 @@ func TestOrgWebhooks(t *testing.T) {
 	// Capture deliveries.
 	var mu sync.Mutex
 	var events []string
-	sink := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	sink := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		mu.Lock()
 		events = append(events, r.Header.Get("X-GitHub-Event")+":"+r.Header.Get("X-GitHub-Hook-Installation-Target-Type"))
 		mu.Unlock()

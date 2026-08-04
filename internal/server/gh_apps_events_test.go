@@ -28,7 +28,7 @@ func TestInstallationCreatedFiresAppWebhook(t *testing.T) {
 		appID       float64
 	}
 	got := make(chan capture, 1)
-	sink := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	sink := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		var body map[string]any
 		raw, _ := bytesReadAll(r)
 		_ = json.Unmarshal(raw, &body)

@@ -38,6 +38,7 @@ RUN case "$TARGETARCH" in \
         *) echo "Unsupported target architecture: $TARGETARCH" >&2; exit 1 ;; \
     esac && \
     apt-get update && \
+    DEBIAN_FRONTEND=noninteractive apt-get upgrade -y && \
     DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends ca-certificates curl && \
     rm -rf /var/lib/apt/lists/* && \
     useradd --create-home --home-dir /opt/actions-runner --shell /bin/bash runner && \

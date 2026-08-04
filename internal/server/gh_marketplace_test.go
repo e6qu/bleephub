@@ -150,7 +150,7 @@ func TestMarketplacePublisherBuyerAndBillingLifecycle(t *testing.T) {
 		body                                 map[string]interface{}
 	}
 	deliveries := make(chan delivery, 4)
-	sink := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	sink := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		var body map[string]interface{}
 		_ = json.NewDecoder(r.Body).Decode(&body)
 		deliveries <- delivery{event: r.Header.Get("X-GitHub-Event"), action: r.Header.Get("X-GitHub-Hook-ID"),
@@ -363,7 +363,7 @@ func TestMarketplaceOrganizationIdentityDoesNotCollideWithUserID(t *testing.T) {
 }
 
 func TestMarketplaceNotFoundIsScopedToAuthenticatedPublisher(t *testing.T) {
-	sink := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(http.StatusNoContent) }))
+	sink := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(http.StatusNoContent) }))
 	defer sink.Close()
 	listing := publishMarketplaceGitHubApp(t, "Marketplace Scope App", sink.URL)
 	app := testServer.store.GetApp(listing.appID)
@@ -387,7 +387,7 @@ func TestMarketplaceNotFoundIsScopedToAuthenticatedPublisher(t *testing.T) {
 }
 
 func TestMarketplacePublisherEditsPlansAndDeletesUnusedListing(t *testing.T) {
-	sink := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(http.StatusNoContent) }))
+	sink := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(http.StatusNoContent) }))
 	defer sink.Close()
 	listing := publishMarketplaceGitHubApp(t, "Marketplace Publisher App", sink.URL)
 	settingsPath := "/settings/apps/marketplace-publisher-app/marketplace"
@@ -409,7 +409,7 @@ func TestMarketplacePublisherEditsPlansAndDeletesUnusedListing(t *testing.T) {
 
 func TestMarketplaceOAuthAppUsesListingWebhookAndIndependentSubscriptionIdentity(t *testing.T) {
 	deliveries := make(chan map[string]interface{}, 2)
-	sink := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	sink := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Header.Get("X-GitHub-Event") != "marketplace_purchase" || !strings.HasPrefix(r.Header.Get("X-Hub-Signature-256"), "sha256=") {
 			w.WriteHeader(http.StatusBadRequest)
 			return

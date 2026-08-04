@@ -124,7 +124,7 @@ func assertHookShape(t *testing.T, h hookResp, targetURL string) {
 // and verifies the response shape matches GitHub's published schema.
 func TestHooks_CRUD(t *testing.T) {
 	// Spin up a trivial HTTP target that returns 200 for every POST.
-	target := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	target := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		io.Copy(io.Discard, r.Body)
 		w.WriteHeader(http.StatusOK)
 	}))
@@ -241,7 +241,7 @@ func TestHooks_CRUD(t *testing.T) {
 // and that delivery objects carry the fields GitHub's schema requires.
 func TestHooks_Ping(t *testing.T) {
 	received := make(chan struct{}, 1)
-	target := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	target := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Header.Get("X-GitHub-Event") != "" {
 			received <- struct{}{}
 		}
@@ -345,7 +345,7 @@ func TestHooks_Ping(t *testing.T) {
 // the redelivery flag is set to true.
 func TestHooks_Deliveries_Redeliver(t *testing.T) {
 	delivered := make(chan string, 10)
-	target := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	target := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		delivered <- r.Header.Get("X-GitHub-Event")
 		io.Copy(io.Discard, r.Body)
 		w.WriteHeader(http.StatusOK)
@@ -458,7 +458,7 @@ func TestHooks_ValidationError(t *testing.T) {
 func TestHooks_ConfigContentTypeRoundTrip(t *testing.T) {
 	// Active hooks fire a ping on creation; sink it in-process so the unit test
 	// makes no real outbound request to example.com.
-	sink := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	sink := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		io.Copy(io.Discard, r.Body)
 		w.WriteHeader(http.StatusOK)
 	}))
@@ -518,7 +518,7 @@ func TestHooks_ConfigContentTypeRoundTrip(t *testing.T) {
 	// PATCH back to form/0 and confirm.
 	patchResp := ghPatch(t, "/api/v3/repos/"+repo+"/hooks/"+strconv.Itoa(h2.ID), defaultToken, map[string]interface{}{
 		"config": map[string]interface{}{
-			"url":          "http://example.com/hook2",
+			"url":          "https://example.com/hook2",
 			"content_type": "form",
 			"insecure_ssl": "0",
 		},
@@ -533,7 +533,7 @@ func TestHooks_ConfigContentTypeRoundTrip(t *testing.T) {
 func TestHooks_NameValidation(t *testing.T) {
 	// The accepted hook is active and fires a ping on creation; sink it
 	// in-process so the unit test makes no real outbound request to example.com.
-	sink := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	sink := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		io.Copy(io.Discard, r.Body)
 		w.WriteHeader(http.StatusOK)
 	}))
@@ -560,7 +560,7 @@ func TestHooks_NameValidation(t *testing.T) {
 	// A non-"web" name is rejected with 422.
 	bad := ghPost(t, "/api/v3/repos/"+repo+"/hooks", defaultToken, map[string]interface{}{
 		"name":   "slack",
-		"config": map[string]interface{}{"url": "http://example.com/hook"},
+		"config": map[string]interface{}{"url": "https://example.com/hook"},
 		"events": []string{"push"},
 	})
 	bad.Body.Close()
@@ -572,7 +572,7 @@ func TestHooks_NameValidation(t *testing.T) {
 // TestHooks_LastResponseAfterDelivery verifies hook.last_response is "unused"
 // before any delivery and reflects the delivery outcome afterwards.
 func TestHooks_LastResponseAfterDelivery(t *testing.T) {
-	target := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	target := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		io.Copy(io.Discard, r.Body)
 		w.WriteHeader(http.StatusOK)
 	}))
@@ -624,7 +624,7 @@ func TestHooks_LastResponseAfterDelivery(t *testing.T) {
 // no synthetic {id,redelivery} JSON body (GitHub returns a minimal/empty body).
 func TestHooks_RedeliverEmptyBody(t *testing.T) {
 	delivered := make(chan struct{}, 4)
-	target := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	target := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		io.Copy(io.Discard, r.Body)
 		delivered <- struct{}{}
 		w.WriteHeader(http.StatusOK)

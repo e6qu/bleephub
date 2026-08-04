@@ -16,7 +16,7 @@ func TestRepoWebhookConfig_GetAndPatch(t *testing.T) {
 
 	// The active hook fires a ping on creation; sink it in-process so the unit
 	// test makes no real outbound request to example.com.
-	sink := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	sink := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		io.Copy(io.Discard, r.Body)
 		w.WriteHeader(http.StatusOK)
 	}))
@@ -87,7 +87,7 @@ func TestRepoWebhookTest_DeliversRealPushEvent(t *testing.T) {
 	requireStatus(t, resp, 201)
 
 	received := make(chan *http.Request, 1)
-	receiver := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	receiver := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		body, _ := io.ReadAll(r.Body)
 		req := r.Clone(r.Context())
 		req.Body = io.NopCloser(strings.NewReader(string(body)))
@@ -137,7 +137,7 @@ func TestRepoWebhookTest_DeliversRealPushEvent(t *testing.T) {
 func TestRepoWebhookTest_RejectsMissingDefaultBranchHead(t *testing.T) {
 	repo := createRepoWriteRepo(t, false)
 
-	receiver := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	receiver := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		t.Fatal("webhook test delivered despite missing default-branch head")
 	}))
 	defer receiver.Close()
