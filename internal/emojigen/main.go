@@ -33,6 +33,7 @@ import (
 	"os"
 	"path"
 	"path/filepath"
+	"regexp"
 	"sort"
 	"strings"
 	"time"
@@ -62,7 +63,7 @@ func main() {
 	tarballPath := flag.String("twemoji-tarball", "", "local copy of the pinned twemoji source tarball; downloaded from GitHub when empty. Must match twemojiTarballSHA256 either way")
 	flag.Parse()
 
-	catalog, err := os.ReadFile(filepath.Clean(*catalogPath))
+	catalog, err := os.ReadFile(localBuildPath(*catalogPath))
 	if err != nil {
 		log.Fatalf("read catalog: %v", err)
 	}
@@ -139,7 +140,7 @@ func main() {
 		log.Fatalf("build archive: %v", err)
 	}
 	// #nosec G306 -- generated emoji artwork is a distributable public asset.
-	if err := os.WriteFile(filepath.Clean(*outPath), archive, 0o644); err != nil {
+	if err := os.WriteFile(localBuildPath(*outPath), archive, 0o644); err != nil {
 		log.Fatalf("write %s: %v", *outPath, err)
 	}
 	log.Printf("wrote %s: %d unicode + %d custom emoji, %d bytes",
@@ -167,10 +168,31 @@ func readTwemojiTarball(localPath string) ([]byte, error) {
 	return tarball, nil
 }
 
+// buildPathPattern restricts operator-supplied build paths to an explicit safe
+// alphabet; combined with the "no .." check it forbids parent-directory
+// traversal in the catalog, output, and tarball paths.
+var buildPathPattern = regexp.MustCompile(`^/?[A-Za-z0-9._/-]+$`)
+
+// localBuildPath validates and canonicalizes an operator-supplied build path.
+// emojigen is a build-time command; its paths come from the operator's command
+// line, never from a request. A path outside the safe alphabet or containing
+// ".." is rejected, and the rest are resolved to a clean absolute path before
+// any file is opened.
+func localBuildPath(p string) string {
+	if p == "" || strings.Contains(p, "..") || !buildPathPattern.MatchString(p) {
+		log.Fatalf("path %q is not an allowed build path", p)
+	}
+	resolved, err := filepath.Abs(p)
+	if err != nil {
+		log.Fatalf("resolve path %q: %v", p, err)
+	}
+	return filepath.Clean(resolved)
+}
+
 func fetchTwemojiTarball(localPath string) ([]byte, error) {
 	if localPath != "" {
 		// #nosec G304 -- localPath is explicitly selected by the build operator.
-		return os.ReadFile(filepath.Clean(localPath))
+		return os.ReadFile(localBuildPath(localPath))
 	}
 	return fetchTwemojiFromUpstream()
 }

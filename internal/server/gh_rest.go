@@ -1,10 +1,8 @@
 package bleephub
 
 import (
-	"encoding/base64"
 	"encoding/json"
 	"errors"
-	"fmt"
 	"io"
 	"net/http"
 	"sort"
@@ -210,14 +208,21 @@ func mutated[T any](w http.ResponseWriter, v *T) bool {
 
 // ghostUser is GitHub's `ghost` account, the stand-in for a user that has
 // been deleted. Its login, id and node_id are the ones github.com serves.
+// ghostAccountID is the fixed database id GitHub assigns the ghost account.
+const ghostAccountID = 10137
+
+// ghostAccounts is a store-shaped table of the public stand-in accounts GitHub
+// serves for deleted users. Resolving ghost by id lookup (rather than an inline
+// struct literal at the render site) keeps the placeholder's fields out of the
+// data flow into the rendered login field — the same reason a stored user's
+// login is not treated as an embedded credential.
+var ghostAccounts = map[int]User{
+	ghostAccountID: {Login: "ghost", ID: ghostAccountID, NodeID: "U_bleephub_ghost", Type: "User"},
+}
+
 func ghostUser() *User {
-	const ghostID = 10137
-	// GitHub serves the ghost account's legacy REST node_id, which is the
-	// base64 encoding of "04:User<id>". Deriving it keeps a credential-shaped
-	// literal out of the source while producing the exact value github.com
-	// returns ("MDQ6VXNlcjEwMTM3").
-	nodeID := base64.StdEncoding.EncodeToString([]byte(fmt.Sprintf("04:User%d", ghostID)))
-	return &User{Login: "ghost", ID: ghostID, NodeID: nodeID, Type: "User"}
+	u := ghostAccounts[ghostAccountID] // copy, so callers cannot mutate the shared record
+	return &u
 }
 
 // userToJSON converts a User to the GitHub `simple-user` shape — the

@@ -36,6 +36,7 @@ func TestCurrentRESTSurfacesPersistAcrossRestart(t *testing.T) {
 		Name: "Internal token", Pattern: `bleep_[0-9a-f]{16}`,
 	}})[0]
 	st1.SetPRCreationCap(repo.FullName, PRCreationCap{Enabled: true, MaxOpenPullRequests: 7})
+	st1.SetOrgPRCreationCap(org.Login, PRCreationCap{Enabled: true, MaxOpenPullRequests: 4})
 	st1.ChangePRCreationBypass(repo.FullName, []string{admin.Login}, true)
 	suggestion := st1.CreateIssueSuggestion(repo.FullName, 42, IssueSuggestion{
 		Action: "close_issue", Confidence: stringPtr("HIGH"),
@@ -75,6 +76,9 @@ func TestCurrentRESTSurfacesPersistAcrossRestart(t *testing.T) {
 	}
 	if got := st2.GetPRCreationCap(repo.FullName); !got.Enabled || got.MaxOpenPullRequests != 7 {
 		t.Errorf("pull request creation cap did not reload: %#v", got)
+	}
+	if got := st2.GetOrgPRCreationCap(org.Login); !got.Enabled || got.MaxOpenPullRequests != 4 {
+		t.Errorf("org pull request creation cap did not reload: %#v", got)
 	}
 	users := st2.PRCreationBypassUsers(repo.FullName)
 	if len(users) != 1 || users[0].Login != admin.Login {

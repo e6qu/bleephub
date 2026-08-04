@@ -604,6 +604,8 @@ type Store struct {
 	SecretScanningCustomPatterns map[string]map[int]*SecretScanningCustomPattern // "org:<login>" or "repo:<full>" → id → pattern
 	NextSecretScanningPatternID  int
 	PRCreationCaps               map[string]*PRCreationCap           // repo full name → cap
+	OrgPRCreationCaps            map[string]*PRCreationCap           // org login → cap
+	PullRequestMergeAsync        map[string]*PullRequestMergeAsync   // uuid → async merge record
 	PRCreationBypass             map[string]map[string]bool          // repo full name → login set
 	IssueSuggestions             map[string]map[int]*IssueSuggestion // "owner/repo#issueID" → id → suggestion
 	NextIssueSuggestionID        int
@@ -1017,6 +1019,8 @@ func NewStore() *Store {
 		SecretScanningCustomPatterns: make(map[string]map[int]*SecretScanningCustomPattern),
 		NextSecretScanningPatternID:  1,
 		PRCreationCaps:               make(map[string]*PRCreationCap),
+		OrgPRCreationCaps:            make(map[string]*PRCreationCap),
+		PullRequestMergeAsync:        make(map[string]*PullRequestMergeAsync),
 		PRCreationBypass:             make(map[string]map[string]bool),
 		IssueSuggestions:             make(map[string]map[int]*IssueSuggestion),
 		NextIssueSuggestionID:        1,
@@ -3263,6 +3267,17 @@ func (st *Store) loadFromPersistence() error {
 				return fmt.Errorf("decode pr_creation_caps row: %w", err)
 			}
 			st.PRCreationCaps[repoKey] = &cap
+		}
+	}
+	if rows, err := st.persist.List("org_pr_creation_caps"); err != nil {
+		return fmt.Errorf("load org_pr_creation_caps: %w", err)
+	} else {
+		for orgLogin, raw := range rows {
+			var cap PRCreationCap
+			if err := loadJSON(raw, &cap); err != nil {
+				return fmt.Errorf("decode org_pr_creation_caps row: %w", err)
+			}
+			st.OrgPRCreationCaps[orgLogin] = &cap
 		}
 	}
 	if rows, err := st.persist.List("pr_creation_bypass"); err != nil {

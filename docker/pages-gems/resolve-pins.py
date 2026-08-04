@@ -24,7 +24,21 @@ ROOT_GEM = "github-pages"
 ROOT_REQUIREMENT = "= 232"
 TARGET_RUBY = "3.2.3"
 
-CACHE = os.environ.get("GEM_INDEX_CACHE", "")
+_raw_cache = os.environ.get("GEM_INDEX_CACHE", "")
+# Resolve the cache directory to a canonical absolute path once, so every cached
+# entry can be confined beneath it (see cache_path).
+CACHE = os.path.realpath(_raw_cache) if _raw_cache else ""
+
+
+def cache_path(cache_name):
+    """Return the absolute path of a cache entry, refusing any that would land
+    outside CACHE. cache_name is already restricted to [A-Za-z0-9_.-] with "."
+    and ".." rejected, so this is defence in depth against the directory itself
+    being manipulated."""
+    resolved = os.path.realpath(os.path.join(CACHE, cache_name))
+    if os.path.commonpath([CACHE, resolved]) != CACHE:
+        raise SystemExit("gem cache path escaped GEM_INDEX_CACHE: %r" % cache_name)
+    return resolved
 
 
 @functools.lru_cache(maxsize=None)
@@ -37,7 +51,7 @@ def index_entry(gem):
         raise SystemExit("unsafe gem name %r" % gem)
     cache_name = gem.replace("/", "_")
     if CACHE:
-        path = os.path.join(CACHE, cache_name)
+        path = cache_path(cache_name)
         if os.path.exists(path):
             return open(path, encoding="utf-8").read()
     # Python 3.10+ verifies HTTPSConnection certificates by default; the host
@@ -53,7 +67,7 @@ def index_entry(gem):
         connection.close()
     if CACHE:
         os.makedirs(CACHE, exist_ok=True)
-        with open(os.path.join(CACHE, cache_name), "w", encoding="utf-8") as f:
+        with open(cache_path(cache_name), "w", encoding="utf-8") as f:
             f.write(body)
     return body
 

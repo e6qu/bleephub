@@ -24,6 +24,8 @@ func (s *Server) registerGHPullRoutes() {
 	s.route("PATCH /api/v3/repos/{owner}/{repo}/pulls/{number}", s.requirePerm(scopePullRequests, permWrite, s.handleUpdatePullRequest))
 	s.route("PUT /api/v3/repos/{owner}/{repo}/pulls/{number}/merge", s.requirePerm(scopeContents, permWrite, s.handleMergePullRequest))
 	s.route("GET /api/v3/repos/{owner}/{repo}/pulls/{number}/merge", s.handleCheckPullRequestMerged)
+	s.route("PUT /api/v3/repos/{owner}/{repo}/pulls/{number}/merge-async", s.requirePerm(scopeContents, permWrite, s.handleMergePullRequestAsync))
+	s.route("GET /api/v3/repos/{owner}/{repo}/pulls/{number}/merge-async/{uuid}", s.requirePerm(scopeContents, permRead, s.handleGetMergePullRequestAsyncResult))
 
 	// PR reviews. The 3-segment GET/PUT/DELETE paths conflict with PR
 	// review-comment reaction routes under Go 1.22's mux, so they are
