@@ -3,7 +3,7 @@ WORKDIR /src
 COPY . .
 RUN CGO_ENABLED=0 go build -tags noui -o /out/bleephub ./cmd/bleephub
 
-FROM ubuntu:26.04@sha256:678c6550cc43645e08669028bc177f50be4e7c5b8cca677067b1914d4afc7a03
+FROM ubuntu:26.04@sha256:3131b4cc82a783df6c9df078f86e01819a13594b865c2cad47bd1bca2b7063bb
 RUN apt-get update && apt-get install -y --no-install-recommends curl ca-certificates jq git openssl zip && rm -rf /var/lib/apt/lists/*
 # gh is pinned to the exact version the compatibility docs verify
 # (docs/BLEEPHUB_GH_CLI.md: "verified on 2.92.0"). The cli.github.com apt
