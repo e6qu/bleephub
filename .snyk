@@ -1,0 +1,35 @@
+# Snyk (https://snyk.io) policy file.
+#
+# Documented ignores for three Snyk Code (SAST) findings that are proven false
+# positives. Each already has a real, verified code-level mitigation; Snyk's
+# taint engine structurally cannot recognize the barrier (it would require
+# either breaking functionality or removing an intentional feature). See the
+# inline `deepcode ignore` comment at each site for the full rationale.
+version: v1.25.0
+ignore:
+  go/XSS:
+    - internal/server/gh_markdown.go:
+        reason: >-
+          Rendered markdown is allowlist-sanitized by bluemonday
+          (markdownSanitizer), which strips javascript:/data: URLs, inline event
+          handlers, and disallowed elements — the same approach GitHub uses.
+          Snyk's go/XSS only credits stdlib HTML-escaping, which would defeat
+          markdown rendering. Verified by TestMarkdownSanitizesDangerousSchemes.
+        expires: 2027-08-04T00:00:00.000Z
+  go/Ssrf:
+    - internal/emojigen/main.go:
+        reason: >-
+          Build-time asset-vendoring tool. The request target is a compile-time
+          constant (twemojiTarballURL), validated https/host by
+          ensureTwemojiURLIsPinnedHTTPS and SHA-256 pinned after fetch; it is
+          never derived from caller input, an environment value, or a redirect.
+        expires: 2027-08-04T00:00:00.000Z
+  go/TooPermissiveTrustManager:
+    - internal/server/webhooks.go:
+        reason: >-
+          InsecureSkipVerify IS the opt-in webhook insecure_ssl=1 feature
+          (GitHub exposes the same switch) and cannot exist without relaxing
+          chain/hostname verification. The VerifyConnection callback still
+          rejects absent or expired certificates and TLS is floored at 1.2, so
+          the client is not a blanket accept-anything trust manager.
+        expires: 2027-08-04T00:00:00.000Z

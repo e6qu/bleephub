@@ -474,7 +474,15 @@ func (s *Server) handleShauthCallback(w http.ResponseWriter, r *http.Request) {
 		writeGHError(w, http.StatusServiceUnavailable, "browser session is unavailable")
 		return
 	}
-	http.Redirect(w, r, pending.ReturnTo, http.StatusFound)
+	// Only redirect to a same-origin relative path. Anything else — an absolute
+	// URL, a protocol-relative //host, or a backslash trick — collapses to the
+	// app root, so a tampered stored ReturnTo can never become an open redirect
+	// to an attacker-controlled origin.
+	redirectTarget := "/ui/"
+	if rt := pending.ReturnTo; strings.HasPrefix(rt, "/") && !strings.HasPrefix(rt, "//") && !strings.Contains(rt, "\\") {
+		redirectTarget = rt
+	}
+	http.Redirect(w, r, redirectTarget, http.StatusFound)
 }
 
 func safeIdentityReturnTo(value string) string {
@@ -648,7 +656,15 @@ func (s *Server) handleGitHubCallback(w http.ResponseWriter, r *http.Request) {
 		writeGHError(w, http.StatusServiceUnavailable, "browser session is unavailable")
 		return
 	}
-	http.Redirect(w, r, pending.ReturnTo, http.StatusFound)
+	// Only redirect to a same-origin relative path. Anything else — an absolute
+	// URL, a protocol-relative //host, or a backslash trick — collapses to the
+	// app root, so a tampered stored ReturnTo can never become an open redirect
+	// to an attacker-controlled origin.
+	redirectTarget := "/ui/"
+	if rt := pending.ReturnTo; strings.HasPrefix(rt, "/") && !strings.HasPrefix(rt, "//") && !strings.Contains(rt, "\\") {
+		redirectTarget = rt
+	}
+	http.Redirect(w, r, redirectTarget, http.StatusFound)
 }
 
 // identityStateCookie names, paths, and secures the per-flow OAuth state cookie.

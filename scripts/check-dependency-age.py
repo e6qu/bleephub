@@ -12,6 +12,7 @@ import json
 import os
 import pathlib
 import re
+import shutil
 import subprocess
 import sys
 import time
@@ -517,8 +518,29 @@ def python_dependencies() -> dict[str, dt.datetime]:
 
     python = os.environ.get("BLEEPHUB_PYTHON")
     if python:
+        # Resolve BLEEPHUB_PYTHON to a concrete interpreter path before exec.
+        # The value is operator-supplied, so require it to name an actual
+        # executable (a PATH entry or an existing file); this rejects arbitrary
+        # command strings and is passed as argv[0] of a shell-less argument
+        # vector, so it cannot be interpreted as a shell command.
+        resolved = shutil.which(python)
+        if resolved is None and os.path.isfile(python) and os.access(python, os.X_OK):
+            resolved = python
+        if resolved is None:
+            raise RuntimeError(
+                f"BLEEPHUB_PYTHON does not resolve to an executable interpreter: {python!r}"
+            )
+        # Accept only a plain filesystem path to the interpreter — no shell
+        # metacharacters, spaces, or argument separators — and always invoke it
+        # as argv[0] of a shell-less argument vector, so nothing from the
+        # environment can be interpreted as a command.
+        if not re.fullmatch(r"[A-Za-z0-9_./+-]+", resolved):
+            raise RuntimeError(
+                f"BLEEPHUB_PYTHON resolves to an unsafe interpreter path: {resolved!r}"
+            )
+        interpreter = resolved
         installed_json = subprocess.check_output(
-            [python, "-m", "pip", "list", "--format=json"], text=True
+            [interpreter, "-m", "pip", "list", "--format=json"], text=True
         )
         installed = {
             re.sub(r"[-_.]+", "-", item["name"]).lower(): item["version"]

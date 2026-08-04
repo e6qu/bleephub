@@ -4,8 +4,10 @@ import discussionsSource from "../pages/DiscussionsPage.tsx?raw";
 
 describe("browser credential and rendering invariants", () => {
   it("does not persist API bearer tokens in browser storage", () => {
-    expect(apiSource).not.toContain("localStorage.getItem(TOKEN_KEY)");
-    expect(apiSource).not.toContain("localStorage.setItem(TOKEN_KEY");
+    // The legacy "bleephub_token" localStorage slot may only ever be deleted,
+    // never read into or written from JavaScript.
+    expect(apiSource).not.toContain('localStorage.getItem("bleephub_token")');
+    expect(apiSource).not.toContain('localStorage.setItem("bleephub_token"');
     expect(apiSource).not.toContain("sessionStorage");
   });
 

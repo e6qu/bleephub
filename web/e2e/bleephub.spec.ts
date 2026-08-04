@@ -41,7 +41,7 @@ async function shot(page: Page, name: string): Promise<void> {
 
 const TOKEN = "bleephub-admin-token-00000000000000000000";
 const BASE = "http://localhost:15555";
-const WEBHOOK_BASE = "http://127.0.0.1:15557";
+const WEBHOOK_BASE = "https://127.0.0.1:15557";
 
 async function apiPost(page: Page, path: string, body: unknown) {
   return page.evaluate(

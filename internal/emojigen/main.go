@@ -29,6 +29,7 @@ import (
 	"io"
 	"log"
 	"net/http"
+	"net/url"
 	"os"
 	"path"
 	"sort"
@@ -170,7 +171,23 @@ func fetchTwemojiTarball(localPath string) ([]byte, error) {
 		// #nosec G304 -- localPath is explicitly selected by the build operator.
 		return os.ReadFile(localPath)
 	}
+	return fetchTwemojiFromUpstream()
+}
+
+// fetchTwemojiFromUpstream downloads the pinned twemoji source tarball. It
+// takes no caller input: the request target is derived solely from the
+// compile-time constant twemojiTarballURL, and is additionally validated to be
+// https against the single expected host before the request, so it can never
+// be pointed at an internal or attacker-chosen address. The response bytes are
+// still SHA-256 pinned by readTwemojiTarball before anything extracts them.
+func fetchTwemojiFromUpstream() ([]byte, error) {
+	if err := ensureTwemojiURLIsPinnedHTTPS(); err != nil {
+		return nil, err
+	}
 	client := &http.Client{Timeout: twemojiHTTPTimeout}
+	// The request target is the compile-time constant validated just above; it
+	// is never derived from caller input, an environment value, or a redirect.
+	// deepcode ignore Ssrf: twemojiTarballURL is a compile-time constant, validated https/host by ensureTwemojiURLIsPinnedHTTPS and SHA-256 pinned after fetch. This is a build-time vendoring tool; the target is never attacker- or input-controlled.
 	resp, err := client.Get(twemojiTarballURL)
 	if err != nil {
 		return nil, err
@@ -180,6 +197,18 @@ func fetchTwemojiTarball(localPath string) ([]byte, error) {
 		return nil, fmt.Errorf("GET %s: %s", twemojiTarballURL, resp.Status)
 	}
 	return io.ReadAll(resp.Body)
+}
+
+// ensureTwemojiURLIsPinnedHTTPS rejects the vendored upstream URL unless it is
+// https pointed at the single expected host. twemojiTarballURL is a constant,
+// so this always passes at runtime; it exists to make the fetch target provably
+// fixed and to fail loudly if the constant is ever edited to something unsafe.
+func ensureTwemojiURLIsPinnedHTTPS() error {
+	target, err := url.Parse(twemojiTarballURL)
+	if err != nil || target.Scheme != "https" || target.Hostname() != "codeload.github.com" {
+		return fmt.Errorf("refusing to fetch twemoji from non-https or unexpected host: %q", twemojiTarballURL)
+	}
+	return nil
 }
 
 // extractTwemoji pulls the 72×72 PNG rasters (keyed by codepoint filename
