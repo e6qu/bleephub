@@ -10,6 +10,7 @@ import (
 	"io"
 	"net"
 	"net/http"
+	"net/http/httptest"
 	"net/url"
 	"strings"
 	"sync"
@@ -214,16 +215,13 @@ func TestWebhookHMACSignature(t *testing.T) {
 	}
 }
 
-// startWebhookReceiver starts an HTTP server that records received webhook payloads.
+// startWebhookReceiver starts an HTTPS server that records received webhook
+// payloads. Delivery is https-only; the shared httptest TLS certificate is
+// trusted by the delivery transport via installWebhookTestTLSRoots.
 func startWebhookReceiver(t *testing.T, handler http.HandlerFunc) (string, func()) {
 	t.Helper()
-	ln, err := net.Listen("tcp", "127.0.0.1:0")
-	if err != nil {
-		t.Fatal(err)
-	}
-	srv := &http.Server{Handler: handler}
-	go srv.Serve(ln)
-	return "http://" + ln.Addr().String(), func() { srv.Close() }
+	srv := httptest.NewTLSServer(handler)
+	return srv.URL, srv.Close
 }
 
 // webhookEventJSON extracts the JSON event payload from a received

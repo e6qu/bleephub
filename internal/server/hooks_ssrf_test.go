@@ -103,7 +103,7 @@ func TestWebhookTargetURLValidation(t *testing.T) {
 	}
 
 	// Opting in must reach the addresses, but never change the scheme rule:
-	// a non-HTTP scheme is undeliverable regardless of where it points.
+	// a non-HTTP(S) scheme is undeliverable regardless of where it points.
 	if err := parseWebhookTargetURLErr("http://127.0.0.1:8080/hook", true); err != nil {
 		t.Errorf("opted-in loopback target rejected: %v", err)
 	}
@@ -185,7 +185,7 @@ func TestCreateHookRejectsPrivateTarget(t *testing.T) {
 // listener on loopback must never receive the delivery.
 func TestWebhookDeliveryRefusesLoopbackListener(t *testing.T) {
 	var hits int32
-	receiver := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	receiver := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		atomic.AddInt32(&hits, 1)
 		w.WriteHeader(http.StatusOK)
 	}))
@@ -221,13 +221,13 @@ func TestWebhookDeliveryRefusesLoopbackListener(t *testing.T) {
 // not a hop to a second destination no address check saw.
 func TestWebhookDeliveryDoesNotFollowRedirects(t *testing.T) {
 	var secondHits int32
-	second := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	second := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		atomic.AddInt32(&secondHits, 1)
 		w.WriteHeader(http.StatusOK)
 	}))
 	defer second.Close()
 
-	first := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	first := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		http.Redirect(w, r, second.URL+"/next", http.StatusFound)
 	}))
 	defer first.Close()
@@ -251,7 +251,7 @@ func TestWebhookDeliveryPreservesPerHookOrder(t *testing.T) {
 
 	var mu sync.Mutex
 	var seen []int
-	receiver := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	receiver := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		var payload struct {
 			Seq int `json:"seq"`
 		}
@@ -296,7 +296,7 @@ func TestWebhookDeliveryConcurrencyIsBounded(t *testing.T) {
 
 	var inFlight, peak int64
 	release := make(chan struct{})
-	receiver := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	receiver := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		now := atomic.AddInt64(&inFlight, 1)
 		for {
 			old := atomic.LoadInt64(&peak)

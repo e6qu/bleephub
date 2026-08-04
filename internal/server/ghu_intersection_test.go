@@ -175,7 +175,7 @@ func (f *ghuFixture) repoRoutes() []ghuRoute {
 func (f *ghuFixture) orgRoutes() []ghuRoute {
 	base := "/api/v3/orgs/" + f.org.Login
 	return []ghuRoute{
-		{http.MethodPost, base + "/hooks", `{"name":"web","config":{"url":"http://127.0.0.1:9/exfiltrate","content_type":"json"},"events":["*"]}`},
+		{http.MethodPost, base + "/hooks", `{"name":"web","config":{"url":"https://127.0.0.1:9/exfiltrate","content_type":"json"},"events":["*"]}`},
 		{http.MethodGet, base + "/hooks", ""},
 		{http.MethodGet, base + "/installations", ""},
 	}
@@ -257,7 +257,7 @@ func TestGhuTokenOfAnInstalledAppIsStillServed(t *testing.T) {
 func TestOrgWebhookCannotBePlantedByAnAppInstalledNowhere(t *testing.T) {
 	f := newGhuFixture(t, "orghook")
 	base := "/api/v3/orgs/" + f.org.Login + "/hooks"
-	create := `{"name":"web","config":{"url":"http://127.0.0.1:9/exfiltrate","content_type":"json"},"events":["*"]}`
+	create := `{"name":"web","config":{"url":"https://127.0.0.1:9/exfiltrate","content_type":"json"},"events":["*"]}`
 
 	if status, body := ghuRequest(t, http.MethodPost, base, f.outsideGhu, create); served(status) {
 		t.Errorf("planting an org webhook with a ghu_ of an app installed nowhere: status = %d, want a denial: %s", status, body)
@@ -287,7 +287,7 @@ func TestNamedButAbsentTargetsAreNeverServed(t *testing.T) {
 		// Write.
 		{http.MethodPut, missing + "/topics", `{"names":["x"]}`},
 		// Admin.
-		{http.MethodPost, missing + "/hooks", `{"name":"web","config":{"url":"http://127.0.0.1:9/x"}}`},
+		{http.MethodPost, missing + "/hooks", `{"name":"web","config":{"url":"https://127.0.0.1:9/x"}}`},
 		{http.MethodPatch, missing, `{"description":"x"}`},
 	}
 	for _, route := range repoRoutes {

@@ -32,6 +32,7 @@ import (
 	"net/url"
 	"os"
 	"path"
+	"path/filepath"
 	"sort"
 	"strings"
 	"time"
@@ -61,7 +62,7 @@ func main() {
 	tarballPath := flag.String("twemoji-tarball", "", "local copy of the pinned twemoji source tarball; downloaded from GitHub when empty. Must match twemojiTarballSHA256 either way")
 	flag.Parse()
 
-	catalog, err := os.ReadFile(*catalogPath)
+	catalog, err := os.ReadFile(filepath.Clean(*catalogPath))
 	if err != nil {
 		log.Fatalf("read catalog: %v", err)
 	}
@@ -138,7 +139,7 @@ func main() {
 		log.Fatalf("build archive: %v", err)
 	}
 	// #nosec G306 -- generated emoji artwork is a distributable public asset.
-	if err := os.WriteFile(*outPath, archive, 0o644); err != nil {
+	if err := os.WriteFile(filepath.Clean(*outPath), archive, 0o644); err != nil {
 		log.Fatalf("write %s: %v", *outPath, err)
 	}
 	log.Printf("wrote %s: %d unicode + %d custom emoji, %d bytes",
@@ -169,7 +170,7 @@ func readTwemojiTarball(localPath string) ([]byte, error) {
 func fetchTwemojiTarball(localPath string) ([]byte, error) {
 	if localPath != "" {
 		// #nosec G304 -- localPath is explicitly selected by the build operator.
-		return os.ReadFile(localPath)
+		return os.ReadFile(filepath.Clean(localPath))
 	}
 	return fetchTwemojiFromUpstream()
 }

@@ -3,7 +3,6 @@ package bleephub
 import (
 	"encoding/json"
 	"net/http"
-	"net/http/cookiejar"
 	"net/http/httptest"
 	"net/url"
 	"strings"
@@ -42,7 +41,7 @@ func doLogin(t *testing.T, s *Server, login string) http.CookieJar {
 	if w.Code != http.StatusFound && w.Code != http.StatusOK {
 		t.Fatalf("POST /login status = %d, want 200 or 302", w.Code)
 	}
-	jar, _ := cookiejar.New(nil)
+	jar := newPermissiveTestJar()
 	u, _ := url.Parse("http://bleephub.test")
 	jar.SetCookies(u, w.Result().Cookies())
 	return jar

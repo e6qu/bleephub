@@ -114,7 +114,7 @@ jobs:
 `)
 
 	rec := &eventRecorder{}
-	receiver := httptest.NewServer(rec.handler())
+	receiver := httptest.NewTLSServer(rec.handler())
 	defer receiver.Close()
 	testServer.store.CreateHook(repoKey, receiver.URL, "", "json", "0", []string{"*"}, true)
 

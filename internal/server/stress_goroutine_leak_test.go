@@ -43,7 +43,7 @@ func drainGoroutines() int {
 // delivery goroutine terminates on its first attempt.
 func TestStressGoroutineLeak(t *testing.T) {
 	var delivered atomic.Int64
-	sink := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	sink := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		delivered.Add(1)
 		w.WriteHeader(http.StatusOK)
 	}))

@@ -37,6 +37,20 @@ export BLEEPHUB_TEST_REVISION
 compose=(docker compose --project-directory "$SHAUTH_SOURCE_DIR" -f "$SHAUTH_SOURCE_DIR/compose.yaml" -f "$root/test/shauth/compose.override.yaml" -p bleephub-shauth-sso)
 temporary="$(mktemp -d)"
 
+# Bleephub delivers session cookies only with Secure set, which a client honors
+# only over https (browsers make a localhost exception, but Playwright's request
+# client and Go clients do not). Serve both instances over TLS with a
+# throwaway self-signed cert valid for both loopback origins; the browser and
+# the shauth/hydra server-side probes below are pointed at it.
+tls_dir="$temporary/tls"
+mkdir -p "$tls_dir"
+openssl req -x509 -newkey rsa:2048 -nodes \
+  -keyout "$tls_dir/key.pem" -out "$tls_dir/cert.pem" \
+  -days 3650 -subj "/CN=localhost" \
+  -addext "subjectAltName=DNS:localhost,IP:127.0.0.1" >/dev/null 2>&1
+chmod 0644 "$tls_dir/cert.pem" "$tls_dir/key.pem"
+export BLEEPHUB_SSO_TLS_DIR="$tls_dir"
+
 random_secret() {
   openssl rand -base64 48 | tr -d '\n'
 }
@@ -94,9 +108,9 @@ export BLEEPHUB_SSO_PRIMARY_CLIENT_SECRET="$primary_secret"
 export BLEEPHUB_SSO_SECONDARY_CLIENT_SECRET="$secondary_secret"
 export SHAUTH_BOOTSTRAP_APPS_JSON
 SHAUTH_BOOTSTRAP_APPS_JSON="$(jq -cn \
-  --arg primary_origin "http://localhost:$primary_port" \
+  --arg primary_origin "https://localhost:$primary_port" \
   --arg primary_secret "$primary_secret" \
-  --arg secondary_origin "http://127.0.0.1:$secondary_port" \
+  --arg secondary_origin "https://127.0.0.1:$secondary_port" \
   --arg secondary_secret "$secondary_secret" \
   --arg revision "$BLEEPHUB_TEST_REVISION" '
   def app($slug; $name; $description; $origin; $secret): {
@@ -149,12 +163,12 @@ curl --fail --silent --show-error http://localhost:4444/health/ready >/dev/null
 
 for port in "$primary_port" "$secondary_port"; do
   for _ in $(seq 1 100); do
-    if curl --fail --silent "http://localhost:$port/health" >/dev/null 2>&1; then
+    if curl --fail --silent --insecure "https://localhost:$port/health" >/dev/null 2>&1; then
       break
     fi
     sleep 0.1
   done
-  curl --fail --silent --show-error "http://localhost:$port/health" >/dev/null
+  curl --fail --silent --show-error --insecure "https://localhost:$port/health" >/dev/null
 done
 
 # Hydra answers /health/ready before it can actually serve an authorization
@@ -165,7 +179,7 @@ done
 # endpoint until Hydra redirects to its login UI (the ready signal), so the test
 # starts only once the OP genuinely serves the flow. Bounded and non-fatal: if
 # it never becomes ready the test proceeds and fails as before.
-warm_redirect="http://localhost:${primary_port}/auth/shauth/callback"
+warm_redirect="https://localhost:${primary_port}/auth/shauth/callback"
 # Hydra requires state to be at least 8 characters, and the redirect to the
 # login UI is what proves the client is registered and the signing keys exist.
 warm_auth_url="http://localhost:8080/oauth2/auth?client_id=bleephub-primary&response_type=code&scope=openid&state=warmup-readiness-probe&redirect_uri=$(jq -rn --arg u "$warm_redirect" '$u|@uri')"

@@ -125,19 +125,17 @@ func (s *Server) sessionCookieFromRequest(r *http.Request) *http.Cookie {
 // would leave a shadow _gh_sess (planted before login, or before this logout)
 // live, and the next request would silently adopt it.
 func (s *Server) clearSessionCookies(w http.ResponseWriter, r *http.Request) error {
-	secure := s.secureCookies(r)
 	for _, name := range []string{secureSessionCookieName, sessionCookieName} {
 		if c, err := r.Cookie(name); err == nil && c.Value != "" {
 			if err := s.store.DeleteLoginSession(c.Value); err != nil {
 				return err
 			}
 		}
-		// The __Host- deletion must itself carry Secure so the browser accepts
-		// the overwrite; the unprefixed one mirrors the deployment's policy.
-		// #nosec G124 -- Secure is conditional only for the supported local-HTTP mode.
+		// Both deletions carry Secure so the browser accepts the overwrite;
+		// Secure cookies are honored over http://localhost / 127.0.0.1 too.
 		http.SetCookie(w, &http.Cookie{
 			Name: name, Value: "", Path: "/", MaxAge: -1, HttpOnly: true,
-			Secure: secure || name == secureSessionCookieName, SameSite: http.SameSiteLaxMode,
+			Secure: true, SameSite: http.SameSiteLaxMode,
 		})
 	}
 	return nil
@@ -680,8 +678,12 @@ func identityStateCookie(secure bool, state, value string, maxAge int, expires t
 		name = "__Host-" + name
 		path = "/" // __Host- requires Path=/
 	}
-	// #nosec G124 -- Secure is conditional only for the supported local-HTTP mode.
-	return &http.Cookie{Name: name, Value: value, Path: path, MaxAge: maxAge, Expires: expires, HttpOnly: true, Secure: secure, SameSite: http.SameSiteLaxMode}
+	// Cookies are always Secure: browsers accept Secure cookies over
+	// http://localhost and http://127.0.0.1 (both are secure contexts), so local
+	// HTTP development still works, while any non-loopback deployment must use
+	// HTTPS to receive them. The __Host- prefix and Path=/ stay conditional
+	// because __Host- additionally requires an https:// origin.
+	return &http.Cookie{Name: name, Value: value, Path: path, MaxAge: maxAge, Expires: expires, HttpOnly: true, Secure: true, SameSite: http.SameSiteLaxMode}
 }
 
 func (s *Server) setIdentityState(w http.ResponseWriter, r *http.Request, pending identityState) error {
@@ -1089,8 +1091,9 @@ func (s *Server) createOIDCBrowserSession(w http.ResponseWriter, r *http.Request
 		return err
 	}
 	secure := s.secureCookies(r)
-	// #nosec G124 -- Secure is conditional only for explicitly enabled local HTTP.
-	http.SetCookie(w, &http.Cookie{Name: sessionCookieNameFor(secure), Value: id, Path: "/", HttpOnly: true, Secure: secure, SameSite: http.SameSiteLaxMode, Expires: session.ExpiresAt})
+	// Secure is always set (honored over http://localhost too); the __Host-
+	// prefixed name is used only for https origins.
+	http.SetCookie(w, &http.Cookie{Name: sessionCookieNameFor(secure), Value: id, Path: "/", HttpOnly: true, Secure: true, SameSite: http.SameSiteLaxMode, Expires: session.ExpiresAt})
 	return nil
 }
 

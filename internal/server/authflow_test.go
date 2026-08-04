@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
-	"net/http/cookiejar"
 	"net/http/httptest"
 	"net/url"
 	"strings"
@@ -317,7 +316,7 @@ func TestOAuthConsentTokenIsNotTheSessionCookie(t *testing.T) {
 	if err := s.createBrowserSession(sessionRecorder, httptest.NewRequest(http.MethodGet, "/", nil), s.store.LookupUserByLogin("admin")); err != nil {
 		t.Fatalf("createBrowserSession: %v", err)
 	}
-	jar, _ := cookiejar.New(nil)
+	jar := newPermissiveTestJar()
 	jarURL, _ := url.Parse("http://bleephub.test")
 	jar.SetCookies(jarURL, sessionRecorder.Result().Cookies())
 	session := ""
@@ -750,11 +749,12 @@ func TestPrivateOutboundOptOutCoversBothTransports(t *testing.T) {
 			t.Errorf("opted-in import vcs_url=%q status = %d, want 422 — the opt-out must not relax the scheme rule", badScheme, got)
 		}
 	}
-	// And webhook configuration reads the same switch.
-	if err := validateWebhookTargetURL("http://127.0.0.1/hook", s.allowPrivateOutboundTargets); err != nil {
+	// And webhook configuration reads the same switch (over https, the only
+	// deliverable scheme).
+	if err := validateWebhookTargetURL("https://127.0.0.1/hook", s.allowPrivateOutboundTargets); err != nil {
 		t.Errorf("opted-in webhook target refused: %v", err)
 	}
-	if err := validateWebhookTargetURL("http://127.0.0.1/hook", false); err == nil {
+	if err := validateWebhookTargetURL("https://127.0.0.1/hook", false); err == nil {
 		t.Error("opted-out webhook target admitted a loopback address")
 	}
 }

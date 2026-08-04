@@ -7,6 +7,7 @@ import (
 	"crypto/sha1" // #nosec G505 -- GitHub's legacy X-Hub-Signature compatibility header requires HMAC-SHA1
 	"crypto/sha256"
 	"crypto/tls"
+	"crypto/x509"
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
@@ -128,6 +129,10 @@ func parseWebhookTargetURL(raw string, allowPrivate bool) (*url.URL, error) {
 	if err != nil {
 		return nil, fmt.Errorf("webhook URL %q is not a valid URL: %w", raw, err)
 	}
+	// This parser is shared with repository import fetches, which legitimately
+	// use http as well as https; the https-only rule for webhook delivery is
+	// enforced separately by webhookTargetRequiresHTTPS at the webhook config
+	// and delivery paths.
 	switch strings.ToLower(u.Scheme) {
 	case "http", "https":
 	default:
@@ -144,6 +149,23 @@ func parseWebhookTargetURL(raw string, allowPrivate bool) (*url.URL, error) {
 		return nil, fmt.Errorf("webhook target %s is not a public address", ip)
 	}
 	return u, nil
+}
+
+// webhookTargetRequiresHTTPS enforces the webhook-specific rule that deliveries
+// go only over TLS. Unlike github.com (which permits http:// endpoints), this
+// instance refuses cleartext delivery so a payload and its HMAC signature can
+// never cross the network in the clear. It is applied at webhook configuration
+// and again at every delivery; parseWebhookTargetURL stays scheme-agnostic
+// because repository import fetches also legitimately use http.
+func webhookTargetRequiresHTTPS(rawURL string) error {
+	u, err := url.Parse(strings.TrimSpace(rawURL))
+	if err != nil {
+		return fmt.Errorf("webhook URL %q is not a valid URL: %w", rawURL, err)
+	}
+	if !strings.EqualFold(u.Scheme, "https") {
+		return fmt.Errorf("webhook URL scheme %q is not deliverable; use https", u.Scheme)
+	}
+	return nil
 }
 
 // validateWebhookTargetURL is the configuration-time gate: the shape check
@@ -258,9 +280,20 @@ func newAddressCheckedHTTPTransport(allowPrivate, insecureTLS bool) *http.Transp
 			InsecureSkipVerify: true, // custom validity check supplied via VerifyConnection
 			VerifyConnection:   verifyWebhookPeerCertificateValidity,
 		}
+	} else if webhookDeliveryTestRoots != nil {
+		// Test-only seam: trust the in-process httptest TLS receiver so the
+		// verifying delivery path can be exercised against a self-signed cert
+		// without insecure_ssl. This is nil in production, where the transport
+		// uses the system root store.
+		transport.TLSClientConfig = &tls.Config{MinVersion: tls.VersionTLS12, RootCAs: webhookDeliveryTestRoots}
 	}
 	return transport
 }
+
+// webhookDeliveryTestRoots, when non-nil, is merged into the verifying webhook
+// delivery transport's trusted roots. It is set only by the test harness (to
+// trust the shared httptest TLS certificate) and is always nil in production.
+var webhookDeliveryTestRoots *x509.CertPool
 
 // verifyWebhookPeerCertificateValidity is the VerifyConnection callback used
 // when a webhook opts out of standard verification via insecure_ssl. It
@@ -576,7 +609,9 @@ func (s *Server) deliverWebhook(hook *Webhook, event, action string, payloadByte
 	hook = s.store.SnapshotHook(hook)
 	guid := uuid.New().String()
 	backoffs := []time.Duration{0, 1 * time.Second, 5 * time.Second}
-	if _, err := parseWebhookTargetURL(hook.URL, s.allowPrivateOutboundTargets); err != nil {
+	if err := webhookTargetRequiresHTTPS(hook.URL); err != nil {
+		backoffs = backoffs[:1]
+	} else if _, err := parseWebhookTargetURL(hook.URL, s.allowPrivateOutboundTargets); err != nil {
 		// A refused target does not become deliverable by waiting: record the
 		// refusal once instead of retrying it.
 		backoffs = backoffs[:1]
@@ -683,7 +718,12 @@ func (s *Server) doDeliverAttempt(hook *Webhook, event, action, guid string, pay
 
 	// Every delivery path funnels through here, so this is where the stored
 	// target is re-checked — a hook configured before a rule tightened, or
-	// written straight into the store, is refused just the same.
+	// written straight into the store, is refused just the same. https is
+	// required: a cleartext target is never put on the wire.
+	if err := webhookTargetRequiresHTTPS(hook.URL); err != nil {
+		s.logger.Warn().Err(err).Int("hook_id", hook.ID).Msg("webhook delivery refused")
+		return undelivered(err)
+	}
 	if _, err := parseWebhookTargetURL(hook.URL, s.allowPrivateOutboundTargets); err != nil {
 		s.logger.Warn().Err(err).Int("hook_id", hook.ID).Msg("webhook delivery refused")
 		return undelivered(err)

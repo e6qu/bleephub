@@ -25,7 +25,7 @@ func TestWebhookFormContentTypeSigning(t *testing.T) {
 	var gotCT, gotSig string
 	var gotBody []byte
 
-	ln := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	ln := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		b, _ := io.ReadAll(r.Body)
 		mu.Lock()
 		gotCT = r.Header.Get("Content-Type")
@@ -89,7 +89,7 @@ func TestWebhookJSONContentTypeSigning(t *testing.T) {
 	var gotCT string
 	var gotBody []byte
 
-	ln := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	ln := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		b, _ := io.ReadAll(r.Body)
 		mu.Lock()
 		gotCT = r.Header.Get("Content-Type")

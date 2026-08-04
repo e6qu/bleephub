@@ -30,7 +30,7 @@ ENV PATH=/usr/local/go/bin:$PATH
 ARG BLEEPHUB_VERSION=development
 ARG BLEEPHUB_COMMIT=none
 ARG BLEEPHUB_PUBLISHED_AT=not-yet-published
-RUN apt_transaction() { rm -rf /var/lib/apt/lists/*; apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends "$@"; }; \
+RUN apt_transaction() { rm -rf /var/lib/apt/lists/*; apt-get update && DEBIAN_FRONTEND=noninteractive apt-get upgrade -y && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends "$@"; }; \
     retry_apt_transaction() { apt_transaction "$@" || apt_transaction "$@"; }; \
     retry_apt_transaction ca-certificates build-essential libdqlite-dev && \
     rm -rf /var/lib/apt/lists/*
@@ -47,7 +47,7 @@ WORKDIR /opt/bleephub-pages/vendor/cache
 # Every gem in the github-pages closure is fetched by exact version, checked
 # against its recorded SHA-256, and only then installed; --local keeps bundler
 # from reaching past the verified cache for anything the pins missed.
-RUN apt_transaction() { rm -rf /var/lib/apt/lists/*; apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends "$@"; }; \
+RUN apt_transaction() { rm -rf /var/lib/apt/lists/*; apt-get update && DEBIAN_FRONTEND=noninteractive apt-get upgrade -y && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends "$@"; }; \
     retry_apt_transaction() { apt_transaction "$@" || apt_transaction "$@"; }; \
     retry_apt_transaction ca-certificates curl && \
     retry_apt_transaction ruby-full ruby-bundler build-essential git libdqlite0 && \

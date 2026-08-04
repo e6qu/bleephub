@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"io"
 	"net/http"
-	"net/http/cookiejar"
 	"net/url"
 	"strings"
 	"testing"
@@ -303,10 +302,7 @@ func TestGHDeviceFlow(t *testing.T) {
 	}
 
 	// Step 3: Sign in through the browser flow and approve the displayed user code.
-	jar, err := cookiejar.New(nil)
-	if err != nil {
-		t.Fatal(err)
-	}
+	jar := newPermissiveTestJar()
 	client := &http.Client{Jar: jar}
 	loginForm := url.Values{"login": {"admin"}, "password": {defaultToken}}
 	loginResp, err := client.Post(testBaseURL+"/login", "application/x-www-form-urlencoded", strings.NewReader(loginForm.Encode()))

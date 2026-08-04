@@ -4,13 +4,25 @@ services:
       - "127.0.0.1:8080:8080"
       - "127.0.0.1:${BLEEPHUB_SSO_PRIMARY_PORT:?set BLEEPHUB_SSO_PRIMARY_PORT}:${BLEEPHUB_SSO_PRIMARY_PORT}"
       - "127.0.0.1:${BLEEPHUB_SSO_SECONDARY_PORT:?set BLEEPHUB_SSO_SECONDARY_PORT}:${BLEEPHUB_SSO_SECONDARY_PORT}"
+    volumes:
+      - ${BLEEPHUB_SSO_TLS_DIR:?set BLEEPHUB_SSO_TLS_DIR}:/etc/bleephub/tls:ro
+    environment:
+      # Trust bleephub's self-signed TLS cert for server-side calls (e.g. the
+      # back-channel logout POST to the relying party).
+      SSL_CERT_FILE: /etc/bleephub/tls/cert.pem
 
   shauth:
     network_mode: service:hydra
     ports: !reset []
+    volumes:
+      - ${BLEEPHUB_SSO_TLS_DIR:?set BLEEPHUB_SSO_TLS_DIR}:/etc/bleephub/tls:ro
     environment:
       HYDRA_ADMIN_URL: http://localhost:4445
       HYDRA_PUBLIC_INTERNAL_URL: http://localhost:4444
+      # Trust bleephub's self-signed TLS cert for server-side probes
+      # (health_url, validation_url) against the relying parties.
+      SSL_CERT_FILE: /etc/bleephub/tls/cert.pem
+      NODE_EXTRA_CA_CERTS: /etc/bleephub/tls/cert.pem
 
   bleephub-primary:
     image: bleephub-shauth-sso-local
@@ -21,15 +33,19 @@ services:
         BLEEPHUB_TEST_REVISION: ${BLEEPHUB_TEST_REVISION:?set BLEEPHUB_TEST_REVISION}
     network_mode: service:hydra
     command: ["-addr", "0.0.0.0:${BLEEPHUB_SSO_PRIMARY_PORT}"]
+    volumes:
+      - ${BLEEPHUB_SSO_TLS_DIR:?set BLEEPHUB_SSO_TLS_DIR}:/etc/bleephub/tls:ro
     environment:
       BLEEPHUB_ADMIN_TOKEN: ${BLEEPHUB_SSO_ADMIN_TOKEN:?set BLEEPHUB_SSO_ADMIN_TOKEN}
-      BLEEPHUB_EXTERNAL_URL: http://localhost:${BLEEPHUB_SSO_PRIMARY_PORT}
+      BLEEPHUB_EXTERNAL_URL: https://localhost:${BLEEPHUB_SSO_PRIMARY_PORT}
+      BPH_TLS_CERT: /etc/bleephub/tls/cert.pem
+      BPH_TLS_KEY: /etc/bleephub/tls/key.pem
       BLEEPHUB_ALLOW_INSECURE_OIDC: "true"
       BLEEPHUB_ALLOW_PRIVATE_OUTBOUND_TARGETS: "true"
       BLEEPHUB_SHAUTH_ISSUER: http://localhost:8080
       BLEEPHUB_SHAUTH_CLIENT_ID: bleephub-primary
       BLEEPHUB_SHAUTH_CLIENT_SECRET: ${BLEEPHUB_SSO_PRIMARY_CLIENT_SECRET:?set BLEEPHUB_SSO_PRIMARY_CLIENT_SECRET}
-      BLEEPHUB_SHAUTH_POST_LOGOUT_URL: http://localhost:${BLEEPHUB_SSO_PRIMARY_PORT}/auth/shauth/logout/complete
+      BLEEPHUB_SHAUTH_POST_LOGOUT_URL: https://localhost:${BLEEPHUB_SSO_PRIMARY_PORT}/auth/shauth/logout/complete
       BLEEPHUB_DATA_DIR: /var/lib/bleephub
       BLEEPHUB_GIT_DIR: /var/lib/bleephub/git
     depends_on:
@@ -45,15 +61,19 @@ services:
         BLEEPHUB_TEST_REVISION: ${BLEEPHUB_TEST_REVISION:?set BLEEPHUB_TEST_REVISION}
     network_mode: service:hydra
     command: ["-addr", "0.0.0.0:${BLEEPHUB_SSO_SECONDARY_PORT}"]
+    volumes:
+      - ${BLEEPHUB_SSO_TLS_DIR:?set BLEEPHUB_SSO_TLS_DIR}:/etc/bleephub/tls:ro
     environment:
       BLEEPHUB_ADMIN_TOKEN: ${BLEEPHUB_SSO_ADMIN_TOKEN:?set BLEEPHUB_SSO_ADMIN_TOKEN}
-      BLEEPHUB_EXTERNAL_URL: http://127.0.0.1:${BLEEPHUB_SSO_SECONDARY_PORT}
+      BLEEPHUB_EXTERNAL_URL: https://127.0.0.1:${BLEEPHUB_SSO_SECONDARY_PORT}
+      BPH_TLS_CERT: /etc/bleephub/tls/cert.pem
+      BPH_TLS_KEY: /etc/bleephub/tls/key.pem
       BLEEPHUB_ALLOW_INSECURE_OIDC: "true"
       BLEEPHUB_ALLOW_PRIVATE_OUTBOUND_TARGETS: "true"
       BLEEPHUB_SHAUTH_ISSUER: http://localhost:8080
       BLEEPHUB_SHAUTH_CLIENT_ID: bleephub-secondary
       BLEEPHUB_SHAUTH_CLIENT_SECRET: ${BLEEPHUB_SSO_SECONDARY_CLIENT_SECRET:?set BLEEPHUB_SSO_SECONDARY_CLIENT_SECRET}
-      BLEEPHUB_SHAUTH_POST_LOGOUT_URL: http://127.0.0.1:${BLEEPHUB_SSO_SECONDARY_PORT}/auth/shauth/logout/complete
+      BLEEPHUB_SHAUTH_POST_LOGOUT_URL: https://127.0.0.1:${BLEEPHUB_SSO_SECONDARY_PORT}/auth/shauth/logout/complete
       BLEEPHUB_DATA_DIR: /var/lib/bleephub
       BLEEPHUB_GIT_DIR: /var/lib/bleephub/git
     depends_on:

@@ -29,12 +29,17 @@ CACHE = os.environ.get("GEM_INDEX_CACHE", "")
 
 @functools.lru_cache(maxsize=None)
 def index_entry(gem):
+    # Validate the gem name before it is ever used to build a cache path. The
+    # regex forbids "/" and the explicit check rejects "." and ".." so the name
+    # can only ever resolve to a plain file directly inside CACHE — never a
+    # parent-directory traversal.
+    if not re.fullmatch(r"[A-Za-z0-9_.-]+", gem) or gem in (".", ".."):
+        raise SystemExit("unsafe gem name %r" % gem)
+    cache_name = gem.replace("/", "_")
     if CACHE:
-        path = os.path.join(CACHE, gem.replace("/", "_"))
+        path = os.path.join(CACHE, cache_name)
         if os.path.exists(path):
             return open(path, encoding="utf-8").read()
-    if not re.fullmatch(r"[A-Za-z0-9_.-]+", gem):
-        raise SystemExit("unsafe gem name %r" % gem)
     # Python 3.10+ verifies HTTPSConnection certificates by default; the host
     # and TLS scheme are constants, so neither can be redirected by gem input.
     connection = http.client.HTTPSConnection("index.rubygems.org", timeout=60)  # nosemgrep: python.lang.security.audit.httpsconnection-detected.httpsconnection-detected
@@ -48,7 +53,7 @@ def index_entry(gem):
         connection.close()
     if CACHE:
         os.makedirs(CACHE, exist_ok=True)
-        with open(os.path.join(CACHE, gem.replace("/", "_")), "w", encoding="utf-8") as f:
+        with open(os.path.join(CACHE, cache_name), "w", encoding="utf-8") as f:
             f.write(body)
     return body
 

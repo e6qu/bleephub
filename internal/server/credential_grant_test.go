@@ -356,7 +356,7 @@ func TestOAuthUserTokenScopesGateOrganizationWebhooks(t *testing.T) {
 		return false
 	}
 
-	const attacker = "http://127.0.0.1:9/attacker-collector"
+	const attacker = "https://127.0.0.1:9/attacker-collector"
 	scopeless := f.oauthToken(t, "")
 	if status, respBody := scopeless.do(t, http.MethodPost, path, body(attacker)); status >= 200 && status < 300 {
 		t.Errorf("%s: POST %s = %d; body=%s", scopeless.name, path, status, respBody)
@@ -368,7 +368,7 @@ func TestOAuthUserTokenScopesGateOrganizationWebhooks(t *testing.T) {
 		f.oauthToken(t, "admin:org"),
 		f.classicToken(t, "admin:org"),
 	} {
-		url := "http://127.0.0.1:9/wrong-scope/" + strings.NewReplacer(" ", "-", `"`, "", "=", "-").Replace(c.name)
+		url := "https://127.0.0.1:9/wrong-scope/" + strings.NewReplacer(" ", "-", `"`, "", "=", "-").Replace(c.name)
 		if status, respBody := c.do(t, http.MethodPost, path, body(url)); status != http.StatusForbidden {
 			t.Errorf("%s: POST %s = %d, want 403 without admin:org_hook; body=%s", c.name, path, status, respBody)
 		}
@@ -382,7 +382,7 @@ func TestOAuthUserTokenScopesGateOrganizationWebhooks(t *testing.T) {
 		f.classicToken(t, "admin:org_hook"),
 		f.session(t),
 	} {
-		url := "http://127.0.0.1:9/legitimate/" + strings.NewReplacer(" ", "-", `"`, "", "=", "-").Replace(c.name)
+		url := "https://127.0.0.1:9/legitimate/" + strings.NewReplacer(" ", "-", `"`, "", "=", "-").Replace(c.name)
 		if status, respBody := c.do(t, http.MethodPost, path, body(url)); status != http.StatusCreated {
 			t.Errorf("%s: POST %s = %d, want 201; body=%s", c.name, path, status, respBody)
 		}

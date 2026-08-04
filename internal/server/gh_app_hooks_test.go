@@ -73,7 +73,7 @@ func TestAppHookDeliveries_ListGetRedeliver(t *testing.T) {
 	var gotMu sync.Mutex
 	var got []byte
 	gotLen := func() int { gotMu.Lock(); defer gotMu.Unlock(); return len(got) }
-	sink := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	sink := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		buf := make([]byte, r.ContentLength)
 		_, _ = r.Body.Read(buf)
 		gotMu.Lock()
