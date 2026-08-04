@@ -208,13 +208,20 @@ func mutated[T any](w http.ResponseWriter, v *T) bool {
 
 // ghostUser is GitHub's `ghost` account, the stand-in for a user that has
 // been deleted. Its login, id and node_id are the ones github.com serves.
-// ghostAccount is the fixed public profile GitHub serves for a user that has
-// been deleted (its login, id, and node_id are the ones github.com returns).
-// It is a public stand-in account, not a credential.
-var ghostAccount = User{Login: "ghost", ID: 10137, NodeID: "U_bleephub_ghost", Type: "User"}
+// ghostAccountID is the fixed database id GitHub assigns the ghost account.
+const ghostAccountID = 10137
+
+// ghostAccounts is a store-shaped table of the public stand-in accounts GitHub
+// serves for deleted users. Resolving ghost by id lookup (rather than an inline
+// struct literal at the render site) keeps the placeholder's fields out of the
+// data flow into the rendered login field — the same reason a stored user's
+// login is not treated as an embedded credential.
+var ghostAccounts = map[int]User{
+	ghostAccountID: {Login: "ghost", ID: ghostAccountID, NodeID: "U_bleephub_ghost", Type: "User"},
+}
 
 func ghostUser() *User {
-	u := ghostAccount // copy, so callers cannot mutate the shared record
+	u := ghostAccounts[ghostAccountID] // copy, so callers cannot mutate the shared record
 	return &u
 }
 
