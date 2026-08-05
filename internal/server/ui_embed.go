@@ -30,6 +30,11 @@ func (s *Server) registerUI() {
 		return
 	}
 	s.mux.Handle("/ui/", spaHandler(sub, "/ui/"))
+	// Redirect the bare root to the SPA. Registered here, alongside the /ui/
+	// handler, so it exists only when /ui/ is actually served (CORE-012).
+	s.route("GET /{$}", func(w http.ResponseWriter, r *http.Request) {
+		http.Redirect(w, r, "/ui/", http.StatusTemporaryRedirect)
+	})
 	s.logger.Info().Msg("UI registered at /ui/")
 }
 

@@ -602,10 +602,12 @@ func (s *Server) registerRoutes() {
 
 	// UI dashboard
 	s.registerUIAPIRoutes()
+	// registerUI mounts /ui/ AND the root redirect to it, but only in the
+	// UI-embedded build. Under -tags noui nothing serves /ui/, so advertising a
+	// redirect to it from / handed callers a 307 into a guaranteed 404 for a
+	// route the server claimed to have (CORE-012); the noui stub registers
+	// neither.
 	s.registerUI()
-	s.route("GET /{$}", func(w http.ResponseWriter, r *http.Request) {
-		http.Redirect(w, r, "/ui/", http.StatusTemporaryRedirect)
-	})
 
 	// Catch-all: tries smart HTTP git protocol, then logs unmatched
 	s.mux.HandleFunc("/", s.handleCatchAll)
