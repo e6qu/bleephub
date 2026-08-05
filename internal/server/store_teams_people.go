@@ -167,6 +167,20 @@ func (st *Store) reconcileOrgInvitationsLocked(org *Org, now time.Time) {
 	}
 }
 
+// ReconcileAllOrgInvitations applies the invitation state machine
+// (expire/consume/cancel, with the durable membership side effects) across every
+// organization. It runs on the background dispatcher tick so a GET never takes
+// the write lock or performs a durable delete on a read (STORE-034). Its Must*
+// persist writes panic on a durable failure; the dispatcher's caller recovers
+// that and reloads, matching the request path's recover behavior.
+func (st *Store) ReconcileAllOrgInvitations(now time.Time) {
+	st.mu.Lock()
+	defer st.mu.Unlock()
+	for _, org := range st.OrgsByLogin {
+		st.reconcileOrgInvitationsLocked(org, now)
+	}
+}
+
 // consumeOrgInvitationLocked completes an accepted invitation: the
 // invitee joins every team the invitation carried and the invitation
 // itself is removed. Callers must hold st.mu for writing.
@@ -209,14 +223,17 @@ func (st *Store) consumeOrgInvitationsForUserLocked(orgLogin string, userID int)
 // ListPendingOrgInvitations returns the org's live invitations sorted by
 // ID, reconciling state first (expiry, out-of-band accepts/cancels).
 func (st *Store) ListPendingOrgInvitations(orgLogin string) []*OrgInvitation {
-	st.mu.Lock()
-	defer st.mu.Unlock()
+	st.mu.RLock()
+	defer st.mu.RUnlock()
 
 	org := st.OrgsByLogin[orgLogin]
 	if org == nil {
 		return nil
 	}
-	st.reconcileOrgInvitationsLocked(org, st.currentTime())
+	// Reads are pure: the invitation state machine (expire/consume/cancel) is
+	// applied durably by the background reconciler (ReconcileAllOrgInvitations on
+	// the dispatcher tick), not on a GET. A GET must not take the write lock and
+	// perform durable deletes (STORE-034).
 	var out []*OrgInvitation
 	for _, inv := range st.OrgInvitations {
 		if inv.OrgID == org.ID && inv.FailedAt == nil {
@@ -230,14 +247,13 @@ func (st *Store) ListPendingOrgInvitations(orgLogin string) []*OrgInvitation {
 // ListFailedOrgInvitations returns the org's failed (expired)
 // invitations sorted by ID.
 func (st *Store) ListFailedOrgInvitations(orgLogin string) []*OrgInvitation {
-	st.mu.Lock()
-	defer st.mu.Unlock()
+	st.mu.RLock()
+	defer st.mu.RUnlock()
 
 	org := st.OrgsByLogin[orgLogin]
 	if org == nil {
 		return nil
 	}
-	st.reconcileOrgInvitationsLocked(org, st.currentTime())
 	var out []*OrgInvitation
 	for _, inv := range st.OrgInvitations {
 		if inv.OrgID == org.ID && inv.FailedAt != nil {
@@ -250,14 +266,13 @@ func (st *Store) ListFailedOrgInvitations(orgLogin string) []*OrgInvitation {
 
 // GetOrgInvitation returns a live (non-failed) invitation by org and ID.
 func (st *Store) GetOrgInvitation(orgLogin string, id int) *OrgInvitation {
-	st.mu.Lock()
-	defer st.mu.Unlock()
+	st.mu.RLock()
+	defer st.mu.RUnlock()
 
 	org := st.OrgsByLogin[orgLogin]
 	if org == nil {
 		return nil
 	}
-	st.reconcileOrgInvitationsLocked(org, st.currentTime())
 	inv := st.OrgInvitations[id]
 	if inv == nil || inv.OrgID != org.ID || inv.FailedAt != nil {
 		return nil

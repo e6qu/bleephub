@@ -48,9 +48,31 @@ func (s *Server) startScheduleDispatcher(ctx context.Context) {
 			if err := s.store.ReapExpiredLoginSessions(tickTime); err != nil {
 				s.logger.Error().Err(err).Msg("expired login-session reap failed")
 			}
+			s.reconcileOrgInvitationsSafely(tickTime)
 			lastFired = s.fireSchedulesThrough(lastFired, tickTime)
 		}
 	})
+}
+
+// reconcileOrgInvitationsSafely runs the org-invitation state machine on a
+// background tick so a GET never has to (STORE-034). A durable write failure
+// panics through the Must* helpers; the background goroutine has no recover
+// middleware, so catch it here, reload durable state, and continue rather than
+// letting a transient persist error kill the dispatcher.
+func (s *Server) reconcileOrgInvitationsSafely(now time.Time) {
+	defer func() {
+		if r := recover(); r != nil {
+			if pf, ok := r.(*persistenceFailure); ok {
+				s.logger.Error().Err(pf).Msg("org-invitation reconcile persist failed; reloading")
+				if err := s.store.ReloadFromPersistence(); err != nil {
+					s.logger.Error().Err(err).Msg("reload after org-invitation reconcile failure")
+				}
+				return
+			}
+			panic(r)
+		}
+	}()
+	s.store.ReconcileAllOrgInvitations(now)
 }
 
 // fireSchedulesThrough replays every whole minute in (lastFired, now] so a scan
