@@ -4,6 +4,7 @@ package dqliteaddr
 
 import (
 	"fmt"
+	"net"
 	"strings"
 )
 
@@ -50,4 +51,21 @@ func (m Map) Resolve(address string) string {
 		return replacement
 	}
 	return address
+}
+
+// ListenAddr resolves the TCP address a dqlite node should listen on. An
+// explicit override (listenEnv, from BLEEPHUB_DQLITE_LISTEN_ADDR) wins so a
+// node behind NAT or a proxy can bind a different local address. Otherwise the
+// node listens on the very port it advertises to peers: defaulting to a fixed
+// ":9000" while the advertised address used a different port left peers dialing
+// the advertised port and failing to connect (STORE-055).
+func ListenAddr(listenEnv, advertise string) (string, error) {
+	if strings.TrimSpace(listenEnv) != "" {
+		return strings.TrimSpace(listenEnv), nil
+	}
+	_, port, err := net.SplitHostPort(advertise)
+	if err != nil {
+		return "", fmt.Errorf("derive listen address from advertise address %q: %w", advertise, err)
+	}
+	return ":" + port, nil
 }

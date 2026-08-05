@@ -14,6 +14,7 @@ import (
 	"net/url"
 	"os"
 	"os/signal"
+	"strconv"
 	"strings"
 	"sync"
 	"syscall"
@@ -46,9 +47,9 @@ func main() {
 		log.Fatalf("create dqlite data directory %s: %v", dataDir, err)
 	}
 
-	listenAddress := os.Getenv("BLEEPHUB_DQLITE_LISTEN_ADDR")
-	if strings.TrimSpace(listenAddress) == "" {
-		listenAddress = ":9000"
+	listenAddress, err := dqliteaddr.ListenAddr(os.Getenv("BLEEPHUB_DQLITE_LISTEN_ADDR"), address)
+	if err != nil {
+		log.Fatalf("resolve dqlite listen address: %v", err)
 	}
 	tlsConfig, err := dqliteaddr.TLSConfig(secret, true)
 	if err != nil {
@@ -79,12 +80,21 @@ func main() {
 		}
 	}()
 
+	voters := 3
+	if v := strings.TrimSpace(os.Getenv("BLEEPHUB_DQLITE_VOTERS")); v != "" {
+		n, convErr := strconv.Atoi(v)
+		if convErr != nil || n < 1 {
+			log.Fatalf("BLEEPHUB_DQLITE_VOTERS must be a positive integer, got %q", v)
+		}
+		voters = n
+	}
+
 	node, err := app.New(
 		dataDir,
 		app.WithAddress(address),
 		app.WithCluster(join),
 		app.WithExternalConn(dqliteDialer(addresses, secret), accepted),
-		app.WithVoters(3),
+		app.WithVoters(voters),
 	)
 	if err != nil {
 		log.Fatalf("start dqlite node: %v", err)

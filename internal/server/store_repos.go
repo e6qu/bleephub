@@ -783,25 +783,31 @@ func (st *Store) deleteRepoLocked(owner, name string) (bool, pendingDeletion, er
 			batch.Delete("codespaces", strconv.Itoa(id))
 		}
 	}
-	if pkgs := st.PackagesByOwnerKey[fullName]; len(pkgs) > 0 {
-		for _, pkg := range pkgs {
-			delete(st.Packages, pkg.ID)
-			batch.Delete("packages", strconv.Itoa(pkg.ID))
-			for versionID := range st.PackageVersionsByPackage[pkg.ID] {
-				delete(st.PackageVersions, versionID)
-				batch.Delete("package_versions", strconv.Itoa(versionID))
-				for fileID, file := range st.PackageFiles {
-					if file.VersionID == versionID {
-						delete(st.PackageFiles, fileID)
-						batch.Delete("package_files", strconv.Itoa(fileID))
-					}
-				}
-				delete(st.PackageFilesByVersion, versionID)
-			}
-			delete(st.PackageVersionsByPackage, pkg.ID)
+	// Enumerate the authoritative package set filtered by owner rather than the
+	// PackagesByOwnerKey secondary index: a soft-deleted package is removed from
+	// that index but kept in st.Packages, so iterating the index left its rows
+	// (and, in repoDeletionIntentLocked, its file bytes) orphaned when the
+	// owning repo was deleted (STORE-028).
+	for pkgID, pkg := range st.Packages {
+		if pkg.OwnerKey != fullName {
+			continue
 		}
-		delete(st.PackagesByOwnerKey, fullName)
+		delete(st.Packages, pkgID)
+		batch.Delete("packages", strconv.Itoa(pkg.ID))
+		for versionID := range st.PackageVersionsByPackage[pkg.ID] {
+			delete(st.PackageVersions, versionID)
+			batch.Delete("package_versions", strconv.Itoa(versionID))
+			for fileID, file := range st.PackageFiles {
+				if file.VersionID == versionID {
+					delete(st.PackageFiles, fileID)
+					batch.Delete("package_files", strconv.Itoa(fileID))
+				}
+			}
+			delete(st.PackageFilesByVersion, versionID)
+		}
+		delete(st.PackageVersionsByPackage, pkg.ID)
 	}
+	delete(st.PackagesByOwnerKey, fullName)
 	for id, alert := range st.SecurityAdvisories {
 		if alert.RepoID == repo.ID {
 			delete(st.SecurityAdvisories, id)
@@ -978,7 +984,12 @@ func (st *Store) repoDeletionIntentLocked(repo *Repo) pendingDeletion {
 			})
 		}
 	}
-	for _, pkg := range st.PackagesByOwnerKey[repo.FullName] {
+	// Authoritative set filtered by owner (soft-deleted packages included), so
+	// their file bytes are still scheduled for external cleanup (STORE-028).
+	for _, pkg := range st.Packages {
+		if pkg.OwnerKey != repo.FullName {
+			continue
+		}
 		for versionID := range st.PackageVersionsByPackage[pkg.ID] {
 			for _, file := range st.PackageFilesByVersion[versionID] {
 				addPackageFile(file.StoragePath)

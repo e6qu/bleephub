@@ -37,12 +37,20 @@ func copilotNextCycleDate(now time.Time) string {
 	return first.Format("2006-01-02")
 }
 
+// copilotSeatExpired reports whether a seat's pending cancellation date has
+// been reached. Reads filter these out in memory; the write paths physically
+// prune them via expireCopilotSeatsLocked.
+func copilotSeatExpired(seat *CopilotSeat, now time.Time) bool {
+	return seat.PendingCancellationDate != "" && seat.PendingCancellationDate <= now.UTC().Format("2006-01-02")
+}
+
 // expireCopilotSeatsLocked drops seats whose pending cancellation date
-// has been reached. Callers hold the write lock.
+// has been reached. Callers hold the write lock. It is invoked from the seat
+// write paths (add/cancel), never from a read: a GET must not perform a durable
+// delete (STORE-034).
 func (st *Store) expireCopilotSeatsLocked(orgLogin string, now time.Time) {
-	today := now.UTC().Format("2006-01-02")
 	for userID, seat := range st.CopilotSeats[orgLogin] {
-		if seat.PendingCancellationDate != "" && seat.PendingCancellationDate <= today {
+		if copilotSeatExpired(seat, now) {
 			delete(st.CopilotSeats[orgLogin], userID)
 			if st.persist != nil {
 				st.persist.MustDelete("copilot_seats", copilotSeatKey(orgLogin, userID))
@@ -57,25 +65,30 @@ func (st *Store) persistCopilotSeatLocked(seat *CopilotSeat) {
 	}
 }
 
-// GetCopilotSeat returns the organization's seat for the user, or nil.
+// GetCopilotSeat returns the organization's seat for the user, or nil. An
+// expired (pending-cancellation-reached) seat reads as absent; the durable
+// removal happens on the next seat write, not on this read.
 func (st *Store) GetCopilotSeat(orgLogin string, userID int) *CopilotSeat {
-	st.mu.Lock()
-	defer st.mu.Unlock()
-	st.expireCopilotSeatsLocked(orgLogin, st.currentTime())
-	if st.CopilotSeats[orgLogin] == nil {
+	st.mu.RLock()
+	defer st.mu.RUnlock()
+	seat := st.CopilotSeats[orgLogin][userID]
+	if seat == nil || copilotSeatExpired(seat, st.currentTime()) {
 		return nil
 	}
-	return st.CopilotSeats[orgLogin][userID]
+	return seat
 }
 
 // ListCopilotSeats returns the organization's seats sorted by creation
 // time (user ID as tie-break) so pagination is stable.
 func (st *Store) ListCopilotSeats(orgLogin string) []*CopilotSeat {
-	st.mu.Lock()
-	defer st.mu.Unlock()
-	st.expireCopilotSeatsLocked(orgLogin, st.currentTime())
+	st.mu.RLock()
+	defer st.mu.RUnlock()
+	now := st.currentTime()
 	out := make([]*CopilotSeat, 0, len(st.CopilotSeats[orgLogin]))
 	for _, seat := range st.CopilotSeats[orgLogin] {
+		if copilotSeatExpired(seat, now) {
+			continue
+		}
 		out = append(out, seat)
 	}
 	sort.Slice(out, func(i, j int) bool {
