@@ -4285,8 +4285,8 @@
         "id": "CORE-012",
         "location": "ui_noembed.go:5, server.go:414",
         "severity": "M",
-        "status": "open",
-        "status_kind": "open"
+        "status": "fixed \u2014 the `GET /{$}` root registration moved out of the unconditional `registerRoutes` and into the build-tagged `registerUI`. The UI-embedded build registers the redirect to `/ui/` (which it serves); the no-embed build registers the root to return an honest 404 directly, so `noui` no longer 307-advertises an unserved `/ui/` nor trips the catch-all's \"unhandled request\" warning, and the registered route set stays identical across builds. Regression test (noui-tagged) asserts the root returns 404, not a redirect",
+        "status_kind": "fixed"
       },
       {
         "category": "CORE",
@@ -4303,8 +4303,8 @@
         "id": "CORE-014",
         "location": "persistence.go:400",
         "severity": "M",
-        "status": "open",
-        "status_kind": "open"
+        "status": "fixed \u2014 refuted: `MustPut`/`MustDelete` no longer `log.Fatalf`; they panic with `*persistenceFailure`, which `recoverMiddleware` catches, reloads durable state, and turns into a 500 for that one request rather than killing the process. The remaining `log.Fatalf` calls are in `MustNewPersistence`, which run at startup/operator-config (not in a request handler), which is correct. Covered by the atomicity tests asserting the Must* helpers raise `*persistenceFailure` rather than exiting",
+        "status_kind": "fixed"
       },
       {
         "category": "CORE",
@@ -6366,8 +6366,8 @@
         },
         "CORE": {
           "status": {
-            "fixed": 20,
-            "open": 11,
+            "fixed": 22,
+            "open": 9,
             "partial": 2
           },
           "total": 33
@@ -6426,8 +6426,8 @@
       },
       "status": {
         "deferred": 1,
-        "fixed": 580,
-        "open": 60,
+        "fixed": 582,
+        "open": 58,
         "partial": 35
       },
       "total": 676
