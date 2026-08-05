@@ -466,6 +466,14 @@ resource "aws_s3_bucket_server_side_encryption_configuration" "access_logs" {
   }
 }
 
+# Versioned for tamper-evidence on the security access trail (an overwrite keeps
+# the prior copy); noncurrent versions are expired quickly by the lifecycle rule
+# below so the retained history stays cheap.
+resource "aws_s3_bucket_versioning" "access_logs" {
+  bucket = aws_s3_bucket.access_logs.id
+  versioning_configuration { status = "Enabled" }
+}
+
 resource "aws_s3_bucket_public_access_block" "access_logs" {
   bucket                  = aws_s3_bucket.access_logs.id
   block_public_acls       = true
@@ -474,8 +482,8 @@ resource "aws_s3_bucket_public_access_block" "access_logs" {
   restrict_public_buckets = true
 }
 
-# Access logs are a re-derivable audit trail, not primary data; expire them on a
-# schedule instead of versioning them (versioning here would only add cost).
+# Access logs are a re-derivable audit trail; expire current objects after a
+# year and drop superseded versions quickly so versioning stays cheap.
 resource "aws_s3_bucket_lifecycle_configuration" "access_logs" {
   bucket = aws_s3_bucket.access_logs.id
   rule {
@@ -483,6 +491,7 @@ resource "aws_s3_bucket_lifecycle_configuration" "access_logs" {
     status = "Enabled"
     filter {}
     expiration { days = 365 }
+    noncurrent_version_expiration { noncurrent_days = 30 }
     abort_incomplete_multipart_upload { days_after_initiation = 7 }
   }
 }
