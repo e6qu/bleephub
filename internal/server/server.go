@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	stdlog "log"
 	"net"
 	"net/http"
@@ -824,8 +825,52 @@ func (s *Server) requestHandler() http.Handler {
 	}
 	bounded := s.requestBodyLimitMiddleware(observed)
 	secured := s.securityHeadersMiddleware(bounded)
-	return otelhttp.NewHandler(s.recoverMiddleware(s.loggingMiddleware(s.adminHostMiddleware(secured))), "bleephub")
+	// slowBodyGuard sits outermost, around otelhttp, so its ResponseController
+	// resolves to the base net/http response writer (whose SetReadDeadline
+	// coordinates with the server's connection management) without depending on
+	// every inner response-writer wrapper implementing Unwrap.
+	return slowBodyGuard(bodyReadInactivityTimeout,
+		otelhttp.NewHandler(s.recoverMiddleware(s.loggingMiddleware(s.adminHostMiddleware(secured))), "bleephub"))
 }
+
+// bodyReadInactivityTimeout bounds how long a single request-body read may
+// stall. It is a *sliding* inactivity deadline (reset before every read), not a
+// total cap: a client uploading a large git pack or artifact keeps making
+// progress and never trips it, while a slow-body Slowloris that trickles or
+// stalls the body is dropped. A fixed http.Server.ReadTimeout would instead cap
+// the whole body — cutting off legitimate large git pushes and artifact uploads
+// — which is exactly why the server leaves ReadTimeout/WriteTimeout unset and
+// closes only the header-read blind spot here (CORE-010).
+const bodyReadInactivityTimeout = 60 * time.Second
+
+// slowBodyGuard wraps each request body so a stalled or trickled body read trips
+// a sliding inactivity deadline on the underlying connection.
+func slowBodyGuard(idle time.Duration, next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Body != nil && r.Body != http.NoBody {
+			r.Body = &inactivityDeadlineBody{rc: http.NewResponseController(w), body: r.Body, idle: idle}
+		}
+		next.ServeHTTP(w, r)
+	})
+}
+
+// inactivityDeadlineBody resets a read deadline before every Read, so a client
+// making steady progress never trips it while a stalled one is cut off.
+type inactivityDeadlineBody struct {
+	rc   *http.ResponseController
+	body io.ReadCloser
+	idle time.Duration
+}
+
+func (b *inactivityDeadlineBody) Read(p []byte) (int, error) {
+	// Best-effort: on a transport that does not support read deadlines
+	// SetReadDeadline returns an error and the guard degrades to the
+	// header/idle timeouts already configured on http.Server.
+	_ = b.rc.SetReadDeadline(time.Now().Add(b.idle))
+	return b.body.Read(p)
+}
+
+func (b *inactivityDeadlineBody) Close() error { return b.body.Close() }
 
 // uiContentSecurityPolicy locks the bundled single-page app down to its own
 // origin. The build emits only external, crossorigin module scripts (no inline
