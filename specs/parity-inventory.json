@@ -982,8 +982,8 @@
         "id": "AUTH-081",
         "location": "8 routes",
         "severity": "M",
-        "status": "partial \u2014 the named cell is closed: `POST /repos/{o}/{r}/rulesets` refuses a `ghu_` of an app installed nowhere, because the handler now intersects the credential rather than asking only about the bearer. The other seven cells were not individually re-driven; the 244-route sweep has not been re-run",
-        "status_kind": "partial"
+        "status": "fixed \u2014 the whole sweep is re-driven behaviourally: `TestNoRepoWriteServesAGhuBroaderThanItsGhs` iterates every registered mutating route under `/repos/{owner}/{repo}` (259 today) and asserts, against the victim's real private repository, that the outside app's `ghs_` is refused everywhere and its `ghu_` is never served where that `ghs_` is refused. No asymmetric cell remains: the named `POST /repos/{o}/{r}/rulesets` cell plus the whole self-gating class were routed through the credential-intersecting `viewer*` helpers (`gh_apps_perms.go`) by the earlier chokepoint sweep, and the AST ratchet `TestOnlyTheRBACLayerAsksWhetherAUserCanReadARepo` structurally forbids reintroducing a bearer-only gate",
+        "status_kind": "fixed"
       },
       {
         "category": "AUTH",
@@ -6350,9 +6350,9 @@
         },
         "AUTH": {
           "status": {
-            "fixed": 116,
+            "fixed": 117,
             "open": 1,
-            "partial": 2
+            "partial": 1
           },
           "total": 119
         },
@@ -6426,9 +6426,9 @@
       },
       "status": {
         "deferred": 1,
-        "fixed": 588,
+        "fixed": 589,
         "open": 54,
-        "partial": 33
+        "partial": 32
       },
       "total": 676
     }
