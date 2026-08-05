@@ -14,9 +14,12 @@ import (
 func TestGistAndCodespaceResponseSnapshotRace(t *testing.T) {
 	s := newTestServer()
 	admin := s.store.LookupUserByLogin("admin")
-	gist := s.store.CreateGist(admin, "initial", false, map[string]*GistFile{
+	gist, err := s.store.CreateGistE(admin, "initial", false, map[string]*GistFile{
 		"note.txt": {Filename: "note.txt", Content: "initial"},
 	})
+	if err != nil {
+		t.Fatalf("create gist: %v", err)
+	}
 	now := fixedTestTime.UTC()
 	codespace := &Codespace{
 		ID:          1,
@@ -46,9 +49,12 @@ func TestGistAndCodespaceResponseSnapshotRace(t *testing.T) {
 		defer wg.Done()
 		for i := 0; i < iterations; i++ {
 			description := fmt.Sprintf("description-%d", i)
-			s.store.UpdateGist(gist.ID, &description, map[string]*GistFile{
+			if _, _, err := s.store.UpdateGistE(gist.ID, &description, map[string]*GistFile{
 				"note.txt": {Filename: "note.txt", Content: description},
-			}, nil)
+			}, nil); err != nil {
+				t.Errorf("update gist: %v", err)
+				return
+			}
 			s.store.UpdateCodespace(codespace.ID, description, "", i+1)
 		}
 	}()

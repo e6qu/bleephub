@@ -3835,8 +3835,8 @@
         "id": "STORE-036",
         "location": "persistence.go:386",
         "severity": "M",
-        "status": "open",
-        "status_kind": "open"
+        "status": "fixed \u2014 `MustNewPersistence` retried every `NewPersistence` error forever (1s intervals) whenever dqlite was configured, so a misconfiguration (malformed `BLEEPHUB_DQLITE_ADDRESS_MAP`, missing transport secret, empty server set, bad encryption key) or a schema written by a newer build looped endlessly behind a \"waiting for dqlite quorum\" log. The unrecoverable config/schema/encryption paths now return a `permanentPersistenceError`, and `MustNewPersistence` fails fast on it (`log.Fatalf`) while still retrying the genuinely transient dial/ping/query failures that occur while a quorum forms. Regression tests cover the classifier and a malformed address map",
+        "status_kind": "fixed"
       },
       {
         "category": "STORE",
@@ -3979,8 +3979,8 @@
         "id": "STORE-052",
         "location": "store_repos.go:449",
         "severity": "m",
-        "status": "open",
-        "status_kind": "open"
+        "status": "fixed \u2014 two `batch.Delete(\"secret_scanning_alerts\", <repo full name>)` calls (one in the repo-delete cascade, one in rename) were dead no-ops: that bucket is always keyed by the integer alert ID, never a repo full name, so a full-name key can never match. Removed both. The real cleanup already happens \u2014 the delete cascade deletes each alert by `strconv.Itoa(id)`, and rename re-Puts each alert under its unchanged integer ID with the new RepoKey \u2014 so this is pure dead-code removal with zero behavior change",
+        "status_kind": "fixed"
       },
       {
         "category": "STORE",
@@ -4033,8 +4033,8 @@
         "id": "STORE-058",
         "location": "store.go:3358",
         "severity": "m",
-        "status": "open",
-        "status_kind": "open"
+        "status": "fixed \u2014 the `panic(err)` wrappers `CreateGist`/`UpdateGist`/`ForkGist` had error-returning twins (`CreateGistE`/`UpdateGistE`/`ForkGistE`) that the production REST handlers already use; the panic variants were reached only by one race test (and `ForkGist` had no callers at all). Removed all three panic wrappers and pointed the race test at the `\u2026E` variants, eliminating the panic-on-error footgun",
+        "status_kind": "fixed"
       },
       {
         "category": "STORE",
@@ -4042,8 +4042,8 @@
         "id": "STORE-059",
         "location": "store_discussions.go:250",
         "severity": "m",
-        "status": "open",
-        "status_kind": "open"
+        "status": "fixed \u2014 `CreateDiscussion` numbered each new discussion by scanning every discussion in the store (all repos, tombstones included) for the per-repo max, so the cost rose with every soft-deleted discussion. Replaced with a `NextDiscussionNumber map[int]int` high-water counter (mirroring `SecretScanningNextNumber`): O(1) on create, monotonic across tombstones (a deleted number is never reused), and restored on reload by the discussions loader. Regression test proves the counter survives a persistence reload and stays monotonic across a tombstone",
+        "status_kind": "fixed"
       },
       {
         "category": "STORE",
@@ -6396,8 +6396,8 @@
         },
         "STORE": {
           "status": {
-            "fixed": 49,
-            "open": 15,
+            "fixed": 53,
+            "open": 11,
             "partial": 10
           },
           "total": 74
@@ -6426,8 +6426,8 @@
       },
       "status": {
         "deferred": 1,
-        "fixed": 572,
-        "open": 68,
+        "fixed": 576,
+        "open": 64,
         "partial": 35
       },
       "total": 676

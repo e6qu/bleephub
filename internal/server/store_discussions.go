@@ -146,21 +146,20 @@ func (st *Store) ListDiscussionCategories(repoID int) []*DiscussionCategory {
 	return out
 }
 
-// nextDiscussionNumber returns the next per-repo discussion number.
-func (st *Store) nextDiscussionNumber(repoID int) int {
-	max := 0
-	for _, d := range st.Discussions {
-		if d.RepoID == repoID && d.Number > max {
-			max = d.Number
-		}
-	}
-	return max + 1
-}
-
 // CreateDiscussion creates a new discussion in the given repository.
 func (st *Store) CreateDiscussion(repoID, categoryID, authorID int, title, body string) *Discussion {
 	st.mu.Lock()
 	defer st.mu.Unlock()
+
+	// Per-repo numbers come from a high-water counter rather than a scan of
+	// every discussion in the store: deleted discussions are tombstoned (never
+	// removed from st.Discussions), so a scan-for-max grew unbounded and its
+	// cost rose with every deletion. The counter only increments, so numbers
+	// stay monotonic across tombstones (a deleted number is never reused).
+	number := st.NextDiscussionNumber[repoID]
+	if number == 0 {
+		number = 1
+	}
 
 	now := st.currentTime()
 	d := &Discussion{
@@ -168,7 +167,7 @@ func (st *Store) CreateDiscussion(repoID, categoryID, authorID int, title, body 
 		NodeID:      discussionNodeID(st.NextDiscussionID),
 		RepoID:      repoID,
 		CategoryID:  categoryID,
-		Number:      st.nextDiscussionNumber(repoID),
+		Number:      number,
 		Title:       title,
 		Body:        body,
 		AuthorID:    authorID,
@@ -178,6 +177,7 @@ func (st *Store) CreateDiscussion(repoID, categoryID, authorID int, title, body 
 	}
 	st.Discussions[d.ID] = d
 	st.NextDiscussionID++
+	st.NextDiscussionNumber[repoID] = number + 1
 	st.persistDiscussion(d)
 	return d
 }
