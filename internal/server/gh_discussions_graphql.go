@@ -1157,6 +1157,11 @@ func paginateGQLMaps(nodes []map[string]interface{}, args map[string]interface{}
 func findDiscussionByNodeID(st *Store, nodeID string) *Discussion {
 	st.mu.RLock()
 	defer st.mu.RUnlock()
+	if id, ok := decodeNodeDBID(nodeID, "D_kgDO"); ok {
+		if d := st.Discussions[id]; d != nil && d.NodeID == nodeID && !d.Deleted {
+			return d
+		}
+	}
 	for _, d := range st.Discussions {
 		if d.NodeID == nodeID && !d.Deleted {
 			return d
@@ -1168,6 +1173,11 @@ func findDiscussionByNodeID(st *Store, nodeID string) *Discussion {
 func findDiscussionCategoryByNodeID(st *Store, nodeID string) *DiscussionCategory {
 	st.mu.RLock()
 	defer st.mu.RUnlock()
+	if id, ok := decodeNodeDBID(nodeID, "DGC_kgDO"); ok {
+		if cat := st.DiscussionCategories[id]; cat != nil && cat.NodeID == nodeID {
+			return cat
+		}
+	}
 	for _, cat := range st.DiscussionCategories {
 		if cat.NodeID == nodeID {
 			return cat
@@ -1179,6 +1189,11 @@ func findDiscussionCategoryByNodeID(st *Store, nodeID string) *DiscussionCategor
 func findDiscussionCommentByNodeID(st *Store, nodeID string) *DiscussionComment {
 	st.mu.RLock()
 	defer st.mu.RUnlock()
+	if id, ok := decodeNodeDBID(nodeID, "DC_kgDO"); ok {
+		if c := st.DiscussionComments[id]; c != nil && c.NodeID == nodeID && !c.Deleted {
+			return c
+		}
+	}
 	for _, c := range st.DiscussionComments {
 		if c.NodeID == nodeID && !c.Deleted {
 			return c
