@@ -228,6 +228,11 @@ func (s *ProjectV2Store) GetProject(id int) *ProjectV2 {
 func (s *ProjectV2Store) LookupProjectByNodeID(nodeID string) *ProjectV2 {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
+	if id, ok := decodeNodeDBID(nodeID, "PVT_kgDO"); ok {
+		if p := s.projects[id]; p != nil && p.NodeID == nodeID {
+			return p
+		}
+	}
 	for _, p := range s.projects {
 		if p.NodeID == nodeID {
 			return p
@@ -340,6 +345,11 @@ func (s *ProjectV2Store) GetItem(id int) *ProjectV2Item {
 func (s *ProjectV2Store) LookupItemByNodeID(nodeID string) *ProjectV2Item {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
+	if id, ok := decodeNodeDBID(nodeID, "PVTI_kgDO"); ok {
+		if it := s.items[id]; it != nil && it.NodeID == nodeID {
+			return it
+		}
+	}
 	for _, it := range s.items {
 		if it.NodeID == nodeID {
 			return it
@@ -426,6 +436,11 @@ func (s *ProjectV2Store) GetField(id int) *ProjectV2Field {
 func (s *ProjectV2Store) LookupFieldByNodeID(nodeID string) *ProjectV2Field {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
+	if id, ok := decodeNodeDBID(nodeID, "PVTF_kgDO"); ok {
+		if f := s.fields[id]; f != nil && f.NodeID == nodeID {
+			return f
+		}
+	}
 	for _, f := range s.fields {
 		if f.NodeID == nodeID {
 			return f

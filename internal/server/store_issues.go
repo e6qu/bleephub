@@ -1258,6 +1258,11 @@ func (st *Store) UpdateCommentBody(id, editorID int, body string) *Comment {
 func (st *Store) LookupCommentByNodeID(nodeID string) *Comment {
 	st.mu.RLock()
 	defer st.mu.RUnlock()
+	if id, ok := decodeNodeDBID(nodeID, "IC_kgDO"); ok {
+		if c := st.Comments[id]; c != nil && c.NodeID == nodeID {
+			return cloneComment(c)
+		}
+	}
 	for _, c := range st.Comments {
 		if c.NodeID == nodeID {
 			return cloneComment(c)

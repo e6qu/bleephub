@@ -2202,6 +2202,11 @@ func findRepoByNodeID(st *Store, nodeID string) *Repo {
 func findIssueByNodeID(st *Store, nodeID string) *Issue {
 	st.mu.RLock()
 	defer st.mu.RUnlock()
+	if id, ok := decodeNodeDBID(nodeID, "I_kgDO"); ok {
+		if i := st.Issues[id]; i != nil && i.NodeID == nodeID {
+			return i
+		}
+	}
 	for _, i := range st.Issues {
 		if i.NodeID == nodeID {
 			return i
@@ -2213,6 +2218,11 @@ func findIssueByNodeID(st *Store, nodeID string) *Issue {
 func findLabelByNodeID(st *Store, nodeID string) *IssueLabel {
 	st.mu.RLock()
 	defer st.mu.RUnlock()
+	if id, ok := decodeNodeDBID(nodeID, "LA_kgDO"); ok {
+		if l := st.Labels[id]; l != nil && l.NodeID == nodeID {
+			return l
+		}
+	}
 	for _, l := range st.Labels {
 		if l.NodeID == nodeID {
 			return l
@@ -2224,6 +2234,11 @@ func findLabelByNodeID(st *Store, nodeID string) *IssueLabel {
 func findMilestoneByNodeID(st *Store, nodeID string) *Milestone {
 	st.mu.RLock()
 	defer st.mu.RUnlock()
+	if id, ok := decodeNodeDBID(nodeID, "MI_kgDO"); ok {
+		if ms := st.Milestones[id]; ms != nil && ms.NodeID == nodeID {
+			return ms
+		}
+	}
 	for _, ms := range st.Milestones {
 		if ms.NodeID == nodeID {
 			return ms
