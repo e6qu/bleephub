@@ -207,6 +207,10 @@ func TestOrgFailedInvitations(t *testing.T) {
 	testServer.store.OrgInvitations[invID].CreatedAt = fixedTestTime.UTC().Add(-8 * 24 * time.Hour)
 	testServer.store.mu.Unlock()
 
+	// Expiry is applied by the background reconciler (dispatcher tick), not on a
+	// read. Drive it directly with the fixed clock.
+	testServer.store.ReconcileAllOrgInvitations(fixedTestTime.UTC())
+
 	if pending := decodeJSONArray(t, ghGet(t, "/api/v3/orgs/people-fail-org/invitations", defaultToken)); len(pending) != 0 {
 		t.Fatalf("expired invitation still pending: %v", pending)
 	}

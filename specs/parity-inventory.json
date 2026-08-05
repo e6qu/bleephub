@@ -3817,8 +3817,8 @@
         "id": "STORE-034",
         "location": "store_teams_people.go:208, store_copilot.go:42",
         "severity": "M",
-        "status": "partial \u2014 the \"kills the server\" half is refuted (the recover middleware catches the persist-failure panic, releases the deferred lock, reloads, and returns 500). The copilot-seat half of the real defect is fixed: `GetCopilotSeat`/`ListCopilotSeats` no longer take the exclusive lock and durably delete expired seats on a read; they filter expired seats in memory under a read lock, and the durable prune stays on the seat write paths (which already call `expireCopilotSeatsLocked`). Regression test proves the reads are non-mutating. The org-invitation half remains: `reconcileOrgInvitationsLocked` is a genuine state machine (consume/cancel/expire with membership side effects), so moving it off the read path needs a background reconciler \u2014 filed as a follow-up",
-        "status_kind": "partial"
+        "status": "fixed \u2014 both halves resolved. The copilot-seat reads were made pure earlier; now the org-invitation reads (`ListPendingOrgInvitations`/`ListFailedOrgInvitations`/`GetOrgInvitation`) take a read lock and no longer run the reconcile state machine (durable deletes + `MustPut`) on a GET. The state machine \u2014 expire/consume/cancel with the durable membership side effects \u2014 now runs on the background schedule dispatcher (`ReconcileAllOrgInvitations`, recover-guarded since a background goroutine has no recover middleware), alongside the existing login-session reap. Consume already ran event-driven on membership activation, so only TTL-expiry timing shifts (\u2264 one tick). Regression tests: a read leaves an expired invitation un-failed and its pending membership intact, while the reconciler applies both durably.",
+        "status_kind": "fixed"
       },
       {
         "category": "STORE",
@@ -6396,9 +6396,9 @@
         },
         "STORE": {
           "status": {
-            "fixed": 55,
+            "fixed": 56,
             "open": 7,
-            "partial": 12
+            "partial": 11
           },
           "total": 74
         },
@@ -6426,9 +6426,9 @@
       },
       "status": {
         "deferred": 1,
-        "fixed": 584,
+        "fixed": 585,
         "open": 57,
-        "partial": 34
+        "partial": 33
       },
       "total": 676
     }
