@@ -4267,8 +4267,8 @@
         "id": "CORE-010",
         "location": "server.go:535",
         "severity": "M",
-        "status": "open",
-        "status_kind": "open"
+        "status": "fixed \u2014 the header-read Slowloris was already bounded by `ReadHeaderTimeout`; the remaining gap was a slow *body* (a client that announces a Content-Length then trickles/stalls it), which a fixed `ReadTimeout` would close only by also cutting off large git pushes. A new `slowBodyGuard` middleware \u2014 placed outermost so its `ResponseController` resolves to the base net/http writer \u2014 wraps each request body and resets a *sliding inactivity* read deadline (60s) before every read: a client making steady progress never trips it, a stalled one is dropped. `ReadTimeout`/`WriteTimeout` stay unset so large uploads are unaffected. Integration test (real server + raw socket) proves a stalled upload is dropped while a prompt one succeeds",
+        "status_kind": "fixed"
       },
       {
         "category": "CORE",
@@ -6366,8 +6366,8 @@
         },
         "CORE": {
           "status": {
-            "fixed": 22,
-            "open": 9,
+            "fixed": 23,
+            "open": 8,
             "partial": 2
           },
           "total": 33
@@ -6426,8 +6426,8 @@
       },
       "status": {
         "deferred": 1,
-        "fixed": 582,
-        "open": 58,
+        "fixed": 583,
+        "open": 57,
         "partial": 35
       },
       "total": 676
