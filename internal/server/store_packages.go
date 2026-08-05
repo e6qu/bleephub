@@ -276,6 +276,14 @@ func (st *Store) CreatePackageVersion(ownerType, ownerKey, pkgType, pkgName, ver
 	if len(files) > 0 && vdir == "" && st.ObjectByteStore == nil {
 		return nil, fmt.Errorf("package file storage is not configured")
 	}
+	// STORE-042: durable metadata replicates cluster-wide via dqlite, but a local
+	// version directory lives on one node only. With persistence enabled, package
+	// bytes must go to the shared object store or replicas that see the metadata
+	// cannot read the files. Mirror the guard the attestation and code-scanning
+	// stores already enforce.
+	if len(files) > 0 && st.persist != nil && st.ObjectByteStore == nil {
+		return nil, fmt.Errorf("package file byte storage requires an object byte store when persistence is enabled")
+	}
 	decodedFiles := make([]decodedPackageFileInput, 0, len(files))
 	for _, fin := range files {
 		data, err := base64.StdEncoding.DecodeString(fin.ContentBase64)
