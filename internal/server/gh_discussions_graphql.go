@@ -543,7 +543,7 @@ func (s *Server) addDiscussionFieldsToSchema(userType, repoType, mutationType *g
 				return nil, fmt.Errorf("resolve source: unexpected type %T", p.Source)
 			}
 			repoID, _ := repo["databaseId"].(int)
-			number, _ := p.Args["number"].(int)
+			number, _ := intArg(p.Args, "number")
 			d := s.store.GetDiscussionByNumber(repoID, number)
 			if d == nil {
 				return nil, &ghNotFoundError{message: fmt.Sprintf("Could not resolve to a Discussion with the number of %d.", number)}
@@ -1125,7 +1125,7 @@ func paginateGQLMaps(nodes []map[string]interface{}, args map[string]interface{}
 		end = start
 	}
 
-	if last, ok := args["last"].(int); ok && last > 0 {
+	if last, ok := intArg(args, "last"); ok && last > 0 {
 		if last > 100 {
 			last = 100
 		}
@@ -1133,7 +1133,7 @@ func paginateGQLMaps(nodes []map[string]interface{}, args map[string]interface{}
 			start = end - last
 		}
 	}
-	if first, ok := args["first"].(int); ok && first > 0 {
+	if first, ok := intArg(args, "first"); ok && first > 0 {
 		if first > 100 {
 			first = 100
 		}
@@ -1141,8 +1141,8 @@ func paginateGQLMaps(nodes []map[string]interface{}, args map[string]interface{}
 			end = start + first
 		}
 	}
-	if first, ok := args["first"].(int); !ok || first <= 0 {
-		if last, ok := args["last"].(int); !ok || last <= 0 {
+	if first, ok := intArg(args, "first"); !ok || first <= 0 {
+		if last, ok := intArg(args, "last"); !ok || last <= 0 {
 			if end-start > 30 {
 				end = start + 30
 			}

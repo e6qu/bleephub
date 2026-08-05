@@ -822,7 +822,7 @@ func (s *Server) addIssueFieldsToSchema(userType, repoType, mutationType, queryT
 			})
 
 			first := 30
-			if f, ok := p.Args["first"].(int); ok && f > 0 {
+			if f, ok := intArg(p.Args, "first"); ok && f > 0 {
 				first = f
 			}
 			after, _ := p.Args["after"].(string)
@@ -842,7 +842,7 @@ func (s *Server) addIssueFieldsToSchema(userType, repoType, mutationType, queryT
 				return nil, fmt.Errorf("resolve source: unexpected type %T", p.Source)
 			}
 			repoID, _ := repo["databaseId"].(int)
-			number, _ := p.Args["number"].(int)
+			number, _ := intArg(p.Args, "number")
 
 			issue := s.store.GetIssueByNumber(repoID, number)
 			if issue == nil {
@@ -969,7 +969,7 @@ func (s *Server) addIssueFieldsToSchema(userType, repoType, mutationType, queryT
 			}
 
 			first := 0
-			if f, ok := p.Args["first"].(int); ok {
+			if f, ok := intArg(p.Args, "first"); ok {
 				first = f
 			}
 			after, _ := p.Args["after"].(string)
@@ -1031,7 +1031,7 @@ func (s *Server) addIssueFieldsToSchema(userType, repoType, mutationType, queryT
 			sort.Slice(users, func(a, b int) bool { return users[a].ID < users[b].ID })
 
 			first := 0
-			if f, ok := p.Args["first"].(int); ok {
+			if f, ok := intArg(p.Args, "first"); ok {
 				first = f
 			}
 			after, _ := p.Args["after"].(string)

@@ -377,8 +377,13 @@ func TestExistingRoutesUnaffected(t *testing.T) {
 		t.Fatalf("/health: expected 200, got %d", resp.StatusCode)
 	}
 	health := decodeJSON(t, resp)
-	if health["enterprise_slug"] != defaultEnterpriseSlug {
-		t.Fatalf("/health enterprise_slug = %v, want %s", health["enterprise_slug"], defaultEnterpriseSlug)
+	// /health is the anonymous liveness probe: status only, no build identity or
+	// tenant slug (CORE-016).
+	if health["status"] != "ok" {
+		t.Fatalf("/health status = %v, want ok", health["status"])
+	}
+	if _, leaked := health["enterprise_slug"]; leaked {
+		t.Fatalf("/health leaks enterprise_slug to anonymous callers")
 	}
 
 	// /_apis/connectionData
