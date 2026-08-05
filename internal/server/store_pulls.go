@@ -548,12 +548,12 @@ func (st *Store) findPRByRepoNumberLocked(repoKey string, pullNumber int) *PullR
 	if repo == nil {
 		return nil
 	}
-	for _, p := range st.PullRequests {
-		if p.RepoID == repo.ID && p.Number == pullNumber {
-			return p
-		}
-	}
-	return nil
+	// Resolve through the same (repoID, number) index every read and merge path
+	// uses (PullsByRepo) rather than scanning st.PullRequests: a linear scan
+	// returns an arbitrary match in map-iteration order, so a stale or duplicate
+	// record could make these reviewer mutations act on a different PR than the
+	// endpoints that read the index. One source of truth, and O(1).
+	return st.PullsByRepo[repo.ID][pullNumber]
 }
 
 // RequestReviewers adds reviewer IDs to a PR's requested reviewers list and

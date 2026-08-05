@@ -228,8 +228,12 @@ func (st *Store) UnlockUserMigrationRepo(id int, repoName string) bool {
 	return true
 }
 
-// IsUserMigrationRepoLocked reports whether a repository is still locked.
-func (st *Store) IsUserMigrationRepoLocked(id int, repoName string) bool {
+// UserMigrationLocksRepo reports whether a user migration still holds the lock
+// on a repository. It acquires st.mu itself; the name deliberately avoids the
+// "…Locked" suffix, which elsewhere in this package marks a helper that must be
+// called with st.mu already held — calling this one under the lock would
+// self-deadlock the non-reentrant mutex.
+func (st *Store) UserMigrationLocksRepo(id int, repoName string) bool {
 	st.mu.RLock()
 	defer st.mu.RUnlock()
 	m := st.UserMigrations[id]
@@ -329,8 +333,11 @@ func (st *Store) UnlockOrgMigrationRepo(id int, repoName string) bool {
 	return true
 }
 
-// IsOrgMigrationRepoLocked reports whether a repository is still locked.
-func (st *Store) IsOrgMigrationRepoLocked(id int, repoName string) bool {
+// OrgMigrationLocksRepo reports whether an organization migration still holds
+// the lock on a repository. It acquires st.mu itself; the name deliberately
+// avoids the "…Locked" suffix that marks caller-holds-the-lock helpers, so it
+// cannot be mistaken for one and deadlocked under the non-reentrant mutex.
+func (st *Store) OrgMigrationLocksRepo(id int, repoName string) bool {
 	st.mu.RLock()
 	defer st.mu.RUnlock()
 	m := st.OrgMigrations[id]

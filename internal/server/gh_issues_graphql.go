@@ -1832,7 +1832,21 @@ func issueFieldValuesConnectionLocked(st *Store, issue *Issue) map[string]interf
 		}
 		nodes = append(nodes, issueFieldValueToGQLLocked(field, issue.ID, values[fieldID]))
 	}
-	return paginateGQL(nodes, len(nodes), "", func(n map[string]interface{}) map[string]interface{} { return n }, func(n map[string]interface{}) string { return gqlNodeIdentity(n) })
+	// Return the full node set with a truthful totalCount; the field resolver
+	// applies the client's page window via repaginateConnection. Pre-paginating
+	// here with paginateGQL clamped the list to 100, so an issue with more than
+	// 100 field values reported totalCount 100 and hid the remainder from
+	// pagination (GQL-022). Match the shape of the sibling connections.
+	return map[string]interface{}{
+		"nodes":      nodes,
+		"totalCount": len(nodes),
+		"pageInfo": map[string]interface{}{
+			"hasNextPage":     false,
+			"hasPreviousPage": false,
+			"startCursor":     nil,
+			"endCursor":       nil,
+		},
+	}
 }
 
 func issueFieldsOrgLocked(st *Store, repo *Repo) string {

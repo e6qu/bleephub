@@ -57,7 +57,7 @@
       },
       {
         "event": "issues",
-        "line": 2920,
+        "line": 2934,
         "producer": "emitWebhookEvent",
         "source": "internal/server/gh_issues_graphql.go"
       },
@@ -2611,8 +2611,8 @@
         "id": "GQL-022",
         "location": "gh_issues_graphql.go:1677",
         "severity": "M",
-        "status": "open",
-        "status_kind": "open"
+        "status": "fixed \u2014 `issueFieldValuesConnectionLocked` was the sole offender: it built the full node list then called `paginateGQL(nodes, len(nodes), \u2026)`, whose page size is clamped to 100, and the field resolver re-paginated that already-truncated slice via `repaginateConnection`, so an issue with >100 field values reported `totalCount` 100 and hid the remainder. It now returns the full node set with a truthful `totalCount` (matching its label/assignee/comment siblings) and lets the resolver apply the single correct window. Regression test asserts `totalCount==105` for a 105-value issue",
+        "status_kind": "fixed"
       },
       {
         "category": "GQL",
@@ -3925,8 +3925,8 @@
         "id": "STORE-046",
         "location": "store_pulls.go:521",
         "severity": "M",
-        "status": "open",
-        "status_kind": "open"
+        "status": "fixed \u2014 `findPRByRepoNumberLocked` (the resolver for the four reviewer-request mutations) linearly scanned `st.PullRequests`, returning an arbitrary `(repoID, number)` match in map order, while every read/merge path used the `PullsByRepo` index. It now resolves through that same index, so all sibling endpoints share one source of truth (and it is O(1)). Regression test desyncs the flat collection from the index and asserts the reviewer path follows the index",
+        "status_kind": "fixed"
       },
       {
         "category": "STORE",
@@ -3988,8 +3988,8 @@
         "id": "STORE-053",
         "location": "store_migrations.go:202",
         "severity": "m",
-        "status": "open",
-        "status_kind": "open"
+        "status": "fixed \u2014 the two outliers `IsUserMigrationRepoLocked`/`IsOrgMigrationRepoLocked` (exported, and they *acquire* `st.mu`) were renamed to `UserMigrationLocksRepo`/`OrgMigrationLocksRepo`, out of the pervasive `\u2026Locked` = caller-already-holds-the-lock convention, so neither can be mistaken for a lock-held helper and deadlocked. Both were dead code (no callers), so the risk was latent; the doc comments now state they take the lock",
+        "status_kind": "fixed"
       },
       {
         "category": "STORE",
@@ -6374,8 +6374,8 @@
         },
         "GQL": {
           "status": {
-            "fixed": 55,
-            "open": 3,
+            "fixed": 56,
+            "open": 2,
             "partial": 3
           },
           "total": 61
@@ -6396,8 +6396,8 @@
         },
         "STORE": {
           "status": {
-            "fixed": 44,
-            "open": 20,
+            "fixed": 46,
+            "open": 18,
             "partial": 10
           },
           "total": 74
@@ -6426,8 +6426,8 @@
       },
       "status": {
         "deferred": 1,
-        "fixed": 566,
-        "open": 74,
+        "fixed": 569,
+        "open": 71,
         "partial": 35
       },
       "total": 676
