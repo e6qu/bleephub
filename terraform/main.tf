@@ -7,6 +7,8 @@ locals {
   git_bucket            = "${var.name}-git"
   object_bucket         = "${var.name}-objects"
   startup_bucket        = "${var.name}-startup"
+  access_log_bucket     = "${var.name}-access-logs"
+  cf_log_bucket         = "${var.name}-cf-logs"
   azs                   = { for index, az in var.availability_zones : tostring(index) => az }
   uses_existing_network = var.existing_vpc_id != ""
   dqlite_nodes          = { for index in range(3) : tostring(index) => 9000 + index }
@@ -106,6 +108,24 @@ data "aws_iam_policy_document" "kms" {
     }
   }
 
+  # S3 server-access-log delivery encrypts each log object with the module key.
+  # Bind the grant to this account's own source buckets.
+  statement {
+    sid       = "S3AccessLogDelivery"
+    effect    = "Allow"
+    actions   = ["kms:GenerateDataKey"]
+    resources = ["*"]
+    principals {
+      type        = "Service"
+      identifiers = ["logging.s3.amazonaws.com"]
+    }
+    condition {
+      test     = "StringEquals"
+      variable = "aws:SourceAccount"
+      values   = [data.aws_caller_identity.current.account_id]
+    }
+  }
+
   # CloudFront decrypts the KMS-encrypted startup document through its OAC.
   # Bind that ability to this distribution rather than granting the service
   # principal access to every object encrypted by the shared key.
@@ -160,12 +180,16 @@ resource "aws_internet_gateway" "this" {
   tags   = merge(local.common_tags, { Name = "${var.name}-igw" })
 }
 
+# No auto-assigned public IPs: the only instance launched here is the fck-nat
+# NAT box, whose launch template attaches its own public IP
+# (associate_public_ip_address), and the network load balancer brings its own
+# AWS-managed addresses. Everything else runs in the private subnets.
 resource "aws_subnet" "public" {
   for_each                = local.uses_existing_network ? {} : local.azs
   vpc_id                  = aws_vpc.this[0].id
   availability_zone       = each.value
   cidr_block              = cidrsubnet(var.vpc_cidr, 8, tonumber(each.key))
-  map_public_ip_on_launch = true
+  map_public_ip_on_launch = false
   tags                    = merge(local.common_tags, { Name = "${var.name}-public-${each.value}" })
 }
 
@@ -275,9 +299,8 @@ resource "aws_vpc_endpoint" "s3" {
   tags              = merge(local.common_tags, { Name = "${var.name}-s3" })
 }
 
-# S3 server-access logs would duplicate CloudTrail data-event auditing while
-# adding a fourth durable bucket; revisit with the audit-log rollout.
-#trivy:ignore:AWS-0089:exp:2027-01-28
+# Every Git ref and pack lives here; server-access logs go to the dedicated
+# access-log bucket (see aws_s3_bucket_logging.git).
 resource "aws_s3_bucket" "git" {
   bucket        = local.git_bucket
   force_destroy = var.force_destroy_storage
@@ -348,8 +371,8 @@ resource "aws_s3_bucket_lifecycle_configuration" "git" {
   }
 }
 
-# See the git bucket: data-event auditing is the intended object-access ledger.
-#trivy:ignore:AWS-0089:exp:2027-01-28
+# Object storage; server-access logs go to the dedicated access-log bucket
+# (see aws_s3_bucket_logging.objects).
 resource "aws_s3_bucket" "objects" {
   bucket        = local.object_bucket
   force_destroy = var.force_destroy_storage
@@ -418,13 +441,128 @@ resource "aws_s3_bucket_lifecycle_configuration" "objects" {
   }
 }
 
+# Server-access logs for every durable bucket land here. The bucket logs its
+# own access into itself (the standard non-recursive self-logging pattern), so
+# it needs no external target, and S3 log delivery writes under bucket-owner-
+# enforced ownership through the policy below rather than a legacy ACL.
+resource "aws_s3_bucket" "access_logs" {
+  bucket        = local.access_log_bucket
+  force_destroy = var.force_destroy_storage
+  tags          = local.common_tags
+
+  lifecycle {
+    prevent_destroy = true
+  }
+}
+
+resource "aws_s3_bucket_server_side_encryption_configuration" "access_logs" {
+  bucket = aws_s3_bucket.access_logs.id
+  rule {
+    apply_server_side_encryption_by_default {
+      sse_algorithm     = "aws:kms"
+      kms_master_key_id = aws_kms_key.this.arn
+    }
+    bucket_key_enabled = true
+  }
+}
+
+resource "aws_s3_bucket_public_access_block" "access_logs" {
+  bucket                  = aws_s3_bucket.access_logs.id
+  block_public_acls       = true
+  ignore_public_acls      = true
+  block_public_policy     = true
+  restrict_public_buckets = true
+}
+
+# Access logs are a re-derivable audit trail, not primary data; expire them on a
+# schedule instead of versioning them (versioning here would only add cost).
+resource "aws_s3_bucket_lifecycle_configuration" "access_logs" {
+  bucket = aws_s3_bucket.access_logs.id
+  rule {
+    id     = "expire-access-logs"
+    status = "Enabled"
+    filter {}
+    expiration { days = 365 }
+    abort_incomplete_multipart_upload { days_after_initiation = 7 }
+  }
+}
+
+data "aws_iam_policy_document" "access_logs" {
+  statement {
+    sid       = "S3ServerAccessLogsDelivery"
+    effect    = "Allow"
+    actions   = ["s3:PutObject"]
+    resources = ["${aws_s3_bucket.access_logs.arn}/*"]
+    principals {
+      type        = "Service"
+      identifiers = ["logging.s3.amazonaws.com"]
+    }
+    condition {
+      test     = "ArnLike"
+      variable = "aws:SourceArn"
+      values = [
+        aws_s3_bucket.git.arn,
+        aws_s3_bucket.objects.arn,
+        aws_s3_bucket.startup.arn,
+        aws_s3_bucket.access_logs.arn,
+      ]
+    }
+    condition {
+      test     = "StringEquals"
+      variable = "aws:SourceAccount"
+      values   = [data.aws_caller_identity.current.account_id]
+    }
+  }
+  statement {
+    sid       = "DenyInsecureTransport"
+    effect    = "Deny"
+    actions   = ["s3:*"]
+    resources = [aws_s3_bucket.access_logs.arn, "${aws_s3_bucket.access_logs.arn}/*"]
+    principals {
+      type        = "*"
+      identifiers = ["*"]
+    }
+    condition {
+      test     = "Bool"
+      variable = "aws:SecureTransport"
+      values   = ["false"]
+    }
+  }
+}
+
+resource "aws_s3_bucket_policy" "access_logs" {
+  bucket     = aws_s3_bucket.access_logs.id
+  policy     = data.aws_iam_policy_document.access_logs.json
+  depends_on = [aws_s3_bucket_public_access_block.access_logs]
+}
+
+resource "aws_s3_bucket_logging" "git" {
+  bucket        = aws_s3_bucket.git.id
+  target_bucket = aws_s3_bucket.access_logs.id
+  target_prefix = "git/"
+}
+
+resource "aws_s3_bucket_logging" "objects" {
+  bucket        = aws_s3_bucket.objects.id
+  target_bucket = aws_s3_bucket.access_logs.id
+  target_prefix = "objects/"
+}
+
+resource "aws_s3_bucket_logging" "startup" {
+  bucket        = aws_s3_bucket.startup.id
+  target_bucket = aws_s3_bucket.access_logs.id
+  target_prefix = "startup/"
+}
+
+resource "aws_s3_bucket_logging" "access_logs" {
+  bucket        = aws_s3_bucket.access_logs.id
+  target_bucket = aws_s3_bucket.access_logs.id
+  target_prefix = "access-logs/"
+}
+
 # This contains exactly one non-sensitive document. It makes the scale-to-zero
 # transition visible without starting an ECS task merely to render a loading
 # screen; no application, Git, object, or status data is readable from it.
-# Viewer requests are recorded by API Gateway; S3 sees only CloudFront's fixed
-# origin read and a separate server-access-log bucket would recursively expand
-# the storage surface for no additional viewer attribution.
-#trivy:ignore:AWS-0089:exp:2027-01-28
 resource "aws_s3_bucket" "startup" {
   bucket        = local.startup_bucket
   force_destroy = var.force_destroy_storage
@@ -656,16 +794,20 @@ resource "aws_security_group" "api_link" {
   name_prefix = "${var.name}-api-link-"
   description = "API Gateway VPC link to Bleephub application tasks"
   vpc_id      = local.vpc_id
-  # The link must reach dynamically addressed application tasks.
-  #trivy:ignore:AWS-0104:exp:2027-01-28
-  egress {
-    description = "Reach application tasks selected by service discovery"
-    protocol    = "-1"
-    from_port   = 0
-    to_port     = 0
-    cidr_blocks = ["0.0.0.0/0"]
-  }
-  tags = local.common_tags
+  tags        = local.common_tags
+}
+
+# The link only needs the application tasks on the single HTTP API port. A
+# standalone rule (rather than an inline egress block referencing the task
+# group) keeps the two security groups free of a definition cycle.
+resource "aws_vpc_security_group_egress_rule" "api_link_to_tasks" {
+  count                        = local.uses_shared_api_gateway_vpc_link ? 0 : 1
+  security_group_id            = aws_security_group.api_link[0].id
+  description                  = "Reach application tasks selected by service discovery"
+  referenced_security_group_id = aws_security_group.task.id
+  ip_protocol                  = "tcp"
+  from_port                    = 5555
+  to_port                      = 5555
 }
 
 resource "aws_security_group" "task" {
