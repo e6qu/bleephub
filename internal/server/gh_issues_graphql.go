@@ -2164,9 +2164,33 @@ func reactionGroupsForGraphQL(rs *ReactionStore, parentType string, parentID int
 
 // --- Node ID lookup helpers ---
 
+// decodeNodeDBID extracts the trailing database id from a GraphQL node ID of the
+// form "<prefix><digits>" (e.g. "R_kgDO00000123", prefix "R_kgDO"). It returns
+// false when the id lacks that prefix or does not end in digits — so a legacy or
+// foreign-shaped id (e.g. the "U_bleephub_<login>" identifiers) falls through to
+// a scan rather than being mis-resolved. Callers pair the O(1) map lookup with a
+// node-id equality check, keeping behavior identical to the old full scan
+// (GQL-024).
+func decodeNodeDBID(nodeID, prefix string) (int, bool) {
+	rest, ok := strings.CutPrefix(nodeID, prefix)
+	if !ok {
+		return 0, false
+	}
+	id, err := strconv.Atoi(rest)
+	if err != nil {
+		return 0, false
+	}
+	return id, true
+}
+
 func findRepoByNodeID(st *Store, nodeID string) *Repo {
 	st.mu.RLock()
 	defer st.mu.RUnlock()
+	if id, ok := decodeNodeDBID(nodeID, "R_kgDO"); ok {
+		if r := st.Repos[id]; r != nil && r.NodeID == nodeID {
+			return r
+		}
+	}
 	for _, r := range st.Repos {
 		if r.NodeID == nodeID {
 			return r
@@ -2289,6 +2313,11 @@ func applyIssueState(i *Issue, state string) {
 func findUserByNodeID(st *Store, nodeID string) *User {
 	st.mu.RLock()
 	defer st.mu.RUnlock()
+	if id, ok := decodeNodeDBID(nodeID, "U_kgDO"); ok {
+		if u := st.Users[id]; u != nil && u.NodeID == nodeID {
+			return u
+		}
+	}
 	for _, u := range st.Users {
 		if u.NodeID == nodeID {
 			return u

@@ -93,6 +93,25 @@ behind a fix belongs in its commit message, not next to the code.
 - Do not grow a parity allowlist (for example the OpenAPI violation allowlist)
   without saying why — a wider allowlist is a parity regression.
 
+## Documentation and terminology
+
+Prose in `docs/`, `README.md`, and this file favours plain language, but common
+technical acronyms are used as-is. Spelling them out in full is noise, not
+clarity — write "GitHub's REST API", never "GitHub's Representational State
+Transfer Application Programming Interface".
+
+The following are established terms and are **allowed acronyms**: they should
+never be expanded, and a docs review should not flag them.
+
+> API, REST, GraphQL, gRPC, CLI, UI, SPA, SDK, CI, CD, SSO, OIDC, OAuth, JWT,
+> JWKS, PKCE, SAML, SCIM, PAT, RBAC, ACL, CSRF, XSS, SSRF, TLS, mTLS, HTTP,
+> HTTPS, URL, URI, DNS, IP, TCP, UDP, CIDR, NAT, VPC, SG, S3, KMS, ECS, EFS,
+> ECR, IAM, AWS, GCP, OTEL, SHA, HMAC, KDF, ID, UUID, JSON, YAML, HCL, HTML,
+> CSS, TS, DOM, CRUD, TTL, TOCTOU, FD, GC, DTO, ORM, DB, SQL, gofmt, gh.
+
+When introducing a bleephub-specific or genuinely uncommon abbreviation, expand
+it on first use; everything above is common enough that expansion only hurts.
+
 ## Security
 
 Do not open a public issue for anything that discloses or bypasses a credential.
