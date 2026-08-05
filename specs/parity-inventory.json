@@ -57,7 +57,7 @@
       },
       {
         "event": "issues",
-        "line": 2934,
+        "line": 2963,
         "producer": "emitWebhookEvent",
         "source": "internal/server/gh_issues_graphql.go"
       },
@@ -2629,8 +2629,8 @@
         "id": "GQL-024",
         "location": "9 scanners",
         "severity": "M",
-        "status": "open",
-        "status_kind": "open"
+        "status": "partial \u2014 the two hottest node-id finders (`findRepoByNodeID`, `findUserByNodeID`), which resolve `repositoryId` and assignees on the issue/PR/discussion create-mutation hot path, now decode the database id embedded in the node id (`decodeNodeDBID`, mirroring the existing `parsePRReviewThreadNodeID` convention) and do an O(1) keyed lookup, with a node-id equality guard and a fallback scan so a foreign- or legacy-shaped id (e.g. the `U_bleephub_<login>` identifiers) still resolves exactly as before. Regression test covers the decoder and both finders. The remaining ~7 finders (labels, milestones, discussions, projects-v2, pull-request by id) still scan and can adopt the same helper in a follow-up.",
+        "status_kind": "partial"
       },
       {
         "category": "GQL",
@@ -4348,8 +4348,8 @@
         "id": "CORE-019",
         "location": "workflows.go:238 + 3",
         "severity": "M",
-        "status": "open",
-        "status_kind": "open"
+        "status": "fixed \u2014 refuted at the HTTP choke point: otelhttp (v0.69.0) already sets the top-level request span's status from the response code (`span.SetStatus(semconv.Status(code))`, mapping 5xx\u2192Error, <5xx\u2192Unset per correct HTTP-server semantics), and `recoverMiddleware` records the panic path \u2014 so traces already distinguish a 5xx failure from success without any repo-side call. The residual (the ~4 manually-created internal spans in workflows.go not calling RecordError/SetStatus) is per-span business-logic work with no shared producer, tracked separately; it is not the claimed repo-wide gap.",
+        "status_kind": "fixed"
       },
       {
         "category": "CORE",
@@ -6366,8 +6366,8 @@
         },
         "CORE": {
           "status": {
-            "fixed": 23,
-            "open": 8,
+            "fixed": 24,
+            "open": 7,
             "partial": 2
           },
           "total": 33
@@ -6375,8 +6375,8 @@
         "GQL": {
           "status": {
             "fixed": 58,
-            "open": 2,
-            "partial": 1
+            "open": 1,
+            "partial": 2
           },
           "total": 61
         },
@@ -6426,9 +6426,9 @@
       },
       "status": {
         "deferred": 1,
-        "fixed": 585,
-        "open": 57,
-        "partial": 33
+        "fixed": 586,
+        "open": 55,
+        "partial": 34
       },
       "total": 676
     }

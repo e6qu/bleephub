@@ -1,6 +1,6 @@
 # OpenID Connect (OIDC) and shauth SSO
 
-bleephub supports federated single sign-on through a standard OpenID Connect
+bleephub supports federated SSO through a standard OpenID Connect
 provider. The reference integration is **shauth** (the e6qu identity service,
 built on Ory Hydra), but any spec-compliant OIDC provider works. This document
 covers the standards bleephub follows, exactly where each is implemented, and
