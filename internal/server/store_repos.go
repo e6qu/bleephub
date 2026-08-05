@@ -2759,12 +2759,30 @@ func (st *Store) moveRepoKeyLocked(batch *persistBatch, oldFull, newFull string)
 			wf.RepoFullName = newFull
 		}
 	}
-	for _, wf := range st.WorkflowFiles {
+	// STORE-029: a workflow file's ID (map key and persistence key) is
+	// stableWorkflowFileID(RepoFullName, Path), so a rename must re-key it. Only
+	// rewriting the field left the row keyed by the old-name hash while the next
+	// registration under the new name derived a different hash and inserted a
+	// duplicate. Snapshot first — never insert into a map being ranged.
+	type workflowFileMove struct {
+		oldID int64
+		newID int64
+		wf    *WorkflowFile
+	}
+	var wfMoves []workflowFileMove
+	for oldID, wf := range st.WorkflowFiles {
 		if wf.RepoFullName == oldFull {
-			wf.RepoFullName = newFull
-			if st.persist != nil {
-				batch.Put("workflow_files", strconv.FormatInt(wf.ID, 10), wf)
-			}
+			wfMoves = append(wfMoves, workflowFileMove{oldID: oldID, newID: stableWorkflowFileID(newFull, wf.Path), wf: wf})
+		}
+	}
+	for _, m := range wfMoves {
+		m.wf.RepoFullName = newFull
+		m.wf.ID = m.newID
+		delete(st.WorkflowFiles, m.oldID)
+		st.WorkflowFiles[m.newID] = m.wf
+		if st.persist != nil {
+			batch.Delete("workflow_files", strconv.FormatInt(m.oldID, 10))
+			batch.Put("workflow_files", strconv.FormatInt(m.newID, 10), m.wf)
 		}
 	}
 
