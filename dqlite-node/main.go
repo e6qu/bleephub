@@ -14,6 +14,7 @@ import (
 	"net/url"
 	"os"
 	"os/signal"
+	"strconv"
 	"strings"
 	"sync"
 	"syscall"
@@ -46,9 +47,17 @@ func main() {
 		log.Fatalf("create dqlite data directory %s: %v", dataDir, err)
 	}
 
-	listenAddress := os.Getenv("BLEEPHUB_DQLITE_LISTEN_ADDR")
-	if strings.TrimSpace(listenAddress) == "" {
-		listenAddress = ":9000"
+	// Listen on the port advertised to peers by default: a fixed ":9000" while
+	// the advertised address used a different port left peers dialing the
+	// advertised port and failing to connect (STORE-055). An explicit override
+	// still wins for NAT/proxy setups.
+	listenAddress := strings.TrimSpace(os.Getenv("BLEEPHUB_DQLITE_LISTEN_ADDR"))
+	if listenAddress == "" {
+		_, port, splitErr := net.SplitHostPort(address)
+		if splitErr != nil {
+			log.Fatalf("derive dqlite listen address from advertise address %q: %v", address, splitErr)
+		}
+		listenAddress = ":" + port
 	}
 	tlsConfig, err := dqliteaddr.TLSConfig(secret, true)
 	if err != nil {
@@ -79,12 +88,21 @@ func main() {
 		}
 	}()
 
+	voters := 3
+	if v := strings.TrimSpace(os.Getenv("BLEEPHUB_DQLITE_VOTERS")); v != "" {
+		n, convErr := strconv.Atoi(v)
+		if convErr != nil || n < 1 {
+			log.Fatalf("BLEEPHUB_DQLITE_VOTERS must be a positive integer, got %q", v)
+		}
+		voters = n
+	}
+
 	node, err := app.New(
 		dataDir,
 		app.WithAddress(address),
 		app.WithCluster(join),
 		app.WithExternalConn(dqliteDialer(addresses, secret), accepted),
-		app.WithVoters(3),
+		app.WithVoters(voters),
 	)
 	if err != nil {
 		log.Fatalf("start dqlite node: %v", err)

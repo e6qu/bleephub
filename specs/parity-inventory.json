@@ -3763,8 +3763,8 @@
         "id": "STORE-028",
         "location": "store_orgs.go:247 + 4",
         "severity": "M",
-        "status": "open",
-        "status_kind": "open"
+        "status": "partial \u2014 the package secondary-index half is fixed: `deleteRepoLocked` and `repoDeletionIntentLocked` iterated `PackagesByOwnerKey`, which a soft-delete prunes while keeping the row in the authoritative `st.Packages`, so a soft-deleted package's rows and file bytes were orphaned on repo delete. Both sites now iterate `st.Packages` filtered by owner (soft-deleted included). Regression test soft-deletes a package then deletes its repo and asserts the row is reclaimed. Remaining (separate, larger cascades, not one-line index swaps): `deleteOrgMetadata` never cascades org-directly-owned packages or the org's marketplace purchases, and there is no user-account deletion cascade at all \u2014 filed as follow-ups",
+        "status_kind": "partial"
       },
       {
         "category": "STORE",
@@ -3817,8 +3817,8 @@
         "id": "STORE-034",
         "location": "store_teams_people.go:208, store_copilot.go:42",
         "severity": "M",
-        "status": "open",
-        "status_kind": "open"
+        "status": "partial \u2014 the \"kills the server\" half is refuted (the recover middleware catches the persist-failure panic, releases the deferred lock, reloads, and returns 500). The copilot-seat half of the real defect is fixed: `GetCopilotSeat`/`ListCopilotSeats` no longer take the exclusive lock and durably delete expired seats on a read; they filter expired seats in memory under a read lock, and the durable prune stays on the seat write paths (which already call `expireCopilotSeatsLocked`). Regression test proves the reads are non-mutating. The org-invitation half remains: `reconcileOrgInvitationsLocked` is a genuine state machine (consume/cancel/expire with membership side effects), so moving it off the read path needs a background reconciler \u2014 filed as a follow-up",
+        "status_kind": "partial"
       },
       {
         "category": "STORE",
@@ -4006,8 +4006,8 @@
         "id": "STORE-055",
         "location": "dqlite-node/main.go:36",
         "severity": "m",
-        "status": "open",
-        "status_kind": "open"
+        "status": "fixed \u2014 the listen address defaulted to a fixed `\":9000\"`, so a node advertising a different port (`BLEEPHUB_DQLITE_ADVERTISE_ADDR=host:7000`) listened on `:9000` and peers dialing the advertised port failed to connect. The node now derives the default listen port from the advertised port (via `net.SplitHostPort`; explicit `BLEEPHUB_DQLITE_LISTEN_ADDR` still wins for NAT/proxy), and the voter count is now configurable via `BLEEPHUB_DQLITE_VOTERS` (default 3, guarded > 0) instead of hardcoded. The derivation is inlined in the node binary because the deadcode gate analyzes only `cmd/bleephub` and CI has no dqlite-tagged test job, so a separate helper would be flagged unreachable",
+        "status_kind": "fixed"
       },
       {
         "category": "STORE",
@@ -4015,8 +4015,8 @@
         "id": "STORE-056",
         "location": "persistence.go:269",
         "severity": "m",
-        "status": "open",
-        "status_kind": "open"
+        "status": "fixed \u2014 refuted: the address map's only source is the process environment variable `BLEEPHUB_DQLITE_ADDRESS_MAP`, immutable for a process's lifetime, so re-reading it per-dial yields the identical value (a behavioral no-op). The genuine runtime drift \u2014 the live quorum-member set changing \u2014 is already handled without the map: the dqlite driver refreshes membership from the quorum itself, and `Map.Resolve` passes any unmapped address through unchanged, so a new member is dialed directly. The map is a static retired\u2192stable translation table; a construction-time snapshot fully serves its purpose. Patching it to re-read per-dial would only mislead readers into thinking live reconfiguration works without a restart",
+        "status_kind": "fixed"
       },
       {
         "category": "STORE",
@@ -6396,9 +6396,9 @@
         },
         "STORE": {
           "status": {
-            "fixed": 53,
-            "open": 11,
-            "partial": 10
+            "fixed": 55,
+            "open": 7,
+            "partial": 12
           },
           "total": 74
         },
@@ -6426,9 +6426,9 @@
       },
       "status": {
         "deferred": 1,
-        "fixed": 576,
-        "open": 64,
-        "partial": 35
+        "fixed": 578,
+        "open": 60,
+        "partial": 37
       },
       "total": 676
     }
