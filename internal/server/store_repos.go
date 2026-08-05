@@ -646,7 +646,6 @@ func (st *Store) deleteRepoLocked(owner, name string) (bool, pendingDeletion, er
 	batch.Delete("repo_deploy_keys", fullName)
 	batch.Delete("check_suite_prefs", fullName)
 	batch.Delete("repo_actions_permissions", fullName)
-	batch.Delete("secret_scanning_alerts", fullName)
 	batch.Delete("dependabot_secrets", fullName)
 	batch.Delete("code_scanning_default_setups", fullName)
 	batch.Delete("code_quality_setups", fullName)
@@ -2482,9 +2481,6 @@ func (st *Store) moveRepoKeyLocked(batch *persistBatch, oldFull, newFull string)
 			}
 		}
 		delete(st.SecretScanningAlertsByRepo, oldFull)
-		if st.persist != nil {
-			batch.Delete("secret_scanning_alerts", oldFull)
-		}
 	}
 	if v := st.SecretScanningNextNumber[oldFull]; v != 0 {
 		st.SecretScanningNextNumber[newFull] = v

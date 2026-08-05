@@ -13,6 +13,7 @@ import (
 	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"log"
@@ -506,11 +507,11 @@ func openSQLite(dataDir string) (*sql.DB, error) {
 func openDqlite(addresses string) (*sql.DB, error) {
 	addressMap, err := dqliteaddr.FromEnvironment(os.Getenv(dqliteaddr.Environment))
 	if err != nil {
-		return nil, fmt.Errorf("parse dqlite address map: %w", err)
+		return nil, permanentErrf("parse dqlite address map: %w", err)
 	}
 	secret := strings.TrimSpace(os.Getenv(dqliteaddr.SecretEnvironment))
 	if secret == "" {
-		return nil, fmt.Errorf("%s is required: it authenticates and encrypts the dqlite transport carrying statements against the whole database", dqliteaddr.SecretEnvironment)
+		return nil, permanentErrf("%s is required: it authenticates and encrypts the dqlite transport carrying statements against the whole database", dqliteaddr.SecretEnvironment)
 	}
 	store := client.NewInmemNodeStore()
 	servers := make([]client.NodeInfo, 0, 3)
@@ -522,10 +523,10 @@ func openDqlite(addresses string) (*sql.DB, error) {
 		servers = append(servers, client.NodeInfo{Address: address})
 	}
 	if len(servers) == 0 {
-		return nil, fmt.Errorf("BLEEPHUB_DQLITE_SERVERS must contain at least one dqlite server address")
+		return nil, permanentErrf("BLEEPHUB_DQLITE_SERVERS must contain at least one dqlite server address")
 	}
 	if err := store.Set(context.Background(), servers); err != nil {
-		return nil, fmt.Errorf("configure dqlite server set: %w", err)
+		return nil, permanentErrf("configure dqlite server set: %w", err)
 	}
 
 	dqliteDriver, err := driver.New(store,
@@ -536,7 +537,7 @@ func openDqlite(addresses string) (*sql.DB, error) {
 		driver.WithRetryLimit(12),
 	)
 	if err != nil {
-		return nil, fmt.Errorf("create dqlite driver: %w", err)
+		return nil, permanentErrf("create dqlite driver: %w", err)
 	}
 	connector, err := dqliteDriver.OpenConnector("bleephub")
 	if err != nil {
@@ -607,7 +608,7 @@ func dqliteHTTPDial(ctx context.Context, address, secret string) (net.Conn, erro
 
 func NewPersistence() (*Persistence, error) {
 	if os.Getenv("BLEEPHUB_DATABASE_URL") != "" {
-		return nil, fmt.Errorf("BLEEPHUB_DATABASE_URL is no longer supported; bleephub stores its own state in SQLite via BLEEPHUB_PERSIST=true and BLEEPHUB_DATA_DIR")
+		return nil, permanentErrf("BLEEPHUB_DATABASE_URL is no longer supported; bleephub stores its own state in SQLite via BLEEPHUB_PERSIST=true and BLEEPHUB_DATA_DIR")
 	}
 
 	if os.Getenv("BLEEPHUB_PERSIST") != "true" {
@@ -615,7 +616,7 @@ func NewPersistence() (*Persistence, error) {
 	}
 	encryptionKey, err := persistenceEncryptionKey()
 	if err != nil {
-		return nil, err
+		return nil, &permanentPersistenceError{err: err}
 	}
 
 	dataDir := os.Getenv("BLEEPHUB_DATA_DIR")
@@ -856,10 +857,10 @@ func migrateSchema(db *sql.DB, dialect dbDialect) error {
 	}
 	version, err := strconv.Atoi(strings.TrimSpace(stored))
 	if err != nil {
-		return fmt.Errorf("persistence schema version %q is not a number", stored)
+		return permanentErrf("persistence schema version %q is not a number", stored)
 	}
 	if version > currentSchemaVersion {
-		return fmt.Errorf("persistence schema version %d was written by a newer bleephub; this build understands up to version %d", version, currentSchemaVersion)
+		return permanentErrf("persistence schema version %d was written by a newer bleephub; this build understands up to version %d", version, currentSchemaVersion)
 	}
 	for _, migration := range schemaMigrations {
 		if migration.version <= version {
@@ -877,11 +878,41 @@ func migrateSchema(db *sql.DB, dialect dbDialect) error {
 	return nil
 }
 
+// permanentPersistenceError marks a persistence-initialization failure that no
+// amount of retrying can fix: a misconfiguration (malformed dqlite address map,
+// missing transport secret, unusable encryption key, empty server set) or a
+// schema written by a newer bleephub. It is distinct from the transient
+// connect/query failures that occur while a dqlite quorum is still forming, and
+// MustNewPersistence fails fast on it instead of looping forever.
+type permanentPersistenceError struct{ err error }
+
+func (e *permanentPersistenceError) Error() string { return e.err.Error() }
+func (e *permanentPersistenceError) Unwrap() error { return e.err }
+
+// permanentErrf builds a permanent persistence error.
+func permanentErrf(format string, args ...any) error {
+	return &permanentPersistenceError{err: fmt.Errorf(format, args...)}
+}
+
+// isPermanentPersistenceError reports whether err (or anything it wraps) is a
+// permanentPersistenceError.
+func isPermanentPersistenceError(err error) bool {
+	var p *permanentPersistenceError
+	return errors.As(err, &p)
+}
+
 func MustNewPersistence() *Persistence {
 	for {
 		p, err := NewPersistence()
 		if err == nil {
 			return p
+		}
+		// A misconfiguration or an unsupported schema can never be fixed by
+		// waiting; retrying it forever only hides the real cause behind an
+		// endless "waiting for dqlite quorum" log. Only transient failures
+		// (dial/ping/query while the quorum forms) are worth retrying.
+		if isPermanentPersistenceError(err) {
+			log.Fatalf("bleephub persistence configuration is unrecoverable: %v", err)
 		}
 		if strings.TrimSpace(os.Getenv("BLEEPHUB_DQLITE_SERVERS")) == "" {
 			log.Fatalf("bleephub persistence configuration failed: %v", err)

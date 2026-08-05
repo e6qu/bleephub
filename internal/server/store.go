@@ -535,6 +535,7 @@ type Store struct {
 	DiscussionCategories         map[int]*DiscussionCategory
 	DiscussionComments           map[int]*DiscussionComment
 	NextDiscussionID             int
+	NextDiscussionNumber         map[int]int // repoID → next per-repo discussion number (high-water; monotonic across tombstones)
 	NextDiscussionCategoryID     int
 	NextDiscussionCommentID      int
 	OrgActionsPermissions        map[string]*OrgActionsPermissions
@@ -987,6 +988,7 @@ func NewStore() *Store {
 		NextSecurityAdvisoryID:       1,
 		NextSecurityAdvisoryReportID: 1,
 		NextDiscussionID:             1,
+		NextDiscussionNumber:         make(map[int]int),
 		NextDiscussionCategoryID:     1,
 		NextDiscussionCommentID:      1,
 		// enterprises
@@ -2504,6 +2506,9 @@ func (st *Store) loadFromPersistence() error {
 			st.Discussions[d.ID] = &d
 			if d.ID >= st.NextDiscussionID {
 				st.NextDiscussionID = d.ID + 1
+			}
+			if d.Number >= st.NextDiscussionNumber[d.RepoID] {
+				st.NextDiscussionNumber[d.RepoID] = d.Number + 1
 			}
 			return nil
 		}},
@@ -4170,13 +4175,6 @@ func (st *Store) commitGistBatchLocked(batch *persistBatch) {
 }
 
 // CreateGist creates a new gist owned by the given user.
-func (st *Store) CreateGist(owner *User, description string, public bool, files map[string]*GistFile) *Gist {
-	g, err := st.CreateGistE(owner, description, public, files)
-	if err != nil {
-		panic(err)
-	}
-	return g
-}
 
 func (st *Store) CreateGistE(owner *User, description string, public bool, files map[string]*GistFile) (*Gist, error) {
 	st.mu.Lock()
@@ -4231,13 +4229,6 @@ func (st *Store) GetGist(id string) *Gist {
 }
 
 // UpdateGist replaces the gist fields and records a history entry.
-func (st *Store) UpdateGist(id string, description *string, files map[string]*GistFile, deleteFiles []string) (*Gist, bool) {
-	g, ok, err := st.UpdateGistE(id, description, files, deleteFiles)
-	if err != nil {
-		panic(err)
-	}
-	return g, ok
-}
 
 func (st *Store) UpdateGistE(id string, description *string, files map[string]*GistFile, deleteFiles []string) (*Gist, bool, error) {
 	st.mu.Lock()
@@ -4471,13 +4462,6 @@ func (st *Store) IsGistStarred(userID int, gistID string) bool {
 }
 
 // ForkGist forks a gist for the given user.
-func (st *Store) ForkGist(user *User, gistID string) (*Gist, bool) {
-	fork, ok, err := st.ForkGistE(user, gistID)
-	if err != nil {
-		panic(err)
-	}
-	return fork, ok
-}
 
 func (st *Store) ForkGistE(user *User, gistID string) (*Gist, bool, error) {
 	st.mu.Lock()
