@@ -387,3 +387,59 @@ func TestNoRegisteredRouteServesAFabricatedRepository(t *testing.T) {
 		t.Fatalf("swept only %d repository routes; the route table is not being read", swept)
 	}
 }
+
+// TestNoRepoWriteServesAGhuBroaderThanItsGhs re-drives the whole
+// repository-write sweep that AUTH-081 was sized against, rather than the
+// handful of routes the comparison above names by hand. For every registered
+// mutating route under /repos/{owner}/{repo}, it drives the outside app's
+// ghu_ and ghs_ tokens against the victim's real private repository and
+// asserts the ghu_ is never served where the same app's ghs_ is refused — the
+// exact asymmetry AUTH-081 tracked. It also pins that the ghs_ of an app
+// installed nowhere is refused everywhere, so "both refused" cannot mask a
+// hole. The write chokepoint (only rbac.go and gh_apps_perms.go may ask the
+// bearer-only question) is enforced structurally by the AST ratchet in
+// authz_chokepoint_test.go; this is its behavioural counterpart across the
+// full route table.
+func TestNoRepoWriteServesAGhuBroaderThanItsGhs(t *testing.T) {
+	f := newGhuFixture(t, "auth081")
+	swept := 0
+	for _, pattern := range fuzzRoutePatterns {
+		method, path, ok := strings.Cut(pattern, " ")
+		if !ok {
+			continue
+		}
+		// Writes only: the read side is covered by the sweep above.
+		if method == http.MethodGet || method == http.MethodHead {
+			continue
+		}
+		if !strings.Contains(path, "/repos/{owner}/{repo}") {
+			continue
+		}
+		swept++
+		filled := strings.ReplaceAll(path, "{owner}", f.victim.Login)
+		filled = strings.ReplaceAll(filled, "{repo}", "ghu-private")
+		filled = ghuPathPlaceholder.ReplaceAllString(filled, "1")
+		body := ""
+		if method != http.MethodDelete {
+			body = "{}"
+		}
+		ghsStatus, ghsBody := ghuRequest(t, method, filled, f.outsideGhs, body)
+		ghuStatus, ghuBody := ghuRequest(t, method, filled, f.outsideGhu, body)
+
+		// Fixture/security invariant: an app installed nowhere, holding no
+		// permissions, must never be served a write on the victim's private
+		// repository through its ghs_ token.
+		if served(ghsStatus) {
+			t.Errorf("%s %s: ghs_ of an app installed nowhere was served a write (%d): %s", method, filled, ghsStatus, ghsBody)
+			continue
+		}
+		// AUTH-081: the ghu_ must not reach further than that ghs_.
+		if served(ghuStatus) {
+			t.Errorf("%s %s: ghu_ of an app installed nowhere was served (%d) where its ghs_ was refused (%d) — the user-to-server token is broader than the same app's installation token: %s",
+				method, filled, ghuStatus, ghsStatus, ghuBody)
+		}
+	}
+	if swept < 200 {
+		t.Fatalf("swept only %d mutating repository routes; the route table is not being read", swept)
+	}
+}
