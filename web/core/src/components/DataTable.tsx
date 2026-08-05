@@ -1,18 +1,51 @@
 import { useState } from "react";
 import {
-  useReactTable,
-  getCoreRowModel,
-  getSortedRowModel,
-  getFilteredRowModel,
+  useTable,
+  tableFeatures,
+  createColumnHelper as tanstackCreateColumnHelper,
+  createCoreRowModel,
+  createSortedRowModel,
+  createFilteredRowModel,
+  rowSortingFeature,
+  columnFilteringFeature,
+  globalFilteringFeature,
+  columnVisibilityFeature,
   flexRender,
   type ColumnDef,
+  type RowData,
   type SortingState,
 } from "@tanstack/react-table";
 
+// react-table v9 is feature-based: a table only carries the features it
+// declares, and the `features` object also holds the row-model factories. The
+// whole app's tables use the same set — global text filtering, click-to-sort,
+// column visibility for rendering — so it is declared once here and threaded
+// through both the column helper and the table instance so their generics line
+// up.
+export const dataTableFeatures = tableFeatures({
+  rowSortingFeature,
+  columnFilteringFeature,
+  globalFilteringFeature,
+  columnVisibilityFeature,
+  coreRowModel: createCoreRowModel(),
+  sortedRowModel: createSortedRowModel(),
+  filteredRowModel: createFilteredRowModel(),
+});
+export type DataTableFeatures = typeof dataTableFeatures;
+
+// createColumnHelper bound to the app feature set, so pages keep writing
+// createColumnHelper<Row>() with a single type argument instead of repeating
+// the feature generic at every call site.
+export function createColumnHelper<TData extends RowData>() {
+  return tanstackCreateColumnHelper<DataTableFeatures, TData>();
+}
+
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-export interface DataTableProps<T> {
+export type DataTableColumn<T extends RowData> = ColumnDef<DataTableFeatures, T, any>;
+
+export interface DataTableProps<T extends RowData> {
   data: T[];
-  columns: ColumnDef<T, any>[];
+  columns: DataTableColumn<T>[];
   filterPlaceholder?: string;
   onRowClick?: (row: T) => void;
   /** Optional empty-state body when no rows match. */
@@ -26,7 +59,7 @@ export interface DataTableProps<T> {
  * Hover background pulls the per-app accent in lightly so the row
  * announces itself without screaming.
  */
-export function DataTable<T>({
+export function DataTable<T extends RowData>({
   data,
   columns,
   filterPlaceholder,
@@ -36,15 +69,13 @@ export function DataTable<T>({
   const [sorting, setSorting] = useState<SortingState>([]);
   const [globalFilter, setGlobalFilter] = useState("");
 
-  const table = useReactTable({
+  const table = useTable<DataTableFeatures, T>({
+    features: dataTableFeatures,
     data,
     columns,
     state: { sorting, globalFilter },
     onSortingChange: setSorting,
     onGlobalFilterChange: setGlobalFilter,
-    getCoreRowModel: getCoreRowModel(),
-    getSortedRowModel: getSortedRowModel(),
-    getFilteredRowModel: getFilteredRowModel(),
   });
 
   const rows = table.getRowModel().rows;

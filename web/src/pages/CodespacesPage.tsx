@@ -2,7 +2,7 @@ import { useMemo, useState, type ReactNode } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link, useNavigate, useParams } from "react-router";
 import { DataTable, InlineError, Spinner } from "@bleephub/ui-core/components";
-import { createColumnHelper } from "@tanstack/react-table";
+import { createColumnHelper } from "@bleephub/ui-core/components";
 import {
   createRepoCodespace,
   createUserCodespace,

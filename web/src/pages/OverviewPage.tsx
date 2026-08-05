@@ -1,6 +1,6 @@
 import { useQuery } from "@tanstack/react-query";
 import { DataTable, InlineError, Spinner, StatusBadge } from "@bleephub/ui-core/components";
-import { createColumnHelper } from "@tanstack/react-table";
+import { createColumnHelper } from "@bleephub/ui-core/components";
 import { useNavigate } from "react-router";
 import { fetchHealth, isForbidden, isRateLimited } from "../api.js";
 import { useMetricsData } from "../hooks/useMetricsData.js";

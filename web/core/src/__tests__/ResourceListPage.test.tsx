@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, afterEach } from "vitest";
 import { render, screen, waitFor, cleanup, fireEvent } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { type ColumnDef } from "@tanstack/react-table";
+import { type DataTableColumn } from "../components/DataTable.js";
 import { ResourceListPage } from "../components/ResourceListPage.js";
 
 interface Row {
@@ -9,7 +9,7 @@ interface Row {
   size: number;
 }
 
-const columns: ColumnDef<Row, unknown>[] = [
+const columns: DataTableColumn<Row>[] = [
   { accessorKey: "name", header: "Name" },
   { accessorKey: "size", header: "Size" },
 ];
