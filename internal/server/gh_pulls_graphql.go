@@ -2380,11 +2380,17 @@ func reviewThreadsForGraphQL(threads []*ReviewThread, st *Store) []map[string]in
 				threadLine = *root.Line
 			}
 		}
+		var resolvedBy interface{}
+		if t.ResolvedByID != 0 {
+			if u, ok := st.Users[t.ResolvedByID]; ok {
+				resolvedBy = userToGraphQL(u)
+			}
+		}
 		out = append(out, map[string]interface{}{
 			"id":         prReviewThreadNodeID(t.ID),
 			"isResolved": t.IsResolved,
 			"isOutdated": false,
-			"resolvedBy": nil,
+			"resolvedBy": resolvedBy,
 			"path":       threadPath,
 			"line":       threadLine,
 			"comments": map[string]interface{}{
@@ -2409,7 +2415,11 @@ func (s *Server) resolveReviewThreadGraphQL(p graphql.ResolveParams, resolved bo
 			message: fmt.Sprintf("Could not resolve to a PullRequestReviewThread with the global id of '%s'", threadNodeID),
 		}
 	}
-	if !s.store.PRReviewComments.ResolveThread(threadID, resolved) {
+	resolverID := 0
+	if actor := ghUserFromContext(p.Context); actor != nil {
+		resolverID = actor.ID
+	}
+	if !s.store.PRReviewComments.ResolveThread(threadID, resolved, resolverID) {
 		return nil, &ghNotFoundError{
 			message: fmt.Sprintf("Could not resolve to a PullRequestReviewThread with the global id of '%s'", threadNodeID),
 		}

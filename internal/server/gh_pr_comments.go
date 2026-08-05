@@ -49,6 +49,7 @@ type PRReviewComment struct {
 	AuthorID          int       `json:"-"`
 	ThreadID          int       `json:"-"` // shared id for the thread root + replies
 	Resolved          bool      `json:"-"` // thread-level resolved flag stored on the root
+	ResolvedByID      int       `json:"-"` // user who resolved the thread (0 when unresolved)
 	CreatedAt         time.Time `json:"created_at"`
 	UpdatedAt         time.Time `json:"updated_at"`
 }
@@ -63,6 +64,7 @@ type prReviewCommentRecord struct {
 	AuthorID      int  `json:"author_id"`
 	ThreadID      int  `json:"thread_id"`
 	Resolved      bool `json:"resolved"`
+	ResolvedByID  int  `json:"resolved_by_id,omitempty"`
 }
 
 func newPRReviewCommentRecord(c *PRReviewComment) prReviewCommentRecord {
@@ -72,6 +74,7 @@ func newPRReviewCommentRecord(c *PRReviewComment) prReviewCommentRecord {
 		AuthorID:        c.AuthorID,
 		ThreadID:        c.ThreadID,
 		Resolved:        c.Resolved,
+		ResolvedByID:    c.ResolvedByID,
 	}
 }
 
@@ -83,6 +86,7 @@ func (r *prReviewCommentRecord) restore() *PRReviewComment {
 	c.AuthorID = r.AuthorID
 	c.ThreadID = r.ThreadID
 	c.Resolved = r.Resolved
+	c.ResolvedByID = r.ResolvedByID
 	return c
 }
 
@@ -314,8 +318,9 @@ func (s *PRReviewCommentStore) DeleteForPRBatch(prID int, batch *persistBatch) {
 	delete(s.byPR, prID)
 }
 
-// ResolveThread flips the thread root's Resolved flag.
-func (s *PRReviewCommentStore) ResolveThread(threadID int, resolved bool) bool {
+// ResolveThread flips the thread root's Resolved flag and records who resolved
+// it (resolverID; ignored when unresolving, which clears the resolver).
+func (s *PRReviewCommentStore) ResolveThread(threadID int, resolved bool, resolverID int) bool {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	root := s.byID[threadID]
@@ -323,6 +328,11 @@ func (s *PRReviewCommentStore) ResolveThread(threadID int, resolved bool) bool {
 		return false
 	}
 	root.Resolved = resolved
+	if resolved {
+		root.ResolvedByID = resolverID
+	} else {
+		root.ResolvedByID = 0
+	}
 	root.UpdatedAt = time.Now().UTC()
 	s.persistComment(root)
 	return true
@@ -335,7 +345,7 @@ func (s *PRReviewCommentStore) GetThread(threadID int) *ReviewThread {
 	if root == nil {
 		return nil
 	}
-	thread := &ReviewThread{ID: threadID, IsResolved: root.Resolved}
+	thread := &ReviewThread{ID: threadID, IsResolved: root.Resolved, ResolvedByID: root.ResolvedByID}
 	for _, c := range s.byPR[root.PullRequestID] {
 		if c.ID == threadID || c.ThreadID == threadID {
 			thread.Comments = append(thread.Comments, clonePRReviewComment(c))
@@ -346,9 +356,10 @@ func (s *PRReviewCommentStore) GetThread(threadID int) *ReviewThread {
 
 // ListThreads groups PR review comments by thread root.
 type ReviewThread struct {
-	ID         int                `json:"id"`
-	IsResolved bool               `json:"isResolved"`
-	Comments   []*PRReviewComment `json:"comments"`
+	ID           int                `json:"id"`
+	IsResolved   bool               `json:"isResolved"`
+	ResolvedByID int                `json:"-"` // user who resolved (0 when unresolved)
+	Comments     []*PRReviewComment `json:"comments"`
 }
 
 func (s *PRReviewCommentStore) ListThreads(prID int) []*ReviewThread {
@@ -364,9 +375,10 @@ func (s *PRReviewCommentStore) ListThreads(prID int) []*ReviewThread {
 		if !ok {
 			t = &ReviewThread{ID: threadID}
 			threads[threadID] = t
-			// Pick up resolved flag from root.
+			// Pick up resolved flag + resolver from root.
 			if root := s.byID[threadID]; root != nil {
 				t.IsResolved = root.Resolved
+				t.ResolvedByID = root.ResolvedByID
 			}
 		}
 		t.Comments = append(t.Comments, clonePRReviewComment(c))

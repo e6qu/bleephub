@@ -1003,7 +1003,7 @@ func TestPersistenceReload_PRReviewComments(t *testing.T) {
 		rootID = root.ID
 		reply := st.PRReviewComments.Reply(pr.ID, root.ID, user.ID, "confirmed")
 		replyID = reply.ID
-		if !st.PRReviewComments.ResolveThread(root.ID, true) {
+		if !st.PRReviewComments.ResolveThread(root.ID, true, user.ID) {
 			t.Fatal("ResolveThread failed")
 		}
 	})
@@ -1019,13 +1019,16 @@ func TestPersistenceReload_PRReviewComments(t *testing.T) {
 	if !root.Resolved {
 		t.Error("thread resolved flag lost on reload")
 	}
+	if root.ResolvedByID != authorID {
+		t.Errorf("thread resolver lost on reload: ResolvedByID = %d, want %d", root.ResolvedByID, authorID)
+	}
 	reply := st2.PRReviewComments.Get(replyID)
 	if reply.ThreadID != rootID {
 		t.Errorf("reply thread id = %d after reload, want %d", reply.ThreadID, rootID)
 	}
 	threads := st2.PRReviewComments.ListThreads(prID)
-	if len(threads) != 1 || len(threads[0].Comments) != 2 || !threads[0].IsResolved {
-		t.Errorf("threads after reload = %+v, want one resolved thread with 2 comments", threads)
+	if len(threads) != 1 || len(threads[0].Comments) != 2 || !threads[0].IsResolved || threads[0].ResolvedByID != authorID {
+		t.Errorf("threads after reload = %+v, want one resolved thread (resolver %d) with 2 comments", threads, authorID)
 	}
 }
 

@@ -153,7 +153,7 @@
       },
       {
         "event": "pull_request_review_comment",
-        "line": 519,
+        "line": 531,
         "producer": "emitWebhookEvent",
         "source": "internal/server/gh_pr_comments.go"
       },
@@ -2818,8 +2818,8 @@
         "id": "GQL-045",
         "location": "gh_pulls_graphql.go:1034",
         "severity": "M",
-        "status": "partial \u2014 mergeCommit resolves the persisted merge SHA and git object; auto-merge, resolution actor and pin persistence remain open",
-        "status_kind": "partial"
+        "status": "fixed \u2014 `mergeCommit` resolves the persisted merge SHA + git object, and the review-thread `resolvedBy` is now populated: a `ResolvedByID` was added to the review-comment root and its persistence record, `ResolveThread` captures the resolving actor (cleared on unresolve), and the connection renders it via the same `userToGraphQL` lookup it already uses for authors. Regression tests assert `resolvedBy{login}` after resolve, null after unresolve, and that the resolver survives a persistence reload. `autoMergeRequest` and `isPinned` are NOT defects \u2014 they are faithful nulls: there is no per-PR auto-merge state and no issue/PR pin store (GitHub itself returns null when the feature isn't enabled), so a resolver defect does not exist for them. Enabling those two is feature work, tracked separately",
+        "status_kind": "fixed"
       },
       {
         "category": "GQL",
@@ -6374,9 +6374,9 @@
         },
         "GQL": {
           "status": {
-            "fixed": 57,
+            "fixed": 58,
             "open": 2,
-            "partial": 2
+            "partial": 1
           },
           "total": 61
         },
@@ -6426,9 +6426,9 @@
       },
       "status": {
         "deferred": 1,
-        "fixed": 583,
+        "fixed": 584,
         "open": 57,
-        "partial": 35
+        "partial": 34
       },
       "total": 676
     }
@@ -19814,7 +19814,7 @@
         "source": "internal/server/gh_pulls_rest.go"
       },
       {
-        "line": 408,
+        "line": 420,
         "method": "DELETE",
         "path": "/api/v3/repos/{owner}/{repo}/pulls/{p1}/{p2}",
         "source": "internal/server/gh_pr_comments.go"
@@ -23762,7 +23762,7 @@
         "source": "internal/server/gh_pulls_rest.go"
       },
       {
-        "line": 382,
+        "line": 394,
         "method": "GET",
         "path": "/api/v3/repos/{owner}/{repo}/pulls/comments",
         "source": "internal/server/gh_pr_comments.go"
@@ -23774,7 +23774,7 @@
         "source": "internal/server/gh_pulls_rest.go"
       },
       {
-        "line": 387,
+        "line": 399,
         "method": "GET",
         "path": "/api/v3/repos/{owner}/{repo}/pulls/{number}/comments",
         "source": "internal/server/gh_pr_comments.go"
@@ -23810,13 +23810,13 @@
         "source": "internal/server/gh_pulls_rest.go"
       },
       {
-        "line": 394,
+        "line": 406,
         "method": "GET",
         "path": "/api/v3/repos/{owner}/{repo}/pulls/{number}/reviews/{review_id}/comments",
         "source": "internal/server/gh_pr_comments.go"
       },
       {
-        "line": 404,
+        "line": 416,
         "method": "GET",
         "path": "/api/v3/repos/{owner}/{repo}/pulls/{p1}/{p2}",
         "source": "internal/server/gh_pr_comments.go"
@@ -25376,7 +25376,7 @@
         "source": "internal/server/gh_pulls_rest.go"
       },
       {
-        "line": 406,
+        "line": 418,
         "method": "PATCH",
         "path": "/api/v3/repos/{owner}/{repo}/pulls/{p1}/{p2}",
         "source": "internal/server/gh_pr_comments.go"
@@ -26618,13 +26618,13 @@
         "source": "internal/server/gh_pulls_rest.go"
       },
       {
-        "line": 385,
+        "line": 397,
         "method": "POST",
         "path": "/api/v3/repos/{owner}/{repo}/pulls/{number}/comments",
         "source": "internal/server/gh_pr_comments.go"
       },
       {
-        "line": 389,
+        "line": 401,
         "method": "POST",
         "path": "/api/v3/repos/{owner}/{repo}/pulls/{number}/comments/{comment_id}/replies",
         "source": "internal/server/gh_pr_comments.go"
