@@ -112,3 +112,31 @@ func TestCodespaceWorkspacePreparationDoesNotHoldStoreLock(t *testing.T) {
 		t.Fatalf("reserve codespace: %v", err)
 	}
 }
+
+// TestCodespaceSecretStoresValue covers STORE-031: CreateCodespaceSecret must
+// retain the decrypted value it is handed, both when creating and when
+// updating an existing secret. The value is never returned through the API,
+// so it is only observable at the store boundary.
+func TestCodespaceSecretStoresValue(t *testing.T) {
+	store := NewStore()
+	store.SeedDefaultUser()
+	scope := codespaceSecretScopeKey("user", "admin")
+
+	store.CreateCodespaceSecret(scope, "DEPLOY_KEY", "first-value", "", nil)
+	if got := store.GetCodespaceSecret(scope, "DEPLOY_KEY"); got == nil || got.Value != "first-value" {
+		t.Fatalf("after create, Value = %q, want %q", codespaceSecretValue(got), "first-value")
+	}
+
+	// Updating the same name must overwrite the stored value.
+	store.CreateCodespaceSecret(scope, "DEPLOY_KEY", "second-value", "", nil)
+	if got := store.GetCodespaceSecret(scope, "DEPLOY_KEY"); got == nil || got.Value != "second-value" {
+		t.Fatalf("after update, Value = %q, want %q", codespaceSecretValue(got), "second-value")
+	}
+}
+
+func codespaceSecretValue(s *CodespaceSecret) string {
+	if s == nil {
+		return "<nil>"
+	}
+	return s.Value
+}

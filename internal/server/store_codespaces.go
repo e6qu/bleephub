@@ -65,6 +65,7 @@ type CodespaceExport struct {
 type CodespaceSecret struct {
 	Name            string    `json:"name"`
 	Key             string    `json:"key"`
+	Value           string    `json:"value"` // decrypted plaintext; never surfaced in an API response, persisted only in the encrypted codespace_secrets bucket
 	CreatedAt       time.Time `json:"created_at"`
 	UpdatedAt       time.Time `json:"updated_at"`
 	SelectedRepoIDs []int     `json:"selected_repository_ids,omitempty"`
@@ -582,6 +583,7 @@ func (st *Store) CreateCodespaceSecret(scope, name, value, visibility string, se
 	key := strings.ToUpper(name)
 	if existing := m[name]; existing != nil {
 		existing.UpdatedAt = now
+		existing.Value = value
 		existing.SelectedRepoIDs = selectedRepoIDs
 		existing.Visibility = visibility
 		st.persistCodespaceSecretScopeLocked(scope)
@@ -590,6 +592,7 @@ func (st *Store) CreateCodespaceSecret(scope, name, value, visibility string, se
 	sec := &CodespaceSecret{
 		Name:            name,
 		Key:             key,
+		Value:           value,
 		CreatedAt:       now,
 		UpdatedAt:       now,
 		SelectedRepoIDs: selectedRepoIDs,

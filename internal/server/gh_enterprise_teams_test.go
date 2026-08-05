@@ -374,3 +374,82 @@ func TestEnterpriseTeamOrganizations_Assignments(t *testing.T) {
 		t.Fatalf("cleanup delete: got %d", resp.StatusCode)
 	}
 }
+
+// TestEnterpriseTeamBulk_AtomicOnInvalid covers REST-062: a bulk add/remove
+// that names one valid and one invalid entry must reject the whole request
+// with a 422 and commit nothing — the earlier valid entries must not already
+// be applied by the time the invalid one is discovered.
+func TestEnterpriseTeamBulk_AtomicOnInvalid(t *testing.T) {
+	resp := ghPost(t, enterpriseAPI+"/teams", defaultToken, map[string]interface{}{"name": "Atomic Crew"})
+	if resp.StatusCode != http.StatusCreated {
+		resp.Body.Close()
+		t.Fatalf("create team: got %d", resp.StatusCode)
+	}
+	resp.Body.Close()
+	_ = createEnterpriseTestUser(t, "ent-atomic-a")
+	memberships := enterpriseAPI + "/teams/atomic-crew/memberships"
+
+	// Valid user first, invalid user second → 422, and the valid user must not
+	// have been added.
+	resp = ghPost(t, memberships+"/add", defaultToken, map[string]interface{}{
+		"usernames": []string{"ent-atomic-a", "no-such-user"},
+	})
+	resp.Body.Close()
+	if resp.StatusCode != http.StatusUnprocessableEntity {
+		t.Fatalf("bulk add with invalid entry: got %d, want 422", resp.StatusCode)
+	}
+	resp = ghGet(t, memberships+"/ent-atomic-a", defaultToken)
+	resp.Body.Close()
+	if resp.StatusCode != http.StatusNotFound {
+		t.Fatalf("valid member added despite 422: get membership got %d, want 404", resp.StatusCode)
+	}
+
+	// Now add the valid user cleanly, then a bulk remove naming it plus an
+	// invalid entry must 422 and leave the valid member in place.
+	resp = ghPut(t, memberships+"/ent-atomic-a", defaultToken, nil)
+	resp.Body.Close()
+	if resp.StatusCode != http.StatusCreated {
+		t.Fatalf("seed membership: got %d, want 201", resp.StatusCode)
+	}
+	resp = ghPost(t, memberships+"/remove", defaultToken, map[string]interface{}{
+		"usernames": []string{"ent-atomic-a", "no-such-user"},
+	})
+	resp.Body.Close()
+	if resp.StatusCode != http.StatusUnprocessableEntity {
+		t.Fatalf("bulk remove with invalid entry: got %d, want 422", resp.StatusCode)
+	}
+	resp = ghGet(t, memberships+"/ent-atomic-a", defaultToken)
+	resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("valid member removed despite 422: get membership got %d, want 200", resp.StatusCode)
+	}
+
+	// Organization assignments have the same contract in "selected" mode.
+	createEnterpriseTestOrg(t, "ent-atomic-org")
+	resp = ghPatch(t, enterpriseAPI+"/teams/atomic-crew", defaultToken, map[string]interface{}{
+		"organization_selection_type": "selected",
+	})
+	resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("patch selection type: got %d, want 200", resp.StatusCode)
+	}
+	orgs := enterpriseAPI + "/teams/atomic-crew/organizations"
+	resp = ghPost(t, orgs+"/add", defaultToken, map[string]interface{}{
+		"organization_slugs": []string{"ent-atomic-org", "no-such-org"},
+	})
+	resp.Body.Close()
+	if resp.StatusCode != http.StatusUnprocessableEntity {
+		t.Fatalf("bulk add orgs with invalid entry: got %d, want 422", resp.StatusCode)
+	}
+	resp = ghGet(t, orgs+"/ent-atomic-org", defaultToken)
+	resp.Body.Close()
+	if resp.StatusCode != http.StatusNotFound {
+		t.Fatalf("valid org assigned despite 422: get assignment got %d, want 404", resp.StatusCode)
+	}
+
+	resp = ghDelete(t, enterpriseAPI+"/teams/atomic-crew", defaultToken)
+	resp.Body.Close()
+	if resp.StatusCode != http.StatusNoContent {
+		t.Fatalf("cleanup delete: got %d", resp.StatusCode)
+	}
+}

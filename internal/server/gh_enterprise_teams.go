@@ -217,13 +217,19 @@ func (s *Server) handleBulkAddEnterpriseTeamMemberships(w http.ResponseWriter, r
 		writeGHValidationError(w, "EnterpriseTeamMembership", "usernames", "missing_field")
 		return
 	}
-	out := make([]map[string]interface{}, 0, len(req.Usernames))
+	// Resolve every username before mutating: a later invalid entry must not
+	// leave the earlier ones already added to the team.
+	users := make([]*User, 0, len(req.Usernames))
 	for _, login := range req.Usernames {
 		u := s.store.LookupUserByLogin(login)
 		if u == nil {
 			writeGHValidationError(w, "EnterpriseTeamMembership", "usernames", "invalid")
 			return
 		}
+		users = append(users, u)
+	}
+	out := make([]map[string]interface{}, 0, len(users))
+	for _, u := range users {
 		s.store.AddEnterpriseTeamMember(team, u.ID)
 		out = append(out, userToJSON(u))
 	}
@@ -245,13 +251,19 @@ func (s *Server) handleBulkRemoveEnterpriseTeamMemberships(w http.ResponseWriter
 		writeGHValidationError(w, "EnterpriseTeamMembership", "usernames", "missing_field")
 		return
 	}
-	out := make([]map[string]interface{}, 0, len(req.Usernames))
+	// Resolve every username before mutating: a later invalid entry must not
+	// leave the earlier ones already removed from the team.
+	users := make([]*User, 0, len(req.Usernames))
 	for _, login := range req.Usernames {
 		u := s.store.LookupUserByLogin(login)
 		if u == nil {
 			writeGHValidationError(w, "EnterpriseTeamMembership", "usernames", "invalid")
 			return
 		}
+		users = append(users, u)
+	}
+	out := make([]map[string]interface{}, 0, len(users))
+	for _, u := range users {
 		if s.store.RemoveEnterpriseTeamMember(team, u.ID) {
 			out = append(out, userToJSON(u))
 		}
@@ -346,14 +358,20 @@ func (s *Server) handleBulkAddEnterpriseTeamOrgs(w http.ResponseWriter, r *http.
 		writeGHValidationError(w, "EnterpriseTeamOrganizations", "organization_slugs", "missing_field")
 		return
 	}
-	base := s.baseURL(r)
-	out := make([]map[string]interface{}, 0, len(req.OrganizationSlugs))
+	// Resolve every slug before mutating: a later invalid entry must not leave
+	// the earlier organizations already assigned to the team.
+	orgs := make([]*Org, 0, len(req.OrganizationSlugs))
 	for _, slug := range req.OrganizationSlugs {
 		org := s.store.GetOrg(slug)
 		if org == nil {
 			writeGHValidationError(w, "EnterpriseTeamOrganizations", "organization_slugs", "invalid")
 			return
 		}
+		orgs = append(orgs, org)
+	}
+	base := s.baseURL(r)
+	out := make([]map[string]interface{}, 0, len(orgs))
+	for _, org := range orgs {
 		s.store.AddEnterpriseTeamOrg(team, org.Login)
 		out = append(out, orgSimpleJSON(org, base))
 	}
