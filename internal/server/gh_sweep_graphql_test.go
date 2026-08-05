@@ -939,6 +939,16 @@ func TestPRGraphQL_ResolveReviewThread(t *testing.T) {
 		t.Fatalf("resolve clientMutationId missing: %v", rd)
 	}
 
+	// resolvedBy reflects the actor who resolved the thread (GQL-045: it used to
+	// be an unconditional null).
+	resolvedByQuery := `query($owner:String!,$repo:String!,$n:Int!){repository(owner:$owner,name:$repo){pullRequest(number:$n){reviewThreads(first:10){nodes{isResolved,resolvedBy{login}}}}}}`
+	rbd := gqlData(t, resolvedByQuery, map[string]interface{}{"owner": owner, "repo": name, "n": prNum})
+	rbNode := rbd["repository"].(map[string]interface{})["pullRequest"].(map[string]interface{})["reviewThreads"].(map[string]interface{})["nodes"].([]interface{})[0].(map[string]interface{})
+	resolvedBy, _ := rbNode["resolvedBy"].(map[string]interface{})
+	if resolvedBy == nil || resolvedBy["login"] == nil || resolvedBy["login"] == "" {
+		t.Fatalf("GQL-045: resolvedBy is null/empty after resolve: %v", rbNode)
+	}
+
 	unresolve := `mutation($input:UnresolveReviewThreadInput!){unresolveReviewThread(input:$input){thread{id,isResolved}}}`
 	ud := gqlData(t, unresolve, map[string]interface{}{
 		"input": map[string]interface{}{
@@ -948,6 +958,13 @@ func TestPRGraphQL_ResolveReviewThread(t *testing.T) {
 	unresolvedThread := ud["unresolveReviewThread"].(map[string]interface{})["thread"].(map[string]interface{})
 	if unresolvedThread["id"] != threadID || unresolvedThread["isResolved"] != false {
 		t.Fatalf("unresolved thread = %v, want same id unresolved", unresolvedThread)
+	}
+
+	// Unresolving clears resolvedBy back to null.
+	ubd := gqlData(t, resolvedByQuery, map[string]interface{}{"owner": owner, "repo": name, "n": prNum})
+	ubNode := ubd["repository"].(map[string]interface{})["pullRequest"].(map[string]interface{})["reviewThreads"].(map[string]interface{})["nodes"].([]interface{})[0].(map[string]interface{})
+	if rb, _ := ubNode["resolvedBy"].(map[string]interface{}); rb != nil {
+		t.Fatalf("GQL-045: resolvedBy should be null after unresolve: %v", ubNode)
 	}
 }
 

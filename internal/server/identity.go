@@ -59,16 +59,17 @@ func (s *Server) oidcClientContext(ctx context.Context) context.Context {
 	if ctx.Value(oidcClientProvidedKey{}) != nil {
 		return ctx
 	}
-	// Route OIDC discovery / JWKS / token / end-session fetches through the same
-	// SSRF address gate as webhook delivery and source imports. The issuer is
-	// operator-configured, but a provider-controlled discovery document can point
-	// the JWKS or end_session_endpoint at an internal/metadata address, so gate
-	// the actual dial (Dialer.Control), not just the configured host. The timeout
-	// still bounds a hung IdP.
-	client := &http.Client{
-		Timeout:   oidcHTTPTimeout,
-		Transport: newAddressCheckedHTTPTransport(s.allowPrivateOutboundTargets, false),
-	}
+	// OIDC discovery / JWKS / token / end-session fetches use an ordinary client
+	// (timeout only), NOT the webhook SSRF address gate. The identity provider is
+	// operator-configured (BLEEPHUB_SHAUTH_*), not a user-supplied destination,
+	// and a co-located provider legitimately resolves to a private/container
+	// address — routing it through the gate that refuses private addresses made
+	// such a Shauth unreachable and 502'd every sign-in (issue #168). Trusting the
+	// configured IdP fully is standard: a compromised IdP already forges tokens,
+	// so gating its discovery URLs buys little. The webhook/import SSRF guard
+	// stays scoped to the user-supplied destinations it exists for. The timeout
+	// still bounds a hung IdP so an /auth/* flood cannot exhaust fds/goroutines.
+	client := &http.Client{Timeout: oidcHTTPTimeout}
 	return oidc.ClientContext(ctx, client)
 }
 
