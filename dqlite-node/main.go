@@ -47,9 +47,17 @@ func main() {
 		log.Fatalf("create dqlite data directory %s: %v", dataDir, err)
 	}
 
-	listenAddress, err := dqliteaddr.ListenAddr(os.Getenv("BLEEPHUB_DQLITE_LISTEN_ADDR"), address)
-	if err != nil {
-		log.Fatalf("resolve dqlite listen address: %v", err)
+	// Listen on the port advertised to peers by default: a fixed ":9000" while
+	// the advertised address used a different port left peers dialing the
+	// advertised port and failing to connect (STORE-055). An explicit override
+	// still wins for NAT/proxy setups.
+	listenAddress := strings.TrimSpace(os.Getenv("BLEEPHUB_DQLITE_LISTEN_ADDR"))
+	if listenAddress == "" {
+		_, port, splitErr := net.SplitHostPort(address)
+		if splitErr != nil {
+			log.Fatalf("derive dqlite listen address from advertise address %q: %v", address, splitErr)
+		}
+		listenAddress = ":" + port
 	}
 	tlsConfig, err := dqliteaddr.TLSConfig(secret, true)
 	if err != nil {

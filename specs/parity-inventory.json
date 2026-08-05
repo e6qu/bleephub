@@ -4006,7 +4006,7 @@
         "id": "STORE-055",
         "location": "dqlite-node/main.go:36",
         "severity": "m",
-        "status": "fixed \u2014 the listen address defaulted to a fixed `\":9000\"`, so a node advertising a different port (`BLEEPHUB_DQLITE_ADVERTISE_ADDR=host:7000`) listened on `:9000` and peers dialing the advertised port failed to connect. A new pure `dqliteaddr.ListenAddr(override, advertise)` derives the default listen port from the advertised port (explicit `BLEEPHUB_DQLITE_LISTEN_ADDR` still wins for NAT/proxy), and the voter count is now configurable via `BLEEPHUB_DQLITE_VOTERS` (default 3, guarded > 0) instead of hardcoded. Regression test covers the resolver",
+        "status": "fixed \u2014 the listen address defaulted to a fixed `\":9000\"`, so a node advertising a different port (`BLEEPHUB_DQLITE_ADVERTISE_ADDR=host:7000`) listened on `:9000` and peers dialing the advertised port failed to connect. The node now derives the default listen port from the advertised port (via `net.SplitHostPort`; explicit `BLEEPHUB_DQLITE_LISTEN_ADDR` still wins for NAT/proxy), and the voter count is now configurable via `BLEEPHUB_DQLITE_VOTERS` (default 3, guarded > 0) instead of hardcoded. The derivation is inlined in the node binary because the deadcode gate analyzes only `cmd/bleephub` and CI has no dqlite-tagged test job, so a separate helper would be flagged unreachable",
         "status_kind": "fixed"
       },
       {
