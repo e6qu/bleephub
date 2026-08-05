@@ -1900,8 +1900,8 @@
         "id": "REST-062",
         "location": "gh_enterprise_teams.go:219, gh_pulls_rest.go:550",
         "severity": "M",
-        "status": "partial \u2014 pull-request review comments are now fully validated before the review or first comment is created; the enterprise-team bulk mutation remains",
-        "status_kind": "partial"
+        "status": "fixed \u2014 the enterprise-team bulk add/remove-member and bulk add-org handlers now resolve every entry before applying any mutation, so an invalid entry rejects the whole request with 422 and commits nothing (matches the earlier pull-request review-comment fix)",
+        "status_kind": "fixed"
       },
       {
         "category": "REST",
@@ -3790,8 +3790,8 @@
         "id": "STORE-031",
         "location": "store_codespaces.go:372",
         "severity": "M",
-        "status": "open",
-        "status_kind": "open"
+        "status": "fixed \u2014 CodespaceSecret carries a Value field and CreateCodespaceSecret stores the decrypted plaintext on both the create and update paths; it is persisted only in the encrypted codespace_secrets bucket and never surfaced in an API response",
+        "status_kind": "fixed"
       },
       {
         "category": "STORE",
@@ -6389,15 +6389,15 @@
         },
         "REST": {
           "status": {
-            "fixed": 118,
-            "partial": 3
+            "fixed": 119,
+            "partial": 2
           },
           "total": 121
         },
         "STORE": {
           "status": {
-            "fixed": 56,
-            "open": 7,
+            "fixed": 57,
+            "open": 6,
             "partial": 11
           },
           "total": 74
@@ -6426,9 +6426,9 @@
       },
       "status": {
         "deferred": 1,
-        "fixed": 586,
-        "open": 55,
-        "partial": 34
+        "fixed": 588,
+        "open": 54,
+        "partial": 33
       },
       "total": 676
     }

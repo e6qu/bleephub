@@ -1,6 +1,7 @@
 package bleephub
 
 import (
+	"context"
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
@@ -13,11 +14,21 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/go-git/go-git/v5/plumbing"
 )
 
 const pagesJekyllTestImage = "bleephub-pages-test"
+
+// pagesJekyllBuildTimeout bounds the release-image build the Jekyll Pages test
+// shells out to. A cold Dockerfile.release build (Go + web bundle + Jekyll
+// layer) finishes in a few minutes on a healthy runner; without a ceiling a
+// stalled `docker buildx build` — a slow registry, a wedged buildkit — would
+// otherwise run until the whole -race suite hits its 40m wall and reports an
+// opaque suite-wide timeout instead of naming this test. The bound is set well
+// under that wall so the build is the failure that surfaces.
+const pagesJekyllBuildTimeout = 20 * time.Minute
 
 var pagesJekyllImageOnce sync.Once
 var pagesJekyllImageErr error
@@ -30,9 +41,16 @@ func realPagesJekyllExecutable(t *testing.T) string {
 			pagesJekyllImageErr = err
 			return
 		}
-		cmd := exec.Command("docker", "buildx", "build", "--load", "-f", "Dockerfile.release", "-t", pagesJekyllTestImage, ".")
+		ctx, cancel := context.WithTimeout(context.Background(), pagesJekyllBuildTimeout)
+		defer cancel()
+		cmd := exec.CommandContext(ctx, "docker", "buildx", "build", "--load", "-f", "Dockerfile.release", "-t", pagesJekyllTestImage, ".")
 		cmd.Dir = root
-		if output, err := cmd.CombinedOutput(); err != nil {
+		output, err := cmd.CombinedOutput()
+		if ctx.Err() == context.DeadlineExceeded {
+			pagesJekyllImageErr = fmt.Errorf("build Bleephub release image: timed out after %s: %s", pagesJekyllBuildTimeout, output)
+			return
+		}
+		if err != nil {
 			pagesJekyllImageErr = fmt.Errorf("build Bleephub release image: %w: %s", err, output)
 		}
 	})
