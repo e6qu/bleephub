@@ -1328,7 +1328,7 @@ func (s *Server) addPullRequestFieldsToSchema(userType, issueType, milestoneType
 				return nil, fmt.Errorf("resolve source: unexpected type %T", p.Source)
 			}
 			repoID, _ := repo["databaseId"].(int)
-			number, _ := p.Args["number"].(int)
+			number, _ := intArg(p.Args, "number")
 
 			pr := s.store.GetPullRequestByNumber(repoID, number)
 			if pr == nil {
@@ -1368,7 +1368,7 @@ func (s *Server) addPullRequestFieldsToSchema(userType, issueType, milestoneType
 				return nil, fmt.Errorf("resolve source: unexpected type %T", p.Source)
 			}
 			repoID, _ := repo["databaseId"].(int)
-			number, _ := p.Args["number"].(int)
+			number, _ := intArg(p.Args, "number")
 
 			// Issue first; if not found, fall through to PR.
 			if issue := s.store.GetIssueByNumber(repoID, number); issue != nil {

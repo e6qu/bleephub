@@ -634,14 +634,16 @@ func (s *Server) handleCatchAll(w http.ResponseWriter, r *http.Request) {
 	http.NotFound(w, r)
 }
 
+// handleHealth is the unauthenticated liveness probe. It deliberately carries
+// no build identity or enterprise slug: /health is reachable anonymously
+// (internalAuthMiddleware exempts it), so exposing the exact commit SHA and the
+// tenant slug here handed any caller a fingerprint (CORE-016). Build identity
+// now lives behind the authenticated internal status endpoint, and dependency
+// readiness is covered by /ready.
 func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]string{
-		"status":          "ok",
-		"service":         "bleephub",
-		"enterprise_slug": s.enterpriseSlug(),
-		"version":         s.build.Version,
-		"commit":          s.build.Commit,
-		"published_at":    s.build.PublishedAt,
+		"status":  "ok",
+		"service": "bleephub",
 	})
 }
 
@@ -680,6 +682,12 @@ func (s *Server) handleInternalStatus(w http.ResponseWriter, r *http.Request) {
 		"jobs_by_status":    jobsByStatus,
 		"connected_runners": sessions,
 		"uptime_seconds":    int(time.Since(s.metrics.StartedAt).Seconds()),
+		// Build identity lives here, behind site-admin internal auth, rather
+		// than on the anonymous /health probe (CORE-016).
+		"enterprise_slug": s.enterpriseSlug(),
+		"version":         s.build.Version,
+		"commit":          s.build.Commit,
+		"published_at":    s.build.PublishedAt,
 	})
 }
 

@@ -336,7 +336,7 @@ func (s *Server) addRepoFieldsToSchema(
 			}
 			counts := s.store.computeRepoLanguages(repo)
 			first := 100
-			if n, ok := p.Args["first"].(int); ok && n > 0 && n < first {
+			if n, ok := intArg(p.Args, "first"); ok && n > 0 && n < first {
 				first = n
 			}
 			edges := make([]interface{}, 0, len(counts))
@@ -628,7 +628,7 @@ func (s *Server) addRepoFieldsToSchema(
 			immutable := s.repoImmutableReleasesEnabled(repoID)
 
 			first := 30
-			if f, ok := p.Args["first"].(int); ok && f > 0 {
+			if f, ok := intArg(p.Args, "first"); ok && f > 0 {
 				first = f
 			}
 			after, _ := p.Args["after"].(string)

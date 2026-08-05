@@ -2845,8 +2845,8 @@
         "id": "GQL-048",
         "location": "gh_pagination.go:163",
         "severity": "m",
-        "status": "partial \u2014 shared connection/window and `intArg` helpers cover every modified lane; remaining legacy forward-only helpers are enumerated for follow-up",
-        "status_kind": "partial"
+        "status": "fixed \u2014 the remaining 13 sites reading GraphQL Int arguments via a bare `.(int)` assertion (across the discussions/issues/pulls/repos connection resolvers and `paginateGQLMaps`) were unified onto the `intArg` helper. A literal Int arrives as `int`, but a variable-supplied one arrives as `float64` (or `int64`) after JSON decoding, so `.(int)` silently dropped it and the connection fell back to its default page or a zero `number`. `intArg` accepts all three numeric shapes. Regression test proves `first` supplied as `float64` is honored",
+        "status_kind": "fixed"
       },
       {
         "category": "GQL",
@@ -4321,8 +4321,8 @@
         "id": "CORE-016",
         "location": "server.go:445",
         "severity": "M",
-        "status": "partial \u2014 `/ready` now rejects a poisoned recovery state or failed persistence ping and ECS probes that dependency-aware endpoint, while `/health` remains a liveness endpoint. The unauthenticated metadata in the legacy health response remains to be removed without breaking its UI consumer",
-        "status_kind": "partial"
+        "status": "fixed \u2014 dependency-aware readiness already moved to `/ready` (rejects a poisoned recovery state or a failed persistence ping; ECS probes it). This change removes the unauthenticated metadata leak: `/health` is now a liveness-only `{status, service}` probe, and the build identity (version/commit/published_at) plus enterprise slug moved to the site-admin-gated internal status endpoint. Its codified consumer test was relocated to assert `/health` leaks nothing and the authenticated endpoint carries the identity",
+        "status_kind": "fixed"
       },
       {
         "category": "CORE",
@@ -6366,17 +6366,17 @@
         },
         "CORE": {
           "status": {
-            "fixed": 19,
+            "fixed": 20,
             "open": 11,
-            "partial": 3
+            "partial": 2
           },
           "total": 33
         },
         "GQL": {
           "status": {
-            "fixed": 56,
+            "fixed": 57,
             "open": 2,
-            "partial": 3
+            "partial": 2
           },
           "total": 61
         },
@@ -6426,9 +6426,9 @@
       },
       "status": {
         "deferred": 1,
-        "fixed": 578,
+        "fixed": 580,
         "open": 60,
-        "partial": 37
+        "partial": 35
       },
       "total": 676
     }
