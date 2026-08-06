@@ -188,6 +188,6 @@ func (st *Store) GetArtifactDeploymentJob(orgID, id int, cluster string) *Artifa
 		return nil
 	}
 	copy := *job
-	copy.Errors = append([]any(nil), job.Errors...)
+	copy.Errors = append([]any{}, job.Errors...)
 	return &copy
 }

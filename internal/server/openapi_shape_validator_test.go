@@ -530,6 +530,37 @@ func (v *shapeValidator) flatten(schema map[string]any) (props map[string]map[st
 	return props, required, additional
 }
 
+// schemaAllowsNull reports whether the schema admits a JSON null: an explicit
+// `nullable: true` (OpenAPI 3.0), a `"null"` entry in a type set (3.1), any
+// anyOf/oneOf branch that admits null, or a fully open schema (no type and no
+// object shape) where nullability cannot be judged. Everything else — a schema
+// with a concrete non-null type — rejects null.
+func (v *shapeValidator) schemaAllowsNull(schema map[string]any) bool {
+	if schema == nil {
+		return true
+	}
+	schema = v.resolve(schema)
+	if n, ok := schema["nullable"].(bool); ok && n {
+		return true
+	}
+	if contains(schemaTypes(schema), "null") {
+		return true
+	}
+	for _, key := range []string{"anyOf", "oneOf"} {
+		if branches, ok := schema[key].([]any); ok {
+			for _, b := range branches {
+				if bs, ok := b.(map[string]any); ok && v.schemaAllowsNull(bs) {
+					return true
+				}
+			}
+			return false // an explicit union, no branch of which admits null
+		}
+	}
+	_, hasProps := schema["properties"]
+	_, hasAllOf := schema["allOf"]
+	return len(schemaTypes(schema)) == 0 && !hasProps && !hasAllOf
+}
+
 func schemaTypes(schema map[string]any) []string {
 	switch t := schema["type"].(type) {
 	case string:
@@ -557,7 +588,13 @@ func (v *shapeValidator) walk(schema map[string]any, val any, op, path string, o
 	schema = v.resolve(schema)
 
 	if val == nil {
-		return // null is acceptable wherever a member is emitted at all
+		// A JSON null is a genuine value: it only satisfies a schema that
+		// actually admits null. Accepting it unconditionally let a null pass
+		// for a non-nullable required field (PAR-009).
+		if !v.schemaAllowsNull(schema) {
+			*out = append(*out, shapeViolation{Op: op, Kind: "null-not-allowed", Field: path})
+		}
+		return
 	}
 
 	if branches, ok := schema["anyOf"].([]any); ok {
@@ -902,6 +939,43 @@ func TestShapeValidatorReportsUndocumentedStatus(t *testing.T) {
 	if undocumentedStatus == 0 || undocumentedBody == 0 {
 		t.Errorf("no probe operation found (undocumented-status=%d undocumented-body=%d); the description no longer covers this case",
 			undocumentedStatus, undocumentedBody)
+	}
+}
+
+// TestShapeValidatorRejectsNullForNonNullable covers PAR-009: a JSON null must
+// only satisfy a schema that actually admits null, so a null emitted for a
+// non-nullable member is reported rather than silently accepted.
+func TestShapeValidatorRejectsNullForNonNullable(t *testing.T) {
+	v := newProbeValidator(t)
+
+	rejects := []map[string]any{
+		{"type": "string"},
+		{"type": "integer"},
+		{"type": "array", "items": map[string]any{"type": "string"}},
+		{"type": "object", "properties": map[string]any{}},
+		{"anyOf": []any{map[string]any{"type": "string"}, map[string]any{"type": "integer"}}},
+	}
+	for _, schema := range rejects {
+		var out []shapeViolation
+		v.walk(schema, nil, "GET /x -> 200", "$", &out, 0)
+		if len(out) != 1 || out[0].Kind != "null-not-allowed" {
+			t.Errorf("null against %v: got %v, want one null-not-allowed", schema, out)
+		}
+	}
+
+	accepts := []map[string]any{
+		{"type": "string", "nullable": true},
+		{"type": []any{"string", "null"}},
+		{"anyOf": []any{map[string]any{"type": "string"}, map[string]any{"type": "null"}}},
+		{}, // fully open schema: nullability cannot be judged
+		{"description": "untyped"},
+	}
+	for _, schema := range accepts {
+		var out []shapeViolation
+		v.walk(schema, nil, "GET /x -> 200", "$", &out, 0)
+		if len(out) != 0 {
+			t.Errorf("null against nullable %v: got %v, want none", schema, out)
+		}
 	}
 }
 

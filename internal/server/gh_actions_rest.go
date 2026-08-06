@@ -241,7 +241,7 @@ func workflowRunJSON(wf *Workflow, baseURL, repoName string, repoJSON map[string
 		fileID = stableWorkflowFileID(wf.RepoFullName, filePath)
 	}
 	created := wf.CreatedAt.UTC().Format("2006-01-02T15:04:05Z")
-	return map[string]any{
+	run := map[string]any{
 		"repository":           repoJSON,
 		"head_repository":      repoJSON,
 		"id":                   int64(wf.RunID),
@@ -263,11 +263,9 @@ func workflowRunJSON(wf *Workflow, baseURL, repoName string, repoJSON map[string
 		"pull_requests":        []any{},
 		"created_at":           created,
 		"updated_at":           created,
-		"actor":                runActorJSON(wf),
 		"run_attempt":          wf.AttemptNumber(),
 		"referenced_workflows": []any{},
 		"run_started_at":       created,
-		"triggering_actor":     runActorJSON(wf),
 		"jobs_url":             fmt.Sprintf("%s/actions/runs/%d/jobs", apiBase, wf.RunID),
 		"logs_url":             fmt.Sprintf("%s/actions/runs/%d/logs", apiBase, wf.RunID),
 		"check_suite_url":      fmt.Sprintf("%s/check-suites/%d", apiBase, wf.RunID),
@@ -284,6 +282,15 @@ func workflowRunJSON(wf *Workflow, baseURL, repoName string, repoJSON map[string
 			"committer": map[string]any{"name": "bleephub", "email": "actions@bleephub"},
 		},
 	}
+	// actor / triggering_actor are optional, non-nullable simple-user objects.
+	// The triggering user is only recoverable from the in-flight event payload
+	// (not persisted), so omit the keys rather than emit null for a seeded or
+	// reloaded run — GitHub omits them when unknown.
+	if actor := runActorJSON(wf); actor != nil {
+		run["actor"] = actor
+		run["triggering_actor"] = actor
+	}
+	return run
 }
 
 // runActorJSON resolves the run's actor from the triggering event's
@@ -350,6 +357,11 @@ func (s *Server) workflowJobJSONLocked(wf *Workflow, wfJob *WorkflowJob, baseURL
 		queuedAt = wf.CreatedAt
 	}
 	createdAt := queuedAt.UTC().Format("2006-01-02T15:04:05Z")
+	// started_at is required and non-nullable: a still-queued job has no start
+	// time yet, so fall back to the queued/created timestamp rather than null.
+	if startedAt == nil {
+		startedAt = createdAt
+	}
 	var completedAt any
 	if status == "completed" {
 		t := wfJob.CompletedAt

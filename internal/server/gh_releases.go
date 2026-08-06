@@ -1383,7 +1383,7 @@ func releaseToJSON(rel *Release, st *Store, baseURL string, repo *Repo) map[stri
 	for _, a := range rel.Assets {
 		assets = append(assets, releaseAssetToJSON(a, st, baseURL, repo, rel))
 	}
-	return map[string]interface{}{
+	m := map[string]interface{}{
 		"id":               rel.ID,
 		"node_id":          rel.NodeID,
 		"tag_name":         rel.TagName,
@@ -1403,8 +1403,13 @@ func releaseToJSON(rel *Release, st *Store, baseURL string, repo *Repo) map[stri
 		"zipball_url":      fmt.Sprintf("%s/api/v3/repos/%s/zipball/%s", baseURL, repo.FullName, rel.TagName),
 		"assets":           assets,
 		"reactions":        reactions,
-		"discussion_url":   discussionURL,
 	}
+	// discussion_url is optional and non-nullable: present only when the release
+	// is linked to a discussion; GitHub omits it otherwise.
+	if discussionURL != nil {
+		m["discussion_url"] = discussionURL
+	}
+	return m
 }
 
 // buildReleaseEventPayload — `release` webhook event payload.

@@ -272,8 +272,9 @@ func (s *Server) globalAdvisoryToJSON(a *SecurityAdvisory, baseURL string) map[s
 	if len(vulnerabilities) == 0 && a.VulnerableVersionRange != "" {
 		vulnerabilities = append(vulnerabilities, map[string]interface{}{
 			// Repository advisories carry a version range but no package
-			// coordinates; the package members are nullable in the schema.
-			"package":                  map[string]interface{}{"ecosystem": nil, "name": nil},
+			// coordinates. package itself is nullable, but its ecosystem/name
+			// are not — emit a null package rather than null members.
+			"package":                  nil,
 			"vulnerable_version_range": a.VulnerableVersionRange,
 			"first_patched_version":    nil,
 			"vulnerable_functions":     []string{},

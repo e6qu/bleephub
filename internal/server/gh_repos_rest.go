@@ -1293,6 +1293,26 @@ func nullableTimestamp(t time.Time) interface{} {
 	return t.UTC().Format(time.RFC3339)
 }
 
+// jsonArray returns s, or a non-nil empty slice when s is nil, so encoding/json
+// emits `[]` instead of `null` for a field GitHub always models as a (possibly
+// empty) array. A nil Go slice otherwise marshals to null, which fails the
+// response-shape check for a non-nullable array member (PAR-009).
+func jsonArray[T any](s []T) []T {
+	if s == nil {
+		return []T{}
+	}
+	return s
+}
+
+// jsonObject is jsonArray for maps: a nil map marshals to null, so return a
+// non-nil empty map for a non-nullable object member that has no value.
+func jsonObject[K comparable, V any](m map[K]V) map[K]V {
+	if m == nil {
+		return map[K]V{}
+	}
+	return m
+}
+
 func nullableTimePtr(t *time.Time) interface{} {
 	if t == nil || t.IsZero() {
 		return nil

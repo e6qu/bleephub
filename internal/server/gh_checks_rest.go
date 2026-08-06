@@ -338,7 +338,7 @@ func (s *Server) handleUpdateCheckSuitePrefs(w http.ResponseWriter, r *http.Requ
 	s.store.SetCheckSuitePreferences(repoKey, req.AutoTriggerChecks)
 	writeJSON(w, http.StatusOK, map[string]interface{}{
 		"preferences": map[string]interface{}{
-			"auto_trigger_checks": req.AutoTriggerChecks,
+			"auto_trigger_checks": jsonArray(req.AutoTriggerChecks),
 		},
 		"repository": repoToJSONForViewer(repo, s.store, s.baseURL(r), ghUserFromContext(r.Context())),
 	})
@@ -490,6 +490,19 @@ func (s *Server) checkSuiteToJSON(suite *CheckSuite, base string) map[string]int
 					},
 				}
 			}
+		}
+	}
+	// head_commit is required and non-nullable. When the commit object can't be
+	// loaded (missing storage, unresolved SHA), fall back to a minimal
+	// simple-commit built from the suite's head SHA rather than emitting null.
+	if headCommit == nil {
+		headCommit = map[string]interface{}{
+			"id":        suite.HeadSHA,
+			"tree_id":   suite.HeadSHA,
+			"message":   "",
+			"timestamp": suite.CreatedAt.UTC().Format(time.RFC3339),
+			"author":    map[string]interface{}{"name": "bleephub", "email": "checks@bleephub"},
+			"committer": map[string]interface{}{"name": "bleephub", "email": "checks@bleephub"},
 		}
 	}
 

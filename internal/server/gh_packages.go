@@ -1179,7 +1179,6 @@ func (s *Server) packageVersionToJSON(v *PackageVersion, p *Package, baseURL, sc
 		"url":              s.packageVersionURL(baseURL, scopePath, p, v),
 		"package_html_url": s.packageHTMLURL(baseURL, p),
 		"html_url":         s.packageVersionHTMLURL(baseURL, p, v),
-		"license":          nil,
 		"description":      v.Description,
 		"created_at":       v.CreatedAt.Format(time.RFC3339),
 		"updated_at":       v.UpdatedAt.Format(time.RFC3339),

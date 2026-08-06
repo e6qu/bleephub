@@ -554,7 +554,8 @@ func (s *Server) handleSearchIssues(w http.ResponseWriter, r *http.Request) {
 			item["score"] = searchRelevanceScore(q.Terms, row.issue.Title, row.issue.Body)
 			item["author_association"] = row.assoc
 			item["draft"] = false
-			item["pull_request"] = nil
+			// pull_request is optional and non-nullable: GitHub sets it only on
+			// rows that are pull requests, and omits it for plain issues.
 			item["repository"] = repoToJSON(row.repo, s.store, base)
 			return item
 		}

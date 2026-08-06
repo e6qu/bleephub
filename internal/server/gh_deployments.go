@@ -803,7 +803,7 @@ func deploymentToJSON(d *Deployment, st *Store, baseURL string, repo *Repo) map[
 		"sha":                    d.Sha,
 		"ref":                    d.Ref,
 		"task":                   d.Task,
-		"payload":                d.Payload,
+		"payload":                jsonObject(d.Payload),
 		"original_environment":   d.OriginalEnv,
 		"environment":            d.Environment,
 		"description":            d.Description,
