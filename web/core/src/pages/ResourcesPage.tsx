@@ -1,4 +1,4 @@
-import { createColumnHelper } from "@tanstack/react-table";
+import { createColumnHelper } from "../components/DataTable.js";
 import { useResources } from "../hooks/index.js";
 import { DataTable } from "../components/DataTable.js";
 import { PageHeading } from "../components/PageHeading.js";

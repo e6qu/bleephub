@@ -57,7 +57,7 @@
       },
       {
         "event": "issues",
-        "line": 2963,
+        "line": 2978,
         "producer": "emitWebhookEvent",
         "source": "internal/server/gh_issues_graphql.go"
       },
@@ -982,8 +982,8 @@
         "id": "AUTH-081",
         "location": "8 routes",
         "severity": "M",
-        "status": "partial \u2014 the named cell is closed: `POST /repos/{o}/{r}/rulesets` refuses a `ghu_` of an app installed nowhere, because the handler now intersects the credential rather than asking only about the bearer. The other seven cells were not individually re-driven; the 244-route sweep has not been re-run",
-        "status_kind": "partial"
+        "status": "fixed \u2014 the whole sweep is re-driven behaviourally: `TestNoRepoWriteServesAGhuBroaderThanItsGhs` iterates every registered mutating route under `/repos/{owner}/{repo}` (259 today) and asserts, against the victim's real private repository, that the outside app's `ghs_` is refused everywhere and its `ghu_` is never served where that `ghs_` is refused. No asymmetric cell remains: the named `POST /repos/{o}/{r}/rulesets` cell plus the whole self-gating class were routed through the credential-intersecting `viewer*` helpers (`gh_apps_perms.go`) by the earlier chokepoint sweep, and the AST ratchet `TestOnlyTheRBACLayerAsksWhetherAUserCanReadARepo` structurally forbids reintroducing a bearer-only gate",
+        "status_kind": "fixed"
       },
       {
         "category": "AUTH",
@@ -2629,7 +2629,7 @@
         "id": "GQL-024",
         "location": "9 scanners",
         "severity": "M",
-        "status": "partial \u2014 the two hottest node-id finders (`findRepoByNodeID`, `findUserByNodeID`), which resolve `repositoryId` and assignees on the issue/PR/discussion create-mutation hot path, now decode the database id embedded in the node id (`decodeNodeDBID`, mirroring the existing `parsePRReviewThreadNodeID` convention) and do an O(1) keyed lookup, with a node-id equality guard and a fallback scan so a foreign- or legacy-shaped id (e.g. the `U_bleephub_<login>` identifiers) still resolves exactly as before. Regression test covers the decoder and both finders. The remaining ~7 finders (labels, milestones, discussions, projects-v2, pull-request by id) still scan and can adopt the same helper in a follow-up.",
+        "status": "partial \u2014 the two hottest node-id finders (`findRepoByNodeID`, `findUserByNodeID`), which resolve `repositoryId` and assignees on the issue/PR/discussion create-mutation hot path, now decode the database id embedded in the node id (`decodeNodeDBID`, mirroring the existing `parsePRReviewThreadNodeID` convention) and do an O(1) keyed lookup, with a node-id equality guard and a fallback scan so a foreign- or legacy-shaped id (e.g. the `U_bleephub_<login>` identifiers) still resolves exactly as before. Regression test covers the decoder and both finders. The remaining id-keyed finders \u2014 issues, labels, milestones, issue comments, pull requests, discussions/categories/comments, and the three projects-v2 lookups (project/item/field) \u2014 now adopt the same `decodeNodeDBID` fast path with the equality guard and fallback scan, preserving the discussions' `!Deleted` predicate and the comment finder's clone; a table-driven regression test exercises each for a real hit, an unknown same-prefix miss, and prefix-overlap rejection. The only remaining scanner is `findIssueTypeByNodeID`, whose collection is nested by org (no single id-keyed map), so an O(1) fast path does not apply.",
         "status_kind": "partial"
       },
       {
@@ -6350,9 +6350,9 @@
         },
         "AUTH": {
           "status": {
-            "fixed": 116,
+            "fixed": 117,
             "open": 1,
-            "partial": 2
+            "partial": 1
           },
           "total": 119
         },
@@ -6426,9 +6426,9 @@
       },
       "status": {
         "deferred": 1,
-        "fixed": 588,
+        "fixed": 589,
         "open": 54,
-        "partial": 33
+        "partial": 32
       },
       "total": 676
     }

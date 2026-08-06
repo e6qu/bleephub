@@ -2558,6 +2558,11 @@ func deriveReviewDecisionLocked(st *Store, prID int) string {
 func findPullRequestByNodeID(st *Store, nodeID string) *PullRequest {
 	st.mu.RLock()
 	defer st.mu.RUnlock()
+	if id, ok := decodeNodeDBID(nodeID, "PR_kgDO"); ok {
+		if pr := st.PullRequests[id]; pr != nil && pr.NodeID == nodeID {
+			return pr
+		}
+	}
 	for _, pr := range st.PullRequests {
 		if pr.NodeID == nodeID {
 			return pr

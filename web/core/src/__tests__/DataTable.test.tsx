@@ -1,6 +1,6 @@
 import { describe, it, expect, afterEach, vi } from "vitest";
 import { render, fireEvent, cleanup } from "@testing-library/react";
-import { createColumnHelper } from "@tanstack/react-table";
+import { createColumnHelper } from "../components/DataTable.js";
 import { DataTable } from "../components/DataTable.js";
 
 afterEach(cleanup);

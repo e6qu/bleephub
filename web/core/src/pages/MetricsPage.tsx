@@ -6,7 +6,7 @@ import { Spinner } from "../components/Spinner.js";
 import { RefreshButton } from "../components/RefreshButton.js";
 import { InlineError } from "../components/InlineError.js";
 import { Button } from "../components/Button.js";
-import { createColumnHelper } from "@tanstack/react-table";
+import { createColumnHelper } from "../components/DataTable.js";
 
 interface RequestRow {
   endpoint: string;

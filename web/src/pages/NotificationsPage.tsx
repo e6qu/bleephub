@@ -2,7 +2,7 @@ import { useState } from "react";
 import { Link } from "react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { DataTable, InlineError, Spinner } from "@bleephub/ui-core/components";
-import { createColumnHelper } from "@tanstack/react-table";
+import { createColumnHelper } from "@bleephub/ui-core/components";
 import {
   deleteThreadSubscription,
   fetchNotifications,

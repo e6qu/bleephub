@@ -1,8 +1,8 @@
 import { useQuery, type UseQueryResult } from "@tanstack/react-query";
-import { type ColumnDef } from "@tanstack/react-table";
+import { type RowData } from "@tanstack/react-table";
 import { type ReactNode } from "react";
 import { Button } from "./Button.js";
-import { DataTable } from "./DataTable.js";
+import { DataTable, type DataTableColumn } from "./DataTable.js";
 import { InlineError } from "./InlineError.js";
 import { PageHeading } from "./PageHeading.js";
 import { Spinner } from "./Spinner.js";
@@ -13,9 +13,9 @@ import { Spinner } from "./Spinner.js";
 // repeating generics.
 //
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-type AnyColumns<T> = ColumnDef<T, any>[];
+type AnyColumns<T extends RowData> = DataTableColumn<T>[];
 
-export interface ResourceListPageProps<T> {
+export interface ResourceListPageProps<T extends RowData> {
   /** Small uppercase label above the title, e.g. "aws · simulator · ecs". */
   kicker?: string;
   /** Page title — rendered in the editorial italic display voice. */
@@ -54,7 +54,7 @@ export interface ResourceListPageProps<T> {
  * DataTable on success. Defaults to 5-second polling — change via
  * `refetchInterval` (or pass `false` / `0` to disable).
  */
-export function ResourceListPage<T>({
+export function ResourceListPage<T extends RowData>({
   kicker,
   title,
   meta,
@@ -97,7 +97,7 @@ export function ResourceListPage<T>({
   );
 }
 
-function ResourceListBody<T>({
+function ResourceListBody<T extends RowData>({
   query,
   rows,
   columns,

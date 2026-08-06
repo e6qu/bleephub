@@ -261,11 +261,14 @@ func TestWebhookDeliverySuccess(t *testing.T) {
 	var lastBody []byte
 
 	url, cleanup := startWebhookReceiver(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		received.Add(1)
 		body, _ := io.ReadAll(r.Body)
 		mu.Lock()
 		lastHeaders = r.Header.Clone()
 		lastBody = body
+		// Signal delivery only after the payload is recorded: a waiter that
+		// observes the count then reads under the lock must see this payload,
+		// not a nil/stale one.
+		received.Add(1)
 		mu.Unlock()
 		w.WriteHeader(200)
 	}))
@@ -389,11 +392,12 @@ func TestWebhookPushEvent(t *testing.T) {
 	var lastPayload map[string]interface{}
 
 	url, cleanup := startWebhookReceiver(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		received.Add(1)
 		body, _ := io.ReadAll(r.Body)
 		mu.Lock()
 		lastEvent = r.Header.Get("X-GitHub-Event")
 		lastPayload = webhookEventJSON(t, r.Header.Get("Content-Type"), body)
+		// Record before signalling: see TestWebhookDeliverySuccess.
+		received.Add(1)
 		mu.Unlock()
 		w.WriteHeader(200)
 	}))
@@ -497,9 +501,10 @@ func TestWebhookPREvent(t *testing.T) {
 	var events []string
 
 	url, cleanup := startWebhookReceiver(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		received.Add(1)
 		mu.Lock()
 		events = append(events, r.Header.Get("X-GitHub-Event"))
+		// Record before signalling: see TestWebhookDeliverySuccess.
+		received.Add(1)
 		mu.Unlock()
 		w.WriteHeader(200)
 	}))
@@ -765,10 +770,11 @@ func TestWebhookPing(t *testing.T) {
 	var lastPayload map[string]interface{}
 
 	url, cleanup := startWebhookReceiver(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		received.Add(1)
 		body, _ := io.ReadAll(r.Body)
 		mu.Lock()
 		lastPayload = webhookEventJSON(t, r.Header.Get("Content-Type"), body)
+		// Record before signalling: see TestWebhookDeliverySuccess.
+		received.Add(1)
 		mu.Unlock()
 		w.WriteHeader(200)
 	}))

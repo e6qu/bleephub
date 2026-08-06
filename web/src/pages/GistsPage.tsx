@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { useSearchParams } from "react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { DataTable, InlineError, Spinner } from "@bleephub/ui-core/components";
-import { createColumnHelper } from "@tanstack/react-table";
+import { createColumnHelper } from "@bleephub/ui-core/components";
 import { confirmAction } from "../components/confirmAction.js";
 import {
   createGist,

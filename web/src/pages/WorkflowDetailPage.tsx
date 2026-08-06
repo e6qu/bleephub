@@ -1,7 +1,7 @@
 import { useParams } from "react-router";
 import { useQuery } from "@tanstack/react-query";
 import { DataTable, InlineError, LogViewer, Spinner, StatusBadge } from "@bleephub/ui-core/components";
-import { createColumnHelper } from "@tanstack/react-table";
+import { createColumnHelper } from "@bleephub/ui-core/components";
 import { fetchWorkflowDetail, fetchWorkflowLogs, isForbidden, isRateLimited } from "../api.js";
 import type { BleephubWorkflowJob } from "../types.js";
 import { PageTitle, SectionLabel } from "../components/ui.js";

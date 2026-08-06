@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { DataTable, InlineError, Spinner } from "@bleephub/ui-core/components";
-import { createColumnHelper } from "@tanstack/react-table";
+import { createColumnHelper } from "@bleephub/ui-core/components";
 import { buildAuditLogPhrase, fetchAuditLog, fetchAuditLogOrgs } from "../api.js";
 import type { BleephubAuditEvent } from "../types.js";
 import { Button, FormLabel, PageTitle } from "../components/ui.js";
