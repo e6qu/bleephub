@@ -3934,8 +3934,8 @@
         "id": "STORE-047",
         "location": "persistence.go:416",
         "severity": "m",
-        "status": "open",
-        "status_kind": "open"
+        "status": "fixed \u2014 `Put`/`Delete` now build a `persistBatch` and commit it, and `persistBatch.Put` runs `json.Marshal` before `Commit` \u2192 `apply` ever takes the process-wide lock, so marshalling happens outside the mutex exactly as `PutBatch` does",
+        "status_kind": "fixed"
       },
       {
         "category": "STORE",
@@ -4375,8 +4375,8 @@
         "id": "CORE-022",
         "location": "otel.go:41",
         "severity": "M",
-        "status": "open",
-        "status_kind": "open"
+        "status": "fixed \u2014 `InitObservability` now gates on `otelExporterConfigured`, which returns enabled when the general `OTEL_EXPORTER_OTLP_ENDPOINT` or any per-signal endpoint (`..._TRACES/_LOGS/_METRICS_ENDPOINT`) is set, so an operator who configures only a per-signal endpoint no longer gets telemetry silently disabled. Tests cover the gate per-var and the end-to-end traces-only path",
+        "status_kind": "fixed"
       },
       {
         "category": "CORE",
@@ -4663,8 +4663,8 @@
         "id": "WEB-021",
         "location": "core/Modal.tsx:42",
         "severity": "M",
-        "status": "open",
-        "status_kind": "open"
+        "status": "fixed \u2014 the `try { showModal() } catch { setAttribute(\"open\",\"\") }` is replaced by a feature-detect: `showModal()` is called when the dialog API exists (preserving the focus trap, backdrop, and top-layer) and only a genuinely absent API degrades to a non-modal open dialog, so a real `showModal()` error surfaces instead of being swallowed. Regression test asserts the error propagates and that native `showModal` is used",
+        "status_kind": "fixed"
       },
       {
         "category": "WEB",
@@ -6366,8 +6366,8 @@
         },
         "CORE": {
           "status": {
-            "fixed": 25,
-            "open": 7,
+            "fixed": 26,
+            "open": 6,
             "partial": 1
           },
           "total": 33
@@ -6395,8 +6395,8 @@
         },
         "STORE": {
           "status": {
-            "fixed": 59,
-            "open": 6,
+            "fixed": 60,
+            "open": 5,
             "partial": 9
           },
           "total": 74
@@ -6411,8 +6411,8 @@
         },
         "WEB": {
           "status": {
-            "fixed": 54,
-            "open": 6,
+            "fixed": 55,
+            "open": 5,
             "partial": 3
           },
           "total": 63
@@ -6425,8 +6425,8 @@
       },
       "status": {
         "deferred": 1,
-        "fixed": 597,
-        "open": 51,
+        "fixed": 600,
+        "open": 48,
         "partial": 27
       },
       "total": 676

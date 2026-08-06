@@ -134,3 +134,46 @@ func TestNoSpansWhenDisabled(t *testing.T) {
 		t.Fatalf("submitWorkflow with no-op tracer should not fail: %v", err)
 	}
 }
+
+// TestOTelExporterConfiguredHonoursPerSignalEndpoints covers CORE-022: the
+// enable-gate must recognise the per-signal OTLP endpoint variables, not only
+// the general one, since the exporters honour them.
+func TestOTelExporterConfiguredHonoursPerSignalEndpoints(t *testing.T) {
+	for _, v := range []string{
+		"OTEL_EXPORTER_OTLP_ENDPOINT",
+		"OTEL_EXPORTER_OTLP_TRACES_ENDPOINT",
+		"OTEL_EXPORTER_OTLP_LOGS_ENDPOINT",
+		"OTEL_EXPORTER_OTLP_METRICS_ENDPOINT",
+	} {
+		t.Run(v, func(t *testing.T) {
+			// Clear the general var so only the per-signal one under test is set.
+			t.Setenv("OTEL_EXPORTER_OTLP_ENDPOINT", "")
+			t.Setenv(v, "http://localhost:4318")
+			if !otelExporterConfigured() {
+				t.Fatalf("otelExporterConfigured() = false with %s set, want true", v)
+			}
+		})
+	}
+}
+
+// TestInitObservabilityWithPerSignalEndpoint pins that only setting a per-signal
+// endpoint still enables telemetry end-to-end (a valid SpanContext).
+func TestInitObservabilityWithPerSignalEndpoint(t *testing.T) {
+	t.Setenv("OTEL_EXPORTER_OTLP_ENDPOINT", "")
+	t.Setenv("OTEL_EXPORTER_OTLP_TRACES_ENDPOINT", "http://localhost:4318")
+
+	obs, err := InitObservability("test-service")
+	if err != nil {
+		t.Fatalf("InitObservability failed: %v", err)
+	}
+	defer obs.Shutdown(context.Background())
+
+	tracer := otel.Tracer("test")
+	_, span := tracer.Start(context.Background(), "test-span")
+	defer span.End()
+	if !span.SpanContext().IsValid() {
+		t.Error("expected a valid SpanContext when only OTEL_EXPORTER_OTLP_TRACES_ENDPOINT is set")
+	}
+
+	otel.SetTracerProvider(noop.NewTracerProvider())
+}

@@ -40,10 +40,13 @@ export function Modal({ open, onClose, title, kicker, children, footer, size = "
     const dlg = ref.current;
     if (!dlg) return;
     if (open && !dlg.open) {
-      try {
+      // Feature-detect rather than try/catch: an environment without the
+      // dialog API (very old jsdom) degrades to a non-modal open dialog, but a
+      // real showModal() error in a browser surfaces instead of silently
+      // dropping the focus trap, backdrop, and top-layer (WEB-021).
+      if (typeof dlg.showModal === "function") {
         dlg.showModal();
-      } catch {
-        // Fallback for very old jsdom that doesn't ship showModal().
+      } else {
         dlg.setAttribute("open", "");
       }
     } else if (!open && dlg.open) {

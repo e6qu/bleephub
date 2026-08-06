@@ -33,13 +33,34 @@ type Observability struct {
 	Shutdown  func(context.Context) error
 }
 
-// InitObservability sets up both tracer + logger providers when
-// OTEL_EXPORTER_OTLP_ENDPOINT is set. Returns a zero-value
-// Observability with a no-op Shutdown when OTel is disabled.
+// InitObservability sets up both tracer + logger providers when any OTLP
+// exporter endpoint is configured (the general OTEL_EXPORTER_OTLP_ENDPOINT or
+// any per-signal endpoint). Returns a zero-value Observability with a no-op
+// Shutdown when OTel is disabled.
 //
 // Components-decoupled invariant intact.
+
+// otelExporterConfigured reports whether OTLP export is configured. The
+// otlp*http exporters honour the per-signal endpoint variables in addition to
+// the general one, so gating solely on OTEL_EXPORTER_OTLP_ENDPOINT silently
+// disabled telemetry for an operator who set only, say,
+// OTEL_EXPORTER_OTLP_TRACES_ENDPOINT (CORE-022).
+func otelExporterConfigured() bool {
+	for _, v := range []string{
+		"OTEL_EXPORTER_OTLP_ENDPOINT",
+		"OTEL_EXPORTER_OTLP_TRACES_ENDPOINT",
+		"OTEL_EXPORTER_OTLP_LOGS_ENDPOINT",
+		"OTEL_EXPORTER_OTLP_METRICS_ENDPOINT",
+	} {
+		if strings.TrimSpace(os.Getenv(v)) != "" {
+			return true
+		}
+	}
+	return false
+}
+
 func InitObservability(serviceName string) (*Observability, error) {
-	if os.Getenv("OTEL_EXPORTER_OTLP_ENDPOINT") == "" {
+	if !otelExporterConfigured() {
 		return &Observability{
 			Shutdown: func(context.Context) error { return nil },
 		}, nil

@@ -54,3 +54,33 @@ describe("Modal", () => {
     expect(dialog?.hasAttribute("open")).toBe(false);
   });
 });
+
+describe("Modal WEB-021: showModal errors are not swallowed", () => {
+  test("uses native showModal for true modal semantics", () => {
+    const showModal = vi.spyOn(HTMLDialogElement.prototype, "showModal");
+    render(
+      <Modal open onClose={() => {}} title="t">
+        body
+      </Modal>,
+    );
+    expect(showModal).toHaveBeenCalledTimes(1);
+    showModal.mockRestore();
+  });
+
+  test("a real showModal() error surfaces instead of a silent non-modal downgrade", () => {
+    const showModal = vi
+      .spyOn(HTMLDialogElement.prototype, "showModal")
+      .mockImplementation(() => {
+        throw new Error("showModal not allowed");
+      });
+    // The previous try/catch swallowed this and downgraded to <dialog open>.
+    expect(() =>
+      render(
+        <Modal open onClose={() => {}} title="t">
+          body
+        </Modal>,
+      ),
+    ).toThrow("showModal not allowed");
+    showModal.mockRestore();
+  });
+});
