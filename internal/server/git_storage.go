@@ -31,8 +31,24 @@ var (
 	s3FSInited bool
 
 	errReferenceAlreadyExists = errors.New("reference already exists")
+	errUnsafeReferenceName    = errors.New("unsafe reference name")
 	refMutationLocks          = newS3KeyLocks()
 )
+
+// checkSafeRefName rejects a reference name that cannot be safely turned into a
+// storage path. Every backend composes the ref file path from the name, and
+// the S3 backend joins it with `path.Join`, which cleans `..` — so a crafted
+// name like `refs/heads/../../other-repo/refs/heads/main` would escape the
+// per-repository chroot. go-git's IsSafe applies git's own check-ref-format
+// rules (no empty/`.`/`..` segments, no backslash), which accepts every
+// legitimate ref bleephub stores (`refs/heads/*`, `refs/pull/N/merge`,
+// `refs/tags/v1.0`, `HEAD`).
+func checkSafeRefName(name plumbing.ReferenceName) error {
+	if !name.IsSafe() {
+		return fmt.Errorf("%w: %q", errUnsafeReferenceName, name)
+	}
+	return nil
+}
 
 type atomicRefStorer struct {
 	gitStorage.Storer
@@ -126,18 +142,27 @@ func (s *atomicRefStorer) InitializeRepositoryReferences(branch *plumbing.Refere
 }
 
 func (s *atomicRefStorer) SetReference(ref *plumbing.Reference) error {
+	if err := checkSafeRefName(ref.Name()); err != nil {
+		return err
+	}
 	return s.withRefLock(ref.Name(), func() error {
 		return s.Storer.SetReference(ref)
 	})
 }
 
 func (s *atomicRefStorer) CheckAndSetReference(next, old *plumbing.Reference) error {
+	if err := checkSafeRefName(next.Name()); err != nil {
+		return err
+	}
 	return s.withRefLock(next.Name(), func() error {
 		return s.Storer.CheckAndSetReference(next, old)
 	})
 }
 
 func (s *atomicRefStorer) CreateReference(ref *plumbing.Reference) error {
+	if err := checkSafeRefName(ref.Name()); err != nil {
+		return err
+	}
 	return s.withRefLock(ref.Name(), func() error {
 		if _, err := s.Storer.Reference(ref.Name()); err == nil {
 			return errReferenceAlreadyExists
@@ -149,12 +174,18 @@ func (s *atomicRefStorer) CreateReference(ref *plumbing.Reference) error {
 }
 
 func (s *atomicRefStorer) RemoveReference(ref plumbing.ReferenceName) error {
+	if err := checkSafeRefName(ref); err != nil {
+		return err
+	}
 	return s.withRefLock(ref, func() error {
 		return s.Storer.RemoveReference(ref)
 	})
 }
 
 func (s *atomicRefStorer) RemoveReferenceCAS(old *plumbing.Reference) error {
+	if err := checkSafeRefName(old.Name()); err != nil {
+		return err
+	}
 	return s.withRefLock(old.Name(), func() error {
 		current, err := s.Storer.Reference(old.Name())
 		if err != nil {
