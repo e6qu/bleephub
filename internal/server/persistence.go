@@ -16,7 +16,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"log"
 	"math"
 	"net"
 	"net/http"
@@ -32,6 +31,7 @@ import (
 	"github.com/canonical/go-dqlite/v3/client"
 	"github.com/canonical/go-dqlite/v3/driver"
 	"github.com/e6qu/bleephub/internal/dqliteaddr"
+	zlog "github.com/rs/zerolog/log"
 	_ "modernc.org/sqlite" // SQLite driver — pure Go, no CGO
 )
 
@@ -912,12 +912,12 @@ func MustNewPersistence() *Persistence {
 		// endless "waiting for dqlite quorum" log. Only transient failures
 		// (dial/ping/query while the quorum forms) are worth retrying.
 		if isPermanentPersistenceError(err) {
-			log.Fatalf("bleephub persistence configuration is unrecoverable: %v", err)
+			zlog.Fatal().Err(err).Msg("persistence configuration is unrecoverable")
 		}
 		if strings.TrimSpace(os.Getenv("BLEEPHUB_DQLITE_SERVERS")) == "" {
-			log.Fatalf("bleephub persistence configuration failed: %v", err)
+			zlog.Fatal().Err(err).Msg("persistence configuration failed")
 		}
-		log.Printf("bleephub is waiting for dqlite quorum: %v", err)
+		zlog.Warn().Err(err).Msg("waiting for dqlite quorum")
 		time.Sleep(time.Second)
 	}
 }
