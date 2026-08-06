@@ -1080,76 +1080,17 @@ func gqlNodeIdentity(n map[string]interface{}) string {
 // identifies. If the cursor carries an identity that still exists, its live
 // index is used (stable across inserts before it); otherwise the cursor's
 // recorded index is the fallback.
-func resolveConnectionIndex(nodes []map[string]interface{}, cursor string, fallbackIdx int) int {
-	if id := connectionCursorID(cursor); id != "" {
-		for i, n := range nodes {
-			if gqlNodeIdentity(n) == id {
-				return i
-			}
-		}
-	}
-	return fallbackIdx
-}
-
+// paginateGQLMaps windows an already-rendered node slice. It wraps each node
+// in a lazy item whose render is a no-op (the node is already built) and
+// delegates to the shared paginateGQLItems windowing, so eager and lazy callers
+// share one cursor implementation.
 func paginateGQLMaps(nodes []map[string]interface{}, args map[string]interface{}) map[string]interface{} {
-	total := len(nodes)
-	start := 0
-	end := total
-
-	if after, ok := args["after"].(string); ok && after != "" {
-		afterIndex := resolveConnectionIndex(nodes, after, decodeCursor(after))
-		// Saturate before adding one: cursor:<MaxInt> must describe an empty
-		// window, not wrap start negative and unexpectedly return page one.
-		if afterIndex >= total {
-			start = total
-		} else {
-			start = afterIndex + 1
-		}
+	items := make([]gqlConnItem, len(nodes))
+	for i, n := range nodes {
+		n := n
+		items[i] = gqlConnItem{identity: gqlNodeIdentity(n), render: func() map[string]interface{} { return n }}
 	}
-	if before, ok := args["before"].(string); ok && before != "" {
-		end = resolveConnectionIndex(nodes, before, decodeCursor(before))
-	}
-	if start < 0 {
-		start = 0
-	}
-	if start > total {
-		start = total
-	}
-	if end < 0 {
-		end = 0
-	}
-	if end > total {
-		end = total
-	}
-	if end < start {
-		end = start
-	}
-
-	if last, ok := intArg(args, "last"); ok && last > 0 {
-		if last > 100 {
-			last = 100
-		}
-		if end-start > last {
-			start = end - last
-		}
-	}
-	if first, ok := intArg(args, "first"); ok && first > 0 {
-		if first > 100 {
-			first = 100
-		}
-		if end-start > first {
-			end = start + first
-		}
-	}
-	if first, ok := intArg(args, "first"); !ok || first <= 0 {
-		if last, ok := intArg(args, "last"); !ok || last <= 0 {
-			if end-start > 30 {
-				end = start + 30
-			}
-		}
-	}
-
-	return buildConnectionWindow(nodes, start, end, total)
+	return paginateGQLItems(items, args)
 }
 
 // --- Node ID lookup helpers ---
