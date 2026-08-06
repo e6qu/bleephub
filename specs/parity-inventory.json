@@ -4402,8 +4402,8 @@
         "id": "CORE-025",
         "location": "main.go:36, persistence.go:395",
         "severity": "M",
-        "status": "partial \u2014 net/http ErrorLog now routed through zerolog; console-vs-JSON and the 29 stdlib log calls still open",
-        "status_kind": "partial"
+        "status": "fixed \u2014 production logging now defaults to structured JSON, with ANSI console output opt-in via `BLEEPHUB_LOG_FORMAT=console`. Every server-runtime stdlib `log.*` call is gone: store-layer error logging routes through a wired `Store.logger` (the configured zerolog logger; a nop until `NewServer` sets it), and the boot-time package functions (`MustNewPersistence` quorum wait, `AdminToken` requirement) route through the zerolog global logger, which `main.go` points at the same configured logger. The stdlib `log` package is only used by the standalone `internal/emojigen` build-time generator, which has no logging pipeline and correctly stays on it. Regression test asserts store errors emit structured fields",
+        "status_kind": "fixed"
       },
       {
         "category": "CORE",
@@ -6366,9 +6366,9 @@
         },
         "CORE": {
           "status": {
-            "fixed": 24,
+            "fixed": 25,
             "open": 7,
-            "partial": 2
+            "partial": 1
           },
           "total": 33
         },
@@ -6426,9 +6426,9 @@
       },
       "status": {
         "deferred": 1,
-        "fixed": 595,
+        "fixed": 596,
         "open": 52,
-        "partial": 28
+        "partial": 27
       },
       "total": 676
     }

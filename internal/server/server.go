@@ -168,6 +168,9 @@ func newServerState(addr string, logger zerolog.Logger, construction serverConst
 		allowPrivateOutboundTargets: construction.allowPrivateOutboundTarget,
 	}
 	s.store.actionsArtifacts = s.artifactStore
+	// Route the store's own error logging through the configured structured
+	// logger (level filter + telemetry bridge) instead of the stdlib default.
+	s.store.logger = logger
 	return s
 }
 
@@ -270,7 +273,7 @@ func retiredEnvVarMessage() string {
 //   - BLEEPHUB_DATA_DIR     — directory for SQLite DB state.
 //   - BLEEPHUB_PERSIST      — when "true", enables SQLite-backed state.
 //
-// Operator-requested persistence that fails to open will log.Fatalf.
+// Operator-requested persistence that fails to open logs a fatal error and exits.
 //
 // When persistence is enabled, the full metadata surface persists: users,
 // tokens, apps (incl. credentials + webhook config), OAuth apps,

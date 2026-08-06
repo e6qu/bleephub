@@ -6,7 +6,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"log"
 	"os"
 	"sort"
 	"strconv"
@@ -15,6 +14,8 @@ import (
 	"time"
 
 	gitStorage "github.com/go-git/go-git/v5/storage"
+	"github.com/rs/zerolog"
+	zlog "github.com/rs/zerolog/log"
 	"golang.org/x/crypto/ssh"
 )
 
@@ -26,7 +27,7 @@ import (
 func AdminToken() string {
 	v := os.Getenv("BLEEPHUB_ADMIN_TOKEN")
 	if v == "" {
-		log.Fatal("bleephub: BLEEPHUB_ADMIN_TOKEN is required (the admin token has no default — set it explicitly)")
+		zlog.Fatal().Msg("bleephub: BLEEPHUB_ADMIN_TOKEN is required (the admin token has no default — set it explicitly)")
 	}
 	return v
 }
@@ -543,6 +544,7 @@ type Store struct {
 	actionsKeyPair               *SecretsKeyPair // lazily generated sealed-box keypair (persisted)
 	actionsArtifacts             *ArtifactStore
 	persist                      *Persistence
+	logger                       zerolog.Logger // structured logger; NewServer wires the configured one, else a nop
 	persistenceRevision          int64
 	persistenceRecoveryRequired  bool
 	nextLoginSessionReap         time.Time
@@ -823,6 +825,7 @@ type Job struct {
 // NewStore creates an initialized store.
 func NewStore() *Store {
 	store := &Store{
+		logger:                       zerolog.Nop(),
 		Agents:                       make(map[int]*Agent),
 		Sessions:                     make(map[string]*Session),
 		Jobs:                         make(map[string]*Job),
@@ -2156,7 +2159,7 @@ func (st *Store) loadFromPersistence() error {
 				return err
 			}
 			if err := cacheParsedKey(&k); err != nil {
-				log.Printf("bleephub: persisted SSH key does not parse and will never authenticate: %v", err)
+				st.logger.Warn().Err(err).Msg("persisted SSH key does not parse and will never authenticate")
 			}
 			st.Misc.userKeys[k.ID] = &k
 			st.Misc.keysByUser[k.UserID] = append(st.Misc.keysByUser[k.UserID], &k)

@@ -3,7 +3,6 @@ package bleephub
 import (
 	"context"
 	"fmt"
-	"log"
 	"os"
 	"path/filepath"
 	"sort"
@@ -101,7 +100,7 @@ func (st *Store) createRepo(fullName, name, description string, private bool, ow
 		st.mu.Lock()
 		delete(st.pendingRepoCreations, fullName)
 		st.mu.Unlock()
-		log.Printf("bleephub: create repo %s: open git storage: %s", safeLogText(fullName), safeLogError(err))
+		st.logger.Error().Str("repo", fullName).Err(err).Msg("create repo: open git storage failed")
 		return nil
 	}
 
@@ -165,7 +164,7 @@ func (st *Store) createRepoLocked(fullName, name, description string, private bo
 		}
 		stor, err = openStorage(context.Background(), fullName)
 		if err != nil {
-			log.Printf("bleephub: create repo %s: open git storage: %s", safeLogText(fullName), safeLogError(err))
+			st.logger.Error().Str("repo", fullName).Err(err).Msg("create repo: open git storage failed")
 			return nil
 		}
 	}
@@ -273,7 +272,7 @@ func (st *Store) ForkRepo(owner *User, sourceRepo *Repo, name string) *Repo {
 		st.mu.Lock()
 		delete(st.pendingRepoCreations, fullName)
 		st.mu.Unlock()
-		log.Printf("bleephub: fork repo %s: copy git storage: %s", safeLogText(fullName), safeLogError(err))
+		st.logger.Error().Str("repo", fullName).Err(err).Msg("fork repo: copy git storage failed")
 		return nil
 	}
 
@@ -416,14 +415,14 @@ func (st *Store) RenameRepo(owner, name, newName string) bool {
 	// prefix the bytes just left, so it has to be reopened against the new one.
 	// An in-memory storer holds the objects itself and is simply re-keyed.
 	if err := moveRepoGitStorage(oldFull, newFull); err != nil {
-		log.Printf("bleephub: rename repo %s -> %s: %s", safeLogText(oldFull), safeLogText(newFull), safeLogError(err))
+		st.logger.Error().Str("from", oldFull).Str("to", newFull).Err(err).Msg("rename repo failed")
 		return false
 	}
 	stor := st.GitStorages[oldFull]
 	if stor != nil && repoGitStorageIsPathBound() {
 		reopened, err := openOrInitGitStorage(context.Background(), newFull)
 		if err != nil {
-			log.Printf("bleephub: rename repo %s -> %s: reopen git storage: %s", safeLogText(oldFull), safeLogText(newFull), safeLogError(err))
+			st.logger.Error().Str("from", oldFull).Str("to", newFull).Err(err).Msg("rename repo: reopen git storage failed")
 			return false
 		}
 		stor = reopened
@@ -2285,14 +2284,14 @@ func (st *Store) TransferRepo(owner, name, newOwner string) bool {
 	}
 
 	if err := moveRepoGitStorage(oldFull, newFull); err != nil {
-		log.Printf("bleephub: transfer repo %s -> %s: %s", safeLogText(oldFull), safeLogText(newFull), safeLogError(err))
+		st.logger.Error().Str("from", oldFull).Str("to", newFull).Err(err).Msg("transfer repo failed")
 		return false
 	}
 	stor := st.GitStorages[oldFull]
 	if stor != nil && repoGitStorageIsPathBound() {
 		reopened, err := openOrInitGitStorage(context.Background(), newFull)
 		if err != nil {
-			log.Printf("bleephub: transfer repo %s -> %s: reopen git storage: %s", safeLogText(oldFull), safeLogText(newFull), safeLogError(err))
+			st.logger.Error().Str("from", oldFull).Str("to", newFull).Err(err).Msg("transfer repo: reopen git storage failed")
 			return false
 		}
 		stor = reopened

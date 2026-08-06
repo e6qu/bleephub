@@ -5,14 +5,17 @@ import (
 	"errors"
 	"flag"
 	"fmt"
+	"io"
 	"net/http"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 	"time"
 
 	"github.com/e6qu/bleephub/internal/server"
 	"github.com/rs/zerolog"
+	zlog "github.com/rs/zerolog/log"
 )
 
 var (
@@ -58,16 +61,25 @@ func run() error {
 		_ = obs.Shutdown(flush)
 	}()
 
+	// Default to structured JSON, which log pipelines can parse. ANSI console
+	// output is human-friendly for local development but noise in production, so
+	// it is opt-in via BLEEPHUB_LOG_FORMAT=console.
+	var base io.Writer = os.Stderr
+	if strings.EqualFold(os.Getenv("BLEEPHUB_LOG_FORMAT"), "console") {
+		base = zerolog.ConsoleWriter{Out: os.Stderr}
+	}
 	var output zerolog.LevelWriter
-	consoleW := zerolog.ConsoleWriter{Out: os.Stderr}
 	if obs.LogWriter != nil {
-		output = zerolog.MultiLevelWriter(consoleW, obs.LogWriter)
+		output = zerolog.MultiLevelWriter(base, obs.LogWriter)
 	} else {
-		output = zerolog.MultiLevelWriter(consoleW)
+		output = zerolog.MultiLevelWriter(base)
 	}
 	logger := zerolog.New(output).
 		With().Timestamp().Str("service", "bleephub").Logger().
 		Level(level)
+	// Route the few package-level boot/fatal loggers (persistence quorum wait,
+	// AdminToken requirement) through the same configured logger.
+	zlog.Logger = logger
 
 	logger.Info().Str("version", version).Str("commit", commit).Msg("starting")
 
