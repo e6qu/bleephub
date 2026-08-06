@@ -1981,8 +1981,8 @@
         "id": "REST-071",
         "location": "gh_issues_rest.go:1131",
         "severity": "M",
-        "status": "partial \u2014 association, timeline, PR discriminator, draft, actor-attributed closure events, sub-issue completion summary and issue type now render; parent remains available through the documented `/issues/{number}/parent` resource rather than embedded in the pinned issue schema",
-        "status_kind": "partial"
+        "status": "fixed \u2014 association, timeline, PR discriminator, draft, actor-attributed closure events, sub-issue completion summary and issue type all render on `issueToJSON`; the only member not embedded is `parent`, deliberately exposed through the documented `/issues/{number}/parent` sub-resource rather than inlined in the pinned issue schema",
+        "status_kind": "fixed"
       },
       {
         "category": "REST",
@@ -3709,8 +3709,8 @@
         "id": "STORE-022",
         "location": "store_projects_classic.go:34, store_rulesets.go:28",
         "severity": "M",
-        "status": "partial \u2014 ruleset history and its next-version counter are durable and reload-tested; classic board ordering remains open",
-        "status_kind": "partial"
+        "status": "fixed \u2014 ruleset history and its next-version counter are durable and reload-tested, and classic project board ordering is now durable too: `ProjectColumn.Position`/`ProjectCard.Position` carry json tags, are persisted on create and on every column/card move, and are restored and sorted on reload. `TestPersistenceReload_ProjectBoardOrder` pins that a reorder whose position order differs from id order survives reload",
+        "status_kind": "fixed"
       },
       {
         "category": "STORE",
@@ -4672,8 +4672,8 @@
         "id": "WEB-022",
         "location": "App.tsx:107",
         "severity": "M",
-        "status": "partial \u2014 a location-keyed route boundary now sits inside the persistent shell, so a page crash preserves navigation and navigating resets the failure. A global unhandled-rejection reporter remains open",
-        "status_kind": "partial"
+        "status": "fixed \u2014 a location-keyed route boundary sits inside the persistent shell (a page crash preserves navigation and navigating resets it), and `installUnhandledRejectionReporter` (wired in `main.tsx`) now reports promise rejections that escape the render tree via console.error, the same channel ErrorBoundary uses. Regression test dispatches an `unhandledrejection` and asserts it is reported",
+        "status_kind": "fixed"
       },
       {
         "category": "WEB",
@@ -6389,16 +6389,16 @@
         },
         "REST": {
           "status": {
-            "fixed": 119,
-            "partial": 2
+            "fixed": 120,
+            "partial": 1
           },
           "total": 121
         },
         "STORE": {
           "status": {
-            "fixed": 58,
+            "fixed": 59,
             "open": 6,
-            "partial": 10
+            "partial": 9
           },
           "total": 74
         },
@@ -6412,9 +6412,9 @@
         },
         "WEB": {
           "status": {
-            "fixed": 53,
+            "fixed": 54,
             "open": 6,
-            "partial": 4
+            "partial": 3
           },
           "total": 63
         }
@@ -6426,9 +6426,9 @@
       },
       "status": {
         "deferred": 1,
-        "fixed": 592,
+        "fixed": 595,
         "open": 52,
-        "partial": 31
+        "partial": 28
       },
       "total": 676
     }

@@ -2,7 +2,12 @@ import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { App } from "./App.js";
+import { installUnhandledRejectionReporter } from "./globalErrorReporter.js";
 import "./index.css";
+
+// Report promise rejections that escape the render tree; ErrorBoundary only
+// catches errors thrown during render.
+installUnhandledRejectionReporter();
 
 // No default refetchInterval: a signed-in shell mounts 10+ queries, and a
 // blanket poll multiplies into ~120 requests/minute per open page — enough to
