@@ -218,7 +218,7 @@
     },
     "introspection_snapshot_sha256": "6c989f3dc8c91e4de1a2e31333b7d17901528201779aaf53286c05fabfa1d320",
     "official_schema": {
-      "content_sha256": "c504a0ed454276c878d5a873b782fa9824f2dec3205de3370845d40977e41322",
+      "content_sha256": "86e8e001eb3db2469348cefd25aacf22e623d3fbeed6affddef47ad98f12a9fc",
       "source": "https://docs.github.com/public/fpt/schema.docs.graphql"
     },
     "resolver_files": [
