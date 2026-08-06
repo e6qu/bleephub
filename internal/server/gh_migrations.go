@@ -576,7 +576,7 @@ func migrationRepoJSON(repo *Repo, st *Store, baseURL string) map[string]interfa
 		"has_discussions":   repoHasDiscussions(repo),
 		"has_pull_requests": repo.HasPullRequests,
 		"is_template":       repo.IsTemplate,
-		"topics":            repo.Topics,
+		"topics":            jsonArray(repo.Topics),
 		"permissions": map[string]bool{
 			"admin": true,
 			"push":  true,

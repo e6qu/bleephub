@@ -1943,12 +1943,7 @@ func reviewToJSON(review *PullRequestReview, st *Store, baseURL, repoFullName st
 	htmlURL := baseURL + "/" + repoFullName + "/pull/" + strconv.Itoa(prNumber) + "#pullrequestreview-" + strconv.Itoa(review.ID)
 	pullURL := baseURL + "/api/v3/repos/" + repoFullName + "/pulls/" + strconv.Itoa(prNumber)
 
-	var submittedAt interface{}
-	if review.SubmittedAt != nil {
-		submittedAt = review.SubmittedAt.Format(time.RFC3339)
-	}
-
-	return map[string]interface{}{
+	m := map[string]interface{}{
 		"id":                 review.ID,
 		"node_id":            review.NodeID,
 		"user":               authorJSON,
@@ -1958,12 +1953,17 @@ func reviewToJSON(review *PullRequestReview, st *Store, baseURL, repoFullName st
 		"html_url":           htmlURL,
 		"pull_request_url":   pullURL,
 		"author_association": authorAssociation,
-		"submitted_at":       submittedAt,
 		"_links": map[string]interface{}{
 			"html":         map[string]interface{}{"href": htmlURL},
 			"pull_request": map[string]interface{}{"href": pullURL},
 		},
 	}
+	// submitted_at is optional and non-nullable: a PENDING review has not been
+	// submitted, so GitHub omits the key rather than emitting null.
+	if review.SubmittedAt != nil {
+		m["submitted_at"] = review.SubmittedAt.Format(time.RFC3339)
+	}
+	return m
 }
 
 // handleListPullRequestFiles serves GET /repos/{owner}/{repo}/pulls/{number}/files,

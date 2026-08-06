@@ -424,14 +424,19 @@ func rulesetToJSON(rs *Ruleset, includeBody bool) map[string]interface{} {
 		"source_type":             rs.SourceType,
 		"source":                  rs.Source,
 		"enforcement":             rs.Enforcement,
-		"bypass_actors":           rs.BypassActors,
+		"bypass_actors":           jsonArray(rs.BypassActors),
 		"current_user_can_bypass": rs.CurrentUserCanBypass,
 		"created_at":              rs.CreatedAt.UTC().Format(time.RFC3339),
 		"updated_at":              rs.UpdatedAt.UTC().Format(time.RFC3339),
 	}
 	if includeBody {
-		m["conditions"] = rs.Conditions
-		m["rules"] = rs.Rules
+		// ref_name.include/exclude are non-nullable arrays: emit [] not null for
+		// an empty condition, whether rs is a stored record or a clone.
+		conds := rs.Conditions
+		conds.RefName.Include = jsonArray(conds.RefName.Include)
+		conds.RefName.Exclude = jsonArray(conds.RefName.Exclude)
+		m["conditions"] = conds
+		m["rules"] = jsonArray(rs.Rules)
 	}
 	return m
 }

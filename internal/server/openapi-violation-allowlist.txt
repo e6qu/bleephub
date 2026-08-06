@@ -24,3 +24,24 @@ GET /meta -> 200	unknown-field	$.installed_version
 # vendored dotcom schema models only the common directory-entry members
 # and omits this documented discriminator-specific field.
 GET /repos/{}/{}/contents/{} -> 200	unknown-field	$[].submodule_git_url
+
+# VERIFIED: pushed_at is null in real GitHub for a repository that has never
+# been pushed to (a freshly created / empty repo). GitHub's own `repository`
+# and `minimal-repository` schemas model pushed_at as nullable; only
+# `full-repository` and `repo-search-result-item` mark it non-nullable, an
+# imprecision in the vendored dotcom description rather than a bleephub bug —
+# bleephub emits nullableTimestamp(repo.PushedAt) faithfully (PAR-009).
+GET /repos/{}/{} -> 200	null-not-allowed	$.pushed_at
+GET /search/repositories -> 200	null-not-allowed	$.items[].pushed_at
+PATCH /repos/{}/{} -> 200	null-not-allowed	$.pushed_at
+POST /orgs/{}/repos -> 201	null-not-allowed	$.pushed_at
+POST /repos/{}/{}/forks -> 202	null-not-allowed	$.pushed_at
+POST /user/codespaces/{}/publish -> 201	null-not-allowed	$.repository.pushed_at
+POST /user/repos -> 201	null-not-allowed	$.pushed_at
+
+# VERIFIED: an enterprise team's description is null when unset. GitHub's
+# `team` and `nullable-team-simple` schemas model description as a nullable
+# member; only `enterprise-team` marks it non-nullable, an imprecision in the
+# vendored description. bleephub emits nullOrString(team.Description) (PAR-009).
+PATCH /enterprises/{}/teams/{} -> 200	null-not-allowed	$.description
+POST /enterprises/{}/teams -> 201	null-not-allowed	$.description

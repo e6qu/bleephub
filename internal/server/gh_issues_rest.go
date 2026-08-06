@@ -1511,10 +1511,16 @@ func issueEventToJSON(e *IssueEvent, st *Store, baseURL, repoFullName string) ma
 
 	out := issueEventBase(e, st, baseURL, repoFullName)
 	out["performed_via_github_app"] = nil
-	out["label"] = labelJSON
+	// label and milestone are optional, non-nullable on the generic issue-event
+	// schema: present only on the events that carry them, omitted otherwise.
+	if labelJSON != nil {
+		out["label"] = labelJSON
+	}
 	out["assignee"] = assigneeJSON
 	out["assigner"] = assignerJSON
-	out["milestone"] = milestoneJSON
+	if milestoneJSON != nil {
+		out["milestone"] = milestoneJSON
+	}
 	return out
 }
 

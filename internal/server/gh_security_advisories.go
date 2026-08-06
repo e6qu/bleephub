@@ -455,10 +455,9 @@ func securityAdvisoryToJSON(a *SecurityAdvisory, repo *Repo, baseURL string, st 
 	}
 	if len(vulnerabilities) == 0 && a.VulnerableVersionRange != "" {
 		vulnerabilities = append(vulnerabilities, map[string]interface{}{
-			"package": map[string]interface{}{
-				"ecosystem": nil,
-				"name":      nil,
-			},
+			// package itself is nullable; its ecosystem/name are not, so emit a
+			// null package rather than a package object with null members.
+			"package":                  nil,
 			"vulnerable_version_range": a.VulnerableVersionRange,
 			"patched_versions":         nil,
 			"vulnerable_functions":     []string{},

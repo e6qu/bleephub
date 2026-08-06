@@ -131,8 +131,10 @@ func cloneRuleset(rs *Ruleset) *Ruleset {
 	}
 	copy := *rs
 	copy.BypassActors = append([]RulesetBypassActor(nil), rs.BypassActors...)
-	copy.Conditions.RefName.Include = append([]string(nil), rs.Conditions.RefName.Include...)
-	copy.Conditions.RefName.Exclude = append([]string(nil), rs.Conditions.RefName.Exclude...)
+	// Start from a non-nil slice: GitHub always emits ref_name.include/exclude
+	// as arrays, so an empty condition must marshal to [] rather than null.
+	copy.Conditions.RefName.Include = append([]string{}, rs.Conditions.RefName.Include...)
+	copy.Conditions.RefName.Exclude = append([]string{}, rs.Conditions.RefName.Exclude...)
 	copy.Rules = make([]Rule, len(rs.Rules))
 	for index, rule := range rs.Rules {
 		copy.Rules[index] = rule
@@ -542,7 +544,8 @@ func (st *Store) ListRulesForBranch(repo *Repo, branch string) []map[string]inte
 	st.mu.RLock()
 	defer st.mu.RUnlock()
 
-	var out []map[string]interface{}
+	// Non-nil: the endpoint returns a JSON array, so no matching rule is [].
+	out := []map[string]interface{}{}
 	for _, rs := range st.Rulesets {
 		if !rulesetAppliesToRepo(rs, repo) {
 			continue

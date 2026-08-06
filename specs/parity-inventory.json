@@ -3914,9 +3914,9 @@
         "category": "STORE",
         "finding": "In-place `s[:0]` filtering rewrites the backing array readers already hold",
         "id": "STORE-045",
-        "location": "store_repos.go:1029 + 2",
+        "location": "gh_actions_permissions.go:343 + branch_protection",
         "severity": "M",
-        "status": "partial \u2014 fixed in gh_actions_permissions.go",
+        "status": "partial \u2014 the original `store_repos.go` site is gone (line reference was stale); `gh_actions_permissions.go` carries the documented safe-copy rationale, and the surveyed `[:0]` filters (e.g. `gh_branch_protection.go:1303`) run on handler-owned clones from `cloneBranchProtection`, not on a stored slice a concurrent reader holds. Remaining work is a `-race`-backed audit of the residual `[:0]` sites, intertwined with STORE-021",
         "status_kind": "partial"
       },
       {
@@ -5455,8 +5455,8 @@
         "id": "PAR-008",
         "location": "gh_codespaces.go",
         "severity": "M",
-        "status": "open",
-        "status_kind": "open"
+        "status": "fixed \u2014 the invented per-login wildcard is gone and the real repo codespace endpoints (`devcontainers`, `new`, `permissions_check`, `machines`) are each registered with a handler behind `requirePerm(scopeCodespaces, permRead, \u2026)`; `TestUserCodespacesByLoginRouteIsNotRegistered` pins that the fabricated route 404s",
+        "status_kind": "fixed"
       },
       {
         "category": "PAR",
@@ -5464,8 +5464,8 @@
         "id": "PAR-009",
         "location": "openapi_shape_validator_test.go:346",
         "severity": "M",
-        "status": "open",
-        "status_kind": "open"
+        "status": "fixed \u2014 `walk` now reports `null-not-allowed` unless the schema admits null (`schemaAllowsNull`: `nullable:true`, a `\"null\"` type entry, an anyOf/oneOf null branch, or a fully open schema), covered by a unit test. Enabling it surfaced 60 real emissions: 16 emitter bugs fixed (nil slices \u2192 `[]` for events/bypass_actors/ref_name.include+exclude/topics/errors/rules-list/auto_trigger_checks; optional non-nullable members omitted rather than null for actor/triggering_actor/discussion_url/submitted_at/search pull_request/issue-event label+milestone/package license; required members given a value for started_at/head_commit/deployment payload; null package for advisory ecosystem/name) and 9 verified GitHub-OpenAPI-imprecision cases allowlisted with citations (repo `pushed_at` and enterprise-team `description`, both nullable in GitHub's sibling schemas)",
+        "status_kind": "fixed"
       },
       {
         "category": "PAR",
@@ -6382,8 +6382,8 @@
         },
         "PAR": {
           "status": {
-            "fixed": 30,
-            "open": 9
+            "fixed": 32,
+            "open": 7
           },
           "total": 39
         },
@@ -6426,8 +6426,8 @@
       },
       "status": {
         "deferred": 1,
-        "fixed": 589,
-        "open": 54,
+        "fixed": 591,
+        "open": 52,
         "partial": 32
       },
       "total": 676
