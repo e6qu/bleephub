@@ -181,12 +181,101 @@ func intArg(args map[string]interface{}, key string) (int, bool) {
 
 // buildConnectionWindow renders nodes[startIdx:endIdx] into a connection map
 // with edges/cursors and a correct pageInfo, matching paginateGQL's shape.
-func buildConnectionWindow(nodes []map[string]interface{}, startIdx, endIdx, total int) map[string]interface{} {
+// gqlConnItem is one element of a GraphQL connection whose expensive node
+// rendering is deferred until pagination has chosen the page. Sorting and
+// cursor resolution run on the lightweight identity, so a `search(first:1)`
+// over a large instance renders a single node instead of every match (GQL-026).
+type gqlConnItem struct {
+	// identity is the stable node id (what gqlNodeIdentity would return for the
+	// rendered node), used for identity-cursor resolution.
+	identity string
+	// render is invoked only for items inside the returned window.
+	render func() map[string]interface{}
+}
+
+// resolveConnectionIndexForItems mirrors resolveConnectionIndex but matches on
+// the lightweight identity so no node is rendered to resolve a cursor.
+func resolveConnectionIndexForItems(items []gqlConnItem, cursor string, fallbackIdx int) int {
+	if id := connectionCursorID(cursor); id != "" {
+		for i := range items {
+			if items[i].identity == id {
+				return i
+			}
+		}
+	}
+	return fallbackIdx
+}
+
+// paginateGQLItems applies the same cursor/first/last windowing as
+// paginateGQLMaps, but over lazy items: only the items inside the final window
+// are rendered.
+func paginateGQLItems(items []gqlConnItem, args map[string]interface{}) map[string]interface{} {
+	total := len(items)
+	start := 0
+	end := total
+
+	if after, ok := args["after"].(string); ok && after != "" {
+		afterIndex := resolveConnectionIndexForItems(items, after, decodeCursor(after))
+		// Saturate before adding one: cursor:<MaxInt> must describe an empty
+		// window, not wrap start negative and unexpectedly return page one.
+		if afterIndex >= total {
+			start = total
+		} else {
+			start = afterIndex + 1
+		}
+	}
+	if before, ok := args["before"].(string); ok && before != "" {
+		end = resolveConnectionIndexForItems(items, before, decodeCursor(before))
+	}
+	if start < 0 {
+		start = 0
+	}
+	if start > total {
+		start = total
+	}
+	if end < 0 {
+		end = 0
+	}
+	if end > total {
+		end = total
+	}
+	if end < start {
+		end = start
+	}
+
+	if last, ok := intArg(args, "last"); ok && last > 0 {
+		if last > 100 {
+			last = 100
+		}
+		if end-start > last {
+			start = end - last
+		}
+	}
+	if first, ok := intArg(args, "first"); ok && first > 0 {
+		if first > 100 {
+			first = 100
+		}
+		if end-start > first {
+			end = start + first
+		}
+	}
+	if first, ok := intArg(args, "first"); !ok || first <= 0 {
+		if last, ok := intArg(args, "last"); !ok || last <= 0 {
+			if end-start > 30 {
+				end = start + 30
+			}
+		}
+	}
+
+	return buildConnectionWindowLazy(items, start, end, total)
+}
+
+func buildConnectionWindowLazy(items []gqlConnItem, startIdx, endIdx, total int) map[string]interface{} {
 	// Keep this final rendering boundary safe even when a new caller computes
 	// a malformed window. Cursor values are untrusted client input, and both
 	// addition and conversion can otherwise produce an out-of-range slice.
-	if total < 0 || total > len(nodes) {
-		total = len(nodes)
+	if total < 0 || total > len(items) {
+		total = len(items)
 	}
 	if startIdx < 0 {
 		startIdx = 0
@@ -200,13 +289,14 @@ func buildConnectionWindow(nodes []map[string]interface{}, startIdx, endIdx, tot
 	if endIdx > total {
 		endIdx = total
 	}
-	page := nodes[startIdx:endIdx]
+	page := items[startIdx:endIdx]
 	outNodes := make([]map[string]interface{}, 0, len(page))
 	edges := make([]map[string]interface{}, 0, len(page))
-	for i, n := range page {
-		cursor := encodeConnectionCursor(startIdx+i, gqlNodeIdentity(n))
-		outNodes = append(outNodes, n)
-		edges = append(edges, map[string]interface{}{"node": n, "cursor": cursor})
+	for i := range page {
+		node := page[i].render()
+		cursor := encodeConnectionCursor(startIdx+i, page[i].identity)
+		outNodes = append(outNodes, node)
+		edges = append(edges, map[string]interface{}{"node": node, "cursor": cursor})
 	}
 	var startCursor, endCursor interface{}
 	if len(edges) > 0 {

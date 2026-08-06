@@ -1455,8 +1455,8 @@ func (s *Server) addPullRequestFieldsToSchema(userType, issueType, milestoneType
 				return paginateGQLMaps(nil, p.Args), nil
 			}
 
-			nodes := s.searchIssuesAndPRs(q, ghUserFromContext(p.Context))
-			return paginateGQLMaps(nodes, p.Args), nil
+			items := s.searchIssuesAndPRs(q, ghUserFromContext(p.Context))
+			return paginateGQLItems(items, p.Args), nil
 		},
 	})
 
@@ -2886,7 +2886,7 @@ func checkSuiteWorkflowRunSourceLocked(st *Store, suite *CheckSuite) map[string]
 // graph. A qualifier bleephub cannot evaluate at all yields honest empty
 // results (never an over-matching ignore). Bare keywords match title/body
 // substrings.
-func (s *Server) searchIssuesAndPRs(query string, viewer *User) []map[string]interface{} {
+func (s *Server) searchIssuesAndPRs(query string, viewer *User) []gqlConnItem {
 	type searchSpec struct {
 		repos      []string // repo full names; empty = all
 		states     []string // OPEN / CLOSED / MERGED; empty = all
@@ -3196,20 +3196,33 @@ func (s *Server) searchIssuesAndPRs(query string, viewer *User) []map[string]int
 
 	// Render outside the lock (the toGQL converters take it themselves),
 	// newest-first across both entity kinds.
+	// Collect lightweight, lazily-rendered items and sort by date. The
+	// expensive issueToGQL/pullRequestToGQL rendering runs only for the items
+	// pagination keeps, so search(first:1) over a large instance renders one
+	// node, not every match (GQL-026).
 	type dated struct {
 		created time.Time
 		updated time.Time
-		node    map[string]interface{}
+		item    gqlConnItem
 	}
 	out := make([]dated, 0, len(matchedIssues)+len(matchedPRs))
 	for _, issue := range matchedIssues {
-		node := issueToGQL(issue, s.store)
-		node["__typename"] = "Issue"
-		out = append(out, dated{created: issue.CreatedAt, updated: issue.UpdatedAt, node: node})
+		issue := issue
+		out = append(out, dated{created: issue.CreatedAt, updated: issue.UpdatedAt, item: gqlConnItem{
+			identity: issue.NodeID,
+			render: func() map[string]interface{} {
+				node := issueToGQL(issue, s.store)
+				node["__typename"] = "Issue"
+				return node
+			},
+		}})
 	}
 	for _, pr := range matchedPRs {
-		node := pullRequestToGQL(pr, s.store)
-		out = append(out, dated{created: pr.CreatedAt, updated: pr.UpdatedAt, node: node})
+		pr := pr
+		out = append(out, dated{created: pr.CreatedAt, updated: pr.UpdatedAt, item: gqlConnItem{
+			identity: pr.NodeID,
+			render:   func() map[string]interface{} { return pullRequestToGQL(pr, s.store) },
+		}})
 	}
 	sort.SliceStable(out, func(a, b int) bool {
 		left, right := out[a].created, out[b].created
@@ -3225,9 +3238,9 @@ func (s *Server) searchIssuesAndPRs(query string, viewer *User) []map[string]int
 		return left.After(right)
 	})
 
-	nodes := make([]map[string]interface{}, 0, len(out))
+	items := make([]gqlConnItem, 0, len(out))
 	for _, d := range out {
-		nodes = append(nodes, d.node)
+		items = append(items, d.item)
 	}
-	return nodes
+	return items
 }

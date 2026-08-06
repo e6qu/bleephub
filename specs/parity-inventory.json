@@ -2647,8 +2647,8 @@
         "id": "GQL-026",
         "location": "gh_pulls_graphql.go:3136",
         "severity": "M",
-        "status": "open",
-        "status_kind": "open"
+        "status": "fixed \u2014 the search resolver now matches and sorts on lightweight items (a stable node id + a lazy render closure) and defers the expensive `issueToGQL`/`pullRequestToGQL` rendering to `paginateGQLItems`, which renders only the nodes inside the chosen window. `paginateGQLMaps` was refactored to wrap the same lazy windowing so every connection shares one cursor implementation; a unit test proves a 100-item `first:1` window renders exactly one node with `totalCount` 100, and that the lazy and eager paths return identical windows/cursors",
+        "status_kind": "fixed"
       },
       {
         "category": "GQL",
@@ -6374,8 +6374,7 @@
         },
         "GQL": {
           "status": {
-            "fixed": 58,
-            "open": 1,
+            "fixed": 59,
             "partial": 2
           },
           "total": 61
@@ -6426,8 +6425,8 @@
       },
       "status": {
         "deferred": 1,
-        "fixed": 596,
-        "open": 52,
+        "fixed": 597,
+        "open": 51,
         "partial": 27
       },
       "total": 676
