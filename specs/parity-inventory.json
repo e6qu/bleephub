@@ -3952,8 +3952,8 @@
         "id": "STORE-049",
         "location": "s3fs.go:73",
         "severity": "m",
-        "status": "partial \u2014 every repository storage entry point now rejects anything except a normalized local `owner/name`, before filesystem or S3 access; ref-name validation remains open",
-        "status_kind": "partial"
+        "status": "fixed \u2014 the repo path is normalized (`owner/name`) at every storage entry point, and reference names are now validated at the `atomicRefStorer` write boundary (`SetReference`/`CheckAndSetReference`/`CreateReference`/`RemoveReference`/`RemoveReferenceCAS`), which wraps every backend. `checkSafeRefName` rejects any name go-git's `IsSafe` flags (empty/`.`/`..` segments, backslash) before it reaches `path.Join`, so a crafted ref can no longer escape the per-repository prefix; legitimate refs (`refs/heads/*`, `refs/pull/N/merge`, tags, `HEAD`) are unaffected. Regression test covers both directions",
+        "status_kind": "fixed"
       },
       {
         "category": "STORE",
@@ -6396,9 +6396,9 @@
         },
         "STORE": {
           "status": {
-            "fixed": 57,
+            "fixed": 58,
             "open": 6,
-            "partial": 11
+            "partial": 10
           },
           "total": 74
         },
@@ -6426,9 +6426,9 @@
       },
       "status": {
         "deferred": 1,
-        "fixed": 591,
+        "fixed": 592,
         "open": 52,
-        "partial": 32
+        "partial": 31
       },
       "total": 676
     }

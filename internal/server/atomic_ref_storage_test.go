@@ -155,3 +155,50 @@ func TestGitPushCommandsHonorWireOldObjectID(t *testing.T) {
 		}
 	}
 }
+
+// TestAtomicRefStorage_RejectsUnsafeRefNames covers STORE-049: a reference name
+// that could escape the per-repository storage path (a `..` segment or a
+// backslash) is refused at the storer boundary, before any backend composes it
+// into a filesystem/S3 key. Legitimate refs are unaffected.
+func TestAtomicRefStorage_RejectsUnsafeRefNames(t *testing.T) {
+	hash := plumbing.NewHash("1111111111111111111111111111111111111111")
+
+	unsafe := []plumbing.ReferenceName{
+		"refs/heads/../../evil",
+		"refs/heads/x/../../../other-repo/refs/heads/main",
+		"refs/heads/..",
+		`refs/heads/back\slash`,
+		"refs/heads/", // trailing empty segment
+	}
+	for _, name := range unsafe {
+		stor := wrapAtomicRefStorage("owner/repo", memory.NewStorage())
+		ref := plumbing.NewHashReference(name, hash)
+		if err := stor.SetReference(ref); !errors.Is(err, errUnsafeReferenceName) {
+			t.Errorf("SetReference(%q): err = %v, want errUnsafeReferenceName", name, err)
+		}
+		// Nothing may have been written under the crafted name.
+		if _, err := stor.Reference(name); err == nil {
+			t.Errorf("SetReference(%q) stored a ref despite the rejection", name)
+		}
+		if err := stor.RemoveReference(name); !errors.Is(err, errUnsafeReferenceName) {
+			t.Errorf("RemoveReference(%q): err = %v, want errUnsafeReferenceName", name, err)
+		}
+		if err := stor.CheckAndSetReference(ref, nil); !errors.Is(err, errUnsafeReferenceName) {
+			t.Errorf("CheckAndSetReference(%q): err = %v, want errUnsafeReferenceName", name, err)
+		}
+	}
+
+	// Every legitimate ref bleephub stores must still be accepted.
+	safe := []plumbing.ReferenceName{
+		plumbing.NewBranchReferenceName("main"),
+		"refs/pull/1/merge",
+		"refs/tags/v1.0.0",
+		plumbing.HEAD,
+	}
+	for _, name := range safe {
+		stor := wrapAtomicRefStorage("owner/repo", memory.NewStorage())
+		if err := stor.SetReference(plumbing.NewHashReference(name, hash)); err != nil {
+			t.Errorf("SetReference(%q): unexpected error %v", name, err)
+		}
+	}
+}
