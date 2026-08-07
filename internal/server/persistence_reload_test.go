@@ -2371,3 +2371,28 @@ func TestCommentIndexConsistencyAndReload(t *testing.T) {
 	}
 	scanMatchesIndex(t, st, "issue", issueID)
 }
+
+// TestPersistenceReload_OpensEveryRepoGitStorage covers STORE-054: the restart
+// load reopens every repository's git storage (now concurrently), so a git
+// operation works immediately after a reload for all repos, not just some.
+func TestPersistenceReload_OpensEveryRepoGitStorage(t *testing.T) {
+	const repoCount = 12
+	st := reloadedStore(t, func(p *Persistence, st *Store) {
+		owner := addTestUser(p, st, "repo-owner")
+		for i := 0; i < repoCount; i++ {
+			if st.CreateRepo(owner, "repo-"+strconv.Itoa(i), "", false) == nil {
+				t.Fatalf("create repo %d", i)
+			}
+		}
+	})
+
+	if got := len(st.GitStorages); got != repoCount {
+		t.Fatalf("reloaded GitStorages = %d, want %d (every repo must be reopened)", got, repoCount)
+	}
+	for i := 0; i < repoCount; i++ {
+		full := "repo-owner/repo-" + strconv.Itoa(i)
+		if st.GitStorages[full] == nil {
+			t.Errorf("git storage for %s was not reopened after reload", full)
+		}
+	}
+}

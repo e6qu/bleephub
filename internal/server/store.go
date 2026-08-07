@@ -1207,6 +1207,49 @@ func (st *Store) wirePersistence(p *Persistence) {
 // Agent connections and ephemeral service codes deliberately stay in memory.
 // Browser sessions are durable because browser authentication must survive
 // service replacement and requests may reach any replica.
+
+// maxParallelStorageOpen bounds the restart-time git-storage open fan-out. The
+// open is I/O-bound (filesystem or S3), so a modest concurrency collapses
+// restart latency without swamping the backend.
+const maxParallelStorageOpen = 16
+
+// openRepoStoragesConcurrently reopens every repo's git storage in parallel and
+// assigns the handles once they are all ready. The repo records are already in
+// the store maps; only the storage handles remain (STORE-054). Each worker
+// writes a distinct result index and the handles are consumed on the calling
+// goroutine after the workers join, so st.GitStorages is mutated only here,
+// single-threaded and lock-free.
+func (st *Store) openRepoStoragesConcurrently(fullNames []string) error {
+	if len(fullNames) == 0 {
+		return nil
+	}
+	type opened struct {
+		stor gitStorage.Storer
+		err  error
+	}
+	results := make([]opened, len(fullNames))
+	sem := make(chan struct{}, maxParallelStorageOpen)
+	var wg sync.WaitGroup
+	for i, fullName := range fullNames {
+		wg.Add(1)
+		sem <- struct{}{}
+		go func(i int, fullName string) {
+			defer wg.Done()
+			defer func() { <-sem }()
+			stor, err := openOrInitGitStorage(context.Background(), fullName)
+			results[i] = opened{stor: stor, err: err}
+		}(i, fullName)
+	}
+	wg.Wait()
+	for i, res := range results {
+		if res.err != nil {
+			return fmt.Errorf("reopen git storage %s: %w", fullNames[i], res.err)
+		}
+		st.GitStorages[fullNames[i]] = res.stor
+	}
+	return nil
+}
+
 func (st *Store) loadFromPersistence() error {
 	if st.persist == nil {
 		return nil
@@ -1220,6 +1263,10 @@ func (st *Store) loadFromPersistence() error {
 	}
 	orphanedRepoRows := newPersistBatch(st.persist)
 	var orphanedRepoNames []string
+	// Git-storage handles are opened after the record load, concurrently: the
+	// per-repo open is filesystem/S3 I/O, so a serial loop makes restart
+	// latency scale with the repository count (STORE-054).
+	var reposToOpen []string
 	if err := st.loadBucket("users", func(raw []byte) error {
 		var u User
 		if err := loadJSON(raw, &u); err != nil {
@@ -1470,15 +1517,15 @@ func (st *Store) loadFromPersistence() error {
 		if r.ID >= st.NextRepo {
 			st.NextRepo = r.ID + 1
 		}
-		// Re-open (or create) the git storage for this repo so git operations
-		// work immediately after restart.
-		stor, err := openOrInitGitStorage(context.Background(), r.FullName)
-		if err != nil {
-			return fmt.Errorf("reopen git storage %s: %w", r.FullName, err)
-		}
-		st.GitStorages[r.FullName] = stor
+		// Defer opening (or creating) this repo's git storage to the concurrent
+		// pass below so git operations work immediately after restart without a
+		// serial per-repo I/O wait here.
+		reposToOpen = append(reposToOpen, r.FullName)
 		return nil
 	}); err != nil {
+		return err
+	}
+	if err := st.openRepoStoragesConcurrently(reposToOpen); err != nil {
 		return err
 	}
 	for _, fullName := range orphanedRepoNames {

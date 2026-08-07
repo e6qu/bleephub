@@ -3997,8 +3997,8 @@
         "id": "STORE-054",
         "location": "store.go:919",
         "severity": "m",
-        "status": "open",
-        "status_kind": "open"
+        "status": "fixed \u2014 the per-repo git-storage open is now concurrent: the load pass collects repo names and `openRepoStoragesConcurrently` reopens them in a bounded pool (16), so restart latency no longer scales linearly with the repository count (the open is filesystem/S3 I/O). Handles are written to distinct result indices and consumed after the workers join, so `st.GitStorages` is still mutated single-threaded \u2014 `-race` reload tests confirm it. The unlocked map mutation is benign: `loadFromPersistence` runs at startup before the server serves, and runtime `ReloadFromPersistence` swaps in a freshly-built candidate store rather than mutating the live one",
+        "status_kind": "fixed"
       },
       {
         "category": "STORE",
@@ -6394,8 +6394,8 @@
         },
         "STORE": {
           "status": {
-            "fixed": 60,
-            "open": 5,
+            "fixed": 61,
+            "open": 4,
             "partial": 9
           },
           "total": 74
@@ -6424,8 +6424,8 @@
       },
       "status": {
         "deferred": 1,
-        "fixed": 611,
-        "open": 38,
+        "fixed": 612,
+        "open": 37,
         "partial": 26
       },
       "total": 676
