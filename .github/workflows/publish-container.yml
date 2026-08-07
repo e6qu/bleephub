@@ -13,10 +13,14 @@ permissions:
 
 concurrency:
   group: publish-bleephub-${{ github.ref_name }}
-  # A tagged release must never be cancelled by a later push: the tag is
-  # already public and immutable, so a half-published release cannot be
-  # re-driven by pushing again.
-  cancel-in-progress: ${{ !startsWith(github.ref, 'refs/tags/') }}
+  # Never cancel a publish in progress. This job pushes the two
+  # architecture tags ($TAG-amd64, $TAG-arm64) and only then assembles the
+  # combined manifest ($TAG); cancelling in that window leaves orphan
+  # architecture tags with no manifest to resolve them. That is true for a
+  # branch (commit-tagged) publish as much as for a tag: both push immutable
+  # registry artifacts a re-push cannot cleanly re-drive. Concurrent
+  # publishes queue instead.
+  cancel-in-progress: false
 
 env:
   IMAGE: ghcr.io/e6qu/bleephub
@@ -448,6 +452,16 @@ jobs:
                   done
               jq -r '.[] | .metadata.container.tags[]? | select(test("^([0-9]+\\.[0-9]+\\.[0-9]+(-[0-9A-Za-z.-]+)?|latest)$"))' "$versions_file"
             } | jq -R . | jq -s 'unique')"
+            # An empty keep-set is never legitimate: the release this workflow
+            # just published is always among the newest twenty, so a zero-length
+            # keep set means the versions query or the tag extraction failed. The
+            # delete filter below keeps a version only if one of its tags is in
+            # the keep set, so an empty keep set would select EVERY version for
+            # deletion. Refuse to prune rather than wipe the package.
+            if [ "$(printf '%s' "$keep_tags" | jq 'length')" -eq 0 ]; then
+              echo "::error::$package: computed an empty keep-set; refusing to prune (this would delete every version)"
+              return 1
+            fi
             jq -r \
               --argjson include_architectures "$include_architectures" \
               --argjson keep "$keep_tags" '

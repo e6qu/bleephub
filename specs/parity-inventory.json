@@ -5878,8 +5878,8 @@
         "id": "CI-016",
         "location": "publish-container.yml:11",
         "severity": "M",
-        "status": "open",
-        "status_kind": "open"
+        "status": "fixed \u2014 the publish workflow's concurrency is now `cancel-in-progress: false` for all refs (previously only tags were protected). Cancelling in the window between pushing `$TAG-amd64`/`$TAG-arm64` and assembling the `$TAG` manifest would orphan the architecture tags; a branch publish pushes equally immutable artifacts, so it must not be cancellable either. Concurrent publishes queue",
+        "status_kind": "fixed"
       },
       {
         "category": "CI",
@@ -6031,8 +6031,8 @@
         "id": "CI-033",
         "location": "publish-container.yml:190",
         "severity": "M",
-        "status": "open",
-        "status_kind": "open"
+        "status": "fixed \u2014 `retain_releases` now refuses to prune (fails the step) when the computed keep-set is empty. The delete filter keeps a version only if one of its tags is in the keep-set, so an empty keep-set \u2014 which can only arise from a failed versions query or tag extraction, never legitimately (the just-published release is always in the newest twenty) \u2014 would have selected every version for deletion. The guard makes that catastrophe impossible",
+        "status_kind": "fixed"
       },
       {
         "category": "CI",
@@ -6357,8 +6357,8 @@
         },
         "CI": {
           "status": {
-            "fixed": 54,
-            "open": 9,
+            "fixed": 56,
+            "open": 7,
             "partial": 2
           },
           "total": 65
@@ -6424,8 +6424,8 @@
       },
       "status": {
         "deferred": 1,
-        "fixed": 607,
-        "open": 42,
+        "fixed": 609,
+        "open": 40,
         "partial": 26
       },
       "total": 676
