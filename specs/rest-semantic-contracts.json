@@ -4032,6 +4032,12 @@
             "type": "integer"
           },
           {
+            "in": "query",
+            "name": "relationship",
+            "required": false,
+            "type": "string"
+          },
+          {
             "enum": [
               "development",
               "runtime"
@@ -20725,6 +20731,12 @@
           },
           {
             "in": "query",
+            "name": "relationship",
+            "required": false,
+            "type": "string"
+          },
+          {
+            "in": "query",
             "name": "runtime_risk",
             "required": false,
             "type": "string"
@@ -28644,6 +28656,9 @@
                 "filter": {
                   "type": "string"
                 },
+                "group_by": {
+                  "type": "array"
+                },
                 "layout": {
                   "enum": [
                     "table",
@@ -28654,6 +28669,12 @@
                 },
                 "name": {
                   "type": "string"
+                },
+                "sort_by": {
+                  "type": "array"
+                },
+                "vertical_group_by": {
+                  "type": "array"
                 },
                 "visible_fields": {
                   "type": "array"
@@ -48017,6 +48038,12 @@
             "name": "per_page",
             "required": false,
             "type": "integer"
+          },
+          {
+            "in": "query",
+            "name": "relationship",
+            "required": false,
+            "type": "string"
           },
           {
             "enum": [
@@ -75250,6 +75277,9 @@
                 "filter": {
                   "type": "string"
                 },
+                "group_by": {
+                  "type": "array"
+                },
                 "layout": {
                   "enum": [
                     "table",
@@ -75260,6 +75290,12 @@
                 },
                 "name": {
                   "type": "string"
+                },
+                "sort_by": {
+                  "type": "array"
+                },
+                "vertical_group_by": {
+                  "type": "array"
                 },
                 "visible_fields": {
                   "type": "array"
@@ -79545,7 +79581,7 @@
   ],
   "schema_version": 1,
   "source": "internal/server/testdata/github-openapi.json.gz",
-  "source_sha256": "cb00b4372f8188c32ee92824e86a8deec61d678bbf3c49372fb6a09dfe8667c1",
+  "source_sha256": "2f78e6e5b7c6bd32af008dbb26655253eee1dee507cf0010bc4142170b97c181",
   "summary": {
     "operations": 1220,
     "state_changing": 584,
