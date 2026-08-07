@@ -21,11 +21,13 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"os/signal"
 	"path/filepath"
 	"strconv"
 	"strings"
 	"sync"
 	"sync/atomic"
+	"syscall"
 	"time"
 
 	"github.com/canonical/go-dqlite/v3/client"
@@ -901,7 +903,20 @@ func isPermanentPersistenceError(err error) bool {
 	return errors.As(err, &p)
 }
 
+// startupQuorumDeadline bounds how long MustNewPersistence retries a transient
+// dqlite failure. Quorum forms in seconds; a wait this long means a downed peer
+// or a misconfiguration, and failing loudly beats retrying forever behind a
+// listener that never starts (so a health check sees nothing).
+const startupQuorumDeadline = 5 * time.Minute
+
 func MustNewPersistence() *Persistence {
+	// Honour SIGTERM during the wait: this runs before the HTTP listener
+	// exists, so without it an orchestrator can only SIGKILL a still-starting
+	// process. A second registration alongside main's is harmless and is
+	// unregistered as soon as quorum forms.
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
+	giveUpAt := time.Now().Add(startupQuorumDeadline)
 	for {
 		p, err := NewPersistence()
 		if err == nil {
@@ -917,8 +932,16 @@ func MustNewPersistence() *Persistence {
 		if strings.TrimSpace(os.Getenv("BLEEPHUB_DQLITE_SERVERS")) == "" {
 			zlog.Fatal().Err(err).Msg("persistence configuration failed")
 		}
+		if time.Now().After(giveUpAt) {
+			zlog.Fatal().Err(err).Dur("deadline", startupQuorumDeadline).
+				Msg("dqlite quorum did not form within the startup deadline")
+		}
 		zlog.Warn().Err(err).Msg("waiting for dqlite quorum")
-		time.Sleep(time.Second)
+		select {
+		case <-ctx.Done():
+			zlog.Fatal().Msg("startup interrupted before dqlite quorum formed")
+		case <-time.After(time.Second):
+		}
 	}
 }
 

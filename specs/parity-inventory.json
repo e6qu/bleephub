@@ -4312,8 +4312,8 @@
         "id": "CORE-015",
         "location": "persistence.go:386",
         "severity": "M",
-        "status": "open",
-        "status_kind": "open"
+        "status": "fixed \u2014 the dqlite-quorum retry in `MustNewPersistence` is now bounded by a `startupQuorumDeadline` (5m) after which it fails loudly with a clear fatal instead of retrying forever, and it registers its own SIGTERM/Interrupt handler and `select`s on it during each wait, so an orchestrator can stop a still-starting process cleanly rather than SIGKILL it. The retry can no longer hang invisibly: it resolves to success, a bounded fatal, or a clean signal exit. (The crash-only ordering still brings the HTTP listener up after persistence; moving it earlier is a separate change)",
+        "status_kind": "fixed"
       },
       {
         "category": "CORE",
@@ -6365,8 +6365,8 @@
         },
         "CORE": {
           "status": {
-            "fixed": 28,
-            "open": 4,
+            "fixed": 29,
+            "open": 3,
             "partial": 1
           },
           "total": 33
@@ -6424,8 +6424,8 @@
       },
       "status": {
         "deferred": 1,
-        "fixed": 610,
-        "open": 39,
+        "fixed": 611,
+        "open": 38,
         "partial": 26
       },
       "total": 676
