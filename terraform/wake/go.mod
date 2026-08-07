@@ -11,7 +11,7 @@ require (
 	github.com/aws/aws-sdk-go-v2/service/ecs v1.89.3
 	github.com/aws/aws-sdk-go-v2/service/lambda v1.101.1
 	github.com/aws/aws-sdk-go-v2/service/scheduler v1.20.3
-	github.com/aws/aws-sdk-go-v2/service/secretsmanager v1.44.3
+	github.com/aws/aws-sdk-go-v2/service/secretsmanager v1.44.4
 )
 
 require (
