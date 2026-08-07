@@ -7,13 +7,15 @@ import (
 )
 
 func TestOrgWebhookConfig_GetAndPatch(t *testing.T) {
-	admin := testServer.store.UsersByLogin["admin"]
-	org := testServer.store.CreateOrg(admin, "hook-config-org", "Hook Config Org", "")
+	t.Parallel()
+	srv := newIsolatedServer(t)
+	admin := srv.store.UsersByLogin["admin"]
+	org := srv.store.CreateOrg(admin, "hook-config-org", "Hook Config Org", "")
 	if org == nil {
 		t.Fatal("create org failed")
 	}
 
-	resp := ghPost(t, "/api/v3/orgs/hook-config-org/hooks", defaultToken, map[string]interface{}{
+	resp := srv.post(t, "/api/v3/orgs/hook-config-org/hooks", defaultToken, map[string]interface{}{
 		"name": "web",
 		"config": map[string]interface{}{
 			"url":          "https://example.test/hook",
@@ -31,7 +33,7 @@ func TestOrgWebhookConfig_GetAndPatch(t *testing.T) {
 	configPath := fmt.Sprintf("/api/v3/orgs/hook-config-org/hooks/%d/config", hookID)
 
 	// GET returns the stored config with the secret masked.
-	resp = ghGet(t, configPath, defaultToken)
+	resp = srv.get(t, configPath, defaultToken)
 	if resp.StatusCode != http.StatusOK {
 		resp.Body.Close()
 		t.Fatalf("get hook config: %d", resp.StatusCode)
@@ -45,7 +47,7 @@ func TestOrgWebhookConfig_GetAndPatch(t *testing.T) {
 	}
 
 	// PATCH updates only the provided members.
-	resp = ghPatch(t, configPath, defaultToken, map[string]interface{}{
+	resp = srv.patch(t, configPath, defaultToken, map[string]interface{}{
 		"url":          "https://example.test/hook2",
 		"insecure_ssl": "1",
 	})
@@ -59,7 +61,7 @@ func TestOrgWebhookConfig_GetAndPatch(t *testing.T) {
 	}
 
 	// The parent hook resource reflects the config change.
-	resp = ghGet(t, fmt.Sprintf("/api/v3/orgs/hook-config-org/hooks/%d", hookID), defaultToken)
+	resp = srv.get(t, fmt.Sprintf("/api/v3/orgs/hook-config-org/hooks/%d", hookID), defaultToken)
 	hook := decodeJSON(t, resp)
 	hookConfig, _ := hook["config"].(map[string]interface{})
 	if hookConfig == nil || hookConfig["url"] != "https://example.test/hook2" {
@@ -67,7 +69,7 @@ func TestOrgWebhookConfig_GetAndPatch(t *testing.T) {
 	}
 
 	// Unknown hook.
-	resp = ghGet(t, "/api/v3/orgs/hook-config-org/hooks/999999/config", defaultToken)
+	resp = srv.get(t, "/api/v3/orgs/hook-config-org/hooks/999999/config", defaultToken)
 	resp.Body.Close()
 	if resp.StatusCode != http.StatusNotFound {
 		t.Fatalf("unknown hook config: %d, want 404", resp.StatusCode)

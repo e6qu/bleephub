@@ -17,7 +17,9 @@ import (
 // the content resolved. Both lanes consult the same predicate now; a fix in one
 // lane that leaves the other open is how this existed in the first place.
 func TestProjectItemAddRefusesContentTheCallerCannotRead(t *testing.T) {
-	store := testServer.store
+	t.Parallel()
+	srv := newIsolatedServer(t)
+	store := srv.store
 
 	now := fixedTestTime.UTC()
 	store.mu.Lock()
@@ -48,7 +50,7 @@ func TestProjectItemAddRefusesContentTheCallerCannotRead(t *testing.T) {
 	}
 	token := store.CreateToken(snooper.ID, "repo, project")
 
-	handler := testServer.requestHandler()
+	handler := srv.requestHandler()
 	add := func(body map[string]any) *httptest.ResponseRecorder {
 		raw, err := json.Marshal(body)
 		if err != nil {
