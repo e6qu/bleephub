@@ -27931,7 +27931,7 @@
         "source": "internal/server/gh_misc_endpoints.go"
       }
     ],
-    "vendored_openapi_sha256": "cb00b4372f8188c32ee92824e86a8deec61d678bbf3c49372fb6a09dfe8667c1"
+    "vendored_openapi_sha256": "2f78e6e5b7c6bd32af008dbb26655253eee1dee507cf0010bc4142170b97c181"
   },
   "schema_version": 1,
   "sources": {
