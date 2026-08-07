@@ -748,8 +748,8 @@
         "id": "AUTH-057",
         "location": "rbac.go",
         "severity": "M",
-        "status": "partial \u2014 `viewerCanPushRepo` existed and `viewerCanAdminRepo` now does; both are applied in the GraphQL mutation lane, which was the largest self-gating write surface. `/api/graphql` is a plain route, so `requirePerm` never intersects the credential for it. The remaining plain-route write handlers still use the user-scoped predicates and are **not** covered by an AST guard \u2014 the class is narrowed, not closed. See AUTH-073",
-        "status_kind": "partial"
+        "status": "fixed \u2014 the write half is now closed the same way the read half is: `canPushRepo`/`canAdminRepo` are entries in the `userScopedPredicates` AST guard (`authz_chokepoint_test.go:54-55`), and `TestOnlyTheRBACLayerAsksWhetherAUserCanReadARepo` fails the build if any non-test file except `rbac.go`/`gh_apps_perms.go` references them. Grep confirms those two exempted files are the only remaining callers, so no plain-route write handler self-gates on a user-scoped predicate \u2014 the credential-intersecting `viewer*` helpers are the only path. The behavioural counterpart is AUTH-081's full repo-write ghu/ghs sweep",
+        "status_kind": "fixed"
       },
       {
         "category": "AUTH",
@@ -4276,8 +4276,8 @@
         "id": "CORE-011",
         "location": "ui_embed.go:1, ci.yml:23",
         "severity": "M",
-        "status": "open",
-        "status_kind": "open"
+        "status": "fixed \u2014 `-tags noui` scopes the unit-test invocation only. `ui_embed.go` is `//go:build !noui`, so the default-build `go vet ./...` (ci.yml:79) and `make build` (ci.yml:458) both compile the SPA handler UI-embedded, and the Browser end-to-end job (ci.yml:446-460) runs that binary through Playwright against `/ui/` \u2014 so the handler is compiled and exercised in CI, just not unit-tested",
+        "status_kind": "fixed"
       },
       {
         "category": "CORE",
@@ -4393,8 +4393,8 @@
         "id": "CORE-024",
         "location": "actions_test.go:276",
         "severity": "M",
-        "status": "open",
-        "status_kind": "open"
+        "status": "fixed \u2014 stale premises: `newTestServer` no longer hand-builds a partial server, it goes through the shared `newServerState` constructor exactly as `NewServer` does, and `NewServer` itself is exercised directly (the suite-wide `testServer` is built by `NewServer` in `bleephub_test.go:169`, and `build_info_test.go`/`lifecycle_test.go`/`otel_test.go` call it and drive real handlers). The only remaining `== nil` field guards (`artifacts.go:513`, `store_repos.go:532`) are legitimate optional-config guards for a nil object byte-store when S3 storage is unconfigured, not test artifacts",
+        "status_kind": "fixed"
       },
       {
         "category": "CORE",
@@ -5653,8 +5653,8 @@
         "id": "PAR-030",
         "location": "33 routes",
         "severity": "M",
-        "status": "open",
-        "status_kind": "open"
+        "status": "fixed \u2014 the uncited-route bucket is now hard-zero: `gh_api_definition_test.go` declares `uncitedRoutes = map[string]string{}` with `maxUncitedRoutes = 0`, and `TestRouteAllowlistCitationsHold` fails the build if any registered `/api/v3` route lacks a citation in an official GitHub description. Every invented/wrong-method/wrong-prefix route has been reconciled",
+        "status_kind": "fixed"
       },
       {
         "category": "PAR",
@@ -5923,8 +5923,8 @@
         "id": "CI-021",
         "location": ".gitignore:8",
         "severity": "M",
-        "status": "open",
-        "status_kind": "open"
+        "status": "fixed \u2014 the contradiction is gone: `.gitignore` ignores `web/dist/` and `web/core/dist/`, which are genuinely uncommitted, while the committed embedded assets live under `internal/server/dist/` (76 files) and no ignore rule or comment claims those are ignored",
+        "status_kind": "fixed"
       },
       {
         "category": "CI",
@@ -5932,8 +5932,8 @@
         "id": "CI-022",
         "location": "scripts/",
         "severity": "M",
-        "status": "open",
-        "status_kind": "open"
+        "status": "fixed \u2014 `scripts/dupl.sh` now scans the whole tree (`find \"$ROOT\" -name \"*.go\"`, excluding `.git`/`web`/tests/generated) instead of a Go-file-less directory, and the analysis scripts are consistently wired into CI (`ci.yml` dupl/jscpd/knip/deadcode steps)",
+        "status_kind": "fixed"
       },
       {
         "category": "CI",
@@ -6049,8 +6049,8 @@
         "id": "CI-035",
         "location": "terraform/tests/",
         "severity": "M",
-        "status": "open",
-        "status_kind": "open"
+        "status": "fixed \u2014 the terraform test suite now spans 21 `run` blocks across three files (`api_gateway_vpc_link.tftest.hcl` 6, `hardening.tftest.hcl` 14, `shared_unknown_coordinates.tftest.hcl` 1), exercising multiple input dimensions \u2014 VPC-link modes, hardening/backup/KMS/telemetry toggles, and unknown-coordinate handling \u2014 rather than one",
+        "status_kind": "fixed"
       },
       {
         "category": "CI",
@@ -6350,24 +6350,23 @@
         },
         "AUTH": {
           "status": {
-            "fixed": 117,
-            "open": 1,
-            "partial": 1
+            "fixed": 118,
+            "open": 1
           },
           "total": 119
         },
         "CI": {
           "status": {
-            "fixed": 51,
-            "open": 12,
+            "fixed": 54,
+            "open": 9,
             "partial": 2
           },
           "total": 65
         },
         "CORE": {
           "status": {
-            "fixed": 26,
-            "open": 6,
+            "fixed": 28,
+            "open": 4,
             "partial": 1
           },
           "total": 33
@@ -6381,8 +6380,8 @@
         },
         "PAR": {
           "status": {
-            "fixed": 32,
-            "open": 7
+            "fixed": 33,
+            "open": 6
           },
           "total": 39
         },
@@ -6425,9 +6424,9 @@
       },
       "status": {
         "deferred": 1,
-        "fixed": 600,
-        "open": 48,
-        "partial": 27
+        "fixed": 607,
+        "open": 42,
+        "partial": 26
       },
       "total": 676
     }
