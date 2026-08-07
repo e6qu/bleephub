@@ -61,15 +61,58 @@ func (s *isolatedServer) do(t *testing.T, method, path, token string, body inter
 	return resp
 }
 
-// get/post mirror the package ghGet/ghPost helpers but target this instance's
-// listener instead of the shared base URL. put/delete/etc. are added the same
-// way (via do) as converted files need them.
+// get/post/patch mirror the package ghGet/ghPost/ghPatch helpers but target
+// this instance's listener instead of the shared base URL. put/delete/etc. are
+// added the same way (via do) as converted files need them.
 func (s *isolatedServer) get(t *testing.T, path, token string) *http.Response {
 	return s.do(t, http.MethodGet, path, token, nil)
 }
 
 func (s *isolatedServer) post(t *testing.T, path, token string, body interface{}) *http.Response {
 	return s.do(t, http.MethodPost, path, token, body)
+}
+
+func (s *isolatedServer) patch(t *testing.T, path, token string, body interface{}) *http.Response {
+	return s.do(t, http.MethodPatch, path, token, body)
+}
+
+func (s *isolatedServer) delete(t *testing.T, path, token string) *http.Response {
+	return s.do(t, http.MethodDelete, path, token, nil)
+}
+
+// createOrg mirrors the package createOrgViaAdminAPI helper against this
+// instance's admin organizations endpoint, so a converted public-feature test
+// provisions its org through the same operator API on its own server.
+func (s *isolatedServer) createOrg(t *testing.T, login string) map[string]interface{} {
+	t.Helper()
+	resp := s.post(t, "/api/v3/admin/organizations", defaultToken, map[string]interface{}{
+		"login": login,
+		"admin": "admin",
+	})
+	if resp.StatusCode != http.StatusCreated {
+		resp.Body.Close()
+		t.Fatalf("POST /api/v3/admin/organizations for %s = %d, want 201", login, resp.StatusCode)
+	}
+	return decodeJSON(t, resp)
+}
+
+// seedRepo mirrors the package seedTestRepo helper on this instance's own
+// store: an admin-owned repo, created idempotently so a converted test can call
+// it without coupling to any shared fixture.
+func (s *isolatedServer) seedRepo(t *testing.T, name string, private bool) *Repo {
+	t.Helper()
+	admin := s.store.LookupUserByLogin("admin")
+	if admin == nil {
+		t.Fatal("default admin user missing")
+	}
+	if repo := s.store.GetRepo("admin", name); repo != nil {
+		return repo
+	}
+	repo := s.store.CreateRepo(admin, name, "", private)
+	if repo == nil {
+		t.Fatalf("CreateRepo %s failed", name)
+	}
+	return repo
 }
 
 // TestIsolatedServersAreIndependentAndParallelSafe pins the invariant the whole

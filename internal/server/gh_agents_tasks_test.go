@@ -5,11 +5,13 @@ import (
 )
 
 func TestAgentTasks_CreateAndReadBack(t *testing.T) {
-	repo := seedTestRepo(t, "agent-tasks-repo", false)
+	t.Parallel()
+	srv := newIsolatedServer(t)
+	repo := srv.seedRepo(t, "agent-tasks-repo", false)
 	repoBase := "/api/v3/agents/repos/" + repo.FullName + "/tasks"
 
 	// Create.
-	resp := ghPost(t, repoBase, defaultToken, map[string]interface{}{
+	resp := srv.post(t, repoBase, defaultToken, map[string]interface{}{
 		"prompt":              "Fix the login button on the homepage\n\nIt renders off-screen on mobile.",
 		"model":               "claude-sonnet-4.6",
 		"create_pull_request": true,
@@ -39,14 +41,14 @@ func TestAgentTasks_CreateAndReadBack(t *testing.T) {
 	if repoRef["id"] != float64(repo.ID) {
 		t.Fatalf("repository.id = %v, want %d", repoRef["id"], repo.ID)
 	}
-	admin := testServer.store.LookupUserByLogin("admin")
+	admin := srv.store.LookupUserByLogin("admin")
 	creator := created["creator"].(map[string]interface{})
 	if creator["id"] != float64(admin.ID) {
 		t.Fatalf("creator.id = %v, want %d", creator["id"], admin.ID)
 	}
 
 	// Get by global id — includes the sessions.
-	resp = ghGet(t, "/api/v3/agents/tasks/"+taskID, defaultToken)
+	resp = srv.get(t, "/api/v3/agents/tasks/"+taskID, defaultToken)
 	if resp.StatusCode != 200 {
 		t.Fatalf("get task status %d, want 200", resp.StatusCode)
 	}
@@ -67,7 +69,7 @@ func TestAgentTasks_CreateAndReadBack(t *testing.T) {
 	}
 
 	// Get by repo + id.
-	resp = ghGet(t, repoBase+"/"+taskID, defaultToken)
+	resp = srv.get(t, repoBase+"/"+taskID, defaultToken)
 	if resp.StatusCode != 200 {
 		t.Fatalf("get repo task status %d, want 200", resp.StatusCode)
 	}
@@ -77,7 +79,7 @@ func TestAgentTasks_CreateAndReadBack(t *testing.T) {
 	}
 
 	// List for repo.
-	resp = ghGet(t, repoBase, defaultToken)
+	resp = srv.get(t, repoBase, defaultToken)
 	if resp.StatusCode != 200 {
 		t.Fatalf("list repo tasks status %d, want 200", resp.StatusCode)
 	}
@@ -94,7 +96,7 @@ func TestAgentTasks_CreateAndReadBack(t *testing.T) {
 	}
 
 	// List for the authenticated user contains the task too.
-	resp = ghGet(t, "/api/v3/agents/tasks", defaultToken)
+	resp = srv.get(t, "/api/v3/agents/tasks", defaultToken)
 	if resp.StatusCode != 200 {
 		t.Fatalf("list user tasks status %d, want 200", resp.StatusCode)
 	}
@@ -111,37 +113,39 @@ func TestAgentTasks_CreateAndReadBack(t *testing.T) {
 }
 
 func TestAgentTasks_Filters(t *testing.T) {
-	repo := seedTestRepo(t, "agent-tasks-filter", false)
+	t.Parallel()
+	srv := newIsolatedServer(t)
+	repo := srv.seedRepo(t, "agent-tasks-filter", false)
 	repoBase := "/api/v3/agents/repos/" + repo.FullName + "/tasks"
 
-	resp := ghPost(t, repoBase, defaultToken, map[string]interface{}{"prompt": "task one"})
+	resp := srv.post(t, repoBase, defaultToken, map[string]interface{}{"prompt": "task one"})
 	mustStatus(t, resp, 201, "create task one")
-	resp = ghPost(t, repoBase, defaultToken, map[string]interface{}{"prompt": "task two"})
+	resp = srv.post(t, repoBase, defaultToken, map[string]interface{}{"prompt": "task two"})
 	mustStatus(t, resp, 201, "create task two")
 
 	// Every stored task is queued; a completed-only filter matches none.
-	resp = ghGet(t, repoBase+"?state=completed", defaultToken)
+	resp = srv.get(t, repoBase+"?state=completed", defaultToken)
 	list := decodeJSON(t, resp)
 	if n := len(list["tasks"].([]interface{})); n != 0 {
 		t.Fatalf("completed filter matched %d tasks, want 0", n)
 	}
 
 	// The queued filter matches both.
-	resp = ghGet(t, repoBase+"?state=queued,failed", defaultToken)
+	resp = srv.get(t, repoBase+"?state=queued,failed", defaultToken)
 	list = decodeJSON(t, resp)
 	if n := len(list["tasks"].([]interface{})); n != 2 {
 		t.Fatalf("queued filter matched %d tasks, want 2", n)
 	}
 
 	// Archived-only view is empty (nothing archives tasks).
-	resp = ghGet(t, repoBase+"?is_archived=true", defaultToken)
+	resp = srv.get(t, repoBase+"?is_archived=true", defaultToken)
 	list = decodeJSON(t, resp)
 	if n := len(list["tasks"].([]interface{})); n != 0 {
 		t.Fatalf("archived filter matched %d tasks, want 0", n)
 	}
 
 	// created_at ascending puts task one first.
-	resp = ghGet(t, repoBase+"?sort=created_at&direction=asc", defaultToken)
+	resp = srv.get(t, repoBase+"?sort=created_at&direction=asc", defaultToken)
 	list = decodeJSON(t, resp)
 	tasks := list["tasks"].([]interface{})
 	if len(tasks) != 2 {
@@ -153,29 +157,31 @@ func TestAgentTasks_Filters(t *testing.T) {
 }
 
 func TestAgentTasks_ValidationAndErrors(t *testing.T) {
-	repo := seedTestRepo(t, "agent-tasks-errors", false)
+	t.Parallel()
+	srv := newIsolatedServer(t)
+	repo := srv.seedRepo(t, "agent-tasks-errors", false)
 	repoBase := "/api/v3/agents/repos/" + repo.FullName + "/tasks"
 
 	// Missing prompt.
-	mustStatus(t, ghPost(t, repoBase, defaultToken, map[string]interface{}{}), 422, "create without prompt")
+	mustStatus(t, srv.post(t, repoBase, defaultToken, map[string]interface{}{}), 422, "create without prompt")
 
 	// Unauthenticated.
-	mustStatus(t, ghGet(t, "/api/v3/agents/tasks", ""), 401, "list without auth")
-	mustStatus(t, ghPost(t, repoBase, "", map[string]interface{}{"prompt": "p"}), 401, "create without auth")
+	mustStatus(t, srv.get(t, "/api/v3/agents/tasks", ""), 401, "list without auth")
+	mustStatus(t, srv.post(t, repoBase, "", map[string]interface{}{"prompt": "p"}), 401, "create without auth")
 
 	// Unknown repository.
-	mustStatus(t, ghGet(t, "/api/v3/agents/repos/admin/no-such-repo/tasks", defaultToken), 404, "list unknown repo")
+	mustStatus(t, srv.get(t, "/api/v3/agents/repos/admin/no-such-repo/tasks", defaultToken), 404, "list unknown repo")
 
 	// Unknown task.
-	mustStatus(t, ghGet(t, "/api/v3/agents/tasks/00000000-0000-0000-0000-000000000000", defaultToken), 404, "get unknown task")
-	mustStatus(t, ghGet(t, repoBase+"/00000000-0000-0000-0000-000000000000", defaultToken), 404, "get unknown repo task")
+	mustStatus(t, srv.get(t, "/api/v3/agents/tasks/00000000-0000-0000-0000-000000000000", defaultToken), 404, "get unknown task")
+	mustStatus(t, srv.get(t, repoBase+"/00000000-0000-0000-0000-000000000000", defaultToken), 404, "get unknown repo task")
 
 	// A task from another repository is a 404 on this repo's surface.
-	other := seedTestRepo(t, "agent-tasks-other", false)
-	resp := ghPost(t, "/api/v3/agents/repos/"+other.FullName+"/tasks", defaultToken, map[string]interface{}{"prompt": "other"})
+	other := srv.seedRepo(t, "agent-tasks-other", false)
+	resp := srv.post(t, "/api/v3/agents/repos/"+other.FullName+"/tasks", defaultToken, map[string]interface{}{"prompt": "other"})
 	if resp.StatusCode != 201 {
 		t.Fatalf("create other-repo task status %d, want 201", resp.StatusCode)
 	}
 	otherTask := decodeJSON(t, resp)
-	mustStatus(t, ghGet(t, repoBase+"/"+otherTask["id"].(string), defaultToken), 404, "cross-repo task lookup")
+	mustStatus(t, srv.get(t, repoBase+"/"+otherTask["id"].(string), defaultToken), 404, "cross-repo task lookup")
 }

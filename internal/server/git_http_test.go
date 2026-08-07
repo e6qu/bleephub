@@ -10,9 +10,11 @@ import (
 // credential on the git-HTTP surface earns a 401, not a silent downgrade to an
 // anonymous 200 on a public repo.
 func TestGitHTTPInvalidCredentialIs401(t *testing.T) {
-	ghPost(t, "/api/v3/user/repos", defaultToken, map[string]interface{}{"name": "auth114-public", "private": false})
+	t.Parallel()
+	srv := newIsolatedServer(t)
+	srv.post(t, "/api/v3/user/repos", defaultToken, map[string]interface{}{"name": "auth114-public", "private": false})
 
-	req, err := http.NewRequest("GET", testBaseURL+"/admin/auth114-public.git/info/refs?service=git-upload-pack", nil)
+	req, err := http.NewRequest("GET", srv.baseURL+"/admin/auth114-public.git/info/refs?service=git-upload-pack", nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -35,6 +37,8 @@ func TestGitHTTPInvalidCredentialIs401(t *testing.T) {
 // authenticated, a caller who still cannot read a private repository gets
 // 404 — indistinguishable from a nonexistent one.
 func TestGitHTTPPrivateRepoExistenceOracle(t *testing.T) {
+	t.Parallel()
+	srv := newIsolatedServer(t)
 	const owner = "admin"
 
 	// Set up: a private repo the caller has no credential for, and a public
@@ -43,7 +47,7 @@ func TestGitHTTPPrivateRepoExistenceOracle(t *testing.T) {
 		{"name": "auth023-private", "private": true},
 		{"name": "auth023-public", "private": false},
 	} {
-		resp := ghPost(t, "/api/v3/user/repos", defaultToken, body)
+		resp := srv.post(t, "/api/v3/user/repos", defaultToken, body)
 		io.Copy(io.Discard, resp.Body)
 		resp.Body.Close()
 	}
@@ -82,7 +86,7 @@ func TestGitHTTPPrivateRepoExistenceOracle(t *testing.T) {
 
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			resp, err := http.Get(testBaseURL + tc.url)
+			resp, err := http.Get(srv.baseURL + tc.url)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -95,7 +99,7 @@ func TestGitHTTPPrivateRepoExistenceOracle(t *testing.T) {
 	}
 
 	// Once authenticated, a nonexistent repository is a plain 404.
-	resp := ghGet(t, "/"+owner+"/auth023-missing.git/info/refs?service=git-upload-pack", defaultToken)
+	resp := srv.get(t, "/"+owner+"/auth023-missing.git/info/refs?service=git-upload-pack", defaultToken)
 	io.Copy(io.Discard, resp.Body)
 	resp.Body.Close()
 	if resp.StatusCode != http.StatusNotFound {
@@ -103,7 +107,7 @@ func TestGitHTTPPrivateRepoExistenceOracle(t *testing.T) {
 	}
 
 	// Control: the repo's owner, authenticated, still reads the private repo.
-	resp = ghGet(t, "/"+owner+"/auth023-private.git/info/refs?service=git-upload-pack", defaultToken)
+	resp = srv.get(t, "/"+owner+"/auth023-private.git/info/refs?service=git-upload-pack", defaultToken)
 	io.Copy(io.Discard, resp.Body)
 	resp.Body.Close()
 	if resp.StatusCode != http.StatusOK {
