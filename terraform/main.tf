@@ -1106,7 +1106,12 @@ resource "aws_iam_role_policy" "wake_service" {
     Version = "2012-10-17"
     Statement = [
       { Effect = "Allow", Action = ["ecs:DescribeServices", "ecs:UpdateService"], Resource = concat([aws_ecs_service.this.id], [for service in aws_ecs_service.dqlite : service.id]) },
-      { Effect = "Allow", Action = ["ecs:ListTasks", "ecs:DescribeTasks", "ecs:StopTask"], Resource = "*" },
+      # ListTasks/DescribeTasks/StopTask do not take a task-ARN resource the
+      # policy can pin (the task IDs are dynamic and ListTasks has no
+      # resource-level permission), so scope them to this deployment's cluster
+      # with the ecs:cluster condition key instead of letting the wake Lambda
+      # stop any ECS task in the account.
+      { Effect = "Allow", Action = ["ecs:ListTasks", "ecs:DescribeTasks", "ecs:StopTask"], Resource = "*", Condition = { ArnEquals = { "ecs:cluster" = local.ecs_cluster_arn } } },
       { Effect = "Allow", Action = ["secretsmanager:GetSecretValue"], Resource = aws_secretsmanager_secret.admin_token.arn },
       { Effect = "Allow", Action = ["kms:Decrypt"], Resource = aws_kms_key.this.arn },
       { Effect = "Allow", Action = ["xray:PutTraceSegments", "xray:PutTelemetryRecords"], Resource = "*" },
