@@ -5941,8 +5941,8 @@
         "id": "CI-023",
         "location": "terraform/main.tf:516",
         "severity": "M",
-        "status": "open",
-        "status_kind": "open"
+        "status": "fixed \u2014 the wake role's `ecs:ListTasks`/`ecs:DescribeTasks`/`ecs:StopTask` grant now carries an `ArnEquals` condition on `ecs:cluster` = `local.ecs_cluster_arn`, scoping it to this deployment's cluster instead of `Resource=\"*\"` account-wide. `Resource=\"*\"` is retained because ListTasks has no resource-level permission and the task ARNs are dynamic, so the cluster condition is the least-privilege boundary. `terraform validate` passes and the hardening test suite stays green",
+        "status_kind": "fixed"
       },
       {
         "category": "CI",
@@ -6357,8 +6357,8 @@
         },
         "CI": {
           "status": {
-            "fixed": 56,
-            "open": 7,
+            "fixed": 57,
+            "open": 6,
             "partial": 2
           },
           "total": 65
@@ -6424,8 +6424,8 @@
       },
       "status": {
         "deferred": 1,
-        "fixed": 609,
-        "open": 40,
+        "fixed": 610,
+        "open": 39,
         "partial": 26
       },
       "total": 676
