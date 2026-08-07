@@ -62,10 +62,12 @@ func authzMatrixSubstitute(pattern, owner, repo, org string) (method, path strin
 }
 
 func TestPrivateRepoMutationsRejectAnUnrelatedUser(t *testing.T) {
+	t.Parallel()
+	srv := newIsolatedServer(t)
 	const ownerLogin = "authzmatrix-owner"
 	const repoName = "authzmatrix-private"
 
-	store := testServer.store
+	store := srv.store
 
 	now := fixedTestTime.UTC()
 	store.mu.Lock()
@@ -92,10 +94,10 @@ func TestPrivateRepoMutationsRejectAnUnrelatedUser(t *testing.T) {
 		t.Fatalf("could not create the fixture organization")
 	}
 
-	handler := testServer.requestHandler()
+	handler := srv.requestHandler()
 
 	var admitted []string
-	for _, pattern := range testServer.routePatterns {
+	for _, pattern := range srv.routePatterns {
 		if !strings.Contains(pattern, "/api/v3/repos/{owner}/{repo}") {
 			continue
 		}
@@ -146,7 +148,7 @@ func TestPrivateRepoMutationsRejectAnUnrelatedUser(t *testing.T) {
 	ownerToken := store.CreateToken(owner.ID, "repo, workflow, read:org, admin:org, gist")
 
 	discriminating := 0
-	for _, pattern := range testServer.routePatterns {
+	for _, pattern := range srv.routePatterns {
 		if !strings.Contains(pattern, "/api/v3/repos/{owner}/{repo}") {
 			continue
 		}
@@ -192,10 +194,12 @@ func TestPrivateRepoMutationsRejectAnUnrelatedUser(t *testing.T) {
 // way it answers for a repository that does not exist so the response cannot be
 // used to prove the repository is there.
 func TestPrivateRepoReadsRejectAnUnrelatedUser(t *testing.T) {
+	t.Parallel()
+	srv := newIsolatedServer(t)
 	const ownerLogin = "authzread-owner"
 	const repoName = "authzread-private"
 
-	store := testServer.store
+	store := srv.store
 
 	now := fixedTestTime.UTC()
 	store.mu.Lock()
@@ -208,9 +212,9 @@ func TestPrivateRepoReadsRejectAnUnrelatedUser(t *testing.T) {
 	if store.CreateRepo(owner, repoName, "private fixture", true) == nil {
 		t.Fatalf("could not create the private fixture repository")
 	}
-	_, strangerToken := authflowStranger(t, testServer, authflowName("authzread-stranger"))
+	_, strangerToken := authflowStranger(t, srv.Server, authflowName("authzread-stranger"))
 
-	handler := testServer.requestHandler()
+	handler := srv.requestHandler()
 
 	// Anonymous, which is the sharpest case: no credential at all.
 	base := "/api/v3/repos/" + ownerLogin + "/" + repoName
@@ -300,7 +304,9 @@ func TestPrivateRepoReadsRejectAnUnrelatedUser(t *testing.T) {
 // schema was an authorization bypass around REST: the REST delete-repository
 // handler calls canAdminRepo, and the mutation reaching the same store did not.
 func TestGraphQLDeleteRepositoryRejectsANonAdmin(t *testing.T) {
-	store := testServer.store
+	t.Parallel()
+	srv := newIsolatedServer(t)
+	store := srv.store
 
 	now := fixedTestTime.UTC()
 	store.mu.Lock()
@@ -320,7 +326,7 @@ func TestGraphQLDeleteRepositoryRejectsANonAdmin(t *testing.T) {
 	}
 	strangerToken := store.CreateToken(stranger.ID, "repo")
 
-	resp := ghPost(t, "/api/graphql", strangerToken.Value, map[string]interface{}{
+	resp := srv.post(t, "/api/graphql", strangerToken.Value, map[string]interface{}{
 		"query": `mutation($id:ID!){deleteRepository(input:{repositoryId:$id}){clientMutationId}}`,
 		"variables": map[string]interface{}{
 			"id": repo.NodeID,
@@ -353,7 +359,9 @@ func TestGraphQLDeleteRepositoryRejectsANonAdmin(t *testing.T) {
 // synthetic bot user standing in for the installation, and that bot is a
 // collaborator on nothing, so apps lost reads they were entitled to.
 func TestInstallationTokenCannotReachAnotherAccountsRepo(t *testing.T) {
-	store := testServer.store
+	t.Parallel()
+	srv := newIsolatedServer(t)
+	store := srv.store
 
 	now := fixedTestTime.UTC()
 	store.mu.Lock()
@@ -385,7 +393,7 @@ func TestInstallationTokenCannotReachAnotherAccountsRepo(t *testing.T) {
 		t.Fatalf("could not mint an installation token")
 	}
 
-	handler := testServer.requestHandler()
+	handler := srv.requestHandler()
 
 	do := func(method, path string) int {
 		req := httptest.NewRequest(method, path, bytes.NewReader([]byte("{}")))
@@ -428,7 +436,9 @@ func TestInstallationTokenCannotReachAnotherAccountsRepo(t *testing.T) {
 // organization — a 204 where the same call against the victim's own repository
 // id gave 403, which is what made the misdirected check visible.
 func TestOrgMutationsRejectAnUnrelatedUser(t *testing.T) {
-	store := testServer.store
+	t.Parallel()
+	srv := newIsolatedServer(t)
+	store := srv.store
 
 	now := fixedTestTime.UTC()
 	store.mu.Lock()
@@ -454,11 +464,11 @@ func TestOrgMutationsRejectAnUnrelatedUser(t *testing.T) {
 	}
 	strangerToken := store.CreateToken(stranger.ID, "repo, workflow, read:org, admin:org, gist")
 
-	handler := testServer.requestHandler()
+	handler := srv.requestHandler()
 	ownRepoID := strconv.Itoa(ownRepo.ID)
 
 	var admitted []string
-	for _, pattern := range testServer.routePatterns {
+	for _, pattern := range srv.routePatterns {
 		if !strings.Contains(pattern, "/api/v3/orgs/{org}") {
 			continue
 		}
@@ -523,7 +533,9 @@ func TestOrgMutationsRejectAnUnrelatedUser(t *testing.T) {
 //
 // Nothing tested this, which is why it was marked fixed once while still live.
 func TestPublicRepositoryBypassIsKeyedOnTheScope(t *testing.T) {
-	store := testServer.store
+	t.Parallel()
+	srv := newIsolatedServer(t)
+	store := srv.store
 
 	now := fixedTestTime.UTC()
 	store.mu.Lock()
@@ -549,7 +561,7 @@ func TestPublicRepositoryBypassIsKeyedOnTheScope(t *testing.T) {
 	tok.RepositorySelection = "subset"
 	store.mu.Unlock()
 
-	handler := testServer.requestHandler()
+	handler := srv.requestHandler()
 	base := "/api/v3/repos/" + owner.Login + "/" + repo.Name
 
 	// The first three are the discriminating probes: scopeActions is neither
