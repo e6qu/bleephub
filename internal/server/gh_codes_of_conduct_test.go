@@ -6,7 +6,9 @@ import (
 )
 
 func TestCodesOfConductList(t *testing.T) {
-	resp := ghGet(t, "/api/v3/codes_of_conduct", defaultToken)
+	t.Parallel()
+	srv := newIsolatedServer(t)
+	resp := srv.get(t, "/api/v3/codes_of_conduct", defaultToken)
 	if resp.StatusCode != 200 {
 		resp.Body.Close()
 		t.Fatalf("list status = %d", resp.StatusCode)
@@ -19,7 +21,7 @@ func TestCodesOfConductList(t *testing.T) {
 	for _, c := range list {
 		key, _ := c["key"].(string)
 		keys[key] = true
-		if c["url"] != testBaseURL+"/api/v3/codes_of_conduct/"+key {
+		if c["url"] != srv.baseURL+"/api/v3/codes_of_conduct/"+key {
 			t.Fatalf("url = %v", c["url"])
 		}
 		if _, hasBody := c["body"]; hasBody {
@@ -32,7 +34,9 @@ func TestCodesOfConductList(t *testing.T) {
 }
 
 func TestCodesOfConductGetByKey(t *testing.T) {
-	resp := ghGet(t, "/api/v3/codes_of_conduct/contributor_covenant", defaultToken)
+	t.Parallel()
+	srv := newIsolatedServer(t)
+	resp := srv.get(t, "/api/v3/codes_of_conduct/contributor_covenant", defaultToken)
 	if resp.StatusCode != 200 {
 		resp.Body.Close()
 		t.Fatalf("get status = %d", resp.StatusCode)
@@ -47,7 +51,7 @@ func TestCodesOfConductGetByKey(t *testing.T) {
 		t.Fatal("body is not the real Contributor Covenant text")
 	}
 
-	resp = ghGet(t, "/api/v3/codes_of_conduct/citizen_code_of_conduct", defaultToken)
+	resp = srv.get(t, "/api/v3/codes_of_conduct/citizen_code_of_conduct", defaultToken)
 	if resp.StatusCode != 200 {
 		resp.Body.Close()
 		t.Fatalf("citizen get status = %d", resp.StatusCode)
@@ -58,7 +62,7 @@ func TestCodesOfConductGetByKey(t *testing.T) {
 		t.Fatal("body is not the real Citizen Code of Conduct text")
 	}
 
-	resp = ghGet(t, "/api/v3/codes_of_conduct/no_such_code", defaultToken)
+	resp = srv.get(t, "/api/v3/codes_of_conduct/no_such_code", defaultToken)
 	resp.Body.Close()
 	if resp.StatusCode != 404 {
 		t.Fatalf("unknown key status = %d, want 404", resp.StatusCode)

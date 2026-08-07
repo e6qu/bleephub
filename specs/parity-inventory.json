@@ -5113,8 +5113,8 @@
         "id": "TEST-008",
         "location": "bleephub_test.go:29",
         "severity": "B",
-        "status": "open",
-        "status_kind": "open"
+        "status": "partial \u2014 migration underway. `newIsolatedServer` (isolated_server_test.go) gives each test its own fully-routed `httptest` server + store, seeded like the shared one, with a per-server pinned clock, so a converted test can call `t.Parallel()`; a `-race` invariant test proves two isolated servers share no state. The shared `testServer` stays alive during the transition; `gh_codes_of_conduct_test.go` is the first file converted. `TestReliabilityDebtOnlyShrinks` now ratchets the shared-harness file/reference ceilings down (128/1463) so each converted group locks in its progress. Remaining: convert the rest of the files group by group",
+        "status_kind": "partial"
       },
       {
         "category": "TEST",
@@ -6403,8 +6403,8 @@
         "TEST": {
           "status": {
             "fixed": 28,
-            "open": 11,
-            "partial": 1
+            "open": 10,
+            "partial": 2
           },
           "total": 40
         },
@@ -6425,8 +6425,8 @@
       "status": {
         "deferred": 1,
         "fixed": 612,
-        "open": 37,
-        "partial": 26
+        "open": 36,
+        "partial": 27
       },
       "total": 676
     }

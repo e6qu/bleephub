@@ -1,0 +1,101 @@
+package bleephub
+
+import (
+	"bytes"
+	"encoding/json"
+	"io"
+	"net/http"
+	"net/http/httptest"
+	"testing"
+
+	"github.com/rs/zerolog"
+)
+
+// TEST-008 migration scaffolding.
+//
+// The package-wide `testServer` is a single live server shared by every test,
+// so tests are coupled through its mutable store and cannot run in parallel.
+// newIsolatedServer builds a fully-routed server backed by its own httptest
+// listener and its own store, seeded exactly like the shared one (NewServer
+// registers every route and seeds the admin user; the clock is pinned to
+// fixedTestTime). A test that switches to it can call t.Parallel() because it
+// shares no request-visible state with any other test.
+//
+// The migration is incremental: this coexists with `testServer`, and files are
+// converted a group at a time.
+type isolatedServer struct {
+	*Server
+	baseURL string
+}
+
+func newIsolatedServer(t *testing.T) *isolatedServer {
+	t.Helper()
+	s := NewServer("127.0.0.1:0", zerolog.Nop())
+	useFixedTestClock(s)
+	ts := httptest.NewServer(s.requestHandler())
+	t.Cleanup(ts.Close)
+	return &isolatedServer{Server: s, baseURL: ts.URL}
+}
+
+func (s *isolatedServer) do(t *testing.T, method, path, token string, body interface{}) *http.Response {
+	t.Helper()
+	var bodyReader io.Reader
+	if body != nil {
+		b, _ := json.Marshal(body)
+		bodyReader = bytes.NewReader(b)
+	}
+	req, err := http.NewRequest(method, s.baseURL+path, bodyReader)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if token != "" {
+		req.Header.Set("Authorization", "token "+token)
+	}
+	if body != nil {
+		req.Header.Set("Content-Type", "application/json")
+	}
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return resp
+}
+
+// get/post mirror the package ghGet/ghPost helpers but target this instance's
+// listener instead of the shared base URL. put/delete/etc. are added the same
+// way (via do) as converted files need them.
+func (s *isolatedServer) get(t *testing.T, path, token string) *http.Response {
+	return s.do(t, http.MethodGet, path, token, nil)
+}
+
+func (s *isolatedServer) post(t *testing.T, path, token string, body interface{}) *http.Response {
+	return s.do(t, http.MethodPost, path, token, body)
+}
+
+// TestIsolatedServersAreIndependentAndParallelSafe pins the invariant the whole
+// migration relies on: two isolated servers share no store state, so mutations
+// in one are invisible to the other and both can run under t.Parallel().
+func TestIsolatedServersAreIndependentAndParallelSafe(t *testing.T) {
+	t.Parallel()
+	a := newIsolatedServer(t)
+	b := newIsolatedServer(t)
+
+	resp := a.post(t, "/api/v3/user/repos", defaultToken, map[string]interface{}{"name": "iso-only-on-a"})
+	resp.Body.Close()
+	if resp.StatusCode != http.StatusCreated {
+		t.Fatalf("create repo on server A: got %d, want 201", resp.StatusCode)
+	}
+
+	// The repo exists on A...
+	onA := a.get(t, "/api/v3/repos/admin/iso-only-on-a", defaultToken)
+	onA.Body.Close()
+	if onA.StatusCode != http.StatusOK {
+		t.Fatalf("repo on its own server: got %d, want 200", onA.StatusCode)
+	}
+	// ...and not on the independent server B.
+	onB := b.get(t, "/api/v3/repos/admin/iso-only-on-a", defaultToken)
+	onB.Body.Close()
+	if onB.StatusCode != http.StatusNotFound {
+		t.Fatalf("repo leaked into an independent server: got %d, want 404", onB.StatusCode)
+	}
+}

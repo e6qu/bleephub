@@ -55,11 +55,11 @@ func TestReliabilityDebtOnlyShrinks(t *testing.T) {
 	const (
 		maxDirectPersistenceWrites = 568
 		minBatchedMutations        = 24
-		maxSharedHarnessFiles      = 130
-		// Raised for the login/SSO/authn/federation security audit, whose
-		// regression tests reuse the established shared harness (newTestServer,
-		// doMiscReq, ghPost, the package fixture) rather than duplicating it.
-		maxSharedHarnessReferences = 1465
+		// Ratcheted down as the TEST-008 migration moves files off the shared
+		// `testServer` onto per-test isolated servers (newIsolatedServer). Lower
+		// these as more files are converted; they must only shrink.
+		maxSharedHarnessFiles      = 128
+		maxSharedHarnessReferences = 1463
 	)
 
 	directWrites, batchedMutations := 0, 0
@@ -76,7 +76,13 @@ func TestReliabilityDebtOnlyShrinks(t *testing.T) {
 			return err
 		}
 		if strings.HasSuffix(path, "_test.go") {
-			if entry.Name() == "reliability_architecture_contract_test.go" {
+			// The contract test names the shared-harness symbols to detect them,
+			// and isolated_server_test.go is the migration infrastructure that
+			// replaces the shared harness (TEST-008) — it references the shared
+			// symbols only to document what it supersedes. Neither is shared-
+			// harness *usage*, so exclude both from the count.
+			if entry.Name() == "reliability_architecture_contract_test.go" ||
+				entry.Name() == "isolated_server_test.go" {
 				return nil
 			}
 			references := len(sharedHarnessReference.FindAll(body, -1))
