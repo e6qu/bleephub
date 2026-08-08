@@ -199,6 +199,18 @@ func activityEventsJSON(events []activityEvent) []map[string]interface{} {
 	return out
 }
 
+// newestActivityTime returns the most recent createdAt across events, or the
+// zero time for an empty feed — the Last-Modified basis for the activity feeds.
+func newestActivityTime(events []activityEvent) time.Time {
+	var newest time.Time
+	for _, ev := range events {
+		if ev.createdAt.After(newest) {
+			newest = ev.createdAt
+		}
+	}
+	return newest
+}
+
 // publicReposByID returns every non-private repository keyed by ID — the
 // repository universe of the public activity feeds.
 func (s *Server) publicReposByID() map[int]*Repo {
@@ -237,5 +249,8 @@ func (s *Server) handleListOrgEvents(w http.ResponseWriter, r *http.Request) {
 
 	events := s.deriveActivityEvents(s.baseURL(r), orgRepos, org)
 	sortActivityEvents(events)
+	if writeLastModified(w, r, newestActivityTime(events)) {
+		return
+	}
 	writeJSON(w, http.StatusOK, paginateAndLink(w, r, activityEventsJSON(events)))
 }

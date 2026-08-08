@@ -77,9 +77,25 @@ func (s *Server) handleListNotifications(w http.ResponseWriter, r *http.Request)
 	rows := s.notificationRows(r, user, opts)
 	rows = paginateAndLink(w, r, rows)
 	threads := s.store.BuildNotificationThreads(rows, s.baseURL(r))
+	writeNotificationThreads(w, r, threads)
+}
+
+// writeNotificationThreads renders a notification thread page, advertising the
+// newest thread's UpdatedAt as Last-Modified and short-circuiting a matching
+// conditional GET with a 304 (REST-031). Threads are sorted newest-first, so
+// the page-one client (the polling case) sees the exact global modification
+// time.
+func writeNotificationThreads(w http.ResponseWriter, r *http.Request, threads []*NotificationThread) {
+	var newest time.Time
 	out := make([]map[string]interface{}, len(threads))
 	for i, t := range threads {
 		out[i] = threadToJSON(t)
+		if t.UpdatedAt.After(newest) {
+			newest = t.UpdatedAt
+		}
+	}
+	if writeLastModified(w, r, newest) {
+		return
 	}
 	writeJSON(w, http.StatusOK, out)
 }
@@ -132,11 +148,7 @@ func (s *Server) handleListRepoNotifications(w http.ResponseWriter, r *http.Requ
 	rows := s.notificationRows(r, user, opts)
 	rows = paginateAndLink(w, r, rows)
 	threads := s.store.BuildNotificationThreads(rows, s.baseURL(r))
-	out := make([]map[string]interface{}, len(threads))
-	for i, t := range threads {
-		out[i] = threadToJSON(t)
-	}
-	writeJSON(w, http.StatusOK, out)
+	writeNotificationThreads(w, r, threads)
 }
 
 func (s *Server) handleMarkRepoNotificationsRead(w http.ResponseWriter, r *http.Request) {

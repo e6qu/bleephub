@@ -55,6 +55,52 @@ func TestActivityFeedsAdvertisePollInterval(t *testing.T) {
 	}
 }
 
+// TestActivityFeedIsConditionalOnLastModified pins REST-031's Last-Modified
+// on the activity feeds: the feed advertises the newest event's time, a
+// matching If-Modified-Since yields a bodyless 304, and a present (even
+// non-matching) If-None-Match takes precedence over If-Modified-Since.
+func TestActivityFeedIsConditionalOnLastModified(t *testing.T) {
+	t.Parallel()
+	srv := newIsolatedServer(t)
+	st := srv.store
+	admin := st.LookupUserByLogin("admin")
+	repo := st.CreateRepo(admin, "lm-feed", "", false)
+	if st.CreateIssue(repo.ID, admin.ID, "hello", "world", nil, nil, 0) == nil {
+		t.Fatal("create issue")
+	}
+
+	resp, body := srv.getWith(t, "/api/v3/events", defaultToken, nil)
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("feed = %d, want 200", resp.StatusCode)
+	}
+	lastMod := resp.Header.Get("Last-Modified")
+	if lastMod == "" {
+		t.Fatal("feed carried no Last-Modified")
+	}
+	if len(body) == 0 || string(body) == "[]" {
+		t.Fatalf("feed unexpectedly empty: %q", body)
+	}
+
+	// A matching If-Modified-Since yields a bodyless 304.
+	resp, body = srv.getWith(t, "/api/v3/events", defaultToken, map[string]string{"If-Modified-Since": lastMod})
+	if resp.StatusCode != http.StatusNotModified {
+		t.Fatalf("conditional feed = %d, want 304", resp.StatusCode)
+	}
+	if len(body) != 0 {
+		t.Fatalf("304 carried a %d-byte body, want none", len(body))
+	}
+
+	// RFC 7232 §3.3: a present (non-matching) If-None-Match takes precedence, so
+	// If-Modified-Since is ignored and the full feed is returned.
+	resp, _ = srv.getWith(t, "/api/v3/events", defaultToken, map[string]string{
+		"If-None-Match":     `"stale"`,
+		"If-Modified-Since": lastMod,
+	})
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("If-None-Match precedence: feed = %d, want 200", resp.StatusCode)
+	}
+}
+
 // TestReleaseAssetDownloadIsConditional pins REST-031's conditional non-JSON
 // download: a binary asset download returns an ETag, a matching If-None-Match
 // returns a bodyless 304, and a 304 is not counted as a download.

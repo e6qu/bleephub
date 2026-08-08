@@ -506,6 +506,32 @@ func pollIntervalForPath(path string) int {
 	return 0
 }
 
+// writeLastModified advertises the modification time of a feed and, when the
+// caller sent a matching If-Modified-Since, short-circuits with a bodyless 304
+// (REST-031). It sets Last-Modified to newest (truncated to HTTP second
+// precision) and returns true when it wrote the 304, so the handler must stop.
+//
+// A zero newest (an empty feed) advertises nothing and never 304s. Per RFC 7232
+// §3.3 If-None-Match takes precedence, so If-Modified-Since is ignored whenever
+// an If-None-Match is present — writeJSON's ETag path evaluates that instead.
+func writeLastModified(w http.ResponseWriter, r *http.Request, newest time.Time) bool {
+	if newest.IsZero() {
+		return false
+	}
+	newest = newest.UTC().Truncate(time.Second)
+	w.Header().Set("Last-Modified", newest.Format(http.TimeFormat))
+	if r.Header.Get("If-None-Match") != "" {
+		return false
+	}
+	if ims := r.Header.Get("If-Modified-Since"); ims != "" {
+		if since, err := http.ParseTime(ims); err == nil && !newest.After(since) {
+			w.WriteHeader(http.StatusNotModified)
+			return true
+		}
+	}
+	return false
+}
+
 // Unwrap lets net/http's ResponseController reach optional interfaces on the
 // real writer even though GitHub headers are injected through this wrapper.
 func (rw *ghResponseWriter) Unwrap() http.ResponseWriter { return rw.ResponseWriter }
