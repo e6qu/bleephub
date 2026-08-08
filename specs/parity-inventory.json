@@ -3808,8 +3808,8 @@
         "id": "STORE-024",
         "location": "persistence.go:436, gh_api_insights.go:271",
         "severity": "M",
-        "status": "open",
-        "status_kind": "open"
+        "status": "fixed \u2014 the request log's FIFO eviction was in-memory only: `RecordAPIRequest` capped `APIRequestRecords` but never deleted the evicted rows' durable `api_insights_requests` entries, so the bucket grew by one row per request forever (and the load path re-trimmed only in memory). Eviction now `MustDelete`s the evicted durable rows, and the load path `Delete`s any excess a pre-fix instance leaked, so the bucket converges to the cap. The cap is a per-Store field (`apiRequestRecordCap`, default `maxAPIRequestRecords`=10000) so a reload+runtime test drives it small and asserts the durable row count stays bounded to the newest-N. (`List` materialising whole buckets is the persistence design; bounding this bucket removes the growth this row is about.)",
+        "status_kind": "fixed"
       },
       {
         "category": "STORE",
@@ -6476,8 +6476,8 @@
         },
         "STORE": {
           "status": {
-            "fixed": 66,
-            "open": 4,
+            "fixed": 67,
+            "open": 3,
             "partial": 8
           },
           "total": 78
@@ -6506,8 +6506,8 @@
       },
       "status": {
         "deferred": 1,
-        "fixed": 625,
-        "open": 34,
+        "fixed": 626,
+        "open": 33,
         "partial": 25
       },
       "total": 685

@@ -283,8 +283,20 @@ func (st *Store) RecordAPIRequest(rec *APIRequestRecord) {
 	defer st.apiInsightsMu.Unlock()
 	rec.ID = st.NextAPIRequestID
 	st.NextAPIRequestID++
+	recordCap := st.apiRequestRecordCap
+	if recordCap <= 0 {
+		recordCap = maxAPIRequestRecords
+	}
 	st.APIRequestRecords = append(st.APIRequestRecords, rec)
-	if overflow := len(st.APIRequestRecords) - maxAPIRequestRecords; overflow > 0 {
+	if overflow := len(st.APIRequestRecords) - recordCap; overflow > 0 {
+		// FIFO eviction must reclaim the durable rows too, or the bucket grows
+		// by one row per request ever served even though memory stays capped
+		// (STORE-024).
+		if st.persist != nil {
+			for _, evicted := range st.APIRequestRecords[:overflow] {
+				st.persist.MustDelete("api_insights_requests", strconv.FormatInt(evicted.ID, 10))
+			}
+		}
 		st.APIRequestRecords = append([]*APIRequestRecord(nil), st.APIRequestRecords[overflow:]...)
 	}
 	if st.persist != nil {
