@@ -5372,10 +5372,10 @@
         "category": "TEST",
         "finding": "A test named for interval refetching has no fake timers and would pass if the interval were deleted",
         "id": "TEST-028",
-        "location": "hooks.test.tsx:56",
+        "location": "web/core/src/__tests__/hooks.test.tsx:56",
         "severity": "M",
-        "status": "open",
-        "status_kind": "open"
+        "status": "fixed \u2014 `useStatus re-fetches on its 5s interval` now installs `vi.useFakeTimers()`, settles the initial fetch, then advances the clock one `refetchInterval` (5s) at a time and asserts the fetch count climbs 1\u21922\u21923, plus that a partial (2s) interval triggers none. Deleting the `refetchInterval` would pin the count at 1 and fail the test \u2014 the assertion-free original could not. Web typecheck + all 49 core tests pass",
+        "status_kind": "fixed"
       },
       {
         "category": "TEST",
@@ -6484,8 +6484,8 @@
         },
         "TEST": {
           "status": {
-            "fixed": 29,
-            "open": 9,
+            "fixed": 30,
+            "open": 8,
             "partial": 2
           },
           "total": 40
@@ -6506,8 +6506,8 @@
       },
       "status": {
         "deferred": 1,
-        "fixed": 624,
-        "open": 35,
+        "fixed": 625,
+        "open": 34,
         "partial": 25
       },
       "total": 685

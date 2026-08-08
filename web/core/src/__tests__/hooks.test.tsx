@@ -53,13 +53,32 @@ describe("Query hooks", () => {
     expect(result.current.data).toHaveLength(1);
   });
 
-  it("useStatus re-fetches on interval", async () => {
+  it("useStatus re-fetches on its 5s interval", async () => {
     const body = { status: "ok", component: "backend", backend_type: "memory", instance_id: "x", uptime_seconds: 1, containers: 0, active_resources: 0, context: "" };
     mockFetch.mockResolvedValue(jsonResponse(body));
 
-    const { result } = renderHook(() => useStatus(), { wrapper: createWrapper() });
+    vi.useFakeTimers();
+    try {
+      renderHook(() => useStatus(), { wrapper: createWrapper() });
 
-    await waitFor(() => expect(result.current.isSuccess).toBe(true));
-    expect(result.current.data?.backend_type).toBe("memory");
+      // Let the initial fetch on mount settle.
+      await vi.advanceTimersByTimeAsync(0);
+      expect(mockFetch).toHaveBeenCalledTimes(1);
+
+      // Each 5s tick must trigger exactly one refetch. Deleting the
+      // refetchInterval would leave the count pinned at 1 and fail this test —
+      // which the previous assertion-free version did not.
+      await vi.advanceTimersByTimeAsync(5_000);
+      expect(mockFetch).toHaveBeenCalledTimes(2);
+
+      await vi.advanceTimersByTimeAsync(5_000);
+      expect(mockFetch).toHaveBeenCalledTimes(3);
+
+      // A partial interval does not trigger an extra fetch.
+      await vi.advanceTimersByTimeAsync(2_000);
+      expect(mockFetch).toHaveBeenCalledTimes(3);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });
