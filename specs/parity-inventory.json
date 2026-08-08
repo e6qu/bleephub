@@ -3961,8 +3961,8 @@
         "id": "STORE-041",
         "location": "store_codespaces.go:175",
         "severity": "M",
-        "status": "open",
-        "status_kind": "open"
+        "status": "fixed \u2014 both halves closed. `reserveCodespace` already commits the durable \"Provisioning\" record before `CreateCodespace` starts the container (record precedes container, with a `cleanup()` on every failure path), and `loadFromPersistence` now reconciles the remaining gap: a codespace persisted as \"Provisioning\" is an interrupted-creation orphan whose container never survives a restart, so on boot it is transitioned to the resumable \"Shutdown\" state (whose start path re-provisions) and the heal is committed in one transaction. Settled codespaces are untouched. Regression `TestInterruptedCodespaceProvisioningReconcilesOnLoad` (orphan \u2192 Shutdown, durable across a second reload; an Available codespace undisturbed)",
+        "status_kind": "fixed"
       },
       {
         "category": "STORE",
@@ -6473,8 +6473,8 @@
         },
         "STORE": {
           "status": {
-            "fixed": 68,
-            "open": 2,
+            "fixed": 69,
+            "open": 1,
             "partial": 8
           },
           "total": 78
@@ -6503,8 +6503,8 @@
       },
       "status": {
         "deferred": 1,
-        "fixed": 635,
-        "open": 25,
+        "fixed": 636,
+        "open": 24,
         "partial": 24
       },
       "total": 685

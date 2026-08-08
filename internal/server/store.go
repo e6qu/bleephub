@@ -3759,10 +3759,23 @@ func (st *Store) loadFromPersistence() error {
 	}
 
 	// codespaces
+	var interruptedCodespaces []*Codespace
 	if err := st.loadBucket("codespaces", func(raw []byte) error {
 		var cs Codespace
 		if err := loadJSON(raw, &cs); err != nil {
 			return err
+		}
+		// A codespace persisted as "Provisioning" is an orphan of an interrupted
+		// creation: reserveCodespace commits the durable record before the
+		// container is started, so a crash in that window leaves the record in
+		// "Provisioning" with no container — and no container survives a restart.
+		// Reconcile it to "Shutdown", the resumable stopped state whose start
+		// path re-provisions, so a crashed creation self-heals on boot instead of
+		// stranding the codespace in a state it can never leave (STORE-041).
+		if cs.State == "Provisioning" {
+			cs.State = "Shutdown"
+			cs.UpdatedAt = st.currentTime()
+			interruptedCodespaces = append(interruptedCodespaces, &cs)
 		}
 		st.Codespaces[cs.ID] = &cs
 		st.CodespacesByName[cs.Name] = &cs
@@ -3772,6 +3785,17 @@ func (st *Store) loadFromPersistence() error {
 		return nil
 	}); err != nil {
 		return err
+	}
+	if len(interruptedCodespaces) > 0 {
+		// One transaction: the reconciled states are durable before boot
+		// completes, so the heal is not re-done (and not lost) on the next start.
+		batch := newPersistBatch(st.persist)
+		for _, cs := range interruptedCodespaces {
+			batch.Put("codespaces", strconv.Itoa(cs.ID), cs)
+		}
+		if err := batch.Commit(); err != nil {
+			return fmt.Errorf("reconcile interrupted codespace provisioning: %w", err)
+		}
 	}
 	codespaceSecretRows, err := st.persist.List("codespace_secrets")
 	if err != nil {
