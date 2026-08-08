@@ -137,26 +137,27 @@ func (st *Store) DeleteClassroom(id int) bool {
 	if st.Classrooms[id] == nil {
 		return false
 	}
+	// One transaction: the classroom and every assignment and accepted-assignment
+	// beneath it are deleted together, so a crash cannot orphan an assignment or
+	// acceptance under a deleted classroom (STORE-001/002).
+	batch := newPersistBatch(st.persist)
 	delete(st.Classrooms, id)
-	if st.persist != nil {
-		st.persist.MustDelete("classrooms", strconv.Itoa(id))
-	}
+	batch.Delete("classrooms", strconv.Itoa(id))
 	for assignmentID, assignment := range st.ClassroomAssignments {
 		if assignment.ClassroomID != id {
 			continue
 		}
 		delete(st.ClassroomAssignments, assignmentID)
-		if st.persist != nil {
-			st.persist.MustDelete("classroom_assignments", strconv.Itoa(assignmentID))
-		}
+		batch.Delete("classroom_assignments", strconv.Itoa(assignmentID))
 		for acceptedID, accepted := range st.ClassroomAcceptedAssignments {
 			if accepted.AssignmentID == assignmentID {
 				delete(st.ClassroomAcceptedAssignments, acceptedID)
-				if st.persist != nil {
-					st.persist.MustDelete("classroom_accepted_assignments", strconv.Itoa(acceptedID))
-				}
+				batch.Delete("classroom_accepted_assignments", strconv.Itoa(acceptedID))
 			}
 		}
+	}
+	if err := batch.Commit(); err != nil {
+		panic(&persistenceFailure{op: "batch", bucket: "classrooms", err: err})
 	}
 	return true
 }
@@ -193,17 +194,19 @@ func (st *Store) DeleteClassroomAssignment(id int) bool {
 	if st.ClassroomAssignments[id] == nil {
 		return false
 	}
+	// One transaction: the assignment and every acceptance of it are deleted
+	// together, so a crash cannot orphan an acceptance (STORE-001/002).
+	batch := newPersistBatch(st.persist)
 	delete(st.ClassroomAssignments, id)
-	if st.persist != nil {
-		st.persist.MustDelete("classroom_assignments", strconv.Itoa(id))
-	}
+	batch.Delete("classroom_assignments", strconv.Itoa(id))
 	for acceptedID, accepted := range st.ClassroomAcceptedAssignments {
 		if accepted.AssignmentID == id {
 			delete(st.ClassroomAcceptedAssignments, acceptedID)
-			if st.persist != nil {
-				st.persist.MustDelete("classroom_accepted_assignments", strconv.Itoa(acceptedID))
-			}
+			batch.Delete("classroom_accepted_assignments", strconv.Itoa(acceptedID))
 		}
+	}
+	if err := batch.Commit(); err != nil {
+		panic(&persistenceFailure{op: "batch", bucket: "classroom_assignments", err: err})
 	}
 	return true
 }

@@ -492,6 +492,10 @@ func (st *Store) DeleteCustomProperty(orgLogin, name string) bool {
 	if st.OrgCustomProperties[orgLogin][name] == nil {
 		return false
 	}
+	// One transaction: removing the property definition and clearing its value
+	// from every repo commit together, so a crash cannot leave a repo carrying a
+	// value for a property that no longer exists (STORE-001/002).
+	batch := newPersistBatch(st.persist)
 	delete(st.OrgCustomProperties[orgLogin], name)
 	prefix := orgLogin + "/"
 	for repoKey, values := range st.RepoCustomPropertyValues {
@@ -500,13 +504,12 @@ func (st *Store) DeleteCustomProperty(orgLogin, name string) bool {
 		}
 		if _, ok := values[name]; ok {
 			delete(values, name)
-			if st.persist != nil {
-				st.persist.MustPut("repo_custom_property_values", repoKey, values)
-			}
+			batch.Put("repo_custom_property_values", repoKey, values)
 		}
 	}
-	if st.persist != nil {
-		st.persist.MustPut("org_custom_properties", orgLogin, st.OrgCustomProperties[orgLogin])
+	batch.Put("org_custom_properties", orgLogin, st.OrgCustomProperties[orgLogin])
+	if err := batch.Commit(); err != nil {
+		panic(&persistenceFailure{op: "batch", bucket: "org_custom_properties", err: err})
 	}
 	return true
 }

@@ -336,10 +336,16 @@ func (st *Store) AcceptRepoInvitation(id int, user *User) bool {
 	st.RepoCollaborators[target.RepoKey][user.Login] = target.Permissions
 	repo.UpdatedAt = time.Now().UTC()
 	delete(st.RepoInvitations[target.RepoKey], id)
-	if st.persist != nil {
-		st.persist.MustPut("repo_invitations", target.RepoKey, st.RepoInvitations[target.RepoKey])
-		st.persist.MustPut("repo_collaborators", target.RepoKey, st.RepoCollaborators[target.RepoKey])
-		st.persist.MustPut("repos", strconv.Itoa(repo.ID), repo)
+	// One transaction: consuming the invitation, adding the collaborator and
+	// touching the repo commit together, so a crash cannot grant collaborator
+	// access while leaving the invitation live, or consume the invitation without
+	// granting access (STORE-001/002).
+	batch := newPersistBatch(st.persist)
+	batch.Put("repo_invitations", target.RepoKey, st.RepoInvitations[target.RepoKey])
+	batch.Put("repo_collaborators", target.RepoKey, st.RepoCollaborators[target.RepoKey])
+	batch.Put("repos", strconv.Itoa(repo.ID), repo)
+	if err := batch.Commit(); err != nil {
+		panic(&persistenceFailure{op: "batch", bucket: "repo_invitations", err: err})
 	}
 	return true
 }

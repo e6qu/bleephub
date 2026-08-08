@@ -117,6 +117,10 @@ func (st *Store) createUserToServerTokenLocked(userID, appID int, oauthClientID,
 		CreatedAt:        now,
 	}
 
+	// One transaction: the access token and its refresh token commit together, so
+	// a crash cannot persist an access token whose refresh token was lost (or a
+	// refresh token orphaned from its access token) (STORE-001/002).
+	batch := newPersistBatch(st.persist)
 	var rt *RefreshToken
 	if withRefresh {
 		refreshHex, err := randomHex(20)
@@ -134,13 +138,12 @@ func (st *Store) createUserToServerTokenLocked(userID, appID int, oauthClientID,
 		}
 		tok.RefreshTokenValue = rt.Token
 		st.RefreshTokens[rt.Token] = rt
-		if st.persist != nil {
-			st.persist.MustPut("refresh_tokens", rt.Token, rt)
-		}
+		batch.Put("refresh_tokens", rt.Token, rt)
 	}
 	st.UserToServerTokens[tokenStr] = tok
-	if st.persist != nil {
-		st.persist.MustPut("user_to_server_tokens", tokenStr, tok)
+	batch.Put("user_to_server_tokens", tokenStr, tok)
+	if err := batch.Commit(); err != nil {
+		return nil, nil, fmt.Errorf("persist user-to-server token: %w", err)
 	}
 	return cloneUserToServerToken(tok), cloneRefreshToken(rt), nil
 }
@@ -218,15 +221,17 @@ func (st *Store) RevokeUserToServerToken(tokenStr string) bool {
 	if tok == nil {
 		return false
 	}
+	// One transaction: the access token and its refresh token are revoked
+	// together, so a crash cannot leave one alive after the other (STORE-001/002).
+	batch := newPersistBatch(st.persist)
 	delete(st.UserToServerTokens, tokenStr)
-	if st.persist != nil {
-		st.persist.MustDelete("user_to_server_tokens", tokenStr)
-	}
+	batch.Delete("user_to_server_tokens", tokenStr)
 	if tok.RefreshTokenValue != "" {
 		delete(st.RefreshTokens, tok.RefreshTokenValue)
-		if st.persist != nil {
-			st.persist.MustDelete("refresh_tokens", tok.RefreshTokenValue)
-		}
+		batch.Delete("refresh_tokens", tok.RefreshTokenValue)
+	}
+	if err := batch.Commit(); err != nil {
+		panic(&persistenceFailure{op: "batch", bucket: "user_to_server_tokens", err: err})
 	}
 	return true
 }
@@ -250,19 +255,23 @@ func (st *Store) RotateUserToServerTokenE(refreshTokenStr string) (*UserToServer
 	}
 	// Revoke the matching user token (find by RefreshTokenValue). The deletes
 	// write through to disk so the rotated-out credentials stay dead after a
-	// restart instead of resurrecting from the persisted buckets.
+	// restart instead of resurrecting from the persisted buckets, and commit in
+	// one transaction so a crash cannot leave the old access token alive without
+	// its refresh token (STORE-001/002). The replacement pair is then created in
+	// its own transaction; a crash between the two only forces re-authentication,
+	// never a live stale credential.
+	batch := newPersistBatch(st.persist)
 	for k, v := range st.UserToServerTokens {
 		if v.RefreshTokenValue == refreshTokenStr {
 			delete(st.UserToServerTokens, k)
-			if st.persist != nil {
-				st.persist.MustDelete("user_to_server_tokens", k)
-			}
+			batch.Delete("user_to_server_tokens", k)
 			break
 		}
 	}
 	delete(st.RefreshTokens, refreshTokenStr)
-	if st.persist != nil {
-		st.persist.MustDelete("refresh_tokens", refreshTokenStr)
+	batch.Delete("refresh_tokens", refreshTokenStr)
+	if err := batch.Commit(); err != nil {
+		return nil, nil, fmt.Errorf("revoke rotated token: %w", err)
 	}
 	return st.createUserToServerTokenLocked(rt.UserID, rt.AppID, rt.OAuthAppClientID, rt.Scopes, 8*time.Hour, true)
 }
@@ -272,6 +281,10 @@ func (st *Store) RotateUserToServerTokenE(refreshTokenStr string) (*UserToServer
 func (st *Store) RevokeUserGrant(clientID string, userID int) int {
 	st.mu.Lock()
 	defer st.mu.Unlock()
+	// One transaction: every access token and its refresh token for this grant
+	// are revoked together, so a crash cannot leave part of a revoked grant alive
+	// (STORE-001/002).
+	batch := newPersistBatch(st.persist)
 	n := 0
 	for k, v := range st.UserToServerTokens {
 		hit := false
@@ -286,16 +299,17 @@ func (st *Store) RevokeUserGrant(clientID string, userID int) int {
 		}
 		if hit {
 			delete(st.UserToServerTokens, k)
-			if st.persist != nil {
-				st.persist.MustDelete("user_to_server_tokens", k)
-			}
+			batch.Delete("user_to_server_tokens", k)
 			if v.RefreshTokenValue != "" {
 				delete(st.RefreshTokens, v.RefreshTokenValue)
-				if st.persist != nil {
-					st.persist.MustDelete("refresh_tokens", v.RefreshTokenValue)
-				}
+				batch.Delete("refresh_tokens", v.RefreshTokenValue)
 			}
 			n++
+		}
+	}
+	if n > 0 {
+		if err := batch.Commit(); err != nil {
+			panic(&persistenceFailure{op: "batch", bucket: "user_to_server_tokens", err: err})
 		}
 	}
 	return n

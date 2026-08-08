@@ -250,10 +250,19 @@ func (st *Store) persistTokenLocked(token *Token) {
 }
 
 func (st *Store) deleteTokenMapKeyLocked(mapKey string) {
-	delete(st.Tokens, mapKey)
-	if st.persist != nil {
-		st.persist.MustDelete("tokens", mapKey)
+	batch := newPersistBatch(st.persist)
+	st.deleteTokenMapKeyBatchLocked(batch, mapKey)
+	if err := batch.Commit(); err != nil {
+		panic(&persistenceFailure{op: "batch", bucket: "tokens", err: err})
 	}
+}
+
+// deleteTokenMapKeyBatchLocked stages a PAT token removal into batch so a
+// multi-credential revoke commits every deleted token in one transaction
+// (STORE-001/002). Callers hold st.mu.
+func (st *Store) deleteTokenMapKeyBatchLocked(batch *persistBatch, mapKey string) {
+	delete(st.Tokens, mapKey)
+	batch.Delete("tokens", mapKey)
 }
 
 // DeviceCode represents a pending device authorization flow.
