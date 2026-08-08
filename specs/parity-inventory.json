@@ -5336,10 +5336,10 @@
         "category": "TEST",
         "finding": "Test dependencies cloned from a branch tip and downloaded without checksums",
         "id": "TEST-024",
-        "location": "bleephub_ecs_test.go:80, Dockerfile:83",
+        "location": "test/terraform-sockerless/bleephub_ecs_test.go:81, Dockerfile.gh-test:25",
         "severity": "M",
-        "status": "open",
-        "status_kind": "open"
+        "status": "fixed \u2014 `resolveSockerlessRepository` now init+fetches the sockerless simulator at an exact pinned commit (`sockerlessPinnedSHA`, GitHub honours fetch-by-sha; the hash is the integrity check) instead of `git clone --depth=1` of the moving branch tip; verified the pinned fetch resolves. The `gh.deb` download in Dockerfile.gh-test was already pinned by version and verified with `sha256sum --check --strict` against per-arch `GH_SHA256_*`. Original stale line refs updated",
+        "status_kind": "fixed"
       },
       {
         "category": "TEST",
@@ -6484,8 +6484,8 @@
         },
         "TEST": {
           "status": {
-            "fixed": 28,
-            "open": 10,
+            "fixed": 29,
+            "open": 9,
             "partial": 2
           },
           "total": 40
@@ -6506,8 +6506,8 @@
       },
       "status": {
         "deferred": 1,
-        "fixed": 622,
-        "open": 37,
+        "fixed": 623,
+        "open": 36,
         "partial": 25
       },
       "total": 685
