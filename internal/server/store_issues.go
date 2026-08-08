@@ -708,6 +708,7 @@ func (st *Store) AddIssueAssignees(repoID int, issueNumber int, assigneeIDs []in
 	if issue == nil {
 		return false
 	}
+	batch := newPersistBatch(st.persist)
 	added := false
 	for _, uid := range assigneeIDs {
 		found := false
@@ -719,14 +720,17 @@ func (st *Store) AddIssueAssignees(repoID int, issueNumber int, assigneeIDs []in
 		}
 		if !found {
 			issue.AssigneeIDs = append(issue.AssigneeIDs, uid)
-			st.recordIssueEventWithIDsLocked(repoID, issue.ID, actorID, "assigned", 0, uid, actorID, 0, 0)
+			st.recordIssueEventWithIDsBatchLocked(batch, repoID, issue.ID, actorID, "assigned", 0, uid, actorID, 0, 0)
 			added = true
 		}
 	}
 	if added {
+		// One transaction: every assigned event and the issue row commit together
+		// (STORE-001/002).
 		issue.UpdatedAt = st.currentTime()
-		if st.persist != nil {
-			st.persist.MustPut("issues", strconv.Itoa(issue.ID), issue)
+		batch.Put("issues", strconv.Itoa(issue.ID), issue)
+		if err := batch.Commit(); err != nil {
+			panic(&persistenceFailure{op: "batch", bucket: "issues", err: err})
 		}
 	}
 	return true
@@ -741,21 +745,25 @@ func (st *Store) RemoveIssueAssignees(repoID int, issueNumber int, assigneeIDs [
 	if issue == nil {
 		return false
 	}
+	batch := newPersistBatch(st.persist)
 	removed := false
 	for _, uid := range assigneeIDs {
 		for idx, existing := range issue.AssigneeIDs {
 			if existing == uid {
 				issue.AssigneeIDs = append(issue.AssigneeIDs[:idx], issue.AssigneeIDs[idx+1:]...)
-				st.recordIssueEventWithIDsLocked(repoID, issue.ID, actorID, "unassigned", 0, uid, actorID, 0, 0)
+				st.recordIssueEventWithIDsBatchLocked(batch, repoID, issue.ID, actorID, "unassigned", 0, uid, actorID, 0, 0)
 				removed = true
 				break
 			}
 		}
 	}
 	if removed {
+		// One transaction: every unassigned event and the issue row commit
+		// together (STORE-001/002).
 		issue.UpdatedAt = st.currentTime()
-		if st.persist != nil {
-			st.persist.MustPut("issues", strconv.Itoa(issue.ID), issue)
+		batch.Put("issues", strconv.Itoa(issue.ID), issue)
+		if err := batch.Commit(); err != nil {
+			panic(&persistenceFailure{op: "batch", bucket: "issues", err: err})
 		}
 	}
 	return true
