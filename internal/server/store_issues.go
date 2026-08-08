@@ -224,6 +224,20 @@ func (st *Store) recordIssueEventWithIDsLocked(repoID, issueID, actorID int, eve
 	return e
 }
 
+// recordIssueEventWithIDsBatchLocked builds an issue event and stages its
+// persist into batch instead of committing its own transaction, so a multi-event
+// mutation (e.g. relabeling an issue) commits every event with the issue row in
+// one transaction (STORE-001/002). Callers hold st.mu.
+func (st *Store) recordIssueEventWithIDsBatchLocked(batch *persistBatch, repoID, issueID, actorID int, event string, labelID, assigneeID, assignerID, milestoneID, commentID int) {
+	e := st.buildIssueEventLocked(repoID, issueID, actorID, event, "issue")
+	e.LabelID = labelID
+	e.AssigneeID = assigneeID
+	e.AssignerID = assignerID
+	e.MilestoneID = milestoneID
+	e.CommentID = commentID
+	batch.Put("issue_events", strconv.Itoa(e.ID), e)
+}
+
 // RecordIssueEvent creates a public issue event. The payload map may contain
 // optional related IDs using the same keys GitHub uses: label_id, assignee_id,
 // assigner_id, milestone_id, comment_id, commit_id, commit_url.
@@ -694,6 +708,7 @@ func (st *Store) AddIssueAssignees(repoID int, issueNumber int, assigneeIDs []in
 	if issue == nil {
 		return false
 	}
+	batch := newPersistBatch(st.persist)
 	added := false
 	for _, uid := range assigneeIDs {
 		found := false
@@ -705,14 +720,17 @@ func (st *Store) AddIssueAssignees(repoID int, issueNumber int, assigneeIDs []in
 		}
 		if !found {
 			issue.AssigneeIDs = append(issue.AssigneeIDs, uid)
-			st.recordIssueEventWithIDsLocked(repoID, issue.ID, actorID, "assigned", 0, uid, actorID, 0, 0)
+			st.recordIssueEventWithIDsBatchLocked(batch, repoID, issue.ID, actorID, "assigned", 0, uid, actorID, 0, 0)
 			added = true
 		}
 	}
 	if added {
+		// One transaction: every assigned event and the issue row commit together
+		// (STORE-001/002).
 		issue.UpdatedAt = st.currentTime()
-		if st.persist != nil {
-			st.persist.MustPut("issues", strconv.Itoa(issue.ID), issue)
+		batch.Put("issues", strconv.Itoa(issue.ID), issue)
+		if err := batch.Commit(); err != nil {
+			panic(&persistenceFailure{op: "batch", bucket: "issues", err: err})
 		}
 	}
 	return true
@@ -727,21 +745,25 @@ func (st *Store) RemoveIssueAssignees(repoID int, issueNumber int, assigneeIDs [
 	if issue == nil {
 		return false
 	}
+	batch := newPersistBatch(st.persist)
 	removed := false
 	for _, uid := range assigneeIDs {
 		for idx, existing := range issue.AssigneeIDs {
 			if existing == uid {
 				issue.AssigneeIDs = append(issue.AssigneeIDs[:idx], issue.AssigneeIDs[idx+1:]...)
-				st.recordIssueEventWithIDsLocked(repoID, issue.ID, actorID, "unassigned", 0, uid, actorID, 0, 0)
+				st.recordIssueEventWithIDsBatchLocked(batch, repoID, issue.ID, actorID, "unassigned", 0, uid, actorID, 0, 0)
 				removed = true
 				break
 			}
 		}
 	}
 	if removed {
+		// One transaction: every unassigned event and the issue row commit
+		// together (STORE-001/002).
 		issue.UpdatedAt = st.currentTime()
-		if st.persist != nil {
-			st.persist.MustPut("issues", strconv.Itoa(issue.ID), issue)
+		batch.Put("issues", strconv.Itoa(issue.ID), issue)
+		if err := batch.Commit(); err != nil {
+			panic(&persistenceFailure{op: "batch", bucket: "issues", err: err})
 		}
 	}
 	return true
@@ -764,22 +786,27 @@ func (st *Store) SetIssueLabels(repoID int, issueNumber int, labelIDs []int, act
 	for _, lid := range labelIDs {
 		newSet[lid] = true
 	}
+	// One transaction: every labeled/unlabeled event and the issue row commit
+	// together, so a crash cannot split the event history from the issue's label
+	// set (STORE-001/002).
+	batch := newPersistBatch(st.persist)
 	for _, lid := range issue.LabelIDs {
 		if !newSet[lid] {
-			st.recordIssueEventWithIDsLocked(repoID, issue.ID, actorID, "unlabeled", lid, 0, 0, 0, 0)
+			st.recordIssueEventWithIDsBatchLocked(batch, repoID, issue.ID, actorID, "unlabeled", lid, 0, 0, 0, 0)
 		}
 	}
 	for _, lid := range labelIDs {
 		if !old[lid] {
-			st.recordIssueEventWithIDsLocked(repoID, issue.ID, actorID, "labeled", lid, 0, 0, 0, 0)
+			st.recordIssueEventWithIDsBatchLocked(batch, repoID, issue.ID, actorID, "labeled", lid, 0, 0, 0, 0)
 		}
 	}
 	// Clone rather than adopt the caller's slice by reference: the request
 	// handler owns labelIDs and may reuse or mutate it after this returns.
 	issue.LabelIDs = append([]int(nil), labelIDs...)
 	issue.UpdatedAt = st.currentTime()
-	if st.persist != nil {
-		st.persist.MustPut("issues", strconv.Itoa(issue.ID), issue)
+	batch.Put("issues", strconv.Itoa(issue.ID), issue)
+	if err := batch.Commit(); err != nil {
+		panic(&persistenceFailure{op: "batch", bucket: "issues", err: err})
 	}
 	return true
 }
@@ -796,13 +823,17 @@ func (st *Store) ClearIssueLabels(repoID int, issueNumber int, actorID int) bool
 	if len(issue.LabelIDs) == 0 {
 		return true
 	}
+	// One transaction: every unlabeled event and the cleared issue row commit
+	// together (STORE-001/002).
+	batch := newPersistBatch(st.persist)
 	for _, lid := range issue.LabelIDs {
-		st.recordIssueEventWithIDsLocked(repoID, issue.ID, actorID, "unlabeled", lid, 0, 0, 0, 0)
+		st.recordIssueEventWithIDsBatchLocked(batch, repoID, issue.ID, actorID, "unlabeled", lid, 0, 0, 0, 0)
 	}
 	issue.LabelIDs = nil
 	issue.UpdatedAt = st.currentTime()
-	if st.persist != nil {
-		st.persist.MustPut("issues", strconv.Itoa(issue.ID), issue)
+	batch.Put("issues", strconv.Itoa(issue.ID), issue)
+	if err := batch.Commit(); err != nil {
+		panic(&persistenceFailure{op: "batch", bucket: "issues", err: err})
 	}
 	return true
 }
@@ -817,6 +848,7 @@ func (st *Store) AddIssueLabels(repoKey string, issueNumber int, labelIDs []int)
 		return false
 	}
 	repo := st.ReposByName[repoKey]
+	batch := newPersistBatch(st.persist)
 	added := false
 	for _, lid := range labelIDs {
 		found := false
@@ -828,14 +860,17 @@ func (st *Store) AddIssueLabels(repoKey string, issueNumber int, labelIDs []int)
 		}
 		if !found {
 			issue.LabelIDs = append(issue.LabelIDs, lid)
-			st.recordIssueEventWithIDsLocked(repo.ID, issue.ID, 0, "labeled", lid, 0, 0, 0, 0)
+			st.recordIssueEventWithIDsBatchLocked(batch, repo.ID, issue.ID, 0, "labeled", lid, 0, 0, 0, 0)
 			added = true
 		}
 	}
 	if added {
+		// One transaction: every labeled event and the issue row commit together
+		// (STORE-001/002).
 		issue.UpdatedAt = st.currentTime()
-		if st.persist != nil {
-			st.persist.MustPut("issues", strconv.Itoa(issue.ID), issue)
+		batch.Put("issues", strconv.Itoa(issue.ID), issue)
+		if err := batch.Commit(); err != nil {
+			panic(&persistenceFailure{op: "batch", bucket: "issues", err: err})
 		}
 	}
 	return true
@@ -865,10 +900,14 @@ func (st *Store) RemoveIssueLabel(repoKey string, issueNumber int, labelName str
 		if lid == label.ID {
 			issue.LabelIDs = append(issue.LabelIDs[:idx], issue.LabelIDs[idx+1:]...)
 			issue.UpdatedAt = st.currentTime()
-			if st.persist != nil {
-				st.persist.MustPut("issues", strconv.Itoa(issue.ID), issue)
+			// One transaction: the issue row and its unlabeled event commit
+			// together (STORE-001/002).
+			batch := newPersistBatch(st.persist)
+			batch.Put("issues", strconv.Itoa(issue.ID), issue)
+			st.recordIssueEventWithIDsBatchLocked(batch, repo.ID, issue.ID, 0, "unlabeled", label.ID, 0, 0, 0, 0)
+			if err := batch.Commit(); err != nil {
+				panic(&persistenceFailure{op: "batch", bucket: "issues", err: err})
 			}
-			st.recordIssueEventWithIDsLocked(repo.ID, issue.ID, 0, "unlabeled", label.ID, 0, 0, 0, 0)
 			return true
 		}
 	}

@@ -24,7 +24,6 @@ import {
   reviewFineGrainedPATRequest,
   unblockUser,
 } from "../api.js";
-import type { FineGrainedPATPermissions } from "../api.js";
 import type {
   GithubBlockedUser,
   GithubGPGKey,

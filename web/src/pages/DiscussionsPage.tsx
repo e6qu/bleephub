@@ -18,7 +18,7 @@ import {
   updateDiscussionComment,
 } from "../api.js";
 import { useOpenCounts } from "../hooks/useOpenCounts.js";
-import type { GithubDiscussion, GithubDiscussionCategory, GithubDiscussionComment } from "../types.js";
+import type { GithubDiscussion, GithubDiscussionComment } from "../types.js";
 import { RepoHeader } from "../components/Shell.js";
 import {
   Button,

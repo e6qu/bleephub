@@ -7,7 +7,7 @@ import {
   fetchRepoSubscribersPage,
   type Page,
 } from "../api.js";
-import type { BleephubRepo, GithubAccount } from "../types.js";
+import type { GithubAccount } from "../types.js";
 import { RepoHeader } from "../components/Shell.js";
 import { PageTitle, Box, Blankslate, Button } from "../components/ui.js";
 import { StarIcon, RepoIcon } from "../components/octicons.js";

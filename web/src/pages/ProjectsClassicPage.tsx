@@ -279,18 +279,14 @@ function ProjectBoard({
           </div>
         </div>
       )}
-      <ColumnsBoard owner={owner} repo={repo} project={project} />
+      <ColumnsBoard project={project} />
     </div>
   );
 }
 
 function ColumnsBoard({
-  owner,
-  repo,
   project,
 }: {
-  owner: string;
-  repo: string;
   project: GithubProjectClassic;
 }) {
   const queryClient = useQueryClient();
@@ -315,8 +311,6 @@ function ColumnsBoard({
       {columns.map((col) => (
         <ColumnCard
           key={col.id}
-          owner={owner}
-          repo={repo}
           project={project}
           column={col}
           columns={columns}
@@ -351,14 +345,10 @@ function ColumnsBoard({
 }
 
 function ColumnCard({
-  owner,
-  repo,
   project,
   column,
   columns,
 }: {
-  owner: string;
-  repo: string;
   project: GithubProjectClassic;
   column: GithubProjectColumn;
   columns: GithubProjectColumn[];
@@ -488,9 +478,6 @@ function ColumnCard({
           cards.map((card) => (
             <ProjectCardItem
               key={card.id}
-              owner={owner}
-              repo={repo}
-              project={project}
               column={column}
               card={card}
               columns={columns}
@@ -522,16 +509,10 @@ function ColumnCard({
 }
 
 function ProjectCardItem({
-  owner,
-  repo,
-  project,
   column,
   card,
   columns,
 }: {
-  owner: string;
-  repo: string;
-  project: GithubProjectClassic;
   column: GithubProjectColumn;
   card: GithubProjectCard;
   columns: GithubProjectColumn[];

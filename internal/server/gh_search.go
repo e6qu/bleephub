@@ -349,16 +349,28 @@ func (s *Server) handleSearchIssues(w http.ResponseWriter, r *http.Request) {
 
 	// Matching rows are gathered under the read lock; rendering happens
 	// after release because the JSON builders (issueToJSON, repoToJSON and
-	// friends) take the store lock themselves.
+	// friends) take the store lock themselves. The mutable fields the scorer and
+	// sorter read directly (title, body, updated-at) are snapshotted here under
+	// the lock — reading them off the live pointer after release would race a
+	// concurrent UpdateIssue writer (the JSON builders re-lock, but these raw
+	// reads did not).
 	type issueRow struct {
-		issue *Issue
-		repo  *Repo
-		assoc string
+		issue   *Issue
+		repo    *Repo
+		assoc   string
+		title   string
+		body    string
+		created time.Time
+		updated time.Time
 	}
 	type prRow struct {
-		pr    *PullRequest
-		repo  *Repo
-		assoc string
+		pr      *PullRequest
+		repo    *Repo
+		assoc   string
+		title   string
+		body    string
+		created time.Time
+		updated time.Time
 	}
 	var issueRows []issueRow
 	var prRows []prRow
@@ -441,7 +453,7 @@ func (s *Server) handleSearchIssues(w http.ResponseWriter, r *http.Request) {
 			continue
 		}
 
-		issueRows = append(issueRows, issueRow{issue, repo, authorAssociationLocked(s.store, issue.AuthorID, repo)})
+		issueRows = append(issueRows, issueRow{issue, repo, authorAssociationLocked(s.store, issue.AuthorID, repo), issue.Title, issue.Body, issue.CreatedAt, issue.UpdatedAt})
 	}
 
 	for _, pr := range s.store.PullRequests {
@@ -526,7 +538,7 @@ func (s *Server) handleSearchIssues(w http.ResponseWriter, r *http.Request) {
 			continue
 		}
 
-		prRows = append(prRows, prRow{pr, repo, authorAssociationLocked(s.store, pr.AuthorID, repo)})
+		prRows = append(prRows, prRow{pr, repo, authorAssociationLocked(s.store, pr.AuthorID, repo), pr.Title, pr.Body, pr.CreatedAt, pr.UpdatedAt})
 	}
 
 	s.store.mu.RUnlock()
@@ -539,10 +551,10 @@ func (s *Server) handleSearchIssues(w http.ResponseWriter, r *http.Request) {
 	// cost on a large corpus.
 	rows := make([]searchIssueRow, 0, len(issueRows)+len(prRows))
 	for _, row := range issueRows {
-		rows = append(rows, searchIssueRow{issue: row.issue, repo: row.repo, assoc: row.assoc})
+		rows = append(rows, searchIssueRow{issue: row.issue, repo: row.repo, assoc: row.assoc, title: row.title, body: row.body, created: row.created, updated: row.updated})
 	}
 	for _, row := range prRows {
-		rows = append(rows, searchIssueRow{pr: row.pr, repo: row.repo, assoc: row.assoc})
+		rows = append(rows, searchIssueRow{pr: row.pr, repo: row.repo, assoc: row.assoc, title: row.title, body: row.body, created: row.created, updated: row.updated})
 	}
 
 	render := func(row searchIssueRow) map[string]interface{} {
@@ -551,7 +563,7 @@ func (s *Server) handleSearchIssues(w http.ResponseWriter, r *http.Request) {
 			// Search returns issue-search-result-item rather than the richer
 			// issue response used by single-issue operations.
 			delete(item, "closed_by")
-			item["score"] = searchRelevanceScore(q.Terms, row.issue.Title, row.issue.Body)
+			item["score"] = searchRelevanceScore(q.Terms, row.title, row.body)
 			item["author_association"] = row.assoc
 			item["draft"] = false
 			// pull_request is optional and non-nullable: GitHub sets it only on
@@ -561,7 +573,7 @@ func (s *Server) handleSearchIssues(w http.ResponseWriter, r *http.Request) {
 		}
 		item := issueToJSONForPR(row.pr, s.store, base, row.repo.FullName)
 		delete(item, "closed_by")
-		item["score"] = searchRelevanceScore(q.Terms, row.pr.Title, row.pr.Body)
+		item["score"] = searchRelevanceScore(q.Terms, row.title, row.body)
 		item["author_association"] = row.assoc
 		item["repository"] = repoToJSON(row.repo, s.store, base)
 		return item
@@ -603,21 +615,18 @@ type searchIssueRow struct {
 	pr    *PullRequest
 	repo  *Repo
 	assoc string
+	// title/body/created/updated are snapshotted under the store lock at gather
+	// time; the scorer and sorter read these instead of the live entity so they
+	// do not race a concurrent writer.
+	title   string
+	body    string
+	created time.Time
+	updated time.Time
 }
 
-func (row searchIssueRow) createdAt() time.Time {
-	if row.issue != nil {
-		return row.issue.CreatedAt
-	}
-	return row.pr.CreatedAt
-}
+func (row searchIssueRow) createdAt() time.Time { return row.created }
 
-func (row searchIssueRow) updatedAt() time.Time {
-	if row.issue != nil {
-		return row.issue.UpdatedAt
-	}
-	return row.pr.UpdatedAt
-}
+func (row searchIssueRow) updatedAt() time.Time { return row.updated }
 
 // orderKey mirrors searchItemOrderKey for an unrendered row: the entity id
 // plus its issue path, which is unique because issues and pull requests draw
