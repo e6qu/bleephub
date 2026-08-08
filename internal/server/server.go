@@ -1078,13 +1078,24 @@ func (s *Server) loggingMiddleware(next http.Handler) http.Handler {
 		start := time.Now()
 		rw := &responseWriter{ResponseWriter: w, status: 200}
 		next.ServeHTTP(rw, r)
-		s.logger.Debug().
+		withTraceContext(s.logger.Debug().
 			Str("method", r.Method).
 			Str("path", r.URL.Path).
 			Int("status", rw.status).
-			Dur("dur", time.Since(start)).
+			Dur("dur", time.Since(start)), r.Context()).
 			Msg("request")
 	})
+}
+
+// withTraceContext stamps the active request span's trace_id/span_id onto a log
+// event so the OTel logs bridge reconstructs the record's trace context and the
+// line correlates with its trace (CORE-007). A spanless context leaves evt
+// unchanged.
+func withTraceContext(evt *zerolog.Event, ctx context.Context) *zerolog.Event {
+	if sc := trace.SpanContextFromContext(ctx); sc.HasTraceID() {
+		return evt.Str("trace_id", sc.TraceID().String()).Str("span_id", sc.SpanID().String())
+	}
+	return evt
 }
 
 type responseWriter struct {
@@ -1207,11 +1218,11 @@ func (s *Server) recoverMiddleware(next http.Handler) http.Handler {
 			span.RecordError(err)
 			span.SetStatus(codes.Error, "handler panicked")
 
-			s.logger.Error().
+			withTraceContext(s.logger.Error().
 				Str("method", r.Method).
 				Str("path", r.URL.Path).
 				Interface("panic", recovered).
-				Bytes("stack", debug.Stack()).
+				Bytes("stack", debug.Stack()), r.Context()).
 				Msg("handler panicked")
 
 			writeGHError(w, http.StatusInternalServerError, "Internal Server Error")

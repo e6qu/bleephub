@@ -22,6 +22,7 @@ import (
 	"go.opentelemetry.io/otel/sdk/resource"
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 	semconv "go.opentelemetry.io/otel/semconv/v1.26.0"
+	"go.opentelemetry.io/otel/trace"
 )
 
 // Observability bundles trace + log SDK shutdown + a zerolog Writer
@@ -158,13 +159,42 @@ func (w *OTelLogWriter) Write(p []byte) (int, error) {
 	record.SetSeverityText(severityText)
 	for k, v := range entry {
 		switch k {
-		case "level", "message", "time":
+		// trace_id/span_id are promoted to the record's trace context via the
+		// emit context below, not duplicated as free-form attributes.
+		case "level", "message", "time", "trace_id", "span_id":
 			continue
 		}
 		record.AddAttributes(attribute.KeyValue{Key: attribute.Key(k), Value: otelValueOf(v)})
 	}
-	w.logger.Emit(context.Background(), record)
+	w.logger.Emit(logEmitContext(entry), record)
 	return len(p), nil
+}
+
+// logEmitContext reconstructs the trace context a log line was produced under so
+// the OTel logs SDK stamps the emitted record's trace_id/span_id and logs
+// correlate with their span (CORE-007). It reads the trace_id/span_id fields the
+// request logger records; a line without a valid pair emits under the background
+// context (unchanged behavior for spanless startup/background logs).
+func logEmitContext(entry map[string]any) context.Context {
+	traceHex, _ := entry["trace_id"].(string)
+	spanHex, _ := entry["span_id"].(string)
+	if traceHex == "" || spanHex == "" {
+		return context.Background()
+	}
+	traceID, err := trace.TraceIDFromHex(traceHex)
+	if err != nil {
+		return context.Background()
+	}
+	spanID, err := trace.SpanIDFromHex(spanHex)
+	if err != nil {
+		return context.Background()
+	}
+	return trace.ContextWithSpanContext(context.Background(), trace.NewSpanContext(trace.SpanContextConfig{
+		TraceID:    traceID,
+		SpanID:     spanID,
+		TraceFlags: trace.FlagsSampled,
+		Remote:     true,
+	}))
 }
 
 func parseZerologTimestamp(entry map[string]any) time.Time {

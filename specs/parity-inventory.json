@@ -4321,8 +4321,8 @@
         "id": "CORE-007",
         "location": "otel.go:128",
         "severity": "M",
-        "status": "open",
-        "status_kind": "open"
+        "status": "fixed \u2014 the zerolog\u2192OTel bridge no longer hardcodes `context.Background()`: `logEmitContext` reconstructs the emitting span's context from the `trace_id`/`span_id` fields on the line (rejecting malformed hex) and emits under it, so the SDK stamps the record's trace context and logs correlate with their trace; the two fields are promoted to trace context rather than duplicated as attributes. The request-completion log and the panic log stamp those fields from the active request span via `withTraceContext`; spanless startup/background logs still emit unchanged. Regression `TestOTelLogBridgeCorrelatesTrace`/`\u2026SpanlessLineEmits`/`TestLogEmitContextRejectsBadHex`",
+        "status_kind": "fixed"
       },
       {
         "category": "CORE",
@@ -6446,8 +6446,8 @@
         },
         "CORE": {
           "status": {
-            "fixed": 30,
-            "open": 2,
+            "fixed": 31,
+            "open": 1,
             "partial": 1
           },
           "total": 33
@@ -6505,8 +6505,8 @@
       },
       "status": {
         "deferred": 1,
-        "fixed": 630,
-        "open": 30,
+        "fixed": 631,
+        "open": 29,
         "partial": 24
       },
       "total": 685
