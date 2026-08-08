@@ -6290,10 +6290,10 @@
         "category": "CI",
         "finding": "Committed build output shipped into the build context, then overwritten",
         "id": "CI-053",
-        "location": ".dockerignore",
+        "location": "Dockerfile.release.dockerignore",
         "severity": "m",
-        "status": "open \u2014 the naive fix (dockerignore internal/server/dist) is wrong: a single global .dockerignore also strips it from the shauth-sso-test build, whose `go:embed all:dist` compiles the committed copy directly (no ui-builder regen stage), breaking that image with \"pattern all:dist: no matching files found\". A correct fix needs per-Dockerfile scoping or making every embed build regenerate dist first",
-        "status_kind": "open"
+        "status": "fixed \u2014 added a per-Dockerfile `Dockerfile.release.dockerignore` (BuildKit honours `<dockerfile>.dockerignore` in preference to the global one, and it *replaces* rather than merges, so it repeats every global rule). Its one addition is `internal/server/dist`: the release image's `builder` stage does `COPY . .` then `COPY --from=ui-builder \u2026/web/dist ./internal/server/dist/` *before* `go build`, so the committed copy shipped into context was pure waste that the fresh build overwrote. Excluding it there is safe (the embed sees the regenerated dist from the ui-builder copy) and worst-case a no-op; the gh-test and shauth images embed the committed dist directly and keep using the global `.dockerignore`, which does not list it. Release-images CI validates the embed",
+        "status_kind": "fixed"
       },
       {
         "category": "CI",
@@ -6438,8 +6438,8 @@
         },
         "CI": {
           "status": {
-            "fixed": 58,
-            "open": 5,
+            "fixed": 59,
+            "open": 4,
             "partial": 2
           },
           "total": 65
@@ -6506,8 +6506,8 @@
       },
       "status": {
         "deferred": 1,
-        "fixed": 627,
-        "open": 32,
+        "fixed": 628,
+        "open": 31,
         "partial": 25
       },
       "total": 685
