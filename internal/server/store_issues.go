@@ -192,6 +192,17 @@ func (st *Store) recordPullRequestEventLocked(repoID, prID, actorID int, event, 
 	return e
 }
 
+// recordPullRequestEventBatchLocked builds a pull-request IssueEvent and stages
+// its persist into batch instead of committing its own transaction, so a
+// multi-event mutation (e.g. requesting several reviewers) commits every event
+// with the pull-request row atomically (STORE-001/002). Callers hold st.mu.
+func (st *Store) recordPullRequestEventBatchLocked(batch *persistBatch, repoID, prID, actorID int, event, commitID string, requestedReviewerID int) {
+	e := st.buildIssueEventLocked(repoID, prID, actorID, event, "pull_request")
+	e.CommitID = commitID
+	e.RequestedReviewerID = requestedReviewerID
+	batch.Put("issue_events", strconv.Itoa(e.ID), e)
+}
+
 // RecordPullRequestEvent creates a public issue event attached to a pull
 // request ("merged", "closed", "reopened", "review_requested", ...).
 func (st *Store) RecordPullRequestEvent(repoID, prID, actorID int, event, commitID string, requestedReviewerID int) *IssueEvent {

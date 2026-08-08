@@ -237,15 +237,15 @@ func (st *Store) UpdatePullRequest(id int, fn func(*PullRequest)) bool {
 	return true
 }
 
-// recordPullRequestLabelEventLocked records a labeled/unlabeled event attached
-// to a pull request so it surfaces in the PR timeline (ParentType
-// "pull_request"), while st.mu is already held.
-func (st *Store) recordPullRequestLabelEventLocked(repoID, prID, actorID, labelID int, event string) {
-	e := st.recordIssueEventWithIDsLocked(repoID, prID, actorID, event, labelID, 0, 0, 0, 0)
-	e.ParentType = "pull_request"
-	if st.persist != nil {
-		st.persist.MustPut("issue_events", strconv.Itoa(e.ID), e)
-	}
+// recordPullRequestLabelEventBatchLocked builds a labeled/unlabeled event
+// attached to a pull request (ParentType "pull_request", so it surfaces in the
+// PR timeline) and stages its persist into batch, so a relabel that emits
+// several events commits them with the pull-request row in one transaction
+// (STORE-001/002). Callers hold st.mu.
+func (st *Store) recordPullRequestLabelEventBatchLocked(batch *persistBatch, repoID, prID, actorID, labelID int, event string) {
+	e := st.buildIssueEventLocked(repoID, prID, actorID, event, "pull_request")
+	e.LabelID = labelID
+	batch.Put("issue_events", strconv.Itoa(e.ID), e)
 }
 
 // AddPullRequestLabels adds labels to a pull request, recording a labeled event
@@ -259,6 +259,7 @@ func (st *Store) AddPullRequestLabels(repoID, prNumber int, labelIDs []int, acto
 	if pr == nil {
 		return false
 	}
+	batch := newPersistBatch(st.persist)
 	added := false
 	for _, lid := range labelIDs {
 		found := false
@@ -270,14 +271,18 @@ func (st *Store) AddPullRequestLabels(repoID, prNumber int, labelIDs []int, acto
 		}
 		if !found {
 			pr.LabelIDs = append(pr.LabelIDs, lid)
-			st.recordPullRequestLabelEventLocked(repoID, pr.ID, actorID, lid, "labeled")
+			st.recordPullRequestLabelEventBatchLocked(batch, repoID, pr.ID, actorID, lid, "labeled")
 			added = true
 		}
 	}
 	if added {
+		// One transaction: every labeled event and the pull-request row commit
+		// together, so a crash cannot record an event without the label landing on
+		// the PR, or vice versa (STORE-001/002).
 		pr.UpdatedAt = st.currentTime()
-		if st.persist != nil {
-			st.persist.MustPut("pull_requests", strconv.Itoa(pr.ID), pr)
+		batch.Put("pull_requests", strconv.Itoa(pr.ID), pr)
+		if err := batch.Commit(); err != nil {
+			panic(&persistenceFailure{op: "batch", bucket: "pull_requests", err: err})
 		}
 	}
 	return true
@@ -300,21 +305,26 @@ func (st *Store) SetPullRequestLabels(repoID, prNumber int, labelIDs []int, acto
 	for _, lid := range labelIDs {
 		newSet[lid] = true
 	}
+	// One transaction: every labeled/unlabeled event and the pull-request row
+	// commit together, so a crash cannot split the event history from the PR's
+	// label set (STORE-001/002).
+	batch := newPersistBatch(st.persist)
 	for _, lid := range pr.LabelIDs {
 		if !newSet[lid] {
-			st.recordPullRequestLabelEventLocked(repoID, pr.ID, actorID, lid, "unlabeled")
+			st.recordPullRequestLabelEventBatchLocked(batch, repoID, pr.ID, actorID, lid, "unlabeled")
 		}
 	}
 	for _, lid := range labelIDs {
 		if !old[lid] {
-			st.recordPullRequestLabelEventLocked(repoID, pr.ID, actorID, lid, "labeled")
+			st.recordPullRequestLabelEventBatchLocked(batch, repoID, pr.ID, actorID, lid, "labeled")
 		}
 	}
 	// Clone rather than adopt the caller's slice by reference.
 	pr.LabelIDs = append([]int(nil), labelIDs...)
 	pr.UpdatedAt = st.currentTime()
-	if st.persist != nil {
-		st.persist.MustPut("pull_requests", strconv.Itoa(pr.ID), pr)
+	batch.Put("pull_requests", strconv.Itoa(pr.ID), pr)
+	if err := batch.Commit(); err != nil {
+		panic(&persistenceFailure{op: "batch", bucket: "pull_requests", err: err})
 	}
 	return true
 }
@@ -332,13 +342,17 @@ func (st *Store) ClearPullRequestLabels(repoID, prNumber, actorID int) bool {
 	if len(pr.LabelIDs) == 0 {
 		return true
 	}
+	// One transaction: every unlabeled event and the cleared PR row commit
+	// together (STORE-001/002).
+	batch := newPersistBatch(st.persist)
 	for _, lid := range pr.LabelIDs {
-		st.recordPullRequestLabelEventLocked(repoID, pr.ID, actorID, lid, "unlabeled")
+		st.recordPullRequestLabelEventBatchLocked(batch, repoID, pr.ID, actorID, lid, "unlabeled")
 	}
 	pr.LabelIDs = nil
 	pr.UpdatedAt = st.currentTime()
-	if st.persist != nil {
-		st.persist.MustPut("pull_requests", strconv.Itoa(pr.ID), pr)
+	batch.Put("pull_requests", strconv.Itoa(pr.ID), pr)
+	if err := batch.Commit(); err != nil {
+		panic(&persistenceFailure{op: "batch", bucket: "pull_requests", err: err})
 	}
 	return true
 }
@@ -357,10 +371,15 @@ func (st *Store) RemovePullRequestLabel(repoID, prNumber, labelID, actorID int) 
 		if lid == labelID {
 			pr.LabelIDs = append(pr.LabelIDs[:idx], pr.LabelIDs[idx+1:]...)
 			pr.UpdatedAt = st.currentTime()
-			if st.persist != nil {
-				st.persist.MustPut("pull_requests", strconv.Itoa(pr.ID), pr)
+			// One transaction: the PR row and its unlabeled event commit together,
+			// so a crash cannot drop the label without recording the event, or
+			// record the event while the label lingers (STORE-001/002).
+			batch := newPersistBatch(st.persist)
+			batch.Put("pull_requests", strconv.Itoa(pr.ID), pr)
+			st.recordPullRequestLabelEventBatchLocked(batch, repoID, pr.ID, actorID, labelID, "unlabeled")
+			if err := batch.Commit(); err != nil {
+				panic(&persistenceFailure{op: "batch", bucket: "pull_requests", err: err})
 			}
-			st.recordPullRequestLabelEventLocked(repoID, pr.ID, actorID, labelID, "unlabeled")
 			break
 		}
 	}
@@ -566,6 +585,10 @@ func (st *Store) RequestReviewers(repoKey string, pullNumber int, reviewerIDs []
 	if pr == nil {
 		return false
 	}
+	// One transaction: every review_requested event and the pull-request row
+	// commit together, so a crash cannot record a request without adding the
+	// reviewer, or vice versa (STORE-001/002).
+	batch := newPersistBatch(st.persist)
 	existing := map[int]struct{}{}
 	for _, id := range pr.RequestedReviewerIDs {
 		existing[id] = struct{}{}
@@ -574,12 +597,13 @@ func (st *Store) RequestReviewers(repoKey string, pullNumber int, reviewerIDs []
 		if _, ok := existing[id]; !ok {
 			pr.RequestedReviewerIDs = append(pr.RequestedReviewerIDs, id)
 			existing[id] = struct{}{}
-			st.recordPullRequestEventLocked(pr.RepoID, pr.ID, actorID, "review_requested", "", id)
+			st.recordPullRequestEventBatchLocked(batch, pr.RepoID, pr.ID, actorID, "review_requested", "", id)
 		}
 	}
 	pr.UpdatedAt = st.currentTime()
-	if st.persist != nil {
-		st.persist.MustPut("pull_requests", strconv.Itoa(pr.ID), pr)
+	batch.Put("pull_requests", strconv.Itoa(pr.ID), pr)
+	if err := batch.Commit(); err != nil {
+		panic(&persistenceFailure{op: "batch", bucket: "pull_requests", err: err})
 	}
 	return true
 }
@@ -594,6 +618,9 @@ func (st *Store) RemoveRequestedReviewers(repoKey string, pullNumber int, review
 	if pr == nil {
 		return false
 	}
+	// One transaction: every review_request_removed event and the pull-request
+	// row commit together (STORE-001/002).
+	batch := newPersistBatch(st.persist)
 	remove := map[int]struct{}{}
 	for _, id := range reviewerIDs {
 		remove[id] = struct{}{}
@@ -604,12 +631,13 @@ func (st *Store) RemoveRequestedReviewers(repoKey string, pullNumber int, review
 			kept = append(kept, id)
 			continue
 		}
-		st.recordPullRequestEventLocked(pr.RepoID, pr.ID, actorID, "review_request_removed", "", id)
+		st.recordPullRequestEventBatchLocked(batch, pr.RepoID, pr.ID, actorID, "review_request_removed", "", id)
 	}
 	pr.RequestedReviewerIDs = kept
 	pr.UpdatedAt = st.currentTime()
-	if st.persist != nil {
-		st.persist.MustPut("pull_requests", strconv.Itoa(pr.ID), pr)
+	batch.Put("pull_requests", strconv.Itoa(pr.ID), pr)
+	if err := batch.Commit(); err != nil {
+		panic(&persistenceFailure{op: "batch", bucket: "pull_requests", err: err})
 	}
 	return true
 }
