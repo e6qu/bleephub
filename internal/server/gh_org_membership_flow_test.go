@@ -45,11 +45,13 @@ func newSharedServerUser(t *testing.T, login string) (*User, string) {
 }
 
 func TestOrgInvitationLifecycle(t *testing.T) {
-	createOrgViaAdminAPI(t, "invite-org")
-	_, inviteeToken := newSharedServerUser(t, "invitee")
+	t.Parallel()
+	srv := newIsolatedServer(t)
+	srv.createOrg(t, "invite-org")
+	_, inviteeToken := srv.newUser(t, "invitee")
 
 	// Admin PUTs a membership for a non-member → pending invitation.
-	put := ghPut(t, "/api/v3/orgs/invite-org/memberships/invitee", defaultToken,
+	put := srv.put(t, "/api/v3/orgs/invite-org/memberships/invitee", defaultToken,
 		map[string]interface{}{"role": "member"})
 	if put.StatusCode != http.StatusOK {
 		put.Body.Close()
@@ -61,7 +63,7 @@ func TestOrgInvitationLifecycle(t *testing.T) {
 	}
 
 	// Pending members are NOT in the members list…
-	members := ghGet(t, "/api/v3/orgs/invite-org/members", defaultToken)
+	members := srv.get(t, "/api/v3/orgs/invite-org/members", defaultToken)
 	var memberList []map[string]interface{}
 	if err := json.NewDecoder(members.Body).Decode(&memberList); err != nil {
 		t.Fatal(err)
@@ -73,14 +75,14 @@ func TestOrgInvitationLifecycle(t *testing.T) {
 		}
 	}
 	// …and the membership check 404s.
-	check := ghGet(t, "/api/v3/orgs/invite-org/members/invitee", defaultToken)
+	check := srv.get(t, "/api/v3/orgs/invite-org/members/invitee", defaultToken)
 	check.Body.Close()
 	if check.StatusCode != http.StatusNotFound {
 		t.Fatalf("member check while pending: got %d, want 404", check.StatusCode)
 	}
 
 	// The invitee sees the pending membership on the user side.
-	mine := ghGet(t, "/api/v3/user/memberships/orgs?state=pending", inviteeToken)
+	mine := srv.get(t, "/api/v3/user/memberships/orgs?state=pending", inviteeToken)
 	var myMemberships []map[string]interface{}
 	if err := json.NewDecoder(mine.Body).Decode(&myMemberships); err != nil {
 		t.Fatal(err)
@@ -90,7 +92,7 @@ func TestOrgInvitationLifecycle(t *testing.T) {
 		t.Fatalf("user pending memberships = %d, want 1", len(myMemberships))
 	}
 
-	single := ghGet(t, "/api/v3/user/memberships/orgs/invite-org", inviteeToken)
+	single := srv.get(t, "/api/v3/user/memberships/orgs/invite-org", inviteeToken)
 	if single.StatusCode != http.StatusOK {
 		single.Body.Close()
 		t.Fatalf("GET own membership: got %d, want 200", single.StatusCode)
@@ -100,13 +102,13 @@ func TestOrgInvitationLifecycle(t *testing.T) {
 	}
 
 	// Accept: PATCH {"state":"active"}. Any other state value is invalid.
-	bad := ghPatch(t, "/api/v3/user/memberships/orgs/invite-org", inviteeToken,
+	bad := srv.patch(t, "/api/v3/user/memberships/orgs/invite-org", inviteeToken,
 		map[string]interface{}{"state": "rejected"})
 	bad.Body.Close()
 	if bad.StatusCode != http.StatusUnprocessableEntity {
 		t.Fatalf("PATCH bad state: got %d, want 422", bad.StatusCode)
 	}
-	accept := ghPatch(t, "/api/v3/user/memberships/orgs/invite-org", inviteeToken,
+	accept := srv.patch(t, "/api/v3/user/memberships/orgs/invite-org", inviteeToken,
 		map[string]interface{}{"state": "active"})
 	if accept.StatusCode != http.StatusOK {
 		accept.Body.Close()
@@ -117,17 +119,17 @@ func TestOrgInvitationLifecycle(t *testing.T) {
 	}
 
 	// Now the member check answers 204 and removal works.
-	check2 := ghGet(t, "/api/v3/orgs/invite-org/members/invitee", defaultToken)
+	check2 := srv.get(t, "/api/v3/orgs/invite-org/members/invitee", defaultToken)
 	check2.Body.Close()
 	if check2.StatusCode != http.StatusNoContent {
 		t.Fatalf("member check after accept: got %d, want 204", check2.StatusCode)
 	}
-	rm := ghDelete(t, "/api/v3/orgs/invite-org/members/invitee", defaultToken)
+	rm := srv.delete(t, "/api/v3/orgs/invite-org/members/invitee", defaultToken)
 	rm.Body.Close()
 	if rm.StatusCode != http.StatusNoContent {
 		t.Fatalf("remove member: got %d, want 204", rm.StatusCode)
 	}
-	check3 := ghGet(t, "/api/v3/orgs/invite-org/members/invitee", defaultToken)
+	check3 := srv.get(t, "/api/v3/orgs/invite-org/members/invitee", defaultToken)
 	check3.Body.Close()
 	if check3.StatusCode != http.StatusNotFound {
 		t.Fatalf("member check after removal: got %d, want 404", check3.StatusCode)
@@ -135,35 +137,37 @@ func TestOrgInvitationLifecycle(t *testing.T) {
 }
 
 func TestOrgPublicMembers(t *testing.T) {
-	createOrgViaAdminAPI(t, "pub-org")
-	_, memberToken := newSharedServerUser(t, "pubmember")
+	t.Parallel()
+	srv := newIsolatedServer(t)
+	srv.createOrg(t, "pub-org")
+	_, memberToken := srv.newUser(t, "pubmember")
 
-	ghPut(t, "/api/v3/orgs/pub-org/memberships/pubmember", defaultToken,
+	srv.put(t, "/api/v3/orgs/pub-org/memberships/pubmember", defaultToken,
 		map[string]interface{}{"role": "member"}).Body.Close()
-	ghPatch(t, "/api/v3/user/memberships/orgs/pub-org", memberToken,
+	srv.patch(t, "/api/v3/user/memberships/orgs/pub-org", memberToken,
 		map[string]interface{}{"state": "active"}).Body.Close()
 
 	// Membership starts concealed.
-	hidden := ghGet(t, "/api/v3/orgs/pub-org/public_members/pubmember", defaultToken)
+	hidden := srv.get(t, "/api/v3/orgs/pub-org/public_members/pubmember", defaultToken)
 	hidden.Body.Close()
 	if hidden.StatusCode != http.StatusNotFound {
 		t.Fatalf("concealed check: got %d, want 404", hidden.StatusCode)
 	}
 
 	// Only the member themselves can publicize — the admin gets 403.
-	asAdmin := ghPut(t, "/api/v3/orgs/pub-org/public_members/pubmember", defaultToken, nil)
+	asAdmin := srv.put(t, "/api/v3/orgs/pub-org/public_members/pubmember", defaultToken, nil)
 	asAdmin.Body.Close()
 	if asAdmin.StatusCode != http.StatusForbidden {
 		t.Fatalf("publicize by other user: got %d, want 403", asAdmin.StatusCode)
 	}
-	pub := ghPut(t, "/api/v3/orgs/pub-org/public_members/pubmember", memberToken, nil)
+	pub := srv.put(t, "/api/v3/orgs/pub-org/public_members/pubmember", memberToken, nil)
 	pub.Body.Close()
 	if pub.StatusCode != http.StatusNoContent {
 		t.Fatalf("publicize: got %d, want 204", pub.StatusCode)
 	}
 
 	// Listed (anonymously) + check 204.
-	list := ghGet(t, "/api/v3/orgs/pub-org/public_members", "")
+	list := srv.get(t, "/api/v3/orgs/pub-org/public_members", "")
 	var publicMembers []map[string]interface{}
 	if err := json.NewDecoder(list.Body).Decode(&publicMembers); err != nil {
 		t.Fatal(err)
@@ -174,12 +178,12 @@ func TestOrgPublicMembers(t *testing.T) {
 	}
 
 	// Conceal again.
-	conceal := ghDelete(t, "/api/v3/orgs/pub-org/public_members/pubmember", memberToken)
+	conceal := srv.delete(t, "/api/v3/orgs/pub-org/public_members/pubmember", memberToken)
 	conceal.Body.Close()
 	if conceal.StatusCode != http.StatusNoContent {
 		t.Fatalf("conceal: got %d, want 204", conceal.StatusCode)
 	}
-	gone := ghGet(t, "/api/v3/orgs/pub-org/public_members/pubmember", defaultToken)
+	gone := srv.get(t, "/api/v3/orgs/pub-org/public_members/pubmember", defaultToken)
 	gone.Body.Close()
 	if gone.StatusCode != http.StatusNotFound {
 		t.Fatalf("check after conceal: got %d, want 404", gone.StatusCode)
@@ -187,7 +191,9 @@ func TestOrgPublicMembers(t *testing.T) {
 }
 
 func TestOrganizationsGlobalList(t *testing.T) {
-	createOrgViaAdminAPI(t, "global-list-org")
+	t.Parallel()
+	srv := newIsolatedServer(t)
+	srv.createOrg(t, "global-list-org")
 
 	// Walk the since cursor the way a real client enumerates
 	// /organizations: the shared test server accumulates organizations
@@ -195,7 +201,7 @@ func TestOrganizationsGlobalList(t *testing.T) {
 	var orgID float64
 	since := 0
 	for orgID == 0 {
-		resp := ghGet(t, "/api/v3/organizations?per_page=100&since="+jsonNumber(float64(since)), defaultToken)
+		resp := srv.get(t, "/api/v3/organizations?per_page=100&since="+jsonNumber(float64(since)), defaultToken)
 		var orgs []map[string]interface{}
 		if err := json.NewDecoder(resp.Body).Decode(&orgs); err != nil {
 			t.Fatal(err)
@@ -216,7 +222,7 @@ func TestOrganizationsGlobalList(t *testing.T) {
 	}
 
 	// The since cursor excludes orgs up to and including the id.
-	resp2 := ghGet(t, "/api/v3/organizations?since="+jsonNumber(orgID), defaultToken)
+	resp2 := srv.get(t, "/api/v3/organizations?since="+jsonNumber(orgID), defaultToken)
 	var after []map[string]interface{}
 	if err := json.NewDecoder(resp2.Body).Decode(&after); err != nil {
 		t.Fatal(err)
@@ -235,9 +241,11 @@ func jsonNumber(f float64) string {
 }
 
 func TestOrgProfileFieldsPatch(t *testing.T) {
-	createOrgViaAdminAPI(t, "profile-org")
+	t.Parallel()
+	srv := newIsolatedServer(t)
+	srv.createOrg(t, "profile-org")
 
-	patch := ghPatch(t, "/api/v3/orgs/profile-org", defaultToken, map[string]interface{}{
+	patch := srv.patch(t, "/api/v3/orgs/profile-org", defaultToken, map[string]interface{}{
 		"company":                         "ACME Holdings",
 		"location":                        "Rotterdam",
 		"blog":                            "https://blog.example.test",
@@ -268,7 +276,7 @@ func TestOrgProfileFieldsPatch(t *testing.T) {
 	}
 
 	// Enum validation on default_repository_permission.
-	bad := ghPatch(t, "/api/v3/orgs/profile-org", defaultToken, map[string]interface{}{
+	bad := srv.patch(t, "/api/v3/orgs/profile-org", defaultToken, map[string]interface{}{
 		"default_repository_permission": "superuser",
 	})
 	bad.Body.Close()
@@ -277,8 +285,8 @@ func TestOrgProfileFieldsPatch(t *testing.T) {
 	}
 
 	// An untouched org serves GitHub's defaults.
-	createOrgViaAdminAPI(t, "default-org")
-	fresh := ghGet(t, "/api/v3/orgs/default-org", defaultToken)
+	srv.createOrg(t, "default-org")
+	fresh := srv.get(t, "/api/v3/orgs/default-org", defaultToken)
 	fGot := decodeJSON(t, fresh)
 	if fGot["default_repository_permission"] != "read" {
 		t.Errorf("default default_repository_permission = %v, want read", fGot["default_repository_permission"])
@@ -289,11 +297,13 @@ func TestOrgProfileFieldsPatch(t *testing.T) {
 }
 
 func TestTeamHierarchyAndRoles(t *testing.T) {
-	createOrgViaAdminAPI(t, "team-org")
-	ghPost(t, "/api/v3/orgs/team-org/repos", defaultToken, map[string]interface{}{"name": "team-repo"}).Body.Close()
+	t.Parallel()
+	srv := newIsolatedServer(t)
+	srv.createOrg(t, "team-org")
+	srv.post(t, "/api/v3/orgs/team-org/repos", defaultToken, map[string]interface{}{"name": "team-repo"}).Body.Close()
 
 	// Parent team, seeding a maintainer + a repo from the create body.
-	parentResp := ghPost(t, "/api/v3/orgs/team-org/teams", defaultToken, map[string]interface{}{
+	parentResp := srv.post(t, "/api/v3/orgs/team-org/teams", defaultToken, map[string]interface{}{
 		"name":        "Platform",
 		"privacy":     "closed",
 		"permission":  "push",
@@ -311,7 +321,7 @@ func TestTeamHierarchyAndRoles(t *testing.T) {
 	}
 
 	// Child team referencing the parent.
-	childResp := ghPost(t, "/api/v3/orgs/team-org/teams", defaultToken, map[string]interface{}{
+	childResp := srv.post(t, "/api/v3/orgs/team-org/teams", defaultToken, map[string]interface{}{
 		"name":                 "Platform Infra",
 		"parent_team_id":       parentID,
 		"notification_setting": "notifications_disabled",
@@ -330,7 +340,7 @@ func TestTeamHierarchyAndRoles(t *testing.T) {
 	}
 
 	// Child teams listing.
-	kids := ghGet(t, "/api/v3/orgs/team-org/teams/platform/teams", defaultToken)
+	kids := srv.get(t, "/api/v3/orgs/team-org/teams/platform/teams", defaultToken)
 	var childTeams []map[string]interface{}
 	if err := json.NewDecoder(kids.Body).Decode(&childTeams); err != nil {
 		t.Fatal(err)
@@ -341,7 +351,7 @@ func TestTeamHierarchyAndRoles(t *testing.T) {
 	}
 
 	// Cycle prevention: re-parenting the parent under its child 422s.
-	cyc := ghPatch(t, "/api/v3/orgs/team-org/teams/platform", defaultToken, map[string]interface{}{
+	cyc := srv.patch(t, "/api/v3/orgs/team-org/teams/platform", defaultToken, map[string]interface{}{
 		"parent_team_id": int(child["id"].(float64)),
 	})
 	cyc.Body.Close()
@@ -350,7 +360,7 @@ func TestTeamHierarchyAndRoles(t *testing.T) {
 	}
 
 	// Maintainer seeded at create reads back with role=maintainer.
-	tm := ghGet(t, "/api/v3/orgs/team-org/teams/platform/memberships/admin", defaultToken)
+	tm := srv.get(t, "/api/v3/orgs/team-org/teams/platform/memberships/admin", defaultToken)
 	if tm.StatusCode != http.StatusOK {
 		tm.Body.Close()
 		t.Fatalf("GET team membership: got %d, want 200", tm.StatusCode)
@@ -360,13 +370,13 @@ func TestTeamHierarchyAndRoles(t *testing.T) {
 	}
 
 	// Role validation + role update via PUT.
-	badRole := ghPut(t, "/api/v3/orgs/team-org/teams/platform/memberships/admin", defaultToken,
+	badRole := srv.put(t, "/api/v3/orgs/team-org/teams/platform/memberships/admin", defaultToken,
 		map[string]interface{}{"role": "overlord"})
 	badRole.Body.Close()
 	if badRole.StatusCode != http.StatusUnprocessableEntity {
 		t.Fatalf("bad team role: got %d, want 422", badRole.StatusCode)
 	}
-	demote := ghPut(t, "/api/v3/orgs/team-org/teams/platform/memberships/admin", defaultToken,
+	demote := srv.put(t, "/api/v3/orgs/team-org/teams/platform/memberships/admin", defaultToken,
 		map[string]interface{}{"role": "member"})
 	if demote.StatusCode != http.StatusOK {
 		demote.Body.Close()
@@ -377,8 +387,8 @@ func TestTeamHierarchyAndRoles(t *testing.T) {
 	}
 
 	// Adding a non-org-member to a team auto-invites them (pending).
-	newSharedServerUser(t, "teamling")
-	invited := ghPut(t, "/api/v3/orgs/team-org/teams/platform/memberships/teamling", defaultToken,
+	srv.newUser(t, "teamling")
+	invited := srv.put(t, "/api/v3/orgs/team-org/teams/platform/memberships/teamling", defaultToken,
 		map[string]interface{}{})
 	if invited.StatusCode != http.StatusOK {
 		invited.Body.Close()
@@ -390,7 +400,7 @@ func TestTeamHierarchyAndRoles(t *testing.T) {
 
 	// Team repos: list carries permissions + role_name; check answers 204
 	// or the repository body under the repository media type.
-	repos := ghGet(t, "/api/v3/orgs/team-org/teams/platform/repos", defaultToken)
+	repos := srv.get(t, "/api/v3/orgs/team-org/teams/platform/repos", defaultToken)
 	var teamRepos []map[string]interface{}
 	if err := json.NewDecoder(repos.Body).Decode(&teamRepos); err != nil {
 		t.Fatal(err)
@@ -407,12 +417,12 @@ func TestTeamHierarchyAndRoles(t *testing.T) {
 		t.Errorf("permissions = %v", perms)
 	}
 
-	checkResp := ghGet(t, "/api/v3/orgs/team-org/teams/platform/repos/team-org/team-repo", defaultToken)
+	checkResp := srv.get(t, "/api/v3/orgs/team-org/teams/platform/repos/team-org/team-repo", defaultToken)
 	checkResp.Body.Close()
 	if checkResp.StatusCode != http.StatusNoContent {
 		t.Fatalf("team repo check: got %d, want 204", checkResp.StatusCode)
 	}
-	mediaReq, _ := http.NewRequest("GET", testBaseURL+"/api/v3/orgs/team-org/teams/platform/repos/team-org/team-repo", nil)
+	mediaReq, _ := http.NewRequest("GET", srv.baseURL+"/api/v3/orgs/team-org/teams/platform/repos/team-org/team-repo", nil)
 	mediaReq.Header.Set("Authorization", "token "+defaultToken)
 	mediaReq.Header.Set("Accept", "application/vnd.github.v3.repository+json")
 	mediaResp, err := http.DefaultClient.Do(mediaReq)
@@ -433,19 +443,19 @@ func TestTeamHierarchyAndRoles(t *testing.T) {
 	}
 
 	// Team rename re-keys the slug: the new slug resolves, the old 404s.
-	rename := ghPatch(t, "/api/v3/orgs/team-org/teams/platform-infra", defaultToken, map[string]interface{}{
+	rename := srv.patch(t, "/api/v3/orgs/team-org/teams/platform-infra", defaultToken, map[string]interface{}{
 		"name": "Infra Core",
 	})
 	rename.Body.Close()
 	if rename.StatusCode != http.StatusOK {
 		t.Fatalf("rename: got %d, want 200", rename.StatusCode)
 	}
-	newSlug := ghGet(t, "/api/v3/orgs/team-org/teams/infra-core", defaultToken)
+	newSlug := srv.get(t, "/api/v3/orgs/team-org/teams/infra-core", defaultToken)
 	newSlug.Body.Close()
 	if newSlug.StatusCode != http.StatusOK {
 		t.Fatalf("renamed slug lookup: got %d, want 200", newSlug.StatusCode)
 	}
-	oldSlug := ghGet(t, "/api/v3/orgs/team-org/teams/platform-infra", defaultToken)
+	oldSlug := srv.get(t, "/api/v3/orgs/team-org/teams/platform-infra", defaultToken)
 	oldSlug.Body.Close()
 	if oldSlug.StatusCode != http.StatusNotFound {
 		t.Fatalf("stale slug lookup: got %d, want 404", oldSlug.StatusCode)
@@ -453,8 +463,10 @@ func TestTeamHierarchyAndRoles(t *testing.T) {
 }
 
 func TestOrgWebhooks(t *testing.T) {
-	createOrgViaAdminAPI(t, "hook-org")
-	ghPost(t, "/api/v3/orgs/hook-org/repos", defaultToken, map[string]interface{}{"name": "hooked-repo"}).Body.Close()
+	t.Parallel()
+	srv := newIsolatedServer(t)
+	srv.createOrg(t, "hook-org")
+	srv.post(t, "/api/v3/orgs/hook-org/repos", defaultToken, map[string]interface{}{"name": "hooked-repo"}).Body.Close()
 
 	// Capture deliveries.
 	var mu sync.Mutex
@@ -468,7 +480,7 @@ func TestOrgWebhooks(t *testing.T) {
 	defer sink.Close()
 
 	// name=web is mandatory on org hooks.
-	noName := ghPost(t, "/api/v3/orgs/hook-org/hooks", defaultToken, map[string]interface{}{
+	noName := srv.post(t, "/api/v3/orgs/hook-org/hooks", defaultToken, map[string]interface{}{
 		"config": map[string]interface{}{"url": sink.URL},
 	})
 	noName.Body.Close()
@@ -476,7 +488,7 @@ func TestOrgWebhooks(t *testing.T) {
 		t.Fatalf("org hook without name: got %d, want 422", noName.StatusCode)
 	}
 
-	create := ghPost(t, "/api/v3/orgs/hook-org/hooks", defaultToken, map[string]interface{}{
+	create := srv.post(t, "/api/v3/orgs/hook-org/hooks", defaultToken, map[string]interface{}{
 		"name":   "web",
 		"config": map[string]interface{}{"url": sink.URL, "content_type": "json"},
 		"events": []string{"*"},
@@ -492,12 +504,12 @@ func TestOrgWebhooks(t *testing.T) {
 	}
 
 	// CRUD: get, list, patch.
-	get := ghGet(t, jsonHookPath("hook-org", hookID), defaultToken)
+	get := srv.get(t, jsonHookPath("hook-org", hookID), defaultToken)
 	get.Body.Close()
 	if get.StatusCode != http.StatusOK {
 		t.Fatalf("get org hook: got %d", get.StatusCode)
 	}
-	patch := ghPatch(t, jsonHookPath("hook-org", hookID), defaultToken, map[string]interface{}{
+	patch := srv.patch(t, jsonHookPath("hook-org", hookID), defaultToken, map[string]interface{}{
 		"events": []string{"push", "issues", "organization"},
 	})
 	if patch.StatusCode != http.StatusOK {
@@ -510,14 +522,14 @@ func TestOrgWebhooks(t *testing.T) {
 	}
 
 	// Ping delivers with the organization target type.
-	ping := ghPost(t, jsonHookPath("hook-org", hookID)+"/pings", defaultToken, nil)
+	ping := srv.post(t, jsonHookPath("hook-org", hookID)+"/pings", defaultToken, nil)
 	ping.Body.Close()
 	if ping.StatusCode != http.StatusNoContent {
 		t.Fatalf("ping: got %d, want 204", ping.StatusCode)
 	}
 
 	// A repo event on an org-owned repo fans out to the org hook.
-	issue := ghPost(t, "/api/v3/repos/hook-org/hooked-repo/issues", defaultToken,
+	issue := srv.post(t, "/api/v3/repos/hook-org/hooked-repo/issues", defaultToken,
 		map[string]interface{}{"title": "fan-out"})
 	issue.Body.Close()
 	if issue.StatusCode != http.StatusCreated {
@@ -542,7 +554,7 @@ func TestOrgWebhooks(t *testing.T) {
 	// Deliveries are introspectable.
 	var deliveryCount int
 	waitFor(t, func() bool {
-		dl := ghGet(t, jsonHookPath("hook-org", hookID)+"/deliveries", defaultToken)
+		dl := srv.get(t, jsonHookPath("hook-org", hookID)+"/deliveries", defaultToken)
 		var deliveries []map[string]interface{}
 		if err := json.NewDecoder(dl.Body).Decode(&deliveries); err != nil {
 			t.Fatal(err)
@@ -553,8 +565,8 @@ func TestOrgWebhooks(t *testing.T) {
 	}, "org hook deliveries not recorded")
 
 	// Org membership changes emit the organization event to org hooks.
-	newSharedServerUser(t, "hookling")
-	ghPut(t, "/api/v3/orgs/hook-org/memberships/hookling", defaultToken,
+	srv.newUser(t, "hookling")
+	srv.put(t, "/api/v3/orgs/hook-org/memberships/hookling", defaultToken,
 		map[string]interface{}{"role": "member"}).Body.Close()
 	waitFor(t, func() bool {
 		mu.Lock()
@@ -568,12 +580,12 @@ func TestOrgWebhooks(t *testing.T) {
 	}, "organization event for member_invited not delivered")
 
 	// Delete; the hook stops resolving.
-	del := ghDelete(t, jsonHookPath("hook-org", hookID), defaultToken)
+	del := srv.delete(t, jsonHookPath("hook-org", hookID), defaultToken)
 	del.Body.Close()
 	if del.StatusCode != http.StatusNoContent {
 		t.Fatalf("delete org hook: got %d, want 204", del.StatusCode)
 	}
-	gone := ghGet(t, jsonHookPath("hook-org", hookID), defaultToken)
+	gone := srv.get(t, jsonHookPath("hook-org", hookID), defaultToken)
 	gone.Body.Close()
 	if gone.StatusCode != http.StatusNotFound {
 		t.Fatalf("get after delete: got %d, want 404", gone.StatusCode)
@@ -587,7 +599,9 @@ func jsonHookPath(org string, id int) string {
 // TestGraphQLUserOrganizations mirrors the exact query `gh org list` sends:
 // a root user(login:) lookup with the organizations connection.
 func TestGraphQLUserOrganizations(t *testing.T) {
-	createOrgViaAdminAPI(t, "gql-org")
+	t.Parallel()
+	srv := newIsolatedServer(t)
+	srv.createOrg(t, "gql-org")
 
 	query := `query OrganizationList($user: String!, $limit: Int!) {
 		user(login: $user) {
@@ -599,7 +613,7 @@ func TestGraphQLUserOrganizations(t *testing.T) {
 			}
 		}
 	}`
-	resp := ghPost(t, "/api/graphql", defaultToken, map[string]interface{}{
+	resp := srv.post(t, "/api/graphql", defaultToken, map[string]interface{}{
 		"query":     query,
 		"variables": map[string]interface{}{"user": "admin", "limit": 100},
 	})

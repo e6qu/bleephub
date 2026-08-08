@@ -1695,7 +1695,7 @@ func issueToGQL(issue *Issue, st *Store) map[string]interface{} {
 		"closedAt":         closedAt,
 		"isPinned":         false,
 		"locked":           issue.Locked,
-		"activeLockReason": graphQLLockReason(issue.ActiveLockReason),
+		"activeLockReason": graphQLLockReason(string(issue.ActiveLockReason)),
 		"author":           author,
 		"labels": map[string]interface{}{
 			"nodes":      labelNodes,

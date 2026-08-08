@@ -141,13 +141,13 @@
       },
       {
         "event": "pull_request_review",
-        "line": 968,
+        "line": 988,
         "producer": "emitWebhookEvent",
         "source": "internal/server/gh_pulls_rest.go"
       },
       {
         "event": "pull_request_review",
-        "line": 1022,
+        "line": 1042,
         "producer": "emitWebhookEvent",
         "source": "internal/server/gh_pulls_rest.go"
       },
@@ -2948,6 +2948,33 @@
         "status_kind": "fixed"
       },
       {
+        "category": "STORE",
+        "finding": "Alert lifecycle states and reasons (code-scanning `state`/`dismissed_reason`, secret-scanning `state`/`resolution`, issue/PR `active_lock_reason`) were free `string` fields whose valid sets lived only in comments and scattered literals \u2014 a typo or drifted value was representable",
+        "id": "STORE-075",
+        "location": "store_code_scanning.go:23, store_secret_scanning.go:42, store_issues.go:55",
+        "severity": "m",
+        "status": "fixed \u2014 introduced typed enums `CodeScanningState`/`CodeScanningDismissedReason`, `SecretScanningState`/`SecretScanningResolution`, and `LockReason` with the documented constant sets; the struct fields carry the types, validators/serialisers convert only at the REST boundary, and JSON output is byte-identical (typed strings marshal as strings). Behaviour-preserving; scanning + lock/moderation suites green",
+        "status_kind": "fixed"
+      },
+      {
+        "category": "REST",
+        "finding": "`handleUpdatePRReview` wrote the review body by global id (`UpdatePullRequestReview` looks reviews up by id alone) *before* scoping it to the PR in the path and never checked authorship \u2014 a caller who owned any repo/PR could `PUT /repos/{owned}/{repo}/pulls/{n}/reviews/{victimReviewID}` and rewrite a review living on another repository, and the late 404 hid that the write had already landed; even naming the correct repo, a non-author could edit another user's review",
+        "id": "REST-122",
+        "location": "gh_pulls_rest.go:826",
+        "severity": "B",
+        "status": "fixed \u2014 resolve the review and require `review.PRID == pr.ID` (404) and `review.AuthorID == user.ID` (403, author-only per GitHub) before mutating; unauthenticated is 401. Regression test proves cross-repo 404 + non-author 403 both leave the body unchanged, and the author edit still succeeds",
+        "status_kind": "fixed"
+      },
+      {
+        "category": "REST",
+        "finding": "`handleMergePullRequest` gates only on `user != nil` (and branch protection, which passes when none is configured); a read-only authenticated user can merge an open PR on a public repo with no protection. GitHub requires write access",
+        "id": "REST-123",
+        "location": "gh_pulls_rest.go:443",
+        "severity": "M",
+        "status": "open \u2014 consistent with the rest of the PR surface: neither `handleCreatePullRequest`, `handleUpdatePullRequest` (close/reopen/base) nor merge model collaborator push-access, so this is a uniform design gap, not an isolated merge bug. Gating merge alone would be inconsistent and risks parity; the whole PR-write surface should adopt a push-access check together \u2014 a product decision, flagged for a call",
+        "status_kind": "open"
+      },
+      {
         "category": "GQL",
         "finding": "The project lane's NOT_FOUND wording differs in capitalisation from the repository lane's `gqlMissingNode`",
         "id": "GQL-058",
@@ -5113,7 +5140,7 @@
         "id": "TEST-008",
         "location": "bleephub_test.go:29",
         "severity": "B",
-        "status": "partial \u2014 migration underway. `newIsolatedServer` (isolated_server_test.go) gives each test its own fully-routed `httptest` server + store, seeded like the shared one, with a per-server pinned clock, so a converted test can call `t.Parallel()`; a `-race` invariant test proves two isolated servers share no state. The shared `testServer` stays alive during the transition; converted so far: `gh_codes_of_conduct_test.go` (batch 1), then `git_http_test.go`, `gh_org_hooks_config_test.go`, `projects_v2_content_test.go`, `gh_agents_tasks_test.go`, `gh_org_issues_test.go`, `gh_org_governance_test.go`, `gh_security_reviews_test.go` (batch 2), then `gh_security_advisories_test.go`, `authz_matrix_test.go`, `gh_org_scim_test.go`, `gh_repos_phase1_test.go` (batch 3), with `patch`/`put`/`delete`/`seedRepo`/`createOrg`/`authedGet`/`authedPost` helpers added to `isolatedServer`. `TestReliabilityDebtOnlyShrinks` ratchets the shared-harness file/reference ceilings down (now 117/1405) so each converted group locks in its progress. Remaining: convert the rest of the files group by group",
+        "status": "partial \u2014 migration underway. `newIsolatedServer` (isolated_server_test.go) gives each test its own fully-routed `httptest` server + store, seeded like the shared one, with a per-server pinned clock, so a converted test can call `t.Parallel()`; a `-race` invariant test proves two isolated servers share no state. The shared `testServer` stays alive during the transition; converted so far: `gh_codes_of_conduct_test.go` (batch 1), then `git_http_test.go`, `gh_org_hooks_config_test.go`, `projects_v2_content_test.go`, `gh_agents_tasks_test.go`, `gh_org_issues_test.go`, `gh_org_governance_test.go`, `gh_security_reviews_test.go` (batch 2), then `gh_security_advisories_test.go`, `authz_matrix_test.go`, `gh_org_scim_test.go`, `gh_repos_phase1_test.go` (batch 3), then `gh_events_feeds_test.go`, `gh_actions_hosted_runners_test.go`, `gh_issue_types_test.go`, `gh_org_membership_flow_test.go`, `gh_orgs_people_rest_test.go` (batch 4), with `patch`/`put`/`delete`/`seedRepo`/`createOrg`/`createTestOrg`/`createTestRepo`/`createTestUser`/`createOrgRepoForGovernance`/`activateOrgMember`/`newUser`/`authedGet`/`authedPost` helpers added to `isolatedServer`. `TestReliabilityDebtOnlyShrinks` ratchets the shared-harness file/reference ceilings down (now 113/1382) so each converted group locks in its progress. Remaining: convert the rest of the files group by group",
         "status_kind": "partial"
       },
       {
@@ -6387,18 +6414,19 @@
         },
         "REST": {
           "status": {
-            "fixed": 120,
+            "fixed": 121,
+            "open": 1,
             "partial": 1
           },
-          "total": 121
+          "total": 123
         },
         "STORE": {
           "status": {
-            "fixed": 61,
+            "fixed": 62,
             "open": 4,
             "partial": 9
           },
-          "total": 74
+          "total": 75
         },
         "TEST": {
           "status": {
@@ -6418,17 +6446,17 @@
         }
       },
       "severity": {
-        "blocker": 162,
-        "major": 372,
-        "minor": 142
+        "blocker": 163,
+        "major": 373,
+        "minor": 143
       },
       "status": {
         "deferred": 1,
-        "fixed": 612,
-        "open": 36,
+        "fixed": 614,
+        "open": 37,
         "partial": 27
       },
-      "total": 676
+      "total": 679
     }
   },
   "rest": {

@@ -36,6 +36,20 @@ type Milestone struct {
 	UpdatedAt   time.Time
 }
 
+// LockReason is why a conversation is locked. GitHub accepts only these values
+// (lowercase kebab-case in REST; the GraphQL enum is uppercased when emitted).
+// Typing the field keeps the documented set from drifting into free text. The
+// empty value means "locked without a stated reason".
+type LockReason string
+
+const (
+	LockReasonNone      LockReason = ""
+	LockReasonOffTopic  LockReason = "off-topic"
+	LockReasonTooHeated LockReason = "too heated"
+	LockReasonResolved  LockReason = "resolved"
+	LockReasonSpam      LockReason = "spam"
+)
+
 // Issue represents a GitHub issue.
 type Issue struct {
 	ID               int
@@ -52,7 +66,7 @@ type Issue struct {
 	MilestoneID      int // 0 = none
 	IssueTypeID      int // 0 = none; organization issue type ID
 	Locked           bool
-	ActiveLockReason string // "", "off-topic", "too heated", "resolved", "spam"
+	ActiveLockReason LockReason // empty = locked without a stated reason
 	CreatedAt        time.Time
 	UpdatedAt        time.Time
 	ClosedAt         *time.Time
@@ -850,7 +864,7 @@ func (st *Store) LockIssue(repoKey string, issueNumber int, lockReason string) b
 		return false
 	}
 	issue.Locked = true
-	issue.ActiveLockReason = lockReason
+	issue.ActiveLockReason = LockReason(lockReason)
 	issue.UpdatedAt = st.currentTime()
 	if st.persist != nil {
 		st.persist.MustPut("issues", strconv.Itoa(issue.ID), issue)
@@ -1204,7 +1218,7 @@ func (st *Store) SetIssueOrPRLock(repoID, number int, locked bool, reason string
 		if i.RepoID == repoID && i.Number == number {
 			i.Locked = locked
 			if locked {
-				i.ActiveLockReason = reason
+				i.ActiveLockReason = LockReason(reason)
 			} else {
 				i.ActiveLockReason = ""
 			}
@@ -1218,7 +1232,7 @@ func (st *Store) SetIssueOrPRLock(repoID, number int, locked bool, reason string
 		if pr.RepoID == repoID && pr.Number == number {
 			pr.Locked = locked
 			if locked {
-				pr.ActiveLockReason = reason
+				pr.ActiveLockReason = LockReason(reason)
 			} else {
 				pr.ActiveLockReason = ""
 			}

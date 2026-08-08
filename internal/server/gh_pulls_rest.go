@@ -824,6 +824,11 @@ func (s *Server) handleGetPRReview(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleUpdatePRReview(w http.ResponseWriter, r *http.Request) {
+	user := ghUserFromContext(r.Context())
+	if user == nil {
+		writeGHError(w, http.StatusUnauthorized, "Bad credentials")
+		return
+	}
 	repo := s.lookupRepoFromPath(r)
 	if repo == nil {
 		writeGHError(w, http.StatusNotFound, "Not Found")
@@ -848,6 +853,21 @@ func (s *Server) handleUpdatePRReview(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Resolve and scope the review to this PR *before* mutating it: the store
+	// looks reviews up by global id alone, so writing first would let a caller
+	// who names any repo/PR they control edit a review that lives on another
+	// repository. Only then enforce that the caller authored it — GitHub allows
+	// just the review's author to edit its summary text.
+	review := s.store.GetPullRequestReview(reviewID)
+	if review == nil || review.PRID != pr.ID {
+		writeGHError(w, http.StatusNotFound, "Not Found")
+		return
+	}
+	if review.AuthorID != user.ID {
+		writeGHError(w, http.StatusForbidden, "Only the author of the review can update it")
+		return
+	}
+
 	var req struct {
 		Body string `json:"body"`
 	}
@@ -860,8 +880,8 @@ func (s *Server) handleUpdatePRReview(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	review := s.store.GetPullRequestReview(reviewID)
-	if review == nil || review.PRID != pr.ID {
+	review = s.store.GetPullRequestReview(reviewID)
+	if review == nil {
 		writeGHError(w, http.StatusNotFound, "Not Found")
 		return
 	}

@@ -2269,7 +2269,7 @@ func pullRequestToGQL(pr *PullRequest, st *Store) map[string]interface{} {
 		"updatedAt":        pr.UpdatedAt.Format(time.RFC3339),
 		"closedAt":         closedAt,
 		"locked":           pr.Locked,
-		"activeLockReason": graphQLLockReason(pr.ActiveLockReason),
+		"activeLockReason": graphQLLockReason(string(pr.ActiveLockReason)),
 		"milestone":        prMilestoneToGQLLocked(pr, st),
 		"labels": map[string]interface{}{
 			"nodes":      labelNodes,

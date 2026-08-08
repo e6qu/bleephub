@@ -584,7 +584,7 @@ func codeScanningAlertToJSON(a *CodeScanningAlert, baseURL string, repo *Repo) m
 		"fixed_at":          fixedAt,
 		"dismissed_by":      dismissedBy,
 		"dismissed_at":      dismissedAt,
-		"dismissed_reason":  nullOrString(a.DismissedReason),
+		"dismissed_reason":  nullOrString(string(a.DismissedReason)),
 		"dismissed_comment": nullOrString(a.DismissedComment),
 		"rule": map[string]interface{}{
 			"id":          a.RuleID,
