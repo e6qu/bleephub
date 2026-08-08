@@ -4445,10 +4445,10 @@
         "category": "CORE",
         "finding": "No `OTEL_*` variable in the task definition, so the whole telemetry stack is inert in the shipped deployment",
         "id": "CORE-021",
-        "location": "otel.go:41, terraform/main.tf:792",
+        "location": "otel.go:41, terraform/main.tf:1416",
         "severity": "M",
-        "status": "open",
-        "status_kind": "open"
+        "status": "fixed \u2014 the server already gates export on `OTEL_EXPORTER_OTLP_ENDPOINT` (`otelExporterConfigured`, CORE-022) but the ECS task definition never set it, so there was no way to turn the stack on. Added a `otel_exporter_otlp_endpoint` variable (plus `otel_service_name`) and a conditional block in the task-def `environment` concat: empty (default) adds no `OTEL_*` vars \u2014 identical to the shipped behaviour \u2014 and setting the endpoint injects `OTEL_EXPORTER_OTLP_ENDPOINT`/`OTEL_SERVICE_NAME`, the single switch that activates traces/logs/metrics. `terraform fmt`/`validate` clean; `terraform test` 21/21 pass",
+        "status_kind": "fixed"
       },
       {
         "category": "CORE",
@@ -6446,8 +6446,8 @@
         },
         "CORE": {
           "status": {
-            "fixed": 29,
-            "open": 3,
+            "fixed": 30,
+            "open": 2,
             "partial": 1
           },
           "total": 33
@@ -6506,8 +6506,8 @@
       },
       "status": {
         "deferred": 1,
-        "fixed": 628,
-        "open": 31,
+        "fixed": 629,
+        "open": 30,
         "partial": 25
       },
       "total": 685
