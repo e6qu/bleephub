@@ -3529,8 +3529,8 @@
         "id": "ACT-052",
         "location": "artifacts.go:966",
         "severity": "m",
-        "status": "partial \u2014 constant-time token comparison and persisted restore-time `LastAccessedAt` landed; policy-driven eviction remains open",
-        "status_kind": "partial"
+        "status": "fixed \u2014 constant-time token comparison and persisted restore-time `LastAccessedAt` landed earlier; finalizing a cache now enforces a per-repository budget (`maxRepoCacheBytes`, GitHub's 10 GiB default; a per-instance field so tests drive it small) via `evictRepoCacheOverLimit`, which deletes least-recently-used finalized entries (oldest `LastAccessedAt`, id breaking ties) until the repo is back under budget, byte-deletes outside the lock. LRU-order regression test",
+        "status_kind": "fixed"
       },
       {
         "category": "ACT",
@@ -3808,8 +3808,8 @@
         "id": "STORE-024",
         "location": "persistence.go:436, gh_api_insights.go:271",
         "severity": "M",
-        "status": "open",
-        "status_kind": "open"
+        "status": "fixed \u2014 the request log's FIFO eviction was in-memory only: `RecordAPIRequest` capped `APIRequestRecords` but never deleted the evicted rows' durable `api_insights_requests` entries, so the bucket grew by one row per request forever (and the load path re-trimmed only in memory). Eviction now `MustDelete`s the evicted durable rows, and the load path `Delete`s any excess a pre-fix instance leaked, so the bucket converges to the cap. The cap is a per-Store field (`apiRequestRecordCap`, default `maxAPIRequestRecords`=10000) so a reload+runtime test drives it small and asserts the durable row count stays bounded to the newest-N. (`List` materialising whole buckets is the persistence design; bounding this bucket removes the growth this row is about.)",
+        "status_kind": "fixed"
       },
       {
         "category": "STORE",
@@ -3826,8 +3826,8 @@
         "id": "STORE-026",
         "location": "store_packages.go:304, store_code_scanning.go:883",
         "severity": "M",
-        "status": "open",
-        "status_kind": "open"
+        "status": "fixed \u2014 the CodeQL-database path already reclaims the superseded archive and compensates on metadata-persist failure (`UpsertCodeQLDatabase` deletes `previous` when its content-addressed path changes, with rollback), and package files use monotonic ids (no reuse). The remaining gap was `CreatePackageVersion`: a multi-file version wrote each file's bytes before committing any metadata, so a mid-loop write failure orphaned the bytes already written. It now tracks written blobs and deletes them (object store or local dir) on any write/mkdir failure before returning. Regression test with a byte store that fails the 2nd write asserts zero orphaned blobs and no committed metadata",
+        "status_kind": "fixed"
       },
       {
         "category": "STORE",
@@ -3997,8 +3997,8 @@
         "id": "STORE-045",
         "location": "gh_actions_permissions.go:343 + branch_protection",
         "severity": "M",
-        "status": "partial \u2014 the original `store_repos.go` site is gone (line reference was stale); `gh_actions_permissions.go` carries the documented safe-copy rationale, and the surveyed `[:0]` filters (e.g. `gh_branch_protection.go:1303`) run on handler-owned clones from `cloneBranchProtection`, not on a stored slice a concurrent reader holds. Remaining work is a `-race`-backed audit of the residual `[:0]` sites, intertwined with STORE-021",
-        "status_kind": "partial"
+        "status": "fixed \u2014 every in-place `[:0]` filter that operates on a *stored* slice (a concurrent reader could hold its backing array) now uses the full three-index reslice `[:0:0]`, forcing `append` to allocate a fresh array instead of overwriting the original: `s.store.PendingMessages` (\u00d73: run-control + workflows), `OrgOIDCPropertyInclusions`, `Misc.keysByUser`, enterprise `team.MemberIDs`, hosted-runner `img.Versions`, codespace `access.SelectedUsernames`, runner-group `a.Labels` (\u00d72), org-actions `p.SelfHostedRunnersSelectedRepoIDs`. The residual `[:0]` sites operate on handler-owned freshly-listed/cloned locals no external reader holds. Full `-race` suite green",
+        "status_kind": "fixed"
       },
       {
         "category": "STORE",
@@ -4445,10 +4445,10 @@
         "category": "CORE",
         "finding": "No `OTEL_*` variable in the task definition, so the whole telemetry stack is inert in the shipped deployment",
         "id": "CORE-021",
-        "location": "otel.go:41, terraform/main.tf:792",
+        "location": "otel.go:41, terraform/main.tf:1416",
         "severity": "M",
-        "status": "open",
-        "status_kind": "open"
+        "status": "fixed \u2014 the server already gates export on `OTEL_EXPORTER_OTLP_ENDPOINT` (`otelExporterConfigured`, CORE-022) but the ECS task definition never set it, so there was no way to turn the stack on. Added a `otel_exporter_otlp_endpoint` variable (plus `otel_service_name`) and a conditional block in the task-def `environment` concat: empty (default) adds no `OTEL_*` vars \u2014 identical to the shipped behaviour \u2014 and setting the endpoint injects `OTEL_EXPORTER_OTLP_ENDPOINT`/`OTEL_SERVICE_NAME`, the single switch that activates traces/logs/metrics. `terraform fmt`/`validate` clean; `terraform test` 21/21 pass",
+        "status_kind": "fixed"
       },
       {
         "category": "CORE",
@@ -5336,10 +5336,10 @@
         "category": "TEST",
         "finding": "Test dependencies cloned from a branch tip and downloaded without checksums",
         "id": "TEST-024",
-        "location": "bleephub_ecs_test.go:80, Dockerfile:83",
+        "location": "test/terraform-sockerless/bleephub_ecs_test.go:81, Dockerfile.gh-test:25",
         "severity": "M",
-        "status": "open",
-        "status_kind": "open"
+        "status": "fixed \u2014 `resolveSockerlessRepository` now init+fetches the sockerless simulator at an exact pinned commit (`sockerlessPinnedSHA`, GitHub honours fetch-by-sha; the hash is the integrity check) instead of `git clone --depth=1` of the moving branch tip; verified the pinned fetch resolves. The `gh.deb` download in Dockerfile.gh-test was already pinned by version and verified with `sha256sum --check --strict` against per-arch `GH_SHA256_*`. Original stale line refs updated",
+        "status_kind": "fixed"
       },
       {
         "category": "TEST",
@@ -5372,10 +5372,10 @@
         "category": "TEST",
         "finding": "A test named for interval refetching has no fake timers and would pass if the interval were deleted",
         "id": "TEST-028",
-        "location": "hooks.test.tsx:56",
+        "location": "web/core/src/__tests__/hooks.test.tsx:56",
         "severity": "M",
-        "status": "open",
-        "status_kind": "open"
+        "status": "fixed \u2014 `useStatus re-fetches on its 5s interval` now installs `vi.useFakeTimers()`, settles the initial fetch, then advances the clock one `refetchInterval` (5s) at a time and asserts the fetch count climbs 1\u21922\u21923, plus that a partial (2s) interval triggers none. Deleting the `refetchInterval` would pin the count at 1 and fail the test \u2014 the assertion-free original could not. Web typecheck + all 49 core tests pass",
+        "status_kind": "fixed"
       },
       {
         "category": "TEST",
@@ -6155,10 +6155,10 @@
         "category": "CI",
         "finding": "Fork pull requests run a fork-built image with the host Docker socket mounted",
         "id": "CI-038",
-        "location": "ci.yml:118",
+        "location": "ci.yml (runner-sockerless job)",
         "severity": "M",
-        "status": "open",
-        "status_kind": "open"
+        "status": "fixed \u2014 the `runner-sockerless` job builds an image from the PR's checked-out code and runs it with `-v /var/run/docker.sock` (host Docker daemon), so a fork PR would hand untrusted code control of the runner's Docker daemon (host compromise). The job is now gated `if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository`, so it runs on push and same-repository PRs (still covered here) but fork PRs skip it. It is the only job that bind-mounts the socket. actionlint clean",
+        "status_kind": "fixed"
       },
       {
         "category": "CI",
@@ -6290,10 +6290,10 @@
         "category": "CI",
         "finding": "Committed build output shipped into the build context, then overwritten",
         "id": "CI-053",
-        "location": ".dockerignore",
+        "location": "Dockerfile.release.dockerignore",
         "severity": "m",
-        "status": "open \u2014 the naive fix (dockerignore internal/server/dist) is wrong: a single global .dockerignore also strips it from the shauth-sso-test build, whose `go:embed all:dist` compiles the committed copy directly (no ui-builder regen stage), breaking that image with \"pattern all:dist: no matching files found\". A correct fix needs per-Dockerfile scoping or making every embed build regenerate dist first",
-        "status_kind": "open"
+        "status": "fixed \u2014 added a per-Dockerfile `Dockerfile.release.dockerignore` (BuildKit honours `<dockerfile>.dockerignore` in preference to the global one, and it *replaces* rather than merges, so it repeats every global rule). Its one addition is `internal/server/dist`: the release image's `builder` stage does `COPY . .` then `COPY --from=ui-builder \u2026/web/dist ./internal/server/dist/` *before* `go build`, so the committed copy shipped into context was pure waste that the fresh build overwrote. Excluding it there is safe (the embed sees the regenerated dist from the ui-builder copy) and worst-case a no-op; the gh-test and shauth images embed the committed dist directly and keep using the global `.dockerignore`, which does not list it. Release-images CI validates the embed",
+        "status_kind": "fixed"
       },
       {
         "category": "CI",
@@ -6417,9 +6417,9 @@
       "categories": {
         "ACT": {
           "status": {
-            "fixed": 53,
+            "fixed": 54,
             "open": 1,
-            "partial": 7
+            "partial": 6
           },
           "total": 61
         },
@@ -6438,16 +6438,16 @@
         },
         "CI": {
           "status": {
-            "fixed": 57,
-            "open": 6,
+            "fixed": 59,
+            "open": 4,
             "partial": 2
           },
           "total": 65
         },
         "CORE": {
           "status": {
-            "fixed": 29,
-            "open": 3,
+            "fixed": 30,
+            "open": 2,
             "partial": 1
           },
           "total": 33
@@ -6476,16 +6476,16 @@
         },
         "STORE": {
           "status": {
-            "fixed": 65,
-            "open": 4,
-            "partial": 9
+            "fixed": 68,
+            "open": 2,
+            "partial": 8
           },
           "total": 78
         },
         "TEST": {
           "status": {
-            "fixed": 28,
-            "open": 10,
+            "fixed": 30,
+            "open": 8,
             "partial": 2
           },
           "total": 40
@@ -6506,9 +6506,9 @@
       },
       "status": {
         "deferred": 1,
-        "fixed": 620,
-        "open": 37,
-        "partial": 27
+        "fixed": 629,
+        "open": 30,
+        "partial": 25
       },
       "total": 685
     }
@@ -19528,13 +19528,13 @@
         "source": "internal/server/gh_actions_extras.go"
       },
       {
-        "line": 790,
+        "line": 799,
         "method": "DELETE",
         "path": "/api/v3/repos/{owner}/{repo}/actions/caches",
         "source": "internal/server/artifacts.go"
       },
       {
-        "line": 792,
+        "line": 801,
         "method": "DELETE",
         "path": "/api/v3/repos/{owner}/{repo}/actions/caches/{cache_id}",
         "source": "internal/server/artifacts.go"
@@ -22606,7 +22606,7 @@
         "source": "internal/server/gh_actions_permissions.go"
       },
       {
-        "line": 794,
+        "line": 803,
         "method": "GET",
         "path": "/api/v3/repos/{owner}/{repo}/actions/cache/usage",
         "source": "internal/server/artifacts.go"
@@ -22618,7 +22618,7 @@
         "source": "internal/server/gh_actions_permissions.go"
       },
       {
-        "line": 789,
+        "line": 798,
         "method": "GET",
         "path": "/api/v3/repos/{owner}/{repo}/actions/caches",
         "source": "internal/server/artifacts.go"

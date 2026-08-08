@@ -148,6 +148,18 @@ variable "github_oauth_client_id" {
   default     = ""
 }
 
+variable "otel_exporter_otlp_endpoint" {
+  description = "OTLP collector endpoint (e.g. https://otel-collector:4318) for the OpenTelemetry traces/logs/metrics the server already emits. Empty (default) leaves telemetry export off — the task definition adds no OTEL_* variables, matching the current shipped behaviour — so setting this is the single switch that activates the otherwise-inert telemetry stack (CORE-021/CORE-022)."
+  type        = string
+  default     = ""
+}
+
+variable "otel_service_name" {
+  description = "OTEL_SERVICE_NAME reported to the collector when otel_exporter_otlp_endpoint is set."
+  type        = string
+  default     = "bleephub"
+}
+
 variable "github_oauth_client_secret_arn" {
   description = "Existing AWS Secrets Manager ARN holding the rotated GitHub OAuth App client secret. Terraform never reads or stores its value."
   type        = string

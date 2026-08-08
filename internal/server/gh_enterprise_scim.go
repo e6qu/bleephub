@@ -576,7 +576,7 @@ func (s *Server) syncSCIMGroupTeamLocked(group *EnterpriseSCIMGroup) {
 		delete(s.store.EnterpriseTeamsBySlug, oldSlug)
 		s.store.EnterpriseTeamsBySlug[team.Slug] = team
 	}
-	team.MemberIDs = team.MemberIDs[:0]
+	team.MemberIDs = team.MemberIDs[:0:0]
 	for _, member := range group.Members {
 		if user := s.store.EnterpriseSettings.SCIMUsers[member.Value]; user != nil {
 			team.MemberIDs = append(team.MemberIDs, user.UserID)

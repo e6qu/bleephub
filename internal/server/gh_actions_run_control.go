@@ -144,7 +144,7 @@ func (s *Server) forceCancelWorkflow(wf *Workflow) {
 		s.queueActionsEvent(evJobCompleted, wf, wfJob)
 	}
 	if len(cancelledJobIDs) > 0 {
-		kept := s.store.PendingMessages[:0]
+		kept := s.store.PendingMessages[:0:0]
 		for _, msg := range s.store.PendingMessages {
 			if !cancelledJobIDs[msg.JobID] {
 				kept = append(kept, msg)

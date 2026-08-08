@@ -486,6 +486,14 @@ jobs:
     name: Runner against Sockerless
     runs-on: ubuntu-latest
     timeout-minutes: 15
+    # This job builds an image from the PR's checked-out code and runs it with
+    # the host Docker socket bind-mounted (make runner-sockerless-test). Never
+    # do that for code from a fork: it would grant untrusted PR code control of
+    # the runner's Docker daemon, i.e. host compromise. Runs on push and on
+    # same-repository pull requests only; fork PRs skip it (CI-038).
+    if: >-
+      github.event_name != 'pull_request' ||
+      github.event.pull_request.head.repo.full_name == github.repository
     steps:
       - *checkout
       # Pinned to a commit for the same reason the shauth checkout above is:

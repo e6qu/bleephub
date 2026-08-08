@@ -252,7 +252,7 @@ func (s *Server) handleDeleteGHESPublicKeys(w http.ResponseWriter, r *http.Reque
 			return
 		}
 		delete(s.store.Misc.userKeys, id)
-		filtered := s.store.Misc.keysByUser[key.UserID][:0]
+		filtered := s.store.Misc.keysByUser[key.UserID][:0:0]
 		for _, candidate := range s.store.Misc.keysByUser[key.UserID] {
 			if candidate.ID != id {
 				filtered = append(filtered, candidate)

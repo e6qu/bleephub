@@ -1181,7 +1181,7 @@ func (st *Store) ModifyOrgCodespacesAccessUsers(orgLogin string, add bool, usern
 		for _, u := range usernames {
 			remove[strings.ToLower(u)] = true
 		}
-		kept := access.SelectedUsernames[:0]
+		kept := access.SelectedUsernames[:0:0]
 		for _, u := range access.SelectedUsernames {
 			if !remove[strings.ToLower(u)] {
 				kept = append(kept, u)

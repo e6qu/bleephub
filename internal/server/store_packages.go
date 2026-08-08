@@ -309,6 +309,21 @@ func (st *Store) CreatePackageVersion(ownerType, ownerKey, pkgType, pkgName, ver
 		UpdatedAt:   now,
 	}
 	persistedFiles := make([]*PackageFile, 0, len(decodedFiles))
+	// A multi-file version writes each file's bytes before any metadata is
+	// committed. If a later write fails we must remove the bytes already written
+	// for this version, or a partial upload leaves orphaned blobs no metadata
+	// references and nothing ever reclaims (STORE-026). Track them and clean up
+	// on any failure below.
+	writtenBlobs := make([]string, 0, len(decodedFiles))
+	cleanupWrittenBlobs := func() {
+		for _, path := range writtenBlobs {
+			if st.ObjectByteStore != nil {
+				_ = st.ObjectByteStore.Delete(context.Background(), path)
+			} else {
+				_ = os.Remove(path)
+			}
+		}
+	}
 	for i, fin := range decodedFiles {
 		fid := st.NextPackageFileID + i
 		pf := &PackageFile{
@@ -322,16 +337,21 @@ func (st *Store) CreatePackageVersion(ownerType, ownerKey, pkgType, pkgName, ver
 		if st.ObjectByteStore != nil {
 			pf.StoragePath = packageFileDataKey(fid)
 			if err := st.ObjectByteStore.Put(context.Background(), pf.StoragePath, fin.Data); err != nil {
+				cleanupWrittenBlobs()
 				return nil, fmt.Errorf("write package file %s: %w", fin.Name, err)
 			}
+			writtenBlobs = append(writtenBlobs, pf.StoragePath)
 		} else if vdir != "" {
 			pf.StoragePath = filepath.Join(vdir, sanitizePackagePathSegment(fin.Name))
 			if err := os.MkdirAll(vdir, 0o750); err != nil {
+				cleanupWrittenBlobs()
 				return nil, fmt.Errorf("mkdir %s: %w", vdir, err)
 			}
 			if err := os.WriteFile(pf.StoragePath, fin.Data, 0o600); err != nil {
+				cleanupWrittenBlobs()
 				return nil, fmt.Errorf("write file %s: %w", pf.StoragePath, err)
 			}
+			writtenBlobs = append(writtenBlobs, pf.StoragePath)
 		}
 		persistedFiles = append(persistedFiles, pf)
 	}

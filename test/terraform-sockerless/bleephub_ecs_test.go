@@ -78,6 +78,12 @@ ready:
 	os.Exit(code)
 }
 
+// sockerlessPinnedSHA pins the sockerless simulator source to an exact commit
+// so this test is reproducible and cannot be silently retargeted by an upstream
+// push (TEST-024). The commit hash is itself the integrity check. Bump it
+// deliberately when the pinned behaviour needs to change.
+const sockerlessPinnedSHA = "8cb5c17d1b510b0d6be3853365ea0fcc77077d89"
+
 func resolveSockerlessRepository() (string, error) {
 	if configured := os.Getenv("SOCKERLESS_REPOSITORY"); configured != "" {
 		return configured, nil
@@ -87,10 +93,18 @@ func resolveSockerlessRepository() (string, error) {
 		return "", err
 	}
 	checkout := filepath.Join(parent, "sockerless")
-	command := exec.Command("git", "clone", "--depth=1", "https://github.com/e6qu/sockerless.git", checkout)
-	if output, err := command.CombinedOutput(); err != nil {
-		_ = os.RemoveAll(parent)
-		return "", fmt.Errorf("clone sockerless simulator source: %w\\n%s", err, output)
+	// Fetch exactly the pinned commit (GitHub honours fetch-by-sha) rather than
+	// whatever a moving branch tip happens to be at test time.
+	for _, args := range [][]string{
+		{"init", "--quiet", checkout},
+		{"-C", checkout, "remote", "add", "origin", "https://github.com/e6qu/sockerless.git"},
+		{"-C", checkout, "fetch", "--quiet", "--depth=1", "origin", sockerlessPinnedSHA},
+		{"-C", checkout, "checkout", "--quiet", "--detach", "FETCH_HEAD"},
+	} {
+		if output, err := exec.Command("git", args...).CombinedOutput(); err != nil {
+			_ = os.RemoveAll(parent)
+			return "", fmt.Errorf("fetch pinned sockerless simulator source (git %v): %w\n%s", args, err, output)
+		}
 	}
 	return checkout, nil
 }

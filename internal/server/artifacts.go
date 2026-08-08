@@ -37,7 +37,15 @@ type ArtifactStore struct {
 	persist     *Persistence
 	revision    int64
 	refreshMu   sync.Mutex
+	// maxRepoCacheBytes is the per-repository cache budget; finalizing a cache
+	// that pushes a repo over it evicts least-recently-used finalized entries
+	// until the repo is back under budget. Defaults to GitHub's 10 GiB; kept as
+	// a field so tests can drive eviction with small caches.
+	maxRepoCacheBytes int64
 }
+
+// defaultMaxRepoCacheBytes is GitHub's default per-repository Actions cache limit.
+const defaultMaxRepoCacheBytes = 10 << 30
 
 const (
 	actionsArtifactsBucket = "actions_artifacts"
@@ -120,14 +128,15 @@ const maxArtifactChunkBytes = 10 << 30
 
 func NewArtifactStoreWithByteStore(dataDir string, byteStore actionsByteStore) *ArtifactStore {
 	store := &ArtifactStore{
-		artifacts:   make(map[int64]*Artifact),
-		nextID:      1,
-		caches:      make(map[int64]*CacheEntry),
-		cacheIndex:  make(map[string]int64),
-		nextCacheID: 1,
-		logPlans:    make(map[int]string),
-		dataDir:     dataDir,
-		byteStore:   byteStore,
+		artifacts:         make(map[int64]*Artifact),
+		nextID:            1,
+		caches:            make(map[int64]*CacheEntry),
+		cacheIndex:        make(map[string]int64),
+		nextCacheID:       1,
+		logPlans:          make(map[int]string),
+		dataDir:           dataDir,
+		byteStore:         byteStore,
+		maxRepoCacheBytes: defaultMaxRepoCacheBytes,
 	}
 	if dataDir != "" {
 		store.recoverFromDisk()
@@ -943,6 +952,59 @@ func (s *Server) handleRepoCacheUsage(w http.ResponseWriter, r *http.Request) {
 }
 
 // removeCacheFromDisk deletes a cache's on-disk copy. No-op in in-memory mode.
+// evictRepoCacheOverLimit enforces the per-repository cache budget after a
+// finalize. When a repo's finalized caches exceed maxRepoCacheBytes it deletes
+// least-recently-used entries (oldest LastAccessedAt first, id breaking ties)
+// until the repo is back under budget — GitHub's cache eviction policy. Byte
+// deletes run outside the lock, matching the delete handlers' pattern.
+func (s *Server) evictRepoCacheOverLimit(ctx context.Context, repo string) {
+	as := s.artifactStore
+	as.mu.Lock()
+	budget := as.maxRepoCacheBytes
+	if budget <= 0 {
+		as.mu.Unlock()
+		return
+	}
+	var total int64
+	entries := make([]*CacheEntry, 0)
+	for _, e := range as.caches {
+		if e.Repo == repo && e.Finalized {
+			total += e.Size
+			entries = append(entries, e)
+		}
+	}
+	if total <= budget {
+		as.mu.Unlock()
+		return
+	}
+	sort.Slice(entries, func(i, j int) bool {
+		if !entries[i].LastAccessedAt.Equal(entries[j].LastAccessedAt) {
+			return entries[i].LastAccessedAt.Before(entries[j].LastAccessedAt)
+		}
+		return entries[i].ID < entries[j].ID
+	})
+	victims := make([]*CacheEntry, 0)
+	for _, e := range entries {
+		if total <= budget {
+			break
+		}
+		victims = append(victims, e)
+		total -= e.Size
+	}
+	as.mu.Unlock()
+
+	for _, e := range victims {
+		if err := s.removeCacheBytes(ctx, e.ID); err != nil {
+			s.logger.Warn().Err(err).Int64("id", e.ID).Str("repo", repo).Msg("evict over-budget repo cache")
+			continue
+		}
+		as.mu.Lock()
+		delete(as.caches, e.ID)
+		delete(as.cacheIndex, cacheLookupKey(e.Repo, e.Key, e.Version))
+		as.mu.Unlock()
+	}
+}
+
 func (s *Server) removeCacheBytes(ctx context.Context, id int64) error {
 	if s.artifactStore.dataDir != "" {
 		if err := os.RemoveAll(filepath.Join(s.artifactStore.dataDir, "caches", strconv.FormatInt(id, 10))); err != nil {
@@ -1585,6 +1647,10 @@ func (s *Server) handleCacheFinalize(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	s.artifactStore.mu.Unlock()
+
+	// Enforce the per-repository cache budget, evicting LRU entries if this
+	// finalize pushed the repo over it.
+	s.evictRepoCacheOverLimit(r.Context(), repo)
 
 	s.logger.Debug().Int64("id", id).Int64("size", entry.Size).Msg("cache finalized")
 	w.WriteHeader(http.StatusOK)

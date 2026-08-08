@@ -677,6 +677,10 @@ type Store struct {
 	// API insights (gh_api_insights.go)
 	APIRequestRecords []*APIRequestRecord // ordered by ID (oldest first)
 	NextAPIRequestID  int64
+	// apiRequestRecordCap bounds both the in-memory log and its durable bucket;
+	// defaults to maxAPIRequestRecords, kept as a field so tests can exercise
+	// FIFO eviction and durable reclamation with a small cap.
+	apiRequestRecordCap int
 	// fine-grained personal access token administration (gh_org_pat_admin.go)
 	OrgPATGrantRequests map[string]map[int]*OrgPATGrantRequest // org login → request ID → request
 	OrgPATGrants        map[string]map[int]*OrgPATGrant        // org login → grant ID → grant
@@ -1089,7 +1093,8 @@ func NewStore() *Store {
 		// org billing budgets
 		OrgBudgets: map[string]map[string]*OrgBudget{},
 		// API insights
-		NextAPIRequestID: 1,
+		NextAPIRequestID:    1,
+		apiRequestRecordCap: maxAPIRequestRecords,
 		// fine-grained personal access token administration
 		OrgPATGrantRequests: map[string]map[int]*OrgPATGrantRequest{},
 		OrgPATGrants:        map[string]map[int]*OrgPATGrant{},
@@ -2783,7 +2788,19 @@ func (st *Store) loadFromPersistence() error {
 	// API request records arrive in map-iteration order; the in-memory log
 	// is oldest-first (RecordAPIRequest appends), so sort by ID ascending.
 	sort.Slice(st.APIRequestRecords, func(i, j int) bool { return st.APIRequestRecords[i].ID < st.APIRequestRecords[j].ID })
-	if overflow := len(st.APIRequestRecords) - maxAPIRequestRecords; overflow > 0 {
+	recordCap := st.apiRequestRecordCap
+	if recordCap <= 0 {
+		recordCap = maxAPIRequestRecords
+	}
+	if overflow := len(st.APIRequestRecords) - recordCap; overflow > 0 {
+		// Reclaim durable rows beyond the cap that a pre-fix instance leaked, so
+		// the bucket converges to maxAPIRequestRecords instead of only being
+		// trimmed in memory on every load (STORE-024).
+		for _, excess := range st.APIRequestRecords[:overflow] {
+			if err := st.persist.Delete("api_insights_requests", strconv.FormatInt(excess.ID, 10)); err != nil {
+				return fmt.Errorf("prune excess api insights request %d: %w", excess.ID, err)
+			}
+		}
 		st.APIRequestRecords = append([]*APIRequestRecord(nil), st.APIRequestRecords[overflow:]...)
 	}
 

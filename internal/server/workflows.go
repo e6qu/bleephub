@@ -719,7 +719,7 @@ func (s *Server) dispatchReadyJobs(ctx context.Context, wf *Workflow, serverURL 
 					for _, id := range jobsToCancel {
 						cancelled[id] = true
 					}
-					filtered := s.store.PendingMessages[:0]
+					filtered := s.store.PendingMessages[:0:0]
 					for _, message := range s.store.PendingMessages {
 						if !cancelled[message.JobID] {
 							filtered = append(filtered, message)
@@ -1283,7 +1283,7 @@ func (s *Server) cancelWorkflow(wf *Workflow) {
 	// Drop queued-but-undelivered job messages so a runner can't pull a
 	// cancelled job later.
 	if len(cancelledJobIDs) > 0 {
-		kept := s.store.PendingMessages[:0]
+		kept := s.store.PendingMessages[:0:0]
 		for _, msg := range s.store.PendingMessages {
 			if !cancelledJobIDs[msg.JobID] {
 				kept = append(kept, msg)
