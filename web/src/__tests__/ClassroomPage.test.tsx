@@ -224,7 +224,7 @@ describe("ClassroomPage", () => {
   });
 
   it("accepts an invite and hands off to the generated repository", async () => {
-    mockFetch.mockImplementation((input: RequestInfo | URL, init?: RequestInit) => {
+    mockFetch.mockImplementation((_input: RequestInfo | URL, init?: RequestInit) => {
       if (init?.method === "POST") return Promise.resolve(jsonResponse({ id: 1, repository: { full_name: "octo-school/processes-mona", html_url: "/octo-school/processes-mona" } }, 201));
       return Promise.resolve(jsonResponse({ ...classroom.assignments[0], starter_code_repository: { full_name: "octo-school/processes-starter" } }));
     });

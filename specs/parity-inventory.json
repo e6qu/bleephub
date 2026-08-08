@@ -4726,8 +4726,8 @@
         "id": "WEB-019",
         "location": "tsconfig.base.json",
         "severity": "M",
-        "status": "open",
-        "status_kind": "open"
+        "status": "partial \u2014 five of the seven strict-adjacent flags are now enabled repo-wide in `tsconfig.base.json` (`noImplicitReturns`, `noFallthroughCasesInSwitch`, `noImplicitOverride`, `noUnusedLocals`, `noUnusedParameters`), with the surfaced violations fixed (missing `override` on `ErrorBoundary`, and a chain of unused pass-through `owner`/`repo`/`project` props removed from the classic-projects board). Typecheck, build, all 511 web tests and knip stay green. The two remaining flags are a genuine null-safety audit, not a flip: `noUncheckedIndexedAccess` (~90 sites) and `exactOptionalPropertyTypes` (~63 sites) surface ~150 real \"possibly undefined\"/exact-optional violations that each need a per-site guard or type widening. The `eslint-disable` comments document intentional `any`/deps choices and stay pending an eslint-tooling decision (install vs. remove)",
+        "status_kind": "partial"
       },
       {
         "category": "WEB",
@@ -6490,8 +6490,8 @@
         "WEB": {
           "status": {
             "fixed": 55,
-            "open": 5,
-            "partial": 3
+            "open": 4,
+            "partial": 4
           },
           "total": 63
         }
@@ -6504,8 +6504,8 @@
       "status": {
         "deferred": 1,
         "fixed": 636,
-        "open": 24,
-        "partial": 24
+        "open": 23,
+        "partial": 25
       },
       "total": 685
     }
