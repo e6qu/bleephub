@@ -8,31 +8,44 @@ import (
 	"time"
 )
 
+// DependabotAlertState is a Dependabot alert's lifecycle state. Transitions are
+// validated through validateDependabotTransition (open ⇄ dismissed); fixed and
+// auto_dismissed are produced by the platform. A typed string marshals to JSON
+// identically to a plain string.
+type DependabotAlertState string
+
+const (
+	DependabotStateOpen          DependabotAlertState = "open"
+	DependabotStateDismissed     DependabotAlertState = "dismissed"
+	DependabotStateFixed         DependabotAlertState = "fixed"
+	DependabotStateAutoDismissed DependabotAlertState = "auto_dismissed"
+)
+
 // DependabotAlert is a repo-scoped Dependabot security alert.
 type DependabotAlert struct {
-	ID                     int        `json:"id"`
-	NodeID                 string     `json:"node_id"`
-	Number                 int        `json:"number"`
-	RepoKey                string     `json:"repo_key"`
-	PackageName            string     `json:"package_name"`
-	PackageEcosystem       string     `json:"package_ecosystem"`
-	ManifestPath           string     `json:"manifest_path"`
-	VulnerabilityID        string     `json:"vulnerability_id"` // GHSA id
-	CVEID                  string     `json:"cve_id"`
-	Severity               string     `json:"severity"`
-	State                  string     `json:"state"`
-	DismissedReason        string     `json:"dismissed_reason"`
-	DismissedComment       string     `json:"dismissed_comment"`
-	DismissedByLogin       string     `json:"dismissed_by_login"`
-	DismissedAt            *time.Time `json:"dismissed_at"`
-	FixedAt                *time.Time `json:"fixed_at"`
-	AutoDismissedAt        *time.Time `json:"auto_dismissed_at"`
-	Summary                string     `json:"summary"`
-	Description            string     `json:"description"`
-	VulnerableVersionRange string     `json:"vulnerable_version_range"`
-	FirstPatchedVersion    string     `json:"first_patched_version"`
-	CreatedAt              time.Time  `json:"created_at"`
-	UpdatedAt              time.Time  `json:"updated_at"`
+	ID                     int                  `json:"id"`
+	NodeID                 string               `json:"node_id"`
+	Number                 int                  `json:"number"`
+	RepoKey                string               `json:"repo_key"`
+	PackageName            string               `json:"package_name"`
+	PackageEcosystem       string               `json:"package_ecosystem"`
+	ManifestPath           string               `json:"manifest_path"`
+	VulnerabilityID        string               `json:"vulnerability_id"` // GHSA id
+	CVEID                  string               `json:"cve_id"`
+	Severity               string               `json:"severity"`
+	State                  DependabotAlertState `json:"state"`
+	DismissedReason        string               `json:"dismissed_reason"`
+	DismissedComment       string               `json:"dismissed_comment"`
+	DismissedByLogin       string               `json:"dismissed_by_login"`
+	DismissedAt            *time.Time           `json:"dismissed_at"`
+	FixedAt                *time.Time           `json:"fixed_at"`
+	AutoDismissedAt        *time.Time           `json:"auto_dismissed_at"`
+	Summary                string               `json:"summary"`
+	Description            string               `json:"description"`
+	VulnerableVersionRange string               `json:"vulnerable_version_range"`
+	FirstPatchedVersion    string               `json:"first_patched_version"`
+	CreatedAt              time.Time            `json:"created_at"`
+	UpdatedAt              time.Time            `json:"updated_at"`
 }
 
 // DependabotSecret is a repository-level Dependabot secret. Value stores the
@@ -96,7 +109,7 @@ func (st *Store) createDependabotAlertLocked(repoKey, pkgName, ecosystem, manife
 		VulnerabilityID:        vulnID,
 		CVEID:                  cveID,
 		Severity:               severity,
-		State:                  state,
+		State:                  DependabotAlertState(state),
 		Summary:                summary,
 		Description:            description,
 		VulnerableVersionRange: vulnRange,
@@ -128,7 +141,7 @@ func (st *Store) ListDependabotAlerts(repoKey, state, severity, packageName, eco
 	byRepo := st.DependabotAlertsByRepo[repoKey]
 	out := make([]*DependabotAlert, 0, len(byRepo))
 	for _, a := range byRepo {
-		if state != "" && a.State != state {
+		if state != "" && a.State != DependabotAlertState(state) {
 			continue
 		}
 		if severity != "" && a.Severity != severity {
@@ -175,14 +188,14 @@ func (st *Store) UpdateDependabotAlert(a *DependabotAlert, state, dismissedReaso
 	st.mu.Lock()
 	defer st.mu.Unlock()
 
-	if err := validateDependabotTransition(a.State, state, dismissedReason); err != nil {
+	if err := validateDependabotTransition(string(a.State), state, dismissedReason); err != nil {
 		return err
 	}
 
 	now := st.currentTime()
 	switch state {
 	case "dismissed":
-		a.State = "dismissed"
+		a.State = DependabotStateDismissed
 		a.DismissedReason = dismissedReason
 		a.DismissedComment = dismissedComment
 		a.DismissedAt = &now
@@ -191,7 +204,7 @@ func (st *Store) UpdateDependabotAlert(a *DependabotAlert, state, dismissedReaso
 		}
 		a.FixedAt = nil
 	case "open":
-		a.State = "open"
+		a.State = DependabotStateOpen
 		a.DismissedReason = ""
 		a.DismissedComment = ""
 		a.DismissedAt = nil
@@ -474,7 +487,7 @@ func (st *Store) ListDependabotAlertsByOrg(orgID int, state, ecosystem, packageN
 			continue
 		}
 		for _, a := range byNumber {
-			if state != "" && a.State != state {
+			if state != "" && a.State != DependabotAlertState(state) {
 				continue
 			}
 			if ecosystem != "" && !strings.EqualFold(a.PackageEcosystem, ecosystem) {

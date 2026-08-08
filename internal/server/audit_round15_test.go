@@ -203,14 +203,16 @@ func TestOnJobCompletedIdempotent(t *testing.T) {
 // error with null data, exactly like the REST handler, rather than leaking the
 // repo's contents.
 func TestGraphQLRepositoryPrivateHidden(t *testing.T) {
-	owner := seedTestUser(testServer, "gqlpriv-owner")
-	testServer.store.CreateRepo(owner, "secret-repo", "", true)
+	t.Parallel()
+	srv := newIsolatedServer(t)
+	owner := seedTestUser(srv.Server, "gqlpriv-owner")
+	srv.store.CreateRepo(owner, "secret-repo", "", true)
 
-	outsider := seedTestUser(testServer, "gqlpriv-outsider")
-	outTok := testServer.store.CreateToken(outsider.ID, "repo")
+	outsider := seedTestUser(srv.Server, "gqlpriv-outsider")
+	outTok := srv.store.CreateToken(outsider.ID, "repo")
 
 	query := fmt.Sprintf(`{repository(owner:"%s", name:"secret-repo"){name}}`, owner.Login)
-	resp := ghPost(t, "/api/graphql", outTok.Value, map[string]string{"query": query})
+	resp := srv.post(t, "/api/graphql", outTok.Value, map[string]string{"query": query})
 	data := decodeJSON(t, resp)
 	d, _ := data["data"].(map[string]interface{})
 	if d != nil && d["repository"] != nil {
@@ -221,8 +223,8 @@ func TestGraphQLRepositoryPrivateHidden(t *testing.T) {
 	}
 
 	// The owner can still read it.
-	ownerTok := testServer.store.CreateToken(owner.ID, "repo")
-	resp2 := ghPost(t, "/api/graphql", ownerTok.Value, map[string]string{"query": query})
+	ownerTok := srv.store.CreateToken(owner.ID, "repo")
+	resp2 := srv.post(t, "/api/graphql", ownerTok.Value, map[string]string{"query": query})
 	data2 := decodeJSON(t, resp2)
 	d2, _ := data2["data"].(map[string]interface{})
 	if d2 == nil || d2["repository"] == nil {

@@ -67,9 +67,11 @@ func jitRunnerPrivateKey(t *testing.T, params []byte) *rsa.PrivateKey {
 // random per-request opaque value (not the old hardcoded constant) with a
 // near-term expiry, and that an authenticated caller gets 201.
 func TestRegistrationTokenRandom(t *testing.T) {
-	ensureSeededRepo(testServer, "admin/regtok")
+	t.Parallel()
+	srv := newIsolatedServer(t)
+	ensureSeededRepo(srv.Server, "admin/regtok")
 	mint := func() (string, string) {
-		resp := ghPost(t, "/api/v3/repos/admin/regtok/actions/runners/registration-token", defaultToken, map[string]interface{}{})
+		resp := srv.post(t, "/api/v3/repos/admin/regtok/actions/runners/registration-token", defaultToken, map[string]interface{}{})
 		if resp.StatusCode != 201 {
 			resp.Body.Close()
 			t.Fatalf("registration-token = %d, want 201", resp.StatusCode)
@@ -134,8 +136,10 @@ func TestAgentRSAPublicKeyRequiresProtocolStandardBase64(t *testing.T) {
 // TestRemoveToken verifies the repo removal token endpoint returns the
 // {token, expires_at} shape with 201 for an authenticated caller.
 func TestRemoveToken(t *testing.T) {
-	ensureSeededRepo(testServer, "admin/rmtok")
-	resp := ghPost(t, "/api/v3/repos/admin/rmtok/actions/runners/remove-token", defaultToken, map[string]interface{}{})
+	t.Parallel()
+	srv := newIsolatedServer(t)
+	ensureSeededRepo(srv.Server, "admin/rmtok")
+	resp := srv.post(t, "/api/v3/repos/admin/rmtok/actions/runners/remove-token", defaultToken, map[string]interface{}{})
 	if resp.StatusCode != 201 {
 		resp.Body.Close()
 		t.Fatalf("remove-token = %d, want 201", resp.StatusCode)
@@ -158,9 +162,11 @@ func TestRemoveToken(t *testing.T) {
 // a runner + a decodable base64 JIT config, validates required fields, and
 // registers the runner so it appears in the runners list.
 func TestGenerateJITConfig(t *testing.T) {
-	ensureSeededRepo(testServer, "admin/jit")
+	t.Parallel()
+	srv := newIsolatedServer(t)
+	ensureSeededRepo(srv.Server, "admin/jit")
 	// Missing required fields → 422.
-	bad := ghPost(t, "/api/v3/repos/admin/jit/actions/runners/generate-jitconfig", defaultToken,
+	bad := srv.post(t, "/api/v3/repos/admin/jit/actions/runners/generate-jitconfig", defaultToken,
 		map[string]interface{}{"name": "jit-runner"})
 	if bad.StatusCode != 422 {
 		bad.Body.Close()
@@ -169,7 +175,7 @@ func TestGenerateJITConfig(t *testing.T) {
 	bad.Body.Close()
 
 	rgid := 1
-	resp := ghPost(t, "/api/v3/repos/admin/jit/actions/runners/generate-jitconfig", defaultToken,
+	resp := srv.post(t, "/api/v3/repos/admin/jit/actions/runners/generate-jitconfig", defaultToken,
 		map[string]interface{}{
 			"name":            "jit-runner",
 			"runner_group_id": rgid,
@@ -279,7 +285,7 @@ func TestGenerateJITConfig(t *testing.T) {
 	}
 
 	// The minted runner must be registered (visible in the runners list).
-	listResp := ghGet(t, "/api/v3/repos/admin/jit/actions/runners", defaultToken)
+	listResp := srv.get(t, "/api/v3/repos/admin/jit/actions/runners", defaultToken)
 	if listResp.StatusCode != 200 {
 		listResp.Body.Close()
 		t.Fatalf("list runners = %d, want 200", listResp.StatusCode)

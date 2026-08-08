@@ -48,7 +48,7 @@ func (s *Server) handleListEnterpriseDependabotAlerts(w http.ResponseWriter, r *
 	}
 	filtered := alerts[:0]
 	for _, a := range alerts {
-		if inList(states, a.State) && inList(severities, a.Severity) &&
+		if inList(states, string(a.State)) && inList(severities, a.Severity) &&
 			inList(ecosystems, a.PackageEcosystem) && inList(packages, a.PackageName) {
 			filtered = append(filtered, a)
 		}

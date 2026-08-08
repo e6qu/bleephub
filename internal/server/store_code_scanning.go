@@ -1051,14 +1051,28 @@ func (st *Store) deleteCodeQLDatabaseDataLocked(db *CodeQLDatabase) error {
 
 // --- CodeQL variant analyses ---
 
+// CodeScanningAnalysisStatus is a CodeQL variant-analysis repo task's status;
+// GitHub emits only these six values. A typed string marshals to JSON
+// identically to a plain string.
+type CodeScanningAnalysisStatus string
+
+const (
+	CSAnalysisPending    CodeScanningAnalysisStatus = "pending"
+	CSAnalysisInProgress CodeScanningAnalysisStatus = "in_progress"
+	CSAnalysisSucceeded  CodeScanningAnalysisStatus = "succeeded"
+	CSAnalysisFailed     CodeScanningAnalysisStatus = "failed"
+	CSAnalysisCanceled   CodeScanningAnalysisStatus = "canceled"
+	CSAnalysisTimedOut   CodeScanningAnalysisStatus = "timed_out"
+)
+
 // CodeQLVariantAnalysisRepoTask is the per-repository result row of a
 // variant analysis.
 type CodeQLVariantAnalysisRepoTask struct {
-	RepoID            int    `json:"repo_id"`
-	FullName          string `json:"full_name"`
-	AnalysisStatus    string `json:"analysis_status"` // pending | in_progress | succeeded | failed | canceled | timed_out
-	ResultCount       int    `json:"result_count"`
-	DatabaseCommitSHA string `json:"database_commit_sha"`
+	RepoID            int                        `json:"repo_id"`
+	FullName          string                     `json:"full_name"`
+	AnalysisStatus    CodeScanningAnalysisStatus `json:"analysis_status"`
+	ResultCount       int                        `json:"result_count"`
+	DatabaseCommitSHA string                     `json:"database_commit_sha"`
 }
 
 // CodeQLVariantAnalysis is a multi-repository variant analysis run for a
@@ -1136,7 +1150,7 @@ func (st *Store) CreateCodeQLVariantAnalysis(controllerRepoKey string, actorID i
 		va.ScannedRepositories = append(va.ScannedRepositories, CodeQLVariantAnalysisRepoTask{
 			RepoID:            repo.ID,
 			FullName:          full,
-			AnalysisStatus:    "succeeded",
+			AnalysisStatus:    CSAnalysisSucceeded,
 			DatabaseCommitSHA: db.CommitOID,
 		})
 	}

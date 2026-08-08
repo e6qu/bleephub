@@ -54,13 +54,15 @@ func cloneRepoSlice(in []*Repo) []*Repo {
 // flipping it back to "true" on update must restore eligibility. Before the fix
 // the field was decoded into nothing and silently dropped.
 func TestReleaseMakeLatestControlsLatest(t *testing.T) {
+	t.Parallel()
+	srv := newIsolatedServer(t)
 	const repo = "make-latest-repo"
-	created := ghPost(t, "/api/v3/user/repos", defaultToken, map[string]interface{}{
+	created := srv.post(t, "/api/v3/user/repos", defaultToken, map[string]interface{}{
 		"name": repo, "auto_init": true,
 	})
 	created.Body.Close()
 
-	first := ghPost(t, "/api/v3/repos/admin/"+repo+"/releases", defaultToken, map[string]interface{}{
+	first := srv.post(t, "/api/v3/repos/admin/"+repo+"/releases", defaultToken, map[string]interface{}{
 		"tag_name": "v1.0.0",
 	})
 	if first.StatusCode != http.StatusCreated {
@@ -69,7 +71,7 @@ func TestReleaseMakeLatestControlsLatest(t *testing.T) {
 	}
 	first.Body.Close()
 
-	second := ghPost(t, "/api/v3/repos/admin/"+repo+"/releases", defaultToken, map[string]interface{}{
+	second := srv.post(t, "/api/v3/repos/admin/"+repo+"/releases", defaultToken, map[string]interface{}{
 		"tag_name": "v2.0.0", "make_latest": "false",
 	})
 	if second.StatusCode != http.StatusCreated {
@@ -80,17 +82,17 @@ func TestReleaseMakeLatestControlsLatest(t *testing.T) {
 	v2ID := int(v2["id"].(float64))
 
 	// v2 is excluded, so the newest *eligible* release is still v1.0.0.
-	latest := decodeJSON(t, ghGet(t, "/api/v3/repos/admin/"+repo+"/releases/latest", defaultToken))
+	latest := decodeJSON(t, srv.get(t, "/api/v3/repos/admin/"+repo+"/releases/latest", defaultToken))
 	if latest["tag_name"] != "v1.0.0" {
 		t.Fatalf("latest = %v, want v1.0.0 (v2 marked make_latest:false)", latest["tag_name"])
 	}
 
 	// Promote v2 back to latest via update.
-	upd := ghPatch(t, "/api/v3/repos/admin/"+repo+"/releases/"+itoa(v2ID), defaultToken, map[string]interface{}{
+	upd := srv.patch(t, "/api/v3/repos/admin/"+repo+"/releases/"+itoa(v2ID), defaultToken, map[string]interface{}{
 		"make_latest": "true",
 	})
 	upd.Body.Close()
-	latest2 := decodeJSON(t, ghGet(t, "/api/v3/repos/admin/"+repo+"/releases/latest", defaultToken))
+	latest2 := decodeJSON(t, srv.get(t, "/api/v3/repos/admin/"+repo+"/releases/latest", defaultToken))
 	if latest2["tag_name"] != "v2.0.0" {
 		t.Fatalf("latest after promote = %v, want v2.0.0", latest2["tag_name"])
 	}
@@ -99,11 +101,13 @@ func TestReleaseMakeLatestControlsLatest(t *testing.T) {
 // generate_release_notes autogenerates the name (when absent) and a changelog
 // body; before the fix it was decoded into nothing.
 func TestReleaseGenerateReleaseNotes(t *testing.T) {
+	t.Parallel()
+	srv := newIsolatedServer(t)
 	const repo = "gen-notes-repo"
-	created := ghPost(t, "/api/v3/user/repos", defaultToken, map[string]interface{}{"name": repo, "auto_init": true})
+	created := srv.post(t, "/api/v3/user/repos", defaultToken, map[string]interface{}{"name": repo, "auto_init": true})
 	created.Body.Close()
 
-	resp := ghPost(t, "/api/v3/repos/admin/"+repo+"/releases", defaultToken, map[string]interface{}{
+	resp := srv.post(t, "/api/v3/repos/admin/"+repo+"/releases", defaultToken, map[string]interface{}{
 		"tag_name": "v1.0.0", "generate_release_notes": true,
 	})
 	if resp.StatusCode != http.StatusCreated {
@@ -122,15 +126,17 @@ func TestReleaseGenerateReleaseNotes(t *testing.T) {
 // discussion_category_name links a new discussion (surfaced as discussion_url)
 // and rejects an unknown category with 422; before the fix it was dropped.
 func TestReleaseDiscussionCategory(t *testing.T) {
+	t.Parallel()
+	srv := newIsolatedServer(t)
 	const repo = "disc-cat-repo"
-	created := ghPost(t, "/api/v3/user/repos", defaultToken, map[string]interface{}{"name": repo, "auto_init": true})
+	created := srv.post(t, "/api/v3/user/repos", defaultToken, map[string]interface{}{"name": repo, "auto_init": true})
 	created.Body.Close()
-	r := testServer.store.GetRepo("admin", repo)
+	r := srv.store.GetRepo("admin", repo)
 	if r == nil {
 		t.Fatal("repo not created")
 	}
 
-	bad := ghPost(t, "/api/v3/repos/admin/"+repo+"/releases", defaultToken, map[string]interface{}{
+	bad := srv.post(t, "/api/v3/repos/admin/"+repo+"/releases", defaultToken, map[string]interface{}{
 		"tag_name": "v0.0.1", "discussion_category_name": "Nonexistent",
 	})
 	if bad.StatusCode != http.StatusUnprocessableEntity {
@@ -139,8 +145,8 @@ func TestReleaseDiscussionCategory(t *testing.T) {
 	}
 	bad.Body.Close()
 
-	testServer.store.CreateDiscussionCategory(r.ID, "Announcements", "📣", "Release notes", false)
-	ok := ghPost(t, "/api/v3/repos/admin/"+repo+"/releases", defaultToken, map[string]interface{}{
+	srv.store.CreateDiscussionCategory(r.ID, "Announcements", "📣", "Release notes", false)
+	ok := srv.post(t, "/api/v3/repos/admin/"+repo+"/releases", defaultToken, map[string]interface{}{
 		"tag_name": "v1.0.0", "discussion_category_name": "Announcements",
 	})
 	if ok.StatusCode != http.StatusCreated {
@@ -156,17 +162,19 @@ func TestReleaseDiscussionCategory(t *testing.T) {
 // A GraphQL createIssue with projectIds adds the new issue to each named
 // ProjectV2 board; before the fix the list was accepted and dropped.
 func TestGraphQLCreateIssueHonorsProjectIds(t *testing.T) {
+	t.Parallel()
+	srv := newIsolatedServer(t)
 	const repo = "gql-projectids-repo"
-	created := ghPost(t, "/api/v3/user/repos", defaultToken, map[string]interface{}{"name": repo})
+	created := srv.post(t, "/api/v3/user/repos", defaultToken, map[string]interface{}{"name": repo})
 	created.Body.Close()
-	repoData := decodeJSON(t, ghGet(t, "/api/v3/repos/admin/"+repo, defaultToken))
+	repoData := decodeJSON(t, srv.get(t, "/api/v3/repos/admin/"+repo, defaultToken))
 	repoNodeID, _ := repoData["node_id"].(string)
 
-	me := decodeJSON(t, ghGet(t, "/api/v3/user", defaultToken))
+	me := decodeJSON(t, srv.get(t, "/api/v3/user", defaultToken))
 	adminID := int(me["id"].(float64))
-	project := testServer.store.ProjectsV2.CreateProject(adminID, "User", "Roadmap", adminID)
+	project := srv.store.ProjectsV2.CreateProject(adminID, "User", "Roadmap", adminID)
 
-	resp := decodeJSON(t, ghPost(t, "/api/graphql", defaultToken, map[string]interface{}{
+	resp := decodeJSON(t, srv.post(t, "/api/graphql", defaultToken, map[string]interface{}{
 		"query": `mutation($input: CreateIssueInput!){ createIssue(input:$input){ issue { id } } }`,
 		"variables": map[string]interface{}{"input": map[string]interface{}{
 			"repositoryId": repoNodeID, "title": "tracked", "projectIds": []interface{}{project.NodeID},
@@ -179,11 +187,11 @@ func TestGraphQLCreateIssueHonorsProjectIds(t *testing.T) {
 	if issueNodeID == "" {
 		t.Fatalf("createIssue returned no issue: %v", resp)
 	}
-	issue := findIssueByNodeID(testServer.store, issueNodeID)
+	issue := findIssueByNodeID(srv.store, issueNodeID)
 	if issue == nil {
 		t.Fatal("issue not found by node id")
 	}
-	if items := testServer.store.ProjectsV2.ListItemsForIssue(issue.ID); len(items) == 0 {
+	if items := srv.store.ProjectsV2.ListItemsForIssue(issue.ID); len(items) == 0 {
 		t.Fatal("issue was not added to the project named in projectIds")
 	}
 }

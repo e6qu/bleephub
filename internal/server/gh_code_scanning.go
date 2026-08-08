@@ -1329,7 +1329,7 @@ func (s *Server) handleGetCodeQLVariantAnalysisRepoTask(w http.ResponseWriter, r
 			"repository":      simpleRepoJSON(taskRepo, s.store, s.baseURL(r)),
 			"analysis_status": task.AnalysisStatus,
 		}
-		if task.AnalysisStatus == "succeeded" {
+		if task.AnalysisStatus == CSAnalysisSucceeded {
 			out["result_count"] = task.ResultCount
 			if task.DatabaseCommitSHA != "" {
 				out["database_commit_sha"] = task.DatabaseCommitSHA

@@ -386,8 +386,18 @@ func (st *Store) MoveProjectCard(card *ProjectCard, targetColumnID int, position
 	defer st.mu.Unlock()
 
 	if targetColumnID != 0 && targetColumnID != card.ColumnID {
-		if st.ProjectColumns[targetColumnID] == nil {
+		target := st.ProjectColumns[targetColumnID]
+		if target == nil {
 			return fmt.Errorf("target column not found")
+		}
+		// A card may only move between columns of the same classic project.
+		// The handler authorizes projects:write on the card's own project/repo;
+		// the destination column's project is never separately authorized, so
+		// without this a caller could move a card into another (private)
+		// project's column — cross-tenant board injection. GitHub answers 422.
+		source := st.ProjectColumns[card.ColumnID]
+		if source == nil || target.ProjectID != source.ProjectID {
+			return fmt.Errorf("target column is in a different project")
 		}
 		card.ColumnID = targetColumnID
 	}
