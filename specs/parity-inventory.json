@@ -3826,8 +3826,8 @@
         "id": "STORE-026",
         "location": "store_packages.go:304, store_code_scanning.go:883",
         "severity": "M",
-        "status": "open",
-        "status_kind": "open"
+        "status": "fixed \u2014 the CodeQL-database path already reclaims the superseded archive and compensates on metadata-persist failure (`UpsertCodeQLDatabase` deletes `previous` when its content-addressed path changes, with rollback), and package files use monotonic ids (no reuse). The remaining gap was `CreatePackageVersion`: a multi-file version wrote each file's bytes before committing any metadata, so a mid-loop write failure orphaned the bytes already written. It now tracks written blobs and deletes them (object store or local dir) on any write/mkdir failure before returning. Regression test with a byte store that fails the 2nd write asserts zero orphaned blobs and no committed metadata",
+        "status_kind": "fixed"
       },
       {
         "category": "STORE",
@@ -6476,8 +6476,8 @@
         },
         "STORE": {
           "status": {
-            "fixed": 67,
-            "open": 3,
+            "fixed": 68,
+            "open": 2,
             "partial": 8
           },
           "total": 78
@@ -6506,8 +6506,8 @@
       },
       "status": {
         "deferred": 1,
-        "fixed": 626,
-        "open": 33,
+        "fixed": 627,
+        "open": 32,
         "partial": 25
       },
       "total": 685
