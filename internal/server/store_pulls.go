@@ -36,7 +36,7 @@ type PullRequest struct {
 	ChangedFiles         int
 	MergedByID           int // 0 = not merged
 	Locked               bool
-	ActiveLockReason     string // "", "off-topic", "too heated", "resolved", "spam"
+	ActiveLockReason     LockReason // empty = locked without a stated reason
 	CreatedAt            time.Time
 	UpdatedAt            time.Time
 	ClosedAt             *time.Time

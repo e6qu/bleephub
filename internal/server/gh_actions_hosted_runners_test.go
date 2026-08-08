@@ -6,9 +6,9 @@ import (
 	"testing"
 )
 
-func defaultRunnerGroupForOrg(t *testing.T, org string) int {
+func defaultRunnerGroupForOrg(t *testing.T, srv *isolatedServer, org string) int {
 	t.Helper()
-	data := decodeJSONWithStatus(t, ghGet(t,
+	data := decodeJSONWithStatus(t, srv.get(t,
 		"/api/v3/orgs/"+org+"/actions/runner-groups", defaultToken), http.StatusOK)
 	groups, _ := data["runner_groups"].([]interface{})
 	for _, raw := range groups {
@@ -22,10 +22,12 @@ func defaultRunnerGroupForOrg(t *testing.T, org string) int {
 }
 
 func TestHostedRunners_CatalogEndpoints(t *testing.T) {
-	org := createTestOrg(t)
+	t.Parallel()
+	srv := newIsolatedServer(t)
+	org := srv.createTestOrg(t)
 	base := "/api/v3/orgs/" + org + "/actions/hosted-runners"
 
-	data := decodeJSONWithStatus(t, ghGet(t, base+"/images/github-owned", defaultToken), 200)
+	data := decodeJSONWithStatus(t, srv.get(t, base+"/images/github-owned", defaultToken), 200)
 	images, _ := data["images"].([]interface{})
 	if int(data["total_count"].(float64)) < 2 || len(images) < 2 {
 		t.Fatalf("github-owned images = %v, want the multi-entry catalog", data)
@@ -40,7 +42,7 @@ func TestHostedRunners_CatalogEndpoints(t *testing.T) {
 		t.Errorf("github-owned image source = %v, want github", first["source"])
 	}
 
-	data = decodeJSONWithStatus(t, ghGet(t, base+"/images/partner", defaultToken), 200)
+	data = decodeJSONWithStatus(t, srv.get(t, base+"/images/partner", defaultToken), 200)
 	images, _ = data["images"].([]interface{})
 	if len(images) == 0 {
 		t.Fatalf("partner images empty: %v", data)
@@ -50,7 +52,7 @@ func TestHostedRunners_CatalogEndpoints(t *testing.T) {
 		t.Errorf("partner image source = %v, want partner", partner["source"])
 	}
 
-	data = decodeJSONWithStatus(t, ghGet(t, base+"/machine-sizes", defaultToken), 200)
+	data = decodeJSONWithStatus(t, srv.get(t, base+"/machine-sizes", defaultToken), 200)
 	specs, _ := data["machine_specs"].([]interface{})
 	if len(specs) != 5 {
 		t.Fatalf("machine_specs len = %d, want 5 (the documented 4..64-core ladder)", len(specs))
@@ -61,13 +63,13 @@ func TestHostedRunners_CatalogEndpoints(t *testing.T) {
 		t.Errorf("4-core spec = %v, want the documented 4-core/16GB/150GB entry", spec0)
 	}
 
-	data = decodeJSONWithStatus(t, ghGet(t, base+"/platforms", defaultToken), 200)
+	data = decodeJSONWithStatus(t, srv.get(t, base+"/platforms", defaultToken), 200)
 	platforms, _ := data["platforms"].([]interface{})
 	if len(platforms) != 4 {
 		t.Fatalf("platforms = %v, want the 4 linux/windows x64+arm64 identifiers", platforms)
 	}
 
-	data = decodeJSONWithStatus(t, ghGet(t, base+"/limits", defaultToken), 200)
+	data = decodeJSONWithStatus(t, srv.get(t, base+"/limits", defaultToken), 200)
 	pub, _ := data["public_ips"].(map[string]interface{})
 	if pub == nil || pub["maximum"].(float64) != 50 || pub["current_usage"].(float64) != 0 {
 		t.Fatalf("limits = %v, want maximum 50 / current_usage 0", data)
@@ -75,12 +77,14 @@ func TestHostedRunners_CatalogEndpoints(t *testing.T) {
 }
 
 func TestHostedRunners_CRUDLifecycle(t *testing.T) {
-	org := createTestOrg(t)
+	t.Parallel()
+	srv := newIsolatedServer(t)
+	org := srv.createTestOrg(t)
 	base := "/api/v3/orgs/" + org + "/actions/hosted-runners"
-	groupID := defaultRunnerGroupForOrg(t, org)
+	groupID := defaultRunnerGroupForOrg(t, srv, org)
 
 	// Validation: bad size, missing runner_group_id, unknown image.
-	resp := ghPost(t, base, defaultToken, map[string]interface{}{
+	resp := srv.post(t, base, defaultToken, map[string]interface{}{
 		"name": "hr-bad", "image": map[string]string{"id": "ubuntu-24.04", "source": "github"},
 		"size": "3-core", "runner_group_id": groupID,
 	})
@@ -88,7 +92,7 @@ func TestHostedRunners_CRUDLifecycle(t *testing.T) {
 	if resp.StatusCode != 422 {
 		t.Fatalf("bad size status = %d, want 422", resp.StatusCode)
 	}
-	resp = ghPost(t, base, defaultToken, map[string]interface{}{
+	resp = srv.post(t, base, defaultToken, map[string]interface{}{
 		"name": "hr-bad", "image": map[string]string{"id": "ubuntu-24.04", "source": "github"},
 		"size": "4-core",
 	})
@@ -96,7 +100,7 @@ func TestHostedRunners_CRUDLifecycle(t *testing.T) {
 	if resp.StatusCode != 422 {
 		t.Fatalf("missing runner_group_id status = %d, want 422", resp.StatusCode)
 	}
-	resp = ghPost(t, base, defaultToken, map[string]interface{}{
+	resp = srv.post(t, base, defaultToken, map[string]interface{}{
 		"name": "hr-bad", "image": map[string]string{"id": "no-such-image", "source": "github"},
 		"size": "4-core", "runner_group_id": groupID,
 	})
@@ -106,7 +110,7 @@ func TestHostedRunners_CRUDLifecycle(t *testing.T) {
 	}
 
 	// Create.
-	created := decodeJSONWithStatus(t, ghPost(t, base, defaultToken, map[string]interface{}{
+	created := decodeJSONWithStatus(t, srv.post(t, base, defaultToken, map[string]interface{}{
 		"name":  "my-hosted-runner",
 		"image": map[string]string{"id": "ubuntu-24.04", "source": "github"},
 		"size":  "8-core", "runner_group_id": groupID,
@@ -128,17 +132,17 @@ func TestHostedRunners_CRUDLifecycle(t *testing.T) {
 	}
 
 	// List + get round-trip.
-	data := decodeJSONWithStatus(t, ghGet(t, base, defaultToken), 200)
+	data := decodeJSONWithStatus(t, srv.get(t, base, defaultToken), 200)
 	if int(data["total_count"].(float64)) != 1 {
 		t.Fatalf("list total_count = %v, want 1", data["total_count"])
 	}
-	got := decodeJSONWithStatus(t, ghGet(t, fmt.Sprintf("%s/%d", base, id), defaultToken), 200)
+	got := decodeJSONWithStatus(t, srv.get(t, fmt.Sprintf("%s/%d", base, id), defaultToken), 200)
 	if got["name"] != "my-hosted-runner" {
 		t.Fatalf("get name = %v", got["name"])
 	}
 
 	// Patch: rename, bump capacity, enable static IPs, change size.
-	patched := decodeJSONWithStatus(t, ghPatch(t, fmt.Sprintf("%s/%d", base, id), defaultToken,
+	patched := decodeJSONWithStatus(t, srv.patch(t, fmt.Sprintf("%s/%d", base, id), defaultToken,
 		map[string]interface{}{
 			"name": "renamed-runner", "maximum_runners": 5,
 			"enable_static_ip": true, "size": "4-core",
@@ -148,7 +152,7 @@ func TestHostedRunners_CRUDLifecycle(t *testing.T) {
 		t.Fatalf("patched runner = %v", patched)
 	}
 	// Static IP reservations show up in the org limits.
-	limits := decodeJSONWithStatus(t, ghGet(t, base+"/limits", defaultToken), 200)
+	limits := decodeJSONWithStatus(t, srv.get(t, base+"/limits", defaultToken), 200)
 	pub, _ := limits["public_ips"].(map[string]interface{})
 	if pub["current_usage"].(float64) != 5 {
 		t.Fatalf("limits current_usage = %v, want 5 (one static-IP runner x maximum_runners 5)", pub)
@@ -156,17 +160,17 @@ func TestHostedRunners_CRUDLifecycle(t *testing.T) {
 
 	// The runner lists under its runner group.
 	groupList := decodeJSONWithStatus(t,
-		ghGet(t, fmt.Sprintf("/api/v3/orgs/%s/actions/runner-groups/%d/hosted-runners", org, groupID), defaultToken), 200)
+		srv.get(t, fmt.Sprintf("/api/v3/orgs/%s/actions/runner-groups/%d/hosted-runners", org, groupID), defaultToken), 200)
 	if int(groupList["total_count"].(float64)) != 1 {
 		t.Fatalf("runner-group hosted-runners total = %v, want 1", groupList["total_count"])
 	}
 
 	// Delete answers 202 with the runner in Deleting state; then 404.
-	deleted := decodeJSONWithStatus(t, ghDelete(t, fmt.Sprintf("%s/%d", base, id), defaultToken), 202)
+	deleted := decodeJSONWithStatus(t, srv.delete(t, fmt.Sprintf("%s/%d", base, id), defaultToken), 202)
 	if deleted["status"] != "Deleting" {
 		t.Fatalf("delete status = %v, want Deleting", deleted["status"])
 	}
-	resp = ghGet(t, fmt.Sprintf("%s/%d", base, id), defaultToken)
+	resp = srv.get(t, fmt.Sprintf("%s/%d", base, id), defaultToken)
 	resp.Body.Close()
 	if resp.StatusCode != 404 {
 		t.Fatalf("get after delete = %d, want 404", resp.StatusCode)
@@ -174,11 +178,13 @@ func TestHostedRunners_CRUDLifecycle(t *testing.T) {
 }
 
 func TestHostedRunners_StaticIPLimitEnforced(t *testing.T) {
-	org := createTestOrg(t)
+	t.Parallel()
+	srv := newIsolatedServer(t)
+	org := srv.createTestOrg(t)
 	base := "/api/v3/orgs/" + org + "/actions/hosted-runners"
-	groupID := defaultRunnerGroupForOrg(t, org)
+	groupID := defaultRunnerGroupForOrg(t, srv, org)
 	// 60 reserved addresses would exceed the 50-address limit.
-	resp := ghPost(t, base, defaultToken, map[string]interface{}{
+	resp := srv.post(t, base, defaultToken, map[string]interface{}{
 		"name":  "too-many-ips",
 		"image": map[string]string{"id": "ubuntu-22.04", "source": "github"},
 		"size":  "4-core", "runner_group_id": groupID,
@@ -191,22 +197,24 @@ func TestHostedRunners_StaticIPLimitEnforced(t *testing.T) {
 }
 
 func TestHostedRunners_CustomImages(t *testing.T) {
-	org := createTestOrg(t)
+	t.Parallel()
+	srv := newIsolatedServer(t)
+	org := srv.createTestOrg(t)
 	base := "/api/v3/orgs/" + org + "/actions/hosted-runners"
-	groupID := defaultRunnerGroupForOrg(t, org)
+	groupID := defaultRunnerGroupForOrg(t, srv, org)
 
 	// Custom image definitions are produced by the image-generation
 	// pipeline on real GitHub (no public create endpoint); seed one
 	// through the store's creation entry point.
-	img := testServer.store.CreateHostedRunnerCustomImage(org, "MyCustomImage", "linux-x64")
-	if !testServer.store.AddHostedRunnerCustomImageVersion(img.ID, "1.0.0", 30) {
+	img := srv.store.CreateHostedRunnerCustomImage(org, "MyCustomImage", "linux-x64")
+	if !srv.store.AddHostedRunnerCustomImageVersion(img.ID, "1.0.0", 30) {
 		t.Fatal("add version 1.0.0")
 	}
-	if !testServer.store.AddHostedRunnerCustomImageVersion(img.ID, "1.1.0", 32) {
+	if !srv.store.AddHostedRunnerCustomImageVersion(img.ID, "1.1.0", 32) {
 		t.Fatal("add version 1.1.0")
 	}
 
-	data := decodeJSONWithStatus(t, ghGet(t, base+"/images/custom", defaultToken), 200)
+	data := decodeJSONWithStatus(t, srv.get(t, base+"/images/custom", defaultToken), 200)
 	images, _ := data["images"].([]interface{})
 	if int(data["total_count"].(float64)) != 1 || len(images) != 1 {
 		t.Fatalf("custom images = %v, want 1", data)
@@ -218,12 +226,12 @@ func TestHostedRunners_CustomImages(t *testing.T) {
 		t.Fatalf("custom image entry = %v", entry)
 	}
 
-	one := decodeJSONWithStatus(t, ghGet(t, fmt.Sprintf("%s/images/custom/%d", base, img.ID), defaultToken), 200)
+	one := decodeJSONWithStatus(t, srv.get(t, fmt.Sprintf("%s/images/custom/%d", base, img.ID), defaultToken), 200)
 	if one["platform"] != "linux-x64" {
 		t.Fatalf("custom image get = %v", one)
 	}
 
-	versions := decodeJSONWithStatus(t, ghGet(t, fmt.Sprintf("%s/images/custom/%d/versions", base, img.ID), defaultToken), 200)
+	versions := decodeJSONWithStatus(t, srv.get(t, fmt.Sprintf("%s/images/custom/%d/versions", base, img.ID), defaultToken), 200)
 	vlist, _ := versions["image_versions"].([]interface{})
 	if len(vlist) != 2 {
 		t.Fatalf("versions = %v", versions)
@@ -233,13 +241,13 @@ func TestHostedRunners_CustomImages(t *testing.T) {
 		t.Fatalf("versions not newest-first: %v", vlist)
 	}
 
-	ver := decodeJSONWithStatus(t, ghGet(t, fmt.Sprintf("%s/images/custom/%d/versions/1.0.0", base, img.ID), defaultToken), 200)
+	ver := decodeJSONWithStatus(t, srv.get(t, fmt.Sprintf("%s/images/custom/%d/versions/1.0.0", base, img.ID), defaultToken), 200)
 	if ver["size_gb"].(float64) != 30 || ver["state"] != "Ready" || ver["state_details"] != "None" {
 		t.Fatalf("version 1.0.0 = %v", ver)
 	}
 
 	// Create a hosted runner FROM the custom image (latest version).
-	created := decodeJSONWithStatus(t, ghPost(t, base, defaultToken, map[string]interface{}{
+	created := decodeJSONWithStatus(t, srv.post(t, base, defaultToken, map[string]interface{}{
 		"name":  "custom-image-runner",
 		"image": map[string]string{"id": fmt.Sprintf("%d", img.ID), "source": "custom"},
 		"size":  "4-core", "runner_group_id": groupID,
@@ -250,26 +258,26 @@ func TestHostedRunners_CustomImages(t *testing.T) {
 		t.Fatalf("custom-image runner image_details = %v", imgDetails)
 	}
 	runnerID := int(created["id"].(float64))
-	resp := ghDelete(t, fmt.Sprintf("%s/%d", base, runnerID), defaultToken)
+	resp := srv.delete(t, fmt.Sprintf("%s/%d", base, runnerID), defaultToken)
 	resp.Body.Close()
 
 	// Delete one version, then the definition.
-	resp = ghDelete(t, fmt.Sprintf("%s/images/custom/%d/versions/1.0.0", base, img.ID), defaultToken)
+	resp = srv.delete(t, fmt.Sprintf("%s/images/custom/%d/versions/1.0.0", base, img.ID), defaultToken)
 	resp.Body.Close()
 	if resp.StatusCode != 204 {
 		t.Fatalf("delete version = %d, want 204", resp.StatusCode)
 	}
-	resp = ghGet(t, fmt.Sprintf("%s/images/custom/%d/versions/1.0.0", base, img.ID), defaultToken)
+	resp = srv.get(t, fmt.Sprintf("%s/images/custom/%d/versions/1.0.0", base, img.ID), defaultToken)
 	resp.Body.Close()
 	if resp.StatusCode != 404 {
 		t.Fatalf("get deleted version = %d, want 404", resp.StatusCode)
 	}
-	resp = ghDelete(t, fmt.Sprintf("%s/images/custom/%d", base, img.ID), defaultToken)
+	resp = srv.delete(t, fmt.Sprintf("%s/images/custom/%d", base, img.ID), defaultToken)
 	resp.Body.Close()
 	if resp.StatusCode != 204 {
 		t.Fatalf("delete image = %d, want 204", resp.StatusCode)
 	}
-	resp = ghGet(t, fmt.Sprintf("%s/images/custom/%d", base, img.ID), defaultToken)
+	resp = srv.get(t, fmt.Sprintf("%s/images/custom/%d", base, img.ID), defaultToken)
 	resp.Body.Close()
 	if resp.StatusCode != 404 {
 		t.Fatalf("get deleted image = %d, want 404", resp.StatusCode)
@@ -277,7 +285,9 @@ func TestHostedRunners_CustomImages(t *testing.T) {
 }
 
 func TestHostedRunners_UnknownOrg404(t *testing.T) {
-	resp := ghGet(t, "/api/v3/orgs/no-such-org-hr/actions/hosted-runners", defaultToken)
+	t.Parallel()
+	srv := newIsolatedServer(t)
+	resp := srv.get(t, "/api/v3/orgs/no-such-org-hr/actions/hosted-runners", defaultToken)
 	resp.Body.Close()
 	if resp.StatusCode != http.StatusNotFound {
 		t.Fatalf("unknown org = %d, want 404", resp.StatusCode)

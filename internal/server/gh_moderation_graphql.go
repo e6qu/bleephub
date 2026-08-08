@@ -271,7 +271,7 @@ func (s *Server) lockByNodeID(nodeID string, locked bool, reason string) (map[st
 		return map[string]interface{}{
 			"nodeID":           refreshed.NodeID,
 			"locked":           refreshed.Locked,
-			"activeLockReason": nilStr(refreshed.ActiveLockReason),
+			"activeLockReason": nilStr(string(refreshed.ActiveLockReason)),
 		}, true
 	}
 	if pr := findPullRequestByNodeID(s.store, nodeID); pr != nil {
@@ -283,7 +283,7 @@ func (s *Server) lockByNodeID(nodeID string, locked bool, reason string) (map[st
 		return map[string]interface{}{
 			"nodeID":           refreshed.NodeID,
 			"locked":           refreshed.Locked,
-			"activeLockReason": nilStr(refreshed.ActiveLockReason),
+			"activeLockReason": nilStr(string(refreshed.ActiveLockReason)),
 		}, true
 	}
 	return nil, false

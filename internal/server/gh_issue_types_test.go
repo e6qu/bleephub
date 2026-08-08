@@ -5,10 +5,12 @@ import (
 )
 
 func TestOrgIssueTypes_CRUD(t *testing.T) {
-	org := createTestOrg(t)
+	t.Parallel()
+	srv := newIsolatedServer(t)
+	org := srv.createTestOrg(t)
 
 	// Create.
-	resp := ghPost(t, "/api/v3/orgs/"+org+"/issue-types", defaultToken, map[string]interface{}{
+	resp := srv.post(t, "/api/v3/orgs/"+org+"/issue-types", defaultToken, map[string]interface{}{
 		"name":        "Epic",
 		"description": "An issue type for a multi-week tracking of work",
 		"is_enabled":  true,
@@ -27,7 +29,7 @@ func TestOrgIssueTypes_CRUD(t *testing.T) {
 	id := itoa(int(created["id"].(float64)))
 
 	// List.
-	resp = ghGet(t, "/api/v3/orgs/"+org+"/issue-types", defaultToken)
+	resp = srv.get(t, "/api/v3/orgs/"+org+"/issue-types", defaultToken)
 	if resp.StatusCode != 200 {
 		t.Fatalf("list issue types: %d", resp.StatusCode)
 	}
@@ -37,7 +39,7 @@ func TestOrgIssueTypes_CRUD(t *testing.T) {
 	}
 
 	// Update via PUT.
-	resp = ghPut(t, "/api/v3/orgs/"+org+"/issue-types/"+id, defaultToken, map[string]interface{}{
+	resp = srv.put(t, "/api/v3/orgs/"+org+"/issue-types/"+id, defaultToken, map[string]interface{}{
 		"name":       "Initiative",
 		"is_enabled": false,
 	})
@@ -53,18 +55,18 @@ func TestOrgIssueTypes_CRUD(t *testing.T) {
 	}
 
 	// Delete.
-	resp = ghDelete(t, "/api/v3/orgs/"+org+"/issue-types/"+id, defaultToken)
+	resp = srv.delete(t, "/api/v3/orgs/"+org+"/issue-types/"+id, defaultToken)
 	resp.Body.Close()
 	if resp.StatusCode != 204 {
 		t.Fatalf("delete issue type: %d", resp.StatusCode)
 	}
-	resp = ghGet(t, "/api/v3/orgs/"+org+"/issue-types", defaultToken)
+	resp = srv.get(t, "/api/v3/orgs/"+org+"/issue-types", defaultToken)
 	if got := decodeJSONArray(t, resp); len(got) != 0 {
 		t.Fatalf("expected empty list after delete, got %v", got)
 	}
 
 	// Deleting again is a 404.
-	resp = ghDelete(t, "/api/v3/orgs/"+org+"/issue-types/"+id, defaultToken)
+	resp = srv.delete(t, "/api/v3/orgs/"+org+"/issue-types/"+id, defaultToken)
 	resp.Body.Close()
 	if resp.StatusCode != 404 {
 		t.Fatalf("delete missing issue type: %d", resp.StatusCode)
@@ -72,10 +74,12 @@ func TestOrgIssueTypes_CRUD(t *testing.T) {
 }
 
 func TestOrgIssueTypes_Validation(t *testing.T) {
-	org := createTestOrg(t)
+	t.Parallel()
+	srv := newIsolatedServer(t)
+	org := srv.createTestOrg(t)
 
 	// Unsupported color.
-	resp := ghPost(t, "/api/v3/orgs/"+org+"/issue-types", defaultToken, map[string]interface{}{
+	resp := srv.post(t, "/api/v3/orgs/"+org+"/issue-types", defaultToken, map[string]interface{}{
 		"name":       "Bug",
 		"is_enabled": true,
 		"color":      "chartreuse",
@@ -86,7 +90,7 @@ func TestOrgIssueTypes_Validation(t *testing.T) {
 	}
 
 	// Missing is_enabled.
-	resp = ghPost(t, "/api/v3/orgs/"+org+"/issue-types", defaultToken, map[string]interface{}{
+	resp = srv.post(t, "/api/v3/orgs/"+org+"/issue-types", defaultToken, map[string]interface{}{
 		"name": "Bug",
 	})
 	resp.Body.Close()
@@ -95,7 +99,7 @@ func TestOrgIssueTypes_Validation(t *testing.T) {
 	}
 
 	// Unknown org.
-	resp = ghGet(t, "/api/v3/orgs/no-such-org-issue-types/issue-types", defaultToken)
+	resp = srv.get(t, "/api/v3/orgs/no-such-org-issue-types/issue-types", defaultToken)
 	resp.Body.Close()
 	if resp.StatusCode != 404 {
 		t.Fatalf("unknown org: %d", resp.StatusCode)
@@ -103,22 +107,24 @@ func TestOrgIssueTypes_Validation(t *testing.T) {
 }
 
 func TestIssueTypeAssignmentREST(t *testing.T) {
-	org := createTestOrg(t)
-	repoName, _ := createOrgRepoForGovernance(t, org)
+	t.Parallel()
+	srv := newIsolatedServer(t)
+	org := srv.createTestOrg(t)
+	repoName, _ := srv.createOrgRepoForGovernance(t, org)
 	repoFullName := org + "/" + repoName
-	created := decodeJSONWithStatus(t, ghPost(t, "/api/v3/orgs/"+org+"/issue-types", defaultToken, map[string]interface{}{
+	created := decodeJSONWithStatus(t, srv.post(t, "/api/v3/orgs/"+org+"/issue-types", defaultToken, map[string]interface{}{
 		"name":       "Bug",
 		"is_enabled": true,
 		"color":      "red",
 	}), 200)
 	typeID := int(created["id"].(float64))
 
-	issue := decodeJSONWithStatus(t, ghPost(t, "/api/v3/repos/"+repoFullName+"/issues", defaultToken, map[string]interface{}{
+	issue := decodeJSONWithStatus(t, srv.post(t, "/api/v3/repos/"+repoFullName+"/issues", defaultToken, map[string]interface{}{
 		"title":         "typed issue",
 		"issue_type_id": typeID,
 	}), 201)
-	repo := testServer.store.GetRepo(org, repoName)
-	stored := testServer.store.GetIssueByNumber(repo.ID, int(issue["number"].(float64)))
+	repo := srv.store.GetRepo(org, repoName)
+	stored := srv.store.GetIssueByNumber(repo.ID, int(issue["number"].(float64)))
 	if stored == nil {
 		t.Fatal("stored issue not found")
 	}
@@ -126,11 +132,11 @@ func TestIssueTypeAssignmentREST(t *testing.T) {
 		t.Fatalf("stored IssueTypeID = %d, want %d", stored.IssueTypeID, typeID)
 	}
 
-	issue = decodeJSONWithStatus(t, ghPatch(t, "/api/v3/repos/"+repoFullName+"/issues/1", defaultToken, map[string]interface{}{
+	issue = decodeJSONWithStatus(t, srv.patch(t, "/api/v3/repos/"+repoFullName+"/issues/1", defaultToken, map[string]interface{}{
 		"issue_type_id": nil,
 	}), 200)
 	_ = issue
-	stored = testServer.store.GetIssueByNumber(repo.ID, 1)
+	stored = srv.store.GetIssueByNumber(repo.ID, 1)
 	if stored == nil {
 		t.Fatal("stored issue not found after clear")
 	}
@@ -140,21 +146,23 @@ func TestIssueTypeAssignmentREST(t *testing.T) {
 }
 
 func TestIssueTypeAssignmentRESTValidation(t *testing.T) {
-	org := createTestOrg(t)
-	repoName, _ := createOrgRepoForGovernance(t, org)
+	t.Parallel()
+	srv := newIsolatedServer(t)
+	org := srv.createTestOrg(t)
+	repoName, _ := srv.createOrgRepoForGovernance(t, org)
 	repoFullName := org + "/" + repoName
-	disabled := decodeJSONWithStatus(t, ghPost(t, "/api/v3/orgs/"+org+"/issue-types", defaultToken, map[string]interface{}{
+	disabled := decodeJSONWithStatus(t, srv.post(t, "/api/v3/orgs/"+org+"/issue-types", defaultToken, map[string]interface{}{
 		"name":       "Disabled",
 		"is_enabled": false,
 	}), 200)
 
-	otherOrg := createTestOrg(t)
-	otherType := decodeJSONWithStatus(t, ghPost(t, "/api/v3/orgs/"+otherOrg+"/issue-types", defaultToken, map[string]interface{}{
+	otherOrg := srv.createTestOrg(t)
+	otherType := decodeJSONWithStatus(t, srv.post(t, "/api/v3/orgs/"+otherOrg+"/issue-types", defaultToken, map[string]interface{}{
 		"name":       "Other org type",
 		"is_enabled": true,
 	}), 200)
 
-	resp := ghPost(t, "/api/v3/repos/"+repoFullName+"/issues", defaultToken, map[string]interface{}{
+	resp := srv.post(t, "/api/v3/repos/"+repoFullName+"/issues", defaultToken, map[string]interface{}{
 		"title":         "disabled type",
 		"issue_type_id": int(disabled["id"].(float64)),
 	})
@@ -163,11 +171,11 @@ func TestIssueTypeAssignmentRESTValidation(t *testing.T) {
 		t.Fatalf("disabled issue type create status = %d, want 422", resp.StatusCode)
 	}
 
-	issue := decodeJSONWithStatus(t, ghPost(t, "/api/v3/repos/"+repoFullName+"/issues", defaultToken, map[string]interface{}{
+	issue := decodeJSONWithStatus(t, srv.post(t, "/api/v3/repos/"+repoFullName+"/issues", defaultToken, map[string]interface{}{
 		"title": "untyped issue",
 	}), 201)
-	repo := testServer.store.GetRepo(org, repoName)
-	stored := testServer.store.GetIssueByNumber(repo.ID, int(issue["number"].(float64)))
+	repo := srv.store.GetRepo(org, repoName)
+	stored := srv.store.GetIssueByNumber(repo.ID, int(issue["number"].(float64)))
 	if stored == nil {
 		t.Fatal("stored issue not found")
 	}
@@ -175,7 +183,7 @@ func TestIssueTypeAssignmentRESTValidation(t *testing.T) {
 		t.Fatalf("untyped IssueTypeID = %d, want 0", stored.IssueTypeID)
 	}
 
-	resp = ghPatch(t, "/api/v3/repos/"+repoFullName+"/issues/1", defaultToken, map[string]interface{}{
+	resp = srv.patch(t, "/api/v3/repos/"+repoFullName+"/issues/1", defaultToken, map[string]interface{}{
 		"issue_type_id": int(otherType["id"].(float64)),
 	})
 	resp.Body.Close()

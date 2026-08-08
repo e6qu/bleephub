@@ -31,6 +31,29 @@ type SecretScanningLocationDetails struct {
 	HTMLURL     string `json:"html_url"`
 }
 
+// SecretScanningState is the lifecycle state of a secret-scanning alert; GitHub
+// only ever emits these two. Typing the field keeps invalid values out of the
+// struct; a typed string marshals to JSON identically to a plain string.
+type SecretScanningState string
+
+const (
+	SecretScanningStateOpen     SecretScanningState = "open"
+	SecretScanningStateResolved SecretScanningState = "resolved"
+)
+
+// SecretScanningResolution is the reason recorded when an alert is resolved;
+// only these six values are accepted (validated at the REST boundary).
+type SecretScanningResolution string
+
+const (
+	SecretScanningResolutionFalsePositive  SecretScanningResolution = "false_positive"
+	SecretScanningResolutionWontFix        SecretScanningResolution = "wont_fix"
+	SecretScanningResolutionRevoked        SecretScanningResolution = "revoked"
+	SecretScanningResolutionUsedInTests    SecretScanningResolution = "used_in_tests"
+	SecretScanningResolutionPatternDeleted SecretScanningResolution = "pattern_deleted"
+	SecretScanningResolutionPatternEdited  SecretScanningResolution = "pattern_edited"
+)
+
 // SecretScanningAlert is a repo-scoped secret scanning alert.
 type SecretScanningAlert struct {
 	ID                    int                      `json:"id"`
@@ -39,8 +62,8 @@ type SecretScanningAlert struct {
 	RepoKey               string                   `json:"repo_key"`
 	SecretType            string                   `json:"secret_type"`
 	SecretTypeDisplayName string                   `json:"secret_type_display_name"`
-	State                 string                   `json:"state"`
-	Resolution            string                   `json:"resolution"`
+	State                 SecretScanningState      `json:"state"`
+	Resolution            SecretScanningResolution `json:"resolution"`
 	ResolutionComment     string                   `json:"resolution_comment"`
 	Locations             []SecretScanningLocation `json:"locations"`
 	HTMLURL               string                   `json:"html_url"`
@@ -174,13 +197,13 @@ func (st *Store) ListSecretScanningAlerts(repoKey, state, secretType, resolution
 	byRepo := st.SecretScanningAlertsByRepo[repoKey]
 	out := make([]*SecretScanningAlert, 0, len(byRepo))
 	for _, a := range byRepo {
-		if state != "" && a.State != state {
+		if state != "" && a.State != SecretScanningState(state) {
 			continue
 		}
 		if secretType != "" && a.SecretType != secretType {
 			continue
 		}
-		if resolution != "" && a.Resolution != resolution {
+		if resolution != "" && a.Resolution != SecretScanningResolution(resolution) {
 			continue
 		}
 		out = append(out, a)
@@ -197,16 +220,16 @@ func (st *Store) UpdateSecretScanningAlert(a *SecretScanningAlert, state, resolu
 	st.mu.Lock()
 	defer st.mu.Unlock()
 
-	if err := validateSecretScanningTransition(a.State, state, resolution); err != nil {
+	if err := validateSecretScanningTransition(string(a.State), state, resolution); err != nil {
 		return err
 	}
 
 	now := st.currentTime()
 	if state != "" {
-		a.State = state
+		a.State = SecretScanningState(state)
 	}
 	if state == "resolved" {
-		a.Resolution = resolution
+		a.Resolution = SecretScanningResolution(resolution)
 		a.ResolutionComment = resolutionComment
 		a.ResolvedAt = &now
 	} else if state == "open" {
@@ -228,21 +251,21 @@ func (st *Store) BulkUpdateSecretScanningAlerts(repoKey, stateFilter, secretType
 	now := st.currentTime()
 	var updated []*SecretScanningAlert
 	for _, a := range byRepo {
-		if stateFilter != "" && a.State != stateFilter {
+		if stateFilter != "" && a.State != SecretScanningState(stateFilter) {
 			continue
 		}
 		if secretTypeFilter != "" && a.SecretType != secretTypeFilter {
 			continue
 		}
-		if resolutionFilter != "" && a.Resolution != resolutionFilter {
+		if resolutionFilter != "" && a.Resolution != SecretScanningResolution(resolutionFilter) {
 			continue
 		}
-		if err := validateSecretScanningTransition(a.State, "resolved", newResolution); err != nil {
+		if err := validateSecretScanningTransition(string(a.State), "resolved", newResolution); err != nil {
 			return nil, err
 		}
 		next := *a
 		next.State = "resolved"
-		next.Resolution = newResolution
+		next.Resolution = SecretScanningResolution(newResolution)
 		next.ResolutionComment = resolutionComment
 		next.ResolvedAt = &now
 		next.UpdatedAt = now
@@ -289,8 +312,10 @@ func validateSecretScanningTransition(currentState, newState, resolution string)
 }
 
 func isValidResolution(r string) bool {
-	switch r {
-	case "false_positive", "wont_fix", "revoked", "used_in_tests", "pattern_deleted", "pattern_edited":
+	switch SecretScanningResolution(r) {
+	case SecretScanningResolutionFalsePositive, SecretScanningResolutionWontFix,
+		SecretScanningResolutionRevoked, SecretScanningResolutionUsedInTests,
+		SecretScanningResolutionPatternDeleted, SecretScanningResolutionPatternEdited:
 		return true
 	}
 	return false
@@ -318,13 +343,13 @@ func (st *Store) ListSecretScanningAlertsByOrg(orgID int, state, secretType, res
 			continue
 		}
 		for _, a := range byNumber {
-			if state != "" && a.State != state {
+			if state != "" && a.State != SecretScanningState(state) {
 				continue
 			}
 			if secretType != "" && a.SecretType != secretType {
 				continue
 			}
-			if resolution != "" && a.Resolution != resolution {
+			if resolution != "" && a.Resolution != SecretScanningResolution(resolution) {
 				continue
 			}
 			out = append(out, a)

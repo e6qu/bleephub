@@ -6,21 +6,23 @@ import (
 )
 
 func TestPublicEventsFeed(t *testing.T) {
-	repoKey := createTestRepo(t)
+	t.Parallel()
+	srv := newIsolatedServer(t)
+	repoKey := srv.createTestRepo(t)
 
-	resp := ghPost(t, "/api/v3/repos/"+repoKey+"/issues", defaultToken, map[string]interface{}{
+	resp := srv.post(t, "/api/v3/repos/"+repoKey+"/issues", defaultToken, map[string]interface{}{
 		"title": "public event source issue",
 		"body":  "event feed body",
 	})
 	issue := decodeJSONWithStatus(t, resp, 201)
 	issueNumber := int(issue["number"].(float64))
 
-	resp = ghPost(t, "/api/v3/repos/"+repoKey+"/issues/"+strconv.Itoa(issueNumber)+"/comments", defaultToken, map[string]interface{}{
+	resp = srv.post(t, "/api/v3/repos/"+repoKey+"/issues/"+strconv.Itoa(issueNumber)+"/comments", defaultToken, map[string]interface{}{
 		"body": "event feed comment",
 	})
 	decodeJSONWithStatus(t, resp, 201)
 
-	resp = ghGet(t, "/api/v3/events", defaultToken)
+	resp = srv.get(t, "/api/v3/events", defaultToken)
 	if resp.StatusCode != 200 {
 		resp.Body.Close()
 		t.Fatalf("events status = %d", resp.StatusCode)
@@ -72,17 +74,19 @@ func TestPublicEventsFeed(t *testing.T) {
 // TestPublicEventsExcludePrivateRepos verifies the global feed never leaks
 // activity from private repositories.
 func TestPublicEventsExcludePrivateRepos(t *testing.T) {
-	resp := ghPost(t, "/api/v3/user/repos", defaultToken, map[string]interface{}{
+	t.Parallel()
+	srv := newIsolatedServer(t)
+	resp := srv.post(t, "/api/v3/user/repos", defaultToken, map[string]interface{}{
 		"name":    "private-events-repo",
 		"private": true,
 	})
 	decodeJSONWithStatus(t, resp, 201)
-	resp = ghPost(t, "/api/v3/repos/admin/private-events-repo/issues", defaultToken, map[string]interface{}{
+	resp = srv.post(t, "/api/v3/repos/admin/private-events-repo/issues", defaultToken, map[string]interface{}{
 		"title": "private issue must not surface",
 	})
 	decodeJSONWithStatus(t, resp, 201)
 
-	resp = ghGet(t, "/api/v3/events", defaultToken)
+	resp = srv.get(t, "/api/v3/events", defaultToken)
 	events := decodeJSONArray(t, resp)
 	for _, e := range events {
 		repo, _ := e["repo"].(map[string]interface{})
@@ -93,19 +97,21 @@ func TestPublicEventsExcludePrivateRepos(t *testing.T) {
 }
 
 func TestFeedsCatalog(t *testing.T) {
-	resp := ghGet(t, "/api/v3/feeds", defaultToken)
+	t.Parallel()
+	srv := newIsolatedServer(t)
+	resp := srv.get(t, "/api/v3/feeds", defaultToken)
 	if resp.StatusCode != 200 {
 		resp.Body.Close()
 		t.Fatalf("feeds status = %d", resp.StatusCode)
 	}
 	feeds := decodeJSON(t, resp)
-	if feeds["timeline_url"] != testBaseURL+"/timeline" {
+	if feeds["timeline_url"] != srv.baseURL+"/timeline" {
 		t.Fatalf("timeline_url = %v", feeds["timeline_url"])
 	}
-	if feeds["user_url"] != testBaseURL+"/{user}" {
+	if feeds["user_url"] != srv.baseURL+"/{user}" {
 		t.Fatalf("user_url = %v", feeds["user_url"])
 	}
-	if feeds["current_user_public_url"] != testBaseURL+"/admin" {
+	if feeds["current_user_public_url"] != srv.baseURL+"/admin" {
 		t.Fatalf("current_user_public_url = %v", feeds["current_user_public_url"])
 	}
 	links, _ := feeds["_links"].(map[string]interface{})
@@ -113,7 +119,7 @@ func TestFeedsCatalog(t *testing.T) {
 		t.Fatal("missing _links")
 	}
 	timeline, _ := links["timeline"].(map[string]interface{})
-	if timeline == nil || timeline["type"] != "application/atom+xml" || timeline["href"] != testBaseURL+"/timeline" {
+	if timeline == nil || timeline["type"] != "application/atom+xml" || timeline["href"] != srv.baseURL+"/timeline" {
 		t.Fatalf("_links.timeline = %v", links["timeline"])
 	}
 	if links["user"] == nil {

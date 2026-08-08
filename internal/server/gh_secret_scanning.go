@@ -375,7 +375,7 @@ func secretScanningAlertToJSON(a *SecretScanningAlert, baseURL string, repo *Rep
 		"html_url":                 htmlURL,
 		"locations_url":            locationsURL,
 		"state":                    a.State,
-		"resolution":               nullOrString(a.Resolution),
+		"resolution":               nullOrString(string(a.Resolution)),
 		"resolved_at":              resolvedAt,
 		"secret_type":              a.SecretType,
 		"secret_type_display_name": a.SecretTypeDisplayName,

@@ -6,6 +6,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"strconv"
 	"testing"
 
 	"github.com/rs/zerolog"
@@ -129,6 +130,75 @@ func (s *isolatedServer) createOrg(t *testing.T, login string, profileName ...st
 		t.Fatalf("POST /api/v3/admin/organizations for %s = %d, want 201", login, resp.StatusCode)
 	}
 	return decodeJSON(t, resp)
+}
+
+// createTestOrg/createTestRepo/createTestUser/activateOrgMember/newUser are
+// per-instance mirrors of the identically named package helpers, so files that
+// provision orgs/repos/users through them can convert without touching the
+// shared server. The package versions remain for files not yet migrated.
+func (s *isolatedServer) createTestOrg(t *testing.T) string {
+	t.Helper()
+	login := "test-org-actions-" + strconv.FormatInt(int64(nextTestID()), 36)
+	s.createOrg(t, login, "Test Org Actions")
+	return login
+}
+
+func (s *isolatedServer) createTestRepo(t *testing.T) string {
+	t.Helper()
+	name := "test-repo-actions-" + strconv.FormatInt(int64(nextTestID()), 36)
+	resp := s.post(t, "/api/v3/user/repos", defaultToken, map[string]interface{}{
+		"name":    name,
+		"private": false,
+	})
+	if resp.StatusCode != http.StatusCreated {
+		body, _ := io.ReadAll(resp.Body)
+		resp.Body.Close()
+		t.Fatalf("create repo: %d %s", resp.StatusCode, body)
+	}
+	resp.Body.Close()
+	return "admin/" + name
+}
+
+func (s *isolatedServer) createOrgRepoForGovernance(t *testing.T, org string) (string, int) {
+	t.Helper()
+	name := "gov-repo-" + strconv.FormatInt(int64(nextTestID()), 36)
+	resp := s.post(t, "/api/v3/orgs/"+org+"/repos", defaultToken, map[string]interface{}{
+		"name":    name,
+		"private": false,
+	})
+	if resp.StatusCode != http.StatusCreated {
+		resp.Body.Close()
+		t.Fatalf("create org repo: %d", resp.StatusCode)
+	}
+	repo := decodeJSON(t, resp)
+	return name, int(repo["id"].(float64))
+}
+
+func (s *isolatedServer) activateOrgMember(t *testing.T, orgLogin, login, memberToken string) {
+	t.Helper()
+	expectStatus(t, s.put(t, "/api/v3/orgs/"+orgLogin+"/memberships/"+login, defaultToken,
+		map[string]interface{}{"role": "member"}), http.StatusOK, "PUT membership "+login)
+	expectStatus(t, s.patch(t, "/api/v3/user/memberships/orgs/"+orgLogin, memberToken,
+		map[string]interface{}{"state": "active"}), http.StatusOK, "accept membership "+login)
+}
+
+// newUser mirrors the package newSharedServerUser helper against this instance's
+// store: a fresh user with a deterministic token, provisioned directly.
+func (s *isolatedServer) newUser(t *testing.T, login string) (*User, string) {
+	t.Helper()
+	st := s.store
+	st.mu.Lock()
+	defer st.mu.Unlock()
+	if existing := st.UsersByLogin[login]; existing != nil {
+		t.Fatalf("user %q already exists", login)
+	}
+	u := &User{ID: st.NextUser, Login: login, Type: "User"}
+	st.NextUser++
+	st.Users[u.ID] = u
+	st.UsersByLogin[login] = u
+	tok := &Token{Value: "ghp_" + login + "0000000000000000000000000000000000", UserID: u.ID, Scopes: "repo,read:org"}
+	st.Tokens[tok.Value] = tok
+	return u, tok.Value
 }
 
 // seedRepo mirrors the package seedTestRepo helper on this instance's own

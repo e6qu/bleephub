@@ -15,19 +15,42 @@ import (
 	"github.com/go-git/go-git/v5/plumbing/storer"
 )
 
+// CodeScanningState is the lifecycle state of a code-scanning alert. The three
+// constants are the only values GitHub emits; typing the field keeps invalid
+// states out of the struct and lets the transition validator be total over the
+// domain. A typed string marshals to JSON identically to a plain string.
+type CodeScanningState string
+
+const (
+	CodeScanningStateOpen      CodeScanningState = "open"
+	CodeScanningStateDismissed CodeScanningState = "dismissed"
+	CodeScanningStateFixed     CodeScanningState = "fixed"
+)
+
+// CodeScanningDismissedReason is the reason recorded when an alert is dismissed;
+// only these four values are accepted (validated at the REST boundary).
+type CodeScanningDismissedReason string
+
+const (
+	CodeScanningDismissedFalsePositive CodeScanningDismissedReason = "false_positive"
+	CodeScanningDismissedWontFix       CodeScanningDismissedReason = "won't_fix"
+	CodeScanningDismissedUsedInTests   CodeScanningDismissedReason = "used_in_tests"
+	CodeScanningDismissedIgnored       CodeScanningDismissedReason = "ignored"
+)
+
 // CodeScanningAlertInstance is one occurrence of a code-scanning alert.
 type CodeScanningAlertInstance struct {
-	Ref         string `json:"ref"`
-	AnalysisKey string `json:"analysis_key"`
-	Category    string `json:"category"`
-	State       string `json:"state"`
-	CommitSHA   string `json:"commit_sha"`
-	Path        string `json:"path"`
-	StartLine   int    `json:"start_line"`
-	EndLine     int    `json:"end_line"`
-	StartColumn int    `json:"start_column"`
-	EndColumn   int    `json:"end_column"`
-	Message     string `json:"message"`
+	Ref         string            `json:"ref"`
+	AnalysisKey string            `json:"analysis_key"`
+	Category    string            `json:"category"`
+	State       CodeScanningState `json:"state"`
+	CommitSHA   string            `json:"commit_sha"`
+	Path        string            `json:"path"`
+	StartLine   int               `json:"start_line"`
+	EndLine     int               `json:"end_line"`
+	StartColumn int               `json:"start_column"`
+	EndColumn   int               `json:"end_column"`
+	Message     string            `json:"message"`
 }
 
 // CodeScanningAlert is a repo-scoped code-scanning alert produced by SARIF
@@ -42,8 +65,8 @@ type CodeScanningAlert struct {
 	RuleDescription  string                      `json:"rule_description"`
 	ToolName         string                      `json:"tool_name"`
 	ToolGUID         string                      `json:"tool_guid"`
-	State            string                      `json:"state"`
-	DismissedReason  string                      `json:"dismissed_reason"`
+	State            CodeScanningState           `json:"state"`
+	DismissedReason  CodeScanningDismissedReason `json:"dismissed_reason"`
 	DismissedComment string                      `json:"dismissed_comment"`
 	DismissedAt      *time.Time                  `json:"dismissed_at"`
 	FixedAt          *time.Time                  `json:"fixed_at"`
@@ -114,7 +137,7 @@ func (st *Store) CreateCodeScanningAlert(repoKey, ruleID, severity, description,
 		RuleSeverity:    severity,
 		RuleDescription: description,
 		ToolName:        toolName,
-		State:           state,
+		State:           CodeScanningState(state),
 		Instances:       instances,
 		CreatedAt:       now,
 		UpdatedAt:       now,
@@ -143,7 +166,7 @@ func (st *Store) ListCodeScanningAlerts(repoKey, state, severity, toolName, rule
 	byRepo := st.CodeScanningAlertsByRepo[repoKey]
 	out := make([]*CodeScanningAlert, 0, len(byRepo))
 	for _, a := range byRepo {
-		if state != "" && a.State != state {
+		if state != "" && a.State != CodeScanningState(state) {
 			continue
 		}
 		if severity != "" && a.RuleSeverity != severity {
@@ -188,26 +211,26 @@ func (st *Store) UpdateCodeScanningAlert(a *CodeScanningAlert, state, dismissedR
 	st.mu.Lock()
 	defer st.mu.Unlock()
 
-	if err := validateCodeScanningTransition(a.State, state, dismissedReason); err != nil {
+	if err := validateCodeScanningTransition(string(a.State), state, dismissedReason); err != nil {
 		return err
 	}
 
 	now := st.currentTime()
 	switch state {
 	case "dismissed":
-		a.State = "dismissed"
-		a.DismissedReason = dismissedReason
+		a.State = CodeScanningStateDismissed
+		a.DismissedReason = CodeScanningDismissedReason(dismissedReason)
 		a.DismissedComment = dismissedComment
 		a.DismissedAt = &now
 		a.FixedAt = nil
 	case "fixed":
-		a.State = "fixed"
+		a.State = CodeScanningStateFixed
 		a.FixedAt = &now
 		a.DismissedReason = ""
 		a.DismissedComment = ""
 		a.DismissedAt = nil
 	case "open":
-		a.State = "open"
+		a.State = CodeScanningStateOpen
 		a.DismissedReason = ""
 		a.DismissedComment = ""
 		a.DismissedAt = nil
@@ -241,8 +264,9 @@ func validateCodeScanningTransition(currentState, newState, dismissedReason stri
 }
 
 func isValidDismissedReason(r string) bool {
-	switch r {
-	case "false_positive", "won't_fix", "used_in_tests", "ignored":
+	switch CodeScanningDismissedReason(r) {
+	case CodeScanningDismissedFalsePositive, CodeScanningDismissedWontFix,
+		CodeScanningDismissedUsedInTests, CodeScanningDismissedIgnored:
 		return true
 	}
 	return false
@@ -768,7 +792,7 @@ func (st *Store) ListCodeScanningAlertsByOrg(orgID int, state, severity, toolNam
 			continue
 		}
 		for _, a := range byNumber {
-			if state != "" && a.State != state {
+			if state != "" && a.State != CodeScanningState(state) {
 				continue
 			}
 			if severity != "" && a.RuleSeverity != severity {
