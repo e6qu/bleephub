@@ -54,6 +54,11 @@ jobs:
         run: go test -race -tags noui -count=1 -timeout 40m -coverprofile=coverage.out ./...
       - name: Enforce the Go coverage floor
         run: bash ./scripts/check-go-coverage.sh coverage.out
+      # The main suite runs under `-tags noui`, which compiles the embedded SPA
+      # handler out. Exercise it in the embedded build (dist is committed) so the
+      # /ui/ asset + client-routing fallback contract is actually tested (TEST-021).
+      - name: Exercise the embedded SPA handler (non-noui build)
+        run: go test -run '^TestSPAHandler' -count=1 ./internal/server/
 
   quality:
     name: Go static analysis

@@ -123,7 +123,7 @@
       },
       {
         "event": "pull_request",
-        "line": 534,
+        "line": 541,
         "producer": "emitWebhookEvent",
         "source": "internal/server/gh_pulls_rest.go"
       },
@@ -135,19 +135,19 @@
       },
       {
         "event": "pull_request_review",
-        "line": 711,
+        "line": 718,
         "producer": "emitWebhookEvent",
         "source": "internal/server/gh_pulls_rest.go"
       },
       {
         "event": "pull_request_review",
-        "line": 988,
+        "line": 995,
         "producer": "emitWebhookEvent",
         "source": "internal/server/gh_pulls_rest.go"
       },
       {
         "event": "pull_request_review",
-        "line": 1042,
+        "line": 1049,
         "producer": "emitWebhookEvent",
         "source": "internal/server/gh_pulls_rest.go"
       },
@@ -919,8 +919,8 @@
         "id": "AUTH-040",
         "location": "persistence.go:290, dqlite-node/main.go:108",
         "severity": "M",
-        "status": "open",
-        "status_kind": "open"
+        "status": "fixed \u2014 the transport now runs over TLS 1.3 with a per-cluster identity derived from `BLEEPHUB_DQLITE_SECRET` (`dqliteaddr.TLSConfig`): the node wraps its listener with `tls.NewListener` and the dialer connects with `tls.Client` pinned to the secret-derived root, so a peer from another cluster's secret is rejected at the handshake. Authentication is a constant-time (`subtle.ConstantTimeCompare`) check of the secret header on the `/dqlite` HTTP upgrade, and `NewPersistence` refuses to start without the secret. Covered by `TestDqliteHTTPDialUpgrades` (presents the secret + upgrades over TLS), `TestDqliteHTTPDialRejectsUnupgradedResponses` (wrong-secret 401 rejected) and `TestDqliteHTTPDialRejectsAnotherClusterTLSIdentity` (cross-cluster TLS identity rejected)",
+        "status_kind": "fixed"
       },
       {
         "category": "AUTH",
@@ -3025,8 +3025,8 @@
         "id": "REST-123",
         "location": "gh_pulls_rest.go:443",
         "severity": "M",
-        "status": "open \u2014 consistent with the rest of the PR surface: neither `handleCreatePullRequest`, `handleUpdatePullRequest` (close/reopen/base) nor merge model collaborator push-access, so this is a uniform design gap, not an isolated merge bug. Gating merge alone would be inconsistent and risks parity; the whole PR-write surface should adopt a push-access check together \u2014 a product decision, flagged for a call",
-        "status_kind": "open"
+        "status": "fixed \u2014 `handleMergePullRequest` now requires push access via `viewerCanPushRepo` before merging, returning `403 \"Must have write access to the repository.\"`; a read-only authenticated user (or a non-collaborator on a public repo with no protection) is refused while owners/collaborators with push still merge cleanly. This is not the \"uniform gap\" the earlier note feared: GitHub deliberately gates the PR verbs differently \u2014 opening a PR uses the fork model (read + head-branch access, no base push), updating is author-or-push, and merge alone requires base-repo push \u2014 so gating merge on push is exact parity, not an inconsistency. Regression `TestMergePullRequestRequiresPushAccess` (403 for a reader, PR unmerged; 200 for the owner)",
+        "status_kind": "fixed"
       },
       {
         "category": "GQL",
@@ -5311,8 +5311,8 @@
         "id": "TEST-021",
         "location": "ui_embed.go:1",
         "severity": "M",
-        "status": "open",
-        "status_kind": "open"
+        "status": "fixed \u2014 `ui_embed_test.go` (`//go:build !noui`) exercises `spaHandler` against an in-memory `fstest.MapFS`: real nested/top-level assets are served verbatim, unknown deep routes and the bare prefix fall back to `index.html` (the client-routing contract), and a missing `index.html` yields a clean 404 rather than a panic or empty 200. Because the main suite runs `-tags noui` (which compiles the handler out), a dedicated CI step `go test -run '^TestSPAHandler' ./internal/server/` runs it in the embedded build (dist is committed), so it is now actually executed on every CI run",
+        "status_kind": "fixed"
       },
       {
         "category": "TEST",
@@ -5572,8 +5572,8 @@
         "id": "PAR-012",
         "location": "openapi_shape_validator_test.go:20",
         "severity": "M",
-        "status": "open",
-        "status_kind": "open"
+        "status": "fixed \u2014 `TestViolationAllowlistInvariants` now enforces the gate's own contract: every allowlisted deviation must be preceded by a justification comment block (citation invariant), that block must declare the member VERIFIED (cited into an official description) or unverified with the emitter named (the bug-ID/justification invariant), and the total is held under a ratcheted ceiling that may only be lowered (only-shrinks). The sweep is cross-checked against the canonical `readViolationAllowlist` parser so it cannot pass by parsing zero entries; verified to fail on both an uncommented entry and a count above the ceiling",
+        "status_kind": "fixed"
       },
       {
         "category": "PAR",
@@ -6431,8 +6431,7 @@
         },
         "AUTH": {
           "status": {
-            "fixed": 118,
-            "open": 1
+            "fixed": 119
           },
           "total": 119
         },
@@ -6461,15 +6460,14 @@
         },
         "PAR": {
           "status": {
-            "fixed": 33,
-            "open": 6
+            "fixed": 34,
+            "open": 5
           },
           "total": 39
         },
         "REST": {
           "status": {
-            "fixed": 124,
-            "open": 1
+            "fixed": 125
           },
           "total": 125
         },
@@ -6483,8 +6481,8 @@
         },
         "TEST": {
           "status": {
-            "fixed": 30,
-            "open": 8,
+            "fixed": 31,
+            "open": 7,
             "partial": 2
           },
           "total": 40
@@ -6505,8 +6503,8 @@
       },
       "status": {
         "deferred": 1,
-        "fixed": 631,
-        "open": 29,
+        "fixed": 635,
+        "open": 25,
         "partial": 24
       },
       "total": 685

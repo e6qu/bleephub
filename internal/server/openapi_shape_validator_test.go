@@ -835,6 +835,58 @@ func TestViolationAllowlistIsSingleCopy(t *testing.T) {
 	}
 }
 
+// TestViolationAllowlistInvariants enforces the three properties the gate's
+// header claims for the allowlist but nothing checked, so all three could
+// silently rot (PAR-012): (1) every allowlisted deviation is justified by a
+// preceding comment block, (2) that block states whether the member is VERIFIED
+// (cited into an official description) or unverified (with the emitter named as
+// the thing to fix), and (3) the list only ever shrinks.
+func TestViolationAllowlistInvariants(t *testing.T) {
+	// Ratchet: lower this whenever an entry is removed; a change that raises it
+	// must fail review. The gate ledger may only shrink.
+	const maxAllowlistEntries = 11
+
+	data, err := os.ReadFile(allowlistFile)
+	if err != nil {
+		t.Fatalf("read allowlist: %v", err)
+	}
+
+	total := 0
+	var comment []string // justification comments since the last blank line
+	for n, raw := range strings.Split(string(data), "\n") {
+		trimmed := strings.TrimSpace(strings.TrimRight(raw, " \t\r"))
+		switch {
+		case trimmed == "":
+			comment = nil
+		case strings.HasPrefix(trimmed, "#"):
+			comment = append(comment, trimmed)
+		default: // a data entry: op<TAB>kind<TAB>field
+			total++
+			if len(comment) == 0 {
+				t.Errorf("%s:%d: entry %q has no preceding justification comment (citation invariant)", allowlistFile, n+1, trimmed)
+				continue
+			}
+			// "VERIFIED" and "unverified" both contain "verified": the block must
+			// declare which of the two justifications applies.
+			if !strings.Contains(strings.ToLower(strings.Join(comment, " ")), "verified") {
+				t.Errorf("%s:%d: entry %q is neither marked VERIFIED (cited) nor unverified — the justification block must state which", allowlistFile, n+1, trimmed)
+			}
+		}
+	}
+	if total > maxAllowlistEntries {
+		t.Fatalf("allowlist has %d entries, ceiling is %d — the gate ledger may only shrink; lower the ceiling when removing entries, never raise it", total, maxAllowlistEntries)
+	}
+	// Cross-check against the canonical parser so the citation sweep above cannot
+	// silently pass by parsing zero entries.
+	allowed, err := readViolationAllowlist(allowlistFile)
+	if err != nil {
+		t.Fatalf("canonical parse: %v", err)
+	}
+	if total != len(allowed) {
+		t.Fatalf("counted %d entries but the gate parser sees %d — the invariant sweep is not covering the same entries the gate uses", total, len(allowed))
+	}
+}
+
 // TestShapeValidatorModelIsDeterministic pins the property the gate rests
 // on: the parsed description is a function of the bytes on disk, not of
 // Go's map iteration order.
