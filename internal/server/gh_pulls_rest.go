@@ -467,6 +467,13 @@ func (s *Server) handleMergePullRequest(w http.ResponseWriter, r *http.Request) 
 		writeGHError(w, http.StatusNotFound, "Not Found")
 		return
 	}
+	// Merging a pull request is a write to the base branch: GitHub requires push
+	// access, so a read-only collaborator (or any authenticated user on a public
+	// repo with no branch protection) must not be able to merge (REST-123).
+	if !s.viewerCanPushRepo(r.Context(), repo) {
+		writeGHError(w, http.StatusForbidden, "Must have write access to the repository.")
+		return
+	}
 
 	if pr.State == "MERGED" {
 		writeGHError(w, http.StatusMethodNotAllowed, "Pull Request is not mergeable")
