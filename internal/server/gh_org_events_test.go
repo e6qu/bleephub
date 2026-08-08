@@ -6,18 +6,20 @@ import (
 )
 
 func TestOrgEvents_FeedFromRecordedActivity(t *testing.T) {
-	admin := testServer.store.UsersByLogin["admin"]
-	org := testServer.store.CreateOrg(admin, "events-org", "Events Org", "")
+	t.Parallel()
+	srv := newIsolatedServer(t)
+	admin := srv.store.UsersByLogin["admin"]
+	org := srv.store.CreateOrg(admin, "events-org", "Events Org", "")
 	if org == nil {
 		t.Fatal("create org failed")
 	}
-	repo := testServer.store.CreateOrgRepo(org, admin, "events-repo", "", false)
+	repo := srv.store.CreateOrgRepo(org, admin, "events-repo", "", false)
 	if repo == nil {
 		t.Fatal("create org repo failed")
 	}
 
 	// Honest empty feed before any activity.
-	resp := ghGet(t, "/api/v3/orgs/events-org/events", defaultToken)
+	resp := srv.get(t, "/api/v3/orgs/events-org/events", defaultToken)
 	if resp.StatusCode != http.StatusOK {
 		resp.Body.Close()
 		t.Fatalf("list org events (empty): %d", resp.StatusCode)
@@ -27,7 +29,7 @@ func TestOrgEvents_FeedFromRecordedActivity(t *testing.T) {
 	}
 
 	// Real activity: an issue and a comment on it.
-	resp = ghPost(t, "/api/v3/repos/events-org/events-repo/issues", defaultToken, map[string]interface{}{
+	resp = srv.post(t, "/api/v3/repos/events-org/events-repo/issues", defaultToken, map[string]interface{}{
 		"title": "events feed issue",
 	})
 	if resp.StatusCode != http.StatusCreated {
@@ -37,7 +39,7 @@ func TestOrgEvents_FeedFromRecordedActivity(t *testing.T) {
 	issue := decodeJSON(t, resp)
 	issueNumber := int(issue["number"].(float64))
 
-	resp = ghPost(t, "/api/v3/repos/events-org/events-repo/issues/1/comments", defaultToken, map[string]interface{}{
+	resp = srv.post(t, "/api/v3/repos/events-org/events-repo/issues/1/comments", defaultToken, map[string]interface{}{
 		"body": "commenting for the feed",
 	})
 	if resp.StatusCode != http.StatusCreated {
@@ -46,7 +48,7 @@ func TestOrgEvents_FeedFromRecordedActivity(t *testing.T) {
 	}
 	resp.Body.Close()
 
-	resp = ghGet(t, "/api/v3/orgs/events-org/events", defaultToken)
+	resp = srv.get(t, "/api/v3/orgs/events-org/events", defaultToken)
 	if resp.StatusCode != http.StatusOK {
 		resp.Body.Close()
 		t.Fatalf("list org events: %d", resp.StatusCode)
@@ -105,20 +107,20 @@ func TestOrgEvents_FeedFromRecordedActivity(t *testing.T) {
 	}
 
 	// The feed is stable: identical IDs and timestamps across requests.
-	resp = ghGet(t, "/api/v3/orgs/events-org/events", defaultToken)
+	resp = srv.get(t, "/api/v3/orgs/events-org/events", defaultToken)
 	again := decodeJSONArray(t, resp)
 	if len(again) != 2 || again[0]["id"] != events[0]["id"] || again[0]["created_at"] != events[0]["created_at"] {
 		t.Fatalf("event feed not stable across requests: %v vs %v", again, events)
 	}
 
 	// Closing the issue adds a closed event with the recorded closure time.
-	resp = ghPatch(t, "/api/v3/repos/events-org/events-repo/issues/1", defaultToken, map[string]interface{}{"state": "closed"})
+	resp = srv.patch(t, "/api/v3/repos/events-org/events-repo/issues/1", defaultToken, map[string]interface{}{"state": "closed"})
 	if resp.StatusCode != http.StatusOK {
 		resp.Body.Close()
 		t.Fatalf("close issue %d: %d", issueNumber, resp.StatusCode)
 	}
 	resp.Body.Close()
-	resp = ghGet(t, "/api/v3/orgs/events-org/events", defaultToken)
+	resp = srv.get(t, "/api/v3/orgs/events-org/events", defaultToken)
 	closedFeed := decodeJSONArray(t, resp)
 	if len(closedFeed) != 3 {
 		t.Fatalf("expected 3 events after closing the issue, got %d", len(closedFeed))
@@ -136,7 +138,7 @@ func TestOrgEvents_FeedFromRecordedActivity(t *testing.T) {
 	}
 
 	// Unknown org.
-	resp = ghGet(t, "/api/v3/orgs/no-such-events-org/events", defaultToken)
+	resp = srv.get(t, "/api/v3/orgs/no-such-events-org/events", defaultToken)
 	resp.Body.Close()
 	if resp.StatusCode != http.StatusNotFound {
 		t.Fatalf("unknown org events: %d, want 404", resp.StatusCode)

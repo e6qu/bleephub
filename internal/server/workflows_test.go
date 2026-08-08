@@ -535,13 +535,15 @@ func TestGithubContextMapRepoLessHasNoFakeRefSha(t *testing.T) {
 }
 
 func TestSubmitWorkflowRepoRefResolution(t *testing.T) {
-	repo := seedTestRepo(t, "internal-submit-ref", false)
+	t.Parallel()
+	srv := newIsolatedServer(t)
+	repo := srv.seedRepo(t, "internal-submit-ref", false)
 	yaml := "name: internal-submit\njobs:\n  build:\n    runs-on: ubuntu-latest\n    steps:\n      - run: echo hi\n"
-	stor := testServer.store.GetGitStorage("admin", "internal-submit-ref")
+	stor := srv.store.GetGitStorage("admin", "internal-submit-ref")
 	if stor == nil {
 		t.Fatalf("git storage for %s missing", repo.FullName)
 	}
-	admin := testServer.store.Users[1]
+	admin := srv.store.Users[1]
 	commit, err := initRepoWithFiles(stor, repo.DefaultBranch, "seed workflow", map[string]string{
 		".github/workflows/internal-submit.yml": yaml,
 	}, repoSignature(admin.Login, "bleephub@local"))
@@ -555,7 +557,7 @@ func TestSubmitWorkflowRepoRefResolution(t *testing.T) {
 		"ref":      "refs/heads/main",
 		"image":    "alpine:latest",
 	})
-	resp, err := authedPost("/internal/exec/workflow", "application/json", bytes.NewReader(body))
+	resp, err := srv.authedPost("/internal/exec/workflow", "application/json", bytes.NewReader(body))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -564,9 +566,9 @@ func TestSubmitWorkflowRepoRefResolution(t *testing.T) {
 	if wfID == "" {
 		t.Fatalf("submit response missing workflowId: %v", data)
 	}
-	testServer.store.mu.RLock()
-	wf := testServer.store.Workflows[wfID]
-	testServer.store.mu.RUnlock()
+	srv.store.mu.RLock()
+	wf := srv.store.Workflows[wfID]
+	srv.store.mu.RUnlock()
 	if wf == nil {
 		t.Fatalf("workflow %q not stored", wfID)
 	}
@@ -576,7 +578,9 @@ func TestSubmitWorkflowRepoRefResolution(t *testing.T) {
 }
 
 func TestSubmitWorkflowRejectsUnresolvedRepoRef(t *testing.T) {
-	repo := seedTestRepo(t, "internal-submit-missing-ref", false)
+	t.Parallel()
+	srv := newIsolatedServer(t)
+	repo := srv.seedRepo(t, "internal-submit-missing-ref", false)
 	yaml := "name: missing-ref\njobs:\n  build:\n    runs-on: ubuntu-latest\n    steps:\n      - run: echo hi\n"
 	body, _ := json.Marshal(map[string]string{
 		"workflow": yaml,
@@ -584,7 +588,7 @@ func TestSubmitWorkflowRejectsUnresolvedRepoRef(t *testing.T) {
 		"ref":      "refs/heads/missing",
 		"image":    "alpine:latest",
 	})
-	resp, err := authedPost("/internal/exec/workflow", "application/json", bytes.NewReader(body))
+	resp, err := srv.authedPost("/internal/exec/workflow", "application/json", bytes.NewReader(body))
 	if err != nil {
 		t.Fatal(err)
 	}

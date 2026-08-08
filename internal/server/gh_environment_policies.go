@@ -22,13 +22,23 @@ import (
 //	GET    /repos/{o}/{r}/environments/{env}/deployment_protection_rules/{protection_rule_id}
 //	DELETE /repos/{o}/{r}/environments/{env}/deployment_protection_rules/{protection_rule_id}
 
+// DeploymentBranchPolicyType is the kind of a deployment branch/tag policy
+// rule. GitHub accepts only these two. A typed string marshals to JSON
+// identically to a plain string.
+type DeploymentBranchPolicyType string
+
+const (
+	BranchPolicyBranch DeploymentBranchPolicyType = "branch"
+	BranchPolicyTag    DeploymentBranchPolicyType = "tag"
+)
+
 // DeploymentBranchPolicyRule is one branch/tag name pattern allowed to
 // deploy to an environment.
 type DeploymentBranchPolicyRule struct {
-	ID     int    `json:"id"`
-	NodeID string `json:"node_id"`
-	Name   string `json:"name"`
-	Type   string `json:"type"` // "branch" | "tag"
+	ID     int                        `json:"id"`
+	NodeID string                     `json:"node_id"`
+	Name   string                     `json:"name"`
+	Type   DeploymentBranchPolicyType `json:"type"`
 }
 
 // EnvCustomProtectionRule is a custom deployment protection rule enabled on
@@ -84,7 +94,7 @@ func (st *Store) CreateEnvBranchPolicy(envID int, name, policyType string) (crea
 	st.mu.Lock()
 	defer st.mu.Unlock()
 	for _, p := range st.EnvBranchPolicies[envID] {
-		if p.Name == name && p.Type == policyType {
+		if p.Name == name && p.Type == DeploymentBranchPolicyType(policyType) {
 			return nil, p
 		}
 	}
@@ -92,7 +102,7 @@ func (st *Store) CreateEnvBranchPolicy(envID int, name, policyType string) (crea
 		ID:     st.NextEnvBranchPolicyID,
 		NodeID: fmt.Sprintf("DBP_kwDO%08d", st.NextEnvBranchPolicyID),
 		Name:   name,
-		Type:   policyType,
+		Type:   DeploymentBranchPolicyType(policyType),
 	}
 	st.NextEnvBranchPolicyID++
 	st.EnvBranchPolicies[envID] = append(st.EnvBranchPolicies[envID], p)

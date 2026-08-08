@@ -7,19 +7,21 @@ import (
 )
 
 func TestBranchProtectionStateAcrossBranchAPIs(t *testing.T) {
+	t.Parallel()
+	srv := newIsolatedServer(t)
 	const repoName = "branch-protection-state-fidelity"
-	create := ghPost(t, "/api/v3/user/repos", defaultToken, map[string]interface{}{
+	create := srv.post(t, "/api/v3/user/repos", defaultToken, map[string]interface{}{
 		"name": repoName, "auto_init": true,
 	})
 	requireStatus(t, create, http.StatusCreated)
 	create.Body.Close()
 
-	repo := testServer.store.GetRepo("admin", repoName)
+	repo := srv.store.GetRepo("admin", repoName)
 	if repo == nil {
 		t.Fatal("created repository missing from store")
 	}
-	shas := seedPullRequestBranches(t, testServer, repo, "policy", "plain")
-	testServer.store.CreateRuleset(repo, &Ruleset{
+	shas := seedPullRequestBranches(t, srv.Server, repo, "policy", "plain")
+	srv.store.CreateRuleset(repo, &Ruleset{
 		Name:        "protect-policy",
 		Target:      "branch",
 		Enforcement: "active",
@@ -30,7 +32,7 @@ func TestBranchProtectionStateAcrossBranchAPIs(t *testing.T) {
 	})
 
 	base := "/api/v3/repos/admin/" + repoName
-	protection := ghPut(t, base+"/branches/main/protection", defaultToken, map[string]interface{}{
+	protection := srv.put(t, base+"/branches/main/protection", defaultToken, map[string]interface{}{
 		"required_status_checks": map[string]interface{}{
 			"strict": true, "contexts": []string{"ci"},
 		},
@@ -43,7 +45,7 @@ func TestBranchProtectionStateAcrossBranchAPIs(t *testing.T) {
 
 	assertBranch := func(name string, wantProtected bool) map[string]interface{} {
 		t.Helper()
-		branch := decodeJSONWithStatus(t, ghGet(t, base+"/branches/"+name, defaultToken), http.StatusOK)
+		branch := decodeJSONWithStatus(t, srv.get(t, base+"/branches/"+name, defaultToken), http.StatusOK)
 		if branch["protected"] != wantProtected {
 			t.Errorf("%s protected = %v, want %v", name, branch["protected"], wantProtected)
 		}
@@ -70,29 +72,29 @@ func TestBranchProtectionStateAcrossBranchAPIs(t *testing.T) {
 		t.Errorf("plain protection.enabled = %v, want false", plainProtection["enabled"])
 	}
 
-	protectedBranches := decodeJSONArray(t, ghGet(t, base+"/branches?protected=true", defaultToken))
+	protectedBranches := decodeJSONArray(t, srv.get(t, base+"/branches?protected=true", defaultToken))
 	assertBranchNames(t, protectedBranches, "main", "policy")
-	unprotectedBranches := decodeJSONArray(t, ghGet(t, base+"/branches?protected=false", defaultToken))
+	unprotectedBranches := decodeJSONArray(t, srv.get(t, base+"/branches?protected=false", defaultToken))
 	assertBranchNames(t, unprotectedBranches, "plain")
-	requireStatus(t, ghGet(t, base+"/branches?protected=yes", defaultToken), http.StatusUnprocessableEntity)
+	requireStatus(t, srv.get(t, base+"/branches?protected=yes", defaultToken), http.StatusUnprocessableEntity)
 
-	whereHead := decodeJSONArray(t, ghGet(t, base+"/commits/"+shas["main"]+"/branches-where-head", defaultToken))
+	whereHead := decodeJSONArray(t, srv.get(t, base+"/commits/"+shas["main"]+"/branches-where-head", defaultToken))
 	assertBranchNames(t, whereHead, "main")
 	if whereHead[0]["protected"] != true {
 		t.Errorf("branches-where-head protected = %v, want true", whereHead[0]["protected"])
 	}
 
-	renamed := decodeJSONWithStatus(t, ghPost(t, base+"/branches/main/rename", defaultToken, map[string]interface{}{
+	renamed := decodeJSONWithStatus(t, srv.post(t, base+"/branches/main/rename", defaultToken, map[string]interface{}{
 		"new_name": "trunk",
 	}), http.StatusCreated)
 	if renamed["protected"] != true {
 		t.Errorf("renamed branch protected = %v, want true", renamed["protected"])
 	}
-	requireStatus(t, ghGet(t, base+"/branches/main/protection", defaultToken), http.StatusNotFound)
-	requireStatus(t, ghGet(t, base+"/branches/trunk/protection", defaultToken), http.StatusOK)
+	requireStatus(t, srv.get(t, base+"/branches/main/protection", defaultToken), http.StatusNotFound)
+	requireStatus(t, srv.get(t, base+"/branches/trunk/protection", defaultToken), http.StatusOK)
 	assertBranch("trunk", true)
 
-	requireStatus(t, ghDelete(t, base+"/branches/trunk/protection", defaultToken), http.StatusNoContent)
+	requireStatus(t, srv.delete(t, base+"/branches/trunk/protection", defaultToken), http.StatusNoContent)
 	assertBranch("trunk", false)
 }
 
