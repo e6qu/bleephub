@@ -389,7 +389,7 @@ func (s *Server) handleUpdateMilestone(w http.ResponseWriter, r *http.Request) {
 			} else if v == "open" {
 				m.ClosedAt = nil
 			}
-			m.State = v
+			m.State = MilestoneState(v)
 		}
 	})
 

@@ -152,7 +152,15 @@ func (s *Server) addMetaFieldsToSchema(queryType *graphql.Object) {
 			"key": &graphql.ArgumentConfig{Type: graphql.NewNonNull(graphql.String)},
 		},
 		Resolve: func(p graphql.ResolveParams) (interface{}, error) {
-			return licenseJSON(p.Args["key"].(string)), nil
+			// Comma-ok: the arg is String! so graphql-go's validation normally
+			// guarantees a string here, but never assert a request-derived value
+			// unconditionally — a coercion edge case would panic instead of
+			// returning a clean null.
+			key, ok := p.Args["key"].(string)
+			if !ok {
+				return nil, nil
+			}
+			return licenseJSON(key), nil
 		},
 	})
 	queryType.AddFieldConfig("licenses", &graphql.Field{
@@ -194,7 +202,10 @@ func (s *Server) addMetaFieldsToSchema(queryType *graphql.Object) {
 			"key": &graphql.ArgumentConfig{Type: graphql.NewNonNull(graphql.String)},
 		},
 		Resolve: func(p graphql.ResolveParams) (interface{}, error) {
-			key := p.Args["key"].(string)
+			key, ok := p.Args["key"].(string)
+			if !ok {
+				return nil, nil
+			}
 			for _, c := range codesOfConductCatalog {
 				if c.key == key {
 					return codeOfConductJSON(c), nil

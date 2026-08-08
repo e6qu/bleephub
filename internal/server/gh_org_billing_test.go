@@ -69,14 +69,16 @@ func TestOrgBillingBudgets_Pagination(t *testing.T) {
 }
 
 func TestOrgBillingBudgets_CRUDRoundTrip(t *testing.T) {
-	admin := testServer.store.UsersByLogin["admin"]
-	org := testServer.store.CreateOrg(admin, "billing-budgets-org", "Billing Budgets Org", "")
+	t.Parallel()
+	srv := newIsolatedServer(t)
+	admin := srv.store.UsersByLogin["admin"]
+	org := srv.store.CreateOrg(admin, "billing-budgets-org", "Billing Budgets Org", "")
 	if org == nil {
 		t.Fatal("create org failed")
 	}
 
 	// Create.
-	resp := ghPost(t, "/api/v3/organizations/billing-budgets-org/settings/billing/budgets", defaultToken, map[string]interface{}{
+	resp := srv.post(t, "/api/v3/organizations/billing-budgets-org/settings/billing/budgets", defaultToken, map[string]interface{}{
 		"budget_amount":         500,
 		"prevent_further_usage": true,
 		"budget_scope":          "organization",
@@ -106,7 +108,7 @@ func TestOrgBillingBudgets_CRUDRoundTrip(t *testing.T) {
 	}
 
 	// List.
-	resp = ghGet(t, "/api/v3/organizations/billing-budgets-org/settings/billing/budgets", defaultToken)
+	resp = srv.get(t, "/api/v3/organizations/billing-budgets-org/settings/billing/budgets", defaultToken)
 	if resp.StatusCode != http.StatusOK {
 		resp.Body.Close()
 		t.Fatalf("list budgets: %d", resp.StatusCode)
@@ -121,7 +123,7 @@ func TestOrgBillingBudgets_CRUDRoundTrip(t *testing.T) {
 	}
 
 	// Get.
-	resp = ghGet(t, "/api/v3/organizations/billing-budgets-org/settings/billing/budgets/"+budgetID, defaultToken)
+	resp = srv.get(t, "/api/v3/organizations/billing-budgets-org/settings/billing/budgets/"+budgetID, defaultToken)
 	if resp.StatusCode != http.StatusOK {
 		resp.Body.Close()
 		t.Fatalf("get budget: %d", resp.StatusCode)
@@ -136,7 +138,7 @@ func TestOrgBillingBudgets_CRUDRoundTrip(t *testing.T) {
 	}
 
 	// Update.
-	resp = ghPatch(t, "/api/v3/organizations/billing-budgets-org/settings/billing/budgets/"+budgetID, defaultToken, map[string]interface{}{
+	resp = srv.patch(t, "/api/v3/organizations/billing-budgets-org/settings/billing/budgets/"+budgetID, defaultToken, map[string]interface{}{
 		"budget_amount":         10,
 		"prevent_further_usage": false,
 	})
@@ -154,7 +156,7 @@ func TestOrgBillingBudgets_CRUDRoundTrip(t *testing.T) {
 	}
 
 	// Delete.
-	resp = ghDo(t, "DELETE", "/api/v3/organizations/billing-budgets-org/settings/billing/budgets/"+budgetID, defaultToken, nil)
+	resp = srv.do(t, "DELETE", "/api/v3/organizations/billing-budgets-org/settings/billing/budgets/"+budgetID, defaultToken, nil)
 	if resp.StatusCode != http.StatusOK {
 		resp.Body.Close()
 		t.Fatalf("delete budget: %d", resp.StatusCode)
@@ -165,7 +167,7 @@ func TestOrgBillingBudgets_CRUDRoundTrip(t *testing.T) {
 	}
 
 	// Gone after delete.
-	resp = ghGet(t, "/api/v3/organizations/billing-budgets-org/settings/billing/budgets/"+budgetID, defaultToken)
+	resp = srv.get(t, "/api/v3/organizations/billing-budgets-org/settings/billing/budgets/"+budgetID, defaultToken)
 	resp.Body.Close()
 	if resp.StatusCode != http.StatusNotFound {
 		t.Fatalf("get deleted budget: %d, want 404", resp.StatusCode)
@@ -173,13 +175,15 @@ func TestOrgBillingBudgets_CRUDRoundTrip(t *testing.T) {
 }
 
 func TestOrgBillingBudgets_Validation(t *testing.T) {
-	admin := testServer.store.UsersByLogin["admin"]
-	if testServer.store.CreateOrg(admin, "billing-budgets-val", "Billing Budgets Val", "") == nil {
+	t.Parallel()
+	srv := newIsolatedServer(t)
+	admin := srv.store.UsersByLogin["admin"]
+	if srv.store.CreateOrg(admin, "billing-budgets-val", "Billing Budgets Val", "") == nil {
 		t.Fatal("create org failed")
 	}
 
 	// Invalid scope.
-	resp := ghPost(t, "/api/v3/organizations/billing-budgets-val/settings/billing/budgets", defaultToken, map[string]interface{}{
+	resp := srv.post(t, "/api/v3/organizations/billing-budgets-val/settings/billing/budgets", defaultToken, map[string]interface{}{
 		"budget_scope":       "galaxy",
 		"budget_product_sku": "actions",
 	})
@@ -189,7 +193,7 @@ func TestOrgBillingBudgets_Validation(t *testing.T) {
 	}
 
 	// Missing SKU.
-	resp = ghPost(t, "/api/v3/organizations/billing-budgets-val/settings/billing/budgets", defaultToken, map[string]interface{}{
+	resp = srv.post(t, "/api/v3/organizations/billing-budgets-val/settings/billing/budgets", defaultToken, map[string]interface{}{
 		"budget_scope": "organization",
 	})
 	resp.Body.Close()
@@ -198,7 +202,7 @@ func TestOrgBillingBudgets_Validation(t *testing.T) {
 	}
 
 	// user scope must set prevent_further_usage.
-	resp = ghPost(t, "/api/v3/organizations/billing-budgets-val/settings/billing/budgets", defaultToken, map[string]interface{}{
+	resp = srv.post(t, "/api/v3/organizations/billing-budgets-val/settings/billing/budgets", defaultToken, map[string]interface{}{
 		"budget_scope":          "user",
 		"budget_entity_name":    "admin",
 		"budget_product_sku":    "premium_requests",
@@ -210,7 +214,7 @@ func TestOrgBillingBudgets_Validation(t *testing.T) {
 	}
 
 	// PATCH unknown budget.
-	resp = ghPatch(t, "/api/v3/organizations/billing-budgets-val/settings/billing/budgets/550e8400-e29b-41d4-a716-446655440000", defaultToken, map[string]interface{}{
+	resp = srv.patch(t, "/api/v3/organizations/billing-budgets-val/settings/billing/budgets/550e8400-e29b-41d4-a716-446655440000", defaultToken, map[string]interface{}{
 		"budget_amount": 1,
 	})
 	resp.Body.Close()
@@ -219,16 +223,16 @@ func TestOrgBillingBudgets_Validation(t *testing.T) {
 	}
 
 	// Non-admin caller is forbidden.
-	outsider := createTestUser(t, "billing-outsider")
-	testServer.store.Tokens["ghp_billing_outsider"] = &Token{Value: "ghp_billing_outsider", UserID: outsider.ID}
-	resp = ghGet(t, "/api/v3/organizations/billing-budgets-val/settings/billing/budgets", "ghp_billing_outsider")
+	outsider := srv.createTestUser(t, "billing-outsider")
+	srv.store.Tokens["ghp_billing_outsider"] = &Token{Value: "ghp_billing_outsider", UserID: outsider.ID}
+	resp = srv.get(t, "/api/v3/organizations/billing-budgets-val/settings/billing/budgets", "ghp_billing_outsider")
 	resp.Body.Close()
 	if resp.StatusCode != http.StatusForbidden {
 		t.Fatalf("non-admin list budgets: %d, want 403", resp.StatusCode)
 	}
 
 	// Unknown org.
-	resp = ghGet(t, "/api/v3/organizations/billing-no-such-org/settings/billing/budgets", defaultToken)
+	resp = srv.get(t, "/api/v3/organizations/billing-no-such-org/settings/billing/budgets", defaultToken)
 	resp.Body.Close()
 	if resp.StatusCode != http.StatusNotFound {
 		t.Fatalf("unknown org: %d, want 404", resp.StatusCode)
@@ -236,17 +240,19 @@ func TestOrgBillingBudgets_Validation(t *testing.T) {
 }
 
 func TestOrgBillingUsage_ComputedFromActionsRunHistory(t *testing.T) {
-	admin := testServer.store.UsersByLogin["admin"]
-	org := testServer.store.CreateOrg(admin, "billing-usage-org", "Billing Usage Org", "")
+	t.Parallel()
+	srv := newIsolatedServer(t)
+	admin := srv.store.UsersByLogin["admin"]
+	org := srv.store.CreateOrg(admin, "billing-usage-org", "Billing Usage Org", "")
 	if org == nil {
 		t.Fatal("create org failed")
 	}
-	if testServer.store.CreateOrgRepo(org, admin, "billing-usage-repo", "", false) == nil {
+	if srv.store.CreateOrgRepo(org, admin, "billing-usage-repo", "", false) == nil {
 		t.Fatal("create org repo failed")
 	}
 
 	// With no run history the report is honestly empty.
-	resp := ghGet(t, "/api/v3/organizations/billing-usage-org/settings/billing/usage?year=2026&month=3", defaultToken)
+	resp := srv.get(t, "/api/v3/organizations/billing-usage-org/settings/billing/usage?year=2026&month=3", defaultToken)
 	if resp.StatusCode != http.StatusOK {
 		resp.Body.Close()
 		t.Fatalf("usage (empty): %d", resp.StatusCode)
@@ -266,16 +272,16 @@ func TestOrgBillingUsage_ComputedFromActionsRunHistory(t *testing.T) {
 			"job": {JobID: "billing-usage-job", StartedAt: started, CompletedAt: started.Add(150 * time.Second)},
 		},
 	}
-	testServer.store.mu.Lock()
-	testServer.store.Workflows[wf.ID] = wf
-	testServer.store.mu.Unlock()
+	srv.store.mu.Lock()
+	srv.store.Workflows[wf.ID] = wf
+	srv.store.mu.Unlock()
 	defer func() {
-		testServer.store.mu.Lock()
-		delete(testServer.store.Workflows, wf.ID)
-		testServer.store.mu.Unlock()
+		srv.store.mu.Lock()
+		delete(srv.store.Workflows, wf.ID)
+		srv.store.mu.Unlock()
 	}()
 
-	resp = ghGet(t, "/api/v3/organizations/billing-usage-org/settings/billing/usage?year=2026&month=3", defaultToken)
+	resp = srv.get(t, "/api/v3/organizations/billing-usage-org/settings/billing/usage?year=2026&month=3", defaultToken)
 	if resp.StatusCode != http.StatusOK {
 		resp.Body.Close()
 		t.Fatalf("usage: %d", resp.StatusCode)
@@ -297,14 +303,14 @@ func TestOrgBillingUsage_ComputedFromActionsRunHistory(t *testing.T) {
 	}
 
 	// Requesting a different month excludes the run.
-	resp = ghGet(t, "/api/v3/organizations/billing-usage-org/settings/billing/usage?year=2026&month=4", defaultToken)
+	resp = srv.get(t, "/api/v3/organizations/billing-usage-org/settings/billing/usage?year=2026&month=4", defaultToken)
 	other := decodeJSON(t, resp)
 	if items, _ := other["usageItems"].([]interface{}); len(items) != 0 {
 		t.Fatalf("expected zero usage items in other month, got %v", items)
 	}
 
 	// Summary aggregates the same real usage.
-	resp = ghGet(t, "/api/v3/organizations/billing-usage-org/settings/billing/usage/summary?year=2026&month=3", defaultToken)
+	resp = srv.get(t, "/api/v3/organizations/billing-usage-org/settings/billing/usage/summary?year=2026&month=3", defaultToken)
 	if resp.StatusCode != http.StatusOK {
 		resp.Body.Close()
 		t.Fatalf("usage summary: %d", resp.StatusCode)
@@ -327,7 +333,7 @@ func TestOrgBillingUsage_ComputedFromActionsRunHistory(t *testing.T) {
 	}
 
 	// Invalid month is rejected.
-	resp = ghGet(t, "/api/v3/organizations/billing-usage-org/settings/billing/usage?month=13", defaultToken)
+	resp = srv.get(t, "/api/v3/organizations/billing-usage-org/settings/billing/usage?month=13", defaultToken)
 	resp.Body.Close()
 	if resp.StatusCode != http.StatusBadRequest {
 		t.Fatalf("invalid month: %d, want 400", resp.StatusCode)
@@ -335,8 +341,10 @@ func TestOrgBillingUsage_ComputedFromActionsRunHistory(t *testing.T) {
 }
 
 func TestOrgBillingPremiumRequestAndAICreditUsage_HonestlyEmpty(t *testing.T) {
-	admin := testServer.store.UsersByLogin["admin"]
-	if testServer.store.CreateOrg(admin, "billing-ai-org", "Billing AI Org", "") == nil {
+	t.Parallel()
+	srv := newIsolatedServer(t)
+	admin := srv.store.UsersByLogin["admin"]
+	if srv.store.CreateOrg(admin, "billing-ai-org", "Billing AI Org", "") == nil {
 		t.Fatal("create org failed")
 	}
 
@@ -344,7 +352,7 @@ func TestOrgBillingPremiumRequestAndAICreditUsage_HonestlyEmpty(t *testing.T) {
 		"/api/v3/organizations/billing-ai-org/settings/billing/premium_request/usage",
 		"/api/v3/organizations/billing-ai-org/settings/billing/ai_credit/usage",
 	} {
-		resp := ghGet(t, path+"?year=2026&month=3&user=admin", defaultToken)
+		resp := srv.get(t, path+"?year=2026&month=3&user=admin", defaultToken)
 		if resp.StatusCode != http.StatusOK {
 			resp.Body.Close()
 			t.Fatalf("%s: %d", path, resp.StatusCode)

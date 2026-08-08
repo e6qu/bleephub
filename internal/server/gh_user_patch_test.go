@@ -5,10 +5,12 @@ import (
 )
 
 func TestUserProfileUpdate(t *testing.T) {
-	user := createTestUser(t, "patch-profile-user")
-	token := testServer.store.CreateToken(user.ID, "repo").Value
+	t.Parallel()
+	srv := newIsolatedServer(t)
+	user := srv.createTestUser(t, "patch-profile-user")
+	token := srv.store.CreateToken(user.ID, "repo").Value
 
-	resp := ghPatch(t, "/api/v3/user", token, map[string]interface{}{
+	resp := srv.patch(t, "/api/v3/user", token, map[string]interface{}{
 		"name":             "Omar Jahandar",
 		"bio":              "builds things",
 		"company":          "Acme corporation",
@@ -32,14 +34,14 @@ func TestUserProfileUpdate(t *testing.T) {
 	}
 
 	// The update round-trips through GET /user.
-	resp = ghGet(t, "/api/v3/user", token)
+	resp = srv.get(t, "/api/v3/user", token)
 	fetched := decodeJSONWithStatus(t, resp, 200)
 	if fetched["company"] != "Acme corporation" || fetched["hireable"] != true {
 		t.Fatalf("GET /user after patch: %v", fetched)
 	}
 
 	// A partial patch leaves other fields untouched.
-	resp = ghPatch(t, "/api/v3/user", token, map[string]interface{}{
+	resp = srv.patch(t, "/api/v3/user", token, map[string]interface{}{
 		"location": "Hamburg, Germany",
 	})
 	updated = decodeJSONWithStatus(t, resp, 200)
@@ -48,7 +50,7 @@ func TestUserProfileUpdate(t *testing.T) {
 	}
 
 	// Unauthenticated → 401.
-	resp = ghPatch(t, "/api/v3/user", "", map[string]interface{}{"name": "x"})
+	resp = srv.patch(t, "/api/v3/user", "", map[string]interface{}{"name": "x"})
 	resp.Body.Close()
 	if resp.StatusCode != 401 {
 		t.Fatalf("unauthenticated status = %d, want 401", resp.StatusCode)

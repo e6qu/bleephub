@@ -99,7 +99,7 @@ func (s *Server) handleGetEnterpriseDependabotRepositoryAccess(w http.ResponseWr
 	// envelope (default_level + list) stays a single object.
 	repos = paginateAndLink(w, r, repos)
 	writeJSON(w, http.StatusOK, map[string]interface{}{
-		"default_level":           nullOrString(level),
+		"default_level":           nullOrString(string(level)),
 		"accessible_repositories": repos,
 	})
 }
@@ -152,6 +152,6 @@ func (s *Server) handleSetEnterpriseDependabotDefaultLevel(w http.ResponseWriter
 		writeGHValidationError(w, "DependabotRepositoryAccess", "default_level", "invalid")
 		return
 	}
-	s.store.SetEnterpriseDependabotDefaultLevel(req.DefaultLevel)
+	s.store.SetEnterpriseDependabotDefaultLevel(DependabotDefaultLevel(req.DefaultLevel))
 	w.WriteHeader(http.StatusNoContent)
 }

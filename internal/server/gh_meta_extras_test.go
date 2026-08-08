@@ -8,7 +8,9 @@ import (
 )
 
 func TestEmojisCatalog(t *testing.T) {
-	resp := ghGet(t, "/api/v3/emojis", defaultToken)
+	t.Parallel()
+	srv := newIsolatedServer(t)
+	resp := srv.get(t, "/api/v3/emojis", defaultToken)
 	if resp.StatusCode != 200 {
 		resp.Body.Close()
 		t.Fatalf("emojis status = %d", resp.StatusCode)
@@ -18,22 +20,24 @@ func TestEmojisCatalog(t *testing.T) {
 		t.Fatalf("emoji catalog has %d entries, want the full gemoji set (>= 1900)", len(data))
 	}
 	thumbsUp, _ := data["+1"].(string)
-	if !strings.HasPrefix(thumbsUp, testBaseURL+"/images/icons/emoji/unicode/1f44d.png") {
-		t.Fatalf("+1 = %q, want a %s-hosted unicode/1f44d.png URL", thumbsUp, testBaseURL)
+	if !strings.HasPrefix(thumbsUp, srv.baseURL+"/images/icons/emoji/unicode/1f44d.png") {
+		t.Fatalf("+1 = %q, want a %s-hosted unicode/1f44d.png URL", thumbsUp, srv.baseURL)
 	}
 	octocat, _ := data["octocat"].(string)
-	if octocat != testBaseURL+"/images/icons/emoji/octocat.png?v8" {
+	if octocat != srv.baseURL+"/images/icons/emoji/octocat.png?v8" {
 		t.Fatalf("octocat = %q, want custom-emoji path on the instance host", octocat)
 	}
 }
 
 func TestZenQuote(t *testing.T) {
+	t.Parallel()
+	srv := newIsolatedServer(t)
 	quotes := map[string]bool{}
 	for _, q := range zenQuotes {
 		quotes[q] = true
 	}
 	for i := 0; i < 5; i++ {
-		resp := ghGet(t, "/api/v3/zen", defaultToken)
+		resp := srv.get(t, "/api/v3/zen", defaultToken)
 		body, _ := io.ReadAll(resp.Body)
 		resp.Body.Close()
 		if resp.StatusCode != 200 {
@@ -51,7 +55,9 @@ func TestZenQuote(t *testing.T) {
 // TestOctocatSpeech verifies the ASCII art is byte-identical to real
 // GitHub's GET /octocat output for a valid `s` parameter.
 func TestOctocatSpeech(t *testing.T) {
-	resp := ghGet(t, "/api/v3/octocat?s=Hello", defaultToken)
+	t.Parallel()
+	srv := newIsolatedServer(t)
+	resp := srv.get(t, "/api/v3/octocat?s=Hello", defaultToken)
 	body, _ := io.ReadAll(resp.Body)
 	resp.Body.Close()
 	if resp.StatusCode != 200 {
@@ -92,7 +98,9 @@ func TestOctocatSpeech(t *testing.T) {
 // containing characters outside GitHub's accepted set (e.g. a period) is
 // ignored and a random zen quote fills the speech bubble.
 func TestOctocatInvalidSpeechFallsBackToZen(t *testing.T) {
-	resp := ghGet(t, "/api/v3/octocat?s=a.b", defaultToken)
+	t.Parallel()
+	srv := newIsolatedServer(t)
+	resp := srv.get(t, "/api/v3/octocat?s=a.b", defaultToken)
 	body, _ := io.ReadAll(resp.Body)
 	resp.Body.Close()
 	if resp.StatusCode != 200 {
@@ -114,7 +122,9 @@ func TestOctocatInvalidSpeechFallsBackToZen(t *testing.T) {
 }
 
 func TestRESTAPIVersions(t *testing.T) {
-	resp := ghGet(t, "/api/v3/versions", defaultToken)
+	t.Parallel()
+	srv := newIsolatedServer(t)
+	resp := srv.get(t, "/api/v3/versions", defaultToken)
 	defer resp.Body.Close()
 	if resp.StatusCode != 200 {
 		t.Fatalf("versions status = %d", resp.StatusCode)
@@ -129,11 +139,13 @@ func TestRESTAPIVersions(t *testing.T) {
 }
 
 func TestCredentialsRevoke(t *testing.T) {
-	user := createTestUser(t, "revoke-target")
-	token := testServer.store.CreateToken(user.ID, "repo").Value
+	t.Parallel()
+	srv := newIsolatedServer(t)
+	user := srv.createTestUser(t, "revoke-target")
+	token := srv.store.CreateToken(user.ID, "repo").Value
 
 	// The token works before revocation.
-	resp := ghGet(t, "/api/v3/user", token)
+	resp := srv.get(t, "/api/v3/user", token)
 	resp.Body.Close()
 	if resp.StatusCode != 200 {
 		t.Fatalf("pre-revocation GET /user = %d", resp.StatusCode)
@@ -141,7 +153,7 @@ func TestCredentialsRevoke(t *testing.T) {
 
 	// Revoke it (the endpoint itself needs no authentication, matching
 	// GitHub) along with an unknown credential, which is silently accepted.
-	resp = ghPost(t, "/api/v3/credentials/revoke", "", map[string]interface{}{
+	resp = srv.post(t, "/api/v3/credentials/revoke", "", map[string]interface{}{
 		"credentials": []string{token, "ghp_doesnotexist000000000000000000000000"},
 	})
 	resp.Body.Close()
@@ -149,7 +161,7 @@ func TestCredentialsRevoke(t *testing.T) {
 		t.Fatalf("revoke status = %d, want 202", resp.StatusCode)
 	}
 
-	resp = ghGet(t, "/api/v3/user", token)
+	resp = srv.get(t, "/api/v3/user", token)
 	resp.Body.Close()
 	if resp.StatusCode != 401 {
 		t.Fatalf("post-revocation GET /user = %d, want 401", resp.StatusCode)
@@ -157,7 +169,9 @@ func TestCredentialsRevoke(t *testing.T) {
 }
 
 func TestCredentialsRevokeValidation(t *testing.T) {
-	resp := ghPost(t, "/api/v3/credentials/revoke", "", map[string]interface{}{
+	t.Parallel()
+	srv := newIsolatedServer(t)
+	resp := srv.post(t, "/api/v3/credentials/revoke", "", map[string]interface{}{
 		"credentials": []string{},
 	})
 	resp.Body.Close()

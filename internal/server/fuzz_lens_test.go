@@ -41,6 +41,12 @@ func FuzzGraphQLWithVariables(f *testing.F) {
 		{"mutation($i:CreateIssueInput!){createIssue(input:$i){issue{number}}}", `{"i":{"repositoryId":42,"title":null,"body":true}}`},
 		{"query($f:Int,$a:String){viewer{repositories(first:$f,after:$a){nodes{name}}}}", `{"f":-1,"a":99}`},
 		{"query($f:Int,$a:String){viewer{repositories(first:$f,after:$a){nodes{name}}}}", `{"f":2147483647,"a":""}`},
+		// license/codeOfConduct read a String! key arg; keep them in corpus so
+		// the resolver arg-coercion path is exercised (see gh_meta_graphql.go).
+		{"{license(key:\"mit\"){key name}}", `{}`},
+		{"query($k:String!){license(key:$k){key}}", `{"k":"apache-2.0"}`},
+		{"{codeOfConduct(key:\"citizen_code_of_conduct\"){key name}}", `{}`},
+		{"query($k:String!){codeOfConduct(key:$k){key}}", `{"k":"contributor_covenant"}`},
 	}
 	for _, sd := range seeds {
 		f.Add(sd.q, sd.vars)

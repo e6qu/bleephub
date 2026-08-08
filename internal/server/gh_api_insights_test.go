@@ -12,25 +12,27 @@ import (
 // dedicated member's classic personal access token and asserts every API
 // insights aggregation reports it.
 func TestAPIInsights_StatsFromObservedTraffic(t *testing.T) {
+	t.Parallel()
+	srv := newIsolatedServer(t)
 	fixedNow := time.Date(2035, time.June, 15, 12, 0, 0, 0, time.UTC)
-	previousClock := testServer.replaceClockNow(func() time.Time { return fixedNow })
-	t.Cleanup(func() { testServer.replaceClockNow(previousClock) })
+	previousClock := srv.replaceClockNow(func() time.Time { return fixedNow })
+	t.Cleanup(func() { srv.replaceClockNow(previousClock) })
 
-	admin := testServer.store.UsersByLogin["admin"]
-	org := testServer.store.CreateOrg(admin, "insights-org", "Insights Org", "")
+	admin := srv.store.UsersByLogin["admin"]
+	org := srv.store.CreateOrg(admin, "insights-org", "Insights Org", "")
 	if org == nil {
 		t.Fatal("create org failed")
 	}
-	member := createTestUser(t, "insights-member")
-	testServer.store.SetMembership(org.Login, member.ID, OrgRoleMember, MembershipStateActive)
+	member := srv.createTestUser(t, "insights-member")
+	srv.store.SetMembership(org.Login, member.ID, OrgRoleMember, MembershipStateActive)
 	memberToken := "ghp_insights_member_token"
-	testServer.store.Tokens[memberToken] = &Token{Value: memberToken, UserID: member.ID}
+	srv.store.Tokens[memberToken] = &Token{Value: memberToken, UserID: member.ID}
 
 	minTS := fixedNow.Add(-time.Hour).Format(time.RFC3339)
 
 	// Real observed traffic: three authenticated requests by the member.
 	for _, path := range []string{"/api/v3/user", "/api/v3/user", "/api/v3/users/insights-member"} {
-		resp := ghGet(t, path, memberToken)
+		resp := srv.get(t, path, memberToken)
 		resp.Body.Close()
 		if resp.StatusCode != http.StatusOK {
 			t.Fatalf("member request %s: %d", path, resp.StatusCode)
@@ -41,7 +43,7 @@ func TestAPIInsights_StatsFromObservedTraffic(t *testing.T) {
 	actorPath := fmt.Sprintf("classic_pat/%d", member.ID)
 
 	// Route stats by actor.
-	resp := ghGet(t, "/api/v3/orgs/insights-org/insights/api/route-stats/"+actorPath+"?"+window, defaultToken)
+	resp := srv.get(t, "/api/v3/orgs/insights-org/insights/api/route-stats/"+actorPath+"?"+window, defaultToken)
 	if resp.StatusCode != http.StatusOK {
 		resp.Body.Close()
 		t.Fatalf("route-stats: %d", resp.StatusCode)
@@ -67,7 +69,7 @@ func TestAPIInsights_StatsFromObservedTraffic(t *testing.T) {
 	}
 
 	// Subject stats.
-	resp = ghGet(t, "/api/v3/orgs/insights-org/insights/api/subject-stats?"+window+"&subject_name_substring=insights-member", defaultToken)
+	resp = srv.get(t, "/api/v3/orgs/insights-org/insights/api/subject-stats?"+window+"&subject_name_substring=insights-member", defaultToken)
 	if resp.StatusCode != http.StatusOK {
 		resp.Body.Close()
 		t.Fatalf("subject-stats: %d", resp.StatusCode)
@@ -82,7 +84,7 @@ func TestAPIInsights_StatsFromObservedTraffic(t *testing.T) {
 
 	// Summary stats (whole org includes the admin's own insights queries, so
 	// only the lower bound is fixed).
-	resp = ghGet(t, "/api/v3/orgs/insights-org/insights/api/summary-stats?"+window, defaultToken)
+	resp = srv.get(t, "/api/v3/orgs/insights-org/insights/api/summary-stats?"+window, defaultToken)
 	if resp.StatusCode != http.StatusOK {
 		resp.Body.Close()
 		t.Fatalf("summary-stats: %d", resp.StatusCode)
@@ -98,7 +100,7 @@ func TestAPIInsights_StatsFromObservedTraffic(t *testing.T) {
 		fmt.Sprintf("/api/v3/orgs/insights-org/insights/api/summary-stats/users/%d?%s", member.ID, window),
 		"/api/v3/orgs/insights-org/insights/api/summary-stats/" + actorPath + "?" + window,
 	} {
-		resp = ghGet(t, path, defaultToken)
+		resp = srv.get(t, path, defaultToken)
 		if resp.StatusCode != http.StatusOK {
 			resp.Body.Close()
 			t.Fatalf("%s: %d", path, resp.StatusCode)
@@ -110,7 +112,7 @@ func TestAPIInsights_StatsFromObservedTraffic(t *testing.T) {
 	}
 
 	// Time stats: a 1h increment covers the whole window in one bucket.
-	resp = ghGet(t, fmt.Sprintf("/api/v3/orgs/insights-org/insights/api/time-stats/users/%d?%s&timestamp_increment=1h", member.ID, window), defaultToken)
+	resp = srv.get(t, fmt.Sprintf("/api/v3/orgs/insights-org/insights/api/time-stats/users/%d?%s&timestamp_increment=1h", member.ID, window), defaultToken)
 	if resp.StatusCode != http.StatusOK {
 		resp.Body.Close()
 		t.Fatalf("time-stats by user: %d", resp.StatusCode)
@@ -128,14 +130,14 @@ func TestAPIInsights_StatsFromObservedTraffic(t *testing.T) {
 		t.Fatalf("time-stats by user total = %v, want 3", bucketTotal)
 	}
 
-	resp = ghGet(t, "/api/v3/orgs/insights-org/insights/api/time-stats?"+window+"&timestamp_increment=1h", defaultToken)
+	resp = srv.get(t, "/api/v3/orgs/insights-org/insights/api/time-stats?"+window+"&timestamp_increment=1h", defaultToken)
 	if resp.StatusCode != http.StatusOK {
 		resp.Body.Close()
 		t.Fatalf("time-stats: %d", resp.StatusCode)
 	}
 	decodeJSONArray(t, resp)
 
-	resp = ghGet(t, "/api/v3/orgs/insights-org/insights/api/time-stats/"+actorPath+"?"+window+"&timestamp_increment=1h", defaultToken)
+	resp = srv.get(t, "/api/v3/orgs/insights-org/insights/api/time-stats/"+actorPath+"?"+window+"&timestamp_increment=1h", defaultToken)
 	if resp.StatusCode != http.StatusOK {
 		resp.Body.Close()
 		t.Fatalf("time-stats by actor: %d", resp.StatusCode)
@@ -151,7 +153,7 @@ func TestAPIInsights_StatsFromObservedTraffic(t *testing.T) {
 	}
 
 	// User stats: the member's traffic groups under one classic PAT actor.
-	resp = ghGet(t, fmt.Sprintf("/api/v3/orgs/insights-org/insights/api/user-stats/%d?%s", member.ID, window), defaultToken)
+	resp = srv.get(t, fmt.Sprintf("/api/v3/orgs/insights-org/insights/api/user-stats/%d?%s", member.ID, window), defaultToken)
 	if resp.StatusCode != http.StatusOK {
 		resp.Body.Close()
 		t.Fatalf("user-stats: %d", resp.StatusCode)
@@ -169,13 +171,15 @@ func TestAPIInsights_StatsFromObservedTraffic(t *testing.T) {
 }
 
 func TestAPIInsights_ParameterValidation(t *testing.T) {
-	admin := testServer.store.UsersByLogin["admin"]
-	if testServer.store.CreateOrg(admin, "insights-val-org", "Insights Val Org", "") == nil {
+	t.Parallel()
+	srv := newIsolatedServer(t)
+	admin := srv.store.UsersByLogin["admin"]
+	if srv.store.CreateOrg(admin, "insights-val-org", "Insights Val Org", "") == nil {
 		t.Fatal("create org failed")
 	}
 
 	// min_timestamp is required.
-	resp := ghGet(t, "/api/v3/orgs/insights-val-org/insights/api/summary-stats", defaultToken)
+	resp := srv.get(t, "/api/v3/orgs/insights-val-org/insights/api/summary-stats", defaultToken)
 	resp.Body.Close()
 	if resp.StatusCode != http.StatusUnprocessableEntity {
 		t.Fatalf("missing min_timestamp: %d, want 422", resp.StatusCode)
@@ -183,23 +187,23 @@ func TestAPIInsights_ParameterValidation(t *testing.T) {
 
 	// timestamp_increment is required for time stats.
 	minTS := url.QueryEscape("2000-01-01T00:00:00Z")
-	resp = ghGet(t, "/api/v3/orgs/insights-val-org/insights/api/time-stats?min_timestamp="+minTS, defaultToken)
+	resp = srv.get(t, "/api/v3/orgs/insights-val-org/insights/api/time-stats?min_timestamp="+minTS, defaultToken)
 	resp.Body.Close()
 	if resp.StatusCode != http.StatusUnprocessableEntity {
 		t.Fatalf("missing timestamp_increment: %d, want 422", resp.StatusCode)
 	}
 
 	// Unknown actor type is not found.
-	resp = ghGet(t, "/api/v3/orgs/insights-val-org/insights/api/route-stats/space_probe/1?min_timestamp="+minTS, defaultToken)
+	resp = srv.get(t, "/api/v3/orgs/insights-val-org/insights/api/route-stats/space_probe/1?min_timestamp="+minTS, defaultToken)
 	resp.Body.Close()
 	if resp.StatusCode != http.StatusNotFound {
 		t.Fatalf("unknown actor type: %d, want 404", resp.StatusCode)
 	}
 
 	// Non-admin caller is forbidden.
-	outsider := createTestUser(t, "insights-outsider")
-	testServer.store.Tokens["ghp_insights_outsider"] = &Token{Value: "ghp_insights_outsider", UserID: outsider.ID}
-	resp = ghGet(t, "/api/v3/orgs/insights-val-org/insights/api/summary-stats?min_timestamp="+minTS, "ghp_insights_outsider")
+	outsider := srv.createTestUser(t, "insights-outsider")
+	srv.store.Tokens["ghp_insights_outsider"] = &Token{Value: "ghp_insights_outsider", UserID: outsider.ID}
+	resp = srv.get(t, "/api/v3/orgs/insights-val-org/insights/api/summary-stats?min_timestamp="+minTS, "ghp_insights_outsider")
 	resp.Body.Close()
 	if resp.StatusCode != http.StatusForbidden {
 		t.Fatalf("non-admin summary-stats: %d, want 403", resp.StatusCode)

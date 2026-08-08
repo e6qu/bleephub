@@ -159,6 +159,24 @@ func (s *isolatedServer) createTestRepo(t *testing.T) string {
 	return "admin/" + name
 }
 
+func (s *isolatedServer) createTestUser(t *testing.T, login string) *User {
+	t.Helper()
+	resp, err := s.authedPost("/internal/users", "application/json", bytes.NewReader(mustJSON(map[string]interface{}{
+		"login": login,
+		"email": login + "@example.com",
+	})))
+	if err != nil {
+		t.Fatalf("create user %s: %v", login, err)
+	}
+	if resp.StatusCode != http.StatusCreated {
+		b, _ := io.ReadAll(resp.Body)
+		resp.Body.Close()
+		t.Fatalf("create user %s: %d %s", login, resp.StatusCode, b)
+	}
+	resp.Body.Close()
+	return s.store.UsersByLogin[login]
+}
+
 func (s *isolatedServer) createOrgRepoForGovernance(t *testing.T, org string) (string, int) {
 	t.Helper()
 	name := "gov-repo-" + strconv.FormatInt(int64(nextTestID()), 36)
