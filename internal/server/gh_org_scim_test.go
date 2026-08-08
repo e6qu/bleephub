@@ -6,9 +6,11 @@ import (
 )
 
 func TestOrganizationSCIMUserLifecycle(t *testing.T) {
-	createOrgViaAdminAPI(t, "org-scim")
+	t.Parallel()
+	srv := newIsolatedServer(t)
+	srv.createOrg(t, "org-scim")
 	base := "/api/v3/scim/v2/organizations/org-scim/Users"
-	created := ghPost(t, base, defaultToken, map[string]interface{}{
+	created := srv.post(t, base, defaultToken, map[string]interface{}{
 		"schemas":     []string{scimUserSchema},
 		"externalId":  "directory-42",
 		"userName":    "org.scim.user",
@@ -28,20 +30,20 @@ func TestOrganizationSCIMUserLifecycle(t *testing.T) {
 		t.Fatalf("created SCIM user = %#v", user)
 	}
 	isActiveMember := func(userID int) bool {
-		membership := testServer.store.GetMembership("org-scim", userID)
+		membership := srv.store.GetMembership("org-scim", userID)
 		return membership != nil && membership.State == MembershipStateActive
 	}
-	backing := testServer.store.LookupUserByLogin("org-scim-user")
+	backing := srv.store.LookupUserByLogin("org-scim-user")
 	if backing == nil || !isActiveMember(backing.ID) {
 		t.Fatalf("backing user/membership was not provisioned: %#v", backing)
 	}
 
-	listed := decodeJSON(t, ghGet(t, base+"?filter=externalId%20eq%20%22directory-42%22", defaultToken))
+	listed := decodeJSON(t, srv.get(t, base+"?filter=externalId%20eq%20%22directory-42%22", defaultToken))
 	if listed["totalResults"] != float64(1) || len(listed["Resources"].([]interface{})) != 1 {
 		t.Fatalf("filtered SCIM users = %#v", listed)
 	}
 
-	patched := ghPatch(t, base+"/"+id, defaultToken, map[string]interface{}{
+	patched := srv.patch(t, base+"/"+id, defaultToken, map[string]interface{}{
 		"schemas": []string{"urn:ietf:params:scim:api:messages:2.0:PatchOp"},
 		"Operations": []map[string]interface{}{
 			{"op": "replace", "path": "displayName", "value": "Renamed SCIM User"},
@@ -60,7 +62,7 @@ func TestOrganizationSCIMUserLifecycle(t *testing.T) {
 		t.Fatal("inactive SCIM identity retained organization membership")
 	}
 
-	replaced := ghPut(t, base+"/"+id, defaultToken, map[string]interface{}{
+	replaced := srv.put(t, base+"/"+id, defaultToken, map[string]interface{}{
 		"schemas": []string{scimUserSchema}, "externalId": "directory-42",
 		"userName": "org.scim.user", "displayName": "Active Again", "active": true,
 	})
@@ -73,15 +75,15 @@ func TestOrganizationSCIMUserLifecycle(t *testing.T) {
 		t.Fatal("reactivated SCIM identity did not restore organization membership")
 	}
 
-	expectStatus(t, ghDelete(t, base+"/"+id, defaultToken), http.StatusNoContent, "delete SCIM user")
+	expectStatus(t, srv.delete(t, base+"/"+id, defaultToken), http.StatusNoContent, "delete SCIM user")
 	if isActiveMember(backing.ID) {
 		t.Fatal("deleted SCIM identity retained organization membership")
 	}
-	expectStatus(t, ghGet(t, base+"/"+id, defaultToken), http.StatusNotFound, "deleted SCIM user")
+	expectStatus(t, srv.get(t, base+"/"+id, defaultToken), http.StatusNotFound, "deleted SCIM user")
 
 	// Keep the OpenAPI shape ratchet non-vacuous when this GHEC-only route
 	// family is selected in isolation.
-	expectStatus(t, ghGet(t, "/api/v3/user", defaultToken), http.StatusOK, "shape-ratchet control")
+	expectStatus(t, srv.get(t, "/api/v3/user", defaultToken), http.StatusOK, "shape-ratchet control")
 }
 
 // TestOrganizationSCIMCannotHijackExistingAccount pins the rule that an org's SCIM
@@ -89,18 +91,20 @@ func TestOrganizationSCIMUserLifecycle(t *testing.T) {
 // manage. Provisioning a SCIM user whose userName collides with a pre-existing
 // account is a conflict, and the victim is neither renamed nor made a member.
 func TestOrganizationSCIMCannotHijackExistingAccount(t *testing.T) {
-	createOrgViaAdminAPI(t, "evilcorp")
+	t.Parallel()
+	srv := newIsolatedServer(t)
+	srv.createOrg(t, "evilcorp")
 
 	// A pre-existing, non-SCIM account.
-	testServer.store.mu.Lock()
-	victim := &User{ID: testServer.store.NextUser, Login: "victim", Name: "Victim", Email: "victim@real.test", Type: "User", StarredRepos: map[string]bool{}}
-	testServer.store.NextUser++
-	testServer.store.Users[victim.ID] = victim
-	testServer.store.UsersByLogin["victim"] = victim
-	testServer.store.mu.Unlock()
+	srv.store.mu.Lock()
+	victim := &User{ID: srv.store.NextUser, Login: "victim", Name: "Victim", Email: "victim@real.test", Type: "User", StarredRepos: map[string]bool{}}
+	srv.store.NextUser++
+	srv.store.Users[victim.ID] = victim
+	srv.store.UsersByLogin["victim"] = victim
+	srv.store.mu.Unlock()
 
 	base := "/api/v3/scim/v2/organizations/evilcorp/Users"
-	resp := ghPost(t, base, defaultToken, map[string]interface{}{
+	resp := srv.post(t, base, defaultToken, map[string]interface{}{
 		"schemas": []string{scimUserSchema}, "userName": "victim",
 		"displayName": "Pwned", "active": true,
 		"emails": []map[string]interface{}{{"value": "attacker@evil.test", "primary": true}},
@@ -111,11 +115,11 @@ func TestOrganizationSCIMCannotHijackExistingAccount(t *testing.T) {
 	}
 	resp.Body.Close()
 
-	after := testServer.store.LookupUserByLogin("victim")
+	after := srv.store.LookupUserByLogin("victim")
 	if after == nil || after.ID != victim.ID || after.Name != "Victim" || after.Email != "victim@real.test" {
 		t.Fatalf("victim account was mutated by SCIM: %#v", after)
 	}
-	if m := testServer.store.GetMembership("evilcorp", victim.ID); m != nil && m.State == MembershipStateActive {
+	if m := srv.store.GetMembership("evilcorp", victim.ID); m != nil && m.State == MembershipStateActive {
 		t.Fatal("victim was force-enrolled into the org via SCIM")
 	}
 }

@@ -8,17 +8,19 @@ import (
 
 // TestListOrgRepos verifies GET /api/v3/orgs/{org}/repos returns org-owned repos.
 func TestListOrgRepos(t *testing.T) {
-	createOrgViaAdminAPI(t, "list-org", "List Org")
+	t.Parallel()
+	srv := newIsolatedServer(t)
+	srv.createOrg(t, "list-org", "List Org")
 
-	ghPost(t, "/api/v3/orgs/list-org/repos", defaultToken, map[string]interface{}{
+	srv.post(t, "/api/v3/orgs/list-org/repos", defaultToken, map[string]interface{}{
 		"name": "alpha",
 	})
-	ghPost(t, "/api/v3/orgs/list-org/repos", defaultToken, map[string]interface{}{
+	srv.post(t, "/api/v3/orgs/list-org/repos", defaultToken, map[string]interface{}{
 		"name":    "beta",
 		"private": true,
 	})
 
-	resp := ghGet(t, "/api/v3/orgs/list-org/repos", defaultToken)
+	resp := srv.get(t, "/api/v3/orgs/list-org/repos", defaultToken)
 	if resp.StatusCode != 200 {
 		resp.Body.Close()
 		t.Fatalf("expected 200, got %d", resp.StatusCode)
@@ -41,7 +43,9 @@ func TestListOrgRepos(t *testing.T) {
 
 // TestListOrgReposNotFound verifies GET for nonexistent org → 404.
 func TestListOrgReposNotFound(t *testing.T) {
-	resp := ghGet(t, "/api/v3/orgs/no-such-org/repos", defaultToken)
+	t.Parallel()
+	srv := newIsolatedServer(t)
+	resp := srv.get(t, "/api/v3/orgs/no-such-org/repos", defaultToken)
 	defer resp.Body.Close()
 	if resp.StatusCode != 404 {
 		t.Fatalf("expected 404, got %d", resp.StatusCode)
@@ -50,16 +54,18 @@ func TestListOrgReposNotFound(t *testing.T) {
 
 // TestListAuthUserReposFilters verifies GET /api/v3/user/repos filtering.
 func TestListAuthUserReposFilters(t *testing.T) {
-	ghPost(t, "/api/v3/user/repos", defaultToken, map[string]interface{}{
+	t.Parallel()
+	srv := newIsolatedServer(t)
+	srv.post(t, "/api/v3/user/repos", defaultToken, map[string]interface{}{
 		"name":    "public-repo",
 		"private": false,
 	})
-	ghPost(t, "/api/v3/user/repos", defaultToken, map[string]interface{}{
+	srv.post(t, "/api/v3/user/repos", defaultToken, map[string]interface{}{
 		"name":    "private-repo",
 		"private": true,
 	})
 
-	resp := ghGet(t, "/api/v3/user/repos?visibility=public", defaultToken)
+	resp := srv.get(t, "/api/v3/user/repos?visibility=public", defaultToken)
 	if resp.StatusCode != 200 {
 		resp.Body.Close()
 		t.Fatalf("expected 200, got %d", resp.StatusCode)
@@ -71,7 +77,7 @@ func TestListAuthUserReposFilters(t *testing.T) {
 		}
 	}
 
-	resp2 := ghGet(t, "/api/v3/user/repos?visibility=private", defaultToken)
+	resp2 := srv.get(t, "/api/v3/user/repos?visibility=private", defaultToken)
 	if resp2.StatusCode != 200 {
 		resp2.Body.Close()
 		t.Fatalf("expected 200, got %d", resp2.StatusCode)
@@ -86,13 +92,15 @@ func TestListAuthUserReposFilters(t *testing.T) {
 
 // TestListAuthUserReposTypeConflict verifies type + visibility/affiliation → 422.
 func TestListAuthUserReposTypeConflict(t *testing.T) {
-	resp := ghGet(t, "/api/v3/user/repos?type=owner&visibility=public", defaultToken)
+	t.Parallel()
+	srv := newIsolatedServer(t)
+	resp := srv.get(t, "/api/v3/user/repos?type=owner&visibility=public", defaultToken)
 	defer resp.Body.Close()
 	if resp.StatusCode != 422 {
 		t.Fatalf("expected 422, got %d", resp.StatusCode)
 	}
 
-	resp2 := ghGet(t, "/api/v3/user/repos?type=owner&affiliation=owner", defaultToken)
+	resp2 := srv.get(t, "/api/v3/user/repos?type=owner&affiliation=owner", defaultToken)
 	defer resp2.Body.Close()
 	if resp2.StatusCode != 422 {
 		t.Fatalf("expected 422, got %d", resp2.StatusCode)
@@ -101,21 +109,22 @@ func TestListAuthUserReposTypeConflict(t *testing.T) {
 
 // TestListAuthUserReposSort verifies sort and direction query params.
 func TestListAuthUserReposSort(t *testing.T) {
-	ghPost(t, "/api/v3/user/repos", defaultToken, map[string]interface{}{
+	t.Parallel()
+	srv := newIsolatedServer(t)
+	srv.post(t, "/api/v3/user/repos", defaultToken, map[string]interface{}{
 		"name": "sort-aaa",
 	})
-	ghPost(t, "/api/v3/user/repos", defaultToken, map[string]interface{}{
+	srv.post(t, "/api/v3/user/repos", defaultToken, map[string]interface{}{
 		"name": "sort-zzz",
 	})
 
-	// The shared test server accumulates repos across tests; fetch all pages
-	// until both target repos are found rather than assuming they fit in one
-	// page.
+	// Fetch all pages until both target repos are found rather than assuming
+	// they fit in one page.
 	var idxAaa, idxZzz = -1, -1
 	url := "/api/v3/user/repos?sort=full_name&direction=asc&per_page=100"
 	seen := 0
 	for url != "" {
-		resp := ghGet(t, url, defaultToken)
+		resp := srv.get(t, url, defaultToken)
 		if resp.StatusCode != 200 {
 			resp.Body.Close()
 			t.Fatalf("expected 200, got %d", resp.StatusCode)
@@ -132,7 +141,7 @@ func TestListAuthUserReposSort(t *testing.T) {
 			seen++
 		}
 		link := resp.Header.Get("Link")
-		url = nextLinkURL(link)
+		url = nextLinkURL(link, srv.baseURL)
 	}
 
 	if idxAaa == -1 || idxZzz == -1 {
@@ -144,7 +153,7 @@ func TestListAuthUserReposSort(t *testing.T) {
 }
 
 // nextLinkURL extracts the rel="next" URL from a GitHub-style Link header.
-func nextLinkURL(link string) string {
+func nextLinkURL(link, base string) string {
 	if link == "" {
 		return ""
 	}
@@ -156,7 +165,7 @@ func nextLinkURL(link string) string {
 		start := strings.Index(part, "<")
 		end := strings.Index(part, ">")
 		if start != -1 && end != -1 && end > start {
-			return strings.TrimPrefix(part[start+1:end], testBaseURL)
+			return strings.TrimPrefix(part[start+1:end], base)
 		}
 	}
 	return ""
@@ -164,16 +173,18 @@ func nextLinkURL(link string) string {
 
 // TestListUserReposByLogin verifies GET /api/v3/users/{username}/repos filters.
 func TestListUserReposByLogin(t *testing.T) {
-	ghPost(t, "/api/v3/user/repos", defaultToken, map[string]interface{}{
+	t.Parallel()
+	srv := newIsolatedServer(t)
+	srv.post(t, "/api/v3/user/repos", defaultToken, map[string]interface{}{
 		"name":    "user-public",
 		"private": false,
 	})
-	ghPost(t, "/api/v3/user/repos", defaultToken, map[string]interface{}{
+	srv.post(t, "/api/v3/user/repos", defaultToken, map[string]interface{}{
 		"name":    "user-private",
 		"private": true,
 	})
 
-	resp := ghGet(t, "/api/v3/users/admin/repos?type=public", "")
+	resp := srv.get(t, "/api/v3/users/admin/repos?type=public", "")
 	if resp.StatusCode != 200 {
 		resp.Body.Close()
 		t.Fatalf("expected 200, got %d", resp.StatusCode)
@@ -188,7 +199,9 @@ func TestListUserReposByLogin(t *testing.T) {
 
 // TestRepoResponseShape verifies new fields are emitted in repo responses.
 func TestRepoResponseShape(t *testing.T) {
-	resp := ghPost(t, "/api/v3/user/repos", defaultToken, map[string]interface{}{
+	t.Parallel()
+	srv := newIsolatedServer(t)
+	resp := srv.post(t, "/api/v3/user/repos", defaultToken, map[string]interface{}{
 		"name":               "shape-repo",
 		"homepage":           "https://example.test",
 		"has_issues":         true,
@@ -227,11 +240,13 @@ func TestRepoResponseShape(t *testing.T) {
 
 // TestUpdateRepoExtended verifies PATCH supports new settings fields.
 func TestUpdateRepoExtended(t *testing.T) {
-	ghPost(t, "/api/v3/user/repos", defaultToken, map[string]interface{}{
+	t.Parallel()
+	srv := newIsolatedServer(t)
+	srv.post(t, "/api/v3/user/repos", defaultToken, map[string]interface{}{
 		"name": "update-extended",
 	})
 
-	resp := ghPatch(t, "/api/v3/repos/admin/update-extended", defaultToken, map[string]interface{}{
+	resp := srv.patch(t, "/api/v3/repos/admin/update-extended", defaultToken, map[string]interface{}{
 		"description":                    "new description",
 		"homepage":                       "https://new.test",
 		"has_issues":                     false,
@@ -273,11 +288,13 @@ func TestUpdateRepoExtended(t *testing.T) {
 
 // TestUpdateRepoRename verifies PATCH with name renames the repo.
 func TestUpdateRepoRename(t *testing.T) {
-	ghPost(t, "/api/v3/user/repos", defaultToken, map[string]interface{}{
+	t.Parallel()
+	srv := newIsolatedServer(t)
+	srv.post(t, "/api/v3/user/repos", defaultToken, map[string]interface{}{
 		"name": "no-rename",
 	})
 
-	resp := ghPatch(t, "/api/v3/repos/admin/no-rename", defaultToken, map[string]interface{}{
+	resp := srv.patch(t, "/api/v3/repos/admin/no-rename", defaultToken, map[string]interface{}{
 		"name": "renamed",
 	})
 	defer resp.Body.Close()
@@ -290,7 +307,7 @@ func TestUpdateRepoRename(t *testing.T) {
 	}
 
 	// Old name is gone.
-	old := ghGet(t, "/api/v3/repos/admin/no-rename", defaultToken)
+	old := srv.get(t, "/api/v3/repos/admin/no-rename", defaultToken)
 	defer old.Body.Close()
 	if old.StatusCode != 404 {
 		t.Fatalf("expected 404 for old name, got %d", old.StatusCode)
@@ -299,7 +316,9 @@ func TestUpdateRepoRename(t *testing.T) {
 
 // TestCreateRepoWithLicenseTemplate verifies license object is emitted.
 func TestCreateRepoWithLicenseTemplate(t *testing.T) {
-	resp := ghPost(t, "/api/v3/user/repos", defaultToken, map[string]interface{}{
+	t.Parallel()
+	srv := newIsolatedServer(t)
+	resp := srv.post(t, "/api/v3/user/repos", defaultToken, map[string]interface{}{
 		"name":             "licensed",
 		"auto_init":        true,
 		"license_template": "mit",
@@ -324,12 +343,14 @@ func TestCreateRepoWithLicenseTemplate(t *testing.T) {
 
 // TestRepoOrganizationField verifies org-owned repos include organization object.
 func TestRepoOrganizationField(t *testing.T) {
-	createOrgViaAdminAPI(t, "field-org", "Field Org")
-	ghPost(t, "/api/v3/orgs/field-org/repos", defaultToken, map[string]interface{}{
+	t.Parallel()
+	srv := newIsolatedServer(t)
+	srv.createOrg(t, "field-org", "Field Org")
+	srv.post(t, "/api/v3/orgs/field-org/repos", defaultToken, map[string]interface{}{
 		"name": "field-repo",
 	})
 
-	resp := ghGet(t, "/api/v3/repos/field-org/field-repo", defaultToken)
+	resp := srv.get(t, "/api/v3/repos/field-org/field-repo", defaultToken)
 	if resp.StatusCode != 200 {
 		resp.Body.Close()
 		t.Fatalf("expected 200, got %d", resp.StatusCode)
@@ -350,13 +371,15 @@ func TestRepoOrganizationField(t *testing.T) {
 
 // TestRepoListPaginationLinkHeader verifies Link header for repo list endpoints.
 func TestRepoListPaginationLinkHeader(t *testing.T) {
+	t.Parallel()
+	srv := newIsolatedServer(t)
 	for i := 0; i < 5; i++ {
-		ghPost(t, "/api/v3/user/repos", defaultToken, map[string]interface{}{
+		srv.post(t, "/api/v3/user/repos", defaultToken, map[string]interface{}{
 			"name": fmt.Sprintf("page-%d", i),
 		})
 	}
 
-	resp := ghGet(t, "/api/v3/user/repos?per_page=2&page=1", defaultToken)
+	resp := srv.get(t, "/api/v3/user/repos?per_page=2&page=1", defaultToken)
 	if resp.StatusCode != 200 {
 		resp.Body.Close()
 		t.Fatalf("expected 200, got %d", resp.StatusCode)

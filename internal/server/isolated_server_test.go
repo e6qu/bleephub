@@ -76,19 +76,54 @@ func (s *isolatedServer) patch(t *testing.T, path, token string, body interface{
 	return s.do(t, http.MethodPatch, path, token, body)
 }
 
+func (s *isolatedServer) put(t *testing.T, path, token string, body interface{}) *http.Response {
+	return s.do(t, http.MethodPut, path, token, body)
+}
+
 func (s *isolatedServer) delete(t *testing.T, path, token string) *http.Response {
 	return s.do(t, http.MethodDelete, path, token, nil)
+}
+
+// authedGet/authedPost mirror the package authedGet/authedPost helpers, which
+// present the admin credential as a Bearer token against this instance's
+// listener. authedPost keeps the drop-in http.Post-style signature (no *testing.T,
+// returns the error) so converted call sites change only their receiver.
+func (s *isolatedServer) authedGet(t *testing.T, path string) *http.Response {
+	t.Helper()
+	req, err := http.NewRequest(http.MethodGet, s.baseURL+path, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	req.Header.Set("Authorization", "Bearer "+defaultToken)
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return resp
+}
+
+func (s *isolatedServer) authedPost(path, contentType string, body io.Reader) (*http.Response, error) {
+	req, err := http.NewRequest(http.MethodPost, s.baseURL+path, body)
+	if err != nil {
+		return nil, err
+	}
+	if contentType != "" {
+		req.Header.Set("Content-Type", contentType)
+	}
+	req.Header.Set("Authorization", "Bearer "+defaultToken)
+	return http.DefaultClient.Do(req)
 }
 
 // createOrg mirrors the package createOrgViaAdminAPI helper against this
 // instance's admin organizations endpoint, so a converted public-feature test
 // provisions its org through the same operator API on its own server.
-func (s *isolatedServer) createOrg(t *testing.T, login string) map[string]interface{} {
+func (s *isolatedServer) createOrg(t *testing.T, login string, profileName ...string) map[string]interface{} {
 	t.Helper()
-	resp := s.post(t, "/api/v3/admin/organizations", defaultToken, map[string]interface{}{
-		"login": login,
-		"admin": "admin",
-	})
+	body := map[string]interface{}{"login": login, "admin": "admin"}
+	if len(profileName) > 0 && profileName[0] != "" {
+		body["profile_name"] = profileName[0]
+	}
+	resp := s.post(t, "/api/v3/admin/organizations", defaultToken, body)
 	if resp.StatusCode != http.StatusCreated {
 		resp.Body.Close()
 		t.Fatalf("POST /api/v3/admin/organizations for %s = %d, want 201", login, resp.StatusCode)
