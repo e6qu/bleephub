@@ -18,17 +18,30 @@ import (
 // Statuses are repo+ref scoped; the combined status endpoint derives the
 // worst state across the latest status per context.
 
+// CommitStatusState is a commit status's state. normalizeStatusState collapses
+// any client input to exactly one of these four, so typing the field (and the
+// normalizer's return) propagates that guarantee instead of discarding it at
+// the boundary. A typed string marshals to JSON identically to a plain string.
+type CommitStatusState string
+
+const (
+	CommitStatusSuccess CommitStatusState = "success"
+	CommitStatusFailure CommitStatusState = "failure"
+	CommitStatusPending CommitStatusState = "pending"
+	CommitStatusError   CommitStatusState = "error"
+)
+
 // CommitStatus is a single commit status context.
 type CommitStatus struct {
-	ID          int       `json:"id"`
-	NodeID      string    `json:"node_id"`
-	State       string    `json:"state"`
-	TargetURL   string    `json:"target_url"`
-	Description string    `json:"description"`
-	Context     string    `json:"context"`
-	CreatorID   int       `json:"creator_id"`
-	CreatedAt   time.Time `json:"created_at"`
-	UpdatedAt   time.Time `json:"updated_at"`
+	ID          int               `json:"id"`
+	NodeID      string            `json:"node_id"`
+	State       CommitStatusState `json:"state"`
+	TargetURL   string            `json:"target_url"`
+	Description string            `json:"description"`
+	Context     string            `json:"context"`
+	CreatorID   int               `json:"creator_id"`
+	CreatedAt   time.Time         `json:"created_at"`
+	UpdatedAt   time.Time         `json:"updated_at"`
 }
 
 // maxCommitStatusesPerRef bounds the number of statuses retained per repo+sha.
@@ -86,18 +99,18 @@ func (s *CommitStatusStore) Create(repoKey, sha string, creatorID int, state, ta
 	return st
 }
 
-func normalizeStatusState(state string) string {
+func normalizeStatusState(state string) CommitStatusState {
 	switch strings.ToLower(state) {
 	case "success":
-		return "success"
+		return CommitStatusSuccess
 	case "failure":
-		return "failure"
+		return CommitStatusFailure
 	case "pending":
-		return "pending"
+		return CommitStatusPending
 	case "error":
-		return "error"
+		return CommitStatusError
 	default:
-		return "pending"
+		return CommitStatusPending
 	}
 }
 

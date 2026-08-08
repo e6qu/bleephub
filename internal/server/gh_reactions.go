@@ -272,20 +272,48 @@ func (s *Server) resolveReactionParent(w http.ResponseWriter, r *http.Request, p
 		writeGHError(w, http.StatusBadRequest, fmt.Sprintf("invalid %s", pathParam))
 		return "", 0, false
 	}
-	if parentType != "issue" {
-		return parentType, parentID, true
-	}
 	repo := s.store.GetRepo(r.PathValue("owner"), r.PathValue("repo"))
 	if repo == nil {
 		writeGHError(w, http.StatusNotFound, "Not Found")
 		return "", 0, false
 	}
-	if issue := s.store.GetIssueByNumber(repo.ID, parentID); issue != nil {
-		return "issue", issue.ID, true
+
+	// Every reaction parent is scoped to the repository named in the path. The
+	// store looks comments/reviews/releases up by global id alone, so without
+	// re-resolving each parent back to its repository a caller who can write to
+	// *any* repository could react on — and, through the list endpoint, read
+	// the reactions and reacting users of — a comment or release that lives in
+	// someone else's private repository. Issue reactions additionally arrive
+	// keyed by the per-repo issue *number* (unique only within a repo) and are
+	// re-keyed to the global issue/PR id here.
+	switch parentType {
+	case "issue":
+		if issue := s.store.GetIssueByNumber(repo.ID, parentID); issue != nil {
+			return "issue", issue.ID, true
+		}
+		if pr := s.store.GetPullRequestByNumber(repo.ID, parentID); pr != nil {
+			return "pull_request", pr.ID, true
+		}
+	case "issue_comment":
+		if c := s.store.GetComment(parentID); c != nil && s.store.CommentRepoID(c) == repo.ID {
+			return parentType, parentID, true
+		}
+	case "commit_comment":
+		if c := s.store.CommitComments.Get(parentID); c != nil && c.RepoID == repo.ID {
+			return parentType, parentID, true
+		}
+	case "pull_request_review_comment":
+		if c := s.store.PRReviewComments.Get(parentID); c != nil {
+			if pr := s.store.GetPullRequest(c.PullRequestID); pr != nil && pr.RepoID == repo.ID {
+				return parentType, parentID, true
+			}
+		}
+	case "release":
+		if rel := s.store.Releases.Get(parentID); rel != nil && rel.RepoID == repo.ID {
+			return parentType, parentID, true
+		}
 	}
-	if pr := s.store.GetPullRequestByNumber(repo.ID, parentID); pr != nil {
-		return "pull_request", pr.ID, true
-	}
+
 	writeGHError(w, http.StatusNotFound, "Not Found")
 	return "", 0, false
 }

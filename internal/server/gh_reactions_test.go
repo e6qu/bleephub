@@ -266,12 +266,26 @@ func TestReactions_AllParentTypes(t *testing.T) {
 	repo := s.store.CreateRepo(admin, "r", "", false)
 	issue := s.store.CreateIssue(repo.ID, admin.ID, "reaction target", "", nil, nil, 0)
 
+	// Every non-issue parent must be a real object living in this repository:
+	// resolveReactionParent re-scopes each id back to its repo, so a fabricated
+	// id (as this test used to pass) is now a 404, which is exactly the
+	// cross-repo hole TestReactions_CrossRepoParentsAreNotReachable pins.
+	issueComment := s.store.CreateComment(issue.ID, admin.ID, "issue comment")
+	commitComment := s.store.CommitComments.Create(repo.ID, "deadbeefdeadbeefdeadbeefdeadbeefdeadbeef", admin.ID, "commit comment", "", nil, nil)
+	seedStorePullRequestBranches(t, s.store, repo, "feat")
+	pr := s.store.CreatePullRequest(repo.ID, admin.ID, "pr", "", "feat", "main", false, nil, nil, 0)
+	if pr == nil {
+		t.Fatal("create pr for review comment")
+	}
+	prComment := s.store.PRReviewComments.CreateRootComment(pr.ID, admin.ID, "a.txt", "pr review comment", "sha", "RIGHT", 1, 0)
+	release := s.store.Releases.Create(repo.ID, admin.ID, "v1.0.0", "main", "v1.0.0", "", false, false, false)
+
 	parents := []string{
 		"/api/v3/repos/admin/r/issues/" + itoa(issue.Number) + "/reactions",
-		"/api/v3/repos/admin/r/issues/comments/1/reactions",
-		"/api/v3/repos/admin/r/pulls/comments/1/reactions",
-		"/api/v3/repos/admin/r/comments/1/reactions",
-		"/api/v3/repos/admin/r/releases/1/reactions",
+		"/api/v3/repos/admin/r/issues/comments/" + itoa(issueComment.ID) + "/reactions",
+		"/api/v3/repos/admin/r/pulls/comments/" + itoa(prComment.ID) + "/reactions",
+		"/api/v3/repos/admin/r/comments/" + itoa(commitComment.ID) + "/reactions",
+		"/api/v3/repos/admin/r/releases/" + itoa(release.ID) + "/reactions",
 	}
 	body, _ := json.Marshal(map[string]string{"content": "rocket"})
 	for _, p := range parents {

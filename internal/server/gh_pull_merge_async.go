@@ -9,22 +9,34 @@ import (
 	"github.com/google/uuid"
 )
 
+// MergeAsyncStatus is the terminal state of an async merge record. Only these
+// four values occur; typing the field keeps the set in code rather than a
+// comment. A typed string marshals to JSON identically to a plain string.
+type MergeAsyncStatus string
+
+const (
+	MergeAsyncPending  MergeAsyncStatus = "pending"
+	MergeAsyncEnqueued MergeAsyncStatus = "enqueued"
+	MergeAsyncMerged   MergeAsyncStatus = "merged"
+	MergeAsyncFailed   MergeAsyncStatus = "failed"
+)
+
 // PullRequestMergeAsync records the outcome of an asynchronous pull-request
 // merge so a subsequent poll (GET .../merge-async/{uuid}) can report status.
 // GitHub's real merge-async endpoint enqueues the merge onto the merge queue;
 // bleephub performs the merge synchronously and stores the terminal result
 // keyed by a generated UUID, which the poll endpoint then returns.
 type PullRequestMergeAsync struct {
-	UUID            string    `json:"uuid"`
-	RepoID          int       `json:"repo_id"`
-	PRNumber        int       `json:"pr_number"`
-	Status          string    `json:"status"` // pending | enqueued | merged | failed
-	MergeMethod     string    `json:"merge_method"`
-	MergeAction     string    `json:"merge_action"`
-	Message         string    `json:"message"`
-	SHA             string    `json:"sha"`
-	ExpectedHeadSHA string    `json:"expected_head_sha"`
-	CreatedAt       time.Time `json:"created_at"`
+	UUID            string           `json:"uuid"`
+	RepoID          int              `json:"repo_id"`
+	PRNumber        int              `json:"pr_number"`
+	Status          MergeAsyncStatus `json:"status"`
+	MergeMethod     string           `json:"merge_method"`
+	MergeAction     string           `json:"merge_action"`
+	Message         string           `json:"message"`
+	SHA             string           `json:"sha"`
+	ExpectedHeadSHA string           `json:"expected_head_sha"`
+	CreatedAt       time.Time        `json:"created_at"`
 }
 
 // RecordPullRequestMergeAsync stores an async merge result keyed by its UUID.
@@ -52,12 +64,12 @@ func (st *Store) GetPullRequestMergeAsync(uuid string) *PullRequestMergeAsync {
 func renderMergeAsyncResult(rec *PullRequestMergeAsync) map[string]interface{} {
 	var details map[string]interface{}
 	switch rec.Status {
-	case "merged":
+	case MergeAsyncMerged:
 		details = map[string]interface{}{
 			"message": rec.Message,
 			"sha":     rec.SHA,
 		}
-	case "failed":
+	case MergeAsyncFailed:
 		details = map[string]interface{}{
 			"message": rec.Message,
 		}
@@ -128,7 +140,7 @@ func (s *Server) handleMergePullRequestAsync(w http.ResponseWriter, r *http.Requ
 	// Already merged: report the merged terminal state (200).
 	if pr.State == "MERGED" {
 		writeJSON(w, http.StatusOK, renderMergeAsyncResult(&PullRequestMergeAsync{
-			Status:  "merged",
+			Status:  MergeAsyncMerged,
 			Message: "Pull Request already merged",
 			SHA:     pr.MergeCommitSHA,
 		}))
@@ -151,7 +163,7 @@ func (s *Server) handleMergePullRequestAsync(w http.ResponseWriter, r *http.Requ
 	if headSha := s.prHeadSha(repo, pr); headSha != "" {
 		if st := s.evaluateChecksForMerge(repo, pr.BaseRefName, headSha); len(st.MissingRequired) > 0 {
 			writeJSON(w, http.StatusConflict, renderMergeAsyncResult(&PullRequestMergeAsync{
-				Status:  "failed",
+				Status:  MergeAsyncFailed,
 				Message: fmt.Sprintf("Required status check %q is expected.", st.MissingRequired[0]),
 			}))
 			return
@@ -163,7 +175,7 @@ func (s *Server) handleMergePullRequestAsync(w http.ResponseWriter, r *http.Requ
 			msg = "Pull Request is not mergeable"
 		}
 		writeJSON(w, http.StatusConflict, renderMergeAsyncResult(&PullRequestMergeAsync{
-			Status:  "failed",
+			Status:  MergeAsyncFailed,
 			Message: msg,
 		}))
 		return
@@ -173,7 +185,7 @@ func (s *Server) handleMergePullRequestAsync(w http.ResponseWriter, r *http.Requ
 	mergeSha, errMsg := s.completePullRequestMerge(repo, pr, user, req.MergeMethod, req.CommitTitle, req.CommitMessage)
 	if errMsg != "" {
 		writeJSON(w, http.StatusConflict, renderMergeAsyncResult(&PullRequestMergeAsync{
-			Status:  "failed",
+			Status:  MergeAsyncFailed,
 			Message: errMsg,
 		}))
 		return
@@ -188,7 +200,7 @@ func (s *Server) handleMergePullRequestAsync(w http.ResponseWriter, r *http.Requ
 		UUID:            uuid.New().String(),
 		RepoID:          repo.ID,
 		PRNumber:        num,
-		Status:          "merged",
+		Status:          MergeAsyncMerged,
 		MergeMethod:     mergeMethod,
 		MergeAction:     "direct_merge",
 		Message:         "Pull Request successfully merged",
@@ -202,7 +214,7 @@ func (s *Server) handleMergePullRequestAsync(w http.ResponseWriter, r *http.Requ
 	// already durable and a poll will report "merged".
 	writeJSON(w, http.StatusAccepted, renderMergeAsyncResult(&PullRequestMergeAsync{
 		UUID:            rec.UUID,
-		Status:          "enqueued",
+		Status:          MergeAsyncEnqueued,
 		MergeMethod:     mergeMethod,
 		MergeAction:     "direct_merge",
 		Message:         "Merge enqueued",

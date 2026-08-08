@@ -15,19 +15,19 @@
       },
       {
         "event": "deployment",
-        "line": 541,
+        "line": 556,
         "producer": "emitWebhookEvent",
         "source": "internal/server/gh_deployments.go"
       },
       {
         "event": "deployment_status",
-        "line": 637,
+        "line": 652,
         "producer": "emitWebhookEvent",
         "source": "internal/server/gh_deployments.go"
       },
       {
         "event": "deployment_status",
-        "line": 647,
+        "line": 662,
         "producer": "emitWebhookEvent",
         "source": "internal/server/gh_deployments.go"
       },
@@ -99,7 +99,7 @@
       },
       {
         "event": "pull_request",
-        "line": 185,
+        "line": 197,
         "producer": "emitWebhookEvent",
         "source": "internal/server/gh_pull_merge_async.go"
       },
@@ -183,7 +183,7 @@
       },
       {
         "event": "status",
-        "line": 275,
+        "line": 288,
         "producer": "emitWebhookEvent",
         "source": "internal/server/gh_statuses_rest.go"
       },
@@ -2948,6 +2948,24 @@
         "status_kind": "fixed"
       },
       {
+        "category": "REST",
+        "finding": "`resolveReactionParent` re-scoped only the `issue` parent to the repository in the URL; for `issue_comment`, `commit_comment`, `pull_request_review_comment` and `release` it returned the raw path id unchecked. Since the store looks each up by global id alone, a caller with write on any repo could `POST /repos/{owned}/{repo}/issues/comments/{victimCommentID}/reactions` to inject a reaction onto \u2014 and via the list endpoint read the reactions and reacting users of \u2014 a comment or release in another (private) repository. It also never verified the parent existed",
+        "id": "REST-124",
+        "location": "gh_reactions.go:275",
+        "severity": "B",
+        "status": "fixed \u2014 every parent type now resolves its object and requires the object's repo == the path repo (404 otherwise), mirroring the sibling handlers' `requireRepoOwns`/`RepoID != repo.ID` checks. Regression test reacts/lists via a foreign repo path for all four non-issue types and asserts 404 with no reaction landing on the victim's parent; the existing all-parent-types test now seeds real parents",
+        "status_kind": "fixed"
+      },
+      {
+        "category": "STORE",
+        "finding": "Async-merge `status`, deployment `state`, and commit-status `state` were free `string` fields whose value sets lived only in comments; commit-status even had a normalizer (`normalizeStatusState`) that canonicalized input but threw the guarantee away by returning `string`",
+        "id": "STORE-076",
+        "location": "gh_pull_merge_async.go:21, gh_deployments.go:62, gh_statuses_rest.go:25",
+        "severity": "m",
+        "status": "fixed \u2014 typed enums `MergeAsyncStatus`, `DeploymentStatusState`, and `CommitStatusState` with constant sets; `normalizeStatusState` now returns the typed value (parse-don't-validate), struct fields carry the types, and conversion happens only at the request boundary. JSON byte-identical; behaviour-preserving",
+        "status_kind": "fixed"
+      },
+      {
         "category": "STORE",
         "finding": "Alert lifecycle states and reasons (code-scanning `state`/`dismissed_reason`, secret-scanning `state`/`resolution`, issue/PR `active_lock_reason`) were free `string` fields whose valid sets lived only in comments and scattered literals \u2014 a typo or drifted value was representable",
         "id": "STORE-075",
@@ -5140,7 +5158,7 @@
         "id": "TEST-008",
         "location": "bleephub_test.go:29",
         "severity": "B",
-        "status": "partial \u2014 migration underway. `newIsolatedServer` (isolated_server_test.go) gives each test its own fully-routed `httptest` server + store, seeded like the shared one, with a per-server pinned clock, so a converted test can call `t.Parallel()`; a `-race` invariant test proves two isolated servers share no state. The shared `testServer` stays alive during the transition; converted so far: `gh_codes_of_conduct_test.go` (batch 1), then `git_http_test.go`, `gh_org_hooks_config_test.go`, `projects_v2_content_test.go`, `gh_agents_tasks_test.go`, `gh_org_issues_test.go`, `gh_org_governance_test.go`, `gh_security_reviews_test.go` (batch 2), then `gh_security_advisories_test.go`, `authz_matrix_test.go`, `gh_org_scim_test.go`, `gh_repos_phase1_test.go` (batch 3), then `gh_events_feeds_test.go`, `gh_actions_hosted_runners_test.go`, `gh_issue_types_test.go`, `gh_org_membership_flow_test.go`, `gh_orgs_people_rest_test.go` (batch 4), with `patch`/`put`/`delete`/`seedRepo`/`createOrg`/`createTestOrg`/`createTestRepo`/`createTestUser`/`createOrgRepoForGovernance`/`activateOrgMember`/`newUser`/`authedGet`/`authedPost` helpers added to `isolatedServer`. `TestReliabilityDebtOnlyShrinks` ratchets the shared-harness file/reference ceilings down (now 113/1382) so each converted group locks in its progress. Remaining: convert the rest of the files group by group",
+        "status": "partial \u2014 migration underway. `newIsolatedServer` (isolated_server_test.go) gives each test its own fully-routed `httptest` server + store, seeded like the shared one, with a per-server pinned clock, so a converted test can call `t.Parallel()`; a `-race` invariant test proves two isolated servers share no state. The shared `testServer` stays alive during the transition; converted so far: `gh_codes_of_conduct_test.go` (batch 1), then `git_http_test.go`, `gh_org_hooks_config_test.go`, `projects_v2_content_test.go`, `gh_agents_tasks_test.go`, `gh_org_issues_test.go`, `gh_org_governance_test.go`, `gh_security_reviews_test.go` (batch 2), then `gh_security_advisories_test.go`, `authz_matrix_test.go`, `gh_org_scim_test.go`, `gh_repos_phase1_test.go` (batch 3), then `gh_events_feeds_test.go`, `gh_actions_hosted_runners_test.go`, `gh_issue_types_test.go`, `gh_org_membership_flow_test.go`, `gh_orgs_people_rest_test.go` (batch 4), then `broker_refresh_test.go`, `handle_mgmt_test.go`, `gh_enterprise_remainder_test.go`, `gh_actions_permissions_test.go`, `gh_code_quality_test.go` (batch 5), with `patch`/`put`/`delete`/`seedRepo`/`createOrg`/`createTestOrg`/`createTestRepo`/`createOrgRepoForGovernance`/`activateOrgMember`/`newUser`/`authedGet`/`authedPost` helpers added to `isolatedServer`. `TestReliabilityDebtOnlyShrinks` ratchets the shared-harness file/reference ceilings down (now 108/1313) so each converted group locks in its progress. Remaining: convert the rest of the files group by group",
         "status_kind": "partial"
       },
       {
@@ -6414,19 +6432,19 @@
         },
         "REST": {
           "status": {
-            "fixed": 121,
+            "fixed": 122,
             "open": 1,
             "partial": 1
           },
-          "total": 123
+          "total": 124
         },
         "STORE": {
           "status": {
-            "fixed": 62,
+            "fixed": 63,
             "open": 4,
             "partial": 9
           },
-          "total": 75
+          "total": 76
         },
         "TEST": {
           "status": {
@@ -6446,17 +6464,17 @@
         }
       },
       "severity": {
-        "blocker": 163,
+        "blocker": 164,
         "major": 373,
-        "minor": 143
+        "minor": 144
       },
       "status": {
         "deferred": 1,
-        "fixed": 614,
+        "fixed": 616,
         "open": 37,
         "partial": 27
       },
-      "total": 679
+      "total": 681
     }
   },
   "rest": {
@@ -19666,7 +19684,7 @@
         "source": "internal/server/gh_dependabot.go"
       },
       {
-        "line": 490,
+        "line": 505,
         "method": "DELETE",
         "path": "/api/v3/repos/{owner}/{repo}/deployments/{deployment_id}",
         "source": "internal/server/gh_deployments.go"
@@ -19678,7 +19696,7 @@
         "source": "internal/server/gh_security_reviews.go"
       },
       {
-        "line": 505,
+        "line": 520,
         "method": "DELETE",
         "path": "/api/v3/repos/{owner}/{repo}/environments/{env_name}",
         "source": "internal/server/gh_deployments.go"
@@ -23224,13 +23242,13 @@
         "source": "internal/server/gh_repos_reads.go"
       },
       {
-        "line": 202,
+        "line": 215,
         "method": "GET",
         "path": "/api/v3/repos/{owner}/{repo}/commits/{ref}/status",
         "source": "internal/server/gh_statuses_rest.go"
       },
       {
-        "line": 203,
+        "line": 216,
         "method": "GET",
         "path": "/api/v3/repos/{owner}/{repo}/commits/{ref}/statuses",
         "source": "internal/server/gh_statuses_rest.go"
@@ -23332,25 +23350,25 @@
         "source": "internal/server/gh_dependency_graph.go"
       },
       {
-        "line": 486,
+        "line": 501,
         "method": "GET",
         "path": "/api/v3/repos/{owner}/{repo}/deployments",
         "source": "internal/server/gh_deployments.go"
       },
       {
-        "line": 488,
+        "line": 503,
         "method": "GET",
         "path": "/api/v3/repos/{owner}/{repo}/deployments/{deployment_id}",
         "source": "internal/server/gh_deployments.go"
       },
       {
-        "line": 494,
+        "line": 509,
         "method": "GET",
         "path": "/api/v3/repos/{owner}/{repo}/deployments/{deployment_id}/statuses",
         "source": "internal/server/gh_deployments.go"
       },
       {
-        "line": 496,
+        "line": 511,
         "method": "GET",
         "path": "/api/v3/repos/{owner}/{repo}/deployments/{deployment_id}/statuses/{status_id}",
         "source": "internal/server/gh_deployments.go"
@@ -23392,13 +23410,13 @@
         "source": "internal/server/gh_security_reviews.go"
       },
       {
-        "line": 499,
+        "line": 514,
         "method": "GET",
         "path": "/api/v3/repos/{owner}/{repo}/environments",
         "source": "internal/server/gh_deployments.go"
       },
       {
-        "line": 501,
+        "line": 516,
         "method": "GET",
         "path": "/api/v3/repos/{owner}/{repo}/environments/{env_name}",
         "source": "internal/server/gh_deployments.go"
@@ -26410,13 +26428,13 @@
         "source": "internal/server/gh_dependency_graph.go"
       },
       {
-        "line": 484,
+        "line": 499,
         "method": "POST",
         "path": "/api/v3/repos/{owner}/{repo}/deployments",
         "source": "internal/server/gh_deployments.go"
       },
       {
-        "line": 492,
+        "line": 507,
         "method": "POST",
         "path": "/api/v3/repos/{owner}/{repo}/deployments/{deployment_id}/statuses",
         "source": "internal/server/gh_deployments.go"
@@ -26770,7 +26788,7 @@
         "source": "internal/server/gh_pull_extensions.go"
       },
       {
-        "line": 204,
+        "line": 217,
         "method": "POST",
         "path": "/api/v3/repos/{owner}/{repo}/statuses/{sha}",
         "source": "internal/server/gh_statuses_rest.go"
@@ -27700,7 +27718,7 @@
         "source": "internal/server/gh_dependabot.go"
       },
       {
-        "line": 503,
+        "line": 518,
         "method": "PUT",
         "path": "/api/v3/repos/{owner}/{repo}/environments/{env_name}",
         "source": "internal/server/gh_deployments.go"

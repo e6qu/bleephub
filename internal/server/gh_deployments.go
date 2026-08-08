@@ -56,20 +56,35 @@ type Deployment struct {
 	Statuses      []*DeploymentStatus    `json:"-"`
 }
 
+// DeploymentStatusState is the state of a deployment status. GitHub emits only
+// these seven values; typing the field keeps the set in code. A typed string
+// marshals to JSON identically to a plain string.
+type DeploymentStatusState string
+
+const (
+	DeploymentStateError      DeploymentStatusState = "error"
+	DeploymentStateFailure    DeploymentStatusState = "failure"
+	DeploymentStateInactive   DeploymentStatusState = "inactive"
+	DeploymentStateInProgress DeploymentStatusState = "in_progress"
+	DeploymentStateQueued     DeploymentStatusState = "queued"
+	DeploymentStatePending    DeploymentStatusState = "pending"
+	DeploymentStateSuccess    DeploymentStatusState = "success"
+)
+
 type DeploymentStatus struct {
-	ID             int       `json:"id"`
-	NodeID         string    `json:"node_id"`
-	State          string    `json:"state"` // error | failure | inactive | in_progress | queued | pending | success
-	CreatorID      int       `json:"creator_id"`
-	DeploymentID   int       `json:"deployment_id"`
-	Description    string    `json:"description"`
-	Environment    string    `json:"environment"`
-	TargetURL      string    `json:"target_url"`
-	LogURL         string    `json:"log_url"`
-	EnvironmentURL string    `json:"environment_url"`
-	AutoInactive   bool      `json:"auto_inactive"`
-	CreatedAt      time.Time `json:"created_at"`
-	UpdatedAt      time.Time `json:"updated_at"`
+	ID             int                   `json:"id"`
+	NodeID         string                `json:"node_id"`
+	State          DeploymentStatusState `json:"state"`
+	CreatorID      int                   `json:"creator_id"`
+	DeploymentID   int                   `json:"deployment_id"`
+	Description    string                `json:"description"`
+	Environment    string                `json:"environment"`
+	TargetURL      string                `json:"target_url"`
+	LogURL         string                `json:"log_url"`
+	EnvironmentURL string                `json:"environment_url"`
+	AutoInactive   bool                  `json:"auto_inactive"`
+	CreatedAt      time.Time             `json:"created_at"`
+	UpdatedAt      time.Time             `json:"updated_at"`
 }
 
 // Environment represents a deployment environment configured on a repo.
@@ -238,7 +253,7 @@ func (ds *DeploymentStore) AddStatus(deploymentID, creatorID int, state, descrip
 	status := &DeploymentStatus{
 		ID:             id,
 		NodeID:         fmt.Sprintf("DS_kgDO%08d", id),
-		State:          state,
+		State:          DeploymentStatusState(state),
 		CreatorID:      creatorID,
 		DeploymentID:   deploymentID,
 		Description:    description,
@@ -273,7 +288,7 @@ func (ds *DeploymentStore) AddStatus(deploymentID, creatorID int, state, descrip
 			}
 			alreadyInactive := false
 			for _, st := range prior.Statuses {
-				if st.State == "inactive" {
+				if st.State == DeploymentStateInactive {
 					alreadyInactive = true
 					break
 				}
@@ -287,7 +302,7 @@ func (ds *DeploymentStore) AddStatus(deploymentID, creatorID int, state, descrip
 			inactiveStatus := &DeploymentStatus{
 				ID:           sid,
 				NodeID:       fmt.Sprintf("DS_kgDO%08d", sid),
-				State:        "inactive",
+				State:        DeploymentStateInactive,
 				CreatorID:    creatorID,
 				DeploymentID: prior.ID,
 				Description:  fmt.Sprintf("Auto-inactivated by deployment #%d", d.ID),
