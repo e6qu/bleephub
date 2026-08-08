@@ -5,7 +5,7 @@ go 1.25.12
 require (
 	github.com/aws/aws-sdk-go-v2 v1.43.4
 	github.com/aws/aws-sdk-go-v2/credentials v1.19.34
-	github.com/aws/aws-sdk-go-v2/service/ecs v1.89.3
+	github.com/aws/aws-sdk-go-v2/service/ecs v1.90.0
 )
 
 require (
