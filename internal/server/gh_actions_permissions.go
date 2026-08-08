@@ -340,7 +340,7 @@ func (a *Agent) RemoveLabels(names []string) {
 	for _, n := range names {
 		drop[n] = true
 	}
-	kept := a.Labels[:0]
+	kept := a.Labels[:0:0]
 	for _, l := range a.Labels {
 		if l.Type == "system" || !drop[l.Name] {
 			kept = append(kept, l)
@@ -351,7 +351,7 @@ func (a *Agent) RemoveLabels(names []string) {
 
 // ClearLabels removes every custom label, leaving system labels in place.
 func (a *Agent) ClearLabels() {
-	kept := a.Labels[:0]
+	kept := a.Labels[:0:0]
 	for _, l := range a.Labels {
 		if l.Type == "system" {
 			kept = append(kept, l)
@@ -854,7 +854,7 @@ func (s *Server) handleRemoveOrgSelfHostedRunnerRepo(w http.ResponseWriter, r *h
 		return
 	}
 	p := s.store.GetOrgActionsPermissions(org)
-	kept := p.SelfHostedRunnersSelectedRepoIDs[:0]
+	kept := p.SelfHostedRunnersSelectedRepoIDs[:0:0]
 	for _, id := range p.SelfHostedRunnersSelectedRepoIDs {
 		if id != repoID {
 			kept = append(kept, id)

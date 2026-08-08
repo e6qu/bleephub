@@ -3997,8 +3997,8 @@
         "id": "STORE-045",
         "location": "gh_actions_permissions.go:343 + branch_protection",
         "severity": "M",
-        "status": "partial \u2014 the original `store_repos.go` site is gone (line reference was stale); `gh_actions_permissions.go` carries the documented safe-copy rationale, and the surveyed `[:0]` filters (e.g. `gh_branch_protection.go:1303`) run on handler-owned clones from `cloneBranchProtection`, not on a stored slice a concurrent reader holds. Remaining work is a `-race`-backed audit of the residual `[:0]` sites, intertwined with STORE-021",
-        "status_kind": "partial"
+        "status": "fixed \u2014 every in-place `[:0]` filter that operates on a *stored* slice (a concurrent reader could hold its backing array) now uses the full three-index reslice `[:0:0]`, forcing `append` to allocate a fresh array instead of overwriting the original: `s.store.PendingMessages` (\u00d73: run-control + workflows), `OrgOIDCPropertyInclusions`, `Misc.keysByUser`, enterprise `team.MemberIDs`, hosted-runner `img.Versions`, codespace `access.SelectedUsernames`, runner-group `a.Labels` (\u00d72), org-actions `p.SelfHostedRunnersSelectedRepoIDs`. The residual `[:0]` sites operate on handler-owned freshly-listed/cloned locals no external reader holds. Full `-race` suite green",
+        "status_kind": "fixed"
       },
       {
         "category": "STORE",
@@ -6476,9 +6476,9 @@
         },
         "STORE": {
           "status": {
-            "fixed": 65,
+            "fixed": 66,
             "open": 4,
-            "partial": 9
+            "partial": 8
           },
           "total": 78
         },
@@ -6506,9 +6506,9 @@
       },
       "status": {
         "deferred": 1,
-        "fixed": 620,
+        "fixed": 621,
         "open": 37,
-        "partial": 27
+        "partial": 26
       },
       "total": 685
     }

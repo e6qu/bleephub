@@ -73,7 +73,7 @@ func (s *Server) handleDeleteOIDCPropertyInclusion(w http.ResponseWriter, r *htt
 	name := r.PathValue("custom_property_name")
 	s.store.mu.Lock()
 	found := false
-	kept := s.store.OrgOIDCPropertyInclusions[org][:0]
+	kept := s.store.OrgOIDCPropertyInclusions[org][:0:0]
 	for _, existing := range s.store.OrgOIDCPropertyInclusions[org] {
 		if strings.EqualFold(existing, name) {
 			found = true

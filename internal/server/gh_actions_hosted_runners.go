@@ -904,7 +904,7 @@ func (s *Server) handleDeleteHostedRunnerCustomImageVersion(w http.ResponseWrite
 	version := r.PathValue("version")
 	s.store.mu.Lock()
 	found := false
-	kept := img.Versions[:0]
+	kept := img.Versions[:0:0]
 	for _, v := range img.Versions {
 		if v.Version == version {
 			found = true
