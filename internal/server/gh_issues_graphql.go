@@ -2013,7 +2013,7 @@ func milestoneToGQL(ms *Milestone) map[string]interface{} {
 		"number":      ms.Number,
 		"title":       ms.Title,
 		"description": ms.Description,
-		"state":       strings.ToUpper(ms.State),
+		"state":       strings.ToUpper(string(ms.State)),
 		"dueOn":       dueOn,
 	}
 }

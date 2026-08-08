@@ -74,6 +74,17 @@ type EnterpriseCodeSecurityAttachment struct {
 	ConfigID int `json:"config_id"`
 }
 
+// DependabotDefaultLevel is an enterprise's Dependabot default repository
+// access level. The empty value means "never set" (serialised as null); the
+// two real values are the constants below. A typed string marshals to JSON
+// identically to a plain string.
+type DependabotDefaultLevel string
+
+const (
+	DependabotDefaultLevelPublic   DependabotDefaultLevel = "public"
+	DependabotDefaultLevelInternal DependabotDefaultLevel = "internal"
+)
+
 // EnterpriseSettings holds the singleton enterprise-level settings the REST
 // surfaces mutate. Persisted as one row under the "enterprise_settings"
 // bucket; zero-value fields fall back to defaultEnterpriseSettings values on
@@ -112,8 +123,8 @@ type EnterpriseSettings struct {
 	GHESLDAPTeamMappings            map[int]string                             `json:"ghes_ldap_team_mappings,omitempty"`
 
 	// Dependabot repository access across organizations.
-	DependabotAccessibleRepoIDs []int  `json:"dependabot_accessible_repo_ids"`
-	DependabotDefaultLevel      string `json:"dependabot_default_level"` // "" = never set (null), else public|internal
+	DependabotAccessibleRepoIDs []int                  `json:"dependabot_accessible_repo_ids"`
+	DependabotDefaultLevel      DependabotDefaultLevel `json:"dependabot_default_level"` // "" = never set (null); else public|internal
 
 	// GitHub Actions cache policy. GitHub Enterprise Server ships with a
 	// 14-day retention limit and a 10 GB per-repository storage limit.
@@ -693,7 +704,7 @@ func (st *Store) SetEnterpriseDependabotRepoAccess(ids []int) {
 
 // SetEnterpriseDependabotDefaultLevel sets the Dependabot default repository
 // access level (public|internal).
-func (st *Store) SetEnterpriseDependabotDefaultLevel(level string) {
+func (st *Store) SetEnterpriseDependabotDefaultLevel(level DependabotDefaultLevel) {
 	st.mu.Lock()
 	defer st.mu.Unlock()
 	st.EnterpriseSettings.DependabotDefaultLevel = level

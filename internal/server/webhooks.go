@@ -1291,12 +1291,18 @@ func (s *Server) createStartupFailureRun(fileName string, content []byte, meta *
 	}
 	wf.WorkflowFileID, wf.WorkflowFilePath = s.resolveWorkflowFileForRun(wf)
 	wf.RunNumber = s.store.ReserveWorkflowRunNumber(wf)
+	// Once wf is published into s.store.Workflows another goroutine can resolve
+	// and mutate it under store.mu, so the queueActionsEvent snapshots (which
+	// copy *wf while holding only snapshotMu) must run inside the same critical
+	// section, matching every other queueActionsEvent call site. Doing this
+	// after Unlock left the terminal run's fields readable lock-free — a data
+	// race, even though the run is already completed so a writer is unlikely.
 	s.store.mu.Lock()
 	s.store.Workflows[wf.ID] = wf
 	s.store.persistWorkflowRecord(wf)
-	s.store.mu.Unlock()
 	s.queueActionsEvent(evRunRequested, wf, nil)
 	s.queueActionsEvent(evRunCompleted, wf, nil)
+	s.store.mu.Unlock()
 }
 
 // workflowNameFromYAML extracts just the workflow's name, tolerating

@@ -2948,6 +2948,24 @@
         "status_kind": "fixed"
       },
       {
+        "category": "ACT",
+        "finding": "`createStartupFailureRun` published the terminal run into `s.store.Workflows` under `store.mu`, released the lock, then called `queueActionsEvent` \u2014 whose `cloneWorkflowEventSnapshot` copies `*wf` while holding only `snapshotMu`. Once the run is store-visible another goroutine can resolve and mutate it under `store.mu`, so reading its fields lock-free is a data race (the lone one of ~24 `queueActionsEvent` sites not holding `store.mu`); low severity only because the run is already completed so a concurrent writer is unlikely",
+        "id": "ACT-098",
+        "location": "webhooks.go:1298",
+        "severity": "m",
+        "status": "fixed \u2014 both `queueActionsEvent` calls moved inside the same `store.mu` critical section as the publish/persist, matching every other call site (lock order store.mu\u2192snapshotMu is unchanged, no deadlock). Verified under `-race`",
+        "status_kind": "fixed"
+      },
+      {
+        "category": "STORE",
+        "finding": "Three more stringly-typed enums whose valid sets lived only in comments: enterprise Dependabot `dependabot_default_level` (public/internal, \"\" = unset), API-insights `actor_type` (5 values) + `subject_type` (2 values), and milestone `state` (open/closed)",
+        "id": "STORE-078",
+        "location": "store_enterprises.go:116, gh_api_insights.go:33, store_issues.go:31",
+        "severity": "m",
+        "status": "fixed \u2014 typed `DependabotDefaultLevel`, `APIInsightsActorType`/`APIInsightsSubjectType`, and `MilestoneState` with constant sets; struct fields carry the types, internal producers use the constants, and conversion happens only at request/filter boundaries (the milestone list `all` filter value stays a plain string). JSON byte-identical; behaviour-preserving",
+        "status_kind": "fixed"
+      },
+      {
         "category": "REST",
         "finding": "`resolveReactionParent` re-scoped only the `issue` parent to the repository in the URL; for `issue_comment`, `commit_comment`, `pull_request_review_comment` and `release` it returned the raw path id unchecked. Since the store looks each up by global id alone, a caller with write on any repo could `POST /repos/{owned}/{repo}/issues/comments/{victimCommentID}/reactions` to inject a reaction onto \u2014 and via the list endpoint read the reactions and reacting users of \u2014 a comment or release in another (private) repository. It also never verified the parent existed",
         "id": "REST-124",
@@ -5176,7 +5194,7 @@
         "id": "TEST-008",
         "location": "bleephub_test.go:29",
         "severity": "B",
-        "status": "partial \u2014 migration underway. `newIsolatedServer` (isolated_server_test.go) gives each test its own fully-routed `httptest` server + store, seeded like the shared one, with a per-server pinned clock, so a converted test can call `t.Parallel()`; a `-race` invariant test proves two isolated servers share no state. The shared `testServer` stays alive during the transition; converted so far: `gh_codes_of_conduct_test.go` (batch 1), then `git_http_test.go`, `gh_org_hooks_config_test.go`, `projects_v2_content_test.go`, `gh_agents_tasks_test.go`, `gh_org_issues_test.go`, `gh_org_governance_test.go`, `gh_security_reviews_test.go` (batch 2), then `gh_security_advisories_test.go`, `authz_matrix_test.go`, `gh_org_scim_test.go`, `gh_repos_phase1_test.go` (batch 3), then `gh_events_feeds_test.go`, `gh_actions_hosted_runners_test.go`, `gh_issue_types_test.go`, `gh_org_membership_flow_test.go`, `gh_orgs_people_rest_test.go` (batch 4), then `broker_refresh_test.go`, `handle_mgmt_test.go`, `gh_enterprise_remainder_test.go`, `gh_actions_permissions_test.go`, `gh_code_quality_test.go` (batch 5), then `workflows_test.go`, `phase_api_gaps_test.go`, `runner_setup_test.go`, `gh_branch_fidelity_test.go`, `ui_api_test.go`, `gh_org_events_test.go`, `audit_round15_test.go` (batch 6, per-test \u2014 only the server-touching tests in each mixed file), with `patch`/`put`/`delete`/`seedRepo`/`createOrg`/`createTestOrg`/`createTestRepo`/`createOrgRepoForGovernance`/`activateOrgMember`/`newUser`/`authedGet`/`authedPost` helpers added to `isolatedServer`. `TestReliabilityDebtOnlyShrinks` ratchets the shared-harness file/reference ceilings down (now 101/1285) so each converted group locks in its progress. Remaining: convert the rest of the files group by group",
+        "status": "partial \u2014 migration underway. `newIsolatedServer` (isolated_server_test.go) gives each test its own fully-routed `httptest` server + store, seeded like the shared one, with a per-server pinned clock, so a converted test can call `t.Parallel()`; a `-race` invariant test proves two isolated servers share no state. The shared `testServer` stays alive during the transition; converted so far: `gh_codes_of_conduct_test.go` (batch 1), then `git_http_test.go`, `gh_org_hooks_config_test.go`, `projects_v2_content_test.go`, `gh_agents_tasks_test.go`, `gh_org_issues_test.go`, `gh_org_governance_test.go`, `gh_security_reviews_test.go` (batch 2), then `gh_security_advisories_test.go`, `authz_matrix_test.go`, `gh_org_scim_test.go`, `gh_repos_phase1_test.go` (batch 3), then `gh_events_feeds_test.go`, `gh_actions_hosted_runners_test.go`, `gh_issue_types_test.go`, `gh_org_membership_flow_test.go`, `gh_orgs_people_rest_test.go` (batch 4), then `broker_refresh_test.go`, `handle_mgmt_test.go`, `gh_enterprise_remainder_test.go`, `gh_actions_permissions_test.go`, `gh_code_quality_test.go` (batch 5), then `workflows_test.go`, `phase_api_gaps_test.go`, `runner_setup_test.go`, `gh_branch_fidelity_test.go`, `ui_api_test.go`, `gh_org_events_test.go`, `audit_round15_test.go` (batch 6, per-test \u2014 only the server-touching tests in each mixed file), then `gh_classroom_test.go`, `gh_org_billing_test.go`, `gh_api_insights_test.go`, `gh_meta_extras_test.go`, `gh_user_issues_test.go`, `gh_user_patch_test.go` (batch 7, per-test; reload/persistence tests left on the shared harness), with `patch`/`put`/`delete`/`seedRepo`/`createOrg`/`createTestOrg`/`createTestRepo`/`createTestUser`/`createOrgRepoForGovernance`/`activateOrgMember`/`newUser`/`authedGet`/`authedPost` helpers added to `isolatedServer`. `TestReliabilityDebtOnlyShrinks` ratchets the shared-harness file/reference ceilings down (now 95/1237) so each converted group locks in its progress. Remaining: convert the rest of the files group by group",
         "status_kind": "partial"
       },
       {
@@ -6399,11 +6417,11 @@
       "categories": {
         "ACT": {
           "status": {
-            "fixed": 52,
+            "fixed": 53,
             "open": 1,
             "partial": 7
           },
-          "total": 60
+          "total": 61
         },
         "ARCH": {
           "status": {
@@ -6458,11 +6476,11 @@
         },
         "STORE": {
           "status": {
-            "fixed": 64,
+            "fixed": 65,
             "open": 4,
             "partial": 9
           },
-          "total": 77
+          "total": 78
         },
         "TEST": {
           "status": {
@@ -6484,15 +6502,15 @@
       "severity": {
         "blocker": 165,
         "major": 373,
-        "minor": 145
+        "minor": 147
       },
       "status": {
         "deferred": 1,
-        "fixed": 618,
+        "fixed": 620,
         "open": 37,
         "partial": 27
       },
-      "total": 683
+      "total": 685
     }
   },
   "rest": {
@@ -22000,55 +22018,55 @@
         "source": "internal/server/gh_org_hooks_rest.go"
       },
       {
-        "line": 61,
+        "line": 82,
         "method": "GET",
         "path": "/api/v3/orgs/{org}/insights/api/route-stats/{actor_type}/{actor_id}",
         "source": "internal/server/gh_api_insights.go"
       },
       {
-        "line": 62,
+        "line": 83,
         "method": "GET",
         "path": "/api/v3/orgs/{org}/insights/api/subject-stats",
         "source": "internal/server/gh_api_insights.go"
       },
       {
-        "line": 63,
+        "line": 84,
         "method": "GET",
         "path": "/api/v3/orgs/{org}/insights/api/summary-stats",
         "source": "internal/server/gh_api_insights.go"
       },
       {
-        "line": 64,
+        "line": 85,
         "method": "GET",
         "path": "/api/v3/orgs/{org}/insights/api/summary-stats/users/{user_id}",
         "source": "internal/server/gh_api_insights.go"
       },
       {
-        "line": 65,
+        "line": 86,
         "method": "GET",
         "path": "/api/v3/orgs/{org}/insights/api/summary-stats/{actor_type}/{actor_id}",
         "source": "internal/server/gh_api_insights.go"
       },
       {
-        "line": 66,
+        "line": 87,
         "method": "GET",
         "path": "/api/v3/orgs/{org}/insights/api/time-stats",
         "source": "internal/server/gh_api_insights.go"
       },
       {
-        "line": 67,
+        "line": 88,
         "method": "GET",
         "path": "/api/v3/orgs/{org}/insights/api/time-stats/users/{user_id}",
         "source": "internal/server/gh_api_insights.go"
       },
       {
-        "line": 68,
+        "line": 89,
         "method": "GET",
         "path": "/api/v3/orgs/{org}/insights/api/time-stats/{actor_type}/{actor_id}",
         "source": "internal/server/gh_api_insights.go"
       },
       {
-        "line": 69,
+        "line": 90,
         "method": "GET",
         "path": "/api/v3/orgs/{org}/insights/api/user-stats/{user_id}",
         "source": "internal/server/gh_api_insights.go"

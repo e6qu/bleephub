@@ -20,6 +20,16 @@ type IssueLabel struct {
 	CreatedAt   time.Time
 }
 
+// MilestoneState is a milestone's state; GitHub has only open and closed. A
+// typed string marshals to JSON identically to a plain string. (The "all"
+// filter value used by list endpoints is not a state and stays a plain string.)
+type MilestoneState string
+
+const (
+	MilestoneStateOpen   MilestoneState = "open"
+	MilestoneStateClosed MilestoneState = "closed"
+)
+
 // Milestone represents a GitHub milestone.
 type Milestone struct {
 	ID          int
@@ -28,8 +38,8 @@ type Milestone struct {
 	Number      int // per-repo sequential
 	Title       string
 	Description string
-	State       string // "open", "closed"
-	CreatorID   int    // user who created the milestone
+	State       MilestoneState
+	CreatorID   int // user who created the milestone
 	DueOn       *time.Time
 	ClosedAt    *time.Time // set when state transitions to "closed"
 	CreatedAt   time.Time
@@ -441,7 +451,7 @@ func (st *Store) CreateMilestone(repoID, creatorID int, title, description, stat
 		Number:      repo.NextMilestoneNumber,
 		Title:       title,
 		Description: description,
-		State:       state,
+		State:       MilestoneState(state),
 		CreatorID:   creatorID,
 		DueOn:       dueOn,
 		CreatedAt:   now,
@@ -484,7 +494,7 @@ func (st *Store) ListMilestones(repoID int, state string) []*Milestone {
 		if ms.RepoID != repoID {
 			continue
 		}
-		if state != "" && state != "all" && ms.State != state {
+		if state != "" && state != "all" && string(ms.State) != state {
 			continue
 		}
 		milestones = append(milestones, ms)

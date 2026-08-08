@@ -20,6 +20,27 @@ import (
 // aggregate those records — when no attributable traffic exists the stats
 // are honestly zero/empty.
 
+// APIInsightsActorType is the credential taxonomy of an observed request's
+// actor; APIInsightsSubjectType is the account it ran on behalf of. Both are
+// produced internally from credential analysis (never unmarshaled from a
+// request), and a typed string marshals to JSON identically to a plain string.
+type APIInsightsActorType string
+
+const (
+	ActorTypeInstallation          APIInsightsActorType = "installation"
+	ActorTypeClassicPAT            APIInsightsActorType = "classic_pat"
+	ActorTypeFineGrainedPAT        APIInsightsActorType = "fine_grained_pat"
+	ActorTypeOAuthApp              APIInsightsActorType = "oauth_app"
+	ActorTypeGitHubAppUserToServer APIInsightsActorType = "github_app_user_to_server"
+)
+
+type APIInsightsSubjectType string
+
+const (
+	SubjectTypeUser         APIInsightsSubjectType = "user"
+	SubjectTypeInstallation APIInsightsSubjectType = "installation"
+)
+
 // APIRequestRecord is one observed, attributed /api/v3 request.
 type APIRequestRecord struct {
 	ID          int64     `json:"id"`
@@ -30,13 +51,13 @@ type APIRequestRecord struct {
 	RateLimited bool      `json:"rate_limited"`
 	// Actor identifies the credential that made the request, using the
 	// actor taxonomy of GitHub's API insights.
-	ActorType string `json:"actor_type"` // installation | classic_pat | fine_grained_pat | oauth_app | github_app_user_to_server
-	ActorID   int64  `json:"actor_id"`
-	ActorName string `json:"actor_name"`
+	ActorType APIInsightsActorType `json:"actor_type"` // installation | classic_pat | fine_grained_pat | oauth_app | github_app_user_to_server
+	ActorID   int64                `json:"actor_id"`
+	ActorName string               `json:"actor_name"`
 	// Subject is the account on whose behalf the request ran.
-	SubjectType string `json:"subject_type"` // "user" | "installation"
-	SubjectID   int64  `json:"subject_id"`
-	SubjectName string `json:"subject_name"`
+	SubjectType APIInsightsSubjectType `json:"subject_type"` // "user" | "installation"
+	SubjectID   int64                  `json:"subject_id"`
+	SubjectName string                 `json:"subject_name"`
 	// UserID is the authenticated user's ID (0 for installation tokens).
 	UserID int `json:"user_id,omitempty"`
 	// IntegrationID / OAuthAppID carry the GitHub App / OAuth app identity
@@ -144,9 +165,9 @@ func (s *Server) recordAPIInsightsRequest(r *http.Request, method, route string,
 			return
 		}
 		app := s.store.GetApp(instTok.AppID)
-		rec.ActorType = "installation"
+		rec.ActorType = ActorTypeInstallation
 		rec.ActorID = int64(inst.ID)
-		rec.SubjectType = "installation"
+		rec.SubjectType = SubjectTypeInstallation
 		rec.SubjectID = int64(inst.ID)
 		if app != nil {
 			rec.ActorName = app.Slug
@@ -163,7 +184,7 @@ func (s *Server) recordAPIInsightsRequest(r *http.Request, method, route string,
 			return
 		}
 		if strings.HasPrefix(uts.Token, tokenPrefixAppUser) {
-			rec.ActorType = "github_app_user_to_server"
+			rec.ActorType = ActorTypeGitHubAppUserToServer
 			if app := s.store.GetApp(uts.AppID); app != nil {
 				rec.ActorID = int64(app.ID)
 				rec.ActorName = app.Slug
@@ -171,7 +192,7 @@ func (s *Server) recordAPIInsightsRequest(r *http.Request, method, route string,
 				rec.IntegrationID = &integrationID
 			}
 		} else {
-			rec.ActorType = "oauth_app"
+			rec.ActorType = ActorTypeOAuthApp
 			s.store.mu.RLock()
 			if app := s.store.AppsByClientID[uts.OAuthAppClientID]; app != nil {
 				rec.ActorID = int64(app.ID)
@@ -183,7 +204,7 @@ func (s *Server) recordAPIInsightsRequest(r *http.Request, method, route string,
 			}
 			s.store.mu.RUnlock()
 		}
-		rec.SubjectType = "user"
+		rec.SubjectType = SubjectTypeUser
 		rec.SubjectID = int64(user.ID)
 		rec.SubjectName = user.Login
 		rec.UserID = user.ID
@@ -194,7 +215,7 @@ func (s *Server) recordAPIInsightsRequest(r *http.Request, method, route string,
 			tokenStr = cred
 		}
 		if strings.HasPrefix(tokenStr, "github_pat_") {
-			rec.ActorType = "fine_grained_pat"
+			rec.ActorType = ActorTypeFineGrainedPAT
 			if tokenID, tokenName, ok := s.store.PATIdentityByTokenValue(tokenStr); ok {
 				rec.ActorID = int64(tokenID)
 				rec.ActorName = tokenName
@@ -202,11 +223,11 @@ func (s *Server) recordAPIInsightsRequest(r *http.Request, method, route string,
 				rec.ActorName = user.Login
 			}
 		} else {
-			rec.ActorType = "classic_pat"
+			rec.ActorType = ActorTypeClassicPAT
 			rec.ActorID = int64(user.ID)
 			rec.ActorName = user.Login
 		}
-		rec.SubjectType = "user"
+		rec.SubjectType = SubjectTypeUser
 		rec.SubjectID = int64(user.ID)
 		rec.SubjectName = user.Login
 		rec.UserID = user.ID
@@ -321,7 +342,7 @@ func (st *Store) apiInsightsRecords(orgLogin string, minT, maxT time.Time) []*AP
 func filterRecordsByActor(records []*APIRequestRecord, actorType string, actorID int64) []*APIRequestRecord {
 	var out []*APIRequestRecord
 	for _, rec := range records {
-		if rec.ActorType == actorType && rec.ActorID == actorID {
+		if string(rec.ActorType) == actorType && rec.ActorID == actorID {
 			out = append(out, rec)
 		}
 	}
@@ -475,7 +496,7 @@ func (s *Server) handleAPIInsightsSubjectStats(w http.ResponseWriter, r *http.Re
 	groups := map[subjectKey]*apiInsightsAggregate{}
 	names := map[subjectKey]string{}
 	for _, rec := range records {
-		k := subjectKey{rec.SubjectType, rec.SubjectID}
+		k := subjectKey{string(rec.SubjectType), rec.SubjectID}
 		if groups[k] == nil {
 			groups[k] = &apiInsightsAggregate{}
 		}
@@ -686,7 +707,7 @@ func (s *Server) handleAPIInsightsUserStats(w http.ResponseWriter, r *http.Reque
 	groups := map[actorKey]*apiInsightsAggregate{}
 	metas := map[actorKey]actorMeta{}
 	for _, rec := range records {
-		k := actorKey{rec.ActorType, rec.ActorID}
+		k := actorKey{string(rec.ActorType), rec.ActorID}
 		if groups[k] == nil {
 			groups[k] = &apiInsightsAggregate{}
 		}
