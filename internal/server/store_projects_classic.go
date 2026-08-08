@@ -138,19 +138,24 @@ func (st *Store) DeleteProjectClassic(id int) bool {
 	if proj == nil {
 		return false
 	}
+	// One transaction: the project and every column and card beneath it are
+	// deleted together, so a crash can never orphan a column or card pointing at a
+	// project that no longer exists (STORE-001/002).
+	batch := newPersistBatch(st.persist)
 	for _, col := range st.ProjectColumns {
 		if col.ProjectID == id {
 			for _, card := range st.ProjectCards {
 				if card.ColumnID == col.ID {
-					st.deleteProjectCardLocked(card.ID)
+					st.deleteProjectCardBatchLocked(batch, card.ID)
 				}
 			}
-			st.deleteProjectColumnLocked(col.ID)
+			st.deleteProjectColumnBatchLocked(batch, col.ID)
 		}
 	}
 	delete(st.ProjectClassic, id)
-	if st.persist != nil {
-		st.persist.MustDelete("projects_classic", strconv.Itoa(id))
+	batch.Delete("projects_classic", strconv.Itoa(id))
+	if err := batch.Commit(); err != nil {
+		panic(&persistenceFailure{op: "batch", bucket: "projects_classic", err: err})
 	}
 	return true
 }
@@ -222,20 +227,27 @@ func (st *Store) DeleteProjectColumn(id int) bool {
 	if col == nil {
 		return false
 	}
+	// One transaction: the column and every card it holds are deleted together,
+	// so a crash can never orphan a card pointing at a deleted column (STORE-001/002).
+	batch := newPersistBatch(st.persist)
 	for _, card := range st.ProjectCards {
 		if card.ColumnID == id {
-			st.deleteProjectCardLocked(card.ID)
+			st.deleteProjectCardBatchLocked(batch, card.ID)
 		}
 	}
-	st.deleteProjectColumnLocked(id)
+	st.deleteProjectColumnBatchLocked(batch, id)
+	if err := batch.Commit(); err != nil {
+		panic(&persistenceFailure{op: "batch", bucket: "project_columns", err: err})
+	}
 	return true
 }
 
-func (st *Store) deleteProjectColumnLocked(id int) {
+// deleteProjectColumnBatchLocked stages a column-row removal into batch. Its
+// cards are staged separately by the caller so the whole column (or project)
+// deletion commits atomically (STORE-001/002). Callers hold st.mu for writing.
+func (st *Store) deleteProjectColumnBatchLocked(batch *persistBatch, id int) {
 	delete(st.ProjectColumns, id)
-	if st.persist != nil {
-		st.persist.MustDelete("project_columns", strconv.Itoa(id))
-	}
+	batch.Delete("project_columns", strconv.Itoa(id))
 }
 
 // MoveProjectColumn repositions a column within its project.
@@ -370,13 +382,23 @@ func (st *Store) DeleteProjectCard(id int) bool {
 }
 
 func (st *Store) deleteProjectCardLocked(id int) bool {
+	batch := newPersistBatch(st.persist)
+	ok := st.deleteProjectCardBatchLocked(batch, id)
+	if err := batch.Commit(); err != nil {
+		panic(&persistenceFailure{op: "batch", bucket: "project_cards", err: err})
+	}
+	return ok
+}
+
+// deleteProjectCardBatchLocked stages a card removal into batch so a cascade
+// (column or project deletion) can commit every card with its parent in one
+// transaction (STORE-001/002). Callers hold st.mu for writing.
+func (st *Store) deleteProjectCardBatchLocked(batch *persistBatch, id int) bool {
 	if st.ProjectCards[id] == nil {
 		return false
 	}
 	delete(st.ProjectCards, id)
-	if st.persist != nil {
-		st.persist.MustDelete("project_cards", strconv.Itoa(id))
-	}
+	batch.Delete("project_cards", strconv.Itoa(id))
 	return true
 }
 
