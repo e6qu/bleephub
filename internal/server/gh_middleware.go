@@ -420,7 +420,13 @@ func (rw *ghResponseWriter) conditionalJSON(etag string, status int) bool {
 		return false
 	}
 	rw.Header().Set("ETag", etag)
-	for _, candidate := range strings.Split(rw.ifNoneMatch, ",") {
+	return etagMatches(rw.ifNoneMatch, etag)
+}
+
+// etagMatches reports whether an If-None-Match header value matches etag,
+// honouring the wildcard (`*`) and weak-validator (`W/`) forms GitHub accepts.
+func etagMatches(ifNoneMatch, etag string) bool {
+	for _, candidate := range strings.Split(ifNoneMatch, ",") {
 		candidate = strings.TrimSpace(candidate)
 		if candidate == "*" || candidate == etag || strings.TrimPrefix(candidate, "W/") == etag {
 			return true
@@ -465,8 +471,39 @@ func (rw *ghResponseWriter) WriteHeader(code int) {
 		}
 		h.Set("X-GitHub-Api-Version", apiVersion)
 		h.Set("X-GitHub-Media-Type", "github.v3; format=json")
+
+		// Activity feeds and the notifications list advertise a polling
+		// interval so clients pace their (now conditional, ETag-backed) polling
+		// (REST-031). Only on GET, and never override a handler that already
+		// set one.
+		if rw.method == http.MethodGet && h.Get("X-Poll-Interval") == "" {
+			if interval := pollIntervalForPath(rw.path); interval > 0 {
+				h.Set("X-Poll-Interval", strconv.Itoa(interval))
+			}
+		}
 	}
 	rw.ResponseWriter.WriteHeader(code)
+}
+
+// pollIntervalForPath returns GitHub's advertised polling interval in seconds
+// for the activity event feeds and the notifications list — the endpoints that
+// carry X-Poll-Interval — and 0 for everything else. The issues-events resource
+// (`.../issues/events`) is a plain list, not an activity feed, and carries none.
+func pollIntervalForPath(path string) int {
+	if strings.Contains(path, "/issues/events") {
+		return 0
+	}
+	switch {
+	case path == "/api/v3/events",
+		path == "/api/v3/notifications",
+		strings.HasSuffix(path, "/events"),
+		strings.HasSuffix(path, "/events/public"),
+		strings.HasSuffix(path, "/received_events"),
+		strings.HasSuffix(path, "/received_events/public"),
+		strings.HasSuffix(path, "/notifications"):
+		return 60
+	}
+	return 0
 }
 
 // Unwrap lets net/http's ResponseController reach optional interfaces on the

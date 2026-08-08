@@ -1621,7 +1621,7 @@
         "id": "REST-031",
         "location": "whole lane",
         "severity": "M",
-        "status": "partial \u2014 every successful JSON GET now receives a strong body-derived ETag at the shared response choke point and `If-None-Match` (including weak and wildcard forms) returns a bodyless 304; `X-GitHub-Media-Type` is emitted globally. Endpoint-specific `Last-Modified`, `X-Poll-Interval`, and conditional non-JSON downloads remain",
+        "status": "partial \u2014 every successful JSON GET now receives a strong body-derived ETag at the shared response choke point and `If-None-Match` (including weak and wildcard forms) returns a bodyless 304; `X-GitHub-Media-Type` is emitted globally. The activity event feeds and notifications list now advertise `X-Poll-Interval: 60` (path-scoped at the shared header writer, excluding the issues-events list), and binary release-asset downloads are conditional \u2014 a stable `\"asset-<id>-<size>\"` ETag with `If-None-Match` returning a bodyless 304 that is not counted as a download. Endpoint-specific `Last-Modified` on the feed handlers remains",
         "status_kind": "partial"
       },
       {

@@ -1105,6 +1105,15 @@ func (s *Server) handleGetReleaseAsset(w http.ResponseWriter, r *http.Request) {
 			writeGHError(w, http.StatusNotFound, "Not Found")
 			return
 		}
+		// Conditional download (REST-031): an asset's bytes are immutable for a
+		// given id, so (id, size) is a stable validator. A matching If-None-Match
+		// returns a bodyless 304 and, like GitHub, is not counted as a download.
+		etag := fmt.Sprintf(`"asset-%d-%d"`, asset.ID, asset.Size)
+		w.Header().Set("ETag", etag)
+		if etagMatches(r.Header.Get("If-None-Match"), etag) {
+			w.WriteHeader(http.StatusNotModified)
+			return
+		}
 		s.store.Releases.IncrementAssetDownloads(assetID)
 		w.Header().Set("Content-Type", asset.ContentType)
 		w.Header().Set("Content-Length", strconv.Itoa(len(data)))
