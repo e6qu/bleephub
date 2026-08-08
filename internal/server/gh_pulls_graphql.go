@@ -2728,7 +2728,7 @@ func statusCheckRollupSourceLocked(st *Store, repoKey, sha string) interface{} {
 		if status.State == "pending" {
 			allCompleted = false
 		}
-		statusState := strings.ToUpper(status.State)
+		statusState := strings.ToUpper(string(status.State))
 		statusContextCounts[statusState]++
 		switch status.State {
 		case "failure", "error":

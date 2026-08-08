@@ -9,7 +9,9 @@ import (
 )
 
 func TestListWorkflowsEmpty(t *testing.T) {
-	resp := authedGet(t, "/internal/workflows")
+	t.Parallel()
+	srv := newIsolatedServer(t)
+	resp := srv.authedGet(t, "/internal/workflows")
 	defer resp.Body.Close()
 
 	if resp.StatusCode != 200 {
@@ -25,9 +27,11 @@ func TestListWorkflowsEmpty(t *testing.T) {
 }
 
 func TestListWorkflowsWithData(t *testing.T) {
+	t.Parallel()
+	srv := newIsolatedServer(t)
 	// Seed a workflow
-	testServer.store.mu.Lock()
-	testServer.store.Workflows["test-wf-1"] = &Workflow{
+	srv.store.mu.Lock()
+	srv.store.Workflows["test-wf-1"] = &Workflow{
 		ID:        "test-wf-1",
 		Name:      "CI Pipeline",
 		RunID:     42,
@@ -39,15 +43,15 @@ func TestListWorkflowsWithData(t *testing.T) {
 			"build": {Key: "build", JobID: "j1", DisplayName: "Build", Status: "completed", Result: "success"},
 		},
 	}
-	testServer.store.mu.Unlock()
+	srv.store.mu.Unlock()
 
 	defer func() {
-		testServer.store.mu.Lock()
-		delete(testServer.store.Workflows, "test-wf-1")
-		testServer.store.mu.Unlock()
+		srv.store.mu.Lock()
+		delete(srv.store.Workflows, "test-wf-1")
+		srv.store.mu.Unlock()
 	}()
 
-	resp := authedGet(t, "/internal/workflows")
+	resp := srv.authedGet(t, "/internal/workflows")
 	defer resp.Body.Close()
 
 	if resp.StatusCode != 200 {
@@ -83,7 +87,9 @@ func TestListWorkflowsWithData(t *testing.T) {
 }
 
 func TestListSessions(t *testing.T) {
-	resp := authedGet(t, "/internal/sessions")
+	t.Parallel()
+	srv := newIsolatedServer(t)
+	resp := srv.authedGet(t, "/internal/sessions")
 	defer resp.Body.Close()
 
 	if resp.StatusCode != 200 {
@@ -98,7 +104,9 @@ func TestListSessions(t *testing.T) {
 }
 
 func TestListRepos(t *testing.T) {
-	resp := authedGet(t, "/internal/repos")
+	t.Parallel()
+	srv := newIsolatedServer(t)
+	resp := srv.authedGet(t, "/internal/repos")
 	defer resp.Body.Close()
 
 	if resp.StatusCode != 200 {
@@ -113,7 +121,9 @@ func TestListRepos(t *testing.T) {
 }
 
 func TestGetWorkflowNotFound(t *testing.T) {
-	resp := authedGet(t, "/internal/workflows/nonexistent")
+	t.Parallel()
+	srv := newIsolatedServer(t)
+	resp := srv.authedGet(t, "/internal/workflows/nonexistent")
 	defer resp.Body.Close()
 
 	if resp.StatusCode != 404 {
@@ -122,9 +132,11 @@ func TestGetWorkflowNotFound(t *testing.T) {
 }
 
 func TestGetWorkflowLogs(t *testing.T) {
+	t.Parallel()
+	srv := newIsolatedServer(t)
 	// Seed a workflow with log lines
-	testServer.store.mu.Lock()
-	testServer.store.Workflows["test-wf-logs"] = &Workflow{
+	srv.store.mu.Lock()
+	srv.store.Workflows["test-wf-logs"] = &Workflow{
 		ID:        "test-wf-logs",
 		Name:      "Log Test",
 		RunID:     99,
@@ -135,17 +147,17 @@ func TestGetWorkflowLogs(t *testing.T) {
 			"test": {Key: "test", JobID: "j-log-1", DisplayName: "Test", Status: "completed", Result: "success"},
 		},
 	}
-	testServer.store.LogLines["j-log-1"] = []string{"line 1", "line 2"}
-	testServer.store.mu.Unlock()
+	srv.store.LogLines["j-log-1"] = []string{"line 1", "line 2"}
+	srv.store.mu.Unlock()
 
 	defer func() {
-		testServer.store.mu.Lock()
-		delete(testServer.store.Workflows, "test-wf-logs")
-		delete(testServer.store.LogLines, "j-log-1")
-		testServer.store.mu.Unlock()
+		srv.store.mu.Lock()
+		delete(srv.store.Workflows, "test-wf-logs")
+		delete(srv.store.LogLines, "j-log-1")
+		srv.store.mu.Unlock()
 	}()
 
-	resp := authedGet(t, "/internal/workflows/test-wf-logs/logs")
+	resp := srv.authedGet(t, "/internal/workflows/test-wf-logs/logs")
 	defer resp.Body.Close()
 
 	if resp.StatusCode != 200 {
@@ -162,7 +174,9 @@ func TestGetWorkflowLogs(t *testing.T) {
 }
 
 func TestInternalUsersCRUD(t *testing.T) {
-	create := ghPost(t, "/internal/users", defaultToken, map[string]interface{}{
+	t.Parallel()
+	srv := newIsolatedServer(t)
+	create := srv.post(t, "/internal/users", defaultToken, map[string]interface{}{
 		"login": "mgmtuser",
 		"name":  "Mgmt User",
 		"email": "m@example.com",
@@ -178,7 +192,7 @@ func TestInternalUsersCRUD(t *testing.T) {
 		t.Fatalf("expected login mgmtuser, got %v", user["login"])
 	}
 
-	list := ghGet(t, "/internal/users", defaultToken)
+	list := srv.get(t, "/internal/users", defaultToken)
 	if list.StatusCode != 200 {
 		body, _ := io.ReadAll(list.Body)
 		list.Body.Close()
@@ -201,7 +215,7 @@ func TestInternalUsersCRUD(t *testing.T) {
 		t.Fatal("created user not in list")
 	}
 
-	get := ghGet(t, fmt.Sprintf("/internal/users/%d", id), defaultToken)
+	get := srv.get(t, fmt.Sprintf("/internal/users/%d", id), defaultToken)
 	if get.StatusCode != 200 {
 		body, _ := io.ReadAll(get.Body)
 		get.Body.Close()
@@ -212,7 +226,7 @@ func TestInternalUsersCRUD(t *testing.T) {
 		t.Errorf("get login = %v, want mgmtuser", got["login"])
 	}
 
-	patch := ghPatch(t, fmt.Sprintf("/internal/users/%d", id), defaultToken, map[string]interface{}{
+	patch := srv.patch(t, fmt.Sprintf("/internal/users/%d", id), defaultToken, map[string]interface{}{
 		"name":       "Updated",
 		"email":      "u@example.com",
 		"site_admin": true,
@@ -233,13 +247,13 @@ func TestInternalUsersCRUD(t *testing.T) {
 		t.Errorf("updated site_admin = %v, want true", updated["site_admin"])
 	}
 
-	del := ghDelete(t, fmt.Sprintf("/internal/users/%d", id), defaultToken)
+	del := srv.delete(t, fmt.Sprintf("/internal/users/%d", id), defaultToken)
 	defer del.Body.Close()
 	if del.StatusCode != 204 {
 		t.Fatalf("delete user: expected 204, got %d", del.StatusCode)
 	}
 
-	get2 := ghGet(t, fmt.Sprintf("/internal/users/%d", id), defaultToken)
+	get2 := srv.get(t, fmt.Sprintf("/internal/users/%d", id), defaultToken)
 	if get2.StatusCode != 404 {
 		body, _ := io.ReadAll(get2.Body)
 		get2.Body.Close()
@@ -249,7 +263,9 @@ func TestInternalUsersCRUD(t *testing.T) {
 }
 
 func TestInternalOrgsCRUD(t *testing.T) {
-	create := ghPost(t, "/internal/orgs", defaultToken, map[string]interface{}{
+	t.Parallel()
+	srv := newIsolatedServer(t)
+	create := srv.post(t, "/internal/orgs", defaultToken, map[string]interface{}{
 		"login": "mgmtorg",
 		"name":  "Mgmt Org",
 	})
@@ -261,7 +277,7 @@ func TestInternalOrgsCRUD(t *testing.T) {
 	org := decodeJSON(t, create)
 	id := int(org["id"].(float64))
 
-	list := ghGet(t, "/internal/orgs", defaultToken)
+	list := srv.get(t, "/internal/orgs", defaultToken)
 	if list.StatusCode != 200 {
 		body, _ := io.ReadAll(list.Body)
 		list.Body.Close()
@@ -281,7 +297,7 @@ func TestInternalOrgsCRUD(t *testing.T) {
 		t.Fatal("created org not in list")
 	}
 
-	get := ghGet(t, fmt.Sprintf("/internal/orgs/%d", id), defaultToken)
+	get := srv.get(t, fmt.Sprintf("/internal/orgs/%d", id), defaultToken)
 	if get.StatusCode != 200 {
 		body, _ := io.ReadAll(get.Body)
 		get.Body.Close()
@@ -292,7 +308,7 @@ func TestInternalOrgsCRUD(t *testing.T) {
 		t.Errorf("get login = %v, want mgmtorg", got["login"])
 	}
 
-	patch := ghPatch(t, fmt.Sprintf("/internal/orgs/%d", id), defaultToken, map[string]interface{}{
+	patch := srv.patch(t, fmt.Sprintf("/internal/orgs/%d", id), defaultToken, map[string]interface{}{
 		"name":        "Updated Org",
 		"description": "updated description",
 	})
@@ -309,13 +325,13 @@ func TestInternalOrgsCRUD(t *testing.T) {
 		t.Errorf("updated description = %v, want updated description", updated["description"])
 	}
 
-	del := ghDelete(t, fmt.Sprintf("/internal/orgs/%d", id), defaultToken)
+	del := srv.delete(t, fmt.Sprintf("/internal/orgs/%d", id), defaultToken)
 	defer del.Body.Close()
 	if del.StatusCode != 204 {
 		t.Fatalf("delete org: expected 204, got %d", del.StatusCode)
 	}
 
-	get2 := ghGet(t, fmt.Sprintf("/internal/orgs/%d", id), defaultToken)
+	get2 := srv.get(t, fmt.Sprintf("/internal/orgs/%d", id), defaultToken)
 	if get2.StatusCode != 404 {
 		body, _ := io.ReadAll(get2.Body)
 		get2.Body.Close()
@@ -325,7 +341,9 @@ func TestInternalOrgsCRUD(t *testing.T) {
 }
 
 func TestInternalTeamsCRUD(t *testing.T) {
-	orgResp := ghPost(t, "/internal/orgs", defaultToken, map[string]interface{}{
+	t.Parallel()
+	srv := newIsolatedServer(t)
+	orgResp := srv.post(t, "/internal/orgs", defaultToken, map[string]interface{}{
 		"login": "team-mgmt-org",
 		"name":  "Team Mgmt Org",
 	})
@@ -338,7 +356,7 @@ func TestInternalTeamsCRUD(t *testing.T) {
 	orgLogin := org["login"].(string)
 	orgID := int(org["id"].(float64))
 
-	teamResp := ghPost(t, fmt.Sprintf("/api/v3/orgs/%s/teams", orgLogin), defaultToken, map[string]interface{}{
+	teamResp := srv.post(t, fmt.Sprintf("/api/v3/orgs/%s/teams", orgLogin), defaultToken, map[string]interface{}{
 		"name":        "Platform",
 		"description": "the platform team",
 		"privacy":     "closed",
@@ -351,7 +369,7 @@ func TestInternalTeamsCRUD(t *testing.T) {
 	team := decodeJSON(t, teamResp)
 	teamID := int(team["id"].(float64))
 
-	list := ghGet(t, "/internal/teams", defaultToken)
+	list := srv.get(t, "/internal/teams", defaultToken)
 	if list.StatusCode != 200 {
 		body, _ := io.ReadAll(list.Body)
 		list.Body.Close()
@@ -374,7 +392,7 @@ func TestInternalTeamsCRUD(t *testing.T) {
 		t.Fatal("created team not in list")
 	}
 
-	get := ghGet(t, fmt.Sprintf("/internal/teams/%d", teamID), defaultToken)
+	get := srv.get(t, fmt.Sprintf("/internal/teams/%d", teamID), defaultToken)
 	if get.StatusCode != 200 {
 		body, _ := io.ReadAll(get.Body)
 		get.Body.Close()
@@ -385,7 +403,7 @@ func TestInternalTeamsCRUD(t *testing.T) {
 		t.Errorf("get name = %v, want Platform", got["name"])
 	}
 
-	patch := ghPatch(t, fmt.Sprintf("/internal/teams/%d", teamID), defaultToken, map[string]interface{}{
+	patch := srv.patch(t, fmt.Sprintf("/internal/teams/%d", teamID), defaultToken, map[string]interface{}{
 		"name":        "Core",
 		"description": "updated",
 		"privacy":     "secret",
@@ -406,13 +424,13 @@ func TestInternalTeamsCRUD(t *testing.T) {
 		t.Errorf("updated privacy = %v, want secret", updated["privacy"])
 	}
 
-	del := ghDelete(t, fmt.Sprintf("/internal/teams/%d", teamID), defaultToken)
+	del := srv.delete(t, fmt.Sprintf("/internal/teams/%d", teamID), defaultToken)
 	defer del.Body.Close()
 	if del.StatusCode != 204 {
 		t.Fatalf("delete team: expected 204, got %d", del.StatusCode)
 	}
 
-	get2 := ghGet(t, fmt.Sprintf("/internal/teams/%d", teamID), defaultToken)
+	get2 := srv.get(t, fmt.Sprintf("/internal/teams/%d", teamID), defaultToken)
 	if get2.StatusCode != 404 {
 		body, _ := io.ReadAll(get2.Body)
 		get2.Body.Close()
@@ -420,14 +438,16 @@ func TestInternalTeamsCRUD(t *testing.T) {
 	}
 	get2.Body.Close()
 
-	ghDelete(t, fmt.Sprintf("/internal/orgs/%d", orgID), defaultToken).Body.Close()
+	srv.delete(t, fmt.Sprintf("/internal/orgs/%d", orgID), defaultToken).Body.Close()
 }
 
 func TestInternalAuditLog(t *testing.T) {
+	t.Parallel()
+	srv := newIsolatedServer(t)
 	fixedNow := time.Date(2035, time.June, 15, 12, 0, 0, 0, time.UTC)
-	previousClock := testServer.replaceClockNow(func() time.Time { return fixedNow })
-	t.Cleanup(func() { testServer.replaceClockNow(previousClock) })
-	e1 := ghPost(t, "/internal/audit-log/events", defaultToken, map[string]interface{}{
+	previousClock := srv.replaceClockNow(func() time.Time { return fixedNow })
+	t.Cleanup(func() { srv.replaceClockNow(previousClock) })
+	e1 := srv.post(t, "/internal/audit-log/events", defaultToken, map[string]interface{}{
 		"actor":       "admin",
 		"action":      "user.login",
 		"target_type": "user",
@@ -447,7 +467,7 @@ func TestInternalAuditLog(t *testing.T) {
 		t.Errorf("event actor = %v, want admin", event1["actor"])
 	}
 
-	e2 := ghPost(t, "/internal/audit-log/events", defaultToken, map[string]interface{}{
+	e2 := srv.post(t, "/internal/audit-log/events", defaultToken, map[string]interface{}{
 		"actor":       "admin",
 		"action":      "org.create",
 		"target_type": "org",
@@ -462,7 +482,7 @@ func TestInternalAuditLog(t *testing.T) {
 	}
 	e2.Body.Close()
 
-	list := ghGet(t, "/internal/audit-log", defaultToken)
+	list := srv.get(t, "/internal/audit-log", defaultToken)
 	if list.StatusCode != 200 {
 		body, _ := io.ReadAll(list.Body)
 		list.Body.Close()
@@ -476,7 +496,7 @@ func TestInternalAuditLog(t *testing.T) {
 		t.Errorf("newest event action = %v, want org.create", entries[0]["action"])
 	}
 
-	filtered := ghGet(t, "/internal/audit-log?org=mgmt-org", defaultToken)
+	filtered := srv.get(t, "/internal/audit-log?org=mgmt-org", defaultToken)
 	if filtered.StatusCode != 200 {
 		body, _ := io.ReadAll(filtered.Body)
 		filtered.Body.Close()
@@ -487,7 +507,7 @@ func TestInternalAuditLog(t *testing.T) {
 		t.Errorf("org filter returned %d entries, want 1", len(orgEntries))
 	}
 
-	actorFilter := ghGet(t, "/internal/audit-log?actor=admin&action=user.login", defaultToken)
+	actorFilter := srv.get(t, "/internal/audit-log?actor=admin&action=user.login", defaultToken)
 	if actorFilter.StatusCode != 200 {
 		body, _ := io.ReadAll(actorFilter.Body)
 		actorFilter.Body.Close()
@@ -500,7 +520,7 @@ func TestInternalAuditLog(t *testing.T) {
 
 	from := fixedNow.Add(-time.Hour).Format(time.RFC3339)
 	to := fixedNow.Add(time.Hour).Format(time.RFC3339)
-	timeFilter := ghGet(t, fmt.Sprintf("/internal/audit-log?from=%s&to=%s", from, to), defaultToken)
+	timeFilter := srv.get(t, fmt.Sprintf("/internal/audit-log?from=%s&to=%s", from, to), defaultToken)
 	if timeFilter.StatusCode != 200 {
 		body, _ := io.ReadAll(timeFilter.Body)
 		timeFilter.Body.Close()

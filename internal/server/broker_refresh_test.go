@@ -12,21 +12,23 @@ import (
 // POST /internal/agents/{id}/refresh-message delivers a real
 // AgentRefreshMessage to every open session for the target agent.
 func TestAgentRefreshMessageDelivery(t *testing.T) {
+	t.Parallel()
+	srv := newIsolatedServer(t)
 	agentID := 4242
-	testServer.store.mu.Lock()
-	testServer.store.Agents[agentID] = &Agent{
+	srv.store.mu.Lock()
+	srv.store.Agents[agentID] = &Agent{
 		ID:      agentID,
 		Name:    "refresh-runner",
 		Version: "2.319.0",
 		Status:  "online",
 		Labels:  []Label{{Name: "self-hosted"}},
 	}
-	testServer.store.mu.Unlock()
+	srv.store.mu.Unlock()
 	defer func() {
-		testServer.store.mu.Lock()
-		delete(testServer.store.Agents, agentID)
-		delete(testServer.store.Sessions, "refresh-sess")
-		testServer.store.mu.Unlock()
+		srv.store.mu.Lock()
+		delete(srv.store.Agents, agentID)
+		delete(srv.store.Sessions, "refresh-sess")
+		srv.store.mu.Unlock()
 	}()
 
 	sess := &Session{
@@ -34,12 +36,12 @@ func TestAgentRefreshMessageDelivery(t *testing.T) {
 		Agent:     &Agent{ID: agentID, Labels: []Label{{Name: "self-hosted"}}},
 		MsgCh:     make(chan *TaskAgentMessage, 10),
 	}
-	testServer.store.mu.Lock()
-	testServer.store.Sessions["refresh-sess"] = sess
-	testServer.store.mu.Unlock()
+	srv.store.mu.Lock()
+	srv.store.Sessions["refresh-sess"] = sess
+	srv.store.mu.Unlock()
 
 	targetVersion := "2.320.0"
-	resp := ghPost(t, fmt.Sprintf("/internal/agents/%d/refresh-message", agentID), defaultToken, map[string]interface{}{
+	resp := srv.post(t, fmt.Sprintf("/internal/agents/%d/refresh-message", agentID), defaultToken, map[string]interface{}{
 		"targetVersion": targetVersion,
 		"timeout":       "10m",
 	})
@@ -80,31 +82,33 @@ func TestAgentRefreshMessageDelivery(t *testing.T) {
 // TestAgentRefreshMessageAdminOnly verifies the refresh endpoint rejects
 // non-admin callers.
 func TestAgentRefreshMessageAdminOnly(t *testing.T) {
+	t.Parallel()
+	srv := newIsolatedServer(t)
 	agentID := 4243
-	testServer.store.mu.Lock()
-	testServer.store.Agents[agentID] = &Agent{ID: agentID, Name: "r"}
-	testServer.store.mu.Unlock()
+	srv.store.mu.Lock()
+	srv.store.Agents[agentID] = &Agent{ID: agentID, Name: "r"}
+	srv.store.mu.Unlock()
 	defer func() {
-		testServer.store.mu.Lock()
-		delete(testServer.store.Agents, agentID)
-		testServer.store.mu.Unlock()
+		srv.store.mu.Lock()
+		delete(srv.store.Agents, agentID)
+		srv.store.mu.Unlock()
 	}()
 
 	// Create a non-admin user + token.
 	nonAdmin := &User{ID: 9001, Login: "nobody", Type: "User"}
-	testServer.store.mu.Lock()
-	testServer.store.Users[nonAdmin.ID] = nonAdmin
+	srv.store.mu.Lock()
+	srv.store.Users[nonAdmin.ID] = nonAdmin
 	tok := &Token{Value: "ghp_nonadmin", UserID: nonAdmin.ID, Scopes: "repo"}
-	testServer.store.Tokens[tok.Value] = tok
-	testServer.store.mu.Unlock()
+	srv.store.Tokens[tok.Value] = tok
+	srv.store.mu.Unlock()
 	defer func() {
-		testServer.store.mu.Lock()
-		delete(testServer.store.Users, nonAdmin.ID)
-		delete(testServer.store.Tokens, tok.Value)
-		testServer.store.mu.Unlock()
+		srv.store.mu.Lock()
+		delete(srv.store.Users, nonAdmin.ID)
+		delete(srv.store.Tokens, tok.Value)
+		srv.store.mu.Unlock()
 	}()
 
-	resp := ghPost(t, fmt.Sprintf("/internal/agents/%d/refresh-message", agentID), tok.Value, map[string]interface{}{
+	resp := srv.post(t, fmt.Sprintf("/internal/agents/%d/refresh-message", agentID), tok.Value, map[string]interface{}{
 		"targetVersion": "2.320.0",
 	})
 	resp.Body.Close()
@@ -115,7 +119,9 @@ func TestAgentRefreshMessageAdminOnly(t *testing.T) {
 
 // TestAgentRefreshMessageAgentNotFound verifies 404 for unknown agents.
 func TestAgentRefreshMessageAgentNotFound(t *testing.T) {
-	resp := ghPost(t, "/internal/agents/99999/refresh-message", defaultToken, map[string]interface{}{
+	t.Parallel()
+	srv := newIsolatedServer(t)
+	resp := srv.post(t, "/internal/agents/99999/refresh-message", defaultToken, map[string]interface{}{
 		"targetVersion": "2.320.0",
 	})
 	resp.Body.Close()
