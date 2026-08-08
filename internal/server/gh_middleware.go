@@ -420,7 +420,13 @@ func (rw *ghResponseWriter) conditionalJSON(etag string, status int) bool {
 		return false
 	}
 	rw.Header().Set("ETag", etag)
-	for _, candidate := range strings.Split(rw.ifNoneMatch, ",") {
+	return etagMatches(rw.ifNoneMatch, etag)
+}
+
+// etagMatches reports whether an If-None-Match header value matches etag,
+// honouring the wildcard (`*`) and weak-validator (`W/`) forms GitHub accepts.
+func etagMatches(ifNoneMatch, etag string) bool {
+	for _, candidate := range strings.Split(ifNoneMatch, ",") {
 		candidate = strings.TrimSpace(candidate)
 		if candidate == "*" || candidate == etag || strings.TrimPrefix(candidate, "W/") == etag {
 			return true
@@ -465,8 +471,65 @@ func (rw *ghResponseWriter) WriteHeader(code int) {
 		}
 		h.Set("X-GitHub-Api-Version", apiVersion)
 		h.Set("X-GitHub-Media-Type", "github.v3; format=json")
+
+		// Activity feeds and the notifications list advertise a polling
+		// interval so clients pace their (now conditional, ETag-backed) polling
+		// (REST-031). Only on GET, and never override a handler that already
+		// set one.
+		if rw.method == http.MethodGet && h.Get("X-Poll-Interval") == "" {
+			if interval := pollIntervalForPath(rw.path); interval > 0 {
+				h.Set("X-Poll-Interval", strconv.Itoa(interval))
+			}
+		}
 	}
 	rw.ResponseWriter.WriteHeader(code)
+}
+
+// pollIntervalForPath returns GitHub's advertised polling interval in seconds
+// for the activity event feeds and the notifications list — the endpoints that
+// carry X-Poll-Interval — and 0 for everything else. The issues-events resource
+// (`.../issues/events`) is a plain list, not an activity feed, and carries none.
+func pollIntervalForPath(path string) int {
+	if strings.Contains(path, "/issues/events") {
+		return 0
+	}
+	switch {
+	case path == "/api/v3/events",
+		path == "/api/v3/notifications",
+		strings.HasSuffix(path, "/events"),
+		strings.HasSuffix(path, "/events/public"),
+		strings.HasSuffix(path, "/received_events"),
+		strings.HasSuffix(path, "/received_events/public"),
+		strings.HasSuffix(path, "/notifications"):
+		return 60
+	}
+	return 0
+}
+
+// writeLastModified advertises the modification time of a feed and, when the
+// caller sent a matching If-Modified-Since, short-circuits with a bodyless 304
+// (REST-031). It sets Last-Modified to newest (truncated to HTTP second
+// precision) and returns true when it wrote the 304, so the handler must stop.
+//
+// A zero newest (an empty feed) advertises nothing and never 304s. Per RFC 7232
+// §3.3 If-None-Match takes precedence, so If-Modified-Since is ignored whenever
+// an If-None-Match is present — writeJSON's ETag path evaluates that instead.
+func writeLastModified(w http.ResponseWriter, r *http.Request, newest time.Time) bool {
+	if newest.IsZero() {
+		return false
+	}
+	newest = newest.UTC().Truncate(time.Second)
+	w.Header().Set("Last-Modified", newest.Format(http.TimeFormat))
+	if r.Header.Get("If-None-Match") != "" {
+		return false
+	}
+	if ims := r.Header.Get("If-Modified-Since"); ims != "" {
+		if since, err := http.ParseTime(ims); err == nil && !newest.After(since) {
+			w.WriteHeader(http.StatusNotModified)
+			return true
+		}
+	}
+	return false
 }
 
 // Unwrap lets net/http's ResponseController reach optional interfaces on the

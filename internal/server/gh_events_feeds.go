@@ -22,6 +22,9 @@ func (s *Server) registerGHEventsFeedsRoutes() {
 func (s *Server) handleListPublicEvents(w http.ResponseWriter, r *http.Request) {
 	events := s.deriveActivityEvents(s.baseURL(r), s.publicReposByID(), nil)
 	sortActivityEvents(events)
+	if writeLastModified(w, r, newestActivityTime(events)) {
+		return
+	}
 	writeJSON(w, http.StatusOK, paginateAndLink(w, r, activityEventsJSON(events)))
 }
 

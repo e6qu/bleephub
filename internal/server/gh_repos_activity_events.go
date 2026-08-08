@@ -261,9 +261,16 @@ func pullRequestMinimalJSON(pr *PullRequest, repo *Repo, stor gitStorage.Storer,
 }
 
 func writeEventEntries(w http.ResponseWriter, r *http.Request, entries []repoEventEntry) {
+	var newest time.Time
 	out := make([]map[string]interface{}, 0, len(entries))
 	for _, e := range entries {
 		out = append(out, e.event)
+		if e.when.After(newest) {
+			newest = e.when
+		}
+	}
+	if writeLastModified(w, r, newest) {
+		return
 	}
 	writeJSON(w, http.StatusOK, paginateAndLink(w, r, out))
 }

@@ -2837,6 +2837,12 @@ func (st *Store) RenameBranch(repoID int, branch, newName string) bool {
 	if err := stor.RemoveReference(oldRef); err != nil {
 		return false
 	}
+	// One transaction: re-keying the branch protection to the new branch name
+	// and the repo row's default-branch/updated-at write commit together (both
+	// target the same durable store), so a crash can never duplicate the protection
+	// under both names or persist a repo whose recorded default branch disagrees
+	// with the protection re-key (STORE-001/002).
+	batch := newPersistBatch(st.persist)
 	if repo.DefaultBranch == branch {
 		repo.DefaultBranch = newName
 	}
@@ -2846,15 +2852,14 @@ func (st *Store) RenameBranch(repoID int, branch, newName string) bool {
 	if protection, ok := st.Misc.branchProtection[oldProtectionKey]; ok {
 		st.Misc.branchProtection[newProtectionKey] = protection
 		delete(st.Misc.branchProtection, oldProtectionKey)
-		if st.Misc.persist != nil {
-			st.Misc.persist.MustPut("branch_protection", newProtectionKey, protection)
-			st.Misc.persist.MustDelete("branch_protection", oldProtectionKey)
-		}
+		batch.Put("branch_protection", newProtectionKey, protection)
+		batch.Delete("branch_protection", oldProtectionKey)
 	}
 	st.Misc.mu.Unlock()
 	repo.UpdatedAt = st.currentTime()
-	if st.persist != nil {
-		st.persist.MustPut("repos", strconv.Itoa(repo.ID), repo)
+	batch.Put("repos", strconv.Itoa(repo.ID), repo)
+	if err := batch.Commit(); err != nil {
+		panic(&persistenceFailure{op: "batch", bucket: "repos", err: err})
 	}
 	return true
 }

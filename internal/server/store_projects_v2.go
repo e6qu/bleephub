@@ -576,13 +576,15 @@ func (s *ProjectV2Store) DeleteProject(id int) bool {
 	if s.projects[id] == nil {
 		return false
 	}
+	// One transaction: the project and every field, item and view it owns are
+	// deleted together, so a crash can never orphan a field/item/view pointing at
+	// a project that no longer exists (STORE-001/002).
+	batch := newPersistBatch(s.persist)
 	delete(s.projects, id)
 	for fid := range s.fields {
 		if s.fields[fid].ProjectID == id {
 			delete(s.fields, fid)
-			if s.persist != nil {
-				s.persist.MustDelete("project_v2_fields", strconv.Itoa(fid))
-			}
+			batch.Delete("project_v2_fields", strconv.Itoa(fid))
 		}
 	}
 	delete(s.fieldsByProj, id)
@@ -590,22 +592,19 @@ func (s *ProjectV2Store) DeleteProject(id int) bool {
 		if it.ProjectID == id {
 			delete(s.items, iid)
 			s.unindexItemLocked(it)
-			if s.persist != nil {
-				s.persist.MustDelete("project_v2_items", strconv.Itoa(iid))
-			}
+			batch.Delete("project_v2_items", strconv.Itoa(iid))
 		}
 	}
 	delete(s.viewsByProj, id)
 	for vid := range s.views {
 		if s.views[vid].ProjectID == id {
 			delete(s.views, vid)
-			if s.persist != nil {
-				s.persist.MustDelete("project_v2_views", strconv.Itoa(vid))
-			}
+			batch.Delete("project_v2_views", strconv.Itoa(vid))
 		}
 	}
-	if s.persist != nil {
-		s.persist.MustDelete("projects_v2", strconv.Itoa(id))
+	batch.Delete("projects_v2", strconv.Itoa(id))
+	if err := batch.Commit(); err != nil {
+		panic(&persistenceFailure{op: "batch", bucket: "projects_v2", err: err})
 	}
 	return true
 }

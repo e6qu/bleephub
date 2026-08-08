@@ -277,6 +277,9 @@ func (s *Server) handleListUserEvents(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	sortActivityEvents(own)
+	if writeLastModified(w, r, newestActivityTime(own)) {
+		return
+	}
 	writeJSON(w, http.StatusOK, paginateAndLink(w, r, activityEventsJSON(own)))
 }
 
@@ -305,6 +308,9 @@ func (s *Server) handleListUserEventsForOrg(w http.ResponseWriter, r *http.Reque
 		}
 	}
 	sortActivityEvents(own)
+	if writeLastModified(w, r, newestActivityTime(own)) {
+		return
+	}
 	writeJSON(w, http.StatusOK, paginateAndLink(w, r, activityEventsJSON(own)))
 }
 
@@ -332,6 +338,9 @@ func (s *Server) handleListUserReceivedEvents(w http.ResponseWriter, r *http.Req
 		}
 	}
 	sortActivityEvents(received)
+	if writeLastModified(w, r, newestActivityTime(received)) {
+		return
+	}
 	writeJSON(w, http.StatusOK, paginateAndLink(w, r, activityEventsJSON(received)))
 }
 

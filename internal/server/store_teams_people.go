@@ -151,17 +151,21 @@ func (st *Store) reconcileOrgInvitationsLocked(org *Org, now time.Time) {
 			failedAt := inv.CreatedAt.Add(orgInvitationTTL)
 			inv.FailedAt = &failedAt
 			inv.FailedReason = "Invitation expired."
+			// One transaction: dropping the abandoned pending membership and
+			// marking the invitation failed commit together, so a crash can never
+			// strand a pending membership whose invitation already expired, or an
+			// expired invitation whose membership still lingers (STORE-001/002).
+			batch := newPersistBatch(st.persist)
 			if inv.UserID != 0 {
 				key := membershipKey(org.Login, inv.UserID)
 				if m := st.Memberships[key]; m != nil && m.State == MembershipStatePending {
 					delete(st.Memberships, key)
-					if st.persist != nil {
-						st.persist.MustDelete("memberships", key)
-					}
+					batch.Delete("memberships", key)
 				}
 			}
-			if st.persist != nil {
-				st.persist.MustPut("org_invitations", strconv.Itoa(inv.ID), inv)
+			batch.Put("org_invitations", strconv.Itoa(inv.ID), inv)
+			if err := batch.Commit(); err != nil {
+				panic(&persistenceFailure{op: "batch", bucket: "org_invitations", err: err})
 			}
 		}
 	}
@@ -185,6 +189,10 @@ func (st *Store) ReconcileAllOrgInvitations(now time.Time) {
 // invitee joins every team the invitation carried and the invitation
 // itself is removed. Callers must hold st.mu for writing.
 func (st *Store) consumeOrgInvitationLocked(inv *OrgInvitation) {
+	// One transaction: the invited-team joins and the invitation removal commit
+	// together, so a crash can never leave the invitee half-joined with the
+	// invitation still live (which reload would then re-consume) (STORE-001/002).
+	batch := newPersistBatch(st.persist)
 	for _, teamID := range inv.TeamIDs {
 		team := st.Teams[teamID]
 		if team == nil || team.OrgID != inv.OrgID {
@@ -193,14 +201,13 @@ func (st *Store) consumeOrgInvitationLocked(inv *OrgInvitation) {
 		if !slices.Contains(team.MemberIDs, inv.UserID) {
 			team.MemberIDs = append(team.MemberIDs, inv.UserID)
 			team.UpdatedAt = st.currentTime()
-			if st.persist != nil {
-				st.persist.MustPut("teams", strconv.Itoa(team.ID), team)
-			}
+			batch.Put("teams", strconv.Itoa(team.ID), team)
 		}
 	}
 	delete(st.OrgInvitations, inv.ID)
-	if st.persist != nil {
-		st.persist.MustDelete("org_invitations", strconv.Itoa(inv.ID))
+	batch.Delete("org_invitations", strconv.Itoa(inv.ID))
+	if err := batch.Commit(); err != nil {
+		panic(&persistenceFailure{op: "batch", bucket: "org_invitations", err: err})
 	}
 }
 
