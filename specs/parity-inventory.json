@@ -6155,10 +6155,10 @@
         "category": "CI",
         "finding": "Fork pull requests run a fork-built image with the host Docker socket mounted",
         "id": "CI-038",
-        "location": "ci.yml:118",
+        "location": "ci.yml (runner-sockerless job)",
         "severity": "M",
-        "status": "open",
-        "status_kind": "open"
+        "status": "fixed \u2014 the `runner-sockerless` job builds an image from the PR's checked-out code and runs it with `-v /var/run/docker.sock` (host Docker daemon), so a fork PR would hand untrusted code control of the runner's Docker daemon (host compromise). The job is now gated `if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository`, so it runs on push and same-repository PRs (still covered here) but fork PRs skip it. It is the only job that bind-mounts the socket. actionlint clean",
+        "status_kind": "fixed"
       },
       {
         "category": "CI",
@@ -6438,8 +6438,8 @@
         },
         "CI": {
           "status": {
-            "fixed": 57,
-            "open": 6,
+            "fixed": 58,
+            "open": 5,
             "partial": 2
           },
           "total": 65
@@ -6506,8 +6506,8 @@
       },
       "status": {
         "deferred": 1,
-        "fixed": 623,
-        "open": 36,
+        "fixed": 624,
+        "open": 35,
         "partial": 25
       },
       "total": 685
