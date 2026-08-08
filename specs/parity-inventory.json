@@ -3529,8 +3529,8 @@
         "id": "ACT-052",
         "location": "artifacts.go:966",
         "severity": "m",
-        "status": "partial \u2014 constant-time token comparison and persisted restore-time `LastAccessedAt` landed; policy-driven eviction remains open",
-        "status_kind": "partial"
+        "status": "fixed \u2014 constant-time token comparison and persisted restore-time `LastAccessedAt` landed earlier; finalizing a cache now enforces a per-repository budget (`maxRepoCacheBytes`, GitHub's 10 GiB default; a per-instance field so tests drive it small) via `evictRepoCacheOverLimit`, which deletes least-recently-used finalized entries (oldest `LastAccessedAt`, id breaking ties) until the repo is back under budget, byte-deletes outside the lock. LRU-order regression test",
+        "status_kind": "fixed"
       },
       {
         "category": "ACT",
@@ -6417,9 +6417,9 @@
       "categories": {
         "ACT": {
           "status": {
-            "fixed": 53,
+            "fixed": 54,
             "open": 1,
-            "partial": 7
+            "partial": 6
           },
           "total": 61
         },
@@ -6506,9 +6506,9 @@
       },
       "status": {
         "deferred": 1,
-        "fixed": 621,
+        "fixed": 622,
         "open": 37,
-        "partial": 26
+        "partial": 25
       },
       "total": 685
     }
@@ -19528,13 +19528,13 @@
         "source": "internal/server/gh_actions_extras.go"
       },
       {
-        "line": 790,
+        "line": 799,
         "method": "DELETE",
         "path": "/api/v3/repos/{owner}/{repo}/actions/caches",
         "source": "internal/server/artifacts.go"
       },
       {
-        "line": 792,
+        "line": 801,
         "method": "DELETE",
         "path": "/api/v3/repos/{owner}/{repo}/actions/caches/{cache_id}",
         "source": "internal/server/artifacts.go"
@@ -22606,7 +22606,7 @@
         "source": "internal/server/gh_actions_permissions.go"
       },
       {
-        "line": 794,
+        "line": 803,
         "method": "GET",
         "path": "/api/v3/repos/{owner}/{repo}/actions/cache/usage",
         "source": "internal/server/artifacts.go"
@@ -22618,7 +22618,7 @@
         "source": "internal/server/gh_actions_permissions.go"
       },
       {
-        "line": 789,
+        "line": 798,
         "method": "GET",
         "path": "/api/v3/repos/{owner}/{repo}/actions/caches",
         "source": "internal/server/artifacts.go"
