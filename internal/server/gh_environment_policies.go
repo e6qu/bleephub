@@ -239,17 +239,20 @@ func (st *Store) DeleteEnvProtectionRule(envID, ruleID int) bool {
 func (st *Store) PruneEnvironmentPolicies(envID int) {
 	st.mu.Lock()
 	defer st.mu.Unlock()
+	// One transaction: an environment's branch policies and protection rules are
+	// pruned together, so a crash cannot leave half an environment's policy set
+	// behind after it is gone (STORE-001/002).
+	batch := newPersistBatch(st.persist)
 	if _, ok := st.EnvBranchPolicies[envID]; ok {
 		delete(st.EnvBranchPolicies, envID)
-		if st.persist != nil {
-			st.persist.MustDelete("env_branch_policies", strconv.Itoa(envID))
-		}
+		batch.Delete("env_branch_policies", strconv.Itoa(envID))
 	}
 	if _, ok := st.EnvProtectionRules[envID]; ok {
 		delete(st.EnvProtectionRules, envID)
-		if st.persist != nil {
-			st.persist.MustDelete("env_protection_rules", strconv.Itoa(envID))
-		}
+		batch.Delete("env_protection_rules", strconv.Itoa(envID))
+	}
+	if err := batch.Commit(); err != nil {
+		panic(&persistenceFailure{op: "batch", bucket: "env_branch_policies", err: err})
 	}
 }
 
