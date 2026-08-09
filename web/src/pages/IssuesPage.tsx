@@ -51,10 +51,15 @@ import {
 } from "../components/ui.js";
 import { IssueOpenedIcon, IssueClosedIcon, CommentIcon, TagIcon } from "../components/octicons.js";
 
+// Spec issue.labels is (string | object)[] and issue.assignees is optional
+// (WEB-013). bleephub always returns label objects; normalise to the pill shape.
+const issueLabelPills = (labels: GithubIssue["labels"]) =>
+  labels.flatMap((l) => (typeof l === "object" ? [{ name: l.name ?? "", color: l.color ?? "" }] : []));
+
 const issueAccessors: ListItemAccessors<GithubIssue> = {
-  labels: (i) => i.labels,
+  labels: (i) => issueLabelPills(i.labels),
   author: (i) => i.user?.login ?? null,
-  assignees: (i) => i.assignees.map((a) => a.login),
+  assignees: (i) => (i.assignees ?? []).map((a) => a.login),
   milestone: (i) => i.milestone?.title ?? null,
   comments: (i) => i.comments,
   createdAt: (i) => i.created_at,
@@ -236,7 +241,7 @@ function IssueList({ owner, repo }: { owner: string; repo: string }) {
                   <span style={{ fontSize: "0.92rem", fontWeight: 600, color: "var(--color-fg)" }}>
                     {issue.title}
                   </span>
-                  <LabelPills labels={issue.labels} />
+                  <LabelPills labels={issueLabelPills(issue.labels)} />
                 </div>
                 <div className="mt-1" style={{ fontSize: "0.78rem", color: "var(--color-fg-muted)" }}>
                   #{issue.number} opened by {issue.user?.login} ·{" "}
@@ -337,7 +342,7 @@ function IssueDetail({ owner, repo, number }: { owner: string; repo: string; num
           {viewerQ.isError && (
             <InlineError inline title="Failed to load current user" detail={String(viewerQ.error)} />
           )}
-          <CommentCard login={issue.user?.login} body={issue.body} date={issue.created_at} isOp />
+          <CommentCard login={issue.user?.login} body={issue.body ?? undefined} date={issue.created_at} isOp />
           <ReactionBar
             queryKey={["issue-body-reactions", owner, repo, number]}
             fetchList={() => fetchIssueReactions(owner, repo, number)}
@@ -365,8 +370,8 @@ function IssueDetail({ owner, repo, number }: { owner: string; repo: string; num
             ownerType={repoDetail?.owner?.type}
             number={number}
             kind="issue"
-            assignees={issue.assignees.map((a) => a.login)}
-            labels={issue.labels}
+            assignees={(issue.assignees ?? []).map((a) => a.login)}
+            labels={issueLabelPills(issue.labels)}
             milestone={issue.milestone ?? null}
             participants={participants}
           />

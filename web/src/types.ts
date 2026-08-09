@@ -304,23 +304,8 @@ export interface WireAppCreated {
 export type GithubState = "open" | "closed";
 
 /** GitHub Issue. */
-export interface GithubIssue {
-  id: number;
-  number: number;
-  title: string;
-  body: string;
-  state: GithubState;
-  /** null when the authoring user no longer resolves (GitHub parity). */
-  user: { login: string; avatar_url: string } | null;
-  labels: { name: string; color: string }[];
-  assignees: { login: string }[];
-  /** null when the issue is not in a milestone. */
-  milestone?: GithubMilestone | null;
-  comments: number;
-  created_at: string;
-  updated_at: string;
-  closed_at: string | null;
-}
+// Generated from the vendored GitHub OpenAPI description (WEB-013).
+export type GithubIssue = components["schemas"]["issue"];
 
 /** GitHub Pull Request. */
 export interface GithubPR {
