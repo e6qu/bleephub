@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
-# Regenerate web/src/generated/github-openapi.d.ts from the vendored GitHub
+# Regenerate third_party/github-openapi.d.ts from the vendored GitHub
 # OpenAPI description (WEB-013). The web app's GitHub-compatible response types
 # are GENERATED from the same pinned spec the Go server validates against
-# (internal/server/testdata/github-openapi.json.gz, pinned in .VERSION and
+# (third_party/github-openapi.json.gz, pinned in .VERSION and
 # guarded by scripts/check-github-openapi-drift.sh), not hand-written and
 # blindly cast.
 #
@@ -15,8 +15,8 @@
 set -euo pipefail
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-SPEC_GZ="$REPO_ROOT/internal/server/testdata/github-openapi.json.gz"
-OUT="$REPO_ROOT/web/src/generated/github-openapi.d.ts"
+SPEC_GZ="$REPO_ROOT/third_party/github-openapi.json.gz"
+OUT="$REPO_ROOT/third_party/github-openapi.d.ts"
 OPENAPI_TS_VERSION="7.13.0"
 
 tmp="$(mktemp -t github-openapi.XXXXXX.json)"

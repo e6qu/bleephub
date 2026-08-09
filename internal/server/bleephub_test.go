@@ -310,7 +310,7 @@ func TestMain(m *testing.M) {
 	}
 
 	if newKeys, total := apiShapeValidator.ratchet(); len(newKeys) > 0 {
-		fmt.Fprintf(os.Stderr, "\nopenapi-shape ratchet: %d NEW response-shape violation(s) vs testdata/github-openapi.json.gz (total observed: %d):\n", len(newKeys), total)
+		fmt.Fprintf(os.Stderr, "\nopenapi-shape ratchet: %d NEW response-shape violation(s) vs ../../third_party/github-openapi.json.gz (total observed: %d):\n", len(newKeys), total)
 		for _, key := range newKeys {
 			fmt.Fprintf(os.Stderr, "  %s\n", key)
 		}

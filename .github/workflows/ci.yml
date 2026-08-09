@@ -406,6 +406,12 @@ jobs:
         run: cd web && bun audit
       - name: Type-check and test the web application
         run: cd web && bun run typecheck && bun run test:coverage
+      # third_party/github-openapi.d.ts is a committed witness of the vendored
+      # spec: it must be a byte-for-byte regeneration of third_party/
+      # github-openapi.json.gz, so a spec bump that was not regenerated (or a
+      # hand-edit) fails here rather than silently drifting the web contract.
+      - name: Verify the generated web API types match the pinned spec
+        run: ./scripts/check-web-openapi-types-drift.sh
       - name: Build the embedded web application
         run: cd web && bun run build
       # The web counterparts of the same two orphaned gates. knip reported

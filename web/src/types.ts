@@ -1,4 +1,4 @@
-import type { components } from "./generated/github-openapi.js";
+import type { components } from "../../third_party/github-openapi.js";
 
 // Enum unions mirror the exact strings the server emits (bleephub Go:
 // workflows.go / store_workflow_files.go). Empty result = still in flight.

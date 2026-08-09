@@ -19,7 +19,7 @@ import (
 )
 
 // Runtime response-shape validation against the vendored GitHub OpenAPI
-// description (testdata/github-openapi.json.gz). The TestMain-owned
+// description (../../third_party/github-openapi.json.gz). The TestMain-owned
 // shared server routes most of the package's test traffic; an observer
 // validates every 2xx /api/v3 JSON response member-by-member against
 // the documented response schema. Violations are deduped after m.Run()
@@ -97,7 +97,7 @@ var apiShapeValidator *shapeValidator
 var shapeParamSegment = regexp.MustCompile(`^\{[^}]+\}$`)
 
 func newShapeValidator() (*shapeValidator, error) {
-	f, err := os.Open("testdata/github-openapi.json.gz")
+	f, err := os.Open("../../third_party/github-openapi.json.gz")
 	if err != nil {
 		return nil, err
 	}

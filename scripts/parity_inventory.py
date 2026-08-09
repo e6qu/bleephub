@@ -15,7 +15,7 @@ from typing import Any
 
 ROOT = Path(__file__).resolve().parent.parent
 LEDGER_PATH = ROOT / "BUGS.md"
-OPENAPI_PATH = ROOT / "internal" / "server" / "testdata" / "github-openapi.json.gz"
+OPENAPI_PATH = ROOT / "third_party" / "github-openapi.json.gz"
 INVENTORY_PATH = ROOT / "specs" / "parity-inventory.json"
 REST_CONTRACT_PATH = ROOT / "specs" / "rest-semantic-contracts.json"
 REST_ROUTE_SNAPSHOT_PATH = (
@@ -25,7 +25,7 @@ GHES_MANAGE_ROUTE_SNAPSHOT_PATH = (
     ROOT / "internal" / "server" / "testdata" / "registered-ghes-manage-routes.txt"
 )
 REST_ROUTE_INDEX_PATH = (
-    ROOT / "internal" / "server" / "testdata" / "github-openapi-routes.txt.gz"
+    ROOT / "third_party" / "github-openapi-routes.txt.gz"
 )
 REST_DEFINITION_TEST_PATH = ROOT / "internal" / "server" / "gh_api_definition_test.go"
 HTTP_METHODS = {"get", "post", "put", "patch", "delete", "head"}
@@ -597,7 +597,7 @@ def graphql_inventory() -> dict[str, Any]:
     )
     if not resolver_files or not test_files:
         raise InventoryError("GraphQL resolver or test discovery returned nothing")
-    version_path = directory / "testdata" / "github-graphql-schema.VERSION"
+    version_path = directory.parent.parent / "third_party" / "github-graphql-schema.VERSION"
     version = {}
     for line in version_path.read_text(encoding="utf-8").splitlines():
         key, separator, value = line.partition(": ")
@@ -737,7 +737,7 @@ def build_inventory() -> dict[str, Any]:
         "sources": {
             "ledger": str(LEDGER_PATH.relative_to(ROOT)),
             "rest_openapi": str(OPENAPI_PATH.relative_to(ROOT)),
-            "graphql_schema": "internal/server/testdata/github-graphql-schema.graphql.gz",
+            "graphql_schema": "third_party/github-graphql-schema.graphql.gz",
             "web_router": "web/src/App.tsx",
         },
         "ledger": {"summary": ledger_summary, "findings": findings},

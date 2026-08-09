@@ -15,8 +15,8 @@ import (
 )
 
 const (
-	vendoredSpecFile             = "testdata/github-openapi.json.gz"
-	vendoredSpecVersion          = "testdata/github-openapi.VERSION"
+	vendoredSpecFile             = "../../third_party/github-openapi.json.gz"
+	vendoredSpecVersion          = "../../third_party/github-openapi.VERSION"
 	registeredRouteSnapshotFile  = "testdata/registered-api-v3-routes.txt"
 	registeredManageSnapshotFile = "testdata/registered-ghes-manage-routes.txt"
 )
@@ -77,7 +77,7 @@ func TestVendoredOpenAPIMatchesRecordedPin(t *testing.T) {
 // be a REAL GitHub API path — bleephub must not invent paths under the GitHub
 // namespace. It validates the registered route table (Server.routePatterns,
 // recorded by Server.route) against the official github/rest-api-description
-// OpenAPI document, vendored (gzipped) at testdata/github-openapi.json.gz so
+// OpenAPI document, vendored (gzipped) at ../../third_party/github-openapi.json.gz so
 // the test is hermetic. Refresh the vendored copy with
 // scripts/update-github-openapi.sh.
 
@@ -129,13 +129,13 @@ func loadGitHubOperations(t *testing.T) map[string]bool {
 }
 
 // officialDescriptions are the non-dotcom GitHub descriptions whose route
-// lists are vendored in testdata/github-openapi-routes.txt.gz, at the
-// commit pinned in testdata/github-openapi.VERSION. A route bleephub
+// lists are vendored in ../../third_party/github-openapi-routes.txt.gz, at the
+// commit pinned in ../../third_party/github-openapi.VERSION. A route bleephub
 // serves that the dotcom description omits must be citable in one of
 // them; otherwise nothing establishes that GitHub has it at all.
 var officialDescriptions = []string{"ghec", "ghes-3.21", "ghes-3.13", "ghes-2.22", "api-2022"}
 
-const routeIndexFile = "testdata/github-openapi-routes.txt.gz"
+const routeIndexFile = "../../third_party/github-openapi-routes.txt.gz"
 
 // loadOfficialRouteIndex returns description name -> normalized
 // "METHOD /path" set.

@@ -79580,7 +79580,7 @@
     }
   ],
   "schema_version": 1,
-  "source": "internal/server/testdata/github-openapi.json.gz",
+  "source": "third_party/github-openapi.json.gz",
   "source_sha256": "2f78e6e5b7c6bd32af008dbb26655253eee1dee507cf0010bc4142170b97c181",
   "summary": {
     "operations": 1220,

@@ -36,7 +36,7 @@ The matrix deliberately distinguishes a described obligation from behavioural ev
 
 ### REST route and response contracts
 
-The registered `/api/v3` surface covered the vendored GitHub REST description plus documented GitHub Enterprise Server-only operations. `TestRegisteredAPIv3RoutesExistInGitHubSpec` rejected invented GitHub-namespace routes, and the runtime OpenAPI observer rejected new response-member/type drift. The vendored description lives at `internal/server/testdata/github-openapi.json.gz` and is refreshed by `scripts/update-github-openapi.sh`.
+The registered `/api/v3` surface covered the vendored GitHub REST description plus documented GitHub Enterprise Server-only operations. `TestRegisteredAPIv3RoutesExistInGitHubSpec` rejected invented GitHub-namespace routes, and the runtime OpenAPI observer rejected new response-member/type drift. The vendored description lives at `third_party/github-openapi.json.gz` and is refreshed by `scripts/update-github-openapi.sh`.
 
 This proved route legitimacy and every response shape exercised by tests. It did **not** prove every status, validation branch, permission combination, pagination edge, webhook, or storage failure for every registered operation. GitHub's REST API is versioned, so the vendored description and compatibility tests remained a ratchet rather than a one-time completeness claim.
 

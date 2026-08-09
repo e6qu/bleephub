@@ -23,8 +23,8 @@ var leadingUnionMember = regexp.MustCompile(`=\s*\n\s*\|`)
 var nullDefaultValue = regexp.MustCompile(`\s*=\s*null\b`)
 
 const (
-	githubGraphQLSchemaFile   = "testdata/github-graphql-schema.graphql.gz"
-	githubGraphQLVersionFile  = "testdata/github-graphql-schema.VERSION"
+	githubGraphQLSchemaFile   = "../../third_party/github-graphql-schema.graphql.gz"
+	githubGraphQLVersionFile  = "../../third_party/github-graphql-schema.VERSION"
 	bleephubGraphQLSnapshot   = "testdata/bleephub-graphql-introspection.json"
 	graphQLGapAllowlist       = "testdata/graphql-schema-gap-allowlist.txt"
 	graphQLCoverageReportFile = "../../specs/graphql-schema-coverage.json"

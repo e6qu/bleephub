@@ -54,9 +54,9 @@ if [[ ! "$PIN_SHA256" =~ ^[0-9a-f]{64}$ ]]; then
 fi
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-DEST="$ROOT/internal/server/testdata/github-openapi.json.gz"
-VERSION_FILE="$ROOT/internal/server/testdata/github-openapi.VERSION"
-ROUTE_INDEX="$ROOT/internal/server/testdata/github-openapi-routes.txt.gz"
+DEST="$ROOT/third_party/github-openapi.json.gz"
+VERSION_FILE="$ROOT/third_party/github-openapi.VERSION"
+ROUTE_INDEX="$ROOT/third_party/github-openapi-routes.txt.gz"
 SPEC_PATH="descriptions/api.github.com/api.github.com.json"
 URL="https://raw.githubusercontent.com/github/rest-api-description/$PIN_COMMIT/$SPEC_PATH"
 
