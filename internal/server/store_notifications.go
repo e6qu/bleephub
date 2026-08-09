@@ -413,6 +413,37 @@ func (st *Store) MarkNotificationsRead(userID int, at time.Time, repoScope strin
 	st.persistNotificationsState(userID, state)
 }
 
+// maxReadThreadIDs bounds the per-user read-marker set; pruneReadThreadSlack is
+// how far past the cap it may grow before a prune, so the O(n log n) prune
+// amortises to O(log n) per mark instead of firing on every mark at the cap.
+// GitHub ages notifications out, so dropping the oldest read markers is faithful;
+// without this the map — re-serialised in full on every mark — grows without
+// limit as a user reads more threads (STORE-023).
+const (
+	maxReadThreadIDs     = 50000
+	pruneReadThreadSlack = 5000
+)
+
+// boundReadThreadIDs prunes the oldest read markers (by read-at time) once the
+// set grows a slack beyond the cap. Caller holds st.mu for writing.
+func boundReadThreadIDs(state *UserNotificationsState) {
+	if len(state.ReadThreadIDs) <= maxReadThreadIDs+pruneReadThreadSlack {
+		return
+	}
+	type marker struct {
+		id string
+		at time.Time
+	}
+	markers := make([]marker, 0, len(state.ReadThreadIDs))
+	for id, at := range state.ReadThreadIDs {
+		markers = append(markers, marker{id, at})
+	}
+	sort.Slice(markers, func(i, j int) bool { return markers[i].at.Before(markers[j].at) })
+	for i := 0; i < len(markers)-maxReadThreadIDs; i++ {
+		delete(state.ReadThreadIDs, markers[i].id)
+	}
+}
+
 // MarkThreadRead records a thread as read for the user.
 func (st *Store) MarkThreadRead(userID int, threadID string, at time.Time) {
 	st.mu.Lock()
@@ -422,6 +453,7 @@ func (st *Store) MarkThreadRead(userID int, threadID string, at time.Time) {
 		state.ReadThreadIDs = map[string]time.Time{}
 	}
 	state.ReadThreadIDs[threadID] = at
+	boundReadThreadIDs(state)
 	st.persistNotificationsState(userID, state)
 }
 

@@ -3913,8 +3913,8 @@
         "id": "STORE-023",
         "location": "store_notifications.go:554, store_repo_reads.go:86",
         "severity": "M",
-        "status": "open",
-        "status_kind": "open"
+        "status": "fixed \u2014 both collections that auto-grew without bound (and were re-serialised in full on every mutation, so the per-mutation cost itself was unbounded) are now capped, making that cost O(cap). The clone-traffic actor set (`store_repo_reads.go`) is capped at `maxTrafficActors` so anonymous clones \u2014 the `git clone` path called out here \u2014 cannot grow it without limit. The per-user notification read-marker set `ReadThreadIDs`, which auto-grows on every thread a user reads and is the map re-serialised on every `MarkThreadRead`, is now capped at `maxReadThreadIDs` and prunes the oldest markers by read-at time once it grows a slack beyond the cap (batched so the prune amortises to O(log n) per mark; GitHub ages notifications out, so dropping the oldest is faithful) \u2014 `TestMarkThreadReadBoundsReadMarkers` pins that the oldest are dropped and the newest retained. The other per-user maps (`DismissedThreadIDs`, `Subscriptions`, `RepoLastReadAt`) grow only with explicit user actions or distinct-repo count, not automatically, so they are human-bounded rather than an unbounded/attacker-driven vector",
+        "status_kind": "fixed"
       },
       {
         "category": "STORE",
@@ -6587,8 +6587,7 @@
         },
         "STORE": {
           "status": {
-            "fixed": 73,
-            "open": 1,
+            "fixed": 74,
             "partial": 4
           },
           "total": 78
@@ -6617,8 +6616,8 @@
       },
       "status": {
         "deferred": 1,
-        "fixed": 656,
-        "open": 16,
+        "fixed": 657,
+        "open": 15,
         "partial": 12
       },
       "total": 685
