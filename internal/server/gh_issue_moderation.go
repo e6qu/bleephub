@@ -54,6 +54,11 @@ func (s *Server) handleUpdateIssueComment(w http.ResponseWriter, r *http.Request
 		return
 	}
 
+	// Optimistic concurrency (STORE-016): reject a stale If-Match with 412.
+	if !checkIfMatch(w, r, commentToJSON(existing, s.store, s.baseURL(r), repo.FullName, commentParentNumber(s.store, existing))) {
+		return
+	}
+
 	var req struct {
 		Body string `json:"body"`
 	}

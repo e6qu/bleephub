@@ -3,6 +3,7 @@ package bleephub
 import (
 	"compress/gzip"
 	"encoding/json"
+	"flag"
 	"fmt"
 	"net/http"
 	"net/url"
@@ -18,7 +19,7 @@ import (
 )
 
 // Runtime response-shape validation against the vendored GitHub OpenAPI
-// description (testdata/github-openapi.json.gz). The TestMain-owned
+// description (../../third_party/github-openapi.json.gz). The TestMain-owned
 // shared server routes most of the package's test traffic; an observer
 // validates every 2xx /api/v3 JSON response member-by-member against
 // the documented response schema. Violations are deduped after m.Run()
@@ -96,7 +97,7 @@ var apiShapeValidator *shapeValidator
 var shapeParamSegment = regexp.MustCompile(`^\{[^}]+\}$`)
 
 func newShapeValidator() (*shapeValidator, error) {
-	f, err := os.Open("testdata/github-openapi.json.gz")
+	f, err := os.Open("../../third_party/github-openapi.json.gz")
 	if err != nil {
 		return nil, err
 	}
@@ -737,6 +738,45 @@ func readViolationAllowlist(path string) (map[string]bool, error) {
 	return allowed, nil
 }
 
+// minShapeCoverage is the coverage floor the full suite must clear (PAR-011).
+// The shared observer now validates ~5k /api/v3 responses on a full run — far
+// fewer than the ~26k when this gate was added, because TEST-008 has steadily
+// migrated tests to isolated servers that do not feed the shared observer. That
+// pulled the count down onto the old 5000 floor, so an ordinary -race + MinIO
+// full run (seen as low as 4879 while a green run sits just above 5000) began
+// to false-fail on normal variance. The floor is set below that observed
+// operating range, with margin, so the intermittent near-floor dip is tolerated
+// while a genuine collapse (observer unwired → orders of magnitude lower) is
+// still caught. TestMain logs the actual count each full run so the trend stays
+// visible; raise this back up if isolated servers are ever wired to the observer.
+const minShapeCoverage = 4000
+
+// isFullTestRun reports whether every test ran, so the coverage floor applies.
+// A `-run <subset>` filter (or the `-run ^$` fuzz pass) legitimately observes
+// only a fraction and must not be judged against the floor.
+func isFullTestRun() bool {
+	f := flag.Lookup("test.run")
+	if f == nil {
+		return false
+	}
+	switch f.Value.String() {
+	case "", ".*", "^.*$":
+		return true
+	default:
+		return false
+	}
+}
+
+// coverage reports how many observed /api/v3 exchanges were matched to an
+// OpenAPI operation and validated. The shape-parity gate is only meaningful if
+// this stays high; a coverage floor guards against it silently collapsing
+// (PAR-011).
+func (v *shapeValidator) coverage() (validated, exchanges int) {
+	v.mu.Lock()
+	defer v.mu.Unlock()
+	return v.validated, v.exchanges
+}
+
 // ratchet compares the deduped violations against the allowlist and
 // returns the new keys.
 func (v *shapeValidator) ratchet() (newKeys []string, total int) {
@@ -762,6 +802,30 @@ func (v *shapeValidator) ratchet() (newKeys []string, total int) {
 	}
 	sort.Strings(newKeys)
 	return newKeys, len(v.seen)
+}
+
+// unusedAllowlistEntries returns allowlist keys that no observed violation
+// matched during this run. On a full run every allowlisted deviation should be
+// triggered by the endpoint it cites; an entry that never fires is a dead
+// suppression — it protects nothing and only inflates the count (PAR-022). The
+// full-run teardown reports these for removal so the gate ledger cannot quietly
+// accumulate entries for shapes no test exercises. Meaningful only on a full
+// run: a `-run <subset>` legitimately exercises few of the cited endpoints.
+func (v *shapeValidator) unusedAllowlistEntries() ([]string, error) {
+	allowed, err := readViolationAllowlist(allowlistFile)
+	if err != nil {
+		return nil, err
+	}
+	v.mu.Lock()
+	defer v.mu.Unlock()
+	var unused []string
+	for key := range allowed {
+		if _, ok := v.seen[key]; !ok {
+			unused = append(unused, key)
+		}
+	}
+	sort.Strings(unused)
+	return unused, nil
 }
 
 // repoRoot walks up from the package directory to the module root.

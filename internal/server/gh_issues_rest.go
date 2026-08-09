@@ -391,6 +391,12 @@ func (s *Server) handleUpdateIssue(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Optimistic concurrency: an If-Match must match the issue's current ETag,
+	// or a stale client would clobber a concurrent edit (STORE-016).
+	if !checkIfMatch(w, r, issueToJSON(issue, s.store, s.baseURL(r), repo.FullName)) {
+		return
+	}
+
 	var req map[string]interface{}
 	if !decodeJSONBody(w, r, &req) {
 		return
@@ -1284,7 +1290,9 @@ func issueToJSON(issue *Issue, st *Store, baseURL, repoFullName string) map[stri
 	title := issue.Title
 	body := issue.Body
 	rawState := issue.State
-	stateReason := issue.StateReason
+	// StateReason is stored in the GraphQL upper-case form (COMPLETED,
+	// NOT_PLANNED, REOPENED); the REST enum is lower-case (PAR-010).
+	stateReason := strings.ToLower(issue.StateReason)
 	locked := issue.Locked
 	activeLockReason := issue.ActiveLockReason
 	createdAt := issue.CreatedAt
@@ -1351,7 +1359,7 @@ func issueToJSON(issue *Issue, st *Store, baseURL, repoFullName string) map[stri
 		"title":              title,
 		"body":               body,
 		"state":              state,
-		"state_reason":       stateReason,
+		"state_reason":       nullIfEmpty(stateReason),
 		"user":               authorJSON,
 		"labels":             labels,
 		"assignee":           assignee,

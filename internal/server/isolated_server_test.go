@@ -33,6 +33,13 @@ func newIsolatedServer(t *testing.T) *isolatedServer {
 	t.Helper()
 	s := NewServer("127.0.0.1:0", zerolog.Nop())
 	useFixedTestClock(s)
+	// Feed the shared OpenAPI shape observer (PAR-011) so isolated-server
+	// tests contribute to the parity coverage instead of eroding it as the
+	// TEST-008 migration moves traffic off the shared harness. The observer is
+	// mutex-guarded, so concurrent isolated servers feed it safely.
+	if apiShapeValidator != nil {
+		s.responseObserver = apiShapeValidator.Observe
+	}
 	ts := httptest.NewServer(s.requestHandler())
 	t.Cleanup(ts.Close)
 	return &isolatedServer{Server: s, baseURL: ts.URL}

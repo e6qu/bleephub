@@ -16,6 +16,7 @@ import (
 	"math/big"
 	"net"
 	"net/http"
+	"net/http/httptest"
 	"net/url"
 	"os"
 	"strings"
@@ -95,6 +96,45 @@ func authedPost(path, contentType string, body io.Reader) (*http.Response, error
 	}
 	req.Header.Set("Authorization", "Bearer "+defaultToken)
 	return http.DefaultClient.Do(req)
+}
+
+// serveTestRequest is the single request-building core the package's various
+// do*Req helpers adapt to their own signatures (TEST-018): it builds a request
+// (JSON Content-Type when body is non-nil), applies authHeader if given, serves
+// it through the full middleware chain, and returns the recorder. It is distinct
+// from authedGet/authedPost, which drive the live httptest listener over HTTP.
+func serveTestRequest(s *Server, authHeader, method, path string, body []byte) *httptest.ResponseRecorder {
+	var req *http.Request
+	if body != nil {
+		req = httptest.NewRequest(method, path, bytes.NewReader(body))
+		req.Header.Set("Content-Type", "application/json")
+	} else {
+		req = httptest.NewRequest(method, path, nil)
+	}
+	if authHeader != "" {
+		req.Header.Set("Authorization", authHeader)
+	}
+	w := httptest.NewRecorder()
+	s.requestHandler().ServeHTTP(w, req)
+	return w
+}
+
+// jsonBodyBytes maps a string request body to serveTestRequest's []byte: an
+// empty string means "no body" (nil), matching the do*Req helpers that took a
+// string body.
+func jsonBodyBytes(body string) []byte {
+	if body == "" {
+		return nil
+	}
+	return []byte(body)
+}
+
+// bearerHeader formats a Bearer credential, or "" for no Authorization header.
+func bearerHeader(token string) string {
+	if token == "" {
+		return ""
+	}
+	return "Bearer " + token
 }
 
 func TestMain(m *testing.M) {
@@ -250,14 +290,52 @@ func TestMain(m *testing.M) {
 	}
 	_ = os.RemoveAll(packageDataDir)
 
+	// Coverage floor (PAR-011): on a full run the shape-parity gate must have
+	// validated a substantial number of /api/v3 responses. A collapse toward
+	// zero — the observer unwired, or nearly every exchange skipped — makes a
+	// green ratchet meaningless, so fail loudly instead. Only on a full run: a
+	// `-run <subset>` (or the `-run ^$` fuzz pass) legitimately observes few.
+	if isFullTestRun() {
+		validated, exchanges := apiShapeValidator.coverage()
+		// Always report the count so a near-floor result is diagnosable from any
+		// run's log (a floor breach is otherwise the only time the number is
+		// visible, which makes an intermittent dip look like a mystery).
+		fmt.Fprintf(os.Stderr, "openapi-shape coverage: %d/%d /api/v3 responses validated (floor %d)\n", validated, exchanges, minShapeCoverage)
+		if validated < minShapeCoverage {
+			fmt.Fprintf(os.Stderr, "openapi-shape coverage floor: only %d /api/v3 response(s) validated against the OpenAPI description (floor %d) — the parity gate has gone vacuous\n", validated, minShapeCoverage)
+			if code == 0 {
+				code = 1
+			}
+		}
+	}
+
 	if newKeys, total := apiShapeValidator.ratchet(); len(newKeys) > 0 {
-		fmt.Fprintf(os.Stderr, "\nopenapi-shape ratchet: %d NEW response-shape violation(s) vs testdata/github-openapi.json.gz (total observed: %d):\n", len(newKeys), total)
+		fmt.Fprintf(os.Stderr, "\nopenapi-shape ratchet: %d NEW response-shape violation(s) vs ../../third_party/github-openapi.json.gz (total observed: %d):\n", len(newKeys), total)
 		for _, key := range newKeys {
 			fmt.Fprintf(os.Stderr, "  %s\n", key)
 		}
 		fmt.Fprintf(os.Stderr, "Fix the response shape, or file a BUG and add the key to openapi-violation-allowlist.txt with its BUG ID.\n")
 		if code == 0 {
 			code = 1
+		}
+	}
+
+	// Dead-entry sweep (PAR-022): on a full run every allowlisted deviation
+	// should have been triggered by the endpoint it cites. An entry no observed
+	// violation matched is a dead suppression that only inflates the ledger, so
+	// fail and name it for removal. Guarded to full runs — a subset legitimately
+	// exercises few of the cited endpoints.
+	if isFullTestRun() {
+		if unused, err := apiShapeValidator.unusedAllowlistEntries(); err != nil {
+			fmt.Fprintf(os.Stderr, "openapi-shape allowlist dead-entry sweep skipped: %v\n", err)
+		} else if len(unused) > 0 {
+			fmt.Fprintf(os.Stderr, "\nopenapi-shape allowlist: %d dead entry/entries never triggered by any exercised endpoint (PAR-022) — remove them and lower the ceiling:\n", len(unused))
+			for _, key := range unused {
+				fmt.Fprintf(os.Stderr, "  %s\n", key)
+			}
+			if code == 0 {
+				code = 1
+			}
 		}
 	}
 

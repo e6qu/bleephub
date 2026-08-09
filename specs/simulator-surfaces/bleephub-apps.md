@@ -8,6 +8,7 @@ Canonical reference: <https://docs.github.com/en/enterprise-server/rest/apps>
 
 - ✓ — implemented + tested
 - ✗ — implemented, no direct test coverage
+- ○ — not implemented (no REST simulator handler; GitHub exposes it only elsewhere)
 
 ## GitHub App identity
 

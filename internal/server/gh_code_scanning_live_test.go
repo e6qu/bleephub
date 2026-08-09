@@ -47,7 +47,7 @@ func TestLiveCodeScanning_FullFlow(t *testing.T) {
 	resp.Body.Close()
 
 	// Patch alert
-	patchBody, _ := json.Marshal(map[string]any{"state": "dismissed", "dismissed_reason": "used_in_tests"})
+	patchBody, _ := json.Marshal(map[string]any{"state": "dismissed", "dismissed_reason": "used in tests"})
 	req, _ := http.NewRequest("PATCH", testBaseURL+"/api/v3/repos/admin/live-code-scanning/code-scanning/alerts/"+itoa(alertNumber), bytes.NewReader(patchBody))
 	req.Header.Set("Authorization", "Bearer "+defaultToken)
 	req.Header.Set("Content-Type", "application/json")

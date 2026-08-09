@@ -8,6 +8,7 @@ Canonical reference: <https://docs.github.com/en/enterprise-server/rest/actions>
 
 - ✓ — implemented + tested
 - ✗ — implemented, no direct test coverage
+- ○ — not implemented (no REST simulator handler; GitHub exposes it only elsewhere)
 
 ## Workflow runs
 
@@ -19,9 +20,9 @@ Canonical reference: <https://docs.github.com/en/enterprise-server/rest/actions>
 | Cancel workflow run | `POST /api/v3/repos/{owner}/{repo}/actions/runs/{run_id}/cancel` | ✓ `handleCancelWorkflowRun` | ✓ same | |
 | Rerun workflow run | `POST /api/v3/repos/{owner}/{repo}/actions/runs/{run_id}/rerun` | ✓ `handleRerunWorkflowRun` | ✓ same | |
 | Rerun failed jobs | `POST /api/v3/repos/{owner}/{repo}/actions/runs/{run_id}/rerun-failed-jobs` | ✓ `gh_actions_extras.go::handleRerunFailedJobs` | ✓ same | |
-| Get run logs | `GET /api/v3/repos/{owner}/{repo}/actions/runs/{run_id}/logs` | ✓ `handleGetRunLogs` | ✓ same | |
-| Get run timing | `GET /api/v3/repos/{owner}/{repo}/actions/runs/{run_id}/timing` | ✓ `handleGetRunTiming` | ✓ same | |
-| Get run approvals | `GET /api/v3/repos/{owner}/{repo}/actions/runs/{run_id}/approvals` | ✓ `handleGetRunApprovals` | ✓ same | |
+| Get run logs | `GET /api/v3/repos/{owner}/{repo}/actions/runs/{run_id}/logs` | ✓ `handleRunLogs` | ✓ same | |
+| Get run timing | `GET /api/v3/repos/{owner}/{repo}/actions/runs/{run_id}/timing` | ✓ `handleRunTiming` | ✓ same | |
+| Get run approvals | `GET /api/v3/repos/{owner}/{repo}/actions/runs/{run_id}/approvals` | ✓ `handleRunApprovals` | ✓ same | |
 
 ## Jobs
 
@@ -35,8 +36,8 @@ Canonical reference: <https://docs.github.com/en/enterprise-server/rest/actions>
 
 | Operation | Verb + path | sim handler | test | notes |
 |---|---|---|---|---|
-| List run artifacts | `GET /api/v3/repos/{owner}/{repo}/actions/runs/{run_id}/artifacts` | ✓ `gh_actions_extras.go::handleListRunArtifacts` | ✓ `gh_actions_test.go` | |
-| List repo artifacts | `GET /api/v3/repos/{owner}/{repo}/actions/artifacts` | ✓ `handleListRepoArtifacts` | ✓ same | |
+| List run artifacts | `GET /api/v3/repos/{owner}/{repo}/actions/runs/{run_id}/artifacts` | ✓ `handleRunArtifacts` | ✓ `gh_actions_test.go` | |
+| List repo artifacts | `GET /api/v3/repos/{owner}/{repo}/actions/artifacts` | ✓ `handleRepoArtifacts` | ✓ same | |
 
 ## Runners
 

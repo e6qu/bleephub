@@ -589,7 +589,9 @@ func (s *Server) handleSearchIssues(w http.ResponseWriter, r *http.Request) {
 		for _, row := range rows {
 			results = append(results, render(row))
 		}
-		writeJSON(w, http.StatusOK, searchEnvelope("issues", results, len(results), false, q, sortSearchResults))
+		env := searchEnvelope(results, len(results), false, q, sortSearchResults)
+		env["search_type"] = "lexical" // required on issues search; the algorithm, not the subject
+		writeJSON(w, http.StatusOK, env)
 		return
 	}
 
@@ -603,7 +605,9 @@ func (s *Server) handleSearchIssues(w http.ResponseWriter, r *http.Request) {
 		"total_count":        total,
 		"incomplete_results": false,
 		"items":              pageItems,
-		"search_type":        "issues",
+		// GitHub's issues-search response requires search_type — the search
+		// algorithm, not the subject. bleephub does keyword (lexical) search.
+		"search_type": "lexical",
 	}
 	writeJSON(w, http.StatusOK, out)
 }
@@ -759,7 +763,7 @@ func issueToJSONForPullRequest(pr *PullRequest, st *Store, baseURL, repoFullName
 		"title":              pr.Title,
 		"body":               pr.Body,
 		"state":              strings.ToLower(pr.State),
-		"state_reason":       "",
+		"state_reason":       nil,
 		"user":               authorJSON,
 		"labels":             labels,
 		"assignee":           assignee,
@@ -931,7 +935,7 @@ func (s *Server) handleSearchRepositories(w http.ResponseWriter, r *http.Request
 		results = append(results, item)
 	}
 
-	writeJSON(w, http.StatusOK, searchEnvelope("", results, len(results), false, q, sortRepoSearchResults))
+	writeJSON(w, http.StatusOK, searchEnvelope(results, len(results), false, q, sortRepoSearchResults))
 }
 
 func repoIssueLabelCount(st *Store, repoID int, labelName string) int {
@@ -1116,7 +1120,7 @@ func (s *Server) handleSearchCode(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	writeJSON(w, http.StatusOK, searchEnvelope("", results, total, truncated, q, nil))
+	writeJSON(w, http.StatusOK, searchEnvelope(results, total, truncated, q, nil))
 }
 
 func (s *Server) handleSearchUsers(w http.ResponseWriter, r *http.Request) {
@@ -1173,7 +1177,7 @@ func (s *Server) handleSearchUsers(w http.ResponseWriter, r *http.Request) {
 		results = append(results, item)
 	}
 
-	writeJSON(w, http.StatusOK, searchEnvelope("", results, len(results), false, q, sortUserSearchResults))
+	writeJSON(w, http.StatusOK, searchEnvelope(results, len(results), false, q, sortUserSearchResults))
 }
 
 func pathMatches(text string, terms []string) bool {
@@ -1293,7 +1297,7 @@ func searchRelevanceScore(terms []string, primary, secondary string) float64 {
 // totalCount is the size of the full match set (before truncation); items is
 // the rendered slice, which may be shorter when a handler caps collection.
 // incomplete reports whether items was truncated below totalCount.
-func searchEnvelope(searchType string, items []map[string]interface{}, totalCount int, incomplete bool, q searchQuery, sortBy searchSorter) map[string]interface{} {
+func searchEnvelope(items []map[string]interface{}, totalCount int, incomplete bool, q searchQuery, sortBy searchSorter) map[string]interface{} {
 	orderSearchItems(items)
 	if sortBy != nil {
 		items = sortBy(items, q.Sort, q.Order)
@@ -1319,9 +1323,6 @@ func searchEnvelope(searchType string, items []map[string]interface{}, totalCoun
 		"total_count":        totalCount,
 		"incomplete_results": incomplete,
 		"items":              pageItems,
-	}
-	if searchType != "" {
-		m["search_type"] = searchType
 	}
 	return m
 }
@@ -1561,7 +1562,7 @@ func (s *Server) handleSearchCommits(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	writeJSON(w, http.StatusOK, searchEnvelope("", results, total, truncated, q, sortCommitSearchResults))
+	writeJSON(w, http.StatusOK, searchEnvelope(results, total, truncated, q, sortCommitSearchResults))
 }
 
 // commitAuthorMatches matches the author: qualifier against the commit's
@@ -1735,7 +1736,7 @@ func (s *Server) handleSearchLabels(w http.ResponseWriter, r *http.Request) {
 			"score":       searchRelevanceScore(q.Terms, l.Name, l.Description),
 		})
 	}
-	writeJSON(w, http.StatusOK, searchEnvelope("", items, len(items), false, q, nil))
+	writeJSON(w, http.StatusOK, searchEnvelope(items, len(items), false, q, nil))
 }
 
 // handleSearchTopics implements GET /search/topics: a real search over the
@@ -1806,5 +1807,5 @@ func (s *Server) handleSearchTopics(w http.ResponseWriter, r *http.Request) {
 			"repository_count":  t.count,
 		})
 	}
-	writeJSON(w, http.StatusOK, searchEnvelope("", items, len(items), false, q, nil))
+	writeJSON(w, http.StatusOK, searchEnvelope(items, len(items), false, q, nil))
 }

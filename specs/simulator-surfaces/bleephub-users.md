@@ -8,6 +8,7 @@ Canonical reference: <https://docs.github.com/en/enterprise-server/rest/users>
 
 - ✓ — implemented + tested
 - ✗ — implemented, no direct test coverage
+- ○ — not implemented (no REST simulator handler; GitHub exposes it only elsewhere)
 
 ## User identity
 

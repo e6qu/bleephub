@@ -19,9 +19,22 @@ import (
 
 const objectChecksumMetadataKey = "bleephub-sha256"
 
+// actionsByteStore stores opaque object bytes. It offers both whole-value
+// ([]byte) and streaming (io.Reader/io.ReadCloser) access: the []byte forms are
+// convenient for small values that are validated or checksummed in memory
+// anyway, while PutStream/GetStream let a large upload or download move through
+// without the whole object ever residing in the process heap (STORE-019).
 type actionsByteStore interface {
 	Put(ctx context.Context, key string, data []byte) error
 	Get(ctx context.Context, key string) ([]byte, error)
+	// PutStream stores everything read from r under key. Implementations must
+	// not buffer the entire stream in memory.
+	PutStream(ctx context.Context, key string, r io.Reader) error
+	// GetStream returns the object as a stream the caller must Close. Unlike
+	// Get it does not verify the stored checksum (a mid-stream body cannot be
+	// rejected after its first byte reaches the client); it trusts the object
+	// store's own transport integrity, as GitHub trusts its CDN.
+	GetStream(ctx context.Context, key string) (io.ReadCloser, error)
 	Delete(ctx context.Context, key string) error
 }
 
@@ -55,21 +68,60 @@ func newActionsByteStoreFromEnv(ctx context.Context) (actionsByteStore, error) {
 }
 
 func (s *s3ActionsByteStore) Put(ctx context.Context, key string, data []byte) error {
+	checksum := sha256.Sum256(data)
+	return s.putObject(ctx, key, bytes.NewReader(data), checksum[:])
+}
+
+// PutStream buffers the reader to a temporary file — never to the heap — while
+// hashing it, then uploads the file with its SHA-256 in metadata. A 2 GiB
+// upload costs a temp file, not 2 GiB of process memory (STORE-019).
+func (s *s3ActionsByteStore) PutStream(ctx context.Context, key string, r io.Reader) error {
+	tmp, err := os.CreateTemp("", "bleephub-object-*")
+	if err != nil {
+		return fmt.Errorf("s3 put %s: stage upload: %w", s.key(key), err)
+	}
+	defer os.Remove(tmp.Name())
+	defer tmp.Close()
+	hasher := sha256.New()
+	if _, err := io.Copy(io.MultiWriter(tmp, hasher), r); err != nil {
+		return fmt.Errorf("s3 put %s: buffer upload: %w", s.key(key), err)
+	}
+	if _, err := tmp.Seek(0, io.SeekStart); err != nil {
+		return fmt.Errorf("s3 put %s: rewind upload: %w", s.key(key), err)
+	}
+	return s.putObject(ctx, key, tmp, hasher.Sum(nil))
+}
+
+// putObject uploads a seekable body with a precomputed SHA-256 checksum in
+// metadata, shared by Put and PutStream.
+func (s *s3ActionsByteStore) putObject(ctx context.Context, key string, body io.ReadSeeker, checksum []byte) error {
 	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
 	defer cancel()
-	checksum := sha256.Sum256(data)
 	_, err := s.fs.client.PutObject(ctx, &s3.PutObjectInput{
 		Bucket: aws.String(s.fs.bucket),
 		Key:    aws.String(s.key(key)),
-		Body:   bytes.NewReader(data),
+		Body:   body,
 		Metadata: map[string]string{
-			objectChecksumMetadataKey: base64.RawStdEncoding.EncodeToString(checksum[:]),
+			objectChecksumMetadataKey: base64.RawStdEncoding.EncodeToString(checksum),
 		},
 	})
 	if err != nil {
 		return fmt.Errorf("s3 put %s: %w", s.key(key), err)
 	}
 	return nil
+}
+
+// GetStream returns the object body as a stream. It does not verify the stored
+// checksum — see the interface doc — and the caller must Close the reader.
+func (s *s3ActionsByteStore) GetStream(ctx context.Context, key string) (io.ReadCloser, error) {
+	resp, err := s.fs.client.GetObject(ctx, &s3.GetObjectInput{
+		Bucket: aws.String(s.fs.bucket),
+		Key:    aws.String(s.key(key)),
+	})
+	if err != nil {
+		return nil, fmt.Errorf("s3 get %s: %w", s.key(key), err)
+	}
+	return resp.Body, nil
 }
 
 func (s *s3ActionsByteStore) Get(ctx context.Context, key string) ([]byte, error) {

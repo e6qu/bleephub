@@ -247,7 +247,7 @@ func (st *Store) DeleteOrg(login string) bool {
 // organization row that goes away while its repositories stay behind leaves
 // every later start rejecting those rows as an unknown owner.
 func (st *Store) DeleteOrgWithError(login string) (bool, error) {
-	repoIntents, deleted, err := st.deleteOrgMetadata(login)
+	repoIntents, orgIntent, deleted, err := st.deleteOrgMetadata(login)
 	if err != nil || !deleted {
 		return deleted, err
 	}
@@ -255,6 +255,11 @@ func (st *Store) DeleteOrgWithError(login string) (bool, error) {
 		if err := st.purgeDeletedRepoBytes(intent.Name, intent); err != nil {
 			return true, fmt.Errorf("delete organization %s: %w", login, err)
 		}
+	}
+	// Reclaim the bytes of the org's directly-owned packages (kind-agnostic
+	// cleanup; runs without st.mu like the repo intents above).
+	if err := st.cleanupDeletedRepo(orgIntent); err != nil {
+		return true, fmt.Errorf("delete organization %s external data: %w", login, err)
 	}
 	if err := st.persist.Delete(pendingDeletionsBucket, pendingOrgDeletionKey(login)); err != nil {
 		return true, fmt.Errorf("delete organization %s: clear deletion intent: %w", login, err)
@@ -265,21 +270,47 @@ func (st *Store) DeleteOrgWithError(login string) (bool, error) {
 // deleteOrgMetadata purges the organization from memory and, in one
 // transaction, from the database. It returns the repositories whose bytes the
 // caller must still destroy.
-func (st *Store) deleteOrgMetadata(login string) ([]pendingDeletion, bool, error) {
+func (st *Store) deleteOrgMetadata(login string) ([]pendingDeletion, pendingDeletion, bool, error) {
 	st.mu.Lock()
 	defer st.mu.Unlock()
 
 	org, ok := st.OrgsByLogin[login]
 	if !ok {
-		return nil, false, nil
+		return nil, pendingDeletion{}, false, nil
 	}
 
-	if err := st.persist.Put(pendingDeletionsBucket, pendingOrgDeletionKey(login), pendingDeletion{
-		Kind:      "org",
-		Name:      login,
-		StartedAt: st.currentTime(),
-	}); err != nil {
-		return nil, true, fmt.Errorf("delete organization %s: record deletion intent: %w", login, err)
+	// Build the org's own deletion intent, scheduling the file bytes of packages
+	// owned directly by the organization (not via one of its repositories) for
+	// external cleanup — otherwise they orphan when the org row goes away
+	// (STORE-028). Package rows are dropped from st.Packages in the batch below.
+	orgIntent := pendingDeletion{Kind: "org", Name: login, StartedAt: st.currentTime()}
+	addPackageFile := func(path string) {
+		if path == "" {
+			return
+		}
+		if st.ObjectByteStore != nil {
+			orgIntent.ObjectKeys = append(orgIntent.ObjectKeys, path)
+		} else {
+			orgIntent.LocalFiles = append(orgIntent.LocalFiles, path)
+		}
+	}
+	var orgPackageIDs []int
+	for pkgID, pkg := range st.Packages {
+		if pkg.OwnerType != "Organization" || pkg.OwnerKey != login {
+			continue
+		}
+		orgPackageIDs = append(orgPackageIDs, pkgID)
+		for versionID := range st.PackageVersionsByPackage[pkgID] {
+			for _, file := range st.PackageFilesByVersion[versionID] {
+				addPackageFile(file.StoragePath)
+			}
+		}
+	}
+	sort.Strings(orgIntent.ObjectKeys)
+	sort.Strings(orgIntent.LocalFiles)
+
+	if err := st.persist.Put(pendingDeletionsBucket, pendingOrgDeletionKey(login), orgIntent); err != nil {
+		return nil, pendingDeletion{}, true, fmt.Errorf("delete organization %s: record deletion intent: %w", login, err)
 	}
 
 	var repoNames []string
@@ -293,16 +324,48 @@ func (st *Store) deleteOrgMetadata(login string) ([]pendingDeletion, bool, error
 	for _, fullName := range repoNames {
 		owner, name, ok := splitRepoFullName(fullName)
 		if !ok {
-			return nil, true, fmt.Errorf("delete organization %s: repository key %q is not an owner/name pair", login, fullName)
+			return nil, pendingDeletion{}, true, fmt.Errorf("delete organization %s: repository key %q is not an owner/name pair", login, fullName)
 		}
 		_, intent, err := st.deleteRepoLocked(owner, name)
 		if err != nil {
-			return nil, true, fmt.Errorf("delete organization %s: %w", login, err)
+			return nil, pendingDeletion{}, true, fmt.Errorf("delete organization %s: %w", login, err)
 		}
 		repoIntents = append(repoIntents, intent)
 	}
 
 	batch := newPersistBatch(st.persist)
+
+	// Cascade the org's directly-owned packages, versions and files (STORE-028).
+	for _, pkgID := range orgPackageIDs {
+		delete(st.Packages, pkgID)
+		batch.Delete("packages", strconv.Itoa(pkgID))
+		for versionID := range st.PackageVersionsByPackage[pkgID] {
+			delete(st.PackageVersions, versionID)
+			batch.Delete("package_versions", strconv.Itoa(versionID))
+			for fileID, file := range st.PackageFiles {
+				if file.VersionID == versionID {
+					delete(st.PackageFiles, fileID)
+					batch.Delete("package_files", strconv.Itoa(fileID))
+				}
+			}
+			delete(st.PackageFilesByVersion, versionID)
+		}
+		delete(st.PackageVersionsByPackage, pkgID)
+	}
+	delete(st.PackagesByOwnerKey, login)
+
+	// Cancel the org's Marketplace purchases so a deleted org keeps no live
+	// subscription (STORE-028). Store→Misc is the required lock order, and
+	// st.mu is held here, so taking Misc.mu is safe.
+	st.Misc.mu.Lock()
+	for k, purchase := range st.Misc.marketplacePurchases {
+		if purchase.AccountType == "Organization" && purchase.AccountID == org.ID {
+			delete(st.Misc.marketplacePurchases, k)
+			batch.Delete("marketplace_purchases", k)
+		}
+	}
+	st.Misc.mu.Unlock()
+
 	for k, m := range st.Memberships {
 		if m.OrgID == org.ID {
 			delete(st.Memberships, k)
@@ -321,9 +384,109 @@ func (st *Store) deleteOrgMetadata(login string) ([]pendingDeletion, bool, error
 	delete(st.OrgsByLogin, login)
 	batch.Delete("orgs", strconv.Itoa(org.ID))
 	if err := batch.Commit(); err != nil {
-		return nil, true, fmt.Errorf("delete organization %s: %w", login, err)
+		return nil, pendingDeletion{}, true, fmt.Errorf("delete organization %s: %w", login, err)
 	}
-	return repoIntents, true, nil
+	return repoIntents, orgIntent, true, nil
+}
+
+// deleteUserOwnedResourcesLocked cascades the resources a deleted user account
+// owns — repositories, directly-owned packages (with their file bytes) and
+// Marketplace purchases — plus its organization memberships, mirroring the
+// organization cascade so a user deletion leaves no orphaned rows or object
+// bytes (STORE-028). The caller holds st.mu; it returns the repository intents
+// and the user's own package-byte intent for the caller to drain after
+// releasing the lock.
+func (st *Store) deleteUserOwnedResourcesLocked(u *User) ([]pendingDeletion, pendingDeletion, error) {
+	var repoNames []string
+	for fullName, repo := range st.ReposByName {
+		if repo.OwnerType == "User" && repo.OwnerID == u.ID {
+			repoNames = append(repoNames, fullName)
+		}
+	}
+	sort.Strings(repoNames)
+	repoIntents := make([]pendingDeletion, 0, len(repoNames))
+	for _, fullName := range repoNames {
+		owner, name, ok := splitRepoFullName(fullName)
+		if !ok {
+			return nil, pendingDeletion{}, fmt.Errorf("delete user %s: repository key %q is not an owner/name pair", u.Login, fullName)
+		}
+		_, intent, err := st.deleteRepoLocked(owner, name)
+		if err != nil {
+			return nil, pendingDeletion{}, fmt.Errorf("delete user %s: %w", u.Login, err)
+		}
+		repoIntents = append(repoIntents, intent)
+	}
+
+	userIntent := pendingDeletion{Kind: "user", Name: u.Login, StartedAt: st.currentTime()}
+	addPackageFile := func(path string) {
+		if path == "" {
+			return
+		}
+		if st.ObjectByteStore != nil {
+			userIntent.ObjectKeys = append(userIntent.ObjectKeys, path)
+		} else {
+			userIntent.LocalFiles = append(userIntent.LocalFiles, path)
+		}
+	}
+	var userPackageIDs []int
+	for pkgID, pkg := range st.Packages {
+		if pkg.OwnerType != "User" || pkg.OwnerKey != u.Login {
+			continue
+		}
+		userPackageIDs = append(userPackageIDs, pkgID)
+		for versionID := range st.PackageVersionsByPackage[pkgID] {
+			for _, file := range st.PackageFilesByVersion[versionID] {
+				addPackageFile(file.StoragePath)
+			}
+		}
+	}
+	sort.Strings(userIntent.ObjectKeys)
+	sort.Strings(userIntent.LocalFiles)
+	if len(userIntent.ObjectKeys) > 0 || len(userIntent.LocalFiles) > 0 {
+		if err := st.persist.Put(pendingDeletionsBucket, pendingUserDeletionKey(u.Login), userIntent); err != nil {
+			return nil, pendingDeletion{}, fmt.Errorf("delete user %s: record deletion intent: %w", u.Login, err)
+		}
+	}
+
+	batch := newPersistBatch(st.persist)
+	for _, pkgID := range userPackageIDs {
+		delete(st.Packages, pkgID)
+		batch.Delete("packages", strconv.Itoa(pkgID))
+		for versionID := range st.PackageVersionsByPackage[pkgID] {
+			delete(st.PackageVersions, versionID)
+			batch.Delete("package_versions", strconv.Itoa(versionID))
+			for fileID, file := range st.PackageFiles {
+				if file.VersionID == versionID {
+					delete(st.PackageFiles, fileID)
+					batch.Delete("package_files", strconv.Itoa(fileID))
+				}
+			}
+			delete(st.PackageFilesByVersion, versionID)
+		}
+		delete(st.PackageVersionsByPackage, pkgID)
+	}
+	delete(st.PackagesByOwnerKey, u.Login)
+
+	st.Misc.mu.Lock()
+	for k, purchase := range st.Misc.marketplacePurchases {
+		if purchase.AccountType == "User" && purchase.AccountID == u.ID {
+			delete(st.Misc.marketplacePurchases, k)
+			batch.Delete("marketplace_purchases", k)
+		}
+	}
+	st.Misc.mu.Unlock()
+
+	for k, m := range st.Memberships {
+		if m.UserID == u.ID {
+			delete(st.Memberships, k)
+			batch.Delete("memberships", k)
+		}
+	}
+
+	if err := batch.Commit(); err != nil {
+		return nil, pendingDeletion{}, fmt.Errorf("delete user %s: %w", u.Login, err)
+	}
+	return repoIntents, userIntent, nil
 }
 
 // ListOrgsByUser returns all organizations the user belongs to, in

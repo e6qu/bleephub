@@ -1,7 +1,6 @@
 package bleephub
 
 import (
-	"bytes"
 	"context"
 	"io"
 	"net/http"
@@ -1284,22 +1283,28 @@ func minimalRepoJSON(repo *Repo, st *Store, baseURL string) map[string]interface
 // ─── File serving ───────────────────────────────────────────────────────
 
 func (s *Server) servePackageFile(w http.ResponseWriter, r *http.Request, f *PackageFile) {
+	// Stream the file straight from the object store to the client — a large
+	// package download must not first materialize in the process heap
+	// (STORE-019). Content-Length comes from the recorded file size.
 	var (
-		data []byte
+		body io.ReadCloser
 		err  error
 	)
 	if s.store.ObjectByteStore != nil {
-		data, err = s.store.ObjectByteStore.Get(r.Context(), f.StoragePath)
+		body, err = s.store.ObjectByteStore.GetStream(r.Context(), f.StoragePath)
 	} else {
-		data, err = os.ReadFile(f.StoragePath)
+		body, err = os.Open(f.StoragePath) // #nosec G304 -- StoragePath is a store-generated internal path
 	}
 	if err != nil {
 		writeGHError(w, http.StatusNotFound, "Not Found")
 		return
 	}
+	defer body.Close()
 	w.Header().Set("Content-Type", f.ContentType)
-	w.Header().Set("Content-Length", strconv.FormatInt(int64(len(data)), 10))
+	if f.Size > 0 {
+		w.Header().Set("Content-Length", strconv.FormatInt(f.Size, 10))
+	}
 	w.Header().Set("Content-Disposition", "attachment; filename=\""+f.Name+"\"")
 	w.WriteHeader(http.StatusOK)
-	_, _ = io.Copy(w, bytes.NewReader(data))
+	_, _ = io.Copy(w, body)
 }

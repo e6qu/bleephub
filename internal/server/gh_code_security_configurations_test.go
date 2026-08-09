@@ -6,12 +6,14 @@ import (
 )
 
 func TestCodeSecurityConfigurations_RepositoriesPagination(t *testing.T) {
-	org := createTestOrg(t)
+	t.Parallel()
+	s := newIsolatedServer(t)
+	org := s.createTestOrg(t)
 	base := "/api/v3/orgs/" + org + "/code-security/configurations"
-	_, repoID1 := createOrgRepoForGovernance(t, org)
-	_, repoID2 := createOrgRepoForGovernance(t, org)
+	_, repoID1 := s.createOrgRepoForGovernance(t, org)
+	_, repoID2 := s.createOrgRepoForGovernance(t, org)
 
-	resp := ghPost(t, base, defaultToken, map[string]interface{}{
+	resp := s.post(t, base, defaultToken, map[string]interface{}{
 		"name": "paged-config", "description": "pagination",
 	})
 	if resp.StatusCode != 201 {
@@ -19,7 +21,7 @@ func TestCodeSecurityConfigurations_RepositoriesPagination(t *testing.T) {
 	}
 	id := itoa(int(decodeJSON(t, resp)["id"].(float64)))
 
-	resp = ghPost(t, base+"/"+id+"/attach", defaultToken, map[string]interface{}{
+	resp = s.post(t, base+"/"+id+"/attach", defaultToken, map[string]interface{}{
 		"scope":                   "selected",
 		"selected_repository_ids": []int{repoID1, repoID2},
 	})
@@ -28,7 +30,7 @@ func TestCodeSecurityConfigurations_RepositoriesPagination(t *testing.T) {
 		t.Fatalf("attach: %d", resp.StatusCode)
 	}
 
-	resp = ghGet(t, base+"/"+id+"/repositories?per_page=1", defaultToken)
+	resp = s.get(t, base+"/"+id+"/repositories?per_page=1", defaultToken)
 	if resp.StatusCode != 200 {
 		resp.Body.Close()
 		t.Fatalf("page 1: %d", resp.StatusCode)
@@ -42,7 +44,7 @@ func TestCodeSecurityConfigurations_RepositoriesPagination(t *testing.T) {
 		t.Fatalf("page 1 Link = %q, want rel=next", link)
 	}
 
-	resp = ghGet(t, base+"/"+id+"/repositories?per_page=1&page=2", defaultToken)
+	resp = s.get(t, base+"/"+id+"/repositories?per_page=1&page=2", defaultToken)
 	if resp.StatusCode != 200 {
 		resp.Body.Close()
 		t.Fatalf("page 2: %d", resp.StatusCode)
@@ -59,11 +61,13 @@ func TestCodeSecurityConfigurations_RepositoriesPagination(t *testing.T) {
 }
 
 func TestCodeSecurityConfigurations_CRUD(t *testing.T) {
-	org := createTestOrg(t)
+	t.Parallel()
+	s := newIsolatedServer(t)
+	org := s.createTestOrg(t)
 	base := "/api/v3/orgs/" + org + "/code-security/configurations"
 
 	// Create.
-	resp := ghPost(t, base, defaultToken, map[string]interface{}{
+	resp := s.post(t, base, defaultToken, map[string]interface{}{
 		"name":                        "octo-defaults",
 		"description":                 "Baseline security posture",
 		"dependabot_alerts":           "enabled",
@@ -94,7 +98,7 @@ func TestCodeSecurityConfigurations_CRUD(t *testing.T) {
 	id := itoa(int(created["id"].(float64)))
 
 	// Duplicate name is rejected.
-	resp = ghPost(t, base, defaultToken, map[string]interface{}{
+	resp = s.post(t, base, defaultToken, map[string]interface{}{
 		"name": "octo-defaults", "description": "dup",
 	})
 	resp.Body.Close()
@@ -103,7 +107,7 @@ func TestCodeSecurityConfigurations_CRUD(t *testing.T) {
 	}
 
 	// List.
-	resp = ghGet(t, base, defaultToken)
+	resp = s.get(t, base, defaultToken)
 	if resp.StatusCode != 200 {
 		t.Fatalf("list configurations: %d", resp.StatusCode)
 	}
@@ -112,7 +116,7 @@ func TestCodeSecurityConfigurations_CRUD(t *testing.T) {
 	}
 
 	// GET one.
-	resp = ghGet(t, base+"/"+id, defaultToken)
+	resp = s.get(t, base+"/"+id, defaultToken)
 	if resp.StatusCode != 200 {
 		t.Fatalf("get configuration: %d", resp.StatusCode)
 	}
@@ -121,7 +125,7 @@ func TestCodeSecurityConfigurations_CRUD(t *testing.T) {
 	}
 
 	// PATCH with a real change returns the updated configuration.
-	resp = ghPatch(t, base+"/"+id, defaultToken, map[string]interface{}{
+	resp = s.patch(t, base+"/"+id, defaultToken, map[string]interface{}{
 		"secret_scanning_push_protection": "enabled",
 	})
 	if resp.StatusCode != 200 {
@@ -132,7 +136,7 @@ func TestCodeSecurityConfigurations_CRUD(t *testing.T) {
 	}
 
 	// PATCH that changes nothing is a 204.
-	resp = ghPatch(t, base+"/"+id, defaultToken, map[string]interface{}{
+	resp = s.patch(t, base+"/"+id, defaultToken, map[string]interface{}{
 		"secret_scanning_push_protection": "enabled",
 	})
 	resp.Body.Close()
@@ -141,12 +145,12 @@ func TestCodeSecurityConfigurations_CRUD(t *testing.T) {
 	}
 
 	// DELETE.
-	resp = ghDelete(t, base+"/"+id, defaultToken)
+	resp = s.delete(t, base+"/"+id, defaultToken)
 	resp.Body.Close()
 	if resp.StatusCode != 204 {
 		t.Fatalf("delete configuration: %d", resp.StatusCode)
 	}
-	resp = ghGet(t, base+"/"+id, defaultToken)
+	resp = s.get(t, base+"/"+id, defaultToken)
 	resp.Body.Close()
 	if resp.StatusCode != 404 {
 		t.Fatalf("get deleted configuration: %d", resp.StatusCode)
@@ -154,12 +158,14 @@ func TestCodeSecurityConfigurations_CRUD(t *testing.T) {
 }
 
 func TestCodeSecurityConfigurations_AttachDetachAndRepoView(t *testing.T) {
-	org := createTestOrg(t)
+	t.Parallel()
+	s := newIsolatedServer(t)
+	org := s.createTestOrg(t)
 	base := "/api/v3/orgs/" + org + "/code-security/configurations"
-	repoName, repoID := createOrgRepoForGovernance(t, org)
+	repoName, repoID := s.createOrgRepoForGovernance(t, org)
 	repoPath := org + "/" + repoName
 
-	resp := ghPost(t, base, defaultToken, map[string]interface{}{
+	resp := s.post(t, base, defaultToken, map[string]interface{}{
 		"name": "attach-target", "description": "attach test",
 	})
 	if resp.StatusCode != 201 {
@@ -168,7 +174,7 @@ func TestCodeSecurityConfigurations_AttachDetachAndRepoView(t *testing.T) {
 	id := itoa(int(decodeJSON(t, resp)["id"].(float64)))
 
 	// Attach to the selected repository.
-	resp = ghPost(t, base+"/"+id+"/attach", defaultToken, map[string]interface{}{
+	resp = s.post(t, base+"/"+id+"/attach", defaultToken, map[string]interface{}{
 		"scope":                   "selected",
 		"selected_repository_ids": []int{repoID},
 	})
@@ -178,7 +184,7 @@ func TestCodeSecurityConfigurations_AttachDetachAndRepoView(t *testing.T) {
 	resp.Body.Close()
 
 	// The configuration's repositories list carries the attachment.
-	resp = ghGet(t, base+"/"+id+"/repositories", defaultToken)
+	resp = s.get(t, base+"/"+id+"/repositories", defaultToken)
 	if resp.StatusCode != 200 {
 		t.Fatalf("list attached repos: %d", resp.StatusCode)
 	}
@@ -192,13 +198,13 @@ func TestCodeSecurityConfigurations_AttachDetachAndRepoView(t *testing.T) {
 	}
 
 	// A status filter that excludes "attached" returns nothing.
-	resp = ghGet(t, base+"/"+id+"/repositories?status=detached,failed", defaultToken)
+	resp = s.get(t, base+"/"+id+"/repositories?status=detached,failed", defaultToken)
 	if got := decodeJSONArray(t, resp); len(got) != 0 {
 		t.Fatalf("filtered attached = %v", got)
 	}
 
 	// The repo-level endpoint reads the association back.
-	resp = ghGet(t, "/api/v3/repos/"+repoPath+"/code-security-configuration", defaultToken)
+	resp = s.get(t, "/api/v3/repos/"+repoPath+"/code-security-configuration", defaultToken)
 	if resp.StatusCode != 200 {
 		t.Fatalf("repo configuration: %d", resp.StatusCode)
 	}
@@ -211,7 +217,7 @@ func TestCodeSecurityConfigurations_AttachDetachAndRepoView(t *testing.T) {
 	}
 
 	// Detach via the repository-selection body.
-	resp = ghDeleteWithBody(t, base+"/detach", defaultToken, map[string]interface{}{
+	resp = s.do(t, "DELETE", base+"/detach", defaultToken, map[string]interface{}{
 		"selected_repository_ids": []int{repoID},
 	})
 	resp.Body.Close()
@@ -220,14 +226,14 @@ func TestCodeSecurityConfigurations_AttachDetachAndRepoView(t *testing.T) {
 	}
 
 	// No association remains: repo-level GET is a 204.
-	resp = ghGet(t, "/api/v3/repos/"+repoPath+"/code-security-configuration", defaultToken)
+	resp = s.get(t, "/api/v3/repos/"+repoPath+"/code-security-configuration", defaultToken)
 	resp.Body.Close()
 	if resp.StatusCode != 204 {
 		t.Fatalf("repo configuration after detach: %d", resp.StatusCode)
 	}
 
 	// Attaching an out-of-org repository ID is rejected.
-	resp = ghPost(t, base+"/"+id+"/attach", defaultToken, map[string]interface{}{
+	resp = s.post(t, base+"/"+id+"/attach", defaultToken, map[string]interface{}{
 		"scope":                   "selected",
 		"selected_repository_ids": []int{99999999},
 	})
@@ -237,7 +243,7 @@ func TestCodeSecurityConfigurations_AttachDetachAndRepoView(t *testing.T) {
 	}
 
 	// Detach requires at least one repository ID.
-	resp = ghDeleteWithBody(t, base+"/detach", defaultToken, map[string]interface{}{
+	resp = s.do(t, "DELETE", base+"/detach", defaultToken, map[string]interface{}{
 		"selected_repository_ids": []int{},
 	})
 	resp.Body.Close()
@@ -247,10 +253,12 @@ func TestCodeSecurityConfigurations_AttachDetachAndRepoView(t *testing.T) {
 }
 
 func TestCodeSecurityConfigurations_Defaults(t *testing.T) {
-	org := createTestOrg(t)
+	t.Parallel()
+	s := newIsolatedServer(t)
+	org := s.createTestOrg(t)
 	base := "/api/v3/orgs/" + org + "/code-security/configurations"
 
-	resp := ghPost(t, base, defaultToken, map[string]interface{}{
+	resp := s.post(t, base, defaultToken, map[string]interface{}{
 		"name": "default-cfg", "description": "defaults test",
 	})
 	if resp.StatusCode != 201 {
@@ -259,7 +267,7 @@ func TestCodeSecurityConfigurations_Defaults(t *testing.T) {
 	id := itoa(int(decodeJSON(t, resp)["id"].(float64)))
 
 	// No defaults configured yet.
-	resp = ghGet(t, base+"/defaults", defaultToken)
+	resp = s.get(t, base+"/defaults", defaultToken)
 	if resp.StatusCode != 200 {
 		t.Fatalf("get defaults: %d", resp.StatusCode)
 	}
@@ -268,7 +276,7 @@ func TestCodeSecurityConfigurations_Defaults(t *testing.T) {
 	}
 
 	// Set as default for all new repositories.
-	resp = ghPut(t, base+"/"+id+"/defaults", defaultToken, map[string]interface{}{
+	resp = s.put(t, base+"/"+id+"/defaults", defaultToken, map[string]interface{}{
 		"default_for_new_repos": "all",
 	})
 	if resp.StatusCode != 200 {
@@ -283,21 +291,21 @@ func TestCodeSecurityConfigurations_Defaults(t *testing.T) {
 	}
 
 	// The defaults listing reflects it.
-	resp = ghGet(t, base+"/defaults", defaultToken)
+	resp = s.get(t, base+"/defaults", defaultToken)
 	defaults := decodeJSONArray(t, resp)
 	if len(defaults) != 1 || defaults[0]["default_for_new_repos"] != "all" {
 		t.Fatalf("defaults = %v", defaults)
 	}
 
 	// Clearing with "none" removes it from the listing.
-	resp = ghPut(t, base+"/"+id+"/defaults", defaultToken, map[string]interface{}{
+	resp = s.put(t, base+"/"+id+"/defaults", defaultToken, map[string]interface{}{
 		"default_for_new_repos": "none",
 	})
 	resp.Body.Close()
 	if resp.StatusCode != 200 {
 		t.Fatalf("clear default: %d", resp.StatusCode)
 	}
-	resp = ghGet(t, base+"/defaults", defaultToken)
+	resp = s.get(t, base+"/defaults", defaultToken)
 	if got := decodeJSONArray(t, resp); len(got) != 0 {
 		t.Fatalf("defaults after clear = %v", got)
 	}

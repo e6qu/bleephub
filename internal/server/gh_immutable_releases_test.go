@@ -6,14 +6,16 @@ import (
 )
 
 func TestImmutableReleases_OrgSettingsAndRepoEnforcement(t *testing.T) {
-	org := createTestOrg(t)
-	repoName, _ := createOrgRepoForGovernance(t, org)
+	t.Parallel()
+	s := newIsolatedServer(t)
+	org := s.createTestOrg(t)
+	repoName, _ := s.createOrgRepoForGovernance(t, org)
 	repoPath := org + "/" + repoName
 	orgSettings := "/api/v3/orgs/" + org + "/settings/immutable-releases"
 	repoEndpoint := "/api/v3/repos/" + repoPath + "/immutable-releases"
 
 	// The unconfigured default is "none".
-	resp := ghGet(t, orgSettings, defaultToken)
+	resp := s.get(t, orgSettings, defaultToken)
 	if resp.StatusCode != 200 {
 		t.Fatalf("get org settings: %d", resp.StatusCode)
 	}
@@ -26,14 +28,14 @@ func TestImmutableReleases_OrgSettingsAndRepoEnforcement(t *testing.T) {
 	}
 
 	// With no enforcement and no repo toggle the repo check is a 404.
-	resp = ghGet(t, repoEndpoint, defaultToken)
+	resp = s.get(t, repoEndpoint, defaultToken)
 	resp.Body.Close()
 	if resp.StatusCode != 404 {
 		t.Fatalf("repo check while disabled: %d", resp.StatusCode)
 	}
 
 	// Enforce for all repositories.
-	resp = ghPut(t, orgSettings, defaultToken, map[string]interface{}{
+	resp = s.put(t, orgSettings, defaultToken, map[string]interface{}{
 		"enforced_repositories": "all",
 	})
 	resp.Body.Close()
@@ -42,7 +44,7 @@ func TestImmutableReleases_OrgSettingsAndRepoEnforcement(t *testing.T) {
 	}
 
 	// The repo check reflects the owner enforcement.
-	resp = ghGet(t, repoEndpoint, defaultToken)
+	resp = s.get(t, repoEndpoint, defaultToken)
 	if resp.StatusCode != 200 {
 		t.Fatalf("repo check under enforcement: %d", resp.StatusCode)
 	}
@@ -52,33 +54,33 @@ func TestImmutableReleases_OrgSettingsAndRepoEnforcement(t *testing.T) {
 	}
 
 	// The repo toggle cannot be disabled while the owner enforces it.
-	resp = ghDelete(t, repoEndpoint, defaultToken)
+	resp = s.delete(t, repoEndpoint, defaultToken)
 	resp.Body.Close()
 	if resp.StatusCode != 409 {
 		t.Fatalf("disable under enforcement: %d", resp.StatusCode)
 	}
 
 	// Drop the enforcement; the repo goes back to disabled.
-	resp = ghPut(t, orgSettings, defaultToken, map[string]interface{}{
+	resp = s.put(t, orgSettings, defaultToken, map[string]interface{}{
 		"enforced_repositories": "none",
 	})
 	resp.Body.Close()
 	if resp.StatusCode != 204 {
 		t.Fatalf("clear org settings: %d", resp.StatusCode)
 	}
-	resp = ghGet(t, repoEndpoint, defaultToken)
+	resp = s.get(t, repoEndpoint, defaultToken)
 	resp.Body.Close()
 	if resp.StatusCode != 404 {
 		t.Fatalf("repo check after clearing: %d", resp.StatusCode)
 	}
 
 	// Repo-level enable / check / disable round-trip.
-	resp = ghPut(t, repoEndpoint, defaultToken, nil)
+	resp = s.put(t, repoEndpoint, defaultToken, nil)
 	resp.Body.Close()
 	if resp.StatusCode != 204 {
 		t.Fatalf("enable repo immutable releases: %d", resp.StatusCode)
 	}
-	resp = ghGet(t, repoEndpoint, defaultToken)
+	resp = s.get(t, repoEndpoint, defaultToken)
 	if resp.StatusCode != 200 {
 		t.Fatalf("repo check after enable: %d", resp.StatusCode)
 	}
@@ -86,12 +88,12 @@ func TestImmutableReleases_OrgSettingsAndRepoEnforcement(t *testing.T) {
 	if check["enabled"] != true || check["enforced_by_owner"] != false {
 		t.Fatalf("check after enable = %v", check)
 	}
-	resp = ghDelete(t, repoEndpoint, defaultToken)
+	resp = s.delete(t, repoEndpoint, defaultToken)
 	resp.Body.Close()
 	if resp.StatusCode != 204 {
 		t.Fatalf("disable repo immutable releases: %d", resp.StatusCode)
 	}
-	resp = ghGet(t, repoEndpoint, defaultToken)
+	resp = s.get(t, repoEndpoint, defaultToken)
 	resp.Body.Close()
 	if resp.StatusCode != 404 {
 		t.Fatalf("repo check after disable: %d", resp.StatusCode)
@@ -99,14 +101,16 @@ func TestImmutableReleases_OrgSettingsAndRepoEnforcement(t *testing.T) {
 }
 
 func TestImmutableReleases_SelectedRepositories(t *testing.T) {
-	org := createTestOrg(t)
-	repoAName, repoAID := createOrgRepoForGovernance(t, org)
-	_, repoBID := createOrgRepoForGovernance(t, org)
+	t.Parallel()
+	s := newIsolatedServer(t)
+	org := s.createTestOrg(t)
+	repoAName, repoAID := s.createOrgRepoForGovernance(t, org)
+	_, repoBID := s.createOrgRepoForGovernance(t, org)
 	orgSettings := "/api/v3/orgs/" + org + "/settings/immutable-releases"
 	reposEndpoint := orgSettings + "/repositories"
 
 	// The selection endpoints require the selected policy.
-	resp := ghPut(t, reposEndpoint, defaultToken, map[string]interface{}{
+	resp := s.put(t, reposEndpoint, defaultToken, map[string]interface{}{
 		"selected_repository_ids": []int{repoAID},
 	})
 	resp.Body.Close()
@@ -115,7 +119,7 @@ func TestImmutableReleases_SelectedRepositories(t *testing.T) {
 	}
 
 	// Switch to selected with an initial selection.
-	resp = ghPut(t, orgSettings, defaultToken, map[string]interface{}{
+	resp = s.put(t, orgSettings, defaultToken, map[string]interface{}{
 		"enforced_repositories":   "selected",
 		"selected_repository_ids": []int{repoAID},
 	})
@@ -125,14 +129,14 @@ func TestImmutableReleases_SelectedRepositories(t *testing.T) {
 	}
 
 	// The settings carry the selection URL.
-	resp = ghGet(t, orgSettings, defaultToken)
+	resp = s.get(t, orgSettings, defaultToken)
 	settings := decodeJSON(t, resp)
 	if settings["enforced_repositories"] != "selected" || settings["selected_repositories_url"] == nil {
 		t.Fatalf("settings = %v", settings)
 	}
 
 	// List the selection.
-	resp = ghGet(t, reposEndpoint, defaultToken)
+	resp = s.get(t, reposEndpoint, defaultToken)
 	if resp.StatusCode != 200 {
 		t.Fatalf("list selection: %d", resp.StatusCode)
 	}
@@ -146,7 +150,7 @@ func TestImmutableReleases_SelectedRepositories(t *testing.T) {
 	}
 
 	// The selected repository is enforced; its sibling is not.
-	resp = ghGet(t, "/api/v3/repos/"+org+"/"+repoAName+"/immutable-releases", defaultToken)
+	resp = s.get(t, "/api/v3/repos/"+org+"/"+repoAName+"/immutable-releases", defaultToken)
 	if resp.StatusCode != 200 {
 		t.Fatalf("selected repo check: %d", resp.StatusCode)
 	}
@@ -155,23 +159,23 @@ func TestImmutableReleases_SelectedRepositories(t *testing.T) {
 	}
 
 	// Add the sibling with the single-repository PUT.
-	resp = ghPut(t, reposEndpoint+"/"+strconv.Itoa(repoBID), defaultToken, nil)
+	resp = s.put(t, reposEndpoint+"/"+strconv.Itoa(repoBID), defaultToken, nil)
 	resp.Body.Close()
 	if resp.StatusCode != 204 {
 		t.Fatalf("add selected repo: %d", resp.StatusCode)
 	}
-	resp = ghGet(t, reposEndpoint, defaultToken)
+	resp = s.get(t, reposEndpoint, defaultToken)
 	if listed = decodeJSON(t, resp); listed["total_count"].(float64) != 2 {
 		t.Fatalf("selection after add = %v", listed)
 	}
 
 	// Remove one with the single-repository DELETE.
-	resp = ghDelete(t, reposEndpoint+"/"+strconv.Itoa(repoAID), defaultToken)
+	resp = s.delete(t, reposEndpoint+"/"+strconv.Itoa(repoAID), defaultToken)
 	resp.Body.Close()
 	if resp.StatusCode != 204 {
 		t.Fatalf("remove selected repo: %d", resp.StatusCode)
 	}
-	resp = ghGet(t, reposEndpoint, defaultToken)
+	resp = s.get(t, reposEndpoint, defaultToken)
 	listed = decodeJSON(t, resp)
 	if listed["total_count"].(float64) != 1 {
 		t.Fatalf("selection after remove = %v", listed)
@@ -182,20 +186,20 @@ func TestImmutableReleases_SelectedRepositories(t *testing.T) {
 	}
 
 	// Replace the whole selection.
-	resp = ghPut(t, reposEndpoint, defaultToken, map[string]interface{}{
+	resp = s.put(t, reposEndpoint, defaultToken, map[string]interface{}{
 		"selected_repository_ids": []int{repoAID, repoBID},
 	})
 	resp.Body.Close()
 	if resp.StatusCode != 204 {
 		t.Fatalf("replace selection: %d", resp.StatusCode)
 	}
-	resp = ghGet(t, reposEndpoint, defaultToken)
+	resp = s.get(t, reposEndpoint, defaultToken)
 	if listed = decodeJSON(t, resp); listed["total_count"].(float64) != 2 {
 		t.Fatalf("replaced selection = %v", listed)
 	}
 
 	// A repository outside the org cannot be selected.
-	resp = ghPut(t, reposEndpoint, defaultToken, map[string]interface{}{
+	resp = s.put(t, reposEndpoint, defaultToken, map[string]interface{}{
 		"selected_repository_ids": []int{99999999},
 	})
 	resp.Body.Close()
@@ -204,7 +208,7 @@ func TestImmutableReleases_SelectedRepositories(t *testing.T) {
 	}
 
 	// An invalid policy value is rejected.
-	resp = ghPut(t, orgSettings, defaultToken, map[string]interface{}{
+	resp = s.put(t, orgSettings, defaultToken, map[string]interface{}{
 		"enforced_repositories": "some",
 	})
 	resp.Body.Close()

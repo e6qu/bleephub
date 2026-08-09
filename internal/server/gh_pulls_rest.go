@@ -384,6 +384,11 @@ func (s *Server) handleUpdatePullRequest(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
+	// Optimistic concurrency (STORE-016): reject a stale If-Match with 412.
+	if !checkIfMatch(w, r, pullRequestToJSON(pr, s.store, s.baseURL(r), repo.FullName)) {
+		return
+	}
+
 	var req map[string]interface{}
 	if !decodeJSONBody(w, r, &req) {
 		return

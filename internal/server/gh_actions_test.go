@@ -96,11 +96,7 @@ func runRequest(s *Server, method, path string) *httptest.ResponseRecorder {
 }
 
 func runAuthedRequest(s *Server, method, path string) *httptest.ResponseRecorder {
-	req := httptest.NewRequest(method, path, nil)
-	req.Header.Set("Authorization", "Bearer "+defaultToken)
-	w := httptest.NewRecorder()
-	s.requestHandler().ServeHTTP(w, req)
-	return w
+	return serveTestRequest(s, "Bearer "+defaultToken, method, path, nil)
 }
 
 func seedFinalizedArtifact(s *Server, id int64, wf *Workflow, name string, createdAt time.Time) {

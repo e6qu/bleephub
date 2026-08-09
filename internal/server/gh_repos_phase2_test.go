@@ -1,11 +1,9 @@
 package bleephub
 
 import (
-	"bytes"
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
-	"io"
 	"net/http"
 	"strings"
 	"testing"
@@ -249,26 +247,10 @@ func TestDeleteContentsFile_RequiresPush(t *testing.T) {
 // helper for DELETE with JSON body.
 func ghDeleteWithBody(t *testing.T, path, token string, body map[string]interface{}) *http.Response {
 	t.Helper()
-	var bodyReader io.Reader
-	if body != nil {
-		b, _ := json.Marshal(body)
-		bodyReader = bytes.NewReader(b)
+	if body == nil {
+		return ghDo(t, "DELETE", path, token, nil)
 	}
-	req, err := http.NewRequest("DELETE", testBaseURL+path, bodyReader)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if token != "" {
-		req.Header.Set("Authorization", "token "+token)
-	}
-	if body != nil {
-		req.Header.Set("Content-Type", "application/json")
-	}
-	resp, err := http.DefaultClient.Do(req)
-	if err != nil {
-		t.Fatal(err)
-	}
-	return resp
+	return ghDo(t, "DELETE", path, token, body)
 }
 
 // TestRepoStargazersREST verifies star/unstar and listing endpoints.

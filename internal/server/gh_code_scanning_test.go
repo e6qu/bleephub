@@ -344,7 +344,7 @@ func TestCodeScanning_PatchDismiss(t *testing.T) {
 	created := seedCodeScanningAlert(t, "admin", "cs-patch", "rule-patch", "error", "CodeQL")
 	number := int(created["number"].(float64))
 
-	patch, _ := json.Marshal(map[string]any{"state": "dismissed", "dismissed_reason": "false_positive"})
+	patch, _ := json.Marshal(map[string]any{"state": "dismissed", "dismissed_reason": "false positive"})
 	req, _ := http.NewRequest("PATCH", testBaseURL+"/api/v3/repos/admin/cs-patch/code-scanning/alerts/"+itoa(number), bytes.NewReader(patch))
 	req.Header.Set("Authorization", "Bearer "+defaultToken)
 	req.Header.Set("Content-Type", "application/json")
@@ -365,7 +365,7 @@ func TestCodeScanning_PatchDismiss(t *testing.T) {
 	if updated["state"] != "dismissed" {
 		t.Fatalf("expected dismissed, got %v", updated["state"])
 	}
-	if updated["dismissed_reason"] != "false_positive" {
+	if updated["dismissed_reason"] != "false positive" {
 		t.Fatalf("expected false_positive, got %v", updated["dismissed_reason"])
 	}
 

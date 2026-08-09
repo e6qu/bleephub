@@ -115,7 +115,7 @@ export function SecretScanningPage() {
                   <button
                     type="button"
                     aria-pressed={selectedNumber === alert.number}
-                    onClick={() => setSelectedNumber(alert.number)}
+                    onClick={() => setSelectedNumber(alert.number ?? 0)}
                     style={{
                       display: "block",
                       width: "100%",
@@ -154,13 +154,13 @@ export function SecretScanningPage() {
               locationsError={locationsQuery.error}
               onResolve={(resolution, comment) =>
                 resolveMutation.mutate({
-                  number: selectedQuery.data.number,
+                  number: selectedQuery.data.number ?? 0,
                   state: "resolved",
                   resolution,
                   resolution_comment: comment,
                 })
               }
-              onReopen={() => resolveMutation.mutate({ number: selectedQuery.data.number, state: "open" })}
+              onReopen={() => resolveMutation.mutate({ number: selectedQuery.data.number ?? 0, state: "open" })}
             />
           ) : (
             <p style={{ color: "var(--color-fg-muted)", fontSize: "0.85rem" }}>Select an alert to view details.</p>
@@ -205,7 +205,7 @@ function AlertDetail({
           </div>
         )}
         <div>
-          <strong>Created:</strong> {new Date(alert.created_at).toLocaleString()}
+          <strong>Created:</strong> {new Date(alert.created_at ?? "").toLocaleString()}
         </div>
       </div>
 

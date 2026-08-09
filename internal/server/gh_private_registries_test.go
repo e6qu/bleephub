@@ -5,8 +5,10 @@ import (
 )
 
 func TestOrgPrivateRegistries_PublicKey(t *testing.T) {
-	org := createTestOrg(t)
-	resp := ghGet(t, "/api/v3/orgs/"+org+"/private-registries/public-key", defaultToken)
+	t.Parallel()
+	s := newIsolatedServer(t)
+	org := s.createTestOrg(t)
+	resp := s.get(t, "/api/v3/orgs/"+org+"/private-registries/public-key", defaultToken)
 	if resp.StatusCode != 200 {
 		t.Fatalf("public key: %d", resp.StatusCode)
 	}
@@ -17,9 +19,9 @@ func TestOrgPrivateRegistries_PublicKey(t *testing.T) {
 }
 
 // privateRegistriesKeyID fetches the org public key ID used to seal values.
-func privateRegistriesKeyID(t *testing.T, org string) string {
+func privateRegistriesKeyID(s *isolatedServer, t *testing.T, org string) string {
 	t.Helper()
-	resp := ghGet(t, "/api/v3/orgs/"+org+"/private-registries/public-key", defaultToken)
+	resp := s.get(t, "/api/v3/orgs/"+org+"/private-registries/public-key", defaultToken)
 	if resp.StatusCode != 200 {
 		resp.Body.Close()
 		t.Fatalf("public key: %d", resp.StatusCode)
@@ -28,12 +30,14 @@ func privateRegistriesKeyID(t *testing.T, org string) string {
 }
 
 func TestOrgPrivateRegistries_CRUD(t *testing.T) {
-	org := createTestOrg(t)
-	keyID := privateRegistriesKeyID(t, org)
+	t.Parallel()
+	s := newIsolatedServer(t)
+	org := s.createTestOrg(t)
+	keyID := privateRegistriesKeyID(s, t, org)
 	base := "/api/v3/orgs/" + org + "/private-registries"
 
 	// Create a token-authenticated Maven repository registry.
-	resp := ghPost(t, base, defaultToken, map[string]interface{}{
+	resp := s.post(t, base, defaultToken, map[string]interface{}{
 		"registry_type":   "maven_repository",
 		"url":             "https://maven.pkg.example.com/org/",
 		"username":        "monalisa",
@@ -60,7 +64,7 @@ func TestOrgPrivateRegistries_CRUD(t *testing.T) {
 	}
 
 	// A second registry of the same type gets a suffixed name.
-	resp = ghPost(t, base, defaultToken, map[string]interface{}{
+	resp = s.post(t, base, defaultToken, map[string]interface{}{
 		"registry_type":   "maven_repository",
 		"url":             "https://maven2.pkg.example.com/org/",
 		"encrypted_value": "c2VjcmV0",
@@ -75,7 +79,7 @@ func TestOrgPrivateRegistries_CRUD(t *testing.T) {
 	}
 
 	// List.
-	resp = ghGet(t, base, defaultToken)
+	resp = s.get(t, base, defaultToken)
 	if resp.StatusCode != 200 {
 		t.Fatalf("list registries: %d", resp.StatusCode)
 	}
@@ -88,7 +92,7 @@ func TestOrgPrivateRegistries_CRUD(t *testing.T) {
 	}
 
 	// GET one.
-	resp = ghGet(t, base+"/MAVEN_REPOSITORY_SECRET", defaultToken)
+	resp = s.get(t, base+"/MAVEN_REPOSITORY_SECRET", defaultToken)
 	if resp.StatusCode != 200 {
 		t.Fatalf("get registry: %d", resp.StatusCode)
 	}
@@ -97,7 +101,7 @@ func TestOrgPrivateRegistries_CRUD(t *testing.T) {
 	}
 
 	// PATCH updates in place.
-	resp = ghPatch(t, base+"/MAVEN_REPOSITORY_SECRET", defaultToken, map[string]interface{}{
+	resp = s.patch(t, base+"/MAVEN_REPOSITORY_SECRET", defaultToken, map[string]interface{}{
 		"url":        "https://maven-new.pkg.example.com/org/",
 		"visibility": "all",
 	})
@@ -105,14 +109,14 @@ func TestOrgPrivateRegistries_CRUD(t *testing.T) {
 	if resp.StatusCode != 204 {
 		t.Fatalf("patch registry: %d", resp.StatusCode)
 	}
-	resp = ghGet(t, base+"/MAVEN_REPOSITORY_SECRET", defaultToken)
+	resp = s.get(t, base+"/MAVEN_REPOSITORY_SECRET", defaultToken)
 	updated := decodeJSON(t, resp)
 	if updated["url"] != "https://maven-new.pkg.example.com/org/" || updated["visibility"] != "all" {
 		t.Fatalf("updated = %v", updated)
 	}
 
 	// The auth type cannot change after creation.
-	resp = ghPatch(t, base+"/MAVEN_REPOSITORY_SECRET", defaultToken, map[string]interface{}{
+	resp = s.patch(t, base+"/MAVEN_REPOSITORY_SECRET", defaultToken, map[string]interface{}{
 		"auth_type": "oidc_azure",
 	})
 	resp.Body.Close()
@@ -121,12 +125,12 @@ func TestOrgPrivateRegistries_CRUD(t *testing.T) {
 	}
 
 	// DELETE.
-	resp = ghDelete(t, base+"/MAVEN_REPOSITORY_SECRET", defaultToken)
+	resp = s.delete(t, base+"/MAVEN_REPOSITORY_SECRET", defaultToken)
 	resp.Body.Close()
 	if resp.StatusCode != 204 {
 		t.Fatalf("delete registry: %d", resp.StatusCode)
 	}
-	resp = ghGet(t, base+"/MAVEN_REPOSITORY_SECRET", defaultToken)
+	resp = s.get(t, base+"/MAVEN_REPOSITORY_SECRET", defaultToken)
 	resp.Body.Close()
 	if resp.StatusCode != 404 {
 		t.Fatalf("get deleted registry: %d", resp.StatusCode)
@@ -134,12 +138,14 @@ func TestOrgPrivateRegistries_CRUD(t *testing.T) {
 }
 
 func TestOrgPrivateRegistries_OIDCAndValidation(t *testing.T) {
-	org := createTestOrg(t)
-	keyID := privateRegistriesKeyID(t, org)
+	t.Parallel()
+	s := newIsolatedServer(t)
+	org := s.createTestOrg(t)
+	keyID := privateRegistriesKeyID(s, t, org)
 	base := "/api/v3/orgs/" + org + "/private-registries"
 
 	// OIDC registries omit encrypted_value/key_id.
-	resp := ghPost(t, base, defaultToken, map[string]interface{}{
+	resp := s.post(t, base, defaultToken, map[string]interface{}{
 		"registry_type": "docker_registry",
 		"url":           "https://myregistry.azurecr.io",
 		"auth_type":     "oidc_azure",
@@ -156,7 +162,7 @@ func TestOrgPrivateRegistries_OIDCAndValidation(t *testing.T) {
 	}
 
 	// An OIDC create carrying encrypted_value is rejected.
-	resp = ghPost(t, base, defaultToken, map[string]interface{}{
+	resp = s.post(t, base, defaultToken, map[string]interface{}{
 		"registry_type":   "npm_registry",
 		"url":             "https://npm.example.com",
 		"auth_type":       "oidc_aws",
@@ -170,7 +176,7 @@ func TestOrgPrivateRegistries_OIDCAndValidation(t *testing.T) {
 	}
 
 	// A token create without encrypted_value is rejected.
-	resp = ghPost(t, base, defaultToken, map[string]interface{}{
+	resp = s.post(t, base, defaultToken, map[string]interface{}{
 		"registry_type": "npm_registry",
 		"url":           "https://npm.example.com",
 		"visibility":    "all",
@@ -181,7 +187,7 @@ func TestOrgPrivateRegistries_OIDCAndValidation(t *testing.T) {
 	}
 
 	// A stale key_id is rejected.
-	resp = ghPost(t, base, defaultToken, map[string]interface{}{
+	resp = s.post(t, base, defaultToken, map[string]interface{}{
 		"registry_type":   "npm_registry",
 		"url":             "https://npm.example.com",
 		"visibility":      "all",
@@ -194,7 +200,7 @@ func TestOrgPrivateRegistries_OIDCAndValidation(t *testing.T) {
 	}
 
 	// An unknown registry type is rejected.
-	resp = ghPost(t, base, defaultToken, map[string]interface{}{
+	resp = s.post(t, base, defaultToken, map[string]interface{}{
 		"registry_type":   "carrier_pigeon",
 		"url":             "https://coop.example.com",
 		"visibility":      "all",

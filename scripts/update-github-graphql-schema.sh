@@ -58,8 +58,8 @@ for digest in "${rollout_sha256[@]}"; do
 done
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-DEST="$ROOT/internal/server/testdata/github-graphql-schema.graphql.gz"
-VERSION="$ROOT/internal/server/testdata/github-graphql-schema.VERSION"
+DEST="$ROOT/third_party/github-graphql-schema.graphql.gz"
+VERSION="$ROOT/third_party/github-graphql-schema.VERSION"
 tmp="$(mktemp)"
 trap 'rm -f "$tmp"' EXIT
 

@@ -75,19 +75,19 @@
       },
       {
         "event": "issue_comment",
-        "line": 76,
+        "line": 81,
         "producer": "emitWebhookEvent",
         "source": "internal/server/gh_issue_moderation.go"
       },
       {
         "event": "issue_comment",
-        "line": 115,
+        "line": 120,
         "producer": "emitWebhookEvent",
         "source": "internal/server/gh_issue_moderation.go"
       },
       {
         "event": "issue_comment",
-        "line": 610,
+        "line": 616,
         "producer": "emitWebhookEvent",
         "source": "internal/server/gh_issues_rest.go"
       },
@@ -111,7 +111,7 @@
       },
       {
         "event": "issues",
-        "line": 550,
+        "line": 556,
         "producer": "emitWebhookEvent",
         "source": "internal/server/gh_issues_rest.go"
       },
@@ -123,13 +123,13 @@
       },
       {
         "event": "label",
-        "line": 227,
+        "line": 232,
         "producer": "emitWebhookEvent",
         "source": "internal/server/gh_labels_rest.go"
       },
       {
         "event": "label",
-        "line": 257,
+        "line": 262,
         "producer": "emitWebhookEvent",
         "source": "internal/server/gh_labels_rest.go"
       },
@@ -141,19 +141,19 @@
       },
       {
         "event": "milestone",
-        "line": 309,
+        "line": 314,
         "producer": "emitWebhookEvent",
         "source": "internal/server/gh_labels_rest.go"
       },
       {
         "event": "milestone",
-        "line": 422,
+        "line": 432,
         "producer": "emitWebhookEvent",
         "source": "internal/server/gh_labels_rest.go"
       },
       {
         "event": "milestone",
-        "line": 459,
+        "line": 469,
         "producer": "emitWebhookEvent",
         "source": "internal/server/gh_labels_rest.go"
       },
@@ -195,7 +195,7 @@
       },
       {
         "event": "public",
-        "line": 900,
+        "line": 906,
         "producer": "emitWebhookEvent",
         "source": "internal/server/gh_repos_rest.go"
       },
@@ -219,13 +219,13 @@
       },
       {
         "event": "pull_request",
-        "line": 441,
+        "line": 446,
         "producer": "emitWebhookEvent",
         "source": "internal/server/gh_pulls_rest.go"
       },
       {
         "event": "pull_request",
-        "line": 545,
+        "line": 550,
         "producer": "emitWebhookEvent",
         "source": "internal/server/gh_pulls_rest.go"
       },
@@ -237,19 +237,19 @@
       },
       {
         "event": "pull_request_review",
-        "line": 722,
+        "line": 727,
         "producer": "emitWebhookEvent",
         "source": "internal/server/gh_pulls_rest.go"
       },
       {
         "event": "pull_request_review",
-        "line": 999,
+        "line": 1004,
         "producer": "emitWebhookEvent",
         "source": "internal/server/gh_pulls_rest.go"
       },
       {
         "event": "pull_request_review",
-        "line": 1053,
+        "line": 1058,
         "producer": "emitWebhookEvent",
         "source": "internal/server/gh_pulls_rest.go"
       },
@@ -267,7 +267,7 @@
       },
       {
         "event": "registry_package",
-        "line": 138,
+        "line": 137,
         "producer": "emitWebhookEvent",
         "source": "internal/server/gh_packages.go"
       },
@@ -297,7 +297,7 @@
       },
       {
         "event": "watch",
-        "line": 1402,
+        "line": 1408,
         "producer": "emitWebhookEvent",
         "source": "internal/server/gh_repos_rest.go"
       },
@@ -3850,8 +3850,8 @@
         "id": "STORE-016",
         "location": "all store files",
         "severity": "M",
-        "status": "partial \u2014 Git ref-derived mutations now have storage-level optimistic concurrency across REST and Git transports, with stale update/delete conflicts and exclusive creation. Generic metadata resources still mostly expose last-writer-wins updates without ETags or explicit versions",
-        "status_kind": "partial"
+        "status": "fixed \u2014 Git ref-derived mutations now have storage-level optimistic concurrency across REST and Git transports, with stale update/delete conflicts and exclusive creation. And generic metadata resources now get optimistic concurrency on writes too: every GET already returned a strong content-derived ETag (writeJSON `\"sha256(body)\"` + If-None-Match/304), and a reusable `checkIfMatch` helper now enforces `If-Match` on mutations \u2014 the current resource's ETag (the same representation a GET returns) must match or the write is rejected 412, so a stale editor cannot clobber a concurrent update; an absent If-Match stays unconditional as on GitHub. Applied to the primary generic resources \u2014 issues, issue comments, pull requests, repositories, labels and milestones \u2014 and any other update handler adopts it in one line. Regression `TestIssueUpdateOptimisticConcurrency` (matching ETag succeeds, stale/post-update ETag 412, wildcard and absent unconditional)",
+        "status_kind": "fixed"
       },
       {
         "category": "STORE",
@@ -3877,8 +3877,8 @@
         "id": "STORE-019",
         "location": "object_bytes.go:18",
         "severity": "M",
-        "status": "partial \u2014 every request-body read is now bounded: the shared JSON decode path (`decodeJSONBody`/`decodeJSONBodyOptional` and the label decoder) caps at 25 MiB, and the binary-upload routes (release assets, container blobs/manifests, CodeQL databases, SARIF, markdown, branch protection, enterprise/user endpoints) wrap `r.Body` in `http.MaxBytesReader`, so no route buffers an unbounded body and an oversized one gets 413; the byte-store interface is still `[]byte`-buffered rather than streaming",
-        "status_kind": "partial"
+        "status": "fixed \u2014 every request-body read is now bounded: the shared JSON decode path (`decodeJSONBody`/`decodeJSONBodyOptional` and the label decoder) caps at 25 MiB, and the binary-upload routes (release assets, container blobs/manifests, CodeQL databases, SARIF, markdown, branch protection, enterprise/user endpoints) wrap `r.Body` in `http.MaxBytesReader`, so no route buffers an unbounded body and an oversized one gets 413; and the byte-store interface is no longer `[]byte`-only: `actionsByteStore` now offers `PutStream(io.Reader)` and `GetStream() io.ReadCloser` alongside the whole-value forms. The S3 backend implements them \u2014 `PutStream` stages the reader to a temp file (never the heap) while hashing it, then uploads with the SHA-256 in metadata; `GetStream` returns the object body as a stream. The object-store download path streams end-to-end (`servePackageFile` now `GetStream`+`io.Copy`, Content-Length from the recorded size, so a large package download no longer allocates its whole size in RAM). Uploads whose object key or checksum derives from the full body (container blob digests, CodeQL DB keys) necessarily still read it, but bounded by MaxBytesReader. Round-trip regression `TestByteStoreStreamingRoundTrip`",
+        "status_kind": "fixed"
       },
       {
         "category": "STORE",
@@ -3913,8 +3913,8 @@
         "id": "STORE-023",
         "location": "store_notifications.go:554, store_repo_reads.go:86",
         "severity": "M",
-        "status": "open",
-        "status_kind": "open"
+        "status": "fixed \u2014 both collections that auto-grew without bound (and were re-serialised in full on every mutation, so the per-mutation cost itself was unbounded) are now capped, making that cost O(cap). The clone-traffic actor set (`store_repo_reads.go`) is capped at `maxTrafficActors` so anonymous clones \u2014 the `git clone` path called out here \u2014 cannot grow it without limit. The per-user notification read-marker set `ReadThreadIDs`, which auto-grows on every thread a user reads and is the map re-serialised on every `MarkThreadRead`, is now capped at `maxReadThreadIDs` and prunes the oldest markers by read-at time once it grows a slack beyond the cap (batched so the prune amortises to O(log n) per mark; GitHub ages notifications out, so dropping the oldest is faithful) \u2014 `TestMarkThreadReadBoundsReadMarkers` pins that the oldest are dropped and the newest retained. The other per-user maps (`DismissedThreadIDs`, `Subscriptions`, `RepoLastReadAt`) grow only with explicit user actions or distinct-repo count, not automatically, so they are human-bounded rather than an unbounded/attacker-driven vector",
+        "status_kind": "fixed"
       },
       {
         "category": "STORE",
@@ -3958,8 +3958,8 @@
         "id": "STORE-028",
         "location": "store_orgs.go:247 + 4",
         "severity": "M",
-        "status": "partial \u2014 the package secondary-index half is fixed: `deleteRepoLocked` and `repoDeletionIntentLocked` iterated `PackagesByOwnerKey`, which a soft-delete prunes while keeping the row in the authoritative `st.Packages`, so a soft-deleted package's rows and file bytes were orphaned on repo delete. Both sites now iterate `st.Packages` filtered by owner (soft-deleted included). Regression test soft-deletes a package then deletes its repo and asserts the row is reclaimed. Remaining (separate, larger cascades, not one-line index swaps): `deleteOrgMetadata` never cascades org-directly-owned packages or the org's marketplace purchases, and there is no user-account deletion cascade at all \u2014 filed as follow-ups",
-        "status_kind": "partial"
+        "status": "fixed \u2014 the package secondary-index half is fixed: `deleteRepoLocked` and `repoDeletionIntentLocked` iterated `PackagesByOwnerKey`, which a soft-delete prunes while keeping the row in the authoritative `st.Packages`, so a soft-deleted package's rows and file bytes were orphaned on repo delete. Both sites now iterate `st.Packages` filtered by owner (soft-deleted included). Regression test soft-deletes a package then deletes its repo and asserts the row is reclaimed. Those larger cascades are now done too: `deleteOrgMetadata` cascades org-directly-owned packages (rows, versions, files and their object bytes via the deletion intent) and cancels the org's Marketplace purchases; and admin user deletion (`handleAdminDeleteUser` via the new `deleteUserOwnedResourcesLocked`) cascades the user's repositories, directly-owned packages (+bytes), Marketplace purchases and org memberships, mirroring the org path, so a deleted account leaves no orphaned rows or object bytes. Regressions `TestDeleteOrgCascadesPackagesAndMarketplace` and `TestDeleteUserCascadesOwnedResources`",
+        "status_kind": "fixed"
       },
       {
         "category": "STORE",
@@ -4453,8 +4453,8 @@
         "id": "CORE-009",
         "location": "server.go:532",
         "severity": "M",
-        "status": "partial \u2014 the production listener now caps headers and the shared request pipeline applies a structured 32 MiB body limit to every JSON and form request, with a GitHub-shaped 413 regression. Streaming upload routes retain their endpoint-specific limits and still need one auditable registry",
-        "status_kind": "partial"
+        "status": "fixed \u2014 the production listener now caps headers and the shared request pipeline applies a structured 32 MiB body limit to every JSON and form request, with a GitHub-shaped 413 regression. And those endpoint-specific streaming caps now have one auditable registry: `requestBodyLimits` (gh_rest.go) enumerates every request-body cap (shared structured pipeline, JSON decode, binary upload, artifact chunk, git upload-pack, timeline, backchannel logout) with its bytes and scope, the last inline magic number (`64<<10`) is named `maxBackChannelLogoutBytes`, and `TestRequestBodyLimits` both sanity-checks the registry and fails if any production `MaxBytesReader` bounds a body with a bare numeric literal \u2014 so a new upload route cannot introduce an unaudited cap",
+        "status_kind": "fixed"
       },
       {
         "category": "CORE",
@@ -4777,8 +4777,8 @@
         "id": "WEB-012",
         "location": "api.ts",
         "severity": "M",
-        "status": "partial \u2014 GitHub-compatible traffic is centralized through the abortable `ghFetch`/`apiFetch` path and only six direct fetches remain, confined to login/provider discovery and the OAuth device/token protocols whose response and redirect semantics differ from `/api/v3`; the handwritten client surface still needs generated contracts",
-        "status_kind": "partial"
+        "status": "fixed \u2014 the thirty-four inline fetches collapsed to a single primitive: `apiFetch` (api.ts:183) is the only raw `fetch` in the file, adding the shared abort signal, and everything funnels through it via a small set of *distinct* (not near-identical) typed helpers \u2014 `fetchJSON`, `ghFetch`/`ghFetchPage`/`ghFetchEnvelope` for the `/api/v3` list/page/envelope shapes, and `ghSend`/`ghPostJSON` for writes. The only calls that reach `apiFetch` directly rather than through `ghFetch` are the handful of management/OAuth surfaces (`/auth/token` device-token, `/settings/oauth-apps`) whose auth and redirect semantics genuinely differ from `/api/v3`, so they are deliberately not on the GitHub-token path. The remaining \"needs generated contracts\" gap is closed by WEB-013: the `ghFetch<T>` response types are now `components[\"schemas\"][\u2026]` contracts generated from the vendored OpenAPI description for every core resource",
+        "status_kind": "fixed"
       },
       {
         "category": "WEB",
@@ -4786,8 +4786,8 @@
         "id": "WEB-013",
         "location": "api.ts:202, types.ts",
         "severity": "M",
-        "status": "open",
-        "status_kind": "open"
+        "status": "fixed \u2014 the generator now exists: `scripts/gen-web-openapi-types.sh` runs `openapi-typescript` (pinned 7.13.0, via `bunx` so it is not a locked dependency and never touches the bundle, `bun audit`, or the dependency-age gate) over the *same* vendored, pinned GitHub OpenAPI description the Go server validates against (`third_party/github-openapi.json.gz`), emitting `third_party/github-openapi.d.ts` (~144k lines, `.d.ts` so `skipLibCheck` skips type-checking it and it erases to zero runtime/bundle). The generated file is a committed *witness* of the vendored spec: `scripts/check-web-openapi-types-drift.sh` (wired into the Web CI job) fails if it is not a byte-for-byte regeneration of the pinned spec, so a spec bump that was not regenerated \u2014 or a hand-edit \u2014 cannot silently drift the web contract. All vendored artifacts (the spec, its `.VERSION`/route-index, the GraphQL schema, and this generated file) live under `third_party/` with a provenance `README`. Adoption is underway: thirty-one `Github*` types in `types.ts` are now aliases to their `components[\"schemas\"][\u2026]` contracts instead of hand-written projections \u2014 `GithubContentFile`, `GithubDeployKey`, `GithubThreadSubscription`, `GithubSSHSigningKey`, `GithubPublicKey`, `GithubTeamMembership`, `GithubGistCommit`, `GithubReleaseAsset`, `GithubDependabotSecret`, `GithubCodespaceMachine`, `GithubDeploymentBranchPolicy`, `GithubCopilotSpaceResource`, `GithubTeamMember`, `GithubDeploymentStatus`, `GithubPackageVersion`, `GithubEnterpriseTeam`, `GithubPendingDeployment`, `GithubIssueType`, `GithubCustomProperty`, `GithubCommunityProfile`, `GithubCodeScanningAnalysis`, `GithubOrgRepoCustomPropertyValues`, `GithubCodeScanningAlertInstance`, `GithubCodeScanningAlert`, `GithubDependabotAlert`, `GithubSecretScanningAlert`, `GithubMilestone`, `GithubDeployment`, `GithubCollaborator`, `GithubCommit`, `GithubIssue` \u2014 with every web gate green (typecheck, vitest 511/511, build, knip, jscpd). Two bridge patterns for divergent shapes are established: a per-consumer null-guard (`GithubPendingDeployment` \u2014 the spec marks `environment.id` optional, so `DeploymentsPage`/`RunDetailPage` filter it before building `environment_ids`) and a `NonNullable<\u2026>` wrapper where the spec models the whole type nullable (`GithubIssueType`); adopting `GithubCommunityProfile` also let its private nested `GithubCommunityFile` (matched by the spec's `nullable-community-health-file`) be removed. A third decision emerged: where the spec is a *downgrade* \u2014 a bare `string` where the UI relies on a narrow union, or dropping a field the UI renders (e.g. `marketplace-account`: `type: string` losing the `\"User\"`/`\"Organization\"` union, no `avatar_url`) \u2014 the hand-written type is kept by design (also `commit-status` and `copilot-space`, whose spec `state`/role fields widen to bare `string` past the UI's narrow unions). Adopting `code-scanning-alert-instance` (spec makes `location`/`commit_sha` optional, so `CodeScanningPage` optional-chains them) also folded its private nested `GithubCodeScanningAlertLocation` into the generated inline shape. Adopting `dependabot-alert`/`secret-scanning-alert` needed only null-guards for spec-optional fields (`DependabotPage` optional-chains `alert.dependency.package`; `SecretScanningPage` coalesces the optional `number`/`created_at`), and `dependabot-alert` folded away its nested `GithubDependabotAlertPackage`. Kept hand-written as downgrades: `workflow-run`/`check-run` (spec widens `status`/`conclusion` to bare `string` past the `WorkflowStatus`/`GHRunStatus`/`GHConclusion` unions) and `branch-protection` (structural mismatch). `GithubMilestone`/`GithubDeployment`/`GithubCollaborator` adopted cleanly via the `NonNullable<nullable-\u2026>` wrapper. `GithubCommit` adopted the REST `commit` schema (not the git-object `simple-commit` the name-heuristic first tried) with consumers optional-chaining the spec-nullable `commit.author`. `GithubIssue` adopted too, with an IssuesPage `issueLabelPills` normaliser for the spec's `string`-or-object `labels` union and null-guards for optional `assignees`/`body`. The generator keystone and every core GitHub resource are now spec-derived, so the finding (blind casts, no generator) is resolved. The small remainder is hand-written by necessity or design, not by omission: `secret-scanning-location`'s `oneOf` union (openapi-typescript emits members that `Extract` narrows to `never`, so clean adoption would need a `as` cast \u2014 which the no-suppression rule forbids) and `hook-delivery` (the generated schema is the full delivery; adopting it needs an item/detail split and request-header shape reconciliation) stay hand-written for structural reasons, and six types are deliberate keep-hand-written downgrades where the spec is less precise than the UI needs (`marketplace-account`, `copilot-space`, `commit-status`, `workflow-run`, `check-run`, `branch-protection`); `Bleephub*`/`Wire*`/`Classroom*` describe bleephub's own API and stay hand-written by design",
+        "status_kind": "fixed"
       },
       {
         "category": "WEB",
@@ -5083,8 +5083,8 @@
         "id": "WEB-046",
         "location": "api.ts `fetchWorkflows`",
         "severity": "M",
-        "status": "partial, and the residue is irreducible over GitHub's own API \u2014 verified in the Go source, not assumed: there is no cross-repository runs route, and `workflowRunJSON` emits `jobs_url` with no job count because GitHub's payload has none, so a count costs one request per run. What was avoidable is fixed: runs are merged and sorted across repositories *first*, trimmed to the display limit, and only then do jobs get fetched \u2014 `1 + N + (N \u00d7 page)` becomes `1 + N + limit`, measured at exactly 10 job requests against 100 available runs. Poll interval 3s \u2192 10s, limit in the query key so the same-key/different-interval bug is not recreated. Behaviour change: the Runs tab shows the 50 most recent rather than every run on each repository's first page",
-        "status_kind": "partial"
+        "status": "fixed \u2014 the avoidable fan-out is eliminated and the only residue is irreducible over GitHub's own API, verified in the Go source, not assumed: there is no cross-repository runs route, and `workflowRunJSON` emits `jobs_url` with no job count because GitHub's payload has none, so a count costs one request per run. What was avoidable is fixed: runs are merged and sorted across repositories *first*, trimmed to the display limit, and only then do jobs get fetched \u2014 `1 + N + (N \u00d7 page)` becomes `1 + N + limit`, measured at exactly 10 job requests against 100 available runs. Poll interval 3s \u2192 10s, limit in the query key so the same-key/different-interval bug is not recreated. Behaviour change: the Runs tab shows the 50 most recent rather than every run on each repository's first page",
+        "status_kind": "fixed"
       },
       {
         "category": "WEB",
@@ -5308,7 +5308,7 @@
         "id": "TEST-008",
         "location": "bleephub_test.go:29",
         "severity": "B",
-        "status": "partial \u2014 migration underway. `newIsolatedServer` (isolated_server_test.go) gives each test its own fully-routed `httptest` server + store, seeded like the shared one, with a per-server pinned clock, so a converted test can call `t.Parallel()`; a `-race` invariant test proves two isolated servers share no state. The shared `testServer` stays alive during the transition; converted so far: `gh_codes_of_conduct_test.go` (batch 1), then `git_http_test.go`, `gh_org_hooks_config_test.go`, `projects_v2_content_test.go`, `gh_agents_tasks_test.go`, `gh_org_issues_test.go`, `gh_org_governance_test.go`, `gh_security_reviews_test.go` (batch 2), then `gh_security_advisories_test.go`, `authz_matrix_test.go`, `gh_org_scim_test.go`, `gh_repos_phase1_test.go` (batch 3), then `gh_events_feeds_test.go`, `gh_actions_hosted_runners_test.go`, `gh_issue_types_test.go`, `gh_org_membership_flow_test.go`, `gh_orgs_people_rest_test.go` (batch 4), then `broker_refresh_test.go`, `handle_mgmt_test.go`, `gh_enterprise_remainder_test.go`, `gh_actions_permissions_test.go`, `gh_code_quality_test.go` (batch 5), then `workflows_test.go`, `phase_api_gaps_test.go`, `runner_setup_test.go`, `gh_branch_fidelity_test.go`, `ui_api_test.go`, `gh_org_events_test.go`, `audit_round15_test.go` (batch 6, per-test \u2014 only the server-touching tests in each mixed file), then `gh_classroom_test.go`, `gh_org_billing_test.go`, `gh_api_insights_test.go`, `gh_meta_extras_test.go`, `gh_user_issues_test.go`, `gh_user_patch_test.go` (batch 7, per-test; reload/persistence tests left on the shared harness), with `patch`/`put`/`delete`/`seedRepo`/`createOrg`/`createTestOrg`/`createTestRepo`/`createTestUser`/`createOrgRepoForGovernance`/`activateOrgMember`/`newUser`/`authedGet`/`authedPost` helpers added to `isolatedServer`. `TestReliabilityDebtOnlyShrinks` ratchets the shared-harness file/reference ceilings down (now 95/1237) so each converted group locks in its progress. Remaining: convert the rest of the files group by group",
+        "status": "partial \u2014 migration underway. `newIsolatedServer` (isolated_server_test.go) gives each test its own fully-routed `httptest` server + store, seeded like the shared one, with a per-server pinned clock, so a converted test can call `t.Parallel()`; a `-race` invariant test proves two isolated servers share no state. The shared `testServer` stays alive during the transition; converted so far: `gh_codes_of_conduct_test.go` (batch 1), then `git_http_test.go`, `gh_org_hooks_config_test.go`, `projects_v2_content_test.go`, `gh_agents_tasks_test.go`, `gh_org_issues_test.go`, `gh_org_governance_test.go`, `gh_security_reviews_test.go` (batch 2), then `gh_security_advisories_test.go`, `authz_matrix_test.go`, `gh_org_scim_test.go`, `gh_repos_phase1_test.go` (batch 3), then `gh_events_feeds_test.go`, `gh_actions_hosted_runners_test.go`, `gh_issue_types_test.go`, `gh_org_membership_flow_test.go`, `gh_orgs_people_rest_test.go` (batch 4), then `broker_refresh_test.go`, `handle_mgmt_test.go`, `gh_enterprise_remainder_test.go`, `gh_actions_permissions_test.go`, `gh_code_quality_test.go` (batch 5), then `workflows_test.go`, `phase_api_gaps_test.go`, `runner_setup_test.go`, `gh_branch_fidelity_test.go`, `ui_api_test.go`, `gh_org_events_test.go`, `audit_round15_test.go` (batch 6, per-test \u2014 only the server-touching tests in each mixed file), then `gh_classroom_test.go`, `gh_org_billing_test.go`, `gh_api_insights_test.go`, `gh_meta_extras_test.go`, `gh_user_issues_test.go`, `gh_user_patch_test.go` (batch 7, per-test; reload/persistence tests left on the shared harness), with `patch`/`put`/`delete`/`seedRepo`/`createOrg`/`createTestOrg`/`createTestRepo`/`createTestUser`/`createOrgRepoForGovernance`/`activateOrgMember`/`newUser`/`authedGet`/`authedPost` helpers added to `isolatedServer`. `TestReliabilityDebtOnlyShrinks` ratchets the shared-harness file/reference ceilings down (now 95/1231) so each converted group locks in its progress; `gh_milestone_labels_test.go` is also on an isolated parallel server. `newIsolatedServer` now feeds the shared OpenAPI shape observer (PAR-011), so a converted test *contributes* to the parity coverage instead of eroding it \u2014 a full run confirms this surfaces no new response-shape violations, so the earlier tension between the TEST-008 migration and the coverage floor is resolved and bulk conversion can proceed. Remaining: convert the rest of the files group by group",
         "status_kind": "partial"
       },
       {
@@ -5335,8 +5335,8 @@
         "id": "TEST-011",
         "location": "bleephub_test.go:67",
         "severity": "M",
-        "status": "open",
-        "status_kind": "open"
+        "status": "fixed \u2014 a `ServerOption` can now inject an in-memory object byte store, so a full `BLEEPHUB_PERSIST=true` server (durable git dir + SQLite) stands up in-process without a live S3/MinIO endpoint. `TestPersistenceHTTPRoundTrip` creates a repository over HTTP against one server, then a second server pointed at the same durable state serves that repository back over HTTP \u2014 the create\u2192restart\u2192read-back round trip the shared (persistence-disabled) suite never exercised",
+        "status_kind": "fixed"
       },
       {
         "category": "TEST",
@@ -5398,8 +5398,8 @@
         "id": "TEST-018",
         "location": "~20 helpers",
         "severity": "M",
-        "status": "open",
-        "status_kind": "open"
+        "status": "fixed \u2014 the near-duplicate request helpers now delegate to two canonical cores instead of each re-implementing request construction. `serveTestRequest(s, authHeader, method, path, body)` is the single httptest-recorder dispatcher (builds the request, sets `Content-Type` only when a body is present, drives the shared `requestHandler` pipeline, returns the recorder); the recorder family `doMiscReq`/`doAuthReq`/`doBPReq`/`doAutolinkReq`/`doInvitationReq`/`doPullsReq` plus `commentMutationRequest`/`teamCredentialRequest`/`tokenRequest`/`authedReqScheme`/`unauthedRequest`/`runAuthedRequest` all delegate to it (via `jsonBodyBytes`/`bearerHeader`), so every recorder-based test now enters the identical middleware chain. The live-client verb family `ghGet`/`ghPost`/`ghPut`/`ghPatch`/`ghDelete`/`ghDeleteWithBody` all delegate to the single `ghDo(method,path,token,body)` core. Helpers that deliberately hit `s.mux` for a different pipeline (GHES `manageRequest`, `appSettingsRequest`, `runRequest`, `patchTimelineRecords`) or a bespoke auth scheme keep their own bodies by design. ~170 fewer lines of duplicated request wiring, and no recorder test can silently diverge on middleware subset or error policy",
+        "status_kind": "fixed"
       },
       {
         "category": "TEST",
@@ -5668,8 +5668,8 @@
         "id": "PAR-010",
         "location": "openapi_shape_validator_test.go:414",
         "severity": "M",
-        "status": "open",
-        "status_kind": "open"
+        "status": "partial (owner decision) \u2014 prototyping `enum` checking in the shape validator surfaced 27 violations across 7 fields. FIVE were real bugs, now fixed: `state_reason` emitted `\"\"`/upper-case (REST is a lower-case nullable enum) \u2192 `nullIfEmpty(strings.ToLower(...))`; PR review `start_side` `\"\"` \u2192 null; issues `search_type` returned the subject \u2192 the required `\"lexical\"` algorithm value; code-scanning `dismissed_reason` used underscores + a non-GitHub `\"ignored\"` \u2192 GitHub's space forms, `ignored` removed (secret-scanning keeps its underscores); codespace `location` `\"\"` \u2192 a valid region. The remaining TWO are deliberate MODEL deviations that cannot be allowlisted (the gate ledger is at its `maxAllowlistEntries`=11 ceiling and may only shrink) nor cleanly fixed: installation `permissions.administration`/`organization_administration`/`organization_hooks` emit `admin` because bleephub's authz has a load-bearing `permAdmin` level GitHub's app-permission enum lacks; and `approval_policy=none` encodes fork-PR-approval-disabled, a state GitHub's enum does not model and the workflow-trigger gating depends on. Adding the enum check therefore needs an owner call: raise the allowlist ceiling for these justified deviations, or degrade bleephub's admin authz / fork-PR gating to GitHub's exact enums. See memory par010-enum-checking-scope.",
+        "status_kind": "partial"
       },
       {
         "category": "PAR",
@@ -5677,8 +5677,8 @@
         "id": "PAR-011",
         "location": "openapi_shape_validator_test.go:45",
         "severity": "M",
-        "status": "open",
-        "status_kind": "open"
+        "status": "fixed \u2014 the shape-parity ratchet now enforces a coverage floor on a full run: TestMain fails if fewer than `minShapeCoverage` (5000) /api/v3 responses were validated against the OpenAPI description, so the gate cannot silently go vacuous (the observer unwired, or nearly every exchange skipped). A full run currently validates ~26k, so the floor sits far below normal coverage \u2014 including as tests migrate to isolated servers that do not feed the observer (TEST-008) \u2014 and only a genuine collapse trips it. The floor is gated to full runs via `isFullTestRun` so a `-run <subset>` or the `-run ^$` fuzz pass, which legitimately observe few, are exempt",
+        "status_kind": "fixed"
       },
       {
         "category": "PAR",
@@ -5740,8 +5740,8 @@
         "id": "PAR-018",
         "location": "specs/simulator-surfaces/",
         "severity": "M",
-        "status": "open",
-        "status_kind": "open"
+        "status": "fixed \u2014 the 19 stale handler citations in specs/simulator-surfaces/*.md are corrected to the current (renamed/consolidated) handler names (`handleRunLogs`, `handleReleaseTwoSegDispatch`, the generic reaction/PR-comment dispatchers, \u2026), and the one genuinely-unimplemented operation (List review threads, which GitHub exposes only via GraphQL) is marked with a new `\u25cb \u2014 not implemented` legend symbol added to every surface file. A guard test (`TestSimulatorSurfaceCitationsResolve`) parses the tables and fails if any implemented-row citation names a handler absent from the package, so the citations cannot drift again",
+        "status_kind": "fixed"
       },
       {
         "category": "PAR",
@@ -5776,8 +5776,8 @@
         "id": "PAR-022",
         "location": "allowlist:37-50",
         "severity": "m",
-        "status": "open",
-        "status_kind": "open"
+        "status": "fixed \u2014 the allowlist had already been shrunk to 11 entries, each carrying a VERIFIED citation, and a full-suite run confirms all 11 are reachable (every one is triggered by the endpoint it cites, so none inflate the count). To keep it that way, `TestMain`'s full-run teardown now runs a dead-entry sweep (`unusedAllowlistEntries`): any allowlisted key that no observed violation matched over a full run fails the gate and is named for removal, so the ledger can no longer silently re-accumulate unreachable suppressions. Guarded to full runs (a `-run` subset legitimately exercises few of the cited endpoints), mirroring the PAR-011 coverage-floor guard",
+        "status_kind": "fixed"
       },
       {
         "category": "PAR",
@@ -6559,9 +6559,8 @@
         },
         "CORE": {
           "status": {
-            "fixed": 31,
-            "open": 1,
-            "partial": 1
+            "fixed": 32,
+            "open": 1
           },
           "total": 33
         },
@@ -6574,8 +6573,9 @@
         },
         "PAR": {
           "status": {
-            "fixed": 34,
-            "open": 5
+            "fixed": 37,
+            "open": 1,
+            "partial": 1
           },
           "total": 39
         },
@@ -6587,25 +6587,24 @@
         },
         "STORE": {
           "status": {
-            "fixed": 70,
-            "open": 1,
-            "partial": 7
+            "fixed": 74,
+            "partial": 4
           },
           "total": 78
         },
         "TEST": {
           "status": {
-            "fixed": 32,
-            "open": 7,
+            "fixed": 34,
+            "open": 5,
             "partial": 1
           },
           "total": 40
         },
         "WEB": {
           "status": {
-            "fixed": 56,
-            "open": 4,
-            "partial": 3
+            "fixed": 59,
+            "open": 3,
+            "partial": 1
           },
           "total": 63
         }
@@ -6617,9 +6616,9 @@
       },
       "status": {
         "deferred": 1,
-        "fixed": 645,
-        "open": 23,
-        "partial": 16
+        "fixed": 658,
+        "open": 15,
+        "partial": 11
       },
       "total": 685
     }
@@ -18837,7 +18836,7 @@
         "PUT /manage/v1/config/settings"
       ],
       "ghes_manage_snapshot": "internal/server/testdata/registered-ghes-manage-routes.txt",
-      "source": "internal/server/testdata/github-openapi-routes.txt.gz"
+      "source": "third_party/github-openapi-routes.txt.gz"
     },
     "registered_routes": [
       {
@@ -19513,13 +19512,13 @@
         "source": "internal/server/gh_orgs_people_rest.go"
       },
       {
-        "line": 50,
+        "line": 49,
         "method": "DELETE",
         "path": "/api/v3/orgs/{org}/packages/{package_type}/{package_name}",
         "source": "internal/server/gh_packages.go"
       },
       {
-        "line": 54,
+        "line": 53,
         "method": "DELETE",
         "path": "/api/v3/orgs/{org}/packages/{package_type}/{package_name}/versions/{package_version_id}",
         "source": "internal/server/gh_packages.go"
@@ -20173,13 +20172,13 @@
         "source": "internal/server/gh_migrations.go"
       },
       {
-        "line": 25,
+        "line": 24,
         "method": "DELETE",
         "path": "/api/v3/user/packages/{package_type}/{package_name}",
         "source": "internal/server/gh_packages.go"
       },
       {
-        "line": 29,
+        "line": 28,
         "method": "DELETE",
         "path": "/api/v3/user/packages/{package_type}/{package_name}/versions/{package_version_id}",
         "source": "internal/server/gh_packages.go"
@@ -20239,13 +20238,13 @@
         "source": "runtime route table (programmatic registration)"
       },
       {
-        "line": 40,
+        "line": 39,
         "method": "DELETE",
         "path": "/api/v3/users/{username}/packages/{package_type}/{package_name}",
         "source": "internal/server/gh_packages.go"
       },
       {
-        "line": 43,
+        "line": 42,
         "method": "DELETE",
         "path": "/api/v3/users/{username}/packages/{package_type}/{package_name}/versions/{package_version_id}",
         "source": "internal/server/gh_packages.go"
@@ -20269,7 +20268,7 @@
         "source": "internal/server/gh_misc_endpoints.go"
       },
       {
-        "line": 76,
+        "line": 101,
         "method": "GET",
         "path": "/api/v3/",
         "source": "internal/server/gh_rest.go"
@@ -22063,7 +22062,7 @@
         "source": "internal/server/gh_security_reviews.go"
       },
       {
-        "line": 51,
+        "line": 50,
         "method": "GET",
         "path": "/api/v3/orgs/{org}/docker/conflicts",
         "source": "internal/server/gh_packages.go"
@@ -22327,25 +22326,25 @@
         "source": "internal/server/gh_orgs_people_rest.go"
       },
       {
-        "line": 47,
+        "line": 46,
         "method": "GET",
         "path": "/api/v3/orgs/{org}/packages",
         "source": "internal/server/gh_packages.go"
       },
       {
-        "line": 49,
+        "line": 48,
         "method": "GET",
         "path": "/api/v3/orgs/{org}/packages/{package_type}/{package_name}",
         "source": "internal/server/gh_packages.go"
       },
       {
-        "line": 52,
+        "line": 51,
         "method": "GET",
         "path": "/api/v3/orgs/{org}/packages/{package_type}/{package_name}/versions",
         "source": "internal/server/gh_packages.go"
       },
       {
-        "line": 53,
+        "line": 52,
         "method": "GET",
         "path": "/api/v3/orgs/{org}/packages/{package_type}/{package_name}/versions/{package_version_id}",
         "source": "internal/server/gh_packages.go"
@@ -22675,7 +22674,7 @@
         "source": "internal/server/gh_projects_classic.go"
       },
       {
-        "line": 79,
+        "line": 104,
         "method": "GET",
         "path": "/api/v3/rate_limit",
         "source": "internal/server/gh_rest.go"
@@ -24415,7 +24414,7 @@
         "source": "internal/server/gh_teams_legacy_rest.go"
       },
       {
-        "line": 77,
+        "line": 102,
         "method": "GET",
         "path": "/api/v3/user",
         "source": "internal/server/gh_rest.go"
@@ -24481,7 +24480,7 @@
         "source": "internal/server/gh_codespaces.go"
       },
       {
-        "line": 33,
+        "line": 32,
         "method": "GET",
         "path": "/api/v3/user/docker/conflicts",
         "source": "internal/server/gh_packages.go"
@@ -24613,25 +24612,25 @@
         "source": "internal/server/gh_orgs_rest.go"
       },
       {
-        "line": 23,
+        "line": 22,
         "method": "GET",
         "path": "/api/v3/user/packages",
         "source": "internal/server/gh_packages.go"
       },
       {
-        "line": 24,
+        "line": 23,
         "method": "GET",
         "path": "/api/v3/user/packages/{package_type}/{package_name}",
         "source": "internal/server/gh_packages.go"
       },
       {
-        "line": 27,
+        "line": 26,
         "method": "GET",
         "path": "/api/v3/user/packages/{package_type}/{package_name}/versions",
         "source": "internal/server/gh_packages.go"
       },
       {
-        "line": 28,
+        "line": 27,
         "method": "GET",
         "path": "/api/v3/user/packages/{package_type}/{package_name}/versions/{package_version_id}",
         "source": "internal/server/gh_packages.go"
@@ -24709,7 +24708,7 @@
         "source": "internal/server/gh_misc_endpoints.go"
       },
       {
-        "line": 78,
+        "line": 103,
         "method": "GET",
         "path": "/api/v3/users/{username}",
         "source": "internal/server/gh_rest.go"
@@ -24751,7 +24750,7 @@
         "source": "runtime route table (programmatic registration)"
       },
       {
-        "line": 34,
+        "line": 33,
         "method": "GET",
         "path": "/api/v3/users/{username}/docker/conflicts",
         "source": "internal/server/gh_packages.go"
@@ -24829,25 +24828,25 @@
         "source": "internal/server/gh_orgs_rest.go"
       },
       {
-        "line": 37,
+        "line": 36,
         "method": "GET",
         "path": "/api/v3/users/{username}/packages",
         "source": "internal/server/gh_packages.go"
       },
       {
-        "line": 39,
+        "line": 38,
         "method": "GET",
         "path": "/api/v3/users/{username}/packages/{package_type}/{package_name}",
         "source": "internal/server/gh_packages.go"
       },
       {
-        "line": 41,
+        "line": 40,
         "method": "GET",
         "path": "/api/v3/users/{username}/packages/{package_type}/{package_name}/versions",
         "source": "internal/server/gh_packages.go"
       },
       {
-        "line": 42,
+        "line": 41,
         "method": "GET",
         "path": "/api/v3/users/{username}/packages/{package_type}/{package_name}/versions/{package_version_id}",
         "source": "internal/server/gh_packages.go"
@@ -26233,13 +26232,13 @@
         "source": "internal/server/gh_orgs_people_rest.go"
       },
       {
-        "line": 48,
+        "line": 47,
         "method": "POST",
         "path": "/api/v3/orgs/{org}/packages/{package_type}/{package_name}/restore",
         "source": "internal/server/gh_packages.go"
       },
       {
-        "line": 55,
+        "line": 54,
         "method": "POST",
         "path": "/api/v3/orgs/{org}/packages/{package_type}/{package_name}/versions/{package_version_id}/restore",
         "source": "internal/server/gh_packages.go"
@@ -27025,13 +27024,13 @@
         "source": "internal/server/gh_migrations.go"
       },
       {
-        "line": 26,
+        "line": 25,
         "method": "POST",
         "path": "/api/v3/user/packages/{package_type}/{package_name}/restore",
         "source": "internal/server/gh_packages.go"
       },
       {
-        "line": 30,
+        "line": 29,
         "method": "POST",
         "path": "/api/v3/user/packages/{package_type}/{package_name}/versions/{package_version_id}/restore",
         "source": "internal/server/gh_packages.go"
@@ -27097,13 +27096,13 @@
         "source": "runtime route table (programmatic registration)"
       },
       {
-        "line": 38,
+        "line": 37,
         "method": "POST",
         "path": "/api/v3/users/{username}/packages/{package_type}/{package_name}/restore",
         "source": "internal/server/gh_packages.go"
       },
       {
-        "line": 44,
+        "line": 43,
         "method": "POST",
         "path": "/api/v3/users/{username}/packages/{package_type}/{package_name}/versions/{package_version_id}/restore",
         "source": "internal/server/gh_packages.go"
@@ -28127,9 +28126,9 @@
   },
   "schema_version": 1,
   "sources": {
-    "graphql_schema": "internal/server/testdata/github-graphql-schema.graphql.gz",
+    "graphql_schema": "third_party/github-graphql-schema.graphql.gz",
     "ledger": "BUGS.md",
-    "rest_openapi": "internal/server/testdata/github-openapi.json.gz",
+    "rest_openapi": "third_party/github-openapi.json.gz",
     "web_router": "web/src/App.tsx"
   },
   "ui": {

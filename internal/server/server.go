@@ -42,23 +42,28 @@ type Server struct {
 	artifactStore          *ArtifactStore
 	metrics                *Metrics
 	maxConcurrentWorkflows int
-	scheduleFired          scheduleFiredKeys // cron-firing dedup (on: schedule)
-	scheduleIndex          scheduleIndex     // parsed-schedule cache keyed by default-branch tip (on: schedule)
-	actionsEvents          actionsEventLoop  // checks/webhook fan-out for run+job transitions
-	registryUploadsMu      sync.Mutex
-	registryUploads        map[string]*containerRegistryUpload
-	classroomMu            sync.Mutex // serializes multi-resource Classroom browser transactions
-	marketplaceMu          sync.Mutex // serializes Marketplace billing transitions and webhook emission
-	workflowConcurrencyMu  sync.Mutex // serializes concurrency-group admission and queue promotion
-	workflowTimeoutMu      sync.Mutex // serializes timeout watcher replacement and cancellation
-	rateLimitsMu           sync.Mutex
-	rateLimits             map[string]*apiRateWindow // hashed credential + resource -> current primary-limit window
-	routePatterns          []string                  // every pattern registered via route(), for fidelity enumeration
-	externalURL            string                    // BLEEPHUB_EXTERNAL_URL; when set, overrides request-Host URL derivation (job messages, action URLs) — the GHES "external URL" knob
-	pagesJekyllExecutable  string
-	identity               identityConfig
-	identityStateKey       []byte // random per-process HMAC key for OAuth state cookies
-	build                  BuildInfo
+	// injectedByteStore, when set by a ServerOption before persistence wiring,
+	// overrides the env-derived object byte store. It lets a test stand up a
+	// fully persistent server (BLEEPHUB_PERSIST=true) with an in-memory object
+	// store instead of requiring a live S3/MinIO endpoint.
+	injectedByteStore     actionsByteStore
+	scheduleFired         scheduleFiredKeys // cron-firing dedup (on: schedule)
+	scheduleIndex         scheduleIndex     // parsed-schedule cache keyed by default-branch tip (on: schedule)
+	actionsEvents         actionsEventLoop  // checks/webhook fan-out for run+job transitions
+	registryUploadsMu     sync.Mutex
+	registryUploads       map[string]*containerRegistryUpload
+	classroomMu           sync.Mutex // serializes multi-resource Classroom browser transactions
+	marketplaceMu         sync.Mutex // serializes Marketplace billing transitions and webhook emission
+	workflowConcurrencyMu sync.Mutex // serializes concurrency-group admission and queue promotion
+	workflowTimeoutMu     sync.Mutex // serializes timeout watcher replacement and cancellation
+	rateLimitsMu          sync.Mutex
+	rateLimits            map[string]*apiRateWindow // hashed credential + resource -> current primary-limit window
+	routePatterns         []string                  // every pattern registered via route(), for fidelity enumeration
+	externalURL           string                    // BLEEPHUB_EXTERNAL_URL; when set, overrides request-Host URL derivation (job messages, action URLs) — the GHES "external URL" knob
+	pagesJekyllExecutable string
+	identity              identityConfig
+	identityStateKey      []byte // random per-process HMAC key for OAuth state cookies
+	build                 BuildInfo
 	// clockNow is injected by deterministic tests and simulators. Production
 	// leaves it nil and currentTime uses the process clock. clockMu makes
 	// replacing a test clock safe while owned background workers are winding
@@ -338,6 +343,13 @@ func NewServer(addr string, logger zerolog.Logger, options ...ServerOption) *Ser
 	}
 	for _, option := range options {
 		option(s)
+	}
+	// A test may inject an in-memory object byte store so a persistent server
+	// needs no live S3 endpoint. It replaces the env-derived store here, before
+	// persistence validation and wiring read it.
+	if s.injectedByteStore != nil {
+		byteStore = s.injectedByteStore
+		s.artifactStore = NewArtifactStoreWithByteStore(dataDir, byteStore)
 	}
 	if err := s.identity.validate(); err != nil {
 		logger.Fatal().Err(err).Msg("invalid Bleephub external identity configuration")
@@ -1121,6 +1133,33 @@ func (rw *responseWriter) WriteHeader(code int) {
 // Content-Length is deliberately left to net/http: a handful of handlers write
 // further bytes after calling this, and declaring a length here would make
 // those responses malformed.
+// checkIfMatch enforces optimistic concurrency on a mutating request (STORE-016).
+// When the request carries If-Match, the current resource's strong ETag — the
+// same content hash a GET of it returns (writeJSON's `"sha256(body)"`) — must
+// match, or the write is rejected 412 Precondition Failed so a client holding a
+// stale copy cannot silently clobber a concurrent update. An absent If-Match is
+// unconditional, exactly as GitHub treats it. `current` is the resource's
+// present JSON representation (the value a GET would return); call this after
+// loading it and before mutating. Returns false when it has already written the
+// 412, so the caller returns immediately.
+func checkIfMatch(w http.ResponseWriter, r *http.Request, current interface{}) bool {
+	ifMatch := r.Header.Get("If-Match")
+	if ifMatch == "" {
+		return true
+	}
+	body, err := json.Marshal(current)
+	if err != nil {
+		return true
+	}
+	sum := sha256.Sum256(body)
+	etag := fmt.Sprintf(`"%x"`, sum)
+	if etagMatches(ifMatch, etag) {
+		return true
+	}
+	writeGHError(w, http.StatusPreconditionFailed, "Precondition Failed")
+	return false
+}
+
 func writeJSON(w http.ResponseWriter, status int, v interface{}) {
 	body, err := json.Marshal(v)
 	if err != nil {

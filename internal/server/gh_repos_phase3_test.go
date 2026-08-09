@@ -8,12 +8,14 @@ import (
 
 // TestListTags verifies GET /repos/{owner}/{repo}/tags.
 func TestListTags(t *testing.T) {
-	ghPost(t, "/api/v3/user/repos", defaultToken, map[string]interface{}{
+	t.Parallel()
+	s := newIsolatedServer(t)
+	s.post(t, "/api/v3/user/repos", defaultToken, map[string]interface{}{
 		"name":      "tags-repo",
 		"auto_init": true,
 	})
 
-	refResp := ghGet(t, "/api/v3/repos/admin/tags-repo/git/refs/heads/main", defaultToken)
+	refResp := s.get(t, "/api/v3/repos/admin/tags-repo/git/refs/heads/main", defaultToken)
 	defer refResp.Body.Close()
 	if refResp.StatusCode != 200 {
 		t.Fatalf("main ref status = %d", refResp.StatusCode)
@@ -28,7 +30,7 @@ func TestListTags(t *testing.T) {
 		t.Fatalf("main ref missing sha: %v", mainRef)
 	}
 
-	tagResp := ghPost(t, "/api/v3/repos/admin/tags-repo/git/tags", defaultToken, map[string]interface{}{
+	tagResp := s.post(t, "/api/v3/repos/admin/tags-repo/git/tags", defaultToken, map[string]interface{}{
 		"tag":     "v1.0.0",
 		"message": "release",
 		"object":  mainSHA,
@@ -47,7 +49,7 @@ func TestListTags(t *testing.T) {
 		t.Fatalf("tag object sha = %q, main sha = %q", tagSHA, mainSHA)
 	}
 
-	annotatedRefResp := ghPost(t, "/api/v3/repos/admin/tags-repo/git/refs", defaultToken, map[string]interface{}{
+	annotatedRefResp := s.post(t, "/api/v3/repos/admin/tags-repo/git/refs", defaultToken, map[string]interface{}{
 		"ref": "refs/tags/v1.0.0",
 		"sha": tagSHA,
 	})
@@ -56,7 +58,7 @@ func TestListTags(t *testing.T) {
 		t.Fatalf("annotated tag ref status = %d", annotatedRefResp.StatusCode)
 	}
 
-	lightweightRefResp := ghPost(t, "/api/v3/repos/admin/tags-repo/git/refs", defaultToken, map[string]interface{}{
+	lightweightRefResp := s.post(t, "/api/v3/repos/admin/tags-repo/git/refs", defaultToken, map[string]interface{}{
 		"ref": "refs/tags/v1.0.1",
 		"sha": mainSHA,
 	})
@@ -65,7 +67,7 @@ func TestListTags(t *testing.T) {
 		t.Fatalf("lightweight tag ref status = %d", lightweightRefResp.StatusCode)
 	}
 
-	resp := ghGet(t, "/api/v3/repos/admin/tags-repo/tags", defaultToken)
+	resp := s.get(t, "/api/v3/repos/admin/tags-repo/tags", defaultToken)
 	defer resp.Body.Close()
 	if resp.StatusCode != 200 {
 		t.Fatalf("expected 200, got %d", resp.StatusCode)
@@ -100,12 +102,14 @@ func TestListTags(t *testing.T) {
 // TestListRefs_All verifies the official matching-refs operation with an
 // empty prefix, which lists every reference.
 func TestListRefs_All(t *testing.T) {
-	ghPost(t, "/api/v3/user/repos", defaultToken, map[string]interface{}{
+	t.Parallel()
+	s := newIsolatedServer(t)
+	s.post(t, "/api/v3/user/repos", defaultToken, map[string]interface{}{
 		"name":      "refs-repo",
 		"auto_init": true,
 	})
 
-	resp := ghGet(t, "/api/v3/repos/admin/refs-repo/git/matching-refs/", defaultToken)
+	resp := s.get(t, "/api/v3/repos/admin/refs-repo/git/matching-refs/", defaultToken)
 	defer resp.Body.Close()
 	if resp.StatusCode != 200 {
 		t.Fatalf("expected 200, got %d", resp.StatusCode)
@@ -137,12 +141,14 @@ func TestListRefs_All(t *testing.T) {
 
 // TestListRefs_HeadsNamespace verifies GET /repos/{owner}/{repo}/git/refs/heads.
 func TestListRefs_HeadsNamespace(t *testing.T) {
-	ghPost(t, "/api/v3/user/repos", defaultToken, map[string]interface{}{
+	t.Parallel()
+	s := newIsolatedServer(t)
+	s.post(t, "/api/v3/user/repos", defaultToken, map[string]interface{}{
 		"name":      "refs-heads-repo",
 		"auto_init": true,
 	})
 
-	resp := ghGet(t, "/api/v3/repos/admin/refs-heads-repo/git/refs/heads", defaultToken)
+	resp := s.get(t, "/api/v3/repos/admin/refs-heads-repo/git/refs/heads", defaultToken)
 	defer resp.Body.Close()
 	if resp.StatusCode != 200 {
 		t.Fatalf("expected 200, got %d", resp.StatusCode)
@@ -164,12 +170,14 @@ func TestListRefs_HeadsNamespace(t *testing.T) {
 
 // TestGetRef_Single verifies GET /repos/{owner}/{repo}/git/refs/heads/main.
 func TestGetRef_Single(t *testing.T) {
-	ghPost(t, "/api/v3/user/repos", defaultToken, map[string]interface{}{
+	t.Parallel()
+	s := newIsolatedServer(t)
+	s.post(t, "/api/v3/user/repos", defaultToken, map[string]interface{}{
 		"name":      "ref-single-repo",
 		"auto_init": true,
 	})
 
-	resp := ghGet(t, "/api/v3/repos/admin/ref-single-repo/git/refs/heads/main", defaultToken)
+	resp := s.get(t, "/api/v3/repos/admin/ref-single-repo/git/refs/heads/main", defaultToken)
 	defer resp.Body.Close()
 	if resp.StatusCode != 200 {
 		t.Fatalf("expected 200, got %d", resp.StatusCode)
@@ -192,12 +200,14 @@ func TestGetRef_Single(t *testing.T) {
 
 // TestGetRef_NotFound verifies GET for a non-existent ref returns 404.
 func TestGetRef_NotFound(t *testing.T) {
-	ghPost(t, "/api/v3/user/repos", defaultToken, map[string]interface{}{
+	t.Parallel()
+	s := newIsolatedServer(t)
+	s.post(t, "/api/v3/user/repos", defaultToken, map[string]interface{}{
 		"name":      "ref-notfound-repo",
 		"auto_init": true,
 	})
 
-	resp := ghGet(t, "/api/v3/repos/admin/ref-notfound-repo/git/refs/heads/nope", defaultToken)
+	resp := s.get(t, "/api/v3/repos/admin/ref-notfound-repo/git/refs/heads/nope", defaultToken)
 	defer resp.Body.Close()
 	if resp.StatusCode != 404 {
 		t.Fatalf("expected 404, got %d", resp.StatusCode)
@@ -206,12 +216,14 @@ func TestGetRef_NotFound(t *testing.T) {
 
 // TestListRefs_TagsNamespaceEmpty verifies GET /repos/{owner}/{repo}/git/refs/tags returns empty array.
 func TestListRefs_TagsNamespaceEmpty(t *testing.T) {
-	ghPost(t, "/api/v3/user/repos", defaultToken, map[string]interface{}{
+	t.Parallel()
+	s := newIsolatedServer(t)
+	s.post(t, "/api/v3/user/repos", defaultToken, map[string]interface{}{
 		"name":      "refs-tags-empty-repo",
 		"auto_init": true,
 	})
 
-	resp := ghGet(t, "/api/v3/repos/admin/refs-tags-empty-repo/git/refs/tags", defaultToken)
+	resp := s.get(t, "/api/v3/repos/admin/refs-tags-empty-repo/git/refs/tags", defaultToken)
 	defer resp.Body.Close()
 	if resp.StatusCode != 200 {
 		t.Fatalf("expected 200, got %d", resp.StatusCode)

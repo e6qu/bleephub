@@ -1,3 +1,5 @@
+import type { components } from "../../third_party/github-openapi.js";
+
 // Enum unions mirror the exact strings the server emits (bleephub Go:
 // workflows.go / store_workflow_files.go). Empty result = still in flight.
 // Keeping these as unions makes a typo'd comparison (e.g. "failed" vs the
@@ -302,23 +304,8 @@ export interface WireAppCreated {
 export type GithubState = "open" | "closed";
 
 /** GitHub Issue. */
-export interface GithubIssue {
-  id: number;
-  number: number;
-  title: string;
-  body: string;
-  state: GithubState;
-  /** null when the authoring user no longer resolves (GitHub parity). */
-  user: { login: string; avatar_url: string } | null;
-  labels: { name: string; color: string }[];
-  assignees: { login: string }[];
-  /** null when the issue is not in a milestone. */
-  milestone?: GithubMilestone | null;
-  comments: number;
-  created_at: string;
-  updated_at: string;
-  closed_at: string | null;
-}
+// Generated from the vendored GitHub OpenAPI description (WEB-013).
+export type GithubIssue = components["schemas"]["issue"];
 
 /** GitHub Pull Request. */
 export interface GithubPR {
@@ -352,26 +339,9 @@ export interface GithubComment {
 }
 
 /** Git commit. */
-export interface GithubCommit {
-  sha: string;
-  commit: {
-    message: string;
-    author: { name: string; email: string; date: string };
-  };
-  author?: { login: string; avatar_url?: string } | null;
-  committer?: { login: string; avatar_url?: string } | null;
-  parents?: Array<{ sha: string; url: string; html_url: string }>;
-  stats?: { additions: number; deletions: number; total: number };
-  files?: Array<{
-    sha: string;
-    filename: string;
-    status: "added" | "modified" | "removed" | "renamed";
-    additions: number;
-    deletions: number;
-    changes: number;
-    patch?: string;
-  }>;
-}
+// Generated from the vendored GitHub OpenAPI description (WEB-013). Spec marks
+// commit.author nullable; consumers optional-chain it.
+export type GithubCommit = components["schemas"]["commit"];
 
 export interface GithubComparison {
   url: string;
@@ -609,13 +579,10 @@ export interface GithubActionsCacheUsage {
 }
 
 /** Pending deployment — GET .../actions/runs/{run_id}/pending_deployments. */
-export interface GithubPendingDeployment {
-  environment: { id: number; name: string };
-  wait_timer: number;
-  wait_timer_started_at: string | null;
-  current_user_can_approve: boolean;
-  reviewers: { type: string; reviewer?: { login?: string; name?: string } }[];
-}
+// Generated from the vendored GitHub OpenAPI description (WEB-013). The spec
+// marks environment.id optional, so consumers filter it before building
+// environment_ids (see DeploymentsPage/RunDetailPage).
+export type GithubPendingDeployment = components["schemas"]["pending-deployment"];
 
 /** Check run — GET .../commits/{sha}/check-runs (items). */
 export interface GithubCheckRun {
@@ -631,11 +598,9 @@ export interface GithubCheckRun {
 }
 
 /** Actions secrets public key — GET {scope}/secrets/public-key. */
-export interface GithubPublicKey {
-  key_id: string;
-  /** base64-encoded 32-byte X25519 public key for sealed-box encryption. */
-  key: string;
-}
+// Generated from the vendored GitHub OpenAPI description (WEB-013). `key` is a
+// base64-encoded 32-byte X25519 public key for sealed-box encryption.
+export type GithubPublicKey = components["schemas"]["actions-public-key"];
 
 export type GithubOrgVisibility = "all" | "private" | "selected";
 
@@ -660,14 +625,10 @@ export interface GithubRunner {
 }
 
 /** Content-file response — GET .../contents/{path} (file variant). */
-export interface GithubContentFile {
-  name: string;
-  path: string;
-  sha: string;
-  type: string;
-  encoding: string;
-  content: string;
-}
+// Generated from the vendored GitHub OpenAPI description (WEB-013). The full
+// spec shape is a superset of the six fields the UI reads; adopting the
+// generated schema replaces a hand-written cast with the documented contract.
+export type GithubContentFile = components["schemas"]["content-file"];
 
 /** Content directory entry — GET .../contents/{path} (dir variant). */
 export interface GithubContentItem {
@@ -709,20 +670,8 @@ export interface GithubRelease {
   assets: GithubReleaseAsset[];
 }
 
-export interface GithubReleaseAsset {
-  id: number;
-  node_id: string;
-  name: string;
-  label: string;
-  state: "uploaded";
-  content_type: string;
-  size: number;
-  download_count: number;
-  created_at: string;
-  updated_at: string;
-  url: string;
-  browser_download_url: string;
-}
+// Generated from the vendored GitHub OpenAPI description (WEB-013).
+export type GithubReleaseAsset = components["schemas"]["release-asset"];
 
 export type GithubMigrationState = "pending" | "exporting" | "exported" | "failed";
 
@@ -790,19 +739,11 @@ export interface BleephubTeam {
   created_at: string;
 }
 
-export interface GithubTeamMember {
-  id: number;
-  login: string;
-  avatar_url: string;
-  type: string;
-  role?: "member" | "maintainer" | "all";
-}
+// Generated from the vendored GitHub OpenAPI description (WEB-013).
+export type GithubTeamMember = components["schemas"]["team-member"];
 
-export interface GithubTeamMembership {
-  state: "active" | "pending";
-  role: "member" | "maintainer";
-  url: string;
-}
+// Generated from the vendored GitHub OpenAPI description (WEB-013).
+export type GithubTeamMembership = components["schemas"]["team-membership"];
 
 export interface GithubTeamRepo {
   id: number;
@@ -813,15 +754,8 @@ export interface GithubTeamRepo {
   role_name?: string;
 }
 
-export interface GithubDeployKey {
-  id: number;
-  key: string;
-  title: string;
-  url: string;
-  verified: boolean;
-  created_at: string;
-  read_only: boolean;
-}
+// Generated from the vendored GitHub OpenAPI description (WEB-013).
+export type GithubDeployKey = components["schemas"]["deploy-key"];
 
 export interface BleephubAuditEvent {
   id: number;
@@ -857,13 +791,8 @@ export interface BleephubGist {
   commits_url?: string;
 }
 
-export interface GithubGistCommit {
-  url: string;
-  version: string;
-  user: { login: string; type: string; avatar_url?: string } | null;
-  change_status: Record<string, number>;
-  committed_at: string;
-}
+// Generated from the vendored GitHub OpenAPI description (WEB-013).
+export type GithubGistCommit = components["schemas"]["gist-commit"];
 
 export interface GithubNotificationThread {
   id: string;
@@ -882,14 +811,8 @@ export interface GithubNotificationThread {
   url: string;
 }
 
-export interface GithubThreadSubscription {
-  subscribed: boolean;
-  ignored: boolean;
-  reason: string;
-  created_at: string;
-  url: string;
-  thread_url: string;
-}
+// Generated from the vendored GitHub OpenAPI description (WEB-013).
+export type GithubThreadSubscription = components["schemas"]["thread-subscription"];
 
 // ─── GitHub Discussions GraphQL shapes ──────────────────────────────────
 
@@ -1007,19 +930,8 @@ export interface GithubSecretScanningLocation {
   details: GithubSecretScanningLocationDetails;
 }
 
-export interface GithubSecretScanningAlert {
-  number: number;
-  state: "open" | "resolved";
-  resolution: string | null;
-  secret_type: string;
-  secret_type_display_name: string;
-  created_at: string;
-  updated_at: string;
-  resolved_at: string | null;
-  url: string;
-  html_url: string;
-  locations_url: string;
-}
+// Generated from the vendored GitHub OpenAPI description (WEB-013).
+export type GithubSecretScanningAlert = components["schemas"]["secret-scanning-alert"];
 
 export type GithubSecretScanningResolution =
   | "false_positive"
@@ -1039,63 +951,15 @@ export type GithubCodeScanningDismissedReason =
   | "used_in_tests"
   | "ignored";
 
-export interface GithubCodeScanningAlertLocation {
-  path: string;
-  start_line: number;
-  end_line: number;
-  start_column: number;
-  end_column: number;
-}
+// Generated from the vendored GitHub OpenAPI description (WEB-013). Spec marks
+// location/commit_sha optional; CodeScanningPage optional-chains them.
+export type GithubCodeScanningAlertInstance = components["schemas"]["code-scanning-alert-instance"];
 
-export interface GithubCodeScanningAlertInstance {
-  ref: string;
-  analysis_key: string;
-  category: string;
-  state: GithubCodeScanningAlertState;
-  commit_sha: string;
-  message: { text: string };
-  location: GithubCodeScanningAlertLocation;
-}
+// Generated from the vendored GitHub OpenAPI description (WEB-013).
+export type GithubCodeScanningAlert = components["schemas"]["code-scanning-alert"];
 
-export interface GithubCodeScanningAlert {
-  number: number;
-  state: GithubCodeScanningAlertState;
-  created_at: string;
-  updated_at: string;
-  url: string;
-  html_url: string;
-  instances_url: string;
-  fixed_at: string | null;
-  dismissed_at: string | null;
-  dismissed_reason: GithubCodeScanningDismissedReason | null;
-  dismissed_comment: string | null;
-  rule: {
-    id: string;
-    severity: string | null;
-    description: string | null;
-    name: string;
-  };
-  tool: { name: string | null };
-  most_recent_instance: GithubCodeScanningAlertInstance | null;
-}
-
-export interface GithubCodeScanningAnalysis {
-  id: number;
-  ref: string;
-  commit_sha: string;
-  analysis_key: string;
-  environment: string;
-  category: string;
-  error: string;
-  created_at: string;
-  results_count: number;
-  rules_count: number;
-  url: string;
-  sarif_id: string;
-  tool: { name: string | null };
-  deletable: boolean;
-  warning: string;
-}
+// Generated from the vendored GitHub OpenAPI description (WEB-013).
+export type GithubCodeScanningAnalysis = components["schemas"]["code-scanning-analysis"];
 
 export interface GithubCodeScanningSARIFUpload {
   id: string;
@@ -1132,49 +996,11 @@ export type GithubDependabotDismissedReason =
   | "not_used"
   | "tolerable_risk";
 
-export interface GithubDependabotAlertPackage {
-  ecosystem: string;
-  name: string;
-}
+// Generated from the vendored GitHub OpenAPI description (WEB-013).
+export type GithubDependabotAlert = components["schemas"]["dependabot-alert"];
 
-export interface GithubDependabotAlert {
-  number: number;
-  state: GithubDependabotAlertState;
-  dependency: {
-    package: GithubDependabotAlertPackage;
-    manifest_path: string;
-  };
-  security_advisory: {
-    ghsa_id: string;
-    cve_id: string | null;
-    summary: string;
-    description: string;
-    severity: string;
-  };
-  security_vulnerability: {
-    package: GithubDependabotAlertPackage;
-    severity: string;
-    vulnerable_version_range: string;
-    first_patched_version: { identifier: string } | null;
-  };
-  url: string;
-  html_url: string;
-  created_at: string;
-  updated_at: string;
-  dismissed_at: string | null;
-  dismissed_by: { login: string } | null;
-  dismissed_reason: GithubDependabotDismissedReason | null;
-  dismissed_comment: string | null;
-  fixed_at: string | null;
-  auto_dismissed_at: string | null;
-}
-
-export interface GithubDependabotSecret {
-  name: string;
-  created_at: string;
-  updated_at: string;
-  visibility?: GithubOrgVisibility;
-}
+// Generated from the vendored GitHub OpenAPI description (WEB-013).
+export type GithubDependabotSecret = components["schemas"]["dependabot-secret"];
 
 // ─── GitHub Codespaces shapes ───────────────────────────────────────────
 
@@ -1197,15 +1023,8 @@ export type GithubCodespaceState =
   | "Rebuilding"
   | "Unavailable";
 
-export interface GithubCodespaceMachine {
-  name: string;
-  display_name: string;
-  operating_system: string;
-  storage_in_bytes: number;
-  memory_in_bytes: number;
-  cpus: number;
-  prebuild_availability: string;
-}
+// Generated from the vendored GitHub OpenAPI description (WEB-013).
+export type GithubCodespaceMachine = components["schemas"]["codespace-machine"];
 
 export interface GithubCodespace {
   id: number;
@@ -1254,23 +1073,8 @@ export interface GithubPackage {
   repository: BleephubRepo | null;
 }
 
-export interface GithubPackageVersion {
-  id: number;
-  name: string;
-  url: string;
-  package_html_url: string;
-  html_url: string;
-  license: string | null;
-  description: string;
-  created_at: string;
-  updated_at: string;
-  deleted_at?: string;
-  metadata: {
-    package_type: GithubPackageType;
-    container?: { tags: string[] };
-    docker?: { tag: string[] };
-  };
-}
+// Generated from the vendored GitHub OpenAPI description (WEB-013).
+export type GithubPackageVersion = components["schemas"]["package-version"];
 
 export interface GithubPackageFile {
   id: number;
@@ -1453,26 +1257,8 @@ export interface GithubCommitActivityWeek {
   total: number;
 }
 
-export interface GithubCommunityFile {
-  url: string;
-  html_url: string;
-}
-
-export interface GithubCommunityProfile {
-  health_percentage: number;
-  description: string | null;
-  documentation: string | null;
-  files: {
-    code_of_conduct: { key: string; name: string } | null;
-    code_of_conduct_file: GithubCommunityFile | null;
-    license: { key: string; name: string; spdx_id: string } | null;
-    contributing: GithubCommunityFile | null;
-    readme: GithubCommunityFile | null;
-    issue_template: GithubCommunityFile | null;
-    pull_request_template: GithubCommunityFile | null;
-  };
-  updated_at: string;
-}
+// Generated from the vendored GitHub OpenAPI description (WEB-013).
+export type GithubCommunityProfile = components["schemas"]["community-profile"];
 
 // ─── Labels + milestones ────────────────────────────────────────────────
 
@@ -1484,20 +1270,8 @@ export interface GithubLabel {
   default: boolean;
 }
 
-export interface GithubMilestone {
-  id: number;
-  number: number;
-  title: string;
-  description: string;
-  state: "open" | "closed";
-  creator: { login: string; avatar_url: string } | null;
-  open_issues: number;
-  closed_issues: number;
-  due_on: string | null;
-  closed_at: string | null;
-  created_at: string;
-  updated_at: string;
-}
+// Generated from the vendored GitHub OpenAPI description (WEB-013).
+export type GithubMilestone = NonNullable<components["schemas"]["nullable-milestone"]>;
 
 // ─── Organization governance ────────────────────────────────────────────
 
@@ -1530,27 +1304,12 @@ export type GithubCustomPropertyValueType =
   | "true_false"
   | "url";
 
-export interface GithubCustomProperty {
-  property_name: string;
-  value_type: GithubCustomPropertyValueType;
-  required: boolean;
-  default_value: unknown;
-  description: string | null;
-  allowed_values?: string[];
-  values_editable_by: string;
-  require_explicit_values: boolean;
-}
+// Generated from the vendored GitHub OpenAPI description (WEB-013).
+export type GithubCustomProperty = components["schemas"]["custom-property"];
 
-export interface GithubIssueType {
-  id: number;
-  node_id: string;
-  name: string;
-  description: string | null;
-  color: string | null;
-  is_enabled: boolean;
-  created_at: string;
-  updated_at: string;
-}
+// Generated from the vendored GitHub OpenAPI description (WEB-013). The spec
+// models the whole type nullable; NonNullable strips that for list consumers.
+export type GithubIssueType = NonNullable<components["schemas"]["issue-type"]>;
 
 export interface GithubOrgRole {
   id: number;
@@ -1579,17 +1338,8 @@ export interface GithubOrgRoleUser extends GithubAccount {
 
 // ─── Enterprise administration ──────────────────────────────────────────
 
-export interface GithubEnterpriseTeam {
-  id: number;
-  name: string;
-  slug: string;
-  description: string | null;
-  organization_selection_type: string;
-  group_id: string | null;
-  notification_setting: string;
-  created_at: string;
-  updated_at: string;
-}
+// Generated from the vendored GitHub OpenAPI description (WEB-013).
+export type GithubEnterpriseTeam = components["schemas"]["enterprise-team"];
 
 export interface GithubEnterpriseDependabotAccess {
   default_level: string | null;
@@ -1655,32 +1405,14 @@ export interface GithubCopilotSpaceCollaborator {
   name?: string;
 }
 
-export interface GithubCopilotSpaceResource {
-  id: number;
-  resource_type: string;
-  metadata: Record<string, unknown>;
-}
+// Generated from the vendored GitHub OpenAPI description (WEB-013).
+export type GithubCopilotSpaceResource = components["schemas"]["copilot-space-resource"];
 
 // ─── Deployments + webhook deliveries + Pages ───────────────────────────
 
 /** Deployment — GET /repos/{o}/{r}/deployments (items). */
-export interface GithubDeployment {
-  id: number;
-  node_id: string;
-  sha: string;
-  ref: string;
-  task: string;
-  environment: string;
-  original_environment: string;
-  description: string;
-  creator: { login: string } | null;
-  payload: Record<string, unknown> | null;
-  created_at: string;
-  updated_at: string;
-  transient_environment: boolean;
-  production_environment: boolean;
-  statuses_url: string;
-}
+// Generated from the vendored GitHub OpenAPI description (WEB-013).
+export type GithubDeployment = NonNullable<components["schemas"]["nullable-deployment"]>;
 
 /** Deployment status state (the POST statuses `state` enum). */
 export type GithubDeploymentState =
@@ -1693,19 +1425,8 @@ export type GithubDeploymentState =
   | "success";
 
 /** Deployment status — GET .../deployments/{id}/statuses (items). */
-export interface GithubDeploymentStatus {
-  id: number;
-  node_id: string;
-  state: GithubDeploymentState;
-  creator: { login: string } | null;
-  description: string;
-  environment: string;
-  target_url: string;
-  log_url: string;
-  environment_url: string;
-  created_at: string;
-  updated_at: string;
-}
+// Generated from the vendored GitHub OpenAPI description (WEB-013).
+export type GithubDeploymentStatus = components["schemas"]["deployment-status"];
 
 // ─── PR reviews, statuses, reactions & timeline ─────────────────────────
 
@@ -1752,12 +1473,8 @@ export interface GithubOrgSimple {
 }
 
 /** One repository row of GET /orgs/{org}/properties/values. */
-export interface GithubOrgRepoCustomPropertyValues {
-  repository_id: number;
-  repository_name: string;
-  repository_full_name: string;
-  properties: { property_name: string; value: unknown }[];
-}
+// Generated from the vendored GitHub OpenAPI description (WEB-013).
+export type GithubOrgRepoCustomPropertyValues = components["schemas"]["org-repo-custom-property-values"];
 
 /** Wait-timer / required-reviewers rule nested in the environment object. */
 export interface GithubEnvironmentProtectionRule {
@@ -1788,12 +1505,8 @@ export interface GithubEnvironmentDetail {
 }
 
 /** Branch/tag pattern — GET .../environments/{env}/deployment-branch-policies. */
-export interface GithubDeploymentBranchPolicy {
-  id: number;
-  node_id: string;
-  name: string;
-  type: "branch" | "tag";
-}
+// Generated from the vendored GitHub OpenAPI description (WEB-013).
+export type GithubDeploymentBranchPolicy = components["schemas"]["deployment-branch-policy"];
 
 /** Custom (app-backed) rule — GET .../environments/{env}/deployment_protection_rules. */
 export interface GithubEnvCustomProtectionRule {
@@ -2022,13 +1735,8 @@ export interface GithubSearchTopicItem {
 }
 
 /** Repo collaborator: simple user plus permission grants. */
-export interface GithubCollaborator {
-  id: number;
-  login: string;
-  type: string;
-  role_name: string;
-  permissions: { pull: boolean; push: boolean; admin: boolean };
-}
+// Generated from the vendored GitHub OpenAPI description (WEB-013).
+export type GithubCollaborator = NonNullable<components["schemas"]["nullable-collaborator"]>;
 
 /** Pending repository invitation. */
 export interface GithubRepoInvitation {
@@ -2110,12 +1818,8 @@ export interface GithubGPGKey {
 }
 
 /** SSH signing key on the authenticated user's account. */
-export interface GithubSSHSigningKey {
-  id: number;
-  key: string;
-  title: string;
-  created_at: string;
-}
+// Generated from the vendored GitHub OpenAPI description (WEB-013).
+export type GithubSSHSigningKey = components["schemas"]["ssh-signing-key"];
 
 /** Entry in GET /user/blocks. */
 export interface GithubBlockedUser {

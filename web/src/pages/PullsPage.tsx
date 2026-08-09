@@ -510,8 +510,8 @@ function PRCommitsTab({ owner, repo, number }: { owner: string; repo: string; nu
               {c.commit.message.split("\n")[0]}
             </div>
             <div className="mt-0.5" style={{ fontSize: "0.78rem", color: "var(--color-fg-muted)" }}>
-              {c.commit.author.name} committed on{" "}
-              {new Date(c.commit.author.date).toLocaleDateString()}
+              {c.commit.author?.name} committed on{" "}
+              {new Date(c.commit.author?.date ?? "").toLocaleDateString()}
             </div>
           </div>
           <span

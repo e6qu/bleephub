@@ -514,17 +514,5 @@ func TestReleases_ReleaseReactionsLifecycle(t *testing.T) {
 }
 
 func doAuthReq(s *Server, method, path string, body []byte) *httptest.ResponseRecorder {
-	var req *http.Request
-	if body != nil {
-		req = httptest.NewRequest(method, path, bytes.NewReader(body))
-	} else {
-		req = httptest.NewRequest(method, path, nil)
-	}
-	req.Header.Set("Authorization", "Bearer bleephub-admin-token-00000000000000000000")
-	if body != nil {
-		req.Header.Set("Content-Type", "application/json")
-	}
-	w := httptest.NewRecorder()
-	s.requestHandler().ServeHTTP(w, req)
-	return w
+	return serveTestRequest(s, "Bearer bleephub-admin-token-00000000000000000000", method, path, body)
 }

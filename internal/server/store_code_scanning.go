@@ -32,10 +32,12 @@ const (
 type CodeScanningDismissedReason string
 
 const (
-	CodeScanningDismissedFalsePositive CodeScanningDismissedReason = "false_positive"
-	CodeScanningDismissedWontFix       CodeScanningDismissedReason = "won't_fix"
-	CodeScanningDismissedUsedInTests   CodeScanningDismissedReason = "used_in_tests"
-	CodeScanningDismissedIgnored       CodeScanningDismissedReason = "ignored"
+	// GitHub's code-scanning dismissed_reason enum uses spaces, not underscores
+	// (unlike the secret-scanning resolution enum). "ignored" is not a GitHub
+	// value at all (PAR-010).
+	CodeScanningDismissedFalsePositive CodeScanningDismissedReason = "false positive"
+	CodeScanningDismissedWontFix       CodeScanningDismissedReason = "won't fix"
+	CodeScanningDismissedUsedInTests   CodeScanningDismissedReason = "used in tests"
 )
 
 // CodeScanningAlertInstance is one occurrence of a code-scanning alert.
@@ -266,7 +268,7 @@ func validateCodeScanningTransition(currentState, newState, dismissedReason stri
 func isValidDismissedReason(r string) bool {
 	switch CodeScanningDismissedReason(r) {
 	case CodeScanningDismissedFalsePositive, CodeScanningDismissedWontFix,
-		CodeScanningDismissedUsedInTests, CodeScanningDismissedIgnored:
+		CodeScanningDismissedUsedInTests:
 		return true
 	}
 	return false

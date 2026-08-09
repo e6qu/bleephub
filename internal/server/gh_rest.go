@@ -19,6 +19,31 @@ const maxJSONBodyBytes = 25 << 20 // 25 MiB
 // no single request can exhaust the process.
 const maxUploadBytes = 2 << 30 // 2 GiB
 
+// requestBodyLimit is one row of the request-body-size registry: a named cap,
+// the bytes it allows, and where it applies.
+type requestBodyLimit struct {
+	name  string
+	bytes int64
+	scope string
+}
+
+// requestBodyLimits is the single auditable inventory of every request-body cap
+// on the byte-transfer surface (CORE-009). The shared pipeline
+// (maxStructuredRequestBody) bounds JSON/form/GraphQL by default; the entries
+// below are the endpoint-specific streaming caps that deliberately exceed it or
+// bound a non-JSON body. Adding a new binary/upload route means adding its cap
+// here so the whole surface stays reviewable in one place; TestRequestBodyLimits
+// keeps the registry honest.
+var requestBodyLimits = []requestBodyLimit{
+	{"structured (shared pipeline)", maxStructuredRequestBody, "every application/json, form and GraphQL request"},
+	{"json decode helpers", maxJSONBodyBytes, "decodeJSONBody / readLimitedBody JSON handlers, container manifests"},
+	{"binary upload", maxUploadBytes, "release assets, container blobs, CodeQL databases + variant packs, SARIF, attestations, package files"},
+	{"artifact chunk", maxArtifactChunkBytes, "Actions artifact chunk upload"},
+	{"git upload-pack", uploadPackRequestCap, "smart-HTTP fetch negotiation"},
+	{"actions timeline", timelineRequestCap, "Actions timeline record batch"},
+	{"backchannel logout", maxBackChannelLogoutBytes, "OIDC back-channel logout token POST"},
+}
+
 // decodeJSONBody decodes the JSON request body into v, refusing a body larger
 // than maxJSONBodyBytes. On failure it writes a GitHub-style response and
 // returns false. Usage: if !decodeJSONBody(w, r, &req) { return }
