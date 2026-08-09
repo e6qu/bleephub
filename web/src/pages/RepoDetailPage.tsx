@@ -503,7 +503,7 @@ function LatestCommitBanner({
         style={{ color: "var(--color-fg)", textDecoration: "none" }}
         title={commit.commit.message}
       >
-        <span style={{ fontWeight: 600 }}>{commit.commit.author.name}</span>{" "}
+        <span style={{ fontWeight: 600 }}>{commit.commit.author?.name}</span>{" "}
         {commit.commit.message.split("\n")[0]}
       </Link>
       <Link
@@ -514,7 +514,7 @@ function LatestCommitBanner({
         {commit.sha.slice(0, 7)}
       </Link>
       <span style={{ color: "var(--color-fg-muted)" }}>
-        · {relativeTimeFromNow(commit.commit.author.date)}
+        · {relativeTimeFromNow(commit.commit.author?.date)}
       </span>
       <Link
         to={`/ui/repos/${owner}/${repo}/commits`}
@@ -1139,7 +1139,7 @@ function CommitsList({
               {c.commit.message.split("\n")[0]}
             </Link>
             <div className="mt-0.5" style={{ fontSize: "0.76rem", color: "var(--color-fg-muted)" }}>
-              {c.commit.author.name} · {new Date(c.commit.author.date).toLocaleDateString()}
+              {c.commit.author?.name} · {new Date(c.commit.author?.date ?? "").toLocaleDateString()}
             </div>
           </div>
           <Link
@@ -1351,7 +1351,7 @@ export function RepoCommitPage() {
               {commit.commit.message.split("\n")[0]}
             </h1>
             <div className="mt-1" style={{ color: "var(--color-fg-muted)", fontSize: ".78rem" }}>
-              {commit.commit.author.name} committed {relativeTimeFromNow(commit.commit.author.date)}
+              {commit.commit.author?.name} committed {relativeTimeFromNow(commit.commit.author?.date)}
             </div>
           </div>
         }

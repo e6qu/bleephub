@@ -354,26 +354,9 @@ export interface GithubComment {
 }
 
 /** Git commit. */
-export interface GithubCommit {
-  sha: string;
-  commit: {
-    message: string;
-    author: { name: string; email: string; date: string };
-  };
-  author?: { login: string; avatar_url?: string } | null;
-  committer?: { login: string; avatar_url?: string } | null;
-  parents?: Array<{ sha: string; url: string; html_url: string }>;
-  stats?: { additions: number; deletions: number; total: number };
-  files?: Array<{
-    sha: string;
-    filename: string;
-    status: "added" | "modified" | "removed" | "renamed";
-    additions: number;
-    deletions: number;
-    changes: number;
-    patch?: string;
-  }>;
-}
+// Generated from the vendored GitHub OpenAPI description (WEB-013). Spec marks
+// commit.author nullable; consumers optional-chain it.
+export type GithubCommit = components["schemas"]["commit"];
 
 export interface GithubComparison {
   url: string;
