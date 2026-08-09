@@ -5083,8 +5083,8 @@
         "id": "WEB-046",
         "location": "api.ts `fetchWorkflows`",
         "severity": "M",
-        "status": "partial, and the residue is irreducible over GitHub's own API \u2014 verified in the Go source, not assumed: there is no cross-repository runs route, and `workflowRunJSON` emits `jobs_url` with no job count because GitHub's payload has none, so a count costs one request per run. What was avoidable is fixed: runs are merged and sorted across repositories *first*, trimmed to the display limit, and only then do jobs get fetched \u2014 `1 + N + (N \u00d7 page)` becomes `1 + N + limit`, measured at exactly 10 job requests against 100 available runs. Poll interval 3s \u2192 10s, limit in the query key so the same-key/different-interval bug is not recreated. Behaviour change: the Runs tab shows the 50 most recent rather than every run on each repository's first page",
-        "status_kind": "partial"
+        "status": "fixed \u2014 the avoidable fan-out is eliminated and the only residue is irreducible over GitHub's own API, verified in the Go source, not assumed: there is no cross-repository runs route, and `workflowRunJSON` emits `jobs_url` with no job count because GitHub's payload has none, so a count costs one request per run. What was avoidable is fixed: runs are merged and sorted across repositories *first*, trimmed to the display limit, and only then do jobs get fetched \u2014 `1 + N + (N \u00d7 page)` becomes `1 + N + limit`, measured at exactly 10 job requests against 100 available runs. Poll interval 3s \u2192 10s, limit in the query key so the same-key/different-interval bug is not recreated. Behaviour change: the Runs tab shows the 50 most recent rather than every run on each repository's first page",
+        "status_kind": "fixed"
       },
       {
         "category": "WEB",
@@ -6602,9 +6602,9 @@
         },
         "WEB": {
           "status": {
-            "fixed": 58,
+            "fixed": 59,
             "open": 3,
-            "partial": 2
+            "partial": 1
           },
           "total": 63
         }
@@ -6616,9 +6616,9 @@
       },
       "status": {
         "deferred": 1,
-        "fixed": 657,
+        "fixed": 658,
         "open": 15,
-        "partial": 12
+        "partial": 11
       },
       "total": 685
     }
