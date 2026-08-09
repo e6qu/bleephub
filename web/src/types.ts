@@ -994,13 +994,8 @@ export type GithubCodeScanningDismissedReason =
   | "used_in_tests"
   | "ignored";
 
-export interface GithubCodeScanningAlertLocation {
-  path: string;
-  start_line: number;
-  end_line: number;
-  start_column: number;
-  end_column: number;
-}
+// Generated from the vendored GitHub OpenAPI description (WEB-013).
+export type GithubCodeScanningAlertLocation = components["schemas"]["code-scanning-alert-location"];
 
 export interface GithubCodeScanningAlertInstance {
   ref: string;
@@ -1034,23 +1029,8 @@ export interface GithubCodeScanningAlert {
   most_recent_instance: GithubCodeScanningAlertInstance | null;
 }
 
-export interface GithubCodeScanningAnalysis {
-  id: number;
-  ref: string;
-  commit_sha: string;
-  analysis_key: string;
-  environment: string;
-  category: string;
-  error: string;
-  created_at: string;
-  results_count: number;
-  rules_count: number;
-  url: string;
-  sarif_id: string;
-  tool: { name: string | null };
-  deletable: boolean;
-  warning: string;
-}
+// Generated from the vendored GitHub OpenAPI description (WEB-013).
+export type GithubCodeScanningAnalysis = components["schemas"]["code-scanning-analysis"];
 
 export interface GithubCodeScanningSARIFUpload {
   id: string;
@@ -1087,10 +1067,8 @@ export type GithubDependabotDismissedReason =
   | "not_used"
   | "tolerable_risk";
 
-export interface GithubDependabotAlertPackage {
-  ecosystem: string;
-  name: string;
-}
+// Generated from the vendored GitHub OpenAPI description (WEB-013).
+export type GithubDependabotAlertPackage = components["schemas"]["dependabot-alert-package"];
 
 export interface GithubDependabotAlert {
   number: number;
@@ -1625,12 +1603,8 @@ export interface GithubOrgSimple {
 }
 
 /** One repository row of GET /orgs/{org}/properties/values. */
-export interface GithubOrgRepoCustomPropertyValues {
-  repository_id: number;
-  repository_name: string;
-  repository_full_name: string;
-  properties: { property_name: string; value: unknown }[];
-}
+// Generated from the vendored GitHub OpenAPI description (WEB-013).
+export type GithubOrgRepoCustomPropertyValues = components["schemas"]["org-repo-custom-property-values"];
 
 /** Wait-timer / required-reviewers rule nested in the environment object. */
 export interface GithubEnvironmentProtectionRule {
