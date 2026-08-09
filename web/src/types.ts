@@ -774,13 +774,8 @@ export interface BleephubTeam {
   created_at: string;
 }
 
-export interface GithubTeamMember {
-  id: number;
-  login: string;
-  avatar_url: string;
-  type: string;
-  role?: "member" | "maintainer" | "all";
-}
+// Generated from the vendored GitHub OpenAPI description (WEB-013).
+export type GithubTeamMember = components["schemas"]["team-member"];
 
 // Generated from the vendored GitHub OpenAPI description (WEB-013).
 export type GithubTeamMembership = components["schemas"]["team-membership"];
@@ -1206,23 +1201,8 @@ export interface GithubPackage {
   repository: BleephubRepo | null;
 }
 
-export interface GithubPackageVersion {
-  id: number;
-  name: string;
-  url: string;
-  package_html_url: string;
-  html_url: string;
-  license: string | null;
-  description: string;
-  created_at: string;
-  updated_at: string;
-  deleted_at?: string;
-  metadata: {
-    package_type: GithubPackageType;
-    container?: { tags: string[] };
-    docker?: { tag: string[] };
-  };
-}
+// Generated from the vendored GitHub OpenAPI description (WEB-013).
+export type GithubPackageVersion = components["schemas"]["package-version"];
 
 export interface GithubPackageFile {
   id: number;
@@ -1531,17 +1511,8 @@ export interface GithubOrgRoleUser extends GithubAccount {
 
 // ─── Enterprise administration ──────────────────────────────────────────
 
-export interface GithubEnterpriseTeam {
-  id: number;
-  name: string;
-  slug: string;
-  description: string | null;
-  organization_selection_type: string;
-  group_id: string | null;
-  notification_setting: string;
-  created_at: string;
-  updated_at: string;
-}
+// Generated from the vendored GitHub OpenAPI description (WEB-013).
+export type GithubEnterpriseTeam = components["schemas"]["enterprise-team"];
 
 export interface GithubEnterpriseDependabotAccess {
   default_level: string | null;
@@ -1642,19 +1613,8 @@ export type GithubDeploymentState =
   | "success";
 
 /** Deployment status — GET .../deployments/{id}/statuses (items). */
-export interface GithubDeploymentStatus {
-  id: number;
-  node_id: string;
-  state: GithubDeploymentState;
-  creator: { login: string } | null;
-  description: string;
-  environment: string;
-  target_url: string;
-  log_url: string;
-  environment_url: string;
-  created_at: string;
-  updated_at: string;
-}
+// Generated from the vendored GitHub OpenAPI description (WEB-013).
+export type GithubDeploymentStatus = components["schemas"]["deployment-status"];
 
 // ─── PR reviews, statuses, reactions & timeline ─────────────────────────
 
