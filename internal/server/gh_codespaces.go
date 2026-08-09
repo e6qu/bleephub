@@ -1080,13 +1080,15 @@ func (s *Server) codespaceToJSON(live *Codespace, baseURL string) map[string]int
 		"devcontainer_path":        cs.DevcontainerPath,
 		"retention_period_minutes": cs.RetentionPeriodMinutes,
 		"idle_timeout_minutes":     cs.IdleTimeoutMinutes,
-		"location":                 cs.Location,
-		"machines_url":             url + "/machines",
-		"prebuild":                 false,
-		"pulls_url":                url + "/pulls",
-		"recent_folders":           []string{},
-		"start_url":                url + "/start",
-		"stop_url":                 url + "/stop",
+		// location is a non-empty region enum; a record without one (a pre-fix
+		// row) still reports a valid region (PAR-010).
+		"location":       coalesceStr(cs.Location, "EastUs"),
+		"machines_url":   url + "/machines",
+		"prebuild":       false,
+		"pulls_url":      url + "/pulls",
+		"recent_folders": []string{},
+		"start_url":      url + "/start",
+		"stop_url":       url + "/stop",
 	}
 }
 

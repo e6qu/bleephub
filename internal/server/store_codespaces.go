@@ -164,6 +164,12 @@ type codespaceCreateOptions struct {
 // the duration. If Docker cannot provision the requested image, the prepared
 // workspace is retained and promoted to the built-in lifecycle runtime.
 func (st *Store) CreateCodespace(ownerLogin, repoKey, gitRef, location string, opts codespaceCreateOptions) (*Codespace, error) {
+	if location == "" {
+		// GitHub assigns a region when the request names none; location is a
+		// non-empty enum (EastUs/SouthEastAsia/WestEurope/WestUs2), never ""
+		// (PAR-010).
+		location = "EastUs"
+	}
 	cs, workspace, cleanup, err := st.reserveCodespace(ownerLogin, repoKey, gitRef, location, opts)
 	if err != nil {
 		return nil, err

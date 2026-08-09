@@ -5668,8 +5668,8 @@
         "id": "PAR-010",
         "location": "openapi_shape_validator_test.go:414",
         "severity": "M",
-        "status": "open",
-        "status_kind": "open"
+        "status": "partial (owner decision) \u2014 prototyping `enum` checking in the shape validator surfaced 27 violations across 7 fields. FIVE were real bugs, now fixed: `state_reason` emitted `\"\"`/upper-case (REST is a lower-case nullable enum) \u2192 `nullIfEmpty(strings.ToLower(...))`; PR review `start_side` `\"\"` \u2192 null; issues `search_type` returned the subject \u2192 the required `\"lexical\"` algorithm value; code-scanning `dismissed_reason` used underscores + a non-GitHub `\"ignored\"` \u2192 GitHub's space forms, `ignored` removed (secret-scanning keeps its underscores); codespace `location` `\"\"` \u2192 a valid region. The remaining TWO are deliberate MODEL deviations that cannot be allowlisted (the gate ledger is at its `maxAllowlistEntries`=11 ceiling and may only shrink) nor cleanly fixed: installation `permissions.administration`/`organization_administration`/`organization_hooks` emit `admin` because bleephub's authz has a load-bearing `permAdmin` level GitHub's app-permission enum lacks; and `approval_policy=none` encodes fork-PR-approval-disabled, a state GitHub's enum does not model and the workflow-trigger gating depends on. Adding the enum check therefore needs an owner call: raise the allowlist ceiling for these justified deviations, or degrade bleephub's admin authz / fork-PR gating to GitHub's exact enums. See memory par010-enum-checking-scope.",
+        "status_kind": "partial"
       },
       {
         "category": "PAR",
@@ -6574,7 +6574,8 @@
         "PAR": {
           "status": {
             "fixed": 36,
-            "open": 3
+            "open": 2,
+            "partial": 1
           },
           "total": 39
         },
@@ -6617,8 +6618,8 @@
       "status": {
         "deferred": 1,
         "fixed": 652,
-        "open": 20,
-        "partial": 12
+        "open": 19,
+        "partial": 13
       },
       "total": 685
     }

@@ -281,7 +281,7 @@ func TestCodeScanningAutofix_NotEligible(t *testing.T) {
 	// Dismiss the alert; generation must refuse with a 422.
 	resp := ghPatch(t, fmt.Sprintf("/api/v3/repos/%s/code-scanning/alerts/%d", repo.FullName, number), defaultToken, map[string]interface{}{
 		"state":            "dismissed",
-		"dismissed_reason": "won't_fix",
+		"dismissed_reason": "won't fix",
 	})
 	mustStatus(t, resp, 200, "dismiss alert")
 	mustStatus(t, ghPost(t, autofixPath, defaultToken, nil), 422, "autofix for dismissed alert")

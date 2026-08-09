@@ -73,7 +73,7 @@ func TestOrgCampaigns_CRUD(t *testing.T) {
 	// Dismissing the linked alert moves it to the closed count.
 	patchAlert := ghPatch(t, "/api/v3/repos/"+org+"/"+repoName+"/code-scanning/alerts/"+itoa(alertNumber), defaultToken, map[string]interface{}{
 		"state":            "dismissed",
-		"dismissed_reason": "won't_fix",
+		"dismissed_reason": "won't fix",
 	})
 	patchAlert.Body.Close()
 	if patchAlert.StatusCode != 200 {
