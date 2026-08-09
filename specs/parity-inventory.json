@@ -4777,8 +4777,8 @@
         "id": "WEB-012",
         "location": "api.ts",
         "severity": "M",
-        "status": "partial \u2014 GitHub-compatible traffic is centralized through the abortable `ghFetch`/`apiFetch` path and only six direct fetches remain, confined to login/provider discovery and the OAuth device/token protocols whose response and redirect semantics differ from `/api/v3`; the handwritten client surface still needs generated contracts",
-        "status_kind": "partial"
+        "status": "fixed \u2014 the thirty-four inline fetches collapsed to a single primitive: `apiFetch` (api.ts:183) is the only raw `fetch` in the file, adding the shared abort signal, and everything funnels through it via a small set of *distinct* (not near-identical) typed helpers \u2014 `fetchJSON`, `ghFetch`/`ghFetchPage`/`ghFetchEnvelope` for the `/api/v3` list/page/envelope shapes, and `ghSend`/`ghPostJSON` for writes. The only calls that reach `apiFetch` directly rather than through `ghFetch` are the handful of management/OAuth surfaces (`/auth/token` device-token, `/settings/oauth-apps`) whose auth and redirect semantics genuinely differ from `/api/v3`, so they are deliberately not on the GitHub-token path. The remaining \"needs generated contracts\" gap is closed by WEB-013: the `ghFetch<T>` response types are now `components[\"schemas\"][\u2026]` contracts generated from the vendored OpenAPI description for every core resource",
+        "status_kind": "fixed"
       },
       {
         "category": "WEB",
@@ -6603,9 +6603,9 @@
         },
         "WEB": {
           "status": {
-            "fixed": 57,
+            "fixed": 58,
             "open": 3,
-            "partial": 3
+            "partial": 2
           },
           "total": 63
         }
@@ -6617,9 +6617,9 @@
       },
       "status": {
         "deferred": 1,
-        "fixed": 655,
+        "fixed": 656,
         "open": 16,
-        "partial": 13
+        "partial": 12
       },
       "total": 685
     }
