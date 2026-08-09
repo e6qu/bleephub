@@ -1176,9 +1176,15 @@ func (st *Store) SetPersistence(p *Persistence) error {
 		// before/after revision-stable reconciler as request-time refreshes;
 		// otherwise startup could bless a cross-bucket partial snapshot as the
 		// newest revision and never reload it.
-		return st.refreshFromPersistence(true)
+		if err := st.refreshFromPersistence(true); err != nil {
+			return err
+		}
+		return st.backfillLoginSessionUserIndex()
 	}
-	return st.setPersistence(p, true)
+	if err := st.setPersistence(p, true); err != nil {
+		return err
+	}
+	return st.backfillLoginSessionUserIndex()
 }
 
 func (st *Store) setPersistence(p *Persistence, observeRevision bool) error {

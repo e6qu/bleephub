@@ -3931,8 +3931,8 @@
         "id": "STORE-025",
         "location": "store.go:958, persistence.go:211",
         "severity": "M",
-        "status": "partial \u2014 the scheduler now reaps expired login sessions hourly through a deterministic-clock, transactional deletion pass that survives restart and retries after persistence failure. Per-user logout still scans the bounded session bucket rather than using a secondary user index",
-        "status_kind": "partial"
+        "status": "fixed \u2014 the scheduler now reaps expired login sessions hourly through a deterministic-clock, transactional deletion pass that survives restart and retries after persistence failure. And per-user logout no longer lists and decodes the whole durable session bucket: a durable secondary index (`login_sessions_by_user`, one row per session keyed `<userID>:<sessionStorageKey>`) is written in the same `persistBatch` as each session, so `DeleteLoginSessionsForUser` resolves a user's sessions with a bounded prefix scan (new `Persistence.ListPrefix`, an indexed `[prefix, prefix++)` range query). Because it reads durable state it revokes sessions this replica never cached, including ones created on other replicas \u2014 the property the old full scan provided and an in-memory index would have lost. The index is a superset of live sessions (Put adds atomically, so revocation never misses one; the bespoke OIDC back-channel transaction may leave a harmless stale row reclaimed at the next per-user purge), and `SetPersistence` backfills it once at startup so upgrades and drift self-heal. Reap/DeleteLoginSession/OIDC-delete drop index rows alongside their sessions. Cross-replica + backfill + disambiguation regressions in store_login_session_index_test.go. (The in-memory cache eviction still iterates the bounded in-memory map, which does no I/O.)",
+        "status_kind": "fixed"
       },
       {
         "category": "STORE",
@@ -6587,9 +6587,9 @@
         },
         "STORE": {
           "status": {
-            "fixed": 69,
+            "fixed": 70,
             "open": 1,
-            "partial": 8
+            "partial": 7
           },
           "total": 78
         },
@@ -6617,9 +6617,9 @@
       },
       "status": {
         "deferred": 1,
-        "fixed": 644,
+        "fixed": 645,
         "open": 23,
-        "partial": 17
+        "partial": 16
       },
       "total": 685
     }

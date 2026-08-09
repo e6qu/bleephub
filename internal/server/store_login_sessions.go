@@ -4,6 +4,8 @@ import (
 	"crypto/sha256"
 	"encoding/json"
 	"fmt"
+	"strconv"
+	"strings"
 	"time"
 )
 
@@ -11,7 +13,42 @@ const (
 	loginSessionsBucket    = "login_sessions"
 	oidcLogoutClaimsBucket = "oidc_logout_claims"
 	loginSessionReapPeriod = time.Hour
+	// loginSessionsByUserBucket is a durable secondary index: one row per
+	// session keyed by `<userID>\x00<sessionStorageKey>`, so every session a
+	// user holds is fetched by a bounded prefix scan (STORE-025) instead of
+	// listing and decoding the whole session bucket on a per-user logout. It is
+	// a superset of live sessions — PutLoginSession writes the index row in the
+	// same batch as the session, so revocation never misses a live session;
+	// harmless stale rows (a session dropped by the bespoke OIDC back-channel
+	// transaction) are reclaimed the next time that user's sessions are purged.
+	loginSessionsByUserBucket = "login_sessions_by_user"
+	// loginSessionUserIndexSep separates the numeric user id from the session
+	// storage key. ':' is not a digit, so it cleanly bounds one user's prefix
+	// range (`1:` never overlaps `12:`), and — unlike a NUL byte — it carries no
+	// embedded-NUL-in-TEXT risk across SQLite/dqlite drivers. The session key
+	// suffix may itself contain ':' (it is `hmac:v1:…`); the FIRST separator is
+	// always the one after the all-digit user id.
+	loginSessionUserIndexSep = ":"
 )
+
+// loginSessionUserIndexKey composes the secondary-index row key.
+func loginSessionUserIndexKey(userID int, sessionStorageKey string) string {
+	return strconv.Itoa(userID) + loginSessionUserIndexSep + sessionStorageKey
+}
+
+func loginSessionUserIndexPrefix(userID int) string {
+	return strconv.Itoa(userID) + loginSessionUserIndexSep
+}
+
+// sessionStorageKeyFromIndexKey recovers the session storage key an index row
+// points at (everything after the first separator; the user id is all digits so
+// the first ':' is unambiguously the separator).
+func sessionStorageKeyFromIndexKey(indexKey string) string {
+	if i := strings.Index(indexKey, loginSessionUserIndexSep); i >= 0 {
+		return indexKey[i+len(loginSessionUserIndexSep):]
+	}
+	return ""
+}
 
 type oidcLogoutReplayMarker struct {
 	ExpiresAt time.Time `json:"expires_at"`
@@ -56,13 +93,19 @@ func (st *Store) PutLoginSession(id string, session *LoginSession) error {
 	st.mu.Lock()
 	defer st.mu.Unlock()
 	persist := st.persist
+	mapKey := loginSessionMapKey(persist, id)
 	if persist != nil {
-		if err := persist.Put(loginSessionsBucket, id, session); err != nil {
+		// The session row and its secondary-index row commit together so the
+		// index can never miss a session that exists (STORE-025).
+		batch := newPersistBatch(persist)
+		batch.Put(loginSessionsBucket, id, session)
+		batch.Put(loginSessionsByUserBucket, loginSessionUserIndexKey(session.UserID, mapKey), struct{}{})
+		if err := batch.Commit(); err != nil {
 			return fmt.Errorf("persist login session: %w", err)
 		}
 	}
 	copy := *session
-	st.LoginSessions[loginSessionMapKey(persist, id)] = &copy
+	st.LoginSessions[mapKey] = &copy
 	return nil
 }
 
@@ -120,6 +163,9 @@ func (st *Store) ReapExpiredLoginSessions(now time.Time) error {
 			}
 			reaped[id] = struct{}{}
 			entries = append(entries, persistencePut{bucket: loginSessionsBucket, key: id})
+			// Drop the session's secondary-index row in the same batch (id is the
+			// session's storage key, exactly what the index row embeds).
+			entries = append(entries, persistencePut{bucket: loginSessionsByUserBucket, key: loginSessionUserIndexKey(session.UserID, id)})
 		}
 		if err := persist.DeleteBatch(entries...); err != nil {
 			st.resetLoginSessionReap()
@@ -134,6 +180,34 @@ func (st *Store) ReapExpiredLoginSessions(now time.Time) error {
 		}
 	}
 	st.mu.Unlock()
+	return nil
+}
+
+// backfillLoginSessionUserIndex upserts a secondary-index row for every session
+// currently loaded, so the per-user index is complete after startup regardless
+// of history: sessions written before the index existed (an upgrade) and any
+// drift are healed here. It runs once per process at SetPersistence, never on a
+// request-time refresh, and is idempotent — the rows are upserts. A dqlite peer
+// starting concurrently writes the same rows to the same keys, so replicas do
+// not clobber one another.
+func (st *Store) backfillLoginSessionUserIndex() error {
+	st.mu.RLock()
+	persist := st.persist
+	keys := make([]string, 0, len(st.LoginSessions))
+	for storageKey, session := range st.LoginSessions {
+		keys = append(keys, loginSessionUserIndexKey(session.UserID, storageKey))
+	}
+	st.mu.RUnlock()
+	if persist == nil || len(keys) == 0 {
+		return nil
+	}
+	batch := newPersistBatch(persist)
+	for _, key := range keys {
+		batch.Put(loginSessionsByUserBucket, key, struct{}{})
+	}
+	if err := batch.Commit(); err != nil {
+		return fmt.Errorf("backfill login-session user index: %w", err)
+	}
 	return nil
 }
 
@@ -192,12 +266,30 @@ func (st *Store) GetLoginSession(id string) (*LoginSession, error) {
 func (st *Store) DeleteLoginSession(id string) error {
 	st.mu.RLock()
 	persist := st.persist
+	cached := st.LoginSessions[loginSessionMapKey(persist, id)]
 	st.mu.RUnlock()
 	mapKey := loginSessionMapKey(persist, id)
 	if persist != nil {
+		// Resolve the owner so the secondary-index row can be dropped too. Prefer
+		// the in-memory copy; fall back to a point read for a session this
+		// replica never cached.
+		userID := -1
+		if cached != nil {
+			userID = cached.UserID
+		} else if raw, err := persist.Get(loginSessionsBucket, id); err == nil && raw != nil {
+			var s LoginSession
+			if json.Unmarshal(raw, &s) == nil {
+				userID = s.UserID
+			}
+		}
 		// Delete by the digested key so a client cannot delete an arbitrary
 		// session by presenting its stored "hmac:v1:" row key.
-		if err := persist.Delete(loginSessionsBucket, mapKey); err != nil {
+		batch := newPersistBatch(persist)
+		batch.Delete(loginSessionsBucket, mapKey)
+		if userID >= 0 {
+			batch.Delete(loginSessionsByUserBucket, loginSessionUserIndexKey(userID, mapKey))
+		}
+		if err := batch.Commit(); err != nil {
 			return fmt.Errorf("delete login session: %w", err)
 		}
 	}
@@ -211,24 +303,24 @@ func (st *Store) DeleteLoginSessionsForUser(userID int) error {
 	st.mu.RLock()
 	persist := st.persist
 	st.mu.RUnlock()
-	ids := map[string]struct{}{}
 	if persist != nil {
-		rows, err := persist.List(loginSessionsBucket)
+		// The secondary index gives this user's session rows by a bounded prefix
+		// scan, so a per-user purge no longer lists and decodes the entire
+		// session bucket (STORE-025). It reads durable state, so it revokes
+		// sessions this replica never cached, including ones created elsewhere.
+		idxRows, err := persist.ListPrefix(loginSessionsByUserBucket, loginSessionUserIndexPrefix(userID))
 		if err != nil {
-			return fmt.Errorf("list login sessions: %w", err)
+			return fmt.Errorf("list login-session index for user %d: %w", userID, err)
 		}
-		for id, raw := range rows {
-			var session LoginSession
-			if err := json.Unmarshal(raw, &session); err != nil {
-				return fmt.Errorf("decode login session %s: %w", id, err)
+		entries := make([]persistencePut, 0, 2*len(idxRows))
+		for indexKey := range idxRows {
+			sessionKey := sessionStorageKeyFromIndexKey(indexKey)
+			if sessionKey == "" {
+				continue
 			}
-			if session.UserID == userID {
-				ids[id] = struct{}{}
-			}
-		}
-		entries := make([]persistencePut, 0, len(ids))
-		for id := range ids {
-			entries = append(entries, persistencePut{bucket: loginSessionsBucket, key: id})
+			entries = append(entries,
+				persistencePut{bucket: loginSessionsBucket, key: sessionKey},
+				persistencePut{bucket: loginSessionsByUserBucket, key: indexKey})
 		}
 		if err := persist.DeleteBatch(entries...); err != nil {
 			return fmt.Errorf("delete login sessions: %w", err)
@@ -254,24 +346,30 @@ func (st *Store) DeleteLoginSessionsForOIDC(provider, issuer, sid, subject strin
 	matches := func(session *LoginSession) bool {
 		return oidcLoginSessionMatches(session, provider, issuer, sid, subject)
 	}
-	ids := map[string]struct{}{}
 	if persist != nil {
 		rows, err := persist.List(loginSessionsBucket)
 		if err != nil {
 			return fmt.Errorf("list OpenID Connect login sessions: %w", err)
 		}
+		type sessionRef struct {
+			id     string
+			userID int
+		}
+		var refs []sessionRef
 		for id, raw := range rows {
 			var session LoginSession
 			if err := json.Unmarshal(raw, &session); err != nil {
 				return fmt.Errorf("decode OpenID Connect login session %s: %w", id, err)
 			}
 			if matches(&session) {
-				ids[id] = struct{}{}
+				refs = append(refs, sessionRef{id: id, userID: session.UserID})
 			}
 		}
-		entries := make([]persistencePut, 0, len(ids))
-		for id := range ids {
-			entries = append(entries, persistencePut{bucket: loginSessionsBucket, key: id})
+		entries := make([]persistencePut, 0, 2*len(refs))
+		for _, ref := range refs {
+			entries = append(entries,
+				persistencePut{bucket: loginSessionsBucket, key: ref.id},
+				persistencePut{bucket: loginSessionsByUserBucket, key: loginSessionUserIndexKey(ref.userID, ref.id)})
 		}
 		if err := persist.DeleteBatch(entries...); err != nil {
 			return fmt.Errorf("delete OpenID Connect login sessions: %w", err)
