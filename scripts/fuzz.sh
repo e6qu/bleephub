@@ -37,11 +37,38 @@ fi
 echo "bleephub-fuzz: ${#targets[@]} target(s), ${FUZZTIME} each"
 
 failed=()
+# run_target fuzzes one target and prints its combined output. -run '^$' skips
+# the ordinary tests so only the named target is fuzzed.
+run_target() {
+  GOWORK=off go test -tags noui -run '^$' \
+    -fuzz "^${1}\$" -fuzztime "${FUZZTIME}" "${FUZZPKG}" 2>&1
+}
+
 for target in "${targets[@]}"; do
   echo "::group::${target}"
-  # -run '^$' skips the ordinary tests: only the named target is fuzzed.
-  if GOWORK=off go test -tags noui -run '^$' \
-    -fuzz "^${target}\$" -fuzztime "${FUZZTIME}" "${FUZZPKG}"; then
+  if out=$(run_target "${target}"); then
+    status=0
+  else
+    status=$?
+  fi
+  # A real crasher writes a reproducer under testdata/fuzz/<target>/ ("Failing
+  # input written") or prints a panic. A bare "context deadline exceeded" with
+  # neither is the fuzz coordinator being interrupted at -fuzztime under CI load,
+  # not a bug — retry once. A genuinely slow input reproduces on the retry and
+  # still fails the gate; a transient deadline does not.
+  if [[ ${status} -ne 0 ]] \
+    && ! grep -q 'Failing input written' <<<"${out}" \
+    && ! grep -q 'panic:' <<<"${out}" \
+    && grep -q 'context deadline exceeded' <<<"${out}"; then
+    echo "bleephub-fuzz: ${target} hit a fuzz-coordinator deadline with no reproducer; retrying once" >&2
+    if out=$(run_target "${target}"); then
+      status=0
+    else
+      status=$?
+    fi
+  fi
+  printf '%s\n' "${out}"
+  if [[ ${status} -eq 0 ]]; then
     echo "bleephub-fuzz: ${target} OK"
   else
     failed+=("${target}")
