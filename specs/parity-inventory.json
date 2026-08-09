@@ -5335,8 +5335,8 @@
         "id": "TEST-011",
         "location": "bleephub_test.go:67",
         "severity": "M",
-        "status": "open",
-        "status_kind": "open"
+        "status": "fixed \u2014 a `ServerOption` can now inject an in-memory object byte store, so a full `BLEEPHUB_PERSIST=true` server (durable git dir + SQLite) stands up in-process without a live S3/MinIO endpoint. `TestPersistenceHTTPRoundTrip` creates a repository over HTTP against one server, then a second server pointed at the same durable state serves that repository back over HTTP \u2014 the create\u2192restart\u2192read-back round trip the shared (persistence-disabled) suite never exercised",
+        "status_kind": "fixed"
       },
       {
         "category": "TEST",
@@ -6595,8 +6595,8 @@
         },
         "TEST": {
           "status": {
-            "fixed": 32,
-            "open": 7,
+            "fixed": 33,
+            "open": 6,
             "partial": 1
           },
           "total": 40
@@ -6617,8 +6617,8 @@
       },
       "status": {
         "deferred": 1,
-        "fixed": 647,
-        "open": 22,
+        "fixed": 648,
+        "open": 21,
         "partial": 15
       },
       "total": 685
