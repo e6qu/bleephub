@@ -1459,27 +1459,12 @@ export type GithubCustomPropertyValueType =
   | "true_false"
   | "url";
 
-export interface GithubCustomProperty {
-  property_name: string;
-  value_type: GithubCustomPropertyValueType;
-  required: boolean;
-  default_value: unknown;
-  description: string | null;
-  allowed_values?: string[];
-  values_editable_by: string;
-  require_explicit_values: boolean;
-}
+// Generated from the vendored GitHub OpenAPI description (WEB-013).
+export type GithubCustomProperty = components["schemas"]["custom-property"];
 
-export interface GithubIssueType {
-  id: number;
-  node_id: string;
-  name: string;
-  description: string | null;
-  color: string | null;
-  is_enabled: boolean;
-  created_at: string;
-  updated_at: string;
-}
+// Generated from the vendored GitHub OpenAPI description (WEB-013). The spec
+// models the whole type nullable; NonNullable strips that for list consumers.
+export type GithubIssueType = NonNullable<components["schemas"]["issue-type"]>;
 
 export interface GithubOrgRole {
   id: number;
