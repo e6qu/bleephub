@@ -540,13 +540,9 @@ func buildJobMessage(serverURL, jobID, planID, timelineID string, requestID int6
 				"workspace", "/github/workspace",
 				"token", jobToken,
 			),
-			"runner": dictContextData(
-				"os", "Linux",
-				"arch", "ARM64",
-				"name", "test-runner",
-				"tool_cache", "/opt/hostedtoolcache",
-				"temp", "/home/runner/work/_temp",
-			),
+			// Built runner-agnostic; the broker rebinds this to the leasing
+			// agent at delivery (ACT-051, rebindRunnerContext).
+			"runner":   runnerContextData(nil),
 			"env":      dictContextData(),
 			"vars":     dictContextData(),
 			"needs":    dictContextData(),

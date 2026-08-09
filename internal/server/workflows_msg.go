@@ -1,6 +1,7 @@
 package bleephub
 
 import (
+	"encoding/json"
 	"fmt"
 	"regexp"
 	"sort"
@@ -294,13 +295,9 @@ func (s *Server) buildJobMessageFromDef(serverURL string, wf *Workflow, wfJob *W
 		},
 		"contextData": map[string]interface{}{
 			"github": toPipelineContextData(githubRunnerContext(s, wf, wfJob, serverURL, jobToken)),
-			"runner": dictContextData(
-				"os", "Linux",
-				"arch", "ARM64",
-				"name", "test-runner",
-				"tool_cache", "/opt/hostedtoolcache",
-				"temp", "/home/runner/work/_temp",
-			),
+			// Built runner-agnostic; the broker rebinds this to the leasing
+			// agent at delivery (ACT-051, rebindRunnerContext).
+			"runner":   runnerContextData(nil),
 			"env":      dictContextData(envPairs...),
 			"vars":     dictContextData(varsPairs...),
 			"secrets":  dictContextData(secretsPairs...),
@@ -679,6 +676,111 @@ func varVal(value string) map[string]interface{} {
 		"value":    value,
 		"isSecret": false,
 	}
+}
+
+// runnerContextData builds the `runner` pipeline context (os/arch/name and the
+// OS-appropriate tool_cache/temp paths). A queued job message is built before a
+// runner is known, so a nil agent yields generic defaults; the broker rebinds
+// this block to the actual leasing agent at delivery (ACT-051) so
+// `${{ runner.os }}`, `runner.arch` and `runner.name` reflect the runner that
+// ran the job rather than a fixed placeholder.
+func runnerContextData(agent *Agent) map[string]interface{} {
+	osName, arch, name := "Linux", "X64", "test-runner"
+	if agent != nil {
+		if agent.Name != "" {
+			name = agent.Name
+		}
+		osName = runnerContextOS(agent)
+		arch = runnerContextArch(agent)
+	}
+	toolCache, temp := "/opt/hostedtoolcache", "/home/runner/work/_temp"
+	switch osName {
+	case "Windows":
+		toolCache, temp = `C:\hostedtoolcache\windows`, `C:\a\_temp`
+	case "macOS":
+		toolCache, temp = "/Users/runner/hostedtoolcache", "/Users/runner/work/_temp"
+	}
+	return dictContextData(
+		"os", osName,
+		"arch", arch,
+		"name", name,
+		"tool_cache", toolCache,
+		"temp", temp,
+	)
+}
+
+// runnerContextOS maps a registered agent to the canonical `runner.os` value
+// GitHub exposes ("Linux"/"Windows"/"macOS"). A self-reported OS label wins
+// over the free-form OS description.
+func runnerContextOS(agent *Agent) string {
+	for _, l := range agent.Labels {
+		switch strings.ToLower(l.Name) {
+		case "linux":
+			return "Linux"
+		case "windows":
+			return "Windows"
+		case "macos":
+			return "macOS"
+		}
+	}
+	switch osFromDescription(agent.OSDescription) {
+	case "windows":
+		return "Windows"
+	case "macos":
+		return "macOS"
+	default:
+		return "Linux"
+	}
+}
+
+// runnerContextArch maps a registered agent to the canonical `runner.arch`
+// value ("X64"/"ARM"/"ARM64"), preferring a self-reported architecture label
+// and falling back to tokens in the OS description.
+func runnerContextArch(agent *Agent) string {
+	for _, l := range agent.Labels {
+		switch strings.ToLower(l.Name) {
+		case "arm64":
+			return "ARM64"
+		case "arm":
+			return "ARM"
+		case "x64", "x86_64", "amd64":
+			return "X64"
+		}
+	}
+	d := strings.ToLower(agent.OSDescription)
+	switch {
+	case strings.Contains(d, "arm64"), strings.Contains(d, "aarch64"):
+		return "ARM64"
+	case strings.Contains(d, "arm"):
+		return "ARM"
+	default:
+		return "X64"
+	}
+}
+
+// rebindRunnerContext rewrites the `contextData.runner` block of a serialized
+// job message to reflect the agent that leased it. It is idempotent — a
+// redelivered message is simply rebound to whichever runner next takes it. The
+// original bytes are returned unchanged if the message is not a job request in
+// the expected shape.
+func rebindRunnerContext(bodyJSON string, agent *Agent) string {
+	if agent == nil {
+		return bodyJSON
+	}
+	var m map[string]interface{}
+	if err := json.Unmarshal([]byte(bodyJSON), &m); err != nil {
+		return bodyJSON
+	}
+	cd, ok := m["contextData"].(map[string]interface{})
+	if !ok {
+		return bodyJSON
+	}
+	cd["runner"] = runnerContextData(agent)
+	out, err := json.Marshal(m)
+	if err != nil {
+		return bodyJSON
+	}
+	return string(out)
 }
 
 func varSecret(value string) map[string]interface{} {

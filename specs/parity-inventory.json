@@ -3616,8 +3616,8 @@
         "id": "ACT-049",
         "location": "workflow_schedule.go:35",
         "severity": "m",
-        "status": "partial \u2014 parse errors are now structured warnings with repository, file, cron, and timezone context; the dispatcher still re-reads and re-parses every default-branch workflow every minute instead of maintaining an indexed schedule",
-        "status_kind": "partial"
+        "status": "fixed \u2014 parse errors are now structured warnings with repository, file, cron, and timezone context; and the dispatcher no longer re-reads and re-parses every default-branch workflow every minute: a `scheduleIndex` cache holds each repo's parsed, cron-validated schedule keyed by the default-branch tip commit (`resolveRefSha`), rebuilt only when that tip moves (`buildScheduleIndex`), so a steady-state tick reduces to cron-matching against pre-parsed entries. The cache is pruned to live repos each tick (`retain`). Regression `TestScheduleIndexRebuildsOnlyOnTipChange` asserts one rebuild across two unchanged-tip ticks and a second rebuild after the tip advances",
+        "status_kind": "fixed"
       },
       {
         "category": "ACT",
@@ -3634,8 +3634,8 @@
         "id": "ACT-051",
         "location": "workflows_msg.go:280",
         "severity": "m",
-        "status": "partial \u2014 workflow/job workflow ref and SHA fields now reach the runner context, including reusable-workflow identity; runner OS/architecture/name still need late binding to the agent that actually leases the queued message",
-        "status_kind": "partial"
+        "status": "fixed \u2014 workflow/job workflow ref and SHA fields now reach the runner context, including reusable-workflow identity; and runner OS/architecture/name are now late-bound to the agent that actually leases the queued message: the job message is built runner-agnostically (`runnerContextData(nil)`) and the broker rewrites `contextData.runner` (os/arch/name plus OS-appropriate tool_cache/temp) to the leasing agent at delivery in `pullPendingMessage` (`rebindRunnerContext`, idempotent so a requeue rebinds afresh). OS/arch derive from the agent's self-reported labels, falling back to its OS description. Regressions `TestRunnerContextDerivedFromAgent` and `TestLeasedJobRebindsRunnerContext`",
+        "status_kind": "fixed"
       },
       {
         "category": "ACT",
@@ -6531,9 +6531,9 @@
       "categories": {
         "ACT": {
           "status": {
-            "fixed": 56,
+            "fixed": 58,
             "open": 1,
-            "partial": 4
+            "partial": 2
           },
           "total": 61
         },
@@ -6617,9 +6617,9 @@
       },
       "status": {
         "deferred": 1,
-        "fixed": 641,
+        "fixed": 643,
         "open": 23,
-        "partial": 20
+        "partial": 18
       },
       "total": 685
     }
