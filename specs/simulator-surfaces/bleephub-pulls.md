@@ -8,6 +8,7 @@ Canonical reference: <https://docs.github.com/en/enterprise-server/rest/pulls>
 
 - ✓ — implemented + tested
 - ✗ — implemented, no direct test coverage
+- ○ — not implemented (no REST simulator handler; GitHub exposes it only elsewhere)
 
 ## Pull request CRUD
 
@@ -33,8 +34,8 @@ Canonical reference: <https://docs.github.com/en/enterprise-server/rest/pulls>
 |---|---|---|---|---|
 | Create PR comment | `POST /api/v3/repos/{owner}/{repo}/pulls/{number}/comments` | ✓ `gh_pr_comments.go::handleCreatePRComment` | ✓ `gh_pr_comments_test.go` | Inline diff comments. |
 | List PR comments | `GET /api/v3/repos/{owner}/{repo}/pulls/{number}/comments` | ✓ `handleListPRComments` | ✓ same | |
-| Reply to PR comment | `POST /api/v3/repos/{owner}/{repo}/pulls/{number}/comments/{comment_id}/replies` | ✓ `handleReplyToPRComment` | ✓ same | |
-| List review threads | `GET /api/v3/repos/{owner}/{repo}/pulls/{number}/review-threads` | ✓ `handleListReviewThreads` | ✓ same | |
-| Get PR comment (dispatch) | `GET /api/v3/repos/{owner}/{repo}/pulls/{p1}/{p2}` | ✓ `handlePRCommentDispatch` | ✓ same | Routes sub-resource GET. |
-| Update PR comment (dispatch) | `PATCH /api/v3/repos/{owner}/{repo}/pulls/{p1}/{p2}` | ✓ `handlePRCommentUpdateDispatch` | ✓ same | |
-| Delete PR comment (dispatch) | `DELETE /api/v3/repos/{owner}/{repo}/pulls/{p1}/{p2}` | ✓ `handlePRCommentDeleteDispatch` | ✓ same | |
+| Reply to PR comment | `POST /api/v3/repos/{owner}/{repo}/pulls/{number}/comments/{comment_id}/replies` | ✓ `handleReplyPRComment` | ✓ same | |
+| List review threads | `GET /api/v3/repos/{owner}/{repo}/pulls/{number}/review-threads` | ○ — | — | GitHub exposes review threads only via GraphQL (`reviewThreads` connection), not REST; no simulator REST handler |
+| Get PR comment (dispatch) | `GET /api/v3/repos/{owner}/{repo}/pulls/{p1}/{p2}` | ✓ `handlePRCommentTwoSegDispatch` | ✓ same | Routes sub-resource GET. |
+| Update PR comment (dispatch) | `PATCH /api/v3/repos/{owner}/{repo}/pulls/{p1}/{p2}` | ✓ `handlePRCommentTwoSegDispatch` | ✓ same | |
+| Delete PR comment (dispatch) | `DELETE /api/v3/repos/{owner}/{repo}/pulls/{p1}/{p2}` | ✓ `handlePRCommentTwoSegDispatch` | ✓ same | |

@@ -5740,8 +5740,8 @@
         "id": "PAR-018",
         "location": "specs/simulator-surfaces/",
         "severity": "M",
-        "status": "open",
-        "status_kind": "open"
+        "status": "fixed \u2014 the 19 stale handler citations in specs/simulator-surfaces/*.md are corrected to the current (renamed/consolidated) handler names (`handleRunLogs`, `handleReleaseTwoSegDispatch`, the generic reaction/PR-comment dispatchers, \u2026), and the one genuinely-unimplemented operation (List review threads, which GitHub exposes only via GraphQL) is marked with a new `\u25cb \u2014 not implemented` legend symbol added to every surface file. A guard test (`TestSimulatorSurfaceCitationsResolve`) parses the tables and fails if any implemented-row citation names a handler absent from the package, so the citations cannot drift again",
+        "status_kind": "fixed"
       },
       {
         "category": "PAR",
@@ -6574,8 +6574,8 @@
         },
         "PAR": {
           "status": {
-            "fixed": 34,
-            "open": 5
+            "fixed": 35,
+            "open": 4
           },
           "total": 39
         },
@@ -6617,8 +6617,8 @@
       },
       "status": {
         "deferred": 1,
-        "fixed": 645,
-        "open": 23,
+        "fixed": 646,
+        "open": 22,
         "partial": 16
       },
       "total": 685

@@ -8,6 +8,7 @@ Canonical reference: <https://docs.github.com/en/enterprise-server/rest/issues>
 
 - ✓ — implemented + tested
 - ✗ — implemented, no direct test coverage
+- ○ — not implemented (no REST simulator handler; GitHub exposes it only elsewhere)
 
 ## Issues
 
@@ -54,9 +55,9 @@ Canonical reference: <https://docs.github.com/en/enterprise-server/rest/issues>
 
 | Operation | Verb + path | sim handler | test | notes |
 |---|---|---|---|---|
-| Create issue reaction | `POST /api/v3/repos/{owner}/{repo}/issues/{number}/reactions` | ✓ `gh_reactions.go::handleCreateIssueReaction` | ✓ `gh_reactions_test.go` | |
-| List issue reactions | `GET /api/v3/repos/{owner}/{repo}/issues/{number}/reactions` | ✓ `handleListIssueReactions` | ✓ same | |
-| Delete issue reaction | `DELETE /api/v3/repos/{owner}/{repo}/issues/{number}/reactions/{reaction_id}` | ✓ `handleDeleteIssueReaction` | ✓ same | |
-| Create comment reaction | `POST /api/v3/repos/{owner}/{repo}/issues/comments/{comment_id}/reactions` | ✓ `handleCreateIssueCommentReaction` | ✓ same | |
-| List comment reactions | `GET /api/v3/repos/{owner}/{repo}/issues/comments/{comment_id}/reactions` | ✓ `handleListIssueCommentReactions` | ✓ same | |
-| Delete comment reaction | `DELETE /api/v3/repos/{owner}/{repo}/issues/comments/{comment_id}/reactions/{reaction_id}` | ✓ `handleDeleteIssueCommentReaction` | ✓ same | |
+| Create issue reaction | `POST /api/v3/repos/{owner}/{repo}/issues/{number}/reactions` | ✓ `handleCreateReaction` | ✓ `gh_reactions_test.go` | |
+| List issue reactions | `GET /api/v3/repos/{owner}/{repo}/issues/{number}/reactions` | ✓ `handleListReactions` | ✓ same | |
+| Delete issue reaction | `DELETE /api/v3/repos/{owner}/{repo}/issues/{number}/reactions/{reaction_id}` | ✓ `handleDeleteReaction` | ✓ same | |
+| Create comment reaction | `POST /api/v3/repos/{owner}/{repo}/issues/comments/{comment_id}/reactions` | ✓ `handleCreateReaction` | ✓ same | |
+| List comment reactions | `GET /api/v3/repos/{owner}/{repo}/issues/comments/{comment_id}/reactions` | ✓ `handleListReactions` | ✓ same | |
+| Delete comment reaction | `DELETE /api/v3/repos/{owner}/{repo}/issues/comments/{comment_id}/reactions/{reaction_id}` | ✓ `handleDeleteReaction` | ✓ same | |

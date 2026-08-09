@@ -8,6 +8,7 @@ Canonical reference: <https://docs.github.com/en/enterprise-server/rest/releases
 
 - ✓ — implemented + tested
 - ✗ — implemented, no direct test coverage
+- ○ — not implemented (no REST simulator handler; GitHub exposes it only elsewhere)
 
 ## Releases
 
@@ -25,6 +26,6 @@ Canonical reference: <https://docs.github.com/en/enterprise-server/rest/releases
 
 | Operation | Verb + path | sim handler | test | notes |
 |---|---|---|---|---|
-| List release assets | `GET /api/v3/repos/{owner}/{repo}/releases/{p1}/{p2}` | ✓ `handleReleaseAssetsDispatch` | ✓ `gh_releases_test.go` | Routes GET on assets sub-resource. |
-| Upload / update asset | `POST /api/v3/repos/{owner}/{repo}/releases/{p1}/{p2}` | ✓ `handleReleaseAssetUploadDispatch` | ✓ same | |
-| Delete asset | `DELETE /api/v3/repos/{owner}/{repo}/releases/{p1}/{p2}/{p3}` | ✓ `handleReleaseAssetDeleteDispatch` | ✓ same | |
+| List release assets | `GET /api/v3/repos/{owner}/{repo}/releases/{p1}/{p2}` | ✓ `handleReleaseTwoSegDispatch` | ✓ `gh_releases_test.go` | Routes GET on assets sub-resource. |
+| Upload / update asset | `POST /api/v3/repos/{owner}/{repo}/releases/{p1}/{p2}` | ✓ `handleReleaseTwoSegDispatch` | ✓ same | |
+| Delete asset | `DELETE /api/v3/repos/{owner}/{repo}/releases/{p1}/{p2}/{p3}` | ✓ `handleReleaseThreeSegDispatch` | ✓ same | |
