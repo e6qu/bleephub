@@ -1,9 +1,11 @@
 package bleephub
 
 import (
+	"bytes"
 	"context"
 	"encoding/base64"
 	"errors"
+	"io"
 	"testing"
 )
 
@@ -28,6 +30,16 @@ func (m *flakyByteStore) Put(_ context.Context, key string, data []byte) error {
 }
 
 func (m *flakyByteStore) Get(_ context.Context, key string) ([]byte, error) { return m.blobs[key], nil }
+func (m *flakyByteStore) PutStream(ctx context.Context, key string, r io.Reader) error {
+	data, err := io.ReadAll(r)
+	if err != nil {
+		return err
+	}
+	return m.Put(ctx, key, data)
+}
+func (m *flakyByteStore) GetStream(_ context.Context, key string) (io.ReadCloser, error) {
+	return io.NopCloser(bytes.NewReader(m.blobs[key])), nil
+}
 func (m *flakyByteStore) Delete(_ context.Context, key string) error {
 	delete(m.blobs, key)
 	return nil

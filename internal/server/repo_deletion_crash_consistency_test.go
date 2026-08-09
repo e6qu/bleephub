@@ -2,6 +2,7 @@ package bleephub
 
 import (
 	"context"
+	"io"
 	"os"
 	"path/filepath"
 	"testing"
@@ -21,6 +22,10 @@ func (s *recordingDeleteByteStore) Put(context.Context, string, []byte) error { 
 func (s *recordingDeleteByteStore) Get(context.Context, string) ([]byte, error) {
 	return nil, os.ErrNotExist
 }
+func (s *recordingDeleteByteStore) PutStream(context.Context, string, io.Reader) error { return nil }
+func (s *recordingDeleteByteStore) GetStream(context.Context, string) (io.ReadCloser, error) {
+	return nil, os.ErrNotExist
+}
 func (s *recordingDeleteByteStore) Delete(_ context.Context, key string) error {
 	s.deleted[key] = true
 	return nil
@@ -28,6 +33,10 @@ func (s *recordingDeleteByteStore) Delete(_ context.Context, key string) error {
 
 func (s *blockingDeleteByteStore) Put(context.Context, string, []byte) error { return nil }
 func (s *blockingDeleteByteStore) Get(context.Context, string) ([]byte, error) {
+	return nil, os.ErrNotExist
+}
+func (s *blockingDeleteByteStore) PutStream(context.Context, string, io.Reader) error { return nil }
+func (s *blockingDeleteByteStore) GetStream(context.Context, string) (io.ReadCloser, error) {
 	return nil, os.ErrNotExist
 }
 func (s *blockingDeleteByteStore) Delete(_ context.Context, key string) error {

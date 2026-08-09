@@ -267,7 +267,7 @@
       },
       {
         "event": "registry_package",
-        "line": 138,
+        "line": 137,
         "producer": "emitWebhookEvent",
         "source": "internal/server/gh_packages.go"
       },
@@ -3877,8 +3877,8 @@
         "id": "STORE-019",
         "location": "object_bytes.go:18",
         "severity": "M",
-        "status": "partial \u2014 every request-body read is now bounded: the shared JSON decode path (`decodeJSONBody`/`decodeJSONBodyOptional` and the label decoder) caps at 25 MiB, and the binary-upload routes (release assets, container blobs/manifests, CodeQL databases, SARIF, markdown, branch protection, enterprise/user endpoints) wrap `r.Body` in `http.MaxBytesReader`, so no route buffers an unbounded body and an oversized one gets 413; the byte-store interface is still `[]byte`-buffered rather than streaming",
-        "status_kind": "partial"
+        "status": "fixed \u2014 every request-body read is now bounded: the shared JSON decode path (`decodeJSONBody`/`decodeJSONBodyOptional` and the label decoder) caps at 25 MiB, and the binary-upload routes (release assets, container blobs/manifests, CodeQL databases, SARIF, markdown, branch protection, enterprise/user endpoints) wrap `r.Body` in `http.MaxBytesReader`, so no route buffers an unbounded body and an oversized one gets 413; and the byte-store interface is no longer `[]byte`-only: `actionsByteStore` now offers `PutStream(io.Reader)` and `GetStream() io.ReadCloser` alongside the whole-value forms. The S3 backend implements them \u2014 `PutStream` stages the reader to a temp file (never the heap) while hashing it, then uploads with the SHA-256 in metadata; `GetStream` returns the object body as a stream. The object-store download path streams end-to-end (`servePackageFile` now `GetStream`+`io.Copy`, Content-Length from the recorded size, so a large package download no longer allocates its whole size in RAM). Uploads whose object key or checksum derives from the full body (container blob digests, CodeQL DB keys) necessarily still read it, but bounded by MaxBytesReader. Round-trip regression `TestByteStoreStreamingRoundTrip`",
+        "status_kind": "fixed"
       },
       {
         "category": "STORE",
@@ -6586,9 +6586,9 @@
         },
         "STORE": {
           "status": {
-            "fixed": 71,
+            "fixed": 72,
             "open": 1,
-            "partial": 6
+            "partial": 5
           },
           "total": 78
         },
@@ -6616,9 +6616,9 @@
       },
       "status": {
         "deferred": 1,
-        "fixed": 649,
+        "fixed": 650,
         "open": 21,
-        "partial": 14
+        "partial": 13
       },
       "total": 685
     }
@@ -19512,13 +19512,13 @@
         "source": "internal/server/gh_orgs_people_rest.go"
       },
       {
-        "line": 50,
+        "line": 49,
         "method": "DELETE",
         "path": "/api/v3/orgs/{org}/packages/{package_type}/{package_name}",
         "source": "internal/server/gh_packages.go"
       },
       {
-        "line": 54,
+        "line": 53,
         "method": "DELETE",
         "path": "/api/v3/orgs/{org}/packages/{package_type}/{package_name}/versions/{package_version_id}",
         "source": "internal/server/gh_packages.go"
@@ -20172,13 +20172,13 @@
         "source": "internal/server/gh_migrations.go"
       },
       {
-        "line": 25,
+        "line": 24,
         "method": "DELETE",
         "path": "/api/v3/user/packages/{package_type}/{package_name}",
         "source": "internal/server/gh_packages.go"
       },
       {
-        "line": 29,
+        "line": 28,
         "method": "DELETE",
         "path": "/api/v3/user/packages/{package_type}/{package_name}/versions/{package_version_id}",
         "source": "internal/server/gh_packages.go"
@@ -20238,13 +20238,13 @@
         "source": "runtime route table (programmatic registration)"
       },
       {
-        "line": 40,
+        "line": 39,
         "method": "DELETE",
         "path": "/api/v3/users/{username}/packages/{package_type}/{package_name}",
         "source": "internal/server/gh_packages.go"
       },
       {
-        "line": 43,
+        "line": 42,
         "method": "DELETE",
         "path": "/api/v3/users/{username}/packages/{package_type}/{package_name}/versions/{package_version_id}",
         "source": "internal/server/gh_packages.go"
@@ -22062,7 +22062,7 @@
         "source": "internal/server/gh_security_reviews.go"
       },
       {
-        "line": 51,
+        "line": 50,
         "method": "GET",
         "path": "/api/v3/orgs/{org}/docker/conflicts",
         "source": "internal/server/gh_packages.go"
@@ -22326,25 +22326,25 @@
         "source": "internal/server/gh_orgs_people_rest.go"
       },
       {
-        "line": 47,
+        "line": 46,
         "method": "GET",
         "path": "/api/v3/orgs/{org}/packages",
         "source": "internal/server/gh_packages.go"
       },
       {
-        "line": 49,
+        "line": 48,
         "method": "GET",
         "path": "/api/v3/orgs/{org}/packages/{package_type}/{package_name}",
         "source": "internal/server/gh_packages.go"
       },
       {
-        "line": 52,
+        "line": 51,
         "method": "GET",
         "path": "/api/v3/orgs/{org}/packages/{package_type}/{package_name}/versions",
         "source": "internal/server/gh_packages.go"
       },
       {
-        "line": 53,
+        "line": 52,
         "method": "GET",
         "path": "/api/v3/orgs/{org}/packages/{package_type}/{package_name}/versions/{package_version_id}",
         "source": "internal/server/gh_packages.go"
@@ -24480,7 +24480,7 @@
         "source": "internal/server/gh_codespaces.go"
       },
       {
-        "line": 33,
+        "line": 32,
         "method": "GET",
         "path": "/api/v3/user/docker/conflicts",
         "source": "internal/server/gh_packages.go"
@@ -24612,25 +24612,25 @@
         "source": "internal/server/gh_orgs_rest.go"
       },
       {
-        "line": 23,
+        "line": 22,
         "method": "GET",
         "path": "/api/v3/user/packages",
         "source": "internal/server/gh_packages.go"
       },
       {
-        "line": 24,
+        "line": 23,
         "method": "GET",
         "path": "/api/v3/user/packages/{package_type}/{package_name}",
         "source": "internal/server/gh_packages.go"
       },
       {
-        "line": 27,
+        "line": 26,
         "method": "GET",
         "path": "/api/v3/user/packages/{package_type}/{package_name}/versions",
         "source": "internal/server/gh_packages.go"
       },
       {
-        "line": 28,
+        "line": 27,
         "method": "GET",
         "path": "/api/v3/user/packages/{package_type}/{package_name}/versions/{package_version_id}",
         "source": "internal/server/gh_packages.go"
@@ -24750,7 +24750,7 @@
         "source": "runtime route table (programmatic registration)"
       },
       {
-        "line": 34,
+        "line": 33,
         "method": "GET",
         "path": "/api/v3/users/{username}/docker/conflicts",
         "source": "internal/server/gh_packages.go"
@@ -24828,25 +24828,25 @@
         "source": "internal/server/gh_orgs_rest.go"
       },
       {
-        "line": 37,
+        "line": 36,
         "method": "GET",
         "path": "/api/v3/users/{username}/packages",
         "source": "internal/server/gh_packages.go"
       },
       {
-        "line": 39,
+        "line": 38,
         "method": "GET",
         "path": "/api/v3/users/{username}/packages/{package_type}/{package_name}",
         "source": "internal/server/gh_packages.go"
       },
       {
-        "line": 41,
+        "line": 40,
         "method": "GET",
         "path": "/api/v3/users/{username}/packages/{package_type}/{package_name}/versions",
         "source": "internal/server/gh_packages.go"
       },
       {
-        "line": 42,
+        "line": 41,
         "method": "GET",
         "path": "/api/v3/users/{username}/packages/{package_type}/{package_name}/versions/{package_version_id}",
         "source": "internal/server/gh_packages.go"
@@ -26232,13 +26232,13 @@
         "source": "internal/server/gh_orgs_people_rest.go"
       },
       {
-        "line": 48,
+        "line": 47,
         "method": "POST",
         "path": "/api/v3/orgs/{org}/packages/{package_type}/{package_name}/restore",
         "source": "internal/server/gh_packages.go"
       },
       {
-        "line": 55,
+        "line": 54,
         "method": "POST",
         "path": "/api/v3/orgs/{org}/packages/{package_type}/{package_name}/versions/{package_version_id}/restore",
         "source": "internal/server/gh_packages.go"
@@ -27024,13 +27024,13 @@
         "source": "internal/server/gh_migrations.go"
       },
       {
-        "line": 26,
+        "line": 25,
         "method": "POST",
         "path": "/api/v3/user/packages/{package_type}/{package_name}/restore",
         "source": "internal/server/gh_packages.go"
       },
       {
-        "line": 30,
+        "line": 29,
         "method": "POST",
         "path": "/api/v3/user/packages/{package_type}/{package_name}/versions/{package_version_id}/restore",
         "source": "internal/server/gh_packages.go"
@@ -27096,13 +27096,13 @@
         "source": "runtime route table (programmatic registration)"
       },
       {
-        "line": 38,
+        "line": 37,
         "method": "POST",
         "path": "/api/v3/users/{username}/packages/{package_type}/{package_name}/restore",
         "source": "internal/server/gh_packages.go"
       },
       {
-        "line": 44,
+        "line": 43,
         "method": "POST",
         "path": "/api/v3/users/{username}/packages/{package_type}/{package_name}/versions/{package_version_id}/restore",
         "source": "internal/server/gh_packages.go"
