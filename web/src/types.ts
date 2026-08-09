@@ -1382,26 +1382,8 @@ export interface GithubCommitActivityWeek {
   total: number;
 }
 
-export interface GithubCommunityFile {
-  url: string;
-  html_url: string;
-}
-
-export interface GithubCommunityProfile {
-  health_percentage: number;
-  description: string | null;
-  documentation: string | null;
-  files: {
-    code_of_conduct: { key: string; name: string } | null;
-    code_of_conduct_file: GithubCommunityFile | null;
-    license: { key: string; name: string; spdx_id: string } | null;
-    contributing: GithubCommunityFile | null;
-    readme: GithubCommunityFile | null;
-    issue_template: GithubCommunityFile | null;
-    pull_request_template: GithubCommunityFile | null;
-  };
-  updated_at: string;
-}
+// Generated from the vendored GitHub OpenAPI description (WEB-013).
+export type GithubCommunityProfile = components["schemas"]["community-profile"];
 
 // ─── Labels + milestones ────────────────────────────────────────────────
 
