@@ -1302,20 +1302,8 @@ export interface GithubLabel {
   default: boolean;
 }
 
-export interface GithubMilestone {
-  id: number;
-  number: number;
-  title: string;
-  description: string;
-  state: "open" | "closed";
-  creator: { login: string; avatar_url: string } | null;
-  open_issues: number;
-  closed_issues: number;
-  due_on: string | null;
-  closed_at: string | null;
-  created_at: string;
-  updated_at: string;
-}
+// Generated from the vendored GitHub OpenAPI description (WEB-013).
+export type GithubMilestone = NonNullable<components["schemas"]["nullable-milestone"]>;
 
 // ─── Organization governance ────────────────────────────────────────────
 
@@ -1455,23 +1443,8 @@ export type GithubCopilotSpaceResource = components["schemas"]["copilot-space-re
 // ─── Deployments + webhook deliveries + Pages ───────────────────────────
 
 /** Deployment — GET /repos/{o}/{r}/deployments (items). */
-export interface GithubDeployment {
-  id: number;
-  node_id: string;
-  sha: string;
-  ref: string;
-  task: string;
-  environment: string;
-  original_environment: string;
-  description: string;
-  creator: { login: string } | null;
-  payload: Record<string, unknown> | null;
-  created_at: string;
-  updated_at: string;
-  transient_environment: boolean;
-  production_environment: boolean;
-  statuses_url: string;
-}
+// Generated from the vendored GitHub OpenAPI description (WEB-013).
+export type GithubDeployment = NonNullable<components["schemas"]["nullable-deployment"]>;
 
 /** Deployment status state (the POST statuses `state` enum). */
 export type GithubDeploymentState =
@@ -1794,13 +1767,8 @@ export interface GithubSearchTopicItem {
 }
 
 /** Repo collaborator: simple user plus permission grants. */
-export interface GithubCollaborator {
-  id: number;
-  login: string;
-  type: string;
-  role_name: string;
-  permissions: { pull: boolean; push: boolean; admin: boolean };
-}
+// Generated from the vendored GitHub OpenAPI description (WEB-013).
+export type GithubCollaborator = NonNullable<components["schemas"]["nullable-collaborator"]>;
 
 /** Pending repository invitation. */
 export interface GithubRepoInvitation {
