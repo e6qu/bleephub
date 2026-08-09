@@ -779,6 +779,7 @@ func (s *Server) handleUpdateRepo(w http.ResponseWriter, r *http.Request) {
 		writeGHError(w, http.StatusForbidden, "Must have admin rights to Repository.")
 		return
 	}
+	wasPrivate := repo.Private
 
 	var req map[string]interface{}
 	if !decodeJSONBody(w, r, &req) {
@@ -893,6 +894,14 @@ func (s *Server) handleUpdateRepo(w http.ResponseWriter, r *http.Request) {
 	})
 
 	updated := s.store.GetRepo(owner, name)
+	// GitHub's `public` event fires when a repository is switched from private to
+	// public, so `on: public` workflows run (ACT-026).
+	if wasPrivate && updated != nil && !updated.Private {
+		s.emitWebhookEvent(updated.FullName, "public", "", map[string]interface{}{
+			"repository": repoPayload(updated),
+			"sender":     userToJSON(user),
+		})
+	}
 	writeJSON(w, http.StatusOK, fullRepoJSONForViewer(updated, s.store, s.baseURL(r), user))
 }
 

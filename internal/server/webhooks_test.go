@@ -959,6 +959,42 @@ func TestWebhookWatchEvent(t *testing.T) {
 	}
 }
 
+func TestWebhookPublicEvent(t *testing.T) {
+	var mu sync.Mutex
+	got := false
+	url, cleanup := startWebhookReceiver(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Header.Get("X-GitHub-Event") == "public" {
+			mu.Lock()
+			got = true
+			mu.Unlock()
+		}
+		w.WriteHeader(200)
+	}))
+	defer cleanup()
+
+	ghPost(t, "/api/v3/user/repos", defaultToken, map[string]interface{}{"name": "wh-public", "private": true}).Body.Close()
+	ghPost(t, "/api/v3/repos/admin/wh-public/hooks", defaultToken, map[string]interface{}{
+		"config": map[string]interface{}{"url": url},
+		"events": []string{"public"},
+		"active": true,
+	}).Body.Close()
+
+	patch := ghPatch(t, "/api/v3/repos/admin/wh-public", defaultToken, map[string]interface{}{"private": false})
+	if patch.StatusCode != http.StatusOK {
+		patch.Body.Close()
+		t.Fatalf("make public status = %d", patch.StatusCode)
+	}
+	patch.Body.Close()
+
+	if !testEventually(5*time.Second, 10*time.Millisecond, func() bool {
+		mu.Lock()
+		defer mu.Unlock()
+		return got
+	}) {
+		t.Fatal("making a repo public did not deliver a public webhook")
+	}
+}
+
 func TestWebhookPing(t *testing.T) {
 	var received atomic.Int32
 	var mu sync.Mutex
