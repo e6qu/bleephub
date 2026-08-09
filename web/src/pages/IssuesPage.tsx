@@ -27,7 +27,7 @@ import {
 } from "../api.js";
 import { useOpenCounts } from "../hooks/useOpenCounts.js";
 import type { GithubIssue, GithubLabel, GithubMilestone, ListFilterState } from "../types.js";
-import { CommentCard, CommentList } from "../components/CommentCard.js";
+import { CommentCard, EditableCommentList } from "../components/CommentCard.js";
 import { CommentComposer } from "../components/CommentComposer.js";
 import { MutationError } from "../components/MutationError.js";
 import { LabelPills } from "../components/LabelPills.js";
@@ -424,7 +424,15 @@ function IssueDetail({ owner, repo, number }: { owner: string; repo: string; num
             <InlineError inline title="Failed to load comments" detail={String(commentsErr)} />
           ) : (
             <>
-              <CommentList comments={comments} />
+              <EditableCommentList
+                owner={owner}
+                repo={repo}
+                comments={comments}
+                invalidateKeys={[
+                  ["issue-comments", owner, repo, number],
+                  ["issue", owner, repo, number],
+                ]}
+              />
               {comments.length === 0 && (
                 <div style={{ padding: "0.5rem 0", color: "var(--color-fg-muted)", fontSize: "0.85rem" }}>
                   No comments yet.

@@ -1436,6 +1436,20 @@ export const updateIssue = (
     patch,
   );
 
+/** Edit an issue/PR comment body (shared endpoint for both surfaces). */
+export const updateIssueComment = (owner: string, repo: string, commentId: number, body: string) =>
+  ghPatchJSON<GithubComment>(
+    `/api/v3/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/issues/comments/${commentId}`,
+    { body },
+  );
+
+/** Delete an issue/PR comment. */
+export const deleteIssueComment = (owner: string, repo: string, commentId: number) =>
+  ghSend(
+    "DELETE",
+    `/api/v3/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/issues/comments/${commentId}`,
+  );
+
 /** First page by (owner, repo, state); follow-up pages by the Link rel="next" URL. */
 export const fetchRepoPRsPage = (
   owner: string,
