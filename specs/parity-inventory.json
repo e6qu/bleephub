@@ -2,6 +2,12 @@
   "actions": {
     "literal_event_producers": [
       {
+        "event": "branch_protection_rule",
+        "line": 464,
+        "producer": "emitWebhookEvent",
+        "source": "internal/server/gh_branch_protection.go"
+      },
+      {
         "event": "check_run",
         "line": 409,
         "producer": "emitWebhookEvent",
@@ -12,6 +18,24 @@
         "line": 428,
         "producer": "emitWebhookEvent",
         "source": "internal/server/actions_events.go"
+      },
+      {
+        "event": "commit_comment",
+        "line": 284,
+        "producer": "emitWebhookEvent",
+        "source": "internal/server/gh_commit_comments_rest.go"
+      },
+      {
+        "event": "create",
+        "line": 1007,
+        "producer": "emitWebhookEvent",
+        "source": "internal/server/gh_repos_git.go"
+      },
+      {
+        "event": "delete",
+        "line": 402,
+        "producer": "emitWebhookEvent",
+        "source": "internal/server/gh_repos_refs.go"
       },
       {
         "event": "deployment",
@@ -30,6 +54,24 @@
         "line": 662,
         "producer": "emitWebhookEvent",
         "source": "internal/server/gh_deployments.go"
+      },
+      {
+        "event": "discussion",
+        "line": 719,
+        "producer": "emitWebhookEvent",
+        "source": "internal/server/gh_discussions_graphql.go"
+      },
+      {
+        "event": "discussion_comment",
+        "line": 811,
+        "producer": "emitWebhookEvent",
+        "source": "internal/server/gh_discussions_graphql.go"
+      },
+      {
+        "event": "fork",
+        "line": 62,
+        "producer": "emitWebhookEvent",
+        "source": "internal/server/gh_repos_forks.go"
       },
       {
         "event": "issue_comment",
@@ -75,19 +117,43 @@
       },
       {
         "event": "label",
-        "line": 136,
+        "line": 148,
         "producer": "emitWebhookEvent",
         "source": "internal/server/gh_labels_rest.go"
       },
       {
         "event": "label",
-        "line": 215,
+        "line": 227,
         "producer": "emitWebhookEvent",
         "source": "internal/server/gh_labels_rest.go"
       },
       {
         "event": "label",
-        "line": 245,
+        "line": 257,
+        "producer": "emitWebhookEvent",
+        "source": "internal/server/gh_labels_rest.go"
+      },
+      {
+        "event": "member",
+        "line": 144,
+        "producer": "emitWebhookEvent",
+        "source": "internal/server/gh_invitations_rest.go"
+      },
+      {
+        "event": "milestone",
+        "line": 309,
+        "producer": "emitWebhookEvent",
+        "source": "internal/server/gh_labels_rest.go"
+      },
+      {
+        "event": "milestone",
+        "line": 422,
+        "producer": "emitWebhookEvent",
+        "source": "internal/server/gh_labels_rest.go"
+      },
+      {
+        "event": "milestone",
+        "line": 459,
         "producer": "emitWebhookEvent",
         "source": "internal/server/gh_labels_rest.go"
       },
@@ -96,6 +162,42 @@
         "line": 465,
         "producer": "emitOrgWebhookEvent",
         "source": "internal/server/gh_org_hooks_rest.go"
+      },
+      {
+        "event": "page_build",
+        "line": 1400,
+        "producer": "emitWebhookEvent",
+        "source": "internal/server/gh_misc_endpoints.go"
+      },
+      {
+        "event": "project",
+        "line": 159,
+        "producer": "emitWebhookEvent",
+        "source": "internal/server/gh_projects_classic.go"
+      },
+      {
+        "event": "project_card",
+        "line": 461,
+        "producer": "emitWebhookEvent",
+        "source": "internal/server/gh_projects_classic.go"
+      },
+      {
+        "event": "project_card",
+        "line": 572,
+        "producer": "emitWebhookEvent",
+        "source": "internal/server/gh_projects_classic.go"
+      },
+      {
+        "event": "project_column",
+        "line": 282,
+        "producer": "emitWebhookEvent",
+        "source": "internal/server/gh_projects_classic.go"
+      },
+      {
+        "event": "public",
+        "line": 900,
+        "producer": "emitWebhookEvent",
+        "source": "internal/server/gh_repos_rest.go"
       },
       {
         "event": "pull_request",
@@ -111,43 +213,43 @@
       },
       {
         "event": "pull_request",
-        "line": 124,
+        "line": 128,
         "producer": "emitWebhookEvent",
         "source": "internal/server/gh_pulls_rest.go"
       },
       {
         "event": "pull_request",
-        "line": 437,
+        "line": 441,
         "producer": "emitWebhookEvent",
         "source": "internal/server/gh_pulls_rest.go"
       },
       {
         "event": "pull_request",
-        "line": 541,
+        "line": 545,
         "producer": "emitWebhookEvent",
         "source": "internal/server/gh_pulls_rest.go"
       },
       {
         "event": "pull_request",
-        "line": 473,
+        "line": 476,
         "producer": "emitWebhookEvent",
         "source": "internal/server/workflow_triggers.go"
       },
       {
         "event": "pull_request_review",
-        "line": 718,
+        "line": 722,
         "producer": "emitWebhookEvent",
         "source": "internal/server/gh_pulls_rest.go"
       },
       {
         "event": "pull_request_review",
-        "line": 995,
+        "line": 999,
         "producer": "emitWebhookEvent",
         "source": "internal/server/gh_pulls_rest.go"
       },
       {
         "event": "pull_request_review",
-        "line": 1049,
+        "line": 1053,
         "producer": "emitWebhookEvent",
         "source": "internal/server/gh_pulls_rest.go"
       },
@@ -162,6 +264,12 @@
         "line": 29,
         "producer": "emitWebhookEvent",
         "source": "internal/server/committed_ref_events.go"
+      },
+      {
+        "event": "registry_package",
+        "line": 138,
+        "producer": "emitWebhookEvent",
+        "source": "internal/server/gh_packages.go"
       },
       {
         "event": "release",
@@ -186,6 +294,12 @@
         "line": 288,
         "producer": "emitWebhookEvent",
         "source": "internal/server/gh_statuses_rest.go"
+      },
+      {
+        "event": "watch",
+        "line": 1402,
+        "producer": "emitWebhookEvent",
+        "source": "internal/server/gh_repos_rest.go"
       },
       {
         "event": "workflow_job",
@@ -2629,8 +2743,8 @@
         "id": "GQL-024",
         "location": "9 scanners",
         "severity": "M",
-        "status": "partial \u2014 the two hottest node-id finders (`findRepoByNodeID`, `findUserByNodeID`), which resolve `repositoryId` and assignees on the issue/PR/discussion create-mutation hot path, now decode the database id embedded in the node id (`decodeNodeDBID`, mirroring the existing `parsePRReviewThreadNodeID` convention) and do an O(1) keyed lookup, with a node-id equality guard and a fallback scan so a foreign- or legacy-shaped id (e.g. the `U_bleephub_<login>` identifiers) still resolves exactly as before. Regression test covers the decoder and both finders. The remaining id-keyed finders \u2014 issues, labels, milestones, issue comments, pull requests, discussions/categories/comments, and the three projects-v2 lookups (project/item/field) \u2014 now adopt the same `decodeNodeDBID` fast path with the equality guard and fallback scan, preserving the discussions' `!Deleted` predicate and the comment finder's clone; a table-driven regression test exercises each for a real hit, an unknown same-prefix miss, and prefix-overlap rejection. The only remaining scanner is `findIssueTypeByNodeID`, whose collection is nested by org (no single id-keyed map), so an O(1) fast path does not apply.",
-        "status_kind": "partial"
+        "status": "fixed \u2014 the two hottest node-id finders (`findRepoByNodeID`, `findUserByNodeID`), which resolve `repositoryId` and assignees on the issue/PR/discussion create-mutation hot path, now decode the database id embedded in the node id (`decodeNodeDBID`, mirroring the existing `parsePRReviewThreadNodeID` convention) and do an O(1) keyed lookup, with a node-id equality guard and a fallback scan so a foreign- or legacy-shaped id (e.g. the `U_bleephub_<login>` identifiers) still resolves exactly as before. Regression test covers the decoder and both finders. The remaining id-keyed finders \u2014 issues, labels, milestones, issue comments, pull requests, discussions/categories/comments, and the three projects-v2 lookups (project/item/field) \u2014 now adopt the same `decodeNodeDBID` fast path with the equality guard and fallback scan, preserving the discussions' `!Deleted` predicate and the comment finder's clone; a table-driven regression test exercises each for a real hit, an unknown same-prefix miss, and prefix-overlap rejection. The last remaining scanner, `findIssueTypeByNodeID`, is now O(1) too: a store-level `IssueTypesByID` index (issue-type ids are globally unique via `NextIssueTypeID`) is maintained on create/delete and rebuilt from persistence on reload, so the finder decodes the `IT_kwDO` node id, looks the type up directly with the NodeID equality guard, and keeps the org-map scan only as a robustness fallback. Regression `TestFindIssueTypeByNodeIDUsesIndex` (index populate/guard/delete) and `TestIssueTypeNodeIDIndexRebuiltOnReload` (fast path survives restart). Every node-id finder now parses the embedded id \u2014 no mutation walks a full map under the lock.",
+        "status_kind": "fixed"
       },
       {
         "category": "GQL",
@@ -3187,8 +3301,8 @@
         "id": "ACT-014",
         "location": "workflow.go:137-161",
         "severity": "M",
-        "status": "partial \u2014 declarations are strongly parsed and validated; run defaults and expression-backed run names execute; job concurrency is now evaluated, persisted, case-insensitive, enforced across runs, replaces stale pending jobs, and delivers cancellation to an active holder. Least-privilege GITHUB_TOKEN API scopes remain open",
-        "status_kind": "partial"
+        "status": "fixed \u2014 declarations are strongly parsed and validated; run defaults and expression-backed run names execute; job concurrency is now evaluated, persisted, case-insensitive, enforced across runs, replaces stale pending jobs, and delivers cancellation to an active holder. And least-privilege GITHUB_TOKEN API scopes are now enforced: `resolveJobTokenPermissions` computes the effective permission map (GitHub semantics \u2014 a job block replaces a workflow block replaces the repo default; `read-all`/`write-all` and `none` handled; an empty block yields metadata:read only), which is embedded in the per-job token by `makeJobJWT` (new `repo`/`perms` claims). The REST gate recognizes the token as a `jobTokenPrincipal`, so `requirePerm` forbids any scope/level the workflow was not granted and `credentialMayAccessTarget` binds it to its own repository alone. The token authenticates as `github-actions[bot]` for handler attribution, matching the installation-token precedent. Regressions `TestResolveJobTokenPermissions` (semantics) and `TestGithubTokenIsRepoScopedLeastPrivilege` (granted scope passes, ungranted 403, cross-repo denied)",
+        "status_kind": "fixed"
       },
       {
         "category": "ACT",
@@ -3295,8 +3409,8 @@
         "id": "ACT-026",
         "location": "webhooks.go:249",
         "severity": "M",
-        "status": "partial \u2014 webhook emission is the single event-production choke point and every implemented mutation event automatically feeds Actions. Issue-comment create/edit/delete and pull-request-review submit/dismiss now join push, PR, issue, review-comment, release, deployment, status/check and workflow lifecycle producers; families with no real mutation producer remain open, though the set keeps shrinking \u2014 label create/edit/delete now produces the `label` event (regression `TestWebhookLabelEvent`)",
-        "status_kind": "partial"
+        "status": "fixed \u2014 webhook emission is the single event-production choke point and every implemented mutation event automatically feeds Actions. Issue-comment create/edit/delete and pull-request-review submit/dismiss now join push, PR, issue, review-comment, release, deployment, status/check and workflow lifecycle producers; families with no real mutation producer remain open, though the set keeps shrinking \u2014 label create/edit/delete now produces the `label` event (regression `TestWebhookLabelEvent`), and milestone create/close/reopen/edit/delete now produces the `milestone` event with GitHub's action semantics (regression `TestWebhookMilestoneEvent`); branch/tag creation and deletion now produce the `create` and `delete` events with `ref`/`ref_type` (regression `TestWebhookCreateDeleteRefEvent`); commit-comment creation produces the `commit_comment` event repository forks produce the `fork` event on the source repo (regression `TestWebhookCommitCommentAndForkEvents`, which also surfaced and fixed a pre-existing commit-comment response-shape gap \u2014 `path`/`position`/`line` are now emitted as required-nullable), starring a repo produces the `watch` event with action `started` (regression `TestWebhookWatchEvent`), switching a repo from private to public produces the `public` event (regression `TestWebhookPublicEvent`), creating a classic project produces the `project` event (regression `TestWebhookProjectEvent`), establishing/updating/removing a branch-protection rule produces the `branch_protection_rule` event (regression `TestWebhookBranchProtectionRuleEvent`); accepting a repo invitation produces the `member` event, creating a discussion/comment produces the `discussion`/`discussion_comment` events, finishing a Pages build produces the `page_build` event, and classic project column/card create and card move produce the `project_column`/`project_card` events (regressions `TestWebhookMemberEvent`, `TestWebhookDiscussionEvents`, `TestWebhookPageBuildEvent`, `TestWebhookProjectCardColumnEvents`) Every GitHub-Actions `on:` trigger event that has a producer in bleephub now fires: the pre-existing set plus the families wired here (create, delete, milestone, commit_comment, fork, watch, public, project, project_column, project_card, branch_protection_rule, member, discussion, discussion_comment, page_build, registry_package). The only Actions trigger events that still do not fire are the ones with no producer in this surface \u2014 `gollum` (no wiki), `merge_group` (no merge queue) \u2014 and the non-webhook mechanisms `workflow_dispatch`/`workflow_call`; `pull_request_target` shares the `pull_request` producer.",
+        "status_kind": "fixed"
       },
       {
         "category": "ACT",
@@ -3304,8 +3418,8 @@
         "id": "ACT-027",
         "location": "webhooks.go:290",
         "severity": "M",
-        "status": "partial \u2014 runs now report `refs/pull/<number>/merge` and prefer `merge_commit_sha`; until Bleephub materializes synthetic merge commits, an event without that field falls back to the head SHA",
-        "status_kind": "partial"
+        "status": "fixed \u2014 runs now report `refs/pull/<number>/merge` and prefer `merge_commit_sha`; until Bleephub materializes synthetic merge commits, an event without that field falls back to the head SHA And the missing piece is done: an open pull request's test-merge commit is now materialized (`computeMergeCommitHash` merges head into base without advancing the base ref, extracted from `performMergeCommit`) on PR open and on synchronize, stored as `PullRequest.PotentialMergeCommitSHA`, and reported as the event's `merge_commit_sha` \u2014 so a `pull_request` run runs against the merge ref/SHA, not the head. A conflict or missing git storage clears the field, keeping the head-SHA fallback; `MergeCommitSHA` stays merged-only so GraphQL `mergeCommit` is unaffected. Regression `TestPullRequestRunReportsMergeSHA`.",
+        "status_kind": "fixed"
       },
       {
         "category": "ACT",
@@ -3502,8 +3616,8 @@
         "id": "ACT-049",
         "location": "workflow_schedule.go:35",
         "severity": "m",
-        "status": "partial \u2014 parse errors are now structured warnings with repository, file, cron, and timezone context; the dispatcher still re-reads and re-parses every default-branch workflow every minute instead of maintaining an indexed schedule",
-        "status_kind": "partial"
+        "status": "fixed \u2014 parse errors are now structured warnings with repository, file, cron, and timezone context; and the dispatcher no longer re-reads and re-parses every default-branch workflow every minute: a `scheduleIndex` cache holds each repo's parsed, cron-validated schedule keyed by the default-branch tip commit (`resolveRefSha`), rebuilt only when that tip moves (`buildScheduleIndex`), so a steady-state tick reduces to cron-matching against pre-parsed entries. The cache is pruned to live repos each tick (`retain`). Regression `TestScheduleIndexRebuildsOnlyOnTipChange` asserts one rebuild across two unchanged-tip ticks and a second rebuild after the tip advances",
+        "status_kind": "fixed"
       },
       {
         "category": "ACT",
@@ -3520,8 +3634,8 @@
         "id": "ACT-051",
         "location": "workflows_msg.go:280",
         "severity": "m",
-        "status": "partial \u2014 workflow/job workflow ref and SHA fields now reach the runner context, including reusable-workflow identity; runner OS/architecture/name still need late binding to the agent that actually leases the queued message",
-        "status_kind": "partial"
+        "status": "fixed \u2014 workflow/job workflow ref and SHA fields now reach the runner context, including reusable-workflow identity; and runner OS/architecture/name are now late-bound to the agent that actually leases the queued message: the job message is built runner-agnostically (`runnerContextData(nil)`) and the broker rewrites `contextData.runner` (os/arch/name plus OS-appropriate tool_cache/temp) to the leasing agent at delivery in `pullPendingMessage` (`rebindRunnerContext`, idempotent so a requeue rebinds afresh). OS/arch derive from the agent's self-reported labels, falling back to its OS description. Regressions `TestRunnerContextDerivedFromAgent` and `TestLeasedJobRebindsRunnerContext`",
+        "status_kind": "fixed"
       },
       {
         "category": "ACT",
@@ -3601,7 +3715,7 @@
         "id": "STORE-001",
         "location": "persistence.go:71",
         "severity": "B",
-        "status": "partial \u2014 a batch executor commits a whole write set in one transaction. `DeleteRepo` stages its whole cascade in that transaction; the repository re-key on `RenameRepo`/`TransferRepo` now stages the repos row and every one of its ~40 subresource buckets (secrets, collaborators, teams, hooks, checks, workflows, commit statuses, notification read state, scanning alerts, packages, env secrets/variables, pages, \u2026) into one `persistBatch` via a batch-aware `moveRepoKeyLocked`, so a crash can no longer split a repository across its old and new names; and `StarRepo`/`UnstarRepo`, `CreateOrg`, `RemoveMembership`, `DeleteLabel`/`DeleteMilestone`, `CreateOrgInvitation`, `AddRepoCollaborator`/`RemoveRepoCollaborator`, `CreateRepoDeployKey`/`DeleteRepoDeployKey`, `DeleteTeam` (with child re-parenting), `RemoveOutsideCollaborator`, `CancelOrgInvitation`, `DeleteEnterpriseCodeSecurityConfig` and `CreateSecretScanningPushProtectionBypass` each commit their whole multi-bucket mutation atomically. Org-invitation acceptance (`consumeOrgInvitationLocked` \u2014 every invited-team join plus the invitation removal) and expiry (`reconcileOrgInvitationsLocked` \u2014 the abandoned pending-membership drop plus the invitation-failed write) each now commit in one transaction, and `RenameBranch` re-keys the branch protection and writes the repo's default-branch change together. The classic and v2 project deletions commit their whole subtree in one transaction \u2014 `DeleteProject` (v2) with its fields/items/views, and `DeleteProjectClassic`/`DeleteProjectColumn` with their columns and cards via batch-aware `deleteProjectCard/ColumnBatchLocked` helpers \u2014 so a crash can no longer orphan a child pointing at a deleted parent. The pull-request reviewer and label mutations that emit one issue-event per element (`RequestReviewers`, `RemoveRequestedReviewers`, `AddPullRequestLabels`, `SetPullRequestLabels`, `ClearPullRequestLabels`, `RemovePullRequestLabel`) and the matching issue label and assignee mutations (`SetIssueLabels`, `ClearIssueLabels`, `AddIssueLabels`, `RemoveIssueLabel`, `AddIssueAssignees`, `RemoveIssueAssignees`) now commit every event with the pull-request/issue row in a single `persistBatch` via batch-aware `recordPullRequestEvent/LabelEventBatchLocked` and `recordIssueEventWithIDsBatchLocked`, so the timeline can no longer diverge from the reviewer/label/assignee state across a crash. Other multi-entity mutations still need transaction-by-transaction conversion",
+        "status": "partial \u2014 a batch executor commits a whole write set in one transaction. `DeleteRepo` stages its whole cascade in that transaction; the repository re-key on `RenameRepo`/`TransferRepo` now stages the repos row and every one of its ~40 subresource buckets (secrets, collaborators, teams, hooks, checks, workflows, commit statuses, notification read state, scanning alerts, packages, env secrets/variables, pages, \u2026) into one `persistBatch` via a batch-aware `moveRepoKeyLocked`, so a crash can no longer split a repository across its old and new names; and `StarRepo`/`UnstarRepo`, `CreateOrg`, `RemoveMembership`, `DeleteLabel`/`DeleteMilestone`, `CreateOrgInvitation`, `AddRepoCollaborator`/`RemoveRepoCollaborator`, `CreateRepoDeployKey`/`DeleteRepoDeployKey`, `DeleteTeam` (with child re-parenting), `RemoveOutsideCollaborator`, `CancelOrgInvitation`, `DeleteEnterpriseCodeSecurityConfig` and `CreateSecretScanningPushProtectionBypass` each commit their whole multi-bucket mutation atomically. Org-invitation acceptance (`consumeOrgInvitationLocked` \u2014 every invited-team join plus the invitation removal) and expiry (`reconcileOrgInvitationsLocked` \u2014 the abandoned pending-membership drop plus the invitation-failed write) each now commit in one transaction, and `RenameBranch` re-keys the branch protection and writes the repo's default-branch change together. The classic and v2 project deletions commit their whole subtree in one transaction \u2014 `DeleteProject` (v2) with its fields/items/views, and `DeleteProjectClassic`/`DeleteProjectColumn` with their columns and cards via batch-aware `deleteProjectCard/ColumnBatchLocked` helpers \u2014 so a crash can no longer orphan a child pointing at a deleted parent. The pull-request reviewer and label mutations that emit one issue-event per element (`RequestReviewers`, `RemoveRequestedReviewers`, `AddPullRequestLabels`, `SetPullRequestLabels`, `ClearPullRequestLabels`, `RemovePullRequestLabel`) and the matching issue label and assignee mutations (`SetIssueLabels`, `ClearIssueLabels`, `AddIssueLabels`, `RemoveIssueLabel`, `AddIssueAssignees`, `RemoveIssueAssignees`) now commit every event with the pull-request/issue row in a single `persistBatch` via batch-aware `recordPullRequestEvent/LabelEventBatchLocked` and `recordIssueEventWithIDsBatchLocked`, so the timeline can no longer diverge from the reviewer/label/assignee state across a crash. A further sweep converts the credential and multi-bucket cascade mutations: user-to-server/refresh token create, revoke, rotate and grant-revoke; `RevokeCredentials` across all four token buckets; `DeleteOAuthApp` with all its issued tokens; classroom and classroom-assignment deletion with their assignments/acceptances; and the org-scoped delete cascades (`DeleteCodeSecurityConfiguration`, `DeleteCustomProperty`, `DeleteNetworkConfiguration`, `DeleteIssueField`, `handleDeleteOrganizationRole`) plus repo-invitation acceptance \u2014 each now a single `persistBatch`. Also converted: `CreateCheckRun` (inline suite + run), `PruneEnvironmentPolicies` (branch policies + protection rules), `persistTeamExternalGroupsLocked` (org groups + team binding) and `replaceOrganizationSCIMUser` (backing account + SCIM record, unlocking before any panic). Other multi-entity mutations still need transaction-by-transaction conversion (e.g. the multi-phase `renameGHESOrganization`)",
         "status_kind": "partial"
       },
       {
@@ -3817,8 +3931,8 @@
         "id": "STORE-025",
         "location": "store.go:958, persistence.go:211",
         "severity": "M",
-        "status": "partial \u2014 the scheduler now reaps expired login sessions hourly through a deterministic-clock, transactional deletion pass that survives restart and retries after persistence failure. Per-user logout still scans the bounded session bucket rather than using a secondary user index",
-        "status_kind": "partial"
+        "status": "fixed \u2014 the scheduler now reaps expired login sessions hourly through a deterministic-clock, transactional deletion pass that survives restart and retries after persistence failure. And per-user logout no longer lists and decodes the whole durable session bucket: a durable secondary index (`login_sessions_by_user`, one row per session keyed `<userID>:<sessionStorageKey>`) is written in the same `persistBatch` as each session, so `DeleteLoginSessionsForUser` resolves a user's sessions with a bounded prefix scan (new `Persistence.ListPrefix`, an indexed `[prefix, prefix++)` range query). Because it reads durable state it revokes sessions this replica never cached, including ones created on other replicas \u2014 the property the old full scan provided and an in-memory index would have lost. The index is a superset of live sessions (Put adds atomically, so revocation never misses one; the bespoke OIDC back-channel transaction may leave a harmless stale row reclaimed at the next per-user purge), and `SetPersistence` backfills it once at startup so upgrades and drift self-heal. Reap/DeleteLoginSession/OIDC-delete drop index rows alongside their sessions. Cross-replica + backfill + disambiguation regressions in store_login_session_index_test.go. (The in-memory cache eviction still iterates the bounded in-memory map, which does no I/O.)",
+        "status_kind": "fixed"
       },
       {
         "category": "STORE",
@@ -4645,8 +4759,8 @@
         "id": "WEB-010",
         "location": "api.ts, ~64 sites",
         "severity": "M",
-        "status": "partial \u2014 a module-wide abort controller backs cancellation (sign-out); per-request abort signals from react-query queryFn contexts are now threaded through the fetch helpers (`fetchJSON`/`ghFetch`/`ghFetchPage`/`ghFetchEnvelope`) and the high-traffic query call sites, combined via `AbortSignal.any` with the sign-out controller and a 30s default request timeout, so a cancelled/unmounted query aborts its in-flight request; secondary query sites remain un-threaded",
-        "status_kind": "partial"
+        "status": "fixed \u2014 a module-wide abort controller backs cancellation (sign-out) and per-request abort signals from react-query `queryFn` contexts are threaded through the low-level helpers (`fetchJSON`/`ghFetch`/`ghFetchPage`/`ghFetchEnvelope`/`apiFetch`/`ghGraphQL`), combined via `AbortSignal.any` with the sign-out controller and a 30s default request timeout. The remaining 24 high-level `fetch*` helpers now each accept and forward `signal?: AbortSignal` (including the `Promise.all` fan-outs in `fetchUsers`/`fetchOrgs`), and their 28 `queryFn` call sites across 14 pages thread the query's signal, so a cancelled/unmounted query aborts its in-flight request everywhere; non-query callers (effects, mutations, event handlers) keep the optional param unset and are unaffected. Verified: typecheck, build, all 511 web tests, knip and audit green",
+        "status_kind": "fixed"
       },
       {
         "category": "WEB",
@@ -5383,8 +5497,8 @@
         "id": "TEST-029",
         "location": "4 specs",
         "severity": "M",
-        "status": "partial \u2014 Codespaces lifecycle and OAuth success paths are covered; Discussions writes and OAuth error branches remain open",
-        "status_kind": "partial"
+        "status": "fixed \u2014 Codespaces lifecycle and the credential surfaces were already covered; Discussions writes are genuinely exercised by `TestDiscussionsGraphQL_Lifecycle` (all eight mutations \u2014 create/update/delete discussion, add/update/delete comment, mark/unmark answer \u2014 with real assertions), so that half of the note was stale. The remaining gap, the OAuth token endpoint's error branches, is now covered by `TestOAuthTokenErrorBranches`: `unsupported_grant_type`, and for both the web and device flows `bad_verification_code`, `incorrect_client_credentials` (wrong client id and wrong secret), `redirect_uri_mismatch` and `authorization_pending`",
+        "status_kind": "fixed"
       },
       {
         "category": "TEST",
@@ -6417,9 +6531,9 @@
       "categories": {
         "ACT": {
           "status": {
-            "fixed": 54,
+            "fixed": 59,
             "open": 1,
-            "partial": 6
+            "partial": 1
           },
           "total": 61
         },
@@ -6453,8 +6567,8 @@
         },
         "GQL": {
           "status": {
-            "fixed": 59,
-            "partial": 2
+            "fixed": 60,
+            "partial": 1
           },
           "total": 61
         },
@@ -6473,25 +6587,25 @@
         },
         "STORE": {
           "status": {
-            "fixed": 69,
+            "fixed": 70,
             "open": 1,
-            "partial": 8
+            "partial": 7
           },
           "total": 78
         },
         "TEST": {
           "status": {
-            "fixed": 31,
+            "fixed": 32,
             "open": 7,
-            "partial": 2
+            "partial": 1
           },
           "total": 40
         },
         "WEB": {
           "status": {
-            "fixed": 55,
+            "fixed": 56,
             "open": 4,
-            "partial": 4
+            "partial": 3
           },
           "total": 63
         }
@@ -6503,9 +6617,9 @@
       },
       "status": {
         "deferred": 1,
-        "fixed": 636,
+        "fixed": 645,
         "open": 23,
-        "partial": 25
+        "partial": 16
       },
       "total": 685
     }
@@ -19081,13 +19195,13 @@
         "source": "internal/server/gh_actions_oidc_properties.go"
       },
       {
-        "line": 394,
+        "line": 457,
         "method": "DELETE",
         "path": "/api/v3/orgs/{org}/actions/permissions/repositories/{repository_id}",
         "source": "internal/server/gh_actions_permissions.go"
       },
       {
-        "line": 426,
+        "line": 489,
         "method": "DELETE",
         "path": "/api/v3/orgs/{org}/actions/permissions/self-hosted-runners/repositories/{repository_id}",
         "source": "internal/server/gh_actions_permissions.go"
@@ -19117,13 +19231,13 @@
         "source": "internal/server/gh_actions_rest.go"
       },
       {
-        "line": 501,
+        "line": 564,
         "method": "DELETE",
         "path": "/api/v3/orgs/{org}/actions/runners/{runner_id}/labels",
         "source": "internal/server/gh_actions_permissions.go"
       },
       {
-        "line": 509,
+        "line": 572,
         "method": "DELETE",
         "path": "/api/v3/orgs/{org}/actions/runners/{runner_id}/labels/{name}",
         "source": "internal/server/gh_actions_permissions.go"
@@ -19543,13 +19657,13 @@
         "source": "internal/server/gh_actions_rest.go"
       },
       {
-        "line": 495,
+        "line": 558,
         "method": "DELETE",
         "path": "/api/v3/repos/{owner}/{repo}/actions/runners/{runner_id}/labels",
         "source": "internal/server/gh_actions_permissions.go"
       },
       {
-        "line": 507,
+        "line": 570,
         "method": "DELETE",
         "path": "/api/v3/repos/{owner}/{repo}/actions/runners/{runner_id}/labels/{name}",
         "source": "internal/server/gh_actions_permissions.go"
@@ -19561,7 +19675,7 @@
         "source": "internal/server/gh_actions_rest.go"
       },
       {
-        "line": 487,
+        "line": 550,
         "method": "DELETE",
         "path": "/api/v3/repos/{owner}/{repo}/actions/runs/{run_id}/logs",
         "source": "internal/server/gh_actions_permissions.go"
@@ -21283,13 +21397,13 @@
         "source": "internal/server/gh_orgs_rest.go"
       },
       {
-        "line": 435,
+        "line": 498,
         "method": "GET",
         "path": "/api/v3/organizations/{org_id}/actions/cache/retention-limit",
         "source": "internal/server/gh_actions_permissions.go"
       },
       {
-        "line": 439,
+        "line": 502,
         "method": "GET",
         "path": "/api/v3/organizations/{org_id}/actions/cache/storage-limit",
         "source": "internal/server/gh_actions_permissions.go"
@@ -21349,13 +21463,13 @@
         "source": "internal/server/gh_orgs_rest.go"
       },
       {
-        "line": 428,
+        "line": 491,
         "method": "GET",
         "path": "/api/v3/orgs/{org}/actions/cache/usage",
         "source": "internal/server/gh_actions_permissions.go"
       },
       {
-        "line": 430,
+        "line": 493,
         "method": "GET",
         "path": "/api/v3/orgs/{org}/actions/cache/usage-by-repository",
         "source": "internal/server/gh_actions_permissions.go"
@@ -21439,55 +21553,55 @@
         "source": "internal/server/gh_misc_endpoints.go"
       },
       {
-        "line": 384,
+        "line": 447,
         "method": "GET",
         "path": "/api/v3/orgs/{org}/actions/permissions",
         "source": "internal/server/gh_actions_permissions.go"
       },
       {
-        "line": 404,
+        "line": 467,
         "method": "GET",
         "path": "/api/v3/orgs/{org}/actions/permissions/artifact-and-log-retention",
         "source": "internal/server/gh_actions_permissions.go"
       },
       {
-        "line": 408,
+        "line": 471,
         "method": "GET",
         "path": "/api/v3/orgs/{org}/actions/permissions/fork-pr-contributor-approval",
         "source": "internal/server/gh_actions_permissions.go"
       },
       {
-        "line": 412,
+        "line": 475,
         "method": "GET",
         "path": "/api/v3/orgs/{org}/actions/permissions/fork-pr-workflows-private-repos",
         "source": "internal/server/gh_actions_permissions.go"
       },
       {
-        "line": 388,
+        "line": 451,
         "method": "GET",
         "path": "/api/v3/orgs/{org}/actions/permissions/repositories",
         "source": "internal/server/gh_actions_permissions.go"
       },
       {
-        "line": 396,
+        "line": 459,
         "method": "GET",
         "path": "/api/v3/orgs/{org}/actions/permissions/selected-actions",
         "source": "internal/server/gh_actions_permissions.go"
       },
       {
-        "line": 416,
+        "line": 479,
         "method": "GET",
         "path": "/api/v3/orgs/{org}/actions/permissions/self-hosted-runners",
         "source": "internal/server/gh_actions_permissions.go"
       },
       {
-        "line": 420,
+        "line": 483,
         "method": "GET",
         "path": "/api/v3/orgs/{org}/actions/permissions/self-hosted-runners/repositories",
         "source": "internal/server/gh_actions_permissions.go"
       },
       {
-        "line": 400,
+        "line": 463,
         "method": "GET",
         "path": "/api/v3/orgs/{org}/actions/permissions/workflow",
         "source": "internal/server/gh_actions_permissions.go"
@@ -21541,7 +21655,7 @@
         "source": "internal/server/gh_actions_rest.go"
       },
       {
-        "line": 497,
+        "line": 560,
         "method": "GET",
         "path": "/api/v3/orgs/{org}/actions/runners/{runner_id}/labels",
         "source": "internal/server/gh_actions_permissions.go"
@@ -22591,13 +22705,13 @@
         "source": "internal/server/gh_actions_extras.go"
       },
       {
-        "line": 473,
+        "line": 536,
         "method": "GET",
         "path": "/api/v3/repos/{owner}/{repo}/actions/cache/retention-limit",
         "source": "internal/server/gh_actions_permissions.go"
       },
       {
-        "line": 477,
+        "line": 540,
         "method": "GET",
         "path": "/api/v3/repos/{owner}/{repo}/actions/cache/storage-limit",
         "source": "internal/server/gh_actions_permissions.go"
@@ -22609,7 +22723,7 @@
         "source": "internal/server/artifacts.go"
       },
       {
-        "line": 481,
+        "line": 544,
         "method": "GET",
         "path": "/api/v3/repos/{owner}/{repo}/actions/cache/usage-policy",
         "source": "internal/server/gh_actions_permissions.go"
@@ -22663,43 +22777,43 @@
         "source": "internal/server/variables.go"
       },
       {
-        "line": 445,
+        "line": 508,
         "method": "GET",
         "path": "/api/v3/repos/{owner}/{repo}/actions/permissions",
         "source": "internal/server/gh_actions_permissions.go"
       },
       {
-        "line": 449,
+        "line": 512,
         "method": "GET",
         "path": "/api/v3/repos/{owner}/{repo}/actions/permissions/access",
         "source": "internal/server/gh_actions_permissions.go"
       },
       {
-        "line": 469,
+        "line": 532,
         "method": "GET",
         "path": "/api/v3/repos/{owner}/{repo}/actions/permissions/artifact-and-log-retention",
         "source": "internal/server/gh_actions_permissions.go"
       },
       {
-        "line": 461,
+        "line": 524,
         "method": "GET",
         "path": "/api/v3/repos/{owner}/{repo}/actions/permissions/fork-pr-contributor-approval",
         "source": "internal/server/gh_actions_permissions.go"
       },
       {
-        "line": 465,
+        "line": 528,
         "method": "GET",
         "path": "/api/v3/repos/{owner}/{repo}/actions/permissions/fork-pr-workflows-private-repos",
         "source": "internal/server/gh_actions_permissions.go"
       },
       {
-        "line": 453,
+        "line": 516,
         "method": "GET",
         "path": "/api/v3/repos/{owner}/{repo}/actions/permissions/selected-actions",
         "source": "internal/server/gh_actions_permissions.go"
       },
       {
-        "line": 457,
+        "line": 520,
         "method": "GET",
         "path": "/api/v3/repos/{owner}/{repo}/actions/permissions/workflow",
         "source": "internal/server/gh_actions_permissions.go"
@@ -22723,7 +22837,7 @@
         "source": "internal/server/gh_actions_rest.go"
       },
       {
-        "line": 491,
+        "line": 554,
         "method": "GET",
         "path": "/api/v3/repos/{owner}/{repo}/actions/runners/{runner_id}/labels",
         "source": "internal/server/gh_actions_permissions.go"
@@ -25255,7 +25369,7 @@
         "source": "internal/server/gh_repos_rest.go"
       },
       {
-        "line": 483,
+        "line": 546,
         "method": "PATCH",
         "path": "/api/v3/repos/{owner}/{repo}/actions/cache/usage-policy",
         "source": "internal/server/gh_actions_permissions.go"
@@ -25945,7 +26059,7 @@
         "source": "internal/server/gh_actions_rest.go"
       },
       {
-        "line": 505,
+        "line": 568,
         "method": "POST",
         "path": "/api/v3/orgs/{org}/actions/runners/{runner_id}/labels",
         "source": "internal/server/gh_actions_permissions.go"
@@ -26269,7 +26383,7 @@
         "source": "internal/server/agents.go"
       },
       {
-        "line": 503,
+        "line": 566,
         "method": "POST",
         "path": "/api/v3/repos/{owner}/{repo}/actions/runners/{runner_id}/labels",
         "source": "internal/server/gh_actions_permissions.go"
@@ -27235,13 +27349,13 @@
         "source": "internal/server/gh_notifications.go"
       },
       {
-        "line": 437,
+        "line": 500,
         "method": "PUT",
         "path": "/api/v3/organizations/{org_id}/actions/cache/retention-limit",
         "source": "internal/server/gh_actions_permissions.go"
       },
       {
-        "line": 441,
+        "line": 504,
         "method": "PUT",
         "path": "/api/v3/organizations/{org_id}/actions/cache/storage-limit",
         "source": "internal/server/gh_actions_permissions.go"
@@ -27253,67 +27367,67 @@
         "source": "internal/server/gh_misc_endpoints.go"
       },
       {
-        "line": 386,
+        "line": 449,
         "method": "PUT",
         "path": "/api/v3/orgs/{org}/actions/permissions",
         "source": "internal/server/gh_actions_permissions.go"
       },
       {
-        "line": 406,
+        "line": 469,
         "method": "PUT",
         "path": "/api/v3/orgs/{org}/actions/permissions/artifact-and-log-retention",
         "source": "internal/server/gh_actions_permissions.go"
       },
       {
-        "line": 410,
+        "line": 473,
         "method": "PUT",
         "path": "/api/v3/orgs/{org}/actions/permissions/fork-pr-contributor-approval",
         "source": "internal/server/gh_actions_permissions.go"
       },
       {
-        "line": 414,
+        "line": 477,
         "method": "PUT",
         "path": "/api/v3/orgs/{org}/actions/permissions/fork-pr-workflows-private-repos",
         "source": "internal/server/gh_actions_permissions.go"
       },
       {
-        "line": 390,
+        "line": 453,
         "method": "PUT",
         "path": "/api/v3/orgs/{org}/actions/permissions/repositories",
         "source": "internal/server/gh_actions_permissions.go"
       },
       {
-        "line": 392,
+        "line": 455,
         "method": "PUT",
         "path": "/api/v3/orgs/{org}/actions/permissions/repositories/{repository_id}",
         "source": "internal/server/gh_actions_permissions.go"
       },
       {
-        "line": 398,
+        "line": 461,
         "method": "PUT",
         "path": "/api/v3/orgs/{org}/actions/permissions/selected-actions",
         "source": "internal/server/gh_actions_permissions.go"
       },
       {
-        "line": 418,
+        "line": 481,
         "method": "PUT",
         "path": "/api/v3/orgs/{org}/actions/permissions/self-hosted-runners",
         "source": "internal/server/gh_actions_permissions.go"
       },
       {
-        "line": 422,
+        "line": 485,
         "method": "PUT",
         "path": "/api/v3/orgs/{org}/actions/permissions/self-hosted-runners/repositories",
         "source": "internal/server/gh_actions_permissions.go"
       },
       {
-        "line": 424,
+        "line": 487,
         "method": "PUT",
         "path": "/api/v3/orgs/{org}/actions/permissions/self-hosted-runners/repositories/{repository_id}",
         "source": "internal/server/gh_actions_permissions.go"
       },
       {
-        "line": 402,
+        "line": 465,
         "method": "PUT",
         "path": "/api/v3/orgs/{org}/actions/permissions/workflow",
         "source": "internal/server/gh_actions_permissions.go"
@@ -27343,7 +27457,7 @@
         "source": "internal/server/gh_runner_groups.go"
       },
       {
-        "line": 499,
+        "line": 562,
         "method": "PUT",
         "path": "/api/v3/orgs/{org}/actions/runners/{runner_id}/labels",
         "source": "internal/server/gh_actions_permissions.go"
@@ -27601,13 +27715,13 @@
         "source": "internal/server/gh_teams_rest.go"
       },
       {
-        "line": 475,
+        "line": 538,
         "method": "PUT",
         "path": "/api/v3/repos/{owner}/{repo}/actions/cache/retention-limit",
         "source": "internal/server/gh_actions_permissions.go"
       },
       {
-        "line": 479,
+        "line": 542,
         "method": "PUT",
         "path": "/api/v3/repos/{owner}/{repo}/actions/cache/storage-limit",
         "source": "internal/server/gh_actions_permissions.go"
@@ -27619,49 +27733,49 @@
         "source": "internal/server/gh_misc_endpoints.go"
       },
       {
-        "line": 447,
+        "line": 510,
         "method": "PUT",
         "path": "/api/v3/repos/{owner}/{repo}/actions/permissions",
         "source": "internal/server/gh_actions_permissions.go"
       },
       {
-        "line": 451,
+        "line": 514,
         "method": "PUT",
         "path": "/api/v3/repos/{owner}/{repo}/actions/permissions/access",
         "source": "internal/server/gh_actions_permissions.go"
       },
       {
-        "line": 471,
+        "line": 534,
         "method": "PUT",
         "path": "/api/v3/repos/{owner}/{repo}/actions/permissions/artifact-and-log-retention",
         "source": "internal/server/gh_actions_permissions.go"
       },
       {
-        "line": 463,
+        "line": 526,
         "method": "PUT",
         "path": "/api/v3/repos/{owner}/{repo}/actions/permissions/fork-pr-contributor-approval",
         "source": "internal/server/gh_actions_permissions.go"
       },
       {
-        "line": 467,
+        "line": 530,
         "method": "PUT",
         "path": "/api/v3/repos/{owner}/{repo}/actions/permissions/fork-pr-workflows-private-repos",
         "source": "internal/server/gh_actions_permissions.go"
       },
       {
-        "line": 455,
+        "line": 518,
         "method": "PUT",
         "path": "/api/v3/repos/{owner}/{repo}/actions/permissions/selected-actions",
         "source": "internal/server/gh_actions_permissions.go"
       },
       {
-        "line": 459,
+        "line": 522,
         "method": "PUT",
         "path": "/api/v3/repos/{owner}/{repo}/actions/permissions/workflow",
         "source": "internal/server/gh_actions_permissions.go"
       },
       {
-        "line": 493,
+        "line": 556,
         "method": "PUT",
         "path": "/api/v3/repos/{owner}/{repo}/actions/runners/{runner_id}/labels",
         "source": "internal/server/gh_actions_permissions.go"

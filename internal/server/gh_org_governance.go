@@ -658,11 +658,18 @@ func (s *Server) handleDeleteOrganizationRole(w http.ResponseWriter, r *http.Req
 	delete(s.store.OrgCustomRoles[org.Login], id)
 	delete(s.store.OrgRoleTeamAssignments[org.Login], id)
 	delete(s.store.OrgRoleUserAssignments[org.Login], id)
-	if s.store.persist != nil {
-		s.store.persist.MustPut("org_custom_roles", org.Login, s.store.OrgCustomRoles[org.Login])
-		s.store.persist.MustPut("org_role_team_assignments", org.Login, s.store.OrgRoleTeamAssignments[org.Login])
-		s.store.persist.MustPut("org_role_user_assignments", org.Login, s.store.OrgRoleUserAssignments[org.Login])
-	}
+	// One transaction: the role and its team and user assignments are deleted
+	// together, so a crash cannot leave a dangling assignment to a deleted role
+	// (STORE-001/002). Unlock before any panic so recovery's reload is not
+	// deadlocked by a still-held write lock (this handler unlocks explicitly).
+	batch := newPersistBatch(s.store.persist)
+	batch.Put("org_custom_roles", org.Login, s.store.OrgCustomRoles[org.Login])
+	batch.Put("org_role_team_assignments", org.Login, s.store.OrgRoleTeamAssignments[org.Login])
+	batch.Put("org_role_user_assignments", org.Login, s.store.OrgRoleUserAssignments[org.Login])
+	commitErr := batch.Commit()
 	s.store.mu.Unlock()
+	if commitErr != nil {
+		panic(&persistenceFailure{op: "batch", bucket: "org_custom_roles", err: commitErr})
+	}
 	w.WriteHeader(http.StatusNoContent)
 }

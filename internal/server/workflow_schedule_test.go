@@ -3,7 +3,85 @@ package bleephub
 import (
 	"testing"
 	"time"
+
+	"github.com/go-git/go-git/v5/plumbing"
+	"github.com/go-git/go-git/v5/plumbing/object"
 )
+
+// ACT-049: the per-minute dispatcher must not re-read and re-parse every
+// workflow file every tick. It caches each repo's parsed schedule keyed by the
+// default-branch tip commit, rebuilding only when that tip moves.
+func TestScheduleIndexRebuildsOnlyOnTipChange(t *testing.T) {
+	s := newTestServer()
+	repoKey := "cronowner/idx-repo"
+	commitWorkflowYAMLToStorage(t, s, repoKey, ".github/workflows/nightly.yml", `name: nightly
+on:
+  schedule:
+    - cron: '30 4 * * *'
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo hi
+`)
+
+	before := s.scheduleIndex.rebuilds.Load()
+
+	// Two ticks at non-matching minutes with an unchanged tip: the workflow is
+	// parsed once and the second tick reuses the cached schedule.
+	s.fireDueSchedules(time.Date(2026, 6, 12, 4, 29, 0, 0, time.UTC))
+	s.fireDueSchedules(time.Date(2026, 6, 12, 4, 28, 0, 0, time.UTC))
+	if got := s.scheduleIndex.rebuilds.Load() - before; got != 1 {
+		t.Fatalf("index rebuilt %d times across two unchanged-tip ticks, want 1 (no per-minute reparse)", got)
+	}
+
+	// Advancing the default-branch tip invalidates the cache.
+	advanceMainTip(t, s, repoKey)
+	s.fireDueSchedules(time.Date(2026, 6, 12, 4, 27, 0, 0, time.UTC))
+	if got := s.scheduleIndex.rebuilds.Load() - before; got != 2 {
+		t.Fatalf("index rebuilt %d times after the branch tip advanced, want 2 (a moved tip must invalidate)", got)
+	}
+}
+
+// advanceMainTip appends an empty commit (same tree as the current tip, new
+// parent+timestamp) to the repo's main branch so its resolved SHA changes while
+// the workflow content is preserved.
+func advanceMainTip(t *testing.T, s *Server, repoKey string) {
+	t.Helper()
+	parts := splitRepoKeyParts(repoKey)
+	stor := s.store.GetGitStorage(parts[0], parts[1])
+	if stor == nil {
+		t.Fatalf("no git storage for %s", repoKey)
+	}
+	mainRef := plumbing.NewBranchReferenceName("main")
+	head, err := stor.Reference(mainRef)
+	if err != nil {
+		t.Fatalf("resolve main: %v", err)
+	}
+	parent, err := object.GetCommit(stor, head.Hash())
+	if err != nil {
+		t.Fatalf("load tip commit: %v", err)
+	}
+	sig := object.Signature{Name: "t", Email: "t@t", When: fixedTestTime.Add(time.Minute)}
+	c := &object.Commit{
+		Author:       sig,
+		Committer:    sig,
+		Message:      "empty advance",
+		TreeHash:     parent.TreeHash,
+		ParentHashes: []plumbing.Hash{head.Hash()},
+	}
+	obj := stor.NewEncodedObject()
+	if err := c.Encode(obj); err != nil {
+		t.Fatalf("encode commit: %v", err)
+	}
+	h, err := stor.SetEncodedObject(obj)
+	if err != nil {
+		t.Fatalf("store commit: %v", err)
+	}
+	if err := stor.SetReference(plumbing.NewHashReference(mainRef, h)); err != nil {
+		t.Fatalf("advance main: %v", err)
+	}
+}
 
 func TestParseCron(t *testing.T) {
 	cases := []struct {

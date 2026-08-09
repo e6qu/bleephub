@@ -65,13 +65,13 @@ function DiscussionList({ owner, repo }: { owner: string; repo: string }) {
 
   const { data: categories = [] } = useQuery({
     queryKey: ["discussion-categories", owner, repo],
-    queryFn: () => fetchDiscussionCategories(owner, repo),
+    queryFn: ({ signal }) => fetchDiscussionCategories(owner, repo, signal),
     enabled: !!owner && !!repo,
   });
 
   const discussions = useInfiniteQuery({
     queryKey: ["discussions", owner, repo, selectedCategory],
-    queryFn: ({ pageParam }) => fetchDiscussionsPage(owner, repo, selectedCategory, pageParam as string | null),
+    queryFn: ({ pageParam, signal }) => fetchDiscussionsPage(owner, repo, selectedCategory, pageParam as string | null, signal),
     initialPageParam: null as string | null,
     getNextPageParam: (last) => (last.pageInfo.hasNextPage ? last.pageInfo.endCursor : undefined),
     enabled: !!owner && !!repo,
@@ -293,7 +293,7 @@ function DiscussionDetail({
 
   const { data: discussion, isLoading, isError, error } = useQuery({
     queryKey: ["discussion", owner, repo, number],
-    queryFn: () => fetchDiscussionDetail(owner, repo, number),
+    queryFn: ({ signal }) => fetchDiscussionDetail(owner, repo, number, signal),
   });
 
   const addCommentMutation = useMutation({

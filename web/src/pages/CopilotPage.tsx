@@ -133,7 +133,7 @@ function SeatsSection({ org }: { org: string }) {
 
   const { data, isLoading, isError, error: loadErr } = useQuery({
     queryKey: ["copilot-seats", org],
-    queryFn: () => fetchCopilotSeats(org),
+    queryFn: ({ signal }) => fetchCopilotSeats(org, signal),
   });
 
   const invalidate = () => {
@@ -249,7 +249,7 @@ function SpacesSection({ owner }: { owner: CopilotSpaceOwner }) {
 
   const { data, isLoading, isError, error: loadErr } = useQuery({
     queryKey: ["copilot-spaces", ownerKey(owner)],
-    queryFn: () => fetchCopilotSpaces(owner),
+    queryFn: ({ signal }) => fetchCopilotSpaces(owner, signal),
   });
 
   const deleteMut = useMutation({
@@ -489,7 +489,7 @@ function SpaceCollaboratorsPanel({
   const key = ["copilot-space-collaborators", ownerKey(owner), spaceNumber];
   const { data, isLoading, isError, error: loadErr } = useQuery({
     queryKey: key,
-    queryFn: () => fetchCopilotSpaceCollaborators(owner, spaceNumber),
+    queryFn: ({ signal }) => fetchCopilotSpaceCollaborators(owner, spaceNumber, signal),
   });
 
   const invalidate = () => {
@@ -647,7 +647,7 @@ function SpaceResourcesPanel({ owner, spaceNumber }: { owner: CopilotSpaceOwner;
   const key = ["copilot-space-resources", ownerKey(owner), spaceNumber];
   const { data, isLoading, isError, error: loadErr } = useQuery({
     queryKey: key,
-    queryFn: () => fetchCopilotSpaceResources(owner, spaceNumber),
+    queryFn: ({ signal }) => fetchCopilotSpaceResources(owner, spaceNumber, signal),
   });
 
   const removeMut = useMutation({

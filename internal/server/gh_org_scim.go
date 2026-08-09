@@ -265,12 +265,18 @@ func (s *Server) replaceOrganizationSCIMUser(w http.ResponseWriter, r *http.Requ
 	user.ExternalID, user.UserName, user.Name, user.DisplayName = req.ExternalID, login, req.Name, req.DisplayName
 	user.Active, user.Emails, user.UpdatedAt = active, append([]EnterpriseSCIMEmail(nil), req.Emails...), backing.UpdatedAt
 	s.setOrganizationSCIMMembershipLocked(org, backing.ID, active)
-	if s.store.persist != nil {
-		s.store.persist.MustPut("users", strconv.Itoa(backing.ID), backing)
-		s.store.persist.MustPut("org_scim_users", org.Login, s.store.OrgSCIMUsers[org.Login])
-	}
+	// One transaction: the renamed backing account and the org's SCIM-user record
+	// commit together, so a crash cannot leave the global identity and the SCIM
+	// view of it disagreeing (STORE-001/002).
+	batch := newPersistBatch(s.store.persist)
+	batch.Put("users", strconv.Itoa(backing.ID), backing)
+	batch.Put("org_scim_users", org.Login, s.store.OrgSCIMUsers[org.Login])
+	commitErr := batch.Commit()
 	result := copySCIMUser(user)
 	s.store.mu.Unlock()
+	if commitErr != nil {
+		panic(&persistenceFailure{op: "batch", bucket: "users", err: commitErr})
+	}
 	return result
 }
 

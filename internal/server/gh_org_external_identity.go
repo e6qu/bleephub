@@ -222,11 +222,15 @@ func (s *Server) handleListTeamExternalGroups(w http.ResponseWriter, r *http.Req
 }
 
 func (s *Server) persistTeamExternalGroupsLocked(orgLogin string, teamID int) {
-	if s.store.persist == nil {
-		return
+	// One transaction: the org's external-group set and the team's group binding
+	// commit together, so a crash cannot leave a team bound to a group the org no
+	// longer records, or vice versa (STORE-001/002).
+	batch := newPersistBatch(s.store.persist)
+	batch.Put("org_external_groups", orgLogin, s.store.OrgExternalGroups[orgLogin])
+	batch.Put("team_external_group_ids", strconv.Itoa(teamID), s.store.TeamExternalGroupIDs[teamID])
+	if err := batch.Commit(); err != nil {
+		panic(&persistenceFailure{op: "batch", bucket: "org_external_groups", err: err})
 	}
-	s.store.persist.MustPut("org_external_groups", orgLogin, s.store.OrgExternalGroups[orgLogin])
-	s.store.persist.MustPut("team_external_group_ids", strconv.Itoa(teamID), s.store.TeamExternalGroupIDs[teamID])
 }
 
 func (s *Server) syncExternalTeamMembersLocked(org *Org, team *Team) {

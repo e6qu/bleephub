@@ -169,7 +169,7 @@ func TestRepoAssigneesAndCollaboratorCheck(t *testing.T) {
 	if invID <= 0 {
 		t.Fatalf("expected real invitation id, got %v", inv["id"])
 	}
-	if !testServer.store.AcceptRepoInvitation(int(invID), testServer.store.UsersByLogin["reads-collab"]) {
+	if _, ok := testServer.store.AcceptRepoInvitation(int(invID), testServer.store.UsersByLogin["reads-collab"]); !ok {
 		t.Fatalf("accept invitation %d failed", int(invID))
 	}
 

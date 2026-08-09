@@ -358,7 +358,7 @@ function MergeBox({
   });
   const statusQ = useQuery({
     queryKey: ["combined-status", owner, repo, pr.head.sha],
-    queryFn: () => fetchCombinedStatus(owner, repo, pr.head.sha),
+    queryFn: ({ signal }) => fetchCombinedStatus(owner, repo, pr.head.sha, signal),
     enabled: !!pr.head.sha,
   });
   const mergeMutation = useMutation({
@@ -587,7 +587,7 @@ function ChecksSection({
   });
   const statusQ = useQuery({
     queryKey: ["combined-status", owner, repo, sha],
-    queryFn: () => fetchCombinedStatus(owner, repo, sha),
+    queryFn: ({ signal }) => fetchCombinedStatus(owner, repo, sha, signal),
     enabled: !!sha,
     refetchInterval: (query) =>
       query.state.data?.statuses.some((st) => st.state === "pending") ? 5000 : false,
@@ -715,7 +715,7 @@ function RequestedReviewersSection({
   const qc = useQueryClient();
   const q = useQuery({
     queryKey: ["pr-requested-reviewers", owner, repo, number],
-    queryFn: () => fetchPRRequestedReviewers(owner, repo, number),
+    queryFn: ({ signal }) => fetchPRRequestedReviewers(owner, repo, number, signal),
   });
   const [login, setLogin] = useState("");
   const invalidate = () =>

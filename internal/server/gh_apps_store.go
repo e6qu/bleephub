@@ -65,12 +65,29 @@ func appBotUser(app *App) *User {
 	}
 }
 
+// actionsBotUser is the synthetic principal a workflow's GITHUB_TOKEN acts as on
+// the REST surface, matching real GitHub's `github-actions[bot]`. Its id mirrors
+// the app-bot scheme (negative of the well-known Actions app id) so a resource
+// it authors attributes back to it through actorUserLocked (ACT-014).
+func actionsBotUser() *User {
+	return &User{
+		ID:     -githubActionsAppID,
+		NodeID: fmt.Sprintf("BOT_kgDO%08d", githubActionsAppID),
+		Login:  "github-actions[bot]",
+		Name:   "github-actions[bot]",
+		Type:   "Bot",
+	}
+}
+
 // actorUserLocked resolves both persisted users and the derived GitHub App bot
 // IDs stored on resources created with an installation token. st.mu must be
 // held by the caller.
 func actorUserLocked(st *Store, id int) *User {
 	if user := st.Users[id]; user != nil {
 		return user
+	}
+	if id == -githubActionsAppID {
+		return actionsBotUser()
 	}
 	if id < 0 {
 		return appBotUser(st.Apps[-id])
@@ -768,10 +785,12 @@ func (st *Store) DeleteOAuthApp(clientID string) bool {
 	if st.OAuthApps[clientID] == nil {
 		return false
 	}
+	// One transaction: the OAuth app and every user-to-server + refresh token it
+	// issued are deleted together, so a crash cannot leave a token alive for a
+	// deleted app (STORE-001/002). Auth codes and device codes are in-memory only.
+	batch := newPersistBatch(st.persist)
 	delete(st.OAuthApps, clientID)
-	if st.persist != nil {
-		st.persist.MustDelete("oauth_apps", clientID)
-	}
+	batch.Delete("oauth_apps", clientID)
 	for code, authorization := range st.AuthCodes {
 		if authorization.ClientID == clientID {
 			delete(st.AuthCodes, code)
@@ -787,14 +806,10 @@ func (st *Store) DeleteOAuthApp(clientID string) bool {
 			continue
 		}
 		delete(st.UserToServerTokens, token)
-		if st.persist != nil {
-			st.persist.MustDelete("user_to_server_tokens", token)
-		}
+		batch.Delete("user_to_server_tokens", token)
 		if userToken.RefreshTokenValue != "" {
 			delete(st.RefreshTokens, userToken.RefreshTokenValue)
-			if st.persist != nil {
-				st.persist.MustDelete("refresh_tokens", userToken.RefreshTokenValue)
-			}
+			batch.Delete("refresh_tokens", userToken.RefreshTokenValue)
 		}
 	}
 	for token, refresh := range st.RefreshTokens {
@@ -802,9 +817,10 @@ func (st *Store) DeleteOAuthApp(clientID string) bool {
 			continue
 		}
 		delete(st.RefreshTokens, token)
-		if st.persist != nil {
-			st.persist.MustDelete("refresh_tokens", token)
-		}
+		batch.Delete("refresh_tokens", token)
+	}
+	if err := batch.Commit(); err != nil {
+		panic(&persistenceFailure{op: "batch", bucket: "oauth_apps", err: err})
 	}
 	return true
 }

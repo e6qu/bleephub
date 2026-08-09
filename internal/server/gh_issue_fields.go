@@ -553,17 +553,20 @@ func (st *Store) DeleteIssueField(orgLogin string, id int) bool {
 	if st.OrgIssueFields[orgLogin][id] == nil {
 		return false
 	}
+	// One transaction: removing the field definition and clearing its value from
+	// every issue commit together, so a crash cannot leave an issue carrying a
+	// value for a field that no longer exists (STORE-001/002).
+	batch := newPersistBatch(st.persist)
 	delete(st.OrgIssueFields[orgLogin], id)
 	for issueID, values := range st.IssueFieldValues {
 		if _, ok := values[id]; ok {
 			delete(values, id)
-			if st.persist != nil {
-				st.persist.MustPut("issue_field_values", strconv.Itoa(issueID), values)
-			}
+			batch.Put("issue_field_values", strconv.Itoa(issueID), values)
 		}
 	}
-	if st.persist != nil {
-		st.persist.MustPut("org_issue_fields", orgLogin, st.OrgIssueFields[orgLogin])
+	batch.Put("org_issue_fields", orgLogin, st.OrgIssueFields[orgLogin])
+	if err := batch.Commit(); err != nil {
+		panic(&persistenceFailure{op: "batch", bucket: "org_issue_fields", err: err})
 	}
 	return true
 }

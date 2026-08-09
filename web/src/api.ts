@@ -243,8 +243,12 @@ export const SESSION_PROBE_TIMEOUT_MS = 5000;
  */
 export async function fetchBrowserSession(
   timeoutMs: number = SESSION_PROBE_TIMEOUT_MS,
+  signal?: AbortSignal,
 ): Promise<boolean> {
-  const res = await apiFetch("/auth/session", { signal: AbortSignal.timeout(timeoutMs) });
+  const timeout = AbortSignal.timeout(timeoutMs);
+  const res = await apiFetch("/auth/session", {
+    signal: signal ? AbortSignal.any([signal, timeout]) : timeout,
+  });
   if (!res.ok) {
     throw new ApiError(res.status, `session probe failed: ${res.status} ${res.statusText}`);
   }
@@ -469,15 +473,15 @@ export async function fetchWorkflowDetail(id: string, signal?: AbortSignal): Pro
   return mapWorkflowRun(repoFullName, run, jobsPage.items);
 }
 
-export async function fetchWorkflowLogs(id: string): Promise<Record<string, string[]>> {
+export async function fetchWorkflowLogs(id: string, signal?: AbortSignal): Promise<Record<string, string[]>> {
   const { owner, repo } = parseWorkflowRouteID(id);
-  const workflow = await fetchWorkflowDetail(id);
+  const workflow = await fetchWorkflowDetail(id, signal);
   const logs: Record<string, string[]> = {};
   await Promise.all(
     Object.values(workflow.jobs)
       .filter((job) => job.status === "completed")
       .map(async (job) => {
-        const text = await fetchJobLogs(owner, repo, Number(job.jobId));
+        const text = await fetchJobLogs(owner, repo, Number(job.jobId), signal);
         if (text) logs[job.jobId] = text.split(/\r?\n/);
       }),
   );
@@ -542,15 +546,15 @@ export async function fetchMetrics(signal?: AbortSignal): Promise<BleephubMetric
 }
 
 
-export const fetchHealth = () =>
-  fetchJSON<BleephubHealth>("/health");
+export const fetchHealth = (signal?: AbortSignal) =>
+  fetchJSON<BleephubHealth>("/health", signal);
 
-export async function fetchWorkflowFiles(): Promise<BleephubWorkflowFile[]> {
-  const repos = await fetchAllUserRepos();
+export async function fetchWorkflowFiles(signal?: AbortSignal): Promise<BleephubWorkflowFile[]> {
+  const repos = await fetchAllUserRepos(signal);
   const perRepo = await Promise.all(
     repos.map(async (repo) => {
       const [owner, repoName] = splitRepoFullName(repo.full_name);
-      const page = await fetchActionsWorkflows(owner, repoName);
+      const page = await fetchActionsWorkflows(owner, repoName, signal);
       return page.items.map((workflow) => mapWorkflowFile(repo.full_name, workflow));
     }),
   );
@@ -558,14 +562,15 @@ export async function fetchWorkflowFiles(): Promise<BleephubWorkflowFile[]> {
 }
 
 
-export async function fetchApps(): Promise<BleephubApp[]> {
-  const raw = await fetchJSON<WireGitHubApp[]>("/settings/apps");
+export async function fetchApps(signal?: AbortSignal): Promise<BleephubApp[]> {
+  const raw = await fetchJSON<WireGitHubApp[]>("/settings/apps", signal);
   return raw.map(normalizeGitHubApp);
 }
 
-export async function fetchInstallations(): Promise<BleephubInstallation[]> {
+export async function fetchInstallations(signal?: AbortSignal): Promise<BleephubInstallation[]> {
   const raw = await ghFetch<{ total_count: number; installations: WireInstallation[] }>(
     "/api/v3/user/installations?per_page=100",
+    signal,
   );
   return raw.installations.map(normalizeInstallation);
 }
@@ -684,9 +689,10 @@ export async function createApp(payload: {
   };
 }
 
-export async function fetchOAuthApps(): Promise<BleephubOAuthApp[]> {
+export async function fetchOAuthApps(signal?: AbortSignal): Promise<BleephubOAuthApp[]> {
   const res = await apiFetch("/settings/oauth-apps", {
     headers: authHeaders(),
+    signal,
   });
   if (!res.ok) {
     handleUnauthorized(res);
@@ -696,8 +702,8 @@ export async function fetchOAuthApps(): Promise<BleephubOAuthApp[]> {
   return raw.map(normalizeOAuthApp);
 }
 
-export async function fetchAppSettings(slug: string): Promise<BleephubApp> {
-  const raw = await fetchJSON<WireGitHubApp>(`/settings/apps/${encodeURIComponent(slug)}`);
+export async function fetchAppSettings(slug: string, signal?: AbortSignal): Promise<BleephubApp> {
+  const raw = await fetchJSON<WireGitHubApp>(`/settings/apps/${encodeURIComponent(slug)}`, signal);
   return normalizeGitHubApp(raw);
 }
 
@@ -807,12 +813,13 @@ export const removeInstallationRepository = (installationId: number, repoId: num
 export async function fetchInstallableRepositories(
   login: string,
   accountType: "User" | "Organization",
+  signal?: AbortSignal,
 ): Promise<BleephubRepo[]> {
   const path =
     accountType === "Organization"
       ? `/api/v3/orgs/${encodeURIComponent(login)}/repos?per_page=100`
       : "/api/v3/user/repos?affiliation=owner&per_page=100";
-  const repos = await ghFetch<BleephubRepo[]>(path);
+  const repos = await ghFetch<BleephubRepo[]>(path, signal);
   return repos.filter((repo) => repo.owner.login === login);
 }
 
@@ -1777,9 +1784,10 @@ export const fetchRunJobs = (owner: string, repo: string, runId: number, signal?
   );
 
 /** Job logs are text/plain, not JSON. */
-export async function fetchJobLogs(owner: string, repo: string, jobId: number): Promise<string> {
+export async function fetchJobLogs(owner: string, repo: string, jobId: number, signal?: AbortSignal): Promise<string> {
   const res = await apiFetch(`/api/v3/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/actions/jobs/${jobId}/logs`, {
     headers: authHeaders(),
+    signal,
   });
   if (!res.ok) {
     handleUnauthorized(res);
@@ -1920,9 +1928,9 @@ export const deleteScopedVariable = (scope: SecretsScope, name: string) =>
 
 // ─── Internal admin endpoints ───────────────────────────────────────────
 
-export async function fetchUsers(): Promise<BleephubUser[]> {
-  const users = await ghFetch<BleephubUser[]>("/api/v3/users?per_page=100");
-  return Promise.all(users.map((user) => ghFetch<BleephubUser>(`/api/v3/users/${encodeURIComponent(user.login)}`)));
+export async function fetchUsers(signal?: AbortSignal): Promise<BleephubUser[]> {
+  const users = await ghFetch<BleephubUser[]>("/api/v3/users?per_page=100", signal);
+  return Promise.all(users.map((user) => ghFetch<BleephubUser>(`/api/v3/users/${encodeURIComponent(user.login)}`, signal)));
 }
 
 export async function createUser(payload: { login: string; email?: string; site_admin?: boolean }): Promise<BleephubUser> {
@@ -1945,9 +1953,9 @@ export async function updateUser(login: string, payload: Pick<Partial<BleephubUs
 export const deleteUser = (login: string) =>
   ghSend("DELETE", `/api/v3/admin/users/${encodeURIComponent(login)}`);
 
-export async function fetchOrgs(): Promise<BleephubOrg[]> {
-  const orgs = await ghFetch<GithubOrgSummary[]>("/api/v3/organizations?per_page=100");
-  return Promise.all(orgs.map((org) => ghFetch<BleephubOrg>(`/api/v3/orgs/${encodeURIComponent(org.login)}`)));
+export async function fetchOrgs(signal?: AbortSignal): Promise<BleephubOrg[]> {
+  const orgs = await ghFetch<GithubOrgSummary[]>("/api/v3/organizations?per_page=100", signal);
+  return Promise.all(orgs.map((org) => ghFetch<BleephubOrg>(`/api/v3/orgs/${encodeURIComponent(org.login)}`, signal)));
 }
 
 export async function createOrg(payload: {
@@ -2757,11 +2765,12 @@ interface GraphQLResponse<T> {
   errors?: Array<{ message: string; type?: string }>;
 }
 
-async function ghGraphQL<T>(query: string, variables?: Record<string, unknown>): Promise<T> {
+async function ghGraphQL<T>(query: string, variables?: Record<string, unknown>, signal?: AbortSignal): Promise<T> {
   const res = await apiFetch("/api/graphql", {
     method: "POST",
     headers: { "Content-Type": "application/json", ...authHeaders() },
     body: JSON.stringify({ query, variables }),
+    signal,
   });
   if (!res.ok) {
     handleUnauthorized(res);
@@ -2795,6 +2804,7 @@ const DISCUSSION_LIST_FRAGMENT = `
 export async function fetchDiscussionCategories(
   owner: string,
   repo: string,
+  signal?: AbortSignal,
 ): Promise<GithubDiscussionCategory[]> {
   const data = await ghGraphQL<{
     repository: { discussionCategories: GithubDiscussionCategoryConnection };
@@ -2807,6 +2817,7 @@ export async function fetchDiscussionCategories(
       }
     }`,
     { owner, repo },
+    signal,
   );
   return data.repository.discussionCategories.nodes;
 }
@@ -2816,6 +2827,7 @@ export async function fetchDiscussionsPage(
   repo: string,
   categoryId: string | null,
   after: string | null,
+  signal?: AbortSignal,
 ): Promise<GithubDiscussionConnection> {
   const data = await ghGraphQL<{
     repository: { discussions: GithubDiscussionConnection };
@@ -2830,6 +2842,7 @@ export async function fetchDiscussionsPage(
       }
     }`,
     { owner, repo, categoryId, after },
+    signal,
   );
   return data.repository.discussions;
 }
@@ -2838,6 +2851,7 @@ export async function fetchDiscussionDetail(
   owner: string,
   repo: string,
   number: number,
+  signal?: AbortSignal,
 ): Promise<GithubDiscussion & { comments: GithubDiscussionCommentConnection }> {
   const data = await ghGraphQL<{
     repository: {
@@ -2883,6 +2897,7 @@ export async function fetchDiscussionDetail(
       }
     }`,
     { owner, repo, number },
+    signal,
   );
   return data.repository.discussion;
 }
@@ -2979,8 +2994,8 @@ export async function updateDiscussionComment(commentId: string, body: string): 
 
 /** GET /contributors returns 204 with an empty body for a repo with no
  * commits — that reads as an honest empty list, not a parse error. */
-export async function fetchRepoContributors(owner: string, repo: string): Promise<GithubContributor[]> {
-  const res = await apiFetch(`/api/v3/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/contributors`, { headers: authHeaders() });
+export async function fetchRepoContributors(owner: string, repo: string, signal?: AbortSignal): Promise<GithubContributor[]> {
+  const res = await apiFetch(`/api/v3/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/contributors`, { headers: authHeaders(), signal });
   if (!res.ok) {
     handleUnauthorized(res);
     throw new ApiError(res.status, `${res.status} ${res.statusText}`);
@@ -3198,8 +3213,8 @@ export const revokeOrgRoleFromUser = (org: string, username: string, roleId: num
 
 // ─── Enterprise administration ──────────────────────────────────────────
 
-export async function fetchEnterpriseSlug(): Promise<string> {
-  const health = await fetchHealth();
+export async function fetchEnterpriseSlug(signal?: AbortSignal): Promise<string> {
+  const health = await fetchHealth(signal);
   if (!health.enterprise_slug) {
     throw new Error("/health response did not include enterprise_slug");
   }
@@ -3286,9 +3301,11 @@ export const fetchCopilotBilling = (org: string) =>
  * endpoint names its count total_seats rather than total_count. */
 export async function fetchCopilotSeats(
   org: string,
+  signal?: AbortSignal,
 ): Promise<{ totalSeats: number; seats: GithubCopilotSeat[] }> {
   const body = await ghFetch<{ total_seats: number; seats: GithubCopilotSeat[] }>(
     `/api/v3/orgs/${encodeURIComponent(org)}/copilot/billing/seats`,
+    signal,
   );
   if (!Array.isArray(body.seats)) {
     throw new Error(`malformed response: missing "seats" array`);
@@ -3318,8 +3335,8 @@ const copilotSpacesBase = (owner: CopilotSpaceOwner) => {
   return `/api/v3/${collection}/${encodeURIComponent(owner.login)}/copilot-spaces`;
 };
 
-export async function fetchCopilotSpaces(owner: CopilotSpaceOwner): Promise<GithubCopilotSpace[]> {
-  const body = await ghFetch<{ spaces: GithubCopilotSpace[] }>(copilotSpacesBase(owner));
+export async function fetchCopilotSpaces(owner: CopilotSpaceOwner, signal?: AbortSignal): Promise<GithubCopilotSpace[]> {
+  const body = await ghFetch<{ spaces: GithubCopilotSpace[] }>(copilotSpacesBase(owner), signal);
   if (!Array.isArray(body.spaces)) {
     throw new Error(`malformed response: missing "spaces" array`);
   }
@@ -3363,9 +3380,11 @@ export const deleteCopilotSpace = (owner: CopilotSpaceOwner, spaceNumber: number
 export async function fetchCopilotSpaceCollaborators(
   owner: CopilotSpaceOwner,
   spaceNumber: number,
+  signal?: AbortSignal,
 ): Promise<GithubCopilotSpaceCollaborator[]> {
   const body = await ghFetch<{ collaborators: GithubCopilotSpaceCollaborator[] }>(
     `${copilotSpacesBase(owner)}/${spaceNumber}/collaborators`,
+    signal,
   );
   if (!Array.isArray(body.collaborators)) {
     throw new Error(`malformed response: missing "collaborators" array`);
@@ -3408,9 +3427,11 @@ export const removeCopilotSpaceCollaborator = (
 export async function fetchCopilotSpaceResources(
   owner: CopilotSpaceOwner,
   spaceNumber: number,
+  signal?: AbortSignal,
 ): Promise<GithubCopilotSpaceResource[]> {
   const body = await ghFetch<{ resources: GithubCopilotSpaceResource[] }>(
     `${copilotSpacesBase(owner)}/${spaceNumber}/resources`,
+    signal,
   );
   if (!Array.isArray(body.resources)) {
     throw new Error(`malformed response: missing "resources" array`);
@@ -3600,9 +3621,10 @@ export const fetchOrgHooksPage = (
 export async function fetchPagesSite(
   owner: string,
   repo: string,
+  signal?: AbortSignal,
 ): Promise<GithubPagesSite | null> {
   try {
-    return await ghFetch<GithubPagesSite>(`/api/v3/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/pages`);
+    return await ghFetch<GithubPagesSite>(`/api/v3/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/pages`, signal);
   } catch (err) {
     if (isNotFound(err)) return null;
     throw err;
@@ -3649,9 +3671,10 @@ export const requestPagesBuild = (
  * response body's message — the endpoint answers 400 with an explanation
  * ("There isn't a custom domain on this Pages site") the panel must show.
  */
-export async function fetchPagesHealth(owner: string, repo: string): Promise<GithubPagesHealth> {
+export async function fetchPagesHealth(owner: string, repo: string, signal?: AbortSignal): Promise<GithubPagesHealth> {
   const res = await apiFetch(`/api/v3/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/pages/health`, {
     headers: authHeaders(),
+    signal,
   });
   if (!res.ok) {
     handleUnauthorized(res);
@@ -3827,9 +3850,11 @@ export async function fetchPRRequestedReviewers(
   owner: string,
   repo: string,
   number: number,
+  signal?: AbortSignal,
 ): Promise<GithubReviewRequest> {
   const body = await ghFetch<GithubReviewRequest>(
     `/api/v3/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/pulls/${number}/requested_reviewers`,
+    signal,
   );
   // No `?? []`: a missing member is a contract break that must surface.
   if (!Array.isArray(body.users) || !Array.isArray(body.teams)) {
@@ -3862,9 +3887,11 @@ export async function fetchCombinedStatus(
   owner: string,
   repo: string,
   ref: string,
+  signal?: AbortSignal,
 ): Promise<GithubCombinedStatus> {
   const body = await ghFetch<GithubCombinedStatus>(
     `/api/v3/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/commits/${ref}/status`,
+    signal,
   );
   // No `?? []`: a missing member is a contract break that must surface.
   if (!Array.isArray(body.statuses)) {

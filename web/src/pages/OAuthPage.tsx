@@ -95,8 +95,8 @@ function AuthorizedApplications() {
 function FlowSimulator() {
   const apps = useQuery({
     queryKey: ["oauth-flow-clients"],
-    queryFn: async () => {
-      const [githubApps, oauthApps] = await Promise.all([fetchApps(), fetchOAuthApps()]);
+    queryFn: async ({ signal }) => {
+      const [githubApps, oauthApps] = await Promise.all([fetchApps(signal), fetchOAuthApps(signal)]);
       return [
         ...oauthApps.map((app) => ({
           id: app.clientId,

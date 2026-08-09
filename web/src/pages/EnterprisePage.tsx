@@ -40,7 +40,7 @@ export function EnterprisePage() {
   const [tab, setTab] = useState<EnterpriseTab>("teams");
   const { data: enterpriseSlug } = useQuery({
     queryKey: ["enterprise-slug"],
-    queryFn: fetchEnterpriseSlug,
+    queryFn: ({ signal }) => fetchEnterpriseSlug(signal),
   });
 
   return (

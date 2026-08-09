@@ -647,9 +647,14 @@ func (st *Store) DeleteCodeSecurityConfiguration(orgLogin string, id int) {
 			delete(attachments, repoID)
 		}
 	}
-	if st.persist != nil {
-		st.persist.MustPut("code_security_configurations", orgLogin, st.CodeSecurityConfigs[orgLogin])
-		st.persist.MustPut("code_security_repo_attachments", orgLogin, attachments)
+	// One transaction: dropping the configuration and detaching it from every
+	// repo commit together, so a crash cannot leave a repo attached to a deleted
+	// configuration (STORE-001/002).
+	batch := newPersistBatch(st.persist)
+	batch.Put("code_security_configurations", orgLogin, st.CodeSecurityConfigs[orgLogin])
+	batch.Put("code_security_repo_attachments", orgLogin, attachments)
+	if err := batch.Commit(); err != nil {
+		panic(&persistenceFailure{op: "batch", bucket: "code_security_configurations", err: err})
 	}
 }
 

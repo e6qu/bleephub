@@ -57,6 +57,13 @@ func (s *Server) handleCreateFork(w http.ResponseWriter, r *http.Request) {
 		"source": sourceRepo.FullName,
 		"fork":   fork.FullName,
 	})
+	// `fork` fires on the source repository so `on: fork` workflows there run,
+	// carrying the new fork as `forkee` (ACT-026).
+	s.emitWebhookEvent(sourceRepo.FullName, "fork", "", map[string]interface{}{
+		"forkee":     fullRepoJSONForViewer(fork, s.store, s.baseURL(r), user),
+		"repository": repoPayload(sourceRepo),
+		"sender":     userToJSON(user),
+	})
 	writeJSON(w, http.StatusAccepted, fullRepoJSONForViewer(fork, s.store, s.baseURL(r), user))
 }
 

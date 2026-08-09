@@ -39,6 +39,71 @@ func TestAgentSatisfiesLabels(t *testing.T) {
 	}
 }
 
+// ACT-051: runner.os/arch/name are placeholders at queue time and must be
+// late-bound to the agent that actually leases the message.
+func TestRunnerContextDerivedFromAgent(t *testing.T) {
+	for _, tc := range []struct {
+		name             string
+		agent            *Agent
+		wantOS, wantArch string
+		wantName         string
+	}{
+		{"nil is generic default", nil, "Linux", "X64", "test-runner"},
+		{"os+arch from labels", &Agent{Name: "win-box", Labels: []Label{{Name: "self-hosted"}, {Name: "Windows"}, {Name: "ARM64"}}}, "Windows", "ARM64", "win-box"},
+		{"macos label", &Agent{Name: "mac", Labels: []Label{{Name: "macOS"}, {Name: "X64"}}}, "macOS", "X64", "mac"},
+		{"fallback to os description", &Agent{Name: "d", OSDescription: "Linux 6.1 aarch64"}, "Linux", "ARM64", "d"},
+	} {
+		got := runnerContextData(tc.agent)
+		entries, _ := got["d"].([]map[string]interface{})
+		vals := map[string]string{}
+		for _, e := range entries {
+			vals[e["k"].(string)] = e["v"].(string)
+		}
+		if vals["os"] != tc.wantOS || vals["arch"] != tc.wantArch || vals["name"] != tc.wantName {
+			t.Errorf("%s: os=%q arch=%q name=%q, want os=%q arch=%q name=%q", tc.name, vals["os"], vals["arch"], vals["name"], tc.wantOS, tc.wantArch, tc.wantName)
+		}
+	}
+}
+
+func TestLeasedJobRebindsRunnerContext(t *testing.T) {
+	s := newTestServer()
+	sess := &Session{
+		SessionID: "lease-sess",
+		Agent:     &Agent{ID: 42, Name: "prod-runner-7", Labels: []Label{{Name: "self-hosted"}, {Name: "Windows"}, {Name: "ARM64"}}},
+		MsgCh:     make(chan *TaskAgentMessage, 1),
+	}
+	s.store.mu.Lock()
+	s.store.Sessions[sess.SessionID] = sess
+	s.store.mu.Unlock()
+
+	// A queued job message carries the runner-agnostic placeholder.
+	body, _ := json.Marshal(map[string]interface{}{
+		"contextData": map[string]interface{}{
+			"runner": runnerContextData(nil),
+		},
+	})
+	s.queueJobMessage(&TaskAgentMessage{MessageID: 5, JobID: "j5", MessageType: "PipelineAgentJobRequest", Body: string(body)})
+
+	msg := s.pullPendingMessage(sess, runnerScope{Org: "octo"})
+	if msg == nil {
+		t.Fatal("free runner did not pull the queued job")
+	}
+
+	var decoded map[string]interface{}
+	if err := json.Unmarshal([]byte(msg.Body), &decoded); err != nil {
+		t.Fatalf("delivered body not JSON: %v", err)
+	}
+	runner := decoded["contextData"].(map[string]interface{})["runner"].(map[string]interface{})
+	vals := map[string]string{}
+	for _, e := range runner["d"].([]interface{}) {
+		m := e.(map[string]interface{})
+		vals[m["k"].(string)] = m["v"].(string)
+	}
+	if vals["os"] != "Windows" || vals["arch"] != "ARM64" || vals["name"] != "prod-runner-7" {
+		t.Fatalf("delivered runner context not rebound to leasing agent: os=%q arch=%q name=%q", vals["os"], vals["arch"], vals["name"])
+	}
+}
+
 func TestBusyRunnerNeverReceivesJobs(t *testing.T) {
 	s := newTestServer()
 	sess := &Session{

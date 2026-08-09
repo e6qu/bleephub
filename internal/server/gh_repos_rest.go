@@ -779,6 +779,7 @@ func (s *Server) handleUpdateRepo(w http.ResponseWriter, r *http.Request) {
 		writeGHError(w, http.StatusForbidden, "Must have admin rights to Repository.")
 		return
 	}
+	wasPrivate := repo.Private
 
 	var req map[string]interface{}
 	if !decodeJSONBody(w, r, &req) {
@@ -893,6 +894,14 @@ func (s *Server) handleUpdateRepo(w http.ResponseWriter, r *http.Request) {
 	})
 
 	updated := s.store.GetRepo(owner, name)
+	// GitHub's `public` event fires when a repository is switched from private to
+	// public, so `on: public` workflows run (ACT-026).
+	if wasPrivate && updated != nil && !updated.Private {
+		s.emitWebhookEvent(updated.FullName, "public", "", map[string]interface{}{
+			"repository": repoPayload(updated),
+			"sender":     userToJSON(user),
+		})
+	}
 	writeJSON(w, http.StatusOK, fullRepoJSONForViewer(updated, s.store, s.baseURL(r), user))
 }
 
@@ -1386,6 +1395,15 @@ func (s *Server) handleStarRepo(w http.ResponseWriter, r *http.Request) {
 	if !s.store.StarRepo(user.ID, owner, name) {
 		writeGHError(w, http.StatusNotFound, "Not Found")
 		return
+	}
+	// GitHub's `watch` event (action "started") fires when a repo is starred, so
+	// `on: watch` workflows run (ACT-026); the name is historical.
+	if repo := s.store.GetRepo(owner, name); repo != nil {
+		s.emitWebhookEvent(repo.FullName, "watch", "started", map[string]interface{}{
+			"action":     "started",
+			"repository": repoPayload(repo),
+			"sender":     userToJSON(user),
+		})
 	}
 	w.WriteHeader(http.StatusNoContent)
 }

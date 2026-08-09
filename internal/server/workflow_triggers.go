@@ -469,6 +469,9 @@ func (s *Server) firePullRequestSynchronize(repo *Repo, repoKey, branch string) 
 		if baseRepo == nil {
 			continue
 		}
+		// The head branch moved, so recompute the test-merge before the payload
+		// is built (ACT-027).
+		s.refreshPullRequestPotentialMerge(baseRepo, pr)
 		payload := buildPullRequestPayload(s.store, baseRepo, pr, nil, "synchronize")
 		s.emitWebhookEvent(baseRepo.FullName, "pull_request", "synchronize", payload)
 	}

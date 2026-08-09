@@ -446,7 +446,7 @@ function JobPane({
 }) {
   const logsQ = useQuery({
     queryKey: ["job-logs", owner, repo, job.id],
-    queryFn: () => fetchJobLogs(owner, repo, job.id),
+    queryFn: ({ signal }) => fetchJobLogs(owner, repo, job.id, signal),
     refetchInterval: live ? 2000 : false,
   });
   const summaryQ = useQuery({

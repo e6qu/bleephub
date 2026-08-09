@@ -165,32 +165,35 @@ func (s *Server) handleGHCredentialsRevoke(w http.ResponseWriter, r *http.Reques
 func (st *Store) RevokeCredentials(credentials []string) int {
 	st.mu.Lock()
 	defer st.mu.Unlock()
+	// One transaction: every credential in the batch is revoked together across
+	// the PAT, user-to-server, refresh and installation token buckets, so a crash
+	// cannot leave part of a revoke request's credentials alive (STORE-001/002).
+	batch := newPersistBatch(st.persist)
 	revoked := 0
 	for _, c := range credentials {
 		if _, mapKey := st.tokenByValueLocked(c); mapKey != "" {
-			st.deleteTokenMapKeyLocked(mapKey)
+			st.deleteTokenMapKeyBatchLocked(batch, mapKey)
 			revoked++
 		}
 		if _, ok := st.UserToServerTokens[c]; ok {
 			delete(st.UserToServerTokens, c)
-			if st.persist != nil {
-				st.persist.MustDelete("user_to_server_tokens", c)
-			}
+			batch.Delete("user_to_server_tokens", c)
 			revoked++
 		}
 		if _, ok := st.RefreshTokens[c]; ok {
 			delete(st.RefreshTokens, c)
-			if st.persist != nil {
-				st.persist.MustDelete("refresh_tokens", c)
-			}
+			batch.Delete("refresh_tokens", c)
 			revoked++
 		}
 		if _, ok := st.InstallationTokens[c]; ok {
 			delete(st.InstallationTokens, c)
-			if st.persist != nil {
-				st.persist.MustDelete("installation_tokens", c)
-			}
+			batch.Delete("installation_tokens", c)
 			revoked++
+		}
+	}
+	if revoked > 0 {
+		if err := batch.Commit(); err != nil {
+			panic(&persistenceFailure{op: "batch", bucket: "tokens", err: err})
 		}
 	}
 	return revoked

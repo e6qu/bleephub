@@ -158,6 +158,10 @@ func (st *Store) CreateCheckRun(repoKey, headSHA, name string, appID int, suiteI
 	st.mu.Lock()
 	defer st.mu.Unlock()
 
+	// One transaction: an inline-created check suite and the check run that
+	// belongs to it commit together, so a crash cannot persist a check run whose
+	// suite was never written (STORE-001/002).
+	batch := newPersistBatch(st.persist)
 	if suiteID == 0 {
 		// inline suite create (mirror logic from CreateCheckSuite without re-locking)
 		for _, s := range st.CheckSuites {
@@ -180,9 +184,7 @@ func (st *Store) CreateCheckRun(repoKey, headSHA, name string, appID int, suiteI
 				CreatedAt: now,
 				UpdatedAt: now,
 			}
-			if st.persist != nil {
-				st.persist.MustPut("check_suites", strconv.FormatInt(suiteID, 10), st.CheckSuites[suiteID])
-			}
+			batch.Put("check_suites", strconv.FormatInt(suiteID, 10), st.CheckSuites[suiteID])
 		}
 	}
 
@@ -201,8 +203,9 @@ func (st *Store) CreateCheckRun(repoKey, headSHA, name string, appID int, suiteI
 		RepoKey:   repoKey,
 	}
 	st.CheckRuns[id] = cr
-	if st.persist != nil {
-		st.persist.MustPut("check_runs", strconv.FormatInt(id, 10), cr)
+	batch.Put("check_runs", strconv.FormatInt(id, 10), cr)
+	if err := batch.Commit(); err != nil {
+		panic(&persistenceFailure{op: "batch", bucket: "check_runs", err: err})
 	}
 	return cr
 }

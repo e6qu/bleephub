@@ -740,7 +740,13 @@ func writeCommit(stor gitStorage.Storer, commit *object.Commit) (plumbing.Hash, 
 // request: unlike performMerge it never fast-forwards — a merge commit is
 // created even when base is an ancestor of head. Returns the merge commit
 // hash.
-func performMergeCommit(stor gitStorage.Storer, baseRef plumbing.ReferenceName, headHash plumbing.Hash, message string, sig *object.Signature) (plumbing.Hash, error) {
+// computeMergeCommitHash computes the merge of headHash into baseRef and writes
+// the resulting merge commit object, but does NOT advance baseRef. It is used to
+// materialize a pull request's potential ("test") merge commit so a
+// pull_request workflow run can report the merge ref/SHA without the PR actually
+// being merged (ACT-027). It returns baseRef's current hash when there is
+// nothing to merge, and an error when the branches do not share a merge base.
+func computeMergeCommitHash(stor gitStorage.Storer, baseRef plumbing.ReferenceName, headHash plumbing.Hash, message string, sig *object.Signature) (plumbing.Hash, error) {
 	baseRefObj, err := stor.Reference(baseRef)
 	if err != nil {
 		return plumbing.ZeroHash, fmt.Errorf("resolve base ref: %w", err)
@@ -773,15 +779,49 @@ func performMergeCommit(stor gitStorage.Storer, baseRef plumbing.ReferenceName, 
 		}
 	}
 
-	commitHash, err := writeCommit(stor, &object.Commit{
+	return writeCommit(stor, &object.Commit{
 		Author:       *sig,
 		Committer:    *sig,
 		Message:      message,
 		TreeHash:     treeHash,
 		ParentHashes: []plumbing.Hash{baseHash, headHash},
 	})
+}
+
+// refreshPullRequestPotentialMerge recomputes and stores an open PR's test-merge
+// commit (head merged into base without advancing base), so a pull_request
+// workflow run reports the merge ref/SHA rather than the head SHA (ACT-027). A
+// merge conflict, an unresolvable ref, or in-memory-only git storage clears the
+// field, leaving the head-SHA fallback in place.
+func (s *Server) refreshPullRequestPotentialMerge(repo *Repo, pr *PullRequest) {
+	sha := ""
+	if repo != nil && pr != nil && pr.State == "OPEN" {
+		if owner, name, ok := splitRepoFullName(repo.FullName); ok {
+			if stor := s.store.GetGitStorage(owner, name); stor != nil {
+				if head := pullRequestHeadSHA(pr, s.store); head != "" {
+					sig := &object.Signature{Name: "bleephub", Email: "bleephub@bleephub.invalid", When: s.currentTime()}
+					if h, err := computeMergeCommitHash(stor, plumbing.NewBranchReferenceName(pr.BaseRefName), plumbing.NewHash(head), "Merge pull request", sig); err == nil && !h.IsZero() {
+						sha = h.String()
+					}
+				}
+			}
+		}
+	}
+	s.store.SetPullRequestPotentialMergeSHA(pr.ID, sha)
+}
+
+func performMergeCommit(stor gitStorage.Storer, baseRef plumbing.ReferenceName, headHash plumbing.Hash, message string, sig *object.Signature) (plumbing.Hash, error) {
+	baseRefObj, err := stor.Reference(baseRef)
+	if err != nil {
+		return plumbing.ZeroHash, fmt.Errorf("resolve base ref: %w", err)
+	}
+	commitHash, err := computeMergeCommitHash(stor, baseRef, headHash, message, sig)
 	if err != nil {
 		return plumbing.ZeroHash, err
+	}
+	if commitHash == baseRefObj.Hash() {
+		// Nothing to merge (head already contained in base): no ref change.
+		return commitHash, nil
 	}
 	if err := stor.CheckAndSetReference(plumbing.NewHashReference(baseRef, commitHash), baseRefObj); err != nil {
 		return plumbing.ZeroHash, err

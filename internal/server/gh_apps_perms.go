@@ -134,11 +134,20 @@ func (s *Server) requirePerm(scope permScope, level permLevel, next http.Handler
 		instTok := ghInstallationTokenFromContext(r.Context())
 		utsTok := ghUserToServerTokenFromContext(r.Context())
 		jwtApp := ghAppFromContext(r.Context())
+		jobTok := ghJobTokenFromContext(r.Context())
 		user := ghUserFromContext(r.Context())
 
 		switch {
 		case instTok != nil:
 			if !hasPerm(instTok.Permissions, scope, level) {
+				writeGHError(w, http.StatusForbidden, "Resource not accessible by integration")
+				return
+			}
+		case jobTok != nil:
+			// A workflow GITHUB_TOKEN carries the workflow's resolved
+			// least-privilege permission set; a scope it was not granted is
+			// forbidden, exactly as GitHub rejects an under-scoped token (ACT-014).
+			if !hasPerm(jobTok.Perms, scope, level) {
 				writeGHError(w, http.StatusForbidden, "Resource not accessible by integration")
 				return
 			}
@@ -236,6 +245,16 @@ const (
 func (s *Server) credentialMayAccessTarget(r *http.Request, user *User, instTok *InstallationToken, scope permScope, need permLevel) targetVerdict {
 	if verdict := s.namedTargetsResolve(r); verdict != targetAllowed {
 		return verdict
+	}
+	if jobTok := ghJobTokenFromContext(r.Context()); jobTok != nil {
+		// A workflow GITHUB_TOKEN reaches exactly its own repository. A request
+		// that names a different repo — or names no repository at all (org- or
+		// user-level routes) — is outside the token's reach (ACT-014).
+		repo := s.repoFromPATRequest(r)
+		if repo == nil || !strings.EqualFold(repo.FullName, jobTok.Repo) {
+			return targetDenied
+		}
+		return targetAllowed
 	}
 	if instTok != nil {
 		if s.installationMayAccessTarget(r, instTok, scope) {

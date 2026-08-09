@@ -219,6 +219,13 @@ func (s *Server) pullPendingMessage(session *Session, scope runnerScope) *TaskAg
 		}
 		s.store.PendingMessages = append(s.store.PendingMessages[:i], s.store.PendingMessages[i+1:]...)
 		s.recordJobAgentLocked(msg, session)
+		// Late-bind the runner context (os/arch/name) to the agent that
+		// actually leased this job — it was unknown when the message was
+		// queued (ACT-051). Idempotent, so a requeue+redeliver to another
+		// runner rebinds afresh.
+		if msg.MessageType == "PipelineAgentJobRequest" {
+			msg.Body = rebindRunnerContext(msg.Body, session.Agent)
+		}
 		return msg
 	}
 	return nil

@@ -401,9 +401,14 @@ func (st *Store) DeleteNetworkConfiguration(orgLogin, id string) bool {
 			res.NetworkConfigurationID = ""
 		}
 	}
-	if st.persist != nil {
-		st.persist.MustPut("org_network_configurations", orgLogin, st.OrgNetworkConfigurations[orgLogin])
-		st.persist.MustPut("org_network_settings", orgLogin, st.OrgNetworkSettings[orgLogin])
+	// One transaction: dropping the configuration and detaching it from every
+	// settings resource commit together, so a crash cannot leave a settings
+	// resource pointing at a deleted configuration (STORE-001/002).
+	batch := newPersistBatch(st.persist)
+	batch.Put("org_network_configurations", orgLogin, st.OrgNetworkConfigurations[orgLogin])
+	batch.Put("org_network_settings", orgLogin, st.OrgNetworkSettings[orgLogin])
+	if err := batch.Commit(); err != nil {
+		panic(&persistenceFailure{op: "batch", bucket: "org_network_configurations", err: err})
 	}
 	return true
 }

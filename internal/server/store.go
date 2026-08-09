@@ -250,10 +250,19 @@ func (st *Store) persistTokenLocked(token *Token) {
 }
 
 func (st *Store) deleteTokenMapKeyLocked(mapKey string) {
-	delete(st.Tokens, mapKey)
-	if st.persist != nil {
-		st.persist.MustDelete("tokens", mapKey)
+	batch := newPersistBatch(st.persist)
+	st.deleteTokenMapKeyBatchLocked(batch, mapKey)
+	if err := batch.Commit(); err != nil {
+		panic(&persistenceFailure{op: "batch", bucket: "tokens", err: err})
 	}
+}
+
+// deleteTokenMapKeyBatchLocked stages a PAT token removal into batch so a
+// multi-credential revoke commits every deleted token in one transaction
+// (STORE-001/002). Callers hold st.mu.
+func (st *Store) deleteTokenMapKeyBatchLocked(batch *persistBatch, mapKey string) {
+	delete(st.Tokens, mapKey)
+	batch.Delete("tokens", mapKey)
 }
 
 // DeviceCode represents a pending device authorization flow.
@@ -624,6 +633,7 @@ type Store struct {
 	OrgCustomProperties         map[string]map[string]*CustomProperty // org login → property name → definition
 	RepoCustomPropertyValues    map[string]map[string]interface{}     // "owner/repo" → property name → value
 	OrgIssueTypes               map[string]map[int]*IssueType         // org login → id → issue type
+	IssueTypesByID              map[int]*IssueType                    // id → issue type (GQL-024 O(1) node-ID lookup; ids are globally unique)
 	NextIssueTypeID             int
 	OrgIssueFields              map[string]map[int]*IssueField // org login → id → issue field
 	NextIssueFieldID            int
@@ -1043,6 +1053,7 @@ func NewStore() *Store {
 		OrgCustomProperties:         map[string]map[string]*CustomProperty{},
 		RepoCustomPropertyValues:    map[string]map[string]interface{}{},
 		OrgIssueTypes:               map[string]map[int]*IssueType{},
+		IssueTypesByID:              map[int]*IssueType{},
 		NextIssueTypeID:             1,
 		OrgIssueFields:              map[string]map[int]*IssueField{},
 		NextIssueFieldID:            1,
@@ -1165,9 +1176,15 @@ func (st *Store) SetPersistence(p *Persistence) error {
 		// before/after revision-stable reconciler as request-time refreshes;
 		// otherwise startup could bless a cross-bucket partial snapshot as the
 		// newest revision and never reload it.
-		return st.refreshFromPersistence(true)
+		if err := st.refreshFromPersistence(true); err != nil {
+			return err
+		}
+		return st.backfillLoginSessionUserIndex()
 	}
-	return st.setPersistence(p, true)
+	if err := st.setPersistence(p, true); err != nil {
+		return err
+	}
+	return st.backfillLoginSessionUserIndex()
 }
 
 func (st *Store) setPersistence(p *Persistence, observeRevision bool) error {
@@ -3000,7 +3017,8 @@ func (st *Store) loadFromPersistence() error {
 				return err
 			}
 			st.OrgIssueTypes[key] = m
-			for id := range m {
+			for id, it := range m {
+				st.IssueTypesByID[id] = it
 				if id >= st.NextIssueTypeID {
 					st.NextIssueTypeID = id + 1
 				}

@@ -42,6 +42,7 @@ type dbDialect struct {
 	putSQL       string // INSERT … ON CONFLICT upsert
 	deleteSQL    string
 	listSQL      string
+	listRangeSQL string
 	valueSQL     string
 	getSQL       string
 	setSQL       string
@@ -58,6 +59,7 @@ var (
 		putSQL:       `INSERT INTO kv (bucket, key, value) VALUES (?, ?, ?) ON CONFLICT(bucket, key) DO UPDATE SET value = excluded.value`,
 		deleteSQL:    `DELETE FROM kv WHERE bucket = ? AND key = ?`,
 		listSQL:      `SELECT key, value FROM kv WHERE bucket = ?`,
+		listRangeSQL: `SELECT key, value FROM kv WHERE bucket = ? AND key >= ? AND key < ?`,
 		valueSQL:     `SELECT value FROM kv WHERE bucket = ? AND key = ?`,
 		getSQL:       `SELECT value FROM counters WHERE name = ?`,
 		setSQL:       `INSERT INTO counters (name, value) VALUES (?, ?) ON CONFLICT(name) DO UPDATE SET value = excluded.value`,
@@ -1173,6 +1175,70 @@ func (p *Persistence) List(bucket string) (map[string][]byte, error) {
 		out[k] = plain
 	}
 	return out, rows.Err()
+}
+
+// ListPrefix returns every row in bucket whose key begins with prefix, as an
+// indexed range scan `[prefix, prefixSuccessor)` on the (bucket, key) primary
+// key — never a whole-bucket scan. Used for secondary indexes whose composite
+// keys embed a grouping field (e.g. login sessions keyed by user), so one
+// group's rows are fetched without reading the others. The bucket must not be a
+// sensitive one: a range scan cannot recover a per-row opaque storage key, so
+// only plaintext index buckets belong here.
+func (p *Persistence) ListPrefix(bucket, prefix string) (map[string][]byte, error) {
+	if p == nil {
+		return nil, nil
+	}
+	hi, ok := prefixUpperBound(prefix)
+	if !ok {
+		// A prefix of all 0xff bytes has no finite successor; fall back to the
+		// full-bucket list filtered by prefix. This never arises for the numeric
+		// grouping prefixes used here.
+		all, err := p.List(bucket)
+		if err != nil {
+			return nil, err
+		}
+		for k := range all {
+			if !strings.HasPrefix(k, prefix) {
+				delete(all, k)
+			}
+		}
+		return all, nil
+	}
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	rows, err := p.db.Query(p.dialect.listRangeSQL, bucket, prefix, hi)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close() //nolint:errcheck
+	out := map[string][]byte{}
+	for rows.Next() {
+		var k string
+		var v []byte
+		if err := rows.Scan(&k, &v); err != nil {
+			return nil, err
+		}
+		plain, err := p.openValue(bucket, k, v)
+		if err != nil {
+			return nil, err
+		}
+		out[k] = plain
+	}
+	return out, rows.Err()
+}
+
+// prefixUpperBound returns the exclusive upper bound of the key range that
+// starts with prefix: the prefix with its last byte incremented. It reports
+// false when the prefix is empty or every trailing byte is 0xff (no successor).
+func prefixUpperBound(prefix string) (string, bool) {
+	b := []byte(prefix)
+	for i := len(b) - 1; i >= 0; i-- {
+		if b[i] != 0xff {
+			b[i]++
+			return string(b[:i+1]), true
+		}
+	}
+	return "", false
 }
 
 func (p *Persistence) Get(bucket, key string) ([]byte, error) {

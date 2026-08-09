@@ -6,9 +6,11 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/go-git/go-git/v5/plumbing"
+	gitStorage "github.com/go-git/go-git/v5/storage"
 )
 
 // scheduleFiredKeys dedupes cron firings: a (repo, file, cron) tuple
@@ -94,6 +96,117 @@ func (s *Server) fireSchedulesThrough(lastFired, now time.Time) time.Time {
 	return current
 }
 
+// scheduleIndex caches the parsed `on: schedule:` timetable for each
+// repository's default branch, keyed by that branch's tip commit. Reading and
+// YAML-parsing every workflow file of every repository once per minute (the old
+// dispatcher behavior) is pure waste when nothing changed: workflow content at
+// a given tip commit is immutable, so a cache invalidated on tip movement lets
+// the per-minute scan reduce to cheap cron-matching against pre-parsed
+// schedules. Only schedule-bearing workflows are retained; parse and cron
+// validation (including the five-minute-floor filter) happen once at build
+// time rather than every tick.
+type scheduleIndex struct {
+	mu       sync.Mutex
+	entries  map[string]*scheduleIndexEntry
+	rebuilds atomic.Int64 // observability: how many times an entry was (re)built
+}
+
+type scheduleIndexEntry struct {
+	defaultBranch string
+	tipSHA        string
+	workflows     []indexedWorkflowSchedule
+}
+
+// indexedWorkflowSchedule is one schedule-bearing workflow file with its cron
+// entries already parsed. content is retained so a firing needs no second git
+// read.
+type indexedWorkflowSchedule struct {
+	fileName string
+	content  []byte
+	entries  []indexedCronEntry
+}
+
+type indexedCronEntry struct {
+	cron     string
+	timezone string
+	cs       *cronSchedule
+}
+
+// lookup returns the cached schedule for repoKey, rebuilding via build() when
+// the entry is absent or its (defaultBranch, tipSHA) key no longer matches. The
+// build runs outside the lock — git reads and YAML parsing are slow, and a
+// given tip SHA yields identical content, so a rare concurrent duplicate build
+// is harmless.
+func (si *scheduleIndex) lookup(repoKey, defaultBranch, tipSHA string, build func() []indexedWorkflowSchedule) []indexedWorkflowSchedule {
+	si.mu.Lock()
+	if e, ok := si.entries[repoKey]; ok && e.tipSHA == tipSHA && e.defaultBranch == defaultBranch {
+		wf := e.workflows
+		si.mu.Unlock()
+		return wf
+	}
+	si.mu.Unlock()
+
+	built := build()
+	si.rebuilds.Add(1)
+
+	si.mu.Lock()
+	if si.entries == nil {
+		si.entries = map[string]*scheduleIndexEntry{}
+	}
+	si.entries[repoKey] = &scheduleIndexEntry{defaultBranch: defaultBranch, tipSHA: tipSHA, workflows: built}
+	si.mu.Unlock()
+	return built
+}
+
+// retain drops cache entries for repositories no longer present, keeping the
+// index bounded as repos are deleted.
+func (si *scheduleIndex) retain(live map[string]struct{}) {
+	si.mu.Lock()
+	defer si.mu.Unlock()
+	for key := range si.entries {
+		if _, ok := live[key]; !ok {
+			delete(si.entries, key)
+		}
+	}
+}
+
+// buildScheduleIndex reads and parses every schedule-bearing workflow file at
+// definitionRef, validating each cron entry once (invalid crons and
+// sub-five-minute intervals are logged and dropped here, not re-warned every
+// minute).
+func (s *Server) buildScheduleIndex(repoKey, definitionRef string, stor gitStorage.Storer) []indexedWorkflowSchedule {
+	var out []indexedWorkflowSchedule
+	for name, content := range listWorkflowFilesAtRef(stor, definitionRef) {
+		on, err := ParseWorkflowOn(content)
+		if err != nil {
+			s.logger.Warn().Err(err).Str("repo", repoKey).Str("file", name).Msg("invalid scheduled workflow")
+			continue
+		}
+		sched := on["schedule"]
+		if sched == nil || len(sched.Schedules) == 0 {
+			continue
+		}
+		var entries []indexedCronEntry
+		for _, entry := range sched.Schedules {
+			cs, err := parseCron(entry.Cron)
+			if err != nil {
+				s.logger.Warn().Err(err).Str("file", name).Str("cron", entry.Cron).Msg("invalid cron in on: schedule")
+				continue
+			}
+			if cs.minimumInterval() < 5*time.Minute {
+				s.logger.Warn().Str("file", name).Str("cron", entry.Cron).Msg("scheduled workflow interval is shorter than GitHub's five-minute minimum")
+				continue
+			}
+			entries = append(entries, indexedCronEntry{cron: entry.Cron, timezone: entry.Timezone, cs: cs})
+		}
+		if len(entries) == 0 {
+			continue
+		}
+		out = append(out, indexedWorkflowSchedule{fileName: name, content: content, entries: entries})
+	}
+	return out
+}
+
 // fireDueSchedules triggers every schedule-bearing workflow from each
 // repository's explicit default branch whose cron matches the given minute.
 // Separated from the ticker so tests drive it with a fixed clock.
@@ -111,6 +224,7 @@ func (s *Server) fireDueSchedules(now time.Time) {
 	}
 	s.store.mu.RUnlock()
 
+	live := make(map[string]struct{}, len(repoKeys))
 	for _, repoKey := range repoKeys {
 		repo := s.store.GetRepoByFullName(repoKey)
 		if repo == nil {
@@ -126,39 +240,27 @@ func (s *Server) fireDueSchedules(now time.Time) {
 			defaultBranch = "main"
 		}
 		definitionRef := plumbing.NewBranchReferenceName(defaultBranch).String()
-		for name, content := range listWorkflowFilesAtRef(stor, definitionRef) {
-			on, err := ParseWorkflowOn(content)
-			if err != nil {
-				s.logger.Warn().Err(err).Str("repo", repoKey).Str("file", name).Msg("invalid scheduled workflow")
-				continue
-			}
-			sched := on["schedule"]
-			if sched == nil || len(sched.Schedules) == 0 {
-				continue
-			}
+		tipSHA := resolveRefSha(stor, definitionRef)
+		live[repoKey] = struct{}{}
+
+		workflows := s.scheduleIndex.lookup(repoKey, defaultBranch, tipSHA, func() []indexedWorkflowSchedule {
+			return s.buildScheduleIndex(repoKey, definitionRef, stor)
+		})
+		for _, wf := range workflows {
 			if scheduleInactive(repo, minute) {
-				s.store.SetWorkflowFileState(repoKey, ".github/workflows/"+name, "disabled_inactivity")
+				s.store.SetWorkflowFileState(repoKey, ".github/workflows/"+wf.fileName, "disabled_inactivity")
 				continue
 			}
-			if s.workflowFileDisabled(repoKey, name) {
+			if s.workflowFileDisabled(repoKey, wf.fileName) {
 				continue
 			}
-			for _, entry := range sched.Schedules {
-				cs, err := parseCron(entry.Cron)
-				if err != nil {
-					s.logger.Warn().Err(err).Str("file", name).Str("cron", entry.Cron).Msg("invalid cron in on: schedule")
-					continue
-				}
-				if cs.minimumInterval() < 5*time.Minute {
-					s.logger.Warn().Str("file", name).Str("cron", entry.Cron).Msg("scheduled workflow interval is shorter than GitHub's five-minute minimum")
-					continue
-				}
+			for _, entry := range wf.entries {
 				scheduledMinute := minute
 				claimMinute := minute
-				if entry.Timezone != "" {
-					location, err := time.LoadLocation(entry.Timezone)
+				if entry.timezone != "" {
+					location, err := time.LoadLocation(entry.timezone)
 					if err != nil {
-						s.logger.Warn().Err(err).Str("file", name).Str("timezone", entry.Timezone).Msg("invalid schedule timezone")
+						s.logger.Warn().Err(err).Str("file", wf.fileName).Str("timezone", entry.timezone).Msg("invalid schedule timezone")
 						continue
 					}
 					scheduledMinute = minute.In(location)
@@ -170,30 +272,31 @@ func (s *Server) fireDueSchedules(now time.Time) {
 					// wall-clock cron.)
 					claimMinute = time.Date(scheduledMinute.Year(), scheduledMinute.Month(), scheduledMinute.Day(), scheduledMinute.Hour(), scheduledMinute.Minute(), 0, 0, location)
 				}
-				if !cs.matches(scheduledMinute) {
+				if !entry.cs.matches(scheduledMinute) {
 					continue
 				}
-				claimKey := repoKey + "\x00" + name + "\x00" + entry.Cron + "\x00" + entry.Timezone
+				claimKey := repoKey + "\x00" + wf.fileName + "\x00" + entry.cron + "\x00" + entry.timezone
 				claimed, err := s.markScheduleFired(claimKey, claimMinute)
 				if err != nil {
-					s.logger.Error().Err(err).Str("repo", repoKey).Str("file", name).Str("cron", entry.Cron).Msg("failed to claim scheduled workflow firing")
+					s.logger.Error().Err(err).Str("repo", repoKey).Str("file", wf.fileName).Str("cron", entry.cron).Msg("failed to claim scheduled workflow firing")
 					continue
 				}
 				if !claimed {
 					continue
 				}
-				if err := s.fireScheduledWorkflow(repoKey, name, content, entry.Cron); err != nil {
+				if err := s.fireScheduledWorkflow(repoKey, wf.fileName, wf.content, entry.cron); err != nil {
 					// The claim was taken before firing; a transient submit
 					// failure would otherwise consume this occurrence with no
 					// run and no retry. Release it so another replica or a
 					// later attempt can pick it up.
 					if relErr := s.releaseScheduleFiring(claimKey, claimMinute); relErr != nil {
-						s.logger.Error().Err(relErr).Str("repo", repoKey).Str("file", name).Str("cron", entry.Cron).Msg("failed to release scheduled workflow claim after firing error")
+						s.logger.Error().Err(relErr).Str("repo", repoKey).Str("file", wf.fileName).Str("cron", entry.cron).Msg("failed to release scheduled workflow claim after firing error")
 					}
 				}
 			}
 		}
 	}
+	s.scheduleIndex.retain(live)
 }
 
 func scheduleInactive(repo *Repo, now time.Time) bool {

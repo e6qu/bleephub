@@ -10,37 +10,38 @@ import (
 
 // PullRequest represents a GitHub pull request.
 type PullRequest struct {
-	ID                   int
-	NodeID               string
-	Number               int // per-repo, SHARED with issues via NextIssueNumber
-	RepoID               int
-	Title                string
-	Body                 string
-	State                string // "OPEN", "CLOSED", "MERGED"
-	IsDraft              bool
-	HeadRefName          string // source branch name
-	HeadRepoID           int    // source repository; zero on legacy rows means RepoID
-	BaseRefName          string // target branch name
-	BaseSHA              string // base branch commit at PR creation ("" when the repo had no git objects)
-	MergeCommitSHA       string // merge result commit ("" until merged, or when merged without git refs)
-	MaintainerCanModify  bool
-	AuthorID             int
-	AssigneeIDs          []int
-	LabelIDs             []int
-	RequestedReviewerIDs []int
-	RequestedTeamIDs     []int
-	MilestoneID          int    // 0 = none
-	Mergeable            string // "MERGEABLE", "CONFLICTING", "UNKNOWN"
-	Additions            int
-	Deletions            int
-	ChangedFiles         int
-	MergedByID           int // 0 = not merged
-	Locked               bool
-	ActiveLockReason     LockReason // empty = locked without a stated reason
-	CreatedAt            time.Time
-	UpdatedAt            time.Time
-	ClosedAt             *time.Time
-	MergedAt             *time.Time
+	ID                      int
+	NodeID                  string
+	Number                  int // per-repo, SHARED with issues via NextIssueNumber
+	RepoID                  int
+	Title                   string
+	Body                    string
+	State                   string // "OPEN", "CLOSED", "MERGED"
+	IsDraft                 bool
+	HeadRefName             string // source branch name
+	HeadRepoID              int    // source repository; zero on legacy rows means RepoID
+	BaseRefName             string // target branch name
+	BaseSHA                 string // base branch commit at PR creation ("" when the repo had no git objects)
+	MergeCommitSHA          string // merge result commit ("" until merged, or when merged without git refs)
+	PotentialMergeCommitSHA string // test-merge of head into base for an open PR ("" if unmergeable/no git); reported to pull_request workflow runs (ACT-027)
+	MaintainerCanModify     bool
+	AuthorID                int
+	AssigneeIDs             []int
+	LabelIDs                []int
+	RequestedReviewerIDs    []int
+	RequestedTeamIDs        []int
+	MilestoneID             int    // 0 = none
+	Mergeable               string // "MERGEABLE", "CONFLICTING", "UNKNOWN"
+	Additions               int
+	Deletions               int
+	ChangedFiles            int
+	MergedByID              int // 0 = not merged
+	Locked                  bool
+	ActiveLockReason        LockReason // empty = locked without a stated reason
+	CreatedAt               time.Time
+	UpdatedAt               time.Time
+	ClosedAt                *time.Time
+	MergedAt                *time.Time
 }
 
 // PullRequestReview represents a review on a pull request.
@@ -290,6 +291,22 @@ func (st *Store) AddPullRequestLabels(repoID, prNumber int, labelIDs []int, acto
 
 // SetPullRequestLabels replaces all labels on a pull request, recording
 // labeled/unlabeled events for the deltas. Returns true when the PR exists.
+// SetPullRequestPotentialMergeSHA records a pull request's test-merge commit
+// (ACT-027). A no-op when unchanged so it does not churn persistence on every
+// event.
+func (st *Store) SetPullRequestPotentialMergeSHA(prID int, sha string) {
+	st.mu.Lock()
+	defer st.mu.Unlock()
+	pr := st.PullRequests[prID]
+	if pr == nil || pr.PotentialMergeCommitSHA == sha {
+		return
+	}
+	pr.PotentialMergeCommitSHA = sha
+	if st.persist != nil {
+		st.persist.MustPut("pull_requests", strconv.Itoa(pr.ID), pr)
+	}
+}
+
 func (st *Store) SetPullRequestLabels(repoID, prNumber int, labelIDs []int, actorID int) bool {
 	st.mu.Lock()
 	defer st.mu.Unlock()

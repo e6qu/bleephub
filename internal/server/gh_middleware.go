@@ -27,6 +27,7 @@ const ctxUserToServerToken contextKey = "gh-uts-token"               // #nosec G
 const ctxPersonalAccessToken contextKey = "gh-personal-access-token" // #nosec G101 -- typed context key, not a credential.
 const ctxSuspendedInstallation contextKey = "gh-suspended-installation"
 const ctxSuspendedUser contextKey = "gh-suspended-user"
+const ctxJobToken contextKey = "gh-job-token" // #nosec G101 -- typed context key, not a credential.
 const ctxGitHubAPIVersion contextKey = "gh-api-version"
 const ctxAPIRateLimit contextKey = "gh-api-rate-limit"
 
@@ -111,6 +112,23 @@ func ghInstallationTokenFromContext(ctx context.Context) *InstallationToken {
 // if any. Consumed by gh_apps_perms.go (permission decorator's user-to-server path).
 func ghUserToServerTokenFromContext(ctx context.Context) *UserToServerToken {
 	t, _ := ctx.Value(ctxUserToServerToken).(*UserToServerToken)
+	return t
+}
+
+// jobTokenPrincipal is the caller a workflow's GITHUB_TOKEN authenticates as on
+// the REST surface: a single repository plus its least-privilege API permission
+// set (ACT-014). requirePerm gates its access to Repo alone, at the granted
+// scopes/levels.
+type jobTokenPrincipal struct {
+	Repo  string
+	Perms map[string]string
+}
+
+// ghJobTokenFromContext extracts the workflow GITHUB_TOKEN principal, if the
+// request authenticated with one. Consumed by requirePerm and
+// credentialMayAccessTarget.
+func ghJobTokenFromContext(ctx context.Context) *jobTokenPrincipal {
+	t, _ := ctx.Value(ctxJobToken).(*jobTokenPrincipal)
 	return t
 }
 
@@ -275,6 +293,18 @@ func (s *Server) resolveBearerCredential(ctx context.Context, tokenStr string) (
 	case looksLikeJWT(tokenStr):
 		if app, err := s.store.parseAndVerifyAppJWT(tokenStr); err == nil {
 			return context.WithValue(ctx, ctxApp, app), nil, true
+		}
+		// A workflow's GITHUB_TOKEN is an HS256 job runtime token, not an App
+		// JWT. Recognize it as a repo-scoped, least-privilege principal so its
+		// /api/v3 calls are gated by the workflow's resolved permissions rather
+		// than rejected wholesale (ACT-014). A session token (no Repo) is left
+		// for the runner-protocol gate, exactly as before.
+		if claims, err := parseRunnerToken(tokenStr); err == nil && claims.Aud == runnerAudJob && claims.Repo != "" {
+			principal := &jobTokenPrincipal{Repo: claims.Repo, Perms: claims.Perms}
+			// The token acts as github-actions[bot] for handler attribution,
+			// exactly as an installation token acts as its app's bot user; the
+			// gate itself is governed by the jobTokenPrincipal, not this user.
+			return context.WithValue(ctx, ctxJobToken, principal), actionsBotUser(), true
 		}
 		return ctx, nil, false
 	case strings.HasPrefix(tokenStr, tokenPrefixInstallation):

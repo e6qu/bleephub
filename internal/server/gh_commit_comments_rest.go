@@ -280,6 +280,13 @@ func (s *Server) handleCreateCommitComment(w http.ResponseWriter, r *http.Reques
 	sha := r.PathValue("commit_sha")
 	c := s.store.CommitComments.Create(repo.ID, sha, user.ID, req.Body, req.Path, req.Position, req.Line)
 	commitCommentJSON := commitCommentToJSON(c, s.store, s.baseURL(r), repo)
+	// `commit_comment` fires so `on: commit_comment` workflows run (ACT-026).
+	s.emitWebhookEvent(repo.FullName, "commit_comment", "created", map[string]interface{}{
+		"action":     "created",
+		"comment":    commitCommentJSON,
+		"repository": repoPayload(repo),
+		"sender":     userToJSON(user),
+	})
 	writeJSONCreated(w, jsonStringField(commitCommentJSON, "url"), commitCommentJSON)
 }
 
@@ -395,14 +402,15 @@ func commitCommentToJSON(c *CommitComment, st *Store, baseURL string, repo *Repo
 		"html_url":           fmt.Sprintf("%s/%s/commit/%s#commitcomment-%d", baseURL, repo.FullName, c.CommitID, c.ID),
 		"author_association": authorAssociation(st, c.AuthorID, repo),
 	}
+	// path/position/line are required-but-nullable on GitHub's commit-comment
+	// schema: a commit-level comment carries them as null rather than omitting
+	// them. Emit them unconditionally so the response validates.
 	if c.Path != "" {
 		out["path"] = c.Path
+	} else {
+		out["path"] = nil
 	}
-	if c.Position != nil {
-		out["position"] = *c.Position
-	}
-	if c.Line != nil {
-		out["line"] = *c.Line
-	}
+	out["position"] = c.Position
+	out["line"] = c.Line
 	return out
 }

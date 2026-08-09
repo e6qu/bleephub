@@ -133,9 +133,20 @@ func (s *Server) handleAcceptRepoInvitation(w http.ResponseWriter, r *http.Reque
 		writeGHError(w, http.StatusNotFound, "Not Found")
 		return
 	}
-	if !s.store.AcceptRepoInvitation(id, user) {
+	repoKey, ok := s.store.AcceptRepoInvitation(id, user)
+	if !ok {
 		writeGHError(w, http.StatusNotFound, "Not Found")
 		return
+	}
+	// Accepting an invitation makes the user a collaborator, which fires GitHub's
+	// `member` event (action "added") so `on: member` workflows run (ACT-026).
+	if repo := s.store.GetRepoByFullName(repoKey); repo != nil {
+		s.emitWebhookEvent(repoKey, "member", "added", map[string]interface{}{
+			"action":     "added",
+			"member":     userToJSON(user),
+			"repository": repoPayload(repo),
+			"sender":     userToJSON(user),
+		})
 	}
 	w.WriteHeader(http.StatusNoContent)
 }
@@ -305,7 +316,10 @@ func (st *Store) ListUserRepoInvitations(user *User) []*RepoInvitation {
 
 // AcceptRepoInvitation accepts an invitation for the user, adding them as a
 // collaborator with the invitation's permission. Returns true on success.
-func (st *Store) AcceptRepoInvitation(id int, user *User) bool {
+// AcceptRepoInvitation consumes a pending invitation and adds the user to the
+// repo's collaborators. It returns the repo's full name (so the caller can fire
+// the `member` webhook) and whether an invitation was accepted.
+func (st *Store) AcceptRepoInvitation(id int, user *User) (string, bool) {
 	st.mu.Lock()
 	defer st.mu.Unlock()
 
@@ -317,18 +331,18 @@ func (st *Store) AcceptRepoInvitation(id int, user *User) bool {
 		}
 	}
 	if target == nil || target.Status != "pending" {
-		return false
+		return "", false
 	}
 	if !invitationMatchesUser(target, user) {
-		return false
+		return "", false
 	}
 	parts := strings.SplitN(target.RepoKey, "/", 2)
 	if len(parts) != 2 {
-		return false
+		return "", false
 	}
 	repo, ok := st.ReposByName[target.RepoKey]
 	if !ok {
-		return false
+		return "", false
 	}
 	if st.RepoCollaborators[target.RepoKey] == nil {
 		st.RepoCollaborators[target.RepoKey] = map[string]string{}
@@ -336,12 +350,18 @@ func (st *Store) AcceptRepoInvitation(id int, user *User) bool {
 	st.RepoCollaborators[target.RepoKey][user.Login] = target.Permissions
 	repo.UpdatedAt = time.Now().UTC()
 	delete(st.RepoInvitations[target.RepoKey], id)
-	if st.persist != nil {
-		st.persist.MustPut("repo_invitations", target.RepoKey, st.RepoInvitations[target.RepoKey])
-		st.persist.MustPut("repo_collaborators", target.RepoKey, st.RepoCollaborators[target.RepoKey])
-		st.persist.MustPut("repos", strconv.Itoa(repo.ID), repo)
+	// One transaction: consuming the invitation, adding the collaborator and
+	// touching the repo commit together, so a crash cannot grant collaborator
+	// access while leaving the invitation live, or consume the invitation without
+	// granting access (STORE-001/002).
+	batch := newPersistBatch(st.persist)
+	batch.Put("repo_invitations", target.RepoKey, st.RepoInvitations[target.RepoKey])
+	batch.Put("repo_collaborators", target.RepoKey, st.RepoCollaborators[target.RepoKey])
+	batch.Put("repos", strconv.Itoa(repo.ID), repo)
+	if err := batch.Commit(); err != nil {
+		panic(&persistenceFailure{op: "batch", bucket: "repo_invitations", err: err})
 	}
-	return true
+	return target.RepoKey, true
 }
 
 // DeclineRepoInvitation removes an invitation addressed to the user.

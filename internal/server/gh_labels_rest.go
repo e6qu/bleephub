@@ -96,6 +96,18 @@ func buildLabelPayload(repo *Repo, labelJSON map[string]interface{}, sender *Use
 	}
 }
 
+// buildMilestonePayload assembles the GitHub `milestone` webhook event body so
+// that `on: milestone` workflows fire for milestone create/edit/close/reopen/
+// delete (ACT-026).
+func buildMilestonePayload(repo *Repo, milestoneJSON map[string]interface{}, sender *User, action string) map[string]interface{} {
+	return map[string]interface{}{
+		"action":     action,
+		"milestone":  milestoneJSON,
+		"repository": repoPayload(repo),
+		"sender":     userToJSON(sender),
+	}
+}
+
 func (s *Server) handleCreateLabel(w http.ResponseWriter, r *http.Request) {
 	user := ghUserFromContext(r.Context())
 	if user == nil {
@@ -294,6 +306,7 @@ func (s *Server) handleCreateMilestone(w http.ResponseWriter, r *http.Request) {
 	repoKey := owner + "/" + name
 	s.recordAuditEvent("milestone.create", user.Login, "", map[string]interface{}{"repo": repoKey, "milestone_id": ms.ID, "title": ms.Title})
 	msJSON := milestoneToJSON(ms, s.store, s.baseURL(r), repo.FullName)
+	s.emitWebhookEvent(repoKey, "milestone", "created", buildMilestonePayload(repo, msJSON, user, "created"))
 	writeJSONCreated(w, jsonStringField(msJSON, "url"), msJSON)
 }
 
@@ -369,6 +382,7 @@ func (s *Server) handleUpdateMilestone(w http.ResponseWriter, r *http.Request) {
 		writeGHError(w, http.StatusNotFound, "Not Found")
 		return
 	}
+	oldState := string(ms.State)
 
 	var req map[string]interface{}
 	if !decodeJSONBody(w, r, &req) {
@@ -394,7 +408,19 @@ func (s *Server) handleUpdateMilestone(w http.ResponseWriter, r *http.Request) {
 	})
 
 	updated := s.store.GetMilestone(ms.ID)
-	writeJSON(w, http.StatusOK, milestoneToJSON(updated, s.store, s.baseURL(r), repo.FullName))
+	msJSON := milestoneToJSON(updated, s.store, s.baseURL(r), repo.FullName)
+	// GitHub distinguishes a state transition from a plain edit: closing fires
+	// `closed`, reopening fires `opened`, any other change fires `edited`.
+	action := "edited"
+	if newState := string(updated.State); newState != oldState {
+		if newState == "closed" {
+			action = "closed"
+		} else if newState == "open" {
+			action = "opened"
+		}
+	}
+	s.emitWebhookEvent(owner+"/"+repoName, "milestone", action, buildMilestonePayload(repo, msJSON, user, action))
+	writeJSON(w, http.StatusOK, msJSON)
 }
 
 func (s *Server) handleDeleteMilestone(w http.ResponseWriter, r *http.Request) {
@@ -426,8 +452,11 @@ func (s *Server) handleDeleteMilestone(w http.ResponseWriter, r *http.Request) {
 	}
 
 	repoKey := owner + "/" + repoName
+	// Snapshot the milestone JSON before deletion so the webhook payload carries it.
+	msJSON := milestoneToJSON(ms, s.store, s.baseURL(r), repo.FullName)
 	s.store.DeleteMilestone(ms.ID)
 	s.recordAuditEvent("milestone.delete", user.Login, "", map[string]interface{}{"repo": repoKey, "milestone_id": ms.ID})
+	s.emitWebhookEvent(repoKey, "milestone", "deleted", buildMilestonePayload(repo, msJSON, user, "deleted"))
 	w.WriteHeader(http.StatusNoContent)
 }
 
