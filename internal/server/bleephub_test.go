@@ -315,6 +315,25 @@ func TestMain(m *testing.M) {
 		}
 	}
 
+	// Dead-entry sweep (PAR-022): on a full run every allowlisted deviation
+	// should have been triggered by the endpoint it cites. An entry no observed
+	// violation matched is a dead suppression that only inflates the ledger, so
+	// fail and name it for removal. Guarded to full runs — a subset legitimately
+	// exercises few of the cited endpoints.
+	if isFullTestRun() {
+		if unused, err := apiShapeValidator.unusedAllowlistEntries(); err != nil {
+			fmt.Fprintf(os.Stderr, "openapi-shape allowlist dead-entry sweep skipped: %v\n", err)
+		} else if len(unused) > 0 {
+			fmt.Fprintf(os.Stderr, "\nopenapi-shape allowlist: %d dead entry/entries never triggered by any exercised endpoint (PAR-022) — remove them and lower the ceiling:\n", len(unused))
+			for _, key := range unused {
+				fmt.Fprintf(os.Stderr, "  %s\n", key)
+			}
+			if code == 0 {
+				code = 1
+			}
+		}
+	}
+
 	os.Exit(code)
 }
 

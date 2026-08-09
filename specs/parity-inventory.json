@@ -5776,8 +5776,8 @@
         "id": "PAR-022",
         "location": "allowlist:37-50",
         "severity": "m",
-        "status": "open",
-        "status_kind": "open"
+        "status": "fixed \u2014 the allowlist had already been shrunk to 11 entries, each carrying a VERIFIED citation, and a full-suite run confirms all 11 are reachable (every one is triggered by the endpoint it cites, so none inflate the count). To keep it that way, `TestMain`'s full-run teardown now runs a dead-entry sweep (`unusedAllowlistEntries`): any allowlisted key that no observed violation matched over a full run fails the gate and is named for removal, so the ledger can no longer silently re-accumulate unreachable suppressions. Guarded to full runs (a `-run` subset legitimately exercises few of the cited endpoints), mirroring the PAR-011 coverage-floor guard",
+        "status_kind": "fixed"
       },
       {
         "category": "PAR",
@@ -6573,8 +6573,8 @@
         },
         "PAR": {
           "status": {
-            "fixed": 36,
-            "open": 2,
+            "fixed": 37,
+            "open": 1,
             "partial": 1
           },
           "total": 39
@@ -6617,8 +6617,8 @@
       },
       "status": {
         "deferred": 1,
-        "fixed": 653,
-        "open": 18,
+        "fixed": 654,
+        "open": 17,
         "partial": 13
       },
       "total": 685

@@ -798,6 +798,30 @@ func (v *shapeValidator) ratchet() (newKeys []string, total int) {
 	return newKeys, len(v.seen)
 }
 
+// unusedAllowlistEntries returns allowlist keys that no observed violation
+// matched during this run. On a full run every allowlisted deviation should be
+// triggered by the endpoint it cites; an entry that never fires is a dead
+// suppression — it protects nothing and only inflates the count (PAR-022). The
+// full-run teardown reports these for removal so the gate ledger cannot quietly
+// accumulate entries for shapes no test exercises. Meaningful only on a full
+// run: a `-run <subset>` legitimately exercises few of the cited endpoints.
+func (v *shapeValidator) unusedAllowlistEntries() ([]string, error) {
+	allowed, err := readViolationAllowlist(allowlistFile)
+	if err != nil {
+		return nil, err
+	}
+	v.mu.Lock()
+	defer v.mu.Unlock()
+	var unused []string
+	for key := range allowed {
+		if _, ok := v.seen[key]; !ok {
+			unused = append(unused, key)
+		}
+	}
+	sort.Strings(unused)
+	return unused, nil
+}
+
 // repoRoot walks up from the package directory to the module root.
 func repoRoot(t *testing.T) string {
 	t.Helper()
