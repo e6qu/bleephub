@@ -3873,6 +3873,8 @@ func pendingRepoDeletionKey(fullName string) string { return "repo:" + fullName 
 
 func pendingOrgDeletionKey(login string) string { return "org:" + login }
 
+func pendingUserDeletionKey(login string) string { return "user:" + login }
+
 func (st *Store) listPendingDeletions() (map[string]pendingDeletion, error) {
 	rows, err := st.persist.List(pendingDeletionsBucket)
 	if err != nil {

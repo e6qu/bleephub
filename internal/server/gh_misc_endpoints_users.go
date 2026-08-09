@@ -158,6 +158,16 @@ func (s *Server) handleAdminDeleteUser(w http.ResponseWriter, r *http.Request) {
 		writeGHError(w, http.StatusForbidden, "You cannot delete your own account.")
 		return
 	}
+	// Cascade the resources the account owns before removing the row, so a
+	// deleted user leaves no orphaned repositories, package rows/bytes or live
+	// Marketplace purchases (STORE-028).
+	repoIntents, userIntent, err := s.store.deleteUserOwnedResourcesLocked(u)
+	if err != nil {
+		s.store.mu.Unlock()
+		s.logger.Error().Err(err).Msg("cascade user-owned resources")
+		writeGHError(w, http.StatusServiceUnavailable, "user resources could not be removed")
+		return
+	}
 	delete(s.store.Users, u.ID)
 	delete(s.store.UsersByLogin, u.Login)
 	s.store.forgetExternalIdentitiesLocked(u)
@@ -170,6 +180,24 @@ func (s *Server) handleAdminDeleteUser(w http.ResponseWriter, r *http.Request) {
 		s.store.persist.MustDelete("users", strconv.Itoa(u.ID))
 	}
 	s.store.mu.Unlock()
+
+	// Reclaim external bytes outside the lock, mirroring the org cascade.
+	for _, intent := range repoIntents {
+		if err := s.store.purgeDeletedRepoBytes(intent.Name, intent); err != nil {
+			s.logger.Error().Err(err).Msg("reclaim deleted user's repository bytes")
+			writeGHError(w, http.StatusServiceUnavailable, "user resources could not be removed")
+			return
+		}
+	}
+	if err := s.store.cleanupDeletedRepo(userIntent); err != nil {
+		s.logger.Error().Err(err).Msg("reclaim deleted user's package bytes")
+		writeGHError(w, http.StatusServiceUnavailable, "user resources could not be removed")
+		return
+	}
+	if s.store.persist != nil {
+		s.store.persist.MustDelete(pendingDeletionsBucket, pendingUserDeletionKey(u.Login))
+	}
+
 	if err := s.store.DeleteLoginSessionsForUser(u.ID); err != nil {
 		s.logger.Error().Err(err).Msg("delete user browser sessions")
 		writeGHError(w, http.StatusServiceUnavailable, "browser sessions could not be revoked")

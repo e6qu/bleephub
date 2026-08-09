@@ -3958,8 +3958,8 @@
         "id": "STORE-028",
         "location": "store_orgs.go:247 + 4",
         "severity": "M",
-        "status": "partial \u2014 the package secondary-index half is fixed: `deleteRepoLocked` and `repoDeletionIntentLocked` iterated `PackagesByOwnerKey`, which a soft-delete prunes while keeping the row in the authoritative `st.Packages`, so a soft-deleted package's rows and file bytes were orphaned on repo delete. Both sites now iterate `st.Packages` filtered by owner (soft-deleted included). Regression test soft-deletes a package then deletes its repo and asserts the row is reclaimed. Remaining (separate, larger cascades, not one-line index swaps): `deleteOrgMetadata` never cascades org-directly-owned packages or the org's marketplace purchases, and there is no user-account deletion cascade at all \u2014 filed as follow-ups",
-        "status_kind": "partial"
+        "status": "fixed \u2014 the package secondary-index half is fixed: `deleteRepoLocked` and `repoDeletionIntentLocked` iterated `PackagesByOwnerKey`, which a soft-delete prunes while keeping the row in the authoritative `st.Packages`, so a soft-deleted package's rows and file bytes were orphaned on repo delete. Both sites now iterate `st.Packages` filtered by owner (soft-deleted included). Regression test soft-deletes a package then deletes its repo and asserts the row is reclaimed. Those larger cascades are now done too: `deleteOrgMetadata` cascades org-directly-owned packages (rows, versions, files and their object bytes via the deletion intent) and cancels the org's Marketplace purchases; and admin user deletion (`handleAdminDeleteUser` via the new `deleteUserOwnedResourcesLocked`) cascades the user's repositories, directly-owned packages (+bytes), Marketplace purchases and org memberships, mirroring the org path, so a deleted account leaves no orphaned rows or object bytes. Regressions `TestDeleteOrgCascadesPackagesAndMarketplace` and `TestDeleteUserCascadesOwnedResources`",
+        "status_kind": "fixed"
       },
       {
         "category": "STORE",
@@ -6587,9 +6587,9 @@
         },
         "STORE": {
           "status": {
-            "fixed": 70,
+            "fixed": 71,
             "open": 1,
-            "partial": 7
+            "partial": 6
           },
           "total": 78
         },
@@ -6617,9 +6617,9 @@
       },
       "status": {
         "deferred": 1,
-        "fixed": 646,
+        "fixed": 647,
         "open": 22,
-        "partial": 16
+        "partial": 15
       },
       "total": 685
     }
