@@ -4786,8 +4786,8 @@
         "id": "WEB-013",
         "location": "api.ts:202, types.ts",
         "severity": "M",
-        "status": "open",
-        "status_kind": "open"
+        "status": "partial \u2014 the generator now exists: `scripts/gen-web-openapi-types.sh` runs `openapi-typescript` (pinned 7.13.0, via `bunx` so it is not a locked dependency and never touches the bundle, `bun audit`, or the dependency-age gate) over the *same* vendored, pinned GitHub OpenAPI description the Go server validates against (`internal/server/testdata/github-openapi.json.gz`), emitting `web/src/generated/github-openapi.d.ts` (~144k lines, `.d.ts` so `skipLibCheck` skips type-checking it and it erases to zero runtime/bundle). `web/knip.ts` ignores `src/generated/**`. First adoption proves the pipeline end-to-end: `GithubContentFile` in `types.ts` is now `components[\"schemas\"][\"content-file\"]` \u2014 the documented contract \u2014 instead of a six-field hand-written projection, with every web gate green (typecheck, vitest 511/511, build, knip, jscpd). The `Github*` types still consumed via hand-written projections migrate type-by-type in follow-ups (each needs an assignability check against the spec's stricter nullability/unions); `Bleephub*`/`Wire*`/`Classroom*` describe bleephub's own API and stay hand-written by design",
+        "status_kind": "partial"
       },
       {
         "category": "WEB",
@@ -6604,8 +6604,8 @@
         "WEB": {
           "status": {
             "fixed": 56,
-            "open": 4,
-            "partial": 3
+            "open": 3,
+            "partial": 4
           },
           "total": 63
         }
@@ -6618,8 +6618,8 @@
       "status": {
         "deferred": 1,
         "fixed": 654,
-        "open": 17,
-        "partial": 13
+        "open": 16,
+        "partial": 14
       },
       "total": 685
     }

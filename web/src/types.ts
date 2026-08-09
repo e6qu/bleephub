@@ -1,3 +1,5 @@
+import type { components } from "./generated/github-openapi.js";
+
 // Enum unions mirror the exact strings the server emits (bleephub Go:
 // workflows.go / store_workflow_files.go). Empty result = still in flight.
 // Keeping these as unions makes a typo'd comparison (e.g. "failed" vs the
@@ -660,14 +662,10 @@ export interface GithubRunner {
 }
 
 /** Content-file response — GET .../contents/{path} (file variant). */
-export interface GithubContentFile {
-  name: string;
-  path: string;
-  sha: string;
-  type: string;
-  encoding: string;
-  content: string;
-}
+// Generated from the vendored GitHub OpenAPI description (WEB-013). The full
+// spec shape is a superset of the six fields the UI reads; adopting the
+// generated schema replaces a hand-written cast with the documented contract.
+export type GithubContentFile = components["schemas"]["content-file"];
 
 /** Content directory entry — GET .../contents/{path} (dir variant). */
 export interface GithubContentItem {
