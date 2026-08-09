@@ -1357,7 +1357,7 @@ func issueToJSON(issue *Issue, st *Store, baseURL, repoFullName string) map[stri
 		"title":              title,
 		"body":               body,
 		"state":              state,
-		"state_reason":       stateReason,
+		"state_reason":       nullIfEmpty(stateReason),
 		"user":               authorJSON,
 		"labels":             labels,
 		"assignee":           assignee,

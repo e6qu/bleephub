@@ -759,7 +759,7 @@ func issueToJSONForPullRequest(pr *PullRequest, st *Store, baseURL, repoFullName
 		"title":              pr.Title,
 		"body":               pr.Body,
 		"state":              strings.ToLower(pr.State),
-		"state_reason":       "",
+		"state_reason":       nil,
 		"user":               authorJSON,
 		"labels":             labels,
 		"assignee":           assignee,

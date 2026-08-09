@@ -767,7 +767,7 @@ func prReviewCommentToJSON(c *PRReviewComment, st *Store, baseURL string, repo *
 		"start_line":             c.StartLine,
 		"original_start_line":    c.OriginalStartLine,
 		"side":                   c.Side,
-		"start_side":             c.StartSide,
+		"start_side":             nullIfEmpty(c.StartSide),
 		"commit_id":              c.CommitID,
 		"original_commit_id":     c.OriginalCommitID,
 		"body":                   c.Body,
