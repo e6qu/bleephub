@@ -5677,8 +5677,8 @@
         "id": "PAR-011",
         "location": "openapi_shape_validator_test.go:45",
         "severity": "M",
-        "status": "open",
-        "status_kind": "open"
+        "status": "fixed \u2014 the shape-parity ratchet now enforces a coverage floor on a full run: TestMain fails if fewer than `minShapeCoverage` (5000) /api/v3 responses were validated against the OpenAPI description, so the gate cannot silently go vacuous (the observer unwired, or nearly every exchange skipped). A full run currently validates ~26k, so the floor sits far below normal coverage \u2014 including as tests migrate to isolated servers that do not feed the observer (TEST-008) \u2014 and only a genuine collapse trips it. The floor is gated to full runs via `isFullTestRun` so a `-run <subset>` or the `-run ^$` fuzz pass, which legitimately observe few, are exempt",
+        "status_kind": "fixed"
       },
       {
         "category": "PAR",
@@ -6573,8 +6573,8 @@
         },
         "PAR": {
           "status": {
-            "fixed": 35,
-            "open": 4
+            "fixed": 36,
+            "open": 3
           },
           "total": 39
         },
@@ -6616,8 +6616,8 @@
       },
       "status": {
         "deferred": 1,
-        "fixed": 651,
-        "open": 21,
+        "fixed": 652,
+        "open": 20,
         "partial": 12
       },
       "total": 685

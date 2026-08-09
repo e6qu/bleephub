@@ -250,6 +250,20 @@ func TestMain(m *testing.M) {
 	}
 	_ = os.RemoveAll(packageDataDir)
 
+	// Coverage floor (PAR-011): on a full run the shape-parity gate must have
+	// validated a substantial number of /api/v3 responses. A collapse toward
+	// zero — the observer unwired, or nearly every exchange skipped — makes a
+	// green ratchet meaningless, so fail loudly instead. Only on a full run: a
+	// `-run <subset>` (or the `-run ^$` fuzz pass) legitimately observes few.
+	if isFullTestRun() {
+		if validated, _ := apiShapeValidator.coverage(); validated < minShapeCoverage {
+			fmt.Fprintf(os.Stderr, "openapi-shape coverage floor: only %d /api/v3 response(s) validated against the OpenAPI description (floor %d) — the parity gate has gone vacuous\n", validated, minShapeCoverage)
+			if code == 0 {
+				code = 1
+			}
+		}
+	}
+
 	if newKeys, total := apiShapeValidator.ratchet(); len(newKeys) > 0 {
 		fmt.Fprintf(os.Stderr, "\nopenapi-shape ratchet: %d NEW response-shape violation(s) vs testdata/github-openapi.json.gz (total observed: %d):\n", len(newKeys), total)
 		for _, key := range newKeys {

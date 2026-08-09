@@ -3,6 +3,7 @@ package bleephub
 import (
 	"compress/gzip"
 	"encoding/json"
+	"flag"
 	"fmt"
 	"net/http"
 	"net/url"
@@ -735,6 +736,39 @@ func readViolationAllowlist(path string) (map[string]bool, error) {
 		allowed[line] = true
 	}
 	return allowed, nil
+}
+
+// minShapeCoverage is the coverage floor the full suite must clear (PAR-011). A
+// full run currently validates ~26k responses; the floor sits far below that so
+// ordinary suite churn — including tests migrating to isolated servers that do
+// not feed the observer (TEST-008) — never trips it, while a true collapse
+// (observer unwired) drops orders of magnitude and is caught.
+const minShapeCoverage = 5000
+
+// isFullTestRun reports whether every test ran, so the coverage floor applies.
+// A `-run <subset>` filter (or the `-run ^$` fuzz pass) legitimately observes
+// only a fraction and must not be judged against the floor.
+func isFullTestRun() bool {
+	f := flag.Lookup("test.run")
+	if f == nil {
+		return false
+	}
+	switch f.Value.String() {
+	case "", ".*", "^.*$":
+		return true
+	default:
+		return false
+	}
+}
+
+// coverage reports how many observed /api/v3 exchanges were matched to an
+// OpenAPI operation and validated. The shape-parity gate is only meaningful if
+// this stays high; a coverage floor guards against it silently collapsing
+// (PAR-011).
+func (v *shapeValidator) coverage() (validated, exchanges int) {
+	v.mu.Lock()
+	defer v.mu.Unlock()
+	return v.validated, v.exchanges
 }
 
 // ratchet compares the deduped violations against the allowlist and
