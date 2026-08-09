@@ -6,36 +6,40 @@ import (
 )
 
 func TestRepoVulnerabilityAlerts_CheckToggle(t *testing.T) {
-	repo := createRepoWriteRepo(t, false)
-	path := "/api/v3/repos/admin/" + repo + "/vulnerability-alerts"
+	t.Parallel()
+	s := newIsolatedServer(t)
+	repo := s.createTestRepo(t)
+	path := "/api/v3/repos/" + repo + "/vulnerability-alerts"
 
-	resp := ghGet(t, path, defaultToken)
+	resp := s.get(t, path, defaultToken)
 	requireStatus(t, resp, 404)
 
-	resp = ghPut(t, path, defaultToken, nil)
+	resp = s.put(t, path, defaultToken, nil)
 	requireStatus(t, resp, 204)
-	resp = ghGet(t, path, defaultToken)
+	resp = s.get(t, path, defaultToken)
 	requireStatus(t, resp, 204)
 
-	resp = ghDelete(t, path, defaultToken)
+	resp = s.delete(t, path, defaultToken)
 	requireStatus(t, resp, 204)
-	resp = ghGet(t, path, defaultToken)
+	resp = s.get(t, path, defaultToken)
 	requireStatus(t, resp, 404)
 }
 
 func TestRepoAutomatedSecurityFixes_Check(t *testing.T) {
-	repo := createRepoWriteRepo(t, false)
-	path := "/api/v3/repos/admin/" + repo + "/automated-security-fixes"
+	t.Parallel()
+	s := newIsolatedServer(t)
+	repo := s.createTestRepo(t)
+	path := "/api/v3/repos/" + repo + "/automated-security-fixes"
 
-	resp := ghGet(t, path, defaultToken)
+	resp := s.get(t, path, defaultToken)
 	data := decodeJSONWithStatus(t, resp, 200)
 	if data["enabled"] != false || data["paused"] != false {
 		t.Fatalf("initial state = %v, want enabled false paused false", data)
 	}
 
-	resp = ghPut(t, path, defaultToken, nil)
+	resp = s.put(t, path, defaultToken, nil)
 	requireStatus(t, resp, 204)
-	resp = ghGet(t, path, defaultToken)
+	resp = s.get(t, path, defaultToken)
 	data = decodeJSONWithStatus(t, resp, 200)
 	if data["enabled"] != true {
 		t.Fatalf("enabled = %v after PUT, want true", data["enabled"])
@@ -43,18 +47,20 @@ func TestRepoAutomatedSecurityFixes_Check(t *testing.T) {
 }
 
 func TestRepoPrivateVulnerabilityReporting_Check(t *testing.T) {
-	repo := createRepoWriteRepo(t, false)
-	path := "/api/v3/repos/admin/" + repo + "/private-vulnerability-reporting"
+	t.Parallel()
+	s := newIsolatedServer(t)
+	repo := s.createTestRepo(t)
+	path := "/api/v3/repos/" + repo + "/private-vulnerability-reporting"
 
-	resp := ghGet(t, path, defaultToken)
+	resp := s.get(t, path, defaultToken)
 	data := decodeJSONWithStatus(t, resp, 200)
 	if data["enabled"] != false {
 		t.Fatalf("initial enabled = %v, want false", data["enabled"])
 	}
 
-	resp = ghPut(t, path, defaultToken, nil)
+	resp = s.put(t, path, defaultToken, nil)
 	requireStatus(t, resp, 204)
-	resp = ghGet(t, path, defaultToken)
+	resp = s.get(t, path, defaultToken)
 	data = decodeJSONWithStatus(t, resp, 200)
 	if data["enabled"] != true {
 		t.Fatalf("enabled = %v after PUT, want true", data["enabled"])
@@ -62,17 +68,19 @@ func TestRepoPrivateVulnerabilityReporting_Check(t *testing.T) {
 }
 
 func TestRepoInteractionLimits_RoundTrip(t *testing.T) {
-	repo := createRepoWriteRepo(t, false)
-	path := "/api/v3/repos/admin/" + repo + "/interaction-limits"
+	t.Parallel()
+	s := newIsolatedServer(t)
+	repo := s.createTestRepo(t)
+	path := "/api/v3/repos/" + repo + "/interaction-limits"
 
 	// No restriction in effect → empty object.
-	resp := ghGet(t, path, defaultToken)
+	resp := s.get(t, path, defaultToken)
 	data := decodeJSONWithStatus(t, resp, 200)
 	if len(data) != 0 {
 		t.Fatalf("initial interaction limits = %v, want {}", data)
 	}
 
-	resp = ghPut(t, path, defaultToken, map[string]interface{}{
+	resp = s.put(t, path, defaultToken, map[string]interface{}{
 		"limit":  "collaborators_only",
 		"expiry": "one_week",
 	})
@@ -89,21 +97,21 @@ func TestRepoInteractionLimits_RoundTrip(t *testing.T) {
 		t.Fatalf("expires_at = %v, want ~one week out", expiresAt)
 	}
 
-	resp = ghGet(t, path, defaultToken)
+	resp = s.get(t, path, defaultToken)
 	got := decodeJSONWithStatus(t, resp, 200)
 	if got["limit"] != "collaborators_only" || got["origin"] != "repository" {
 		t.Fatalf("read-back = %v", got)
 	}
 
 	// Invalid enum values are validation failures.
-	resp = ghPut(t, path, defaultToken, map[string]interface{}{"limit": "everyone"})
+	resp = s.put(t, path, defaultToken, map[string]interface{}{"limit": "everyone"})
 	requireStatus(t, resp, 422)
-	resp = ghPut(t, path, defaultToken, map[string]interface{}{"limit": "existing_users", "expiry": "forever"})
+	resp = s.put(t, path, defaultToken, map[string]interface{}{"limit": "existing_users", "expiry": "forever"})
 	requireStatus(t, resp, 422)
 
-	resp = ghDelete(t, path, defaultToken)
+	resp = s.delete(t, path, defaultToken)
 	requireStatus(t, resp, 204)
-	resp = ghGet(t, path, defaultToken)
+	resp = s.get(t, path, defaultToken)
 	data = decodeJSONWithStatus(t, resp, 200)
 	if len(data) != 0 {
 		t.Fatalf("after DELETE = %v, want {}", data)

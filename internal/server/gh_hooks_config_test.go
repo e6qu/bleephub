@@ -12,7 +12,9 @@ import (
 )
 
 func TestRepoWebhookConfig_GetAndPatch(t *testing.T) {
-	repo := createRepoWriteRepo(t, false)
+	t.Parallel()
+	s := newIsolatedServer(t)
+	repo := s.createTestRepo(t)
 
 	// The active hook fires a ping on creation; sink it in-process so the unit
 	// test makes no real outbound request to example.com.
@@ -23,7 +25,7 @@ func TestRepoWebhookConfig_GetAndPatch(t *testing.T) {
 	defer sink.Close()
 	createURL := sink.URL + "/webhook"
 
-	resp := ghPost(t, "/api/v3/repos/admin/"+repo+"/hooks", defaultToken, map[string]interface{}{
+	resp := s.post(t, "/api/v3/repos/"+repo+"/hooks", defaultToken, map[string]interface{}{
 		"config": map[string]interface{}{
 			"url":          createURL,
 			"content_type": "json",
@@ -33,9 +35,9 @@ func TestRepoWebhookConfig_GetAndPatch(t *testing.T) {
 	})
 	hook := decodeJSONWithStatus(t, resp, 201)
 	hookID := fmt.Sprintf("%d", int(hook["id"].(float64)))
-	base := "/api/v3/repos/admin/" + repo + "/hooks/" + hookID
+	base := "/api/v3/repos/" + repo + "/hooks/" + hookID
 
-	resp = ghGet(t, base+"/config", defaultToken)
+	resp = s.get(t, base+"/config", defaultToken)
 	config := decodeJSONWithStatus(t, resp, 200)
 	if config["url"] != createURL {
 		t.Fatalf("config url = %v", config["url"])
@@ -51,7 +53,7 @@ func TestRepoWebhookConfig_GetAndPatch(t *testing.T) {
 		t.Fatalf("config secret = %v, want masked", config["secret"])
 	}
 
-	resp = ghPatch(t, base+"/config", defaultToken, map[string]interface{}{
+	resp = s.patch(t, base+"/config", defaultToken, map[string]interface{}{
 		"url":          "https://example.com/webhook2",
 		"content_type": "form",
 		"insecure_ssl": "1",
@@ -63,7 +65,7 @@ func TestRepoWebhookConfig_GetAndPatch(t *testing.T) {
 
 	// The config change is a view of the same webhook: the hook object
 	// reflects it.
-	resp = ghGet(t, base, defaultToken)
+	resp = s.get(t, base, defaultToken)
 	hook = decodeJSONWithStatus(t, resp, 200)
 	hookConfig, _ := hook["config"].(map[string]interface{})
 	if hookConfig["url"] != "https://example.com/webhook2" {
@@ -71,15 +73,17 @@ func TestRepoWebhookConfig_GetAndPatch(t *testing.T) {
 	}
 
 	// Unknown hook → 404.
-	resp = ghGet(t, "/api/v3/repos/admin/"+repo+"/hooks/424242/config", defaultToken)
+	resp = s.get(t, "/api/v3/repos/"+repo+"/hooks/424242/config", defaultToken)
 	requireStatus(t, resp, 404)
-	resp = ghPatch(t, "/api/v3/repos/admin/"+repo+"/hooks/424242/config", defaultToken, map[string]interface{}{"url": "x"})
+	resp = s.patch(t, "/api/v3/repos/"+repo+"/hooks/424242/config", defaultToken, map[string]interface{}{"url": "x"})
 	requireStatus(t, resp, 404)
 }
 
 func TestRepoWebhookTest_DeliversRealPushEvent(t *testing.T) {
-	repo := createRepoWriteRepo(t, true)
-	resp := ghPut(t, "/api/v3/repos/admin/"+repo+"/contents/webhook-test.txt", defaultToken, map[string]interface{}{
+	t.Parallel()
+	s := newIsolatedServer(t)
+	repo := s.createTestRepo(t)
+	resp := s.put(t, "/api/v3/repos/"+repo+"/contents/webhook-test.txt", defaultToken, map[string]interface{}{
 		"message": "seed webhook test head",
 		"content": base64.StdEncoding.EncodeToString([]byte("webhook test\n")),
 		"branch":  "main",
@@ -99,7 +103,7 @@ func TestRepoWebhookTest_DeliversRealPushEvent(t *testing.T) {
 	}))
 	defer receiver.Close()
 
-	resp = ghPost(t, "/api/v3/repos/admin/"+repo+"/hooks", defaultToken, map[string]interface{}{
+	resp = s.post(t, "/api/v3/repos/"+repo+"/hooks", defaultToken, map[string]interface{}{
 		"config": map[string]interface{}{"url": receiver.URL, "content_type": "json", "secret": "hush"},
 		"events": []string{"push"},
 		"active": false,
@@ -107,7 +111,7 @@ func TestRepoWebhookTest_DeliversRealPushEvent(t *testing.T) {
 	hook := decodeJSONWithStatus(t, resp, 201)
 	hookID := fmt.Sprintf("%d", int(hook["id"].(float64)))
 
-	resp = ghPost(t, "/api/v3/repos/admin/"+repo+"/hooks/"+hookID+"/tests", defaultToken, nil)
+	resp = s.post(t, "/api/v3/repos/"+repo+"/hooks/"+hookID+"/tests", defaultToken, nil)
 	requireStatus(t, resp, 204)
 
 	select {
@@ -130,19 +134,21 @@ func TestRepoWebhookTest_DeliversRealPushEvent(t *testing.T) {
 	}
 
 	// Unknown hook → 404.
-	resp = ghPost(t, "/api/v3/repos/admin/"+repo+"/hooks/424242/tests", defaultToken, nil)
+	resp = s.post(t, "/api/v3/repos/"+repo+"/hooks/424242/tests", defaultToken, nil)
 	requireStatus(t, resp, 404)
 }
 
 func TestRepoWebhookTest_RejectsMissingDefaultBranchHead(t *testing.T) {
-	repo := createRepoWriteRepo(t, false)
+	t.Parallel()
+	s := newIsolatedServer(t)
+	repo := s.createTestRepo(t)
 
 	receiver := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		t.Fatal("webhook test delivered despite missing default-branch head")
 	}))
 	defer receiver.Close()
 
-	resp := ghPost(t, "/api/v3/repos/admin/"+repo+"/hooks", defaultToken, map[string]interface{}{
+	resp := s.post(t, "/api/v3/repos/"+repo+"/hooks", defaultToken, map[string]interface{}{
 		"config": map[string]interface{}{"url": receiver.URL, "content_type": "json"},
 		"events": []string{"push"},
 		"active": false,
@@ -150,6 +156,6 @@ func TestRepoWebhookTest_RejectsMissingDefaultBranchHead(t *testing.T) {
 	hook := decodeJSONWithStatus(t, resp, 201)
 	hookID := fmt.Sprintf("%d", int(hook["id"].(float64)))
 
-	resp = ghPost(t, "/api/v3/repos/admin/"+repo+"/hooks/"+hookID+"/tests", defaultToken, nil)
+	resp = s.post(t, "/api/v3/repos/"+repo+"/hooks/"+hookID+"/tests", defaultToken, nil)
 	requireStatus(t, resp, 422)
 }
