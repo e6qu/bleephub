@@ -5398,8 +5398,8 @@
         "id": "TEST-018",
         "location": "~20 helpers",
         "severity": "M",
-        "status": "open",
-        "status_kind": "open"
+        "status": "fixed \u2014 the near-duplicate request helpers now delegate to two canonical cores instead of each re-implementing request construction. `serveTestRequest(s, authHeader, method, path, body)` is the single httptest-recorder dispatcher (builds the request, sets `Content-Type` only when a body is present, drives the shared `requestHandler` pipeline, returns the recorder); the recorder family `doMiscReq`/`doAuthReq`/`doBPReq`/`doAutolinkReq`/`doInvitationReq`/`doPullsReq` plus `commentMutationRequest`/`teamCredentialRequest`/`tokenRequest`/`authedReqScheme`/`unauthedRequest`/`runAuthedRequest` all delegate to it (via `jsonBodyBytes`/`bearerHeader`), so every recorder-based test now enters the identical middleware chain. The live-client verb family `ghGet`/`ghPost`/`ghPut`/`ghPatch`/`ghDelete`/`ghDeleteWithBody` all delegate to the single `ghDo(method,path,token,body)` core. Helpers that deliberately hit `s.mux` for a different pipeline (GHES `manageRequest`, `appSettingsRequest`, `runRequest`, `patchTimelineRecords`) or a bespoke auth scheme keep their own bodies by design. ~170 fewer lines of duplicated request wiring, and no recorder test can silently diverge on middleware subset or error policy",
+        "status_kind": "fixed"
       },
       {
         "category": "TEST",
@@ -6595,8 +6595,8 @@
         },
         "TEST": {
           "status": {
-            "fixed": 33,
-            "open": 6,
+            "fixed": 34,
+            "open": 5,
             "partial": 1
           },
           "total": 40
@@ -6617,8 +6617,8 @@
       },
       "status": {
         "deferred": 1,
-        "fixed": 652,
-        "open": 19,
+        "fixed": 653,
+        "open": 18,
         "partial": 13
       },
       "total": 685

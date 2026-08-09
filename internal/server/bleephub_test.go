@@ -16,6 +16,7 @@ import (
 	"math/big"
 	"net"
 	"net/http"
+	"net/http/httptest"
 	"net/url"
 	"os"
 	"strings"
@@ -95,6 +96,45 @@ func authedPost(path, contentType string, body io.Reader) (*http.Response, error
 	}
 	req.Header.Set("Authorization", "Bearer "+defaultToken)
 	return http.DefaultClient.Do(req)
+}
+
+// serveTestRequest is the single request-building core the package's various
+// do*Req helpers adapt to their own signatures (TEST-018): it builds a request
+// (JSON Content-Type when body is non-nil), applies authHeader if given, serves
+// it through the full middleware chain, and returns the recorder. It is distinct
+// from authedGet/authedPost, which drive the live httptest listener over HTTP.
+func serveTestRequest(s *Server, authHeader, method, path string, body []byte) *httptest.ResponseRecorder {
+	var req *http.Request
+	if body != nil {
+		req = httptest.NewRequest(method, path, bytes.NewReader(body))
+		req.Header.Set("Content-Type", "application/json")
+	} else {
+		req = httptest.NewRequest(method, path, nil)
+	}
+	if authHeader != "" {
+		req.Header.Set("Authorization", authHeader)
+	}
+	w := httptest.NewRecorder()
+	s.requestHandler().ServeHTTP(w, req)
+	return w
+}
+
+// jsonBodyBytes maps a string request body to serveTestRequest's []byte: an
+// empty string means "no body" (nil), matching the do*Req helpers that took a
+// string body.
+func jsonBodyBytes(body string) []byte {
+	if body == "" {
+		return nil
+	}
+	return []byte(body)
+}
+
+// bearerHeader formats a Bearer credential, or "" for no Authorization header.
+func bearerHeader(token string) string {
+	if token == "" {
+		return ""
+	}
+	return "Bearer " + token
 }
 
 func TestMain(m *testing.M) {

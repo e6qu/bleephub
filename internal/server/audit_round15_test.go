@@ -12,13 +12,7 @@ import (
 // tokenRequest drives a route through the /api middleware chain with an
 // explicit bearer token, so requirePerm sees the token's resolved principal.
 func tokenRequest(s *Server, method, path, token string) *httptest.ResponseRecorder {
-	req := httptest.NewRequest(method, path, nil)
-	if token != "" {
-		req.Header.Set("Authorization", "Bearer "+token)
-	}
-	w := httptest.NewRecorder()
-	s.requestHandler().ServeHTTP(w, req)
-	return w
+	return serveTestRequest(s, bearerHeader(token), method, path, nil)
 }
 
 // seedTestUser inserts a fresh user and returns it.

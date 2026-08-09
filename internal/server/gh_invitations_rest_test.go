@@ -1,7 +1,6 @@
 package bleephub
 
 import (
-	"bytes"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -19,19 +18,7 @@ func invitationsTestServer(t *testing.T) *Server {
 }
 
 func doInvitationReq(s *Server, token, method, path string, body []byte) *httptest.ResponseRecorder {
-	var req *http.Request
-	if body != nil {
-		req = httptest.NewRequest(method, path, bytes.NewReader(body))
-		req.Header.Set("Content-Type", "application/json")
-	} else {
-		req = httptest.NewRequest(method, path, nil)
-	}
-	if token != "" {
-		req.Header.Set("Authorization", "Bearer "+token)
-	}
-	w := httptest.NewRecorder()
-	s.requestHandler().ServeHTTP(w, req)
-	return w
+	return serveTestRequest(s, bearerHeader(token), method, path, body)
 }
 
 func makeOtherUser(s *Server, login string) (*User, string) {

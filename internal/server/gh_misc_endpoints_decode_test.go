@@ -1,7 +1,6 @@
 package bleephub
 
 import (
-	"bytes"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -28,21 +27,7 @@ func miscEndpointsTestServer(t *testing.T) *Server {
 }
 
 func doMiscReq(s *Server, method, path string, body string) *httptest.ResponseRecorder {
-	var bodyR *bytes.Reader
-	if body != "" {
-		bodyR = bytes.NewReader([]byte(body))
-	}
-	var req *http.Request
-	if bodyR != nil {
-		req = httptest.NewRequest(method, path, bodyR)
-		req.Header.Set("Content-Type", "application/json")
-	} else {
-		req = httptest.NewRequest(method, path, nil)
-	}
-	req.Header.Set("Authorization", "token "+adminPAT)
-	w := httptest.NewRecorder()
-	s.requestHandler().ServeHTTP(w, req)
-	return w
+	return serveTestRequest(s, "token "+adminPAT, method, path, jsonBodyBytes(body))
 }
 
 func assertProblemsParsingJSON(t *testing.T, w *httptest.ResponseRecorder, surface string) {

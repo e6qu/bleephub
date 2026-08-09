@@ -1,7 +1,6 @@
 package bleephub
 
 import (
-	"bytes"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -20,20 +19,7 @@ func bpTestServer(t *testing.T) *Server {
 }
 
 func doBPReq(s *Server, token, method, path, body string) *httptest.ResponseRecorder {
-	var bodyR *bytes.Reader
-	if body != "" {
-		bodyR = bytes.NewReader([]byte(body))
-	} else {
-		bodyR = bytes.NewReader(nil)
-	}
-	req := httptest.NewRequest(method, path, bodyR)
-	if body != "" {
-		req.Header.Set("Content-Type", "application/json")
-	}
-	req.Header.Set("Authorization", "Bearer "+token)
-	w := httptest.NewRecorder()
-	s.requestHandler().ServeHTTP(w, req)
-	return w
+	return serveTestRequest(s, "Bearer "+token, method, path, jsonBodyBytes(body))
 }
 
 func TestBranchProtection_CRUD(t *testing.T) {

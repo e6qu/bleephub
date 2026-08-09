@@ -11,10 +11,7 @@ import (
 // any Authorization header, so requirePerm sees no user. Mirrors
 // runAuthedRequest (gh_actions_test.go) minus the token.
 func unauthedRequest(s *Server, method, path string) *httptest.ResponseRecorder {
-	req := httptest.NewRequest(method, path, nil)
-	w := httptest.NewRecorder()
-	s.requestHandler().ServeHTTP(w, req)
-	return w
+	return serveTestRequest(s, "", method, path, nil)
 }
 
 // TestActionsWriteEndpointsRequireAuth guards against the workflow-run

@@ -3,26 +3,13 @@ package bleephub
 import (
 	"net/http"
 	"net/http/httptest"
-	"strings"
 	"testing"
 )
 
 // authedReqScheme drives a request through the /api middleware with the given
 // raw Authorization header value, returning the recorder.
 func authedReqScheme(s *Server, method, path, authHeader, body string) *httptest.ResponseRecorder {
-	var r *http.Request
-	if body != "" {
-		r = httptest.NewRequest(method, path, strings.NewReader(body))
-		r.Header.Set("Content-Type", "application/json")
-	} else {
-		r = httptest.NewRequest(method, path, nil)
-	}
-	if authHeader != "" {
-		r.Header.Set("Authorization", authHeader)
-	}
-	w := httptest.NewRecorder()
-	s.requestHandler().ServeHTTP(w, r)
-	return w
+	return serveTestRequest(s, authHeader, method, path, jsonBodyBytes(body))
 }
 
 // TestAuthScheme_CaseInsensitive guards the fix for octokit-style lowercase

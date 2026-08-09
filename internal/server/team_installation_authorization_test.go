@@ -11,14 +11,7 @@ import (
 
 func teamCredentialRequest(t *testing.T, s *Server, method, path, token, body string) *httptest.ResponseRecorder {
 	t.Helper()
-	req := httptest.NewRequest(method, path, strings.NewReader(body))
-	req.Header.Set("Authorization", "Bearer "+token)
-	if body != "" {
-		req.Header.Set("Content-Type", "application/json")
-	}
-	rec := httptest.NewRecorder()
-	s.requestHandler().ServeHTTP(rec, req)
-	return rec
+	return serveTestRequest(s, "Bearer "+token, method, path, jsonBodyBytes(body))
 }
 
 func TestInstallationMembersPermissionCoversTheWholeTeamJourney(t *testing.T) {
