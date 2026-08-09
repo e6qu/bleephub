@@ -29,6 +29,23 @@ type isolatedServer struct {
 	baseURL string
 }
 
+// repoRef identifies a repository by its owner and name. The isolated repo
+// helpers return one instead of a bare string so a converted test cannot make
+// the two mistakes that produced silent 404s and "admin/admin/<name>" during
+// the TEST-008 migration: hand-building a "/api/v3/repos/<owner>/<name>" path,
+// or passing a full "owner/name" where only the name (or only the owner) was
+// meant. Consumers use path()/fullName()/owner/name; the compiler rejects
+// concatenating a repoRef into a URL.
+type repoRef struct {
+	owner, name string
+}
+
+// fullName is "owner/name" (e.g. for GraphQL nameWithOwner or a body field).
+func (r repoRef) fullName() string { return r.owner + "/" + r.name }
+
+// path is the REST resource path "/api/v3/repos/owner/name"; append subpaths.
+func (r repoRef) path() string { return "/api/v3/repos/" + r.owner + "/" + r.name }
+
 func newIsolatedServer(t *testing.T) *isolatedServer {
 	t.Helper()
 	s := NewServer("127.0.0.1:0", zerolog.Nop())
@@ -150,7 +167,7 @@ func (s *isolatedServer) createTestOrg(t *testing.T) string {
 	return login
 }
 
-func (s *isolatedServer) createTestRepo(t *testing.T) string {
+func (s *isolatedServer) createTestRepo(t *testing.T) repoRef {
 	t.Helper()
 	name := "test-repo-actions-" + strconv.FormatInt(int64(nextTestID()), 36)
 	resp := s.post(t, "/api/v3/user/repos", defaultToken, map[string]interface{}{
@@ -163,7 +180,7 @@ func (s *isolatedServer) createTestRepo(t *testing.T) string {
 		t.Fatalf("create repo: %d %s", resp.StatusCode, body)
 	}
 	resp.Body.Close()
-	return "admin/" + name
+	return repoRef{owner: "admin", name: name}
 }
 
 func (s *isolatedServer) createTestUser(t *testing.T, login string) *User {
@@ -184,9 +201,15 @@ func (s *isolatedServer) createTestUser(t *testing.T, login string) *User {
 	return s.store.UsersByLogin[login]
 }
 
-// createEnterpriseTestUser mirrors the package helper against this instance's
-// store: it seeds a user + PAT directly (no HTTP) so an enterprise test can
-// provision a non-admin principal on its own server.
+// createIssueForTest mirrors the package helper: open an issue on repo (which is
+// "admin/<name>" from createTestRepo) and return its (id, number).
+func (s *isolatedServer) createIssueForTest(t *testing.T, repo repoRef, title string) (int, int) {
+	t.Helper()
+	resp := s.post(t, repo.path()+"/issues", defaultToken, map[string]interface{}{"title": title})
+	data := decodeJSONWithStatus(t, resp, 201)
+	return int(data["id"].(float64)), int(data["number"].(float64))
+}
+
 // gqlDo/gqlData mirror the package GraphQL helpers against this instance.
 func (s *isolatedServer) gqlDo(t *testing.T, query string, variables map[string]interface{}) map[string]interface{} {
 	t.Helper()
@@ -217,7 +240,7 @@ func (s *isolatedServer) gqlData(t *testing.T, query string, variables map[strin
 
 // sweepRepo/sweepPR mirror the package helpers against this instance: create a
 // repo with a seeded feature branch, and open a PR on it.
-func (s *isolatedServer) sweepRepo(t *testing.T, name string) (string, string) {
+func (s *isolatedServer) sweepRepo(t *testing.T, name string) repoRef {
 	t.Helper()
 	resp := s.post(t, "/api/v3/user/repos", defaultToken, map[string]interface{}{"name": name, "auto_init": true})
 	data := decodeJSON(t, resp)
@@ -232,12 +255,12 @@ func (s *isolatedServer) sweepRepo(t *testing.T, name string) (string, string) {
 		t.Fatalf("repo %s/%s not found after create", login, repoName)
 	}
 	seedPullRequestBranches(t, s.Server, repo, "feature")
-	return login, repoName
+	return repoRef{owner: login, name: repoName}
 }
 
-func (s *isolatedServer) sweepPR(t *testing.T, owner, name, title string) (int, int) {
+func (s *isolatedServer) sweepPR(t *testing.T, repo repoRef, title string) (int, int) {
 	t.Helper()
-	resp := s.post(t, "/api/v3/repos/"+owner+"/"+name+"/pulls", defaultToken, map[string]interface{}{
+	resp := s.post(t, repo.path()+"/pulls", defaultToken, map[string]interface{}{
 		"title": title,
 		"head":  "feature",
 		"base":  "main",
@@ -252,6 +275,9 @@ func (s *isolatedServer) sweepPR(t *testing.T, owner, name, title string) (int, 
 	return int(num), int(id)
 }
 
+// createEnterpriseTestUser mirrors the package helper against this instance's
+// store: it seeds a user + PAT directly (no HTTP) so an enterprise test can
+// provision a non-admin principal on its own server.
 func (s *isolatedServer) createEnterpriseTestUser(t *testing.T, login string) string {
 	t.Helper()
 	s.store.mu.Lock()
@@ -265,7 +291,7 @@ func (s *isolatedServer) createEnterpriseTestUser(t *testing.T, login string) st
 	return tok.Value
 }
 
-func (s *isolatedServer) createOrgRepoForGovernance(t *testing.T, org string) (string, int) {
+func (s *isolatedServer) createOrgRepoForGovernance(t *testing.T, org string) (repoRef, int) {
 	t.Helper()
 	name := "gov-repo-" + strconv.FormatInt(int64(nextTestID()), 36)
 	resp := s.post(t, "/api/v3/orgs/"+org+"/repos", defaultToken, map[string]interface{}{
@@ -277,7 +303,7 @@ func (s *isolatedServer) createOrgRepoForGovernance(t *testing.T, org string) (s
 		t.Fatalf("create org repo: %d", resp.StatusCode)
 	}
 	repo := decodeJSON(t, resp)
-	return name, int(repo["id"].(float64))
+	return repoRef{owner: org, name: name}, int(repo["id"].(float64))
 }
 
 func (s *isolatedServer) activateOrgMember(t *testing.T, orgLogin, login, memberToken string) {

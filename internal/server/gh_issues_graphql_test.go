@@ -6,17 +6,20 @@ import (
 )
 
 func TestIssueGraphQLFiltersAndOrderByAreBehavioral(t *testing.T) {
-	owner, repo := sweepRepo(t, "gql-issue-filter-fidelity")
-	first := decodeJSON(t, ghPost(t, "/api/v3/repos/"+owner+"/"+repo+"/issues", defaultToken,
+	t.Parallel()
+	s := newIsolatedServer(t)
+	sweep := s.sweepRepo(t, "gql-issue-filter-fidelity")
+	owner, repo := sweep.owner, sweep.name
+	first := decodeJSON(t, s.post(t, "/api/v3/repos/"+owner+"/"+repo+"/issues", defaultToken,
 		map[string]interface{}{"title": "mentioned", "body": "cc @alice"}))
-	second := decodeJSON(t, ghPost(t, "/api/v3/repos/"+owner+"/"+repo+"/issues", defaultToken,
+	second := decodeJSON(t, s.post(t, "/api/v3/repos/"+owner+"/"+repo+"/issues", defaultToken,
 		map[string]interface{}{"title": "discussed"}))
 	firstNumber := int(first["number"].(float64))
 	secondNumber := int(second["number"].(float64))
-	ghPatch(t, "/api/v3/repos/"+owner+"/"+repo+"/issues/"+itoa(secondNumber), defaultToken,
+	s.patch(t, "/api/v3/repos/"+owner+"/"+repo+"/issues/"+itoa(secondNumber), defaultToken,
 		map[string]interface{}{"state": "closed"}).Body.Close()
 	for _, body := range []string{"one", "two"} {
-		ghPost(t, "/api/v3/repos/"+owner+"/"+repo+"/issues/"+itoa(secondNumber)+"/comments",
+		s.post(t, "/api/v3/repos/"+owner+"/"+repo+"/issues/"+itoa(secondNumber)+"/comments",
 			defaultToken, map[string]interface{}{"body": body}).Body.Close()
 	}
 
@@ -24,7 +27,7 @@ func TestIssueGraphQLFiltersAndOrderByAreBehavioral(t *testing.T) {
 		t.Helper()
 		query := `query($owner:String!,$repo:String!){repository(owner:$owner,name:$repo){issues(first:10,` +
 			selection + `){nodes{number}}}}`
-		data := gqlData(t, query, map[string]interface{}{"owner": owner, "repo": repo})
+		data := s.gqlData(t, query, map[string]interface{}{"owner": owner, "repo": repo})
 		repository := data["repository"].(map[string]interface{})
 		connection := repository["issues"].(map[string]interface{})
 		rawNodes := connection["nodes"].([]interface{})
@@ -53,14 +56,16 @@ func TestIssueGraphQLFiltersAndOrderByAreBehavioral(t *testing.T) {
 // `gh issue view` sends on `...on Issue` for issue-types and sub-issues.
 // Sub-issue fields are backed by the same ordered issue links as the REST API.
 func TestIssueGraphQL_SubIssueFields(t *testing.T) {
-	repo := createRepoWriteRepo(t, false)
-	parentID, parentNum := createIssueForTest(t, repo, "parent")
-	openChildID, openChildNum := createIssueForTest(t, repo, "open child")
-	closedChildID, closedChildNum := createIssueForTest(t, repo, "closed child")
-	parentPath := fmt.Sprintf("/api/v3/repos/admin/%s/issues/%d", repo, parentNum)
-	requireStatus(t, ghPost(t, parentPath+"/sub_issues", defaultToken, map[string]interface{}{"sub_issue_id": openChildID}), 201)
-	requireStatus(t, ghPost(t, parentPath+"/sub_issues", defaultToken, map[string]interface{}{"sub_issue_id": closedChildID}), 201)
-	requireStatus(t, ghPatch(t, fmt.Sprintf("/api/v3/repos/admin/%s/issues/%d", repo, closedChildNum), defaultToken, map[string]interface{}{"state": "closed"}), 200)
+	t.Parallel()
+	s := newIsolatedServer(t)
+	repo := s.createTestRepo(t)
+	parentID, parentNum := s.createIssueForTest(t, repo, "parent")
+	openChildID, openChildNum := s.createIssueForTest(t, repo, "open child")
+	closedChildID, closedChildNum := s.createIssueForTest(t, repo, "closed child")
+	parentPath := fmt.Sprintf("/api/v3/repos/%s/issues/%d", repo, parentNum)
+	requireStatus(t, s.post(t, parentPath+"/sub_issues", defaultToken, map[string]interface{}{"sub_issue_id": openChildID}), 201)
+	requireStatus(t, s.post(t, parentPath+"/sub_issues", defaultToken, map[string]interface{}{"sub_issue_id": closedChildID}), 201)
+	requireStatus(t, s.patch(t, fmt.Sprintf("/api/v3/repos/%s/issues/%d", repo, closedChildNum), defaultToken, map[string]interface{}{"state": "closed"}), 200)
 
 	// The exact selection set gh CLI's `gh issue view` sends for these four
 	// fields on `...on Issue`.
@@ -83,11 +88,11 @@ func TestIssueGraphQL_SubIssueFields(t *testing.T) {
 		}
 	}`
 
-	resp := ghPost(t, "/api/graphql", defaultToken, map[string]interface{}{
+	resp := s.post(t, "/api/graphql", defaultToken, map[string]interface{}{
 		"query": query,
 		"variables": map[string]interface{}{
 			"owner":  "admin",
-			"name":   repo,
+			"name":   repo.name,
 			"number": parentNum,
 		},
 	})
@@ -139,7 +144,7 @@ func TestIssueGraphQL_SubIssueFields(t *testing.T) {
 	if firstNode["state"] != "OPEN" || secondNode["state"] != "CLOSED" {
 		t.Fatalf("subIssue states = %v/%v", firstNode["state"], secondNode["state"])
 	}
-	if gotRepo := firstNode["repository"].(map[string]interface{})["nameWithOwner"]; gotRepo != "admin/"+repo {
+	if gotRepo := firstNode["repository"].(map[string]interface{})["nameWithOwner"]; gotRepo != repo.fullName() {
 		t.Fatalf("subIssue repository = %v", gotRepo)
 	}
 	summary, _ := parentIssue["subIssuesSummary"].(map[string]interface{})
@@ -170,10 +175,12 @@ func TestIssueGraphQL_SubIssueFields(t *testing.T) {
 }
 
 func TestIssueGraphQL_IssueTypeAssignment(t *testing.T) {
-	org := createTestOrg(t)
-	repoName, _ := createOrgRepoForGovernance(t, org)
-	repoFullName := org + "/" + repoName
-	createdType := decodeJSONWithStatus(t, ghPost(t, "/api/v3/orgs/"+org+"/issue-types", defaultToken, map[string]interface{}{
+	t.Parallel()
+	s := newIsolatedServer(t)
+	org := s.createTestOrg(t)
+	repoName, _ := s.createOrgRepoForGovernance(t, org)
+	repoFullName := repoName.fullName()
+	createdType := decodeJSONWithStatus(t, s.post(t, "/api/v3/orgs/"+org+"/issue-types", defaultToken, map[string]interface{}{
 		"name":        "Epic",
 		"description": "Tracks a coordinated body of work",
 		"is_enabled":  true,
@@ -181,7 +188,7 @@ func TestIssueGraphQL_IssueTypeAssignment(t *testing.T) {
 	}), 200)
 	typeID := int(createdType["id"].(float64))
 
-	issue := decodeJSONWithStatus(t, ghPost(t, "/api/v3/repos/"+repoFullName+"/issues", defaultToken, map[string]interface{}{
+	issue := decodeJSONWithStatus(t, s.post(t, "/api/v3/repos/"+repoFullName+"/issues", defaultToken, map[string]interface{}{
 		"title":         "typed through REST",
 		"issue_type_id": typeID,
 	}), 201)
@@ -195,7 +202,7 @@ func TestIssueGraphQL_IssueTypeAssignment(t *testing.T) {
 			}
 		}
 	}`
-	resp := ghPost(t, "/api/graphql", defaultToken, map[string]interface{}{
+	resp := s.post(t, "/api/graphql", defaultToken, map[string]interface{}{
 		"query": query,
 		"variables": map[string]interface{}{
 			"owner":  org,
@@ -221,13 +228,15 @@ func TestIssueGraphQL_IssueTypeAssignment(t *testing.T) {
 }
 
 func TestIssueGraphQL_IssueCommentPinned(t *testing.T) {
-	repo := createRepoWriteRepo(t, false)
-	_, number := createIssueForTest(t, repo, "comment pin")
-	comment := decodeJSONWithStatus(t, ghPost(t, fmt.Sprintf("/api/v3/repos/admin/%s/issues/%d/comments", repo, number), defaultToken, map[string]interface{}{
+	t.Parallel()
+	s := newIsolatedServer(t)
+	repo := s.createTestRepo(t)
+	_, number := s.createIssueForTest(t, repo, "comment pin")
+	comment := decodeJSONWithStatus(t, s.post(t, fmt.Sprintf("/api/v3/repos/%s/issues/%d/comments", repo, number), defaultToken, map[string]interface{}{
 		"body": "pinned through REST",
 	}), 201)
 	commentID := int(comment["id"].(float64))
-	requireStatus(t, ghPut(t, fmt.Sprintf("/api/v3/repos/admin/%s/issues/comments/%d/pin", repo, commentID), defaultToken, nil), 200)
+	requireStatus(t, s.put(t, fmt.Sprintf("/api/v3/repos/%s/issues/comments/%d/pin", repo, commentID), defaultToken, nil), 200)
 
 	query := `query($owner:String!,$name:String!,$number:Int!){
 		repository(owner:$owner,name:$name){
@@ -238,11 +247,11 @@ func TestIssueGraphQL_IssueCommentPinned(t *testing.T) {
 			}
 		}
 	}`
-	resp := ghPost(t, "/api/graphql", defaultToken, map[string]interface{}{
+	resp := s.post(t, "/api/graphql", defaultToken, map[string]interface{}{
 		"query": query,
 		"variables": map[string]interface{}{
 			"owner":  "admin",
-			"name":   repo,
+			"name":   repo.name,
 			"number": number,
 		},
 	})
@@ -269,17 +278,19 @@ func TestIssueGraphQL_IssueCommentPinned(t *testing.T) {
 }
 
 func TestIssueGraphQL_IssueFieldValues(t *testing.T) {
-	org := createTestOrg(t)
-	repoName, _ := createOrgRepoForGovernance(t, org)
-	repoFullName := org + "/" + repoName
-	issue := decodeJSONWithStatus(t, ghPost(t, "/api/v3/repos/"+repoFullName+"/issues", defaultToken, map[string]interface{}{
+	t.Parallel()
+	s := newIsolatedServer(t)
+	org := s.createTestOrg(t)
+	repoName, _ := s.createOrgRepoForGovernance(t, org)
+	repoFullName := repoName.fullName()
+	issue := decodeJSONWithStatus(t, s.post(t, "/api/v3/repos/"+repoFullName+"/issues", defaultToken, map[string]interface{}{
 		"title": "custom fields through REST",
 	}), 201)
 	number := int(issue["number"].(float64))
 
 	mkField := func(body map[string]interface{}) int {
 		t.Helper()
-		created := decodeJSONWithStatus(t, ghPost(t, "/api/v3/orgs/"+org+"/issue-fields", defaultToken, body), 200)
+		created := decodeJSONWithStatus(t, s.post(t, "/api/v3/orgs/"+org+"/issue-fields", defaultToken, body), 200)
 		return int(created["id"].(float64))
 	}
 	textID := mkField(map[string]interface{}{"name": "Team notes", "data_type": "text", "visibility": "all"})
@@ -300,7 +311,7 @@ func TestIssueGraphQL_IssueFieldValues(t *testing.T) {
 	})
 	dateID := mkField(map[string]interface{}{"name": "Due", "data_type": "date", "visibility": "all"})
 
-	valuesResp := ghPost(t, "/api/v3/repos/"+repoFullName+"/issues/"+itoa(number)+"/issue-field-values", defaultToken, map[string]interface{}{
+	valuesResp := s.post(t, "/api/v3/repos/"+repoFullName+"/issues/"+itoa(number)+"/issue-field-values", defaultToken, map[string]interface{}{
 		"issue_field_values": []map[string]interface{}{
 			{"field_id": textID, "value": "needs design review"},
 			{"field_id": numberID, "value": 5},
@@ -350,7 +361,7 @@ func TestIssueGraphQL_IssueFieldValues(t *testing.T) {
 			}
 		}
 	}`
-	resp := ghPost(t, "/api/graphql", defaultToken, map[string]interface{}{
+	resp := s.post(t, "/api/graphql", defaultToken, map[string]interface{}{
 		"query": query,
 		"variables": map[string]interface{}{
 			"owner":  org,

@@ -163,7 +163,7 @@ func TestCodeSecurityConfigurations_AttachDetachAndRepoView(t *testing.T) {
 	org := s.createTestOrg(t)
 	base := "/api/v3/orgs/" + org + "/code-security/configurations"
 	repoName, repoID := s.createOrgRepoForGovernance(t, org)
-	repoPath := org + "/" + repoName
+	repoPath := repoName.fullName()
 
 	resp := s.post(t, base, defaultToken, map[string]interface{}{
 		"name": "attach-target", "description": "attach test",

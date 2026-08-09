@@ -57,8 +57,9 @@ func queryPRReviews(s *isolatedServer, t *testing.T, owner, name string, prNum i
 func TestPRGraphQL_ReviewsConnectionPagination(t *testing.T) {
 	t.Parallel()
 	s := newIsolatedServer(t)
-	owner, name := s.sweepRepo(t, "sweep-reviewpaginate")
-	prNum, _ := s.sweepPR(t, owner, name, "paginate reviews")
+	sweep := s.sweepRepo(t, "sweep-reviewpaginate")
+	owner, name := sweep.owner, sweep.name
+	prNum, _ := s.sweepPR(t, sweep, "paginate reviews")
 
 	const total = 5
 	seedPRReviews(s, t, owner, name, prNum, total)
@@ -166,7 +167,8 @@ func queryIssueComments(s *isolatedServer, t *testing.T, owner, name string, iss
 func TestIssueGraphQL_CommentsConnectionPagination(t *testing.T) {
 	t.Parallel()
 	s := newIsolatedServer(t)
-	owner, name := s.sweepRepo(t, "sweep-commentpaginate")
+	sweep := s.sweepRepo(t, "sweep-commentpaginate")
+	owner, name := sweep.owner, sweep.name
 
 	// Create an issue via REST.
 	resp := s.post(t, "/api/v3/repos/"+owner+"/"+name+"/issues", defaultToken,

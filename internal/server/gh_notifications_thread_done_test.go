@@ -12,7 +12,7 @@ func TestNotificationThreadMarkDone(t *testing.T) {
 	t.Parallel()
 	s := newIsolatedServer(t)
 	repoKey := s.createTestRepo(t)
-	resp := s.post(t, "/api/v3/repos/"+repoKey+"/issues", defaultToken, map[string]interface{}{
+	resp := s.post(t, repoKey.path()+"/issues", defaultToken, map[string]interface{}{
 		"title": "thread-done source issue",
 	})
 	issue := decodeJSONWithStatus(t, resp, 201)
