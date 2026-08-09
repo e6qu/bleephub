@@ -313,7 +313,9 @@ function PendingDeploymentsBanner({
   const review = useMutation({
     mutationFn: (state: "approved" | "rejected") =>
       reviewPendingDeployments(owner, repo, run.id, {
-        environment_ids: (pendingQ.data ?? []).map((p) => p.environment.id),
+        environment_ids: (pendingQ.data ?? [])
+          .map((p) => p.environment.id)
+          .filter((id): id is number => id !== undefined),
         state,
         comment,
       }),

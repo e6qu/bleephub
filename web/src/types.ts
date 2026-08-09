@@ -611,13 +611,10 @@ export interface GithubActionsCacheUsage {
 }
 
 /** Pending deployment — GET .../actions/runs/{run_id}/pending_deployments. */
-export interface GithubPendingDeployment {
-  environment: { id: number; name: string };
-  wait_timer: number;
-  wait_timer_started_at: string | null;
-  current_user_can_approve: boolean;
-  reviewers: { type: string; reviewer?: { login?: string; name?: string } }[];
-}
+// Generated from the vendored GitHub OpenAPI description (WEB-013). The spec
+// marks environment.id optional, so consumers filter it before building
+// environment_ids (see DeploymentsPage/RunDetailPage).
+export type GithubPendingDeployment = components["schemas"]["pending-deployment"];
 
 /** Check run — GET .../commits/{sha}/check-runs (items). */
 export interface GithubCheckRun {
