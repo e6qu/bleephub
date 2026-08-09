@@ -4813,8 +4813,8 @@
         "id": "WEB-016",
         "location": "ci.yml:25-39, knip.ts",
         "severity": "M",
-        "status": "open",
-        "status_kind": "open"
+        "status": "deferred by decision \u2014 the four web quality gates (bun audit, typecheck, test:coverage, knip, jscpd) are now wired in the CI Web job. The remaining half, that knip cannot report dead code inside the core workspace, is by design: @bleephub/ui-core is a deliberately general-purpose component library whose operator-shell exports (BackendApp/SimulatorApp, the Overview/Containers/Resources/Metrics pages, the API client) Bleephub's own SPA does not mount but which are its public contract, unit-tested in core/src/__tests__ and contract-e2e-specced in core/e2e/backend-app.spec.ts. Pruning core to the SPA's current usage would delete a maintained, tested feature, so knip is left treating the package exports map as the public surface (documented in web/knip.ts). Owner decision 2026-08-10: keep as a library. See WEB-017.",
+        "status_kind": "deferred"
       },
       {
         "category": "WEB",
@@ -4822,8 +4822,8 @@
         "id": "WEB-017",
         "location": "web/core",
         "severity": "M",
-        "status": "open",
-        "status_kind": "open"
+        "status": "deferred by decision \u2014 the ~1,500 lines are not dead: they are @bleephub/ui-core's reusable operator shell (AppShell/BackendApp/SimulatorApp, the Overview/Containers/Resources/Metrics pages, the API client and hooks), an intentional shared-library surface that Bleephub's SPA does not mount but that is unit-tested in core/src/__tests__ and contract-e2e-specced in core/e2e/backend-app.spec.ts (see that file's header). knip flags them only because it cannot see that out-of-band usage. Owner decision 2026-08-10: keep the library, do not prune. See WEB-016 and web/knip.ts.",
+        "status_kind": "deferred"
       },
       {
         "category": "WEB",
@@ -6602,8 +6602,9 @@
         },
         "WEB": {
           "status": {
+            "deferred": 2,
             "fixed": 59,
-            "open": 3,
+            "open": 1,
             "partial": 1
           },
           "total": 63
@@ -6615,9 +6616,9 @@
         "minor": 147
       },
       "status": {
-        "deferred": 1,
+        "deferred": 3,
         "fixed": 658,
-        "open": 15,
+        "open": 13,
         "partial": 11
       },
       "total": 685
