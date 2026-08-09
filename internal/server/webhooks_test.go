@@ -917,6 +917,48 @@ func TestWebhookCommitCommentAndForkEvents(t *testing.T) {
 	}
 }
 
+func TestWebhookWatchEvent(t *testing.T) {
+	var mu sync.Mutex
+	started := false
+	url, cleanup := startWebhookReceiver(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Header.Get("X-GitHub-Event") == "watch" {
+			p := func() map[string]interface{} {
+				b, _ := io.ReadAll(r.Body)
+				return webhookEventJSON(t, r.Header.Get("Content-Type"), b)
+			}()
+			if p["action"] == "started" {
+				mu.Lock()
+				started = true
+				mu.Unlock()
+			}
+		}
+		w.WriteHeader(200)
+	}))
+	defer cleanup()
+
+	createWebhookTestRepo(t, "wh-watch")
+	ghPost(t, "/api/v3/repos/admin/wh-watch/hooks", defaultToken, map[string]interface{}{
+		"config": map[string]interface{}{"url": url},
+		"events": []string{"watch"},
+		"active": true,
+	}).Body.Close()
+
+	star := ghPut(t, "/api/v3/user/starred/admin/wh-watch", defaultToken, nil)
+	if star.StatusCode != http.StatusNoContent {
+		star.Body.Close()
+		t.Fatalf("star status = %d", star.StatusCode)
+	}
+	star.Body.Close()
+
+	if !testEventually(5*time.Second, 10*time.Millisecond, func() bool {
+		mu.Lock()
+		defer mu.Unlock()
+		return started
+	}) {
+		t.Fatal("starring did not deliver a watch/started webhook")
+	}
+}
+
 func TestWebhookPing(t *testing.T) {
 	var received atomic.Int32
 	var mu sync.Mutex

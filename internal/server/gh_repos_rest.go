@@ -1387,6 +1387,15 @@ func (s *Server) handleStarRepo(w http.ResponseWriter, r *http.Request) {
 		writeGHError(w, http.StatusNotFound, "Not Found")
 		return
 	}
+	// GitHub's `watch` event (action "started") fires when a repo is starred, so
+	// `on: watch` workflows run (ACT-026); the name is historical.
+	if repo := s.store.GetRepo(owner, name); repo != nil {
+		s.emitWebhookEvent(repo.FullName, "watch", "started", map[string]interface{}{
+			"action":     "started",
+			"repository": repoPayload(repo),
+			"sender":     userToJSON(user),
+		})
+	}
 	w.WriteHeader(http.StatusNoContent)
 }
 
