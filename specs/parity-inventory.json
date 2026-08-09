@@ -5383,8 +5383,8 @@
         "id": "TEST-029",
         "location": "4 specs",
         "severity": "M",
-        "status": "partial \u2014 Codespaces lifecycle and OAuth success paths are covered; Discussions writes and OAuth error branches remain open",
-        "status_kind": "partial"
+        "status": "fixed \u2014 Codespaces lifecycle and the credential surfaces were already covered; Discussions writes are genuinely exercised by `TestDiscussionsGraphQL_Lifecycle` (all eight mutations \u2014 create/update/delete discussion, add/update/delete comment, mark/unmark answer \u2014 with real assertions), so that half of the note was stale. The remaining gap, the OAuth token endpoint's error branches, is now covered by `TestOAuthTokenErrorBranches`: `unsupported_grant_type`, and for both the web and device flows `bad_verification_code`, `incorrect_client_credentials` (wrong client id and wrong secret), `redirect_uri_mismatch` and `authorization_pending`",
+        "status_kind": "fixed"
       },
       {
         "category": "TEST",
@@ -6481,9 +6481,9 @@
         },
         "TEST": {
           "status": {
-            "fixed": 31,
+            "fixed": 32,
             "open": 7,
-            "partial": 2
+            "partial": 1
           },
           "total": 40
         },
@@ -6503,9 +6503,9 @@
       },
       "status": {
         "deferred": 1,
-        "fixed": 636,
+        "fixed": 637,
         "open": 23,
-        "partial": 25
+        "partial": 24
       },
       "total": 685
     }
