@@ -28,7 +28,7 @@ export function WorkflowDetailPage() {
     error: logsError,
   } = useQuery({
     queryKey: ["workflow-logs", id],
-    queryFn: () => fetchWorkflowLogs(id!),
+    queryFn: ({ signal }) => fetchWorkflowLogs(id!, signal),
     enabled: !!id,
     // Logs stop changing once the run completes; also back off on throttle/forbid.
     refetchInterval: (query) =>

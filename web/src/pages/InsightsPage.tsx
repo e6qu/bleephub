@@ -88,7 +88,7 @@ function CommunityProfileSection({ owner, repo }: { owner: string; repo: string 
 function ContributorsSection({ owner, repo }: { owner: string; repo: string }) {
   const { data, isLoading, isError, error } = useQuery({
     queryKey: ["contributors", owner, repo],
-    queryFn: () => fetchRepoContributors(owner, repo),
+    queryFn: ({ signal }) => fetchRepoContributors(owner, repo, signal),
   });
 
   return (

@@ -49,7 +49,7 @@ function UsersTable() {
 
   const { data, isLoading, isError } = useQuery({
     queryKey: ["users"],
-    queryFn: fetchUsers,
+    queryFn: ({ signal }) => fetchUsers(signal),
     refetchInterval: (query) =>
       isRateLimited(query.state.error) || isForbidden(query.state.error) ? false : 5000,
   });

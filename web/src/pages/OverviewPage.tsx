@@ -22,7 +22,7 @@ export function OverviewPage() {
   const navigate = useNavigate();
   const { data: health } = useQuery({
     queryKey: ["health"],
-    queryFn: fetchHealth,
+    queryFn: ({ signal }) => fetchHealth(signal),
     refetchInterval: (query) =>
       isRateLimited(query.state.error) || isForbidden(query.state.error) ? false : 5000,
   });

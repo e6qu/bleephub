@@ -1013,7 +1013,7 @@ function PagesTab({ owner, repo }: { owner: string; repo: string }) {
   const queryClient = useQueryClient();
   const siteQ = useQuery({
     queryKey: ["pages-site", owner, repo],
-    queryFn: () => fetchPagesSite(owner, repo),
+    queryFn: ({ signal }) => fetchPagesSite(owner, repo, signal),
     enabled: !!owner && !!repo,
   });
 
@@ -1429,7 +1429,7 @@ function PagesHealthCard({
 }) {
   const healthQ = useQuery({
     queryKey: ["pages-health", owner, repo],
-    queryFn: () => fetchPagesHealth(owner, repo),
+    queryFn: ({ signal }) => fetchPagesHealth(owner, repo, signal),
     enabled: hasCustomDomain,
     retry: false,
   });

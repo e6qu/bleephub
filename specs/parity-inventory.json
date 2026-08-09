@@ -4645,8 +4645,8 @@
         "id": "WEB-010",
         "location": "api.ts, ~64 sites",
         "severity": "M",
-        "status": "partial \u2014 a module-wide abort controller backs cancellation (sign-out); per-request abort signals from react-query queryFn contexts are now threaded through the fetch helpers (`fetchJSON`/`ghFetch`/`ghFetchPage`/`ghFetchEnvelope`) and the high-traffic query call sites, combined via `AbortSignal.any` with the sign-out controller and a 30s default request timeout, so a cancelled/unmounted query aborts its in-flight request; secondary query sites remain un-threaded",
-        "status_kind": "partial"
+        "status": "fixed \u2014 a module-wide abort controller backs cancellation (sign-out) and per-request abort signals from react-query `queryFn` contexts are threaded through the low-level helpers (`fetchJSON`/`ghFetch`/`ghFetchPage`/`ghFetchEnvelope`/`apiFetch`/`ghGraphQL`), combined via `AbortSignal.any` with the sign-out controller and a 30s default request timeout. The remaining 24 high-level `fetch*` helpers now each accept and forward `signal?: AbortSignal` (including the `Promise.all` fan-outs in `fetchUsers`/`fetchOrgs`), and their 28 `queryFn` call sites across 14 pages thread the query's signal, so a cancelled/unmounted query aborts its in-flight request everywhere; non-query callers (effects, mutations, event handlers) keep the optional param unset and are unaffected. Verified: typecheck, build, all 511 web tests, knip and audit green",
+        "status_kind": "fixed"
       },
       {
         "category": "WEB",
@@ -6489,9 +6489,9 @@
         },
         "WEB": {
           "status": {
-            "fixed": 55,
+            "fixed": 56,
             "open": 4,
-            "partial": 4
+            "partial": 3
           },
           "total": 63
         }
@@ -6503,9 +6503,9 @@
       },
       "status": {
         "deferred": 1,
-        "fixed": 638,
+        "fixed": 639,
         "open": 23,
-        "partial": 23
+        "partial": 22
       },
       "total": 685
     }

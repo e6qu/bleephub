@@ -97,7 +97,7 @@ function AppsTab() {
   const [installSlug, setInstallSlug] = useState<string | null>(null);
   const { data, isLoading, isError } = useQuery({
     queryKey: ["apps"],
-    queryFn: fetchApps,
+    queryFn: ({ signal }) => fetchApps(signal),
     refetchInterval: (query) =>
       isRateLimited(query.state.error) || isForbidden(query.state.error) ? false : 5000,
   });
@@ -180,7 +180,7 @@ function InstallationsTab() {
   const [manageRepositories, setManageRepositories] = useState<BleephubInstallation | null>(null);
   const { data, isLoading, isError } = useQuery({
     queryKey: ["installations"],
-    queryFn: fetchInstallations,
+    queryFn: ({ signal }) => fetchInstallations(signal),
     refetchInterval: (query) =>
       isRateLimited(query.state.error) || isForbidden(query.state.error) ? false : 5000,
   });
@@ -315,7 +315,7 @@ function OAuthAppsTab() {
   const [settingsClientId, setSettingsClientId] = useState<string | null>(null);
   const { data, isLoading, isError } = useQuery({
     queryKey: ["oauth-apps"],
-    queryFn: fetchOAuthApps,
+    queryFn: ({ signal }) => fetchOAuthApps(signal),
     refetchInterval: (query) =>
       isRateLimited(query.state.error) || isForbidden(query.state.error) ? false : 5000,
   });
@@ -722,7 +722,7 @@ function AppSettingsDialog({ slug, onClose }: { slug: string; onClose: () => voi
   const queryClient = useQueryClient();
   const appQuery = useQuery({
     queryKey: ["app-settings", slug],
-    queryFn: () => fetchAppSettings(slug),
+    queryFn: ({ signal }) => fetchAppSettings(slug, signal),
   });
   const [draft, setDraft] = useState<BleephubApp | null>(null);
   const [credential, setCredential] = useState<{ title: string; value: string } | null>(null);
@@ -941,7 +941,7 @@ function InstallAppDialog({ slug, onClose }: { slug: string; onClose: () => void
   const account = target ?? accounts.data?.[0] ?? null;
   const repos = useQuery({
     queryKey: ["installable-repositories", account?.type, account?.login],
-    queryFn: () => fetchInstallableRepositories(account!.login, account!.type),
+    queryFn: ({ signal }) => fetchInstallableRepositories(account!.login, account!.type, signal),
     enabled: !!account && selection === "selected",
   });
   const mutation = useMutation({
@@ -1028,10 +1028,11 @@ function InstallationRepositoriesDialog({
   const queryClient = useQueryClient();
   const available = useQuery({
     queryKey: ["installable-repositories", installation.targetType, installation.targetLogin],
-    queryFn: () =>
+    queryFn: ({ signal }) =>
       fetchInstallableRepositories(
         installation.targetLogin,
         installation.targetType as "User" | "Organization",
+        signal,
       ),
   });
   const installed = useQuery({

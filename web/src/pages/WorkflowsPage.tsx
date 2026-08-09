@@ -48,7 +48,7 @@ const filesCol = createColumnHelper<BleephubWorkflowFile>();
 function WorkflowsTab() {
   const { data, isLoading, isError } = useQuery({
     queryKey: ["workflow_files"],
-    queryFn: fetchWorkflowFiles,
+    queryFn: ({ signal }) => fetchWorkflowFiles(signal),
     refetchInterval: (query) =>
       isRateLimited(query.state.error) || isForbidden(query.state.error) ? false : 5000,
   });
