@@ -5,10 +5,12 @@ import (
 )
 
 func TestOrgCustomProperties_SchemaCRUD(t *testing.T) {
-	org := createTestOrg(t)
+	t.Parallel()
+	s := newIsolatedServer(t)
+	org := s.createTestOrg(t)
 
 	// PUT a single_select definition.
-	resp := ghPut(t, "/api/v3/orgs/"+org+"/properties/schema/environment", defaultToken, map[string]interface{}{
+	resp := s.put(t, "/api/v3/orgs/"+org+"/properties/schema/environment", defaultToken, map[string]interface{}{
 		"value_type":     "single_select",
 		"required":       true,
 		"default_value":  "production",
@@ -33,7 +35,7 @@ func TestOrgCustomProperties_SchemaCRUD(t *testing.T) {
 	}
 
 	// PATCH the schema in a batch.
-	resp = ghPatch(t, "/api/v3/orgs/"+org+"/properties/schema", defaultToken, map[string]interface{}{
+	resp = s.patch(t, "/api/v3/orgs/"+org+"/properties/schema", defaultToken, map[string]interface{}{
 		"properties": []map[string]interface{}{
 			{"property_name": "service", "value_type": "string"},
 			{"property_name": "team", "value_type": "string", "description": "Team owning the repository"},
@@ -47,7 +49,7 @@ func TestOrgCustomProperties_SchemaCRUD(t *testing.T) {
 	}
 
 	// GET all definitions, sorted by name.
-	resp = ghGet(t, "/api/v3/orgs/"+org+"/properties/schema", defaultToken)
+	resp = s.get(t, "/api/v3/orgs/"+org+"/properties/schema", defaultToken)
 	if resp.StatusCode != 200 {
 		t.Fatalf("get schema: %d", resp.StatusCode)
 	}
@@ -60,7 +62,7 @@ func TestOrgCustomProperties_SchemaCRUD(t *testing.T) {
 	}
 
 	// GET one definition.
-	resp = ghGet(t, "/api/v3/orgs/"+org+"/properties/schema/team", defaultToken)
+	resp = s.get(t, "/api/v3/orgs/"+org+"/properties/schema/team", defaultToken)
 	if resp.StatusCode != 200 {
 		t.Fatalf("get property: %d", resp.StatusCode)
 	}
@@ -69,7 +71,7 @@ func TestOrgCustomProperties_SchemaCRUD(t *testing.T) {
 	}
 
 	// Replacing a definition overwrites missing optional values.
-	resp = ghPut(t, "/api/v3/orgs/"+org+"/properties/schema/team", defaultToken, map[string]interface{}{
+	resp = s.put(t, "/api/v3/orgs/"+org+"/properties/schema/team", defaultToken, map[string]interface{}{
 		"value_type": "string",
 	})
 	if resp.StatusCode != 200 {
@@ -80,12 +82,12 @@ func TestOrgCustomProperties_SchemaCRUD(t *testing.T) {
 	}
 
 	// DELETE.
-	resp = ghDelete(t, "/api/v3/orgs/"+org+"/properties/schema/team", defaultToken)
+	resp = s.delete(t, "/api/v3/orgs/"+org+"/properties/schema/team", defaultToken)
 	resp.Body.Close()
 	if resp.StatusCode != 204 {
 		t.Fatalf("delete property: %d", resp.StatusCode)
 	}
-	resp = ghGet(t, "/api/v3/orgs/"+org+"/properties/schema/team", defaultToken)
+	resp = s.get(t, "/api/v3/orgs/"+org+"/properties/schema/team", defaultToken)
 	resp.Body.Close()
 	if resp.StatusCode != 404 {
 		t.Fatalf("get deleted property: %d", resp.StatusCode)
@@ -93,10 +95,12 @@ func TestOrgCustomProperties_SchemaCRUD(t *testing.T) {
 }
 
 func TestOrgCustomProperties_SchemaValidation(t *testing.T) {
-	org := createTestOrg(t)
+	t.Parallel()
+	s := newIsolatedServer(t)
+	org := s.createTestOrg(t)
 
 	// Bad value type.
-	resp := ghPut(t, "/api/v3/orgs/"+org+"/properties/schema/bad", defaultToken, map[string]interface{}{
+	resp := s.put(t, "/api/v3/orgs/"+org+"/properties/schema/bad", defaultToken, map[string]interface{}{
 		"value_type": "integer",
 	})
 	resp.Body.Close()
@@ -105,7 +109,7 @@ func TestOrgCustomProperties_SchemaValidation(t *testing.T) {
 	}
 
 	// Required without a default.
-	resp = ghPut(t, "/api/v3/orgs/"+org+"/properties/schema/bad", defaultToken, map[string]interface{}{
+	resp = s.put(t, "/api/v3/orgs/"+org+"/properties/schema/bad", defaultToken, map[string]interface{}{
 		"value_type": "string",
 		"required":   true,
 	})
@@ -115,7 +119,7 @@ func TestOrgCustomProperties_SchemaValidation(t *testing.T) {
 	}
 
 	// allowed_values on a non-select type.
-	resp = ghPut(t, "/api/v3/orgs/"+org+"/properties/schema/bad", defaultToken, map[string]interface{}{
+	resp = s.put(t, "/api/v3/orgs/"+org+"/properties/schema/bad", defaultToken, map[string]interface{}{
 		"value_type":     "string",
 		"allowed_values": []string{"a"},
 	})
@@ -126,12 +130,14 @@ func TestOrgCustomProperties_SchemaValidation(t *testing.T) {
 }
 
 func TestRepoCustomPropertyValues_SetAndRead(t *testing.T) {
-	org := createTestOrg(t)
-	repoName, _ := createOrgRepoForGovernance(t, org)
+	t.Parallel()
+	s := newIsolatedServer(t)
+	org := s.createTestOrg(t)
+	repoName, _ := s.createOrgRepoForGovernance(t, org)
 	repoPath := org + "/" + repoName
 
 	// Definitions: one with a default, one select, one boolean.
-	resp := ghPatch(t, "/api/v3/orgs/"+org+"/properties/schema", defaultToken, map[string]interface{}{
+	resp := s.patch(t, "/api/v3/orgs/"+org+"/properties/schema", defaultToken, map[string]interface{}{
 		"properties": []map[string]interface{}{
 			{"property_name": "environment", "value_type": "single_select", "default_value": "production",
 				"allowed_values": []string{"production", "development"}},
@@ -145,7 +151,7 @@ func TestRepoCustomPropertyValues_SetAndRead(t *testing.T) {
 	}
 
 	// Before any assignment the default is the effective value.
-	resp = ghGet(t, "/api/v3/repos/"+repoPath+"/properties/values", defaultToken)
+	resp = s.get(t, "/api/v3/repos/"+repoPath+"/properties/values", defaultToken)
 	if resp.StatusCode != 200 {
 		t.Fatalf("get repo values: %d", resp.StatusCode)
 	}
@@ -155,7 +161,7 @@ func TestRepoCustomPropertyValues_SetAndRead(t *testing.T) {
 	}
 
 	// PATCH repo values.
-	resp = ghPatch(t, "/api/v3/repos/"+repoPath+"/properties/values", defaultToken, map[string]interface{}{
+	resp = s.patch(t, "/api/v3/repos/"+repoPath+"/properties/values", defaultToken, map[string]interface{}{
 		"properties": []map[string]interface{}{
 			{"property_name": "environment", "value": "development"},
 			{"property_name": "team", "value": "octocats"},
@@ -166,7 +172,7 @@ func TestRepoCustomPropertyValues_SetAndRead(t *testing.T) {
 	if resp.StatusCode != 204 {
 		t.Fatalf("patch repo values: %d", resp.StatusCode)
 	}
-	resp = ghGet(t, "/api/v3/repos/"+repoPath+"/properties/values", defaultToken)
+	resp = s.get(t, "/api/v3/repos/"+repoPath+"/properties/values", defaultToken)
 	values = decodeJSONArray(t, resp)
 	if len(values) != 3 {
 		t.Fatalf("values = %v", values)
@@ -180,7 +186,7 @@ func TestRepoCustomPropertyValues_SetAndRead(t *testing.T) {
 	}
 
 	// Null unsets; environment falls back to the default.
-	resp = ghPatch(t, "/api/v3/repos/"+repoPath+"/properties/values", defaultToken, map[string]interface{}{
+	resp = s.patch(t, "/api/v3/repos/"+repoPath+"/properties/values", defaultToken, map[string]interface{}{
 		"properties": []map[string]interface{}{
 			{"property_name": "environment", "value": nil},
 			{"property_name": "team", "value": nil},
@@ -190,7 +196,7 @@ func TestRepoCustomPropertyValues_SetAndRead(t *testing.T) {
 	if resp.StatusCode != 204 {
 		t.Fatalf("unset repo values: %d", resp.StatusCode)
 	}
-	resp = ghGet(t, "/api/v3/repos/"+repoPath+"/properties/values", defaultToken)
+	resp = s.get(t, "/api/v3/repos/"+repoPath+"/properties/values", defaultToken)
 	values = decodeJSONArray(t, resp)
 	if len(values) != 2 {
 		t.Fatalf("values after unset = %v", values)
@@ -200,7 +206,7 @@ func TestRepoCustomPropertyValues_SetAndRead(t *testing.T) {
 	}
 
 	// Value outside allowed_values is a 422.
-	resp = ghPatch(t, "/api/v3/repos/"+repoPath+"/properties/values", defaultToken, map[string]interface{}{
+	resp = s.patch(t, "/api/v3/repos/"+repoPath+"/properties/values", defaultToken, map[string]interface{}{
 		"properties": []map[string]interface{}{
 			{"property_name": "environment", "value": "staging"},
 		},
@@ -211,7 +217,7 @@ func TestRepoCustomPropertyValues_SetAndRead(t *testing.T) {
 	}
 
 	// Unknown property is a 422.
-	resp = ghPatch(t, "/api/v3/repos/"+repoPath+"/properties/values", defaultToken, map[string]interface{}{
+	resp = s.patch(t, "/api/v3/repos/"+repoPath+"/properties/values", defaultToken, map[string]interface{}{
 		"properties": []map[string]interface{}{
 			{"property_name": "no-such-prop", "value": "x"},
 		},
@@ -223,11 +229,13 @@ func TestRepoCustomPropertyValues_SetAndRead(t *testing.T) {
 }
 
 func TestOrgCustomProperties_OrgValues(t *testing.T) {
-	org := createTestOrg(t)
-	repoA, _ := createOrgRepoForGovernance(t, org)
-	repoB, _ := createOrgRepoForGovernance(t, org)
+	t.Parallel()
+	s := newIsolatedServer(t)
+	org := s.createTestOrg(t)
+	repoA, _ := s.createOrgRepoForGovernance(t, org)
+	repoB, _ := s.createOrgRepoForGovernance(t, org)
 
-	resp := ghPatch(t, "/api/v3/orgs/"+org+"/properties/schema", defaultToken, map[string]interface{}{
+	resp := s.patch(t, "/api/v3/orgs/"+org+"/properties/schema", defaultToken, map[string]interface{}{
 		"properties": []map[string]interface{}{
 			{"property_name": "team", "value_type": "string"},
 		},
@@ -238,7 +246,7 @@ func TestOrgCustomProperties_OrgValues(t *testing.T) {
 	}
 
 	// Batch-apply values to both repositories.
-	resp = ghPatch(t, "/api/v3/orgs/"+org+"/properties/values", defaultToken, map[string]interface{}{
+	resp = s.patch(t, "/api/v3/orgs/"+org+"/properties/values", defaultToken, map[string]interface{}{
 		"repository_names": []string{repoA, repoB},
 		"properties": []map[string]interface{}{
 			{"property_name": "team", "value": "platform"},
@@ -250,7 +258,7 @@ func TestOrgCustomProperties_OrgValues(t *testing.T) {
 	}
 
 	// List org repo values.
-	resp = ghGet(t, "/api/v3/orgs/"+org+"/properties/values", defaultToken)
+	resp = s.get(t, "/api/v3/orgs/"+org+"/properties/values", defaultToken)
 	if resp.StatusCode != 200 {
 		t.Fatalf("list org values: %d", resp.StatusCode)
 	}
@@ -269,14 +277,14 @@ func TestOrgCustomProperties_OrgValues(t *testing.T) {
 	}
 
 	// repository_query filters by name.
-	resp = ghGet(t, "/api/v3/orgs/"+org+"/properties/values?repository_query="+repoA, defaultToken)
+	resp = s.get(t, "/api/v3/orgs/"+org+"/properties/values?repository_query="+repoA, defaultToken)
 	filtered := decodeJSONArray(t, resp)
 	if len(filtered) != 1 || filtered[0]["repository_name"] != repoA {
 		t.Fatalf("filtered = %v", filtered)
 	}
 
 	// Unknown repository name in the batch is a 422.
-	resp = ghPatch(t, "/api/v3/orgs/"+org+"/properties/values", defaultToken, map[string]interface{}{
+	resp = s.patch(t, "/api/v3/orgs/"+org+"/properties/values", defaultToken, map[string]interface{}{
 		"repository_names": []string{"no-such-repo-here"},
 		"properties": []map[string]interface{}{
 			{"property_name": "team", "value": "x"},
