@@ -239,6 +239,33 @@ describe("IssuesPage detail", () => {
       expect(deleted).toBeTruthy();
     });
   });
+
+  it("assigns a user through the sidebar", async () => {
+    mockFetch.mockImplementation((url: RequestInfo | URL, init?: RequestInit) => {
+      const u = url.toString();
+      if (u.endsWith("/issues/7/assignees") && init?.method === "POST") {
+        return Promise.resolve(jsonResponse(issue(7, "A real issue")));
+      }
+      if (u.endsWith("/repos/admin/test/assignees")) {
+        return Promise.resolve(jsonResponse([{ login: "bob" }]));
+      }
+      if (u.includes("/issues/7/comments")) return Promise.resolve(jsonResponse([]));
+      if (u.includes("/issues/7/reactions")) return Promise.resolve(jsonResponse([]));
+      if (u.endsWith("/api/v3/user")) return Promise.resolve(jsonResponse({ login: "admin" }));
+      if (u.includes("/issues/7")) return Promise.resolve(jsonResponse(issue(7, "A real issue")));
+      return Promise.resolve(jsonResponse([]));
+    });
+    renderAt("/ui/repos/admin/test/issues/7");
+    const select = await screen.findByLabelText(/add assignee/i);
+    fireEvent.change(select, { target: { value: "bob" } });
+    await waitFor(() => {
+      const posted = mockFetch.mock.calls.find(
+        (c) => c[0].toString().endsWith("/issues/7/assignees") && c[1]?.method === "POST",
+      );
+      expect(posted).toBeTruthy();
+      expect(JSON.parse((posted![1] as RequestInit).body as string)).toEqual({ assignees: ["bob"] });
+    });
+  });
 });
 
 describe("IssuesPage list pagination", () => {

@@ -1450,6 +1450,27 @@ export const deleteIssueComment = (owner: string, repo: string, commentId: numbe
     `/api/v3/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/issues/comments/${commentId}`,
   );
 
+/** Users who can be assigned to issues/PRs in this repo. */
+export const fetchAssignableUsers = (owner: string, repo: string) =>
+  ghFetch<Array<{ login: string }>>(
+    `/api/v3/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/assignees`,
+  );
+
+/** Add assignees to an issue or PR (PRs share the issue-assignees endpoint). */
+export const addAssignees = (owner: string, repo: string, number: number, assignees: string[]) =>
+  ghPostJSON<GithubIssue>(
+    `/api/v3/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/issues/${number}/assignees`,
+    { assignees },
+  );
+
+/** Remove assignees from an issue or PR (DELETE carries the assignee list). */
+export const removeAssignees = (owner: string, repo: string, number: number, assignees: string[]) =>
+  ghSend(
+    "DELETE",
+    `/api/v3/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/issues/${number}/assignees`,
+    { assignees },
+  );
+
 /** First page by (owner, repo, state); follow-up pages by the Link rel="next" URL. */
 export const fetchRepoPRsPage = (
   owner: string,
