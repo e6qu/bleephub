@@ -43,6 +43,7 @@ type Server struct {
 	metrics                *Metrics
 	maxConcurrentWorkflows int
 	scheduleFired          scheduleFiredKeys // cron-firing dedup (on: schedule)
+	scheduleIndex          scheduleIndex     // parsed-schedule cache keyed by default-branch tip (on: schedule)
 	actionsEvents          actionsEventLoop  // checks/webhook fan-out for run+job transitions
 	registryUploadsMu      sync.Mutex
 	registryUploads        map[string]*containerRegistryUpload
