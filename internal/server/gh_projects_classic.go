@@ -279,6 +279,12 @@ func (s *Server) handleCreateProjectColumn(w http.ResponseWriter, r *http.Reques
 	}
 	col := s.store.CreateProjectColumn(proj.ID, body.Name)
 	colJSON := projectColumnToJSON(col, s.store, s.baseURL(r))
+	s.emitWebhookEvent(repo.FullName, "project_column", "created", map[string]interface{}{
+		"action":         "created",
+		"project_column": colJSON,
+		"repository":     repoPayload(repo),
+		"sender":         userToJSON(user),
+	})
 	writeJSONCreated(w, jsonStringField(colJSON, "url"), colJSON)
 }
 
@@ -452,6 +458,12 @@ func (s *Server) handleCreateProjectCard(w http.ResponseWriter, r *http.Request)
 		writeGHError(w, http.StatusNotFound, "Not Found")
 		return
 	}
+	s.emitWebhookEvent(repo.FullName, "project_card", "created", map[string]interface{}{
+		"action":       "created",
+		"project_card": item,
+		"repository":   repoPayload(repo),
+		"sender":       userToJSON(user),
+	})
 	writeJSONCreated(w, jsonStringField(item, "url"), item)
 }
 
@@ -557,6 +569,12 @@ func (s *Server) handleMoveProjectCard(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	cardMoveURL := projectCardURL(card, s.baseURL(r))
+	s.emitWebhookEvent(repo.FullName, "project_card", "moved", map[string]interface{}{
+		"action":       "moved",
+		"project_card": map[string]interface{}{"id": card.ID, "url": cardMoveURL},
+		"repository":   repoPayload(repo),
+		"sender":       userToJSON(user),
+	})
 	writeJSONCreated(w, cardMoveURL, map[string]interface{}{"id": card.ID, "url": cardMoveURL})
 }
 

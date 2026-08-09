@@ -130,6 +130,19 @@ func (s *Server) handleInternalCreatePackageVersion(w http.ResponseWriter, r *ht
 	baseURL := s.baseURL(r)
 	scopePath := packageScopePath(ownerTypeFromInternal(ownerType), resolvedOwnerKey)
 	out := s.packageVersionToJSON(v, p, baseURL, scopePath)
+	// `registry_package` fires (published) so `on: registry_package` workflows
+	// run; for a repository-scoped package the source repo's hooks receive it
+	// (ACT-026). User/org-scoped packages have no repo hook target.
+	if ownerType == "repository" {
+		if repo := s.store.GetRepoByFullName(resolvedOwnerKey); repo != nil {
+			s.emitWebhookEvent(repo.FullName, "registry_package", "published", map[string]interface{}{
+				"action":           "published",
+				"registry_package": map[string]interface{}{"name": pkgName, "package_type": pkgType},
+				"repository":       repoPayload(repo),
+				"sender":           userToJSON(repo.Owner),
+			})
+		}
+	}
 	writeJSON(w, http.StatusCreated, out)
 }
 

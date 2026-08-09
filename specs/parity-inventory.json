@@ -176,6 +176,24 @@
         "source": "internal/server/gh_projects_classic.go"
       },
       {
+        "event": "project_card",
+        "line": 461,
+        "producer": "emitWebhookEvent",
+        "source": "internal/server/gh_projects_classic.go"
+      },
+      {
+        "event": "project_card",
+        "line": 572,
+        "producer": "emitWebhookEvent",
+        "source": "internal/server/gh_projects_classic.go"
+      },
+      {
+        "event": "project_column",
+        "line": 282,
+        "producer": "emitWebhookEvent",
+        "source": "internal/server/gh_projects_classic.go"
+      },
+      {
         "event": "public",
         "line": 900,
         "producer": "emitWebhookEvent",
@@ -246,6 +264,12 @@
         "line": 29,
         "producer": "emitWebhookEvent",
         "source": "internal/server/committed_ref_events.go"
+      },
+      {
+        "event": "registry_package",
+        "line": 138,
+        "producer": "emitWebhookEvent",
+        "source": "internal/server/gh_packages.go"
       },
       {
         "event": "release",
@@ -3385,8 +3409,8 @@
         "id": "ACT-026",
         "location": "webhooks.go:249",
         "severity": "M",
-        "status": "partial \u2014 webhook emission is the single event-production choke point and every implemented mutation event automatically feeds Actions. Issue-comment create/edit/delete and pull-request-review submit/dismiss now join push, PR, issue, review-comment, release, deployment, status/check and workflow lifecycle producers; families with no real mutation producer remain open, though the set keeps shrinking \u2014 label create/edit/delete now produces the `label` event (regression `TestWebhookLabelEvent`), and milestone create/close/reopen/edit/delete now produces the `milestone` event with GitHub's action semantics (regression `TestWebhookMilestoneEvent`); branch/tag creation and deletion now produce the `create` and `delete` events with `ref`/`ref_type` (regression `TestWebhookCreateDeleteRefEvent`); commit-comment creation produces the `commit_comment` event repository forks produce the `fork` event on the source repo (regression `TestWebhookCommitCommentAndForkEvents`, which also surfaced and fixed a pre-existing commit-comment response-shape gap \u2014 `path`/`position`/`line` are now emitted as required-nullable), starring a repo produces the `watch` event with action `started` (regression `TestWebhookWatchEvent`), switching a repo from private to public produces the `public` event (regression `TestWebhookPublicEvent`), creating a classic project produces the `project` event (regression `TestWebhookProjectEvent`), establishing/updating/removing a branch-protection rule produces the `branch_protection_rule` event (regression `TestWebhookBranchProtectionRuleEvent`); accepting a repo invitation produces the `member` event, creating a discussion/comment produces the `discussion`/`discussion_comment` events, and finishing a Pages build produces the `page_build` event (regressions `TestWebhookMemberEvent`, `TestWebhookDiscussionEvents`, `TestWebhookPageBuildEvent`)",
-        "status_kind": "partial"
+        "status": "fixed \u2014 webhook emission is the single event-production choke point and every implemented mutation event automatically feeds Actions. Issue-comment create/edit/delete and pull-request-review submit/dismiss now join push, PR, issue, review-comment, release, deployment, status/check and workflow lifecycle producers; families with no real mutation producer remain open, though the set keeps shrinking \u2014 label create/edit/delete now produces the `label` event (regression `TestWebhookLabelEvent`), and milestone create/close/reopen/edit/delete now produces the `milestone` event with GitHub's action semantics (regression `TestWebhookMilestoneEvent`); branch/tag creation and deletion now produce the `create` and `delete` events with `ref`/`ref_type` (regression `TestWebhookCreateDeleteRefEvent`); commit-comment creation produces the `commit_comment` event repository forks produce the `fork` event on the source repo (regression `TestWebhookCommitCommentAndForkEvents`, which also surfaced and fixed a pre-existing commit-comment response-shape gap \u2014 `path`/`position`/`line` are now emitted as required-nullable), starring a repo produces the `watch` event with action `started` (regression `TestWebhookWatchEvent`), switching a repo from private to public produces the `public` event (regression `TestWebhookPublicEvent`), creating a classic project produces the `project` event (regression `TestWebhookProjectEvent`), establishing/updating/removing a branch-protection rule produces the `branch_protection_rule` event (regression `TestWebhookBranchProtectionRuleEvent`); accepting a repo invitation produces the `member` event, creating a discussion/comment produces the `discussion`/`discussion_comment` events, finishing a Pages build produces the `page_build` event, and classic project column/card create and card move produce the `project_column`/`project_card` events (regressions `TestWebhookMemberEvent`, `TestWebhookDiscussionEvents`, `TestWebhookPageBuildEvent`, `TestWebhookProjectCardColumnEvents`) Every GitHub-Actions `on:` trigger event that has a producer in bleephub now fires: the pre-existing set plus the families wired here (create, delete, milestone, commit_comment, fork, watch, public, project, project_column, project_card, branch_protection_rule, member, discussion, discussion_comment, page_build, registry_package). The only Actions trigger events that still do not fire are the ones with no producer in this surface \u2014 `gollum` (no wiki), `merge_group` (no merge queue) \u2014 and the non-webhook mechanisms `workflow_dispatch`/`workflow_call`; `pull_request_target` shares the `pull_request` producer.",
+        "status_kind": "fixed"
       },
       {
         "category": "ACT",
@@ -6507,9 +6531,9 @@
       "categories": {
         "ACT": {
           "status": {
-            "fixed": 54,
+            "fixed": 55,
             "open": 1,
-            "partial": 6
+            "partial": 5
           },
           "total": 61
         },
@@ -6593,9 +6617,9 @@
       },
       "status": {
         "deferred": 1,
-        "fixed": 639,
+        "fixed": 640,
         "open": 23,
-        "partial": 22
+        "partial": 21
       },
       "total": 685
     }

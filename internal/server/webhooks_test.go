@@ -1228,6 +1228,82 @@ func TestWebhookPageBuildEvent(t *testing.T) {
 	}
 }
 
+func TestWebhookProjectCardColumnEvents(t *testing.T) {
+	var mu sync.Mutex
+	got := map[string]bool{}
+	url, cleanup := startWebhookReceiver(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if ev := r.Header.Get("X-GitHub-Event"); ev == "project_column" || ev == "project_card" {
+			b, _ := io.ReadAll(r.Body)
+			if a, ok := webhookEventJSON(t, r.Header.Get("Content-Type"), b)["action"].(string); ok {
+				mu.Lock()
+				got[ev+":"+a] = true
+				mu.Unlock()
+			}
+		}
+		w.WriteHeader(200)
+	}))
+	defer cleanup()
+
+	createWebhookTestRepo(t, "wh-projcard")
+	ghPost(t, "/api/v3/repos/admin/wh-projcard/hooks", defaultToken, map[string]interface{}{
+		"config": map[string]interface{}{"url": url},
+		"events": []string{"project_column", "project_card"},
+		"active": true,
+	}).Body.Close()
+
+	projID := int(decodeJSON(t, ghPost(t, "/api/v3/repos/admin/wh-projcard/projects", defaultToken, map[string]interface{}{"name": "Board"}))["id"].(float64))
+	c1 := createColumn(t, projID, "Todo")
+	c2 := createColumn(t, projID, "Done")
+	card := createCard(t, c1, map[string]any{"note": "task"})
+	cardID := int(card["id"].(float64))
+	moveCard(t, cardID, c2, "last")
+
+	if !testEventually(5*time.Second, 10*time.Millisecond, func() bool {
+		mu.Lock()
+		defer mu.Unlock()
+		return got["project_column:created"] && got["project_card:created"] && got["project_card:moved"]
+	}) {
+		mu.Lock()
+		g := fmt.Sprint(got)
+		mu.Unlock()
+		t.Fatalf("project card/column webhooks not all delivered; got %s", g)
+	}
+}
+
+func TestWebhookRegistryPackageEvent(t *testing.T) {
+	var mu sync.Mutex
+	published := false
+	url, cleanup := startWebhookReceiver(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Header.Get("X-GitHub-Event") == "registry_package" {
+			b, _ := io.ReadAll(r.Body)
+			if webhookEventJSON(t, r.Header.Get("Content-Type"), b)["action"] == "published" {
+				mu.Lock()
+				published = true
+				mu.Unlock()
+			}
+		}
+		w.WriteHeader(200)
+	}))
+	defer cleanup()
+
+	createWebhookTestRepo(t, "wh-pkg")
+	ghPost(t, "/api/v3/repos/admin/wh-pkg/hooks", defaultToken, map[string]interface{}{
+		"config": map[string]interface{}{"url": url},
+		"events": []string{"registry_package"},
+		"active": true,
+	}).Body.Close()
+
+	seedPackageVersion(t, "repository", "admin/wh-pkg", "npm", "wh-pkg-lib", "1.0.0")
+
+	if !testEventually(5*time.Second, 10*time.Millisecond, func() bool {
+		mu.Lock()
+		defer mu.Unlock()
+		return published
+	}) {
+		t.Fatal("publishing a repository package did not deliver a registry_package webhook")
+	}
+}
+
 func TestWebhookPing(t *testing.T) {
 	var received atomic.Int32
 	var mu sync.Mutex
