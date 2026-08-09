@@ -1471,6 +1471,26 @@ export const removeAssignees = (owner: string, repo: string, number: number, ass
     { assignees },
   );
 
+/** Lock an issue/PR conversation (optionally with a GitHub lock reason). */
+export const lockIssue = (
+  owner: string,
+  repo: string,
+  number: number,
+  lockReason?: "off-topic" | "too heated" | "resolved" | "spam",
+) =>
+  ghSend(
+    "PUT",
+    `/api/v3/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/issues/${number}/lock`,
+    lockReason ? { lock_reason: lockReason } : undefined,
+  );
+
+/** Unlock an issue/PR conversation. */
+export const unlockIssue = (owner: string, repo: string, number: number) =>
+  ghSend(
+    "DELETE",
+    `/api/v3/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/issues/${number}/lock`,
+  );
+
 /** First page by (owner, repo, state); follow-up pages by the Link rel="next" URL. */
 export const fetchRepoPRsPage = (
   owner: string,

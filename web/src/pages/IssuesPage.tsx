@@ -471,6 +471,7 @@ function IssueDetail({ owner, repo, number }: { owner: string; repo: string; num
             labels={issueLabelPills(issue.labels)}
             milestone={issue.milestone ?? null}
             participants={participants}
+            locked={issue.locked ?? false}
           />
         </div>
       </div>

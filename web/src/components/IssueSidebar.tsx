@@ -12,6 +12,8 @@ import {
   removeIssueLabel,
   addAssignees,
   removeAssignees,
+  lockIssue,
+  unlockIssue,
   setIssueMilestone,
   setIssueType,
 } from "../api.js";
@@ -66,6 +68,7 @@ export function IssueSidebar({
   participants,
   reviewers,
   development,
+  locked = false,
 }: {
   owner: string;
   repo: string;
@@ -78,6 +81,7 @@ export function IssueSidebar({
   participants: string[];
   reviewers?: ReactNode;
   development?: ReactNode;
+  locked?: boolean;
 }) {
   const qc = useQueryClient();
   const [error, setError] = useState<string | null>(null);
@@ -144,6 +148,11 @@ export function IssueSidebar({
   });
   const issueTypeMut = useMutation({
     mutationFn: (id: number | null) => setIssueType(owner, repo, number, id),
+    onSuccess: invalidate,
+    onError: (err: Error) => setError(err.message),
+  });
+  const lockMut = useMutation({
+    mutationFn: () => (locked ? unlockIssue(owner, repo, number) : lockIssue(owner, repo, number)),
     onSuccess: invalidate,
     onError: (err: Error) => setError(err.message),
   });
@@ -323,6 +332,24 @@ export function IssueSidebar({
 
       <SidebarSection title="Development">
         {development ?? <span style={muted}>No branches or pull requests</span>}
+      </SidebarSection>
+
+      <SidebarSection title="Lock conversation">
+        <button
+          type="button"
+          onClick={() => lockMut.mutate()}
+          disabled={lockMut.isPending}
+          style={{
+            border: "none",
+            background: "transparent",
+            color: "var(--color-accent-fg)",
+            fontSize: "0.82rem",
+            padding: 0,
+            cursor: "pointer",
+          }}
+        >
+          {locked ? "Unlock conversation" : "Lock conversation"}
+        </button>
       </SidebarSection>
 
       <SidebarSection title={`${participants.length} participant${participants.length === 1 ? "" : "s"}`} last>

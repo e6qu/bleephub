@@ -266,6 +266,28 @@ describe("IssuesPage detail", () => {
       expect(JSON.parse((posted![1] as RequestInit).body as string)).toEqual({ assignees: ["bob"] });
     });
   });
+
+  it("locks the conversation from the sidebar", async () => {
+    mockFetch.mockImplementation((url: RequestInfo | URL, init?: RequestInit) => {
+      const u = url.toString();
+      if (u.endsWith("/issues/7/lock") && init?.method === "PUT") {
+        return Promise.resolve(new Response(null, { status: 204 }));
+      }
+      if (u.includes("/issues/7/comments")) return Promise.resolve(jsonResponse([]));
+      if (u.includes("/issues/7/reactions")) return Promise.resolve(jsonResponse([]));
+      if (u.endsWith("/api/v3/user")) return Promise.resolve(jsonResponse({ login: "admin" }));
+      if (u.includes("/issues/7")) return Promise.resolve(jsonResponse(issue(7, "A real issue")));
+      return Promise.resolve(jsonResponse([]));
+    });
+    renderAt("/ui/repos/admin/test/issues/7");
+    fireEvent.click(await screen.findByRole("button", { name: /lock conversation/i }));
+    await waitFor(() => {
+      const locked = mockFetch.mock.calls.find(
+        (c) => c[0].toString().endsWith("/issues/7/lock") && c[1]?.method === "PUT",
+      );
+      expect(locked).toBeTruthy();
+    });
+  });
 });
 
 describe("IssuesPage list pagination", () => {
