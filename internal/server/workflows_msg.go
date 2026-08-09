@@ -16,7 +16,9 @@ import (
 func (s *Server) buildJobMessageFromDef(serverURL string, wf *Workflow, wfJob *WorkflowJob, planID, timelineID string, requestID int64, defaultImage string) (map[string]interface{}, error) {
 	jd := wfJob.Def
 	scopeID := uuid.New().String()
-	jobToken := makeJWT(scopeID, "actions")
+	// GITHUB_TOKEN is scoped to this workflow's repository and the least-
+	// privilege permission set its `permissions:` block resolves to (ACT-014).
+	jobToken := makeJobJWT(scopeID, wf.RepoFullName, s.resolveJobTokenPermissions(wf, jd))
 
 	// Determine the job container; empty means host mode (the run was
 	// submitted with hostMode and the YAML declares no container) — the

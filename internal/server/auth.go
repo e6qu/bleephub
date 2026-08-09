@@ -693,26 +693,56 @@ type runnerTokenClaims struct {
 	Nbf int64  `json:"nbf"`
 	Exp int64  `json:"exp"`
 	Scp string `json:"scp"`
+	// Repo and Perms are carried only by a per-job runtime token (GITHUB_TOKEN,
+	// aud=="actions"). They bind the token to a single repository and the
+	// workflow's resolved least-privilege API permission set so the REST gate
+	// can scope its /api/v3 access (ACT-014). Absent on session tokens.
+	Repo  string            `json:"repo,omitempty"`
+	Perms map[string]string `json:"perms,omitempty"`
 }
 
-// makeJWT mints an HS256-signed bearer credential for sub. The runner parses
-// it as a JWT to read its expiry; only this server can produce one, and only
-// parseRunnerToken accepts one.
-func makeJWT(sub, aud string) string {
-	now := time.Now()
-	payload, err := json.Marshal(runnerTokenClaims{
-		Sub: sub,
-		Iss: "bleephub",
-		Aud: aud,
-		Nbf: now.Add(-runnerClockSkew).Unix(),
-		Exp: now.Add(runnerTokenTTL).Unix(),
-		Scp: "Actions.Results:write Actions.Pipelines:read",
-	})
+const runnerTokenScp = "Actions.Results:write Actions.Pipelines:read"
+
+// signRunnerClaims serializes and HS256-signs a runner bearer credential. Only
+// this server can produce one, and only parseRunnerToken accepts one.
+func signRunnerClaims(claims runnerTokenClaims) string {
+	payload, err := json.Marshal(claims)
 	if err != nil {
 		panic("encode runner bearer token: " + err.Error())
 	}
 	signing := base64url([]byte(`{"alg":"HS256","typ":"JWT"}`)) + "." + base64url(payload)
 	return signing + "." + base64url(runnerMAC(signing))
+}
+
+// makeJWT mints an HS256-signed bearer credential for sub. The runner parses
+// it as a JWT to read its expiry.
+func makeJWT(sub, aud string) string {
+	now := time.Now()
+	return signRunnerClaims(runnerTokenClaims{
+		Sub: sub,
+		Iss: "bleephub",
+		Aud: aud,
+		Nbf: now.Add(-runnerClockSkew).Unix(),
+		Exp: now.Add(runnerTokenTTL).Unix(),
+		Scp: runnerTokenScp,
+	})
+}
+
+// makeJobJWT mints a per-job runtime token (GITHUB_TOKEN) bound to one
+// repository and the workflow's resolved least-privilege API permission set.
+// The REST gate reads repo+perms to scope the token's /api/v3 access (ACT-014).
+func makeJobJWT(sub, repo string, perms map[string]string) string {
+	now := time.Now()
+	return signRunnerClaims(runnerTokenClaims{
+		Sub:   sub,
+		Iss:   "bleephub",
+		Aud:   runnerAudJob,
+		Nbf:   now.Add(-runnerClockSkew).Unix(),
+		Exp:   now.Add(runnerTokenTTL).Unix(),
+		Scp:   runnerTokenScp,
+		Repo:  repo,
+		Perms: perms,
+	})
 }
 
 // parseRunnerToken verifies a bearer credential's signature and time bounds

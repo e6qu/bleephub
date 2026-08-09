@@ -90,6 +90,69 @@ type WorkflowPermissions struct {
 	CanApprovePullRequestReviews bool   `json:"can_approve_pull_request_reviews"`
 }
 
+// githubTokenDefaultScopes is the standard set of GITHUB_TOKEN API permission
+// scopes a workflow receives when it declares no `permissions:` block (or uses
+// read-all / write-all): the repo's default workflow-permission level applies
+// across all of them. These are the permScopes the REST gate can check for a
+// repository-scoped token.
+var githubTokenDefaultScopes = []permScope{
+	scopeActions, scopeChecks, scopeContents, scopeDeployments, scopeDiscussions,
+	scopeIssues, scopePages, scopePullRequests, scopeSecurityEvents, scopeMetadata,
+}
+
+// resolveJobTokenPermissions computes the least-privilege GITHUB_TOKEN API
+// permission map for one job (ACT-014). GitHub semantics: a job-level
+// `permissions:` block fully replaces a workflow-level one, which fully replaces
+// the repo default; there is no merge. An undeclared block grants the repo's
+// default level (read unless the repo/org setting is write) across the standard
+// scope set; `read-all`/`write-all` grant that level across the set; an explicit
+// block grants exactly the listed scopes (a `none` value drops the scope). A
+// declared-but-empty block (`permissions: {}`) yields metadata:read only, which
+// is always granted regardless.
+func (s *Server) resolveJobTokenPermissions(wf *Workflow, jd *JobDef) map[string]string {
+	var declared PermissionDef
+	switch {
+	case jd != nil && jd.Permissions != nil:
+		declared = jd.Permissions
+	case wf != nil:
+		declared = wf.Permissions // nil when the workflow declared none
+	}
+
+	perms := map[string]string{}
+	switch {
+	case declared == nil:
+		level := "read"
+		if wf != nil {
+			if wp := s.store.GetRepoActionsPermissions(wf.RepoFullName).WorkflowPermissions; wp != nil && wp.DefaultWorkflowPermissions == "write" {
+				level = "write"
+			}
+		}
+		for _, sc := range githubTokenDefaultScopes {
+			perms[string(sc)] = level
+		}
+	default:
+		if lvl, ok := declared["*"]; ok { // read-all / write-all
+			for _, sc := range githubTokenDefaultScopes {
+				perms[string(sc)] = lvl
+			}
+		} else {
+			for k, v := range declared {
+				if v == "none" || v == "" {
+					continue
+				}
+				// Permission keys are hyphenated in YAML (pull-requests,
+				// security-events); permScope values are underscored.
+				perms[strings.ReplaceAll(k, "-", "_")] = v
+			}
+		}
+	}
+	// metadata:read is always available to a workflow token.
+	if _, ok := perms[string(scopeMetadata)]; !ok {
+		perms[string(scopeMetadata)] = "read"
+	}
+	return perms
+}
+
 // defaultOrgActionsPermissions returns the GitHub-default org settings.
 func defaultOrgActionsPermissions() *OrgActionsPermissions {
 	return &OrgActionsPermissions{

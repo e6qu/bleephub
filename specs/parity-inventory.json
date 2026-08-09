@@ -3301,8 +3301,8 @@
         "id": "ACT-014",
         "location": "workflow.go:137-161",
         "severity": "M",
-        "status": "partial \u2014 declarations are strongly parsed and validated; run defaults and expression-backed run names execute; job concurrency is now evaluated, persisted, case-insensitive, enforced across runs, replaces stale pending jobs, and delivers cancellation to an active holder. Least-privilege GITHUB_TOKEN API scopes remain open",
-        "status_kind": "partial"
+        "status": "fixed \u2014 declarations are strongly parsed and validated; run defaults and expression-backed run names execute; job concurrency is now evaluated, persisted, case-insensitive, enforced across runs, replaces stale pending jobs, and delivers cancellation to an active holder. And least-privilege GITHUB_TOKEN API scopes are now enforced: `resolveJobTokenPermissions` computes the effective permission map (GitHub semantics \u2014 a job block replaces a workflow block replaces the repo default; `read-all`/`write-all` and `none` handled; an empty block yields metadata:read only), which is embedded in the per-job token by `makeJobJWT` (new `repo`/`perms` claims). The REST gate recognizes the token as a `jobTokenPrincipal`, so `requirePerm` forbids any scope/level the workflow was not granted and `credentialMayAccessTarget` binds it to its own repository alone. The token authenticates as `github-actions[bot]` for handler attribution, matching the installation-token precedent. Regressions `TestResolveJobTokenPermissions` (semantics) and `TestGithubTokenIsRepoScopedLeastPrivilege` (granted scope passes, ungranted 403, cross-repo denied)",
+        "status_kind": "fixed"
       },
       {
         "category": "ACT",
@@ -6531,9 +6531,9 @@
       "categories": {
         "ACT": {
           "status": {
-            "fixed": 58,
+            "fixed": 59,
             "open": 1,
-            "partial": 2
+            "partial": 1
           },
           "total": 61
         },
@@ -6617,9 +6617,9 @@
       },
       "status": {
         "deferred": 1,
-        "fixed": 643,
+        "fixed": 644,
         "open": 23,
-        "partial": 18
+        "partial": 17
       },
       "total": 685
     }
@@ -19195,13 +19195,13 @@
         "source": "internal/server/gh_actions_oidc_properties.go"
       },
       {
-        "line": 394,
+        "line": 457,
         "method": "DELETE",
         "path": "/api/v3/orgs/{org}/actions/permissions/repositories/{repository_id}",
         "source": "internal/server/gh_actions_permissions.go"
       },
       {
-        "line": 426,
+        "line": 489,
         "method": "DELETE",
         "path": "/api/v3/orgs/{org}/actions/permissions/self-hosted-runners/repositories/{repository_id}",
         "source": "internal/server/gh_actions_permissions.go"
@@ -19231,13 +19231,13 @@
         "source": "internal/server/gh_actions_rest.go"
       },
       {
-        "line": 501,
+        "line": 564,
         "method": "DELETE",
         "path": "/api/v3/orgs/{org}/actions/runners/{runner_id}/labels",
         "source": "internal/server/gh_actions_permissions.go"
       },
       {
-        "line": 509,
+        "line": 572,
         "method": "DELETE",
         "path": "/api/v3/orgs/{org}/actions/runners/{runner_id}/labels/{name}",
         "source": "internal/server/gh_actions_permissions.go"
@@ -19657,13 +19657,13 @@
         "source": "internal/server/gh_actions_rest.go"
       },
       {
-        "line": 495,
+        "line": 558,
         "method": "DELETE",
         "path": "/api/v3/repos/{owner}/{repo}/actions/runners/{runner_id}/labels",
         "source": "internal/server/gh_actions_permissions.go"
       },
       {
-        "line": 507,
+        "line": 570,
         "method": "DELETE",
         "path": "/api/v3/repos/{owner}/{repo}/actions/runners/{runner_id}/labels/{name}",
         "source": "internal/server/gh_actions_permissions.go"
@@ -19675,7 +19675,7 @@
         "source": "internal/server/gh_actions_rest.go"
       },
       {
-        "line": 487,
+        "line": 550,
         "method": "DELETE",
         "path": "/api/v3/repos/{owner}/{repo}/actions/runs/{run_id}/logs",
         "source": "internal/server/gh_actions_permissions.go"
@@ -21397,13 +21397,13 @@
         "source": "internal/server/gh_orgs_rest.go"
       },
       {
-        "line": 435,
+        "line": 498,
         "method": "GET",
         "path": "/api/v3/organizations/{org_id}/actions/cache/retention-limit",
         "source": "internal/server/gh_actions_permissions.go"
       },
       {
-        "line": 439,
+        "line": 502,
         "method": "GET",
         "path": "/api/v3/organizations/{org_id}/actions/cache/storage-limit",
         "source": "internal/server/gh_actions_permissions.go"
@@ -21463,13 +21463,13 @@
         "source": "internal/server/gh_orgs_rest.go"
       },
       {
-        "line": 428,
+        "line": 491,
         "method": "GET",
         "path": "/api/v3/orgs/{org}/actions/cache/usage",
         "source": "internal/server/gh_actions_permissions.go"
       },
       {
-        "line": 430,
+        "line": 493,
         "method": "GET",
         "path": "/api/v3/orgs/{org}/actions/cache/usage-by-repository",
         "source": "internal/server/gh_actions_permissions.go"
@@ -21553,55 +21553,55 @@
         "source": "internal/server/gh_misc_endpoints.go"
       },
       {
-        "line": 384,
+        "line": 447,
         "method": "GET",
         "path": "/api/v3/orgs/{org}/actions/permissions",
         "source": "internal/server/gh_actions_permissions.go"
       },
       {
-        "line": 404,
+        "line": 467,
         "method": "GET",
         "path": "/api/v3/orgs/{org}/actions/permissions/artifact-and-log-retention",
         "source": "internal/server/gh_actions_permissions.go"
       },
       {
-        "line": 408,
+        "line": 471,
         "method": "GET",
         "path": "/api/v3/orgs/{org}/actions/permissions/fork-pr-contributor-approval",
         "source": "internal/server/gh_actions_permissions.go"
       },
       {
-        "line": 412,
+        "line": 475,
         "method": "GET",
         "path": "/api/v3/orgs/{org}/actions/permissions/fork-pr-workflows-private-repos",
         "source": "internal/server/gh_actions_permissions.go"
       },
       {
-        "line": 388,
+        "line": 451,
         "method": "GET",
         "path": "/api/v3/orgs/{org}/actions/permissions/repositories",
         "source": "internal/server/gh_actions_permissions.go"
       },
       {
-        "line": 396,
+        "line": 459,
         "method": "GET",
         "path": "/api/v3/orgs/{org}/actions/permissions/selected-actions",
         "source": "internal/server/gh_actions_permissions.go"
       },
       {
-        "line": 416,
+        "line": 479,
         "method": "GET",
         "path": "/api/v3/orgs/{org}/actions/permissions/self-hosted-runners",
         "source": "internal/server/gh_actions_permissions.go"
       },
       {
-        "line": 420,
+        "line": 483,
         "method": "GET",
         "path": "/api/v3/orgs/{org}/actions/permissions/self-hosted-runners/repositories",
         "source": "internal/server/gh_actions_permissions.go"
       },
       {
-        "line": 400,
+        "line": 463,
         "method": "GET",
         "path": "/api/v3/orgs/{org}/actions/permissions/workflow",
         "source": "internal/server/gh_actions_permissions.go"
@@ -21655,7 +21655,7 @@
         "source": "internal/server/gh_actions_rest.go"
       },
       {
-        "line": 497,
+        "line": 560,
         "method": "GET",
         "path": "/api/v3/orgs/{org}/actions/runners/{runner_id}/labels",
         "source": "internal/server/gh_actions_permissions.go"
@@ -22705,13 +22705,13 @@
         "source": "internal/server/gh_actions_extras.go"
       },
       {
-        "line": 473,
+        "line": 536,
         "method": "GET",
         "path": "/api/v3/repos/{owner}/{repo}/actions/cache/retention-limit",
         "source": "internal/server/gh_actions_permissions.go"
       },
       {
-        "line": 477,
+        "line": 540,
         "method": "GET",
         "path": "/api/v3/repos/{owner}/{repo}/actions/cache/storage-limit",
         "source": "internal/server/gh_actions_permissions.go"
@@ -22723,7 +22723,7 @@
         "source": "internal/server/artifacts.go"
       },
       {
-        "line": 481,
+        "line": 544,
         "method": "GET",
         "path": "/api/v3/repos/{owner}/{repo}/actions/cache/usage-policy",
         "source": "internal/server/gh_actions_permissions.go"
@@ -22777,43 +22777,43 @@
         "source": "internal/server/variables.go"
       },
       {
-        "line": 445,
+        "line": 508,
         "method": "GET",
         "path": "/api/v3/repos/{owner}/{repo}/actions/permissions",
         "source": "internal/server/gh_actions_permissions.go"
       },
       {
-        "line": 449,
+        "line": 512,
         "method": "GET",
         "path": "/api/v3/repos/{owner}/{repo}/actions/permissions/access",
         "source": "internal/server/gh_actions_permissions.go"
       },
       {
-        "line": 469,
+        "line": 532,
         "method": "GET",
         "path": "/api/v3/repos/{owner}/{repo}/actions/permissions/artifact-and-log-retention",
         "source": "internal/server/gh_actions_permissions.go"
       },
       {
-        "line": 461,
+        "line": 524,
         "method": "GET",
         "path": "/api/v3/repos/{owner}/{repo}/actions/permissions/fork-pr-contributor-approval",
         "source": "internal/server/gh_actions_permissions.go"
       },
       {
-        "line": 465,
+        "line": 528,
         "method": "GET",
         "path": "/api/v3/repos/{owner}/{repo}/actions/permissions/fork-pr-workflows-private-repos",
         "source": "internal/server/gh_actions_permissions.go"
       },
       {
-        "line": 453,
+        "line": 516,
         "method": "GET",
         "path": "/api/v3/repos/{owner}/{repo}/actions/permissions/selected-actions",
         "source": "internal/server/gh_actions_permissions.go"
       },
       {
-        "line": 457,
+        "line": 520,
         "method": "GET",
         "path": "/api/v3/repos/{owner}/{repo}/actions/permissions/workflow",
         "source": "internal/server/gh_actions_permissions.go"
@@ -22837,7 +22837,7 @@
         "source": "internal/server/gh_actions_rest.go"
       },
       {
-        "line": 491,
+        "line": 554,
         "method": "GET",
         "path": "/api/v3/repos/{owner}/{repo}/actions/runners/{runner_id}/labels",
         "source": "internal/server/gh_actions_permissions.go"
@@ -25369,7 +25369,7 @@
         "source": "internal/server/gh_repos_rest.go"
       },
       {
-        "line": 483,
+        "line": 546,
         "method": "PATCH",
         "path": "/api/v3/repos/{owner}/{repo}/actions/cache/usage-policy",
         "source": "internal/server/gh_actions_permissions.go"
@@ -26059,7 +26059,7 @@
         "source": "internal/server/gh_actions_rest.go"
       },
       {
-        "line": 505,
+        "line": 568,
         "method": "POST",
         "path": "/api/v3/orgs/{org}/actions/runners/{runner_id}/labels",
         "source": "internal/server/gh_actions_permissions.go"
@@ -26383,7 +26383,7 @@
         "source": "internal/server/agents.go"
       },
       {
-        "line": 503,
+        "line": 566,
         "method": "POST",
         "path": "/api/v3/repos/{owner}/{repo}/actions/runners/{runner_id}/labels",
         "source": "internal/server/gh_actions_permissions.go"
@@ -27349,13 +27349,13 @@
         "source": "internal/server/gh_notifications.go"
       },
       {
-        "line": 437,
+        "line": 500,
         "method": "PUT",
         "path": "/api/v3/organizations/{org_id}/actions/cache/retention-limit",
         "source": "internal/server/gh_actions_permissions.go"
       },
       {
-        "line": 441,
+        "line": 504,
         "method": "PUT",
         "path": "/api/v3/organizations/{org_id}/actions/cache/storage-limit",
         "source": "internal/server/gh_actions_permissions.go"
@@ -27367,67 +27367,67 @@
         "source": "internal/server/gh_misc_endpoints.go"
       },
       {
-        "line": 386,
+        "line": 449,
         "method": "PUT",
         "path": "/api/v3/orgs/{org}/actions/permissions",
         "source": "internal/server/gh_actions_permissions.go"
       },
       {
-        "line": 406,
+        "line": 469,
         "method": "PUT",
         "path": "/api/v3/orgs/{org}/actions/permissions/artifact-and-log-retention",
         "source": "internal/server/gh_actions_permissions.go"
       },
       {
-        "line": 410,
+        "line": 473,
         "method": "PUT",
         "path": "/api/v3/orgs/{org}/actions/permissions/fork-pr-contributor-approval",
         "source": "internal/server/gh_actions_permissions.go"
       },
       {
-        "line": 414,
+        "line": 477,
         "method": "PUT",
         "path": "/api/v3/orgs/{org}/actions/permissions/fork-pr-workflows-private-repos",
         "source": "internal/server/gh_actions_permissions.go"
       },
       {
-        "line": 390,
+        "line": 453,
         "method": "PUT",
         "path": "/api/v3/orgs/{org}/actions/permissions/repositories",
         "source": "internal/server/gh_actions_permissions.go"
       },
       {
-        "line": 392,
+        "line": 455,
         "method": "PUT",
         "path": "/api/v3/orgs/{org}/actions/permissions/repositories/{repository_id}",
         "source": "internal/server/gh_actions_permissions.go"
       },
       {
-        "line": 398,
+        "line": 461,
         "method": "PUT",
         "path": "/api/v3/orgs/{org}/actions/permissions/selected-actions",
         "source": "internal/server/gh_actions_permissions.go"
       },
       {
-        "line": 418,
+        "line": 481,
         "method": "PUT",
         "path": "/api/v3/orgs/{org}/actions/permissions/self-hosted-runners",
         "source": "internal/server/gh_actions_permissions.go"
       },
       {
-        "line": 422,
+        "line": 485,
         "method": "PUT",
         "path": "/api/v3/orgs/{org}/actions/permissions/self-hosted-runners/repositories",
         "source": "internal/server/gh_actions_permissions.go"
       },
       {
-        "line": 424,
+        "line": 487,
         "method": "PUT",
         "path": "/api/v3/orgs/{org}/actions/permissions/self-hosted-runners/repositories/{repository_id}",
         "source": "internal/server/gh_actions_permissions.go"
       },
       {
-        "line": 402,
+        "line": 465,
         "method": "PUT",
         "path": "/api/v3/orgs/{org}/actions/permissions/workflow",
         "source": "internal/server/gh_actions_permissions.go"
@@ -27457,7 +27457,7 @@
         "source": "internal/server/gh_runner_groups.go"
       },
       {
-        "line": 499,
+        "line": 562,
         "method": "PUT",
         "path": "/api/v3/orgs/{org}/actions/runners/{runner_id}/labels",
         "source": "internal/server/gh_actions_permissions.go"
@@ -27715,13 +27715,13 @@
         "source": "internal/server/gh_teams_rest.go"
       },
       {
-        "line": 475,
+        "line": 538,
         "method": "PUT",
         "path": "/api/v3/repos/{owner}/{repo}/actions/cache/retention-limit",
         "source": "internal/server/gh_actions_permissions.go"
       },
       {
-        "line": 479,
+        "line": 542,
         "method": "PUT",
         "path": "/api/v3/repos/{owner}/{repo}/actions/cache/storage-limit",
         "source": "internal/server/gh_actions_permissions.go"
@@ -27733,49 +27733,49 @@
         "source": "internal/server/gh_misc_endpoints.go"
       },
       {
-        "line": 447,
+        "line": 510,
         "method": "PUT",
         "path": "/api/v3/repos/{owner}/{repo}/actions/permissions",
         "source": "internal/server/gh_actions_permissions.go"
       },
       {
-        "line": 451,
+        "line": 514,
         "method": "PUT",
         "path": "/api/v3/repos/{owner}/{repo}/actions/permissions/access",
         "source": "internal/server/gh_actions_permissions.go"
       },
       {
-        "line": 471,
+        "line": 534,
         "method": "PUT",
         "path": "/api/v3/repos/{owner}/{repo}/actions/permissions/artifact-and-log-retention",
         "source": "internal/server/gh_actions_permissions.go"
       },
       {
-        "line": 463,
+        "line": 526,
         "method": "PUT",
         "path": "/api/v3/repos/{owner}/{repo}/actions/permissions/fork-pr-contributor-approval",
         "source": "internal/server/gh_actions_permissions.go"
       },
       {
-        "line": 467,
+        "line": 530,
         "method": "PUT",
         "path": "/api/v3/repos/{owner}/{repo}/actions/permissions/fork-pr-workflows-private-repos",
         "source": "internal/server/gh_actions_permissions.go"
       },
       {
-        "line": 455,
+        "line": 518,
         "method": "PUT",
         "path": "/api/v3/repos/{owner}/{repo}/actions/permissions/selected-actions",
         "source": "internal/server/gh_actions_permissions.go"
       },
       {
-        "line": 459,
+        "line": 522,
         "method": "PUT",
         "path": "/api/v3/repos/{owner}/{repo}/actions/permissions/workflow",
         "source": "internal/server/gh_actions_permissions.go"
       },
       {
-        "line": 493,
+        "line": 556,
         "method": "PUT",
         "path": "/api/v3/repos/{owner}/{repo}/actions/runners/{runner_id}/labels",
         "source": "internal/server/gh_actions_permissions.go"
