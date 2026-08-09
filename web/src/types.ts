@@ -962,19 +962,8 @@ export interface GithubSecretScanningLocation {
   details: GithubSecretScanningLocationDetails;
 }
 
-export interface GithubSecretScanningAlert {
-  number: number;
-  state: "open" | "resolved";
-  resolution: string | null;
-  secret_type: string;
-  secret_type_display_name: string;
-  created_at: string;
-  updated_at: string;
-  resolved_at: string | null;
-  url: string;
-  html_url: string;
-  locations_url: string;
-}
+// Generated from the vendored GitHub OpenAPI description (WEB-013).
+export type GithubSecretScanningAlert = components["schemas"]["secret-scanning-alert"];
 
 export type GithubSecretScanningResolution =
   | "false_positive"
@@ -998,27 +987,8 @@ export type GithubCodeScanningDismissedReason =
 // location/commit_sha optional; CodeScanningPage optional-chains them.
 export type GithubCodeScanningAlertInstance = components["schemas"]["code-scanning-alert-instance"];
 
-export interface GithubCodeScanningAlert {
-  number: number;
-  state: GithubCodeScanningAlertState;
-  created_at: string;
-  updated_at: string;
-  url: string;
-  html_url: string;
-  instances_url: string;
-  fixed_at: string | null;
-  dismissed_at: string | null;
-  dismissed_reason: GithubCodeScanningDismissedReason | null;
-  dismissed_comment: string | null;
-  rule: {
-    id: string;
-    severity: string | null;
-    description: string | null;
-    name: string;
-  };
-  tool: { name: string | null };
-  most_recent_instance: GithubCodeScanningAlertInstance | null;
-}
+// Generated from the vendored GitHub OpenAPI description (WEB-013).
+export type GithubCodeScanningAlert = components["schemas"]["code-scanning-alert"];
 
 // Generated from the vendored GitHub OpenAPI description (WEB-013).
 export type GithubCodeScanningAnalysis = components["schemas"]["code-scanning-analysis"];
@@ -1059,39 +1029,7 @@ export type GithubDependabotDismissedReason =
   | "tolerable_risk";
 
 // Generated from the vendored GitHub OpenAPI description (WEB-013).
-export type GithubDependabotAlertPackage = components["schemas"]["dependabot-alert-package"];
-
-export interface GithubDependabotAlert {
-  number: number;
-  state: GithubDependabotAlertState;
-  dependency: {
-    package: GithubDependabotAlertPackage;
-    manifest_path: string;
-  };
-  security_advisory: {
-    ghsa_id: string;
-    cve_id: string | null;
-    summary: string;
-    description: string;
-    severity: string;
-  };
-  security_vulnerability: {
-    package: GithubDependabotAlertPackage;
-    severity: string;
-    vulnerable_version_range: string;
-    first_patched_version: { identifier: string } | null;
-  };
-  url: string;
-  html_url: string;
-  created_at: string;
-  updated_at: string;
-  dismissed_at: string | null;
-  dismissed_by: { login: string } | null;
-  dismissed_reason: GithubDependabotDismissedReason | null;
-  dismissed_comment: string | null;
-  fixed_at: string | null;
-  auto_dismissed_at: string | null;
-}
+export type GithubDependabotAlert = components["schemas"]["dependabot-alert"];
 
 // Generated from the vendored GitHub OpenAPI description (WEB-013).
 export type GithubDependabotSecret = components["schemas"]["dependabot-secret"];

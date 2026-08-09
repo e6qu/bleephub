@@ -152,7 +152,7 @@ export function DependabotPage() {
                       {alert.state}
                       {alert.dismissed_reason ? ` — ${alert.dismissed_reason}` : ""}
                       {` · ${alert.security_vulnerability.severity}`}
-                      {` · ${alert.dependency.package.ecosystem}`}
+                      {` · ${alert.dependency.package?.ecosystem}`}
                     </div>
                   </button>
                 </li>
@@ -207,7 +207,7 @@ function AlertDetail({
       <h3 style={{ marginTop: 0, marginBottom: "0.75rem" }}>Alert #{alert.number}</h3>
       <div style={{ fontSize: "0.85rem", marginBottom: "0.75rem" }}>
         <div>
-          <strong>Package:</strong> {alert.dependency.package.name} ({alert.dependency.package.ecosystem})
+          <strong>Package:</strong> {alert.dependency.package?.name} ({alert.dependency.package?.ecosystem})
         </div>
         <div>
           <strong>Manifest:</strong> {alert.dependency.manifest_path}
