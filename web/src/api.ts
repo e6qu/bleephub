@@ -1421,6 +1421,21 @@ export const createIssueComment = (owner: string, repo: string, number: number, 
     { body },
   );
 
+/**
+ * Patch an issue's editable fields. `state` closes/reopens it; `title`/`body`
+ * edit it. GitHub uses one PATCH endpoint for all three.
+ */
+export const updateIssue = (
+  owner: string,
+  repo: string,
+  number: number,
+  patch: { title?: string; body?: string; state?: "open" | "closed" },
+) =>
+  ghPatchJSON<GithubIssue>(
+    `/api/v3/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/issues/${number}`,
+    patch,
+  );
+
 /** First page by (owner, repo, state); follow-up pages by the Link rel="next" URL. */
 export const fetchRepoPRsPage = (
   owner: string,

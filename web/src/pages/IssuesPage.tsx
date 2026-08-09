@@ -9,6 +9,7 @@ import {
   fetchIssueDetail,
   fetchIssueComments,
   createIssue,
+  updateIssue,
   isNotFound,
   fetchRepoLabels,
   createRepoLabel,
@@ -28,6 +29,7 @@ import { useOpenCounts } from "../hooks/useOpenCounts.js";
 import type { GithubIssue, GithubLabel, GithubMilestone, ListFilterState } from "../types.js";
 import { CommentCard, CommentList } from "../components/CommentCard.js";
 import { CommentComposer } from "../components/CommentComposer.js";
+import { MutationError } from "../components/MutationError.js";
 import { LabelPills } from "../components/LabelPills.js";
 import { StateToggle } from "../components/StateToggle.js";
 import { RepoHeader } from "../components/Shell.js";
@@ -284,6 +286,16 @@ function IssueDetail({ owner, repo, number }: { owner: string; repo: string; num
   const viewerQ = useQuery({ queryKey: ["viewer"], queryFn: fetchAuthenticatedUser });
   const viewerLogin = typeof viewerQ.data?.login === "string" ? viewerQ.data.login : null;
 
+  const qc = useQueryClient();
+  const stateMut = useMutation({
+    mutationFn: () =>
+      updateIssue(owner, repo, number, { state: issue?.state === "open" ? "closed" : "open" }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["issue", owner, repo, number] });
+      qc.invalidateQueries({ queryKey: ["issues", owner, repo] });
+    },
+  });
+
   if (isError) {
     if (isNotFound(error)) {
       return (
@@ -363,6 +375,7 @@ function IssueDetail({ owner, repo, number }: { owner: string; repo: string; num
               )}
             </>
           )}
+          <MutationError of={stateMut} />
           <CommentComposer
             owner={owner}
             repo={repo}
@@ -371,6 +384,15 @@ function IssueDetail({ owner, repo, number }: { owner: string; repo: string; num
               ["issue-comments", owner, repo, number],
               ["issue", owner, repo, number],
             ]}
+            extraActions={
+              <Button
+                size="sm"
+                disabled={stateMut.isPending}
+                onClick={() => stateMut.mutate()}
+              >
+                {open ? "Close issue" : "Reopen issue"}
+              </Button>
+            }
           />
         </div>
         <div style={{ width: "100%", maxWidth: "16rem", flexShrink: 0 }}>
