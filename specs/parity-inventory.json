@@ -4453,8 +4453,8 @@
         "id": "CORE-009",
         "location": "server.go:532",
         "severity": "M",
-        "status": "partial \u2014 the production listener now caps headers and the shared request pipeline applies a structured 32 MiB body limit to every JSON and form request, with a GitHub-shaped 413 regression. Streaming upload routes retain their endpoint-specific limits and still need one auditable registry",
-        "status_kind": "partial"
+        "status": "fixed \u2014 the production listener now caps headers and the shared request pipeline applies a structured 32 MiB body limit to every JSON and form request, with a GitHub-shaped 413 regression. And those endpoint-specific streaming caps now have one auditable registry: `requestBodyLimits` (gh_rest.go) enumerates every request-body cap (shared structured pipeline, JSON decode, binary upload, artifact chunk, git upload-pack, timeline, backchannel logout) with its bytes and scope, the last inline magic number (`64<<10`) is named `maxBackChannelLogoutBytes`, and `TestRequestBodyLimits` both sanity-checks the registry and fails if any production `MaxBytesReader` bounds a body with a bare numeric literal \u2014 so a new upload route cannot introduce an unaudited cap",
+        "status_kind": "fixed"
       },
       {
         "category": "CORE",
@@ -6559,9 +6559,8 @@
         },
         "CORE": {
           "status": {
-            "fixed": 31,
-            "open": 1,
-            "partial": 1
+            "fixed": 32,
+            "open": 1
           },
           "total": 33
         },
@@ -6617,9 +6616,9 @@
       },
       "status": {
         "deferred": 1,
-        "fixed": 648,
+        "fixed": 649,
         "open": 21,
-        "partial": 15
+        "partial": 14
       },
       "total": 685
     }
@@ -20269,7 +20268,7 @@
         "source": "internal/server/gh_misc_endpoints.go"
       },
       {
-        "line": 76,
+        "line": 101,
         "method": "GET",
         "path": "/api/v3/",
         "source": "internal/server/gh_rest.go"
@@ -22675,7 +22674,7 @@
         "source": "internal/server/gh_projects_classic.go"
       },
       {
-        "line": 79,
+        "line": 104,
         "method": "GET",
         "path": "/api/v3/rate_limit",
         "source": "internal/server/gh_rest.go"
@@ -24415,7 +24414,7 @@
         "source": "internal/server/gh_teams_legacy_rest.go"
       },
       {
-        "line": 77,
+        "line": 102,
         "method": "GET",
         "path": "/api/v3/user",
         "source": "internal/server/gh_rest.go"
@@ -24709,7 +24708,7 @@
         "source": "internal/server/gh_misc_endpoints.go"
       },
       {
-        "line": 78,
+        "line": 103,
         "method": "GET",
         "path": "/api/v3/users/{username}",
         "source": "internal/server/gh_rest.go"

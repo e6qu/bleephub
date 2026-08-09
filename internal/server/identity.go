@@ -1256,9 +1256,14 @@ func (s *Server) handleShauthFrontChannelLogout(w http.ResponseWriter, r *http.R
 	_, _ = w.Write([]byte(`<!doctype html><html lang="en"><head><meta charset="utf-8"><title>Signed out</title></head><body></body></html>`))
 }
 
+// maxBackChannelLogoutBytes caps the OIDC back-channel logout POST. The body is
+// a single form field holding a logout JWT; kilobytes at most (registered in
+// requestBodyLimits, CORE-009).
+const maxBackChannelLogoutBytes = 64 << 10 // 64 KiB
+
 func (s *Server) handleShauthBackChannelLogout(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Cache-Control", "no-store")
-	r.Body = http.MaxBytesReader(w, r.Body, 64<<10)
+	r.Body = http.MaxBytesReader(w, r.Body, maxBackChannelLogoutBytes)
 	if err := r.ParseForm(); err != nil {
 		writeGHError(w, http.StatusBadRequest, "invalid logout request")
 		return
