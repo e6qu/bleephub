@@ -705,20 +705,8 @@ export interface GithubRelease {
   assets: GithubReleaseAsset[];
 }
 
-export interface GithubReleaseAsset {
-  id: number;
-  node_id: string;
-  name: string;
-  label: string;
-  state: "uploaded";
-  content_type: string;
-  size: number;
-  download_count: number;
-  created_at: string;
-  updated_at: string;
-  url: string;
-  browser_download_url: string;
-}
+// Generated from the vendored GitHub OpenAPI description (WEB-013).
+export type GithubReleaseAsset = components["schemas"]["release-asset"];
 
 export type GithubMigrationState = "pending" | "exporting" | "exported" | "failed";
 
@@ -794,11 +782,8 @@ export interface GithubTeamMember {
   role?: "member" | "maintainer" | "all";
 }
 
-export interface GithubTeamMembership {
-  state: "active" | "pending";
-  role: "member" | "maintainer";
-  url: string;
-}
+// Generated from the vendored GitHub OpenAPI description (WEB-013).
+export type GithubTeamMembership = components["schemas"]["team-membership"];
 
 export interface GithubTeamRepo {
   id: number;
@@ -846,13 +831,8 @@ export interface BleephubGist {
   commits_url?: string;
 }
 
-export interface GithubGistCommit {
-  url: string;
-  version: string;
-  user: { login: string; type: string; avatar_url?: string } | null;
-  change_status: Record<string, number>;
-  committed_at: string;
-}
+// Generated from the vendored GitHub OpenAPI description (WEB-013).
+export type GithubGistCommit = components["schemas"]["gist-commit"];
 
 export interface GithubNotificationThread {
   id: string;
@@ -1152,12 +1132,8 @@ export interface GithubDependabotAlert {
   auto_dismissed_at: string | null;
 }
 
-export interface GithubDependabotSecret {
-  name: string;
-  created_at: string;
-  updated_at: string;
-  visibility?: GithubOrgVisibility;
-}
+// Generated from the vendored GitHub OpenAPI description (WEB-013).
+export type GithubDependabotSecret = components["schemas"]["dependabot-secret"];
 
 // ─── GitHub Codespaces shapes ───────────────────────────────────────────
 
@@ -1180,15 +1156,8 @@ export type GithubCodespaceState =
   | "Rebuilding"
   | "Unavailable";
 
-export interface GithubCodespaceMachine {
-  name: string;
-  display_name: string;
-  operating_system: string;
-  storage_in_bytes: number;
-  memory_in_bytes: number;
-  cpus: number;
-  prebuild_availability: string;
-}
+// Generated from the vendored GitHub OpenAPI description (WEB-013).
+export type GithubCodespaceMachine = components["schemas"]["codespace-machine"];
 
 export interface GithubCodespace {
   id: number;
@@ -1638,11 +1607,8 @@ export interface GithubCopilotSpaceCollaborator {
   name?: string;
 }
 
-export interface GithubCopilotSpaceResource {
-  id: number;
-  resource_type: string;
-  metadata: Record<string, unknown>;
-}
+// Generated from the vendored GitHub OpenAPI description (WEB-013).
+export type GithubCopilotSpaceResource = components["schemas"]["copilot-space-resource"];
 
 // ─── Deployments + webhook deliveries + Pages ───────────────────────────
 
@@ -1771,12 +1737,8 @@ export interface GithubEnvironmentDetail {
 }
 
 /** Branch/tag pattern — GET .../environments/{env}/deployment-branch-policies. */
-export interface GithubDeploymentBranchPolicy {
-  id: number;
-  node_id: string;
-  name: string;
-  type: "branch" | "tag";
-}
+// Generated from the vendored GitHub OpenAPI description (WEB-013).
+export type GithubDeploymentBranchPolicy = components["schemas"]["deployment-branch-policy"];
 
 /** Custom (app-backed) rule — GET .../environments/{env}/deployment_protection_rules. */
 export interface GithubEnvCustomProtectionRule {
