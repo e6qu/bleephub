@@ -1034,6 +1034,55 @@ func TestWebhookProjectEvent(t *testing.T) {
 	}
 }
 
+func TestWebhookBranchProtectionRuleEvent(t *testing.T) {
+	var mu sync.Mutex
+	actions := map[string]bool{}
+	url, cleanup := startWebhookReceiver(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Header.Get("X-GitHub-Event") == "branch_protection_rule" {
+			b, _ := io.ReadAll(r.Body)
+			if a, ok := webhookEventJSON(t, r.Header.Get("Content-Type"), b)["action"].(string); ok {
+				mu.Lock()
+				actions[a] = true
+				mu.Unlock()
+			}
+		}
+		w.WriteHeader(200)
+	}))
+	defer cleanup()
+
+	repoPath := "/api/v3/repos/admin/wh-bpr"
+	ghPost(t, "/api/v3/user/repos", defaultToken, map[string]interface{}{"name": "wh-bpr", "auto_init": true}).Body.Close()
+	ghPost(t, repoPath+"/hooks", defaultToken, map[string]interface{}{
+		"config": map[string]interface{}{"url": url},
+		"events": []string{"branch_protection_rule"},
+		"active": true,
+	}).Body.Close()
+
+	put := ghPut(t, repoPath+"/branches/main/protection", defaultToken, map[string]interface{}{
+		"required_status_checks":        nil,
+		"enforce_admins":                true,
+		"required_pull_request_reviews": nil,
+		"restrictions":                  nil,
+	})
+	if put.StatusCode != http.StatusOK {
+		put.Body.Close()
+		t.Fatalf("put protection status = %d", put.StatusCode)
+	}
+	put.Body.Close()
+	ghDelete(t, repoPath+"/branches/main/protection", defaultToken).Body.Close()
+
+	if !testEventually(5*time.Second, 10*time.Millisecond, func() bool {
+		mu.Lock()
+		defer mu.Unlock()
+		return actions["created"] && actions["deleted"]
+	}) {
+		mu.Lock()
+		got := fmt.Sprint(actions)
+		mu.Unlock()
+		t.Fatalf("branch protection create/delete did not deliver created+deleted; got %s", got)
+	}
+}
+
 func TestWebhookPing(t *testing.T) {
 	var received atomic.Int32
 	var mu sync.Mutex

@@ -2,6 +2,12 @@
   "actions": {
     "literal_event_producers": [
       {
+        "event": "branch_protection_rule",
+        "line": 464,
+        "producer": "emitWebhookEvent",
+        "source": "internal/server/gh_branch_protection.go"
+      },
+      {
         "event": "check_run",
         "line": 409,
         "producer": "emitWebhookEvent",
@@ -3355,7 +3361,7 @@
         "id": "ACT-026",
         "location": "webhooks.go:249",
         "severity": "M",
-        "status": "partial \u2014 webhook emission is the single event-production choke point and every implemented mutation event automatically feeds Actions. Issue-comment create/edit/delete and pull-request-review submit/dismiss now join push, PR, issue, review-comment, release, deployment, status/check and workflow lifecycle producers; families with no real mutation producer remain open, though the set keeps shrinking \u2014 label create/edit/delete now produces the `label` event (regression `TestWebhookLabelEvent`), and milestone create/close/reopen/edit/delete now produces the `milestone` event with GitHub's action semantics (regression `TestWebhookMilestoneEvent`); branch/tag creation and deletion now produce the `create` and `delete` events with `ref`/`ref_type` (regression `TestWebhookCreateDeleteRefEvent`); commit-comment creation produces the `commit_comment` event repository forks produce the `fork` event on the source repo (regression `TestWebhookCommitCommentAndForkEvents`, which also surfaced and fixed a pre-existing commit-comment response-shape gap \u2014 `path`/`position`/`line` are now emitted as required-nullable), starring a repo produces the `watch` event with action `started` (regression `TestWebhookWatchEvent`), switching a repo from private to public produces the `public` event (regression `TestWebhookPublicEvent`), and creating a classic project produces the `project` event (regression `TestWebhookProjectEvent`)",
+        "status": "partial \u2014 webhook emission is the single event-production choke point and every implemented mutation event automatically feeds Actions. Issue-comment create/edit/delete and pull-request-review submit/dismiss now join push, PR, issue, review-comment, release, deployment, status/check and workflow lifecycle producers; families with no real mutation producer remain open, though the set keeps shrinking \u2014 label create/edit/delete now produces the `label` event (regression `TestWebhookLabelEvent`), and milestone create/close/reopen/edit/delete now produces the `milestone` event with GitHub's action semantics (regression `TestWebhookMilestoneEvent`); branch/tag creation and deletion now produce the `create` and `delete` events with `ref`/`ref_type` (regression `TestWebhookCreateDeleteRefEvent`); commit-comment creation produces the `commit_comment` event repository forks produce the `fork` event on the source repo (regression `TestWebhookCommitCommentAndForkEvents`, which also surfaced and fixed a pre-existing commit-comment response-shape gap \u2014 `path`/`position`/`line` are now emitted as required-nullable), starring a repo produces the `watch` event with action `started` (regression `TestWebhookWatchEvent`), switching a repo from private to public produces the `public` event (regression `TestWebhookPublicEvent`), creating a classic project produces the `project` event (regression `TestWebhookProjectEvent`), and establishing/updating/removing a branch-protection rule produces the `branch_protection_rule` event (regression `TestWebhookBranchProtectionRuleEvent`)",
         "status_kind": "partial"
       },
       {

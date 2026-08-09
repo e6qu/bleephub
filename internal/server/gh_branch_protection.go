@@ -418,6 +418,7 @@ func (s *Server) handleBranchProtectionPut(w http.ResponseWriter, r *http.Reques
 
 	key := bpKey(repo.ID, branch)
 	s.store.Misc.mu.Lock()
+	existed := s.store.Misc.branchProtection[key] != nil
 	bp := cloneBranchProtection(s.store.Misc.branchProtection[key])
 	if bp == nil {
 		bp = &BranchProtection{}
@@ -446,7 +447,26 @@ func (s *Server) handleBranchProtectionPut(w http.ResponseWriter, r *http.Reques
 	s.store.Misc.mu.Unlock()
 
 	bp = s.hydrateBranchProtectionURLs(bp, repo, branch, s.baseURL(r))
+	// `branch_protection_rule` fires when a rule is established or updated, so
+	// `on: branch_protection_rule` workflows run (ACT-026).
+	if bp.IsProtected() {
+		action := "created"
+		if existed {
+			action = "edited"
+		}
+		s.emitBranchProtectionRuleEvent(repo, branch, action, r)
+	}
 	writeJSON(w, http.StatusOK, bp)
+}
+
+// emitBranchProtectionRuleEvent fires GitHub's `branch_protection_rule` webhook.
+func (s *Server) emitBranchProtectionRuleEvent(repo *Repo, branch, action string, r *http.Request) {
+	s.emitWebhookEvent(repo.FullName, "branch_protection_rule", action, map[string]interface{}{
+		"action":     action,
+		"rule":       map[string]interface{}{"name": branch, "repository_id": repo.ID},
+		"repository": repoPayload(repo),
+		"sender":     userToJSON(ghUserFromContext(r.Context())),
+	})
 }
 
 func (s *Server) handleBranchProtectionDelete(w http.ResponseWriter, r *http.Request) {
@@ -456,7 +476,13 @@ func (s *Server) handleBranchProtectionDelete(w http.ResponseWriter, r *http.Req
 		return
 	}
 	branch := r.PathValue("branch")
+	s.store.Misc.mu.RLock()
+	existed := s.store.Misc.branchProtection[bpKey(repo.ID, branch)] != nil
+	s.store.Misc.mu.RUnlock()
 	s.setBranchProtection(repo, branch, nil)
+	if existed {
+		s.emitBranchProtectionRuleEvent(repo, branch, "deleted", r)
+	}
 	w.WriteHeader(http.StatusNoContent)
 }
 
