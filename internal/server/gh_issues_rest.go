@@ -391,6 +391,12 @@ func (s *Server) handleUpdateIssue(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Optimistic concurrency: an If-Match must match the issue's current ETag,
+	// or a stale client would clobber a concurrent edit (STORE-016).
+	if !checkIfMatch(w, r, issueToJSON(issue, s.store, s.baseURL(r), repo.FullName)) {
+		return
+	}
+
 	var req map[string]interface{}
 	if !decodeJSONBody(w, r, &req) {
 		return

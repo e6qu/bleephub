@@ -779,6 +779,12 @@ func (s *Server) handleUpdateRepo(w http.ResponseWriter, r *http.Request) {
 		writeGHError(w, http.StatusForbidden, "Must have admin rights to Repository.")
 		return
 	}
+
+	// Optimistic concurrency (STORE-016): reject a stale If-Match with 412. The
+	// representation is the same viewer-scoped one a GET returns for this user.
+	if !checkIfMatch(w, r, fullRepoJSONForViewer(repo, s.store, s.baseURL(r), user)) {
+		return
+	}
 	wasPrivate := repo.Private
 
 	var req map[string]interface{}

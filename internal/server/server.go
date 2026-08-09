@@ -1133,6 +1133,33 @@ func (rw *responseWriter) WriteHeader(code int) {
 // Content-Length is deliberately left to net/http: a handful of handlers write
 // further bytes after calling this, and declaring a length here would make
 // those responses malformed.
+// checkIfMatch enforces optimistic concurrency on a mutating request (STORE-016).
+// When the request carries If-Match, the current resource's strong ETag — the
+// same content hash a GET of it returns (writeJSON's `"sha256(body)"`) — must
+// match, or the write is rejected 412 Precondition Failed so a client holding a
+// stale copy cannot silently clobber a concurrent update. An absent If-Match is
+// unconditional, exactly as GitHub treats it. `current` is the resource's
+// present JSON representation (the value a GET would return); call this after
+// loading it and before mutating. Returns false when it has already written the
+// 412, so the caller returns immediately.
+func checkIfMatch(w http.ResponseWriter, r *http.Request, current interface{}) bool {
+	ifMatch := r.Header.Get("If-Match")
+	if ifMatch == "" {
+		return true
+	}
+	body, err := json.Marshal(current)
+	if err != nil {
+		return true
+	}
+	sum := sha256.Sum256(body)
+	etag := fmt.Sprintf(`"%x"`, sum)
+	if etagMatches(ifMatch, etag) {
+		return true
+	}
+	writeGHError(w, http.StatusPreconditionFailed, "Precondition Failed")
+	return false
+}
+
 func writeJSON(w http.ResponseWriter, status int, v interface{}) {
 	body, err := json.Marshal(v)
 	if err != nil {

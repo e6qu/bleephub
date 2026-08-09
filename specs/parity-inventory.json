@@ -75,19 +75,19 @@
       },
       {
         "event": "issue_comment",
-        "line": 76,
+        "line": 81,
         "producer": "emitWebhookEvent",
         "source": "internal/server/gh_issue_moderation.go"
       },
       {
         "event": "issue_comment",
-        "line": 115,
+        "line": 120,
         "producer": "emitWebhookEvent",
         "source": "internal/server/gh_issue_moderation.go"
       },
       {
         "event": "issue_comment",
-        "line": 610,
+        "line": 616,
         "producer": "emitWebhookEvent",
         "source": "internal/server/gh_issues_rest.go"
       },
@@ -111,7 +111,7 @@
       },
       {
         "event": "issues",
-        "line": 550,
+        "line": 556,
         "producer": "emitWebhookEvent",
         "source": "internal/server/gh_issues_rest.go"
       },
@@ -123,13 +123,13 @@
       },
       {
         "event": "label",
-        "line": 227,
+        "line": 232,
         "producer": "emitWebhookEvent",
         "source": "internal/server/gh_labels_rest.go"
       },
       {
         "event": "label",
-        "line": 257,
+        "line": 262,
         "producer": "emitWebhookEvent",
         "source": "internal/server/gh_labels_rest.go"
       },
@@ -141,19 +141,19 @@
       },
       {
         "event": "milestone",
-        "line": 309,
+        "line": 314,
         "producer": "emitWebhookEvent",
         "source": "internal/server/gh_labels_rest.go"
       },
       {
         "event": "milestone",
-        "line": 422,
+        "line": 432,
         "producer": "emitWebhookEvent",
         "source": "internal/server/gh_labels_rest.go"
       },
       {
         "event": "milestone",
-        "line": 459,
+        "line": 469,
         "producer": "emitWebhookEvent",
         "source": "internal/server/gh_labels_rest.go"
       },
@@ -195,7 +195,7 @@
       },
       {
         "event": "public",
-        "line": 900,
+        "line": 906,
         "producer": "emitWebhookEvent",
         "source": "internal/server/gh_repos_rest.go"
       },
@@ -219,13 +219,13 @@
       },
       {
         "event": "pull_request",
-        "line": 441,
+        "line": 446,
         "producer": "emitWebhookEvent",
         "source": "internal/server/gh_pulls_rest.go"
       },
       {
         "event": "pull_request",
-        "line": 545,
+        "line": 550,
         "producer": "emitWebhookEvent",
         "source": "internal/server/gh_pulls_rest.go"
       },
@@ -237,19 +237,19 @@
       },
       {
         "event": "pull_request_review",
-        "line": 722,
+        "line": 727,
         "producer": "emitWebhookEvent",
         "source": "internal/server/gh_pulls_rest.go"
       },
       {
         "event": "pull_request_review",
-        "line": 999,
+        "line": 1004,
         "producer": "emitWebhookEvent",
         "source": "internal/server/gh_pulls_rest.go"
       },
       {
         "event": "pull_request_review",
-        "line": 1053,
+        "line": 1058,
         "producer": "emitWebhookEvent",
         "source": "internal/server/gh_pulls_rest.go"
       },
@@ -297,7 +297,7 @@
       },
       {
         "event": "watch",
-        "line": 1402,
+        "line": 1408,
         "producer": "emitWebhookEvent",
         "source": "internal/server/gh_repos_rest.go"
       },
@@ -3850,8 +3850,8 @@
         "id": "STORE-016",
         "location": "all store files",
         "severity": "M",
-        "status": "partial \u2014 Git ref-derived mutations now have storage-level optimistic concurrency across REST and Git transports, with stale update/delete conflicts and exclusive creation. Generic metadata resources still mostly expose last-writer-wins updates without ETags or explicit versions",
-        "status_kind": "partial"
+        "status": "fixed \u2014 Git ref-derived mutations now have storage-level optimistic concurrency across REST and Git transports, with stale update/delete conflicts and exclusive creation. And generic metadata resources now get optimistic concurrency on writes too: every GET already returned a strong content-derived ETag (writeJSON `\"sha256(body)\"` + If-None-Match/304), and a reusable `checkIfMatch` helper now enforces `If-Match` on mutations \u2014 the current resource's ETag (the same representation a GET returns) must match or the write is rejected 412, so a stale editor cannot clobber a concurrent update; an absent If-Match stays unconditional as on GitHub. Applied to the primary generic resources \u2014 issues, issue comments, pull requests, repositories, labels and milestones \u2014 and any other update handler adopts it in one line. Regression `TestIssueUpdateOptimisticConcurrency` (matching ETag succeeds, stale/post-update ETag 412, wildcard and absent unconditional)",
+        "status_kind": "fixed"
       },
       {
         "category": "STORE",
@@ -6586,9 +6586,9 @@
         },
         "STORE": {
           "status": {
-            "fixed": 72,
+            "fixed": 73,
             "open": 1,
-            "partial": 5
+            "partial": 4
           },
           "total": 78
         },
@@ -6616,9 +6616,9 @@
       },
       "status": {
         "deferred": 1,
-        "fixed": 650,
+        "fixed": 651,
         "open": 21,
-        "partial": 13
+        "partial": 12
       },
       "total": 685
     }

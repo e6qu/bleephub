@@ -205,6 +205,11 @@ func (s *Server) handleUpdateLabel(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Optimistic concurrency (STORE-016): reject a stale If-Match with 412.
+	if !checkIfMatch(w, r, issueLabelToJSON(label, s.baseURL(r), repo.FullName)) {
+		return
+	}
+
 	var req map[string]interface{}
 	if !decodeJSONBody(w, r, &req) {
 		return
@@ -380,6 +385,11 @@ func (s *Server) handleUpdateMilestone(w http.ResponseWriter, r *http.Request) {
 	ms := s.store.GetMilestoneByNumber(repo.ID, num)
 	if ms == nil {
 		writeGHError(w, http.StatusNotFound, "Not Found")
+		return
+	}
+
+	// Optimistic concurrency (STORE-016): reject a stale If-Match with 412.
+	if !checkIfMatch(w, r, milestoneToJSON(ms, s.store, s.baseURL(r), repo.FullName)) {
 		return
 	}
 	oldState := string(ms.State)
