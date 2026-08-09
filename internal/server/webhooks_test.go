@@ -862,6 +862,61 @@ func TestWebhookCreateDeleteRefEvent(t *testing.T) {
 	}
 }
 
+func TestWebhookCommitCommentAndForkEvents(t *testing.T) {
+	var mu sync.Mutex
+	got := map[string]bool{}
+	url, cleanup := startWebhookReceiver(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if ev := r.Header.Get("X-GitHub-Event"); ev == "commit_comment" || ev == "fork" {
+			mu.Lock()
+			got[ev] = true
+			mu.Unlock()
+		}
+		w.WriteHeader(200)
+	}))
+	defer cleanup()
+
+	repoPath := "/api/v3/repos/admin/wh-cc-fork"
+	ghPost(t, "/api/v3/user/repos", defaultToken, map[string]interface{}{"name": "wh-cc-fork", "auto_init": true}).Body.Close()
+	ghPost(t, repoPath+"/hooks", defaultToken, map[string]interface{}{
+		"config": map[string]interface{}{"url": url},
+		"events": []string{"commit_comment", "fork"},
+		"active": true,
+	}).Body.Close()
+
+	refData := decodeJSON(t, ghGet(t, repoPath+"/git/refs/heads/main", defaultToken))
+	mainObj, _ := refData["object"].(map[string]interface{})
+	mainSha, _ := mainObj["sha"].(string)
+	if mainSha == "" {
+		t.Fatalf("main sha missing: %v", refData)
+	}
+	cc := ghPost(t, repoPath+"/commits/"+mainSha+"/comments", defaultToken, map[string]interface{}{"body": "nice commit"})
+	if cc.StatusCode != http.StatusCreated {
+		cc.Body.Close()
+		t.Fatalf("create commit comment status = %d", cc.StatusCode)
+	}
+	cc.Body.Close()
+
+	// A fork by another user fires `fork` on the source repo's hook.
+	_, forkerToken := newSharedServerUser(t, "wh-forker")
+	fk := ghPost(t, repoPath+"/forks", forkerToken, map[string]interface{}{})
+	if fk.StatusCode != http.StatusAccepted {
+		fk.Body.Close()
+		t.Fatalf("fork status = %d", fk.StatusCode)
+	}
+	fk.Body.Close()
+
+	if !testEventually(5*time.Second, 10*time.Millisecond, func() bool {
+		mu.Lock()
+		defer mu.Unlock()
+		return got["commit_comment"] && got["fork"]
+	}) {
+		mu.Lock()
+		g := fmt.Sprint(got)
+		mu.Unlock()
+		t.Fatalf("commit_comment/fork webhooks not delivered; got %s", g)
+	}
+}
+
 func TestWebhookPing(t *testing.T) {
 	var received atomic.Int32
 	var mu sync.Mutex

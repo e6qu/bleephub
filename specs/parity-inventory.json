@@ -14,6 +14,12 @@
         "source": "internal/server/actions_events.go"
       },
       {
+        "event": "commit_comment",
+        "line": 284,
+        "producer": "emitWebhookEvent",
+        "source": "internal/server/gh_commit_comments_rest.go"
+      },
+      {
         "event": "create",
         "line": 1007,
         "producer": "emitWebhookEvent",
@@ -42,6 +48,12 @@
         "line": 662,
         "producer": "emitWebhookEvent",
         "source": "internal/server/gh_deployments.go"
+      },
+      {
+        "event": "fork",
+        "line": 62,
+        "producer": "emitWebhookEvent",
+        "source": "internal/server/gh_repos_forks.go"
       },
       {
         "event": "issue_comment",
@@ -3325,7 +3337,7 @@
         "id": "ACT-026",
         "location": "webhooks.go:249",
         "severity": "M",
-        "status": "partial \u2014 webhook emission is the single event-production choke point and every implemented mutation event automatically feeds Actions. Issue-comment create/edit/delete and pull-request-review submit/dismiss now join push, PR, issue, review-comment, release, deployment, status/check and workflow lifecycle producers; families with no real mutation producer remain open, though the set keeps shrinking \u2014 label create/edit/delete now produces the `label` event (regression `TestWebhookLabelEvent`), and milestone create/close/reopen/edit/delete now produces the `milestone` event with GitHub's action semantics (regression `TestWebhookMilestoneEvent`); branch/tag creation and deletion now produce the `create` and `delete` events with `ref`/`ref_type` (regression `TestWebhookCreateDeleteRefEvent`)",
+        "status": "partial \u2014 webhook emission is the single event-production choke point and every implemented mutation event automatically feeds Actions. Issue-comment create/edit/delete and pull-request-review submit/dismiss now join push, PR, issue, review-comment, release, deployment, status/check and workflow lifecycle producers; families with no real mutation producer remain open, though the set keeps shrinking \u2014 label create/edit/delete now produces the `label` event (regression `TestWebhookLabelEvent`), and milestone create/close/reopen/edit/delete now produces the `milestone` event with GitHub's action semantics (regression `TestWebhookMilestoneEvent`); branch/tag creation and deletion now produce the `create` and `delete` events with `ref`/`ref_type` (regression `TestWebhookCreateDeleteRefEvent`); commit-comment creation produces the `commit_comment` event and repository forks produce the `fork` event on the source repo (regression `TestWebhookCommitCommentAndForkEvents`, which also surfaced and fixed a pre-existing commit-comment response-shape gap \u2014 `path`/`position`/`line` are now emitted as required-nullable)",
         "status_kind": "partial"
       },
       {
