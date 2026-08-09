@@ -994,18 +994,9 @@ export type GithubCodeScanningDismissedReason =
   | "used_in_tests"
   | "ignored";
 
-// Generated from the vendored GitHub OpenAPI description (WEB-013).
-export type GithubCodeScanningAlertLocation = components["schemas"]["code-scanning-alert-location"];
-
-export interface GithubCodeScanningAlertInstance {
-  ref: string;
-  analysis_key: string;
-  category: string;
-  state: GithubCodeScanningAlertState;
-  commit_sha: string;
-  message: { text: string };
-  location: GithubCodeScanningAlertLocation;
-}
+// Generated from the vendored GitHub OpenAPI description (WEB-013). Spec marks
+// location/commit_sha optional; CodeScanningPage optional-chains them.
+export type GithubCodeScanningAlertInstance = components["schemas"]["code-scanning-alert-instance"];
 
 export interface GithubCodeScanningAlert {
   number: number;

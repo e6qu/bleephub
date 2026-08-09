@@ -458,13 +458,13 @@ function AlertDetail({
           {instances.map((inst, idx) => (
             <li key={idx} style={{ fontSize: "0.85rem", padding: "0.4rem 0", borderBottom: "1px solid var(--color-border)" }}>
               <div>
-                <strong>{inst.location.path || "—"}</strong>
+                <strong>{inst.location?.path || "—"}</strong>
               </div>
               <div style={{ color: "var(--color-fg-muted)" }}>
-                lines {inst.location.start_line}–{inst.location.end_line}, columns {inst.location.start_column}–
-                {inst.location.end_column}
+                lines {inst.location?.start_line}–{inst.location?.end_line}, columns {inst.location?.start_column}–
+                {inst.location?.end_column}
               </div>
-              <div style={{ color: "var(--color-fg-muted)" }}>commit {inst.commit_sha.slice(0, 7)}</div>
+              <div style={{ color: "var(--color-fg-muted)" }}>commit {inst.commit_sha?.slice(0, 7)}</div>
             </li>
           ))}
         </ul>
