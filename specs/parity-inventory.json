@@ -213,43 +213,43 @@
       },
       {
         "event": "pull_request",
-        "line": 124,
+        "line": 128,
         "producer": "emitWebhookEvent",
         "source": "internal/server/gh_pulls_rest.go"
       },
       {
         "event": "pull_request",
-        "line": 437,
+        "line": 441,
         "producer": "emitWebhookEvent",
         "source": "internal/server/gh_pulls_rest.go"
       },
       {
         "event": "pull_request",
-        "line": 541,
+        "line": 545,
         "producer": "emitWebhookEvent",
         "source": "internal/server/gh_pulls_rest.go"
       },
       {
         "event": "pull_request",
-        "line": 473,
+        "line": 476,
         "producer": "emitWebhookEvent",
         "source": "internal/server/workflow_triggers.go"
       },
       {
         "event": "pull_request_review",
-        "line": 718,
+        "line": 722,
         "producer": "emitWebhookEvent",
         "source": "internal/server/gh_pulls_rest.go"
       },
       {
         "event": "pull_request_review",
-        "line": 995,
+        "line": 999,
         "producer": "emitWebhookEvent",
         "source": "internal/server/gh_pulls_rest.go"
       },
       {
         "event": "pull_request_review",
-        "line": 1049,
+        "line": 1053,
         "producer": "emitWebhookEvent",
         "source": "internal/server/gh_pulls_rest.go"
       },
@@ -3418,8 +3418,8 @@
         "id": "ACT-027",
         "location": "webhooks.go:290",
         "severity": "M",
-        "status": "partial \u2014 runs now report `refs/pull/<number>/merge` and prefer `merge_commit_sha`; until Bleephub materializes synthetic merge commits, an event without that field falls back to the head SHA",
-        "status_kind": "partial"
+        "status": "fixed \u2014 runs now report `refs/pull/<number>/merge` and prefer `merge_commit_sha`; until Bleephub materializes synthetic merge commits, an event without that field falls back to the head SHA And the missing piece is done: an open pull request's test-merge commit is now materialized (`computeMergeCommitHash` merges head into base without advancing the base ref, extracted from `performMergeCommit`) on PR open and on synchronize, stored as `PullRequest.PotentialMergeCommitSHA`, and reported as the event's `merge_commit_sha` \u2014 so a `pull_request` run runs against the merge ref/SHA, not the head. A conflict or missing git storage clears the field, keeping the head-SHA fallback; `MergeCommitSHA` stays merged-only so GraphQL `mergeCommit` is unaffected. Regression `TestPullRequestRunReportsMergeSHA`.",
+        "status_kind": "fixed"
       },
       {
         "category": "ACT",
@@ -6531,9 +6531,9 @@
       "categories": {
         "ACT": {
           "status": {
-            "fixed": 55,
+            "fixed": 56,
             "open": 1,
-            "partial": 5
+            "partial": 4
           },
           "total": 61
         },
@@ -6617,9 +6617,9 @@
       },
       "status": {
         "deferred": 1,
-        "fixed": 640,
+        "fixed": 641,
         "open": 23,
-        "partial": 21
+        "partial": 20
       },
       "total": 685
     }

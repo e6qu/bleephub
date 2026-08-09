@@ -258,13 +258,17 @@ func buildPullRequestPayload(st *Store, repo *Repo, pr *PullRequest, sender *Use
 	}
 
 	prJSON := map[string]interface{}{
-		"number":           pr.Number,
-		"title":            pr.Title,
-		"body":             pr.Body,
-		"state":            state,
-		"draft":            pr.IsDraft,
-		"merged":           pr.State == "MERGED",
-		"merge_commit_sha": coalesceStr(pr.MergeCommitSHA, pullRequestHeadSHA(pr, st)),
+		"number": pr.Number,
+		"title":  pr.Title,
+		"body":   pr.Body,
+		"state":  state,
+		"draft":  pr.IsDraft,
+		"merged": pr.State == "MERGED",
+		// A merged PR reports its real merge commit; an open one reports its
+		// test-merge commit (GitHub's "potential merge"), so a pull_request
+		// workflow run runs against the merge ref rather than the head (ACT-027).
+		// Both fall back to the head SHA when no merge commit is available.
+		"merge_commit_sha": coalesceStr(pr.MergeCommitSHA, coalesceStr(pr.PotentialMergeCommitSHA, pullRequestHeadSHA(pr, st))),
 		"head": map[string]interface{}{
 			"ref":  pr.HeadRefName,
 			"sha":  pullRequestHeadSHA(pr, st),

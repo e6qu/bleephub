@@ -1304,6 +1304,61 @@ func TestWebhookRegistryPackageEvent(t *testing.T) {
 	}
 }
 
+func TestPullRequestRunReportsMergeSHA(t *testing.T) {
+	var mu sync.Mutex
+	var mergeSHA, headSHA string
+	url, cleanup := startWebhookReceiver(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Header.Get("X-GitHub-Event") == "pull_request" {
+			b, _ := io.ReadAll(r.Body)
+			p := webhookEventJSON(t, r.Header.Get("Content-Type"), b)
+			if p["action"] == "opened" {
+				if pr, _ := p["pull_request"].(map[string]interface{}); pr != nil {
+					mu.Lock()
+					mergeSHA, _ = pr["merge_commit_sha"].(string)
+					if head, _ := pr["head"].(map[string]interface{}); head != nil {
+						headSHA, _ = head["sha"].(string)
+					}
+					mu.Unlock()
+				}
+			}
+		}
+		w.WriteHeader(200)
+	}))
+	defer cleanup()
+
+	repoPath := "/api/v3/repos/admin/act027"
+	ghPost(t, "/api/v3/user/repos", defaultToken, map[string]interface{}{"name": "act027", "auto_init": true}).Body.Close()
+	ghPost(t, repoPath+"/hooks", defaultToken, map[string]interface{}{
+		"config": map[string]interface{}{"url": url},
+		"events": []string{"pull_request"},
+		"active": true,
+	}).Body.Close()
+
+	mainSha := decodeJSON(t, ghGet(t, repoPath+"/git/refs/heads/main", defaultToken))["object"].(map[string]interface{})["sha"].(string)
+	ghPost(t, repoPath+"/git/refs", defaultToken, map[string]interface{}{"ref": "refs/heads/feat", "sha": mainSha}).Body.Close()
+	ghPut(t, repoPath+"/contents/act027.txt", defaultToken, map[string]interface{}{
+		"message": "add file",
+		"content": base64.StdEncoding.EncodeToString([]byte("hello")),
+		"branch":  "feat",
+	}).Body.Close()
+
+	ghPost(t, repoPath+"/pulls", defaultToken, map[string]interface{}{"title": "PR", "head": "feat", "base": "main"}).Body.Close()
+
+	if !testEventually(5*time.Second, 10*time.Millisecond, func() bool {
+		mu.Lock()
+		defer mu.Unlock()
+		return mergeSHA != ""
+	}) {
+		t.Fatal("no pull_request opened webhook delivered")
+	}
+	mu.Lock()
+	ms, hs := mergeSHA, headSHA
+	mu.Unlock()
+	if ms == "" || ms == hs {
+		t.Fatalf("merge_commit_sha = %q (head = %q): an open PR run must report a distinct test-merge commit, not the head SHA (ACT-027)", ms, hs)
+	}
+}
+
 func TestWebhookPing(t *testing.T) {
 	var received atomic.Int32
 	var mu sync.Mutex

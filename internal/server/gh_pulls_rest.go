@@ -120,6 +120,10 @@ func (s *Server) handleCreatePullRequest(w http.ResponseWriter, r *http.Request)
 	}
 
 	repoKey := owner + "/" + name
+	// Materialize the test-merge commit before the payload is built so the
+	// opened event (and the workflow run it triggers) reports the merge ref
+	// (ACT-027).
+	s.refreshPullRequestPotentialMerge(repo, pr)
 	openedPayload := buildPullRequestPayload(s.store, repo, pr, user, "opened")
 	s.emitWebhookEvent(repoKey, "pull_request", "opened", openedPayload)
 
