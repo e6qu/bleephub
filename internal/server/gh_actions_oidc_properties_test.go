@@ -6,11 +6,13 @@ import (
 )
 
 func TestOIDCCustomPropertyInclusions_CRUD(t *testing.T) {
-	org := createTestOrg(t)
+	t.Parallel()
+	s := newIsolatedServer(t)
+	org := s.createTestOrg(t)
 	base := "/api/v3/orgs/" + org + "/actions/oidc/customization/properties/repo"
 
 	// Empty to start.
-	resp := ghGet(t, base, defaultToken)
+	resp := s.get(t, base, defaultToken)
 	var list []map[string]interface{}
 	if err := json.NewDecoder(resp.Body).Decode(&list); err != nil {
 		t.Fatalf("decode: %v", err)
@@ -21,7 +23,7 @@ func TestOIDCCustomPropertyInclusions_CRUD(t *testing.T) {
 	}
 
 	// Create.
-	created := decodeJSONWithStatus(t, ghPost(t, base, defaultToken, map[string]string{
+	created := decodeJSONWithStatus(t, s.post(t, base, defaultToken, map[string]string{
 		"custom_property_name": "environment_tier",
 	}), 201)
 	if created["custom_property_name"] != "environment_tier" || created["inclusion_source"] != "organization" {
@@ -29,21 +31,21 @@ func TestOIDCCustomPropertyInclusions_CRUD(t *testing.T) {
 	}
 
 	// Duplicate rejects.
-	resp = ghPost(t, base, defaultToken, map[string]string{"custom_property_name": "environment_tier"})
+	resp = s.post(t, base, defaultToken, map[string]string{"custom_property_name": "environment_tier"})
 	resp.Body.Close()
 	if resp.StatusCode != 422 {
 		t.Fatalf("duplicate create = %d, want 422", resp.StatusCode)
 	}
 
 	// Missing name rejects.
-	resp = ghPost(t, base, defaultToken, map[string]string{})
+	resp = s.post(t, base, defaultToken, map[string]string{})
 	resp.Body.Close()
 	if resp.StatusCode != 422 {
 		t.Fatalf("missing name create = %d, want 422", resp.StatusCode)
 	}
 
 	// Listed.
-	resp = ghGet(t, base, defaultToken)
+	resp = s.get(t, base, defaultToken)
 	list = nil
 	if err := json.NewDecoder(resp.Body).Decode(&list); err != nil {
 		t.Fatalf("decode: %v", err)
@@ -54,12 +56,12 @@ func TestOIDCCustomPropertyInclusions_CRUD(t *testing.T) {
 	}
 
 	// Delete, then a second delete 404s.
-	resp = ghDelete(t, base+"/environment_tier", defaultToken)
+	resp = s.delete(t, base+"/environment_tier", defaultToken)
 	resp.Body.Close()
 	if resp.StatusCode != 204 {
 		t.Fatalf("delete = %d, want 204", resp.StatusCode)
 	}
-	resp = ghDelete(t, base+"/environment_tier", defaultToken)
+	resp = s.delete(t, base+"/environment_tier", defaultToken)
 	resp.Body.Close()
 	if resp.StatusCode != 404 {
 		t.Fatalf("delete again = %d, want 404", resp.StatusCode)
