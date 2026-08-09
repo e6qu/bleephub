@@ -184,6 +184,22 @@ func (s *isolatedServer) createTestUser(t *testing.T, login string) *User {
 	return s.store.UsersByLogin[login]
 }
 
+// createEnterpriseTestUser mirrors the package helper against this instance's
+// store: it seeds a user + PAT directly (no HTTP) so an enterprise test can
+// provision a non-admin principal on its own server.
+func (s *isolatedServer) createEnterpriseTestUser(t *testing.T, login string) string {
+	t.Helper()
+	s.store.mu.Lock()
+	u := &User{ID: s.store.NextUser, Login: login, NodeID: "U_ent" + strconv.Itoa(s.store.NextUser), Type: "User"}
+	s.store.NextUser++
+	s.store.Users[u.ID] = u
+	s.store.UsersByLogin[u.Login] = u
+	tok := &Token{Value: "ghp_" + login + "0000000000000000000000000000", UserID: u.ID, Scopes: "repo"}
+	s.store.Tokens[tok.Value] = tok
+	s.store.mu.Unlock()
+	return tok.Value
+}
+
 func (s *isolatedServer) createOrgRepoForGovernance(t *testing.T, org string) (string, int) {
 	t.Helper()
 	name := "gov-repo-" + strconv.FormatInt(int64(nextTestID()), 36)

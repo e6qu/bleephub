@@ -7,18 +7,20 @@ import (
 )
 
 func TestEnterpriseCodeSecurityConfigurations_CRUD(t *testing.T) {
+	t.Parallel()
+	s := newIsolatedServer(t)
 	base := enterpriseAPI + "/code-security/configurations"
 
 	// Missing name/description → 400 (the documented bad-request status for
 	// the enterprise create endpoint).
-	resp := ghPost(t, base, defaultToken, map[string]interface{}{"name": "no-description"})
+	resp := s.post(t, base, defaultToken, map[string]interface{}{"name": "no-description"})
 	resp.Body.Close()
 	if resp.StatusCode != http.StatusBadRequest {
 		t.Fatalf("create without description: got %d, want 400", resp.StatusCode)
 	}
 
 	// Create with defaults.
-	resp = ghPost(t, base, defaultToken, map[string]interface{}{
+	resp = s.post(t, base, defaultToken, map[string]interface{}{
 		"name":              "baseline",
 		"description":       "Enterprise baseline security posture",
 		"dependabot_alerts": "enabled",
@@ -44,7 +46,7 @@ func TestEnterpriseCodeSecurityConfigurations_CRUD(t *testing.T) {
 	one := fmt.Sprintf("%s/%d", base, id)
 
 	// Get.
-	resp = ghGet(t, one, defaultToken)
+	resp = s.get(t, one, defaultToken)
 	if resp.StatusCode != http.StatusOK {
 		resp.Body.Close()
 		t.Fatalf("get: got %d, want 200", resp.StatusCode)
@@ -55,7 +57,7 @@ func TestEnterpriseCodeSecurityConfigurations_CRUD(t *testing.T) {
 	}
 
 	// List contains it.
-	resp = ghGet(t, base, defaultToken)
+	resp = s.get(t, base, defaultToken)
 	if resp.StatusCode != http.StatusOK {
 		resp.Body.Close()
 		t.Fatalf("list: got %d, want 200", resp.StatusCode)
@@ -71,7 +73,7 @@ func TestEnterpriseCodeSecurityConfigurations_CRUD(t *testing.T) {
 	}
 
 	// Patch: change a feature + name.
-	resp = ghPatch(t, one, defaultToken, map[string]interface{}{
+	resp = s.patch(t, one, defaultToken, map[string]interface{}{
 		"name":            "baseline-v2",
 		"secret_scanning": "enabled",
 	})
@@ -89,19 +91,19 @@ func TestEnterpriseCodeSecurityConfigurations_CRUD(t *testing.T) {
 	}
 
 	// Invalid enum → 422 on update.
-	resp = ghPatch(t, one, defaultToken, map[string]interface{}{"secret_scanning": "sideways"})
+	resp = s.patch(t, one, defaultToken, map[string]interface{}{"secret_scanning": "sideways"})
 	resp.Body.Close()
 	if resp.StatusCode != http.StatusUnprocessableEntity {
 		t.Fatalf("patch invalid enum: got %d, want 422", resp.StatusCode)
 	}
 
 	// Delete.
-	resp = ghDelete(t, one, defaultToken)
+	resp = s.delete(t, one, defaultToken)
 	resp.Body.Close()
 	if resp.StatusCode != http.StatusNoContent {
 		t.Fatalf("delete: got %d, want 204", resp.StatusCode)
 	}
-	resp = ghGet(t, one, defaultToken)
+	resp = s.get(t, one, defaultToken)
 	resp.Body.Close()
 	if resp.StatusCode != http.StatusNotFound {
 		t.Fatalf("get after delete: got %d, want 404", resp.StatusCode)
@@ -109,15 +111,17 @@ func TestEnterpriseCodeSecurityConfigurations_CRUD(t *testing.T) {
 }
 
 func TestEnterpriseCodeSecurityConfigurations_OpaqueCursorValidation(t *testing.T) {
+	t.Parallel()
+	s := newIsolatedServer(t)
 	base := enterpriseAPI + "/code-security/configurations"
-	resp := ghGet(t, base+"?after="+encodeCursor(0), defaultToken)
+	resp := s.get(t, base+"?after="+encodeCursor(0), defaultToken)
 	if resp.StatusCode != http.StatusOK {
 		body := decodeResponseBodyForTest(resp)
 		t.Fatalf("opaque cursor status = %d, want 200; body=%s", resp.StatusCode, body)
 	}
 	resp.Body.Close()
 
-	resp = ghGet(t, base+"?after=not-a-cursor", defaultToken)
+	resp = s.get(t, base+"?after=not-a-cursor", defaultToken)
 	if resp.StatusCode != http.StatusUnprocessableEntity {
 		body := decodeResponseBodyForTest(resp)
 		t.Fatalf("malformed cursor status = %d, want 422; body=%s", resp.StatusCode, body)
@@ -126,8 +130,10 @@ func TestEnterpriseCodeSecurityConfigurations_OpaqueCursorValidation(t *testing.
 }
 
 func TestEnterpriseCodeSecurityConfiguration_AdvancedSecurityAggregates(t *testing.T) {
+	t.Parallel()
+	s := newIsolatedServer(t)
 	base := enterpriseAPI + "/code-security/configurations"
-	resp := ghPost(t, base, defaultToken, map[string]interface{}{
+	resp := s.post(t, base, defaultToken, map[string]interface{}{
 		"name":          "ghas-code-only",
 		"description":   "code security product only",
 		"code_security": "enabled",
@@ -141,7 +147,7 @@ func TestEnterpriseCodeSecurityConfiguration_AdvancedSecurityAggregates(t *testi
 		t.Fatalf("advanced_security = %v, want code_security (folded from the code_security toggle)", cfg["advanced_security"])
 	}
 	id := int(cfg["id"].(float64))
-	resp = ghDelete(t, fmt.Sprintf("%s/%d", base, id), defaultToken)
+	resp = s.delete(t, fmt.Sprintf("%s/%d", base, id), defaultToken)
 	resp.Body.Close()
 	if resp.StatusCode != http.StatusNoContent {
 		t.Fatalf("cleanup delete: got %d", resp.StatusCode)
@@ -149,9 +155,11 @@ func TestEnterpriseCodeSecurityConfiguration_AdvancedSecurityAggregates(t *testi
 }
 
 func TestEnterpriseCodeSecurityConfiguration_DefaultsAndAttach(t *testing.T) {
+	t.Parallel()
+	s := newIsolatedServer(t)
 	// An organization-owned repository the attachment can land on.
-	createEnterpriseTestOrg(t, "ent-cs-org")
-	resp := ghPost(t, "/api/v3/orgs/ent-cs-org/repos", defaultToken, map[string]interface{}{"name": "cs-repo"})
+	s.createOrg(t, "ent-cs-org")
+	resp := s.post(t, "/api/v3/orgs/ent-cs-org/repos", defaultToken, map[string]interface{}{"name": "cs-repo"})
 	if resp.StatusCode != http.StatusCreated {
 		resp.Body.Close()
 		t.Fatalf("create org repo: got %d, want 201", resp.StatusCode)
@@ -159,7 +167,7 @@ func TestEnterpriseCodeSecurityConfiguration_DefaultsAndAttach(t *testing.T) {
 	resp.Body.Close()
 
 	base := enterpriseAPI + "/code-security/configurations"
-	resp = ghPost(t, base, defaultToken, map[string]interface{}{
+	resp = s.post(t, base, defaultToken, map[string]interface{}{
 		"name":        "attach-me",
 		"description": "configuration under attachment test",
 	})
@@ -172,14 +180,14 @@ func TestEnterpriseCodeSecurityConfiguration_DefaultsAndAttach(t *testing.T) {
 	one := fmt.Sprintf("%s/%d", base, id)
 
 	// Attach with an invalid scope → 422.
-	resp = ghPost(t, one+"/attach", defaultToken, map[string]interface{}{"scope": "some"})
+	resp = s.post(t, one+"/attach", defaultToken, map[string]interface{}{"scope": "some"})
 	resp.Body.Close()
 	if resp.StatusCode != http.StatusUnprocessableEntity {
 		t.Fatalf("attach invalid scope: got %d, want 422", resp.StatusCode)
 	}
 
 	// Attach to all repositories → 202.
-	resp = ghPost(t, one+"/attach", defaultToken, map[string]interface{}{"scope": "all"})
+	resp = s.post(t, one+"/attach", defaultToken, map[string]interface{}{"scope": "all"})
 	if resp.StatusCode != http.StatusAccepted {
 		resp.Body.Close()
 		t.Fatalf("attach: got %d, want 202", resp.StatusCode)
@@ -191,7 +199,7 @@ func TestEnterpriseCodeSecurityConfiguration_DefaultsAndAttach(t *testing.T) {
 	// shared test server, so the one created here may sit past page 1.
 	var sawRepo bool
 	for page := 1; !sawRepo; page++ {
-		resp = ghGet(t, fmt.Sprintf("%s/repositories?per_page=100&page=%d", one, page), defaultToken)
+		resp = s.get(t, fmt.Sprintf("%s/repositories?per_page=100&page=%d", one, page), defaultToken)
 		if resp.StatusCode != http.StatusOK {
 			resp.Body.Close()
 			t.Fatalf("repositories page %d: got %d, want 200", page, resp.StatusCode)
@@ -216,7 +224,7 @@ func TestEnterpriseCodeSecurityConfiguration_DefaultsAndAttach(t *testing.T) {
 
 	// Status filter for a state bleephub's synchronous attach never leaves
 	// behind → empty list.
-	resp = ghGet(t, one+"/repositories?status=failed", defaultToken)
+	resp = s.get(t, one+"/repositories?status=failed", defaultToken)
 	if resp.StatusCode != http.StatusOK {
 		resp.Body.Close()
 		t.Fatalf("repositories status filter: got %d, want 200", resp.StatusCode)
@@ -226,7 +234,7 @@ func TestEnterpriseCodeSecurityConfiguration_DefaultsAndAttach(t *testing.T) {
 	}
 
 	// Set as default for new repositories.
-	resp = ghPut(t, one+"/defaults", defaultToken, map[string]interface{}{
+	resp = s.put(t, one+"/defaults", defaultToken, map[string]interface{}{
 		"default_for_new_repos": "all",
 	})
 	if resp.StatusCode != http.StatusOK {
@@ -242,7 +250,7 @@ func TestEnterpriseCodeSecurityConfiguration_DefaultsAndAttach(t *testing.T) {
 	}
 
 	// The defaults listing includes it.
-	resp = ghGet(t, base+"/defaults", defaultToken)
+	resp = s.get(t, base+"/defaults", defaultToken)
 	if resp.StatusCode != http.StatusOK {
 		resp.Body.Close()
 		t.Fatalf("defaults: got %d, want 200", resp.StatusCode)
@@ -262,28 +270,28 @@ func TestEnterpriseCodeSecurityConfiguration_DefaultsAndAttach(t *testing.T) {
 	}
 
 	// Deleting a default configuration → 409.
-	resp = ghDelete(t, one, defaultToken)
+	resp = s.delete(t, one, defaultToken)
 	resp.Body.Close()
 	if resp.StatusCode != http.StatusConflict {
 		t.Fatalf("delete default configuration: got %d, want 409", resp.StatusCode)
 	}
 
 	// Clear the default, then delete cleanly.
-	resp = ghPut(t, one+"/defaults", defaultToken, map[string]interface{}{
+	resp = s.put(t, one+"/defaults", defaultToken, map[string]interface{}{
 		"default_for_new_repos": "none",
 	})
 	resp.Body.Close()
 	if resp.StatusCode != http.StatusOK {
 		t.Fatalf("clear default: got %d, want 200", resp.StatusCode)
 	}
-	resp = ghDelete(t, one, defaultToken)
+	resp = s.delete(t, one, defaultToken)
 	resp.Body.Close()
 	if resp.StatusCode != http.StatusNoContent {
 		t.Fatalf("delete after clearing default: got %d, want 204", resp.StatusCode)
 	}
 
 	// Its attachments were removed with it.
-	resp = ghGet(t, one+"/repositories", defaultToken)
+	resp = s.get(t, one+"/repositories", defaultToken)
 	resp.Body.Close()
 	if resp.StatusCode != http.StatusNotFound {
 		t.Fatalf("repositories after delete: got %d, want 404", resp.StatusCode)
