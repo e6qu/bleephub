@@ -764,6 +764,54 @@ func TestWebhookLabelEvent(t *testing.T) {
 	}
 }
 
+func TestWebhookMilestoneEvent(t *testing.T) {
+	var mu sync.Mutex
+	actions := map[string]bool{}
+	url, cleanup := startWebhookReceiver(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Header.Get("X-GitHub-Event") == "milestone" {
+			body, _ := io.ReadAll(r.Body)
+			p := webhookEventJSON(t, r.Header.Get("Content-Type"), body)
+			if a, ok := p["action"].(string); ok {
+				mu.Lock()
+				actions[a] = true
+				mu.Unlock()
+			}
+		}
+		w.WriteHeader(200)
+	}))
+	defer cleanup()
+
+	createWebhookTestRepo(t, "wh-milestone")
+	ghPost(t, "/api/v3/repos/admin/wh-milestone/hooks", defaultToken, map[string]interface{}{
+		"config": map[string]interface{}{"url": url},
+		"events": []string{"milestone"},
+		"active": true,
+	}).Body.Close()
+
+	created := ghPost(t, "/api/v3/repos/admin/wh-milestone/milestones", defaultToken, map[string]interface{}{
+		"title": "v1",
+	})
+	if created.StatusCode != http.StatusCreated {
+		created.Body.Close()
+		t.Fatalf("create milestone status = %d", created.StatusCode)
+	}
+	created.Body.Close()
+	// Closing fires `closed`; deleting fires `deleted`.
+	ghPatch(t, "/api/v3/repos/admin/wh-milestone/milestones/1", defaultToken, map[string]interface{}{"state": "closed"}).Body.Close()
+	ghDelete(t, "/api/v3/repos/admin/wh-milestone/milestones/1", defaultToken).Body.Close()
+
+	if !testEventually(5*time.Second, 10*time.Millisecond, func() bool {
+		mu.Lock()
+		defer mu.Unlock()
+		return actions["created"] && actions["closed"] && actions["deleted"]
+	}) {
+		mu.Lock()
+		got := fmt.Sprint(actions)
+		mu.Unlock()
+		t.Fatalf("milestone CRUD did not deliver created+closed+deleted webhooks; got %s", got)
+	}
+}
+
 func TestWebhookPing(t *testing.T) {
 	var received atomic.Int32
 	var mu sync.Mutex

@@ -75,19 +75,37 @@
       },
       {
         "event": "label",
-        "line": 136,
+        "line": 148,
         "producer": "emitWebhookEvent",
         "source": "internal/server/gh_labels_rest.go"
       },
       {
         "event": "label",
-        "line": 215,
+        "line": 227,
         "producer": "emitWebhookEvent",
         "source": "internal/server/gh_labels_rest.go"
       },
       {
         "event": "label",
-        "line": 245,
+        "line": 257,
+        "producer": "emitWebhookEvent",
+        "source": "internal/server/gh_labels_rest.go"
+      },
+      {
+        "event": "milestone",
+        "line": 309,
+        "producer": "emitWebhookEvent",
+        "source": "internal/server/gh_labels_rest.go"
+      },
+      {
+        "event": "milestone",
+        "line": 422,
+        "producer": "emitWebhookEvent",
+        "source": "internal/server/gh_labels_rest.go"
+      },
+      {
+        "event": "milestone",
+        "line": 459,
         "producer": "emitWebhookEvent",
         "source": "internal/server/gh_labels_rest.go"
       },
@@ -3295,7 +3313,7 @@
         "id": "ACT-026",
         "location": "webhooks.go:249",
         "severity": "M",
-        "status": "partial \u2014 webhook emission is the single event-production choke point and every implemented mutation event automatically feeds Actions. Issue-comment create/edit/delete and pull-request-review submit/dismiss now join push, PR, issue, review-comment, release, deployment, status/check and workflow lifecycle producers; families with no real mutation producer remain open, though the set keeps shrinking \u2014 label create/edit/delete now produces the `label` event (regression `TestWebhookLabelEvent`)",
+        "status": "partial \u2014 webhook emission is the single event-production choke point and every implemented mutation event automatically feeds Actions. Issue-comment create/edit/delete and pull-request-review submit/dismiss now join push, PR, issue, review-comment, release, deployment, status/check and workflow lifecycle producers; families with no real mutation producer remain open, though the set keeps shrinking \u2014 label create/edit/delete now produces the `label` event (regression `TestWebhookLabelEvent`), and milestone create/close/reopen/edit/delete now produces the `milestone` event with GitHub's action semantics (regression `TestWebhookMilestoneEvent`)",
         "status_kind": "partial"
       },
       {
