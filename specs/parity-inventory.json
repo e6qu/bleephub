@@ -2629,8 +2629,8 @@
         "id": "GQL-024",
         "location": "9 scanners",
         "severity": "M",
-        "status": "partial \u2014 the two hottest node-id finders (`findRepoByNodeID`, `findUserByNodeID`), which resolve `repositoryId` and assignees on the issue/PR/discussion create-mutation hot path, now decode the database id embedded in the node id (`decodeNodeDBID`, mirroring the existing `parsePRReviewThreadNodeID` convention) and do an O(1) keyed lookup, with a node-id equality guard and a fallback scan so a foreign- or legacy-shaped id (e.g. the `U_bleephub_<login>` identifiers) still resolves exactly as before. Regression test covers the decoder and both finders. The remaining id-keyed finders \u2014 issues, labels, milestones, issue comments, pull requests, discussions/categories/comments, and the three projects-v2 lookups (project/item/field) \u2014 now adopt the same `decodeNodeDBID` fast path with the equality guard and fallback scan, preserving the discussions' `!Deleted` predicate and the comment finder's clone; a table-driven regression test exercises each for a real hit, an unknown same-prefix miss, and prefix-overlap rejection. The only remaining scanner is `findIssueTypeByNodeID`, whose collection is nested by org (no single id-keyed map), so an O(1) fast path does not apply.",
-        "status_kind": "partial"
+        "status": "fixed \u2014 the two hottest node-id finders (`findRepoByNodeID`, `findUserByNodeID`), which resolve `repositoryId` and assignees on the issue/PR/discussion create-mutation hot path, now decode the database id embedded in the node id (`decodeNodeDBID`, mirroring the existing `parsePRReviewThreadNodeID` convention) and do an O(1) keyed lookup, with a node-id equality guard and a fallback scan so a foreign- or legacy-shaped id (e.g. the `U_bleephub_<login>` identifiers) still resolves exactly as before. Regression test covers the decoder and both finders. The remaining id-keyed finders \u2014 issues, labels, milestones, issue comments, pull requests, discussions/categories/comments, and the three projects-v2 lookups (project/item/field) \u2014 now adopt the same `decodeNodeDBID` fast path with the equality guard and fallback scan, preserving the discussions' `!Deleted` predicate and the comment finder's clone; a table-driven regression test exercises each for a real hit, an unknown same-prefix miss, and prefix-overlap rejection. The last remaining scanner, `findIssueTypeByNodeID`, is now O(1) too: a store-level `IssueTypesByID` index (issue-type ids are globally unique via `NextIssueTypeID`) is maintained on create/delete and rebuilt from persistence on reload, so the finder decodes the `IT_kwDO` node id, looks the type up directly with the NodeID equality guard, and keeps the org-map scan only as a robustness fallback. Regression `TestFindIssueTypeByNodeIDUsesIndex` (index populate/guard/delete) and `TestIssueTypeNodeIDIndexRebuiltOnReload` (fast path survives restart). Every node-id finder now parses the embedded id \u2014 no mutation walks a full map under the lock.",
+        "status_kind": "fixed"
       },
       {
         "category": "GQL",
@@ -6453,8 +6453,8 @@
         },
         "GQL": {
           "status": {
-            "fixed": 59,
-            "partial": 2
+            "fixed": 60,
+            "partial": 1
           },
           "total": 61
         },
@@ -6503,9 +6503,9 @@
       },
       "status": {
         "deferred": 1,
-        "fixed": 637,
+        "fixed": 638,
         "open": 23,
-        "partial": 24
+        "partial": 23
       },
       "total": 685
     }

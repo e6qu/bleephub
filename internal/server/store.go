@@ -633,6 +633,7 @@ type Store struct {
 	OrgCustomProperties         map[string]map[string]*CustomProperty // org login → property name → definition
 	RepoCustomPropertyValues    map[string]map[string]interface{}     // "owner/repo" → property name → value
 	OrgIssueTypes               map[string]map[int]*IssueType         // org login → id → issue type
+	IssueTypesByID              map[int]*IssueType                    // id → issue type (GQL-024 O(1) node-ID lookup; ids are globally unique)
 	NextIssueTypeID             int
 	OrgIssueFields              map[string]map[int]*IssueField // org login → id → issue field
 	NextIssueFieldID            int
@@ -1052,6 +1053,7 @@ func NewStore() *Store {
 		OrgCustomProperties:         map[string]map[string]*CustomProperty{},
 		RepoCustomPropertyValues:    map[string]map[string]interface{}{},
 		OrgIssueTypes:               map[string]map[int]*IssueType{},
+		IssueTypesByID:              map[int]*IssueType{},
 		NextIssueTypeID:             1,
 		OrgIssueFields:              map[string]map[int]*IssueField{},
 		NextIssueFieldID:            1,
@@ -3009,7 +3011,8 @@ func (st *Store) loadFromPersistence() error {
 				return err
 			}
 			st.OrgIssueTypes[key] = m
-			for id := range m {
+			for id, it := range m {
+				st.IssueTypesByID[id] = it
 				if id >= st.NextIssueTypeID {
 					st.NextIssueTypeID = id + 1
 				}

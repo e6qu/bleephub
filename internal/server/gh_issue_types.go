@@ -250,6 +250,16 @@ func findIssueTypeByNodeID(st *Store, nodeID string) *IssueType {
 	}
 	st.mu.RLock()
 	defer st.mu.RUnlock()
+	// O(1) fast path: the node ID embeds the globally-unique database id, so
+	// parse it and look the type up directly instead of walking every org's map
+	// under the lock (GQL-024). The NodeID equality guard rejects a decoded id
+	// that resolves to a different node shape; the scan below remains as a
+	// robustness fallback, matching the other node finders.
+	if id, ok := decodeNodeDBID(nodeID, "IT_kwDO"); ok {
+		if it := st.IssueTypesByID[id]; it != nil && it.NodeID == nodeID {
+			return it
+		}
+	}
 	for _, types := range st.OrgIssueTypes {
 		for _, it := range types {
 			if it.NodeID == nodeID {
@@ -281,6 +291,7 @@ func (st *Store) CreateIssueType(orgLogin, name string, description, color *stri
 		st.OrgIssueTypes[orgLogin] = map[int]*IssueType{}
 	}
 	st.OrgIssueTypes[orgLogin][it.ID] = it
+	st.IssueTypesByID[it.ID] = it
 	if st.persist != nil {
 		st.persist.MustPut("org_issue_types", orgLogin, st.OrgIssueTypes[orgLogin])
 	}
@@ -315,6 +326,7 @@ func (st *Store) DeleteIssueType(orgLogin string, id int) bool {
 		return false
 	}
 	delete(st.OrgIssueTypes[orgLogin], id)
+	delete(st.IssueTypesByID, id)
 	if st.persist != nil {
 		st.persist.MustPut("org_issue_types", orgLogin, st.OrgIssueTypes[orgLogin])
 	}
