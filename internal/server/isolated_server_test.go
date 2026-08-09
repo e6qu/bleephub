@@ -187,6 +187,71 @@ func (s *isolatedServer) createTestUser(t *testing.T, login string) *User {
 // createEnterpriseTestUser mirrors the package helper against this instance's
 // store: it seeds a user + PAT directly (no HTTP) so an enterprise test can
 // provision a non-admin principal on its own server.
+// gqlDo/gqlData mirror the package GraphQL helpers against this instance.
+func (s *isolatedServer) gqlDo(t *testing.T, query string, variables map[string]interface{}) map[string]interface{} {
+	t.Helper()
+	body := map[string]interface{}{"query": query}
+	if variables != nil {
+		body["variables"] = variables
+	}
+	resp := s.post(t, "/api/graphql", defaultToken, body)
+	if resp.StatusCode != http.StatusOK {
+		resp.Body.Close()
+		t.Fatalf("graphql status = %d", resp.StatusCode)
+	}
+	return decodeJSON(t, resp)
+}
+
+func (s *isolatedServer) gqlData(t *testing.T, query string, variables map[string]interface{}) map[string]interface{} {
+	t.Helper()
+	env := s.gqlDo(t, query, variables)
+	if errs, ok := env["errors"]; ok && errs != nil {
+		t.Fatalf("graphql errors: %v", errs)
+	}
+	d, _ := env["data"].(map[string]interface{})
+	if d == nil {
+		t.Fatalf("no data in response: %v", env)
+	}
+	return d
+}
+
+// sweepRepo/sweepPR mirror the package helpers against this instance: create a
+// repo with a seeded feature branch, and open a PR on it.
+func (s *isolatedServer) sweepRepo(t *testing.T, name string) (string, string) {
+	t.Helper()
+	resp := s.post(t, "/api/v3/user/repos", defaultToken, map[string]interface{}{"name": name, "auto_init": true})
+	data := decodeJSON(t, resp)
+	owner, _ := data["owner"].(map[string]interface{})
+	login, _ := owner["login"].(string)
+	repoName, _ := data["name"].(string)
+	if login == "" || repoName == "" {
+		t.Fatalf("repo create failed: %v", data)
+	}
+	repo := s.store.GetRepo(login, repoName)
+	if repo == nil {
+		t.Fatalf("repo %s/%s not found after create", login, repoName)
+	}
+	seedPullRequestBranches(t, s.Server, repo, "feature")
+	return login, repoName
+}
+
+func (s *isolatedServer) sweepPR(t *testing.T, owner, name, title string) (int, int) {
+	t.Helper()
+	resp := s.post(t, "/api/v3/repos/"+owner+"/"+name+"/pulls", defaultToken, map[string]interface{}{
+		"title": title,
+		"head":  "feature",
+		"base":  "main",
+		"body":  "sweep pr body",
+	})
+	data := decodeJSON(t, resp)
+	num, ok := data["number"].(float64)
+	if !ok {
+		t.Fatalf("pr create failed: %v", data)
+	}
+	id, _ := data["id"].(float64)
+	return int(num), int(id)
+}
+
 func (s *isolatedServer) createEnterpriseTestUser(t *testing.T, login string) string {
 	t.Helper()
 	s.store.mu.Lock()

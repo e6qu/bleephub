@@ -12,10 +12,10 @@ import (
 // return everything, so this test also pins the all-in-one-page case.
 
 // seedPRReviews submits n reviews against a PR via REST.
-func seedPRReviews(t *testing.T, owner, name string, prNum, n int) {
+func seedPRReviews(s *isolatedServer, t *testing.T, owner, name string, prNum, n int) {
 	t.Helper()
 	for i := 0; i < n; i++ {
-		resp := ghPost(t, "/api/v3/repos/"+owner+"/"+name+"/pulls/"+itoa(prNum)+"/reviews", defaultToken,
+		resp := s.post(t, "/api/v3/repos/"+owner+"/"+name+"/pulls/"+itoa(prNum)+"/reviews", defaultToken,
 			map[string]interface{}{"body": "review " + itoa(i), "event": "COMMENT"})
 		if resp.StatusCode != 200 {
 			resp.Body.Close()
@@ -28,7 +28,7 @@ func seedPRReviews(t *testing.T, owner, name string, prNum, n int) {
 // queryPRReviews fetches PullRequest.reviews with the given connection-arg
 // fragment (e.g. `first: 2` or `first: 2, after: "<cursor>"`) and returns the
 // reviews connection map.
-func queryPRReviews(t *testing.T, owner, name string, prNum int, connArgs string) map[string]interface{} {
+func queryPRReviews(s *isolatedServer, t *testing.T, owner, name string, prNum int, connArgs string) map[string]interface{} {
 	t.Helper()
 	query := `query PRReviews($owner: String!, $repo: String!, $pr_number: Int!) {
 		repository(owner: $owner, name: $repo) {
@@ -41,7 +41,7 @@ func queryPRReviews(t *testing.T, owner, name string, prNum int, connArgs string
 			}
 		}
 	}`
-	d := gqlData(t, query, map[string]interface{}{"owner": owner, "repo": name, "pr_number": prNum})
+	d := s.gqlData(t, query, map[string]interface{}{"owner": owner, "repo": name, "pr_number": prNum})
 	repo, _ := d["repository"].(map[string]interface{})
 	pr, _ := repo["pullRequest"].(map[string]interface{})
 	if pr == nil {
@@ -55,14 +55,16 @@ func queryPRReviews(t *testing.T, owner, name string, prNum int, connArgs string
 }
 
 func TestPRGraphQL_ReviewsConnectionPagination(t *testing.T) {
-	owner, name := sweepRepo(t, "sweep-reviewpaginate")
-	prNum, _ := sweepPR(t, owner, name, "paginate reviews")
+	t.Parallel()
+	s := newIsolatedServer(t)
+	owner, name := s.sweepRepo(t, "sweep-reviewpaginate")
+	prNum, _ := s.sweepPR(t, owner, name, "paginate reviews")
 
 	const total = 5
-	seedPRReviews(t, owner, name, prNum, total)
+	seedPRReviews(s, t, owner, name, prNum, total)
 
 	// --- Page 1: first:2 returns exactly 2, hasNextPage:true, real endCursor ---
-	page1 := queryPRReviews(t, owner, name, prNum, "first: 2")
+	page1 := queryPRReviews(s, t, owner, name, prNum, "first: 2")
 	nodes1, _ := page1["nodes"].([]interface{})
 	if len(nodes1) != 2 {
 		t.Fatalf("first:2 returned %d nodes, want 2", len(nodes1))
@@ -83,7 +85,7 @@ func TestPRGraphQL_ReviewsConnectionPagination(t *testing.T) {
 	}
 
 	// --- Page 2: after:<endCursor> returns the next slice ---
-	page2 := queryPRReviews(t, owner, name, prNum, `first: 2, after: "`+endCursor1+`"`)
+	page2 := queryPRReviews(s, t, owner, name, prNum, `first: 2, after: "`+endCursor1+`"`)
 	nodes2, _ := page2["nodes"].([]interface{})
 	if len(nodes2) != 2 {
 		t.Fatalf("page2 returned %d nodes, want 2", len(nodes2))
@@ -108,7 +110,7 @@ func TestPRGraphQL_ReviewsConnectionPagination(t *testing.T) {
 
 	// --- Page 3: the final single review ---
 	endCursor2, _ := pi2["endCursor"].(string)
-	page3 := queryPRReviews(t, owner, name, prNum, `first: 2, after: "`+endCursor2+`"`)
+	page3 := queryPRReviews(s, t, owner, name, prNum, `first: 2, after: "`+endCursor2+`"`)
 	nodes3, _ := page3["nodes"].([]interface{})
 	if len(nodes3) != 1 {
 		t.Fatalf("page3 returned %d nodes, want 1", len(nodes3))
@@ -119,7 +121,7 @@ func TestPRGraphQL_ReviewsConnectionPagination(t *testing.T) {
 	}
 
 	// --- first:100 (the runner-cell shape) returns everything, one page ---
-	all := queryPRReviews(t, owner, name, prNum, "first: 100")
+	all := queryPRReviews(s, t, owner, name, prNum, "first: 100")
 	allNodes, _ := all["nodes"].([]interface{})
 	if len(allNodes) != total {
 		t.Fatalf("first:100 returned %d nodes, want %d", len(allNodes), total)
@@ -135,7 +137,7 @@ func TestPRGraphQL_ReviewsConnectionPagination(t *testing.T) {
 
 // queryIssueComments fetches Issue.comments with the given connection-arg
 // fragment and returns the comments connection map.
-func queryIssueComments(t *testing.T, owner, name string, issueNum int, connArgs string) map[string]interface{} {
+func queryIssueComments(s *isolatedServer, t *testing.T, owner, name string, issueNum int, connArgs string) map[string]interface{} {
 	t.Helper()
 	query := `query IssueComments($owner: String!, $repo: String!, $n: Int!) {
 		repository(owner: $owner, name: $repo) {
@@ -148,7 +150,7 @@ func queryIssueComments(t *testing.T, owner, name string, issueNum int, connArgs
 			}
 		}
 	}`
-	d := gqlData(t, query, map[string]interface{}{"owner": owner, "repo": name, "n": issueNum})
+	d := s.gqlData(t, query, map[string]interface{}{"owner": owner, "repo": name, "n": issueNum})
 	repo, _ := d["repository"].(map[string]interface{})
 	issue, _ := repo["issue"].(map[string]interface{})
 	if issue == nil {
@@ -162,10 +164,12 @@ func queryIssueComments(t *testing.T, owner, name string, issueNum int, connArgs
 }
 
 func TestIssueGraphQL_CommentsConnectionPagination(t *testing.T) {
-	owner, name := sweepRepo(t, "sweep-commentpaginate")
+	t.Parallel()
+	s := newIsolatedServer(t)
+	owner, name := s.sweepRepo(t, "sweep-commentpaginate")
 
 	// Create an issue via REST.
-	resp := ghPost(t, "/api/v3/repos/"+owner+"/"+name+"/issues", defaultToken,
+	resp := s.post(t, "/api/v3/repos/"+owner+"/"+name+"/issues", defaultToken,
 		map[string]interface{}{"title": "paginate comments"})
 	issueData := decodeJSON(t, resp)
 	numF, ok := issueData["number"].(float64)
@@ -176,7 +180,7 @@ func TestIssueGraphQL_CommentsConnectionPagination(t *testing.T) {
 
 	const total = 5
 	for i := 0; i < total; i++ {
-		r := ghPost(t, "/api/v3/repos/"+owner+"/"+name+"/issues/"+itoa(issueNum)+"/comments", defaultToken,
+		r := s.post(t, "/api/v3/repos/"+owner+"/"+name+"/issues/"+itoa(issueNum)+"/comments", defaultToken,
 			map[string]interface{}{"body": "comment " + itoa(i)})
 		if r.StatusCode != 201 && r.StatusCode != 200 {
 			r.Body.Close()
@@ -186,7 +190,7 @@ func TestIssueGraphQL_CommentsConnectionPagination(t *testing.T) {
 	}
 
 	// Page 1: first:2 → 2 nodes, hasNextPage:true, real endCursor.
-	page1 := queryIssueComments(t, owner, name, issueNum, "first: 2")
+	page1 := queryIssueComments(s, t, owner, name, issueNum, "first: 2")
 	if n, _ := page1["nodes"].([]interface{}); len(n) != 2 {
 		t.Fatalf("first:2 returned %d comments, want 2", len(n))
 	}
@@ -201,7 +205,7 @@ func TestIssueGraphQL_CommentsConnectionPagination(t *testing.T) {
 
 	// Page 2: after:<cursor> → next 2, disjoint from page 1.
 	page1Nodes, _ := page1["nodes"].([]interface{})
-	page2 := queryIssueComments(t, owner, name, issueNum, `first: 2, after: "`+endCursor+`"`)
+	page2 := queryIssueComments(s, t, owner, name, issueNum, `first: 2, after: "`+endCursor+`"`)
 	page2Nodes, _ := page2["nodes"].([]interface{})
 	if len(page2Nodes) != 2 {
 		t.Fatalf("page2 returned %d comments, want 2", len(page2Nodes))
@@ -217,7 +221,7 @@ func TestIssueGraphQL_CommentsConnectionPagination(t *testing.T) {
 	}
 
 	// first:100 (runner-cell shape) returns everything in one page.
-	all := queryIssueComments(t, owner, name, issueNum, "first: 100")
+	all := queryIssueComments(s, t, owner, name, issueNum, "first: 100")
 	if n, _ := all["nodes"].([]interface{}); len(n) != total {
 		t.Fatalf("first:100 returned %d comments, want %d", len(n), total)
 	}
