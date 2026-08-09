@@ -296,7 +296,12 @@ func TestMain(m *testing.M) {
 	// green ratchet meaningless, so fail loudly instead. Only on a full run: a
 	// `-run <subset>` (or the `-run ^$` fuzz pass) legitimately observes few.
 	if isFullTestRun() {
-		if validated, _ := apiShapeValidator.coverage(); validated < minShapeCoverage {
+		validated, exchanges := apiShapeValidator.coverage()
+		// Always report the count so a near-floor result is diagnosable from any
+		// run's log (a floor breach is otherwise the only time the number is
+		// visible, which makes an intermittent dip look like a mystery).
+		fmt.Fprintf(os.Stderr, "openapi-shape coverage: %d/%d /api/v3 responses validated (floor %d)\n", validated, exchanges, minShapeCoverage)
+		if validated < minShapeCoverage {
 			fmt.Fprintf(os.Stderr, "openapi-shape coverage floor: only %d /api/v3 response(s) validated against the OpenAPI description (floor %d) — the parity gate has gone vacuous\n", validated, minShapeCoverage)
 			if code == 0 {
 				code = 1

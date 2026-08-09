@@ -738,12 +738,18 @@ func readViolationAllowlist(path string) (map[string]bool, error) {
 	return allowed, nil
 }
 
-// minShapeCoverage is the coverage floor the full suite must clear (PAR-011). A
-// full run currently validates ~26k responses; the floor sits far below that so
-// ordinary suite churn — including tests migrating to isolated servers that do
-// not feed the observer (TEST-008) — never trips it, while a true collapse
-// (observer unwired) drops orders of magnitude and is caught.
-const minShapeCoverage = 5000
+// minShapeCoverage is the coverage floor the full suite must clear (PAR-011).
+// The shared observer now validates ~5k /api/v3 responses on a full run — far
+// fewer than the ~26k when this gate was added, because TEST-008 has steadily
+// migrated tests to isolated servers that do not feed the shared observer. That
+// pulled the count down onto the old 5000 floor, so an ordinary -race + MinIO
+// full run (seen as low as 4879 while a green run sits just above 5000) began
+// to false-fail on normal variance. The floor is set below that observed
+// operating range, with margin, so the intermittent near-floor dip is tolerated
+// while a genuine collapse (observer unwired → orders of magnitude lower) is
+// still caught. TestMain logs the actual count each full run so the trend stays
+// visible; raise this back up if isolated servers are ever wired to the observer.
+const minShapeCoverage = 4000
 
 // isFullTestRun reports whether every test ran, so the coverage floor applies.
 // A `-run <subset>` filter (or the `-run ^$` fuzz pass) legitimately observes
