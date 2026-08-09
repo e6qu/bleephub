@@ -926,6 +926,23 @@ func (s *Server) handleGetTag(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, gitTagToJSON(s.baseURL(r), owner+"/"+repoName, sha, tag))
 }
 
+// buildRefLifecyclePayload assembles the shared body of GitHub's `create` and
+// `delete` webhook events so `on: create` / `on: delete` workflows fire for
+// branch and tag creation/deletion (ACT-026).
+func buildRefLifecyclePayload(repo *Repo, fullRef plumbing.ReferenceName, sender *User) map[string]interface{} {
+	refType := "tag"
+	if fullRef.IsBranch() {
+		refType = "branch"
+	}
+	return map[string]interface{}{
+		"ref":         fullRef.Short(),
+		"ref_type":    refType,
+		"pusher_type": "user",
+		"repository":  repoPayload(repo),
+		"sender":      userToJSON(sender),
+	}
+}
+
 func (s *Server) handleCreateRef(w http.ResponseWriter, r *http.Request) {
 	_, _, repo, stor := s.gitDataContext(w, r)
 	if repo == nil {
@@ -982,6 +999,12 @@ func (s *Server) handleCreateRef(w http.ResponseWriter, r *http.Request) {
 	if fullRef.IsBranch() {
 		s.afterCommittedRefUpdate(repo, ghUserFromContext(r.Context()), fullRef.String(), plumbing.ZeroHash.String(), target.String(), s.baseURL(r))
 	}
+	// The `create` event fires for a newly-created branch or tag (distinct from
+	// the `push` above, which afterCommittedRefUpdate emits for branches).
+	createPayload := buildRefLifecyclePayload(repo, fullRef, ghUserFromContext(r.Context()))
+	createPayload["master_branch"] = repo.DefaultBranch
+	createPayload["description"] = repo.Description
+	s.emitWebhookEvent(repo.FullName, "create", "", createPayload)
 	ref, _ := stor.Reference(fullRef)
 	refJSON := refToJSON(stor, s.baseURL(r), repo.FullName, ref)
 	writeJSONCreated(w, jsonStringField(refJSON, "url"), refJSON)

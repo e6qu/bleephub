@@ -812,6 +812,56 @@ func TestWebhookMilestoneEvent(t *testing.T) {
 	}
 }
 
+func TestWebhookCreateDeleteRefEvent(t *testing.T) {
+	var mu sync.Mutex
+	events := map[string]bool{}
+	url, cleanup := startWebhookReceiver(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if ev := r.Header.Get("X-GitHub-Event"); ev == "create" || ev == "delete" {
+			mu.Lock()
+			events[ev] = true
+			mu.Unlock()
+		}
+		w.WriteHeader(200)
+	}))
+	defer cleanup()
+
+	repoPath := "/api/v3/repos/admin/wh-refs"
+	ghPost(t, "/api/v3/user/repos", defaultToken, map[string]interface{}{"name": "wh-refs", "auto_init": true}).Body.Close()
+	ghPost(t, repoPath+"/hooks", defaultToken, map[string]interface{}{
+		"config": map[string]interface{}{"url": url},
+		"events": []string{"create", "delete"},
+		"active": true,
+	}).Body.Close()
+
+	refData := decodeJSON(t, ghGet(t, repoPath+"/git/refs/heads/main", defaultToken))
+	mainObj, _ := refData["object"].(map[string]interface{})
+	mainSha, _ := mainObj["sha"].(string)
+	if mainSha == "" {
+		t.Fatalf("main ref sha missing: %v", refData)
+	}
+
+	created := ghPost(t, repoPath+"/git/refs", defaultToken, map[string]interface{}{
+		"ref": "refs/heads/wh-feature", "sha": mainSha,
+	})
+	if created.StatusCode != http.StatusCreated {
+		created.Body.Close()
+		t.Fatalf("create ref status = %d", created.StatusCode)
+	}
+	created.Body.Close()
+	ghDelete(t, repoPath+"/git/refs/heads/wh-feature", defaultToken).Body.Close()
+
+	if !testEventually(5*time.Second, 10*time.Millisecond, func() bool {
+		mu.Lock()
+		defer mu.Unlock()
+		return events["create"] && events["delete"]
+	}) {
+		mu.Lock()
+		got := fmt.Sprint(events)
+		mu.Unlock()
+		t.Fatalf("branch create/delete did not deliver create+delete webhooks; got %s", got)
+	}
+}
+
 func TestWebhookPing(t *testing.T) {
 	var received atomic.Int32
 	var mu sync.Mutex
