@@ -287,12 +287,23 @@ function IssueDetail({ owner, repo, number }: { owner: string; repo: string; num
   const viewerLogin = typeof viewerQ.data?.login === "string" ? viewerQ.data.login : null;
 
   const qc = useQueryClient();
+  const invalidateIssue = () => {
+    qc.invalidateQueries({ queryKey: ["issue", owner, repo, number] });
+    qc.invalidateQueries({ queryKey: ["issues", owner, repo] });
+  };
   const stateMut = useMutation({
     mutationFn: () =>
       updateIssue(owner, repo, number, { state: issue?.state === "open" ? "closed" : "open" }),
+    onSuccess: invalidateIssue,
+  });
+  const [editing, setEditing] = useState(false);
+  const [editTitle, setEditTitle] = useState("");
+  const [editBody, setEditBody] = useState("");
+  const editMut = useMutation({
+    mutationFn: () => updateIssue(owner, repo, number, { title: editTitle, body: editBody }),
     onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ["issue", owner, repo, number] });
-      qc.invalidateQueries({ queryKey: ["issues", owner, repo] });
+      invalidateIssue();
+      setEditing(false);
     },
   });
 
@@ -332,7 +343,53 @@ function IssueDetail({ owner, repo, number }: { owner: string; repo: string; num
           {issue.title}{" "}
           <span style={{ color: "var(--color-fg-muted)" }}>#{issue.number}</span>
         </h1>
+        <Button
+          size="sm"
+          onClick={() => {
+            setEditTitle(issue.title);
+            setEditBody(issue.body ?? "");
+            setEditing(true);
+          }}
+        >
+          Edit
+        </Button>
       </div>
+
+      {editing && (
+        <Modal title="Edit issue" onClose={() => setEditing(false)}>
+          <FormLabel id="edit-issue-title">Title</FormLabel>
+          <input
+            id="edit-issue-title"
+            autoFocus
+            value={editTitle}
+            onChange={(e) => setEditTitle(e.target.value)}
+            className="mb-3 w-full"
+          />
+          <FormLabel id="edit-issue-body">Description</FormLabel>
+          <textarea
+            id="edit-issue-body"
+            value={editBody}
+            onChange={(e) => setEditBody(e.target.value)}
+            rows={6}
+            className="mb-4 w-full"
+            style={{ resize: "vertical" }}
+          />
+          <MutationError of={editMut} />
+          <DialogActions>
+            <Button variant="ghost" size="sm" onClick={() => setEditing(false)}>
+              Cancel
+            </Button>
+            <Button
+              variant="primary"
+              size="sm"
+              disabled={!editTitle.trim() || editMut.isPending}
+              onClick={() => editMut.mutate()}
+            >
+              {editMut.isPending ? "Saving…" : "Save"}
+            </Button>
+          </DialogActions>
+        </Modal>
+      )}
       <div
         className="mb-4 flex flex-wrap items-center gap-3 border-b pb-3"
         style={{ borderColor: "var(--color-border)" }}

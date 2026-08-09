@@ -152,6 +152,36 @@ describe("IssuesPage detail", () => {
       expect(JSON.parse((patched![1] as RequestInit).body as string)).toEqual({ state: "closed" });
     });
   });
+
+  it("edits the issue title and body", async () => {
+    mockFetch.mockImplementation((url: RequestInfo | URL, init?: RequestInit) => {
+      const u = url.toString();
+      if (u.endsWith("/issues/7") && init?.method === "PATCH") {
+        return Promise.resolve(jsonResponse({ ...issue(7, "Renamed"), body: "New body" }));
+      }
+      if (u.includes("/issues/7/comments")) return Promise.resolve(jsonResponse([]));
+      if (u.includes("/issues/7/reactions")) return Promise.resolve(jsonResponse([]));
+      if (u.endsWith("/api/v3/user")) return Promise.resolve(jsonResponse({ login: "admin" }));
+      if (u.includes("/issues/7")) return Promise.resolve(jsonResponse(issue(7, "A real issue")));
+      return Promise.resolve(jsonResponse([]));
+    });
+    renderAt("/ui/repos/admin/test/issues/7");
+    fireEvent.click(await screen.findByRole("button", { name: /^edit$/i }));
+    const title = await screen.findByLabelText(/title/i);
+    fireEvent.change(title, { target: { value: "Renamed" } });
+    fireEvent.change(screen.getByLabelText(/description/i), { target: { value: "New body" } });
+    fireEvent.click(screen.getByRole("button", { name: /^save$/i }));
+    await waitFor(() => {
+      const patched = mockFetch.mock.calls.find(
+        (c) => c[0].toString().endsWith("/issues/7") && c[1]?.method === "PATCH",
+      );
+      expect(patched).toBeTruthy();
+      expect(JSON.parse((patched![1] as RequestInit).body as string)).toEqual({
+        title: "Renamed",
+        body: "New body",
+      });
+    });
+  });
 });
 
 describe("IssuesPage list pagination", () => {
