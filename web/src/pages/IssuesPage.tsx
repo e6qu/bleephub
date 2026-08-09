@@ -27,6 +27,7 @@ import {
 import { useOpenCounts } from "../hooks/useOpenCounts.js";
 import type { GithubIssue, GithubLabel, GithubMilestone, ListFilterState } from "../types.js";
 import { CommentCard, CommentList } from "../components/CommentCard.js";
+import { CommentComposer } from "../components/CommentComposer.js";
 import { LabelPills } from "../components/LabelPills.js";
 import { StateToggle } from "../components/StateToggle.js";
 import { RepoHeader } from "../components/Shell.js";
@@ -362,6 +363,15 @@ function IssueDetail({ owner, repo, number }: { owner: string; repo: string; num
               )}
             </>
           )}
+          <CommentComposer
+            owner={owner}
+            repo={repo}
+            number={number}
+            invalidateKeys={[
+              ["issue-comments", owner, repo, number],
+              ["issue", owner, repo, number],
+            ]}
+          />
         </div>
         <div style={{ width: "100%", maxWidth: "16rem", flexShrink: 0 }}>
           <IssueSidebar

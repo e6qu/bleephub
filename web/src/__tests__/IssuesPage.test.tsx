@@ -98,6 +98,36 @@ describe("IssuesPage detail", () => {
       expect(screen.getByText("A real issue")).toBeInTheDocument();
     });
   });
+
+  it("posts a comment through the composer", async () => {
+    mockFetch.mockImplementation((url: RequestInfo | URL, init?: RequestInit) => {
+      const u = url.toString();
+      if (u.endsWith("/issues/7/comments") && init?.method === "POST") {
+        return Promise.resolve(
+          jsonResponse(
+            { id: 1, body: "looks good", user: { login: "admin" }, created_at: "2026-01-02T00:00:00Z" },
+            201,
+          ),
+        );
+      }
+      if (u.includes("/issues/7/comments")) return Promise.resolve(jsonResponse([]));
+      if (u.includes("/issues/7/reactions")) return Promise.resolve(jsonResponse([]));
+      if (u.endsWith("/api/v3/user")) return Promise.resolve(jsonResponse({ login: "admin" }));
+      if (u.includes("/issues/7")) return Promise.resolve(jsonResponse(issue(7, "A real issue")));
+      return Promise.resolve(jsonResponse([]));
+    });
+    renderAt("/ui/repos/admin/test/issues/7");
+    const box = await screen.findByPlaceholderText(/leave a comment/i);
+    fireEvent.change(box, { target: { value: "looks good" } });
+    fireEvent.click(screen.getByRole("button", { name: /^comment$/i }));
+    await waitFor(() => {
+      const posted = mockFetch.mock.calls.find(
+        (c) => c[0].toString().endsWith("/issues/7/comments") && c[1]?.method === "POST",
+      );
+      expect(posted).toBeTruthy();
+      expect(JSON.parse((posted![1] as RequestInit).body as string)).toEqual({ body: "looks good" });
+    });
+  });
 });
 
 describe("IssuesPage list pagination", () => {

@@ -1411,6 +1411,16 @@ export const fetchIssueComments = (owner: string, repo: string, number: number) 
     `/api/v3/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/issues/${number}/comments`
   );
 
+/**
+ * Post a comment on an issue or pull request. GitHub models a PR's conversation
+ * on the shared issue-comments endpoint, so this serves both surfaces.
+ */
+export const createIssueComment = (owner: string, repo: string, number: number, body: string) =>
+  ghPostJSON<GithubComment>(
+    `/api/v3/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/issues/${number}/comments`,
+    { body },
+  );
+
 /** First page by (owner, repo, state); follow-up pages by the Link rel="next" URL. */
 export const fetchRepoPRsPage = (
   owner: string,
