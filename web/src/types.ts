@@ -633,11 +633,9 @@ export interface GithubCheckRun {
 }
 
 /** Actions secrets public key — GET {scope}/secrets/public-key. */
-export interface GithubPublicKey {
-  key_id: string;
-  /** base64-encoded 32-byte X25519 public key for sealed-box encryption. */
-  key: string;
-}
+// Generated from the vendored GitHub OpenAPI description (WEB-013). `key` is a
+// base64-encoded 32-byte X25519 public key for sealed-box encryption.
+export type GithubPublicKey = components["schemas"]["actions-public-key"];
 
 export type GithubOrgVisibility = "all" | "private" | "selected";
 
@@ -811,15 +809,8 @@ export interface GithubTeamRepo {
   role_name?: string;
 }
 
-export interface GithubDeployKey {
-  id: number;
-  key: string;
-  title: string;
-  url: string;
-  verified: boolean;
-  created_at: string;
-  read_only: boolean;
-}
+// Generated from the vendored GitHub OpenAPI description (WEB-013).
+export type GithubDeployKey = components["schemas"]["deploy-key"];
 
 export interface BleephubAuditEvent {
   id: number;
@@ -880,14 +871,8 @@ export interface GithubNotificationThread {
   url: string;
 }
 
-export interface GithubThreadSubscription {
-  subscribed: boolean;
-  ignored: boolean;
-  reason: string;
-  created_at: string;
-  url: string;
-  thread_url: string;
-}
+// Generated from the vendored GitHub OpenAPI description (WEB-013).
+export type GithubThreadSubscription = components["schemas"]["thread-subscription"];
 
 // ─── GitHub Discussions GraphQL shapes ──────────────────────────────────
 
@@ -2108,12 +2093,8 @@ export interface GithubGPGKey {
 }
 
 /** SSH signing key on the authenticated user's account. */
-export interface GithubSSHSigningKey {
-  id: number;
-  key: string;
-  title: string;
-  created_at: string;
-}
+// Generated from the vendored GitHub OpenAPI description (WEB-013).
+export type GithubSSHSigningKey = components["schemas"]["ssh-signing-key"];
 
 /** Entry in GET /user/blocks. */
 export interface GithubBlockedUser {
