@@ -1392,8 +1392,20 @@ func (s *Server) runPagesBuild(ctx context.Context, repo *Repo, pusher *PagesPus
 		s.store.Misc.persist.MustPut("pages_builds", repo.FullName, s.store.Misc.pagesBuilds[repo.FullName])
 		s.store.Misc.persist.MustPut("pages_sites", strconv.Itoa(repo.ID), pages)
 	}
+	buildStatus, buildCommit, buildDuration := build.Status, build.Commit, build.Duration
 	s.store.Misc.mu.Unlock()
 	s.recordAuditEvent("pages.build", actor, "", map[string]interface{}{"repo": repo.FullName, "build_id": buildID})
+	// `page_build` fires when a Pages build finishes, so `on: page_build`
+	// workflows run (ACT-026). Fields are snapshotted under the lock above.
+	s.emitWebhookEvent(repo.FullName, "page_build", "", map[string]interface{}{
+		"build": map[string]interface{}{
+			"status":   buildStatus,
+			"commit":   buildCommit,
+			"duration": buildDuration,
+		},
+		"repository": repoPayload(repo),
+		"sender":     userToJSON(s.store.LookupUserByLogin(actor)),
+	})
 	return build, true
 }
 

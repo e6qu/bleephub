@@ -715,6 +715,13 @@ func (s *Server) addDiscussionFieldsToSchema(userType, repoType, mutationType *g
 				return nil, fmt.Errorf("title is required")
 			}
 			d := s.store.CreateDiscussion(repo.ID, cat.ID, user.ID, title, body)
+			// `discussion` (created) fires so `on: discussion` workflows run (ACT-026).
+			s.emitWebhookEvent(repo.FullName, "discussion", "created", map[string]interface{}{
+				"action":     "created",
+				"discussion": map[string]interface{}{"number": d.Number, "title": d.Title, "body": d.Body},
+				"repository": repoPayload(repo),
+				"sender":     userToJSON(user),
+			})
 			return map[string]interface{}{
 				"discussion":       discussionToGQL(d, s.store),
 				"clientMutationId": input["clientMutationId"],
@@ -798,6 +805,17 @@ func (s *Server) addDiscussionFieldsToSchema(userType, repoType, mutationType *g
 				}
 			}
 			c := s.store.CreateDiscussionComment(d.ID, user.ID, body, parentID)
+			// `discussion_comment` (created) fires so `on: discussion_comment`
+			// workflows run (ACT-026).
+			if repo := s.store.GetRepoByID(d.RepoID); repo != nil {
+				s.emitWebhookEvent(repo.FullName, "discussion_comment", "created", map[string]interface{}{
+					"action":     "created",
+					"comment":    map[string]interface{}{"id": c.ID, "body": c.Body},
+					"discussion": map[string]interface{}{"number": d.Number, "title": d.Title},
+					"repository": repoPayload(repo),
+					"sender":     userToJSON(user),
+				})
+			}
 			return map[string]interface{}{
 				"comment":          discussionCommentToGQL(c, s.store),
 				"clientMutationId": input["clientMutationId"],

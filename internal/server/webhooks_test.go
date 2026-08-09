@@ -1083,6 +1083,151 @@ func TestWebhookBranchProtectionRuleEvent(t *testing.T) {
 	}
 }
 
+func TestWebhookMemberEvent(t *testing.T) {
+	var mu sync.Mutex
+	added := false
+	url, cleanup := startWebhookReceiver(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Header.Get("X-GitHub-Event") == "member" {
+			b, _ := io.ReadAll(r.Body)
+			if webhookEventJSON(t, r.Header.Get("Content-Type"), b)["action"] == "added" {
+				mu.Lock()
+				added = true
+				mu.Unlock()
+			}
+		}
+		w.WriteHeader(200)
+	}))
+	defer cleanup()
+
+	createWebhookTestRepo(t, "wh-member")
+	ghPost(t, "/api/v3/repos/admin/wh-member/hooks", defaultToken, map[string]interface{}{
+		"config": map[string]interface{}{"url": url},
+		"events": []string{"member"},
+		"active": true,
+	}).Body.Close()
+
+	_, collabToken := newSharedServerUser(t, "wh-member-collab")
+	inv := ghPut(t, "/api/v3/repos/admin/wh-member/collaborators/wh-member-collab", defaultToken, map[string]interface{}{"permission": "push"})
+	if inv.StatusCode != http.StatusCreated {
+		inv.Body.Close()
+		t.Fatalf("invite status = %d, want 201", inv.StatusCode)
+	}
+	inv.Body.Close()
+
+	list := decodeJSONArray(t, ghGet(t, "/api/v3/user/repository_invitations", collabToken))
+	if len(list) == 0 {
+		t.Fatal("no pending invitations for the collaborator")
+	}
+	invID := int(list[0]["id"].(float64))
+	acc := ghPatch(t, fmt.Sprintf("/api/v3/user/repository_invitations/%d", invID), collabToken, nil)
+	if acc.StatusCode != http.StatusNoContent {
+		acc.Body.Close()
+		t.Fatalf("accept status = %d, want 204", acc.StatusCode)
+	}
+	acc.Body.Close()
+
+	if !testEventually(5*time.Second, 10*time.Millisecond, func() bool {
+		mu.Lock()
+		defer mu.Unlock()
+		return added
+	}) {
+		t.Fatal("accepting an invitation did not deliver a member/added webhook")
+	}
+}
+
+func TestWebhookDiscussionEvents(t *testing.T) {
+	var mu sync.Mutex
+	got := map[string]bool{}
+	url, cleanup := startWebhookReceiver(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if ev := r.Header.Get("X-GitHub-Event"); ev == "discussion" || ev == "discussion_comment" {
+			mu.Lock()
+			got[ev] = true
+			mu.Unlock()
+		}
+		w.WriteHeader(200)
+	}))
+	defer cleanup()
+
+	repoData := decodeJSON(t, ghPost(t, "/api/v3/user/repos", defaultToken, map[string]interface{}{"name": "discussions-wh"}))
+	login := repoData["owner"].(map[string]interface{})["login"].(string)
+	name := repoData["name"].(string)
+	repoNodeID := repoData["node_id"].(string)
+	ghPost(t, "/api/v3/repos/"+login+"/"+name+"/hooks", defaultToken, map[string]interface{}{
+		"config": map[string]interface{}{"url": url},
+		"events": []string{"discussion", "discussion_comment"},
+		"active": true,
+	}).Body.Close()
+
+	cats := runDiscussionGQL(t, `query($owner:String!,$name:String!){repository(owner:$owner,name:$name){discussionCategories(first:10){nodes{id,name}}}}`,
+		map[string]interface{}{"owner": login, "name": name})
+	var catID string
+	for _, n := range cats["repository"].(map[string]interface{})["discussionCategories"].(map[string]interface{})["nodes"].([]interface{}) {
+		c := n.(map[string]interface{})
+		if c["name"] == "Q&A" {
+			catID = c["id"].(string)
+		}
+	}
+	if catID == "" {
+		t.Fatal("no Q&A category")
+	}
+
+	created := runDiscussionGQL(t, `mutation($repo:ID!,$cat:ID!){createDiscussion(input:{repositoryId:$repo,categoryId:$cat,title:"Hi",body:"B"}){discussion{id}}}`,
+		map[string]interface{}{"repo": repoNodeID, "cat": catID})
+	discID := created["createDiscussion"].(map[string]interface{})["discussion"].(map[string]interface{})["id"].(string)
+	runDiscussionGQL(t, `mutation($d:ID!){addDiscussionComment(input:{discussionId:$d,body:"C"}){comment{id}}}`,
+		map[string]interface{}{"d": discID})
+
+	if !testEventually(5*time.Second, 10*time.Millisecond, func() bool {
+		mu.Lock()
+		defer mu.Unlock()
+		return got["discussion"] && got["discussion_comment"]
+	}) {
+		mu.Lock()
+		g := fmt.Sprint(got)
+		mu.Unlock()
+		t.Fatalf("discussion/discussion_comment webhooks not delivered; got %s", g)
+	}
+}
+
+func TestWebhookPageBuildEvent(t *testing.T) {
+	var mu sync.Mutex
+	got := false
+	url, cleanup := startWebhookReceiver(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Header.Get("X-GitHub-Event") == "page_build" {
+			mu.Lock()
+			got = true
+			mu.Unlock()
+		}
+		w.WriteHeader(200)
+	}))
+	defer cleanup()
+
+	repoPath := "/api/v3/repos/admin/wh-pagebuild"
+	ghPost(t, "/api/v3/user/repos", defaultToken, map[string]interface{}{"name": "wh-pagebuild", "auto_init": true}).Body.Close()
+	ghPost(t, repoPath+"/hooks", defaultToken, map[string]interface{}{
+		"config": map[string]interface{}{"url": url},
+		"events": []string{"page_build"},
+		"active": true,
+	}).Body.Close()
+	requireStatus(t, ghPost(t, repoPath+"/pages", defaultToken, map[string]interface{}{
+		"source": map[string]interface{}{"branch": "main", "path": "/"},
+	}), 201)
+	build := ghPost(t, repoPath+"/pages/builds", defaultToken, nil)
+	if build.StatusCode != http.StatusCreated {
+		build.Body.Close()
+		t.Fatalf("trigger pages build status = %d, want 201", build.StatusCode)
+	}
+	build.Body.Close()
+
+	if !testEventually(10*time.Second, 20*time.Millisecond, func() bool {
+		mu.Lock()
+		defer mu.Unlock()
+		return got
+	}) {
+		t.Fatal("a Pages build did not deliver a page_build webhook")
+	}
+}
+
 func TestWebhookPing(t *testing.T) {
 	var received atomic.Int32
 	var mu sync.Mutex
