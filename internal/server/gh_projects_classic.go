@@ -155,6 +155,13 @@ func (s *Server) handleCreateProjectClassic(w http.ResponseWriter, r *http.Reque
 	proj := s.store.CreateProjectClassic(repo, user.ID, body.Name, body.Body, body.State)
 	s.recordAuditEvent("project.create", user.Login, "", map[string]interface{}{"repo": repo.FullName, "project_id": proj.ID})
 	projJSON := projectClassicToJSON(proj, s.store, s.baseURL(r), repo.FullName)
+	// `project` (created) fires so `on: project` workflows run (ACT-026).
+	s.emitWebhookEvent(repo.FullName, "project", "created", map[string]interface{}{
+		"action":     "created",
+		"project":    projJSON,
+		"repository": repoPayload(repo),
+		"sender":     userToJSON(user),
+	})
 	writeJSONCreated(w, jsonStringField(projJSON, "url"), projJSON)
 }
 

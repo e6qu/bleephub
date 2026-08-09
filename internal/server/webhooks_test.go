@@ -995,6 +995,45 @@ func TestWebhookPublicEvent(t *testing.T) {
 	}
 }
 
+func TestWebhookProjectEvent(t *testing.T) {
+	var mu sync.Mutex
+	created := false
+	url, cleanup := startWebhookReceiver(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Header.Get("X-GitHub-Event") == "project" {
+			b, _ := io.ReadAll(r.Body)
+			if webhookEventJSON(t, r.Header.Get("Content-Type"), b)["action"] == "created" {
+				mu.Lock()
+				created = true
+				mu.Unlock()
+			}
+		}
+		w.WriteHeader(200)
+	}))
+	defer cleanup()
+
+	createWebhookTestRepo(t, "wh-project")
+	ghPost(t, "/api/v3/repos/admin/wh-project/hooks", defaultToken, map[string]interface{}{
+		"config": map[string]interface{}{"url": url},
+		"events": []string{"project"},
+		"active": true,
+	}).Body.Close()
+
+	proj := ghPost(t, "/api/v3/repos/admin/wh-project/projects", defaultToken, map[string]interface{}{"name": "Roadmap"})
+	if proj.StatusCode != http.StatusCreated {
+		proj.Body.Close()
+		t.Fatalf("create project status = %d", proj.StatusCode)
+	}
+	proj.Body.Close()
+
+	if !testEventually(5*time.Second, 10*time.Millisecond, func() bool {
+		mu.Lock()
+		defer mu.Unlock()
+		return created
+	}) {
+		t.Fatal("creating a classic project did not deliver a project/created webhook")
+	}
+}
+
 func TestWebhookPing(t *testing.T) {
 	var received atomic.Int32
 	var mu sync.Mutex
