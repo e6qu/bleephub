@@ -542,6 +542,21 @@ func (s *isolatedServer) createRepoWriteRepo(t *testing.T, autoInit bool) string
 	return name
 }
 
+// gqlAuthzPost mirrors the package helper (still used by graphql_authz_test.go):
+// a GraphQL POST expecting 200, on this isolated server.
+func (s *isolatedServer) gqlAuthzPost(t *testing.T, token, query string, variables map[string]interface{}) map[string]interface{} {
+	t.Helper()
+	resp := s.post(t, "/api/graphql", token, map[string]interface{}{
+		"query":     query,
+		"variables": variables,
+	})
+	if resp.StatusCode != http.StatusOK {
+		resp.Body.Close()
+		t.Fatalf("graphql status = %d", resp.StatusCode)
+	}
+	return decodeJSON(t, resp)
+}
+
 // seedSecretAlert mirrors the package helper (still used by
 // gh_search_notifications_rulesets_live_test.go): commits a file containing a
 // detectable secret and returns the resulting alert, on this isolated server.
