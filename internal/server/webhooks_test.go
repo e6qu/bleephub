@@ -18,6 +18,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/e6qu/bleephub/internal/server/testutil"
 	memfs "github.com/go-git/go-billy/v5/memfs"
 	git "github.com/go-git/go-git/v5"
 	"github.com/go-git/go-git/v5/config"
@@ -36,7 +37,7 @@ func (s *isolatedServer) createWebhookTestRepo(t *testing.T, name string) {
 
 func waitForWebhookCount(t *testing.T, received *atomic.Int32, want int32) {
 	t.Helper()
-	if !testEventually(5*time.Second, 10*time.Millisecond, func() bool {
+	if !testutil.TestEventually(5*time.Second, 10*time.Millisecond, func() bool {
 		return received.Load() >= want
 	}) {
 		t.Fatalf("webhook deliveries = %d, want at least %d", received.Load(), want)
@@ -368,7 +369,7 @@ func TestWebhookDeliveryRetry(t *testing.T) {
 	resp2.Body.Close()
 
 	// Wait for retries (1s + 5s backoff = ~6s, use generous timeout)
-	if !testEventually(15*time.Second, 200*time.Millisecond, func() bool { return attempts.Load() >= 3 }) {
+	if !testutil.TestEventually(15*time.Second, 200*time.Millisecond, func() bool { return attempts.Load() >= 3 }) {
 		t.Fatalf("expected at least 3 delivery attempts, got %d", attempts.Load())
 	}
 }
@@ -426,7 +427,7 @@ func TestWebhookPushEvent(t *testing.T) {
 	// Push via git (use go-git)
 	s.pushTestCommit(t, "admin", "wh-push")
 
-	if !testEventually(5*time.Second, 10*time.Millisecond, func() bool {
+	if !testutil.TestEventually(5*time.Second, 10*time.Millisecond, func() bool {
 		mu.Lock()
 		defer mu.Unlock()
 		return lastEvent == "push" && lastPayload["ref"] != nil
@@ -492,7 +493,7 @@ func TestWebhookReleaseLifecycleActions(t *testing.T) {
 	deleted := ghDelete(t, "/api/v3/repos/admin/"+repo+"/releases/"+itoa(releaseID), defaultToken)
 	deleted.Body.Close()
 
-	testEventually(5*time.Second, 20*time.Millisecond, func() bool {
+	testutil.TestEventually(5*time.Second, 20*time.Millisecond, func() bool {
 		mu.Lock()
 		count := len(actions)
 		mu.Unlock()
@@ -718,7 +719,7 @@ func TestWebhookIssuesEventFromGraphQL(t *testing.T) {
 	})
 	closeResp.Body.Close()
 
-	if !testEventually(5*time.Second, 10*time.Millisecond, func() bool {
+	if !testutil.TestEventually(5*time.Second, 10*time.Millisecond, func() bool {
 		mu.Lock()
 		defer mu.Unlock()
 		return actions["opened"] && actions["closed"]
@@ -770,7 +771,7 @@ func TestWebhookLabelEvent(t *testing.T) {
 	del := s.delete(t, "/api/v3/repos/admin/wh-label/labels/triage", defaultToken)
 	del.Body.Close()
 
-	if !testEventually(5*time.Second, 10*time.Millisecond, func() bool {
+	if !testutil.TestEventually(5*time.Second, 10*time.Millisecond, func() bool {
 		mu.Lock()
 		defer mu.Unlock()
 		return actions["created"] && actions["deleted"]
@@ -820,7 +821,7 @@ func TestWebhookMilestoneEvent(t *testing.T) {
 	s.patch(t, "/api/v3/repos/admin/wh-milestone/milestones/1", defaultToken, map[string]interface{}{"state": "closed"}).Body.Close()
 	s.delete(t, "/api/v3/repos/admin/wh-milestone/milestones/1", defaultToken).Body.Close()
 
-	if !testEventually(5*time.Second, 10*time.Millisecond, func() bool {
+	if !testutil.TestEventually(5*time.Second, 10*time.Millisecond, func() bool {
 		mu.Lock()
 		defer mu.Unlock()
 		return actions["created"] && actions["closed"] && actions["deleted"]
@@ -870,7 +871,7 @@ func TestWebhookCreateDeleteRefEvent(t *testing.T) {
 	created.Body.Close()
 	ghDelete(t, repoPath+"/git/refs/heads/wh-feature", defaultToken).Body.Close()
 
-	if !testEventually(5*time.Second, 10*time.Millisecond, func() bool {
+	if !testutil.TestEventually(5*time.Second, 10*time.Millisecond, func() bool {
 		mu.Lock()
 		defer mu.Unlock()
 		return events["create"] && events["delete"]
@@ -926,7 +927,7 @@ func TestWebhookCommitCommentAndForkEvents(t *testing.T) {
 	}
 	fk.Body.Close()
 
-	if !testEventually(5*time.Second, 10*time.Millisecond, func() bool {
+	if !testutil.TestEventually(5*time.Second, 10*time.Millisecond, func() bool {
 		mu.Lock()
 		defer mu.Unlock()
 		return got["commit_comment"] && got["fork"]
@@ -973,7 +974,7 @@ func TestWebhookWatchEvent(t *testing.T) {
 	}
 	star.Body.Close()
 
-	if !testEventually(5*time.Second, 10*time.Millisecond, func() bool {
+	if !testutil.TestEventually(5*time.Second, 10*time.Millisecond, func() bool {
 		mu.Lock()
 		defer mu.Unlock()
 		return started
@@ -1009,7 +1010,7 @@ func TestWebhookPublicEvent(t *testing.T) {
 	}
 	patch.Body.Close()
 
-	if !testEventually(5*time.Second, 10*time.Millisecond, func() bool {
+	if !testutil.TestEventually(5*time.Second, 10*time.Millisecond, func() bool {
 		mu.Lock()
 		defer mu.Unlock()
 		return got
@@ -1050,7 +1051,7 @@ func TestWebhookProjectEvent(t *testing.T) {
 	}
 	proj.Body.Close()
 
-	if !testEventually(5*time.Second, 10*time.Millisecond, func() bool {
+	if !testutil.TestEventually(5*time.Second, 10*time.Millisecond, func() bool {
 		mu.Lock()
 		defer mu.Unlock()
 		return created
@@ -1096,7 +1097,7 @@ func TestWebhookBranchProtectionRuleEvent(t *testing.T) {
 	put.Body.Close()
 	ghDelete(t, repoPath+"/branches/main/protection", defaultToken).Body.Close()
 
-	if !testEventually(5*time.Second, 10*time.Millisecond, func() bool {
+	if !testutil.TestEventually(5*time.Second, 10*time.Millisecond, func() bool {
 		mu.Lock()
 		defer mu.Unlock()
 		return actions["created"] && actions["deleted"]
@@ -1153,7 +1154,7 @@ func TestWebhookMemberEvent(t *testing.T) {
 	}
 	acc.Body.Close()
 
-	if !testEventually(5*time.Second, 10*time.Millisecond, func() bool {
+	if !testutil.TestEventually(5*time.Second, 10*time.Millisecond, func() bool {
 		mu.Lock()
 		defer mu.Unlock()
 		return added
@@ -1204,7 +1205,7 @@ func TestWebhookDiscussionEvents(t *testing.T) {
 	runDiscussionGQL(t, `mutation($d:ID!){addDiscussionComment(input:{discussionId:$d,body:"C"}){comment{id}}}`,
 		map[string]interface{}{"d": discID})
 
-	if !testEventually(5*time.Second, 10*time.Millisecond, func() bool {
+	if !testutil.TestEventually(5*time.Second, 10*time.Millisecond, func() bool {
 		mu.Lock()
 		defer mu.Unlock()
 		return got["discussion"] && got["discussion_comment"]
@@ -1246,7 +1247,7 @@ func TestWebhookPageBuildEvent(t *testing.T) {
 	}
 	build.Body.Close()
 
-	if !testEventually(10*time.Second, 20*time.Millisecond, func() bool {
+	if !testutil.TestEventually(10*time.Second, 20*time.Millisecond, func() bool {
 		mu.Lock()
 		defer mu.Unlock()
 		return got
@@ -1287,7 +1288,7 @@ func TestWebhookProjectCardColumnEvents(t *testing.T) {
 	cardID := int(card["id"].(float64))
 	s.moveCard(t, cardID, c2, "last")
 
-	if !testEventually(5*time.Second, 10*time.Millisecond, func() bool {
+	if !testutil.TestEventually(5*time.Second, 10*time.Millisecond, func() bool {
 		mu.Lock()
 		defer mu.Unlock()
 		return got["project_column:created"] && got["project_card:created"] && got["project_card:moved"]
@@ -1326,7 +1327,7 @@ func TestWebhookRegistryPackageEvent(t *testing.T) {
 
 	s.seedPackageVersion(t, "repository", "admin/wh-pkg", "npm", "wh-pkg-lib", "1.0.0")
 
-	if !testEventually(5*time.Second, 10*time.Millisecond, func() bool {
+	if !testutil.TestEventually(5*time.Second, 10*time.Millisecond, func() bool {
 		mu.Lock()
 		defer mu.Unlock()
 		return published
@@ -1375,7 +1376,7 @@ func TestPullRequestRunReportsMergeSHA(t *testing.T) {
 
 	ghPost(t, repoPath+"/pulls", defaultToken, map[string]interface{}{"title": "PR", "head": "feat", "base": "main"}).Body.Close()
 
-	if !testEventually(5*time.Second, 10*time.Millisecond, func() bool {
+	if !testutil.TestEventually(5*time.Second, 10*time.Millisecond, func() bool {
 		mu.Lock()
 		defer mu.Unlock()
 		return mergeSHA != ""
@@ -1475,7 +1476,7 @@ func TestWebhookDeliveryLog(t *testing.T) {
 	// (which only observes the receiver) can win the race with the store write —
 	// poll the endpoint until the log is populated rather than reading it once.
 	var deliveries []map[string]interface{}
-	if !testEventually(5*time.Second, 10*time.Millisecond, func() bool {
+	if !testutil.TestEventually(5*time.Second, 10*time.Millisecond, func() bool {
 		delResp := s.get(t, fmt.Sprintf("/api/v3/repos/admin/wh-log/hooks/%d/deliveries", hookID), defaultToken)
 		if delResp.StatusCode != 200 {
 			delResp.Body.Close()
@@ -1757,7 +1758,7 @@ func TestWebhookOrganizationBlock(t *testing.T) {
 	resp = s.post(t, "/api/v3/repos/admin/wh-userrepo/issues", defaultToken, map[string]interface{}{"title": "user evt"})
 	resp.Body.Close()
 
-	if !testEventually(5*time.Second, 10*time.Millisecond, func() bool {
+	if !testutil.TestEventually(5*time.Second, 10*time.Millisecond, func() bool {
 		mu.Lock()
 		defer mu.Unlock()
 		orgSeen, userSeen := false, false

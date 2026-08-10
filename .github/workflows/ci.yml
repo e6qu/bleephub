@@ -412,7 +412,14 @@ jobs:
       # hand-edit) fails here rather than silently drifting the web contract.
       - name: Verify the generated web API types match the pinned spec
         run: ./scripts/check-web-openapi-types-drift.sh
-      - name: Build the embedded web application
+      # CORE-013: the embedded UI (internal/server/dist, go:embed'd by
+      # ui_embed.go) is a GENERATED Vite artifact and is deliberately NOT
+      # committed — it is gitignored except for a .gitkeep, and rebuilt by the
+      # release image (Dockerfile.release ui-builder stage) and `make build`.
+      # Because nothing generated is committed, it cannot go stale, so there is
+      # no freshness gate to run. This step still builds the app so a broken
+      # production build fails CI.
+      - name: Build the web application
         run: cd web && bun run build
       # The web counterparts of the same two orphaned gates. knip reported
       # e2e/shauth-sso.mjs as an unused file because it is launched by
@@ -476,6 +483,15 @@ jobs:
     timeout-minutes: 15
     steps:
       - *checkout
+      # This job integration-tests bleephub's SSO against the real shauth OIDC
+      # provider, so it necessarily depends on the e6qu/shauth repository — one
+      # of only two external repos any CI job needs (the other is e6qu/sockerless
+      # below). Both are pinned to an exact commit for the same reason: an
+      # unpinned default branch makes this job's verdict depend on a push to a
+      # different repository, so a green pull request could turn red (or the
+      # reverse, which is worse) without anyone touching it. Bumping the pin is a
+      # deliberate, reviewable change made in lockstep with any structural change
+      # on the shauth side.
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false

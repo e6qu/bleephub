@@ -15,6 +15,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/e6qu/bleephub/internal/server/testutil"
 	"github.com/rs/zerolog"
 )
 
@@ -172,14 +173,14 @@ func (s *isolatedServer) createOrg(t *testing.T, login string, profileName ...st
 // shared server. The package versions remain for files not yet migrated.
 func (s *isolatedServer) createTestOrg(t *testing.T) string {
 	t.Helper()
-	login := "test-org-actions-" + strconv.FormatInt(int64(nextTestID()), 36)
+	login := "test-org-actions-" + strconv.FormatInt(int64(testutil.NextTestID()), 36)
 	s.createOrg(t, login, "Test Org Actions")
 	return login
 }
 
 func (s *isolatedServer) createTestRepo(t *testing.T) repoRef {
 	t.Helper()
-	name := "test-repo-actions-" + strconv.FormatInt(int64(nextTestID()), 36)
+	name := "test-repo-actions-" + strconv.FormatInt(int64(testutil.NextTestID()), 36)
 	resp := s.post(t, "/api/v3/user/repos", defaultToken, map[string]interface{}{
 		"name":    name,
 		"private": false,
@@ -303,7 +304,7 @@ func (s *isolatedServer) createEnterpriseTestUser(t *testing.T, login string) st
 
 func (s *isolatedServer) createOrgRepoForGovernance(t *testing.T, org string) (repoRef, int) {
 	t.Helper()
-	name := "gov-repo-" + strconv.FormatInt(int64(nextTestID()), 36)
+	name := "gov-repo-" + strconv.FormatInt(int64(testutil.NextTestID()), 36)
 	resp := s.post(t, "/api/v3/orgs/"+org+"/repos", defaultToken, map[string]interface{}{
 		"name":    name,
 		"private": false,
@@ -539,7 +540,7 @@ func (s *isolatedServer) seedDependabotAlert(t *testing.T, owner, repo string, o
 // the REST API (optionally auto-initialized) and return its bare name.
 func (s *isolatedServer) createRepoWriteRepo(t *testing.T, autoInit bool) string {
 	t.Helper()
-	name := fmt.Sprintf("rw-%d-%d", int64(nextTestID()), atomic.AddInt64(&repoWriteRepoSeq, 1))
+	name := fmt.Sprintf("rw-%d-%d", int64(testutil.NextTestID()), atomic.AddInt64(&repoWriteRepoSeq, 1))
 	resp := s.post(t, "/api/v3/user/repos", defaultToken, map[string]interface{}{
 		"name":      name,
 		"auto_init": autoInit,

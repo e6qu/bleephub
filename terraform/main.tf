@@ -144,6 +144,26 @@ data "aws_iam_policy_document" "kms" {
       values   = [aws_cloudfront_distribution.startup.arn]
     }
   }
+
+  # CloudWatch alarm actions publish to the KMS-encrypted alerts SNS topic
+  # through the CloudWatch service principal, so the key must let CloudWatch
+  # generate a data key and decrypt when it encrypts a notification. Bound to
+  # this account.
+  statement {
+    sid       = "CloudWatchAlarmsToEncryptedSNS"
+    effect    = "Allow"
+    actions   = ["kms:Decrypt", "kms:GenerateDataKey"]
+    resources = ["*"]
+    principals {
+      type        = "Service"
+      identifiers = ["cloudwatch.amazonaws.com"]
+    }
+    condition {
+      test     = "StringEquals"
+      variable = "aws:SourceAccount"
+      values   = [data.aws_caller_identity.current.account_id]
+    }
+  }
 }
 
 moved {
@@ -232,6 +252,16 @@ resource "aws_route_table_association" "private" {
 # fck-nat is the actual upstream NAT-instance implementation. It owns the
 # default routes of every private subnet; this module never provisions an AWS
 # managed NAT Gateway.
+#
+# 24/7 NAT cost (CI-037): fck-nat is a single t4g.nano NAT *instance*
+# (~$3/mo + data) deliberately chosen over a managed NAT Gateway (~$32/mo +
+# per-GB), so this is already the low-cost egress option. It stays up around the
+# clock on purpose: even while the API service is idle-shut-down (desired_count
+# 0), background reconcilers and the wake path itself need outbound reachability
+# (ECR pulls, ACME renewals, the wake controller's own AWS API calls), so gating
+# NAT on idle state would deadlock the very path that scales the service back up.
+# ha_mode is off (a second AZ instance doubles cost for a dev/simulator
+# deployment); a NAT-instance replacement is ~1 min via the ASG the module owns.
 module "fck_nat" {
   count   = local.uses_existing_network ? 0 : 1
   source  = "RaJiska/fck-nat/aws"
@@ -368,6 +398,9 @@ resource "aws_s3_bucket_lifecycle_configuration" "git" {
     status = "Enabled"
     filter {}
     abort_incomplete_multipart_upload { days_after_initiation = 7 }
+    # Versioning is enabled on this bucket; expire superseded copies so
+    # noncurrent versions do not accumulate storage cost forever (CI-037).
+    noncurrent_version_expiration { noncurrent_days = 30 }
   }
 }
 
@@ -438,6 +471,9 @@ resource "aws_s3_bucket_lifecycle_configuration" "objects" {
     status = "Enabled"
     filter {}
     abort_incomplete_multipart_upload { days_after_initiation = 7 }
+    # Versioning is enabled on this bucket; expire superseded copies so
+    # noncurrent versions do not accumulate storage cost forever (CI-037).
+    noncurrent_version_expiration { noncurrent_days = 30 }
   }
 }
 
@@ -581,6 +617,19 @@ resource "aws_s3_bucket" "startup" {
 resource "aws_s3_bucket_versioning" "startup" {
   bucket = aws_s3_bucket.startup.id
   versioning_configuration { status = "Enabled" }
+}
+
+# Versioning is enabled above; without this the startup bucket's superseded
+# object versions would accumulate forever with no expiration (CI-037).
+resource "aws_s3_bucket_lifecycle_configuration" "startup" {
+  bucket = aws_s3_bucket.startup.id
+  rule {
+    id     = "expire-noncurrent-and-abort-uploads"
+    status = "Enabled"
+    filter {}
+    abort_incomplete_multipart_upload { days_after_initiation = 7 }
+    noncurrent_version_expiration { noncurrent_days = 30 }
+  }
 }
 
 resource "aws_s3_bucket_server_side_encryption_configuration" "startup" {
@@ -1527,8 +1576,18 @@ resource "aws_ecs_service" "this" {
   name            = var.name
   cluster         = local.ecs_cluster_arn
   task_definition = aws_ecs_task_definition.this.arn
-  desired_count   = var.idle_shutdown_enabled ? 0 : 1
-  launch_type     = "FARGATE"
+
+  # SINGLE-WRITER CEILING (CI-036): desired_count is 0 (idle) or exactly 1, and
+  # there is deliberately NO aws_appautoscaling_target/policy for this service.
+  # bleephub's application state is an in-memory store guarded by a process-local
+  # mutex; a second serving task would own a divergent copy of that state, so the
+  # API is architecturally capped at one running task. Durability is provided out
+  # of band by the dqlite quorum (its own service below), not by API replicas.
+  # Horizontal scaling of the API is therefore not a Terraform knob — it requires
+  # the multi-writer refactor tracked as ARCH-001. The wake controller owns the
+  # 0↔1 transition at runtime (see the ignore_changes below).
+  desired_count = var.idle_shutdown_enabled ? 0 : 1
+  launch_type   = "FARGATE"
 
   # A replacement task must pass its health check before the serving one is
   # taken away. Metadata is served by the independent dqlite quorum, and the
@@ -1740,4 +1799,123 @@ resource "aws_lambda_permission" "idle_shutdown_alarm" {
   function_name = aws_lambda_function.idle_shutdown.function_name
   principal     = "lambda.alarms.cloudwatch.amazonaws.com"
   source_arn    = aws_cloudwatch_metric_alarm.idle_shutdown.arn
+}
+
+# ─── Cost guardrails (CI-037) ────────────────────────────────────────────────
+# A monthly cost budget and account-wide cost-anomaly detection. Both always
+# exist so spend is visible in the console; email notifications are wired only
+# when var.alert_email is set (Budgets and Cost Explorer are global services and
+# use the default provider).
+
+resource "aws_budgets_budget" "monthly" {
+  name         = "${var.name}-monthly"
+  budget_type  = "COST"
+  limit_amount = tostring(var.monthly_budget_usd)
+  limit_unit   = "USD"
+  time_unit    = "MONTHLY"
+
+  dynamic "notification" {
+    for_each = var.alert_email != "" ? {
+      forecasted = { type = "FORECASTED", threshold = 80 }
+      actual     = { type = "ACTUAL", threshold = 100 }
+    } : {}
+    content {
+      comparison_operator        = "GREATER_THAN"
+      threshold                  = notification.value.threshold
+      threshold_type             = "PERCENTAGE"
+      notification_type          = notification.value.type
+      subscriber_email_addresses = [var.alert_email]
+    }
+  }
+}
+
+resource "aws_ce_anomaly_monitor" "service" {
+  name              = "${var.name}-anomaly"
+  monitor_type      = "DIMENSIONAL"
+  monitor_dimension = "SERVICE"
+  tags              = local.common_tags
+}
+
+resource "aws_ce_anomaly_subscription" "default" {
+  count            = var.alert_email != "" ? 1 : 0
+  name             = "${var.name}-anomaly-sub"
+  frequency        = "DAILY"
+  monitor_arn_list = [aws_ce_anomaly_monitor.service.arn]
+
+  subscriber {
+    type    = "EMAIL"
+    address = var.alert_email
+  }
+
+  threshold_expression {
+    dimension {
+      key           = "ANOMALY_TOTAL_IMPACT_ABSOLUTE"
+      match_options = ["GREATER_THAN_OR_EQUAL"]
+      values        = ["25"]
+    }
+  }
+
+  tags = local.common_tags
+}
+
+# ─── Operational alerting (CI-024) ───────────────────────────────────────────
+# The idle_shutdown alarm above turns the service OFF; it is a control signal,
+# not an error signal. This SNS topic and the error alarms below surface actual
+# failures. CloudWatch alarm actions require an ARN, so email delivery is via an
+# SNS subscription wired only when var.alert_email is set.
+
+resource "aws_sns_topic" "alerts" {
+  name = "${var.name}-alerts"
+  # Encrypt with the module's customer-managed key (not the AWS-managed
+  # alias/aws/sns) so the topic meets the same CMK bar as every other durable
+  # store here; the KMS key policy grants CloudWatch use of the key below.
+  kms_master_key_id = aws_kms_key.this.arn
+  tags              = local.common_tags
+}
+
+resource "aws_sns_topic_subscription" "alerts_email" {
+  count     = var.alert_email != "" ? 1 : 0
+  topic_arn = aws_sns_topic.alerts.arn
+  protocol  = "email"
+  endpoint  = var.alert_email
+}
+
+# A sustained spike of API Gateway server errors (5xx) means the app is failing
+# requests — distinct from the idle-shutdown control alarm.
+resource "aws_cloudwatch_metric_alarm" "api_5xx" {
+  alarm_name          = "${var.name}-api-5xx"
+  namespace           = "AWS/ApiGateway"
+  metric_name         = "5xx"
+  dimensions          = { ApiId = aws_apigatewayv2_api.this.id }
+  statistic           = "Sum"
+  period              = 300
+  evaluation_periods  = 1
+  threshold           = 5
+  comparison_operator = "GreaterThanThreshold"
+  treat_missing_data  = "notBreaching"
+  alarm_actions       = [aws_sns_topic.alerts.arn]
+  ok_actions          = [aws_sns_topic.alerts.arn]
+  tags                = local.common_tags
+}
+
+# A failing wake/idle controller Lambda can strand the service off or fail to
+# scale it down, so any invocation error pages.
+resource "aws_cloudwatch_metric_alarm" "lambda_errors" {
+  for_each = {
+    wake          = aws_lambda_function.wake.function_name
+    idle_shutdown = aws_lambda_function.idle_shutdown.function_name
+    idle_arm      = aws_lambda_function.idle_arm.function_name
+  }
+  alarm_name          = "${var.name}-lambda-errors-${each.key}"
+  namespace           = "AWS/Lambda"
+  metric_name         = "Errors"
+  dimensions          = { FunctionName = each.value }
+  statistic           = "Sum"
+  period              = 300
+  evaluation_periods  = 1
+  threshold           = 0
+  comparison_operator = "GreaterThanThreshold"
+  treat_missing_data  = "notBreaching"
+  alarm_actions       = [aws_sns_topic.alerts.arn]
+  tags                = local.common_tags
 }

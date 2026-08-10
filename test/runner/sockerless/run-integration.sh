@@ -1013,19 +1013,19 @@ wait_for_workflow_run() {
 
 # Helper: submit workflow YAML through GitHub Actions workflow dispatch and wait for completion.
 submit_and_wait_workflow() {
-    local test_num="$1" label="$2" yaml="$3" max="${4:-180}" inputs_json="${5:-}"
+    local test_num="$1" label="$2" yaml="$3" max="${4:-180}" inputs_json="${5:-}" expected="${6:-success}"
     if [ -z "$inputs_json" ]; then
         inputs_json='{}'
     fi
 
-    log "===== TEST $test_num: $label ====="
+    log "===== TEST $test_num: $label (expect: $expected) ====="
     submit_workflow_dispatch "$test_num" "$yaml" "$inputs_json"
-    if wait_for_workflow_run "$LAST_WORKFLOW_RUN_ID" "$label" "$max"; then
+    if wait_for_workflow_run "$LAST_WORKFLOW_RUN_ID" "$label" "$max" "$expected"; then
         log "TEST $test_num PASSED: $label"
         return 0
     fi
     show_diag
-    fail "$label failed"
+    fail "$label did not reach the expected conclusion ($expected)"
 }
 
 # Iteration aid: BLEEPHUB_TEST_FROM=N starts at test N. CI runs everything.
@@ -1453,4 +1453,26 @@ done
 log "TEST 14 PASSED: dispatcher-spawned runner executed the queued job"
 fi
 
-log "===== ALL 14 INTEGRATION TESTS PASSED ====="
+
+# ===== TEST 15: A workflow whose step fails must report a FAILING conclusion =====
+# Negative-path coverage (TEST-023): every other test asserts success, so a
+# runner that reported "success" for a job with a failing step would go
+# unnoticed. Submit a workflow with a step that exits non-zero and assert the
+# run's conclusion is "failure" — exercising the expected-conclusion parameter
+# that submit_and_wait_workflow now threads to wait_for_workflow_run.
+if run_test 15; then
+submit_and_wait_workflow 15 "Failing step reports failure" '
+name: failing-step-test
+jobs:
+  boom:
+    runs-on: self-hosted
+    steps:
+      - run: echo "this step fails on purpose"
+      - run: exit 1
+      - run: echo "this step must not run after the failure"
+' 120 "{}" failure
+
+sleep 3
+fi
+
+log "===== ALL 15 INTEGRATION TESTS PASSED ====="

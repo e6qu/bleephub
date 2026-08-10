@@ -9,6 +9,8 @@ import (
 	"sync"
 	"testing"
 	"time"
+
+	"github.com/e6qu/bleephub/internal/server/testutil"
 )
 
 // eventRecorder captures webhook deliveries (event + action) for
@@ -44,7 +46,7 @@ func (er *eventRecorder) has(want string) bool {
 
 func waitUntil(t *testing.T, what string, cond func() bool) {
 	t.Helper()
-	if !testEventually(5*time.Second, 20*time.Millisecond, cond) {
+	if !testutil.TestEventually(5*time.Second, 20*time.Millisecond, cond) {
 		t.Fatalf("timed out waiting for %s", what)
 	}
 }

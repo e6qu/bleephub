@@ -3,6 +3,8 @@ package bleephub
 import (
 	"strconv"
 	"testing"
+
+	"github.com/e6qu/bleephub/internal/server/testutil"
 )
 
 func TestOrgIssueFields_CRUD(t *testing.T) {
@@ -259,7 +261,7 @@ func TestIssueFieldValues_PushAccessRequired(t *testing.T) {
 	repoKey, _ := s.createOrgRepoForGovernance(t, org)
 	_, number := s.createIssueForTest(t, repoKey, "outsider test")
 
-	outsider := s.createTestUser(t, "gov-outsider-"+strconv.FormatInt(int64(nextTestID()), 36))
+	outsider := s.createTestUser(t, "gov-outsider-"+strconv.FormatInt(int64(testutil.NextTestID()), 36))
 	tok := s.store.CreateToken(outsider.ID, "repo").Value
 
 	resp := s.post(t, repoKey.path()+"/issues/"+itoa(number)+"/issue-field-values", tok, map[string]interface{}{

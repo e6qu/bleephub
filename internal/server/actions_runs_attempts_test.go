@@ -7,6 +7,8 @@ import (
 	"net/http"
 	"testing"
 	"time"
+
+	"github.com/e6qu/bleephub/internal/server/testutil"
 )
 
 func TestAgentSatisfiesLabels(t *testing.T) {
@@ -391,7 +393,7 @@ jobs:
 	// Push trigger while disabled → no run.
 	before := s.countRepoRuns(repoKey)
 	s.triggerWorkflowsForEvent(repoKey, "push", "", "refs/heads/main", nil)
-	changed := testEventually(200*time.Millisecond, 10*time.Millisecond, func() bool {
+	changed := testutil.TestEventually(200*time.Millisecond, 10*time.Millisecond, func() bool {
 		return s.countRepoRuns(repoKey) != before
 	})
 	if got := s.countRepoRuns(repoKey); changed {

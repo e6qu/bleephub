@@ -9,6 +9,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/e6qu/bleephub/internal/server/testutil"
 )
 
 func TestOpenAPISearchRepositories(t *testing.T) {
@@ -180,7 +182,7 @@ func TestOpenAPIPullRequest(t *testing.T) {
 }
 
 func TestOpenAPIGitDataShapes(t *testing.T) {
-	repoName := fmt.Sprintf("oa-git-data-%d", int64(nextTestID()))
+	repoName := fmt.Sprintf("oa-git-data-%d", int64(testutil.NextTestID()))
 	resp := ghPost(t, "/api/v3/user/repos", defaultToken, map[string]interface{}{
 		"name": repoName, "auto_init": true,
 	})
@@ -344,7 +346,7 @@ func TestOpenAPIUser(t *testing.T) {
 }
 
 func TestOpenAPIOrg(t *testing.T) {
-	createOrgViaAdminAPI(t, fmt.Sprintf("oa-org-%d", int64(nextTestID())), "OpenAPI Org")
+	createOrgViaAdminAPI(t, fmt.Sprintf("oa-org-%d", int64(testutil.NextTestID())), "OpenAPI Org")
 
 	orgs := func() string {
 		resp := ghGet(t, "/api/v3/user/orgs", defaultToken)

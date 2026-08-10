@@ -7,13 +7,15 @@ import (
 	"sync"
 	"testing"
 	"time"
+
+	"github.com/e6qu/bleephub/internal/server/testutil"
 )
 
 // waitFor polls cond until it holds or a 15s deadline expires (webhook
 // deliveries are asynchronous).
 func waitFor(t *testing.T, cond func() bool, msg string) {
 	t.Helper()
-	if !testEventually(15*time.Second, 100*time.Millisecond, cond) {
+	if !testutil.TestEventually(15*time.Second, 100*time.Millisecond, cond) {
 		t.Fatal(msg)
 	}
 }

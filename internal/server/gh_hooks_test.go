@@ -9,6 +9,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/e6qu/bleephub/internal/server/testutil"
 )
 
 // hookResp is the shape GitHub returns for a repository webhook.
@@ -55,7 +57,7 @@ func decodeHookList(t *testing.T, resp *http.Response) []hookResp {
 func pollDeliveries(t *testing.T, path string, minCount int) []map[string]interface{} {
 	t.Helper()
 	var list []map[string]interface{}
-	if testEventually(3*time.Second, 50*time.Millisecond, func() bool {
+	if testutil.TestEventually(3*time.Second, 50*time.Millisecond, func() bool {
 		resp := ghGet(t, path, defaultToken)
 		list = nil
 		json.NewDecoder(resp.Body).Decode(&list)
@@ -403,7 +405,7 @@ func TestHooks_Deliveries_Redeliver(t *testing.T) {
 	// Poll until a redelivery=true entry is persisted (the create-time
 	// auto-ping and the explicit ping also produce deliveries, so a fixed
 	// count isn't a reliable signal — wait for the redelivery flag itself).
-	foundRedelivery := testEventually(3*time.Second, 50*time.Millisecond, func() bool {
+	foundRedelivery := testutil.TestEventually(3*time.Second, 50*time.Millisecond, func() bool {
 		for _, d := range pollDeliveries(t, "/api/v3/repos/"+repo+"/hooks/"+strconv.Itoa(hookID)+"/deliveries", 1) {
 			if r, ok := d["redelivery"].(bool); ok && r {
 				return true
@@ -603,7 +605,7 @@ func TestHooks_LastResponseAfterDelivery(t *testing.T) {
 	pollDeliveries(t, "/api/v3/repos/"+repo+"/hooks/"+strconv.Itoa(hookID)+"/deliveries", 1)
 
 	// Poll the hook until last_response reflects the OK delivery.
-	ok := testEventually(3*time.Second, 50*time.Millisecond, func() bool {
+	ok := testutil.TestEventually(3*time.Second, 50*time.Millisecond, func() bool {
 		got := decodeHook(t, ghGet(t, "/api/v3/repos/"+repo+"/hooks/"+strconv.Itoa(hookID), defaultToken))
 		if got.LastResponse["status"] == "OK" {
 			if code, _ := got.LastResponse["code"].(float64); int(code) != 200 {

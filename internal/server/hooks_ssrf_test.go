@@ -13,6 +13,8 @@ import (
 	"sync/atomic"
 	"testing"
 	"time"
+
+	"github.com/e6qu/bleephub/internal/server/testutil"
 )
 
 // ssrfTestServer is a unit server with the webhook address gate at its secure
@@ -270,7 +272,7 @@ func TestWebhookDeliveryPreservesPerHookOrder(t *testing.T) {
 		s.enqueueWebhookDelivery(hook, "push", "", []byte(fmt.Sprintf(`{"seq":%d}`, i)))
 	}
 
-	testEventually(20*time.Second, 20*time.Millisecond, func() bool {
+	testutil.TestEventually(20*time.Second, 20*time.Millisecond, func() bool {
 		mu.Lock()
 		done := len(seen) >= events
 		mu.Unlock()
@@ -317,7 +319,7 @@ func TestWebhookDeliveryConcurrencyIsBounded(t *testing.T) {
 	}
 
 	// Let the pool saturate, then let every held request finish.
-	testEventually(5*time.Second, 10*time.Millisecond, func() bool {
+	testutil.TestEventually(5*time.Second, 10*time.Millisecond, func() bool {
 		return atomic.LoadInt64(&peak) >= webhookDeliveryWorkers
 	})
 	got := atomic.LoadInt64(&peak)

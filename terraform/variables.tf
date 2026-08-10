@@ -241,3 +241,16 @@ variable "force_destroy_storage" {
   type        = bool
   default     = false
 }
+
+# Cost guardrails (CI-037).
+variable "monthly_budget_usd" {
+  description = "Monthly cost budget in USD. Drives the AWS Budgets alarm; the budget always tracks spend, and notifications fire only when alert_email is set."
+  type        = number
+  default     = 100
+}
+
+variable "alert_email" {
+  description = "Email address for budget-threshold and cost-anomaly notifications. Empty disables the notifications (the budget and anomaly monitor still exist for console tracking)."
+  type        = string
+  default     = ""
+}

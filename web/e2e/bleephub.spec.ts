@@ -88,6 +88,18 @@ async function apiGet(page: Page, path: string) {
   );
 }
 
+// Setup fixtures use fixed repo names reused across runs, so re-creating one
+// that already exists is expected (422). Tolerate ONLY that — rethrow any other
+// failure (auth, 5xx) instead of a blanket catch-and-null that masks a broken
+// setup and turns it into a confusing downstream assertion failure.
+function ignoreAlreadyExists(e: unknown): null {
+  const msg = String(e);
+  if (msg.includes("422") || msg.includes("409") || /already exists/i.test(msg)) {
+    return null;
+  }
+  throw e;
+}
+
 // Open the GitHub-style global-nav drawer (the hamburger). The drawer holds
 // both the GitHub destinations and the bleephub "Operations" section.
 async function openDrawer(page: Page): Promise<void> {
@@ -401,9 +413,17 @@ test.describe("GitHub Classroom transition product", () => {
 // ─── Repos page ─────────────────────────────────────────────────────────────
 
 test.describe("Repos page", () => {
-  test("shows empty state initially", async ({ page }) => {
+  test("renders the repositories page", async ({ page }) => {
     await page.goto("/ui/repos");
-    await shot(page, "12-repos-empty");
+    await page.waitForLoadState("networkidle");
+    // Assert the page chrome renders rather than an empty list: other tests in
+    // this file create repos and the e2e server persists them across the run,
+    // so "empty" is not a stable, ordering-independent precondition. This test
+    // previously only screenshotted and asserted nothing.
+    await expect(
+      page.getByRole("heading", { level: 1 }).filter({ hasText: "Repositories" }),
+    ).toBeVisible();
+    await shot(page, "12-repos");
   });
 
   test("shows repo after creation and links to detail", async ({ page }) => {
@@ -466,7 +486,7 @@ test.describe("Repo detail page", () => {
       name: "detail-test",
       description: "Detail page test",
       private: false,
-    }).catch(() => null);
+    }).catch(ignoreAlreadyExists);
 
     await page.goto(`/ui/repos/${owner}/detail-test`);
     await page.waitForLoadState("networkidle");
@@ -491,7 +511,7 @@ test.describe("Repo detail page", () => {
       description: "README test",
       private: false,
       auto_init: true,
-    }).catch(() => null);
+    }).catch(ignoreAlreadyExists);
 
     await page.goto(`/ui/repos/${owner}/readme-test`);
     await page.waitForLoadState("networkidle");
@@ -535,7 +555,7 @@ test.describe("Repo detail page", () => {
       name: "issues-test",
       description: "",
       private: false,
-    }).catch(() => null);
+    }).catch(ignoreAlreadyExists);
     await apiPost(page, `/api/v3/repos/${owner}/issues-test/issues`, {
       title: "First Playwright issue",
       body: "Created by Playwright test",
@@ -564,7 +584,7 @@ test.describe("Issues page", () => {
       name: "issues-direct",
       description: "",
       private: false,
-    }).catch(() => null);
+    }).catch(ignoreAlreadyExists);
 
     // Create issue via API
     await apiPost(page, `/api/v3/repos/${owner}/issues-direct/issues`, {
@@ -601,7 +621,7 @@ test.describe("Pull Requests page", () => {
       name: "pulls-direct",
       description: "",
       private: false,
-    }).catch(() => null);
+    }).catch(ignoreAlreadyExists);
 
     await page.goto(`/ui/repos/${owner}/pulls-direct/pulls`);
     await page.waitForLoadState("networkidle");

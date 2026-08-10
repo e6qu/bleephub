@@ -12,6 +12,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/e6qu/bleephub/internal/server/testutil"
 )
 
 type marketplaceTestListing struct {
@@ -242,7 +244,7 @@ func TestMarketplacePublisherBuyerAndBillingLifecycle(t *testing.T) {
 		t.Fatalf("change webhook = %+v", got)
 	}
 	var deliveryRows []map[string]interface{}
-	testEventually(2*time.Second, 10*time.Millisecond, func() bool {
+	testutil.TestEventually(2*time.Second, 10*time.Millisecond, func() bool {
 		resp := s.marketplaceRequest(t, http.MethodGet,
 			"/settings/apps/"+listing.slug+"/marketplace/deliveries", "token "+defaultToken, nil)
 		deliveryRows = decodeJSONArray(t, resp)

@@ -7,6 +7,11 @@ web/node_modules/
 web/core/node_modules/
 web/dist/
 web/core/dist/
+# The embedded UI (internal/server/dist) is a generated Vite artifact, built by
+# the release image and `make build`, not committed. Keep only .gitkeep so the
+# directory exists and `//go:embed all:dist` still compiles on a fresh checkout.
+internal/server/dist/*
+!internal/server/dist/.gitkeep
 web/.auth/
 web/test-results/
 web/playwright-report/

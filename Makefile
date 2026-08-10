@@ -6,6 +6,10 @@ build: web-build
 run: build
 	./bleephub-server
 
+# CORE-013: internal/server/dist is a generated Vite artifact that is NOT
+# committed (gitignored except .gitkeep). Regenerate it locally before an
+# embedded `go build`; the release image builds it the same way in its
+# ui-builder stage. Nothing generated is committed, so it cannot go stale.
 web-build:
 	cd web && bun install --frozen-lockfile && bun run build
 	rm -rf internal/server/dist/*
