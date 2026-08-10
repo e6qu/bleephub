@@ -8,6 +8,41 @@ import { Button, FormLabel, PageTitle } from "../components/ui.js";
 
 const col = createColumnHelper<BleephubAuditEvent>();
 
+const AUDIT_CSV_COLUMNS = [
+  "id",
+  "created_at",
+  "actor_login",
+  "action",
+  "entity_type",
+  "entity_id",
+  "details",
+] as const;
+
+/** Serialize audit events to CSV (object fields like `details` become JSON). */
+export function auditEventsToCsv(events: BleephubAuditEvent[]): string {
+  const esc = (value: unknown) => {
+    const s = value !== null && typeof value === "object" ? JSON.stringify(value) : String(value ?? "");
+    return `"${s.replace(/"/g, '""')}"`;
+  };
+  const header = AUDIT_CSV_COLUMNS.join(",");
+  const rows = events.map((e) =>
+    AUDIT_CSV_COLUMNS.map((c) => esc((e as unknown as Record<string, unknown>)[c])).join(","),
+  );
+  return [header, ...rows].join("\n");
+}
+
+/** Trigger a browser download of `content` as `filename`. */
+function downloadTextFile(filename: string, mime: string, content: string): void {
+  const url = URL.createObjectURL(new Blob([content], { type: mime }));
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  URL.revokeObjectURL(url);
+}
+
 export function AuditLogPage() {
   const [org, setOrg] = useState("");
   const [actor, setActor] = useState("");
@@ -110,9 +145,40 @@ export function AuditLogPage() {
     }),
   ];
 
+  const events = data ?? [];
   return (
     <div>
-      <PageTitle title="Audit log" meta="GitHub Enterprise Server organization audit events." />
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <PageTitle title="Audit log" meta="GitHub Enterprise Server organization audit events." />
+        <div className="flex items-center gap-2">
+          <Button
+            size="sm"
+            disabled={events.length === 0}
+            onClick={() =>
+              downloadTextFile(
+                `audit-log-${effectiveOrg || "org"}.csv`,
+                "text/csv",
+                auditEventsToCsv(events),
+              )
+            }
+          >
+            Export CSV
+          </Button>
+          <Button
+            size="sm"
+            disabled={events.length === 0}
+            onClick={() =>
+              downloadTextFile(
+                `audit-log-${effectiveOrg || "org"}.json`,
+                "application/json",
+                JSON.stringify(events, null, 2),
+              )
+            }
+          >
+            Export JSON
+          </Button>
+        </div>
+      </div>
 
       <div
         className="mb-5 grid gap-3"
