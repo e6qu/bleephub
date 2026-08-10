@@ -24,6 +24,7 @@ import {
   fetchPackages,
   putFile,
   deleteFile,
+  createRef,
 } from "../api.js";
 import { useOpenCounts } from "../hooks/useOpenCounts.js";
 import { decodeContentsBase64 } from "../utils/workflowDispatch.js";
@@ -287,7 +288,7 @@ export function RepoDetailPage({ initialTab = "code" }: { initialTab?: SubTab })
         (tagsError ? (
           <InlineError title="Failed to load tags" detail={String(tagsErr)} />
         ) : (
-          <TagsList tags={tags} />
+          <TagsList owner={owner} repo={repo} tags={tags} branches={branches} defaultBranch={repoData.default_branch} />
         ))}
       {tab === "releases" &&
         (releasesError ? (
@@ -1826,8 +1827,73 @@ function BranchesList({
   branches: GithubBranch[];
   defaultBranch: string;
 }) {
+  const qc = useQueryClient();
+  const [creating, setCreating] = useState(false);
+  const [name, setName] = useState("");
+  const [source, setSource] = useState(defaultBranch);
+  const createMut = useMutation({
+    mutationFn: () => {
+      const sha = branches.find((b) => b.name === source)?.commit.sha ?? "";
+      return createRef(owner, repo, `refs/heads/${name}`, sha);
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["branches", owner, repo] });
+      setCreating(false);
+      setName("");
+    },
+  });
+
+  const newBranchButton = branches.length > 0 && (
+    <Button size="sm" onClick={() => setCreating(true)}>
+      New branch
+    </Button>
+  );
+  const newBranchModal = creating && (
+    <Modal title="Create a branch" onClose={() => setCreating(false)}>
+      <FormLabel id="new-branch-name">Branch name</FormLabel>
+      <input
+        id="new-branch-name"
+        autoFocus
+        value={name}
+        onChange={(e) => setName(e.target.value)}
+        placeholder="e.g. feature/login"
+        className="mb-3 w-full"
+      />
+      <FormLabel id="new-branch-source">Create from</FormLabel>
+      <select
+        id="new-branch-source"
+        value={source}
+        onChange={(e) => setSource(e.target.value)}
+        className="mb-3 w-full"
+      >
+        {branches.map((b) => (
+          <option key={b.name} value={b.name}>
+            {b.name}
+          </option>
+        ))}
+      </select>
+      <MutationError of={createMut} />
+      <DialogActions>
+        <Button variant="ghost" size="sm" onClick={() => setCreating(false)}>
+          Cancel
+        </Button>
+        <Button
+          variant="primary"
+          size="sm"
+          disabled={!name.trim() || createMut.isPending}
+          onClick={() => createMut.mutate()}
+        >
+          {createMut.isPending ? "Creating…" : "Create branch"}
+        </Button>
+      </DialogActions>
+    </Modal>
+  );
+
   if (branches.length === 0) return <Blankslate icon={<BranchIcon size={26} />} title="No branches" />;
   return (
+    <>
+      <div className="mb-3 flex justify-end">{newBranchButton}</div>
+      {newBranchModal}
     <Box>
       {branches.map((b, i) => (
         <div
@@ -1885,12 +1951,91 @@ function BranchesList({
         </div>
       ))}
     </Box>
+    </>
   );
 }
 
-function TagsList({ tags }: { tags: GithubTag[] }) {
-  if (tags.length === 0) return <Blankslate icon={<TagIcon size={26} />} title="No tags" />;
+function TagsList({
+  owner,
+  repo,
+  tags,
+  branches,
+  defaultBranch,
+}: {
+  owner: string;
+  repo: string;
+  tags: GithubTag[];
+  branches: GithubBranch[];
+  defaultBranch: string;
+}) {
+  const qc = useQueryClient();
+  const [creating, setCreating] = useState(false);
+  const [name, setName] = useState("");
+  const [source, setSource] = useState(defaultBranch);
+  const createMut = useMutation({
+    mutationFn: () => {
+      const sha = branches.find((b) => b.name === source)?.commit.sha ?? "";
+      return createRef(owner, repo, `refs/tags/${name}`, sha);
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["repo-tags", owner, repo] });
+      setCreating(false);
+      setName("");
+    },
+  });
+
+  const newTagModal = creating && (
+    <Modal title="Create a tag" onClose={() => setCreating(false)}>
+      <FormLabel id="new-tag-name">Tag name</FormLabel>
+      <input
+        id="new-tag-name"
+        autoFocus
+        value={name}
+        onChange={(e) => setName(e.target.value)}
+        placeholder="e.g. v1.0.0"
+        className="mb-3 w-full"
+      />
+      <FormLabel id="new-tag-source">Create from</FormLabel>
+      <select
+        id="new-tag-source"
+        value={source}
+        onChange={(e) => setSource(e.target.value)}
+        className="mb-3 w-full"
+      >
+        {branches.map((b) => (
+          <option key={b.name} value={b.name}>
+            {b.name}
+          </option>
+        ))}
+      </select>
+      <MutationError of={createMut} />
+      <DialogActions>
+        <Button variant="ghost" size="sm" onClick={() => setCreating(false)}>
+          Cancel
+        </Button>
+        <Button
+          variant="primary"
+          size="sm"
+          disabled={!name.trim() || !branches.length || createMut.isPending}
+          onClick={() => createMut.mutate()}
+        >
+          {createMut.isPending ? "Creating…" : "Create tag"}
+        </Button>
+      </DialogActions>
+    </Modal>
+  );
+
   return (
+    <>
+      <div className="mb-3 flex justify-end">
+        <Button size="sm" disabled={!branches.length} onClick={() => setCreating(true)}>
+          New tag
+        </Button>
+      </div>
+      {newTagModal}
+      {tags.length === 0 ? (
+        <Blankslate icon={<TagIcon size={26} />} title="No tags" />
+      ) : (
     <Box>
       {tags.map((t, i) => (
         <div
@@ -1923,5 +2068,7 @@ function TagsList({ tags }: { tags: GithubTag[] }) {
         </div>
       ))}
     </Box>
+      )}
+    </>
   );
 }
