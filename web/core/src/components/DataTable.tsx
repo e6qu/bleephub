@@ -46,10 +46,10 @@ export type DataTableColumn<T extends RowData> = ColumnDef<DataTableFeatures, T,
 export interface DataTableProps<T extends RowData> {
   data: T[];
   columns: DataTableColumn<T>[];
-  filterPlaceholder?: string;
-  onRowClick?: (row: T) => void;
+  filterPlaceholder?: string | undefined;
+  onRowClick?: ((row: T) => void) | undefined;
   /** Optional empty-state body when no rows match. */
-  emptyMessage?: string;
+  emptyMessage?: string | undefined;
 }
 
 /**

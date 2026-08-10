@@ -49,7 +49,7 @@ function ProfileSidebar({
   orgs,
 }: {
   profile: GithubUserProfile;
-  orgs?: GithubOrgSummary[];
+  orgs?: GithubOrgSummary[] | undefined;
 }) {
   const p = profile;
   return (

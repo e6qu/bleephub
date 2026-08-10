@@ -285,7 +285,7 @@ function DiscussionDetail({
   const counts = useOpenCounts(owner, repo);
   const qc = useQueryClient();
   const navigate = useNavigate();
-  const [replyTo, setReplyTo] = useState<{ id: string; login?: string } | null>(null);
+  const [replyTo, setReplyTo] = useState<{ id: string; login?: string | undefined } | null>(null);
   const [commentBody, setCommentBody] = useState("");
   const [commentError, setCommentError] = useState<string | null>(null);
   const [editingComment, setEditingComment] = useState<string | null>(null);

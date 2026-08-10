@@ -37,11 +37,11 @@ export interface ResourceListPageProps<T extends RowData> {
   refetchInterval?: number | false;
 
   /** DataTable filter input placeholder. */
-  filterPlaceholder?: string;
+  filterPlaceholder?: string | undefined;
   /** DataTable empty-state message. */
-  emptyMessage?: string;
+  emptyMessage?: string | undefined;
   /** Optional row-click handler. */
-  onRowClick?: (row: T) => void;
+  onRowClick?: ((row: T) => void) | undefined;
 }
 
 /**
@@ -108,9 +108,9 @@ function ResourceListBody<T extends RowData>({
   query: UseQueryResult<T[]>;
   rows: T[];
   columns: AnyColumns<T>;
-  filterPlaceholder?: string;
-  emptyMessage?: string;
-  onRowClick?: (row: T) => void;
+  filterPlaceholder?: string | undefined;
+  emptyMessage?: string | undefined;
+  onRowClick?: ((row: T) => void) | undefined;
 }) {
   if (query.isLoading) {
     return <Spinner label="loading" />;

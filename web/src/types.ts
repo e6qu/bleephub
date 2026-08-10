@@ -7,6 +7,13 @@ import type { components } from "../../third_party/github-openapi.js";
 // Only values the server actually ASSIGNS belong here — a workflow is never
 // "queued"/"skipped", a workflow file is never anything but "active".
 // "waiting" = held on a reviewer-protected environment approval.
+/**
+ * Like Partial<T> but each optional member also explicitly admits `undefined`,
+ * for exactOptionalPropertyTypes: callers build patch payloads with
+ * `field: value || undefined`, which is a present-but-undefined property.
+ */
+export type Undef<T> = { [K in keyof T]?: T[K] | undefined };
+
 export type WorkflowStatus =
   | "queued"
   | "in_progress"
@@ -74,10 +81,10 @@ export interface BleephubWorkflowJob {
 
 /** Filters the repo list endpoints support server-side. */
 export interface RepoListFilters {
-  type?: string;
-  visibility?: "public" | "private" | "internal";
-  sort?: "created" | "updated" | "pushed" | "full_name";
-  direction?: "asc" | "desc";
+  type?: string | undefined;
+  visibility?: "public" | "private" | "internal" | undefined;
+  sort?: "created" | "updated" | "pushed" | "full_name" | undefined;
+  direction?: "asc" | "desc" | undefined;
 }
 
 /** Repo represents a GitHub repository. */
@@ -768,12 +775,12 @@ export interface BleephubAuditEvent {
 }
 
 export interface BleephubGistFile {
-  filename?: string;
-  content?: string;
-  raw_url?: string;
-  size?: number;
-  type?: string;
-  language?: string;
+  filename?: string | undefined;
+  content?: string | undefined;
+  raw_url?: string | undefined;
+  size?: number | undefined;
+  type?: string | undefined;
+  language?: string | undefined;
 }
 
 export interface BleephubGist {
@@ -1119,7 +1126,7 @@ export interface GithubSecurityAdvisoryCreatePayload {
   summary: string;
   description: string;
   severity: GithubSecurityAdvisorySeverity;
-  cwe_ids?: string[];
+  cwe_ids?: string[] | undefined;
 }
 
 export interface GithubSecurityAdvisoryUpdatePayload {
@@ -1133,8 +1140,8 @@ export interface GithubSecurityAdvisoryUpdatePayload {
 export interface GithubVulnerabilityReportPayload {
   summary: string;
   description: string;
-  severity?: GithubSecurityAdvisorySeverity;
-  cwe_ids?: string[];
+  severity?: GithubSecurityAdvisorySeverity | undefined;
+  cwe_ids?: string[] | undefined;
 }
 
 // ─── GitHub Repository Rulesets shapes ──────────────────────────────────

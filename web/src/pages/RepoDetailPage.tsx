@@ -340,7 +340,7 @@ function CodeView({
   loading: boolean;
   branches: string[];
   defaultBranch: string;
-  sshUrl?: string;
+  sshUrl?: string | undefined;
   initialRef?: string;
   initialPath?: string;
 }) {
@@ -537,7 +537,7 @@ function CloneButton({
 }: {
   owner: string;
   repo: string;
-  sshUrl?: string;
+  sshUrl?: string | undefined;
   archiveRef: string;
 }) {
   const [open, setOpen] = useState(false);
@@ -903,7 +903,7 @@ function EmptyRepoSetup({
   owner: string;
   repo: string;
   defaultBranch: string;
-  sshUrl?: string;
+  sshUrl?: string | undefined;
 }) {
   const origin = typeof window !== "undefined" ? window.location.origin : "";
   const [activeTab, setActiveTab] = useState<"https" | "ssh" | "gh">("https");

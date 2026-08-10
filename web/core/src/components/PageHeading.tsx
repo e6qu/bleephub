@@ -2,7 +2,7 @@ import { type ReactNode } from "react";
 
 export interface PageHeadingProps {
   /** Small label printed above the title — typically a section/category. */
-  kicker?: string;
+  kicker?: string | undefined;
   /** The headline. Rendered in the serif display voice. */
   title: ReactNode;
   /** Sub-line under the title (monospace). */

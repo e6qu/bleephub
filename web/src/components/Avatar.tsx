@@ -11,7 +11,7 @@ export function Avatar({
   square = false,
 }: {
   login: string;
-  src?: string | null;
+  src?: string | null | undefined;
   size?: number;
   square?: boolean;
 }) {

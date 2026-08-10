@@ -3,10 +3,10 @@ import remarkGfm from "remark-gfm";
 import type { GithubComment } from "../types.js";
 
 export interface CommentCardProps {
-  login?: string;
-  body?: string;
+  login?: string | undefined;
+  body?: string | undefined;
   date: string;
-  isOp?: boolean;
+  isOp?: boolean | undefined;
 }
 
 export function CommentCard({ login, body, date, isOp = false }: CommentCardProps) {

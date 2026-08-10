@@ -377,7 +377,7 @@ function SpaceDialog({
   onClose,
 }: {
   owner: CopilotSpaceOwner;
-  space?: GithubCopilotSpace;
+  space?: GithubCopilotSpace | undefined;
   onClose: () => void;
 }) {
   const qc = useQueryClient();
@@ -718,7 +718,7 @@ function SpaceResourceForm({
   owner: CopilotSpaceOwner;
   spaceNumber: number;
   /** When set the form edits this resource's metadata (the type is fixed). */
-  resource?: GithubCopilotSpaceResource;
+  resource?: GithubCopilotSpaceResource | undefined;
   onDone: () => void;
 }) {
   const qc = useQueryClient();
