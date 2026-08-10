@@ -5,6 +5,29 @@ import (
 	"time"
 )
 
+// TestTeamGetsAreDetached pins STORE-021 for the team getters: GetTeam and
+// GetTeamByID must deep-copy the MemberIDs/RepoPermissions reference fields.
+func TestTeamGetsAreDetached(t *testing.T) {
+	s := newTestServer()
+	admin := s.store.UsersByLogin["admin"]
+	org := s.store.CreateOrg(admin, "team-detach-org", "T", "")
+	team := s.store.CreateTeam(org.Login, "Crew", TeamOptions{})
+	s.store.SetTeamMembership(org.Login, team.Slug, admin.ID, TeamRoleMember)
+
+	got := s.store.GetTeam(org.Login, team.Slug)
+	got.Name = "hacked"
+	got.MemberIDs = append(got.MemberIDs, 99999)
+	fresh := s.store.GetTeamByID(team.ID)
+	if fresh.Name == "hacked" {
+		t.Fatalf("team name mutated through the getter: %q", fresh.Name)
+	}
+	for _, id := range fresh.MemberIDs {
+		if id == 99999 {
+			t.Fatalf("team MemberIDs mutated through the getter: %v", fresh.MemberIDs)
+		}
+	}
+}
+
 // TestMembershipGetIsDetached pins STORE-021 for the org-membership getter.
 func TestMembershipGetIsDetached(t *testing.T) {
 	s := newTestServer()

@@ -775,17 +775,44 @@ func (st *Store) CreateTeam(orgLogin, name string, opts TeamOptions) *Team {
 }
 
 // GetTeam returns a team by org login and slug, or nil.
+// cloneTeam returns a deep copy safe to hand outside the store lock
+// (STORE-021): MemberIDs, MaintainerIDs, RepoNames and RepoPermissions are the
+// reference fields. Team writes go through the keyed UpdateTeam (or mutate the
+// live st.Teams row directly), never a getter result.
+func cloneTeam(t *Team) *Team {
+	if t == nil {
+		return nil
+	}
+	clone := *t
+	if t.MemberIDs != nil {
+		clone.MemberIDs = append([]int(nil), t.MemberIDs...)
+	}
+	if t.MaintainerIDs != nil {
+		clone.MaintainerIDs = append([]int(nil), t.MaintainerIDs...)
+	}
+	if t.RepoNames != nil {
+		clone.RepoNames = append([]string(nil), t.RepoNames...)
+	}
+	if t.RepoPermissions != nil {
+		clone.RepoPermissions = make(map[string]TeamPermission, len(t.RepoPermissions))
+		for k, v := range t.RepoPermissions {
+			clone.RepoPermissions[k] = v
+		}
+	}
+	return &clone
+}
+
 func (st *Store) GetTeam(orgLogin, slug string) *Team {
 	st.mu.RLock()
 	defer st.mu.RUnlock()
-	return st.TeamsBySlug[teamSlugKey(orgLogin, slug)]
+	return cloneTeam(st.TeamsBySlug[teamSlugKey(orgLogin, slug)])
 }
 
 // GetTeamByID returns a team by its numeric ID, or nil.
 func (st *Store) GetTeamByID(id int) *Team {
 	st.mu.RLock()
 	defer st.mu.RUnlock()
-	return st.Teams[id]
+	return cloneTeam(st.Teams[id])
 }
 
 // UpdateTeam applies a mutation function to a team. When the mutation
