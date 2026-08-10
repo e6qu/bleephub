@@ -239,7 +239,7 @@ func TestForkPullRequestTriggersWithTheBaseWorkflowDefinition(t *testing.T) {
 	s := newIsolatedServer(t)
 	const baseKey = "forkbase-owner/fork-app"
 	const forkKey = "forkhead-owner/fork-app"
-	cancelRepoRunsCleanup(t, baseKey)
+	s.cancelRepoRunsCleanup(t, baseKey)
 
 	commitWorkflowYAMLToStorage(t, s.Server, baseKey, ".github/workflows/ci.yml", forkTriggerBaseYAML)
 	forkHeadSha := commitWorkflowYAMLToStorage(t, s.Server, forkKey, ".github/workflows/ci.yml", forkTriggerForkYAML)
@@ -302,7 +302,7 @@ func TestPushRunsTheDefinitionOnThePushedRef(t *testing.T) {
 	t.Parallel()
 	s := newIsolatedServer(t)
 	const repoKey = "refdef-owner/refdef-app"
-	cancelRepoRunsCleanup(t, repoKey)
+	s.cancelRepoRunsCleanup(t, repoKey)
 
 	commitWorkflowYAMLToStorage(t, s.Server, repoKey, ".github/workflows/ci.yml", `name: main-ci
 on: [push]
@@ -390,7 +390,7 @@ func TestExpiredJobLeaseIsRedelivered(t *testing.T) {
 	t.Parallel()
 	s := newIsolatedServer(t)
 	const repoKey = "leaseowner/lease-app"
-	cancelRepoRunsCleanup(t, repoKey)
+	s.cancelRepoRunsCleanup(t, repoKey)
 	commitWorkflowYAMLToStorage(t, s.Server, repoKey, ".github/workflows/ci.yml", `name: lease-ci
 on: [push]
 jobs:
@@ -461,7 +461,7 @@ func TestLiveJobLeaseIsLeftAlone(t *testing.T) {
 	t.Parallel()
 	s := newIsolatedServer(t)
 	const repoKey = "leaselive/lease-app"
-	cancelRepoRunsCleanup(t, repoKey)
+	s.cancelRepoRunsCleanup(t, repoKey)
 	commitWorkflowYAMLToStorage(t, s.Server, repoKey, ".github/workflows/ci.yml", `name: lease-live
 on: [push]
 jobs:

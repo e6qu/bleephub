@@ -20,7 +20,7 @@ func TestCancellationSignalsRunningJob(t *testing.T) {
 	t.Parallel()
 	s := newIsolatedServer(t)
 	repoKey := "cancelowner/cancel-repo"
-	cancelRepoRunsCleanup(t, repoKey)
+	s.cancelRepoRunsCleanup(t, repoKey)
 	commitWorkflowYAMLToStorage(t, s.Server, repoKey, ".github/workflows/ci.yml", `name: cancel-ci
 on: [push]
 jobs:
@@ -138,7 +138,7 @@ func TestCancelPurgesUndeliveredJobs(t *testing.T) {
 	t.Parallel()
 	s := newIsolatedServer(t)
 	repoKey := "cancelq/cq-repo"
-	cancelRepoRunsCleanup(t, repoKey)
+	s.cancelRepoRunsCleanup(t, repoKey)
 	commitWorkflowYAMLToStorage(t, s.Server, repoKey, ".github/workflows/ci.yml", `name: cq-ci
 on: [push]
 jobs:

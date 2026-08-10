@@ -185,26 +185,6 @@ func TestLabelRoutingQueuesUntilMatch(t *testing.T) {
 	}
 }
 
-// cancelRepoRunsCleanup cancels every in-flight run a test created on
-// the shared testServer, keeping the global max-concurrent-workflows
-// budget free for unrelated tests.
-func cancelRepoRunsCleanup(t *testing.T, repoKey string) {
-	t.Helper()
-	t.Cleanup(func() {
-		testServer.store.mu.RLock()
-		var runs []*Workflow
-		for _, w := range testServer.store.Workflows {
-			if w.RepoFullName == repoKey && w.Status != WorkflowStatusCompleted {
-				runs = append(runs, w)
-			}
-		}
-		testServer.store.mu.RUnlock()
-		for _, w := range runs {
-			testServer.cancelWorkflow(w)
-		}
-	})
-}
-
 func (s *isolatedServer) seedRerunRepo(t *testing.T, repoKey, yaml string) *Workflow {
 	t.Helper()
 	s.cancelRepoRunsCleanup(t, repoKey)

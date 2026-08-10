@@ -106,7 +106,7 @@ func TestActionsChecksLifecycle(t *testing.T) {
 	t.Parallel()
 	s := newIsolatedServer(t)
 	repoKey := "checksowner/checks-repo"
-	cancelRepoRunsCleanup(t, repoKey)
+	s.cancelRepoRunsCleanup(t, repoKey)
 	commitWorkflowYAMLToStorage(t, s.Server, repoKey, ".github/workflows/ci.yml", `name: ci
 on: [push]
 jobs:
@@ -211,7 +211,7 @@ func TestActionsSkippedJobCheckRun(t *testing.T) {
 	t.Parallel()
 	s := newIsolatedServer(t)
 	repoKey := "checkskip/skip-repo"
-	cancelRepoRunsCleanup(t, repoKey)
+	s.cancelRepoRunsCleanup(t, repoKey)
 	commitWorkflowYAMLToStorage(t, s.Server, repoKey, ".github/workflows/ci.yml", `name: skip-ci
 on: [push]
 jobs:
