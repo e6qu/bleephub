@@ -1388,12 +1388,20 @@ func (s *Server) runPagesBuild(ctx context.Context, repo *Repo, pusher *PagesPus
 		pages.Status = "built"
 		pages.Custom404 = custom404
 	}
-	if s.store.Misc.persist != nil {
-		s.store.Misc.persist.MustPut("pages_builds", repo.FullName, s.store.Misc.pagesBuilds[repo.FullName])
-		s.store.Misc.persist.MustPut("pages_sites", strconv.Itoa(repo.ID), pages)
-	}
+	// The completed build's record and the site's new status reflect the same
+	// build finishing; commit them in one transaction so a crash can't leave the
+	// build marked built while the site row still says building, or vice versa
+	// (STORE-001/002). Unlock before any panic so a persist failure can't
+	// deadlock on the held lock.
+	batch := newPersistBatch(s.store.Misc.persist)
+	batch.Put("pages_builds", repo.FullName, s.store.Misc.pagesBuilds[repo.FullName])
+	batch.Put("pages_sites", strconv.Itoa(repo.ID), pages)
+	persistErr := batch.Commit()
 	buildStatus, buildCommit, buildDuration := build.Status, build.Commit, build.Duration
 	s.store.Misc.mu.Unlock()
+	if persistErr != nil {
+		panic(&persistenceFailure{op: "batch", bucket: "pages_sites", key: strconv.Itoa(repo.ID), err: persistErr})
+	}
 	s.recordAuditEvent("pages.build", actor, "", map[string]interface{}{"repo": repo.FullName, "build_id": buildID})
 	// `page_build` fires when a Pages build finishes, so `on: page_build`
 	// workflows run (ACT-026). Fields are snapshotted under the lock above.
