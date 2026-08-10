@@ -542,6 +542,84 @@ func (s *isolatedServer) createRepoWriteRepo(t *testing.T, autoInit bool) string
 	return name
 }
 
+// seedCodeScanningAlert mirrors the package helper (still used by three other
+// code-scanning files): uploads a one-result SARIF and returns the single
+// alert it produces, all on this isolated server.
+func (s *isolatedServer) seedCodeScanningAlert(t *testing.T, owner, repo, ruleID, severity, toolName string) map[string]any {
+	t.Helper()
+	sarif := map[string]any{
+		"version": "2.1.0",
+		"runs": []map[string]any{
+			{
+				"tool": map[string]any{
+					"driver": map[string]any{
+						"name": toolName,
+						"rules": []map[string]any{
+							{
+								"id": ruleID,
+								"fullDescription": map[string]any{
+									"text": "test description for " + ruleID,
+								},
+								"defaultConfiguration": map[string]any{
+									"level": severity,
+								},
+								"properties": map[string]any{
+									"problem.severity": severity,
+								},
+							},
+						},
+					},
+				},
+				"results": []map[string]any{
+					{
+						"ruleId":  ruleID,
+						"message": map[string]any{"text": "problem here"},
+						"locations": []map[string]any{
+							{
+								"physicalLocation": map[string]any{
+									"artifactLocation": map[string]any{"uri": "src/index.js"},
+									"region":           map[string]any{"startLine": 10, "endLine": 10, "startColumn": 5, "endColumn": 15},
+								},
+							},
+						},
+					},
+				},
+			},
+		},
+	}
+	sarifBytes, _ := json.Marshal(sarif)
+	commitSHA := s.putRepoFile(t, owner+"/"+repo, "src/"+ruleID+".js", "const finding = true;\n", "add "+ruleID+" source")
+	body, _ := json.Marshal(map[string]any{
+		"commit_sha": commitSHA,
+		"ref":        "refs/heads/main",
+		"sarif":      base64.StdEncoding.EncodeToString(sarifBytes),
+	})
+	resp, err := s.authedPost("/api/v3/repos/"+owner+"/"+repo+"/code-scanning/sarifs", "application/json", bytes.NewReader(body))
+	if err != nil {
+		t.Fatalf("upload SARIF: %v", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusAccepted {
+		b, _ := io.ReadAll(resp.Body)
+		t.Fatalf("upload SARIF: %d body=%s", resp.StatusCode, b)
+	}
+	alertsResp := s.authedGet(t, "/api/v3/repos/"+owner+"/"+repo+"/code-scanning/alerts?rule="+ruleID)
+	if alertsResp.StatusCode != http.StatusOK {
+		b, _ := io.ReadAll(alertsResp.Body)
+		alertsResp.Body.Close()
+		t.Fatalf("list uploaded alert: %d body=%s", alertsResp.StatusCode, b)
+	}
+	var alerts []map[string]any
+	if err := json.NewDecoder(alertsResp.Body).Decode(&alerts); err != nil {
+		t.Fatalf("decode uploaded alerts: %v", err)
+	}
+	alertsResp.Body.Close()
+	if len(alerts) != 1 {
+		t.Fatalf("uploaded SARIF produced %d alerts for %s, want 1", len(alerts), ruleID)
+	}
+	return alerts[0]
+}
+
 // cleanupCodespaceContainer mirrors the package helper (still used by two
 // other codespaces files): best-effort delete of a named codespace on this
 // isolated server's store at test cleanup.

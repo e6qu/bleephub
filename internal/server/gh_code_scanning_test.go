@@ -89,8 +89,9 @@ func seedCodeScanningAlert(t *testing.T, owner, repo, ruleID, severity, toolName
 }
 
 func TestCodeScanningAlertTestsUsePublicSARIFUpload(t *testing.T) {
+	t.Parallel()
 	needles := map[string]string{
-		"gh_code_scanning_test.go": `authedPost("` + `/internal/repos/"+owner+"/"+repo+"/code-scanning/alerts"`,
+		"gh_code_scanning_test.go": `s.authedPost("` + `/internal/repos/"+owner+"/"+repo+"/code-scanning/alerts"`,
 		"gh_code_scanning.go":      `POST /internal/repos/{owner}/{repo}/code-scanning/alerts`,
 	}
 	for path, needle := range needles {
@@ -105,16 +106,18 @@ func TestCodeScanningAlertTestsUsePublicSARIFUpload(t *testing.T) {
 }
 
 func TestCodeScanning_ListAndFilter(t *testing.T) {
-	admin := testServer.store.UsersByLogin["admin"]
-	repo := testServer.store.CreateRepo(admin, "cs-list", "", false)
+	t.Parallel()
+	s := newIsolatedServer(t)
+	admin := s.store.UsersByLogin["admin"]
+	repo := s.store.CreateRepo(admin, "cs-list", "", false)
 	if repo == nil {
 		t.Fatal("create repo failed")
 	}
 
-	seedCodeScanningAlert(t, "admin", "cs-list", "rule-a", "error", "CodeQL")
-	seedCodeScanningAlert(t, "admin", "cs-list", "rule-b", "warning", "Semgrep")
+	s.seedCodeScanningAlert(t, "admin", "cs-list", "rule-a", "error", "CodeQL")
+	s.seedCodeScanningAlert(t, "admin", "cs-list", "rule-b", "warning", "Semgrep")
 
-	resp := authedGet(t, "/api/v3/repos/admin/cs-list/code-scanning/alerts")
+	resp := s.authedGet(t, "/api/v3/repos/admin/cs-list/code-scanning/alerts")
 	if resp.StatusCode != http.StatusOK {
 		b, _ := io.ReadAll(resp.Body)
 		resp.Body.Close()
@@ -129,7 +132,7 @@ func TestCodeScanning_ListAndFilter(t *testing.T) {
 		t.Fatalf("expected 2 alerts, got %d", len(list))
 	}
 
-	resp = authedGet(t, "/api/v3/repos/admin/cs-list/code-scanning/alerts?severity=error")
+	resp = s.authedGet(t, "/api/v3/repos/admin/cs-list/code-scanning/alerts?severity=error")
 	if resp.StatusCode != http.StatusOK {
 		b, _ := io.ReadAll(resp.Body)
 		resp.Body.Close()
@@ -144,7 +147,7 @@ func TestCodeScanning_ListAndFilter(t *testing.T) {
 		t.Fatalf("expected 1 filtered alert, got %d", len(filtered))
 	}
 
-	resp = authedGet(t, "/api/v3/repos/admin/cs-list/code-scanning/alerts?tool_name=Semgrep")
+	resp = s.authedGet(t, "/api/v3/repos/admin/cs-list/code-scanning/alerts?tool_name=Semgrep")
 	if resp.StatusCode != http.StatusOK {
 		b, _ := io.ReadAll(resp.Body)
 		resp.Body.Close()
@@ -159,7 +162,7 @@ func TestCodeScanning_ListAndFilter(t *testing.T) {
 		t.Fatalf("expected 1 Semgrep alert, got %d", len(filtered))
 	}
 
-	resp = authedGet(t, "/api/v3/repos/admin/cs-list/code-scanning/alerts?rule=rule-a")
+	resp = s.authedGet(t, "/api/v3/repos/admin/cs-list/code-scanning/alerts?rule=rule-a")
 	if resp.StatusCode != http.StatusOK {
 		b, _ := io.ReadAll(resp.Body)
 		resp.Body.Close()
@@ -176,16 +179,18 @@ func TestCodeScanning_ListAndFilter(t *testing.T) {
 }
 
 func TestCodeScanning_GetAndInstances(t *testing.T) {
-	admin := testServer.store.UsersByLogin["admin"]
-	repo := testServer.store.CreateRepo(admin, "cs-get", "", false)
+	t.Parallel()
+	s := newIsolatedServer(t)
+	admin := s.store.UsersByLogin["admin"]
+	repo := s.store.CreateRepo(admin, "cs-get", "", false)
 	if repo == nil {
 		t.Fatal("create repo failed")
 	}
 
-	created := seedCodeScanningAlert(t, "admin", "cs-get", "rule-get", "error", "CodeQL")
+	created := s.seedCodeScanningAlert(t, "admin", "cs-get", "rule-get", "error", "CodeQL")
 	number := int(created["number"].(float64))
 
-	resp := authedGet(t, "/api/v3/repos/admin/cs-get/code-scanning/alerts/"+itoa(number))
+	resp := s.authedGet(t, "/api/v3/repos/admin/cs-get/code-scanning/alerts/"+itoa(number))
 	if resp.StatusCode != http.StatusOK {
 		b, _ := io.ReadAll(resp.Body)
 		resp.Body.Close()
@@ -203,7 +208,7 @@ func TestCodeScanning_GetAndInstances(t *testing.T) {
 		t.Fatalf("expected state open, got %v", got["state"])
 	}
 
-	resp = authedGet(t, "/api/v3/repos/admin/cs-get/code-scanning/alerts/"+itoa(number)+"/instances")
+	resp = s.authedGet(t, "/api/v3/repos/admin/cs-get/code-scanning/alerts/"+itoa(number)+"/instances")
 	if resp.StatusCode != http.StatusOK {
 		b, _ := io.ReadAll(resp.Body)
 		resp.Body.Close()
@@ -335,17 +340,19 @@ func TestCodeScanning_AlertInstancesPagination(t *testing.T) {
 }
 
 func TestCodeScanning_PatchDismiss(t *testing.T) {
-	admin := testServer.store.UsersByLogin["admin"]
-	repo := testServer.store.CreateRepo(admin, "cs-patch", "", false)
+	t.Parallel()
+	s := newIsolatedServer(t)
+	admin := s.store.UsersByLogin["admin"]
+	repo := s.store.CreateRepo(admin, "cs-patch", "", false)
 	if repo == nil {
 		t.Fatal("create repo failed")
 	}
 
-	created := seedCodeScanningAlert(t, "admin", "cs-patch", "rule-patch", "error", "CodeQL")
+	created := s.seedCodeScanningAlert(t, "admin", "cs-patch", "rule-patch", "error", "CodeQL")
 	number := int(created["number"].(float64))
 
 	patch, _ := json.Marshal(map[string]any{"state": "dismissed", "dismissed_reason": "false positive"})
-	req, _ := http.NewRequest("PATCH", testBaseURL+"/api/v3/repos/admin/cs-patch/code-scanning/alerts/"+itoa(number), bytes.NewReader(patch))
+	req, _ := http.NewRequest("PATCH", s.baseURL+"/api/v3/repos/admin/cs-patch/code-scanning/alerts/"+itoa(number), bytes.NewReader(patch))
 	req.Header.Set("Authorization", "Bearer "+defaultToken)
 	req.Header.Set("Content-Type", "application/json")
 	resp, err := http.DefaultClient.Do(req)
@@ -371,7 +378,7 @@ func TestCodeScanning_PatchDismiss(t *testing.T) {
 
 	// Reopen
 	patch, _ = json.Marshal(map[string]any{"state": "open"})
-	req, _ = http.NewRequest("PATCH", testBaseURL+"/api/v3/repos/admin/cs-patch/code-scanning/alerts/"+itoa(number), bytes.NewReader(patch))
+	req, _ = http.NewRequest("PATCH", s.baseURL+"/api/v3/repos/admin/cs-patch/code-scanning/alerts/"+itoa(number), bytes.NewReader(patch))
 	req.Header.Set("Authorization", "Bearer "+defaultToken)
 	req.Header.Set("Content-Type", "application/json")
 	resp, err = http.DefaultClient.Do(req)
@@ -394,17 +401,19 @@ func TestCodeScanning_PatchDismiss(t *testing.T) {
 }
 
 func TestCodeScanning_InvalidDismissedReason(t *testing.T) {
-	admin := testServer.store.UsersByLogin["admin"]
-	repo := testServer.store.CreateRepo(admin, "cs-invalid", "", false)
+	t.Parallel()
+	s := newIsolatedServer(t)
+	admin := s.store.UsersByLogin["admin"]
+	repo := s.store.CreateRepo(admin, "cs-invalid", "", false)
 	if repo == nil {
 		t.Fatal("create repo failed")
 	}
 
-	created := seedCodeScanningAlert(t, "admin", "cs-invalid", "rule-invalid", "error", "CodeQL")
+	created := s.seedCodeScanningAlert(t, "admin", "cs-invalid", "rule-invalid", "error", "CodeQL")
 	number := int(created["number"].(float64))
 
 	patch, _ := json.Marshal(map[string]any{"state": "dismissed", "dismissed_reason": "not_a_reason"})
-	req, _ := http.NewRequest("PATCH", testBaseURL+"/api/v3/repos/admin/cs-invalid/code-scanning/alerts/"+itoa(number), bytes.NewReader(patch))
+	req, _ := http.NewRequest("PATCH", s.baseURL+"/api/v3/repos/admin/cs-invalid/code-scanning/alerts/"+itoa(number), bytes.NewReader(patch))
 	req.Header.Set("Authorization", "Bearer "+defaultToken)
 	req.Header.Set("Content-Type", "application/json")
 	resp, err := http.DefaultClient.Do(req)
@@ -420,8 +429,10 @@ func TestCodeScanning_InvalidDismissedReason(t *testing.T) {
 }
 
 func TestCodeScanning_SARIFUploadCreatesAlerts(t *testing.T) {
-	admin := testServer.store.UsersByLogin["admin"]
-	repo := testServer.store.CreateRepo(admin, "cs-sarif", "", false)
+	t.Parallel()
+	s := newIsolatedServer(t)
+	admin := s.store.UsersByLogin["admin"]
+	repo := s.store.CreateRepo(admin, "cs-sarif", "", false)
 	if repo == nil {
 		t.Fatal("create repo failed")
 	}
@@ -463,14 +474,14 @@ func TestCodeScanning_SARIFUploadCreatesAlerts(t *testing.T) {
 		},
 	}
 	sarifBytes, _ := json.Marshal(sarif)
-	commitSHA := putRepoFile(t, repo.FullName, "src/zip.js", "export const zip = true;\n", "add scanned source")
+	commitSHA := s.putRepoFile(t, repo.FullName, "src/zip.js", "export const zip = true;\n", "add scanned source")
 	body, _ := json.Marshal(map[string]any{
 		"commit_sha": commitSHA,
 		"ref":        "refs/heads/main",
 		"sarif":      base64.StdEncoding.EncodeToString(sarifBytes),
 	})
 
-	resp, err := authedPost("/api/v3/repos/admin/cs-sarif/code-scanning/sarifs", "application/json", bytes.NewReader(body))
+	resp, err := s.authedPost("/api/v3/repos/admin/cs-sarif/code-scanning/sarifs", "application/json", bytes.NewReader(body))
 	if err != nil {
 		t.Fatalf("sarif upload: %v", err)
 	}
@@ -489,7 +500,7 @@ func TestCodeScanning_SARIFUploadCreatesAlerts(t *testing.T) {
 	}
 
 	// List alerts
-	resp = authedGet(t, "/api/v3/repos/admin/cs-sarif/code-scanning/alerts")
+	resp = s.authedGet(t, "/api/v3/repos/admin/cs-sarif/code-scanning/alerts")
 	if resp.StatusCode != http.StatusOK {
 		b, _ := io.ReadAll(resp.Body)
 		resp.Body.Close()
@@ -506,7 +517,7 @@ func TestCodeScanning_SARIFUploadCreatesAlerts(t *testing.T) {
 
 	// Get upload
 	uploadID := upload["id"].(string)
-	resp = authedGet(t, "/api/v3/repos/admin/cs-sarif/code-scanning/sarifs/"+uploadID)
+	resp = s.authedGet(t, "/api/v3/repos/admin/cs-sarif/code-scanning/sarifs/"+uploadID)
 	if resp.StatusCode != http.StatusOK {
 		b, _ := io.ReadAll(resp.Body)
 		resp.Body.Close()
@@ -527,7 +538,7 @@ func TestCodeScanning_SARIFUploadCreatesAlerts(t *testing.T) {
 	} {
 		t.Run(name, func(t *testing.T) {
 			invalidBody, _ := json.Marshal(coordinate)
-			invalid, err := authedPost("/api/v3/repos/admin/cs-sarif/code-scanning/sarifs", "application/json", bytes.NewReader(invalidBody))
+			invalid, err := s.authedPost("/api/v3/repos/admin/cs-sarif/code-scanning/sarifs", "application/json", bytes.NewReader(invalidBody))
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -541,12 +552,14 @@ func TestCodeScanning_SARIFUploadCreatesAlerts(t *testing.T) {
 }
 
 func TestCodeScanning_SARIFUploadCreatesAnalysisWithoutFindings(t *testing.T) {
-	admin := testServer.store.UsersByLogin["admin"]
-	repo := testServer.store.CreateRepo(admin, "cs-sarif-clean", "", false)
+	t.Parallel()
+	s := newIsolatedServer(t)
+	admin := s.store.UsersByLogin["admin"]
+	repo := s.store.CreateRepo(admin, "cs-sarif-clean", "", false)
 	if repo == nil {
 		t.Fatal("create repo failed")
 	}
-	commitSHA := putRepoFile(t, repo.FullName, "src/clean.js", "export const clean = true;\n", "add clean source")
+	commitSHA := s.putRepoFile(t, repo.FullName, "src/clean.js", "export const clean = true;\n", "add clean source")
 	sarifBytes, err := json.Marshal(map[string]any{
 		"version": "2.1.0",
 		"runs": []map[string]any{{
@@ -565,7 +578,7 @@ func TestCodeScanning_SARIFUploadCreatesAnalysisWithoutFindings(t *testing.T) {
 	if err != nil {
 		t.Fatalf("marshal upload: %v", err)
 	}
-	resp, err := authedPost("/api/v3/repos/admin/cs-sarif-clean/code-scanning/sarifs", "application/json", bytes.NewReader(body))
+	resp, err := s.authedPost("/api/v3/repos/admin/cs-sarif-clean/code-scanning/sarifs", "application/json", bytes.NewReader(body))
 	if err != nil {
 		t.Fatalf("upload SARIF: %v", err)
 	}
@@ -575,7 +588,7 @@ func TestCodeScanning_SARIFUploadCreatesAnalysisWithoutFindings(t *testing.T) {
 		t.Fatalf("upload SARIF = %d body=%s, want 202", resp.StatusCode, responseBody)
 	}
 
-	resp = authedGet(t, "/api/v3/repos/admin/cs-sarif-clean/code-scanning/analyses")
+	resp = s.authedGet(t, "/api/v3/repos/admin/cs-sarif-clean/code-scanning/analyses")
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusOK {
 		responseBody, _ := io.ReadAll(resp.Body)
@@ -594,12 +607,14 @@ func TestCodeScanning_SARIFUploadCreatesAnalysisWithoutFindings(t *testing.T) {
 }
 
 func TestCodeScanning_SARIFUploadCreatesEveryRun(t *testing.T) {
-	admin := testServer.store.UsersByLogin["admin"]
-	repo := testServer.store.CreateRepo(admin, "cs-sarif-runs", "", false)
+	t.Parallel()
+	s := newIsolatedServer(t)
+	admin := s.store.UsersByLogin["admin"]
+	repo := s.store.CreateRepo(admin, "cs-sarif-runs", "", false)
 	if repo == nil {
 		t.Fatal("create repo failed")
 	}
-	commitSHA := putRepoFile(t, repo.FullName, "src/multi.js", "export const multi = true;\n", "add multi-run source")
+	commitSHA := s.putRepoFile(t, repo.FullName, "src/multi.js", "export const multi = true;\n", "add multi-run source")
 	sarifBytes, err := json.Marshal(map[string]any{
 		"version": "2.1.0",
 		"runs": []map[string]any{
@@ -627,7 +642,7 @@ func TestCodeScanning_SARIFUploadCreatesEveryRun(t *testing.T) {
 	if err != nil {
 		t.Fatalf("marshal upload: %v", err)
 	}
-	resp, err := authedPost("/api/v3/repos/admin/cs-sarif-runs/code-scanning/sarifs", "application/json", bytes.NewReader(body))
+	resp, err := s.authedPost("/api/v3/repos/admin/cs-sarif-runs/code-scanning/sarifs", "application/json", bytes.NewReader(body))
 	if err != nil {
 		t.Fatalf("upload SARIF: %v", err)
 	}
@@ -637,7 +652,7 @@ func TestCodeScanning_SARIFUploadCreatesEveryRun(t *testing.T) {
 		t.Fatalf("upload SARIF = %d body=%s, want 202", resp.StatusCode, responseBody)
 	}
 
-	resp = authedGet(t, "/api/v3/repos/admin/cs-sarif-runs/code-scanning/analyses")
+	resp = s.authedGet(t, "/api/v3/repos/admin/cs-sarif-runs/code-scanning/analyses")
 	defer resp.Body.Close()
 	var analyses []map[string]any
 	if err := json.NewDecoder(resp.Body).Decode(&analyses); err != nil {
@@ -655,7 +670,7 @@ func TestCodeScanning_SARIFUploadCreatesEveryRun(t *testing.T) {
 		t.Fatalf("analysis tools = %+v, want both SARIF runs", tools)
 	}
 
-	resp = authedGet(t, "/api/v3/repos/admin/cs-sarif-runs/code-scanning/alerts")
+	resp = s.authedGet(t, "/api/v3/repos/admin/cs-sarif-runs/code-scanning/alerts")
 	defer resp.Body.Close()
 	var alerts []map[string]any
 	if err := json.NewDecoder(resp.Body).Decode(&alerts); err != nil {
@@ -667,15 +682,17 @@ func TestCodeScanning_SARIFUploadCreatesEveryRun(t *testing.T) {
 }
 
 func TestCodeScanning_Analyses(t *testing.T) {
-	admin := testServer.store.UsersByLogin["admin"]
-	repo := testServer.store.CreateRepo(admin, "cs-analyses", "", false)
+	t.Parallel()
+	s := newIsolatedServer(t)
+	admin := s.store.UsersByLogin["admin"]
+	repo := s.store.CreateRepo(admin, "cs-analyses", "", false)
 	if repo == nil {
 		t.Fatal("create repo failed")
 	}
 
-	analysis := testServer.store.CreateCodeScanningAnalysis(repo.FullName, "refs/heads/main", "deadbeefdeadbeefdeadbeefdeadbeefdeadbeef", "key", "cat", "CodeQL", "c7a7c45a-8a3c-4f6e-9b5c-1d3c01234567")
+	analysis := s.store.CreateCodeScanningAnalysis(repo.FullName, "refs/heads/main", "deadbeefdeadbeefdeadbeefdeadbeefdeadbeef", "key", "cat", "CodeQL", "c7a7c45a-8a3c-4f6e-9b5c-1d3c01234567")
 
-	resp := authedGet(t, "/api/v3/repos/admin/cs-analyses/code-scanning/analyses")
+	resp := s.authedGet(t, "/api/v3/repos/admin/cs-analyses/code-scanning/analyses")
 	if resp.StatusCode != http.StatusOK {
 		b, _ := io.ReadAll(resp.Body)
 		resp.Body.Close()
@@ -690,7 +707,7 @@ func TestCodeScanning_Analyses(t *testing.T) {
 		t.Fatalf("expected 1 analysis, got %d", len(list))
 	}
 
-	resp = authedGet(t, "/api/v3/repos/admin/cs-analyses/code-scanning/analyses/"+itoa(analysis.ID))
+	resp = s.authedGet(t, "/api/v3/repos/admin/cs-analyses/code-scanning/analyses/"+itoa(analysis.ID))
 	if resp.StatusCode != http.StatusOK {
 		b, _ := io.ReadAll(resp.Body)
 		resp.Body.Close()
@@ -705,7 +722,7 @@ func TestCodeScanning_Analyses(t *testing.T) {
 		t.Fatalf("expected analysis id %d, got %v", analysis.ID, got["id"])
 	}
 
-	req, _ := http.NewRequest("DELETE", testBaseURL+"/api/v3/repos/admin/cs-analyses/code-scanning/analyses/"+itoa(analysis.ID), nil)
+	req, _ := http.NewRequest("DELETE", s.baseURL+"/api/v3/repos/admin/cs-analyses/code-scanning/analyses/"+itoa(analysis.ID), nil)
 	req.Header.Set("Authorization", "Bearer "+defaultToken)
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
@@ -718,7 +735,7 @@ func TestCodeScanning_Analyses(t *testing.T) {
 	}
 	resp.Body.Close()
 
-	resp = authedGet(t, "/api/v3/repos/admin/cs-analyses/code-scanning/analyses/"+itoa(analysis.ID))
+	resp = s.authedGet(t, "/api/v3/repos/admin/cs-analyses/code-scanning/analyses/"+itoa(analysis.ID))
 	if resp.StatusCode != http.StatusNotFound {
 		t.Fatalf("expected 404 after delete, got %d", resp.StatusCode)
 	}
@@ -726,10 +743,10 @@ func TestCodeScanning_Analyses(t *testing.T) {
 }
 
 // patchDefaultSetup PATCHes a repo's default setup and returns the response.
-func patchDefaultSetup(t *testing.T, repoKey string, body map[string]any) *http.Response {
+func (s *isolatedServer) patchDefaultSetup(t *testing.T, repoKey string, body map[string]any) *http.Response {
 	t.Helper()
 	payload, _ := json.Marshal(body)
-	req, _ := http.NewRequest("PATCH", testBaseURL+"/api/v3/repos/"+repoKey+"/code-scanning/default-setup", bytes.NewReader(payload))
+	req, _ := http.NewRequest("PATCH", s.baseURL+"/api/v3/repos/"+repoKey+"/code-scanning/default-setup", bytes.NewReader(payload))
 	req.Header.Set("Authorization", "Bearer "+defaultToken)
 	req.Header.Set("Content-Type", "application/json")
 	resp, err := http.DefaultClient.Do(req)
@@ -739,9 +756,9 @@ func patchDefaultSetup(t *testing.T, repoKey string, body map[string]any) *http.
 	return resp
 }
 
-func getDefaultSetup(t *testing.T, repoKey string) map[string]any {
+func (s *isolatedServer) getDefaultSetup(t *testing.T, repoKey string) map[string]any {
 	t.Helper()
-	resp := authedGet(t, "/api/v3/repos/"+repoKey+"/code-scanning/default-setup")
+	resp := s.authedGet(t, "/api/v3/repos/"+repoKey+"/code-scanning/default-setup")
 	if resp.StatusCode != http.StatusOK {
 		b, _ := io.ReadAll(resp.Body)
 		resp.Body.Close()
@@ -756,13 +773,15 @@ func getDefaultSetup(t *testing.T, repoKey string) map[string]any {
 }
 
 func TestCodeScanning_DefaultSetup(t *testing.T) {
-	admin := testServer.store.UsersByLogin["admin"]
-	repo := testServer.store.CreateRepo(admin, "cs-default", "", false)
+	t.Parallel()
+	s := newIsolatedServer(t)
+	admin := s.store.UsersByLogin["admin"]
+	repo := s.store.CreateRepo(admin, "cs-default", "", false)
 	if repo == nil {
 		t.Fatal("create repo failed")
 	}
 	// Real repository content: languages are detected from the git tree.
-	stor := testServer.store.GitStorages[repo.FullName]
+	stor := s.store.GitStorages[repo.FullName]
 	if _, err := initRepoWithFiles(stor, repo.DefaultBranch, "init", map[string]string{
 		"main.go":                  "package main\n\nfunc main() {}\n",
 		"tool/script.py":           "print('hi')\n",
@@ -772,7 +791,7 @@ func TestCodeScanning_DefaultSetup(t *testing.T) {
 	}
 
 	// Before any configuration the repo reports not-configured.
-	got := getDefaultSetup(t, "admin/cs-default")
+	got := s.getDefaultSetup(t, "admin/cs-default")
 	if got["state"] != "not-configured" {
 		t.Fatalf("expected not-configured before enabling, got %v", got["state"])
 	}
@@ -784,7 +803,7 @@ func TestCodeScanning_DefaultSetup(t *testing.T) {
 	}
 
 	// Changing options while default setup is disabled is a state conflict.
-	resp := patchDefaultSetup(t, "admin/cs-default", map[string]any{"query_suite": "extended"})
+	resp := s.patchDefaultSetup(t, "admin/cs-default", map[string]any{"query_suite": "extended"})
 	resp.Body.Close()
 	if resp.StatusCode != http.StatusConflict {
 		t.Fatalf("patch without enabling: %d want 409", resp.StatusCode)
@@ -792,7 +811,7 @@ func TestCodeScanning_DefaultSetup(t *testing.T) {
 
 	// Enable with an explicit query suite; the 200 body is the documented
 	// empty object.
-	resp = patchDefaultSetup(t, "admin/cs-default", map[string]any{"state": "configured", "query_suite": "extended"})
+	resp = s.patchDefaultSetup(t, "admin/cs-default", map[string]any{"state": "configured", "query_suite": "extended"})
 	if resp.StatusCode != http.StatusOK {
 		b, _ := io.ReadAll(resp.Body)
 		resp.Body.Close()
@@ -809,7 +828,7 @@ func TestCodeScanning_DefaultSetup(t *testing.T) {
 
 	// GET reads back the persisted configuration with the languages
 	// derived from the repository's real content.
-	got = getDefaultSetup(t, "admin/cs-default")
+	got = s.getDefaultSetup(t, "admin/cs-default")
 	if got["state"] != "configured" {
 		t.Fatalf("expected configured, got %v", got["state"])
 	}
@@ -832,12 +851,12 @@ func TestCodeScanning_DefaultSetup(t *testing.T) {
 	}
 
 	// Explicit languages override detection.
-	resp = patchDefaultSetup(t, "admin/cs-default", map[string]any{"languages": []string{"go"}})
+	resp = s.patchDefaultSetup(t, "admin/cs-default", map[string]any{"languages": []string{"go"}})
 	resp.Body.Close()
 	if resp.StatusCode != http.StatusOK {
 		t.Fatalf("patch languages: %d", resp.StatusCode)
 	}
-	got = getDefaultSetup(t, "admin/cs-default")
+	got = s.getDefaultSetup(t, "admin/cs-default")
 	if l, _ := got["languages"].([]any); len(l) != 1 || l[0] != "go" {
 		t.Fatalf("expected languages [go], got %v", got["languages"])
 	}
@@ -847,25 +866,25 @@ func TestCodeScanning_DefaultSetup(t *testing.T) {
 	}
 
 	// A language outside the documented enum is rejected.
-	resp = patchDefaultSetup(t, "admin/cs-default", map[string]any{"languages": []string{"cobol"}})
+	resp = s.patchDefaultSetup(t, "admin/cs-default", map[string]any{"languages": []string{"cobol"}})
 	resp.Body.Close()
 	if resp.StatusCode != http.StatusUnprocessableEntity {
 		t.Fatalf("invalid language: %d want 422", resp.StatusCode)
 	}
 
 	// Disable; GET reads back not-configured with the update timestamp.
-	resp = patchDefaultSetup(t, "admin/cs-default", map[string]any{"state": "not-configured"})
+	resp = s.patchDefaultSetup(t, "admin/cs-default", map[string]any{"state": "not-configured"})
 	resp.Body.Close()
 	if resp.StatusCode != http.StatusOK {
 		t.Fatalf("disable default setup: %d", resp.StatusCode)
 	}
-	got = getDefaultSetup(t, "admin/cs-default")
+	got = s.getDefaultSetup(t, "admin/cs-default")
 	if got["state"] != "not-configured" {
 		t.Fatalf("expected not-configured after disable, got %v", got["state"])
 	}
 
 	// Disabling again is a state conflict.
-	resp = patchDefaultSetup(t, "admin/cs-default", map[string]any{"state": "not-configured"})
+	resp = s.patchDefaultSetup(t, "admin/cs-default", map[string]any{"state": "not-configured"})
 	resp.Body.Close()
 	if resp.StatusCode != http.StatusConflict {
 		t.Fatalf("double disable: %d want 409", resp.StatusCode)
@@ -875,12 +894,14 @@ func TestCodeScanning_DefaultSetup(t *testing.T) {
 // TestCodeScanning_DefaultSetupNoLanguages verifies enabling fails when
 // the repository has no CodeQL-supported languages to analyze.
 func TestCodeScanning_DefaultSetupNoLanguages(t *testing.T) {
-	admin := testServer.store.UsersByLogin["admin"]
-	repo := testServer.store.CreateRepo(admin, "cs-default-empty", "", false)
+	t.Parallel()
+	s := newIsolatedServer(t)
+	admin := s.store.UsersByLogin["admin"]
+	repo := s.store.CreateRepo(admin, "cs-default-empty", "", false)
 	if repo == nil {
 		t.Fatal("create repo failed")
 	}
-	resp := patchDefaultSetup(t, "admin/cs-default-empty", map[string]any{"state": "configured"})
+	resp := s.patchDefaultSetup(t, "admin/cs-default-empty", map[string]any{"state": "configured"})
 	resp.Body.Close()
 	if resp.StatusCode != http.StatusUnprocessableEntity {
 		t.Fatalf("enable on empty repo: %d want 422", resp.StatusCode)
@@ -888,31 +909,33 @@ func TestCodeScanning_DefaultSetupNoLanguages(t *testing.T) {
 }
 
 func TestCodeScanning_404(t *testing.T) {
-	admin := testServer.store.UsersByLogin["admin"]
-	repo := testServer.store.CreateRepo(admin, "cs-404", "", false)
+	t.Parallel()
+	s := newIsolatedServer(t)
+	admin := s.store.UsersByLogin["admin"]
+	repo := s.store.CreateRepo(admin, "cs-404", "", false)
 	if repo == nil {
 		t.Fatal("create repo failed")
 	}
 
-	resp := authedGet(t, "/api/v3/repos/admin/cs-404/code-scanning/alerts/999")
+	resp := s.authedGet(t, "/api/v3/repos/admin/cs-404/code-scanning/alerts/999")
 	if resp.StatusCode != http.StatusNotFound {
 		t.Fatalf("expected 404 alert, got %d", resp.StatusCode)
 	}
 	resp.Body.Close()
 
-	resp = authedGet(t, "/api/v3/repos/admin/does-not-exist/code-scanning/alerts")
+	resp = s.authedGet(t, "/api/v3/repos/admin/does-not-exist/code-scanning/alerts")
 	if resp.StatusCode != http.StatusNotFound {
 		t.Fatalf("expected 404 repo, got %d", resp.StatusCode)
 	}
 	resp.Body.Close()
 
-	resp = authedGet(t, "/api/v3/repos/admin/cs-404/code-scanning/analyses/999")
+	resp = s.authedGet(t, "/api/v3/repos/admin/cs-404/code-scanning/analyses/999")
 	if resp.StatusCode != http.StatusNotFound {
 		t.Fatalf("expected 404 analysis, got %d", resp.StatusCode)
 	}
 	resp.Body.Close()
 
-	resp = authedGet(t, "/api/v3/repos/admin/cs-404/code-scanning/sarifs/nonexistent")
+	resp = s.authedGet(t, "/api/v3/repos/admin/cs-404/code-scanning/sarifs/nonexistent")
 	if resp.StatusCode != http.StatusNotFound {
 		t.Fatalf("expected 404 sarif, got %d", resp.StatusCode)
 	}
