@@ -458,7 +458,7 @@ func (st *Store) ListCustomProperties(orgLogin string) []*CustomProperty {
 		}
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].PropertyName < out[j].PropertyName })
-	return out
+	return snapshotCustomProperties(out)
 }
 
 // GetCustomProperty returns a property definition by name, or nil.

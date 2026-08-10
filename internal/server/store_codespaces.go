@@ -633,7 +633,7 @@ func (st *Store) ListCodespaceSecrets(scope string) []*CodespaceSecret {
 	for i, n := range names {
 		out[i] = m[n]
 	}
-	return out
+	return snapshotCodespaceSecrets(out)
 }
 
 // DeleteCodespaceSecret removes a secret.

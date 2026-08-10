@@ -335,7 +335,7 @@ func (st *Store) ListDiscussionComments(discussionID, parentID int) []*Discussio
 		out = append(out, c)
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].CreatedAt.Before(out[j].CreatedAt) })
-	return out
+	return snapshotDiscussionComments(out)
 }
 
 // UpdateDiscussionComment applies a mutation function to a comment.

@@ -673,7 +673,7 @@ func (st *Store) ListEnterpriseCodeSecurityConfigs() []*EnterpriseCodeSecurityCo
 		out = append(out, c)
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].ID < out[j].ID })
-	return out
+	return snapshotEnterpriseCodeSecurityConfigs(out)
 }
 
 // TouchEnterpriseCodeSecurityConfig bumps updated_at and persists after a

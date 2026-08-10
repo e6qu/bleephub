@@ -528,7 +528,7 @@ func (st *Store) ListPullRequestReviews(repoKey string, pullNumber int) []*PullR
 	}
 	reviews := make([]*PullRequestReview, len(st.PRReviewsByPR[pr.ID]))
 	copy(reviews, st.PRReviewsByPR[pr.ID])
-	return reviews
+	return snapshotReviews(reviews)
 }
 
 // UpdatePullRequestReview updates a review's body.
@@ -769,5 +769,5 @@ func (st *Store) ListPRReviews(prID int) []*PullRequestReview {
 	defer st.mu.RUnlock()
 	reviews := make([]*PullRequestReview, len(st.PRReviewsByPR[prID]))
 	copy(reviews, st.PRReviewsByPR[prID])
-	return reviews
+	return snapshotReviews(reviews)
 }

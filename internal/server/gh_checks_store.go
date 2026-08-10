@@ -276,7 +276,7 @@ func (st *Store) ListCheckRunsForCommit(repoKey, headSHA, status, conclusion str
 		cp := *cr
 		out = append(out, &cp)
 	}
-	return out
+	return snapshotCheckRuns(out)
 }
 
 // ListCheckRunsForSuite returns every CheckRun in a suite.
@@ -291,7 +291,7 @@ func (st *Store) ListCheckRunsForSuite(suiteID int64) []*CheckRun {
 			out = append(out, &cp)
 		}
 	}
-	return out
+	return snapshotCheckRuns(out)
 }
 
 // SetCheckSuitePreferences replaces the per-app auto-trigger flags for a repo.

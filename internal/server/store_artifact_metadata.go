@@ -156,7 +156,7 @@ func (st *Store) ListArtifactDeploymentRecords(orgID int, digest string) []*Arti
 		out = append(out, rec)
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].ID < out[j].ID })
-	return out
+	return snapshotArtifactDeploymentRecords(out)
 }
 
 func (st *Store) CreateArtifactDeploymentJob(job *ArtifactDeploymentJob) *ArtifactDeploymentJob {

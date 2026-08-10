@@ -347,7 +347,7 @@ func (st *Store) ListCampaigns(orgLogin string) []*Campaign {
 		out = append(out, c)
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].Number < out[j].Number })
-	return out
+	return snapshotCampaigns(out)
 }
 
 // GetCampaign returns a campaign by org and number, or nil.

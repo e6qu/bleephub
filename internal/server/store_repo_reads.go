@@ -111,7 +111,7 @@ func (st *Store) ListRepoCloneTraffic(repoID int, since time.Time) []*RepoTraffi
 		}
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].Day < out[j].Day })
-	return out
+	return snapshotRepoTrafficBuckets(out)
 }
 
 // ListRepoSubscribers returns the users holding a watch subscription on the

@@ -597,6 +597,28 @@ func snapshotSecretScanningAlerts(in []*SecretScanningAlert) []*SecretScanningAl
 	return out
 }
 
+func snapshotReviews(in []*PullRequestReview) []*PullRequestReview {
+	if in == nil {
+		return nil
+	}
+	out := make([]*PullRequestReview, len(in))
+	for i, x := range in {
+		out[i] = cloneReview(x)
+	}
+	return out
+}
+
+func snapshotEnterpriseCodeSecurityConfigs(in []*EnterpriseCodeSecurityConfiguration) []*EnterpriseCodeSecurityConfiguration {
+	if in == nil {
+		return nil
+	}
+	out := make([]*EnterpriseCodeSecurityConfiguration, len(in))
+	for i, x := range in {
+		out[i] = cloneEnterpriseCodeSecurityConfig(x)
+	}
+	return out
+}
+
 // RenameRepo renames owner/name to owner/newName, moving every map keyed by
 // the repo full name and updating embedded repo-name strings. It returns true
 // on success.
