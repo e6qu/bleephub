@@ -5,6 +5,31 @@ import (
 	"time"
 )
 
+// TestIssueGetsAreDetached pins STORE-021 for the issue getters: GetIssue and
+// GetIssueByNumber must deep-copy AssigneeIDs/LabelIDs and ClosedAt.
+func TestIssueGetsAreDetached(t *testing.T) {
+	s := newTestServer()
+	admin := s.store.UsersByLogin["admin"]
+	repo := s.store.CreateRepo(admin, "issue-detach", "", false)
+	iss := s.store.CreateIssue(repo.ID, admin.ID, "bug", "body", []int{1}, []int{admin.ID}, 0)
+
+	got := s.store.GetIssue(iss.ID)
+	got.Title = "hacked"
+	got.LabelIDs = append(got.LabelIDs, 99999)
+	got.AssigneeIDs[0] = 99999
+
+	fresh := s.store.GetIssueByNumber(repo.ID, iss.Number)
+	if fresh.Title == "hacked" {
+		t.Fatalf("issue title mutated through the getter: %q", fresh.Title)
+	}
+	if len(fresh.LabelIDs) != 1 || fresh.LabelIDs[0] != 1 {
+		t.Fatalf("issue LabelIDs mutated through the getter: %v", fresh.LabelIDs)
+	}
+	if fresh.AssigneeIDs[0] != admin.ID {
+		t.Fatalf("issue AssigneeIDs mutated through the getter: %v", fresh.AssigneeIDs)
+	}
+}
+
 // TestPullRequestReviewGetIsDetached pins STORE-021 for the PR-review getter.
 func TestPullRequestReviewGetIsDetached(t *testing.T) {
 	s := newTestServer()

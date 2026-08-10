@@ -669,17 +669,39 @@ func (st *Store) unindexIssueLocked(issue *Issue) {
 }
 
 // GetIssue returns an issue by global ID.
+// cloneIssue returns a deep copy safe to hand outside the store lock
+// (STORE-021): AssigneeIDs, LabelIDs and ClosedAt are the reference fields.
+// Issue writes go through the keyed UpdateIssue(id, fn); the getter's callers
+// only read.
+func cloneIssue(i *Issue) *Issue {
+	if i == nil {
+		return nil
+	}
+	clone := *i
+	if i.AssigneeIDs != nil {
+		clone.AssigneeIDs = append([]int(nil), i.AssigneeIDs...)
+	}
+	if i.LabelIDs != nil {
+		clone.LabelIDs = append([]int(nil), i.LabelIDs...)
+	}
+	if i.ClosedAt != nil {
+		closed := *i.ClosedAt
+		clone.ClosedAt = &closed
+	}
+	return &clone
+}
+
 func (st *Store) GetIssue(id int) *Issue {
 	st.mu.RLock()
 	defer st.mu.RUnlock()
-	return st.Issues[id]
+	return cloneIssue(st.Issues[id])
 }
 
 // GetIssueByNumber returns an issue by repo ID and number.
 func (st *Store) GetIssueByNumber(repoID, number int) *Issue {
 	st.mu.RLock()
 	defer st.mu.RUnlock()
-	return st.IssuesByRepo[repoID][number]
+	return cloneIssue(st.IssuesByRepo[repoID][number])
 }
 
 // ListIssues returns issues for a repository, optionally filtered by state.
