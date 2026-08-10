@@ -40,7 +40,10 @@ export function createColumnHelper<TData extends RowData>() {
   return tanstackCreateColumnHelper<DataTableFeatures, TData>();
 }
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
+// The final `any` is `ColumnDef`'s cell-value type parameter. A column array is
+// heterogeneous — each accessor yields a different value type — so an aggregate
+// column list cannot name a single value type; `any` here mirrors how TanStack
+// Table itself types a mixed ColumnDef list.
 export type DataTableColumn<T extends RowData> = ColumnDef<DataTableFeatures, T, any>;
 
 export interface DataTableProps<T extends RowData> {

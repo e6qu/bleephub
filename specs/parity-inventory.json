@@ -4840,8 +4840,8 @@
         "id": "WEB-019",
         "location": "tsconfig.base.json",
         "severity": "M",
-        "status": "partial \u2014 all seven strict-adjacent flags are now enabled repo-wide in `tsconfig.base.json`: the earlier five (`noImplicitReturns`, `noFallthroughCasesInSwitch`, `noImplicitOverride`, `noUnusedLocals`, `noUnusedParameters`) plus `exactOptionalPropertyTypes` and `noUncheckedIndexedAccess`. `exactOptionalPropertyTypes` surfaced ~75 present-but-undefined sites, each fixed rather than suppressed: optional component-prop and API-payload fields that legitimately receive `undefined` were widened to admit it, with a shared `Undef<T>` mapped type in `types.ts` for the `Partial` PATCH payloads (`updateOrg`/`updateTeam`) and an `ApiFetchInit` wrapper type for the `RequestInit` cases. `noUncheckedIndexedAccess` surfaced 122 index-access sites: the 41 in source got real fixes (early-return guards, `?? default`, destructuring defaults like `const [a = \"\", b = \"\"] = split`, and `!` only where an index is provably valid such as a length-checked array or a regex capture group), and the 81 in test files got `!` assertions on test-controlled indices \u2014 the permitted test-only carve-out. Typecheck, build, all 511 web tests and knip stay green. The sole remainder is an owner tooling decision: the five `eslint-disable` comments document intentional `any`/deps choices and await a call on whether to install eslint (making them active) or drop them",
-        "status_kind": "partial"
+        "status": "fixed \u2014 all seven strict-adjacent flags are now enabled repo-wide in `tsconfig.base.json`: the earlier five (`noImplicitReturns`, `noFallthroughCasesInSwitch`, `noImplicitOverride`, `noUnusedLocals`, `noUnusedParameters`) plus `exactOptionalPropertyTypes` and `noUncheckedIndexedAccess`. `exactOptionalPropertyTypes` surfaced ~75 present-but-undefined sites, each fixed rather than suppressed: optional component-prop and API-payload fields that legitimately receive `undefined` were widened to admit it, with a shared `Undef<T>` mapped type in `types.ts` for the `Partial` PATCH payloads (`updateOrg`/`updateTeam`) and an `ApiFetchInit` wrapper type for the `RequestInit` cases. `noUncheckedIndexedAccess` surfaced 122 index-access sites: the 41 in source got real fixes (early-return guards, `?? default`, destructuring defaults like `const [a = \"\", b = \"\"] = split`, and `!` only where an index is provably valid such as a length-checked array or a regex capture group), and the 81 in test files got `!` assertions on test-controlled indices \u2014 the permitted test-only carve-out. Typecheck, build, all 511 web tests and knip stay green. The second half of the finding \u2014 five `eslint-disable` comments suppressing a linter that is not installed (so dead directives) \u2014 is now resolved without needing the owner's install-eslint decision: all `eslint-disable` comments in `web/core/src` are gone (verified zero remain). The three page-level `no-explicit-any` sites (`ResourcesPage`/`ContainersPage`/`MetricsPage`) were real fixes \u2014 their `const columns: any[]` now uses the existing `DataTableColumn<Row>[]` type, removing the `any` \u2014 and the two genuinely-generic core sites (`DataTable`'s `DataTableColumn` cell-value parameter and `ResourceListPage`'s alias) plus the `Toast` intentional-deps case keep their rationale as plain explanatory comments rather than directives for a linter that is not run. Typecheck, build, all 511 web tests and knip stay green",
+        "status_kind": "fixed"
       },
       {
         "category": "WEB",
@@ -6602,9 +6602,8 @@
         "WEB": {
           "status": {
             "deferred": 2,
-            "fixed": 59,
-            "open": 1,
-            "partial": 1
+            "fixed": 60,
+            "open": 1
           },
           "total": 63
         }
@@ -6616,9 +6615,9 @@
       },
       "status": {
         "deferred": 3,
-        "fixed": 661,
+        "fixed": 662,
         "open": 12,
-        "partial": 9
+        "partial": 8
       },
       "total": 685
     }

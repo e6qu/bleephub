@@ -6,7 +6,7 @@ import { Spinner } from "../components/Spinner.js";
 import { RefreshButton } from "../components/RefreshButton.js";
 import { InlineError } from "../components/InlineError.js";
 import { Button } from "../components/Button.js";
-import { createColumnHelper } from "../components/DataTable.js";
+import { createColumnHelper, type DataTableColumn } from "../components/DataTable.js";
 
 interface RequestRow {
   endpoint: string;
@@ -57,8 +57,7 @@ export function MetricsPage() {
         .sort((a, b) => b.count - a.count)
     : [];
 
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const columns: any[] = [
+  const columns: DataTableColumn<RequestRow>[] = [
     col.accessor("endpoint", {
       header: "Endpoint",
       cell: (info) => (

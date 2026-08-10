@@ -7,12 +7,9 @@ import { InlineError } from "./InlineError.js";
 import { PageHeading } from "./PageHeading.js";
 import { Spinner } from "./Spinner.js";
 
-// `ColumnDef`'s second type parameter (cell value type) defaults to
-// `unknown`. Allowing `any` here matches the existing DataTable
-// signature so callers can keep using `accessorKey` columns without
-// repeating generics.
-//
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
+// `DataTableColumn` fixes `ColumnDef`'s cell-value type parameter to `any`
+// (see its definition) so callers can keep using `accessorKey` columns of
+// mixed value types without repeating generics.
 type AnyColumns<T extends RowData> = DataTableColumn<T>[];
 
 export interface ResourceListPageProps<T extends RowData> {

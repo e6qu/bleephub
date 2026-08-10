@@ -185,6 +185,7 @@ export function useToastQueryErrors(error: unknown, title?: string) {
   const report = useReportError();
   useEffect(() => {
     if (error) report(error, title);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    // Intentionally keyed on `error` only: `report`/`title` are stable and we
+    // want to toast when the error value itself changes, not when they do.
   }, [error]);
 }

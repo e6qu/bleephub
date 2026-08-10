@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { createColumnHelper } from "../components/DataTable.js";
+import { createColumnHelper, type DataTableColumn } from "../components/DataTable.js";
 import { useContainers } from "../hooks/index.js";
 import { DataTable } from "../components/DataTable.js";
 import { PageHeading } from "../components/PageHeading.js";
@@ -13,8 +13,7 @@ import type { ContainerSummary } from "../api/index.js";
 
 const col = createColumnHelper<ContainerSummary>();
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-const columns: any[] = [
+const columns: DataTableColumn<ContainerSummary>[] = [
   col.accessor("id", {
     header: "ID",
     cell: (info) => (
