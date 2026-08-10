@@ -1470,17 +1470,22 @@ func TestWebhookDeliveryLog(t *testing.T) {
 
 	waitForWebhookCount(t, &received, 1)
 
-	// List deliveries
-	delResp := s.get(t, fmt.Sprintf("/api/v3/repos/admin/wh-log/hooks/%d/deliveries", hookID), defaultToken)
-	if delResp.StatusCode != 200 {
-		delResp.Body.Close()
-		t.Fatalf("list deliveries: expected 200, got %d", delResp.StatusCode)
-	}
-	defer delResp.Body.Close()
-
+	// List deliveries. The delivery is recorded (AddDelivery) by the background
+	// delivery goroutine AFTER the receiver's POST returns, so waitForWebhookCount
+	// (which only observes the receiver) can win the race with the store write —
+	// poll the endpoint until the log is populated rather than reading it once.
 	var deliveries []map[string]interface{}
-	json.NewDecoder(delResp.Body).Decode(&deliveries)
-	if len(deliveries) < 1 {
+	if !testEventually(5*time.Second, 10*time.Millisecond, func() bool {
+		delResp := s.get(t, fmt.Sprintf("/api/v3/repos/admin/wh-log/hooks/%d/deliveries", hookID), defaultToken)
+		if delResp.StatusCode != 200 {
+			delResp.Body.Close()
+			t.Fatalf("list deliveries: expected 200, got %d", delResp.StatusCode)
+		}
+		deliveries = nil
+		json.NewDecoder(delResp.Body).Decode(&deliveries)
+		delResp.Body.Close()
+		return len(deliveries) >= 1
+	}) {
 		t.Fatal("expected at least 1 delivery in log")
 	}
 
