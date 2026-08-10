@@ -153,9 +153,9 @@ describe("api wire-shape normalization", () => {
       ]),
     );
     const apps = await fetchOAuthApps();
-    expect(apps[0].clientId).toBe("Iv1.abc123");
-    expect(apps[0].callbackUrl).toBe("https://example.test/cb");
-    expect(apps[0].createdAt).toBe("2026-01-01T00:00:00Z");
+    expect(apps[0]!.clientId).toBe("Iv1.abc123");
+    expect(apps[0]!.callbackUrl).toBe("https://example.test/cb");
+    expect(apps[0]!.createdAt).toBe("2026-01-01T00:00:00Z");
   });
 
   it("createApp uses the GitHub App Manifest flow", async () => {
@@ -180,8 +180,8 @@ describe("api wire-shape normalization", () => {
       events: ["push"],
     });
 
-    expect(mockFetch.mock.calls[0][0]).toBe("/settings/apps/new");
-    const firstOptions = mockFetch.mock.calls[0][1] as RequestInit;
+    expect(mockFetch.mock.calls[0]![0]).toBe("/settings/apps/new");
+    const firstOptions = mockFetch.mock.calls[0]![1] as RequestInit;
     expect(firstOptions.method).toBe("POST");
     expect(firstOptions.redirect).toBeUndefined();
     expect(firstOptions.headers).toMatchObject({
@@ -195,8 +195,8 @@ describe("api wire-shape normalization", () => {
     expect(manifest.default_permissions).toEqual({ contents: "read" });
     expect(manifest.default_events).toEqual(["push"]);
 
-    expect(mockFetch.mock.calls[1][0]).toBe("/api/v3/app-manifests/manifest-code/conversions");
-    expect(mockFetch.mock.calls[1][1]).toMatchObject({
+    expect(mockFetch.mock.calls[1]![0]).toBe("/api/v3/app-manifests/manifest-code/conversions");
+    expect(mockFetch.mock.calls[1]![1]).toMatchObject({
       method: "POST",
       headers: { Authorization: "Bearer admintoken" },
     });
@@ -211,7 +211,7 @@ describe("api wire-shape normalization", () => {
     );
     const secrets = await fetchSecrets("admin", "repo");
     expect(Array.isArray(secrets)).toBe(true);
-    expect(secrets[0].name).toBe("TOKEN");
+    expect(secrets[0]!.name).toBe("TOKEN");
   });
 
   it("fetchEnvironments unwraps the {environments:[…]} envelope", async () => {
@@ -219,7 +219,7 @@ describe("api wire-shape normalization", () => {
       jsonResponse({ total_count: 1, environments: [{ name: "prod", node_id: "n", url: "u" }] }),
     );
     const envs = await fetchEnvironments("admin", "repo");
-    expect(envs[0].name).toBe("prod");
+    expect(envs[0]!.name).toBe("prod");
   });
 
   it("fetchEnterpriseSlug requires the runtime enterprise coordinate", async () => {
@@ -247,7 +247,7 @@ describe("repository API helpers", () => {
     mockFetch.mockResolvedValue(jsonResponse([]));
 
     await expect(fetchRepoCommits("admin", "empty")).resolves.toEqual([]);
-    expect(mockFetch.mock.calls[0][0]).toBe("/api/v3/repos/admin/empty/commits?per_page=100");
+    expect(mockFetch.mock.calls[0]![0]).toBe("/api/v3/repos/admin/empty/commits?per_page=100");
   });
 
   it("fetchRepoCommits still fails on adapter errors", async () => {
@@ -448,7 +448,7 @@ describe("Link-header pagination", () => {
   it("fetchRepoIssuesPage follows an explicit page URL when given", async () => {
     mockFetch.mockResolvedValue(jsonResponse([]));
     await fetchRepoIssuesPage("a", "b", "open", "/api/v3/repos/a/b/issues?page=2");
-    expect(mockFetch.mock.calls[0][0]).toBe("/api/v3/repos/a/b/issues?page=2");
+    expect(mockFetch.mock.calls[0]![0]).toBe("/api/v3/repos/a/b/issues?page=2");
   });
 
   it("fetchRepos lists repositories through the GitHub REST user repository endpoint", async () => {
@@ -478,7 +478,7 @@ describe("single-resource fetches", () => {
   it("fetchPRDetail hits the single-PR endpoint", async () => {
     mockFetch.mockResolvedValue(jsonResponse({ id: 1, number: 7 }));
     await fetchPRDetail("a", "b", 7);
-    expect(mockFetch.mock.calls[0][0]).toBe("/api/v3/repos/a/b/pulls/7");
+    expect(mockFetch.mock.calls[0]![0]).toBe("/api/v3/repos/a/b/pulls/7");
   });
 });
 
@@ -501,7 +501,7 @@ describe("api auth headers", () => {
     mockFetch.mockResolvedValue(new Response(null, { status: 204 }));
     await dispatchWorkflow("admin/repo", 1, { ref: "main" });
     expect(mockFetch).toHaveBeenCalledTimes(1);
-    const [, opts] = mockFetch.mock.calls[0];
+    const [, opts] = mockFetch.mock.calls[0]!;
     expect((opts.headers as Record<string, string>).Authorization).toBe("Bearer ghp_testtoken");
   });
 });
@@ -546,26 +546,26 @@ describe("Codespaces application programming interface helpers", () => {
     mockFetch.mockResolvedValue(jsonResponse({ total_count: 1, codespaces: [codespace] }));
     const page = await fetchUserCodespaces();
     expect(page.items).toHaveLength(1);
-    expect(page.items[0].name).toBe("crimson-spoon-abc123");
+    expect(page.items[0]!.name).toBe("crimson-spoon-abc123");
   });
 
   it("fetchRepoCodespaces hits the repo-scoped endpoint", async () => {
     mockFetch.mockResolvedValue(jsonResponse({ total_count: 1, codespaces: [codespace] }));
     await fetchRepoCodespaces("admin", "test");
-    expect(mockFetch.mock.calls[0][0]).toBe("/api/v3/repos/admin/test/codespaces");
+    expect(mockFetch.mock.calls[0]![0]).toBe("/api/v3/repos/admin/test/codespaces");
   });
 
   it("fetchCodespaceMachines unwraps the machines envelope", async () => {
     mockFetch.mockResolvedValue(jsonResponse({ total_count: 1, machines: [machine] }));
     const page = await fetchCodespaceMachines("admin", "test");
     expect(page.items).toHaveLength(1);
-    expect(page.items[0].name).toBe("basicLinux32");
+    expect(page.items[0]!.name).toBe("basicLinux32");
   });
 
   it("createUserCodespace sends repository_id and display_name", async () => {
     mockFetch.mockResolvedValue(jsonResponse(codespace, 201));
     await createUserCodespace({ repository_id: 10, machine: "basicLinux32", display_name: "New space" });
-    const [url, opts] = mockFetch.mock.calls[0];
+    const [url, opts] = mockFetch.mock.calls[0]!;
     expect(url).toBe("/api/v3/user/codespaces");
     expect(opts.method).toBe("POST");
     const body = JSON.parse(opts.body as string);
@@ -577,13 +577,13 @@ describe("Codespaces application programming interface helpers", () => {
   it("createRepoCodespace hits the repo-scoped endpoint", async () => {
     mockFetch.mockResolvedValue(jsonResponse(codespace, 201));
     await createRepoCodespace("admin", "test", { machine: "basicLinux32" });
-    expect(mockFetch.mock.calls[0][0]).toBe("/api/v3/repos/admin/test/codespaces");
+    expect(mockFetch.mock.calls[0]![0]).toBe("/api/v3/repos/admin/test/codespaces");
   });
 
   it("startCodespace POSTs to the start subresource", async () => {
     mockFetch.mockResolvedValue(jsonResponse(codespace));
     await startCodespace("crimson-spoon-abc123");
-    const [url, opts] = mockFetch.mock.calls[0];
+    const [url, opts] = mockFetch.mock.calls[0]!;
     expect(url).toBe("/api/v3/user/codespaces/crimson-spoon-abc123/start");
     expect(opts.method).toBe("POST");
   });
@@ -591,7 +591,7 @@ describe("Codespaces application programming interface helpers", () => {
   it("stopCodespace POSTs to the stop subresource", async () => {
     mockFetch.mockResolvedValue(jsonResponse(codespace));
     await stopCodespace("crimson-spoon-abc123");
-    const [url, opts] = mockFetch.mock.calls[0];
+    const [url, opts] = mockFetch.mock.calls[0]!;
     expect(url).toBe("/api/v3/user/codespaces/crimson-spoon-abc123/stop");
     expect(opts.method).toBe("POST");
   });
@@ -599,7 +599,7 @@ describe("Codespaces application programming interface helpers", () => {
   it("deleteCodespace DELETEs the named codespace", async () => {
     mockFetch.mockResolvedValue(new Response(null, { status: 202 }));
     await deleteCodespace("crimson-spoon-abc123");
-    const [url, opts] = mockFetch.mock.calls[0];
+    const [url, opts] = mockFetch.mock.calls[0]!;
     expect(url).toBe("/api/v3/user/codespaces/crimson-spoon-abc123");
     expect(opts.method).toBe("DELETE");
   });
@@ -632,15 +632,15 @@ describe("Notifications application programming interface helpers", () => {
   it("fetchNotifications lists threads", async () => {
     mockFetch.mockResolvedValue(jsonResponse([thread]));
     const threads = await fetchNotifications();
-    expect(mockFetch.mock.calls[0][0]).toBe("/api/v3/notifications");
+    expect(mockFetch.mock.calls[0]![0]).toBe("/api/v3/notifications");
     expect(threads).toHaveLength(1);
-    expect(threads[0].id).toBe("t1");
+    expect(threads[0]!.id).toBe("t1");
   });
 
   it("markThreadRead PATCHes the thread", async () => {
     mockFetch.mockResolvedValue(new Response(null, { status: 205 }));
     await markThreadRead("t1");
-    const [url, opts] = mockFetch.mock.calls[0];
+    const [url, opts] = mockFetch.mock.calls[0]!;
     expect(url).toBe("/api/v3/notifications/threads/t1");
     expect(opts.method).toBe("PATCH");
   });
@@ -660,7 +660,7 @@ describe("Notifications application programming interface helpers", () => {
   it("setThreadSubscription PUTs subscription state", async () => {
     mockFetch.mockResolvedValue(jsonResponse(subscription));
     await setThreadSubscription("t1", true);
-    const [url, opts] = mockFetch.mock.calls[0];
+    const [url, opts] = mockFetch.mock.calls[0]!;
     expect(url).toBe("/api/v3/notifications/threads/t1/subscription");
     expect(opts.method).toBe("PUT");
     expect(JSON.parse(opts.body as string)).toEqual({ subscribed: true, ignored: false });
@@ -669,7 +669,7 @@ describe("Notifications application programming interface helpers", () => {
   it("deleteThreadSubscription DELETEs the subscription", async () => {
     mockFetch.mockResolvedValue(new Response(null, { status: 204 }));
     await deleteThreadSubscription("t1");
-    const [url, opts] = mockFetch.mock.calls[0];
+    const [url, opts] = mockFetch.mock.calls[0]!;
     expect(url).toBe("/api/v3/notifications/threads/t1/subscription");
     expect(opts.method).toBe("DELETE");
   });
@@ -685,7 +685,7 @@ describe("Organization and team application programming interface helpers", () =
 
     const orgs = await fetchOrgs();
 
-    expect(orgs[0].name).toBe("Acme");
+    expect(orgs[0]!.name).toBe("Acme");
     expect(mockFetch.mock.calls.map((c) => c[0])).toEqual([
       "/api/v3/organizations?per_page=100",
       "/api/v3/orgs/acme",
@@ -702,16 +702,16 @@ describe("Organization and team application programming interface helpers", () =
     await createOrg({ login: "acme", name: "Acme", description: "Real org" });
 
     const calls = mockFetch.mock.calls;
-    expect(calls[0][0]).toBe("/api/v3/user");
-    expect(calls[1][0]).toBe("/api/v3/admin/organizations");
-    expect(calls[1][1]).toMatchObject({ method: "POST" });
-    expect(JSON.parse(calls[1][1].body as string)).toEqual({
+    expect(calls[0]![0]).toBe("/api/v3/user");
+    expect(calls[1]![0]).toBe("/api/v3/admin/organizations");
+    expect(calls[1]![1]).toMatchObject({ method: "POST" });
+    expect(JSON.parse(calls[1]![1].body as string)).toEqual({
       login: "acme",
       admin: "admin",
       profile_name: "Acme",
     });
-    expect(calls[2][0]).toBe("/api/v3/orgs/acme");
-    expect(calls[2][1]).toMatchObject({ method: "PATCH" });
+    expect(calls[2]![0]).toBe("/api/v3/orgs/acme");
+    expect(calls[2]![1]).toMatchObject({ method: "PATCH" });
     expect(calls.map((c) => c[0])).not.toContain("/internal/orgs");
   });
 
@@ -723,10 +723,10 @@ describe("Organization and team application programming interface helpers", () =
     await updateOrg("acme", { name: "Acme" });
     await deleteOrg("acme");
 
-    expect(mockFetch.mock.calls[0][0]).toBe("/api/v3/orgs/acme");
-    expect(mockFetch.mock.calls[0][1]).toMatchObject({ method: "PATCH" });
-    expect(mockFetch.mock.calls[1][0]).toBe("/api/v3/orgs/acme");
-    expect(mockFetch.mock.calls[1][1]).toMatchObject({ method: "DELETE" });
+    expect(mockFetch.mock.calls[0]![0]).toBe("/api/v3/orgs/acme");
+    expect(mockFetch.mock.calls[0]![1]).toMatchObject({ method: "PATCH" });
+    expect(mockFetch.mock.calls[1]![0]).toBe("/api/v3/orgs/acme");
+    expect(mockFetch.mock.calls[1]![1]).toMatchObject({ method: "DELETE" });
   });
 
   it("team helpers use authenticated-user and organization team REST routes", async () => {
@@ -751,13 +751,13 @@ describe("Organization and team application programming interface helpers", () =
     await deleteTeam("acme", "core");
 
     const calls = mockFetch.mock.calls;
-    expect(calls[0][0]).toBe("/api/v3/user/teams?per_page=100");
-    expect(calls[1][0]).toBe("/api/v3/orgs/acme/teams");
-    expect(calls[1][1]).toMatchObject({ method: "POST" });
-    expect(calls[2][0]).toBe("/api/v3/orgs/acme/teams/core");
-    expect(calls[2][1]).toMatchObject({ method: "PATCH" });
-    expect(calls[3][0]).toBe("/api/v3/orgs/acme/teams/core");
-    expect(calls[3][1]).toMatchObject({ method: "DELETE" });
+    expect(calls[0]![0]).toBe("/api/v3/user/teams?per_page=100");
+    expect(calls[1]![0]).toBe("/api/v3/orgs/acme/teams");
+    expect(calls[1]![1]).toMatchObject({ method: "POST" });
+    expect(calls[2]![0]).toBe("/api/v3/orgs/acme/teams/core");
+    expect(calls[2]![1]).toMatchObject({ method: "PATCH" });
+    expect(calls[3]![0]).toBe("/api/v3/orgs/acme/teams/core");
+    expect(calls[3]![1]).toMatchObject({ method: "DELETE" });
     expect(calls.map((c) => c[0])).not.toContain("/internal/teams");
   });
 });
@@ -772,7 +772,7 @@ describe("GitHub Enterprise Server user administration application programming i
 
     const users = await fetchUsers();
 
-    expect(users[0].created_at).toBe("2026-01-01T00:00:00Z");
+    expect(users[0]!.created_at).toBe("2026-01-01T00:00:00Z");
     expect(mockFetch.mock.calls.map((c) => c[0])).toEqual([
       "/api/v3/users?per_page=100",
       "/api/v3/users/dev",
@@ -789,12 +789,12 @@ describe("GitHub Enterprise Server user administration application programming i
     await createUser({ login: "dev", email: "dev@example.com", site_admin: true });
 
     const calls = mockFetch.mock.calls;
-    expect(calls[0][0]).toBe("/api/v3/admin/users");
-    expect(calls[0][1]).toMatchObject({ method: "POST" });
-    expect(JSON.parse(calls[0][1].body as string)).toEqual({ login: "dev", email: "dev@example.com" });
-    expect(calls[1][0]).toBe("/api/v3/users/dev/site_admin");
-    expect(calls[1][1]).toMatchObject({ method: "PUT" });
-    expect(calls[2][0]).toBe("/api/v3/users/dev");
+    expect(calls[0]![0]).toBe("/api/v3/admin/users");
+    expect(calls[0]![1]).toMatchObject({ method: "POST" });
+    expect(JSON.parse(calls[0]![1].body as string)).toEqual({ login: "dev", email: "dev@example.com" });
+    expect(calls[1]![0]).toBe("/api/v3/users/dev/site_admin");
+    expect(calls[1]![1]).toMatchObject({ method: "PUT" });
+    expect(calls[2]![0]).toBe("/api/v3/users/dev");
     expect(calls.map((c) => c[0])).not.toContain("/internal/users");
   });
 
@@ -807,11 +807,11 @@ describe("GitHub Enterprise Server user administration application programming i
     await updateUser("dev", { site_admin: false });
     await deleteUser("dev");
 
-    expect(mockFetch.mock.calls[0][0]).toBe("/api/v3/users/dev/site_admin");
-    expect(mockFetch.mock.calls[0][1]).toMatchObject({ method: "DELETE" });
-    expect(mockFetch.mock.calls[1][0]).toBe("/api/v3/users/dev");
-    expect(mockFetch.mock.calls[2][0]).toBe("/api/v3/admin/users/dev");
-    expect(mockFetch.mock.calls[2][1]).toMatchObject({ method: "DELETE" });
+    expect(mockFetch.mock.calls[0]![0]).toBe("/api/v3/users/dev/site_admin");
+    expect(mockFetch.mock.calls[0]![1]).toMatchObject({ method: "DELETE" });
+    expect(mockFetch.mock.calls[1]![0]).toBe("/api/v3/users/dev");
+    expect(mockFetch.mock.calls[2]![0]).toBe("/api/v3/admin/users/dev");
+    expect(mockFetch.mock.calls[2]![1]).toMatchObject({ method: "DELETE" });
   });
 });
 
@@ -831,7 +831,7 @@ describe("GitHub Enterprise Server organization audit log application programmin
     expect(orgs.map((o) => o.login)).toEqual(["acme", "zeta"]);
     // Site admins viewing the audit log hold no personal membership, so this
     // must list all orgs, not just the viewer's.
-    expect(mockFetch.mock.calls[0][0]).toBe("/api/v3/organizations?per_page=100");
+    expect(mockFetch.mock.calls[0]![0]).toBe("/api/v3/organizations?per_page=100");
   });
 
   it("fetchAuditLog uses the GitHub Enterprise Server organization audit-log route", async () => {
@@ -859,7 +859,7 @@ describe("GitHub Enterprise Server organization audit log application programmin
       entity_id: "acme/demo",
       created_at: "2026-01-01T00:00:00Z",
     });
-    const url = String(mockFetch.mock.calls[0][0]);
+    const url = String(mockFetch.mock.calls[0]![0]);
     expect(url).toContain("/api/v3/orgs/acme/audit-log?");
     expect(url).toContain("include=all");
     expect(url).toContain("per_page=100");
@@ -897,35 +897,35 @@ describe("Gists application programming interface helpers", () => {
   it("fetchPublicGists hits the public endpoint", async () => {
     mockFetch.mockResolvedValue(jsonResponse([gist]));
     const gists = await fetchPublicGists();
-    expect(mockFetch.mock.calls[0][0]).toBe("/api/v3/gists/public");
+    expect(mockFetch.mock.calls[0]![0]).toBe("/api/v3/gists/public");
     expect(gists).toHaveLength(1);
   });
 
   it("fetchStarredGists hits the starred endpoint", async () => {
     mockFetch.mockResolvedValue(jsonResponse([gist]));
     const gists = await fetchStarredGists();
-    expect(mockFetch.mock.calls[0][0]).toBe("/api/v3/gists/starred");
+    expect(mockFetch.mock.calls[0]![0]).toBe("/api/v3/gists/starred");
     expect(gists).toHaveLength(1);
   });
 
   it("fetchGistCommits lists commits", async () => {
     mockFetch.mockResolvedValue(jsonResponse([commit]));
     const commits = await fetchGistCommits("g1");
-    expect(mockFetch.mock.calls[0][0]).toBe("/api/v3/gists/g1/commits");
-    expect(commits[0].version).toBe("abc123");
+    expect(mockFetch.mock.calls[0]![0]).toBe("/api/v3/gists/g1/commits");
+    expect(commits[0]!.version).toBe("abc123");
   });
 
   it("fetchGistForks lists forks", async () => {
     mockFetch.mockResolvedValue(jsonResponse([gist]));
     const forks = await fetchGistForks("g1");
-    expect(mockFetch.mock.calls[0][0]).toBe("/api/v3/gists/g1/forks");
+    expect(mockFetch.mock.calls[0]![0]).toBe("/api/v3/gists/g1/forks");
     expect(forks).toHaveLength(1);
   });
 
   it("forkGist POSTs to forks", async () => {
     mockFetch.mockResolvedValue(jsonResponse(gist, 201));
     await forkGist("g1");
-    const [url, opts] = mockFetch.mock.calls[0];
+    const [url, opts] = mockFetch.mock.calls[0]!;
     expect(url).toBe("/api/v3/gists/g1/forks");
     expect(opts.method).toBe("POST");
   });
@@ -943,7 +943,7 @@ describe("Gists application programming interface helpers", () => {
   it("starGist PUTs the star endpoint", async () => {
     mockFetch.mockResolvedValue(new Response(null, { status: 204 }));
     await starGist("g1");
-    const [url, opts] = mockFetch.mock.calls[0];
+    const [url, opts] = mockFetch.mock.calls[0]!;
     expect(url).toBe("/api/v3/gists/g1/star");
     expect(opts.method).toBe("PUT");
   });
@@ -951,7 +951,7 @@ describe("Gists application programming interface helpers", () => {
   it("unstarGist DELETEs the star endpoint", async () => {
     mockFetch.mockResolvedValue(new Response(null, { status: 204 }));
     await unstarGist("g1");
-    const [url, opts] = mockFetch.mock.calls[0];
+    const [url, opts] = mockFetch.mock.calls[0]!;
     expect(url).toBe("/api/v3/gists/g1/star");
     expect(opts.method).toBe("DELETE");
   });
@@ -982,7 +982,7 @@ describe("fetchBrowserSession", () => {
       new Response(JSON.stringify({ authenticated: true }), { status: 200 }),
     );
     await fetchBrowserSession(25);
-    const [url, opts] = mockFetch.mock.calls[0];
+    const [url, opts] = mockFetch.mock.calls[0]!;
     expect(url).toBe("/auth/session");
     expect(opts.signal).toBeInstanceOf(AbortSignal);
     expect(opts.signal.aborted).toBe(false);

@@ -794,12 +794,12 @@ function AboutSidebar({
         ) : releases && releases.length > 0 ? (
           <div className="flex flex-col gap-1">
             <Link
-              to={`${base}/releases/${releases[0].id}`}
+              to={`${base}/releases/${releases[0]!.id}`}
               className="inline-flex items-center gap-1.5"
               style={{ fontWeight: 600, color: "var(--color-fg)", textDecoration: "none" }}
             >
               <TagIcon size={15} style={{ color: "var(--color-status-ok)" }} />
-              {releases[0].name || releases[0].tag_name}
+              {releases[0]!.name || releases[0]!.tag_name}
               <span
                 style={{
                   fontSize: "0.68rem",

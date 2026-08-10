@@ -81,7 +81,7 @@ function DiscussionList({ owner, repo }: { owner: string; repo: string }) {
 
   const createMutation = useMutation({
     mutationFn: () =>
-      createDiscussion(repoDetail!.node_id, newCategory || categories[0]?.id, newTitle, newBody),
+      createDiscussion(repoDetail!.node_id, newCategory || categories[0]?.id || "", newTitle, newBody),
     onSuccess: (discussion: GithubDiscussion) => {
       qc.invalidateQueries({ queryKey: ["discussions", owner, repo] });
       setCreating(false);

@@ -340,7 +340,7 @@ export function Tabs<K extends string>({
     else if (event.key === "End") next = items.length - 1;
     else return;
     event.preventDefault();
-    onChange(items[next].key);
+    onChange(items[next]!.key);
     event.currentTarget.parentElement
       ?.querySelectorAll<HTMLButtonElement>('[role="tab"]')
       .item(next)
@@ -456,6 +456,7 @@ function trapTab(event: KeyboardEvent, panel: HTMLElement | null) {
   }
   const first = focusables[0];
   const last = focusables[focusables.length - 1];
+  if (!first || !last) return;
 
   if (!panel || !active || !panel.contains(active)) {
     event.preventDefault();

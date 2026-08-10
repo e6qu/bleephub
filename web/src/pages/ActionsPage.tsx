@@ -761,7 +761,7 @@ function defaultValueFor(def: WorkflowDispatchInput): string {
     return def.default === true || def.default === "true" ? "true" : "false";
   }
   if (typeof def.default === "string") return def.default;
-  if (def.type === "choice" && def.options && def.options.length > 0) return def.options[0];
+  if (def.type === "choice" && def.options && def.options.length > 0) return def.options[0]!;
   return "";
 }
 
@@ -783,7 +783,7 @@ function DispatchFormModal({
   const [ref, setRef] = useState("main");
   const [values, setValues] = useState<Record<string, string>>(() => {
     const init: Record<string, string> = {};
-    for (const name of inputNames) init[name] = defaultValueFor(inputs[name]);
+    for (const name of inputNames) init[name] = defaultValueFor(inputs[name]!);
     return init;
   });
   const [error, setError] = useState<string | null>(null);
@@ -797,7 +797,7 @@ function DispatchFormModal({
   );
 
   // `environment`-typed inputs offer the repo's environments as choices.
-  const needsEnvs = inputNames.some((n) => inputs[n].type === "environment");
+  const needsEnvs = inputNames.some((n) => inputs[n]!.type === "environment");
   const envsQ = useQuery({
     queryKey: ["environments", owner, repo],
     queryFn: () => fetchEnvironments(owner, repo),
@@ -807,13 +807,13 @@ function DispatchFormModal({
   const mutation = useMutation({
     mutationFn: async () => {
       for (const name of inputNames) {
-        if (inputs[name].required && values[name] === "") {
+        if (inputs[name]!.required && values[name] === "") {
           throw new Error(`Input "${name}" is required`);
         }
       }
       await dispatchWorkflow(`${owner}/${repo}`, workflow.id, {
         ref,
-        inputs: Object.fromEntries(inputNames.map((n) => [n, values[n]])),
+        inputs: Object.fromEntries(inputNames.map((n) => [n, values[n] ?? ""])),
       });
     },
     onSuccess: () => {
@@ -841,7 +841,7 @@ function DispatchFormModal({
       />
 
       {inputNames.map((name) => {
-        const def = inputs[name];
+        const def = inputs[name]!;
         const fieldId = `dispatch-input-${name}`;
         const label = (
           <FormLabel id={fieldId}>

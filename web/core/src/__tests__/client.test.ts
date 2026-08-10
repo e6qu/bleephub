@@ -58,7 +58,7 @@ describe("ApiClient", () => {
     const result = await client.containers();
 
     expect(result).toHaveLength(1);
-    expect(result[0].name).toBe("web");
+    expect(result[0]!.name).toBe("web");
   });
 
   it("metrics() returns MetricsResponse", async () => {

@@ -922,7 +922,7 @@ export function parseLinkLast(link: string | null): number | null {
   if (!link) return null;
   for (const part of link.split(",")) {
     const m = part.match(/<[^>]*[?&]page=(\d+)[^>]*>\s*;\s*rel="last"/);
-    if (m) return parseInt(m[1], 10);
+    if (m) return parseInt(m[1]!, 10);
   }
   return null;
 }
@@ -932,7 +932,7 @@ export function parseLinkNext(link: string | null): string | null {
   if (!link) return null;
   for (const part of link.split(",")) {
     const m = part.match(/<([^>]+)>\s*;\s*rel="next"/);
-    if (m) return m[1];
+    if (m) return m[1] ?? null;
   }
   return null;
 }

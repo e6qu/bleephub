@@ -71,7 +71,7 @@ const columns = [
 export function RunnersPage() {
   const reposQ = useQuery({ queryKey: ["repos"], queryFn: fetchRepos });
   const firstRepo = reposQ.data?.[0]?.full_name;
-  const [owner, repo] = firstRepo ? firstRepo.split("/") : ["", ""];
+  const [owner = "", repo = ""] = firstRepo ? firstRepo.split("/") : ["", ""];
 
   const runnersQ = useQuery({
     queryKey: ["gh-runners", firstRepo],

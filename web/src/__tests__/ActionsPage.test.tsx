@@ -184,7 +184,7 @@ describe("ActionsPage runs list", () => {
     expect(screen.getByTitle("in progress")).toBeInTheDocument();
     expect(screen.getByTitle("failure")).toBeInTheDocument();
     expect(screen.getAllByText("main").length).toBeGreaterThan(0);
-    const calls = mockFetch.mock.calls.map((c) => c[0].toString());
+    const calls = mockFetch.mock.calls.map((c) => c[0]!.toString());
     expect(calls.some((c) => c.startsWith("/api/v3/repos/admin/test/actions/runs?"))).toBe(true);
   });
 
@@ -194,7 +194,7 @@ describe("ActionsPage runs list", () => {
     await waitFor(() => expect(screen.getByText("2 workflow runs")).toBeInTheDocument());
     fireEvent.change(screen.getByLabelText("Status"), { target: { value: "completed" } });
     await waitFor(() => {
-      const calls = mockFetch.mock.calls.map((c) => c[0].toString());
+      const calls = mockFetch.mock.calls.map((c) => c[0]!.toString());
       expect(calls.some((c) => c.includes("/actions/runs?") && c.includes("status=completed"))).toBe(true);
     });
   });
@@ -205,7 +205,7 @@ describe("ActionsPage runs list", () => {
     await waitFor(() => expect(screen.getByRole("button", { name: "CI" })).toBeInTheDocument());
     fireEvent.click(screen.getByRole("button", { name: "CI" }));
     await waitFor(() => {
-      const calls = mockFetch.mock.calls.map((c) => c[0].toString());
+      const calls = mockFetch.mock.calls.map((c) => c[0]!.toString());
       expect(calls.some((c) => c.includes("/actions/workflows/10/runs"))).toBe(true);
     });
   });
@@ -297,10 +297,10 @@ describe("ActionsPage workflow dispatch", () => {
     // Two "Run workflow" buttons exist now (header + modal submit) — the
     // modal's submit is the last in document order.
     const submitButtons = screen.getAllByRole("button", { name: /^run workflow$/i });
-    fireEvent.click(submitButtons[submitButtons.length - 1]);
+    fireEvent.click(submitButtons[submitButtons.length - 1]!);
     await waitFor(() => {
       const dispatchCall = mockFetch.mock.calls.find(
-        (c) => c[0].toString().endsWith("/actions/workflows/10/dispatches") && c[1]?.method === "POST",
+        (c) => c[0]!.toString().endsWith("/actions/workflows/10/dispatches") && c[1]?.method === "POST",
       );
       expect(dispatchCall).toBeTruthy();
       const body = JSON.parse(dispatchCall![1]!.body as string);
@@ -318,7 +318,7 @@ describe("ActionsPage workflow dispatch", () => {
     fireEvent.click(screen.getByRole("button", { name: "CI" }));
     // Wait for the contents fetch to settle, then assert absence.
     await waitFor(() => {
-      const calls = mockFetch.mock.calls.map((c) => c[0].toString());
+      const calls = mockFetch.mock.calls.map((c) => c[0]!.toString());
       expect(calls.some((c) => c.includes("/contents/"))).toBe(true);
     });
     expect(screen.queryByRole("button", { name: "Run workflow" })).not.toBeInTheDocument();
@@ -335,7 +335,7 @@ describe("ActionsPage enable/disable", () => {
     fireEvent.click(await screen.findByRole("menuitem", { name: /disable workflow/i }));
     await waitFor(() => {
       const call = mockFetch.mock.calls.find(
-        (c) => c[0].toString().endsWith("/actions/workflows/10/disable") && c[1]?.method === "PUT",
+        (c) => c[0]!.toString().endsWith("/actions/workflows/10/disable") && c[1]?.method === "PUT",
       );
       expect(call).toBeTruthy();
     });
@@ -351,7 +351,7 @@ describe("ActionsPage enable/disable", () => {
     fireEvent.click(await screen.findByRole("menuitem", { name: /enable workflow/i }));
     await waitFor(() => {
       const call = mockFetch.mock.calls.find(
-        (c) => c[0].toString().endsWith("/actions/workflows/11/enable") && c[1]?.method === "PUT",
+        (c) => c[0]!.toString().endsWith("/actions/workflows/11/enable") && c[1]?.method === "PUT",
       );
       expect(call).toBeTruthy();
     });
@@ -375,9 +375,9 @@ describe("parseWorkflowDispatch", () => {
       required: true,
       default: "staging",
     });
-    expect(spec.inputs.log_level.options).toEqual(["debug", "info"]);
-    expect(spec.inputs.dry_run.type).toBe("boolean");
-    expect(spec.inputs.dry_run.default).toBe(true);
+    expect(spec.inputs.log_level!.options).toEqual(["debug", "info"]);
+    expect(spec.inputs.dry_run!.type).toBe("boolean");
+    expect(spec.inputs.dry_run!.default).toBe(true);
   });
 
   it("treats unparsable YAML as no dispatch trigger", () => {

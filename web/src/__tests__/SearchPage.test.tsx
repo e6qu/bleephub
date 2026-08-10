@@ -57,7 +57,7 @@ describe("SearchPage", () => {
       expect(screen.getByText("admin/hit-repo")).toBeInTheDocument();
     });
     expect(screen.getByText(/1 repository/)).toBeInTheDocument();
-    const url = String(mockFetch.mock.calls[0][0]);
+    const url = String(mockFetch.mock.calls[0]![0]);
     expect(url).toContain("/api/v3/search/repositories?");
     expect(url).toContain("q=hit");
     expect(url).toContain("per_page=30");
@@ -74,7 +74,7 @@ describe("SearchPage", () => {
       expect(screen.getByText("admin/hit-repo")).toBeInTheDocument();
     });
 
-    const firstURL = new URL(String(mockFetch.mock.calls[0][0]), "http://bleephub.test");
+    const firstURL = new URL(String(mockFetch.mock.calls[0]![0]), "http://bleephub.test");
     expect(firstURL.searchParams.get("q")).toBe(
       "bank archived:false fork:true -topic:web",
     );
@@ -86,7 +86,7 @@ describe("SearchPage", () => {
     });
     await waitFor(() => {
       const lastURL = new URL(
-        String(mockFetch.mock.calls[mockFetch.mock.calls.length - 1][0]),
+        String(mockFetch.mock.calls[mockFetch.mock.calls.length - 1]![0]),
         "http://bleephub.test",
       );
       expect(lastURL.searchParams.get("q")).toContain('-topic:"legacy systems"');
@@ -101,7 +101,7 @@ describe("SearchPage", () => {
     await waitFor(() => {
       expect(screen.getByText("admin/hit-repo")).toBeInTheDocument();
     });
-    const requestURL = new URL(String(mockFetch.mock.calls[0][0]), "http://bleephub.test");
+    const requestURL = new URL(String(mockFetch.mock.calls[0]![0]), "http://bleephub.test");
     expect(requestURL.searchParams.get("q")).toBe("archived:true");
   });
 
@@ -113,7 +113,7 @@ describe("SearchPage", () => {
     await waitFor(() => {
       expect(screen.getByText("No matching issues and pull requests")).toBeInTheDocument();
     });
-    expect(String(mockFetch.mock.calls[0][0])).toContain("/api/v3/search/issues?");
+    expect(String(mockFetch.mock.calls[0]![0])).toContain("/api/v3/search/issues?");
 
     fireEvent.click(screen.getByRole("tab", { name: "Commits" }));
     await waitFor(() => {

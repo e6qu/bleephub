@@ -71,7 +71,7 @@ function mockInsightsEndpoints(overrides: Record<string, () => Response> = {}) {
         days: [0, 0, 0, 0, 0, 0, 0],
         total: 0,
       }));
-      weeks[51] = { week: weeks[51].week, days: [0, 3, 0, 1, 0, 0, 0], total: 4 };
+      weeks[51] = { week: weeks[51]!.week, days: [0, 3, 0, 1, 0, 0, 0], total: 4 };
       return Promise.resolve(jsonResponse(weeks));
     }
     if (u.includes("/traffic/views")) {

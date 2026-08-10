@@ -88,7 +88,7 @@ function parseQuery(
   let m: RegExpExecArray | null;
   while ((m = tokenRe.exec(raw)) !== null) {
     const key = m[1];
-    const val = m[2].replace(/^"|"$/g, "");
+    const val = m[2]!.replace(/^"|"$/g, "");
     switch (key) {
       case "is":
         if (val === "open" || val === "closed") state = val;

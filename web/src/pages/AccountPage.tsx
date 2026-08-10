@@ -87,7 +87,7 @@ function FineGrainedTokensTab() {
 
   const createMutation = useMutation({
     mutationFn: () => createFineGrainedPAT({
-      name, resource_owner: owner || query.data!.resource_owners[0].login,
+      name, resource_owner: owner || query.data!.resource_owners[0]?.login || "",
       repository_selection: selection, repository_ids: selection === "subset" ? repositoryIDs : [],
       permissions: { repository: permissions, organization: { members: "read" } },
       ...(expires ? { expires_at: new Date(`${expires}T23:59:59Z`).toISOString() } : {}),
@@ -290,7 +290,7 @@ function KeyManager<T extends { id: number }>({
           </div>
         </div>
       </Box>
-      <Box header={<span style={{ fontWeight: 600 }}>{kind[0].toUpperCase() + kind.slice(1)}s</span>}>
+      <Box header={<span style={{ fontWeight: 600 }}>{kind.charAt(0).toUpperCase() + kind.slice(1)}s</span>}>
         {keys.length === 0 ? (
           <div style={{ padding: "1rem", color: "var(--color-fg-muted)", fontSize: "0.85rem" }}>
             No {kind}s.

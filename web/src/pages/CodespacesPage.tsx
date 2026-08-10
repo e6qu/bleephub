@@ -110,7 +110,7 @@ function CodespacesList({ repoScope }: { repoScope: string | null }) {
     queryKey,
     queryFn: () =>
       repoScope
-        ? fetchRepoCodespaces(repoScope.split("/")[0], repoScope.split("/")[1])
+        ? fetchRepoCodespaces(repoScope.split("/")[0]!, repoScope.split("/")[1]!)
         : fetchUserCodespaces(),
     refetchInterval: (query) =>
       isRateLimited(query.state.error) || isForbidden(query.state.error) ? false : 10000,
@@ -341,7 +341,7 @@ function CreateCodespaceDialog({
   const createMut = useMutation({
     mutationFn: async () => {
       if (repoScope) {
-        const [owner, repo] = repoScope.split("/");
+        const [owner = "", repo = ""] = repoScope.split("/");
         return createRepoCodespace(owner, repo, { machine, display_name: displayName });
       }
       const repo = repos?.find((r: BleephubRepo) => r.full_name === selectedRepo);
