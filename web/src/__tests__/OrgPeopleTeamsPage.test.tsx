@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, afterEach } from "vitest";
-import { render, cleanup, screen, waitFor } from "@testing-library/react";
+import { render, cleanup, screen, waitFor, fireEvent } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { MemoryRouter, Routes, Route } from "react-router";
 import { OrgPeoplePage } from "../pages/OrgPeoplePage.js";
@@ -65,6 +65,68 @@ describe("OrgPeoplePage", () => {
     renderPeople("missing");
     await waitFor(() => {
       expect(screen.getByText(/failed to load members/i)).toBeInTheDocument();
+    });
+  });
+
+  const member = { id: 2, login: "dev", avatar_url: "", type: "User", site_admin: false };
+
+  it("invites a member via PUT memberships", async () => {
+    mockFetch.mockImplementation((url: RequestInfo | URL, init?: RequestInit) => {
+      const u = url.toString();
+      if (u.endsWith("/memberships/newdev") && init?.method === "PUT") {
+        return Promise.resolve(jsonResponse({ state: "active", role: "member" }));
+      }
+      return Promise.resolve(jsonResponse([]));
+    });
+    renderPeople();
+    fireEvent.change(await screen.findByLabelText(/invite a member/i), { target: { value: "newdev" } });
+    fireEvent.click(screen.getByRole("button", { name: /^invite$/i }));
+    await waitFor(() => {
+      const put = mockFetch.mock.calls.find(
+        (c) => c[0].toString().endsWith("/memberships/newdev") && c[1]?.method === "PUT",
+      );
+      expect(put).toBeTruthy();
+      expect(JSON.parse((put![1] as RequestInit).body as string)).toEqual({ role: "member" });
+    });
+  });
+
+  it("changes a member's role via the per-member select", async () => {
+    mockFetch.mockImplementation((url: RequestInfo | URL, init?: RequestInit) => {
+      const u = url.toString();
+      if (u.endsWith("/memberships/dev") && init?.method === "PUT") {
+        return Promise.resolve(jsonResponse({ state: "active", role: "admin" }));
+      }
+      if (u.endsWith("/members")) return Promise.resolve(jsonResponse([member]));
+      return Promise.resolve(jsonResponse([]));
+    });
+    renderPeople();
+    fireEvent.change(await screen.findByLabelText(/set role for dev/i), { target: { value: "admin" } });
+    await waitFor(() => {
+      const put = mockFetch.mock.calls.find(
+        (c) => c[0].toString().endsWith("/memberships/dev") && c[1]?.method === "PUT",
+      );
+      expect(put).toBeTruthy();
+      expect(JSON.parse((put![1] as RequestInit).body as string)).toEqual({ role: "admin" });
+    });
+  });
+
+  it("removes a member after confirmation", async () => {
+    mockFetch.mockImplementation((url: RequestInfo | URL, init?: RequestInit) => {
+      const u = url.toString();
+      if (u.endsWith("/memberships/dev") && init?.method === "DELETE") {
+        return Promise.resolve(new Response(null, { status: 204 }));
+      }
+      if (u.endsWith("/members")) return Promise.resolve(jsonResponse([member]));
+      return Promise.resolve(jsonResponse([]));
+    });
+    renderPeople();
+    fireEvent.click(await screen.findByRole("button", { name: /remove dev/i }));
+    fireEvent.click(await screen.findByRole("button", { name: /^remove$/i }));
+    await waitFor(() => {
+      const del = mockFetch.mock.calls.find(
+        (c) => c[0].toString().endsWith("/memberships/dev") && c[1]?.method === "DELETE",
+      );
+      expect(del).toBeTruthy();
     });
   });
 });
