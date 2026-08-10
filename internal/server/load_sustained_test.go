@@ -11,6 +11,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/e6qu/bleephub/internal/server/testutil"
 	"github.com/rs/zerolog"
 )
 
@@ -235,7 +236,7 @@ func TestLoadWebhookDeliveryBounded(t *testing.T) {
 	// on the store write lock, so draining is contention-bound, not leaked —
 	// poll until the count settles rather than guessing a fixed sleep.
 	finalGoros := runtime.NumGoroutine()
-	settled := testEventually(30*time.Second, 50*time.Millisecond, func() bool {
+	settled := testutil.TestEventually(30*time.Second, 50*time.Millisecond, func() bool {
 		if int(received.Load()) < events {
 			return false
 		}

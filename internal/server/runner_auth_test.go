@@ -6,7 +6,6 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
-	"github.com/google/uuid"
 	"net/http"
 	"net/http/httptest"
 	"runtime"
@@ -14,6 +13,8 @@ import (
 	"sync"
 	"testing"
 	"time"
+
+	"github.com/google/uuid"
 )
 
 // --- helpers ---

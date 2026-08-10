@@ -13,6 +13,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/e6qu/bleephub/internal/server/testutil"
 	"github.com/google/uuid"
 )
 
@@ -1074,14 +1075,14 @@ jobs:
 
 func createTestOrg(t *testing.T) string {
 	t.Helper()
-	login := "test-org-actions-" + strconv.FormatInt(int64(nextTestID()), 36)
+	login := "test-org-actions-" + strconv.FormatInt(int64(testutil.NextTestID()), 36)
 	createOrgViaAdminAPI(t, login, "Test Org Actions")
 	return login
 }
 
 func createTestRepo(t *testing.T) string {
 	t.Helper()
-	name := "test-repo-actions-" + strconv.FormatInt(int64(nextTestID()), 36)
+	name := "test-repo-actions-" + strconv.FormatInt(int64(testutil.NextTestID()), 36)
 	resp := ghPost(t, "/api/v3/user/repos", defaultToken, map[string]interface{}{
 		"name":    name,
 		"private": false,

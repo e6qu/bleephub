@@ -13,6 +13,8 @@ import (
 	"strings"
 	"sync/atomic"
 	"testing"
+
+	"github.com/e6qu/bleephub/internal/server/testutil"
 )
 
 var repoWriteRepoSeq int64
@@ -92,7 +94,7 @@ func (s *isolatedServer) mintPagesOIDCTokenForAudience(t *testing.T, repo, sha, 
 // optionally with an auto-init initial commit. Returns the repo name.
 func createRepoWriteRepo(t *testing.T, autoInit bool) string {
 	t.Helper()
-	name := fmt.Sprintf("rw-%d-%d", int64(nextTestID()), atomic.AddInt64(&repoWriteRepoSeq, 1))
+	name := fmt.Sprintf("rw-%d-%d", int64(testutil.NextTestID()), atomic.AddInt64(&repoWriteRepoSeq, 1))
 	resp := ghPost(t, "/api/v3/user/repos", defaultToken, map[string]interface{}{
 		"name":      name,
 		"auto_init": autoInit,

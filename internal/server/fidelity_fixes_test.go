@@ -13,6 +13,8 @@ import (
 	"sync"
 	"testing"
 	"time"
+
+	"github.com/e6qu/bleephub/internal/server/testutil"
 )
 
 // TestWebhookFormContentTypeSigning verifies that a content_type=form hook
@@ -49,7 +51,7 @@ func TestWebhookFormContentTypeSigning(t *testing.T) {
 	s.deliverWebhook(hook, "push", "", payload)
 
 	// deliverWebhook is synchronous; the receiver runs in the test server.
-	testEventually(2*time.Second, 20*time.Millisecond, func() bool {
+	testutil.TestEventually(2*time.Second, 20*time.Millisecond, func() bool {
 		mu.Lock()
 		done := gotBody != nil
 		mu.Unlock()
@@ -104,7 +106,7 @@ func TestWebhookJSONContentTypeSigning(t *testing.T) {
 	payload := []byte(`{"ref":"refs/heads/main"}`)
 	s.deliverWebhook(hook, "push", "", payload)
 
-	testEventually(2*time.Second, 20*time.Millisecond, func() bool {
+	testutil.TestEventually(2*time.Second, 20*time.Millisecond, func() bool {
 		mu.Lock()
 		done := gotBody != nil
 		mu.Unlock()

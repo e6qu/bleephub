@@ -11,6 +11,8 @@ import (
 	"sync"
 	"testing"
 	"time"
+
+	"github.com/e6qu/bleephub/internal/server/testutil"
 )
 
 func TestArtifactCreateUploadFinalize(t *testing.T) {
@@ -371,7 +373,7 @@ func TestArtifactDownloadNotFound(t *testing.T) {
 // scopeIdentifier recorded in the job message.
 func seedCacheRunJob(t *testing.T, s *Server, repo string) string {
 	t.Helper()
-	scopeID := fmt.Sprintf("scope-%s-%d", repo, int64(nextTestID()))
+	scopeID := fmt.Sprintf("scope-%s-%d", repo, int64(testutil.NextTestID()))
 	msg := map[string]interface{}{
 		"plan": map[string]interface{}{
 			"scopeIdentifier": scopeID,

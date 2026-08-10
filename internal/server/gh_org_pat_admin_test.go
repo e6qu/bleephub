@@ -10,6 +10,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/e6qu/bleephub/internal/server/testutil"
 )
 
 // createPATGrantRequest files a pending fine-grained personal access token
@@ -47,7 +49,7 @@ func (s *isolatedServer) orgPATAdminAppToken(t *testing.T, org *Org) string {
 func TestOrgPATGrantRequests_ApproveRevokeLifecycle(t *testing.T) {
 	t.Parallel()
 	s := newIsolatedServer(t)
-	suffix := fmt.Sprintf("%d", nextTestID())
+	suffix := fmt.Sprintf("%d", testutil.NextTestID())
 	orgLogin := "pat-org-" + suffix
 	ownerLogin := "pat-owner-" + suffix
 	repoName := "pat-repo-" + suffix
@@ -238,7 +240,7 @@ func TestOrgPATGrantRequests_ApproveRevokeLifecycle(t *testing.T) {
 func TestOrgPATGrantRequests_BulkReviewAndBulkRevoke(t *testing.T) {
 	t.Parallel()
 	s := newIsolatedServer(t)
-	suffix := fmt.Sprintf("%d", nextTestID())
+	suffix := fmt.Sprintf("%d", testutil.NextTestID())
 	orgLogin := "pat-bulk-org-" + suffix
 	ownerLogin := "pat-bulk-owner-" + suffix
 	admin := s.store.UsersByLogin["admin"]

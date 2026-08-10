@@ -6,7 +6,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"net"
 	"net/http"
 	"os"
 	"os/exec"
@@ -20,6 +19,7 @@ import (
 
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
+	"github.com/e6qu/bleephub/internal/server/testutil"
 )
 
 var (
@@ -152,7 +152,7 @@ func newS3FSForTest(t *testing.T) *s3FS {
 
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
-	bucket := fmt.Sprintf("bleephub-test-%d", nextTestID())
+	bucket := fmt.Sprintf("bleephub-test-%d", testutil.NextTestID())
 	fs, err := newS3FS(ctx, endpoint, bucket, "git")
 	if err != nil {
 		t.Fatalf("newS3FS: %v", err)
@@ -173,7 +173,7 @@ func newObjectByteStoreForTest(t *testing.T) (*s3FS, actionsByteStore) {
 func startS3ServerForTest(t *testing.T) string {
 	t.Helper()
 	s3ServerOnce.Do(func() {
-		addr := freeLocalAddr(t)
+		addr := testutil.FreeLocalAddr(t)
 		s3ServerEndpoint = "http://" + addr
 		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
 		defer cancel()
@@ -184,7 +184,7 @@ func startS3ServerForTest(t *testing.T) string {
 			return
 		}
 		s3ServerContainer = strings.TrimSpace(string(output))
-		if testEventually(30*time.Second, 100*time.Millisecond, func() bool {
+		if testutil.TestEventually(30*time.Second, 100*time.Millisecond, func() bool {
 			response, err := http.Get(s3ServerEndpoint + "/minio/health/ready") // #nosec G107 -- local test server
 			if err == nil {
 				_ = response.Body.Close()
@@ -202,19 +202,6 @@ func startS3ServerForTest(t *testing.T) string {
 		t.Fatal(s3ServerErr)
 	}
 	return s3ServerEndpoint
-}
-
-func freeLocalAddr(t *testing.T) string {
-	t.Helper()
-	ln, err := net.Listen("tcp", "127.0.0.1:0")
-	if err != nil {
-		t.Fatalf("listen free port: %v", err)
-	}
-	addr := ln.Addr().String()
-	if err := ln.Close(); err != nil {
-		t.Fatalf("close free port listener: %v", err)
-	}
-	return addr
 }
 
 func putS3RawObject(t *testing.T, fs *s3FS, key string, content []byte) {
