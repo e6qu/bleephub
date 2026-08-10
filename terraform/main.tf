@@ -1837,3 +1837,62 @@ resource "aws_ce_anomaly_subscription" "default" {
 
   tags = local.common_tags
 }
+
+# ─── Operational alerting (CI-024) ───────────────────────────────────────────
+# The idle_shutdown alarm above turns the service OFF; it is a control signal,
+# not an error signal. This SNS topic and the error alarms below surface actual
+# failures. CloudWatch alarm actions require an ARN, so email delivery is via an
+# SNS subscription wired only when var.alert_email is set.
+
+resource "aws_sns_topic" "alerts" {
+  name              = "${var.name}-alerts"
+  kms_master_key_id = "alias/aws/sns"
+  tags              = local.common_tags
+}
+
+resource "aws_sns_topic_subscription" "alerts_email" {
+  count     = var.alert_email != "" ? 1 : 0
+  topic_arn = aws_sns_topic.alerts.arn
+  protocol  = "email"
+  endpoint  = var.alert_email
+}
+
+# A sustained spike of API Gateway server errors (5xx) means the app is failing
+# requests — distinct from the idle-shutdown control alarm.
+resource "aws_cloudwatch_metric_alarm" "api_5xx" {
+  alarm_name          = "${var.name}-api-5xx"
+  namespace           = "AWS/ApiGateway"
+  metric_name         = "5xx"
+  dimensions          = { ApiId = aws_apigatewayv2_api.this.id }
+  statistic           = "Sum"
+  period              = 300
+  evaluation_periods  = 1
+  threshold           = 5
+  comparison_operator = "GreaterThanThreshold"
+  treat_missing_data  = "notBreaching"
+  alarm_actions       = [aws_sns_topic.alerts.arn]
+  ok_actions          = [aws_sns_topic.alerts.arn]
+  tags                = local.common_tags
+}
+
+# A failing wake/idle controller Lambda can strand the service off or fail to
+# scale it down, so any invocation error pages.
+resource "aws_cloudwatch_metric_alarm" "lambda_errors" {
+  for_each = {
+    wake          = aws_lambda_function.wake.function_name
+    idle_shutdown = aws_lambda_function.idle_shutdown.function_name
+    idle_arm      = aws_lambda_function.idle_arm.function_name
+  }
+  alarm_name          = "${var.name}-lambda-errors-${each.key}"
+  namespace           = "AWS/Lambda"
+  metric_name         = "Errors"
+  dimensions          = { FunctionName = each.value }
+  statistic           = "Sum"
+  period              = 300
+  evaluation_periods  = 1
+  threshold           = 0
+  comparison_operator = "GreaterThanThreshold"
+  treat_missing_data  = "notBreaching"
+  alarm_actions       = [aws_sns_topic.alerts.arn]
+  tags                = local.common_tags
+}

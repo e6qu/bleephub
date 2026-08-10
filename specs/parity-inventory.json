@@ -6145,8 +6145,8 @@
         "id": "CI-024",
         "location": "terraform/main.tf:982",
         "severity": "M",
-        "status": "partial \u2014 the public API now emits structured access logs and every wake-controller Lambda emits active X-Ray traces; SNS and error alarms remain",
-        "status_kind": "partial"
+        "status": "fixed \u2014 the public API now emits structured access logs and every wake-controller Lambda emits active X-Ray traces, and the remaining SNS + error-alarm gap is closed: an `aws_sns_topic.alerts` (KMS-encrypted via `alias/aws/sns`) with a conditional email subscription (`var.alert_email`) now backs real error alarms \u2014 `aws_cloudwatch_metric_alarm.api_5xx` on the API Gateway `5xx` metric and a `for_each` `lambda_errors` alarm on each wake-controller Lambda's `Errors` metric \u2014 all routed to the topic. These are distinct from the pre-existing idle-shutdown alarm, which is a control signal (turns the service off), not an error signal. `terraform validate`, `fmt` and `tflint` clean.",
+        "status_kind": "fixed"
       },
       {
         "category": "CI",
@@ -6551,9 +6551,9 @@
         },
         "CI": {
           "status": {
-            "fixed": 61,
+            "fixed": 62,
             "open": 2,
-            "partial": 2
+            "partial": 1
           },
           "total": 65
         },
@@ -6615,9 +6615,9 @@
       },
       "status": {
         "deferred": 3,
-        "fixed": 667,
+        "fixed": 668,
         "open": 8,
-        "partial": 7
+        "partial": 6
       },
       "total": 685
     }
