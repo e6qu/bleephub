@@ -189,11 +189,29 @@ func (st *Store) CreateDiscussion(repoID, categoryID, authorID int, title, body 
 	return d
 }
 
+// cloneDiscussion returns a copy safe to hand outside the store lock
+// (STORE-021): LastEditedAt and PublishedAt are the only reference fields.
+func cloneDiscussion(d *Discussion) *Discussion {
+	if d == nil {
+		return nil
+	}
+	clone := *d
+	if d.LastEditedAt != nil {
+		edited := *d.LastEditedAt
+		clone.LastEditedAt = &edited
+	}
+	if d.PublishedAt != nil {
+		published := *d.PublishedAt
+		clone.PublishedAt = &published
+	}
+	return &clone
+}
+
 // GetDiscussion returns a discussion by global ID.
 func (st *Store) GetDiscussion(id int) *Discussion {
 	st.mu.RLock()
 	defer st.mu.RUnlock()
-	return st.Discussions[id]
+	return cloneDiscussion(st.Discussions[id])
 }
 
 // GetDiscussionByNumber returns a discussion by repo and number.
@@ -202,7 +220,7 @@ func (st *Store) GetDiscussionByNumber(repoID, number int) *Discussion {
 	defer st.mu.RUnlock()
 	for _, d := range st.Discussions {
 		if d.RepoID == repoID && d.Number == number && !d.Deleted {
-			return d
+			return cloneDiscussion(d)
 		}
 	}
 	return nil
