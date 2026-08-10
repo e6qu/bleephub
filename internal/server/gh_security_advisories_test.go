@@ -99,6 +99,55 @@ func TestSecurityAdvisory_CRUD(t *testing.T) {
 	}
 }
 
+// TestSecurityAdvisoryReadsReturnDetachedSnapshots pins STORE-021 for the
+// security-advisory family: GetSecurityAdvisoryByGHSA and ListSecurityAdvisories
+// must hand back copies, so a reader mutating a result (or its CWEs slice)
+// cannot corrupt the stored advisory. Writes go through UpdateSecurityAdvisory
+// (keyed by id), which still reaches the live row.
+func TestSecurityAdvisoryReadsReturnDetachedSnapshots(t *testing.T) {
+	t.Parallel()
+	srv := newIsolatedServer(t)
+	admin := srv.store.UsersByLogin["admin"]
+	repo := srv.store.CreateRepo(admin, "sa-detach", "", false)
+	adv := srv.store.CreateSecurityAdvisory(repo.ID, admin.ID, CreateAdvisoryReq{
+		Summary:  "detach advisory",
+		Severity: "medium",
+		CWEs:     []string{"CWE-79"},
+	})
+
+	// A reader mutating the getter's result must not touch the stored row.
+	got := srv.store.GetSecurityAdvisoryByGHSA(repo.ID, adv.GHSAID)
+	got.Summary = "hacked"
+	got.CWEs[0] = "CWE-000"
+	got.CWEs = append(got.CWEs, "CWE-999")
+
+	again := srv.store.GetSecurityAdvisoryByGHSA(repo.ID, adv.GHSAID)
+	if again.Summary != "detach advisory" {
+		t.Fatalf("stored summary = %q, want unchanged (getter leaked a live pointer)", again.Summary)
+	}
+	if len(again.CWEs) != 1 || again.CWEs[0] != "CWE-79" {
+		t.Fatalf("stored CWEs mutated through the getter: %v", again.CWEs)
+	}
+
+	// The list read is detached too.
+	listed := srv.store.ListSecurityAdvisories(repo.ID)
+	if len(listed) != 1 {
+		t.Fatalf("list = %d advisories, want 1", len(listed))
+	}
+	listed[0].CWEs[0] = "CWE-111"
+	if fresh := srv.store.ListSecurityAdvisories(repo.ID); fresh[0].CWEs[0] != "CWE-79" {
+		t.Fatalf("stored CWEs mutated through the list: %v", fresh[0].CWEs)
+	}
+
+	// The keyed update still reaches the live row.
+	if !srv.store.UpdateSecurityAdvisory(adv.ID, func(a *SecurityAdvisory) { a.Summary = "updated" }) {
+		t.Fatal("update returned false")
+	}
+	if reread := srv.store.GetSecurityAdvisoryByGHSA(repo.ID, adv.GHSAID); reread.Summary != "updated" {
+		t.Fatalf("live summary after update = %q, want updated", reread.Summary)
+	}
+}
+
 func TestSecurityAdvisory_RequestCVE(t *testing.T) {
 	t.Parallel()
 	srv := newIsolatedServer(t)

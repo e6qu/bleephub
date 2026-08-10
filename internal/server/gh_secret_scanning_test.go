@@ -253,6 +253,45 @@ func TestSecretScanning_GetAndLocations(t *testing.T) {
 	}
 }
 
+// TestSecretScanningAlertGetReturnsDetachedSnapshot pins STORE-021 for the
+// secret-scanning family: GetSecretScanningAlert must hand back a copy, so a
+// reader mutating the result (or racing a concurrent update) cannot corrupt the
+// stored alert, and UpdateSecretScanningAlert must still mutate the live row.
+func TestSecretScanningAlertGetReturnsDetachedSnapshot(t *testing.T) {
+	s := newTestServer()
+	admin := s.store.UsersByLogin["admin"]
+	repo := s.store.CreateRepo(admin, "ss-detach", "", false)
+	alert := s.store.CreateSecretScanningAlert(repo.FullName, "github_personal_access_token", []SecretScanningLocation{
+		{Type: "commit", Details: SecretScanningLocationDetails{Path: "first.txt", StartLine: 1, EndLine: 1}},
+	})
+
+	// A caller that mutates the returned alert must not touch the stored row.
+	got := s.store.GetSecretScanningAlert(repo.FullName, alert.Number)
+	got.State = "resolved"
+	got.Locations[0].Details.Path = "hacked.txt"
+	got.Locations = append(got.Locations, SecretScanningLocation{Type: "commit"})
+
+	again := s.store.GetSecretScanningAlert(repo.FullName, alert.Number)
+	if again.State != "open" {
+		t.Fatalf("stored state = %q, want open (getter leaked a live pointer)", again.State)
+	}
+	if len(again.Locations) != 1 || again.Locations[0].Details.Path != "first.txt" {
+		t.Fatalf("stored locations mutated through the getter: %+v", again.Locations)
+	}
+
+	// The update path still mutates the live row despite the getter cloning.
+	if err := s.store.UpdateSecretScanningAlert(again, "resolved", "used_in_tests", ""); err != nil {
+		t.Fatalf("update: %v", err)
+	}
+	if again.State != "resolved" {
+		t.Fatalf("returned snapshot state = %q, want resolved", again.State)
+	}
+	persisted := s.store.GetSecretScanningAlert(repo.FullName, alert.Number)
+	if persisted.State != "resolved" || persisted.Resolution != "used_in_tests" {
+		t.Fatalf("live alert after update = %+v, want resolved/used_in_tests", persisted)
+	}
+}
+
 func TestSecretScanning_AlertLocationsPagination(t *testing.T) {
 	s := newTestServer()
 	s.registerRoutes()

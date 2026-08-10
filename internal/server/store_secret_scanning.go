@@ -158,10 +158,30 @@ func secretTypeDisplayName(secretType string) string {
 }
 
 // GetSecretScanningAlert returns an alert by repo + alert number.
+// cloneSecretScanningAlert returns a deep copy safe to hand outside the store
+// lock: the Locations slice and the ResolvedAt pointer are the only reference
+// fields, so copying the struct plus those two detaches the result from the
+// stored alert (STORE-021 — a reader must not observe a concurrent in-place
+// update, and must not be able to mutate the stored row through the getter).
+func cloneSecretScanningAlert(a *SecretScanningAlert) *SecretScanningAlert {
+	if a == nil {
+		return nil
+	}
+	clone := *a
+	if a.Locations != nil {
+		clone.Locations = append([]SecretScanningLocation(nil), a.Locations...)
+	}
+	if a.ResolvedAt != nil {
+		resolved := *a.ResolvedAt
+		clone.ResolvedAt = &resolved
+	}
+	return &clone
+}
+
 func (st *Store) GetSecretScanningAlert(repoKey string, number int) *SecretScanningAlert {
 	st.mu.RLock()
 	defer st.mu.RUnlock()
-	return st.SecretScanningAlertsByRepo[repoKey][number]
+	return cloneSecretScanningAlert(st.SecretScanningAlertsByRepo[repoKey][number])
 }
 
 // sortAlertList orders a slice of alert records by created/updated time,
@@ -216,29 +236,39 @@ func (st *Store) ListSecretScanningAlerts(repoKey, state, secretType, resolution
 }
 
 // UpdateSecretScanningAlert applies a state/resolution transition to a single alert.
+// UpdateSecretScanningAlert applies a state/resolution transition. The caller's
+// `a` now comes from GetSecretScanningAlert, which returns a detached clone, so
+// the mutation is applied to the LIVE stored alert (re-fetched by key here) and
+// a detached snapshot of the new state is written back into `a` for the caller
+// to render — never the live pointer.
 func (st *Store) UpdateSecretScanningAlert(a *SecretScanningAlert, state, resolution, resolutionComment string) error {
 	st.mu.Lock()
 	defer st.mu.Unlock()
 
-	if err := validateSecretScanningTransition(string(a.State), state, resolution); err != nil {
+	live := st.SecretScanningAlertsByRepo[a.RepoKey][a.Number]
+	if live == nil {
+		return fmt.Errorf("secret scanning alert %s#%d not found", a.RepoKey, a.Number)
+	}
+	if err := validateSecretScanningTransition(string(live.State), state, resolution); err != nil {
 		return err
 	}
 
 	now := st.currentTime()
 	if state != "" {
-		a.State = SecretScanningState(state)
+		live.State = SecretScanningState(state)
 	}
 	if state == "resolved" {
-		a.Resolution = SecretScanningResolution(resolution)
-		a.ResolutionComment = resolutionComment
-		a.ResolvedAt = &now
+		live.Resolution = SecretScanningResolution(resolution)
+		live.ResolutionComment = resolutionComment
+		live.ResolvedAt = &now
 	} else if state == "open" {
-		a.Resolution = ""
-		a.ResolutionComment = ""
-		a.ResolvedAt = nil
+		live.Resolution = ""
+		live.ResolutionComment = ""
+		live.ResolvedAt = nil
 	}
-	a.UpdatedAt = now
-	st.persistSecretScanningAlert(a)
+	live.UpdatedAt = now
+	st.persistSecretScanningAlert(live)
+	*a = *cloneSecretScanningAlert(live)
 	return nil
 }
 
