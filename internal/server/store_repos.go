@@ -186,7 +186,7 @@ func (st *Store) createRepoLocked(fullName, name, description string, private bo
 func (st *Store) GetRepo(owner, name string) *Repo {
 	st.mu.RLock()
 	defer st.mu.RUnlock()
-	return st.ReposByName[owner+"/"+name]
+	return cloneRepo(st.ReposByName[owner+"/"+name])
 }
 
 // GetRepoByFullName resolves an "owner/name" key under the read lock.
@@ -199,13 +199,13 @@ func (st *Store) GetRepo(owner, name string) *Repo {
 func (st *Store) GetRepoByFullName(fullName string) *Repo {
 	st.mu.RLock()
 	defer st.mu.RUnlock()
-	return st.ReposByName[fullName]
+	return cloneRepo(st.ReposByName[fullName])
 }
 
 func (st *Store) GetRepoByID(id int) *Repo {
 	st.mu.RLock()
 	defer st.mu.RUnlock()
-	return st.Repos[id]
+	return cloneRepo(st.Repos[id])
 }
 
 func (st *Store) UpdateRepo(owner, name string, fn func(*Repo)) bool {
@@ -217,7 +217,7 @@ func (st *Store) UpdateRepo(owner, name string, fn func(*Repo)) bool {
 	if !ok {
 		return false
 	}
-	repo := cloneRepoForMutation(current)
+	repo := cloneRepo(current)
 	fn(repo)
 	repo.UpdatedAt = st.currentTime()
 	batch := newPersistBatch(st.persist)
@@ -253,7 +253,7 @@ func (st *Store) ForkRepo(owner *User, sourceRepo *Repo, name string) *Repo {
 		st.mu.Unlock()
 		return nil
 	}
-	source := cloneRepoForMutation(liveSource)
+	source := cloneRepo(liveSource)
 	st.pendingRepoCreations[fullName] = true
 	st.mu.Unlock()
 
@@ -375,13 +375,24 @@ func cloneTimePtr(t *time.Time) *time.Time {
 	return &clone
 }
 
-func cloneRepoForMutation(repo *Repo) *Repo {
+// cloneRepo returns a deep copy of a repository detached from the stored row:
+// every mutable reference field (time pointers, the *bool, the topics slice and
+// the stargazers map) is copied so a caller can neither observe a concurrent
+// in-place mutation (e.g. StarRepo writing the Stargazers map under the write
+// lock) nor leak a write back into the store. The Owner *User is a shared
+// cross-entity pointer kept shallow — detaching users is GetUser's concern.
+// It backs both the copy-on-write UpdateRepo path and the read getters.
+func cloneRepo(repo *Repo) *Repo {
 	if repo == nil {
 		return nil
 	}
 	clone := *repo
 	clone.ArchivedAt = cloneTimePtr(repo.ArchivedAt)
 	clone.InteractionLimitExpiry = cloneTimePtr(repo.InteractionLimitExpiry)
+	if repo.HasDiscussions != nil {
+		v := *repo.HasDiscussions
+		clone.HasDiscussions = &v
+	}
 	clone.Topics = append([]string(nil), repo.Topics...)
 	clone.Stargazers = make(map[int]bool, len(repo.Stargazers))
 	for userID, starred := range repo.Stargazers {

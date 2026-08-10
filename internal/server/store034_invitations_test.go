@@ -334,3 +334,42 @@ func TestEnterpriseCodeSecurityConfigGetIsDetached(t *testing.T) {
 		t.Fatalf("SetDefault did not update the live config: %q", def.DefaultForNewRepos)
 	}
 }
+
+// TestRepoGetIsDetached pins STORE-021 for the repository getters: a returned
+// repo must not share its mutable Stargazers map / Topics slice / scalar fields
+// with the stored row, so a reader can never race StarRepo's in-place map write.
+func TestRepoGetIsDetached(t *testing.T) {
+	s := newTestServer()
+	admin := s.store.UsersByLogin["admin"]
+	repo := s.store.CreateRepo(admin, "detach-repo", "", false)
+	if !s.store.StarRepo(admin.ID, admin.Login, repo.Name) {
+		t.Fatal("StarRepo failed")
+	}
+
+	got := s.store.GetRepo(admin.Login, repo.Name)
+	if got.Stargazers == nil || !got.Stargazers[admin.ID] {
+		t.Fatal("expected the star to be visible on the getter result")
+	}
+	// Mutate every mutable reference field on the returned snapshot.
+	got.Stargazers[999] = true
+	got.Topics = append(got.Topics, "tampered")
+	got.Description = "TAMPERED"
+
+	fresh := s.store.GetRepoByID(repo.ID)
+	if fresh.Stargazers[999] {
+		t.Fatal("Stargazers map is shared with the store (STORE-021 fatal-map race)")
+	}
+	if len(fresh.Topics) != 0 {
+		t.Fatalf("Topics slice leaked: %v", fresh.Topics)
+	}
+	if fresh.Description != "" {
+		t.Fatalf("scalar mutation leaked: description = %q", fresh.Description)
+	}
+	// The real writer still updates the live row.
+	if !s.store.UnstarRepo(admin.ID, admin.Login, repo.Name) {
+		t.Fatal("UnstarRepo failed")
+	}
+	if s.store.GetRepo(admin.Login, repo.Name).Stargazers[admin.ID] {
+		t.Fatal("UnstarRepo did not update the live row")
+	}
+}
