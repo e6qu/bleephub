@@ -352,6 +352,34 @@ func (s *isolatedServer) seedRepo(t *testing.T, name string, private bool) *Repo
 	return repo
 }
 
+// seedTestOrg/seedOrgRepo mirror the package helpers against this instance's
+// store: an org owned by admin and an org-owned repo, both idempotent.
+func (s *isolatedServer) seedTestOrg(t *testing.T, login string) *Org {
+	t.Helper()
+	if org := s.store.GetOrg(login); org != nil {
+		return org
+	}
+	admin := s.store.LookupUserByLogin("admin")
+	org := s.store.CreateOrg(admin, login, login, "")
+	if org == nil {
+		t.Fatalf("CreateOrg %s failed", login)
+	}
+	return org
+}
+
+func (s *isolatedServer) seedOrgRepo(t *testing.T, org *Org, name string, private bool) *Repo {
+	t.Helper()
+	if repo := s.store.GetRepo(org.Login, name); repo != nil {
+		return repo
+	}
+	admin := s.store.LookupUserByLogin("admin")
+	repo := s.store.CreateOrgRepo(org, admin, name, "", private)
+	if repo == nil {
+		t.Fatalf("CreateOrgRepo %s/%s failed", org.Login, name)
+	}
+	return repo
+}
+
 // TestIsolatedServersAreIndependentAndParallelSafe pins the invariant the whole
 // migration relies on: two isolated servers share no store state, so mutations
 // in one are invisible to the other and both can run under t.Parallel().
