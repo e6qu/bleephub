@@ -542,6 +542,24 @@ func (s *isolatedServer) createRepoWriteRepo(t *testing.T, autoInit bool) string
 	return name
 }
 
+// copilotTestOrg mirrors the package helper (still used by gh_copilot_test.go):
+// an org owned by admin with optional active members, on this isolated server.
+func (s *isolatedServer) copilotTestOrg(t *testing.T, login string, memberLogins ...string) (*Org, []*User) {
+	t.Helper()
+	admin := s.store.LookupUserByLogin("admin")
+	org := s.store.CreateOrg(admin, login, login, "")
+	if org == nil {
+		t.Fatalf("CreateOrg(%q) returned nil", login)
+	}
+	members := make([]*User, 0, len(memberLogins))
+	for _, ml := range memberLogins {
+		u := seedTestUser(s.Server, ml)
+		s.store.SetMembership(org.Login, u.ID, OrgRoleMember, MembershipStateActive)
+		members = append(members, u)
+	}
+	return org, members
+}
+
 // createReadsRepo mirrors the package helper (still used by three other repo
 // read-surface files): creates an admin repo with optional extra fields.
 func (s *isolatedServer) createReadsRepo(t *testing.T, name string, extra map[string]interface{}) {
