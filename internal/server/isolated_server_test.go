@@ -2,6 +2,7 @@ package bleephub
 
 import (
 	"bytes"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -450,6 +451,81 @@ func (s *isolatedServer) submitSnapshotForRepoPath(t *testing.T, repoFullName, m
 func (s *isolatedServer) submitSnapshotForTest(t *testing.T, repo, ref, sha, correlator string, purls ...string) map[string]interface{} {
 	t.Helper()
 	return s.submitSnapshotForRepoPath(t, "admin/"+repo, "go.mod", ref, sha, correlator, purls...)
+}
+
+// putRepoFile/seedDependabotAlert mirror the package helpers against this
+// instance (package versions stay for the un-migrated dependabot/enterprise
+// files that share them; dupl.sh excludes _test.go so the duplication is safe).
+func (s *isolatedServer) putRepoFile(t *testing.T, repoFullName, path, content, message string) string {
+	t.Helper()
+	resp := s.put(t, "/api/v3/repos/"+repoFullName+"/contents/"+path, defaultToken, map[string]interface{}{
+		"message": message,
+		"content": base64.StdEncoding.EncodeToString([]byte(content)),
+	})
+	if resp.StatusCode != http.StatusCreated {
+		b, _ := io.ReadAll(resp.Body)
+		resp.Body.Close()
+		t.Fatalf("put contents %s: %d body=%s", path, resp.StatusCode, b)
+	}
+	out := decodeJSON(t, resp)
+	commit := out["commit"].(map[string]interface{})
+	return commit["sha"].(string)
+}
+
+func (s *isolatedServer) seedDependabotAlert(t *testing.T, owner, repo string, overrides map[string]any) map[string]any {
+	t.Helper()
+	body := map[string]any{
+		"package_name":             "dependabot-" + repo + "-pkg",
+		"package_ecosystem":        "npm",
+		"manifest_path":            "package-lock.json",
+		"severity":                 "high",
+		"summary":                  "Prototype pollution in lodash",
+		"description":              "A vulnerability allows prototype pollution.",
+		"vulnerable_version_range": "< 4.17.21",
+		"first_patched_version":    "4.17.21",
+	}
+	for k, v := range overrides {
+		body[k] = v
+	}
+	packageName := body["package_name"].(string)
+	ecosystem := body["package_ecosystem"].(string)
+	manifestPath := body["manifest_path"].(string)
+	rangeExpr := body["vulnerable_version_range"].(string)
+	patchedVersion, _ := body["first_patched_version"].(string)
+	repoFullName := owner + "/" + repo
+
+	create := s.post(t, "/api/v3/repos/"+repoFullName+"/security-advisories", defaultToken, map[string]interface{}{
+		"summary":     body["summary"],
+		"description": body["description"],
+		"severity":    body["severity"],
+		"cwe_ids":     []string{"CWE-79"},
+		"vulnerabilities": []map[string]interface{}{
+			{
+				"package":                  map[string]interface{}{"ecosystem": ecosystem, "name": packageName},
+				"vulnerable_version_range": rangeExpr,
+				"first_patched_version":    patchedVersion,
+			},
+		},
+	})
+	advisory := decodeJSONWithStatus(t, create, http.StatusCreated)
+	ghsaID := advisory["ghsa_id"].(string)
+	publish := s.patch(t, "/api/v3/repos/"+repoFullName+"/security-advisories/"+ghsaID, defaultToken, map[string]interface{}{"state": "published"})
+	decodeJSONWithStatus(t, publish, http.StatusOK)
+
+	manifestContent := fmt.Sprintf("%s %s\n", ecosystem, packageName)
+	sha := s.putRepoFile(t, repoFullName, manifestPath, manifestContent, "seed Dependabot dependency")
+	s.submitSnapshotForRepoPath(t, repoFullName, manifestPath, "refs/heads/main", sha, "dependabot/"+packageName, dependabotTestPackageURL(ecosystem, packageName, rangeExpr))
+
+	resp := s.authedGet(t, "/api/v3/repos/"+repoFullName+"/dependabot/alerts?package_name="+packageName)
+	alerts := decodeJSONArray(t, resp)
+	for _, created := range alerts {
+		securityAdvisory, _ := created["security_advisory"].(map[string]any)
+		if securityAdvisory != nil && securityAdvisory["ghsa_id"] == ghsaID {
+			return created
+		}
+	}
+	t.Fatalf("Dependabot alert for advisory %s was not created: %v", ghsaID, alerts)
+	return nil
 }
 
 // createRepoWriteRepo mirrors the package helper: create an admin repo through
