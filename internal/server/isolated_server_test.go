@@ -542,6 +542,21 @@ func (s *isolatedServer) createRepoWriteRepo(t *testing.T, autoInit bool) string
 	return name
 }
 
+// uploadAttestation mirrors the package helper (still used by
+// gh_artifact_metadata_test.go): posts a sigstore bundle and returns the
+// created attestation id, on this isolated server.
+func (s *isolatedServer) uploadAttestation(t *testing.T, ownerRepo, token string, bundle map[string]interface{}) int {
+	t.Helper()
+	resp := s.post(t, "/api/v3/repos/"+ownerRepo+"/attestations", token,
+		map[string]interface{}{"bundle": bundle})
+	if resp.StatusCode != 201 {
+		resp.Body.Close()
+		t.Fatalf("upload attestation = %d, want 201", resp.StatusCode)
+	}
+	created := decodeJSON(t, resp)
+	return int(created["id"].(float64))
+}
+
 // userSurfaceUser mirrors the package helper (still used by
 // gh_marketplace_test.go): a user plus a broad-scope token, on this isolated
 // server.
