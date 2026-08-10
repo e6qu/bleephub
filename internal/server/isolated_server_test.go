@@ -11,6 +11,7 @@ import (
 	"strconv"
 	"sync/atomic"
 	"testing"
+	"time"
 
 	"github.com/rs/zerolog"
 )
@@ -539,6 +540,21 @@ func (s *isolatedServer) createRepoWriteRepo(t *testing.T, autoInit bool) string
 	})
 	requireStatus(t, resp, 201)
 	return name
+}
+
+// cleanupCodespaceContainer mirrors the package helper (still used by two
+// other codespaces files): best-effort delete of a named codespace on this
+// isolated server's store at test cleanup.
+func (s *isolatedServer) cleanupCodespaceContainer(t *testing.T, name string) {
+	t.Helper()
+	if cs := s.store.GetCodespaceByName(name); cs != nil {
+		if _, err := s.store.DeleteCodespace(cs.ID); err == nil {
+			return
+		}
+	}
+	ctx, cancel := contextWithTimeout(30 * time.Second)
+	defer cancel()
+	_ = dockerRemoveContainer(ctx, codespaceContainerName(name))
 }
 
 // createTestPRRepo mirrors the package helper (still used by four other
