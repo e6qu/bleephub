@@ -424,3 +424,55 @@ describe("repository detail journeys", () => {
     expect(screen.getByText(/extra detail/)).toBeInTheDocument();
   });
 });
+
+describe("RepoDetailPage file editing", () => {
+  it("edits a file through the contents API", async () => {
+    mockFetch.mockImplementation((url: RequestInfo | URL) => routedFetch(url));
+    renderPage("/ui/repos/admin/test/blob/main/README.md");
+    fireEvent.click(await screen.findByRole("button", { name: /^edit$/i }));
+    const editor = await screen.findByLabelText(/edit README\.md/i);
+    fireEvent.change(editor, { target: { value: "# changed" } });
+    fireEvent.click(screen.getByRole("button", { name: /commit changes/i }));
+    await waitFor(() => {
+      const put = mockFetch.mock.calls.find(
+        (c) => c[0].toString().endsWith("/contents/README.md") && c[1]?.method === "PUT",
+      );
+      expect(put).toBeTruthy();
+      const body = JSON.parse((put![1] as RequestInit).body as string);
+      expect(body.sha).toBe("r1");
+      expect(body.branch).toBe("main");
+      expect(typeof body.content).toBe("string");
+    });
+  });
+
+  it("deletes a file after confirmation", async () => {
+    mockFetch.mockImplementation((url: RequestInfo | URL) => routedFetch(url));
+    renderPage("/ui/repos/admin/test/blob/main/README.md");
+    fireEvent.click(await screen.findByRole("button", { name: /delete file/i }));
+    fireEvent.click(await screen.findByRole("button", { name: /^delete$/i }));
+    await waitFor(() => {
+      const del = mockFetch.mock.calls.find(
+        (c) => c[0].toString().endsWith("/contents/README.md") && c[1]?.method === "DELETE",
+      );
+      expect(del).toBeTruthy();
+    });
+  });
+
+  it("creates a new file from the code view", async () => {
+    mockFetch.mockImplementation((url: RequestInfo | URL) => routedFetch(url));
+    renderPage("/ui/repos/admin/test");
+    fireEvent.click(await screen.findByRole("button", { name: /add file/i }));
+    fireEvent.change(await screen.findByLabelText(/file path/i), { target: { value: "NEW.md" } });
+    fireEvent.change(screen.getByLabelText(/contents/i), { target: { value: "hello" } });
+    fireEvent.click(screen.getByRole("button", { name: /commit new file/i }));
+    await waitFor(() => {
+      const put = mockFetch.mock.calls.find(
+        (c) => c[0].toString().endsWith("/contents/NEW.md") && c[1]?.method === "PUT",
+      );
+      expect(put).toBeTruthy();
+      const body = JSON.parse((put![1] as RequestInit).body as string);
+      expect(body.branch).toBe("main");
+      expect(body.sha).toBeUndefined();
+    });
+  });
+});

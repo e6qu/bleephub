@@ -153,6 +153,7 @@ import type {
   GithubMarketplaceSubscription,
   Undef,
 } from "./types.js";
+import { encodeContentsBase64 } from "./utils/workflowDispatch.js";
 
 // One AbortController behind every request this module makes.
 //
@@ -1066,6 +1067,57 @@ export const fetchRepoFile = (
     `/api/v3/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/contents/${encodedPath}${qs}`,
   );
 };
+
+/**
+ * Create or update a file through the contents API. `content` is raw text; it is
+ * base64-encoded here. Pass `sha` (the blob sha from the file response) to update
+ * an existing file, omit it to create a new one. `branch` targets a branch.
+ */
+export const putFile = (
+  owner: string,
+  repo: string,
+  path: string,
+  payload: { message: string; content: string; sha?: string; branch?: string },
+) => {
+  const encodedPath = path.split("/").map(encodeURIComponent).join("/");
+  const body: Record<string, unknown> = {
+    message: payload.message,
+    content: encodeContentsBase64(payload.content),
+  };
+  if (payload.sha) body.sha = payload.sha;
+  if (payload.branch) body.branch = payload.branch;
+  return ghPutJSON<{ commit: { sha: string } }>(
+    `/api/v3/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/contents/${encodedPath}`,
+    body,
+  );
+};
+
+/** Delete a file through the contents API. `sha` is the file's current blob sha. */
+export const deleteFile = (
+  owner: string,
+  repo: string,
+  path: string,
+  payload: { message: string; sha: string; branch?: string },
+) => {
+  const encodedPath = path.split("/").map(encodeURIComponent).join("/");
+  const body: Record<string, unknown> = { message: payload.message, sha: payload.sha };
+  if (payload.branch) body.branch = payload.branch;
+  return ghSend(
+    "DELETE",
+    `/api/v3/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/contents/${encodedPath}`,
+    body,
+  );
+};
+
+/**
+ * Create a git ref (branch or tag) at `sha`. `ref` is the fully-qualified name,
+ * e.g. "refs/heads/feature" for a branch or "refs/tags/v1" for a lightweight tag.
+ */
+export const createRef = (owner: string, repo: string, ref: string, sha: string) =>
+  ghPostJSON<{ ref: string; object: { sha: string } }>(
+    `/api/v3/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/git/refs`,
+    { ref, sha },
+  );
 
 export const fetchRepoReadme = (owner: string, repo: string, ref?: string): Promise<GithubContentFile> => {
   const qs = ref ? `?ref=${encodeURIComponent(ref)}` : "";
