@@ -5,6 +5,43 @@ import (
 	"time"
 )
 
+// TestOrgInvitationAndInteractionLimitGetsAreDetached pins STORE-021 for the
+// teams/people family: GetOrgInvitation and GetOrgInteractionLimit must return
+// copies, so a reader mutating the result (or its TeamIDs slice) cannot corrupt
+// the stored row.
+func TestOrgInvitationAndInteractionLimitGetsAreDetached(t *testing.T) {
+	s := newTestServer()
+	st := s.store
+	admin := st.UsersByLogin["admin"]
+	org := st.CreateOrg(admin, "detach-org", "Detach", "")
+	invitee := &User{ID: st.NextUser, Login: "detach-invitee", Type: "User"}
+	st.mu.Lock()
+	st.Users[invitee.ID] = invitee
+	st.UsersByLogin[invitee.Login] = invitee
+	st.NextUser++
+	st.mu.Unlock()
+
+	inv, msg := st.CreateOrgInvitation(org, admin, invitee, "", "direct_member", []int{7, 8})
+	if inv == nil {
+		t.Fatalf("create invitation: %s", msg)
+	}
+
+	got := st.GetOrgInvitation(org.Login, inv.ID)
+	got.Role = "admin"
+	got.TeamIDs[0] = 999
+	again := st.GetOrgInvitation(org.Login, inv.ID)
+	if again.Role == "admin" || again.TeamIDs[0] != 7 {
+		t.Fatalf("invitation mutated through the getter: role=%q teamIDs=%v", again.Role, again.TeamIDs)
+	}
+
+	st.SetOrgInteractionLimit(org.Login, "existing_users", fixedTestTime.Add(24*time.Hour))
+	lim := st.GetOrgInteractionLimit(org.Login)
+	lim.Limit = "hacked"
+	if fresh := st.GetOrgInteractionLimit(org.Login); fresh.Limit != "existing_users" {
+		t.Fatalf("interaction limit mutated through the getter: %q", fresh.Limit)
+	}
+}
+
 // TestOrgInvitationReadsAreNonMutating covers the invitation half of STORE-034:
 // the invitation list/get endpoints used to take the exclusive lock and run the
 // reconcile state machine — durable deletes and MustPut writes — on a GET, so a

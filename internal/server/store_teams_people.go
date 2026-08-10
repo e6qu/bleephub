@@ -272,6 +272,23 @@ func (st *Store) ListFailedOrgInvitations(orgLogin string) []*OrgInvitation {
 }
 
 // GetOrgInvitation returns a live (non-failed) invitation by org and ID.
+// cloneOrgInvitation returns a copy safe to hand outside the store lock
+// (STORE-021): TeamIDs and FailedAt are the only reference fields.
+func cloneOrgInvitation(inv *OrgInvitation) *OrgInvitation {
+	if inv == nil {
+		return nil
+	}
+	clone := *inv
+	if inv.TeamIDs != nil {
+		clone.TeamIDs = append([]int(nil), inv.TeamIDs...)
+	}
+	if inv.FailedAt != nil {
+		failed := *inv.FailedAt
+		clone.FailedAt = &failed
+	}
+	return &clone
+}
+
 func (st *Store) GetOrgInvitation(orgLogin string, id int) *OrgInvitation {
 	st.mu.RLock()
 	defer st.mu.RUnlock()
@@ -284,7 +301,7 @@ func (st *Store) GetOrgInvitation(orgLogin string, id int) *OrgInvitation {
 	if inv == nil || inv.OrgID != org.ID || inv.FailedAt != nil {
 		return nil
 	}
-	return inv
+	return cloneOrgInvitation(inv)
 }
 
 // CancelOrgInvitation removes a live invitation and its pending
@@ -415,7 +432,10 @@ func (st *Store) GetOrgInteractionLimit(orgLogin string) *OrgInteractionLimit {
 		}
 		return nil
 	}
-	return lim
+	// A copy so a reader can't mutate the stored limit through the getter
+	// (STORE-021); OrgInteractionLimit is all-value, so a shallow copy detaches.
+	clone := *lim
+	return &clone
 }
 
 // SetOrgInteractionLimit stores the org's interaction limit.
