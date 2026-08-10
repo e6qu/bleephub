@@ -414,6 +414,17 @@ jobs:
         run: ./scripts/check-web-openapi-types-drift.sh
       - name: Build the embedded web application
         run: cd web && bun run build
+      # CORE-013: internal/server/dist is a committed build artifact (go:embed'd
+      # by ui_embed.go) that previously had no freshness gate — a web/ change
+      # that was not rebuilt would ship a stale UI. Reuse the fresh build above
+      # and fail if the committed copy drifted. The Vite build is deterministic
+      # under the pinned bun version, so any diff is a real stale-artifact bug.
+      - name: Verify the committed embedded UI matches a fresh build
+        run: |
+          rm -rf internal/server/dist/*
+          cp -R web/dist/. internal/server/dist/
+          git diff --exit-code -- internal/server/dist \
+            || { echo "internal/server/dist is stale — run 'make web-build' and commit the result (CORE-013)"; exit 1; }
       # The web counterparts of the same two orphaned gates. knip reported
       # e2e/shauth-sso.mjs as an unused file because it is launched by
       # scripts/test-shauth-sso.sh rather than imported; it is declared as an

@@ -4489,8 +4489,8 @@
         "id": "CORE-013",
         "location": "ui_embed.go:12, Makefile:11",
         "severity": "M",
-        "status": "open",
-        "status_kind": "open"
+        "status": "fixed \u2014 the committed `internal/server/dist` tree (go:embed'd by `ui_embed.go`) now has a freshness gate. The \"Web application\" CI job, right after it builds the app, copies the fresh `web/dist` over `internal/server/dist` and runs `git diff --exit-code`, failing if the committed artifacts drifted from a fresh build; `make check-web-embed` runs the same check locally. This is reliable because the Vite build is deterministic: two builds are byte-identical, and \u2014 verified here \u2014 the output is independent of the bun version (built with both the local 1.3.10 and the CI-pinned 1.3.14 and got byte-identical trees), because bun is only the runtime/package manager while the lockfile-pinned Vite/Rollup do the bundling. The committed tree was in fact stale (the merged web PRs had changed sources without regenerating it); this change also regenerates it so the gate is green.",
+        "status_kind": "fixed"
       },
       {
         "category": "CORE",
@@ -6558,8 +6558,7 @@
         },
         "CORE": {
           "status": {
-            "fixed": 32,
-            "open": 1
+            "fixed": 33
           },
           "total": 33
         },
@@ -6614,8 +6613,8 @@
       },
       "status": {
         "deferred": 3,
-        "fixed": 670,
-        "open": 7,
+        "fixed": 671,
+        "open": 6,
         "partial": 5
       },
       "total": 685
