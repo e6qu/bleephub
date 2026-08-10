@@ -22,25 +22,13 @@ func createOrgRepoForGovernance(t *testing.T, org string) (string, int) {
 	return name, int(repo["id"].(float64))
 }
 
-// createIssueForGovernance opens an issue and returns its number.
-func createIssueForGovernance(t *testing.T, repoFullName, title string) int {
-	t.Helper()
-	resp := ghPost(t, "/api/v3/repos/"+repoFullName+"/issues", defaultToken, map[string]interface{}{
-		"title": title,
-	})
-	if resp.StatusCode != 201 {
-		resp.Body.Close()
-		t.Fatalf("create issue: %d", resp.StatusCode)
-	}
-	issue := decodeJSON(t, resp)
-	return int(issue["number"].(float64))
-}
-
 func TestOrgIssueFields_CRUD(t *testing.T) {
-	org := createTestOrg(t)
+	t.Parallel()
+	s := newIsolatedServer(t)
+	org := s.createTestOrg(t)
 
 	// Create a single-select field with options.
-	resp := ghPost(t, "/api/v3/orgs/"+org+"/issue-fields", defaultToken, map[string]interface{}{
+	resp := s.post(t, "/api/v3/orgs/"+org+"/issue-fields", defaultToken, map[string]interface{}{
 		"name":        "Priority",
 		"description": "Level of importance for the issue",
 		"data_type":   "single_select",
@@ -67,7 +55,7 @@ func TestOrgIssueFields_CRUD(t *testing.T) {
 	fieldID := itoa(int(created["id"].(float64)))
 
 	// List.
-	resp = ghGet(t, "/api/v3/orgs/"+org+"/issue-fields", defaultToken)
+	resp = s.get(t, "/api/v3/orgs/"+org+"/issue-fields", defaultToken)
 	if resp.StatusCode != 200 {
 		t.Fatalf("list issue fields: %d", resp.StatusCode)
 	}
@@ -76,7 +64,7 @@ func TestOrgIssueFields_CRUD(t *testing.T) {
 	}
 
 	// PATCH: rename and replace options, retaining "High" by ID.
-	resp = ghPatch(t, "/api/v3/orgs/"+org+"/issue-fields/"+fieldID, defaultToken, map[string]interface{}{
+	resp = s.patch(t, "/api/v3/orgs/"+org+"/issue-fields/"+fieldID, defaultToken, map[string]interface{}{
 		"name": "Severity",
 		"options": []map[string]interface{}{
 			{"id": firstOptionID, "name": "Critical", "color": "red", "priority": 1},
@@ -100,12 +88,12 @@ func TestOrgIssueFields_CRUD(t *testing.T) {
 	}
 
 	// Delete.
-	resp = ghDelete(t, "/api/v3/orgs/"+org+"/issue-fields/"+fieldID, defaultToken)
+	resp = s.delete(t, "/api/v3/orgs/"+org+"/issue-fields/"+fieldID, defaultToken)
 	resp.Body.Close()
 	if resp.StatusCode != 204 {
 		t.Fatalf("delete issue field: %d", resp.StatusCode)
 	}
-	resp = ghDelete(t, "/api/v3/orgs/"+org+"/issue-fields/"+fieldID, defaultToken)
+	resp = s.delete(t, "/api/v3/orgs/"+org+"/issue-fields/"+fieldID, defaultToken)
 	resp.Body.Close()
 	if resp.StatusCode != 404 {
 		t.Fatalf("delete missing issue field: %d", resp.StatusCode)
@@ -113,10 +101,12 @@ func TestOrgIssueFields_CRUD(t *testing.T) {
 }
 
 func TestOrgIssueFields_Validation(t *testing.T) {
-	org := createTestOrg(t)
+	t.Parallel()
+	s := newIsolatedServer(t)
+	org := s.createTestOrg(t)
 
 	// single_select without options.
-	resp := ghPost(t, "/api/v3/orgs/"+org+"/issue-fields", defaultToken, map[string]interface{}{
+	resp := s.post(t, "/api/v3/orgs/"+org+"/issue-fields", defaultToken, map[string]interface{}{
 		"name":      "Status",
 		"data_type": "single_select",
 	})
@@ -126,7 +116,7 @@ func TestOrgIssueFields_Validation(t *testing.T) {
 	}
 
 	// Unsupported data type.
-	resp = ghPost(t, "/api/v3/orgs/"+org+"/issue-fields", defaultToken, map[string]interface{}{
+	resp = s.post(t, "/api/v3/orgs/"+org+"/issue-fields", defaultToken, map[string]interface{}{
 		"name":      "Weird",
 		"data_type": "geo_point",
 	})
@@ -136,7 +126,7 @@ func TestOrgIssueFields_Validation(t *testing.T) {
 	}
 
 	// Options on a text field.
-	resp = ghPost(t, "/api/v3/orgs/"+org+"/issue-fields", defaultToken, map[string]interface{}{
+	resp = s.post(t, "/api/v3/orgs/"+org+"/issue-fields", defaultToken, map[string]interface{}{
 		"name":      "Notes",
 		"data_type": "text",
 		"options":   []map[string]interface{}{{"name": "x", "color": "red"}},
@@ -148,14 +138,15 @@ func TestOrgIssueFields_Validation(t *testing.T) {
 }
 
 func TestIssueFieldValues_AddSetListClear(t *testing.T) {
-	org := createTestOrg(t)
-	repoName, _ := createOrgRepoForGovernance(t, org)
-	repoPath := org + "/" + repoName
-	number := createIssueForGovernance(t, repoPath, "field value test")
+	t.Parallel()
+	s := newIsolatedServer(t)
+	org := s.createTestOrg(t)
+	repoKey, _ := s.createOrgRepoForGovernance(t, org)
+	_, number := s.createIssueForTest(t, repoKey, "field value test")
 
 	mkField := func(body map[string]interface{}) int {
 		t.Helper()
-		resp := ghPost(t, "/api/v3/orgs/"+org+"/issue-fields", defaultToken, body)
+		resp := s.post(t, "/api/v3/orgs/"+org+"/issue-fields", defaultToken, body)
 		if resp.StatusCode != 200 {
 			resp.Body.Close()
 			t.Fatalf("create field %v: %d", body["name"], resp.StatusCode)
@@ -180,10 +171,10 @@ func TestIssueFieldValues_AddSetListClear(t *testing.T) {
 	})
 	dateID := mkField(map[string]interface{}{"name": "Due", "data_type": "date"})
 
-	valuesPath := "/api/v3/repos/" + repoPath + "/issues/" + itoa(number) + "/issue-field-values"
+	valuesPath := repoKey.path() + "/issues/" + itoa(number) + "/issue-field-values"
 
 	// POST adds values.
-	resp := ghPost(t, valuesPath, defaultToken, map[string]interface{}{
+	resp := s.post(t, valuesPath, defaultToken, map[string]interface{}{
 		"issue_field_values": []map[string]interface{}{
 			{"field_id": textID, "value": "needs design review"},
 			{"field_id": numberID, "value": 5},
@@ -222,7 +213,7 @@ func TestIssueFieldValues_AddSetListClear(t *testing.T) {
 	}
 
 	// GET lists the same values.
-	resp = ghGet(t, valuesPath, defaultToken)
+	resp = s.get(t, valuesPath, defaultToken)
 	if resp.StatusCode != 200 {
 		t.Fatalf("list field values: %d", resp.StatusCode)
 	}
@@ -231,7 +222,7 @@ func TestIssueFieldValues_AddSetListClear(t *testing.T) {
 	}
 
 	// PUT replaces all values.
-	resp = ghPut(t, valuesPath, defaultToken, map[string]interface{}{
+	resp = s.put(t, valuesPath, defaultToken, map[string]interface{}{
 		"issue_field_values": []map[string]interface{}{
 			{"field_id": selectID, "value": "Low"},
 		},
@@ -245,7 +236,7 @@ func TestIssueFieldValues_AddSetListClear(t *testing.T) {
 	}
 
 	// Invalid option name is a 422.
-	resp = ghPost(t, valuesPath, defaultToken, map[string]interface{}{
+	resp = s.post(t, valuesPath, defaultToken, map[string]interface{}{
 		"issue_field_values": []map[string]interface{}{
 			{"field_id": selectID, "value": "Nonexistent"},
 		},
@@ -256,7 +247,7 @@ func TestIssueFieldValues_AddSetListClear(t *testing.T) {
 	}
 
 	// Unknown field is a 422.
-	resp = ghPost(t, valuesPath, defaultToken, map[string]interface{}{
+	resp = s.post(t, valuesPath, defaultToken, map[string]interface{}{
 		"issue_field_values": []map[string]interface{}{
 			{"field_id": 99999999, "value": "x"},
 		},
@@ -267,7 +258,7 @@ func TestIssueFieldValues_AddSetListClear(t *testing.T) {
 	}
 
 	// POST with an empty array clears everything.
-	resp = ghPost(t, valuesPath, defaultToken, map[string]interface{}{
+	resp = s.post(t, valuesPath, defaultToken, map[string]interface{}{
 		"issue_field_values": []map[string]interface{}{},
 	})
 	if resp.StatusCode != 200 {
@@ -279,15 +270,16 @@ func TestIssueFieldValues_AddSetListClear(t *testing.T) {
 }
 
 func TestIssueFieldValues_PushAccessRequired(t *testing.T) {
-	org := createTestOrg(t)
-	repoName, _ := createOrgRepoForGovernance(t, org)
-	repoPath := org + "/" + repoName
-	number := createIssueForGovernance(t, repoPath, "outsider test")
+	t.Parallel()
+	s := newIsolatedServer(t)
+	org := s.createTestOrg(t)
+	repoKey, _ := s.createOrgRepoForGovernance(t, org)
+	_, number := s.createIssueForTest(t, repoKey, "outsider test")
 
-	outsider := createTestUser(t, "gov-outsider-"+strconv.FormatInt(int64(nextTestID()), 36))
-	tok := testServer.store.CreateToken(outsider.ID, "repo").Value
+	outsider := s.createTestUser(t, "gov-outsider-"+strconv.FormatInt(int64(nextTestID()), 36))
+	tok := s.store.CreateToken(outsider.ID, "repo").Value
 
-	resp := ghPost(t, "/api/v3/repos/"+repoPath+"/issues/"+itoa(number)+"/issue-field-values", tok, map[string]interface{}{
+	resp := s.post(t, repoKey.path()+"/issues/"+itoa(number)+"/issue-field-values", tok, map[string]interface{}{
 		"issue_field_values": []map[string]interface{}{},
 	})
 	resp.Body.Close()
