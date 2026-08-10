@@ -144,6 +144,26 @@ data "aws_iam_policy_document" "kms" {
       values   = [aws_cloudfront_distribution.startup.arn]
     }
   }
+
+  # CloudWatch alarm actions publish to the KMS-encrypted alerts SNS topic
+  # through the CloudWatch service principal, so the key must let CloudWatch
+  # generate a data key and decrypt when it encrypts a notification. Bound to
+  # this account.
+  statement {
+    sid       = "CloudWatchAlarmsToEncryptedSNS"
+    effect    = "Allow"
+    actions   = ["kms:Decrypt", "kms:GenerateDataKey"]
+    resources = ["*"]
+    principals {
+      type        = "Service"
+      identifiers = ["cloudwatch.amazonaws.com"]
+    }
+    condition {
+      test     = "StringEquals"
+      variable = "aws:SourceAccount"
+      values   = [data.aws_caller_identity.current.account_id]
+    }
+  }
 }
 
 moved {
@@ -1845,8 +1865,11 @@ resource "aws_ce_anomaly_subscription" "default" {
 # SNS subscription wired only when var.alert_email is set.
 
 resource "aws_sns_topic" "alerts" {
-  name              = "${var.name}-alerts"
-  kms_master_key_id = "alias/aws/sns"
+  name = "${var.name}-alerts"
+  # Encrypt with the module's customer-managed key (not the AWS-managed
+  # alias/aws/sns) so the topic meets the same CMK bar as every other durable
+  # store here; the KMS key policy grants CloudWatch use of the key below.
+  kms_master_key_id = aws_kms_key.this.arn
   tags              = local.common_tags
 }
 
