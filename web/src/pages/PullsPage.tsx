@@ -9,6 +9,7 @@ import {
   fetchCheckRuns,
   fetchRepoBranches,
   createPull,
+  updatePull,
   mergePR,
   isNotFound,
   fetchAuthenticatedUser,
@@ -58,6 +59,7 @@ import {
 } from "../components/ListControls.js";
 import { Button, Box, Blankslate, StateLabel, SectionLabel, FormLabel, Tabs, Modal, DialogActions } from "../components/ui.js";
 import { MutationError } from "../components/MutationError.js";
+import { CommentComposer } from "../components/CommentComposer.js";
 import {
   PullRequestIcon,
   MergedIcon,
@@ -324,6 +326,27 @@ function PRDetail({ owner, repo, number }: { owner: string; repo: string; number
   const viewerQ = useQuery({ queryKey: ["viewer"], queryFn: fetchAuthenticatedUser });
   const viewerLogin = typeof viewerQ.data?.login === "string" ? viewerQ.data.login : null;
 
+  const qc = useQueryClient();
+  const invalidatePR = () => {
+    qc.invalidateQueries({ queryKey: ["pr", owner, repo, number] });
+    qc.invalidateQueries({ queryKey: ["prs", owner, repo] });
+  };
+  const stateMut = useMutation({
+    mutationFn: () =>
+      updatePull(owner, repo, number, { state: pr?.state === "open" ? "closed" : "open" }),
+    onSuccess: invalidatePR,
+  });
+  const [editing, setEditing] = useState(false);
+  const [editTitle, setEditTitle] = useState("");
+  const [editBody, setEditBody] = useState("");
+  const editMut = useMutation({
+    mutationFn: () => updatePull(owner, repo, number, { title: editTitle, body: editBody }),
+    onSuccess: () => {
+      invalidatePR();
+      setEditing(false);
+    },
+  });
+
   if (isError) {
     if (isNotFound(error)) {
       return (
@@ -349,9 +372,57 @@ function PRDetail({ owner, repo, number }: { owner: string; repo: string; number
     <div>
       <RepoHeader owner={owner} repo={repo} active="pulls" {...counts} />
 
-      <h1 className="mb-2" style={{ fontSize: "1.5rem", fontWeight: 400, color: "var(--color-fg)" }}>
-        {pr.title} <span style={{ color: "var(--color-fg-muted)" }}>#{pr.number}</span>
-      </h1>
+      <div className="mb-2 flex flex-wrap items-baseline gap-2">
+        <h1 style={{ fontSize: "1.5rem", fontWeight: 400, color: "var(--color-fg)" }}>
+          {pr.title} <span style={{ color: "var(--color-fg-muted)" }}>#{pr.number}</span>
+        </h1>
+        <Button
+          size="sm"
+          onClick={() => {
+            setEditTitle(pr.title);
+            setEditBody(pr.body ?? "");
+            setEditing(true);
+          }}
+        >
+          Edit
+        </Button>
+      </div>
+
+      {editing && (
+        <Modal title="Edit pull request" onClose={() => setEditing(false)}>
+          <FormLabel id="edit-pr-title">Title</FormLabel>
+          <input
+            id="edit-pr-title"
+            autoFocus
+            value={editTitle}
+            onChange={(e) => setEditTitle(e.target.value)}
+            className="mb-3 w-full"
+          />
+          <FormLabel id="edit-pr-body">Description</FormLabel>
+          <textarea
+            id="edit-pr-body"
+            value={editBody}
+            onChange={(e) => setEditBody(e.target.value)}
+            rows={6}
+            className="mb-4 w-full"
+            style={{ resize: "vertical" }}
+          />
+          <MutationError of={editMut} />
+          <DialogActions>
+            <Button variant="ghost" size="sm" onClick={() => setEditing(false)}>
+              Cancel
+            </Button>
+            <Button
+              variant="primary"
+              size="sm"
+              disabled={!editTitle.trim() || editMut.isPending}
+              onClick={() => editMut.mutate()}
+            >
+              {editMut.isPending ? "Saving…" : "Save"}
+            </Button>
+          </DialogActions>
+        </Modal>
+      )}
       <div className="mb-4 flex flex-wrap items-center gap-3">
         <StateLabel state={s} icon={<PRStateIcon pr={pr} size={15} />}>
           {stateLabel}
@@ -396,6 +467,27 @@ function PRDetail({ owner, repo, number }: { owner: string; repo: string; number
             <ReviewThreadsSection owner={owner} repo={repo} number={number} />
             <ReviewsSection owner={owner} repo={repo} number={number} />
             <MergeBox owner={owner} repo={repo} number={number} pr={pr} />
+            <MutationError of={stateMut} />
+            <CommentComposer
+              owner={owner}
+              repo={repo}
+              number={number}
+              invalidateKeys={[
+                ["pr-timeline", owner, repo, number],
+                ["pr", owner, repo, number],
+              ]}
+              extraActions={
+                s !== "merged" && (
+                  <Button
+                    size="sm"
+                    disabled={stateMut.isPending}
+                    onClick={() => stateMut.mutate()}
+                  >
+                    {s === "closed" ? "Reopen pull request" : "Close pull request"}
+                  </Button>
+                )
+              }
+            />
           </div>
           <div style={{ width: "100%", maxWidth: "16rem", flexShrink: 0 }}>
             <IssueSidebar

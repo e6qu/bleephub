@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, afterEach } from "vitest";
-import { render, cleanup, screen, waitFor, fireEvent } from "@testing-library/react";
+import { render, cleanup, screen, waitFor, fireEvent, within } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { MemoryRouter, Routes, Route } from "react-router";
 import { PullsPage } from "../pages/PullsPage.js";
@@ -767,5 +767,55 @@ describe("PullsPage create", () => {
         body: "",
       });
     });
+  });
+});
+
+describe("PullsPage write actions", () => {
+  it("closes a pull request", async () => {
+    mockPRApis((u, init) => {
+      if (u.endsWith("/pulls/9") && init?.method === "PATCH") {
+        return jsonResponse(pr(9, "Feature PR", { state: "closed" }));
+      }
+      return undefined;
+    });
+    renderAt("/ui/repos/admin/test/pulls/9");
+    fireEvent.click(await screen.findByRole("button", { name: /close pull request/i }));
+    await waitFor(() => expect(findCall("/pulls/9", "PATCH")).toBeDefined());
+    expect(JSON.parse(String(findCall("/pulls/9", "PATCH")?.body))).toEqual({ state: "closed" });
+  });
+
+  it("edits a pull request title and body", async () => {
+    mockPRApis((u, init) => {
+      if (u.endsWith("/pulls/9") && init?.method === "PATCH") {
+        return jsonResponse(pr(9, "Renamed", { body: "new" }));
+      }
+      return undefined;
+    });
+    renderAt("/ui/repos/admin/test/pulls/9");
+    fireEvent.click(await screen.findByRole("button", { name: /^edit$/i }));
+    fireEvent.change(await screen.findByLabelText(/title/i), { target: { value: "Renamed" } });
+    fireEvent.change(screen.getByLabelText(/description/i), { target: { value: "new" } });
+    fireEvent.click(screen.getByRole("button", { name: /^save$/i }));
+    await waitFor(() => expect(findCall("/pulls/9", "PATCH")).toBeDefined());
+    expect(JSON.parse(String(findCall("/pulls/9", "PATCH")?.body))).toEqual({
+      title: "Renamed",
+      body: "new",
+    });
+  });
+
+  it("comments on the pull request conversation", async () => {
+    mockPRApis((u, init) => {
+      if (u.endsWith("/issues/9/comments") && init?.method === "POST") {
+        return jsonResponse({ id: 1, body: "nice", user: { login: "admin" }, created_at: "2026-01-02T00:00:00Z" });
+      }
+      return undefined;
+    });
+    renderAt("/ui/repos/admin/test/pulls/9");
+    const box = await screen.findByPlaceholderText(/leave a comment/i);
+    fireEvent.change(box, { target: { value: "nice" } });
+    const composer = box.closest("div") as HTMLElement;
+    fireEvent.click(within(composer).getByRole("button", { name: /^comment$/i }));
+    await waitFor(() => expect(findCall("/issues/9/comments", "POST")).toBeDefined());
+    expect(JSON.parse(String(findCall("/issues/9/comments", "POST")?.body))).toEqual({ body: "nice" });
   });
 });
