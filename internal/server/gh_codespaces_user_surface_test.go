@@ -346,7 +346,7 @@ func TestCodespacesCreateForPullRequest(t *testing.T) {
 		if cs := s.store.GetCodespaceByName(name); cs != nil {
 			_, _ = s.store.DeleteCodespace(cs.ID)
 		}
-		cleanupCodespaceContainer(t, name)
+		s.cleanupCodespaceContainer(t, name)
 	})
 	gitStatus, _ := created["git_status"].(map[string]any)
 	if gitStatus["ref"] != "feature" {

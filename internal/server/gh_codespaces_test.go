@@ -14,18 +14,6 @@ import (
 
 const codespaceTestImage = "alpine:latest"
 
-func cleanupCodespaceContainer(t *testing.T, name string) {
-	t.Helper()
-	if cs := testServer.store.GetCodespaceByName(name); cs != nil {
-		if _, err := testServer.store.DeleteCodespace(cs.ID); err == nil {
-			return
-		}
-	}
-	ctx, cancel := contextWithTimeout(30 * time.Second)
-	defer cancel()
-	_ = dockerRemoveContainer(ctx, codespaceContainerName(name))
-}
-
 func contextWithTimeout(d time.Duration) (context.Context, context.CancelFunc) {
 	return context.WithTimeout(context.Background(), d)
 }

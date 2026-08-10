@@ -883,6 +883,7 @@ func TestWebhookCreateDeleteRefEvent(t *testing.T) {
 }
 
 func TestWebhookCommitCommentAndForkEvents(t *testing.T) {
+	s := newIsolatedServer(t)
 	var mu sync.Mutex
 	got := map[string]bool{}
 	url, cleanup := startWebhookReceiver(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -896,20 +897,20 @@ func TestWebhookCommitCommentAndForkEvents(t *testing.T) {
 	defer cleanup()
 
 	repoPath := "/api/v3/repos/admin/wh-cc-fork"
-	ghPost(t, "/api/v3/user/repos", defaultToken, map[string]interface{}{"name": "wh-cc-fork", "auto_init": true}).Body.Close()
-	ghPost(t, repoPath+"/hooks", defaultToken, map[string]interface{}{
+	s.post(t, "/api/v3/user/repos", defaultToken, map[string]interface{}{"name": "wh-cc-fork", "auto_init": true}).Body.Close()
+	s.post(t, repoPath+"/hooks", defaultToken, map[string]interface{}{
 		"config": map[string]interface{}{"url": url},
 		"events": []string{"commit_comment", "fork"},
 		"active": true,
 	}).Body.Close()
 
-	refData := decodeJSON(t, ghGet(t, repoPath+"/git/refs/heads/main", defaultToken))
+	refData := decodeJSON(t, s.get(t, repoPath+"/git/refs/heads/main", defaultToken))
 	mainObj, _ := refData["object"].(map[string]interface{})
 	mainSha, _ := mainObj["sha"].(string)
 	if mainSha == "" {
 		t.Fatalf("main sha missing: %v", refData)
 	}
-	cc := ghPost(t, repoPath+"/commits/"+mainSha+"/comments", defaultToken, map[string]interface{}{"body": "nice commit"})
+	cc := s.post(t, repoPath+"/commits/"+mainSha+"/comments", defaultToken, map[string]interface{}{"body": "nice commit"})
 	if cc.StatusCode != http.StatusCreated {
 		cc.Body.Close()
 		t.Fatalf("create commit comment status = %d", cc.StatusCode)
@@ -917,8 +918,8 @@ func TestWebhookCommitCommentAndForkEvents(t *testing.T) {
 	cc.Body.Close()
 
 	// A fork by another user fires `fork` on the source repo's hook.
-	_, forkerToken := newSharedServerUser(t, "wh-forker")
-	fk := ghPost(t, repoPath+"/forks", forkerToken, map[string]interface{}{})
+	_, forkerToken := s.newUser(t, "wh-forker")
+	fk := s.post(t, repoPath+"/forks", forkerToken, map[string]interface{}{})
 	if fk.StatusCode != http.StatusAccepted {
 		fk.Body.Close()
 		t.Fatalf("fork status = %d", fk.StatusCode)
