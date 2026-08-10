@@ -12,27 +12,6 @@ import (
 
 // --- shared fixtures for the secrets/variables suites ---
 
-// sealForServer produces the {encrypted_value, key_id} pair a real client
-// (libsodium sealed box against the public-key endpoint) would PUT.
-func sealForServer(t *testing.T, plain string) (enc, keyID string) {
-	t.Helper()
-	enc, keyID, err := testServer.store.SealSecretValue(plain)
-	if err != nil {
-		t.Fatalf("seal: %v", err)
-	}
-	return enc, keyID
-}
-
-// putSealedSecret PUTs a secret the way real clients do.
-func putSealedSecret(t *testing.T, path, plain string) *http.Response {
-	t.Helper()
-	enc, keyID := sealForServer(t, plain)
-	return ghPut(t, path, defaultToken, map[string]interface{}{
-		"encrypted_value": enc,
-		"key_id":          keyID,
-	})
-}
-
 func mustStatus(t *testing.T, resp *http.Response, want int, what string) {
 	t.Helper()
 	defer resp.Body.Close()
