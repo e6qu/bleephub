@@ -1,15 +1,20 @@
 import { useMemo, useState } from "react";
 import { useParams, Link } from "react-router";
-import { useQuery } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { InlineError, Spinner } from "@bleephub/ui-core/components";
 import {
   fetchUserProfile,
   fetchUserReposByLoginPage,
   fetchUserOrgsByLogin,
+  fetchAuthenticatedUser,
+  checkFollowing,
+  followUser,
+  unfollowUser,
 } from "../api.js";
 import type { BleephubRepo, GithubOrgSummary, GithubUserProfile } from "../types.js";
 import { Avatar } from "../components/Avatar.js";
 import { SectionLabel, Blankslate, Button } from "../components/ui.js";
+import { MutationError } from "../components/MutationError.js";
 import {
   RepoIcon,
   BranchIcon,
@@ -44,6 +49,41 @@ export function ProfilePage() {
   );
 }
 
+/**
+ * Follow/Unfollow control for another user's profile. Renders nothing on the
+ * viewer's own profile. The follow state comes from GET user/following/{login}
+ * (204/404); the button toggles it via PUT/DELETE and refreshes both.
+ */
+function FollowButton({ login }: { login: string }) {
+  const qc = useQueryClient();
+  const viewer = useQuery({ queryKey: ["viewer"], queryFn: fetchAuthenticatedUser });
+  const viewerLogin = typeof viewer.data?.login === "string" ? viewer.data.login : null;
+  const isSelf = viewerLogin !== null && viewerLogin === login;
+  const following = useQuery({
+    queryKey: ["following", login],
+    queryFn: () => checkFollowing(login),
+    enabled: viewerLogin !== null && !isSelf,
+  });
+  const isFollowing = following.data === true;
+  const toggle = useMutation({
+    mutationFn: () => (isFollowing ? unfollowUser(login) : followUser(login)),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["following", login] });
+      qc.invalidateQueries({ queryKey: ["user-profile", login] });
+    },
+  });
+
+  if (isSelf || viewerLogin === null) return null;
+  return (
+    <div>
+      <Button size="sm" disabled={toggle.isPending} onClick={() => toggle.mutate()}>
+        {isFollowing ? "Unfollow" : "Follow"}
+      </Button>
+      <MutationError of={toggle} />
+    </div>
+  );
+}
+
 function ProfileSidebar({
   profile,
   orgs,
@@ -59,6 +99,7 @@ function ProfileSidebar({
         <div style={{ fontSize: "1.5rem", fontWeight: 600, lineHeight: 1.2 }}>{p.name || p.login}</div>
         <div style={{ fontSize: "1.15rem", color: "var(--color-fg-muted)", fontWeight: 300 }}>{p.login}</div>
       </div>
+      <FollowButton login={p.login} />
       {p.bio && <p style={{ fontSize: "0.9rem", color: "var(--color-fg)" }}>{p.bio}</p>}
       <div className="flex items-center gap-2" style={{ fontSize: "0.85rem", color: "var(--color-fg-muted)" }}>
         <PeopleIcon size={15} />

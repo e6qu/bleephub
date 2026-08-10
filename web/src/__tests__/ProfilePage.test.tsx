@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, afterEach } from "vitest";
-import { render, cleanup, screen, waitFor } from "@testing-library/react";
+import { render, cleanup, screen, waitFor, fireEvent } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { MemoryRouter, Routes, Route } from "react-router";
 import { ProfilePage } from "../pages/ProfilePage.js";
@@ -106,5 +106,63 @@ describe("ProfilePage", () => {
     await waitFor(() => {
       expect(screen.getByText(/failed to load profile/i)).toBeInTheDocument();
     });
+  });
+});
+
+describe("ProfilePage follow", () => {
+  function mockFollow(following: boolean) {
+    mockFetch.mockImplementation((url: RequestInfo | URL, init?: RequestInit) => {
+      const u = url.toString();
+      if (u.endsWith("/user/following/octocat") && init?.method === "PUT") {
+        return Promise.resolve(new Response(null, { status: 204 }));
+      }
+      if (u.endsWith("/user/following/octocat") && init?.method === "DELETE") {
+        return Promise.resolve(new Response(null, { status: 204 }));
+      }
+      if (u.endsWith("/user/following/octocat")) {
+        return Promise.resolve(new Response(null, { status: following ? 204 : 404 }));
+      }
+      if (u.endsWith("/api/v3/user")) return Promise.resolve(jsonResponse({ login: "me", id: 9 }));
+      if (u.includes("/repos")) return Promise.resolve(jsonResponse([repo], 200, { Link: "" }));
+      if (u.includes("/orgs")) return Promise.resolve(jsonResponse([]));
+      return Promise.resolve(jsonResponse(profile));
+    });
+  }
+
+  it("follows a user from their profile", async () => {
+    mockFollow(false);
+    renderAt("/ui/octocat");
+    fireEvent.click(await screen.findByRole("button", { name: /^follow$/i }));
+    await waitFor(() => {
+      const put = mockFetch.mock.calls.find(
+        (c) => c[0].toString().endsWith("/user/following/octocat") && c[1]?.method === "PUT",
+      );
+      expect(put).toBeTruthy();
+    });
+  });
+
+  it("unfollows when already following", async () => {
+    mockFollow(true);
+    renderAt("/ui/octocat");
+    fireEvent.click(await screen.findByRole("button", { name: /^unfollow$/i }));
+    await waitFor(() => {
+      const del = mockFetch.mock.calls.find(
+        (c) => c[0].toString().endsWith("/user/following/octocat") && c[1]?.method === "DELETE",
+      );
+      expect(del).toBeTruthy();
+    });
+  });
+
+  it("hides the follow button on your own profile", async () => {
+    mockFetch.mockImplementation((url: RequestInfo | URL) => {
+      const u = url.toString();
+      if (u.endsWith("/api/v3/user")) return Promise.resolve(jsonResponse({ login: "octocat", id: 1 }));
+      if (u.includes("/repos")) return Promise.resolve(jsonResponse([repo], 200, { Link: "" }));
+      if (u.includes("/orgs")) return Promise.resolve(jsonResponse([]));
+      return Promise.resolve(jsonResponse(profile));
+    });
+    renderAt("/ui/octocat");
+    await screen.findByText("The Octocat");
+    expect(screen.queryByRole("button", { name: /^follow$/i })).not.toBeInTheDocument();
   });
 });

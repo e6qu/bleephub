@@ -4338,6 +4338,25 @@ export const setOrgMembership = (org: string, username: string, role: "member" |
 export const removeOrgMember = (org: string, username: string) =>
   ghSend("DELETE", `/api/v3/orgs/${encodeURIComponent(org)}/memberships/${encodeURIComponent(username)}`);
 
+/** Whether the authenticated user follows `login` (204 = yes, 404 = no). */
+export const checkFollowing = async (login: string): Promise<boolean> => {
+  const res = await apiFetch(`/api/v3/user/following/${encodeURIComponent(login)}`, {
+    headers: authHeaders(),
+  });
+  if (res.status === 204) return true;
+  if (res.status === 404) return false;
+  handleUnauthorized(res);
+  return false;
+};
+
+/** Follow a user — PUT user/following/{login}. */
+export const followUser = (login: string) =>
+  ghSend("PUT", `/api/v3/user/following/${encodeURIComponent(login)}`);
+
+/** Unfollow a user — DELETE user/following/{login}. */
+export const unfollowUser = (login: string) =>
+  ghSend("DELETE", `/api/v3/user/following/${encodeURIComponent(login)}`);
+
 /** Teams in an organization (GET /orgs/{org}/teams). */
 export const fetchOrgTeams = (org: string) =>
   ghFetch<GithubOrgTeam[]>(`/api/v3/orgs/${encodeURIComponent(org)}/teams`);
