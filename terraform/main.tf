@@ -232,6 +232,16 @@ resource "aws_route_table_association" "private" {
 # fck-nat is the actual upstream NAT-instance implementation. It owns the
 # default routes of every private subnet; this module never provisions an AWS
 # managed NAT Gateway.
+#
+# 24/7 NAT cost (CI-037): fck-nat is a single t4g.nano NAT *instance*
+# (~$3/mo + data) deliberately chosen over a managed NAT Gateway (~$32/mo +
+# per-GB), so this is already the low-cost egress option. It stays up around the
+# clock on purpose: even while the API service is idle-shut-down (desired_count
+# 0), background reconcilers and the wake path itself need outbound reachability
+# (ECR pulls, ACME renewals, the wake controller's own AWS API calls), so gating
+# NAT on idle state would deadlock the very path that scales the service back up.
+# ha_mode is off (a second AZ instance doubles cost for a dev/simulator
+# deployment); a NAT-instance replacement is ~1 min via the ASG the module owns.
 module "fck_nat" {
   count   = local.uses_existing_network ? 0 : 1
   source  = "RaJiska/fck-nat/aws"
@@ -368,6 +378,9 @@ resource "aws_s3_bucket_lifecycle_configuration" "git" {
     status = "Enabled"
     filter {}
     abort_incomplete_multipart_upload { days_after_initiation = 7 }
+    # Versioning is enabled on this bucket; expire superseded copies so
+    # noncurrent versions do not accumulate storage cost forever (CI-037).
+    noncurrent_version_expiration { noncurrent_days = 30 }
   }
 }
 
@@ -438,6 +451,9 @@ resource "aws_s3_bucket_lifecycle_configuration" "objects" {
     status = "Enabled"
     filter {}
     abort_incomplete_multipart_upload { days_after_initiation = 7 }
+    # Versioning is enabled on this bucket; expire superseded copies so
+    # noncurrent versions do not accumulate storage cost forever (CI-037).
+    noncurrent_version_expiration { noncurrent_days = 30 }
   }
 }
 
@@ -581,6 +597,19 @@ resource "aws_s3_bucket" "startup" {
 resource "aws_s3_bucket_versioning" "startup" {
   bucket = aws_s3_bucket.startup.id
   versioning_configuration { status = "Enabled" }
+}
+
+# Versioning is enabled above; without this the startup bucket's superseded
+# object versions would accumulate forever with no expiration (CI-037).
+resource "aws_s3_bucket_lifecycle_configuration" "startup" {
+  bucket = aws_s3_bucket.startup.id
+  rule {
+    id     = "expire-noncurrent-and-abort-uploads"
+    status = "Enabled"
+    filter {}
+    abort_incomplete_multipart_upload { days_after_initiation = 7 }
+    noncurrent_version_expiration { noncurrent_days = 30 }
+  }
 }
 
 resource "aws_s3_bucket_server_side_encryption_configuration" "startup" {
@@ -1750,4 +1779,61 @@ resource "aws_lambda_permission" "idle_shutdown_alarm" {
   function_name = aws_lambda_function.idle_shutdown.function_name
   principal     = "lambda.alarms.cloudwatch.amazonaws.com"
   source_arn    = aws_cloudwatch_metric_alarm.idle_shutdown.arn
+}
+
+# ─── Cost guardrails (CI-037) ────────────────────────────────────────────────
+# A monthly cost budget and account-wide cost-anomaly detection. Both always
+# exist so spend is visible in the console; email notifications are wired only
+# when var.alert_email is set (Budgets and Cost Explorer are global services and
+# use the default provider).
+
+resource "aws_budgets_budget" "monthly" {
+  name         = "${var.name}-monthly"
+  budget_type  = "COST"
+  limit_amount = tostring(var.monthly_budget_usd)
+  limit_unit   = "USD"
+  time_unit    = "MONTHLY"
+
+  dynamic "notification" {
+    for_each = var.alert_email != "" ? {
+      forecasted = { type = "FORECASTED", threshold = 80 }
+      actual     = { type = "ACTUAL", threshold = 100 }
+    } : {}
+    content {
+      comparison_operator        = "GREATER_THAN"
+      threshold                  = notification.value.threshold
+      threshold_type             = "PERCENTAGE"
+      notification_type          = notification.value.type
+      subscriber_email_addresses = [var.alert_email]
+    }
+  }
+}
+
+resource "aws_ce_anomaly_monitor" "service" {
+  name              = "${var.name}-anomaly"
+  monitor_type      = "DIMENSIONAL"
+  monitor_dimension = "SERVICE"
+  tags              = local.common_tags
+}
+
+resource "aws_ce_anomaly_subscription" "default" {
+  count            = var.alert_email != "" ? 1 : 0
+  name             = "${var.name}-anomaly-sub"
+  frequency        = "DAILY"
+  monitor_arn_list = [aws_ce_anomaly_monitor.service.arn]
+
+  subscriber {
+    type    = "EMAIL"
+    address = var.alert_email
+  }
+
+  threshold_expression {
+    dimension {
+      key           = "ANOMALY_TOTAL_IMPACT_ABSOLUTE"
+      match_options = ["GREATER_THAN_OR_EQUAL"]
+      values        = ["25"]
+    }
+  }
+
+  tags = local.common_tags
 }

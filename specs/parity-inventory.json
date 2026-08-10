@@ -6262,8 +6262,8 @@
         "id": "CI-037",
         "location": "terraform/main.tf:166",
         "severity": "M",
-        "status": "open",
-        "status_kind": "open"
+        "status": "fixed \u2014 all four addressed. (1) The three versioned buckets that lacked it (`git`, `objects`, `startup`) now carry a `noncurrent_version_expiration { noncurrent_days = 30 }` rule (the `startup` bucket had no lifecycle configuration at all; only `access_logs` was already correct), so superseded versions no longer accumulate cost forever. (2) A monthly `aws_budgets_budget` (`var.monthly_budget_usd`, default 100 USD) tracks spend and, when `var.alert_email` is set, notifies at 80% forecasted / 100% actual. (3) `aws_ce_anomaly_monitor` (dimensional, by SERVICE) plus a conditional `aws_ce_anomaly_subscription` provide daily cost-anomaly detection. (4) The 24/7 NAT is documented: fck-nat is a single t4g.nano NAT *instance* (~$3/mo) deliberately chosen over a managed NAT Gateway (~$32/mo), and it stays up because the wake path and background reconcilers need egress even while the API is idle-shut-down \u2014 gating NAT on idle would deadlock the scale-up path. `terraform validate`, `fmt` and `tflint` clean.",
+        "status_kind": "fixed"
       },
       {
         "category": "CI",
@@ -6551,8 +6551,8 @@
         },
         "CI": {
           "status": {
-            "fixed": 60,
-            "open": 3,
+            "fixed": 61,
+            "open": 2,
             "partial": 2
           },
           "total": 65
@@ -6615,8 +6615,8 @@
       },
       "status": {
         "deferred": 3,
-        "fixed": 666,
-        "open": 9,
+        "fixed": 667,
+        "open": 8,
         "partial": 7
       },
       "total": 685
