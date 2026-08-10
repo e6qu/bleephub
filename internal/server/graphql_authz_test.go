@@ -44,9 +44,9 @@ type gqlAuthzFixture struct {
 	headSHA       string
 }
 
-func newGQLAuthzFixture(t *testing.T, tag string, private bool) *gqlAuthzFixture {
+func newGQLAuthzFixture(t *testing.T, srv *Server, tag string, private bool) *gqlAuthzFixture {
 	t.Helper()
-	st := testServer.store
+	st := srv.store
 	now := fixedTestTime.UTC()
 
 	mkUser := func(login string) *User {
@@ -74,7 +74,7 @@ func newGQLAuthzFixture(t *testing.T, tag string, private bool) *gqlAuthzFixture
 	if f.repo == nil {
 		t.Fatalf("could not create the fixture repository for %s", tag)
 	}
-	branches := seedPullRequestBranches(t, testServer, f.repo, "feature", "spare")
+	branches := seedPullRequestBranches(t, srv, f.repo, "feature", "spare")
 	f.headSHA = branches["feature"]
 	if f.headSHA == "" {
 		t.Fatalf("fixture %s: feature branch has no head commit", tag)
@@ -106,20 +106,6 @@ func newGQLAuthzFixture(t *testing.T, tag string, private bool) *gqlAuthzFixture
 	f.ownerToken = ownerTok.Value
 	f.strangerToken = strangerTok.Value
 	return f
-}
-
-// gqlAuthzPost posts a GraphQL document as token and returns the envelope.
-func gqlAuthzPost(t *testing.T, token, query string, variables map[string]interface{}) map[string]interface{} {
-	t.Helper()
-	resp := ghPost(t, "/api/graphql", token, map[string]interface{}{
-		"query":     query,
-		"variables": variables,
-	})
-	if resp.StatusCode != http.StatusOK {
-		resp.Body.Close()
-		t.Fatalf("graphql status = %d", resp.StatusCode)
-	}
-	return decodeJSON(t, resp)
 }
 
 func gqlAuthzErrors(env map[string]interface{}) []interface{} {
@@ -334,24 +320,26 @@ var gqlMutationCases = []gqlMutationCase{
 }
 
 func TestGraphQLMutationsRefuseAnUnrelatedAuthenticatedUser(t *testing.T) {
+	t.Parallel()
+	s := newIsolatedServer(t)
 	// A fixture per case: several of these mutations destroy what the next one
 	// addresses, and a shared fixture would let the first success mask every
 	// refusal after it.
 	for _, tc := range gqlMutationCases {
-		f := newGQLAuthzFixture(t, "stranger-"+tc.name, true)
-		env := gqlAuthzPost(t, f.strangerToken, tc.doc, map[string]interface{}{"input": tc.input(f)})
+		f := newGQLAuthzFixture(t, s.Server, "stranger-"+tc.name, true)
+		env := s.gqlAuthzPost(t, f.strangerToken, tc.doc, map[string]interface{}{"input": tc.input(f)})
 		if len(gqlAuthzErrors(env)) == 0 {
 			t.Errorf("%s: an account with no access to the repository was served: %v", tc.name, env)
 		}
 		// The refusal has to be a refusal, not an error reported after the
 		// write landed.
-		assertGQLFixtureUntouched(t, tc.name, f)
+		s.assertGQLFixtureUntouched(t, tc.name, f)
 	}
 }
 
-func assertGQLFixtureUntouched(t *testing.T, what string, f *gqlAuthzFixture) {
+func (s *isolatedServer) assertGQLFixtureUntouched(t *testing.T, what string, f *gqlAuthzFixture) {
 	t.Helper()
-	st := testServer.store
+	st := s.store
 	if st.GetRepoByFullName(f.repo.FullName) == nil {
 		t.Errorf("%s: the repository was deleted by a stranger", what)
 		return
@@ -403,9 +391,11 @@ func parsedThreadID(t *testing.T, nodeID string) int {
 // same table, driven by the repository's owner against a fresh fixture each
 // time, must succeed. A guard that refuses everybody is not a fix.
 func TestGraphQLMutationsStillServeTheirEntitledCaller(t *testing.T) {
+	t.Parallel()
+	s := newIsolatedServer(t)
 	for _, tc := range gqlMutationCases {
-		f := newGQLAuthzFixture(t, "owner-"+tc.name, true)
-		env := gqlAuthzPost(t, f.ownerToken, tc.doc, map[string]interface{}{"input": tc.input(f)})
+		f := newGQLAuthzFixture(t, s.Server, "owner-"+tc.name, true)
+		env := s.gqlAuthzPost(t, f.ownerToken, tc.doc, map[string]interface{}{"input": tc.input(f)})
 		if errs := gqlAuthzErrors(env); len(errs) > 0 {
 			t.Errorf("%s: the repository owner was refused: %v", tc.name, errs)
 		}
@@ -418,7 +408,9 @@ func TestGraphQLMutationsStillServeTheirEntitledCaller(t *testing.T) {
 // repository, and demanding push for them would wall off the contribution path
 // the REST surface deliberately keeps open.
 func TestGraphQLReadLevelMutationsServeAnOutsideContributor(t *testing.T) {
-	f := newGQLAuthzFixture(t, "outside", false)
+	t.Parallel()
+	s := newIsolatedServer(t)
+	f := newGQLAuthzFixture(t, s.Server, "outside", false)
 
 	for _, tc := range gqlMutationCases {
 		switch tc.name {
@@ -426,7 +418,7 @@ func TestGraphQLReadLevelMutationsServeAnOutsideContributor(t *testing.T) {
 		default:
 			continue
 		}
-		env := gqlAuthzPost(t, f.strangerToken, tc.doc, map[string]interface{}{"input": tc.input(f)})
+		env := s.gqlAuthzPost(t, f.strangerToken, tc.doc, map[string]interface{}{"input": tc.input(f)})
 		if errs := gqlAuthzErrors(env); len(errs) > 0 {
 			t.Errorf("%s: an outside contributor was refused on a public repository: %v", tc.name, errs)
 		}
@@ -439,14 +431,16 @@ func TestGraphQLReadLevelMutationsServeAnOutsideContributor(t *testing.T) {
 // with a context carrying no viewer — which is the state an unauthenticated
 // path would hand them.
 func TestGraphQLDiscussionAnswerMutationsRequireAViewer(t *testing.T) {
-	f := newGQLAuthzFixture(t, "anon", true)
+	t.Parallel()
+	s := newIsolatedServer(t)
+	f := newGQLAuthzFixture(t, s.Server, "anon", true)
 
 	for _, doc := range []string{
 		`mutation($input:MarkDiscussionCommentAsAnswerInput!){markDiscussionCommentAsAnswer(input:$input){discussion{id}}}`,
 		`mutation($input:UnmarkDiscussionCommentAsAnswerInput!){unmarkDiscussionCommentAsAnswer(input:$input){discussion{id}}}`,
 	} {
 		result := graphql.Do(graphql.Params{
-			Schema:        testServer.graphqlSchema,
+			Schema:        s.graphqlSchema,
 			RequestString: doc,
 			VariableValues: map[string]interface{}{
 				"input": map[string]interface{}{"id": f.discComment.NodeID},
@@ -457,12 +451,12 @@ func TestGraphQLDiscussionAnswerMutationsRequireAViewer(t *testing.T) {
 			t.Errorf("a viewerless caller was served: %v", result.Data)
 		}
 	}
-	if dc := testServer.store.GetDiscussionComment(f.discComment.ID); dc == nil || dc.IsAnswer {
+	if dc := s.store.GetDiscussionComment(f.discComment.ID); dc == nil || dc.IsAnswer {
 		t.Errorf("a viewerless caller marked the answer: %+v", dc)
 	}
 
 	// And the endpoint itself still answers 401 without a credential.
-	resp := ghPost(t, "/api/graphql", "", map[string]interface{}{
+	resp := s.post(t, "/api/graphql", "", map[string]interface{}{
 		"query": `mutation{markDiscussionCommentAsAnswer(input:{id:"x"}){discussion{id}}}`,
 	})
 	defer resp.Body.Close()
@@ -475,10 +469,12 @@ func TestGraphQLDiscussionAnswerMutationsRequireAViewer(t *testing.T) {
 // --match-head-commit interlock. The argument was accepted and ignored, so a
 // client that named the commit it had reviewed merged whatever had landed since.
 func TestGraphQLMergePullRequestHonoursExpectedHeadOid(t *testing.T) {
+	t.Parallel()
+	s := newIsolatedServer(t)
 	doc := `mutation($input:MergePullRequestInput!){mergePullRequest(input:$input){clientMutationId}}`
 
-	stale := newGQLAuthzFixture(t, "headoid-stale", true)
-	env := gqlAuthzPost(t, stale.ownerToken, doc, map[string]interface{}{
+	stale := newGQLAuthzFixture(t, s.Server, "headoid-stale", true)
+	env := s.gqlAuthzPost(t, stale.ownerToken, doc, map[string]interface{}{
 		"input": map[string]interface{}{
 			"pullRequestId":   stale.pr.NodeID,
 			"expectedHeadOid": "0000000000000000000000000000000000000000",
@@ -487,12 +483,12 @@ func TestGraphQLMergePullRequestHonoursExpectedHeadOid(t *testing.T) {
 	if len(gqlAuthzErrors(env)) == 0 {
 		t.Errorf("a stale expectedHeadOid merged anyway: %v", env)
 	}
-	if pr := testServer.store.GetPullRequest(stale.pr.ID); pr == nil || pr.State != "OPEN" {
+	if pr := s.store.GetPullRequest(stale.pr.ID); pr == nil || pr.State != "OPEN" {
 		t.Errorf("pull request state after the refused merge = %+v, want OPEN", pr)
 	}
 
-	fresh := newGQLAuthzFixture(t, "headoid-fresh", true)
-	env = gqlAuthzPost(t, fresh.ownerToken, doc, map[string]interface{}{
+	fresh := newGQLAuthzFixture(t, s.Server, "headoid-fresh", true)
+	env = s.gqlAuthzPost(t, fresh.ownerToken, doc, map[string]interface{}{
 		"input": map[string]interface{}{
 			"pullRequestId":   fresh.pr.NodeID,
 			"expectedHeadOid": fresh.headSHA,
@@ -501,7 +497,7 @@ func TestGraphQLMergePullRequestHonoursExpectedHeadOid(t *testing.T) {
 	if errs := gqlAuthzErrors(env); len(errs) > 0 {
 		t.Fatalf("the correct expectedHeadOid was refused: %v", errs)
 	}
-	if pr := testServer.store.GetPullRequest(fresh.pr.ID); pr == nil || pr.State != "MERGED" {
+	if pr := s.store.GetPullRequest(fresh.pr.ID); pr == nil || pr.State != "MERGED" {
 		t.Errorf("pull request state after the accepted merge = %+v, want MERGED", pr)
 	}
 }
@@ -513,9 +509,11 @@ func TestGraphQLMergePullRequestHonoursExpectedHeadOid(t *testing.T) {
 // then still a way around REST, which is the whole point of closing this lane.
 // The caller here is the repository's owner, i.e. an admin.
 func TestGraphQLMergePullRequestEnforcesRequiredChecks(t *testing.T) {
-	f := newGQLAuthzFixture(t, "requiredchecks", true)
+	t.Parallel()
+	s := newIsolatedServer(t)
+	f := newGQLAuthzFixture(t, s.Server, "requiredchecks", true)
 	repoPath := "/api/v3/repos/" + f.repo.FullName
-	resp := ghPut(t, repoPath+"/branches/main/protection", f.ownerToken, map[string]interface{}{
+	resp := s.put(t, repoPath+"/branches/main/protection", f.ownerToken, map[string]interface{}{
 		"required_status_checks": map[string]interface{}{"strict": true, "contexts": []string{"ci"}},
 	})
 	if resp.StatusCode != http.StatusOK {
@@ -527,19 +525,19 @@ func TestGraphQLMergePullRequestEnforcesRequiredChecks(t *testing.T) {
 	doc := `mutation($input:MergePullRequestInput!){mergePullRequest(input:$input){clientMutationId}}`
 	vars := map[string]interface{}{"input": map[string]interface{}{"pullRequestId": f.pr.NodeID}}
 
-	env := gqlAuthzPost(t, f.ownerToken, doc, vars)
+	env := s.gqlAuthzPost(t, f.ownerToken, doc, vars)
 	errs := gqlAuthzErrors(env)
 	if len(errs) == 0 {
 		t.Errorf("a red required check did not stop the merge: %v", env)
 	} else if !strings.Contains(fmt.Sprint(errs[0]), "Required status check") {
 		t.Errorf("merge refusal = %v, want the required-status-check message", errs[0])
 	}
-	if pr := testServer.store.GetPullRequest(f.pr.ID); pr == nil || pr.State != "OPEN" {
+	if pr := s.store.GetPullRequest(f.pr.ID); pr == nil || pr.State != "OPEN" {
 		t.Fatalf("pull request state after the refused merge = %+v, want OPEN", pr)
 	}
 
 	// Turn the required check green and the same caller merges.
-	resp = ghPost(t, repoPath+"/check-runs", f.ownerToken, map[string]interface{}{
+	resp = s.post(t, repoPath+"/check-runs", f.ownerToken, map[string]interface{}{
 		"name":       "ci",
 		"head_sha":   f.headSHA,
 		"status":     "completed",
@@ -551,11 +549,11 @@ func TestGraphQLMergePullRequestEnforcesRequiredChecks(t *testing.T) {
 	}
 	resp.Body.Close()
 
-	env = gqlAuthzPost(t, f.ownerToken, doc, vars)
+	env = s.gqlAuthzPost(t, f.ownerToken, doc, vars)
 	if errs := gqlAuthzErrors(env); len(errs) > 0 {
 		t.Fatalf("a green required check still blocked the merge: %v", errs)
 	}
-	if pr := testServer.store.GetPullRequest(f.pr.ID); pr == nil || pr.State != "MERGED" {
+	if pr := s.store.GetPullRequest(f.pr.ID); pr == nil || pr.State != "MERGED" {
 		t.Errorf("pull request state after the permitted merge = %+v, want MERGED", pr)
 	}
 }
@@ -565,10 +563,12 @@ func TestGraphQLMergePullRequestEnforcesRequiredChecks(t *testing.T) {
 // milestoneId were accepted, dropped, and the unchanged issue returned as if
 // they had been applied.
 func TestGraphQLUpdateIssueAppliesItsTriageArguments(t *testing.T) {
-	f := newGQLAuthzFixture(t, "triage", true)
+	t.Parallel()
+	s := newIsolatedServer(t)
+	f := newGQLAuthzFixture(t, s.Server, "triage", true)
 	doc := `mutation($input:UpdateIssueInput!){updateIssue(input:$input){issue{title}}}`
 
-	env := gqlAuthzPost(t, f.ownerToken, doc, map[string]interface{}{
+	env := s.gqlAuthzPost(t, f.ownerToken, doc, map[string]interface{}{
 		"input": map[string]interface{}{
 			"id":          f.issue.NodeID,
 			"labelIds":    []interface{}{f.label.NodeID},
@@ -579,7 +579,7 @@ func TestGraphQLUpdateIssueAppliesItsTriageArguments(t *testing.T) {
 	if errs := gqlAuthzErrors(env); len(errs) > 0 {
 		t.Fatalf("updateIssue refused its own arguments: %v", errs)
 	}
-	issue := testServer.store.GetIssue(f.issue.ID)
+	issue := s.store.GetIssue(f.issue.ID)
 	if issue == nil {
 		t.Fatalf("issue disappeared")
 	}
@@ -594,7 +594,7 @@ func TestGraphQLUpdateIssueAppliesItsTriageArguments(t *testing.T) {
 	}
 
 	// An id that names nothing is refused rather than dropped.
-	env = gqlAuthzPost(t, f.ownerToken, doc, map[string]interface{}{
+	env = s.gqlAuthzPost(t, f.ownerToken, doc, map[string]interface{}{
 		"input": map[string]interface{}{
 			"id":       f.issue.NodeID,
 			"labelIds": []interface{}{"LA_kgDOnosuchlabel"},
@@ -603,7 +603,7 @@ func TestGraphQLUpdateIssueAppliesItsTriageArguments(t *testing.T) {
 	if len(gqlAuthzErrors(env)) == 0 {
 		t.Errorf("an unresolvable labelId was accepted: %v", env)
 	}
-	if issue := testServer.store.GetIssue(f.issue.ID); issue == nil || len(issue.LabelIDs) != 1 {
+	if issue := s.store.GetIssue(f.issue.ID); issue == nil || len(issue.LabelIDs) != 1 {
 		t.Errorf("the refused update still changed the labels: %+v", issue)
 	}
 }
@@ -612,26 +612,28 @@ func TestGraphQLUpdateIssueAppliesItsTriageArguments(t *testing.T) {
 // upper-cased and written straight into the store while the IssueState enum sat
 // unused in the same file.
 func TestGraphQLUpdateIssueValidatesState(t *testing.T) {
-	f := newGQLAuthzFixture(t, "state", true)
+	t.Parallel()
+	s := newIsolatedServer(t)
+	f := newGQLAuthzFixture(t, s.Server, "state", true)
 	doc := `mutation($input:UpdateIssueInput!){updateIssue(input:$input){issue{title}}}`
 
-	env := gqlAuthzPost(t, f.ownerToken, doc, map[string]interface{}{
+	env := s.gqlAuthzPost(t, f.ownerToken, doc, map[string]interface{}{
 		"input": map[string]interface{}{"id": f.issue.NodeID, "state": "banana"},
 	})
 	if len(gqlAuthzErrors(env)) == 0 {
 		t.Errorf("an invalid IssueState was accepted: %v", env)
 	}
-	if issue := testServer.store.GetIssue(f.issue.ID); issue == nil || issue.State != "OPEN" {
+	if issue := s.store.GetIssue(f.issue.ID); issue == nil || issue.State != "OPEN" {
 		t.Errorf("issue state after the refused update = %+v, want OPEN", issue)
 	}
 
-	env = gqlAuthzPost(t, f.ownerToken, doc, map[string]interface{}{
+	env = s.gqlAuthzPost(t, f.ownerToken, doc, map[string]interface{}{
 		"input": map[string]interface{}{"id": f.issue.NodeID, "state": "CLOSED"},
 	})
 	if errs := gqlAuthzErrors(env); len(errs) > 0 {
 		t.Fatalf("a valid IssueState was refused: %v", errs)
 	}
-	issue := testServer.store.GetIssue(f.issue.ID)
+	issue := s.store.GetIssue(f.issue.ID)
 	if issue == nil || issue.State != "CLOSED" {
 		t.Fatalf("issue state after CLOSED = %+v", issue)
 	}
@@ -641,7 +643,9 @@ func TestGraphQLUpdateIssueValidatesState(t *testing.T) {
 }
 
 func TestGraphQLEveryMutationIsCoveredByThePolicyTable(t *testing.T) {
-	mutation := testServer.graphqlSchema.MutationType()
+	t.Parallel()
+	s := newIsolatedServer(t)
+	mutation := s.graphqlSchema.MutationType()
 	if mutation == nil {
 		t.Fatalf("the schema exposes no mutation type")
 	}
@@ -686,6 +690,7 @@ func TestGraphQLEveryMutationIsCoveredByThePolicyTable(t *testing.T) {
 // the sweep is what makes coverage structural rather than a convention every
 // new file has to remember.
 func TestGraphQLMutationSweepRejectsAnUnguardedMutation(t *testing.T) {
+	t.Parallel()
 	for _, tc := range []struct {
 		name  string
 		field string
@@ -740,9 +745,9 @@ type gqlProjectAuthzFixture struct {
 	org           *Org
 }
 
-func newGQLProjectAuthzFixture(t *testing.T, tag string) *gqlProjectAuthzFixture {
+func (s *isolatedServer) newGQLProjectAuthzFixture(t *testing.T, tag string) *gqlProjectAuthzFixture {
 	t.Helper()
-	st := testServer.store
+	st := s.store
 	now := fixedTestTime.UTC()
 
 	mkUser := func(login string) *User {
@@ -846,15 +851,17 @@ var gqlProjectMutationCases = []gqlProjectMutationCase{
 }
 
 func TestGraphQLProjectV2MutationsRefuseAnUnrelatedAuthenticatedUser(t *testing.T) {
-	st := testServer.store
+	t.Parallel()
+	s := newIsolatedServer(t)
+	st := s.store
 	for _, tc := range gqlProjectMutationCases {
-		f := newGQLProjectAuthzFixture(t, "stranger-"+tc.name)
+		f := s.newGQLProjectAuthzFixture(t, "stranger-"+tc.name)
 		projects := len(st.ProjectsV2.ListProjectsForOwner(f.owner.ID, "User"))
 		items := len(st.ProjectsV2.ListItemsForProject(f.project.ID))
 		fields := len(st.ProjectsV2.FieldsForProject(f.project.ID))
 		values := len(st.ProjectsV2.GetItem(f.item.ID).FieldValues)
 
-		env := gqlAuthzPost(t, f.strangerToken, tc.doc, map[string]interface{}{"input": tc.input(f)})
+		env := s.gqlAuthzPost(t, f.strangerToken, tc.doc, map[string]interface{}{"input": tc.input(f)})
 		if len(gqlAuthzErrors(env)) == 0 {
 			t.Errorf("%s: an account with no access to the project was served: %v", tc.name, env)
 		}
@@ -875,9 +882,11 @@ func TestGraphQLProjectV2MutationsRefuseAnUnrelatedAuthenticatedUser(t *testing.
 }
 
 func TestGraphQLProjectV2MutationsStillServeTheirEntitledCaller(t *testing.T) {
+	t.Parallel()
+	s := newIsolatedServer(t)
 	for _, tc := range gqlProjectMutationCases {
-		f := newGQLProjectAuthzFixture(t, "owner-"+tc.name)
-		env := gqlAuthzPost(t, f.ownerToken, tc.doc, map[string]interface{}{"input": tc.input(f)})
+		f := s.newGQLProjectAuthzFixture(t, "owner-"+tc.name)
+		env := s.gqlAuthzPost(t, f.ownerToken, tc.doc, map[string]interface{}{"input": tc.input(f)})
 		if errs := gqlAuthzErrors(env); len(errs) > 0 {
 			t.Errorf("%s: the project's owner was refused: %v", tc.name, errs)
 		}
@@ -888,24 +897,26 @@ func TestGraphQLProjectV2MutationsStillServeTheirEntitledCaller(t *testing.T) {
 // branch the user-owned cases cannot reach: a project under an organization is
 // for its members, and membership is what decides — not merely holding a token.
 func TestGraphQLCreateProjectV2HonoursOrganizationMembership(t *testing.T) {
-	f := newGQLProjectAuthzFixture(t, "orgowner")
+	t.Parallel()
+	s := newIsolatedServer(t)
+	f := s.newGQLProjectAuthzFixture(t, "orgowner")
 	doc := `mutation($input:CreateProjectV2Input!){createProjectV2(input:$input){projectV2{id}}}`
 	input := map[string]interface{}{"ownerId": f.org.NodeID, "title": "org project"}
 
-	env := gqlAuthzPost(t, f.strangerToken, doc, map[string]interface{}{"input": input})
+	env := s.gqlAuthzPost(t, f.strangerToken, doc, map[string]interface{}{"input": input})
 	if len(gqlAuthzErrors(env)) == 0 {
 		t.Errorf("a non-member created a project under the organization: %v", env)
 	}
-	if got := len(testServer.store.ProjectsV2.ListProjectsForOwner(f.org.ID, "Organization")); got != 0 {
+	if got := len(s.store.ProjectsV2.ListProjectsForOwner(f.org.ID, "Organization")); got != 0 {
 		t.Fatalf("organization project count after the refusal = %d, want 0", got)
 	}
 
 	// The organization's admin, who created it, still may.
-	env = gqlAuthzPost(t, f.ownerToken, doc, map[string]interface{}{"input": input})
+	env = s.gqlAuthzPost(t, f.ownerToken, doc, map[string]interface{}{"input": input})
 	if errs := gqlAuthzErrors(env); len(errs) > 0 {
 		t.Fatalf("an organization admin was refused: %v", errs)
 	}
-	if got := len(testServer.store.ProjectsV2.ListProjectsForOwner(f.org.ID, "Organization")); got != 1 {
+	if got := len(s.store.ProjectsV2.ListProjectsForOwner(f.org.ID, "Organization")); got != 1 {
 		t.Errorf("organization project count after the accepted create = %d, want 1", got)
 	}
 }
@@ -915,22 +926,24 @@ func TestGraphQLCreateProjectV2HonoursOrganizationMembership(t *testing.T) {
 // but the content belongs to a private repository they cannot read. Adding it
 // would republish its title through the project.
 func TestGraphQLAddProjectV2ItemRequiresReadingTheContent(t *testing.T) {
-	f := newGQLProjectAuthzFixture(t, "content")
+	t.Parallel()
+	s := newIsolatedServer(t)
+	f := s.newGQLProjectAuthzFixture(t, "content")
 	doc := `mutation($input:AddProjectV2ItemByIdInput!){addProjectV2ItemById(input:$input){item{id}}}`
 
-	env := gqlAuthzPost(t, f.ownerToken, doc, map[string]interface{}{
+	env := s.gqlAuthzPost(t, f.ownerToken, doc, map[string]interface{}{
 		"input": map[string]interface{}{"projectId": f.project.NodeID, "contentId": f.strangerIssue.NodeID},
 	})
 	if len(gqlAuthzErrors(env)) == 0 {
 		t.Errorf("an unreadable issue was pulled into a project: %v", env)
 	}
-	if got := len(testServer.store.ProjectsV2.ListItemsForIssue(f.strangerIssue.ID)); got != 0 {
+	if got := len(s.store.ProjectsV2.ListItemsForIssue(f.strangerIssue.ID)); got != 0 {
 		t.Errorf("the private issue is indexed against %d project items, want 0", got)
 	}
 
 	// Content the caller can read still goes in.
-	second := testServer.store.CreateIssue(f.issue.RepoID, f.owner.ID, "another readable issue", "", nil, nil, 0)
-	env = gqlAuthzPost(t, f.ownerToken, doc, map[string]interface{}{
+	second := s.store.CreateIssue(f.issue.RepoID, f.owner.ID, "another readable issue", "", nil, nil, 0)
+	env = s.gqlAuthzPost(t, f.ownerToken, doc, map[string]interface{}{
 		"input": map[string]interface{}{"projectId": f.project.NodeID, "contentId": second.NodeID},
 	})
 	if errs := gqlAuthzErrors(env); len(errs) > 0 {

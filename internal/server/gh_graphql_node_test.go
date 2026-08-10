@@ -45,7 +45,7 @@ func TestGraphQLNodeAndNodesRefetchCanonicalObjects(t *testing.T) {
 }
 
 func TestGraphQLNodeHidesAnUnreadablePrivateRepository(t *testing.T) {
-	fixture := newGQLAuthzFixture(t, "node-private", true)
+	fixture := newGQLAuthzFixture(t, testServer, "node-private", true)
 	response := decodeJSONWithStatus(t, ghPost(t, "/api/graphql", fixture.strangerToken, map[string]interface{}{
 		"query":     `query($id:ID!){node(id:$id){id __typename}}`,
 		"variables": map[string]interface{}{"id": fixture.repo.NodeID},
