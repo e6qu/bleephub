@@ -3778,6 +3778,33 @@ export const fetchOrgHooksPage = (
 ): Promise<Page<GithubOrgWebhook>> =>
   ghFetchPage<GithubOrgWebhook>(pageUrl ?? `/api/v3/orgs/${encodeURIComponent(org)}/hooks?per_page=30`);
 
+/** Create an organization webhook — POST orgs/{org}/hooks. */
+export const createOrgHook = (
+  org: string,
+  payload: { url: string; contentType?: string; events?: string[]; active?: boolean },
+) =>
+  ghPostJSON<GithubOrgWebhook>(`/api/v3/orgs/${encodeURIComponent(org)}/hooks`, {
+    name: "web",
+    active: payload.active ?? true,
+    events: payload.events ?? ["push"],
+    config: { url: payload.url, content_type: payload.contentType ?? "json" },
+  });
+
+/** Patch an organization webhook (e.g. toggle `active`) — PATCH orgs/{org}/hooks/{id}. */
+export const updateOrgHook = (
+  org: string,
+  id: number,
+  patch: { active?: boolean; events?: string[]; config?: { url?: string; content_type?: string } },
+) => ghPatchJSON<GithubOrgWebhook>(`/api/v3/orgs/${encodeURIComponent(org)}/hooks/${id}`, patch);
+
+/** Delete an organization webhook — DELETE orgs/{org}/hooks/{id}. */
+export const deleteOrgHook = (org: string, id: number) =>
+  ghSend("DELETE", `/api/v3/orgs/${encodeURIComponent(org)}/hooks/${id}`);
+
+/** Send a ping event to an organization webhook — POST orgs/{org}/hooks/{id}/pings. */
+export const pingOrgHook = (org: string, id: number) =>
+  ghSend("POST", `/api/v3/orgs/${encodeURIComponent(org)}/hooks/${id}/pings`);
+
 /** Pages site, or null when Pages is not enabled on the repo (404). */
 export async function fetchPagesSite(
   owner: string,
