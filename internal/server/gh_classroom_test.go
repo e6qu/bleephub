@@ -9,6 +9,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/e6qu/bleephub/internal/server/testutil"
 	"github.com/go-git/go-git/v5/plumbing"
 )
 
@@ -352,7 +353,7 @@ func TestGitHubClassroomTransitionExportImportAndNoOperatorSeeds(t *testing.T) {
 	t.Parallel()
 	srv := newIsolatedServer(t)
 	org := srv.createTestOrg(t)
-	classroomName := "Transition Export " + strconv.FormatUint(nextTestID(), 10)
+	classroomName := "Transition Export " + strconv.FormatUint(testutil.NextTestID(), 10)
 	decodeJSONWithStatus(t, srv.post(t, "/classroom-data/classrooms", defaultToken, map[string]interface{}{
 		"name": classroomName, "organization": org,
 	}), http.StatusCreated)

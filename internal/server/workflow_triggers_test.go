@@ -4,6 +4,8 @@ import (
 	"strconv"
 	"testing"
 	"time"
+
+	"github.com/e6qu/bleephub/internal/server/testutil"
 )
 
 func TestParseWorkflowOnShapes(t *testing.T) {
@@ -551,7 +553,7 @@ jobs:
 	s.firePullRequestSynchronize(repo, repoKey, "feature-x")
 
 	var found *Workflow
-	ok := testEventually(2*time.Second, 20*time.Millisecond, func() bool {
+	ok := testutil.TestEventually(2*time.Second, 20*time.Millisecond, func() bool {
 		s.store.mu.RLock()
 		for _, w := range s.store.Workflows {
 			if w.RepoFullName == repoKey && w.EventName == "pull_request" {

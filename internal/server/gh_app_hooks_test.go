@@ -10,6 +10,8 @@ import (
 	"sync"
 	"testing"
 	"time"
+
+	"github.com/e6qu/bleephub/internal/server/testutil"
 )
 
 // App-level webhook config + deliveries — GET/PATCH /app/hook/config + the
@@ -161,7 +163,7 @@ func TestAppHookDeliveries_ListGetRedeliver(t *testing.T) {
 		t.Errorf("REDELIVER body = %q, want empty", w.Body.String())
 	}
 	// Sink fires async — quick poll.
-	testEventually(2*time.Second, 20*time.Millisecond, func() bool { return gotLen() > 0 })
+	testutil.TestEventually(2*time.Second, 20*time.Millisecond, func() bool { return gotLen() > 0 })
 
 	// Store now has 2 deliveries (the original + the redelivery).
 	deliveries := s.store.ListAppDeliveries(app.ID)

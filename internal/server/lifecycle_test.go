@@ -14,6 +14,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/e6qu/bleephub/internal/server/testutil"
 	"github.com/rs/zerolog"
 )
 
@@ -41,7 +42,7 @@ func lifecycleServer(t *testing.T) (base string, cancel func(), done <-chan erro
 	go func() { exit <- srv.ListenAndServe(ctx) }()
 
 	base = "http://" + addr
-	if testEventually(5*time.Second, 20*time.Millisecond, func() bool {
+	if testutil.TestEventually(5*time.Second, 20*time.Millisecond, func() bool {
 		resp, err := http.Get(base + "/health")
 		if err == nil {
 			resp.Body.Close()

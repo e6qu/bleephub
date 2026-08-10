@@ -10,6 +10,8 @@ import (
 	"strings"
 	"sync/atomic"
 	"testing"
+
+	"github.com/e6qu/bleephub/internal/server/testutil"
 )
 
 // --- shared fixtures ---
@@ -17,7 +19,7 @@ import (
 var authflowSeq int64
 
 func authflowName(prefix string) string {
-	return fmt.Sprintf("%s-%d-%d", prefix, int64(nextTestID()), atomic.AddInt64(&authflowSeq, 1))
+	return fmt.Sprintf("%s-%d-%d", prefix, int64(testutil.NextTestID()), atomic.AddInt64(&authflowSeq, 1))
 }
 
 // authflowStranger seeds a user with no relationship to anything and returns

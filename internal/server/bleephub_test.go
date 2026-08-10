@@ -20,10 +20,10 @@ import (
 	"net/url"
 	"os"
 	"strings"
-	"sync/atomic"
 	"testing"
 	"time"
 
+	"github.com/e6qu/bleephub/internal/server/testutil"
 	"github.com/rs/zerolog"
 	"golang.org/x/crypto/ssh"
 )
@@ -33,34 +33,9 @@ var (
 	testServer  *Server
 	testSSHAddr string
 	testSSHKey  ed25519.PrivateKey
-	testID      atomic.Uint64
 )
 
 var fixedTestTime = time.Date(2042, time.July, 15, 12, 0, 0, 0, time.UTC)
-
-func nextTestID() uint64 {
-	return testID.Add(1)
-}
-
-func testEventually(timeout, interval time.Duration, condition func() bool) bool {
-	if condition() {
-		return true
-	}
-	timer := time.NewTimer(timeout)
-	defer timer.Stop()
-	ticker := time.NewTicker(interval)
-	defer ticker.Stop()
-	for {
-		select {
-		case <-timer.C:
-			return condition()
-		case <-ticker.C:
-			if condition() {
-				return true
-			}
-		}
-	}
-}
 
 func useFixedTestClock(server *Server) {
 	clockNow := func() time.Time { return fixedTestTime }
@@ -265,7 +240,7 @@ func TestMain(m *testing.M) {
 
 	// Wait for server to be ready without coupling correctness to one fixed
 	// sleep that is either unnecessarily slow or too short on a loaded host.
-	ready := testEventually(2500*time.Millisecond, 50*time.Millisecond, func() bool {
+	ready := testutil.TestEventually(2500*time.Millisecond, 50*time.Millisecond, func() bool {
 		resp, err := http.Get(testBaseURL + "/health")
 		if err == nil {
 			_ = resp.Body.Close()
