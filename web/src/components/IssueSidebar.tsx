@@ -7,8 +7,13 @@ import {
   fetchRepoMilestones,
   fetchOrgIssueTypes,
   fetchIssueGraphQLIssueType,
+  fetchAssignableUsers,
   addIssueLabels,
   removeIssueLabel,
+  addAssignees,
+  removeAssignees,
+  lockIssue,
+  unlockIssue,
   setIssueMilestone,
   setIssueType,
 } from "../api.js";
@@ -63,6 +68,7 @@ export function IssueSidebar({
   participants,
   reviewers,
   development,
+  locked = false,
 }: {
   owner: string;
   repo: string;
@@ -75,6 +81,7 @@ export function IssueSidebar({
   participants: string[];
   reviewers?: ReactNode;
   development?: ReactNode;
+  locked?: boolean;
 }) {
   const qc = useQueryClient();
   const [error, setError] = useState<string | null>(null);
@@ -110,6 +117,20 @@ export function IssueSidebar({
     qc.invalidateQueries({ queryKey: [kind === "pr" ? "prs" : "issues", owner, repo] });
     qc.invalidateQueries({ queryKey: ["pr-timeline", owner, repo, number] });
   };
+  const { data: assignableUsers = [] } = useQuery({
+    queryKey: ["assignable-users", owner, repo],
+    queryFn: () => fetchAssignableUsers(owner, repo),
+  });
+  const addAssigneeMut = useMutation({
+    mutationFn: (login: string) => addAssignees(owner, repo, number, [login]),
+    onSuccess: invalidate,
+    onError: (err: Error) => setError(err.message),
+  });
+  const removeAssigneeMut = useMutation({
+    mutationFn: (login: string) => removeAssignees(owner, repo, number, [login]),
+    onSuccess: invalidate,
+    onError: (err: Error) => setError(err.message),
+  });
   const addLabelMut = useMutation({
     mutationFn: (name: string) => addIssueLabels(owner, repo, number, [name]),
     onSuccess: invalidate,
@@ -130,9 +151,16 @@ export function IssueSidebar({
     onSuccess: invalidate,
     onError: (err: Error) => setError(err.message),
   });
+  const lockMut = useMutation({
+    mutationFn: () => (locked ? unlockIssue(owner, repo, number) : lockIssue(owner, repo, number)),
+    onSuccess: invalidate,
+    onError: (err: Error) => setError(err.message),
+  });
 
   const applied = new Set(labels.map((l) => l.name));
   const addable = repoLabels.filter((l) => !applied.has(l.name));
+  const assignedSet = new Set(assignees);
+  const addableAssignees = assignableUsers.filter((u) => !assignedSet.has(u.login));
   const enabledIssueTypes = issueTypes.filter((it) => it.is_enabled);
   const selectedIssueType = graphQLIssueType
     ? issueTypes.find((it) => it.node_id === graphQLIssueType.id) ?? null
@@ -147,17 +175,49 @@ export function IssueSidebar({
       {kind === "pr" && reviewers && <SidebarSection title="Reviewers">{reviewers}</SidebarSection>}
 
       <SidebarSection title="Assignees">
-        {assignees.length === 0 ? (
-          <span style={muted}>No one —</span>
-        ) : (
-          <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
-            {assignees.map((a) => (
-              <span key={a} style={{ fontSize: "0.82rem", fontWeight: 600, color: "var(--color-fg)" }}>
-                {a}
-              </span>
-            ))}
-          </div>
-        )}
+        <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
+          {assignees.length === 0 && <span style={muted}>No one —</span>}
+          {assignees.map((a) => (
+            <span key={a} className="inline-flex items-center gap-1">
+              <span style={{ fontSize: "0.82rem", fontWeight: 600, color: "var(--color-fg)" }}>{a}</span>
+              <button
+                type="button"
+                aria-label={`Unassign ${a}`}
+                onClick={() => removeAssigneeMut.mutate(a)}
+                disabled={removeAssigneeMut.isPending}
+                style={{
+                  border: "none",
+                  background: "transparent",
+                  color: "var(--color-fg-muted)",
+                  fontSize: "0.75rem",
+                  lineHeight: 1,
+                  padding: "0 0.15rem",
+                  cursor: "pointer",
+                }}
+              >
+                ✕
+              </button>
+            </span>
+          ))}
+          {addableAssignees.length > 0 && (
+            <select
+              aria-label="Add assignee"
+              value=""
+              onChange={(e) => {
+                if (e.target.value) addAssigneeMut.mutate(e.target.value);
+              }}
+              disabled={addAssigneeMut.isPending}
+              style={{ fontSize: "0.8rem" }}
+            >
+              <option value="">Assign…</option>
+              {addableAssignees.map((u) => (
+                <option key={u.login} value={u.login}>
+                  {u.login}
+                </option>
+              ))}
+            </select>
+          )}
+        </div>
       </SidebarSection>
 
       <SidebarSection title="Labels">
@@ -272,6 +332,24 @@ export function IssueSidebar({
 
       <SidebarSection title="Development">
         {development ?? <span style={muted}>No branches or pull requests</span>}
+      </SidebarSection>
+
+      <SidebarSection title="Lock conversation">
+        <button
+          type="button"
+          onClick={() => lockMut.mutate()}
+          disabled={lockMut.isPending}
+          style={{
+            border: "none",
+            background: "transparent",
+            color: "var(--color-accent-fg)",
+            fontSize: "0.82rem",
+            padding: 0,
+            cursor: "pointer",
+          }}
+        >
+          {locked ? "Unlock conversation" : "Lock conversation"}
+        </button>
       </SidebarSection>
 
       <SidebarSection title={`${participants.length} participant${participants.length === 1 ? "" : "s"}`} last>

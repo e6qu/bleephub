@@ -98,6 +98,196 @@ describe("IssuesPage detail", () => {
       expect(screen.getByText("A real issue")).toBeInTheDocument();
     });
   });
+
+  it("posts a comment through the composer", async () => {
+    mockFetch.mockImplementation((url: RequestInfo | URL, init?: RequestInit) => {
+      const u = url.toString();
+      if (u.endsWith("/issues/7/comments") && init?.method === "POST") {
+        return Promise.resolve(
+          jsonResponse(
+            { id: 1, body: "looks good", user: { login: "admin" }, created_at: "2026-01-02T00:00:00Z" },
+            201,
+          ),
+        );
+      }
+      if (u.includes("/issues/7/comments")) return Promise.resolve(jsonResponse([]));
+      if (u.includes("/issues/7/reactions")) return Promise.resolve(jsonResponse([]));
+      if (u.endsWith("/api/v3/user")) return Promise.resolve(jsonResponse({ login: "admin" }));
+      if (u.includes("/issues/7")) return Promise.resolve(jsonResponse(issue(7, "A real issue")));
+      return Promise.resolve(jsonResponse([]));
+    });
+    renderAt("/ui/repos/admin/test/issues/7");
+    const box = await screen.findByPlaceholderText(/leave a comment/i);
+    fireEvent.change(box, { target: { value: "looks good" } });
+    fireEvent.click(screen.getByRole("button", { name: /^comment$/i }));
+    await waitFor(() => {
+      const posted = mockFetch.mock.calls.find(
+        (c) => c[0].toString().endsWith("/issues/7/comments") && c[1]?.method === "POST",
+      );
+      expect(posted).toBeTruthy();
+      expect(JSON.parse((posted![1] as RequestInit).body as string)).toEqual({ body: "looks good" });
+    });
+  });
+
+  it("closes an open issue via the Close button", async () => {
+    mockFetch.mockImplementation((url: RequestInfo | URL, init?: RequestInit) => {
+      const u = url.toString();
+      if (u.endsWith("/issues/7") && init?.method === "PATCH") {
+        return Promise.resolve(jsonResponse({ ...issue(7, "A real issue"), state: "closed" }));
+      }
+      if (u.includes("/issues/7/comments")) return Promise.resolve(jsonResponse([]));
+      if (u.includes("/issues/7/reactions")) return Promise.resolve(jsonResponse([]));
+      if (u.endsWith("/api/v3/user")) return Promise.resolve(jsonResponse({ login: "admin" }));
+      if (u.includes("/issues/7")) return Promise.resolve(jsonResponse(issue(7, "A real issue")));
+      return Promise.resolve(jsonResponse([]));
+    });
+    renderAt("/ui/repos/admin/test/issues/7");
+    const closeBtn = await screen.findByRole("button", { name: /close issue/i });
+    fireEvent.click(closeBtn);
+    await waitFor(() => {
+      const patched = mockFetch.mock.calls.find(
+        (c) => c[0].toString().endsWith("/issues/7") && c[1]?.method === "PATCH",
+      );
+      expect(patched).toBeTruthy();
+      expect(JSON.parse((patched![1] as RequestInit).body as string)).toEqual({ state: "closed" });
+    });
+  });
+
+  it("edits the issue title and body", async () => {
+    mockFetch.mockImplementation((url: RequestInfo | URL, init?: RequestInit) => {
+      const u = url.toString();
+      if (u.endsWith("/issues/7") && init?.method === "PATCH") {
+        return Promise.resolve(jsonResponse({ ...issue(7, "Renamed"), body: "New body" }));
+      }
+      if (u.includes("/issues/7/comments")) return Promise.resolve(jsonResponse([]));
+      if (u.includes("/issues/7/reactions")) return Promise.resolve(jsonResponse([]));
+      if (u.endsWith("/api/v3/user")) return Promise.resolve(jsonResponse({ login: "admin" }));
+      if (u.includes("/issues/7")) return Promise.resolve(jsonResponse(issue(7, "A real issue")));
+      return Promise.resolve(jsonResponse([]));
+    });
+    renderAt("/ui/repos/admin/test/issues/7");
+    fireEvent.click(await screen.findByRole("button", { name: /^edit$/i }));
+    const title = await screen.findByLabelText(/title/i);
+    fireEvent.change(title, { target: { value: "Renamed" } });
+    fireEvent.change(screen.getByLabelText(/description/i), { target: { value: "New body" } });
+    fireEvent.click(screen.getByRole("button", { name: /^save$/i }));
+    await waitFor(() => {
+      const patched = mockFetch.mock.calls.find(
+        (c) => c[0].toString().endsWith("/issues/7") && c[1]?.method === "PATCH",
+      );
+      expect(patched).toBeTruthy();
+      expect(JSON.parse((patched![1] as RequestInit).body as string)).toEqual({
+        title: "Renamed",
+        body: "New body",
+      });
+    });
+  });
+
+  const withComment = () => ({
+    id: 100,
+    body: "old comment",
+    user: { login: "admin" },
+    created_at: "2026-01-02T00:00:00Z",
+  });
+
+  it("edits a comment in place", async () => {
+    mockFetch.mockImplementation((url: RequestInfo | URL, init?: RequestInit) => {
+      const u = url.toString();
+      if (u.endsWith("/issues/comments/100") && init?.method === "PATCH") {
+        return Promise.resolve(jsonResponse({ ...withComment(), body: "edited" }));
+      }
+      if (u.includes("/issues/7/comments")) return Promise.resolve(jsonResponse([withComment()]));
+      if (u.includes("/issues/7/reactions")) return Promise.resolve(jsonResponse([]));
+      if (u.endsWith("/api/v3/user")) return Promise.resolve(jsonResponse({ login: "admin" }));
+      if (u.includes("/issues/7")) return Promise.resolve(jsonResponse(issue(7, "A real issue")));
+      return Promise.resolve(jsonResponse([]));
+    });
+    renderAt("/ui/repos/admin/test/issues/7");
+    fireEvent.click(await screen.findByRole("button", { name: /edit comment/i }));
+    const box = await screen.findByLabelText(/edit comment/i);
+    fireEvent.change(box, { target: { value: "edited" } });
+    fireEvent.click(screen.getByRole("button", { name: /^save$/i }));
+    await waitFor(() => {
+      const patched = mockFetch.mock.calls.find(
+        (c) => c[0].toString().endsWith("/issues/comments/100") && c[1]?.method === "PATCH",
+      );
+      expect(patched).toBeTruthy();
+      expect(JSON.parse((patched![1] as RequestInit).body as string)).toEqual({ body: "edited" });
+    });
+  });
+
+  it("deletes a comment after confirmation", async () => {
+    mockFetch.mockImplementation((url: RequestInfo | URL, init?: RequestInit) => {
+      const u = url.toString();
+      if (u.endsWith("/issues/comments/100") && init?.method === "DELETE") {
+        return Promise.resolve(new Response(null, { status: 204 }));
+      }
+      if (u.includes("/issues/7/comments")) return Promise.resolve(jsonResponse([withComment()]));
+      if (u.includes("/issues/7/reactions")) return Promise.resolve(jsonResponse([]));
+      if (u.endsWith("/api/v3/user")) return Promise.resolve(jsonResponse({ login: "admin" }));
+      if (u.includes("/issues/7")) return Promise.resolve(jsonResponse(issue(7, "A real issue")));
+      return Promise.resolve(jsonResponse([]));
+    });
+    renderAt("/ui/repos/admin/test/issues/7");
+    fireEvent.click(await screen.findByRole("button", { name: /delete comment/i }));
+    // confirmAction modal renders a "Delete" confirm button
+    fireEvent.click(await screen.findByRole("button", { name: /^delete$/i }));
+    await waitFor(() => {
+      const deleted = mockFetch.mock.calls.find(
+        (c) => c[0].toString().endsWith("/issues/comments/100") && c[1]?.method === "DELETE",
+      );
+      expect(deleted).toBeTruthy();
+    });
+  });
+
+  it("assigns a user through the sidebar", async () => {
+    mockFetch.mockImplementation((url: RequestInfo | URL, init?: RequestInit) => {
+      const u = url.toString();
+      if (u.endsWith("/issues/7/assignees") && init?.method === "POST") {
+        return Promise.resolve(jsonResponse(issue(7, "A real issue")));
+      }
+      if (u.endsWith("/repos/admin/test/assignees")) {
+        return Promise.resolve(jsonResponse([{ login: "bob" }]));
+      }
+      if (u.includes("/issues/7/comments")) return Promise.resolve(jsonResponse([]));
+      if (u.includes("/issues/7/reactions")) return Promise.resolve(jsonResponse([]));
+      if (u.endsWith("/api/v3/user")) return Promise.resolve(jsonResponse({ login: "admin" }));
+      if (u.includes("/issues/7")) return Promise.resolve(jsonResponse(issue(7, "A real issue")));
+      return Promise.resolve(jsonResponse([]));
+    });
+    renderAt("/ui/repos/admin/test/issues/7");
+    const select = await screen.findByLabelText(/add assignee/i);
+    fireEvent.change(select, { target: { value: "bob" } });
+    await waitFor(() => {
+      const posted = mockFetch.mock.calls.find(
+        (c) => c[0].toString().endsWith("/issues/7/assignees") && c[1]?.method === "POST",
+      );
+      expect(posted).toBeTruthy();
+      expect(JSON.parse((posted![1] as RequestInit).body as string)).toEqual({ assignees: ["bob"] });
+    });
+  });
+
+  it("locks the conversation from the sidebar", async () => {
+    mockFetch.mockImplementation((url: RequestInfo | URL, init?: RequestInit) => {
+      const u = url.toString();
+      if (u.endsWith("/issues/7/lock") && init?.method === "PUT") {
+        return Promise.resolve(new Response(null, { status: 204 }));
+      }
+      if (u.includes("/issues/7/comments")) return Promise.resolve(jsonResponse([]));
+      if (u.includes("/issues/7/reactions")) return Promise.resolve(jsonResponse([]));
+      if (u.endsWith("/api/v3/user")) return Promise.resolve(jsonResponse({ login: "admin" }));
+      if (u.includes("/issues/7")) return Promise.resolve(jsonResponse(issue(7, "A real issue")));
+      return Promise.resolve(jsonResponse([]));
+    });
+    renderAt("/ui/repos/admin/test/issues/7");
+    fireEvent.click(await screen.findByRole("button", { name: /lock conversation/i }));
+    await waitFor(() => {
+      const locked = mockFetch.mock.calls.find(
+        (c) => c[0].toString().endsWith("/issues/7/lock") && c[1]?.method === "PUT",
+      );
+      expect(locked).toBeTruthy();
+    });
+  });
 });
 
 describe("IssuesPage list pagination", () => {

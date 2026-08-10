@@ -9,6 +9,7 @@ import {
   fetchIssueDetail,
   fetchIssueComments,
   createIssue,
+  updateIssue,
   isNotFound,
   fetchRepoLabels,
   createRepoLabel,
@@ -26,7 +27,9 @@ import {
 } from "../api.js";
 import { useOpenCounts } from "../hooks/useOpenCounts.js";
 import type { GithubIssue, GithubLabel, GithubMilestone, ListFilterState } from "../types.js";
-import { CommentCard, CommentList } from "../components/CommentCard.js";
+import { CommentCard, EditableCommentList } from "../components/CommentCard.js";
+import { CommentComposer } from "../components/CommentComposer.js";
+import { MutationError } from "../components/MutationError.js";
 import { LabelPills } from "../components/LabelPills.js";
 import { StateToggle } from "../components/StateToggle.js";
 import { RepoHeader } from "../components/Shell.js";
@@ -283,6 +286,27 @@ function IssueDetail({ owner, repo, number }: { owner: string; repo: string; num
   const viewerQ = useQuery({ queryKey: ["viewer"], queryFn: fetchAuthenticatedUser });
   const viewerLogin = typeof viewerQ.data?.login === "string" ? viewerQ.data.login : null;
 
+  const qc = useQueryClient();
+  const invalidateIssue = () => {
+    qc.invalidateQueries({ queryKey: ["issue", owner, repo, number] });
+    qc.invalidateQueries({ queryKey: ["issues", owner, repo] });
+  };
+  const stateMut = useMutation({
+    mutationFn: () =>
+      updateIssue(owner, repo, number, { state: issue?.state === "open" ? "closed" : "open" }),
+    onSuccess: invalidateIssue,
+  });
+  const [editing, setEditing] = useState(false);
+  const [editTitle, setEditTitle] = useState("");
+  const [editBody, setEditBody] = useState("");
+  const editMut = useMutation({
+    mutationFn: () => updateIssue(owner, repo, number, { title: editTitle, body: editBody }),
+    onSuccess: () => {
+      invalidateIssue();
+      setEditing(false);
+    },
+  });
+
   if (isError) {
     if (isNotFound(error)) {
       return (
@@ -319,7 +343,53 @@ function IssueDetail({ owner, repo, number }: { owner: string; repo: string; num
           {issue.title}{" "}
           <span style={{ color: "var(--color-fg-muted)" }}>#{issue.number}</span>
         </h1>
+        <Button
+          size="sm"
+          onClick={() => {
+            setEditTitle(issue.title);
+            setEditBody(issue.body ?? "");
+            setEditing(true);
+          }}
+        >
+          Edit
+        </Button>
       </div>
+
+      {editing && (
+        <Modal title="Edit issue" onClose={() => setEditing(false)}>
+          <FormLabel id="edit-issue-title">Title</FormLabel>
+          <input
+            id="edit-issue-title"
+            autoFocus
+            value={editTitle}
+            onChange={(e) => setEditTitle(e.target.value)}
+            className="mb-3 w-full"
+          />
+          <FormLabel id="edit-issue-body">Description</FormLabel>
+          <textarea
+            id="edit-issue-body"
+            value={editBody}
+            onChange={(e) => setEditBody(e.target.value)}
+            rows={6}
+            className="mb-4 w-full"
+            style={{ resize: "vertical" }}
+          />
+          <MutationError of={editMut} />
+          <DialogActions>
+            <Button variant="ghost" size="sm" onClick={() => setEditing(false)}>
+              Cancel
+            </Button>
+            <Button
+              variant="primary"
+              size="sm"
+              disabled={!editTitle.trim() || editMut.isPending}
+              onClick={() => editMut.mutate()}
+            >
+              {editMut.isPending ? "Saving…" : "Save"}
+            </Button>
+          </DialogActions>
+        </Modal>
+      )}
       <div
         className="mb-4 flex flex-wrap items-center gap-3 border-b pb-3"
         style={{ borderColor: "var(--color-border)" }}
@@ -354,7 +424,15 @@ function IssueDetail({ owner, repo, number }: { owner: string; repo: string; num
             <InlineError inline title="Failed to load comments" detail={String(commentsErr)} />
           ) : (
             <>
-              <CommentList comments={comments} />
+              <EditableCommentList
+                owner={owner}
+                repo={repo}
+                comments={comments}
+                invalidateKeys={[
+                  ["issue-comments", owner, repo, number],
+                  ["issue", owner, repo, number],
+                ]}
+              />
               {comments.length === 0 && (
                 <div style={{ padding: "0.5rem 0", color: "var(--color-fg-muted)", fontSize: "0.85rem" }}>
                   No comments yet.
@@ -362,6 +440,25 @@ function IssueDetail({ owner, repo, number }: { owner: string; repo: string; num
               )}
             </>
           )}
+          <MutationError of={stateMut} />
+          <CommentComposer
+            owner={owner}
+            repo={repo}
+            number={number}
+            invalidateKeys={[
+              ["issue-comments", owner, repo, number],
+              ["issue", owner, repo, number],
+            ]}
+            extraActions={
+              <Button
+                size="sm"
+                disabled={stateMut.isPending}
+                onClick={() => stateMut.mutate()}
+              >
+                {open ? "Close issue" : "Reopen issue"}
+              </Button>
+            }
+          />
         </div>
         <div style={{ width: "100%", maxWidth: "16rem", flexShrink: 0 }}>
           <IssueSidebar
@@ -374,6 +471,7 @@ function IssueDetail({ owner, repo, number }: { owner: string; repo: string; num
             labels={issueLabelPills(issue.labels)}
             milestone={issue.milestone ?? null}
             participants={participants}
+            locked={issue.locked ?? false}
           />
         </div>
       </div>

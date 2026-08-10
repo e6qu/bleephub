@@ -1417,6 +1417,86 @@ export const fetchIssueComments = (owner: string, repo: string, number: number) 
     `/api/v3/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/issues/${number}/comments`
   );
 
+/**
+ * Post a comment on an issue or pull request. GitHub models a PR's conversation
+ * on the shared issue-comments endpoint, so this serves both surfaces.
+ */
+export const createIssueComment = (owner: string, repo: string, number: number, body: string) =>
+  ghPostJSON<GithubComment>(
+    `/api/v3/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/issues/${number}/comments`,
+    { body },
+  );
+
+/**
+ * Patch an issue's editable fields. `state` closes/reopens it; `title`/`body`
+ * edit it. GitHub uses one PATCH endpoint for all three.
+ */
+export const updateIssue = (
+  owner: string,
+  repo: string,
+  number: number,
+  patch: { title?: string; body?: string; state?: "open" | "closed" },
+) =>
+  ghPatchJSON<GithubIssue>(
+    `/api/v3/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/issues/${number}`,
+    patch,
+  );
+
+/** Edit an issue/PR comment body (shared endpoint for both surfaces). */
+export const updateIssueComment = (owner: string, repo: string, commentId: number, body: string) =>
+  ghPatchJSON<GithubComment>(
+    `/api/v3/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/issues/comments/${commentId}`,
+    { body },
+  );
+
+/** Delete an issue/PR comment. */
+export const deleteIssueComment = (owner: string, repo: string, commentId: number) =>
+  ghSend(
+    "DELETE",
+    `/api/v3/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/issues/comments/${commentId}`,
+  );
+
+/** Users who can be assigned to issues/PRs in this repo. */
+export const fetchAssignableUsers = (owner: string, repo: string) =>
+  ghFetch<Array<{ login: string }>>(
+    `/api/v3/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/assignees`,
+  );
+
+/** Add assignees to an issue or PR (PRs share the issue-assignees endpoint). */
+export const addAssignees = (owner: string, repo: string, number: number, assignees: string[]) =>
+  ghPostJSON<GithubIssue>(
+    `/api/v3/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/issues/${number}/assignees`,
+    { assignees },
+  );
+
+/** Remove assignees from an issue or PR (DELETE carries the assignee list). */
+export const removeAssignees = (owner: string, repo: string, number: number, assignees: string[]) =>
+  ghSend(
+    "DELETE",
+    `/api/v3/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/issues/${number}/assignees`,
+    { assignees },
+  );
+
+/** Lock an issue/PR conversation (optionally with a GitHub lock reason). */
+export const lockIssue = (
+  owner: string,
+  repo: string,
+  number: number,
+  lockReason?: "off-topic" | "too heated" | "resolved" | "spam",
+) =>
+  ghSend(
+    "PUT",
+    `/api/v3/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/issues/${number}/lock`,
+    lockReason ? { lock_reason: lockReason } : undefined,
+  );
+
+/** Unlock an issue/PR conversation. */
+export const unlockIssue = (owner: string, repo: string, number: number) =>
+  ghSend(
+    "DELETE",
+    `/api/v3/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/issues/${number}/lock`,
+  );
+
 /** First page by (owner, repo, state); follow-up pages by the Link rel="next" URL. */
 export const fetchRepoPRsPage = (
   owner: string,
@@ -1432,6 +1512,29 @@ export const fetchRepoPRsPage = (
 
 export const fetchPRDetail = (owner: string, repo: string, number: number, signal?: AbortSignal) =>
   ghFetch<GithubPR>(`/api/v3/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/pulls/${number}`, signal);
+
+/** Open a pull request from `head` into `base`. */
+export const createPull = (
+  owner: string,
+  repo: string,
+  payload: { title: string; head: string; base: string; body?: string; draft?: boolean },
+) =>
+  ghPostJSON<GithubPR>(
+    `/api/v3/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/pulls`,
+    payload,
+  );
+
+/** Patch a pull request's editable fields (title/body, or state to close/reopen). */
+export const updatePull = (
+  owner: string,
+  repo: string,
+  number: number,
+  patch: { title?: string; body?: string; state?: "open" | "closed" },
+) =>
+  ghPatchJSON<GithubPR>(
+    `/api/v3/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/pulls/${number}`,
+    patch,
+  );
 
 export const fetchRepoBranches = (owner: string, repo: string) =>
   ghFetch<GithubBranch[]>(`/api/v3/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/branches`);
