@@ -403,6 +403,55 @@ func (s *isolatedServer) putSealedSecret(t *testing.T, path, plain string) *http
 	})
 }
 
+// headShaForTest/submitSnapshotForTest mirror the package dependency-graph
+// helpers against this instance (the package versions stay for gh_dependabot's
+// seedDependabotAlert, which is shared across un-migrated files).
+func (s *isolatedServer) headShaForRepoPath(t *testing.T, repoFullName string) string {
+	t.Helper()
+	resp := s.get(t, "/api/v3/repos/"+repoFullName+"/commits", defaultToken)
+	commits := decodeJSONWithStatus2xxArray(t, resp, 200)
+	if len(commits) == 0 {
+		t.Fatal("repo has no commits")
+	}
+	return commits[0]["sha"].(string)
+}
+
+func (s *isolatedServer) headShaForTest(t *testing.T, repo string) string {
+	t.Helper()
+	return s.headShaForRepoPath(t, "admin/"+repo)
+}
+
+func (s *isolatedServer) submitSnapshotForRepoPath(t *testing.T, repoFullName, manifestPath, ref, sha, correlator string, purls ...string) map[string]interface{} {
+	t.Helper()
+	resolved := map[string]interface{}{}
+	for _, purl := range purls {
+		resolved[purl] = map[string]interface{}{"package_url": purl, "scope": "runtime"}
+	}
+	resp := s.post(t, "/api/v3/repos/"+repoFullName+"/dependency-graph/snapshots", defaultToken, map[string]interface{}{
+		"version": 0,
+		"ref":     ref,
+		"sha":     sha,
+		"job":     map[string]interface{}{"id": "job-1", "correlator": correlator},
+		"detector": map[string]interface{}{
+			"name": "bleephub-test-detector", "version": "1.0.0", "url": "https://example.com/detector",
+		},
+		"scanned": "2035-06-15T12:00:00Z",
+		"manifests": map[string]interface{}{
+			manifestPath: map[string]interface{}{
+				"name":     manifestPath,
+				"file":     map[string]interface{}{"source_location": manifestPath},
+				"resolved": resolved,
+			},
+		},
+	})
+	return decodeJSONWithStatus(t, resp, 201)
+}
+
+func (s *isolatedServer) submitSnapshotForTest(t *testing.T, repo, ref, sha, correlator string, purls ...string) map[string]interface{} {
+	t.Helper()
+	return s.submitSnapshotForRepoPath(t, "admin/"+repo, "go.mod", ref, sha, correlator, purls...)
+}
+
 // createRepoWriteRepo mirrors the package helper: create an admin repo through
 // the REST API (optionally auto-initialized) and return its bare name.
 func (s *isolatedServer) createRepoWriteRepo(t *testing.T, autoInit bool) string {
