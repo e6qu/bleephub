@@ -6181,8 +6181,8 @@
         "id": "CI-028",
         "location": "Dockerfile.release:33",
         "severity": "M",
-        "status": "partial \u2014 all 100 gems are pinned by exact version and RubyGems-published SHA-256, then installed from the verified local cache with networking disabled. The dqlite PPA key is vendored and scoped with `signed-by=`, but the PPA drops old builds and its package version therefore still floats",
-        "status_kind": "partial"
+        "status": "fixed \u2014 all 100 gems are pinned by exact version and RubyGems-published SHA-256, then installed from the verified local cache with networking disabled. The dqlite dependency no longer floats: the base moved to `ubuntu:26.04` (digest-pinned), where dqlite is an in-archive package rather than a development PPA, and `libdqlite-dev`/`libdqlite0` are now pinned to the exact `=1.18.4-1` in both the dqlite-node builder and the runtime stage (verified installable against the pinned base image via a local `docker run`). A libdqlite ABI bump is now a deliberate pin edit, caught by the \"Release images\" build, rather than a silent floating version.",
+        "status_kind": "fixed"
       },
       {
         "category": "CI",
@@ -6551,9 +6551,8 @@
         },
         "CI": {
           "status": {
-            "fixed": 62,
-            "open": 2,
-            "partial": 1
+            "fixed": 63,
+            "open": 2
           },
           "total": 65
         },
@@ -6615,9 +6614,9 @@
       },
       "status": {
         "deferred": 3,
-        "fixed": 668,
+        "fixed": 669,
         "open": 8,
-        "partial": 6
+        "partial": 5
       },
       "total": 685
     }

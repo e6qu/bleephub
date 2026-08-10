@@ -32,7 +32,7 @@ ARG BLEEPHUB_COMMIT=none
 ARG BLEEPHUB_PUBLISHED_AT=not-yet-published
 RUN apt_transaction() { rm -rf /var/lib/apt/lists/*; apt-get update && DEBIAN_FRONTEND=noninteractive apt-get upgrade -y && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends "$@"; }; \
     retry_apt_transaction() { apt_transaction "$@" || apt_transaction "$@"; }; \
-    retry_apt_transaction ca-certificates build-essential libdqlite-dev && \
+    retry_apt_transaction ca-certificates build-essential libdqlite-dev=1.18.4-1 && \
     rm -rf /var/lib/apt/lists/*
 WORKDIR /src
 COPY go.mod go.sum ./
@@ -50,7 +50,7 @@ WORKDIR /opt/bleephub-pages/vendor/cache
 RUN apt_transaction() { rm -rf /var/lib/apt/lists/*; apt-get update && DEBIAN_FRONTEND=noninteractive apt-get upgrade -y && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends "$@"; }; \
     retry_apt_transaction() { apt_transaction "$@" || apt_transaction "$@"; }; \
     retry_apt_transaction ca-certificates curl && \
-    retry_apt_transaction ruby-full ruby-bundler build-essential git libdqlite0 && \
+    retry_apt_transaction ruby-full ruby-bundler build-essential git libdqlite0=1.18.4-1 && \
     mkdir -p /opt/bleephub-pages/vendor/cache && \
     while read -r digest gem; do \
         curl --fail --location --silent --show-error \
