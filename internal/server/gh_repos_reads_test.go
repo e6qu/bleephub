@@ -152,13 +152,15 @@ func TestRepoTeamsList(t *testing.T) {
 }
 
 func TestRepoAssigneesAndCollaboratorCheck(t *testing.T) {
-	createReadsRepo(t, "reads-assign", nil)
-	createTestUser(t, "reads-collab")
-	createTestUser(t, "reads-stranger")
+	t.Parallel()
+	s := newIsolatedServer(t)
+	s.createReadsRepo(t, "reads-assign", nil)
+	s.createTestUser(t, "reads-collab")
+	s.createTestUser(t, "reads-stranger")
 
 	// Inviting a new user answers 201 with a pending repository invitation;
 	// the invitee becomes a collaborator once the invitation is accepted.
-	resp := ghPut(t, "/api/v3/repos/admin/reads-assign/collaborators/reads-collab", defaultToken,
+	resp := s.put(t, "/api/v3/repos/admin/reads-assign/collaborators/reads-collab", defaultToken,
 		map[string]interface{}{"permission": "push"})
 	if resp.StatusCode != 201 {
 		resp.Body.Close()
@@ -169,11 +171,11 @@ func TestRepoAssigneesAndCollaboratorCheck(t *testing.T) {
 	if invID <= 0 {
 		t.Fatalf("expected real invitation id, got %v", inv["id"])
 	}
-	if _, ok := testServer.store.AcceptRepoInvitation(int(invID), testServer.store.UsersByLogin["reads-collab"]); !ok {
+	if _, ok := s.store.AcceptRepoInvitation(int(invID), s.store.UsersByLogin["reads-collab"]); !ok {
 		t.Fatalf("accept invitation %d failed", int(invID))
 	}
 
-	resp = ghGet(t, "/api/v3/repos/admin/reads-assign/assignees", defaultToken)
+	resp = s.get(t, "/api/v3/repos/admin/reads-assign/assignees", defaultToken)
 	if resp.StatusCode != 200 {
 		resp.Body.Close()
 		t.Fatalf("list assignees: %d", resp.StatusCode)
@@ -198,7 +200,7 @@ func TestRepoAssigneesAndCollaboratorCheck(t *testing.T) {
 		"/api/v3/repos/admin/reads-assign/collaborators/admin":          204,
 		"/api/v3/repos/admin/reads-assign/collaborators/reads-stranger": 404,
 	} {
-		resp := ghGet(t, path, defaultToken)
+		resp := s.get(t, path, defaultToken)
 		resp.Body.Close()
 		if resp.StatusCode != want {
 			t.Fatalf("GET %s: expected %d, got %d", path, want, resp.StatusCode)
@@ -379,8 +381,10 @@ func TestRepoCodeownersErrors(t *testing.T) {
 }
 
 func TestListPublicRepositories(t *testing.T) {
-	createReadsRepo(t, "reads-public-list", nil)
-	repo := testServer.store.GetRepo("admin", "reads-public-list")
+	t.Parallel()
+	s := newIsolatedServer(t)
+	s.createReadsRepo(t, "reads-public-list", nil)
+	repo := s.store.GetRepo("admin", "reads-public-list")
 	if repo == nil {
 		t.Fatal("repo not created")
 	}
@@ -390,7 +394,7 @@ func TestListPublicRepositories(t *testing.T) {
 	found := false
 	since := 0
 	for !found {
-		resp := ghGet(t, fmt.Sprintf("/api/v3/repositories?since=%d", since), defaultToken)
+		resp := s.get(t, fmt.Sprintf("/api/v3/repositories?since=%d", since), defaultToken)
 		if resp.StatusCode != 200 {
 			resp.Body.Close()
 			t.Fatalf("list public repositories: %d", resp.StatusCode)
@@ -411,7 +415,7 @@ func TestListPublicRepositories(t *testing.T) {
 	}
 
 	// since= pagination excludes repositories up to that ID.
-	resp := ghGet(t, fmt.Sprintf("/api/v3/repositories?since=%d", repo.ID), defaultToken)
+	resp := s.get(t, fmt.Sprintf("/api/v3/repositories?since=%d", repo.ID), defaultToken)
 	if resp.StatusCode != 200 {
 		resp.Body.Close()
 		t.Fatalf("list public repositories since: %d", resp.StatusCode)
