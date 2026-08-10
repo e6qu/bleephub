@@ -544,6 +544,33 @@ func (s *isolatedServer) createRepoWriteRepo(t *testing.T, autoInit bool) string
 	return name
 }
 
+// putReadsFile mirrors the package helper (still used by gh_repos_reads_test.go):
+// commits a file via the contents API and returns the commit SHA.
+func (s *isolatedServer) putReadsFile(t *testing.T, repo, path, content, message, branch string) string {
+	t.Helper()
+	body := map[string]interface{}{
+		"message": message,
+		"content": base64.StdEncoding.EncodeToString([]byte(content)),
+	}
+	if branch != "" {
+		body["branch"] = branch
+	}
+	resp := s.do(t, "PUT", "/api/v3/repos/admin/"+repo+"/contents/"+path, defaultToken, body)
+	defer resp.Body.Close()
+	if resp.StatusCode != 201 {
+		t.Fatalf("put contents %s/%s: %d", repo, path, resp.StatusCode)
+	}
+	var out struct {
+		Commit struct {
+			SHA string `json:"sha"`
+		} `json:"commit"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&out); err != nil {
+		t.Fatalf("decode put contents response: %v", err)
+	}
+	return out.Commit.SHA
+}
+
 // createGitHubAppViaManifest mirrors the package helper (still used by
 // gh_apps_flow_test.go and gh_marketplace_test.go): runs the app-manifest
 // conversion flow and returns the created app, on this isolated server.
