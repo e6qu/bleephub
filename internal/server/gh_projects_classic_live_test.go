@@ -13,12 +13,14 @@ import (
 // through the shared TestMain server so the OpenAPI response-shape validator
 // observes them.
 func TestLiveProjectsClassic_FullFlow(t *testing.T) {
-	admin := testServer.store.UsersByLogin["admin"]
-	repo := testServer.store.CreateRepo(admin, "live-projects-classic", "", false)
+	t.Parallel()
+	s := newIsolatedServer(t)
+	admin := s.store.UsersByLogin["admin"]
+	repo := s.store.CreateRepo(admin, "live-projects-classic", "", false)
 
 	// Create project
 	createBody, _ := json.Marshal(map[string]any{"name": "Live Roadmap", "body": "live body"})
-	resp, err := authedPost("/api/v3/repos/admin/live-projects-classic/projects", "application/json", bytes.NewReader(createBody))
+	resp, err := s.authedPost("/api/v3/repos/admin/live-projects-classic/projects", "application/json", bytes.NewReader(createBody))
 	if err != nil {
 		t.Fatalf("create project: %v", err)
 	}
@@ -35,7 +37,7 @@ func TestLiveProjectsClassic_FullFlow(t *testing.T) {
 	projID := int(created["id"].(float64))
 
 	// List projects
-	resp = authedGet(t, "/api/v3/repos/admin/live-projects-classic/projects")
+	resp = s.authedGet(t, "/api/v3/repos/admin/live-projects-classic/projects")
 	if resp.StatusCode != http.StatusOK {
 		b, _ := io.ReadAll(resp.Body)
 		resp.Body.Close()
@@ -45,7 +47,7 @@ func TestLiveProjectsClassic_FullFlow(t *testing.T) {
 	resp.Body.Close()
 
 	// Get project
-	resp = authedGet(t, "/api/v3/projects/"+itoa(projID))
+	resp = s.authedGet(t, "/api/v3/projects/"+itoa(projID))
 	if resp.StatusCode != http.StatusOK {
 		b, _ := io.ReadAll(resp.Body)
 		resp.Body.Close()
@@ -55,7 +57,7 @@ func TestLiveProjectsClassic_FullFlow(t *testing.T) {
 
 	// Create column
 	colBody, _ := json.Marshal(map[string]any{"name": "Live Column"})
-	resp, err = authedPost("/api/v3/projects/"+itoa(projID)+"/columns", "application/json", bytes.NewReader(colBody))
+	resp, err = s.authedPost("/api/v3/projects/"+itoa(projID)+"/columns", "application/json", bytes.NewReader(colBody))
 	if err != nil {
 		t.Fatalf("create column: %v", err)
 	}
@@ -72,9 +74,9 @@ func TestLiveProjectsClassic_FullFlow(t *testing.T) {
 	colID := int(col["id"].(float64))
 
 	// Create issue and issue card
-	issue := testServer.store.CreateIssue(repo.ID, admin.ID, "live issue", "body", nil, nil, 0)
+	issue := s.store.CreateIssue(repo.ID, admin.ID, "live issue", "body", nil, nil, 0)
 	cardBody, _ := json.Marshal(map[string]any{"content_id": issue.ID, "content_type": "Issue"})
-	resp, err = authedPost("/api/v3/projects/columns/"+itoa(colID)+"/cards", "application/json", bytes.NewReader(cardBody))
+	resp, err = s.authedPost("/api/v3/projects/columns/"+itoa(colID)+"/cards", "application/json", bytes.NewReader(cardBody))
 	if err != nil {
 		t.Fatalf("create issue card: %v", err)
 	}
@@ -91,7 +93,7 @@ func TestLiveProjectsClassic_FullFlow(t *testing.T) {
 
 	// Create note card
 	noteBody, _ := json.Marshal(map[string]any{"note": "live note"})
-	resp, err = authedPost("/api/v3/projects/columns/"+itoa(colID)+"/cards", "application/json", bytes.NewReader(noteBody))
+	resp, err = s.authedPost("/api/v3/projects/columns/"+itoa(colID)+"/cards", "application/json", bytes.NewReader(noteBody))
 	if err != nil {
 		t.Fatalf("create note card: %v", err)
 	}
@@ -107,7 +109,7 @@ func TestLiveProjectsClassic_FullFlow(t *testing.T) {
 	resp.Body.Close()
 
 	// List cards
-	resp = authedGet(t, "/api/v3/projects/columns/"+itoa(colID)+"/cards")
+	resp = s.authedGet(t, "/api/v3/projects/columns/"+itoa(colID)+"/cards")
 	if resp.StatusCode != http.StatusOK {
 		b, _ := io.ReadAll(resp.Body)
 		resp.Body.Close()
@@ -118,7 +120,7 @@ func TestLiveProjectsClassic_FullFlow(t *testing.T) {
 	// Move note card
 	cardID := int(noteCard["id"].(float64))
 	moveBody, _ := json.Marshal(map[string]any{"position": "first"})
-	req, _ := http.NewRequest("POST", testBaseURL+"/api/v3/projects/columns/cards/"+itoa(cardID)+"/moves", strings.NewReader(string(moveBody)))
+	req, _ := http.NewRequest("POST", s.baseURL+"/api/v3/projects/columns/cards/"+itoa(cardID)+"/moves", strings.NewReader(string(moveBody)))
 	req.Header.Set("Authorization", "Bearer "+defaultToken)
 	req.Header.Set("Content-Type", "application/json")
 	resp, err = http.DefaultClient.Do(req)
@@ -134,7 +136,7 @@ func TestLiveProjectsClassic_FullFlow(t *testing.T) {
 
 	// Update project
 	patchBody, _ := json.Marshal(map[string]any{"state": "closed"})
-	req, _ = http.NewRequest("PATCH", testBaseURL+"/api/v3/projects/"+itoa(projID), strings.NewReader(string(patchBody)))
+	req, _ = http.NewRequest("PATCH", s.baseURL+"/api/v3/projects/"+itoa(projID), strings.NewReader(string(patchBody)))
 	req.Header.Set("Authorization", "Bearer "+defaultToken)
 	req.Header.Set("Content-Type", "application/json")
 	resp, err = http.DefaultClient.Do(req)
