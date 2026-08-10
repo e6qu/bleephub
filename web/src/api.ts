@@ -4327,6 +4327,17 @@ export const fetchOrgProfile = (org: string) =>
 export const fetchOrgMembers = (org: string) =>
   ghFetch<GithubAccount[]>(`/api/v3/orgs/${encodeURIComponent(org)}/members`);
 
+/** Add or invite a member (or change their role) — PUT orgs/{org}/memberships/{user}. */
+export const setOrgMembership = (org: string, username: string, role: "member" | "admin") =>
+  ghPutJSON<{ state: string; role: string }>(
+    `/api/v3/orgs/${encodeURIComponent(org)}/memberships/${encodeURIComponent(username)}`,
+    { role },
+  );
+
+/** Remove a member from the org — DELETE orgs/{org}/memberships/{user}. */
+export const removeOrgMember = (org: string, username: string) =>
+  ghSend("DELETE", `/api/v3/orgs/${encodeURIComponent(org)}/memberships/${encodeURIComponent(username)}`);
+
 /** Teams in an organization (GET /orgs/{org}/teams). */
 export const fetchOrgTeams = (org: string) =>
   ghFetch<GithubOrgTeam[]>(`/api/v3/orgs/${encodeURIComponent(org)}/teams`);
