@@ -117,7 +117,14 @@ func (st *Store) createDiscussionCategoryLocked(repoID int, name, emoji, descrip
 func (st *Store) GetDiscussionCategory(id int) *DiscussionCategory {
 	st.mu.RLock()
 	defer st.mu.RUnlock()
-	return st.DiscussionCategories[id]
+	// A copy so a reader can't mutate the stored category through the getter
+	// (STORE-021); DiscussionCategory is all-value, so a shallow copy detaches.
+	cat := st.DiscussionCategories[id]
+	if cat == nil {
+		return nil
+	}
+	clone := *cat
+	return &clone
 }
 
 // GetDiscussionCategoryByName returns a category by repo and name.

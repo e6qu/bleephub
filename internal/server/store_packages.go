@@ -387,10 +387,26 @@ type PackageFileInput struct {
 }
 
 // GetPackageVersion returns a package version by ID, or nil.
+// clonePackageVersion returns a copy safe to hand outside the store lock
+// (STORE-021): Metadata is the only reference field.
+func clonePackageVersion(v *PackageVersion) *PackageVersion {
+	if v == nil {
+		return nil
+	}
+	clone := *v
+	if v.Metadata != nil {
+		clone.Metadata = make(map[string]interface{}, len(v.Metadata))
+		for k, val := range v.Metadata {
+			clone.Metadata[k] = val
+		}
+	}
+	return &clone
+}
+
 func (st *Store) GetPackageVersion(id int) *PackageVersion {
 	st.mu.RLock()
 	defer st.mu.RUnlock()
-	return st.PackageVersions[id]
+	return clonePackageVersion(st.PackageVersions[id])
 }
 
 // ListPackageVersions returns versions for a package, newest first.
@@ -465,7 +481,14 @@ func (st *Store) SetPackageVersionRegistryManifestDigest(id int, digest string) 
 func (st *Store) GetPackageFile(id int) *PackageFile {
 	st.mu.RLock()
 	defer st.mu.RUnlock()
-	return st.PackageFiles[id]
+	// A copy so a reader can't mutate the stored file through the getter
+	// (STORE-021); PackageFile is all-value, so a shallow copy detaches.
+	f := st.PackageFiles[id]
+	if f == nil {
+		return nil
+	}
+	clone := *f
+	return &clone
 }
 
 // ListPackageFiles returns files for a version.

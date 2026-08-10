@@ -12,6 +12,27 @@ import (
 	"testing"
 )
 
+// TestPackageVersionGetReturnsDetachedSnapshot pins STORE-021 for the package
+// family: GetPackageVersion must return a copy, including its Metadata map.
+func TestPackageVersionGetReturnsDetachedSnapshot(t *testing.T) {
+	s := newTestServer()
+	pkg, _ := s.store.CreatePackage("User", "admin", "npm", "detach-pkg", "private")
+	v, err := s.store.CreatePackageVersion("User", "admin", "npm", pkg.Name, "1.0.0", "desc",
+		map[string]interface{}{"tag": "latest"}, nil)
+	if err != nil {
+		t.Fatalf("create version: %v", err)
+	}
+
+	got := s.store.GetPackageVersion(v.ID)
+	got.Description = "hacked"
+	got.Metadata["tag"] = "hacked"
+
+	again := s.store.GetPackageVersion(v.ID)
+	if again.Description == "hacked" || again.Metadata["tag"] != "latest" {
+		t.Fatalf("package version mutated through the getter: desc=%q metadata=%v", again.Description, again.Metadata)
+	}
+}
+
 func TestPackageFixturesDoNotSeedContainerPackagesThroughInternalRoute(t *testing.T) {
 	for _, path := range []string{"gh_packages_test.go", "gh_packages_live_test.go", "gh_packages_user_surface_test.go"} {
 		source, err := os.ReadFile(path)
