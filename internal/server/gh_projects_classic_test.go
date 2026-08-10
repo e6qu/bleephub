@@ -7,6 +7,30 @@ import (
 	"testing"
 )
 
+// TestProjectClassicGetIsDetached pins STORE-021: GetProjectClassic returns a
+// copy, and UpdateProjectClassic still reaches the live row.
+func TestProjectClassicGetIsDetached(t *testing.T) {
+	s := newTestServer()
+	admin := s.store.UsersByLogin["admin"]
+	repo := s.store.CreateRepo(admin, "proj-detach", "", false)
+	p := s.store.CreateProjectClassic(repo, admin.ID, "Board", "body", "open")
+
+	got := s.store.GetProjectClassic(p.ID)
+	got.Name = "hacked"
+	if fresh := s.store.GetProjectClassic(p.ID); fresh.Name != "Board" {
+		t.Fatalf("project mutated through the getter: %q", fresh.Name)
+	}
+
+	newName := "Renamed"
+	updated := s.store.UpdateProjectClassic(got, &newName, nil, nil)
+	if updated.Name != "Renamed" {
+		t.Fatalf("update returned %q, want Renamed", updated.Name)
+	}
+	if live := s.store.GetProjectClassic(p.ID); live.Name != "Renamed" {
+		t.Fatalf("live project after update = %q, want Renamed", live.Name)
+	}
+}
+
 func TestProjectsClassic_ProjectCRUD(t *testing.T) {
 	t.Parallel()
 	s := newIsolatedServer(t)

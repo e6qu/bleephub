@@ -95,7 +95,15 @@ func (st *Store) CreateProjectClassic(repo *Repo, creatorID int, name, body, sta
 func (st *Store) GetProjectClassic(id int) *ProjectClassic {
 	st.mu.RLock()
 	defer st.mu.RUnlock()
-	return st.ProjectClassic[id]
+	// A copy so a reader can't mutate the stored project through the getter
+	// (STORE-021); ProjectClassic is all-value. Edits go through
+	// UpdateProjectClassic, which re-fetches the live row by id.
+	proj := st.ProjectClassic[id]
+	if proj == nil {
+		return nil
+	}
+	clone := *proj
+	return &clone
 }
 
 // ListProjectClassicsForRepo returns all projects in a repo, newest first.
@@ -113,21 +121,30 @@ func (st *Store) ListProjectClassicsForRepo(repoKey string) []*ProjectClassic {
 }
 
 // UpdateProjectClassic applies updates to a project.
+// UpdateProjectClassic applies the given field updates. `proj` now comes from
+// GetProjectClassic, which returns a detached clone, so the mutation is applied
+// to the LIVE row (re-fetched by id) and a fresh snapshot is returned for the
+// caller to render — never the live pointer (STORE-021).
 func (st *Store) UpdateProjectClassic(proj *ProjectClassic, name, body, state *string) *ProjectClassic {
 	st.mu.Lock()
 	defer st.mu.Unlock()
+	live := st.ProjectClassic[proj.ID]
+	if live == nil {
+		return nil
+	}
 	if name != nil {
-		proj.Name = *name
+		live.Name = *name
 	}
 	if body != nil {
-		proj.Body = *body
+		live.Body = *body
 	}
 	if state != nil {
-		proj.State = *state
+		live.State = *state
 	}
-	proj.UpdatedAt = st.currentTime()
-	st.persistProjectClassic(proj)
-	return proj
+	live.UpdatedAt = st.currentTime()
+	st.persistProjectClassic(live)
+	clone := *live
+	return &clone
 }
 
 // DeleteProjectClassic deletes a project and all its columns and cards.
