@@ -54,8 +54,9 @@ func secretScanningSeedValue(secretType string) string {
 }
 
 func TestSecretScanningAlertTestsUseCommittedContent(t *testing.T) {
+	t.Parallel()
 	sources := map[string]string{
-		"gh_secret_scanning_test.go": `authedPost("` + `/internal/repos/` + `"+owner+"/"+repo+"/secret-scanning/alerts"`,
+		"gh_secret_scanning_test.go": `s.authedPost("` + `/internal/repos/` + `"+owner+"/"+repo+"/secret-scanning/alerts"`,
 		"gh_secret_scanning.go":      `POST /internal/repos/{owner}/{repo}/secret-scanning/alerts`,
 	}
 	for path, needle := range sources {
@@ -75,22 +76,24 @@ func TestSecretScanningAlertTestsUseCommittedContent(t *testing.T) {
 	if !strings.Contains(source, `"/contents/"+path`) {
 		t.Fatal("secret scanning public alert tests must exercise the public contents API ingestion path")
 	}
-	placeholderNeedle := `authedPost("` + `/internal/repos/` + `"+owner+"/"+repo+"/secret-scanning/push-protection-placeholders"`
+	placeholderNeedle := `s.authedPost("` + `/internal/repos/` + `"+owner+"/"+repo+"/secret-scanning/push-protection-placeholders"`
 	if strings.Contains(source, placeholderNeedle) {
 		t.Fatal("secret scanning push-protection tests must create placeholders from protected public writes, not the internal operator route")
 	}
 }
 
 func TestSecretScanningDetectsGeneratedFineGrainedPersonalAccessToken(t *testing.T) {
-	admin := testServer.store.UsersByLogin["admin"]
-	repo := testServer.store.CreateRepo(admin, "ss-fine-grained-pat", "", true)
-	token, err := testServer.store.CreateUserFineGrainedPAT(admin.ID, createPersonalAccessTokenWebRequest{
+	t.Parallel()
+	s := newIsolatedServer(t)
+	admin := s.store.UsersByLogin["admin"]
+	repo := s.store.CreateRepo(admin, "ss-fine-grained-pat", "", true)
+	token, err := s.store.CreateUserFineGrainedPAT(admin.ID, createPersonalAccessTokenWebRequest{
 		Name: "secret scanning live token", ResourceOwner: admin.Login, RepositorySelection: "none",
 	})
 	if err != nil {
 		t.Fatalf("create fine-grained personal access token: %v", err)
 	}
-	resp := ghPut(t, "/api/v3/repos/admin/"+repo.Name+"/contents/credential.txt", defaultToken, map[string]any{
+	resp := s.put(t, "/api/v3/repos/admin/"+repo.Name+"/contents/credential.txt", defaultToken, map[string]any{
 		"message": "commit fine-grained credential",
 		"content": base64.StdEncoding.EncodeToString([]byte("token=" + token.Value + "\n")),
 	})
@@ -100,16 +103,16 @@ func TestSecretScanningDetectsGeneratedFineGrainedPersonalAccessToken(t *testing
 		t.Fatalf("commit fine-grained credential: %d body=%s", resp.StatusCode, body)
 	}
 	resp.Body.Close()
-	alerts := decodeJSONArray(t, ghGet(t, "/api/v3/repos/admin/"+repo.Name+"/secret-scanning/alerts?secret_type=github_personal_access_token", defaultToken))
+	alerts := decodeJSONArray(t, s.get(t, "/api/v3/repos/admin/"+repo.Name+"/secret-scanning/alerts?secret_type=github_personal_access_token", defaultToken))
 	if len(alerts) != 1 {
 		t.Fatalf("generated fine-grained credential alerts = %v, want one", alerts)
 	}
 }
 
-func createSecretScanningOrgRepoViaPublicAPI(t *testing.T, org, repo string) {
+func (s *isolatedServer) createSecretScanningOrgRepoViaPublicAPI(t *testing.T, org, repo string) {
 	t.Helper()
-	createOrgViaAdminAPI(t, org)
-	resp := ghPost(t, "/api/v3/orgs/"+org+"/repos", defaultToken, map[string]any{
+	s.createOrg(t, org)
+	resp := s.post(t, "/api/v3/orgs/"+org+"/repos", defaultToken, map[string]any{
 		"name":    repo,
 		"private": true,
 	})
@@ -121,9 +124,9 @@ func createSecretScanningOrgRepoViaPublicAPI(t *testing.T, org, repo string) {
 	resp.Body.Close()
 }
 
-func enableSecretScanningPushProtectionPattern(t *testing.T, org, patternID string) {
+func (s *isolatedServer) enableSecretScanningPushProtectionPattern(t *testing.T, org, patternID string) {
 	t.Helper()
-	resp := ghPatch(t, "/api/v3/orgs/"+org+"/secret-scanning/pattern-configurations", defaultToken, map[string]any{
+	resp := s.patch(t, "/api/v3/orgs/"+org+"/secret-scanning/pattern-configurations", defaultToken, map[string]any{
 		"provider_pattern_settings": []map[string]any{
 			{"token_type": patternID, "push_protection_setting": "enabled"},
 		},
@@ -155,16 +158,18 @@ func secretScanningBlockedPlaceholder(t *testing.T, resp *http.Response) string 
 }
 
 func TestSecretScanning_ListAndFilter(t *testing.T) {
-	admin := testServer.store.UsersByLogin["admin"]
-	repo := testServer.store.CreateRepo(admin, "ss-list", "", false)
+	t.Parallel()
+	s := newIsolatedServer(t)
+	admin := s.store.UsersByLogin["admin"]
+	repo := s.store.CreateRepo(admin, "ss-list", "", false)
 	if repo == nil {
 		t.Fatal("create repo failed")
 	}
 
-	seedSecretAlert(t, "admin", "ss-list", "github_personal_access_token")
-	seedSecretAlert(t, "admin", "ss-list", "aws_access_key_id")
+	s.seedSecretAlert(t, "admin", "ss-list", "github_personal_access_token")
+	s.seedSecretAlert(t, "admin", "ss-list", "aws_access_key_id")
 
-	resp := authedGet(t, "/api/v3/repos/admin/ss-list/secret-scanning/alerts")
+	resp := s.authedGet(t, "/api/v3/repos/admin/ss-list/secret-scanning/alerts")
 	if resp.StatusCode != http.StatusOK {
 		b, _ := io.ReadAll(resp.Body)
 		resp.Body.Close()
@@ -179,7 +184,7 @@ func TestSecretScanning_ListAndFilter(t *testing.T) {
 		t.Fatalf("expected 2 alerts, got %d", len(list))
 	}
 
-	resp = authedGet(t, "/api/v3/repos/admin/ss-list/secret-scanning/alerts?secret_type=aws_access_key_id")
+	resp = s.authedGet(t, "/api/v3/repos/admin/ss-list/secret-scanning/alerts?secret_type=aws_access_key_id")
 	if resp.StatusCode != http.StatusOK {
 		b, _ := io.ReadAll(resp.Body)
 		resp.Body.Close()
@@ -196,16 +201,18 @@ func TestSecretScanning_ListAndFilter(t *testing.T) {
 }
 
 func TestSecretScanning_GetAndLocations(t *testing.T) {
-	admin := testServer.store.UsersByLogin["admin"]
-	repo := testServer.store.CreateRepo(admin, "ss-get", "", false)
+	t.Parallel()
+	s := newIsolatedServer(t)
+	admin := s.store.UsersByLogin["admin"]
+	repo := s.store.CreateRepo(admin, "ss-get", "", false)
 	if repo == nil {
 		t.Fatal("create repo failed")
 	}
 
-	created := seedSecretAlert(t, "admin", "ss-get", "github_personal_access_token")
+	created := s.seedSecretAlert(t, "admin", "ss-get", "github_personal_access_token")
 	number := int(created["number"].(float64))
 
-	resp := authedGet(t, "/api/v3/repos/admin/ss-get/secret-scanning/alerts/"+itoa(number))
+	resp := s.authedGet(t, "/api/v3/repos/admin/ss-get/secret-scanning/alerts/"+itoa(number))
 	if resp.StatusCode != http.StatusOK {
 		b, _ := io.ReadAll(resp.Body)
 		resp.Body.Close()
@@ -223,7 +230,7 @@ func TestSecretScanning_GetAndLocations(t *testing.T) {
 		t.Fatalf("expected state open, got %v", got["state"])
 	}
 
-	resp = authedGet(t, "/api/v3/repos/admin/ss-get/secret-scanning/alerts/"+itoa(number)+"/locations")
+	resp = s.authedGet(t, "/api/v3/repos/admin/ss-get/secret-scanning/alerts/"+itoa(number)+"/locations")
 	if resp.StatusCode != http.StatusOK {
 		b, _ := io.ReadAll(resp.Body)
 		resp.Body.Close()
@@ -295,20 +302,22 @@ func TestSecretScanning_AlertLocationsPagination(t *testing.T) {
 }
 
 func TestSecretScanning_GitDatabaseRefCreatesAlert(t *testing.T) {
-	admin := testServer.store.UsersByLogin["admin"]
-	repo := testServer.store.CreateRepo(admin, "ss-git-database", "", false)
+	t.Parallel()
+	s := newIsolatedServer(t)
+	admin := s.store.UsersByLogin["admin"]
+	repo := s.store.CreateRepo(admin, "ss-git-database", "", false)
 	if repo == nil {
 		t.Fatal("create repo failed")
 	}
 
-	resp := ghPost(t, "/api/v3/repos/admin/ss-git-database/git/blobs", defaultToken, map[string]any{
+	resp := s.post(t, "/api/v3/repos/admin/ss-git-database/git/blobs", defaultToken, map[string]any{
 		"content": "token=" + secretScanningSeedValue("aws_access_key_id") + "\n",
 	})
 	if resp.StatusCode != http.StatusCreated {
 		t.Fatalf("create blob: %d", resp.StatusCode)
 	}
 	blob := decodeJSON(t, resp)
-	resp = ghPost(t, "/api/v3/repos/admin/ss-git-database/git/trees", defaultToken, map[string]any{
+	resp = s.post(t, "/api/v3/repos/admin/ss-git-database/git/trees", defaultToken, map[string]any{
 		"tree": []map[string]any{
 			{"path": "credentials.txt", "mode": "100644", "type": "blob", "sha": blob["sha"]},
 		},
@@ -317,7 +326,7 @@ func TestSecretScanning_GitDatabaseRefCreatesAlert(t *testing.T) {
 		t.Fatalf("create tree: %d", resp.StatusCode)
 	}
 	tree := decodeJSON(t, resp)
-	resp = ghPost(t, "/api/v3/repos/admin/ss-git-database/git/commits", defaultToken, map[string]any{
+	resp = s.post(t, "/api/v3/repos/admin/ss-git-database/git/commits", defaultToken, map[string]any{
 		"message": "add credentials",
 		"tree":    tree["sha"],
 	})
@@ -325,7 +334,7 @@ func TestSecretScanning_GitDatabaseRefCreatesAlert(t *testing.T) {
 		t.Fatalf("create commit: %d", resp.StatusCode)
 	}
 	commit := decodeJSON(t, resp)
-	resp = ghPost(t, "/api/v3/repos/admin/ss-git-database/git/refs", defaultToken, map[string]any{
+	resp = s.post(t, "/api/v3/repos/admin/ss-git-database/git/refs", defaultToken, map[string]any{
 		"ref": "refs/heads/main",
 		"sha": commit["sha"],
 	})
@@ -334,7 +343,7 @@ func TestSecretScanning_GitDatabaseRefCreatesAlert(t *testing.T) {
 	}
 	resp.Body.Close()
 
-	alerts := decodeJSONArray(t, ghGet(t, "/api/v3/repos/admin/ss-git-database/secret-scanning/alerts?secret_type=aws_access_key_id", defaultToken))
+	alerts := decodeJSONArray(t, s.get(t, "/api/v3/repos/admin/ss-git-database/secret-scanning/alerts?secret_type=aws_access_key_id", defaultToken))
 	if len(alerts) != 1 {
 		t.Fatalf("expected one Git Database-ingested alert, got %d: %v", len(alerts), alerts)
 	}
@@ -344,17 +353,19 @@ func TestSecretScanning_GitDatabaseRefCreatesAlert(t *testing.T) {
 }
 
 func TestSecretScanning_PatchResolution(t *testing.T) {
-	admin := testServer.store.UsersByLogin["admin"]
-	repo := testServer.store.CreateRepo(admin, "ss-patch", "", false)
+	t.Parallel()
+	s := newIsolatedServer(t)
+	admin := s.store.UsersByLogin["admin"]
+	repo := s.store.CreateRepo(admin, "ss-patch", "", false)
 	if repo == nil {
 		t.Fatal("create repo failed")
 	}
 
-	created := seedSecretAlert(t, "admin", "ss-patch", "github_personal_access_token")
+	created := s.seedSecretAlert(t, "admin", "ss-patch", "github_personal_access_token")
 	number := int(created["number"].(float64))
 
 	patch, _ := json.Marshal(map[string]any{"state": "resolved", "resolution": "false_positive"})
-	req, _ := http.NewRequest("PATCH", testBaseURL+"/api/v3/repos/admin/ss-patch/secret-scanning/alerts/"+itoa(number), bytes.NewReader(patch))
+	req, _ := http.NewRequest("PATCH", s.baseURL+"/api/v3/repos/admin/ss-patch/secret-scanning/alerts/"+itoa(number), bytes.NewReader(patch))
 	req.Header.Set("Authorization", "Bearer "+defaultToken)
 	req.Header.Set("Content-Type", "application/json")
 	resp, err := http.DefaultClient.Do(req)
@@ -380,17 +391,19 @@ func TestSecretScanning_PatchResolution(t *testing.T) {
 }
 
 func TestSecretScanning_InvalidResolution(t *testing.T) {
-	admin := testServer.store.UsersByLogin["admin"]
-	repo := testServer.store.CreateRepo(admin, "ss-invalid", "", false)
+	t.Parallel()
+	s := newIsolatedServer(t)
+	admin := s.store.UsersByLogin["admin"]
+	repo := s.store.CreateRepo(admin, "ss-invalid", "", false)
 	if repo == nil {
 		t.Fatal("create repo failed")
 	}
 
-	created := seedSecretAlert(t, "admin", "ss-invalid", "github_personal_access_token")
+	created := s.seedSecretAlert(t, "admin", "ss-invalid", "github_personal_access_token")
 	number := int(created["number"].(float64))
 
 	patch, _ := json.Marshal(map[string]any{"state": "resolved", "resolution": "not_a_real_resolution"})
-	req, _ := http.NewRequest("PATCH", testBaseURL+"/api/v3/repos/admin/ss-invalid/secret-scanning/alerts/"+itoa(number), bytes.NewReader(patch))
+	req, _ := http.NewRequest("PATCH", s.baseURL+"/api/v3/repos/admin/ss-invalid/secret-scanning/alerts/"+itoa(number), bytes.NewReader(patch))
 	req.Header.Set("Authorization", "Bearer "+defaultToken)
 	req.Header.Set("Content-Type", "application/json")
 	resp, err := http.DefaultClient.Do(req)
@@ -406,19 +419,21 @@ func TestSecretScanning_InvalidResolution(t *testing.T) {
 }
 
 func TestSecretScanning_404(t *testing.T) {
-	admin := testServer.store.UsersByLogin["admin"]
-	repo := testServer.store.CreateRepo(admin, "ss-404", "", false)
+	t.Parallel()
+	s := newIsolatedServer(t)
+	admin := s.store.UsersByLogin["admin"]
+	repo := s.store.CreateRepo(admin, "ss-404", "", false)
 	if repo == nil {
 		t.Fatal("create repo failed")
 	}
 
-	resp := authedGet(t, "/api/v3/repos/admin/ss-404/secret-scanning/alerts/999")
+	resp := s.authedGet(t, "/api/v3/repos/admin/ss-404/secret-scanning/alerts/999")
 	if resp.StatusCode != http.StatusNotFound {
 		t.Fatalf("expected 404, got %d", resp.StatusCode)
 	}
 	resp.Body.Close()
 
-	resp = authedGet(t, "/api/v3/repos/admin/does-not-exist/secret-scanning/alerts")
+	resp = s.authedGet(t, "/api/v3/repos/admin/does-not-exist/secret-scanning/alerts")
 	if resp.StatusCode != http.StatusNotFound {
 		t.Fatalf("expected 404 for missing repo, got %d", resp.StatusCode)
 	}
@@ -426,19 +441,21 @@ func TestSecretScanning_404(t *testing.T) {
 }
 
 func TestSecretScanning_BulkUpdate(t *testing.T) {
-	admin := testServer.store.UsersByLogin["admin"]
-	repo := testServer.store.CreateRepo(admin, "ss-bulk", "", false)
+	t.Parallel()
+	s := newIsolatedServer(t)
+	admin := s.store.UsersByLogin["admin"]
+	repo := s.store.CreateRepo(admin, "ss-bulk", "", false)
 	if repo == nil {
 		t.Fatal("create repo failed")
 	}
 
-	seedSecretAlert(t, "admin", "ss-bulk", "github_personal_access_token")
-	seedSecretAlert(t, "admin", "ss-bulk", "github_personal_access_token")
-	seedSecretAlert(t, "admin", "ss-bulk", "aws_access_key_id")
+	s.seedSecretAlert(t, "admin", "ss-bulk", "github_personal_access_token")
+	s.seedSecretAlert(t, "admin", "ss-bulk", "github_personal_access_token")
+	s.seedSecretAlert(t, "admin", "ss-bulk", "aws_access_key_id")
 
 	// GitHub exposes only the per-alert PATCH. A client that wants a bulk
 	// operation lists with a filter, then updates each returned alert.
-	resp := authedGet(t, "/api/v3/repos/admin/ss-bulk/secret-scanning/alerts?secret_type=github_personal_access_token")
+	resp := s.authedGet(t, "/api/v3/repos/admin/ss-bulk/secret-scanning/alerts?secret_type=github_personal_access_token")
 	var selected []map[string]any
 	if err := json.NewDecoder(resp.Body).Decode(&selected); err != nil {
 		resp.Body.Close()
@@ -450,7 +467,7 @@ func TestSecretScanning_BulkUpdate(t *testing.T) {
 	}
 	for _, alert := range selected {
 		number := int(alert["number"].(float64))
-		updated := decodeJSON(t, ghPatch(
+		updated := decodeJSON(t, s.patch(
 			t,
 			fmt.Sprintf("/api/v3/repos/admin/ss-bulk/secret-scanning/alerts/%d", number),
 			defaultToken,
@@ -464,26 +481,28 @@ func TestSecretScanning_BulkUpdate(t *testing.T) {
 }
 
 func TestSecretScanning_OrgAlerts(t *testing.T) {
-	admin := testServer.store.UsersByLogin["admin"]
-	org := testServer.store.CreateOrg(admin, "ss-org-alerts", "SS Org Alerts", "")
+	t.Parallel()
+	s := newIsolatedServer(t)
+	admin := s.store.UsersByLogin["admin"]
+	org := s.store.CreateOrg(admin, "ss-org-alerts", "SS Org Alerts", "")
 	if org == nil {
 		t.Fatal("create org failed")
 	}
-	repo1 := testServer.store.CreateOrgRepo(org, admin, "ss-org-repo1", "", false)
-	repo2 := testServer.store.CreateOrgRepo(org, admin, "ss-org-repo2", "", false)
+	repo1 := s.store.CreateOrgRepo(org, admin, "ss-org-repo1", "", false)
+	repo2 := s.store.CreateOrgRepo(org, admin, "ss-org-repo2", "", false)
 	if repo1 == nil || repo2 == nil {
 		t.Fatal("create org repo failed")
 	}
-	userRepo := testServer.store.CreateRepo(admin, "ss-user-repo", "", false)
+	userRepo := s.store.CreateRepo(admin, "ss-user-repo", "", false)
 	if userRepo == nil {
 		t.Fatal("create repo failed")
 	}
 
-	seedSecretAlert(t, org.Login, repo1.Name, "github_personal_access_token")
-	seedSecretAlert(t, org.Login, repo2.Name, "aws_access_key_id")
-	seedSecretAlert(t, "admin", userRepo.Name, "slack_incoming_webhook_url")
+	s.seedSecretAlert(t, org.Login, repo1.Name, "github_personal_access_token")
+	s.seedSecretAlert(t, org.Login, repo2.Name, "aws_access_key_id")
+	s.seedSecretAlert(t, "admin", userRepo.Name, "slack_incoming_webhook_url")
 
-	resp := authedGet(t, "/api/v3/orgs/ss-org-alerts/secret-scanning/alerts")
+	resp := s.authedGet(t, "/api/v3/orgs/ss-org-alerts/secret-scanning/alerts")
 	if resp.StatusCode != http.StatusOK {
 		b, _ := io.ReadAll(resp.Body)
 		resp.Body.Close()
@@ -500,13 +519,15 @@ func TestSecretScanning_OrgAlerts(t *testing.T) {
 }
 
 func TestSecretScanning_PatternConfigurations(t *testing.T) {
-	admin := testServer.store.UsersByLogin["admin"]
-	org := testServer.store.CreateOrg(admin, "ss-patterns", "SS Patterns", "")
+	t.Parallel()
+	s := newIsolatedServer(t)
+	admin := s.store.UsersByLogin["admin"]
+	org := s.store.CreateOrg(admin, "ss-patterns", "SS Patterns", "")
 	if org == nil {
 		t.Fatal("create org failed")
 	}
 
-	resp := authedGet(t, "/api/v3/orgs/ss-patterns/secret-scanning/pattern-configurations")
+	resp := s.authedGet(t, "/api/v3/orgs/ss-patterns/secret-scanning/pattern-configurations")
 	if resp.StatusCode != http.StatusOK {
 		b, _ := io.ReadAll(resp.Body)
 		resp.Body.Close()
@@ -538,14 +559,16 @@ func TestSecretScanning_PatternConfigurations(t *testing.T) {
 }
 
 func TestSecretScanning_PatternConfigurationsUpdate(t *testing.T) {
-	admin := testServer.store.UsersByLogin["admin"]
-	org := testServer.store.CreateOrg(admin, "ss-pattern-org", "SS Pattern Org", "")
+	t.Parallel()
+	s := newIsolatedServer(t)
+	admin := s.store.UsersByLogin["admin"]
+	org := s.store.CreateOrg(admin, "ss-pattern-org", "SS Pattern Org", "")
 	if org == nil {
 		t.Fatal("create org failed")
 	}
 
 	// Fresh org: no configuration version yet, every pattern not-set.
-	resp := ghGet(t, "/api/v3/orgs/ss-pattern-org/secret-scanning/pattern-configurations", defaultToken)
+	resp := s.get(t, "/api/v3/orgs/ss-pattern-org/secret-scanning/pattern-configurations", defaultToken)
 	if resp.StatusCode != http.StatusOK {
 		resp.Body.Close()
 		t.Fatalf("get pattern configurations: %d", resp.StatusCode)
@@ -556,7 +579,7 @@ func TestSecretScanning_PatternConfigurationsUpdate(t *testing.T) {
 	}
 
 	// Update the aws pattern's push protection setting.
-	resp = ghPatch(t, "/api/v3/orgs/ss-pattern-org/secret-scanning/pattern-configurations", defaultToken, map[string]any{
+	resp = s.patch(t, "/api/v3/orgs/ss-pattern-org/secret-scanning/pattern-configurations", defaultToken, map[string]any{
 		"provider_pattern_settings": []map[string]any{
 			{"token_type": "aws", "push_protection_setting": "enabled"},
 		},
@@ -572,7 +595,7 @@ func TestSecretScanning_PatternConfigurationsUpdate(t *testing.T) {
 	}
 
 	// The stored setting and version read back.
-	resp = ghGet(t, "/api/v3/orgs/ss-pattern-org/secret-scanning/pattern-configurations", defaultToken)
+	resp = s.get(t, "/api/v3/orgs/ss-pattern-org/secret-scanning/pattern-configurations", defaultToken)
 	after := decodeJSON(t, resp)
 	if after["pattern_config_version"] != version {
 		t.Fatalf("pattern_config_version = %v, want %s", after["pattern_config_version"], version)
@@ -590,7 +613,7 @@ func TestSecretScanning_PatternConfigurationsUpdate(t *testing.T) {
 	}
 
 	// Optimistic concurrency: a stale version conflicts, the current one wins.
-	resp = ghPatch(t, "/api/v3/orgs/ss-pattern-org/secret-scanning/pattern-configurations", defaultToken, map[string]any{
+	resp = s.patch(t, "/api/v3/orgs/ss-pattern-org/secret-scanning/pattern-configurations", defaultToken, map[string]any{
 		"pattern_config_version": "stale-version",
 		"provider_pattern_settings": []map[string]any{
 			{"token_type": "aws", "push_protection_setting": "disabled"},
@@ -600,7 +623,7 @@ func TestSecretScanning_PatternConfigurationsUpdate(t *testing.T) {
 	if resp.StatusCode != http.StatusConflict {
 		t.Fatalf("stale version patch: %d, want 409", resp.StatusCode)
 	}
-	resp = ghPatch(t, "/api/v3/orgs/ss-pattern-org/secret-scanning/pattern-configurations", defaultToken, map[string]any{
+	resp = s.patch(t, "/api/v3/orgs/ss-pattern-org/secret-scanning/pattern-configurations", defaultToken, map[string]any{
 		"pattern_config_version": version,
 		"provider_pattern_settings": []map[string]any{
 			{"token_type": "aws", "push_protection_setting": "disabled"},
@@ -613,7 +636,7 @@ func TestSecretScanning_PatternConfigurationsUpdate(t *testing.T) {
 	resp.Body.Close()
 
 	// Validation: unknown pattern, invalid setting.
-	resp = ghPatch(t, "/api/v3/orgs/ss-pattern-org/secret-scanning/pattern-configurations", defaultToken, map[string]any{
+	resp = s.patch(t, "/api/v3/orgs/ss-pattern-org/secret-scanning/pattern-configurations", defaultToken, map[string]any{
 		"provider_pattern_settings": []map[string]any{
 			{"token_type": "made-up-pattern", "push_protection_setting": "enabled"},
 		},
@@ -622,7 +645,7 @@ func TestSecretScanning_PatternConfigurationsUpdate(t *testing.T) {
 	if resp.StatusCode != http.StatusUnprocessableEntity {
 		t.Fatalf("unknown pattern: %d, want 422", resp.StatusCode)
 	}
-	resp = ghPatch(t, "/api/v3/orgs/ss-pattern-org/secret-scanning/pattern-configurations", defaultToken, map[string]any{
+	resp = s.patch(t, "/api/v3/orgs/ss-pattern-org/secret-scanning/pattern-configurations", defaultToken, map[string]any{
 		"provider_pattern_settings": []map[string]any{
 			{"token_type": "aws", "push_protection_setting": "sometimes"},
 		},
@@ -634,13 +657,15 @@ func TestSecretScanning_PatternConfigurationsUpdate(t *testing.T) {
 }
 
 func TestSecretScanning_PushProtectionBypasses(t *testing.T) {
+	t.Parallel()
+	s := newIsolatedServer(t)
 	org := "ss-bypass-org"
 	repo := "ss-bypass-repo"
-	createSecretScanningOrgRepoViaPublicAPI(t, org, repo)
-	enableSecretScanningPushProtectionPattern(t, org, "aws")
+	s.createSecretScanningOrgRepoViaPublicAPI(t, org, repo)
+	s.enableSecretScanningPushProtectionPattern(t, org, "aws")
 
 	// Unknown placeholder → 404.
-	resp := ghPost(t, "/api/v3/repos/"+org+"/"+repo+"/secret-scanning/push-protection-bypasses", defaultToken, map[string]any{
+	resp := s.post(t, "/api/v3/repos/"+org+"/"+repo+"/secret-scanning/push-protection-bypasses", defaultToken, map[string]any{
 		"reason":         "false_positive",
 		"placeholder_id": "no-such-placeholder",
 	})
@@ -650,13 +675,13 @@ func TestSecretScanning_PushProtectionBypasses(t *testing.T) {
 	}
 
 	// A protected public contents write mints a placeholder before it commits.
-	resp = ghPut(t, "/api/v3/repos/"+org+"/"+repo+"/contents/config/secret.txt", defaultToken, map[string]any{
+	resp = s.put(t, "/api/v3/repos/"+org+"/"+repo+"/contents/config/secret.txt", defaultToken, map[string]any{
 		"message": "add protected credential",
 		"content": base64.StdEncoding.EncodeToString([]byte("token=" + secretScanningSeedValue("aws_access_key_id") + "\n")),
 	})
 	placeholderID := secretScanningBlockedPlaceholder(t, resp)
 
-	resp = ghPost(t, "/api/v3/repos/"+org+"/"+repo+"/secret-scanning/push-protection-bypasses", defaultToken, map[string]any{
+	resp = s.post(t, "/api/v3/repos/"+org+"/"+repo+"/secret-scanning/push-protection-bypasses", defaultToken, map[string]any{
 		"reason":         "used_in_tests",
 		"placeholder_id": placeholderID,
 	})
@@ -672,7 +697,7 @@ func TestSecretScanning_PushProtectionBypasses(t *testing.T) {
 		t.Fatalf("bypass missing expire_at: %v", bypass)
 	}
 
-	resp = ghPut(t, "/api/v3/repos/"+org+"/"+repo+"/contents/config/secret.txt", defaultToken, map[string]any{
+	resp = s.put(t, "/api/v3/repos/"+org+"/"+repo+"/contents/config/secret.txt", defaultToken, map[string]any{
 		"message": "add bypassed credential",
 		"content": base64.StdEncoding.EncodeToString([]byte("token=" + secretScanningSeedValue("aws_access_key_id") + "\n")),
 	})
@@ -683,13 +708,13 @@ func TestSecretScanning_PushProtectionBypasses(t *testing.T) {
 	}
 	resp.Body.Close()
 
-	alerts := decodeJSONArray(t, ghGet(t, "/api/v3/repos/"+org+"/"+repo+"/secret-scanning/alerts?secret_type=aws_access_key_id", defaultToken))
+	alerts := decodeJSONArray(t, s.get(t, "/api/v3/repos/"+org+"/"+repo+"/secret-scanning/alerts?secret_type=aws_access_key_id", defaultToken))
 	if len(alerts) != 1 {
 		t.Fatalf("bypassed contents write did not create alert: %v", alerts)
 	}
 
 	// The placeholder is consumed by the bypass endpoint.
-	resp = ghPost(t, "/api/v3/repos/"+org+"/"+repo+"/secret-scanning/push-protection-bypasses", defaultToken, map[string]any{
+	resp = s.post(t, "/api/v3/repos/"+org+"/"+repo+"/secret-scanning/push-protection-bypasses", defaultToken, map[string]any{
 		"reason":         "used_in_tests",
 		"placeholder_id": placeholderID,
 	})
@@ -699,7 +724,7 @@ func TestSecretScanning_PushProtectionBypasses(t *testing.T) {
 	}
 
 	// Invalid reason.
-	resp = ghPost(t, "/api/v3/repos/"+org+"/"+repo+"/secret-scanning/push-protection-bypasses", defaultToken, map[string]any{
+	resp = s.post(t, "/api/v3/repos/"+org+"/"+repo+"/secret-scanning/push-protection-bypasses", defaultToken, map[string]any{
 		"reason":         "because",
 		"placeholder_id": placeholderID,
 	})
@@ -710,19 +735,21 @@ func TestSecretScanning_PushProtectionBypasses(t *testing.T) {
 }
 
 func TestSecretScanning_PushProtectionBlocksGitDatabaseRefBeforeMutation(t *testing.T) {
+	t.Parallel()
+	s := newIsolatedServer(t)
 	org := "ss-bypass-git-org"
 	repo := "ss-bypass-git-repo"
-	createSecretScanningOrgRepoViaPublicAPI(t, org, repo)
-	enableSecretScanningPushProtectionPattern(t, org, "aws")
+	s.createSecretScanningOrgRepoViaPublicAPI(t, org, repo)
+	s.enableSecretScanningPushProtectionPattern(t, org, "aws")
 
-	resp := ghPost(t, "/api/v3/repos/"+org+"/"+repo+"/git/blobs", defaultToken, map[string]any{
+	resp := s.post(t, "/api/v3/repos/"+org+"/"+repo+"/git/blobs", defaultToken, map[string]any{
 		"content": "token=" + secretScanningSeedValue("aws_access_key_id") + "\n",
 	})
 	if resp.StatusCode != http.StatusCreated {
 		t.Fatalf("create blob: %d", resp.StatusCode)
 	}
 	blob := decodeJSON(t, resp)
-	resp = ghPost(t, "/api/v3/repos/"+org+"/"+repo+"/git/trees", defaultToken, map[string]any{
+	resp = s.post(t, "/api/v3/repos/"+org+"/"+repo+"/git/trees", defaultToken, map[string]any{
 		"tree": []map[string]any{
 			{"path": "credentials.txt", "mode": "100644", "type": "blob", "sha": blob["sha"]},
 		},
@@ -731,7 +758,7 @@ func TestSecretScanning_PushProtectionBlocksGitDatabaseRefBeforeMutation(t *test
 		t.Fatalf("create tree: %d", resp.StatusCode)
 	}
 	tree := decodeJSON(t, resp)
-	resp = ghPost(t, "/api/v3/repos/"+org+"/"+repo+"/git/commits", defaultToken, map[string]any{
+	resp = s.post(t, "/api/v3/repos/"+org+"/"+repo+"/git/commits", defaultToken, map[string]any{
 		"message": "add credentials",
 		"tree":    tree["sha"],
 	})
@@ -741,19 +768,19 @@ func TestSecretScanning_PushProtectionBlocksGitDatabaseRefBeforeMutation(t *test
 	commit := decodeJSON(t, resp)
 
 	refPath := "/api/v3/repos/" + org + "/" + repo + "/git/refs"
-	resp = ghPost(t, refPath, defaultToken, map[string]any{
+	resp = s.post(t, refPath, defaultToken, map[string]any{
 		"ref": "refs/heads/main",
 		"sha": commit["sha"],
 	})
 	placeholderID := secretScanningBlockedPlaceholder(t, resp)
 
-	resp = ghGet(t, "/api/v3/repos/"+org+"/"+repo+"/git/ref/heads/main", defaultToken)
+	resp = s.get(t, "/api/v3/repos/"+org+"/"+repo+"/git/ref/heads/main", defaultToken)
 	resp.Body.Close()
 	if resp.StatusCode != http.StatusNotFound {
 		t.Fatalf("protected ref create mutated branch: %d, want 404", resp.StatusCode)
 	}
 
-	resp = ghPost(t, "/api/v3/repos/"+org+"/"+repo+"/secret-scanning/push-protection-bypasses", defaultToken, map[string]any{
+	resp = s.post(t, "/api/v3/repos/"+org+"/"+repo+"/secret-scanning/push-protection-bypasses", defaultToken, map[string]any{
 		"reason":         "used_in_tests",
 		"placeholder_id": placeholderID,
 	})
@@ -764,7 +791,7 @@ func TestSecretScanning_PushProtectionBlocksGitDatabaseRefBeforeMutation(t *test
 	}
 	resp.Body.Close()
 
-	resp = ghPost(t, refPath, defaultToken, map[string]any{
+	resp = s.post(t, refPath, defaultToken, map[string]any{
 		"ref": "refs/heads/main",
 		"sha": commit["sha"],
 	})
@@ -777,13 +804,15 @@ func TestSecretScanning_PushProtectionBlocksGitDatabaseRefBeforeMutation(t *test
 }
 
 func TestSecretScanning_ScanHistory(t *testing.T) {
-	admin := testServer.store.UsersByLogin["admin"]
-	if testServer.store.CreateRepo(admin, "ss-history-repo", "", false) == nil {
+	t.Parallel()
+	s := newIsolatedServer(t)
+	admin := s.store.UsersByLogin["admin"]
+	if s.store.CreateRepo(admin, "ss-history-repo", "", false) == nil {
 		t.Fatal("create repo failed")
 	}
 
 	// A repository with no recorded scanning activity has an empty history.
-	resp := ghGet(t, "/api/v3/repos/admin/ss-history-repo/secret-scanning/scan-history", defaultToken)
+	resp := s.get(t, "/api/v3/repos/admin/ss-history-repo/secret-scanning/scan-history", defaultToken)
 	if resp.StatusCode != http.StatusOK {
 		resp.Body.Close()
 		t.Fatalf("scan history (empty): %d", resp.StatusCode)
@@ -797,8 +826,8 @@ func TestSecretScanning_ScanHistory(t *testing.T) {
 	}
 
 	// Recorded alerts imply completed scans.
-	seedSecretAlert(t, "admin", "ss-history-repo", "aws_access_key_id")
-	resp = ghGet(t, "/api/v3/repos/admin/ss-history-repo/secret-scanning/scan-history", defaultToken)
+	s.seedSecretAlert(t, "admin", "ss-history-repo", "aws_access_key_id")
+	resp = s.get(t, "/api/v3/repos/admin/ss-history-repo/secret-scanning/scan-history", defaultToken)
 	if resp.StatusCode != http.StatusOK {
 		resp.Body.Close()
 		t.Fatalf("scan history: %d", resp.StatusCode)
@@ -821,7 +850,7 @@ func TestSecretScanning_ScanHistory(t *testing.T) {
 	}
 
 	// Unknown repository.
-	resp = ghGet(t, "/api/v3/repos/admin/no-such-history-repo/secret-scanning/scan-history", defaultToken)
+	resp = s.get(t, "/api/v3/repos/admin/no-such-history-repo/secret-scanning/scan-history", defaultToken)
 	resp.Body.Close()
 	if resp.StatusCode != http.StatusNotFound {
 		t.Fatalf("unknown repo scan history: %d, want 404", resp.StatusCode)
