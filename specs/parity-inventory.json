@@ -5443,8 +5443,8 @@
         "id": "TEST-023",
         "location": "run-integration.sh:946",
         "severity": "M",
-        "status": "open",
-        "status_kind": "open"
+        "status": "fixed \u2014 `submit_and_wait_workflow` now threads a 6th `expected` argument (default `success`) through to `wait_for_workflow_run`, and a new negative-path TEST 15 (\"Failing step reports failure\") submits a workflow whose step runs `exit 1` and asserts the run's conclusion is `failure`. So the harness no longer only ever asserts success: a runner that reported `success` for a job with a failing step now fails the integration suite (and the \"must not run after the failure\" third step guards against the failing step being skipped). `bash -n` and `shellcheck -S error` clean; the actual execution is exercised by CI's \"Runner against Sockerless\" integration job.",
+        "status_kind": "fixed"
       },
       {
         "category": "TEST",
@@ -6594,8 +6594,8 @@
         },
         "TEST": {
           "status": {
-            "fixed": 36,
-            "open": 4
+            "fixed": 37,
+            "open": 3
           },
           "total": 40
         },
@@ -6615,8 +6615,8 @@
       },
       "status": {
         "deferred": 3,
-        "fixed": 663,
-        "open": 12,
+        "fixed": 664,
+        "open": 11,
         "partial": 7
       },
       "total": 685
@@ -28487,10 +28487,12 @@
         "line": 254,
         "path": "/ui/admin/audit-log",
         "rendered_tests": [
+          "web/src/__tests__/AuditLogPage.test.tsx",
           "web/src/__tests__/pageErrorPaths.test.tsx"
         ],
         "source": "web/src/App.tsx",
         "tests": [
+          "web/src/__tests__/AuditLogPage.test.tsx",
           "web/src/__tests__/pageErrorPaths.test.tsx"
         ]
       },
