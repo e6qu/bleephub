@@ -542,6 +542,46 @@ func (s *isolatedServer) createRepoWriteRepo(t *testing.T, autoInit bool) string
 	return name
 }
 
+// createColumn/createCard/moveCard mirror the package helpers (still used by
+// webhooks_test.go): classic-projects column/card operations on this server.
+func (s *isolatedServer) createColumn(t *testing.T, projectID int, name string) int {
+	t.Helper()
+	resp := s.post(t, "/api/v3/projects/"+itoa(projectID)+"/columns", defaultToken, map[string]any{"name": name})
+	if resp.StatusCode != http.StatusCreated {
+		b, _ := io.ReadAll(resp.Body)
+		resp.Body.Close()
+		t.Fatalf("create column %s: %d %s", name, resp.StatusCode, b)
+	}
+	data := decodeJSON(t, resp)
+	return int(data["id"].(float64))
+}
+
+func (s *isolatedServer) createCard(t *testing.T, columnID int, body map[string]any) map[string]any {
+	t.Helper()
+	resp := s.post(t, "/api/v3/projects/columns/"+itoa(columnID)+"/cards", defaultToken, body)
+	if resp.StatusCode != http.StatusCreated {
+		bb, _ := io.ReadAll(resp.Body)
+		resp.Body.Close()
+		t.Fatalf("create card: %d %s", resp.StatusCode, bb)
+	}
+	return decodeJSON(t, resp)
+}
+
+func (s *isolatedServer) moveCard(t *testing.T, cardID, columnID int, position string) map[string]any {
+	t.Helper()
+	body := map[string]any{"position": position}
+	if columnID != 0 {
+		body["column_id"] = columnID
+	}
+	resp := s.post(t, "/api/v3/projects/columns/cards/"+itoa(cardID)+"/moves", defaultToken, body)
+	if resp.StatusCode != http.StatusCreated {
+		bb, _ := io.ReadAll(resp.Body)
+		resp.Body.Close()
+		t.Fatalf("move card: %d %s", resp.StatusCode, bb)
+	}
+	return decodeJSON(t, resp)
+}
+
 // uploadAttestation mirrors the package helper (still used by
 // gh_artifact_metadata_test.go): posts a sigstore bundle and returns the
 // created attestation id, on this isolated server.
