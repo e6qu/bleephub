@@ -12,14 +12,16 @@ import (
 // Live-server shape test for code scanning. Exercises every route through the
 // shared TestMain server so the OpenAPI response-shape validator observes them.
 func TestLiveCodeScanning_FullFlow(t *testing.T) {
-	admin := testServer.store.UsersByLogin["admin"]
-	testServer.store.CreateRepo(admin, "live-code-scanning", "", false)
+	t.Parallel()
+	s := newIsolatedServer(t)
+	admin := s.store.UsersByLogin["admin"]
+	s.store.CreateRepo(admin, "live-code-scanning", "", false)
 
-	alert := seedCodeScanningAlert(t, "admin", "live-code-scanning", "live-rule", "error", "CodeQL")
+	alert := s.seedCodeScanningAlert(t, "admin", "live-code-scanning", "live-rule", "error", "CodeQL")
 	alertNumber := int(alert["number"].(float64))
 
 	// List alerts
-	resp := authedGet(t, "/api/v3/repos/admin/live-code-scanning/code-scanning/alerts")
+	resp := s.authedGet(t, "/api/v3/repos/admin/live-code-scanning/code-scanning/alerts")
 	if resp.StatusCode != http.StatusOK {
 		b, _ := io.ReadAll(resp.Body)
 		resp.Body.Close()
@@ -29,7 +31,7 @@ func TestLiveCodeScanning_FullFlow(t *testing.T) {
 	resp.Body.Close()
 
 	// Get alert
-	resp = authedGet(t, "/api/v3/repos/admin/live-code-scanning/code-scanning/alerts/"+itoa(alertNumber))
+	resp = s.authedGet(t, "/api/v3/repos/admin/live-code-scanning/code-scanning/alerts/"+itoa(alertNumber))
 	if resp.StatusCode != http.StatusOK {
 		b, _ := io.ReadAll(resp.Body)
 		resp.Body.Close()
@@ -38,7 +40,7 @@ func TestLiveCodeScanning_FullFlow(t *testing.T) {
 	resp.Body.Close()
 
 	// List instances
-	resp = authedGet(t, "/api/v3/repos/admin/live-code-scanning/code-scanning/alerts/"+itoa(alertNumber)+"/instances")
+	resp = s.authedGet(t, "/api/v3/repos/admin/live-code-scanning/code-scanning/alerts/"+itoa(alertNumber)+"/instances")
 	if resp.StatusCode != http.StatusOK {
 		b, _ := io.ReadAll(resp.Body)
 		resp.Body.Close()
@@ -48,7 +50,7 @@ func TestLiveCodeScanning_FullFlow(t *testing.T) {
 
 	// Patch alert
 	patchBody, _ := json.Marshal(map[string]any{"state": "dismissed", "dismissed_reason": "used in tests"})
-	req, _ := http.NewRequest("PATCH", testBaseURL+"/api/v3/repos/admin/live-code-scanning/code-scanning/alerts/"+itoa(alertNumber), bytes.NewReader(patchBody))
+	req, _ := http.NewRequest("PATCH", s.baseURL+"/api/v3/repos/admin/live-code-scanning/code-scanning/alerts/"+itoa(alertNumber), bytes.NewReader(patchBody))
 	req.Header.Set("Authorization", "Bearer "+defaultToken)
 	req.Header.Set("Content-Type", "application/json")
 	resp, err := http.DefaultClient.Do(req)
@@ -88,13 +90,13 @@ func TestLiveCodeScanning_FullFlow(t *testing.T) {
 		},
 	}
 	sarifBytes, _ := json.Marshal(sarif)
-	commitSHA := putRepoFile(t, "admin/live-code-scanning", "live.go", "package live\n", "add live source")
+	commitSHA := s.putRepoFile(t, "admin/live-code-scanning", "live.go", "package live\n", "add live source")
 	sarifBody, _ := json.Marshal(map[string]any{
 		"commit_sha": commitSHA,
 		"ref":        "refs/heads/main",
 		"sarif":      base64.StdEncoding.EncodeToString(sarifBytes),
 	})
-	resp, err = authedPost("/api/v3/repos/admin/live-code-scanning/code-scanning/sarifs", "application/json", bytes.NewReader(sarifBody))
+	resp, err = s.authedPost("/api/v3/repos/admin/live-code-scanning/code-scanning/sarifs", "application/json", bytes.NewReader(sarifBody))
 	if err != nil {
 		t.Fatalf("sarif upload: %v", err)
 	}
@@ -111,7 +113,7 @@ func TestLiveCodeScanning_FullFlow(t *testing.T) {
 	uploadID := upload["id"].(string)
 
 	// Get SARIF upload
-	resp = authedGet(t, "/api/v3/repos/admin/live-code-scanning/code-scanning/sarifs/"+uploadID)
+	resp = s.authedGet(t, "/api/v3/repos/admin/live-code-scanning/code-scanning/sarifs/"+uploadID)
 	if resp.StatusCode != http.StatusOK {
 		b, _ := io.ReadAll(resp.Body)
 		resp.Body.Close()
@@ -127,7 +129,7 @@ func TestLiveCodeScanning_FullFlow(t *testing.T) {
 	}
 
 	// List analyses
-	resp = authedGet(t, "/api/v3/repos/admin/live-code-scanning/code-scanning/analyses")
+	resp = s.authedGet(t, "/api/v3/repos/admin/live-code-scanning/code-scanning/analyses")
 	if resp.StatusCode != http.StatusOK {
 		b, _ := io.ReadAll(resp.Body)
 		resp.Body.Close()
@@ -136,7 +138,7 @@ func TestLiveCodeScanning_FullFlow(t *testing.T) {
 	resp.Body.Close()
 
 	// Default setup
-	resp = authedGet(t, "/api/v3/repos/admin/live-code-scanning/code-scanning/default-setup")
+	resp = s.authedGet(t, "/api/v3/repos/admin/live-code-scanning/code-scanning/default-setup")
 	if resp.StatusCode != http.StatusOK {
 		b, _ := io.ReadAll(resp.Body)
 		resp.Body.Close()
