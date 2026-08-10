@@ -275,3 +275,62 @@ func TestOrgInvitationReadsAreNonMutating(t *testing.T) {
 		t.Fatal("reconciler did not drop the expired pending membership")
 	}
 }
+
+// TestEnterpriseTeamGetIsDetached pins STORE-021 for the enterprise-team getter:
+// mutating a returned team must not reach the stored row, and the mutators must
+// still commit against the live team even when handed a stale clone.
+func TestEnterpriseTeamGetIsDetached(t *testing.T) {
+	s := newTestServer()
+	created := s.store.CreateEnterpriseTeam("Justice League", "", "selected", nil, "")
+	if created == nil {
+		t.Fatal("CreateEnterpriseTeam returned nil")
+	}
+
+	got := s.store.GetEnterpriseTeam(created.Slug)
+	got.Name = "TAMPERED"
+	got.MemberIDs = append(got.MemberIDs, 999)
+	got.SelectedOrgLogins = append(got.SelectedOrgLogins, "tampered-org")
+
+	fresh := s.store.GetEnterpriseTeam(created.Slug)
+	if fresh.Name != "Justice League" {
+		t.Fatalf("mutating a getter result leaked to the store: name = %q", fresh.Name)
+	}
+	if len(fresh.MemberIDs) != 0 || len(fresh.SelectedOrgLogins) != 0 {
+		t.Fatalf("slice mutation leaked: members=%v orgs=%v", fresh.MemberIDs, fresh.SelectedOrgLogins)
+	}
+
+	// A mutator handed the stale clone must still act on the live team.
+	s.store.AddEnterpriseTeamMember(got, 42)
+	if !s.store.IsEnterpriseTeamMember(s.store.GetEnterpriseTeam(created.Slug), 42) {
+		t.Fatal("AddEnterpriseTeamMember did not update the live team when handed a clone")
+	}
+}
+
+// TestEnterpriseCodeSecurityConfigGetIsDetached pins STORE-021 for the
+// code-security-config getter and its mutate-through writers.
+func TestEnterpriseCodeSecurityConfigGetIsDetached(t *testing.T) {
+	s := newTestServer()
+	adv := true
+	cfg := s.store.CreateEnterpriseCodeSecurityConfig(&EnterpriseCodeSecurityConfiguration{
+		Name:                      "baseline",
+		CodeScanningAllowAdvanced: &adv,
+	})
+
+	got := s.store.GetEnterpriseCodeSecurityConfig(cfg.ID)
+	got.Name = "TAMPERED"
+	*got.CodeScanningAllowAdvanced = false
+
+	fresh := s.store.GetEnterpriseCodeSecurityConfig(cfg.ID)
+	if fresh.Name != "baseline" {
+		t.Fatalf("mutating a getter result leaked: name = %q", fresh.Name)
+	}
+	if fresh.CodeScanningAllowAdvanced == nil || !*fresh.CodeScanningAllowAdvanced {
+		t.Fatal("mutating the getter's *bool leaked to the store")
+	}
+
+	// SetDefault handed a stale clone must still commit to the live row.
+	s.store.SetEnterpriseCodeSecurityConfigDefault(got, "all")
+	if def := s.store.GetEnterpriseCodeSecurityConfig(cfg.ID); def.DefaultForNewRepos != "all" {
+		t.Fatalf("SetDefault did not update the live config: %q", def.DefaultForNewRepos)
+	}
+}
