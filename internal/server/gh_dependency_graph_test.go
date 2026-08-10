@@ -7,35 +7,6 @@ import (
 	"testing"
 )
 
-// submitSnapshotForRepoPath stays package-level: gh_dependabot's
-// seedDependabotAlert (shared with other un-migrated files) still calls it. The
-// isolated-server equivalents live in isolated_server_test.go.
-func submitSnapshotForRepoPath(t *testing.T, repoFullName, manifestPath, ref, sha, correlator string, purls ...string) map[string]interface{} {
-	t.Helper()
-	resolved := map[string]interface{}{}
-	for _, purl := range purls {
-		resolved[purl] = map[string]interface{}{"package_url": purl, "scope": "runtime"}
-	}
-	resp := ghPost(t, "/api/v3/repos/"+repoFullName+"/dependency-graph/snapshots", defaultToken, map[string]interface{}{
-		"version": 0,
-		"ref":     ref,
-		"sha":     sha,
-		"job":     map[string]interface{}{"id": "job-1", "correlator": correlator},
-		"detector": map[string]interface{}{
-			"name": "bleephub-test-detector", "version": "1.0.0", "url": "https://example.com/detector",
-		},
-		"scanned": "2035-06-15T12:00:00Z",
-		"manifests": map[string]interface{}{
-			manifestPath: map[string]interface{}{
-				"name":     manifestPath,
-				"file":     map[string]interface{}{"source_location": manifestPath},
-				"resolved": resolved,
-			},
-		},
-	})
-	return decodeJSONWithStatus(t, resp, 201)
-}
-
 func TestDependencyGraphSnapshots_SubmitAndSBOM(t *testing.T) {
 	t.Parallel()
 	s := newIsolatedServer(t)

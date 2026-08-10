@@ -47,18 +47,6 @@ func makeSigstoreBundle(t *testing.T, subjectDigest, predicateType string) map[s
 	}
 }
 
-func uploadAttestation(t *testing.T, ownerRepo, token string, bundle map[string]interface{}) int {
-	t.Helper()
-	resp := ghPost(t, "/api/v3/repos/"+ownerRepo+"/attestations", token,
-		map[string]interface{}{"bundle": bundle})
-	if resp.StatusCode != 201 {
-		resp.Body.Close()
-		t.Fatalf("upload attestation = %d, want 201", resp.StatusCode)
-	}
-	created := decodeJSON(t, resp)
-	return int(created["id"].(float64))
-}
-
 // TestAttestationGetReturnsDetachedSnapshot pins STORE-021 for the attestation
 // family: GetAttestation must return a copy so a reader cannot mutate the stored
 // Bundle or SubjectDigests.

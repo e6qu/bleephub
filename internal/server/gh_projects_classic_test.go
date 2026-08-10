@@ -337,29 +337,6 @@ func TestProjectsClassic_RequiresAuth(t *testing.T) {
 	resp.Body.Close()
 }
 
-func createColumn(t *testing.T, projectID int, name string) int {
-	t.Helper()
-	resp := ghPost(t, "/api/v3/projects/"+itoa(projectID)+"/columns", defaultToken, map[string]any{"name": name})
-	if resp.StatusCode != http.StatusCreated {
-		b, _ := io.ReadAll(resp.Body)
-		resp.Body.Close()
-		t.Fatalf("create column %s: %d %s", name, resp.StatusCode, b)
-	}
-	data := decodeJSON(t, resp)
-	return int(data["id"].(float64))
-}
-
-func createCard(t *testing.T, columnID int, body map[string]any) map[string]any {
-	t.Helper()
-	resp := ghPost(t, "/api/v3/projects/columns/"+itoa(columnID)+"/cards", defaultToken, body)
-	if resp.StatusCode != http.StatusCreated {
-		bb, _ := io.ReadAll(resp.Body)
-		resp.Body.Close()
-		t.Fatalf("create card: %d %s", resp.StatusCode, bb)
-	}
-	return decodeJSON(t, resp)
-}
-
 func (s *isolatedServer) moveColumn(t *testing.T, columnID int, position string) map[string]any {
 	t.Helper()
 	resp := s.post(t, "/api/v3/projects/columns/"+itoa(columnID)+"/moves", defaultToken, map[string]any{"position": position})
@@ -385,21 +362,6 @@ func (s *isolatedServer) listColumns(t *testing.T, projectID int) []map[string]a
 	}
 	resp.Body.Close()
 	return out
-}
-
-func moveCard(t *testing.T, cardID, columnID int, position string) map[string]any {
-	t.Helper()
-	body := map[string]any{"position": position}
-	if columnID != 0 {
-		body["column_id"] = columnID
-	}
-	resp := ghPost(t, "/api/v3/projects/columns/cards/"+itoa(cardID)+"/moves", defaultToken, body)
-	if resp.StatusCode != http.StatusCreated {
-		bb, _ := io.ReadAll(resp.Body)
-		resp.Body.Close()
-		t.Fatalf("move card: %d %s", resp.StatusCode, bb)
-	}
-	return decodeJSON(t, resp)
 }
 
 func (s *isolatedServer) listCards(t *testing.T, columnID int) []map[string]any {

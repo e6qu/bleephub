@@ -5,23 +5,6 @@ import (
 	"testing"
 )
 
-// createOrgRepoForGovernance creates a repository inside the org through the
-// REST API and returns its name and numeric ID.
-func createOrgRepoForGovernance(t *testing.T, org string) (string, int) {
-	t.Helper()
-	name := "gov-repo-" + strconv.FormatInt(int64(nextTestID()), 36)
-	resp := ghPost(t, "/api/v3/orgs/"+org+"/repos", defaultToken, map[string]interface{}{
-		"name":    name,
-		"private": false,
-	})
-	if resp.StatusCode != 201 {
-		resp.Body.Close()
-		t.Fatalf("create org repo: %d", resp.StatusCode)
-	}
-	repo := decodeJSON(t, resp)
-	return name, int(repo["id"].(float64))
-}
-
 func TestOrgIssueFields_CRUD(t *testing.T) {
 	t.Parallel()
 	s := newIsolatedServer(t)

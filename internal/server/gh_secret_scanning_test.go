@@ -9,34 +9,10 @@ import (
 	"net/http"
 	"os"
 	"strings"
-	"sync/atomic"
 	"testing"
 )
 
 var secretScanningSeedCounter uint64
-
-func seedSecretAlert(t *testing.T, owner, repo, secretType string) map[string]any {
-	t.Helper()
-	n := atomic.AddUint64(&secretScanningSeedCounter, 1)
-	path := fmt.Sprintf("config/secrets-%d.txt", n)
-	content := fmt.Sprintf("detected=%s\n", secretScanningSeedValue(secretType))
-	resp := ghPut(t, "/api/v3/repos/"+owner+"/"+repo+"/contents/"+path, defaultToken, map[string]any{
-		"message": "add detected secret",
-		"content": base64.StdEncoding.EncodeToString([]byte(content)),
-	})
-	if resp.StatusCode != http.StatusCreated {
-		b, _ := io.ReadAll(resp.Body)
-		resp.Body.Close()
-		t.Fatalf("put detected secret: %d body=%s", resp.StatusCode, b)
-	}
-	resp.Body.Close()
-
-	list := decodeJSONArray(t, ghGet(t, "/api/v3/repos/"+owner+"/"+repo+"/secret-scanning/alerts?secret_type="+secretType, defaultToken))
-	if len(list) == 0 {
-		t.Fatalf("secret scanning did not create %s alert for %s/%s", secretType, owner, repo)
-	}
-	return list[0]
-}
 
 func secretScanningSeedValue(secretType string) string {
 	switch secretType {

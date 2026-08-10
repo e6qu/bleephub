@@ -17,36 +17,6 @@ import (
 // pkg/cmd/release/shared/fetch.go, api/queries_pr_review.go) — so schema
 // drift against the real client fails here before it fails in the harness.
 
-// gqlDo posts a GraphQL request as the admin user and returns the full
-// response envelope (data + errors).
-func gqlDo(t *testing.T, query string, variables map[string]interface{}) map[string]interface{} {
-	t.Helper()
-	body := map[string]interface{}{"query": query}
-	if variables != nil {
-		body["variables"] = variables
-	}
-	resp := ghPost(t, "/api/graphql", defaultToken, body)
-	if resp.StatusCode != http.StatusOK {
-		resp.Body.Close()
-		t.Fatalf("graphql status = %d", resp.StatusCode)
-	}
-	return decodeJSON(t, resp)
-}
-
-// gqlData asserts an error-free response and returns data.
-func gqlData(t *testing.T, query string, variables map[string]interface{}) map[string]interface{} {
-	t.Helper()
-	env := gqlDo(t, query, variables)
-	if errs, ok := env["errors"]; ok && errs != nil {
-		t.Fatalf("graphql errors: %v", errs)
-	}
-	d, _ := env["data"].(map[string]interface{})
-	if d == nil {
-		t.Fatalf("no data in response: %v", env)
-	}
-	return d
-}
-
 func TestGHCLIIssueLookupAcceptsExclusiveStateEnums(t *testing.T) {
 	t.Parallel()
 	s := newIsolatedServer(t)
@@ -95,25 +65,6 @@ func TestRepoGraphQLURLUsesConfiguredExternalURL(t *testing.T) {
 	if got := repoToGraphQL(s.store, repo)["url"]; got != "https://bleephub.example.test/octo/example" {
 		t.Fatalf("repository GraphQL url = %v", got)
 	}
-}
-
-// sweepRepo creates a fresh repo via REST and returns (owner, name).
-// sweepPR creates a PR via REST and returns its number and database id.
-func sweepPR(t *testing.T, owner, name, title string) (int, int) {
-	t.Helper()
-	resp := ghPost(t, "/api/v3/repos/"+owner+"/"+name+"/pulls", defaultToken, map[string]interface{}{
-		"title": title,
-		"head":  "feature",
-		"base":  "main",
-		"body":  "sweep pr body",
-	})
-	data := decodeJSON(t, resp)
-	num, ok := data["number"].(float64)
-	if !ok {
-		t.Fatalf("pr create failed: %v", data)
-	}
-	id, _ := data["id"].(float64)
-	return int(num), int(id)
 }
 
 // --- Finding 1: gh's GitHubRepo query (repo clone, pr create) ---

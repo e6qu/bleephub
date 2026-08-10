@@ -111,25 +111,6 @@ func assertNoInternalURL(t *testing.T, value any) {
 	walk(value, "$")
 }
 
-// putRepoFile creates or updates a file via the contents API, returning
-// the commit SHA. This is how the autofix tests give the target branch
-// real git content.
-func putRepoFile(t *testing.T, repoFullName, path, content, message string) string {
-	t.Helper()
-	resp := ghPut(t, "/api/v3/repos/"+repoFullName+"/contents/"+path, defaultToken, map[string]interface{}{
-		"message": message,
-		"content": base64.StdEncoding.EncodeToString([]byte(content)),
-	})
-	if resp.StatusCode != http.StatusCreated {
-		b, _ := io.ReadAll(resp.Body)
-		resp.Body.Close()
-		t.Fatalf("put contents %s: %d body=%s", path, resp.StatusCode, b)
-	}
-	out := decodeJSON(t, resp)
-	commit := out["commit"].(map[string]interface{})
-	return commit["sha"].(string)
-}
-
 // --- organization code scanning alerts ---
 
 func TestCodeScanningOrgAlerts_List(t *testing.T) {

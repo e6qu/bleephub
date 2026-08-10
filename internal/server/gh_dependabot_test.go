@@ -12,65 +12,6 @@ import (
 	"testing"
 )
 
-func seedDependabotAlert(t *testing.T, owner, repo string, overrides map[string]any) map[string]any {
-	t.Helper()
-	body := map[string]any{
-		"package_name":             "dependabot-" + repo + "-pkg",
-		"package_ecosystem":        "npm",
-		"manifest_path":            "package-lock.json",
-		"severity":                 "high",
-		"summary":                  "Prototype pollution in lodash",
-		"description":              "A vulnerability allows prototype pollution.",
-		"vulnerable_version_range": "< 4.17.21",
-		"first_patched_version":    "4.17.21",
-	}
-	for k, v := range overrides {
-		body[k] = v
-	}
-	packageName := body["package_name"].(string)
-	ecosystem := body["package_ecosystem"].(string)
-	manifestPath := body["manifest_path"].(string)
-	rangeExpr := body["vulnerable_version_range"].(string)
-	patchedVersion, _ := body["first_patched_version"].(string)
-	repoFullName := owner + "/" + repo
-
-	create := ghPost(t, "/api/v3/repos/"+repoFullName+"/security-advisories", defaultToken, map[string]interface{}{
-		"summary":     body["summary"],
-		"description": body["description"],
-		"severity":    body["severity"],
-		"cwe_ids":     []string{"CWE-79"},
-		"vulnerabilities": []map[string]interface{}{
-			{
-				"package": map[string]interface{}{
-					"ecosystem": ecosystem,
-					"name":      packageName,
-				},
-				"vulnerable_version_range": rangeExpr,
-				"first_patched_version":    patchedVersion,
-			},
-		},
-	})
-	advisory := decodeJSONWithStatus(t, create, http.StatusCreated)
-	ghsaID := advisory["ghsa_id"].(string)
-	publish := ghPatch(t, "/api/v3/repos/"+repoFullName+"/security-advisories/"+ghsaID, defaultToken, map[string]interface{}{"state": "published"})
-	decodeJSONWithStatus(t, publish, http.StatusOK)
-
-	manifestContent := fmt.Sprintf("%s %s\n", ecosystem, packageName)
-	sha := putRepoFile(t, repoFullName, manifestPath, manifestContent, "seed Dependabot dependency")
-	submitSnapshotForRepoPath(t, repoFullName, manifestPath, "refs/heads/main", sha, "dependabot/"+packageName, dependabotTestPackageURL(ecosystem, packageName, rangeExpr))
-
-	resp := authedGet(t, "/api/v3/repos/"+repoFullName+"/dependabot/alerts?package_name="+packageName)
-	alerts := decodeJSONArray(t, resp)
-	for _, created := range alerts {
-		securityAdvisory, _ := created["security_advisory"].(map[string]any)
-		if securityAdvisory != nil && securityAdvisory["ghsa_id"] == ghsaID {
-			return created
-		}
-	}
-	t.Fatalf("Dependabot alert for advisory %s was not created: %v", ghsaID, alerts)
-	return nil
-}
-
 func dependabotTestPackageURL(ecosystem, packageName, rangeExpr string) string {
 	version := "1.0.0"
 	switch {
