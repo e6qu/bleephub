@@ -187,17 +187,49 @@ func (st *Store) unindexPullLocked(pr *PullRequest) {
 }
 
 // GetPullRequest returns a pull request by global ID.
+// clonePullRequest returns a deep copy safe to hand outside the store lock
+// (STORE-021): the four ID slices plus ClosedAt/MergedAt are the reference
+// fields. PR writes go through the keyed UpdatePullRequest(id, fn); the getter's
+// callers only read.
+func clonePullRequest(pr *PullRequest) *PullRequest {
+	if pr == nil {
+		return nil
+	}
+	clone := *pr
+	if pr.AssigneeIDs != nil {
+		clone.AssigneeIDs = append([]int(nil), pr.AssigneeIDs...)
+	}
+	if pr.LabelIDs != nil {
+		clone.LabelIDs = append([]int(nil), pr.LabelIDs...)
+	}
+	if pr.RequestedReviewerIDs != nil {
+		clone.RequestedReviewerIDs = append([]int(nil), pr.RequestedReviewerIDs...)
+	}
+	if pr.RequestedTeamIDs != nil {
+		clone.RequestedTeamIDs = append([]int(nil), pr.RequestedTeamIDs...)
+	}
+	if pr.ClosedAt != nil {
+		closed := *pr.ClosedAt
+		clone.ClosedAt = &closed
+	}
+	if pr.MergedAt != nil {
+		merged := *pr.MergedAt
+		clone.MergedAt = &merged
+	}
+	return &clone
+}
+
 func (st *Store) GetPullRequest(id int) *PullRequest {
 	st.mu.RLock()
 	defer st.mu.RUnlock()
-	return st.PullRequests[id]
+	return clonePullRequest(st.PullRequests[id])
 }
 
 // GetPullRequestByNumber returns a pull request by repo ID and number.
 func (st *Store) GetPullRequestByNumber(repoID, number int) *PullRequest {
 	st.mu.RLock()
 	defer st.mu.RUnlock()
-	return st.PullsByRepo[repoID][number]
+	return clonePullRequest(st.PullsByRepo[repoID][number])
 }
 
 // ListPullRequests returns pull requests for a repository, optionally filtered by state.

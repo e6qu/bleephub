@@ -5,6 +5,34 @@ import (
 	"time"
 )
 
+// TestPullRequestGetIsDetached pins STORE-021 for the pull-request getter.
+func TestPullRequestGetIsDetached(t *testing.T) {
+	s := newTestServer()
+	admin := s.store.UsersByLogin["admin"]
+	repo := s.store.CreateRepo(admin, "pr-detach", "", false)
+	s.store.mu.Lock()
+	prID := s.store.NextPR
+	s.store.PullRequests[prID] = &PullRequest{
+		ID: prID, Number: 1, RepoID: repo.ID, State: "OPEN",
+		LabelIDs: []int{1}, AssigneeIDs: []int{admin.ID},
+	}
+	s.store.NextPR++
+	s.store.mu.Unlock()
+
+	got := s.store.GetPullRequest(prID)
+	got.State = "MERGED"
+	got.LabelIDs = append(got.LabelIDs, 99999)
+	got.AssigneeIDs[0] = 99999
+
+	fresh := s.store.GetPullRequest(prID)
+	if fresh.State == "MERGED" {
+		t.Fatalf("PR state mutated through the getter: %q", fresh.State)
+	}
+	if len(fresh.LabelIDs) != 1 || fresh.LabelIDs[0] != 1 || fresh.AssigneeIDs[0] != admin.ID {
+		t.Fatalf("PR slices mutated through the getter: labels=%v assignees=%v", fresh.LabelIDs, fresh.AssigneeIDs)
+	}
+}
+
 // TestIssueGetsAreDetached pins STORE-021 for the issue getters: GetIssue and
 // GetIssueByNumber must deep-copy AssigneeIDs/LabelIDs and ClosedAt.
 func TestIssueGetsAreDetached(t *testing.T) {
