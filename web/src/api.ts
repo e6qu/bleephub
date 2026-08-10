@@ -2031,6 +2031,13 @@ export const fetchCheckRuns = (owner: string, repo: string, sha: string) =>
 export const fetchActionsRunners = (owner: string, repo: string) =>
   ghFetchEnvelope<GithubRunner>(`/api/v3/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/actions/runners`, "runners");
 
+/** Mint a short-lived self-hosted runner registration token for a repo. */
+export const createRunnerRegistrationToken = (owner: string, repo: string) =>
+  ghPostJSON<{ token: string; expires_at: string }>(
+    `/api/v3/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/actions/runners/registration-token`,
+    {},
+  );
+
 // ─── Secrets & variables (repo / environment / org scopes) ──────────────
 
 /**
