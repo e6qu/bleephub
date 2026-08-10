@@ -7,6 +7,7 @@ import (
 )
 
 func TestProjectV2Store_DeleteProjectUnindexesContentItems(t *testing.T) {
+	t.Parallel()
 	store := newProjectV2Store(nil)
 	project := store.CreateProject(1, "User", "Cleanup", 1)
 	item := store.AddItem(project.ID, "Issue", 42, 1)
@@ -25,12 +26,14 @@ func TestProjectV2Store_DeleteProjectUnindexesContentItems(t *testing.T) {
 }
 
 func TestProjectsV2GraphQL_CreateProjectRequiresResolvedOwner(t *testing.T) {
-	admin := testServer.store.UsersByLogin["admin"]
+	t.Parallel()
+	s := newIsolatedServer(t)
+	admin := s.store.UsersByLogin["admin"]
 	if admin == nil {
 		t.Fatal("admin user not seeded")
 	}
-	before := len(testServer.store.ProjectsV2.ListProjectsForOwner(admin.ID, "User"))
-	resp := gqlDo(t, `mutation($owner:ID!){
+	before := len(s.store.ProjectsV2.ListProjectsForOwner(admin.ID, "User"))
+	resp := s.gqlDo(t, `mutation($owner:ID!){
 		createProjectV2(input:{ownerId:$owner,title:"Unknown owner"}){
 			projectV2 { id title }
 		}
@@ -42,24 +45,26 @@ func TestProjectsV2GraphQL_CreateProjectRequiresResolvedOwner(t *testing.T) {
 	if !strings.Contains(fmt.Sprint(errs[0]), "Could not resolve to an owner with the global id of 'PVTI_unknown_owner'.") {
 		t.Fatalf("unexpected unknown-owner error: %v", errs[0])
 	}
-	if after := len(testServer.store.ProjectsV2.ListProjectsForOwner(admin.ID, "User")); after != before {
+	if after := len(s.store.ProjectsV2.ListProjectsForOwner(admin.ID, "User")); after != before {
 		t.Fatalf("unknown owner mutation created user-owned project: before=%d after=%d", before, after)
 	}
 }
 
 func TestProjectsV2GraphQL_CreateProjectUsesResolvedUserAndOrganizationOwners(t *testing.T) {
-	admin := testServer.store.UsersByLogin["admin"]
+	t.Parallel()
+	s := newIsolatedServer(t)
+	admin := s.store.UsersByLogin["admin"]
 	if admin == nil {
 		t.Fatal("admin user not seeded")
 	}
-	orgJSON := createOrgViaAdminAPI(t, "pv2-gql-owner-org")
+	orgJSON := s.createOrg(t, "pv2-gql-owner-org")
 	orgNodeID, _ := orgJSON["node_id"].(string)
-	org := testServer.store.OrgsByLogin["pv2-gql-owner-org"]
+	org := s.store.OrgsByLogin["pv2-gql-owner-org"]
 	if org == nil || orgNodeID == "" {
 		t.Fatalf("created organization missing node ID: org=%v json=%v", org, orgJSON)
 	}
 
-	userResp := gqlData(t, `mutation($owner:ID!){
+	userResp := s.gqlData(t, `mutation($owner:ID!){
 		createProjectV2(input:{ownerId:$owner,title:"User owned"}){
 			projectV2 { id title }
 		}
@@ -68,11 +73,11 @@ func TestProjectsV2GraphQL_CreateProjectUsesResolvedUserAndOrganizationOwners(t 
 	if userProject["title"] != "User owned" {
 		t.Fatalf("user project response = %v", userProject)
 	}
-	if !projectV2OwnerHasTitle(testServer.store, admin.ID, "User", "User owned") {
+	if !projectV2OwnerHasTitle(s.store, admin.ID, "User", "User owned") {
 		t.Fatalf("user-owned project was not stored under admin")
 	}
 
-	orgResp := gqlData(t, `mutation($owner:ID!){
+	orgResp := s.gqlData(t, `mutation($owner:ID!){
 		createProjectV2(input:{ownerId:$owner,title:"Organization owned"}){
 			projectV2 { id title }
 		}
@@ -81,7 +86,7 @@ func TestProjectsV2GraphQL_CreateProjectUsesResolvedUserAndOrganizationOwners(t 
 	if orgProject["title"] != "Organization owned" {
 		t.Fatalf("organization project response = %v", orgProject)
 	}
-	if !projectV2OwnerHasTitle(testServer.store, org.ID, "Organization", "Organization owned") {
+	if !projectV2OwnerHasTitle(s.store, org.ID, "Organization", "Organization owned") {
 		t.Fatalf("organization-owned project was not stored under %s", org.Login)
 	}
 }
@@ -96,24 +101,27 @@ func projectV2OwnerHasTitle(st *Store, ownerID int, ownerType, title string) boo
 }
 
 func TestProjectsV2GraphQL_FieldValueKinds(t *testing.T) {
-	owner, repoName := sweepRepo(t, "gql-project-v2-fields")
-	issue := decodeJSONWithStatus(t, ghPost(t, "/api/v3/repos/"+owner+"/"+repoName+"/issues", defaultToken, map[string]interface{}{
+	t.Parallel()
+	s := newIsolatedServer(t)
+	sweep := s.sweepRepo(t, "gql-project-v2-fields")
+	owner, repoName := sweep.owner, sweep.name
+	issue := decodeJSONWithStatus(t, s.post(t, "/api/v3/repos/"+owner+"/"+repoName+"/issues", defaultToken, map[string]interface{}{
 		"title": "project item",
 	}), 201)
 	issueNumber := int(issue["number"].(float64))
-	repo := testServer.store.GetRepo(owner, repoName)
-	admin := testServer.store.UsersByLogin["admin"]
-	project := testServer.store.ProjectsV2.CreateProject(admin.ID, "User", "GraphQL fields", admin.ID)
-	item := testServer.store.ProjectsV2.AddItem(project.ID, "Issue", int(issue["id"].(float64)), admin.ID)
+	repo := s.store.GetRepo(owner, repoName)
+	admin := s.store.UsersByLogin["admin"]
+	project := s.store.ProjectsV2.CreateProject(admin.ID, "User", "GraphQL fields", admin.ID)
+	item := s.store.ProjectsV2.AddItem(project.ID, "Issue", int(issue["id"].(float64)), admin.ID)
 
-	textField := testServer.store.ProjectsV2.CreateField(project.ID, "Notes", ProjectV2FieldText, nil, nil)
-	numberField := testServer.store.ProjectsV2.CreateField(project.ID, "Effort", ProjectV2FieldNumber, nil, nil)
-	dateField := testServer.store.ProjectsV2.CreateField(project.ID, "Due", ProjectV2FieldDate, nil, nil)
-	selectField := testServer.store.ProjectsV2.CreateField(project.ID, "Priority", ProjectV2FieldSingleSelect, []*ProjectV2SingleSelectOption{
+	textField := s.store.ProjectsV2.CreateField(project.ID, "Notes", ProjectV2FieldText, nil, nil)
+	numberField := s.store.ProjectsV2.CreateField(project.ID, "Effort", ProjectV2FieldNumber, nil, nil)
+	dateField := s.store.ProjectsV2.CreateField(project.ID, "Due", ProjectV2FieldDate, nil, nil)
+	selectField := s.store.ProjectsV2.CreateField(project.ID, "Priority", ProjectV2FieldSingleSelect, []*ProjectV2SingleSelectOption{
 		{Name: "High", Color: "RED"},
 		{Name: "Low", Color: "GREEN"},
 	}, nil)
-	iterationField := testServer.store.ProjectsV2.CreateField(project.ID, "Sprint", ProjectV2FieldIteration, nil, &ProjectV2IterationConfiguration{
+	iterationField := s.store.ProjectsV2.CreateField(project.ID, "Sprint", ProjectV2FieldIteration, nil, &ProjectV2IterationConfiguration{
 		StartDate: "2026-07-06",
 		Duration:  7,
 		Iterations: []*ProjectV2Iteration{
@@ -124,7 +132,7 @@ func TestProjectsV2GraphQL_FieldValueKinds(t *testing.T) {
 
 	update := func(field *ProjectV2Field, value map[string]interface{}) {
 		t.Helper()
-		data := gqlData(t, `mutation($project:ID!,$item:ID!,$field:ID!,$value:ProjectV2FieldValueInput!){
+		data := s.gqlData(t, `mutation($project:ID!,$item:ID!,$field:ID!,$value:ProjectV2FieldValueInput!){
 			updateProjectV2ItemFieldValue(input:{projectId:$project,itemId:$item,fieldId:$field,value:$value}){
 				projectV2Item { id }
 			}
@@ -161,7 +169,7 @@ func TestProjectsV2GraphQL_FieldValueKinds(t *testing.T) {
 			}
 		}
 	}`
-	data := gqlData(t, query, map[string]interface{}{"owner": owner, "name": repoName, "number": issueNumber})
+	data := s.gqlData(t, query, map[string]interface{}{"owner": owner, "name": repoName, "number": issueNumber})
 	items := data["repository"].(map[string]interface{})["issue"].(map[string]interface{})["projectItems"].(map[string]interface{})
 	if got := int(items["totalCount"].(float64)); got != 1 {
 		t.Fatalf("projectItems.totalCount = %d, want 1: %v", got, items)
@@ -183,7 +191,7 @@ func TestProjectsV2GraphQL_FieldValueKinds(t *testing.T) {
 		t.Fatalf("sprint value = %v", got)
 	}
 
-	resp := gqlDo(t, `mutation($project:ID!,$item:ID!,$field:ID!){
+	resp := s.gqlDo(t, `mutation($project:ID!,$item:ID!,$field:ID!){
 		updateProjectV2ItemFieldValue(input:{projectId:$project,itemId:$item,fieldId:$field,value:{text:"wrong"}}){
 			projectV2Item { id }
 		}
@@ -197,21 +205,24 @@ func TestProjectsV2GraphQL_FieldValueKinds(t *testing.T) {
 }
 
 func TestProjectsV2GraphQL_ProjectLevelConnections(t *testing.T) {
-	owner, repoName := sweepRepo(t, "gql-project-v2-project-connections")
-	issue := decodeJSONWithStatus(t, ghPost(t, "/api/v3/repos/"+owner+"/"+repoName+"/issues", defaultToken, map[string]interface{}{
+	t.Parallel()
+	s := newIsolatedServer(t)
+	sweep := s.sweepRepo(t, "gql-project-v2-project-connections")
+	owner, repoName := sweep.owner, sweep.name
+	issue := decodeJSONWithStatus(t, s.post(t, "/api/v3/repos/"+owner+"/"+repoName+"/issues", defaultToken, map[string]interface{}{
 		"title": "project item",
 	}), 201)
 	issueID := int(issue["id"].(float64))
 	issueNumber := int(issue["number"].(float64))
-	admin := testServer.store.UsersByLogin["admin"]
-	project := testServer.store.ProjectsV2.CreateProject(admin.ID, "User", "GraphQL project", admin.ID)
-	testServer.store.ProjectsV2.AddItem(project.ID, "Issue", issueID, admin.ID)
-	testServer.store.ProjectsV2.AddDraftItem(project.ID, "Draft item", "Body", admin.ID)
-	stage := testServer.store.ProjectsV2.CreateField(project.ID, "Stage", ProjectV2FieldSingleSelect, []*ProjectV2SingleSelectOption{
+	admin := s.store.UsersByLogin["admin"]
+	project := s.store.ProjectsV2.CreateProject(admin.ID, "User", "GraphQL project", admin.ID)
+	s.store.ProjectsV2.AddItem(project.ID, "Issue", issueID, admin.ID)
+	s.store.ProjectsV2.AddDraftItem(project.ID, "Draft item", "Body", admin.ID)
+	stage := s.store.ProjectsV2.CreateField(project.ID, "Stage", ProjectV2FieldSingleSelect, []*ProjectV2SingleSelectOption{
 		{Name: "Todo", Color: "GRAY", Description: "ready to schedule"},
 		{Name: "Done", Color: "GREEN"},
 	}, nil)
-	sprint := testServer.store.ProjectsV2.CreateField(project.ID, "Sprint", ProjectV2FieldIteration, nil, &ProjectV2IterationConfiguration{
+	sprint := s.store.ProjectsV2.CreateField(project.ID, "Sprint", ProjectV2FieldIteration, nil, &ProjectV2IterationConfiguration{
 		StartDate: "2026-07-06",
 		Duration:  14,
 		Iterations: []*ProjectV2Iteration{
@@ -219,7 +230,7 @@ func TestProjectsV2GraphQL_ProjectLevelConnections(t *testing.T) {
 		},
 	})
 	filter := "is:issue"
-	view := testServer.store.ProjectsV2.CreateView(project.ID, "Issues board", "board", &filter, []int{stage.ID, sprint.ID}, admin.ID)
+	view := s.store.ProjectsV2.CreateView(project.ID, "Issues board", "board", &filter, []int{stage.ID, sprint.ID}, admin.ID)
 	if view == nil {
 		t.Fatal("CreateView returned nil")
 	}
@@ -255,7 +266,7 @@ func TestProjectsV2GraphQL_ProjectLevelConnections(t *testing.T) {
 			}
 		}
 	}`
-	data := gqlData(t, query, map[string]interface{}{"owner": owner, "name": repoName, "number": issueNumber})
+	data := s.gqlData(t, query, map[string]interface{}{"owner": owner, "name": repoName, "number": issueNumber})
 	projectNode := data["repository"].(map[string]interface{})["issue"].(map[string]interface{})["projectItems"].(map[string]interface{})["nodes"].([]interface{})[0].(map[string]interface{})["project"].(map[string]interface{})
 
 	fields := projectNode["fields"].(map[string]interface{})
