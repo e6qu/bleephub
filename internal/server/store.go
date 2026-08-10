@@ -560,8 +560,14 @@ type Store struct {
 	codespaceRuntimeDelete       func(*Codespace) error
 	codespaceWorkspacePrepare    func(string, *Repo, gitStorage.Storer, string) (string, func(), error)
 	repoStorageOpen              func(context.Context, string) (gitStorage.Storer, error)
-	pendingRepoCreations         map[string]bool
-	replicaRefreshMu             sync.Mutex
+	// repoPrefixCopy/repoPrefixDelete are the slow object-store prefix moves the
+	// S3 rename path runs outside the store lock (STORE-013). Nil in production
+	// (the real S3 helpers run); a test injects a blocking copy to prove the
+	// lock is released and to force the slow path without a live S3 backend.
+	repoPrefixCopy       func(oldFull, newFull string) error
+	repoPrefixDelete     func(fullName string) error
+	pendingRepoCreations map[string]bool
+	replicaRefreshMu     sync.Mutex
 	// mu guards the Store's maps and counters. sync.RWMutex read locks are
 	// NOT reentrant: once a writer queues on Lock, new RLock calls block, so
 	// a goroutine that re-acquires mu while already holding it deadlocks.
@@ -3833,6 +3839,9 @@ func (st *Store) loadFromPersistence() error {
 	if err := st.finishInterruptedDeletions(); err != nil {
 		return err
 	}
+	if err := st.finishInterruptedRenames(); err != nil {
+		return err
+	}
 	revision, err := st.persist.StateRevision()
 	if err != nil {
 		return fmt.Errorf("load persistence state revision: %w", err)
@@ -3874,6 +3883,21 @@ func pendingRepoDeletionKey(fullName string) string { return "repo:" + fullName 
 func pendingOrgDeletionKey(login string) string { return "org:" + login }
 
 func pendingUserDeletionKey(login string) string { return "user:" + login }
+
+// pendingRenamesBucket records a repository rename whose slow object-store
+// prefix copy runs outside the store lock (STORE-013). The intent survives from
+// just before the copy until the old prefix has been purged, so a crash at any
+// point is recoverable: if the metadata already moved to `To`, the leftover
+// `From` prefix is purged; if it did not, the partial `To` copy is purged.
+const pendingRenamesBucket = "pending_renames"
+
+type pendingRename struct {
+	From      string    `json:"from"`
+	To        string    `json:"to"`
+	StartedAt time.Time `json:"started_at"`
+}
+
+func pendingRepoRenameKey(to string) string { return "repo:" + to }
 
 func (st *Store) listPendingDeletions() (map[string]pendingDeletion, error) {
 	rows, err := st.persist.List(pendingDeletionsBucket)
@@ -3935,6 +3959,43 @@ func (st *Store) finishInterruptedDeletions() error {
 			}
 		default:
 			return fmt.Errorf("%s row %s has unknown kind %q", pendingDeletionsBucket, key, record.Kind)
+		}
+	}
+	return nil
+}
+
+// finishInterruptedRenames purges the object-store prefix a rename left behind
+// after a crash (STORE-013). It runs at startup after loading, without the
+// store lock. If the metadata already moved to the new name, the stale old
+// prefix is purged; otherwise the partial new-prefix copy — which nothing
+// references — is purged. Either way the intent is cleared.
+func (st *Store) finishInterruptedRenames() error {
+	rows, err := st.persist.List(pendingRenamesBucket)
+	if err != nil {
+		return fmt.Errorf("load %s: %w", pendingRenamesBucket, err)
+	}
+	keys := make([]string, 0, len(rows))
+	for key := range rows {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+	for _, key := range keys {
+		var rec pendingRename
+		if err := loadJSON(rows[key], &rec); err != nil {
+			return fmt.Errorf("decode %s row %s: %w", pendingRenamesBucket, key, err)
+		}
+		st.mu.Lock()
+		_, toLive := st.ReposByName[rec.To]
+		st.mu.Unlock()
+		stale := rec.To // partial copy the rename never published
+		if toLive {
+			stale = rec.From // rename published; the old prefix is the leftover
+		}
+		if err := st.deleteRepoPrefixBytes(stale); err != nil {
+			return fmt.Errorf("resume repository rename %s -> %s: purge %s: %w", rec.From, rec.To, stale, err)
+		}
+		if err := st.persist.Delete(pendingRenamesBucket, key); err != nil {
+			return fmt.Errorf("resume repository rename %s -> %s: clear intent: %w", rec.From, rec.To, err)
 		}
 	}
 	return nil

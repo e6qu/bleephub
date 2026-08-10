@@ -3823,8 +3823,8 @@
         "id": "STORE-013",
         "location": "store_codespaces.go:182, timeline.go:210, store_repos.go:249",
         "severity": "B",
-        "status": "partial \u2014 Codespace creation, workspace export, runtime deletion, repository storage creation, fork copying and repository deletion now perform external work outside the global lock behind identity/name reservations, with blocking-backend regressions proving unrelated reads continue. Rename/transfer now commit their whole re-key in a single transaction instead of ~40 independent persistence rounds while the lock is held, and their filesystem move is a constant-time `os.Rename`; the one remaining piece is moving the S3 object-prefix rename (the only slow case) outside the lock behind a per-repository lifecycle reservation, a live-repo concurrency change that warrants its own focused, blocking-backend-tested commit",
-        "status_kind": "partial"
+        "status": "fixed \u2014 Codespace creation, workspace export, runtime deletion, repository storage creation, fork copying and repository deletion perform external work outside the global lock behind identity/name reservations, with blocking-backend regressions proving unrelated reads continue. Rename/transfer commit their whole re-key in a single transaction instead of ~40 independent persistence rounds while the lock is held, and their filesystem move is a constant-time `os.Rename`. The last slow case \u2014 the S3 object-prefix rename \u2014 now runs outside the lock too: `renameRepoS3` reserves the target name and records a crash-recoverable `pending_renames` intent under the lock, copies the object graph outside the lock (both prefixes coexist so old-name readers keep working), swaps the metadata under the lock, then purges the old prefix; `finishInterruptedRenames` finishes either side of a crash at startup. A blocking-backend regression proves an unrelated read proceeds while the copy blocks, and a reload regression proves the recovery path. No global-lock round-trip now spans a `docker pull`, an S3 prefix operation or a Raft round-trip",
+        "status_kind": "fixed"
       },
       {
         "category": "STORE",
@@ -6587,8 +6587,8 @@
         },
         "STORE": {
           "status": {
-            "fixed": 74,
-            "partial": 4
+            "fixed": 75,
+            "partial": 3
           },
           "total": 78
         },
@@ -6617,9 +6617,9 @@
       },
       "status": {
         "deferred": 3,
-        "fixed": 658,
+        "fixed": 659,
         "open": 13,
-        "partial": 11
+        "partial": 10
       },
       "total": 685
     }

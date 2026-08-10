@@ -393,7 +393,18 @@ func cloneRepoForMutation(repo *Repo) *Repo {
 // RenameRepo renames owner/name to owner/newName, moving every map keyed by
 // the repo full name and updating embedded repo-name strings. It returns true
 // on success.
+// RenameRepo renames owner/name to owner/newName, moving its git bytes. For
+// filesystem and in-memory storage the move is constant-time and stays under the
+// store lock; for S3 the object-prefix copy is slow, so it runs outside the lock
+// behind a target reservation and a crash-recoverable intent (STORE-013).
 func (st *Store) RenameRepo(owner, name, newName string) bool {
+	if st.renameNeedsSlowMove() {
+		return st.renameRepoS3(owner, name, newName)
+	}
+	return st.renameRepoUnderLock(owner, name, newName)
+}
+
+func (st *Store) renameRepoUnderLock(owner, name, newName string) bool {
 	st.mu.Lock()
 	defer st.mu.Unlock()
 
@@ -449,6 +460,117 @@ func (st *Store) RenameRepo(owner, name, newName string) bool {
 	}
 
 	return true
+}
+
+// renameRepoS3 performs a rename whose object-prefix copy is too slow to hold
+// the store lock. It reserves the target name and records a rename intent under
+// the lock, copies the object graph outside the lock (both prefixes coexist, so
+// old-name readers keep working), swaps the metadata under the lock, then purges
+// the old prefix outside the lock. A crash at any point is finished by
+// finishInterruptedRenames.
+func (st *Store) renameRepoS3(owner, name, newName string) bool {
+	oldFull := owner + "/" + name
+	newFull := owner + "/" + newName
+
+	st.mu.Lock()
+	if oldFull == newFull {
+		st.mu.Unlock()
+		return true
+	}
+	repo, ok := st.ReposByName[oldFull]
+	if !ok {
+		st.mu.Unlock()
+		return false
+	}
+	if st.pendingRepoCreations == nil {
+		st.pendingRepoCreations = make(map[string]bool)
+	}
+	if st.ReposByName[newFull] != nil || st.pendingRepoCreations[newFull] {
+		st.mu.Unlock()
+		return false
+	}
+	repoID := repo.ID
+	st.pendingRepoCreations[newFull] = true
+	intent := pendingRename{From: oldFull, To: newFull, StartedAt: st.currentTime()}
+	if err := st.persist.Put(pendingRenamesBucket, pendingRepoRenameKey(newFull), intent); err != nil {
+		delete(st.pendingRepoCreations, newFull)
+		st.mu.Unlock()
+		st.logger.Error().Str("from", oldFull).Str("to", newFull).Err(err).Msg("rename repo: record intent failed")
+		return false
+	}
+	st.mu.Unlock()
+
+	// Outside the lock: copy the object graph. The source stays intact, so a
+	// reader resolving the old name during the copy still finds its bytes.
+	if err := st.copyRepoPrefixBytes(oldFull, newFull); err != nil {
+		st.abortRenameReservation(newFull)
+		st.logger.Error().Str("from", oldFull).Str("to", newFull).Err(err).Msg("rename repo: copy object prefix failed")
+		return false
+	}
+
+	// Re-lock and re-validate: the repo must still be the same one at the old
+	// name (a concurrent delete or competing rename may have moved it).
+	st.mu.Lock()
+	live := st.Repos[repoID]
+	if live == nil || live.FullName != oldFull || (st.ReposByName[newFull] != nil && st.ReposByName[newFull] != live) {
+		st.mu.Unlock()
+		st.abortRenameReservation(newFull)
+		return false
+	}
+	stor := st.GitStorages[oldFull]
+	if stor != nil && repoGitStorageIsPathBound() {
+		reopened, err := openOrInitGitStorage(context.Background(), newFull)
+		if err != nil {
+			st.mu.Unlock()
+			st.abortRenameReservation(newFull)
+			st.logger.Error().Str("from", oldFull).Str("to", newFull).Err(err).Msg("rename repo: reopen git storage failed")
+			return false
+		}
+		stor = reopened
+	}
+
+	live.Name = newName
+	live.FullName = newFull
+	live.UpdatedAt = st.currentTime()
+	st.ReposByName[newFull] = live
+	delete(st.ReposByName, oldFull)
+	if stor != nil {
+		st.GitStorages[newFull] = stor
+		delete(st.GitStorages, oldFull)
+	}
+	batch := newPersistBatch(st.persist)
+	batch.Put("repos", strconv.Itoa(live.ID), live)
+	st.moveRepoKeyLocked(batch, oldFull, newFull)
+	if err := batch.Commit(); err != nil {
+		panic(&persistenceFailure{op: "batch", bucket: "repos", err: err})
+	}
+	delete(st.pendingRepoCreations, newFull)
+	st.mu.Unlock()
+
+	// The metadata now points at the new name, so the old prefix is unreferenced.
+	// Purge it, then clear the intent; a crash before either is finished by
+	// recovery. Keep the intent if the purge fails so recovery can retry it.
+	if err := st.deleteRepoPrefixBytes(oldFull); err != nil {
+		st.logger.Warn().Str("from", oldFull).Str("to", newFull).Err(err).Msg("rename repo: purge old object prefix deferred to recovery")
+		return true
+	}
+	if err := st.persist.Delete(pendingRenamesBucket, pendingRepoRenameKey(newFull)); err != nil {
+		st.logger.Warn().Str("to", newFull).Err(err).Msg("rename repo: clear intent deferred to recovery")
+	}
+	return true
+}
+
+// abortRenameReservation unwinds a rename that did not publish: it drops the
+// target reservation, purges the (partial or unpublished) new-name copy, and
+// clears the intent — keeping the intent for recovery if the purge fails.
+func (st *Store) abortRenameReservation(newFull string) {
+	st.mu.Lock()
+	delete(st.pendingRepoCreations, newFull)
+	st.mu.Unlock()
+	if err := st.deleteRepoPrefixBytes(newFull); err != nil {
+		return // leave the intent for finishInterruptedRenames
+	}
+	_ = st.persist.Delete(pendingRenamesBucket, pendingRepoRenameKey(newFull))
 }
 
 // DeleteRepo removes a repository, its cascade and its bytes. The metadata
@@ -1085,6 +1207,72 @@ func deleteRepoGitStorage(fullName string) error {
 	}
 	if !IsS3GitStorage() {
 		return nil
+	}
+	s3fs, err := getS3FS(context.Background())
+	if err != nil {
+		return fmt.Errorf("resolve S3 git storage: %w", err)
+	}
+	if s3fs == nil {
+		return nil
+	}
+	if err := s3fs.deleteRepoPrefix(fullName); err != nil {
+		return fmt.Errorf("purge S3 object prefix: %w", err)
+	}
+	return nil
+}
+
+// renameNeedsSlowMove reports whether a rename must move its object bytes
+// through a slow backend (S3 — filesystem and in-memory moves are constant-time),
+// in which case RenameRepo copies outside the store lock. A test seam forces the
+// slow path without a live S3 backend.
+func (st *Store) renameNeedsSlowMove() bool {
+	if st.repoPrefixCopy != nil {
+		return true
+	}
+	return IsS3GitStorage() && GitDataDir() == ""
+}
+
+// copyRepoPrefixBytes/deleteRepoPrefixBytes run the slow object-store prefix
+// moves through the test seam when set, else the real S3 helpers.
+func (st *Store) copyRepoPrefixBytes(oldFull, newFull string) error {
+	if st.repoPrefixCopy != nil {
+		return st.repoPrefixCopy(oldFull, newFull)
+	}
+	return copyRepoGitStorageS3(oldFull, newFull)
+}
+
+func (st *Store) deleteRepoPrefixBytes(fullName string) error {
+	if st.repoPrefixDelete != nil {
+		return st.repoPrefixDelete(fullName)
+	}
+	return deleteRepoGitStorageS3(fullName)
+}
+
+// copyRepoGitStorageS3 copies an S3 object prefix without deleting the source.
+func copyRepoGitStorageS3(oldFull, newFull string) error {
+	if err := validateRepoStorageFullName(oldFull); err != nil {
+		return err
+	}
+	if err := validateRepoStorageFullName(newFull); err != nil {
+		return err
+	}
+	s3fs, err := getS3FS(context.Background())
+	if err != nil {
+		return fmt.Errorf("resolve S3 git storage: %w", err)
+	}
+	if s3fs == nil {
+		return nil
+	}
+	if err := s3fs.copyRepoPrefix(oldFull, newFull); err != nil {
+		return fmt.Errorf("copy S3 object prefix: %w", err)
+	}
+	return nil
+}
+
+// deleteRepoGitStorageS3 purges an S3 object prefix (no filesystem side effects).
+func deleteRepoGitStorageS3(fullName string) error {
+	if err := validateRepoStorageFullName(fullName); err != nil {
+		return err
 	}
 	s3fs, err := getS3FS(context.Background())
 	if err != nil {
