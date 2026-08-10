@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strconv"
+	"sync/atomic"
 	"testing"
 
 	"github.com/rs/zerolog"
@@ -400,6 +401,19 @@ func (s *isolatedServer) putSealedSecret(t *testing.T, path, plain string) *http
 		"encrypted_value": enc,
 		"key_id":          keyID,
 	})
+}
+
+// createRepoWriteRepo mirrors the package helper: create an admin repo through
+// the REST API (optionally auto-initialized) and return its bare name.
+func (s *isolatedServer) createRepoWriteRepo(t *testing.T, autoInit bool) string {
+	t.Helper()
+	name := fmt.Sprintf("rw-%d-%d", int64(nextTestID()), atomic.AddInt64(&repoWriteRepoSeq, 1))
+	resp := s.post(t, "/api/v3/user/repos", defaultToken, map[string]interface{}{
+		"name":      name,
+		"auto_init": autoInit,
+	})
+	requireStatus(t, resp, 201)
+	return name
 }
 
 // createTestCodespaceRepo mirrors the package helper: an admin repo seeded with
