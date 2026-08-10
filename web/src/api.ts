@@ -3695,6 +3695,17 @@ import type {
  * Full environment objects (protection rules + branch-policy config) from
  * the same envelope endpoint fetchEnvironments unwraps into slim rows.
  */
+export const putEnvironment = (
+  owner: string,
+  repo: string,
+  name: string,
+  payload: Record<string, unknown> = {},
+) =>
+  ghPutJSON<GithubEnvironmentDetail>(
+    `/api/v3/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/environments/${encodeURIComponent(name)}`,
+    payload,
+  );
+
 export const fetchEnvironmentsDetail = (owner: string, repo: string) =>
   ghFetch<{ environments: GithubEnvironmentDetail[] }>(
     `/api/v3/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/environments`,

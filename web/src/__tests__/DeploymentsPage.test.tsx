@@ -183,6 +183,37 @@ describe("DeploymentsPage", () => {
     await waitFor(() => expect(screen.getByText(/release\/\*/)).toBeInTheDocument());
   });
 
+  it("creates an environment via PUT .../environments/{name}", async () => {
+    mockFetch.mockImplementation((url: string, init?: RequestInit) => {
+      if (url === "/api/v3/repos/admin/deploy-repo/environments" && init?.method === "PUT") {
+        return Promise.resolve(jsonResponse({ ...environment, id: 12, name: "staging" }));
+      }
+      if (url === "/api/v3/repos/admin/deploy-repo/environments/staging" && init?.method === "PUT") {
+        return Promise.resolve(jsonResponse({ ...environment, id: 12, name: "staging" }));
+      }
+      if (url === "/api/v3/repos/admin/deploy-repo/environments") {
+        return Promise.resolve(jsonResponse({ total_count: 0, environments: [] }));
+      }
+      if (url.startsWith("/api/v3/repos/admin/deploy-repo/deployments?")) {
+        return Promise.resolve(jsonResponse([]));
+      }
+      return Promise.resolve(jsonResponse({ message: "Not Found" }, 404));
+    });
+    renderPage();
+
+    fireEvent.click(await screen.findByRole("tab", { name: "Environments" }));
+    fireEvent.change(await screen.findByLabelText("Name"), { target: { value: "staging" } });
+    fireEvent.click(screen.getByRole("button", { name: "Create environment" }));
+
+    await waitFor(() => {
+      const putCall = mockFetch.mock.calls.find(
+        (c) =>
+          c[0] === "/api/v3/repos/admin/deploy-repo/environments/staging" && c[1]?.method === "PUT",
+      );
+      expect(putCall).toBeDefined();
+    });
+  });
+
   it("approves pending deployments for a waiting run", async () => {
     const run = {
       id: 42,
