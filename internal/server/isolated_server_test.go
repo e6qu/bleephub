@@ -541,6 +541,22 @@ func (s *isolatedServer) createRepoWriteRepo(t *testing.T, autoInit bool) string
 	return name
 }
 
+// createTestPRRepo mirrors the package helper (still used by four other
+// files): an auto-initialised admin repo seeded with the standard PR branch
+// set, on this isolated server.
+func (s *isolatedServer) createTestPRRepo(t *testing.T, name string) {
+	t.Helper()
+	resp := s.post(t, "/api/v3/user/repos", defaultToken, map[string]interface{}{
+		"name": name, "auto_init": true,
+	})
+	resp.Body.Close()
+	repo := s.store.GetRepo("admin", name)
+	if repo == nil {
+		t.Fatalf("repo %s not created", name)
+	}
+	seedPullRequestBranches(t, s.Server, repo, "feature", "feat", "feat1", "feat2", "fix", "branch", "r", "f", "a", "b", "draft-feat")
+}
+
 // cancelRepoRunsCleanup mirrors the package helper (still used by six
 // shared-server files): at test cleanup it cancels every in-flight run the
 // test created, on this isolated server's own store.
