@@ -251,7 +251,7 @@ func (st *Store) ListPullRequests(repoID int, state string) []*PullRequest {
 		}
 		prs = append(prs, pr)
 	}
-	return prs
+	return snapshotPullRequests(prs)
 }
 
 // UpdatePullRequest applies a mutation function to a pull request.

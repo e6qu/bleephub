@@ -634,7 +634,7 @@ func (st *Store) ListEnterpriseTeamOrgs(t *EnterpriseTeam) []*Org {
 		}
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].ID < out[j].ID })
-	return out
+	return snapshotOrgs(out)
 }
 
 // --- enterprise code security configurations ---
@@ -766,7 +766,7 @@ func (st *Store) ListEnterpriseCodeSecurityConfigRepos(configID int) []*Repo {
 		}
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].ID < out[j].ID })
-	return out
+	return snapshotRepos(out)
 }
 
 // SetEnterpriseCodeSecurityConfigDefault marks the configuration as the

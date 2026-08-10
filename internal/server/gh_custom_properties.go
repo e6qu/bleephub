@@ -618,5 +618,5 @@ func (st *Store) ListOrgReposForProperties(orgLogin, query string) []*Repo {
 		out = append(out, repo)
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].ID < out[j].ID })
-	return out
+	return snapshotRepos(out)
 }

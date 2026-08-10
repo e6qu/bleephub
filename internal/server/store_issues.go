@@ -556,7 +556,7 @@ func (st *Store) ListMilestones(repoID int, state string) []*Milestone {
 		}
 		milestones = append(milestones, ms)
 	}
-	return milestones
+	return snapshotMilestones(milestones)
 }
 
 // UpdateMilestone applies a mutation function to a milestone.
@@ -718,7 +718,7 @@ func (st *Store) ListIssues(repoID int, state string) []*Issue {
 		}
 		issues = append(issues, issue)
 	}
-	return issues
+	return snapshotIssues(issues)
 }
 
 // UpdateIssue applies a mutation function to an issue.
@@ -1020,7 +1020,7 @@ func (st *Store) ListIssueComments(repoKey string, issueNumber int) []*Comment {
 			comments = append(comments, cloneComment(c))
 		}
 	}
-	return comments
+	return snapshotComments(comments)
 }
 
 // GetIssueComment returns a comment by global ID.
@@ -1045,7 +1045,7 @@ func (st *Store) ListRepoIssueComments(repoID int) []*Comment {
 		}
 	}
 	sort.Slice(comments, func(i, j int) bool { return comments[i].CreatedAt.Before(comments[j].CreatedAt) })
-	return comments
+	return snapshotComments(comments)
 }
 
 // PinIssueComment marks a comment as pinned. Returns true when the comment
@@ -1205,7 +1205,7 @@ func (st *Store) CreateCommentFor(parentType string, parentID, authorID int, bod
 
 // ListComments returns all conversation comments for an issue.
 func (st *Store) ListComments(issueID int) []*Comment {
-	return st.ListCommentsFor("issue", issueID)
+	return snapshotComments(st.ListCommentsFor("issue", issueID))
 }
 
 // GetComment returns a comment by global ID.
@@ -1433,7 +1433,7 @@ func (st *Store) ListCommentsFor(parentType string, parentID int) []*Comment {
 	for _, c := range indexed {
 		comments = append(comments, cloneComment(c))
 	}
-	return comments
+	return snapshotComments(comments)
 }
 
 // indexCommentLocked / unindexCommentLocked maintain CommentsByParent alongside

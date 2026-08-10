@@ -401,6 +401,92 @@ func cloneRepo(repo *Repo) *Repo {
 	return &clone
 }
 
+// snapshotRepos returns detached clones of a repo list so a caller iterating and
+// rendering them can't race an in-place element mutation — most acutely
+// StarRepo/UnstarRepo writing an element's Stargazers map, a fatal concurrent
+// map access (STORE-021). Named to avoid colliding with the test-only
+// cloneRepoSlice.
+func snapshotRepos(in []*Repo) []*Repo {
+	if in == nil {
+		return nil
+	}
+	out := make([]*Repo, len(in))
+	for i, r := range in {
+		out[i] = cloneRepo(r)
+	}
+	return out
+}
+
+// snapshot* helpers detach a list of store pointers (STORE-021): a caller
+// iterating and rendering them can't race an in-place element mutation, and a
+// value copy can't leak a write back into the stored row. Each reuses the
+// element's existing clone helper.
+func snapshotIssues(in []*Issue) []*Issue {
+	if in == nil {
+		return nil
+	}
+	out := make([]*Issue, len(in))
+	for i, x := range in {
+		out[i] = cloneIssue(x)
+	}
+	return out
+}
+
+func snapshotPullRequests(in []*PullRequest) []*PullRequest {
+	if in == nil {
+		return nil
+	}
+	out := make([]*PullRequest, len(in))
+	for i, x := range in {
+		out[i] = clonePullRequest(x)
+	}
+	return out
+}
+
+func snapshotComments(in []*Comment) []*Comment {
+	if in == nil {
+		return nil
+	}
+	out := make([]*Comment, len(in))
+	for i, x := range in {
+		out[i] = cloneComment(x)
+	}
+	return out
+}
+
+func snapshotOrgs(in []*Org) []*Org {
+	if in == nil {
+		return nil
+	}
+	out := make([]*Org, len(in))
+	for i, x := range in {
+		out[i] = cloneOrg(x)
+	}
+	return out
+}
+
+func snapshotTeams(in []*Team) []*Team {
+	if in == nil {
+		return nil
+	}
+	out := make([]*Team, len(in))
+	for i, x := range in {
+		out[i] = cloneTeam(x)
+	}
+	return out
+}
+
+func snapshotMilestones(in []*Milestone) []*Milestone {
+	if in == nil {
+		return nil
+	}
+	out := make([]*Milestone, len(in))
+	for i, x := range in {
+		out[i] = cloneMilestone(x)
+	}
+	return out
+}
+
 // RenameRepo renames owner/name to owner/newName, moving every map keyed by
 // the repo full name and updating embedded repo-name strings. It returns true
 // on success.
@@ -1692,7 +1778,7 @@ func (st *Store) ListForks(sourceRepoID int, opts RepoListOptions) []*Repo {
 			repos = append(repos, r)
 		}
 	}
-	return filterSortPaginateRepos(repos, opts)
+	return snapshotRepos(filterSortPaginateRepos(repos, opts))
 }
 
 // CountForks returns how many repositories were forked from the given
@@ -1721,7 +1807,7 @@ func (st *Store) ListReposByOwner(login string) []*Repo {
 			repos = append(repos, r)
 		}
 	}
-	return repos
+	return snapshotRepos(repos)
 }
 
 // RepoListOptions controls filtering, sorting and pagination for repo list
@@ -1779,7 +1865,7 @@ func (st *Store) ListReposForOrg(org string, opts RepoListOptions) []*Repo {
 		}
 		repos = append(repos, r)
 	}
-	return filterSortPaginateRepos(repos, opts)
+	return snapshotRepos(filterSortPaginateRepos(repos, opts))
 }
 
 // ListReposForUser returns public repos owned by a user, filtered/sorted/paged.
@@ -1801,7 +1887,7 @@ func (st *Store) ListReposForUser(user *User, opts RepoListOptions) []*Repo {
 		}
 		repos = append(repos, r)
 	}
-	return filterSortPaginateRepos(repos, opts)
+	return snapshotRepos(filterSortPaginateRepos(repos, opts))
 }
 
 // ListReposForAuthUser returns repos the authenticated user can access.
@@ -1876,7 +1962,7 @@ func (st *Store) ListReposForAuthUser(user *User, opts RepoListOptions) []*Repo 
 		}
 	}
 
-	return filterSortPaginateRepos(repos, opts)
+	return snapshotRepos(filterSortPaginateRepos(repos, opts))
 }
 
 func filterSortPaginateRepos(repos []*Repo, opts RepoListOptions) []*Repo {
@@ -2460,7 +2546,7 @@ func (st *Store) ListRepoSubscriptionsForUser(userID int) []*Repo {
 		}
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].ID < out[j].ID })
-	return out
+	return snapshotRepos(out)
 }
 
 // TransferRepo transfers ownership of a repository to a new owner account.

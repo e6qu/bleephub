@@ -583,7 +583,7 @@ func (st *Store) ListTeamsWithOrgRole(orgLogin string, roleID int) []*Team {
 			out = append(out, team)
 		}
 	}
-	return out
+	return snapshotTeams(out)
 }
 
 // ListUsersWithOrgRole returns the users holding the role, mapping each

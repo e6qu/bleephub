@@ -145,7 +145,7 @@ func (st *Store) ListPublicRepos(since int) []*Repo {
 		out = append(out, repo)
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].ID < out[j].ID })
-	return out
+	return snapshotRepos(out)
 }
 
 // ListTeamsForRepo returns the org teams granted access to the repository,
@@ -163,7 +163,7 @@ func (st *Store) ListTeamsForRepo(fullName string) []*Team {
 		}
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].ID < out[j].ID })
-	return out
+	return snapshotTeams(out)
 }
 
 // LookupUserByEmail returns the user whose email matches case-insensitively,

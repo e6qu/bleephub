@@ -228,7 +228,7 @@ func (st *Store) ListTeamsByUser(userID int) []*Team {
 			}
 		}
 	}
-	return teams
+	return snapshotTeams(teams)
 }
 
 // UpdateOrg applies a mutation function to an organization.
@@ -513,7 +513,7 @@ func (st *Store) ListOrgsByUser(userID int) []*Org {
 	st.mu.RLock()
 	defer st.mu.RUnlock()
 
-	return st.listOrgsByUserLocked(userID, false)
+	return snapshotOrgs(st.listOrgsByUserLocked(userID, false))
 }
 
 // ListPublicOrgsByUser returns only active organization memberships that the
@@ -524,7 +524,7 @@ func (st *Store) ListPublicOrgsByUser(userID int) []*Org {
 	st.mu.RLock()
 	defer st.mu.RUnlock()
 
-	return st.listOrgsByUserLocked(userID, true)
+	return snapshotOrgs(st.listOrgsByUserLocked(userID, true))
 }
 
 func (st *Store) listOrgsByUserLocked(userID int, publicOnly bool) []*Org {
@@ -642,7 +642,7 @@ func (st *Store) ListOrgsAll(since int) []*Org {
 		}
 	}
 	sort.Slice(orgs, func(i, j int) bool { return orgs[i].ID < orgs[j].ID })
-	return orgs
+	return snapshotOrgs(orgs)
 }
 
 // GetMembership returns a user's membership in an organization, or nil.
@@ -910,7 +910,7 @@ func (st *Store) ListChildTeams(orgLogin string, parentID int) []*Team {
 		}
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].ID < out[j].ID })
-	return out
+	return snapshotTeams(out)
 }
 
 // DeleteTeam removes a team from an organization.
@@ -962,7 +962,7 @@ func (st *Store) ListTeams(orgLogin string) []*Team {
 			teams = append(teams, t)
 		}
 	}
-	return teams
+	return snapshotTeams(teams)
 }
 
 // ListTeamMembers returns the users who are members of a team.
@@ -1064,7 +1064,7 @@ func (st *Store) ListTeamRepos(orgLogin, slug string) []*Repo {
 			repos = append(repos, repo)
 		}
 	}
-	return repos
+	return snapshotRepos(repos)
 }
 
 // GetTeamRepoPermission returns the effective permission a team confers on a
