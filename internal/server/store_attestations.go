@@ -125,11 +125,27 @@ func (st *Store) CreateAttestation(repoID int, bundle json.RawMessage, subjects 
 	return a, nil
 }
 
+// cloneAttestation returns a copy safe to hand outside the store lock
+// (STORE-021): Bundle and SubjectDigests are the only reference fields.
+func cloneAttestation(a *Attestation) *Attestation {
+	if a == nil {
+		return nil
+	}
+	clone := *a
+	if a.Bundle != nil {
+		clone.Bundle = append(json.RawMessage(nil), a.Bundle...)
+	}
+	if a.SubjectDigests != nil {
+		clone.SubjectDigests = append([]string(nil), a.SubjectDigests...)
+	}
+	return &clone
+}
+
 // GetAttestation returns an attestation by ID, or nil.
 func (st *Store) GetAttestation(id int) *Attestation {
 	st.mu.RLock()
 	defer st.mu.RUnlock()
-	return st.Attestations[id]
+	return cloneAttestation(st.Attestations[id])
 }
 
 // hasSubjectDigest reports whether the attestation covers the digest.

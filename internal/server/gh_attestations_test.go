@@ -59,6 +59,37 @@ func uploadAttestation(t *testing.T, ownerRepo, token string, bundle map[string]
 	return int(created["id"].(float64))
 }
 
+// TestAttestationGetReturnsDetachedSnapshot pins STORE-021 for the attestation
+// family: GetAttestation must return a copy so a reader cannot mutate the stored
+// Bundle or SubjectDigests.
+func TestAttestationGetReturnsDetachedSnapshot(t *testing.T) {
+	t.Parallel()
+	s := newIsolatedServer(t)
+	admin := s.store.UsersByLogin["admin"]
+	repo := s.store.CreateRepo(admin, "attest-detach", "", false)
+	digest := testSubjectDigest("attest-detach-artifact")
+	bundle, err := json.Marshal(makeSigstoreBundle(t, digest, "https://slsa.dev/provenance/v1"))
+	if err != nil {
+		t.Fatalf("marshal bundle: %v", err)
+	}
+	att, err := s.store.CreateAttestation(repo.ID, bundle, []string{digest}, "https://slsa.dev/provenance/v1", "admin")
+	if err != nil {
+		t.Fatalf("create attestation: %v", err)
+	}
+
+	got := s.store.GetAttestation(att.ID)
+	got.SubjectDigests[0] = "sha256:hacked"
+	got.Bundle = append(got.Bundle, 'X')
+
+	again := s.store.GetAttestation(att.ID)
+	if again.SubjectDigests[0] != digest {
+		t.Fatalf("subject digests mutated through the getter: %v", again.SubjectDigests)
+	}
+	if len(again.Bundle) != len(bundle) {
+		t.Fatalf("bundle mutated through the getter: len %d, want %d", len(again.Bundle), len(bundle))
+	}
+}
+
 func TestRepoAttestations_CreateAndListRoundTrip(t *testing.T) {
 	t.Parallel()
 	s := newIsolatedServer(t)
