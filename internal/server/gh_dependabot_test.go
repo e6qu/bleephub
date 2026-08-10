@@ -91,6 +91,35 @@ func mustJSON(v any) []byte {
 	return b
 }
 
+// TestDependabotAlertReadsReturnDetachedSnapshots pins STORE-021 for the
+// dependabot family: GetDependabotAlert returns a copy, UpdateDependabotAlert
+// still reaches the live row.
+func TestDependabotAlertReadsReturnDetachedSnapshots(t *testing.T) {
+	s := newTestServer()
+	admin := s.store.UsersByLogin["admin"]
+	repo := s.store.CreateRepo(admin, "dep-detach", "", false)
+	alert := s.store.CreateDependabotAlertIfNew(repo.FullName, "lodash", "npm", "package-lock.json",
+		"GHSA-xxxx", "CVE-1", "high", "prototype pollution", "desc", "< 1.0.0", "1.0.0")
+
+	got := s.store.GetDependabotAlert(repo.FullName, alert.Number)
+	got.State = DependabotStateDismissed
+	got.Summary = "hacked"
+	again := s.store.GetDependabotAlert(repo.FullName, alert.Number)
+	if again.State != DependabotStateOpen || again.Summary == "hacked" {
+		t.Fatalf("alert mutated through the getter: state=%q summary=%q", again.State, again.Summary)
+	}
+
+	if err := s.store.UpdateDependabotAlert(again, "dismissed", "tolerable_risk", "acceptable", admin); err != nil {
+		t.Fatalf("update: %v", err)
+	}
+	if again.State != DependabotStateDismissed {
+		t.Fatalf("returned snapshot state = %q, want dismissed", again.State)
+	}
+	if live := s.store.GetDependabotAlert(repo.FullName, alert.Number); live.State != DependabotStateDismissed {
+		t.Fatalf("live alert after update = %q, want dismissed", live.State)
+	}
+}
+
 func TestDependabotAlertTestsUsePublicDependencyGraph(t *testing.T) {
 	source, err := os.ReadFile("gh_dependabot_test.go")
 	if err != nil {

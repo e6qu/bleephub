@@ -125,11 +125,34 @@ func (st *Store) createDependabotAlertLocked(repoKey, pkgName, ecosystem, manife
 	return a
 }
 
+// cloneDependabotAlert returns a copy safe to hand outside the store lock
+// (STORE-021): DismissedAt, FixedAt and AutoDismissedAt are the only reference
+// fields. Mutations go through UpdateDependabotAlert against the live row.
+func cloneDependabotAlert(a *DependabotAlert) *DependabotAlert {
+	if a == nil {
+		return nil
+	}
+	clone := *a
+	if a.DismissedAt != nil {
+		dismissed := *a.DismissedAt
+		clone.DismissedAt = &dismissed
+	}
+	if a.FixedAt != nil {
+		fixed := *a.FixedAt
+		clone.FixedAt = &fixed
+	}
+	if a.AutoDismissedAt != nil {
+		auto := *a.AutoDismissedAt
+		clone.AutoDismissedAt = &auto
+	}
+	return &clone
+}
+
 // GetDependabotAlert returns an alert by repo + alert number.
 func (st *Store) GetDependabotAlert(repoKey string, number int) *DependabotAlert {
 	st.mu.RLock()
 	defer st.mu.RUnlock()
-	return st.DependabotAlertsByRepo[repoKey][number]
+	return cloneDependabotAlert(st.DependabotAlertsByRepo[repoKey][number])
 }
 
 // ListDependabotAlerts returns repo alerts filtered/sorted per GitHub's list
@@ -188,31 +211,39 @@ func (st *Store) UpdateDependabotAlert(a *DependabotAlert, state, dismissedReaso
 	st.mu.Lock()
 	defer st.mu.Unlock()
 
-	if err := validateDependabotTransition(string(a.State), state, dismissedReason); err != nil {
+	// `a` now comes from GetDependabotAlert, which returns a detached clone, so
+	// mutate the LIVE row (re-fetched by key) and write a fresh snapshot back
+	// into `a` for the caller to render.
+	live := st.DependabotAlertsByRepo[a.RepoKey][a.Number]
+	if live == nil {
+		return fmt.Errorf("dependabot alert %s#%d not found", a.RepoKey, a.Number)
+	}
+	if err := validateDependabotTransition(string(live.State), state, dismissedReason); err != nil {
 		return err
 	}
 
 	now := st.currentTime()
 	switch state {
 	case "dismissed":
-		a.State = DependabotStateDismissed
-		a.DismissedReason = dismissedReason
-		a.DismissedComment = dismissedComment
-		a.DismissedAt = &now
+		live.State = DependabotStateDismissed
+		live.DismissedReason = dismissedReason
+		live.DismissedComment = dismissedComment
+		live.DismissedAt = &now
 		if dismissedBy != nil {
-			a.DismissedByLogin = dismissedBy.Login
+			live.DismissedByLogin = dismissedBy.Login
 		}
-		a.FixedAt = nil
+		live.FixedAt = nil
 	case "open":
-		a.State = DependabotStateOpen
-		a.DismissedReason = ""
-		a.DismissedComment = ""
-		a.DismissedAt = nil
-		a.DismissedByLogin = ""
-		a.FixedAt = nil
+		live.State = DependabotStateOpen
+		live.DismissedReason = ""
+		live.DismissedComment = ""
+		live.DismissedAt = nil
+		live.DismissedByLogin = ""
+		live.FixedAt = nil
 	}
-	a.UpdatedAt = now
-	st.persistDependabotAlert(a)
+	live.UpdatedAt = now
+	st.persistDependabotAlert(live)
+	*a = *cloneDependabotAlert(live)
 	return nil
 }
 
