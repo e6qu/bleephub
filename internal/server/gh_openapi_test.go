@@ -157,9 +157,11 @@ func TestOpenAPIIssue(t *testing.T) {
 }
 
 func TestOpenAPIPullRequest(t *testing.T) {
-	createTestPRRepo(t, "oa-pr")
+	t.Parallel()
+	s := newIsolatedServer(t)
+	s.createTestPRRepo(t, "oa-pr")
 
-	resp := ghPost(t, "/api/v3/repos/admin/oa-pr/pulls", defaultToken, map[string]interface{}{
+	resp := s.post(t, "/api/v3/repos/admin/oa-pr/pulls", defaultToken, map[string]interface{}{
 		"title": "OpenAPI PR",
 		"head":  "feature",
 		"base":  "main",
@@ -172,7 +174,7 @@ func TestOpenAPIPullRequest(t *testing.T) {
 	validateSchema(t, "PullRequest", data)
 
 	// GET
-	resp2 := ghGet(t, "/api/v3/repos/admin/oa-pr/pulls/1", "")
+	resp2 := s.get(t, "/api/v3/repos/admin/oa-pr/pulls/1", "")
 	data2 := decodeJSON(t, resp2)
 	validateSchema(t, "PullRequest", data2)
 }

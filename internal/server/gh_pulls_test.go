@@ -15,19 +15,6 @@ import (
 	"github.com/go-git/go-git/v5/plumbing/object"
 )
 
-func createTestPRRepo(t *testing.T, name string) {
-	t.Helper()
-	resp := ghPost(t, "/api/v3/user/repos", defaultToken, map[string]interface{}{
-		"name": name, "auto_init": true,
-	})
-	resp.Body.Close()
-	repo := testServer.store.GetRepo("admin", name)
-	if repo == nil {
-		t.Fatalf("repo %s not created", name)
-	}
-	seedPullRequestBranches(t, testServer, repo, "feature", "feat", "feat1", "feat2", "fix", "branch", "r", "f", "a", "b", "draft-feat")
-}
-
 func (s *isolatedServer) createGraphQLPRRepo(t *testing.T, name string, branches ...string) string {
 	t.Helper()
 	resp := s.post(t, "/api/v3/user/repos", defaultToken, map[string]interface{}{

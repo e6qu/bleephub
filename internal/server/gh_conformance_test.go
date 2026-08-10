@@ -151,9 +151,11 @@ func TestConformance422DuplicateLabel(t *testing.T) {
 }
 
 func TestConformance422PRValidation(t *testing.T) {
-	createTestPRRepo(t, "conf-pr-422")
+	t.Parallel()
+	s := newIsolatedServer(t)
+	s.createTestPRRepo(t, "conf-pr-422")
 
-	resp := ghPost(t, "/api/v3/repos/admin/conf-pr-422/pulls", defaultToken, map[string]interface{}{
+	resp := s.post(t, "/api/v3/repos/admin/conf-pr-422/pulls", defaultToken, map[string]interface{}{
 		"title": "No head",
 		"head":  "",
 		"base":  "main",
@@ -409,9 +411,11 @@ func TestGHApiIssueCreateThenGraphQL(t *testing.T) {
 }
 
 func TestGHApiPRCreateThenGraphQL(t *testing.T) {
-	createTestPRRepo(t, "cross-pr-1")
+	t.Parallel()
+	s := newIsolatedServer(t)
+	s.createTestPRRepo(t, "cross-pr-1")
 
-	resp := ghPost(t, "/api/v3/repos/admin/cross-pr-1/pulls", defaultToken, map[string]interface{}{
+	resp := s.post(t, "/api/v3/repos/admin/cross-pr-1/pulls", defaultToken, map[string]interface{}{
 		"title": "Cross PR",
 		"body":  "Via REST",
 		"head":  "feature",
@@ -423,7 +427,7 @@ func TestGHApiPRCreateThenGraphQL(t *testing.T) {
 	}
 	resp.Body.Close()
 
-	resp2 := ghPost(t, "/api/graphql", defaultToken, map[string]interface{}{
+	resp2 := s.post(t, "/api/graphql", defaultToken, map[string]interface{}{
 		"query": `{repository(owner:"admin",name:"cross-pr-1"){pullRequest(number:1){title,body,state,headRefName,baseRefName}}}`,
 	})
 	data := decodeJSON(t, resp2)
@@ -523,12 +527,14 @@ func TestGHApiGraphQLIssuesQuery(t *testing.T) {
 }
 
 func TestGHApiGraphQLPRsQuery(t *testing.T) {
-	createTestPRRepo(t, "cross-gql-prs")
-	ghPost(t, "/api/v3/repos/admin/cross-gql-prs/pulls", defaultToken, map[string]interface{}{
+	t.Parallel()
+	s := newIsolatedServer(t)
+	s.createTestPRRepo(t, "cross-gql-prs")
+	s.post(t, "/api/v3/repos/admin/cross-gql-prs/pulls", defaultToken, map[string]interface{}{
 		"title": "GQL query PR", "head": "feat", "base": "main",
 	}).Body.Close()
 
-	resp := ghPost(t, "/api/graphql", defaultToken, map[string]interface{}{
+	resp := s.post(t, "/api/graphql", defaultToken, map[string]interface{}{
 		"query": `{repository(owner:"admin",name:"cross-gql-prs"){pullRequests(first:5,states:[OPEN]){totalCount,nodes{title,number}}}}`,
 	})
 	data := decodeJSON(t, resp)

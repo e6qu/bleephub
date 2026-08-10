@@ -173,29 +173,31 @@ func TestBranchProtection_RestrictionsSubresource(t *testing.T) {
 }
 
 func TestBranchProtection_MergeEnforcesRequiredReviews(t *testing.T) {
-	createTestPRRepo(t, "bp-merge-reviews")
-	defer func() { ghDelete(t, "/api/v3/repos/admin/bp-merge-reviews", defaultToken).Body.Close() }()
+	t.Parallel()
+	s := newIsolatedServer(t)
+	s.createTestPRRepo(t, "bp-merge-reviews")
+	defer func() { s.delete(t, "/api/v3/repos/admin/bp-merge-reviews", defaultToken).Body.Close() }()
 
-	ghPut(t, "/api/v3/repos/admin/bp-merge-reviews/branches/main/protection", defaultToken, map[string]interface{}{
+	s.put(t, "/api/v3/repos/admin/bp-merge-reviews/branches/main/protection", defaultToken, map[string]interface{}{
 		"required_pull_request_reviews": map[string]interface{}{"required_approving_review_count": 1},
 		"enforce_admins":                true,
 	}).Body.Close()
 
-	ghPost(t, "/api/v3/repos/admin/bp-merge-reviews/pulls", defaultToken, map[string]interface{}{
+	s.post(t, "/api/v3/repos/admin/bp-merge-reviews/pulls", defaultToken, map[string]interface{}{
 		"title": "To merge", "head": "feat", "base": "main",
 	}).Body.Close()
 
-	resp := ghPut(t, "/api/v3/repos/admin/bp-merge-reviews/pulls/1/merge", defaultToken, map[string]interface{}{})
+	resp := s.put(t, "/api/v3/repos/admin/bp-merge-reviews/pulls/1/merge", defaultToken, map[string]interface{}{})
 	require.Equal(t, http.StatusMethodNotAllowed, resp.StatusCode)
 	resp.Body.Close()
 
-	resp = ghPost(t, "/api/v3/repos/admin/bp-merge-reviews/pulls/1/reviews", defaultToken, map[string]interface{}{
+	resp = s.post(t, "/api/v3/repos/admin/bp-merge-reviews/pulls/1/reviews", defaultToken, map[string]interface{}{
 		"body": "LGTM", "event": "APPROVE",
 	})
 	require.Equal(t, http.StatusOK, resp.StatusCode)
 	resp.Body.Close()
 
-	resp = ghPut(t, "/api/v3/repos/admin/bp-merge-reviews/pulls/1/merge", defaultToken, map[string]interface{}{})
+	resp = s.put(t, "/api/v3/repos/admin/bp-merge-reviews/pulls/1/merge", defaultToken, map[string]interface{}{})
 	require.Equal(t, http.StatusOK, resp.StatusCode)
 	resp.Body.Close()
 }
