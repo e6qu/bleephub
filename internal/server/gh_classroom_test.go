@@ -249,7 +249,7 @@ func TestGitHubClassroomBrowserWorkflowCreatesRealAssignmentRepository(t *testin
 	assignment := decodeJSONWithStatus(t, srv.post(t, "/classroom-data/classrooms/"+classroomID+"/assignments", defaultToken, map[string]interface{}{
 		"title":                          "Pointers and Processes",
 		"type":                           "individual",
-		"starter_code_repository":        starterFullName,
+		"starter_code_repository":        starterFullName.fullName(),
 		"feedback_pull_requests_enabled": true,
 		"students_are_repo_admins":       true,
 		"public_repo":                    false,
@@ -308,7 +308,7 @@ func TestGitHubClassroomGroupAcceptanceLinksRosterIdentifiers(t *testing.T) {
 		"students": []map[string]interface{}{{"roster_identifier": "student-a"}, {"roster_identifier": "student-b"}, {"roster_identifier": "student-c"}},
 	}), http.StatusOK)
 	assignment := decodeJSONWithStatus(t, srv.post(t, "/classroom-data/classrooms/"+classroomID+"/assignments", defaultToken, map[string]interface{}{
-		"title": "Team Project", "type": "group", "starter_code_repository": starterFullName, "max_members": 2, "max_teams": 1,
+		"title": "Team Project", "type": "group", "starter_code_repository": starterFullName.fullName(), "max_members": 2, "max_teams": 1,
 	}), http.StatusCreated)
 	assignmentID := int(assignment["id"].(float64))
 	invite := assignment["invite_link"].(string)

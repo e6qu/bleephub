@@ -32,7 +32,7 @@ func TestPublicEventsFeed(t *testing.T) {
 	var issuesEvent, commentEvent map[string]interface{}
 	for _, e := range events {
 		repo, _ := e["repo"].(map[string]interface{})
-		if repo == nil || repo["name"] != repoKey.name {
+		if repo == nil || repo["name"] != repoKey.fullName() {
 			continue
 		}
 		switch e["type"] {

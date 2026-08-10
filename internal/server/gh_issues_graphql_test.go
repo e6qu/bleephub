@@ -62,10 +62,10 @@ func TestIssueGraphQL_SubIssueFields(t *testing.T) {
 	parentID, parentNum := s.createIssueForTest(t, repo, "parent")
 	openChildID, openChildNum := s.createIssueForTest(t, repo, "open child")
 	closedChildID, closedChildNum := s.createIssueForTest(t, repo, "closed child")
-	parentPath := fmt.Sprintf("/api/v3/repos/%s/issues/%d", repo, parentNum)
+	parentPath := fmt.Sprintf("/api/v3/repos/%s/issues/%d", repo.fullName(), parentNum)
 	requireStatus(t, s.post(t, parentPath+"/sub_issues", defaultToken, map[string]interface{}{"sub_issue_id": openChildID}), 201)
 	requireStatus(t, s.post(t, parentPath+"/sub_issues", defaultToken, map[string]interface{}{"sub_issue_id": closedChildID}), 201)
-	requireStatus(t, s.patch(t, fmt.Sprintf("/api/v3/repos/%s/issues/%d", repo, closedChildNum), defaultToken, map[string]interface{}{"state": "closed"}), 200)
+	requireStatus(t, s.patch(t, fmt.Sprintf("/api/v3/repos/%s/issues/%d", repo.fullName(), closedChildNum), defaultToken, map[string]interface{}{"state": "closed"}), 200)
 
 	// The exact selection set gh CLI's `gh issue view` sends for these four
 	// fields on `...on Issue`.
@@ -206,7 +206,7 @@ func TestIssueGraphQL_IssueTypeAssignment(t *testing.T) {
 		"query": query,
 		"variables": map[string]interface{}{
 			"owner":  org,
-			"name":   repoName,
+			"name":   repoName.name,
 			"number": number,
 		},
 	})
@@ -232,11 +232,11 @@ func TestIssueGraphQL_IssueCommentPinned(t *testing.T) {
 	s := newIsolatedServer(t)
 	repo := s.createTestRepo(t)
 	_, number := s.createIssueForTest(t, repo, "comment pin")
-	comment := decodeJSONWithStatus(t, s.post(t, fmt.Sprintf("/api/v3/repos/%s/issues/%d/comments", repo, number), defaultToken, map[string]interface{}{
+	comment := decodeJSONWithStatus(t, s.post(t, fmt.Sprintf("/api/v3/repos/%s/issues/%d/comments", repo.fullName(), number), defaultToken, map[string]interface{}{
 		"body": "pinned through REST",
 	}), 201)
 	commentID := int(comment["id"].(float64))
-	requireStatus(t, s.put(t, fmt.Sprintf("/api/v3/repos/%s/issues/comments/%d/pin", repo, commentID), defaultToken, nil), 200)
+	requireStatus(t, s.put(t, fmt.Sprintf("/api/v3/repos/%s/issues/comments/%d/pin", repo.fullName(), commentID), defaultToken, nil), 200)
 
 	query := `query($owner:String!,$name:String!,$number:Int!){
 		repository(owner:$owner,name:$name){
@@ -365,7 +365,7 @@ func TestIssueGraphQL_IssueFieldValues(t *testing.T) {
 		"query": query,
 		"variables": map[string]interface{}{
 			"owner":  org,
-			"name":   repoName,
+			"name":   repoName.name,
 			"number": number,
 		},
 	})
