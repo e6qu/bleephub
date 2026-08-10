@@ -310,11 +310,13 @@ func TestGraphQLCreateRepo(t *testing.T) {
 }
 
 func TestGraphQLCreateRepoAcceptsAuthenticatedOwnerID(t *testing.T) {
-	admin := testServer.store.LookupUserByLogin("admin")
+	t.Parallel()
+	s := newIsolatedServer(t)
+	admin := s.store.LookupUserByLogin("admin")
 	if admin == nil {
 		t.Fatal("default admin was not seeded")
 	}
-	resp := ghPost(t, "/api/graphql", defaultToken, map[string]interface{}{
+	resp := s.post(t, "/api/graphql", defaultToken, map[string]interface{}{
 		"query":     `mutation($input:CreateRepositoryInput!){createRepository(input:$input){repository{name,owner{login}}}}`,
 		"variables": map[string]interface{}{"input": map[string]interface{}{"name": "gql-owner-id", "ownerId": admin.NodeID, "visibility": "PRIVATE"}},
 	})
@@ -331,15 +333,17 @@ func TestGraphQLCreateRepoAcceptsAuthenticatedOwnerID(t *testing.T) {
 }
 
 func TestGraphQLCreateRepoAcceptsActiveOrganizationOwnerID(t *testing.T) {
-	admin := testServer.store.LookupUserByLogin("admin")
+	t.Parallel()
+	s := newIsolatedServer(t)
+	admin := s.store.LookupUserByLogin("admin")
 	if admin == nil {
 		t.Fatal("default admin was not seeded")
 	}
-	org := testServer.store.CreateOrg(admin, "gql-owner-org", "GraphQL owner organization", "")
+	org := s.store.CreateOrg(admin, "gql-owner-org", "GraphQL owner organization", "")
 	if org == nil {
 		t.Fatal("create organization")
 	}
-	resp := ghPost(t, "/api/graphql", defaultToken, map[string]interface{}{
+	resp := s.post(t, "/api/graphql", defaultToken, map[string]interface{}{
 		"query":     `mutation($input:CreateRepositoryInput!){createRepository(input:$input){repository{name,owner{login}}}}`,
 		"variables": map[string]interface{}{"input": map[string]interface{}{"name": "gql-org-owner-id", "ownerId": org.NodeID, "visibility": "PRIVATE"}},
 	})
@@ -374,11 +378,13 @@ func TestGraphQLRepoNotFound(t *testing.T) {
 
 // TestGitInfoRefs verifies correct content-type and pkt-line response.
 func TestGitInfoRefs(t *testing.T) {
-	ghPost(t, "/api/v3/user/repos", defaultToken, map[string]interface{}{
+	t.Parallel()
+	s := newIsolatedServer(t)
+	s.post(t, "/api/v3/user/repos", defaultToken, map[string]interface{}{
 		"name": "test-git-info",
 	})
 
-	resp, err := http.Get(testBaseURL + "/admin/test-git-info.git/info/refs?service=git-upload-pack")
+	resp, err := http.Get(s.baseURL + "/admin/test-git-info.git/info/refs?service=git-upload-pack")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -401,8 +407,10 @@ func TestGitInfoRefs(t *testing.T) {
 
 // TestGitClonePush verifies creating a repo, pushing a commit via go-git, and verifying content.
 func TestGitClonePush(t *testing.T) {
+	t.Parallel()
+	s := newIsolatedServer(t)
 	// Create repo via API
-	resp := ghPost(t, "/api/v3/user/repos", defaultToken, map[string]interface{}{
+	resp := s.post(t, "/api/v3/user/repos", defaultToken, map[string]interface{}{
 		"name": "test-git-push",
 	})
 	resp.Body.Close()
@@ -417,7 +425,7 @@ func TestGitClonePush(t *testing.T) {
 	// Create remote
 	_, err = repo.CreateRemote(&config.RemoteConfig{
 		Name: "origin",
-		URLs: []string{testBaseURL + "/admin/test-git-push.git"},
+		URLs: []string{s.baseURL + "/admin/test-git-push.git"},
 	})
 	if err != nil {
 		t.Fatalf("failed to create remote: %v", err)
@@ -462,7 +470,7 @@ func TestGitClonePush(t *testing.T) {
 	}
 
 	// Verify: list branches should now show main
-	resp2 := ghGet(t, "/api/v3/repos/admin/test-git-push/branches", "")
+	resp2 := s.get(t, "/api/v3/repos/admin/test-git-push/branches", "")
 	if resp2.StatusCode != 200 {
 		resp2.Body.Close()
 		t.Fatalf("expected 200, got %d", resp2.StatusCode)
@@ -484,7 +492,7 @@ func TestGitClonePush(t *testing.T) {
 	}
 
 	// Verify: README endpoint should work
-	resp3 := ghGet(t, "/api/v3/repos/admin/test-git-push/readme", "")
+	resp3 := s.get(t, "/api/v3/repos/admin/test-git-push/readme", "")
 	if resp3.StatusCode != 200 {
 		resp3.Body.Close()
 		t.Fatalf("expected 200 for readme, got %d", resp3.StatusCode)
@@ -553,6 +561,7 @@ func storeCommit(s gitStorage.Storer, treeHash, parentHash plumbing.Hash, msg st
 }
 
 func TestGitStorageInitFailure(t *testing.T) {
+	s := newIsolatedServer(t)
 	tmpDir := t.TempDir()
 	readOnlyDir := tmpDir + "/readonly"
 	if err := os.Mkdir(readOnlyDir, 0o555); err != nil {
@@ -560,17 +569,18 @@ func TestGitStorageInitFailure(t *testing.T) {
 	}
 	t.Setenv("BLEEPHUB_GIT_DIR", readOnlyDir)
 
-	repo := testServer.store.CreateRepo(&User{Login: "admin", ID: 1}, "git-init-fail", "", false)
+	repo := s.store.CreateRepo(&User{Login: "admin", ID: 1}, "git-init-fail", "", false)
 	if repo != nil {
 		t.Fatal("expected nil repo when git storage init fails")
 	}
 }
 
 func TestGitDeleteCleanup(t *testing.T) {
+	s := newIsolatedServer(t)
 	tmpDir := t.TempDir()
 	t.Setenv("BLEEPHUB_GIT_DIR", tmpDir)
 
-	repo := testServer.store.CreateRepo(&User{Login: "admin", ID: 1}, "git-cleanup", "", false)
+	repo := s.store.CreateRepo(&User{Login: "admin", ID: 1}, "git-cleanup", "", false)
 	if repo == nil {
 		t.Fatal("expected repo to be created")
 	}
@@ -580,7 +590,7 @@ func TestGitDeleteCleanup(t *testing.T) {
 		t.Fatalf("expected git dir to exist: %v", err)
 	}
 
-	deleted, err := testServer.store.DeleteRepo("admin", "git-cleanup")
+	deleted, err := s.store.DeleteRepo("admin", "git-cleanup")
 	if err != nil {
 		t.Fatalf("DeleteRepo: %v", err)
 	}
@@ -630,12 +640,14 @@ func TestDeleteRepoReportsS3GitCleanupFailure(t *testing.T) {
 }
 
 func TestGitFetchNoAuthPublicRepo(t *testing.T) {
-	ghPost(t, "/api/v3/user/repos", defaultToken, map[string]interface{}{
+	t.Parallel()
+	s := newIsolatedServer(t)
+	s.post(t, "/api/v3/user/repos", defaultToken, map[string]interface{}{
 		"name":    "public-clone",
 		"private": false,
 	})
 
-	resp, err := http.Get(testBaseURL + "/admin/public-clone.git/info/refs?service=git-upload-pack")
+	resp, err := http.Get(s.baseURL + "/admin/public-clone.git/info/refs?service=git-upload-pack")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -646,12 +658,14 @@ func TestGitFetchNoAuthPublicRepo(t *testing.T) {
 }
 
 func TestGitFetchNoAuthPrivateRepo(t *testing.T) {
-	ghPost(t, "/api/v3/user/repos", defaultToken, map[string]interface{}{
+	t.Parallel()
+	s := newIsolatedServer(t)
+	s.post(t, "/api/v3/user/repos", defaultToken, map[string]interface{}{
 		"name":    "private-clone",
 		"private": true,
 	})
 
-	resp, err := http.Get(testBaseURL + "/admin/private-clone.git/info/refs?service=git-upload-pack")
+	resp, err := http.Get(s.baseURL + "/admin/private-clone.git/info/refs?service=git-upload-pack")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -665,11 +679,13 @@ func TestGitFetchNoAuthPrivateRepo(t *testing.T) {
 }
 
 func TestGitPushNoAuth(t *testing.T) {
-	ghPost(t, "/api/v3/user/repos", defaultToken, map[string]interface{}{
+	t.Parallel()
+	s := newIsolatedServer(t)
+	s.post(t, "/api/v3/user/repos", defaultToken, map[string]interface{}{
 		"name": "no-auth-push",
 	})
 
-	resp, err := http.Get(testBaseURL + "/admin/no-auth-push.git/info/refs?service=git-receive-pack")
+	resp, err := http.Get(s.baseURL + "/admin/no-auth-push.git/info/refs?service=git-receive-pack")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -680,7 +696,9 @@ func TestGitPushNoAuth(t *testing.T) {
 }
 
 func TestGitPushWithAuth(t *testing.T) {
-	repo := testServer.store.CreateRepo(&User{Login: "admin", ID: 1}, "auth-push", "", false)
+	t.Parallel()
+	s := newIsolatedServer(t)
+	repo := s.store.CreateRepo(&User{Login: "admin", ID: 1}, "auth-push", "", false)
 	if repo == nil {
 		t.Fatal("expected repo to be created")
 	}
@@ -701,7 +719,7 @@ func TestGitPushWithAuth(t *testing.T) {
 
 	_, err = gitRepo.CreateRemote(&config.RemoteConfig{
 		Name: "origin",
-		URLs: []string{testBaseURL + "/admin/auth-push.git"},
+		URLs: []string{s.baseURL + "/admin/auth-push.git"},
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -717,12 +735,14 @@ func TestGitPushWithAuth(t *testing.T) {
 }
 
 func TestGitFetchPrivateRepoWithAuth(t *testing.T) {
-	repo := testServer.store.CreateRepo(&User{Login: "admin", ID: 1}, "private-auth-fetch", "", true)
+	t.Parallel()
+	s := newIsolatedServer(t)
+	repo := s.store.CreateRepo(&User{Login: "admin", ID: 1}, "private-auth-fetch", "", true)
 	if repo == nil {
 		t.Fatal("expected repo to be created")
 	}
 
-	resp, err := http.NewRequest("GET", testBaseURL+"/admin/private-auth-fetch.git/info/refs?service=git-upload-pack", nil)
+	resp, err := http.NewRequest("GET", s.baseURL+"/admin/private-auth-fetch.git/info/refs?service=git-upload-pack", nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1013,33 +1033,35 @@ func TestGetContentsRootListing(t *testing.T) {
 }
 
 func TestRepositoryReadsResolveBranchTagAndCommitRefs(t *testing.T) {
-	created := ghPost(t, "/api/v3/user/repos", defaultToken, map[string]interface{}{
+	t.Parallel()
+	s := newIsolatedServer(t)
+	created := s.post(t, "/api/v3/user/repos", defaultToken, map[string]interface{}{
 		"name":      "treeish-reads",
 		"auto_init": true,
 	})
 	repo := decodeJSON(t, created)
 
-	initialResp := ghGet(t, "/api/v3/repos/admin/treeish-reads/commits", defaultToken)
+	initialResp := s.get(t, "/api/v3/repos/admin/treeish-reads/commits", defaultToken)
 	initial := decodeJSONArray(t, initialResp)
 	if len(initial) != 1 {
 		t.Fatalf("initial commits = %v, want one commit", initial)
 	}
 	initialSHA := initial[0]["sha"].(string)
-	wantCommitURL := testBaseURL + "/api/v3/repos/admin/treeish-reads/commits/" + initialSHA
+	wantCommitURL := s.baseURL + "/api/v3/repos/admin/treeish-reads/commits/" + initialSHA
 	if initial[0]["url"] != wantCommitURL {
 		t.Fatalf("commit url = %v, want %s", initial[0]["url"], wantCommitURL)
 	}
-	if initial[0]["html_url"] != testBaseURL+"/admin/treeish-reads/commit/"+initialSHA {
+	if initial[0]["html_url"] != s.baseURL+"/admin/treeish-reads/commit/"+initialSHA {
 		t.Fatalf("commit html_url = %v", initial[0]["html_url"])
 	}
 	commitDetails := initial[0]["commit"].(map[string]interface{})
 	tree := commitDetails["tree"].(map[string]interface{})
-	wantTreeURL := testBaseURL + "/api/v3/repos/admin/treeish-reads/git/trees/" + tree["sha"].(string)
+	wantTreeURL := s.baseURL + "/api/v3/repos/admin/treeish-reads/git/trees/" + tree["sha"].(string)
 	if tree["url"] != wantTreeURL {
 		t.Fatalf("commit tree url = %v, want %s", tree["url"], wantTreeURL)
 	}
 
-	added := ghPut(t, "/api/v3/repos/admin/treeish-reads/contents/after.txt", defaultToken, map[string]interface{}{
+	added := s.put(t, "/api/v3/repos/admin/treeish-reads/contents/after.txt", defaultToken, map[string]interface{}{
 		"message": "second commit",
 		"content": base64.StdEncoding.EncodeToString([]byte("after")),
 	})
@@ -1047,7 +1069,7 @@ func TestRepositoryReadsResolveBranchTagAndCommitRefs(t *testing.T) {
 	headSHA := addedJSON["commit"].(map[string]interface{})["sha"].(string)
 
 	for _, ref := range []string{"main", headSHA} {
-		resp := ghGet(t, "/api/v3/repos/admin/treeish-reads/contents/after.txt?ref="+ref, defaultToken)
+		resp := s.get(t, "/api/v3/repos/admin/treeish-reads/contents/after.txt?ref="+ref, defaultToken)
 		if resp.StatusCode != http.StatusOK {
 			body, _ := io.ReadAll(resp.Body)
 			resp.Body.Close()
@@ -1056,19 +1078,19 @@ func TestRepositoryReadsResolveBranchTagAndCommitRefs(t *testing.T) {
 		resp.Body.Close()
 	}
 
-	old := ghGet(t, "/api/v3/repos/admin/treeish-reads/contents/after.txt?ref="+initialSHA, defaultToken)
+	old := s.get(t, "/api/v3/repos/admin/treeish-reads/contents/after.txt?ref="+initialSHA, defaultToken)
 	old.Body.Close()
 	if old.StatusCode != http.StatusNotFound {
 		t.Fatalf("new file at old commit = %d, want 404", old.StatusCode)
 	}
 
-	readme := ghGet(t, "/api/v3/repos/admin/treeish-reads/readme?ref="+initialSHA, defaultToken)
+	readme := s.get(t, "/api/v3/repos/admin/treeish-reads/readme?ref="+initialSHA, defaultToken)
 	readme.Body.Close()
 	if readme.StatusCode != http.StatusOK {
 		t.Fatalf("README at commit = %d, want 200 (repo=%v)", readme.StatusCode, repo["full_name"])
 	}
 
-	history := ghGet(t, "/api/v3/repos/admin/treeish-reads/commits?sha="+initialSHA, defaultToken)
+	history := s.get(t, "/api/v3/repos/admin/treeish-reads/commits?sha="+initialSHA, defaultToken)
 	commits := decodeJSONArray(t, history)
 	if len(commits) != 1 || commits[0]["sha"] != initialSHA {
 		t.Fatalf("history rooted at old commit = %v", commits)
@@ -1464,26 +1486,28 @@ func TestRepoSubscription(t *testing.T) {
 
 // TestRepoVulnerabilityAlerts verifies enabling/disabling vulnerability alerts.
 func TestRepoVulnerabilityAlerts(t *testing.T) {
+	t.Parallel()
+	s := newIsolatedServer(t)
 	repoName := "vuln-alerts-repo"
-	ghPost(t, "/api/v3/user/repos", defaultToken, map[string]interface{}{"name": repoName})
+	s.post(t, "/api/v3/user/repos", defaultToken, map[string]interface{}{"name": repoName})
 
-	putResp := ghPut(t, "/api/v3/repos/admin/"+repoName+"/vulnerability-alerts", defaultToken, nil)
+	putResp := s.put(t, "/api/v3/repos/admin/"+repoName+"/vulnerability-alerts", defaultToken, nil)
 	if putResp.StatusCode != 204 {
 		putResp.Body.Close()
 		t.Fatalf("expected 204, got %d", putResp.StatusCode)
 	}
 	putResp.Body.Close()
-	repo := testServer.store.GetRepo("admin", repoName)
+	repo := s.store.GetRepo("admin", repoName)
 	if repo == nil || !repo.VulnerabilityAlertsEnabled {
 		t.Fatal("expected vulnerability alerts enabled")
 	}
 
-	delResp := ghDelete(t, "/api/v3/repos/admin/"+repoName+"/vulnerability-alerts", defaultToken)
+	delResp := s.delete(t, "/api/v3/repos/admin/"+repoName+"/vulnerability-alerts", defaultToken)
 	defer delResp.Body.Close()
 	if delResp.StatusCode != 204 {
 		t.Fatalf("expected 204, got %d", delResp.StatusCode)
 	}
-	repo = testServer.store.GetRepo("admin", repoName)
+	repo = s.store.GetRepo("admin", repoName)
 	if repo == nil || repo.VulnerabilityAlertsEnabled {
 		t.Fatal("expected vulnerability alerts disabled")
 	}
