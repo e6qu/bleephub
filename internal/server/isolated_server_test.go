@@ -56,6 +56,10 @@ func newIsolatedServer(t *testing.T) *isolatedServer {
 	t.Helper()
 	s := NewServer("127.0.0.1:0", zerolog.Nop())
 	useFixedTestClock(s)
+	// Package upload routes persist bytes under PackageDataDir; the shared
+	// harness sets one in TestMain, so give each isolated server its own
+	// per-test temp dir (auto-cleaned, so parallel-safe).
+	s.store.PackageDataDir = t.TempDir()
 	// Feed the shared OpenAPI shape observer (PAR-011) so isolated-server
 	// tests contribute to the parity coverage instead of eroding it as the
 	// TEST-008 migration moves traffic off the shared harness. The observer is
@@ -542,6 +546,50 @@ func (s *isolatedServer) createRepoWriteRepo(t *testing.T, autoInit bool) string
 	})
 	requireStatus(t, resp, 201)
 	return name
+}
+
+// seedPackageVersion mirrors the package helper (still used by gh_packages
+// files): publishes a package version (with a small file) via the internal
+// route and returns (packageID, versionID), on this isolated server.
+func (s *isolatedServer) seedPackageVersion(t *testing.T, ownerType, owner, pkgType, pkgName, version string) (int, int) {
+	t.Helper()
+	if pkgType == "container" {
+		t.Fatalf("container packages must be published through the GitHub Container Registry-compatible /v2/ data plane, not /internal/packages")
+	}
+	body, _ := json.Marshal(map[string]any{
+		"version":     version,
+		"description": "test version",
+		"metadata": map[string]any{
+			"package_type": pkgType,
+			"container":    map[string]any{"tags": []string{"latest"}},
+		},
+		"files": []map[string]any{
+			{
+				"name":           "package.tgz",
+				"content_type":   "application/gzip",
+				"content_base64": base64.StdEncoding.EncodeToString([]byte("hello package")),
+			},
+		},
+	})
+	resp, err := s.authedPost("/internal/packages/"+ownerType+"/"+owner+"/"+pkgType+"/"+pkgName+"/versions", "application/json", bytes.NewReader(body))
+	if err != nil {
+		t.Fatalf("seed package version: %v", err)
+	}
+	if resp.StatusCode != http.StatusCreated {
+		b, _ := io.ReadAll(resp.Body)
+		resp.Body.Close()
+		t.Fatalf("seed package version: %d %s", resp.StatusCode, b)
+	}
+	var v map[string]any
+	if err := json.NewDecoder(resp.Body).Decode(&v); err != nil {
+		t.Fatalf("decode seeded version: %v", err)
+	}
+	resp.Body.Close()
+	pkgID := 0
+	if u := s.store.GetPackage(owner, pkgType, pkgName); u != nil {
+		pkgID = u.ID
+	}
+	return pkgID, int(v["id"].(float64))
 }
 
 // putReadsFile mirrors the package helper (still used by gh_repos_reads_test.go):
