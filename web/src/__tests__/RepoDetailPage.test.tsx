@@ -29,6 +29,8 @@ function renderPage(path = "/ui/repos/admin/test") {
         <Routes>
           <Route path="/ui/repos/:owner/:repo" element={<RepoDetailPage />} />
           <Route path="/ui/repos/:owner/:repo/commits" element={<RepoDetailPage initialTab="commits" />} />
+          <Route path="/ui/repos/:owner/:repo/branches" element={<RepoDetailPage initialTab="branches" />} />
+          <Route path="/ui/repos/:owner/:repo/tags" element={<RepoDetailPage initialTab="tags" />} />
           <Route path="/ui/repos/:owner/:repo/commits/:sha" element={<RepoCommitPage />} />
           <Route path="/ui/repos/:owner/:repo/tree/:ref/*" element={<RepoDetailPage />} />
           <Route path="/ui/repos/:owner/:repo/blob/:ref/*" element={<RepoFilePage />} />
@@ -422,5 +424,95 @@ describe("repository detail journeys", () => {
 
     expect(await screen.findByText("admin/test")).toBeInTheDocument();
     expect(screen.getByText(/extra detail/)).toBeInTheDocument();
+  });
+});
+
+describe("RepoDetailPage file editing", () => {
+  it("edits a file through the contents API", async () => {
+    mockFetch.mockImplementation((url: RequestInfo | URL) => routedFetch(url));
+    renderPage("/ui/repos/admin/test/blob/main/README.md");
+    fireEvent.click(await screen.findByRole("button", { name: /^edit$/i }));
+    const editor = await screen.findByLabelText(/edit README\.md/i);
+    fireEvent.change(editor, { target: { value: "# changed" } });
+    fireEvent.click(screen.getByRole("button", { name: /commit changes/i }));
+    await waitFor(() => {
+      const put = mockFetch.mock.calls.find(
+        (c) => c[0].toString().endsWith("/contents/README.md") && c[1]?.method === "PUT",
+      );
+      expect(put).toBeTruthy();
+      const body = JSON.parse((put![1] as RequestInit).body as string);
+      expect(body.sha).toBe("r1");
+      expect(body.branch).toBe("main");
+      expect(typeof body.content).toBe("string");
+    });
+  });
+
+  it("deletes a file after confirmation", async () => {
+    mockFetch.mockImplementation((url: RequestInfo | URL) => routedFetch(url));
+    renderPage("/ui/repos/admin/test/blob/main/README.md");
+    fireEvent.click(await screen.findByRole("button", { name: /delete file/i }));
+    fireEvent.click(await screen.findByRole("button", { name: /^delete$/i }));
+    await waitFor(() => {
+      const del = mockFetch.mock.calls.find(
+        (c) => c[0].toString().endsWith("/contents/README.md") && c[1]?.method === "DELETE",
+      );
+      expect(del).toBeTruthy();
+    });
+  });
+
+  it("creates a new file from the code view", async () => {
+    mockFetch.mockImplementation((url: RequestInfo | URL) => routedFetch(url));
+    renderPage("/ui/repos/admin/test");
+    fireEvent.click(await screen.findByRole("button", { name: /add file/i }));
+    fireEvent.change(await screen.findByLabelText(/file path/i), { target: { value: "NEW.md" } });
+    fireEvent.change(screen.getByLabelText(/contents/i), { target: { value: "hello" } });
+    fireEvent.click(screen.getByRole("button", { name: /commit new file/i }));
+    await waitFor(() => {
+      const put = mockFetch.mock.calls.find(
+        (c) => c[0].toString().endsWith("/contents/NEW.md") && c[1]?.method === "PUT",
+      );
+      expect(put).toBeTruthy();
+      const body = JSON.parse((put![1] as RequestInit).body as string);
+      expect(body.branch).toBe("main");
+      expect(body.sha).toBeUndefined();
+    });
+  });
+});
+
+describe("RepoDetailPage refs", () => {
+  it("creates a branch from the branches tab", async () => {
+    mockFetch.mockImplementation((url: RequestInfo | URL) => routedFetch(url));
+    renderPage("/ui/repos/admin/test/branches");
+    fireEvent.click(await screen.findByRole("button", { name: /new branch/i }));
+    fireEvent.change(await screen.findByLabelText(/branch name/i), { target: { value: "feature/x" } });
+    fireEvent.click(screen.getByRole("button", { name: /create branch/i }));
+    await waitFor(() => {
+      const post = mockFetch.mock.calls.find(
+        (c) => c[0].toString().endsWith("/git/refs") && c[1]?.method === "POST",
+      );
+      expect(post).toBeTruthy();
+      expect(JSON.parse((post![1] as RequestInit).body as string)).toEqual({
+        ref: "refs/heads/feature/x",
+        sha: "abc",
+      });
+    });
+  });
+
+  it("creates a tag from the tags tab", async () => {
+    mockFetch.mockImplementation((url: RequestInfo | URL) => routedFetch(url));
+    renderPage("/ui/repos/admin/test/tags");
+    fireEvent.click(await screen.findByRole("button", { name: /new tag/i }));
+    fireEvent.change(await screen.findByLabelText(/tag name/i), { target: { value: "v1.0.0" } });
+    fireEvent.click(screen.getByRole("button", { name: /create tag/i }));
+    await waitFor(() => {
+      const post = mockFetch.mock.calls.find(
+        (c) => c[0].toString().endsWith("/git/refs") && c[1]?.method === "POST",
+      );
+      expect(post).toBeTruthy();
+      expect(JSON.parse((post![1] as RequestInit).body as string)).toEqual({
+        ref: "refs/tags/v1.0.0",
+        sha: "abc",
+      });
+    });
   });
 });

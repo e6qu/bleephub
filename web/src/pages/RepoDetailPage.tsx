@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router";
-import { useQuery } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Spinner, InlineError } from "@bleephub/ui-core/components";
 import Markdown from "react-markdown";
 import remarkGfm from "remark-gfm";
@@ -22,9 +22,14 @@ import {
   fetchEnvironments,
   fetchReleases,
   fetchPackages,
+  putFile,
+  deleteFile,
+  createRef,
 } from "../api.js";
 import { useOpenCounts } from "../hooks/useOpenCounts.js";
 import { decodeContentsBase64 } from "../utils/workflowDispatch.js";
+import { confirmAction } from "../components/confirmAction.js";
+import { MutationError } from "../components/MutationError.js";
 import { relativeTimeFromNow } from "../utils/format.js";
 import { repoCodeRoute } from "../routes.js";
 import type {
@@ -42,7 +47,7 @@ import type {
   GithubRepoSocialCounts,
 } from "../types.js";
 import { RepoHeader } from "../components/Shell.js";
-import { Box, Blankslate, Button, CodeBlock, SectionLabel } from "../components/ui.js";
+import { Box, Blankslate, Button, CodeBlock, SectionLabel, Modal, DialogActions, FormLabel } from "../components/ui.js";
 import {
   BranchIcon,
   TagIcon,
@@ -283,7 +288,7 @@ export function RepoDetailPage({ initialTab = "code" }: { initialTab?: SubTab })
         (tagsError ? (
           <InlineError title="Failed to load tags" detail={String(tagsErr)} />
         ) : (
-          <TagsList tags={tags} />
+          <TagsList owner={owner} repo={repo} tags={tags} branches={branches} defaultBranch={repoData.default_branch} />
         ))}
       {tab === "releases" &&
         (releasesError ? (
@@ -379,6 +384,31 @@ function CodeView({
     enabled: commits.length > 0 && path === "",
   });
 
+  const qc = useQueryClient();
+  const [adding, setAdding] = useState(false);
+  const [newName, setNewName] = useState("");
+  const [newContent, setNewContent] = useState("");
+  const [newMessage, setNewMessage] = useState("");
+  const createFileMut = useMutation({
+    mutationFn: () => {
+      const fullPath = path ? `${path}/${newName}` : newName;
+      return putFile(owner, repo, fullPath, {
+        message: newMessage || `Create ${fullPath}`,
+        content: newContent,
+        branch,
+      });
+    },
+    onSuccess: () => {
+      const fullPath = path ? `${path}/${newName}` : newName;
+      qc.invalidateQueries({ queryKey: ["contents", owner, repo, path, branch] });
+      setAdding(false);
+      setNewName("");
+      setNewContent("");
+      setNewMessage("");
+      navigate(repoCodeRoute(owner, repo, { kind: "blob", ref: branch, path: fullPath }));
+    },
+  });
+
   if (loading || itemsLoading || readmeLoading) return <Spinner label="loading code" />;
   if (commits.length === 0) {
     return <EmptyRepoSetup owner={owner} repo={repo} defaultBranch={defaultBranch} sshUrl={sshUrl} />;
@@ -426,8 +456,58 @@ function CodeView({
           </button>
         )}
         <span style={{ fontSize: "0.85rem", color: "var(--color-fg-muted)", flex: 1 }}>{path}</span>
+        <Button size="sm" onClick={() => setAdding(true)}>
+          Add file
+        </Button>
         <CloneButton owner={owner} repo={repo} sshUrl={sshUrl} archiveRef={branch} />
       </div>
+
+      {adding && (
+        <Modal title="Add a new file" onClose={() => setAdding(false)}>
+          <FormLabel id="new-file-name">
+            File path{path ? ` (under ${path}/)` : ""}
+          </FormLabel>
+          <input
+            id="new-file-name"
+            autoFocus
+            value={newName}
+            onChange={(e) => setNewName(e.target.value)}
+            placeholder="e.g. docs/README.md"
+            className="mb-3 w-full"
+          />
+          <FormLabel id="new-file-content">Contents</FormLabel>
+          <textarea
+            id="new-file-content"
+            value={newContent}
+            onChange={(e) => setNewContent(e.target.value)}
+            rows={12}
+            className="font-mono mb-3 w-full"
+            style={{ resize: "vertical", fontSize: ".8rem" }}
+          />
+          <FormLabel id="new-file-message">Commit message</FormLabel>
+          <input
+            id="new-file-message"
+            value={newMessage}
+            onChange={(e) => setNewMessage(e.target.value)}
+            placeholder={`Create ${newName || "file"}`}
+            className="mb-2 w-full"
+          />
+          <MutationError of={createFileMut} />
+          <DialogActions>
+            <Button variant="ghost" size="sm" onClick={() => setAdding(false)}>
+              Cancel
+            </Button>
+            <Button
+              variant="primary"
+              size="sm"
+              disabled={!newName.trim() || createFileMut.isPending}
+              onClick={() => createFileMut.mutate()}
+            >
+              {createFileMut.isPending ? "Committing…" : "Commit new file"}
+            </Button>
+          </DialogActions>
+        </Modal>
+      )}
 
       {fileList.length > 0 && (
         <Box
@@ -1536,6 +1616,33 @@ export function RepoFilePage() {
     queryFn: () => fetchRepoFile(owner, repo, path, ref),
     enabled: !!owner && !!repo && !!ref && !!path,
   });
+  const qc = useQueryClient();
+  const navigate = useNavigate();
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState("");
+  const [message, setMessage] = useState("");
+  const editMut = useMutation({
+    mutationFn: () =>
+      putFile(owner, repo, path, {
+        message: message || `Update ${path}`,
+        content: draft,
+        sha: query.data?.sha,
+        branch: ref,
+      }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["file", owner, repo, ref, path] });
+      setEditing(false);
+    },
+  });
+  const deleteMut = useMutation({
+    mutationFn: () =>
+      deleteFile(owner, repo, path, {
+        message: `Delete ${path}`,
+        sha: query.data?.sha ?? "",
+        branch: ref,
+      }),
+    onSuccess: () => navigate(`/ui/repos/${owner}/${repo}`),
+  });
 
   if (query.isLoading) return <Spinner label={`loading ${path}`} />;
   if (query.isError || !query.data) {
@@ -1571,24 +1678,93 @@ export function RepoFilePage() {
             <span style={{ color: "var(--color-fg-muted)", fontSize: ".76rem" }}>
               {query.data.sha.slice(0, 7)}
             </span>
+            {!editing && (
+              <>
+                <Button
+                  size="sm"
+                  onClick={() => {
+                    setDraft(content);
+                    setMessage("");
+                    setEditing(true);
+                  }}
+                >
+                  Edit
+                </Button>
+                <Button
+                  size="sm"
+                  aria-label="Delete file"
+                  disabled={deleteMut.isPending}
+                  onClick={async () => {
+                    if (
+                      await confirmAction(`Delete ${path}?`, {
+                        title: "Delete file",
+                        confirmLabel: "Delete",
+                      })
+                    ) {
+                      deleteMut.mutate();
+                    }
+                  }}
+                >
+                  Delete
+                </Button>
+              </>
+            )}
           </div>
         }
       >
-        <pre
-          className="font-mono"
-          style={{
-            margin: 0,
-            padding: "1rem",
-            overflowX: "auto",
-            fontSize: ".8rem",
-            lineHeight: 1.55,
-            whiteSpace: "pre",
-            background: "var(--color-surface)",
-          }}
-        >
-          {content}
-        </pre>
+        {editing ? (
+          <div style={{ padding: "1rem" }}>
+            <textarea
+              aria-label={`Edit ${path}`}
+              value={draft}
+              onChange={(e) => setDraft(e.target.value)}
+              rows={18}
+              className="font-mono w-full"
+              style={{ resize: "vertical", fontSize: ".8rem" }}
+            />
+            <div className="mt-3">
+              <FormLabel id="commit-message">Commit message</FormLabel>
+              <input
+                id="commit-message"
+                value={message}
+                onChange={(e) => setMessage(e.target.value)}
+                placeholder={`Update ${path}`}
+                className="mb-2 w-full"
+              />
+            </div>
+            <MutationError of={editMut} />
+            <DialogActions>
+              <Button variant="ghost" size="sm" onClick={() => setEditing(false)}>
+                Cancel
+              </Button>
+              <Button
+                variant="primary"
+                size="sm"
+                disabled={editMut.isPending}
+                onClick={() => editMut.mutate()}
+              >
+                {editMut.isPending ? "Committing…" : "Commit changes"}
+              </Button>
+            </DialogActions>
+          </div>
+        ) : (
+          <pre
+            className="font-mono"
+            style={{
+              margin: 0,
+              padding: "1rem",
+              overflowX: "auto",
+              fontSize: ".8rem",
+              lineHeight: 1.55,
+              whiteSpace: "pre",
+              background: "var(--color-surface)",
+            }}
+          >
+            {content}
+          </pre>
+        )}
       </Box>
+      <MutationError of={deleteMut} />
     </div>
   );
 }
@@ -1651,8 +1827,73 @@ function BranchesList({
   branches: GithubBranch[];
   defaultBranch: string;
 }) {
+  const qc = useQueryClient();
+  const [creating, setCreating] = useState(false);
+  const [name, setName] = useState("");
+  const [source, setSource] = useState(defaultBranch);
+  const createMut = useMutation({
+    mutationFn: () => {
+      const sha = branches.find((b) => b.name === source)?.commit.sha ?? "";
+      return createRef(owner, repo, `refs/heads/${name}`, sha);
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["branches", owner, repo] });
+      setCreating(false);
+      setName("");
+    },
+  });
+
+  const newBranchButton = branches.length > 0 && (
+    <Button size="sm" onClick={() => setCreating(true)}>
+      New branch
+    </Button>
+  );
+  const newBranchModal = creating && (
+    <Modal title="Create a branch" onClose={() => setCreating(false)}>
+      <FormLabel id="new-branch-name">Branch name</FormLabel>
+      <input
+        id="new-branch-name"
+        autoFocus
+        value={name}
+        onChange={(e) => setName(e.target.value)}
+        placeholder="e.g. feature/login"
+        className="mb-3 w-full"
+      />
+      <FormLabel id="new-branch-source">Create from</FormLabel>
+      <select
+        id="new-branch-source"
+        value={source}
+        onChange={(e) => setSource(e.target.value)}
+        className="mb-3 w-full"
+      >
+        {branches.map((b) => (
+          <option key={b.name} value={b.name}>
+            {b.name}
+          </option>
+        ))}
+      </select>
+      <MutationError of={createMut} />
+      <DialogActions>
+        <Button variant="ghost" size="sm" onClick={() => setCreating(false)}>
+          Cancel
+        </Button>
+        <Button
+          variant="primary"
+          size="sm"
+          disabled={!name.trim() || createMut.isPending}
+          onClick={() => createMut.mutate()}
+        >
+          {createMut.isPending ? "Creating…" : "Create branch"}
+        </Button>
+      </DialogActions>
+    </Modal>
+  );
+
   if (branches.length === 0) return <Blankslate icon={<BranchIcon size={26} />} title="No branches" />;
   return (
+    <>
+      <div className="mb-3 flex justify-end">{newBranchButton}</div>
+      {newBranchModal}
     <Box>
       {branches.map((b, i) => (
         <div
@@ -1710,12 +1951,91 @@ function BranchesList({
         </div>
       ))}
     </Box>
+    </>
   );
 }
 
-function TagsList({ tags }: { tags: GithubTag[] }) {
-  if (tags.length === 0) return <Blankslate icon={<TagIcon size={26} />} title="No tags" />;
+function TagsList({
+  owner,
+  repo,
+  tags,
+  branches,
+  defaultBranch,
+}: {
+  owner: string;
+  repo: string;
+  tags: GithubTag[];
+  branches: GithubBranch[];
+  defaultBranch: string;
+}) {
+  const qc = useQueryClient();
+  const [creating, setCreating] = useState(false);
+  const [name, setName] = useState("");
+  const [source, setSource] = useState(defaultBranch);
+  const createMut = useMutation({
+    mutationFn: () => {
+      const sha = branches.find((b) => b.name === source)?.commit.sha ?? "";
+      return createRef(owner, repo, `refs/tags/${name}`, sha);
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["repo-tags", owner, repo] });
+      setCreating(false);
+      setName("");
+    },
+  });
+
+  const newTagModal = creating && (
+    <Modal title="Create a tag" onClose={() => setCreating(false)}>
+      <FormLabel id="new-tag-name">Tag name</FormLabel>
+      <input
+        id="new-tag-name"
+        autoFocus
+        value={name}
+        onChange={(e) => setName(e.target.value)}
+        placeholder="e.g. v1.0.0"
+        className="mb-3 w-full"
+      />
+      <FormLabel id="new-tag-source">Create from</FormLabel>
+      <select
+        id="new-tag-source"
+        value={source}
+        onChange={(e) => setSource(e.target.value)}
+        className="mb-3 w-full"
+      >
+        {branches.map((b) => (
+          <option key={b.name} value={b.name}>
+            {b.name}
+          </option>
+        ))}
+      </select>
+      <MutationError of={createMut} />
+      <DialogActions>
+        <Button variant="ghost" size="sm" onClick={() => setCreating(false)}>
+          Cancel
+        </Button>
+        <Button
+          variant="primary"
+          size="sm"
+          disabled={!name.trim() || !branches.length || createMut.isPending}
+          onClick={() => createMut.mutate()}
+        >
+          {createMut.isPending ? "Creating…" : "Create tag"}
+        </Button>
+      </DialogActions>
+    </Modal>
+  );
+
   return (
+    <>
+      <div className="mb-3 flex justify-end">
+        <Button size="sm" disabled={!branches.length} onClick={() => setCreating(true)}>
+          New tag
+        </Button>
+      </div>
+      {newTagModal}
+      {tags.length === 0 ? (
+        <Blankslate icon={<TagIcon size={26} />} title="No tags" />
+      ) : (
     <Box>
       {tags.map((t, i) => (
         <div
@@ -1748,5 +2068,7 @@ function TagsList({ tags }: { tags: GithubTag[] }) {
         </div>
       ))}
     </Box>
+      )}
+    </>
   );
 }

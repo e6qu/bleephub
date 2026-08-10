@@ -15,6 +15,14 @@ export function decodeContentsBase64(b64: string): string {
   return new TextDecoder().decode(bytes);
 }
 
+/** Encode UTF-8 text to base64 for the GitHub contents API `content` member. */
+export function encodeContentsBase64(text: string): string {
+  const bytes = new TextEncoder().encode(text);
+  let bin = "";
+  for (const b of bytes) bin += String.fromCharCode(b);
+  return btoa(bin);
+}
+
 function normalizeInput(raw: unknown): WorkflowDispatchInput {
   if (raw === null || typeof raw !== "object") return {};
   const r = raw as Record<string, unknown>;
