@@ -17,9 +17,11 @@ import (
 // JobCancellation to the runner executing a job, leaves always()-gated
 // jobs runnable, and the run concludes cancelled.
 func TestCancellationSignalsRunningJob(t *testing.T) {
+	t.Parallel()
+	s := newIsolatedServer(t)
 	repoKey := "cancelowner/cancel-repo"
 	cancelRepoRunsCleanup(t, repoKey)
-	commitWorkflowYAMLToStorage(t, testServer, repoKey, ".github/workflows/ci.yml", `name: cancel-ci
+	commitWorkflowYAMLToStorage(t, s.Server, repoKey, ".github/workflows/ci.yml", `name: cancel-ci
 on: [push]
 jobs:
   slow:
@@ -33,13 +35,13 @@ jobs:
     steps:
       - run: echo cleanup
 `)
-	testServer.triggerWorkflowsForEvent(repoKey, "push", "", "refs/heads/main", nil)
+	s.triggerWorkflowsForEvent(repoKey, "push", "", "refs/heads/main", nil)
 
 	var wf *Workflow
 	waitUntil(t, "run", func() bool {
-		testServer.store.mu.RLock()
-		defer testServer.store.mu.RUnlock()
-		for _, w := range testServer.store.Workflows {
+		s.store.mu.RLock()
+		defer s.store.mu.RUnlock()
+		for _, w := range s.store.Workflows {
 			if w.RepoFullName == repoKey {
 				wf = w
 				return true
@@ -54,34 +56,34 @@ jobs:
 		Agent:     &Agent{ID: 7001, Labels: []Label{{Name: "self-hosted"}}},
 		MsgCh:     make(chan *TaskAgentMessage, 10),
 	}
-	testServer.store.mu.Lock()
-	testServer.store.Sessions["cancel-sess"] = sess
-	testServer.store.mu.Unlock()
+	s.store.mu.Lock()
+	s.store.Sessions["cancel-sess"] = sess
+	s.store.mu.Unlock()
 	// The pending queue is shared across tests — keep only this run's
 	// job so the pull below deterministically takes it.
-	testServer.store.mu.Lock()
+	s.store.mu.Lock()
 	slowJobID := wf.Jobs["slow"].JobID
-	kept := testServer.store.PendingMessages[:0]
-	for _, m := range testServer.store.PendingMessages {
+	kept := s.store.PendingMessages[:0]
+	for _, m := range s.store.PendingMessages {
 		if m.JobID == slowJobID {
 			kept = append(kept, m)
 		}
 	}
-	testServer.store.PendingMessages = kept
-	testServer.store.mu.Unlock()
+	s.store.PendingMessages = kept
+	s.store.mu.Unlock()
 
-	msg := testServer.pullPendingMessage(sess, runnerScope{Repo: repoKey})
+	msg := s.pullPendingMessage(sess, runnerScope{Repo: repoKey})
 	if msg == nil || msg.JobID != slowJobID {
 		t.Fatalf("runner did not pull the slow job: %v", msg)
 	}
-	testServer.store.mu.Lock()
+	s.store.mu.Lock()
 	slowID := wf.Jobs["slow"].JobID
-	testServer.store.Jobs[slowID].Status = "running"
+	s.store.Jobs[slowID].Status = "running"
 	wf.Jobs["slow"].Status = JobStatusRunning
-	testServer.store.mu.Unlock()
+	s.store.mu.Unlock()
 
 	// Cancel via the REST API.
-	resp := ghPost(t, fmt.Sprintf("/api/v3/repos/%s/actions/runs/%d/cancel", repoKey, wf.RunID), defaultToken, map[string]interface{}{})
+	resp := s.post(t, fmt.Sprintf("/api/v3/repos/%s/actions/runs/%d/cancel", repoKey, wf.RunID), defaultToken, map[string]interface{}{})
 	resp.Body.Close()
 
 	// The runner receives a JobCancellation for the running job.
@@ -102,10 +104,10 @@ jobs:
 		t.Fatalf("cancellation body = %s (err %v), want jobId %s", cancelMsg.Body, err, slowID)
 	}
 
-	testServer.store.mu.RLock()
+	s.store.mu.RLock()
 	slowStatus := wf.Jobs["slow"].Status
 	cleanupStatus := wf.Jobs["cleanup"].Status
-	testServer.store.mu.RUnlock()
+	s.store.mu.RUnlock()
 	if slowStatus != JobStatusRunning {
 		t.Errorf("running job force-completed server-side: %q (the runner reports the cancel)", slowStatus)
 	}
@@ -114,18 +116,18 @@ jobs:
 	}
 
 	// The runner aborts and reports; the always() job then dispatches.
-	testServer.onJobCompleted(context.Background(), slowID, "Canceled")
+	s.onJobCompleted(context.Background(), slowID, "Canceled")
 	waitUntil(t, "cleanup dispatched", func() bool {
-		testServer.store.mu.RLock()
-		defer testServer.store.mu.RUnlock()
+		s.store.mu.RLock()
+		defer s.store.mu.RUnlock()
 		return wf.Jobs["cleanup"].Status == JobStatusQueued
 	})
 
 	// Cleanup completes; run concludes cancelled (not failure).
-	testServer.onJobCompleted(context.Background(), wf.Jobs["cleanup"].JobID, "Succeeded")
+	s.onJobCompleted(context.Background(), wf.Jobs["cleanup"].JobID, "Succeeded")
 	waitUntil(t, "run cancelled", func() bool {
-		testServer.store.mu.RLock()
-		defer testServer.store.mu.RUnlock()
+		s.store.mu.RLock()
+		defer s.store.mu.RUnlock()
 		return wf.Status == WorkflowStatusCompleted && wf.Result == ResultCancelled
 	})
 }
@@ -133,9 +135,11 @@ jobs:
 // TestCancelPurgesUndeliveredJobs: cancelling drops queued-but-undelivered
 // job messages so a runner can't pull a cancelled job later.
 func TestCancelPurgesUndeliveredJobs(t *testing.T) {
+	t.Parallel()
+	s := newIsolatedServer(t)
 	repoKey := "cancelq/cq-repo"
 	cancelRepoRunsCleanup(t, repoKey)
-	commitWorkflowYAMLToStorage(t, testServer, repoKey, ".github/workflows/ci.yml", `name: cq-ci
+	commitWorkflowYAMLToStorage(t, s.Server, repoKey, ".github/workflows/ci.yml", `name: cq-ci
 on: [push]
 jobs:
   a:
@@ -143,12 +147,12 @@ jobs:
     steps:
       - run: echo a
 `)
-	testServer.triggerWorkflowsForEvent(repoKey, "push", "", "refs/heads/main", nil)
+	s.triggerWorkflowsForEvent(repoKey, "push", "", "refs/heads/main", nil)
 	var wf *Workflow
 	waitUntil(t, "run", func() bool {
-		testServer.store.mu.RLock()
-		defer testServer.store.mu.RUnlock()
-		for _, w := range testServer.store.Workflows {
+		s.store.mu.RLock()
+		defer s.store.mu.RUnlock()
+		for _, w := range s.store.Workflows {
 			if w.RepoFullName == repoKey {
 				wf = w
 				return true
@@ -157,11 +161,11 @@ jobs:
 		return false
 	})
 
-	testServer.cancelWorkflow(wf)
+	s.cancelWorkflow(wf)
 
-	testServer.store.mu.RLock()
-	defer testServer.store.mu.RUnlock()
-	for _, msg := range testServer.store.PendingMessages {
+	s.store.mu.RLock()
+	defer s.store.mu.RUnlock()
+	for _, msg := range s.store.PendingMessages {
 		if msg.JobID == wf.Jobs["a"].JobID {
 			t.Fatal("cancelled job's message still pending")
 		}
@@ -178,20 +182,22 @@ jobs:
 // can't start yields a run with conclusion startup_failure, visible on
 // the runs API, with no jobs.
 func TestStartupFailureRunShell(t *testing.T) {
+	t.Parallel()
+	s := newIsolatedServer(t)
 	repoKey := "startfail/sf-repo"
-	commitWorkflowYAMLToStorage(t, testServer, repoKey, ".github/workflows/broken.yml", `name: broken-call
+	commitWorkflowYAMLToStorage(t, s.Server, repoKey, ".github/workflows/broken.yml", `name: broken-call
 on: [push]
 jobs:
   call:
     uses: ./.github/workflows/does-not-exist.yml
 `)
-	testServer.triggerWorkflowsForEvent(repoKey, "push", "", "refs/heads/main", nil)
+	s.triggerWorkflowsForEvent(repoKey, "push", "", "refs/heads/main", nil)
 
 	var wf *Workflow
 	waitUntil(t, "startup_failure run", func() bool {
-		testServer.store.mu.RLock()
-		defer testServer.store.mu.RUnlock()
-		for _, w := range testServer.store.Workflows {
+		s.store.mu.RLock()
+		defer s.store.mu.RUnlock()
+		for _, w := range s.store.Workflows {
 			if w.RepoFullName == repoKey {
 				wf = w
 				return true
@@ -207,7 +213,7 @@ jobs:
 	}
 
 	// Visible through the runs API with the real conclusion.
-	resp, err := http.Get(fmt.Sprintf("http://%s/api/v3/repos/%s/actions/runs/%d", testServer.addr, repoKey, wf.RunID))
+	resp, err := http.Get(fmt.Sprintf("%s/api/v3/repos/%s/actions/runs/%d", s.baseURL, repoKey, wf.RunID))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -221,7 +227,7 @@ jobs:
 		t.Errorf("API name = %v, want broken-call", run["name"])
 	}
 	waitUntil(t, "startup failure check suite", func() bool {
-		suites := testServer.store.ListCheckSuitesForCommit(repoKey, wf.Sha, githubActionsAppID)
+		suites := s.store.ListCheckSuitesForCommit(repoKey, wf.Sha, githubActionsAppID)
 		return len(suites) == 1 && suites[0].Status == "completed" &&
 			suites[0].Conclusion == "startup_failure"
 	})
@@ -229,24 +235,26 @@ jobs:
 
 // TestRunnerGroupsCRUD exercises runner-group create/read/update/delete.
 func TestRunnerGroupsCRUD(t *testing.T) {
-	resp := ghPost(t, "/api/v3/admin/organizations", defaultToken,
+	t.Parallel()
+	s := newIsolatedServer(t)
+	resp := s.post(t, "/api/v3/admin/organizations", defaultToken,
 		map[string]interface{}{"login": "rg-org", "admin": "admin"})
 	resp.Body.Close()
 
-	testServer.store.mu.Lock()
-	agentID := testServer.store.NextAgent
-	testServer.store.NextAgent++
-	testServer.store.Agents[agentID] = &Agent{
+	s.store.mu.Lock()
+	agentID := s.store.NextAgent
+	s.store.NextAgent++
+	s.store.Agents[agentID] = &Agent{
 		ID: agentID, Name: "rg-agent", Status: "online", Scope: runnerScope{Org: "rg-org"},
 	}
-	testServer.store.mu.Unlock()
+	s.store.mu.Unlock()
 
 	do := func(method, path string, body interface{}) (int, map[string]interface{}) {
 		var payload []byte
 		if body != nil {
 			payload, _ = json.Marshal(body)
 		}
-		req, _ := http.NewRequest(method, "http://"+testServer.addr+path, bytesReader(payload))
+		req, _ := http.NewRequest(method, s.baseURL+path, bytesReader(payload))
 		req.Header.Set("Authorization", "Bearer "+defaultToken)
 		req.Header.Set("Content-Type", "application/json")
 		r, err := http.DefaultClient.Do(req)
@@ -402,7 +410,9 @@ func bytesReader(b []byte) *bytes.Reader {
 // TestLocalActionTarball verifies actions hosted on bleephub
 // itself serve GitHub-layout tarballs from their own git storage.
 func TestLocalActionTarball(t *testing.T) {
-	commitFilesToStorage(t, testServer, "actowner/hello-action", map[string]string{
+	t.Parallel()
+	s := newIsolatedServer(t)
+	commitFilesToStorage(t, s.Server, "actowner/hello-action", map[string]string{
 		"action.yml": `name: hello
 runs:
   using: composite
@@ -414,12 +424,12 @@ runs:
 	})
 
 	// The runner fetches an action tarball with the job's runtime token.
-	jobToken, _ := testJobToken(t, testServer, "actowner/hello-action")
-	resp := runnerDo(t, "GET", "http://"+testServer.addr+"/_apis/v1/actions/tarball/actowner/hello-action/main", jobToken, "")
+	jobToken, _ := testJobToken(t, s.Server, "actowner/hello-action")
+	resp := runnerDo(t, "GET", s.baseURL+"/_apis/v1/actions/tarball/actowner/hello-action/main", jobToken, "")
 	defer resp.Body.Close()
 	if resp.StatusCode == http.StatusBadGateway {
 		// Default branch may be master in the test storage.
-		resp2 := runnerDo(t, "GET", "http://"+testServer.addr+"/_apis/v1/actions/tarball/actowner/hello-action/master", jobToken, "")
+		resp2 := runnerDo(t, "GET", s.baseURL+"/_apis/v1/actions/tarball/actowner/hello-action/master", jobToken, "")
 		defer resp2.Body.Close()
 		resp = resp2
 	}
@@ -467,6 +477,7 @@ runs:
 }
 
 func TestNormalizeResultRunnerSpellings(t *testing.T) {
+	t.Parallel()
 	// The official runner reports the US spelling "Canceled".
 	for _, in := range []string{"Canceled", "canceled", "Cancelled", "cancelled"} {
 		if got := normalizeResult(in); got != "cancelled" {
