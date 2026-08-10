@@ -1,0 +1,1 @@
+import{m as e}from"./vendor-tanstack-BqCMRApm.js";import{ds as t,vs as n,xs as r}from"./index-wegoMjdX.js";function i(i){return e({queryKey:[`workflows`,i],queryFn:({signal:e})=>t(i,e),refetchInterval:e=>r(e.state.error)||n(e.state.error)?!1:1e4})}export{i as t};
