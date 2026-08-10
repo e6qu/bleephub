@@ -342,7 +342,13 @@ func (st *Store) ListRepoIssueEvents(repoID int) []*IssueEvent {
 func (st *Store) GetIssueEvent(id int) *IssueEvent {
 	st.mu.RLock()
 	defer st.mu.RUnlock()
-	return st.IssueEvents[id]
+	// A copy so a reader can't mutate the stored event (STORE-021); all-value.
+	ev := st.IssueEvents[id]
+	if ev == nil {
+		return nil
+	}
+	clone := *ev
+	return &clone
 }
 
 // --- Label CRUD ---
@@ -381,7 +387,14 @@ func (st *Store) CreateLabel(repoID int, name, description, color string) *Issue
 func (st *Store) GetLabel(id int) *IssueLabel {
 	st.mu.RLock()
 	defer st.mu.RUnlock()
-	return st.Labels[id]
+	// A copy so a reader can't mutate the stored label through the getter
+	// (STORE-021); IssueLabel is all-value. Edits go through UpdateLabel by id.
+	lbl := st.Labels[id]
+	if lbl == nil {
+		return nil
+	}
+	clone := *lbl
+	return &clone
 }
 
 // GetLabelByName returns a label by repo and name.
@@ -390,7 +403,8 @@ func (st *Store) GetLabelByName(repoID int, name string) *IssueLabel {
 	defer st.mu.RUnlock()
 	for _, l := range st.Labels {
 		if l.RepoID == repoID && l.Name == name {
-			return l
+			clone := *l
+			return &clone
 		}
 	}
 	return nil
@@ -492,10 +506,28 @@ func (st *Store) CreateMilestone(repoID, creatorID int, title, description, stat
 }
 
 // GetMilestone returns a milestone by global ID.
+// cloneMilestone returns a copy safe to hand outside the store lock
+// (STORE-021): DueOn and ClosedAt are the only reference fields.
+func cloneMilestone(m *Milestone) *Milestone {
+	if m == nil {
+		return nil
+	}
+	clone := *m
+	if m.DueOn != nil {
+		due := *m.DueOn
+		clone.DueOn = &due
+	}
+	if m.ClosedAt != nil {
+		closed := *m.ClosedAt
+		clone.ClosedAt = &closed
+	}
+	return &clone
+}
+
 func (st *Store) GetMilestone(id int) *Milestone {
 	st.mu.RLock()
 	defer st.mu.RUnlock()
-	return st.Milestones[id]
+	return cloneMilestone(st.Milestones[id])
 }
 
 // GetMilestoneByNumber returns a milestone by repo and number.
@@ -504,7 +536,7 @@ func (st *Store) GetMilestoneByNumber(repoID, number int) *Milestone {
 	defer st.mu.RUnlock()
 	for _, ms := range st.Milestones {
 		if ms.RepoID == repoID && ms.Number == number {
-			return ms
+			return cloneMilestone(ms)
 		}
 	}
 	return nil

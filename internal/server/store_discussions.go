@@ -286,7 +286,18 @@ func (st *Store) CreateDiscussionComment(discussionID, authorID int, body string
 func (st *Store) GetDiscussionComment(id int) *DiscussionComment {
 	st.mu.RLock()
 	defer st.mu.RUnlock()
-	return st.DiscussionComments[id]
+	// A copy so a reader can't mutate the stored comment through the getter
+	// (STORE-021); LastEditedAt is the only reference field.
+	c := st.DiscussionComments[id]
+	if c == nil {
+		return nil
+	}
+	clone := *c
+	if c.LastEditedAt != nil {
+		edited := *c.LastEditedAt
+		clone.LastEditedAt = &edited
+	}
+	return &clone
 }
 
 // ListDiscussionComments returns comments for a discussion, optionally scoped to a parent.

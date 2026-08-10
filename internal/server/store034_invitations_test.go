@@ -5,6 +5,30 @@ import (
 	"time"
 )
 
+// TestMilestoneAndLabelGetsAreDetached pins STORE-021 for the issues family:
+// GetMilestone (with its DueOn time pointer) and GetLabel must return copies.
+func TestMilestoneAndLabelGetsAreDetached(t *testing.T) {
+	s := newTestServer()
+	admin := s.store.UsersByLogin["admin"]
+	repo := s.store.CreateRepo(admin, "ml-detach", "", false)
+	due := fixedTestTime.Add(48 * time.Hour)
+	ms := s.store.CreateMilestone(repo.ID, admin.ID, "v1", "desc", "open", &due)
+	lbl := s.store.CreateLabel(repo.ID, "bug", "d", "ff0000")
+
+	m := s.store.GetMilestone(ms.ID)
+	m.Title = "hacked"
+	*m.DueOn = m.DueOn.Add(999 * time.Hour)
+	if fresh := s.store.GetMilestone(ms.ID); fresh.Title == "hacked" || !fresh.DueOn.Equal(due) {
+		t.Fatalf("milestone mutated through the getter: title=%q dueOn=%v", fresh.Title, fresh.DueOn)
+	}
+
+	l := s.store.GetLabel(lbl.ID)
+	l.Color = "000000"
+	if fresh := s.store.GetLabel(lbl.ID); fresh.Color != "ff0000" {
+		t.Fatalf("label mutated through the getter: %q", fresh.Color)
+	}
+}
+
 // TestOrgInvitationAndInteractionLimitGetsAreDetached pins STORE-021 for the
 // teams/people family: GetOrgInvitation and GetOrgInteractionLimit must return
 // copies, so a reader mutating the result (or its TeamIDs slice) cannot corrupt
