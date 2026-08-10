@@ -186,17 +186,32 @@ func (st *Store) CreateOrg(creator *User, login, name, description string) *Org 
 }
 
 // GetOrg returns an organization by login, or nil if not found.
+// cloneOrg returns a copy safe to hand outside the store lock (STORE-021):
+// MembersCanCreateRepositories is the only reference field. Org writes go
+// through the keyed UpdateOrg or mutate the live st.Orgs row directly.
+func cloneOrg(o *Org) *Org {
+	if o == nil {
+		return nil
+	}
+	clone := *o
+	if o.MembersCanCreateRepositories != nil {
+		v := *o.MembersCanCreateRepositories
+		clone.MembersCanCreateRepositories = &v
+	}
+	return &clone
+}
+
 func (st *Store) GetOrg(login string) *Org {
 	st.mu.RLock()
 	defer st.mu.RUnlock()
-	return st.OrgsByLogin[login]
+	return cloneOrg(st.OrgsByLogin[login])
 }
 
 // GetOrgByID returns an organization by its numeric ID, or nil.
 func (st *Store) GetOrgByID(id int) *Org {
 	st.mu.RLock()
 	defer st.mu.RUnlock()
-	return st.Orgs[id]
+	return cloneOrg(st.Orgs[id])
 }
 
 // ListTeamsByUser returns every team across all orgs that the given user is a member of.

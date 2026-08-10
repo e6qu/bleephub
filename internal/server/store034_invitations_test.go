@@ -5,6 +5,32 @@ import (
 	"time"
 )
 
+// TestOrgGetsAreDetached pins STORE-021 for the org getters: GetOrg and
+// GetOrgByID must copy the org, including its MembersCanCreateRepositories bool
+// pointer.
+func TestOrgGetsAreDetached(t *testing.T) {
+	s := newTestServer()
+	admin := s.store.UsersByLogin["admin"]
+	org := s.store.CreateOrg(admin, "org-detach", "Name", "")
+	allowed := true
+	s.store.UpdateOrg(org.Login, func(o *Org) {
+		o.MembersCanCreateRepositories = &allowed
+		o.Description = "orig"
+	})
+
+	got := s.store.GetOrg(org.Login)
+	got.Description = "hacked"
+	*got.MembersCanCreateRepositories = false
+
+	fresh := s.store.GetOrgByID(org.ID)
+	if fresh.Description == "hacked" {
+		t.Fatalf("org description mutated through the getter: %q", fresh.Description)
+	}
+	if fresh.MembersCanCreateRepositories == nil || !*fresh.MembersCanCreateRepositories {
+		t.Fatalf("org bool pointer mutated through the getter: %v", fresh.MembersCanCreateRepositories)
+	}
+}
+
 // TestTeamGetsAreDetached pins STORE-021 for the team getters: GetTeam and
 // GetTeamByID must deep-copy the MemberIDs/RepoPermissions reference fields.
 func TestTeamGetsAreDetached(t *testing.T) {
