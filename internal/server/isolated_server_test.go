@@ -3,6 +3,7 @@ package bleephub
 import (
 	"bytes"
 	"encoding/json"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -376,6 +377,45 @@ func (s *isolatedServer) seedOrgRepo(t *testing.T, org *Org, name string, privat
 	repo := s.store.CreateOrgRepo(org, admin, name, "", private)
 	if repo == nil {
 		t.Fatalf("CreateOrgRepo %s/%s failed", org.Login, name)
+	}
+	return repo
+}
+
+// sealForServer/putSealedSecret mirror the package helpers against this
+// instance: seal a value with this store's actions key pair, and PUT a secret
+// the way real clients do.
+func (s *isolatedServer) sealForServer(t *testing.T, plain string) (enc, keyID string) {
+	t.Helper()
+	enc, keyID, err := s.store.SealSecretValue(plain)
+	if err != nil {
+		t.Fatalf("seal: %v", err)
+	}
+	return enc, keyID
+}
+
+func (s *isolatedServer) putSealedSecret(t *testing.T, path, plain string) *http.Response {
+	t.Helper()
+	enc, keyID := s.sealForServer(t, plain)
+	return s.put(t, path, defaultToken, map[string]interface{}{
+		"encrypted_value": enc,
+		"key_id":          keyID,
+	})
+}
+
+// createTestCodespaceRepo mirrors the package helper: an admin repo seeded with
+// a devcontainer.json pointing at the fast test image.
+func (s *isolatedServer) createTestCodespaceRepo(t *testing.T, name string) *Repo {
+	t.Helper()
+	admin := s.store.UsersByLogin["admin"]
+	repo := s.store.CreateRepo(admin, name, "codespace test repo", false)
+	if repo == nil {
+		t.Fatalf("failed to create repo %s", name)
+	}
+	stor := s.store.GitStorages[repo.FullName]
+	if _, err := initRepoWithFiles(stor, repo.DefaultBranch, "init", map[string]string{
+		".devcontainer/devcontainer.json": fmt.Sprintf(`{"image":"%s"}`, codespaceTestImage),
+	}, repoSignature(admin.Login, "bleephub@local")); err != nil {
+		t.Fatalf("init repo files: %v", err)
 	}
 	return repo
 }
