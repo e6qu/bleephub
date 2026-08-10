@@ -133,7 +133,9 @@ func (st *Store) GetDiscussionCategoryByName(repoID int, name string) *Discussio
 	defer st.mu.RUnlock()
 	for _, cat := range st.DiscussionCategories {
 		if cat.RepoID == repoID && cat.Name == name {
-			return cat
+			// Detach like GetDiscussionCategory — all-value, so a shallow copy.
+			clone := *cat
+			return &clone
 		}
 	}
 	return nil

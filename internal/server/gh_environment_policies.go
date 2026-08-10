@@ -128,7 +128,9 @@ func (st *Store) GetEnvBranchPolicy(envID, policyID int) *DeploymentBranchPolicy
 	defer st.mu.RUnlock()
 	for _, p := range st.EnvBranchPolicies[envID] {
 		if p.ID == policyID {
-			return p
+			// Detach: DeploymentBranchPolicyRule is all-value (STORE-021).
+			clone := *p
+			return &clone
 		}
 	}
 	return nil
@@ -211,7 +213,9 @@ func (st *Store) GetEnvProtectionRule(envID, ruleID int) *EnvCustomProtectionRul
 	defer st.mu.RUnlock()
 	for _, rule := range st.EnvProtectionRules[envID] {
 		if rule.ID == ruleID {
-			return rule
+			// Detach: EnvCustomProtectionRule is all-value (STORE-021).
+			clone := *rule
+			return &clone
 		}
 	}
 	return nil

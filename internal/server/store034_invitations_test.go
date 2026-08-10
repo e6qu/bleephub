@@ -425,3 +425,34 @@ func TestSmallStoreGetsAreDetached(t *testing.T) {
 		t.Fatalf("mutating a GetCodeScanningDefaultSetup result leaked: state=%q langs=%v", fresh.State, fresh.Languages)
 	}
 }
+
+// TestCopilotSpaceGetIsDetached pins STORE-021 for the copilot-spaces
+// mutate-through family: GetCopilotSpace returns a detached snapshot (including
+// its Collaborators/Resources slices) and SaveCopilotSpace publishes a mutated
+// snapshot back onto the live row.
+func TestCopilotSpaceGetIsDetached(t *testing.T) {
+	s := newTestServer()
+	created := s.store.CreateCopilotSpace("User", "admin", 1, "space", "desc", "instr", "reader")
+	if created == nil {
+		t.Fatal("CreateCopilotSpace returned nil")
+	}
+
+	got := s.store.GetCopilotSpace("User", "admin", created.Number)
+	got.Name = "TAMPERED"
+	got.Resources = append(got.Resources, &CopilotSpaceResource{ID: 99, ResourceType: "repo"})
+
+	fresh := s.store.GetCopilotSpace("User", "admin", created.Number)
+	if fresh.Name != "space" {
+		t.Fatalf("mutating a GetCopilotSpace result leaked: name = %q", fresh.Name)
+	}
+	if len(fresh.Resources) != 0 {
+		t.Fatalf("Resources slice leaked: %v", fresh.Resources)
+	}
+
+	// Save publishes the mutated snapshot onto the live row.
+	got.Name = "renamed"
+	s.store.SaveCopilotSpace(got)
+	if after := s.store.GetCopilotSpace("User", "admin", created.Number); after.Name != "renamed" || len(after.Resources) != 1 {
+		t.Fatalf("SaveCopilotSpace did not publish the update: name=%q resources=%d", after.Name, len(after.Resources))
+	}
+}
