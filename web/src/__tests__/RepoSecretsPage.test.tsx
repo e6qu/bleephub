@@ -123,7 +123,7 @@ describe("RepoSecretsPage secrets", () => {
     await waitFor(() => {
       const call = mockFetch.mock.calls.find(
         (c) =>
-          c[0].toString() === "/api/v3/repos/admin/test/actions/secrets/MY_SECRET" &&
+          c[0]!.toString() === "/api/v3/repos/admin/test/actions/secrets/MY_SECRET" &&
           c[1]?.method === "PUT",
       );
       expect(call).toBeTruthy();
@@ -145,13 +145,13 @@ describe("RepoSecretsPage secrets", () => {
     await installMocks();
     renderPage();
     await screen.findByText("NPM_TOKEN");
-    fireEvent.click(screen.getAllByRole("button", { name: /^delete$/i })[0]);
+    fireEvent.click(screen.getAllByRole("button", { name: /^delete$/i })[0]!);
     // Destructive delete now goes through the shared confirmation modal.
     fireEvent.click(await screen.findByRole("button", { name: "Confirm" }));
     await waitFor(() => {
       const call = mockFetch.mock.calls.find(
         (c) =>
-          c[0].toString() === "/api/v3/repos/admin/test/actions/secrets/NPM_TOKEN" &&
+          c[0]!.toString() === "/api/v3/repos/admin/test/actions/secrets/NPM_TOKEN" &&
           c[1]?.method === "DELETE",
       );
       expect(call).toBeTruthy();
@@ -178,7 +178,7 @@ describe("RepoSecretsPage variables", () => {
     await waitFor(() => {
       const call = mockFetch.mock.calls.find(
         (c) =>
-          c[0].toString() === "/api/v3/repos/admin/test/actions/variables" &&
+          c[0]!.toString() === "/api/v3/repos/admin/test/actions/variables" &&
           c[1]?.method === "POST",
       );
       expect(call).toBeTruthy();
@@ -196,7 +196,7 @@ describe("RepoSecretsPage variables", () => {
     await waitFor(() => {
       const call = mockFetch.mock.calls.find(
         (c) =>
-          c[0].toString() === "/api/v3/repos/admin/test/actions/variables/NODE_ENV" &&
+          c[0]!.toString() === "/api/v3/repos/admin/test/actions/variables/NODE_ENV" &&
           c[1]?.method === "PATCH",
       );
       expect(call).toBeTruthy();
@@ -209,13 +209,13 @@ describe("RepoSecretsPage variables", () => {
     renderPage();
     await screen.findByText("NODE_ENV");
     // Two delete buttons exist (secret + variable) — the variable one is second.
-    fireEvent.click(screen.getAllByRole("button", { name: /^delete$/i })[1]);
+    fireEvent.click(screen.getAllByRole("button", { name: /^delete$/i })[1]!);
     // Destructive delete now goes through the shared confirmation modal.
     fireEvent.click(await screen.findByRole("button", { name: "Confirm" }));
     await waitFor(() => {
       const call = mockFetch.mock.calls.find(
         (c) =>
-          c[0].toString() === "/api/v3/repos/admin/test/actions/variables/NODE_ENV" &&
+          c[0]!.toString() === "/api/v3/repos/admin/test/actions/variables/NODE_ENV" &&
           c[1]?.method === "DELETE",
       );
       expect(call).toBeTruthy();
@@ -241,7 +241,7 @@ describe("RepoSecretsPage org scope", () => {
     await waitFor(() => {
       const call = mockFetch.mock.calls.find(
         (c) =>
-          c[0].toString() === "/api/v3/orgs/admin/actions/secrets/ORG_NEW" &&
+          c[0]!.toString() === "/api/v3/orgs/admin/actions/secrets/ORG_NEW" &&
           c[1]?.method === "PUT",
       );
       expect(call).toBeTruthy();

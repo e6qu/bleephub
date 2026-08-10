@@ -126,23 +126,26 @@ func TestSubIssues_ReplaceParentPersistsOldParent(t *testing.T) {
 }
 
 func TestIssueDependencies_BlockedBy(t *testing.T) {
-	repo := createRepoWriteRepo(t, false)
-	blockedID, blockedNum := createIssueForTest(t, repo, "blocked issue")
-	blockerID, blockerNum := createIssueForTest(t, repo, "blocking issue")
+	t.Parallel()
+	s := newIsolatedServer(t)
+	repo := s.createRepoWriteRepo(t, false)
+	repoID := repoRef{owner: "admin", name: repo}
+	blockedID, blockedNum := s.createIssueForTest(t, repoID, "blocked issue")
+	blockerID, blockerNum := s.createIssueForTest(t, repoID, "blocking issue")
 	blockedPath := fmt.Sprintf("/api/v3/repos/admin/%s/issues/%d", repo, blockedNum)
 
-	resp := ghGet(t, blockedPath+"/dependencies/blocked_by", defaultToken)
+	resp := s.get(t, blockedPath+"/dependencies/blocked_by", defaultToken)
 	if list := decodeJSONWithStatus2xxArray(t, resp, 200); len(list) != 0 {
 		t.Fatalf("initial blocked_by = %v, want empty", list)
 	}
 
-	resp = ghPost(t, blockedPath+"/dependencies/blocked_by", defaultToken, map[string]interface{}{"issue_id": blockerID})
+	resp = s.post(t, blockedPath+"/dependencies/blocked_by", defaultToken, map[string]interface{}{"issue_id": blockerID})
 	created := decodeJSONWithStatus(t, resp, 201)
 	if int(created["number"].(float64)) != blockerNum {
 		t.Fatalf("blocked_by POST returned #%v, want the blocking issue #%d", created["number"], blockerNum)
 	}
 
-	resp = ghGet(t, blockedPath+"/dependencies/blocked_by", defaultToken)
+	resp = s.get(t, blockedPath+"/dependencies/blocked_by", defaultToken)
 	list := decodeJSONWithStatus2xxArray(t, resp, 200)
 	if len(list) != 1 || int(list[0]["number"].(float64)) != blockerNum {
 		t.Fatalf("blocked_by list = %v, want [#%d]", list, blockerNum)
@@ -150,31 +153,31 @@ func TestIssueDependencies_BlockedBy(t *testing.T) {
 
 	// The link is bidirectional: the blocker sees the blocked issue on its
 	// blocking side.
-	if blocking := testServer.store.ListIssueBlocking(blockerID); len(blocking) != 1 || blocking[0] != blockedID {
+	if blocking := s.store.ListIssueBlocking(blockerID); len(blocking) != 1 || blocking[0] != blockedID {
 		t.Fatalf("blocking view = %v, want [%d]", blocking, blockedID)
 	}
 
 	// Duplicates and self-links are rejected.
-	resp = ghPost(t, blockedPath+"/dependencies/blocked_by", defaultToken, map[string]interface{}{"issue_id": blockerID})
+	resp = s.post(t, blockedPath+"/dependencies/blocked_by", defaultToken, map[string]interface{}{"issue_id": blockerID})
 	requireStatus(t, resp, 422)
-	resp = ghPost(t, blockedPath+"/dependencies/blocked_by", defaultToken, map[string]interface{}{"issue_id": blockedID})
+	resp = s.post(t, blockedPath+"/dependencies/blocked_by", defaultToken, map[string]interface{}{"issue_id": blockedID})
 	requireStatus(t, resp, 422)
-	resp = ghPost(t, blockedPath+"/dependencies/blocked_by", defaultToken, map[string]interface{}{"issue_id": 999999})
+	resp = s.post(t, blockedPath+"/dependencies/blocked_by", defaultToken, map[string]interface{}{"issue_id": 999999})
 	requireStatus(t, resp, 404)
 
 	// Removal returns the unlinked blocking issue and clears both sides.
-	resp = ghDelete(t, blockedPath+"/dependencies/blocked_by/"+strconv.Itoa(blockerID), defaultToken)
+	resp = s.delete(t, blockedPath+"/dependencies/blocked_by/"+strconv.Itoa(blockerID), defaultToken)
 	removed := decodeJSONWithStatus(t, resp, 200)
 	if int(removed["number"].(float64)) != blockerNum {
 		t.Fatalf("removed dependency #%v, want #%d", removed["number"], blockerNum)
 	}
-	resp = ghGet(t, blockedPath+"/dependencies/blocked_by", defaultToken)
+	resp = s.get(t, blockedPath+"/dependencies/blocked_by", defaultToken)
 	if list := decodeJSONWithStatus2xxArray(t, resp, 200); len(list) != 0 {
 		t.Fatalf("blocked_by after removal = %v, want empty", list)
 	}
-	if blocking := testServer.store.ListIssueBlocking(blockerID); len(blocking) != 0 {
+	if blocking := s.store.ListIssueBlocking(blockerID); len(blocking) != 0 {
 		t.Fatalf("blocking view after removal = %v, want empty", blocking)
 	}
-	resp = ghDelete(t, blockedPath+"/dependencies/blocked_by/"+strconv.Itoa(blockerID), defaultToken)
+	resp = s.delete(t, blockedPath+"/dependencies/blocked_by/"+strconv.Itoa(blockerID), defaultToken)
 	requireStatus(t, resp, 404)
 }

@@ -551,14 +551,41 @@ func (st *Store) ListCodeSecurityConfigurations(orgLogin string) []*CodeSecurity
 		out = append(out, c)
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].ID < out[j].ID })
-	return out
+	return snapshotCodeSecurityConfigurations(out)
+}
+
+// cloneCodeSecurityConfiguration detaches a configuration from the stored row so
+// a reader can't race the in-place UpdatedAt/field mutations UpdateCodeSecurityConfiguration
+// applies to the live row. Its reference fields are four optional scalars.
+func cloneCodeSecurityConfiguration(c *CodeSecurityConfiguration) *CodeSecurityConfiguration {
+	if c == nil {
+		return nil
+	}
+	clone := *c
+	if c.DependencyGraphAutosubmitLabeled != nil {
+		v := *c.DependencyGraphAutosubmitLabeled
+		clone.DependencyGraphAutosubmitLabeled = &v
+	}
+	if c.CodeScanningRunnerType != nil {
+		v := *c.CodeScanningRunnerType
+		clone.CodeScanningRunnerType = &v
+	}
+	if c.CodeScanningRunnerLabel != nil {
+		v := *c.CodeScanningRunnerLabel
+		clone.CodeScanningRunnerLabel = &v
+	}
+	if c.CodeScanningAllowAdvanced != nil {
+		v := *c.CodeScanningAllowAdvanced
+		clone.CodeScanningAllowAdvanced = &v
+	}
+	return &clone
 }
 
 // GetCodeSecurityConfiguration returns a configuration by org and ID, or nil.
 func (st *Store) GetCodeSecurityConfiguration(orgLogin string, id int) *CodeSecurityConfiguration {
 	st.mu.RLock()
 	defer st.mu.RUnlock()
-	return st.CodeSecurityConfigs[orgLogin][id]
+	return cloneCodeSecurityConfiguration(st.CodeSecurityConfigs[orgLogin][id])
 }
 
 // GetCodeSecurityConfigurationByName returns a configuration by name, or nil.
@@ -567,7 +594,7 @@ func (st *Store) GetCodeSecurityConfigurationByName(orgLogin, name string) *Code
 	defer st.mu.RUnlock()
 	for _, c := range st.CodeSecurityConfigs[orgLogin] {
 		if c.Name == name {
-			return c
+			return cloneCodeSecurityConfiguration(c)
 		}
 	}
 	return nil
@@ -770,7 +797,7 @@ func (st *Store) ListCodeSecurityConfigurationRepos(orgLogin string, id int) []*
 		}
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].ID < out[j].ID })
-	return out
+	return snapshotRepos(out)
 }
 
 // GetRepoCodeSecurityConfiguration returns the configuration attached to the

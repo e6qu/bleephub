@@ -173,10 +173,26 @@ func (st *Store) CreatePackage(ownerType, ownerKey, pkgType, name, visibility st
 }
 
 // GetPackage returns a package by owner/type/name, or nil.
+// clonePackage detaches a package from the stored row (its only reference field
+// is the DeletedAt time pointer) so a reader cannot race the in-place mutations
+// that recomputeVersionCountLocked / DeletePackage / RestorePackage apply to the
+// live package.
+func clonePackage(p *Package) *Package {
+	if p == nil {
+		return nil
+	}
+	clone := *p
+	if p.DeletedAt != nil {
+		v := *p.DeletedAt
+		clone.DeletedAt = &v
+	}
+	return &clone
+}
+
 func (st *Store) GetPackage(ownerKey, pkgType, name string) *Package {
 	st.mu.RLock()
 	defer st.mu.RUnlock()
-	return st.PackagesByOwnerKey[ownerKey][packageKey(pkgType, name)]
+	return clonePackage(st.PackagesByOwnerKey[ownerKey][packageKey(pkgType, name)])
 }
 
 // ListPackages returns packages for an owner, newest first.
@@ -188,7 +204,7 @@ func (st *Store) ListPackages(ownerKey string) []*Package {
 		out = append(out, p)
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].ID > out[j].ID })
-	return out
+	return snapshotPackages(out)
 }
 
 // DeletePackage soft-deletes a package: it leaves the by-owner key map
@@ -220,7 +236,7 @@ func (st *Store) GetDeletedPackage(ownerKey, pkgType, name string) *Package {
 	defer st.mu.RUnlock()
 	for _, p := range st.Packages {
 		if p.Deleted && p.OwnerKey == ownerKey && p.PackageType == pkgType && p.Name == name {
-			return p
+			return clonePackage(p)
 		}
 	}
 	return nil
@@ -387,10 +403,26 @@ type PackageFileInput struct {
 }
 
 // GetPackageVersion returns a package version by ID, or nil.
+// clonePackageVersion returns a copy safe to hand outside the store lock
+// (STORE-021): Metadata is the only reference field.
+func clonePackageVersion(v *PackageVersion) *PackageVersion {
+	if v == nil {
+		return nil
+	}
+	clone := *v
+	if v.Metadata != nil {
+		clone.Metadata = make(map[string]interface{}, len(v.Metadata))
+		for k, val := range v.Metadata {
+			clone.Metadata[k] = val
+		}
+	}
+	return &clone
+}
+
 func (st *Store) GetPackageVersion(id int) *PackageVersion {
 	st.mu.RLock()
 	defer st.mu.RUnlock()
-	return st.PackageVersions[id]
+	return clonePackageVersion(st.PackageVersions[id])
 }
 
 // ListPackageVersions returns versions for a package, newest first.
@@ -406,7 +438,7 @@ func (st *Store) ListPackageVersions(pkgID int, includeDeleted bool) []*PackageV
 		out = append(out, v)
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].ID > out[j].ID })
-	return out
+	return snapshotPackageVersions(out)
 }
 
 // DeletePackageVersion marks a version as deleted.
@@ -465,7 +497,14 @@ func (st *Store) SetPackageVersionRegistryManifestDigest(id int, digest string) 
 func (st *Store) GetPackageFile(id int) *PackageFile {
 	st.mu.RLock()
 	defer st.mu.RUnlock()
-	return st.PackageFiles[id]
+	// A copy so a reader can't mutate the stored file through the getter
+	// (STORE-021); PackageFile is all-value, so a shallow copy detaches.
+	f := st.PackageFiles[id]
+	if f == nil {
+		return nil
+	}
+	clone := *f
+	return &clone
 }
 
 // ListPackageFiles returns files for a version.
@@ -477,7 +516,7 @@ func (st *Store) ListPackageFiles(versionID int) []*PackageFile {
 		out = append(out, f)
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].ID < out[j].ID })
-	return out
+	return snapshotSlice(out)
 }
 
 func (st *Store) recomputeVersionCountLocked(p *Package) {

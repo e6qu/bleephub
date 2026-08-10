@@ -268,6 +268,10 @@ func (s *Server) handleUpdateSecurityAdvisory(w http.ResponseWriter, r *http.Req
 		writeGHError(w, http.StatusNotFound, "Not Found")
 		return
 	}
+	// GetSecurityAdvisoryByGHSA returns a detached snapshot (STORE-021), so the
+	// pre-update `adv` no longer reflects the mutation applied by the keyed
+	// UpdateSecurityAdvisory above; re-read the fresh state to publish and render.
+	adv = s.store.GetSecurityAdvisoryByGHSA(repo.ID, r.PathValue("ghsa_id"))
 	if !publishedBefore && adv.PublishedAt != nil && adv.State == "published" {
 		s.deriveDependabotAlertsForPublishedAdvisory(adv)
 	}

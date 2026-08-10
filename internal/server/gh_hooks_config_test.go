@@ -25,7 +25,7 @@ func TestRepoWebhookConfig_GetAndPatch(t *testing.T) {
 	defer sink.Close()
 	createURL := sink.URL + "/webhook"
 
-	resp := s.post(t, "/api/v3/repos/"+repo+"/hooks", defaultToken, map[string]interface{}{
+	resp := s.post(t, repo.path()+"/hooks", defaultToken, map[string]interface{}{
 		"config": map[string]interface{}{
 			"url":          createURL,
 			"content_type": "json",
@@ -35,7 +35,7 @@ func TestRepoWebhookConfig_GetAndPatch(t *testing.T) {
 	})
 	hook := decodeJSONWithStatus(t, resp, 201)
 	hookID := fmt.Sprintf("%d", int(hook["id"].(float64)))
-	base := "/api/v3/repos/" + repo + "/hooks/" + hookID
+	base := repo.path() + "/hooks/" + hookID
 
 	resp = s.get(t, base+"/config", defaultToken)
 	config := decodeJSONWithStatus(t, resp, 200)
@@ -73,9 +73,9 @@ func TestRepoWebhookConfig_GetAndPatch(t *testing.T) {
 	}
 
 	// Unknown hook → 404.
-	resp = s.get(t, "/api/v3/repos/"+repo+"/hooks/424242/config", defaultToken)
+	resp = s.get(t, repo.path()+"/hooks/424242/config", defaultToken)
 	requireStatus(t, resp, 404)
-	resp = s.patch(t, "/api/v3/repos/"+repo+"/hooks/424242/config", defaultToken, map[string]interface{}{"url": "x"})
+	resp = s.patch(t, repo.path()+"/hooks/424242/config", defaultToken, map[string]interface{}{"url": "x"})
 	requireStatus(t, resp, 404)
 }
 
@@ -83,7 +83,7 @@ func TestRepoWebhookTest_DeliversRealPushEvent(t *testing.T) {
 	t.Parallel()
 	s := newIsolatedServer(t)
 	repo := s.createTestRepo(t)
-	resp := s.put(t, "/api/v3/repos/"+repo+"/contents/webhook-test.txt", defaultToken, map[string]interface{}{
+	resp := s.put(t, repo.path()+"/contents/webhook-test.txt", defaultToken, map[string]interface{}{
 		"message": "seed webhook test head",
 		"content": base64.StdEncoding.EncodeToString([]byte("webhook test\n")),
 		"branch":  "main",
@@ -103,7 +103,7 @@ func TestRepoWebhookTest_DeliversRealPushEvent(t *testing.T) {
 	}))
 	defer receiver.Close()
 
-	resp = s.post(t, "/api/v3/repos/"+repo+"/hooks", defaultToken, map[string]interface{}{
+	resp = s.post(t, repo.path()+"/hooks", defaultToken, map[string]interface{}{
 		"config": map[string]interface{}{"url": receiver.URL, "content_type": "json", "secret": "hush"},
 		"events": []string{"push"},
 		"active": false,
@@ -111,7 +111,7 @@ func TestRepoWebhookTest_DeliversRealPushEvent(t *testing.T) {
 	hook := decodeJSONWithStatus(t, resp, 201)
 	hookID := fmt.Sprintf("%d", int(hook["id"].(float64)))
 
-	resp = s.post(t, "/api/v3/repos/"+repo+"/hooks/"+hookID+"/tests", defaultToken, nil)
+	resp = s.post(t, repo.path()+"/hooks/"+hookID+"/tests", defaultToken, nil)
 	requireStatus(t, resp, 204)
 
 	select {
@@ -134,7 +134,7 @@ func TestRepoWebhookTest_DeliversRealPushEvent(t *testing.T) {
 	}
 
 	// Unknown hook → 404.
-	resp = s.post(t, "/api/v3/repos/"+repo+"/hooks/424242/tests", defaultToken, nil)
+	resp = s.post(t, repo.path()+"/hooks/424242/tests", defaultToken, nil)
 	requireStatus(t, resp, 404)
 }
 
@@ -148,7 +148,7 @@ func TestRepoWebhookTest_RejectsMissingDefaultBranchHead(t *testing.T) {
 	}))
 	defer receiver.Close()
 
-	resp := s.post(t, "/api/v3/repos/"+repo+"/hooks", defaultToken, map[string]interface{}{
+	resp := s.post(t, repo.path()+"/hooks", defaultToken, map[string]interface{}{
 		"config": map[string]interface{}{"url": receiver.URL, "content_type": "json"},
 		"events": []string{"push"},
 		"active": false,
@@ -156,6 +156,6 @@ func TestRepoWebhookTest_RejectsMissingDefaultBranchHead(t *testing.T) {
 	hook := decodeJSONWithStatus(t, resp, 201)
 	hookID := fmt.Sprintf("%d", int(hook["id"].(float64)))
 
-	resp = s.post(t, "/api/v3/repos/"+repo+"/hooks/"+hookID+"/tests", defaultToken, nil)
+	resp = s.post(t, repo.path()+"/hooks/"+hookID+"/tests", defaultToken, nil)
 	requireStatus(t, resp, 422)
 }

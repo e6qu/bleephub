@@ -10,13 +10,15 @@ import (
 // directly by their owners, so no pending requests exist and the list is
 // empty; unauthenticated callers get 401.
 func TestAppInstallationRequests(t *testing.T) {
-	app := testServer.store.CreateApp(1, "Installation Requests App", "", nil, nil)
+	t.Parallel()
+	s := newIsolatedServer(t)
+	app := s.store.CreateApp(1, "Installation Requests App", "", nil, nil)
 	jwt, err := signAppJWT(app.PEMPrivateKey, app.ID, fixedTestTime)
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	req, err := http.NewRequest("GET", testBaseURL+"/api/v3/app/installation-requests", nil)
+	req, err := http.NewRequest("GET", s.baseURL+"/api/v3/app/installation-requests", nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -35,7 +37,7 @@ func TestAppInstallationRequests(t *testing.T) {
 	}
 
 	// Without an app JWT the endpoint requires authentication.
-	resp2, err := http.Get(testBaseURL + "/api/v3/app/installation-requests")
+	resp2, err := http.Get(s.baseURL + "/api/v3/app/installation-requests")
 	if err != nil {
 		t.Fatal(err)
 	}

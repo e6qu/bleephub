@@ -172,7 +172,7 @@ func (st *Store) ListRepoAutolinks(repoKey string) []*RepoAutolink {
 		out = append(out, a)
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].ID < out[j].ID })
-	return out
+	return snapshotSlice(out)
 }
 
 // GetRepoAutolink returns an autolink by ID, or nil.

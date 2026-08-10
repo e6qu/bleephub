@@ -13,16 +13,18 @@ import (
 // --- GitHub Copilot coding agent repository secrets ---
 
 func TestAgentsRepoSecrets_RoundTrip(t *testing.T) {
-	repo := seedTestRepo(t, "agents-sec-repo", false)
+	t.Parallel()
+	s := newIsolatedServer(t)
+	repo := s.seedRepo(t, "agents-sec-repo", false)
 	base := "/api/v3/repos/" + repo.FullName + "/agents/secrets"
 
 	// Public key matches the shared Actions sealed-box keypair.
-	resp := ghGet(t, base+"/public-key", defaultToken)
+	resp := s.get(t, base+"/public-key", defaultToken)
 	if resp.StatusCode != 200 {
 		t.Fatalf("public-key status %d, want 200", resp.StatusCode)
 	}
 	body := decodeJSON(t, resp)
-	kp, err := testServer.store.ActionsKeyPair()
+	kp, err := s.store.ActionsKeyPair()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -31,10 +33,10 @@ func TestAgentsRepoSecrets_RoundTrip(t *testing.T) {
 	}
 
 	// Create.
-	mustStatus(t, putSealedSecret(t, base+"/AGENT_TOKEN", "plain-1"), 201, "create secret")
+	mustStatus(t, s.putSealedSecret(t, base+"/AGENT_TOKEN", "plain-1"), 201, "create secret")
 
 	// List.
-	resp = ghGet(t, base, defaultToken)
+	resp = s.get(t, base, defaultToken)
 	if resp.StatusCode != 200 {
 		t.Fatalf("list status %d, want 200", resp.StatusCode)
 	}
@@ -48,7 +50,7 @@ func TestAgentsRepoSecrets_RoundTrip(t *testing.T) {
 	}
 
 	// Get.
-	resp = ghGet(t, base+"/AGENT_TOKEN", defaultToken)
+	resp = s.get(t, base+"/AGENT_TOKEN", defaultToken)
 	if resp.StatusCode != 200 {
 		t.Fatalf("get status %d, want 200", resp.StatusCode)
 	}
@@ -58,12 +60,12 @@ func TestAgentsRepoSecrets_RoundTrip(t *testing.T) {
 	}
 
 	// Update.
-	mustStatus(t, putSealedSecret(t, base+"/AGENT_TOKEN", "plain-2"), 204, "update secret")
+	mustStatus(t, s.putSealedSecret(t, base+"/AGENT_TOKEN", "plain-2"), 204, "update secret")
 
 	// Delete.
-	mustStatus(t, ghDelete(t, base+"/AGENT_TOKEN", defaultToken), 204, "delete secret")
-	mustStatus(t, ghGet(t, base+"/AGENT_TOKEN", defaultToken), 404, "get deleted secret")
-	mustStatus(t, ghDelete(t, base+"/AGENT_TOKEN", defaultToken), 404, "delete deleted secret")
+	mustStatus(t, s.delete(t, base+"/AGENT_TOKEN", defaultToken), 204, "delete secret")
+	mustStatus(t, s.get(t, base+"/AGENT_TOKEN", defaultToken), 404, "get deleted secret")
+	mustStatus(t, s.delete(t, base+"/AGENT_TOKEN", defaultToken), 404, "delete deleted secret")
 }
 
 func TestAgentsRepoSecrets_ListPagination(t *testing.T) {
@@ -110,36 +112,40 @@ func TestAgentsRepoSecrets_ListPagination(t *testing.T) {
 }
 
 func TestAgentsRepoSecrets_Validation(t *testing.T) {
-	repo := seedTestRepo(t, "agents-sec-valid", false)
+	t.Parallel()
+	s := newIsolatedServer(t)
+	repo := s.seedRepo(t, "agents-sec-valid", false)
 	base := "/api/v3/repos/" + repo.FullName + "/agents/secrets"
 
 	// Invalid name (starts with a digit).
-	mustStatus(t, putSealedSecret(t, base+"/1BAD", "v"), 422, "invalid secret name")
+	mustStatus(t, s.putSealedSecret(t, base+"/1BAD", "v"), 422, "invalid secret name")
 
 	// Wrong key_id.
-	resp := ghPut(t, base+"/GOOD_NAME", defaultToken, map[string]interface{}{
+	resp := s.put(t, base+"/GOOD_NAME", defaultToken, map[string]interface{}{
 		"encrypted_value": "c2VjcmV0",
 		"key_id":          "not-the-key",
 	})
 	mustStatus(t, resp, 422, "wrong key_id")
 
 	// Unknown repository.
-	mustStatus(t, ghGet(t, "/api/v3/repos/admin/no-such-repo/agents/secrets", defaultToken), 404, "unknown repo list")
+	mustStatus(t, s.get(t, "/api/v3/repos/admin/no-such-repo/agents/secrets", defaultToken), 404, "unknown repo list")
 }
 
 // --- GitHub Copilot coding agent organization secrets ---
 
 func TestAgentsOrgSecrets_VisibilityAndSelectedRepos(t *testing.T) {
-	org := seedTestOrg(t, "agents-sec-org")
-	repo1 := seedOrgRepo(t, org, "sel-one", true)
-	repo2 := seedOrgRepo(t, org, "sel-two", true)
+	t.Parallel()
+	s := newIsolatedServer(t)
+	org := s.seedTestOrg(t, "agents-sec-org")
+	repo1 := s.seedOrgRepo(t, org, "sel-one", true)
+	repo2 := s.seedOrgRepo(t, org, "sel-two", true)
 	base := "/api/v3/orgs/" + org.Login + "/agents/secrets"
 
-	mustStatus(t, ghGet(t, base+"/public-key", defaultToken), 200, "org public-key")
+	mustStatus(t, s.get(t, base+"/public-key", defaultToken), 200, "org public-key")
 
 	// Create with visibility selected.
-	enc, keyID := sealForServer(t, "org-plain")
-	resp := ghPut(t, base+"/ORG_AGENT_SECRET", defaultToken, map[string]interface{}{
+	enc, keyID := s.sealForServer(t, "org-plain")
+	resp := s.put(t, base+"/ORG_AGENT_SECRET", defaultToken, map[string]interface{}{
 		"encrypted_value":         enc,
 		"key_id":                  keyID,
 		"visibility":              "selected",
@@ -148,7 +154,7 @@ func TestAgentsOrgSecrets_VisibilityAndSelectedRepos(t *testing.T) {
 	mustStatus(t, resp, 201, "create org secret")
 
 	// Get carries visibility + the /agents/ selected_repositories_url.
-	resp = ghGet(t, base+"/ORG_AGENT_SECRET", defaultToken)
+	resp = s.get(t, base+"/ORG_AGENT_SECRET", defaultToken)
 	if resp.StatusCode != 200 {
 		t.Fatalf("get org secret status %d, want 200", resp.StatusCode)
 	}
@@ -162,7 +168,7 @@ func TestAgentsOrgSecrets_VisibilityAndSelectedRepos(t *testing.T) {
 	}
 
 	// List selected repositories.
-	resp = ghGet(t, base+"/ORG_AGENT_SECRET/repositories", defaultToken)
+	resp = s.get(t, base+"/ORG_AGENT_SECRET/repositories", defaultToken)
 	if resp.StatusCode != 200 {
 		t.Fatalf("list selected repos status %d, want 200", resp.StatusCode)
 	}
@@ -172,17 +178,17 @@ func TestAgentsOrgSecrets_VisibilityAndSelectedRepos(t *testing.T) {
 	}
 
 	// Set the full list.
-	resp = ghPut(t, base+"/ORG_AGENT_SECRET/repositories", defaultToken, map[string]interface{}{
+	resp = s.put(t, base+"/ORG_AGENT_SECRET/repositories", defaultToken, map[string]interface{}{
 		"selected_repository_ids": []int{repo1.ID, repo2.ID},
 	})
 	mustStatus(t, resp, 204, "set selected repos")
 
 	// Remove one, then add it back.
-	mustStatus(t, ghDelete(t, fmt.Sprintf("%s/ORG_AGENT_SECRET/repositories/%d", base, repo2.ID), defaultToken), 204, "remove selected repo")
-	mustStatus(t, ghPut(t, fmt.Sprintf("%s/ORG_AGENT_SECRET/repositories/%d", base, repo2.ID), defaultToken, nil), 204, "add selected repo")
+	mustStatus(t, s.delete(t, fmt.Sprintf("%s/ORG_AGENT_SECRET/repositories/%d", base, repo2.ID), defaultToken), 204, "remove selected repo")
+	mustStatus(t, s.put(t, fmt.Sprintf("%s/ORG_AGENT_SECRET/repositories/%d", base, repo2.ID), defaultToken, nil), 204, "add selected repo")
 
 	// Repo-visible org secrets list.
-	resp = ghGet(t, "/api/v3/repos/"+repo1.FullName+"/agents/organization-secrets", defaultToken)
+	resp = s.get(t, "/api/v3/repos/"+repo1.FullName+"/agents/organization-secrets", defaultToken)
 	if resp.StatusCode != 200 {
 		t.Fatalf("repo org-secrets status %d, want 200", resp.StatusCode)
 	}
@@ -192,54 +198,56 @@ func TestAgentsOrgSecrets_VisibilityAndSelectedRepos(t *testing.T) {
 	}
 
 	// A repo outside the selection sees nothing.
-	repo3 := seedOrgRepo(t, org, "sel-three", true)
-	resp = ghGet(t, "/api/v3/repos/"+repo3.FullName+"/agents/organization-secrets", defaultToken)
+	repo3 := s.seedOrgRepo(t, org, "sel-three", true)
+	resp = s.get(t, "/api/v3/repos/"+repo3.FullName+"/agents/organization-secrets", defaultToken)
 	notVisible := decodeJSON(t, resp)
 	if notVisible["total_count"] != float64(0) {
 		t.Fatalf("unselected repo sees %v org secrets, want 0", notVisible["total_count"])
 	}
 
 	// Per-repo add is a 409 when visibility is not "selected".
-	enc, keyID = sealForServer(t, "all-plain")
-	mustStatus(t, ghPut(t, base+"/ORG_ALL_SECRET", defaultToken, map[string]interface{}{
+	enc, keyID = s.sealForServer(t, "all-plain")
+	mustStatus(t, s.put(t, base+"/ORG_ALL_SECRET", defaultToken, map[string]interface{}{
 		"encrypted_value": enc, "key_id": keyID, "visibility": "all",
 	}), 201, "create all-visibility secret")
-	mustStatus(t, ghPut(t, fmt.Sprintf("%s/ORG_ALL_SECRET/repositories/%d", base, repo1.ID), defaultToken, nil), 409, "add repo to all-visibility secret")
+	mustStatus(t, s.put(t, fmt.Sprintf("%s/ORG_ALL_SECRET/repositories/%d", base, repo1.ID), defaultToken, nil), 409, "add repo to all-visibility secret")
 
 	// Missing visibility is a 422.
-	enc, keyID = sealForServer(t, "no-vis")
-	mustStatus(t, ghPut(t, base+"/ORG_NO_VIS", defaultToken, map[string]interface{}{
+	enc, keyID = s.sealForServer(t, "no-vis")
+	mustStatus(t, s.put(t, base+"/ORG_NO_VIS", defaultToken, map[string]interface{}{
 		"encrypted_value": enc, "key_id": keyID,
 	}), 422, "create without visibility")
 
 	// Delete.
-	mustStatus(t, ghDelete(t, base+"/ORG_AGENT_SECRET", defaultToken), 204, "delete org secret")
-	mustStatus(t, ghGet(t, base+"/ORG_AGENT_SECRET", defaultToken), 404, "get deleted org secret")
+	mustStatus(t, s.delete(t, base+"/ORG_AGENT_SECRET", defaultToken), 204, "delete org secret")
+	mustStatus(t, s.get(t, base+"/ORG_AGENT_SECRET", defaultToken), 404, "get deleted org secret")
 }
 
 // --- GitHub Copilot coding agent repository variables ---
 
 func TestAgentsRepoVariables_CRUD(t *testing.T) {
-	repo := seedTestRepo(t, "agents-var-repo", false)
+	t.Parallel()
+	s := newIsolatedServer(t)
+	repo := s.seedRepo(t, "agents-var-repo", false)
 	base := "/api/v3/repos/" + repo.FullName + "/agents/variables"
 
 	// Create.
-	mustStatus(t, ghPost(t, base, defaultToken, map[string]interface{}{
+	mustStatus(t, s.post(t, base, defaultToken, map[string]interface{}{
 		"name": "agent_mode", "value": "fast",
 	}), 201, "create variable")
 
 	// Duplicate create conflicts.
-	mustStatus(t, ghPost(t, base, defaultToken, map[string]interface{}{
+	mustStatus(t, s.post(t, base, defaultToken, map[string]interface{}{
 		"name": "AGENT_MODE", "value": "again",
 	}), 409, "duplicate create")
 
 	// Invalid name.
-	mustStatus(t, ghPost(t, base, defaultToken, map[string]interface{}{
+	mustStatus(t, s.post(t, base, defaultToken, map[string]interface{}{
 		"name": "GITHUB_RESERVED", "value": "x",
 	}), 422, "reserved name")
 
 	// List.
-	resp := ghGet(t, base, defaultToken)
+	resp := s.get(t, base, defaultToken)
 	if resp.StatusCode != 200 {
 		t.Fatalf("list status %d, want 200", resp.StatusCode)
 	}
@@ -249,7 +257,7 @@ func TestAgentsRepoVariables_CRUD(t *testing.T) {
 	}
 
 	// Get (names are upper-cased).
-	resp = ghGet(t, base+"/AGENT_MODE", defaultToken)
+	resp = s.get(t, base+"/AGENT_MODE", defaultToken)
 	if resp.StatusCode != 200 {
 		t.Fatalf("get status %d, want 200", resp.StatusCode)
 	}
@@ -259,10 +267,10 @@ func TestAgentsRepoVariables_CRUD(t *testing.T) {
 	}
 
 	// Patch value + rename.
-	mustStatus(t, ghPatch(t, base+"/AGENT_MODE", defaultToken, map[string]interface{}{
+	mustStatus(t, s.patch(t, base+"/AGENT_MODE", defaultToken, map[string]interface{}{
 		"name": "AGENT_SPEED", "value": "slow",
 	}), 204, "patch variable")
-	resp = ghGet(t, base+"/AGENT_SPEED", defaultToken)
+	resp = s.get(t, base+"/AGENT_SPEED", defaultToken)
 	if resp.StatusCode != 200 {
 		t.Fatalf("get renamed status %d, want 200", resp.StatusCode)
 	}
@@ -270,35 +278,37 @@ func TestAgentsRepoVariables_CRUD(t *testing.T) {
 	if got["value"] != "slow" {
 		t.Fatalf("patched value = %v, want slow", got["value"])
 	}
-	mustStatus(t, ghGet(t, base+"/AGENT_MODE", defaultToken), 404, "old name gone")
+	mustStatus(t, s.get(t, base+"/AGENT_MODE", defaultToken), 404, "old name gone")
 
 	// Delete.
-	mustStatus(t, ghDelete(t, base+"/AGENT_SPEED", defaultToken), 204, "delete variable")
-	mustStatus(t, ghGet(t, base+"/AGENT_SPEED", defaultToken), 404, "get deleted variable")
+	mustStatus(t, s.delete(t, base+"/AGENT_SPEED", defaultToken), 204, "delete variable")
+	mustStatus(t, s.get(t, base+"/AGENT_SPEED", defaultToken), 404, "get deleted variable")
 }
 
 // --- GitHub Copilot coding agent organization variables ---
 
 func TestAgentsOrgVariables_CRUDAndSelectedRepos(t *testing.T) {
-	org := seedTestOrg(t, "agents-var-org")
-	repo1 := seedOrgRepo(t, org, "var-one", true)
-	repo2 := seedOrgRepo(t, org, "var-two", true)
+	t.Parallel()
+	s := newIsolatedServer(t)
+	org := s.seedTestOrg(t, "agents-var-org")
+	repo1 := s.seedOrgRepo(t, org, "var-one", true)
+	repo2 := s.seedOrgRepo(t, org, "var-two", true)
 	base := "/api/v3/orgs/" + org.Login + "/agents/variables"
 
 	// Create with visibility selected.
-	mustStatus(t, ghPost(t, base, defaultToken, map[string]interface{}{
+	mustStatus(t, s.post(t, base, defaultToken, map[string]interface{}{
 		"name": "ORG_AGENT_VAR", "value": "v1",
 		"visibility":              "selected",
 		"selected_repository_ids": []int{repo1.ID},
 	}), 201, "create org variable")
 
 	// Missing visibility is a 422.
-	mustStatus(t, ghPost(t, base, defaultToken, map[string]interface{}{
+	mustStatus(t, s.post(t, base, defaultToken, map[string]interface{}{
 		"name": "NO_VIS", "value": "v",
 	}), 422, "create without visibility")
 
 	// Get.
-	resp := ghGet(t, base+"/ORG_AGENT_VAR", defaultToken)
+	resp := s.get(t, base+"/ORG_AGENT_VAR", defaultToken)
 	if resp.StatusCode != 200 {
 		t.Fatalf("get org variable status %d, want 200", resp.StatusCode)
 	}
@@ -308,7 +318,7 @@ func TestAgentsOrgVariables_CRUDAndSelectedRepos(t *testing.T) {
 	}
 
 	// Selected repositories list + set + per-repo add/remove.
-	resp = ghGet(t, base+"/ORG_AGENT_VAR/repositories", defaultToken)
+	resp = s.get(t, base+"/ORG_AGENT_VAR/repositories", defaultToken)
 	if resp.StatusCode != 200 {
 		t.Fatalf("list selected repos status %d, want 200", resp.StatusCode)
 	}
@@ -316,23 +326,23 @@ func TestAgentsOrgVariables_CRUDAndSelectedRepos(t *testing.T) {
 	if repos["total_count"] != float64(1) {
 		t.Fatalf("selected total_count = %v, want 1", repos["total_count"])
 	}
-	mustStatus(t, ghPut(t, base+"/ORG_AGENT_VAR/repositories", defaultToken, map[string]interface{}{
+	mustStatus(t, s.put(t, base+"/ORG_AGENT_VAR/repositories", defaultToken, map[string]interface{}{
 		"selected_repository_ids": []int{repo1.ID, repo2.ID},
 	}), 204, "set selected repos")
-	mustStatus(t, ghDelete(t, fmt.Sprintf("%s/ORG_AGENT_VAR/repositories/%d", base, repo1.ID), defaultToken), 204, "remove selected repo")
-	mustStatus(t, ghPut(t, fmt.Sprintf("%s/ORG_AGENT_VAR/repositories/%d", base, repo1.ID), defaultToken, nil), 204, "add selected repo")
+	mustStatus(t, s.delete(t, fmt.Sprintf("%s/ORG_AGENT_VAR/repositories/%d", base, repo1.ID), defaultToken), 204, "remove selected repo")
+	mustStatus(t, s.put(t, fmt.Sprintf("%s/ORG_AGENT_VAR/repositories/%d", base, repo1.ID), defaultToken, nil), 204, "add selected repo")
 
 	// Patch visibility to all: selection endpoints now conflict.
-	mustStatus(t, ghPatch(t, base+"/ORG_AGENT_VAR", defaultToken, map[string]interface{}{
+	mustStatus(t, s.patch(t, base+"/ORG_AGENT_VAR", defaultToken, map[string]interface{}{
 		"visibility": "all",
 	}), 204, "patch visibility")
-	mustStatus(t, ghGet(t, base+"/ORG_AGENT_VAR/repositories", defaultToken), 409, "list repos on all-visibility variable")
-	mustStatus(t, ghPut(t, base+"/ORG_AGENT_VAR/repositories", defaultToken, map[string]interface{}{
+	mustStatus(t, s.get(t, base+"/ORG_AGENT_VAR/repositories", defaultToken), 409, "list repos on all-visibility variable")
+	mustStatus(t, s.put(t, base+"/ORG_AGENT_VAR/repositories", defaultToken, map[string]interface{}{
 		"selected_repository_ids": []int{repo1.ID},
 	}), 409, "set repos on all-visibility variable")
 
 	// Repo-visible org variables list (visibility all → visible everywhere).
-	resp = ghGet(t, "/api/v3/repos/"+repo2.FullName+"/agents/organization-variables", defaultToken)
+	resp = s.get(t, "/api/v3/repos/"+repo2.FullName+"/agents/organization-variables", defaultToken)
 	if resp.StatusCode != 200 {
 		t.Fatalf("repo org-variables status %d, want 200", resp.StatusCode)
 	}
@@ -342,7 +352,7 @@ func TestAgentsOrgVariables_CRUDAndSelectedRepos(t *testing.T) {
 	}
 
 	// List org variables.
-	resp = ghGet(t, base, defaultToken)
+	resp = s.get(t, base, defaultToken)
 	if resp.StatusCode != 200 {
 		t.Fatalf("list org variables status %d, want 200", resp.StatusCode)
 	}
@@ -352,28 +362,30 @@ func TestAgentsOrgVariables_CRUDAndSelectedRepos(t *testing.T) {
 	}
 
 	// Delete.
-	mustStatus(t, ghDelete(t, base+"/ORG_AGENT_VAR", defaultToken), 204, "delete org variable")
-	mustStatus(t, ghGet(t, base+"/ORG_AGENT_VAR", defaultToken), 404, "get deleted org variable")
+	mustStatus(t, s.delete(t, base+"/ORG_AGENT_VAR", defaultToken), 204, "delete org variable")
+	mustStatus(t, s.get(t, base+"/ORG_AGENT_VAR", defaultToken), 404, "get deleted org variable")
 }
 
 // TestAgentsSecrets_IsolatedFromActions verifies the /agents/ tables are
 // distinct from the Actions ones: an Actions secret does not appear on
 // the agents surface and vice versa.
 func TestAgentsSecrets_IsolatedFromActions(t *testing.T) {
-	repo := seedTestRepo(t, "agents-isolation", false)
+	t.Parallel()
+	s := newIsolatedServer(t)
+	repo := s.seedRepo(t, "agents-isolation", false)
 
-	mustStatus(t, putSealedSecret(t, "/api/v3/repos/"+repo.FullName+"/actions/secrets/ACTIONS_ONLY", "a"), 201, "create actions secret")
-	mustStatus(t, putSealedSecret(t, "/api/v3/repos/"+repo.FullName+"/agents/secrets/AGENTS_ONLY", "b"), 201, "create agents secret")
+	mustStatus(t, s.putSealedSecret(t, "/api/v3/repos/"+repo.FullName+"/actions/secrets/ACTIONS_ONLY", "a"), 201, "create actions secret")
+	mustStatus(t, s.putSealedSecret(t, "/api/v3/repos/"+repo.FullName+"/agents/secrets/AGENTS_ONLY", "b"), 201, "create agents secret")
 
-	resp := ghGet(t, "/api/v3/repos/"+repo.FullName+"/agents/secrets", defaultToken)
+	resp := s.get(t, "/api/v3/repos/"+repo.FullName+"/agents/secrets", defaultToken)
 	list := decodeJSON(t, resp)
 	secrets := list["secrets"].([]interface{})
 	if len(secrets) != 1 || secrets[0].(map[string]interface{})["name"] != "AGENTS_ONLY" {
 		t.Fatalf("agents secrets = %v, want only AGENTS_ONLY", secrets)
 	}
 
-	mustStatus(t, ghGet(t, "/api/v3/repos/"+repo.FullName+"/actions/secrets/AGENTS_ONLY", defaultToken), 404, "agents secret invisible to actions surface")
-	mustStatus(t, ghGet(t, "/api/v3/repos/"+repo.FullName+"/agents/secrets/ACTIONS_ONLY", defaultToken), 404, "actions secret invisible to agents surface")
+	mustStatus(t, s.get(t, "/api/v3/repos/"+repo.FullName+"/actions/secrets/AGENTS_ONLY", defaultToken), 404, "agents secret invisible to actions surface")
+	mustStatus(t, s.get(t, "/api/v3/repos/"+repo.FullName+"/agents/secrets/ACTIONS_ONLY", defaultToken), 404, "actions secret invisible to agents surface")
 }
 
 // TestAgentsCodeScanPersistenceReload verifies every new bucket —

@@ -68,7 +68,7 @@ func (st *Store) ListRepoActivity(repoID int) []*RepoActivity {
 		}
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].ID < out[j].ID })
-	return out
+	return snapshotSlice(out)
 }
 
 // RecordRepoClone counts one clone of a repository by the given actor in
@@ -111,7 +111,7 @@ func (st *Store) ListRepoCloneTraffic(repoID int, since time.Time) []*RepoTraffi
 		}
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].Day < out[j].Day })
-	return out
+	return snapshotRepoTrafficBuckets(out)
 }
 
 // ListRepoSubscribers returns the users holding a watch subscription on the
@@ -129,7 +129,7 @@ func (st *Store) ListRepoSubscribers(repoID int) []*User {
 		}
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].ID < out[j].ID })
-	return out
+	return snapshotUsers(out)
 }
 
 // ListPublicRepos returns public repositories with an ID greater than since,
@@ -145,7 +145,7 @@ func (st *Store) ListPublicRepos(since int) []*Repo {
 		out = append(out, repo)
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].ID < out[j].ID })
-	return out
+	return snapshotRepos(out)
 }
 
 // ListTeamsForRepo returns the org teams granted access to the repository,
@@ -163,7 +163,7 @@ func (st *Store) ListTeamsForRepo(fullName string) []*Team {
 		}
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].ID < out[j].ID })
-	return out
+	return snapshotTeams(out)
 }
 
 // LookupUserByEmail returns the user whose email matches case-insensitively,
@@ -238,5 +238,5 @@ func (st *Store) ListAssignableUsers(repo *Repo) []*User {
 		}
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].Login < out[j].Login })
-	return out
+	return snapshotUsers(out)
 }

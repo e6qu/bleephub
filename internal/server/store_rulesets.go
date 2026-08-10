@@ -346,7 +346,7 @@ func (st *Store) ListOrgRulesets(orgID int) []*Ruleset {
 		}
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].ID < out[j].ID })
-	return out
+	return snapshotRulesets(out)
 }
 
 // GetOrgRuleset returns a ruleset by ID.
@@ -497,7 +497,7 @@ func (st *Store) ListRulesetsForRepository(repo *Repo, includeParents bool) []*R
 		}
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].ID < out[j].ID })
-	return out
+	return snapshotRulesets(out)
 }
 
 // ApplicableRulesets snapshots every repository and organization ruleset that

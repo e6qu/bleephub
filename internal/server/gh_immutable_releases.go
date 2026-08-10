@@ -308,7 +308,7 @@ func (st *Store) ListOrgImmutableReleasesRepos(orgLogin string) []*Repo {
 		}
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].ID < out[j].ID })
-	return out
+	return snapshotRepos(out)
 }
 
 // RepoImmutableReleasesState reports whether immutable releases are enabled

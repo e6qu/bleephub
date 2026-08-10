@@ -22,6 +22,7 @@ import (
 // installed on that account. Each test mints its own tokens from it so a token
 // carries exactly the grant the case is about.
 type entitlementFixture struct {
+	store *Store
 	owner *User
 	repo  *Repo
 	app   *App
@@ -33,9 +34,9 @@ type entitlementFixture struct {
 // refuse at.
 var metadataOnly = map[string]string{"metadata": "read"}
 
-func newEntitlementFixture(t *testing.T, tag string, private bool) *entitlementFixture {
+func (s *isolatedServer) newEntitlementFixture(t *testing.T, tag string, private bool) *entitlementFixture {
 	t.Helper()
-	st := testServer.store
+	st := s.store
 
 	owner := st.LookupUserByLogin("entitle-owner-" + tag)
 	if owner == nil {
@@ -76,23 +77,23 @@ func newEntitlementFixture(t *testing.T, tag string, private bool) *entitlementF
 	if inst == nil {
 		t.Fatalf("fixture %s: could not install the app on the owner", tag)
 	}
-	return &entitlementFixture{owner: owner, repo: repo, app: app, inst: inst}
+	return &entitlementFixture{store: s.store, owner: owner, repo: repo, app: app, inst: inst}
 }
 
 // installationToken mints a ghs_ carrying exactly perms, over every repository
 // the installation covers.
 func (f *entitlementFixture) installationToken(t *testing.T, perms map[string]string) string {
 	t.Helper()
-	tok := testServer.store.CreateInstallationToken(f.inst.ID, f.app.ID, perms, nil)
+	tok := f.store.CreateInstallationToken(f.inst.ID, f.app.ID, perms, nil)
 	if tok == nil {
 		t.Fatal("could not mint an installation token")
 	}
 	return tok.Token
 }
 
-func entitlementGQLErrors(t *testing.T, token, doc string, input map[string]interface{}) []interface{} {
+func (s *isolatedServer) entitlementGQLErrors(t *testing.T, token, doc string, input map[string]interface{}) []interface{} {
 	t.Helper()
-	env := gqlAuthzPost(t, token, doc, map[string]interface{}{"input": input})
+	env := s.gqlAuthzPost(t, token, doc, map[string]interface{}{"input": input})
 	return gqlAuthzErrors(env)
 }
 
@@ -100,23 +101,25 @@ func entitlementGQLErrors(t *testing.T, token, doc string, input map[string]inte
 // metadata-only installation token deleted a repository outright, because the
 // admin arm asked only whether the installation reached it.
 func TestGraphQLAdminMutationNeedsTheAdministrationGrant(t *testing.T) {
+	t.Parallel()
+	s := newIsolatedServer(t)
 	doc := `mutation($input:DeleteRepositoryInput!){deleteRepository(input:$input){clientMutationId}}`
 
-	refused := newEntitlementFixture(t, "gql-admin-deny", true)
+	refused := s.newEntitlementFixture(t, "gql-admin-deny", true)
 	token := refused.installationToken(t, metadataOnly)
-	if errs := entitlementGQLErrors(t, token, doc, map[string]interface{}{"repositoryId": refused.repo.NodeID}); len(errs) == 0 {
+	if errs := s.entitlementGQLErrors(t, token, doc, map[string]interface{}{"repositoryId": refused.repo.NodeID}); len(errs) == 0 {
 		t.Error("deleteRepository succeeded for an installation holding only metadata:read")
 	}
-	if testServer.store.GetRepo(refused.owner.Login, refused.repo.Name) == nil {
+	if s.store.GetRepo(refused.owner.Login, refused.repo.Name) == nil {
 		t.Error("the repository was deleted by an installation holding only metadata:read")
 	}
 
-	allowed := newEntitlementFixture(t, "gql-admin-allow", true)
+	allowed := s.newEntitlementFixture(t, "gql-admin-allow", true)
 	entitled := allowed.installationToken(t, map[string]string{"metadata": "read", "administration": "write"})
-	if errs := entitlementGQLErrors(t, entitled, doc, map[string]interface{}{"repositoryId": allowed.repo.NodeID}); len(errs) != 0 {
+	if errs := s.entitlementGQLErrors(t, entitled, doc, map[string]interface{}{"repositoryId": allowed.repo.NodeID}); len(errs) != 0 {
 		t.Errorf("deleteRepository refused an installation holding administration:write: %v", errs)
 	}
-	if testServer.store.GetRepo(allowed.owner.Login, allowed.repo.Name) != nil {
+	if s.store.GetRepo(allowed.owner.Login, allowed.repo.Name) != nil {
 		t.Error("deleteRepository reported success but the repository is still there")
 	}
 }
@@ -125,27 +128,29 @@ func TestGraphQLAdminMutationNeedsTheAdministrationGrant(t *testing.T) {
 // and it is why the scope belongs on the policy row: an app entitled to issues
 // must be served even though it holds no contents grant at all.
 func TestGraphQLPushMutationNeedsTheIssuesGrant(t *testing.T) {
+	t.Parallel()
+	s := newIsolatedServer(t)
 	doc := `mutation($input:UpdateIssueInput!){updateIssue(input:$input){issue{title}}}`
 
-	f := newEntitlementFixture(t, "gql-push", true)
-	issue := testServer.store.CreateIssue(f.repo.ID, f.owner.ID, "before", "body", nil, nil, 0)
+	f := s.newEntitlementFixture(t, "gql-push", true)
+	issue := s.store.CreateIssue(f.repo.ID, f.owner.ID, "before", "body", nil, nil, 0)
 	if issue == nil {
 		t.Fatal("could not seed the issue")
 	}
 
 	token := f.installationToken(t, metadataOnly)
-	if errs := entitlementGQLErrors(t, token, doc, map[string]interface{}{"id": issue.NodeID, "title": "after"}); len(errs) == 0 {
+	if errs := s.entitlementGQLErrors(t, token, doc, map[string]interface{}{"id": issue.NodeID, "title": "after"}); len(errs) == 0 {
 		t.Error("updateIssue succeeded for an installation holding only metadata:read")
 	}
-	if got := testServer.store.GetIssue(issue.ID); got != nil && got.Title != "before" {
+	if got := s.store.GetIssue(issue.ID); got != nil && got.Title != "before" {
 		t.Errorf("issue title = %q; a metadata-only installation edited it", got.Title)
 	}
 
 	entitled := f.installationToken(t, map[string]string{"metadata": "read", "issues": "write"})
-	if errs := entitlementGQLErrors(t, entitled, doc, map[string]interface{}{"id": issue.NodeID, "title": "after"}); len(errs) != 0 {
+	if errs := s.entitlementGQLErrors(t, entitled, doc, map[string]interface{}{"id": issue.NodeID, "title": "after"}); len(errs) != 0 {
 		t.Errorf("updateIssue refused an installation holding issues:write: %v", errs)
 	}
-	if got := testServer.store.GetIssue(issue.ID); got == nil || got.Title != "after" {
+	if got := s.store.GetIssue(issue.ID); got == nil || got.Title != "after" {
 		t.Error("updateIssue reported success but the title did not change")
 	}
 }
@@ -156,10 +161,12 @@ func TestGraphQLPushMutationNeedsTheIssuesGrant(t *testing.T) {
 // relax the grant. Returning early above the credential check let the author of
 // an issue retitle it through an app installed nowhere.
 func TestAuthorExemptionDoesNotBypassTheCredential(t *testing.T) {
-	st := testServer.store
+	t.Parallel()
+	s := newIsolatedServer(t)
+	st := s.store
 	doc := `mutation($input:UpdateIssueInput!){updateIssue(input:$input){issue{title}}}`
 
-	f := newEntitlementFixture(t, "author", false)
+	f := s.newEntitlementFixture(t, "author", false)
 
 	st.mu.Lock()
 	now := fixedTestTime.UTC()
@@ -191,7 +198,7 @@ func TestAuthorExemptionDoesNotBypassTheCredential(t *testing.T) {
 	if uts == nil {
 		t.Fatal("could not mint the user-to-server token")
 	}
-	if errs := entitlementGQLErrors(t, uts.Token, doc, map[string]interface{}{"id": issue.NodeID, "title": "renamed"}); len(errs) == 0 {
+	if errs := s.entitlementGQLErrors(t, uts.Token, doc, map[string]interface{}{"id": issue.NodeID, "title": "renamed"}); len(errs) == 0 {
 		t.Error("the issue's author retitled it through an app installed nowhere")
 	}
 	if got := st.GetIssue(issue.ID); got != nil && got.Title != "authored" {
@@ -204,7 +211,7 @@ func TestAuthorExemptionDoesNotBypassTheCredential(t *testing.T) {
 	if pat == nil {
 		t.Fatal("could not mint the author's token")
 	}
-	if errs := entitlementGQLErrors(t, pat.Value, doc, map[string]interface{}{"id": issue.NodeID, "title": "renamed"}); len(errs) != 0 {
+	if errs := s.entitlementGQLErrors(t, pat.Value, doc, map[string]interface{}{"id": issue.NodeID, "title": "renamed"}); len(errs) != 0 {
 		t.Errorf("the author was refused an edit of their own issue: %v", errs)
 	}
 	if got := st.GetIssue(issue.ID); got == nil || got.Title != "renamed" {
@@ -212,9 +219,9 @@ func TestAuthorExemptionDoesNotBypassTheCredential(t *testing.T) {
 	}
 }
 
-func entitlementGitStatus(t *testing.T, method, url, token string) int {
+func (s *isolatedServer) entitlementGitStatus(t *testing.T, method, url, token string) int {
 	t.Helper()
-	req, err := http.NewRequest(method, testBaseURL+url, nil)
+	req, err := http.NewRequest(method, s.baseURL+url, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -232,30 +239,32 @@ func entitlementGitStatus(t *testing.T, method, url, token string) int {
 // because the git routes sit outside the /api middleware and had nothing but
 // reachability to go on.
 func TestGitTransportsNeedTheContentsGrant(t *testing.T) {
-	f := newEntitlementFixture(t, "git", true)
+	t.Parallel()
+	s := newIsolatedServer(t)
+	f := s.newEntitlementFixture(t, "git", true)
 	base := "/" + f.owner.Login + "/" + f.repo.Name + ".git/info/refs?service="
 
 	token := f.installationToken(t, metadataOnly)
-	if got := entitlementGitStatus(t, "GET", base+"git-upload-pack", token); got != http.StatusNotFound {
+	if got := s.entitlementGitStatus(t, "GET", base+"git-upload-pack", token); got != http.StatusNotFound {
 		t.Errorf("upload-pack for a metadata-only installation = %d, want 404 (no existence oracle)", got)
 	}
-	if got := entitlementGitStatus(t, "GET", base+"git-receive-pack", token); got != http.StatusNotFound {
+	if got := s.entitlementGitStatus(t, "GET", base+"git-receive-pack", token); got != http.StatusNotFound {
 		t.Errorf("receive-pack for a metadata-only installation = %d, want 404 (no existence oracle)", got)
 	}
 
 	reader := f.installationToken(t, map[string]string{"metadata": "read", "contents": "read"})
-	if got := entitlementGitStatus(t, "GET", base+"git-upload-pack", reader); got != http.StatusOK {
+	if got := s.entitlementGitStatus(t, "GET", base+"git-upload-pack", reader); got != http.StatusOK {
 		t.Errorf("upload-pack for an installation holding contents:read = %d, want 200", got)
 	}
-	if got := entitlementGitStatus(t, "GET", base+"git-receive-pack", reader); got != http.StatusForbidden {
+	if got := s.entitlementGitStatus(t, "GET", base+"git-receive-pack", reader); got != http.StatusForbidden {
 		t.Errorf("receive-pack for an installation holding only contents:read = %d, want 403", got)
 	}
 
 	writer := f.installationToken(t, map[string]string{"metadata": "read", "contents": "write"})
-	if got := entitlementGitStatus(t, "GET", base+"git-upload-pack", writer); got != http.StatusOK {
+	if got := s.entitlementGitStatus(t, "GET", base+"git-upload-pack", writer); got != http.StatusOK {
 		t.Errorf("upload-pack for an installation holding contents:write = %d, want 200", got)
 	}
-	if got := entitlementGitStatus(t, "GET", base+"git-receive-pack", writer); got != http.StatusOK {
+	if got := s.entitlementGitStatus(t, "GET", base+"git-receive-pack", writer); got != http.StatusOK {
 		t.Errorf("receive-pack for an installation holding contents:write = %d, want 200", got)
 	}
 }
@@ -265,8 +274,10 @@ func TestGitTransportsNeedTheContentsGrant(t *testing.T) {
 // user-to-server token of an app installed nowhere saw the private member list
 // its own installation token could not.
 func TestOrgMemberListingIntersectsTheCredential(t *testing.T) {
-	st := testServer.store
-	org := seedTestOrg(t, "entitle-members-org")
+	t.Parallel()
+	s := newIsolatedServer(t)
+	st := s.store
+	org := s.seedTestOrg(t, "entitle-members-org")
 
 	st.mu.Lock()
 	now := fixedTestTime.UTC()
@@ -291,7 +302,7 @@ func TestOrgMemberListingIntersectsTheCredential(t *testing.T) {
 
 	listing := func(token string) []map[string]interface{} {
 		t.Helper()
-		resp := ghGet(t, "/api/v3/orgs/"+org.Login+"/members", token)
+		resp := s.get(t, "/api/v3/orgs/"+org.Login+"/members", token)
 		if resp.StatusCode != http.StatusOK {
 			resp.Body.Close()
 			t.Fatalf("GET /orgs/%s/members = %d, want 200", org.Login, resp.StatusCode)

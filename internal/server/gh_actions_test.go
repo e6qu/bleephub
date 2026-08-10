@@ -1290,25 +1290,27 @@ func TestActionsPermissions_Org_WorkflowPermissions(t *testing.T) {
 }
 
 func TestActionsPermissions_Org_CacheLimits(t *testing.T) {
-	org := createTestOrg(t)
-	orgID := strconv.Itoa(testServer.store.GetOrg(org).ID)
+	t.Parallel()
+	s := newIsolatedServer(t)
+	org := s.createTestOrg(t)
+	orgID := strconv.Itoa(s.store.GetOrg(org).ID)
 
-	retResp := ghPut(t, "/api/v3/organizations/"+orgID+"/actions/cache/retention-limit", defaultToken, map[string]interface{}{
+	retResp := s.put(t, "/api/v3/organizations/"+orgID+"/actions/cache/retention-limit", defaultToken, map[string]interface{}{
 		"max_cache_retention_days": 45,
 	})
 	requireNoContent(t, retResp)
-	data := decodeJSONWithStatus(t, ghGet(t, "/api/v3/organizations/"+orgID+"/actions/cache/retention-limit", defaultToken), 200)
+	data := decodeJSONWithStatus(t, s.get(t, "/api/v3/organizations/"+orgID+"/actions/cache/retention-limit", defaultToken), 200)
 	if data["max_cache_retention_days"] != float64(45) {
 		t.Errorf("max_cache_retention_days = %v", data["max_cache_retention_days"])
 	}
 
 	// Gigabytes, as GitHub declares it — the old field name said bytes and the
 	// value was a byte count, so both the name and the unit were invented.
-	storResp := ghPut(t, "/api/v3/organizations/"+orgID+"/actions/cache/storage-limit", defaultToken, map[string]interface{}{
+	storResp := s.put(t, "/api/v3/organizations/"+orgID+"/actions/cache/storage-limit", defaultToken, map[string]interface{}{
 		"max_cache_size_gb": 10,
 	})
 	requireNoContent(t, storResp)
-	data = decodeJSONWithStatus(t, ghGet(t, "/api/v3/organizations/"+orgID+"/actions/cache/storage-limit", defaultToken), 200)
+	data = decodeJSONWithStatus(t, s.get(t, "/api/v3/organizations/"+orgID+"/actions/cache/storage-limit", defaultToken), 200)
 	if data["max_cache_size_gb"] != float64(10) {
 		t.Errorf("max_cache_size_gb = %v", data["max_cache_size_gb"])
 	}

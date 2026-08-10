@@ -90,7 +90,7 @@ describe("CodeScanningPage", () => {
     await waitFor(() => expect(sarifRequest).toBeDefined());
     expect(sarifRequest?.commit_sha).toBe(headSHA);
     expect(sarifRequest?.ref).toBe("refs/heads/trunk");
-    expect(new TextDecoder().decode(Uint8Array.from(atob(sarifRequest!.sarif), (char) => char.charCodeAt(0)))).toContain("café");
+    expect(new TextDecoder().decode(Uint8Array.from(atob(sarifRequest!.sarif!), (char) => char.charCodeAt(0)))).toContain("café");
     expect(sarifRequest?.commit_sha).not.toMatch(/^0+$/);
 
     fireEvent.click(screen.getByRole("button", { name: "Delete go CodeQL database" }));

@@ -10,32 +10,34 @@ import (
 
 // seedProjectV2Org creates an org (admin as owner) and an org-owned
 // Projects v2 project through the shared store.
-func seedProjectV2Org(t *testing.T, orgLogin, title string) (*Org, *ProjectV2) {
+func (s *isolatedServer) seedProjectV2Org(t *testing.T, orgLogin, title string) (*Org, *ProjectV2) {
 	t.Helper()
-	admin := testServer.store.UsersByLogin["admin"]
-	org := testServer.store.GetOrg(orgLogin)
+	admin := s.store.UsersByLogin["admin"]
+	org := s.store.GetOrg(orgLogin)
 	if org == nil {
-		org = testServer.store.CreateOrg(admin, orgLogin, orgLogin, "")
+		org = s.store.CreateOrg(admin, orgLogin, orgLogin, "")
 		if org == nil {
 			t.Fatalf("create org %s failed", orgLogin)
 		}
 	}
-	p := testServer.store.ProjectsV2.CreateProject(org.ID, "Organization", title, admin.ID)
+	p := s.store.ProjectsV2.CreateProject(org.ID, "Organization", title, admin.ID)
 	return org, p
 }
 
 func TestOrgProjectsV2_ListGetAndVisibility(t *testing.T) {
-	org, p := seedProjectV2Org(t, "pv2-vis-org", "Roadmap Q3")
+	t.Parallel()
+	s := newIsolatedServer(t)
+	org, p := s.seedProjectV2Org(t, "pv2-vis-org", "Roadmap Q3")
 
 	// Unauthenticated → 401 (the projects surface requires a token).
-	resp := ghGet(t, "/api/v3/orgs/"+org.Login+"/projectsV2", "")
+	resp := s.get(t, "/api/v3/orgs/"+org.Login+"/projectsV2", "")
 	resp.Body.Close()
 	if resp.StatusCode != 401 {
 		t.Fatalf("unauthenticated list = %d, want 401", resp.StatusCode)
 	}
 
 	// Admin (org member) sees the private project.
-	resp = ghGet(t, "/api/v3/orgs/"+org.Login+"/projectsV2", defaultToken)
+	resp = s.get(t, "/api/v3/orgs/"+org.Login+"/projectsV2", defaultToken)
 	if resp.StatusCode != 200 {
 		resp.Body.Close()
 		t.Fatalf("list = %d, want 200", resp.StatusCode)
@@ -66,7 +68,7 @@ func TestOrgProjectsV2_ListGetAndVisibility(t *testing.T) {
 	}
 
 	// GET by number.
-	resp = ghGet(t, "/api/v3/orgs/"+org.Login+"/projectsV2/"+strconv.Itoa(p.Number), defaultToken)
+	resp = s.get(t, "/api/v3/orgs/"+org.Login+"/projectsV2/"+strconv.Itoa(p.Number), defaultToken)
 	if resp.StatusCode != 200 {
 		resp.Body.Close()
 		t.Fatalf("get = %d, want 200", resp.StatusCode)
@@ -77,21 +79,21 @@ func TestOrgProjectsV2_ListGetAndVisibility(t *testing.T) {
 	}
 
 	// Unknown project number → 404. Unknown org → 404.
-	resp = ghGet(t, "/api/v3/orgs/"+org.Login+"/projectsV2/99999", defaultToken)
+	resp = s.get(t, "/api/v3/orgs/"+org.Login+"/projectsV2/99999", defaultToken)
 	resp.Body.Close()
 	if resp.StatusCode != 404 {
 		t.Fatalf("unknown number = %d, want 404", resp.StatusCode)
 	}
-	resp = ghGet(t, "/api/v3/orgs/no-such-org/projectsV2", defaultToken)
+	resp = s.get(t, "/api/v3/orgs/no-such-org/projectsV2", defaultToken)
 	resp.Body.Close()
 	if resp.StatusCode != 404 {
 		t.Fatalf("unknown org = %d, want 404", resp.StatusCode)
 	}
 
 	// A non-member's PAT cannot see the private project (404 / excluded).
-	outsider := createTestUser(t, "pv2-outsider")
-	outsiderToken := testServer.store.CreateToken(outsider.ID, "repo").Value
-	resp = ghGet(t, "/api/v3/orgs/"+org.Login+"/projectsV2/"+strconv.Itoa(p.Number), outsiderToken)
+	outsider := s.createTestUser(t, "pv2-outsider")
+	outsiderToken := s.store.CreateToken(outsider.ID, "repo").Value
+	resp = s.get(t, "/api/v3/orgs/"+org.Login+"/projectsV2/"+strconv.Itoa(p.Number), outsiderToken)
 	resp.Body.Close()
 	if resp.StatusCode != 404 {
 		t.Fatalf("outsider get private project = %d, want 404", resp.StatusCode)
@@ -99,8 +101,8 @@ func TestOrgProjectsV2_ListGetAndVisibility(t *testing.T) {
 
 	// Once public, the outsider can read it.
 	public := true
-	testServer.store.ProjectsV2.UpdateProject(p.ID, nil, nil, &public)
-	resp = ghGet(t, "/api/v3/orgs/"+org.Login+"/projectsV2/"+strconv.Itoa(p.Number), outsiderToken)
+	s.store.ProjectsV2.UpdateProject(p.ID, nil, nil, &public)
+	resp = s.get(t, "/api/v3/orgs/"+org.Login+"/projectsV2/"+strconv.Itoa(p.Number), outsiderToken)
 	if resp.StatusCode != 200 {
 		resp.Body.Close()
 		t.Fatalf("outsider get public project = %d, want 200", resp.StatusCode)
@@ -112,13 +114,15 @@ func TestOrgProjectsV2_ListGetAndVisibility(t *testing.T) {
 }
 
 func TestOrgProjectsV2_ListQueryFilter(t *testing.T) {
-	org, _ := seedProjectV2Org(t, "pv2-q-org", "Alpha launch")
-	admin := testServer.store.UsersByLogin["admin"]
-	closedProj := testServer.store.ProjectsV2.CreateProject(org.ID, "Organization", "Beta cleanup", admin.ID)
+	t.Parallel()
+	s := newIsolatedServer(t)
+	org, _ := s.seedProjectV2Org(t, "pv2-q-org", "Alpha launch")
+	admin := s.store.UsersByLogin["admin"]
+	closedProj := s.store.ProjectsV2.CreateProject(org.ID, "Organization", "Beta cleanup", admin.ID)
 	closed := true
-	testServer.store.ProjectsV2.UpdateProject(closedProj.ID, nil, &closed, nil)
+	s.store.ProjectsV2.UpdateProject(closedProj.ID, nil, &closed, nil)
 
-	resp := ghGet(t, "/api/v3/orgs/"+org.Login+"/projectsV2?q=is%3Aclosed", defaultToken)
+	resp := s.get(t, "/api/v3/orgs/"+org.Login+"/projectsV2?q=is%3Aclosed", defaultToken)
 	if resp.StatusCode != 200 {
 		resp.Body.Close()
 		t.Fatalf("q=is:closed = %d, want 200", resp.StatusCode)
@@ -134,7 +138,7 @@ func TestOrgProjectsV2_ListQueryFilter(t *testing.T) {
 		t.Fatal("closed_at should be set on a closed project")
 	}
 
-	resp = ghGet(t, "/api/v3/orgs/"+org.Login+"/projectsV2?q=alpha", defaultToken)
+	resp = s.get(t, "/api/v3/orgs/"+org.Login+"/projectsV2?q=alpha", defaultToken)
 	if resp.StatusCode != 200 {
 		resp.Body.Close()
 		t.Fatalf("q=alpha = %d, want 200", resp.StatusCode)
@@ -146,11 +150,13 @@ func TestOrgProjectsV2_ListQueryFilter(t *testing.T) {
 }
 
 func TestOrgProjectV2Fields_CreateListGet(t *testing.T) {
-	org, p := seedProjectV2Org(t, "pv2-fields-org", "Fields")
+	t.Parallel()
+	s := newIsolatedServer(t)
+	org, p := s.seedProjectV2Org(t, "pv2-fields-org", "Fields")
 	base := "/api/v3/orgs/" + org.Login + "/projectsV2/" + strconv.Itoa(p.Number)
 
 	// text field
-	resp := ghPost(t, base+"/fields", defaultToken, map[string]interface{}{
+	resp := s.post(t, base+"/fields", defaultToken, map[string]interface{}{
 		"name": "Notes", "data_type": "text",
 	})
 	if resp.StatusCode != 201 {
@@ -163,7 +169,7 @@ func TestOrgProjectV2Fields_CreateListGet(t *testing.T) {
 	}
 
 	// single select field with rich options
-	resp = ghPost(t, base+"/fields", defaultToken, map[string]interface{}{
+	resp = s.post(t, base+"/fields", defaultToken, map[string]interface{}{
 		"name": "Priority", "data_type": "single_select",
 		"single_select_options": []map[string]interface{}{
 			{"name": "High", "color": "RED", "description": "Do first"},
@@ -190,7 +196,7 @@ func TestOrgProjectV2Fields_CreateListGet(t *testing.T) {
 	}
 
 	// iteration field
-	resp = ghPost(t, base+"/fields", defaultToken, map[string]interface{}{
+	resp = s.post(t, base+"/fields", defaultToken, map[string]interface{}{
 		"name": "Sprint", "data_type": "iteration",
 		"iteration_configuration": map[string]interface{}{
 			"start_date": "2026-07-06", "duration": 7,
@@ -218,7 +224,7 @@ func TestOrgProjectV2Fields_CreateListGet(t *testing.T) {
 	}
 
 	// list fields
-	resp = ghGet(t, base+"/fields", defaultToken)
+	resp = s.get(t, base+"/fields", defaultToken)
 	if resp.StatusCode != 200 {
 		resp.Body.Close()
 		t.Fatalf("list fields = %d, want 200", resp.StatusCode)
@@ -230,7 +236,7 @@ func TestOrgProjectV2Fields_CreateListGet(t *testing.T) {
 
 	// get single field
 	fieldID := int(ssField["id"].(float64))
-	resp = ghGet(t, base+"/fields/"+strconv.Itoa(fieldID), defaultToken)
+	resp = s.get(t, base+"/fields/"+strconv.Itoa(fieldID), defaultToken)
 	if resp.StatusCode != 200 {
 		resp.Body.Close()
 		t.Fatalf("get field = %d, want 200", resp.StatusCode)
@@ -239,7 +245,7 @@ func TestOrgProjectV2Fields_CreateListGet(t *testing.T) {
 	if gotField["name"] != "Priority" {
 		t.Fatalf("field name = %v", gotField["name"])
 	}
-	resp = ghGet(t, base+"/fields/999999", defaultToken)
+	resp = s.get(t, base+"/fields/999999", defaultToken)
 	resp.Body.Close()
 	if resp.StatusCode != 404 {
 		t.Fatalf("unknown field = %d, want 404", resp.StatusCode)
@@ -256,7 +262,7 @@ func TestOrgProjectV2Fields_CreateListGet(t *testing.T) {
 		{"name": "BadIter", "data_type": "iteration", // malformed start_date
 			"iteration_configuration": map[string]interface{}{"start_date": "07/06/2026"}},
 	} {
-		resp = ghPost(t, base+"/fields", defaultToken, body)
+		resp = s.post(t, base+"/fields", defaultToken, body)
 		resp.Body.Close()
 		if resp.StatusCode != 422 {
 			t.Fatalf("invalid field body #%d = %d, want 422", i, resp.StatusCode)
@@ -265,17 +271,19 @@ func TestOrgProjectV2Fields_CreateListGet(t *testing.T) {
 }
 
 func TestOrgProjectV2Items_AddGetPatchDelete(t *testing.T) {
-	org, p := seedProjectV2Org(t, "pv2-items-org", "Items")
-	admin := testServer.store.UsersByLogin["admin"]
-	repo := testServer.store.CreateOrgRepo(org, admin, "pv2-items-repo", "", false)
+	t.Parallel()
+	s := newIsolatedServer(t)
+	org, p := s.seedProjectV2Org(t, "pv2-items-org", "Items")
+	admin := s.store.UsersByLogin["admin"]
+	repo := s.store.CreateOrgRepo(org, admin, "pv2-items-repo", "", false)
 	if repo == nil {
 		t.Fatal("create org repo failed")
 	}
-	issue := testServer.store.CreateIssue(repo.ID, admin.ID, "Fix the flux capacitor", "", nil, nil, 0)
+	issue := s.store.CreateIssue(repo.ID, admin.ID, "Fix the flux capacitor", "", nil, nil, 0)
 	base := "/api/v3/orgs/" + org.Login + "/projectsV2/" + strconv.Itoa(p.Number)
 
 	// Add by database ID.
-	resp := ghPost(t, base+"/items", defaultToken, map[string]interface{}{
+	resp := s.post(t, base+"/items", defaultToken, map[string]interface{}{
 		"type": "Issue", "id": issue.ID,
 	})
 	if resp.StatusCode != 201 {
@@ -289,7 +297,7 @@ func TestOrgProjectV2Items_AddGetPatchDelete(t *testing.T) {
 	itemID := int(item["id"].(float64))
 
 	// Adding the same issue again is idempotent (same item ID).
-	resp = ghPost(t, base+"/items", defaultToken, map[string]interface{}{
+	resp = s.post(t, base+"/items", defaultToken, map[string]interface{}{
 		"type": "Issue", "owner": org.Login, "repo": repo.Name, "number": issue.Number,
 	})
 	if resp.StatusCode != 201 {
@@ -302,7 +310,7 @@ func TestOrgProjectV2Items_AddGetPatchDelete(t *testing.T) {
 	}
 
 	// Draft item.
-	resp = ghPost(t, base+"/drafts", defaultToken, map[string]interface{}{
+	resp = s.post(t, base+"/drafts", defaultToken, map[string]interface{}{
 		"title": "Draft: write docs", "body": "eventually",
 	})
 	if resp.StatusCode != 201 {
@@ -316,7 +324,7 @@ func TestOrgProjectV2Items_AddGetPatchDelete(t *testing.T) {
 	draftID := int(draft["id"].(float64))
 
 	// List items — both present, content populated.
-	resp = ghGet(t, base+"/items", defaultToken)
+	resp = s.get(t, base+"/items", defaultToken)
 	if resp.StatusCode != 200 {
 		resp.Body.Close()
 		t.Fatalf("list items = %d, want 200", resp.StatusCode)
@@ -327,7 +335,7 @@ func TestOrgProjectV2Items_AddGetPatchDelete(t *testing.T) {
 	}
 
 	// Get single item with content.
-	resp = ghGet(t, base+"/items/"+strconv.Itoa(itemID), defaultToken)
+	resp = s.get(t, base+"/items/"+strconv.Itoa(itemID), defaultToken)
 	if resp.StatusCode != 200 {
 		resp.Body.Close()
 		t.Fatalf("get item = %d, want 200", resp.StatusCode)
@@ -339,11 +347,11 @@ func TestOrgProjectV2Items_AddGetPatchDelete(t *testing.T) {
 	}
 
 	// Field values: text + single select set via PATCH, read back.
-	textField := testServer.store.ProjectsV2.CreateField(p.ID, "Notes", ProjectV2FieldText, nil, nil)
-	ssField := testServer.store.ProjectsV2.CreateField(p.ID, "Status", ProjectV2FieldSingleSelect,
+	textField := s.store.ProjectsV2.CreateField(p.ID, "Notes", ProjectV2FieldText, nil, nil)
+	ssField := s.store.ProjectsV2.CreateField(p.ID, "Status", ProjectV2FieldSingleSelect,
 		[]*ProjectV2SingleSelectOption{{Name: "Todo"}, {Name: "Done"}}, nil)
-	numField := testServer.store.ProjectsV2.CreateField(p.ID, "Points", ProjectV2FieldNumber, nil, nil)
-	resp = ghPatch(t, base+"/items/"+strconv.Itoa(itemID), defaultToken, map[string]interface{}{
+	numField := s.store.ProjectsV2.CreateField(p.ID, "Points", ProjectV2FieldNumber, nil, nil)
+	resp = s.patch(t, base+"/items/"+strconv.Itoa(itemID), defaultToken, map[string]interface{}{
 		"fields": []map[string]interface{}{
 			{"id": textField.ID, "value": "needs review"},
 			{"id": ssField.ID, "value": ssField.Options[1].ID},
@@ -372,7 +380,7 @@ func TestOrgProjectV2Items_AddGetPatchDelete(t *testing.T) {
 	}
 
 	// Clearing a value via null; explicit fields selection returns null.
-	resp = ghPatch(t, base+"/items/"+strconv.Itoa(itemID), defaultToken, map[string]interface{}{
+	resp = s.patch(t, base+"/items/"+strconv.Itoa(itemID), defaultToken, map[string]interface{}{
 		"fields": []map[string]interface{}{{"id": textField.ID, "value": nil}},
 	})
 	if resp.StatusCode != 200 {
@@ -380,7 +388,7 @@ func TestOrgProjectV2Items_AddGetPatchDelete(t *testing.T) {
 		t.Fatalf("clear value = %d, want 200", resp.StatusCode)
 	}
 	resp.Body.Close()
-	resp = ghGet(t, base+"/items/"+strconv.Itoa(itemID)+"?fields="+strconv.Itoa(textField.ID), defaultToken)
+	resp = s.get(t, base+"/items/"+strconv.Itoa(itemID)+"?fields="+strconv.Itoa(textField.ID), defaultToken)
 	if resp.StatusCode != 200 {
 		resp.Body.Close()
 		t.Fatalf("get with fields selection = %d, want 200", resp.StatusCode)
@@ -397,7 +405,7 @@ func TestOrgProjectV2Items_AddGetPatchDelete(t *testing.T) {
 		{"fields": []map[string]interface{}{{"id": numField.ID, "value": "not a number"}}},
 		{"fields": []map[string]interface{}{}},
 	} {
-		resp = ghPatch(t, base+"/items/"+strconv.Itoa(itemID), defaultToken, body)
+		resp = s.patch(t, base+"/items/"+strconv.Itoa(itemID), defaultToken, body)
 		resp.Body.Close()
 		if resp.StatusCode != 422 {
 			t.Fatalf("invalid patch #%d = %d, want 422", i, resp.StatusCode)
@@ -405,7 +413,7 @@ func TestOrgProjectV2Items_AddGetPatchDelete(t *testing.T) {
 	}
 
 	// q filter: is:draft matches only the draft.
-	resp = ghGet(t, base+"/items?q=is%3Adraft", defaultToken)
+	resp = s.get(t, base+"/items?q=is%3Adraft", defaultToken)
 	if resp.StatusCode != 200 {
 		resp.Body.Close()
 		t.Fatalf("q=is:draft = %d, want 200", resp.StatusCode)
@@ -416,7 +424,7 @@ func TestOrgProjectV2Items_AddGetPatchDelete(t *testing.T) {
 	}
 
 	// Field-value filter: Status:Done matches the patched item.
-	resp = ghGet(t, base+"/items?q=Status%3ADone", defaultToken)
+	resp = s.get(t, base+"/items?q=Status%3ADone", defaultToken)
 	if resp.StatusCode != 200 {
 		resp.Body.Close()
 		t.Fatalf("q=Status:Done = %d, want 200", resp.StatusCode)
@@ -427,12 +435,12 @@ func TestOrgProjectV2Items_AddGetPatchDelete(t *testing.T) {
 	}
 
 	// Delete item.
-	resp = ghDelete(t, base+"/items/"+strconv.Itoa(draftID), defaultToken)
+	resp = s.delete(t, base+"/items/"+strconv.Itoa(draftID), defaultToken)
 	resp.Body.Close()
 	if resp.StatusCode != 204 {
 		t.Fatalf("delete item = %d, want 204", resp.StatusCode)
 	}
-	resp = ghGet(t, base+"/items/"+strconv.Itoa(draftID), defaultToken)
+	resp = s.get(t, base+"/items/"+strconv.Itoa(draftID), defaultToken)
 	resp.Body.Close()
 	if resp.StatusCode != 404 {
 		t.Fatalf("deleted item get = %d, want 404", resp.StatusCode)
@@ -445,7 +453,7 @@ func TestOrgProjectV2Items_AddGetPatchDelete(t *testing.T) {
 		{"type": "Issue", "id": 999999},
 		{"type": "Issue", "owner": org.Login, "repo": "nope", "number": 1},
 	} {
-		resp = ghPost(t, base+"/items", defaultToken, body)
+		resp = s.post(t, base+"/items", defaultToken, body)
 		resp.Body.Close()
 		if resp.StatusCode != 422 {
 			t.Fatalf("invalid add-item body #%d = %d, want 422", i, resp.StatusCode)
@@ -454,19 +462,21 @@ func TestOrgProjectV2Items_AddGetPatchDelete(t *testing.T) {
 }
 
 func TestOrgProjectV2Views_CreateAndListItems(t *testing.T) {
-	org, p := seedProjectV2Org(t, "pv2-views-org", "Views")
-	admin := testServer.store.UsersByLogin["admin"]
-	repo := testServer.store.CreateOrgRepo(org, admin, "pv2-views-repo", "", false)
+	t.Parallel()
+	s := newIsolatedServer(t)
+	org, p := s.seedProjectV2Org(t, "pv2-views-org", "Views")
+	admin := s.store.UsersByLogin["admin"]
+	repo := s.store.CreateOrgRepo(org, admin, "pv2-views-repo", "", false)
 	if repo == nil {
 		t.Fatal("create org repo failed")
 	}
-	issue := testServer.store.CreateIssue(repo.ID, admin.ID, "An issue", "", nil, nil, 0)
-	testServer.store.ProjectsV2.AddItem(p.ID, "Issue", issue.ID, admin.ID)
-	testServer.store.ProjectsV2.AddDraftItem(p.ID, "A draft", "", admin.ID)
-	field := testServer.store.ProjectsV2.CreateField(p.ID, "Stage", ProjectV2FieldText, nil, nil)
+	issue := s.store.CreateIssue(repo.ID, admin.ID, "An issue", "", nil, nil, 0)
+	s.store.ProjectsV2.AddItem(p.ID, "Issue", issue.ID, admin.ID)
+	s.store.ProjectsV2.AddDraftItem(p.ID, "A draft", "", admin.ID)
+	field := s.store.ProjectsV2.CreateField(p.ID, "Stage", ProjectV2FieldText, nil, nil)
 	base := "/api/v3/orgs/" + org.Login + "/projectsV2/" + strconv.Itoa(p.Number)
 
-	resp := ghPost(t, base+"/views", defaultToken, map[string]interface{}{
+	resp := s.post(t, base+"/views", defaultToken, map[string]interface{}{
 		"name": "Issues board", "layout": "board", "filter": "is:issue",
 	})
 	if resp.StatusCode != 201 {
@@ -484,7 +494,7 @@ func TestOrgProjectV2Views_CreateAndListItems(t *testing.T) {
 	viewNumber := int(view["number"].(float64))
 
 	// The view's filter hides the draft.
-	resp = ghGet(t, base+"/views/"+strconv.Itoa(viewNumber)+"/items", defaultToken)
+	resp = s.get(t, base+"/views/"+strconv.Itoa(viewNumber)+"/items", defaultToken)
 	if resp.StatusCode != 200 {
 		resp.Body.Close()
 		t.Fatalf("view items = %d, want 200", resp.StatusCode)
@@ -494,7 +504,7 @@ func TestOrgProjectV2Views_CreateAndListItems(t *testing.T) {
 		t.Fatalf("view items = %v, want the one issue", items)
 	}
 
-	resp = ghGet(t, base+"/views/999/items", defaultToken)
+	resp = s.get(t, base+"/views/999/items", defaultToken)
 	resp.Body.Close()
 	if resp.StatusCode != 404 {
 		t.Fatalf("unknown view = %d, want 404", resp.StatusCode)
@@ -505,7 +515,7 @@ func TestOrgProjectV2Views_CreateAndListItems(t *testing.T) {
 		{"layout": "board"},
 		{"name": "y", "layout": "table", "visible_fields": []int{999999}},
 	} {
-		resp = ghPost(t, base+"/views", defaultToken, body)
+		resp = s.post(t, base+"/views", defaultToken, body)
 		resp.Body.Close()
 		if resp.StatusCode != 422 {
 			t.Fatalf("invalid view body #%d = %d, want 422", i, resp.StatusCode)
@@ -514,11 +524,13 @@ func TestOrgProjectV2Views_CreateAndListItems(t *testing.T) {
 }
 
 func TestUserProjectsV2_FlowIncludingUserIDRoutes(t *testing.T) {
-	admin := testServer.store.UsersByLogin["admin"]
-	p := testServer.store.ProjectsV2.CreateProject(admin.ID, "User", "Personal backlog", admin.ID)
+	t.Parallel()
+	s := newIsolatedServer(t)
+	admin := s.store.UsersByLogin["admin"]
+	p := s.store.ProjectsV2.CreateProject(admin.ID, "User", "Personal backlog", admin.ID)
 
 	// List + get by login.
-	resp := ghGet(t, "/api/v3/users/admin/projectsV2", defaultToken)
+	resp := s.get(t, "/api/v3/users/admin/projectsV2", defaultToken)
 	if resp.StatusCode != 200 {
 		resp.Body.Close()
 		t.Fatalf("user list = %d, want 200", resp.StatusCode)
@@ -534,7 +546,7 @@ func TestUserProjectsV2_FlowIncludingUserIDRoutes(t *testing.T) {
 		t.Fatal("user project missing from list")
 	}
 	base := "/api/v3/users/admin/projectsV2/" + strconv.Itoa(p.Number)
-	resp = ghGet(t, base, defaultToken)
+	resp = s.get(t, base, defaultToken)
 	if resp.StatusCode != 200 {
 		resp.Body.Close()
 		t.Fatalf("user get = %d, want 200", resp.StatusCode)
@@ -542,7 +554,7 @@ func TestUserProjectsV2_FlowIncludingUserIDRoutes(t *testing.T) {
 	resp.Body.Close()
 
 	// Field create/list/get through /users/{username}.
-	resp = ghPost(t, base+"/fields", defaultToken, map[string]interface{}{
+	resp = s.post(t, base+"/fields", defaultToken, map[string]interface{}{
 		"name": "Effort", "data_type": "number",
 	})
 	if resp.StatusCode != 201 {
@@ -551,13 +563,13 @@ func TestUserProjectsV2_FlowIncludingUserIDRoutes(t *testing.T) {
 	}
 	field := decodeJSON(t, resp)
 	fieldID := int(field["id"].(float64))
-	resp = ghGet(t, base+"/fields/"+strconv.Itoa(fieldID), defaultToken)
+	resp = s.get(t, base+"/fields/"+strconv.Itoa(fieldID), defaultToken)
 	if resp.StatusCode != 200 {
 		resp.Body.Close()
 		t.Fatalf("user field get = %d, want 200", resp.StatusCode)
 	}
 	resp.Body.Close()
-	resp = ghGet(t, base+"/fields", defaultToken)
+	resp = s.get(t, base+"/fields", defaultToken)
 	if resp.StatusCode != 200 {
 		resp.Body.Close()
 		t.Fatalf("user fields list = %d, want 200", resp.StatusCode)
@@ -565,7 +577,7 @@ func TestUserProjectsV2_FlowIncludingUserIDRoutes(t *testing.T) {
 	resp.Body.Close()
 
 	// Draft creation goes through POST /user/{user_id}/… (by user ID).
-	resp = ghPost(t, fmt.Sprintf("/api/v3/user/%d/projectsV2/%d/drafts", admin.ID, p.Number), defaultToken,
+	resp = s.post(t, fmt.Sprintf("/api/v3/user/%d/projectsV2/%d/drafts", admin.ID, p.Number), defaultToken,
 		map[string]interface{}{"title": "My draft"})
 	if resp.StatusCode != 201 {
 		resp.Body.Close()
@@ -575,7 +587,7 @@ func TestUserProjectsV2_FlowIncludingUserIDRoutes(t *testing.T) {
 	draftID := int(draft["id"].(float64))
 
 	// Item PATCH + GET + DELETE via /users/{username}.
-	resp = ghPatch(t, base+"/items/"+strconv.Itoa(draftID), defaultToken, map[string]interface{}{
+	resp = s.patch(t, base+"/items/"+strconv.Itoa(draftID), defaultToken, map[string]interface{}{
 		"fields": []map[string]interface{}{{"id": fieldID, "value": 3}},
 	})
 	if resp.StatusCode != 200 {
@@ -583,7 +595,7 @@ func TestUserProjectsV2_FlowIncludingUserIDRoutes(t *testing.T) {
 		t.Fatalf("user item patch = %d, want 200", resp.StatusCode)
 	}
 	resp.Body.Close()
-	resp = ghGet(t, base+"/items", defaultToken)
+	resp = s.get(t, base+"/items", defaultToken)
 	if resp.StatusCode != 200 {
 		resp.Body.Close()
 		t.Fatalf("user items list = %d, want 200", resp.StatusCode)
@@ -594,7 +606,7 @@ func TestUserProjectsV2_FlowIncludingUserIDRoutes(t *testing.T) {
 	}
 
 	// View creation goes through POST /users/{user_id}/… (by user ID).
-	resp = ghPost(t, fmt.Sprintf("/api/v3/users/%d/projectsV2/%d/views", admin.ID, p.Number), defaultToken,
+	resp = s.post(t, fmt.Sprintf("/api/v3/users/%d/projectsV2/%d/views", admin.ID, p.Number), defaultToken,
 		map[string]interface{}{"name": "Table", "layout": "table"})
 	if resp.StatusCode != 201 {
 		resp.Body.Close()
@@ -602,7 +614,7 @@ func TestUserProjectsV2_FlowIncludingUserIDRoutes(t *testing.T) {
 	}
 	view := decodeJSON(t, resp)
 	viewNumber := int(view["number"].(float64))
-	resp = ghGet(t, base+"/views/"+strconv.Itoa(viewNumber)+"/items", defaultToken)
+	resp = s.get(t, base+"/views/"+strconv.Itoa(viewNumber)+"/items", defaultToken)
 	if resp.StatusCode != 200 {
 		resp.Body.Close()
 		t.Fatalf("user view items = %d, want 200", resp.StatusCode)
@@ -611,9 +623,9 @@ func TestUserProjectsV2_FlowIncludingUserIDRoutes(t *testing.T) {
 
 	// Another user cannot write to this project (403), and the
 	// authenticated-user draft route rejects an addressee mismatch.
-	other := createTestUser(t, "pv2-other-user")
-	otherToken := testServer.store.CreateToken(other.ID, "repo").Value
-	resp = ghPost(t, fmt.Sprintf("/api/v3/user/%d/projectsV2/%d/drafts", admin.ID, p.Number), otherToken,
+	other := s.createTestUser(t, "pv2-other-user")
+	otherToken := s.store.CreateToken(other.ID, "repo").Value
+	resp = s.post(t, fmt.Sprintf("/api/v3/user/%d/projectsV2/%d/drafts", admin.ID, p.Number), otherToken,
 		map[string]interface{}{"title": "Sneaky"})
 	resp.Body.Close()
 	if resp.StatusCode != 403 {
@@ -621,14 +633,14 @@ func TestUserProjectsV2_FlowIncludingUserIDRoutes(t *testing.T) {
 	}
 
 	// Private user project hidden from others.
-	resp = ghGet(t, base, otherToken)
+	resp = s.get(t, base, otherToken)
 	resp.Body.Close()
 	if resp.StatusCode != 404 {
 		t.Fatalf("other user get private project = %d, want 404", resp.StatusCode)
 	}
 
 	// Delete the item last.
-	resp = ghDelete(t, base+"/items/"+strconv.Itoa(draftID), defaultToken)
+	resp = s.delete(t, base+"/items/"+strconv.Itoa(draftID), defaultToken)
 	resp.Body.Close()
 	if resp.StatusCode != 204 {
 		t.Fatalf("user item delete = %d, want 204", resp.StatusCode)
@@ -636,14 +648,16 @@ func TestUserProjectsV2_FlowIncludingUserIDRoutes(t *testing.T) {
 }
 
 func TestOrgProjectV2Items_CursorPagination(t *testing.T) {
-	org, p := seedProjectV2Org(t, "pv2-page-org", "Paging")
-	admin := testServer.store.UsersByLogin["admin"]
+	t.Parallel()
+	s := newIsolatedServer(t)
+	org, p := s.seedProjectV2Org(t, "pv2-page-org", "Paging")
+	admin := s.store.UsersByLogin["admin"]
 	for i := 0; i < 5; i++ {
-		testServer.store.ProjectsV2.AddDraftItem(p.ID, fmt.Sprintf("Draft %d", i), "", admin.ID)
+		s.store.ProjectsV2.AddDraftItem(p.ID, fmt.Sprintf("Draft %d", i), "", admin.ID)
 	}
 	base := "/api/v3/orgs/" + org.Login + "/projectsV2/" + strconv.Itoa(p.Number)
 
-	resp := ghGet(t, base+"/items?per_page=2", defaultToken)
+	resp := s.get(t, base+"/items?per_page=2", defaultToken)
 	if resp.StatusCode != 200 {
 		resp.Body.Close()
 		t.Fatalf("page 1 = %d, want 200", resp.StatusCode)
@@ -658,7 +672,7 @@ func TestOrgProjectV2Items_CursorPagination(t *testing.T) {
 	}
 
 	after := extractCursor(t, link, "after")
-	resp = ghGet(t, base+"/items?per_page=2&after="+after, defaultToken)
+	resp = s.get(t, base+"/items?per_page=2&after="+after, defaultToken)
 	if resp.StatusCode != 200 {
 		resp.Body.Close()
 		t.Fatalf("page 2 = %d, want 200", resp.StatusCode)

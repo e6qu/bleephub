@@ -186,17 +186,32 @@ func (st *Store) CreateOrg(creator *User, login, name, description string) *Org 
 }
 
 // GetOrg returns an organization by login, or nil if not found.
+// cloneOrg returns a copy safe to hand outside the store lock (STORE-021):
+// MembersCanCreateRepositories is the only reference field. Org writes go
+// through the keyed UpdateOrg or mutate the live st.Orgs row directly.
+func cloneOrg(o *Org) *Org {
+	if o == nil {
+		return nil
+	}
+	clone := *o
+	if o.MembersCanCreateRepositories != nil {
+		v := *o.MembersCanCreateRepositories
+		clone.MembersCanCreateRepositories = &v
+	}
+	return &clone
+}
+
 func (st *Store) GetOrg(login string) *Org {
 	st.mu.RLock()
 	defer st.mu.RUnlock()
-	return st.OrgsByLogin[login]
+	return cloneOrg(st.OrgsByLogin[login])
 }
 
 // GetOrgByID returns an organization by its numeric ID, or nil.
 func (st *Store) GetOrgByID(id int) *Org {
 	st.mu.RLock()
 	defer st.mu.RUnlock()
-	return st.Orgs[id]
+	return cloneOrg(st.Orgs[id])
 }
 
 // ListTeamsByUser returns every team across all orgs that the given user is a member of.
@@ -213,7 +228,7 @@ func (st *Store) ListTeamsByUser(userID int) []*Team {
 			}
 		}
 	}
-	return teams
+	return snapshotTeams(teams)
 }
 
 // UpdateOrg applies a mutation function to an organization.
@@ -498,7 +513,7 @@ func (st *Store) ListOrgsByUser(userID int) []*Org {
 	st.mu.RLock()
 	defer st.mu.RUnlock()
 
-	return st.listOrgsByUserLocked(userID, false)
+	return snapshotOrgs(st.listOrgsByUserLocked(userID, false))
 }
 
 // ListPublicOrgsByUser returns only active organization memberships that the
@@ -509,7 +524,7 @@ func (st *Store) ListPublicOrgsByUser(userID int) []*Org {
 	st.mu.RLock()
 	defer st.mu.RUnlock()
 
-	return st.listOrgsByUserLocked(userID, true)
+	return snapshotOrgs(st.listOrgsByUserLocked(userID, true))
 }
 
 func (st *Store) listOrgsByUserLocked(userID int, publicOnly bool) []*Org {
@@ -592,7 +607,7 @@ func (st *Store) ListPublicOrgMembers(orgLogin string) []*User {
 			}
 		}
 	}
-	return users
+	return snapshotUsers(users)
 }
 
 // ListMembershipsByUser returns the user's memberships across all orgs,
@@ -611,7 +626,7 @@ func (st *Store) ListMembershipsByUser(userID int, state MembershipState) []*Mem
 		}
 		out = append(out, m)
 	}
-	return out
+	return snapshotSlice(out)
 }
 
 // ListOrgsAll returns every organization with ID greater than `since`,
@@ -627,14 +642,22 @@ func (st *Store) ListOrgsAll(since int) []*Org {
 		}
 	}
 	sort.Slice(orgs, func(i, j int) bool { return orgs[i].ID < orgs[j].ID })
-	return orgs
+	return snapshotOrgs(orgs)
 }
 
 // GetMembership returns a user's membership in an organization, or nil.
 func (st *Store) GetMembership(orgLogin string, userID int) *Membership {
 	st.mu.RLock()
 	defer st.mu.RUnlock()
-	return st.Memberships[membershipKey(orgLogin, userID)]
+	// A copy so a reader can't mutate the stored membership through the getter
+	// (STORE-021); Membership is all-value, so a shallow copy detaches. Its 24
+	// callers only read State/Role, and writes go through keyed store methods.
+	m := st.Memberships[membershipKey(orgLogin, userID)]
+	if m == nil {
+		return nil
+	}
+	clone := *m
+	return &clone
 }
 
 // RemoveMembership removes a user's membership from an organization.
@@ -692,7 +715,7 @@ func (st *Store) ListOrgMembers(orgLogin string) []*User {
 			}
 		}
 	}
-	return users
+	return snapshotUsers(users)
 }
 
 // TeamOptions carries the optional attributes of team creation.
@@ -767,17 +790,44 @@ func (st *Store) CreateTeam(orgLogin, name string, opts TeamOptions) *Team {
 }
 
 // GetTeam returns a team by org login and slug, or nil.
+// cloneTeam returns a deep copy safe to hand outside the store lock
+// (STORE-021): MemberIDs, MaintainerIDs, RepoNames and RepoPermissions are the
+// reference fields. Team writes go through the keyed UpdateTeam (or mutate the
+// live st.Teams row directly), never a getter result.
+func cloneTeam(t *Team) *Team {
+	if t == nil {
+		return nil
+	}
+	clone := *t
+	if t.MemberIDs != nil {
+		clone.MemberIDs = append([]int(nil), t.MemberIDs...)
+	}
+	if t.MaintainerIDs != nil {
+		clone.MaintainerIDs = append([]int(nil), t.MaintainerIDs...)
+	}
+	if t.RepoNames != nil {
+		clone.RepoNames = append([]string(nil), t.RepoNames...)
+	}
+	if t.RepoPermissions != nil {
+		clone.RepoPermissions = make(map[string]TeamPermission, len(t.RepoPermissions))
+		for k, v := range t.RepoPermissions {
+			clone.RepoPermissions[k] = v
+		}
+	}
+	return &clone
+}
+
 func (st *Store) GetTeam(orgLogin, slug string) *Team {
 	st.mu.RLock()
 	defer st.mu.RUnlock()
-	return st.TeamsBySlug[teamSlugKey(orgLogin, slug)]
+	return cloneTeam(st.TeamsBySlug[teamSlugKey(orgLogin, slug)])
 }
 
 // GetTeamByID returns a team by its numeric ID, or nil.
 func (st *Store) GetTeamByID(id int) *Team {
 	st.mu.RLock()
 	defer st.mu.RUnlock()
-	return st.Teams[id]
+	return cloneTeam(st.Teams[id])
 }
 
 // UpdateTeam applies a mutation function to a team. When the mutation
@@ -860,7 +910,7 @@ func (st *Store) ListChildTeams(orgLogin string, parentID int) []*Team {
 		}
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].ID < out[j].ID })
-	return out
+	return snapshotTeams(out)
 }
 
 // DeleteTeam removes a team from an organization.
@@ -912,7 +962,7 @@ func (st *Store) ListTeams(orgLogin string) []*Team {
 			teams = append(teams, t)
 		}
 	}
-	return teams
+	return snapshotTeams(teams)
 }
 
 // ListTeamMembers returns the users who are members of a team.
@@ -930,7 +980,7 @@ func (st *Store) ListTeamMembers(orgLogin, slug string) []*User {
 			members = append(members, u)
 		}
 	}
-	return members
+	return snapshotUsers(members)
 }
 
 // GetTeamMembership returns a user's role in a team and whether they are a
@@ -1014,7 +1064,7 @@ func (st *Store) ListTeamRepos(orgLogin, slug string) []*Repo {
 			repos = append(repos, repo)
 		}
 	}
-	return repos
+	return snapshotRepos(repos)
 }
 
 // GetTeamRepoPermission returns the effective permission a team confers on a

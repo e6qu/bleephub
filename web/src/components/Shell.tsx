@@ -138,8 +138,8 @@ export function RepoHeader({
   repo: string;
   active: RepoTab;
   /** number when exact; "N+" when the server reports further pages. */
-  issueCount?: number | string;
-  prCount?: number | string;
+  issueCount?: number | string | undefined;
+  prCount?: number | string | undefined;
 }) {
   const base = `/ui/repos/${owner}/${repo}`;
   const location = useLocation();
@@ -383,9 +383,9 @@ function RepoAction({
 }: {
   icon: ReactNode;
   label: string;
-  count?: number;
+  count?: number | undefined;
   busy: boolean;
-  active?: boolean;
+  active?: boolean | undefined;
   tone: "watch" | "fork" | "star";
   onClick: () => void;
 }) {
@@ -461,7 +461,7 @@ function RepoTabLink({
   to: string;
   icon?: ReactNode;
   label: string;
-  count?: number | string;
+  count?: number | string | undefined;
   active: boolean;
 }) {
   return (

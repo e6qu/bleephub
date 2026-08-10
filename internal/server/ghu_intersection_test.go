@@ -40,9 +40,9 @@ type ghuFixture struct {
 	insideGhs string
 }
 
-func newGhuFixture(t *testing.T, tag string) *ghuFixture {
+func (s *isolatedServer) newGhuFixture(t *testing.T, tag string) *ghuFixture {
 	t.Helper()
-	store := testServer.store
+	store := s.store
 	now := fixedTestTime.UTC()
 
 	mkUser := func(login string) *User {
@@ -126,13 +126,13 @@ func newGhuFixture(t *testing.T, tag string) *ghuFixture {
 
 // ghuRequest issues one request against the live test server and returns the
 // status and a truncated body for failure messages.
-func ghuRequest(t *testing.T, method, path, token, body string) (int, string) {
+func (s *isolatedServer) ghuRequest(t *testing.T, method, path, token, body string) (int, string) {
 	t.Helper()
 	var reader io.Reader
 	if body != "" {
 		reader = strings.NewReader(body)
 	}
-	req, err := http.NewRequest(method, testBaseURL+path, reader)
+	req, err := http.NewRequest(method, s.baseURL+path, reader)
 	if err != nil {
 		t.Fatalf("building %s %s: %v", method, path, err)
 	}
@@ -183,12 +183,14 @@ func (f *ghuFixture) orgRoutes() []ghuRoute {
 
 // A ghu_ token must never reach further than the ghs_ token of the same app.
 func TestGhuTokenIsNeverBroaderThanTheSameAppsGhsToken(t *testing.T) {
-	f := newGhuFixture(t, "narrow")
+	t.Parallel()
+	s := newIsolatedServer(t)
+	f := s.newGhuFixture(t, "narrow")
 
 	for _, route := range append(f.repoRoutes(), f.orgRoutes()...) {
 		name := route.method + " " + route.path
-		ghsStatus, ghsBody := ghuRequest(t, route.method, route.path, f.outsideGhs, route.body)
-		ghuStatus, ghuBody := ghuRequest(t, route.method, route.path, f.outsideGhu, route.body)
+		ghsStatus, ghsBody := s.ghuRequest(t, route.method, route.path, f.outsideGhs, route.body)
+		ghuStatus, ghuBody := s.ghuRequest(t, route.method, route.path, f.outsideGhu, route.body)
 
 		if served(ghsStatus) {
 			t.Errorf("%s: the fixture is wrong — an app installed nowhere was served its ghs_ token (%d): %s", name, ghsStatus, ghsBody)
@@ -204,19 +206,21 @@ func TestGhuTokenIsNeverBroaderThanTheSameAppsGhsToken(t *testing.T) {
 // The bearer's own credential still reaches everything it did before, so the
 // denials above are the app's absence and not a broken fixture.
 func TestGhuFixtureBearerStillReachesItsOwnAccess(t *testing.T) {
-	f := newGhuFixture(t, "control")
+	t.Parallel()
+	s := newIsolatedServer(t)
+	f := s.newGhuFixture(t, "control")
 
 	for _, route := range f.repoRoutes() {
 		if route.method != http.MethodGet {
 			continue
 		}
-		status, body := ghuRequest(t, route.method, route.path, f.bearerToken, route.body)
+		status, body := s.ghuRequest(t, route.method, route.path, f.bearerToken, route.body)
 		if !served(status) {
 			t.Errorf("%s with the bearer's own PAT: status = %d, want 2xx: %s", route.path, status, body)
 		}
 	}
 	for _, route := range f.orgRoutes() {
-		status, body := ghuRequest(t, route.method, route.path, f.bearerToken, route.body)
+		status, body := s.ghuRequest(t, route.method, route.path, f.bearerToken, route.body)
 		if !served(status) {
 			t.Errorf("%s %s with the bearer's own PAT: status = %d, want 2xx: %s", route.method, route.path, status, body)
 		}
@@ -227,22 +231,24 @@ func TestGhuFixtureBearerStillReachesItsOwnAccess(t *testing.T) {
 // does hold access, must still be served. Over-blocking here is the regression
 // that every previous tightening of this gate introduced.
 func TestGhuTokenOfAnInstalledAppIsStillServed(t *testing.T) {
-	f := newGhuFixture(t, "wide")
+	t.Parallel()
+	s := newIsolatedServer(t)
+	f := s.newGhuFixture(t, "wide")
 
 	for _, route := range f.repoRoutes() {
-		status, body := ghuRequest(t, route.method, route.path, f.insideGhu, route.body)
+		status, body := s.ghuRequest(t, route.method, route.path, f.insideGhu, route.body)
 		if !served(status) {
 			t.Errorf("%s with a ghu_ of an app installed on the owner: status = %d, want 2xx: %s", route.path, status, body)
 		}
 		// The ghs_ baseline for the same installation: the ghu_ above is
 		// meant to be the intersection of that and its bearer, not something
 		// narrower.
-		if status, body := ghuRequest(t, route.method, route.path, f.insideGhs, route.body); !served(status) {
+		if status, body := s.ghuRequest(t, route.method, route.path, f.insideGhs, route.body); !served(status) {
 			t.Errorf("%s with the installed app's ghs_: status = %d, want 2xx: %s", route.path, status, body)
 		}
 	}
 	for _, route := range f.orgRoutes() {
-		status, body := ghuRequest(t, route.method, route.path, f.insideGhu, route.body)
+		status, body := s.ghuRequest(t, route.method, route.path, f.insideGhu, route.body)
 		if !served(status) {
 			t.Errorf("%s %s with a ghu_ of an app installed on the org: status = %d, want 2xx: %s",
 				route.method, route.path, status, body)
@@ -255,17 +261,19 @@ func TestGhuTokenOfAnInstalledAppIsStillServed(t *testing.T) {
 // attacker chose received every event the organization ever emits. This pins
 // the specific exfiltration rather than the generic comparison above.
 func TestOrgWebhookCannotBePlantedByAnAppInstalledNowhere(t *testing.T) {
-	f := newGhuFixture(t, "orghook")
+	t.Parallel()
+	s := newIsolatedServer(t)
+	f := s.newGhuFixture(t, "orghook")
 	base := "/api/v3/orgs/" + f.org.Login + "/hooks"
 	create := `{"name":"web","config":{"url":"https://127.0.0.1:9/exfiltrate","content_type":"json"},"events":["*"]}`
 
-	if status, body := ghuRequest(t, http.MethodPost, base, f.outsideGhu, create); served(status) {
+	if status, body := s.ghuRequest(t, http.MethodPost, base, f.outsideGhu, create); served(status) {
 		t.Errorf("planting an org webhook with a ghu_ of an app installed nowhere: status = %d, want a denial: %s", status, body)
 	}
-	if status, body := ghuRequest(t, http.MethodGet, base, f.outsideGhu, ""); served(status) {
+	if status, body := s.ghuRequest(t, http.MethodGet, base, f.outsideGhu, ""); served(status) {
 		t.Errorf("listing org webhooks with a ghu_ of an app installed nowhere: status = %d, want a denial: %s", status, body)
 	}
-	if hooks := testServer.store.ListOrgHooks(f.org.Login); len(hooks) != 0 {
+	if hooks := s.store.ListOrgHooks(f.org.Login); len(hooks) != 0 {
 		t.Errorf("the organization has %d webhook(s) after the refused create; none should have been stored", len(hooks))
 	}
 }
@@ -275,7 +283,9 @@ func TestOrgWebhookCannotBePlantedByAnAppInstalledNowhere(t *testing.T) {
 // repository is not there" both reduced to a nil lookup. Handlers keyed off the
 // raw path values then acted under a fabricated key.
 func TestNamedButAbsentTargetsAreNeverServed(t *testing.T) {
-	f := newGhuFixture(t, "absent")
+	t.Parallel()
+	s := newIsolatedServer(t)
+	f := s.newGhuFixture(t, "absent")
 	missing := "/api/v3/repos/ghu-no-such-owner/ghu-no-such-repo"
 
 	repoRoutes := []ghuRoute{
@@ -291,14 +301,14 @@ func TestNamedButAbsentTargetsAreNeverServed(t *testing.T) {
 		{http.MethodPatch, missing, `{"description":"x"}`},
 	}
 	for _, route := range repoRoutes {
-		status, body := ghuRequest(t, route.method, route.path, f.bearerToken, route.body)
+		status, body := s.ghuRequest(t, route.method, route.path, f.bearerToken, route.body)
 		if status != http.StatusNotFound {
 			t.Errorf("%s %s: status = %d, want 404 (a fabricated repository must never be acted on, and must not be distinguishable from one the caller cannot see): %s",
 				route.method, route.path, status, body)
 		}
 	}
 	// Nothing was created under the fabricated key.
-	if hooks := testServer.store.ListHooks("ghu-no-such-owner/ghu-no-such-repo"); len(hooks) != 0 {
+	if hooks := s.store.ListHooks("ghu-no-such-owner/ghu-no-such-repo"); len(hooks) != 0 {
 		t.Errorf("%d webhook(s) stored under a repository that does not exist", len(hooks))
 	}
 
@@ -309,7 +319,7 @@ func TestNamedButAbsentTargetsAreNeverServed(t *testing.T) {
 		{http.MethodPatch, missingOrg, `{"description":"x"}`},
 	}
 	for _, route := range orgRoutes {
-		status, body := ghuRequest(t, route.method, route.path, f.bearerToken, route.body)
+		status, body := s.ghuRequest(t, route.method, route.path, f.bearerToken, route.body)
 		if status != http.StatusNotFound {
 			t.Errorf("%s %s: status = %d, want 404 for an organization that does not exist: %s",
 				route.method, route.path, status, body)
@@ -322,7 +332,9 @@ func TestNamedButAbsentTargetsAreNeverServed(t *testing.T) {
 // before. Denying those would break most of the API, which is why the gate
 // cannot simply default to refusing a nil lookup.
 func TestRoutesNamingNoRepositoryAreUnaffected(t *testing.T) {
-	f := newGhuFixture(t, "control-absent")
+	t.Parallel()
+	s := newIsolatedServer(t)
+	f := s.newGhuFixture(t, "control-absent")
 
 	for _, route := range []ghuRoute{
 		{http.MethodGet, "/api/v3/user/repos", ""},
@@ -331,7 +343,7 @@ func TestRoutesNamingNoRepositoryAreUnaffected(t *testing.T) {
 		{http.MethodGet, "/api/v3/orgs/" + f.org.Login + "/hooks", ""},
 		{http.MethodGet, "/api/v3/orgs/" + f.org.Login + "/members", ""},
 	} {
-		status, body := ghuRequest(t, route.method, route.path, f.bearerToken, route.body)
+		status, body := s.ghuRequest(t, route.method, route.path, f.bearerToken, route.body)
 		if !served(status) {
 			t.Errorf("%s %s: status = %d, want 2xx — this route names no absent resource: %s",
 				route.method, route.path, status, body)
@@ -352,7 +364,9 @@ var ghuPathPlaceholder = regexp.MustCompile(`\{[^}]+\}`)
 var fabricatedRepoRoutesStillServed = map[string]bool{}
 
 func TestNoRegisteredRouteServesAFabricatedRepository(t *testing.T) {
-	f := newGhuFixture(t, "sweep")
+	t.Parallel()
+	s := newIsolatedServer(t)
+	f := s.newGhuFixture(t, "sweep")
 	appJWT, err := signAppJWT(f.outsideApp.PEMPrivateKey, f.outsideApp.ID, fixedTestTime)
 	if err != nil {
 		t.Fatalf("signing app JWT for credential-specific route: %v", err)
@@ -378,7 +392,7 @@ func TestNoRegisteredRouteServesAFabricatedRepository(t *testing.T) {
 		if pattern == "GET /api/v3/repos/{owner}/{repo}/installation" {
 			token = appJWT
 		}
-		status, text := ghuRequest(t, method, filled, token, body)
+		status, text := s.ghuRequest(t, method, filled, token, body)
 		if status != http.StatusNotFound {
 			t.Errorf("%s %s: status = %d, want 404 for a repository that does not exist: %s", method, filled, status, text)
 		}
@@ -401,7 +415,9 @@ func TestNoRegisteredRouteServesAFabricatedRepository(t *testing.T) {
 // authz_chokepoint_test.go; this is its behavioural counterpart across the
 // full route table.
 func TestNoRepoWriteServesAGhuBroaderThanItsGhs(t *testing.T) {
-	f := newGhuFixture(t, "auth081")
+	t.Parallel()
+	s := newIsolatedServer(t)
+	f := s.newGhuFixture(t, "auth081")
 	swept := 0
 	for _, pattern := range fuzzRoutePatterns {
 		method, path, ok := strings.Cut(pattern, " ")
@@ -423,8 +439,8 @@ func TestNoRepoWriteServesAGhuBroaderThanItsGhs(t *testing.T) {
 		if method != http.MethodDelete {
 			body = "{}"
 		}
-		ghsStatus, ghsBody := ghuRequest(t, method, filled, f.outsideGhs, body)
-		ghuStatus, ghuBody := ghuRequest(t, method, filled, f.outsideGhu, body)
+		ghsStatus, ghsBody := s.ghuRequest(t, method, filled, f.outsideGhs, body)
+		ghuStatus, ghuBody := s.ghuRequest(t, method, filled, f.outsideGhu, body)
 
 		// Fixture/security invariant: an app installed nowhere, holding no
 		// permissions, must never be served a write on the victim's private

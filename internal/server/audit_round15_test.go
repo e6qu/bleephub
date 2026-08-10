@@ -125,11 +125,7 @@ func TestListOrgMembersNonMemberSeesOnlyPublic(t *testing.T) {
 	s.store.SetMembership("mem-org", priv.ID, OrgRoleMember, MembershipStateActive)
 	pub := seedTestUser(s, "pub-member")
 	s.store.SetMembership("mem-org", pub.ID, OrgRoleMember, MembershipStateActive)
-	if m := s.store.GetMembership("mem-org", pub.ID); m != nil {
-		s.store.mu.Lock()
-		m.Public = true
-		s.store.mu.Unlock()
-	}
+	s.store.SetMembershipPublic("mem-org", pub.ID, true)
 
 	outsider := seedTestUser(s, "mem-outsider")
 	outTok := s.store.CreateToken(outsider.ID, "read:org")

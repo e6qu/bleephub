@@ -122,23 +122,25 @@ jobs:
 `
 
 func TestWorkflowCallEndToEnd(t *testing.T) {
+	t.Parallel()
+	s := newIsolatedServer(t)
 	repoKey := "callowner/call-repo"
-	cancelRepoRunsCleanup(t, repoKey)
-	commitFilesToStorage(t, testServer, repoKey, map[string]string{
+	s.cancelRepoRunsCleanup(t, repoKey)
+	commitFilesToStorage(t, s.Server, repoKey, map[string]string{
 		".github/workflows/caller.yml": callerWorkflowYAML,
 		".github/workflows/called.yml": calledWorkflowYAML,
 	})
 
-	testServer.triggerWorkflowsForEvent(repoKey, "push", "", "refs/heads/main", nil)
+	s.triggerWorkflowsForEvent(repoKey, "push", "", "refs/heads/main", nil)
 
-	testServer.store.mu.RLock()
+	s.store.mu.RLock()
 	var wf *Workflow
-	for _, w := range testServer.store.Workflows {
+	for _, w := range s.store.Workflows {
 		if w.RepoFullName == repoKey && w.Name == "caller" {
 			wf = w
 		}
 	}
-	testServer.store.mu.RUnlock()
+	s.store.mu.RUnlock()
 	if wf == nil {
 		t.Fatal("caller workflow not triggered")
 	}
@@ -160,19 +162,19 @@ func TestWorkflowCallEndToEnd(t *testing.T) {
 	}
 
 	// Complete setup with an output; the gate must resolve `with:`.
-	testServer.store.mu.Lock()
+	s.store.mu.Lock()
 	wf.Jobs["setup"].Outputs["version"] = "1.2.3"
 	setupID := wf.Jobs["setup"].JobID
-	testServer.store.mu.Unlock()
-	testServer.onJobCompleted(context.Background(), setupID, "Succeeded")
+	s.store.mu.Unlock()
+	s.onJobCompleted(context.Background(), setupID, "Succeeded")
 
-	testServer.store.mu.RLock()
+	s.store.mu.RLock()
 	gate := wf.Jobs["deploy/__call"]
 	publish := wf.Jobs["deploy/publish"]
 	gateStatus := gate.Status
 	publishStatus := publish.Status
 	binding := publish.Def.Call
-	testServer.store.mu.RUnlock()
+	s.store.mu.RUnlock()
 
 	if gateStatus != JobStatusCompleted {
 		t.Fatalf("gate status = %q, want completed", gateStatus)
@@ -190,7 +192,7 @@ func TestWorkflowCallEndToEnd(t *testing.T) {
 
 	// The called job's runner message carries the call inputs and the
 	// caller-view needs context (no gate, unprefixed keys).
-	msg, err := testServer.buildJobMessageFromDef("http://localhost", wf, publish, "p", "t", 1, "alpine:latest")
+	msg, err := s.buildJobMessageFromDef("http://localhost", wf, publish, "p", "t", 1, "alpine:latest")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -200,19 +202,19 @@ func TestWorkflowCallEndToEnd(t *testing.T) {
 	}
 
 	// Complete publish with the url output; the collector must map it.
-	testServer.store.mu.Lock()
+	s.store.mu.Lock()
 	publish.Outputs["url"] = "https://prod.example"
 	publishID := publish.JobID
-	testServer.store.mu.Unlock()
-	testServer.onJobCompleted(context.Background(), publishID, "Succeeded")
+	s.store.mu.Unlock()
+	s.onJobCompleted(context.Background(), publishID, "Succeeded")
 
-	testServer.store.mu.RLock()
+	s.store.mu.RLock()
 	collector := wf.Jobs["deploy"]
 	notify := wf.Jobs["notify"]
 	collectorStatus := collector.Status
 	collectorURL := collector.Outputs["url"]
 	notifyStatus := notify.Status
-	testServer.store.mu.RUnlock()
+	s.store.mu.RUnlock()
 
 	if collectorStatus != JobStatusCompleted {
 		t.Fatalf("collector status = %q, want completed", collectorStatus)
@@ -225,7 +227,7 @@ func TestWorkflowCallEndToEnd(t *testing.T) {
 	}
 
 	// notify's needs context exposes the caller key with the mapped outputs.
-	nmsg, err := testServer.buildJobMessageFromDef("http://localhost", wf, notify, "p2", "t2", 2, "alpine:latest")
+	nmsg, err := s.buildJobMessageFromDef("http://localhost", wf, notify, "p2", "t2", 2, "alpine:latest")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -245,6 +247,8 @@ func jobKeys(wf *Workflow) []string {
 }
 
 func TestWorkflowCallSkipCascade(t *testing.T) {
+	t.Parallel()
+	s := newIsolatedServer(t)
 	repoKey := "callskip/skip-repo"
 	caller := `name: skip-caller
 on: [push]
@@ -260,27 +264,27 @@ jobs:
     steps:
       - run: echo done
 `
-	commitFilesToStorage(t, testServer, repoKey, map[string]string{
+	commitFilesToStorage(t, s.Server, repoKey, map[string]string{
 		".github/workflows/caller.yml": caller,
 		".github/workflows/called.yml": calledWorkflowYAML,
 	})
 
-	testServer.triggerWorkflowsForEvent(repoKey, "push", "", "refs/heads/main", nil)
+	s.triggerWorkflowsForEvent(repoKey, "push", "", "refs/heads/main", nil)
 
-	testServer.store.mu.RLock()
+	s.store.mu.RLock()
 	var wf *Workflow
-	for _, w := range testServer.store.Workflows {
+	for _, w := range s.store.Workflows {
 		if w.RepoFullName == repoKey {
 			wf = w
 		}
 	}
-	testServer.store.mu.RUnlock()
+	s.store.mu.RUnlock()
 	if wf == nil {
 		t.Fatal("workflow not triggered")
 	}
 
-	testServer.store.mu.RLock()
-	defer testServer.store.mu.RUnlock()
+	s.store.mu.RLock()
+	defer s.store.mu.RUnlock()
 	for _, key := range []string{"deploy/__call", "deploy/publish", "deploy", "notify"} {
 		j := wf.Jobs[key]
 		if j == nil {
@@ -296,8 +300,10 @@ jobs:
 }
 
 func TestWorkflowCallValidation(t *testing.T) {
+	t.Parallel()
+	s := newIsolatedServer(t)
 	repoKey := "callval/val-repo"
-	commitFilesToStorage(t, testServer, repoKey, map[string]string{
+	commitFilesToStorage(t, s.Server, repoKey, map[string]string{
 		".github/workflows/called.yml":     calledWorkflowYAML,
 		".github/workflows/not-called.yml": "name: x\non: [push]\njobs:\n  a:\n    steps:\n      - run: echo a\n",
 	})
@@ -317,7 +323,7 @@ func TestWorkflowCallValidation(t *testing.T) {
 	for _, tc := range cases {
 		def := &WorkflowDef{Name: "v", Jobs: map[string]*JobDef{"call": tc.job}}
 		meta := &WorkflowEventMeta{EventName: "push", Repo: repoKey}
-		_, err := testServer.submitWorkflow(context.Background(), "http://localhost", def, "alpine:latest", meta)
+		_, err := s.submitWorkflow(context.Background(), "http://localhost", def, "alpine:latest", meta)
 		if err == nil || !strings.Contains(err.Error(), tc.want) {
 			t.Errorf("%s: err = %v, want containing %q", tc.name, err, tc.want)
 		}
@@ -325,6 +331,8 @@ func TestWorkflowCallValidation(t *testing.T) {
 }
 
 func TestWorkflowCallNestingDepthLimit(t *testing.T) {
+	t.Parallel()
+	s := newIsolatedServer(t)
 	repoKey := "calldeep/deep-repo"
 	// l1 → l2 → l3 → l4 → l5: five levels exceeds GitHub's four.
 	files := map[string]string{}
@@ -337,19 +345,21 @@ func TestWorkflowCallNestingDepthLimit(t *testing.T) {
 		}
 		files[".github/workflows/l"+string(rune('0'+i))+".yml"] = body
 	}
-	commitFilesToStorage(t, testServer, repoKey, files)
+	commitFilesToStorage(t, s.Server, repoKey, files)
 
 	def := &WorkflowDef{Name: "deep", Jobs: map[string]*JobDef{
 		"start": {Uses: "./.github/workflows/l2.yml"},
 	}}
 	meta := &WorkflowEventMeta{EventName: "push", Repo: repoKey}
-	_, err := testServer.submitWorkflow(context.Background(), "http://localhost", def, "alpine:latest", meta)
+	_, err := s.submitWorkflow(context.Background(), "http://localhost", def, "alpine:latest", meta)
 	if err == nil || !strings.Contains(err.Error(), "nested deeper") {
 		t.Errorf("err = %v, want nesting-depth error", err)
 	}
 }
 
 func TestRemapCallSecrets(t *testing.T) {
+	t.Parallel()
+	s := newIsolatedServer(t)
 	binding := &WorkflowCallBinding{
 		CalledPath: "x.yml",
 		SecretsMap: map[string]string{
@@ -357,7 +367,7 @@ func TestRemapCallSecrets(t *testing.T) {
 		},
 	}
 	wf := &Workflow{}
-	got, err := remapCallSecrets(testServer, wf, binding, map[string]string{
+	got, err := remapCallSecrets(s.Server, wf, binding, map[string]string{
 		"PROD_KEY": "sekrit",
 		"OTHER":    "hidden-from-called",
 	})
@@ -376,6 +386,7 @@ func TestRemapCallSecrets(t *testing.T) {
 }
 
 func TestWorkflowCallInputTypingIsStrict(t *testing.T) {
+	t.Parallel()
 	boolean := &WorkflowInputDef{Type: "boolean"}
 	if _, err := typedCallInput(boolean, "yes"); err == nil {
 		t.Fatal("boolean input accepted a truthy non-boolean value")
@@ -401,6 +412,7 @@ func TestWorkflowCallInputTypingIsStrict(t *testing.T) {
 }
 
 func TestReusableWorkflowTopLevelEnvironmentReachesCalledJobs(t *testing.T) {
+	t.Parallel()
 	out := &WorkflowDef{Jobs: map[string]*JobDef{}}
 	called := &WorkflowDef{
 		Env: map[string]string{"FROM_CALLED": "workflow", "OVERRIDDEN": "workflow"},
@@ -422,6 +434,8 @@ func TestReusableWorkflowTopLevelEnvironmentReachesCalledJobs(t *testing.T) {
 }
 
 func TestReusableWorkflowTemplateFailuresFailClosed(t *testing.T) {
+	t.Parallel()
+	s := newIsolatedServer(t)
 	binding := &WorkflowCallBinding{
 		CalledPath: "called.yml",
 		With:       map[string]string{"flag": "${{ inputs.missing["},
@@ -429,12 +443,12 @@ func TestReusableWorkflowTemplateFailuresFailClosed(t *testing.T) {
 	}
 	wf := &Workflow{Jobs: map[string]*WorkflowJob{}}
 	gate := &WorkflowJob{Def: &JobDef{Call: binding}}
-	if testServer.resolveCallInputsLocked(wf, gate) {
+	if s.resolveCallInputsLocked(wf, gate) {
 		t.Fatal("broken input template succeeded")
 	}
 
 	binding.SecretsMap = map[string]string{"TOKEN": "${{ secrets.MISSING["}
-	if _, err := remapCallSecrets(testServer, wf, binding, map[string]string{}); err == nil {
+	if _, err := remapCallSecrets(s.Server, wf, binding, map[string]string{}); err == nil {
 		t.Fatal("broken secret template succeeded")
 	}
 }

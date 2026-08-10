@@ -33,7 +33,7 @@ export function projectCardContentHref(contentUrl: string | null): string {
   if (!contentUrl) return "#";
   const match = contentUrl.match(/\/api\/v3\/repos\/([^/]+)\/([^/]+)\/(issues|pulls)\/(\d+)(?:$|[?#])/);
   if (!match) return contentUrl;
-  const [, owner, repo, kind, number] = match;
+  const [, owner = "", repo = "", kind = "", number = ""] = match;
   return `/ui/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/${kind}/${number}`;
 }
 
@@ -50,7 +50,7 @@ export function ProjectsClassicPage() {
 
   useEffect(() => {
     if (projects.length > 0 && !selectedProject) {
-      setSelectedProject(projects[0]);
+      setSelectedProject(projects[0]!);
     }
   }, [projects, selectedProject]);
 
@@ -423,7 +423,7 @@ function ColumnCard({
                   aria-label="Move column left"
                   onClick={() => {
                     const prev = columns[columns.findIndex((c) => c.id === column.id) - 1];
-                    move.mutate("after:" + prev.id);
+                    if (prev) move.mutate("after:" + prev.id);
                   }}
                   style={{ fontSize: "0.7rem", background: "transparent", border: "none", cursor: "pointer" }}
                 >
@@ -437,7 +437,7 @@ function ColumnCard({
                   onClick={() => {
                     const idx = columns.findIndex((c) => c.id === column.id);
                     const next = columns[idx + 1];
-                    move.mutate("after:" + next.id);
+                    if (next) move.mutate("after:" + next.id);
                   }}
                   style={{ fontSize: "0.7rem", background: "transparent", border: "none", cursor: "pointer" }}
                 >
@@ -598,7 +598,7 @@ function ProjectCardItem({
                 if (action === "col") {
                   move.mutate({ position: "first", column_id: Number(target) });
                 } else if (action === "pos") {
-                  move.mutate({ position: target });
+                  move.mutate({ position: target ?? "" });
                 }
                 e.target.value = "";
               }}

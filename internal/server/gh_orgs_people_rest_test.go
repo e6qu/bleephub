@@ -16,16 +16,6 @@ func expectStatus(t *testing.T, resp *http.Response, want int, context string) {
 	}
 }
 
-// activateOrgMember runs the real invitation-acceptance flow: the org
-// owner PUTs a pending membership and the member accepts it.
-func activateOrgMember(t *testing.T, orgLogin, login, memberToken string) {
-	t.Helper()
-	expectStatus(t, ghPut(t, "/api/v3/orgs/"+orgLogin+"/memberships/"+login, defaultToken,
-		map[string]interface{}{"role": "member"}), http.StatusOK, "PUT membership "+login)
-	expectStatus(t, ghPatch(t, "/api/v3/user/memberships/orgs/"+orgLogin, memberToken,
-		map[string]interface{}{"state": "active"}), http.StatusOK, "accept membership "+login)
-}
-
 func TestOrgInvitationsLifecycle(t *testing.T) {
 	t.Parallel()
 	srv := newIsolatedServer(t)

@@ -335,7 +335,9 @@ func TestWebhookDeliveryConcurrencyIsBounded(t *testing.T) {
 // caller against the repository the path resolves to, so a path naming one
 // that does not exist must be refused by the handler rather than acted on.
 func TestRepoHookRoutesRefuseAnUnresolvedRepository(t *testing.T) {
-	store := testServer.store
+	t.Parallel()
+	s := newIsolatedServer(t)
+	store := s.store
 	now := fixedTestTime
 	store.mu.Lock()
 	stranger := &User{ID: store.NextUser, Login: "ssrf-stranger", Type: "User", CreatedAt: now, UpdatedAt: now}
@@ -349,7 +351,7 @@ func TestRepoHookRoutesRefuseAnUnresolvedRepository(t *testing.T) {
 	}
 
 	const path = "/api/v3/repos/ssrf-no-such-owner/ssrf-no-such-repo/hooks"
-	resp := ghPost(t, path, token.Value, map[string]interface{}{
+	resp := s.post(t, path, token.Value, map[string]interface{}{
 		"name":   "web",
 		"config": map[string]string{"url": "http://169.254.169.254/latest/meta-data/"},
 		"events": []string{"push"},
@@ -363,7 +365,7 @@ func TestRepoHookRoutesRefuseAnUnresolvedRepository(t *testing.T) {
 		t.Fatalf("%d hook(s) stored against a repository that does not exist", len(hooks))
 	}
 
-	listResp := ghGet(t, path, token.Value)
+	listResp := s.get(t, path, token.Value)
 	listResp.Body.Close()
 	if listResp.StatusCode != http.StatusNotFound {
 		t.Errorf("GET %s = %d, want 404", path, listResp.StatusCode)
@@ -374,7 +376,9 @@ func TestRepoHookRoutesRefuseAnUnresolvedRepository(t *testing.T) {
 // Dependabot secrets surface: the public-key endpoints answered without ever
 // looking at the repository or organization the path named.
 func TestDependabotSecretsRefuseAnUnresolvedRepository(t *testing.T) {
-	store := testServer.store
+	t.Parallel()
+	s := newIsolatedServer(t)
+	store := s.store
 	now := fixedTestTime
 	store.mu.Lock()
 	stranger := &User{ID: store.NextUser, Login: "ssrf-dependabot-stranger", Type: "User", CreatedAt: now, UpdatedAt: now}
@@ -391,7 +395,7 @@ func TestDependabotSecretsRefuseAnUnresolvedRepository(t *testing.T) {
 		"/api/v3/repos/ssrf-no-such-owner/ssrf-no-such-repo/dependabot/secrets/public-key",
 		"/api/v3/orgs/ssrf-no-such-org/dependabot/secrets/public-key",
 	} {
-		resp := ghGet(t, path, token.Value)
+		resp := s.get(t, path, token.Value)
 		body, _ := io.ReadAll(resp.Body)
 		resp.Body.Close()
 		if resp.StatusCode != http.StatusNotFound {

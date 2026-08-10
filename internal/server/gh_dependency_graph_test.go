@@ -7,58 +7,14 @@ import (
 	"testing"
 )
 
-func headShaForTest(t *testing.T, repo string) string {
-	t.Helper()
-	return headShaForRepoPath(t, "admin/"+repo)
-}
-
-func headShaForRepoPath(t *testing.T, repoFullName string) string {
-	t.Helper()
-	resp := ghGet(t, "/api/v3/repos/"+repoFullName+"/commits", defaultToken)
-	commits := decodeJSONWithStatus2xxArray(t, resp, 200)
-	if len(commits) == 0 {
-		t.Fatal("repo has no commits")
-	}
-	return commits[0]["sha"].(string)
-}
-
-func submitSnapshotForTest(t *testing.T, repo, ref, sha, correlator string, purls ...string) map[string]interface{} {
-	t.Helper()
-	return submitSnapshotForRepoPath(t, "admin/"+repo, "go.mod", ref, sha, correlator, purls...)
-}
-
-func submitSnapshotForRepoPath(t *testing.T, repoFullName, manifestPath, ref, sha, correlator string, purls ...string) map[string]interface{} {
-	t.Helper()
-	resolved := map[string]interface{}{}
-	for _, purl := range purls {
-		resolved[purl] = map[string]interface{}{"package_url": purl, "scope": "runtime"}
-	}
-	resp := ghPost(t, "/api/v3/repos/"+repoFullName+"/dependency-graph/snapshots", defaultToken, map[string]interface{}{
-		"version": 0,
-		"ref":     ref,
-		"sha":     sha,
-		"job":     map[string]interface{}{"id": "job-1", "correlator": correlator},
-		"detector": map[string]interface{}{
-			"name": "bleephub-test-detector", "version": "1.0.0", "url": "https://example.com/detector",
-		},
-		"scanned": "2035-06-15T12:00:00Z",
-		"manifests": map[string]interface{}{
-			manifestPath: map[string]interface{}{
-				"name":     manifestPath,
-				"file":     map[string]interface{}{"source_location": manifestPath},
-				"resolved": resolved,
-			},
-		},
-	})
-	return decodeJSONWithStatus(t, resp, 201)
-}
-
 func TestDependencyGraphSnapshots_SubmitAndSBOM(t *testing.T) {
-	repo := createRepoWriteRepo(t, true)
-	sha := headShaForTest(t, repo)
+	t.Parallel()
+	s := newIsolatedServer(t)
+	repo := s.createRepoWriteRepo(t, true)
+	sha := s.headShaForTest(t, repo)
 
 	// An SBOM with no snapshots honestly describes only the repository.
-	resp := ghGet(t, "/api/v3/repos/admin/"+repo+"/dependency-graph/sbom", defaultToken)
+	resp := s.get(t, "/api/v3/repos/admin/"+repo+"/dependency-graph/sbom", defaultToken)
 	doc := decodeJSONWithStatus(t, resp, 200)
 	sbom, _ := doc["sbom"].(map[string]interface{})
 	if sbom == nil {
@@ -69,7 +25,7 @@ func TestDependencyGraphSnapshots_SubmitAndSBOM(t *testing.T) {
 	}
 
 	// Default-branch snapshot → SUCCESS.
-	result := submitSnapshotForTest(t, repo, "refs/heads/main", sha, "ci/build",
+	result := s.submitSnapshotForTest(t, repo, "refs/heads/main", sha, "ci/build",
 		"pkg:golang/github.com/example/dep@v1.2.3")
 	if result["result"] != "SUCCESS" {
 		t.Fatalf("default-branch snapshot result = %v, want SUCCESS", result)
@@ -79,14 +35,14 @@ func TestDependencyGraphSnapshots_SubmitAndSBOM(t *testing.T) {
 	}
 
 	// Non-default ref → ACCEPTED.
-	result = submitSnapshotForTest(t, repo, "refs/heads/feature", strings.Repeat("a", 40), "ci/build",
+	result = s.submitSnapshotForTest(t, repo, "refs/heads/feature", strings.Repeat("a", 40), "ci/build",
 		"pkg:golang/github.com/example/dep@v1.2.3")
 	if result["result"] != "ACCEPTED" {
 		t.Fatalf("feature-branch snapshot result = %v, want ACCEPTED", result)
 	}
 
 	// A schema-invalid snapshot is rejected with 422 and never persisted.
-	resp = ghPost(t, "/api/v3/repos/admin/"+repo+"/dependency-graph/snapshots", defaultToken, map[string]interface{}{
+	resp = s.post(t, "/api/v3/repos/admin/"+repo+"/dependency-graph/snapshots", defaultToken, map[string]interface{}{
 		"version": 0,
 		"ref":     "refs/heads/main",
 		"sha":     "short",
@@ -100,7 +56,7 @@ func TestDependencyGraphSnapshots_SubmitAndSBOM(t *testing.T) {
 
 	// The SBOM now includes the recorded default-branch dependency as a real
 	// SPDX package with a purl external reference.
-	resp = ghGet(t, "/api/v3/repos/admin/"+repo+"/dependency-graph/sbom", defaultToken)
+	resp = s.get(t, "/api/v3/repos/admin/"+repo+"/dependency-graph/sbom", defaultToken)
 	doc = decodeJSONWithStatus(t, resp, 200)
 	sbom = doc["sbom"].(map[string]interface{})
 	if sbom["spdxVersion"] != "SPDX-2.3" || sbom["dataLicense"] != "CC0-1.0" || sbom["SPDXID"] != "SPDXRef-DOCUMENT" {
@@ -122,9 +78,11 @@ func TestDependencyGraphSnapshots_SubmitAndSBOM(t *testing.T) {
 }
 
 func TestDependencyGraphSBOMReport_GenerateAndFetch(t *testing.T) {
-	repo := createRepoWriteRepo(t, true)
+	t.Parallel()
+	s := newIsolatedServer(t)
+	repo := s.createRepoWriteRepo(t, true)
 
-	resp := ghGet(t, "/api/v3/repos/admin/"+repo+"/dependency-graph/sbom/generate-report", defaultToken)
+	resp := s.get(t, "/api/v3/repos/admin/"+repo+"/dependency-graph/sbom/generate-report", defaultToken)
 	report := decodeJSONWithStatus(t, resp, 201)
 	sbomURL, _ := report["sbom_url"].(string)
 	if sbomURL == "" {
@@ -149,38 +107,40 @@ func TestDependencyGraphSBOMReport_GenerateAndFetch(t *testing.T) {
 	}
 
 	// Following the redirect yields the SPDX document.
-	followResp := ghGet(t, strings.TrimPrefix(location, testBaseURL), defaultToken)
+	followResp := s.get(t, strings.TrimPrefix(location, s.baseURL), defaultToken)
 	doc := decodeJSONWithStatus(t, followResp, 200)
 	if doc["sbom"] == nil {
 		t.Fatalf("redirect target did not serve an SBOM: %v", doc)
 	}
 
 	// Unknown report UUID → 404.
-	resp = ghGet(t, "/api/v3/repos/admin/"+repo+"/dependency-graph/sbom/fetch-report/not-a-report", defaultToken)
+	resp = s.get(t, "/api/v3/repos/admin/"+repo+"/dependency-graph/sbom/fetch-report/not-a-report", defaultToken)
 	requireStatus(t, resp, 404)
 }
 
 func TestDependencyGraphCompare_RealDiff(t *testing.T) {
-	repo := createRepoWriteRepo(t, true)
-	baseSha := headShaForTest(t, repo)
+	t.Parallel()
+	s := newIsolatedServer(t)
+	repo := s.createRepoWriteRepo(t, true)
+	baseSha := s.headShaForTest(t, repo)
 
 	// A second commit on main gives the head revision.
-	resp := ghPut(t, "/api/v3/repos/admin/"+repo+"/contents/notes.txt", defaultToken, map[string]interface{}{
+	resp := s.put(t, "/api/v3/repos/admin/"+repo+"/contents/notes.txt", defaultToken, map[string]interface{}{
 		"message": "add notes",
 		"content": base64.StdEncoding.EncodeToString([]byte("notes\n")),
 	})
 	requireStatus(t, resp, 201)
-	headSha := headShaForTest(t, repo)
+	headSha := s.headShaForTest(t, repo)
 	if headSha == baseSha {
 		t.Fatal("contents PUT did not advance main")
 	}
 
-	submitSnapshotForTest(t, repo, "refs/heads/main", baseSha, "ci/build",
+	s.submitSnapshotForTest(t, repo, "refs/heads/main", baseSha, "ci/build",
 		"pkg:npm/left-pad@1.0.0", "pkg:npm/lodash@4.17.21")
-	submitSnapshotForTest(t, repo, "refs/heads/main", headSha, "ci/build",
+	s.submitSnapshotForTest(t, repo, "refs/heads/main", headSha, "ci/build",
 		"pkg:npm/lodash@4.17.21", "pkg:npm/chalk@5.3.0")
 
-	resp = ghGet(t, "/api/v3/repos/admin/"+repo+"/dependency-graph/compare/"+baseSha+"..."+headSha, defaultToken)
+	resp = s.get(t, "/api/v3/repos/admin/"+repo+"/dependency-graph/compare/"+baseSha+"..."+headSha, defaultToken)
 	diff := decodeJSONWithStatus2xxArray(t, resp, 200)
 	if len(diff) != 2 {
 		t.Fatalf("diff = %v, want one added + one removed", diff)
@@ -205,8 +165,8 @@ func TestDependencyGraphCompare_RealDiff(t *testing.T) {
 	}
 
 	// Malformed basehead → 400; unknown revisions → 404.
-	resp = ghGet(t, "/api/v3/repos/admin/"+repo+"/dependency-graph/compare/justonerev", defaultToken)
+	resp = s.get(t, "/api/v3/repos/admin/"+repo+"/dependency-graph/compare/justonerev", defaultToken)
 	requireStatus(t, resp, 400)
-	resp = ghGet(t, "/api/v3/repos/admin/"+repo+"/dependency-graph/compare/nope...alsonope", defaultToken)
+	resp = s.get(t, "/api/v3/repos/admin/"+repo+"/dependency-graph/compare/nope...alsonope", defaultToken)
 	requireStatus(t, resp, 404)
 }

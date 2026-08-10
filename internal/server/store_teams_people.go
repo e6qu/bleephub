@@ -248,7 +248,7 @@ func (st *Store) ListPendingOrgInvitations(orgLogin string) []*OrgInvitation {
 		}
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].ID < out[j].ID })
-	return out
+	return snapshotOrgInvitations(out)
 }
 
 // ListFailedOrgInvitations returns the org's failed (expired)
@@ -268,10 +268,27 @@ func (st *Store) ListFailedOrgInvitations(orgLogin string) []*OrgInvitation {
 		}
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].ID < out[j].ID })
-	return out
+	return snapshotOrgInvitations(out)
 }
 
 // GetOrgInvitation returns a live (non-failed) invitation by org and ID.
+// cloneOrgInvitation returns a copy safe to hand outside the store lock
+// (STORE-021): TeamIDs and FailedAt are the only reference fields.
+func cloneOrgInvitation(inv *OrgInvitation) *OrgInvitation {
+	if inv == nil {
+		return nil
+	}
+	clone := *inv
+	if inv.TeamIDs != nil {
+		clone.TeamIDs = append([]int(nil), inv.TeamIDs...)
+	}
+	if inv.FailedAt != nil {
+		failed := *inv.FailedAt
+		clone.FailedAt = &failed
+	}
+	return &clone
+}
+
 func (st *Store) GetOrgInvitation(orgLogin string, id int) *OrgInvitation {
 	st.mu.RLock()
 	defer st.mu.RUnlock()
@@ -284,7 +301,7 @@ func (st *Store) GetOrgInvitation(orgLogin string, id int) *OrgInvitation {
 	if inv == nil || inv.OrgID != org.ID || inv.FailedAt != nil {
 		return nil
 	}
-	return inv
+	return cloneOrgInvitation(inv)
 }
 
 // CancelOrgInvitation removes a live invitation and its pending
@@ -330,7 +347,7 @@ func (st *Store) ListPendingOrgInvitationsForTeam(orgLogin string, teamID int) [
 			out = append(out, inv)
 		}
 	}
-	return out
+	return snapshotOrgInvitations(out)
 }
 
 // --- organization user blocks ---
@@ -392,7 +409,7 @@ func (st *Store) ListOrgBlockedUsers(orgLogin string) []*User {
 			out = append(out, u)
 		}
 	}
-	return out
+	return snapshotUsers(out)
 }
 
 // --- organization interaction limits ---
@@ -415,7 +432,10 @@ func (st *Store) GetOrgInteractionLimit(orgLogin string) *OrgInteractionLimit {
 		}
 		return nil
 	}
-	return lim
+	// A copy so a reader can't mutate the stored limit through the getter
+	// (STORE-021); OrgInteractionLimit is all-value, so a shallow copy detaches.
+	clone := *lim
+	return &clone
 }
 
 // SetOrgInteractionLimit stores the org's interaction limit.
@@ -563,7 +583,7 @@ func (st *Store) ListTeamsWithOrgRole(orgLogin string, roleID int) []*Team {
 			out = append(out, team)
 		}
 	}
-	return out
+	return snapshotTeams(out)
 }
 
 // ListUsersWithOrgRole returns the users holding the role, mapping each
@@ -647,7 +667,7 @@ func (st *Store) ListOutsideCollaborators(orgLogin string) []*User {
 		}
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].ID < out[j].ID })
-	return out
+	return snapshotUsers(out)
 }
 
 // GrantTeamRepoAccessAsCollaborator materializes a member's team-derived

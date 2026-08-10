@@ -417,7 +417,7 @@ function RosterDialog({ classroom, onClose }: { classroom: Classroom; onClose: (
           .filter(Boolean)
           .map((line) => {
             const [login, ...identifier] = line.split(",");
-            return { login: login.trim(), roster_identifier: identifier.join(",").trim() };
+            return { login: (login ?? "").trim(), roster_identifier: identifier.join(",").trim() };
           }),
       ),
     onSuccess: () => {

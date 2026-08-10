@@ -6,8 +6,10 @@ import (
 )
 
 func TestOrgArtifactMetadata_StorageRecords(t *testing.T) {
-	admin := testServer.store.UsersByLogin["admin"]
-	org := testServer.store.CreateOrg(admin, "artifact-meta-org", "Artifact Meta", "")
+	t.Parallel()
+	s := newIsolatedServer(t)
+	admin := s.store.UsersByLogin["admin"]
+	org := s.store.CreateOrg(admin, "artifact-meta-org", "Artifact Meta", "")
 	if org == nil {
 		t.Fatal("create org failed")
 	}
@@ -15,7 +17,7 @@ func TestOrgArtifactMetadata_StorageRecords(t *testing.T) {
 	base := "/api/v3/orgs/" + org.Login + "/artifacts"
 
 	// Create a storage record.
-	resp := ghPost(t, base+"/metadata/storage-record", defaultToken, map[string]interface{}{
+	resp := s.post(t, base+"/metadata/storage-record", defaultToken, map[string]interface{}{
 		"name":         "libfoo",
 		"digest":       digest,
 		"version":      "1.2.3",
@@ -45,7 +47,7 @@ func TestOrgArtifactMetadata_StorageRecords(t *testing.T) {
 	}
 
 	// return_records=false omits the records array.
-	resp = ghPost(t, base+"/metadata/storage-record", defaultToken, map[string]interface{}{
+	resp = s.post(t, base+"/metadata/storage-record", defaultToken, map[string]interface{}{
 		"name":           "libbar",
 		"digest":         testSubjectDigest("storage-artifact-2"),
 		"registry_url":   "https://reg.example.com/artifactory/",
@@ -61,7 +63,7 @@ func TestOrgArtifactMetadata_StorageRecords(t *testing.T) {
 	}
 
 	// List by digest.
-	resp = ghGet(t, base+"/"+digest+"/metadata/storage-records", defaultToken)
+	resp = s.get(t, base+"/"+digest+"/metadata/storage-records", defaultToken)
 	if resp.StatusCode != 200 {
 		resp.Body.Close()
 		t.Fatalf("list storage records = %d, want 200", resp.StatusCode)
@@ -78,7 +80,7 @@ func TestOrgArtifactMetadata_StorageRecords(t *testing.T) {
 		{"name": "x", "digest": digest},                                                 // missing registry_url
 		{"name": "x", "digest": digest, "registry_url": "https://x/", "status": "gone"}, // bad status
 	} {
-		resp = ghPost(t, base+"/metadata/storage-record", defaultToken, body)
+		resp = s.post(t, base+"/metadata/storage-record", defaultToken, body)
 		resp.Body.Close()
 		if resp.StatusCode != 422 {
 			t.Fatalf("invalid storage body #%d = %d, want 422", i, resp.StatusCode)
@@ -86,21 +88,21 @@ func TestOrgArtifactMetadata_StorageRecords(t *testing.T) {
 	}
 
 	// Unknown org → 404; non-admin → 403; org-outsider read → 404.
-	resp = ghPost(t, "/api/v3/orgs/no-such-org/artifacts/metadata/storage-record", defaultToken,
+	resp = s.post(t, "/api/v3/orgs/no-such-org/artifacts/metadata/storage-record", defaultToken,
 		map[string]interface{}{"name": "x", "digest": digest, "registry_url": "https://x/"})
 	resp.Body.Close()
 	if resp.StatusCode != 404 {
 		t.Fatalf("unknown org = %d, want 404", resp.StatusCode)
 	}
-	outsider := createTestUser(t, "artifact-meta-outsider")
-	outsiderToken := testServer.store.CreateToken(outsider.ID, "repo").Value
-	resp = ghPost(t, base+"/metadata/storage-record", outsiderToken,
+	outsider := s.createTestUser(t, "artifact-meta-outsider")
+	outsiderToken := s.store.CreateToken(outsider.ID, "repo").Value
+	resp = s.post(t, base+"/metadata/storage-record", outsiderToken,
 		map[string]interface{}{"name": "x", "digest": digest, "registry_url": "https://x/"})
 	resp.Body.Close()
 	if resp.StatusCode != 403 {
 		t.Fatalf("non-admin create = %d, want 403", resp.StatusCode)
 	}
-	resp = ghGet(t, base+"/"+digest+"/metadata/storage-records", outsiderToken)
+	resp = s.get(t, base+"/"+digest+"/metadata/storage-records", outsiderToken)
 	resp.Body.Close()
 	if resp.StatusCode != 404 {
 		t.Fatalf("outsider list = %d, want 404", resp.StatusCode)
@@ -108,8 +110,10 @@ func TestOrgArtifactMetadata_StorageRecords(t *testing.T) {
 }
 
 func TestOrgArtifactMetadata_DeploymentRecords(t *testing.T) {
-	admin := testServer.store.UsersByLogin["admin"]
-	org := testServer.store.CreateOrg(admin, "deploy-meta-org", "Deploy Meta", "")
+	t.Parallel()
+	s := newIsolatedServer(t)
+	admin := s.store.UsersByLogin["admin"]
+	org := s.store.CreateOrg(admin, "deploy-meta-org", "Deploy Meta", "")
 	if org == nil {
 		t.Fatal("create org failed")
 	}
@@ -118,7 +122,7 @@ func TestOrgArtifactMetadata_DeploymentRecords(t *testing.T) {
 
 	// Create a deployment record. No provenance attestation exists yet,
 	// so attestation_id is null.
-	resp := ghPost(t, base+"/metadata/deployment-record", defaultToken, map[string]interface{}{
+	resp := s.post(t, base+"/metadata/deployment-record", defaultToken, map[string]interface{}{
 		"name":                 "libfoo",
 		"digest":               digest,
 		"version":              "1.2.3",
@@ -150,7 +154,7 @@ func TestOrgArtifactMetadata_DeploymentRecords(t *testing.T) {
 
 	// Same deployment identity again → the record is updated in place
 	// (same ID, new status), not duplicated.
-	resp = ghPost(t, base+"/metadata/deployment-record", defaultToken, map[string]interface{}{
+	resp = s.post(t, base+"/metadata/deployment-record", defaultToken, map[string]interface{}{
 		"name":                 "libfoo",
 		"digest":               digest,
 		"status":               "decommissioned",
@@ -171,13 +175,13 @@ func TestOrgArtifactMetadata_DeploymentRecords(t *testing.T) {
 
 	// Once a provenance attestation for the digest lands in an org repo,
 	// the record links to it.
-	repo := testServer.store.CreateOrgRepo(org, admin, "deploy-src", "", false)
+	repo := s.store.CreateOrgRepo(org, admin, "deploy-src", "", false)
 	if repo == nil {
 		t.Fatal("create org repo failed")
 	}
-	attID := uploadAttestation(t, org.Login+"/deploy-src", defaultToken,
+	attID := s.uploadAttestation(t, org.Login+"/deploy-src", defaultToken,
 		makeSigstoreBundle(t, digest, "https://slsa.dev/provenance/v1"))
-	resp = ghGet(t, base+"/"+digest+"/metadata/deployment-records", defaultToken)
+	resp = s.get(t, base+"/"+digest+"/metadata/deployment-records", defaultToken)
 	if resp.StatusCode != 200 {
 		resp.Body.Close()
 		t.Fatalf("list deployment records = %d, want 200", resp.StatusCode)
@@ -201,7 +205,7 @@ func TestOrgArtifactMetadata_DeploymentRecords(t *testing.T) {
 		{"name": "x", "digest": digest, "status": "deployed", "logical_environment": "p", "deployment_name": "d",
 			"runtime_risks": []string{"volcano"}},
 	} {
-		resp = ghPost(t, base+"/metadata/deployment-record", defaultToken, body)
+		resp = s.post(t, base+"/metadata/deployment-record", defaultToken, body)
 		resp.Body.Close()
 		if resp.StatusCode != 422 {
 			t.Fatalf("invalid deployment body #%d = %d, want 422", i, resp.StatusCode)
@@ -210,8 +214,10 @@ func TestOrgArtifactMetadata_DeploymentRecords(t *testing.T) {
 }
 
 func TestOrgArtifactMetadata_ClusterDeploymentRecords(t *testing.T) {
-	admin := testServer.store.UsersByLogin["admin"]
-	org := testServer.store.CreateOrg(admin, "cluster-meta-org", "Cluster Meta", "")
+	t.Parallel()
+	s := newIsolatedServer(t)
+	admin := s.store.UsersByLogin["admin"]
+	org := s.store.CreateOrg(admin, "cluster-meta-org", "Cluster Meta", "")
 	if org == nil {
 		t.Fatal("create org failed")
 	}
@@ -219,7 +225,7 @@ func TestOrgArtifactMetadata_ClusterDeploymentRecords(t *testing.T) {
 	d2 := testSubjectDigest("cluster-artifact-2")
 	base := "/api/v3/orgs/" + org.Login + "/artifacts/metadata/deployment-record/cluster/prod-cluster"
 
-	resp := ghPost(t, base, defaultToken, map[string]interface{}{
+	resp := s.post(t, base, defaultToken, map[string]interface{}{
 		"logical_environment":  "production",
 		"physical_environment": "us-east-1",
 		"deployments": []map[string]interface{}{
@@ -248,7 +254,7 @@ func TestOrgArtifactMetadata_ClusterDeploymentRecords(t *testing.T) {
 
 	// Re-posting the same identities updates in place.
 	firstID := int(records[0].(map[string]interface{})["id"].(float64))
-	resp = ghPost(t, base, defaultToken, map[string]interface{}{
+	resp = s.post(t, base, defaultToken, map[string]interface{}{
 		"logical_environment":  "production",
 		"physical_environment": "us-east-1",
 		"deployments": []map[string]interface{}{
@@ -275,7 +281,7 @@ func TestOrgArtifactMetadata_ClusterDeploymentRecords(t *testing.T) {
 		{"logical_environment": "production", "deployments": []map[string]interface{}{}},
 		{"deployments": []map[string]interface{}{{"name": "a", "digest": d1, "deployment_name": "x"}}},
 	} {
-		resp = ghPost(t, base, defaultToken, body)
+		resp = s.post(t, base, defaultToken, body)
 		resp.Body.Close()
 		if resp.StatusCode != 422 {
 			t.Fatalf("invalid cluster body #%d = %d, want 422", i, resp.StatusCode)

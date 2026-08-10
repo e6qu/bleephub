@@ -551,7 +551,7 @@ function EditGistDialog({
   const [description, setDescription] = useState(gist.description);
   const nextFileId = useRef(0);
   const [files, setFiles] = useState<
-    { id: number; filename: string; content?: string; original: string }[]
+    { id: number; filename: string; content?: string | undefined; original: string }[]
   >(() =>
     Object.entries(gist.files).map(([name, file]) => ({
       id: nextFileId.current++,

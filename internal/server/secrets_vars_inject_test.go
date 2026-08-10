@@ -8,25 +8,27 @@ import (
 // matrix (all/private/selected × public/private/selected/unselected
 // repo) through the runner-side collector, for secrets and variables.
 func TestCollectOrgVisibilityMatrix(t *testing.T) {
-	org := seedTestOrg(t, "injorg-matrix")
-	pubRepo := seedOrgRepo(t, org, "inj-pub", false)
-	privRepo := seedOrgRepo(t, org, "inj-priv", true)
-	selRepo := seedOrgRepo(t, org, "inj-sel", false) // public but selected
-	userRepo := seedTestRepo(t, "inj-user-owned", true)
+	t.Parallel()
+	s := newIsolatedServer(t)
+	org := s.seedTestOrg(t, "injorg-matrix")
+	pubRepo := s.seedOrgRepo(t, org, "inj-pub", false)
+	privRepo := s.seedOrgRepo(t, org, "inj-priv", true)
+	selRepo := s.seedOrgRepo(t, org, "inj-sel", false) // public but selected
+	userRepo := s.seedRepo(t, "inj-user-owned", true)
 
 	secBase := "/api/v3/orgs/" + org.Login + "/actions/secrets"
 	varBase := "/api/v3/orgs/" + org.Login + "/actions/variables"
 
 	put := func(name, visibility string, ids []int) {
 		t.Helper()
-		enc, keyID := sealForServer(t, "sec:"+name)
+		enc, keyID := s.sealForServer(t, "sec:"+name)
 		body := map[string]interface{}{
 			"encrypted_value": enc, "key_id": keyID, "visibility": visibility,
 		}
 		if ids != nil {
 			body["selected_repository_ids"] = ids
 		}
-		mustStatus(t, ghPut(t, secBase+"/"+name, defaultToken, body), 201, "put secret "+name)
+		mustStatus(t, s.put(t, secBase+"/"+name, defaultToken, body), 201, "put secret "+name)
 
 		varBody := map[string]interface{}{
 			"name": name, "value": "var:" + name, "visibility": visibility,
@@ -34,7 +36,7 @@ func TestCollectOrgVisibilityMatrix(t *testing.T) {
 		if ids != nil {
 			varBody["selected_repository_ids"] = ids
 		}
-		mustStatus(t, ghPost(t, varBase, defaultToken, varBody), 201, "post variable "+name)
+		mustStatus(t, s.post(t, varBase, defaultToken, varBody), 201, "post variable "+name)
 	}
 	put("M_ALL", "all", nil)
 	put("M_PRIV", "private", nil)
@@ -53,7 +55,7 @@ func TestCollectOrgVisibilityMatrix(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run(tc.repo.FullName, func(t *testing.T) {
-			secrets, vars, err := testServer.CollectJobSecretsAndVars(tc.repo.FullName, "")
+			secrets, vars, err := s.CollectJobSecretsAndVars(tc.repo.FullName, "")
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -78,33 +80,35 @@ func TestCollectOrgVisibilityMatrix(t *testing.T) {
 // TestCollectPrecedence proves the merge order: organization < repository
 // < environment, independently for secrets and variables.
 func TestCollectPrecedence(t *testing.T) {
-	org := seedTestOrg(t, "injorg-prec")
-	repo := seedOrgRepo(t, org, "prec-repo", false)
-	testServer.store.Deployments.UpsertEnvironment(repo.ID, "production")
+	t.Parallel()
+	s := newIsolatedServer(t)
+	org := s.seedTestOrg(t, "injorg-prec")
+	repo := s.seedOrgRepo(t, org, "prec-repo", false)
+	s.store.Deployments.UpsertEnvironment(repo.ID, "production")
 
 	// One name defined at all three scopes.
-	enc, keyID := sealForServer(t, "from-org")
-	mustStatus(t, ghPut(t, "/api/v3/orgs/"+org.Login+"/actions/secrets/STACKED", defaultToken,
+	enc, keyID := s.sealForServer(t, "from-org")
+	mustStatus(t, s.put(t, "/api/v3/orgs/"+org.Login+"/actions/secrets/STACKED", defaultToken,
 		map[string]interface{}{"encrypted_value": enc, "key_id": keyID, "visibility": "all"}), 201, "org secret")
-	mustStatus(t, putSealedSecret(t, "/api/v3/repos/"+repo.FullName+"/actions/secrets/STACKED", "from-repo"), 201, "repo secret")
-	mustStatus(t, putSealedSecret(t, "/api/v3/repos/"+repo.FullName+"/environments/production/secrets/STACKED", "from-env"), 201, "env secret")
+	mustStatus(t, s.putSealedSecret(t, "/api/v3/repos/"+repo.FullName+"/actions/secrets/STACKED", "from-repo"), 201, "repo secret")
+	mustStatus(t, s.putSealedSecret(t, "/api/v3/repos/"+repo.FullName+"/environments/production/secrets/STACKED", "from-env"), 201, "env secret")
 
-	mustStatus(t, ghPost(t, "/api/v3/orgs/"+org.Login+"/actions/variables", defaultToken,
+	mustStatus(t, s.post(t, "/api/v3/orgs/"+org.Login+"/actions/variables", defaultToken,
 		map[string]interface{}{"name": "STACKED_VAR", "value": "from-org", "visibility": "all"}), 201, "org var")
-	mustStatus(t, ghPost(t, "/api/v3/repos/"+repo.FullName+"/actions/variables", defaultToken,
+	mustStatus(t, s.post(t, "/api/v3/repos/"+repo.FullName+"/actions/variables", defaultToken,
 		map[string]interface{}{"name": "STACKED_VAR", "value": "from-repo"}), 201, "repo var")
-	mustStatus(t, ghPost(t, "/api/v3/repos/"+repo.FullName+"/environments/production/variables", defaultToken,
+	mustStatus(t, s.post(t, "/api/v3/repos/"+repo.FullName+"/environments/production/variables", defaultToken,
 		map[string]interface{}{"name": "STACKED_VAR", "value": "from-env"}), 201, "env var")
 
 	// And one name per scope to show lower scopes still contribute.
-	enc, keyID = sealForServer(t, "only-org")
-	mustStatus(t, ghPut(t, "/api/v3/orgs/"+org.Login+"/actions/secrets/ONLY_ORG", defaultToken,
+	enc, keyID = s.sealForServer(t, "only-org")
+	mustStatus(t, s.put(t, "/api/v3/orgs/"+org.Login+"/actions/secrets/ONLY_ORG", defaultToken,
 		map[string]interface{}{"encrypted_value": enc, "key_id": keyID, "visibility": "all"}), 201, "only-org secret")
-	mustStatus(t, putSealedSecret(t, "/api/v3/repos/"+repo.FullName+"/actions/secrets/ONLY_REPO", "only-repo"), 201, "only-repo secret")
-	mustStatus(t, putSealedSecret(t, "/api/v3/repos/"+repo.FullName+"/environments/production/secrets/ONLY_ENV", "only-env"), 201, "only-env secret")
+	mustStatus(t, s.putSealedSecret(t, "/api/v3/repos/"+repo.FullName+"/actions/secrets/ONLY_REPO", "only-repo"), 201, "only-repo secret")
+	mustStatus(t, s.putSealedSecret(t, "/api/v3/repos/"+repo.FullName+"/environments/production/secrets/ONLY_ENV", "only-env"), 201, "only-env secret")
 
 	// With the environment: env wins, all scopes contribute.
-	secrets, vars, err := testServer.CollectJobSecretsAndVars(repo.FullName, "production")
+	secrets, vars, err := s.CollectJobSecretsAndVars(repo.FullName, "production")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -121,7 +125,7 @@ func TestCollectPrecedence(t *testing.T) {
 	}
 
 	// Without the environment: repo wins, env-only items absent.
-	secrets, vars, err = testServer.CollectJobSecretsAndVars(repo.FullName, "")
+	secrets, vars, err = s.CollectJobSecretsAndVars(repo.FullName, "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -139,7 +143,9 @@ func TestCollectPrecedence(t *testing.T) {
 // TestCollectUnknownRepo confirms the collector fails loudly for a
 // repository Bleephub does not know.
 func TestCollectUnknownRepo(t *testing.T) {
-	if secrets, vars, err := testServer.CollectJobSecretsAndVars("ghost/ghost", ""); err == nil {
+	t.Parallel()
+	s := newIsolatedServer(t)
+	if secrets, vars, err := s.CollectJobSecretsAndVars("ghost/ghost", ""); err == nil {
 		t.Fatalf("CollectJobSecretsAndVars returned %v/%v without an error for an unknown repository", secrets, vars)
 	}
 }

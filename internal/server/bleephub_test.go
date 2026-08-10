@@ -354,7 +354,9 @@ func fuzzProcess(args []string) bool {
 }
 
 func TestHealth(t *testing.T) {
-	resp, err := http.Get(testBaseURL + "/health")
+	t.Parallel()
+	s := newIsolatedServer(t)
+	resp, err := http.Get(s.baseURL + "/health")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -365,7 +367,9 @@ func TestHealth(t *testing.T) {
 }
 
 func TestConnectionData(t *testing.T) {
-	resp, err := http.Get(testBaseURL + "/_apis/connectionData")
+	t.Parallel()
+	s := newIsolatedServer(t)
+	resp, err := http.Get(s.baseURL + "/_apis/connectionData")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -390,6 +394,8 @@ func TestConnectionData(t *testing.T) {
 }
 
 func TestOAuthToken(t *testing.T) {
+	t.Parallel()
+	s := newIsolatedServer(t)
 	// Register a runner with an RSA public key, then exchange a signed
 	// client_assertion JWT for an access token — the real Azure DevOps
 	// agent OAuth2 jwt-bearer flow the actions/runner uses.
@@ -402,7 +408,7 @@ func TestOAuthToken(t *testing.T) {
 	exp := base64.StdEncoding.EncodeToString(big.NewInt(int64(key.E)).Bytes())
 	regBody := fmt.Sprintf(`{"name":"oauth-test","version":"2.0","authorization":{"publicKey":{"modulus":%q,"exponent":%q}}}`, mod, exp)
 	regToken := mustRunnerRegistrationToken(t, runnerScope{Repo: "oauth-owner/oauth-repo"})
-	regResp := runnerDo(t, "POST", testBaseURL+"/_apis/v1/Agent/1", regToken, regBody)
+	regResp := runnerDo(t, "POST", s.baseURL+"/_apis/v1/Agent/1", regToken, regBody)
 	defer regResp.Body.Close()
 	if regResp.StatusCode != 200 {
 		t.Fatalf("agent register: expected 200, got %d", regResp.StatusCode)
@@ -423,7 +429,7 @@ func TestOAuthToken(t *testing.T) {
 	for _, algorithm := range []string{"RS256", "PS256"} {
 		t.Run(algorithm, func(t *testing.T) {
 			form := runnerTokenExchangeForm(signTestAssertionWithAlgorithm(t, key, agent.Authorization.ClientID, algorithm))
-			resp, err := http.Post(testBaseURL+"/_apis/v1/auth/", "application/x-www-form-urlencoded", strings.NewReader(form.Encode()))
+			resp, err := http.Post(s.baseURL+"/_apis/v1/auth/", "application/x-www-form-urlencoded", strings.NewReader(form.Encode()))
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -445,7 +451,9 @@ func TestOAuthToken(t *testing.T) {
 }
 
 func TestOAuthTokenRejectsMissingAssertion(t *testing.T) {
-	resp, err := http.Post(testBaseURL+"/_apis/v1/auth/", "application/x-www-form-urlencoded", nil)
+	t.Parallel()
+	s := newIsolatedServer(t)
+	resp, err := http.Post(s.baseURL+"/_apis/v1/auth/", "application/x-www-form-urlencoded", nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -456,12 +464,14 @@ func TestOAuthTokenRejectsMissingAssertion(t *testing.T) {
 }
 
 func TestOAuthTokenRejectsUnknownClient(t *testing.T) {
+	t.Parallel()
+	s := newIsolatedServer(t)
 	key, err := rsa.GenerateKey(rand.Reader, 2048)
 	if err != nil {
 		t.Fatalf("generate key: %v", err)
 	}
 	form := runnerTokenExchangeForm(signTestAssertion(t, key, "00000000-0000-0000-0000-000000000000"))
-	resp, err := http.Post(testBaseURL+"/_apis/v1/auth/", "application/x-www-form-urlencoded", strings.NewReader(form.Encode()))
+	resp, err := http.Post(s.baseURL+"/_apis/v1/auth/", "application/x-www-form-urlencoded", strings.NewReader(form.Encode()))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -513,18 +523,20 @@ func runnerTokenExchangeForm(assertion string) url.Values {
 }
 
 func TestRunnerRegistration(t *testing.T) {
+	t.Parallel()
+	s := newIsolatedServer(t)
 	body := `{"url":"http://localhost","runner_event":"register"}`
 	// config.sh presents the administration:write-minted registration token.
 	regToken := mustRunnerRegistrationToken(t, runnerScope{Repo: "reg-owner/reg-repo"})
 
-	if unauth := runnerDo(t, "POST", testBaseURL+"/api/v3/actions/runner-registration", "", body); true {
+	if unauth := runnerDo(t, "POST", s.baseURL+"/api/v3/actions/runner-registration", "", body); true {
 		unauth.Body.Close()
 		if unauth.StatusCode != 401 {
 			t.Fatalf("unauthenticated runner-registration: expected 401, got %d", unauth.StatusCode)
 		}
 	}
 
-	resp := runnerDo(t, "POST", testBaseURL+"/api/v3/actions/runner-registration", regToken, body)
+	resp := runnerDo(t, "POST", s.baseURL+"/api/v3/actions/runner-registration", regToken, body)
 	defer resp.Body.Close()
 	if resp.StatusCode != 200 {
 		t.Fatalf("expected 200, got %d", resp.StatusCode)
@@ -542,8 +554,10 @@ func TestRunnerRegistration(t *testing.T) {
 }
 
 func TestListPools(t *testing.T) {
-	sessionToken, _ := testAgentSession(t, testServer, runnerScope{Repo: "pool-owner/pool-repo"})
-	resp := runnerDo(t, "GET", testBaseURL+"/_apis/v1/AgentPools", sessionToken, "")
+	t.Parallel()
+	s := newIsolatedServer(t)
+	sessionToken, _ := testAgentSession(t, s.Server, runnerScope{Repo: "pool-owner/pool-repo"})
+	resp := runnerDo(t, "GET", s.baseURL+"/_apis/v1/AgentPools", sessionToken, "")
 	defer resp.Body.Close()
 
 	var data map[string]interface{}
@@ -556,10 +570,12 @@ func TestListPools(t *testing.T) {
 }
 
 func TestAgentLifecycle(t *testing.T) {
+	t.Parallel()
+	s := newIsolatedServer(t)
 	// Register agent with the credential config.sh was given.
 	agentBody := `{"name":"test-runner","version":"3.0.0","labels":[{"name":"self-hosted","type":"system"}]}`
 	regToken := mustRunnerRegistrationToken(t, runnerScope{Repo: "life-owner/life-repo"})
-	resp := runnerDo(t, "POST", testBaseURL+"/_apis/v1/Agent/1", regToken, agentBody)
+	resp := runnerDo(t, "POST", s.baseURL+"/_apis/v1/Agent/1", regToken, agentBody)
 	defer resp.Body.Close()
 
 	var agent struct {
@@ -585,7 +601,7 @@ func TestAgentLifecycle(t *testing.T) {
 	sessionToken := makeJWT(agent.Authorization.ClientID, runnerAudSession)
 
 	// List agents
-	resp2 := runnerDo(t, "GET", testBaseURL+"/_apis/v1/Agent/1", sessionToken, "")
+	resp2 := runnerDo(t, "GET", s.baseURL+"/_apis/v1/Agent/1", sessionToken, "")
 	defer resp2.Body.Close()
 
 	var list map[string]interface{}
@@ -597,14 +613,14 @@ func TestAgentLifecycle(t *testing.T) {
 	}
 
 	// Get agent
-	resp3 := runnerDo(t, "GET", fmt.Sprintf("%s/_apis/v1/Agent/1/%d", testBaseURL, agentID), sessionToken, "")
+	resp3 := runnerDo(t, "GET", fmt.Sprintf("%s/_apis/v1/Agent/1/%d", s.baseURL, agentID), sessionToken, "")
 	defer resp3.Body.Close()
 	if resp3.StatusCode != 200 {
 		t.Fatalf("get agent: expected 200, got %d", resp3.StatusCode)
 	}
 
 	// Delete agent
-	resp4 := runnerDo(t, "DELETE", fmt.Sprintf("%s/_apis/v1/Agent/1/%d", testBaseURL, agentID), sessionToken, "")
+	resp4 := runnerDo(t, "DELETE", fmt.Sprintf("%s/_apis/v1/Agent/1/%d", s.baseURL, agentID), sessionToken, "")
 	defer resp4.Body.Close()
 	if resp4.StatusCode != 200 {
 		t.Fatalf("delete agent: expected 200, got %d", resp4.StatusCode)
@@ -613,8 +629,8 @@ func TestAgentLifecycle(t *testing.T) {
 	// Verify deleted. The deleted runner's own token no longer resolves to an
 	// agent, so the check runs as another runner registered for the same
 	// scope.
-	observerToken, _ := testAgentSession(t, testServer, runnerScope{Repo: "life-owner/life-repo"})
-	resp5 := runnerDo(t, "GET", fmt.Sprintf("%s/_apis/v1/Agent/1/%d", testBaseURL, agentID), observerToken, "")
+	observerToken, _ := testAgentSession(t, s.Server, runnerScope{Repo: "life-owner/life-repo"})
+	resp5 := runnerDo(t, "GET", fmt.Sprintf("%s/_apis/v1/Agent/1/%d", s.baseURL, agentID), observerToken, "")
 	defer resp5.Body.Close()
 	if resp5.StatusCode != 404 {
 		t.Fatalf("expected 404 after delete, got %d", resp5.StatusCode)
@@ -622,10 +638,12 @@ func TestAgentLifecycle(t *testing.T) {
 }
 
 func TestSessionAndMessage(t *testing.T) {
+	t.Parallel()
+	s := newIsolatedServer(t)
 	// Create session as a registered runner.
-	sessionToken, agent := testAgentSession(t, testServer, runnerScope{Repo: "sess-owner/sess-repo"})
+	sessionToken, agent := testAgentSession(t, s.Server, runnerScope{Repo: "sess-owner/sess-repo"})
 	sessionBody := fmt.Sprintf(`{"ownerName":"RUNNER","agent":{"id":%d,"name":"test"}}`, agent.ID)
-	resp := runnerDo(t, "POST", testBaseURL+"/_apis/v1/AgentSession/1", sessionToken, sessionBody)
+	resp := runnerDo(t, "POST", s.baseURL+"/_apis/v1/AgentSession/1", sessionToken, sessionBody)
 	defer resp.Body.Close()
 
 	var session map[string]interface{}
@@ -638,14 +656,14 @@ func TestSessionAndMessage(t *testing.T) {
 
 	// Submit a job
 	jobBody := `{"image":"alpine:latest","steps":[{"run":"echo hello"}]}`
-	resp2, err := authedPost("/internal/exec/submit", "application/json", bytes.NewBufferString(jobBody))
+	resp2, err := s.authedPost("/internal/exec/submit", "application/json", bytes.NewBufferString(jobBody))
 	if err != nil {
 		t.Fatal(err)
 	}
 	resp2.Body.Close()
 
 	// Poll for message (should get it immediately since job was just submitted)
-	resp3 := runnerDo(t, "GET", testBaseURL+"/_apis/v1/Message/1?sessionId="+sessionID, sessionToken, "")
+	resp3 := runnerDo(t, "GET", s.baseURL+"/_apis/v1/Message/1?sessionId="+sessionID, sessionToken, "")
 	defer resp3.Body.Close()
 
 	body, _ := io.ReadAll(resp3.Body)
@@ -663,5 +681,5 @@ func TestSessionAndMessage(t *testing.T) {
 	}
 
 	// Delete session
-	runnerDo(t, "DELETE", testBaseURL+"/_apis/v1/AgentSession/1/"+sessionID, sessionToken, "").Body.Close()
+	runnerDo(t, "DELETE", s.baseURL+"/_apis/v1/AgentSession/1/"+sessionID, sessionToken, "").Body.Close()
 }

@@ -2,6 +2,8 @@ package bleephub
 
 import (
 	"encoding/json"
+	"io"
+	"net/http"
 	"strings"
 	"testing"
 	"time"
@@ -15,7 +17,9 @@ import (
 // /api/graphql is a plain route, so requirePerm never runs for it and nothing
 // else intersects the credential. The write half has to do it itself.
 func TestGraphQLWriteMutationsIntersectTheCredential(t *testing.T) {
-	store := testServer.store
+	t.Parallel()
+	s := newIsolatedServer(t)
+	store := s.store
 	now := fixedTestTime.UTC()
 
 	mkUser := func(login string) *User {
@@ -75,9 +79,24 @@ func TestGraphQLWriteMutationsIntersectTheCredential(t *testing.T) {
 	}
 	mutation := `mutation{updateIssue(input:{id:"` + issue.NodeID + `",title:"hijacked"}){issue{title}}}`
 
+	// Bearer auth against this instance's listener — the credential scheme the
+	// ghu_/ghs_ intersection depends on. (The shared-server ghuRequest targets
+	// the package base URL, so it is inlined here for the isolated server.)
 	post := func(token string) (int, string) {
 		body, _ := json.Marshal(map[string]string{"query": mutation})
-		return ghuRequest(t, "POST", "/api/graphql", token, string(body))
+		req, err := http.NewRequest("POST", s.baseURL+"/api/graphql", strings.NewReader(string(body)))
+		if err != nil {
+			t.Fatalf("build graphql request: %v", err)
+		}
+		req.Header.Set("Authorization", "Bearer "+token)
+		req.Header.Set("Content-Type", "application/json")
+		resp, err := http.DefaultClient.Do(req)
+		if err != nil {
+			t.Fatalf("post graphql: %v", err)
+		}
+		defer resp.Body.Close()
+		b, _ := io.ReadAll(resp.Body)
+		return resp.StatusCode, string(b)
 	}
 
 	// The ghs_ of an app installed nowhere is the baseline: it is refused. The

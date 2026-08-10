@@ -16,7 +16,9 @@ import (
 // this instance: 200, image/png, an immutable cache policy, and a valid
 // 72×72 PNG. No sampling — an unserved catalog entry is a broken contract.
 func TestEmojiCatalogImagesAllServed(t *testing.T) {
-	resp := ghGet(t, "/api/v3/emojis", defaultToken)
+	t.Parallel()
+	s := newIsolatedServer(t)
+	resp := s.get(t, "/api/v3/emojis", defaultToken)
 	if resp.StatusCode != 200 {
 		resp.Body.Close()
 		t.Fatalf("emojis status = %d", resp.StatusCode)
@@ -35,11 +37,11 @@ func TestEmojiCatalogImagesAllServed(t *testing.T) {
 		if err != nil {
 			t.Fatalf("catalog[%q] = %q: %v", name, imageURL, err)
 		}
-		if !strings.HasPrefix(imageURL, testBaseURL+"/images/icons/emoji/") {
+		if !strings.HasPrefix(imageURL, s.baseURL+"/images/icons/emoji/") {
 			t.Fatalf("catalog[%q] = %q, want an instance-hosted /images/icons/emoji/ URL", name, imageURL)
 		}
 
-		img := ghGet(t, u.Path+"?"+u.RawQuery, "")
+		img := s.get(t, u.Path+"?"+u.RawQuery, "")
 		body, _ := io.ReadAll(img.Body)
 		img.Body.Close()
 		if img.StatusCode != 200 {
@@ -62,13 +64,15 @@ func TestEmojiCatalogImagesAllServed(t *testing.T) {
 }
 
 func TestEmojiImageUnknownPath404(t *testing.T) {
+	t.Parallel()
+	s := newIsolatedServer(t)
 	for _, p := range []string{
 		"/images/icons/emoji/unicode/ffffff.png",
 		"/images/icons/emoji/notreal.png",
 		"/images/icons/emoji/LICENSE-TWEMOJI",
 		"/images/icons/emoji/unicode/",
 	} {
-		resp := ghGet(t, p, "")
+		resp := s.get(t, p, "")
 		resp.Body.Close()
 		if resp.StatusCode != 404 {
 			t.Errorf("GET %s = %d, want 404", p, resp.StatusCode)
@@ -82,6 +86,7 @@ func TestEmojiImageUnknownPath404(t *testing.T) {
 // pixels emojiart.BadgePNG produces for that name, keeping the committed
 // archive reproducible from the in-repo generator.
 func TestCustomEmojiArtworkMatchesGenerator(t *testing.T) {
+	t.Parallel()
 	assets, err := loadEmojiAssets()
 	if err != nil {
 		t.Fatalf("load embedded emoji assets: %v", err)

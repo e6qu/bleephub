@@ -325,13 +325,11 @@ func (s *Server) setRepoLFS(w http.ResponseWriter, r *http.Request, enabled bool
 		writeGHError(w, http.StatusForbidden, "Must have admin rights to Repository.")
 		return
 	}
-	s.store.mu.Lock()
-	repo.LFSEnabled = enabled
-	repo.UpdatedAt = s.currentTime()
-	if s.store.persist != nil {
-		s.store.persist.MustPut("repos", strconv.Itoa(repo.ID), repo)
-	}
-	s.store.mu.Unlock()
+	// repo is a detached snapshot from GetRepo; mutate the live row through the
+	// copy-on-write UpdateRepo path so the change is observed and persisted.
+	s.store.UpdateRepo(r.PathValue("owner"), r.PathValue("repo"), func(rp *Repo) {
+		rp.LFSEnabled = enabled
+	})
 	w.WriteHeader(http.StatusNoContent)
 }
 

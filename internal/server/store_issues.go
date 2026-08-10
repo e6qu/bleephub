@@ -314,7 +314,7 @@ func (st *Store) ListIssueEvents(repoID, issueID int) []*IssueEvent {
 		events = append(events, e)
 	}
 	sort.Slice(events, func(i, j int) bool { return events[i].ID < events[j].ID })
-	return events
+	return snapshotSlice(events)
 }
 
 // ListPullRequestEvents returns the issue events attached to a pull
@@ -330,19 +330,25 @@ func (st *Store) ListPullRequestEvents(repoID, prID int) []*IssueEvent {
 		events = append(events, e)
 	}
 	sort.Slice(events, func(i, j int) bool { return events[i].ID < events[j].ID })
-	return events
+	return snapshotSlice(events)
 }
 
 // ListRepoIssueEvents returns all issue events for a repository.
 func (st *Store) ListRepoIssueEvents(repoID int) []*IssueEvent {
-	return st.ListIssueEvents(repoID, 0)
+	return snapshotSlice(st.ListIssueEvents(repoID, 0))
 }
 
 // GetIssueEvent returns an issue event by global ID.
 func (st *Store) GetIssueEvent(id int) *IssueEvent {
 	st.mu.RLock()
 	defer st.mu.RUnlock()
-	return st.IssueEvents[id]
+	// A copy so a reader can't mutate the stored event (STORE-021); all-value.
+	ev := st.IssueEvents[id]
+	if ev == nil {
+		return nil
+	}
+	clone := *ev
+	return &clone
 }
 
 // --- Label CRUD ---
@@ -381,7 +387,14 @@ func (st *Store) CreateLabel(repoID int, name, description, color string) *Issue
 func (st *Store) GetLabel(id int) *IssueLabel {
 	st.mu.RLock()
 	defer st.mu.RUnlock()
-	return st.Labels[id]
+	// A copy so a reader can't mutate the stored label through the getter
+	// (STORE-021); IssueLabel is all-value. Edits go through UpdateLabel by id.
+	lbl := st.Labels[id]
+	if lbl == nil {
+		return nil
+	}
+	clone := *lbl
+	return &clone
 }
 
 // GetLabelByName returns a label by repo and name.
@@ -390,7 +403,8 @@ func (st *Store) GetLabelByName(repoID int, name string) *IssueLabel {
 	defer st.mu.RUnlock()
 	for _, l := range st.Labels {
 		if l.RepoID == repoID && l.Name == name {
-			return l
+			clone := *l
+			return &clone
 		}
 	}
 	return nil
@@ -406,7 +420,7 @@ func (st *Store) ListLabels(repoID int) []*IssueLabel {
 			labels = append(labels, l)
 		}
 	}
-	return labels
+	return snapshotSlice(labels)
 }
 
 // UpdateLabel applies a mutation function to a label.
@@ -492,10 +506,28 @@ func (st *Store) CreateMilestone(repoID, creatorID int, title, description, stat
 }
 
 // GetMilestone returns a milestone by global ID.
+// cloneMilestone returns a copy safe to hand outside the store lock
+// (STORE-021): DueOn and ClosedAt are the only reference fields.
+func cloneMilestone(m *Milestone) *Milestone {
+	if m == nil {
+		return nil
+	}
+	clone := *m
+	if m.DueOn != nil {
+		due := *m.DueOn
+		clone.DueOn = &due
+	}
+	if m.ClosedAt != nil {
+		closed := *m.ClosedAt
+		clone.ClosedAt = &closed
+	}
+	return &clone
+}
+
 func (st *Store) GetMilestone(id int) *Milestone {
 	st.mu.RLock()
 	defer st.mu.RUnlock()
-	return st.Milestones[id]
+	return cloneMilestone(st.Milestones[id])
 }
 
 // GetMilestoneByNumber returns a milestone by repo and number.
@@ -504,7 +536,7 @@ func (st *Store) GetMilestoneByNumber(repoID, number int) *Milestone {
 	defer st.mu.RUnlock()
 	for _, ms := range st.Milestones {
 		if ms.RepoID == repoID && ms.Number == number {
-			return ms
+			return cloneMilestone(ms)
 		}
 	}
 	return nil
@@ -524,7 +556,7 @@ func (st *Store) ListMilestones(repoID int, state string) []*Milestone {
 		}
 		milestones = append(milestones, ms)
 	}
-	return milestones
+	return snapshotMilestones(milestones)
 }
 
 // UpdateMilestone applies a mutation function to a milestone.
@@ -637,17 +669,39 @@ func (st *Store) unindexIssueLocked(issue *Issue) {
 }
 
 // GetIssue returns an issue by global ID.
+// cloneIssue returns a deep copy safe to hand outside the store lock
+// (STORE-021): AssigneeIDs, LabelIDs and ClosedAt are the reference fields.
+// Issue writes go through the keyed UpdateIssue(id, fn); the getter's callers
+// only read.
+func cloneIssue(i *Issue) *Issue {
+	if i == nil {
+		return nil
+	}
+	clone := *i
+	if i.AssigneeIDs != nil {
+		clone.AssigneeIDs = append([]int(nil), i.AssigneeIDs...)
+	}
+	if i.LabelIDs != nil {
+		clone.LabelIDs = append([]int(nil), i.LabelIDs...)
+	}
+	if i.ClosedAt != nil {
+		closed := *i.ClosedAt
+		clone.ClosedAt = &closed
+	}
+	return &clone
+}
+
 func (st *Store) GetIssue(id int) *Issue {
 	st.mu.RLock()
 	defer st.mu.RUnlock()
-	return st.Issues[id]
+	return cloneIssue(st.Issues[id])
 }
 
 // GetIssueByNumber returns an issue by repo ID and number.
 func (st *Store) GetIssueByNumber(repoID, number int) *Issue {
 	st.mu.RLock()
 	defer st.mu.RUnlock()
-	return st.IssuesByRepo[repoID][number]
+	return cloneIssue(st.IssuesByRepo[repoID][number])
 }
 
 // ListIssues returns issues for a repository, optionally filtered by state.
@@ -664,7 +718,7 @@ func (st *Store) ListIssues(repoID int, state string) []*Issue {
 		}
 		issues = append(issues, issue)
 	}
-	return issues
+	return snapshotIssues(issues)
 }
 
 // UpdateIssue applies a mutation function to an issue.
@@ -966,7 +1020,7 @@ func (st *Store) ListIssueComments(repoKey string, issueNumber int) []*Comment {
 			comments = append(comments, cloneComment(c))
 		}
 	}
-	return comments
+	return snapshotComments(comments)
 }
 
 // GetIssueComment returns a comment by global ID.
@@ -991,7 +1045,7 @@ func (st *Store) ListRepoIssueComments(repoID int) []*Comment {
 		}
 	}
 	sort.Slice(comments, func(i, j int) bool { return comments[i].CreatedAt.Before(comments[j].CreatedAt) })
-	return comments
+	return snapshotComments(comments)
 }
 
 // PinIssueComment marks a comment as pinned. Returns true when the comment
@@ -1151,7 +1205,7 @@ func (st *Store) CreateCommentFor(parentType string, parentID, authorID int, bod
 
 // ListComments returns all conversation comments for an issue.
 func (st *Store) ListComments(issueID int) []*Comment {
-	return st.ListCommentsFor("issue", issueID)
+	return snapshotComments(st.ListCommentsFor("issue", issueID))
 }
 
 // GetComment returns a comment by global ID.
@@ -1379,7 +1433,7 @@ func (st *Store) ListCommentsFor(parentType string, parentID int) []*Comment {
 	for _, c := range indexed {
 		comments = append(comments, cloneComment(c))
 	}
-	return comments
+	return snapshotComments(comments)
 }
 
 // indexCommentLocked / unindexCommentLocked maintain CommentsByParent alongside

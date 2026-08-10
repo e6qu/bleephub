@@ -596,8 +596,10 @@ func TestCreateOrgRepo(t *testing.T) {
 // returns 403 for unauthenticated callers and non-site-admin users — matching
 // real GHES behaviour.
 func TestAdminCreateOrg_RequiresSiteAdmin(t *testing.T) {
+	t.Parallel()
+	s := newIsolatedServer(t)
 	// No token — unauthenticated → 403.
-	resp := ghPost(t, "/api/v3/admin/organizations", "", map[string]interface{}{
+	resp := s.post(t, "/api/v3/admin/organizations", "", map[string]interface{}{
 		"login": "org-no-auth",
 		"admin": "admin",
 	})
@@ -607,16 +609,16 @@ func TestAdminCreateOrg_RequiresSiteAdmin(t *testing.T) {
 	}
 
 	// Token for a non-site-admin user → 403.
-	testServer.store.mu.Lock()
-	regularUser := &User{ID: testServer.store.NextUser, Login: "regular", Type: "User", SiteAdmin: false}
-	testServer.store.NextUser++
-	testServer.store.Users[regularUser.ID] = regularUser
-	testServer.store.UsersByLogin[regularUser.Login] = regularUser
+	s.store.mu.Lock()
+	regularUser := &User{ID: s.store.NextUser, Login: "regular", Type: "User", SiteAdmin: false}
+	s.store.NextUser++
+	s.store.Users[regularUser.ID] = regularUser
+	s.store.UsersByLogin[regularUser.Login] = regularUser
 	regularTok := &Token{Value: "ghp_regularusertoken0000000000000000000000", UserID: regularUser.ID, Scopes: "repo"}
-	testServer.store.Tokens[regularTok.Value] = regularTok
-	testServer.store.mu.Unlock()
+	s.store.Tokens[regularTok.Value] = regularTok
+	s.store.mu.Unlock()
 
-	resp2 := ghPost(t, "/api/v3/admin/organizations", regularTok.Value, map[string]interface{}{
+	resp2 := s.post(t, "/api/v3/admin/organizations", regularTok.Value, map[string]interface{}{
 		"login": "org-non-admin",
 		"admin": "admin",
 	})

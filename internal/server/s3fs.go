@@ -530,7 +530,11 @@ func (f *s3FS) Root() string {
 	return f.prefix
 }
 
-func (f *s3FS) renameRepoPrefix(oldFull, newFull string) error {
+// copyRepoPrefix copies every object under oldFull's prefix to newFull's,
+// leaving the source intact. STORE-013 runs this outside the store lock so both
+// prefixes coexist during the copy and readers at the old name keep working;
+// the caller purges the old prefix after swapping metadata under the lock.
+func (f *s3FS) copyRepoPrefix(oldFull, newFull string) error {
 	oldPrefix := f.key(oldFull) + "/"
 	newPrefix := f.key(newFull) + "/"
 	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
@@ -566,7 +570,17 @@ func (f *s3FS) renameRepoPrefix(oldFull, newFull string) error {
 			return fmt.Errorf("s3 copy %s -> %s: %w", oldKey, newKey, err)
 		}
 	}
-	return f.deleteObjectKeys(ctx, oldKeys)
+	return nil
+}
+
+// renameRepoPrefix moves an object prefix in place (copy then delete). It is the
+// single-shot form used when the move is fast enough to hold the store lock; the
+// live-repo path uses copyRepoPrefix + deleteRepoPrefix around the metadata swap.
+func (f *s3FS) renameRepoPrefix(oldFull, newFull string) error {
+	if err := f.copyRepoPrefix(oldFull, newFull); err != nil {
+		return err
+	}
+	return f.deleteRepoPrefix(oldFull)
 }
 
 func (f *s3FS) deleteRepoPrefix(fullName string) error {

@@ -588,7 +588,7 @@ function PropertyDialog({
   onClose,
 }: {
   org: string;
-  property?: GithubCustomProperty;
+  property?: GithubCustomProperty | undefined;
   onClose: () => void;
 }) {
   const qc = useQueryClient();

@@ -134,7 +134,7 @@ func TestRepoCustomPropertyValues_SetAndRead(t *testing.T) {
 	s := newIsolatedServer(t)
 	org := s.createTestOrg(t)
 	repoName, _ := s.createOrgRepoForGovernance(t, org)
-	repoPath := org + "/" + repoName
+	repoPath := repoName.fullName()
 
 	// Definitions: one with a default, one select, one boolean.
 	resp := s.patch(t, "/api/v3/orgs/"+org+"/properties/schema", defaultToken, map[string]interface{}{
@@ -247,7 +247,7 @@ func TestOrgCustomProperties_OrgValues(t *testing.T) {
 
 	// Batch-apply values to both repositories.
 	resp = s.patch(t, "/api/v3/orgs/"+org+"/properties/values", defaultToken, map[string]interface{}{
-		"repository_names": []string{repoA, repoB},
+		"repository_names": []string{repoA.name, repoB.name},
 		"properties": []map[string]interface{}{
 			{"property_name": "team", "value": "platform"},
 		},
@@ -277,9 +277,9 @@ func TestOrgCustomProperties_OrgValues(t *testing.T) {
 	}
 
 	// repository_query filters by name.
-	resp = s.get(t, "/api/v3/orgs/"+org+"/properties/values?repository_query="+repoA, defaultToken)
+	resp = s.get(t, "/api/v3/orgs/"+org+"/properties/values?repository_query="+repoA.name, defaultToken)
 	filtered := decodeJSONArray(t, resp)
-	if len(filtered) != 1 || filtered[0]["repository_name"] != repoA {
+	if len(filtered) != 1 || filtered[0]["repository_name"] != repoA.name {
 		t.Fatalf("filtered = %v", filtered)
 	}
 

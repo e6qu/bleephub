@@ -185,6 +185,10 @@ func (st *Store) AddAppDelivery(appID int, d *WebhookDelivery) {
 }
 
 // ListAppDeliveries returns app-level deliveries newest-first.
+// ListAppDeliveries returns the app's deliveries. Like GetAppDelivery it hands
+// back live rows deliberately: deliveries are write-once (append-only, never
+// mutated) so a reader never races a writer, and each carries full payloads
+// cloning would needlessly copy (STORE-021 documented exception).
 func (st *Store) ListAppDeliveries(appID int) []*WebhookDelivery {
 	st.mu.RLock()
 	defer st.mu.RUnlock()
@@ -198,6 +202,13 @@ func (st *Store) ListAppDeliveries(appID int) []*WebhookDelivery {
 }
 
 // GetAppDelivery returns a single app-level delivery.
+// GetAppDelivery returns a stored delivery by id, or nil.
+//
+// This intentionally returns the live row rather than a snapshot: deliveries are
+// write-once — AddAppDelivery appends a record and nothing mutates it afterward
+// (a redelivery appends a brand-new record), so a reader never races a writer —
+// and a WebhookDelivery carries the full request/response payloads that cloning
+// on every read would needlessly copy.
 func (st *Store) GetAppDelivery(appID, deliveryID int) *WebhookDelivery {
 	st.mu.RLock()
 	defer st.mu.RUnlock()

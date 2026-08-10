@@ -23,27 +23,6 @@ func waitFor(t *testing.T, cond func() bool, msg string) {
 // accept → active), member/public-member endpoints, team hierarchy + roles
 // + repos, the global org list, org profile fields, and org webhooks.
 
-// newSharedServerUser registers a user + PAT directly in the shared
-// server's store (bleephub has no REST user-creation endpoint — real
-// GitHub provisions users out of band too).
-func newSharedServerUser(t *testing.T, login string) (*User, string) {
-	t.Helper()
-	st := testServer.store
-	st.mu.Lock()
-	if existing := st.UsersByLogin[login]; existing != nil {
-		st.mu.Unlock()
-		t.Fatalf("user %q already exists", login)
-	}
-	u := &User{ID: st.NextUser, Login: login, Type: "User"}
-	st.NextUser++
-	st.Users[u.ID] = u
-	st.UsersByLogin[login] = u
-	tok := &Token{Value: "ghp_" + login + "0000000000000000000000000000000000", UserID: u.ID, Scopes: "repo,read:org"}
-	st.Tokens[tok.Value] = tok
-	st.mu.Unlock()
-	return u, tok.Value
-}
-
 func TestOrgInvitationLifecycle(t *testing.T) {
 	t.Parallel()
 	srv := newIsolatedServer(t)

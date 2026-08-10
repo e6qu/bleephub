@@ -128,22 +128,24 @@ func TestReleases_FullLifecycle(t *testing.T) {
 }
 
 func TestReleases_CreateUsesRealGitTagAndRejectsUnresolvedTarget(t *testing.T) {
+	t.Parallel()
+	s := newIsolatedServer(t)
 	repoPath := "/api/v3/repos/admin/release-git-source"
-	resp := ghPost(t, "/api/v3/user/repos", defaultToken, map[string]interface{}{
+	resp := s.post(t, "/api/v3/user/repos", defaultToken, map[string]interface{}{
 		"name": "release-git-source", "auto_init": true,
 	})
 	resp.Body.Close()
-	repo := testServer.store.GetRepo("admin", "release-git-source")
+	repo := s.store.GetRepo("admin", "release-git-source")
 	if repo == nil {
 		t.Fatal("repository not created")
 	}
-	stor, _ := testServer.store.GitStorageForRepoID(repo.ID)
+	stor, _ := s.store.GitStorageForRepoID(repo.ID)
 	mainRef, err := stor.Reference(plumbing.NewBranchReferenceName("main"))
 	if err != nil {
 		t.Fatalf("resolve main: %v", err)
 	}
 
-	create := ghPost(t, repoPath+"/releases", defaultToken, map[string]interface{}{
+	create := s.post(t, repoPath+"/releases", defaultToken, map[string]interface{}{
 		"tag_name": "v1.0.0", "target_commitish": "main", "name": "Real source release",
 	})
 	if create.StatusCode != http.StatusCreated {
@@ -159,7 +161,7 @@ func TestReleases_CreateUsesRealGitTagAndRejectsUnresolvedTarget(t *testing.T) {
 		t.Fatalf("tag hash = %s, want main %s", tagRef.Hash(), mainRef.Hash())
 	}
 
-	bad := ghPost(t, repoPath+"/releases", defaultToken, map[string]interface{}{
+	bad := s.post(t, repoPath+"/releases", defaultToken, map[string]interface{}{
 		"tag_name": "v2.0.0", "target_commitish": "missing-branch",
 	})
 	if bad.StatusCode != http.StatusUnprocessableEntity {
@@ -173,13 +175,15 @@ func TestReleases_CreateUsesRealGitTagAndRejectsUnresolvedTarget(t *testing.T) {
 }
 
 func TestReleases_UpdateIsRepositoryScoped(t *testing.T) {
+	t.Parallel()
+	s := newIsolatedServer(t)
 	for _, name := range []string{"release-scope-a", "release-scope-b"} {
-		resp := ghPost(t, "/api/v3/user/repos", defaultToken, map[string]interface{}{
+		resp := s.post(t, "/api/v3/user/repos", defaultToken, map[string]interface{}{
 			"name": name, "auto_init": true,
 		})
 		resp.Body.Close()
 	}
-	created := ghPost(t, "/api/v3/repos/admin/release-scope-a/releases", defaultToken, map[string]interface{}{
+	created := s.post(t, "/api/v3/repos/admin/release-scope-a/releases", defaultToken, map[string]interface{}{
 		"tag_name": "v1.0.0", "name": "Repository A",
 	})
 	if created.StatusCode != http.StatusCreated {
@@ -190,11 +194,11 @@ func TestReleases_UpdateIsRepositoryScoped(t *testing.T) {
 	id := int(release["id"].(float64))
 
 	patch, _ := json.Marshal(map[string]interface{}{"name": "Cross-repository mutation"})
-	wrongRepo := doAuthReq(testServer, http.MethodPatch, "/api/v3/repos/admin/release-scope-b/releases/"+itoa(id), patch)
+	wrongRepo := doAuthReq(s.Server, http.MethodPatch, "/api/v3/repos/admin/release-scope-b/releases/"+itoa(id), patch)
 	if wrongRepo.Code != http.StatusNotFound {
 		t.Fatalf("cross-repository update status = %d body=%s", wrongRepo.Code, wrongRepo.Body.String())
 	}
-	stored := testServer.store.Releases.Get(id)
+	stored := s.store.Releases.Get(id)
 	if stored.Name != "Repository A" {
 		t.Fatalf("cross-repository update mutated release: %q", stored.Name)
 	}
@@ -229,31 +233,33 @@ func TestReleases_GenerateNotes(t *testing.T) {
 }
 
 func TestReleases_GenerateNotesMergedPullRequests(t *testing.T) {
+	t.Parallel()
+	s := newIsolatedServer(t)
 	repoPath := "/api/v3/repos/admin/rel-notes-prs"
-	ghPost(t, "/api/v3/user/repos", defaultToken, map[string]interface{}{
+	s.post(t, "/api/v3/user/repos", defaultToken, map[string]interface{}{
 		"name": "rel-notes-prs", "auto_init": true,
 	}).Body.Close()
-	repo := testServer.store.GetRepo("admin", "rel-notes-prs")
+	repo := s.store.GetRepo("admin", "rel-notes-prs")
 	if repo == nil {
 		t.Fatal("repo not created")
 	}
-	seedPullRequestBranches(t, testServer, repo, "feature")
+	seedPullRequestBranches(t, s.Server, repo, "feature")
 
-	mainRef := ghGet(t, repoPath+"/git/refs/heads/main", defaultToken)
+	mainRef := s.get(t, repoPath+"/git/refs/heads/main", defaultToken)
 	mainData := decodeJSON(t, mainRef)
 	mainObj, _ := mainData["object"].(map[string]interface{})
 	baseSHA, _ := mainObj["sha"].(string)
 	if baseSHA == "" {
 		t.Fatalf("main ref missing sha: %v", mainData)
 	}
-	ghPost(t, repoPath+"/git/refs", defaultToken, map[string]interface{}{
+	s.post(t, repoPath+"/git/refs", defaultToken, map[string]interface{}{
 		"ref": "refs/tags/v1.0.0", "sha": baseSHA,
 	}).Body.Close()
 
-	ghPost(t, repoPath+"/pulls", defaultToken, map[string]interface{}{
+	s.post(t, repoPath+"/pulls", defaultToken, map[string]interface{}{
 		"title": "Ship release notes", "head": "feature", "base": "main",
 	}).Body.Close()
-	mergeResp := ghPut(t, repoPath+"/pulls/1/merge", defaultToken, map[string]interface{}{})
+	mergeResp := s.put(t, repoPath+"/pulls/1/merge", defaultToken, map[string]interface{}{})
 	if mergeResp.StatusCode != http.StatusOK {
 		mergeResp.Body.Close()
 		t.Fatalf("merge status = %d", mergeResp.StatusCode)
@@ -263,7 +269,7 @@ func TestReleases_GenerateNotesMergedPullRequests(t *testing.T) {
 	if mergeSHA == "" {
 		t.Fatalf("merge returned no sha: %v", mergeData)
 	}
-	ghPost(t, repoPath+"/git/refs", defaultToken, map[string]interface{}{
+	s.post(t, repoPath+"/git/refs", defaultToken, map[string]interface{}{
 		"ref": "refs/tags/v2.0.0", "sha": mergeSHA,
 	}).Body.Close()
 
@@ -271,7 +277,7 @@ func TestReleases_GenerateNotesMergedPullRequests(t *testing.T) {
 		"tag_name":          "v2.0.0",
 		"previous_tag_name": "v1.0.0",
 	})
-	resp := ghPost(t, repoPath+"/releases/generate-notes", defaultToken, json.RawMessage(body))
+	resp := s.post(t, repoPath+"/releases/generate-notes", defaultToken, json.RawMessage(body))
 	if resp.StatusCode != http.StatusOK {
 		resp.Body.Close()
 		t.Fatalf("generate-notes status = %d", resp.StatusCode)

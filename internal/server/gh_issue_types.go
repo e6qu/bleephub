@@ -207,7 +207,7 @@ func (st *Store) ListIssueTypes(orgLogin string) []*IssueType {
 		out = append(out, it)
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].ID < out[j].ID })
-	return out
+	return snapshotIssueTypes(out)
 }
 
 // GetAssignableIssueTypeForRepo returns an enabled issue type owned by the

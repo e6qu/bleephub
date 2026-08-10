@@ -186,7 +186,7 @@ func (st *Store) createRepoLocked(fullName, name, description string, private bo
 func (st *Store) GetRepo(owner, name string) *Repo {
 	st.mu.RLock()
 	defer st.mu.RUnlock()
-	return st.ReposByName[owner+"/"+name]
+	return cloneRepo(st.ReposByName[owner+"/"+name])
 }
 
 // GetRepoByFullName resolves an "owner/name" key under the read lock.
@@ -199,13 +199,13 @@ func (st *Store) GetRepo(owner, name string) *Repo {
 func (st *Store) GetRepoByFullName(fullName string) *Repo {
 	st.mu.RLock()
 	defer st.mu.RUnlock()
-	return st.ReposByName[fullName]
+	return cloneRepo(st.ReposByName[fullName])
 }
 
 func (st *Store) GetRepoByID(id int) *Repo {
 	st.mu.RLock()
 	defer st.mu.RUnlock()
-	return st.Repos[id]
+	return cloneRepo(st.Repos[id])
 }
 
 func (st *Store) UpdateRepo(owner, name string, fn func(*Repo)) bool {
@@ -217,7 +217,7 @@ func (st *Store) UpdateRepo(owner, name string, fn func(*Repo)) bool {
 	if !ok {
 		return false
 	}
-	repo := cloneRepoForMutation(current)
+	repo := cloneRepo(current)
 	fn(repo)
 	repo.UpdatedAt = st.currentTime()
 	batch := newPersistBatch(st.persist)
@@ -253,7 +253,7 @@ func (st *Store) ForkRepo(owner *User, sourceRepo *Repo, name string) *Repo {
 		st.mu.Unlock()
 		return nil
 	}
-	source := cloneRepoForMutation(liveSource)
+	source := cloneRepo(liveSource)
 	st.pendingRepoCreations[fullName] = true
 	st.mu.Unlock()
 
@@ -375,13 +375,24 @@ func cloneTimePtr(t *time.Time) *time.Time {
 	return &clone
 }
 
-func cloneRepoForMutation(repo *Repo) *Repo {
+// cloneRepo returns a deep copy of a repository detached from the stored row:
+// every mutable reference field (time pointers, the *bool, the topics slice and
+// the stargazers map) is copied so a caller can neither observe a concurrent
+// in-place mutation (e.g. StarRepo writing the Stargazers map under the write
+// lock) nor leak a write back into the store. The Owner *User is a shared
+// cross-entity pointer kept shallow — detaching users is GetUser's concern.
+// It backs both the copy-on-write UpdateRepo path and the read getters.
+func cloneRepo(repo *Repo) *Repo {
 	if repo == nil {
 		return nil
 	}
 	clone := *repo
 	clone.ArchivedAt = cloneTimePtr(repo.ArchivedAt)
 	clone.InteractionLimitExpiry = cloneTimePtr(repo.InteractionLimitExpiry)
+	if repo.HasDiscussions != nil {
+		v := *repo.HasDiscussions
+		clone.HasDiscussions = &v
+	}
 	clone.Topics = append([]string(nil), repo.Topics...)
 	clone.Stargazers = make(map[int]bool, len(repo.Stargazers))
 	for userID, starred := range repo.Stargazers {
@@ -390,10 +401,239 @@ func cloneRepoForMutation(repo *Repo) *Repo {
 	return &clone
 }
 
+// snapshotRepos returns detached clones of a repo list so a caller iterating and
+// rendering them can't race an in-place element mutation — most acutely
+// StarRepo/UnstarRepo writing an element's Stargazers map, a fatal concurrent
+// map access (STORE-021). Named to avoid colliding with the test-only
+// cloneRepoSlice.
+func snapshotRepos(in []*Repo) []*Repo {
+	if in == nil {
+		return nil
+	}
+	out := make([]*Repo, len(in))
+	for i, r := range in {
+		out[i] = cloneRepo(r)
+	}
+	return out
+}
+
+// snapshot* helpers detach a list of store pointers (STORE-021): a caller
+// iterating and rendering them can't race an in-place element mutation, and a
+// value copy can't leak a write back into the stored row. Each reuses the
+// element's existing clone helper.
+func snapshotIssues(in []*Issue) []*Issue {
+	if in == nil {
+		return nil
+	}
+	out := make([]*Issue, len(in))
+	for i, x := range in {
+		out[i] = cloneIssue(x)
+	}
+	return out
+}
+
+func snapshotPullRequests(in []*PullRequest) []*PullRequest {
+	if in == nil {
+		return nil
+	}
+	out := make([]*PullRequest, len(in))
+	for i, x := range in {
+		out[i] = clonePullRequest(x)
+	}
+	return out
+}
+
+func snapshotComments(in []*Comment) []*Comment {
+	if in == nil {
+		return nil
+	}
+	out := make([]*Comment, len(in))
+	for i, x := range in {
+		out[i] = cloneComment(x)
+	}
+	return out
+}
+
+func snapshotOrgs(in []*Org) []*Org {
+	if in == nil {
+		return nil
+	}
+	out := make([]*Org, len(in))
+	for i, x := range in {
+		out[i] = cloneOrg(x)
+	}
+	return out
+}
+
+func snapshotTeams(in []*Team) []*Team {
+	if in == nil {
+		return nil
+	}
+	out := make([]*Team, len(in))
+	for i, x := range in {
+		out[i] = cloneTeam(x)
+	}
+	return out
+}
+
+func snapshotMilestones(in []*Milestone) []*Milestone {
+	if in == nil {
+		return nil
+	}
+	out := make([]*Milestone, len(in))
+	for i, x := range in {
+		out[i] = cloneMilestone(x)
+	}
+	return out
+}
+
+func snapshotAttestations(in []*Attestation) []*Attestation {
+	if in == nil {
+		return nil
+	}
+	out := make([]*Attestation, len(in))
+	for i, x := range in {
+		out[i] = cloneAttestation(x)
+	}
+	return out
+}
+
+func snapshotCodeScanningAlerts(in []*CodeScanningAlert) []*CodeScanningAlert {
+	if in == nil {
+		return nil
+	}
+	out := make([]*CodeScanningAlert, len(in))
+	for i, x := range in {
+		out[i] = cloneCodeScanningAlert(x)
+	}
+	return out
+}
+
+func snapshotCodeSecurityConfigurations(in []*CodeSecurityConfiguration) []*CodeSecurityConfiguration {
+	if in == nil {
+		return nil
+	}
+	out := make([]*CodeSecurityConfiguration, len(in))
+	for i, x := range in {
+		out[i] = cloneCodeSecurityConfiguration(x)
+	}
+	return out
+}
+
+func snapshotDependabotAlerts(in []*DependabotAlert) []*DependabotAlert {
+	if in == nil {
+		return nil
+	}
+	out := make([]*DependabotAlert, len(in))
+	for i, x := range in {
+		out[i] = cloneDependabotAlert(x)
+	}
+	return out
+}
+
+func snapshotDiscussions(in []*Discussion) []*Discussion {
+	if in == nil {
+		return nil
+	}
+	out := make([]*Discussion, len(in))
+	for i, x := range in {
+		out[i] = cloneDiscussion(x)
+	}
+	return out
+}
+
+func snapshotEnterpriseTeams(in []*EnterpriseTeam) []*EnterpriseTeam {
+	if in == nil {
+		return nil
+	}
+	out := make([]*EnterpriseTeam, len(in))
+	for i, x := range in {
+		out[i] = cloneEnterpriseTeam(x)
+	}
+	return out
+}
+
+func snapshotOrgInvitations(in []*OrgInvitation) []*OrgInvitation {
+	if in == nil {
+		return nil
+	}
+	out := make([]*OrgInvitation, len(in))
+	for i, x := range in {
+		out[i] = cloneOrgInvitation(x)
+	}
+	return out
+}
+
+func snapshotPackages(in []*Package) []*Package {
+	if in == nil {
+		return nil
+	}
+	out := make([]*Package, len(in))
+	for i, x := range in {
+		out[i] = clonePackage(x)
+	}
+	return out
+}
+
+func snapshotPackageVersions(in []*PackageVersion) []*PackageVersion {
+	if in == nil {
+		return nil
+	}
+	out := make([]*PackageVersion, len(in))
+	for i, x := range in {
+		out[i] = clonePackageVersion(x)
+	}
+	return out
+}
+
+func snapshotSecretScanningAlerts(in []*SecretScanningAlert) []*SecretScanningAlert {
+	if in == nil {
+		return nil
+	}
+	out := make([]*SecretScanningAlert, len(in))
+	for i, x := range in {
+		out[i] = cloneSecretScanningAlert(x)
+	}
+	return out
+}
+
+func snapshotReviews(in []*PullRequestReview) []*PullRequestReview {
+	if in == nil {
+		return nil
+	}
+	out := make([]*PullRequestReview, len(in))
+	for i, x := range in {
+		out[i] = cloneReview(x)
+	}
+	return out
+}
+
+func snapshotEnterpriseCodeSecurityConfigs(in []*EnterpriseCodeSecurityConfiguration) []*EnterpriseCodeSecurityConfiguration {
+	if in == nil {
+		return nil
+	}
+	out := make([]*EnterpriseCodeSecurityConfiguration, len(in))
+	for i, x := range in {
+		out[i] = cloneEnterpriseCodeSecurityConfig(x)
+	}
+	return out
+}
+
 // RenameRepo renames owner/name to owner/newName, moving every map keyed by
 // the repo full name and updating embedded repo-name strings. It returns true
 // on success.
+// RenameRepo renames owner/name to owner/newName, moving its git bytes. For
+// filesystem and in-memory storage the move is constant-time and stays under the
+// store lock; for S3 the object-prefix copy is slow, so it runs outside the lock
+// behind a target reservation and a crash-recoverable intent (STORE-013).
 func (st *Store) RenameRepo(owner, name, newName string) bool {
+	if st.renameNeedsSlowMove() {
+		return st.renameRepoS3(owner, name, newName)
+	}
+	return st.renameRepoUnderLock(owner, name, newName)
+}
+
+func (st *Store) renameRepoUnderLock(owner, name, newName string) bool {
 	st.mu.Lock()
 	defer st.mu.Unlock()
 
@@ -449,6 +689,117 @@ func (st *Store) RenameRepo(owner, name, newName string) bool {
 	}
 
 	return true
+}
+
+// renameRepoS3 performs a rename whose object-prefix copy is too slow to hold
+// the store lock. It reserves the target name and records a rename intent under
+// the lock, copies the object graph outside the lock (both prefixes coexist, so
+// old-name readers keep working), swaps the metadata under the lock, then purges
+// the old prefix outside the lock. A crash at any point is finished by
+// finishInterruptedRenames.
+func (st *Store) renameRepoS3(owner, name, newName string) bool {
+	oldFull := owner + "/" + name
+	newFull := owner + "/" + newName
+
+	st.mu.Lock()
+	if oldFull == newFull {
+		st.mu.Unlock()
+		return true
+	}
+	repo, ok := st.ReposByName[oldFull]
+	if !ok {
+		st.mu.Unlock()
+		return false
+	}
+	if st.pendingRepoCreations == nil {
+		st.pendingRepoCreations = make(map[string]bool)
+	}
+	if st.ReposByName[newFull] != nil || st.pendingRepoCreations[newFull] {
+		st.mu.Unlock()
+		return false
+	}
+	repoID := repo.ID
+	st.pendingRepoCreations[newFull] = true
+	intent := pendingRename{From: oldFull, To: newFull, StartedAt: st.currentTime()}
+	if err := st.persist.Put(pendingRenamesBucket, pendingRepoRenameKey(newFull), intent); err != nil {
+		delete(st.pendingRepoCreations, newFull)
+		st.mu.Unlock()
+		st.logger.Error().Str("from", oldFull).Str("to", newFull).Err(err).Msg("rename repo: record intent failed")
+		return false
+	}
+	st.mu.Unlock()
+
+	// Outside the lock: copy the object graph. The source stays intact, so a
+	// reader resolving the old name during the copy still finds its bytes.
+	if err := st.copyRepoPrefixBytes(oldFull, newFull); err != nil {
+		st.abortRenameReservation(newFull)
+		st.logger.Error().Str("from", oldFull).Str("to", newFull).Err(err).Msg("rename repo: copy object prefix failed")
+		return false
+	}
+
+	// Re-lock and re-validate: the repo must still be the same one at the old
+	// name (a concurrent delete or competing rename may have moved it).
+	st.mu.Lock()
+	live := st.Repos[repoID]
+	if live == nil || live.FullName != oldFull || (st.ReposByName[newFull] != nil && st.ReposByName[newFull] != live) {
+		st.mu.Unlock()
+		st.abortRenameReservation(newFull)
+		return false
+	}
+	stor := st.GitStorages[oldFull]
+	if stor != nil && repoGitStorageIsPathBound() {
+		reopened, err := openOrInitGitStorage(context.Background(), newFull)
+		if err != nil {
+			st.mu.Unlock()
+			st.abortRenameReservation(newFull)
+			st.logger.Error().Str("from", oldFull).Str("to", newFull).Err(err).Msg("rename repo: reopen git storage failed")
+			return false
+		}
+		stor = reopened
+	}
+
+	live.Name = newName
+	live.FullName = newFull
+	live.UpdatedAt = st.currentTime()
+	st.ReposByName[newFull] = live
+	delete(st.ReposByName, oldFull)
+	if stor != nil {
+		st.GitStorages[newFull] = stor
+		delete(st.GitStorages, oldFull)
+	}
+	batch := newPersistBatch(st.persist)
+	batch.Put("repos", strconv.Itoa(live.ID), live)
+	st.moveRepoKeyLocked(batch, oldFull, newFull)
+	if err := batch.Commit(); err != nil {
+		panic(&persistenceFailure{op: "batch", bucket: "repos", err: err})
+	}
+	delete(st.pendingRepoCreations, newFull)
+	st.mu.Unlock()
+
+	// The metadata now points at the new name, so the old prefix is unreferenced.
+	// Purge it, then clear the intent; a crash before either is finished by
+	// recovery. Keep the intent if the purge fails so recovery can retry it.
+	if err := st.deleteRepoPrefixBytes(oldFull); err != nil {
+		st.logger.Warn().Str("from", oldFull).Str("to", newFull).Err(err).Msg("rename repo: purge old object prefix deferred to recovery")
+		return true
+	}
+	if err := st.persist.Delete(pendingRenamesBucket, pendingRepoRenameKey(newFull)); err != nil {
+		st.logger.Warn().Str("to", newFull).Err(err).Msg("rename repo: clear intent deferred to recovery")
+	}
+	return true
+}
+
+// abortRenameReservation unwinds a rename that did not publish: it drops the
+// target reservation, purges the (partial or unpublished) new-name copy, and
+// clears the intent — keeping the intent for recovery if the purge fails.
+func (st *Store) abortRenameReservation(newFull string) {
+	st.mu.Lock()
+	delete(st.pendingRepoCreations, newFull)
+	st.mu.Unlock()
+	if err := st.deleteRepoPrefixBytes(newFull); err != nil {
+		return // leave the intent for finishInterruptedRenames
+	}
+	_ = st.persist.Delete(pendingRenamesBucket, pendingRepoRenameKey(newFull))
 }
 
 // DeleteRepo removes a repository, its cascade and its bytes. The metadata
@@ -1099,6 +1450,72 @@ func deleteRepoGitStorage(fullName string) error {
 	return nil
 }
 
+// renameNeedsSlowMove reports whether a rename must move its object bytes
+// through a slow backend (S3 — filesystem and in-memory moves are constant-time),
+// in which case RenameRepo copies outside the store lock. A test seam forces the
+// slow path without a live S3 backend.
+func (st *Store) renameNeedsSlowMove() bool {
+	if st.repoPrefixCopy != nil {
+		return true
+	}
+	return IsS3GitStorage() && GitDataDir() == ""
+}
+
+// copyRepoPrefixBytes/deleteRepoPrefixBytes run the slow object-store prefix
+// moves through the test seam when set, else the real S3 helpers.
+func (st *Store) copyRepoPrefixBytes(oldFull, newFull string) error {
+	if st.repoPrefixCopy != nil {
+		return st.repoPrefixCopy(oldFull, newFull)
+	}
+	return copyRepoGitStorageS3(oldFull, newFull)
+}
+
+func (st *Store) deleteRepoPrefixBytes(fullName string) error {
+	if st.repoPrefixDelete != nil {
+		return st.repoPrefixDelete(fullName)
+	}
+	return deleteRepoGitStorageS3(fullName)
+}
+
+// copyRepoGitStorageS3 copies an S3 object prefix without deleting the source.
+func copyRepoGitStorageS3(oldFull, newFull string) error {
+	if err := validateRepoStorageFullName(oldFull); err != nil {
+		return err
+	}
+	if err := validateRepoStorageFullName(newFull); err != nil {
+		return err
+	}
+	s3fs, err := getS3FS(context.Background())
+	if err != nil {
+		return fmt.Errorf("resolve S3 git storage: %w", err)
+	}
+	if s3fs == nil {
+		return nil
+	}
+	if err := s3fs.copyRepoPrefix(oldFull, newFull); err != nil {
+		return fmt.Errorf("copy S3 object prefix: %w", err)
+	}
+	return nil
+}
+
+// deleteRepoGitStorageS3 purges an S3 object prefix (no filesystem side effects).
+func deleteRepoGitStorageS3(fullName string) error {
+	if err := validateRepoStorageFullName(fullName); err != nil {
+		return err
+	}
+	s3fs, err := getS3FS(context.Background())
+	if err != nil {
+		return fmt.Errorf("resolve S3 git storage: %w", err)
+	}
+	if s3fs == nil {
+		return nil
+	}
+	if err := s3fs.deleteRepoPrefix(fullName); err != nil {
+		return fmt.Errorf("purge S3 object prefix: %w", err)
+	}
+	return nil
+}
+
 func (st *Store) deleteRepoIDReferencesLocked(batch *persistBatch, repoID int) {
 	delete(st.RepoImports, repoID)
 	delete(st.DependencySnapshots, repoID)
@@ -1493,7 +1910,7 @@ func (st *Store) ListForks(sourceRepoID int, opts RepoListOptions) []*Repo {
 			repos = append(repos, r)
 		}
 	}
-	return filterSortPaginateRepos(repos, opts)
+	return snapshotRepos(filterSortPaginateRepos(repos, opts))
 }
 
 // CountForks returns how many repositories were forked from the given
@@ -1522,7 +1939,7 @@ func (st *Store) ListReposByOwner(login string) []*Repo {
 			repos = append(repos, r)
 		}
 	}
-	return repos
+	return snapshotRepos(repos)
 }
 
 // RepoListOptions controls filtering, sorting and pagination for repo list
@@ -1580,7 +1997,7 @@ func (st *Store) ListReposForOrg(org string, opts RepoListOptions) []*Repo {
 		}
 		repos = append(repos, r)
 	}
-	return filterSortPaginateRepos(repos, opts)
+	return snapshotRepos(filterSortPaginateRepos(repos, opts))
 }
 
 // ListReposForUser returns public repos owned by a user, filtered/sorted/paged.
@@ -1602,7 +2019,7 @@ func (st *Store) ListReposForUser(user *User, opts RepoListOptions) []*Repo {
 		}
 		repos = append(repos, r)
 	}
-	return filterSortPaginateRepos(repos, opts)
+	return snapshotRepos(filterSortPaginateRepos(repos, opts))
 }
 
 // ListReposForAuthUser returns repos the authenticated user can access.
@@ -1677,7 +2094,7 @@ func (st *Store) ListReposForAuthUser(user *User, opts RepoListOptions) []*Repo 
 		}
 	}
 
-	return filterSortPaginateRepos(repos, opts)
+	return snapshotRepos(filterSortPaginateRepos(repos, opts))
 }
 
 func filterSortPaginateRepos(repos []*Repo, opts RepoListOptions) []*Repo {
@@ -2093,7 +2510,7 @@ func (st *Store) ListRepoDeployKeys(repoID int) []*RepoDeployKey {
 		out = append(out, k)
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].ID < out[j].ID })
-	return out
+	return snapshotSlice(out)
 }
 
 // GetRepoDeployKey returns a deploy key by ID.
@@ -2230,7 +2647,16 @@ func (st *Store) GetRepoSubscription(userID int, repoID int) *RepoSubscription {
 	st.mu.RLock()
 	defer st.mu.RUnlock()
 
-	return st.RepoSubscriptions[repoSubscriptionKey(userID, repoID)]
+	// SetRepoSubscription swaps in a fresh row rather than mutating in place, so
+	// this is already race-free; return a detached value copy anyway (the struct
+	// has no reference fields) to keep the getter safe against a future in-place
+	// writer.
+	sub := st.RepoSubscriptions[repoSubscriptionKey(userID, repoID)]
+	if sub == nil {
+		return nil
+	}
+	clone := *sub
+	return &clone
 }
 
 // ListRepoSubscriptionsForUser returns the repositories subscribed by userID.
@@ -2252,7 +2678,7 @@ func (st *Store) ListRepoSubscriptionsForUser(userID int) []*Repo {
 		}
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].ID < out[j].ID })
-	return out
+	return snapshotRepos(out)
 }
 
 // TransferRepo transfers ownership of a repository to a new owner account.

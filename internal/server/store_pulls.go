@@ -187,17 +187,49 @@ func (st *Store) unindexPullLocked(pr *PullRequest) {
 }
 
 // GetPullRequest returns a pull request by global ID.
+// clonePullRequest returns a deep copy safe to hand outside the store lock
+// (STORE-021): the four ID slices plus ClosedAt/MergedAt are the reference
+// fields. PR writes go through the keyed UpdatePullRequest(id, fn); the getter's
+// callers only read.
+func clonePullRequest(pr *PullRequest) *PullRequest {
+	if pr == nil {
+		return nil
+	}
+	clone := *pr
+	if pr.AssigneeIDs != nil {
+		clone.AssigneeIDs = append([]int(nil), pr.AssigneeIDs...)
+	}
+	if pr.LabelIDs != nil {
+		clone.LabelIDs = append([]int(nil), pr.LabelIDs...)
+	}
+	if pr.RequestedReviewerIDs != nil {
+		clone.RequestedReviewerIDs = append([]int(nil), pr.RequestedReviewerIDs...)
+	}
+	if pr.RequestedTeamIDs != nil {
+		clone.RequestedTeamIDs = append([]int(nil), pr.RequestedTeamIDs...)
+	}
+	if pr.ClosedAt != nil {
+		closed := *pr.ClosedAt
+		clone.ClosedAt = &closed
+	}
+	if pr.MergedAt != nil {
+		merged := *pr.MergedAt
+		clone.MergedAt = &merged
+	}
+	return &clone
+}
+
 func (st *Store) GetPullRequest(id int) *PullRequest {
 	st.mu.RLock()
 	defer st.mu.RUnlock()
-	return st.PullRequests[id]
+	return clonePullRequest(st.PullRequests[id])
 }
 
 // GetPullRequestByNumber returns a pull request by repo ID and number.
 func (st *Store) GetPullRequestByNumber(repoID, number int) *PullRequest {
 	st.mu.RLock()
 	defer st.mu.RUnlock()
-	return st.PullsByRepo[repoID][number]
+	return clonePullRequest(st.PullsByRepo[repoID][number])
 }
 
 // ListPullRequests returns pull requests for a repository, optionally filtered by state.
@@ -219,7 +251,7 @@ func (st *Store) ListPullRequests(repoID int, state string) []*PullRequest {
 		}
 		prs = append(prs, pr)
 	}
-	return prs
+	return snapshotPullRequests(prs)
 }
 
 // UpdatePullRequest applies a mutation function to a pull request.
@@ -456,11 +488,30 @@ func (st *Store) CreatePullRequestReview(repoKey string, pullNumber int, userID 
 	return st.createPRReviewLocked(pr.ID, userID, state, body)
 }
 
+// cloneReview returns a copy safe to hand outside the store lock (STORE-021):
+// SubmittedAt and DismissedAt are the only reference fields. Review writes go
+// through the keyed Update/Submit/Dismiss methods.
+func cloneReview(r *PullRequestReview) *PullRequestReview {
+	if r == nil {
+		return nil
+	}
+	clone := *r
+	if r.SubmittedAt != nil {
+		submitted := *r.SubmittedAt
+		clone.SubmittedAt = &submitted
+	}
+	if r.DismissedAt != nil {
+		dismissed := *r.DismissedAt
+		clone.DismissedAt = &dismissed
+	}
+	return &clone
+}
+
 // GetPullRequestReview returns a review by global ID.
 func (st *Store) GetPullRequestReview(id int) *PullRequestReview {
 	st.mu.RLock()
 	defer st.mu.RUnlock()
-	return st.PRReviews[id]
+	return cloneReview(st.PRReviews[id])
 }
 
 // ListPullRequestReviews returns all reviews for a repo/PR number.
@@ -477,7 +528,7 @@ func (st *Store) ListPullRequestReviews(repoKey string, pullNumber int) []*PullR
 	}
 	reviews := make([]*PullRequestReview, len(st.PRReviewsByPR[pr.ID]))
 	copy(reviews, st.PRReviewsByPR[pr.ID])
-	return reviews
+	return snapshotReviews(reviews)
 }
 
 // UpdatePullRequestReview updates a review's body.
@@ -718,5 +769,5 @@ func (st *Store) ListPRReviews(prID int) []*PullRequestReview {
 	defer st.mu.RUnlock()
 	reviews := make([]*PullRequestReview, len(st.PRReviewsByPR[prID]))
 	copy(reviews, st.PRReviewsByPR[prID])
-	return reviews
+	return snapshotReviews(reviews)
 }

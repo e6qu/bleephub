@@ -31,7 +31,7 @@ describe("DataTable", () => {
     expect(rows).toHaveLength(3);
 
     const names = Array.from(rows).map(
-      (row) => row.querySelectorAll("td")[0].textContent,
+      (row) => row.querySelectorAll("td")[0]!.textContent,
     );
     expect(names).toContain("Alice");
     expect(names).toContain("Bob");
@@ -44,19 +44,19 @@ describe("DataTable", () => {
     const headers = container.querySelectorAll("th");
     // Sort is on a child <button> for keyboard activation; the <th>
     // wrapper carries aria-sort.
-    const ageSortButton = headers[1].querySelector("button")!;
+    const ageSortButton = headers[1]!.querySelector("button")!;
 
     fireEvent.click(ageSortButton);
     let rows = container.querySelectorAll("tbody tr");
     let ageValues = Array.from(rows).map(
-      (row) => row.querySelectorAll("td")[1].textContent,
+      (row) => row.querySelectorAll("td")[1]!.textContent,
     );
     expect(ageValues).toEqual(["35", "30", "25"]);
 
     fireEvent.click(ageSortButton);
     rows = container.querySelectorAll("tbody tr");
     ageValues = Array.from(rows).map(
-      (row) => row.querySelectorAll("td")[1].textContent,
+      (row) => row.querySelectorAll("td")[1]!.textContent,
     );
     expect(ageValues).toEqual(["25", "30", "35"]);
   });
@@ -71,7 +71,7 @@ describe("DataTable", () => {
 
     const rows = container.querySelectorAll("tbody tr");
     expect(rows).toHaveLength(1);
-    expect(rows[0].querySelectorAll("td")[0].textContent).toBe("Alice");
+    expect(rows[0]!.querySelectorAll("td")[0]!.textContent).toBe("Alice");
   });
 
   it("has accessible label on filter input", () => {
@@ -87,7 +87,7 @@ describe("DataTable", () => {
     );
 
     const rows = container.querySelectorAll("tbody tr");
-    fireEvent.click(rows[0]);
+    fireEvent.click(rows[0]!);
     expect(onClick).toHaveBeenCalledTimes(1);
     expect(onClick).toHaveBeenCalledWith(expect.objectContaining({ name: expect.any(String) }));
 

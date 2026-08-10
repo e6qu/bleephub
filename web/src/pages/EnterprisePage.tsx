@@ -176,7 +176,7 @@ function EnterpriseTeamDialog({
   team,
   onClose,
 }: {
-  team?: GithubEnterpriseTeam;
+  team?: GithubEnterpriseTeam | undefined;
   onClose: () => void;
 }) {
   const qc = useQueryClient();

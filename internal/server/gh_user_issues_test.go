@@ -12,14 +12,14 @@ func TestAuthenticatedUserIssues(t *testing.T) {
 	repoKey := srv.createTestRepo(t)
 
 	// An issue assigned to the user (default filter=assigned must return it).
-	resp := srv.post(t, "/api/v3/repos/"+repoKey+"/issues", defaultToken, map[string]interface{}{
+	resp := srv.post(t, repoKey.path()+"/issues", defaultToken, map[string]interface{}{
 		"title":     "assigned to target user",
 		"assignees": []string{user.Login},
 	})
 	decodeJSONWithStatus(t, resp, 201)
 
 	// An issue created by the user (filter=created).
-	resp = srv.post(t, "/api/v3/repos/"+repoKey+"/issues", token, map[string]interface{}{
+	resp = srv.post(t, repoKey.path()+"/issues", token, map[string]interface{}{
 		"title": "created by target user",
 	})
 	decodeJSONWithStatus(t, resp, 201)
@@ -36,7 +36,7 @@ func TestAuthenticatedUserIssues(t *testing.T) {
 	}
 	// Cross-repo listings carry the repository member.
 	repoJSON, _ := issues[0]["repository"].(map[string]interface{})
-	if repoJSON == nil || repoJSON["full_name"] != repoKey {
+	if repoJSON == nil || repoJSON["full_name"] != repoKey.fullName() {
 		t.Fatalf("issue repository = %v", issues[0]["repository"])
 	}
 
@@ -83,17 +83,17 @@ func TestAuthenticatedUserIssuesLabelFilter(t *testing.T) {
 	token := srv.store.CreateToken(user.ID, "repo").Value
 	repoKey := srv.createTestRepo(t)
 
-	resp := srv.post(t, "/api/v3/repos/"+repoKey+"/labels", defaultToken, map[string]interface{}{
+	resp := srv.post(t, repoKey.path()+"/labels", defaultToken, map[string]interface{}{
 		"name": "wanted-label", "color": "d73a4a",
 	})
 	decodeJSONWithStatus(t, resp, 201)
 
-	resp = srv.post(t, "/api/v3/repos/"+repoKey+"/issues", token, map[string]interface{}{
+	resp = srv.post(t, repoKey.path()+"/issues", token, map[string]interface{}{
 		"title":  "labelled issue",
 		"labels": []string{"wanted-label"},
 	})
 	decodeJSONWithStatus(t, resp, 201)
-	resp = srv.post(t, "/api/v3/repos/"+repoKey+"/issues", token, map[string]interface{}{
+	resp = srv.post(t, repoKey.path()+"/issues", token, map[string]interface{}{
 		"title": "unlabelled issue",
 	})
 	decodeJSONWithStatus(t, resp, 201)

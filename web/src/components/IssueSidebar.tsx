@@ -66,7 +66,7 @@ export function IssueSidebar({
 }: {
   owner: string;
   repo: string;
-  ownerType?: string;
+  ownerType?: string | undefined;
   number: number;
   kind: "issue" | "pr";
   assignees: string[];

@@ -9,7 +9,7 @@ func TestRepoVulnerabilityAlerts_CheckToggle(t *testing.T) {
 	t.Parallel()
 	s := newIsolatedServer(t)
 	repo := s.createTestRepo(t)
-	path := "/api/v3/repos/" + repo + "/vulnerability-alerts"
+	path := repo.path() + "/vulnerability-alerts"
 
 	resp := s.get(t, path, defaultToken)
 	requireStatus(t, resp, 404)
@@ -29,7 +29,7 @@ func TestRepoAutomatedSecurityFixes_Check(t *testing.T) {
 	t.Parallel()
 	s := newIsolatedServer(t)
 	repo := s.createTestRepo(t)
-	path := "/api/v3/repos/" + repo + "/automated-security-fixes"
+	path := repo.path() + "/automated-security-fixes"
 
 	resp := s.get(t, path, defaultToken)
 	data := decodeJSONWithStatus(t, resp, 200)
@@ -50,7 +50,7 @@ func TestRepoPrivateVulnerabilityReporting_Check(t *testing.T) {
 	t.Parallel()
 	s := newIsolatedServer(t)
 	repo := s.createTestRepo(t)
-	path := "/api/v3/repos/" + repo + "/private-vulnerability-reporting"
+	path := repo.path() + "/private-vulnerability-reporting"
 
 	resp := s.get(t, path, defaultToken)
 	data := decodeJSONWithStatus(t, resp, 200)
@@ -71,7 +71,7 @@ func TestRepoInteractionLimits_RoundTrip(t *testing.T) {
 	t.Parallel()
 	s := newIsolatedServer(t)
 	repo := s.createTestRepo(t)
-	path := "/api/v3/repos/" + repo + "/interaction-limits"
+	path := repo.path() + "/interaction-limits"
 
 	// No restriction in effect → empty object.
 	resp := s.get(t, path, defaultToken)

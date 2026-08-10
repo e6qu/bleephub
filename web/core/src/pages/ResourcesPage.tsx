@@ -1,4 +1,4 @@
-import { createColumnHelper } from "../components/DataTable.js";
+import { createColumnHelper, type DataTableColumn } from "../components/DataTable.js";
 import { useResources } from "../hooks/index.js";
 import { DataTable } from "../components/DataTable.js";
 import { PageHeading } from "../components/PageHeading.js";
@@ -11,8 +11,7 @@ import type { ResourceEntry } from "../api/index.js";
 
 const col = createColumnHelper<ResourceEntry>();
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-const columns: any[] = [
+const columns: DataTableColumn<ResourceEntry>[] = [
   col.accessor("containerId", {
     header: "Container",
     cell: (info) => (

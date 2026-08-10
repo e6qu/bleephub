@@ -81,7 +81,7 @@ describe("App session states", () => {
     render(<App />);
     // Called with no explicit argument: the module's bounded default applies.
     expect(mockedProbe).toHaveBeenCalledTimes(1);
-    expect(mockedProbe.mock.calls[0]).toHaveLength(0);
+    expect(mockedProbe.mock.calls[0]!).toHaveLength(0);
   });
 
   it("handles a background 401 inside the router and preserves the return location", async () => {

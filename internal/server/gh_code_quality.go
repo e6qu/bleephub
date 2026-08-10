@@ -121,7 +121,7 @@ func (st *Store) ListCodeQualityFindings(repoKey, state string) []*CodeQualityFi
 		}
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].Number < out[j].Number })
-	return out
+	return snapshotSlice(out)
 }
 
 func (st *Store) GetCodeQualityFinding(repoKey string, number int) *CodeQualityFinding {

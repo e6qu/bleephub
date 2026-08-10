@@ -352,7 +352,7 @@ func (st *Store) ListCodespacesByOwner(ownerLogin string) []*Codespace {
 		}
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].ID > out[j].ID })
-	return out
+	return snapshotCodespaces(out)
 }
 
 // ListCodespacesByRepo returns all codespaces for a repository.
@@ -366,7 +366,7 @@ func (st *Store) ListCodespacesByRepo(repoKey string) []*Codespace {
 		}
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].ID > out[j].ID })
-	return out
+	return snapshotCodespaces(out)
 }
 
 // DeleteCodespace stops and removes the backing container and deletes the record.
@@ -633,7 +633,7 @@ func (st *Store) ListCodespaceSecrets(scope string) []*CodespaceSecret {
 	for i, n := range names {
 		out[i] = m[n]
 	}
-	return out
+	return snapshotCodespaceSecrets(out)
 }
 
 // DeleteCodespaceSecret removes a secret.

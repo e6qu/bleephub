@@ -10,8 +10,10 @@ import (
 )
 
 func TestLiveDependabot_AlertsAndSecrets(t *testing.T) {
-	repo := createRepoWriteRepo(t, false)
-	created := seedDependabotAlert(t, "admin", repo, map[string]any{
+	t.Parallel()
+	s := newIsolatedServer(t)
+	repo := s.createRepoWriteRepo(t, false)
+	created := s.seedDependabotAlert(t, "admin", repo, map[string]any{
 		"package_name":             "live-dependabot-lodash",
 		"package_ecosystem":        "npm",
 		"manifest_path":            "package-lock.json",
@@ -23,7 +25,7 @@ func TestLiveDependabot_AlertsAndSecrets(t *testing.T) {
 	})
 	number := int(created["number"].(float64))
 
-	resp := authedGet(t, "/api/v3/repos/admin/"+repo+"/dependabot/alerts")
+	resp := s.authedGet(t, "/api/v3/repos/admin/"+repo+"/dependabot/alerts")
 	if resp.StatusCode != http.StatusOK {
 		body, _ := io.ReadAll(resp.Body)
 		resp.Body.Close()
@@ -31,7 +33,7 @@ func TestLiveDependabot_AlertsAndSecrets(t *testing.T) {
 	}
 	resp.Body.Close()
 
-	resp = authedGet(t, "/api/v3/repos/admin/"+repo+"/dependabot/alerts/"+itoa(number))
+	resp = s.authedGet(t, "/api/v3/repos/admin/"+repo+"/dependabot/alerts/"+itoa(number))
 	if resp.StatusCode != http.StatusOK {
 		body, _ := io.ReadAll(resp.Body)
 		resp.Body.Close()
@@ -40,7 +42,7 @@ func TestLiveDependabot_AlertsAndSecrets(t *testing.T) {
 	resp.Body.Close()
 
 	patch, _ := json.Marshal(map[string]any{"state": "dismissed", "dismissed_reason": "fix_started"})
-	req, _ := http.NewRequest("PATCH", testBaseURL+"/api/v3/repos/admin/"+repo+"/dependabot/alerts/"+itoa(number), bytes.NewReader(patch))
+	req, _ := http.NewRequest("PATCH", s.baseURL+"/api/v3/repos/admin/"+repo+"/dependabot/alerts/"+itoa(number), bytes.NewReader(patch))
 	req.Header.Set("Authorization", "Bearer "+defaultToken)
 	req.Header.Set("Content-Type", "application/json")
 	resp, err := http.DefaultClient.Do(req)
@@ -55,7 +57,7 @@ func TestLiveDependabot_AlertsAndSecrets(t *testing.T) {
 	resp.Body.Close()
 
 	// Repo secret public-key + create
-	resp = authedGet(t, "/api/v3/repos/admin/"+repo+"/dependabot/secrets/public-key")
+	resp = s.authedGet(t, "/api/v3/repos/admin/"+repo+"/dependabot/secrets/public-key")
 	if resp.StatusCode != http.StatusOK {
 		body, _ := io.ReadAll(resp.Body)
 		resp.Body.Close()
@@ -72,7 +74,7 @@ func TestLiveDependabot_AlertsAndSecrets(t *testing.T) {
 		"encrypted_value": base64.StdEncoding.EncodeToString([]byte("live-encrypted")),
 		"key_id":          keyID,
 	})
-	req, _ = http.NewRequest("PUT", testBaseURL+"/api/v3/repos/admin/"+repo+"/dependabot/secrets/LIVE_SECRET", bytes.NewReader(put))
+	req, _ = http.NewRequest("PUT", s.baseURL+"/api/v3/repos/admin/"+repo+"/dependabot/secrets/LIVE_SECRET", bytes.NewReader(put))
 	req.Header.Set("Authorization", "Bearer "+defaultToken)
 	req.Header.Set("Content-Type", "application/json")
 	resp, err = http.DefaultClient.Do(req)
@@ -86,7 +88,7 @@ func TestLiveDependabot_AlertsAndSecrets(t *testing.T) {
 	}
 	resp.Body.Close()
 
-	resp = authedGet(t, "/api/v3/repos/admin/"+repo+"/dependabot/secrets")
+	resp = s.authedGet(t, "/api/v3/repos/admin/"+repo+"/dependabot/secrets")
 	if resp.StatusCode != http.StatusOK {
 		body, _ := io.ReadAll(resp.Body)
 		resp.Body.Close()
@@ -95,14 +97,14 @@ func TestLiveDependabot_AlertsAndSecrets(t *testing.T) {
 	resp.Body.Close()
 
 	// Org secret
-	admin := testServer.store.UsersByLogin["admin"]
-	org := testServer.store.CreateOrg(admin, "live-dependabot-org", "Live Dependabot Org", "")
+	admin := s.store.UsersByLogin["admin"]
+	org := s.store.CreateOrg(admin, "live-dependabot-org", "Live Dependabot Org", "")
 	if org == nil {
 		t.Fatal("create org failed")
 	}
-	orgRepo := testServer.store.CreateOrgRepo(org, admin, "live-dependabot-org-repo", "", false)
+	orgRepo := s.store.CreateOrgRepo(org, admin, "live-dependabot-org-repo", "", false)
 
-	resp = authedGet(t, "/api/v3/orgs/live-dependabot-org/dependabot/secrets/public-key")
+	resp = s.authedGet(t, "/api/v3/orgs/live-dependabot-org/dependabot/secrets/public-key")
 	if resp.StatusCode != http.StatusOK {
 		body, _ := io.ReadAll(resp.Body)
 		resp.Body.Close()
@@ -116,7 +118,7 @@ func TestLiveDependabot_AlertsAndSecrets(t *testing.T) {
 		"visibility":              "selected",
 		"selected_repository_ids": []int{orgRepo.ID},
 	})
-	req, _ = http.NewRequest("PUT", testBaseURL+"/api/v3/orgs/live-dependabot-org/dependabot/secrets/LIVE_ORG_SECRET", bytes.NewReader(putOrg))
+	req, _ = http.NewRequest("PUT", s.baseURL+"/api/v3/orgs/live-dependabot-org/dependabot/secrets/LIVE_ORG_SECRET", bytes.NewReader(putOrg))
 	req.Header.Set("Authorization", "Bearer "+defaultToken)
 	req.Header.Set("Content-Type", "application/json")
 	resp, err = http.DefaultClient.Do(req)
@@ -130,7 +132,7 @@ func TestLiveDependabot_AlertsAndSecrets(t *testing.T) {
 	}
 	resp.Body.Close()
 
-	resp = authedGet(t, "/api/v3/orgs/live-dependabot-org/dependabot/secrets/LIVE_ORG_SECRET/repositories")
+	resp = s.authedGet(t, "/api/v3/orgs/live-dependabot-org/dependabot/secrets/LIVE_ORG_SECRET/repositories")
 	if resp.StatusCode != http.StatusOK {
 		body, _ := io.ReadAll(resp.Body)
 		resp.Body.Close()

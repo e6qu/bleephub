@@ -95,7 +95,15 @@ func (st *Store) CreateProjectClassic(repo *Repo, creatorID int, name, body, sta
 func (st *Store) GetProjectClassic(id int) *ProjectClassic {
 	st.mu.RLock()
 	defer st.mu.RUnlock()
-	return st.ProjectClassic[id]
+	// A copy so a reader can't mutate the stored project through the getter
+	// (STORE-021); ProjectClassic is all-value. Edits go through
+	// UpdateProjectClassic, which re-fetches the live row by id.
+	proj := st.ProjectClassic[id]
+	if proj == nil {
+		return nil
+	}
+	clone := *proj
+	return &clone
 }
 
 // ListProjectClassicsForRepo returns all projects in a repo, newest first.
@@ -109,25 +117,34 @@ func (st *Store) ListProjectClassicsForRepo(repoKey string) []*ProjectClassic {
 		}
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].ID > out[j].ID })
-	return out
+	return snapshotSlice(out)
 }
 
 // UpdateProjectClassic applies updates to a project.
+// UpdateProjectClassic applies the given field updates. `proj` now comes from
+// GetProjectClassic, which returns a detached clone, so the mutation is applied
+// to the LIVE row (re-fetched by id) and a fresh snapshot is returned for the
+// caller to render — never the live pointer (STORE-021).
 func (st *Store) UpdateProjectClassic(proj *ProjectClassic, name, body, state *string) *ProjectClassic {
 	st.mu.Lock()
 	defer st.mu.Unlock()
+	live := st.ProjectClassic[proj.ID]
+	if live == nil {
+		return nil
+	}
 	if name != nil {
-		proj.Name = *name
+		live.Name = *name
 	}
 	if body != nil {
-		proj.Body = *body
+		live.Body = *body
 	}
 	if state != nil {
-		proj.State = *state
+		live.State = *state
 	}
-	proj.UpdatedAt = st.currentTime()
-	st.persistProjectClassic(proj)
-	return proj
+	live.UpdatedAt = st.currentTime()
+	st.persistProjectClassic(live)
+	clone := *live
+	return &clone
 }
 
 // DeleteProjectClassic deletes a project and all its columns and cards.
@@ -192,7 +209,15 @@ func (st *Store) CreateProjectColumn(projectID int, name string) *ProjectColumn 
 func (st *Store) GetProjectColumn(id int) *ProjectColumn {
 	st.mu.RLock()
 	defer st.mu.RUnlock()
-	return st.ProjectColumns[id]
+	// A copy so a reader can't mutate the stored column through the getter
+	// (STORE-021); ProjectColumn is all-value. The Update/Move writers re-fetch
+	// the live row by id.
+	col := st.ProjectColumns[id]
+	if col == nil {
+		return nil
+	}
+	clone := *col
+	return &clone
 }
 
 // ListProjectColumns returns columns for a project in visual order.
@@ -206,17 +231,24 @@ func (st *Store) ListProjectColumns(projectID int) []*ProjectColumn {
 		}
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].Position < out[j].Position })
-	return out
+	return snapshotSlice(out)
 }
 
 // UpdateProjectColumn renames a column.
 func (st *Store) UpdateProjectColumn(col *ProjectColumn, name string) *ProjectColumn {
 	st.mu.Lock()
 	defer st.mu.Unlock()
-	col.Name = name
-	col.UpdatedAt = st.currentTime()
-	st.persistProjectColumn(col)
-	return col
+	// `col` is a detached clone from GetProjectColumn; mutate the live row and
+	// return a fresh snapshot (STORE-021).
+	live := st.ProjectColumns[col.ID]
+	if live == nil {
+		return nil
+	}
+	live.Name = name
+	live.UpdatedAt = st.currentTime()
+	st.persistProjectColumn(live)
+	clone := *live
+	return &clone
 }
 
 // DeleteProjectColumn deletes a column and all its cards.
@@ -254,6 +286,13 @@ func (st *Store) deleteProjectColumnBatchLocked(batch *persistBatch, id int) {
 func (st *Store) MoveProjectColumn(col *ProjectColumn, position string) error {
 	st.mu.Lock()
 	defer st.mu.Unlock()
+
+	// `col` is a detached clone from GetProjectColumn; operate on the live row
+	// so the position change reaches the store (STORE-021).
+	col = st.ProjectColumns[col.ID]
+	if col == nil {
+		return fmt.Errorf("column not found")
+	}
 
 	cols := make([]*ProjectColumn, 0)
 	for _, c := range st.ProjectColumns {
@@ -346,7 +385,15 @@ func (st *Store) CreateProjectCard(columnID, creatorID int, note string, issueID
 func (st *Store) GetProjectCard(id int) *ProjectCard {
 	st.mu.RLock()
 	defer st.mu.RUnlock()
-	return st.ProjectCards[id]
+	// A copy so a reader can't mutate the stored card through the getter
+	// (STORE-021); ProjectCard is all-value. The Update/Move/Convert writers
+	// re-fetch the live row by id.
+	card := st.ProjectCards[id]
+	if card == nil {
+		return nil
+	}
+	clone := *card
+	return &clone
 }
 
 // ListProjectCards returns cards in a column in visual order.
@@ -360,7 +407,7 @@ func (st *Store) ListProjectCards(columnID int) []*ProjectCard {
 		}
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].Position < out[j].Position })
-	return out
+	return snapshotSlice(out)
 }
 
 // UpdateProjectCard updates a card's note. Converting a note card to an
@@ -368,10 +415,17 @@ func (st *Store) ListProjectCards(columnID int) []*ProjectCard {
 func (st *Store) UpdateProjectCard(card *ProjectCard, note string) *ProjectCard {
 	st.mu.Lock()
 	defer st.mu.Unlock()
-	card.Note = note
-	card.UpdatedAt = st.currentTime()
-	st.persistProjectCard(card)
-	return card
+	// `card` is a detached clone from GetProjectCard; mutate the live row and
+	// return a fresh snapshot (STORE-021).
+	live := st.ProjectCards[card.ID]
+	if live == nil {
+		return nil
+	}
+	live.Note = note
+	live.UpdatedAt = st.currentTime()
+	st.persistProjectCard(live)
+	clone := *live
+	return &clone
 }
 
 // DeleteProjectCard deletes a card.
@@ -406,6 +460,13 @@ func (st *Store) deleteProjectCardBatchLocked(batch *persistBatch, id int) bool 
 func (st *Store) MoveProjectCard(card *ProjectCard, targetColumnID int, position string) error {
 	st.mu.Lock()
 	defer st.mu.Unlock()
+
+	// `card` is a detached clone from GetProjectCard; operate on the live row so
+	// the column/position change reaches the store (STORE-021).
+	card = st.ProjectCards[card.ID]
+	if card == nil {
+		return fmt.Errorf("card not found")
+	}
 
 	if targetColumnID != 0 && targetColumnID != card.ColumnID {
 		target := st.ProjectColumns[targetColumnID]
@@ -486,11 +547,18 @@ func (st *Store) MoveProjectCard(card *ProjectCard, targetColumnID int, position
 func (st *Store) ConvertProjectCardToIssue(card *ProjectCard, issueID int) *ProjectCard {
 	st.mu.Lock()
 	defer st.mu.Unlock()
-	card.Note = ""
-	card.IssueID = issueID
-	card.UpdatedAt = st.currentTime()
-	st.persistProjectCard(card)
-	return card
+	// `card` is a detached clone from GetProjectCard; mutate the live row and
+	// return a fresh snapshot (STORE-021).
+	live := st.ProjectCards[card.ID]
+	if live == nil {
+		return nil
+	}
+	live.Note = ""
+	live.IssueID = issueID
+	live.UpdatedAt = st.currentTime()
+	st.persistProjectCard(live)
+	clone := *live
+	return &clone
 }
 
 func (st *Store) persistProjectClassic(p *ProjectClassic) {

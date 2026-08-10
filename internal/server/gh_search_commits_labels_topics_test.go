@@ -8,9 +8,9 @@ import (
 
 // putTestFile creates or updates a file through the real contents API,
 // producing a real git commit with the given message.
-func putTestFile(s *isolatedServer, t *testing.T, repoKey, path, message, content string) {
+func putTestFile(s *isolatedServer, t *testing.T, repoKey repoRef, path, message, content string) {
 	t.Helper()
-	resp := s.put(t, "/api/v3/repos/"+repoKey+"/contents/"+path, defaultToken, map[string]interface{}{
+	resp := s.put(t, repoKey.path()+"/contents/"+path, defaultToken, map[string]interface{}{
 		"message": message,
 		"content": base64.StdEncoding.EncodeToString([]byte(content)),
 	})
@@ -24,7 +24,7 @@ func TestSearchCommits(t *testing.T) {
 	putTestFile(s, t, repoKey, "a.txt", "add alpha searchable-commit-marker", "alpha")
 	putTestFile(s, t, repoKey, "b.txt", "add beta unrelated", "beta")
 
-	resp := s.get(t, "/api/v3/search/commits?q=searchable-commit-marker+repo:"+repoKey, defaultToken)
+	resp := s.get(t, "/api/v3/search/commits?q=searchable-commit-marker+repo:"+repoKey.fullName(), defaultToken)
 	if resp.StatusCode != 200 {
 		resp.Body.Close()
 		t.Fatalf("search commits status = %d", resp.StatusCode)
@@ -50,7 +50,7 @@ func TestSearchCommits(t *testing.T) {
 		t.Fatalf("sha = %q", sha)
 	}
 	repoJSON, _ := item["repository"].(map[string]interface{})
-	if repoJSON == nil || repoJSON["full_name"] != repoKey {
+	if repoJSON == nil || repoJSON["full_name"] != repoKey.fullName() {
 		t.Fatalf("repository = %v", item["repository"])
 	}
 	author, _ := commit["author"].(map[string]interface{})
@@ -59,7 +59,7 @@ func TestSearchCommits(t *testing.T) {
 	}
 
 	// hash: qualifier finds the same commit by its real SHA.
-	resp = s.get(t, "/api/v3/search/commits?q=hash:"+sha+"+repo:"+repoKey, defaultToken)
+	resp = s.get(t, "/api/v3/search/commits?q=hash:"+sha+"+repo:"+repoKey.fullName(), defaultToken)
 	env = decodeJSON(t, resp)
 	if env["total_count"] != float64(1) {
 		t.Fatalf("hash search total_count = %v", env["total_count"])
@@ -77,16 +77,16 @@ func TestSearchLabels(t *testing.T) {
 	t.Parallel()
 	s := newIsolatedServer(t)
 	repoKey := s.createTestRepo(t)
-	resp := s.post(t, "/api/v3/repos/"+repoKey+"/labels", defaultToken, map[string]interface{}{
+	resp := s.post(t, repoKey.path()+"/labels", defaultToken, map[string]interface{}{
 		"name": "searchable-bug", "color": "d73a4a", "description": "Something is broken",
 	})
 	decodeJSONWithStatus(t, resp, 201)
-	resp = s.post(t, "/api/v3/repos/"+repoKey+"/labels", defaultToken, map[string]interface{}{
+	resp = s.post(t, repoKey.path()+"/labels", defaultToken, map[string]interface{}{
 		"name": "enhancement", "color": "a2eeef",
 	})
 	decodeJSONWithStatus(t, resp, 201)
 
-	repoResp := s.get(t, "/api/v3/repos/"+repoKey, defaultToken)
+	repoResp := s.get(t, repoKey.path(), defaultToken)
 	repoData := decodeJSONWithStatus(t, repoResp, 200)
 	repoID := strconv.Itoa(int(repoData["id"].(float64)))
 
@@ -125,7 +125,7 @@ func TestSearchTopics(t *testing.T) {
 	t.Parallel()
 	s := newIsolatedServer(t)
 	repoKey := s.createTestRepo(t)
-	resp := s.put(t, "/api/v3/repos/"+repoKey+"/topics", defaultToken, map[string]interface{}{
+	resp := s.put(t, repoKey.path()+"/topics", defaultToken, map[string]interface{}{
 		"names": []string{"searchable-topic-golang", "other-subject"},
 	})
 	decodeJSONWithStatus(t, resp, 200)

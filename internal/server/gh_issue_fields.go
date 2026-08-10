@@ -439,7 +439,7 @@ func (st *Store) ListIssueFields(orgLogin string) []*IssueField {
 		out = append(out, f)
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].ID < out[j].ID })
-	return out
+	return snapshotIssueFields(out)
 }
 
 // GetIssueField returns an issue field by org and ID, or nil.

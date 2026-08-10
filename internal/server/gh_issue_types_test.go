@@ -111,7 +111,7 @@ func TestIssueTypeAssignmentREST(t *testing.T) {
 	srv := newIsolatedServer(t)
 	org := srv.createTestOrg(t)
 	repoName, _ := srv.createOrgRepoForGovernance(t, org)
-	repoFullName := org + "/" + repoName
+	repoFullName := repoName.fullName()
 	created := decodeJSONWithStatus(t, srv.post(t, "/api/v3/orgs/"+org+"/issue-types", defaultToken, map[string]interface{}{
 		"name":       "Bug",
 		"is_enabled": true,
@@ -123,7 +123,7 @@ func TestIssueTypeAssignmentREST(t *testing.T) {
 		"title":         "typed issue",
 		"issue_type_id": typeID,
 	}), 201)
-	repo := srv.store.GetRepo(org, repoName)
+	repo := srv.store.GetRepo(org, repoName.name)
 	stored := srv.store.GetIssueByNumber(repo.ID, int(issue["number"].(float64)))
 	if stored == nil {
 		t.Fatal("stored issue not found")
@@ -150,7 +150,7 @@ func TestIssueTypeAssignmentRESTValidation(t *testing.T) {
 	srv := newIsolatedServer(t)
 	org := srv.createTestOrg(t)
 	repoName, _ := srv.createOrgRepoForGovernance(t, org)
-	repoFullName := org + "/" + repoName
+	repoFullName := repoName.fullName()
 	disabled := decodeJSONWithStatus(t, srv.post(t, "/api/v3/orgs/"+org+"/issue-types", defaultToken, map[string]interface{}{
 		"name":       "Disabled",
 		"is_enabled": false,
@@ -174,7 +174,7 @@ func TestIssueTypeAssignmentRESTValidation(t *testing.T) {
 	issue := decodeJSONWithStatus(t, srv.post(t, "/api/v3/repos/"+repoFullName+"/issues", defaultToken, map[string]interface{}{
 		"title": "untyped issue",
 	}), 201)
-	repo := srv.store.GetRepo(org, repoName)
+	repo := srv.store.GetRepo(org, repoName.name)
 	stored := srv.store.GetIssueByNumber(repo.ID, int(issue["number"].(float64)))
 	if stored == nil {
 		t.Fatal("stored issue not found")
