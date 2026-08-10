@@ -220,15 +220,17 @@ func TestGHGraphQLNoAuth(t *testing.T) {
 
 // TestGHDeviceFlow verifies the full device authorization flow.
 func TestGHDeviceFlow(t *testing.T) {
-	admin := testServer.store.LookupUserByLogin("admin")
+	t.Parallel()
+	s := newIsolatedServer(t)
+	admin := s.store.LookupUserByLogin("admin")
 	if admin == nil {
 		t.Fatal("admin user not seeded")
 	}
-	app := testServer.store.CreateOAuthApp(admin.ID, "device flow test", "", "https://example.test", "http://callback/")
+	app := s.store.CreateOAuthApp(admin.ID, "device flow test", "", "https://example.test", "http://callback/")
 
 	// Step 1: Request device code
 	form := url.Values{"client_id": {app.ClientID}, "scope": {"repo"}}
-	resp, err := http.Post(testBaseURL+"/login/device/code", "application/x-www-form-urlencoded", strings.NewReader(form.Encode()))
+	resp, err := http.Post(s.baseURL+"/login/device/code", "application/x-www-form-urlencoded", strings.NewReader(form.Encode()))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -253,7 +255,7 @@ func TestGHDeviceFlow(t *testing.T) {
 		"device_code": {deviceCode},
 		"grant_type":  {"urn:ietf:params:oauth:grant-type:device_code"},
 	}
-	tokReq, _ := http.NewRequest("POST", testBaseURL+"/login/oauth/access_token", strings.NewReader(form2.Encode()))
+	tokReq, _ := http.NewRequest("POST", s.baseURL+"/login/oauth/access_token", strings.NewReader(form2.Encode()))
 	tokReq.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	tokReq.Header.Set("Accept", "application/json") // real clients (gh CLI) negotiate JSON
 	resp2, err := http.DefaultClient.Do(tokReq)
@@ -273,7 +275,7 @@ func TestGHDeviceFlow(t *testing.T) {
 	jar := newPermissiveTestJar()
 	client := &http.Client{Jar: jar}
 	loginForm := url.Values{"login": {"admin"}, "password": {defaultToken}}
-	loginResp, err := client.Post(testBaseURL+"/login", "application/x-www-form-urlencoded", strings.NewReader(loginForm.Encode()))
+	loginResp, err := client.Post(s.baseURL+"/login", "application/x-www-form-urlencoded", strings.NewReader(loginForm.Encode()))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -282,7 +284,7 @@ func TestGHDeviceFlow(t *testing.T) {
 		t.Fatalf("login status = %d", loginResp.StatusCode)
 	}
 	approveForm := url.Values{"user_code": {userCode}}
-	approveResp, err := client.Post(testBaseURL+"/login/device", "application/x-www-form-urlencoded", strings.NewReader(approveForm.Encode()))
+	approveResp, err := client.Post(s.baseURL+"/login/device", "application/x-www-form-urlencoded", strings.NewReader(approveForm.Encode()))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -292,7 +294,7 @@ func TestGHDeviceFlow(t *testing.T) {
 	}
 
 	// Step 4: Exchange device code for token.
-	tokReq, _ = http.NewRequest("POST", testBaseURL+"/login/oauth/access_token", strings.NewReader(form2.Encode()))
+	tokReq, _ = http.NewRequest("POST", s.baseURL+"/login/oauth/access_token", strings.NewReader(form2.Encode()))
 	tokReq.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	tokReq.Header.Set("Accept", "application/json")
 	resp2, err = http.DefaultClient.Do(tokReq)
@@ -314,7 +316,7 @@ func TestGHDeviceFlow(t *testing.T) {
 	}
 
 	// Step 5: Use the new token to hit /api/v3/
-	resp3 := ghGet(t, "/api/v3/", accessToken)
+	resp3 := s.get(t, "/api/v3/", accessToken)
 	defer resp3.Body.Close()
 	if resp3.StatusCode != 200 {
 		t.Fatalf("expected 200 with new token, got %d", resp3.StatusCode)
