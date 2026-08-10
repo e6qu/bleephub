@@ -541,6 +541,60 @@ func (s *isolatedServer) createRepoWriteRepo(t *testing.T, autoInit bool) string
 	return name
 }
 
+// cancelRepoRunsCleanup mirrors the package helper (still used by six
+// shared-server files): at test cleanup it cancels every in-flight run the
+// test created, on this isolated server's own store.
+func (s *isolatedServer) cancelRepoRunsCleanup(t *testing.T, repoKey string) {
+	t.Helper()
+	t.Cleanup(func() {
+		s.store.mu.RLock()
+		var runs []*Workflow
+		for _, w := range s.store.Workflows {
+			if w.RepoFullName == repoKey && w.Status != WorkflowStatusCompleted {
+				runs = append(runs, w)
+			}
+		}
+		s.store.mu.RUnlock()
+		for _, w := range runs {
+			s.cancelWorkflow(w)
+		}
+	})
+}
+
+// assertWorkflowJobsUseHostMode mirrors the package helper (still used by
+// gh_actions_run_control_test.go): each workflow job has a stored runner job
+// whose message runs in host mode (no jobContainer), read from s.store.
+func (s *isolatedServer) assertWorkflowJobsUseHostMode(t *testing.T, wf *Workflow, keys ...string) {
+	t.Helper()
+	if len(keys) == 0 {
+		for key := range wf.Jobs {
+			keys = append(keys, key)
+		}
+	}
+	for _, key := range keys {
+		job := wf.Jobs[key]
+		if job == nil {
+			t.Fatalf("workflow job %q not found", key)
+		}
+		s.store.mu.RLock()
+		queued := s.store.Jobs[job.JobID]
+		s.store.mu.RUnlock()
+		if queued == nil {
+			t.Fatalf("workflow job %q has no stored runner job %q", key, job.JobID)
+		}
+		if queued.Message == "" {
+			t.Fatalf("workflow job %q has no runner message", key)
+		}
+		var msg map[string]interface{}
+		if err := json.Unmarshal([]byte(queued.Message), &msg); err != nil {
+			t.Fatalf("workflow job %q message JSON: %v", key, err)
+		}
+		if msg["jobContainer"] != nil {
+			t.Fatalf("workflow job %q jobContainer = %#v, want nil for a workflow without container", key, msg["jobContainer"])
+		}
+	}
+}
+
 // createTestGist mirrors the package helper (still used by
 // gh_misc_endpoints_users_test.go): a small public/private gist owned by token.
 func (s *isolatedServer) createTestGist(t *testing.T, token string, public bool) map[string]interface{} {

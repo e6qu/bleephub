@@ -10,6 +10,7 @@ import (
 )
 
 func TestAgentSatisfiesLabels(t *testing.T) {
+	t.Parallel()
 	agent := &Agent{Labels: []Label{{Name: "self-hosted"}, {Name: "Linux"}, {Name: "gpu"}}}
 	cases := []struct {
 		required []string
@@ -42,6 +43,7 @@ func TestAgentSatisfiesLabels(t *testing.T) {
 // ACT-051: runner.os/arch/name are placeholders at queue time and must be
 // late-bound to the agent that actually leases the message.
 func TestRunnerContextDerivedFromAgent(t *testing.T) {
+	t.Parallel()
 	for _, tc := range []struct {
 		name             string
 		agent            *Agent
@@ -203,16 +205,16 @@ func cancelRepoRunsCleanup(t *testing.T, repoKey string) {
 	})
 }
 
-func seedRerunRepo(t *testing.T, repoKey, yaml string) *Workflow {
+func (s *isolatedServer) seedRerunRepo(t *testing.T, repoKey, yaml string) *Workflow {
 	t.Helper()
-	cancelRepoRunsCleanup(t, repoKey)
-	commitWorkflowYAMLToStorage(t, testServer, repoKey, ".github/workflows/ci.yml", yaml)
-	testServer.triggerWorkflowsForEvent(repoKey, "push", "", "refs/heads/main", nil)
+	s.cancelRepoRunsCleanup(t, repoKey)
+	commitWorkflowYAMLToStorage(t, s.Server, repoKey, ".github/workflows/ci.yml", yaml)
+	s.triggerWorkflowsForEvent(repoKey, "push", "", "refs/heads/main", nil)
 	var wf *Workflow
 	waitUntil(t, "triggered run", func() bool {
-		testServer.store.mu.RLock()
-		defer testServer.store.mu.RUnlock()
-		for _, w := range testServer.store.Workflows {
+		s.store.mu.RLock()
+		defer s.store.mu.RUnlock()
+		for _, w := range s.store.Workflows {
 			if w.RepoFullName == repoKey {
 				wf = w
 				return true
@@ -268,23 +270,25 @@ jobs:
 `
 
 func TestRerunKeepsRunIDAndBumpsAttempt(t *testing.T) {
+	t.Parallel()
+	s := newIsolatedServer(t)
 	repoKey := "rerunowner/rerun-repo"
-	wf := seedRerunRepo(t, repoKey, twoJobYAML)
+	wf := s.seedRerunRepo(t, repoKey, twoJobYAML)
 	origRunID := wf.RunID
-	assertWorkflowJobsUseHostMode(t, wf)
+	s.assertWorkflowJobsUseHostMode(t, wf)
 
 	// Finish both jobs (one failure) so the run completes.
-	testServer.onJobCompleted(context.Background(), wf.Jobs["good"].JobID, "Succeeded")
-	testServer.onJobCompleted(context.Background(), wf.Jobs["bad"].JobID, "Failed")
+	s.onJobCompleted(context.Background(), wf.Jobs["good"].JobID, "Succeeded")
+	s.onJobCompleted(context.Background(), wf.Jobs["bad"].JobID, "Failed")
 
-	resp := ghPost(t, fmt.Sprintf("/api/v3/repos/%s/actions/runs/%d/rerun", repoKey, origRunID), defaultToken, map[string]interface{}{})
+	resp := s.post(t, fmt.Sprintf("/api/v3/repos/%s/actions/runs/%d/rerun", repoKey, origRunID), defaultToken, map[string]interface{}{})
 	if resp.StatusCode != http.StatusCreated {
 		t.Fatalf("rerun status = %d", resp.StatusCode)
 	}
 	resp.Body.Close()
 
 	// Same run id, attempt 2, both jobs fresh.
-	resp2, err := http.Get(fmt.Sprintf("http://%s/api/v3/repos/%s/actions/runs/%d", testServer.addr, repoKey, origRunID))
+	resp2, err := http.Get(fmt.Sprintf("%s/api/v3/repos/%s/actions/runs/%d", s.baseURL, repoKey, origRunID))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -297,22 +301,22 @@ func TestRerunKeepsRunIDAndBumpsAttempt(t *testing.T) {
 	if int(run["id"].(float64)) != origRunID {
 		t.Errorf("rerun id = %v, want %d (same run id)", run["id"], origRunID)
 	}
-	testServer.store.mu.RLock()
+	s.store.mu.RLock()
 	var attempt2 *Workflow
-	for _, w := range testServer.store.Workflows {
+	for _, w := range s.store.Workflows {
 		if w.RepoFullName == repoKey && w.RunID == origRunID {
 			attempt2 = w
 			break
 		}
 	}
-	testServer.store.mu.RUnlock()
+	s.store.mu.RUnlock()
 	if attempt2 == nil {
 		t.Fatal("rerun attempt 2 not found")
 	}
-	assertWorkflowJobsUseHostMode(t, attempt2)
+	s.assertWorkflowJobsUseHostMode(t, attempt2)
 
 	// The first attempt is retrievable.
-	resp3, err := http.Get(fmt.Sprintf("http://%s/api/v3/repos/%s/actions/runs/%d/attempts/1", testServer.addr, repoKey, origRunID))
+	resp3, err := http.Get(fmt.Sprintf("%s/api/v3/repos/%s/actions/runs/%d/attempts/1", s.baseURL, repoKey, origRunID))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -327,7 +331,7 @@ func TestRerunKeepsRunIDAndBumpsAttempt(t *testing.T) {
 	}
 
 	// Attempt 1 jobs endpoint serves the archived jobs.
-	resp4, err := http.Get(fmt.Sprintf("http://%s/api/v3/repos/%s/actions/runs/%d/attempts/1/jobs", testServer.addr, repoKey, origRunID))
+	resp4, err := http.Get(fmt.Sprintf("%s/api/v3/repos/%s/actions/runs/%d/attempts/1/jobs", s.baseURL, repoKey, origRunID))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -342,18 +346,20 @@ func TestRerunKeepsRunIDAndBumpsAttempt(t *testing.T) {
 }
 
 func TestRerunFailedJobsCarriesSuccesses(t *testing.T) {
+	t.Parallel()
+	s := newIsolatedServer(t)
 	repoKey := "rerunfail/rf-repo"
-	wf := seedRerunRepo(t, repoKey, twoJobYAML)
+	wf := s.seedRerunRepo(t, repoKey, twoJobYAML)
 	runID := wf.RunID
-	assertWorkflowJobsUseHostMode(t, wf)
+	s.assertWorkflowJobsUseHostMode(t, wf)
 
-	testServer.store.mu.Lock()
+	s.store.mu.Lock()
 	wf.Jobs["good"].Outputs["artifact"] = "kept"
-	testServer.store.mu.Unlock()
-	testServer.onJobCompleted(context.Background(), wf.Jobs["good"].JobID, "Succeeded")
-	testServer.onJobCompleted(context.Background(), wf.Jobs["bad"].JobID, "Failed")
+	s.store.mu.Unlock()
+	s.onJobCompleted(context.Background(), wf.Jobs["good"].JobID, "Succeeded")
+	s.onJobCompleted(context.Background(), wf.Jobs["bad"].JobID, "Failed")
 
-	resp := ghPost(t, fmt.Sprintf("/api/v3/repos/%s/actions/runs/%d/rerun-failed-jobs", repoKey, runID), defaultToken, map[string]interface{}{})
+	resp := s.post(t, fmt.Sprintf("/api/v3/repos/%s/actions/runs/%d/rerun-failed-jobs", repoKey, runID), defaultToken, map[string]interface{}{})
 	if resp.StatusCode != http.StatusCreated {
 		t.Fatalf("rerun-failed-jobs status = %d", resp.StatusCode)
 	}
@@ -361,9 +367,9 @@ func TestRerunFailedJobsCarriesSuccesses(t *testing.T) {
 
 	var attempt2 *Workflow
 	waitUntil(t, "attempt 2", func() bool {
-		testServer.store.mu.RLock()
-		defer testServer.store.mu.RUnlock()
-		for _, w := range testServer.store.Workflows {
+		s.store.mu.RLock()
+		defer s.store.mu.RUnlock()
+		for _, w := range s.store.Workflows {
 			if w.RepoFullName == repoKey && w.RunID == runID {
 				attempt2 = w
 				return w.AttemptNumber() == 2
@@ -372,12 +378,12 @@ func TestRerunFailedJobsCarriesSuccesses(t *testing.T) {
 		return false
 	})
 
-	testServer.store.mu.RLock()
+	s.store.mu.RLock()
 	good := attempt2.Jobs["good"]
 	bad := attempt2.Jobs["bad"]
 	goodStatus, goodResult, goodOut := good.Status, good.Result, good.Outputs["artifact"]
 	badStatus := bad.Status
-	testServer.store.mu.RUnlock()
+	s.store.mu.RUnlock()
 
 	if goodStatus != JobStatusCompleted || goodResult != ResultSuccess {
 		t.Errorf("good carried over: status=%q result=%q", goodStatus, goodResult)
@@ -388,12 +394,14 @@ func TestRerunFailedJobsCarriesSuccesses(t *testing.T) {
 	if badStatus != JobStatusQueued {
 		t.Errorf("bad job should re-dispatch (queued), got %q", badStatus)
 	}
-	assertWorkflowJobsUseHostMode(t, attempt2, "bad")
+	s.assertWorkflowJobsUseHostMode(t, attempt2, "bad")
 }
 
 func TestWorkflowEnableDisable(t *testing.T) {
+	t.Parallel()
+	s := newIsolatedServer(t)
 	repoKey := "disowner/dis-repo"
-	commitWorkflowYAMLToStorage(t, testServer, repoKey, ".github/workflows/ci.yml", `name: dis-ci
+	commitWorkflowYAMLToStorage(t, s.Server, repoKey, ".github/workflows/ci.yml", `name: dis-ci
 on: [push, workflow_dispatch]
 jobs:
   build:
@@ -401,11 +409,11 @@ jobs:
     steps:
       - run: echo hi
 `)
-	testServer.store.DiscoverWorkflowFilesFromGit(repoKey)
+	s.store.DiscoverWorkflowFilesFromGit(repoKey)
 
 	disable := func(verb string) int {
 		req, _ := http.NewRequest("PUT",
-			fmt.Sprintf("http://%s/api/v3/repos/%s/actions/workflows/ci.yml/%s", testServer.addr, repoKey, verb), nil)
+			fmt.Sprintf("%s/api/v3/repos/%s/actions/workflows/ci.yml/%s", s.baseURL, repoKey, verb), nil)
 		req.Header.Set("Authorization", "Bearer "+defaultToken)
 		resp, err := http.DefaultClient.Do(req)
 		if err != nil {
@@ -418,13 +426,13 @@ jobs:
 	if code := disable("disable"); code != http.StatusNoContent {
 		t.Fatalf("disable status = %d", code)
 	}
-	wfFile := testServer.resolveWorkflowFile(repoKey, "ci.yml")
+	wfFile := s.resolveWorkflowFile(repoKey, "ci.yml")
 	if wfFile.State != "disabled_manually" {
 		t.Errorf("state = %q, want disabled_manually", wfFile.State)
 	}
 
 	// Dispatch while disabled → 403.
-	resp := ghPost(t, fmt.Sprintf("/api/v3/repos/%s/actions/workflows/ci.yml/dispatches", repoKey), defaultToken,
+	resp := s.post(t, fmt.Sprintf("/api/v3/repos/%s/actions/workflows/ci.yml/dispatches", repoKey), defaultToken,
 		map[string]interface{}{"ref": "refs/heads/main"})
 	if resp.StatusCode != http.StatusForbidden {
 		t.Errorf("dispatch while disabled = %d, want 403", resp.StatusCode)
@@ -432,28 +440,28 @@ jobs:
 	resp.Body.Close()
 
 	// Push trigger while disabled → no run.
-	before := countRepoRuns(repoKey)
-	testServer.triggerWorkflowsForEvent(repoKey, "push", "", "refs/heads/main", nil)
+	before := s.countRepoRuns(repoKey)
+	s.triggerWorkflowsForEvent(repoKey, "push", "", "refs/heads/main", nil)
 	changed := testEventually(200*time.Millisecond, 10*time.Millisecond, func() bool {
-		return countRepoRuns(repoKey) != before
+		return s.countRepoRuns(repoKey) != before
 	})
-	if got := countRepoRuns(repoKey); changed {
+	if got := s.countRepoRuns(repoKey); changed {
 		t.Errorf("disabled workflow triggered: runs %d → %d", before, got)
 	}
 
 	if code := disable("enable"); code != http.StatusNoContent {
 		t.Fatalf("enable status = %d", code)
 	}
-	if wfFile := testServer.resolveWorkflowFile(repoKey, "ci.yml"); wfFile.State != "active" {
+	if wfFile := s.resolveWorkflowFile(repoKey, "ci.yml"); wfFile.State != "active" {
 		t.Errorf("state after enable = %q", wfFile.State)
 	}
 }
 
-func countRepoRuns(repoKey string) int {
-	testServer.store.mu.RLock()
-	defer testServer.store.mu.RUnlock()
+func (s *isolatedServer) countRepoRuns(repoKey string) int {
+	s.store.mu.RLock()
+	defer s.store.mu.RUnlock()
 	n := 0
-	for _, w := range testServer.store.Workflows {
+	for _, w := range s.store.Workflows {
 		if w.RepoFullName == repoKey {
 			n++
 		}
@@ -462,20 +470,22 @@ func countRepoRuns(repoKey string) int {
 }
 
 func TestOrgRunnerEndpoints(t *testing.T) {
+	t.Parallel()
+	s := newIsolatedServer(t)
 	// Seed an org + an agent.
-	resp := ghPost(t, "/api/v3/admin/organizations", defaultToken,
+	resp := s.post(t, "/api/v3/admin/organizations", defaultToken,
 		map[string]interface{}{"login": "runner-org", "admin": "admin"})
 	resp.Body.Close()
 
-	testServer.store.mu.Lock()
-	agentID := testServer.store.NextAgent
-	testServer.store.NextAgent++
-	testServer.store.Agents[agentID] = &Agent{ID: agentID, Name: "org-agent", Status: "online",
+	s.store.mu.Lock()
+	agentID := s.store.NextAgent
+	s.store.NextAgent++
+	s.store.Agents[agentID] = &Agent{ID: agentID, Name: "org-agent", Status: "online",
 		Labels: []Label{{Name: "self-hosted"}}, Scope: runnerScope{Org: "runner-org"}}
-	testServer.store.mu.Unlock()
+	s.store.mu.Unlock()
 
 	get := func(path string) (int, map[string]interface{}) {
-		req, _ := http.NewRequest("GET", "http://"+testServer.addr+path, nil)
+		req, _ := http.NewRequest("GET", s.baseURL+path, nil)
 		req.Header.Set("Authorization", "Bearer "+defaultToken)
 		r, err := http.DefaultClient.Do(req)
 		if err != nil {
@@ -508,7 +518,7 @@ func TestOrgRunnerEndpoints(t *testing.T) {
 		t.Errorf("unknown org runners list = %d, want 404", code)
 	}
 
-	respTok := ghPost(t, "/api/v3/orgs/runner-org/actions/runners/registration-token", defaultToken, map[string]interface{}{})
+	respTok := s.post(t, "/api/v3/orgs/runner-org/actions/runners/registration-token", defaultToken, map[string]interface{}{})
 	if respTok.StatusCode != http.StatusCreated {
 		t.Errorf("org registration-token = %d, want 201", respTok.StatusCode)
 	}
