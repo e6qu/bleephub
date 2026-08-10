@@ -457,7 +457,15 @@ func (st *Store) DeleteDependabotUserSecret(userLogin, name string) bool {
 func (st *Store) GetDependabotUserSecret(userLogin, name string) *DependabotUserSecret {
 	st.mu.RLock()
 	defer st.mu.RUnlock()
-	return st.DependabotUserSecrets[userLogin][name]
+	// Detach from the stored row so a reader cannot race the in-place update
+	// UpsertDependabotUserSecret applies to an existing secret. The struct has
+	// no reference fields, so a value copy is a full snapshot.
+	s := st.DependabotUserSecrets[userLogin][name]
+	if s == nil {
+		return nil
+	}
+	clone := *s
+	return &clone
 }
 
 // ListDependabotUserSecrets returns all user-level Dependabot secrets sorted by name.

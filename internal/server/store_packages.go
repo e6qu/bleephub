@@ -173,10 +173,26 @@ func (st *Store) CreatePackage(ownerType, ownerKey, pkgType, name, visibility st
 }
 
 // GetPackage returns a package by owner/type/name, or nil.
+// clonePackage detaches a package from the stored row (its only reference field
+// is the DeletedAt time pointer) so a reader cannot race the in-place mutations
+// that recomputeVersionCountLocked / DeletePackage / RestorePackage apply to the
+// live package.
+func clonePackage(p *Package) *Package {
+	if p == nil {
+		return nil
+	}
+	clone := *p
+	if p.DeletedAt != nil {
+		v := *p.DeletedAt
+		clone.DeletedAt = &v
+	}
+	return &clone
+}
+
 func (st *Store) GetPackage(ownerKey, pkgType, name string) *Package {
 	st.mu.RLock()
 	defer st.mu.RUnlock()
-	return st.PackagesByOwnerKey[ownerKey][packageKey(pkgType, name)]
+	return clonePackage(st.PackagesByOwnerKey[ownerKey][packageKey(pkgType, name)])
 }
 
 // ListPackages returns packages for an owner, newest first.
@@ -220,7 +236,7 @@ func (st *Store) GetDeletedPackage(ownerKey, pkgType, name string) *Package {
 	defer st.mu.RUnlock()
 	for _, p := range st.Packages {
 		if p.Deleted && p.OwnerKey == ownerKey && p.PackageType == pkgType && p.Name == name {
-			return p
+			return clonePackage(p)
 		}
 	}
 	return nil

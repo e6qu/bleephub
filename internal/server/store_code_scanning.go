@@ -699,7 +699,16 @@ type CodeScanningDefaultSetup struct {
 func (st *Store) GetCodeScanningDefaultSetup(repoKey string) *CodeScanningDefaultSetup {
 	st.mu.RLock()
 	defer st.mu.RUnlock()
-	return st.CodeScanningDefaultSetups[repoKey]
+	// Detach from the stored row: SetCodeScanningDefaultSetup stamps UpdatedAt on
+	// the configuration in place, so a reader must hold an independent snapshot
+	// (with its own Languages slice).
+	s := st.CodeScanningDefaultSetups[repoKey]
+	if s == nil {
+		return nil
+	}
+	clone := *s
+	clone.Languages = append([]string(nil), s.Languages...)
+	return &clone
 }
 
 // SetCodeScanningDefaultSetup records (and persists) a repo's default
@@ -872,7 +881,15 @@ func autofixKey(repoKey string, number int) string {
 func (st *Store) GetCodeScanningAutofix(repoKey string, number int) *CodeScanningAutofix {
 	st.mu.RLock()
 	defer st.mu.RUnlock()
-	return st.CodeScanningAutofixes[autofixKey(repoKey, number)]
+	// The autofix is write-once today, but hand back a detached value copy (it
+	// has no reference fields) so a future in-place status update can't race a
+	// reader.
+	a := st.CodeScanningAutofixes[autofixKey(repoKey, number)]
+	if a == nil {
+		return nil
+	}
+	clone := *a
+	return &clone
 }
 
 // CreateCodeScanningAutofix generates and stores the autofix for an
@@ -1007,6 +1024,13 @@ func (st *Store) UpsertCodeQLDatabase(repoKey, language, name, contentType, comm
 }
 
 // GetCodeQLDatabase returns the CodeQL database for a repo + language.
+//
+// Unlike the other store getters this intentionally returns the live row rather
+// than a snapshot: a stored database is write-once (UpsertCodeQLDatabase builds
+// a fresh row and swaps the map pointer under the write lock rather than
+// mutating an existing one, and nothing else mutates it in place), so a reader
+// holding the pointer never races a writer. Its Content field can hold the full
+// database blob, which cloning on every metadata read would needlessly copy.
 func (st *Store) GetCodeQLDatabase(repoKey, language string) *CodeQLDatabase {
 	st.mu.RLock()
 	defer st.mu.RUnlock()

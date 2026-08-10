@@ -2429,7 +2429,16 @@ func (st *Store) GetRepoSubscription(userID int, repoID int) *RepoSubscription {
 	st.mu.RLock()
 	defer st.mu.RUnlock()
 
-	return st.RepoSubscriptions[repoSubscriptionKey(userID, repoID)]
+	// SetRepoSubscription swaps in a fresh row rather than mutating in place, so
+	// this is already race-free; return a detached value copy anyway (the struct
+	// has no reference fields) to keep the getter safe against a future in-place
+	// writer.
+	sub := st.RepoSubscriptions[repoSubscriptionKey(userID, repoID)]
+	if sub == nil {
+		return nil
+	}
+	clone := *sub
+	return &clone
 }
 
 // ListRepoSubscriptionsForUser returns the repositories subscribed by userID.

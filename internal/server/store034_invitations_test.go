@@ -373,3 +373,55 @@ func TestRepoGetIsDetached(t *testing.T) {
 		t.Fatal("UnstarRepo did not update the live row")
 	}
 }
+
+// TestSmallStoreGetsAreDetached pins STORE-021 for the remaining getters whose
+// stored rows are mutated in place: packages (recomputeVersionCount/Delete),
+// Dependabot user secrets (Upsert), and code-scanning default setup (Set).
+func TestSmallStoreGetsAreDetached(t *testing.T) {
+	s := newTestServer()
+
+	// Package: a getter result must not share the DeletedAt pointer or leak a
+	// scalar write, and the live writer must still update the store.
+	if _, ok := s.store.CreatePackage("User", "admin", "npm", "detach-pkg", "private"); !ok {
+		t.Fatal("CreatePackage failed")
+	}
+	pkg := s.store.GetPackage("admin", "npm", "detach-pkg")
+	if pkg == nil {
+		t.Fatal("GetPackage returned nil")
+	}
+	pkg.VersionCount = 4242
+	pkg.Deleted = true
+	if fresh := s.store.GetPackage("admin", "npm", "detach-pkg"); fresh.VersionCount == 4242 || fresh.Deleted {
+		t.Fatal("mutating a GetPackage result leaked to the store")
+	}
+	if !s.store.DeletePackage("admin", "npm", "detach-pkg") {
+		t.Fatal("DeletePackage failed")
+	}
+	if s.store.GetPackage("admin", "npm", "detach-pkg") != nil {
+		t.Fatal("DeletePackage did not update the live row")
+	}
+
+	// Dependabot user secret: Upsert mutates an existing secret in place.
+	s.store.UpsertDependabotUserSecret("admin", "TOKEN", "v1", "key1")
+	sec := s.store.GetDependabotUserSecret("admin", "TOKEN")
+	sec.Value = "TAMPERED"
+	if s.store.GetDependabotUserSecret("admin", "TOKEN").Value != "v1" {
+		t.Fatal("mutating a GetDependabotUserSecret result leaked to the store")
+	}
+	s.store.UpsertDependabotUserSecret("admin", "TOKEN", "v2", "key2")
+	if s.store.GetDependabotUserSecret("admin", "TOKEN").Value != "v2" {
+		t.Fatal("Upsert did not update the live secret")
+	}
+
+	// Code-scanning default setup: Set stamps UpdatedAt on the configuration.
+	s.store.SetCodeScanningDefaultSetup(&CodeScanningDefaultSetup{
+		RepoKey: "admin/x", State: "configured", Languages: []string{"go"},
+	})
+	setup := s.store.GetCodeScanningDefaultSetup("admin/x")
+	setup.State = "TAMPERED"
+	setup.Languages = append(setup.Languages, "python")
+	fresh := s.store.GetCodeScanningDefaultSetup("admin/x")
+	if fresh.State != "configured" || len(fresh.Languages) != 1 {
+		t.Fatalf("mutating a GetCodeScanningDefaultSetup result leaked: state=%q langs=%v", fresh.State, fresh.Languages)
+	}
+}
