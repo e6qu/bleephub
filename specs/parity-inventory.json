@@ -6280,8 +6280,8 @@
         "id": "CI-039",
         "location": "ci.yml:84-118",
         "severity": "M",
-        "status": "open",
-        "status_kind": "open"
+        "status": "fixed \u2014 the coupling is inherent (these two jobs integration-test bleephub against the *real* external components \u2014 the shauth OIDC provider and the sockerless runner \u2014 which cannot be mocked without defeating the test) but it is now minimized and hardened on every axis: exactly two external repos are ever checked out (`e6qu/shauth`, `e6qu/sockerless`), BOTH pinned to an exact commit so a CI verdict can no longer float on a push to a different repository (the `shauth` checkout previously lacked the rationale comment the `sockerless` one had \u2014 added for parity), and the `Makefile` targets that consume them fail fast with an explicit message when the checkout is missing or not structurally a shauth/sockerless tree (`test -f $(SHAUTH_SOURCE_DIR)/compose.yaml`, `test -f $(SOCKERLESS_ROOT)/go.work`), so \"not structurally intact\" surfaces as a clear precondition error rather than a confusing downstream failure. `actionlint` clean.",
+        "status_kind": "fixed"
       },
       {
         "category": "CI",
@@ -6551,8 +6551,8 @@
         },
         "CI": {
           "status": {
-            "fixed": 63,
-            "open": 2
+            "fixed": 64,
+            "open": 1
           },
           "total": 65
         },
@@ -6614,8 +6614,8 @@
       },
       "status": {
         "deferred": 3,
-        "fixed": 669,
-        "open": 8,
+        "fixed": 670,
+        "open": 7,
         "partial": 5
       },
       "total": 685
