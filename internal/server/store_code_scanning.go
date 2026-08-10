@@ -152,11 +152,33 @@ func (st *Store) CreateCodeScanningAlert(repoKey, ruleID, severity, description,
 	return alert
 }
 
+// cloneCodeScanningAlert returns a deep copy safe to hand outside the store
+// lock (STORE-021): Instances, DismissedAt and FixedAt are the only reference
+// fields. Mutations go through UpdateCodeScanningAlert against the live row.
+func cloneCodeScanningAlert(a *CodeScanningAlert) *CodeScanningAlert {
+	if a == nil {
+		return nil
+	}
+	clone := *a
+	if a.Instances != nil {
+		clone.Instances = append([]CodeScanningAlertInstance(nil), a.Instances...)
+	}
+	if a.DismissedAt != nil {
+		dismissed := *a.DismissedAt
+		clone.DismissedAt = &dismissed
+	}
+	if a.FixedAt != nil {
+		fixed := *a.FixedAt
+		clone.FixedAt = &fixed
+	}
+	return &clone
+}
+
 // GetCodeScanningAlert returns an alert by repo + alert number.
 func (st *Store) GetCodeScanningAlert(repoKey string, number int) *CodeScanningAlert {
 	st.mu.RLock()
 	defer st.mu.RUnlock()
-	return st.CodeScanningAlertsByRepo[repoKey][number]
+	return cloneCodeScanningAlert(st.CodeScanningAlertsByRepo[repoKey][number])
 }
 
 // ListCodeScanningAlerts returns repo alerts filtered/sorted per GitHub's list
@@ -209,37 +231,46 @@ func (st *Store) ListCodeScanningAlerts(repoKey, state, severity, toolName, rule
 // UpdateCodeScanningAlert applies a state/dismissed_reason transition to a
 // single alert. Valid transitions mirror real GitHub: open → dismissed,
 // open → fixed, dismissed → open.
+// UpdateCodeScanningAlert applies a state transition. `a` now comes from
+// GetCodeScanningAlert, which returns a detached clone, so the mutation is
+// applied to the LIVE row (re-fetched by key) and a fresh snapshot is written
+// back into `a` for the caller to render — never the live pointer.
 func (st *Store) UpdateCodeScanningAlert(a *CodeScanningAlert, state, dismissedReason, dismissedComment string) error {
 	st.mu.Lock()
 	defer st.mu.Unlock()
 
-	if err := validateCodeScanningTransition(string(a.State), state, dismissedReason); err != nil {
+	live := st.CodeScanningAlertsByRepo[a.RepoKey][a.Number]
+	if live == nil {
+		return fmt.Errorf("code scanning alert %s#%d not found", a.RepoKey, a.Number)
+	}
+	if err := validateCodeScanningTransition(string(live.State), state, dismissedReason); err != nil {
 		return err
 	}
 
 	now := st.currentTime()
 	switch state {
 	case "dismissed":
-		a.State = CodeScanningStateDismissed
-		a.DismissedReason = CodeScanningDismissedReason(dismissedReason)
-		a.DismissedComment = dismissedComment
-		a.DismissedAt = &now
-		a.FixedAt = nil
+		live.State = CodeScanningStateDismissed
+		live.DismissedReason = CodeScanningDismissedReason(dismissedReason)
+		live.DismissedComment = dismissedComment
+		live.DismissedAt = &now
+		live.FixedAt = nil
 	case "fixed":
-		a.State = CodeScanningStateFixed
-		a.FixedAt = &now
-		a.DismissedReason = ""
-		a.DismissedComment = ""
-		a.DismissedAt = nil
+		live.State = CodeScanningStateFixed
+		live.FixedAt = &now
+		live.DismissedReason = ""
+		live.DismissedComment = ""
+		live.DismissedAt = nil
 	case "open":
-		a.State = CodeScanningStateOpen
-		a.DismissedReason = ""
-		a.DismissedComment = ""
-		a.DismissedAt = nil
-		a.FixedAt = nil
+		live.State = CodeScanningStateOpen
+		live.DismissedReason = ""
+		live.DismissedComment = ""
+		live.DismissedAt = nil
+		live.FixedAt = nil
 	}
-	a.UpdatedAt = now
-	st.persistCodeScanningAlert(a)
+	live.UpdatedAt = now
+	st.persistCodeScanningAlert(live)
+	*a = *cloneCodeScanningAlert(live)
 	return nil
 }
 

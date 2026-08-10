@@ -88,6 +88,40 @@ func seedCodeScanningAlert(t *testing.T, owner, repo, ruleID, severity, toolName
 	return alerts[0]
 }
 
+// TestCodeScanningAlertReadsReturnDetachedSnapshots pins STORE-021 for the
+// code-scanning family: GetCodeScanningAlert must return a copy, and
+// UpdateCodeScanningAlert must still reach the live row.
+func TestCodeScanningAlertReadsReturnDetachedSnapshots(t *testing.T) {
+	s := newTestServer()
+	admin := s.store.UsersByLogin["admin"]
+	repo := s.store.CreateRepo(admin, "cs-detach", "", false)
+	alert := s.store.CreateCodeScanningAlert(repo.FullName, "detach-rule", "error", "d", "CodeQL", "guid-1", "open",
+		[]CodeScanningAlertInstance{{Ref: "refs/heads/main", Path: "a.go"}})
+
+	got := s.store.GetCodeScanningAlert(repo.FullName, alert.Number)
+	got.State = CodeScanningStateFixed
+	got.Instances[0].Path = "hacked.go"
+	got.Instances = append(got.Instances, CodeScanningAlertInstance{Path: "b.go"})
+
+	again := s.store.GetCodeScanningAlert(repo.FullName, alert.Number)
+	if again.State != CodeScanningStateOpen {
+		t.Fatalf("stored state = %q, want open (getter leaked a live pointer)", again.State)
+	}
+	if len(again.Instances) != 1 || again.Instances[0].Path != "a.go" {
+		t.Fatalf("stored instances mutated through the getter: %+v", again.Instances)
+	}
+
+	if err := s.store.UpdateCodeScanningAlert(again, "fixed", "", ""); err != nil {
+		t.Fatalf("update: %v", err)
+	}
+	if again.State != CodeScanningStateFixed {
+		t.Fatalf("returned snapshot state = %q, want fixed", again.State)
+	}
+	if live := s.store.GetCodeScanningAlert(repo.FullName, alert.Number); live.State != CodeScanningStateFixed {
+		t.Fatalf("live alert after update = %q, want fixed", live.State)
+	}
+}
+
 func TestCodeScanningAlertTestsUsePublicSARIFUpload(t *testing.T) {
 	t.Parallel()
 	needles := map[string]string{
