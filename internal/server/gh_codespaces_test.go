@@ -30,23 +30,6 @@ func contextWithTimeout(d time.Duration) (context.Context, context.CancelFunc) {
 	return context.WithTimeout(context.Background(), d)
 }
 
-func createTestCodespaceRepo(t *testing.T, name string) *Repo {
-	t.Helper()
-	admin := testServer.store.UsersByLogin["admin"]
-	repo := testServer.store.CreateRepo(admin, name, "codespace test repo", false)
-	if repo == nil {
-		t.Fatalf("failed to create repo %s", name)
-	}
-	// Seed a devcontainer.json pointing at the fast test image.
-	stor := testServer.store.GitStorages[repo.FullName]
-	if _, err := initRepoWithFiles(stor, repo.DefaultBranch, "init", map[string]string{
-		".devcontainer/devcontainer.json": fmt.Sprintf(`{"image":"%s"}`, codespaceTestImage),
-	}, repoSignature(admin.Login, "bleephub@local")); err != nil {
-		t.Fatalf("init repo files: %v", err)
-	}
-	return repo
-}
-
 func TestCodespaces_WorkspaceRuntimeWithoutDockerCLI(t *testing.T) {
 	// No t.Parallel(): t.Setenv("PATH", …) below cannot run in a parallel test.
 	s := newIsolatedServer(t)

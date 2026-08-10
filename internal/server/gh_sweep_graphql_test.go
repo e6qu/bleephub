@@ -98,24 +98,6 @@ func TestRepoGraphQLURLUsesConfiguredExternalURL(t *testing.T) {
 }
 
 // sweepRepo creates a fresh repo via REST and returns (owner, name).
-func sweepRepo(t *testing.T, name string) (string, string) {
-	t.Helper()
-	resp := ghPost(t, "/api/v3/user/repos", defaultToken, map[string]interface{}{"name": name, "auto_init": true})
-	data := decodeJSON(t, resp)
-	owner, _ := data["owner"].(map[string]interface{})
-	login, _ := owner["login"].(string)
-	repoName, _ := data["name"].(string)
-	if login == "" || repoName == "" {
-		t.Fatalf("repo create failed: %v", data)
-	}
-	repo := testServer.store.GetRepo(login, repoName)
-	if repo == nil {
-		t.Fatalf("repo %s/%s not found after create", login, repoName)
-	}
-	seedPullRequestBranches(t, testServer, repo, "feature")
-	return login, repoName
-}
-
 // sweepPR creates a PR via REST and returns its number and database id.
 func sweepPR(t *testing.T, owner, name, title string) (int, int) {
 	t.Helper()

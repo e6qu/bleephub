@@ -225,37 +225,6 @@ func (s *isolatedServer) seedRerunRepo(t *testing.T, repoKey, yaml string) *Work
 	return wf
 }
 
-func assertWorkflowJobsUseHostMode(t *testing.T, wf *Workflow, keys ...string) {
-	t.Helper()
-	if len(keys) == 0 {
-		for key := range wf.Jobs {
-			keys = append(keys, key)
-		}
-	}
-	for _, key := range keys {
-		job := wf.Jobs[key]
-		if job == nil {
-			t.Fatalf("workflow job %q not found", key)
-		}
-		testServer.store.mu.RLock()
-		queued := testServer.store.Jobs[job.JobID]
-		testServer.store.mu.RUnlock()
-		if queued == nil {
-			t.Fatalf("workflow job %q has no stored runner job %q", key, job.JobID)
-		}
-		if queued.Message == "" {
-			t.Fatalf("workflow job %q has no runner message", key)
-		}
-		var msg map[string]interface{}
-		if err := json.Unmarshal([]byte(queued.Message), &msg); err != nil {
-			t.Fatalf("workflow job %q message JSON: %v", key, err)
-		}
-		if msg["jobContainer"] != nil {
-			t.Fatalf("workflow job %q jobContainer = %#v, want nil for a workflow without container", key, msg["jobContainer"])
-		}
-	}
-}
-
 const twoJobYAML = `name: ci
 on: [push]
 jobs:
