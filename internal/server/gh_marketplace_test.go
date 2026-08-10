@@ -22,13 +22,13 @@ type marketplaceTestListing struct {
 	paidPlanID int
 }
 
-func publishMarketplaceOAuthApp(t *testing.T, name, slug, webhookURL string) (clientID, clientSecret string, planID int) {
+func (s *isolatedServer) publishMarketplaceOAuthApp(t *testing.T, name, slug, webhookURL string) (clientID, clientSecret string, planID int) {
 	t.Helper()
 	form := url.Values{
 		"name": {name}, "description": {"Marketplace OAuth integration"},
 		"url": {"https://example.test/oauth-app"}, "callback_url": {"https://example.test/oauth/callback"},
 	}
-	req, err := http.NewRequest(http.MethodPost, testBaseURL+"/settings/oauth-apps/new", strings.NewReader(form.Encode()))
+	req, err := http.NewRequest(http.MethodPost, s.baseURL+"/settings/oauth-apps/new", strings.NewReader(form.Encode()))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -43,11 +43,11 @@ func publishMarketplaceOAuthApp(t *testing.T, name, slug, webhookURL string) (cl
 		"webhook_secret": "oauth-marketplace-secret", "webhook_content_type": "json", "webhook_active": true,
 		"published": false,
 	}
-	requireMarketplaceStatus(t, marketplaceRequest(t, http.MethodPut, settingsPath, "token "+defaultToken, body), http.StatusCreated)
-	plan := requireMarketplaceStatus(t, marketplaceRequest(t, http.MethodPost, settingsPath+"/plans", "token "+defaultToken,
+	requireMarketplaceStatus(t, s.marketplaceRequest(t, http.MethodPut, settingsPath, "token "+defaultToken, body), http.StatusCreated)
+	plan := requireMarketplaceStatus(t, s.marketplaceRequest(t, http.MethodPost, settingsPath+"/plans", "token "+defaultToken,
 		map[string]interface{}{"name": "OAuth Free", "description": "OAuth plan", "price_model": "FREE", "state": "published"}), http.StatusCreated)
 	body["published"] = true
-	requireMarketplaceStatus(t, marketplaceRequest(t, http.MethodPut, settingsPath, "token "+defaultToken, body), http.StatusOK)
+	requireMarketplaceStatus(t, s.marketplaceRequest(t, http.MethodPut, settingsPath, "token "+defaultToken, body), http.StatusOK)
 	return clientID, clientSecret, int(plan["id"].(float64))
 }
 
@@ -60,7 +60,7 @@ func mustDoMarketplaceRequest(t *testing.T, req *http.Request) *http.Response {
 	return resp
 }
 
-func marketplaceRequest(t *testing.T, method, path, authorization string, body interface{}) *http.Response {
+func (s *isolatedServer) marketplaceRequest(t *testing.T, method, path, authorization string, body interface{}) *http.Response {
 	t.Helper()
 	var reader io.Reader
 	if body != nil {
@@ -70,7 +70,7 @@ func marketplaceRequest(t *testing.T, method, path, authorization string, body i
 		}
 		reader = bytes.NewReader(raw)
 	}
-	req, err := http.NewRequest(method, testBaseURL+path, reader)
+	req, err := http.NewRequest(method, s.baseURL+path, reader)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -104,9 +104,9 @@ func requireMarketplaceStatus(t *testing.T, resp *http.Response, status int) map
 	return value
 }
 
-func publishMarketplaceGitHubApp(t *testing.T, name, webhookURL string) marketplaceTestListing {
+func (s *isolatedServer) publishMarketplaceGitHubApp(t *testing.T, name, webhookURL string) marketplaceTestListing {
 	t.Helper()
-	app := createGitHubAppViaManifest(t, name, map[string]string{"contents": "read"}, []string{"push"})
+	app := s.createGitHubAppViaManifest(t, name, map[string]string{"contents": "read"}, []string{"push"})
 	slug := app["slug"].(string)
 	settingsPath := "/settings/apps/" + slug + "/marketplace"
 	listingBody := map[string]interface{}{
@@ -116,10 +116,10 @@ func publishMarketplaceGitHubApp(t *testing.T, name, webhookURL string) marketpl
 		"webhook_secret": "marketplace-secret", "webhook_content_type": "json", "webhook_active": true,
 		"published": false,
 	}
-	requireMarketplaceStatus(t, marketplaceRequest(t, http.MethodPut, settingsPath, "token "+defaultToken, listingBody), http.StatusCreated)
+	requireMarketplaceStatus(t, s.marketplaceRequest(t, http.MethodPut, settingsPath, "token "+defaultToken, listingBody), http.StatusCreated)
 
 	createPlan := func(body map[string]interface{}) int {
-		created := requireMarketplaceStatus(t, marketplaceRequest(t, http.MethodPost, settingsPath+"/plans", "token "+defaultToken, body), http.StatusCreated)
+		created := requireMarketplaceStatus(t, s.marketplaceRequest(t, http.MethodPost, settingsPath+"/plans", "token "+defaultToken, body), http.StatusCreated)
 		return int(created["id"].(float64))
 	}
 	freePlanID := createPlan(map[string]interface{}{
@@ -133,7 +133,7 @@ func publishMarketplaceGitHubApp(t *testing.T, name, webhookURL string) marketpl
 		"state": "published", "bullets": []string{"Private repositories", "Priority support"},
 	})
 	listingBody["published"] = true
-	published := requireMarketplaceStatus(t, marketplaceRequest(t, http.MethodPut, settingsPath, "token "+defaultToken, listingBody), http.StatusOK)
+	published := requireMarketplaceStatus(t, s.marketplaceRequest(t, http.MethodPut, settingsPath, "token "+defaultToken, listingBody), http.StatusOK)
 	if published["slug"] != slug || published["published"] != true {
 		t.Fatalf("published Marketplace listing = %v", published)
 	}
@@ -145,6 +145,7 @@ func publishMarketplaceGitHubApp(t *testing.T, name, webhookURL string) marketpl
 }
 
 func TestMarketplacePublisherBuyerAndBillingLifecycle(t *testing.T) {
+	s := newIsolatedServer(t)
 	type delivery struct {
 		event, action, signature, targetType string
 		body                                 map[string]interface{}
@@ -159,8 +160,8 @@ func TestMarketplacePublisherBuyerAndBillingLifecycle(t *testing.T) {
 	}))
 	defer sink.Close()
 
-	listing := publishMarketplaceGitHubApp(t, "Marketplace Lifecycle App", sink.URL)
-	buyer, buyerToken := userSurfaceUser(t, "marketplace-lifecycle-buyer")
+	listing := s.publishMarketplaceGitHubApp(t, "Marketplace Lifecycle App", sink.URL)
+	buyer, buyerToken := s.userSurfaceUser(t, "marketplace-lifecycle-buyer")
 	nextPurchaseDelivery := func() delivery {
 		t.Helper()
 		deadline := time.After(2 * time.Second)
@@ -176,7 +177,7 @@ func TestMarketplacePublisherBuyerAndBillingLifecycle(t *testing.T) {
 		}
 	}
 
-	listResp := marketplaceRequest(t, http.MethodGet, "/ui-data/marketplace/listings", "token "+buyerToken, nil)
+	listResp := s.marketplaceRequest(t, http.MethodGet, "/ui-data/marketplace/listings", "token "+buyerToken, nil)
 	listings := decodeJSONArray(t, listResp)
 	found := false
 	for _, row := range listings {
@@ -191,7 +192,7 @@ func TestMarketplacePublisherBuyerAndBillingLifecycle(t *testing.T) {
 		t.Fatalf("Marketplace browse did not include %q: %v", listing.slug, listings)
 	}
 
-	purchase := requireMarketplaceStatus(t, marketplaceRequest(t, http.MethodPost,
+	purchase := requireMarketplaceStatus(t, s.marketplaceRequest(t, http.MethodPost,
 		"/ui-data/marketplace/listings/"+listing.slug+"/purchase", "token "+buyerToken,
 		map[string]interface{}{"plan_id": listing.freePlanID, "billing_cycle": "monthly"}), http.StatusCreated)
 	if purchase["account_login"] != buyer.Login || purchase["setup_url"] == nil {
@@ -201,8 +202,8 @@ func TestMarketplacePublisherBuyerAndBillingLifecycle(t *testing.T) {
 	if marketplacePurchase["is_installed"] != true {
 		t.Fatalf("Marketplace purchase did not install GitHub App: %v", marketplacePurchase)
 	}
-	installationID := *testServer.store.GetMarketplacePurchase(listing.slug, "User", buyer.ID).InstallationID
-	installation := testServer.store.GetInstallation(installationID)
+	installationID := *s.store.GetMarketplacePurchase(listing.slug, "User", buyer.ID).InstallationID
+	installation := s.store.GetInstallation(installationID)
 	if installation == nil || installation.AppID != listing.appID || installation.TargetID != buyer.ID {
 		t.Fatalf("Marketplace installation = %#v", installation)
 	}
@@ -219,18 +220,18 @@ func TestMarketplacePublisherBuyerAndBillingLifecycle(t *testing.T) {
 	}
 
 	for _, path := range []string{"/api/v3/marketplace_listing/plans", "/api/v3/marketplace_listing/stubbed/plans"} {
-		plans := decodeJSONArray(t, marketplaceRequest(t, http.MethodGet, path, "Bearer "+listing.appJWT, nil))
+		plans := decodeJSONArray(t, s.marketplaceRequest(t, http.MethodGet, path, "Bearer "+listing.appJWT, nil))
 		if len(plans) != 2 || plans[0]["url"] == nil || plans[0]["accounts_url"] == nil {
 			t.Fatalf("%s plans = %v", path, plans)
 		}
 	}
 	accountPath := "/api/v3/marketplace_listing/accounts/" + strconv.Itoa(buyer.ID)
-	account := requireMarketplaceStatus(t, marketplaceRequest(t, http.MethodGet, accountPath, "Bearer "+listing.appJWT, nil), http.StatusOK)
+	account := requireMarketplaceStatus(t, s.marketplaceRequest(t, http.MethodGet, accountPath, "Bearer "+listing.appJWT, nil), http.StatusOK)
 	if account["login"] != buyer.Login {
 		t.Fatalf("publisher account lookup = %v", account)
 	}
 
-	changed := requireMarketplaceStatus(t, marketplaceRequest(t, http.MethodPatch,
+	changed := requireMarketplaceStatus(t, s.marketplaceRequest(t, http.MethodPatch,
 		"/ui-data/marketplace/listings/"+listing.slug+"/subscription", "token "+buyerToken,
 		map[string]interface{}{"plan_id": listing.paidPlanID, "billing_cycle": "monthly"}), http.StatusOK)
 	if changed["marketplace_pending_change"] != nil {
@@ -242,7 +243,7 @@ func TestMarketplacePublisherBuyerAndBillingLifecycle(t *testing.T) {
 	}
 	var deliveryRows []map[string]interface{}
 	testEventually(2*time.Second, 10*time.Millisecond, func() bool {
-		resp := marketplaceRequest(t, http.MethodGet,
+		resp := s.marketplaceRequest(t, http.MethodGet,
 			"/settings/apps/"+listing.slug+"/marketplace/deliveries", "token "+defaultToken, nil)
 		deliveryRows = decodeJSONArray(t, resp)
 		return len(deliveryRows) >= 3
@@ -251,18 +252,18 @@ func TestMarketplacePublisherBuyerAndBillingLifecycle(t *testing.T) {
 		t.Fatalf("Marketplace delivery history = %v", deliveryRows)
 	}
 
-	cancelled := requireMarketplaceStatus(t, marketplaceRequest(t, http.MethodDelete,
+	cancelled := requireMarketplaceStatus(t, s.marketplaceRequest(t, http.MethodDelete,
 		"/ui-data/marketplace/listings/"+listing.slug+"/subscription", "token "+buyerToken, nil), http.StatusAccepted)
 	if cancelled["marketplace_pending_change"] == nil {
 		t.Fatalf("paid cancellation did not wait for billing boundary: %v", cancelled)
 	}
 
-	userPurchases := decodeJSONArray(t, marketplaceRequest(t, http.MethodGet, "/api/v3/user/marketplace_purchases", "token "+buyerToken, nil))
+	userPurchases := decodeJSONArray(t, s.marketplaceRequest(t, http.MethodGet, "/api/v3/user/marketplace_purchases", "token "+buyerToken, nil))
 	if len(userPurchases) != 1 || userPurchases[0]["plan"].(map[string]interface{})["id"] != float64(listing.paidPlanID) {
 		t.Fatalf("user Marketplace purchases = %v", userPurchases)
 	}
 
-	unauthorized := marketplaceRequest(t, http.MethodGet, "/api/v3/marketplace_listing/plans", "token "+defaultToken, nil)
+	unauthorized := s.marketplaceRequest(t, http.MethodGet, "/api/v3/marketplace_listing/plans", "token "+defaultToken, nil)
 	unauthorized.Body.Close()
 	if unauthorized.StatusCode != http.StatusUnauthorized {
 		t.Fatalf("personal access token Marketplace publisher status = %d, want 401", unauthorized.StatusCode)
@@ -326,7 +327,8 @@ func TestMarketplacePlansPagination(t *testing.T) {
 }
 
 func TestMarketplacePublicWorkflowsHaveNoOperatorIngress(t *testing.T) {
-	for _, route := range testServer.routePatterns {
+	s := newIsolatedServer(t)
+	for _, route := range s.routePatterns {
 		if strings.Contains(route, "/internal/marketplace") {
 			t.Fatalf("Marketplace operator ingress route remained registered: %s", route)
 		}
@@ -363,23 +365,24 @@ func TestMarketplaceOrganizationIdentityDoesNotCollideWithUserID(t *testing.T) {
 }
 
 func TestMarketplaceNotFoundIsScopedToAuthenticatedPublisher(t *testing.T) {
+	s := newIsolatedServer(t)
 	sink := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(http.StatusNoContent) }))
 	defer sink.Close()
-	listing := publishMarketplaceGitHubApp(t, "Marketplace Scope App", sink.URL)
-	app := testServer.store.GetApp(listing.appID)
-	resp := marketplaceRequest(t, http.MethodGet, "/api/v3/marketplace_listing/plans",
+	listing := s.publishMarketplaceGitHubApp(t, "Marketplace Scope App", sink.URL)
+	app := s.store.GetApp(listing.appID)
+	resp := s.marketplaceRequest(t, http.MethodGet, "/api/v3/marketplace_listing/plans",
 		"Basic "+basicHeader(app.ClientID, app.ClientSecret), nil)
 	resp.Body.Close()
 	if resp.StatusCode != http.StatusUnauthorized {
 		t.Fatalf("GitHub App Basic Marketplace authentication status = %d, want 401", resp.StatusCode)
 	}
 
-	resp = marketplaceRequest(t, http.MethodGet, "/api/v3/marketplace_listing/plans/999/accounts", "Bearer "+listing.appJWT, nil)
+	resp = s.marketplaceRequest(t, http.MethodGet, "/api/v3/marketplace_listing/plans/999/accounts", "Bearer "+listing.appJWT, nil)
 	resp.Body.Close()
 	if resp.StatusCode != http.StatusNotFound {
 		t.Fatalf("unknown plan accounts status = %d, want 404", resp.StatusCode)
 	}
-	resp = marketplaceRequest(t, http.MethodGet, "/api/v3/marketplace_listing/stubbed/accounts/999999", "Bearer "+listing.appJWT, nil)
+	resp = s.marketplaceRequest(t, http.MethodGet, "/api/v3/marketplace_listing/stubbed/accounts/999999", "Bearer "+listing.appJWT, nil)
 	resp.Body.Close()
 	if resp.StatusCode != http.StatusNotFound {
 		t.Fatalf("purchase-less account status = %d, want 404", resp.StatusCode)
@@ -387,20 +390,21 @@ func TestMarketplaceNotFoundIsScopedToAuthenticatedPublisher(t *testing.T) {
 }
 
 func TestMarketplacePublisherEditsPlansAndDeletesUnusedListing(t *testing.T) {
+	s := newIsolatedServer(t)
 	sink := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(http.StatusNoContent) }))
 	defer sink.Close()
-	listing := publishMarketplaceGitHubApp(t, "Marketplace Publisher App", sink.URL)
+	listing := s.publishMarketplaceGitHubApp(t, "Marketplace Publisher App", sink.URL)
 	settingsPath := "/settings/apps/marketplace-publisher-app/marketplace"
-	updated := requireMarketplaceStatus(t, marketplaceRequest(t, http.MethodPut,
+	updated := requireMarketplaceStatus(t, s.marketplaceRequest(t, http.MethodPut,
 		settingsPath+"/plans/"+strconv.Itoa(listing.paidPlanID), "token "+defaultToken,
 		map[string]interface{}{"name": "Enterprise", "description": "Updated publisher plan", "price_model": "FLAT_RATE", "monthly_price_in_cents": 2400, "yearly_price_in_cents": 24000, "state": "published", "bullets": []string{"Enterprise support"}}), http.StatusOK)
 	if updated["name"] != "Enterprise" || updated["number"] != float64(listing.paidPlanID) {
 		t.Fatalf("updated Marketplace plan = %v", updated)
 	}
-	requireMarketplaceStatus(t, marketplaceRequest(t, http.MethodDelete,
+	requireMarketplaceStatus(t, s.marketplaceRequest(t, http.MethodDelete,
 		settingsPath+"/plans/"+strconv.Itoa(listing.freePlanID), "token "+defaultToken, nil), http.StatusNoContent)
-	requireMarketplaceStatus(t, marketplaceRequest(t, http.MethodDelete, settingsPath, "token "+defaultToken, nil), http.StatusNoContent)
-	resp := marketplaceRequest(t, http.MethodGet, settingsPath, "token "+defaultToken, nil)
+	requireMarketplaceStatus(t, s.marketplaceRequest(t, http.MethodDelete, settingsPath, "token "+defaultToken, nil), http.StatusNoContent)
+	resp := s.marketplaceRequest(t, http.MethodGet, settingsPath, "token "+defaultToken, nil)
 	resp.Body.Close()
 	if resp.StatusCode != http.StatusNotFound {
 		t.Fatalf("deleted Marketplace listing status = %d, want 404", resp.StatusCode)
@@ -408,6 +412,7 @@ func TestMarketplacePublisherEditsPlansAndDeletesUnusedListing(t *testing.T) {
 }
 
 func TestMarketplaceOAuthAppUsesListingWebhookAndIndependentSubscriptionIdentity(t *testing.T) {
+	s := newIsolatedServer(t)
 	deliveries := make(chan map[string]interface{}, 2)
 	sink := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Header.Get("X-GitHub-Event") != "marketplace_purchase" || !strings.HasPrefix(r.Header.Get("X-Hub-Signature-256"), "sha256=") {
@@ -421,15 +426,15 @@ func TestMarketplaceOAuthAppUsesListingWebhookAndIndependentSubscriptionIdentity
 	}))
 	defer sink.Close()
 
-	clientID, clientSecret, oauthPlanID := publishMarketplaceOAuthApp(t, "Marketplace OAuth App", "marketplace-oauth-app", sink.URL)
-	githubListing := publishMarketplaceGitHubApp(t, "Marketplace Identity App", sink.URL)
-	buyer, token := userSurfaceUser(t, "marketplace-multi-app-buyer")
+	clientID, clientSecret, oauthPlanID := s.publishMarketplaceOAuthApp(t, "Marketplace OAuth App", "marketplace-oauth-app", sink.URL)
+	githubListing := s.publishMarketplaceGitHubApp(t, "Marketplace Identity App", sink.URL)
+	buyer, token := s.userSurfaceUser(t, "marketplace-multi-app-buyer")
 
 	for slug, planID := range map[string]int{"marketplace-oauth-app": oauthPlanID, githubListing.slug: githubListing.freePlanID} {
-		requireMarketplaceStatus(t, marketplaceRequest(t, http.MethodPost, "/ui-data/marketplace/listings/"+slug+"/purchase", "token "+token,
+		requireMarketplaceStatus(t, s.marketplaceRequest(t, http.MethodPost, "/ui-data/marketplace/listings/"+slug+"/purchase", "token "+token,
 			map[string]interface{}{"plan_id": planID, "billing_cycle": "monthly"}), http.StatusCreated)
 	}
-	subscriptions := decodeJSONArray(t, marketplaceRequest(t, http.MethodGet, "/ui-data/marketplace/subscriptions", "token "+token, nil))
+	subscriptions := decodeJSONArray(t, s.marketplaceRequest(t, http.MethodGet, "/ui-data/marketplace/subscriptions", "token "+token, nil))
 	if len(subscriptions) != 2 {
 		t.Fatalf("independent Marketplace subscriptions = %v", subscriptions)
 	}
@@ -443,11 +448,11 @@ func TestMarketplaceOAuthAppUsesListingWebhookAndIndependentSubscriptionIdentity
 	}
 
 	basic := "Basic " + basicHeader(clientID, clientSecret)
-	plans := decodeJSONArray(t, marketplaceRequest(t, http.MethodGet, "/api/v3/marketplace_listing/plans", basic, nil))
+	plans := decodeJSONArray(t, s.marketplaceRequest(t, http.MethodGet, "/api/v3/marketplace_listing/plans", basic, nil))
 	if len(plans) != 1 || plans[0]["id"] != float64(oauthPlanID) {
 		t.Fatalf("OAuth App scoped Marketplace plans = %v", plans)
 	}
-	account := requireMarketplaceStatus(t, marketplaceRequest(t, http.MethodGet,
+	account := requireMarketplaceStatus(t, s.marketplaceRequest(t, http.MethodGet,
 		"/api/v3/marketplace_listing/accounts/"+strconv.Itoa(buyer.ID), basic, nil), http.StatusOK)
 	if account["login"] != buyer.Login || account["marketplace_purchase"].(map[string]interface{})["is_installed"] != false {
 		t.Fatalf("OAuth App Marketplace account = %v", account)

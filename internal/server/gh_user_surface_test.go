@@ -222,21 +222,23 @@ func TestUserInteractionLimits_RoundTrip(t *testing.T) {
 // ─── GitHub Marketplace purchases ────────────────────────────────────────
 
 func TestUserMarketplacePurchases_ListWithRealPlan(t *testing.T) {
-	_, tok := userSurfaceUser(t, "marketuser")
+	t.Parallel()
+	s := newIsolatedServer(t)
+	_, tok := s.userSurfaceUser(t, "marketuser")
 
 	// No purchases yet.
-	list := decodeJSONArray(t, ghGet(t, "/api/v3/user/marketplace_purchases", tok))
+	list := decodeJSONArray(t, s.get(t, "/api/v3/user/marketplace_purchases", tok))
 	if len(list) != 0 {
 		t.Fatalf("purchases before seeding = %v", list)
 	}
 
-	listing := publishMarketplaceGitHubApp(t, "User Purchases App", testBaseURL+"/health")
-	requireMarketplaceStatus(t, marketplaceRequest(t, http.MethodPost,
+	listing := s.publishMarketplaceGitHubApp(t, "User Purchases App", s.baseURL+"/health")
+	requireMarketplaceStatus(t, s.marketplaceRequest(t, http.MethodPost,
 		"/ui-data/marketplace/listings/"+listing.slug+"/purchase", "token "+tok,
 		map[string]interface{}{"plan_id": listing.freePlanID, "billing_cycle": "monthly"}), http.StatusCreated)
 
 	for _, path := range []string{"/api/v3/user/marketplace_purchases", "/api/v3/user/marketplace_purchases/stubbed"} {
-		list = decodeJSONArray(t, ghGet(t, path, tok))
+		list = decodeJSONArray(t, s.get(t, path, tok))
 		if len(list) != 1 {
 			t.Fatalf("%s: purchases = %v", path, list)
 		}

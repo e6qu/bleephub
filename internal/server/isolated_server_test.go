@@ -689,6 +689,41 @@ func (s *isolatedServer) installGitHubAppViaBrowser(t *testing.T, appSlug, targe
 	return decodeJSON(t, resp)
 }
 
+// createOrgViaAdminAPI mirrors the package helper on this isolated server:
+// provisions an organization owned by admin through the admin API.
+func (s *isolatedServer) createOrgViaAdminAPI(t *testing.T, login string, profileName ...string) map[string]interface{} {
+	t.Helper()
+	body := map[string]interface{}{
+		"login": login,
+		"admin": "admin",
+	}
+	if len(profileName) > 0 && profileName[0] != "" {
+		body["profile_name"] = profileName[0]
+	}
+	resp := s.post(t, "/api/v3/admin/organizations", defaultToken, body)
+	if resp.StatusCode != http.StatusCreated {
+		resp.Body.Close()
+		t.Fatalf("POST /api/v3/admin/organizations for %s = %d, want 201", login, resp.StatusCode)
+	}
+	return decodeJSON(t, resp)
+}
+
+// installAppOnOrg provisions an app, an organization owned by admin, an
+// organization repository, and an installation carrying the given permissions;
+// it returns appID, slug, pem, and instID — all on this isolated server.
+func (s *isolatedServer) installAppOnOrg(t *testing.T, orgLogin, repoName string, perms map[string]string) (int, string, string, int) {
+	t.Helper()
+	s.createOrgViaAdminAPI(t, orgLogin)
+	s.post(t, "/api/v3/orgs/"+orgLogin+"/repos", defaultToken, map[string]interface{}{"name": repoName}).Body.Close()
+
+	appData := s.createGitHubAppViaManifest(t, orgLogin+"-app", perms, nil)
+	appID := int(appData["id"].(float64))
+	pemKey := appData["pem"].(string)
+	appSlug := appData["slug"].(string)
+	instData := s.installGitHubAppViaBrowser(t, appSlug, orgLogin, "all")
+	return appID, appSlug, pemKey, int(instData["id"].(float64))
+}
+
 // gqlAuthzPost mirrors the package helper (still used by graphql_authz_test.go):
 // a GraphQL POST expecting 200, on this isolated server.
 func (s *isolatedServer) gqlAuthzPost(t *testing.T, token, query string, variables map[string]interface{}) map[string]interface{} {
