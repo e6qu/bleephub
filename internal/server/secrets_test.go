@@ -33,35 +33,6 @@ func putSealedSecret(t *testing.T, path, plain string) *http.Response {
 	})
 }
 
-// seedTestRepo creates an admin-owned repo (idempotent across tests).
-// seedTestOrg creates an org owned by admin (idempotent across tests).
-func seedTestOrg(t *testing.T, login string) *Org {
-	t.Helper()
-	if org := testServer.store.GetOrg(login); org != nil {
-		return org
-	}
-	admin := testServer.store.LookupUserByLogin("admin")
-	org := testServer.store.CreateOrg(admin, login, login, "")
-	if org == nil {
-		t.Fatalf("CreateOrg %s failed", login)
-	}
-	return org
-}
-
-// seedOrgRepo creates an org-owned repo (idempotent across tests).
-func seedOrgRepo(t *testing.T, org *Org, name string, private bool) *Repo {
-	t.Helper()
-	if repo := testServer.store.GetRepo(org.Login, name); repo != nil {
-		return repo
-	}
-	admin := testServer.store.LookupUserByLogin("admin")
-	repo := testServer.store.CreateOrgRepo(org, admin, name, "", private)
-	if repo == nil {
-		t.Fatalf("CreateOrgRepo %s/%s failed", org.Login, name)
-	}
-	return repo
-}
-
 func mustStatus(t *testing.T, resp *http.Response, want int, what string) {
 	t.Helper()
 	defer resp.Body.Close()
