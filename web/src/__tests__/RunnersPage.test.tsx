@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, afterEach } from "vitest";
-import { render, cleanup, screen, waitFor } from "@testing-library/react";
+import { render, cleanup, screen, waitFor, fireEvent } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { BrowserRouter } from "react-router";
 import { RunnersPage } from "../pages/RunnersPage.js";
@@ -117,5 +117,28 @@ describe("RunnersPage", () => {
     expect(calls).toContain("/api/v3/user/repos?per_page=100");
     expect(calls.some((c) => c.includes("/actions/runners"))).toBe(false);
     expect(calls).not.toContain("/internal/sessions");
+  });
+});
+
+describe("RunnersPage add runner", () => {
+  it("generates a registration token and shows the register command", async () => {
+    mockFetch.mockImplementation((url: RequestInfo | URL, init?: RequestInit) => {
+      const u = url.toString();
+      if (u.endsWith("/actions/runners/registration-token") && init?.method === "POST") {
+        return Promise.resolve(jsonResponse({ token: "AABBCC", expires_at: "2026-01-01T01:00:00Z" }));
+      }
+      if (u === "/api/v3/user/repos?per_page=100") return Promise.resolve(jsonResponse(reposData));
+      if (u.includes("/actions/runners")) return Promise.resolve(jsonResponse(runnersData));
+      return Promise.resolve(jsonResponse([]));
+    });
+    renderPage();
+    fireEvent.click(await screen.findByRole("button", { name: /add runner/i }));
+    await waitFor(() => {
+      const post = mockFetch.mock.calls.find(
+        (c) => c[0].toString().endsWith("/actions/runners/registration-token") && c[1]?.method === "POST",
+      );
+      expect(post).toBeTruthy();
+    });
+    expect(await screen.findByText(/AABBCC/)).toBeInTheDocument();
   });
 });

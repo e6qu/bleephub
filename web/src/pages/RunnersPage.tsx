@@ -1,9 +1,16 @@
-import { useQuery } from "@tanstack/react-query";
+import { useMutation, useQuery } from "@tanstack/react-query";
 import { DataTable, InlineError, Spinner, StatusBadge } from "@bleephub/ui-core/components";
 import { createColumnHelper } from "@bleephub/ui-core/components";
-import { fetchRepos, fetchActionsRunners, isForbidden, isRateLimited } from "../api.js";
+import {
+  fetchRepos,
+  fetchActionsRunners,
+  createRunnerRegistrationToken,
+  isForbidden,
+  isRateLimited,
+} from "../api.js";
 import type { GithubRunner } from "../types.js";
-import { PageTitle, StatCard } from "../components/ui.js";
+import { PageTitle, StatCard, Button, Modal, CodeBlock } from "../components/ui.js";
+import { MutationError } from "../components/MutationError.js";
 
 const col = createColumnHelper<GithubRunner>();
 
@@ -80,6 +87,9 @@ export function RunnersPage() {
     refetchInterval: (query) =>
       isRateLimited(query.state.error) || isForbidden(query.state.error) ? false : 5000,
   });
+  const tokenMut = useMutation({
+    mutationFn: () => createRunnerRegistrationToken(owner, repo),
+  });
 
   if (reposQ.isError) {
     return <InlineError title="Failed to load repositories for the runner registry" />;
@@ -110,10 +120,33 @@ export function RunnersPage() {
 
   return (
     <div>
-      <PageTitle
-        title="Registered runners"
-        meta={`${totalCount} runner${totalCount === 1 ? "" : "s"} · ${firstRepo}`}
-      />
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <PageTitle
+          title="Registered runners"
+          meta={`${totalCount} runner${totalCount === 1 ? "" : "s"} · ${firstRepo}`}
+        />
+        <Button
+          variant="primary"
+          size="sm"
+          disabled={tokenMut.isPending}
+          onClick={() => tokenMut.mutate()}
+        >
+          {tokenMut.isPending ? "Generating…" : "Add runner"}
+        </Button>
+      </div>
+      <MutationError of={tokenMut} />
+
+      {tokenMut.data && (
+        <Modal title="Register a self-hosted runner" onClose={() => tokenMut.reset()}>
+          <p style={{ marginTop: 0, fontSize: "0.85rem", color: "var(--color-fg-muted)" }}>
+            Run this on the runner host. The token expires{" "}
+            {new Date(tokenMut.data.expires_at).toLocaleString()}.
+          </p>
+          <CodeBlock>
+            {`./config.sh --url ${window.location.origin}/${firstRepo} --token ${tokenMut.data.token}`}
+          </CodeBlock>
+        </Modal>
+      )}
 
       <div className="mb-6 grid grid-cols-3 gap-3">
         <StatCard
