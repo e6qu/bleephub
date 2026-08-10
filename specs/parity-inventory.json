@@ -5470,8 +5470,8 @@
         "id": "TEST-026",
         "location": "bleephub.spec.ts:322",
         "severity": "M",
-        "status": "open",
-        "status_kind": "open"
+        "status": "fixed \u2014 the five fixture-setup `apiPost(...).catch(() => null)` calls now use a discriminating `ignoreAlreadyExists` handler that swallows ONLY the 422/409 \"already exists\" case (the fixed repo names are legitimately re-created across runs) and rethrows any other failure (auth, 5xx), so a broken setup surfaces as its real error instead of a confusing downstream assertion. The \"shows empty state initially\" test was vacuous \u2014 it navigated and screenshotted but asserted nothing, and its name presumed an empty precondition that the run-persistent e2e server does not provide once sibling tests create repos; it is now an ordering-independent assertion that the `/ui/repos` page chrome (the \"Repositories\" h1) renders. Web typecheck clean; the browser run is exercised by CI's \"Browser end-to-end\" job.",
+        "status_kind": "fixed"
       },
       {
         "category": "TEST",
@@ -6594,8 +6594,8 @@
         },
         "TEST": {
           "status": {
-            "fixed": 37,
-            "open": 3
+            "fixed": 38,
+            "open": 2
           },
           "total": 40
         },
@@ -6615,8 +6615,8 @@
       },
       "status": {
         "deferred": 3,
-        "fixed": 664,
-        "open": 11,
+        "fixed": 665,
+        "open": 10,
         "partial": 7
       },
       "total": 685
@@ -28133,262 +28133,262 @@
   "ui": {
     "browser_navigations": [
       {
-        "line": 101,
+        "line": 113,
         "source": "web/e2e/bleephub.spec.ts",
         "target": "/"
       },
       {
-        "line": 114,
-        "source": "web/e2e/bleephub.spec.ts",
-        "target": "/ui/admin"
-      },
-      {
-        "line": 122,
+        "line": 126,
         "source": "web/e2e/bleephub.spec.ts",
         "target": "/ui/admin"
       },
       {
         "line": 134,
         "source": "web/e2e/bleephub.spec.ts",
-        "target": "/ui/"
+        "target": "/ui/admin"
       },
       {
-        "line": 149,
+        "line": 146,
         "source": "web/e2e/bleephub.spec.ts",
         "target": "/ui/"
       },
       {
-        "line": 193,
+        "line": 161,
         "source": "web/e2e/bleephub.spec.ts",
         "target": "/ui/"
       },
       {
-        "line": 204,
+        "line": 205,
+        "source": "web/e2e/bleephub.spec.ts",
+        "target": "/ui/"
+      },
+      {
+        "line": 216,
         "source": "web/e2e/bleephub.spec.ts",
         "target": "/ui/search?q=${encodeURIComponent(marker)}&type=repositories"
       },
       {
-        "line": 224,
+        "line": 236,
         "source": "web/e2e/bleephub.spec.ts",
         "target": "/ui/"
       },
       {
-        "line": 237,
+        "line": 249,
         "source": "web/e2e/bleephub.spec.ts",
         "target": "/ui/repos/admin/${name}"
       },
       {
-        "line": 248,
+        "line": 260,
         "source": "web/e2e/bleephub.spec.ts",
         "target": "/ui/repos/admin/${name}/commits"
       },
       {
-        "line": 261,
+        "line": 273,
         "source": "web/e2e/bleephub.spec.ts",
         "target": "/ui/repos/admin/${name}/branches"
       },
       {
-        "line": 271,
+        "line": 283,
         "source": "web/e2e/bleephub.spec.ts",
         "target": "/ui/"
       },
       {
-        "line": 295,
+        "line": 307,
         "source": "web/e2e/bleephub.spec.ts",
         "target": "/ui/packages"
       },
       {
-        "line": 314,
+        "line": 326,
         "source": "web/e2e/bleephub.spec.ts",
         "target": "/ui/"
       },
       {
-        "line": 351,
+        "line": 363,
         "source": "web/e2e/bleephub.spec.ts",
         "target": "/ui/account"
       },
       {
-        "line": 375,
+        "line": 387,
         "source": "web/e2e/bleephub.spec.ts",
         "target": "/ui/"
       },
       {
-        "line": 381,
+        "line": 393,
         "source": "web/e2e/bleephub.spec.ts",
         "target": "/ui/classrooms/${classroom.id}"
       },
       {
-        "line": 405,
+        "line": 417,
         "source": "web/e2e/bleephub.spec.ts",
         "target": "/ui/repos"
       },
       {
-        "line": 411,
+        "line": 431,
         "source": "web/e2e/bleephub.spec.ts",
         "target": "/ui/"
       },
       {
-        "line": 419,
+        "line": 439,
         "source": "web/e2e/bleephub.spec.ts",
         "target": "/ui/repos"
       },
       {
-        "line": 441,
+        "line": 461,
         "source": "web/e2e/bleephub.spec.ts",
         "target": "/ui/repos"
       },
       {
-        "line": 460,
+        "line": 480,
         "source": "web/e2e/bleephub.spec.ts",
         "target": "/ui/"
       },
       {
-        "line": 471,
+        "line": 491,
         "source": "web/e2e/bleephub.spec.ts",
         "target": "/ui/repos/${owner}/detail-test"
       },
       {
-        "line": 485,
+        "line": 505,
         "source": "web/e2e/bleephub.spec.ts",
         "target": "/ui/"
       },
       {
-        "line": 496,
+        "line": 516,
         "source": "web/e2e/bleephub.spec.ts",
         "target": "/ui/repos/${owner}/readme-test"
       },
       {
-        "line": 506,
+        "line": 526,
         "source": "web/e2e/bleephub.spec.ts",
         "target": "/ui/"
       },
       {
-        "line": 520,
+        "line": 540,
         "source": "web/e2e/bleephub.spec.ts",
         "target": "/ui/repos/admin/${repo}"
       },
       {
-        "line": 530,
+        "line": 550,
         "source": "web/e2e/bleephub.spec.ts",
         "target": "/ui/"
       },
       {
-        "line": 544,
+        "line": 564,
         "source": "web/e2e/bleephub.spec.ts",
         "target": "/ui/repos/${owner}/issues-test"
       },
       {
-        "line": 559,
+        "line": 579,
         "source": "web/e2e/bleephub.spec.ts",
         "target": "/ui/"
       },
       {
-        "line": 574,
+        "line": 594,
         "source": "web/e2e/bleephub.spec.ts",
         "target": "/ui/repos/${owner}/issues-direct/issues"
       },
       {
-        "line": 596,
+        "line": 616,
         "source": "web/e2e/bleephub.spec.ts",
         "target": "/ui/"
       },
       {
-        "line": 606,
+        "line": 626,
         "source": "web/e2e/bleephub.spec.ts",
         "target": "/ui/repos/${owner}/pulls-direct/pulls"
       },
       {
-        "line": 614,
+        "line": 634,
         "source": "web/e2e/bleephub.spec.ts",
         "target": "/ui/"
       },
       {
-        "line": 638,
+        "line": 658,
         "source": "web/e2e/bleephub.spec.ts",
         "target": "/ui/repos/admin/${repo}/pulls/${pull.number}/files"
       },
       {
-        "line": 666,
+        "line": 686,
         "source": "web/e2e/bleephub.spec.ts",
         "target": "/ui/apps"
       },
       {
-        "line": 674,
+        "line": 694,
         "source": "web/e2e/bleephub.spec.ts",
         "target": "/ui/apps"
       },
       {
-        "line": 685,
+        "line": 705,
         "source": "web/e2e/bleephub.spec.ts",
         "target": "/ui/apps"
       },
       {
-        "line": 695,
+        "line": 715,
         "source": "web/e2e/bleephub.spec.ts",
         "target": "/ui/oauth"
       },
       {
-        "line": 706,
+        "line": 726,
         "source": "web/e2e/bleephub.spec.ts",
         "target": "/ui/"
       },
       {
-        "line": 738,
+        "line": 758,
         "source": "web/e2e/bleephub.spec.ts",
         "target": "/ui/workflows"
       },
       {
-        "line": 757,
+        "line": 777,
         "source": "web/e2e/bleephub.spec.ts",
         "target": "/ui/metrics"
       },
       {
-        "line": 768,
+        "line": 788,
         "source": "web/e2e/bleephub.spec.ts",
         "target": "/ui/"
       },
       {
-        "line": 774,
+        "line": 794,
         "source": "web/e2e/bleephub.spec.ts",
         "target": "/ui/repos/${owner}/${repo}/releases"
       },
       {
-        "line": 818,
+        "line": 838,
         "source": "web/e2e/bleephub.spec.ts",
         "target": "/ui/"
       },
       {
-        "line": 825,
+        "line": 845,
         "source": "web/e2e/bleephub.spec.ts",
         "target": "/ui/repos/${owner}/${repo}/security/code-scanning"
       },
       {
-        "line": 873,
+        "line": 893,
         "source": "web/e2e/bleephub.spec.ts",
         "target": "/ui/apps"
       },
       {
-        "line": 907,
+        "line": 927,
         "source": "web/e2e/bleephub.spec.ts",
         "target": "/ui/marketplace"
       },
       {
-        "line": 957,
+        "line": 977,
         "source": "web/e2e/bleephub.spec.ts",
         "target": "/ui/admin"
       },
       {
-        "line": 962,
+        "line": 982,
         "source": "web/e2e/bleephub.spec.ts",
         "target": "/ui/repos"
       },
       {
-        "line": 974,
+        "line": 994,
         "source": "web/e2e/bleephub.spec.ts",
         "target": "/ui/repos/${owner}/dark-theme-repo"
       },
       {
-        "line": 987,
+        "line": 1007,
         "source": "web/e2e/bleephub.spec.ts",
         "target": "/health"
       },
