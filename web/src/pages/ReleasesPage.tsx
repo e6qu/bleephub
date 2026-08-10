@@ -3,16 +3,21 @@ import { Link, useLocation, useNavigate, useParams } from "react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { InlineError, Spinner } from "@bleephub/ui-core/components";
 import {
+  addReleaseReaction,
   createRelease,
   deleteRelease,
   deleteReleaseAsset,
   downloadReleaseAsset,
+  fetchAuthenticatedUser,
   fetchRelease,
+  fetchReleaseReactions,
   fetchReleases,
+  removeReleaseReaction,
   updateRelease,
   uploadReleaseAsset,
   type ReleasePayload,
 } from "../api.js";
+import { ReactionBar } from "../components/ReactionBar.js";
 import type { GithubRelease, GithubReleaseAsset } from "../types.js";
 import { RepoHeader } from "../components/Shell.js";
 import { Blankslate, Box, Button, ErrorBanner, FormLabel, PageTitle } from "../components/ui.js";
@@ -196,6 +201,8 @@ function ReleaseDetail({ owner, repo, releaseId }: { owner: string; repo: string
   const queryClient = useQueryClient();
   const [editing, setEditing] = useState(false);
   const release = useQuery({ queryKey: ["release", owner, repo, releaseId], queryFn: () => fetchRelease(owner, repo, releaseId) });
+  const viewerQ = useQuery({ queryKey: ["viewer"], queryFn: fetchAuthenticatedUser });
+  const viewerLogin = typeof viewerQ.data?.login === "string" ? viewerQ.data.login : null;
   const remove = useMutation({
     mutationFn: () => deleteRelease(owner, repo, releaseId),
     onSuccess: async () => {
@@ -220,6 +227,15 @@ function ReleaseDetail({ owner, repo, releaseId }: { owner: string; repo: string
       />
       {remove.isError && <ErrorBanner>{String(remove.error)}</ErrorBanner>}
       {release.data.body && <div className="mb-5 whitespace-pre-wrap" style={{ lineHeight: 1.6 }}>{release.data.body}</div>}
+      <div className="mb-5">
+        <ReactionBar
+          queryKey={["release-reactions", owner, repo, releaseId]}
+          fetchList={() => fetchReleaseReactions(owner, repo, releaseId)}
+          add={(content) => addReleaseReaction(owner, repo, releaseId, content)}
+          remove={(reactionId) => removeReleaseReaction(owner, repo, releaseId, reactionId)}
+          viewerLogin={viewerLogin}
+        />
+      </div>
       <ReleaseAssets owner={owner} repo={repo} release={release.data} />
     </>
   );

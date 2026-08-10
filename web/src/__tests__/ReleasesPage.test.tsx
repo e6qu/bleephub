@@ -45,4 +45,32 @@ describe("ReleasesPage", () => {
     await waitFor(() => expect(screen.getByRole("heading", { name: "Updated release" })).toBeVisible());
     expect(screen.getByRole("button", { name: "Delete artifact.txt" })).toBeVisible();
   });
+
+  it("adds a reaction to a release via POST /releases/{id}/reactions", async () => {
+    mockFetch.mockImplementation((input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      if (init?.method === "POST" && url.endsWith("/releases/1/reactions")) {
+        return Promise.resolve(
+          response({ id: 3, content: "heart", user: { login: "admin" }, created_at: "2026-07-12T00:00:00Z" }, 201),
+        );
+      }
+      if (url.endsWith("/releases/1/reactions")) return Promise.resolve(response([]));
+      if (url.endsWith("/releases/1")) return Promise.resolve(response(release));
+      if (url === "/api/v3/repos/admin/release") return Promise.resolve(response(repo));
+      if (url.endsWith("/user")) return Promise.resolve(response({ login: "admin" }));
+      return Promise.resolve(response([]));
+    });
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    render(<QueryClientProvider client={client}><MemoryRouter initialEntries={["/ui/repos/admin/release/releases/1"]}><Routes><Route path="/ui/repos/:owner/:repo/releases/:releaseId" element={<ReleasesPage />} /></Routes></MemoryRouter></QueryClientProvider>);
+
+    fireEvent.click(await screen.findByRole("button", { name: "add reaction" }));
+    fireEvent.click(screen.getByRole("button", { name: "react with heart" }));
+    await waitFor(() => {
+      const call = mockFetch.mock.calls.find(
+        (c) => String(c[0]).endsWith("/releases/1/reactions") && c[1]?.method === "POST",
+      );
+      expect(call).toBeDefined();
+      expect(JSON.parse(String(call![1].body))).toEqual({ content: "heart" });
+    });
+  });
 });

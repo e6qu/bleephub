@@ -4165,6 +4165,32 @@ export const removeIssueCommentReaction = (
     "DELETE",
     `/api/v3/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/issues/comments/${commentId}/reactions/${reactionId}`,
   );
+
+export const fetchReleaseReactions = (owner: string, repo: string, releaseId: number) =>
+  ghFetch<GithubReaction[]>(
+    `/api/v3/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/releases/${releaseId}/reactions`,
+  );
+
+export const addReleaseReaction = (
+  owner: string,
+  repo: string,
+  releaseId: number,
+  content: GithubReactionContent,
+): Promise<GithubReaction> =>
+  ghPostJSON(`/api/v3/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/releases/${releaseId}/reactions`, {
+    content,
+  });
+
+export const removeReleaseReaction = (
+  owner: string,
+  repo: string,
+  releaseId: number,
+  reactionId: number,
+) =>
+  ghSend(
+    "DELETE",
+    `/api/v3/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/releases/${releaseId}/reactions/${reactionId}`,
+  );
 // ─── Search + repo social + account ─────────────────────────────────────
 
 /** One page of a /search/* envelope ({total_count, incomplete_results, items}). */
