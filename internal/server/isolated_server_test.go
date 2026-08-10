@@ -542,6 +542,19 @@ func (s *isolatedServer) createRepoWriteRepo(t *testing.T, autoInit bool) string
 	return name
 }
 
+// userSurfaceUser mirrors the package helper (still used by
+// gh_marketplace_test.go): a user plus a broad-scope token, on this isolated
+// server.
+func (s *isolatedServer) userSurfaceUser(t *testing.T, login string) (*User, string) {
+	t.Helper()
+	u := s.createTestUser(t, login)
+	tok := "ghp_" + login + "0000000000token"
+	s.store.mu.Lock()
+	s.store.Tokens[tok] = &Token{Value: tok, UserID: u.ID, Scopes: "repo, workflow, read:org, admin:org, gist, user", CreatedAt: fixedTestTime}
+	s.store.mu.Unlock()
+	return u, tok
+}
+
 // copilotTestOrg mirrors the package helper (still used by gh_copilot_test.go):
 // an org owned by admin with optional active members, on this isolated server.
 func (s *isolatedServer) copilotTestOrg(t *testing.T, login string, memberLogins ...string) (*Org, []*User) {
