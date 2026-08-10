@@ -2241,6 +2241,9 @@ export const setRepoInteractionLimit = (owner: string, repo: string, limit: stri
 export const transferRepo = (owner: string, repo: string, newOwner: string) =>
   ghPostJSON<BleephubRepo>(`/api/v3/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/transfer`, { new_owner: newOwner });
 
+export const deleteRepo = (owner: string, repo: string): Promise<void> =>
+  ghDelete(`/api/v3/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}`);
+
 export const renameBranch = (owner: string, repo: string, branch: string, newName: string) =>
   ghPostJSON<{ url: string }>(`/api/v3/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/branches/${encodeURIComponent(branch)}/rename`, { new_name: newName });
 

@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { useParams, Link } from "react-router";
+import { useParams, useNavigate, Link } from "react-router";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Spinner, InlineError } from "@bleephub/ui-core/components";
 import { confirmAction } from "../components/confirmAction.js";
@@ -8,6 +8,7 @@ import {
   createPagesSite,
   deletePagesSite,
   cancelRepoInvitation,
+  deleteRepo,
   deleteRepoDeployKey,
   fetchPagesBuilds,
   fetchPagesDeploymentStatus,
@@ -91,7 +92,12 @@ export function RepoSettingsPage() {
         {tab === "pages" && <PagesTab owner={owner} repo={repo} />}
         {tab === "security" && <SecurityTab owner={owner} repo={repo} />}
         {tab === "interaction" && <InteractionTab owner={owner} repo={repo} />}
-        {tab === "transfer" && <TransferTab owner={owner} repo={repo} />}
+        {tab === "transfer" && (
+          <div style={{ display: "flex", flexDirection: "column", gap: "1rem" }}>
+            <TransferTab owner={owner} repo={repo} />
+            <DeleteRepoCard owner={owner} repo={repo} />
+          </div>
+        )}
         {tab === "rename" && <RenameBranchTab owner={owner} repo={repo} />}
       </SettingsLayout>
     </div>
@@ -926,6 +932,46 @@ function TransferTab({ owner, repo }: { owner: string; repo: string }) {
             disabled={mutation.isPending || !newOwner.trim()}
           >
             Transfer
+          </Button>
+        </div>
+      </div>
+    </Box>
+  );
+}
+
+function DeleteRepoCard({ owner, repo }: { owner: string; repo: string }) {
+  const navigate = useNavigate();
+  const queryClient = useQueryClient();
+  const [error, setError] = useState<string | null>(null);
+
+  const mutation = useMutation({
+    mutationFn: () => deleteRepo(owner, repo),
+    onSuccess: () => {
+      setError(null);
+      void queryClient.invalidateQueries({ queryKey: ["repos"] });
+      navigate("/ui/");
+    },
+    onError: (err: Error) => setError(err.message),
+  });
+
+  const handleDelete = async () => {
+    const confirmed = await confirmAction(
+      `This permanently deletes ${owner}/${repo}, including its issues, pull requests, and all data. This cannot be undone.`,
+      { title: "Delete this repository?", confirmLabel: "Delete" },
+    );
+    if (confirmed) mutation.mutate();
+  };
+
+  return (
+    <Box header={<span style={{ fontWeight: 600, color: "var(--gh-danger, var(--color-danger-fg))" }}>Delete this repository</span>}>
+      <div style={{ padding: "1rem", display: "flex", flexDirection: "column", gap: "0.75rem" }}>
+        {error && <ErrorBanner>{error}</ErrorBanner>}
+        <p style={{ fontSize: "0.85rem", color: "var(--color-fg-muted)" }}>
+          Once you delete a repository, there is no going back. All issues, pull requests, and data are permanently removed.
+        </p>
+        <div className="flex justify-end">
+          <Button variant="danger" onClick={handleDelete} disabled={mutation.isPending}>
+            Delete this repository
           </Button>
         </div>
       </div>
