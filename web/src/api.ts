@@ -1077,7 +1077,12 @@ export const putFile = (
   owner: string,
   repo: string,
   path: string,
-  payload: { message: string; content: string; sha?: string; branch?: string },
+  payload: {
+    message: string;
+    content: string;
+    sha?: string | undefined;
+    branch?: string | undefined;
+  },
 ) => {
   const encodedPath = path.split("/").map(encodeURIComponent).join("/");
   const body: Record<string, unknown> = {
