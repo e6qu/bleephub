@@ -7,23 +7,26 @@ import (
 
 var fixedCampaignTestTime = time.Date(2035, time.June, 15, 12, 0, 0, 0, time.UTC)
 
-func useFixedCampaignClock(t *testing.T) {
+func (s *isolatedServer) useFixedCampaignClock(t *testing.T) {
 	t.Helper()
-	previous := testServer.replaceClockNow(func() time.Time { return fixedCampaignTestTime })
-	t.Cleanup(func() { testServer.replaceClockNow(previous) })
+	previous := s.replaceClockNow(func() time.Time { return fixedCampaignTestTime })
+	t.Cleanup(func() { s.replaceClockNow(previous) })
 }
 
 func TestOrgCampaigns_CRUD(t *testing.T) {
-	useFixedCampaignClock(t)
-	org := createTestOrg(t)
-	repoName, repoID := createOrgRepoForGovernance(t, org)
+	t.Parallel()
+	s := newIsolatedServer(t)
+	s.useFixedCampaignClock(t)
+	org := s.createTestOrg(t)
+	repoRow, repoID := s.createOrgRepoForGovernance(t, org)
+	repoName := repoRow.name
 
-	alert := seedCodeScanningAlert(t, org, repoName, "campaign-rule", "error", "CodeQL")
+	alert := s.seedCodeScanningAlert(t, org, repoName, "campaign-rule", "error", "CodeQL")
 	alertNumber := int(alert["number"].(float64))
 	endsAt := fixedCampaignTestTime.Add(30 * 24 * time.Hour).Format(time.RFC3339)
 
 	// Create.
-	resp := ghPost(t, "/api/v3/orgs/"+org+"/campaigns", defaultToken, map[string]interface{}{
+	resp := s.post(t, "/api/v3/orgs/"+org+"/campaigns", defaultToken, map[string]interface{}{
 		"name":        "Q4 code scanning cleanup",
 		"description": "Fix the open CodeQL alerts before the freeze",
 		"ends_at":     endsAt,
@@ -53,7 +56,7 @@ func TestOrgCampaigns_CRUD(t *testing.T) {
 	number := itoa(int(created["number"].(float64)))
 
 	// GET one.
-	resp = ghGet(t, "/api/v3/orgs/"+org+"/campaigns/"+number, defaultToken)
+	resp = s.get(t, "/api/v3/orgs/"+org+"/campaigns/"+number, defaultToken)
 	if resp.StatusCode != 200 {
 		t.Fatalf("get campaign: %d", resp.StatusCode)
 	}
@@ -62,7 +65,7 @@ func TestOrgCampaigns_CRUD(t *testing.T) {
 	}
 
 	// List.
-	resp = ghGet(t, "/api/v3/orgs/"+org+"/campaigns", defaultToken)
+	resp = s.get(t, "/api/v3/orgs/"+org+"/campaigns", defaultToken)
 	if resp.StatusCode != 200 {
 		t.Fatalf("list campaigns: %d", resp.StatusCode)
 	}
@@ -71,7 +74,7 @@ func TestOrgCampaigns_CRUD(t *testing.T) {
 	}
 
 	// Dismissing the linked alert moves it to the closed count.
-	patchAlert := ghPatch(t, "/api/v3/repos/"+org+"/"+repoName+"/code-scanning/alerts/"+itoa(alertNumber), defaultToken, map[string]interface{}{
+	patchAlert := s.patch(t, "/api/v3/repos/"+org+"/"+repoName+"/code-scanning/alerts/"+itoa(alertNumber), defaultToken, map[string]interface{}{
 		"state":            "dismissed",
 		"dismissed_reason": "won't fix",
 	})
@@ -79,14 +82,14 @@ func TestOrgCampaigns_CRUD(t *testing.T) {
 	if patchAlert.StatusCode != 200 {
 		t.Fatalf("dismiss alert: %d", patchAlert.StatusCode)
 	}
-	resp = ghGet(t, "/api/v3/orgs/"+org+"/campaigns/"+number, defaultToken)
+	resp = s.get(t, "/api/v3/orgs/"+org+"/campaigns/"+number, defaultToken)
 	stats = decodeJSON(t, resp)["alert_stats"].(map[string]interface{})
 	if stats["open_count"].(float64) != 0 || stats["closed_count"].(float64) != 1 {
 		t.Fatalf("alert_stats after dismissal = %v", stats)
 	}
 
 	// PATCH: close the campaign.
-	resp = ghPatch(t, "/api/v3/orgs/"+org+"/campaigns/"+number, defaultToken, map[string]interface{}{
+	resp = s.patch(t, "/api/v3/orgs/"+org+"/campaigns/"+number, defaultToken, map[string]interface{}{
 		"state": "closed",
 	})
 	if resp.StatusCode != 200 {
@@ -98,22 +101,22 @@ func TestOrgCampaigns_CRUD(t *testing.T) {
 	}
 
 	// State filter.
-	resp = ghGet(t, "/api/v3/orgs/"+org+"/campaigns?state=open", defaultToken)
+	resp = s.get(t, "/api/v3/orgs/"+org+"/campaigns?state=open", defaultToken)
 	if got := decodeJSONArray(t, resp); len(got) != 0 {
 		t.Fatalf("open campaigns = %v", got)
 	}
-	resp = ghGet(t, "/api/v3/orgs/"+org+"/campaigns?state=closed", defaultToken)
+	resp = s.get(t, "/api/v3/orgs/"+org+"/campaigns?state=closed", defaultToken)
 	if got := decodeJSONArray(t, resp); len(got) != 1 {
 		t.Fatalf("closed campaigns = %v", got)
 	}
 
 	// DELETE.
-	resp = ghDelete(t, "/api/v3/orgs/"+org+"/campaigns/"+number, defaultToken)
+	resp = s.delete(t, "/api/v3/orgs/"+org+"/campaigns/"+number, defaultToken)
 	resp.Body.Close()
 	if resp.StatusCode != 204 {
 		t.Fatalf("delete campaign: %d", resp.StatusCode)
 	}
-	resp = ghGet(t, "/api/v3/orgs/"+org+"/campaigns/"+number, defaultToken)
+	resp = s.get(t, "/api/v3/orgs/"+org+"/campaigns/"+number, defaultToken)
 	resp.Body.Close()
 	if resp.StatusCode != 404 {
 		t.Fatalf("get deleted campaign: %d", resp.StatusCode)
@@ -121,10 +124,13 @@ func TestOrgCampaigns_CRUD(t *testing.T) {
 }
 
 func TestOrgCampaigns_Validation(t *testing.T) {
-	useFixedCampaignClock(t)
-	org := createTestOrg(t)
-	repoName, repoID := createOrgRepoForGovernance(t, org)
-	alert := seedCodeScanningAlert(t, org, repoName, "v-rule", "warning", "CodeQL")
+	t.Parallel()
+	s := newIsolatedServer(t)
+	s.useFixedCampaignClock(t)
+	org := s.createTestOrg(t)
+	repoRow, repoID := s.createOrgRepoForGovernance(t, org)
+	repoName := repoRow.name
+	alert := s.seedCodeScanningAlert(t, org, repoName, "v-rule", "warning", "CodeQL")
 	alertNumber := int(alert["number"].(float64))
 	future := fixedCampaignTestTime.Add(24 * time.Hour).Format(time.RFC3339)
 	alerts := []map[string]interface{}{
@@ -132,7 +138,7 @@ func TestOrgCampaigns_Validation(t *testing.T) {
 	}
 
 	// ends_at in the past.
-	resp := ghPost(t, "/api/v3/orgs/"+org+"/campaigns", defaultToken, map[string]interface{}{
+	resp := s.post(t, "/api/v3/orgs/"+org+"/campaigns", defaultToken, map[string]interface{}{
 		"name":                 "past",
 		"description":          "d",
 		"ends_at":              fixedCampaignTestTime.Add(-time.Hour).Format(time.RFC3339),
@@ -144,7 +150,7 @@ func TestOrgCampaigns_Validation(t *testing.T) {
 	}
 
 	// Missing alert linkage.
-	resp = ghPost(t, "/api/v3/orgs/"+org+"/campaigns", defaultToken, map[string]interface{}{
+	resp = s.post(t, "/api/v3/orgs/"+org+"/campaigns", defaultToken, map[string]interface{}{
 		"name": "no alerts", "description": "d", "ends_at": future,
 	})
 	resp.Body.Close()
@@ -153,7 +159,7 @@ func TestOrgCampaigns_Validation(t *testing.T) {
 	}
 
 	// Unknown alert number.
-	resp = ghPost(t, "/api/v3/orgs/"+org+"/campaigns", defaultToken, map[string]interface{}{
+	resp = s.post(t, "/api/v3/orgs/"+org+"/campaigns", defaultToken, map[string]interface{}{
 		"name": "bad alert", "description": "d", "ends_at": future,
 		"code_scanning_alerts": []map[string]interface{}{
 			{"repository_id": repoID, "alert_numbers": []int{987654}},
@@ -165,9 +171,9 @@ func TestOrgCampaigns_Validation(t *testing.T) {
 	}
 
 	// A manager who is not an org member.
-	outsider := createTestUser(t, "campaign-outsider-"+org)
+	outsider := s.createTestUser(t, "campaign-outsider-"+org)
 	_ = outsider
-	resp = ghPost(t, "/api/v3/orgs/"+org+"/campaigns", defaultToken, map[string]interface{}{
+	resp = s.post(t, "/api/v3/orgs/"+org+"/campaigns", defaultToken, map[string]interface{}{
 		"name": "bad manager", "description": "d", "ends_at": future,
 		"managers":             []string{"campaign-outsider-" + org},
 		"code_scanning_alerts": alerts,
@@ -178,7 +184,7 @@ func TestOrgCampaigns_Validation(t *testing.T) {
 	}
 
 	// A name longer than 50 characters.
-	resp = ghPost(t, "/api/v3/orgs/"+org+"/campaigns", defaultToken, map[string]interface{}{
+	resp = s.post(t, "/api/v3/orgs/"+org+"/campaigns", defaultToken, map[string]interface{}{
 		"name":                 "0123456789012345678901234567890123456789012345678901",
 		"description":          "d",
 		"ends_at":              future,
