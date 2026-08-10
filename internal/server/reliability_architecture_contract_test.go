@@ -58,8 +58,8 @@ func TestReliabilityDebtOnlyShrinks(t *testing.T) {
 		// Ratcheted down as the TEST-008 migration moves files off the shared
 		// `testServer` onto per-test isolated servers (newIsolatedServer). Lower
 		// these as more files are converted; they must only shrink.
-		maxSharedHarnessFiles      = 93
-		maxSharedHarnessReferences = 1229
+		maxSharedHarnessFiles      = 92
+		maxSharedHarnessReferences = 1228
 	)
 
 	directWrites, batchedMutations := 0, 0
