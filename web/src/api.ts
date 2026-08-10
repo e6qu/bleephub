@@ -1507,6 +1507,29 @@ export const fetchRepoPRsPage = (
 export const fetchPRDetail = (owner: string, repo: string, number: number, signal?: AbortSignal) =>
   ghFetch<GithubPR>(`/api/v3/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/pulls/${number}`, signal);
 
+/** Open a pull request from `head` into `base`. */
+export const createPull = (
+  owner: string,
+  repo: string,
+  payload: { title: string; head: string; base: string; body?: string; draft?: boolean },
+) =>
+  ghPostJSON<GithubPR>(
+    `/api/v3/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/pulls`,
+    payload,
+  );
+
+/** Patch a pull request's editable fields (title/body, or state to close/reopen). */
+export const updatePull = (
+  owner: string,
+  repo: string,
+  number: number,
+  patch: { title?: string; body?: string; state?: "open" | "closed" },
+) =>
+  ghPatchJSON<GithubPR>(
+    `/api/v3/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/pulls/${number}`,
+    patch,
+  );
+
 export const fetchRepoBranches = (owner: string, repo: string) =>
   ghFetch<GithubBranch[]>(`/api/v3/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/branches`);
 

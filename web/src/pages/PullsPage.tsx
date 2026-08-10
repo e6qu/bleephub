@@ -7,6 +7,8 @@ import {
   fetchPRDetail,
   fetchPRCommits,
   fetchCheckRuns,
+  fetchRepoBranches,
+  createPull,
   mergePR,
   isNotFound,
   fetchAuthenticatedUser,
@@ -54,7 +56,8 @@ import {
   emptyFilters,
   type ListItemAccessors,
 } from "../components/ListControls.js";
-import { Button, Box, Blankslate, StateLabel, SectionLabel, FormLabel, Tabs } from "../components/ui.js";
+import { Button, Box, Blankslate, StateLabel, SectionLabel, FormLabel, Tabs, Modal, DialogActions } from "../components/ui.js";
+import { MutationError } from "../components/MutationError.js";
 import {
   PullRequestIcon,
   MergedIcon,
@@ -113,10 +116,32 @@ function usePRClosedCount(owner: string, repo: string): number | string | undefi
 }
 
 function PRList({ owner, repo }: { owner: string; repo: string }) {
+  const navigate = useNavigate();
+  const qc = useQueryClient();
   const [state, setState] = useState<"open" | "closed">("open");
   const [filters, setFilters] = useState<ListFilterState>(emptyFilters);
   const counts = useOpenCounts(owner, repo);
   const closedCount = usePRClosedCount(owner, repo);
+
+  const [creating, setCreating] = useState(false);
+  const [prTitle, setPrTitle] = useState("");
+  const [prBody, setPrBody] = useState("");
+  const [prHead, setPrHead] = useState("");
+  const [prBase, setPrBase] = useState("");
+  const { data: branches = [] } = useQuery({
+    queryKey: ["branches", owner, repo],
+    queryFn: () => fetchRepoBranches(owner, repo),
+    enabled: creating,
+  });
+  const createMut = useMutation({
+    mutationFn: () =>
+      createPull(owner, repo, { title: prTitle, head: prHead, base: prBase, body: prBody }),
+    onSuccess: (pr: GithubPR) => {
+      qc.invalidateQueries({ queryKey: ["prs", owner, repo] });
+      setCreating(false);
+      navigate(`/ui/repos/${owner}/${repo}/pulls/${pr.number}`);
+    },
+  });
 
   const query = useInfiniteQuery({
     queryKey: ["prs", owner, repo, state, "paged"],
@@ -149,7 +174,84 @@ function PRList({ owner, repo }: { owner: string; repo: string }) {
         filters={filters}
         onFilters={setFilters}
         accessors={prAccessors}
+        actions={
+          <Button variant="primary" size="sm" onClick={() => setCreating(true)}>
+            New pull request
+          </Button>
+        }
       />
+
+      {creating && (
+        <Modal title="Open a pull request" onClose={() => setCreating(false)}>
+          <div className="mb-3 flex items-center gap-2">
+            <div className="flex-1">
+              <FormLabel id="pr-base">Base</FormLabel>
+              <select
+                id="pr-base"
+                value={prBase}
+                onChange={(e) => setPrBase(e.target.value)}
+                className="w-full"
+              >
+                <option value="">Choose base…</option>
+                {branches.map((b) => (
+                  <option key={b.name} value={b.name}>
+                    {b.name}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <span style={{ marginTop: "1.2rem", color: "var(--color-fg-muted)" }}>←</span>
+            <div className="flex-1">
+              <FormLabel id="pr-head">Compare</FormLabel>
+              <select
+                id="pr-head"
+                value={prHead}
+                onChange={(e) => setPrHead(e.target.value)}
+                className="w-full"
+              >
+                <option value="">Choose head…</option>
+                {branches.map((b) => (
+                  <option key={b.name} value={b.name}>
+                    {b.name}
+                  </option>
+                ))}
+              </select>
+            </div>
+          </div>
+          <FormLabel id="pr-title">Title</FormLabel>
+          <input
+            id="pr-title"
+            value={prTitle}
+            onChange={(e) => setPrTitle(e.target.value)}
+            placeholder="Pull request title"
+            className="mb-3 w-full"
+          />
+          <FormLabel id="pr-body">Description (optional)</FormLabel>
+          <textarea
+            id="pr-body"
+            value={prBody}
+            onChange={(e) => setPrBody(e.target.value)}
+            rows={5}
+            placeholder="Describe the change…"
+            className="mb-4 w-full"
+            style={{ resize: "vertical" }}
+          />
+          <MutationError of={createMut} />
+          <DialogActions>
+            <Button variant="ghost" size="sm" onClick={() => setCreating(false)}>
+              Cancel
+            </Button>
+            <Button
+              variant="primary"
+              size="sm"
+              disabled={!prTitle.trim() || !prHead || !prBase || prHead === prBase || createMut.isPending}
+              onClick={() => createMut.mutate()}
+            >
+              {createMut.isPending ? "Creating…" : "Create pull request"}
+            </Button>
+          </DialogActions>
+        </Modal>
+      )}
 
       {prs.length === 0 ? (
         <Blankslate icon={<PullRequestIcon size={26} />} title={`No ${state} pull requests`} />
