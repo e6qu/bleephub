@@ -1,1 +1,0 @@
-import{t as e}from"./vendor-crypto-CEOeYTvH.js";async function t(t,n){await e.ready;let r=e.crypto_box_seal(t,e.from_base64(n,e.base64_variants.ORIGINAL));return e.to_base64(r,e.base64_variants.ORIGINAL)}export{t};

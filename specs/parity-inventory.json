@@ -4487,9 +4487,9 @@
         "category": "CORE",
         "finding": "73 committed build artifacts with no CI check that they match a fresh build",
         "id": "CORE-013",
-        "location": "ui_embed.go:12, Makefile:11",
+        "location": "ui_embed.go:12, .gitignore",
         "severity": "M",
-        "status": "fixed \u2014 the committed `internal/server/dist` tree (go:embed'd by `ui_embed.go`) now has a freshness gate. The \"Web application\" CI job, right after it builds the app, copies the fresh `web/dist` over `internal/server/dist` and runs `git diff --exit-code`, failing if the committed artifacts drifted from a fresh build; `make check-web-embed` runs the same check locally. This is reliable because the Vite build is deterministic: two builds are byte-identical, and \u2014 verified here \u2014 the output is independent of the bun version (built with both the local 1.3.10 and the CI-pinned 1.3.14 and got byte-identical trees), because bun is only the runtime/package manager while the lockfile-pinned Vite/Rollup do the bundling. The committed tree was in fact stale (the merged web PRs had changed sources without regenerating it); this change also regenerates it so the gate is green.",
+        "status": "fixed \u2014 the generated UI is no longer committed, so it cannot go stale. The `internal/server/dist` tree (go:embed'd by `ui_embed.go`) was 73 Vite output files tracked in git; a byte-exact freshness gate was tried but Vite 8's native bundler (rolldown + lightningcss) is not byte-reproducible across CPU architectures, so a mac-built commit can never match a linux CI rebuild. Instead `internal/server/dist` is now gitignored except a single `.gitkeep`, which keeps `//go:embed all:dist` compiling on a fresh checkout, and the SPA is rebuilt only where it is consumed \u2014 the release image's `ui-builder` stage (`Dockerfile.release`, which already regenerated it and whose `.dockerignore` excludes the tree) and `make build`. Staleness is structurally impossible because no generated artifact is committed. CI still runs `bun run build` so a broken production build fails, and `TestSPAHandlerServesAssetsAndFallsBackToIndex` exercises the handler against a synthetic in-memory FS rather than the embed.",
         "status_kind": "fixed"
       },
       {

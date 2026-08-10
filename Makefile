@@ -1,4 +1,4 @@
-.PHONY: build run test web-build check-web-embed gh-test shauth-sso-test runner-sockerless-test runner-image
+.PHONY: build run test web-build gh-test shauth-sso-test runner-sockerless-test runner-image
 
 build: web-build
 	CGO_ENABLED=0 GOWORK=off go build -o bleephub-server ./cmd/bleephub
@@ -6,20 +6,14 @@ build: web-build
 run: build
 	./bleephub-server
 
+# CORE-013: internal/server/dist is a generated Vite artifact that is NOT
+# committed (gitignored except .gitkeep). Regenerate it locally before an
+# embedded `go build`; the release image builds it the same way in its
+# ui-builder stage. Nothing generated is committed, so it cannot go stale.
 web-build:
 	cd web && bun install --frozen-lockfile && bun run build
 	rm -rf internal/server/dist/*
 	cp -R web/dist/. internal/server/dist/
-
-# CORE-013: fail if the committed embedded UI (internal/server/dist, go:embed'd
-# by ui_embed.go) does not match a fresh build of the current web sources. The
-# Vite build is deterministic under the CI-pinned bun version, so any diff means
-# web/ was changed without regenerating the embedded copy. Run `make web-build`
-# and commit the result to fix.
-check-web-embed: web-build
-	@git diff --exit-code -- internal/server/dist \
-	  || { echo "ERROR: internal/server/dist is stale — run 'make web-build' and commit the result (CORE-013)"; exit 1; }
-	@echo "internal/server/dist matches a fresh build"
 
 test:
 	GOWORK=off go test -tags noui -count=1 -timeout 20m ./...
