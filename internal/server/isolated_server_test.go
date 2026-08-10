@@ -8,7 +8,9 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"strconv"
+	"strings"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -540,6 +542,76 @@ func (s *isolatedServer) createRepoWriteRepo(t *testing.T, autoInit bool) string
 	})
 	requireStatus(t, resp, 201)
 	return name
+}
+
+// createGitHubAppViaManifest mirrors the package helper (still used by
+// gh_apps_flow_test.go and gh_marketplace_test.go): runs the app-manifest
+// conversion flow and returns the created app, on this isolated server.
+func (s *isolatedServer) createGitHubAppViaManifest(t *testing.T, name string, perms map[string]string, events []string) map[string]interface{} {
+	t.Helper()
+	manifest := map[string]interface{}{
+		"name":                name,
+		"url":                 "https://example.test/app",
+		"redirect_url":        "https://example.test/callback",
+		"default_permissions": perms,
+		"default_events":      events,
+	}
+	manifestJSON, _ := json.Marshal(manifest)
+	form := url.Values{"manifest": {string(manifestJSON)}}
+	req, _ := http.NewRequest("POST", s.baseURL+"/settings/apps/new", strings.NewReader(form.Encode()))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	req.Header.Set("Authorization", "token "+defaultToken)
+	resp, err := noRedirectClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	resp.Body.Close()
+	if resp.StatusCode != http.StatusFound {
+		t.Fatalf("manifest submission: got %d, want 302", resp.StatusCode)
+	}
+	loc, err := url.Parse(resp.Header.Get("Location"))
+	if err != nil {
+		t.Fatalf("parse manifest redirect: %v", err)
+	}
+	code := loc.Query().Get("code")
+	if code == "" {
+		t.Fatal("manifest redirect carries no code")
+	}
+	convResp := s.post(t, "/api/v3/app-manifests/"+code+"/conversions", "", nil)
+	if convResp.StatusCode != http.StatusCreated {
+		convResp.Body.Close()
+		t.Fatalf("manifest conversion: got %d, want 201", convResp.StatusCode)
+	}
+	return decodeJSON(t, convResp)
+}
+
+// installGitHubAppViaBrowser mirrors the package helper (still used by
+// gh_apps_flow_test.go): runs the browser install flow and returns the
+// installation, on this isolated server.
+func (s *isolatedServer) installGitHubAppViaBrowser(t *testing.T, appSlug, targetLogin, selection string, repoIDs ...int) map[string]interface{} {
+	t.Helper()
+	form := url.Values{}
+	if targetLogin != "" {
+		form.Set("target_login", targetLogin)
+	}
+	if selection != "" {
+		form.Set("repository_selection", selection)
+	}
+	for _, id := range repoIDs {
+		form.Add("repository_ids", fmt.Sprint(id))
+	}
+	req, _ := http.NewRequest("POST", s.baseURL+"/apps/"+appSlug+"/installations/new", strings.NewReader(form.Encode()))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	req.Header.Set("Authorization", "token "+defaultToken)
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if resp.StatusCode != http.StatusCreated {
+		resp.Body.Close()
+		t.Fatalf("GitHub App browser installation: got %d, want 201", resp.StatusCode)
+	}
+	return decodeJSON(t, resp)
 }
 
 // gqlAuthzPost mirrors the package helper (still used by graphql_authz_test.go):

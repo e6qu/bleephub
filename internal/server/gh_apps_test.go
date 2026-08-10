@@ -406,7 +406,9 @@ func TestAppManifestInvalidConversionCode404(t *testing.T) {
 }
 
 func TestGetAuthenticatedApp(t *testing.T) {
-	appData := createGitHubAppViaManifest(t, "JSON Web Token Auth App", nil, nil)
+	t.Parallel()
+	s := newIsolatedServer(t)
+	appData := s.createGitHubAppViaManifest(t, "JSON Web Token Auth App", nil, nil)
 	appID := int(appData["id"].(float64))
 	pem := appData["pem"].(string)
 
@@ -417,7 +419,7 @@ func TestGetAuthenticatedApp(t *testing.T) {
 	}
 
 	// GET /app with a JSON Web Token.
-	req, _ := http.NewRequest("GET", testBaseURL+"/api/v3/app", nil)
+	req, _ := http.NewRequest("GET", s.baseURL+"/api/v3/app", nil)
 	req.Header.Set("Authorization", "Bearer "+jwt)
 	httpResp, err := http.DefaultClient.Do(req)
 	if err != nil {
@@ -490,15 +492,17 @@ func TestCreateInstallationHTTP(t *testing.T) {
 }
 
 func TestListAppInstallationsHTTP(t *testing.T) {
-	appData := createGitHubAppViaManifest(t, "List Inst App", nil, nil)
+	t.Parallel()
+	s := newIsolatedServer(t)
+	appData := s.createGitHubAppViaManifest(t, "List Inst App", nil, nil)
 	appID := int(appData["id"].(float64))
 	pem := appData["pem"].(string)
 
-	installGitHubAppViaBrowser(t, appData["slug"].(string), "admin", "all")
+	s.installGitHubAppViaBrowser(t, appData["slug"].(string), "admin", "all")
 
 	// List via a JSON Web Token.
 	jwt, _ := signAppJWT(pem, appID, fixedTestTime)
-	req, _ := http.NewRequest("GET", testBaseURL+"/api/v3/app/installations", nil)
+	req, _ := http.NewRequest("GET", s.baseURL+"/api/v3/app/installations", nil)
 	req.Header.Set("Authorization", "Bearer "+jwt)
 	httpResp, err := http.DefaultClient.Do(req)
 	if err != nil {
@@ -598,16 +602,18 @@ func TestListAppInstallationsPagination(t *testing.T) {
 }
 
 func TestCreateInstallationTokenHTTP(t *testing.T) {
-	appData := createGitHubAppViaManifest(t, "Token HTTP App", map[string]string{"contents": "write"}, nil)
+	t.Parallel()
+	s := newIsolatedServer(t)
+	appData := s.createGitHubAppViaManifest(t, "Token HTTP App", map[string]string{"contents": "write"}, nil)
 	appID := int(appData["id"].(float64))
 	pemKey := appData["pem"].(string)
 
-	instData := installGitHubAppViaBrowser(t, appData["slug"].(string), "admin", "all")
+	instData := s.installGitHubAppViaBrowser(t, appData["slug"].(string), "admin", "all")
 	instID := int(instData["id"].(float64))
 
 	// Create an installation token via a JSON Web Token.
 	jwt, _ := signAppJWT(pemKey, appID, fixedTestTime)
-	req, _ := http.NewRequest("POST", fmt.Sprintf("%s/api/v3/app/installations/%d/access_tokens", testBaseURL, instID), nil)
+	req, _ := http.NewRequest("POST", fmt.Sprintf("%s/api/v3/app/installations/%d/access_tokens", s.baseURL, instID), nil)
 	req.Header.Set("Authorization", "Bearer "+jwt)
 	httpResp, err := http.DefaultClient.Do(req)
 	if err != nil {
@@ -636,15 +642,17 @@ func TestCreateInstallationTokenHTTP(t *testing.T) {
 }
 
 func TestInstallationTokenAuth(t *testing.T) {
-	appData := createGitHubAppViaManifest(t, "Token Auth App", nil, nil)
+	t.Parallel()
+	s := newIsolatedServer(t)
+	appData := s.createGitHubAppViaManifest(t, "Token Auth App", nil, nil)
 	appID := int(appData["id"].(float64))
 	pemKey := appData["pem"].(string)
 
-	instData := installGitHubAppViaBrowser(t, appData["slug"].(string), "admin", "all")
+	instData := s.installGitHubAppViaBrowser(t, appData["slug"].(string), "admin", "all")
 	instID := int(instData["id"].(float64))
 
 	jwt, _ := signAppJWT(pemKey, appID, fixedTestTime)
-	req, _ := http.NewRequest("POST", fmt.Sprintf("%s/api/v3/app/installations/%d/access_tokens", testBaseURL, instID), nil)
+	req, _ := http.NewRequest("POST", fmt.Sprintf("%s/api/v3/app/installations/%d/access_tokens", s.baseURL, instID), nil)
 	req.Header.Set("Authorization", "Bearer "+jwt)
 	httpResp, _ := http.DefaultClient.Do(req)
 	tokData := decodeJSON(t, httpResp)
@@ -652,7 +660,7 @@ func TestInstallationTokenAuth(t *testing.T) {
 
 	// Use the installation token to call a GitHub application programming
 	// interface endpoint.
-	req2, _ := http.NewRequest("GET", testBaseURL+"/api/v3/user", nil)
+	req2, _ := http.NewRequest("GET", s.baseURL+"/api/v3/user", nil)
 	req2.Header.Set("Authorization", "Bearer "+ghsToken)
 	resp3, err := http.DefaultClient.Do(req2)
 	if err != nil {
@@ -670,19 +678,21 @@ func TestInstallationTokenAuth(t *testing.T) {
 }
 
 func TestInstallationTokenWrongApp(t *testing.T) {
-	appA := createGitHubAppViaManifest(t, "App A Wrong", nil, nil)
+	t.Parallel()
+	s := newIsolatedServer(t)
+	appA := s.createGitHubAppViaManifest(t, "App A Wrong", nil, nil)
 
-	appB := createGitHubAppViaManifest(t, "App B Wrong", nil, nil)
+	appB := s.createGitHubAppViaManifest(t, "App B Wrong", nil, nil)
 	appBPEM := appB["pem"].(string)
 	appBID := int(appB["id"].(float64))
 
 	// Create an installation for app A.
-	instData := installGitHubAppViaBrowser(t, appA["slug"].(string), "admin", "all")
+	instData := s.installGitHubAppViaBrowser(t, appA["slug"].(string), "admin", "all")
 	instAID := int(instData["id"].(float64))
 
 	// Try to create a token for app A's installation using app B's JSON Web Token.
 	jwt, _ := signAppJWT(appBPEM, appBID, fixedTestTime)
-	req, _ := http.NewRequest("POST", fmt.Sprintf("%s/api/v3/app/installations/%d/access_tokens", testBaseURL, instAID), nil)
+	req, _ := http.NewRequest("POST", fmt.Sprintf("%s/api/v3/app/installations/%d/access_tokens", s.baseURL, instAID), nil)
 	req.Header.Set("Authorization", "Bearer "+jwt)
 	httpResp, err := http.DefaultClient.Do(req)
 	if err != nil {
@@ -760,16 +770,18 @@ func TestGetRepoInstallationHTTP(t *testing.T) {
 }
 
 func TestDeleteInstallationHTTP(t *testing.T) {
-	appData := createGitHubAppViaManifest(t, "Delete Inst App", nil, nil)
+	t.Parallel()
+	s := newIsolatedServer(t)
+	appData := s.createGitHubAppViaManifest(t, "Delete Inst App", nil, nil)
 	appID := int(appData["id"].(float64))
 	pemKey := appData["pem"].(string)
 
-	instData := installGitHubAppViaBrowser(t, appData["slug"].(string), "admin", "all")
+	instData := s.installGitHubAppViaBrowser(t, appData["slug"].(string), "admin", "all")
 	instID := int(instData["id"].(float64))
 
 	// Delete via a JSON Web Token.
 	jwt, _ := signAppJWT(pemKey, appID, fixedTestTime)
-	req, _ := http.NewRequest("DELETE", fmt.Sprintf("%s/api/v3/app/installations/%d", testBaseURL, instID), nil)
+	req, _ := http.NewRequest("DELETE", fmt.Sprintf("%s/api/v3/app/installations/%d", s.baseURL, instID), nil)
 	req.Header.Set("Authorization", "Bearer "+jwt)
 	httpResp, err := http.DefaultClient.Do(req)
 	if err != nil {
@@ -782,7 +794,7 @@ func TestDeleteInstallationHTTP(t *testing.T) {
 	httpResp.Body.Close()
 
 	// Verify gone
-	req2, _ := http.NewRequest("GET", fmt.Sprintf("%s/api/v3/app/installations/%d", testBaseURL, instID), nil)
+	req2, _ := http.NewRequest("GET", fmt.Sprintf("%s/api/v3/app/installations/%d", s.baseURL, instID), nil)
 	req2.Header.Set("Authorization", "Bearer "+jwt)
 	httpResp2, _ := http.DefaultClient.Do(req2)
 	if httpResp2.StatusCode != 404 {

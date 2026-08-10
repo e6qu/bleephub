@@ -3,16 +3,18 @@ package bleephub
 import "testing"
 
 func TestGraphQLNodeAndNodesRefetchCanonicalObjects(t *testing.T) {
-	repoName := createRepoWriteRepo(t, true)
-	repo := testServer.store.GetRepo("admin", repoName)
+	t.Parallel()
+	s := newIsolatedServer(t)
+	repoName := s.createRepoWriteRepo(t, true)
+	repo := s.store.GetRepo("admin", repoName)
 	if repo == nil {
 		t.Fatal("fixture repository is missing")
 	}
-	_, issueNumber := createIssueForTest(t, repoName, "node refetch")
-	issue := testServer.store.GetIssueByNumber(repo.ID, issueNumber)
-	admin := testServer.store.LookupUserByLogin("admin")
+	_, issueNumber := s.createIssueForTest(t, repoRef{owner: "admin", name: repoName}, "node refetch")
+	issue := s.store.GetIssueByNumber(repo.ID, issueNumber)
+	admin := s.store.LookupUserByLogin("admin")
 
-	response := decodeJSONWithStatus(t, ghPost(t, "/api/graphql", defaultToken, map[string]interface{}{
+	response := decodeJSONWithStatus(t, s.post(t, "/api/graphql", defaultToken, map[string]interface{}{
 		"query": `query($repo:ID!,$ids:[ID!]!){
 			node(id:$repo){id __typename ... on Repository{nameWithOwner}}
 			nodes(ids:$ids){
@@ -45,8 +47,10 @@ func TestGraphQLNodeAndNodesRefetchCanonicalObjects(t *testing.T) {
 }
 
 func TestGraphQLNodeHidesAnUnreadablePrivateRepository(t *testing.T) {
-	fixture := newGQLAuthzFixture(t, testServer, "node-private", true)
-	response := decodeJSONWithStatus(t, ghPost(t, "/api/graphql", fixture.strangerToken, map[string]interface{}{
+	t.Parallel()
+	s := newIsolatedServer(t)
+	fixture := newGQLAuthzFixture(t, s.Server, "node-private", true)
+	response := decodeJSONWithStatus(t, s.post(t, "/api/graphql", fixture.strangerToken, map[string]interface{}{
 		"query":     `query($id:ID!){node(id:$id){id __typename}}`,
 		"variables": map[string]interface{}{"id": fixture.repo.NodeID},
 	}), 200)

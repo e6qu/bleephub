@@ -196,8 +196,10 @@ func TestConformanceContentTypeOnError(t *testing.T) {
 }
 
 func TestConformanceAcceptHeader(t *testing.T) {
+	t.Parallel()
+	s := newIsolatedServer(t)
 	// application/vnd.github+json should be accepted
-	req, _ := newGHRequest("GET", testBaseURL+"/api/v3/user", defaultToken)
+	req, _ := newGHRequest("GET", s.baseURL+"/api/v3/user", defaultToken)
 	req.Header.Set("Accept", "application/vnd.github+json")
 	resp, err := doGHRequest(req)
 	if err != nil {
@@ -220,7 +222,9 @@ func TestConformanceApiVersionHeader(t *testing.T) {
 }
 
 func TestConformanceApiVersionSelectionAndRetirement(t *testing.T) {
-	req, _ := newGHRequest("GET", testBaseURL+"/api/v3/user", defaultToken)
+	t.Parallel()
+	s := newIsolatedServer(t)
+	req, _ := newGHRequest("GET", s.baseURL+"/api/v3/user", defaultToken)
 	req.Header.Set("X-GitHub-Api-Version", "2026-03-10")
 	resp, err := doGHRequest(req)
 	if err != nil {
@@ -234,7 +238,7 @@ func TestConformanceApiVersionSelectionAndRetirement(t *testing.T) {
 		t.Fatalf("supported API version response header = %q", got)
 	}
 
-	req, _ = newGHRequest("GET", testBaseURL+"/api/v3/user", defaultToken)
+	req, _ = newGHRequest("GET", s.baseURL+"/api/v3/user", defaultToken)
 	req.Header.Set("X-GitHub-Api-Version", "2020-01-01")
 	resp, err = doGHRequest(req)
 	if err != nil {
@@ -248,7 +252,7 @@ func TestConformanceApiVersionSelectionAndRetirement(t *testing.T) {
 	// The calendar header only versions REST. GraphQL remains a continuously
 	// evolving schema and must not be rejected because a client happens to
 	// carry a retired REST version header on all GitHub requests.
-	req, _ = newGHRequest("POST", testBaseURL+"/api/graphql", defaultToken)
+	req, _ = newGHRequest("POST", s.baseURL+"/api/graphql", defaultToken)
 	req.Header.Set("X-GitHub-Api-Version", "2020-01-01")
 	req.Header.Set("Content-Type", "application/json")
 	req.Body = io.NopCloser(strings.NewReader(`{"query":"{ viewer { login } }"}`))
