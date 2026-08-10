@@ -64,17 +64,19 @@ func TestPaginationDefaults(t *testing.T) {
 }
 
 func TestPaginationCustomPerPage(t *testing.T) {
+	t.Parallel()
+	s := newIsolatedServer(t)
 	repoName := "pg-perpage"
-	createTestIssueRepo(t, repoName)
+	s.createTestIssueRepo(t, repoName)
 
 	for i := 0; i < 5; i++ {
-		ghPost(t, "/api/v3/repos/admin/"+repoName+"/issues", defaultToken, map[string]interface{}{
+		s.post(t, "/api/v3/repos/admin/"+repoName+"/issues", defaultToken, map[string]interface{}{
 			"title": "Issue",
 		}).Body.Close()
 	}
 
 	// Page 1 with per_page=2
-	resp := ghGet(t, "/api/v3/repos/admin/"+repoName+"/issues?per_page=2", "")
+	resp := s.get(t, "/api/v3/repos/admin/"+repoName+"/issues?per_page=2", "")
 	if resp.StatusCode != 200 {
 		resp.Body.Close()
 		t.Fatalf("expected 200, got %d", resp.StatusCode)
@@ -94,8 +96,8 @@ func TestPaginationCustomPerPage(t *testing.T) {
 	if !strings.Contains(link, `rel="last"`) {
 		t.Fatalf("expected rel=last in Link, got %s", link)
 	}
-	if !strings.Contains(link, "<"+testBaseURL+"/api/v3/") {
-		t.Fatalf("expected absolute pagination targets rooted at %s, got %s", testBaseURL, link)
+	if !strings.Contains(link, "<"+s.baseURL+"/api/v3/") {
+		t.Fatalf("expected absolute pagination targets rooted at %s, got %s", s.baseURL, link)
 	}
 }
 

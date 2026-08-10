@@ -548,6 +548,15 @@ func (s *isolatedServer) createRepoWriteRepo(t *testing.T, autoInit bool) string
 	return name
 }
 
+// createTestIssueRepo mirrors the package helper on this isolated server:
+// creates a user repo, failing loudly here rather than as a later 404.
+func (s *isolatedServer) createTestIssueRepo(t *testing.T, name string) {
+	t.Helper()
+	mustPost(t, s.post(t, "/api/v3/user/repos", defaultToken, map[string]interface{}{
+		"name": name,
+	}))
+}
+
 // seedPackageVersion mirrors the package helper (still used by gh_packages
 // files): publishes a package version (with a small file) via the internal
 // route and returns (packageID, versionID), on this isolated server.

@@ -123,6 +123,8 @@ func assertHookShape(t *testing.T, h hookResp, targetURL string) {
 // TestHooks_CRUD exercises create → list → get → update → delete lifecycle
 // and verifies the response shape matches GitHub's published schema.
 func TestHooks_CRUD(t *testing.T) {
+	t.Parallel()
+	s := newIsolatedServer(t)
 	// Spin up a trivial HTTP target that returns 200 for every POST.
 	target := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		io.Copy(io.Discard, r.Body)
@@ -132,12 +134,12 @@ func TestHooks_CRUD(t *testing.T) {
 
 	repo := "admin/hooks-crud"
 	// Create repo so the hook has something to attach to.
-	ghPost(t, "/api/v3/user/repos", defaultToken, map[string]interface{}{
+	s.post(t, "/api/v3/user/repos", defaultToken, map[string]interface{}{
 		"name": "hooks-crud",
 	}).Body.Close()
 
 	// CreateHook
-	resp := ghPost(t, "/api/v3/repos/"+repo+"/hooks", defaultToken, map[string]interface{}{
+	resp := s.post(t, "/api/v3/repos/"+repo+"/hooks", defaultToken, map[string]interface{}{
 		"config": map[string]interface{}{
 			"url":          target.URL + "/hook",
 			"content_type": "json",
@@ -158,7 +160,7 @@ func TestHooks_CRUD(t *testing.T) {
 	hookID := created.ID
 
 	// ListHooks
-	listResp := ghGet(t, "/api/v3/repos/"+repo+"/hooks", defaultToken)
+	listResp := s.get(t, "/api/v3/repos/"+repo+"/hooks", defaultToken)
 	if listResp.StatusCode != http.StatusOK {
 		listResp.Body.Close()
 		t.Fatalf("list hooks: got %d", listResp.StatusCode)
@@ -176,7 +178,7 @@ func TestHooks_CRUD(t *testing.T) {
 	}
 
 	// GetHook
-	getResp := ghGet(t, "/api/v3/repos/"+repo+"/hooks/"+strconv.Itoa(hookID), defaultToken)
+	getResp := s.get(t, "/api/v3/repos/"+repo+"/hooks/"+strconv.Itoa(hookID), defaultToken)
 	if getResp.StatusCode != http.StatusOK {
 		getResp.Body.Close()
 		t.Fatalf("get hook: got %d", getResp.StatusCode)
@@ -196,7 +198,7 @@ func TestHooks_CRUD(t *testing.T) {
 			"events": []string{"push"},
 		})
 		req, _ := http.NewRequest("PATCH",
-			testBaseURL+"/api/v3/repos/"+repo+"/hooks/"+strconv.Itoa(hookID),
+			s.baseURL+"/api/v3/repos/"+repo+"/hooks/"+strconv.Itoa(hookID),
 			strings.NewReader(string(b)))
 		req.Header.Set("Authorization", "token "+defaultToken)
 		req.Header.Set("Content-Type", "application/json")
@@ -218,7 +220,7 @@ func TestHooks_CRUD(t *testing.T) {
 
 	// DeleteHook
 	delReq, _ := http.NewRequest("DELETE",
-		testBaseURL+"/api/v3/repos/"+repo+"/hooks/"+strconv.Itoa(hookID), nil)
+		s.baseURL+"/api/v3/repos/"+repo+"/hooks/"+strconv.Itoa(hookID), nil)
 	delReq.Header.Set("Authorization", "token "+defaultToken)
 	delResp, err := http.DefaultClient.Do(delReq)
 	if err != nil {
@@ -230,7 +232,7 @@ func TestHooks_CRUD(t *testing.T) {
 	}
 
 	// Verify gone
-	goneResp := ghGet(t, "/api/v3/repos/"+repo+"/hooks/"+strconv.Itoa(hookID), defaultToken)
+	goneResp := s.get(t, "/api/v3/repos/"+repo+"/hooks/"+strconv.Itoa(hookID), defaultToken)
 	goneResp.Body.Close()
 	if goneResp.StatusCode != http.StatusNotFound {
 		t.Errorf("deleted hook: got %d, want 404", goneResp.StatusCode)
