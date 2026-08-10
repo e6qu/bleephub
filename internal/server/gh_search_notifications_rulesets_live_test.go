@@ -13,11 +13,13 @@ import (
 // response-shape validator observes them.
 
 func TestLiveSearch_IssuesAndReposAndUsers(t *testing.T) {
-	admin := testServer.store.UsersByLogin["admin"]
-	repo := testServer.store.CreateRepo(admin, "live-search-repo", "", false)
-	testServer.store.CreateIssue(repo.ID, admin.ID, "live bug", "body", nil, nil, 0)
+	t.Parallel()
+	s := newIsolatedServer(t)
+	admin := s.store.UsersByLogin["admin"]
+	repo := s.store.CreateRepo(admin, "live-search-repo", "", false)
+	s.store.CreateIssue(repo.ID, admin.ID, "live bug", "body", nil, nil, 0)
 
-	resp := authedGet(t, "/api/v3/search/issues?q=live+bug")
+	resp := s.authedGet(t, "/api/v3/search/issues?q=live+bug")
 	if resp.StatusCode != http.StatusOK {
 		body, _ := io.ReadAll(resp.Body)
 		resp.Body.Close()
@@ -32,7 +34,7 @@ func TestLiveSearch_IssuesAndReposAndUsers(t *testing.T) {
 		t.Errorf("expected 1 issue result, got %+v", issuesResp["items"])
 	}
 
-	resp = authedGet(t, "/api/v3/search/repositories?q=live-search-repo")
+	resp = s.authedGet(t, "/api/v3/search/repositories?q=live-search-repo")
 	if resp.StatusCode != http.StatusOK {
 		body, _ := io.ReadAll(resp.Body)
 		resp.Body.Close()
@@ -41,7 +43,7 @@ func TestLiveSearch_IssuesAndReposAndUsers(t *testing.T) {
 	json.NewDecoder(resp.Body).Decode(&map[string]any{})
 	resp.Body.Close()
 
-	resp = authedGet(t, "/api/v3/search/users?q=admin")
+	resp = s.authedGet(t, "/api/v3/search/users?q=admin")
 	if resp.StatusCode != http.StatusOK {
 		body, _ := io.ReadAll(resp.Body)
 		resp.Body.Close()
@@ -52,15 +54,17 @@ func TestLiveSearch_IssuesAndReposAndUsers(t *testing.T) {
 }
 
 func TestLiveNotifications_Threads(t *testing.T) {
-	admin := testServer.store.UsersByLogin["admin"]
-	repo := testServer.store.CreateRepo(admin, "live-notif-repo", "", false)
-	if !testServer.store.SetRepoSubscription(admin.ID, repo.ID, true) {
+	t.Parallel()
+	s := newIsolatedServer(t)
+	admin := s.store.UsersByLogin["admin"]
+	repo := s.store.CreateRepo(admin, "live-notif-repo", "", false)
+	if !s.store.SetRepoSubscription(admin.ID, repo.ID, true) {
 		t.Fatal("subscribe to notification fixture repository")
 	}
-	author := createTestUser(t, "live-notif-author")
-	testServer.store.CreateIssue(repo.ID, author.ID, "live notif issue", "body", nil, nil, 0)
+	author := s.createTestUser(t, "live-notif-author")
+	s.store.CreateIssue(repo.ID, author.ID, "live notif issue", "body", nil, nil, 0)
 
-	resp := authedGet(t, "/api/v3/notifications")
+	resp := s.authedGet(t, "/api/v3/notifications")
 	if resp.StatusCode != http.StatusOK {
 		body, _ := io.ReadAll(resp.Body)
 		resp.Body.Close()
@@ -86,7 +90,7 @@ func TestLiveNotifications_Threads(t *testing.T) {
 	if threadID == "" {
 		t.Fatalf("notification for live-notif-repo not found in %+v", threads)
 	}
-	req, _ := http.NewRequest("PATCH", testBaseURL+"/api/v3/notifications/threads/"+threadID, strings.NewReader(""))
+	req, _ := http.NewRequest("PATCH", s.baseURL+"/api/v3/notifications/threads/"+threadID, strings.NewReader(""))
 	req.Header.Set("Authorization", "Bearer "+defaultToken)
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
@@ -99,7 +103,7 @@ func TestLiveNotifications_Threads(t *testing.T) {
 	}
 	resp.Body.Close()
 
-	resp = authedGet(t, "/api/v3/repos/admin/live-notif-repo/notifications")
+	resp = s.authedGet(t, "/api/v3/repos/admin/live-notif-repo/notifications")
 	if resp.StatusCode != http.StatusOK {
 		body, _ := io.ReadAll(resp.Body)
 		resp.Body.Close()
@@ -109,8 +113,10 @@ func TestLiveNotifications_Threads(t *testing.T) {
 }
 
 func TestLiveRulesets_CRUD(t *testing.T) {
-	admin := testServer.store.UsersByLogin["admin"]
-	testServer.store.CreateRepo(admin, "live-ruleset-repo", "", false)
+	t.Parallel()
+	s := newIsolatedServer(t)
+	admin := s.store.UsersByLogin["admin"]
+	s.store.CreateRepo(admin, "live-ruleset-repo", "", false)
 
 	create, _ := json.Marshal(map[string]any{
 		"name":        "live-protect-main",
@@ -126,7 +132,7 @@ func TestLiveRulesets_CRUD(t *testing.T) {
 			{"type": "required_linear_history"},
 		},
 	})
-	resp, _ := authedPost("/api/v3/repos/admin/live-ruleset-repo/rulesets", "application/json", strings.NewReader(string(create)))
+	resp, _ := s.authedPost("/api/v3/repos/admin/live-ruleset-repo/rulesets", "application/json", strings.NewReader(string(create)))
 	if resp.StatusCode != http.StatusCreated {
 		body, _ := io.ReadAll(resp.Body)
 		resp.Body.Close()
@@ -139,7 +145,7 @@ func TestLiveRulesets_CRUD(t *testing.T) {
 	resp.Body.Close()
 	rsID := int(created["id"].(float64))
 
-	resp = authedGet(t, "/api/v3/repos/admin/live-ruleset-repo/rulesets")
+	resp = s.authedGet(t, "/api/v3/repos/admin/live-ruleset-repo/rulesets")
 	if resp.StatusCode != http.StatusOK {
 		body, _ := io.ReadAll(resp.Body)
 		resp.Body.Close()
@@ -147,7 +153,7 @@ func TestLiveRulesets_CRUD(t *testing.T) {
 	}
 	resp.Body.Close()
 
-	resp = authedGet(t, "/api/v3/repos/admin/live-ruleset-repo/rulesets/"+itoa(rsID))
+	resp = s.authedGet(t, "/api/v3/repos/admin/live-ruleset-repo/rulesets/"+itoa(rsID))
 	if resp.StatusCode != http.StatusOK {
 		body, _ := io.ReadAll(resp.Body)
 		resp.Body.Close()
@@ -155,7 +161,7 @@ func TestLiveRulesets_CRUD(t *testing.T) {
 	}
 	resp.Body.Close()
 
-	resp = authedGet(t, "/api/v3/repos/admin/live-ruleset-repo/rules/branches/main")
+	resp = s.authedGet(t, "/api/v3/repos/admin/live-ruleset-repo/rules/branches/main")
 	if resp.StatusCode != http.StatusOK {
 		body, _ := io.ReadAll(resp.Body)
 		resp.Body.Close()
@@ -165,13 +171,15 @@ func TestLiveRulesets_CRUD(t *testing.T) {
 }
 
 func TestLiveSecretScanning_CRUD(t *testing.T) {
-	admin := testServer.store.UsersByLogin["admin"]
-	testServer.store.CreateRepo(admin, "live-secret-scanning-repo", "", false)
+	t.Parallel()
+	s := newIsolatedServer(t)
+	admin := s.store.UsersByLogin["admin"]
+	s.store.CreateRepo(admin, "live-secret-scanning-repo", "", false)
 
-	created := seedSecretAlert(t, "admin", "live-secret-scanning-repo", "github_personal_access_token")
+	created := s.seedSecretAlert(t, "admin", "live-secret-scanning-repo", "github_personal_access_token")
 	number := int(created["number"].(float64))
 
-	resp := authedGet(t, "/api/v3/repos/admin/live-secret-scanning-repo/secret-scanning/alerts")
+	resp := s.authedGet(t, "/api/v3/repos/admin/live-secret-scanning-repo/secret-scanning/alerts")
 	if resp.StatusCode != http.StatusOK {
 		body, _ := io.ReadAll(resp.Body)
 		resp.Body.Close()
@@ -179,7 +187,7 @@ func TestLiveSecretScanning_CRUD(t *testing.T) {
 	}
 	resp.Body.Close()
 
-	resp = authedGet(t, "/api/v3/repos/admin/live-secret-scanning-repo/secret-scanning/alerts/"+itoa(number))
+	resp = s.authedGet(t, "/api/v3/repos/admin/live-secret-scanning-repo/secret-scanning/alerts/"+itoa(number))
 	if resp.StatusCode != http.StatusOK {
 		body, _ := io.ReadAll(resp.Body)
 		resp.Body.Close()
@@ -187,7 +195,7 @@ func TestLiveSecretScanning_CRUD(t *testing.T) {
 	}
 	resp.Body.Close()
 
-	resp = authedGet(t, "/api/v3/repos/admin/live-secret-scanning-repo/secret-scanning/alerts/"+itoa(number)+"/locations")
+	resp = s.authedGet(t, "/api/v3/repos/admin/live-secret-scanning-repo/secret-scanning/alerts/"+itoa(number)+"/locations")
 	if resp.StatusCode != http.StatusOK {
 		body, _ := io.ReadAll(resp.Body)
 		resp.Body.Close()

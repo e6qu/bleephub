@@ -81,7 +81,7 @@ function DiscussionList({ owner, repo }: { owner: string; repo: string }) {
 
   const createMutation = useMutation({
     mutationFn: () =>
-      createDiscussion(repoDetail!.node_id, newCategory || categories[0]?.id, newTitle, newBody),
+      createDiscussion(repoDetail!.node_id, newCategory || categories[0]?.id || "", newTitle, newBody),
     onSuccess: (discussion: GithubDiscussion) => {
       qc.invalidateQueries({ queryKey: ["discussions", owner, repo] });
       setCreating(false);
@@ -285,7 +285,7 @@ function DiscussionDetail({
   const counts = useOpenCounts(owner, repo);
   const qc = useQueryClient();
   const navigate = useNavigate();
-  const [replyTo, setReplyTo] = useState<{ id: string; login?: string } | null>(null);
+  const [replyTo, setReplyTo] = useState<{ id: string; login?: string | undefined } | null>(null);
   const [commentBody, setCommentBody] = useState("");
   const [commentError, setCommentError] = useState<string | null>(null);
   const [editingComment, setEditingComment] = useState<string | null>(null);

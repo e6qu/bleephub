@@ -8,10 +8,10 @@ import type { CSSProperties } from "react";
  */
 
 export interface IconProps {
-  size?: number;
-  className?: string;
-  style?: CSSProperties;
-  title?: string;
+  size?: number | undefined;
+  className?: string | undefined;
+  style?: CSSProperties | undefined;
+  title?: string | undefined;
 }
 
 function Svg({

@@ -47,33 +47,54 @@ func makeSigstoreBundle(t *testing.T, subjectDigest, predicateType string) map[s
 	}
 }
 
-func uploadAttestation(t *testing.T, ownerRepo, token string, bundle map[string]interface{}) int {
-	t.Helper()
-	resp := ghPost(t, "/api/v3/repos/"+ownerRepo+"/attestations", token,
-		map[string]interface{}{"bundle": bundle})
-	if resp.StatusCode != 201 {
-		resp.Body.Close()
-		t.Fatalf("upload attestation = %d, want 201", resp.StatusCode)
+// TestAttestationGetReturnsDetachedSnapshot pins STORE-021 for the attestation
+// family: GetAttestation must return a copy so a reader cannot mutate the stored
+// Bundle or SubjectDigests.
+func TestAttestationGetReturnsDetachedSnapshot(t *testing.T) {
+	t.Parallel()
+	s := newIsolatedServer(t)
+	admin := s.store.UsersByLogin["admin"]
+	repo := s.store.CreateRepo(admin, "attest-detach", "", false)
+	digest := testSubjectDigest("attest-detach-artifact")
+	bundle, err := json.Marshal(makeSigstoreBundle(t, digest, "https://slsa.dev/provenance/v1"))
+	if err != nil {
+		t.Fatalf("marshal bundle: %v", err)
 	}
-	created := decodeJSON(t, resp)
-	return int(created["id"].(float64))
+	att, err := s.store.CreateAttestation(repo.ID, bundle, []string{digest}, "https://slsa.dev/provenance/v1", "admin")
+	if err != nil {
+		t.Fatalf("create attestation: %v", err)
+	}
+
+	got := s.store.GetAttestation(att.ID)
+	got.SubjectDigests[0] = "sha256:hacked"
+	got.Bundle = append(got.Bundle, 'X')
+
+	again := s.store.GetAttestation(att.ID)
+	if again.SubjectDigests[0] != digest {
+		t.Fatalf("subject digests mutated through the getter: %v", again.SubjectDigests)
+	}
+	if len(again.Bundle) != len(bundle) {
+		t.Fatalf("bundle mutated through the getter: len %d, want %d", len(again.Bundle), len(bundle))
+	}
 }
 
 func TestRepoAttestations_CreateAndListRoundTrip(t *testing.T) {
-	admin := testServer.store.UsersByLogin["admin"]
-	repo := testServer.store.CreateRepo(admin, "attest-repo", "", false)
+	t.Parallel()
+	s := newIsolatedServer(t)
+	admin := s.store.UsersByLogin["admin"]
+	repo := s.store.CreateRepo(admin, "attest-repo", "", false)
 	if repo == nil {
 		t.Fatal("create repo failed")
 	}
 	digest := testSubjectDigest("attest-repo-artifact")
 	bundle := makeSigstoreBundle(t, digest, "https://slsa.dev/provenance/v1")
-	id := uploadAttestation(t, "admin/attest-repo", defaultToken, bundle)
+	id := s.uploadAttestation(t, "admin/attest-repo", defaultToken, bundle)
 	if id == 0 {
 		t.Fatal("attestation id missing")
 	}
 
 	// List by subject digest: the stored bundle round-trips verbatim.
-	resp := ghGet(t, "/api/v3/repos/admin/attest-repo/attestations/"+digest, defaultToken)
+	resp := s.get(t, "/api/v3/repos/admin/attest-repo/attestations/"+digest, defaultToken)
 	if resp.StatusCode != 200 {
 		resp.Body.Close()
 		t.Fatalf("list = %d, want 200", resp.StatusCode)
@@ -100,8 +121,8 @@ func TestRepoAttestations_CreateAndListRoundTrip(t *testing.T) {
 	// predicate_type filtering: a second attestation with an SBOM
 	// predicate is excluded by predicate_type=provenance.
 	sbom := makeSigstoreBundle(t, digest, "https://spdx.dev/Document/v2.3")
-	uploadAttestation(t, "admin/attest-repo", defaultToken, sbom)
-	resp = ghGet(t, "/api/v3/repos/admin/attest-repo/attestations/"+digest+"?predicate_type=provenance", defaultToken)
+	s.uploadAttestation(t, "admin/attest-repo", defaultToken, sbom)
+	resp = s.get(t, "/api/v3/repos/admin/attest-repo/attestations/"+digest+"?predicate_type=provenance", defaultToken)
 	if resp.StatusCode != 200 {
 		resp.Body.Close()
 		t.Fatalf("filtered list = %d, want 200", resp.StatusCode)
@@ -112,7 +133,7 @@ func TestRepoAttestations_CreateAndListRoundTrip(t *testing.T) {
 	}
 
 	// A different digest lists nothing.
-	resp = ghGet(t, "/api/v3/repos/admin/attest-repo/attestations/"+testSubjectDigest("other"), defaultToken)
+	resp = s.get(t, "/api/v3/repos/admin/attest-repo/attestations/"+testSubjectDigest("other"), defaultToken)
 	if resp.StatusCode != 200 {
 		resp.Body.Close()
 		t.Fatalf("empty list = %d, want 200", resp.StatusCode)
@@ -123,26 +144,26 @@ func TestRepoAttestations_CreateAndListRoundTrip(t *testing.T) {
 	}
 
 	// Validation and permission failures.
-	resp = ghPost(t, "/api/v3/repos/admin/attest-repo/attestations", defaultToken,
+	resp = s.post(t, "/api/v3/repos/admin/attest-repo/attestations", defaultToken,
 		map[string]interface{}{"bundle": map[string]interface{}{"mediaType": "x"}})
 	resp.Body.Close()
 	if resp.StatusCode != 422 {
 		t.Fatalf("bundle without DSSE envelope = %d, want 422", resp.StatusCode)
 	}
-	resp = ghPost(t, "/api/v3/repos/admin/attest-repo/attestations", defaultToken, map[string]interface{}{})
+	resp = s.post(t, "/api/v3/repos/admin/attest-repo/attestations", defaultToken, map[string]interface{}{})
 	resp.Body.Close()
 	if resp.StatusCode != 422 {
 		t.Fatalf("missing bundle = %d, want 422", resp.StatusCode)
 	}
-	outsider := createTestUser(t, "attest-outsider")
-	outsiderToken := testServer.store.CreateToken(outsider.ID, "repo").Value
-	resp = ghPost(t, "/api/v3/repos/admin/attest-repo/attestations", outsiderToken,
+	outsider := s.createTestUser(t, "attest-outsider")
+	outsiderToken := s.store.CreateToken(outsider.ID, "repo").Value
+	resp = s.post(t, "/api/v3/repos/admin/attest-repo/attestations", outsiderToken,
 		map[string]interface{}{"bundle": bundle})
 	resp.Body.Close()
 	if resp.StatusCode != 403 {
 		t.Fatalf("non-writer upload = %d, want 403", resp.StatusCode)
 	}
-	resp = ghPost(t, "/api/v3/repos/admin/no-such-repo/attestations", defaultToken,
+	resp = s.post(t, "/api/v3/repos/admin/no-such-repo/attestations", defaultToken,
 		map[string]interface{}{"bundle": bundle})
 	resp.Body.Close()
 	if resp.StatusCode != 404 {
@@ -151,22 +172,24 @@ func TestRepoAttestations_CreateAndListRoundTrip(t *testing.T) {
 }
 
 func TestRepoAttestations_BundlesUseObjectStore(t *testing.T) {
+	// No t.Parallel(): newObjectByteStoreForTest uses t.Setenv.
+	s := newIsolatedServer(t)
 	_, byteStore := newObjectByteStoreForTest(t)
-	previous := testServer.store.ObjectByteStore
-	testServer.store.ObjectByteStore = byteStore
-	t.Cleanup(func() { testServer.store.ObjectByteStore = previous })
+	previous := s.store.ObjectByteStore
+	s.store.ObjectByteStore = byteStore
+	t.Cleanup(func() { s.store.ObjectByteStore = previous })
 
-	admin := testServer.store.UsersByLogin["admin"]
-	repo := testServer.store.CreateRepo(admin, "attest-object-repo", "", false)
+	admin := s.store.UsersByLogin["admin"]
+	repo := s.store.CreateRepo(admin, "attest-object-repo", "", false)
 	if repo == nil {
 		t.Fatal("create repo failed")
 	}
 	digest := testSubjectDigest("attest-object-repo-artifact")
 	bundle := makeSigstoreBundle(t, digest, "https://slsa.dev/provenance/v1")
-	id := uploadAttestation(t, "admin/attest-object-repo", defaultToken, bundle)
+	id := s.uploadAttestation(t, "admin/attest-object-repo", defaultToken, bundle)
 	key := attestationBundleDataKey(id)
 
-	stored := testServer.store.GetAttestation(id)
+	stored := s.store.GetAttestation(id)
 	if stored == nil {
 		t.Fatal("attestation metadata missing")
 	}
@@ -180,7 +203,7 @@ func TestRepoAttestations_BundlesUseObjectStore(t *testing.T) {
 		t.Fatalf("object-backed attestation bundle missing: %v", err)
 	}
 
-	resp := ghGet(t, "/api/v3/repos/admin/attest-object-repo/attestations/"+digest, defaultToken)
+	resp := s.get(t, "/api/v3/repos/admin/attest-object-repo/attestations/"+digest, defaultToken)
 	if resp.StatusCode != 200 {
 		resp.Body.Close()
 		t.Fatalf("list = %d, want 200", resp.StatusCode)
@@ -197,7 +220,7 @@ func TestRepoAttestations_BundlesUseObjectStore(t *testing.T) {
 		t.Fatal("object-backed dsseEnvelope.payload did not round-trip")
 	}
 
-	resp = ghDelete(t, "/api/v3/users/admin/attestations/"+strconv.Itoa(id), defaultToken)
+	resp = s.delete(t, "/api/v3/users/admin/attestations/"+strconv.Itoa(id), defaultToken)
 	resp.Body.Close()
 	if resp.StatusCode != 204 {
 		t.Fatalf("delete = %d, want 204", resp.StatusCode)
@@ -208,23 +231,25 @@ func TestRepoAttestations_BundlesUseObjectStore(t *testing.T) {
 }
 
 func TestOrgAttestations_ListRepositoriesBulkAndDelete(t *testing.T) {
-	admin := testServer.store.UsersByLogin["admin"]
-	org := testServer.store.CreateOrg(admin, "attest-org", "Attest Org", "")
+	t.Parallel()
+	s := newIsolatedServer(t)
+	admin := s.store.UsersByLogin["admin"]
+	org := s.store.CreateOrg(admin, "attest-org", "Attest Org", "")
 	if org == nil {
 		t.Fatal("create org failed")
 	}
-	repo := testServer.store.CreateOrgRepo(org, admin, "signed-images", "", false)
+	repo := s.store.CreateOrgRepo(org, admin, "signed-images", "", false)
 	if repo == nil {
 		t.Fatal("create org repo failed")
 	}
 	digest := testSubjectDigest("attest-org-artifact")
 	bundle := makeSigstoreBundle(t, digest, "https://slsa.dev/provenance/v1")
-	id1 := uploadAttestation(t, org.Login+"/signed-images", defaultToken, bundle)
-	id2 := uploadAttestation(t, org.Login+"/signed-images", defaultToken,
+	id1 := s.uploadAttestation(t, org.Login+"/signed-images", defaultToken, bundle)
+	id2 := s.uploadAttestation(t, org.Login+"/signed-images", defaultToken,
 		makeSigstoreBundle(t, digest, "https://spdx.dev/Document/v2.3"))
 
 	// Org-level list by digest.
-	resp := ghGet(t, "/api/v3/orgs/"+org.Login+"/attestations/"+digest, defaultToken)
+	resp := s.get(t, "/api/v3/orgs/"+org.Login+"/attestations/"+digest, defaultToken)
 	if resp.StatusCode != 200 {
 		resp.Body.Close()
 		t.Fatalf("org list = %d, want 200", resp.StatusCode)
@@ -235,7 +260,7 @@ func TestOrgAttestations_ListRepositoriesBulkAndDelete(t *testing.T) {
 	}
 
 	// Repositories with attestations.
-	resp = ghGet(t, "/api/v3/orgs/"+org.Login+"/attestations/repositories", defaultToken)
+	resp = s.get(t, "/api/v3/orgs/"+org.Login+"/attestations/repositories", defaultToken)
 	if resp.StatusCode != 200 {
 		resp.Body.Close()
 		t.Fatalf("repositories list = %d, want 200", resp.StatusCode)
@@ -247,7 +272,7 @@ func TestOrgAttestations_ListRepositoriesBulkAndDelete(t *testing.T) {
 
 	// Bulk list: known digest maps to entries, unknown digest to null.
 	missing := testSubjectDigest("never-uploaded")
-	resp = ghPost(t, "/api/v3/orgs/"+org.Login+"/attestations/bulk-list", defaultToken,
+	resp = s.post(t, "/api/v3/orgs/"+org.Login+"/attestations/bulk-list", defaultToken,
 		map[string]interface{}{"subject_digests": []string{digest, missing}})
 	if resp.StatusCode != 200 {
 		resp.Body.Close()
@@ -267,7 +292,7 @@ func TestOrgAttestations_ListRepositoriesBulkAndDelete(t *testing.T) {
 	}
 
 	// Bulk list without digests → 422.
-	resp = ghPost(t, "/api/v3/orgs/"+org.Login+"/attestations/bulk-list", defaultToken,
+	resp = s.post(t, "/api/v3/orgs/"+org.Login+"/attestations/bulk-list", defaultToken,
 		map[string]interface{}{"subject_digests": []string{}})
 	resp.Body.Close()
 	if resp.StatusCode != 422 {
@@ -275,34 +300,34 @@ func TestOrgAttestations_ListRepositoriesBulkAndDelete(t *testing.T) {
 	}
 
 	// Non-admin cannot delete.
-	outsider := createTestUser(t, "attest-org-outsider")
-	outsiderToken := testServer.store.CreateToken(outsider.ID, "repo").Value
-	resp = ghDelete(t, "/api/v3/orgs/"+org.Login+"/attestations/"+strconv.Itoa(id1), outsiderToken)
+	outsider := s.createTestUser(t, "attest-org-outsider")
+	outsiderToken := s.store.CreateToken(outsider.ID, "repo").Value
+	resp = s.delete(t, "/api/v3/orgs/"+org.Login+"/attestations/"+strconv.Itoa(id1), outsiderToken)
 	resp.Body.Close()
 	if resp.StatusCode != 403 {
 		t.Fatalf("non-admin delete = %d, want 403", resp.StatusCode)
 	}
 
 	// Delete by ID.
-	resp = ghDelete(t, "/api/v3/orgs/"+org.Login+"/attestations/"+strconv.Itoa(id1), defaultToken)
+	resp = s.delete(t, "/api/v3/orgs/"+org.Login+"/attestations/"+strconv.Itoa(id1), defaultToken)
 	resp.Body.Close()
 	if resp.StatusCode != 204 {
 		t.Fatalf("delete by id = %d, want 204", resp.StatusCode)
 	}
-	resp = ghDelete(t, "/api/v3/orgs/"+org.Login+"/attestations/"+strconv.Itoa(id1), defaultToken)
+	resp = s.delete(t, "/api/v3/orgs/"+org.Login+"/attestations/"+strconv.Itoa(id1), defaultToken)
 	resp.Body.Close()
 	if resp.StatusCode != 404 {
 		t.Fatalf("delete by id again = %d, want 404", resp.StatusCode)
 	}
 
 	// delete-request with attestation_ids removes the second one.
-	resp = ghPost(t, "/api/v3/orgs/"+org.Login+"/attestations/delete-request", defaultToken,
+	resp = s.post(t, "/api/v3/orgs/"+org.Login+"/attestations/delete-request", defaultToken,
 		map[string]interface{}{"attestation_ids": []int{id2}})
 	resp.Body.Close()
 	if resp.StatusCode != 200 {
 		t.Fatalf("delete-request = %d, want 200", resp.StatusCode)
 	}
-	resp = ghGet(t, "/api/v3/orgs/"+org.Login+"/attestations/"+digest, defaultToken)
+	resp = s.get(t, "/api/v3/orgs/"+org.Login+"/attestations/"+digest, defaultToken)
 	if resp.StatusCode != 200 {
 		resp.Body.Close()
 		t.Fatalf("post-delete list = %d, want 200", resp.StatusCode)
@@ -313,13 +338,13 @@ func TestOrgAttestations_ListRepositoriesBulkAndDelete(t *testing.T) {
 	}
 
 	// delete-request matching nothing → 404; both/neither lists → 422.
-	resp = ghPost(t, "/api/v3/orgs/"+org.Login+"/attestations/delete-request", defaultToken,
+	resp = s.post(t, "/api/v3/orgs/"+org.Login+"/attestations/delete-request", defaultToken,
 		map[string]interface{}{"subject_digests": []string{missing}})
 	resp.Body.Close()
 	if resp.StatusCode != 404 {
 		t.Fatalf("delete-request no match = %d, want 404", resp.StatusCode)
 	}
-	resp = ghPost(t, "/api/v3/orgs/"+org.Login+"/attestations/delete-request", defaultToken,
+	resp = s.post(t, "/api/v3/orgs/"+org.Login+"/attestations/delete-request", defaultToken,
 		map[string]interface{}{"subject_digests": []string{digest}, "attestation_ids": []int{1}})
 	resp.Body.Close()
 	if resp.StatusCode != 422 {
@@ -327,13 +352,13 @@ func TestOrgAttestations_ListRepositoriesBulkAndDelete(t *testing.T) {
 	}
 
 	// Delete by digest: reupload then wipe the digest.
-	uploadAttestation(t, org.Login+"/signed-images", defaultToken, bundle)
-	resp = ghDelete(t, "/api/v3/orgs/"+org.Login+"/attestations/digest/"+digest, defaultToken)
+	s.uploadAttestation(t, org.Login+"/signed-images", defaultToken, bundle)
+	resp = s.delete(t, "/api/v3/orgs/"+org.Login+"/attestations/digest/"+digest, defaultToken)
 	resp.Body.Close()
 	if resp.StatusCode != 204 {
 		t.Fatalf("delete by digest = %d, want 204", resp.StatusCode)
 	}
-	resp = ghDelete(t, "/api/v3/orgs/"+org.Login+"/attestations/digest/"+digest, defaultToken)
+	resp = s.delete(t, "/api/v3/orgs/"+org.Login+"/attestations/digest/"+digest, defaultToken)
 	resp.Body.Close()
 	if resp.StatusCode != 404 {
 		t.Fatalf("delete by digest again = %d, want 404", resp.StatusCode)
@@ -341,18 +366,20 @@ func TestOrgAttestations_ListRepositoriesBulkAndDelete(t *testing.T) {
 }
 
 func TestUserAttestations_ListBulkAndDelete(t *testing.T) {
-	owner := createTestUser(t, "attest-user")
-	ownerToken := testServer.store.CreateToken(owner.ID, "repo").Value
-	repo := testServer.store.CreateRepo(owner, "personal-artifacts", "", false)
+	t.Parallel()
+	s := newIsolatedServer(t)
+	owner := s.createTestUser(t, "attest-user")
+	ownerToken := s.store.CreateToken(owner.ID, "repo").Value
+	repo := s.store.CreateRepo(owner, "personal-artifacts", "", false)
 	if repo == nil {
 		t.Fatal("create user repo failed")
 	}
 	digest := testSubjectDigest("attest-user-artifact")
 	bundle := makeSigstoreBundle(t, digest, "https://slsa.dev/provenance/v1")
-	id := uploadAttestation(t, owner.Login+"/personal-artifacts", ownerToken, bundle)
+	id := s.uploadAttestation(t, owner.Login+"/personal-artifacts", ownerToken, bundle)
 
 	// List by digest at the user scope.
-	resp := ghGet(t, "/api/v3/users/"+owner.Login+"/attestations/"+digest, defaultToken)
+	resp := s.get(t, "/api/v3/users/"+owner.Login+"/attestations/"+digest, defaultToken)
 	if resp.StatusCode != 200 {
 		resp.Body.Close()
 		t.Fatalf("user list = %d, want 200", resp.StatusCode)
@@ -363,7 +390,7 @@ func TestUserAttestations_ListBulkAndDelete(t *testing.T) {
 	}
 
 	// Bulk list at the user scope.
-	resp = ghPost(t, "/api/v3/users/"+owner.Login+"/attestations/bulk-list", defaultToken,
+	resp = s.post(t, "/api/v3/users/"+owner.Login+"/attestations/bulk-list", defaultToken,
 		map[string]interface{}{"subject_digests": []string{digest}})
 	if resp.StatusCode != 200 {
 		resp.Body.Close()
@@ -376,38 +403,38 @@ func TestUserAttestations_ListBulkAndDelete(t *testing.T) {
 	}
 
 	// A different user cannot delete another user's attestations.
-	stranger := createTestUser(t, "attest-stranger")
-	strangerToken := testServer.store.CreateToken(stranger.ID, "repo").Value
-	resp = ghDelete(t, "/api/v3/users/"+owner.Login+"/attestations/"+strconv.Itoa(id), strangerToken)
+	stranger := s.createTestUser(t, "attest-stranger")
+	strangerToken := s.store.CreateToken(stranger.ID, "repo").Value
+	resp = s.delete(t, "/api/v3/users/"+owner.Login+"/attestations/"+strconv.Itoa(id), strangerToken)
 	resp.Body.Close()
 	if resp.StatusCode != 403 {
 		t.Fatalf("stranger delete = %d, want 403", resp.StatusCode)
 	}
 
 	// The owner deletes by ID.
-	resp = ghDelete(t, "/api/v3/users/"+owner.Login+"/attestations/"+strconv.Itoa(id), ownerToken)
+	resp = s.delete(t, "/api/v3/users/"+owner.Login+"/attestations/"+strconv.Itoa(id), ownerToken)
 	resp.Body.Close()
 	if resp.StatusCode != 204 {
 		t.Fatalf("owner delete = %d, want 204", resp.StatusCode)
 	}
 
 	// delete-request + delete-by-digest round-trip.
-	uploadAttestation(t, owner.Login+"/personal-artifacts", ownerToken, bundle)
-	resp = ghPost(t, "/api/v3/users/"+owner.Login+"/attestations/delete-request", ownerToken,
+	s.uploadAttestation(t, owner.Login+"/personal-artifacts", ownerToken, bundle)
+	resp = s.post(t, "/api/v3/users/"+owner.Login+"/attestations/delete-request", ownerToken,
 		map[string]interface{}{"subject_digests": []string{digest}})
 	resp.Body.Close()
 	if resp.StatusCode != 200 {
 		t.Fatalf("user delete-request = %d, want 200", resp.StatusCode)
 	}
-	uploadAttestation(t, owner.Login+"/personal-artifacts", ownerToken, bundle)
-	resp = ghDelete(t, "/api/v3/users/"+owner.Login+"/attestations/digest/"+digest, ownerToken)
+	s.uploadAttestation(t, owner.Login+"/personal-artifacts", ownerToken, bundle)
+	resp = s.delete(t, "/api/v3/users/"+owner.Login+"/attestations/digest/"+digest, ownerToken)
 	resp.Body.Close()
 	if resp.StatusCode != 204 {
 		t.Fatalf("user delete by digest = %d, want 204", resp.StatusCode)
 	}
 
 	// Unknown user → 404.
-	resp = ghGet(t, "/api/v3/users/no-such-user/attestations/"+digest, defaultToken)
+	resp = s.get(t, "/api/v3/users/no-such-user/attestations/"+digest, defaultToken)
 	resp.Body.Close()
 	if resp.StatusCode != 404 {
 		t.Fatalf("unknown user list = %d, want 404", resp.StatusCode)
@@ -415,17 +442,19 @@ func TestUserAttestations_ListBulkAndDelete(t *testing.T) {
 }
 
 func TestAttestations_CursorPagination(t *testing.T) {
-	admin := testServer.store.UsersByLogin["admin"]
-	repo := testServer.store.CreateRepo(admin, "attest-page-repo", "", false)
+	t.Parallel()
+	s := newIsolatedServer(t)
+	admin := s.store.UsersByLogin["admin"]
+	repo := s.store.CreateRepo(admin, "attest-page-repo", "", false)
 	if repo == nil {
 		t.Fatal("create repo failed")
 	}
 	digest := testSubjectDigest("attest-page-artifact")
 	for i := 0; i < 3; i++ {
-		uploadAttestation(t, "admin/attest-page-repo", defaultToken,
+		s.uploadAttestation(t, "admin/attest-page-repo", defaultToken,
 			makeSigstoreBundle(t, digest, fmt.Sprintf("https://example.com/predicate/v%d", i)))
 	}
-	resp := ghGet(t, "/api/v3/repos/admin/attest-page-repo/attestations/"+digest+"?per_page=2", defaultToken)
+	resp := s.get(t, "/api/v3/repos/admin/attest-page-repo/attestations/"+digest+"?per_page=2", defaultToken)
 	if resp.StatusCode != 200 {
 		resp.Body.Close()
 		t.Fatalf("page 1 = %d, want 200", resp.StatusCode)
@@ -439,7 +468,7 @@ func TestAttestations_CursorPagination(t *testing.T) {
 		t.Fatalf("page 1 Link = %q, want rel=next", link)
 	}
 	after := extractCursor(t, link, "after")
-	resp = ghGet(t, "/api/v3/repos/admin/attest-page-repo/attestations/"+digest+"?per_page=2&after="+after, defaultToken)
+	resp = s.get(t, "/api/v3/repos/admin/attest-page-repo/attestations/"+digest+"?per_page=2&after="+after, defaultToken)
 	if resp.StatusCode != 200 {
 		resp.Body.Close()
 		t.Fatalf("page 2 = %d, want 200", resp.StatusCode)

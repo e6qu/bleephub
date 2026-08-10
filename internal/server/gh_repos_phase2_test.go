@@ -13,12 +13,14 @@ import (
 
 // TestRepoTopicsREST verifies GET and PUT /repos/{owner}/{repo}/topics.
 func TestRepoTopicsREST(t *testing.T) {
-	ghPost(t, "/api/v3/user/repos", defaultToken, map[string]interface{}{
+	t.Parallel()
+	s := newIsolatedServer(t)
+	s.post(t, "/api/v3/user/repos", defaultToken, map[string]interface{}{
 		"name": "topics-rest",
 	})
 
 	// GET returns empty topics.
-	getResp := ghGet(t, "/api/v3/repos/admin/topics-rest/topics", defaultToken)
+	getResp := s.get(t, "/api/v3/repos/admin/topics-rest/topics", defaultToken)
 	defer getResp.Body.Close()
 	if getResp.StatusCode != 200 {
 		t.Fatalf("expected 200 for get topics, got %d", getResp.StatusCode)
@@ -33,7 +35,7 @@ func TestRepoTopicsREST(t *testing.T) {
 	}
 
 	// PUT topics.
-	putResp := ghPut(t, "/api/v3/repos/admin/topics-rest/topics", defaultToken, map[string]interface{}{
+	putResp := s.put(t, "/api/v3/repos/admin/topics-rest/topics", defaultToken, map[string]interface{}{
 		"names": []string{"go", "ci", "bleephub"},
 	})
 	if putResp.StatusCode != 200 {
@@ -51,7 +53,7 @@ func TestRepoTopicsREST(t *testing.T) {
 	}
 
 	// GET reflects the update.
-	getResp2 := ghGet(t, "/api/v3/repos/admin/topics-rest/topics", defaultToken)
+	getResp2 := s.get(t, "/api/v3/repos/admin/topics-rest/topics", defaultToken)
 	defer getResp2.Body.Close()
 	var got2 map[string]interface{}
 	if err := json.NewDecoder(getResp2.Body).Decode(&got2); err != nil {
@@ -63,7 +65,7 @@ func TestRepoTopicsREST(t *testing.T) {
 	}
 
 	// Repo JSON also exposes topics.
-	repoResp := ghGet(t, "/api/v3/repos/admin/topics-rest", defaultToken)
+	repoResp := s.get(t, "/api/v3/repos/admin/topics-rest", defaultToken)
 	defer repoResp.Body.Close()
 	var repo map[string]interface{}
 	if err := json.NewDecoder(repoResp.Body).Decode(&repo); err != nil {
@@ -77,7 +79,9 @@ func TestRepoTopicsREST(t *testing.T) {
 
 // TestRepoTopicsREST_Validation verifies topic name validation.
 func TestRepoTopicsREST_Validation(t *testing.T) {
-	ghPost(t, "/api/v3/user/repos", defaultToken, map[string]interface{}{
+	t.Parallel()
+	s := newIsolatedServer(t)
+	s.post(t, "/api/v3/user/repos", defaultToken, map[string]interface{}{
 		"name": "topics-validation",
 	})
 
@@ -93,7 +97,7 @@ func TestRepoTopicsREST_Validation(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			resp := ghPut(t, "/api/v3/repos/admin/topics-validation/topics", defaultToken, map[string]interface{}{
+			resp := s.put(t, "/api/v3/repos/admin/topics-validation/topics", defaultToken, map[string]interface{}{
 				"names": tc.topics,
 			})
 			defer resp.Body.Close()
@@ -106,21 +110,23 @@ func TestRepoTopicsREST_Validation(t *testing.T) {
 
 // TestRepoTopicsREST_PrivateRequiresRead verifies private repo access control.
 func TestRepoTopicsREST_PrivateRequiresRead(t *testing.T) {
-	ghPost(t, "/api/v3/user/repos", defaultToken, map[string]interface{}{
+	t.Parallel()
+	s := newIsolatedServer(t)
+	s.post(t, "/api/v3/user/repos", defaultToken, map[string]interface{}{
 		"name":    "topics-private",
 		"private": true,
 	})
 
-	testServer.store.mu.Lock()
-	other := &User{ID: testServer.store.NextUser, Login: "other", Type: "User"}
-	testServer.store.NextUser++
-	testServer.store.Users[other.ID] = other
-	testServer.store.UsersByLogin[other.Login] = other
+	s.store.mu.Lock()
+	other := &User{ID: s.store.NextUser, Login: "other", Type: "User"}
+	s.store.NextUser++
+	s.store.Users[other.ID] = other
+	s.store.UsersByLogin[other.Login] = other
 	otherTok := &Token{Value: "ghp_otherusertoken000000000000000000000000", UserID: other.ID, Scopes: "repo"}
-	testServer.store.Tokens[otherTok.Value] = otherTok
-	testServer.store.mu.Unlock()
+	s.store.Tokens[otherTok.Value] = otherTok
+	s.store.mu.Unlock()
 
-	resp := ghGet(t, "/api/v3/repos/admin/topics-private/topics", otherTok.Value)
+	resp := s.get(t, "/api/v3/repos/admin/topics-private/topics", otherTok.Value)
 	defer resp.Body.Close()
 	if resp.StatusCode != 404 {
 		t.Fatalf("expected 404 for unreadable private repo, got %d", resp.StatusCode)
@@ -129,14 +135,16 @@ func TestRepoTopicsREST_PrivateRequiresRead(t *testing.T) {
 
 // TestDeleteContentsFile verifies DELETE /repos/{owner}/{repo}/contents/{path}.
 func TestDeleteContentsFile(t *testing.T) {
-	ghPost(t, "/api/v3/user/repos", defaultToken, map[string]interface{}{
+	t.Parallel()
+	s := newIsolatedServer(t)
+	s.post(t, "/api/v3/user/repos", defaultToken, map[string]interface{}{
 		"name":      "delete-contents",
 		"auto_init": true,
 	})
 
 	// Create a file to delete.
 	encoded := base64.StdEncoding.EncodeToString([]byte("to be deleted"))
-	putResp := ghPut(t, "/api/v3/repos/admin/delete-contents/contents/remove-me.txt", defaultToken, map[string]interface{}{
+	putResp := s.put(t, "/api/v3/repos/admin/delete-contents/contents/remove-me.txt", defaultToken, map[string]interface{}{
 		"message": "add file",
 		"content": encoded,
 	})
@@ -149,7 +157,7 @@ func TestDeleteContentsFile(t *testing.T) {
 	sha := content["sha"].(string)
 
 	// Delete the file.
-	delResp := ghDeleteWithBody(t, "/api/v3/repos/admin/delete-contents/contents/remove-me.txt", defaultToken, map[string]interface{}{
+	delResp := s.do(t, "DELETE", "/api/v3/repos/admin/delete-contents/contents/remove-me.txt", defaultToken, map[string]interface{}{
 		"message": "remove file",
 		"sha":     sha,
 	})
@@ -167,7 +175,7 @@ func TestDeleteContentsFile(t *testing.T) {
 	}
 
 	// File is gone.
-	getResp := ghGet(t, "/api/v3/repos/admin/delete-contents/contents/remove-me.txt", defaultToken)
+	getResp := s.get(t, "/api/v3/repos/admin/delete-contents/contents/remove-me.txt", defaultToken)
 	defer getResp.Body.Close()
 	if getResp.StatusCode != 404 {
 		t.Fatalf("expected 404 after delete, got %d", getResp.StatusCode)
@@ -176,13 +184,15 @@ func TestDeleteContentsFile(t *testing.T) {
 
 // TestDeleteContentsFile_ShaMismatch verifies deletion is rejected when SHA does not match.
 func TestDeleteContentsFile_ShaMismatch(t *testing.T) {
-	ghPost(t, "/api/v3/user/repos", defaultToken, map[string]interface{}{
+	t.Parallel()
+	s := newIsolatedServer(t)
+	s.post(t, "/api/v3/user/repos", defaultToken, map[string]interface{}{
 		"name":      "delete-sha-mismatch",
 		"auto_init": true,
 	})
 
 	encoded := base64.StdEncoding.EncodeToString([]byte("content"))
-	putResp := ghPut(t, "/api/v3/repos/admin/delete-sha-mismatch/contents/x.txt", defaultToken, map[string]interface{}{
+	putResp := s.put(t, "/api/v3/repos/admin/delete-sha-mismatch/contents/x.txt", defaultToken, map[string]interface{}{
 		"message": "add file",
 		"content": encoded,
 	})
@@ -192,7 +202,7 @@ func TestDeleteContentsFile_ShaMismatch(t *testing.T) {
 	}
 	putResp.Body.Close()
 
-	delResp := ghDeleteWithBody(t, "/api/v3/repos/admin/delete-sha-mismatch/contents/x.txt", defaultToken, map[string]interface{}{
+	delResp := s.do(t, "DELETE", "/api/v3/repos/admin/delete-sha-mismatch/contents/x.txt", defaultToken, map[string]interface{}{
 		"message": "remove file",
 		"sha":     "0000000000000000000000000000000000000000",
 	})
@@ -204,12 +214,14 @@ func TestDeleteContentsFile_ShaMismatch(t *testing.T) {
 
 // TestDeleteContentsFile_NonExistentPath verifies deletion of a missing path returns 422.
 func TestDeleteContentsFile_NonExistentPath(t *testing.T) {
-	ghPost(t, "/api/v3/user/repos", defaultToken, map[string]interface{}{
+	t.Parallel()
+	s := newIsolatedServer(t)
+	s.post(t, "/api/v3/user/repos", defaultToken, map[string]interface{}{
 		"name":      "delete-missing",
 		"auto_init": true,
 	})
 
-	delResp := ghDeleteWithBody(t, "/api/v3/repos/admin/delete-missing/contents/nope.txt", defaultToken, map[string]interface{}{
+	delResp := s.do(t, "DELETE", "/api/v3/repos/admin/delete-missing/contents/nope.txt", defaultToken, map[string]interface{}{
 		"message": "remove file",
 		"sha":     "0000000000000000000000000000000000000000",
 	})
@@ -221,20 +233,22 @@ func TestDeleteContentsFile_NonExistentPath(t *testing.T) {
 
 // TestDeleteContentsFile_RequiresPush verifies write access is enforced.
 func TestDeleteContentsFile_RequiresPush(t *testing.T) {
-	ghPost(t, "/api/v3/user/repos", defaultToken, map[string]interface{}{
+	t.Parallel()
+	s := newIsolatedServer(t)
+	s.post(t, "/api/v3/user/repos", defaultToken, map[string]interface{}{
 		"name": "delete-perms",
 	})
 
-	testServer.store.mu.Lock()
-	other := &User{ID: testServer.store.NextUser, Login: "other", Type: "User"}
-	testServer.store.NextUser++
-	testServer.store.Users[other.ID] = other
-	testServer.store.UsersByLogin[other.Login] = other
+	s.store.mu.Lock()
+	other := &User{ID: s.store.NextUser, Login: "other", Type: "User"}
+	s.store.NextUser++
+	s.store.Users[other.ID] = other
+	s.store.UsersByLogin[other.Login] = other
 	otherTok := &Token{Value: "ghp_otherusertoken000000000000000000000000", UserID: other.ID, Scopes: "repo"}
-	testServer.store.Tokens[otherTok.Value] = otherTok
-	testServer.store.mu.Unlock()
+	s.store.Tokens[otherTok.Value] = otherTok
+	s.store.mu.Unlock()
 
-	delResp := ghDeleteWithBody(t, "/api/v3/repos/admin/delete-perms/contents/x.txt", otherTok.Value, map[string]interface{}{
+	delResp := s.do(t, "DELETE", "/api/v3/repos/admin/delete-perms/contents/x.txt", otherTok.Value, map[string]interface{}{
 		"message": "remove file",
 		"sha":     "0000000000000000000000000000000000000000",
 	})
@@ -255,12 +269,14 @@ func ghDeleteWithBody(t *testing.T, path, token string, body map[string]interfac
 
 // TestRepoStargazersREST verifies star/unstar and listing endpoints.
 func TestRepoStargazersREST(t *testing.T) {
-	ghPost(t, "/api/v3/user/repos", defaultToken, map[string]interface{}{
+	t.Parallel()
+	s := newIsolatedServer(t)
+	s.post(t, "/api/v3/user/repos", defaultToken, map[string]interface{}{
 		"name": "stargazers-rest",
 	})
 
 	// Initially no stargazers.
-	listResp := ghGet(t, "/api/v3/repos/admin/stargazers-rest/stargazers", defaultToken)
+	listResp := s.get(t, "/api/v3/repos/admin/stargazers-rest/stargazers", defaultToken)
 	defer listResp.Body.Close()
 	if listResp.StatusCode != 200 {
 		t.Fatalf("expected 200 for list stargazers, got %d", listResp.StatusCode)
@@ -274,7 +290,7 @@ func TestRepoStargazersREST(t *testing.T) {
 	}
 
 	// Star the repo.
-	starResp := ghPut(t, "/api/v3/user/starred/admin/stargazers-rest", defaultToken, nil)
+	starResp := s.put(t, "/api/v3/user/starred/admin/stargazers-rest", defaultToken, nil)
 	if starResp.StatusCode != 204 {
 		starResp.Body.Close()
 		t.Fatalf("expected 204 for star, got %d", starResp.StatusCode)
@@ -282,7 +298,7 @@ func TestRepoStargazersREST(t *testing.T) {
 	starResp.Body.Close()
 
 	// Repo JSON reflects count.
-	repoResp := ghGet(t, "/api/v3/repos/admin/stargazers-rest", defaultToken)
+	repoResp := s.get(t, "/api/v3/repos/admin/stargazers-rest", defaultToken)
 	defer repoResp.Body.Close()
 	var repo map[string]interface{}
 	if err := json.NewDecoder(repoResp.Body).Decode(&repo); err != nil {
@@ -293,7 +309,7 @@ func TestRepoStargazersREST(t *testing.T) {
 	}
 
 	// List shows the current user.
-	listResp2 := ghGet(t, "/api/v3/repos/admin/stargazers-rest/stargazers", defaultToken)
+	listResp2 := s.get(t, "/api/v3/repos/admin/stargazers-rest/stargazers", defaultToken)
 	defer listResp2.Body.Close()
 	var stargazers2 []map[string]interface{}
 	if err := json.NewDecoder(listResp2.Body).Decode(&stargazers2); err != nil {
@@ -307,7 +323,7 @@ func TestRepoStargazersREST(t *testing.T) {
 	}
 
 	// List user's starred repos (may include repos starred by earlier tests).
-	starredResp := ghGet(t, "/api/v3/user/starred", defaultToken)
+	starredResp := s.get(t, "/api/v3/user/starred", defaultToken)
 	defer starredResp.Body.Close()
 	if starredResp.StatusCode != 200 {
 		t.Fatalf("expected 200 for list starred, got %d", starredResp.StatusCode)
@@ -328,13 +344,13 @@ func TestRepoStargazersREST(t *testing.T) {
 	}
 
 	// Unstar.
-	unstarResp := ghDeleteWithBody(t, "/api/v3/user/starred/admin/stargazers-rest", defaultToken, nil)
+	unstarResp := s.do(t, "DELETE", "/api/v3/user/starred/admin/stargazers-rest", defaultToken, nil)
 	defer unstarResp.Body.Close()
 	if unstarResp.StatusCode != 204 {
 		t.Fatalf("expected 204 for unstar, got %d", unstarResp.StatusCode)
 	}
 
-	listResp3 := ghGet(t, "/api/v3/repos/admin/stargazers-rest/stargazers", defaultToken)
+	listResp3 := s.get(t, "/api/v3/repos/admin/stargazers-rest/stargazers", defaultToken)
 	defer listResp3.Body.Close()
 	var stargazers3 []map[string]interface{}
 	if err := json.NewDecoder(listResp3.Body).Decode(&stargazers3); err != nil {
@@ -403,23 +419,25 @@ func TestRepoStargazersPagination(t *testing.T) {
 
 // TestRepoCollaboratorsREST verifies collaborator add/list/remove and permission check.
 func TestRepoCollaboratorsREST(t *testing.T) {
-	ghPost(t, "/api/v3/user/repos", defaultToken, map[string]interface{}{
+	t.Parallel()
+	s := newIsolatedServer(t)
+	s.post(t, "/api/v3/user/repos", defaultToken, map[string]interface{}{
 		"name": "collab-rest",
 	})
 
 	// Create another user.
-	testServer.store.mu.Lock()
-	other := &User{ID: testServer.store.NextUser, Login: "collab-user", Type: "User", StarredRepos: map[string]bool{}}
-	testServer.store.NextUser++
-	testServer.store.Users[other.ID] = other
-	testServer.store.UsersByLogin[other.Login] = other
+	s.store.mu.Lock()
+	other := &User{ID: s.store.NextUser, Login: "collab-user", Type: "User", StarredRepos: map[string]bool{}}
+	s.store.NextUser++
+	s.store.Users[other.ID] = other
+	s.store.UsersByLogin[other.Login] = other
 	otherTok := &Token{Value: "ghp_collabusertoken000000000000000000000", UserID: other.ID, Scopes: "repo"}
-	testServer.store.Tokens[otherTok.Value] = otherTok
-	testServer.store.mu.Unlock()
+	s.store.Tokens[otherTok.Value] = otherTok
+	s.store.mu.Unlock()
 
 	// Inviting a new collaborator answers 201 with a pending repository
 	// invitation carrying the invitee, inviter, and requested role.
-	addResp := ghPut(t, "/api/v3/repos/admin/collab-rest/collaborators/collab-user", defaultToken, map[string]interface{}{
+	addResp := s.put(t, "/api/v3/repos/admin/collab-rest/collaborators/collab-user", defaultToken, map[string]interface{}{
 		"permission": "push",
 	})
 	if addResp.StatusCode != 201 {
@@ -439,7 +457,7 @@ func TestRepoCollaboratorsREST(t *testing.T) {
 	}
 
 	// The pending invitation is listed on the repository until accepted.
-	pendingResp := ghGet(t, "/api/v3/repos/admin/collab-rest/invitations", defaultToken)
+	pendingResp := s.get(t, "/api/v3/repos/admin/collab-rest/invitations", defaultToken)
 	if pendingResp.StatusCode != 200 {
 		pendingResp.Body.Close()
 		t.Fatalf("expected 200 for list invitations, got %d", pendingResp.StatusCode)
@@ -449,14 +467,14 @@ func TestRepoCollaboratorsREST(t *testing.T) {
 	}
 
 	// The invitee accepts, becoming a collaborator.
-	acceptResp := ghPatch(t, fmt.Sprintf("/api/v3/user/repository_invitations/%d", int(invID)), otherTok.Value, nil)
+	acceptResp := s.patch(t, fmt.Sprintf("/api/v3/user/repository_invitations/%d", int(invID)), otherTok.Value, nil)
 	acceptResp.Body.Close()
 	if acceptResp.StatusCode != 204 {
 		t.Fatalf("expected 204 for accept invitation, got %d", acceptResp.StatusCode)
 	}
 
 	// Re-PUT on an existing collaborator updates the permission in place (204).
-	updateResp := ghPut(t, "/api/v3/repos/admin/collab-rest/collaborators/collab-user", defaultToken, map[string]interface{}{
+	updateResp := s.put(t, "/api/v3/repos/admin/collab-rest/collaborators/collab-user", defaultToken, map[string]interface{}{
 		"permission": "push",
 	})
 	updateResp.Body.Close()
@@ -465,7 +483,7 @@ func TestRepoCollaboratorsREST(t *testing.T) {
 	}
 
 	// List collaborators includes the owner and the new collaborator.
-	listResp := ghGet(t, "/api/v3/repos/admin/collab-rest/collaborators", defaultToken)
+	listResp := s.get(t, "/api/v3/repos/admin/collab-rest/collaborators", defaultToken)
 	defer listResp.Body.Close()
 	if listResp.StatusCode != 200 {
 		t.Fatalf("expected 200 for list collaborators, got %d", listResp.StatusCode)
@@ -479,7 +497,7 @@ func TestRepoCollaboratorsREST(t *testing.T) {
 	}
 
 	// Permission check.
-	permResp := ghGet(t, "/api/v3/repos/admin/collab-rest/collaborators/collab-user/permission", defaultToken)
+	permResp := s.get(t, "/api/v3/repos/admin/collab-rest/collaborators/collab-user/permission", defaultToken)
 	defer permResp.Body.Close()
 	if permResp.StatusCode != 200 {
 		t.Fatalf("expected 200 for permission check, got %d", permResp.StatusCode)
@@ -493,21 +511,21 @@ func TestRepoCollaboratorsREST(t *testing.T) {
 	}
 
 	// Collaborator can read the private repo's contents metadata.
-	metaResp := ghGet(t, "/api/v3/repos/admin/collab-rest", otherTok.Value)
+	metaResp := s.get(t, "/api/v3/repos/admin/collab-rest", otherTok.Value)
 	defer metaResp.Body.Close()
 	if metaResp.StatusCode != 200 {
 		t.Fatalf("expected 200 for collaborator repo read, got %d", metaResp.StatusCode)
 	}
 
 	// Remove collaborator.
-	delResp := ghDeleteWithBody(t, "/api/v3/repos/admin/collab-rest/collaborators/collab-user", defaultToken, nil)
+	delResp := s.do(t, "DELETE", "/api/v3/repos/admin/collab-rest/collaborators/collab-user", defaultToken, nil)
 	defer delResp.Body.Close()
 	if delResp.StatusCode != 204 {
 		t.Fatalf("expected 204 for remove collaborator, got %d", delResp.StatusCode)
 	}
 
 	// After removal, list shows only owner.
-	listResp2 := ghGet(t, "/api/v3/repos/admin/collab-rest/collaborators", defaultToken)
+	listResp2 := s.get(t, "/api/v3/repos/admin/collab-rest/collaborators", defaultToken)
 	defer listResp2.Body.Close()
 	var collabs2 []map[string]interface{}
 	if err := json.NewDecoder(listResp2.Body).Decode(&collabs2); err != nil {
@@ -588,14 +606,16 @@ func TestRepoCollaboratorsPagination(t *testing.T) {
 // TestRepoLanguagesREST verifies GET /repos/{owner}/{repo}/languages returns
 // byte totals by language for the default branch.
 func TestRepoLanguagesREST(t *testing.T) {
-	ghPost(t, "/api/v3/user/repos", defaultToken, map[string]interface{}{
+	t.Parallel()
+	s := newIsolatedServer(t)
+	s.post(t, "/api/v3/user/repos", defaultToken, map[string]interface{}{
 		"name": "languages-rest",
 	})
-	repo := testServer.store.GetRepo("admin", "languages-rest")
+	repo := s.store.GetRepo("admin", "languages-rest")
 	if repo == nil {
 		t.Fatalf("repo not created")
 	}
-	stor := testServer.store.GetGitStorage("admin", "languages-rest")
+	stor := s.store.GetGitStorage("admin", "languages-rest")
 	if stor == nil {
 		t.Fatalf("no git storage")
 	}
@@ -610,7 +630,7 @@ func TestRepoLanguagesREST(t *testing.T) {
 		t.Fatalf("init repo: %v", err)
 	}
 
-	resp := ghGet(t, "/api/v3/repos/admin/languages-rest/languages", defaultToken)
+	resp := s.get(t, "/api/v3/repos/admin/languages-rest/languages", defaultToken)
 	defer resp.Body.Close()
 	if resp.StatusCode != 200 {
 		t.Fatalf("expected 200 for languages, got %d", resp.StatusCode)
@@ -644,14 +664,16 @@ func TestRepoLanguagesREST(t *testing.T) {
 // TestRepoMergeREST verifies POST /repos/{owner}/{repo}/merges performs a
 // three-way merge of head into base.
 func TestRepoMergeREST(t *testing.T) {
-	ghPost(t, "/api/v3/user/repos", defaultToken, map[string]interface{}{
+	t.Parallel()
+	s := newIsolatedServer(t)
+	s.post(t, "/api/v3/user/repos", defaultToken, map[string]interface{}{
 		"name": "merge-rest",
 	})
-	repo := testServer.store.GetRepo("admin", "merge-rest")
+	repo := s.store.GetRepo("admin", "merge-rest")
 	if repo == nil {
 		t.Fatalf("repo not created")
 	}
-	stor := testServer.store.GetGitStorage("admin", "merge-rest")
+	stor := s.store.GetGitStorage("admin", "merge-rest")
 	if stor == nil {
 		t.Fatalf("no git storage")
 	}
@@ -677,7 +699,7 @@ func TestRepoMergeREST(t *testing.T) {
 		t.Fatalf("commit on feature: %v", err)
 	}
 
-	resp := ghPost(t, "/api/v3/repos/admin/merge-rest/merges", defaultToken, map[string]interface{}{
+	resp := s.post(t, "/api/v3/repos/admin/merge-rest/merges", defaultToken, map[string]interface{}{
 		"base":           "main",
 		"head":           "feature",
 		"commit_message": "merge feature",
@@ -706,14 +728,16 @@ func TestRepoMergeREST(t *testing.T) {
 
 // TestRepoForksREST verifies POST and GET /repos/{owner}/{repo}/forks.
 func TestRepoForksREST(t *testing.T) {
-	ghPost(t, "/api/v3/user/repos", defaultToken, map[string]interface{}{
+	t.Parallel()
+	s := newIsolatedServer(t)
+	s.post(t, "/api/v3/user/repos", defaultToken, map[string]interface{}{
 		"name": "fork-source",
 	})
-	source := testServer.store.GetRepo("admin", "fork-source")
+	source := s.store.GetRepo("admin", "fork-source")
 	if source == nil {
 		t.Fatalf("source repo not created")
 	}
-	stor := testServer.store.GetGitStorage("admin", "fork-source")
+	stor := s.store.GetGitStorage("admin", "fork-source")
 	if stor == nil {
 		t.Fatalf("no git storage")
 	}
@@ -725,16 +749,16 @@ func TestRepoForksREST(t *testing.T) {
 	}
 
 	// Create a second user to fork into.
-	testServer.store.mu.Lock()
-	forker := &User{ID: testServer.store.NextUser, Login: "forker", Type: "User", CreatedAt: fixedTestTime, UpdatedAt: fixedTestTime}
-	testServer.store.NextUser++
-	testServer.store.Users[forker.ID] = forker
-	testServer.store.UsersByLogin[forker.Login] = forker
+	s.store.mu.Lock()
+	forker := &User{ID: s.store.NextUser, Login: "forker", Type: "User", CreatedAt: fixedTestTime, UpdatedAt: fixedTestTime}
+	s.store.NextUser++
+	s.store.Users[forker.ID] = forker
+	s.store.UsersByLogin[forker.Login] = forker
 	tok := &Token{Value: "forker-token", UserID: forker.ID, Scopes: "repo", CreatedAt: fixedTestTime}
-	testServer.store.Tokens[tok.Value] = tok
-	testServer.store.mu.Unlock()
+	s.store.Tokens[tok.Value] = tok
+	s.store.mu.Unlock()
 
-	resp := ghPost(t, "/api/v3/repos/admin/fork-source/forks", "forker-token", map[string]interface{}{})
+	resp := s.post(t, "/api/v3/repos/admin/fork-source/forks", "forker-token", map[string]interface{}{})
 	defer resp.Body.Close()
 	if resp.StatusCode != 202 {
 		t.Fatalf("expected 202 for fork, got %d", resp.StatusCode)
@@ -751,7 +775,7 @@ func TestRepoForksREST(t *testing.T) {
 	}
 
 	// List forks as source owner.
-	listResp := ghGet(t, "/api/v3/repos/admin/fork-source/forks", defaultToken)
+	listResp := s.get(t, "/api/v3/repos/admin/fork-source/forks", defaultToken)
 	defer listResp.Body.Close()
 	if listResp.StatusCode != 200 {
 		t.Fatalf("expected 200 for list forks, got %d", listResp.StatusCode)
@@ -768,10 +792,12 @@ func TestRepoForksREST(t *testing.T) {
 // TestRepoRenameREST verifies PATCH /repos/{owner}/{repo} can rename a repo
 // and that the new name is reachable afterwards.
 func TestRepoRenameREST(t *testing.T) {
-	ghPost(t, "/api/v3/user/repos", defaultToken, map[string]interface{}{
+	t.Parallel()
+	s := newIsolatedServer(t)
+	s.post(t, "/api/v3/user/repos", defaultToken, map[string]interface{}{
 		"name": "rename-me",
 	})
-	stor := testServer.store.GetGitStorage("admin", "rename-me")
+	stor := s.store.GetGitStorage("admin", "rename-me")
 	if stor == nil {
 		t.Fatalf("no git storage")
 	}
@@ -782,7 +808,7 @@ func TestRepoRenameREST(t *testing.T) {
 		t.Fatalf("init repo: %v", err)
 	}
 
-	patchResp := ghPatch(t, "/api/v3/repos/admin/rename-me", defaultToken, map[string]interface{}{
+	patchResp := s.patch(t, "/api/v3/repos/admin/rename-me", defaultToken, map[string]interface{}{
 		"name": "renamed-repo",
 	})
 	defer patchResp.Body.Close()
@@ -798,20 +824,20 @@ func TestRepoRenameREST(t *testing.T) {
 	}
 
 	// Old name is gone.
-	oldResp := ghGet(t, "/api/v3/repos/admin/rename-me", defaultToken)
+	oldResp := s.get(t, "/api/v3/repos/admin/rename-me", defaultToken)
 	defer oldResp.Body.Close()
 	if oldResp.StatusCode != 404 {
 		t.Fatalf("expected 404 for old name, got %d", oldResp.StatusCode)
 	}
 
 	// New name resolves and git storage still works.
-	newResp := ghGet(t, "/api/v3/repos/admin/renamed-repo", defaultToken)
+	newResp := s.get(t, "/api/v3/repos/admin/renamed-repo", defaultToken)
 	defer newResp.Body.Close()
 	if newResp.StatusCode != 200 {
 		t.Fatalf("expected 200 for new name, got %d", newResp.StatusCode)
 	}
 
-	commitsResp := ghGet(t, "/api/v3/repos/admin/renamed-repo/commits", defaultToken)
+	commitsResp := s.get(t, "/api/v3/repos/admin/renamed-repo/commits", defaultToken)
 	defer commitsResp.Body.Close()
 	if commitsResp.StatusCode != 200 {
 		t.Fatalf("expected 200 for commits after rename, got %d", commitsResp.StatusCode)
@@ -820,14 +846,16 @@ func TestRepoRenameREST(t *testing.T) {
 
 // TestRepoCompareREST verifies GET /repos/{owner}/{repo}/compare/{base}...{head}.
 func TestRepoCompareREST(t *testing.T) {
-	ghPost(t, "/api/v3/user/repos", defaultToken, map[string]interface{}{
+	t.Parallel()
+	s := newIsolatedServer(t)
+	s.post(t, "/api/v3/user/repos", defaultToken, map[string]interface{}{
 		"name": "compare-rest",
 	})
-	repo := testServer.store.GetRepo("admin", "compare-rest")
+	repo := s.store.GetRepo("admin", "compare-rest")
 	if repo == nil {
 		t.Fatalf("repo not created")
 	}
-	stor := testServer.store.GetGitStorage("admin", "compare-rest")
+	stor := s.store.GetGitStorage("admin", "compare-rest")
 	if stor == nil {
 		t.Fatalf("no git storage")
 	}
@@ -856,7 +884,7 @@ func TestRepoCompareREST(t *testing.T) {
 		t.Fatalf("commit on feature: %v", err)
 	}
 
-	resp := ghGet(t, "/api/v3/repos/admin/compare-rest/compare/main...feature", defaultToken)
+	resp := s.get(t, "/api/v3/repos/admin/compare-rest/compare/main...feature", defaultToken)
 	defer resp.Body.Close()
 	if resp.StatusCode != 200 {
 		t.Fatalf("expected 200 for compare, got %d", resp.StatusCode)

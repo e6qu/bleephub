@@ -151,6 +151,7 @@ import type {
   GithubMarketplaceListingSettings,
   GithubMarketplacePlan,
   GithubMarketplaceSubscription,
+  Undef,
 } from "./types.js";
 
 // One AbortController behind every request this module makes.
@@ -180,11 +181,16 @@ export function abortPendingRequests(): void {
  * combined with it rather than replacing it, so passing a per-request deadline
  * never costs the request its sign-out cancellation.
  */
-function apiFetch(input: RequestInfo | URL, init?: RequestInit): Promise<Response> {
+type ApiFetchInit = Omit<RequestInit, "signal" | "body"> & {
+  signal?: AbortSignal | null | undefined;
+  body?: BodyInit | null | undefined;
+};
+
+function apiFetch(input: RequestInfo | URL, init?: ApiFetchInit): Promise<Response> {
   const signal = init?.signal
     ? AbortSignal.any([pendingRequests.signal, init.signal])
     : pendingRequests.signal;
-  return fetch(input, { ...init, signal });
+  return fetch(input, { ...init, signal } as RequestInit);
 }
 
 /**
@@ -314,7 +320,7 @@ function rateLimitRetryAfterSeconds(res: Response): number | undefined {
 export class ApiError extends Error {
   status: number;
   /** Present when the server throttled the request (see isRateLimited). */
-  retryAfterSeconds?: number;
+  retryAfterSeconds?: number | undefined;
   constructor(status: number, message: string, options?: { retryAfterSeconds?: number }) {
     super(message);
     this.name = "ApiError";
@@ -627,13 +633,13 @@ function normalizeOAuthApp(raw: WireOAuthApp): BleephubOAuthApp {
 
 export async function createApp(payload: {
   name: string;
-  description?: string;
-  url?: string;
-  callback_url?: string;
-  webhook_url?: string;
-  webhook_active?: boolean;
-  permissions?: Record<string, string>;
-  events?: string[];
+  description?: string | undefined;
+  url?: string | undefined;
+  callback_url?: string | undefined;
+  webhook_url?: string | undefined;
+  webhook_active?: boolean | undefined;
+  permissions?: Record<string, string> | undefined;
+  events?: string[] | undefined;
 }): Promise<{ clientId: string; pem: string; client_secret: string; webhook_secret: string }> {
   const origin = globalThis.location?.origin || "http://localhost";
   const redirectUrl = `${origin}/ui/apps`;
@@ -916,7 +922,7 @@ export function parseLinkLast(link: string | null): number | null {
   if (!link) return null;
   for (const part of link.split(",")) {
     const m = part.match(/<[^>]*[?&]page=(\d+)[^>]*>\s*;\s*rel="last"/);
-    if (m) return parseInt(m[1], 10);
+    if (m) return parseInt(m[1]!, 10);
   }
   return null;
 }
@@ -926,7 +932,7 @@ export function parseLinkNext(link: string | null): string | null {
   if (!link) return null;
   for (const part of link.split(",")) {
     const m = part.match(/<([^>]+)>\s*;\s*rel="next"/);
-    if (m) return m[1];
+    if (m) return m[1] ?? null;
   }
   return null;
 }
@@ -996,13 +1002,13 @@ export const fetchOrgReposPage = (
 
 export const createRepo = (payload: {
   name: string;
-  description?: string;
-  private?: boolean;
-  visibility?: "public" | "private" | "internal";
-  default_branch?: string;
-  auto_init?: boolean;
-  gitignore_template?: string;
-  license_template?: string;
+  description?: string | undefined;
+  private?: boolean | undefined;
+  visibility?: "public" | "private" | "internal" | undefined;
+  default_branch?: string | undefined;
+  auto_init?: boolean | undefined;
+  gitignore_template?: string | undefined;
+  license_template?: string | undefined;
 }): Promise<BleephubRepo> =>
   ghPostJSON("/api/v3/user/repos", payload);
 
@@ -1010,13 +1016,13 @@ export const createOrgRepo = (
   org: string,
   payload: {
     name: string;
-    description?: string;
-    private?: boolean;
-    visibility?: "public" | "private" | "internal";
-    default_branch?: string;
-    auto_init?: boolean;
-    gitignore_template?: string;
-    license_template?: string;
+    description?: string | undefined;
+    private?: boolean | undefined;
+    visibility?: "public" | "private" | "internal" | undefined;
+    default_branch?: string | undefined;
+    auto_init?: boolean | undefined;
+    gitignore_template?: string | undefined;
+    license_template?: string | undefined;
   },
 ): Promise<BleephubRepo> => ghPostJSON(`/api/v3/orgs/${encodeURIComponent(org)}/repos`, payload);
 
@@ -1299,20 +1305,20 @@ export const createClassroomAssignment = (
     public_repo: boolean;
     students_are_repo_admins: boolean;
     feedback_pull_requests_enabled: boolean;
-    deadline?: string;
-    max_teams?: number;
-    max_members?: number;
+    deadline?: string | undefined;
+    max_teams?: number | undefined;
+    max_members?: number | undefined;
     autograding_tests: ClassroomAutogradingTest[];
   },
 ) => ghPostJSON<ClassroomAssignment>(`/classroom-data/classrooms/${classroomID}/assignments`, body);
 export const updateClassroomAssignment = (
   assignmentID: number,
   body: {
-    title?: string;
-    type?: "individual" | "group";
-    invitations_enabled?: boolean;
-    deadline?: string;
-    autograding_tests?: ClassroomAutogradingTest[];
+    title?: string | undefined;
+    type?: "individual" | "group" | undefined;
+    invitations_enabled?: boolean | undefined;
+    deadline?: string | undefined;
+    autograding_tests?: ClassroomAutogradingTest[] | undefined;
   },
 ) => ghPatchJSON<ClassroomAssignment>(`/classroom-data/assignments/${assignmentID}`, body);
 export const deleteClassroomAssignment = (assignmentID: number) =>
@@ -1562,13 +1568,13 @@ export const deleteBranchProtection = (owner: string, repo: string, branch: stri
   ghDeleteJSON<void>(`/api/v3/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/branches/${encodeURIComponent(branch)}/protection`, {});
 
 export interface RepoCommitListOptions {
-  sha?: string;
-  path?: string;
-  author?: string;
-  since?: string;
-  until?: string;
-  page?: number;
-  perPage?: number;
+  sha?: string | undefined;
+  path?: string | undefined;
+  author?: string | undefined;
+  since?: string | undefined;
+  until?: string | undefined;
+  page?: number | undefined;
+  perPage?: number | undefined;
 }
 
 export const fetchRepoCommits = (
@@ -1691,11 +1697,11 @@ export const fetchRelease = (owner: string, repo: string, releaseId: number) =>
 
 export interface ReleasePayload {
   tag_name: string;
-  target_commitish?: string;
-  name?: string;
-  body?: string;
-  draft?: boolean;
-  prerelease?: boolean;
+  target_commitish?: string | undefined;
+  name?: string | undefined;
+  body?: string | undefined;
+  draft?: boolean | undefined;
+  prerelease?: boolean | undefined;
 }
 
 export const createRelease = (owner: string, repo: string, payload: ReleasePayload) =>
@@ -1836,10 +1842,10 @@ export const fetchActionsWorkflows = (owner: string, repo: string, signal?: Abor
 /** Filters the runs-list endpoint supports server-side. */
 export interface RunFilters {
   /** Numeric workflow-file id; scopes to .../workflows/{id}/runs. */
-  workflowId?: number;
-  status?: string;
-  branch?: string;
-  event?: string;
+  workflowId?: number | undefined;
+  status?: string | undefined;
+  branch?: string | undefined;
+  event?: string | undefined;
 }
 
 /** First page by filters; follow-up pages by the Link rel="next" URL. */
@@ -2036,7 +2042,7 @@ export async function fetchUsers(signal?: AbortSignal): Promise<BleephubUser[]> 
   return Promise.all(users.map((user) => ghFetch<BleephubUser>(`/api/v3/users/${encodeURIComponent(user.login)}`, signal)));
 }
 
-export async function createUser(payload: { login: string; email?: string; site_admin?: boolean }): Promise<BleephubUser> {
+export async function createUser(payload: { login: string; email?: string | undefined; site_admin?: boolean | undefined }): Promise<BleephubUser> {
   const user = await ghPostJSON<BleephubUser>("/api/v3/admin/users", { login: payload.login, email: payload.email });
   if (payload.site_admin) {
     await ghSend("PUT", `/api/v3/users/${encodeURIComponent(user.login)}/site_admin`);
@@ -2063,9 +2069,9 @@ export async function fetchOrgs(signal?: AbortSignal): Promise<BleephubOrg[]> {
 
 export async function createOrg(payload: {
   login: string;
-  name?: string;
-  description?: string;
-  billing_email?: string;
+  name?: string | undefined;
+  description?: string | undefined;
+  billing_email?: string | undefined;
 }): Promise<BleephubOrg> {
   const viewer = await fetchCurrentUser();
   const org = await ghPostJSON<BleephubOrg>("/api/v3/admin/organizations", {
@@ -2082,7 +2088,7 @@ export async function createOrg(payload: {
   return org;
 }
 
-export const updateOrg = (login: string, payload: Partial<BleephubOrg>) =>
+export const updateOrg = (login: string, payload: Undef<BleephubOrg>) =>
   ghPatchJSON<BleephubOrg>(`/api/v3/orgs/${encodeURIComponent(login)}`, payload);
 
 export const deleteOrg = (login: string) =>
@@ -2090,14 +2096,14 @@ export const deleteOrg = (login: string) =>
 
 export const fetchTeams = () => ghFetch<BleephubTeam[]>("/api/v3/user/teams?per_page=100");
 
-export const createTeam = (payload: { org: string; name: string; description?: string; privacy?: "secret" | "closed" }) =>
+export const createTeam = (payload: { org: string; name: string; description?: string | undefined; privacy?: "secret" | "closed" | undefined }) =>
   ghPostJSON<BleephubTeam>(`/api/v3/orgs/${encodeURIComponent(payload.org)}/teams`, {
     name: payload.name,
     description: payload.description,
     privacy: payload.privacy,
   });
 
-export const updateTeam = (org: string, slug: string, payload: Partial<BleephubTeam>) =>
+export const updateTeam = (org: string, slug: string, payload: Undef<BleephubTeam>) =>
   ghPatchJSON<BleephubTeam>(`/api/v3/orgs/${encodeURIComponent(org)}/teams/${encodeURIComponent(slug)}`, payload);
 
 export const deleteTeam = (org: string, slug: string) =>
@@ -2185,8 +2191,8 @@ interface GithubAuditEntry {
 
 export const fetchAuditLog = (filters: {
   org: string;
-  phrase?: string;
-  order?: "asc" | "desc";
+  phrase?: string | undefined;
+  order?: "asc" | "desc" | undefined;
 }): Promise<BleephubAuditEvent[]> => {
   const params = new URLSearchParams();
   params.set("include", "all");
@@ -2220,9 +2226,9 @@ export const fetchAuditLogOrgs = async (signal?: AbortSignal): Promise<BleephubO
 };
 
 export const buildAuditLogPhrase = (filters: {
-  actor?: string;
-  action?: string;
-  text?: string;
+  actor?: string | undefined;
+  action?: string | undefined;
+  text?: string | undefined;
 }) => {
   const terms: string[] = [];
   if (filters.actor) terms.push(filters.actor);
@@ -2378,9 +2384,9 @@ export const moveProjectCard = (
 // ─── Secret scanning ────────────────────────────────────────────────────
 
 export interface SecretScanningFilters {
-  state?: "open" | "resolved";
-  secret_type?: string;
-  resolution?: string;
+  state?: "open" | "resolved" | undefined;
+  secret_type?: string | undefined;
+  resolution?: string | undefined;
 }
 
 export const fetchSecretScanningAlerts = (
@@ -2412,12 +2418,12 @@ export const updateSecretScanningAlert = (
 // ─── Code scanning ──────────────────────────────────────────────────────
 
 export interface CodeScanningFilters {
-  state?: GithubCodeScanningAlertState;
-  severity?: string;
-  tool_name?: string;
-  rule?: string;
-  sort?: "created" | "updated";
-  direction?: "asc" | "desc";
+  state?: GithubCodeScanningAlertState | undefined;
+  severity?: string | undefined;
+  tool_name?: string | undefined;
+  rule?: string | undefined;
+  sort?: "created" | "updated" | undefined;
+  direction?: "asc" | "desc" | undefined;
 }
 
 export const fetchCodeScanningAlerts = (
@@ -2497,13 +2503,13 @@ async function ghPatchJSON<T>(path: string, body: unknown): Promise<T> {
 // ─── GitHub Dependabot ──────────────────────────────────────────────────
 
 export interface DependabotFilters {
-  state?: GithubDependabotAlertState;
-  severity?: string;
-  package_name?: string;
-  ecosystem?: string;
-  manifest?: string;
-  sort?: "created" | "updated";
-  direction?: "asc" | "desc";
+  state?: GithubDependabotAlertState | undefined;
+  severity?: string | undefined;
+  package_name?: string | undefined;
+  ecosystem?: string | undefined;
+  manifest?: string | undefined;
+  sort?: "created" | "updated" | undefined;
+  direction?: "asc" | "desc" | undefined;
 }
 
 export const fetchDependabotAlerts = (
@@ -3153,7 +3159,7 @@ export const fetchRepoMilestones = (owner: string, repo: string, state: "open" |
 export const createRepoMilestone = (
   owner: string,
   repo: string,
-  payload: { title: string; description?: string; due_on?: string },
+  payload: { title: string; description?: string | undefined; due_on?: string | undefined },
 ): Promise<GithubMilestone> => ghPostJSON(`/api/v3/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/milestones`, payload);
 
 export const updateRepoMilestone = (
@@ -3264,10 +3270,10 @@ export const upsertOrgCustomProperties = (
   properties: {
     property_name: string;
     value_type: GithubCustomPropertyValueType;
-    required?: boolean;
-    default_value?: string | null;
-    description?: string | null;
-    allowed_values?: string[];
+    required?: boolean | undefined;
+    default_value?: string | null | undefined;
+    description?: string | null | undefined;
+    allowed_values?: string[] | undefined;
   }[],
 ): Promise<GithubCustomProperty[]> =>
   ghPatchJSON(`/api/v3/orgs/${encodeURIComponent(org)}/properties/schema`, { properties });
@@ -3280,13 +3286,13 @@ export const fetchOrgIssueTypes = (org: string) =>
 
 export const createOrgIssueType = (
   org: string,
-  payload: { name: string; is_enabled: boolean; description?: string; color?: string },
+  payload: { name: string; is_enabled: boolean; description?: string | undefined; color?: string | undefined },
 ): Promise<GithubIssueType> => ghPostJSON(`/api/v3/orgs/${encodeURIComponent(org)}/issue-types`, payload);
 
 export const updateOrgIssueType = (
   org: string,
   issueTypeId: number,
-  payload: { name: string; is_enabled: boolean; description?: string; color?: string },
+  payload: { name: string; is_enabled: boolean; description?: string | undefined; color?: string | undefined },
 ): Promise<GithubIssueType> =>
   ghPutJSON(`/api/v3/orgs/${encodeURIComponent(org)}/issue-types/${issueTypeId}`, payload);
 
@@ -3334,8 +3340,8 @@ export const fetchEnterpriseTeams = () =>
 
 export const createEnterpriseTeam = (payload: {
   name: string;
-  description?: string;
-  organization_selection_type?: string;
+  description?: string | undefined;
+  organization_selection_type?: string | undefined;
 }): Promise<GithubEnterpriseTeam> =>
   enterprisePath("/teams").then((path) => ghPostJSON(path, payload));
 
@@ -3673,10 +3679,10 @@ export const createDeploymentStatus = (
   deploymentId: number,
   payload: {
     state: GithubDeploymentState;
-    description?: string;
-    environment?: string;
-    environment_url?: string;
-    log_url?: string;
+    description?: string | undefined;
+    environment?: string | undefined;
+    environment_url?: string | undefined;
+    log_url?: string | undefined;
   },
 ): Promise<GithubDeploymentStatus> =>
   ghPostJSON(`/api/v3/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/deployments/${deploymentId}/statuses`, payload);
@@ -4083,8 +4089,8 @@ async function ghSearch<T>(
 }
 
 export interface RepositorySearchOptions {
-  sort?: "stars" | "forks" | "help-wanted-issues" | "updated";
-  order?: "asc" | "desc";
+  sort?: "stars" | "forks" | "help-wanted-issues" | "updated" | undefined;
+  order?: "asc" | "desc" | undefined;
 }
 
 export const searchRepositories = (q: string, page = 1, options: RepositorySearchOptions = {}) => {

@@ -288,19 +288,21 @@ func (st *Store) RecordAPIRequest(rec *APIRequestRecord) {
 		recordCap = maxAPIRequestRecords
 	}
 	st.APIRequestRecords = append(st.APIRequestRecords, rec)
+	// Commit the new record together with any FIFO evictions in one transaction
+	// so a crash can't apply the insert without the eviction (or vice versa),
+	// leaving the durable bucket over its cap or missing the just-served request
+	// (STORE-001/002; the eviction itself is STORE-024). The defer releases the
+	// lock if the commit panics.
+	batch := newPersistBatch(st.persist)
 	if overflow := len(st.APIRequestRecords) - recordCap; overflow > 0 {
-		// FIFO eviction must reclaim the durable rows too, or the bucket grows
-		// by one row per request ever served even though memory stays capped
-		// (STORE-024).
-		if st.persist != nil {
-			for _, evicted := range st.APIRequestRecords[:overflow] {
-				st.persist.MustDelete("api_insights_requests", strconv.FormatInt(evicted.ID, 10))
-			}
+		for _, evicted := range st.APIRequestRecords[:overflow] {
+			batch.Delete("api_insights_requests", strconv.FormatInt(evicted.ID, 10))
 		}
 		st.APIRequestRecords = append([]*APIRequestRecord(nil), st.APIRequestRecords[overflow:]...)
 	}
-	if st.persist != nil {
-		st.persist.MustPut("api_insights_requests", strconv.FormatInt(rec.ID, 10), rec)
+	batch.Put("api_insights_requests", strconv.FormatInt(rec.ID, 10), rec)
+	if err := batch.Commit(); err != nil {
+		panic(&persistenceFailure{op: "batch", bucket: "api_insights_requests", key: strconv.FormatInt(rec.ID, 10), err: err})
 	}
 }
 

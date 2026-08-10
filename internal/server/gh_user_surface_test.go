@@ -9,25 +9,14 @@ import (
 	"time"
 )
 
-// userSurfaceUser creates a fresh user plus a classic personal access
-// token so the /user endpoints operate on an account isolated from the
-// shared admin fixture.
-func userSurfaceUser(t *testing.T, login string) (*User, string) {
-	t.Helper()
-	u := createTestUser(t, login)
-	tok := "ghp_" + login + "0000000000token"
-	testServer.store.mu.Lock()
-	testServer.store.Tokens[tok] = &Token{Value: tok, UserID: u.ID, Scopes: "repo, workflow, read:org, admin:org, gist, user", CreatedAt: fixedTestTime}
-	testServer.store.mu.Unlock()
-	return u, tok
-}
-
 // ─── PATCH /user + GET /user/{account_id} ───────────────────────────────
 
 func TestUserProfile_UpdateAuthenticatedUser(t *testing.T) {
-	u, tok := userSurfaceUser(t, "profileuser")
+	t.Parallel()
+	s := newIsolatedServer(t)
+	u, tok := s.userSurfaceUser(t, "profileuser")
 
-	resp := ghPatch(t, "/api/v3/user", tok, map[string]interface{}{
+	resp := s.patch(t, "/api/v3/user", tok, map[string]interface{}{
 		"name":             "Profile User",
 		"blog":             "https://blog.example.com",
 		"company":          "Example Corp",
@@ -49,35 +38,37 @@ func TestUserProfile_UpdateAuthenticatedUser(t *testing.T) {
 	}
 
 	// GET /user reflects the stored profile.
-	got := decodeJSON(t, ghGet(t, "/api/v3/user", tok))
+	got := decodeJSON(t, s.get(t, "/api/v3/user", tok))
 	if got["company"] != "Example Corp" || got["hireable"] != true {
 		t.Fatalf("GET /user does not reflect PATCHed profile: %v", got)
 	}
 
 	// GET /user/{account_id} resolves the same account by numeric ID.
-	byID := decodeJSON(t, ghGet(t, "/api/v3/user/"+strconv.Itoa(u.ID), tok))
+	byID := decodeJSON(t, s.get(t, "/api/v3/user/"+strconv.Itoa(u.ID), tok))
 	if byID["login"] != "profileuser" || byID["location"] != "Berlin" {
 		t.Fatalf("GET /user/{account_id}: got %v", byID)
 	}
 
 	// Unknown account IDs are 404.
-	mustStatus(t, ghGet(t, "/api/v3/user/99999999", tok), http.StatusNotFound, "GET /user/{account_id} unknown")
-	mustStatus(t, ghGet(t, "/api/v3/user/not-a-number", tok), http.StatusNotFound, "GET /user/{account_id} non-numeric")
+	mustStatus(t, s.get(t, "/api/v3/user/99999999", tok), http.StatusNotFound, "GET /user/{account_id} unknown")
+	mustStatus(t, s.get(t, "/api/v3/user/not-a-number", tok), http.StatusNotFound, "GET /user/{account_id} non-numeric")
 }
 
 // ─── Emails ──────────────────────────────────────────────────────────────
 
 func TestUserEmails_AddListDeleteVisibility(t *testing.T) {
-	_, tok := userSurfaceUser(t, "emailuser")
+	t.Parallel()
+	s := newIsolatedServer(t)
+	_, tok := s.userSurfaceUser(t, "emailuser")
 
 	// The account starts with its primary email.
-	list := decodeJSONArray(t, ghGet(t, "/api/v3/user/emails", tok))
+	list := decodeJSONArray(t, s.get(t, "/api/v3/user/emails", tok))
 	if len(list) != 1 || list[0]["email"] != "emailuser@example.com" || list[0]["primary"] != true {
 		t.Fatalf("initial email list = %v", list)
 	}
 
 	// Add a secondary address.
-	resp := ghPost(t, "/api/v3/user/emails", tok, map[string]interface{}{
+	resp := s.post(t, "/api/v3/user/emails", tok, map[string]interface{}{
 		"emails": []string{"second@example.com"},
 	})
 	if resp.StatusCode != http.StatusCreated {
@@ -92,24 +83,24 @@ func TestUserEmails_AddListDeleteVisibility(t *testing.T) {
 		t.Fatalf("new email visibility should be null, got %v (present=%v)", vis, present)
 	}
 
-	list = decodeJSONArray(t, ghGet(t, "/api/v3/user/emails", tok))
+	list = decodeJSONArray(t, s.get(t, "/api/v3/user/emails", tok))
 	if len(list) != 2 {
 		t.Fatalf("email list after add = %v", list)
 	}
 
 	// Duplicates are rejected with a validation error.
-	mustStatus(t, ghPost(t, "/api/v3/user/emails", tok, map[string]interface{}{
+	mustStatus(t, s.post(t, "/api/v3/user/emails", tok, map[string]interface{}{
 		"emails": []string{"second@example.com"},
 	}), http.StatusUnprocessableEntity, "POST duplicate email")
 
 	// No public emails yet.
-	pub := decodeJSONArray(t, ghGet(t, "/api/v3/user/public_emails", tok))
+	pub := decodeJSONArray(t, s.get(t, "/api/v3/user/public_emails", tok))
 	if len(pub) != 0 {
 		t.Fatalf("public emails before visibility change = %v", pub)
 	}
 
 	// Make the primary email public.
-	resp = ghPatch(t, "/api/v3/user/email/visibility", tok, map[string]interface{}{"visibility": "public"})
+	resp = s.patch(t, "/api/v3/user/email/visibility", tok, map[string]interface{}{"visibility": "public"})
 	if resp.StatusCode != http.StatusOK {
 		resp.Body.Close()
 		t.Fatalf("PATCH /user/email/visibility: status = %d, want 200", resp.StatusCode)
@@ -118,41 +109,43 @@ func TestUserEmails_AddListDeleteVisibility(t *testing.T) {
 	if len(updated) != 1 || updated[0]["visibility"] != "public" || updated[0]["primary"] != true {
 		t.Fatalf("visibility update response = %v", updated)
 	}
-	pub = decodeJSONArray(t, ghGet(t, "/api/v3/user/public_emails", tok))
+	pub = decodeJSONArray(t, s.get(t, "/api/v3/user/public_emails", tok))
 	if len(pub) != 1 || pub[0]["email"] != "emailuser@example.com" {
 		t.Fatalf("public emails after visibility change = %v", pub)
 	}
 
 	// Invalid visibility value is a validation error.
-	mustStatus(t, ghPatch(t, "/api/v3/user/email/visibility", tok, map[string]interface{}{"visibility": "internal"}),
+	mustStatus(t, s.patch(t, "/api/v3/user/email/visibility", tok, map[string]interface{}{"visibility": "internal"}),
 		http.StatusUnprocessableEntity, "PATCH visibility invalid")
 
 	// Deleting a secondary address works; the primary is protected.
-	mustStatus(t, ghDeleteWithBody(t, "/api/v3/user/emails", tok, map[string]interface{}{
+	mustStatus(t, s.do(t, "DELETE", "/api/v3/user/emails", tok, map[string]interface{}{
 		"emails": []interface{}{"second@example.com"},
 	}), http.StatusNoContent, "DELETE secondary email")
-	list = decodeJSONArray(t, ghGet(t, "/api/v3/user/emails", tok))
+	list = decodeJSONArray(t, s.get(t, "/api/v3/user/emails", tok))
 	if len(list) != 1 {
 		t.Fatalf("email list after delete = %v", list)
 	}
-	mustStatus(t, ghDeleteWithBody(t, "/api/v3/user/emails", tok, map[string]interface{}{
+	mustStatus(t, s.do(t, "DELETE", "/api/v3/user/emails", tok, map[string]interface{}{
 		"emails": []interface{}{"emailuser@example.com"},
 	}), http.StatusUnprocessableEntity, "DELETE primary email")
-	mustStatus(t, ghDeleteWithBody(t, "/api/v3/user/emails", tok, map[string]interface{}{
+	mustStatus(t, s.do(t, "DELETE", "/api/v3/user/emails", tok, map[string]interface{}{
 		"emails": []interface{}{"never-added@example.com"},
 	}), http.StatusNotFound, "DELETE unknown email")
 
 	// The bare-array request body form GitHub documents is accepted too.
-	resp = ghPost(t, "/api/v3/user/emails", tok, []string{"third@example.com"})
+	resp = s.post(t, "/api/v3/user/emails", tok, []string{"third@example.com"})
 	mustStatus(t, resp, http.StatusCreated, "POST bare-array body")
 }
 
 // ─── SSH signing key single read ─────────────────────────────────────────
 
 func TestUserSSHSigningKey_GetByID(t *testing.T) {
-	_, tok := userSurfaceUser(t, "signkeyuser")
+	t.Parallel()
+	s := newIsolatedServer(t)
+	_, tok := s.userSurfaceUser(t, "signkeyuser")
 
-	resp := ghPost(t, "/api/v3/user/ssh_signing_keys", tok, map[string]interface{}{
+	resp := s.post(t, "/api/v3/user/ssh_signing_keys", tok, map[string]interface{}{
 		"key":   "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAISignKeyUserTest signkeyuser@example.com",
 		"title": "signing key",
 	})
@@ -163,29 +156,31 @@ func TestUserSSHSigningKey_GetByID(t *testing.T) {
 	created := decodeJSON(t, resp)
 	id := int(created["id"].(float64))
 
-	got := decodeJSON(t, ghGet(t, "/api/v3/user/ssh_signing_keys/"+strconv.Itoa(id), tok))
+	got := decodeJSON(t, s.get(t, "/api/v3/user/ssh_signing_keys/"+strconv.Itoa(id), tok))
 	if int(got["id"].(float64)) != id || got["key"] != created["key"] {
 		t.Fatalf("GET ssh signing key = %v, created = %v", got, created)
 	}
 
-	mustStatus(t, ghGet(t, "/api/v3/user/ssh_signing_keys/999999", tok), http.StatusNotFound, "GET unknown ssh signing key")
+	mustStatus(t, s.get(t, "/api/v3/user/ssh_signing_keys/999999", tok), http.StatusNotFound, "GET unknown ssh signing key")
 }
 
 // ─── Interaction limits ──────────────────────────────────────────────────
 
 func TestUserInteractionLimits_RoundTrip(t *testing.T) {
-	_, tok := userSurfaceUser(t, "limituser")
+	t.Parallel()
+	s := newIsolatedServer(t)
+	_, tok := s.userSurfaceUser(t, "limituser")
 
 	// No limit set: 204.
-	mustStatus(t, ghGet(t, "/api/v3/user/interaction-limits", tok), http.StatusNoContent, "GET before set")
+	mustStatus(t, s.get(t, "/api/v3/user/interaction-limits", tok), http.StatusNoContent, "GET before set")
 
 	// Invalid group is a validation error.
-	mustStatus(t, ghPut(t, "/api/v3/user/interaction-limits", tok, map[string]interface{}{
+	mustStatus(t, s.put(t, "/api/v3/user/interaction-limits", tok, map[string]interface{}{
 		"limit": "everyone",
 	}), http.StatusUnprocessableEntity, "PUT invalid limit")
 
 	// Set a limit.
-	resp := ghPut(t, "/api/v3/user/interaction-limits", tok, map[string]interface{}{
+	resp := s.put(t, "/api/v3/user/interaction-limits", tok, map[string]interface{}{
 		"limit":  "contributors_only",
 		"expiry": "one_week",
 	})
@@ -202,33 +197,35 @@ func TestUserInteractionLimits_RoundTrip(t *testing.T) {
 		t.Fatalf("expires_at %v not ~one week out (err %v)", set["expires_at"], err)
 	}
 
-	got := decodeJSON(t, ghGet(t, "/api/v3/user/interaction-limits", tok))
+	got := decodeJSON(t, s.get(t, "/api/v3/user/interaction-limits", tok))
 	if got["limit"] != "contributors_only" || got["origin"] != "user" {
 		t.Fatalf("GET after set = %v", got)
 	}
 
-	mustStatus(t, ghDelete(t, "/api/v3/user/interaction-limits", tok), http.StatusNoContent, "DELETE limits")
-	mustStatus(t, ghGet(t, "/api/v3/user/interaction-limits", tok), http.StatusNoContent, "GET after delete")
+	mustStatus(t, s.delete(t, "/api/v3/user/interaction-limits", tok), http.StatusNoContent, "DELETE limits")
+	mustStatus(t, s.get(t, "/api/v3/user/interaction-limits", tok), http.StatusNoContent, "GET after delete")
 }
 
 // ─── GitHub Marketplace purchases ────────────────────────────────────────
 
 func TestUserMarketplacePurchases_ListWithRealPlan(t *testing.T) {
-	_, tok := userSurfaceUser(t, "marketuser")
+	t.Parallel()
+	s := newIsolatedServer(t)
+	_, tok := s.userSurfaceUser(t, "marketuser")
 
 	// No purchases yet.
-	list := decodeJSONArray(t, ghGet(t, "/api/v3/user/marketplace_purchases", tok))
+	list := decodeJSONArray(t, s.get(t, "/api/v3/user/marketplace_purchases", tok))
 	if len(list) != 0 {
 		t.Fatalf("purchases before seeding = %v", list)
 	}
 
-	listing := publishMarketplaceGitHubApp(t, "User Purchases App", testBaseURL+"/health")
-	requireMarketplaceStatus(t, marketplaceRequest(t, http.MethodPost,
+	listing := s.publishMarketplaceGitHubApp(t, "User Purchases App", s.baseURL+"/health")
+	requireMarketplaceStatus(t, s.marketplaceRequest(t, http.MethodPost,
 		"/ui-data/marketplace/listings/"+listing.slug+"/purchase", "token "+tok,
 		map[string]interface{}{"plan_id": listing.freePlanID, "billing_cycle": "monthly"}), http.StatusCreated)
 
 	for _, path := range []string{"/api/v3/user/marketplace_purchases", "/api/v3/user/marketplace_purchases/stubbed"} {
-		list = decodeJSONArray(t, ghGet(t, path, tok))
+		list = decodeJSONArray(t, s.get(t, path, tok))
 		if len(list) != 1 {
 			t.Fatalf("%s: purchases = %v", path, list)
 		}
@@ -250,12 +247,14 @@ func TestUserMarketplacePurchases_ListWithRealPlan(t *testing.T) {
 // ─── Hovercard ───────────────────────────────────────────────────────────
 
 func TestUserHovercard_FromRealMembershipsAndRepos(t *testing.T) {
-	u, tok := userSurfaceUser(t, "hoveruser")
-	admin := testServer.store.UsersByLogin["admin"]
-	org := testServer.store.CreateOrg(admin, "hover-org", "Hover Org", "")
-	testServer.store.SetMembership(org.Login, u.ID, OrgRoleMember, MembershipStateActive)
+	t.Parallel()
+	s := newIsolatedServer(t)
+	u, tok := s.userSurfaceUser(t, "hoveruser")
+	admin := s.store.UsersByLogin["admin"]
+	org := s.store.CreateOrg(admin, "hover-org", "Hover Org", "")
+	s.store.SetMembership(org.Login, u.ID, OrgRoleMember, MembershipStateActive)
 
-	card := decodeJSON(t, ghGet(t, "/api/v3/users/hoveruser/hovercard", tok))
+	card := decodeJSON(t, s.get(t, "/api/v3/users/hoveruser/hovercard", tok))
 	contexts, _ := card["contexts"].([]interface{})
 	found := false
 	for _, c := range contexts {
@@ -269,8 +268,8 @@ func TestUserHovercard_FromRealMembershipsAndRepos(t *testing.T) {
 	}
 
 	// Repository subject adds an ownership context for the repo owner.
-	repo := testServer.store.CreateRepo(u, "hover-repo", "", false)
-	card = decodeJSON(t, ghGet(t, fmt.Sprintf("/api/v3/users/hoveruser/hovercard?subject_type=repository&subject_id=%d", repo.ID), tok))
+	repo := s.store.CreateRepo(u, "hover-repo", "", false)
+	card = decodeJSON(t, s.get(t, fmt.Sprintf("/api/v3/users/hoveruser/hovercard?subject_type=repository&subject_id=%d", repo.ID), tok))
 	contexts, _ = card["contexts"].([]interface{})
 	found = false
 	for _, c := range contexts {
@@ -284,24 +283,26 @@ func TestUserHovercard_FromRealMembershipsAndRepos(t *testing.T) {
 	}
 
 	// subject_type without subject_id, and invalid subject types, are 422.
-	mustStatus(t, ghGet(t, "/api/v3/users/hoveruser/hovercard?subject_type=repository", tok),
+	mustStatus(t, s.get(t, "/api/v3/users/hoveruser/hovercard?subject_type=repository", tok),
 		http.StatusUnprocessableEntity, "hovercard subject_type without subject_id")
-	mustStatus(t, ghGet(t, "/api/v3/users/hoveruser/hovercard?subject_type=galaxy&subject_id=1", tok),
+	mustStatus(t, s.get(t, "/api/v3/users/hoveruser/hovercard?subject_type=galaxy&subject_id=1", tok),
 		http.StatusUnprocessableEntity, "hovercard invalid subject_type")
-	mustStatus(t, ghGet(t, "/api/v3/users/no-such-user-xyz/hovercard", tok),
+	mustStatus(t, s.get(t, "/api/v3/users/no-such-user-xyz/hovercard", tok),
 		http.StatusNotFound, "hovercard unknown user")
 }
 
 // ─── GET /user/issues ────────────────────────────────────────────────────
 
 func TestUserIssues_FiltersAcrossRepos(t *testing.T) {
-	u, tok := userSurfaceUser(t, "issueuser")
-	repo := testServer.store.CreateRepo(u, "issue-repo", "", false)
+	t.Parallel()
+	s := newIsolatedServer(t)
+	u, tok := s.userSurfaceUser(t, "issueuser")
+	repo := s.store.CreateRepo(u, "issue-repo", "", false)
 	if repo == nil {
 		t.Fatal("create repo failed")
 	}
 
-	resp := ghPost(t, "/api/v3/repos/issueuser/issue-repo/issues", tok, map[string]interface{}{
+	resp := s.post(t, "/api/v3/repos/issueuser/issue-repo/issues", tok, map[string]interface{}{
 		"title": "created by me",
 	})
 	if resp.StatusCode != http.StatusCreated {
@@ -312,13 +313,13 @@ func TestUserIssues_FiltersAcrossRepos(t *testing.T) {
 	num := int(issue["number"].(float64))
 
 	// Default filter is "assigned": nothing assigned yet.
-	list := decodeJSONArray(t, ghGet(t, "/api/v3/user/issues", tok))
+	list := decodeJSONArray(t, s.get(t, "/api/v3/user/issues", tok))
 	if len(list) != 0 {
 		t.Fatalf("assigned issues before assignment = %v", list)
 	}
 
 	// filter=created finds the authored issue, with its repository attached.
-	list = decodeJSONArray(t, ghGet(t, "/api/v3/user/issues?filter=created", tok))
+	list = decodeJSONArray(t, s.get(t, "/api/v3/user/issues?filter=created", tok))
 	if len(list) != 1 || list[0]["title"] != "created by me" {
 		t.Fatalf("created issues = %v", list)
 	}
@@ -328,21 +329,21 @@ func TestUserIssues_FiltersAcrossRepos(t *testing.T) {
 	}
 
 	// Assign the user; the default filter now matches.
-	mustStatus(t, ghPost(t, fmt.Sprintf("/api/v3/repos/issueuser/issue-repo/issues/%d/assignees", num), tok,
+	mustStatus(t, s.post(t, fmt.Sprintf("/api/v3/repos/issueuser/issue-repo/issues/%d/assignees", num), tok,
 		map[string]interface{}{"assignees": []string{"issueuser"}}), http.StatusCreated, "add assignee")
-	list = decodeJSONArray(t, ghGet(t, "/api/v3/user/issues", tok))
+	list = decodeJSONArray(t, s.get(t, "/api/v3/user/issues", tok))
 	if len(list) != 1 {
 		t.Fatalf("assigned issues after assignment = %v", list)
 	}
 
 	// Closing the issue removes it from the default open-state listing.
-	mustStatus(t, ghPatch(t, fmt.Sprintf("/api/v3/repos/issueuser/issue-repo/issues/%d", num), tok,
+	mustStatus(t, s.patch(t, fmt.Sprintf("/api/v3/repos/issueuser/issue-repo/issues/%d", num), tok,
 		map[string]interface{}{"state": "closed"}), http.StatusOK, "close issue")
-	list = decodeJSONArray(t, ghGet(t, "/api/v3/user/issues?filter=created", tok))
+	list = decodeJSONArray(t, s.get(t, "/api/v3/user/issues?filter=created", tok))
 	if len(list) != 0 {
 		t.Fatalf("open created issues after close = %v", list)
 	}
-	list = decodeJSONArray(t, ghGet(t, "/api/v3/user/issues?filter=created&state=closed", tok))
+	list = decodeJSONArray(t, s.get(t, "/api/v3/user/issues?filter=created&state=closed", tok))
 	if len(list) != 1 {
 		t.Fatalf("closed created issues = %v", list)
 	}
@@ -351,13 +352,15 @@ func TestUserIssues_FiltersAcrossRepos(t *testing.T) {
 // ─── Migration repositories ──────────────────────────────────────────────
 
 func TestUserMigrationRepositories_List(t *testing.T) {
-	u, tok := userSurfaceUser(t, "miguser")
-	repo := testServer.store.CreateRepo(u, "mig-repo", "", false)
+	t.Parallel()
+	s := newIsolatedServer(t)
+	u, tok := s.userSurfaceUser(t, "miguser")
+	repo := s.store.CreateRepo(u, "mig-repo", "", false)
 	if repo == nil {
 		t.Fatal("create repo failed")
 	}
 
-	resp := ghPost(t, "/api/v3/user/migrations", tok, map[string]interface{}{
+	resp := s.post(t, "/api/v3/user/migrations", tok, map[string]interface{}{
 		"repositories": []string{repo.FullName},
 	})
 	if resp.StatusCode != http.StatusCreated {
@@ -367,21 +370,23 @@ func TestUserMigrationRepositories_List(t *testing.T) {
 	mig := decodeJSON(t, resp)
 	id := int(mig["id"].(float64))
 
-	repos := decodeJSONArray(t, ghGet(t, fmt.Sprintf("/api/v3/user/migrations/%d/repositories", id), tok))
+	repos := decodeJSONArray(t, s.get(t, fmt.Sprintf("/api/v3/user/migrations/%d/repositories", id), tok))
 	if len(repos) != 1 || repos[0]["full_name"] != "miguser/mig-repo" {
 		t.Fatalf("migration repositories = %v", repos)
 	}
 
 	// Another user's migration is invisible.
-	mustStatus(t, ghGet(t, fmt.Sprintf("/api/v3/user/migrations/%d/repositories", id), defaultToken),
+	mustStatus(t, s.get(t, fmt.Sprintf("/api/v3/user/migrations/%d/repositories", id), defaultToken),
 		http.StatusNotFound, "migration repositories cross-user")
 }
 
 // ─── Billing usage reports ───────────────────────────────────────────────
 
 func TestUserBillingUsage_FromRealWorkflowRuns(t *testing.T) {
-	u, tok := userSurfaceUser(t, "billuser")
-	repo := testServer.store.CreateRepo(u, "bill-repo", "", false)
+	t.Parallel()
+	s := newIsolatedServer(t)
+	u, tok := s.userSurfaceUser(t, "billuser")
+	repo := s.store.CreateRepo(u, "bill-repo", "", false)
 	if repo == nil {
 		t.Fatal("create repo failed")
 	}
@@ -389,8 +394,8 @@ func TestUserBillingUsage_FromRealWorkflowRuns(t *testing.T) {
 	// Record a completed workflow run with one 90-second job — the real
 	// state the report is derived from (metered as 2 rounded-up minutes).
 	started := fixedTestTime.UTC().Add(-10 * time.Minute)
-	testServer.store.mu.Lock()
-	testServer.store.Workflows["bill-run-1"] = &Workflow{
+	s.store.mu.Lock()
+	s.store.Workflows["bill-run-1"] = &Workflow{
 		ID:           "bill-run-1",
 		Name:         "bill",
 		RunID:        999901,
@@ -403,14 +408,14 @@ func TestUserBillingUsage_FromRealWorkflowRuns(t *testing.T) {
 				StartedAt: started, CompletedAt: started.Add(90 * time.Second)},
 		},
 	}
-	testServer.store.mu.Unlock()
+	s.store.mu.Unlock()
 	t.Cleanup(func() {
-		testServer.store.mu.Lock()
-		delete(testServer.store.Workflows, "bill-run-1")
-		testServer.store.mu.Unlock()
+		s.store.mu.Lock()
+		delete(s.store.Workflows, "bill-run-1")
+		s.store.mu.Unlock()
 	})
 
-	report := decodeJSON(t, ghGet(t, "/api/v3/users/billuser/settings/billing/usage", tok))
+	report := decodeJSON(t, s.get(t, "/api/v3/users/billuser/settings/billing/usage", tok))
 	items, _ := report["usageItems"].([]interface{})
 	if len(items) != 1 {
 		t.Fatalf("usageItems = %v", report)
@@ -430,7 +435,7 @@ func TestUserBillingUsage_FromRealWorkflowRuns(t *testing.T) {
 	}
 
 	// The summary aggregates the same real usage.
-	summary := decodeJSON(t, ghGet(t, "/api/v3/users/billuser/settings/billing/usage/summary", tok))
+	summary := decodeJSON(t, s.get(t, "/api/v3/users/billuser/settings/billing/usage/summary", tok))
 	if summary["user"] != "billuser" {
 		t.Fatalf("summary user = %v", summary["user"])
 	}
@@ -453,7 +458,7 @@ func TestUserBillingUsage_FromRealWorkflowRuns(t *testing.T) {
 		"/api/v3/users/billuser/settings/billing/ai_credit/usage",
 		"/api/v3/users/billuser/settings/billing/premium_request/usage",
 	} {
-		rep := decodeJSON(t, ghGet(t, path, tok))
+		rep := decodeJSON(t, s.get(t, path, tok))
 		if rep["user"] != "billuser" {
 			t.Fatalf("%s: user = %v", path, rep["user"])
 		}
@@ -464,19 +469,19 @@ func TestUserBillingUsage_FromRealWorkflowRuns(t *testing.T) {
 
 	// Filters: an unmatched repository filter empties the report; a bad
 	// year is a 400; another (non-admin) user is forbidden.
-	filtered := decodeJSON(t, ghGet(t, "/api/v3/users/billuser/settings/billing/usage?repository=billuser/other", tok))
+	filtered := decodeJSON(t, s.get(t, "/api/v3/users/billuser/settings/billing/usage?repository=billuser/other", tok))
 	if items, _ := filtered["usageItems"].([]interface{}); len(items) != 0 {
 		t.Fatalf("filtered usageItems = %v", filtered)
 	}
-	mustStatus(t, ghGet(t, "/api/v3/users/billuser/settings/billing/usage?year=abc", tok),
+	mustStatus(t, s.get(t, "/api/v3/users/billuser/settings/billing/usage?year=abc", tok),
 		http.StatusBadRequest, "billing usage bad year")
 
-	_, otherTok := userSurfaceUser(t, "billspy")
-	mustStatus(t, ghGet(t, "/api/v3/users/billuser/settings/billing/usage", otherTok),
+	_, otherTok := s.userSurfaceUser(t, "billspy")
+	mustStatus(t, s.get(t, "/api/v3/users/billuser/settings/billing/usage", otherTok),
 		http.StatusForbidden, "billing usage other user")
 
 	// A site administrator can read any account's usage.
-	adminView := decodeJSON(t, ghGet(t, "/api/v3/users/billuser/settings/billing/usage", defaultToken))
+	adminView := decodeJSON(t, s.get(t, "/api/v3/users/billuser/settings/billing/usage", defaultToken))
 	if items, _ := adminView["usageItems"].([]interface{}); len(items) != 1 {
 		t.Fatalf("admin view usageItems = %v", adminView)
 	}

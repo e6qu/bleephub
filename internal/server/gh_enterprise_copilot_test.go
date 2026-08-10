@@ -7,11 +7,13 @@ import (
 )
 
 func TestEnterpriseCopilotCodingAgentPolicy(t *testing.T) {
+	t.Parallel()
+	s := newIsolatedServer(t)
 	policy := enterpriseAPI + "/copilot/policies/coding_agent"
 	orgs := policy + "/organizations"
 
 	// Invalid policy state → 400.
-	resp := ghPut(t, policy, defaultToken, map[string]interface{}{"policy_state": "sideways"})
+	resp := s.put(t, policy, defaultToken, map[string]interface{}{"policy_state": "sideways"})
 	resp.Body.Close()
 	if resp.StatusCode != http.StatusBadRequest {
 		t.Fatalf("invalid policy: got %d, want 400", resp.StatusCode)
@@ -19,52 +21,52 @@ func TestEnterpriseCopilotCodingAgentPolicy(t *testing.T) {
 
 	// Editing the organization selection before the policy is
 	// enabled_for_selected_orgs → 400.
-	resp = ghPut(t, policy, defaultToken, map[string]interface{}{"policy_state": "enabled_for_all_orgs"})
+	resp = s.put(t, policy, defaultToken, map[string]interface{}{"policy_state": "enabled_for_all_orgs"})
 	resp.Body.Close()
 	if resp.StatusCode != http.StatusNoContent {
 		t.Fatalf("set policy all orgs: got %d, want 204", resp.StatusCode)
 	}
-	resp = ghPost(t, orgs, defaultToken, map[string]interface{}{"organizations": []string{"ent-copilot-org"}})
+	resp = s.post(t, orgs, defaultToken, map[string]interface{}{"organizations": []string{"ent-copilot-org"}})
 	resp.Body.Close()
 	if resp.StatusCode != http.StatusBadRequest {
 		t.Fatalf("add orgs under all-orgs policy: got %d, want 400", resp.StatusCode)
 	}
 
 	// With enabled_for_selected_orgs the selection can be edited.
-	createEnterpriseTestOrg(t, "ent-copilot-org")
-	resp = ghPut(t, policy, defaultToken, map[string]interface{}{"policy_state": "enabled_for_selected_orgs"})
+	s.createOrg(t, "ent-copilot-org")
+	resp = s.put(t, policy, defaultToken, map[string]interface{}{"policy_state": "enabled_for_selected_orgs"})
 	resp.Body.Close()
 	if resp.StatusCode != http.StatusNoContent {
 		t.Fatalf("set policy selected orgs: got %d, want 204", resp.StatusCode)
 	}
-	resp = ghPost(t, orgs, defaultToken, map[string]interface{}{"organizations": []string{"ent-copilot-org"}})
+	resp = s.post(t, orgs, defaultToken, map[string]interface{}{"organizations": []string{"ent-copilot-org"}})
 	resp.Body.Close()
 	if resp.StatusCode != http.StatusNoContent {
 		t.Fatalf("add orgs: got %d, want 204", resp.StatusCode)
 	}
-	testServer.store.mu.RLock()
-	enabled := append([]string(nil), testServer.store.EnterpriseSettings.CopilotCodingAgentOrgs...)
-	testServer.store.mu.RUnlock()
+	s.store.mu.RLock()
+	enabled := append([]string(nil), s.store.EnterpriseSettings.CopilotCodingAgentOrgs...)
+	s.store.mu.RUnlock()
 	if len(enabled) != 1 || enabled[0] != "ent-copilot-org" {
 		t.Fatalf("enabled orgs after add = %v, want [ent-copilot-org]", enabled)
 	}
 
 	// Remove via DELETE with a body.
-	resp = ghDeleteWithBody(t, orgs, defaultToken, map[string]interface{}{"organizations": []string{"ent-copilot-org"}})
+	resp = s.do(t, "DELETE", orgs, defaultToken, map[string]interface{}{"organizations": []string{"ent-copilot-org"}})
 	resp.Body.Close()
 	if resp.StatusCode != http.StatusNoContent {
 		t.Fatalf("remove orgs: got %d, want 204", resp.StatusCode)
 	}
-	testServer.store.mu.RLock()
-	remaining := len(testServer.store.EnterpriseSettings.CopilotCodingAgentOrgs)
-	testServer.store.mu.RUnlock()
+	s.store.mu.RLock()
+	remaining := len(s.store.EnterpriseSettings.CopilotCodingAgentOrgs)
+	s.store.mu.RUnlock()
 	if remaining != 0 {
 		t.Fatalf("enabled orgs after remove = %d, want 0", remaining)
 	}
 
 	// Non-owner → 403.
-	memberTok := createEnterpriseTestUser(t, "ent-copilot-member")
-	resp = ghPut(t, policy, memberTok, map[string]interface{}{"policy_state": "enabled_for_all_orgs"})
+	memberTok := s.createEnterpriseTestUser(t, "ent-copilot-member")
+	resp = s.put(t, policy, memberTok, map[string]interface{}{"policy_state": "enabled_for_all_orgs"})
 	resp.Body.Close()
 	if resp.StatusCode != http.StatusForbidden {
 		t.Fatalf("non-owner set policy: got %d, want 403", resp.StatusCode)
@@ -72,9 +74,11 @@ func TestEnterpriseCopilotCodingAgentPolicy(t *testing.T) {
 }
 
 func TestEnterpriseCopilotMetricsReports(t *testing.T) {
+	t.Parallel()
+	s := newIsolatedServer(t)
 	fixedNow := time.Date(2035, time.June, 15, 12, 0, 0, 0, time.UTC)
-	previousClock := testServer.replaceClockNow(func() time.Time { return fixedNow })
-	t.Cleanup(func() { testServer.replaceClockNow(previousClock) })
+	previousClock := s.replaceClockNow(func() time.Time { return fixedNow })
+	t.Cleanup(func() { s.replaceClockNow(previousClock) })
 	yesterday := fixedNow.AddDate(0, 0, -1).Format("2006-01-02")
 
 	for _, path := range []string{
@@ -83,12 +87,12 @@ func TestEnterpriseCopilotMetricsReports(t *testing.T) {
 		"/copilot/metrics/reports/user-teams-1-day",
 	} {
 		// day is a required parameter.
-		resp := ghGet(t, enterpriseAPI+path, defaultToken)
+		resp := s.get(t, enterpriseAPI+path, defaultToken)
 		resp.Body.Close()
 		if resp.StatusCode != http.StatusUnprocessableEntity {
 			t.Fatalf("%s without day: got %d, want 422", path, resp.StatusCode)
 		}
-		resp = ghGet(t, enterpriseAPI+path+"?day=13-10-2025", defaultToken)
+		resp = s.get(t, enterpriseAPI+path+"?day=13-10-2025", defaultToken)
 		resp.Body.Close()
 		if resp.StatusCode != http.StatusUnprocessableEntity {
 			t.Fatalf("%s malformed day: got %d, want 422", path, resp.StatusCode)
@@ -96,7 +100,7 @@ func TestEnterpriseCopilotMetricsReports(t *testing.T) {
 
 		// A report can only exist for days that have already happened.
 		future := fixedNow.AddDate(0, 0, 7).Format("2006-01-02")
-		resp = ghGet(t, enterpriseAPI+path+"?day="+future, defaultToken)
+		resp = s.get(t, enterpriseAPI+path+"?day="+future, defaultToken)
 		resp.Body.Close()
 		if resp.StatusCode != http.StatusNotFound {
 			t.Fatalf("%s future day: got %d, want 404", path, resp.StatusCode)
@@ -104,7 +108,7 @@ func TestEnterpriseCopilotMetricsReports(t *testing.T) {
 
 		// bleephub records no Copilot usage activity, so the report for any
 		// past day is honestly empty in the documented shape.
-		resp = ghGet(t, enterpriseAPI+path+"?day="+yesterday, defaultToken)
+		resp = s.get(t, enterpriseAPI+path+"?day="+yesterday, defaultToken)
 		if resp.StatusCode != http.StatusOK {
 			resp.Body.Close()
 			t.Fatalf("%s: got %d, want 200", path, resp.StatusCode)
@@ -126,7 +130,7 @@ func TestEnterpriseCopilotMetricsReports(t *testing.T) {
 		"/copilot/metrics/reports/enterprise-28-day/latest",
 		"/copilot/metrics/reports/users-28-day/latest",
 	} {
-		resp := ghGet(t, enterpriseAPI+path, defaultToken)
+		resp := s.get(t, enterpriseAPI+path, defaultToken)
 		if resp.StatusCode != http.StatusOK {
 			resp.Body.Close()
 			t.Fatalf("%s: got %d, want 200", path, resp.StatusCode)

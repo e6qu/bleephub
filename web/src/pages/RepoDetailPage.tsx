@@ -340,7 +340,7 @@ function CodeView({
   loading: boolean;
   branches: string[];
   defaultBranch: string;
-  sshUrl?: string;
+  sshUrl?: string | undefined;
   initialRef?: string;
   initialPath?: string;
 }) {
@@ -537,7 +537,7 @@ function CloneButton({
 }: {
   owner: string;
   repo: string;
-  sshUrl?: string;
+  sshUrl?: string | undefined;
   archiveRef: string;
 }) {
   const [open, setOpen] = useState(false);
@@ -794,12 +794,12 @@ function AboutSidebar({
         ) : releases && releases.length > 0 ? (
           <div className="flex flex-col gap-1">
             <Link
-              to={`${base}/releases/${releases[0].id}`}
+              to={`${base}/releases/${releases[0]!.id}`}
               className="inline-flex items-center gap-1.5"
               style={{ fontWeight: 600, color: "var(--color-fg)", textDecoration: "none" }}
             >
               <TagIcon size={15} style={{ color: "var(--color-status-ok)" }} />
-              {releases[0].name || releases[0].tag_name}
+              {releases[0]!.name || releases[0]!.tag_name}
               <span
                 style={{
                   fontSize: "0.68rem",
@@ -903,7 +903,7 @@ function EmptyRepoSetup({
   owner: string;
   repo: string;
   defaultBranch: string;
-  sshUrl?: string;
+  sshUrl?: string | undefined;
 }) {
   const origin = typeof window !== "undefined" ? window.location.origin : "";
   const [activeTab, setActiveTab] = useState<"https" | "ssh" | "gh">("https");

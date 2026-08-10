@@ -58,6 +58,7 @@ import (
 // itself: the key pair it generates, the tenant token it exchanges its
 // registration token for, and the session bearer it ends up holding.
 type handshakeRunner struct {
+	srv        *isolatedServer
 	t          *testing.T
 	name       string
 	scopePath  string // "/owner/repo" or "/org", the --url path config.sh is given
@@ -72,13 +73,13 @@ type handshakeRunner struct {
 // handshakeCall issues one request against the live test server and returns
 // its status, response headers and body. authorization is sent verbatim, so a
 // step can present the RemoteAuth scheme the runner uses.
-func handshakeCall(t *testing.T, method, path, authorization, contentType, body string) (int, http.Header, []byte) {
+func handshakeCall(t *testing.T, baseURL, method, path, authorization, contentType, body string) (int, http.Header, []byte) {
 	t.Helper()
 	var reader io.Reader
 	if body != "" {
 		reader = strings.NewReader(body)
 	}
-	req, err := http.NewRequest(method, testBaseURL+path, reader)
+	req, err := http.NewRequest(method, baseURL+path, reader)
 	if err != nil {
 		t.Fatalf("build %s %s: %v", method, path, err)
 	}
@@ -102,9 +103,9 @@ func handshakeCall(t *testing.T, method, path, authorization, contentType, body 
 
 // handshakeStep runs one step of the handshake and fails with the step's name
 // when it does not succeed, so an over-tight gate names itself.
-func handshakeStep(t *testing.T, step, method, path, authorization, contentType, body string, want int) []byte {
+func handshakeStep(t *testing.T, baseURL, step, method, path, authorization, contentType, body string, want int) []byte {
 	t.Helper()
-	status, _, payload := handshakeCall(t, method, path, authorization, contentType, body)
+	status, _, payload := handshakeCall(t, baseURL, method, path, authorization, contentType, body)
 	if status != want {
 		t.Fatalf("%s: %s %s = %d, want %d; body=%s", step, method, path, status, want, payload)
 	}
@@ -120,9 +121,9 @@ func handshakeStep(t *testing.T, step, method, path, authorization, contentType,
 // and asks for one only when the refusal names the Bearer scheme, so a 401
 // without that challenge ends configuration instead of starting the token
 // exchange.
-func refuseAnonymous(t *testing.T, step, method, path, contentType, body string) {
+func refuseAnonymous(t *testing.T, baseURL, step, method, path, contentType, body string) {
 	t.Helper()
-	status, header, payload := handshakeCall(t, method, path, "", contentType, body)
+	status, header, payload := handshakeCall(t, baseURL, method, path, "", contentType, body)
 	if status != http.StatusUnauthorized {
 		t.Errorf("%s: anonymous %s %s = %d, want 401; body=%s", step, method, path, status, payload)
 		return
@@ -149,13 +150,13 @@ func runnerRouteChallenges(method, path string) bool {
 	return !(method == "POST" && strings.HasPrefix(path, "/_apis/v1/Agent/"))
 }
 
-func newHandshakeRunner(t *testing.T, name, scopePath string) *handshakeRunner {
+func (s *isolatedServer) newHandshakeRunner(t *testing.T, name, scopePath string) *handshakeRunner {
 	t.Helper()
 	key, err := rsa.GenerateKey(rand.Reader, 2048)
 	if err != nil {
 		t.Fatalf("generate runner key: %v", err)
 	}
-	return &handshakeRunner{t: t, name: name, scopePath: scopePath, key: key}
+	return &handshakeRunner{srv: s, t: t, name: name, scopePath: scopePath, key: key}
 }
 
 // publicKeyJSON encodes the runner's RSA public key the way the agent protocol
@@ -170,8 +171,8 @@ func (h *handshakeRunner) publicKeyJSON() string {
 // caller mints the token `config.sh --token` is invoked with.
 func (h *handshakeRunner) mintRegistrationToken(path string) string {
 	h.t.Helper()
-	refuseAnonymous(h.t, "mint registration token", "POST", path, "application/json", "{}")
-	payload := handshakeStep(h.t, "mint registration token", "POST", path,
+	refuseAnonymous(h.t, h.srv.baseURL, "mint registration token", "POST", path, "application/json", "{}")
+	payload := handshakeStep(h.t, h.srv.baseURL, "mint registration token", "POST", path,
 		"token "+defaultToken, "application/json", "{}", http.StatusCreated)
 	var minted struct {
 		Token string `json:"token"`
@@ -191,10 +192,10 @@ func (h *handshakeRunner) mintRegistrationToken(path string) string {
 func (h *handshakeRunner) exchangeTenantCredential(registrationToken, runnerEvent string) {
 	h.t.Helper()
 	const path = "/api/v3/actions/runner-registration"
-	body := fmt.Sprintf(`{"url":%q,"runner_event":%q}`, testBaseURL+h.scopePath, runnerEvent)
-	refuseAnonymous(h.t, "tenant credential", "POST", path, "application/json", body)
+	body := fmt.Sprintf(`{"url":%q,"runner_event":%q}`, h.srv.baseURL+h.scopePath, runnerEvent)
+	refuseAnonymous(h.t, h.srv.baseURL, "tenant credential", "POST", path, "application/json", body)
 
-	payload := handshakeStep(h.t, "tenant credential", "POST", path,
+	payload := handshakeStep(h.t, h.srv.baseURL, "tenant credential", "POST", path,
 		"RemoteAuth "+registrationToken, "application/json", body, http.StatusOK)
 	var tenant struct {
 		URL         string `json:"url"`
@@ -220,13 +221,13 @@ func (h *handshakeRunner) connectionData(authorization string) {
 	h.t.Helper()
 	// Service discovery is read before the runner holds any credential and
 	// again with the session bearer once it has one; both must answer.
-	handshakeStep(h.t, "connectionData", "GET", "/_apis/connectionData", authorization, "", "", http.StatusOK)
+	handshakeStep(h.t, h.srv.baseURL, "connectionData", "GET", "/_apis/connectionData", authorization, "", "", http.StatusOK)
 }
 
 func (h *handshakeRunner) listPools() {
 	h.t.Helper()
-	refuseAnonymous(h.t, "list pools", "GET", "/_apis/v1/AgentPools", "", "")
-	handshakeStep(h.t, "list pools", "GET", "/_apis/v1/AgentPools",
+	refuseAnonymous(h.t, h.srv.baseURL, "list pools", "GET", "/_apis/v1/AgentPools", "", "")
+	handshakeStep(h.t, h.srv.baseURL, "list pools", "GET", "/_apis/v1/AgentPools",
 		"Bearer "+h.setupToken, "", "", http.StatusOK)
 }
 
@@ -243,9 +244,9 @@ func (h *handshakeRunner) testConnection() {
 	h.t.Helper()
 	const path = "/_apis/v1/AgentPools?poolType=Automation"
 	h.connectionData("")
-	refuseAnonymous(h.t, "credential test", "GET", path, "", "")
+	refuseAnonymous(h.t, h.srv.baseURL, "credential test", "GET", path, "", "")
 	h.exchangeSessionToken()
-	handshakeStep(h.t, "credential test", "GET", path, "Bearer "+h.session, "", "", http.StatusOK)
+	handshakeStep(h.t, h.srv.baseURL, "credential test", "GET", path, "Bearer "+h.session, "", "", http.StatusOK)
 	h.connectionData("Bearer " + h.session)
 }
 
@@ -255,8 +256,8 @@ func (h *handshakeRunner) testConnection() {
 func (h *handshakeRunner) lookUpOwnName() []Agent {
 	h.t.Helper()
 	path := "/_apis/v1/Agent/1?agentName=" + url.QueryEscape(h.name)
-	refuseAnonymous(h.t, "look up own name", "GET", path, "", "")
-	payload := handshakeStep(h.t, "look up own name", "GET", path,
+	refuseAnonymous(h.t, h.srv.baseURL, "look up own name", "GET", path, "", "")
+	payload := handshakeStep(h.t, h.srv.baseURL, "look up own name", "GET", path,
 		"Bearer "+h.setupToken, "", "", http.StatusOK)
 	var listing struct {
 		Count int     `json:"count"`
@@ -283,8 +284,8 @@ func (h *handshakeRunner) addAgent() {
 	h.t.Helper()
 	const path = "/_apis/v1/Agent/1"
 	body := h.agentBody()
-	refuseAnonymous(h.t, "add agent", "POST", path, "application/json", body)
-	payload := handshakeStep(h.t, "add agent", "POST", path,
+	refuseAnonymous(h.t, h.srv.baseURL, "add agent", "POST", path, "application/json", body)
+	payload := handshakeStep(h.t, h.srv.baseURL, "add agent", "POST", path,
 		"Bearer "+h.setupToken, "application/json", body, http.StatusOK)
 	h.readAgent("add agent", payload)
 }
@@ -301,8 +302,8 @@ func (h *handshakeRunner) replaceAgent(agentID int) {
 	h.key = key
 	path := fmt.Sprintf("/_apis/v1/Agent/1/%d", agentID)
 	body := h.agentBody()
-	refuseAnonymous(h.t, "replace agent", "PUT", path, "application/json", body)
-	payload := handshakeStep(h.t, "replace agent", "PUT", path,
+	refuseAnonymous(h.t, h.srv.baseURL, "replace agent", "PUT", path, "application/json", body)
+	payload := handshakeStep(h.t, h.srv.baseURL, "replace agent", "PUT", path,
 		"Bearer "+h.setupToken, "application/json", body, http.StatusOK)
 	h.readAgent("replace agent", payload)
 }
@@ -332,7 +333,7 @@ func (h *handshakeRunner) readAgent(step string, payload []byte) {
 func (h *handshakeRunner) exchangeSessionToken() {
 	h.t.Helper()
 	form := runnerTokenExchangeForm(signTestAssertion(h.t, h.key, h.clientID))
-	payload := handshakeStep(h.t, "session token", "POST", "/_apis/v1/auth/", "",
+	payload := handshakeStep(h.t, h.srv.baseURL, "session token", "POST", "/_apis/v1/auth/", "",
 		"application/x-www-form-urlencoded", form.Encode(), http.StatusOK)
 	var issued struct {
 		AccessToken string `json:"access_token"`
@@ -350,8 +351,8 @@ func (h *handshakeRunner) createSession() {
 	h.t.Helper()
 	const path = "/_apis/v1/AgentSession/1"
 	body := fmt.Sprintf(`{"ownerName":%q,"agent":{"id":%d}}`, h.name, h.agentID)
-	refuseAnonymous(h.t, "create session", "POST", path, "application/json", body)
-	payload := handshakeStep(h.t, "create session", "POST", path,
+	refuseAnonymous(h.t, h.srv.baseURL, "create session", "POST", path, "application/json", body)
+	payload := handshakeStep(h.t, h.srv.baseURL, "create session", "POST", path,
 		"Bearer "+h.session, "application/json", body, http.StatusOK)
 	var created struct {
 		SessionID string `json:"sessionId"`
@@ -374,7 +375,7 @@ func (h *handshakeRunner) messagePath() string {
 // block for its full timeout, which is correct behaviour and a useless wait.
 func (h *handshakeRunner) pollForMessage(messageType, bodyMarker string) []byte {
 	h.t.Helper()
-	payload := handshakeStep(h.t, "poll for messages", "GET", h.messagePath(),
+	payload := handshakeStep(h.t, h.srv.baseURL, "poll for messages", "GET", h.messagePath(),
 		"Bearer "+h.session, "", "", http.StatusOK)
 	var delivered TaskAgentMessage
 	if err := json.Unmarshal(payload, &delivered); err != nil {
@@ -390,8 +391,8 @@ func (h *handshakeRunner) pollForMessage(messageType, bodyMarker string) []byte 
 func (h *handshakeRunner) deleteSession() {
 	h.t.Helper()
 	path := fmt.Sprintf("/_apis/v1/AgentSession/1/%s", url.PathEscape(h.sessionID))
-	refuseAnonymous(h.t, "delete session", "DELETE", path, "", "")
-	handshakeStep(h.t, "delete session", "DELETE", path, "Bearer "+h.session, "", "", http.StatusOK)
+	refuseAnonymous(h.t, h.srv.baseURL, "delete session", "DELETE", path, "", "")
+	handshakeStep(h.t, h.srv.baseURL, "delete session", "DELETE", path, "Bearer "+h.session, "", "", http.StatusOK)
 }
 
 // configure runs the whole `config.sh` sequence and leaves the runner holding
@@ -413,12 +414,14 @@ func (h *handshakeRunner) configure(registrationTokenPath string) {
 // regression this file exists for: a runner registering against a repository
 // must complete configuration and open a listening session.
 func TestRunnerConfigurationHandshakeSucceedsForARepositoryRunner(t *testing.T) {
-	testRepo(t, testServer, "admin", "handshake-repo", false)
+	t.Parallel()
+	s := newIsolatedServer(t)
+	testRepo(t, s.Server, "admin", "handshake-repo", false)
 
-	runner := newHandshakeRunner(t, "handshake-repo-runner", "/admin/handshake-repo")
+	runner := s.newHandshakeRunner(t, "handshake-repo-runner", "/admin/handshake-repo")
 	runner.configure("/api/v3/repos/admin/handshake-repo/actions/runners/registration-token")
 	runner.createSession()
-	refuseAnonymous(t, "poll for messages", "GET", runner.messagePath(), "", "")
+	refuseAnonymous(t, s.baseURL, "poll for messages", "GET", runner.messagePath(), "", "")
 	runner.deleteSession()
 }
 
@@ -426,7 +429,9 @@ func TestRunnerConfigurationHandshakeSucceedsForARepositoryRunner(t *testing.T) 
 // sequence at the other scope the harness exercises. The credential carries an
 // organization rather than a repository, and every gate has to read it.
 func TestRunnerConfigurationHandshakeSucceedsForAnOrganizationRunner(t *testing.T) {
-	store := testServer.store
+	t.Parallel()
+	s := newIsolatedServer(t)
+	store := s.store
 	admin := store.LookupUserByLogin("admin")
 	if admin == nil {
 		t.Fatal("the seeded admin user is missing")
@@ -436,10 +441,10 @@ func TestRunnerConfigurationHandshakeSucceedsForAnOrganizationRunner(t *testing.
 		t.Fatalf("could not create the fixture organization")
 	}
 
-	runner := newHandshakeRunner(t, "handshake-org-runner", "/"+orgLogin)
+	runner := s.newHandshakeRunner(t, "handshake-org-runner", "/"+orgLogin)
 	runner.configure("/api/v3/orgs/" + orgLogin + "/actions/runners/registration-token")
 	runner.createSession()
-	refuseAnonymous(t, "poll for messages", "GET", runner.messagePath(), "", "")
+	refuseAnonymous(t, s.baseURL, "poll for messages", "GET", runner.messagePath(), "", "")
 	runner.deleteSession()
 
 	// The clientId the runner stores is a bare GUID — it deserializes the
@@ -448,7 +453,7 @@ func TestRunnerConfigurationHandshakeSucceedsForAnOrganizationRunner(t *testing.
 	if _, err := uuid.Parse(runner.clientID); err != nil {
 		t.Fatalf("clientId %q is not a GUID, which the runner will refuse: %v", runner.clientID, err)
 	}
-	agent := testServer.store.LookupAgentByClientID(runner.clientID)
+	agent := s.store.LookupAgentByClientID(runner.clientID)
 	if agent == nil {
 		t.Fatalf("no agent registered with clientId %q", runner.clientID)
 	}
@@ -462,13 +467,15 @@ func TestRunnerConfigurationHandshakeSucceedsForAnOrganizationRunner(t *testing.
 // lookup finds the old registration, the replacement carries a new key pair,
 // and the session exchange has to accept that new key.
 func TestRunnerReconfigurationReplacesItsRegistration(t *testing.T) {
-	testRepo(t, testServer, "admin", "handshake-replace", false)
+	t.Parallel()
+	s := newIsolatedServer(t)
+	testRepo(t, s.Server, "admin", "handshake-replace", false)
 	const tokenPath = "/api/v3/repos/admin/handshake-replace/actions/runners/registration-token"
 
-	first := newHandshakeRunner(t, "handshake-replace-runner", "/admin/handshake-replace")
+	first := s.newHandshakeRunner(t, "handshake-replace-runner", "/admin/handshake-replace")
 	first.configure(tokenPath)
 
-	second := newHandshakeRunner(t, "handshake-replace-runner", "/admin/handshake-replace")
+	second := s.newHandshakeRunner(t, "handshake-replace-runner", "/admin/handshake-replace")
 	second.exchangeTenantCredential(second.mintRegistrationToken(tokenPath), "register")
 	existing := second.lookUpOwnName()
 	if len(existing) != 1 {
@@ -492,9 +499,11 @@ func TestRunnerReconfigurationReplacesItsRegistration(t *testing.T) {
 // removal token is exchanged for a tenant credential, which looks the runner
 // up and deletes its registration.
 func TestRunnerRemovalHandshakeSucceeds(t *testing.T) {
-	testRepo(t, testServer, "admin", "handshake-remove", false)
+	t.Parallel()
+	s := newIsolatedServer(t)
+	testRepo(t, s.Server, "admin", "handshake-remove", false)
 
-	runner := newHandshakeRunner(t, "handshake-remove-runner", "/admin/handshake-remove")
+	runner := s.newHandshakeRunner(t, "handshake-remove-runner", "/admin/handshake-remove")
 	runner.configure("/api/v3/repos/admin/handshake-remove/actions/runners/registration-token")
 
 	removalToken := runner.mintRegistrationToken("/api/v3/repos/admin/handshake-remove/actions/runners/remove-token")
@@ -506,8 +515,8 @@ func TestRunnerRemovalHandshakeSucceeds(t *testing.T) {
 	}
 
 	path := fmt.Sprintf("/_apis/v1/Agent/1/%d", runner.agentID)
-	refuseAnonymous(t, "delete agent", "DELETE", path, "", "")
-	handshakeStep(t, "delete agent", "DELETE", path, "Bearer "+runner.setupToken, "", "", http.StatusOK)
+	refuseAnonymous(t, s.baseURL, "delete agent", "DELETE", path, "", "")
+	handshakeStep(t, s.baseURL, "delete agent", "DELETE", path, "Bearer "+runner.setupToken, "", "", http.StatusOK)
 
 	if remaining := runner.lookUpOwnName(); len(remaining) != 0 {
 		t.Fatalf("registration survived removal: %d agents still named %q", len(remaining), runner.name)
@@ -519,10 +528,12 @@ func TestRunnerRemovalHandshakeSucceeds(t *testing.T) {
 // neither does the other's job, and neither is a substitute for the session
 // bearer a configured runner holds.
 func TestRunnerSetupCredentialsDoNotCrossPurposes(t *testing.T) {
-	testRepo(t, testServer, "admin", "handshake-purposes", false)
+	t.Parallel()
+	s := newIsolatedServer(t)
+	testRepo(t, s.Server, "admin", "handshake-purposes", false)
 	base := "/api/v3/repos/admin/handshake-purposes/actions/runners/"
 
-	runner := newHandshakeRunner(t, "handshake-purposes-runner", "/admin/handshake-purposes")
+	runner := s.newHandshakeRunner(t, "handshake-purposes-runner", "/admin/handshake-purposes")
 	registration := runner.mintRegistrationToken(base + "registration-token")
 	removal := runner.mintRegistrationToken(base + "remove-token")
 
@@ -532,8 +543,8 @@ func TestRunnerSetupCredentialsDoNotCrossPurposes(t *testing.T) {
 		{"register", removal, "removal token registering"},
 		{"remove", registration, "registration token removing"},
 	} {
-		body := fmt.Sprintf(`{"url":%q,"runner_event":%q}`, testBaseURL+runner.scopePath, tc.event)
-		status, _, payload := handshakeCall(t, "POST", "/api/v3/actions/runner-registration",
+		body := fmt.Sprintf(`{"url":%q,"runner_event":%q}`, s.baseURL+runner.scopePath, tc.event)
+		status, _, payload := handshakeCall(t, s.baseURL, "POST", "/api/v3/actions/runner-registration",
 			"RemoteAuth "+tc.token, "application/json", body)
 		if status != http.StatusUnauthorized {
 			t.Errorf("%s: status = %d, want 401; body=%s", tc.name, status, payload)
@@ -541,8 +552,8 @@ func TestRunnerSetupCredentialsDoNotCrossPurposes(t *testing.T) {
 	}
 
 	// An unrecognized runner_event names no operation, so it cannot select one.
-	body := fmt.Sprintf(`{"url":%q,"runner_event":"sideways"}`, testBaseURL+runner.scopePath)
-	if status, _, payload := handshakeCall(t, "POST", "/api/v3/actions/runner-registration",
+	body := fmt.Sprintf(`{"url":%q,"runner_event":"sideways"}`, s.baseURL+runner.scopePath)
+	if status, _, payload := handshakeCall(t, s.baseURL, "POST", "/api/v3/actions/runner-registration",
 		"RemoteAuth "+registration, "application/json", body); status != http.StatusBadRequest {
 		t.Errorf("unknown runner_event: status = %d, want 400; body=%s", status, payload)
 	}
@@ -553,7 +564,7 @@ func TestRunnerSetupCredentialsDoNotCrossPurposes(t *testing.T) {
 	runner.listPools()
 	runner.addAgent()
 
-	removalTenant := newHandshakeRunner(t, runner.name, runner.scopePath)
+	removalTenant := s.newHandshakeRunner(t, runner.name, runner.scopePath)
 	removalTenant.exchangeTenantCredential(removal, "remove")
 
 	// A removal credential may look a runner up — `config.sh remove` does —
@@ -561,23 +572,23 @@ func TestRunnerSetupCredentialsDoNotCrossPurposes(t *testing.T) {
 	// credential may not delete one. A setup token offered for the wrong
 	// purpose is not a credential the route knows, so it is refused exactly
 	// like none at all.
-	if status, _, payload := handshakeCall(t, "POST", "/_apis/v1/Agent/1",
+	if status, _, payload := handshakeCall(t, s.baseURL, "POST", "/_apis/v1/Agent/1",
 		"Bearer "+removalTenant.setupToken, "application/json", runner.agentBody()); status != http.StatusUnauthorized {
 		t.Errorf("removal token adding an agent: status = %d, want 401; body=%s", status, payload)
 	}
 	replacePath := fmt.Sprintf("/_apis/v1/Agent/1/%d", runner.agentID)
-	if status, _, payload := handshakeCall(t, "PUT", replacePath,
+	if status, _, payload := handshakeCall(t, s.baseURL, "PUT", replacePath,
 		"Bearer "+removalTenant.setupToken, "application/json", runner.agentBody()); status != http.StatusUnauthorized {
 		t.Errorf("removal token replacing an agent: status = %d, want 401; body=%s", status, payload)
 	}
-	if status, _, payload := handshakeCall(t, "DELETE", replacePath,
+	if status, _, payload := handshakeCall(t, s.baseURL, "DELETE", replacePath,
 		"Bearer "+runner.setupToken, "", ""); status != http.StatusUnauthorized {
 		t.Errorf("registration token deleting an agent: status = %d, want 401; body=%s", status, payload)
 	}
 	// The pool listing is not a fleet-wide view: a credential for another
 	// repository sees nothing of this one's runners.
-	outsider := newHandshakeRunner(t, runner.name, "/admin/handshake-purposes-other")
-	testRepo(t, testServer, "admin", "handshake-purposes-other", false)
+	outsider := s.newHandshakeRunner(t, runner.name, "/admin/handshake-purposes-other")
+	testRepo(t, s.Server, "admin", "handshake-purposes-other", false)
 	outsider.exchangeTenantCredential(
 		outsider.mintRegistrationToken("/api/v3/repos/admin/handshake-purposes-other/actions/runners/registration-token"),
 		"register")
@@ -590,8 +601,10 @@ func TestRunnerSetupCredentialsDoNotCrossPurposes(t *testing.T) {
 // the other direction: the per-job runtime token a worker holds is a verified
 // runner credential, but it is not a runner registering itself.
 func TestRunnerJobTokenIsNotAConfigurationCredential(t *testing.T) {
-	testRepo(t, testServer, "admin", "handshake-jobtoken", false)
-	jobToken, _ := testJobToken(t, testServer, "admin/handshake-jobtoken")
+	t.Parallel()
+	s := newIsolatedServer(t)
+	testRepo(t, s.Server, "admin", "handshake-jobtoken", false)
+	jobToken, _ := testJobToken(t, s.Server, "admin/handshake-jobtoken")
 
 	for _, tc := range []struct{ method, path, body string }{
 		{"GET", "/_apis/v1/AgentPools", ""},
@@ -603,7 +616,7 @@ func TestRunnerJobTokenIsNotAConfigurationCredential(t *testing.T) {
 		if tc.body != "" {
 			contentType = "application/json"
 		}
-		status, _, payload := handshakeCall(t, tc.method, tc.path, "Bearer "+jobToken, contentType, tc.body)
+		status, _, payload := handshakeCall(t, s.baseURL, tc.method, tc.path, "Bearer "+jobToken, contentType, tc.body)
 		if status != http.StatusForbidden {
 			t.Errorf("job token on %s %s: status = %d, want 403; body=%s", tc.method, tc.path, status, payload)
 		}
@@ -616,9 +629,11 @@ func TestRunnerJobTokenIsNotAConfigurationCredential(t *testing.T) {
 // last of those, so every call before it must still authenticate — a
 // registration removed any earlier takes the runner's credential with it.
 func TestEphemeralRunnerTeardownStaysAuthenticated(t *testing.T) {
-	testRepo(t, testServer, "admin", "handshake-ephemeral", false)
+	t.Parallel()
+	s := newIsolatedServer(t)
+	testRepo(t, s.Server, "admin", "handshake-ephemeral", false)
 
-	runner := newHandshakeRunner(t, "handshake-ephemeral-runner", "/admin/handshake-ephemeral")
+	runner := s.newHandshakeRunner(t, "handshake-ephemeral-runner", "/admin/handshake-ephemeral")
 	runner.exchangeTenantCredential(
 		runner.mintRegistrationToken("/api/v3/repos/admin/handshake-ephemeral/actions/runners/registration-token"),
 		"register")
@@ -634,7 +649,7 @@ func TestEphemeralRunnerTeardownStaysAuthenticated(t *testing.T) {
 			`"labels":[{"name":"self-hosted","type":"custom"},{"name":%q,"type":"custom"}],`+
 			`"authorization":{"publicKey":%s}}`,
 		runner.name, runner.name, runner.publicKeyJSON())
-	payload := handshakeStep(t, "add ephemeral agent", "POST", "/_apis/v1/Agent/1",
+	payload := handshakeStep(t, s.baseURL, "add ephemeral agent", "POST", "/_apis/v1/Agent/1",
 		"Bearer "+runner.setupToken, "application/json", body, http.StatusOK)
 	var registered Agent
 	if err := json.Unmarshal(payload, &registered); err != nil {
@@ -650,19 +665,19 @@ func TestEphemeralRunnerTeardownStaysAuthenticated(t *testing.T) {
 	// Queue one job for it, the way the workflow engine does.
 	planID := fmt.Sprintf("handshake-ephemeral-plan-%d", runner.agentID)
 	jobID := "handshake-ephemeral-job-" + planID
-	requestID := testServer.nextRequestID()
+	requestID := s.nextRequestID()
 	message := fmt.Sprintf(
 		`{"plan":{"scopeIdentifier":%q,"planId":%q},"requestId":%d,`+
 			`"contextData":{"github":{"t":2,"d":[{"k":"repository","v":"admin/handshake-ephemeral"}]}}}`,
 		planID, planID, requestID)
-	testServer.store.mu.Lock()
-	testServer.store.Jobs[jobID] = &Job{
+	s.store.mu.Lock()
+	s.store.Jobs[jobID] = &Job{
 		ID: jobID, RequestID: requestID, PlanID: planID, Status: "queued", Message: message,
 		LockedUntil: fixedTestTime.Add(time.Hour),
 	}
-	testServer.store.mu.Unlock()
+	s.store.mu.Unlock()
 	queued := &TaskAgentMessage{
-		MessageID:   testServer.nextMessageID(),
+		MessageID:   s.nextMessageID(),
 		MessageType: "PipelineAgentJobRequest",
 		Body:        message,
 		JobID:       jobID,
@@ -671,41 +686,41 @@ func TestEphemeralRunnerTeardownStaysAuthenticated(t *testing.T) {
 	// This suite intentionally shares one server. Put this test's explicitly
 	// targeted message first so an unrelated test's generic self-hosted job
 	// cannot be claimed and mistaken for this one after shuffled execution.
-	testServer.store.mu.Lock()
-	testServer.store.PendingMessages = append([]*TaskAgentMessage{queued}, testServer.store.PendingMessages...)
-	testServer.store.mu.Unlock()
+	s.store.mu.Lock()
+	s.store.PendingMessages = append([]*TaskAgentMessage{queued}, s.store.PendingMessages...)
+	s.store.mu.Unlock()
 
 	runner.pollForMessage("PipelineAgentJobRequest", planID)
 
 	// The listener renews the job request while the worker runs.
 	requestPath := fmt.Sprintf("/_apis/v1/AgentRequest/1/%d", requestID)
-	refuseAnonymous(t, "renew job request", "PATCH", requestPath, "application/json", "{}")
-	handshakeStep(t, "renew job request", "PATCH", requestPath,
+	refuseAnonymous(t, s.baseURL, "renew job request", "PATCH", requestPath, "application/json", "{}")
+	handshakeStep(t, s.baseURL, "renew job request", "PATCH", requestPath,
 		"Bearer "+runner.session, "application/json", "{}", http.StatusOK)
 
 	// The worker reports completion on the job's runtime token.
 	jobRuntimeToken := makeJWT(planID, runnerAudJob)
 	finishPath := fmt.Sprintf("/_apis/v1/FinishJob/%s/build/%s", planID, planID)
 	finishBody := fmt.Sprintf(`{"name":"JobCompleted","jobId":%q,"result":0}`, jobID)
-	refuseAnonymous(t, "finish job", "POST", finishPath, "application/json", finishBody)
-	handshakeStep(t, "finish job", "POST", finishPath,
+	refuseAnonymous(t, s.baseURL, "finish job", "POST", finishPath, "application/json", finishBody)
+	handshakeStep(t, s.baseURL, "finish job", "POST", finishPath,
 		"Bearer "+jobRuntimeToken, "application/json", finishBody, http.StatusOK)
 
 	// Then the listener closes the request and the session — both on the agent
 	// session bearer, so the registration must still exist for both.
-	handshakeStep(t, "complete job request", "DELETE", requestPath+"?result=succeeded",
+	handshakeStep(t, s.baseURL, "complete job request", "DELETE", requestPath+"?result=succeeded",
 		"Bearer "+runner.session, "", "", http.StatusOK)
 	runner.deleteSession()
 
-	testServer.store.mu.RLock()
-	_, stillRegistered := testServer.store.Agents[runner.agentID]
-	testServer.store.mu.RUnlock()
+	s.store.mu.RLock()
+	_, stillRegistered := s.store.Agents[runner.agentID]
+	s.store.mu.RUnlock()
 	if stillRegistered {
 		t.Fatalf("ephemeral agent %d survived its teardown", runner.agentID)
 	}
 
 	// And with the registration gone, its session bearer is dead.
-	if status, _, payload := handshakeCall(t, "GET", "/_apis/v1/AgentPools",
+	if status, _, payload := handshakeCall(t, s.baseURL, "GET", "/_apis/v1/AgentPools",
 		"Bearer "+runner.session, "", ""); status != http.StatusUnauthorized {
 		t.Errorf("deregistered runner's session token: status = %d, want 401; body=%s", status, payload)
 	}
@@ -731,16 +746,18 @@ func actionArchiveAuthorization(token string) string {
 // contract has two halves and neither is optional: the response has to carry a
 // usable token, and the route has to accept it in that shape.
 func TestRunnerActionDownloadCarriesTheCredentialItIsGiven(t *testing.T) {
+	t.Parallel()
+	s := newIsolatedServer(t)
 	const actionRepo = "handshake-actions/hello-action"
-	commitFilesToStorage(t, testServer, actionRepo, map[string]string{
+	commitFilesToStorage(t, s.Server, actionRepo, map[string]string{
 		"action.yml": "name: hello\nruns:\n  using: composite\n  steps:\n    - run: echo hi\n      shell: bash\n",
 	})
-	jobToken, scopeID := testJobToken(t, testServer, actionRepo)
+	jobToken, scopeID := testJobToken(t, s.Server, actionRepo)
 
 	infoPath := fmt.Sprintf("/_apis/v1/ActionDownloadInfo/%s/build/plan-%s", scopeID, scopeID)
 	infoBody := fmt.Sprintf(`{"actions":[{"nameWithOwner":%q,"ref":"main"}]}`, actionRepo)
-	refuseAnonymous(t, "resolve action download", "POST", infoPath, "application/json", infoBody)
-	payload := handshakeStep(t, "resolve action download", "POST", infoPath,
+	refuseAnonymous(t, s.baseURL, "resolve action download", "POST", infoPath, "application/json", infoBody)
+	payload := handshakeStep(t, s.baseURL, "resolve action download", "POST", infoPath,
 		"Bearer "+jobToken, "application/json", infoBody, http.StatusOK)
 
 	var resolved struct {
@@ -771,14 +788,14 @@ func TestRunnerActionDownloadCarriesTheCredentialItIsGiven(t *testing.T) {
 		t.Errorf("action download expiresAt = %s, want the real near-term expiry of the token it describes", expiry)
 	}
 
-	archivePath, found := strings.CutPrefix(info.TarballURL, testBaseURL)
+	archivePath, found := strings.CutPrefix(info.TarballURL, s.baseURL)
 	if !found {
 		t.Fatalf("tarball url %q does not address this server", info.TarballURL)
 	}
 
 	// Presented the way the runner presents it, the archive is served.
-	refuseAnonymous(t, "download action archive", "GET", archivePath, "", "")
-	handshakeStep(t, "download action archive", "GET", archivePath,
+	refuseAnonymous(t, s.baseURL, "download action archive", "GET", archivePath, "", "")
+	handshakeStep(t, s.baseURL, "download action archive", "GET", archivePath,
 		actionArchiveAuthorization(info.Authentication.Token), "", "", http.StatusOK)
 
 	// And the token in it is verified, not merely present: a basic credential
@@ -788,7 +805,7 @@ func TestRunnerActionDownloadCarriesTheCredentialItIsGiven(t *testing.T) {
 		"an agent session":     actionArchiveAuthorization(makeJWT(uuid.New().String(), runnerAudSession)),
 		"another user's token": "Basic " + base64.StdEncoding.EncodeToString([]byte("someone-else:"+info.Authentication.Token)),
 	} {
-		status, _, body := handshakeCall(t, "GET", archivePath, authorization, "", "")
+		status, _, body := handshakeCall(t, s.baseURL, "GET", archivePath, authorization, "", "")
 		if status == http.StatusOK {
 			t.Errorf("action archive served to %s: status = %d; body=%d bytes", name, status, len(body))
 		}
@@ -800,8 +817,10 @@ func TestRunnerActionDownloadCarriesTheCredentialItIsGiven(t *testing.T) {
 // step exercising a path that no longer exists would otherwise pass by
 // reaching the catch-all.
 func TestRunnerHandshakeRoutesAreRegistered(t *testing.T) {
-	registered := make(map[string]bool, len(testServer.routePatterns))
-	for _, pattern := range testServer.routePatterns {
+	t.Parallel()
+	s := newIsolatedServer(t)
+	registered := make(map[string]bool, len(s.routePatterns))
+	for _, pattern := range s.routePatterns {
 		registered[pattern] = true
 	}
 	for _, pattern := range []string{

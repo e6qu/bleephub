@@ -1,33 +1,17 @@
 package bleephub
 
 import (
-	"fmt"
 	"net/http"
 	"testing"
 )
 
 const enterpriseAPI = "/api/v3/enterprises/bleephub"
 
-// createEnterpriseTestUser registers a non-site-admin user with a PAT on the
-// shared test server and returns its token.
-func createEnterpriseTestUser(t *testing.T, login string) string {
-	t.Helper()
-	testServer.store.mu.Lock()
-	u := &User{ID: testServer.store.NextUser, Login: login, NodeID: fmt.Sprintf("U_ent%d", testServer.store.NextUser), Type: "User"}
-	testServer.store.NextUser++
-	testServer.store.Users[u.ID] = u
-	testServer.store.UsersByLogin[u.Login] = u
-	tok := &Token{Value: "ghp_" + login + "0000000000000000000000000000", UserID: u.ID, Scopes: "repo"}
-	testServer.store.Tokens[tok.Value] = tok
-	testServer.store.mu.Unlock()
-	return tok.Value
-}
-
 // createEnterpriseTestOrg provisions an organization owned by the seeded
 // admin through the GitHub Enterprise Server admin org-creation endpoint.
-func createEnterpriseTestOrg(t *testing.T, login string) {
+func (s *isolatedServer) createEnterpriseTestOrg(t *testing.T, login string) {
 	t.Helper()
-	resp := ghPost(t, "/api/v3/admin/organizations", defaultToken, map[string]interface{}{
+	resp := s.post(t, "/api/v3/admin/organizations", defaultToken, map[string]interface{}{
 		"login": login,
 		"admin": "admin",
 	})
@@ -38,8 +22,10 @@ func createEnterpriseTestOrg(t *testing.T, login string) {
 }
 
 func TestEnterpriseTeams_CreateGetUpdateDelete(t *testing.T) {
+	t.Parallel()
+	s := newIsolatedServer(t)
 	// Create.
-	resp := ghPost(t, enterpriseAPI+"/teams", defaultToken, map[string]interface{}{
+	resp := s.post(t, enterpriseAPI+"/teams", defaultToken, map[string]interface{}{
 		"name":        "Justice League",
 		"description": "A great team.",
 	})
@@ -62,14 +48,14 @@ func TestEnterpriseTeams_CreateGetUpdateDelete(t *testing.T) {
 	}
 
 	// Duplicate name → 422.
-	resp = ghPost(t, enterpriseAPI+"/teams", defaultToken, map[string]interface{}{"name": "Justice League"})
+	resp = s.post(t, enterpriseAPI+"/teams", defaultToken, map[string]interface{}{"name": "Justice League"})
 	resp.Body.Close()
 	if resp.StatusCode != http.StatusUnprocessableEntity {
 		t.Fatalf("duplicate create: got %d, want 422", resp.StatusCode)
 	}
 
 	// Get by slug.
-	resp = ghGet(t, enterpriseAPI+"/teams/justice-league", defaultToken)
+	resp = s.get(t, enterpriseAPI+"/teams/justice-league", defaultToken)
 	if resp.StatusCode != http.StatusOK {
 		resp.Body.Close()
 		t.Fatalf("get: got %d, want 200", resp.StatusCode)
@@ -80,7 +66,7 @@ func TestEnterpriseTeams_CreateGetUpdateDelete(t *testing.T) {
 	}
 
 	// List contains it.
-	resp = ghGet(t, enterpriseAPI+"/teams", defaultToken)
+	resp = s.get(t, enterpriseAPI+"/teams", defaultToken)
 	if resp.StatusCode != http.StatusOK {
 		resp.Body.Close()
 		t.Fatalf("list: got %d, want 200", resp.StatusCode)
@@ -96,7 +82,7 @@ func TestEnterpriseTeams_CreateGetUpdateDelete(t *testing.T) {
 	}
 
 	// Update: rename re-slugs, selection type changes.
-	resp = ghPatch(t, enterpriseAPI+"/teams/justice-league", defaultToken, map[string]interface{}{
+	resp = s.patch(t, enterpriseAPI+"/teams/justice-league", defaultToken, map[string]interface{}{
 		"name":                        "Justice Society",
 		"organization_selection_type": "selected",
 	})
@@ -113,19 +99,19 @@ func TestEnterpriseTeams_CreateGetUpdateDelete(t *testing.T) {
 	}
 
 	// Old slug is gone, new slug resolves.
-	resp = ghGet(t, enterpriseAPI+"/teams/justice-league", defaultToken)
+	resp = s.get(t, enterpriseAPI+"/teams/justice-league", defaultToken)
 	resp.Body.Close()
 	if resp.StatusCode != http.StatusNotFound {
 		t.Fatalf("old slug after rename: got %d, want 404", resp.StatusCode)
 	}
 
 	// Delete.
-	resp = ghDelete(t, enterpriseAPI+"/teams/justice-society", defaultToken)
+	resp = s.delete(t, enterpriseAPI+"/teams/justice-society", defaultToken)
 	resp.Body.Close()
 	if resp.StatusCode != http.StatusNoContent {
 		t.Fatalf("delete: got %d, want 204", resp.StatusCode)
 	}
-	resp = ghGet(t, enterpriseAPI+"/teams/justice-society", defaultToken)
+	resp = s.get(t, enterpriseAPI+"/teams/justice-society", defaultToken)
 	resp.Body.Close()
 	if resp.StatusCode != http.StatusNotFound {
 		t.Fatalf("get after delete: got %d, want 404", resp.StatusCode)
@@ -133,35 +119,37 @@ func TestEnterpriseTeams_CreateGetUpdateDelete(t *testing.T) {
 }
 
 func TestEnterpriseTeams_AuthAndUnknownEnterprise(t *testing.T) {
+	t.Parallel()
+	s := newIsolatedServer(t)
 	// Unknown enterprise slug → 404.
-	resp := ghGet(t, "/api/v3/enterprises/not-this-one/teams", defaultToken)
+	resp := s.get(t, "/api/v3/enterprises/not-this-one/teams", defaultToken)
 	resp.Body.Close()
 	if resp.StatusCode != http.StatusNotFound {
 		t.Fatalf("unknown enterprise: got %d, want 404", resp.StatusCode)
 	}
 
 	// Unauthenticated → 401.
-	resp = ghGet(t, enterpriseAPI+"/teams", "")
+	resp = s.get(t, enterpriseAPI+"/teams", "")
 	resp.Body.Close()
 	if resp.StatusCode != http.StatusUnauthorized {
 		t.Fatalf("unauthenticated list: got %d, want 401", resp.StatusCode)
 	}
 
 	// Non-owner create → 403; missing name → 422.
-	memberTok := createEnterpriseTestUser(t, "ent-member")
-	resp = ghPost(t, enterpriseAPI+"/teams", memberTok, map[string]interface{}{"name": "Nope"})
+	memberTok := s.createEnterpriseTestUser(t, "ent-member")
+	resp = s.post(t, enterpriseAPI+"/teams", memberTok, map[string]interface{}{"name": "Nope"})
 	resp.Body.Close()
 	if resp.StatusCode != http.StatusForbidden {
 		t.Fatalf("non-owner create: got %d, want 403", resp.StatusCode)
 	}
-	resp = ghPost(t, enterpriseAPI+"/teams", defaultToken, map[string]interface{}{"description": "no name"})
+	resp = s.post(t, enterpriseAPI+"/teams", defaultToken, map[string]interface{}{"description": "no name"})
 	resp.Body.Close()
 	if resp.StatusCode != http.StatusUnprocessableEntity {
 		t.Fatalf("missing name: got %d, want 422", resp.StatusCode)
 	}
 
 	// A plain member can read the team list.
-	resp = ghGet(t, enterpriseAPI+"/teams", memberTok)
+	resp = s.get(t, enterpriseAPI+"/teams", memberTok)
 	resp.Body.Close()
 	if resp.StatusCode != http.StatusOK {
 		t.Fatalf("member list: got %d, want 200", resp.StatusCode)
@@ -169,20 +157,22 @@ func TestEnterpriseTeams_AuthAndUnknownEnterprise(t *testing.T) {
 }
 
 func TestEnterpriseTeamMemberships_Flow(t *testing.T) {
-	resp := ghPost(t, enterpriseAPI+"/teams", defaultToken, map[string]interface{}{"name": "Membership Crew"})
+	t.Parallel()
+	s := newIsolatedServer(t)
+	resp := s.post(t, enterpriseAPI+"/teams", defaultToken, map[string]interface{}{"name": "Membership Crew"})
 	if resp.StatusCode != http.StatusCreated {
 		resp.Body.Close()
 		t.Fatalf("create team: got %d", resp.StatusCode)
 	}
 	resp.Body.Close()
 
-	tokA := createEnterpriseTestUser(t, "ent-mem-a")
-	_ = createEnterpriseTestUser(t, "ent-mem-b")
+	tokA := s.createEnterpriseTestUser(t, "ent-mem-a")
+	_ = s.createEnterpriseTestUser(t, "ent-mem-b")
 
 	base := enterpriseAPI + "/teams/membership-crew/memberships"
 
 	// PUT single membership → 201 simple-user.
-	resp = ghPut(t, base+"/ent-mem-a", defaultToken, nil)
+	resp = s.put(t, base+"/ent-mem-a", defaultToken, nil)
 	if resp.StatusCode != http.StatusCreated {
 		resp.Body.Close()
 		t.Fatalf("put membership: got %d, want 201", resp.StatusCode)
@@ -193,21 +183,21 @@ func TestEnterpriseTeamMemberships_Flow(t *testing.T) {
 	}
 
 	// Unknown user → 404.
-	resp = ghPut(t, base+"/no-such-user", defaultToken, nil)
+	resp = s.put(t, base+"/no-such-user", defaultToken, nil)
 	resp.Body.Close()
 	if resp.StatusCode != http.StatusNotFound {
 		t.Fatalf("put unknown user: got %d, want 404", resp.StatusCode)
 	}
 
 	// Non-owner cannot add → 403.
-	resp = ghPut(t, base+"/ent-mem-b", tokA, nil)
+	resp = s.put(t, base+"/ent-mem-b", tokA, nil)
 	resp.Body.Close()
 	if resp.StatusCode != http.StatusForbidden {
 		t.Fatalf("non-owner put: got %d, want 403", resp.StatusCode)
 	}
 
 	// Bulk add → 200 array of the added users.
-	resp = ghPost(t, base+"/add", defaultToken, map[string]interface{}{
+	resp = s.post(t, base+"/add", defaultToken, map[string]interface{}{
 		"usernames": []string{"ent-mem-b"},
 	})
 	if resp.StatusCode != http.StatusOK {
@@ -220,7 +210,7 @@ func TestEnterpriseTeamMemberships_Flow(t *testing.T) {
 	}
 
 	// GET single membership.
-	resp = ghGet(t, base+"/ent-mem-a", defaultToken)
+	resp = s.get(t, base+"/ent-mem-a", defaultToken)
 	if resp.StatusCode != http.StatusOK {
 		resp.Body.Close()
 		t.Fatalf("get membership: got %d, want 200", resp.StatusCode)
@@ -228,7 +218,7 @@ func TestEnterpriseTeamMemberships_Flow(t *testing.T) {
 	resp.Body.Close()
 
 	// List has both, sorted by user ID.
-	resp = ghGet(t, base, defaultToken)
+	resp = s.get(t, base, defaultToken)
 	if resp.StatusCode != http.StatusOK {
 		resp.Body.Close()
 		t.Fatalf("list memberships: got %d, want 200", resp.StatusCode)
@@ -239,7 +229,7 @@ func TestEnterpriseTeamMemberships_Flow(t *testing.T) {
 	}
 
 	// Bulk remove → 200 array of removed users.
-	resp = ghPost(t, base+"/remove", defaultToken, map[string]interface{}{
+	resp = s.post(t, base+"/remove", defaultToken, map[string]interface{}{
 		"usernames": []string{"ent-mem-b"},
 	})
 	if resp.StatusCode != http.StatusOK {
@@ -252,12 +242,12 @@ func TestEnterpriseTeamMemberships_Flow(t *testing.T) {
 	}
 
 	// DELETE single membership → 204, then GET → 404.
-	resp = ghDelete(t, base+"/ent-mem-a", defaultToken)
+	resp = s.delete(t, base+"/ent-mem-a", defaultToken)
 	resp.Body.Close()
 	if resp.StatusCode != http.StatusNoContent {
 		t.Fatalf("delete membership: got %d, want 204", resp.StatusCode)
 	}
-	resp = ghGet(t, base+"/ent-mem-a", defaultToken)
+	resp = s.get(t, base+"/ent-mem-a", defaultToken)
 	resp.Body.Close()
 	if resp.StatusCode != http.StatusNotFound {
 		t.Fatalf("get after delete: got %d, want 404", resp.StatusCode)
@@ -265,11 +255,13 @@ func TestEnterpriseTeamMemberships_Flow(t *testing.T) {
 }
 
 func TestEnterpriseTeamOrganizations_Assignments(t *testing.T) {
-	createEnterpriseTestOrg(t, "ent-team-org-1")
-	createEnterpriseTestOrg(t, "ent-team-org-2")
+	t.Parallel()
+	s := newIsolatedServer(t)
+	s.createEnterpriseTestOrg(t, "ent-team-org-1")
+	s.createEnterpriseTestOrg(t, "ent-team-org-2")
 
 	// Selection type "disabled" (default): assignments cannot be edited.
-	resp := ghPost(t, enterpriseAPI+"/teams", defaultToken, map[string]interface{}{"name": "Org Squad"})
+	resp := s.post(t, enterpriseAPI+"/teams", defaultToken, map[string]interface{}{"name": "Org Squad"})
 	if resp.StatusCode != http.StatusCreated {
 		resp.Body.Close()
 		t.Fatalf("create team: got %d", resp.StatusCode)
@@ -277,14 +269,14 @@ func TestEnterpriseTeamOrganizations_Assignments(t *testing.T) {
 	resp.Body.Close()
 	base := enterpriseAPI + "/teams/org-squad/organizations"
 
-	resp = ghPut(t, base+"/ent-team-org-1", defaultToken, nil)
+	resp = s.put(t, base+"/ent-team-org-1", defaultToken, nil)
 	resp.Body.Close()
 	if resp.StatusCode != http.StatusUnprocessableEntity {
 		t.Fatalf("assign while disabled: got %d, want 422", resp.StatusCode)
 	}
 
 	// Switch to "selected" and assign.
-	resp = ghPatch(t, enterpriseAPI+"/teams/org-squad", defaultToken, map[string]interface{}{
+	resp = s.patch(t, enterpriseAPI+"/teams/org-squad", defaultToken, map[string]interface{}{
 		"organization_selection_type": "selected",
 	})
 	resp.Body.Close()
@@ -292,7 +284,7 @@ func TestEnterpriseTeamOrganizations_Assignments(t *testing.T) {
 		t.Fatalf("patch selection type: got %d, want 200", resp.StatusCode)
 	}
 
-	resp = ghPut(t, base+"/ent-team-org-1", defaultToken, nil)
+	resp = s.put(t, base+"/ent-team-org-1", defaultToken, nil)
 	if resp.StatusCode != http.StatusCreated {
 		resp.Body.Close()
 		t.Fatalf("assign org: got %d, want 201", resp.StatusCode)
@@ -303,7 +295,7 @@ func TestEnterpriseTeamOrganizations_Assignments(t *testing.T) {
 	}
 
 	// Bulk add the second org.
-	resp = ghPost(t, base+"/add", defaultToken, map[string]interface{}{
+	resp = s.post(t, base+"/add", defaultToken, map[string]interface{}{
 		"organization_slugs": []string{"ent-team-org-2"},
 	})
 	if resp.StatusCode != http.StatusOK {
@@ -316,7 +308,7 @@ func TestEnterpriseTeamOrganizations_Assignments(t *testing.T) {
 	}
 
 	// List returns both assignments.
-	resp = ghGet(t, base, defaultToken)
+	resp = s.get(t, base, defaultToken)
 	if resp.StatusCode != http.StatusOK {
 		resp.Body.Close()
 		t.Fatalf("list assignments: got %d, want 200", resp.StatusCode)
@@ -326,49 +318,49 @@ func TestEnterpriseTeamOrganizations_Assignments(t *testing.T) {
 	}
 
 	// Single-assignment read.
-	resp = ghGet(t, base+"/ent-team-org-2", defaultToken)
+	resp = s.get(t, base+"/ent-team-org-2", defaultToken)
 	resp.Body.Close()
 	if resp.StatusCode != http.StatusOK {
 		t.Fatalf("get assignment: got %d, want 200", resp.StatusCode)
 	}
 
 	// Bulk remove → 204.
-	resp = ghPost(t, base+"/remove", defaultToken, map[string]interface{}{
+	resp = s.post(t, base+"/remove", defaultToken, map[string]interface{}{
 		"organization_slugs": []string{"ent-team-org-2"},
 	})
 	resp.Body.Close()
 	if resp.StatusCode != http.StatusNoContent {
 		t.Fatalf("bulk remove orgs: got %d, want 204", resp.StatusCode)
 	}
-	resp = ghGet(t, base+"/ent-team-org-2", defaultToken)
+	resp = s.get(t, base+"/ent-team-org-2", defaultToken)
 	resp.Body.Close()
 	if resp.StatusCode != http.StatusNotFound {
 		t.Fatalf("get removed assignment: got %d, want 404", resp.StatusCode)
 	}
 
 	// DELETE single assignment.
-	resp = ghDelete(t, base+"/ent-team-org-1", defaultToken)
+	resp = s.delete(t, base+"/ent-team-org-1", defaultToken)
 	resp.Body.Close()
 	if resp.StatusCode != http.StatusNoContent {
 		t.Fatalf("delete assignment: got %d, want 204", resp.StatusCode)
 	}
 
 	// Selection type "all" derives every organization on the instance.
-	resp = ghPatch(t, enterpriseAPI+"/teams/org-squad", defaultToken, map[string]interface{}{
+	resp = s.patch(t, enterpriseAPI+"/teams/org-squad", defaultToken, map[string]interface{}{
 		"organization_selection_type": "all",
 	})
 	resp.Body.Close()
 	if resp.StatusCode != http.StatusOK {
 		t.Fatalf("patch selection all: got %d, want 200", resp.StatusCode)
 	}
-	resp = ghGet(t, base+"/ent-team-org-2", defaultToken)
+	resp = s.get(t, base+"/ent-team-org-2", defaultToken)
 	resp.Body.Close()
 	if resp.StatusCode != http.StatusOK {
 		t.Fatalf("assignment under all: got %d, want 200 (every org assigned)", resp.StatusCode)
 	}
 
 	// Cleanup so team lists elsewhere stay predictable.
-	resp = ghDelete(t, enterpriseAPI+"/teams/org-squad", defaultToken)
+	resp = s.delete(t, enterpriseAPI+"/teams/org-squad", defaultToken)
 	resp.Body.Close()
 	if resp.StatusCode != http.StatusNoContent {
 		t.Fatalf("cleanup delete: got %d", resp.StatusCode)
@@ -380,25 +372,27 @@ func TestEnterpriseTeamOrganizations_Assignments(t *testing.T) {
 // with a 422 and commit nothing — the earlier valid entries must not already
 // be applied by the time the invalid one is discovered.
 func TestEnterpriseTeamBulk_AtomicOnInvalid(t *testing.T) {
-	resp := ghPost(t, enterpriseAPI+"/teams", defaultToken, map[string]interface{}{"name": "Atomic Crew"})
+	t.Parallel()
+	s := newIsolatedServer(t)
+	resp := s.post(t, enterpriseAPI+"/teams", defaultToken, map[string]interface{}{"name": "Atomic Crew"})
 	if resp.StatusCode != http.StatusCreated {
 		resp.Body.Close()
 		t.Fatalf("create team: got %d", resp.StatusCode)
 	}
 	resp.Body.Close()
-	_ = createEnterpriseTestUser(t, "ent-atomic-a")
+	_ = s.createEnterpriseTestUser(t, "ent-atomic-a")
 	memberships := enterpriseAPI + "/teams/atomic-crew/memberships"
 
 	// Valid user first, invalid user second → 422, and the valid user must not
 	// have been added.
-	resp = ghPost(t, memberships+"/add", defaultToken, map[string]interface{}{
+	resp = s.post(t, memberships+"/add", defaultToken, map[string]interface{}{
 		"usernames": []string{"ent-atomic-a", "no-such-user"},
 	})
 	resp.Body.Close()
 	if resp.StatusCode != http.StatusUnprocessableEntity {
 		t.Fatalf("bulk add with invalid entry: got %d, want 422", resp.StatusCode)
 	}
-	resp = ghGet(t, memberships+"/ent-atomic-a", defaultToken)
+	resp = s.get(t, memberships+"/ent-atomic-a", defaultToken)
 	resp.Body.Close()
 	if resp.StatusCode != http.StatusNotFound {
 		t.Fatalf("valid member added despite 422: get membership got %d, want 404", resp.StatusCode)
@@ -406,27 +400,27 @@ func TestEnterpriseTeamBulk_AtomicOnInvalid(t *testing.T) {
 
 	// Now add the valid user cleanly, then a bulk remove naming it plus an
 	// invalid entry must 422 and leave the valid member in place.
-	resp = ghPut(t, memberships+"/ent-atomic-a", defaultToken, nil)
+	resp = s.put(t, memberships+"/ent-atomic-a", defaultToken, nil)
 	resp.Body.Close()
 	if resp.StatusCode != http.StatusCreated {
 		t.Fatalf("seed membership: got %d, want 201", resp.StatusCode)
 	}
-	resp = ghPost(t, memberships+"/remove", defaultToken, map[string]interface{}{
+	resp = s.post(t, memberships+"/remove", defaultToken, map[string]interface{}{
 		"usernames": []string{"ent-atomic-a", "no-such-user"},
 	})
 	resp.Body.Close()
 	if resp.StatusCode != http.StatusUnprocessableEntity {
 		t.Fatalf("bulk remove with invalid entry: got %d, want 422", resp.StatusCode)
 	}
-	resp = ghGet(t, memberships+"/ent-atomic-a", defaultToken)
+	resp = s.get(t, memberships+"/ent-atomic-a", defaultToken)
 	resp.Body.Close()
 	if resp.StatusCode != http.StatusOK {
 		t.Fatalf("valid member removed despite 422: get membership got %d, want 200", resp.StatusCode)
 	}
 
 	// Organization assignments have the same contract in "selected" mode.
-	createEnterpriseTestOrg(t, "ent-atomic-org")
-	resp = ghPatch(t, enterpriseAPI+"/teams/atomic-crew", defaultToken, map[string]interface{}{
+	s.createEnterpriseTestOrg(t, "ent-atomic-org")
+	resp = s.patch(t, enterpriseAPI+"/teams/atomic-crew", defaultToken, map[string]interface{}{
 		"organization_selection_type": "selected",
 	})
 	resp.Body.Close()
@@ -434,20 +428,20 @@ func TestEnterpriseTeamBulk_AtomicOnInvalid(t *testing.T) {
 		t.Fatalf("patch selection type: got %d, want 200", resp.StatusCode)
 	}
 	orgs := enterpriseAPI + "/teams/atomic-crew/organizations"
-	resp = ghPost(t, orgs+"/add", defaultToken, map[string]interface{}{
+	resp = s.post(t, orgs+"/add", defaultToken, map[string]interface{}{
 		"organization_slugs": []string{"ent-atomic-org", "no-such-org"},
 	})
 	resp.Body.Close()
 	if resp.StatusCode != http.StatusUnprocessableEntity {
 		t.Fatalf("bulk add orgs with invalid entry: got %d, want 422", resp.StatusCode)
 	}
-	resp = ghGet(t, orgs+"/ent-atomic-org", defaultToken)
+	resp = s.get(t, orgs+"/ent-atomic-org", defaultToken)
 	resp.Body.Close()
 	if resp.StatusCode != http.StatusNotFound {
 		t.Fatalf("valid org assigned despite 422: get assignment got %d, want 404", resp.StatusCode)
 	}
 
-	resp = ghDelete(t, enterpriseAPI+"/teams/atomic-crew", defaultToken)
+	resp = s.delete(t, enterpriseAPI+"/teams/atomic-crew", defaultToken)
 	resp.Body.Close()
 	if resp.StatusCode != http.StatusNoContent {
 		t.Fatalf("cleanup delete: got %d", resp.StatusCode)

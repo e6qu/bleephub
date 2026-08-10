@@ -415,7 +415,7 @@ func (st *Store) ListPrivateRegistries(orgLogin string) []*PrivateRegistryConfig
 		out = append(out, reg)
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].Name < out[j].Name })
-	return out
+	return snapshotPrivateRegistryConfigurations(out)
 }
 
 // GetPrivateRegistry returns a registry by configuration name, or nil.

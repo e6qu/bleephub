@@ -107,7 +107,7 @@ func TestOrgActionsPermissions_SelfHostedRunners(t *testing.T) {
 	srv := newIsolatedServer(t)
 	org := srv.createTestOrg(t)
 	repoKey := srv.createTestRepo(t)
-	repoData := decodeJSONWithStatus(t, srv.get(t, "/api/v3/repos/"+repoKey, defaultToken), 200)
+	repoData := decodeJSONWithStatus(t, srv.get(t, repoKey.path(), defaultToken), 200)
 	repoID := int(repoData["id"].(float64))
 
 	path := "/api/v3/orgs/" + org + "/actions/permissions/self-hosted-runners"

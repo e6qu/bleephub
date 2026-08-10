@@ -12,23 +12,23 @@ import (
 // submitConcurrencyWorkflow submits a one-job workflow with a
 // concurrency group through the real workflow-submission surface and
 // returns the engine workflow id.
-func submitConcurrencyWorkflow(t *testing.T, name, group, repo string) string {
+func (s *isolatedServer) submitConcurrencyWorkflow(t *testing.T, name, group, repo string) string {
 	t.Helper()
 	yaml := fmt.Sprintf("name: %s\nconcurrency: %s\njobs:\n  build:\n    runs-on: ubuntu-latest\n    steps:\n      - run: echo hi\n", name, group)
 	parts := strings.Split(repo, "/")
 	if len(parts) != 2 {
 		t.Fatalf("expected owner/repo, got %q", repo)
 	}
-	repoRow := testServer.store.GetRepoByFullName(repo)
+	repoRow := s.store.GetRepoByFullName(repo)
 	if repoRow == nil {
 		t.Fatalf("repository %s missing", repo)
 	}
-	stor := testServer.store.GetGitStorage(parts[0], parts[1])
+	stor := s.store.GetGitStorage(parts[0], parts[1])
 	if stor == nil {
 		t.Fatalf("git storage for %s missing", repo)
 	}
 	if resolveBranchSha(stor, repoRow.DefaultBranch) == "" {
-		admin := testServer.store.Users[1]
+		admin := s.store.Users[1]
 		if _, err := initRepoWithFiles(stor, repoRow.DefaultBranch, "seed workflow", map[string]string{
 			".github/workflows/" + name + ".yml": yaml,
 		}, repoSignature(admin.Login, "bleephub@local")); err != nil {
@@ -36,7 +36,7 @@ func submitConcurrencyWorkflow(t *testing.T, name, group, repo string) string {
 		}
 	}
 	body, _ := json.Marshal(map[string]string{"workflow": yaml, "repo": repo, "image": "alpine:latest"})
-	resp, err := authedPost("/internal/exec/workflow", "application/json", bytes.NewReader(body))
+	resp, err := s.authedPost("/internal/exec/workflow", "application/json", bytes.NewReader(body))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -48,9 +48,9 @@ func submitConcurrencyWorkflow(t *testing.T, name, group, repo string) string {
 	return id
 }
 
-func cancelWorkflowByID(t *testing.T, id string) {
+func (s *isolatedServer) cancelWorkflowByID(t *testing.T, id string) {
 	t.Helper()
-	resp, err := authedPost("/internal/exec/workflows/"+id+"/cancel", "application/json", nil)
+	resp, err := s.authedPost("/internal/exec/workflows/"+id+"/cancel", "application/json", nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -58,9 +58,9 @@ func cancelWorkflowByID(t *testing.T, id string) {
 }
 
 // runIDByName resolves a run's GitHub-shape id from the repo run list.
-func runIDByName(t *testing.T, repo, name string) int {
+func (s *isolatedServer) runIDByName(t *testing.T, repo, name string) int {
 	t.Helper()
-	data := decodeJSONWithStatus(t, ghGet(t, "/api/v3/repos/"+repo+"/actions/runs", defaultToken), 200)
+	data := decodeJSONWithStatus(t, s.get(t, "/api/v3/repos/"+repo+"/actions/runs", defaultToken), 200)
 	runs, _ := data["workflow_runs"].([]interface{})
 	for _, r := range runs {
 		run, _ := r.(map[string]interface{})
@@ -73,19 +73,21 @@ func runIDByName(t *testing.T, repo, name string) int {
 }
 
 func TestConcurrencyGroups_RepoAndRunEndpoints(t *testing.T) {
-	org := seedTestOrg(t, "cg-org")
-	repo := seedOrgRepo(t, org, "cg-repo", false).FullName
+	t.Parallel()
+	s := newIsolatedServer(t)
+	org := s.seedTestOrg(t, "cg-org")
+	repo := s.seedOrgRepo(t, org, "cg-repo", false).FullName
 	group := "cg-test-group"
-	wf1 := submitConcurrencyWorkflow(t, "cg-holder", group, repo)
-	wf2 := submitConcurrencyWorkflow(t, "cg-waiter", group, repo)
-	defer cancelWorkflowByID(t, wf2)
-	defer cancelWorkflowByID(t, wf1)
+	wf1 := s.submitConcurrencyWorkflow(t, "cg-holder", group, repo)
+	wf2 := s.submitConcurrencyWorkflow(t, "cg-waiter", group, repo)
+	defer s.cancelWorkflowByID(t, wf2)
+	defer s.cancelWorkflowByID(t, wf1)
 
-	holderID := runIDByName(t, repo, "cg-holder")
-	waiterID := runIDByName(t, repo, "cg-waiter")
+	holderID := s.runIDByName(t, repo, "cg-holder")
+	waiterID := s.runIDByName(t, repo, "cg-waiter")
 
 	// Repo-level active group list: one group, lease acquired.
-	data := decodeJSONWithStatus(t, ghGet(t, "/api/v3/repos/"+repo+"/actions/concurrency_groups", defaultToken), 200)
+	data := decodeJSONWithStatus(t, s.get(t, "/api/v3/repos/"+repo+"/actions/concurrency_groups", defaultToken), 200)
 	groups, _ := data["concurrency_groups"].([]interface{})
 	if int(data["total_count"].(float64)) != 1 || len(groups) != 1 {
 		t.Fatalf("concurrency_groups = %v, want exactly the one active group", data)
@@ -100,7 +102,7 @@ func TestConcurrencyGroups_RepoAndRunEndpoints(t *testing.T) {
 
 	// Group by name: holder in_progress, waiter pending.
 	groupPath := "/api/v3/repos/" + repo + "/actions/concurrency_groups/" + url.PathEscape(group)
-	data = decodeJSONWithStatus(t, ghGet(t, groupPath, defaultToken), 200)
+	data = decodeJSONWithStatus(t, s.get(t, groupPath, defaultToken), 200)
 	members, _ := data["group_members"].([]interface{})
 	if int(data["total_count"].(float64)) != 2 || len(members) != 2 {
 		t.Fatalf("group members = %v, want holder + waiter", data)
@@ -115,20 +117,20 @@ func TestConcurrencyGroups_RepoAndRunEndpoints(t *testing.T) {
 	}
 
 	// ahead_of_run: only the holder is ahead of the waiter.
-	data = decodeJSONWithStatus(t, ghGet(t, fmt.Sprintf("%s?ahead_of_run=%d", groupPath, waiterID), defaultToken), 200)
+	data = decodeJSONWithStatus(t, s.get(t, fmt.Sprintf("%s?ahead_of_run=%d", groupPath, waiterID), defaultToken), 200)
 	members, _ = data["group_members"].([]interface{})
 	if len(members) != 1 || int(members[0].(map[string]interface{})["run_id"].(float64)) != holderID {
 		t.Fatalf("ahead_of_run members = %v, want only the holder", members)
 	}
 	// A run that isn't a member rejects.
-	resp := ghGet(t, groupPath+"?ahead_of_run=999999", defaultToken)
+	resp := s.get(t, groupPath+"?ahead_of_run=999999", defaultToken)
 	resp.Body.Close()
 	if resp.StatusCode != 422 {
 		t.Fatalf("ahead_of_run non-member = %d, want 422", resp.StatusCode)
 	}
 
 	// Run-level view: the waiter queues at position 1 with a position_url.
-	data = decodeJSONWithStatus(t, ghGet(t,
+	data = decodeJSONWithStatus(t, s.get(t,
 		fmt.Sprintf("/api/v3/repos/%s/actions/runs/%d/concurrency_groups", repo, waiterID), defaultToken), 200)
 	groups, _ = data["concurrency_groups"].([]interface{})
 	if int(data["total_count"].(float64)) != 1 || len(groups) != 1 {
@@ -148,7 +150,7 @@ func TestConcurrencyGroups_RepoAndRunEndpoints(t *testing.T) {
 	}
 
 	// The holder reports position 0 / in_progress.
-	data = decodeJSONWithStatus(t, ghGet(t,
+	data = decodeJSONWithStatus(t, s.get(t,
 		fmt.Sprintf("/api/v3/repos/%s/actions/runs/%d/concurrency_groups", repo, holderID), defaultToken), 200)
 	groups, _ = data["concurrency_groups"].([]interface{})
 	entry, _ = groups[0].(map[string]interface{})
@@ -159,7 +161,7 @@ func TestConcurrencyGroups_RepoAndRunEndpoints(t *testing.T) {
 	}
 
 	// Unknown group 404s.
-	resp = ghGet(t, "/api/v3/repos/"+repo+"/actions/concurrency_groups/no-such-group", defaultToken)
+	resp = s.get(t, "/api/v3/repos/"+repo+"/actions/concurrency_groups/no-such-group", defaultToken)
 	resp.Body.Close()
 	if resp.StatusCode != 404 {
 		t.Fatalf("unknown group = %d, want 404", resp.StatusCode)
@@ -167,19 +169,21 @@ func TestConcurrencyGroups_RepoAndRunEndpoints(t *testing.T) {
 }
 
 func TestConcurrencyGroups_CompletedRunReleasesLease(t *testing.T) {
-	org := seedTestOrg(t, "cg-org")
-	repo := seedOrgRepo(t, org, "cg-repo-done", false).FullName
-	wfID := submitConcurrencyWorkflow(t, "cg-done", "cg-done-group", repo)
-	runID := runIDByName(t, repo, "cg-done")
-	cancelWorkflowByID(t, wfID)
+	t.Parallel()
+	s := newIsolatedServer(t)
+	org := s.seedTestOrg(t, "cg-org")
+	repo := s.seedOrgRepo(t, org, "cg-repo-done", false).FullName
+	wfID := s.submitConcurrencyWorkflow(t, "cg-done", "cg-done-group", repo)
+	runID := s.runIDByName(t, repo, "cg-done")
+	s.cancelWorkflowByID(t, wfID)
 
 	// Cancelled (completed) run: its group is no longer active
 	// repo-wide, and the run-level view lists the group with no members.
-	data := decodeJSONWithStatus(t, ghGet(t, "/api/v3/repos/"+repo+"/actions/concurrency_groups", defaultToken), 200)
+	data := decodeJSONWithStatus(t, s.get(t, "/api/v3/repos/"+repo+"/actions/concurrency_groups", defaultToken), 200)
 	if int(data["total_count"].(float64)) != 0 {
 		t.Fatalf("active groups after completion = %v, want none", data)
 	}
-	data = decodeJSONWithStatus(t, ghGet(t,
+	data = decodeJSONWithStatus(t, s.get(t,
 		fmt.Sprintf("/api/v3/repos/%s/actions/runs/%d/concurrency_groups", repo, runID), defaultToken), 200)
 	groups, _ := data["concurrency_groups"].([]interface{})
 	if int(data["total_count"].(float64)) != 1 || len(groups) != 1 {
@@ -196,14 +200,14 @@ func TestConcurrencyGroups_CompletedRunReleasesLease(t *testing.T) {
 		"repo":     repo,
 		"image":    "alpine:latest",
 	})
-	resp, err := authedPost("/internal/exec/workflow", "application/json", bytes.NewReader(body))
+	resp, err := s.authedPost("/internal/exec/workflow", "application/json", bytes.NewReader(body))
 	if err != nil {
 		t.Fatal(err)
 	}
 	sub := decodeJSONWithStatus(t, resp, 200)
-	defer cancelWorkflowByID(t, sub["workflowId"].(string))
-	plainID := runIDByName(t, repo, "cg-none")
-	data = decodeJSONWithStatus(t, ghGet(t,
+	defer s.cancelWorkflowByID(t, sub["workflowId"].(string))
+	plainID := s.runIDByName(t, repo, "cg-none")
+	data = decodeJSONWithStatus(t, s.get(t,
 		fmt.Sprintf("/api/v3/repos/%s/actions/runs/%d/concurrency_groups", repo, plainID), defaultToken), 200)
 	if int(data["total_count"].(float64)) != 0 {
 		t.Fatalf("no-concurrency run groups = %v, want 0", data)

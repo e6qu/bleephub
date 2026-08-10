@@ -7,22 +7,24 @@ import (
 )
 
 func TestRepositoryImport_GitSourceLifecycle(t *testing.T) {
-	source := createRepoWriteRepo(t, true)
-	target := createRepoWriteRepo(t, false)
+	t.Parallel()
+	s := newIsolatedServer(t)
+	source := s.createRepoWriteRepo(t, true)
+	target := s.createRepoWriteRepo(t, false)
 	base := "/api/v3/repos/admin/" + target + "/import"
 
 	// No import yet.
-	resp := ghGet(t, base, defaultToken)
+	resp := s.get(t, base, defaultToken)
 	requireStatus(t, resp, 404)
 
 	// vcs_url is required.
-	resp = ghPut(t, base, defaultToken, map[string]interface{}{})
+	resp = s.put(t, base, defaultToken, map[string]interface{}{})
 	requireStatus(t, resp, 422)
 
 	// Start a real git import from the source repo's smart HTTP endpoint.
-	resp = ghPut(t, base, defaultToken, map[string]interface{}{
+	resp = s.put(t, base, defaultToken, map[string]interface{}{
 		"vcs":     "git",
-		"vcs_url": testBaseURL + "/admin/" + source + ".git",
+		"vcs_url": s.baseURL + "/admin/" + source + ".git",
 	})
 	imp := decodeJSONWithStatus(t, resp, 201)
 	if imp["status"] != "complete" {
@@ -45,18 +47,18 @@ func TestRepositoryImport_GitSourceLifecycle(t *testing.T) {
 	}
 
 	// The import really landed: the source's README is in the target's git.
-	resp = ghGet(t, "/api/v3/repos/admin/"+target+"/contents/README.md", defaultToken)
+	resp = s.get(t, "/api/v3/repos/admin/"+target+"/contents/README.md", defaultToken)
 	requireStatus(t, resp, 200)
 
 	// Status reads back.
-	resp = ghGet(t, base, defaultToken)
+	resp = s.get(t, base, defaultToken)
 	got := decodeJSONWithStatus(t, resp, 200)
 	if got["status"] != "complete" {
 		t.Fatalf("GET status = %v, want complete", got["status"])
 	}
 
 	// Authors were discovered from the imported commits and can be remapped.
-	resp = ghGet(t, base+"/authors", defaultToken)
+	resp = s.get(t, base+"/authors", defaultToken)
 	authors := decodeJSONWithStatus2xxArray(t, resp, 200)
 	if len(authors) != 1 {
 		t.Fatalf("authors = %v, want 1 entry", authors)
@@ -65,7 +67,7 @@ func TestRepositoryImport_GitSourceLifecycle(t *testing.T) {
 	if authors[0]["remote_id"] == "" || authors[0]["email"] == nil {
 		t.Fatalf("author entry missing members: %v", authors[0])
 	}
-	resp = ghPatch(t, base+"/authors/"+authorID, defaultToken, map[string]interface{}{
+	resp = s.patch(t, base+"/authors/"+authorID, defaultToken, map[string]interface{}{
 		"name":  "Mapped Author",
 		"email": "mapped@example.com",
 	})
@@ -74,47 +76,49 @@ func TestRepositoryImport_GitSourceLifecycle(t *testing.T) {
 		t.Fatalf("updated author = %v", updated)
 	}
 	// Unknown author → 404.
-	resp = ghPatch(t, base+"/authors/424242", defaultToken, map[string]interface{}{"name": "x"})
+	resp = s.patch(t, base+"/authors/424242", defaultToken, map[string]interface{}{"name": "x"})
 	requireStatus(t, resp, 404)
 
 	// Git LFS preference round-trips.
-	resp = ghPatch(t, base+"/lfs", defaultToken, map[string]interface{}{"use_lfs": "opt_in"})
+	resp = s.patch(t, base+"/lfs", defaultToken, map[string]interface{}{"use_lfs": "opt_in"})
 	lfs := decodeJSONWithStatus(t, resp, 200)
 	if lfs["use_lfs"] != true {
 		t.Fatalf("use_lfs = %v, want true", lfs["use_lfs"])
 	}
-	resp = ghPatch(t, base+"/lfs", defaultToken, map[string]interface{}{"use_lfs": "bogus"})
+	resp = s.patch(t, base+"/lfs", defaultToken, map[string]interface{}{"use_lfs": "bogus"})
 	requireStatus(t, resp, 422)
 
 	// No files over the 100 MB threshold.
-	resp = ghGet(t, base+"/large_files", defaultToken)
+	resp = s.get(t, base+"/large_files", defaultToken)
 	largeFiles := decodeJSONWithStatus2xxArray(t, resp, 200)
 	if len(largeFiles) != 0 {
 		t.Fatalf("large_files = %v, want empty", largeFiles)
 	}
 
 	// PATCH restarts the import with updated parameters.
-	resp = ghPatch(t, base, defaultToken, map[string]interface{}{"vcs": "git"})
+	resp = s.patch(t, base, defaultToken, map[string]interface{}{"vcs": "git"})
 	restarted := decodeJSONWithStatus(t, resp, 200)
 	if restarted["status"] != "complete" {
 		t.Fatalf("restarted status = %v, want complete", restarted["status"])
 	}
 
 	// Cancel removes the import record.
-	delResp := ghDelete(t, base, defaultToken)
+	delResp := s.delete(t, base, defaultToken)
 	requireStatus(t, delResp, 204)
-	resp = ghGet(t, base, defaultToken)
+	resp = s.get(t, base, defaultToken)
 	requireStatus(t, resp, 404)
-	delResp = ghDelete(t, base, defaultToken)
+	delResp = s.delete(t, base, defaultToken)
 	requireStatus(t, delResp, 404)
 }
 
 func TestRepositoryImport_HonestFailures(t *testing.T) {
-	target := createRepoWriteRepo(t, false)
+	t.Parallel()
+	s := newIsolatedServer(t)
+	target := s.createRepoWriteRepo(t, false)
 	base := "/api/v3/repos/admin/" + target + "/import"
 
 	// A VCS type bleephub cannot really import ends in an honest error.
-	resp := ghPut(t, base, defaultToken, map[string]interface{}{
+	resp := s.put(t, base, defaultToken, map[string]interface{}{
 		"vcs":     "subversion",
 		"vcs_url": "https://svn.example.invalid/repo",
 	})
@@ -128,7 +132,7 @@ func TestRepositoryImport_HonestFailures(t *testing.T) {
 	}
 
 	// An unreachable git remote ends in an honest failure state too.
-	resp = ghPut(t, base, defaultToken, map[string]interface{}{
+	resp = s.put(t, base, defaultToken, map[string]interface{}{
 		"vcs":     "git",
 		"vcs_url": "http://127.0.0.1:1/unreachable.git",
 	})

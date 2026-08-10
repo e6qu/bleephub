@@ -35,6 +35,7 @@ import (
 // over-blocking is the other half of what these cases pin, and a session is the
 // shape that legitimately carries no selection at all.
 type credGrantCaller struct {
+	srv    *isolatedServer
 	name   string
 	token  string
 	cookie string
@@ -55,7 +56,7 @@ func (c credGrantCaller) do(t *testing.T, method, path, body string) (int, strin
 	if body != "" {
 		reader = strings.NewReader(body)
 	}
-	req, err := http.NewRequest(method, testBaseURL+path, reader)
+	req, err := http.NewRequest(method, c.srv.baseURL+path, reader)
 	if err != nil {
 		t.Fatalf("%s: building %s %s: %v", c.name, method, path, err)
 	}
@@ -114,14 +115,15 @@ const (
 // takes the repositories it needs from it, so a destructive probe never decides
 // the outcome of the next one.
 type credGrantFixture struct {
+	srv   *isolatedServer
 	owner *User
 	org   *Org
 	seq   int
 }
 
-func newCredGrantFixture(t *testing.T, tag string) *credGrantFixture {
+func (s *isolatedServer) newCredGrantFixture(t *testing.T, tag string) *credGrantFixture {
 	t.Helper()
-	st := testServer.store
+	st := s.store
 
 	st.mu.Lock()
 	now := fixedTestTime.UTC()
@@ -144,7 +146,7 @@ func newCredGrantFixture(t *testing.T, tag string) *credGrantFixture {
 	if org == nil {
 		t.Fatalf("%s: could not create the organization", tag)
 	}
-	return &credGrantFixture{owner: owner, org: org}
+	return &credGrantFixture{srv: s, owner: owner, org: org}
 }
 
 // repo creates a private repository owned by the fixture's account. Private,
@@ -153,7 +155,7 @@ func newCredGrantFixture(t *testing.T, tag string) *credGrantFixture {
 func (f *credGrantFixture) repo(t *testing.T, name string) *Repo {
 	t.Helper()
 	f.seq++
-	repo := testServer.store.CreateRepo(f.owner, fmt.Sprintf("%s-%d", name, f.seq), "", true)
+	repo := f.srv.store.CreateRepo(f.owner, fmt.Sprintf("%s-%d", name, f.seq), "", true)
 	if repo == nil {
 		t.Fatalf("could not create the repository %s", name)
 	}
@@ -162,7 +164,7 @@ func (f *credGrantFixture) repo(t *testing.T, name string) *Repo {
 
 func (f *credGrantFixture) issue(t *testing.T, repo *Repo) *Issue {
 	t.Helper()
-	issue := testServer.store.CreateIssue(repo.ID, f.owner.ID, "before", "", nil, nil, 0)
+	issue := f.srv.store.CreateIssue(repo.ID, f.owner.ID, "before", "", nil, nil, 0)
 	if issue == nil {
 		t.Fatalf("could not seed an issue on %s", repo.FullName)
 	}
@@ -177,7 +179,7 @@ func (f *credGrantFixture) issue(t *testing.T, repo *Repo) *Issue {
 func (f *credGrantFixture) oauthToken(t *testing.T, scopes string) credGrantCaller {
 	t.Helper()
 	f.seq++
-	tok, _ := testServer.store.CreateUserToServerToken(
+	tok, _ := f.srv.store.CreateUserToServerToken(
 		f.owner.ID, 0, fmt.Sprintf("Iv1.credgrant%s%d", f.owner.Login, f.seq), scopes, time.Hour, false)
 	if tok == nil {
 		t.Fatal("could not mint the gho_ token")
@@ -185,14 +187,14 @@ func (f *credGrantFixture) oauthToken(t *testing.T, scopes string) credGrantCall
 	if tok.AppID != 0 {
 		t.Fatalf("the fixture token must be a gho_ with no app behind it, got AppID %d", tok.AppID)
 	}
-	return credGrantCaller{name: "gho_ scopes=" + fmt.Sprintf("%q", scopes), token: tok.Token}
+	return credGrantCaller{srv: f.srv, name: "gho_ scopes=" + fmt.Sprintf("%q", scopes), token: tok.Token}
 }
 
 // fineGrainedToken mints a fine-grained PAT over the owner's account, selecting
 // exactly selected and holding perms over them.
 func (f *credGrantFixture) fineGrainedToken(t *testing.T, perms map[string]string, selected ...*Repo) credGrantCaller {
 	t.Helper()
-	st := testServer.store
+	st := f.srv.store
 	f.seq++
 	tok := st.CreateToken(f.owner.ID, "")
 	if tok == nil {
@@ -212,34 +214,34 @@ func (f *credGrantFixture) fineGrainedToken(t *testing.T, perms map[string]strin
 	tok.RepositoryIDs = ids
 	tok.Permissions = OrgPATPermissions{Repository: perms}
 	st.mu.Unlock()
-	return credGrantCaller{name: "fine-grained selecting " + strings.Join(names, ","), token: tok.Value}
+	return credGrantCaller{srv: f.srv, name: "fine-grained selecting " + strings.Join(names, ","), token: tok.Value}
 }
 
 func (f *credGrantFixture) classicToken(t *testing.T, scopes string) credGrantCaller {
 	t.Helper()
-	tok := testServer.store.CreateToken(f.owner.ID, scopes)
+	tok := f.srv.store.CreateToken(f.owner.ID, scopes)
 	if tok == nil {
 		t.Fatal("could not mint the classic token")
 	}
-	return credGrantCaller{name: "classic PAT scopes=" + fmt.Sprintf("%q", scopes), token: tok.Value}
+	return credGrantCaller{srv: f.srv, name: "classic PAT scopes=" + fmt.Sprintf("%q", scopes), token: tok.Value}
 }
 
 func (f *credGrantFixture) session(t *testing.T) credGrantCaller {
 	t.Helper()
 	f.seq++
 	id := fmt.Sprintf("credgrant-sess-%s-%d", f.owner.Login, f.seq)
-	if err := testServer.store.PutLoginSession(id, &LoginSession{
+	if err := f.srv.store.PutLoginSession(id, &LoginSession{
 		UserID:    f.owner.ID,
 		ExpiresAt: fixedTestTime.Add(time.Hour),
 	}); err != nil {
 		t.Fatalf("could not open the browser session: %v", err)
 	}
-	return credGrantCaller{name: "browser session", cookie: id}
+	return credGrantCaller{srv: f.srv, name: "browser session", cookie: id}
 }
 
 // credGrantServedRepo asserts the caller reaches the repository on both
 // transports and through the mutation lane, and that the mutation landed.
-func credGrantServedRepo(t *testing.T, c credGrantCaller, repo *Repo, issue *Issue) {
+func (s *isolatedServer) credGrantServedRepo(t *testing.T, c credGrantCaller, repo *Repo, issue *Issue) {
 	t.Helper()
 	if got := c.gitStatus(t, repo, "git-upload-pack"); got != http.StatusOK {
 		t.Errorf("%s: upload-pack on %s = %d, want 200", c.name, repo.FullName, got)
@@ -251,14 +253,14 @@ func credGrantServedRepo(t *testing.T, c credGrantCaller, repo *Repo, issue *Iss
 	if !c.mutates(t, credGrantUpdateIssue, map[string]interface{}{"id": issue.NodeID, "title": title}) {
 		t.Errorf("%s: updateIssue on %s was refused", c.name, repo.FullName)
 	}
-	if got := testServer.store.GetIssue(issue.ID); got == nil || got.Title != title {
+	if got := s.store.GetIssue(issue.ID); got == nil || got.Title != title {
 		t.Errorf("%s: updateIssue on %s reported success but the title did not change", c.name, repo.FullName)
 	}
 }
 
 // credGrantRefusedRepo is its mirror: both transports refuse, and the mutation
 // leaves the issue alone.
-func credGrantRefusedRepo(t *testing.T, c credGrantCaller, repo *Repo, issue *Issue) {
+func (s *isolatedServer) credGrantRefusedRepo(t *testing.T, c credGrantCaller, repo *Repo, issue *Issue) {
 	t.Helper()
 	if got := c.gitStatus(t, repo, "git-upload-pack"); got == http.StatusOK {
 		t.Errorf("%s: upload-pack on %s = 200; it cloned a private repository", c.name, repo.FullName)
@@ -270,7 +272,7 @@ func credGrantRefusedRepo(t *testing.T, c credGrantCaller, repo *Repo, issue *Is
 	if c.mutates(t, credGrantUpdateIssue, map[string]interface{}{"id": issue.NodeID, "title": "hijacked"}) {
 		t.Errorf("%s: updateIssue on %s succeeded", c.name, repo.FullName)
 	}
-	if got := testServer.store.GetIssue(issue.ID); got == nil || got.Title != before {
+	if got := s.store.GetIssue(issue.ID); got == nil || got.Title != before {
 		t.Errorf("%s: the issue on %s was retitled", c.name, repo.FullName)
 	}
 }
@@ -279,31 +281,35 @@ func credGrantRefusedRepo(t *testing.T, c credGrantCaller, repo *Repo, issue *Is
 // scopes at all belongs to the repository's own owner, so the principal half
 // admits it and the grant is the only thing left.
 func TestOAuthUserTokenScopesGateGitAndGraphQL(t *testing.T) {
-	f := newCredGrantFixture(t, "gho-transports")
+	t.Parallel()
+	s := newIsolatedServer(t)
+	f := s.newCredGrantFixture(t, "gho-transports")
 
 	refused := f.repo(t, "victim")
-	credGrantRefusedRepo(t, f.oauthToken(t, ""), refused, f.issue(t, refused))
+	s.credGrantRefusedRepo(t, f.oauthToken(t, ""), refused, f.issue(t, refused))
 
 	// The control: the same shape holding the scope GitHub grants a clone, a
 	// push and an issue edit under.
 	served := f.repo(t, "entitled")
-	credGrantServedRepo(t, f.oauthToken(t, "repo"), served, f.issue(t, served))
+	s.credGrantServedRepo(t, f.oauthToken(t, "repo"), served, f.issue(t, served))
 
 	// And the two shapes that carry no app selection of their own, which must be
 	// exactly as unaffected as they were before.
 	unaffected := f.repo(t, "classic")
-	credGrantServedRepo(t, f.classicToken(t, "repo"), unaffected, f.issue(t, unaffected))
+	s.credGrantServedRepo(t, f.classicToken(t, "repo"), unaffected, f.issue(t, unaffected))
 
 	viaSession := f.repo(t, "session")
-	credGrantServedRepo(t, f.session(t), viaSession, f.issue(t, viaSession))
+	s.credGrantServedRepo(t, f.session(t), viaSession, f.issue(t, viaSession))
 }
 
 // TestOAuthUserTokenScopesGateRepositoryDeletion covers the admin level
 // separately, because deleting the repository is what the case proves and a
 // deleted repository cannot then serve the control.
 func TestOAuthUserTokenScopesGateRepositoryDeletion(t *testing.T) {
-	f := newCredGrantFixture(t, "gho-delete")
-	st := testServer.store
+	t.Parallel()
+	s := newIsolatedServer(t)
+	f := s.newCredGrantFixture(t, "gho-delete")
+	st := s.store
 
 	doomed := f.repo(t, "scopeless-target")
 	scopeless := f.oauthToken(t, "")
@@ -342,13 +348,15 @@ func TestOAuthUserTokenScopesGateRepositoryDeletion(t *testing.T) {
 // event the organization emits, and the handler gates itself on the caller's
 // admin role alone.
 func TestOAuthUserTokenScopesGateOrganizationWebhooks(t *testing.T) {
-	f := newCredGrantFixture(t, "gho-hooks")
+	t.Parallel()
+	s := newIsolatedServer(t)
+	f := s.newCredGrantFixture(t, "gho-hooks")
 	path := "/api/v3/orgs/" + f.org.Login + "/hooks"
 	body := func(url string) string {
 		return `{"name":"web","active":true,"events":["push"],"config":{"url":"` + url + `","content_type":"json"}}`
 	}
 	planted := func(url string) bool {
-		for _, hook := range testServer.store.ListOrgHooks(f.org.Login) {
+		for _, hook := range s.store.ListOrgHooks(f.org.Login) {
 			if hook.URL == url {
 				return true
 			}
@@ -396,8 +404,10 @@ func TestOAuthUserTokenScopesGateOrganizationWebhooks(t *testing.T) {
 // selection is the whole point of a fine-grained token, and the surfaces that
 // never reach requirePerm were not reading it.
 func TestFineGrainedTokenSelectionGatesGitAndGraphQL(t *testing.T) {
-	f := newCredGrantFixture(t, "finegrained")
-	st := testServer.store
+	t.Parallel()
+	s := newIsolatedServer(t)
+	f := s.newCredGrantFixture(t, "finegrained")
+	st := s.store
 
 	selected := f.repo(t, "selected")
 	unselected := f.repo(t, "unselected")
@@ -409,8 +419,8 @@ func TestFineGrainedTokenSelectionGatesGitAndGraphQL(t *testing.T) {
 	// The token holds every permission it could ask for. Only the selection
 	// separates the two repositories, and they have the same owner, so nothing
 	// but the selection can be doing the work.
-	credGrantRefusedRepo(t, token, unselected, f.issue(t, unselected))
-	credGrantServedRepo(t, token, selected, f.issue(t, selected))
+	s.credGrantRefusedRepo(t, token, unselected, f.issue(t, unselected))
+	s.credGrantServedRepo(t, token, selected, f.issue(t, selected))
 
 	doomed := f.repo(t, "unselected-target")
 	if token.mutates(t, credGrantDeleteRepo, map[string]interface{}{"repositoryId": doomed.NodeID}) {
@@ -432,10 +442,10 @@ func TestFineGrainedTokenSelectionGatesGitAndGraphQL(t *testing.T) {
 	// The over-block guard: the credentials that carry no repository selection
 	// still reach the repository the fine-grained token was refused.
 	unaffected := f.repo(t, "classic")
-	credGrantServedRepo(t, f.classicToken(t, "repo"), unaffected, f.issue(t, unaffected))
+	s.credGrantServedRepo(t, f.classicToken(t, "repo"), unaffected, f.issue(t, unaffected))
 
 	viaSession := f.repo(t, "session")
-	credGrantServedRepo(t, f.session(t), viaSession, f.issue(t, viaSession))
+	s.credGrantServedRepo(t, f.session(t), viaSession, f.issue(t, viaSession))
 }
 
 // TestUserToServerGrantIsNotDecidedByMapOrder pins the other half of the grant
@@ -444,8 +454,10 @@ func TestFineGrainedTokenSelectionGatesGitAndGraphQL(t *testing.T) {
 // scope answered differently from one request to the next — an authorization
 // decision taken by coin flip, and one that no single-run test can catch.
 func TestUserToServerGrantIsNotDecidedByMapOrder(t *testing.T) {
-	f := newCredGrantFixture(t, "maporder")
-	st := testServer.store
+	t.Parallel()
+	s := newIsolatedServer(t)
+	f := s.newCredGrantFixture(t, "maporder")
+	st := s.store
 	repo := f.repo(t, "target")
 
 	// One installation grants contents, the other does not. Only the first
@@ -467,7 +479,7 @@ func TestUserToServerGrantIsNotDecidedByMapOrder(t *testing.T) {
 	if uts == nil {
 		t.Fatal("could not mint the ghu_ token")
 	}
-	caller := credGrantCaller{name: "ghu_ of an app installed twice", token: uts.Token}
+	caller := credGrantCaller{srv: s, name: "ghu_ of an app installed twice", token: uts.Token}
 
 	seen := map[int]int{}
 	// Enough attempts that a coin-flip gate cannot land the same way through

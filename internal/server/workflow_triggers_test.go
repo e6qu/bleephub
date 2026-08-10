@@ -295,9 +295,11 @@ jobs: {}
 }
 
 func TestTriggerFiltersEndToEnd(t *testing.T) {
+	t.Parallel()
+	s := newIsolatedServer(t)
 	repoKey := "trigowner/trig-repo"
-	cancelRepoRunsCleanup(t, repoKey)
-	commitWorkflowYAMLToStorage(t, testServer, repoKey, ".github/workflows/main-only.yml", `name: main-only
+	s.cancelRepoRunsCleanup(t, repoKey)
+	commitWorkflowYAMLToStorage(t, s.Server, repoKey, ".github/workflows/main-only.yml", `name: main-only
 on:
   push:
     branches: [main]
@@ -309,10 +311,10 @@ jobs:
 `)
 
 	countRuns := func(name string) int {
-		testServer.store.mu.RLock()
-		defer testServer.store.mu.RUnlock()
+		s.store.mu.RLock()
+		defer s.store.mu.RUnlock()
 		n := 0
-		for _, w := range testServer.store.Workflows {
+		for _, w := range s.store.Workflows {
 			if w.RepoFullName == repoKey && w.Name == name {
 				n++
 			}
@@ -320,26 +322,26 @@ jobs:
 		return n
 	}
 
-	testServer.triggerWorkflowsForEvent(repoKey, "push", "", "refs/heads/dev", nil)
+	s.triggerWorkflowsForEvent(repoKey, "push", "", "refs/heads/dev", nil)
 	if got := countRuns("main-only"); got != 0 {
 		t.Fatalf("push to dev created %d runs, want 0", got)
 	}
-	testServer.triggerWorkflowsForEvent(repoKey, "push", "", "refs/heads/main", nil)
+	s.triggerWorkflowsForEvent(repoKey, "push", "", "refs/heads/main", nil)
 	if got := countRuns("main-only"); got != 1 {
 		t.Fatalf("push to main created %d runs, want 1", got)
 	}
 
 	// The triggering payload becomes github.event on the run.
-	testServer.triggerWorkflowsForEvent(repoKey, "push", "", "refs/heads/main",
+	s.triggerWorkflowsForEvent(repoKey, "push", "", "refs/heads/main",
 		map[string]interface{}{"head_commit": map[string]interface{}{"message": "x"}})
-	testServer.store.mu.RLock()
+	s.store.mu.RLock()
 	var withPayload *Workflow
-	for _, w := range testServer.store.Workflows {
+	for _, w := range s.store.Workflows {
 		if w.RepoFullName == repoKey && w.EventPayload != nil {
 			withPayload = w
 		}
 	}
-	testServer.store.mu.RUnlock()
+	s.store.mu.RUnlock()
 	if withPayload == nil {
 		t.Fatal("no run carried the event payload")
 	}
@@ -521,11 +523,13 @@ jobs:
 }
 
 func TestPullRequestSynchronizeOnPush(t *testing.T) {
+	t.Parallel()
+	s := newIsolatedServer(t)
 	owner := "syncowner"
 	repoName := "sync-repo"
 	repoKey := owner + "/" + repoName
-	cancelRepoRunsCleanup(t, repoKey)
-	commitWorkflowYAMLToStorage(t, testServer, repoKey, ".github/workflows/pr-ci.yml", `name: pr-ci
+	s.cancelRepoRunsCleanup(t, repoKey)
+	commitWorkflowYAMLToStorage(t, s.Server, repoKey, ".github/workflows/pr-ci.yml", `name: pr-ci
 on: [pull_request]
 jobs:
   build:
@@ -533,28 +537,28 @@ jobs:
     steps:
       - run: echo hi
 `)
-	repo := testServer.store.GetRepo(owner, repoName)
+	repo := s.store.GetRepo(owner, repoName)
 	if repo == nil {
 		t.Fatal("repo missing")
 	}
-	seedStorePullRequestBranches(t, testServer.store, repo, "feature-x")
-	user := testServer.store.UsersByLogin[owner]
-	pr := testServer.store.CreatePullRequest(repo.ID, user.ID, "t", "b", "feature-x", "main", false, nil, nil, 0)
+	seedStorePullRequestBranches(t, s.store, repo, "feature-x")
+	user := s.store.UsersByLogin[owner]
+	pr := s.store.CreatePullRequest(repo.ID, user.ID, "t", "b", "feature-x", "main", false, nil, nil, 0)
 	if pr == nil {
 		t.Fatal("PR not created")
 	}
 
-	testServer.firePullRequestSynchronize(repo, repoKey, "feature-x")
+	s.firePullRequestSynchronize(repo, repoKey, "feature-x")
 
 	var found *Workflow
 	ok := testEventually(2*time.Second, 20*time.Millisecond, func() bool {
-		testServer.store.mu.RLock()
-		for _, w := range testServer.store.Workflows {
+		s.store.mu.RLock()
+		for _, w := range s.store.Workflows {
 			if w.RepoFullName == repoKey && w.EventName == "pull_request" {
 				found = w
 			}
 		}
-		testServer.store.mu.RUnlock()
+		s.store.mu.RUnlock()
 		return found != nil
 	})
 	if !ok {

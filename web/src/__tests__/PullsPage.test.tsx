@@ -97,7 +97,7 @@ function mockPRApis(overrides: (u: string, init?: RequestInit) => Response | und
 function findCall(pathSuffix: string, method?: string): RequestInit | undefined {
   const call = mockFetch.mock.calls.find((c) => {
     const init = c[1] as RequestInit | undefined;
-    return c[0].toString().endsWith(pathSuffix) && init?.method === method;
+    return c[0]!.toString().endsWith(pathSuffix) && init?.method === method;
   });
   if (!call) return undefined;
   return (call[1] as RequestInit | undefined) ?? {};
@@ -132,7 +132,7 @@ describe("PullsPage detail", () => {
     await waitFor(() => {
       expect(screen.getByText("Single fetch PR")).toBeInTheDocument();
     });
-    const calls = mockFetch.mock.calls.map((c) => c[0].toString());
+    const calls = mockFetch.mock.calls.map((c) => c[0]!.toString());
     expect(calls).toContain("/api/v3/repos/admin/test/pulls/77");
   });
 
@@ -190,7 +190,7 @@ describe("PullsPage list pagination", () => {
     await waitFor(() => {
       expect(screen.getByText("third pr")).toBeInTheDocument();
     });
-    const calls = mockFetch.mock.calls.map((c) => c[0].toString());
+    const calls = mockFetch.mock.calls.map((c) => c[0]!.toString());
     expect(calls).toContain(page2Url);
   });
 });
@@ -315,7 +315,7 @@ describe("PullsPage reviews", () => {
     const dismissButtons = screen.getAllByRole("button", { name: /^dismiss$/i });
     expect(dismissButtons.length).toBe(2);
 
-    fireEvent.click(dismissButtons[0]);
+    fireEvent.click(dismissButtons[0]!);
     fireEvent.change(screen.getByLabelText("dismissal message for review 1"), {
       target: { value: "stale approval" },
     });

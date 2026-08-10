@@ -21,7 +21,7 @@ export function MarketplacePublisherPage() {
   return <PublisherEditor key={`${publisher}:${query.data?.updated_at ?? "new"}`} publisher={publisher} listing={query.data ?? undefined} />;
 }
 
-function PublisherEditor({ publisher, listing }: { publisher: string; listing?: GithubMarketplaceListingSettings }) {
+function PublisherEditor({ publisher, listing }: { publisher: string; listing?: GithubMarketplaceListingSettings | undefined }) {
   const client = useQueryClient();
   const [form, setForm] = useState<MarketplaceListingSettingsPayload>({
     name: listing?.name ?? "",

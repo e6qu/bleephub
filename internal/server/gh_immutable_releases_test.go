@@ -10,7 +10,7 @@ func TestImmutableReleases_OrgSettingsAndRepoEnforcement(t *testing.T) {
 	s := newIsolatedServer(t)
 	org := s.createTestOrg(t)
 	repoName, _ := s.createOrgRepoForGovernance(t, org)
-	repoPath := org + "/" + repoName
+	repoPath := repoName.fullName()
 	orgSettings := "/api/v3/orgs/" + org + "/settings/immutable-releases"
 	repoEndpoint := "/api/v3/repos/" + repoPath + "/immutable-releases"
 
@@ -150,7 +150,7 @@ func TestImmutableReleases_SelectedRepositories(t *testing.T) {
 	}
 
 	// The selected repository is enforced; its sibling is not.
-	resp = s.get(t, "/api/v3/repos/"+org+"/"+repoAName+"/immutable-releases", defaultToken)
+	resp = s.get(t, repoAName.path()+"/immutable-releases", defaultToken)
 	if resp.StatusCode != 200 {
 		t.Fatalf("selected repo check: %d", resp.StatusCode)
 	}

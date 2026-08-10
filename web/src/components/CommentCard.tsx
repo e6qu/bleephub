@@ -9,12 +9,12 @@ import { MutationError } from "./MutationError.js";
 import { confirmAction } from "./confirmAction.js";
 
 export interface CommentCardProps {
-  login?: string;
-  body?: string;
+  login?: string | undefined;
+  body?: string | undefined;
   date: string;
-  isOp?: boolean;
+  isOp?: boolean | undefined;
   /** Rendered at the right of the header — e.g. Edit/Delete controls. */
-  headerActions?: ReactNode;
+  headerActions?: ReactNode | undefined;
 }
 
 export function CommentCard({ login, body, date, isOp = false, headerActions }: CommentCardProps) {

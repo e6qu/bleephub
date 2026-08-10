@@ -211,7 +211,14 @@ func (ds *DeploymentStore) DeleteDeployment(id int) bool {
 }
 
 func (ds *DeploymentStore) deleteDeploymentLocked(d *Deployment) {
-	ds.deleteDeploymentBatchLocked(d, nil)
+	// Commit the deployment row and its statuses in one transaction so a crash
+	// can't drop the deployment while orphaning its statuses (STORE-001/002).
+	// The caller holds ds.mu via defer, so a panic here unwinds and releases it.
+	batch := newPersistBatch(ds.persist)
+	ds.deleteDeploymentBatchLocked(d, batch)
+	if err := batch.Commit(); err != nil {
+		panic(&persistenceFailure{op: "batch", bucket: "deployments", key: strconv.Itoa(d.ID), err: err})
+	}
 }
 
 func (ds *DeploymentStore) deleteDeploymentBatchLocked(d *Deployment, batch *persistBatch) {

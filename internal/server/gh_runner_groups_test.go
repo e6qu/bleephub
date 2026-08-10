@@ -6,30 +6,32 @@ import (
 	"testing"
 )
 
-func registerRunnerForLabels(t *testing.T, scope runnerScope) int {
+func (s *isolatedServer) registerRunnerForLabels(t *testing.T, scope runnerScope) int {
 	t.Helper()
 	// Agent registration presents the scoped registration token config.sh is
 	// given, not a personal access token.
 	body := `{"name":"label-runner","labels":[{"name":"self-hosted","type":"system"},{"name":"linux","type":"system"}]}`
 	token := mustRunnerRegistrationToken(t, scope)
-	resp := runnerDo(t, "POST", testBaseURL+"/_apis/v1/Agent/1", token, body)
+	resp := runnerDo(t, "POST", s.baseURL+"/_apis/v1/Agent/1", token, body)
 	agent := decodeJSONWithStatus(t, resp, 200)
 	return int(agent["id"].(float64))
 }
 
 func TestRunnerLabels_Repo_ListSetDelete(t *testing.T) {
-	repo := createTestRepo(t)
-	agentID := registerRunnerForLabels(t, runnerScope{Repo: repo})
+	t.Parallel()
+	s := newIsolatedServer(t)
+	repo := s.createTestRepo(t).fullName()
+	agentID := s.registerRunnerForLabels(t, runnerScope{Repo: repo})
 
 	// List labels: should include the two system labels.
-	listResp := ghGet(t, fmt.Sprintf("/api/v3/repos/%s/actions/runners/%d/labels", repo, agentID), defaultToken)
+	listResp := s.get(t, fmt.Sprintf("/api/v3/repos/%s/actions/runners/%d/labels", repo, agentID), defaultToken)
 	listData := decodeJSONWithStatus(t, listResp, 200)
 	if listData["total_count"].(float64) != 2 {
 		t.Fatalf("initial labels count = %v, want 2", listData["total_count"])
 	}
 
 	// Set custom labels.
-	setResp := ghPut(t, fmt.Sprintf("/api/v3/repos/%s/actions/runners/%d/labels", repo, agentID), defaultToken, map[string]interface{}{
+	setResp := s.put(t, fmt.Sprintf("/api/v3/repos/%s/actions/runners/%d/labels", repo, agentID), defaultToken, map[string]interface{}{
 		"labels": []string{"gpu", "arm64"},
 	})
 	setData := decodeJSONWithStatus(t, setResp, 200)
@@ -38,7 +40,7 @@ func TestRunnerLabels_Repo_ListSetDelete(t *testing.T) {
 	}
 
 	// Delete all custom labels; system labels remain.
-	delResp := ghDelete(t, fmt.Sprintf("/api/v3/repos/%s/actions/runners/%d/labels", repo, agentID), defaultToken)
+	delResp := s.delete(t, fmt.Sprintf("/api/v3/repos/%s/actions/runners/%d/labels", repo, agentID), defaultToken)
 	delData := decodeJSONWithStatus(t, delResp, 200)
 	if delData["total_count"].(float64) != 2 {
 		t.Fatalf("labels after delete = %v, want 2", delData["total_count"])
@@ -53,16 +55,18 @@ func TestRunnerLabels_Repo_ListSetDelete(t *testing.T) {
 }
 
 func TestRunnerLabels_Org_ListSet(t *testing.T) {
-	org := createTestOrg(t)
-	agentID := registerRunnerForLabels(t, runnerScope{Org: org})
+	t.Parallel()
+	s := newIsolatedServer(t)
+	org := s.createTestOrg(t)
+	agentID := s.registerRunnerForLabels(t, runnerScope{Org: org})
 
-	listResp := ghGet(t, fmt.Sprintf("/api/v3/orgs/%s/actions/runners/%d/labels", org, agentID), defaultToken)
+	listResp := s.get(t, fmt.Sprintf("/api/v3/orgs/%s/actions/runners/%d/labels", org, agentID), defaultToken)
 	listData := decodeJSONWithStatus(t, listResp, 200)
 	if listData["total_count"].(float64) != 2 {
 		t.Fatalf("initial org labels count = %v, want 2", listData["total_count"])
 	}
 
-	setResp := ghPut(t, fmt.Sprintf("/api/v3/orgs/%s/actions/runners/%d/labels", org, agentID), defaultToken, map[string]interface{}{
+	setResp := s.put(t, fmt.Sprintf("/api/v3/orgs/%s/actions/runners/%d/labels", org, agentID), defaultToken, map[string]interface{}{
 		"labels": []string{"builder"},
 	})
 	setData := decodeJSONWithStatus(t, setResp, 200)
@@ -72,8 +76,10 @@ func TestRunnerLabels_Org_ListSet(t *testing.T) {
 }
 
 func TestRunnerLabels_Org_UnknownOrg(t *testing.T) {
-	agentID := registerRunnerForLabels(t, runnerScope{Org: "different-org"})
-	listResp := ghGet(t, fmt.Sprintf("/api/v3/orgs/no-such-org-999/actions/runners/%d/labels", agentID), defaultToken)
+	t.Parallel()
+	s := newIsolatedServer(t)
+	agentID := s.registerRunnerForLabels(t, runnerScope{Org: "different-org"})
+	listResp := s.get(t, fmt.Sprintf("/api/v3/orgs/no-such-org-999/actions/runners/%d/labels", agentID), defaultToken)
 	if listResp.StatusCode != 404 {
 		body, _ := io.ReadAll(listResp.Body)
 		listResp.Body.Close()
@@ -83,8 +89,10 @@ func TestRunnerLabels_Org_UnknownOrg(t *testing.T) {
 }
 
 func TestRunnerLabels_Repo_UnknownRunner(t *testing.T) {
-	repo := createTestRepo(t)
-	listResp := ghGet(t, fmt.Sprintf("/api/v3/repos/%s/actions/runners/999999/labels", repo), defaultToken)
+	t.Parallel()
+	s := newIsolatedServer(t)
+	repo := s.createTestRepo(t).fullName()
+	listResp := s.get(t, fmt.Sprintf("/api/v3/repos/%s/actions/runners/999999/labels", repo), defaultToken)
 	if listResp.StatusCode != 404 {
 		body, _ := io.ReadAll(listResp.Body)
 		listResp.Body.Close()

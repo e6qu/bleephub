@@ -190,6 +190,11 @@ func (s *Server) renameGHESOrganization(oldLogin, newLogin string) bool {
 	}
 
 	s.store.mu.Lock()
+	// Stage the whole final re-key phase — membership key moves, installation
+	// target updates, the org row and enterprise settings — into one
+	// transaction so a crash can no longer commit some of them and leave the
+	// organization split across its old and new login (STORE-001/002).
+	batch := newPersistBatch(s.store.persist)
 	delete(s.store.OrgsByLogin, oldLogin)
 	for key, membership := range s.store.Memberships {
 		if membership.OrgID != org.ID {
@@ -198,10 +203,8 @@ func (s *Server) renameGHESOrganization(oldLogin, newLogin string) bool {
 		nextKey := membershipKey(newLogin, membership.UserID)
 		delete(s.store.Memberships, key)
 		s.store.Memberships[nextKey] = membership
-		if s.store.persist != nil {
-			s.store.persist.MustDelete("memberships", key)
-			s.store.persist.MustPut("memberships", nextKey, membership)
-		}
+		batch.Delete("memberships", key)
+		batch.Put("memberships", nextKey, membership)
 	}
 	for key, team := range s.store.TeamsBySlug {
 		if team.OrgID != org.ID {
@@ -213,17 +216,17 @@ func (s *Server) renameGHESOrganization(oldLogin, newLogin string) bool {
 	for _, installation := range s.store.Installations {
 		if installation.TargetType == "Organization" && installation.TargetID == org.ID {
 			installation.TargetLogin = newLogin
-			if s.store.persist != nil {
-				s.store.persist.MustPut("installations", strconv.Itoa(installation.ID), installation)
-			}
+			batch.Put("installations", strconv.Itoa(installation.ID), installation)
 		}
 	}
 	moveGHESOrgScopedState(s.store, oldLogin, newLogin)
-	if s.store.persist != nil {
-		s.store.persist.MustPut("orgs", strconv.Itoa(org.ID), org)
-	}
-	s.store.persistEnterpriseSettings()
+	batch.Put("orgs", strconv.Itoa(org.ID), org)
+	batch.Put("enterprise_settings", "enterprise", s.store.EnterpriseSettings)
+	err := batch.Commit()
 	s.store.mu.Unlock()
+	if err != nil {
+		panic(&persistenceFailure{op: "batch", bucket: "orgs", key: strconv.Itoa(org.ID), err: err})
+	}
 	return true
 }
 

@@ -77,22 +77,27 @@ func TestStressPRSerializerRace(t *testing.T) {
 // watchdog fails it if a lock-order inversion deadlocks the whole set instead
 // of letting the go-test timeout kill the binary.
 func TestStressReaderWriterLockGraph(t *testing.T) {
-	h := wrappedTestHandler(testServer)
+	t.Parallel()
+	s := newIsolatedServer(t)
+	h := wrappedTestHandler(s.Server)
 	tok := defaultToken
 
 	// A repo with issues + a PR gives the GraphQL PR serializer and the
 	// search/notification scans something non-trivial to render.
 	const repoName = "stress-lockgraph"
-	if r := ghPost(t, "/api/v3/user/repos", tok, map[string]interface{}{"name": repoName}); r.StatusCode != 201 && r.StatusCode != 422 {
+	r, err := doReq(h, "POST", "/api/v3/user/repos", tok, map[string]interface{}{"name": repoName})
+	if err != nil {
+		t.Fatalf("seed repo: %v", err)
+	}
+	if r.StatusCode != 201 && r.StatusCode != 422 {
 		drainClose(r)
 		t.Fatalf("seed repo: %d", r.StatusCode)
-	} else {
-		drainClose(r)
 	}
+	drainClose(r)
 	repoPath := "/api/v3/repos/admin/" + repoName
 	for j := 0; j < 4; j++ {
-		if r := ghPost(t, repoPath+"/issues", tok, map[string]interface{}{"title": fmt.Sprintf("lg issue %d", j), "body": "b"}); r != nil {
-			drainClose(r)
+		if ir, ierr := doReq(h, "POST", repoPath+"/issues", tok, map[string]interface{}{"title": fmt.Sprintf("lg issue %d", j), "body": "b"}); ierr == nil && ir != nil {
+			drainClose(ir)
 		}
 	}
 

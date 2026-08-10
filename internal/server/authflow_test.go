@@ -561,28 +561,30 @@ func TestRepositorySecretHandlersKeyOffTheResolvedRepository(t *testing.T) {
 // authflowProtectedRepo creates an auto-initialised repository on the shared
 // harness, protects main, and returns the repository name plus a pushing
 // collaborator's token.
-func authflowProtectedRepo(t *testing.T) (repoName string, pushToken string) {
+func (s *isolatedServer) authflowProtectedRepo(t *testing.T) (repoName string, pushToken string) {
 	t.Helper()
-	repoName = createRepoWriteRepo(t, true)
-	repo := testServer.store.GetRepo("admin", repoName)
+	repoName = s.createRepoWriteRepo(t, true)
+	repo := s.store.GetRepo("admin", repoName)
 	if repo == nil {
 		t.Fatalf("fixture repository admin/%s not found", repoName)
 	}
-	testServer.setBranchProtection(repo, "main", &BranchProtection{
+	s.setBranchProtection(repo, "main", &BranchProtection{
 		EnforceAdmins: &BPEnforceAdmins{Enabled: false},
 	})
-	pusher, token := authflowStranger(t, testServer, authflowName("pusher"))
-	if !testServer.store.AddRepoCollaborator("admin", repoName, pusher.Login, "push") {
+	pusher, token := authflowStranger(t, s.Server, authflowName("pusher"))
+	if !s.store.AddRepoCollaborator("admin", repoName, pusher.Login, "push") {
 		t.Fatal("could not add the pushing collaborator")
 	}
 	return repoName, token
 }
 
 func TestProtectedBranchRefusesForcePushWithoutAdmin(t *testing.T) {
-	repoName, pushToken := authflowProtectedRepo(t)
+	t.Parallel()
+	s := newIsolatedServer(t)
+	repoName, pushToken := s.authflowProtectedRepo(t)
 	base := "/api/v3/repos/admin/" + repoName
 
-	head := decodeJSONWithStatus(t, ghGet(t, base+"/git/refs/heads/main", defaultToken), 200)
+	head := decodeJSONWithStatus(t, s.get(t, base+"/git/refs/heads/main", defaultToken), 200)
 	object, _ := head["object"].(map[string]interface{})
 	sha, _ := object["sha"].(string)
 	if sha == "" {
@@ -590,11 +592,11 @@ func TestProtectedBranchRefusesForcePushWithoutAdmin(t *testing.T) {
 	}
 
 	body := map[string]interface{}{"sha": sha, "force": true}
-	resp := ghPatch(t, base+"/git/refs/heads/main", pushToken, body)
+	resp := s.patch(t, base+"/git/refs/heads/main", pushToken, body)
 	requireStatus(t, resp, http.StatusForbidden)
 
-	_, strangerToken := authflowStranger(t, testServer, authflowName("noaccess"))
-	resp = ghPatch(t, base+"/git/refs/heads/main", strangerToken, body)
+	_, strangerToken := authflowStranger(t, s.Server, authflowName("noaccess"))
+	resp = s.patch(t, base+"/git/refs/heads/main", strangerToken, body)
 	if resp.StatusCode == http.StatusOK {
 		resp.Body.Close()
 		t.Fatalf("a non-collaborator force-pushed refs/heads/main")
@@ -603,14 +605,16 @@ func TestProtectedBranchRefusesForcePushWithoutAdmin(t *testing.T) {
 }
 
 func TestProtectedBranchRefusesDeletionWithoutAdmin(t *testing.T) {
-	repoName, pushToken := authflowProtectedRepo(t)
+	t.Parallel()
+	s := newIsolatedServer(t)
+	repoName, pushToken := s.authflowProtectedRepo(t)
 	base := "/api/v3/repos/admin/" + repoName
 
-	resp := ghDelete(t, base+"/git/refs/heads/main", pushToken)
+	resp := s.delete(t, base+"/git/refs/heads/main", pushToken)
 	requireStatus(t, resp, http.StatusForbidden)
 
-	_, strangerToken := authflowStranger(t, testServer, authflowName("nodelete"))
-	resp = ghDelete(t, base+"/git/refs/heads/main", strangerToken)
+	_, strangerToken := authflowStranger(t, s.Server, authflowName("nodelete"))
+	resp = s.delete(t, base+"/git/refs/heads/main", strangerToken)
 	if resp.StatusCode == http.StatusNoContent {
 		resp.Body.Close()
 		t.Fatalf("a non-collaborator deleted refs/heads/main")
@@ -618,24 +622,28 @@ func TestProtectedBranchRefusesDeletionWithoutAdmin(t *testing.T) {
 	resp.Body.Close()
 
 	// The branch survived both attempts.
-	requireStatus(t, ghGet(t, base+"/git/refs/heads/main", defaultToken), 200)
+	requireStatus(t, s.get(t, base+"/git/refs/heads/main", defaultToken), 200)
 }
 
 // TestProtectedBranchAllowanceIsHonoured keeps the gate from becoming a blanket
 // refusal: allow_deletions is exactly the setting that permits the deletion.
 func TestProtectedBranchAllowanceIsHonoured(t *testing.T) {
-	repoName, pushToken := authflowProtectedRepo(t)
-	repo := testServer.store.GetRepo("admin", repoName)
-	testServer.setBranchProtection(repo, "main", &BranchProtection{
+	t.Parallel()
+	s := newIsolatedServer(t)
+	repoName, pushToken := s.authflowProtectedRepo(t)
+	repo := s.store.GetRepo("admin", repoName)
+	s.setBranchProtection(repo, "main", &BranchProtection{
 		AllowDeletions: &BPEnabled{Enabled: true},
 	})
-	requireStatus(t, ghDelete(t, "/api/v3/repos/admin/"+repoName+"/git/refs/heads/main", pushToken), 204)
+	requireStatus(t, s.delete(t, "/api/v3/repos/admin/"+repoName+"/git/refs/heads/main", pushToken), 204)
 }
 
 // --- branch protection is administrator-only ---
 
 func TestBranchProtectionRefusesNonAdmins(t *testing.T) {
-	repoName, pushToken := authflowProtectedRepo(t)
+	t.Parallel()
+	s := newIsolatedServer(t)
+	repoName, pushToken := s.authflowProtectedRepo(t)
 	base := "/api/v3/repos/admin/" + repoName + "/branches/main/protection"
 
 	writes := []struct {
@@ -652,11 +660,11 @@ func TestBranchProtectionRefusesNonAdmins(t *testing.T) {
 		var resp *http.Response
 		switch tc.method {
 		case "PUT":
-			resp = ghPut(t, tc.path, pushToken, tc.body)
+			resp = s.put(t, tc.path, pushToken, tc.body)
 		case "POST":
-			resp = ghPost(t, tc.path, pushToken, tc.body)
+			resp = s.post(t, tc.path, pushToken, tc.body)
 		default:
-			resp = ghDelete(t, tc.path, pushToken)
+			resp = s.delete(t, tc.path, pushToken)
 		}
 		if resp.StatusCode >= 200 && resp.StatusCode < 300 {
 			resp.Body.Close()
@@ -667,7 +675,7 @@ func TestBranchProtectionRefusesNonAdmins(t *testing.T) {
 	}
 
 	for _, path := range []string{base, base + "/enforce_admins", base + "/restrictions"} {
-		resp := ghGet(t, path, pushToken)
+		resp := s.get(t, path, pushToken)
 		if resp.StatusCode >= 200 && resp.StatusCode < 300 {
 			resp.Body.Close()
 			t.Errorf("GET %s by a pushing non-admin status = %d, want a denial", path, resp.StatusCode)
@@ -678,7 +686,7 @@ func TestBranchProtectionRefusesNonAdmins(t *testing.T) {
 
 	// The owner is still served, so the denials above are a gate and not an
 	// endpoint that refuses everyone.
-	requireStatus(t, ghGet(t, base, defaultToken), 200)
+	requireStatus(t, s.get(t, base, defaultToken), 200)
 }
 
 // --- source import must not fetch private address space ---
@@ -779,9 +787,11 @@ func TestRetiredEnvVarIsRefusedRatherThanIgnored(t *testing.T) {
 // --- the invented per-username codespaces route is gone ---
 
 func TestUserCodespacesByLoginRouteIsNotRegistered(t *testing.T) {
-	victim, _ := authflowStranger(t, testServer, authflowName("cs-victim"))
+	t.Parallel()
+	s := newIsolatedServer(t)
+	victim, _ := authflowStranger(t, s.Server, authflowName("cs-victim"))
 	for _, token := range []string{"", defaultToken} {
-		resp := ghGet(t, "/api/v3/users/"+victim.Login+"/codespaces", token)
+		resp := s.get(t, "/api/v3/users/"+victim.Login+"/codespaces", token)
 		resp.Body.Close()
 		if resp.StatusCode != http.StatusNotFound {
 			t.Fatalf("GET /users/%s/codespaces status = %d, want 404 — the route is not a real GitHub endpoint",
@@ -793,9 +803,11 @@ func TestUserCodespacesByLoginRouteIsNotRegistered(t *testing.T) {
 // --- gist sub-resources honour visibility ---
 
 func TestSecretGistSubResourcesRefuseAnonymousCallers(t *testing.T) {
-	owner, ownerToken := authflowStranger(t, testServer, authflowName("gist-owner"))
+	t.Parallel()
+	s := newIsolatedServer(t)
+	owner, ownerToken := authflowStranger(t, s.Server, authflowName("gist-owner"))
 	_ = owner
-	created := decodeJSONWithStatus(t, ghPost(t, "/api/v3/gists", ownerToken, map[string]interface{}{
+	created := decodeJSONWithStatus(t, s.post(t, "/api/v3/gists", ownerToken, map[string]interface{}{
 		"description": "secret",
 		"public":      false,
 		"files":       map[string]interface{}{"secret.txt": map[string]interface{}{"content": "TOP-SECRET-GIST-BODY"}},
@@ -805,7 +817,7 @@ func TestSecretGistSubResourcesRefuseAnonymousCallers(t *testing.T) {
 		t.Fatalf("no gist id in %v", created)
 	}
 
-	commits := decodeJSONWithStatus2xxArray(t, ghGet(t, "/api/v3/gists/"+id+"/commits", ownerToken), 200)
+	commits := decodeJSONWithStatus2xxArray(t, s.get(t, "/api/v3/gists/"+id+"/commits", ownerToken), 200)
 	if len(commits) == 0 {
 		t.Fatal("the secret gist has no revisions to address")
 	}
@@ -821,7 +833,7 @@ func TestSecretGistSubResourcesRefuseAnonymousCallers(t *testing.T) {
 		"/api/v3/gists/" + id + "/forks",
 		"/api/v3/gists/" + id + "/comments",
 	} {
-		resp := ghGet(t, path, "")
+		resp := s.get(t, path, "")
 		body := readAllString(t, resp)
 		if resp.StatusCode != http.StatusNotFound {
 			t.Errorf("anonymous GET %s status = %d, want 404", path, resp.StatusCode)
@@ -832,12 +844,12 @@ func TestSecretGistSubResourcesRefuseAnonymousCallers(t *testing.T) {
 	}
 
 	// A stranger with a credential is no better placed than an anonymous one.
-	_, strangerToken := authflowStranger(t, testServer, authflowName("gist-stranger"))
+	_, strangerToken := authflowStranger(t, s.Server, authflowName("gist-stranger"))
 	for _, path := range []string{
 		"/api/v3/gists/" + id + "/" + sha,
 		"/api/v3/gists/" + id + "/commits",
 	} {
-		resp := ghGet(t, path, strangerToken)
+		resp := s.get(t, path, strangerToken)
 		body := readAllString(t, resp)
 		if resp.StatusCode != http.StatusNotFound {
 			t.Errorf("stranger GET %s status = %d, want 404", path, resp.StatusCode)
@@ -848,9 +860,9 @@ func TestSecretGistSubResourcesRefuseAnonymousCallers(t *testing.T) {
 	}
 
 	// The owner still reaches every one of them.
-	requireStatus(t, ghGet(t, "/api/v3/gists/"+id+"/"+sha, ownerToken), 200)
-	requireStatus(t, ghGet(t, "/api/v3/gists/"+id+"/forks", ownerToken), 200)
-	requireStatus(t, ghGet(t, "/api/v3/gists/"+id+"/comments", ownerToken), 200)
+	requireStatus(t, s.get(t, "/api/v3/gists/"+id+"/"+sha, ownerToken), 200)
+	requireStatus(t, s.get(t, "/api/v3/gists/"+id+"/forks", ownerToken), 200)
+	requireStatus(t, s.get(t, "/api/v3/gists/"+id+"/comments", ownerToken), 200)
 }
 
 func readAllString(t *testing.T, resp *http.Response) string {

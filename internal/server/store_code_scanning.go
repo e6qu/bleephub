@@ -152,11 +152,33 @@ func (st *Store) CreateCodeScanningAlert(repoKey, ruleID, severity, description,
 	return alert
 }
 
+// cloneCodeScanningAlert returns a deep copy safe to hand outside the store
+// lock (STORE-021): Instances, DismissedAt and FixedAt are the only reference
+// fields. Mutations go through UpdateCodeScanningAlert against the live row.
+func cloneCodeScanningAlert(a *CodeScanningAlert) *CodeScanningAlert {
+	if a == nil {
+		return nil
+	}
+	clone := *a
+	if a.Instances != nil {
+		clone.Instances = append([]CodeScanningAlertInstance(nil), a.Instances...)
+	}
+	if a.DismissedAt != nil {
+		dismissed := *a.DismissedAt
+		clone.DismissedAt = &dismissed
+	}
+	if a.FixedAt != nil {
+		fixed := *a.FixedAt
+		clone.FixedAt = &fixed
+	}
+	return &clone
+}
+
 // GetCodeScanningAlert returns an alert by repo + alert number.
 func (st *Store) GetCodeScanningAlert(repoKey string, number int) *CodeScanningAlert {
 	st.mu.RLock()
 	defer st.mu.RUnlock()
-	return st.CodeScanningAlertsByRepo[repoKey][number]
+	return cloneCodeScanningAlert(st.CodeScanningAlertsByRepo[repoKey][number])
 }
 
 // ListCodeScanningAlerts returns repo alerts filtered/sorted per GitHub's list
@@ -203,43 +225,52 @@ func (st *Store) ListCodeScanningAlerts(repoKey, state, severity, toolName, rule
 		}
 		return !less
 	})
-	return out
+	return snapshotCodeScanningAlerts(out)
 }
 
 // UpdateCodeScanningAlert applies a state/dismissed_reason transition to a
 // single alert. Valid transitions mirror real GitHub: open → dismissed,
 // open → fixed, dismissed → open.
+// UpdateCodeScanningAlert applies a state transition. `a` now comes from
+// GetCodeScanningAlert, which returns a detached clone, so the mutation is
+// applied to the LIVE row (re-fetched by key) and a fresh snapshot is written
+// back into `a` for the caller to render — never the live pointer.
 func (st *Store) UpdateCodeScanningAlert(a *CodeScanningAlert, state, dismissedReason, dismissedComment string) error {
 	st.mu.Lock()
 	defer st.mu.Unlock()
 
-	if err := validateCodeScanningTransition(string(a.State), state, dismissedReason); err != nil {
+	live := st.CodeScanningAlertsByRepo[a.RepoKey][a.Number]
+	if live == nil {
+		return fmt.Errorf("code scanning alert %s#%d not found", a.RepoKey, a.Number)
+	}
+	if err := validateCodeScanningTransition(string(live.State), state, dismissedReason); err != nil {
 		return err
 	}
 
 	now := st.currentTime()
 	switch state {
 	case "dismissed":
-		a.State = CodeScanningStateDismissed
-		a.DismissedReason = CodeScanningDismissedReason(dismissedReason)
-		a.DismissedComment = dismissedComment
-		a.DismissedAt = &now
-		a.FixedAt = nil
+		live.State = CodeScanningStateDismissed
+		live.DismissedReason = CodeScanningDismissedReason(dismissedReason)
+		live.DismissedComment = dismissedComment
+		live.DismissedAt = &now
+		live.FixedAt = nil
 	case "fixed":
-		a.State = CodeScanningStateFixed
-		a.FixedAt = &now
-		a.DismissedReason = ""
-		a.DismissedComment = ""
-		a.DismissedAt = nil
+		live.State = CodeScanningStateFixed
+		live.FixedAt = &now
+		live.DismissedReason = ""
+		live.DismissedComment = ""
+		live.DismissedAt = nil
 	case "open":
-		a.State = CodeScanningStateOpen
-		a.DismissedReason = ""
-		a.DismissedComment = ""
-		a.DismissedAt = nil
-		a.FixedAt = nil
+		live.State = CodeScanningStateOpen
+		live.DismissedReason = ""
+		live.DismissedComment = ""
+		live.DismissedAt = nil
+		live.FixedAt = nil
 	}
-	a.UpdatedAt = now
-	st.persistCodeScanningAlert(a)
+	live.UpdatedAt = now
+	st.persistCodeScanningAlert(live)
+	*a = *cloneCodeScanningAlert(live)
 	return nil
 }
 
@@ -333,7 +364,7 @@ func (st *Store) ListCodeScanningAnalyses(repoKey, ref, toolName string) []*Code
 		out = append(out, a)
 	}
 	sort.SliceStable(out, func(i, j int) bool { return out[i].ID > out[j].ID })
-	return out
+	return snapshotSlice(out)
 }
 
 // DeleteCodeScanningAnalysis removes an analysis from the store.
@@ -668,7 +699,16 @@ type CodeScanningDefaultSetup struct {
 func (st *Store) GetCodeScanningDefaultSetup(repoKey string) *CodeScanningDefaultSetup {
 	st.mu.RLock()
 	defer st.mu.RUnlock()
-	return st.CodeScanningDefaultSetups[repoKey]
+	// Detach from the stored row: SetCodeScanningDefaultSetup stamps UpdatedAt on
+	// the configuration in place, so a reader must hold an independent snapshot
+	// (with its own Languages slice).
+	s := st.CodeScanningDefaultSetups[repoKey]
+	if s == nil {
+		return nil
+	}
+	clone := *s
+	clone.Languages = append([]string(nil), s.Languages...)
+	return &clone
 }
 
 // SetCodeScanningDefaultSetup records (and persists) a repo's default
@@ -816,7 +856,7 @@ func (st *Store) ListCodeScanningAlertsByOrg(orgID int, state, severity, toolNam
 	sortAlertList(out, sortField, direction,
 		func(a *CodeScanningAlert) time.Time { return a.CreatedAt },
 		func(a *CodeScanningAlert) time.Time { return a.UpdatedAt })
-	return out
+	return snapshotCodeScanningAlerts(out)
 }
 
 // CodeScanningAutofix is a Copilot Autofix suggestion for one code
@@ -841,7 +881,15 @@ func autofixKey(repoKey string, number int) string {
 func (st *Store) GetCodeScanningAutofix(repoKey string, number int) *CodeScanningAutofix {
 	st.mu.RLock()
 	defer st.mu.RUnlock()
-	return st.CodeScanningAutofixes[autofixKey(repoKey, number)]
+	// The autofix is write-once today, but hand back a detached value copy (it
+	// has no reference fields) so a future in-place status update can't race a
+	// reader.
+	a := st.CodeScanningAutofixes[autofixKey(repoKey, number)]
+	if a == nil {
+		return nil
+	}
+	clone := *a
+	return &clone
 }
 
 // CreateCodeScanningAutofix generates and stores the autofix for an
@@ -976,6 +1024,13 @@ func (st *Store) UpsertCodeQLDatabase(repoKey, language, name, contentType, comm
 }
 
 // GetCodeQLDatabase returns the CodeQL database for a repo + language.
+//
+// Unlike the other store getters this intentionally returns the live row rather
+// than a snapshot: a stored database is write-once (UpsertCodeQLDatabase builds
+// a fresh row and swaps the map pointer under the write lock rather than
+// mutating an existing one, and nothing else mutates it in place), so a reader
+// holding the pointer never races a writer. Its Content field can hold the full
+// database blob, which cloning on every metadata read would needlessly copy.
 func (st *Store) GetCodeQLDatabase(repoKey, language string) *CodeQLDatabase {
 	st.mu.RLock()
 	defer st.mu.RUnlock()
@@ -983,6 +1038,11 @@ func (st *Store) GetCodeQLDatabase(repoKey, language string) *CodeQLDatabase {
 }
 
 // ListCodeQLDatabases returns a repo's CodeQL databases sorted by language.
+// ListCodeQLDatabases returns live rows deliberately, matching GetCodeQLDatabase:
+// a stored database is write-once (UpsertCodeQLDatabase swaps a fresh row rather
+// than mutating in place) and its Content field can hold the full database blob
+// that cloning on every list would needlessly copy (STORE-021 documented
+// exception).
 func (st *Store) ListCodeQLDatabases(repoKey string) []*CodeQLDatabase {
 	st.mu.RLock()
 	defer st.mu.RUnlock()

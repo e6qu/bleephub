@@ -1168,14 +1168,16 @@ func TestGraphQLHasIssuesEnabled(t *testing.T) {
 // from the viewer's real access, not a hardcoded ADMIN: an anonymous viewer of
 // a public repo gets READ (not ADMIN).
 func TestGraphQLViewerPermissionNotHardcoded(t *testing.T) {
-	createTestIssueRepo(t, "gql-viewer-perm")
+	t.Parallel()
+	s := newIsolatedServer(t)
+	s.createTestIssueRepo(t, "gql-viewer-perm")
 
 	// A signed-in user who is not the owner. The endpoint requires
 	// authentication, so the earlier anonymous form of this test could not
 	// distinguish "viewerPermission is computed" from "the request was
 	// refused" — an authenticated non-owner tests the same property and is a
 	// request GitHub would actually serve.
-	store := testServer.store
+	store := s.store
 	store.mu.Lock()
 	outsider := &User{ID: store.NextUser, Login: "gql-viewer-perm-outsider", Type: "User"}
 	store.Users[outsider.ID] = outsider
@@ -1184,7 +1186,7 @@ func TestGraphQLViewerPermissionNotHardcoded(t *testing.T) {
 	store.mu.Unlock()
 	outsiderToken := store.CreateToken(outsider.ID, "repo")
 
-	resp := ghPost(t, "/api/graphql", outsiderToken.Value, map[string]interface{}{
+	resp := s.post(t, "/api/graphql", outsiderToken.Value, map[string]interface{}{
 		"query": `{repository(owner:"admin",name:"gql-viewer-perm"){viewerPermission}}`,
 	})
 	if resp.StatusCode != 200 {

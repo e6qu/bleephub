@@ -12,17 +12,19 @@ import (
 // endpoints through the shared TestMain server so the OpenAPI response-shape
 // validator observes them.
 func TestLiveMigrations_UserAndOrg(t *testing.T) {
-	admin := testServer.store.UsersByLogin["admin"]
-	repo := testServer.store.CreateRepo(admin, "live-migration-repo", "live", false)
-	org := testServer.store.CreateOrg(admin, "live-migration-org", "Live Org", "")
-	orgRepo := testServer.store.CreateOrgRepo(org, admin, "live-org-repo", "live org", false)
+	t.Parallel()
+	s := newIsolatedServer(t)
+	admin := s.store.UsersByLogin["admin"]
+	repo := s.store.CreateRepo(admin, "live-migration-repo", "live", false)
+	org := s.store.CreateOrg(admin, "live-migration-org", "Live Org", "")
+	orgRepo := s.store.CreateOrgRepo(org, admin, "live-org-repo", "live org", false)
 
 	// Start user migration
 	body, _ := json.Marshal(map[string]any{
 		"repositories":      []string{repo.FullName},
 		"lock_repositories": true,
 	})
-	resp, err := authedPost("/api/v3/user/migrations", "application/json", bytes.NewReader(body))
+	resp, err := s.authedPost("/api/v3/user/migrations", "application/json", bytes.NewReader(body))
 	if err != nil {
 		t.Fatalf("create user migration: %v", err)
 	}
@@ -39,7 +41,7 @@ func TestLiveMigrations_UserAndOrg(t *testing.T) {
 	userID := int(userMig["id"].(float64))
 
 	// List user migrations
-	resp = authedGet(t, "/api/v3/user/migrations")
+	resp = s.authedGet(t, "/api/v3/user/migrations")
 	if resp.StatusCode != http.StatusOK {
 		b, _ := io.ReadAll(resp.Body)
 		resp.Body.Close()
@@ -49,7 +51,7 @@ func TestLiveMigrations_UserAndOrg(t *testing.T) {
 	resp.Body.Close()
 
 	// Get user migration
-	resp = authedGet(t, "/api/v3/user/migrations/"+itoa(userID))
+	resp = s.authedGet(t, "/api/v3/user/migrations/"+itoa(userID))
 	if resp.StatusCode != http.StatusOK {
 		b, _ := io.ReadAll(resp.Body)
 		resp.Body.Close()
@@ -62,7 +64,7 @@ func TestLiveMigrations_UserAndOrg(t *testing.T) {
 		"repositories":      []string{orgRepo.FullName},
 		"lock_repositories": true,
 	})
-	resp, err = authedPost("/api/v3/orgs/"+org.Login+"/migrations", "application/json", bytes.NewReader(body))
+	resp, err = s.authedPost("/api/v3/orgs/"+org.Login+"/migrations", "application/json", bytes.NewReader(body))
 	if err != nil {
 		t.Fatalf("create org migration: %v", err)
 	}
@@ -79,7 +81,7 @@ func TestLiveMigrations_UserAndOrg(t *testing.T) {
 	orgMigID := int(orgMig["id"].(float64))
 
 	// List org migrations
-	resp = authedGet(t, "/api/v3/orgs/"+org.Login+"/migrations")
+	resp = s.authedGet(t, "/api/v3/orgs/"+org.Login+"/migrations")
 	if resp.StatusCode != http.StatusOK {
 		b, _ := io.ReadAll(resp.Body)
 		resp.Body.Close()
@@ -89,7 +91,7 @@ func TestLiveMigrations_UserAndOrg(t *testing.T) {
 	resp.Body.Close()
 
 	// Get org migration
-	resp = authedGet(t, "/api/v3/orgs/"+org.Login+"/migrations/"+itoa(orgMigID))
+	resp = s.authedGet(t, "/api/v3/orgs/"+org.Login+"/migrations/"+itoa(orgMigID))
 	if resp.StatusCode != http.StatusOK {
 		b, _ := io.ReadAll(resp.Body)
 		resp.Body.Close()
@@ -98,7 +100,7 @@ func TestLiveMigrations_UserAndOrg(t *testing.T) {
 	resp.Body.Close()
 
 	// Unlock the migrated repository through GitHub's documented operation.
-	req, _ := http.NewRequest(http.MethodDelete, testBaseURL+"/api/v3/orgs/"+org.Login+"/migrations/"+itoa(orgMigID)+"/repos/"+orgRepo.Name+"/lock", nil)
+	req, _ := http.NewRequest(http.MethodDelete, s.baseURL+"/api/v3/orgs/"+org.Login+"/migrations/"+itoa(orgMigID)+"/repos/"+orgRepo.Name+"/lock", nil)
 	req.Header.Set("Authorization", "Bearer "+defaultToken)
 	resp, err = http.DefaultClient.Do(req)
 	if err != nil {

@@ -243,7 +243,7 @@ func (st *Store) ListPendingRepoInvitations(repoKey string) []*RepoInvitation {
 		}
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].ID < out[j].ID })
-	return out
+	return snapshotSlice(out)
 }
 
 // GetRepoInvitation returns an invitation by repository key and ID, or nil.
@@ -311,7 +311,7 @@ func (st *Store) ListUserRepoInvitations(user *User) []*RepoInvitation {
 		}
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].ID < out[j].ID })
-	return out
+	return snapshotSlice(out)
 }
 
 // AcceptRepoInvitation accepts an invitation for the user, adding them as a

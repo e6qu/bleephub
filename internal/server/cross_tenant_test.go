@@ -30,9 +30,9 @@ type crossTenantFixture struct {
 	attackerTok  string
 }
 
-func newCrossTenantFixture(t *testing.T, tag string) *crossTenantFixture {
+func (s *isolatedServer) newCrossTenantFixture(t *testing.T, tag string) *crossTenantFixture {
 	t.Helper()
-	store := testServer.store
+	store := s.store
 	now := fixedTestTime.UTC()
 
 	mkUser := func(login string) *User {
@@ -77,8 +77,10 @@ func assertStatus(t *testing.T, resp *http.Response, want int, what string) {
 }
 
 func TestCrossTenantCheckRunsAndSuitesAreNotReachableByID(t *testing.T) {
-	f := newCrossTenantFixture(t, "checks")
-	store := testServer.store
+	t.Parallel()
+	s := newIsolatedServer(t)
+	f := s.newCrossTenantFixture(t, "checks")
+	store := s.store
 
 	suite := store.CreateCheckSuite(f.victimRepo.FullName, "main", "deadbeefdeadbeefdeadbeefdeadbeefdeadbeef", 0)
 	if suite == nil {
@@ -95,18 +97,18 @@ func TestCrossTenantCheckRunsAndSuitesAreNotReachableByID(t *testing.T) {
 
 	// Positive control: the owner reaches its own check run and suite, so a 404
 	// below means the guard fired rather than the fixture being unreachable.
-	assertStatus(t, ghGet(t, runPath(victimBase), f.victimToken), http.StatusOK, "owner GET check run")
-	assertStatus(t, ghGet(t, suitePath(victimBase), f.victimToken), http.StatusOK, "owner GET check suite")
+	assertStatus(t, s.get(t, runPath(victimBase), f.victimToken), http.StatusOK, "owner GET check run")
+	assertStatus(t, s.get(t, suitePath(victimBase), f.victimToken), http.StatusOK, "owner GET check suite")
 
-	assertStatus(t, ghGet(t, runPath(attackerBase), f.attackerTok),
+	assertStatus(t, s.get(t, runPath(attackerBase), f.attackerTok),
 		http.StatusNotFound, "cross-tenant GET check run")
-	assertStatus(t, ghGet(t, runPath(attackerBase)+"/annotations", f.attackerTok),
+	assertStatus(t, s.get(t, runPath(attackerBase)+"/annotations", f.attackerTok),
 		http.StatusNotFound, "cross-tenant GET check run annotations")
-	assertStatus(t, ghPatch(t, runPath(attackerBase), f.attackerTok, map[string]interface{}{"name": "pwned"}),
+	assertStatus(t, s.patch(t, runPath(attackerBase), f.attackerTok, map[string]interface{}{"name": "pwned"}),
 		http.StatusNotFound, "cross-tenant PATCH check run")
-	assertStatus(t, ghGet(t, suitePath(attackerBase), f.attackerTok),
+	assertStatus(t, s.get(t, suitePath(attackerBase), f.attackerTok),
 		http.StatusNotFound, "cross-tenant GET check suite")
-	assertStatus(t, ghGet(t, suitePath(attackerBase)+"/check-runs", f.attackerTok),
+	assertStatus(t, s.get(t, suitePath(attackerBase)+"/check-runs", f.attackerTok),
 		http.StatusNotFound, "cross-tenant GET check suite runs")
 
 	if got := store.GetCheckRun(run.ID); got == nil || got.Name != "victim-only" {
@@ -115,8 +117,10 @@ func TestCrossTenantCheckRunsAndSuitesAreNotReachableByID(t *testing.T) {
 }
 
 func TestCrossTenantDeploymentStatusIsNotReachableByID(t *testing.T) {
-	f := newCrossTenantFixture(t, "deployments")
-	deployments := testServer.store.Deployments
+	t.Parallel()
+	s := newIsolatedServer(t)
+	f := s.newCrossTenantFixture(t, "deployments")
+	deployments := s.store.Deployments
 
 	victimDep := deployments.CreateDeployment(f.victimRepo.ID, f.victim.ID, "main", "sha", "deploy", "production", "victim", nil, true, false)
 	victimStatus, _ := deployments.AddStatus(victimDep.ID, f.victim.ID, "success", "victim-only", "", "", "", "production", false)
@@ -127,23 +131,25 @@ func TestCrossTenantDeploymentStatusIsNotReachableByID(t *testing.T) {
 
 	victimPath := "/api/v3/repos/" + f.victimRepo.FullName +
 		"/deployments/" + itoa(victimDep.ID) + "/statuses/" + itoa(victimStatus.ID)
-	assertStatus(t, ghGet(t, victimPath, f.victimToken), http.StatusOK, "owner GET deployment status")
+	assertStatus(t, s.get(t, victimPath, f.victimToken), http.StatusOK, "owner GET deployment status")
 
 	// The attacker's own repository, the victim's deployment and status ids.
-	assertStatus(t, ghGet(t, "/api/v3/repos/"+f.attackerRepo.FullName+
+	assertStatus(t, s.get(t, "/api/v3/repos/"+f.attackerRepo.FullName+
 		"/deployments/"+itoa(victimDep.ID)+"/statuses/"+itoa(victimStatus.ID), f.attackerTok),
 		http.StatusNotFound, "cross-tenant GET deployment status")
 
 	// The attacker's own deployment, the victim's status id: the status must be
 	// bound to the deployment in the path, not merely to a readable repository.
-	assertStatus(t, ghGet(t, "/api/v3/repos/"+f.attackerRepo.FullName+
+	assertStatus(t, s.get(t, "/api/v3/repos/"+f.attackerRepo.FullName+
 		"/deployments/"+itoa(attackerDep.ID)+"/statuses/"+itoa(victimStatus.ID), f.attackerTok),
 		http.StatusNotFound, "foreign status under an owned deployment")
 }
 
 func TestCrossTenantPRReviewCommentIsNotReachableByID(t *testing.T) {
-	f := newCrossTenantFixture(t, "prcomments")
-	store := testServer.store
+	t.Parallel()
+	s := newIsolatedServer(t)
+	f := s.newCrossTenantFixture(t, "prcomments")
+	store := s.store
 
 	seedStorePullRequestBranches(t, store, f.victimRepo, "feature")
 	pr := store.CreatePullRequest(f.victimRepo.ID, f.victim.ID, "victim pr", "", "feature", "main", false, nil, nil, 0)
@@ -158,13 +164,13 @@ func TestCrossTenantPRReviewCommentIsNotReachableByID(t *testing.T) {
 	victimPath := "/api/v3/repos/" + f.victimRepo.FullName + "/pulls/comments/" + itoa(comment.ID)
 	attackerPath := "/api/v3/repos/" + f.attackerRepo.FullName + "/pulls/comments/" + itoa(comment.ID)
 
-	assertStatus(t, ghGet(t, victimPath, f.victimToken), http.StatusOK, "owner GET review comment")
+	assertStatus(t, s.get(t, victimPath, f.victimToken), http.StatusOK, "owner GET review comment")
 
-	assertStatus(t, ghGet(t, attackerPath, f.attackerTok),
+	assertStatus(t, s.get(t, attackerPath, f.attackerTok),
 		http.StatusNotFound, "cross-tenant GET review comment")
-	assertStatus(t, ghPatch(t, attackerPath, f.attackerTok, map[string]interface{}{"body": "pwned"}),
+	assertStatus(t, s.patch(t, attackerPath, f.attackerTok, map[string]interface{}{"body": "pwned"}),
 		http.StatusNotFound, "cross-tenant PATCH review comment")
-	assertStatus(t, ghDelete(t, attackerPath, f.attackerTok),
+	assertStatus(t, s.delete(t, attackerPath, f.attackerTok),
 		http.StatusNotFound, "cross-tenant DELETE review comment")
 
 	got := store.PRReviewComments.Get(comment.ID)
@@ -177,8 +183,10 @@ func TestCrossTenantPRReviewCommentIsNotReachableByID(t *testing.T) {
 }
 
 func TestCrossTenantIssueCommentIsNotReachableByID(t *testing.T) {
-	f := newCrossTenantFixture(t, "issuecomments")
-	store := testServer.store
+	t.Parallel()
+	s := newIsolatedServer(t)
+	f := s.newCrossTenantFixture(t, "issuecomments")
+	store := s.store
 
 	issue := store.CreateIssue(f.victimRepo.ID, f.victim.ID, "victim issue", "", nil, nil, 0)
 	if issue == nil {
@@ -193,12 +201,12 @@ func TestCrossTenantIssueCommentIsNotReachableByID(t *testing.T) {
 	victimPath := "/api/v3/repos/" + f.victimRepo.FullName + "/issues/comments/" + itoa(comment.ID)
 	attackerPath := "/api/v3/repos/" + f.attackerRepo.FullName + "/issues/comments/" + itoa(comment.ID)
 
-	assertStatus(t, ghPatch(t, victimPath, f.victimToken, map[string]interface{}{"body": "owner edit"}),
+	assertStatus(t, s.patch(t, victimPath, f.victimToken, map[string]interface{}{"body": "owner edit"}),
 		http.StatusOK, "owner PATCH issue comment")
 
-	assertStatus(t, ghPatch(t, attackerPath, f.attackerTok, map[string]interface{}{"body": "pwned"}),
+	assertStatus(t, s.patch(t, attackerPath, f.attackerTok, map[string]interface{}{"body": "pwned"}),
 		http.StatusNotFound, "cross-tenant PATCH issue comment")
-	assertStatus(t, ghDelete(t, "/api/v3/repos/"+f.attackerRepo.FullName+"/issues/comments/"+itoa(doomed.ID), f.attackerTok),
+	assertStatus(t, s.delete(t, "/api/v3/repos/"+f.attackerRepo.FullName+"/issues/comments/"+itoa(doomed.ID), f.attackerTok),
 		http.StatusNotFound, "cross-tenant DELETE issue comment")
 
 	if got := store.GetComment(comment.ID); got == nil || got.Body != "owner edit" {
@@ -210,6 +218,6 @@ func TestCrossTenantIssueCommentIsNotReachableByID(t *testing.T) {
 
 	// Positive control on the delete path, so the 404 above is the guard and
 	// not a route that refuses everybody.
-	assertStatus(t, ghDelete(t, "/api/v3/repos/"+f.victimRepo.FullName+"/issues/comments/"+itoa(doomed.ID), f.victimToken),
+	assertStatus(t, s.delete(t, "/api/v3/repos/"+f.victimRepo.FullName+"/issues/comments/"+itoa(doomed.ID), f.victimToken),
 		http.StatusNoContent, "owner DELETE issue comment")
 }

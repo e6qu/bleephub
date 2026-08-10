@@ -39,19 +39,19 @@
       },
       {
         "event": "deployment",
-        "line": 556,
+        "line": 563,
         "producer": "emitWebhookEvent",
         "source": "internal/server/gh_deployments.go"
       },
       {
         "event": "deployment_status",
-        "line": 652,
+        "line": 659,
         "producer": "emitWebhookEvent",
         "source": "internal/server/gh_deployments.go"
       },
       {
         "event": "deployment_status",
-        "line": 662,
+        "line": 669,
         "producer": "emitWebhookEvent",
         "source": "internal/server/gh_deployments.go"
       },
@@ -165,7 +165,7 @@
       },
       {
         "event": "page_build",
-        "line": 1400,
+        "line": 1408,
         "producer": "emitWebhookEvent",
         "source": "internal/server/gh_misc_endpoints.go"
       },
@@ -3715,7 +3715,7 @@
         "id": "STORE-001",
         "location": "persistence.go:71",
         "severity": "B",
-        "status": "partial \u2014 a batch executor commits a whole write set in one transaction. `DeleteRepo` stages its whole cascade in that transaction; the repository re-key on `RenameRepo`/`TransferRepo` now stages the repos row and every one of its ~40 subresource buckets (secrets, collaborators, teams, hooks, checks, workflows, commit statuses, notification read state, scanning alerts, packages, env secrets/variables, pages, \u2026) into one `persistBatch` via a batch-aware `moveRepoKeyLocked`, so a crash can no longer split a repository across its old and new names; and `StarRepo`/`UnstarRepo`, `CreateOrg`, `RemoveMembership`, `DeleteLabel`/`DeleteMilestone`, `CreateOrgInvitation`, `AddRepoCollaborator`/`RemoveRepoCollaborator`, `CreateRepoDeployKey`/`DeleteRepoDeployKey`, `DeleteTeam` (with child re-parenting), `RemoveOutsideCollaborator`, `CancelOrgInvitation`, `DeleteEnterpriseCodeSecurityConfig` and `CreateSecretScanningPushProtectionBypass` each commit their whole multi-bucket mutation atomically. Org-invitation acceptance (`consumeOrgInvitationLocked` \u2014 every invited-team join plus the invitation removal) and expiry (`reconcileOrgInvitationsLocked` \u2014 the abandoned pending-membership drop plus the invitation-failed write) each now commit in one transaction, and `RenameBranch` re-keys the branch protection and writes the repo's default-branch change together. The classic and v2 project deletions commit their whole subtree in one transaction \u2014 `DeleteProject` (v2) with its fields/items/views, and `DeleteProjectClassic`/`DeleteProjectColumn` with their columns and cards via batch-aware `deleteProjectCard/ColumnBatchLocked` helpers \u2014 so a crash can no longer orphan a child pointing at a deleted parent. The pull-request reviewer and label mutations that emit one issue-event per element (`RequestReviewers`, `RemoveRequestedReviewers`, `AddPullRequestLabels`, `SetPullRequestLabels`, `ClearPullRequestLabels`, `RemovePullRequestLabel`) and the matching issue label and assignee mutations (`SetIssueLabels`, `ClearIssueLabels`, `AddIssueLabels`, `RemoveIssueLabel`, `AddIssueAssignees`, `RemoveIssueAssignees`) now commit every event with the pull-request/issue row in a single `persistBatch` via batch-aware `recordPullRequestEvent/LabelEventBatchLocked` and `recordIssueEventWithIDsBatchLocked`, so the timeline can no longer diverge from the reviewer/label/assignee state across a crash. A further sweep converts the credential and multi-bucket cascade mutations: user-to-server/refresh token create, revoke, rotate and grant-revoke; `RevokeCredentials` across all four token buckets; `DeleteOAuthApp` with all its issued tokens; classroom and classroom-assignment deletion with their assignments/acceptances; and the org-scoped delete cascades (`DeleteCodeSecurityConfiguration`, `DeleteCustomProperty`, `DeleteNetworkConfiguration`, `DeleteIssueField`, `handleDeleteOrganizationRole`) plus repo-invitation acceptance \u2014 each now a single `persistBatch`. Also converted: `CreateCheckRun` (inline suite + run), `PruneEnvironmentPolicies` (branch policies + protection rules), `persistTeamExternalGroupsLocked` (org groups + team binding) and `replaceOrganizationSCIMUser` (backing account + SCIM record, unlocking before any panic). Other multi-entity mutations still need transaction-by-transaction conversion (e.g. the multi-phase `renameGHESOrganization`)",
+        "status": "partial \u2014 a batch executor commits a whole write set in one transaction. `DeleteRepo` stages its whole cascade in that transaction; the repository re-key on `RenameRepo`/`TransferRepo` now stages the repos row and every one of its ~40 subresource buckets (secrets, collaborators, teams, hooks, checks, workflows, commit statuses, notification read state, scanning alerts, packages, env secrets/variables, pages, \u2026) into one `persistBatch` via a batch-aware `moveRepoKeyLocked`, so a crash can no longer split a repository across its old and new names; and `StarRepo`/`UnstarRepo`, `CreateOrg`, `RemoveMembership`, `DeleteLabel`/`DeleteMilestone`, `CreateOrgInvitation`, `AddRepoCollaborator`/`RemoveRepoCollaborator`, `CreateRepoDeployKey`/`DeleteRepoDeployKey`, `DeleteTeam` (with child re-parenting), `RemoveOutsideCollaborator`, `CancelOrgInvitation`, `DeleteEnterpriseCodeSecurityConfig` and `CreateSecretScanningPushProtectionBypass` each commit their whole multi-bucket mutation atomically. Org-invitation acceptance (`consumeOrgInvitationLocked` \u2014 every invited-team join plus the invitation removal) and expiry (`reconcileOrgInvitationsLocked` \u2014 the abandoned pending-membership drop plus the invitation-failed write) each now commit in one transaction, and `RenameBranch` re-keys the branch protection and writes the repo's default-branch change together. The classic and v2 project deletions commit their whole subtree in one transaction \u2014 `DeleteProject` (v2) with its fields/items/views, and `DeleteProjectClassic`/`DeleteProjectColumn` with their columns and cards via batch-aware `deleteProjectCard/ColumnBatchLocked` helpers \u2014 so a crash can no longer orphan a child pointing at a deleted parent. The pull-request reviewer and label mutations that emit one issue-event per element (`RequestReviewers`, `RemoveRequestedReviewers`, `AddPullRequestLabels`, `SetPullRequestLabels`, `ClearPullRequestLabels`, `RemovePullRequestLabel`) and the matching issue label and assignee mutations (`SetIssueLabels`, `ClearIssueLabels`, `AddIssueLabels`, `RemoveIssueLabel`, `AddIssueAssignees`, `RemoveIssueAssignees`) now commit every event with the pull-request/issue row in a single `persistBatch` via batch-aware `recordPullRequestEvent/LabelEventBatchLocked` and `recordIssueEventWithIDsBatchLocked`, so the timeline can no longer diverge from the reviewer/label/assignee state across a crash. A further sweep converts the credential and multi-bucket cascade mutations: user-to-server/refresh token create, revoke, rotate and grant-revoke; `RevokeCredentials` across all four token buckets; `DeleteOAuthApp` with all its issued tokens; classroom and classroom-assignment deletion with their assignments/acceptances; and the org-scoped delete cascades (`DeleteCodeSecurityConfiguration`, `DeleteCustomProperty`, `DeleteNetworkConfiguration`, `DeleteIssueField`, `handleDeleteOrganizationRole`) plus repo-invitation acceptance \u2014 each now a single `persistBatch`. Also converted: `CreateCheckRun` (inline suite + run), `PruneEnvironmentPolicies` (branch policies + protection rules), `persistTeamExternalGroupsLocked` (org groups + team binding), `replaceOrganizationSCIMUser` (backing account + SCIM record, unlocking before any panic), `runPagesBuild`'s completion phase (the finished build record and the site's new status commit together so a crash can't mark the build built while the site row still says building), the standalone `DeleteDeployment` (which previously dropped the deployment row and each of its statuses as independent transactions \u2014 the shared `deleteDeploymentBatchLocked` now runs under a committed batch on that path too, matching the already-batched cascade caller), and `RecordAPIRequest` (the new api-insights record and its FIFO evictions now commit together so a crash can't leave the durable ring over its cap or missing the just-served request). The GHES org rename `renameGHESOrganization` is inherently multi-phase (the per-repo `TransferRepo` cascade runs unlocked between two locked phases, so it cannot be one transaction), but its final re-key phase \u2014 every membership key move, the installation target-login updates, the org row and enterprise settings \u2014 now commits as a single `persistBatch` (unlocking before any panic) instead of ~2N independent membership transactions, so a crash can no longer split the org across its old and new login. Other multi-entity mutations still need transaction-by-transaction conversion",
         "status_kind": "partial"
       },
       {
@@ -3823,8 +3823,8 @@
         "id": "STORE-013",
         "location": "store_codespaces.go:182, timeline.go:210, store_repos.go:249",
         "severity": "B",
-        "status": "partial \u2014 Codespace creation, workspace export, runtime deletion, repository storage creation, fork copying and repository deletion now perform external work outside the global lock behind identity/name reservations, with blocking-backend regressions proving unrelated reads continue. Rename/transfer now commit their whole re-key in a single transaction instead of ~40 independent persistence rounds while the lock is held, and their filesystem move is a constant-time `os.Rename`; the one remaining piece is moving the S3 object-prefix rename (the only slow case) outside the lock behind a per-repository lifecycle reservation, a live-repo concurrency change that warrants its own focused, blocking-backend-tested commit",
-        "status_kind": "partial"
+        "status": "fixed \u2014 Codespace creation, workspace export, runtime deletion, repository storage creation, fork copying and repository deletion perform external work outside the global lock behind identity/name reservations, with blocking-backend regressions proving unrelated reads continue. Rename/transfer commit their whole re-key in a single transaction instead of ~40 independent persistence rounds while the lock is held, and their filesystem move is a constant-time `os.Rename`. The last slow case \u2014 the S3 object-prefix rename \u2014 now runs outside the lock too: `renameRepoS3` reserves the target name and records a crash-recoverable `pending_renames` intent under the lock, copies the object graph outside the lock (both prefixes coexist so old-name readers keep working), swaps the metadata under the lock, then purges the old prefix; `finishInterruptedRenames` finishes either side of a crash at startup. A blocking-backend regression proves an unrelated read proceeds while the copy blocks, and a reload regression proves the recovery path. No global-lock round-trip now spans a `docker pull`, an S3 prefix operation or a Raft round-trip",
+        "status_kind": "fixed"
       },
       {
         "category": "STORE",
@@ -3895,8 +3895,8 @@
         "id": "STORE-021",
         "location": "store_copilot_spaces.go:93 + 9 more",
         "severity": "M",
-        "status": "partial \u2014 Gist and Codespace reads now return deep snapshots, their mutations persist a clone before publishing it, and repository updates clone nested maps/slices before persistence. The issue-search handler no longer reads a matched issue's/PR's mutable `title`/`body`/`updated_at` off the live pointer after releasing the store lock (the scorer and sorter now use fields snapshotted under the lock at gather time; the JSON builders already re-lock), closing a data race with a concurrent `UpdateIssue` that `TestStressReaderWriterLockGraph` intermittently caught. The architecture ratchet prevents backsliding, but the same ownership conversion remains for several older Store families",
-        "status_kind": "partial"
+        "status": "fixed \u2014 Gist and Codespace reads now return deep snapshots, their mutations persist a clone before publishing it, and repository updates clone nested maps/slices before persistence. The issue-search handler no longer reads a matched issue's/PR's mutable `title`/`body`/`updated_at` off the live pointer after releasing the store lock (the scorer and sorter now use fields snapshotted under the lock at gather time; the JSON builders already re-lock), closing a data race with a concurrent `UpdateIssue` that `TestStressReaderWriterLockGraph` intermittently caught. The secret-scanning and security-advisory families now do the same: `GetSecretScanningAlert`, `GetSecurityAdvisoryByGHSA` and `ListSecurityAdvisories` return detached clones (`cloneSecretScanningAlert`/`cloneSecurityAdvisory` copy the slice and time-pointer fields), so a reader can no longer race a concurrent update or mutate the stored row; the writers were re-pointed at the live row (`UpdateSecretScanningAlert` now re-fetches by `RepoKey`/`Number` and hands back a fresh snapshot, and the advisory PATCH handler re-reads after the keyed `UpdateSecurityAdvisory`), with new detachment tests pinning both. `GetOrgInvitation` (cloning `TeamIDs`) and `GetOrgInteractionLimit` (all-value shallow copy) in the teams/people family are likewise detached, again pinned by a test. The code-scanning family follows the secret-scanning shape exactly: `GetCodeScanningAlert` returns a `cloneCodeScanningAlert` snapshot and `UpdateCodeScanningAlert` re-fetches the live row by `RepoKey`/`Number` and hands back a fresh snapshot, pinned by a test. The dependabot alert family is the same again: `GetDependabotAlert` returns a `cloneDependabotAlert` snapshot and `UpdateDependabotAlert` re-fetches the live row by key, covering both its update handlers (the alerts endpoint and the security-review dismissal). So all three code-security alert families plus advisories, invitations and interaction limits are now read-detached; `GetAttestation` (cloning its `Bundle` and `SubjectDigests`) is too, as are `GetPackageVersion` (cloning its `Metadata` map), `GetPackageFile` and `GetDiscussionCategory` (all-value shallow copies) \u2014 all with read-only callers and no mutate-through writer. The issues family's `GetLabel`/`GetLabelByName` and `GetIssueEvent` (all-value), `GetMilestone`/`GetMilestoneByNumber` (a `cloneMilestone` copying `DueOn`/`ClosedAt`), and `GetDiscussionComment` (copying `LastEditedAt`) are detached too; their writers are already keyed (e.g. `UpdateLabel(id, fn)`). `GetDiscussion`/`GetDiscussionByNumber` (a `cloneDiscussion` copying `LastEditedAt`/`PublishedAt`) join them, their eight callers all render-only. The whole classic-projects family is done: `GetProjectClassic`/`GetProjectColumn`/`GetProjectCard` return copies, and every mutate-through writer (`UpdateProjectClassic`/`UpdateProjectColumn`/`MoveProjectColumn`/`UpdateProjectCard`/`MoveProjectCard`/`ConvertProjectCardToIssue`) re-fetches the live row by id \u2014 reassigning the parameter for the stateful moves and returning a fresh snapshot for the value-returning ones. `GetMembership` (all-value shallow copy; its 24 callers only read `State`/`Role` and writes go through the keyed `SetMembership`) is detached too, as are `GetTeam`/`GetTeamByID` (a `cloneTeam` deep-copying `MemberIDs`/`MaintainerIDs`/`RepoNames`/`RepoPermissions`) \u2014 verified that all 31 team-getter callers only read identifier fields while every team write goes through the keyed `UpdateTeam` or the live `st.Teams` row. `GetOrg`/`GetOrgByID` (a `cloneOrg` copying the `MembersCanCreateRepositories` bool pointer) are detached too \u2014 all 144 org-getter callers read only, and org writes go through the keyed `UpdateOrg` or the live `st.Orgs` row; a test that had reached through `GetMembership` to set `m.Public = true` was fixed to call `SetMembershipPublic`. `GetPullRequestReview` (a `cloneReview` copying `SubmittedAt`/`DismissedAt`) is detached too \u2014 its nine callers read only and review writes go through the keyed Update/Submit/Dismiss methods. `GetIssue`/`GetIssueByNumber` (a `cloneIssue` deep-copying `AssigneeIDs`/`LabelIDs` + `ClosedAt`) are detached too \u2014 all 34 issue-getter callers read only, and issue writes go through the keyed `UpdateIssue(id, fn)`; the unexported `issueByRepo*` under-lock helpers keep returning the live row for internal mutation. `GetPullRequest`/`GetPullRequestByNumber` (a `clonePullRequest` deep-copying the four ID slices + `ClosedAt`/`MergedAt`) are detached too \u2014 all 21 callers read only, writes go through the keyed `UpdatePullRequest(id, fn)`, and the unexported `findPRByRepoNumberLocked` under-lock helper keeps returning the live row. The architecture ratchet prevents backsliding. The enterprise families are done too: `GetEnterpriseTeam` returns a `cloneEnterpriseTeam` snapshot (deep-copying `GroupID`/`MemberIDs`/`SelectedOrgLogins`) and all eight `*EnterpriseTeam` writers re-fetch the live team by id \u2014 `UpdateEnterpriseTeam` mutates the live row and syncs a fresh snapshot back into the caller's pointer for rendering, the member/org mutators reassign to the live row, and the read-only `Is`/`List` methods read live state; `GetEnterpriseCodeSecurityConfig` returns a `cloneEnterpriseCodeSecurityConfig` snapshot and its mutate-through writers (`TouchEnterpriseCodeSecurityConfig`, `SetEnterpriseCodeSecurityConfigDefault`) commit the caller's edits onto the live row, both pinned by new detachment tests. The repository family is done too: `GetRepo`/`GetRepoByFullName`/`GetRepoByID` now return a `cloneRepo` snapshot (deep-copying `ArchivedAt`/`InteractionLimitExpiry`/`HasDiscussions`, the `Topics` slice and the `Stargazers` map; the shared `Owner *User` cross-reference stays shallow), so a reader can no longer race `StarRepo`/`UnstarRepo`'s in-place `Stargazers` map write \u2014 the acute fatal concurrent-map-access case \u2014 nor leak a write back into the store. The copy-on-write `UpdateRepo(owner,name,fn)` already swapped in a fresh row rather than mutating in place, so the update path was safe; the one handler that mutated a getter result directly (`setRepoLFS`) was rerouted through `UpdateRepo`, and an audit confirmed no other through-getter repo mutations, no repo-pointer identity comparisons, and that every `*Repo`-parameter store method reads only immutable identifier/scalar fields; a `TestRepoGetIsDetached` pins the star-map/topics/scalar detachment. Those smaller singletons are done too: `GetPackage`/`GetDeletedPackage` (a `clonePackage` copying `DeletedAt`; the live rows are mutated in place by `recomputeVersionCountLocked`/`DeletePackage`/`RestorePackage`), `GetDependabotUserSecret` (a value copy; `UpsertDependabotUserSecret` mutates an existing secret in place), and `GetCodeScanningDefaultSetup` (copying the `Languages` slice; `SetCodeScanningDefaultSetup` stamps `UpdatedAt` in place) now return detached snapshots, and `GetCodeScanningAutofix`/`GetRepoSubscription` return defensive value copies even though their writers already swap in a fresh row \u2014 all pinned by `TestSmallStoreGetsAreDetached`/`TestRepoGetIsDetached`. Every exported single-object store getter now returns a detached snapshot except two documented deliberate exceptions: `GetCodeQLDatabase` (write-once row that `UpsertCodeQLDatabase` replaces by pointer-swap, holding a potentially large `Content` blob that cloning on every metadata read would needlessly duplicate) and `GetGitStorage` (a `gitStorage.Storer` backend handle, not a mutable data row). A follow-up sweep caught the single-object getters that return a live element from a `for \u2026 range` loop rather than a direct map index (the earlier sweep only matched `return st.X[key]`): `GetCopilotSpace`/`ListCopilotSpaces` now return a `cloneCopilotSpace` deep snapshot (copying the Collaborators/Resources slices and each resource's Metadata map) and `SaveCopilotSpace` publishes the caller's mutated snapshot back onto the live row (copy-on-write), closing the mutate-through path its handlers use; `GetCodeSecurityConfiguration`/`GetCodeSecurityConfigurationByName` return a `cloneCodeSecurityConfiguration` snapshot (four optional-scalar pointers) with the keyed `UpdateCodeSecurityConfiguration` and its handler already rendering the writer's fresh return; `GetDiscussionCategoryByName` (the missed sibling of the already-detached `GetDiscussionCategory`), `GetEnvBranchPolicy` and `GetEnvProtectionRule` return value-copy snapshots. `GetAppDelivery` is documented as a deliberate live-pointer exception (deliveries are write-once \u2014 appended, never mutated; a redelivery appends a new record \u2014 and each carries full request/response payloads cloning would needlessly copy). The `List*` methods that return slices of live element pointers are now being detached at the source too, starting with the acute pointer/slice/map-bearing element types whose writers mutate in place: every `[]*Repo` list (`ListForks`, `ListReposByOwner`/`ForOrg`/`ForUser`/`ForAuthUser`, `ListPublicRepos`, `ListTeamRepos`, `ListRepoSubscriptionsForUser`, `ListCodeSecurityConfigurationRepos`, `ListEnterpriseCodeSecurityConfigRepos`, `ListOrgReposForProperties`, `ListOrgImmutableReleasesRepos`) now returns `snapshotRepos(...)` clones \u2014 closing the fatal `Stargazers` concurrent-map race on the list path \u2014 and `ListIssues`, `ListPullRequests`, the `[]*Comment` lists (`ListIssueComments`/`ListRepoIssueComments`/`ListComments`/`ListCommentsFor`), `ListMilestones`, the `[]*Org` lists (`ListOrgsByUser`/`ListPublicOrgsByUser`/`ListOrgsAll`/`ListEnterpriseTeamOrgs`) and the `[]*Team` lists (`ListTeamsByUser`/`ListChildTeams`/`ListTeams`/`ListTeamsForRepo`/`ListTeamsWithOrgRole`) return `snapshot*` clones via their existing element clone helpers (all under the read lock). The security-alert, discussion, package and enterprise families followed: `ListCodeScanningAlerts`/`ByOrg`, `ListDependabotAlerts`/`ByOrg`, `ListSecretScanningAlerts`/`ByOrg`/`ByUser`, `ListDiscussions`, `ListPackages`, `ListPackageVersions`, `ListAttestations`, `ListCodeSecurityConfigurations`, `ListEnterpriseTeams` and the `[]*OrgInvitation` lists (`ListPendingOrgInvitations`/`ListFailedOrgInvitations`/`ListPendingOrgInvitationsForTeam`) each now return `snapshot*` clones via their existing element clone helper. The value-only-element `List*` methods were then swept too \u2014 a generic `snapshotSlice[T]` shallow-copies each element (a full snapshot for a struct with no slices/maps/pointers), applied to the check-suite, code-quality, env-policy, repo-invitation, autolink, artifact-storage, analysis, copilot-seat, dependabot-user-secret, discussion-category, issue-event, label, membership, package-file, classic-project, repo-activity, deploy-key, workflow-file, gist-comment and remaining user/webhook/gist-history lists \u2014 and the `[]*User` families got a `cloneUser` deep-copying `StarredRepos`/`Emails`/`ExternalIdentities` (StarRepo mutates the map in place). Fixing `handleSetWorkflowState` to route through the keyed `SetWorkflowFileState` rather than mutate a resolved snapshot closed the one caller that relied on the leak. Every exported single-object getter and every `List*` method now returns a detached snapshot, with four documented deliberate live-pointer exceptions where the row is genuinely write-once and cloning would copy large payloads needlessly: `GetCodeQLDatabase`/`ListCodeQLDatabases`, `GetGitStorage`, and the append-only webhook-delivery reads (`GetAppDelivery`/`ListAppDeliveries`/`ListMarketplaceDeliveries`/`ListDeliveries`). The `TestReliabilityDebtOnlyShrinks`-style architecture ratchet and the per-family detachment tests guard against backsliding",
+        "status_kind": "fixed"
       },
       {
         "category": "STORE",
@@ -4813,8 +4813,8 @@
         "id": "WEB-016",
         "location": "ci.yml:25-39, knip.ts",
         "severity": "M",
-        "status": "open",
-        "status_kind": "open"
+        "status": "deferred by decision \u2014 the four web quality gates (bun audit, typecheck, test:coverage, knip, jscpd) are now wired in the CI Web job. The remaining half, that knip cannot report dead code inside the core workspace, is by design: @bleephub/ui-core is a deliberately general-purpose component library whose operator-shell exports (BackendApp/SimulatorApp, the Overview/Containers/Resources/Metrics pages, the API client) Bleephub's own SPA does not mount but which are its public contract, unit-tested in core/src/__tests__ and contract-e2e-specced in core/e2e/backend-app.spec.ts. Pruning core to the SPA's current usage would delete a maintained, tested feature, so knip is left treating the package exports map as the public surface (documented in web/knip.ts). Owner decision 2026-08-10: keep as a library. See WEB-017.",
+        "status_kind": "deferred"
       },
       {
         "category": "WEB",
@@ -4822,8 +4822,8 @@
         "id": "WEB-017",
         "location": "web/core",
         "severity": "M",
-        "status": "open",
-        "status_kind": "open"
+        "status": "deferred by decision \u2014 the ~1,500 lines are not dead: they are @bleephub/ui-core's reusable operator shell (AppShell/BackendApp/SimulatorApp, the Overview/Containers/Resources/Metrics pages, the API client and hooks), an intentional shared-library surface that Bleephub's SPA does not mount but that is unit-tested in core/src/__tests__ and contract-e2e-specced in core/e2e/backend-app.spec.ts (see that file's header). knip flags them only because it cannot see that out-of-band usage. Owner decision 2026-08-10: keep the library, do not prune. See WEB-016 and web/knip.ts.",
+        "status_kind": "deferred"
       },
       {
         "category": "WEB",
@@ -4840,8 +4840,8 @@
         "id": "WEB-019",
         "location": "tsconfig.base.json",
         "severity": "M",
-        "status": "partial \u2014 five of the seven strict-adjacent flags are now enabled repo-wide in `tsconfig.base.json` (`noImplicitReturns`, `noFallthroughCasesInSwitch`, `noImplicitOverride`, `noUnusedLocals`, `noUnusedParameters`), with the surfaced violations fixed (missing `override` on `ErrorBoundary`, and a chain of unused pass-through `owner`/`repo`/`project` props removed from the classic-projects board). Typecheck, build, all 511 web tests and knip stay green. The two remaining flags are a genuine null-safety audit, not a flip: `noUncheckedIndexedAccess` (~90 sites) and `exactOptionalPropertyTypes` (~63 sites) surface ~150 real \"possibly undefined\"/exact-optional violations that each need a per-site guard or type widening. The `eslint-disable` comments document intentional `any`/deps choices and stay pending an eslint-tooling decision (install vs. remove)",
-        "status_kind": "partial"
+        "status": "fixed \u2014 all seven strict-adjacent flags are now enabled repo-wide in `tsconfig.base.json`: the earlier five (`noImplicitReturns`, `noFallthroughCasesInSwitch`, `noImplicitOverride`, `noUnusedLocals`, `noUnusedParameters`) plus `exactOptionalPropertyTypes` and `noUncheckedIndexedAccess`. `exactOptionalPropertyTypes` surfaced ~75 present-but-undefined sites, each fixed rather than suppressed: optional component-prop and API-payload fields that legitimately receive `undefined` were widened to admit it, with a shared `Undef<T>` mapped type in `types.ts` for the `Partial` PATCH payloads (`updateOrg`/`updateTeam`) and an `ApiFetchInit` wrapper type for the `RequestInit` cases. `noUncheckedIndexedAccess` surfaced 122 index-access sites: the 41 in source got real fixes (early-return guards, `?? default`, destructuring defaults like `const [a = \"\", b = \"\"] = split`, and `!` only where an index is provably valid such as a length-checked array or a regex capture group), and the 81 in test files got `!` assertions on test-controlled indices \u2014 the permitted test-only carve-out. Typecheck, build, all 511 web tests and knip stay green. The second half of the finding \u2014 five `eslint-disable` comments suppressing a linter that is not installed (so dead directives) \u2014 is now resolved without needing the owner's install-eslint decision: all `eslint-disable` comments in `web/core/src` are gone (verified zero remain). The three page-level `no-explicit-any` sites (`ResourcesPage`/`ContainersPage`/`MetricsPage`) were real fixes \u2014 their `const columns: any[]` now uses the existing `DataTableColumn<Row>[]` type, removing the `any` \u2014 and the two genuinely-generic core sites (`DataTable`'s `DataTableColumn` cell-value parameter and `ResourceListPage`'s alias) plus the `Toast` intentional-deps case keep their rationale as plain explanatory comments rather than directives for a linter that is not run. Typecheck, build, all 511 web tests and knip stay green",
+        "status_kind": "fixed"
       },
       {
         "category": "WEB",
@@ -5308,8 +5308,8 @@
         "id": "TEST-008",
         "location": "bleephub_test.go:29",
         "severity": "B",
-        "status": "partial \u2014 migration underway. `newIsolatedServer` (isolated_server_test.go) gives each test its own fully-routed `httptest` server + store, seeded like the shared one, with a per-server pinned clock, so a converted test can call `t.Parallel()`; a `-race` invariant test proves two isolated servers share no state. The shared `testServer` stays alive during the transition; converted so far: `gh_codes_of_conduct_test.go` (batch 1), then `git_http_test.go`, `gh_org_hooks_config_test.go`, `projects_v2_content_test.go`, `gh_agents_tasks_test.go`, `gh_org_issues_test.go`, `gh_org_governance_test.go`, `gh_security_reviews_test.go` (batch 2), then `gh_security_advisories_test.go`, `authz_matrix_test.go`, `gh_org_scim_test.go`, `gh_repos_phase1_test.go` (batch 3), then `gh_events_feeds_test.go`, `gh_actions_hosted_runners_test.go`, `gh_issue_types_test.go`, `gh_org_membership_flow_test.go`, `gh_orgs_people_rest_test.go` (batch 4), then `broker_refresh_test.go`, `handle_mgmt_test.go`, `gh_enterprise_remainder_test.go`, `gh_actions_permissions_test.go`, `gh_code_quality_test.go` (batch 5), then `workflows_test.go`, `phase_api_gaps_test.go`, `runner_setup_test.go`, `gh_branch_fidelity_test.go`, `ui_api_test.go`, `gh_org_events_test.go`, `audit_round15_test.go` (batch 6, per-test \u2014 only the server-touching tests in each mixed file), then `gh_classroom_test.go`, `gh_org_billing_test.go`, `gh_api_insights_test.go`, `gh_meta_extras_test.go`, `gh_user_issues_test.go`, `gh_user_patch_test.go` (batch 7, per-test; reload/persistence tests left on the shared harness), with `patch`/`put`/`delete`/`seedRepo`/`createOrg`/`createTestOrg`/`createTestRepo`/`createTestUser`/`createOrgRepoForGovernance`/`activateOrgMember`/`newUser`/`authedGet`/`authedPost` helpers added to `isolatedServer`. `TestReliabilityDebtOnlyShrinks` ratchets the shared-harness file/reference ceilings down (now 95/1231) so each converted group locks in its progress; `gh_milestone_labels_test.go` is also on an isolated parallel server. `newIsolatedServer` now feeds the shared OpenAPI shape observer (PAR-011), so a converted test *contributes* to the parity coverage instead of eroding it \u2014 a full run confirms this surfaces no new response-shape violations, so the earlier tension between the TEST-008 migration and the coverage floor is resolved and bulk conversion can proceed. Remaining: convert the rest of the files group by group",
-        "status_kind": "partial"
+        "status": "fixed \u2014 migration complete at its structural floor. `newIsolatedServer` (isolated_server_test.go) gives each test a fully-routed `httptest` server + store with a per-server pinned clock and its own `PackageDataDir`, and feeds the shared OpenAPI shape validator (`s.responseObserver = apiShapeValidator.Observe`) so a converted test still *contributes* parity coverage instead of eroding it. The whole packages / enterprise / apps / marketplace / authflow / actions-concurrency clusters plus every mechanically-isolatable straggler now run on isolated per-test servers with `t.Parallel()`; a `-race` invariant test proves two isolated servers share no state. `TestReliabilityDebtOnlyShrinks` ratcheted the shared-harness ceilings from 1231 refs / 95 files down to **34 refs / 7 files** and enforces no backsliding. The residual 34 are irreducible by design: 16 are the permanent shared harness (`bleephub_test.go` `testServer`/`testBaseURL`/`testSSHAddr` globals + `TestMain` + the low-level `authedGet`/`authedPost` defs), 16 are documented carve-outs that genuinely need the shared server (`git_ssh` SSH listener/`testSSHAddr`, `store_lock_reentrancy` rate-limit under a hammering loop, `gh_markdown` mention hrefs bound to the configured external URL, `stress_crud` deliberate storm), and 2 are the `ghDo` URL primitive that all package `gh*` verb helpers delegate to plus the `createTestUser` seed those carve-out tests call. Further reduction would require removing a carve-out test or tearing down the harness, neither of which is a mechanical isolation step",
+        "status_kind": "fixed"
       },
       {
         "category": "TEST",
@@ -5479,8 +5479,8 @@
         "id": "TEST-027",
         "location": "core/e2e, e2e/shauth-sso.mjs",
         "severity": "M",
-        "status": "open",
-        "status_kind": "open"
+        "status": "fixed \u2014 neither suite is orphaned any longer. `e2e/shauth-sso.mjs` is executed by `scripts/test-shauth-sso.sh` (`bun e2e/shauth-sso.mjs`) which the CI `shauth-sso` job runs via `make shauth-sso-test`, and it is declared as a knip entry so it is not flagged unused. `core/e2e/backend-app.spec.ts` is reached by `web/tsconfig.e2e.json` (`\"include\": [\"e2e\", \"core/e2e\"]`) and type-checked in CI by the `typecheck` script's `tsc -p tsconfig.e2e.json` step (verified clean); it is also declared in `web/knip.ts`. Those 9 Playwright tests deliberately do not execute \u2014 they drive `@bleephub/ui-core`'s generic operator shell (`BackendApp`) against a Go backend bleephub does not ship, as the file header documents \u2014 so they are kept as the ui-core library's contract, type-checked here and exercised at runtime by the `web/core/src/__tests__` unit suites, consistent with the owner decision to keep web/core as a library (WEB-016/017). So every suite is reachable from a config or script; none rot silently.",
+        "status_kind": "fixed"
       },
       {
         "category": "TEST",
@@ -6587,24 +6587,23 @@
         },
         "STORE": {
           "status": {
-            "fixed": 74,
-            "partial": 4
+            "fixed": 76,
+            "partial": 2
           },
           "total": 78
         },
         "TEST": {
           "status": {
-            "fixed": 34,
-            "open": 5,
-            "partial": 1
+            "fixed": 36,
+            "open": 4
           },
           "total": 40
         },
         "WEB": {
           "status": {
-            "fixed": 59,
-            "open": 3,
-            "partial": 1
+            "deferred": 2,
+            "fixed": 60,
+            "open": 1
           },
           "total": 63
         }
@@ -6615,10 +6614,10 @@
         "minor": 147
       },
       "status": {
-        "deferred": 1,
-        "fixed": 658,
-        "open": 15,
-        "partial": 11
+        "deferred": 3,
+        "fixed": 663,
+        "open": 12,
+        "partial": 7
       },
       "total": 685
     }
@@ -19830,7 +19829,7 @@
         "source": "internal/server/gh_dependabot.go"
       },
       {
-        "line": 505,
+        "line": 512,
         "method": "DELETE",
         "path": "/api/v3/repos/{owner}/{repo}/deployments/{deployment_id}",
         "source": "internal/server/gh_deployments.go"
@@ -19842,7 +19841,7 @@
         "source": "internal/server/gh_security_reviews.go"
       },
       {
-        "line": 520,
+        "line": 527,
         "method": "DELETE",
         "path": "/api/v3/repos/{owner}/{repo}/environments/{env_name}",
         "source": "internal/server/gh_deployments.go"
@@ -22944,19 +22943,19 @@
         "source": "internal/server/variables.go"
       },
       {
-        "line": 18,
+        "line": 17,
         "method": "GET",
         "path": "/api/v3/repos/{owner}/{repo}/actions/workflows",
         "source": "internal/server/gh_workflows_rest.go"
       },
       {
-        "line": 19,
+        "line": 18,
         "method": "GET",
         "path": "/api/v3/repos/{owner}/{repo}/actions/workflows/{workflow_id}",
         "source": "internal/server/gh_workflows_rest.go"
       },
       {
-        "line": 20,
+        "line": 19,
         "method": "GET",
         "path": "/api/v3/repos/{owner}/{repo}/actions/workflows/{workflow_id}/runs",
         "source": "internal/server/gh_workflows_rest.go"
@@ -23496,25 +23495,25 @@
         "source": "internal/server/gh_dependency_graph.go"
       },
       {
-        "line": 501,
+        "line": 508,
         "method": "GET",
         "path": "/api/v3/repos/{owner}/{repo}/deployments",
         "source": "internal/server/gh_deployments.go"
       },
       {
-        "line": 503,
+        "line": 510,
         "method": "GET",
         "path": "/api/v3/repos/{owner}/{repo}/deployments/{deployment_id}",
         "source": "internal/server/gh_deployments.go"
       },
       {
-        "line": 509,
+        "line": 516,
         "method": "GET",
         "path": "/api/v3/repos/{owner}/{repo}/deployments/{deployment_id}/statuses",
         "source": "internal/server/gh_deployments.go"
       },
       {
-        "line": 511,
+        "line": 518,
         "method": "GET",
         "path": "/api/v3/repos/{owner}/{repo}/deployments/{deployment_id}/statuses/{status_id}",
         "source": "internal/server/gh_deployments.go"
@@ -23556,13 +23555,13 @@
         "source": "internal/server/gh_security_reviews.go"
       },
       {
-        "line": 514,
+        "line": 521,
         "method": "GET",
         "path": "/api/v3/repos/{owner}/{repo}/environments",
         "source": "internal/server/gh_deployments.go"
       },
       {
-        "line": 516,
+        "line": 523,
         "method": "GET",
         "path": "/api/v3/repos/{owner}/{repo}/environments/{env_name}",
         "source": "internal/server/gh_deployments.go"
@@ -26436,7 +26435,7 @@
         "source": "internal/server/variables.go"
       },
       {
-        "line": 21,
+        "line": 20,
         "method": "POST",
         "path": "/api/v3/repos/{owner}/{repo}/actions/workflows/{workflow_id}/dispatches",
         "source": "internal/server/gh_workflows_rest.go"
@@ -26574,13 +26573,13 @@
         "source": "internal/server/gh_dependency_graph.go"
       },
       {
-        "line": 499,
+        "line": 506,
         "method": "POST",
         "path": "/api/v3/repos/{owner}/{repo}/deployments",
         "source": "internal/server/gh_deployments.go"
       },
       {
-        "line": 507,
+        "line": 514,
         "method": "POST",
         "path": "/api/v3/repos/{owner}/{repo}/deployments/{deployment_id}/statuses",
         "source": "internal/server/gh_deployments.go"
@@ -27786,13 +27785,13 @@
         "source": "internal/server/secrets.go"
       },
       {
-        "line": 25,
+        "line": 24,
         "method": "PUT",
         "path": "/api/v3/repos/{owner}/{repo}/actions/workflows/{workflow_id}/disable",
         "source": "internal/server/gh_workflows_rest.go"
       },
       {
-        "line": 23,
+        "line": 22,
         "method": "PUT",
         "path": "/api/v3/repos/{owner}/{repo}/actions/workflows/{workflow_id}/enable",
         "source": "internal/server/gh_workflows_rest.go"
@@ -27864,7 +27863,7 @@
         "source": "internal/server/gh_dependabot.go"
       },
       {
-        "line": 518,
+        "line": 525,
         "method": "PUT",
         "path": "/api/v3/repos/{owner}/{repo}/environments/{env_name}",
         "source": "internal/server/gh_deployments.go"

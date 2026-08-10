@@ -14,11 +14,11 @@ func TestMilestoneLabels_ListFromMilestoneIssues(t *testing.T) {
 		{"name": "feature", "color": "a2eeef"},
 		{"name": "unused", "color": "cccccc"},
 	} {
-		resp := s.post(t, "/api/v3/repos/"+repo+"/labels", defaultToken, l)
+		resp := s.post(t, repo.path()+"/labels", defaultToken, l)
 		requireStatus(t, resp, 201)
 	}
 
-	resp := s.post(t, "/api/v3/repos/"+repo+"/milestones", defaultToken, map[string]interface{}{"title": "v1.0"})
+	resp := s.post(t, repo.path()+"/milestones", defaultToken, map[string]interface{}{"title": "v1.0"})
 	milestone := decodeJSONWithStatus(t, resp, 201)
 	msNumber := int(milestone["number"].(float64))
 	if msNumber != 1 {
@@ -27,20 +27,20 @@ func TestMilestoneLabels_ListFromMilestoneIssues(t *testing.T) {
 
 	// Two issues in the milestone sharing the "bug" label; a third issue
 	// outside the milestone carries "unused", which must not appear.
-	resp = s.post(t, "/api/v3/repos/"+repo+"/issues", defaultToken, map[string]interface{}{
+	resp = s.post(t, repo.path()+"/issues", defaultToken, map[string]interface{}{
 		"title": "one", "labels": []string{"bug"}, "milestone": msNumber,
 	})
 	requireStatus(t, resp, 201)
-	resp = s.post(t, "/api/v3/repos/"+repo+"/issues", defaultToken, map[string]interface{}{
+	resp = s.post(t, repo.path()+"/issues", defaultToken, map[string]interface{}{
 		"title": "two", "labels": []string{"bug", "feature"}, "milestone": msNumber,
 	})
 	requireStatus(t, resp, 201)
-	resp = s.post(t, "/api/v3/repos/"+repo+"/issues", defaultToken, map[string]interface{}{
+	resp = s.post(t, repo.path()+"/issues", defaultToken, map[string]interface{}{
 		"title": "outside", "labels": []string{"unused"},
 	})
 	requireStatus(t, resp, 201)
 
-	resp = s.get(t, "/api/v3/repos/"+repo+"/milestones/1/labels", defaultToken)
+	resp = s.get(t, repo.path()+"/milestones/1/labels", defaultToken)
 	labels := decodeJSONWithStatus2xxArray(t, resp, 200)
 	names := map[string]bool{}
 	for _, l := range labels {
@@ -50,6 +50,6 @@ func TestMilestoneLabels_ListFromMilestoneIssues(t *testing.T) {
 		t.Fatalf("milestone labels = %v, want exactly [bug feature]", labels)
 	}
 
-	resp = s.get(t, "/api/v3/repos/"+repo+"/milestones/42/labels", defaultToken)
+	resp = s.get(t, repo.path()+"/milestones/42/labels", defaultToken)
 	requireStatus(t, resp, 404)
 }

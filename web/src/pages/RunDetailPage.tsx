@@ -421,7 +421,7 @@ function segmentJobLog(text: string): { segments: LogSegment[]; lines: string[] 
     const group = line.match(/##\[group\](.*)$/);
     if (group) {
       if (current) segments.push(current);
-      current = { title: group[1].trim(), lines: [] };
+      current = { title: group[1]!.trim(), lines: [] };
       continue;
     }
     if (/##\[endgroup\]/.test(line)) {

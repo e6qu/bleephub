@@ -10,14 +10,14 @@ func TestPublicEventsFeed(t *testing.T) {
 	srv := newIsolatedServer(t)
 	repoKey := srv.createTestRepo(t)
 
-	resp := srv.post(t, "/api/v3/repos/"+repoKey+"/issues", defaultToken, map[string]interface{}{
+	resp := srv.post(t, repoKey.path()+"/issues", defaultToken, map[string]interface{}{
 		"title": "public event source issue",
 		"body":  "event feed body",
 	})
 	issue := decodeJSONWithStatus(t, resp, 201)
 	issueNumber := int(issue["number"].(float64))
 
-	resp = srv.post(t, "/api/v3/repos/"+repoKey+"/issues/"+strconv.Itoa(issueNumber)+"/comments", defaultToken, map[string]interface{}{
+	resp = srv.post(t, repoKey.path()+"/issues/"+strconv.Itoa(issueNumber)+"/comments", defaultToken, map[string]interface{}{
 		"body": "event feed comment",
 	})
 	decodeJSONWithStatus(t, resp, 201)
@@ -32,7 +32,7 @@ func TestPublicEventsFeed(t *testing.T) {
 	var issuesEvent, commentEvent map[string]interface{}
 	for _, e := range events {
 		repo, _ := e["repo"].(map[string]interface{})
-		if repo == nil || repo["name"] != repoKey {
+		if repo == nil || repo["name"] != repoKey.fullName() {
 			continue
 		}
 		switch e["type"] {

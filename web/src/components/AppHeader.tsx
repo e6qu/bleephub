@@ -83,7 +83,7 @@ function HeaderMenu({
   /** The signed-in username, published on the always-visible trigger so
    * post-deployment qualification can find the identity and open this menu to
    * reach the real sign-out control inside it. */
-  shauthUser?: string;
+  shauthUser?: string | undefined;
   children: (close: () => void) => ReactNode;
 }) {
   const [open, setOpen] = useState(false);
@@ -277,7 +277,7 @@ function DrawerSection({ title, items, onNavigate }: { title: string; items: Dra
         <NavLink
           key={it.to}
           to={it.to}
-          end={it.end}
+          end={it.end ?? false}
           onClick={onNavigate}
           style={{ textDecoration: "none" }}
         >
@@ -362,7 +362,7 @@ function iconButtonStyle(): CSSProperties {
   };
 }
 
-function Avatar({ login, url, size = 24 }: { login: string; url?: string; size?: number }) {
+function Avatar({ login, url, size = 24 }: { login: string; url?: string | undefined; size?: number }) {
   if (url) {
     return <img src={url} alt="" width={size} height={size} style={{ borderRadius: "50%", display: "block" }} />;
   }

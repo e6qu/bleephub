@@ -109,7 +109,7 @@ func (st *Store) ListDependencySnapshots(repoID int) []*DependencySnapshot {
 	defer st.mu.RUnlock()
 	out := make([]*DependencySnapshot, len(st.DependencySnapshots[repoID]))
 	copy(out, st.DependencySnapshots[repoID])
-	return out
+	return snapshotDependencySnapshots(out)
 }
 
 // AddSBOMExport records a generated SBOM export.

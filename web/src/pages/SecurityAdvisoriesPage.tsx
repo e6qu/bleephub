@@ -141,7 +141,7 @@ export function SecurityAdvisoriesPage() {
             <option value="all">All</option>
             {SEVERITIES.map((s) => (
               <option key={s} value={s}>
-                {s[0].toUpperCase() + s.slice(1)}
+                {s.charAt(0).toUpperCase() + s.slice(1)}
               </option>
             ))}
           </select>
@@ -450,7 +450,7 @@ function AdvisoryEditModal({
       >
         {SEVERITIES.map((value) => (
           <option key={value} value={value}>
-            {value[0].toUpperCase() + value.slice(1)}
+            {value.charAt(0).toUpperCase() + value.slice(1)}
           </option>
         ))}
       </select>
@@ -556,7 +556,7 @@ function AdvisoryFormModal({
       >
         {SEVERITIES.map((s) => (
           <option key={s} value={s}>
-            {s[0].toUpperCase() + s.slice(1)}
+            {s.charAt(0).toUpperCase() + s.slice(1)}
           </option>
         ))}
       </select>

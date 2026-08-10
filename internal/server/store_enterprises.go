@@ -372,10 +372,54 @@ func (st *Store) CreateEnterpriseTeam(name, description, selectionType string, g
 }
 
 // GetEnterpriseTeam returns an enterprise team by slug, or nil.
+// cloneEnterpriseTeam returns a deep copy safe to hand outside the store lock
+// (STORE-021): GroupID, MemberIDs and SelectedOrgLogins are the reference
+// fields. The mutators below re-fetch the live row by id.
+func cloneEnterpriseTeam(t *EnterpriseTeam) *EnterpriseTeam {
+	if t == nil {
+		return nil
+	}
+	clone := *t
+	if t.GroupID != nil {
+		group := *t.GroupID
+		clone.GroupID = &group
+	}
+	if t.MemberIDs != nil {
+		clone.MemberIDs = append([]int(nil), t.MemberIDs...)
+	}
+	if t.SelectedOrgLogins != nil {
+		clone.SelectedOrgLogins = append([]string(nil), t.SelectedOrgLogins...)
+	}
+	return &clone
+}
+
+// cloneEnterpriseCodeSecurityConfig deep-copies a configuration so callers hold
+// a row detached from the stored one (its only reference fields are three
+// optional scalars).
+func cloneEnterpriseCodeSecurityConfig(c *EnterpriseCodeSecurityConfiguration) *EnterpriseCodeSecurityConfiguration {
+	if c == nil {
+		return nil
+	}
+	clone := *c
+	if c.CodeScanningAllowAdvanced != nil {
+		v := *c.CodeScanningAllowAdvanced
+		clone.CodeScanningAllowAdvanced = &v
+	}
+	if c.CodeScanningRunnerType != nil {
+		v := *c.CodeScanningRunnerType
+		clone.CodeScanningRunnerType = &v
+	}
+	if c.CodeScanningRunnerLabel != nil {
+		v := *c.CodeScanningRunnerLabel
+		clone.CodeScanningRunnerLabel = &v
+	}
+	return &clone
+}
+
 func (st *Store) GetEnterpriseTeam(slug string) *EnterpriseTeam {
 	st.mu.RLock()
 	defer st.mu.RUnlock()
-	return st.EnterpriseTeamsBySlug[slug]
+	return cloneEnterpriseTeam(st.EnterpriseTeamsBySlug[slug])
 }
 
 // ListEnterpriseTeams returns all enterprise teams sorted by ID.
@@ -387,7 +431,7 @@ func (st *Store) ListEnterpriseTeams() []*EnterpriseTeam {
 		out = append(out, t)
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].ID < out[j].ID })
-	return out
+	return snapshotEnterpriseTeams(out)
 }
 
 // UpdateEnterpriseTeam applies the non-nil fields. Renaming re-slugs the team
@@ -396,31 +440,39 @@ func (st *Store) ListEnterpriseTeams() []*EnterpriseTeam {
 func (st *Store) UpdateEnterpriseTeam(t *EnterpriseTeam, name, description, selectionType, notificationSetting *string, groupID **string) bool {
 	st.mu.Lock()
 	defer st.mu.Unlock()
+	// Re-fetch the live row: the caller holds a detached clone from
+	// GetEnterpriseTeam, so mutate the stored team and sync fresh state back
+	// into the caller's pointer for rendering.
+	live := st.EnterpriseTeams[t.ID]
+	if live == nil {
+		return false
+	}
 
-	if name != nil && *name != "" && *name != t.Name {
+	if name != nil && *name != "" && *name != live.Name {
 		newSlug := slugify(*name)
-		if other, exists := st.EnterpriseTeamsBySlug[newSlug]; exists && other != t {
+		if other, exists := st.EnterpriseTeamsBySlug[newSlug]; exists && other != live {
 			return false
 		}
-		delete(st.EnterpriseTeamsBySlug, t.Slug)
-		t.Name = *name
-		t.Slug = newSlug
-		st.EnterpriseTeamsBySlug[t.Slug] = t
+		delete(st.EnterpriseTeamsBySlug, live.Slug)
+		live.Name = *name
+		live.Slug = newSlug
+		st.EnterpriseTeamsBySlug[live.Slug] = live
 	}
 	if description != nil {
-		t.Description = *description
+		live.Description = *description
 	}
 	if selectionType != nil {
-		t.OrganizationSelectionType = *selectionType
+		live.OrganizationSelectionType = *selectionType
 	}
 	if notificationSetting != nil {
-		t.NotificationSetting = *notificationSetting
+		live.NotificationSetting = *notificationSetting
 	}
 	if groupID != nil {
-		t.GroupID = *groupID
+		live.GroupID = *groupID
 	}
-	t.UpdatedAt = st.currentTime()
-	st.persistEnterpriseTeam(t)
+	live.UpdatedAt = st.currentTime()
+	st.persistEnterpriseTeam(live)
+	*t = *cloneEnterpriseTeam(live)
 	return true
 }
 
@@ -446,6 +498,10 @@ func (st *Store) DeleteEnterpriseTeam(slug string) bool {
 func (st *Store) AddEnterpriseTeamMember(t *EnterpriseTeam, userID int) {
 	st.mu.Lock()
 	defer st.mu.Unlock()
+	t = st.EnterpriseTeams[t.ID]
+	if t == nil {
+		return
+	}
 
 	for _, id := range t.MemberIDs {
 		if id == userID {
@@ -462,6 +518,10 @@ func (st *Store) AddEnterpriseTeamMember(t *EnterpriseTeam, userID int) {
 func (st *Store) RemoveEnterpriseTeamMember(t *EnterpriseTeam, userID int) bool {
 	st.mu.Lock()
 	defer st.mu.Unlock()
+	t = st.EnterpriseTeams[t.ID]
+	if t == nil {
+		return false
+	}
 
 	for i, id := range t.MemberIDs {
 		if id == userID {
@@ -478,6 +538,10 @@ func (st *Store) RemoveEnterpriseTeamMember(t *EnterpriseTeam, userID int) bool 
 func (st *Store) IsEnterpriseTeamMember(t *EnterpriseTeam, userID int) bool {
 	st.mu.RLock()
 	defer st.mu.RUnlock()
+	t = st.EnterpriseTeams[t.ID]
+	if t == nil {
+		return false
+	}
 	for _, id := range t.MemberIDs {
 		if id == userID {
 			return true
@@ -490,6 +554,10 @@ func (st *Store) IsEnterpriseTeamMember(t *EnterpriseTeam, userID int) bool {
 func (st *Store) ListEnterpriseTeamMembers(t *EnterpriseTeam) []*User {
 	st.mu.RLock()
 	defer st.mu.RUnlock()
+	t = st.EnterpriseTeams[t.ID]
+	if t == nil {
+		return nil
+	}
 	out := make([]*User, 0, len(t.MemberIDs))
 	for _, id := range t.MemberIDs {
 		if u := st.Users[id]; u != nil {
@@ -497,13 +565,17 @@ func (st *Store) ListEnterpriseTeamMembers(t *EnterpriseTeam) []*User {
 		}
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].ID < out[j].ID })
-	return out
+	return snapshotUsers(out)
 }
 
 // AddEnterpriseTeamOrg records an organization assignment (idempotent).
 func (st *Store) AddEnterpriseTeamOrg(t *EnterpriseTeam, orgLogin string) {
 	st.mu.Lock()
 	defer st.mu.Unlock()
+	t = st.EnterpriseTeams[t.ID]
+	if t == nil {
+		return
+	}
 
 	for _, l := range t.SelectedOrgLogins {
 		if l == orgLogin {
@@ -521,6 +593,10 @@ func (st *Store) AddEnterpriseTeamOrg(t *EnterpriseTeam, orgLogin string) {
 func (st *Store) RemoveEnterpriseTeamOrg(t *EnterpriseTeam, orgLogin string) bool {
 	st.mu.Lock()
 	defer st.mu.Unlock()
+	t = st.EnterpriseTeams[t.ID]
+	if t == nil {
+		return false
+	}
 
 	for i, l := range t.SelectedOrgLogins {
 		if l == orgLogin {
@@ -539,6 +615,10 @@ func (st *Store) RemoveEnterpriseTeamOrg(t *EnterpriseTeam, orgLogin string) boo
 func (st *Store) ListEnterpriseTeamOrgs(t *EnterpriseTeam) []*Org {
 	st.mu.RLock()
 	defer st.mu.RUnlock()
+	t = st.EnterpriseTeams[t.ID]
+	if t == nil {
+		return nil
+	}
 
 	var out []*Org
 	switch t.OrganizationSelectionType {
@@ -554,7 +634,7 @@ func (st *Store) ListEnterpriseTeamOrgs(t *EnterpriseTeam) []*Org {
 		}
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].ID < out[j].ID })
-	return out
+	return snapshotOrgs(out)
 }
 
 // --- enterprise code security configurations ---
@@ -581,7 +661,7 @@ func (st *Store) CreateEnterpriseCodeSecurityConfig(c *EnterpriseCodeSecurityCon
 func (st *Store) GetEnterpriseCodeSecurityConfig(id int) *EnterpriseCodeSecurityConfiguration {
 	st.mu.RLock()
 	defer st.mu.RUnlock()
-	return st.EnterpriseCodeSecurityConfigs[id]
+	return cloneEnterpriseCodeSecurityConfig(st.EnterpriseCodeSecurityConfigs[id])
 }
 
 // ListEnterpriseCodeSecurityConfigs returns all configurations sorted by ID.
@@ -593,7 +673,7 @@ func (st *Store) ListEnterpriseCodeSecurityConfigs() []*EnterpriseCodeSecurityCo
 		out = append(out, c)
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].ID < out[j].ID })
-	return out
+	return snapshotEnterpriseCodeSecurityConfigs(out)
 }
 
 // TouchEnterpriseCodeSecurityConfig bumps updated_at and persists after a
@@ -601,9 +681,17 @@ func (st *Store) ListEnterpriseCodeSecurityConfigs() []*EnterpriseCodeSecurityCo
 func (st *Store) TouchEnterpriseCodeSecurityConfig(c *EnterpriseCodeSecurityConfiguration, mutate func()) {
 	st.mu.Lock()
 	defer st.mu.Unlock()
+	// The caller holds a detached clone from GetEnterpriseCodeSecurityConfig;
+	// mutate() applies its edits to that clone, which we then commit onto the
+	// live row so concurrent readers observe the update through a stable pointer.
+	live := st.EnterpriseCodeSecurityConfigs[c.ID]
+	if live == nil {
+		return
+	}
 	mutate()
 	c.UpdatedAt = st.currentTime()
-	st.persistEnterpriseCodeSecurityConfig(c)
+	*live = *cloneEnterpriseCodeSecurityConfig(c)
+	st.persistEnterpriseCodeSecurityConfig(live)
 }
 
 // DeleteEnterpriseCodeSecurityConfig removes a configuration and detaches its
@@ -678,7 +766,7 @@ func (st *Store) ListEnterpriseCodeSecurityConfigRepos(configID int) []*Repo {
 		}
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].ID < out[j].ID })
-	return out
+	return snapshotRepos(out)
 }
 
 // SetEnterpriseCodeSecurityConfigDefault marks the configuration as the
@@ -686,9 +774,15 @@ func (st *Store) ListEnterpriseCodeSecurityConfigRepos(configID int) []*Repo {
 func (st *Store) SetEnterpriseCodeSecurityConfigDefault(c *EnterpriseCodeSecurityConfiguration, defaultForNewRepos string) {
 	st.mu.Lock()
 	defer st.mu.Unlock()
+	// c is a detached clone; commit the change onto the live row.
+	live := st.EnterpriseCodeSecurityConfigs[c.ID]
+	if live == nil {
+		return
+	}
 	c.DefaultForNewRepos = defaultForNewRepos
 	c.UpdatedAt = st.currentTime()
-	st.persistEnterpriseCodeSecurityConfig(c)
+	*live = *cloneEnterpriseCodeSecurityConfig(c)
+	st.persistEnterpriseCodeSecurityConfig(live)
 }
 
 // --- enterprise settings mutators ---

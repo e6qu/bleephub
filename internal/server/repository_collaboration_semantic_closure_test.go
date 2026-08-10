@@ -20,9 +20,9 @@ import (
 	"github.com/go-git/go-git/v5/plumbing/object"
 )
 
-func semanticRequest(t *testing.T, method, path, accept string) *http.Response {
+func (s *isolatedServer) semanticRequest(t *testing.T, method, path, accept string) *http.Response {
 	t.Helper()
-	req, err := http.NewRequest(method, testBaseURL+path, nil)
+	req, err := http.NewRequest(method, s.baseURL+path, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -38,9 +38,11 @@ func semanticRequest(t *testing.T, method, path, accept string) *http.Response {
 }
 
 func TestListCommitsHonorsDocumentedSelectorsAndPagination(t *testing.T) {
-	admin := testServer.store.UsersByLogin["admin"]
-	repo := testServer.store.CreateRepo(admin, "commit-selectors", "", false)
-	stor := testServer.store.GetGitStorage("admin", repo.Name)
+	t.Parallel()
+	s := newIsolatedServer(t)
+	admin := s.store.UsersByLogin["admin"]
+	repo := s.store.CreateRepo(admin, "commit-selectors", "", false)
+	stor := s.store.GetGitStorage("admin", repo.Name)
 
 	firstWhen := time.Date(2026, time.January, 2, 3, 4, 5, 0, time.UTC)
 	secondWhen := firstWhen.Add(24 * time.Hour)
@@ -66,14 +68,14 @@ func TestListCommitsHonorsDocumentedSelectorsAndPagination(t *testing.T) {
 		{"since=" + url.QueryEscape(secondWhen.Format(time.RFC3339)), secondSHA},
 		{"until=" + url.QueryEscape(firstWhen.Format(time.RFC3339)), firstSHA},
 	} {
-		resp := ghGet(t, "/api/v3/repos/admin/"+repo.Name+"/commits?"+tc.query, defaultToken)
+		resp := s.get(t, "/api/v3/repos/admin/"+repo.Name+"/commits?"+tc.query, defaultToken)
 		items := decodeJSONArray(t, resp)
 		if len(items) != 1 || items[0]["sha"] != tc.want.String() {
 			t.Fatalf("%s commits = %v, want only %s", tc.query, items, tc.want)
 		}
 	}
 
-	resp := ghGet(t, "/api/v3/repos/admin/"+repo.Name+"/commits?per_page=1&page=2", defaultToken)
+	resp := s.get(t, "/api/v3/repos/admin/"+repo.Name+"/commits?per_page=1&page=2", defaultToken)
 	items := decodeJSONArray(t, resp)
 	if len(items) != 1 || items[0]["sha"] != firstSHA.String() {
 		t.Fatalf("page 2 commits = %v, want %s", items, firstSHA)
@@ -82,7 +84,7 @@ func TestListCommitsHonorsDocumentedSelectorsAndPagination(t *testing.T) {
 		t.Fatalf("page 2 Link = %q, want previous-page relation", link)
 	}
 
-	invalid := ghGet(t, "/api/v3/repos/admin/"+repo.Name+"/commits?since=not-a-date", defaultToken)
+	invalid := s.get(t, "/api/v3/repos/admin/"+repo.Name+"/commits?since=not-a-date", defaultToken)
 	invalid.Body.Close()
 	if invalid.StatusCode != http.StatusUnprocessableEntity {
 		t.Fatalf("invalid since = %d, want 422", invalid.StatusCode)
@@ -90,9 +92,11 @@ func TestListCommitsHonorsDocumentedSelectorsAndPagination(t *testing.T) {
 }
 
 func TestRepositoryReadMediaTypesAndDirectoryShapes(t *testing.T) {
-	admin := testServer.store.UsersByLogin["admin"]
-	repo := testServer.store.CreateRepo(admin, "content-shapes", "", false)
-	stor := testServer.store.GetGitStorage("admin", repo.Name)
+	t.Parallel()
+	s := newIsolatedServer(t)
+	admin := s.store.UsersByLogin["admin"]
+	repo := s.store.CreateRepo(admin, "content-shapes", "", false)
+	stor := s.store.GetGitStorage("admin", repo.Name)
 
 	readmeHash, err := storeBlob(stor, []byte("# Read me\n"))
 	if err != nil {
@@ -138,14 +142,14 @@ func TestRepositoryReadMediaTypesAndDirectoryShapes(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	resp := semanticRequest(t, http.MethodGet, "/api/v3/repos/admin/"+repo.Name+"/contents/README.md", "application/vnd.github.raw+json")
+	resp := s.semanticRequest(t, http.MethodGet, "/api/v3/repos/admin/"+repo.Name+"/contents/README.md", "application/vnd.github.raw+json")
 	raw, _ := io.ReadAll(resp.Body)
 	resp.Body.Close()
 	if resp.StatusCode != http.StatusOK || string(raw) != "# Read me\n" {
 		t.Fatalf("raw contents = %d %q", resp.StatusCode, raw)
 	}
 
-	resp = semanticRequest(t, http.MethodGet, "/api/v3/repos/admin/"+repo.Name+"/contents/", "application/vnd.github.object+json")
+	resp = s.semanticRequest(t, http.MethodGet, "/api/v3/repos/admin/"+repo.Name+"/contents/", "application/vnd.github.object+json")
 	objectListing := decodeJSON(t, resp)
 	if objectListing["type"] != "dir" {
 		t.Fatalf("object media directory type = %v", objectListing["type"])
@@ -167,27 +171,27 @@ func TestRepositoryReadMediaTypesAndDirectoryShapes(t *testing.T) {
 	if byName["readme-link"]["type"] != "symlink" || byName["readme-link"]["target"] != "README.md" {
 		t.Fatalf("symlink shape = %v", byName["readme-link"])
 	}
-	resp = ghGet(t, "/api/v3/repos/admin/"+repo.Name+"/contents/readme-link", defaultToken)
+	resp = s.get(t, "/api/v3/repos/admin/"+repo.Name+"/contents/readme-link", defaultToken)
 	resolvedLink := decodeJSON(t, resp)
 	decodedLink, err := base64.StdEncoding.DecodeString(resolvedLink["content"].(string))
 	if err != nil || string(decodedLink) != "# Read me\n" || resolvedLink["type"] != "file" {
 		t.Fatalf("resolved symlink contents = %v, decoded %q, err %v", resolvedLink, decodedLink, err)
 	}
 
-	resp = ghGet(t, "/api/v3/repos/admin/"+repo.Name+"/contents/vendor?ref="+head.String(), defaultToken)
+	resp = s.get(t, "/api/v3/repos/admin/"+repo.Name+"/contents/vendor?ref="+head.String(), defaultToken)
 	vendor := decodeJSONArray(t, resp)
 	if len(vendor) != 1 || vendor[0]["type"] != "submodule" ||
 		vendor[0]["submodule_git_url"] != "https://example.test/lib.git" {
 		t.Fatalf("submodule shape = %v", vendor)
 	}
 
-	resp = semanticRequest(t, http.MethodGet, "/api/v3/repos/admin/"+repo.Name+"/commits/main", "application/vnd.github.sha")
+	resp = s.semanticRequest(t, http.MethodGet, "/api/v3/repos/admin/"+repo.Name+"/commits/main", "application/vnd.github.sha")
 	shaBody, _ := io.ReadAll(resp.Body)
 	resp.Body.Close()
 	if string(shaBody) != head.String() {
 		t.Fatalf("commit SHA media body = %q, want %s", shaBody, head)
 	}
-	resp = semanticRequest(t, http.MethodGet, "/api/v3/repos/admin/"+repo.Name+"/commits/main", "application/vnd.github.diff")
+	resp = s.semanticRequest(t, http.MethodGet, "/api/v3/repos/admin/"+repo.Name+"/commits/main", "application/vnd.github.diff")
 	diffBody, _ := io.ReadAll(resp.Body)
 	resp.Body.Close()
 	if !bytes.Contains(diffBody, []byte("README.md")) {
@@ -196,9 +200,11 @@ func TestRepositoryReadMediaTypesAndDirectoryShapes(t *testing.T) {
 }
 
 func TestArchiveZipPreservesSymlinks(t *testing.T) {
-	admin := testServer.store.UsersByLogin["admin"]
-	repo := testServer.store.CreateRepo(admin, "archive-symlink", "", false)
-	stor := testServer.store.GetGitStorage("admin", repo.Name)
+	t.Parallel()
+	s := newIsolatedServer(t)
+	admin := s.store.UsersByLogin["admin"]
+	repo := s.store.CreateRepo(admin, "archive-symlink", "", false)
+	stor := s.store.GetGitStorage("admin", repo.Name)
 	targetHash, err := storeBlob(stor, []byte("target\n"))
 	if err != nil {
 		t.Fatal(err)
@@ -222,10 +228,10 @@ func TestArchiveZipPreservesSymlinks(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	redirect := noRedirectGet(t, "/api/v3/repos/admin/"+repo.Name+"/zipball/main")
+	redirect := s.noRedirectGet(t, "/api/v3/repos/admin/"+repo.Name+"/zipball/main")
 	location := redirect.Header.Get("Location")
 	redirect.Body.Close()
-	resp := ghGet(t, strings.TrimPrefix(location, testBaseURL), defaultToken)
+	resp := s.get(t, strings.TrimPrefix(location, s.baseURL), defaultToken)
 	body, _ := io.ReadAll(resp.Body)
 	resp.Body.Close()
 	zr, err := zip.NewReader(bytes.NewReader(body), int64(len(body)))
@@ -257,16 +263,18 @@ func TestArchiveZipPreservesSymlinks(t *testing.T) {
 }
 
 func TestCompareAndReferenceListsFailLoudlyWithoutGitStorage(t *testing.T) {
-	admin := testServer.store.UsersByLogin["admin"]
-	repo := testServer.store.CreateRepo(admin, "missing-read-storage", "", false)
-	stor := testServer.store.GetGitStorage("admin", repo.Name)
-	testServer.store.mu.Lock()
-	delete(testServer.store.GitStorages, repo.FullName)
-	testServer.store.mu.Unlock()
+	t.Parallel()
+	s := newIsolatedServer(t)
+	admin := s.store.UsersByLogin["admin"]
+	repo := s.store.CreateRepo(admin, "missing-read-storage", "", false)
+	stor := s.store.GetGitStorage("admin", repo.Name)
+	s.store.mu.Lock()
+	delete(s.store.GitStorages, repo.FullName)
+	s.store.mu.Unlock()
 	t.Cleanup(func() {
-		testServer.store.mu.Lock()
-		testServer.store.GitStorages[repo.FullName] = stor
-		testServer.store.mu.Unlock()
+		s.store.mu.Lock()
+		s.store.GitStorages[repo.FullName] = stor
+		s.store.mu.Unlock()
 	})
 
 	for _, path := range []string{
@@ -274,7 +282,7 @@ func TestCompareAndReferenceListsFailLoudlyWithoutGitStorage(t *testing.T) {
 		"/api/v3/repos/" + repo.FullName + "/branches",
 		"/api/v3/repos/" + repo.FullName + "/tags",
 	} {
-		resp := ghGet(t, path, defaultToken)
+		resp := s.get(t, path, defaultToken)
 		resp.Body.Close()
 		if resp.StatusCode != http.StatusInternalServerError {
 			t.Fatalf("%s = %d, want 500", path, resp.StatusCode)
@@ -283,18 +291,20 @@ func TestCompareAndReferenceListsFailLoudlyWithoutGitStorage(t *testing.T) {
 }
 
 func TestMergeUpstreamPerformsDivergedMergeWithAuthenticatedAuthor(t *testing.T) {
-	admin := testServer.store.UsersByLogin["admin"]
-	source := testServer.store.CreateRepo(admin, "merge-source", "", false)
-	sourceStor := testServer.store.GetGitStorage("admin", source.Name)
+	t.Parallel()
+	s := newIsolatedServer(t)
+	admin := s.store.UsersByLogin["admin"]
+	source := s.store.CreateRepo(admin, "merge-source", "", false)
+	sourceStor := s.store.GetGitStorage("admin", source.Name)
 	signature := &object.Signature{Name: admin.Login, Email: "admin@example.test", When: fixedTestTime}
 	if _, err := initRepoWithFiles(sourceStor, "main", "root", map[string]string{"root.txt": "root\n"}, signature); err != nil {
 		t.Fatal(err)
 	}
-	fork := testServer.store.ForkRepo(admin, source, "merge-fork")
+	fork := s.store.ForkRepo(admin, source, "merge-fork")
 	if fork == nil {
 		t.Fatal("create fork")
 	}
-	forkStor := testServer.store.GetGitStorage("admin", fork.Name)
+	forkStor := s.store.GetGitStorage("admin", fork.Name)
 	if _, err := createFileCommit(sourceStor, "main", "upstream.txt", "upstream\n", "upstream", signature); err != nil {
 		t.Fatal(err)
 	}
@@ -302,7 +312,7 @@ func TestMergeUpstreamPerformsDivergedMergeWithAuthenticatedAuthor(t *testing.T)
 		t.Fatal(err)
 	}
 
-	resp := ghPost(t, "/api/v3/repos/"+fork.FullName+"/merge-upstream", defaultToken, map[string]interface{}{"branch": "main"})
+	resp := s.post(t, "/api/v3/repos/"+fork.FullName+"/merge-upstream", defaultToken, map[string]interface{}{"branch": "main"})
 	out := decodeJSONWithStatus(t, resp, http.StatusOK)
 	if out["merge_type"] != "merge" {
 		t.Fatalf("merge type = %v, want merge", out["merge_type"])
@@ -319,7 +329,7 @@ func TestMergeUpstreamPerformsDivergedMergeWithAuthenticatedAuthor(t *testing.T)
 		t.Fatalf("merge commit = parents %d author %q", head.NumParents(), head.Author.Name)
 	}
 	for _, path := range []string{"fork.txt", "upstream.txt"} {
-		resp := ghGet(t, "/api/v3/repos/"+fork.FullName+"/contents/"+path, defaultToken)
+		resp := s.get(t, "/api/v3/repos/"+fork.FullName+"/contents/"+path, defaultToken)
 		resp.Body.Close()
 		if resp.StatusCode != http.StatusOK {
 			t.Fatalf("merged %s = %d", path, resp.StatusCode)
@@ -328,20 +338,22 @@ func TestMergeUpstreamPerformsDivergedMergeWithAuthenticatedAuthor(t *testing.T)
 }
 
 func TestPullRequestAndIssueCollaborationMetadata(t *testing.T) {
-	createTestPRRepo(t, "collaboration-metadata")
-	repo := testServer.store.GetRepo("admin", "collaboration-metadata")
-	created := ghPost(t, "/api/v3/repos/"+repo.FullName+"/pulls", defaultToken, map[string]interface{}{
+	t.Parallel()
+	s := newIsolatedServer(t)
+	s.createTestPRRepo(t, "collaboration-metadata")
+	repo := s.store.GetRepo("admin", "collaboration-metadata")
+	created := s.post(t, "/api/v3/repos/"+repo.FullName+"/pulls", defaultToken, map[string]interface{}{
 		"title": "Metadata", "head": "feat", "base": "main",
 	})
 	prJSON := decodeJSONWithStatus(t, created, http.StatusCreated)
 	number := int(prJSON["number"].(float64))
-	pr := testServer.store.GetPullRequestByNumber(repo.ID, number)
-	testServer.store.UpdatePullRequest(pr.ID, func(stored *PullRequest) {
+	pr := s.store.GetPullRequestByNumber(repo.ID, number)
+	s.store.UpdatePullRequest(pr.ID, func(stored *PullRequest) {
 		stored.Mergeable = "UNKNOWN"
 	})
-	testServer.store.PRReviewComments.CreateRootComment(pr.ID, testServer.store.UsersByLogin["admin"].ID, "feature.txt", "inline", "", "RIGHT", 1, 0)
+	s.store.PRReviewComments.CreateRootComment(pr.ID, s.store.UsersByLogin["admin"].ID, "feature.txt", "inline", "", "RIGHT", 1, 0)
 
-	resp := ghGet(t, "/api/v3/repos/"+repo.FullName+"/pulls/"+prJSONNumber(number), defaultToken)
+	resp := s.get(t, "/api/v3/repos/"+repo.FullName+"/pulls/"+prJSONNumber(number), defaultToken)
 	renderedPR := decodeJSON(t, resp)
 	if renderedPR["mergeable"] != nil {
 		t.Fatalf("unknown mergeable = %v, want null", renderedPR["mergeable"])
@@ -350,26 +362,26 @@ func TestPullRequestAndIssueCollaborationMetadata(t *testing.T) {
 		t.Fatalf("review_comments = %v, want 1", renderedPR["review_comments"])
 	}
 
-	parentResp := ghPost(t, "/api/v3/repos/"+repo.FullName+"/issues", defaultToken, map[string]interface{}{"title": "Parent"})
+	parentResp := s.post(t, "/api/v3/repos/"+repo.FullName+"/issues", defaultToken, map[string]interface{}{"title": "Parent"})
 	parent := decodeJSONWithStatus(t, parentResp, http.StatusCreated)
-	childResp := ghPost(t, "/api/v3/repos/"+repo.FullName+"/issues", defaultToken, map[string]interface{}{"title": "Child"})
+	childResp := s.post(t, "/api/v3/repos/"+repo.FullName+"/issues", defaultToken, map[string]interface{}{"title": "Child"})
 	child := decodeJSONWithStatus(t, childResp, http.StatusCreated)
 	parentNumber := int(parent["number"].(float64))
 	childNumber := int(child["number"].(float64))
-	childIssue := testServer.store.GetIssueByNumber(repo.ID, childNumber)
-	resp = ghPost(t, "/api/v3/repos/"+repo.FullName+"/issues/"+prJSONNumber(parentNumber)+"/sub_issues", defaultToken, map[string]interface{}{"sub_issue_id": childIssue.ID})
+	childIssue := s.store.GetIssueByNumber(repo.ID, childNumber)
+	resp = s.post(t, "/api/v3/repos/"+repo.FullName+"/issues/"+prJSONNumber(parentNumber)+"/sub_issues", defaultToken, map[string]interface{}{"sub_issue_id": childIssue.ID})
 	resp.Body.Close()
 	if resp.StatusCode != http.StatusCreated {
 		t.Fatalf("add sub-issue = %d", resp.StatusCode)
 	}
 	for _, issueNumber := range []int{childNumber, parentNumber} {
-		resp = ghPatch(t, "/api/v3/repos/"+repo.FullName+"/issues/"+prJSONNumber(issueNumber), defaultToken, map[string]interface{}{"state": "closed"})
+		resp = s.patch(t, "/api/v3/repos/"+repo.FullName+"/issues/"+prJSONNumber(issueNumber), defaultToken, map[string]interface{}{"state": "closed"})
 		resp.Body.Close()
 		if resp.StatusCode != http.StatusOK {
 			t.Fatalf("close issue %d = %d", issueNumber, resp.StatusCode)
 		}
 	}
-	resp = ghGet(t, "/api/v3/repos/"+repo.FullName+"/issues/"+prJSONNumber(parentNumber), defaultToken)
+	resp = s.get(t, "/api/v3/repos/"+repo.FullName+"/issues/"+prJSONNumber(parentNumber), defaultToken)
 	issue := decodeJSON(t, resp)
 	if issue["author_association"] != "OWNER" || !strings.HasSuffix(issue["timeline_url"].(string), "/timeline") {
 		t.Fatalf("issue association/timeline = %v / %v", issue["author_association"], issue["timeline_url"])
@@ -474,13 +486,15 @@ func TestCommentAuthorAssociationUsesRepositoryRelationship(t *testing.T) {
 }
 
 func TestContentsHTMLMediaRendersMarkup(t *testing.T) {
-	createReadsRepo(t, "content-html", map[string]interface{}{"auto_init": true})
+	t.Parallel()
+	s := newIsolatedServer(t)
+	s.createReadsRepo(t, "content-html", map[string]interface{}{"auto_init": true})
 	encoded := base64.StdEncoding.EncodeToString([]byte("# Heading\n"))
-	resp := ghPut(t, "/api/v3/repos/admin/content-html/contents/doc.md", defaultToken, map[string]interface{}{
+	resp := s.put(t, "/api/v3/repos/admin/content-html/contents/doc.md", defaultToken, map[string]interface{}{
 		"message": "doc", "content": encoded,
 	})
 	resp.Body.Close()
-	request := semanticRequest(t, http.MethodGet, "/api/v3/repos/admin/content-html/contents/doc.md", "application/vnd.github.html+json")
+	request := s.semanticRequest(t, http.MethodGet, "/api/v3/repos/admin/content-html/contents/doc.md", "application/vnd.github.html+json")
 	body, _ := io.ReadAll(request.Body)
 	request.Body.Close()
 	if request.StatusCode != http.StatusOK || !bytes.Contains(body, []byte("<h1")) {

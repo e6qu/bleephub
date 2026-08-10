@@ -12,7 +12,7 @@ import { fetchRepoIssuesPage, fetchRepoPRsPage } from "../api.js";
 export function useOpenCounts(
   owner: string,
   repo: string,
-): { issueCount?: number | string; prCount?: number | string } {
+): { issueCount?: number | string | undefined; prCount?: number | string | undefined } {
   const { data: issuePage } = useQuery({
     queryKey: ["issues", owner, repo, "open", "count"],
     queryFn: ({ signal }) => fetchRepoIssuesPage(owner, repo, "open", undefined, signal),

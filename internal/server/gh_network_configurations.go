@@ -288,7 +288,7 @@ func (st *Store) ListNetworkConfigurations(orgLogin string) []*NetworkConfigurat
 		}
 		return out[i].ID < out[j].ID
 	})
-	return out
+	return snapshotNetworkConfigurations(out)
 }
 
 // GetNetworkConfiguration returns a configuration by ID, or nil.

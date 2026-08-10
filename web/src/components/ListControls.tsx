@@ -76,7 +76,7 @@ function quoteToken(v: string): string {
 /** Parse a GitHub-style query back into filter state (state + dimensions). */
 function parseQuery(
   raw: string,
-): { state?: "open" | "closed"; filters: Partial<ListFilterState> } {
+): { state?: "open" | "closed" | undefined; filters: Partial<ListFilterState> } {
   const filters: Partial<ListFilterState> = {
     label: null,
     author: null,
@@ -88,7 +88,7 @@ function parseQuery(
   let m: RegExpExecArray | null;
   while ((m = tokenRe.exec(raw)) !== null) {
     const key = m[1];
-    const val = m[2].replace(/^"|"$/g, "");
+    const val = m[2]!.replace(/^"|"$/g, "");
     switch (key) {
       case "is":
         if (val === "open" || val === "closed") state = val;
@@ -172,8 +172,8 @@ export function ListControls<T>({
   kind: "issue" | "pr";
   state: "open" | "closed";
   onState: (s: "open" | "closed") => void;
-  openCount?: number | string;
-  closedCount?: number | string;
+  openCount?: number | string | undefined;
+  closedCount?: number | string | undefined;
   items: T[];
   filters: ListFilterState;
   onFilters: (f: ListFilterState) => void;

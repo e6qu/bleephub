@@ -383,7 +383,7 @@ export function BranchProtectionPage() {
                         <input
                           type="checkbox"
                           checked={form[key as keyof FormState] as boolean}
-                          onChange={(e) => setForm((current) => ({ ...current, [key]: e.target.checked }))}
+                          onChange={(e) => setForm((current) => ({ ...current, [key as string]: e.target.checked }))}
                         />
                         {label}
                       </label>

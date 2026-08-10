@@ -89,7 +89,7 @@ function MarketplaceDirectory() {
             <Blankslate title="No apps matched">Try another Marketplace search.</Blankslate>
           ) : (
             <div className="marketplace-grid">
-              {visible.map((listing, index) => <ListingCard key={listing.slug} listing={listing} color={MARKETPLACE_COLORS[index % MARKETPLACE_COLORS.length]} />)}
+              {visible.map((listing, index) => <ListingCard key={listing.slug} listing={listing} color={MARKETPLACE_COLORS[index % MARKETPLACE_COLORS.length]!} />)}
             </div>
           )}
           {(subscriptions.data?.length ?? 0) > 0 && (

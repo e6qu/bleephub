@@ -202,6 +202,29 @@ func (st *Store) CreateSecurityAdvisoryE(repoID, authorID int, req CreateAdvisor
 }
 
 // ListSecurityAdvisories returns all security advisories for a repo, newest first.
+// cloneSecurityAdvisory returns a deep copy safe to hand outside the store
+// lock (STORE-021). CWEs, Vulnerabilities and PublishedAt are the only
+// reference fields; SecurityAdvisoryVulnerability is all-value, so copying the
+// two slices and the time pointer detaches the result. Mutations go through
+// UpdateSecurityAdvisory (keyed by id), never the getter's result.
+func cloneSecurityAdvisory(a *SecurityAdvisory) *SecurityAdvisory {
+	if a == nil {
+		return nil
+	}
+	clone := *a
+	if a.CWEs != nil {
+		clone.CWEs = append([]string(nil), a.CWEs...)
+	}
+	if a.Vulnerabilities != nil {
+		clone.Vulnerabilities = append([]SecurityAdvisoryVulnerability(nil), a.Vulnerabilities...)
+	}
+	if a.PublishedAt != nil {
+		published := *a.PublishedAt
+		clone.PublishedAt = &published
+	}
+	return &clone
+}
+
 func (st *Store) ListSecurityAdvisories(repoID int) []*SecurityAdvisory {
 	st.mu.RLock()
 	defer st.mu.RUnlock()
@@ -212,12 +235,12 @@ func (st *Store) ListSecurityAdvisories(repoID int) []*SecurityAdvisory {
 	}
 	out := make([]*SecurityAdvisory, 0, len(st.SecurityAdvisoriesByRepo[repo.FullName]))
 	for _, a := range st.SecurityAdvisoriesByRepo[repo.FullName] {
-		out = append(out, a)
+		out = append(out, cloneSecurityAdvisory(a))
 	}
 	sort.Slice(out, func(i, j int) bool {
 		return out[i].CreatedAt.After(out[j].CreatedAt)
 	})
-	return out
+	return snapshotSecurityAdvisories(out)
 }
 
 // GetSecurityAdvisoryByGHSA returns an advisory by repo and GHSA ID.
@@ -229,7 +252,7 @@ func (st *Store) GetSecurityAdvisoryByGHSA(repoID int, ghsaID string) *SecurityA
 	if repo == nil {
 		return nil
 	}
-	return st.SecurityAdvisoriesByRepo[repo.FullName][ghsaID]
+	return cloneSecurityAdvisory(st.SecurityAdvisoriesByRepo[repo.FullName][ghsaID])
 }
 
 // UpdateSecurityAdvisory applies fn to the advisory and persists it.

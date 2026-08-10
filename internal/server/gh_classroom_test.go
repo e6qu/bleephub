@@ -20,8 +20,7 @@ func TestGitHubClassroomSurface(t *testing.T) {
 	t.Cleanup(func() { srv.replaceClockNow(previousClock) })
 	org := srv.createTestOrg(t)
 	starterRepo := srv.createTestRepo(t)
-	starterOwner, starterName, _ := strings.Cut(starterRepo, "/")
-	starterRecord := srv.store.GetRepo(starterOwner, starterName)
+	starterRecord := srv.store.GetRepo(starterRepo.owner, starterRepo.name)
 	if err := srv.initRepoFiles(context.Background(), starterRecord, starterRecord.DefaultBranch, "Classroom starter", "", "", true); err != nil {
 		t.Fatalf("initialize starter repository: %v", err)
 	}
@@ -40,7 +39,7 @@ func TestGitHubClassroomSurface(t *testing.T) {
 	assignment := decodeJSONWithStatus(t, srv.post(t, "/classroom-data/classrooms/"+classroomID+"/assignments", defaultToken, map[string]interface{}{
 		"title":                   "Intro to Binaries",
 		"type":                    "individual",
-		"starter_code_repository": starterRepo,
+		"starter_code_repository": starterRepo.fullName(),
 		"public_repo":             true,
 		"invitations_enabled":     true,
 		"editor":                  "codespaces",
@@ -111,7 +110,7 @@ func TestGitHubClassroomSurface(t *testing.T) {
 	resp = srv.get(t, "/api/v3/assignments/"+assignmentID, defaultToken)
 	fullAssignment := decodeJSONWithStatus(t, resp, 200)
 	starter, _ := fullAssignment["starter_code_repository"].(map[string]interface{})
-	if starter == nil || starter["full_name"] != starterRepo {
+	if starter == nil || starter["full_name"] != starterRepo.fullName() {
 		t.Fatalf("starter_code_repository = %v", fullAssignment["starter_code_repository"])
 	}
 	nested, _ := fullAssignment["classroom"].(map[string]interface{})
@@ -188,7 +187,7 @@ func TestGitHubClassroomRequiresOwningOrganizationAdmin(t *testing.T) {
 	assignment := decodeJSONWithStatus(t, srv.post(t, "/classroom-data/classrooms/"+classroomID+"/assignments", defaultToken, map[string]interface{}{
 		"title":                   "Private Assignment",
 		"type":                    "individual",
-		"starter_code_repository": starterRepo,
+		"starter_code_repository": starterRepo.fullName(),
 	}), http.StatusCreated)
 	assignmentID := strconv.Itoa(int(assignment["id"].(float64)))
 
@@ -227,8 +226,7 @@ func TestGitHubClassroomBrowserWorkflowCreatesRealAssignmentRepository(t *testin
 	srv := newIsolatedServer(t)
 	orgLogin := srv.createTestOrg(t)
 	starterFullName := srv.createTestRepo(t)
-	starterOwner, starterName, _ := strings.Cut(starterFullName, "/")
-	starter := srv.store.GetRepo(starterOwner, starterName)
+	starter := srv.store.GetRepo(starterFullName.owner, starterFullName.name)
 	if err := srv.initRepoFiles(context.Background(), starter, starter.DefaultBranch, "Classroom starter", "", "", true); err != nil {
 		t.Fatalf("initialize starter repository: %v", err)
 	}
@@ -251,7 +249,7 @@ func TestGitHubClassroomBrowserWorkflowCreatesRealAssignmentRepository(t *testin
 	assignment := decodeJSONWithStatus(t, srv.post(t, "/classroom-data/classrooms/"+classroomID+"/assignments", defaultToken, map[string]interface{}{
 		"title":                          "Pointers and Processes",
 		"type":                           "individual",
-		"starter_code_repository":        starterFullName,
+		"starter_code_repository":        starterFullName.fullName(),
 		"feedback_pull_requests_enabled": true,
 		"students_are_repo_admins":       true,
 		"public_repo":                    false,
@@ -294,8 +292,7 @@ func TestGitHubClassroomGroupAcceptanceLinksRosterIdentifiers(t *testing.T) {
 	srv := newIsolatedServer(t)
 	org := srv.createTestOrg(t)
 	starterFullName := srv.createTestRepo(t)
-	owner, name, _ := strings.Cut(starterFullName, "/")
-	starter := srv.store.GetRepo(owner, name)
+	starter := srv.store.GetRepo(starterFullName.owner, starterFullName.name)
 	if err := srv.initRepoFiles(context.Background(), starter, starter.DefaultBranch, "Group starter", "", "", true); err != nil {
 		t.Fatalf("initialize starter: %v", err)
 	}
@@ -311,7 +308,7 @@ func TestGitHubClassroomGroupAcceptanceLinksRosterIdentifiers(t *testing.T) {
 		"students": []map[string]interface{}{{"roster_identifier": "student-a"}, {"roster_identifier": "student-b"}, {"roster_identifier": "student-c"}},
 	}), http.StatusOK)
 	assignment := decodeJSONWithStatus(t, srv.post(t, "/classroom-data/classrooms/"+classroomID+"/assignments", defaultToken, map[string]interface{}{
-		"title": "Team Project", "type": "group", "starter_code_repository": starterFullName, "max_members": 2, "max_teams": 1,
+		"title": "Team Project", "type": "group", "starter_code_repository": starterFullName.fullName(), "max_members": 2, "max_teams": 1,
 	}), http.StatusCreated)
 	assignmentID := int(assignment["id"].(float64))
 	invite := assignment["invite_link"].(string)

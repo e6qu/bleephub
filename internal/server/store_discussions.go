@@ -117,7 +117,14 @@ func (st *Store) createDiscussionCategoryLocked(repoID int, name, emoji, descrip
 func (st *Store) GetDiscussionCategory(id int) *DiscussionCategory {
 	st.mu.RLock()
 	defer st.mu.RUnlock()
-	return st.DiscussionCategories[id]
+	// A copy so a reader can't mutate the stored category through the getter
+	// (STORE-021); DiscussionCategory is all-value, so a shallow copy detaches.
+	cat := st.DiscussionCategories[id]
+	if cat == nil {
+		return nil
+	}
+	clone := *cat
+	return &clone
 }
 
 // GetDiscussionCategoryByName returns a category by repo and name.
@@ -126,7 +133,9 @@ func (st *Store) GetDiscussionCategoryByName(repoID int, name string) *Discussio
 	defer st.mu.RUnlock()
 	for _, cat := range st.DiscussionCategories {
 		if cat.RepoID == repoID && cat.Name == name {
-			return cat
+			// Detach like GetDiscussionCategory — all-value, so a shallow copy.
+			clone := *cat
+			return &clone
 		}
 	}
 	return nil
@@ -143,7 +152,7 @@ func (st *Store) ListDiscussionCategories(repoID int) []*DiscussionCategory {
 		}
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].ID < out[j].ID })
-	return out
+	return snapshotSlice(out)
 }
 
 // CreateDiscussion creates a new discussion in the given repository.
@@ -182,11 +191,29 @@ func (st *Store) CreateDiscussion(repoID, categoryID, authorID int, title, body 
 	return d
 }
 
+// cloneDiscussion returns a copy safe to hand outside the store lock
+// (STORE-021): LastEditedAt and PublishedAt are the only reference fields.
+func cloneDiscussion(d *Discussion) *Discussion {
+	if d == nil {
+		return nil
+	}
+	clone := *d
+	if d.LastEditedAt != nil {
+		edited := *d.LastEditedAt
+		clone.LastEditedAt = &edited
+	}
+	if d.PublishedAt != nil {
+		published := *d.PublishedAt
+		clone.PublishedAt = &published
+	}
+	return &clone
+}
+
 // GetDiscussion returns a discussion by global ID.
 func (st *Store) GetDiscussion(id int) *Discussion {
 	st.mu.RLock()
 	defer st.mu.RUnlock()
-	return st.Discussions[id]
+	return cloneDiscussion(st.Discussions[id])
 }
 
 // GetDiscussionByNumber returns a discussion by repo and number.
@@ -195,7 +222,7 @@ func (st *Store) GetDiscussionByNumber(repoID, number int) *Discussion {
 	defer st.mu.RUnlock()
 	for _, d := range st.Discussions {
 		if d.RepoID == repoID && d.Number == number && !d.Deleted {
-			return d
+			return cloneDiscussion(d)
 		}
 	}
 	return nil
@@ -216,7 +243,7 @@ func (st *Store) ListDiscussions(repoID, categoryID int) []*Discussion {
 		out = append(out, d)
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].CreatedAt.After(out[j].CreatedAt) })
-	return out
+	return snapshotDiscussions(out)
 }
 
 // UpdateDiscussion applies a mutation function to a discussion.
@@ -279,7 +306,18 @@ func (st *Store) CreateDiscussionComment(discussionID, authorID int, body string
 func (st *Store) GetDiscussionComment(id int) *DiscussionComment {
 	st.mu.RLock()
 	defer st.mu.RUnlock()
-	return st.DiscussionComments[id]
+	// A copy so a reader can't mutate the stored comment through the getter
+	// (STORE-021); LastEditedAt is the only reference field.
+	c := st.DiscussionComments[id]
+	if c == nil {
+		return nil
+	}
+	clone := *c
+	if c.LastEditedAt != nil {
+		edited := *c.LastEditedAt
+		clone.LastEditedAt = &edited
+	}
+	return &clone
 }
 
 // ListDiscussionComments returns comments for a discussion, optionally scoped to a parent.
@@ -297,7 +335,7 @@ func (st *Store) ListDiscussionComments(discussionID, parentID int) []*Discussio
 		out = append(out, c)
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].CreatedAt.Before(out[j].CreatedAt) })
-	return out
+	return snapshotDiscussionComments(out)
 }
 
 // UpdateDiscussionComment applies a mutation function to a comment.

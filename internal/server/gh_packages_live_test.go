@@ -14,9 +14,11 @@ import (
 // endpoints through the shared TestMain server so the OpenAPI response-shape
 // validator observes them.
 func TestLivePackages_UserOrgRepo(t *testing.T) {
-	admin := testServer.store.UsersByLogin["admin"]
-	org := testServer.store.CreateOrg(admin, "live-pkg-org", "Live Pkg Org", "")
-	repo := testServer.store.CreateRepo(admin, "live-pkg-repo", "live pkg repo", false)
+	t.Parallel()
+	s := newIsolatedServer(t)
+	admin := s.store.UsersByLogin["admin"]
+	org := s.store.CreateOrg(admin, "live-pkg-org", "Live Pkg Org", "")
+	repo := s.store.CreateRepo(admin, "live-pkg-repo", "live pkg repo", false)
 
 	seed := func(ownerType, owner, pkgType, pkgName, version string) int {
 		body, _ := json.Marshal(map[string]any{
@@ -33,7 +35,7 @@ func TestLivePackages_UserOrgRepo(t *testing.T) {
 				},
 			},
 		})
-		resp, err := authedPost("/internal/packages/"+ownerType+"/"+owner+"/"+pkgType+"/"+pkgName+"/versions", "application/json", bytes.NewReader(body))
+		resp, err := s.authedPost("/internal/packages/"+ownerType+"/"+owner+"/"+pkgType+"/"+pkgName+"/versions", "application/json", bytes.NewReader(body))
 		if err != nil {
 			t.Fatalf("seed %s/%s: %v", ownerType, pkgName, err)
 		}
@@ -50,7 +52,7 @@ func TestLivePackages_UserOrgRepo(t *testing.T) {
 		return int(v["id"].(float64))
 	}
 
-	_, userVersionID := publishContainerPackageVersion(t, admin.Login, "live-user-pkg", "1.0.0")
+	_, userVersionID := s.publishContainerPackageVersion(t, admin.Login, "live-user-pkg", "1.0.0")
 	orgVersionID := seed("org", org.Login, "npm", "live-org-pkg", "1.0.0")
 	repoVersionID := seed("repository", repo.FullName, "docker", "live-repo-pkg", "1.0.0")
 
@@ -75,7 +77,7 @@ func TestLivePackages_UserOrgRepo(t *testing.T) {
 	}
 
 	for _, c := range cases {
-		resp := authedGet(t, c.path)
+		resp := s.authedGet(t, c.path)
 		if resp.StatusCode != http.StatusOK {
 			b, _ := io.ReadAll(resp.Body)
 			resp.Body.Close()

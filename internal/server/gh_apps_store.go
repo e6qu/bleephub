@@ -519,7 +519,7 @@ func (st *Store) ListAppInstallations(appID int) []*Installation {
 		}
 	}
 	sort.Slice(result, func(i, j int) bool { return result[i].ID < result[j].ID })
-	return result
+	return snapshotInstallations(result)
 }
 
 // CountAppInstallations returns the number of installations for a given app.

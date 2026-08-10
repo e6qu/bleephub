@@ -51,14 +51,14 @@ func testCodeQLDatabaseBundleWithManifest(t *testing.T, language, manifestYAML, 
 
 // uploadCodeQLDatabase sends the raw uploads.github.com request used by the
 // official github/codeql-action and returns the public REST representation.
-func uploadCodeQLDatabase(t *testing.T, repoFullName, language, commitOID string, content []byte) map[string]any {
+func (s *isolatedServer) uploadCodeQLDatabase(t *testing.T, repoFullName, language, commitOID string, content []byte) map[string]any {
 	t.Helper()
-	resp := postCodeQLDatabase(t, defaultToken, repoFullName, language, language+"-database", commitOID, "application/zip", content)
+	resp := s.postCodeQLDatabase(t, defaultToken, repoFullName, language, language+"-database", commitOID, "application/zip", content)
 	resp.Body.Close()
 	if resp.StatusCode != http.StatusCreated {
 		t.Fatalf("upload CodeQL database: %d", resp.StatusCode)
 	}
-	get := ghGet(t, "/api/v3/repos/"+repoFullName+"/code-scanning/codeql/databases/"+language, defaultToken)
+	get := s.get(t, "/api/v3/repos/"+repoFullName+"/code-scanning/codeql/databases/"+language, defaultToken)
 	if get.StatusCode != http.StatusOK {
 		b, _ := io.ReadAll(get.Body)
 		get.Body.Close()
@@ -67,11 +67,11 @@ func uploadCodeQLDatabase(t *testing.T, repoFullName, language, commitOID string
 	return decodeJSON(t, get)
 }
 
-func postCodeQLDatabase(t *testing.T, token, repoFullName, language, name, commitOID, contentType string, content []byte) *http.Response {
+func (s *isolatedServer) postCodeQLDatabase(t *testing.T, token, repoFullName, language, name, commitOID, contentType string, content []byte) *http.Response {
 	t.Helper()
 	path := "/repos/" + repoFullName + "/code-scanning/codeql/databases/" + language +
 		"?name=" + name + "&commit_oid=" + commitOID
-	req, err := http.NewRequest(http.MethodPost, testBaseURL+path, bytes.NewReader(content))
+	req, err := http.NewRequest(http.MethodPost, s.baseURL+path, bytes.NewReader(content))
 	if err != nil {
 		t.Fatalf("create CodeQL database upload: %v", err)
 	}
@@ -111,35 +111,18 @@ func assertNoInternalURL(t *testing.T, value any) {
 	walk(value, "$")
 }
 
-// putRepoFile creates or updates a file via the contents API, returning
-// the commit SHA. This is how the autofix tests give the target branch
-// real git content.
-func putRepoFile(t *testing.T, repoFullName, path, content, message string) string {
-	t.Helper()
-	resp := ghPut(t, "/api/v3/repos/"+repoFullName+"/contents/"+path, defaultToken, map[string]interface{}{
-		"message": message,
-		"content": base64.StdEncoding.EncodeToString([]byte(content)),
-	})
-	if resp.StatusCode != http.StatusCreated {
-		b, _ := io.ReadAll(resp.Body)
-		resp.Body.Close()
-		t.Fatalf("put contents %s: %d body=%s", path, resp.StatusCode, b)
-	}
-	out := decodeJSON(t, resp)
-	commit := out["commit"].(map[string]interface{})
-	return commit["sha"].(string)
-}
-
 // --- organization code scanning alerts ---
 
 func TestCodeScanningOrgAlerts_List(t *testing.T) {
-	org := seedTestOrg(t, "cs-org-alerts")
-	repo := seedOrgRepo(t, org, "cs-org-repo", false)
+	t.Parallel()
+	s := newIsolatedServer(t)
+	org := s.seedTestOrg(t, "cs-org-alerts")
+	repo := s.seedOrgRepo(t, org, "cs-org-repo", false)
 
-	seedCodeScanningAlert(t, org.Login, "cs-org-repo", "org-rule-a", "error", "CodeQL")
-	seedCodeScanningAlert(t, org.Login, "cs-org-repo", "org-rule-b", "warning", "Semgrep")
+	s.seedCodeScanningAlert(t, org.Login, "cs-org-repo", "org-rule-a", "error", "CodeQL")
+	s.seedCodeScanningAlert(t, org.Login, "cs-org-repo", "org-rule-b", "warning", "Semgrep")
 
-	resp := ghGet(t, "/api/v3/orgs/"+org.Login+"/code-scanning/alerts", defaultToken)
+	resp := s.get(t, "/api/v3/orgs/"+org.Login+"/code-scanning/alerts", defaultToken)
 	if resp.StatusCode != http.StatusOK {
 		b, _ := io.ReadAll(resp.Body)
 		resp.Body.Close()
@@ -159,7 +142,7 @@ func TestCodeScanningOrgAlerts_List(t *testing.T) {
 	}
 
 	// Severity filter.
-	resp = ghGet(t, "/api/v3/orgs/"+org.Login+"/code-scanning/alerts?severity=error", defaultToken)
+	resp = s.get(t, "/api/v3/orgs/"+org.Login+"/code-scanning/alerts?severity=error", defaultToken)
 	var filtered []map[string]any
 	if err := json.NewDecoder(resp.Body).Decode(&filtered); err != nil {
 		t.Fatalf("decode filtered org alerts: %v", err)
@@ -170,32 +153,34 @@ func TestCodeScanningOrgAlerts_List(t *testing.T) {
 	}
 
 	// Unknown org.
-	mustStatus(t, ghGet(t, "/api/v3/orgs/no-such-org/code-scanning/alerts", defaultToken), 404, "unknown org alerts")
+	mustStatus(t, s.get(t, "/api/v3/orgs/no-such-org/code-scanning/alerts", defaultToken), 404, "unknown org alerts")
 }
 
 // --- Copilot Autofix ---
 
 func TestCodeScanningAutofix_GenerateAndCommit(t *testing.T) {
-	repo := seedTestRepo(t, "cs-autofix", false)
+	t.Parallel()
+	s := newIsolatedServer(t)
+	repo := s.seedRepo(t, "cs-autofix", false)
 
 	// Give the default branch real content at the alert's flagged path.
 	fileContent := strings.Repeat("line\n", 11) + "tail"
-	putRepoFile(t, repo.FullName, "src/index.js", fileContent, "seed vulnerable file")
+	s.putRepoFile(t, repo.FullName, "src/index.js", fileContent, "seed vulnerable file")
 
-	alert := seedCodeScanningAlert(t, "admin", "cs-autofix", "js/sql-injection", "error", "CodeQL")
+	alert := s.seedCodeScanningAlert(t, "admin", "cs-autofix", "js/sql-injection", "error", "CodeQL")
 	number := int(alert["number"].(float64))
 	autofixPath := fmt.Sprintf("/api/v3/repos/%s/code-scanning/alerts/%d/autofix", repo.FullName, number)
 
 	// No autofix yet.
-	mustStatus(t, ghGet(t, autofixPath, defaultToken), 404, "autofix before generation")
+	mustStatus(t, s.get(t, autofixPath, defaultToken), 404, "autofix before generation")
 
 	// Committing before an autofix exists is a 400.
-	mustStatus(t, ghPost(t, autofixPath+"/commits", defaultToken, map[string]interface{}{
+	mustStatus(t, s.post(t, autofixPath+"/commits", defaultToken, map[string]interface{}{
 		"target_ref": "refs/heads/main",
 	}), 400, "commit before autofix")
 
 	// Generate: 202 on first trigger, 200 when it already exists.
-	resp := ghPost(t, autofixPath, defaultToken, nil)
+	resp := s.post(t, autofixPath, defaultToken, nil)
 	if resp.StatusCode != http.StatusAccepted {
 		b, _ := io.ReadAll(resp.Body)
 		resp.Body.Close()
@@ -208,10 +193,10 @@ func TestCodeScanningAutofix_GenerateAndCommit(t *testing.T) {
 	if desc, _ := created["description"].(string); !strings.Contains(desc, "js/sql-injection") {
 		t.Fatalf("autofix description = %v, want rule reference", created["description"])
 	}
-	mustStatus(t, ghPost(t, autofixPath, defaultToken, nil), 200, "re-create autofix")
+	mustStatus(t, s.post(t, autofixPath, defaultToken, nil), 200, "re-create autofix")
 
 	// GET returns the stored autofix.
-	resp = ghGet(t, autofixPath, defaultToken)
+	resp = s.get(t, autofixPath, defaultToken)
 	if resp.StatusCode != http.StatusOK {
 		t.Fatalf("get autofix: %d", resp.StatusCode)
 	}
@@ -221,12 +206,12 @@ func TestCodeScanningAutofix_GenerateAndCommit(t *testing.T) {
 	}
 
 	// Commit against a branch that does not exist is a 422.
-	mustStatus(t, ghPost(t, autofixPath+"/commits", defaultToken, map[string]interface{}{
+	mustStatus(t, s.post(t, autofixPath+"/commits", defaultToken, map[string]interface{}{
 		"target_ref": "refs/heads/no-such-branch",
 	}), 422, "commit to missing branch")
 
 	// Commit onto main: a real commit lands on the branch.
-	resp = ghPost(t, autofixPath+"/commits", defaultToken, map[string]interface{}{
+	resp = s.post(t, autofixPath+"/commits", defaultToken, map[string]interface{}{
 		"target_ref": "refs/heads/main",
 		"message":    "Apply Copilot Autofix",
 	})
@@ -245,7 +230,7 @@ func TestCodeScanningAutofix_GenerateAndCommit(t *testing.T) {
 	}
 
 	// The branch head is the autofix commit and it changed the flagged file.
-	resp = ghGet(t, "/api/v3/repos/"+repo.FullName+"/commits", defaultToken)
+	resp = s.get(t, "/api/v3/repos/"+repo.FullName+"/commits", defaultToken)
 	if resp.StatusCode != http.StatusOK {
 		t.Fatalf("list commits: %d", resp.StatusCode)
 	}
@@ -258,7 +243,7 @@ func TestCodeScanningAutofix_GenerateAndCommit(t *testing.T) {
 		t.Fatalf("branch head = %v, want autofix commit %s", commits[0]["sha"], sha)
 	}
 
-	resp = ghGet(t, "/api/v3/repos/"+repo.FullName+"/contents/src/index.js", defaultToken)
+	resp = s.get(t, "/api/v3/repos/"+repo.FullName+"/contents/src/index.js", defaultToken)
 	if resp.StatusCode != http.StatusOK {
 		t.Fatalf("get fixed file: %d", resp.StatusCode)
 	}
@@ -273,37 +258,41 @@ func TestCodeScanningAutofix_GenerateAndCommit(t *testing.T) {
 }
 
 func TestCodeScanningAutofix_NotEligible(t *testing.T) {
-	repo := seedTestRepo(t, "cs-autofix-elig", false)
-	alert := seedCodeScanningAlert(t, "admin", "cs-autofix-elig", "js/xss", "warning", "CodeQL")
+	t.Parallel()
+	s := newIsolatedServer(t)
+	repo := s.seedRepo(t, "cs-autofix-elig", false)
+	alert := s.seedCodeScanningAlert(t, "admin", "cs-autofix-elig", "js/xss", "warning", "CodeQL")
 	number := int(alert["number"].(float64))
 	autofixPath := fmt.Sprintf("/api/v3/repos/%s/code-scanning/alerts/%d/autofix", repo.FullName, number)
 
 	// Dismiss the alert; generation must refuse with a 422.
-	resp := ghPatch(t, fmt.Sprintf("/api/v3/repos/%s/code-scanning/alerts/%d", repo.FullName, number), defaultToken, map[string]interface{}{
+	resp := s.patch(t, fmt.Sprintf("/api/v3/repos/%s/code-scanning/alerts/%d", repo.FullName, number), defaultToken, map[string]interface{}{
 		"state":            "dismissed",
 		"dismissed_reason": "won't fix",
 	})
 	mustStatus(t, resp, 200, "dismiss alert")
-	mustStatus(t, ghPost(t, autofixPath, defaultToken, nil), 422, "autofix for dismissed alert")
+	mustStatus(t, s.post(t, autofixPath, defaultToken, nil), 422, "autofix for dismissed alert")
 
 	// Unknown alert number.
-	mustStatus(t, ghPost(t, "/api/v3/repos/"+repo.FullName+"/code-scanning/alerts/99999/autofix", defaultToken, nil), 404, "autofix for unknown alert")
+	mustStatus(t, s.post(t, "/api/v3/repos/"+repo.FullName+"/code-scanning/alerts/99999/autofix", defaultToken, nil), 404, "autofix for unknown alert")
 }
 
 // --- CodeQL databases ---
 
 func TestCodeQLDatabases_RoundTrip(t *testing.T) {
-	repo := seedTestRepo(t, "codeql-dbs", false)
-	commitOID := putRepoFile(t, repo.FullName, "main.go", "package main\n", "add source")
+	t.Parallel()
+	s := newIsolatedServer(t)
+	repo := s.seedRepo(t, "codeql-dbs", false)
+	commitOID := s.putRepoFile(t, repo.FullName, "main.go", "package main\n", "add source")
 	dbBytes := testCodeQLDatabaseBundle(t, "go", "codeql-database-archive-bytes")
 
-	created := uploadCodeQLDatabase(t, repo.FullName, "go", commitOID, dbBytes)
+	created := s.uploadCodeQLDatabase(t, repo.FullName, "go", commitOID, dbBytes)
 	if created["language"] != "go" {
 		t.Fatalf("seeded language = %v, want go", created["language"])
 	}
 
 	// List.
-	resp := ghGet(t, "/api/v3/repos/"+repo.FullName+"/code-scanning/codeql/databases", defaultToken)
+	resp := s.get(t, "/api/v3/repos/"+repo.FullName+"/code-scanning/codeql/databases", defaultToken)
 	if resp.StatusCode != http.StatusOK {
 		t.Fatalf("list databases: %d", resp.StatusCode)
 	}
@@ -332,7 +321,7 @@ func TestCodeQLDatabases_RoundTrip(t *testing.T) {
 	assertNoInternalURL(t, db)
 
 	// Get one.
-	resp = ghGet(t, "/api/v3/repos/"+repo.FullName+"/code-scanning/codeql/databases/go", defaultToken)
+	resp = s.get(t, "/api/v3/repos/"+repo.FullName+"/code-scanning/codeql/databases/go", defaultToken)
 	if resp.StatusCode != http.StatusOK {
 		t.Fatalf("get database: %d", resp.StatusCode)
 	}
@@ -343,7 +332,7 @@ func TestCodeQLDatabases_RoundTrip(t *testing.T) {
 
 	// With Accept set to the archive content type, the redirect resolves
 	// to the real database bytes.
-	req, err := http.NewRequest("GET", testBaseURL+"/api/v3/repos/"+repo.FullName+"/code-scanning/codeql/databases/go", nil)
+	req, err := http.NewRequest("GET", s.baseURL+"/api/v3/repos/"+repo.FullName+"/code-scanning/codeql/databases/go", nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -388,27 +377,28 @@ func TestCodeQLDatabases_RoundTrip(t *testing.T) {
 	}
 
 	// Unknown language.
-	mustStatus(t, ghGet(t, "/api/v3/repos/"+repo.FullName+"/code-scanning/codeql/databases/ruby", defaultToken), 404, "get unknown database")
+	mustStatus(t, s.get(t, "/api/v3/repos/"+repo.FullName+"/code-scanning/codeql/databases/ruby", defaultToken), 404, "get unknown database")
 
 	// Delete.
-	mustStatus(t, ghDelete(t, "/api/v3/repos/"+repo.FullName+"/code-scanning/codeql/databases/go", defaultToken), 204, "delete database")
-	mustStatus(t, ghGet(t, "/api/v3/repos/"+repo.FullName+"/code-scanning/codeql/databases/go", defaultToken), 404, "get deleted database")
-	mustStatus(t, ghDelete(t, "/api/v3/repos/"+repo.FullName+"/code-scanning/codeql/databases/go", defaultToken), 404, "delete deleted database")
+	mustStatus(t, s.delete(t, "/api/v3/repos/"+repo.FullName+"/code-scanning/codeql/databases/go", defaultToken), 204, "delete database")
+	mustStatus(t, s.get(t, "/api/v3/repos/"+repo.FullName+"/code-scanning/codeql/databases/go", defaultToken), 404, "get deleted database")
+	mustStatus(t, s.delete(t, "/api/v3/repos/"+repo.FullName+"/code-scanning/codeql/databases/go", defaultToken), 404, "delete deleted database")
 }
 
 func TestCodeQLDatabases_BytesUseObjectStore(t *testing.T) {
-	repo := seedTestRepo(t, "codeql-dbs-object", false)
+	s := newIsolatedServer(t)
+	repo := s.seedRepo(t, "codeql-dbs-object", false)
 	objectFS, objectStore := newObjectByteStoreForTest(t)
-	oldStore := testServer.store.ObjectByteStore
-	testServer.store.ObjectByteStore = objectStore
+	oldStore := s.store.ObjectByteStore
+	s.store.ObjectByteStore = objectStore
 	t.Cleanup(func() {
-		testServer.store.ObjectByteStore = oldStore
+		s.store.ObjectByteStore = oldStore
 	})
 
-	commitOID := putRepoFile(t, repo.FullName, "main.go", "package main\n", "add source")
+	commitOID := s.putRepoFile(t, repo.FullName, "main.go", "package main\n", "add source")
 	dbBytes := testCodeQLDatabaseBundle(t, "go", "object-backed-codeql-database")
-	uploadCodeQLDatabase(t, repo.FullName, "go", commitOID, dbBytes)
-	db := testServer.store.GetCodeQLDatabase(repo.FullName, "go")
+	s.uploadCodeQLDatabase(t, repo.FullName, "go", commitOID, dbBytes)
+	db := s.store.GetCodeQLDatabase(repo.FullName, "go")
 	if db == nil {
 		t.Fatal("CodeQL database missing after seed")
 	}
@@ -419,7 +409,7 @@ func TestCodeQLDatabases_BytesUseObjectStore(t *testing.T) {
 		t.Fatalf("CodeQL database metadata retained %d raw bytes; bytes must live in object storage", len(db.Content))
 	}
 
-	req, err := http.NewRequest("GET", testBaseURL+"/api/v3/repos/"+repo.FullName+"/code-scanning/codeql/databases/go", nil)
+	req, err := http.NewRequest("GET", s.baseURL+"/api/v3/repos/"+repo.FullName+"/code-scanning/codeql/databases/go", nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -441,24 +431,26 @@ func TestCodeQLDatabases_BytesUseObjectStore(t *testing.T) {
 		t.Fatalf("downloaded object-backed bytes = %q, want %q", raw, dbBytes)
 	}
 
-	mustStatus(t, ghDelete(t, "/api/v3/repos/"+repo.FullName+"/code-scanning/codeql/databases/go", defaultToken), http.StatusNoContent, "delete object-backed database")
+	mustStatus(t, s.delete(t, "/api/v3/repos/"+repo.FullName+"/code-scanning/codeql/databases/go", defaultToken), http.StatusNoContent, "delete object-backed database")
 	if _, err := objectFS.Open(db.StoragePath); err == nil {
 		t.Fatalf("CodeQL database object %s survived database deletion", db.StoragePath)
 	}
 }
 
 func TestCodeQLDatabaseUpload_ValidatesOfficialActionProtocol(t *testing.T) {
-	repo := seedTestRepo(t, "codeql-upload-contract", false)
-	commitOID := putRepoFile(t, repo.FullName, "main.go", "package main\n", "add source")
+	t.Parallel()
+	s := newIsolatedServer(t)
+	repo := s.seedRepo(t, "codeql-upload-contract", false)
+	commitOID := s.putRepoFile(t, repo.FullName, "main.go", "package main\n", "add source")
 	bundle := testCodeQLDatabaseBundle(t, "go", "dataset")
 
-	resp := postCodeQLDatabase(t, "", repo.FullName, "go", "go-database", commitOID, "application/zip", bundle)
+	resp := s.postCodeQLDatabase(t, "", repo.FullName, "go", "go-database", commitOID, "application/zip", bundle)
 	resp.Body.Close()
 	if resp.StatusCode != http.StatusUnauthorized {
 		t.Fatalf("unauthenticated upload = %d, want 401", resp.StatusCode)
 	}
 
-	resp = postCodeQLDatabase(t, defaultToken, repo.FullName, "go", "go-database", commitOID, "application/octet-stream", bundle)
+	resp = s.postCodeQLDatabase(t, defaultToken, repo.FullName, "go", "go-database", commitOID, "application/octet-stream", bundle)
 	resp.Body.Close()
 	if resp.StatusCode != http.StatusUnsupportedMediaType {
 		t.Fatalf("wrong content type = %d, want 415", resp.StatusCode)
@@ -477,7 +469,7 @@ func TestCodeQLDatabaseUpload_ValidatesOfficialActionProtocol(t *testing.T) {
 		"oversized manifest": {language: "go", commit: commitOID, bundle: testCodeQLDatabaseBundleWithManifest(t, "go", "primaryLanguage: go\n#"+strings.Repeat("x", 1<<20), "dataset")},
 	} {
 		t.Run(name, func(t *testing.T) {
-			resp := postCodeQLDatabase(t, defaultToken, repo.FullName, tc.language, tc.language+"-database", tc.commit, "application/zip", tc.bundle)
+			resp := s.postCodeQLDatabase(t, defaultToken, repo.FullName, tc.language, tc.language+"-database", tc.commit, "application/zip", tc.bundle)
 			resp.Body.Close()
 			if resp.StatusCode != http.StatusUnprocessableEntity {
 				t.Fatalf("status = %d, want 422", resp.StatusCode)
@@ -500,13 +492,13 @@ func TestCodeQLDatabaseUpload_ValidatesOfficialActionProtocol(t *testing.T) {
 	if err := zw.Close(); err != nil {
 		t.Fatal(err)
 	}
-	resp = postCodeQLDatabase(t, defaultToken, repo.FullName, "go", "go-database", commitOID, "application/zip", unsafe.Bytes())
+	resp = s.postCodeQLDatabase(t, defaultToken, repo.FullName, "go", "go-database", commitOID, "application/zip", unsafe.Bytes())
 	resp.Body.Close()
 	if resp.StatusCode != http.StatusUnprocessableEntity {
 		t.Fatalf("unsafe archive = %d, want 422", resp.StatusCode)
 	}
 
-	oldRoute, err := authedPost("/internal/repos/"+repo.FullName+"/code-scanning/codeql/databases", "application/json", strings.NewReader(`{}`))
+	oldRoute, err := s.authedPost("/internal/repos/"+repo.FullName+"/code-scanning/codeql/databases", "application/json", strings.NewReader(`{}`))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -514,12 +506,13 @@ func TestCodeQLDatabaseUpload_ValidatesOfficialActionProtocol(t *testing.T) {
 	if oldRoute.StatusCode != http.StatusNotFound {
 		t.Fatalf("obsolete internal route = %d, want 404", oldRoute.StatusCode)
 	}
-	if got := testServer.store.GetCodeQLDatabase(repo.FullName, "go"); got != nil {
+	if got := s.store.GetCodeQLDatabase(repo.FullName, "go"); got != nil {
 		t.Fatalf("invalid uploads created database %+v", got)
 	}
 }
 
 func TestCodeQLDatabaseProductionHasNoOperatorSeedRoute(t *testing.T) {
+	t.Parallel()
 	obsoleteRoute := "/internal/repos/" + "{owner}/{repo}/code-scanning/codeql/databases"
 	for _, file := range []string{"gh_code_scanning.go", "../../specs/BLEEPHUB_GITHUB_API_PARITY.md"} {
 		source, err := os.ReadFile(file)
@@ -533,25 +526,27 @@ func TestCodeQLDatabaseProductionHasNoOperatorSeedRoute(t *testing.T) {
 }
 
 func TestCodeQLDatabaseUpload_ActionsInstallationTokenLifecycle(t *testing.T) {
-	admin := testServer.store.UsersByLogin["admin"]
-	repo := seedTestRepo(t, "codeql-actions-token", true)
-	other := seedTestRepo(t, "codeql-actions-token-other", true)
-	commitOID := putRepoFile(t, repo.FullName, "main.go", "package main\n", "add source")
-	otherCommit := putRepoFile(t, other.FullName, "main.go", "package main\n", "add source")
+	t.Parallel()
+	s := newIsolatedServer(t)
+	admin := s.store.UsersByLogin["admin"]
+	repo := s.seedRepo(t, "codeql-actions-token", true)
+	other := s.seedRepo(t, "codeql-actions-token-other", true)
+	commitOID := s.putRepoFile(t, repo.FullName, "main.go", "package main\n", "add source")
+	otherCommit := s.putRepoFile(t, other.FullName, "main.go", "package main\n", "add source")
 	bundle := testCodeQLDatabaseBundle(t, "go", "installation dataset")
 
 	permissions := map[string]string{"security_events": "write", "contents": "write"}
-	app := testServer.store.CreateApp(admin.ID, "CodeQL Database Producer", "", permissions, nil)
-	installation := testServer.store.CreateInstallation(app.ID, "User", admin.ID, admin.Login, permissions, nil)
-	token := testServer.store.CreateInstallationToken(installation.ID, app.ID, permissions, []int{repo.ID})
+	app := s.store.CreateApp(admin.ID, "CodeQL Database Producer", "", permissions, nil)
+	installation := s.store.CreateInstallation(app.ID, "User", admin.ID, admin.Login, permissions, nil)
+	token := s.store.CreateInstallationToken(installation.ID, app.ID, permissions, []int{repo.ID})
 
-	resp := postCodeQLDatabase(t, token.Token, repo.FullName, "go", "go-database", commitOID, "application/zip", bundle)
+	resp := s.postCodeQLDatabase(t, token.Token, repo.FullName, "go", "go-database", commitOID, "application/zip", bundle)
 	resp.Body.Close()
 	if resp.StatusCode != http.StatusCreated {
 		t.Fatalf("installation upload = %d, want 201", resp.StatusCode)
 	}
 
-	get := ghGet(t, "/api/v3/repos/"+repo.FullName+"/code-scanning/codeql/databases/go", token.Token)
+	get := s.get(t, "/api/v3/repos/"+repo.FullName+"/code-scanning/codeql/databases/go", token.Token)
 	if get.StatusCode != http.StatusOK {
 		body, _ := io.ReadAll(get.Body)
 		get.Body.Close()
@@ -566,14 +561,14 @@ func TestCodeQLDatabaseUpload_ActionsInstallationTokenLifecycle(t *testing.T) {
 	// 404, not 403: a repository the token cannot read must answer the same
 	// whether it exists or not, or the pair of statuses proves which private
 	// names are real.
-	resp = postCodeQLDatabase(t, token.Token, other.FullName, "go", "go-database", otherCommit, "application/zip", bundle)
+	resp = s.postCodeQLDatabase(t, token.Token, other.FullName, "go", "go-database", otherCommit, "application/zip", bundle)
 	resp.Body.Close()
 	if resp.StatusCode != http.StatusNotFound {
 		t.Fatalf("token upload outside selected repository = %d, want 404", resp.StatusCode)
 	}
 
-	contentsOnly := testServer.store.CreateInstallationToken(installation.ID, app.ID, map[string]string{"contents": "write"}, []int{repo.ID})
-	resp = postCodeQLDatabase(t, contentsOnly.Token, repo.FullName, "go", "go-database", commitOID, "application/zip", bundle)
+	contentsOnly := s.store.CreateInstallationToken(installation.ID, app.ID, map[string]string{"contents": "write"}, []int{repo.ID})
+	resp = s.postCodeQLDatabase(t, contentsOnly.Token, repo.FullName, "go", "go-database", commitOID, "application/zip", bundle)
 	resp.Body.Close()
 	if resp.StatusCode != http.StatusForbidden {
 		t.Fatalf("upload without security_events:write = %d, want 403", resp.StatusCode)
@@ -593,7 +588,7 @@ func TestCodeQLDatabaseUpload_ActionsInstallationTokenLifecycle(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	sarifResponse := ghPost(t, "/api/v3/repos/"+repo.FullName+"/code-scanning/sarifs", token.Token, map[string]any{
+	sarifResponse := s.post(t, "/api/v3/repos/"+repo.FullName+"/code-scanning/sarifs", token.Token, map[string]any{
 		"commit_sha": commitOID,
 		"ref":        "refs/heads/main",
 		"sarif":      base64.StdEncoding.EncodeToString(sarifBytes),
@@ -604,7 +599,7 @@ func TestCodeQLDatabaseUpload_ActionsInstallationTokenLifecycle(t *testing.T) {
 		t.Fatalf("installation SARIF upload = %d body=%s", sarifResponse.StatusCode, body)
 	}
 	sarifUpload := decodeJSON(t, sarifResponse)
-	status := ghGet(t, "/api/v3/repos/"+repo.FullName+"/code-scanning/sarifs/"+sarifUpload["id"].(string), token.Token)
+	status := s.get(t, "/api/v3/repos/"+repo.FullName+"/code-scanning/sarifs/"+sarifUpload["id"].(string), token.Token)
 	if status.StatusCode != http.StatusOK {
 		body, _ := io.ReadAll(status.Body)
 		status.Body.Close()
@@ -614,7 +609,7 @@ func TestCodeQLDatabaseUpload_ActionsInstallationTokenLifecycle(t *testing.T) {
 	if statusBody["processing_status"] != "complete" {
 		t.Fatalf("installation SARIF status = %v", statusBody)
 	}
-	deniedSARIF := ghPost(t, "/api/v3/repos/"+repo.FullName+"/code-scanning/sarifs", contentsOnly.Token, map[string]any{
+	deniedSARIF := s.post(t, "/api/v3/repos/"+repo.FullName+"/code-scanning/sarifs", contentsOnly.Token, map[string]any{
 		"commit_sha": commitOID,
 		"ref":        "refs/heads/main",
 		"sarif":      base64.StdEncoding.EncodeToString(sarifBytes),
@@ -624,7 +619,7 @@ func TestCodeQLDatabaseUpload_ActionsInstallationTokenLifecycle(t *testing.T) {
 		t.Fatalf("SARIF upload without security_events:write = %d, want 403", deniedSARIF.StatusCode)
 	}
 
-	deleteResp := ghDelete(t, "/api/v3/repos/"+repo.FullName+"/code-scanning/codeql/databases/go", token.Token)
+	deleteResp := s.delete(t, "/api/v3/repos/"+repo.FullName+"/code-scanning/codeql/databases/go", token.Token)
 	deleteResp.Body.Close()
 	if deleteResp.StatusCode != http.StatusNoContent {
 		t.Fatalf("installation delete = %d, want 204", deleteResp.StatusCode)
@@ -632,29 +627,30 @@ func TestCodeQLDatabaseUpload_ActionsInstallationTokenLifecycle(t *testing.T) {
 }
 
 func TestCodeQLDatabaseUpload_ObjectFailurePreservesPreviousDatabase(t *testing.T) {
-	repo := seedTestRepo(t, "codeql-object-atomic", false)
-	firstCommit := putRepoFile(t, repo.FullName, "main.go", "package main\n", "add source")
+	s := newIsolatedServer(t)
+	repo := s.seedRepo(t, "codeql-object-atomic", false)
+	firstCommit := s.putRepoFile(t, repo.FullName, "main.go", "package main\n", "add source")
 	firstBundle := testCodeQLDatabaseBundle(t, "go", "first dataset")
 	objectFS, goodStore := newObjectByteStoreForTest(t)
-	oldStore := testServer.store.ObjectByteStore
-	testServer.store.ObjectByteStore = goodStore
-	t.Cleanup(func() { testServer.store.ObjectByteStore = oldStore })
+	oldStore := s.store.ObjectByteStore
+	s.store.ObjectByteStore = goodStore
+	t.Cleanup(func() { s.store.ObjectByteStore = oldStore })
 
-	created := uploadCodeQLDatabase(t, repo.FullName, "go", firstCommit, firstBundle)
+	created := s.uploadCodeQLDatabase(t, repo.FullName, "go", firstCommit, firstBundle)
 	databaseID := int(created["id"].(float64))
-	secondCommit := putRepoFile(t, repo.FullName, "second.go", "package main\n", "add second source")
+	secondCommit := s.putRepoFile(t, repo.FullName, "second.go", "package main\n", "add second source")
 	secondBundle := testCodeQLDatabaseBundle(t, "go", "replacement dataset")
-	testServer.store.ObjectByteStore = &s3ActionsByteStore{fs: &s3FS{client: objectFS.client, bucket: "missing-bucket", prefix: objectFS.prefix}}
+	s.store.ObjectByteStore = &s3ActionsByteStore{fs: &s3FS{client: objectFS.client, bucket: "missing-bucket", prefix: objectFS.prefix}}
 
-	resp := postCodeQLDatabase(t, defaultToken, repo.FullName, "go", "replacement", secondCommit, "application/zip", secondBundle)
+	resp := s.postCodeQLDatabase(t, defaultToken, repo.FullName, "go", "replacement", secondCommit, "application/zip", secondBundle)
 	body, _ := io.ReadAll(resp.Body)
 	resp.Body.Close()
 	if resp.StatusCode != http.StatusInternalServerError {
 		t.Fatalf("failed replacement = %d body=%s, want 500", resp.StatusCode, body)
 	}
 
-	testServer.store.ObjectByteStore = goodStore
-	database := testServer.store.GetCodeQLDatabase(repo.FullName, "go")
+	s.store.ObjectByteStore = goodStore
+	database := s.store.GetCodeQLDatabase(repo.FullName, "go")
 	if database == nil || database.CommitOID != firstCommit || database.Name != "go-database" {
 		t.Fatalf("database changed after object failure: %+v", database)
 	}
@@ -665,8 +661,8 @@ func TestCodeQLDatabaseUpload_ObjectFailurePreservesPreviousDatabase(t *testing.
 		t.Fatalf("database bytes changed after object failure")
 	}
 	previousPath := database.StoragePath
-	replaced := uploadCodeQLDatabase(t, repo.FullName, "go", secondCommit, secondBundle)
-	database = testServer.store.GetCodeQLDatabase(repo.FullName, "go")
+	replaced := s.uploadCodeQLDatabase(t, repo.FullName, "go", secondCommit, secondBundle)
+	database = s.store.GetCodeQLDatabase(repo.FullName, "go")
 	if database == nil || database.CommitOID != secondCommit || database.StoragePath == previousPath || database.Name != "go-database" {
 		t.Fatalf("successful replacement database = %+v response=%v", database, replaced)
 	}
@@ -725,11 +721,13 @@ func TestCodeQLDatabaseUpload_PersistenceFailurePreservesPreviousDatabase(t *tes
 }
 
 func TestCodeQLArtifacts_PrivateRepositoryDownloadsRequireAccess(t *testing.T) {
-	repo := seedTestRepo(t, "codeql-private-download", true)
-	commitOID := putRepoFile(t, repo.FullName, "main.go", "package main\n", "add source")
+	t.Parallel()
+	s := newIsolatedServer(t)
+	repo := s.seedRepo(t, "codeql-private-download", true)
+	commitOID := s.putRepoFile(t, repo.FullName, "main.go", "package main\n", "add source")
 	bundle := testCodeQLDatabaseBundle(t, "go", "private source dataset")
-	uploadCodeQLDatabase(t, repo.FullName, "go", commitOID, bundle)
-	databaseURL := testBaseURL + "/code-scanning/repos/" + repo.FullName + "/codeql/databases/go/download"
+	s.uploadCodeQLDatabase(t, repo.FullName, "go", commitOID, bundle)
+	databaseURL := s.baseURL + "/code-scanning/repos/" + repo.FullName + "/codeql/databases/go/download"
 
 	unauthenticated, err := http.Get(databaseURL)
 	if err != nil {
@@ -758,18 +756,20 @@ func TestCodeQLArtifacts_PrivateRepositoryDownloadsRequireAccess(t *testing.T) {
 // --- CodeQL variant analyses ---
 
 func TestCodeQLVariantAnalyses_CreateAndReadBack(t *testing.T) {
-	controller := seedTestRepo(t, "codeql-va-controller", false)
-	withDB := seedTestRepo(t, "codeql-va-with-db", false)
-	withoutDB := seedTestRepo(t, "codeql-va-no-db", false)
+	t.Parallel()
+	s := newIsolatedServer(t)
+	controller := s.seedRepo(t, "codeql-va-controller", false)
+	withDB := s.seedRepo(t, "codeql-va-with-db", false)
+	withoutDB := s.seedRepo(t, "codeql-va-no-db", false)
 
-	databaseCommit := putRepoFile(t, withDB.FullName, "main.go", "package main\n", "add source")
-	uploadCodeQLDatabase(t, withDB.FullName, "go", databaseCommit, testCodeQLDatabaseBundle(t, "go", "db"))
+	databaseCommit := s.putRepoFile(t, withDB.FullName, "main.go", "package main\n", "add source")
+	s.uploadCodeQLDatabase(t, withDB.FullName, "go", databaseCommit, testCodeQLDatabaseBundle(t, "go", "db"))
 
 	queryPackBytes := testCodeQLQueryPack(t)
 	queryPack := base64.StdEncoding.EncodeToString(queryPackBytes)
 	basePath := "/api/v3/repos/" + controller.FullName + "/code-scanning/codeql/variant-analyses"
 
-	resp := ghPost(t, basePath, defaultToken, map[string]interface{}{
+	resp := s.post(t, basePath, defaultToken, map[string]interface{}{
 		"language":   "go",
 		"query_pack": queryPack,
 		"repositories": []string{
@@ -838,7 +838,7 @@ func TestCodeQLVariantAnalyses_CreateAndReadBack(t *testing.T) {
 	}
 
 	// Get by id.
-	resp = ghGet(t, fmt.Sprintf("%s/%d", basePath, vaID), defaultToken)
+	resp = s.get(t, fmt.Sprintf("%s/%d", basePath, vaID), defaultToken)
 	if resp.StatusCode != http.StatusOK {
 		t.Fatalf("get variant analysis: %d", resp.StatusCode)
 	}
@@ -849,7 +849,7 @@ func TestCodeQLVariantAnalyses_CreateAndReadBack(t *testing.T) {
 	assertNoInternalURL(t, got)
 
 	// Per-repository task.
-	resp = ghGet(t, fmt.Sprintf("%s/%d/repos/%s", basePath, vaID, withDB.FullName), defaultToken)
+	resp = s.get(t, fmt.Sprintf("%s/%d/repos/%s", basePath, vaID, withDB.FullName), defaultToken)
 	if resp.StatusCode != http.StatusOK {
 		t.Fatalf("get repo task: %d", resp.StatusCode)
 	}
@@ -866,27 +866,28 @@ func TestCodeQLVariantAnalyses_CreateAndReadBack(t *testing.T) {
 	}
 
 	// A repository that was not scanned is a 404 on the task endpoint.
-	mustStatus(t, ghGet(t, fmt.Sprintf("%s/%d/repos/%s", basePath, vaID, withoutDB.FullName), defaultToken), 404, "task for skipped repo")
+	mustStatus(t, s.get(t, fmt.Sprintf("%s/%d/repos/%s", basePath, vaID, withoutDB.FullName), defaultToken), 404, "task for skipped repo")
 
 	// Unknown analysis id.
-	mustStatus(t, ghGet(t, basePath+"/99999", defaultToken), 404, "unknown variant analysis")
+	mustStatus(t, s.get(t, basePath+"/99999", defaultToken), 404, "unknown variant analysis")
 }
 
 func TestCodeQLVariantAnalyses_QueryPacksUseObjectStore(t *testing.T) {
-	controller := seedTestRepo(t, "codeql-va-object-controller", true)
-	withDB := seedTestRepo(t, "codeql-va-object-db", false)
-	databaseCommit := putRepoFile(t, withDB.FullName, "main.go", "package main\n", "add source")
-	uploadCodeQLDatabase(t, withDB.FullName, "go", databaseCommit, testCodeQLDatabaseBundle(t, "go", "db"))
+	s := newIsolatedServer(t)
+	controller := s.seedRepo(t, "codeql-va-object-controller", true)
+	withDB := s.seedRepo(t, "codeql-va-object-db", false)
+	databaseCommit := s.putRepoFile(t, withDB.FullName, "main.go", "package main\n", "add source")
+	s.uploadCodeQLDatabase(t, withDB.FullName, "go", databaseCommit, testCodeQLDatabaseBundle(t, "go", "db"))
 
 	objectFS, objectStore := newObjectByteStoreForTest(t)
-	oldStore := testServer.store.ObjectByteStore
-	testServer.store.ObjectByteStore = objectStore
+	oldStore := s.store.ObjectByteStore
+	s.store.ObjectByteStore = objectStore
 	t.Cleanup(func() {
-		testServer.store.ObjectByteStore = oldStore
+		s.store.ObjectByteStore = oldStore
 	})
 
 	queryPackBytes := testCodeQLQueryPack(t)
-	resp := ghPost(t, "/api/v3/repos/"+controller.FullName+"/code-scanning/codeql/variant-analyses", defaultToken, map[string]interface{}{
+	resp := s.post(t, "/api/v3/repos/"+controller.FullName+"/code-scanning/codeql/variant-analyses", defaultToken, map[string]interface{}{
 		"language":     "go",
 		"query_pack":   base64.StdEncoding.EncodeToString(queryPackBytes),
 		"repositories": []string{withDB.FullName},
@@ -926,7 +927,7 @@ func TestCodeQLVariantAnalyses_QueryPacksUseObjectStore(t *testing.T) {
 		t.Fatalf("CodeQL variant-analysis query-pack object bytes = %q, want %q", got, queryPackBytes)
 	}
 
-	va := testServer.store.GetCodeQLVariantAnalysis(controller.FullName, vaID)
+	va := s.store.GetCodeQLVariantAnalysis(controller.FullName, vaID)
 	if va == nil {
 		t.Fatal("variant analysis missing after create")
 	}
@@ -959,7 +960,7 @@ func TestCodeQLVariantAnalyses_QueryPacksUseObjectStore(t *testing.T) {
 		t.Fatalf("downloaded object-backed query pack = %q, want %q", raw, queryPackBytes)
 	}
 
-	mustStatus(t, ghDelete(t, "/api/v3/repos/"+controller.FullName, defaultToken), http.StatusNoContent, "delete controller repository")
+	mustStatus(t, s.delete(t, "/api/v3/repos/"+controller.FullName, defaultToken), http.StatusNoContent, "delete controller repository")
 	if _, err := objectFS.Open(key); err == nil {
 		t.Fatalf("CodeQL variant-analysis query-pack object %s survived controller repository deletion", key)
 	}
@@ -996,34 +997,36 @@ func testCodeQLQueryPack(t *testing.T) []byte {
 }
 
 func TestCodeQLVariantAnalyses_Validation(t *testing.T) {
-	controller := seedTestRepo(t, "codeql-va-valid", false)
+	t.Parallel()
+	s := newIsolatedServer(t)
+	controller := s.seedRepo(t, "codeql-va-valid", false)
 	basePath := "/api/v3/repos/" + controller.FullName + "/code-scanning/codeql/variant-analyses"
 	queryPack := base64.StdEncoding.EncodeToString([]byte("pack"))
 
 	// Invalid language.
-	mustStatus(t, ghPost(t, basePath, defaultToken, map[string]interface{}{
+	mustStatus(t, s.post(t, basePath, defaultToken, map[string]interface{}{
 		"language": "cobol", "query_pack": queryPack, "repositories": []string{"a/b"},
 	}), 422, "invalid language")
 
 	// Missing query pack.
-	mustStatus(t, ghPost(t, basePath, defaultToken, map[string]interface{}{
+	mustStatus(t, s.post(t, basePath, defaultToken, map[string]interface{}{
 		"language": "go", "repositories": []string{"a/b"},
 	}), 422, "missing query pack")
 
 	// More than one repository selector.
-	mustStatus(t, ghPost(t, basePath, defaultToken, map[string]interface{}{
+	mustStatus(t, s.post(t, basePath, defaultToken, map[string]interface{}{
 		"language": "go", "query_pack": queryPack,
 		"repositories":      []string{"a/b"},
 		"repository_owners": []string{"admin"},
 	}), 422, "two repository selectors")
 
 	// No repository selector at all.
-	mustStatus(t, ghPost(t, basePath, defaultToken, map[string]interface{}{
+	mustStatus(t, s.post(t, basePath, defaultToken, map[string]interface{}{
 		"language": "go", "query_pack": queryPack,
 	}), 422, "no repository selector")
 
 	// All targets unresolvable → the analysis fails with no_repos_queried.
-	resp := ghPost(t, basePath, defaultToken, map[string]interface{}{
+	resp := s.post(t, basePath, defaultToken, map[string]interface{}{
 		"language": "go", "query_pack": queryPack,
 		"repositories": []string{"admin/never-existed"},
 	})

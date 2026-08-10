@@ -16,13 +16,13 @@ import (
 // state of a codespace whose backing container is gone (State Shutdown,
 // no container) — so codespace sub-resource endpoints that never touch
 // the container can be exercised without a Docker round-trip.
-func seedCodespaceRecord(t *testing.T, ownerLogin, repoKey string) *Codespace {
+func seedCodespaceRecord(t *testing.T, s *isolatedServer, ownerLogin, repoKey string) *Codespace {
 	t.Helper()
 	name, err := generateCodespaceName(repoKey)
 	if err != nil {
 		t.Fatalf("generate codespace name: %v", err)
 	}
-	st := testServer.store
+	st := s.store
 	st.mu.Lock()
 	m := codespaceDefaultMachine()
 	now := fixedTestTime.UTC()
@@ -62,6 +62,7 @@ func (r errReader) Read([]byte) (int, error) {
 }
 
 func TestGenerateCodespaceNameRequiresRandomBytes(t *testing.T) {
+	t.Parallel()
 	name, err := generateCodespaceNameWithReader("octo/repo", bytes.NewReader([]byte{0xab, 0xcd, 0xef, 0x12}))
 	if err != nil {
 		t.Fatalf("generate codespace name: %v", err)
@@ -77,10 +78,12 @@ func TestGenerateCodespaceNameRequiresRandomBytes(t *testing.T) {
 }
 
 func TestCodespacesUserMachines_RealCatalogValues(t *testing.T) {
-	repo := createTestCodespaceRepo(t, "cs-user-machines-repo")
-	cs := seedCodespaceRecord(t, "admin", repo.FullName)
+	t.Parallel()
+	s := newIsolatedServer(t)
+	repo := s.createTestCodespaceRepo(t, "cs-user-machines-repo")
+	cs := seedCodespaceRecord(t, s, "admin", repo.FullName)
 
-	resp := ghGet(t, "/api/v3/user/codespaces/"+cs.Name+"/machines", defaultToken)
+	resp := s.get(t, "/api/v3/user/codespaces/"+cs.Name+"/machines", defaultToken)
 	if resp.StatusCode != http.StatusOK {
 		b, _ := io.ReadAll(resp.Body)
 		resp.Body.Close()
@@ -111,7 +114,7 @@ func TestCodespacesUserMachines_RealCatalogValues(t *testing.T) {
 	}
 
 	// Unknown sub-resources under a codespace are 404.
-	respBogus := ghGet(t, "/api/v3/user/codespaces/"+cs.Name+"/bogus", defaultToken)
+	respBogus := s.get(t, "/api/v3/user/codespaces/"+cs.Name+"/bogus", defaultToken)
 	respBogus.Body.Close()
 	if respBogus.StatusCode != http.StatusNotFound {
 		t.Fatalf("bogus sub-resource: %d, want 404", respBogus.StatusCode)
@@ -119,10 +122,12 @@ func TestCodespacesUserMachines_RealCatalogValues(t *testing.T) {
 }
 
 func TestCodespacesExport_CreatesRealBranch(t *testing.T) {
-	repo := createTestCodespaceRepo(t, "cs-export-repo")
-	cs := seedCodespaceRecord(t, "admin", repo.FullName)
+	t.Parallel()
+	s := newIsolatedServer(t)
+	repo := s.createTestCodespaceRepo(t, "cs-export-repo")
+	cs := seedCodespaceRecord(t, s, "admin", repo.FullName)
 
-	resp := ghPost(t, "/api/v3/user/codespaces/"+cs.Name+"/exports", defaultToken, nil)
+	resp := s.post(t, "/api/v3/user/codespaces/"+cs.Name+"/exports", defaultToken, nil)
 	if resp.StatusCode != http.StatusAccepted {
 		b, _ := io.ReadAll(resp.Body)
 		resp.Body.Close()
@@ -143,7 +148,7 @@ func TestCodespacesExport_CreatesRealBranch(t *testing.T) {
 
 	// The exported branch really exists in the repository's git storage
 	// and points at the exported commit.
-	stor := testServer.store.GitStorages[repo.FullName]
+	stor := s.store.GitStorages[repo.FullName]
 	ref, err := stor.Reference(plumbing.NewBranchReferenceName(branch))
 	if err != nil {
 		t.Fatalf("exported branch missing from git storage: %v", err)
@@ -153,20 +158,20 @@ func TestCodespacesExport_CreatesRealBranch(t *testing.T) {
 	}
 
 	// Export details round-trip via GET with id "latest".
-	got := decodeJSON(t, ghGet(t, "/api/v3/user/codespaces/"+cs.Name+"/exports/latest", defaultToken))
+	got := decodeJSON(t, s.get(t, "/api/v3/user/codespaces/"+cs.Name+"/exports/latest", defaultToken))
 	if got["branch"] != branch || got["sha"] != sha {
 		t.Fatalf("GET export = %v", got)
 	}
 
-	respMissing := ghGet(t, "/api/v3/user/codespaces/"+cs.Name+"/exports/nope", defaultToken)
+	respMissing := s.get(t, "/api/v3/user/codespaces/"+cs.Name+"/exports/nope", defaultToken)
 	respMissing.Body.Close()
 	if respMissing.StatusCode != http.StatusNotFound {
 		t.Fatalf("GET unknown export: %d, want 404", respMissing.StatusCode)
 	}
 
 	// Exporting an unpublished codespace (no repository) is a 422.
-	unpublished := seedCodespaceRecord(t, "admin", "")
-	respNoRepo := ghPost(t, "/api/v3/user/codespaces/"+unpublished.Name+"/exports", defaultToken, nil)
+	unpublished := seedCodespaceRecord(t, s, "admin", "")
+	respNoRepo := s.post(t, "/api/v3/user/codespaces/"+unpublished.Name+"/exports", defaultToken, nil)
 	respNoRepo.Body.Close()
 	if respNoRepo.StatusCode != http.StatusUnprocessableEntity {
 		t.Fatalf("export unpublished codespace: %d, want 422", respNoRepo.StatusCode)
@@ -174,9 +179,11 @@ func TestCodespacesExport_CreatesRealBranch(t *testing.T) {
 }
 
 func TestCodespacesPublish_CreatesRepository(t *testing.T) {
-	cs := seedCodespaceRecord(t, "admin", "")
+	t.Parallel()
+	s := newIsolatedServer(t)
+	cs := seedCodespaceRecord(t, s, "admin", "")
 
-	resp := ghPost(t, "/api/v3/user/codespaces/"+cs.Name+"/publish", defaultToken, map[string]any{
+	resp := s.post(t, "/api/v3/user/codespaces/"+cs.Name+"/publish", defaultToken, map[string]any{
 		"name":    "cs-published-repo",
 		"private": true,
 	})
@@ -192,7 +199,7 @@ func TestCodespacesPublish_CreatesRepository(t *testing.T) {
 	}
 
 	// The repository is a real store entity reachable through the API.
-	repoResp := ghGet(t, "/api/v3/repos/admin/cs-published-repo", defaultToken)
+	repoResp := s.get(t, "/api/v3/repos/admin/cs-published-repo", defaultToken)
 	if repoResp.StatusCode != http.StatusOK {
 		repoResp.Body.Close()
 		t.Fatalf("GET published repo: %d", repoResp.StatusCode)
@@ -200,15 +207,15 @@ func TestCodespacesPublish_CreatesRepository(t *testing.T) {
 	repoResp.Body.Close()
 
 	// Publishing an already-published codespace is a 422.
-	again := ghPost(t, "/api/v3/user/codespaces/"+cs.Name+"/publish", defaultToken, map[string]any{"name": "other"})
+	again := s.post(t, "/api/v3/user/codespaces/"+cs.Name+"/publish", defaultToken, map[string]any{"name": "other"})
 	again.Body.Close()
 	if again.StatusCode != http.StatusUnprocessableEntity {
 		t.Fatalf("re-publish: %d, want 422", again.StatusCode)
 	}
 
 	// A repository name collision is a 422.
-	other := seedCodespaceRecord(t, "admin", "")
-	conflict := ghPost(t, "/api/v3/user/codespaces/"+other.Name+"/publish", defaultToken, map[string]any{"name": "cs-published-repo"})
+	other := seedCodespaceRecord(t, s, "admin", "")
+	conflict := s.post(t, "/api/v3/user/codespaces/"+other.Name+"/publish", defaultToken, map[string]any{"name": "cs-published-repo"})
 	conflict.Body.Close()
 	if conflict.StatusCode != http.StatusUnprocessableEntity {
 		t.Fatalf("publish with taken name: %d, want 422", conflict.StatusCode)
@@ -216,17 +223,19 @@ func TestCodespacesPublish_CreatesRepository(t *testing.T) {
 }
 
 func TestCodespacesUserSecret_SelectedRepositories(t *testing.T) {
-	repoA := seedTestRepo(t, "cs-secret-repo-a", false)
-	repoB := seedTestRepo(t, "cs-secret-repo-b", false)
+	t.Parallel()
+	s := newIsolatedServer(t)
+	repoA := s.seedRepo(t, "cs-secret-repo-a", false)
+	repoB := s.seedRepo(t, "cs-secret-repo-b", false)
 
-	put := putSealedSecret(t, "/api/v3/user/codespaces/secrets/CS_SEL_SECRET", "sekrit")
+	put := s.putSealedSecret(t, "/api/v3/user/codespaces/secrets/CS_SEL_SECRET", "sekrit")
 	put.Body.Close()
 	if put.StatusCode != http.StatusNoContent {
 		t.Fatalf("put secret: %d", put.StatusCode)
 	}
 
 	// Set the full selected list.
-	resp := ghPut(t, "/api/v3/user/codespaces/secrets/CS_SEL_SECRET/repositories", defaultToken, map[string]any{
+	resp := s.put(t, "/api/v3/user/codespaces/secrets/CS_SEL_SECRET/repositories", defaultToken, map[string]any{
 		"selected_repository_ids": []int{repoA.ID},
 	})
 	resp.Body.Close()
@@ -236,7 +245,7 @@ func TestCodespacesUserSecret_SelectedRepositories(t *testing.T) {
 
 	listSelected := func() []map[string]any {
 		t.Helper()
-		resp := ghGet(t, "/api/v3/user/codespaces/secrets/CS_SEL_SECRET/repositories", defaultToken)
+		resp := s.get(t, "/api/v3/user/codespaces/secrets/CS_SEL_SECRET/repositories", defaultToken)
 		if resp.StatusCode != http.StatusOK {
 			resp.Body.Close()
 			t.Fatalf("list selected repos: %d", resp.StatusCode)
@@ -261,7 +270,7 @@ func TestCodespacesUserSecret_SelectedRepositories(t *testing.T) {
 	}
 
 	// Add one repository, then remove it.
-	resp = ghPut(t, fmt.Sprintf("/api/v3/user/codespaces/secrets/CS_SEL_SECRET/repositories/%d", repoB.ID), defaultToken, nil)
+	resp = s.put(t, fmt.Sprintf("/api/v3/user/codespaces/secrets/CS_SEL_SECRET/repositories/%d", repoB.ID), defaultToken, nil)
 	resp.Body.Close()
 	if resp.StatusCode != http.StatusNoContent {
 		t.Fatalf("add selected repo: %d", resp.StatusCode)
@@ -269,7 +278,7 @@ func TestCodespacesUserSecret_SelectedRepositories(t *testing.T) {
 	if repos = listSelected(); len(repos) != 2 {
 		t.Fatalf("selected repos after add = %v", repos)
 	}
-	resp = ghDelete(t, fmt.Sprintf("/api/v3/user/codespaces/secrets/CS_SEL_SECRET/repositories/%d", repoB.ID), defaultToken)
+	resp = s.delete(t, fmt.Sprintf("/api/v3/user/codespaces/secrets/CS_SEL_SECRET/repositories/%d", repoB.ID), defaultToken)
 	resp.Body.Close()
 	if resp.StatusCode != http.StatusNoContent {
 		t.Fatalf("remove selected repo: %d", resp.StatusCode)
@@ -279,36 +288,38 @@ func TestCodespacesUserSecret_SelectedRepositories(t *testing.T) {
 	}
 
 	// Unknown repositories and unknown secrets are 404.
-	resp = ghPut(t, "/api/v3/user/codespaces/secrets/CS_SEL_SECRET/repositories", defaultToken, map[string]any{
+	resp = s.put(t, "/api/v3/user/codespaces/secrets/CS_SEL_SECRET/repositories", defaultToken, map[string]any{
 		"selected_repository_ids": []int{99999999},
 	})
 	resp.Body.Close()
 	if resp.StatusCode != http.StatusNotFound {
 		t.Fatalf("set with unknown repo: %d, want 404", resp.StatusCode)
 	}
-	resp = ghGet(t, "/api/v3/user/codespaces/secrets/NO_SUCH_SECRET/repositories", defaultToken)
+	resp = s.get(t, "/api/v3/user/codespaces/secrets/NO_SUCH_SECRET/repositories", defaultToken)
 	resp.Body.Close()
 	if resp.StatusCode != http.StatusNotFound {
 		t.Fatalf("list for unknown secret: %d, want 404", resp.StatusCode)
 	}
 
-	del := ghDelete(t, "/api/v3/user/codespaces/secrets/CS_SEL_SECRET", defaultToken)
+	del := s.delete(t, "/api/v3/user/codespaces/secrets/CS_SEL_SECRET", defaultToken)
 	del.Body.Close()
 }
 
 func TestCodespacesCreateForPullRequest(t *testing.T) {
-	repo := createTestCodespaceRepo(t, "cs-pr-repo")
+	t.Parallel()
+	s := newIsolatedServer(t)
+	repo := s.createTestCodespaceRepo(t, "cs-pr-repo")
 
 	// A real head branch (with the devcontainer) backs the pull request.
-	stor := testServer.store.GitStorages[repo.FullName]
-	admin := testServer.store.UsersByLogin["admin"]
+	stor := s.store.GitStorages[repo.FullName]
+	admin := s.store.UsersByLogin["admin"]
 	if _, err := initRepoWithFiles(stor, "feature", "feature work", map[string]string{
 		".devcontainer/devcontainer.json": fmt.Sprintf(`{"image":%q}`, codespaceTestImage),
 		"feature.txt":                     "feature",
 	}, repoSignature(admin.Login, "bleephub@local")); err != nil {
 		t.Fatalf("init feature branch: %v", err)
 	}
-	prResp := ghPost(t, "/api/v3/repos/"+repo.FullName+"/pulls", defaultToken, map[string]any{
+	prResp := s.post(t, "/api/v3/repos/"+repo.FullName+"/pulls", defaultToken, map[string]any{
 		"title": "PR for codespace",
 		"head":  "feature",
 		"base":  "main",
@@ -321,7 +332,7 @@ func TestCodespacesCreateForPullRequest(t *testing.T) {
 	pr := decodeJSON(t, prResp)
 	num := int(pr["number"].(float64))
 
-	resp := ghPost(t, fmt.Sprintf("/api/v3/repos/%s/pulls/%d/codespaces", repo.FullName, num), defaultToken, map[string]any{
+	resp := s.post(t, fmt.Sprintf("/api/v3/repos/%s/pulls/%d/codespaces", repo.FullName, num), defaultToken, map[string]any{
 		"machine": "basicLinux32",
 	})
 	if resp.StatusCode != http.StatusCreated {
@@ -332,10 +343,10 @@ func TestCodespacesCreateForPullRequest(t *testing.T) {
 	created := decodeJSON(t, resp)
 	name := created["name"].(string)
 	t.Cleanup(func() {
-		if cs := testServer.store.GetCodespaceByName(name); cs != nil {
-			_, _ = testServer.store.DeleteCodespace(cs.ID)
+		if cs := s.store.GetCodespaceByName(name); cs != nil {
+			_, _ = s.store.DeleteCodespace(cs.ID)
 		}
-		cleanupCodespaceContainer(t, name)
+		s.cleanupCodespaceContainer(t, name)
 	})
 	gitStatus, _ := created["git_status"].(map[string]any)
 	if gitStatus["ref"] != "feature" {
@@ -347,7 +358,7 @@ func TestCodespacesCreateForPullRequest(t *testing.T) {
 	}
 
 	// Unknown pull request numbers are 404.
-	missing := ghPost(t, "/api/v3/repos/"+repo.FullName+"/pulls/9999/codespaces", defaultToken, nil)
+	missing := s.post(t, "/api/v3/repos/"+repo.FullName+"/pulls/9999/codespaces", defaultToken, nil)
 	missing.Body.Close()
 	if missing.StatusCode != http.StatusNotFound {
 		t.Fatalf("codespace for unknown pull request: %d, want 404", missing.StatusCode)

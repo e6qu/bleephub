@@ -17,37 +17,9 @@ import (
 // pkg/cmd/release/shared/fetch.go, api/queries_pr_review.go) — so schema
 // drift against the real client fails here before it fails in the harness.
 
-// gqlDo posts a GraphQL request as the admin user and returns the full
-// response envelope (data + errors).
-func gqlDo(t *testing.T, query string, variables map[string]interface{}) map[string]interface{} {
-	t.Helper()
-	body := map[string]interface{}{"query": query}
-	if variables != nil {
-		body["variables"] = variables
-	}
-	resp := ghPost(t, "/api/graphql", defaultToken, body)
-	if resp.StatusCode != http.StatusOK {
-		resp.Body.Close()
-		t.Fatalf("graphql status = %d", resp.StatusCode)
-	}
-	return decodeJSON(t, resp)
-}
-
-// gqlData asserts an error-free response and returns data.
-func gqlData(t *testing.T, query string, variables map[string]interface{}) map[string]interface{} {
-	t.Helper()
-	env := gqlDo(t, query, variables)
-	if errs, ok := env["errors"]; ok && errs != nil {
-		t.Fatalf("graphql errors: %v", errs)
-	}
-	d, _ := env["data"].(map[string]interface{})
-	if d == nil {
-		t.Fatalf("no data in response: %v", env)
-	}
-	return d
-}
-
 func TestGHCLIIssueLookupAcceptsExclusiveStateEnums(t *testing.T) {
+	t.Parallel()
+	s := newIsolatedServer(t)
 	// gh v2.96 builds this exact polymorphic shape for `gh issue view`,
 	// `gh issue close`, and `gh issue reopen`. GitHub executes it even though
 	// Issue.state and PullRequest.state use different enum types.
@@ -61,7 +33,7 @@ query IssueByNumber($owner: String!, $repo: String!, $number: Int!) {
     }
   }
 }`
-	_, validationErrors, err := graphqlPrepareDocument(testServer.graphqlSchema, query)
+	_, validationErrors, err := graphqlPrepareDocument(s.graphqlSchema, query)
 	if err != nil {
 		t.Fatalf("prepare official gh issue lookup: %v", err)
 	}
@@ -77,7 +49,7 @@ query($owner: String!, $repo: String!, $number: Int!) {
     issue(number: $number) { value: state value: title }
   }
 }`
-	_, validationErrors, err = graphqlPrepareDocument(testServer.graphqlSchema, conflicting)
+	_, validationErrors, err = graphqlPrepareDocument(s.graphqlSchema, conflicting)
 	if err != nil {
 		t.Fatalf("prepare genuine field conflict: %v", err)
 	}
@@ -88,53 +60,20 @@ query($owner: String!, $repo: String!, $number: Int!) {
 
 func TestRepoGraphQLURLUsesConfiguredExternalURL(t *testing.T) {
 	t.Setenv("BLEEPHUB_EXTERNAL_URL", "https://bleephub.example.test/")
+	s := newIsolatedServer(t)
 	repo := &Repo{FullName: "octo/example", Name: "example"}
-	if got := repoToGraphQL(testServer.store, repo)["url"]; got != "https://bleephub.example.test/octo/example" {
+	if got := repoToGraphQL(s.store, repo)["url"]; got != "https://bleephub.example.test/octo/example" {
 		t.Fatalf("repository GraphQL url = %v", got)
 	}
-}
-
-// sweepRepo creates a fresh repo via REST and returns (owner, name).
-func sweepRepo(t *testing.T, name string) (string, string) {
-	t.Helper()
-	resp := ghPost(t, "/api/v3/user/repos", defaultToken, map[string]interface{}{"name": name, "auto_init": true})
-	data := decodeJSON(t, resp)
-	owner, _ := data["owner"].(map[string]interface{})
-	login, _ := owner["login"].(string)
-	repoName, _ := data["name"].(string)
-	if login == "" || repoName == "" {
-		t.Fatalf("repo create failed: %v", data)
-	}
-	repo := testServer.store.GetRepo(login, repoName)
-	if repo == nil {
-		t.Fatalf("repo %s/%s not found after create", login, repoName)
-	}
-	seedPullRequestBranches(t, testServer, repo, "feature")
-	return login, repoName
-}
-
-// sweepPR creates a PR via REST and returns its number and database id.
-func sweepPR(t *testing.T, owner, name, title string) (int, int) {
-	t.Helper()
-	resp := ghPost(t, "/api/v3/repos/"+owner+"/"+name+"/pulls", defaultToken, map[string]interface{}{
-		"title": title,
-		"head":  "feature",
-		"base":  "main",
-		"body":  "sweep pr body",
-	})
-	data := decodeJSON(t, resp)
-	num, ok := data["number"].(float64)
-	if !ok {
-		t.Fatalf("pr create failed: %v", data)
-	}
-	id, _ := data["id"].(float64)
-	return int(num), int(id)
 }
 
 // --- Finding 1: gh's GitHubRepo query (repo clone, pr create) ---
 
 func TestRepoGraphQL_GitHubRepoQuery(t *testing.T) {
-	owner, name := sweepRepo(t, "sweep-githubrepo")
+	t.Parallel()
+	s := newIsolatedServer(t)
+	sweep := s.sweepRepo(t, "sweep-githubrepo")
+	owner, name := sweep.owner, sweep.name
 
 	// Verbatim from api/queries_repo.go GitHubRepo.
 	query := `
@@ -162,7 +101,7 @@ func TestRepoGraphQL_GitHubRepoQuery(t *testing.T) {
 			squashMergeAllowed
 		}
 	}`
-	d := gqlData(t, query, map[string]interface{}{"owner": owner, "name": name})
+	d := s.gqlData(t, query, map[string]interface{}{"owner": owner, "name": name})
 	repo, _ := d["repository"].(map[string]interface{})
 	if repo == nil {
 		t.Fatalf("repository null: %v", d)
@@ -176,8 +115,10 @@ func TestRepoGraphQL_GitHubRepoQuery(t *testing.T) {
 }
 
 func TestRepoMetadataPushedAtFollowsGitHistory(t *testing.T) {
+	t.Parallel()
+	s := newIsolatedServer(t)
 	name := "sweep-empty-pushed-at"
-	createResp := ghPost(t, "/api/v3/user/repos", defaultToken, map[string]interface{}{"name": name})
+	createResp := s.post(t, "/api/v3/user/repos", defaultToken, map[string]interface{}{"name": name})
 	created := decodeJSON(t, createResp)
 	ownerData, _ := created["owner"].(map[string]interface{})
 	owner, _ := ownerData["login"].(string)
@@ -189,7 +130,7 @@ func TestRepoMetadataPushedAtFollowsGitHistory(t *testing.T) {
 	}
 
 	query := `query($owner:String!,$name:String!){repository(owner:$owner,name:$name){pushedAt,isEmpty}}`
-	before := gqlData(t, query, map[string]interface{}{"owner": owner, "name": name})
+	before := s.gqlData(t, query, map[string]interface{}{"owner": owner, "name": name})
 	beforeRepo, _ := before["repository"].(map[string]interface{})
 	if beforeRepo == nil {
 		t.Fatalf("repository query before commit = %v", before)
@@ -201,7 +142,7 @@ func TestRepoMetadataPushedAtFollowsGitHistory(t *testing.T) {
 		t.Fatalf("GraphQL isEmpty before commit = %v, want true", beforeRepo["isEmpty"])
 	}
 
-	putResp := ghPut(t, "/api/v3/repos/"+owner+"/"+name+"/contents/README.md", defaultToken, map[string]interface{}{
+	putResp := s.put(t, "/api/v3/repos/"+owner+"/"+name+"/contents/README.md", defaultToken, map[string]interface{}{
 		"message": "initial commit",
 		"content": base64.StdEncoding.EncodeToString([]byte("# " + name + "\n")),
 	})
@@ -209,12 +150,12 @@ func TestRepoMetadataPushedAtFollowsGitHistory(t *testing.T) {
 		t.Fatalf("contents create status = %d", putResp.StatusCode)
 	}
 
-	repoResp := ghGet(t, "/api/v3/repos/"+owner+"/"+name, defaultToken)
+	repoResp := s.get(t, "/api/v3/repos/"+owner+"/"+name, defaultToken)
 	afterREST := decodeJSON(t, repoResp)
 	if afterREST["pushed_at"] == nil {
 		t.Fatalf("REST pushed_at after real commit = nil, want timestamp")
 	}
-	after := gqlData(t, query, map[string]interface{}{"owner": owner, "name": name})
+	after := s.gqlData(t, query, map[string]interface{}{"owner": owner, "name": name})
 	afterRepo, _ := after["repository"].(map[string]interface{})
 	if afterRepo == nil {
 		t.Fatalf("repository query after commit = %v", after)
@@ -228,12 +169,15 @@ func TestRepoMetadataPushedAtFollowsGitHistory(t *testing.T) {
 }
 
 func TestRepoGraphQLArchivedAtFollowsArchiveState(t *testing.T) {
-	owner, name := sweepRepo(t, "archive-state")
+	t.Parallel()
+	s := newIsolatedServer(t)
+	sweep := s.sweepRepo(t, "archive-state")
+	owner, name := sweep.owner, sweep.name
 	query := `query($owner:String!,$name:String!){
 		repository(owner:$owner,name:$name){isArchived,archivedAt}
 	}`
 
-	before := gqlData(t, query, map[string]interface{}{"owner": owner, "name": name})
+	before := s.gqlData(t, query, map[string]interface{}{"owner": owner, "name": name})
 	beforeRepo, _ := before["repository"].(map[string]interface{})
 	if beforeRepo == nil {
 		t.Fatalf("repository null before archive: %v", before)
@@ -242,11 +186,11 @@ func TestRepoGraphQLArchivedAtFollowsArchiveState(t *testing.T) {
 		t.Fatalf("repository before archive = %v, want unarchived with null archivedAt", beforeRepo)
 	}
 
-	patchResp := ghPatch(t, "/api/v3/repos/"+owner+"/"+name, defaultToken, map[string]interface{}{"archived": true})
+	patchResp := s.patch(t, "/api/v3/repos/"+owner+"/"+name, defaultToken, map[string]interface{}{"archived": true})
 	if patchResp.StatusCode != http.StatusOK {
 		t.Fatalf("archive patch status = %d", patchResp.StatusCode)
 	}
-	archived := gqlData(t, query, map[string]interface{}{"owner": owner, "name": name})
+	archived := s.gqlData(t, query, map[string]interface{}{"owner": owner, "name": name})
 	archivedRepo, _ := archived["repository"].(map[string]interface{})
 	if archivedRepo == nil {
 		t.Fatalf("repository null after archive: %v", archived)
@@ -259,11 +203,11 @@ func TestRepoGraphQLArchivedAtFollowsArchiveState(t *testing.T) {
 		t.Fatalf("archivedAt %q is not RFC3339: %v", archivedAt, err)
 	}
 
-	unarchiveResp := ghPatch(t, "/api/v3/repos/"+owner+"/"+name, defaultToken, map[string]interface{}{"archived": false})
+	unarchiveResp := s.patch(t, "/api/v3/repos/"+owner+"/"+name, defaultToken, map[string]interface{}{"archived": false})
 	if unarchiveResp.StatusCode != http.StatusOK {
 		t.Fatalf("unarchive patch status = %d", unarchiveResp.StatusCode)
 	}
-	after := gqlData(t, query, map[string]interface{}{"owner": owner, "name": name})
+	after := s.gqlData(t, query, map[string]interface{}{"owner": owner, "name": name})
 	afterRepo, _ := after["repository"].(map[string]interface{})
 	if afterRepo == nil || afterRepo["isArchived"] != false || afterRepo["archivedAt"] != nil {
 		t.Fatalf("repository after unarchive = %v, want unarchived with null archivedAt", afterRepo)
@@ -274,21 +218,23 @@ func TestRepoGraphQLArchivedAtFollowsArchiveState(t *testing.T) {
 // returns real organization data (not a synthetic partial User-shaped payload)
 // when the login resolves to an organization.
 func TestRepoGraphQL_RepositoryOwnerOrg(t *testing.T) {
+	t.Parallel()
+	s := newIsolatedServer(t)
 	orgLogin := "sweep-owner-org"
-	org := testServer.store.CreateOrg(testServer.store.UsersByLogin["admin"], orgLogin, "Sweep Owner Org", "")
+	org := s.store.CreateOrg(s.store.UsersByLogin["admin"], orgLogin, "Sweep Owner Org", "")
 	if org == nil {
 		t.Fatal("failed to create org")
 	}
-	repo := testServer.store.CreateOrgRepo(org, testServer.store.UsersByLogin["admin"], "owner-interface-repo", "", false)
+	repo := s.store.CreateOrgRepo(org, s.store.UsersByLogin["admin"], "owner-interface-repo", "", false)
 	if repo == nil {
 		t.Fatal("failed to create organization repository")
 	}
 	defer func() {
-		testServer.store.mu.Lock()
-		delete(testServer.store.Orgs, org.ID)
-		delete(testServer.store.OrgsByLogin, orgLogin)
-		delete(testServer.store.Memberships, membershipKey(orgLogin, testServer.store.UsersByLogin["admin"].ID))
-		testServer.store.mu.Unlock()
+		s.store.mu.Lock()
+		delete(s.store.Orgs, org.ID)
+		delete(s.store.OrgsByLogin, orgLogin)
+		delete(s.store.Memberships, membershipKey(orgLogin, s.store.UsersByLogin["admin"].ID))
+		s.store.mu.Unlock()
 	}()
 
 	query := `query Owner($login: String!) {
@@ -310,7 +256,7 @@ func TestRepoGraphQL_RepositoryOwnerOrg(t *testing.T) {
 			}
 		}
 	}`
-	d := gqlData(t, query, map[string]interface{}{"login": orgLogin})
+	d := s.gqlData(t, query, map[string]interface{}{"login": orgLogin})
 	owner, _ := d["repositoryOwner"].(map[string]interface{})
 	if owner == nil {
 		t.Fatalf("repositoryOwner null: %v", d)
@@ -340,7 +286,9 @@ func TestRepoGraphQL_RepositoryOwnerOrg(t *testing.T) {
 // --- Finding 1: the static --json field set gh repo view exposes ---
 
 func TestRepoGraphQL_ViewJSONStaticFields(t *testing.T) {
-	repoResp := ghPost(t, "/api/v3/user/repos", defaultToken, map[string]interface{}{
+	t.Parallel()
+	s := newIsolatedServer(t)
+	repoResp := s.post(t, "/api/v3/user/repos", defaultToken, map[string]interface{}{
 		"name":             "sweep-repoview",
 		"license_template": "mit",
 		"has_discussions":  false,
@@ -356,12 +304,12 @@ func TestRepoGraphQL_ViewJSONStaticFields(t *testing.T) {
 		t.Fatalf("created repo has_discussions = %v, want false", repoData["has_discussions"])
 	}
 	disabledQuery := `query($owner:String!,$name:String!){repository(owner:$owner,name:$name){hasDiscussionsEnabled}}`
-	disabledData := gqlData(t, disabledQuery, map[string]interface{}{"owner": owner, "name": name})
+	disabledData := s.gqlData(t, disabledQuery, map[string]interface{}{"owner": owner, "name": name})
 	disabledRepo, _ := disabledData["repository"].(map[string]interface{})
 	if disabledRepo == nil || disabledRepo["hasDiscussionsEnabled"] != false {
 		t.Fatalf("GraphQL hasDiscussionsEnabled before patch = %v, want false", disabledRepo)
 	}
-	patchResp := ghPatch(t, "/api/v3/repos/"+owner+"/"+name, defaultToken, map[string]interface{}{
+	patchResp := s.patch(t, "/api/v3/repos/"+owner+"/"+name, defaultToken, map[string]interface{}{
 		"homepage":               "https://example.test/sweep-repoview",
 		"has_projects":           true,
 		"has_wiki":               true,
@@ -378,7 +326,7 @@ func TestRepoGraphQL_ViewJSONStaticFields(t *testing.T) {
 	}
 
 	// Seed a published release so latestRelease resolves to real store data.
-	relResp := ghPost(t, "/api/v3/repos/"+owner+"/"+name+"/releases", defaultToken, map[string]interface{}{
+	relResp := s.post(t, "/api/v3/repos/"+owner+"/"+name+"/releases", defaultToken, map[string]interface{}{
 		"tag_name": "v1.0.0",
 		"name":     "first",
 	})
@@ -386,7 +334,7 @@ func TestRepoGraphQL_ViewJSONStaticFields(t *testing.T) {
 	if relData["id"] == nil {
 		t.Fatalf("release create failed: %v", relData)
 	}
-	subResp := ghPut(t, "/api/v3/repos/"+owner+"/"+name+"/subscription", defaultToken, map[string]interface{}{
+	subResp := s.put(t, "/api/v3/repos/"+owner+"/"+name+"/subscription", defaultToken, map[string]interface{}{
 		"subscribed": true,
 	})
 	if subResp.StatusCode != http.StatusOK {
@@ -416,7 +364,7 @@ func TestRepoGraphQL_ViewJSONStaticFields(t *testing.T) {
 			archivedAt
 		}
 	}`
-	d := gqlData(t, query, map[string]interface{}{"owner": owner, "name": name})
+	d := s.gqlData(t, query, map[string]interface{}{"owner": owner, "name": name})
 	repo, _ := d["repository"].(map[string]interface{})
 	if repo == nil {
 		t.Fatalf("repository null: %v", d)
@@ -476,18 +424,21 @@ func TestRepoGraphQL_ViewJSONStaticFields(t *testing.T) {
 }
 
 func TestRepoGraphQL_ForkParentAndCount(t *testing.T) {
-	owner, name := sweepRepo(t, "sweep-fork-graphql")
+	t.Parallel()
+	s := newIsolatedServer(t)
+	sweep := s.sweepRepo(t, "sweep-fork-graphql")
+	owner, name := sweep.owner, sweep.name
 
-	testServer.store.mu.Lock()
-	forker := &User{ID: testServer.store.NextUser, Login: "graphql-forker", Type: "User", CreatedAt: fixedTestTime, UpdatedAt: fixedTestTime}
-	testServer.store.NextUser++
-	testServer.store.Users[forker.ID] = forker
-	testServer.store.UsersByLogin[forker.Login] = forker
+	s.store.mu.Lock()
+	forker := &User{ID: s.store.NextUser, Login: "graphql-forker", Type: "User", CreatedAt: fixedTestTime, UpdatedAt: fixedTestTime}
+	s.store.NextUser++
+	s.store.Users[forker.ID] = forker
+	s.store.UsersByLogin[forker.Login] = forker
 	tok := &Token{Value: "graphql-forker-token", UserID: forker.ID, Scopes: "repo", CreatedAt: fixedTestTime}
-	testServer.store.Tokens[tok.Value] = tok
-	testServer.store.mu.Unlock()
+	s.store.Tokens[tok.Value] = tok
+	s.store.mu.Unlock()
 
-	resp := ghPost(t, "/api/v3/repos/"+owner+"/"+name+"/forks", tok.Value, map[string]interface{}{"name": "sweep-fork-child"})
+	resp := s.post(t, "/api/v3/repos/"+owner+"/"+name+"/forks", tok.Value, map[string]interface{}{"name": "sweep-fork-child"})
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusAccepted {
 		t.Fatalf("fork create status = %d, want 202", resp.StatusCode)
@@ -503,7 +454,7 @@ func TestRepoGraphQL_ForkParentAndCount(t *testing.T) {
 			parent{nameWithOwner databaseId}
 		}
 	}`
-	d := gqlData(t, query, map[string]interface{}{
+	d := s.gqlData(t, query, map[string]interface{}{
 		"owner":     owner,
 		"name":      name,
 		"forkOwner": forker.Login,
@@ -523,8 +474,11 @@ func TestRepoGraphQL_ForkParentAndCount(t *testing.T) {
 // --- Finding 2: gh pr list (lister query with literal enum orderBy) ---
 
 func TestPRGraphQL_ListQueryShape(t *testing.T) {
-	owner, name := sweepRepo(t, "sweep-prlist")
-	prNum, _ := sweepPR(t, owner, name, "list me")
+	t.Parallel()
+	s := newIsolatedServer(t)
+	sweep := s.sweepRepo(t, "sweep-prlist")
+	owner, name := sweep.owner, sweep.name
+	prNum, _ := s.sweepPR(t, sweep, "list me")
 
 	// Verbatim from pkg/cmd/pr/shared/lister.go with gh pr list's default
 	// fields expanded per api/query_builder.go.
@@ -558,7 +512,7 @@ func TestPRGraphQL_ListQueryShape(t *testing.T) {
 				}
 			}
 		}`
-	d := gqlData(t, query, map[string]interface{}{
+	d := s.gqlData(t, query, map[string]interface{}{
 		"owner": owner,
 		"repo":  name,
 		"limit": 30,
@@ -590,10 +544,13 @@ func TestPRGraphQL_ListQueryShape(t *testing.T) {
 // statusCheckRollup backed by the real checks and commit-status stores ---
 
 func TestPRGraphQL_ViewDefaultFields(t *testing.T) {
-	owner, name := sweepRepo(t, "sweep-prview")
-	prNum, prID := sweepPR(t, owner, name, "view me")
-	createTestUser(t, "sweep-reviewer")
-	reqResp := ghPost(t, "/api/v3/repos/"+owner+"/"+name+"/pulls/"+itoa(prNum)+"/requested_reviewers", defaultToken,
+	t.Parallel()
+	s := newIsolatedServer(t)
+	sweep := s.sweepRepo(t, "sweep-prview")
+	owner, name := sweep.owner, sweep.name
+	prNum, prID := s.sweepPR(t, sweep, "view me")
+	s.createTestUser(t, "sweep-reviewer")
+	reqResp := s.post(t, "/api/v3/repos/"+owner+"/"+name+"/pulls/"+itoa(prNum)+"/requested_reviewers", defaultToken,
 		map[string]interface{}{"reviewers": []string{"sweep-reviewer"}})
 	if reqResp.StatusCode != http.StatusCreated {
 		reqResp.Body.Close()
@@ -602,7 +559,7 @@ func TestPRGraphQL_ViewDefaultFields(t *testing.T) {
 	reqResp.Body.Close()
 
 	// Submit a review so reviews{} carries data.
-	revResp := ghPost(t, "/api/v3/repos/"+owner+"/"+name+"/pulls/"+itoa(prNum)+"/reviews", defaultToken,
+	revResp := s.post(t, "/api/v3/repos/"+owner+"/"+name+"/pulls/"+itoa(prNum)+"/reviews", defaultToken,
 		map[string]interface{}{"body": "ship it", "event": "APPROVE"})
 	if revResp.StatusCode != 200 {
 		revResp.Body.Close()
@@ -613,13 +570,13 @@ func TestPRGraphQL_ViewDefaultFields(t *testing.T) {
 	// Record a completed GitHub Actions workflow job against the PR's head sha
 	// so the checks store and GraphQL statusCheckRollup are fed by the same
 	// Actions event path as real runs.
-	headSHA := pullRequestHeadSHA(testServer.store.GetPullRequest(prID), testServer.store)
+	headSHA := pullRequestHeadSHA(s.store.GetPullRequest(prID), s.store)
 	if headSHA == "" {
 		t.Fatal("PR head sha did not resolve")
 	}
 	repoKey := owner + "/" + name
 	now := fixedTestTime.UTC()
-	runID := testServer.store.ReserveRunID()
+	runID := s.store.ReserveRunID()
 	wf := &Workflow{
 		ID:           "gql-rollup-" + repoKey,
 		Name:         "ci",
@@ -644,11 +601,11 @@ func TestPRGraphQL_ViewDefaultFields(t *testing.T) {
 			},
 		},
 	}
-	testServer.store.mu.Lock()
-	testServer.store.Workflows[wf.ID] = wf
-	testServer.store.mu.Unlock()
-	testServer.onActionsRunRequestedSnapshot(wf, cloneWorkflowEventSnapshot(wf))
-	statusResp := ghPost(t, "/api/v3/repos/"+owner+"/"+name+"/statuses/"+headSHA, defaultToken,
+	s.store.mu.Lock()
+	s.store.Workflows[wf.ID] = wf
+	s.store.mu.Unlock()
+	s.onActionsRunRequestedSnapshot(wf, cloneWorkflowEventSnapshot(wf))
+	statusResp := s.post(t, "/api/v3/repos/"+owner+"/"+name+"/statuses/"+headSHA, defaultToken,
 		map[string]interface{}{
 			"state":       "failure",
 			"target_url":  "https://ci.example.test/unit",
@@ -685,7 +642,7 @@ func TestPRGraphQL_ViewDefaultFields(t *testing.T) {
 			pullRequest(number: $pr_number) {...pr}
 		}
 	}`
-	d := gqlData(t, query, map[string]interface{}{"owner": owner, "repo": name, "pr_number": prNum})
+	d := s.gqlData(t, query, map[string]interface{}{"owner": owner, "repo": name, "pr_number": prNum})
 	repo, _ := d["repository"].(map[string]interface{})
 	pr, _ := repo["pullRequest"].(map[string]interface{})
 	if pr == nil {
@@ -793,8 +750,11 @@ func countForState(raw interface{}, state string) int {
 // --- Finding 4: gh pr merge's finder fields + the merge mutation shape ---
 
 func TestPRGraphQL_MergePath(t *testing.T) {
-	owner, name := sweepRepo(t, "sweep-prmerge")
-	prNum, _ := sweepPR(t, owner, name, "merge me")
+	t.Parallel()
+	s := newIsolatedServer(t)
+	sweep := s.sweepRepo(t, "sweep-prmerge")
+	owner, name := sweep.owner, sweep.name
+	prNum, _ := s.sweepPR(t, sweep, "merge me")
 
 	// Finder fields from pkg/cmd/pr/merge/merge.go (isInMergeQueue /
 	// isMergeQueueEnabled removed by gh's introspection — bleephub doesn't
@@ -806,7 +766,7 @@ func TestPRGraphQL_MergePath(t *testing.T) {
 			pullRequest(number: $pr_number) {...pr}
 		}
 	}`
-	d := gqlData(t, query, map[string]interface{}{"owner": owner, "repo": name, "pr_number": prNum})
+	d := s.gqlData(t, query, map[string]interface{}{"owner": owner, "repo": name, "pr_number": prNum})
 	pr, _ := d["repository"].(map[string]interface{})["pullRequest"].(map[string]interface{})
 	if pr == nil {
 		t.Fatalf("pullRequest null: %v", d)
@@ -824,7 +784,7 @@ func TestPRGraphQL_MergePath(t *testing.T) {
 	// Mutation shape from pkg/cmd/pr/merge/http.go (shurcooL-generated):
 	// selects only clientMutationId.
 	mergeMutation := `mutation PullRequestMerge($input:MergePullRequestInput!){mergePullRequest(input:$input){clientMutationId}}`
-	md := gqlData(t, mergeMutation, map[string]interface{}{
+	md := s.gqlData(t, mergeMutation, map[string]interface{}{
 		"input": map[string]interface{}{
 			"pullRequestId": prNodeID,
 			"mergeMethod":   "MERGE",
@@ -835,7 +795,7 @@ func TestPRGraphQL_MergePath(t *testing.T) {
 	}
 
 	// The merge is real: REST reports merged.
-	getResp := ghGet(t, "/api/v3/repos/"+owner+"/"+name+"/pulls/"+itoa(prNum), defaultToken)
+	getResp := s.get(t, "/api/v3/repos/"+owner+"/"+name+"/pulls/"+itoa(prNum), defaultToken)
 	prJSON := decodeJSON(t, getResp)
 	if merged, _ := prJSON["merged"].(bool); !merged {
 		t.Errorf("REST merged = %v after mergePullRequest, want true", prJSON["merged"])
@@ -845,11 +805,14 @@ func TestPRGraphQL_MergePath(t *testing.T) {
 // --- Finding 5: gh pr review → addPullRequestReview mutation ---
 
 func TestPRGraphQL_AddPullRequestReview(t *testing.T) {
-	owner, name := sweepRepo(t, "sweep-prreview")
-	prNum, _ := sweepPR(t, owner, name, "review me")
+	t.Parallel()
+	s := newIsolatedServer(t)
+	sweep := s.sweepRepo(t, "sweep-prreview")
+	owner, name := sweep.owner, sweep.name
+	prNum, _ := s.sweepPR(t, sweep, "review me")
 
 	// gh pr review resolves the PR with Fields: ["id","number"] first.
-	d := gqlData(t, `query($owner:String!,$repo:String!,$n:Int!){repository(owner:$owner,name:$repo){pullRequest(number:$n){id,number}}}`,
+	d := s.gqlData(t, `query($owner:String!,$repo:String!,$n:Int!){repository(owner:$owner,name:$repo){pullRequest(number:$n){id,number}}}`,
 		map[string]interface{}{"owner": owner, "repo": name, "n": prNum})
 	prNodeID, _ := d["repository"].(map[string]interface{})["pullRequest"].(map[string]interface{})["id"].(string)
 	if prNodeID == "" {
@@ -859,7 +822,7 @@ func TestPRGraphQL_AddPullRequestReview(t *testing.T) {
 	// Mutation shape from api/queries_pr_review.go AddReview
 	// (shurcooL-generated, selects clientMutationId).
 	mutation := `mutation PullRequestReviewAdd($input:AddPullRequestReviewInput!){addPullRequestReview(input:$input){clientMutationId}}`
-	gqlData(t, mutation, map[string]interface{}{
+	s.gqlData(t, mutation, map[string]interface{}{
 		"input": map[string]interface{}{
 			"pullRequestId": prNodeID,
 			"event":         "REQUEST_CHANGES",
@@ -868,7 +831,7 @@ func TestPRGraphQL_AddPullRequestReview(t *testing.T) {
 	})
 
 	// The review landed in the same store REST serves.
-	listResp := ghGet(t, "/api/v3/repos/"+owner+"/"+name+"/pulls/"+itoa(prNum)+"/reviews", defaultToken)
+	listResp := s.get(t, "/api/v3/repos/"+owner+"/"+name+"/pulls/"+itoa(prNum)+"/reviews", defaultToken)
 	reviews := decodeJSONArray(t, listResp)
 	if len(reviews) != 1 {
 		t.Fatalf("REST reviews = %v, want 1", reviews)
@@ -878,7 +841,7 @@ func TestPRGraphQL_AddPullRequestReview(t *testing.T) {
 	}
 
 	// reviewDecision derives from the new review.
-	d2 := gqlData(t, `query($owner:String!,$repo:String!,$n:Int!){repository(owner:$owner,name:$repo){pullRequest(number:$n){reviewDecision,latestReviews(first: 100){nodes{author{login},authorAssociation,submittedAt,body,state}}}}}`,
+	d2 := s.gqlData(t, `query($owner:String!,$repo:String!,$n:Int!){repository(owner:$owner,name:$repo){pullRequest(number:$n){reviewDecision,latestReviews(first: 100){nodes{author{login},authorAssociation,submittedAt,body,state}}}}}`,
 		map[string]interface{}{"owner": owner, "repo": name, "n": prNum})
 	pr2, _ := d2["repository"].(map[string]interface{})["pullRequest"].(map[string]interface{})
 	if pr2["reviewDecision"] != "CHANGES_REQUESTED" {
@@ -891,10 +854,13 @@ func TestPRGraphQL_AddPullRequestReview(t *testing.T) {
 }
 
 func TestPRGraphQL_ResolveReviewThread(t *testing.T) {
-	owner, name := sweepRepo(t, "sweep-prthread")
-	prNum, _ := sweepPR(t, owner, name, "thread me")
+	t.Parallel()
+	s := newIsolatedServer(t)
+	sweep := s.sweepRepo(t, "sweep-prthread")
+	owner, name := sweep.owner, sweep.name
+	prNum, _ := s.sweepPR(t, sweep, "thread me")
 
-	root := decodeJSONWithStatus(t, ghPost(t, "/api/v3/repos/"+owner+"/"+name+"/pulls/"+itoa(prNum)+"/comments", defaultToken, map[string]interface{}{
+	root := decodeJSONWithStatus(t, s.post(t, "/api/v3/repos/"+owner+"/"+name+"/pulls/"+itoa(prNum)+"/comments", defaultToken, map[string]interface{}{
 		"body":      "please adjust this line",
 		"path":      "main.go",
 		"line":      3,
@@ -902,13 +868,13 @@ func TestPRGraphQL_ResolveReviewThread(t *testing.T) {
 		"commit_id": "abc123",
 	}), http.StatusCreated)
 	rootID := int(root["id"].(float64))
-	decodeJSONWithStatus(t, ghPost(t, "/api/v3/repos/"+owner+"/"+name+"/pulls/"+itoa(prNum)+"/comments", defaultToken, map[string]interface{}{
+	decodeJSONWithStatus(t, s.post(t, "/api/v3/repos/"+owner+"/"+name+"/pulls/"+itoa(prNum)+"/comments", defaultToken, map[string]interface{}{
 		"body":        "addressed",
 		"in_reply_to": rootID,
 	}), http.StatusCreated)
 
 	query := `query($owner:String!,$repo:String!,$n:Int!){repository(owner:$owner,name:$repo){pullRequest(number:$n){reviewThreads(first:10){nodes{id,isResolved,isOutdated,path,line,comments{totalCount,nodes{body,path,line,state,author{login}}}}}}}}`
-	d := gqlData(t, query, map[string]interface{}{"owner": owner, "repo": name, "n": prNum})
+	d := s.gqlData(t, query, map[string]interface{}{"owner": owner, "repo": name, "n": prNum})
 	threads := d["repository"].(map[string]interface{})["pullRequest"].(map[string]interface{})["reviewThreads"].(map[string]interface{})
 	nodes, _ := threads["nodes"].([]interface{})
 	if len(nodes) != 1 {
@@ -925,7 +891,7 @@ func TestPRGraphQL_ResolveReviewThread(t *testing.T) {
 	}
 
 	resolve := `mutation($input:ResolveReviewThreadInput!){resolveReviewThread(input:$input){clientMutationId,thread{id,isResolved,comments{totalCount}}}}`
-	rd := gqlData(t, resolve, map[string]interface{}{
+	rd := s.gqlData(t, resolve, map[string]interface{}{
 		"input": map[string]interface{}{
 			"threadId":         threadID,
 			"clientMutationId": "resolve-1",
@@ -942,7 +908,7 @@ func TestPRGraphQL_ResolveReviewThread(t *testing.T) {
 	// resolvedBy reflects the actor who resolved the thread (GQL-045: it used to
 	// be an unconditional null).
 	resolvedByQuery := `query($owner:String!,$repo:String!,$n:Int!){repository(owner:$owner,name:$repo){pullRequest(number:$n){reviewThreads(first:10){nodes{isResolved,resolvedBy{login}}}}}}`
-	rbd := gqlData(t, resolvedByQuery, map[string]interface{}{"owner": owner, "repo": name, "n": prNum})
+	rbd := s.gqlData(t, resolvedByQuery, map[string]interface{}{"owner": owner, "repo": name, "n": prNum})
 	rbNode := rbd["repository"].(map[string]interface{})["pullRequest"].(map[string]interface{})["reviewThreads"].(map[string]interface{})["nodes"].([]interface{})[0].(map[string]interface{})
 	resolvedBy, _ := rbNode["resolvedBy"].(map[string]interface{})
 	if resolvedBy == nil || resolvedBy["login"] == nil || resolvedBy["login"] == "" {
@@ -950,7 +916,7 @@ func TestPRGraphQL_ResolveReviewThread(t *testing.T) {
 	}
 
 	unresolve := `mutation($input:UnresolveReviewThreadInput!){unresolveReviewThread(input:$input){thread{id,isResolved}}}`
-	ud := gqlData(t, unresolve, map[string]interface{}{
+	ud := s.gqlData(t, unresolve, map[string]interface{}{
 		"input": map[string]interface{}{
 			"threadId": threadID,
 		},
@@ -961,7 +927,7 @@ func TestPRGraphQL_ResolveReviewThread(t *testing.T) {
 	}
 
 	// Unresolving clears resolvedBy back to null.
-	ubd := gqlData(t, resolvedByQuery, map[string]interface{}{"owner": owner, "repo": name, "n": prNum})
+	ubd := s.gqlData(t, resolvedByQuery, map[string]interface{}{"owner": owner, "repo": name, "n": prNum})
 	ubNode := ubd["repository"].(map[string]interface{})["pullRequest"].(map[string]interface{})["reviewThreads"].(map[string]interface{})["nodes"].([]interface{})[0].(map[string]interface{})
 	if rb, _ := ubNode["resolvedBy"].(map[string]interface{}); rb != nil {
 		t.Fatalf("GQL-045: resolvedBy should be null after unresolve: %v", ubNode)
@@ -971,7 +937,10 @@ func TestPRGraphQL_ResolveReviewThread(t *testing.T) {
 // --- Finding 6: gh release list → Repository.releases connection ---
 
 func TestRepoGraphQL_ReleasesConnection(t *testing.T) {
-	owner, name := sweepRepo(t, "sweep-releases")
+	t.Parallel()
+	s := newIsolatedServer(t)
+	sweep := s.sweepRepo(t, "sweep-releases")
+	owner, name := sweep.owner, sweep.name
 
 	for _, rel := range []map[string]interface{}{
 		{"tag_name": "v0.9.0", "name": "old"},
@@ -979,20 +948,20 @@ func TestRepoGraphQL_ReleasesConnection(t *testing.T) {
 		{"tag_name": "v1.1.0-rc1", "name": "rc", "prerelease": true},
 		{"tag_name": "v2.0.0", "name": "draft", "draft": true},
 	} {
-		resp := ghPost(t, "/api/v3/repos/"+owner+"/"+name+"/releases", defaultToken, rel)
+		resp := s.post(t, "/api/v3/repos/"+owner+"/"+name+"/releases", defaultToken, rel)
 		if decodeJSON(t, resp)["id"] == nil {
 			t.Fatalf("release create failed for %v", rel)
 		}
 	}
 
-	resp := ghPut(t, "/api/v3/repos/"+owner+"/"+name+"/immutable-releases", defaultToken, nil)
+	resp := s.put(t, "/api/v3/repos/"+owner+"/"+name+"/immutable-releases", defaultToken, nil)
 	resp.Body.Close()
 	if resp.StatusCode != 204 {
 		t.Fatalf("enable immutable releases: %d", resp.StatusCode)
 	}
 
 	query := `query RepositoryReleaseList($direction:OrderDirection!$endCursor:String$name:String!$owner:String!$perPage:Int!){repository(owner: $owner, name: $name){releases(first: $perPage, orderBy: {field: CREATED_AT, direction: $direction}, after: $endCursor){nodes{name,tagName,isDraft,immutable,isLatest,isPrerelease,createdAt,publishedAt},pageInfo{hasNextPage,endCursor}}}}`
-	d := gqlData(t, query, map[string]interface{}{
+	d := s.gqlData(t, query, map[string]interface{}{
 		"owner":     owner,
 		"name":      name,
 		"perPage":   30,
@@ -1025,7 +994,7 @@ func TestRepoGraphQL_ReleasesConnection(t *testing.T) {
 		t.Errorf("draft publishedAt = %v, want null", byTag["v2.0.0"]["publishedAt"])
 	}
 
-	intro := gqlData(t, `query Release_fields{Release: __type(name: "Release"){fields{name}}}`, nil)
+	intro := s.gqlData(t, `query Release_fields{Release: __type(name: "Release"){fields{name}}}`, nil)
 	fields, _ := intro["Release"].(map[string]interface{})["fields"].([]interface{})
 	foundImmutable := false
 	for _, f := range fields {
@@ -1042,9 +1011,12 @@ func TestRepoGraphQL_ReleasesConnection(t *testing.T) {
 // --- Finding 7: gh release view/download/delete draft lookup ---
 
 func TestRepoGraphQL_ReleaseByTag(t *testing.T) {
-	owner, name := sweepRepo(t, "sweep-reltag")
+	t.Parallel()
+	s := newIsolatedServer(t)
+	sweep := s.sweepRepo(t, "sweep-reltag")
+	owner, name := sweep.owner, sweep.name
 
-	resp := ghPost(t, "/api/v3/repos/"+owner+"/"+name+"/releases", defaultToken, map[string]interface{}{
+	resp := s.post(t, "/api/v3/repos/"+owner+"/"+name+"/releases", defaultToken, map[string]interface{}{
 		"tag_name": "v9.9.9",
 		"name":     "pending draft",
 		"draft":    true,
@@ -1057,7 +1029,7 @@ func TestRepoGraphQL_ReleaseByTag(t *testing.T) {
 
 	// Verbatim shurcooL rendering of fetchDraftRelease's query.
 	query := `query RepositoryReleaseByTag($name:String!$owner:String!$tagName:String!){repository(owner: $owner, name: $name){release(tagName: $tagName){databaseId,isDraft}}}`
-	d := gqlData(t, query, map[string]interface{}{"owner": owner, "name": name, "tagName": "v9.9.9"})
+	d := s.gqlData(t, query, map[string]interface{}{"owner": owner, "name": name, "tagName": "v9.9.9"})
 	rel, _ := d["repository"].(map[string]interface{})["release"].(map[string]interface{})
 	if rel == nil {
 		t.Fatalf("release null for existing draft tag: %v", d)
@@ -1070,7 +1042,7 @@ func TestRepoGraphQL_ReleaseByTag(t *testing.T) {
 	}
 
 	// Missing tag: plain null, no error (gh keys on the null).
-	d2 := gqlData(t, query, map[string]interface{}{"owner": owner, "name": name, "tagName": "v0.0.0-missing"})
+	d2 := s.gqlData(t, query, map[string]interface{}{"owner": owner, "name": name, "tagName": "v0.0.0-missing"})
 	if rel2 := d2["repository"].(map[string]interface{})["release"]; rel2 != nil {
 		t.Errorf("release = %v for missing tag, want null", rel2)
 	}
@@ -1079,13 +1051,16 @@ func TestRepoGraphQL_ReleaseByTag(t *testing.T) {
 // --- Finding 8: IssueComment.viewerDidAuthor ---
 
 func TestIssueGraphQL_CommentViewerDidAuthor(t *testing.T) {
-	owner, name := sweepRepo(t, "sweep-issuecomment")
-	resp := ghPost(t, "/api/v3/repos/"+owner+"/"+name+"/issues", defaultToken, map[string]interface{}{
+	t.Parallel()
+	s := newIsolatedServer(t)
+	sweep := s.sweepRepo(t, "sweep-issuecomment")
+	owner, name := sweep.owner, sweep.name
+	resp := s.post(t, "/api/v3/repos/"+owner+"/"+name+"/issues", defaultToken, map[string]interface{}{
 		"title": "comment probe",
 	})
 	issue := decodeJSON(t, resp)
 	num := int(issue["number"].(float64))
-	cResp := ghPost(t, "/api/v3/repos/"+owner+"/"+name+"/issues/"+itoa(num)+"/comments", defaultToken,
+	cResp := s.post(t, "/api/v3/repos/"+owner+"/"+name+"/issues/"+itoa(num)+"/comments", defaultToken,
 		map[string]interface{}{"body": "mine"})
 	cResp.Body.Close()
 
@@ -1094,7 +1069,7 @@ func TestIssueGraphQL_CommentViewerDidAuthor(t *testing.T) {
 	query := `query($owner:String!,$name:String!,$n:Int!){repository(owner:$owner,name:$name){issue(number:$n){
 		comments(first: 100) {nodes {id,author{login,...on User{id,name}},authorAssociation,body,createdAt,includesCreatedEdit,isMinimized,minimizedReason,reactionGroups{content,users{totalCount}},url,viewerDidAuthor},pageInfo{hasNextPage,endCursor},totalCount}
 	}}}`
-	d := gqlData(t, query, map[string]interface{}{"owner": owner, "name": name, "n": num})
+	d := s.gqlData(t, query, map[string]interface{}{"owner": owner, "name": name, "n": num})
 	comments, _ := d["repository"].(map[string]interface{})["issue"].(map[string]interface{})["comments"].(map[string]interface{})
 	nodes, _ := comments["nodes"].([]interface{})
 	if len(nodes) != 1 {
@@ -1108,8 +1083,11 @@ func TestIssueGraphQL_CommentViewerDidAuthor(t *testing.T) {
 // --- Finding 9: Query.search — the gh pr status query shape ---
 
 func TestSearchGraphQL_PRStatusShape(t *testing.T) {
-	owner, name := sweepRepo(t, "sweep-prstatus")
-	sweepPR(t, owner, name, "status pr")
+	t.Parallel()
+	s := newIsolatedServer(t)
+	sweep := s.sweepRepo(t, "sweep-prstatus")
+	owner, name := sweep.owner, sweep.name
+	s.sweepPR(t, sweep, "status pr")
 
 	// Structure from pkg/cmd/pr/status/http.go pullRequestStatus +
 	// pullRequestFragment(false, false).
@@ -1147,7 +1125,7 @@ func TestSearchGraphQL_PRStatusShape(t *testing.T) {
 			}
 		}
 	}`
-	d := gqlData(t, query, map[string]interface{}{
+	d := s.gqlData(t, query, map[string]interface{}{
 		"owner":         owner,
 		"repo":          name,
 		"headRefName":   "feature",
@@ -1181,18 +1159,21 @@ func TestSearchGraphQL_PRStatusShape(t *testing.T) {
 // --- Finding 9 + 11: gh issue list --label goes through Query.search ---
 
 func TestSearchGraphQL_IssueLabelSearch(t *testing.T) {
-	owner, name := sweepRepo(t, "sweep-issuesearch")
+	t.Parallel()
+	s := newIsolatedServer(t)
+	sweep := s.sweepRepo(t, "sweep-issuesearch")
+	owner, name := sweep.owner, sweep.name
 
-	lResp := ghPost(t, "/api/v3/repos/"+owner+"/"+name+"/labels", defaultToken,
+	lResp := s.post(t, "/api/v3/repos/"+owner+"/"+name+"/labels", defaultToken,
 		map[string]interface{}{"name": "bug", "color": "d73a4a"})
 	lResp.Body.Close()
-	iResp := ghPost(t, "/api/v3/repos/"+owner+"/"+name+"/issues", defaultToken,
+	iResp := s.post(t, "/api/v3/repos/"+owner+"/"+name+"/issues", defaultToken,
 		map[string]interface{}{"title": "labeled", "labels": []interface{}{"bug"}})
 	labeled := decodeJSON(t, iResp)
 	if labeled["number"] == nil {
 		t.Fatalf("labeled issue create failed: %v", labeled)
 	}
-	iResp2 := ghPost(t, "/api/v3/repos/"+owner+"/"+name+"/issues", defaultToken,
+	iResp2 := s.post(t, "/api/v3/repos/"+owner+"/"+name+"/issues", defaultToken,
 		map[string]interface{}{"title": "unlabeled"})
 	iResp2.Body.Close()
 
@@ -1214,7 +1195,7 @@ func TestSearchGraphQL_IssueLabelSearch(t *testing.T) {
 		}`
 	// The advanced-syntax string gh builds for `gh issue list --label bug`
 	// groups the repo qualifier in parentheses.
-	d := gqlData(t, query, map[string]interface{}{
+	d := s.gqlData(t, query, map[string]interface{}{
 		"repo":  name,
 		"owner": owner,
 		"type":  "ISSUE",
@@ -1232,7 +1213,7 @@ func TestSearchGraphQL_IssueLabelSearch(t *testing.T) {
 
 	// SearchType must NOT carry ISSUE_ADVANCED — gh introspects the enum and
 	// would opt into the advanced type when present.
-	intro := gqlData(t, `query SearchType_enumValues{SearchType: __type(name: "SearchType"){enumValues(includeDeprecated: true){name}}}`, nil)
+	intro := s.gqlData(t, `query SearchType_enumValues{SearchType: __type(name: "SearchType"){enumValues(includeDeprecated: true){name}}}`, nil)
 	vals, _ := intro["SearchType"].(map[string]interface{})["enumValues"].([]interface{})
 	for _, v := range vals {
 		if v.(map[string]interface{})["name"] == "ISSUE_ADVANCED" {
@@ -1245,14 +1226,17 @@ func TestSearchGraphQL_IssueLabelSearch(t *testing.T) {
 // orderBy as literal enums (caught live by the docker harness) ---
 
 func TestRepoGraphQL_LabelListOrderByEnums(t *testing.T) {
-	owner, name := sweepRepo(t, "sweep-labellist")
-	lResp := ghPost(t, "/api/v3/repos/"+owner+"/"+name+"/labels", defaultToken,
+	t.Parallel()
+	s := newIsolatedServer(t)
+	sweep := s.sweepRepo(t, "sweep-labellist")
+	owner, name := sweep.owner, sweep.name
+	lResp := s.post(t, "/api/v3/repos/"+owner+"/"+name+"/labels", defaultToken,
 		map[string]interface{}{"name": "enhancement", "color": "a2eeef"})
 	lResp.Body.Close()
 
 	// Verbatim shurcooL rendering of api.RepoLabels' query.
 	query := `query RepositoryLabelList($endCursor:String$name:String!$owner:String!){repository(owner: $owner, name: $name){labels(first: 100, orderBy: {field: NAME, direction: ASC}, after: $endCursor){nodes{id,name},pageInfo{hasNextPage,endCursor}}}}`
-	d := gqlData(t, query, map[string]interface{}{"owner": owner, "name": name, "endCursor": nil})
+	d := s.gqlData(t, query, map[string]interface{}{"owner": owner, "name": name, "endCursor": nil})
 	labels, _ := d["repository"].(map[string]interface{})["labels"].(map[string]interface{})
 	nodes, _ := labels["nodes"].([]interface{})
 	if len(nodes) != 1 || nodes[0].(map[string]interface{})["name"] != "enhancement" {
@@ -1265,8 +1249,11 @@ func TestRepoGraphQL_LabelListOrderByEnums(t *testing.T) {
 // (caught live by the docker harness) ---
 
 func TestIssueGraphQL_CreateWithNullProjectIDs(t *testing.T) {
-	owner, name := sweepRepo(t, "sweep-issuecreate")
-	repoNodeID := gqlData(t, `query($owner:String!,$name:String!){repository(owner:$owner,name:$name){id}}`,
+	t.Parallel()
+	s := newIsolatedServer(t)
+	sweep := s.sweepRepo(t, "sweep-issuecreate")
+	owner, name := sweep.owner, sweep.name
+	repoNodeID := s.gqlData(t, `query($owner:String!,$name:String!){repository(owner:$owner,name:$name){id}}`,
 		map[string]interface{}{"owner": owner, "name": name})["repository"].(map[string]interface{})["id"].(string)
 
 	// Verbatim from api/queries_issue.go IssueCreate; variables mirror what
@@ -1280,7 +1267,7 @@ func TestIssueGraphQL_CreateWithNullProjectIDs(t *testing.T) {
 			}
 		}
 	}`
-	d := gqlData(t, mutation, map[string]interface{}{
+	d := s.gqlData(t, mutation, map[string]interface{}{
 		"input": map[string]interface{}{
 			"repositoryId": repoNodeID,
 			"title":        "created with null projectIds",
@@ -1299,7 +1286,10 @@ func TestIssueGraphQL_CreateWithNullProjectIDs(t *testing.T) {
 // --- Finding 10: NOT_FOUND error fidelity ---
 
 func TestGraphQL_NotFoundErrors(t *testing.T) {
-	owner, name := sweepRepo(t, "sweep-notfound")
+	t.Parallel()
+	s := newIsolatedServer(t)
+	sweep := s.sweepRepo(t, "sweep-notfound")
+	owner, name := sweep.owner, sweep.name
 
 	assertNotFound := func(t *testing.T, env map[string]interface{}, wantMsgPart string) {
 		t.Helper()
@@ -1317,22 +1307,22 @@ func TestGraphQL_NotFoundErrors(t *testing.T) {
 		}
 	}
 
-	env := gqlDo(t, `query($owner:String!,$name:String!){repository(owner:$owner,name:$name){id}}`,
+	env := s.gqlDo(t, `query($owner:String!,$name:String!){repository(owner:$owner,name:$name){id}}`,
 		map[string]interface{}{"owner": owner, "name": "definitely-missing"})
 	assertNotFound(t, env, "Could not resolve to a Repository with the name")
 	if data, _ := env["data"].(map[string]interface{}); data["repository"] != nil {
 		t.Errorf("data.repository = %v, want null", data["repository"])
 	}
 
-	env = gqlDo(t, `query($owner:String!,$name:String!){repository(owner:$owner,name:$name){pullRequest(number:9999){id}}}`,
+	env = s.gqlDo(t, `query($owner:String!,$name:String!){repository(owner:$owner,name:$name){pullRequest(number:9999){id}}}`,
 		map[string]interface{}{"owner": owner, "name": name})
 	assertNotFound(t, env, "Could not resolve to a PullRequest with the number of 9999")
 
-	env = gqlDo(t, `query($owner:String!,$name:String!){repository(owner:$owner,name:$name){issue(number:9999){id}}}`,
+	env = s.gqlDo(t, `query($owner:String!,$name:String!){repository(owner:$owner,name:$name){issue(number:9999){id}}}`,
 		map[string]interface{}{"owner": owner, "name": name})
 	assertNotFound(t, env, "Could not resolve to an Issue with the number of 9999")
 
-	env = gqlDo(t, `query($owner:String!,$name:String!){repository(owner:$owner,name:$name){issueOrPullRequest(number:9999){...on Issue{id}...on PullRequest{id}}}}`,
+	env = s.gqlDo(t, `query($owner:String!,$name:String!){repository(owner:$owner,name:$name){issueOrPullRequest(number:9999){...on Issue{id}...on PullRequest{id}}}}`,
 		map[string]interface{}{"owner": owner, "name": name})
 	assertNotFound(t, env, "Could not resolve to an issue or pull request with the number of 9999")
 }
@@ -1340,7 +1330,9 @@ func TestGraphQL_NotFoundErrors(t *testing.T) {
 // --- Finding 11: GET /api/v3/meta (GHES shape) ---
 
 func TestMetaEndpoint(t *testing.T) {
-	resp := ghGet(t, "/api/v3/meta", defaultToken)
+	t.Parallel()
+	s := newIsolatedServer(t)
+	resp := s.get(t, "/api/v3/meta", defaultToken)
 	if resp.StatusCode != 200 {
 		resp.Body.Close()
 		t.Fatalf("GET /meta status = %d, want 200", resp.StatusCode)
@@ -1358,21 +1350,23 @@ func TestMetaEndpoint(t *testing.T) {
 // submitWorkflow, so workflow_id resolves ---
 
 func TestWebhookTrigger_WorkflowFileResolvable(t *testing.T) {
+	t.Parallel()
+	s := newIsolatedServer(t)
 	repoKey := "sweeppushowner/sweep-push-repo"
-	commitWorkflowYAMLToStorage(t, testServer, repoKey, ".github/workflows/ci.yml", sampleWorkflowYAML)
+	commitWorkflowYAMLToStorage(t, s.Server, repoKey, ".github/workflows/ci.yml", sampleWorkflowYAML)
 
-	testServer.triggerWorkflowsForEvent(repoKey, "push", "", "refs/heads/main", nil)
+	s.triggerWorkflowsForEvent(repoKey, "push", "", "refs/heads/main", nil)
 
 	// The workflow was submitted synchronously above; find it.
 	var wf *Workflow
-	testServer.store.mu.RLock()
-	for _, w := range testServer.store.Workflows {
+	s.store.mu.RLock()
+	for _, w := range s.store.Workflows {
 		if w.RepoFullName == repoKey {
 			wf = w
 			break
 		}
 	}
-	testServer.store.mu.RUnlock()
+	s.store.mu.RUnlock()
 	if wf == nil {
 		t.Fatalf("no workflow stored for %s after push trigger", repoKey)
 	}
@@ -1389,7 +1383,7 @@ func TestWebhookTrigger_WorkflowFileResolvable(t *testing.T) {
 	// The run's workflow_id must resolve: GET the run, then GET its workflow.
 	// workflow_id is an int64 beyond float64's exact range — decode with
 	// json.Number (the same trap jq 1.6 hits; the harness uses gh --jq).
-	runResp := ghGet(t, "/api/v3/repos/"+repoKey+"/actions/runs/"+itoa(wf.RunID), defaultToken)
+	runResp := s.get(t, "/api/v3/repos/"+repoKey+"/actions/runs/"+itoa(wf.RunID), defaultToken)
 	if runResp.StatusCode != 200 {
 		runResp.Body.Close()
 		t.Fatalf("GET run status = %d", runResp.StatusCode)
@@ -1406,7 +1400,7 @@ func TestWebhookTrigger_WorkflowFileResolvable(t *testing.T) {
 	if err != nil || wfID != wf.WorkflowFileID {
 		t.Errorf("run workflow_id = %v, want %d", run["workflow_id"], wf.WorkflowFileID)
 	}
-	wfResp := ghGet(t, fmt.Sprintf("/api/v3/repos/%s/actions/workflows/%d", repoKey, wfID), defaultToken)
+	wfResp := s.get(t, fmt.Sprintf("/api/v3/repos/%s/actions/workflows/%d", repoKey, wfID), defaultToken)
 	if wfResp.StatusCode != 200 {
 		wfResp.Body.Close()
 		t.Fatalf("GET /actions/workflows/{workflow_id} status = %d, want 200 (gh run view resolves this)", wfResp.StatusCode)

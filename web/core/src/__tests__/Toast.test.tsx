@@ -39,7 +39,7 @@ describe("ToastProvider", () => {
     expect(screen.getByText("boom")).toBeInTheDocument();
 
     const closes = screen.getAllByLabelText("Dismiss notification");
-    await user.click(closes[0]);
+    await user.click(closes[0]!);
     expect(screen.queryByText("First")).not.toBeInTheDocument();
     expect(screen.getByText("Second")).toBeInTheDocument();
   });

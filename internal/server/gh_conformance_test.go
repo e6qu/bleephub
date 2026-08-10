@@ -151,9 +151,11 @@ func TestConformance422DuplicateLabel(t *testing.T) {
 }
 
 func TestConformance422PRValidation(t *testing.T) {
-	createTestPRRepo(t, "conf-pr-422")
+	t.Parallel()
+	s := newIsolatedServer(t)
+	s.createTestPRRepo(t, "conf-pr-422")
 
-	resp := ghPost(t, "/api/v3/repos/admin/conf-pr-422/pulls", defaultToken, map[string]interface{}{
+	resp := s.post(t, "/api/v3/repos/admin/conf-pr-422/pulls", defaultToken, map[string]interface{}{
 		"title": "No head",
 		"head":  "",
 		"base":  "main",
@@ -196,8 +198,10 @@ func TestConformanceContentTypeOnError(t *testing.T) {
 }
 
 func TestConformanceAcceptHeader(t *testing.T) {
+	t.Parallel()
+	s := newIsolatedServer(t)
 	// application/vnd.github+json should be accepted
-	req, _ := newGHRequest("GET", testBaseURL+"/api/v3/user", defaultToken)
+	req, _ := newGHRequest("GET", s.baseURL+"/api/v3/user", defaultToken)
 	req.Header.Set("Accept", "application/vnd.github+json")
 	resp, err := doGHRequest(req)
 	if err != nil {
@@ -220,7 +224,9 @@ func TestConformanceApiVersionHeader(t *testing.T) {
 }
 
 func TestConformanceApiVersionSelectionAndRetirement(t *testing.T) {
-	req, _ := newGHRequest("GET", testBaseURL+"/api/v3/user", defaultToken)
+	t.Parallel()
+	s := newIsolatedServer(t)
+	req, _ := newGHRequest("GET", s.baseURL+"/api/v3/user", defaultToken)
 	req.Header.Set("X-GitHub-Api-Version", "2026-03-10")
 	resp, err := doGHRequest(req)
 	if err != nil {
@@ -234,7 +240,7 @@ func TestConformanceApiVersionSelectionAndRetirement(t *testing.T) {
 		t.Fatalf("supported API version response header = %q", got)
 	}
 
-	req, _ = newGHRequest("GET", testBaseURL+"/api/v3/user", defaultToken)
+	req, _ = newGHRequest("GET", s.baseURL+"/api/v3/user", defaultToken)
 	req.Header.Set("X-GitHub-Api-Version", "2020-01-01")
 	resp, err = doGHRequest(req)
 	if err != nil {
@@ -248,7 +254,7 @@ func TestConformanceApiVersionSelectionAndRetirement(t *testing.T) {
 	// The calendar header only versions REST. GraphQL remains a continuously
 	// evolving schema and must not be rejected because a client happens to
 	// carry a retired REST version header on all GitHub requests.
-	req, _ = newGHRequest("POST", testBaseURL+"/api/graphql", defaultToken)
+	req, _ = newGHRequest("POST", s.baseURL+"/api/graphql", defaultToken)
 	req.Header.Set("X-GitHub-Api-Version", "2020-01-01")
 	req.Header.Set("Content-Type", "application/json")
 	req.Body = io.NopCloser(strings.NewReader(`{"query":"{ viewer { login } }"}`))
@@ -405,9 +411,11 @@ func TestGHApiIssueCreateThenGraphQL(t *testing.T) {
 }
 
 func TestGHApiPRCreateThenGraphQL(t *testing.T) {
-	createTestPRRepo(t, "cross-pr-1")
+	t.Parallel()
+	s := newIsolatedServer(t)
+	s.createTestPRRepo(t, "cross-pr-1")
 
-	resp := ghPost(t, "/api/v3/repos/admin/cross-pr-1/pulls", defaultToken, map[string]interface{}{
+	resp := s.post(t, "/api/v3/repos/admin/cross-pr-1/pulls", defaultToken, map[string]interface{}{
 		"title": "Cross PR",
 		"body":  "Via REST",
 		"head":  "feature",
@@ -419,7 +427,7 @@ func TestGHApiPRCreateThenGraphQL(t *testing.T) {
 	}
 	resp.Body.Close()
 
-	resp2 := ghPost(t, "/api/graphql", defaultToken, map[string]interface{}{
+	resp2 := s.post(t, "/api/graphql", defaultToken, map[string]interface{}{
 		"query": `{repository(owner:"admin",name:"cross-pr-1"){pullRequest(number:1){title,body,state,headRefName,baseRefName}}}`,
 	})
 	data := decodeJSON(t, resp2)
@@ -519,12 +527,14 @@ func TestGHApiGraphQLIssuesQuery(t *testing.T) {
 }
 
 func TestGHApiGraphQLPRsQuery(t *testing.T) {
-	createTestPRRepo(t, "cross-gql-prs")
-	ghPost(t, "/api/v3/repos/admin/cross-gql-prs/pulls", defaultToken, map[string]interface{}{
+	t.Parallel()
+	s := newIsolatedServer(t)
+	s.createTestPRRepo(t, "cross-gql-prs")
+	s.post(t, "/api/v3/repos/admin/cross-gql-prs/pulls", defaultToken, map[string]interface{}{
 		"title": "GQL query PR", "head": "feat", "base": "main",
 	}).Body.Close()
 
-	resp := ghPost(t, "/api/graphql", defaultToken, map[string]interface{}{
+	resp := s.post(t, "/api/graphql", defaultToken, map[string]interface{}{
 		"query": `{repository(owner:"admin",name:"cross-gql-prs"){pullRequests(first:5,states:[OPEN]){totalCount,nodes{title,number}}}}`,
 	})
 	data := decodeJSON(t, resp)

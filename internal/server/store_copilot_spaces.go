@@ -94,7 +94,43 @@ func (st *Store) SaveCopilotSpace(space *CopilotSpace) {
 	st.mu.Lock()
 	defer st.mu.Unlock()
 	space.UpdatedAt = st.currentTime()
+	// The caller mutated a detached snapshot from GetCopilotSpace; publish it as
+	// the live row (copy-on-write) so the update is visible in memory, not just
+	// persisted.
+	st.CopilotSpaces[space.ID] = space
 	st.persistCopilotSpaceLocked(space)
+}
+
+// cloneCopilotSpace deep-copies a space so a getter caller holds a snapshot
+// detached from the stored row: its Collaborators and Resources slices (and each
+// resource's Metadata map) are copied, so a reader can neither race SaveCopilotSpace's
+// in-place UpdatedAt bump nor mutate the stored space's members/resources.
+func cloneCopilotSpace(sp *CopilotSpace) *CopilotSpace {
+	if sp == nil {
+		return nil
+	}
+	clone := *sp
+	if sp.Collaborators != nil {
+		clone.Collaborators = make([]*CopilotSpaceCollaborator, len(sp.Collaborators))
+		for i, c := range sp.Collaborators {
+			cc := *c
+			clone.Collaborators[i] = &cc
+		}
+	}
+	if sp.Resources != nil {
+		clone.Resources = make([]*CopilotSpaceResource, len(sp.Resources))
+		for i, r := range sp.Resources {
+			rc := *r
+			if r.Metadata != nil {
+				rc.Metadata = make(map[string]interface{}, len(r.Metadata))
+				for k, v := range r.Metadata {
+					rc.Metadata[k] = v
+				}
+			}
+			clone.Resources[i] = &rc
+		}
+	}
+	return &clone
 }
 
 // GetCopilotSpace returns the owner's space with the given number, or nil.
@@ -103,7 +139,7 @@ func (st *Store) GetCopilotSpace(ownerType, ownerLogin string, number int) *Copi
 	defer st.mu.RUnlock()
 	for _, sp := range st.CopilotSpaces {
 		if sp.OwnerType == ownerType && sp.OwnerLogin == ownerLogin && sp.Number == number {
-			return sp
+			return cloneCopilotSpace(sp)
 		}
 	}
 	return nil
@@ -116,7 +152,7 @@ func (st *Store) ListCopilotSpaces(ownerType, ownerLogin string) []*CopilotSpace
 	var out []*CopilotSpace
 	for _, sp := range st.CopilotSpaces {
 		if sp.OwnerType == ownerType && sp.OwnerLogin == ownerLogin {
-			out = append(out, sp)
+			out = append(out, cloneCopilotSpace(sp))
 		}
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].Number < out[j].Number })

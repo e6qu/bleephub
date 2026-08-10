@@ -12,65 +12,6 @@ import (
 	"testing"
 )
 
-func seedDependabotAlert(t *testing.T, owner, repo string, overrides map[string]any) map[string]any {
-	t.Helper()
-	body := map[string]any{
-		"package_name":             "dependabot-" + repo + "-pkg",
-		"package_ecosystem":        "npm",
-		"manifest_path":            "package-lock.json",
-		"severity":                 "high",
-		"summary":                  "Prototype pollution in lodash",
-		"description":              "A vulnerability allows prototype pollution.",
-		"vulnerable_version_range": "< 4.17.21",
-		"first_patched_version":    "4.17.21",
-	}
-	for k, v := range overrides {
-		body[k] = v
-	}
-	packageName := body["package_name"].(string)
-	ecosystem := body["package_ecosystem"].(string)
-	manifestPath := body["manifest_path"].(string)
-	rangeExpr := body["vulnerable_version_range"].(string)
-	patchedVersion, _ := body["first_patched_version"].(string)
-	repoFullName := owner + "/" + repo
-
-	create := ghPost(t, "/api/v3/repos/"+repoFullName+"/security-advisories", defaultToken, map[string]interface{}{
-		"summary":     body["summary"],
-		"description": body["description"],
-		"severity":    body["severity"],
-		"cwe_ids":     []string{"CWE-79"},
-		"vulnerabilities": []map[string]interface{}{
-			{
-				"package": map[string]interface{}{
-					"ecosystem": ecosystem,
-					"name":      packageName,
-				},
-				"vulnerable_version_range": rangeExpr,
-				"first_patched_version":    patchedVersion,
-			},
-		},
-	})
-	advisory := decodeJSONWithStatus(t, create, http.StatusCreated)
-	ghsaID := advisory["ghsa_id"].(string)
-	publish := ghPatch(t, "/api/v3/repos/"+repoFullName+"/security-advisories/"+ghsaID, defaultToken, map[string]interface{}{"state": "published"})
-	decodeJSONWithStatus(t, publish, http.StatusOK)
-
-	manifestContent := fmt.Sprintf("%s %s\n", ecosystem, packageName)
-	sha := putRepoFile(t, repoFullName, manifestPath, manifestContent, "seed Dependabot dependency")
-	submitSnapshotForRepoPath(t, repoFullName, manifestPath, "refs/heads/main", sha, "dependabot/"+packageName, dependabotTestPackageURL(ecosystem, packageName, rangeExpr))
-
-	resp := authedGet(t, "/api/v3/repos/"+repoFullName+"/dependabot/alerts?package_name="+packageName)
-	alerts := decodeJSONArray(t, resp)
-	for _, created := range alerts {
-		securityAdvisory, _ := created["security_advisory"].(map[string]any)
-		if securityAdvisory != nil && securityAdvisory["ghsa_id"] == ghsaID {
-			return created
-		}
-	}
-	t.Fatalf("Dependabot alert for advisory %s was not created: %v", ghsaID, alerts)
-	return nil
-}
-
 func dependabotTestPackageURL(ecosystem, packageName, rangeExpr string) string {
 	version := "1.0.0"
 	switch {
@@ -91,6 +32,35 @@ func mustJSON(v any) []byte {
 	return b
 }
 
+// TestDependabotAlertReadsReturnDetachedSnapshots pins STORE-021 for the
+// dependabot family: GetDependabotAlert returns a copy, UpdateDependabotAlert
+// still reaches the live row.
+func TestDependabotAlertReadsReturnDetachedSnapshots(t *testing.T) {
+	s := newTestServer()
+	admin := s.store.UsersByLogin["admin"]
+	repo := s.store.CreateRepo(admin, "dep-detach", "", false)
+	alert := s.store.CreateDependabotAlertIfNew(repo.FullName, "lodash", "npm", "package-lock.json",
+		"GHSA-xxxx", "CVE-1", "high", "prototype pollution", "desc", "< 1.0.0", "1.0.0")
+
+	got := s.store.GetDependabotAlert(repo.FullName, alert.Number)
+	got.State = DependabotStateDismissed
+	got.Summary = "hacked"
+	again := s.store.GetDependabotAlert(repo.FullName, alert.Number)
+	if again.State != DependabotStateOpen || again.Summary == "hacked" {
+		t.Fatalf("alert mutated through the getter: state=%q summary=%q", again.State, again.Summary)
+	}
+
+	if err := s.store.UpdateDependabotAlert(again, "dismissed", "tolerable_risk", "acceptable", admin); err != nil {
+		t.Fatalf("update: %v", err)
+	}
+	if again.State != DependabotStateDismissed {
+		t.Fatalf("returned snapshot state = %q, want dismissed", again.State)
+	}
+	if live := s.store.GetDependabotAlert(repo.FullName, alert.Number); live.State != DependabotStateDismissed {
+		t.Fatalf("live alert after update = %q, want dismissed", live.State)
+	}
+}
+
 func TestDependabotAlertTestsUsePublicDependencyGraph(t *testing.T) {
 	source, err := os.ReadFile("gh_dependabot_test.go")
 	if err != nil {
@@ -99,7 +69,7 @@ func TestDependabotAlertTestsUsePublicDependencyGraph(t *testing.T) {
 	text := string(source)
 	for _, needle := range []string{
 		`authedPost("` + `/internal/repos/`,
-		`ghPost(t, "` + `/internal/repos/`,
+		`s.post(t, "` + `/internal/repos/`,
 	} {
 		if strings.Contains(text, needle) && strings.Contains(text, "dependabot/alerts") {
 			t.Fatal("Dependabot alert tests must create alerts from public security advisories plus dependency graph snapshots, not the internal operator alert route")
@@ -108,18 +78,20 @@ func TestDependabotAlertTestsUsePublicDependencyGraph(t *testing.T) {
 }
 
 func TestDependabot_AdvisoryPublishCreatesAlertFromExistingSnapshot(t *testing.T) {
-	repo := createRepoWriteRepo(t, false)
+	t.Parallel()
+	s := newIsolatedServer(t)
+	repo := s.createRepoWriteRepo(t, false)
 	repoFullName := "admin/" + repo
-	sha := putRepoFile(t, repoFullName, "package-lock.json", `{"dependencies":{"late-alert":{"version":"1.0.0"}}}`, "seed dependency manifest")
-	submitSnapshotForRepoPath(t, repoFullName, "package-lock.json", "refs/heads/main", sha, "dependabot/late-alert",
+	sha := s.putRepoFile(t, repoFullName, "package-lock.json", `{"dependencies":{"late-alert":{"version":"1.0.0"}}}`, "seed dependency manifest")
+	s.submitSnapshotForRepoPath(t, repoFullName, "package-lock.json", "refs/heads/main", sha, "dependabot/late-alert",
 		"pkg:npm/late-alert@1.0.0")
 
-	resp := authedGet(t, "/api/v3/repos/"+repoFullName+"/dependabot/alerts?package_name=late-alert")
+	resp := s.authedGet(t, "/api/v3/repos/"+repoFullName+"/dependabot/alerts?package_name=late-alert")
 	if alerts := decodeJSONArray(t, resp); len(alerts) != 0 {
 		t.Fatalf("alerts before advisory publish = %v, want none", alerts)
 	}
 
-	create := ghPost(t, "/api/v3/repos/"+repoFullName+"/security-advisories", defaultToken, map[string]interface{}{
+	create := s.post(t, "/api/v3/repos/"+repoFullName+"/security-advisories", defaultToken, map[string]interface{}{
 		"summary":     "late-alert vulnerability",
 		"description": "advisory published after dependency snapshot",
 		"severity":    "high",
@@ -136,10 +108,10 @@ func TestDependabot_AdvisoryPublishCreatesAlertFromExistingSnapshot(t *testing.T
 	})
 	advisory := decodeJSONWithStatus(t, create, http.StatusCreated)
 	ghsaID := advisory["ghsa_id"].(string)
-	publish := ghPatch(t, "/api/v3/repos/"+repoFullName+"/security-advisories/"+ghsaID, defaultToken, map[string]interface{}{"state": "published"})
+	publish := s.patch(t, "/api/v3/repos/"+repoFullName+"/security-advisories/"+ghsaID, defaultToken, map[string]interface{}{"state": "published"})
 	decodeJSONWithStatus(t, publish, http.StatusOK)
 
-	resp = authedGet(t, "/api/v3/repos/"+repoFullName+"/dependabot/alerts?package_name=late-alert")
+	resp = s.authedGet(t, "/api/v3/repos/"+repoFullName+"/dependabot/alerts?package_name=late-alert")
 	alerts := decodeJSONArray(t, resp)
 	if len(alerts) != 1 {
 		t.Fatalf("alerts after advisory publish = %v, want one", alerts)
@@ -151,26 +123,28 @@ func TestDependabot_AdvisoryPublishCreatesAlertFromExistingSnapshot(t *testing.T
 }
 
 func TestDependabot_ListAndFilter(t *testing.T) {
-	admin := testServer.store.UsersByLogin["admin"]
-	repo := testServer.store.CreateRepo(admin, "dependabot-list", "", false)
+	t.Parallel()
+	s := newIsolatedServer(t)
+	admin := s.store.UsersByLogin["admin"]
+	repo := s.store.CreateRepo(admin, "dependabot-list", "", false)
 	if repo == nil {
 		t.Fatal("create repo failed")
 	}
 
-	seedDependabotAlert(t, "admin", "dependabot-list", map[string]any{
+	s.seedDependabotAlert(t, "admin", "dependabot-list", map[string]any{
 		"package_name":      "dependabot-list-lodash",
 		"package_ecosystem": "npm",
 		"manifest_path":     "package-lock.json",
 		"severity":          "high",
 	})
-	seedDependabotAlert(t, "admin", "dependabot-list", map[string]any{
+	s.seedDependabotAlert(t, "admin", "dependabot-list", map[string]any{
 		"package_name":      "dependabot-list-django",
 		"package_ecosystem": "pip",
 		"manifest_path":     "requirements.txt",
 		"severity":          "critical",
 	})
 
-	resp := authedGet(t, "/api/v3/repos/admin/dependabot-list/dependabot/alerts")
+	resp := s.authedGet(t, "/api/v3/repos/admin/dependabot-list/dependabot/alerts")
 	if resp.StatusCode != http.StatusOK {
 		b, _ := io.ReadAll(resp.Body)
 		resp.Body.Close()
@@ -185,7 +159,7 @@ func TestDependabot_ListAndFilter(t *testing.T) {
 		t.Fatalf("expected 2 alerts, got %d", len(list))
 	}
 
-	resp = authedGet(t, "/api/v3/repos/admin/dependabot-list/dependabot/alerts?severity=critical")
+	resp = s.authedGet(t, "/api/v3/repos/admin/dependabot-list/dependabot/alerts?severity=critical")
 	if resp.StatusCode != http.StatusOK {
 		b, _ := io.ReadAll(resp.Body)
 		resp.Body.Close()
@@ -200,7 +174,7 @@ func TestDependabot_ListAndFilter(t *testing.T) {
 		t.Fatalf("expected 1 critical alert, got %d", len(filtered))
 	}
 
-	resp = authedGet(t, "/api/v3/repos/admin/dependabot-list/dependabot/alerts?ecosystem=pip")
+	resp = s.authedGet(t, "/api/v3/repos/admin/dependabot-list/dependabot/alerts?ecosystem=pip")
 	if resp.StatusCode != http.StatusOK {
 		b, _ := io.ReadAll(resp.Body)
 		resp.Body.Close()
@@ -214,19 +188,21 @@ func TestDependabot_ListAndFilter(t *testing.T) {
 }
 
 func TestDependabot_GetAndPatch(t *testing.T) {
-	admin := testServer.store.UsersByLogin["admin"]
-	repo := testServer.store.CreateRepo(admin, "dependabot-patch", "", false)
+	t.Parallel()
+	s := newIsolatedServer(t)
+	admin := s.store.UsersByLogin["admin"]
+	repo := s.store.CreateRepo(admin, "dependabot-patch", "", false)
 	if repo == nil {
 		t.Fatal("create repo failed")
 	}
 
-	created := seedDependabotAlert(t, "admin", "dependabot-patch", map[string]any{
+	created := s.seedDependabotAlert(t, "admin", "dependabot-patch", map[string]any{
 		"package_name": "axios",
 		"severity":     "medium",
 	})
 	number := int(created["number"].(float64))
 
-	resp := authedGet(t, "/api/v3/repos/admin/dependabot-patch/dependabot/alerts/"+itoa(number))
+	resp := s.authedGet(t, "/api/v3/repos/admin/dependabot-patch/dependabot/alerts/"+itoa(number))
 	if resp.StatusCode != http.StatusOK {
 		b, _ := io.ReadAll(resp.Body)
 		resp.Body.Close()
@@ -242,7 +218,7 @@ func TestDependabot_GetAndPatch(t *testing.T) {
 	}
 
 	patch, _ := json.Marshal(map[string]any{"state": "dismissed", "dismissed_reason": "tolerable_risk", "dismissed_comment": "accepted risk"})
-	req, _ := http.NewRequest("PATCH", testBaseURL+"/api/v3/repos/admin/dependabot-patch/dependabot/alerts/"+itoa(number), bytes.NewReader(patch))
+	req, _ := http.NewRequest("PATCH", s.baseURL+"/api/v3/repos/admin/dependabot-patch/dependabot/alerts/"+itoa(number), bytes.NewReader(patch))
 	req.Header.Set("Authorization", "Bearer "+defaultToken)
 	req.Header.Set("Content-Type", "application/json")
 	resp, err := http.DefaultClient.Do(req)
@@ -265,7 +241,7 @@ func TestDependabot_GetAndPatch(t *testing.T) {
 
 	// Reopen
 	patch, _ = json.Marshal(map[string]any{"state": "open"})
-	req, _ = http.NewRequest("PATCH", testBaseURL+"/api/v3/repos/admin/dependabot-patch/dependabot/alerts/"+itoa(number), bytes.NewReader(patch))
+	req, _ = http.NewRequest("PATCH", s.baseURL+"/api/v3/repos/admin/dependabot-patch/dependabot/alerts/"+itoa(number), bytes.NewReader(patch))
 	req.Header.Set("Authorization", "Bearer "+defaultToken)
 	req.Header.Set("Content-Type", "application/json")
 	resp, err = http.DefaultClient.Do(req)
@@ -281,16 +257,18 @@ func TestDependabot_GetAndPatch(t *testing.T) {
 }
 
 func TestDependabot_InvalidDismissedReason(t *testing.T) {
-	admin := testServer.store.UsersByLogin["admin"]
-	repo := testServer.store.CreateRepo(admin, "dependabot-invalid", "", false)
+	t.Parallel()
+	s := newIsolatedServer(t)
+	admin := s.store.UsersByLogin["admin"]
+	repo := s.store.CreateRepo(admin, "dependabot-invalid", "", false)
 	if repo == nil {
 		t.Fatal("create repo failed")
 	}
-	created := seedDependabotAlert(t, "admin", "dependabot-invalid", map[string]any{})
+	created := s.seedDependabotAlert(t, "admin", "dependabot-invalid", map[string]any{})
 	number := int(created["number"].(float64))
 
 	patch, _ := json.Marshal(map[string]any{"state": "dismissed", "dismissed_reason": "not_a_reason"})
-	req, _ := http.NewRequest("PATCH", testBaseURL+"/api/v3/repos/admin/dependabot-invalid/dependabot/alerts/"+itoa(number), bytes.NewReader(patch))
+	req, _ := http.NewRequest("PATCH", s.baseURL+"/api/v3/repos/admin/dependabot-invalid/dependabot/alerts/"+itoa(number), bytes.NewReader(patch))
 	req.Header.Set("Authorization", "Bearer "+defaultToken)
 	req.Header.Set("Content-Type", "application/json")
 	resp, err := http.DefaultClient.Do(req)
@@ -306,13 +284,15 @@ func TestDependabot_InvalidDismissedReason(t *testing.T) {
 }
 
 func TestDependabot_RepoSecretsCRUD(t *testing.T) {
-	admin := testServer.store.UsersByLogin["admin"]
-	repo := testServer.store.CreateRepo(admin, "dependabot-repo-secrets", "", false)
+	t.Parallel()
+	s := newIsolatedServer(t)
+	admin := s.store.UsersByLogin["admin"]
+	repo := s.store.CreateRepo(admin, "dependabot-repo-secrets", "", false)
 	if repo == nil {
 		t.Fatal("create repo failed")
 	}
 
-	resp := authedGet(t, "/api/v3/repos/admin/dependabot-repo-secrets/dependabot/secrets/public-key")
+	resp := s.authedGet(t, "/api/v3/repos/admin/dependabot-repo-secrets/dependabot/secrets/public-key")
 	if resp.StatusCode != http.StatusOK {
 		b, _ := io.ReadAll(resp.Body)
 		resp.Body.Close()
@@ -330,7 +310,7 @@ func TestDependabot_RepoSecretsCRUD(t *testing.T) {
 			"encrypted_value": base64.StdEncoding.EncodeToString([]byte("encrypted-" + name)),
 			"key_id":          keyID,
 		}
-		req, _ := http.NewRequest("PUT", testBaseURL+"/api/v3/repos/admin/dependabot-repo-secrets/dependabot/secrets/"+name, bytes.NewReader(mustJSON(body)))
+		req, _ := http.NewRequest("PUT", s.baseURL+"/api/v3/repos/admin/dependabot-repo-secrets/dependabot/secrets/"+name, bytes.NewReader(mustJSON(body)))
 		req.Header.Set("Authorization", "Bearer "+defaultToken)
 		req.Header.Set("Content-Type", "application/json")
 		resp, err := http.DefaultClient.Do(req)
@@ -348,7 +328,7 @@ func TestDependabot_RepoSecretsCRUD(t *testing.T) {
 	put("MY_SECRET", http.StatusCreated)
 	put("MY_SECRET", http.StatusNoContent)
 
-	resp = authedGet(t, "/api/v3/repos/admin/dependabot-repo-secrets/dependabot/secrets")
+	resp = s.authedGet(t, "/api/v3/repos/admin/dependabot-repo-secrets/dependabot/secrets")
 	if resp.StatusCode != http.StatusOK {
 		b, _ := io.ReadAll(resp.Body)
 		resp.Body.Close()
@@ -364,7 +344,7 @@ func TestDependabot_RepoSecretsCRUD(t *testing.T) {
 		t.Fatalf("expected 1 secret, got %d", len(secrets))
 	}
 
-	resp = authedGet(t, "/api/v3/repos/admin/dependabot-repo-secrets/dependabot/secrets/MY_SECRET")
+	resp = s.authedGet(t, "/api/v3/repos/admin/dependabot-repo-secrets/dependabot/secrets/MY_SECRET")
 	if resp.StatusCode != http.StatusOK {
 		b, _ := io.ReadAll(resp.Body)
 		resp.Body.Close()
@@ -372,7 +352,7 @@ func TestDependabot_RepoSecretsCRUD(t *testing.T) {
 	}
 	resp.Body.Close()
 
-	req, _ := http.NewRequest("DELETE", testBaseURL+"/api/v3/repos/admin/dependabot-repo-secrets/dependabot/secrets/MY_SECRET", nil)
+	req, _ := http.NewRequest("DELETE", s.baseURL+"/api/v3/repos/admin/dependabot-repo-secrets/dependabot/secrets/MY_SECRET", nil)
 	req.Header.Set("Authorization", "Bearer "+defaultToken)
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
@@ -385,7 +365,7 @@ func TestDependabot_RepoSecretsCRUD(t *testing.T) {
 	}
 	resp.Body.Close()
 
-	resp = authedGet(t, "/api/v3/repos/admin/dependabot-repo-secrets/dependabot/secrets/MY_SECRET")
+	resp = s.authedGet(t, "/api/v3/repos/admin/dependabot-repo-secrets/dependabot/secrets/MY_SECRET")
 	if resp.StatusCode != http.StatusNotFound {
 		t.Fatalf("expected 404 after delete, got %d", resp.StatusCode)
 	}
@@ -393,17 +373,19 @@ func TestDependabot_RepoSecretsCRUD(t *testing.T) {
 }
 
 func TestDependabot_OrgSecretsCRUD(t *testing.T) {
-	admin := testServer.store.UsersByLogin["admin"]
-	org := testServer.store.CreateOrg(admin, "dependabot-org", "Dependabot Org", "")
+	t.Parallel()
+	s := newIsolatedServer(t)
+	admin := s.store.UsersByLogin["admin"]
+	org := s.store.CreateOrg(admin, "dependabot-org", "Dependabot Org", "")
 	if org == nil {
 		t.Fatal("create org failed")
 	}
-	repo := testServer.store.CreateOrgRepo(org, admin, "dependabot-org-repo", "", false)
+	repo := s.store.CreateOrgRepo(org, admin, "dependabot-org-repo", "", false)
 	if repo == nil {
 		t.Fatal("create org repo failed")
 	}
 
-	resp := authedGet(t, "/api/v3/orgs/dependabot-org/dependabot/secrets/public-key")
+	resp := s.authedGet(t, "/api/v3/orgs/dependabot-org/dependabot/secrets/public-key")
 	if resp.StatusCode != http.StatusOK {
 		b, _ := io.ReadAll(resp.Body)
 		resp.Body.Close()
@@ -422,7 +404,7 @@ func TestDependabot_OrgSecretsCRUD(t *testing.T) {
 		"visibility":              "selected",
 		"selected_repository_ids": []int{repo.ID},
 	}
-	req, _ := http.NewRequest("PUT", testBaseURL+"/api/v3/orgs/dependabot-org/dependabot/secrets/ORG_SECRET", bytes.NewReader(mustJSON(putBody)))
+	req, _ := http.NewRequest("PUT", s.baseURL+"/api/v3/orgs/dependabot-org/dependabot/secrets/ORG_SECRET", bytes.NewReader(mustJSON(putBody)))
 	req.Header.Set("Authorization", "Bearer "+defaultToken)
 	req.Header.Set("Content-Type", "application/json")
 	resp, err := http.DefaultClient.Do(req)
@@ -436,7 +418,7 @@ func TestDependabot_OrgSecretsCRUD(t *testing.T) {
 	}
 	resp.Body.Close()
 
-	resp = authedGet(t, "/api/v3/orgs/dependabot-org/dependabot/secrets")
+	resp = s.authedGet(t, "/api/v3/orgs/dependabot-org/dependabot/secrets")
 	if resp.StatusCode != http.StatusOK {
 		b, _ := io.ReadAll(resp.Body)
 		resp.Body.Close()
@@ -452,7 +434,7 @@ func TestDependabot_OrgSecretsCRUD(t *testing.T) {
 		t.Fatalf("expected 1 org secret, got %d", len(secrets))
 	}
 
-	resp = authedGet(t, "/api/v3/orgs/dependabot-org/dependabot/secrets/ORG_SECRET")
+	resp = s.authedGet(t, "/api/v3/orgs/dependabot-org/dependabot/secrets/ORG_SECRET")
 	if resp.StatusCode != http.StatusOK {
 		b, _ := io.ReadAll(resp.Body)
 		resp.Body.Close()
@@ -467,7 +449,7 @@ func TestDependabot_OrgSecretsCRUD(t *testing.T) {
 		t.Fatalf("expected visibility selected, got %v", got["visibility"])
 	}
 
-	resp = authedGet(t, "/api/v3/orgs/dependabot-org/dependabot/secrets/ORG_SECRET/repositories")
+	resp = s.authedGet(t, "/api/v3/orgs/dependabot-org/dependabot/secrets/ORG_SECRET/repositories")
 	if resp.StatusCode != http.StatusOK {
 		b, _ := io.ReadAll(resp.Body)
 		resp.Body.Close()
@@ -484,7 +466,7 @@ func TestDependabot_OrgSecretsCRUD(t *testing.T) {
 
 	// Replace selected repos
 	setBody := map[string]any{"selected_repository_ids": []int{}}
-	req, _ = http.NewRequest("PUT", testBaseURL+"/api/v3/orgs/dependabot-org/dependabot/secrets/ORG_SECRET/repositories", bytes.NewReader(mustJSON(setBody)))
+	req, _ = http.NewRequest("PUT", s.baseURL+"/api/v3/orgs/dependabot-org/dependabot/secrets/ORG_SECRET/repositories", bytes.NewReader(mustJSON(setBody)))
 	req.Header.Set("Authorization", "Bearer "+defaultToken)
 	req.Header.Set("Content-Type", "application/json")
 	resp, err = http.DefaultClient.Do(req)
@@ -498,7 +480,7 @@ func TestDependabot_OrgSecretsCRUD(t *testing.T) {
 	}
 	resp.Body.Close()
 
-	req, _ = http.NewRequest("DELETE", testBaseURL+"/api/v3/orgs/dependabot-org/dependabot/secrets/ORG_SECRET", nil)
+	req, _ = http.NewRequest("DELETE", s.baseURL+"/api/v3/orgs/dependabot-org/dependabot/secrets/ORG_SECRET", nil)
 	req.Header.Set("Authorization", "Bearer "+defaultToken)
 	resp, err = http.DefaultClient.Do(req)
 	if err != nil {
@@ -513,31 +495,33 @@ func TestDependabot_OrgSecretsCRUD(t *testing.T) {
 }
 
 func TestDependabot_404(t *testing.T) {
-	admin := testServer.store.UsersByLogin["admin"]
-	repo := testServer.store.CreateRepo(admin, "dependabot-404", "", false)
+	t.Parallel()
+	s := newIsolatedServer(t)
+	admin := s.store.UsersByLogin["admin"]
+	repo := s.store.CreateRepo(admin, "dependabot-404", "", false)
 	if repo == nil {
 		t.Fatal("create repo failed")
 	}
 
-	resp := authedGet(t, "/api/v3/repos/admin/dependabot-404/dependabot/alerts/999")
+	resp := s.authedGet(t, "/api/v3/repos/admin/dependabot-404/dependabot/alerts/999")
 	if resp.StatusCode != http.StatusNotFound {
 		t.Fatalf("expected 404 alert, got %d", resp.StatusCode)
 	}
 	resp.Body.Close()
 
-	resp = authedGet(t, "/api/v3/repos/admin/does-not-exist/dependabot/alerts")
+	resp = s.authedGet(t, "/api/v3/repos/admin/does-not-exist/dependabot/alerts")
 	if resp.StatusCode != http.StatusNotFound {
 		t.Fatalf("expected 404 missing repo, got %d", resp.StatusCode)
 	}
 	resp.Body.Close()
 
-	resp = authedGet(t, "/api/v3/repos/admin/dependabot-404/dependabot/secrets/NOPE")
+	resp = s.authedGet(t, "/api/v3/repos/admin/dependabot-404/dependabot/secrets/NOPE")
 	if resp.StatusCode != http.StatusNotFound {
 		t.Fatalf("expected 404 secret, got %d", resp.StatusCode)
 	}
 	resp.Body.Close()
 
-	resp = authedGet(t, "/api/v3/orgs/does-not-exist/dependabot/secrets")
+	resp = s.authedGet(t, "/api/v3/orgs/does-not-exist/dependabot/secrets")
 	if resp.StatusCode != http.StatusNotFound {
 		t.Fatalf("expected 404 org, got %d", resp.StatusCode)
 	}
@@ -545,26 +529,28 @@ func TestDependabot_404(t *testing.T) {
 }
 
 func TestDependabot_OrgAlerts(t *testing.T) {
-	admin := testServer.store.UsersByLogin["admin"]
-	org := testServer.store.CreateOrg(admin, "dependabot-org-alerts", "Dependabot Org Alerts", "")
+	t.Parallel()
+	s := newIsolatedServer(t)
+	admin := s.store.UsersByLogin["admin"]
+	org := s.store.CreateOrg(admin, "dependabot-org-alerts", "Dependabot Org Alerts", "")
 	if org == nil {
 		t.Fatal("create org failed")
 	}
-	repo1 := testServer.store.CreateOrgRepo(org, admin, "dependabot-org-repo1", "", false)
-	repo2 := testServer.store.CreateOrgRepo(org, admin, "dependabot-org-repo2", "", false)
+	repo1 := s.store.CreateOrgRepo(org, admin, "dependabot-org-repo1", "", false)
+	repo2 := s.store.CreateOrgRepo(org, admin, "dependabot-org-repo2", "", false)
 	if repo1 == nil || repo2 == nil {
 		t.Fatal("create org repo failed")
 	}
-	userRepo := testServer.store.CreateRepo(admin, "dependabot-user-repo", "", false)
+	userRepo := s.store.CreateRepo(admin, "dependabot-user-repo", "", false)
 	if userRepo == nil {
 		t.Fatal("create repo failed")
 	}
 
-	seedDependabotAlert(t, org.Login, repo1.Name, map[string]any{"package_name": "pkg1"})
-	seedDependabotAlert(t, org.Login, repo2.Name, map[string]any{"package_name": "pkg2"})
-	seedDependabotAlert(t, "admin", userRepo.Name, map[string]any{"package_name": "pkg3"})
+	s.seedDependabotAlert(t, org.Login, repo1.Name, map[string]any{"package_name": "pkg1"})
+	s.seedDependabotAlert(t, org.Login, repo2.Name, map[string]any{"package_name": "pkg2"})
+	s.seedDependabotAlert(t, "admin", userRepo.Name, map[string]any{"package_name": "pkg3"})
 
-	resp := authedGet(t, "/api/v3/orgs/dependabot-org-alerts/dependabot/alerts")
+	resp := s.authedGet(t, "/api/v3/orgs/dependabot-org-alerts/dependabot/alerts")
 	if resp.StatusCode != http.StatusOK {
 		b, _ := io.ReadAll(resp.Body)
 		resp.Body.Close()
@@ -581,18 +567,20 @@ func TestDependabot_OrgAlerts(t *testing.T) {
 }
 
 func TestDependabot_RepositoryAccess(t *testing.T) {
-	admin := testServer.store.UsersByLogin["admin"]
-	org := testServer.store.CreateOrg(admin, "dependabot-org-access", "Dependabot Org Access", "")
+	t.Parallel()
+	s := newIsolatedServer(t)
+	admin := s.store.UsersByLogin["admin"]
+	org := s.store.CreateOrg(admin, "dependabot-org-access", "Dependabot Org Access", "")
 	if org == nil {
 		t.Fatal("create org failed")
 	}
-	repo1 := testServer.store.CreateOrgRepo(org, admin, "dependabot-org-access-1", "", false)
-	repo2 := testServer.store.CreateOrgRepo(org, admin, "dependabot-org-access-2", "", false)
+	repo1 := s.store.CreateOrgRepo(org, admin, "dependabot-org-access-1", "", false)
+	repo2 := s.store.CreateOrgRepo(org, admin, "dependabot-org-access-2", "", false)
 	if repo1 == nil || repo2 == nil {
 		t.Fatal("create org repo failed")
 	}
 
-	resp := authedGet(t, "/api/v3/orgs/dependabot-org-access/dependabot/repository-access")
+	resp := s.authedGet(t, "/api/v3/orgs/dependabot-org-access/dependabot/repository-access")
 	if resp.StatusCode != http.StatusOK {
 		b, _ := io.ReadAll(resp.Body)
 		resp.Body.Close()
@@ -611,7 +599,7 @@ func TestDependabot_RepositoryAccess(t *testing.T) {
 	}
 
 	patch := func(body map[string]any) {
-		req, _ := http.NewRequest("PATCH", testBaseURL+"/api/v3/orgs/dependabot-org-access/dependabot/repository-access", bytes.NewReader(mustJSON(body)))
+		req, _ := http.NewRequest("PATCH", s.baseURL+"/api/v3/orgs/dependabot-org-access/dependabot/repository-access", bytes.NewReader(mustJSON(body)))
 		req.Header.Set("Authorization", "Bearer "+defaultToken)
 		req.Header.Set("Content-Type", "application/json")
 		resp, err := http.DefaultClient.Do(req)
@@ -628,7 +616,7 @@ func TestDependabot_RepositoryAccess(t *testing.T) {
 
 	patch(map[string]any{"repository_ids_to_add": []int{repo1.ID, repo2.ID}})
 
-	resp = authedGet(t, "/api/v3/orgs/dependabot-org-access/dependabot/repository-access")
+	resp = s.authedGet(t, "/api/v3/orgs/dependabot-org-access/dependabot/repository-access")
 	if resp.StatusCode != http.StatusOK {
 		b, _ := io.ReadAll(resp.Body)
 		resp.Body.Close()
@@ -644,7 +632,7 @@ func TestDependabot_RepositoryAccess(t *testing.T) {
 
 	patch(map[string]any{"repository_ids_to_remove": []int{repo2.ID}})
 
-	resp = authedGet(t, "/api/v3/orgs/dependabot-org-access/dependabot/repository-access")
+	resp = s.authedGet(t, "/api/v3/orgs/dependabot-org-access/dependabot/repository-access")
 	if resp.StatusCode != http.StatusOK {
 		b, _ := io.ReadAll(resp.Body)
 		resp.Body.Close()
@@ -660,14 +648,16 @@ func TestDependabot_RepositoryAccess(t *testing.T) {
 }
 
 func TestDependabot_RepositoryAccessDefaultLevel(t *testing.T) {
-	admin := testServer.store.UsersByLogin["admin"]
-	org := testServer.store.CreateOrg(admin, "dependabot-default-level", "Dependabot Default Level", "")
+	t.Parallel()
+	s := newIsolatedServer(t)
+	admin := s.store.UsersByLogin["admin"]
+	org := s.store.CreateOrg(admin, "dependabot-default-level", "Dependabot Default Level", "")
 	if org == nil {
 		t.Fatal("create org failed")
 	}
 
 	// Invalid level.
-	resp := ghPut(t, "/api/v3/orgs/dependabot-default-level/dependabot/repository-access/default-level", defaultToken, map[string]any{
+	resp := s.put(t, "/api/v3/orgs/dependabot-default-level/dependabot/repository-access/default-level", defaultToken, map[string]any{
 		"default_level": "top-secret",
 	})
 	resp.Body.Close()
@@ -676,14 +666,14 @@ func TestDependabot_RepositoryAccessDefaultLevel(t *testing.T) {
 	}
 
 	// Set to internal and read it back through the repository-access GET.
-	resp = ghPut(t, "/api/v3/orgs/dependabot-default-level/dependabot/repository-access/default-level", defaultToken, map[string]any{
+	resp = s.put(t, "/api/v3/orgs/dependabot-default-level/dependabot/repository-access/default-level", defaultToken, map[string]any{
 		"default_level": "internal",
 	})
 	resp.Body.Close()
 	if resp.StatusCode != http.StatusNoContent {
 		t.Fatalf("set default level: %d, want 204", resp.StatusCode)
 	}
-	resp = authedGet(t, "/api/v3/orgs/dependabot-default-level/dependabot/repository-access")
+	resp = s.authedGet(t, "/api/v3/orgs/dependabot-default-level/dependabot/repository-access")
 	if resp.StatusCode != http.StatusOK {
 		resp.Body.Close()
 		t.Fatalf("get repository access: %d", resp.StatusCode)
@@ -698,7 +688,7 @@ func TestDependabot_RepositoryAccessDefaultLevel(t *testing.T) {
 	}
 
 	// Unknown org.
-	resp = ghPut(t, "/api/v3/orgs/no-such-dependabot-org/dependabot/repository-access/default-level", defaultToken, map[string]any{
+	resp = s.put(t, "/api/v3/orgs/no-such-dependabot-org/dependabot/repository-access/default-level", defaultToken, map[string]any{
 		"default_level": "public",
 	})
 	resp.Body.Close()
@@ -708,18 +698,20 @@ func TestDependabot_RepositoryAccessDefaultLevel(t *testing.T) {
 }
 
 func TestDependabot_OrgSecretSelectedRepoAddRemove(t *testing.T) {
-	admin := testServer.store.UsersByLogin["admin"]
-	org := testServer.store.CreateOrg(admin, "dependabot-repo-sel", "Dependabot Repo Sel", "")
+	t.Parallel()
+	s := newIsolatedServer(t)
+	admin := s.store.UsersByLogin["admin"]
+	org := s.store.CreateOrg(admin, "dependabot-repo-sel", "Dependabot Repo Sel", "")
 	if org == nil {
 		t.Fatal("create org failed")
 	}
-	r1 := testServer.store.CreateOrgRepo(org, admin, "dependabot-repo-sel-1", "", false)
-	r2 := testServer.store.CreateOrgRepo(org, admin, "dependabot-repo-sel-2", "", false)
+	r1 := s.store.CreateOrgRepo(org, admin, "dependabot-repo-sel-1", "", false)
+	r2 := s.store.CreateOrgRepo(org, admin, "dependabot-repo-sel-2", "", false)
 	if r1 == nil || r2 == nil {
 		t.Fatal("create org repos failed")
 	}
 
-	resp := authedGet(t, "/api/v3/orgs/dependabot-repo-sel/dependabot/secrets/public-key")
+	resp := s.authedGet(t, "/api/v3/orgs/dependabot-repo-sel/dependabot/secrets/public-key")
 	var pk map[string]any
 	if err := json.NewDecoder(resp.Body).Decode(&pk); err != nil {
 		t.Fatalf("decode public key: %v", err)
@@ -727,7 +719,7 @@ func TestDependabot_OrgSecretSelectedRepoAddRemove(t *testing.T) {
 	resp.Body.Close()
 	keyID, _ := pk["key_id"].(string)
 
-	resp = ghPut(t, "/api/v3/orgs/dependabot-repo-sel/dependabot/secrets/SELECTED_SECRET", defaultToken, map[string]any{
+	resp = s.put(t, "/api/v3/orgs/dependabot-repo-sel/dependabot/secrets/SELECTED_SECRET", defaultToken, map[string]any{
 		"encrypted_value":         base64.StdEncoding.EncodeToString([]byte("selected-secret")),
 		"key_id":                  keyID,
 		"visibility":              "selected",
@@ -739,12 +731,12 @@ func TestDependabot_OrgSecretSelectedRepoAddRemove(t *testing.T) {
 	}
 
 	// Add the second repository.
-	resp = ghPut(t, fmt.Sprintf("/api/v3/orgs/dependabot-repo-sel/dependabot/secrets/SELECTED_SECRET/repositories/%d", r2.ID), defaultToken, nil)
+	resp = s.put(t, fmt.Sprintf("/api/v3/orgs/dependabot-repo-sel/dependabot/secrets/SELECTED_SECRET/repositories/%d", r2.ID), defaultToken, nil)
 	resp.Body.Close()
 	if resp.StatusCode != http.StatusNoContent {
 		t.Fatalf("add selected repo: %d, want 204", resp.StatusCode)
 	}
-	resp = authedGet(t, "/api/v3/orgs/dependabot-repo-sel/dependabot/secrets/SELECTED_SECRET/repositories")
+	resp = s.authedGet(t, "/api/v3/orgs/dependabot-repo-sel/dependabot/secrets/SELECTED_SECRET/repositories")
 	var repos map[string]any
 	if err := json.NewDecoder(resp.Body).Decode(&repos); err != nil {
 		t.Fatalf("decode selected repos: %v", err)
@@ -755,12 +747,12 @@ func TestDependabot_OrgSecretSelectedRepoAddRemove(t *testing.T) {
 	}
 
 	// Remove the first repository.
-	resp = ghDelete(t, fmt.Sprintf("/api/v3/orgs/dependabot-repo-sel/dependabot/secrets/SELECTED_SECRET/repositories/%d", r1.ID), defaultToken)
+	resp = s.delete(t, fmt.Sprintf("/api/v3/orgs/dependabot-repo-sel/dependabot/secrets/SELECTED_SECRET/repositories/%d", r1.ID), defaultToken)
 	resp.Body.Close()
 	if resp.StatusCode != http.StatusNoContent {
 		t.Fatalf("remove selected repo: %d, want 204", resp.StatusCode)
 	}
-	resp = authedGet(t, "/api/v3/orgs/dependabot-repo-sel/dependabot/secrets/SELECTED_SECRET/repositories")
+	resp = s.authedGet(t, "/api/v3/orgs/dependabot-repo-sel/dependabot/secrets/SELECTED_SECRET/repositories")
 	if err := json.NewDecoder(resp.Body).Decode(&repos); err != nil {
 		t.Fatalf("decode selected repos: %v", err)
 	}
@@ -770,7 +762,7 @@ func TestDependabot_OrgSecretSelectedRepoAddRemove(t *testing.T) {
 	}
 
 	// A secret with visibility all conflicts.
-	resp = ghPut(t, "/api/v3/orgs/dependabot-repo-sel/dependabot/secrets/ALL_SECRET", defaultToken, map[string]any{
+	resp = s.put(t, "/api/v3/orgs/dependabot-repo-sel/dependabot/secrets/ALL_SECRET", defaultToken, map[string]any{
 		"encrypted_value": base64.StdEncoding.EncodeToString([]byte("all-secret")),
 		"key_id":          keyID,
 		"visibility":      "all",
@@ -779,14 +771,14 @@ func TestDependabot_OrgSecretSelectedRepoAddRemove(t *testing.T) {
 	if resp.StatusCode != http.StatusCreated {
 		t.Fatalf("put all-visibility secret: %d, want 201", resp.StatusCode)
 	}
-	resp = ghPut(t, fmt.Sprintf("/api/v3/orgs/dependabot-repo-sel/dependabot/secrets/ALL_SECRET/repositories/%d", r1.ID), defaultToken, nil)
+	resp = s.put(t, fmt.Sprintf("/api/v3/orgs/dependabot-repo-sel/dependabot/secrets/ALL_SECRET/repositories/%d", r1.ID), defaultToken, nil)
 	resp.Body.Close()
 	if resp.StatusCode != http.StatusConflict {
 		t.Fatalf("add repo to all-visibility secret: %d, want 409", resp.StatusCode)
 	}
 
 	// Unknown secret.
-	resp = ghPut(t, fmt.Sprintf("/api/v3/orgs/dependabot-repo-sel/dependabot/secrets/NO_SUCH/repositories/%d", r1.ID), defaultToken, nil)
+	resp = s.put(t, fmt.Sprintf("/api/v3/orgs/dependabot-repo-sel/dependabot/secrets/NO_SUCH/repositories/%d", r1.ID), defaultToken, nil)
 	resp.Body.Close()
 	if resp.StatusCode != http.StatusNotFound {
 		t.Fatalf("unknown secret add repo: %d, want 404", resp.StatusCode)
