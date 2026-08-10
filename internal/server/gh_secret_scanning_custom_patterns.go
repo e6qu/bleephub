@@ -83,7 +83,7 @@ func (st *Store) ListSecretScanningCustomPatterns(scope string) []*SecretScannin
 		out = append(out, cloneSecretScanningCustomPattern(pattern))
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].ID < out[j].ID })
-	return out
+	return snapshotSecretScanningCustomPatterns(out)
 }
 
 func (st *Store) CreateSecretScanningCustomPatterns(scope string, specs []secretScanningPatternCreate) []*SecretScanningCustomPattern {

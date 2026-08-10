@@ -308,13 +308,13 @@ func (st *Store) ListPullRequestStacks(repoID int) []*PullRequestStack {
 	var out []*PullRequestStack
 	repo := st.Repos[repoID]
 	if repo == nil {
-		return out
+		return snapshotPullRequestStacks(out)
 	}
 	for _, stack := range st.PullRequestStacks[repo.FullName] {
 		out = append(out, clonePullRequestStack(stack))
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].Number < out[j].Number })
-	return out
+	return snapshotPullRequestStacks(out)
 }
 
 func (st *Store) GetPullRequestStack(repoKey string, number int) *PullRequestStack {
@@ -640,7 +640,7 @@ func (st *Store) ListIssueSuggestions(repoKey string, issueID int) []*IssueSugge
 		out = append(out, cloneIssueSuggestion(suggestion))
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].ID < out[j].ID })
-	return out
+	return snapshotIssueSuggestions(out)
 }
 
 func (st *Store) ResolveIssueSuggestion(repoKey string, issueID, suggestionID, userID int, state string, eventID *int) *IssueSuggestion {

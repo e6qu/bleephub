@@ -177,7 +177,7 @@ func (st *Store) ListMarketplacePlans(listingSlug string, publishedOnly bool) []
 		out = append(out, cloneMarketplacePlan(plan))
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].Number < out[j].Number })
-	return out
+	return snapshotMarketplacePlans(out)
 }
 
 func (st *Store) GetMarketplacePlanForListing(listingSlug string, planID int) *MarketplacePlan {
@@ -387,7 +387,7 @@ func (st *Store) ListMarketplacePurchasesForListing(listingSlug string) []*Marke
 		}
 		return left.Before(right)
 	})
-	return out
+	return snapshotMarketplacePurchases(out)
 }
 
 func (st *Store) ListMarketplacePurchasesForAccount(accountType string, accountID int) []*MarketplacePurchase {
@@ -400,7 +400,7 @@ func (st *Store) ListMarketplacePurchasesForAccount(accountType string, accountI
 		}
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].ListingSlug < out[j].ListingSlug })
-	return out
+	return snapshotMarketplacePurchases(out)
 }
 
 func (st *Store) DeleteMarketplacePurchase(listingSlug, accountType string, accountID int) error {

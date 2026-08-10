@@ -520,7 +520,7 @@ func (st *Store) ListOrgHooks(orgLogin string) []*Webhook {
 	for i, hook := range hooks {
 		out[i] = cloneWebhook(hook)
 	}
-	return out
+	return snapshotWebhooks(out)
 }
 
 // UpdateOrgHook updates an org webhook in place. Returns false if not found.

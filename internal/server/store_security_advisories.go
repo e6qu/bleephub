@@ -240,7 +240,7 @@ func (st *Store) ListSecurityAdvisories(repoID int) []*SecurityAdvisory {
 	sort.Slice(out, func(i, j int) bool {
 		return out[i].CreatedAt.After(out[j].CreatedAt)
 	})
-	return out
+	return snapshotSecurityAdvisories(out)
 }
 
 // GetSecurityAdvisoryByGHSA returns an advisory by repo and GHSA ID.

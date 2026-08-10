@@ -306,3 +306,116 @@ func snapshotRepoTrafficBuckets(in []*RepoTrafficBucket) []*RepoTrafficBucket {
 	}
 	return out
 }
+
+// The following reuse clone helpers that already existed elsewhere for the
+// single-object getters; the list methods just needed the slice wrapper.
+
+func snapshotInstallations(in []*Installation) []*Installation {
+	if in == nil {
+		return nil
+	}
+	out := make([]*Installation, len(in))
+	for i, x := range in {
+		out[i] = cloneInstallation(x)
+	}
+	return out
+}
+
+func snapshotCodespaces(in []*Codespace) []*Codespace {
+	if in == nil {
+		return nil
+	}
+	out := make([]*Codespace, len(in))
+	for i, x := range in {
+		out[i] = cloneCodespace(x)
+	}
+	return out
+}
+
+func snapshotRulesets(in []*Ruleset) []*Ruleset {
+	if in == nil {
+		return nil
+	}
+	out := make([]*Ruleset, len(in))
+	for i, x := range in {
+		out[i] = cloneRuleset(x)
+	}
+	return out
+}
+
+func snapshotSecurityAdvisories(in []*SecurityAdvisory) []*SecurityAdvisory {
+	if in == nil {
+		return nil
+	}
+	out := make([]*SecurityAdvisory, len(in))
+	for i, x := range in {
+		out[i] = cloneSecurityAdvisory(x)
+	}
+	return out
+}
+
+func snapshotSecretScanningCustomPatterns(in []*SecretScanningCustomPattern) []*SecretScanningCustomPattern {
+	if in == nil {
+		return nil
+	}
+	out := make([]*SecretScanningCustomPattern, len(in))
+	for i, x := range in {
+		out[i] = cloneSecretScanningCustomPattern(x)
+	}
+	return out
+}
+
+func snapshotMarketplacePlans(in []*MarketplacePlan) []*MarketplacePlan {
+	if in == nil {
+		return nil
+	}
+	out := make([]*MarketplacePlan, len(in))
+	for i, x := range in {
+		out[i] = cloneMarketplacePlan(x)
+	}
+	return out
+}
+
+func snapshotMarketplacePurchases(in []*MarketplacePurchase) []*MarketplacePurchase {
+	if in == nil {
+		return nil
+	}
+	out := make([]*MarketplacePurchase, len(in))
+	for i, x := range in {
+		out[i] = cloneMarketplacePurchase(x)
+	}
+	return out
+}
+
+func snapshotWebhooks(in []*Webhook) []*Webhook {
+	if in == nil {
+		return nil
+	}
+	out := make([]*Webhook, len(in))
+	for i, x := range in {
+		out[i] = cloneWebhook(x)
+	}
+	return out
+}
+
+func snapshotIssueSuggestions(in []*IssueSuggestion) []*IssueSuggestion {
+	if in == nil {
+		return nil
+	}
+	out := make([]*IssueSuggestion, len(in))
+	for i, x := range in {
+		out[i] = cloneIssueSuggestion(x)
+	}
+	return out
+}
+
+func snapshotPullRequestStacks(in []*PullRequestStack) []*PullRequestStack {
+	if in == nil {
+		return nil
+	}
+	out := make([]*PullRequestStack, len(in))
+	for i, x := range in {
+		out[i] = clonePullRequestStack(x)
+	}
+	return out
+}
