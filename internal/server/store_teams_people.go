@@ -409,7 +409,7 @@ func (st *Store) ListOrgBlockedUsers(orgLogin string) []*User {
 			out = append(out, u)
 		}
 	}
-	return out
+	return snapshotUsers(out)
 }
 
 // --- organization interaction limits ---
@@ -667,7 +667,7 @@ func (st *Store) ListOutsideCollaborators(orgLogin string) []*User {
 		}
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].ID < out[j].ID })
-	return out
+	return snapshotUsers(out)
 }
 
 // GrantTeamRepoAccessAsCollaborator materializes a member's team-derived

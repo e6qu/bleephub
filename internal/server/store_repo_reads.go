@@ -129,7 +129,7 @@ func (st *Store) ListRepoSubscribers(repoID int) []*User {
 		}
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].ID < out[j].ID })
-	return out
+	return snapshotUsers(out)
 }
 
 // ListPublicRepos returns public repositories with an ID greater than since,
@@ -238,5 +238,5 @@ func (st *Store) ListAssignableUsers(repo *Repo) []*User {
 		}
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].Login < out[j].Login })
-	return out
+	return snapshotUsers(out)
 }

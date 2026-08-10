@@ -419,3 +419,40 @@ func snapshotPullRequestStacks(in []*PullRequestStack) []*PullRequestStack {
 	}
 	return out
 }
+
+// cloneUser detaches a user from the stored row (STORE-021). User is the most
+// shared entity — StarRepo/UnstarRepo mutate a user's StarredRepos map in place
+// — so member-list callers must hold snapshots. UserEmail and ExternalIdentity
+// are value structs, so copying their slices detaches them fully.
+func cloneUser(u *User) *User {
+	if u == nil {
+		return nil
+	}
+	c := *u
+	if u.StarredRepos != nil {
+		m := make(map[string]bool, len(u.StarredRepos))
+		for k, v := range u.StarredRepos {
+			m[k] = v
+		}
+		c.StarredRepos = m
+	}
+	if u.Hireable != nil {
+		v := *u.Hireable
+		c.Hireable = &v
+	}
+	c.Emails = append([]UserEmail(nil), u.Emails...)
+	c.InteractionLimitExpiry = cloneTimePtr(u.InteractionLimitExpiry)
+	c.ExternalIdentities = append([]ExternalIdentity(nil), u.ExternalIdentities...)
+	return &c
+}
+
+func snapshotUsers(in []*User) []*User {
+	if in == nil {
+		return nil
+	}
+	out := make([]*User, len(in))
+	for i, x := range in {
+		out[i] = cloneUser(x)
+	}
+	return out
+}

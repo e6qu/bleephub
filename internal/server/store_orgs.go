@@ -607,7 +607,7 @@ func (st *Store) ListPublicOrgMembers(orgLogin string) []*User {
 			}
 		}
 	}
-	return users
+	return snapshotUsers(users)
 }
 
 // ListMembershipsByUser returns the user's memberships across all orgs,
@@ -715,7 +715,7 @@ func (st *Store) ListOrgMembers(orgLogin string) []*User {
 			}
 		}
 	}
-	return users
+	return snapshotUsers(users)
 }
 
 // TeamOptions carries the optional attributes of team creation.
@@ -980,7 +980,7 @@ func (st *Store) ListTeamMembers(orgLogin, slug string) []*User {
 			members = append(members, u)
 		}
 	}
-	return members
+	return snapshotUsers(members)
 }
 
 // GetTeamMembership returns a user's role in a team and whether they are a

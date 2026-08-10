@@ -565,7 +565,7 @@ func (st *Store) ListEnterpriseTeamMembers(t *EnterpriseTeam) []*User {
 		}
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].ID < out[j].ID })
-	return out
+	return snapshotUsers(out)
 }
 
 // AddEnterpriseTeamOrg records an organization assignment (idempotent).
