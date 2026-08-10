@@ -2849,6 +2849,11 @@ export const stopCodespace = (name: string) =>
 export const deleteCodespace = (name: string) =>
   ghDelete(`/api/v3/user/codespaces/${encodeURIComponent(name)}`);
 
+export const updateCodespace = (
+  name: string,
+  payload: { machine?: string; display_name?: string },
+) => ghPatchJSON<unknown>(`/api/v3/user/codespaces/${encodeURIComponent(name)}`, payload).then(decodeCodespace);
+
 export const fetchCodespaceMachines = (owner: string, repo: string) =>
   ghFetchEnvelope<GithubCodespaceMachine>(
     `/api/v3/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/codespaces/machines`,
