@@ -634,7 +634,15 @@ func (st *Store) ListOrgsAll(since int) []*Org {
 func (st *Store) GetMembership(orgLogin string, userID int) *Membership {
 	st.mu.RLock()
 	defer st.mu.RUnlock()
-	return st.Memberships[membershipKey(orgLogin, userID)]
+	// A copy so a reader can't mutate the stored membership through the getter
+	// (STORE-021); Membership is all-value, so a shallow copy detaches. Its 24
+	// callers only read State/Role, and writes go through keyed store methods.
+	m := st.Memberships[membershipKey(orgLogin, userID)]
+	if m == nil {
+		return nil
+	}
+	clone := *m
+	return &clone
 }
 
 // RemoveMembership removes a user's membership from an organization.

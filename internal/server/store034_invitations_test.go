@@ -5,6 +5,26 @@ import (
 	"time"
 )
 
+// TestMembershipGetIsDetached pins STORE-021 for the org-membership getter.
+func TestMembershipGetIsDetached(t *testing.T) {
+	s := newTestServer()
+	admin := s.store.UsersByLogin["admin"]
+	org := s.store.CreateOrg(admin, "mem-detach-org", "M", "")
+	u := &User{ID: s.store.NextUser, Login: "mem-detach-user", Type: "User"}
+	s.store.mu.Lock()
+	s.store.Users[u.ID] = u
+	s.store.UsersByLogin[u.Login] = u
+	s.store.NextUser++
+	s.store.mu.Unlock()
+	s.store.SetMembership(org.Login, u.ID, OrgRoleAdmin, MembershipStateActive)
+
+	got := s.store.GetMembership(org.Login, u.ID)
+	got.State = MembershipStatePending
+	if fresh := s.store.GetMembership(org.Login, u.ID); fresh.State != MembershipStateActive {
+		t.Fatalf("membership mutated through the getter: state=%v", fresh.State)
+	}
+}
+
 // TestMilestoneAndLabelGetsAreDetached pins STORE-021 for the issues family:
 // GetMilestone (with its DueOn time pointer) and GetLabel must return copies.
 func TestMilestoneAndLabelGetsAreDetached(t *testing.T) {
