@@ -541,6 +541,26 @@ func (s *isolatedServer) createRepoWriteRepo(t *testing.T, autoInit bool) string
 	return name
 }
 
+// createTestGist mirrors the package helper (still used by
+// gh_misc_endpoints_users_test.go): a small public/private gist owned by token.
+func (s *isolatedServer) createTestGist(t *testing.T, token string, public bool) map[string]interface{} {
+	t.Helper()
+	resp := s.post(t, "/api/v3/gists", token, map[string]interface{}{
+		"description": "test gist",
+		"public":      public,
+		"files": map[string]interface{}{
+			"hello.go": map[string]interface{}{
+				"content": "package main\n\nfunc main() {}",
+			},
+		},
+	})
+	if resp.StatusCode != 201 {
+		resp.Body.Close()
+		t.Fatalf("expected 201, got %d", resp.StatusCode)
+	}
+	return decodeJSON(t, resp)
+}
+
 // createTestCodespaceRepo mirrors the package helper: an admin repo seeded with
 // a devcontainer.json pointing at the fast test image.
 func (s *isolatedServer) createTestCodespaceRepo(t *testing.T, name string) *Repo {

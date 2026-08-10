@@ -25,7 +25,9 @@ func createTestGist(t *testing.T, token string, public bool) map[string]interfac
 }
 
 func TestCreateGist(t *testing.T) {
-	data := createTestGist(t, defaultToken, true)
+	t.Parallel()
+	s := newIsolatedServer(t)
+	data := s.createTestGist(t, defaultToken, true)
 	if data["description"] != "test gist" {
 		t.Fatalf("expected description='test gist', got %v", data["description"])
 	}
@@ -52,7 +54,9 @@ func TestCreateGist(t *testing.T) {
 }
 
 func TestCreateGistNoFiles(t *testing.T) {
-	resp := ghPost(t, "/api/v3/gists", defaultToken, map[string]interface{}{
+	t.Parallel()
+	s := newIsolatedServer(t)
+	resp := s.post(t, "/api/v3/gists", defaultToken, map[string]interface{}{
 		"description": "empty",
 		"public":      true,
 		"files":       map[string]interface{}{},
@@ -64,10 +68,12 @@ func TestCreateGistNoFiles(t *testing.T) {
 }
 
 func TestGetGist(t *testing.T) {
-	created := createTestGist(t, defaultToken, true)
+	t.Parallel()
+	s := newIsolatedServer(t)
+	created := s.createTestGist(t, defaultToken, true)
 	id := created["id"].(string)
 
-	resp := ghGet(t, "/api/v3/gists/"+id, defaultToken)
+	resp := s.get(t, "/api/v3/gists/"+id, defaultToken)
 	if resp.StatusCode != 200 {
 		resp.Body.Close()
 		t.Fatalf("expected 200, got %d", resp.StatusCode)
@@ -90,7 +96,9 @@ func TestGetGist(t *testing.T) {
 }
 
 func TestGetGistNotFound(t *testing.T) {
-	resp := ghGet(t, "/api/v3/gists/nosuchgist", defaultToken)
+	t.Parallel()
+	s := newIsolatedServer(t)
+	resp := s.get(t, "/api/v3/gists/nosuchgist", defaultToken)
 	defer resp.Body.Close()
 	if resp.StatusCode != 404 {
 		t.Fatalf("expected 404, got %d", resp.StatusCode)
@@ -98,10 +106,12 @@ func TestGetGistNotFound(t *testing.T) {
 }
 
 func TestUpdateGist(t *testing.T) {
-	created := createTestGist(t, defaultToken, true)
+	t.Parallel()
+	s := newIsolatedServer(t)
+	created := s.createTestGist(t, defaultToken, true)
 	id := created["id"].(string)
 
-	resp := ghPatch(t, "/api/v3/gists/"+id, defaultToken, map[string]interface{}{
+	resp := s.patch(t, "/api/v3/gists/"+id, defaultToken, map[string]interface{}{
 		"description": "updated description",
 		"files": map[string]interface{}{
 			"hello.go": map[string]interface{}{
@@ -134,10 +144,12 @@ func TestUpdateGist(t *testing.T) {
 }
 
 func TestUpdateGistDeleteFile(t *testing.T) {
-	created := createTestGist(t, defaultToken, true)
+	t.Parallel()
+	s := newIsolatedServer(t)
+	created := s.createTestGist(t, defaultToken, true)
 	id := created["id"].(string)
 
-	resp := ghPatch(t, "/api/v3/gists/"+id, defaultToken, map[string]interface{}{
+	resp := s.patch(t, "/api/v3/gists/"+id, defaultToken, map[string]interface{}{
 		"files": map[string]interface{}{
 			"hello.go": nil,
 		},
@@ -154,16 +166,18 @@ func TestUpdateGistDeleteFile(t *testing.T) {
 }
 
 func TestDeleteGist(t *testing.T) {
-	created := createTestGist(t, defaultToken, true)
+	t.Parallel()
+	s := newIsolatedServer(t)
+	created := s.createTestGist(t, defaultToken, true)
 	id := created["id"].(string)
 
-	resp := ghDelete(t, "/api/v3/gists/"+id, defaultToken)
+	resp := s.delete(t, "/api/v3/gists/"+id, defaultToken)
 	defer resp.Body.Close()
 	if resp.StatusCode != 204 {
 		t.Fatalf("expected 204, got %d", resp.StatusCode)
 	}
 
-	resp2 := ghGet(t, "/api/v3/gists/"+id, defaultToken)
+	resp2 := s.get(t, "/api/v3/gists/"+id, defaultToken)
 	defer resp2.Body.Close()
 	if resp2.StatusCode != 404 {
 		t.Fatalf("expected 404 after delete, got %d", resp2.StatusCode)
@@ -171,28 +185,30 @@ func TestDeleteGist(t *testing.T) {
 }
 
 func TestStarGist(t *testing.T) {
-	created := createTestGist(t, defaultToken, true)
+	t.Parallel()
+	s := newIsolatedServer(t)
+	created := s.createTestGist(t, defaultToken, true)
 	id := created["id"].(string)
 
-	star := ghPut(t, "/api/v3/gists/"+id+"/star", defaultToken, nil)
+	star := s.put(t, "/api/v3/gists/"+id+"/star", defaultToken, nil)
 	defer star.Body.Close()
 	if star.StatusCode != 204 {
 		t.Fatalf("expected 204 on star, got %d", star.StatusCode)
 	}
 
-	check := ghGet(t, "/api/v3/gists/"+id+"/star", defaultToken)
+	check := s.get(t, "/api/v3/gists/"+id+"/star", defaultToken)
 	defer check.Body.Close()
 	if check.StatusCode != 204 {
 		t.Fatalf("expected 204 on check starred, got %d", check.StatusCode)
 	}
 
-	unstar := ghDelete(t, "/api/v3/gists/"+id+"/star", defaultToken)
+	unstar := s.delete(t, "/api/v3/gists/"+id+"/star", defaultToken)
 	defer unstar.Body.Close()
 	if unstar.StatusCode != 204 {
 		t.Fatalf("expected 204 on unstar, got %d", unstar.StatusCode)
 	}
 
-	check2 := ghGet(t, "/api/v3/gists/"+id+"/star", defaultToken)
+	check2 := s.get(t, "/api/v3/gists/"+id+"/star", defaultToken)
 	defer check2.Body.Close()
 	if check2.StatusCode != 404 {
 		t.Fatalf("expected 404 after unstar, got %d", check2.StatusCode)
@@ -200,11 +216,13 @@ func TestStarGist(t *testing.T) {
 }
 
 func TestListStarredGists(t *testing.T) {
-	created := createTestGist(t, defaultToken, true)
+	t.Parallel()
+	s := newIsolatedServer(t)
+	created := s.createTestGist(t, defaultToken, true)
 	id := created["id"].(string)
-	ghPut(t, "/api/v3/gists/"+id+"/star", defaultToken, nil).Body.Close()
+	s.put(t, "/api/v3/gists/"+id+"/star", defaultToken, nil).Body.Close()
 
-	resp := ghGet(t, "/api/v3/gists/starred", defaultToken)
+	resp := s.get(t, "/api/v3/gists/starred", defaultToken)
 	if resp.StatusCode != 200 {
 		resp.Body.Close()
 		t.Fatalf("expected 200, got %d", resp.StatusCode)
@@ -223,10 +241,12 @@ func TestListStarredGists(t *testing.T) {
 }
 
 func TestForkGist(t *testing.T) {
-	created := createTestGist(t, defaultToken, true)
+	t.Parallel()
+	s := newIsolatedServer(t)
+	created := s.createTestGist(t, defaultToken, true)
 	id := created["id"].(string)
 
-	resp := ghPost(t, "/api/v3/gists/"+id+"/forks", defaultToken, nil)
+	resp := s.post(t, "/api/v3/gists/"+id+"/forks", defaultToken, nil)
 	if resp.StatusCode != 201 {
 		resp.Body.Close()
 		t.Fatalf("expected 201, got %d", resp.StatusCode)
@@ -236,7 +256,7 @@ func TestForkGist(t *testing.T) {
 		t.Fatal("fork id should differ from original")
 	}
 
-	listResp := ghGet(t, "/api/v3/gists/"+id+"/forks", defaultToken)
+	listResp := s.get(t, "/api/v3/gists/"+id+"/forks", defaultToken)
 	if listResp.StatusCode != 200 {
 		listResp.Body.Close()
 		t.Fatalf("expected 200, got %d", listResp.StatusCode)
@@ -248,10 +268,12 @@ func TestForkGist(t *testing.T) {
 }
 
 func TestGistComments(t *testing.T) {
-	created := createTestGist(t, defaultToken, true)
+	t.Parallel()
+	s := newIsolatedServer(t)
+	created := s.createTestGist(t, defaultToken, true)
 	id := created["id"].(string)
 
-	createResp := ghPost(t, "/api/v3/gists/"+id+"/comments", defaultToken, map[string]interface{}{
+	createResp := s.post(t, "/api/v3/gists/"+id+"/comments", defaultToken, map[string]interface{}{
 		"body": "first comment",
 	})
 	if createResp.StatusCode != 201 {
@@ -264,7 +286,7 @@ func TestGistComments(t *testing.T) {
 		t.Fatalf("unexpected comment body: %v", comment["body"])
 	}
 
-	getResp := ghGet(t, "/api/v3/gists/"+id+"/comments/"+commentID, defaultToken)
+	getResp := s.get(t, "/api/v3/gists/"+id+"/comments/"+commentID, defaultToken)
 	if getResp.StatusCode != 200 {
 		getResp.Body.Close()
 		t.Fatalf("expected 200, got %d", getResp.StatusCode)
@@ -274,7 +296,7 @@ func TestGistComments(t *testing.T) {
 		t.Fatalf("unexpected body on get: %v", got["body"])
 	}
 
-	patchResp := ghPatch(t, "/api/v3/gists/"+id+"/comments/"+commentID, defaultToken, map[string]interface{}{
+	patchResp := s.patch(t, "/api/v3/gists/"+id+"/comments/"+commentID, defaultToken, map[string]interface{}{
 		"body": "updated comment",
 	})
 	if patchResp.StatusCode != 200 {
@@ -286,7 +308,7 @@ func TestGistComments(t *testing.T) {
 		t.Fatalf("unexpected updated body: %v", updated["body"])
 	}
 
-	listResp := ghGet(t, "/api/v3/gists/"+id+"/comments", defaultToken)
+	listResp := s.get(t, "/api/v3/gists/"+id+"/comments", defaultToken)
 	if listResp.StatusCode != 200 {
 		listResp.Body.Close()
 		t.Fatalf("expected 200, got %d", listResp.StatusCode)
@@ -296,13 +318,13 @@ func TestGistComments(t *testing.T) {
 		t.Fatalf("expected 1 comment, got %d", len(comments))
 	}
 
-	delResp := ghDelete(t, "/api/v3/gists/"+id+"/comments/"+commentID, defaultToken)
+	delResp := s.delete(t, "/api/v3/gists/"+id+"/comments/"+commentID, defaultToken)
 	defer delResp.Body.Close()
 	if delResp.StatusCode != 204 {
 		t.Fatalf("expected 204, got %d", delResp.StatusCode)
 	}
 
-	getResp2 := ghGet(t, "/api/v3/gists/"+id+"/comments/"+commentID, defaultToken)
+	getResp2 := s.get(t, "/api/v3/gists/"+id+"/comments/"+commentID, defaultToken)
 	defer getResp2.Body.Close()
 	if getResp2.StatusCode != 404 {
 		t.Fatalf("expected 404 after delete, got %d", getResp2.StatusCode)
@@ -310,10 +332,12 @@ func TestGistComments(t *testing.T) {
 }
 
 func TestListGistsForAuthUser(t *testing.T) {
-	created := createTestGist(t, defaultToken, true)
+	t.Parallel()
+	s := newIsolatedServer(t)
+	created := s.createTestGist(t, defaultToken, true)
 	id := created["id"].(string)
 
-	resp := ghGet(t, "/api/v3/gists", defaultToken)
+	resp := s.get(t, "/api/v3/gists", defaultToken)
 	if resp.StatusCode != 200 {
 		resp.Body.Close()
 		t.Fatalf("expected 200, got %d", resp.StatusCode)
@@ -332,10 +356,12 @@ func TestListGistsForAuthUser(t *testing.T) {
 }
 
 func TestListPublicGists(t *testing.T) {
-	created := createTestGist(t, defaultToken, true)
+	t.Parallel()
+	s := newIsolatedServer(t)
+	created := s.createTestGist(t, defaultToken, true)
 	id := created["id"].(string)
 
-	resp := ghGet(t, "/api/v3/gists/public", "")
+	resp := s.get(t, "/api/v3/gists/public", "")
 	if resp.StatusCode != 200 {
 		resp.Body.Close()
 		t.Fatalf("expected 200, got %d", resp.StatusCode)
@@ -354,10 +380,12 @@ func TestListPublicGists(t *testing.T) {
 }
 
 func TestPrivateGistHiddenFromOthers(t *testing.T) {
-	created := createTestGist(t, defaultToken, false)
+	t.Parallel()
+	s := newIsolatedServer(t)
+	created := s.createTestGist(t, defaultToken, false)
 	id := created["id"].(string)
 
-	resp := ghGet(t, "/api/v3/gists/"+id, "")
+	resp := s.get(t, "/api/v3/gists/"+id, "")
 	defer resp.Body.Close()
 	if resp.StatusCode != 404 {
 		t.Fatalf("expected 404 for private gist without auth, got %d", resp.StatusCode)
@@ -365,11 +393,13 @@ func TestPrivateGistHiddenFromOthers(t *testing.T) {
 }
 
 func TestGistPagination(t *testing.T) {
+	t.Parallel()
+	s := newIsolatedServer(t)
 	for i := 0; i < 3; i++ {
-		createTestGist(t, defaultToken, true)
+		s.createTestGist(t, defaultToken, true)
 	}
 
-	req, err := http.NewRequest("GET", testBaseURL+"/api/v3/gists?per_page=1&page=1", nil)
+	req, err := http.NewRequest("GET", s.baseURL+"/api/v3/gists?per_page=1&page=1", nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -389,10 +419,12 @@ func TestGistPagination(t *testing.T) {
 }
 
 func TestListGistCommits(t *testing.T) {
-	created := createTestGist(t, defaultToken, true)
+	t.Parallel()
+	s := newIsolatedServer(t)
+	created := s.createTestGist(t, defaultToken, true)
 	id := created["id"].(string)
 
-	resp := ghGet(t, "/api/v3/gists/"+id+"/commits", defaultToken)
+	resp := s.get(t, "/api/v3/gists/"+id+"/commits", defaultToken)
 	if resp.StatusCode != 200 {
 		resp.Body.Close()
 		t.Fatalf("expected 200, got %d", resp.StatusCode)
@@ -407,14 +439,16 @@ func TestListGistCommits(t *testing.T) {
 }
 
 func TestGetGistAtRevision(t *testing.T) {
-	created := createTestGist(t, defaultToken, true)
+	t.Parallel()
+	s := newIsolatedServer(t)
+	created := s.createTestGist(t, defaultToken, true)
 	id := created["id"].(string)
 
-	commitsResp := ghGet(t, "/api/v3/gists/"+id+"/commits", defaultToken)
+	commitsResp := s.get(t, "/api/v3/gists/"+id+"/commits", defaultToken)
 	commits := decodeJSONArray(t, commitsResp)
 	sha := commits[0]["version"].(string)
 
-	resp := ghGet(t, "/api/v3/gists/"+id+"/"+sha, defaultToken)
+	resp := s.get(t, "/api/v3/gists/"+id+"/"+sha, defaultToken)
 	if resp.StatusCode != 200 {
 		resp.Body.Close()
 		t.Fatalf("expected 200, got %d", resp.StatusCode)
