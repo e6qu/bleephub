@@ -225,7 +225,7 @@ func (st *Store) ListCodeScanningAlerts(repoKey, state, severity, toolName, rule
 		}
 		return !less
 	})
-	return out
+	return snapshotCodeScanningAlerts(out)
 }
 
 // UpdateCodeScanningAlert applies a state/dismissed_reason transition to a
@@ -856,7 +856,7 @@ func (st *Store) ListCodeScanningAlertsByOrg(orgID int, state, severity, toolNam
 	sortAlertList(out, sortField, direction,
 		func(a *CodeScanningAlert) time.Time { return a.CreatedAt },
 		func(a *CodeScanningAlert) time.Time { return a.UpdatedAt })
-	return out
+	return snapshotCodeScanningAlerts(out)
 }
 
 // CodeScanningAutofix is a Copilot Autofix suggestion for one code

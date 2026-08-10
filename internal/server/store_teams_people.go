@@ -248,7 +248,7 @@ func (st *Store) ListPendingOrgInvitations(orgLogin string) []*OrgInvitation {
 		}
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].ID < out[j].ID })
-	return out
+	return snapshotOrgInvitations(out)
 }
 
 // ListFailedOrgInvitations returns the org's failed (expired)
@@ -268,7 +268,7 @@ func (st *Store) ListFailedOrgInvitations(orgLogin string) []*OrgInvitation {
 		}
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].ID < out[j].ID })
-	return out
+	return snapshotOrgInvitations(out)
 }
 
 // GetOrgInvitation returns a live (non-failed) invitation by org and ID.
@@ -347,7 +347,7 @@ func (st *Store) ListPendingOrgInvitationsForTeam(orgLogin string, teamID int) [
 			out = append(out, inv)
 		}
 	}
-	return out
+	return snapshotOrgInvitations(out)
 }
 
 // --- organization user blocks ---

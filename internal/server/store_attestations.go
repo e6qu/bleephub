@@ -179,7 +179,7 @@ func (st *Store) ListAttestations(repoIDs map[int]bool, subjectDigest, predicate
 		out = append(out, a)
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].ID < out[j].ID })
-	return out
+	return snapshotAttestations(out)
 }
 
 // ReadAttestationBundle reads the Sigstore bundle bytes for an attestation.

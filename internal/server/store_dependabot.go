@@ -202,7 +202,7 @@ func (st *Store) ListDependabotAlerts(repoKey, state, severity, packageName, eco
 		}
 		return !less
 	})
-	return out
+	return snapshotDependabotAlerts(out)
 }
 
 // UpdateDependabotAlert applies a state/dismissed_reason transition to a single
@@ -558,5 +558,5 @@ func (st *Store) ListDependabotAlertsByOrg(orgID int, state, ecosystem, packageN
 		}
 		return !less
 	})
-	return out
+	return snapshotDependabotAlerts(out)
 }

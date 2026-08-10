@@ -204,7 +204,7 @@ func (st *Store) ListPackages(ownerKey string) []*Package {
 		out = append(out, p)
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].ID > out[j].ID })
-	return out
+	return snapshotPackages(out)
 }
 
 // DeletePackage soft-deletes a package: it leaves the by-owner key map
@@ -438,7 +438,7 @@ func (st *Store) ListPackageVersions(pkgID int, includeDeleted bool) []*PackageV
 		out = append(out, v)
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].ID > out[j].ID })
-	return out
+	return snapshotPackageVersions(out)
 }
 
 // DeletePackageVersion marks a version as deleted.

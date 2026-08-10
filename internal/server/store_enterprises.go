@@ -431,7 +431,7 @@ func (st *Store) ListEnterpriseTeams() []*EnterpriseTeam {
 		out = append(out, t)
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].ID < out[j].ID })
-	return out
+	return snapshotEnterpriseTeams(out)
 }
 
 // UpdateEnterpriseTeam applies the non-nil fields. Renaming re-slugs the team

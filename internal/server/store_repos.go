@@ -487,6 +487,116 @@ func snapshotMilestones(in []*Milestone) []*Milestone {
 	return out
 }
 
+func snapshotAttestations(in []*Attestation) []*Attestation {
+	if in == nil {
+		return nil
+	}
+	out := make([]*Attestation, len(in))
+	for i, x := range in {
+		out[i] = cloneAttestation(x)
+	}
+	return out
+}
+
+func snapshotCodeScanningAlerts(in []*CodeScanningAlert) []*CodeScanningAlert {
+	if in == nil {
+		return nil
+	}
+	out := make([]*CodeScanningAlert, len(in))
+	for i, x := range in {
+		out[i] = cloneCodeScanningAlert(x)
+	}
+	return out
+}
+
+func snapshotCodeSecurityConfigurations(in []*CodeSecurityConfiguration) []*CodeSecurityConfiguration {
+	if in == nil {
+		return nil
+	}
+	out := make([]*CodeSecurityConfiguration, len(in))
+	for i, x := range in {
+		out[i] = cloneCodeSecurityConfiguration(x)
+	}
+	return out
+}
+
+func snapshotDependabotAlerts(in []*DependabotAlert) []*DependabotAlert {
+	if in == nil {
+		return nil
+	}
+	out := make([]*DependabotAlert, len(in))
+	for i, x := range in {
+		out[i] = cloneDependabotAlert(x)
+	}
+	return out
+}
+
+func snapshotDiscussions(in []*Discussion) []*Discussion {
+	if in == nil {
+		return nil
+	}
+	out := make([]*Discussion, len(in))
+	for i, x := range in {
+		out[i] = cloneDiscussion(x)
+	}
+	return out
+}
+
+func snapshotEnterpriseTeams(in []*EnterpriseTeam) []*EnterpriseTeam {
+	if in == nil {
+		return nil
+	}
+	out := make([]*EnterpriseTeam, len(in))
+	for i, x := range in {
+		out[i] = cloneEnterpriseTeam(x)
+	}
+	return out
+}
+
+func snapshotOrgInvitations(in []*OrgInvitation) []*OrgInvitation {
+	if in == nil {
+		return nil
+	}
+	out := make([]*OrgInvitation, len(in))
+	for i, x := range in {
+		out[i] = cloneOrgInvitation(x)
+	}
+	return out
+}
+
+func snapshotPackages(in []*Package) []*Package {
+	if in == nil {
+		return nil
+	}
+	out := make([]*Package, len(in))
+	for i, x := range in {
+		out[i] = clonePackage(x)
+	}
+	return out
+}
+
+func snapshotPackageVersions(in []*PackageVersion) []*PackageVersion {
+	if in == nil {
+		return nil
+	}
+	out := make([]*PackageVersion, len(in))
+	for i, x := range in {
+		out[i] = clonePackageVersion(x)
+	}
+	return out
+}
+
+func snapshotSecretScanningAlerts(in []*SecretScanningAlert) []*SecretScanningAlert {
+	if in == nil {
+		return nil
+	}
+	out := make([]*SecretScanningAlert, len(in))
+	for i, x := range in {
+		out[i] = cloneSecretScanningAlert(x)
+	}
+	return out
+}
+
 // RenameRepo renames owner/name to owner/newName, moving every map keyed by
 // the repo full name and updating embedded repo-name strings. It returns true
 // on success.

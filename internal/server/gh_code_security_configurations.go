@@ -551,7 +551,7 @@ func (st *Store) ListCodeSecurityConfigurations(orgLogin string) []*CodeSecurity
 		out = append(out, c)
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].ID < out[j].ID })
-	return out
+	return snapshotCodeSecurityConfigurations(out)
 }
 
 // cloneCodeSecurityConfiguration detaches a configuration from the stored row so

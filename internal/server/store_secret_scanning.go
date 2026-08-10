@@ -232,7 +232,7 @@ func (st *Store) ListSecretScanningAlerts(repoKey, state, secretType, resolution
 	sortAlertList(out, sortField, direction,
 		func(a *SecretScanningAlert) time.Time { return a.CreatedAt },
 		func(a *SecretScanningAlert) time.Time { return a.UpdatedAt })
-	return out
+	return snapshotSecretScanningAlerts(out)
 }
 
 // UpdateSecretScanningAlert applies a state/resolution transition to a single alert.
@@ -395,7 +395,7 @@ func (st *Store) ListSecretScanningAlertsByOrg(orgID int, state, secretType, res
 	sortAlertList(out, sortField, direction,
 		func(a *SecretScanningAlert) time.Time { return a.CreatedAt },
 		func(a *SecretScanningAlert) time.Time { return a.UpdatedAt })
-	return out
+	return snapshotSecretScanningAlerts(out)
 }
 
 // ListSecretScanningAlertsByUser returns all secret scanning alerts for
@@ -417,7 +417,7 @@ func (st *Store) ListSecretScanningAlertsByUser(userID int) []*SecretScanningAle
 	sort.SliceStable(out, func(i, j int) bool {
 		return out[i].CreatedAt.After(out[j].CreatedAt)
 	})
-	return out
+	return snapshotSecretScanningAlerts(out)
 }
 
 // secretScanningProviderPatterns is the catalog of partner patterns the

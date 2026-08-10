@@ -243,7 +243,7 @@ func (st *Store) ListDiscussions(repoID, categoryID int) []*Discussion {
 		out = append(out, d)
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].CreatedAt.After(out[j].CreatedAt) })
-	return out
+	return snapshotDiscussions(out)
 }
 
 // UpdateDiscussion applies a mutation function to a discussion.
