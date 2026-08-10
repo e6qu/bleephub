@@ -542,6 +542,41 @@ func (s *isolatedServer) createRepoWriteRepo(t *testing.T, autoInit bool) string
 	return name
 }
 
+// createReadsRepo mirrors the package helper (still used by three other repo
+// read-surface files): creates an admin repo with optional extra fields.
+func (s *isolatedServer) createReadsRepo(t *testing.T, name string, extra map[string]interface{}) {
+	t.Helper()
+	body := map[string]interface{}{"name": name}
+	for k, v := range extra {
+		body[k] = v
+	}
+	resp := s.post(t, "/api/v3/user/repos", defaultToken, body)
+	defer resp.Body.Close()
+	if resp.StatusCode != 201 {
+		t.Fatalf("create repo %s: %d", name, resp.StatusCode)
+	}
+}
+
+// noRedirectGet mirrors the package helper (still used by
+// gh_repos_commit_reads_test.go): a GET that does not follow redirects, on
+// this isolated server.
+func (s *isolatedServer) noRedirectGet(t *testing.T, path string) *http.Response {
+	t.Helper()
+	client := &http.Client{CheckRedirect: func(*http.Request, []*http.Request) error {
+		return http.ErrUseLastResponse
+	}}
+	req, err := http.NewRequest("GET", s.baseURL+path, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	req.Header.Set("Authorization", "token "+defaultToken)
+	resp, err := client.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return resp
+}
+
 // seedCodeScanningAlert mirrors the package helper (still used by three other
 // code-scanning files): uploads a one-result SARIF and returns the single
 // alert it produces, all on this isolated server.
