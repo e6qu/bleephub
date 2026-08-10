@@ -223,10 +223,14 @@ func (rs *ReleaseStore) Update(id int, fn func(*Release)) bool {
 func (rs *ReleaseStore) DeleteAllForRepo(repoID int) error {
 	rs.mu.Lock()
 	defer rs.mu.Unlock()
+	batch := newPersistBatch(rs.persist)
 	for _, r := range rs.byRepo[repoID] {
-		if err := rs.deleteReleaseLocked(r); err != nil {
+		if err := rs.deleteReleaseBatchLocked(r, batch); err != nil {
 			return err
 		}
+	}
+	if err := batch.Commit(); err != nil {
+		return fmt.Errorf("persist releases deletion: %w", err)
 	}
 	delete(rs.byRepo, repoID)
 	return nil
@@ -288,8 +292,12 @@ func (rs *ReleaseStore) Delete(id int) (bool, error) {
 	if r == nil {
 		return false, nil
 	}
-	if err := rs.deleteReleaseLocked(r); err != nil {
+	batch := newPersistBatch(rs.persist)
+	if err := rs.deleteReleaseBatchLocked(r, batch); err != nil {
 		return true, err
+	}
+	if err := batch.Commit(); err != nil {
+		return true, fmt.Errorf("persist release deletion: %w", err)
 	}
 	src := rs.byRepo[r.RepoID]
 	for i, x := range src {
@@ -379,16 +387,39 @@ func (rs *ReleaseStore) deleteAssetLocked(a *ReleaseAsset) error {
 	return nil
 }
 
-func (rs *ReleaseStore) deleteReleaseLocked(r *Release) error {
-	for _, a := range r.Assets {
-		if err := rs.deleteAssetLocked(a); err != nil {
+// deleteAssetBatchLocked removes an asset's bytes and in-memory state, staging
+// its persisted row deletion into batch instead of committing it immediately,
+// so a caller can drop a release and every one of its assets in one transaction.
+func (rs *ReleaseStore) deleteAssetBatchLocked(a *ReleaseAsset, batch *persistBatch) error {
+	if err := rs.removeAssetDataLocked(a.ID); err != nil {
+		return err
+	}
+	delete(rs.assetByID, a.ID)
+	if rel := rs.byID[a.ReleaseID]; rel != nil {
+		src := rel.Assets
+		for i, x := range src {
+			if x.ID == a.ID {
+				rel.Assets = append(src[:i], src[i+1:]...)
+				break
+			}
+		}
+	}
+	batch.Delete("release_assets", strconv.Itoa(a.ID))
+	return nil
+}
+
+// deleteReleaseBatchLocked stages a release row and every one of its asset rows
+// into batch so a crash can no longer leave the release split from its assets.
+// The caller commits the batch.
+func (rs *ReleaseStore) deleteReleaseBatchLocked(r *Release, batch *persistBatch) error {
+	// Iterate a copy: deleteAssetBatchLocked mutates r.Assets in place.
+	for _, a := range append([]*ReleaseAsset(nil), r.Assets...) {
+		if err := rs.deleteAssetBatchLocked(a, batch); err != nil {
 			return err
 		}
 	}
 	delete(rs.byID, r.ID)
-	if rs.persist != nil {
-		rs.persist.MustDelete("releases", strconv.Itoa(r.ID))
-	}
+	batch.Delete("releases", strconv.Itoa(r.ID))
 	return nil
 }
 
