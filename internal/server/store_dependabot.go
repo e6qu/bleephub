@@ -479,7 +479,7 @@ func (st *Store) ListDependabotUserSecrets(userLogin string) []*DependabotUserSe
 		out = append(out, sec)
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].Name < out[j].Name })
-	return out
+	return snapshotSlice(out)
 }
 
 // --- org repository access ---

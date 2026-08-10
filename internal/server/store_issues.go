@@ -314,7 +314,7 @@ func (st *Store) ListIssueEvents(repoID, issueID int) []*IssueEvent {
 		events = append(events, e)
 	}
 	sort.Slice(events, func(i, j int) bool { return events[i].ID < events[j].ID })
-	return events
+	return snapshotSlice(events)
 }
 
 // ListPullRequestEvents returns the issue events attached to a pull
@@ -330,12 +330,12 @@ func (st *Store) ListPullRequestEvents(repoID, prID int) []*IssueEvent {
 		events = append(events, e)
 	}
 	sort.Slice(events, func(i, j int) bool { return events[i].ID < events[j].ID })
-	return events
+	return snapshotSlice(events)
 }
 
 // ListRepoIssueEvents returns all issue events for a repository.
 func (st *Store) ListRepoIssueEvents(repoID int) []*IssueEvent {
-	return st.ListIssueEvents(repoID, 0)
+	return snapshotSlice(st.ListIssueEvents(repoID, 0))
 }
 
 // GetIssueEvent returns an issue event by global ID.
@@ -420,7 +420,7 @@ func (st *Store) ListLabels(repoID int) []*IssueLabel {
 			labels = append(labels, l)
 		}
 	}
-	return labels
+	return snapshotSlice(labels)
 }
 
 // UpdateLabel applies a mutation function to a label.

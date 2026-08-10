@@ -68,7 +68,7 @@ func (st *Store) ListRepoActivity(repoID int) []*RepoActivity {
 		}
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].ID < out[j].ID })
-	return out
+	return snapshotSlice(out)
 }
 
 // RecordRepoClone counts one clone of a repository by the given actor in

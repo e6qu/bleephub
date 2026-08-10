@@ -626,7 +626,7 @@ func (st *Store) ListMembershipsByUser(userID int, state MembershipState) []*Mem
 		}
 		out = append(out, m)
 	}
-	return out
+	return snapshotSlice(out)
 }
 
 // ListOrgsAll returns every organization with ID greater than `since`,

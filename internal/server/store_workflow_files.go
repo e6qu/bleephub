@@ -137,7 +137,10 @@ func (st *Store) GetWorkflowFile(repoFullName string, id int64) *WorkflowFile {
 	if wf.RepoFullName != repoFullName {
 		return nil
 	}
-	return wf
+	// Detach: WorkflowFile is all-value, so a shallow copy is a full snapshot;
+	// writes go through the keyed SetWorkflowFileState (STORE-021).
+	clone := *wf
+	return &clone
 }
 
 // ListWorkflowFiles returns every WorkflowFile registered for the
@@ -152,7 +155,7 @@ func (st *Store) ListWorkflowFiles(repoFullName string) []*WorkflowFile {
 		}
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].ID < out[j].ID })
-	return out
+	return snapshotSlice(out)
 }
 
 // DiscoverWorkflowFilesFromGit walks the repo's default branch and registers

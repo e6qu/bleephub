@@ -150,7 +150,7 @@ func (st *Store) ListCheckSuitesForCommit(repoKey, headSHA string, appID int) []
 		out = append(out, &cp)
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].ID < out[j].ID })
-	return out
+	return snapshotSlice(out)
 }
 
 // CreateCheckRun inserts a new check run. If suiteID is 0, finds-or-creates a suite for the SHA.

@@ -456,3 +456,55 @@ func snapshotUsers(in []*User) []*User {
 	}
 	return out
 }
+
+// snapshotSlice detaches a list whose element type is all-value (no slices,
+// maps or pointers, verified per type): a shallow struct copy of each element
+// is a full snapshot. Used for the remaining value-only List* element types so
+// a reader can't race an in-place scalar update on the stored row.
+func snapshotSlice[T any](in []*T) []*T {
+	if in == nil {
+		return nil
+	}
+	out := make([]*T, len(in))
+	for i, x := range in {
+		if x == nil {
+			continue
+		}
+		c := *x
+		out[i] = &c
+	}
+	return out
+}
+
+func snapshotOrgBudgets(in []*OrgBudget) []*OrgBudget {
+	if in == nil {
+		return nil
+	}
+	out := make([]*OrgBudget, len(in))
+	for i, x := range in {
+		out[i] = cloneBudget(x)
+	}
+	return out
+}
+
+func snapshotGistHistory(in []*GistHistory) []*GistHistory {
+	if in == nil {
+		return nil
+	}
+	out := make([]*GistHistory, len(in))
+	for i, x := range in {
+		if x == nil {
+			continue
+		}
+		c := *x
+		if x.ChangeStatus != nil {
+			m := make(map[string]int, len(x.ChangeStatus))
+			for k, v := range x.ChangeStatus {
+				m[k] = v
+			}
+			c.ChangeStatus = m
+		}
+		out[i] = &c
+	}
+	return out
+}

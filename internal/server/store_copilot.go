@@ -97,7 +97,7 @@ func (st *Store) ListCopilotSeats(orgLogin string) []*CopilotSeat {
 		}
 		return out[i].UserID < out[j].UserID
 	})
-	return out
+	return snapshotSlice(out)
 }
 
 // AddCopilotSeats grants seats to the given users, assigned through

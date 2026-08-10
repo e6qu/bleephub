@@ -129,6 +129,9 @@ func (st *Store) AddMarketplaceDelivery(listingSlug string, delivery *WebhookDel
 	st.Misc.marketplaceDeliveries[listingSlug] = list
 }
 
+// ListMarketplaceDeliveries returns live rows deliberately: webhook deliveries
+// are write-once and carry full payloads (STORE-021 documented exception, as
+// for ListAppDeliveries).
 func (st *Store) ListMarketplaceDeliveries(listingSlug string) []*WebhookDelivery {
 	st.Misc.mu.RLock()
 	defer st.Misc.mu.RUnlock()

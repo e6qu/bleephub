@@ -11,7 +11,6 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
-	"time"
 )
 
 func (s *Server) registerGHWorkflowsRoutes() {
@@ -39,13 +38,10 @@ func (s *Server) handleSetWorkflowState(state string) http.HandlerFunc {
 			writeGHError(w, http.StatusNotFound, "Not Found")
 			return
 		}
-		s.store.mu.Lock()
-		wf.State = state
-		wf.UpdatedAt = time.Now().UTC()
-		if s.store.persist != nil {
-			s.store.persist.MustPut("workflow_files", strconv.FormatInt(wf.ID, 10), wf)
-		}
-		s.store.mu.Unlock()
+		// wf is a detached snapshot from resolveWorkflowFile; mutate the live row
+		// through the keyed writer so the state change is observed in memory, not
+		// just persisted to a discarded clone (STORE-021).
+		s.store.SetWorkflowFileState(wf.RepoFullName, wf.Path, state)
 		w.WriteHeader(http.StatusNoContent)
 	}
 }

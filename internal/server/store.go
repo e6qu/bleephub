@@ -4530,7 +4530,7 @@ func (st *Store) ListGistCommits(gistID string) []*GistHistory {
 	out := make([]*GistHistory, len(g.History))
 	copy(out, g.History)
 	sortHistory(out)
-	return out
+	return snapshotGistHistory(out)
 }
 
 // GetGistAtRevision returns the gist state at a specific revision.
@@ -4801,7 +4801,7 @@ func (st *Store) ListGistComments(gistID string) []*GistComment {
 		}
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].CreatedAt.Before(out[j].CreatedAt) })
-	return out
+	return snapshotSlice(out)
 }
 
 // ListUsers returns all users.
@@ -4813,7 +4813,7 @@ func (st *Store) ListUsers() []*User {
 		out = append(out, u)
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].ID < out[j].ID })
-	return out
+	return snapshotUsers(out)
 }
 
 // ListBlockedUsers returns the logins of users blocked by userID.
@@ -4887,7 +4887,7 @@ func (st *Store) ListUserBlocks(userID int) []*User {
 			out = append(out, u)
 		}
 	}
-	return out
+	return snapshotUsers(out)
 }
 
 // IsUserFollowing reports whether userID follows targetID.

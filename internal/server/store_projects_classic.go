@@ -117,7 +117,7 @@ func (st *Store) ListProjectClassicsForRepo(repoKey string) []*ProjectClassic {
 		}
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].ID > out[j].ID })
-	return out
+	return snapshotSlice(out)
 }
 
 // UpdateProjectClassic applies updates to a project.
@@ -231,7 +231,7 @@ func (st *Store) ListProjectColumns(projectID int) []*ProjectColumn {
 		}
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].Position < out[j].Position })
-	return out
+	return snapshotSlice(out)
 }
 
 // UpdateProjectColumn renames a column.
@@ -407,7 +407,7 @@ func (st *Store) ListProjectCards(columnID int) []*ProjectCard {
 		}
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].Position < out[j].Position })
-	return out
+	return snapshotSlice(out)
 }
 
 // UpdateProjectCard updates a card's note. Converting a note card to an

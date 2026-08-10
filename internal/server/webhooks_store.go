@@ -160,7 +160,7 @@ func (st *Store) ListHooks(repoKey string) []*Webhook {
 	for i, hook := range hooks {
 		out[i] = cloneWebhook(hook)
 	}
-	return out
+	return snapshotWebhooks(out)
 }
 
 // UpdateHook updates a webhook in place. Returns false if not found.
@@ -255,6 +255,10 @@ func (st *Store) SetHookLastResponse(repoKey string, hookID int, lr *HookLastRes
 }
 
 // ListDeliveries returns all deliveries for a webhook, newest first.
+// ListDeliveries returns the hook's deliveries newest-first. Delivery rows are
+// shared live deliberately: they are write-once (append-only, never mutated)
+// and carry full request/response payloads cloning would needlessly copy
+// (STORE-021 documented exception, as for ListAppDeliveries).
 func (st *Store) ListDeliveries(hookID int) []*WebhookDelivery {
 	st.mu.RLock()
 	defer st.mu.RUnlock()

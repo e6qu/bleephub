@@ -107,7 +107,7 @@ func (st *Store) ListOrgBudgets(orgLogin string) []*OrgBudget {
 		}
 		return out[i].ID < out[j].ID
 	})
-	return out
+	return snapshotOrgBudgets(out)
 }
 
 // UpdateOrgBudget applies fn to a budget under the write lock. Returns the

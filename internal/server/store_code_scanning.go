@@ -364,7 +364,7 @@ func (st *Store) ListCodeScanningAnalyses(repoKey, ref, toolName string) []*Code
 		out = append(out, a)
 	}
 	sort.SliceStable(out, func(i, j int) bool { return out[i].ID > out[j].ID })
-	return out
+	return snapshotSlice(out)
 }
 
 // DeleteCodeScanningAnalysis removes an analysis from the store.
@@ -1038,6 +1038,11 @@ func (st *Store) GetCodeQLDatabase(repoKey, language string) *CodeQLDatabase {
 }
 
 // ListCodeQLDatabases returns a repo's CodeQL databases sorted by language.
+// ListCodeQLDatabases returns live rows deliberately, matching GetCodeQLDatabase:
+// a stored database is write-once (UpsertCodeQLDatabase swaps a fresh row rather
+// than mutating in place) and its Content field can hold the full database blob
+// that cloning on every list would needlessly copy (STORE-021 documented
+// exception).
 func (st *Store) ListCodeQLDatabases(repoKey string) []*CodeQLDatabase {
 	st.mu.RLock()
 	defer st.mu.RUnlock()

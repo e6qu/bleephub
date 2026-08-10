@@ -2510,7 +2510,7 @@ func (st *Store) ListRepoDeployKeys(repoID int) []*RepoDeployKey {
 		out = append(out, k)
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].ID < out[j].ID })
-	return out
+	return snapshotSlice(out)
 }
 
 // GetRepoDeployKey returns a deploy key by ID.

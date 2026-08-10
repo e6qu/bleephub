@@ -152,7 +152,7 @@ func (st *Store) ListDiscussionCategories(repoID int) []*DiscussionCategory {
 		}
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].ID < out[j].ID })
-	return out
+	return snapshotSlice(out)
 }
 
 // CreateDiscussion creates a new discussion in the given repository.

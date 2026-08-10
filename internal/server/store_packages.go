@@ -516,7 +516,7 @@ func (st *Store) ListPackageFiles(versionID int) []*PackageFile {
 		out = append(out, f)
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].ID < out[j].ID })
-	return out
+	return snapshotSlice(out)
 }
 
 func (st *Store) recomputeVersionCountLocked(p *Package) {
