@@ -9,19 +9,6 @@ import (
 	"time"
 )
 
-// userSurfaceUser creates a fresh user plus a classic personal access
-// token so the /user endpoints operate on an account isolated from the
-// shared admin fixture.
-func userSurfaceUser(t *testing.T, login string) (*User, string) {
-	t.Helper()
-	u := createTestUser(t, login)
-	tok := "ghp_" + login + "0000000000token"
-	testServer.store.mu.Lock()
-	testServer.store.Tokens[tok] = &Token{Value: tok, UserID: u.ID, Scopes: "repo, workflow, read:org, admin:org, gist, user", CreatedAt: fixedTestTime}
-	testServer.store.mu.Unlock()
-	return u, tok
-}
-
 // ─── PATCH /user + GET /user/{account_id} ───────────────────────────────
 
 func TestUserProfile_UpdateAuthenticatedUser(t *testing.T) {
