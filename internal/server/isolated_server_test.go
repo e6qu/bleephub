@@ -601,6 +601,82 @@ func (s *isolatedServer) seedPackageVersion(t *testing.T, ownerType, owner, pkgT
 	return pkgID, int(v["id"].(float64))
 }
 
+// registryRequest mirrors the package helper against this isolated server's
+// Container-Registry-compatible /v2/ data plane.
+func (s *isolatedServer) registryRequest(t *testing.T, method, path string, body io.Reader) *http.Response {
+	t.Helper()
+	req, err := http.NewRequest(method, s.baseURL+path, body)
+	if err != nil {
+		t.Fatal(err)
+	}
+	req.Header.Set("Authorization", "Bearer "+defaultToken)
+	if method == http.MethodPut && strings.Contains(path, "/manifests/") {
+		req.Header.Set("Content-Type", "application/vnd.oci.image.manifest.v1+json")
+	}
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return resp
+}
+
+// uploadRegistryBlob mirrors the package helper: monolithic-then-PUT blob
+// upload, returning the sha256 digest, on this isolated server.
+func (s *isolatedServer) uploadRegistryBlob(t *testing.T, name string, data []byte) string {
+	t.Helper()
+	start := s.registryRequest(t, http.MethodPost, "/v2/"+name+"/blobs/uploads/", nil)
+	requireStatus(t, start, http.StatusAccepted)
+	location := start.Header.Get("Location")
+	if location == "" {
+		t.Fatalf("start upload missing Location")
+	}
+	patch := s.registryRequest(t, http.MethodPatch, location, bytes.NewReader(data))
+	requireStatus(t, patch, http.StatusAccepted)
+	digest := digestSHA256(data)
+	sep := "?"
+	if strings.Contains(location, "?") {
+		sep = "&"
+	}
+	put := s.registryRequest(t, http.MethodPut, location+sep+"digest="+digest, nil)
+	requireStatus(t, put, http.StatusCreated)
+	if got := put.Header.Get("Docker-Content-Digest"); got != digest {
+		t.Fatalf("blob digest = %q, want %q", got, digest)
+	}
+	return digest
+}
+
+// publishContainerPackageVersion mirrors the package helper: publishes a
+// single-layer OCI image and returns (packageID, versionID), on this server.
+func (s *isolatedServer) publishContainerPackageVersion(t *testing.T, owner, pkgName, version string) (int, int) {
+	t.Helper()
+	name := owner + "/" + pkgName
+	layerBytes := []byte("package layer " + owner + "/" + pkgName + ":" + version)
+	layerDigest := s.uploadRegistryBlob(t, name, layerBytes)
+	manifest := mustRegistryJSON(map[string]interface{}{
+		"schemaVersion": 2,
+		"mediaType":     "application/vnd.oci.image.manifest.v1+json",
+		"layers": []map[string]interface{}{
+			{
+				"mediaType": "application/vnd.oci.image.layer.v1.tar",
+				"digest":    layerDigest,
+				"size":      len(layerBytes),
+			},
+		},
+	})
+	resp := s.registryRequest(t, http.MethodPut, "/v2/"+name+"/manifests/"+version, bytes.NewReader(manifest))
+	if resp.StatusCode != http.StatusCreated {
+		body, _ := io.ReadAll(resp.Body)
+		resp.Body.Close()
+		t.Fatalf("publish container package %s:%s: %d %s", name, version, resp.StatusCode, body)
+	}
+	created := decodeJSON(t, resp)
+	pkgID := 0
+	if pkg := s.store.GetPackage(owner, "container", pkgName); pkg != nil {
+		pkgID = pkg.ID
+	}
+	return pkgID, int(created["id"].(float64))
+}
+
 // putReadsFile mirrors the package helper (still used by gh_repos_reads_test.go):
 // commits a file via the contents API and returns the commit SHA.
 func (s *isolatedServer) putReadsFile(t *testing.T, repo, path, content, message, branch string) string {
