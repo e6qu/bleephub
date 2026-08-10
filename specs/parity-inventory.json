@@ -6253,8 +6253,8 @@
         "id": "CI-036",
         "location": "terraform/main.tf:885",
         "severity": "M",
-        "status": "open",
-        "status_kind": "open"
+        "status": "fixed \u2014 the `aws_ecs_service \"this\"` block now carries a SINGLE-WRITER CEILING comment stating explicitly that `desired_count` is 0 (idle) or exactly 1 and that there is deliberately no `aws_appautoscaling_target`/policy for the API: bleephub's application state is an in-memory store guarded by a process-local mutex, so a second serving task would own a divergent copy \u2014 the API is architecturally capped at one running task, with durability provided out of band by the dqlite quorum rather than by API replicas. The absence of autoscaling was correct (you cannot horizontally scale a single writer); it was just undocumented. Lifting the cap is the multi-writer refactor tracked as ARCH-001. `terraform validate` and `fmt` clean.",
+        "status_kind": "fixed"
       },
       {
         "category": "CI",
@@ -6551,8 +6551,8 @@
         },
         "CI": {
           "status": {
-            "fixed": 59,
-            "open": 4,
+            "fixed": 60,
+            "open": 3,
             "partial": 2
           },
           "total": 65
@@ -6615,8 +6615,8 @@
       },
       "status": {
         "deferred": 3,
-        "fixed": 665,
-        "open": 10,
+        "fixed": 666,
+        "open": 9,
         "partial": 7
       },
       "total": 685

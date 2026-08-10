@@ -1527,8 +1527,18 @@ resource "aws_ecs_service" "this" {
   name            = var.name
   cluster         = local.ecs_cluster_arn
   task_definition = aws_ecs_task_definition.this.arn
-  desired_count   = var.idle_shutdown_enabled ? 0 : 1
-  launch_type     = "FARGATE"
+
+  # SINGLE-WRITER CEILING (CI-036): desired_count is 0 (idle) or exactly 1, and
+  # there is deliberately NO aws_appautoscaling_target/policy for this service.
+  # bleephub's application state is an in-memory store guarded by a process-local
+  # mutex; a second serving task would own a divergent copy of that state, so the
+  # API is architecturally capped at one running task. Durability is provided out
+  # of band by the dqlite quorum (its own service below), not by API replicas.
+  # Horizontal scaling of the API is therefore not a Terraform knob — it requires
+  # the multi-writer refactor tracked as ARCH-001. The wake controller owns the
+  # 0↔1 transition at runtime (see the ignore_changes below).
+  desired_count = var.idle_shutdown_enabled ? 0 : 1
+  launch_type   = "FARGATE"
 
   # A replacement task must pass its health check before the serving one is
   # taken away. Metadata is served by the independent dqlite quorum, and the
