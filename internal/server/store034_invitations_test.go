@@ -5,6 +5,36 @@ import (
 	"time"
 )
 
+// TestPullRequestReviewGetIsDetached pins STORE-021 for the PR-review getter.
+func TestPullRequestReviewGetIsDetached(t *testing.T) {
+	s := newTestServer()
+	admin := s.store.UsersByLogin["admin"]
+	repo := s.store.CreateRepo(admin, "review-detach", "", false)
+	s.store.mu.Lock()
+	prID := s.store.NextPR
+	s.store.PullRequests[prID] = &PullRequest{ID: prID, Number: 1, RepoID: repo.ID, State: "OPEN"}
+	s.store.NextPR++
+	s.store.mu.Unlock()
+	review := s.store.CreatePRReview(prID, admin.ID, "APPROVED", "lgtm")
+	if review == nil {
+		t.Fatal("create review failed")
+	}
+
+	got := s.store.GetPullRequestReview(review.ID)
+	got.Body = "hacked"
+	if got.SubmittedAt != nil {
+		*got.SubmittedAt = got.SubmittedAt.Add(999 * time.Hour)
+	}
+
+	fresh := s.store.GetPullRequestReview(review.ID)
+	if fresh.Body == "hacked" {
+		t.Fatalf("review body mutated through the getter: %q", fresh.Body)
+	}
+	if fresh.SubmittedAt == nil || !fresh.SubmittedAt.Equal(*review.SubmittedAt) {
+		t.Fatal("review SubmittedAt mutated through the getter")
+	}
+}
+
 // TestOrgGetsAreDetached pins STORE-021 for the org getters: GetOrg and
 // GetOrgByID must copy the org, including its MembersCanCreateRepositories bool
 // pointer.

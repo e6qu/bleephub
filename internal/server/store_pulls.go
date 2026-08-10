@@ -456,11 +456,30 @@ func (st *Store) CreatePullRequestReview(repoKey string, pullNumber int, userID 
 	return st.createPRReviewLocked(pr.ID, userID, state, body)
 }
 
+// cloneReview returns a copy safe to hand outside the store lock (STORE-021):
+// SubmittedAt and DismissedAt are the only reference fields. Review writes go
+// through the keyed Update/Submit/Dismiss methods.
+func cloneReview(r *PullRequestReview) *PullRequestReview {
+	if r == nil {
+		return nil
+	}
+	clone := *r
+	if r.SubmittedAt != nil {
+		submitted := *r.SubmittedAt
+		clone.SubmittedAt = &submitted
+	}
+	if r.DismissedAt != nil {
+		dismissed := *r.DismissedAt
+		clone.DismissedAt = &dismissed
+	}
+	return &clone
+}
+
 // GetPullRequestReview returns a review by global ID.
 func (st *Store) GetPullRequestReview(id int) *PullRequestReview {
 	st.mu.RLock()
 	defer st.mu.RUnlock()
-	return st.PRReviews[id]
+	return cloneReview(st.PRReviews[id])
 }
 
 // ListPullRequestReviews returns all reviews for a repo/PR number.
