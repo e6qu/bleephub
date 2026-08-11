@@ -183,6 +183,30 @@ describe("DeploymentsPage", () => {
     await waitFor(() => expect(screen.getByText(/release\/\*/)).toBeInTheDocument());
   });
 
+  it("creates a deployment via POST .../deployments", async () => {
+    mockFetch.mockImplementation((url: string, init?: RequestInit) => {
+      if (url === "/api/v3/repos/admin/deploy-repo/deployments" && init?.method === "POST") {
+        return Promise.resolve(jsonResponse({ ...deployment, id: 8, ref: "main" }, 201));
+      }
+      if (url.startsWith("/api/v3/repos/admin/deploy-repo/deployments?")) {
+        return Promise.resolve(jsonResponse([]));
+      }
+      return Promise.resolve(jsonResponse({ message: "Not Found" }, 404));
+    });
+    renderPage();
+
+    fireEvent.change(await screen.findByLabelText("Ref"), { target: { value: "main" } });
+    fireEvent.click(screen.getByRole("button", { name: "Create deployment" }));
+
+    await waitFor(() => {
+      const post = mockFetch.mock.calls.find(
+        (c) => c[0] === "/api/v3/repos/admin/deploy-repo/deployments" && c[1]?.method === "POST",
+      );
+      expect(post).toBeDefined();
+      expect(JSON.parse(String(post![1].body))).toEqual({ ref: "main" });
+    });
+  });
+
   it("creates an environment via PUT .../environments/{name}", async () => {
     mockFetch.mockImplementation((url: string, init?: RequestInit) => {
       if (url === "/api/v3/repos/admin/deploy-repo/environments" && init?.method === "PUT") {

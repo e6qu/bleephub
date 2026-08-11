@@ -3,6 +3,7 @@ import { useParams } from "react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Spinner, InlineError } from "@bleephub/ui-core/components";
 import {
+  createDeployment,
   createDeploymentStatus,
   fetchDeploymentStatuses,
   fetchDeploymentsPage,
@@ -87,15 +88,8 @@ function DeploymentsTab({ owner, repo }: { owner: string; repo: string }) {
     enabled: !!owner && !!repo,
   });
 
-  if (firstPage.isLoading) return <Spinner label="loading deployments" />;
-  if (firstPage.isError)
-    return <InlineError title="Failed to load deployments" detail={String(firstPage.error)} />;
-
   const deployments = [...(firstPage.data?.items ?? []), ...extra];
   const followUrl = nextUrl ?? firstPage.data?.nextUrl ?? null;
-
-  if (deployments.length === 0)
-    return <Blankslate title="No deployments">Deployments created via POST /deployments appear here.</Blankslate>;
 
   const loadMore = async () => {
     if (!followUrl || loadingMore) return;
@@ -113,27 +107,77 @@ function DeploymentsTab({ owner, repo }: { owner: string; repo: string }) {
   };
 
   return (
-    <div style={{ display: "flex", flexDirection: "column", gap: "0.75rem" }}>
-      {pageError && <ErrorBanner>{pageError}</ErrorBanner>}
-      <Box>
-        {deployments.map((d, i) => (
-          <DeploymentRow
-            key={d.id}
-            owner={owner}
-            repo={repo}
-            deployment={d}
-            last={i === deployments.length - 1}
-          />
-        ))}
-      </Box>
-      {followUrl && (
-        <div className="flex justify-center">
-          <Button variant="secondary" size="sm" disabled={loadingMore} onClick={() => void loadMore()}>
-            {loadingMore ? "Loading…" : "Load more"}
-          </Button>
+    <div style={{ display: "flex", flexDirection: "column", gap: "1rem" }}>
+      <NewDeploymentForm owner={owner} repo={repo} />
+      {firstPage.isLoading ? (
+        <Spinner label="loading deployments" />
+      ) : firstPage.isError ? (
+        <InlineError title="Failed to load deployments" detail={String(firstPage.error)} />
+      ) : deployments.length === 0 ? (
+        <Blankslate title="No deployments">Deployments created via POST /deployments appear here.</Blankslate>
+      ) : (
+        <div style={{ display: "flex", flexDirection: "column", gap: "0.75rem" }}>
+          {pageError && <ErrorBanner>{pageError}</ErrorBanner>}
+          <Box>
+            {deployments.map((d, i) => (
+              <DeploymentRow
+                key={d.id}
+                owner={owner}
+                repo={repo}
+                deployment={d}
+                last={i === deployments.length - 1}
+              />
+            ))}
+          </Box>
+          {followUrl && (
+            <div className="flex justify-center">
+              <Button variant="secondary" size="sm" disabled={loadingMore} onClick={() => void loadMore()}>
+                {loadingMore ? "Loading…" : "Load more"}
+              </Button>
+            </div>
+          )}
         </div>
       )}
     </div>
+  );
+}
+
+function NewDeploymentForm({ owner, repo }: { owner: string; repo: string }) {
+  const queryClient = useQueryClient();
+  const [ref, setRef] = useState("");
+  const [environment, setEnvironment] = useState("");
+  const [description, setDescription] = useState("");
+  const createMut = useMutation({
+    mutationFn: () =>
+      createDeployment(owner, repo, {
+        ref: ref.trim(),
+        ...(environment.trim() ? { environment: environment.trim() } : {}),
+        ...(description.trim() ? { description: description.trim() } : {}),
+      }),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ["deployments", owner, repo] });
+      setRef("");
+      setEnvironment("");
+      setDescription("");
+    },
+  });
+  return (
+    <Box header={<span style={{ fontWeight: 600 }}>New deployment</span>}>
+      <div style={{ padding: "1rem", display: "flex", flexDirection: "column", gap: "0.5rem" }}>
+        {createMut.error && <ErrorBanner>{String(createMut.error)}</ErrorBanner>}
+        <FormLabel id="new-deploy-ref">Ref</FormLabel>
+        <input id="new-deploy-ref" type="text" value={ref} onChange={(e) => setRef(e.target.value)} placeholder="main or a commit SHA" className="w-full" />
+        <FormLabel id="new-deploy-env">Environment</FormLabel>
+        <input id="new-deploy-env" type="text" value={environment} onChange={(e) => setEnvironment(e.target.value)} placeholder="production" className="w-full" />
+        <FormLabel id="new-deploy-desc">Description</FormLabel>
+        <input id="new-deploy-desc" type="text" value={description} onChange={(e) => setDescription(e.target.value)} placeholder="optional" className="w-full" />
+        <div className="flex justify-end">
+          <Button variant="primary" disabled={createMut.isPending || !ref.trim()} onClick={() => createMut.mutate()}>
+            Create deployment
+          </Button>
+        </div>
+      </div>
+    </Box>
   );
 }
 

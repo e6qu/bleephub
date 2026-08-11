@@ -3756,6 +3756,20 @@ export const fetchDeploymentStatuses = (owner: string, repo: string, deploymentI
     `/api/v3/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/deployments/${deploymentId}/statuses`,
   );
 
+export const createDeployment = (
+  owner: string,
+  repo: string,
+  payload: {
+    ref: string;
+    environment?: string;
+    description?: string;
+    task?: string;
+    auto_merge?: boolean;
+    required_contexts?: string[];
+  },
+): Promise<GithubDeployment> =>
+  ghPostJSON(`/api/v3/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/deployments`, payload);
+
 export const createDeploymentStatus = (
   owner: string,
   repo: string,
