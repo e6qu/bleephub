@@ -418,6 +418,30 @@ describe("repository detail journeys", () => {
     expect(screen.getByText(/extra detail/)).toBeInTheDocument();
   });
 
+  it("adds a commit comment via POST /commits/{sha}/comments", async () => {
+    mockFetch.mockImplementation((url: RequestInfo | URL, init?: RequestInit) => {
+      const u = url.toString();
+      if (u.endsWith("/commits/abc123/comments") && init?.method === "POST") {
+        return Promise.resolve(
+          jsonResponse({ id: 1, body: "nice", user: { login: "admin" }, created_at: "2026-01-01T00:00:00Z" }, 201),
+        );
+      }
+      return routedFetch(url);
+    });
+    renderPage("/ui/repos/admin/test/commits/abc123");
+
+    fireEvent.change(await screen.findByLabelText("commit comment"), { target: { value: "nice" } });
+    fireEvent.click(screen.getByRole("button", { name: "Comment" }));
+
+    await waitFor(() => {
+      const post = mockFetch.mock.calls.find(
+        (c) => c[0].toString().endsWith("/commits/abc123/comments") && c[1]?.method === "POST",
+      );
+      expect(post).toBeDefined();
+      expect(JSON.parse(String(post![1].body))).toEqual({ body: "nice" });
+    });
+  });
+
   it("renders a repository file at its durable URL", async () => {
     mockFetch.mockImplementation((url: RequestInfo | URL) => routedFetch(url));
     renderPage("/ui/repos/admin/test/blob/main/README.md");

@@ -8,6 +8,8 @@ import {
   fetchRepoDetail,
   fetchRepoBranches,
   fetchRepoCommit,
+  fetchCommitComments,
+  createCommitComment,
   fetchRepoCommits,
   fetchRepoComparison,
   fetchRepoContents,
@@ -48,6 +50,7 @@ import type {
 } from "../types.js";
 import { RepoHeader } from "../components/Shell.js";
 import { Box, Blankslate, Button, CodeBlock, SectionLabel, Modal, DialogActions, FormLabel } from "../components/ui.js";
+import { CommentCard } from "../components/CommentCard.js";
 import {
   BranchIcon,
   TagIcon,
@@ -1504,7 +1507,63 @@ export function RepoCommitPage() {
           ))}
         </div>
       )}
+      <CommitCommentsSection owner={owner} repo={repo} sha={sha} />
     </div>
+  );
+}
+
+function CommitCommentsSection({ owner, repo, sha }: { owner: string; repo: string; sha: string }) {
+  const qc = useQueryClient();
+  const [body, setBody] = useState("");
+  const listQ = useQuery({
+    queryKey: ["commit-comments", owner, repo, sha],
+    queryFn: () => fetchCommitComments(owner, repo, sha),
+    enabled: !!owner && !!repo && !!sha,
+  });
+  const createMut = useMutation({
+    mutationFn: () => createCommitComment(owner, repo, sha, body.trim()),
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: ["commit-comments", owner, repo, sha] });
+      setBody("");
+    },
+  });
+
+  const comments = listQ.data ?? [];
+  return (
+    <section aria-label="Commit comments" className="mt-5">
+      <SectionLabel>Comments</SectionLabel>
+      {createMut.error && (
+        <InlineError inline title="Failed to add comment" detail={String(createMut.error)} />
+      )}
+      {comments.map((c) => (
+        <CommentCard key={c.id} login={c.user?.login} body={c.body} date={c.created_at} />
+      ))}
+      {comments.length === 0 && (
+        <div style={{ padding: "0.25rem 0 0.75rem", color: "var(--color-fg-muted)", fontSize: "0.85rem" }}>
+          No comments yet.
+        </div>
+      )}
+      <div className="flex flex-col gap-2">
+        <textarea
+          aria-label="commit comment"
+          value={body}
+          onChange={(e) => setBody(e.target.value)}
+          placeholder="Leave a comment on this commit"
+          rows={3}
+          className="w-full"
+          style={{ fontSize: "0.88rem", padding: "0.5rem" }}
+        />
+        <div className="flex justify-end">
+          <Button
+            variant="primary"
+            disabled={createMut.isPending || !body.trim()}
+            onClick={() => createMut.mutate()}
+          >
+            Comment
+          </Button>
+        </div>
+      </div>
+    </section>
   );
 }
 

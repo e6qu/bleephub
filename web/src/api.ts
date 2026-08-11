@@ -21,6 +21,7 @@ import type {
   GithubActor,
   GithubTeamRef,
   GithubCommit,
+  GithubCommitComment,
   GithubComparison,
   GithubWebhook,
   GithubSecret,
@@ -1675,6 +1676,17 @@ export const fetchRepoCommits = (
 export const fetchRepoCommit = (owner: string, repo: string, ref: string) =>
   ghFetch<GithubCommit>(
     `/api/v3/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/commits/${encodeURIComponent(ref)}`,
+  );
+
+export const fetchCommitComments = (owner: string, repo: string, sha: string) =>
+  ghFetch<GithubCommitComment[]>(
+    `/api/v3/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/commits/${encodeURIComponent(sha)}/comments`,
+  );
+
+export const createCommitComment = (owner: string, repo: string, sha: string, body: string) =>
+  ghPostJSON<GithubCommitComment>(
+    `/api/v3/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/commits/${encodeURIComponent(sha)}/comments`,
+    { body },
   );
 
 export const fetchRepoComparison = (owner: string, repo: string, base: string, head: string) =>
