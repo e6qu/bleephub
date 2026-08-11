@@ -61,7 +61,7 @@ func newActionsByteStoreFromEnv(ctx context.Context) (actionsByteStore, error) {
 	}
 	verifyCtx, cancel := context.WithTimeout(ctx, 15*time.Second)
 	defer cancel()
-	if _, err := fs.client.HeadBucket(verifyCtx, &s3.HeadBucketInput{Bucket: aws.String(bucket)}); err != nil {
+	if _, err := fs.Client().HeadBucket(verifyCtx, &s3.HeadBucketInput{Bucket: aws.String(bucket)}); err != nil {
 		return nil, fmt.Errorf("s3 head bucket %s: %w", bucket, err)
 	}
 	return &s3ActionsByteStore{fs: fs}, nil
@@ -97,8 +97,8 @@ func (s *s3ActionsByteStore) PutStream(ctx context.Context, key string, r io.Rea
 func (s *s3ActionsByteStore) putObject(ctx context.Context, key string, body io.ReadSeeker, checksum []byte) error {
 	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
 	defer cancel()
-	_, err := s.fs.client.PutObject(ctx, &s3.PutObjectInput{
-		Bucket: aws.String(s.fs.bucket),
+	_, err := s.fs.Client().PutObject(ctx, &s3.PutObjectInput{
+		Bucket: aws.String(s.fs.Bucket()),
 		Key:    aws.String(s.key(key)),
 		Body:   body,
 		Metadata: map[string]string{
@@ -114,8 +114,8 @@ func (s *s3ActionsByteStore) putObject(ctx context.Context, key string, body io.
 // GetStream returns the object body as a stream. It does not verify the stored
 // checksum — see the interface doc — and the caller must Close the reader.
 func (s *s3ActionsByteStore) GetStream(ctx context.Context, key string) (io.ReadCloser, error) {
-	resp, err := s.fs.client.GetObject(ctx, &s3.GetObjectInput{
-		Bucket: aws.String(s.fs.bucket),
+	resp, err := s.fs.Client().GetObject(ctx, &s3.GetObjectInput{
+		Bucket: aws.String(s.fs.Bucket()),
 		Key:    aws.String(s.key(key)),
 	})
 	if err != nil {
@@ -127,8 +127,8 @@ func (s *s3ActionsByteStore) GetStream(ctx context.Context, key string) (io.Read
 func (s *s3ActionsByteStore) Get(ctx context.Context, key string) ([]byte, error) {
 	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
 	defer cancel()
-	resp, err := s.fs.client.GetObject(ctx, &s3.GetObjectInput{
-		Bucket: aws.String(s.fs.bucket),
+	resp, err := s.fs.Client().GetObject(ctx, &s3.GetObjectInput{
+		Bucket: aws.String(s.fs.Bucket()),
 		Key:    aws.String(s.key(key)),
 	})
 	if err != nil {
@@ -165,8 +165,8 @@ func verifyObjectChecksum(metadata map[string]string, data []byte) error {
 func (s *s3ActionsByteStore) Delete(ctx context.Context, key string) error {
 	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
 	defer cancel()
-	_, err := s.fs.client.DeleteObject(ctx, &s3.DeleteObjectInput{
-		Bucket: aws.String(s.fs.bucket),
+	_, err := s.fs.Client().DeleteObject(ctx, &s3.DeleteObjectInput{
+		Bucket: aws.String(s.fs.Bucket()),
 		Key:    aws.String(s.key(key)),
 	})
 	if err != nil {
@@ -176,7 +176,7 @@ func (s *s3ActionsByteStore) Delete(ctx context.Context, key string) error {
 }
 
 func (s *s3ActionsByteStore) key(key string) string {
-	return path.Join(s.fs.prefix, strings.TrimPrefix(key, "/"))
+	return path.Join(s.fs.Prefix(), strings.TrimPrefix(key, "/"))
 }
 
 func artifactDataKey(id int64) string {

@@ -185,7 +185,7 @@ func TestActionsArtifactAndCacheMetadataPersistence(t *testing.T) {
 
 func TestArtifactUploadWritesObjectStore(t *testing.T) {
 	fs := newS3FSForTest(t)
-	objectFS := &s3FS{client: fs.client, bucket: fs.bucket, prefix: "objects"}
+	objectFS := deriveS3FSForTest(t, fs.Bucket(), "objects")
 	s := newTestServer()
 	s.setArtifactStore(NewArtifactStoreWithByteStore("", &s3ActionsByteStore{fs: objectFS}))
 	token := seedRunJobToken(t, s, "octo/repo", "run-1")
@@ -310,7 +310,7 @@ func TestGetSignedArtifactURLScopesByWorkflowRunBackendID(t *testing.T) {
 
 func TestCacheUploadWritesObjectStore(t *testing.T) {
 	fs := newS3FSForTest(t)
-	objectFS := &s3FS{client: fs.client, bucket: fs.bucket, prefix: "objects"}
+	objectFS := deriveS3FSForTest(t, fs.Bucket(), "objects")
 	store := NewArtifactStoreWithByteStore("", &s3ActionsByteStore{fs: objectFS})
 	entry := &CacheEntry{ID: 7, Repo: "octo/repo", Key: "linux-go", Version: "v1"}
 	entry.Data = []byte("cache archive bytes")

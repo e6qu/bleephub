@@ -1,4 +1,4 @@
-package bleephub
+package gitstore
 
 import (
 	"bytes"
@@ -21,7 +21,7 @@ import (
 	"github.com/google/uuid"
 )
 
-type s3FS struct {
+type S3FS struct {
 	client   *s3.Client
 	bucket   string
 	prefix   string
@@ -30,33 +30,54 @@ type s3FS struct {
 	locks    *s3KeyLocks
 }
 
-// gitObjectLocker grants exclusive use of one object-store key across every
+// Client exposes the underlying S3 client for object-byte stores that share
+// this filesystem's connection.
+func (f *S3FS) Client() *s3.Client { return f.client }
+
+// Bucket reports the bucket this filesystem stores objects in.
+func (f *S3FS) Bucket() string { return f.bucket }
+
+// Prefix reports the key prefix all of this filesystem's objects live under.
+func (f *S3FS) Prefix() string { return f.prefix }
+
+// GitObjectLocker grants exclusive use of one object-store key across every
 // replica. Amazon S3 has no advisory locking, so go-git's compare-and-set on
 // refs and its packed-refs rewrite borrow the same durable store that already
 // serializes the rest of the shared state.
-type gitObjectLocker interface {
+type GitObjectLocker interface {
 	AcquireLock(name, owner string, ttl time.Duration) (bool, error)
 	ReleaseLock(name, owner string) error
 }
 
 var (
 	gitObjectLockerMu sync.RWMutex
-	gitObjectLockerV  gitObjectLocker
+	gitObjectLockerV  GitObjectLocker
 )
 
-// setGitObjectLocker installs the durable lock manager. Until one is
+// SetGitObjectLocker installs the durable lock manager. Until one is
 // installed there is no shared durable state, so no other replica can be
 // writing the same objects and the process-local lock is the whole lock.
-func setGitObjectLocker(l gitObjectLocker) {
+func SetGitObjectLocker(l GitObjectLocker) {
 	gitObjectLockerMu.Lock()
 	defer gitObjectLockerMu.Unlock()
 	gitObjectLockerV = l
 }
 
-func currentGitObjectLocker() gitObjectLocker {
+func currentGitObjectLocker() GitObjectLocker {
 	gitObjectLockerMu.RLock()
 	defer gitObjectLockerMu.RUnlock()
 	return gitObjectLockerV
+}
+
+// ClearGitObjectLocker uninstalls l if it is the currently installed lock
+// manager. A closed locker cannot arbitrate git object locks; leaving it
+// installed would fail every ref update.
+func ClearGitObjectLocker(l GitObjectLocker) {
+	gitObjectLockerMu.Lock()
+	defer gitObjectLockerMu.Unlock()
+	if gitObjectLockerV == l {
+		gitObjectLockerV = nil
+	}
 }
 
 const (
@@ -126,7 +147,7 @@ func (l *s3KeyLocks) drop(key string) {
 	}
 }
 
-func newS3FS(ctx context.Context, endpoint, bucket, prefix string) (*s3FS, error) {
+func NewS3FS(ctx context.Context, endpoint, bucket, prefix string) (*S3FS, error) {
 	var opts []func(*awsconfig.LoadOptions) error
 	opts = append(opts, awsconfig.WithRegion(bleephubS3Region()))
 	cfg, err := awsconfig.LoadDefaultConfig(ctx, opts...)
@@ -143,7 +164,7 @@ func newS3FS(ctx context.Context, endpoint, bucket, prefix string) (*s3FS, error
 	}
 	client := s3.NewFromConfig(cfg, clientOpts...)
 
-	return &s3FS{
+	return &S3FS{
 		client: client,
 		bucket: bucket,
 		prefix: prefix,
@@ -166,15 +187,15 @@ func bleephubS3Region() string {
 	return "us-east-1"
 }
 
-func (f *s3FS) key(p string) string {
+func (f *S3FS) key(p string) string {
 	return path.Join(f.prefix, p)
 }
 
-func (f *s3FS) Create(filename string) (billy.File, error) {
+func (f *S3FS) Create(filename string) (billy.File, error) {
 	return f.newActiveFile(filename, nil), nil
 }
 
-func (f *s3FS) Open(filename string) (billy.File, error) {
+func (f *S3FS) Open(filename string) (billy.File, error) {
 	if state := f.activeFile(filename); state != nil {
 		return &s3File{fs: f, name: filename, state: state}, nil
 	}
@@ -203,7 +224,7 @@ func (f *s3FS) Open(filename string) (billy.File, error) {
 	return &s3File{fs: f, name: filename, state: &s3FileState{data: data}}, nil
 }
 
-func (f *s3FS) OpenFile(filename string, flag int, perm os.FileMode) (billy.File, error) {
+func (f *S3FS) OpenFile(filename string, flag int, perm os.FileMode) (billy.File, error) {
 	if flag&(os.O_CREATE|os.O_TRUNC) == os.O_CREATE|os.O_TRUNC && flag&os.O_EXCL == 0 {
 		return f.Create(filename)
 	}
@@ -243,14 +264,14 @@ func (f *s3FS) OpenFile(filename string, flag int, perm os.FileMode) (billy.File
 // so entries are keyed by the bucket-absolute object key. A chroot-relative
 // key such as "config" names a different object in every repository, and one
 // repository's reader would otherwise be handed another repository's bytes.
-func (f *s3FS) activeFile(filename string) *s3FileState {
+func (f *S3FS) activeFile(filename string) *s3FileState {
 	active := f.activeFiles()
 	active.mu.Lock()
 	defer active.mu.Unlock()
 	return active.files[f.key(filename)]
 }
 
-func (f *s3FS) newActiveFile(filename string, data []byte) *s3File {
+func (f *S3FS) newActiveFile(filename string, data []byte) *s3File {
 	state := &s3FileState{data: data, dirty: true}
 	active := f.activeFiles()
 	active.mu.Lock()
@@ -259,7 +280,7 @@ func (f *s3FS) newActiveFile(filename string, data []byte) *s3File {
 	return &s3File{fs: f, name: filename, state: state, writer: true}
 }
 
-func (f *s3FS) removeActiveFile(filename string, state *s3FileState) {
+func (f *S3FS) removeActiveFile(filename string, state *s3FileState) {
 	active := f.activeFiles()
 	key := f.key(filename)
 	active.mu.Lock()
@@ -269,7 +290,7 @@ func (f *s3FS) removeActiveFile(filename string, state *s3FileState) {
 	active.mu.Unlock()
 }
 
-func (f *s3FS) activeFiles() *s3ActiveFiles {
+func (f *S3FS) activeFiles() *s3ActiveFiles {
 	f.activeMu.Lock()
 	defer f.activeMu.Unlock()
 	if f.active != nil {
@@ -279,7 +300,7 @@ func (f *s3FS) activeFiles() *s3ActiveFiles {
 	return f.active
 }
 
-func (f *s3FS) Stat(filename string) (os.FileInfo, error) {
+func (f *S3FS) Stat(filename string) (os.FileInfo, error) {
 	if state := f.activeFile(filename); state != nil {
 		state.mu.Lock()
 		size := int64(len(state.data))
@@ -321,7 +342,7 @@ func (f *s3FS) Stat(filename string) (os.FileInfo, error) {
 	}, nil
 }
 
-func (f *s3FS) Rename(oldpath, newpath string) error {
+func (f *S3FS) Rename(oldpath, newpath string) error {
 	srcKey := f.key(oldpath)
 	dstKey := f.key(newpath)
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
@@ -357,7 +378,7 @@ func (f *s3FS) Rename(oldpath, newpath string) error {
 	return nil
 }
 
-func (f *s3FS) Remove(filename string) error {
+func (f *S3FS) Remove(filename string) error {
 	key := f.key(filename)
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 	defer cancel()
@@ -372,16 +393,16 @@ func (f *s3FS) Remove(filename string) error {
 	return nil
 }
 
-func (f *s3FS) Join(elem ...string) string {
+func (f *S3FS) Join(elem ...string) string {
 	return path.Join(elem...)
 }
 
-func (f *s3FS) TempFile(dir, prefix string) (billy.File, error) {
+func (f *S3FS) TempFile(dir, prefix string) (billy.File, error) {
 	name := path.Join(dir, prefix+uuid.New().String())
 	return f.Create(name)
 }
 
-func (f *s3FS) ReadDir(dirname string) ([]os.FileInfo, error) {
+func (f *S3FS) ReadDir(dirname string) ([]os.FileInfo, error) {
 	prefix := f.key(dirname)
 	if !strings.HasSuffix(prefix, "/") {
 		prefix += "/"
@@ -491,24 +512,24 @@ func (f *s3FS) ReadDir(dirname string) ([]os.FileInfo, error) {
 	return entries, nil
 }
 
-func (f *s3FS) MkdirAll(filename string, perm os.FileMode) error {
+func (f *S3FS) MkdirAll(filename string, perm os.FileMode) error {
 	return nil
 }
 
-func (f *s3FS) Lstat(filename string) (os.FileInfo, error) {
+func (f *S3FS) Lstat(filename string) (os.FileInfo, error) {
 	return f.Stat(filename)
 }
 
-func (f *s3FS) Symlink(target, link string) error {
+func (f *S3FS) Symlink(target, link string) error {
 	return billy.ErrNotSupported
 }
 
-func (f *s3FS) Readlink(link string) (string, error) {
+func (f *S3FS) Readlink(link string) (string, error) {
 	return "", billy.ErrNotSupported
 }
 
-func (f *s3FS) Chroot(path string) (billy.Filesystem, error) {
-	return &s3FS{
+func (f *S3FS) Chroot(path string) (billy.Filesystem, error) {
+	return &S3FS{
 		client: f.client,
 		bucket: f.bucket,
 		prefix: f.key(path),
@@ -517,7 +538,7 @@ func (f *s3FS) Chroot(path string) (billy.Filesystem, error) {
 	}, nil
 }
 
-func (f *s3FS) keyLocks() *s3KeyLocks {
+func (f *S3FS) keyLocks() *s3KeyLocks {
 	f.activeMu.Lock()
 	defer f.activeMu.Unlock()
 	if f.locks == nil {
@@ -526,15 +547,15 @@ func (f *s3FS) keyLocks() *s3KeyLocks {
 	return f.locks
 }
 
-func (f *s3FS) Root() string {
+func (f *S3FS) Root() string {
 	return f.prefix
 }
 
-// copyRepoPrefix copies every object under oldFull's prefix to newFull's,
+// CopyRepoPrefix copies every object under oldFull's prefix to newFull's,
 // leaving the source intact. STORE-013 runs this outside the store lock so both
 // prefixes coexist during the copy and readers at the old name keep working;
 // the caller purges the old prefix after swapping metadata under the lock.
-func (f *s3FS) copyRepoPrefix(oldFull, newFull string) error {
+func (f *S3FS) CopyRepoPrefix(oldFull, newFull string) error {
 	oldPrefix := f.key(oldFull) + "/"
 	newPrefix := f.key(newFull) + "/"
 	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
@@ -573,17 +594,17 @@ func (f *s3FS) copyRepoPrefix(oldFull, newFull string) error {
 	return nil
 }
 
-// renameRepoPrefix moves an object prefix in place (copy then delete). It is the
+// RenameRepoPrefix moves an object prefix in place (copy then delete). It is the
 // single-shot form used when the move is fast enough to hold the store lock; the
-// live-repo path uses copyRepoPrefix + deleteRepoPrefix around the metadata swap.
-func (f *s3FS) renameRepoPrefix(oldFull, newFull string) error {
-	if err := f.copyRepoPrefix(oldFull, newFull); err != nil {
+// live-repo path uses CopyRepoPrefix + DeleteRepoPrefix around the metadata swap.
+func (f *S3FS) RenameRepoPrefix(oldFull, newFull string) error {
+	if err := f.CopyRepoPrefix(oldFull, newFull); err != nil {
 		return err
 	}
-	return f.deleteRepoPrefix(oldFull)
+	return f.DeleteRepoPrefix(oldFull)
 }
 
-func (f *s3FS) deleteRepoPrefix(fullName string) error {
+func (f *S3FS) DeleteRepoPrefix(fullName string) error {
 	prefix := f.key(fullName) + "/"
 	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 	defer cancel()
@@ -609,7 +630,7 @@ func (f *s3FS) deleteRepoPrefix(fullName string) error {
 	}
 }
 
-func (f *s3FS) deleteObjectKeys(ctx context.Context, keys []string) error {
+func (f *S3FS) deleteObjectKeys(ctx context.Context, keys []string) error {
 	const maxDeleteObjects = 1000
 	for start := 0; start < len(keys); start += maxDeleteObjects {
 		end := min(start+maxDeleteObjects, len(keys))
@@ -633,7 +654,7 @@ func (f *s3FS) deleteObjectKeys(ctx context.Context, keys []string) error {
 }
 
 type s3File struct {
-	fs        *s3FS
+	fs        *S3FS
 	name      string
 	state     *s3FileState
 	pos       int
@@ -889,5 +910,5 @@ func (fi *s3FileInfo) ModTime() time.Time { return fi.modTime }
 func (fi *s3FileInfo) IsDir() bool        { return fi.isDir }
 func (fi *s3FileInfo) Sys() interface{}   { return nil }
 
-var _ billy.Filesystem = (*s3FS)(nil)
+var _ billy.Filesystem = (*S3FS)(nil)
 var _ billy.File = (*s3File)(nil)

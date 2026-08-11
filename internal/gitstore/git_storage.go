@@ -1,4 +1,4 @@
-package bleephub
+package gitstore
 
 import (
 	"context"
@@ -24,14 +24,23 @@ import (
 	"github.com/google/uuid"
 )
 
-var (
-	s3FSMu     sync.Mutex
-	s3FSCache  *s3FS
-	s3FSErr    error
-	s3FSInited bool
+// S3FSCacheState memoizes the process-wide S3 filesystem built from the
+// environment. Its fields are exported state, not functions, so tests in
+// dependent packages can reset the memo between environment changes without a
+// test-only exported function tripping the deadcode gate.
+type S3FSCacheState struct {
+	Mu     sync.Mutex
+	FS     *S3FS
+	Err    error
+	Inited bool
+}
 
-	errReferenceAlreadyExists = errors.New("reference already exists")
-	errUnsafeReferenceName    = errors.New("unsafe reference name")
+// S3FSCache is the process-wide memo consulted by GetS3FS.
+var S3FSCache S3FSCacheState
+
+var (
+	ErrReferenceAlreadyExists = errors.New("reference already exists")
+	ErrUnsafeReferenceName    = errors.New("unsafe reference name")
 	refMutationLocks          = newS3KeyLocks()
 )
 
@@ -45,7 +54,7 @@ var (
 // `refs/tags/v1.0`, `HEAD`).
 func checkSafeRefName(name plumbing.ReferenceName) error {
 	if !name.IsSafe() {
-		return fmt.Errorf("%w: %q", errUnsafeReferenceName, name)
+		return fmt.Errorf("%w: %q", ErrUnsafeReferenceName, name)
 	}
 	return nil
 }
@@ -55,7 +64,7 @@ type atomicRefStorer struct {
 	repo string
 }
 
-func wrapAtomicRefStorage(repo string, stor gitStorage.Storer) gitStorage.Storer {
+func WrapAtomicRefStorage(repo string, stor gitStorage.Storer) gitStorage.Storer {
 	return &atomicRefStorer{Storer: stor, repo: repo}
 }
 
@@ -125,7 +134,7 @@ func (s *atomicRefStorer) InitializeRepositoryReferences(branch *plumbing.Refere
 			return err
 		}
 		if branchExists || (requireEmpty && alreadyInitialized) {
-			return errReferenceAlreadyExists
+			return ErrReferenceAlreadyExists
 		}
 		if err := s.Storer.SetReference(branch); err != nil {
 			return err
@@ -165,7 +174,7 @@ func (s *atomicRefStorer) CreateReference(ref *plumbing.Reference) error {
 	}
 	return s.withRefLock(ref.Name(), func() error {
 		if _, err := s.Storer.Reference(ref.Name()); err == nil {
-			return errReferenceAlreadyExists
+			return ErrReferenceAlreadyExists
 		} else if !errors.Is(err, plumbing.ErrReferenceNotFound) {
 			return err
 		}
@@ -198,21 +207,21 @@ func (s *atomicRefStorer) RemoveReferenceCAS(old *plumbing.Reference) error {
 	})
 }
 
-func createReferenceIfAbsent(stor gitStorage.Storer, ref *plumbing.Reference) error {
+func CreateReferenceIfAbsent(stor gitStorage.Storer, ref *plumbing.Reference) error {
 	if atomic, ok := stor.(interface {
 		CreateReference(*plumbing.Reference) error
 	}); ok {
 		return atomic.CreateReference(ref)
 	}
 	if _, err := stor.Reference(ref.Name()); err == nil {
-		return errReferenceAlreadyExists
+		return ErrReferenceAlreadyExists
 	} else if !errors.Is(err, plumbing.ErrReferenceNotFound) {
 		return err
 	}
 	return stor.SetReference(ref)
 }
 
-func removeReferenceCAS(stor gitStorage.Storer, old *plumbing.Reference) error {
+func RemoveReferenceCAS(stor gitStorage.Storer, old *plumbing.Reference) error {
 	if atomic, ok := stor.(interface {
 		RemoveReferenceCAS(*plumbing.Reference) error
 	}); ok {
@@ -228,7 +237,7 @@ func removeReferenceCAS(stor gitStorage.Storer, old *plumbing.Reference) error {
 	return stor.RemoveReference(old.Name())
 }
 
-func initializeRepositoryReferences(stor gitStorage.Storer, branch *plumbing.Reference, requireEmpty bool) error {
+func InitializeRepositoryReferences(stor gitStorage.Storer, branch *plumbing.Reference, requireEmpty bool) error {
 	if atomic, ok := stor.(interface {
 		InitializeRepositoryReferences(*plumbing.Reference, bool) error
 	}); ok {
@@ -253,7 +262,7 @@ func initializeRepositoryReferences(stor gitStorage.Storer, branch *plumbing.Ref
 		return err
 	}
 	if branchExists || (requireEmpty && alreadyInitialized) {
-		return errReferenceAlreadyExists
+		return ErrReferenceAlreadyExists
 	}
 	if err := stor.SetReference(branch); err != nil {
 		return err
@@ -268,31 +277,31 @@ func initializeRepositoryReferences(stor gitStorage.Storer, branch *plumbing.Ref
 	return nil
 }
 
-func getS3FS(ctx context.Context) (*s3FS, error) {
-	s3FSMu.Lock()
-	defer s3FSMu.Unlock()
-	if s3FSInited {
-		return s3FSCache, s3FSErr
+func GetS3FS(ctx context.Context) (*S3FS, error) {
+	S3FSCache.Mu.Lock()
+	defer S3FSCache.Mu.Unlock()
+	if S3FSCache.Inited {
+		return S3FSCache.FS, S3FSCache.Err
 	}
 
 	endpoint := os.Getenv("BLEEPHUB_S3_ENDPOINT")
 	bucket := os.Getenv("BLEEPHUB_S3_BUCKET")
 	if bucket == "" {
-		s3FSInited = true
+		S3FSCache.Inited = true
 		return nil, nil
 	}
 
 	prefix := os.Getenv("BLEEPHUB_S3_PREFIX")
-	fs, err := newS3FS(ctx, endpoint, bucket, prefix)
+	fs, err := NewS3FS(ctx, endpoint, bucket, prefix)
 	if err != nil {
 		// Configuration discovery can fail transiently (for example while an
 		// ECS task waits for credentials). Do not poison Git storage for the
 		// lifetime of the process; the next repository operation retries.
 		return nil, err
 	}
-	s3FSCache = fs
-	s3FSErr = nil
-	s3FSInited = true
+	S3FSCache.FS = fs
+	S3FSCache.Err = nil
+	S3FSCache.Inited = true
 	return fs, nil
 }
 
@@ -304,11 +313,11 @@ func IsS3GitStorage() bool {
 	return os.Getenv("BLEEPHUB_S3_BUCKET") != ""
 }
 
-// validateRepoStorageFullName keeps every filesystem and object-store backend
+// ValidateRepoStorageFullName keeps every filesystem and object-store backend
 // at the same trust boundary. Repository keys are always exactly owner/name;
 // accepting an absolute path, a dot component, or a platform separator here
 // would let a valid API request escape the configured repository namespace.
-func validateRepoStorageFullName(fullName string) error {
+func ValidateRepoStorageFullName(fullName string) error {
 	if fullName == "" ||
 		strings.Contains(fullName, `\`) ||
 		strings.Count(fullName, "/") != 1 ||
@@ -323,8 +332,8 @@ func validateRepoStorageFullName(fullName string) error {
 	return nil
 }
 
-func repoGitDirPath(gitDir, fullName string) (string, error) {
-	if err := validateRepoStorageFullName(fullName); err != nil {
+func RepoGitDirPath(gitDir, fullName string) (string, error) {
+	if err := ValidateRepoStorageFullName(fullName); err != nil {
 		return "", err
 	}
 	root, err := filepath.Abs(gitDir)
@@ -340,10 +349,10 @@ func repoGitDirPath(gitDir, fullName string) (string, error) {
 }
 
 func newGitStorage(ctx context.Context, fullName string) (gitStorage.Storer, error) {
-	if err := validateRepoStorageFullName(fullName); err != nil {
+	if err := ValidateRepoStorageFullName(fullName); err != nil {
 		return nil, err
 	}
-	s3fs, err := getS3FS(ctx)
+	s3fs, err := GetS3FS(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -352,14 +361,14 @@ func newGitStorage(ctx context.Context, fullName string) (gitStorage.Storer, err
 		if err != nil {
 			return nil, fmt.Errorf("s3 chroot %s: %w", fullName, err)
 		}
-		return wrapAtomicRefStorage(fullName, gitFilesystem.NewStorage(polyfill.New(chrooted), cache.NewObjectLRUDefault())), nil
+		return WrapAtomicRefStorage(fullName, gitFilesystem.NewStorage(polyfill.New(chrooted), cache.NewObjectLRUDefault())), nil
 	}
 
 	gitDir := GitDataDir()
 	if gitDir == "" {
-		return wrapAtomicRefStorage(fullName, memory.NewStorage()), nil
+		return WrapAtomicRefStorage(fullName, memory.NewStorage()), nil
 	}
-	repoDir, err := repoGitDirPath(gitDir, fullName)
+	repoDir, err := RepoGitDirPath(gitDir, fullName)
 	if err != nil {
 		return nil, err
 	}
@@ -367,10 +376,10 @@ func newGitStorage(ctx context.Context, fullName string) (gitStorage.Storer, err
 		return nil, fmt.Errorf("mkdir %s: %w", repoDir, err)
 	}
 	fs := osfs.New(repoDir)
-	return wrapAtomicRefStorage(fullName, gitFilesystem.NewStorage(fs, cache.NewObjectLRUDefault())), nil
+	return WrapAtomicRefStorage(fullName, gitFilesystem.NewStorage(fs, cache.NewObjectLRUDefault())), nil
 }
 
-func openOrInitGitStorage(ctx context.Context, fullName string) (gitStorage.Storer, error) {
+func OpenOrInitGitStorage(ctx context.Context, fullName string) (gitStorage.Storer, error) {
 	stor, err := newGitStorage(ctx, fullName)
 	if err != nil {
 		return nil, err

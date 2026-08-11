@@ -33,6 +33,7 @@ import (
 	"github.com/canonical/go-dqlite/v3/client"
 	"github.com/canonical/go-dqlite/v3/driver"
 	"github.com/e6qu/bleephub/internal/dqliteaddr"
+	"github.com/e6qu/bleephub/internal/gitstore"
 	zlog "github.com/rs/zerolog/log"
 	_ "modernc.org/sqlite" // SQLite driver — pure Go, no CGO
 )
@@ -1313,10 +1314,6 @@ func (p *Persistence) Close() error {
 	}
 	// A closed database cannot arbitrate git object locks; leaving it installed
 	// would fail every ref update with "database is closed".
-	gitObjectLockerMu.Lock()
-	if gitObjectLockerV == gitObjectLocker(p) {
-		gitObjectLockerV = nil
-	}
-	gitObjectLockerMu.Unlock()
+	gitstore.ClearGitObjectLocker(p)
 	return p.db.Close()
 }

@@ -1433,7 +1433,7 @@ func moveRepoGitStorage(oldFull, newFull string) error {
 	if s3fs == nil {
 		return nil
 	}
-	if err := s3fs.renameRepoPrefix(oldFull, newFull); err != nil {
+	if err := s3fs.RenameRepoPrefix(oldFull, newFull); err != nil {
 		return fmt.Errorf("move S3 object prefix: %w", err)
 	}
 	return nil
@@ -1462,7 +1462,7 @@ func deleteRepoGitStorage(fullName string) error {
 	if s3fs == nil {
 		return nil
 	}
-	if err := s3fs.deleteRepoPrefix(fullName); err != nil {
+	if err := s3fs.DeleteRepoPrefix(fullName); err != nil {
 		return fmt.Errorf("purge S3 object prefix: %w", err)
 	}
 	return nil
@@ -1510,7 +1510,7 @@ func copyRepoGitStorageS3(oldFull, newFull string) error {
 	if s3fs == nil {
 		return nil
 	}
-	if err := s3fs.copyRepoPrefix(oldFull, newFull); err != nil {
+	if err := s3fs.CopyRepoPrefix(oldFull, newFull); err != nil {
 		return fmt.Errorf("copy S3 object prefix: %w", err)
 	}
 	return nil
@@ -1528,7 +1528,7 @@ func deleteRepoGitStorageS3(fullName string) error {
 	if s3fs == nil {
 		return nil
 	}
-	if err := s3fs.deleteRepoPrefix(fullName); err != nil {
+	if err := s3fs.DeleteRepoPrefix(fullName); err != nil {
 		return fmt.Errorf("purge S3 object prefix: %w", err)
 	}
 	return nil

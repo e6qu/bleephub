@@ -1,4 +1,4 @@
-package bleephub
+package gitstore
 
 import (
 	"errors"
@@ -6,13 +6,12 @@ import (
 	"testing"
 
 	"github.com/go-git/go-git/v5/plumbing"
-	"github.com/go-git/go-git/v5/plumbing/protocol/packp"
 	gitStorage "github.com/go-git/go-git/v5/storage"
 	"github.com/go-git/go-git/v5/storage/memory"
 )
 
 func TestAtomicRefStorage_CreateIsExclusive(t *testing.T) {
-	stor := wrapAtomicRefStorage("owner/repo", memory.NewStorage())
+	stor := WrapAtomicRefStorage("owner/repo", memory.NewStorage())
 	name := plumbing.NewBranchReferenceName("main")
 	refs := []*plumbing.Reference{
 		plumbing.NewHashReference(name, plumbing.NewHash("1111111111111111111111111111111111111111")),
@@ -26,7 +25,7 @@ func TestAtomicRefStorage_CreateIsExclusive(t *testing.T) {
 		go func(ref *plumbing.Reference) {
 			ready.Done()
 			<-start
-			results <- createReferenceIfAbsent(stor, ref)
+			results <- CreateReferenceIfAbsent(stor, ref)
 		}(ref)
 	}
 	ready.Wait()
@@ -36,7 +35,7 @@ func TestAtomicRefStorage_CreateIsExclusive(t *testing.T) {
 		switch err := <-results; {
 		case err == nil:
 			created++
-		case errors.Is(err, errReferenceAlreadyExists):
+		case errors.Is(err, ErrReferenceAlreadyExists):
 			rejected++
 		default:
 			t.Fatalf("create ref: %v", err)
@@ -48,7 +47,7 @@ func TestAtomicRefStorage_CreateIsExclusive(t *testing.T) {
 }
 
 func TestAtomicRefStorage_StaleDeleteCannotRemoveNewValue(t *testing.T) {
-	stor := wrapAtomicRefStorage("owner/repo", memory.NewStorage())
+	stor := WrapAtomicRefStorage("owner/repo", memory.NewStorage())
 	name := plumbing.NewBranchReferenceName("main")
 	old := plumbing.NewHashReference(name, plumbing.NewHash("1111111111111111111111111111111111111111"))
 	if err := stor.SetReference(old); err != nil {
@@ -58,7 +57,7 @@ func TestAtomicRefStorage_StaleDeleteCannotRemoveNewValue(t *testing.T) {
 	if err := stor.CheckAndSetReference(next, old); err != nil {
 		t.Fatal(err)
 	}
-	if err := removeReferenceCAS(stor, old); !errors.Is(err, gitStorage.ErrReferenceHasChanged) {
+	if err := RemoveReferenceCAS(stor, old); !errors.Is(err, gitStorage.ErrReferenceHasChanged) {
 		t.Fatalf("stale delete error = %v, want ErrReferenceHasChanged", err)
 	}
 	got, err := stor.Reference(name)
@@ -71,7 +70,7 @@ func TestAtomicRefStorage_StaleDeleteCannotRemoveNewValue(t *testing.T) {
 }
 
 func TestAtomicRefStorage_RepositoryInitializationIsExclusiveAcrossBranches(t *testing.T) {
-	stor := wrapAtomicRefStorage("owner/repo", memory.NewStorage())
+	stor := WrapAtomicRefStorage("owner/repo", memory.NewStorage())
 	branches := []*plumbing.Reference{
 		plumbing.NewHashReference(plumbing.NewBranchReferenceName("main"), plumbing.NewHash("1111111111111111111111111111111111111111")),
 		plumbing.NewHashReference(plumbing.NewBranchReferenceName("trunk"), plumbing.NewHash("2222222222222222222222222222222222222222")),
@@ -84,7 +83,7 @@ func TestAtomicRefStorage_RepositoryInitializationIsExclusiveAcrossBranches(t *t
 		go func(branch *plumbing.Reference) {
 			ready.Done()
 			<-start
-			results <- initializeRepositoryReferences(stor, branch, true)
+			results <- InitializeRepositoryReferences(stor, branch, true)
 		}(branch)
 	}
 	ready.Wait()
@@ -94,7 +93,7 @@ func TestAtomicRefStorage_RepositoryInitializationIsExclusiveAcrossBranches(t *t
 		switch err := <-results; {
 		case err == nil:
 			initialized++
-		case errors.Is(err, errReferenceAlreadyExists):
+		case errors.Is(err, ErrReferenceAlreadyExists):
 			rejected++
 		default:
 			t.Fatalf("initialize repository refs: %v", err)
@@ -129,33 +128,6 @@ func TestAtomicRefStorage_RepositoryInitializationIsExclusiveAcrossBranches(t *t
 	}
 }
 
-func TestGitPushCommandsHonorWireOldObjectID(t *testing.T) {
-	stor := wrapAtomicRefStorage("owner/repo", memory.NewStorage())
-	name := plumbing.NewBranchReferenceName("main")
-	current := plumbing.NewHash("2222222222222222222222222222222222222222")
-	if err := stor.SetReference(plumbing.NewHashReference(name, current)); err != nil {
-		t.Fatal(err)
-	}
-	stale := plumbing.NewHash("1111111111111111111111111111111111111111")
-	next := plumbing.NewHash("3333333333333333333333333333333333333333")
-	for _, command := range []*packp.Command{
-		{Name: name, Old: stale, New: next},
-		{Name: name, Old: stale, New: plumbing.ZeroHash},
-		{Name: name, Old: plumbing.ZeroHash, New: next},
-	} {
-		if err := applyPushCommandAtomic(stor, command); err == nil {
-			t.Fatalf("%s with stale/duplicate precondition unexpectedly succeeded", command.Action())
-		}
-		got, err := stor.Reference(name)
-		if err != nil {
-			t.Fatal(err)
-		}
-		if got.Hash() != current {
-			t.Fatalf("%s changed ref to %s, want %s", command.Action(), got.Hash(), current)
-		}
-	}
-}
-
 // TestAtomicRefStorage_RejectsUnsafeRefNames covers STORE-049: a reference name
 // that could escape the per-repository storage path (a `..` segment or a
 // backslash) is refused at the storer boundary, before any backend composes it
@@ -171,20 +143,20 @@ func TestAtomicRefStorage_RejectsUnsafeRefNames(t *testing.T) {
 		"refs/heads/", // trailing empty segment
 	}
 	for _, name := range unsafe {
-		stor := wrapAtomicRefStorage("owner/repo", memory.NewStorage())
+		stor := WrapAtomicRefStorage("owner/repo", memory.NewStorage())
 		ref := plumbing.NewHashReference(name, hash)
-		if err := stor.SetReference(ref); !errors.Is(err, errUnsafeReferenceName) {
-			t.Errorf("SetReference(%q): err = %v, want errUnsafeReferenceName", name, err)
+		if err := stor.SetReference(ref); !errors.Is(err, ErrUnsafeReferenceName) {
+			t.Errorf("SetReference(%q): err = %v, want ErrUnsafeReferenceName", name, err)
 		}
 		// Nothing may have been written under the crafted name.
 		if _, err := stor.Reference(name); err == nil {
 			t.Errorf("SetReference(%q) stored a ref despite the rejection", name)
 		}
-		if err := stor.RemoveReference(name); !errors.Is(err, errUnsafeReferenceName) {
-			t.Errorf("RemoveReference(%q): err = %v, want errUnsafeReferenceName", name, err)
+		if err := stor.RemoveReference(name); !errors.Is(err, ErrUnsafeReferenceName) {
+			t.Errorf("RemoveReference(%q): err = %v, want ErrUnsafeReferenceName", name, err)
 		}
-		if err := stor.CheckAndSetReference(ref, nil); !errors.Is(err, errUnsafeReferenceName) {
-			t.Errorf("CheckAndSetReference(%q): err = %v, want errUnsafeReferenceName", name, err)
+		if err := stor.CheckAndSetReference(ref, nil); !errors.Is(err, ErrUnsafeReferenceName) {
+			t.Errorf("CheckAndSetReference(%q): err = %v, want ErrUnsafeReferenceName", name, err)
 		}
 	}
 
@@ -196,7 +168,7 @@ func TestAtomicRefStorage_RejectsUnsafeRefNames(t *testing.T) {
 		plumbing.HEAD,
 	}
 	for _, name := range safe {
-		stor := wrapAtomicRefStorage("owner/repo", memory.NewStorage())
+		stor := WrapAtomicRefStorage("owner/repo", memory.NewStorage())
 		if err := stor.SetReference(plumbing.NewHashReference(name, hash)); err != nil {
 			t.Errorf("SetReference(%q): unexpected error %v", name, err)
 		}

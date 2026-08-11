@@ -425,7 +425,7 @@ func TestLogfilesUpload_AppendsBlocks(t *testing.T) {
 
 func TestLogfilesUpload_WritesObjectStore(t *testing.T) {
 	fs := newS3FSForTest(t)
-	objectFS := &s3FS{client: fs.client, bucket: fs.bucket, prefix: "objects"}
+	objectFS := deriveS3FSForTest(t, fs.Bucket(), "objects")
 	s := newTimelineTestServer()
 	s.setArtifactStore(NewArtifactStoreWithByteStore("", &s3ActionsByteStore{fs: objectFS}))
 	planID := uuid.New().String()
@@ -440,8 +440,8 @@ func TestLogfilesUpload_WritesObjectStore(t *testing.T) {
 }
 
 func TestLogfilesUpload_ObjectStoreFailurePreservesState(t *testing.T) {
-	fs := newS3FSForTest(t)
-	objectFS := &s3FS{client: fs.client, bucket: "missing-bucket", prefix: "objects"}
+	newS3FSForTest(t)
+	objectFS := deriveS3FSForTest(t, "missing-bucket", "objects")
 	s := newTimelineTestServer()
 	s.setArtifactStore(NewArtifactStoreWithByteStore("", &s3ActionsByteStore{fs: objectFS}))
 	planID := uuid.New().String()
@@ -471,7 +471,7 @@ func TestLogfilesUpload_ObjectStoreFailurePreservesState(t *testing.T) {
 
 func TestJobLogs_ReadsUploadedLogFilesFromObjectStore(t *testing.T) {
 	fs := newS3FSForTest(t)
-	objectFS := &s3FS{client: fs.client, bucket: fs.bucket, prefix: "objects"}
+	objectFS := deriveS3FSForTest(t, fs.Bucket(), "objects")
 	s := newTimelineTestServer()
 	s.setArtifactStore(NewArtifactStoreWithByteStore("", &s3ActionsByteStore{fs: objectFS}))
 	_, wfJob := seedRun(t, s, "octo/repo", "completed", "success")
@@ -499,7 +499,7 @@ func TestJobLogs_ReadsUploadedLogFilesFromObjectStore(t *testing.T) {
 
 func TestJobLogs_SurviveServiceReloadWithObjectStore(t *testing.T) {
 	fs := newS3FSForTest(t)
-	objectFS := &s3FS{client: fs.client, bucket: fs.bucket, prefix: "objects"}
+	objectFS := deriveS3FSForTest(t, fs.Bucket(), "objects")
 	byteStore := &s3ActionsByteStore{fs: objectFS}
 	t.Setenv("BLEEPHUB_PERSIST", "true")
 	t.Setenv("BLEEPHUB_DATA_DIR", t.TempDir())
@@ -549,8 +549,8 @@ func TestJobLogs_SurviveServiceReloadWithObjectStore(t *testing.T) {
 }
 
 func TestRunLogsDelete_ObjectStoreFailurePreservesState(t *testing.T) {
-	fs := newS3FSForTest(t)
-	objectFS := &s3FS{client: fs.client, bucket: "missing-bucket", prefix: "objects"}
+	newS3FSForTest(t)
+	objectFS := deriveS3FSForTest(t, "missing-bucket", "objects")
 	s := newTimelineTestServer()
 	s.registerGHActionsPermissionsRoutes()
 	s.setArtifactStore(NewArtifactStoreWithByteStore("", &s3ActionsByteStore{fs: objectFS}))

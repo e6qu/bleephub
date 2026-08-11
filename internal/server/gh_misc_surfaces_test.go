@@ -313,7 +313,7 @@ func TestPagesBuildsCRUD(t *testing.T) {
 	s.registerGHRepoObjectRoutes()
 	s.registerGHGitDataRoutes()
 	fs := newS3FSForTest(t)
-	objectFS := &s3FS{client: fs.client, bucket: fs.bucket, prefix: "pages-build-objects"}
+	objectFS := deriveS3FSForTest(t, fs.Bucket(), "pages-build-objects")
 	s.store.ObjectByteStore = &s3ActionsByteStore{fs: objectFS}
 	admin := s.store.UsersByLogin["admin"]
 	repo := s.store.CreateRepo(admin, "pages-build-test", "", false)
@@ -499,7 +499,7 @@ func TestPagesJekyllBuildPublishesGeneratedSite(t *testing.T) {
 	s.registerGHMiscEndpoints()
 	s.pagesJekyllExecutable = realPagesJekyllExecutable(t)
 	fs := newS3FSForTest(t)
-	objectFS := &s3FS{client: fs.client, bucket: fs.bucket, prefix: "pages-jekyll-objects"}
+	objectFS := deriveS3FSForTest(t, fs.Bucket(), "pages-jekyll-objects")
 	s.store.ObjectByteStore = &s3ActionsByteStore{fs: objectFS}
 	admin := s.store.UsersByLogin["admin"]
 	repo := s.store.CreateRepo(admin, "pages-jekyll-test", "", false)

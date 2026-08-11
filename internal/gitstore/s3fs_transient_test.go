@@ -1,4 +1,4 @@
-package bleephub
+package gitstore
 
 import (
 	"context"
@@ -45,7 +45,7 @@ func transientS3Client() *s3.Client {
 // a live branch — a silent history loss. Only a definite 404 (NoSuchKey /
 // NotFound) may map to os.ErrNotExist; every other failure must propagate.
 func TestS3TransientErrorIsNotMistakenForNotExist(t *testing.T) {
-	fs := &s3FS{
+	fs := &S3FS{
 		client: transientS3Client(),
 		bucket: "bucket",
 		prefix: "repo",
