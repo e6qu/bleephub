@@ -18,14 +18,9 @@ var (
 	IsS3GitStorage = gitstore.IsS3GitStorage
 
 	newS3FS                        = gitstore.NewS3FS
-	getS3FS                        = gitstore.GetS3FS
-	openOrInitGitStorage           = gitstore.OpenOrInitGitStorage
-	validateRepoStorageFullName    = gitstore.ValidateRepoStorageFullName
-	repoGitDirPath                 = gitstore.RepoGitDirPath
 	initializeRepositoryReferences = gitstore.InitializeRepositoryReferences
 	createReferenceIfAbsent        = gitstore.CreateReferenceIfAbsent
 	removeReferenceCAS             = gitstore.RemoveReferenceCAS
-	setGitObjectLocker             = gitstore.SetGitObjectLocker
 
 	errReferenceAlreadyExists = gitstore.ErrReferenceAlreadyExists
 )

@@ -51,7 +51,12 @@ jobs:
       # hung test rather than a slow one, and sends whoever is on the PR looking
       # for a deadlock that isn't there.
       - name: Run the complete server suite against MinIO S3
-        run: go test -race -tags noui -count=1 -timeout 40m -coverprofile=coverage.out ./...
+        # -coverpkg follows the ARCH-001 module split: internal/store and
+        # internal/gitstore carry no test binaries of their own — they are
+        # exercised through internal/server's suite — and without cross-package
+        # attribution the profile would count their statements as 0% and read
+        # as a coverage collapse that never happened.
+        run: go test -race -tags noui -count=1 -timeout 40m -coverpkg=./... -coverprofile=coverage.out ./...
       - name: Enforce the Go coverage floor
         run: bash ./scripts/check-go-coverage.sh coverage.out
       # The main suite runs under `-tags noui`, which compiles the embedded SPA
