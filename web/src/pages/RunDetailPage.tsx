@@ -14,6 +14,8 @@ import {
   fetchPendingDeployments,
   reviewPendingDeployments,
   cancelRun,
+  forceCancelRun,
+  approveWorkflowRun,
   rerunRun,
   rerunFailedJobs,
   isNotFound,
@@ -184,11 +186,23 @@ function RunHeader({
     mutationFn: () => rerunFailedJobs(owner, repo, run.id),
     onSuccess: invalidateRun,
   });
+  const forceCancelMutation = useMutation({
+    mutationFn: () => forceCancelRun(owner, repo, run.id),
+    onSuccess: invalidateRun,
+  });
+  const approveMutation = useMutation({
+    mutationFn: () => approveWorkflowRun(owner, repo, run.id),
+    onSuccess: invalidateRun,
+  });
 
   const cancellable = run.status === "queued" || run.status === "in_progress" || run.status === "waiting";
   const completed = run.status === "completed";
   const mutationError =
-    cancelMutation.error ?? rerunMutation.error ?? rerunFailedMutation.error;
+    cancelMutation.error ??
+    forceCancelMutation.error ??
+    approveMutation.error ??
+    rerunMutation.error ??
+    rerunFailedMutation.error;
 
   return (
     <header className="border-b pb-4" style={{ borderColor: "var(--color-border)" }}>
@@ -244,6 +258,16 @@ function RunHeader({
           </div>
         </div>
         <div className="flex shrink-0 items-center gap-2">
+          {run.status === "waiting" && (
+            <Button
+              variant="primary"
+              size="sm"
+              disabled={approveMutation.isPending}
+              onClick={() => approveMutation.mutate()}
+            >
+              {approveMutation.isPending ? "Approving…" : "Approve"}
+            </Button>
+          )}
           {cancellable && (
             <Button
               variant="danger"
@@ -252,6 +276,16 @@ function RunHeader({
               onClick={() => cancelMutation.mutate()}
             >
               {cancelMutation.isPending ? "Cancelling…" : "Cancel workflow"}
+            </Button>
+          )}
+          {cancellable && (
+            <Button
+              variant="secondary"
+              size="sm"
+              disabled={forceCancelMutation.isPending}
+              onClick={() => forceCancelMutation.mutate()}
+            >
+              {forceCancelMutation.isPending ? "Force cancelling…" : "Force cancel"}
             </Button>
           )}
           {completed && (

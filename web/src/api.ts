@@ -2016,6 +2016,14 @@ export const fetchJobSummary = (owner: string, repo: string, jobId: number) =>
 export const cancelRun = (owner: string, repo: string, runId: number) =>
   ghSend("POST", `/api/v3/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/actions/runs/${runId}/cancel`);
 
+// Force-cancel bypasses conditions/`always()` cleanup steps that keep a normal
+// cancel from finishing; approve releases a fork-PR / deployment-gated run.
+export const forceCancelRun = (owner: string, repo: string, runId: number) =>
+  ghSend("POST", `/api/v3/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/actions/runs/${runId}/force-cancel`);
+
+export const approveWorkflowRun = (owner: string, repo: string, runId: number) =>
+  ghSend("POST", `/api/v3/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/actions/runs/${runId}/approve`);
+
 export const rerunRun = (owner: string, repo: string, runId: number) =>
   ghSend("POST", `/api/v3/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/actions/runs/${runId}/rerun`);
 

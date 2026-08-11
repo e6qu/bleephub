@@ -178,6 +178,33 @@ describe("RunDetailPage", () => {
     });
   });
 
+  it("force-cancels an in-progress run via POST /force-cancel", async () => {
+    installMocks({
+      run: runData({ status: "in_progress", conclusion: null }),
+      job: jobData({ status: "in_progress", conclusion: null, completed_at: null }),
+    });
+    renderPage();
+    fireEvent.click(await screen.findByRole("button", { name: "Force cancel" }));
+    await waitFor(() => {
+      const call = mockFetch.mock.calls.find(
+        (c) => c[0].toString().endsWith("/actions/runs/5/force-cancel") && c[1]?.method === "POST",
+      );
+      expect(call).toBeTruthy();
+    });
+  });
+
+  it("approves a waiting run via POST /approve", async () => {
+    installMocks({ run: runData({ status: "waiting", conclusion: null }) });
+    renderPage();
+    fireEvent.click(await screen.findByRole("button", { name: "Approve" }));
+    await waitFor(() => {
+      const call = mockFetch.mock.calls.find(
+        (c) => c[0].toString().endsWith("/actions/runs/5/approve") && c[1]?.method === "POST",
+      );
+      expect(call).toBeTruthy();
+    });
+  });
+
   it("offers re-run buttons for a completed failed run and hits the right endpoints", async () => {
     installMocks({
       run: runData({ conclusion: "failure" }),
