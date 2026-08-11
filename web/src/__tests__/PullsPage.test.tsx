@@ -573,6 +573,21 @@ describe("PullsPage combined status merge box", () => {
     expect(screen.getByText(/lint failed/)).toBeInTheDocument();
     expect(screen.getByText("build")).toBeInTheDocument();
   });
+
+  it("updates the PR branch via PUT /pulls/{n}/update-branch", async () => {
+    mockPRApis((u, init) => {
+      if (u.endsWith("/pulls/9/update-branch") && init?.method === "PUT") {
+        return jsonResponse({ message: "Updating pull request branch.", url: "" }, 202);
+      }
+      return undefined;
+    });
+    renderAt("/ui/repos/admin/test/pulls/9");
+
+    fireEvent.click(await screen.findByRole("button", { name: "Update branch" }));
+    await waitFor(() => {
+      expect(findCall("/pulls/9/update-branch", "PUT")).toBeDefined();
+    });
+  });
 });
 
 describe("PullsPage reactions", () => {

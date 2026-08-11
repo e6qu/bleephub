@@ -407,6 +407,7 @@ function RepoAction({
 export type OrgTab =
   | "overview"
   | "repos"
+  | "projects"
   | "packages"
   | "people"
   | "teams"
@@ -439,6 +440,7 @@ export function OrgHeader({ org, active }: { org: string; active: OrgTab }) {
       >
         <RepoTabLink to={base} icon={<OrganizationIcon size={15} />} label="Overview" active={active === "overview"} />
         <RepoTabLink to={`${base}/repos`} icon={<RepoIcon size={15} />} label="Repositories" active={active === "repos"} />
+        <RepoTabLink to={`${base}/projects`} icon={<ProjectIcon size={15} />} label="Projects" active={active === "projects"} />
         <RepoTabLink to={`${base}/packages`} icon={<PackageIcon size={15} />} label="Packages" active={active === "packages"} />
         <RepoTabLink to={`${base}/people`} icon={<PeopleIcon size={15} />} label="People" active={active === "people"} />
         <RepoTabLink to={`${base}/teams`} icon={<TeamIcon size={15} />} label="Teams" active={active === "teams"} />

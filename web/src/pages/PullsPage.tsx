@@ -11,6 +11,7 @@ import {
   createPull,
   updatePull,
   mergePR,
+  updatePRBranch,
   isNotFound,
   fetchAuthenticatedUser,
   fetchPRReviews,
@@ -566,6 +567,10 @@ function MergeBox({
       navigate(`/ui/repos/${owner}/${repo}/pulls`);
     },
   });
+  const updateBranchMut = useMutation({
+    mutationFn: () => updatePRBranch(owner, repo, number),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["pr", owner, repo, number] }),
+  });
 
   const s = prState(pr);
   if (s === "merged") {
@@ -664,7 +669,21 @@ function MergeBox({
                 </option>
               ))}
             </select>
+            <Button
+              variant="secondary"
+              size="sm"
+              disabled={updateBranchMut.isPending}
+              onClick={() => updateBranchMut.mutate()}
+            >
+              {updateBranchMut.isPending ? "Updating…" : "Update branch"}
+            </Button>
           </div>
+          {updateBranchMut.isError && (
+            <div className="mt-2" style={{ fontSize: "0.8rem", color: "var(--color-status-error)" }}>
+              Update branch failed:{" "}
+              {updateBranchMut.error instanceof Error ? updateBranchMut.error.message : "unknown error"}
+            </div>
+          )}
           {mergeMutation.isError && (
             <div className="mt-2" style={{ fontSize: "0.8rem", color: "var(--color-status-error)" }}>
               Merge failed:{" "}

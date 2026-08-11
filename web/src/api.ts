@@ -22,6 +22,8 @@ import type {
   GithubTeamRef,
   GithubCommit,
   GithubCommitComment,
+  GithubProjectV2,
+  GithubProjectV2Item,
   GithubComparison,
   GithubWebhook,
   GithubSecret,
@@ -1753,6 +1755,18 @@ export async function mergePR(
   }
 }
 
+// Bring the PR's head branch up to date with its base (the "Update branch"
+// button on a behind PR).
+export const updatePRBranch = (owner: string, repo: string, number: number) =>
+  ghSend("PUT", `/api/v3/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/pulls/${number}/update-branch`, {});
+
+// Sync a fork's branch with its upstream ("Sync fork").
+export const syncFork = (owner: string, repo: string, branch: string) =>
+  ghPostJSON<{ message?: string; merge_type?: string; base_branch?: string }>(
+    `/api/v3/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/merge-upstream`,
+    { branch },
+  );
+
 export const fetchWebhooks = (owner: string, repo: string) =>
   ghFetch<GithubWebhook[]>(`/api/v3/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/hooks`);
 
@@ -2003,6 +2017,14 @@ export const fetchJobSummary = (owner: string, repo: string, jobId: number) =>
 
 export const cancelRun = (owner: string, repo: string, runId: number) =>
   ghSend("POST", `/api/v3/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/actions/runs/${runId}/cancel`);
+
+// Force-cancel bypasses conditions/`always()` cleanup steps that keep a normal
+// cancel from finishing; approve releases a fork-PR / deployment-gated run.
+export const forceCancelRun = (owner: string, repo: string, runId: number) =>
+  ghSend("POST", `/api/v3/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/actions/runs/${runId}/force-cancel`);
+
+export const approveWorkflowRun = (owner: string, repo: string, runId: number) =>
+  ghSend("POST", `/api/v3/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/actions/runs/${runId}/approve`);
 
 export const rerunRun = (owner: string, repo: string, runId: number) =>
   ghSend("POST", `/api/v3/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/actions/runs/${runId}/rerun`);
@@ -4320,6 +4342,27 @@ export const removeCommitCommentReaction = (
     "DELETE",
     `/api/v3/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/comments/${commentId}/reactions/${reactionId}`,
   );
+
+// ─── Projects V2 (org-scoped) ────────────────────────────────────────────
+export const fetchOrgProjectsV2 = (org: string) =>
+  ghFetch<GithubProjectV2[]>(`/api/v3/orgs/${encodeURIComponent(org)}/projectsV2`);
+
+export const fetchOrgProjectV2 = (org: string, number: number) =>
+  ghFetch<GithubProjectV2>(`/api/v3/orgs/${encodeURIComponent(org)}/projectsV2/${number}`);
+
+export const fetchOrgProjectV2Items = (org: string, number: number) =>
+  ghFetch<GithubProjectV2Item[]>(`/api/v3/orgs/${encodeURIComponent(org)}/projectsV2/${number}/items`);
+
+export const addOrgProjectV2Item = (
+  org: string,
+  number: number,
+  payload: { type: "Issue" | "PullRequest"; owner: string; repo: string; number: number },
+): Promise<GithubProjectV2Item> =>
+  ghPostJSON(`/api/v3/orgs/${encodeURIComponent(org)}/projectsV2/${number}/items`, payload);
+
+export const deleteOrgProjectV2Item = (org: string, number: number, itemId: number) =>
+  ghDelete(`/api/v3/orgs/${encodeURIComponent(org)}/projectsV2/${number}/items/${itemId}`);
+
 // ─── Search + repo social + account ─────────────────────────────────────
 
 /** One page of a /search/* envelope ({total_count, incomplete_results, items}). */

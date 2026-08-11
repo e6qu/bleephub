@@ -8,6 +8,7 @@ import {
   fetchRepoDetail,
   fetchRepoBranches,
   fetchRepoCommit,
+  syncFork,
   fetchCombinedStatus,
   createCommitStatus,
   fetchCommitComments,
@@ -132,6 +133,14 @@ export function RepoDetailPage({ initialTab = "code" }: { initialTab?: SubTab })
       && repoData.pushed_at !== null,
   });
   const counts = useOpenCounts(owner, repo);
+  const mainQc = useQueryClient();
+  const syncForkMut = useMutation({
+    mutationFn: () => syncFork(owner, repo, repoData?.default_branch ?? ""),
+    onSuccess: () => {
+      void mainQc.invalidateQueries({ queryKey: ["commits", owner, repo] });
+      void mainQc.invalidateQueries({ queryKey: ["repo", owner, repo] });
+    },
+  });
   const { data: webhooks = [], isError: webhooksError, error: webhooksErr } = useQuery({
     queryKey: ["webhooks", owner, repo],
     queryFn: () => fetchWebhooks(owner, repo),
@@ -258,6 +267,23 @@ export function RepoDetailPage({ initialTab = "code" }: { initialTab?: SubTab })
         ) : (
           <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_296px]">
             <div className="min-w-0">
+              {repoData.fork && (
+                <div className="mb-3 flex items-center gap-2">
+                  <Button
+                    size="sm"
+                    variant="secondary"
+                    disabled={syncForkMut.isPending}
+                    onClick={() => syncForkMut.mutate()}
+                  >
+                    {syncForkMut.isPending ? "Syncing…" : "Sync fork"}
+                  </Button>
+                  {syncForkMut.isError && (
+                    <span style={{ color: "var(--color-status-error)", fontSize: "0.8rem" }}>
+                      Sync failed: {syncForkMut.error instanceof Error ? syncForkMut.error.message : "unknown error"}
+                    </span>
+                  )}
+                </div>
+              )}
               <CodeView
                 owner={owner}
                 repo={repo}

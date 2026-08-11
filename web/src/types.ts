@@ -766,6 +766,19 @@ export type GithubDeployKey = components["schemas"]["deploy-key"];
 export type GithubAutolink = components["schemas"]["autolink"];
 export type GithubCommitComment = components["schemas"]["commit-comment"];
 
+export interface GithubProjectV2 {
+  id: number;
+  number: number;
+  title: string;
+  short_description: string | null;
+}
+
+export interface GithubProjectV2Item {
+  id: number;
+  content_type: "Issue" | "PullRequest" | "DraftIssue";
+  content: { title?: string; number?: number; html_url?: string } | null;
+}
+
 export interface BleephubAuditEvent {
   id: number;
   actor_login: string;
