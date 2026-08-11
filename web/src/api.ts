@@ -1758,6 +1758,13 @@ export async function mergePR(
 export const updatePRBranch = (owner: string, repo: string, number: number) =>
   ghSend("PUT", `/api/v3/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/pulls/${number}/update-branch`, {});
 
+// Sync a fork's branch with its upstream ("Sync fork").
+export const syncFork = (owner: string, repo: string, branch: string) =>
+  ghPostJSON<{ message?: string; merge_type?: string; base_branch?: string }>(
+    `/api/v3/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/merge-upstream`,
+    { branch },
+  );
+
 export const fetchWebhooks = (owner: string, repo: string) =>
   ghFetch<GithubWebhook[]>(`/api/v3/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/hooks`);
 

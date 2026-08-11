@@ -507,6 +507,29 @@ describe("repository detail journeys", () => {
     expect(await screen.findByText("admin/test")).toBeInTheDocument();
     expect(screen.getByText(/extra detail/)).toBeInTheDocument();
   });
+
+  it("syncs a fork via POST /merge-upstream", async () => {
+    mockFetch.mockImplementation((url: RequestInfo | URL, init?: RequestInit) => {
+      const u = url.toString();
+      if (u.endsWith("/merge-upstream") && init?.method === "POST") {
+        return Promise.resolve(
+          jsonResponse({ message: "Successfully fetched and fast-forwarded", merge_type: "fast-forward", base_branch: "main" }),
+        );
+      }
+      if (u.endsWith("/repos/admin/test")) return Promise.resolve(jsonResponse({ ...repoData, fork: true }));
+      return routedFetch(url);
+    });
+    renderPage("/ui/repos/admin/test");
+
+    fireEvent.click(await screen.findByRole("button", { name: "Sync fork" }));
+    await waitFor(() => {
+      const post = mockFetch.mock.calls.find(
+        (c) => c[0].toString().endsWith("/merge-upstream") && c[1]?.method === "POST",
+      );
+      expect(post).toBeDefined();
+      expect(JSON.parse(String(post![1].body))).toEqual({ branch: "main" });
+    });
+  });
 });
 
 describe("RepoDetailPage file editing", () => {
