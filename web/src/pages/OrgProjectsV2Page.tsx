@@ -8,6 +8,7 @@ import {
   fetchOrgProjectV2Items,
   fetchOrgProjectV2Fields,
   addOrgProjectV2Item,
+  createOrgProjectV2Draft,
   deleteOrgProjectV2Item,
   setOrgProjectV2ItemField,
 } from "../api.js";
@@ -105,6 +106,14 @@ function ProjectV2Detail({ org, number }: { org: string; number: number }) {
     mutationFn: (itemId: number) => deleteOrgProjectV2Item(org, number, itemId),
     onSuccess: invalidate,
   });
+  const [draftTitle, setDraftTitle] = useState("");
+  const draftMut = useMutation({
+    mutationFn: () => createOrgProjectV2Draft(org, number, { title: draftTitle.trim() }),
+    onSuccess: () => {
+      invalidate();
+      setDraftTitle("");
+    },
+  });
 
   if (projectQ.isLoading) return <Spinner label="loading project" />;
   if (projectQ.isError || !projectQ.data) {
@@ -152,6 +161,26 @@ function ProjectV2Detail({ org, number }: { org: string; number: number }) {
             onClick={() => addMut.mutate()}
           >
             Add item
+          </Button>
+        </div>
+        <div style={{ padding: "0 1rem 1rem", display: "flex", gap: "0.5rem", alignItems: "flex-end" }}>
+          {draftMut.error && <ErrorBanner>{String(draftMut.error)}</ErrorBanner>}
+          <label className="flex min-w-0 flex-1 flex-col gap-1" style={{ fontSize: "0.78rem" }}>
+            New draft
+            <input
+              aria-label="draft title"
+              value={draftTitle}
+              onChange={(e) => setDraftTitle(e.target.value)}
+              placeholder="Draft title"
+              className="w-full"
+            />
+          </label>
+          <Button
+            variant="secondary"
+            disabled={draftMut.isPending || !draftTitle.trim()}
+            onClick={() => draftMut.mutate()}
+          >
+            Add draft
           </Button>
         </div>
       </Box>

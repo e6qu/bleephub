@@ -85,6 +85,32 @@ describe("OrgProjectsV2Page", () => {
     });
   });
 
+  it("creates a draft item via POST .../drafts", async () => {
+    mockFetch.mockImplementation((url: RequestInfo | URL, init?: RequestInit) => {
+      const u = url.toString();
+      if (u.endsWith("/orgs/acme/projectsV2/3/drafts") && init?.method === "POST") {
+        return Promise.resolve(jsonResponse({ id: 20, content_type: "DraftIssue", content: null }, 201));
+      }
+      if (u.endsWith("/orgs/acme/projectsV2/3/items")) return Promise.resolve(jsonResponse([]));
+      if (u.endsWith("/orgs/acme/projectsV2/3")) {
+        return Promise.resolve(jsonResponse({ id: 1, number: 3, title: "Roadmap", short_description: null }));
+      }
+      return Promise.resolve(jsonResponse([]));
+    });
+    renderAt("/ui/orgs/acme/projects/3");
+
+    fireEvent.change(await screen.findByLabelText("draft title"), { target: { value: "Plan the sprint" } });
+    fireEvent.click(screen.getByRole("button", { name: "Add draft" }));
+
+    await waitFor(() => {
+      const post = mockFetch.mock.calls.find(
+        (c) => c[0].toString().endsWith("/orgs/acme/projectsV2/3/drafts") && c[1]?.method === "POST",
+      );
+      expect(post).toBeDefined();
+      expect(JSON.parse(String(post![1].body))).toEqual({ title: "Plan the sprint" });
+    });
+  });
+
   it("adds an item via POST /orgs/{org}/projectsV2/{n}/items", async () => {
     mockFetch.mockImplementation((url: RequestInfo | URL, init?: RequestInit) => {
       const u = url.toString();

@@ -4367,6 +4367,13 @@ export const deleteOrgProjectV2Item = (org: string, number: number, itemId: numb
 export const fetchOrgProjectV2Fields = (org: string, number: number) =>
   ghFetch<GithubProjectV2Field[]>(`/api/v3/orgs/${encodeURIComponent(org)}/projectsV2/${number}/fields`);
 
+export const createOrgProjectV2Draft = (
+  org: string,
+  number: number,
+  payload: { title: string; body?: string },
+): Promise<GithubProjectV2Item> =>
+  ghPostJSON(`/api/v3/orgs/${encodeURIComponent(org)}/projectsV2/${number}/drafts`, payload);
+
 // Set an item's field value — e.g. move it to another single-select option
 // (value is the option id string for single-select fields).
 export const setOrgProjectV2ItemField = (
