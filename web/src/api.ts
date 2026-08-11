@@ -51,6 +51,7 @@ import type {
   GithubTeamMember,
   GithubTeamMembership,
   GithubTeamRepo,
+  GithubAutolink,
   GithubDeployKey,
   BleephubAuditEvent,
   BleephubGist,
@@ -2202,6 +2203,19 @@ export const addRepoDeployKey = (owner: string, repo: string, title: string, key
 
 export const deleteRepoDeployKey = (owner: string, repo: string, keyId: number) =>
   ghDeleteJSON<void>(`/api/v3/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/keys/${keyId}`, {});
+
+export const fetchRepoAutolinks = (owner: string, repo: string) =>
+  ghFetch<GithubAutolink[]>(`/api/v3/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/autolinks`);
+
+export const createRepoAutolink = (
+  owner: string,
+  repo: string,
+  payload: { key_prefix: string; url_template: string; is_alphanumeric?: boolean },
+): Promise<GithubAutolink> =>
+  ghPostJSON(`/api/v3/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/autolinks`, payload);
+
+export const deleteRepoAutolink = (owner: string, repo: string, autolinkId: number) =>
+  ghDelete(`/api/v3/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/autolinks/${autolinkId}`);
 
 export async function setRepoFlag(owner: string, repo: string, flag: string, enabled: boolean): Promise<void> {
   const path = `/api/v3/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}`;
