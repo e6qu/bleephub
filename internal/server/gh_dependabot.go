@@ -127,11 +127,11 @@ func (s *Server) handleUpdateDependabotAlert(w http.ResponseWriter, r *http.Requ
 		return
 	}
 	if req.State == "" {
-		writeGHValidationError(w, "DependabotAlert", "state", "missing_field")
+		writeGHValidationErrorSimple(w, "state is missing")
 		return
 	}
 	if err := s.store.UpdateDependabotAlert(a, req.State, req.DismissedReason, req.DismissedComment, user); err != nil {
-		writeGHValidationError(w, "DependabotAlert", "state", "invalid")
+		writeGHValidationErrorSimple(w, "state is invalid")
 		return
 	}
 	writeJSON(w, http.StatusOK, dependabotAlertToJSON(a, s.baseURL(r), repo))

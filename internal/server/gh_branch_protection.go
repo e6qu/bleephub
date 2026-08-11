@@ -407,7 +407,7 @@ func (s *Server) handleBranchProtectionPut(w http.ResponseWriter, r *http.Reques
 		return
 	}
 	if len(fields) == 0 {
-		writeGHValidationError(w, "BranchProtection", "body", "missing_field")
+		writeGHValidationErrorSimple(w, "required_status_checks, enforce_admins, required_pull_request_reviews, and restrictions are required")
 		return
 	}
 	var req bpRequest

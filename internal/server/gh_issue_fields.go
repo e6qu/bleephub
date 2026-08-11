@@ -346,7 +346,10 @@ func (s *Server) applyIssueFieldValues(w http.ResponseWriter, r *http.Request, r
 		}
 		normalized, err := normalizeIssueFieldValue(field, v.Value)
 		if err != nil {
-			writeGHValidationErrorSimple(w, err.Error())
+			// This op documents the full validation-error shape (objects),
+			// unlike the issue-field CRUD ops above which document
+			// validation-error-simple.
+			writeGHValidationErrorMessage(w, "IssueFieldValue", "value", "invalid", err.Error())
 			return
 		}
 		updates[field.ID] = normalized

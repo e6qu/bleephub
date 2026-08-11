@@ -295,9 +295,10 @@ func (s *Server) handleCreateSecretScanningPushProtectionBypass(w http.ResponseW
 
 func writeSecretScanningPushProtectionBlocked(w http.ResponseWriter, ph *SecretScanningPushProtectionPlaceholder) {
 	writeJSON(w, http.StatusUnprocessableEntity, map[string]interface{}{
-		"message":        "Push cannot contain secrets.",
-		"placeholder_id": ph.ID,
-		"token_type":     ph.TokenType,
+		"message":           "Push cannot contain secrets.",
+		"documentation_url": "https://docs.github.com/code-security/secret-scanning/working-with-secret-scanning-and-push-protection",
+		"placeholder_id":    ph.ID,
+		"token_type":        ph.TokenType,
 		"errors": []map[string]interface{}{
 			{
 				"resource":       "SecretScanningPushProtectionBypass",

@@ -131,7 +131,7 @@ func (s *Server) handleGenerateJITConfig(w http.ResponseWriter, r *http.Request)
 		return
 	}
 	if req.Name == "" || req.RunnerGroupID == nil || len(req.Labels) == 0 {
-		writeGHValidationError(w, "Runner", "name", "missing_field")
+		writeGHValidationErrorSimple(w, "name is missing")
 		return
 	}
 	workFolder := req.WorkFolder

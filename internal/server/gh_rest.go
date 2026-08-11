@@ -220,6 +220,26 @@ func writeGHValidationError(w http.ResponseWriter, resource, field, code string)
 	})
 }
 
+// writeGHValidationErrorMessage is writeGHValidationError with the error
+// item's optional human-readable message, for operations whose documented
+// validation-error detail carries one (e.g. issue-field-values).
+func writeGHValidationErrorMessage(w http.ResponseWriter, resource, field, code, message string) {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusUnprocessableEntity)
+	_ = json.NewEncoder(w).Encode(map[string]interface{}{
+		"message":           "Validation Failed",
+		"documentation_url": "https://docs.github.com/rest",
+		"errors": []map[string]string{
+			{
+				"resource": resource,
+				"field":    field,
+				"code":     code,
+				"message":  message,
+			},
+		},
+	})
+}
+
 // mutated guards the gap between resolving a resource and mutating it: a
 // store mutator returns nil when the target was deleted in between, and the
 // request is then a 404 rather than a render of a nil pointer.

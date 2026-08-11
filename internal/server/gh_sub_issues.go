@@ -354,11 +354,11 @@ func (s *Server) handleReprioritizeSubIssue(w http.ResponseWriter, r *http.Reque
 		return
 	}
 	if req.SubIssueID == nil {
-		writeGHValidationError(w, "SubIssue", "sub_issue_id", "missing_field")
+		writeGHValidationErrorSimple(w, "sub_issue_id is missing")
 		return
 	}
 	if req.AfterID != nil && req.BeforeID != nil {
-		writeGHValidationError(w, "SubIssue", "after_id", "invalid")
+		writeGHValidationErrorSimple(w, "after_id and before_id are mutually exclusive")
 		return
 	}
 	if err := s.store.ReprioritizeSubIssue(issue.ID, *req.SubIssueID, req.AfterID, req.BeforeID); err != nil {

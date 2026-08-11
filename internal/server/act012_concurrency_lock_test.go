@@ -57,7 +57,6 @@ func TestConcurrencyAdmissionSerializesAcrossReplicas(t *testing.T) {
 		t.Fatalf("peer re-AcquireLock: ok=%v err=%v", ok, err)
 	}
 	submitted := make(chan error, 1)
-	started := time.Now()
 	go func() {
 		_, err := s.submitWorkflow(context.Background(), "http://localhost", def("blocked"), "")
 		submitted <- err
@@ -65,7 +64,7 @@ func TestConcurrencyAdmissionSerializesAcrossReplicas(t *testing.T) {
 
 	select {
 	case err := <-submitted:
-		t.Fatalf("submission finished in %s with a peer holding the admission lock (err=%v)", time.Since(started), err)
+		t.Fatalf("submission finished with a peer holding the admission lock (err=%v)", err)
 	case <-time.After(250 * time.Millisecond):
 		// Still waiting on the peer — expected.
 	}

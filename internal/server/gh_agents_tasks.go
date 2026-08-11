@@ -385,7 +385,15 @@ func (s *Server) handleCreateAgentTaskInRepo(w http.ResponseWriter, r *http.Requ
 		return
 	}
 	if req.Prompt == "" {
-		writeGHValidationError(w, "AgentTask", "prompt", "missing_field")
+		// This op's documented 422 items declare only code/message — the
+		// resource/field members of the generic helper are undeclared there.
+		writeJSON(w, http.StatusUnprocessableEntity, map[string]interface{}{
+			"message":           "Validation Failed",
+			"documentation_url": "https://docs.github.com/rest",
+			"errors": []map[string]string{
+				{"code": "missing_field", "message": "prompt is required"},
+			},
+		})
 		return
 	}
 

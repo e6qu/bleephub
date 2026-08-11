@@ -54,19 +54,19 @@ func (s *Server) handleListRepoActivity(w http.ResponseWriter, r *http.Request) 
 		direction = "desc"
 	}
 	if direction != "asc" && direction != "desc" {
-		writeGHValidationError(w, "Activity", "direction", "invalid")
+		writeGHValidationErrorSimple(w, "direction is invalid")
 		return
 	}
 	activityType := q.Get("activity_type")
 	if activityType != "" && !validActivityTypes[activityType] {
-		writeGHValidationError(w, "Activity", "activity_type", "invalid")
+		writeGHValidationErrorSimple(w, "activity_type is invalid")
 		return
 	}
 	var cutoff time.Time
 	if period := q.Get("time_period"); period != "" {
 		d, ok := activityTimePeriods[period]
 		if !ok {
-			writeGHValidationError(w, "Activity", "time_period", "invalid")
+			writeGHValidationErrorSimple(w, "time_period is invalid")
 			return
 		}
 		cutoff = time.Now().UTC().Add(-d)
