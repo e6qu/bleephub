@@ -2274,22 +2274,20 @@ export const deleteRepoAutolink = (owner: string, repo: string, autolinkId: numb
   ghDelete(`/api/v3/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/autolinks/${autolinkId}`);
 
 export async function setRepoFlag(owner: string, repo: string, flag: string, enabled: boolean): Promise<void> {
-  const path = `/api/v3/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}`;
-  let body: Record<string, unknown>;
-  switch (flag) {
-    case "automated_security_fixes":
-      body = { security_and_analysis: { automated_security_fixes: { status: enabled ? "enabled" : "disabled" } } };
-      break;
-    case "vulnerability_alerts":
-      body = { security_and_analysis: { advanced_security: { status: enabled ? "enabled" : "disabled" } } };
-      break;
-    case "private_vulnerability_reporting":
-      body = { security_and_analysis: { secret_scanning_non_provider_patterns: { status: enabled ? "enabled" : "disabled" } } };
-      break;
-    default:
-      body = { [flag]: enabled };
+  const base = `/api/v3/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}`;
+  // The security toggles have dedicated PUT/DELETE endpoints; PATCHing
+  // security_and_analysis (the old body) is silently ignored by the server.
+  const dedicated: Record<string, string> = {
+    automated_security_fixes: "automated-security-fixes",
+    vulnerability_alerts: "vulnerability-alerts",
+    private_vulnerability_reporting: "private-vulnerability-reporting",
+  };
+  const sub = dedicated[flag];
+  if (sub) {
+    await ghSend(enabled ? "PUT" : "DELETE", `${base}/${sub}`);
+    return;
   }
-  await ghPatchJSON<void>(path, body);
+  await ghPatchJSON<void>(base, { [flag]: enabled });
 }
 
 /**
