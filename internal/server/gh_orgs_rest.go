@@ -131,7 +131,7 @@ func (s *Server) handleUpdateOrg(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if !s.viewerCanAdminOrg(r.Context(), org.Login) {
+	if !(user.SiteAdmin || s.viewerCanAdminOrg(r.Context(), org.Login)) {
 		writeGHError(w, http.StatusForbidden, "Must be an organization owner.")
 		return
 	}
@@ -213,7 +213,7 @@ func (s *Server) handleDeleteOrg(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if !s.viewerCanAdminOrg(r.Context(), org.Login) {
+	if !(user.SiteAdmin || s.viewerCanAdminOrg(r.Context(), org.Login)) {
 		writeGHError(w, http.StatusForbidden, "Must be an organization owner.")
 		return
 	}
