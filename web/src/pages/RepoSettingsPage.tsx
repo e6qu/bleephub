@@ -5,6 +5,9 @@ import { Spinner, InlineError } from "@bleephub/ui-core/components";
 import { confirmAction } from "../components/confirmAction.js";
 import {
   addRepoDeployKey,
+  createRepoAutolink,
+  deleteRepoAutolink,
+  fetchRepoAutolinks,
   createPagesSite,
   deletePagesSite,
   cancelRepoInvitation,
@@ -34,6 +37,7 @@ import {
 } from "../api.js";
 import type {
   BleephubRepo,
+  GithubAutolink,
   GithubCollaborator,
   GithubDeployKey,
   GithubPagesBuild,
@@ -44,7 +48,7 @@ import { RepoHeader } from "../components/Shell.js";
 import { SettingsLayout, type SettingsNavSection } from "../components/SettingsLayout.js";
 import { PageTitle, Button, Box, FormLabel, ErrorBanner } from "../components/ui.js";
 
-type SettingsTab = "general" | "collaborators" | "deploy-keys" | "pages" | "security" | "interaction" | "transfer" | "rename";
+type SettingsTab = "general" | "collaborators" | "deploy-keys" | "pages" | "security" | "interaction" | "transfer" | "rename" | "autolinks";
 
 const SETTINGS_NAV: SettingsNavSection<SettingsTab>[] = [
   { items: [{ key: "general", label: "General" }] },
@@ -54,6 +58,7 @@ const SETTINGS_NAV: SettingsNavSection<SettingsTab>[] = [
     items: [
       { key: "pages", label: "Pages" },
       { key: "rename", label: "Rename branch" },
+      { key: "autolinks", label: "Autolinks" },
     ],
   },
   {
@@ -92,6 +97,7 @@ export function RepoSettingsPage() {
         {tab === "pages" && <PagesTab owner={owner} repo={repo} />}
         {tab === "security" && <SecurityTab owner={owner} repo={repo} />}
         {tab === "interaction" && <InteractionTab owner={owner} repo={repo} />}
+        {tab === "autolinks" && <AutolinksTab owner={owner} repo={repo} />}
         {tab === "transfer" && (
           <div style={{ display: "flex", flexDirection: "column", gap: "1rem" }}>
             <TransferTab owner={owner} repo={repo} />
@@ -936,6 +942,104 @@ function TransferTab({ owner, repo }: { owner: string; repo: string }) {
         </div>
       </div>
     </Box>
+  );
+}
+
+function AutolinksTab({ owner, repo }: { owner: string; repo: string }) {
+  const queryClient = useQueryClient();
+  const [keyPrefix, setKeyPrefix] = useState("");
+  const [urlTemplate, setUrlTemplate] = useState("");
+  const listQ = useQuery({
+    queryKey: ["repo-autolinks", owner, repo],
+    queryFn: () => fetchRepoAutolinks(owner, repo),
+    enabled: !!owner && !!repo,
+  });
+  const invalidate = () =>
+    void queryClient.invalidateQueries({ queryKey: ["repo-autolinks", owner, repo] });
+  const createMut = useMutation({
+    mutationFn: () =>
+      createRepoAutolink(owner, repo, { key_prefix: keyPrefix.trim(), url_template: urlTemplate.trim() }),
+    onSuccess: () => {
+      invalidate();
+      setKeyPrefix("");
+      setUrlTemplate("");
+    },
+  });
+  const deleteMut = useMutation({
+    mutationFn: (id: number) => deleteRepoAutolink(owner, repo, id),
+    onSuccess: invalidate,
+  });
+
+  const autolinks: GithubAutolink[] = listQ.data ?? [];
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: "1rem" }}>
+      <Box header={<span style={{ fontWeight: 600 }}>Add autolink reference</span>}>
+        <div style={{ padding: "1rem", display: "flex", flexDirection: "column", gap: "0.5rem" }}>
+          {createMut.error && <ErrorBanner>{String(createMut.error)}</ErrorBanner>}
+          <FormLabel id="autolink-prefix">Reference prefix</FormLabel>
+          <input
+            id="autolink-prefix"
+            type="text"
+            value={keyPrefix}
+            onChange={(e) => setKeyPrefix(e.target.value)}
+            placeholder="TICKET-"
+            className="w-full"
+          />
+          <FormLabel id="autolink-url">Target URL</FormLabel>
+          <input
+            id="autolink-url"
+            type="text"
+            value={urlTemplate}
+            onChange={(e) => setUrlTemplate(e.target.value)}
+            placeholder="https://example.com/TICKET?query=<num>"
+            className="w-full"
+          />
+          <div className="flex justify-end">
+            <Button
+              variant="primary"
+              disabled={createMut.isPending || !keyPrefix.trim() || !urlTemplate.trim()}
+              onClick={() => createMut.mutate()}
+            >
+              Add autolink
+            </Button>
+          </div>
+        </div>
+      </Box>
+      {deleteMut.error && <ErrorBanner>{String(deleteMut.error)}</ErrorBanner>}
+      {listQ.isLoading ? (
+        <Spinner label="loading autolinks" />
+      ) : listQ.isError ? (
+        <InlineError title="Failed to load autolinks" detail={String(listQ.error)} />
+      ) : autolinks.length === 0 ? null : (
+        <Box>
+          {autolinks.map((a, i) => (
+            <div
+              key={a.id}
+              className="flex items-center gap-3"
+              style={{ padding: "0.65rem 1rem", borderBottom: i === autolinks.length - 1 ? "none" : "1px solid var(--color-border)" }}
+            >
+              <div className="min-w-0 flex-1">
+                <div className="font-mono" style={{ fontWeight: 500 }}>{a.key_prefix}&lt;num&gt;</div>
+                <div style={{ fontSize: "0.76rem", color: "var(--color-fg-muted)", wordBreak: "break-all" }}>
+                  {a.url_template}
+                </div>
+              </div>
+              <Button
+                size="sm"
+                variant="danger"
+                aria-label={`Delete autolink ${a.key_prefix}`}
+                disabled={deleteMut.isPending}
+                onClick={async () => {
+                  if (await confirmAction(`Delete autolink ${a.key_prefix}?`)) deleteMut.mutate(a.id);
+                }}
+              >
+                Delete
+              </Button>
+            </div>
+          ))}
+        </Box>
+      )}
+    </div>
   );
 }
 

@@ -51,6 +51,7 @@ import type {
   GithubTeamMember,
   GithubTeamMembership,
   GithubTeamRepo,
+  GithubAutolink,
   GithubDeployKey,
   BleephubAuditEvent,
   BleephubGist,
@@ -1499,6 +1500,25 @@ export const updateIssue = (
     patch,
   );
 
+export const fetchSubIssues = (owner: string, repo: string, number: number) =>
+  ghFetch<GithubIssue[]>(
+    `/api/v3/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/issues/${number}/sub_issues`,
+  );
+
+// The API keys sub-issues by the child's internal id, not its number.
+export const addSubIssue = (owner: string, repo: string, number: number, subIssueId: number) =>
+  ghPostJSON<GithubIssue>(
+    `/api/v3/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/issues/${number}/sub_issues`,
+    { sub_issue_id: subIssueId },
+  );
+
+export const removeSubIssue = (owner: string, repo: string, number: number, subIssueId: number) =>
+  ghSend(
+    "DELETE",
+    `/api/v3/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/issues/${number}/sub_issue`,
+    { sub_issue_id: subIssueId },
+  );
+
 /** Edit an issue/PR comment body (shared endpoint for both surfaces). */
 export const updateIssueComment = (owner: string, repo: string, commentId: number, body: string) =>
   ghPatchJSON<GithubComment>(
@@ -2202,6 +2222,19 @@ export const addRepoDeployKey = (owner: string, repo: string, title: string, key
 
 export const deleteRepoDeployKey = (owner: string, repo: string, keyId: number) =>
   ghDeleteJSON<void>(`/api/v3/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/keys/${keyId}`, {});
+
+export const fetchRepoAutolinks = (owner: string, repo: string) =>
+  ghFetch<GithubAutolink[]>(`/api/v3/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/autolinks`);
+
+export const createRepoAutolink = (
+  owner: string,
+  repo: string,
+  payload: { key_prefix: string; url_template: string; is_alphanumeric?: boolean },
+): Promise<GithubAutolink> =>
+  ghPostJSON(`/api/v3/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/autolinks`, payload);
+
+export const deleteRepoAutolink = (owner: string, repo: string, autolinkId: number) =>
+  ghDelete(`/api/v3/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/autolinks/${autolinkId}`);
 
 export async function setRepoFlag(owner: string, repo: string, flag: string, enabled: boolean): Promise<void> {
   const path = `/api/v3/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}`;
@@ -3755,6 +3788,20 @@ export const fetchDeploymentStatuses = (owner: string, repo: string, deploymentI
   ghFetch<GithubDeploymentStatus[]>(
     `/api/v3/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/deployments/${deploymentId}/statuses`,
   );
+
+export const createDeployment = (
+  owner: string,
+  repo: string,
+  payload: {
+    ref: string;
+    environment?: string;
+    description?: string;
+    task?: string;
+    auto_merge?: boolean;
+    required_contexts?: string[];
+  },
+): Promise<GithubDeployment> =>
+  ghPostJSON(`/api/v3/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/deployments`, payload);
 
 export const createDeploymentStatus = (
   owner: string,

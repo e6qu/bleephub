@@ -118,6 +118,38 @@ describe("RepoSettingsPage", () => {
     });
   });
 
+  it("creates an autolink via POST .../autolinks from the autolinks tab", async () => {
+    mockFetch.mockImplementation((url: string, opts?: { method?: string }) => {
+      const u = url.toString();
+      if (u === "/api/v3/repos/admin/settings-repo/autolinks" && opts?.method === "POST") {
+        return Promise.resolve(
+          jsonResponse({ id: 1, key_prefix: "TICKET-", url_template: "https://x/<num>", is_alphanumeric: true }, 201),
+        );
+      }
+      if (u === "/api/v3/repos/admin/settings-repo/autolinks") return Promise.resolve(jsonResponse([]));
+      if (u.includes("/issues") || u.includes("/pulls")) return Promise.resolve(jsonResponse([]));
+      return Promise.resolve(jsonResponse(repo));
+    });
+    renderPage();
+    await waitFor(() => screen.getByDisplayValue("before"));
+
+    fireEvent.click(screen.getByRole("button", { name: "Autolinks" }));
+    fireEvent.change(await screen.findByLabelText("Reference prefix"), { target: { value: "TICKET-" } });
+    fireEvent.change(screen.getByLabelText("Target URL"), { target: { value: "https://x/<num>" } });
+    fireEvent.click(screen.getByRole("button", { name: "Add autolink" }));
+
+    await waitFor(() => {
+      const post = mockFetch.mock.calls.find(
+        (c) => c[0] === "/api/v3/repos/admin/settings-repo/autolinks" && c[1]?.method === "POST",
+      );
+      expect(post).toBeDefined();
+      expect(JSON.parse(String(post![1].body))).toEqual({
+        key_prefix: "TICKET-",
+        url_template: "https://x/<num>",
+      });
+    });
+  });
+
   it("deletes the repository via DELETE /repos/{owner}/{repo} from the danger zone", async () => {
     // Route by URL/method so any number of background GETs stay valid; only the
     // DELETE returns an empty 204.
