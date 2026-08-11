@@ -1009,6 +1009,60 @@ func TestGraphQLClosePullRequest(t *testing.T) {
 	}
 }
 
+func TestGraphQLPullRequestDraftMutations(t *testing.T) {
+	t.Parallel()
+	s := newIsolatedServer(t)
+	repoNodeID := s.createGraphQLPRRepo(t, "gql-pr-draft", "feat")
+
+	// Create a draft PR.
+	respCreate := s.post(t, "/api/graphql", defaultToken, map[string]interface{}{
+		"query": `mutation($input: CreatePullRequestInput!) { createPullRequest(input: $input) { pullRequest { id isDraft } } }`,
+		"variables": map[string]interface{}{
+			"input": map[string]interface{}{
+				"repositoryId": repoNodeID,
+				"title":        "Draft PR",
+				"headRefName":  "feat",
+				"baseRefName":  "main",
+				"draft":        true,
+			},
+		},
+	})
+	dc := decodeJSON(t, respCreate)
+	prData := dc["data"].(map[string]interface{})["createPullRequest"].(map[string]interface{})["pullRequest"].(map[string]interface{})
+	prID := prData["id"].(string)
+	if prData["isDraft"] != true {
+		t.Fatalf("expected created PR isDraft=true, got %v", prData["isDraft"])
+	}
+
+	// Mark ready for review → isDraft false.
+	respReady := s.post(t, "/api/graphql", defaultToken, map[string]interface{}{
+		"query":     `mutation($input: MarkPullRequestReadyForReviewInput!) { markPullRequestReadyForReview(input: $input) { pullRequest { isDraft } } }`,
+		"variables": map[string]interface{}{"input": map[string]interface{}{"pullRequestId": prID}},
+	})
+	dr := decodeJSON(t, respReady)
+	if dr["errors"] != nil {
+		t.Fatalf("markPullRequestReadyForReview errors: %v", dr["errors"])
+	}
+	ready := dr["data"].(map[string]interface{})["markPullRequestReadyForReview"].(map[string]interface{})["pullRequest"].(map[string]interface{})
+	if ready["isDraft"] != false {
+		t.Fatalf("expected isDraft=false after markReady, got %v", ready["isDraft"])
+	}
+
+	// Convert back to draft → isDraft true.
+	respDraft := s.post(t, "/api/graphql", defaultToken, map[string]interface{}{
+		"query":     `mutation($input: ConvertPullRequestToDraftInput!) { convertPullRequestToDraft(input: $input) { pullRequest { isDraft } } }`,
+		"variables": map[string]interface{}{"input": map[string]interface{}{"pullRequestId": prID}},
+	})
+	dd := decodeJSON(t, respDraft)
+	if dd["errors"] != nil {
+		t.Fatalf("convertPullRequestToDraft errors: %v", dd["errors"])
+	}
+	draft := dd["data"].(map[string]interface{})["convertPullRequestToDraft"].(map[string]interface{})["pullRequest"].(map[string]interface{})
+	if draft["isDraft"] != true {
+		t.Fatalf("expected isDraft=true after convertToDraft, got %v", draft["isDraft"])
+	}
+}
+
 func TestGraphQLReopenPullRequest(t *testing.T) {
 	t.Parallel()
 	s := newIsolatedServer(t)

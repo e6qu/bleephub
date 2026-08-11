@@ -387,6 +387,24 @@
         }
       }
     },
+    "ConvertPullRequestToDraftInput": {
+      "kind": "INPUT_OBJECT",
+      "input_fields": {
+        "clientMutationId": "String",
+        "pullRequestId": "ID!"
+      }
+    },
+    "ConvertPullRequestToDraftPayload": {
+      "kind": "OBJECT",
+      "fields": {
+        "clientMutationId": {
+          "type": "String"
+        },
+        "pullRequest": {
+          "type": "PullRequest"
+        }
+      }
+    },
     "CreateDiscussionInput": {
       "kind": "INPUT_OBJECT",
       "input_fields": {
@@ -1807,6 +1825,24 @@
         }
       }
     },
+    "MarkPullRequestReadyForReviewInput": {
+      "kind": "INPUT_OBJECT",
+      "input_fields": {
+        "clientMutationId": "String",
+        "pullRequestId": "ID!"
+      }
+    },
+    "MarkPullRequestReadyForReviewPayload": {
+      "kind": "OBJECT",
+      "fields": {
+        "clientMutationId": {
+          "type": "String"
+        },
+        "pullRequest": {
+          "type": "PullRequest"
+        }
+      }
+    },
     "MergePullRequestInput": {
       "kind": "INPUT_OBJECT",
       "input_fields": {
@@ -1967,6 +2003,12 @@
             "input": "ClosePullRequestInput!"
           }
         },
+        "convertPullRequestToDraft": {
+          "type": "ConvertPullRequestToDraftPayload",
+          "args": {
+            "input": "ConvertPullRequestToDraftInput!"
+          }
+        },
         "createDiscussion": {
           "type": "CreateDiscussionPayload",
           "args": {
@@ -2031,6 +2073,12 @@
           "type": "MarkDiscussionCommentAsAnswerPayload",
           "args": {
             "input": "MarkDiscussionCommentAsAnswerInput!"
+          }
+        },
+        "markPullRequestReadyForReview": {
+          "type": "MarkPullRequestReadyForReviewPayload",
+          "args": {
+            "input": "MarkPullRequestReadyForReviewInput!"
           }
         },
         "mergePullRequest": {

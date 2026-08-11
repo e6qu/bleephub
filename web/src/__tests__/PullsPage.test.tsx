@@ -588,6 +588,36 @@ describe("PullsPage combined status merge box", () => {
       expect(findCall("/pulls/9/update-branch", "PUT")).toBeDefined();
     });
   });
+
+  it("marks a draft PR ready for review via the GraphQL mutation", async () => {
+    mockPRApis((u, init) => {
+      if (u.endsWith("/pulls/9") && init?.method === undefined) {
+        return jsonResponse(pr(9, "Draft PR", { draft: true, node_id: "PR_kwDO123" }));
+      }
+      if (u.endsWith("/api/graphql") && init?.method === "POST") {
+        const body = JSON.parse(String(init.body ?? "{}")) as { query?: string };
+        if (body.query?.includes("markPullRequestReadyForReview")) {
+          return jsonResponse({ data: { markPullRequestReadyForReview: { clientMutationId: null } } });
+        }
+      }
+      return undefined;
+    });
+    renderAt("/ui/repos/admin/test/pulls/9");
+
+    fireEvent.click(await screen.findByRole("button", { name: "Ready for review" }));
+    await waitFor(() => {
+      const readyCall = mockFetch.mock.calls.find(
+        (c) =>
+          c[0].toString().endsWith("/api/graphql") &&
+          (c[1] as RequestInit | undefined)?.method === "POST" &&
+          JSON.parse(String((c[1] as RequestInit).body)).query.includes("markPullRequestReadyForReview"),
+      );
+      expect(readyCall).toBeDefined();
+      expect(JSON.parse(String((readyCall![1] as RequestInit).body)).variables.input).toEqual({
+        pullRequestId: "PR_kwDO123",
+      });
+    });
+  });
 });
 
 describe("PullsPage reactions", () => {

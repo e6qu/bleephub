@@ -207,7 +207,7 @@
       },
       {
         "event": "pull_request",
-        "line": 1733,
+        "line": 1811,
         "producer": "emitWebhookEvent",
         "source": "internal/server/gh_pulls_graphql.go"
       },
@@ -322,15 +322,15 @@
   "graphql": {
     "compatibility_gap_count": 77,
     "coverage": {
-      "bleephub_types": 271,
+      "bleephub_types": 275,
       "compatibility_gap_count": 77,
-      "implemented_fields": 844,
+      "implemented_fields": 854,
       "official_fields": 8341,
       "official_types": 1806,
-      "shared_types": 231,
-      "signature_exact_fields": 812
+      "shared_types": 235,
+      "signature_exact_fields": 822
     },
-    "introspection_snapshot_sha256": "6c989f3dc8c91e4de1a2e31333b7d17901528201779aaf53286c05fabfa1d320",
+    "introspection_snapshot_sha256": "6a42b140bc866317aa8b10d89bcdb04212a20e70da3b698ac997493d0142f43b",
     "official_schema": {
       "content_sha256": "86e8e001eb3db2469348cefd25aacf22e623d3fbeed6affddef47ad98f12a9fc",
       "source": "https://docs.github.com/public/fpt/schema.docs.graphql"

@@ -1246,14 +1246,16 @@ var graphqlMutationAuthz = map[string]mutationRule{
 	"lockLockable":      repoRule{scope: scopeIssues, level: mutationPushRepo, target: mutationTargetIssueOrPullRequest("lockableId")},
 	"unlockLockable":    repoRule{scope: scopeIssues, level: mutationPushRepo, target: mutationTargetIssueOrPullRequest("lockableId")},
 
-	"createPullRequest":     repoRule{scope: scopePullRequests, level: mutationReadRepo, target: mutationTargetRepo("repositoryId")},
-	"addPullRequestReview":  repoRule{scope: scopePullRequests, level: mutationReadRepo, target: mutationTargetPullRequest("pullRequestId")},
-	"closePullRequest":      repoRule{scope: scopePullRequests, level: mutationPushRepo, authorMayAct: true, target: mutationTargetPullRequest("pullRequestId")},
-	"reopenPullRequest":     repoRule{scope: scopePullRequests, level: mutationPushRepo, authorMayAct: true, target: mutationTargetPullRequest("pullRequestId")},
-	"updatePullRequest":     repoRule{scope: scopePullRequests, level: mutationPushRepo, authorMayAct: true, target: mutationTargetPullRequest("pullRequestId")},
-	"mergePullRequest":      repoRule{scope: scopePullRequests, level: mutationPushRepo, target: mutationTargetPullRequest("pullRequestId")},
-	"resolveReviewThread":   repoRule{scope: scopePullRequests, level: mutationPushRepo, authorMayAct: true, target: mutationTargetReviewThread("threadId")},
-	"unresolveReviewThread": repoRule{scope: scopePullRequests, level: mutationPushRepo, authorMayAct: true, target: mutationTargetReviewThread("threadId")},
+	"createPullRequest":             repoRule{scope: scopePullRequests, level: mutationReadRepo, target: mutationTargetRepo("repositoryId")},
+	"addPullRequestReview":          repoRule{scope: scopePullRequests, level: mutationReadRepo, target: mutationTargetPullRequest("pullRequestId")},
+	"closePullRequest":              repoRule{scope: scopePullRequests, level: mutationPushRepo, authorMayAct: true, target: mutationTargetPullRequest("pullRequestId")},
+	"reopenPullRequest":             repoRule{scope: scopePullRequests, level: mutationPushRepo, authorMayAct: true, target: mutationTargetPullRequest("pullRequestId")},
+	"updatePullRequest":             repoRule{scope: scopePullRequests, level: mutationPushRepo, authorMayAct: true, target: mutationTargetPullRequest("pullRequestId")},
+	"markPullRequestReadyForReview": repoRule{scope: scopePullRequests, level: mutationPushRepo, authorMayAct: true, target: mutationTargetPullRequest("pullRequestId")},
+	"convertPullRequestToDraft":     repoRule{scope: scopePullRequests, level: mutationPushRepo, authorMayAct: true, target: mutationTargetPullRequest("pullRequestId")},
+	"mergePullRequest":              repoRule{scope: scopePullRequests, level: mutationPushRepo, target: mutationTargetPullRequest("pullRequestId")},
+	"resolveReviewThread":           repoRule{scope: scopePullRequests, level: mutationPushRepo, authorMayAct: true, target: mutationTargetReviewThread("threadId")},
+	"unresolveReviewThread":         repoRule{scope: scopePullRequests, level: mutationPushRepo, authorMayAct: true, target: mutationTargetReviewThread("threadId")},
 
 	// Projects v2. A project belongs to a user or an organization, not to a
 	// repository, so write is the owner-scoped predicate the REST surface uses:

@@ -12,6 +12,8 @@ import {
   updatePull,
   mergePR,
   updatePRBranch,
+  markPullRequestReadyForReview,
+  convertPullRequestToDraft,
   isNotFound,
   fetchAuthenticatedUser,
   fetchPRReviews,
@@ -571,6 +573,15 @@ function MergeBox({
     mutationFn: () => updatePRBranch(owner, repo, number),
     onSuccess: () => qc.invalidateQueries({ queryKey: ["pr", owner, repo, number] }),
   });
+  const invalidatePR = () => qc.invalidateQueries({ queryKey: ["pr", owner, repo, number] });
+  const readyMut = useMutation({
+    mutationFn: () => markPullRequestReadyForReview(pr.node_id),
+    onSuccess: invalidatePR,
+  });
+  const draftMut = useMutation({
+    mutationFn: () => convertPullRequestToDraft(pr.node_id),
+    onSuccess: invalidatePR,
+  });
 
   const s = prState(pr);
   if (s === "merged") {
@@ -669,6 +680,25 @@ function MergeBox({
                 </option>
               ))}
             </select>
+            {pr.draft ? (
+              <Button
+                size="sm"
+                variant="secondary"
+                disabled={readyMut.isPending}
+                onClick={() => readyMut.mutate()}
+              >
+                {readyMut.isPending ? "…" : "Ready for review"}
+              </Button>
+            ) : (
+              <Button
+                size="sm"
+                variant="secondary"
+                disabled={draftMut.isPending}
+                onClick={() => draftMut.mutate()}
+              >
+                {draftMut.isPending ? "…" : "Convert to draft"}
+              </Button>
+            )}
             <Button
               variant="secondary"
               size="sm"
