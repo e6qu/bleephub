@@ -522,14 +522,21 @@ describe("PullsPage requested reviewers", () => {
       if (u.endsWith("/pulls/9/requested_reviewers") && init?.method === "DELETE") {
         return jsonResponse(pr(9, "Feature PR"));
       }
+      // Reviewers are chosen from the assignable users; carol is already
+      // requested (filtered out), dave is offered.
+      if (u.endsWith("/assignees")) {
+        return jsonResponse([{ login: "carol" }, { login: "dave" }]);
+      }
       return undefined;
     });
     renderAt("/ui/repos/admin/test/pulls/9");
 
-    expect(await screen.findByText("carol")).toBeInTheDocument();
+    // The requested-reviewer chip (carol also appears as an assignable option,
+    // so target the chip's remove control to disambiguate).
+    expect(await screen.findByLabelText("remove reviewer carol")).toBeInTheDocument();
 
-    fireEvent.change(screen.getByLabelText("reviewer login"), { target: { value: "dave" } });
-    fireEvent.click(screen.getByRole("button", { name: /request review/i }));
+    const reviewerSelect = await screen.findByLabelText("reviewer login");
+    fireEvent.change(reviewerSelect, { target: { value: "dave" } });
     await waitFor(() => {
       expect(findCall("/pulls/9/requested_reviewers", "POST")).toBeDefined();
     });
