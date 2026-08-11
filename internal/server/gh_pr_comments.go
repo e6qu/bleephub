@@ -267,7 +267,10 @@ func (s *PRReviewCommentStore) Update(id int, body string) bool {
 	return true
 }
 
-func (s *PRReviewCommentStore) Delete(id int) bool {
+// Delete removes a review comment. The comment row and its reactions delete
+// in one transaction, so a crash cannot durably drop the reactions while the
+// comment survives (STORE-001/002).
+func (s *PRReviewCommentStore) Delete(id int, reactions *ReactionStore) bool {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	c := s.byID[id]
@@ -283,8 +286,13 @@ func (s *PRReviewCommentStore) Delete(id int) bool {
 		}
 	}
 	delete(s.threadRoots, id)
-	if s.persist != nil {
-		s.persist.MustDelete("pr_review_comments", strconv.Itoa(id))
+	batch := newPersistBatch(s.persist)
+	batch.Delete("pr_review_comments", strconv.Itoa(id))
+	if reactions != nil {
+		reactions.DeleteParentsBatch("pull_request_review_comment", map[int]bool{id: true}, batch)
+	}
+	if err := batch.Commit(); err != nil {
+		panic(&persistenceFailure{op: "batch", bucket: "pr_review_comments", key: strconv.Itoa(id), err: err})
 	}
 	return true
 }
@@ -653,11 +661,10 @@ func (s *Server) handleDeletePRComment(w http.ResponseWriter, r *http.Request) {
 		writeGHError(w, http.StatusForbidden, "Must have push access to delete another user's comment")
 		return
 	}
-	if !s.store.PRReviewComments.Delete(c.ID) {
+	if !s.store.PRReviewComments.Delete(c.ID, s.store.Reactions) {
 		writeGHError(w, http.StatusNotFound, "Not Found")
 		return
 	}
-	s.store.Reactions.DeleteParent("pull_request_review_comment", c.ID)
 	w.WriteHeader(http.StatusNoContent)
 }
 

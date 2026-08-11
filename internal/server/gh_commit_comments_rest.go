@@ -133,7 +133,10 @@ func (s *CommitCommentStore) Update(id int, body string) bool {
 }
 
 // Delete removes a commit comment.
-func (s *CommitCommentStore) Delete(id int) bool {
+// Delete removes a commit comment. The comment row and its reactions delete
+// in one transaction, so a crash cannot durably drop the reactions while the
+// comment survives (STORE-001/002).
+func (s *CommitCommentStore) Delete(id int, reactions *ReactionStore) bool {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	c := s.byID[id]
@@ -156,8 +159,13 @@ func (s *CommitCommentStore) Delete(id int) bool {
 			break
 		}
 	}
-	if s.persist != nil {
-		s.persist.MustDelete("commit_comments", strconv.Itoa(id))
+	batch := newPersistBatch(s.persist)
+	batch.Delete("commit_comments", strconv.Itoa(id))
+	if reactions != nil {
+		reactions.DeleteParentsBatch("commit_comment", map[int]bool{id: true}, batch)
+	}
+	if err := batch.Commit(); err != nil {
+		panic(&persistenceFailure{op: "batch", bucket: "commit_comments", key: strconv.Itoa(id), err: err})
 	}
 	return true
 }
@@ -372,11 +380,10 @@ func (s *Server) handleDeleteCommitComment(w http.ResponseWriter, r *http.Reques
 		writeGHError(w, http.StatusForbidden, "Must have push access")
 		return
 	}
-	if !s.store.CommitComments.Delete(id) {
+	if !s.store.CommitComments.Delete(id, s.store.Reactions) {
 		writeGHError(w, http.StatusNotFound, "Not Found")
 		return
 	}
-	s.store.Reactions.DeleteParent("commit_comment", id)
 	w.WriteHeader(http.StatusNoContent)
 }
 

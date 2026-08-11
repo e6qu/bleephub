@@ -285,7 +285,10 @@ func (rs *ReleaseStore) IDsForRepo(repoID int) map[int]bool {
 	return ids
 }
 
-func (rs *ReleaseStore) Delete(id int) (bool, error) {
+// Delete removes a release. The release row, its asset rows, and its
+// reactions delete in one transaction, so a crash cannot durably drop the
+// reactions while the release survives (STORE-001/002).
+func (rs *ReleaseStore) Delete(id int, reactions *ReactionStore) (bool, error) {
 	rs.mu.Lock()
 	defer rs.mu.Unlock()
 	r := rs.byID[id]
@@ -295,6 +298,9 @@ func (rs *ReleaseStore) Delete(id int) (bool, error) {
 	batch := newPersistBatch(rs.persist)
 	if err := rs.deleteReleaseBatchLocked(r, batch); err != nil {
 		return true, err
+	}
+	if reactions != nil {
+		reactions.DeleteParentsBatch("release", map[int]bool{id: true}, batch)
 	}
 	if err := batch.Commit(); err != nil {
 		return true, fmt.Errorf("persist release deletion: %w", err)
@@ -999,7 +1005,7 @@ func (s *Server) handleDeleteRelease(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	payload := s.buildReleaseEventPayload(repo, rel, user, "deleted", s.baseURL(r))
-	deleted, err := s.store.Releases.Delete(id)
+	deleted, err := s.store.Releases.Delete(id, s.store.Reactions)
 	if err != nil {
 		writeGHError(w, http.StatusInternalServerError, "Failed to delete release")
 		return
@@ -1008,7 +1014,6 @@ func (s *Server) handleDeleteRelease(w http.ResponseWriter, r *http.Request) {
 		writeGHError(w, http.StatusNotFound, "Not Found")
 		return
 	}
-	s.store.Reactions.DeleteParent("release", id)
 	s.emitWebhookEvent(repo.FullName, "release", "deleted", payload)
 	s.recordAuditEvent("release.destroy", user.Login, "", map[string]interface{}{"repo": repo.FullName, "release_id": id})
 	w.WriteHeader(http.StatusNoContent)

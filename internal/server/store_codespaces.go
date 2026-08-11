@@ -763,7 +763,10 @@ func (st *Store) ExportCodespace(id int) (*CodespaceExport, error) {
 }
 
 // PublishCodespace creates a repository for an unpublished codespace and
-// associates the codespace with it.
+// associates the codespace with it. The repo row (with its default discussion
+// categories) and the codespace row commit in one transaction: a crash between
+// the two would otherwise leave the codespace permanently unpublishable — the
+// repo name is durably taken but the codespace never learned it (STORE-001/002).
 func (st *Store) PublishCodespace(id int, owner *User, name string, private bool) (*Codespace, error) {
 	st.mu.Lock()
 	defer st.mu.Unlock()
@@ -777,13 +780,17 @@ func (st *Store) PublishCodespace(id int, owner *User, name string, private bool
 	if name == "" {
 		name = cs.Name
 	}
-	repo := st.createRepoLocked(owner.Login+"/"+name, name, "", private, owner.ID, "User", owner, nil)
+	batch := newPersistBatch(st.persist)
+	repo := st.createRepoLocked(batch, owner.Login+"/"+name, name, "", private, owner.ID, "User", owner, nil)
 	if repo == nil {
 		return nil, errRepoNameTaken
 	}
 	cs.RepoKey = repo.FullName
 	cs.UpdatedAt = st.currentTime()
-	st.persistCodespaceLocked(cs)
+	batch.Put("codespaces", strconv.Itoa(cs.ID), cs)
+	if err := batch.Commit(); err != nil {
+		panic(&persistenceFailure{op: "batch", bucket: "codespaces", key: strconv.Itoa(cs.ID), err: err})
+	}
 	return cs, nil
 }
 

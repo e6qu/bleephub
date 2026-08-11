@@ -110,13 +110,16 @@ func (st *Store) createRepo(fullName, name, description string, private bool, ow
 	if st.ReposByName[fullName] != nil {
 		return nil
 	}
-	return st.createRepoLocked(fullName, name, description, private, ownerID, ownerType, owner, stor)
+	return st.createRepoLocked(nil, fullName, name, description, private, ownerID, ownerType, owner, stor)
 }
 
 // createRepoLocked creates a repo record around prepared git storage. Caller
 // must hold st.mu. A nil storer is retained only for the Codespaces publish
-// transaction, whose broader two-entity conversion is tracked separately.
-func (st *Store) createRepoLocked(fullName, name, description string, private bool, ownerID int, ownerType string, owner *User, stor gitStorage.Storer) *Repo {
+// transaction. The repo row and its default discussion categories commit in
+// one transaction (STORE-001/002); a non-nil batch stages them into the
+// caller's transaction instead (e.g. PublishCodespace commits the repo and
+// codespace rows together) and the caller commits.
+func (st *Store) createRepoLocked(batch *persistBatch, fullName, name, description string, private bool, ownerID int, ownerType string, owner *User, stor gitStorage.Storer) *Repo {
 	if _, exists := st.ReposByName[fullName]; exists {
 		return nil
 	}
@@ -169,17 +172,22 @@ func (st *Store) createRepoLocked(fullName, name, description string, private bo
 		}
 	}
 
-	batch := newPersistBatch(st.persist)
-	batch.Put("repos", strconv.Itoa(repo.ID), repo)
-	if err := batch.Commit(); err != nil {
-		panic(&persistenceFailure{op: "batch", bucket: "repos", key: strconv.Itoa(repo.ID), err: err})
+	ownBatch := batch == nil
+	if ownBatch {
+		batch = newPersistBatch(st.persist)
 	}
+	batch.Put("repos", strconv.Itoa(repo.ID), repo)
 	st.Repos[repo.ID] = repo
 	st.ReposByName[fullName] = repo
 	st.GitStorages[fullName] = stor
 
-	st.ensureDefaultDiscussionCategoriesLocked(repo.ID)
+	st.ensureDefaultDiscussionCategoriesBatchLocked(batch, repo.ID)
 
+	if ownBatch {
+		if err := batch.Commit(); err != nil {
+			panic(&persistenceFailure{op: "batch", bucket: "repos", key: strconv.Itoa(repo.ID), err: err})
+		}
+	}
 	return repo
 }
 
@@ -342,17 +350,19 @@ func (st *Store) ForkRepo(owner *User, sourceRepo *Repo, name string) *Repo {
 		UpdatedAt:                 now,
 		PushedAt:                  source.PushedAt,
 	}
+	// One transaction: the fork's repo row and its default discussion
+	// categories commit together (STORE-001/002).
 	batch := newPersistBatch(st.persist)
 	batch.Put("repos", strconv.Itoa(repo.ID), repo)
-	if err := batch.Commit(); err != nil {
-		panic(&persistenceFailure{op: "batch", bucket: "repos", key: strconv.Itoa(repo.ID), err: err})
-	}
 
 	st.Repos[repo.ID] = repo
 	st.ReposByName[fullName] = repo
 	st.GitStorages[fullName] = stor
 
-	st.ensureDefaultDiscussionCategoriesLocked(repo.ID)
+	st.ensureDefaultDiscussionCategoriesBatchLocked(batch, repo.ID)
+	if err := batch.Commit(); err != nil {
+		panic(&persistenceFailure{op: "batch", bucket: "repos", key: strconv.Itoa(repo.ID), err: err})
+	}
 	return repo
 }
 

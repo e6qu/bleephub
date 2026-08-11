@@ -151,16 +151,10 @@ func (rs *ReactionStore) DeleteReactionByUser(parentType string, parentID, react
 	return true
 }
 
-// DeleteParent removes every reaction attached to one parent entity.
-func (rs *ReactionStore) DeleteParent(parentType string, parentID int) {
-	rs.DeleteParents(parentType, map[int]bool{parentID: true})
-}
-
-// DeleteParents removes every reaction attached to the given parent entities.
-func (rs *ReactionStore) DeleteParents(parentType string, parentIDs map[int]bool) {
-	rs.DeleteParentsBatch(parentType, parentIDs, nil)
-}
-
+// DeleteParentsBatch removes every reaction attached to the given parent
+// entities. A non-nil batch stages the durable deletes into the caller's
+// transaction so they commit with the parent rows they belong to
+// (STORE-001/002); a nil batch commits each delete independently.
 func (rs *ReactionStore) DeleteParentsBatch(parentType string, parentIDs map[int]bool, batch *persistBatch) {
 	if len(parentIDs) == 0 {
 		return

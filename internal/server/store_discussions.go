@@ -66,9 +66,10 @@ func discussionCommentNodeID(id int) string {
 	return fmt.Sprintf("DC_kgDO%08d", id)
 }
 
-// ensureDefaultDiscussionCategoriesLocked creates default categories while the
-// caller already holds st.mu.
-func (st *Store) ensureDefaultDiscussionCategoriesLocked(repoID int) {
+// ensureDefaultDiscussionCategoriesBatchLocked creates default categories,
+// staging every row into batch so they commit with the repo row that owns them
+// in one transaction (STORE-001/002). Callers hold st.mu.
+func (st *Store) ensureDefaultDiscussionCategoriesBatchLocked(batch *persistBatch, repoID int) {
 	defaults := []struct {
 		name         string
 		emoji        string
@@ -82,7 +83,7 @@ func (st *Store) ensureDefaultDiscussionCategoriesLocked(repoID int) {
 		{"Polls", ":bar_chart:", "Take a vote from the community", false},
 	}
 	for _, d := range defaults {
-		st.createDiscussionCategoryLocked(repoID, d.name, d.emoji, d.description, d.isAnswerable)
+		st.createDiscussionCategoryBatchLocked(batch, repoID, d.name, d.emoji, d.description, d.isAnswerable)
 	}
 }
 
@@ -95,6 +96,23 @@ func (st *Store) CreateDiscussionCategory(repoID int, name, emoji, description s
 
 // createDiscussionCategoryLocked creates a category while the caller already holds st.mu.
 func (st *Store) createDiscussionCategoryLocked(repoID int, name, emoji, description string, isAnswerable bool) *DiscussionCategory {
+	cat := st.buildDiscussionCategoryLocked(repoID, name, emoji, description, isAnswerable)
+	st.persistDiscussionCategory(cat)
+	return cat
+}
+
+// createDiscussionCategoryBatchLocked creates a category and stages its persist
+// into batch instead of committing its own transaction (STORE-001/002).
+// Callers hold st.mu.
+func (st *Store) createDiscussionCategoryBatchLocked(batch *persistBatch, repoID int, name, emoji, description string, isAnswerable bool) *DiscussionCategory {
+	cat := st.buildDiscussionCategoryLocked(repoID, name, emoji, description, isAnswerable)
+	batch.Put("discussion_categories", strconv.Itoa(cat.ID), cat)
+	return cat
+}
+
+// buildDiscussionCategoryLocked allocates and indexes a category without
+// persisting it. Callers hold st.mu.
+func (st *Store) buildDiscussionCategoryLocked(repoID int, name, emoji, description string, isAnswerable bool) *DiscussionCategory {
 	now := st.currentTime()
 	cat := &DiscussionCategory{
 		ID:           st.NextDiscussionCategoryID,
@@ -109,7 +127,6 @@ func (st *Store) createDiscussionCategoryLocked(repoID int, name, emoji, descrip
 	}
 	st.DiscussionCategories[cat.ID] = cat
 	st.NextDiscussionCategoryID++
-	st.persistDiscussionCategory(cat)
 	return cat
 }
 
@@ -372,7 +389,9 @@ func (st *Store) DeleteDiscussionComment(id int) bool {
 	return true
 }
 
-// MarkDiscussionCommentAsAnswer marks a comment as the answer, unmarking any other answer.
+// MarkDiscussionCommentAsAnswer marks a comment as the answer, unmarking any
+// other answer. The unmark and the new answer commit in one transaction so a
+// crash cannot leave the discussion with no answer — or two (STORE-001/002).
 func (st *Store) MarkDiscussionCommentAsAnswer(id int) bool {
 	st.mu.Lock()
 	defer st.mu.Unlock()
@@ -380,16 +399,20 @@ func (st *Store) MarkDiscussionCommentAsAnswer(id int) bool {
 	if !ok || c.Deleted {
 		return false
 	}
+	batch := newPersistBatch(st.persist)
 	for _, other := range st.DiscussionComments {
 		if other.DiscussionID == c.DiscussionID && other.IsAnswer {
 			other.IsAnswer = false
 			other.UpdatedAt = st.currentTime()
-			st.persistDiscussionComment(other)
+			batch.Put("discussion_comments", strconv.Itoa(other.ID), other)
 		}
 	}
 	c.IsAnswer = true
 	c.UpdatedAt = st.currentTime()
-	st.persistDiscussionComment(c)
+	batch.Put("discussion_comments", strconv.Itoa(c.ID), c)
+	if err := batch.Commit(); err != nil {
+		panic(&persistenceFailure{op: "batch", bucket: "discussion_comments", key: strconv.Itoa(c.ID), err: err})
+	}
 	return true
 }
 

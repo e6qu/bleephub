@@ -4186,9 +4186,6 @@ func (st *Store) SeedDefaultUser() {
 	}
 	st.Users[u.ID] = u
 	st.UsersByLogin[u.Login] = u
-	if st.persist != nil {
-		st.persist.MustPut("users", strconv.Itoa(u.ID), u)
-	}
 
 	t := &Token{
 		Value:     AdminToken(),
@@ -4197,7 +4194,14 @@ func (st *Store) SeedDefaultUser() {
 		CreatedAt: now,
 	}
 	st.Tokens[st.tokenMapKey(t.Value)] = t
-	st.persistTokenLocked(t)
+	// One transaction: the admin user and its token commit together, so a
+	// crash cannot seed an admin nobody can authenticate as (STORE-001/002).
+	batch := newPersistBatch(st.persist)
+	batch.Put("users", strconv.Itoa(u.ID), u)
+	batch.Put("tokens", t.Value, t)
+	if err := batch.Commit(); err != nil {
+		panic(&persistenceFailure{op: "batch", bucket: "users", key: strconv.Itoa(u.ID), err: err})
+	}
 }
 
 // LookupToken returns the token and associated user, or nil if not found.

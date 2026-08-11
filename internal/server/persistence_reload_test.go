@@ -977,7 +977,7 @@ func TestPersistenceReload_ReactionParentDeletion(t *testing.T) {
 		if _, _, err := st.Reactions.AddReaction("issue_comment", comment.ID, user.ID, "heart"); err != nil {
 			t.Fatalf("AddReaction issue comment: %v", err)
 		}
-		st.Reactions.DeleteParent("issue", issue.ID)
+		st.Reactions.DeleteParentsBatch("issue", map[int]bool{issue.ID: true}, nil)
 		if !st.DeleteComment(comment.ID) {
 			t.Fatal("DeleteComment returned false")
 		}
