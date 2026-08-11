@@ -2733,8 +2733,9 @@ export const createSecurityAdvisoryTemporaryFork = (
     {},
   );
 
+// Returns 202 Accepted with no body, so it must not parse a JSON response.
 export const requestCVE = (owner: string, repo: string, ghsaId: string) =>
-  ghPostJSON<GithubSecurityAdvisory>(`/api/v3/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/security-advisories/${encodeURIComponent(ghsaId)}/cve`, {});
+  ghSend("POST", `/api/v3/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/security-advisories/${encodeURIComponent(ghsaId)}/cve`, {});
 
 export const reportVulnerability = (
   owner: string,
@@ -3201,7 +3202,7 @@ export async function markDiscussionCommentAsAnswer(commentId: string): Promise<
     `mutation($input: MarkDiscussionCommentAsAnswerInput!) {
       markDiscussionCommentAsAnswer(input: $input) { clientMutationId }
     }`,
-    { input: { commentId } },
+    { input: { id: commentId } },
   );
 }
 
@@ -3210,7 +3211,7 @@ export async function unmarkDiscussionCommentAsAnswer(commentId: string): Promis
     `mutation($input: UnmarkDiscussionCommentAsAnswerInput!) {
       unmarkDiscussionCommentAsAnswer(input: $input) { clientMutationId }
     }`,
-    { input: { commentId } },
+    { input: { id: commentId } },
   );
 }
 
@@ -3219,7 +3220,7 @@ export async function deleteDiscussion(discussionId: string): Promise<void> {
     `mutation($input: DeleteDiscussionInput!) {
       deleteDiscussion(input: $input) { clientMutationId }
     }`,
-    { input: { discussionId } },
+    { input: { id: discussionId } },
   );
 }
 
@@ -3228,7 +3229,7 @@ export async function deleteDiscussionComment(commentId: string): Promise<void> 
     `mutation($input: DeleteDiscussionCommentInput!) {
       deleteDiscussionComment(input: $input) { clientMutationId }
     }`,
-    { input: { commentId } },
+    { input: { id: commentId } },
   );
 }
 
@@ -3465,11 +3466,12 @@ export const revokeOrgRoleFromUser = (org: string, username: string, roleId: num
 // ─── Enterprise administration ──────────────────────────────────────────
 
 export async function fetchEnterpriseSlug(signal?: AbortSignal): Promise<string> {
-  const health = await fetchHealth(signal);
-  if (!health.enterprise_slug) {
-    throw new Error("/health response did not include enterprise_slug");
+  // enterprise_slug is emitted by /internal/status, not /health.
+  const status = await fetchJSON<{ enterprise_slug?: string }>("/internal/status", signal);
+  if (!status.enterprise_slug) {
+    throw new Error("/internal/status response did not include enterprise_slug");
   }
-  return health.enterprise_slug;
+  return status.enterprise_slug;
 }
 
 async function enterprisePath(path: string): Promise<string> {

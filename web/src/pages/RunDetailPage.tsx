@@ -538,8 +538,13 @@ function JobPane({
         ))
       )}
 
-      {logsQ.isError && (
+      {logsQ.isError && !isNotFound(logsQ.error) && (
         <InlineError inline title="Failed to load job logs" detail={String(logsQ.error)} />
+      )}
+      {logsQ.isError && isNotFound(logsQ.error) && job.steps.length === 0 && (
+        <div style={{ padding: "0.5rem 1rem", fontSize: "0.8rem", color: "var(--color-fg-muted)" }}>
+          No logs yet.
+        </div>
       )}
       {!stepSliced && lines.length > 0 && (
         <div style={{ borderTop: "1px solid var(--color-border)" }}>

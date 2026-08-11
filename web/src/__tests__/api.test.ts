@@ -54,6 +54,8 @@ import {
   fetchAuditLogOrgs,
   buildAuditLogPhrase,
   fetchEnterpriseSlug,
+  deleteDiscussion,
+  requestCVE,
   packageListPath,
   fetchSecurityAdvisory,
   updateSecurityAdvisory,
@@ -225,7 +227,7 @@ describe("api wire-shape normalization", () => {
   it("fetchEnterpriseSlug requires the runtime enterprise coordinate", async () => {
     mockFetch.mockResolvedValue(jsonResponse({ status: "ok", service: "bleephub" }));
     await expect(fetchEnterpriseSlug()).rejects.toThrow(
-      "/health response did not include enterprise_slug",
+      "/internal/status response did not include enterprise_slug",
     );
   });
 });
@@ -1211,5 +1213,17 @@ describe("typed failure fidelity", () => {
     expect(isNotFound(error)).toBe(true);
     expect(String(error)).toContain("Could not resolve repository");
     expect(String(error)).toContain("Viewer cannot read discussions");
+  });
+
+  it("deleteDiscussion sends input.id (the field the server requires)", async () => {
+    mockFetch.mockResolvedValue(jsonResponse({ data: { deleteDiscussion: { clientMutationId: null } } }));
+    await deleteDiscussion("D_kwDO123");
+    const body = JSON.parse(String(mockFetch.mock.calls[0]![1]!.body));
+    expect(body.variables.input).toEqual({ id: "D_kwDO123" });
+  });
+
+  it("requestCVE tolerates a 202 with an empty body (does not parse JSON)", async () => {
+    mockFetch.mockResolvedValue(new Response(null, { status: 202 }));
+    await expect(requestCVE("octo", "repo", "GHSA-xxxx")).resolves.toBeUndefined();
   });
 });

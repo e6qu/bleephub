@@ -52,7 +52,7 @@ describe("EnterprisePage teams tab", () => {
   it("uses the configured enterprise slug from Bleephub health", async () => {
     mockFetch.mockImplementation((url: RequestInfo | URL) => {
       const u = url.toString();
-      if (u === "/health") {
+      if (u === "/internal/status") {
         return Promise.resolve(healthResponse("octo-enterprise"));
       }
       if (u.includes("/api/v3/enterprises/octo-enterprise/teams")) {
@@ -79,7 +79,7 @@ describe("EnterprisePage teams tab", () => {
   it("lists enterprise teams via the bleephub enterprise slug", async () => {
     mockFetch.mockImplementation((url: RequestInfo | URL) => {
       const u = url.toString();
-      if (u === "/health") return Promise.resolve(healthResponse());
+      if (u === "/internal/status") return Promise.resolve(healthResponse());
       if (u.includes("/api/v3/enterprises/bleephub/teams")) {
         return Promise.resolve(jsonResponse([platformTeam]));
       }
@@ -99,7 +99,7 @@ describe("EnterprisePage teams tab", () => {
 
   it("shows an empty state when no teams exist", async () => {
     mockFetch.mockImplementation((url: RequestInfo | URL) => {
-      if (url.toString() === "/health") return Promise.resolve(healthResponse());
+      if (url.toString() === "/internal/status") return Promise.resolve(healthResponse());
       return Promise.resolve(jsonResponse([]));
     });
     renderPage();
@@ -111,7 +111,7 @@ describe("EnterprisePage teams tab", () => {
   it("creates a team through the dialog", async () => {
     mockFetch.mockImplementation((url: RequestInfo | URL, init?: RequestInit) => {
       const u = url.toString();
-      if (u === "/health") return Promise.resolve(healthResponse());
+      if (u === "/internal/status") return Promise.resolve(healthResponse());
       if (u.endsWith("/enterprises/bleephub/teams") && init?.method === "POST") {
         return Promise.resolve(jsonResponse(platformTeam, 201));
       }
@@ -140,7 +140,7 @@ describe("EnterprisePage teams tab", () => {
   it("manages team memberships from the members dialog", async () => {
     mockFetch.mockImplementation((url: RequestInfo | URL, init?: RequestInit) => {
       const u = url.toString();
-      if (u === "/health") return Promise.resolve(healthResponse());
+      if (u === "/internal/status") return Promise.resolve(healthResponse());
       if (u.includes("/teams/platform/memberships/dev1") && init?.method === "PUT") {
         return Promise.resolve(
           jsonResponse({ id: 4, login: "dev1", avatar_url: "", type: "User", site_admin: false }, 201),
@@ -179,7 +179,7 @@ describe("EnterprisePage teams tab", () => {
     const selectedTeam = { ...platformTeam, organization_selection_type: "selected" };
     mockFetch.mockImplementation((url: RequestInfo | URL, init?: RequestInit) => {
       const u = url.toString();
-      if (u === "/health") return Promise.resolve(healthResponse());
+      if (u === "/internal/status") return Promise.resolve(healthResponse());
       if (u.includes("/teams/platform/organizations/acme") && init?.method === "PUT") {
         return Promise.resolve(
           jsonResponse({ id: 12, login: "acme", avatar_url: "", description: null }, 201),
@@ -235,7 +235,7 @@ describe("EnterprisePage teams tab", () => {
   it("disables organization assignment editing unless the selection type is selected", async () => {
     mockFetch.mockImplementation((url: RequestInfo | URL) => {
       const u = url.toString();
-      if (u === "/health") return Promise.resolve(healthResponse());
+      if (u === "/internal/status") return Promise.resolve(healthResponse());
       if (u.includes("/teams/platform/organizations")) {
         return Promise.resolve(
           jsonResponse([{ id: 11, login: "legacy", avatar_url: "", description: null }]),
@@ -266,7 +266,7 @@ describe("EnterprisePage settings tab", () => {
   function mockSettings() {
     mockFetch.mockImplementation((url: RequestInfo | URL, init?: RequestInit) => {
       const u = url.toString();
-      if (u === "/health") return Promise.resolve(healthResponse());
+      if (u === "/internal/status") return Promise.resolve(healthResponse());
       if (u.includes("/actions/cache/storage-limit") && init?.method === "PUT") {
         return Promise.resolve(new Response(null, { status: 204 }));
       }
@@ -316,7 +316,7 @@ describe("EnterprisePage settings tab", () => {
   it("surfaces settings load failures", async () => {
     mockFetch.mockImplementation((url: RequestInfo | URL) => {
       const u = url.toString();
-      if (u === "/health") return Promise.resolve(healthResponse());
+      if (u === "/internal/status") return Promise.resolve(healthResponse());
       if (u.includes("/actions/cache/storage-limit")) {
         return Promise.resolve(jsonResponse({ message: "boom" }, 500));
       }
