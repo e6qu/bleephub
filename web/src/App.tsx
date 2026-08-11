@@ -12,6 +12,7 @@ const WorkflowDetailPage = lazy(() => import("./pages/WorkflowDetailPage.js").th
 const RunnersPage = lazy(() => import("./pages/RunnersPage.js").then(({ RunnersPage }) => ({ default: RunnersPage })));
 const ReposPage = lazy(() => import("./pages/ReposPage.js").then(({ ReposPage }) => ({ default: ReposPage })));
 const OrgReposPage = lazy(() => import("./pages/OrgReposPage.js").then(({ OrgReposPage }) => ({ default: OrgReposPage })));
+const OrgProjectsV2Page = lazy(() => import("./pages/OrgProjectsV2Page.js").then(({ OrgProjectsV2Page }) => ({ default: OrgProjectsV2Page })));
 const RepoDetailPage = lazy(() => import("./pages/RepoDetailPage.js").then(({ RepoDetailPage }) => ({ default: RepoDetailPage })));
 const RepoCommitPage = lazy(() => import("./pages/RepoDetailPage.js").then(({ RepoCommitPage }) => ({ default: RepoCommitPage })));
 const RepoComparePage = lazy(() => import("./pages/RepoDetailPage.js").then(({ RepoComparePage }) => ({ default: RepoComparePage })));
@@ -191,6 +192,8 @@ export function App() {
               <Route path="/ui/runners" element={<RunnersPage />} />
               <Route path="/ui/repos" element={<ReposPage />} />
               <Route path="/ui/orgs/:org/repos" element={<OrgReposPage />} />
+              <Route path="/ui/orgs/:org/projects" element={<OrgProjectsV2Page />} />
+              <Route path="/ui/orgs/:org/projects/:number" element={<OrgProjectsV2Page />} />
               <Route path="/ui/orgs/:org/rulesets" element={<RulesetsPage />} />
               <Route path="/ui/orgs/:org/governance" element={<OrgGovernancePage />} />
               <Route path="/ui/orgs/:org/copilot" element={<CopilotPage />} />

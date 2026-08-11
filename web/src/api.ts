@@ -22,6 +22,8 @@ import type {
   GithubTeamRef,
   GithubCommit,
   GithubCommitComment,
+  GithubProjectV2,
+  GithubProjectV2Item,
   GithubComparison,
   GithubWebhook,
   GithubSecret,
@@ -4340,6 +4342,27 @@ export const removeCommitCommentReaction = (
     "DELETE",
     `/api/v3/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/comments/${commentId}/reactions/${reactionId}`,
   );
+
+// ─── Projects V2 (org-scoped) ────────────────────────────────────────────
+export const fetchOrgProjectsV2 = (org: string) =>
+  ghFetch<GithubProjectV2[]>(`/api/v3/orgs/${encodeURIComponent(org)}/projectsV2`);
+
+export const fetchOrgProjectV2 = (org: string, number: number) =>
+  ghFetch<GithubProjectV2>(`/api/v3/orgs/${encodeURIComponent(org)}/projectsV2/${number}`);
+
+export const fetchOrgProjectV2Items = (org: string, number: number) =>
+  ghFetch<GithubProjectV2Item[]>(`/api/v3/orgs/${encodeURIComponent(org)}/projectsV2/${number}/items`);
+
+export const addOrgProjectV2Item = (
+  org: string,
+  number: number,
+  payload: { type: "Issue" | "PullRequest"; owner: string; repo: string; number: number },
+): Promise<GithubProjectV2Item> =>
+  ghPostJSON(`/api/v3/orgs/${encodeURIComponent(org)}/projectsV2/${number}/items`, payload);
+
+export const deleteOrgProjectV2Item = (org: string, number: number, itemId: number) =>
+  ghDelete(`/api/v3/orgs/${encodeURIComponent(org)}/projectsV2/${number}/items/${itemId}`);
+
 // ─── Search + repo social + account ─────────────────────────────────────
 
 /** One page of a /search/* envelope ({total_count, incomplete_results, items}). */
