@@ -998,6 +998,17 @@ resource "aws_efs_file_system" "sqlite" {
 
   lifecycle {
     prevent_destroy = true
+    # An EFS filesystem's KMS key is create-time-only on AWS: it cannot be
+    # changed in place, so expressing a key change forces a replacement that
+    # prevent_destroy correctly refuses — which wedged every already-deployed
+    # plan when the customer-managed key above was introduced (CI-061). New
+    # deployments still encrypt with the customer-managed key at creation;
+    # an existing filesystem keeps the key it was created with and its plans
+    # apply cleanly. Migrating an existing filesystem to the customer-managed
+    # key is an operational procedure, not an in-place apply: AWS Backup
+    # restore into a new filesystem encrypted with the target key, then
+    # point this resource at it (terraform state rm + import).
+    ignore_changes = [kms_key_id]
   }
 }
 
