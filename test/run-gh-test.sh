@@ -105,12 +105,14 @@ HOST="localhost"
 # the bleephub host explicitly with the same token.
 export GH_TOKEN="$TOKEN"
 export GH_HOST="$HOST"
-# Login the host so gh's host config has bleephub as a known GHES.
-echo "$TOKEN" | gh auth login --hostname "$HOST" --with-token >/dev/null 2>&1 || true
-gh config set -h "$HOST" git_protocol https >/dev/null 2>&1 || true
+# Login the host so gh's host config has bleephub as a known GHES. These must
+# fail loudly (set -e): a swallowed login failure makes every later gh verb
+# fail with confusing unauthenticated errors far from the cause.
+echo "$TOKEN" | gh auth login --hostname "$HOST" --with-token >/dev/null
+gh config set -h "$HOST" git_protocol https >/dev/null
 # Wire git pushes/pulls through gh's credential helper so native verbs that
 # shell out to git (gh repo clone, gh pr create from a working dir) authenticate.
-gh auth setup-git --hostname "$HOST" >/dev/null 2>&1 || true
+gh auth setup-git --hostname "$HOST" >/dev/null
 
 # `api` for endpoints `gh` doesn't expose as a high-level command
 # (apps/{slug}, /applications/{cid}/token, suspend, etc.). For the
