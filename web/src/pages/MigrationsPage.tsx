@@ -176,8 +176,8 @@ function MigrationsList({ scope }: { scope: Scope }) {
         header: "Locked",
         cell: (info) => (info.getValue() ? "yes" : "no"),
       }),
-      col.accessor("exported_at", {
-        header: "Exported",
+      col.accessor("created_at", {
+        header: "Created",
         cell: (info) => new Date(info.getValue<string>()).toLocaleString(),
       }),
       col.display({
@@ -299,7 +299,7 @@ function MigrationDetailDialog({
       </div>
 
       <div className="mb-4 text-sm" style={{ color: "var(--color-fg-muted)" }}>
-        Exported {new Date(migration.exported_at).toLocaleString()} ·{" "}
+        Created {new Date(migration.created_at).toLocaleString()} ·{" "}
         {migration.repositories.length} repositor
         {migration.repositories.length === 1 ? "y" : "ies"}
       </div>

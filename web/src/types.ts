@@ -714,7 +714,6 @@ export interface GithubMigration {
   archive_url: string;
   created_at: string;
   updated_at: string;
-  exported_at: string;
 }
 
 export interface BleephubUser {
