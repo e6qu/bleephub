@@ -249,12 +249,12 @@ export function App() {
               <Route path="/ui/classrooms/accept/:inviteCode" element={<ClassroomPage />} />
               <Route path="/ui/marketplace" element={<MarketplacePage />} />
               <Route path="/ui/marketplace/:slug" element={<MarketplacePage />} />
-              <Route path="/ui/admin" element={<OverviewPage />} />
-              <Route path="/ui/admin/users" element={<UsersPage />} />
-              <Route path="/ui/admin/orgs" element={<OrgsPage />} />
-              <Route path="/ui/admin/teams" element={<TeamsPage />} />
-              <Route path="/ui/admin/enterprise" element={<EnterprisePage />} />
-              <Route path="/ui/admin/audit-log" element={<AuditLogPage />} />
+              <Route path="/ui/operations" element={<OverviewPage />} />
+              <Route path="/ui/operations/users" element={<UsersPage />} />
+              <Route path="/ui/operations/orgs" element={<OrgsPage />} />
+              <Route path="/ui/operations/teams" element={<TeamsPage />} />
+              <Route path="/ui/operations/enterprise" element={<EnterprisePage />} />
+              <Route path="/ui/operations/audit-log" element={<AuditLogPage />} />
               {/* Deployments + webhook deliveries + Pages */}
               <Route path="/ui/repos/:owner/:repo/deployments" element={<DeploymentsPage />} />
               <Route path="/ui/repos/:owner/:repo/hooks/:hookId/deliveries" element={<WebhookDeliveriesPage />} />

@@ -60,7 +60,7 @@ describe("global creation journeys", () => {
   it("opens organization creation directly from ?new=1", async () => {
     mockFetch.mockResolvedValue(jsonResponse([]));
 
-    renderAt("/ui/admin/orgs", "/ui/admin/orgs?new=1", <OrgsPage />);
+    renderAt("/ui/operations/orgs", "/ui/operations/orgs?new=1", <OrgsPage />);
 
     expect(
       await screen.findByRole("heading", { name: "Create organization" }),
@@ -92,7 +92,7 @@ describe("global creation journeys", () => {
       return Promise.resolve(jsonResponse([]));
     });
 
-    renderAt("/ui/admin/orgs", "/ui/admin/orgs", <OrgsPage />);
+    renderAt("/ui/operations/orgs", "/ui/operations/orgs", <OrgsPage />);
 
     fireEvent.click(await screen.findByRole("button", { name: "edit" }));
     const policy = screen.getByRole("checkbox", { name: /Repository creation/ });

@@ -25,7 +25,7 @@ function renderPage() {
   });
   return render(
     <QueryClientProvider client={queryClient}>
-      <MemoryRouter initialEntries={["/ui/admin/enterprise"]}>
+      <MemoryRouter initialEntries={["/ui/operations/enterprise"]}>
         <EnterprisePage />
       </MemoryRouter>
     </QueryClientProvider>,
