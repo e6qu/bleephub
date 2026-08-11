@@ -1753,6 +1753,11 @@ export async function mergePR(
   }
 }
 
+// Bring the PR's head branch up to date with its base (the "Update branch"
+// button on a behind PR).
+export const updatePRBranch = (owner: string, repo: string, number: number) =>
+  ghSend("PUT", `/api/v3/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/pulls/${number}/update-branch`, {});
+
 export const fetchWebhooks = (owner: string, repo: string) =>
   ghFetch<GithubWebhook[]>(`/api/v3/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/hooks`);
 
