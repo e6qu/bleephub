@@ -3049,7 +3049,7 @@ const DISCUSSION_LIST_FRAGMENT = `
   category { id name emoji isAnswerable }
   createdAt
   updatedAt
-  comments(first: 0) { totalCount }
+  comments { totalCount }
 `;
 
 export async function fetchDiscussionCategories(
@@ -3171,7 +3171,7 @@ export async function createDiscussion(
           category { id name emoji isAnswerable }
           createdAt
           updatedAt
-          comments(first: 0) { totalCount }
+          comments { totalCount }
         }
       }
     }`,
