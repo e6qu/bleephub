@@ -6523,8 +6523,8 @@
         "id": "ARCH-001",
         "location": "internal/server",
         "severity": "M",
-        "status": "deferred by decision",
-        "status_kind": "deferred"
+        "status": "fixed \u2014 taken on its own once every other change had merged, as the owner-chosen coarse modular monolith that still assembles into the one fat binary. The data layer is now its own compiler-enforced module: `internal/store` (137 files, ~41k lines \u2014 Store and every sub-store, all entity types previously scattered beside their handlers, Persistence/PersistBatch, replica refresh, object byte store) sitting on `internal/gitstore` (git object storage + s3fs), with `internal/server` (~213k lines \u2014 Server, REST, GraphQL, Actions engine, identity, webhooks, and all contract gates) importing store and never the reverse. Type-alias compatibility files keep the 2,600+ Server methods and the whole test estate compiling unchanged; every newly exported store field carries json:\"-\" so wire and persisted shapes are byte-identical; the replica reflect-copy gained an access-field skip set so exporting the lock/persist fields could not change refresh semantics. Verified as a pure refactor: full suite green except the documented MinIO host-OOM cluster, shape ratchet zero-new, deadcode/dupl/clock gates green, and a runtime smoke across REST, git contents, GraphQL, UI and a push-triggered Actions run. Further de-methodizing of the engine slices (actions, graphql, identity) out of internal/server remains available as future work but is not this row's defect: the load-bearing split \u2014 data layer vs application \u2014 is done and the compiler now enforces it",
+        "status_kind": "fixed"
       }
     ],
     "summary": {
@@ -6537,7 +6537,7 @@
         },
         "ARCH": {
           "status": {
-            "deferred": 1
+            "fixed": 1
           },
           "total": 1
         },
@@ -6604,8 +6604,8 @@
         "minor": 147
       },
       "status": {
-        "deferred": 4,
-        "fixed": 681
+        "deferred": 3,
+        "fixed": 682
       },
       "total": 685
     }

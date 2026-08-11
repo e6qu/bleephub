@@ -24,10 +24,10 @@ ACCEPTED_FINDINGS: dict[tuple[str, str], str] = {
         "through the same dial-time SSRF address gate as webhook delivery "
         "(newAddressCheckedHTTPTransport), so it cannot reach an internal or "
         "cloud-metadata address regardless of the URL.",
-    ("go/path-injection", "internal/server/git_storage.go"):
+    ("go/path-injection", "internal/gitstore/git_storage.go"):
         "Path derives from a repo full name fully sanitised by repoGitDirPath "
         "(validateRepoStorageFullName + filepath.Abs/Join/Rel + IsLocal containment).",
-    ("go/path-injection", "internal/server/store_repos.go"):
+    ("go/path-injection", "internal/store/store_repos.go"):
         "Same repoGitDirPath containment sanitiser as git_storage.go.",
     ("go/reflected-xss", "internal/server/gh_middleware.go"):
         "Generic ResponseWriter.Write wrapper; API responses are JSON with a "
@@ -47,7 +47,7 @@ ACCEPTED_FINDINGS: dict[tuple[str, str], str] = {
         "Secret-scanning patterns are intentionally unanchored — a secret must match anywhere in scanned content.",
     ("go/incorrect-integer-conversion", "internal/server/expressions.go"):
         "Array index int(n) is range-checked (0 <= n < len) before use.",
-    ("go/incorrect-integer-conversion", "internal/server/store.go"):
+    ("go/incorrect-integer-conversion", "internal/store/store.go"):
         "Hex option/iteration IDs are internally-generated seeds parsed at 64-bit width; "
         "additionally range-guarded before conversion.",
     ("go/bad-redirect-check", "internal/server/identity.go"):
