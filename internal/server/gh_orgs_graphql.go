@@ -41,6 +41,9 @@ func (s *Server) addOrgFieldsToSchema(userType, queryType *graphql.Object, nodeI
 			"updatedAt": &graphql.Field{Type: graphql.NewNonNull(dateTime)},
 		},
 	})
+	// Registered so later schema families (Team.organization in the pull
+	// request file) reuse the one Organization type instead of forking it.
+	s.graphqlTypes.organization = orgType
 
 	orgEdgeType := graphql.NewObject(graphql.ObjectConfig{
 		Name: "OrganizationEdge",

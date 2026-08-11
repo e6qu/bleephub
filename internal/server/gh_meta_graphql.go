@@ -104,48 +104,7 @@ func (s *Server) addMetaFieldsToSchema(queryType *graphql.Object) {
 		},
 	})
 
-	licenseRuleType := graphql.NewObject(graphql.ObjectConfig{
-		Name: "LicenseRule",
-		Fields: graphql.Fields{
-			"description": &graphql.Field{Type: graphql.NewNonNull(graphql.String)},
-			"key":         &graphql.Field{Type: graphql.NewNonNull(graphql.String)},
-			"label":       &graphql.Field{Type: graphql.NewNonNull(graphql.String)},
-		},
-	})
-	licenseType := graphql.NewObject(graphql.ObjectConfig{
-		Name: "License",
-		Fields: graphql.Fields{
-			"body":           &graphql.Field{Type: graphql.NewNonNull(graphql.String)},
-			"conditions":     &graphql.Field{Type: graphql.NewNonNull(graphql.NewList(licenseRuleType))},
-			"description":    &graphql.Field{Type: graphql.String},
-			"featured":       &graphql.Field{Type: graphql.NewNonNull(graphql.Boolean)},
-			"hidden":         &graphql.Field{Type: graphql.NewNonNull(graphql.Boolean)},
-			"id":             &graphql.Field{Type: graphql.NewNonNull(graphql.ID)},
-			"implementation": &graphql.Field{Type: graphql.String},
-			"key":            &graphql.Field{Type: graphql.NewNonNull(graphql.String)},
-			"limitations":    &graphql.Field{Type: graphql.NewNonNull(graphql.NewList(licenseRuleType))},
-			"name":           &graphql.Field{Type: graphql.NewNonNull(graphql.String)},
-			"nickname":       &graphql.Field{Type: graphql.String},
-			"permissions":    &graphql.Field{Type: graphql.NewNonNull(graphql.NewList(licenseRuleType))},
-			"pseudoLicense":  &graphql.Field{Type: graphql.NewNonNull(graphql.Boolean)},
-			"spdxId":         &graphql.Field{Type: graphql.String},
-			"url":            &graphql.Field{Type: uri},
-		},
-	})
-	licenseJSON := func(key string) interface{} {
-		tmpl, ok := licenseTemplates[strings.ToLower(key)]
-		if !ok {
-			return nil
-		}
-		return map[string]interface{}{
-			"body": tmpl.body, "conditions": []interface{}{}, "description": nil,
-			"featured": false, "hidden": false, "id": tmpl.nodeID,
-			"implementation": nil, "key": strings.ToLower(key), "limitations": []interface{}{},
-			"name": tmpl.name, "nickname": nil, "permissions": []interface{}{},
-			"pseudoLicense": false, "spdxId": tmpl.spdxID,
-			"url": "https://choosealicense.com/licenses/" + strings.ToLower(key) + "/",
-		}
-	}
+	licenseType := s.gqlLicenseType()
 	queryType.AddFieldConfig("license", &graphql.Field{
 		Type: licenseType,
 		Args: graphql.FieldConfigArgument{
@@ -160,7 +119,7 @@ func (s *Server) addMetaFieldsToSchema(queryType *graphql.Object) {
 			if !ok {
 				return nil, nil
 			}
-			return licenseJSON(key), nil
+			return graphQLLicenseJSON(key), nil
 		},
 	})
 	queryType.AddFieldConfig("licenses", &graphql.Field{
@@ -173,7 +132,7 @@ func (s *Server) addMetaFieldsToSchema(queryType *graphql.Object) {
 			sort.Strings(keys)
 			out := make([]interface{}, 0, len(keys))
 			for _, key := range keys {
-				out = append(out, licenseJSON(key))
+				out = append(out, graphQLLicenseJSON(key))
 			}
 			return out, nil
 		},
@@ -237,4 +196,60 @@ func (s *Server) addMetaFieldsToSchema(queryType *graphql.Object) {
 			return map[string]interface{}{}, nil
 		},
 	})
+}
+
+// gqlLicenseType returns the shared License object type (memoized). Both
+// Query.license/licenses and Repository.licenseInfo resolve to this type —
+// matching GitHub, where licenseInfo is a full License, not a summary fork.
+func (s *Server) gqlLicenseType() *graphql.Object {
+	if s.graphqlTypes.license != nil {
+		return s.graphqlTypes.license
+	}
+	uri := s.graphQLStringScalar("URI")
+	licenseRuleType := graphql.NewObject(graphql.ObjectConfig{
+		Name: "LicenseRule",
+		Fields: graphql.Fields{
+			"description": &graphql.Field{Type: graphql.NewNonNull(graphql.String)},
+			"key":         &graphql.Field{Type: graphql.NewNonNull(graphql.String)},
+			"label":       &graphql.Field{Type: graphql.NewNonNull(graphql.String)},
+		},
+	})
+	s.graphqlTypes.license = graphql.NewObject(graphql.ObjectConfig{
+		Name: "License",
+		Fields: graphql.Fields{
+			"body":           &graphql.Field{Type: graphql.NewNonNull(graphql.String)},
+			"conditions":     &graphql.Field{Type: graphql.NewNonNull(graphql.NewList(licenseRuleType))},
+			"description":    &graphql.Field{Type: graphql.String},
+			"featured":       &graphql.Field{Type: graphql.NewNonNull(graphql.Boolean)},
+			"hidden":         &graphql.Field{Type: graphql.NewNonNull(graphql.Boolean)},
+			"id":             &graphql.Field{Type: graphql.NewNonNull(graphql.ID)},
+			"implementation": &graphql.Field{Type: graphql.String},
+			"key":            &graphql.Field{Type: graphql.NewNonNull(graphql.String)},
+			"limitations":    &graphql.Field{Type: graphql.NewNonNull(graphql.NewList(licenseRuleType))},
+			"name":           &graphql.Field{Type: graphql.NewNonNull(graphql.String)},
+			"nickname":       &graphql.Field{Type: graphql.String},
+			"permissions":    &graphql.Field{Type: graphql.NewNonNull(graphql.NewList(licenseRuleType))},
+			"pseudoLicense":  &graphql.Field{Type: graphql.NewNonNull(graphql.Boolean)},
+			"spdxId":         &graphql.Field{Type: graphql.String},
+			"url":            &graphql.Field{Type: uri},
+		},
+	})
+	return s.graphqlTypes.license
+}
+
+// graphQLLicenseJSON renders the GraphQL source map for a catalog license
+// key, or nil when the key names no vendored license template.
+func graphQLLicenseJSON(key string) interface{} {
+	tmpl, ok := licenseTemplates[strings.ToLower(key)]
+	if !ok {
+		return nil
+	}
+	return map[string]interface{}{
+		"body": tmpl.body, "conditions": []interface{}{}, "description": nil,
+		"featured": false, "hidden": false, "id": tmpl.nodeID,
+		"implementation": nil, "key": strings.ToLower(key), "limitations": []interface{}{},
+		"name": tmpl.name, "nickname": nil, "permissions": []interface{}{},
+		"pseudoLicense": false, "spdxId": tmpl.spdxID,
+		"url": "https://choosealicense.com/licenses/" + strings.ToLower(key) + "/",
+	}
 }

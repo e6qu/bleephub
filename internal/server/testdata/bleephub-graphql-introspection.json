@@ -82,15 +82,7 @@
           "type": "String"
         },
         "item": {
-          "type": "AddProjectV2ItemByIdPayloadItem"
-        }
-      }
-    },
-    "AddProjectV2ItemByIdPayloadItem": {
-      "kind": "OBJECT",
-      "fields": {
-        "id": {
-          "type": "ID!"
+          "type": "ProjectV2Item"
         }
       }
     },
@@ -184,7 +176,7 @@
       "kind": "OBJECT",
       "fields": {
         "checkSuite": {
-          "type": "CheckSuiteRef"
+          "type": "CheckSuite!"
         },
         "completedAt": {
           "type": "DateTime"
@@ -247,27 +239,11 @@
         "WAITING"
       ]
     },
-    "CheckSuiteRef": {
+    "CheckSuite": {
       "kind": "OBJECT",
       "fields": {
         "workflowRun": {
-          "type": "CheckWorkflowRun"
-        }
-      }
-    },
-    "CheckWorkflow": {
-      "kind": "OBJECT",
-      "fields": {
-        "name": {
-          "type": "String!"
-        }
-      }
-    },
-    "CheckWorkflowRun": {
-      "kind": "OBJECT",
-      "fields": {
-        "workflow": {
-          "type": "CheckWorkflow"
+          "type": "WorkflowRun"
         }
       }
     },
@@ -305,20 +281,6 @@
         },
         "pullRequest": {
           "type": "PullRequest"
-        }
-      }
-    },
-    "ClosingIssuesReferencesConnection": {
-      "kind": "OBJECT",
-      "fields": {
-        "nodes": {
-          "type": "[Issue]"
-        },
-        "pageInfo": {
-          "type": "PageInfo!"
-        },
-        "totalCount": {
-          "type": "Int!"
         }
       }
     },
@@ -457,7 +419,7 @@
       "input_fields": {
         "clientMutationId": "String",
         "dataType": "ProjectV2CustomFieldType!",
-        "iterationConfiguration": "ProjectV2IterationConfigurationInput",
+        "iterationConfiguration": "ProjectV2IterationFieldConfigurationInput",
         "name": "String!",
         "projectId": "ID!",
         "singleSelectOptions": "[ProjectV2SingleSelectFieldOptionInput!]"
@@ -470,7 +432,7 @@
           "type": "String"
         },
         "projectV2Field": {
-          "type": "ProjectV2FieldSummary"
+          "type": "ProjectV2FieldConfiguration"
         }
       }
     },
@@ -646,10 +608,10 @@
           "type": "DateTime"
         },
         "reactionGroups": {
-          "type": "[DiscussionReactionGroup]"
+          "type": "[ReactionGroup!]"
         },
         "reactions": {
-          "type": "DiscussionReactionConnection",
+          "type": "ReactionConnection!",
           "args": {
             "after": "String",
             "before": "String",
@@ -675,7 +637,10 @@
         "viewerCanUpdate": {
           "type": "Boolean!"
         }
-      }
+      },
+      "interfaces": [
+        "Lockable"
+      ]
     },
     "DiscussionCategory": {
       "kind": "OBJECT",
@@ -758,14 +723,20 @@
         "isAnswer": {
           "type": "Boolean!"
         },
+        "isMinimized": {
+          "type": "Boolean!"
+        },
         "lastEditedAt": {
           "type": "DateTime"
         },
+        "minimizedReason": {
+          "type": "String"
+        },
         "reactionGroups": {
-          "type": "[DiscussionReactionGroup]"
+          "type": "[ReactionGroup!]"
         },
         "reactions": {
-          "type": "DiscussionReactionConnection",
+          "type": "ReactionConnection!",
           "args": {
             "after": "String",
             "before": "String",
@@ -785,7 +756,10 @@
         "updatedAt": {
           "type": "DateTime!"
         }
-      }
+      },
+      "interfaces": [
+        "Minimizable"
+      ]
     },
     "DiscussionCommentConnection": {
       "kind": "OBJECT",
@@ -856,67 +830,6 @@
         "CREATED_AT",
         "UPDATED_AT"
       ]
-    },
-    "DiscussionReactingUserConnection": {
-      "kind": "OBJECT",
-      "fields": {
-        "totalCount": {
-          "type": "Int!"
-        }
-      }
-    },
-    "DiscussionReaction": {
-      "kind": "OBJECT",
-      "fields": {
-        "content": {
-          "type": "String!"
-        },
-        "id": {
-          "type": "ID!"
-        },
-        "user": {
-          "type": "User"
-        }
-      }
-    },
-    "DiscussionReactionConnection": {
-      "kind": "OBJECT",
-      "fields": {
-        "edges": {
-          "type": "[DiscussionReactionEdge]"
-        },
-        "nodes": {
-          "type": "[DiscussionReaction]"
-        },
-        "pageInfo": {
-          "type": "PageInfo!"
-        },
-        "totalCount": {
-          "type": "Int!"
-        }
-      }
-    },
-    "DiscussionReactionEdge": {
-      "kind": "OBJECT",
-      "fields": {
-        "cursor": {
-          "type": "String!"
-        },
-        "node": {
-          "type": "DiscussionReaction"
-        }
-      }
-    },
-    "DiscussionReactionGroup": {
-      "kind": "OBJECT",
-      "fields": {
-        "content": {
-          "type": "String!"
-        },
-        "users": {
-          "type": "DiscussionReactingUserConnection"
-        }
-      }
     },
     "Float": {
       "kind": "SCALAR"
@@ -1062,7 +975,7 @@
           "type": "Int!"
         },
         "parent": {
-          "type": "RelatedIssue"
+          "type": "Issue"
         },
         "projectItems": {
           "type": "ProjectV2ItemConnection",
@@ -1076,6 +989,9 @@
         "reactionGroups": {
           "type": "[ReactionGroup!]"
         },
+        "repository": {
+          "type": "Repository!"
+        },
         "state": {
           "type": "IssueState!"
         },
@@ -1083,10 +999,12 @@
           "type": "IssueStateReason"
         },
         "subIssues": {
-          "type": "SubIssueConnection",
+          "type": "IssueConnection!",
           "args": {
             "after": "String",
-            "first": "Int"
+            "before": "String",
+            "first": "Int",
+            "last": "Int"
           }
         },
         "subIssuesSummary": {
@@ -1103,6 +1021,7 @@
         }
       },
       "interfaces": [
+        "Lockable",
         "Node"
       ]
     },
@@ -1150,7 +1069,7 @@
           "type": "String"
         },
         "reactionGroups": {
-          "type": "[ReactionGroup]"
+          "type": "[ReactionGroup!]"
         },
         "updatedAt": {
           "type": "DateTime!"
@@ -1161,7 +1080,10 @@
         "viewerDidAuthor": {
           "type": "Boolean!"
         }
-      }
+      },
+      "interfaces": [
+        "Minimizable"
+      ]
     },
     "IssueCommentConnection": {
       "kind": "OBJECT",
@@ -1690,17 +1612,6 @@
         }
       }
     },
-    "LatestReviewConnection": {
-      "kind": "OBJECT",
-      "fields": {
-        "nodes": {
-          "type": "[PullRequestReview]"
-        },
-        "totalCount": {
-          "type": "Int!"
-        }
-      }
-    },
     "License": {
       "kind": "OBJECT",
       "fields": {
@@ -1780,7 +1691,7 @@
           "type": "String"
         },
         "lockedRecord": {
-          "type": "LockableSummary"
+          "type": "Lockable"
         }
       }
     },
@@ -1793,19 +1704,21 @@
         "TOO_HEATED"
       ]
     },
-    "LockableSummary": {
-      "kind": "OBJECT",
+    "Lockable": {
+      "kind": "INTERFACE",
       "fields": {
         "activeLockReason": {
-          "type": "String"
-        },
-        "id": {
-          "type": "ID!"
+          "type": "LockReason"
         },
         "locked": {
           "type": "Boolean!"
         }
-      }
+      },
+      "possible_types": [
+        "Discussion",
+        "Issue",
+        "PullRequest"
+      ]
     },
     "MarkDiscussionCommentAsAnswerInput": {
       "kind": "INPUT_OBJECT",
@@ -1931,19 +1844,20 @@
         "OPEN"
       ]
     },
-    "MinimizableComment": {
-      "kind": "OBJECT",
+    "Minimizable": {
+      "kind": "INTERFACE",
       "fields": {
-        "id": {
-          "type": "ID!"
-        },
         "isMinimized": {
           "type": "Boolean!"
         },
         "minimizedReason": {
           "type": "String"
         }
-      }
+      },
+      "possible_types": [
+        "DiscussionComment",
+        "IssueComment"
+      ]
     },
     "MinimizeCommentInput": {
       "kind": "INPUT_OBJECT",
@@ -1960,7 +1874,7 @@
           "type": "String"
         },
         "minimizedComment": {
-          "type": "MinimizableComment"
+          "type": "Minimizable"
         }
       }
     },
@@ -2287,139 +2201,6 @@
         }
       }
     },
-    "PRBaseRef": {
-      "kind": "OBJECT",
-      "fields": {
-        "branchProtectionRule": {
-          "type": "BranchProtectionRule"
-        },
-        "name": {
-          "type": "String!"
-        }
-      }
-    },
-    "PRComment": {
-      "kind": "OBJECT",
-      "fields": {
-        "author": {
-          "type": "Actor"
-        },
-        "authorAssociation": {
-          "type": "CommentAuthorAssociation!"
-        },
-        "body": {
-          "type": "String!"
-        },
-        "createdAt": {
-          "type": "DateTime!"
-        },
-        "editor": {
-          "type": "User"
-        },
-        "id": {
-          "type": "ID!"
-        },
-        "includesCreatedEdit": {
-          "type": "Boolean"
-        },
-        "isMinimized": {
-          "type": "Boolean"
-        },
-        "lastEditedAt": {
-          "type": "DateTime"
-        },
-        "minimizedReason": {
-          "type": "String"
-        },
-        "reactionGroups": {
-          "type": "[PRReactionGroup]"
-        },
-        "url": {
-          "type": "URI!"
-        },
-        "viewerDidAuthor": {
-          "type": "Boolean"
-        }
-      }
-    },
-    "PRCommentConnection": {
-      "kind": "OBJECT",
-      "fields": {
-        "nodes": {
-          "type": "[PRComment]"
-        },
-        "pageInfo": {
-          "type": "PageInfo!"
-        },
-        "totalCount": {
-          "type": "Int!"
-        }
-      }
-    },
-    "PRLabel": {
-      "kind": "OBJECT",
-      "fields": {
-        "color": {
-          "type": "String!"
-        },
-        "description": {
-          "type": "String"
-        },
-        "id": {
-          "type": "ID!"
-        },
-        "name": {
-          "type": "String!"
-        }
-      }
-    },
-    "PRLabelConnection": {
-      "kind": "OBJECT",
-      "fields": {
-        "nodes": {
-          "type": "[PRLabel]"
-        },
-        "pageInfo": {
-          "type": "PageInfo!"
-        },
-        "totalCount": {
-          "type": "Int!"
-        }
-      }
-    },
-    "PRReactingUserConnection": {
-      "kind": "OBJECT",
-      "fields": {
-        "totalCount": {
-          "type": "Int!"
-        }
-      }
-    },
-    "PRReactionGroup": {
-      "kind": "OBJECT",
-      "fields": {
-        "content": {
-          "type": "String!"
-        },
-        "users": {
-          "type": "PRReactingUserConnection"
-        }
-      }
-    },
-    "PRUserConnection": {
-      "kind": "OBJECT",
-      "fields": {
-        "nodes": {
-          "type": "[User]"
-        },
-        "pageInfo": {
-          "type": "PageInfo!"
-        },
-        "totalCount": {
-          "type": "Int!"
-        }
-      }
-    },
     "PageInfo": {
       "kind": "OBJECT",
       "fields": {
@@ -2455,7 +2236,7 @@
           "type": "Boolean!"
         },
         "fields": {
-          "type": "ProjectV2FieldConnection!",
+          "type": "ProjectV2FieldConfigurationConnection!",
           "args": {
             "after": "String",
             "before": "String",
@@ -2520,28 +2301,58 @@
         "id": {
           "type": "ID!"
         },
-        "iterationConfiguration": {
-          "type": "ProjectV2IterationConfiguration"
-        },
         "name": {
           "type": "String!"
-        },
-        "options": {
-          "type": "[ProjectV2SingleSelectFieldOption]"
         },
         "updatedAt": {
           "type": "DateTime!"
         }
-      }
+      },
+      "interfaces": [
+        "ProjectV2FieldCommon"
+      ]
     },
-    "ProjectV2FieldConnection": {
+    "ProjectV2FieldCommon": {
+      "kind": "INTERFACE",
+      "fields": {
+        "createdAt": {
+          "type": "DateTime!"
+        },
+        "dataType": {
+          "type": "ProjectV2FieldType!"
+        },
+        "id": {
+          "type": "ID!"
+        },
+        "name": {
+          "type": "String!"
+        },
+        "updatedAt": {
+          "type": "DateTime!"
+        }
+      },
+      "possible_types": [
+        "ProjectV2Field",
+        "ProjectV2IterationField",
+        "ProjectV2SingleSelectField"
+      ]
+    },
+    "ProjectV2FieldConfiguration": {
+      "kind": "UNION",
+      "possible_types": [
+        "ProjectV2Field",
+        "ProjectV2IterationField",
+        "ProjectV2SingleSelectField"
+      ]
+    },
+    "ProjectV2FieldConfigurationConnection": {
       "kind": "OBJECT",
       "fields": {
         "edges": {
-          "type": "[ProjectV2FieldEdge]"
+          "type": "[ProjectV2FieldConfigurationEdge]"
         },
         "nodes": {
-          "type": "[ProjectV2Field]"
+          "type": "[ProjectV2FieldConfiguration]"
         },
         "pageInfo": {
           "type": "PageInfo!"
@@ -2551,28 +2362,14 @@
         }
       }
     },
-    "ProjectV2FieldEdge": {
+    "ProjectV2FieldConfigurationEdge": {
       "kind": "OBJECT",
       "fields": {
         "cursor": {
           "type": "String!"
         },
         "node": {
-          "type": "ProjectV2Field"
-        }
-      }
-    },
-    "ProjectV2FieldSummary": {
-      "kind": "OBJECT",
-      "fields": {
-        "dataType": {
-          "type": "String!"
-        },
-        "id": {
-          "type": "ID!"
-        },
-        "name": {
-          "type": "String!"
+          "type": "ProjectV2FieldConfiguration"
         }
       }
     },
@@ -2595,10 +2392,10 @@
         "TRACKS"
       ]
     },
-    "ProjectV2FieldValueInput": {
+    "ProjectV2FieldValue": {
       "kind": "INPUT_OBJECT",
       "input_fields": {
-        "date": "String",
+        "date": "Date",
         "iterationId": "String",
         "number": "Float",
         "singleSelectOptionId": "String",
@@ -2713,6 +2510,65 @@
       ]
     },
     "ProjectV2Iteration": {
+      "kind": "INPUT_OBJECT",
+      "input_fields": {
+        "duration": "Int!",
+        "startDate": "Date!",
+        "title": "String!"
+      }
+    },
+    "ProjectV2IterationField": {
+      "kind": "OBJECT",
+      "fields": {
+        "configuration": {
+          "type": "ProjectV2IterationFieldConfiguration!"
+        },
+        "createdAt": {
+          "type": "DateTime!"
+        },
+        "dataType": {
+          "type": "ProjectV2FieldType!"
+        },
+        "id": {
+          "type": "ID!"
+        },
+        "name": {
+          "type": "String!"
+        },
+        "updatedAt": {
+          "type": "DateTime!"
+        }
+      },
+      "interfaces": [
+        "ProjectV2FieldCommon"
+      ]
+    },
+    "ProjectV2IterationFieldConfiguration": {
+      "kind": "OBJECT",
+      "fields": {
+        "completedIterations": {
+          "type": "[ProjectV2IterationFieldIteration!]!"
+        },
+        "duration": {
+          "type": "Int!"
+        },
+        "iterations": {
+          "type": "[ProjectV2IterationFieldIteration!]!"
+        },
+        "startDay": {
+          "type": "Int!"
+        }
+      }
+    },
+    "ProjectV2IterationFieldConfigurationInput": {
+      "kind": "INPUT_OBJECT",
+      "input_fields": {
+        "duration": "Int!",
+        "iterations": "[ProjectV2Iteration!]!",
+        "startDate": "Date!"
+      }
+    },
+    "ProjectV2IterationFieldIteration": {
       "kind": "OBJECT",
       "fields": {
         "duration": {
@@ -2722,42 +2578,38 @@
           "type": "String!"
         },
         "startDate": {
-          "type": "String!"
+          "type": "Date!"
         },
         "title": {
           "type": "String!"
         }
       }
     },
-    "ProjectV2IterationConfiguration": {
+    "ProjectV2SingleSelectField": {
       "kind": "OBJECT",
       "fields": {
-        "duration": {
-          "type": "Int"
+        "createdAt": {
+          "type": "DateTime!"
         },
-        "iterations": {
-          "type": "[ProjectV2Iteration]"
+        "dataType": {
+          "type": "ProjectV2FieldType!"
         },
-        "startDate": {
-          "type": "String"
+        "id": {
+          "type": "ID!"
+        },
+        "name": {
+          "type": "String!"
+        },
+        "options": {
+          "type": "[ProjectV2SingleSelectFieldOption!]!"
+        },
+        "updatedAt": {
+          "type": "DateTime!"
         }
-      }
-    },
-    "ProjectV2IterationConfigurationInput": {
-      "kind": "INPUT_OBJECT",
-      "input_fields": {
-        "duration": "Int!",
-        "iterations": "[ProjectV2IterationInput!]",
-        "startDate": "String!"
-      }
-    },
-    "ProjectV2IterationInput": {
-      "kind": "INPUT_OBJECT",
-      "input_fields": {
-        "duration": "Int",
-        "startDate": "String!",
-        "title": "String!"
-      }
+      },
+      "interfaces": [
+        "ProjectV2FieldCommon"
+      ]
     },
     "ProjectV2SingleSelectFieldOption": {
       "kind": "OBJECT",
@@ -2801,6 +2653,15 @@
         "createdAt": {
           "type": "DateTime!"
         },
+        "fields": {
+          "type": "ProjectV2FieldConfigurationConnection",
+          "args": {
+            "after": "String",
+            "before": "String",
+            "first": "Int",
+            "last": "Int"
+          }
+        },
         "filter": {
           "type": "String"
         },
@@ -2818,9 +2679,6 @@
         },
         "updatedAt": {
           "type": "DateTime!"
-        },
-        "visibleFieldIds": {
-          "type": "[Int!]"
         }
       }
     },
@@ -2870,7 +2728,7 @@
           "type": "Int!"
         },
         "assignees": {
-          "type": "PRUserConnection",
+          "type": "UserConnection!",
           "args": {
             "after": "String",
             "before": "String",
@@ -2885,7 +2743,7 @@
           "type": "AutoMergeRequest"
         },
         "baseRef": {
-          "type": "PRBaseRef"
+          "type": "Ref"
         },
         "baseRefName": {
           "type": "String!"
@@ -2906,14 +2764,14 @@
           "type": "DateTime"
         },
         "closingIssuesReferences": {
-          "type": "ClosingIssuesReferencesConnection",
+          "type": "IssueConnection",
           "args": {
             "after": "String",
             "first": "Int"
           }
         },
         "comments": {
-          "type": "PRCommentConnection",
+          "type": "IssueCommentConnection!",
           "args": {
             "after": "String",
             "before": "String",
@@ -2971,7 +2829,7 @@
           "type": "Boolean!"
         },
         "labels": {
-          "type": "PRLabelConnection",
+          "type": "LabelConnection",
           "args": {
             "after": "String",
             "before": "String",
@@ -2980,7 +2838,7 @@
           }
         },
         "latestReviews": {
-          "type": "LatestReviewConnection",
+          "type": "PullRequestReviewConnection",
           "args": {
             "after": "String",
             "before": "String",
@@ -3031,7 +2889,7 @@
           }
         },
         "reactionGroups": {
-          "type": "[PRReactionGroup!]"
+          "type": "[ReactionGroup!]"
         },
         "reviewDecision": {
           "type": "PullRequestReviewDecision"
@@ -3077,6 +2935,7 @@
         }
       },
       "interfaces": [
+        "Lockable",
         "Node"
       ]
     },
@@ -3188,7 +3047,7 @@
           "type": "ID!"
         },
         "reactionGroups": {
-          "type": "[PRReactionGroup]"
+          "type": "[ReactionGroup!]"
         },
         "state": {
           "type": "PullRequestReviewState!"
@@ -3469,55 +3328,82 @@
         }
       }
     },
+    "Reaction": {
+      "kind": "OBJECT",
+      "fields": {
+        "content": {
+          "type": "ReactionContent!"
+        },
+        "id": {
+          "type": "ID!"
+        },
+        "user": {
+          "type": "User"
+        }
+      }
+    },
+    "ReactionConnection": {
+      "kind": "OBJECT",
+      "fields": {
+        "edges": {
+          "type": "[ReactionEdge]"
+        },
+        "nodes": {
+          "type": "[Reaction]"
+        },
+        "pageInfo": {
+          "type": "PageInfo!"
+        },
+        "totalCount": {
+          "type": "Int!"
+        }
+      }
+    },
+    "ReactionContent": {
+      "kind": "ENUM",
+      "enum_values": [
+        "CONFUSED",
+        "EYES",
+        "HEART",
+        "HOORAY",
+        "LAUGH",
+        "ROCKET",
+        "THUMBS_DOWN",
+        "THUMBS_UP"
+      ]
+    },
+    "ReactionEdge": {
+      "kind": "OBJECT",
+      "fields": {
+        "cursor": {
+          "type": "String!"
+        },
+        "node": {
+          "type": "Reaction"
+        }
+      }
+    },
     "ReactionGroup": {
       "kind": "OBJECT",
       "fields": {
         "content": {
-          "type": "String!"
+          "type": "ReactionContent!"
         },
         "users": {
-          "type": "ReactingUserConnection"
+          "type": "ReactingUserConnection!"
         }
       }
     },
     "Ref": {
       "kind": "OBJECT",
       "fields": {
+        "branchProtectionRule": {
+          "type": "BranchProtectionRule"
+        },
         "name": {
           "type": "String!"
         },
         "prefix": {
-          "type": "String!"
-        }
-      }
-    },
-    "RelatedIssue": {
-      "kind": "OBJECT",
-      "fields": {
-        "id": {
-          "type": "ID!"
-        },
-        "number": {
-          "type": "Int!"
-        },
-        "repository": {
-          "type": "RelatedIssueRepository"
-        },
-        "state": {
-          "type": "String!"
-        },
-        "title": {
-          "type": "String!"
-        },
-        "url": {
-          "type": "String!"
-        }
-      }
-    },
-    "RelatedIssueRepository": {
-      "kind": "OBJECT",
-      "fields": {
-        "nameWithOwner": {
           "type": "String!"
         }
       }
@@ -3624,14 +3510,6 @@
         },
         "pullRequest": {
           "type": "PullRequest"
-        }
-      }
-    },
-    "RepoWatcherConnection": {
-      "kind": "OBJECT",
-      "fields": {
-        "totalCount": {
-          "type": "Int!"
         }
       }
     },
@@ -3781,7 +3659,7 @@
           "type": "Release"
         },
         "licenseInfo": {
-          "type": "RepositoryLicense"
+          "type": "License"
         },
         "mergeCommitAllowed": {
           "type": "Boolean!"
@@ -3881,7 +3759,7 @@
           "type": "RepositoryVisibility!"
         },
         "watchers": {
-          "type": "RepoWatcherConnection"
+          "type": "UserConnection!"
         }
       },
       "interfaces": [
@@ -3921,23 +3799,6 @@
         },
         "node": {
           "type": "Repository"
-        }
-      }
-    },
-    "RepositoryLicense": {
-      "kind": "OBJECT",
-      "fields": {
-        "key": {
-          "type": "String!"
-        },
-        "name": {
-          "type": "String!"
-        },
-        "nickname": {
-          "type": "String"
-        },
-        "spdxId": {
-          "type": "String"
         }
       }
     },
@@ -4235,17 +4096,6 @@
     "String": {
       "kind": "SCALAR"
     },
-    "SubIssueConnection": {
-      "kind": "OBJECT",
-      "fields": {
-        "nodes": {
-          "type": "[RelatedIssue]"
-        },
-        "totalCount": {
-          "type": "Int!"
-        }
-      }
-    },
     "SubIssuesSummary": {
       "kind": "OBJECT",
       "fields": {
@@ -4270,17 +4120,9 @@
           "type": "String"
         },
         "organization": {
-          "type": "TeamOrganization!"
+          "type": "Organization!"
         },
         "slug": {
-          "type": "String!"
-        }
-      }
-    },
-    "TeamOrganization": {
-      "kind": "OBJECT",
-      "fields": {
-        "login": {
           "type": "String!"
         }
       }
@@ -4310,7 +4152,7 @@
           "type": "String"
         },
         "unlockedRecord": {
-          "type": "LockableSummary"
+          "type": "Lockable"
         }
       }
     },
@@ -4346,7 +4188,7 @@
           "type": "String"
         },
         "unminimizedComment": {
-          "type": "MinimizableComment"
+          "type": "Minimizable"
         }
       }
     },
@@ -4440,7 +4282,7 @@
         "fieldId": "ID!",
         "itemId": "ID!",
         "projectId": "ID!",
-        "value": "ProjectV2FieldValueInput!"
+        "value": "ProjectV2FieldValue!"
       }
     },
     "UpdateProjectV2ItemFieldValuePayload": {
@@ -4450,15 +4292,7 @@
           "type": "String"
         },
         "projectV2Item": {
-          "type": "UpdateProjectV2ItemFieldValuePayloadItem"
-        }
-      }
-    },
-    "UpdateProjectV2ItemFieldValuePayloadItem": {
-      "kind": "OBJECT",
-      "fields": {
-        "id": {
-          "type": "ID!"
+          "type": "ProjectV2Item"
         }
       }
     },
@@ -4577,6 +4411,22 @@
         },
         "totalCount": {
           "type": "Int!"
+        }
+      }
+    },
+    "Workflow": {
+      "kind": "OBJECT",
+      "fields": {
+        "name": {
+          "type": "String!"
+        }
+      }
+    },
+    "WorkflowRun": {
+      "kind": "OBJECT",
+      "fields": {
+        "workflow": {
+          "type": "Workflow!"
         }
       }
     }

@@ -1,77 +1,9 @@
 field	Mutation.deleteRepository	absent from GitHub
-field	ProjectV2Field.iterationConfiguration	absent from GitHub
-field	ProjectV2Field.options	absent from GitHub
-field	ProjectV2View.visibleFieldIds	absent from GitHub
-field-type	AddProjectV2ItemByIdPayload.item	AddProjectV2ItemByIdPayloadItem	ProjectV2Item
-field-type	CheckRun.checkSuite	CheckSuiteRef	CheckSuite!
-field-type	CreateProjectV2FieldPayload.projectV2Field	ProjectV2FieldSummary	ProjectV2FieldConfiguration
-field-type	Discussion.reactionGroups	[DiscussionReactionGroup]	[ReactionGroup!]
-field-type	Discussion.reactions	DiscussionReactionConnection	ReactionConnection!
-field-type	DiscussionComment.reactionGroups	[DiscussionReactionGroup]	[ReactionGroup!]
-field-type	DiscussionComment.reactions	DiscussionReactionConnection	ReactionConnection!
-field-type	Issue.parent	RelatedIssue	Issue
-field-type	Issue.subIssues	SubIssueConnection	IssueConnection!
-field-type	IssueComment.reactionGroups	[ReactionGroup]	[ReactionGroup!]
-field-type	LockLockablePayload.lockedRecord	LockableSummary	Lockable
-field-type	MinimizeCommentPayload.minimizedComment	MinimizableComment	Minimizable
-field-type	ProjectV2.fields	ProjectV2FieldConnection!	ProjectV2FieldConfigurationConnection!
-field-type	PullRequest.assignees	PRUserConnection	UserConnection!
-field-type	PullRequest.baseRef	PRBaseRef	Ref
-field-type	PullRequest.closingIssuesReferences	ClosingIssuesReferencesConnection	IssueConnection
-field-type	PullRequest.comments	PRCommentConnection	IssueCommentConnection!
-field-type	PullRequest.labels	PRLabelConnection	LabelConnection
-field-type	PullRequest.latestReviews	LatestReviewConnection	PullRequestReviewConnection
-field-type	PullRequest.reactionGroups	[PRReactionGroup!]	[ReactionGroup!]
-field-type	PullRequestReview.reactionGroups	[PRReactionGroup]	[ReactionGroup!]
-field-type	ReactionGroup.content	String!	ReactionContent!
-field-type	ReactionGroup.users	ReactingUserConnection	ReactingUserConnection!
-field-type	Repository.licenseInfo	RepositoryLicense	License
-field-type	Repository.watchers	RepoWatcherConnection	UserConnection!
 field-type	Team.name	String	String!
-field-type	Team.organization	TeamOrganization!	Organization!
-field-type	UnlockLockablePayload.unlockedRecord	LockableSummary	Lockable
-field-type	UnminimizeCommentPayload.unminimizedComment	MinimizableComment	Minimizable
-field-type	UpdateProjectV2ItemFieldValuePayload.projectV2Item	UpdateProjectV2ItemFieldValuePayloadItem	ProjectV2Item
-input-field-type	CreateProjectV2FieldInput.iterationConfiguration	ProjectV2IterationConfigurationInput	ProjectV2IterationFieldConfigurationInput
-input-field-type	UpdateProjectV2ItemFieldValueInput.value	ProjectV2FieldValueInput!	ProjectV2FieldValue!
-type	AddProjectV2ItemByIdPayloadItem	OBJECT is absent from GitHub
 type	Boolean	SCALAR is absent from GitHub
-type	CheckSuiteRef	OBJECT is absent from GitHub
-type	CheckWorkflow	OBJECT is absent from GitHub
-type	CheckWorkflowRun	OBJECT is absent from GitHub
-type	ClosingIssuesReferencesConnection	OBJECT is absent from GitHub
 type	DeleteRepositoryInput	INPUT_OBJECT is absent from GitHub
 type	DeleteRepositoryPayload	OBJECT is absent from GitHub
-type	DiscussionReactingUserConnection	OBJECT is absent from GitHub
-type	DiscussionReaction	OBJECT is absent from GitHub
-type	DiscussionReactionConnection	OBJECT is absent from GitHub
-type	DiscussionReactionEdge	OBJECT is absent from GitHub
-type	DiscussionReactionGroup	OBJECT is absent from GitHub
 type	Float	SCALAR is absent from GitHub
 type	ID	SCALAR is absent from GitHub
 type	Int	SCALAR is absent from GitHub
-type	LatestReviewConnection	OBJECT is absent from GitHub
-type	LockableSummary	OBJECT is absent from GitHub
-type	MinimizableComment	OBJECT is absent from GitHub
-type	PRBaseRef	OBJECT is absent from GitHub
-type	PRComment	OBJECT is absent from GitHub
-type	PRCommentConnection	OBJECT is absent from GitHub
-type	PRLabel	OBJECT is absent from GitHub
-type	PRLabelConnection	OBJECT is absent from GitHub
-type	PRReactingUserConnection	OBJECT is absent from GitHub
-type	PRReactionGroup	OBJECT is absent from GitHub
-type	PRUserConnection	OBJECT is absent from GitHub
-type	ProjectV2FieldSummary	OBJECT is absent from GitHub
-type	ProjectV2FieldValueInput	INPUT_OBJECT is absent from GitHub
-type	ProjectV2IterationConfiguration	OBJECT is absent from GitHub
-type	ProjectV2IterationConfigurationInput	INPUT_OBJECT is absent from GitHub
-type	ProjectV2IterationInput	INPUT_OBJECT is absent from GitHub
-type	RelatedIssue	OBJECT is absent from GitHub
-type	RelatedIssueRepository	OBJECT is absent from GitHub
-type	RepoWatcherConnection	OBJECT is absent from GitHub
-type	RepositoryLicense	OBJECT is absent from GitHub
 type	String	SCALAR is absent from GitHub
-type	SubIssueConnection	OBJECT is absent from GitHub
-type	TeamOrganization	OBJECT is absent from GitHub
-type	UpdateProjectV2ItemFieldValuePayloadItem	OBJECT is absent from GitHub
-type-kind	ProjectV2Iteration	OBJECT	INPUT_OBJECT

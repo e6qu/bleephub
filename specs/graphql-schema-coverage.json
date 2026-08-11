@@ -1,11 +1,11 @@
 {
   "official_types": 1806,
-  "bleephub_types": 275,
-  "shared_types": 235,
+  "bleephub_types": 259,
+  "shared_types": 252,
   "official_fields": 8341,
-  "implemented_fields": 854,
-  "signature_exact_fields": 822,
-  "compatibility_gap_count": 77,
+  "implemented_fields": 911,
+  "signature_exact_fields": 910,
+  "compatibility_gap_count": 9,
   "missing_types": [
     "AbortQueuedMigrationsInput",
     "AbortQueuedMigrationsPayload",
@@ -151,7 +151,6 @@
     "CheckStep",
     "CheckStepConnection",
     "CheckStepEdge",
-    "CheckSuite",
     "CheckSuiteAutoTriggerPreference",
     "CheckSuiteConnection",
     "CheckSuiteEdge",
@@ -650,7 +649,6 @@
     "LinkedBranch",
     "LinkedBranchConnection",
     "LinkedBranchEdge",
-    "Lockable",
     "LockedEvent",
     "Mannequin",
     "MannequinConnection",
@@ -701,7 +699,6 @@
     "MilestoneOrder",
     "MilestoneOrderField",
     "MilestonedEvent",
-    "Minimizable",
     "MoveProjectCardInput",
     "MoveProjectCardPayload",
     "MoveProjectColumnInput",
@@ -877,13 +874,10 @@
     "ProjectV2Connection",
     "ProjectV2Edge",
     "ProjectV2Event",
-    "ProjectV2FieldCommon",
-    "ProjectV2FieldConfiguration",
-    "ProjectV2FieldConfigurationConnection",
-    "ProjectV2FieldConfigurationEdge",
+    "ProjectV2FieldConnection",
+    "ProjectV2FieldEdge",
     "ProjectV2FieldOrder",
     "ProjectV2FieldOrderField",
-    "ProjectV2FieldValue",
     "ProjectV2Filters",
     "ProjectV2IssueFieldValues",
     "ProjectV2ItemArchivedState",
@@ -905,10 +899,6 @@
     "ProjectV2ItemOrderField",
     "ProjectV2ItemStatusChangedEvent",
     "ProjectV2ItemType",
-    "ProjectV2IterationField",
-    "ProjectV2IterationFieldConfiguration",
-    "ProjectV2IterationFieldConfigurationInput",
-    "ProjectV2IterationFieldIteration",
     "ProjectV2MultiSelectField",
     "ProjectV2MultiSelectFieldOption",
     "ProjectV2MultiSelectFieldOptionInput",
@@ -918,7 +908,6 @@
     "ProjectV2PermissionLevel",
     "ProjectV2Recent",
     "ProjectV2Roles",
-    "ProjectV2SingleSelectField",
     "ProjectV2SortBy",
     "ProjectV2SortByConnection",
     "ProjectV2SortByEdge",
@@ -990,10 +979,6 @@
     "PushAllowanceEdge",
     "Reactable",
     "ReactingUserEdge",
-    "Reaction",
-    "ReactionConnection",
-    "ReactionContent",
-    "ReactionEdge",
     "ReactionOrder",
     "ReactionOrderField",
     "Reactor",
@@ -1565,10 +1550,8 @@
     "VerifyVerifiableDomainPayload",
     "ViewerHovercardContext",
     "Votable",
-    "Workflow",
     "WorkflowFileReference",
     "WorkflowFileReferenceInput",
-    "WorkflowRun",
     "WorkflowRunConnection",
     "WorkflowRunEdge",
     "WorkflowRunFile",
@@ -1649,6 +1632,24 @@
       "summary",
       "text",
       "title",
+      "url"
+    ],
+    "CheckSuite": [
+      "app",
+      "branch",
+      "checkRuns",
+      "commit",
+      "conclusion",
+      "createdAt",
+      "creator",
+      "databaseId",
+      "id",
+      "matchingPullRequests",
+      "push",
+      "repository",
+      "resourcePath",
+      "status",
+      "updatedAt",
       "url"
     ],
     "CloseIssueInput": [
@@ -1758,8 +1759,6 @@
       "deletedAt",
       "editor",
       "includesCreatedEdit",
-      "isMinimized",
-      "minimizedReason",
       "publishedAt",
       "replyTo",
       "resourcePath",
@@ -1815,7 +1814,6 @@
       "projectsV2",
       "publishedAt",
       "reactions",
-      "repository",
       "resourcePath",
       "suggestedActors",
       "timeline",
@@ -1937,6 +1935,10 @@
     ],
     "MilestoneConnection": [
       "edges"
+    ],
+    "Minimizable": [
+      "viewerCanMinimize",
+      "viewerCanUnminimize"
     ],
     "Mutation": [
       "abortQueuedMigrations",
@@ -2288,6 +2290,13 @@
       "databaseId",
       "project"
     ],
+    "ProjectV2FieldCommon": [
+      "databaseId",
+      "project"
+    ],
+    "ProjectV2FieldValue": [
+      "multiSelectOptionIds"
+    ],
     "ProjectV2Item": [
       "content",
       "createdAt",
@@ -2349,10 +2358,16 @@
       "item",
       "updatedAt"
     ],
-    "ProjectV2Iteration": [
-      "duration",
-      "startDate",
-      "title"
+    "ProjectV2IterationField": [
+      "databaseId",
+      "project"
+    ],
+    "ProjectV2IterationFieldIteration": [
+      "titleHTML"
+    ],
+    "ProjectV2SingleSelectField": [
+      "databaseId",
+      "project"
     ],
     "ProjectV2SingleSelectFieldOption": [
       "descriptionHTML",
@@ -2366,7 +2381,6 @@
     "ProjectV2View": [
       "configuration",
       "databaseId",
-      "fields",
       "fullDatabaseId",
       "groupBy",
       "groupByFields",
@@ -2570,6 +2584,14 @@
       "nodes",
       "pageInfo"
     ],
+    "Reaction": [
+      "createdAt",
+      "databaseId",
+      "reactable"
+    ],
+    "ReactionConnection": [
+      "viewerHasReacted"
+    ],
     "ReactionGroup": [
       "createdAt",
       "reactors",
@@ -2578,7 +2600,6 @@
     ],
     "Ref": [
       "associatedPullRequests",
-      "branchProtectionRule",
       "compare",
       "id",
       "refUpdateRule",
@@ -2904,6 +2925,32 @@
     ],
     "UserConnection": [
       "edges"
+    ],
+    "Workflow": [
+      "createdAt",
+      "databaseId",
+      "id",
+      "resourcePath",
+      "runs",
+      "state",
+      "updatedAt",
+      "url"
+    ],
+    "WorkflowRun": [
+      "checkSuite",
+      "createdAt",
+      "databaseId",
+      "deploymentReviews",
+      "displayTitle",
+      "event",
+      "file",
+      "id",
+      "pendingDeploymentRequests",
+      "resourcePath",
+      "runAttempt",
+      "runNumber",
+      "updatedAt",
+      "url"
     ]
   }
 }

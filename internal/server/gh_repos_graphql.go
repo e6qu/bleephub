@@ -31,13 +31,7 @@ func (s *Server) addRepoFieldsToSchema(
 			"INTERNAL": &graphql.EnumValueConfig{Value: "INTERNAL"},
 		},
 	})
-	refType := graphql.NewObject(graphql.ObjectConfig{
-		Name: "Ref",
-		Fields: graphql.Fields{
-			"name":   &graphql.Field{Type: graphql.NewNonNull(graphql.String)},
-			"prefix": &graphql.Field{Type: graphql.NewNonNull(graphql.String)},
-		},
-	})
+	refType := s.gqlRefType()
 
 	repoType := graphql.NewObject(graphql.ObjectConfig{
 		Name:       "Repository",
@@ -233,12 +227,9 @@ func (s *Server) addRepoFieldsToSchema(
 		},
 	})
 	repoType.AddFieldConfig("watchers", &graphql.Field{
-		Type: graphql.NewObject(graphql.ObjectConfig{
-			Name: "RepoWatcherConnection",
-			Fields: graphql.Fields{
-				"totalCount": &graphql.Field{Type: graphql.NewNonNull(graphql.Int)},
-			},
-		}),
+		// Real GitHub: watchers: UserConnection! — the same shared connection
+		// type the assignee surfaces use, backed by the subscription store.
+		Type: graphql.NewNonNull(s.gqlUserConnectionType(userType)),
 		Resolve: func(p graphql.ResolveParams) (interface{}, error) {
 			r, ok := p.Source.(map[string]interface{})
 			if !ok {
@@ -248,19 +239,27 @@ func (s *Server) addRepoFieldsToSchema(
 			if !ok || repoID == 0 {
 				return nil, fmt.Errorf("repository watcher source missing databaseId")
 			}
-			return map[string]interface{}{"totalCount": len(s.store.ListRepoSubscribers(repoID))}, nil
+			subscribers := s.store.ListRepoSubscribers(repoID)
+			nodes := make([]map[string]interface{}, 0, len(subscribers))
+			for _, u := range subscribers {
+				nodes = append(nodes, userToGraphQL(u))
+			}
+			return map[string]interface{}{
+				"nodes":      nodes,
+				"totalCount": len(nodes),
+				"pageInfo": map[string]interface{}{
+					"hasNextPage":     false,
+					"hasPreviousPage": false,
+					"startCursor":     nil,
+					"endCursor":       nil,
+				},
+			}, nil
 		},
 	})
 	repoType.AddFieldConfig("licenseInfo", &graphql.Field{
-		Type: graphql.NewObject(graphql.ObjectConfig{
-			Name: "RepositoryLicense",
-			Fields: graphql.Fields{
-				"key":      &graphql.Field{Type: graphql.NewNonNull(graphql.String)},
-				"name":     &graphql.Field{Type: graphql.NewNonNull(graphql.String)},
-				"nickname": &graphql.Field{Type: graphql.String},
-				"spdxId":   &graphql.Field{Type: graphql.String},
-			},
-		}),
+		// Real GitHub: licenseInfo: License — the same full License type
+		// Query.license serves, resolved from the vendored license catalog.
+		Type: s.gqlLicenseType(),
 		Resolve: func(p graphql.ResolveParams) (interface{}, error) {
 			r, ok := p.Source.(map[string]interface{})
 			if !ok {
@@ -270,16 +269,23 @@ func (s *Server) addRepoFieldsToSchema(
 			if key == "" {
 				return nil, nil
 			}
+			if license := graphQLLicenseJSON(key); license != nil {
+				return license, nil
+			}
+			// A stored license key outside the vendored catalog still resolves
+			// (License's non-null contract needs body/id/etc.) from the repo's
+			// recorded metadata.
 			name, ok := r["licenseName"].(string)
 			if !ok || name == "" {
 				return nil, fmt.Errorf("repository source missing licenseName")
 			}
 			spdxID, _ := r["licenseSPDX"].(string)
 			return map[string]interface{}{
-				"key":      key,
-				"name":     name,
-				"nickname": nil,
-				"spdxId":   spdxID,
+				"body": "", "conditions": []interface{}{}, "description": nil,
+				"featured": false, "hidden": false, "id": "L_" + key,
+				"implementation": nil, "key": key, "limitations": []interface{}{},
+				"name": name, "nickname": nil, "permissions": []interface{}{},
+				"pseudoLicense": false, "spdxId": nilStr(spdxID), "url": nil,
 			}, nil
 		},
 	})
@@ -1801,4 +1807,45 @@ func decodeCursorStrict(s string) (int, error) {
 		return 0, fmt.Errorf("cursor index")
 	}
 	return n, nil
+}
+
+// gqlRefType returns the shared Ref object type (memoized). Used by
+// Repository.defaultBranchRef and PullRequest.baseRef — matching GitHub, where
+// both fields are the one Ref type. branchProtectionRule resolves from the
+// "branchProtectionRule" key of the source map when the producer embeds one
+// (the PR baseRef path does); sources without the key resolve null, the value
+// real GitHub returns for an unprotected ref.
+func (s *Server) gqlRefType() *graphql.Object {
+	if s.graphqlTypes.ref != nil {
+		return s.graphqlTypes.ref
+	}
+	branchProtectionRuleType := graphql.NewObject(graphql.ObjectConfig{
+		Name: "BranchProtectionRule",
+		Fields: graphql.Fields{
+			"requiresStrictStatusChecks":   &graphql.Field{Type: graphql.NewNonNull(graphql.Boolean)},
+			"requiredApprovingReviewCount": &graphql.Field{Type: graphql.Int},
+		},
+	})
+	s.graphqlTypes.ref = graphql.NewObject(graphql.ObjectConfig{
+		Name: "Ref",
+		Fields: graphql.Fields{
+			"name":   &graphql.Field{Type: graphql.NewNonNull(graphql.String)},
+			"prefix": &graphql.Field{Type: graphql.NewNonNull(graphql.String)},
+			"branchProtectionRule": &graphql.Field{
+				Type: branchProtectionRuleType,
+				Resolve: func(p graphql.ResolveParams) (interface{}, error) {
+					ref, ok := p.Source.(map[string]interface{})
+					if !ok {
+						return nil, fmt.Errorf("ref source: unexpected type %T", p.Source)
+					}
+					rule, ok := ref["branchProtectionRule"].(map[string]interface{})
+					if !ok || rule == nil {
+						return nil, nil
+					}
+					return rule, nil
+				},
+			},
+		},
+	})
+	return s.graphqlTypes.ref
 }

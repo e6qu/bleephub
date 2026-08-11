@@ -135,7 +135,7 @@ func (s *Server) viewerCanReadProjectContent(ctx context.Context, contentType st
 // gh CLI's `gh project create` + `gh project item-add` use:
 //   - createProjectV2(input{ownerId, title}) → ProjectV2
 //   - addProjectV2ItemById(input{projectId, contentId}) → ProjectV2Item
-//   - createProjectV2Field(input{projectId, dataType, name}) → ProjectV2Field
+//   - createProjectV2Field(input{projectId, dataType, name}) → ProjectV2FieldConfiguration
 //   - updateProjectV2ItemFieldValue(input{projectId,itemId,fieldId,value}) → ProjectV2Item
 func (s *Server) addProjectV2MutationsToSchema(mutationType *graphql.Object) {
 	projectV2Type := s.projectV2GraphQLTypes()
@@ -188,23 +188,9 @@ func (s *Server) addProjectV2MutationsToSchema(mutationType *graphql.Object) {
 	addItemPayloadType := graphql.NewObject(graphql.ObjectConfig{
 		Name: "AddProjectV2ItemByIdPayload",
 		Fields: graphql.Fields{
-			"item": &graphql.Field{
-				Type: graphql.NewObject(graphql.ObjectConfig{
-					Name: "AddProjectV2ItemByIdPayloadItem",
-					Fields: graphql.Fields{
-						"id": &graphql.Field{
-							Type: graphql.NewNonNull(graphql.ID),
-							Resolve: func(p graphql.ResolveParams) (interface{}, error) {
-								src, ok := p.Source.(map[string]interface{})
-								if !ok {
-									return nil, fmt.Errorf("resolve source: unexpected type %T", p.Source)
-								}
-								return src["nodeID"], nil
-							},
-						},
-					},
-				}),
-			},
+			// The shared ProjectV2Item type (GitHub's payload shape); the
+			// resolver feeds it a full projectV2ItemToGQL source map.
+			"item": &graphql.Field{Type: s.projectV2ItemType()},
 		},
 	})
 
@@ -234,9 +220,7 @@ func (s *Server) addProjectV2MutationsToSchema(mutationType *graphql.Object) {
 			}
 			item := s.store.ProjectsV2.AddItem(proj.ID, contentType, contentID, user.ID)
 			return map[string]interface{}{
-				"item": map[string]interface{}{
-					"nodeID": item.NodeID,
-				},
+				"item": projectV2ItemToGQL(item, s.store),
 			}, nil
 		},
 	})
@@ -260,20 +244,24 @@ func (s *Server) addProjectV2MutationsToSchema(mutationType *graphql.Object) {
 			"name": &graphql.InputObjectFieldConfig{Type: graphql.NewNonNull(graphql.String)},
 		},
 	})
+	// GitHub's input names: ProjectV2Iteration is officially an INPUT_OBJECT
+	// (the object flavor is ProjectV2IterationFieldIteration), and the
+	// configuration input is ProjectV2IterationFieldConfigurationInput.
+	dateScalar := s.graphQLStringScalar("Date")
 	iterationInputType := graphql.NewInputObject(graphql.InputObjectConfig{
-		Name: "ProjectV2IterationInput",
+		Name: "ProjectV2Iteration",
 		Fields: graphql.InputObjectConfigFieldMap{
 			"title":     &graphql.InputObjectFieldConfig{Type: graphql.NewNonNull(graphql.String)},
-			"startDate": &graphql.InputObjectFieldConfig{Type: graphql.NewNonNull(graphql.String)},
-			"duration":  &graphql.InputObjectFieldConfig{Type: graphql.Int},
+			"startDate": &graphql.InputObjectFieldConfig{Type: graphql.NewNonNull(dateScalar)},
+			"duration":  &graphql.InputObjectFieldConfig{Type: graphql.NewNonNull(graphql.Int)},
 		},
 	})
 	iterationConfigInputType := graphql.NewInputObject(graphql.InputObjectConfig{
-		Name: "ProjectV2IterationConfigurationInput",
+		Name: "ProjectV2IterationFieldConfigurationInput",
 		Fields: graphql.InputObjectConfigFieldMap{
-			"startDate":  &graphql.InputObjectFieldConfig{Type: graphql.NewNonNull(graphql.String)},
+			"startDate":  &graphql.InputObjectFieldConfig{Type: graphql.NewNonNull(dateScalar)},
 			"duration":   &graphql.InputObjectFieldConfig{Type: graphql.NewNonNull(graphql.Int)},
-			"iterations": &graphql.InputObjectFieldConfig{Type: graphql.NewList(graphql.NewNonNull(iterationInputType))},
+			"iterations": &graphql.InputObjectFieldConfig{Type: graphql.NewNonNull(graphql.NewList(graphql.NewNonNull(iterationInputType)))},
 		},
 	})
 
@@ -288,28 +276,12 @@ func (s *Server) addProjectV2MutationsToSchema(mutationType *graphql.Object) {
 		},
 	})
 
-	projectV2FieldType := graphql.NewObject(graphql.ObjectConfig{
-		Name: "ProjectV2FieldSummary",
-		Fields: graphql.Fields{
-			"id": &graphql.Field{
-				Type: graphql.NewNonNull(graphql.ID),
-				Resolve: func(p graphql.ResolveParams) (interface{}, error) {
-					src, ok := p.Source.(map[string]interface{})
-					if !ok {
-						return nil, fmt.Errorf("resolve source: unexpected type %T", p.Source)
-					}
-					return src["nodeID"], nil
-				},
-			},
-			"name":     &graphql.Field{Type: graphql.NewNonNull(graphql.String)},
-			"dataType": &graphql.Field{Type: graphql.NewNonNull(graphql.String)},
-		},
-	})
-
 	createFieldPayloadType := graphql.NewObject(graphql.ObjectConfig{
 		Name: "CreateProjectV2FieldPayload",
 		Fields: graphql.Fields{
-			"projectV2Field": &graphql.Field{Type: projectV2FieldType},
+			// GitHub's payload shape: the ProjectV2FieldConfiguration union;
+			// the resolver feeds it a full projectV2FieldToGQL source map.
+			"projectV2Field": &graphql.Field{Type: s.projectV2FieldConfigurationUnion()},
 		},
 	})
 
@@ -368,24 +340,21 @@ func (s *Server) addProjectV2MutationsToSchema(mutationType *graphql.Object) {
 			}
 			field := s.store.ProjectsV2.CreateField(proj.ID, name, ProjectV2FieldDataType(dataType), options, iteration)
 			return map[string]interface{}{
-				"projectV2Field": map[string]interface{}{
-					"nodeID":   field.NodeID,
-					"name":     field.Name,
-					"dataType": string(field.DataType),
-				},
+				"projectV2Field": projectV2FieldToGQL(field),
 			}, nil
 		},
 	})
 
 	// --- updateProjectV2ItemFieldValue ---
 
+	// GitHub's input name is ProjectV2FieldValue (with a Date-typed date).
 	fieldValueInputType := graphql.NewInputObject(graphql.InputObjectConfig{
-		Name: "ProjectV2FieldValueInput",
+		Name: "ProjectV2FieldValue",
 		Fields: graphql.InputObjectConfigFieldMap{
 			"singleSelectOptionId": &graphql.InputObjectFieldConfig{Type: graphql.String},
 			"text":                 &graphql.InputObjectFieldConfig{Type: graphql.String},
 			"number":               &graphql.InputObjectFieldConfig{Type: graphql.Float},
-			"date":                 &graphql.InputObjectFieldConfig{Type: graphql.String},
+			"date":                 &graphql.InputObjectFieldConfig{Type: dateScalar},
 			"iterationId":          &graphql.InputObjectFieldConfig{Type: graphql.String},
 		},
 	})
@@ -402,23 +371,9 @@ func (s *Server) addProjectV2MutationsToSchema(mutationType *graphql.Object) {
 	updateValuePayloadType := graphql.NewObject(graphql.ObjectConfig{
 		Name: "UpdateProjectV2ItemFieldValuePayload",
 		Fields: graphql.Fields{
-			"projectV2Item": &graphql.Field{
-				Type: graphql.NewObject(graphql.ObjectConfig{
-					Name: "UpdateProjectV2ItemFieldValuePayloadItem",
-					Fields: graphql.Fields{
-						"id": &graphql.Field{
-							Type: graphql.NewNonNull(graphql.ID),
-							Resolve: func(p graphql.ResolveParams) (interface{}, error) {
-								src, ok := p.Source.(map[string]interface{})
-								if !ok {
-									return nil, fmt.Errorf("resolve source: unexpected type %T", p.Source)
-								}
-								return src["nodeID"], nil
-							},
-						},
-					},
-				}),
-			},
+			// The shared ProjectV2Item type (GitHub's payload shape); the
+			// resolver feeds it a full projectV2ItemToGQL source map.
+			"projectV2Item": &graphql.Field{Type: s.projectV2ItemType()},
 		},
 	})
 
@@ -460,7 +415,7 @@ func (s *Server) addProjectV2MutationsToSchema(mutationType *graphql.Object) {
 				return nil, err
 			}
 			return map[string]interface{}{
-				"projectV2Item": map[string]interface{}{"nodeID": item.NodeID},
+				"projectV2Item": projectV2ItemToGQL(item, s.store),
 			}, nil
 		},
 	})

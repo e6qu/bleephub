@@ -845,7 +845,7 @@ var gqlProjectMutationCases = []gqlProjectMutationCase{
 	},
 	{
 		name: "createProjectV2Field",
-		doc:  `mutation($input:CreateProjectV2FieldInput!){createProjectV2Field(input:$input){projectV2Field{id}}}`,
+		doc:  `mutation($input:CreateProjectV2FieldInput!){createProjectV2Field(input:$input){projectV2Field{... on ProjectV2FieldCommon{id}}}}`,
 		input: func(f *gqlProjectAuthzFixture) map[string]interface{} {
 			return map[string]interface{}{"projectId": f.project.NodeID, "dataType": "TEXT", "name": "from the table"}
 		},
