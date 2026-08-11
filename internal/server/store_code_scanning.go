@@ -386,7 +386,9 @@ func (st *Store) DeleteCodeScanningAnalysis(repoKey string, id int) bool {
 
 // CreateSARIFUpload parses a base64-encoded SARIF payload, creates analyses
 // and alerts, and returns the upload record. Processing is synchronous so the
-// returned upload is always "complete".
+// returned upload is always "complete". Every analysis, alert, and the upload
+// row commit in one transaction so a crash cannot leave a partial upload
+// (STORE-001/002).
 func (st *Store) CreateSARIFUpload(repoKey string, payload map[string]interface{}) (*SARIFUpload, error) {
 	st.mu.Lock()
 	defer st.mu.Unlock()
@@ -429,6 +431,7 @@ func (st *Store) CreateSARIFUpload(repoKey string, payload map[string]interface{
 		st.SARIFUploads = make(map[string]*SARIFUpload)
 	}
 
+	batch := newPersistBatch(st.persist)
 	runs, _ := sarif["runs"].([]interface{})
 	for _, rawRun := range runs {
 		run, _ := rawRun.(map[string]interface{})
@@ -437,14 +440,15 @@ func (st *Store) CreateSARIFUpload(repoKey string, payload map[string]interface{
 		results, _ := run["results"].([]interface{})
 		analysisKey := fmt.Sprintf("%s:%s", toolName, ref)
 		category := fmt.Sprintf("%s/%s", toolName, ref)
-		analysis := st.createAnalysisAndAlertsLocked(repoKey, ref, commitSHA, analysisKey, category, toolName, toolGUID, run, results)
+		analysis := st.createAnalysisAndAlertsLocked(batch, repoKey, ref, commitSHA, analysisKey, category, toolName, toolGUID, run, results)
 		analysis.SARIFUploadID = uploadID
-		st.persistCodeScanningAnalysis(analysis)
+		st.persistCodeScanningAnalysisBatchLocked(batch, analysis)
 	}
 
 	st.SARIFUploads[uploadID] = upload
-	if st.persist != nil {
-		st.persist.MustPut("sarif_uploads", uploadID, upload)
+	batch.Put("sarif_uploads", uploadID, upload)
+	if err := batch.Commit(); err != nil {
+		panic(&persistenceFailure{op: "batch", bucket: "sarif_uploads", key: uploadID, err: err})
 	}
 	return upload, nil
 }
@@ -466,7 +470,10 @@ func extractSARIFToolGUID(run map[string]interface{}) string {
 	return guid
 }
 
-func (st *Store) createAnalysisAndAlertsLocked(repoKey, ref, commitSHA, analysisKey, category, toolName, toolGUID string, run map[string]interface{}, results []interface{}) *CodeScanningAnalysis {
+// createAnalysisAndAlertsLocked builds one analysis plus its alerts and stages
+// every row into batch instead of committing per-record transactions, so the
+// whole SARIF upload persists atomically (STORE-001/002). Callers hold st.mu.
+func (st *Store) createAnalysisAndAlertsLocked(batch *persistBatch, repoKey, ref, commitSHA, analysisKey, category, toolName, toolGUID string, run map[string]interface{}, results []interface{}) *CodeScanningAnalysis {
 	if st.CodeScanningAlertsByRepo[repoKey] == nil {
 		st.CodeScanningAlertsByRepo[repoKey] = make(map[int]*CodeScanningAlert)
 	}
@@ -505,7 +512,7 @@ func (st *Store) createAnalysisAndAlertsLocked(repoKey, ref, commitSHA, analysis
 	}
 	analysis.ResultsCount = len(results)
 	analysis.RulesCount = len(ruleSet)
-	st.persistCodeScanningAnalysis(analysis)
+	st.persistCodeScanningAnalysisBatchLocked(batch, analysis)
 
 	for _, r := range results {
 		result, _ := r.(map[string]interface{})
@@ -572,7 +579,7 @@ func (st *Store) createAnalysisAndAlertsLocked(repoKey, ref, commitSHA, analysis
 
 		st.CodeScanningAlerts[alert.ID] = alert
 		st.CodeScanningAlertsByRepo[repoKey][number] = alert
-		st.persistCodeScanningAlert(alert)
+		st.persistCodeScanningAlertBatchLocked(batch, alert)
 	}
 
 	return analysis
@@ -818,6 +825,18 @@ func (st *Store) persistCodeScanningAnalysis(a *CodeScanningAnalysis) {
 	if st.persist != nil {
 		st.persist.MustPut("code_scanning_analyses", strconv.Itoa(a.ID), a)
 	}
+}
+
+// persistCodeScanningAlertBatchLocked stages an alert row into batch instead
+// of committing its own transaction (STORE-001/002). Callers hold st.mu.
+func (st *Store) persistCodeScanningAlertBatchLocked(batch *persistBatch, a *CodeScanningAlert) {
+	batch.Put("code_scanning_alerts", strconv.Itoa(a.ID), a)
+}
+
+// persistCodeScanningAnalysisBatchLocked stages an analysis row into batch
+// instead of committing its own transaction (STORE-001/002). Callers hold st.mu.
+func (st *Store) persistCodeScanningAnalysisBatchLocked(batch *persistBatch, a *CodeScanningAnalysis) {
+	batch.Put("code_scanning_analyses", strconv.Itoa(a.ID), a)
 }
 
 // ListCodeScanningAlertsByOrg returns all code scanning alerts for

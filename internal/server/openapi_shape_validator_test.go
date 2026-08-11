@@ -41,7 +41,8 @@ const allowlistFile = "openapi-violation-allowlist.txt"
 type shapeViolation struct {
 	Op string // "METHOD /spec/path/template -> status"
 	// Kind is one of: unknown-field, type-mismatch, missing-required,
-	// malformed-json, internal-url, undocumented-status (the description
+	// malformed-json, internal-url, enum-mismatch (a string value outside
+	// the schema's declared enum), undocumented-status (the description
 	// does not list this status for the operation at all),
 	// undocumented-body (it lists the status but documents no JSON body
 	// for it), vacuous-gate.
@@ -298,7 +299,11 @@ func (v *shapeValidator) Observe(req *http.Request, status int, header http.Head
 	v.mu.Lock()
 	v.exchanges++
 	v.mu.Unlock()
-	if status < 200 || status >= 300 || len(body) == 0 {
+	// 2xx and 4xx/5xx JSON bodies are both validated (PAR-013): GitHub's
+	// description documents error schemas too, and an error body that
+	// deviates from them breaks clients exactly like a success body does.
+	// 3xx responses carry no documented JSON contract.
+	if status < 200 || (status >= 300 && status < 400) || len(body) == 0 {
 		return
 	}
 	if ct := header.Get("Content-Type"); ct != "" && !strings.Contains(ct, "json") {
@@ -368,6 +373,16 @@ func (v *shapeValidator) Observe(req *http.Request, status int, header http.Head
 		}
 		documented = true
 		for _, schema := range schemas {
+			// A documented error schema that is a sealed EMPTY object
+			// ({properties:{}, additionalProperties:false}) is a description
+			// stub, not a contract — e.g. GET /gists/{id}/star documents its
+			// 404 that way while the real API (and bleephub) returns the
+			// standard message/documentation_url body. Judging the response
+			// by the stub would flag bleephub for being right.
+			if status >= 400 && v.sealedEmptyObject(schema) {
+				v.countValidated()
+				return
+			}
 			var out []shapeViolation
 			v.walk(schema, decoded, opLabel(op, status), "$", &out, 0)
 			if len(out) == 0 {
@@ -381,6 +396,14 @@ func (v *shapeValidator) Observe(req *http.Request, status int, header http.Head
 		break
 	}
 	if !documented {
+		// GitHub documents error statuses sparsely: most operations list only
+		// a handful of their real 4xx responses. An undocumented error status
+		// is therefore the description's gap, not a bleephub deviation —
+		// unlike an undocumented 2xx, which stays the strongest parity
+		// signal the observer can see.
+		if status >= 400 {
+			return
+		}
 		// The description covers the path but not this status with a JSON
 		// body, so there is nothing to validate against. Report that
 		// instead of dropping the exchange: an undocumented status is the
@@ -406,6 +429,23 @@ func (v *shapeValidator) countValidated() {
 	v.mu.Lock()
 	v.validated++
 	v.mu.Unlock()
+}
+
+// sealedEmptyObject reports whether schema resolves to an object that declares
+// no members yet forbids all others — the {properties:{},
+// additionalProperties:false} stub GitHub's description uses for a few error
+// responses it never bothered to model.
+func (v *shapeValidator) sealedEmptyObject(schema map[string]any) bool {
+	schema = v.resolve(schema)
+	if schema == nil {
+		return false
+	}
+	props, _, additional := v.flatten(schema)
+	if len(props) != 0 {
+		return false
+	}
+	sealed, ok := additional.(bool)
+	return ok && !sealed
 }
 
 func internalURLFields(v any, field string) []string {
@@ -666,6 +706,22 @@ func (v *shapeValidator) walk(schema map[string]any, val any, op, path string, o
 	case string:
 		if len(types) > 0 && !contains(types, "string") {
 			*out = append(*out, shapeViolation{Op: op, Kind: "type-mismatch", Field: path})
+			return
+		}
+		// Enum membership (PAR-010): a declared enum enumerates the only
+		// values real GitHub emits, so a value outside it is a wire-format
+		// deviation even when the type matches.
+		if enum, ok := schema["enum"].([]any); ok && len(enum) > 0 {
+			member := false
+			for _, allowed := range enum {
+				if s, ok := allowed.(string); ok && s == value {
+					member = true
+					break
+				}
+			}
+			if !member {
+				*out = append(*out, shapeViolation{Op: op, Kind: "enum-mismatch", Field: path})
+			}
 		}
 	case bool:
 		if len(types) > 0 && !contains(types, "boolean") {
@@ -907,8 +963,17 @@ func TestViolationAllowlistIsSingleCopy(t *testing.T) {
 // the thing to fix), and (3) the list only ever shrinks.
 func TestViolationAllowlistInvariants(t *testing.T) {
 	// Ratchet: lower this whenever an entry is removed; a change that raises it
-	// must fail review. The gate ledger may only shrink.
-	const maxAllowlistEntries = 11
+	// must fail review. The gate ledger may only shrink — the one sanctioned
+	// exception is an owner-signed deliberate deviation. Raised 11→22 by owner
+	// decision 2026-08-11 (ledger PAR-010 + PAR-013) when the gate learned two
+	// new checks: 4xx-body validation surfaced the four git/refs
+	// push-protection members (the feature's bypass contract, kept over
+	// degrading it to the documented plain validation-error), and enum
+	// checking surfaced the seven deliberate model deviations (the
+	// load-bearing `admin` app-permission level on six installation fields,
+	// and fork-PR approval_policy `none` encoding a disabled state GitHub's
+	// enum does not model).
+	const maxAllowlistEntries = 22
 
 	data, err := os.ReadFile(allowlistFile)
 	if err != nil {

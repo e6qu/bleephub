@@ -758,6 +758,7 @@ func (s *Server) ListenAndServe(ctx context.Context) error {
 		return err
 	}
 	s.startScheduleDispatcher(ctx)
+	s.startActionsJanitor(ctx)
 	handler := s.requestHandler()
 
 	srv := &http.Server{

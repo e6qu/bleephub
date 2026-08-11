@@ -1463,7 +1463,7 @@ func (s *Server) handleAddRunnerLabels(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if len(req.Labels) == 0 {
-		writeGHValidationError(w, "RunnerLabel", "labels", "missing_field")
+		writeGHValidationErrorSimple(w, "labels is missing")
 		return
 	}
 	s.store.mu.Lock()

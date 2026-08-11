@@ -105,12 +105,14 @@ HOST="localhost"
 # the bleephub host explicitly with the same token.
 export GH_TOKEN="$TOKEN"
 export GH_HOST="$HOST"
-# Login the host so gh's host config has bleephub as a known GHES.
-echo "$TOKEN" | gh auth login --hostname "$HOST" --with-token >/dev/null 2>&1 || true
-gh config set -h "$HOST" git_protocol https >/dev/null 2>&1 || true
+# Login the host so gh's host config has bleephub as a known GHES. These must
+# fail loudly (set -e): a swallowed login failure makes every later gh verb
+# fail with confusing unauthenticated errors far from the cause.
+echo "$TOKEN" | gh auth login --hostname "$HOST" --with-token >/dev/null
+gh config set -h "$HOST" git_protocol https >/dev/null
 # Wire git pushes/pulls through gh's credential helper so native verbs that
 # shell out to git (gh repo clone, gh pr create from a working dir) authenticate.
-gh auth setup-git --hostname "$HOST" >/dev/null 2>&1 || true
+gh auth setup-git --hostname "$HOST" >/dev/null
 
 # `api` for endpoints `gh` doesn't expose as a high-level command
 # (apps/{slug}, /applications/{cid}/token, suspend, etc.). For the
@@ -659,7 +661,7 @@ fi
 COMMENT_NODE_ID=$(echo "$PR_COMMENTS" | jq -r '.comments[0].id')
 if [ -n "$COMMENT_NODE_ID" ] && [ "$COMMENT_NODE_ID" != "null" ]; then
     MIN_RESP=$(curl -sSk -X POST -H "Authorization: bearer $TOKEN" -H "Content-Type: application/json" \
-        -d "{\"query\":\"mutation { minimizeComment(input: {subjectId: \\\"$COMMENT_NODE_ID\\\", classifier: OFF_TOPIC}) { minimizedComment { id isMinimized minimizedReason } } }\"}" \
+        -d "{\"query\":\"mutation { minimizeComment(input: {subjectId: \\\"$COMMENT_NODE_ID\\\", classifier: OFF_TOPIC}) { minimizedComment { isMinimized minimizedReason } } }\"}" \
         "$BASE/api/graphql")
     IS_MIN=$(echo "$MIN_RESP" | jq -r '.data.minimizeComment.minimizedComment.isMinimized')
     MIN_REASON=$(echo "$MIN_RESP" | jq -r '.data.minimizeComment.minimizedComment.minimizedReason')
@@ -692,9 +694,12 @@ if [ -n "$ADMIN_NODE_ID" ] && [ "$ADMIN_NODE_ID" != "null" ]; then
     assert_not_empty "createProjectV2 id" "$PROJ_NODE_ID"
     assert_eq "createProjectV2 title" "Review Board" "$PROJ_TITLE"
 
-    # Add a field with single-select options.
+    # Add a field with single-select options. projectV2Field is the official
+    # ProjectV2FieldConfiguration union (as on real GitHub), so its members
+    # are reached through the ProjectV2FieldCommon interface fragment — a
+    # bare selection is invalid against github.com too.
     CREATE_FIELD=$(curl -sSk -X POST -H "Authorization: bearer $TOKEN" -H "Content-Type: application/json" \
-        -d "{\"query\":\"mutation { createProjectV2Field(input: {projectId: \\\"$PROJ_NODE_ID\\\", dataType: SINGLE_SELECT, name: \\\"Status\\\", singleSelectOptions: [{name: \\\"Todo\\\"}, {name: \\\"Done\\\"}]}) { projectV2Field { id name dataType } } }\"}" \
+        -d "{\"query\":\"mutation { createProjectV2Field(input: {projectId: \\\"$PROJ_NODE_ID\\\", dataType: SINGLE_SELECT, name: \\\"Status\\\", singleSelectOptions: [{name: \\\"Todo\\\"}, {name: \\\"Done\\\"}]}) { projectV2Field { ... on ProjectV2FieldCommon { id name dataType } } } }\"}" \
         "$BASE/api/graphql")
     FIELD_NODE_ID=$(echo "$CREATE_FIELD" | jq -r '.data.createProjectV2Field.projectV2Field.id')
     FIELD_NAME=$(echo "$CREATE_FIELD" | jq -r '.data.createProjectV2Field.projectV2Field.name')

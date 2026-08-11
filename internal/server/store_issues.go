@@ -173,11 +173,13 @@ func (st *Store) persistIssueEventLocked(e *IssueEvent) {
 	}
 }
 
-// recordIssueEventLocked creates a plain issue-parented IssueEvent while st.mu
-// is already held.
-func (st *Store) recordIssueEventLocked(repoID, issueID, actorID int, event string) *IssueEvent {
+// recordIssueEventBatchLocked builds a plain issue-parented IssueEvent and
+// stages its persist into batch instead of committing its own transaction, so
+// the event commits with the issue row it describes in one transaction
+// (STORE-001/002). Callers hold st.mu.
+func (st *Store) recordIssueEventBatchLocked(batch *persistBatch, repoID, issueID, actorID int, event string) *IssueEvent {
 	e := st.buildIssueEventLocked(repoID, issueID, actorID, event, "issue")
-	st.persistIssueEventLocked(e)
+	batch.Put("issue_events", strconv.Itoa(e.ID), e)
 	return e
 }
 
@@ -211,19 +213,6 @@ func (st *Store) RecordPullRequestEvent(repoID, prID, actorID int, event, commit
 	return st.recordPullRequestEventLocked(repoID, prID, actorID, event, commitID, requestedReviewerID)
 }
 
-// recordIssueEventWithIDsLocked creates an IssueEvent with optional related IDs
-// while st.mu is already held.
-func (st *Store) recordIssueEventWithIDsLocked(repoID, issueID, actorID int, event string, labelID, assigneeID, assignerID, milestoneID, commentID int) *IssueEvent {
-	e := st.buildIssueEventLocked(repoID, issueID, actorID, event, "issue")
-	e.LabelID = labelID
-	e.AssigneeID = assigneeID
-	e.AssignerID = assignerID
-	e.MilestoneID = milestoneID
-	e.CommentID = commentID
-	st.persistIssueEventLocked(e)
-	return e
-}
-
 // recordIssueEventWithIDsBatchLocked builds an issue event and stages its
 // persist into batch instead of committing its own transaction, so a multi-event
 // mutation (e.g. relabeling an issue) commits every event with the issue row in
@@ -251,7 +240,15 @@ func (st *Store) RecordIssueEvent(repoID, issueID, actorID int, event string, pa
 	milestoneID := intFromPayload(payload, "milestone_id")
 	commentID := intFromPayload(payload, "comment_id")
 
-	e := st.recordIssueEventWithIDsLocked(repoID, issueID, actorID, event, labelID, assigneeID, assignerID, milestoneID, commentID)
+	// Build the event fully before persisting so the row reaches the database
+	// exactly once, complete, instead of a bare put followed by a re-put with
+	// the string fields filled in (STORE-001/002).
+	e := st.buildIssueEventLocked(repoID, issueID, actorID, event, "issue")
+	e.LabelID = labelID
+	e.AssigneeID = assigneeID
+	e.AssignerID = assignerID
+	e.MilestoneID = milestoneID
+	e.CommentID = commentID
 	if v, ok := payload["commit_id"].(string); ok {
 		e.CommitID = v
 	}
@@ -267,9 +264,7 @@ func (st *Store) RecordIssueEvent(repoID, issueID, actorID int, event string, pa
 	if v, ok := payload["rename_to"].(string); ok {
 		e.RenameTo = v
 	}
-	if st.persist != nil {
-		st.persist.MustPut("issue_events", strconv.Itoa(e.ID), e)
-	}
+	st.persistIssueEventLocked(e)
 	return e
 }
 
@@ -638,10 +633,14 @@ func (st *Store) CreateIssue(repoID, authorID int, title, body string, labelIDs,
 	repo.NextIssueNumber++
 	st.Issues[issue.ID] = issue
 	st.indexIssueLocked(issue)
-	if st.persist != nil {
-		st.persist.MustPut("issues", strconv.Itoa(issue.ID), issue)
+	// One transaction: the issue row and its "opened" event commit together
+	// (STORE-001/002).
+	batch := newPersistBatch(st.persist)
+	batch.Put("issues", strconv.Itoa(issue.ID), issue)
+	st.recordIssueEventBatchLocked(batch, repoID, issue.ID, authorID, "opened")
+	if err := batch.Commit(); err != nil {
+		panic(&persistenceFailure{op: "batch", bucket: "issues", key: strconv.Itoa(issue.ID), err: err})
 	}
-	st.recordIssueEventLocked(repoID, issue.ID, authorID, "opened")
 	return issue
 }
 
@@ -980,10 +979,14 @@ func (st *Store) LockIssue(repoKey string, issueNumber int, lockReason string) b
 	issue.Locked = true
 	issue.ActiveLockReason = LockReason(lockReason)
 	issue.UpdatedAt = st.currentTime()
-	if st.persist != nil {
-		st.persist.MustPut("issues", strconv.Itoa(issue.ID), issue)
+	// One transaction: the issue row and its "locked" event commit together
+	// (STORE-001/002).
+	batch := newPersistBatch(st.persist)
+	batch.Put("issues", strconv.Itoa(issue.ID), issue)
+	st.recordIssueEventBatchLocked(batch, issue.RepoID, issue.ID, 0, "locked")
+	if err := batch.Commit(); err != nil {
+		panic(&persistenceFailure{op: "batch", bucket: "issues", key: strconv.Itoa(issue.ID), err: err})
 	}
-	st.recordIssueEventLocked(issue.RepoID, issue.ID, 0, "locked")
 	return true
 }
 
@@ -998,10 +1001,14 @@ func (st *Store) UnlockIssue(repoKey string, issueNumber int) bool {
 	issue.Locked = false
 	issue.ActiveLockReason = ""
 	issue.UpdatedAt = st.currentTime()
-	if st.persist != nil {
-		st.persist.MustPut("issues", strconv.Itoa(issue.ID), issue)
+	// One transaction: the issue row and its "unlocked" event commit together
+	// (STORE-001/002).
+	batch := newPersistBatch(st.persist)
+	batch.Put("issues", strconv.Itoa(issue.ID), issue)
+	st.recordIssueEventBatchLocked(batch, issue.RepoID, issue.ID, 0, "unlocked")
+	if err := batch.Commit(); err != nil {
+		panic(&persistenceFailure{op: "batch", bucket: "issues", key: strconv.Itoa(issue.ID), err: err})
 	}
-	st.recordIssueEventLocked(issue.RepoID, issue.ID, 0, "unlocked")
 	return true
 }
 
@@ -1190,15 +1197,19 @@ func (st *Store) CreateCommentFor(parentType string, parentID, authorID int, bod
 	st.Comments[c.ID] = c
 	st.CommentCounts[commentCountKey(parentType, parentID)]++
 	st.indexCommentLocked(c)
-	if st.persist != nil {
-		st.persist.MustPut("comments", strconv.Itoa(c.ID), c)
-	}
+	// One transaction: the comment row and its "commented" event commit
+	// together (STORE-001/002).
+	batch := newPersistBatch(st.persist)
+	batch.Put("comments", strconv.Itoa(c.ID), c)
 	// Record a timeline event for issue comments (PR comments get their own
 	// review-comment machinery elsewhere).
 	if parentType == "issue" {
 		if issue := st.Issues[parentID]; issue != nil {
-			st.recordIssueEventWithIDsLocked(issue.RepoID, issue.ID, authorID, "commented", 0, 0, 0, 0, c.ID)
+			st.recordIssueEventWithIDsBatchLocked(batch, issue.RepoID, issue.ID, authorID, "commented", 0, 0, 0, 0, c.ID)
 		}
+	}
+	if err := batch.Commit(); err != nil {
+		panic(&persistenceFailure{op: "batch", bucket: "comments", key: strconv.Itoa(c.ID), err: err})
 	}
 	return cloneComment(c)
 }
@@ -1236,7 +1247,8 @@ func (st *Store) CommentRepoID(c *Comment) int {
 	return 0
 }
 
-// DeleteComment removes a comment by id. Returns true if removed.
+// DeleteComment removes a comment by id. Returns true if removed. The comment
+// row and its reactions delete in one transaction (STORE-001/002).
 func (st *Store) DeleteComment(id int) bool {
 	st.mu.Lock()
 	defer st.mu.Unlock()
@@ -1246,15 +1258,17 @@ func (st *Store) DeleteComment(id int) bool {
 	}
 	delete(st.Comments, id)
 	st.unindexCommentLocked(c)
-	st.Reactions.DeleteParent(c.ParentType+"_comment", id)
+	batch := newPersistBatch(st.persist)
+	st.Reactions.DeleteParentsBatch(c.ParentType+"_comment", map[int]bool{id: true}, batch)
 	key := commentCountKey(c.ParentType, c.IssueID)
 	if st.CommentCounts[key] <= 1 {
 		delete(st.CommentCounts, key)
 	} else {
 		st.CommentCounts[key]--
 	}
-	if st.persist != nil {
-		st.persist.MustDelete("comments", strconv.Itoa(id))
+	batch.Delete("comments", strconv.Itoa(id))
+	if err := batch.Commit(); err != nil {
+		panic(&persistenceFailure{op: "batch", bucket: "comments", key: strconv.Itoa(id), err: err})
 	}
 	return true
 }

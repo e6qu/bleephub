@@ -487,11 +487,16 @@ func TestEphemeralRunnerTakesExactlyOneJob(t *testing.T) {
 		s.store.mu.Unlock()
 	}
 
-	// An ephemeral runner that has already finished one job is done.
+	// An ephemeral runner that has already finished one job is done. Mirror
+	// the post-delivery bookkeeping recordJobAgentLocked writes: EverAssigned
+	// is what disqualifies a used ephemeral runner, and it must keep doing so
+	// even after the completed job's stub is garbage-collected.
 	_, ephemeral := testAgentSession(t, s, runnerScope{Repo: "octo/a"})
 	s.store.mu.Lock()
 	ephemeral.Ephemeral = true
 	s.store.Jobs["done-eph"] = &Job{ID: "done-eph", Status: "completed", AgentID: ephemeral.ID}
+	ephemeral.AssignedJobID = "done-eph"
+	ephemeral.EverAssigned = true
 	s.store.mu.Unlock()
 	queue("next-eph", "octo/a")
 	ephSession := &Session{SessionID: "s-eph", Agent: ephemeral, MsgCh: make(chan *TaskAgentMessage, 1)}

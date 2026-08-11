@@ -885,6 +885,12 @@ func githubTeamRoles(token, login string) (admin, developer bool, err error) {
 }
 
 func (s *Server) handleLocalLogin(w http.ResponseWriter, r *http.Request) {
+	// Login CSRF: a cross-site form (e.g. enctype=text/plain smuggling a JSON
+	// body) could sign the victim's browser into an attacker's account.
+	if s.crossSiteBrowserPost(r) {
+		writeGHError(w, http.StatusForbidden, "cross-origin login denied")
+		return
+	}
 	var request struct {
 		Login    string `json:"login"`
 		Password string `json:"password"`
@@ -920,6 +926,12 @@ func (s *Server) handleLocalLogin(w http.ResponseWriter, r *http.Request) {
 // session. The SPA must not retain a bearer credential in web storage: any
 // script executing in the origin could read it and use it outside the browser.
 func (s *Server) handleTokenLogin(w http.ResponseWriter, r *http.Request) {
+	// Same login-CSRF surface as the local form: exchanging a token mints a
+	// browser session cookie, so a foreign origin must not be able to drive it.
+	if s.crossSiteBrowserPost(r) {
+		writeGHError(w, http.StatusForbidden, "cross-origin login denied")
+		return
+	}
 	ctx := s.authenticateRequest(r)
 	if invalid, _ := ctx.Value(ctxInvalidCredential).(bool); invalid {
 		writeGHError(w, http.StatusUnauthorized, "Bad credentials")
@@ -1113,8 +1125,23 @@ func requestOrigin(r *http.Request) string {
 	return scheme + "://" + r.Host
 }
 
+// crossSiteBrowserPost reports whether a POST to a browser-session
+// state-changing endpoint arrived from a foreign origin. Browsers attach
+// Origin to every POST — same-origin and cross-origin alike — so a
+// present-but-foreign Origin (including the "null" a sandboxed iframe
+// produces) is a cross-site request forgery; an absent Origin is a
+// non-browser client, which carries no ambient cookie jar to forge.
+// SameSite=Lax on the session cookies covers requests that need the
+// victim's session; this check also kills the vectors that don't — login
+// CSRF (posting attacker credentials sets a fresh cookie) and forced
+// logout (clearing cookies needs no cookie).
+func (s *Server) crossSiteBrowserPost(r *http.Request) bool {
+	origin := r.Header.Get("Origin")
+	return origin != "" && origin != s.externalURL && origin != requestOrigin(r)
+}
+
 func (s *Server) handleIdentityLogout(w http.ResponseWriter, r *http.Request) {
-	if origin := r.Header.Get("Origin"); origin != "" && origin != s.externalURL && origin != requestOrigin(r) {
+	if s.crossSiteBrowserPost(r) {
 		writeGHError(w, http.StatusForbidden, "cross-origin logout denied")
 		return
 	}
@@ -1161,6 +1188,12 @@ func (s *Server) handleIdentityLogout(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) handleIdentitySignedOut(w http.ResponseWriter, r *http.Request) {
 	if r.Method == http.MethodPost {
+		// Forced-logout CSRF: clearing the victim's cookies needs no cookie of
+		// its own, so SameSite alone does not cover this POST.
+		if s.crossSiteBrowserPost(r) {
+			writeGHError(w, http.StatusForbidden, "cross-origin sign-out denied")
+			return
+		}
 		// #nosec G124 -- deletion mirrors the session's conditional local-HTTP policy.
 		if err := s.clearSessionCookies(w, r); err != nil {
 			s.logger.Error().Err(err).Msg("delete browser session on signed-out landing")

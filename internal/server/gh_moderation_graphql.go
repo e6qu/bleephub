@@ -2,22 +2,10 @@ package bleephub
 
 import (
 	"fmt"
+	"strings"
 
 	"github.com/graphql-go/graphql"
 )
-
-// gqlSourceField reads key from a resolver's p.Source when Source is a
-// map[string]interface{}, returning nil otherwise. graphql-go only invokes a
-// sub-field resolver when the parent value is non-null, so in normal operation
-// Source is always the payload map; the comma-ok keeps a future schema change
-// (or a hand-driven fuzz input) from panicking.
-func gqlSourceField(p graphql.ResolveParams, key string) interface{} {
-	m, ok := p.Source.(map[string]interface{})
-	if !ok {
-		return nil
-	}
-	return m[key]
-}
 
 // addModerationMutationsToSchema registers comment minimization +
 // issue/PR locking GraphQL mutations against the shared mutationType.
@@ -53,44 +41,20 @@ func (s *Server) addModerationMutationsToSchema(mutationType *graphql.Object) {
 		},
 	})
 
-	// Payload type carries the minimized comment by node id + the resolved
-	// state — gh CLI / Octokit tests typically read minimizedComment { id
-	// isMinimized minimizedReason } to confirm the mutation worked.
-	minimizedCommentType := graphql.NewObject(graphql.ObjectConfig{
-		Name: "MinimizableComment",
-		Fields: graphql.Fields{
-			"id": &graphql.Field{
-				Type: graphql.NewNonNull(graphql.ID),
-				Resolve: func(p graphql.ResolveParams) (interface{}, error) {
-					return gqlSourceField(p, "nodeID"), nil
-				},
-			},
-			"isMinimized": &graphql.Field{
-				Type: graphql.NewNonNull(graphql.Boolean),
-				Resolve: func(p graphql.ResolveParams) (interface{}, error) {
-					return gqlSourceField(p, "isMinimized"), nil
-				},
-			},
-			"minimizedReason": &graphql.Field{
-				Type: graphql.String,
-				Resolve: func(p graphql.ResolveParams) (interface{}, error) {
-					return gqlSourceField(p, "minimizedReason"), nil
-				},
-			},
-		},
-	})
-
+	// The payload carries the comment behind GitHub's Minimizable interface;
+	// the resolvers below feed it full commentToGQL source maps so any
+	// inline-fragment selection on the concrete IssueComment resolves.
 	minimizePayloadType := graphql.NewObject(graphql.ObjectConfig{
 		Name: "MinimizeCommentPayload",
 		Fields: graphql.Fields{
-			"minimizedComment": &graphql.Field{Type: minimizedCommentType},
+			"minimizedComment": &graphql.Field{Type: s.gqlMinimizableInterface()},
 		},
 	})
 
 	unminimizePayloadType := graphql.NewObject(graphql.ObjectConfig{
 		Name: "UnminimizeCommentPayload",
 		Fields: graphql.Fields{
-			"unminimizedComment": &graphql.Field{Type: minimizedCommentType},
+			"unminimizedComment": &graphql.Field{Type: s.gqlMinimizableInterface()},
 		},
 	})
 
@@ -113,11 +77,7 @@ func (s *Server) addModerationMutationsToSchema(mutationType *graphql.Object) {
 				return nil, fmt.Errorf("could not resolve to a node with the global id of '%s'", nodeID)
 			}
 			return map[string]interface{}{
-				"minimizedComment": map[string]interface{}{
-					"nodeID":          updated.NodeID,
-					"isMinimized":     updated.MinimizedReason != "",
-					"minimizedReason": nilStr(updated.MinimizedReason),
-				},
+				"minimizedComment": commentToGQL(updated, s.store),
 			}, nil
 		},
 	})
@@ -140,11 +100,7 @@ func (s *Server) addModerationMutationsToSchema(mutationType *graphql.Object) {
 				return nil, fmt.Errorf("could not resolve to a node with the global id of '%s'", nodeID)
 			}
 			return map[string]interface{}{
-				"unminimizedComment": map[string]interface{}{
-					"nodeID":          updated.NodeID,
-					"isMinimized":     false,
-					"minimizedReason": nil,
-				},
+				"unminimizedComment": commentToGQL(updated, s.store),
 			}, nil
 		},
 	})
@@ -168,41 +124,20 @@ func (s *Server) addModerationMutationsToSchema(mutationType *graphql.Object) {
 		},
 	})
 
-	lockedRecordType := graphql.NewObject(graphql.ObjectConfig{
-		Name: "LockableSummary",
-		Fields: graphql.Fields{
-			"id": &graphql.Field{
-				Type: graphql.NewNonNull(graphql.ID),
-				Resolve: func(p graphql.ResolveParams) (interface{}, error) {
-					return gqlSourceField(p, "nodeID"), nil
-				},
-			},
-			"locked": &graphql.Field{
-				Type: graphql.NewNonNull(graphql.Boolean),
-				Resolve: func(p graphql.ResolveParams) (interface{}, error) {
-					return gqlSourceField(p, "locked"), nil
-				},
-			},
-			"activeLockReason": &graphql.Field{
-				Type: graphql.String,
-				Resolve: func(p graphql.ResolveParams) (interface{}, error) {
-					return gqlSourceField(p, "activeLockReason"), nil
-				},
-			},
-		},
-	})
-
+	// The payloads carry the locked record behind GitHub's Lockable
+	// interface; lockByNodeID feeds them full issueToGQL/pullRequestToGQL
+	// source maps so inline fragments on the concrete types resolve.
 	lockPayloadType := graphql.NewObject(graphql.ObjectConfig{
 		Name: "LockLockablePayload",
 		Fields: graphql.Fields{
-			"lockedRecord": &graphql.Field{Type: lockedRecordType},
+			"lockedRecord": &graphql.Field{Type: s.gqlLockableInterface()},
 		},
 	})
 
 	unlockPayloadType := graphql.NewObject(graphql.ObjectConfig{
 		Name: "UnlockLockablePayload",
 		Fields: graphql.Fields{
-			"unlockedRecord": &graphql.Field{Type: lockedRecordType},
+			"unlockedRecord": &graphql.Field{Type: s.gqlLockableInterface()},
 		},
 	})
 
@@ -258,9 +193,10 @@ func graphqlToRESTLockReason(enum string) string {
 }
 
 // lockByNodeID resolves nodeID to an Issue or PullRequest, applies the
-// requested lock state, and returns a source map suitable for the
-// LockableSummary GraphQL type. The bool indicates whether a target was
-// found.
+// requested lock state, and returns the full GraphQL source map for the
+// Lockable interface (the concrete Issue/PullRequest type resolves any
+// selection, and activeLockReason serializes through the LockReason enum).
+// The bool indicates whether a target was found.
 func (s *Server) lockByNodeID(nodeID string, locked bool, reason string) (map[string]interface{}, bool) {
 	if issue := findIssueByNodeID(s.store, nodeID); issue != nil {
 		s.store.SetIssueOrPRLock(issue.RepoID, issue.Number, locked, reason)
@@ -268,11 +204,7 @@ func (s *Server) lockByNodeID(nodeID string, locked bool, reason string) (map[st
 		if refreshed == nil {
 			refreshed = issue
 		}
-		return map[string]interface{}{
-			"nodeID":           refreshed.NodeID,
-			"locked":           refreshed.Locked,
-			"activeLockReason": nilStr(string(refreshed.ActiveLockReason)),
-		}, true
+		return issueToGQL(refreshed, s.store), true
 	}
 	if pr := findPullRequestByNodeID(s.store, nodeID); pr != nil {
 		s.store.SetIssueOrPRLock(pr.RepoID, pr.Number, locked, reason)
@@ -280,11 +212,63 @@ func (s *Server) lockByNodeID(nodeID string, locked bool, reason string) (map[st
 		if refreshed == nil {
 			refreshed = pr
 		}
-		return map[string]interface{}{
-			"nodeID":           refreshed.NodeID,
-			"locked":           refreshed.Locked,
-			"activeLockReason": nilStr(string(refreshed.ActiveLockReason)),
-		}, true
+		return pullRequestToGQL(refreshed, s.store), true
 	}
 	return nil, false
+}
+
+// gqlLockableInterface returns GitHub's Lockable interface (memoized):
+// locked: Boolean! + activeLockReason: LockReason, exactly the official
+// field set. Issue, PullRequest, and Discussion implement it. ResolveType
+// discriminates on the source map's node id prefix — the registry entries
+// are populated by the time any query executes.
+func (s *Server) gqlLockableInterface() *graphql.Interface {
+	if s.graphqlTypes.lockable != nil {
+		return s.graphqlTypes.lockable
+	}
+	s.graphqlTypes.lockable = graphql.NewInterface(graphql.InterfaceConfig{
+		Name: "Lockable",
+		Fields: graphql.Fields{
+			"locked":           &graphql.Field{Type: graphql.NewNonNull(graphql.Boolean)},
+			"activeLockReason": &graphql.Field{Type: s.graphQLEnum("LockReason", "OFF_TOPIC", "RESOLVED", "SPAM", "TOO_HEATED")},
+		},
+		ResolveType: func(p graphql.ResolveTypeParams) *graphql.Object {
+			source, _ := p.Value.(map[string]interface{})
+			nodeID, _ := source["nodeID"].(string)
+			switch {
+			case strings.HasPrefix(nodeID, "PR_"):
+				return s.graphqlTypes.pullRequest
+			case strings.HasPrefix(nodeID, "D_"):
+				return s.graphqlTypes.discussion
+			default:
+				return s.graphqlTypes.issue
+			}
+		},
+	})
+	return s.graphqlTypes.lockable
+}
+
+// gqlMinimizableInterface returns GitHub's Minimizable interface (memoized)
+// with the subset of official fields bleephub models (isMinimized,
+// minimizedReason). IssueComment and DiscussionComment implement it.
+func (s *Server) gqlMinimizableInterface() *graphql.Interface {
+	if s.graphqlTypes.minimizable != nil {
+		return s.graphqlTypes.minimizable
+	}
+	s.graphqlTypes.minimizable = graphql.NewInterface(graphql.InterfaceConfig{
+		Name: "Minimizable",
+		Fields: graphql.Fields{
+			"isMinimized":     &graphql.Field{Type: graphql.NewNonNull(graphql.Boolean)},
+			"minimizedReason": &graphql.Field{Type: graphql.String},
+		},
+		ResolveType: func(p graphql.ResolveTypeParams) *graphql.Object {
+			source, _ := p.Value.(map[string]interface{})
+			nodeID, _ := source["nodeID"].(string)
+			if strings.HasPrefix(nodeID, "DC_") {
+				return s.graphqlTypes.discussionComment
+			}
+			return s.graphqlTypes.issueComment
+		},
+	})
+	return s.graphqlTypes.minimizable
 }

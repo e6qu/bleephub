@@ -132,7 +132,7 @@ func TestProjectsV2GraphQL_FieldValueKinds(t *testing.T) {
 
 	update := func(field *ProjectV2Field, value map[string]interface{}) {
 		t.Helper()
-		data := s.gqlData(t, `mutation($project:ID!,$item:ID!,$field:ID!,$value:ProjectV2FieldValueInput!){
+		data := s.gqlData(t, `mutation($project:ID!,$item:ID!,$field:ID!,$value:ProjectV2FieldValue!){
 			updateProjectV2ItemFieldValue(input:{projectId:$project,itemId:$item,fieldId:$field,value:$value}){
 				projectV2Item { id }
 			}
@@ -244,16 +244,14 @@ func TestProjectsV2GraphQL_ProjectLevelConnections(t *testing.T) {
 							fields(first:10){
 								totalCount
 								nodes{
-									id
-									name
-									dataType
-									options { id name color description }
-									iterationConfiguration { startDate duration iterations { id title startDate duration } }
+									... on ProjectV2FieldCommon { id name dataType }
+									... on ProjectV2SingleSelectField { options { id name color description } }
+									... on ProjectV2IterationField { configuration { startDay duration iterations { id title startDate duration } completedIterations { id title startDate duration } } }
 								}
 							}
 							views(first:10){
 								totalCount
-								nodes{ id number name layout filter visibleFieldIds }
+								nodes{ id number name layout filter fields(first:10){ nodes { ... on ProjectV2FieldCommon { id } } } }
 							}
 							items(first:10){
 								totalCount
@@ -286,13 +284,19 @@ func TestProjectsV2GraphQL_ProjectLevelConnections(t *testing.T) {
 	if secondField["id"] != sprint.NodeID || secondField["dataType"] != string(ProjectV2FieldIteration) {
 		t.Fatalf("second field = %v", secondField)
 	}
-	iteration := secondField["iterationConfiguration"].(map[string]interface{})
-	if iteration["startDate"] != "2026-07-06" || iteration["duration"].(float64) != 14 {
+	iteration := secondField["configuration"].(map[string]interface{})
+	// 2026-07-06 is a Monday (startDay 1); Sprint 1 ended 2026-07-20, so it
+	// reports under completedIterations, exactly as real GitHub splits them.
+	if iteration["startDay"].(float64) != 1 || iteration["duration"].(float64) != 14 {
 		t.Fatalf("iteration configuration = %v", iteration)
 	}
-	iterations := iteration["iterations"].([]interface{})
-	if len(iterations) != 1 || iterations[0].(map[string]interface{})["title"] != "Sprint 1" {
-		t.Fatalf("iterations = %v", iterations)
+	if active := iteration["iterations"].([]interface{}); len(active) != 0 {
+		t.Fatalf("iterations = %v, want none active", active)
+	}
+	completed := iteration["completedIterations"].([]interface{})
+	if len(completed) != 1 || completed[0].(map[string]interface{})["title"] != "Sprint 1" ||
+		completed[0].(map[string]interface{})["startDate"] != "2026-07-06" {
+		t.Fatalf("completedIterations = %v", completed)
 	}
 
 	views := projectNode["views"].(map[string]interface{})
@@ -303,9 +307,11 @@ func TestProjectsV2GraphQL_ProjectLevelConnections(t *testing.T) {
 	if viewNode["id"] != view.NodeID || viewNode["name"] != "Issues board" || viewNode["layout"] != "BOARD_LAYOUT" || viewNode["filter"] != "is:issue" {
 		t.Fatalf("view node = %v", viewNode)
 	}
-	visible := viewNode["visibleFieldIds"].([]interface{})
-	if len(visible) != 2 || int(visible[0].(float64)) != stage.ID || int(visible[1].(float64)) != sprint.ID {
-		t.Fatalf("visibleFieldIds = %v", visible)
+	viewFields := viewNode["fields"].(map[string]interface{})["nodes"].([]interface{})
+	if len(viewFields) != 2 ||
+		viewFields[0].(map[string]interface{})["id"] != stage.NodeID ||
+		viewFields[1].(map[string]interface{})["id"] != sprint.NodeID {
+		t.Fatalf("view fields = %v", viewFields)
 	}
 
 	items := projectNode["items"].(map[string]interface{})

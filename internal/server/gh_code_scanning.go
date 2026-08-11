@@ -460,24 +460,24 @@ func (s *Server) handleUpdateCodeScanningDefaultSetup(w http.ResponseWriter, r *
 	}
 
 	if req.State != "" && req.State != "configured" && req.State != "not-configured" {
-		writeGHValidationError(w, "CodeScanningDefaultSetup", "state", "invalid")
+		writeGHError(w, http.StatusUnprocessableEntity, "Value of state is invalid")
 		return
 	}
 	if req.QuerySuite != "" && req.QuerySuite != "default" && req.QuerySuite != "extended" {
-		writeGHValidationError(w, "CodeScanningDefaultSetup", "query_suite", "invalid")
+		writeGHError(w, http.StatusUnprocessableEntity, "Value of query_suite is invalid")
 		return
 	}
 	if req.RunnerType != "" && req.RunnerType != "standard" && req.RunnerType != "labeled" {
-		writeGHValidationError(w, "CodeScanningDefaultSetup", "runner_type", "invalid")
+		writeGHError(w, http.StatusUnprocessableEntity, "Value of runner_type is invalid")
 		return
 	}
 	if req.ThreatModel != "" && req.ThreatModel != "remote" && req.ThreatModel != "remote_and_local" {
-		writeGHValidationError(w, "CodeScanningDefaultSetup", "threat_model", "invalid")
+		writeGHError(w, http.StatusUnprocessableEntity, "Value of threat_model is invalid")
 		return
 	}
 	for _, lang := range req.Languages {
 		if !codeQLDefaultSetupLanguages[lang] {
-			writeGHValidationError(w, "CodeScanningDefaultSetup", "languages", "invalid")
+			writeGHError(w, http.StatusUnprocessableEntity, "Value of languages is invalid")
 			return
 		}
 	}
@@ -1223,16 +1223,16 @@ func (s *Server) handleCreateCodeQLVariantAnalysis(w http.ResponseWriter, r *htt
 		return
 	}
 	if !codeQLLanguages[req.Language] {
-		writeGHValidationError(w, "VariantAnalysis", "language", "invalid")
+		writeGHError(w, http.StatusUnprocessableEntity, "Value of language is invalid")
 		return
 	}
 	if req.QueryPack == "" {
-		writeGHValidationError(w, "VariantAnalysis", "query_pack", "missing_field")
+		writeGHError(w, http.StatusUnprocessableEntity, "query_pack is required")
 		return
 	}
 	queryPack, err := base64.StdEncoding.DecodeString(req.QueryPack)
 	if err != nil {
-		writeGHValidationError(w, "VariantAnalysis", "query_pack", "invalid")
+		writeGHError(w, http.StatusUnprocessableEntity, "Value of query_pack is invalid")
 		return
 	}
 	sources := 0
@@ -1246,11 +1246,11 @@ func (s *Server) handleCreateCodeQLVariantAnalysis(w http.ResponseWriter, r *htt
 		sources++
 	}
 	if sources != 1 {
-		writeGHValidationError(w, "VariantAnalysis", "repositories", "invalid")
+		writeGHError(w, http.StatusUnprocessableEntity, "Value of repositories is invalid")
 		return
 	}
 	if len(req.RepositoryLists) > 1 || len(req.RepositoryOwners) > 1 {
-		writeGHValidationError(w, "VariantAnalysis", "repositories", "invalid")
+		writeGHError(w, http.StatusUnprocessableEntity, "Value of repositories is invalid")
 		return
 	}
 

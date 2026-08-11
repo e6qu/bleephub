@@ -37,7 +37,9 @@ func FuzzGraphQLWithVariables(f *testing.F) {
 		{"query($n:Int){repository(owner:\"a\",name:\"b\"){issue(number:$n){title}}}", `{"n":true}`},
 		{"query($n:Int){repository(owner:\"a\",name:\"b\"){issue(number:$n){title}}}", `{"n":[1,2,3]}`},
 		{"query($a:String){search(query:$a,type:REPOSITORY,first:5){repositoryCount}}", `{"a":{"nested":1}}`},
-		{"mutation($i:MinimizeCommentInput!){minimizeComment(input:$i){minimizedComment{id}}}", `{"i":{"subjectId":123,"classifier":["x"]}}`},
+		// minimizedComment is the Minimizable interface (no `id` field there,
+		// matching real GitHub) — select an interface field.
+		{"mutation($i:MinimizeCommentInput!){minimizeComment(input:$i){minimizedComment{isMinimized}}}", `{"i":{"subjectId":123,"classifier":["x"]}}`},
 		{"mutation($i:CreateIssueInput!){createIssue(input:$i){issue{number}}}", `{"i":{"repositoryId":42,"title":null,"body":true}}`},
 		{"query($f:Int,$a:String){viewer{repositories(first:$f,after:$a){nodes{name}}}}", `{"f":-1,"a":99}`},
 		{"query($f:Int,$a:String){viewer{repositories(first:$f,after:$a){nodes{name}}}}", `{"f":2147483647,"a":""}`},

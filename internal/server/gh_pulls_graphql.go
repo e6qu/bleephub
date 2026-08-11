@@ -104,60 +104,12 @@ func (s *Server) addPullRequestFieldsToSchema(userType, issueType, milestoneType
 		},
 	})
 
-	// --- PR Label types (PR-prefixed to avoid name collision) ---
-	prLabelType := graphql.NewObject(graphql.ObjectConfig{
-		Name: "PRLabel",
-		Fields: graphql.Fields{
-			"id": &graphql.Field{
-				Type: graphql.NewNonNull(graphql.ID),
-				Resolve: func(p graphql.ResolveParams) (interface{}, error) {
-					l, ok := p.Source.(map[string]interface{})
-					if !ok {
-						return nil, fmt.Errorf("resolve source: unexpected type %T", p.Source)
-					}
-					return l["nodeID"], nil
-				},
-			},
-			"name":        &graphql.Field{Type: graphql.NewNonNull(graphql.String)},
-			"description": &graphql.Field{Type: graphql.String},
-			"color":       &graphql.Field{Type: graphql.NewNonNull(graphql.String)},
-		},
-	})
-
-	prLabelConnectionType := graphql.NewObject(graphql.ObjectConfig{
-		Name: "PRLabelConnection",
-		Fields: graphql.Fields{
-			"nodes":      &graphql.Field{Type: graphql.NewList(prLabelType)},
-			"totalCount": &graphql.Field{Type: graphql.NewNonNull(graphql.Int)},
-			"pageInfo":   &graphql.Field{Type: graphql.NewNonNull(s.gqlPageInfoType())},
-		},
-	})
-
-	// --- PR Assignee connection ---
-	prAssigneeConnectionType := graphql.NewObject(graphql.ObjectConfig{
-		Name: "PRUserConnection",
-		Fields: graphql.Fields{
-			"nodes":      &graphql.Field{Type: graphql.NewList(userType)},
-			"totalCount": &graphql.Field{Type: graphql.NewNonNull(graphql.Int)},
-			"pageInfo":   &graphql.Field{Type: graphql.NewNonNull(s.gqlPageInfoType())},
-		},
-	})
-
-	// --- Reaction group type for PRs ---
-	prReactionGroupType := graphql.NewObject(graphql.ObjectConfig{
-		Name: "PRReactionGroup",
-		Fields: graphql.Fields{
-			"content": &graphql.Field{Type: graphql.NewNonNull(graphql.String)},
-			"users": &graphql.Field{
-				Type: graphql.NewObject(graphql.ObjectConfig{
-					Name: "PRReactingUserConnection",
-					Fields: graphql.Fields{
-						"totalCount": &graphql.Field{Type: graphql.NewNonNull(graphql.Int)},
-					},
-				}),
-			},
-		},
-	})
+	// Shared connection/label/reaction types come from the registry — PRs and
+	// issues expose the same Label/UserConnection/ReactionGroup types, exactly
+	// as GitHub's schema does.
+	prLabelConnectionType := s.gqlLabelConnectionType()
+	prAssigneeConnectionType := s.gqlUserConnectionType(userType)
+	prReactionGroupType := s.gqlReactionGroupType()
 
 	// --- Commit + status-check rollup types ---
 	// gh selects PR check state through the commits connection:
@@ -195,21 +147,33 @@ func (s *Server) addPullRequestFieldsToSchema(userType, issueType, milestoneType
 				},
 			},
 			"detailsUrl": &graphql.Field{Type: uri},
+			// Bearing GitHub's real type names: CheckRun.checkSuite is a
+			// non-null CheckSuite whose workflowRun/workflow expose the subset
+			// gh CLI selects. statusCheckRollupSourceLocked always embeds a
+			// checkSuite source map (with a null workflowRun when the run has
+			// no recorded suite), satisfying the non-null contract.
 			"checkSuite": &graphql.Field{
-				Type: graphql.NewObject(graphql.ObjectConfig{
-					Name: "CheckSuiteRef",
+				Type: graphql.NewNonNull(graphql.NewObject(graphql.ObjectConfig{
+					Name: "CheckSuite",
 					Fields: graphql.Fields{
 						"workflowRun": &graphql.Field{
 							Type: graphql.NewObject(graphql.ObjectConfig{
-								Name: "CheckWorkflowRun",
+								Name: "WorkflowRun",
 								Fields: graphql.Fields{
 									"workflow": &graphql.Field{
-										Type: graphql.NewObject(graphql.ObjectConfig{
-											Name: "CheckWorkflow",
+										Type: graphql.NewNonNull(graphql.NewObject(graphql.ObjectConfig{
+											Name: "Workflow",
 											Fields: graphql.Fields{
 												"name": &graphql.Field{Type: graphql.NewNonNull(graphql.String)},
 											},
-										}),
+										})),
+										Resolve: func(p graphql.ResolveParams) (interface{}, error) {
+											run, ok := p.Source.(map[string]interface{})
+											if !ok {
+												return nil, fmt.Errorf("resolve source: unexpected type %T", p.Source)
+											}
+											return run["workflow"], nil
+										},
 									},
 								},
 							}),
@@ -222,7 +186,7 @@ func (s *Server) addPullRequestFieldsToSchema(userType, issueType, milestoneType
 							},
 						},
 					},
-				}),
+				})),
 				Resolve: func(p graphql.ResolveParams) (interface{}, error) {
 					cr, ok := p.Source.(map[string]interface{})
 					if !ok {
@@ -425,7 +389,7 @@ func (s *Server) addPullRequestFieldsToSchema(userType, issueType, milestoneType
 				},
 			},
 			"reactionGroups": &graphql.Field{
-				Type: graphql.NewList(prReactionGroupType),
+				Type: graphql.NewList(graphql.NewNonNull(prReactionGroupType)),
 				Resolve: func(p graphql.ResolveParams) (interface{}, error) {
 					r, ok := p.Source.(map[string]interface{})
 					if !ok {
@@ -468,13 +432,10 @@ func (s *Server) addPullRequestFieldsToSchema(userType, issueType, milestoneType
 			// GitHub's validator is laxer; the value is never null here.
 			"name": &graphql.Field{Type: graphql.String},
 			"slug": &graphql.Field{Type: graphql.NewNonNull(graphql.String)},
+			// The shared Organization type (registered by addOrgFieldsToSchema,
+			// which runs before this family) — not a private login-only fork.
 			"organization": &graphql.Field{
-				Type: graphql.NewNonNull(graphql.NewObject(graphql.ObjectConfig{
-					Name: "TeamOrganization",
-					Fields: graphql.Fields{
-						"login": &graphql.Field{Type: graphql.NewNonNull(graphql.String)},
-					},
-				})),
+				Type: graphql.NewNonNull(s.graphqlTypes.organization),
 			},
 		},
 	})
@@ -517,157 +478,11 @@ func (s *Server) addPullRequestFieldsToSchema(userType, issueType, milestoneType
 	})
 
 	// --- PR Comment connection ---
-	// PRComment type — must match IssueComment's nullability for shared
-	// fields (body, createdAt). gh CLI's `gh issue view` and `gh pr view`
-	// queries union Issue|PR with shared `comments.nodes` field
-	// selections; the field types must merge. Resolvers read from the
-	// source map populated by prCommentToGQLLocked above.
-	prCommentType := graphql.NewObject(graphql.ObjectConfig{
-		Name: "PRComment",
-		Fields: graphql.Fields{
-			"id": &graphql.Field{
-				Type: graphql.NewNonNull(graphql.ID),
-				Resolve: func(p graphql.ResolveParams) (interface{}, error) {
-					c, ok := p.Source.(map[string]interface{})
-					if !ok {
-						return nil, fmt.Errorf("resolve source: unexpected type %T", p.Source)
-					}
-					return c["nodeID"], nil
-				},
-			},
-			"body": &graphql.Field{
-				Type: graphql.NewNonNull(graphql.String),
-				Resolve: func(p graphql.ResolveParams) (interface{}, error) {
-					c, ok := p.Source.(map[string]interface{})
-					if !ok {
-						return nil, fmt.Errorf("resolve source: unexpected type %T", p.Source)
-					}
-					return c["body"], nil
-				},
-			},
-			"createdAt": &graphql.Field{
-				Type: graphql.NewNonNull(dateTime),
-				Resolve: func(p graphql.ResolveParams) (interface{}, error) {
-					c, ok := p.Source.(map[string]interface{})
-					if !ok {
-						return nil, fmt.Errorf("resolve source: unexpected type %T", p.Source)
-					}
-					return c["createdAt"], nil
-				},
-			},
-			"authorAssociation": &graphql.Field{
-				Type: graphql.NewNonNull(commentAuthorAssociationEnum),
-				Resolve: func(p graphql.ResolveParams) (interface{}, error) {
-					c, ok := p.Source.(map[string]interface{})
-					if !ok {
-						return nil, fmt.Errorf("resolve source: unexpected type %T", p.Source)
-					}
-					return c["authorAssociation"], nil
-				},
-			},
-			"url": &graphql.Field{
-				Type: graphql.NewNonNull(uri),
-				Resolve: func(p graphql.ResolveParams) (interface{}, error) {
-					c, ok := p.Source.(map[string]interface{})
-					if !ok {
-						return nil, fmt.Errorf("resolve source: unexpected type %T", p.Source)
-					}
-					return c["url"], nil
-				},
-			},
-			"viewerDidAuthor": &graphql.Field{
-				Type: graphql.Boolean,
-				Resolve: func(p graphql.ResolveParams) (interface{}, error) {
-					c, ok := p.Source.(map[string]interface{})
-					if !ok {
-						return nil, fmt.Errorf("resolve source: unexpected type %T", p.Source)
-					}
-					viewer := ghUserFromContext(p.Context)
-					authorID, _ := c["authorID"].(int)
-					return viewer != nil && authorID == viewer.ID, nil
-				},
-			},
-			"author": &graphql.Field{
-				Type: s.graphqlTypes.actor,
-				Resolve: func(p graphql.ResolveParams) (interface{}, error) {
-					c, ok := p.Source.(map[string]interface{})
-					if !ok {
-						return nil, fmt.Errorf("resolve source: unexpected type %T", p.Source)
-					}
-					return c["author"], nil
-				},
-			},
-			"includesCreatedEdit": &graphql.Field{
-				Type: graphql.Boolean,
-				Resolve: func(p graphql.ResolveParams) (interface{}, error) {
-					c, ok := p.Source.(map[string]interface{})
-					if !ok {
-						return nil, fmt.Errorf("resolve source: unexpected type %T", p.Source)
-					}
-					return c["includesCreatedEdit"], nil
-				},
-			},
-			"lastEditedAt": &graphql.Field{
-				Type: dateTime,
-				Resolve: func(p graphql.ResolveParams) (interface{}, error) {
-					c, ok := p.Source.(map[string]interface{})
-					if !ok {
-						return nil, fmt.Errorf("resolve source: unexpected type %T", p.Source)
-					}
-					return c["lastEditedAt"], nil
-				},
-			},
-			"editor": &graphql.Field{
-				Type: userType,
-				Resolve: func(p graphql.ResolveParams) (interface{}, error) {
-					c, ok := p.Source.(map[string]interface{})
-					if !ok {
-						return nil, fmt.Errorf("resolve source: unexpected type %T", p.Source)
-					}
-					return c["editor"], nil
-				},
-			},
-			"isMinimized": &graphql.Field{
-				Type: graphql.Boolean,
-				Resolve: func(p graphql.ResolveParams) (interface{}, error) {
-					c, ok := p.Source.(map[string]interface{})
-					if !ok {
-						return nil, fmt.Errorf("resolve source: unexpected type %T", p.Source)
-					}
-					return c["isMinimized"], nil
-				},
-			},
-			"minimizedReason": &graphql.Field{
-				Type: graphql.String,
-				Resolve: func(p graphql.ResolveParams) (interface{}, error) {
-					c, ok := p.Source.(map[string]interface{})
-					if !ok {
-						return nil, fmt.Errorf("resolve source: unexpected type %T", p.Source)
-					}
-					return c["minimizedReason"], nil
-				},
-			},
-			"reactionGroups": &graphql.Field{
-				Type: graphql.NewList(prReactionGroupType),
-				Resolve: func(p graphql.ResolveParams) (interface{}, error) {
-					c, ok := p.Source.(map[string]interface{})
-					if !ok {
-						return nil, fmt.Errorf("resolve source: unexpected type %T", p.Source)
-					}
-					return c["reactionGroups"], nil
-				},
-			},
-		},
-	})
-
-	prCommentConnectionType := graphql.NewObject(graphql.ObjectConfig{
-		Name: "PRCommentConnection",
-		Fields: graphql.Fields{
-			"nodes":      &graphql.Field{Type: graphql.NewList(prCommentType)},
-			"totalCount": &graphql.Field{Type: graphql.NewNonNull(graphql.Int)},
-			"pageInfo":   &graphql.Field{Type: graphql.NewNonNull(s.gqlPageInfoType())},
-		},
-	})
+	// Real GitHub serves PR conversation comments as IssueComment (PRs are
+	// issues internally); the shared IssueCommentConnection from the registry
+	// keeps gh CLI's merged Issue|PullRequest `comments` fragments on one
+	// type. The nodes are commentToGQLLocked source maps.
+	prCommentConnectionType := s.gqlIssueCommentConnectionType()
 
 	// --- PR Review thread types ---
 	prReviewCommentType := graphql.NewObject(graphql.ObjectConfig{
@@ -746,7 +561,7 @@ func (s *Server) addPullRequestFieldsToSchema(userType, issueType, milestoneType
 	// --- PullRequest type ---
 	pullRequestType := graphql.NewObject(graphql.ObjectConfig{
 		Name:       "PullRequest",
-		Interfaces: []*graphql.Interface{nodeInterface},
+		Interfaces: []*graphql.Interface{nodeInterface, s.gqlLockableInterface()},
 		Fields: graphql.Fields{
 			"id": &graphql.Field{
 				Type: graphql.NewNonNull(graphql.ID),
@@ -812,7 +627,7 @@ func (s *Server) addPullRequestFieldsToSchema(userType, issueType, milestoneType
 				},
 			},
 			"assignees": &graphql.Field{
-				Type: prAssigneeConnectionType,
+				Type: graphql.NewNonNull(prAssigneeConnectionType),
 				Args: relayConnectionArgs(),
 				Resolve: func(p graphql.ResolveParams) (interface{}, error) {
 					pr, ok := p.Source.(map[string]interface{})
@@ -850,7 +665,7 @@ func (s *Server) addPullRequestFieldsToSchema(userType, issueType, milestoneType
 				},
 			},
 			"comments": &graphql.Field{
-				Type: prCommentConnectionType,
+				Type: graphql.NewNonNull(prCommentConnectionType),
 				Args: graphql.FieldConfigArgument{
 					"first":  &graphql.ArgumentConfig{Type: graphql.Int},
 					"last":   &graphql.ArgumentConfig{Type: graphql.Int},
@@ -1068,14 +883,10 @@ func (s *Server) addPullRequestFieldsToSchema(userType, issueType, milestoneType
 				},
 			},
 			"closingIssuesReferences": &graphql.Field{
-				Type: graphql.NewObject(graphql.ObjectConfig{
-					Name: "ClosingIssuesReferencesConnection",
-					Fields: graphql.Fields{
-						"nodes":      &graphql.Field{Type: graphql.NewList(issueType)},
-						"pageInfo":   &graphql.Field{Type: graphql.NewNonNull(s.gqlPageInfoType())},
-						"totalCount": &graphql.Field{Type: graphql.NewNonNull(graphql.Int)},
-					},
-				}),
+				// The shared IssueConnection — the nodes are full issueToGQL
+				// maps already, so the connection type from Repository.issues
+				// serves them unchanged.
+				Type: s.gqlIssueConnectionType(issueType),
 				Args: graphql.FieldConfigArgument{
 					"first": &graphql.ArgumentConfig{Type: graphql.Int},
 					"after": &graphql.ArgumentConfig{Type: graphql.String},
@@ -1110,15 +921,11 @@ func (s *Server) addPullRequestFieldsToSchema(userType, issueType, milestoneType
 				},
 			},
 			// latestReviews — the newest review per author, derived from the
-			// same review store as `reviews`.
+			// same review store as `reviews`. Shares PullRequestReviewConnection
+			// with `reviews`, as GitHub's schema does; repaginateConnection
+			// synthesizes the pageInfo the connection type requires.
 			"latestReviews": &graphql.Field{
-				Type: graphql.NewObject(graphql.ObjectConfig{
-					Name: "LatestReviewConnection",
-					Fields: graphql.Fields{
-						"nodes":      &graphql.Field{Type: graphql.NewList(prReviewType)},
-						"totalCount": &graphql.Field{Type: graphql.NewNonNull(graphql.Int)},
-					},
-				}),
+				Type: prReviewConnectionType,
 				Args: relayConnectionArgs(),
 				Resolve: func(p graphql.ResolveParams) (interface{}, error) {
 					pr, ok := p.Source.(map[string]interface{})
@@ -1138,51 +945,37 @@ func (s *Server) addPullRequestFieldsToSchema(userType, issueType, milestoneType
 					return pr["mergeStateStatus"], nil
 				},
 			},
-			// gh pr status selects baseRef{branchProtectionRule{...}}; resolve
-			// from the typed branch-protection model.
+			// gh pr status selects baseRef{branchProtectionRule{...}}; the
+			// shared Ref type serves it, with the rule resolved eagerly from
+			// the typed branch-protection model and embedded in the source map.
 			"baseRef": &graphql.Field{
-				Type: graphql.NewObject(graphql.ObjectConfig{
-					Name: "PRBaseRef",
-					Fields: graphql.Fields{
-						"name": &graphql.Field{Type: graphql.NewNonNull(graphql.String)},
-						"branchProtectionRule": &graphql.Field{
-							Type: graphql.NewObject(graphql.ObjectConfig{
-								Name: "BranchProtectionRule",
-								Fields: graphql.Fields{
-									"requiresStrictStatusChecks":   &graphql.Field{Type: graphql.NewNonNull(graphql.Boolean)},
-									"requiredApprovingReviewCount": &graphql.Field{Type: graphql.Int},
-								},
-							}),
-							Resolve: func(p graphql.ResolveParams) (interface{}, error) {
-								pr, ok := p.Source.(map[string]interface{})
-								if !ok {
-									return nil, fmt.Errorf("resolve source: unexpected type %T", p.Source)
-								}
-								prID, _ := pr["databaseId"].(int)
-								prObj := s.store.GetPullRequest(prID)
-								if prObj == nil {
-									return nil, nil
-								}
-								repo := s.store.GetRepoByID(prObj.RepoID)
-								if repo == nil {
-									return nil, nil
-								}
-								return s.branchProtectionRuleForPR(repo, prObj.BaseRefName), nil
-							},
-						},
-					},
-				}),
+				Type: s.gqlRefType(),
 				Resolve: func(p graphql.ResolveParams) (interface{}, error) {
 					pr, ok := p.Source.(map[string]interface{})
 					if !ok {
 						return nil, fmt.Errorf("resolve source: unexpected type %T", p.Source)
 					}
 					base, _ := pr["baseRefName"].(string)
-					return map[string]interface{}{"name": base}, nil
+					ref := map[string]interface{}{
+						"name":   base,
+						"prefix": "refs/heads/",
+					}
+					prID, _ := pr["databaseId"].(int)
+					if prObj := s.store.GetPullRequest(prID); prObj != nil {
+						if repo := s.store.GetRepoByID(prObj.RepoID); repo != nil {
+							if rule := s.branchProtectionRuleForPR(repo, prObj.BaseRefName); rule != nil {
+								ref["branchProtectionRule"] = rule
+							}
+						}
+					}
+					return ref, nil
 				},
 			},
 		},
 	})
+
+	// Registered for interface ResolveType dispatch (Lockable).
+	s.graphqlTypes.pullRequest = pullRequestType
 
 	// --- PR Connection ---
 	prEdgeType := graphql.NewObject(graphql.ObjectConfig{
@@ -2235,7 +2028,7 @@ func pullRequestToGQL(pr *PullRequest, st *Store) map[string]interface{} {
 	prCommentNodes := make([]map[string]interface{}, 0)
 	for _, c := range st.Comments {
 		if c.ParentType == "pull_request" && c.IssueID == pr.ID {
-			prCommentNodes = append(prCommentNodes, prCommentToGQLLocked(c, st))
+			prCommentNodes = append(prCommentNodes, commentToGQLLocked(c, st))
 		}
 	}
 	// st.Comments is a map, so iteration order is nondeterministic; sort for
@@ -2565,39 +2358,6 @@ func prMilestoneToGQLLocked(pr *PullRequest, st *Store) interface{} {
 	}
 }
 
-// prCommentToGQLLocked builds the GraphQL source map for a single
-// PR conversation comment. Caller must hold st.mu.RLock.
-func prCommentToGQLLocked(c *Comment, st *Store) map[string]interface{} {
-	var author map[string]interface{}
-	if u, ok := st.Users[c.AuthorID]; ok {
-		author = userToGraphQL(u)
-	}
-	var editor map[string]interface{}
-	var lastEditedAt interface{}
-	if c.LastEditedAt != nil {
-		lastEditedAt = c.LastEditedAt.Format(time.RFC3339)
-		if u, ok := st.Users[c.EditorID]; ok {
-			editor = userToGraphQL(u)
-		}
-	}
-	return map[string]interface{}{
-		"_dbID":               c.ID,
-		"nodeID":              c.NodeID,
-		"body":                c.Body,
-		"url":                 commentURLLocked(c, st),
-		"authorID":            c.AuthorID,
-		"createdAt":           c.CreatedAt.Format(time.RFC3339),
-		"author":              author,
-		"authorAssociation":   commentAuthorAssociationLocked(c, st),
-		"includesCreatedEdit": c.LastEditedAt != nil,
-		"lastEditedAt":        lastEditedAt,
-		"editor":              editor,
-		"isMinimized":         c.MinimizedReason != "",
-		"minimizedReason":     nilStr(c.MinimizedReason),
-		"reactionGroups":      reactionGroupsForGraphQL(st.Reactions, "issue_comment", c.ID),
-	}
-}
-
 // deriveReviewDecisionLocked derives the review decision from reviews.
 // Must be called while holding st.mu.RLock().
 func deriveReviewDecisionLocked(st *Store, prID int) string {
@@ -2839,10 +2599,10 @@ func statusCheckRollupSourceLocked(st *Store, repoKey, sha string) interface{} {
 		case "failure", "timed_out", "cancelled", "startup_failure":
 			anyFailed = true
 		}
-		var suiteSource interface{}
-		if suite := st.CheckSuites[cr.SuiteID]; suite != nil {
-			suiteSource = checkSuiteGraphQLSourceLocked(st, suite)
-		}
+		// checkSuite is CheckSuite! — always embed a source map; a run with no
+		// recorded suite carries a null workflowRun, like GitHub's stand-alone
+		// check runs.
+		suiteSource := checkSuiteGraphQLSourceLocked(st, st.CheckSuites[cr.SuiteID])
 		nodes = append(nodes, map[string]interface{}{
 			"__typename":  "CheckRun",
 			"name":        cr.Name,
@@ -2930,11 +2690,14 @@ func stateCountNodes(states []string, counts map[string]int) []interface{} {
 }
 
 func checkSuiteGraphQLSourceLocked(st *Store, suite *CheckSuite) map[string]interface{} {
-	if suite == nil {
-		return nil
+	// workflowRun defaults to an untyped nil: a typed-nil map would pass
+	// graphql-go's isNullish check and then fail WorkflowRun.workflow's
+	// non-null contract on a nil source map.
+	source := map[string]interface{}{"workflowRun": nil}
+	if run := checkSuiteWorkflowRunSourceLocked(st, suite); run != nil {
+		source["workflowRun"] = run
 	}
-	workflowRun := checkSuiteWorkflowRunSourceLocked(st, suite)
-	return map[string]interface{}{"workflowRun": workflowRun}
+	return source
 }
 
 func checkSuiteWorkflowRunSourceLocked(st *Store, suite *CheckSuite) map[string]interface{} {

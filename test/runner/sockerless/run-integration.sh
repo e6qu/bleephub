@@ -927,8 +927,10 @@ for i in $(seq 1 30); do
 done
 [ "$COUNT" -gt 0 ] || fail "runner never registered with bleephub"
 
-# Give the runner a moment to establish its session
-sleep 5
+# No blind settling delay for the runner's broker session: bleephub queues
+# submitted jobs until the session exists, and every test's
+# wait_for_workflow_run polls with a generous timeout, so session
+# establishment latency is absorbed by the polls that follow.
 
 put_workflow_file() {
     local filename="$1" yaml="$2" encoded
@@ -1031,8 +1033,16 @@ submit_and_wait_workflow() {
 # Iteration aid: BLEEPHUB_TEST_FROM=N starts at test N. CI runs everything.
 TEST_FROM="${BLEEPHUB_TEST_FROM:-1}"
 
+# Counts the tests that actually execute so the final banner reports the
+# truth — a hardcoded total drifts every time a test is added or removed,
+# and lies outright under BLEEPHUB_TEST_FROM.
+TESTS_RUN=0
 run_test() {
-    [ "$TEST_FROM" -le "$1" ]
+    if [ "$TEST_FROM" -le "$1" ]; then
+        TESTS_RUN=$((TESTS_RUN + 1))
+        return 0
+    fi
+    return 1
 }
 
 # ===== TEST 1: Single-job GitHub Actions workflow =====
@@ -1475,4 +1485,4 @@ jobs:
 sleep 3
 fi
 
-log "===== ALL 15 INTEGRATION TESTS PASSED ====="
+log "===== ALL $TESTS_RUN INTEGRATION TESTS PASSED ====="

@@ -117,9 +117,13 @@ func TestBusyRunnerNeverReceivesJobs(t *testing.T) {
 	}
 	s.store.mu.Lock()
 	s.store.Sessions["busy-sess"] = sess
-	// An assigned, unfinished job marks the agent busy.
+	// An assigned, unfinished job marks the agent busy. Mirror what
+	// recordJobAgentLocked writes on delivery: the job's AgentID and the
+	// agent's own assignment bookkeeping.
 	s.store.Jobs["job-1"] = &Job{ID: "job-1", AgentID: 901, Status: "running"}
 	s.store.Jobs["job-2"] = &Job{ID: "job-2", Status: "queued"}
+	sess.Agent.AssignedJobID = "job-1"
+	sess.Agent.EverAssigned = true
 	s.store.mu.Unlock()
 
 	s.queueJobMessage(&TaskAgentMessage{MessageID: 7, JobID: "job-2", Labels: []string{"self-hosted"}})

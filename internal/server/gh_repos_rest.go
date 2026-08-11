@@ -986,12 +986,12 @@ func (s *Server) handlePutRepoTopics(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if len(req.Names) > 20 {
-		writeGHValidationError(w, "Repository", "names", "invalid")
+		writeGHValidationErrorSimple(w, "names cannot exceed 20 topics")
 		return
 	}
 	for _, n := range req.Names {
 		if n == "" || len(n) > 50 || strings.ContainsAny(n, " /\\:") {
-			writeGHValidationError(w, "Repository", "names", "invalid")
+			writeGHValidationErrorSimple(w, fmt.Sprintf("topic name %q is invalid", n))
 			return
 		}
 	}

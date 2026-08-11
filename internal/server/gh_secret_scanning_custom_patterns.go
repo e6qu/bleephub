@@ -2,6 +2,7 @@ package bleephub
 
 import (
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"regexp"
 	"sort"
@@ -214,18 +215,42 @@ func (s *Server) createCustomPatterns(w http.ResponseWriter, r *http.Request, sc
 	if !decodeJSONBody(w, r, &request) {
 		return
 	}
+	// The documented 422 for this batch op is {message, validation_errors}
+	// keyed by the zero-based index of the failing pattern, each carrying
+	// coded errors — not the generic validation-error envelope.
+	writePatternError := func(index int, code, message string) {
+		writeJSON(w, http.StatusUnprocessableEntity, map[string]interface{}{
+			"message": "Validation Failed",
+			"validation_errors": map[string]interface{}{
+				strconv.Itoa(index): map[string]interface{}{
+					"errors": []map[string]string{{"code": code, "message": message}},
+				},
+			},
+		})
+	}
 	if len(request.Patterns) == 0 {
-		writeGHValidationError(w, "SecretScanningCustomPattern", "patterns", "missing_field")
+		writeJSON(w, http.StatusUnprocessableEntity, map[string]interface{}{
+			"message": "patterns is required",
+		})
 		return
 	}
 	existingNames := map[string]bool{}
 	for _, pattern := range s.store.ListSecretScanningCustomPatterns(scope) {
 		existingNames[pattern.Name] = true
 	}
-	for _, pattern := range request.Patterns {
-		if pattern.Name == "" || pattern.Pattern == "" || existingNames[pattern.Name] ||
-			!validPatternRegexes(pattern.Pattern, pattern.StartDelimiter, pattern.EndDelimiter, pattern.MustMatch, pattern.MustNotMatch) {
-			writeGHValidationError(w, "SecretScanningCustomPattern", "patterns", "invalid")
+	for i, pattern := range request.Patterns {
+		switch {
+		case pattern.Name == "":
+			writePatternError(i, "name", "name is required")
+			return
+		case existingNames[pattern.Name]:
+			writePatternError(i, "name", fmt.Sprintf("a pattern named %q already exists", pattern.Name))
+			return
+		case pattern.Pattern == "":
+			writePatternError(i, "invalid", "pattern is required")
+			return
+		case !validPatternRegexes(pattern.Pattern, pattern.StartDelimiter, pattern.EndDelimiter, pattern.MustMatch, pattern.MustNotMatch):
+			writePatternError(i, "invalid", "pattern is not a valid regular expression")
 			return
 		}
 		existingNames[pattern.Name] = true

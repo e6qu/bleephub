@@ -89,6 +89,9 @@ func (s *Server) handleSubmitJob(w http.ResponseWriter, r *http.Request) {
 
 	s.store.mu.Lock()
 	s.store.Jobs[jobID] = job
+	// Operator-submitted jobs name no repository; the empty repo scope is the
+	// narrowest one there is (see repoForJobScope).
+	s.store.registerDispatchedJobLocked(job, msg, "")
 	s.store.registerJobLogMasksLocked(planID, msg)
 	s.store.mu.Unlock()
 

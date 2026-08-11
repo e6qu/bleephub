@@ -379,6 +379,11 @@ func (st *Store) CreatePackageVersion(ownerType, ownerKey, pkgType, pkgName, ver
 	st.PackageVersionsByPackage[p.ID][id] = v
 	st.NextPackageVersionID++
 
+	// One transaction: every file row, the version row, and the package row
+	// commit together, so a crash cannot record files without their version or
+	// a version its package never counted (STORE-001/002). The blob bytes above
+	// stay outside the batch with their own compensation (STORE-026).
+	batch := newPersistBatch(st.persist)
 	for _, pf := range persistedFiles {
 		st.PackageFiles[pf.ID] = pf
 		if st.PackageFilesByVersion[v.ID] == nil {
@@ -386,12 +391,15 @@ func (st *Store) CreatePackageVersion(ownerType, ownerKey, pkgType, pkgName, ver
 		}
 		st.PackageFilesByVersion[v.ID][pf.ID] = pf
 		st.NextPackageFileID++
-		st.persistPackageFile(pf)
+		st.persistPackageFileBatchLocked(batch, pf)
 	}
 
 	st.recomputeVersionCountLocked(p)
-	st.persistPackageVersion(v)
-	st.persistPackage(p)
+	st.persistPackageVersionBatchLocked(batch, v)
+	st.persistPackageBatchLocked(batch, p)
+	if err := batch.Commit(); err != nil {
+		panic(&persistenceFailure{op: "batch", bucket: "package_versions", key: strconv.Itoa(v.ID), err: err})
+	}
 	return v, nil
 }
 
@@ -441,7 +449,8 @@ func (st *Store) ListPackageVersions(pkgID int, includeDeleted bool) []*PackageV
 	return snapshotPackageVersions(out)
 }
 
-// DeletePackageVersion marks a version as deleted.
+// DeletePackageVersion marks a version as deleted. The version row and the
+// package's recomputed count commit in one transaction (STORE-001/002).
 func (st *Store) DeletePackageVersion(id int) bool {
 	st.mu.Lock()
 	defer st.mu.Unlock()
@@ -453,15 +462,20 @@ func (st *Store) DeletePackageVersion(id int) bool {
 	v.Deleted = true
 	v.DeletedAt = &now
 	v.UpdatedAt = now
+	batch := newPersistBatch(st.persist)
 	if p := st.Packages[v.PackageID]; p != nil {
 		st.recomputeVersionCountLocked(p)
-		st.persistPackage(p)
+		st.persistPackageBatchLocked(batch, p)
 	}
-	st.persistPackageVersion(v)
+	st.persistPackageVersionBatchLocked(batch, v)
+	if err := batch.Commit(); err != nil {
+		panic(&persistenceFailure{op: "batch", bucket: "package_versions", key: strconv.Itoa(v.ID), err: err})
+	}
 	return true
 }
 
-// RestorePackageVersion unmarks a deleted version.
+// RestorePackageVersion unmarks a deleted version. The version row and the
+// package's recomputed count commit in one transaction (STORE-001/002).
 func (st *Store) RestorePackageVersion(id int) bool {
 	st.mu.Lock()
 	defer st.mu.Unlock()
@@ -472,11 +486,15 @@ func (st *Store) RestorePackageVersion(id int) bool {
 	v.Deleted = false
 	v.DeletedAt = nil
 	v.UpdatedAt = st.currentTime()
+	batch := newPersistBatch(st.persist)
 	if p := st.Packages[v.PackageID]; p != nil {
 		st.recomputeVersionCountLocked(p)
-		st.persistPackage(p)
+		st.persistPackageBatchLocked(batch, p)
 	}
-	st.persistPackageVersion(v)
+	st.persistPackageVersionBatchLocked(batch, v)
+	if err := batch.Commit(); err != nil {
+		panic(&persistenceFailure{op: "batch", bucket: "package_versions", key: strconv.Itoa(v.ID), err: err})
+	}
 	return true
 }
 
@@ -542,10 +560,22 @@ func (st *Store) persistPackageVersion(v *PackageVersion) {
 	}
 }
 
-func (st *Store) persistPackageFile(f *PackageFile) {
-	if st.persist != nil {
-		st.persist.MustPut("package_files", strconv.Itoa(f.ID), f)
-	}
+// persistPackageBatchLocked stages a package row into batch instead of
+// committing its own transaction (STORE-001/002). Callers hold st.mu.
+func (st *Store) persistPackageBatchLocked(batch *persistBatch, p *Package) {
+	batch.Put("packages", strconv.Itoa(p.ID), p)
+}
+
+// persistPackageVersionBatchLocked stages a version row into batch instead of
+// committing its own transaction (STORE-001/002). Callers hold st.mu.
+func (st *Store) persistPackageVersionBatchLocked(batch *persistBatch, v *PackageVersion) {
+	batch.Put("package_versions", strconv.Itoa(v.ID), v)
+}
+
+// persistPackageFileBatchLocked stages a file row into batch instead of
+// committing its own transaction (STORE-001/002). Callers hold st.mu.
+func (st *Store) persistPackageFileBatchLocked(batch *persistBatch, f *PackageFile) {
+	batch.Put("package_files", strconv.Itoa(f.ID), f)
 }
 
 // PackageVersionURL returns the public API URL for a package version.

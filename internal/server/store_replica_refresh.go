@@ -171,6 +171,11 @@ func (st *Store) refreshFromPersistenceBeforeApply(force bool, beforeApply func(
 				st.Workflows[id] = workflow
 			}
 		}
+		// The Workflows map was just replaced (with local-runtime identities
+		// re-attached above); the derived run-id and concurrency-group indexes
+		// are unexported, so the reflect copy left the old ones in place —
+		// recompute them from the merged map.
+		st.rebuildWorkflowIndexesLocked()
 		st.actionsKeyPair = candidate.actionsKeyPair
 		st.persistenceRevision = candidate.persistenceRevision
 		persist.localRevision.Store(candidate.persistenceRevision)

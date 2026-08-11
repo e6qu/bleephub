@@ -404,13 +404,17 @@ func (st *Store) CreateTemporaryFork(repoID int, ghsaID string) *Repo {
 	st.ReposByName[fullName] = fork
 	st.GitStorages[fullName] = stor
 
-	st.ensureDefaultDiscussionCategoriesLocked(fork.ID)
+	// One transaction: the advisory's PrivateForkID, the fork repo row, and its
+	// default discussion categories commit together, so a crash cannot record a
+	// fork ID whose repo never landed (STORE-001/002).
+	batch := newPersistBatch(st.persist)
+	st.ensureDefaultDiscussionCategoriesBatchLocked(batch, fork.ID)
 
 	adv.PrivateForkID = fork.ID
-	st.persistSecurityAdvisory(adv)
-
-	if st.persist != nil {
-		st.persist.MustPut("repos", strconv.Itoa(fork.ID), fork)
+	batch.Put("security_advisories", strconv.Itoa(adv.ID), adv)
+	batch.Put("repos", strconv.Itoa(fork.ID), fork)
+	if err := batch.Commit(); err != nil {
+		panic(&persistenceFailure{op: "batch", bucket: "repos", key: strconv.Itoa(fork.ID), err: err})
 	}
 	return fork
 }

@@ -153,7 +153,7 @@ func (s *Server) handleGHCredentialsRevoke(w http.ResponseWriter, r *http.Reques
 		return
 	}
 	if len(req.Credentials) < 1 || len(req.Credentials) > 1000 {
-		writeGHValidationError(w, "Credentials", "credentials", "invalid")
+		writeGHValidationErrorSimple(w, "credentials is invalid")
 		return
 	}
 	s.store.RevokeCredentials(req.Credentials)

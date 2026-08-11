@@ -513,6 +513,32 @@ func (as *ArtifactStore) writeLogData(ctx context.Context, logID int, data []byt
 	return as.writeBytes(ctx, logDataKey(logID), "", data)
 }
 
+// releaseLogClaimsForPlans drops the log-container claims held by the given
+// plans and reports the released log ids, so the caller can free the
+// in-memory log bytes those ids key. Only the in-memory claim registry is
+// touched; durable byte-store log objects are not.
+func (as *ArtifactStore) releaseLogClaimsForPlans(planIDs []string) []int {
+	if len(planIDs) == 0 {
+		return nil
+	}
+	planSet := make(map[string]bool, len(planIDs))
+	for _, planID := range planIDs {
+		if planID != "" {
+			planSet[planID] = true
+		}
+	}
+	var logIDs []int
+	as.mu.Lock()
+	for logID, planID := range as.logPlans {
+		if planSet[planID] {
+			delete(as.logPlans, logID)
+			logIDs = append(logIDs, logID)
+		}
+	}
+	as.mu.Unlock()
+	return logIDs
+}
+
 func (as *ArtifactStore) deleteLogData(ctx context.Context, logID int) error {
 	// Deleting a run's logs releases the container too, so the claim does not
 	// outlive the bytes it guards.
@@ -1766,6 +1792,15 @@ func (s *Server) repoForJobScope(scopeID string) (string, error) {
 	}
 	s.store.mu.RLock()
 	defer s.store.mu.RUnlock()
+	// Dispatch-time record first: O(1), no message parse, and it outlives the
+	// GC of the secret-bearing job message.
+	if planID, ok := s.store.planIDByScope[scopeID]; ok {
+		if ps, ok := s.store.planScopes[planID]; ok && ps.ScopeID == scopeID {
+			return ps.Repo, nil
+		}
+	}
+	// Fallback for jobs seeded outside the dispatch path (tests): parse each
+	// job's message.
 	for _, job := range s.store.Jobs {
 		if plan, repo := jobMessageScopeAndRepo(job.Message); plan != "" && plan == scopeID {
 			return repo, nil

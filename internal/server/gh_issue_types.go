@@ -64,8 +64,11 @@ func (s *Server) handleListRepoIssueTypes(w http.ResponseWriter, r *http.Request
 }
 
 // writeGHValidationErrorSimple writes GitHub's validation-error-simple shape
-// (a bare string per error) that the issue-types / issue-fields endpoints
-// document as their 422 response.
+// (a bare string per error). Many operations document exactly this form for
+// their 422 — issue-types/issue-fields, repository activity, dependabot alert
+// updates, topics, branch protection, runner labels, JIT config, credential
+// revocation, sub-issue priority — where writeGHValidationError's object form
+// would be a wire-format deviation (the shape gate flags it).
 func writeGHValidationErrorSimple(w http.ResponseWriter, errs ...string) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusUnprocessableEntity)

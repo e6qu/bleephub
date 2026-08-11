@@ -39,30 +39,29 @@ func copilotNextCycleDate(now time.Time) string {
 
 // copilotSeatExpired reports whether a seat's pending cancellation date has
 // been reached. Reads filter these out in memory; the write paths physically
-// prune them via expireCopilotSeatsLocked.
+// prune them via expireCopilotSeatsBatchLocked.
 func copilotSeatExpired(seat *CopilotSeat, now time.Time) bool {
 	return seat.PendingCancellationDate != "" && seat.PendingCancellationDate <= now.UTC().Format("2006-01-02")
 }
 
-// expireCopilotSeatsLocked drops seats whose pending cancellation date
-// has been reached. Callers hold the write lock. It is invoked from the seat
-// write paths (add/cancel), never from a read: a GET must not perform a durable
-// delete (STORE-034).
-func (st *Store) expireCopilotSeatsLocked(orgLogin string, now time.Time) {
+// expireCopilotSeatsBatchLocked drops seats whose pending cancellation date
+// has been reached, staging the deletes into batch so they commit with the
+// rest of the seat mutation in one transaction (STORE-001/002). Callers hold
+// the write lock. It is invoked from the seat write paths (add/cancel), never
+// from a read: a GET must not perform a durable delete (STORE-034).
+func (st *Store) expireCopilotSeatsBatchLocked(batch *persistBatch, orgLogin string, now time.Time) {
 	for userID, seat := range st.CopilotSeats[orgLogin] {
 		if copilotSeatExpired(seat, now) {
 			delete(st.CopilotSeats[orgLogin], userID)
-			if st.persist != nil {
-				st.persist.MustDelete("copilot_seats", copilotSeatKey(orgLogin, userID))
-			}
+			batch.Delete("copilot_seats", copilotSeatKey(orgLogin, userID))
 		}
 	}
 }
 
-func (st *Store) persistCopilotSeatLocked(seat *CopilotSeat) {
-	if st.persist != nil {
-		st.persist.MustPut("copilot_seats", copilotSeatKey(seat.OrgLogin, seat.UserID), seat)
-	}
+// persistCopilotSeatBatchLocked stages a seat row into batch instead of
+// committing its own transaction (STORE-001/002). Callers hold st.mu.
+func (st *Store) persistCopilotSeatBatchLocked(batch *persistBatch, seat *CopilotSeat) {
+	batch.Put("copilot_seats", copilotSeatKey(seat.OrgLogin, seat.UserID), seat)
 }
 
 // GetCopilotSeat returns the organization's seat for the user, or nil. An
@@ -104,11 +103,14 @@ func (st *Store) ListCopilotSeats(orgLogin string) []*CopilotSeat {
 // teamSlug when non-empty. Users who already hold an active seat are
 // skipped; seats pending cancellation are reinstated. Returns the
 // number of seats created or reinstated — the count GitHub bills for.
+// The expiry prune and every seat write commit in one transaction
+// (STORE-001/002).
 func (st *Store) AddCopilotSeats(orgLogin string, userIDs []int, teamSlug string) int {
 	st.mu.Lock()
 	defer st.mu.Unlock()
 	now := st.currentTime()
-	st.expireCopilotSeatsLocked(orgLogin, now)
+	batch := newPersistBatch(st.persist)
+	st.expireCopilotSeatsBatchLocked(batch, orgLogin, now)
 	if st.CopilotSeats[orgLogin] == nil {
 		st.CopilotSeats[orgLogin] = map[int]*CopilotSeat{}
 	}
@@ -119,7 +121,7 @@ func (st *Store) AddCopilotSeats(orgLogin string, userIDs []int, teamSlug string
 				seat.PendingCancellationDate = ""
 				seat.AssigningTeamSlug = teamSlug
 				seat.UpdatedAt = now
-				st.persistCopilotSeatLocked(seat)
+				st.persistCopilotSeatBatchLocked(batch, seat)
 				created++
 			}
 			continue
@@ -132,8 +134,11 @@ func (st *Store) AddCopilotSeats(orgLogin string, userIDs []int, teamSlug string
 			UpdatedAt:         now,
 		}
 		st.CopilotSeats[orgLogin][id] = seat
-		st.persistCopilotSeatLocked(seat)
+		st.persistCopilotSeatBatchLocked(batch, seat)
 		created++
+	}
+	if err := batch.Commit(); err != nil {
+		panic(&persistenceFailure{op: "batch", bucket: "copilot_seats", err: err})
 	}
 	return created
 }
@@ -147,13 +152,20 @@ func (st *Store) CancelCopilotSeatsForUsers(orgLogin string, userIDs []int) (can
 	st.mu.Lock()
 	defer st.mu.Unlock()
 	now := st.currentTime()
-	st.expireCopilotSeatsLocked(orgLogin, now)
+	// One transaction: the expiry prune and every cancellation mark commit
+	// together (STORE-001/002). The prune still commits on the team-assigned
+	// early return — its deletes are correct regardless of the 422.
+	batch := newPersistBatch(st.persist)
+	st.expireCopilotSeatsBatchLocked(batch, orgLogin, now)
 	for _, id := range userIDs {
 		if seat, ok := st.CopilotSeats[orgLogin][id]; ok && seat.AssigningTeamSlug != "" {
 			teamAssigned = append(teamAssigned, id)
 		}
 	}
 	if len(teamAssigned) > 0 {
+		if err := batch.Commit(); err != nil {
+			panic(&persistenceFailure{op: "batch", bucket: "copilot_seats", err: err})
+		}
 		return 0, teamAssigned
 	}
 	date := copilotNextCycleDate(now)
@@ -164,19 +176,25 @@ func (st *Store) CancelCopilotSeatsForUsers(orgLogin string, userIDs []int) (can
 		}
 		seat.PendingCancellationDate = date
 		seat.UpdatedAt = now
-		st.persistCopilotSeatLocked(seat)
+		st.persistCopilotSeatBatchLocked(batch, seat)
 		cancelled++
+	}
+	if err := batch.Commit(); err != nil {
+		panic(&persistenceFailure{op: "batch", bucket: "copilot_seats", err: err})
 	}
 	return cancelled, nil
 }
 
 // CancelCopilotSeatsForTeam marks every seat assigned through the team
-// as pending cancellation and returns the number of seats affected.
+// as pending cancellation and returns the number of seats affected. The
+// expiry prune and every cancellation mark commit in one transaction
+// (STORE-001/002).
 func (st *Store) CancelCopilotSeatsForTeam(orgLogin, teamSlug string) int {
 	st.mu.Lock()
 	defer st.mu.Unlock()
 	now := st.currentTime()
-	st.expireCopilotSeatsLocked(orgLogin, now)
+	batch := newPersistBatch(st.persist)
+	st.expireCopilotSeatsBatchLocked(batch, orgLogin, now)
 	date := copilotNextCycleDate(now)
 	cancelled := 0
 	for _, seat := range st.CopilotSeats[orgLogin] {
@@ -185,8 +203,11 @@ func (st *Store) CancelCopilotSeatsForTeam(orgLogin, teamSlug string) int {
 		}
 		seat.PendingCancellationDate = date
 		seat.UpdatedAt = now
-		st.persistCopilotSeatLocked(seat)
+		st.persistCopilotSeatBatchLocked(batch, seat)
 		cancelled++
+	}
+	if err := batch.Commit(); err != nil {
+		panic(&persistenceFailure{op: "batch", bucket: "copilot_seats", err: err})
 	}
 	return cancelled
 }

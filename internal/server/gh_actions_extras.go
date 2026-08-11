@@ -513,6 +513,17 @@ func (s *Server) findWorkflowByBackendID(backendID string) *Workflow {
 	}
 	s.store.mu.RLock()
 	defer s.store.mu.RUnlock()
+	// The Workflows map is keyed by wf.ID; the run-id index resolves the
+	// strconv.Itoa(wf.RunID) form the toolkit sometimes sends. The linear scan
+	// remains only as a fallback for directly-seeded stores.
+	if wf := s.store.Workflows[backendID]; wf != nil {
+		return wf
+	}
+	if runID, err := strconv.Atoi(backendID); err == nil {
+		if wf := s.store.workflowsByRunID[runID]; wf != nil {
+			return wf
+		}
+	}
 	for _, wf := range s.store.Workflows {
 		if backendID == wf.ID || backendID == strconv.Itoa(wf.RunID) {
 			return wf

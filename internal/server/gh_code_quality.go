@@ -261,7 +261,7 @@ func (s *Server) handleUpdateCodeQualitySetup(w http.ResponseWriter, r *http.Req
 		switch key {
 		case "state", "runner_type", "runner_label", "languages":
 		default:
-			writeGHValidationError(w, "CodeQualitySetup", key, "invalid")
+			writeGHError(w, http.StatusUnprocessableEntity, fmt.Sprintf("Value of %s is invalid", key))
 			return
 		}
 	}
@@ -270,7 +270,7 @@ func (s *Server) handleUpdateCodeQualitySetup(w http.ResponseWriter, r *http.Req
 	if v, ok := raw["state"]; ok {
 		var state string
 		if err := json.Unmarshal(v, &state); err != nil || (state != "configured" && state != "not-configured") {
-			writeGHValidationError(w, "CodeQualitySetup", "state", "invalid")
+			writeGHError(w, http.StatusUnprocessableEntity, "Value of state is invalid")
 			return
 		}
 		setup.State = state
@@ -278,7 +278,7 @@ func (s *Server) handleUpdateCodeQualitySetup(w http.ResponseWriter, r *http.Req
 	if v, ok := raw["runner_type"]; ok {
 		var runnerType string
 		if err := json.Unmarshal(v, &runnerType); err != nil || (runnerType != "standard" && runnerType != "labeled") {
-			writeGHValidationError(w, "CodeQualitySetup", "runner_type", "invalid")
+			writeGHError(w, http.StatusUnprocessableEntity, "Value of runner_type is invalid")
 			return
 		}
 		setup.RunnerType = runnerType
@@ -289,7 +289,7 @@ func (s *Server) handleUpdateCodeQualitySetup(w http.ResponseWriter, r *http.Req
 	if v, ok := raw["runner_label"]; ok {
 		var label *string
 		if err := json.Unmarshal(v, &label); err != nil {
-			writeGHValidationError(w, "CodeQualitySetup", "runner_label", "invalid")
+			writeGHError(w, http.StatusUnprocessableEntity, "Value of runner_label is invalid")
 			return
 		}
 		if label == nil {
@@ -301,19 +301,19 @@ func (s *Server) handleUpdateCodeQualitySetup(w http.ResponseWriter, r *http.Req
 	if v, ok := raw["languages"]; ok {
 		var languages []string
 		if err := json.Unmarshal(v, &languages); err != nil {
-			writeGHValidationError(w, "CodeQualitySetup", "languages", "invalid")
+			writeGHError(w, http.StatusUnprocessableEntity, "Value of languages is invalid")
 			return
 		}
 		for _, lang := range languages {
 			if !slices.Contains(codeQualityUpdateLanguages, lang) {
-				writeGHValidationError(w, "CodeQualitySetup", "languages", "invalid")
+				writeGHError(w, http.StatusUnprocessableEntity, "Value of languages is invalid")
 				return
 			}
 		}
 		setup.Languages = languages
 	}
 	if setup.RunnerType == "labeled" && setup.RunnerLabel == "" {
-		writeGHValidationError(w, "CodeQualitySetup", "runner_label", "missing_field")
+		writeGHError(w, http.StatusUnprocessableEntity, "runner_label is required")
 		return
 	}
 	// The periodic analysis schedule exists exactly while the setup is

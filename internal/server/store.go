@@ -742,6 +742,22 @@ type Store struct {
 	RepoActivities   map[int]*RepoActivity         // id → recorded ref update (push activity)
 	NextRepoActivity int                           // next RepoActivity ID
 	RepoCloneTraffic map[string]*RepoTrafficBucket // "repoID:YYYY-MM-DD" → clone counters
+
+	// --- Actions hot-path indexes (actions_indexes.go) ---
+	//
+	// All of these are unexported on purpose: the replica-refresh field copy
+	// skips unexported fields, so a snapshot swap can never smuggle stale
+	// pointers in through them. jobsByPlanID/jobsByRequestID/planScopes/
+	// planIDByScope mirror the replica-local Jobs map; workflowsByRunID and the
+	// two concurrency-group indexes mirror the durable Workflows map and are
+	// rebuilt wherever Workflows is reloaded (load, replica refresh).
+	jobsByPlanID                map[string]*Job                       // Job.PlanID → job
+	jobsByRequestID             map[int64]*Job                        // Job.RequestID → job
+	planScopes                  map[string]planScope                  // Job.PlanID → plan scope identity (survives Message GC)
+	planIDByScope               map[string]string                     // plan scopeIdentifier → Job.PlanID
+	workflowsByRunID            map[int]*Workflow                     // Workflow.RunID → workflow
+	workflowsByConcurrencyGroup map[string]map[string]*Workflow       // group → Workflow.ID → non-completed workflow
+	jobsByConcurrencyGroup      map[string]map[*WorkflowJob]*Workflow // group → non-terminal job → owning workflow
 }
 
 func (st *Store) currentTime() time.Time {
@@ -786,6 +802,17 @@ type Agent struct {
 	// is recorded here rather than encoded into the clientId because the runner
 	// deserializes that field as a GUID and rejects anything else.
 	Scope runnerScope `json:"scope"`
+
+	// AssignedJobID is the broker's process-local busy bookkeeping: the job
+	// this agent currently holds (set when a job message is delivered, cleared
+	// when a non-ephemeral agent's job completes or the lease is reclaimed).
+	// EverAssigned records that the agent has held a job at least once; for an
+	// EPHEMERAL agent that alone disqualifies it from another job — the flag
+	// MUST survive the GC of the completed job's stub, or a used ephemeral
+	// runner could be handed a second job (see agentTakesAJobLocked). Neither
+	// field is serialized: the runner's TaskAgent contract has no such fields.
+	AssignedJobID string `json:"-"`
+	EverAssigned  bool   `json:"-"`
 }
 
 // Label is an agent label.
@@ -837,9 +864,14 @@ type Job struct {
 	TimelineID  string    `json:"timelineId"`
 	Status      string    `json:"status"` // queued, running, completed
 	Result      string    `json:"result"` // Succeeded, Failed, Cancelled
-	Message     string    `json:"-"`      // JSON-encoded job request message
+	Message     string    `json:"-"`      // JSON-encoded job request message (secret-bearing; cleared at run finalization)
 	LockedUntil time.Time `json:"lockedUntil"`
 	AgentID     int       `json:"agentId"`
+	// CompletedAt is the retirement stamp for the janitor: set when the runner
+	// reports completion or when the owning run finalizes, whichever comes
+	// first. runnerTokenTTL after it, no valid credential can address this job
+	// any more and its replica-local state is swept (actions_indexes.go).
+	CompletedAt time.Time `json:"-"`
 }
 
 // NewStore creates an initialized store.
@@ -967,6 +999,13 @@ func NewStore() *Store {
 		DiscussionComments:           map[int]*DiscussionComment{},
 		OrgActionsPermissions:        map[string]*OrgActionsPermissions{},
 		RepoActionsPermissions:       map[string]*RepoActionsPermissions{},
+		jobsByPlanID:                 make(map[string]*Job),
+		jobsByRequestID:              make(map[int64]*Job),
+		planScopes:                   make(map[string]planScope),
+		planIDByScope:                make(map[string]string),
+		workflowsByRunID:             make(map[int]*Workflow),
+		workflowsByConcurrencyGroup:  make(map[string]map[string]*Workflow),
+		jobsByConcurrencyGroup:       make(map[string]map[*WorkflowJob]*Workflow),
 		NextAgent:                    1,
 		NextSecretScanningAlertID:    1,
 		NextCodeScanningAlertID:      1,
@@ -3848,6 +3887,10 @@ func (st *Store) loadFromPersistence() error {
 	}
 	st.persistenceRevision = revision
 
+	// The Workflows map was just repopulated from disk; the derived run-id and
+	// concurrency-group indexes must be recomputed from it.
+	st.rebuildWorkflowIndexesLocked()
+
 	return nil
 }
 
@@ -4143,9 +4186,6 @@ func (st *Store) SeedDefaultUser() {
 	}
 	st.Users[u.ID] = u
 	st.UsersByLogin[u.Login] = u
-	if st.persist != nil {
-		st.persist.MustPut("users", strconv.Itoa(u.ID), u)
-	}
 
 	t := &Token{
 		Value:     AdminToken(),
@@ -4154,7 +4194,14 @@ func (st *Store) SeedDefaultUser() {
 		CreatedAt: now,
 	}
 	st.Tokens[st.tokenMapKey(t.Value)] = t
-	st.persistTokenLocked(t)
+	// One transaction: the admin user and its token commit together, so a
+	// crash cannot seed an admin nobody can authenticate as (STORE-001/002).
+	batch := newPersistBatch(st.persist)
+	batch.Put("users", strconv.Itoa(u.ID), u)
+	batch.Put("tokens", t.Value, t)
+	if err := batch.Commit(); err != nil {
+		panic(&persistenceFailure{op: "batch", bucket: "users", key: strconv.Itoa(u.ID), err: err})
+	}
 }
 
 // LookupToken returns the token and associated user, or nil if not found.

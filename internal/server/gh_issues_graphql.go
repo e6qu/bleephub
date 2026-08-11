@@ -14,11 +14,6 @@ import (
 func (s *Server) addIssueFieldsToSchema(userType, repoType, mutationType, queryType *graphql.Object, nodeInterface *graphql.Interface) (*graphql.Object, *graphql.Object) {
 	dateTime := s.graphQLStringScalar("DateTime")
 	uri := s.graphQLStringScalar("URI")
-	commentAuthorAssociationEnum := s.graphQLEnum(
-		"CommentAuthorAssociation",
-		"COLLABORATOR", "CONTRIBUTOR", "FIRST_TIMER", "FIRST_TIME_CONTRIBUTOR",
-		"MANNEQUIN", "MEMBER", "NONE", "OWNER",
-	)
 	lockReasonEnum := s.graphQLEnum("LockReason", "OFF_TOPIC", "RESOLVED", "SPAM", "TOO_HEATED")
 	issueStateReasonEnum := s.graphQLEnum("IssueStateReason", "COMPLETED", "NOT_PLANNED", "REOPENED")
 	issueStateEnum := graphql.NewEnum(graphql.EnumConfig{
@@ -42,34 +37,8 @@ func (s *Server) addIssueFieldsToSchema(userType, repoType, mutationType, queryT
 			"CLOSED": &graphql.EnumValueConfig{Value: "CLOSED"},
 		},
 	})
-	// --- Label types ---
-	issueLabelType := graphql.NewObject(graphql.ObjectConfig{
-		Name: "Label",
-		Fields: graphql.Fields{
-			"id": &graphql.Field{
-				Type: graphql.NewNonNull(graphql.ID),
-				Resolve: func(p graphql.ResolveParams) (interface{}, error) {
-					l, ok := p.Source.(map[string]interface{})
-					if !ok {
-						return nil, fmt.Errorf("label source: unexpected type %T", p.Source)
-					}
-					return l["nodeID"], nil
-				},
-			},
-			"name":        &graphql.Field{Type: graphql.NewNonNull(graphql.String)},
-			"description": &graphql.Field{Type: graphql.String},
-			"color":       &graphql.Field{Type: graphql.NewNonNull(graphql.String)},
-		},
-	})
-
-	labelConnectionType := graphql.NewObject(graphql.ObjectConfig{
-		Name: "LabelConnection",
-		Fields: graphql.Fields{
-			"nodes":      &graphql.Field{Type: graphql.NewList(issueLabelType)},
-			"totalCount": &graphql.Field{Type: graphql.NewNonNull(graphql.Int)},
-			"pageInfo":   &graphql.Field{Type: graphql.NewNonNull(s.gqlPageInfoType())},
-		},
-	})
+	// --- Label types (shared with PullRequest via the registry) ---
+	labelConnectionType := s.gqlLabelConnectionType()
 
 	// --- Milestone type ---
 	issueMilestoneType := graphql.NewObject(graphql.ObjectConfig{
@@ -102,159 +71,16 @@ func (s *Server) addIssueFieldsToSchema(userType, repoType, mutationType, queryT
 		},
 	})
 
-	// --- Reaction group type (static) ---
-	reactionGroupType := graphql.NewObject(graphql.ObjectConfig{
-		Name: "ReactionGroup",
-		Fields: graphql.Fields{
-			"content": &graphql.Field{Type: graphql.NewNonNull(graphql.String)},
-			"users": &graphql.Field{
-				Type: graphql.NewObject(graphql.ObjectConfig{
-					Name: "ReactingUserConnection",
-					Fields: graphql.Fields{
-						"totalCount": &graphql.Field{Type: graphql.NewNonNull(graphql.Int)},
-					},
-				}),
-			},
-		},
-	})
+	// --- Reaction group type (shared via the registry) ---
+	reactionGroupType := s.gqlReactionGroupType()
 
-	// --- Comment types ---
-	issueCommentType := graphql.NewObject(graphql.ObjectConfig{
-		Name: "IssueComment",
-		Fields: graphql.Fields{
-			"id": &graphql.Field{
-				Type: graphql.NewNonNull(graphql.ID),
-				Resolve: func(p graphql.ResolveParams) (interface{}, error) {
-					c, ok := p.Source.(map[string]interface{})
-					if !ok {
-						return nil, fmt.Errorf("resolve source: unexpected type %T", p.Source)
-					}
-					return c["nodeID"], nil
-				},
-			},
-			"body":      &graphql.Field{Type: graphql.NewNonNull(graphql.String)},
-			"url":       &graphql.Field{Type: graphql.NewNonNull(uri)},
-			"createdAt": &graphql.Field{Type: graphql.NewNonNull(dateTime)},
-			"updatedAt": &graphql.Field{Type: graphql.NewNonNull(dateTime)},
-			"author": &graphql.Field{
-				Type: s.graphqlTypes.actor,
-				Resolve: func(p graphql.ResolveParams) (interface{}, error) {
-					c, ok := p.Source.(map[string]interface{})
-					if !ok {
-						return nil, fmt.Errorf("resolve source: unexpected type %T", p.Source)
-					}
-					return c["author"], nil
-				},
-			},
-			"authorAssociation": &graphql.Field{Type: graphql.NewNonNull(commentAuthorAssociationEnum)},
-			// Fields gh CLI's `gh issue view` queries on IssueComment — defaults
-			// fine for bleephub (we don't model edit history or moderation).
-			"includesCreatedEdit": &graphql.Field{
-				Type: graphql.NewNonNull(graphql.Boolean),
-				Resolve: func(p graphql.ResolveParams) (interface{}, error) {
-					c, ok := p.Source.(map[string]interface{})
-					if !ok {
-						return nil, fmt.Errorf("resolve source: unexpected type %T", p.Source)
-					}
-					return c["includesCreatedEdit"], nil
-				},
-			},
-			"lastEditedAt": &graphql.Field{
-				Type: dateTime,
-				Resolve: func(p graphql.ResolveParams) (interface{}, error) {
-					c, ok := p.Source.(map[string]interface{})
-					if !ok {
-						return nil, fmt.Errorf("resolve source: unexpected type %T", p.Source)
-					}
-					return c["lastEditedAt"], nil
-				},
-			},
-			"editor": &graphql.Field{
-				Type: s.graphqlTypes.actor,
-				Resolve: func(p graphql.ResolveParams) (interface{}, error) {
-					c, ok := p.Source.(map[string]interface{})
-					if !ok {
-						return nil, fmt.Errorf("resolve source: unexpected type %T", p.Source)
-					}
-					return c["editor"], nil
-				},
-			},
-			"isMinimized": &graphql.Field{
-				Type: graphql.NewNonNull(graphql.Boolean),
-				Resolve: func(p graphql.ResolveParams) (interface{}, error) {
-					c, ok := p.Source.(map[string]interface{})
-					if !ok {
-						return nil, fmt.Errorf("resolve source: unexpected type %T", p.Source)
-					}
-					return c["isMinimized"], nil
-				},
-			},
-			"isPinned": &graphql.Field{
-				Type: graphql.Boolean,
-				Resolve: func(p graphql.ResolveParams) (interface{}, error) {
-					c, ok := p.Source.(map[string]interface{})
-					if !ok {
-						return nil, fmt.Errorf("resolve source: unexpected type %T", p.Source)
-					}
-					return c["isPinned"], nil
-				},
-			},
-			"minimizedReason": &graphql.Field{
-				Type: graphql.String,
-				Resolve: func(p graphql.ResolveParams) (interface{}, error) {
-					c, ok := p.Source.(map[string]interface{})
-					if !ok {
-						return nil, fmt.Errorf("resolve source: unexpected type %T", p.Source)
-					}
-					return c["minimizedReason"], nil
-				},
-			},
-			"reactionGroups": &graphql.Field{
-				Type: graphql.NewList(reactionGroupType),
-				Resolve: func(p graphql.ResolveParams) (interface{}, error) {
-					c, ok := p.Source.(map[string]interface{})
-					if !ok {
-						return nil, fmt.Errorf("resolve source: unexpected type %T", p.Source)
-					}
-					return c["reactionGroups"], nil
-				},
-			},
-			// gh's shared comments fragment (issue view + pr view) selects
-			// viewerDidAuthor; mirrors PRComment's resolver.
-			"viewerDidAuthor": &graphql.Field{
-				Type: graphql.NewNonNull(graphql.Boolean),
-				Resolve: func(p graphql.ResolveParams) (interface{}, error) {
-					c, ok := p.Source.(map[string]interface{})
-					if !ok {
-						return nil, fmt.Errorf("resolve source: unexpected type %T", p.Source)
-					}
-					viewer := ghUserFromContext(p.Context)
-					authorID, _ := c["authorID"].(int)
-					return viewer != nil && authorID == viewer.ID, nil
-				},
-			},
-		},
-	})
+	// --- Comment types (shared with PullRequest via the registry) ---
+	issueCommentType := s.gqlIssueCommentType()
+	commentConnectionType := s.gqlIssueCommentConnectionType()
 
-	commentConnectionType := graphql.NewObject(graphql.ObjectConfig{
-		Name: "IssueCommentConnection",
-		Fields: graphql.Fields{
-			"nodes":      &graphql.Field{Type: graphql.NewList(issueCommentType)},
-			"totalCount": &graphql.Field{Type: graphql.NewNonNull(graphql.Int)},
-			"pageInfo":   &graphql.Field{Type: graphql.NewNonNull(s.gqlPageInfoType())},
-		},
-	})
+	// --- Assignee connection (shared UserConnection via the registry) ---
 
-	// --- Assignee connection ---
-
-	assigneeConnectionType := graphql.NewObject(graphql.ObjectConfig{
-		Name: "UserConnection",
-		Fields: graphql.Fields{
-			"nodes":      &graphql.Field{Type: graphql.NewList(userType)},
-			"totalCount": &graphql.Field{Type: graphql.NewNonNull(graphql.Int)},
-			"pageInfo":   &graphql.Field{Type: graphql.NewNonNull(s.gqlPageInfoType())},
-		},
-	})
+	assigneeConnectionType := s.gqlUserConnectionType(userType)
 
 	// --- Issue-type and sub-issue support types ---
 	// gh CLI's `gh issue view` selects GitHub's issue-type and sub-issue
@@ -274,33 +100,6 @@ func (s *Server) addIssueFieldsToSchema(userType, repoType, mutationType, queryT
 		},
 	})
 
-	relatedIssueRepoType := graphql.NewObject(graphql.ObjectConfig{
-		Name: "RelatedIssueRepository",
-		Fields: graphql.Fields{
-			"nameWithOwner": &graphql.Field{Type: graphql.NewNonNull(graphql.String)},
-		},
-	})
-
-	relatedIssueType := graphql.NewObject(graphql.ObjectConfig{
-		Name: "RelatedIssue",
-		Fields: graphql.Fields{
-			"id":         &graphql.Field{Type: graphql.NewNonNull(graphql.ID)},
-			"number":     &graphql.Field{Type: graphql.NewNonNull(graphql.Int)},
-			"title":      &graphql.Field{Type: graphql.NewNonNull(graphql.String)},
-			"url":        &graphql.Field{Type: graphql.NewNonNull(graphql.String)},
-			"state":      &graphql.Field{Type: graphql.NewNonNull(graphql.String)},
-			"repository": &graphql.Field{Type: relatedIssueRepoType},
-		},
-	})
-
-	subIssueConnectionType := graphql.NewObject(graphql.ObjectConfig{
-		Name: "SubIssueConnection",
-		Fields: graphql.Fields{
-			"nodes":      &graphql.Field{Type: graphql.NewList(relatedIssueType)},
-			"totalCount": &graphql.Field{Type: graphql.NewNonNull(graphql.Int)},
-		},
-	})
-
 	subIssuesSummaryType := graphql.NewObject(graphql.ObjectConfig{
 		Name: "SubIssuesSummary",
 		Fields: graphql.Fields{
@@ -315,7 +114,7 @@ func (s *Server) addIssueFieldsToSchema(userType, repoType, mutationType, queryT
 	// --- Issue type ---
 	issueType := graphql.NewObject(graphql.ObjectConfig{
 		Name:       "Issue",
-		Interfaces: []*graphql.Interface{nodeInterface},
+		Interfaces: []*graphql.Interface{nodeInterface, s.gqlLockableInterface()},
 		Fields: graphql.Fields{
 			"id": &graphql.Field{
 				Type: graphql.NewNonNull(graphql.ID),
@@ -462,34 +261,6 @@ func (s *Server) addIssueFieldsToSchema(userType, repoType, mutationType, queryT
 					return it, nil
 				},
 			},
-			"parent": &graphql.Field{
-				Type: relatedIssueType,
-				Resolve: func(p graphql.ResolveParams) (interface{}, error) {
-					i, ok := p.Source.(map[string]interface{})
-					if !ok {
-						return nil, fmt.Errorf("resolve source: unexpected type %T", p.Source)
-					}
-					parent, ok := i["parent"].(map[string]interface{})
-					if !ok || parent == nil {
-						return nil, nil
-					}
-					return parent, nil
-				},
-			},
-			"subIssues": &graphql.Field{
-				Type: subIssueConnectionType,
-				Args: graphql.FieldConfigArgument{
-					"first": &graphql.ArgumentConfig{Type: graphql.Int},
-					"after": &graphql.ArgumentConfig{Type: graphql.String},
-				},
-				Resolve: func(p graphql.ResolveParams) (interface{}, error) {
-					i, ok := p.Source.(map[string]interface{})
-					if !ok {
-						return nil, fmt.Errorf("resolve source: unexpected type %T", p.Source)
-					}
-					return repaginateConnection(i["subIssues"], p.Args), nil
-				},
-			},
 			"subIssuesSummary": &graphql.Field{
 				Type: graphql.NewNonNull(subIssuesSummaryType),
 				Resolve: func(p graphql.ResolveParams) (interface{}, error) {
@@ -519,24 +290,81 @@ func (s *Server) addIssueFieldsToSchema(userType, repoType, mutationType, queryT
 		},
 	})
 
-	// --- Issue connection ---
-	issueEdgeType := graphql.NewObject(graphql.ObjectConfig{
-		Name: "IssueEdge",
-		Fields: graphql.Fields{
-			"node":   &graphql.Field{Type: issueType},
-			"cursor": &graphql.Field{Type: graphql.NewNonNull(graphql.String)},
+	// Registered for interface ResolveType dispatch (Lockable).
+	s.graphqlTypes.issue = issueType
+
+	// parent / subIssues carry GitHub's real signatures (Issue and
+	// IssueConnection!) — added after issueType exists because both are
+	// self-referential. They resolve lazily from the sub-issue store: eagerly
+	// embedding full issue maps in issueToGQL would recurse parent↔child
+	// forever, so the source map no longer carries them and each level of
+	// nesting renders only when the query actually selects it.
+	issueType.AddFieldConfig("parent", &graphql.Field{
+		Type: issueType,
+		Resolve: func(p graphql.ResolveParams) (interface{}, error) {
+			i, ok := p.Source.(map[string]interface{})
+			if !ok {
+				return nil, fmt.Errorf("resolve source: unexpected type %T", p.Source)
+			}
+			issueID, _ := i["databaseId"].(int)
+			s.store.mu.RLock()
+			parentID, hasParent := s.store.SubIssueParent[issueID]
+			s.store.mu.RUnlock()
+			if !hasParent {
+				return nil, nil
+			}
+			parent := s.store.GetIssue(parentID)
+			if parent == nil {
+				return nil, nil
+			}
+			return issueToGQL(parent, s.store), nil
+		},
+	})
+	issueType.AddFieldConfig("subIssues", &graphql.Field{
+		Type: graphql.NewNonNull(s.gqlIssueConnectionType(issueType)),
+		Args: relayConnectionArgs(),
+		Resolve: func(p graphql.ResolveParams) (interface{}, error) {
+			i, ok := p.Source.(map[string]interface{})
+			if !ok {
+				return nil, fmt.Errorf("resolve source: unexpected type %T", p.Source)
+			}
+			issueID, _ := i["databaseId"].(int)
+			s.store.mu.RLock()
+			childIDs := append([]int(nil), s.store.SubIssueLists[issueID]...)
+			s.store.mu.RUnlock()
+			nodes := make([]map[string]interface{}, 0, len(childIDs))
+			for _, childID := range childIDs {
+				if child := s.store.GetIssue(childID); child != nil {
+					nodes = append(nodes, issueToGQL(child, s.store))
+				}
+			}
+			return paginateGQLMaps(nodes, p.Args), nil
+		},
+	})
+	// Issue.repository — Repository!, same as real GitHub; resolves the
+	// issue's owning repository (RelatedIssueRepository's old role).
+	issueType.AddFieldConfig("repository", &graphql.Field{
+		Type: graphql.NewNonNull(repoType),
+		Resolve: func(p graphql.ResolveParams) (interface{}, error) {
+			i, ok := p.Source.(map[string]interface{})
+			if !ok {
+				return nil, fmt.Errorf("resolve source: unexpected type %T", p.Source)
+			}
+			issueID, _ := i["databaseId"].(int)
+			issue := s.store.GetIssue(issueID)
+			if issue == nil {
+				return nil, fmt.Errorf("issue %d not found", issueID)
+			}
+			repo := s.store.GetRepoByID(issue.RepoID)
+			if repo == nil {
+				return nil, fmt.Errorf("repository %d not found", issue.RepoID)
+			}
+			return repoToGraphQL(s.store, s.store.snapRepo(repo)), nil
 		},
 	})
 
-	issueConnectionType := graphql.NewObject(graphql.ObjectConfig{
-		Name: "IssueConnection",
-		Fields: graphql.Fields{
-			"nodes":      &graphql.Field{Type: graphql.NewList(issueType)},
-			"edges":      &graphql.Field{Type: graphql.NewList(issueEdgeType)},
-			"totalCount": &graphql.Field{Type: graphql.NewNonNull(graphql.Int)},
-			"pageInfo":   &graphql.Field{Type: graphql.NewNonNull(s.gqlPageInfoType())},
-		},
-	})
+	// --- Issue connection (shared with PullRequest via the registry) ---
+	issueConnectionType := s.gqlIssueConnectionType(issueType)
 
 	// --- Issue filters input ---
 	issueFiltersInput := graphql.NewInputObject(graphql.InputObjectConfig{
@@ -1648,27 +1476,23 @@ func issueToGQL(issue *Issue, st *Store) map[string]interface{} {
 		url = externalURL("/" + repo.FullName + "/issues/" + strconv.Itoa(issue.Number))
 	}
 
-	var parent map[string]interface{}
-	if parentID, ok := st.SubIssueParent[issue.ID]; ok {
-		if parentIssue := st.Issues[parentID]; parentIssue != nil {
-			parent = relatedIssueToGQLLocked(parentIssue, st)
-		}
-	}
-	subIssueNodes := make([]map[string]interface{}, 0, len(st.SubIssueLists[issue.ID]))
+	// parent/subIssues resolve lazily (their eager maps would recurse
+	// parent↔child); only the summary counts are computed here.
+	totalSubIssues := 0
 	completedSubIssues := 0
 	for _, childID := range st.SubIssueLists[issue.ID] {
 		child := st.Issues[childID]
 		if child == nil {
 			continue
 		}
+		totalSubIssues++
 		if child.State == "CLOSED" {
 			completedSubIssues++
 		}
-		subIssueNodes = append(subIssueNodes, relatedIssueToGQLLocked(child, st))
 	}
 	percentCompleted := 0
-	if len(subIssueNodes) > 0 {
-		percentCompleted = completedSubIssues * 100 / len(subIssueNodes)
+	if totalSubIssues > 0 {
+		percentCompleted = completedSubIssues * 100 / totalSubIssues
 	}
 
 	var closedAt interface{}
@@ -1719,19 +1543,8 @@ func issueToGQL(issue *Issue, st *Store) map[string]interface{} {
 		},
 		"milestone": milestone,
 		"issueType": issueType,
-		"parent":    parent,
-		"subIssues": map[string]interface{}{
-			"nodes":      subIssueNodes,
-			"totalCount": len(subIssueNodes),
-			"pageInfo": map[string]interface{}{
-				"hasNextPage":     false,
-				"hasPreviousPage": false,
-				"startCursor":     nil,
-				"endCursor":       nil,
-			},
-		},
 		"subIssuesSummary": map[string]interface{}{
-			"total":            len(subIssueNodes),
+			"total":            totalSubIssues,
 			"completed":        completedSubIssues,
 			"percentCompleted": percentCompleted,
 		},
@@ -1771,6 +1584,277 @@ func (s *Server) gqlPageInfoType() *graphql.Object {
 		},
 	})
 	return s.graphqlTypes.pageInfo
+}
+
+// gqlLabelType returns the shared Label object type (memoized). Both Issue and
+// PullRequest label connections use this single type so the schema matches
+// GitHub's, where PRs and issues share one Label.
+func (s *Server) gqlLabelType() *graphql.Object {
+	if s.graphqlTypes.labelType != nil {
+		return s.graphqlTypes.labelType
+	}
+	s.graphqlTypes.labelType = graphql.NewObject(graphql.ObjectConfig{
+		Name: "Label",
+		Fields: graphql.Fields{
+			"id": &graphql.Field{
+				Type: graphql.NewNonNull(graphql.ID),
+				Resolve: func(p graphql.ResolveParams) (interface{}, error) {
+					l, ok := p.Source.(map[string]interface{})
+					if !ok {
+						return nil, fmt.Errorf("label source: unexpected type %T", p.Source)
+					}
+					return l["nodeID"], nil
+				},
+			},
+			"name":        &graphql.Field{Type: graphql.NewNonNull(graphql.String)},
+			"description": &graphql.Field{Type: graphql.String},
+			"color":       &graphql.Field{Type: graphql.NewNonNull(graphql.String)},
+		},
+	})
+	return s.graphqlTypes.labelType
+}
+
+// gqlLabelConnectionType returns the shared LabelConnection type (memoized).
+func (s *Server) gqlLabelConnectionType() *graphql.Object {
+	if s.graphqlTypes.labelConnection != nil {
+		return s.graphqlTypes.labelConnection
+	}
+	s.graphqlTypes.labelConnection = graphql.NewObject(graphql.ObjectConfig{
+		Name: "LabelConnection",
+		Fields: graphql.Fields{
+			"nodes":      &graphql.Field{Type: graphql.NewList(s.gqlLabelType())},
+			"totalCount": &graphql.Field{Type: graphql.NewNonNull(graphql.Int)},
+			"pageInfo":   &graphql.Field{Type: graphql.NewNonNull(s.gqlPageInfoType())},
+		},
+	})
+	return s.graphqlTypes.labelConnection
+}
+
+// gqlUserConnectionType returns the shared UserConnection type (memoized).
+// Used by Issue.assignees, PullRequest.assignees, Repository.assignableUsers,
+// and Repository.watchers — the same single connection type GitHub exposes.
+func (s *Server) gqlUserConnectionType(userType *graphql.Object) *graphql.Object {
+	if s.graphqlTypes.userConnection != nil {
+		return s.graphqlTypes.userConnection
+	}
+	s.graphqlTypes.userConnection = graphql.NewObject(graphql.ObjectConfig{
+		Name: "UserConnection",
+		Fields: graphql.Fields{
+			"nodes":      &graphql.Field{Type: graphql.NewList(userType)},
+			"totalCount": &graphql.Field{Type: graphql.NewNonNull(graphql.Int)},
+			"pageInfo":   &graphql.Field{Type: graphql.NewNonNull(s.gqlPageInfoType())},
+		},
+	})
+	return s.graphqlTypes.userConnection
+}
+
+// gqlReactionGroupType returns the shared ReactionGroup type (memoized), with
+// GitHub's exact signatures: content is the ReactionContent enum and users is
+// a non-null ReactingUserConnection. Issues, comments, PRs, reviews, and
+// discussions all resolve reactionGroups through this one type; the source
+// maps come from reactionGroupsForGraphQL, which emits enum-shaped content
+// values and always-present users connections.
+func (s *Server) gqlReactionGroupType() *graphql.Object {
+	if s.graphqlTypes.reactionGroup != nil {
+		return s.graphqlTypes.reactionGroup
+	}
+	reactionContentEnum := s.graphQLEnum(
+		"ReactionContent",
+		"CONFUSED", "EYES", "HEART", "HOORAY", "LAUGH", "ROCKET", "THUMBS_DOWN", "THUMBS_UP",
+	)
+	s.graphqlTypes.reactionGroup = graphql.NewObject(graphql.ObjectConfig{
+		Name: "ReactionGroup",
+		Fields: graphql.Fields{
+			"content": &graphql.Field{Type: graphql.NewNonNull(reactionContentEnum)},
+			"users": &graphql.Field{
+				Type: graphql.NewNonNull(graphql.NewObject(graphql.ObjectConfig{
+					Name: "ReactingUserConnection",
+					Fields: graphql.Fields{
+						"totalCount": &graphql.Field{Type: graphql.NewNonNull(graphql.Int)},
+					},
+				})),
+			},
+		},
+	})
+	return s.graphqlTypes.reactionGroup
+}
+
+// gqlIssueCommentType returns the shared IssueComment object type (memoized).
+// Real GitHub stores PR conversation comments in the issue-comment table and
+// serves both through this one type; bleephub mirrors that, so gh CLI's
+// merged Issue|PullRequest `comments` fragments select a single type. The
+// resolvers read the source maps built by commentToGQLLocked.
+func (s *Server) gqlIssueCommentType() *graphql.Object {
+	if s.graphqlTypes.issueComment != nil {
+		return s.graphqlTypes.issueComment
+	}
+	dateTime := s.graphQLStringScalar("DateTime")
+	uri := s.graphQLStringScalar("URI")
+	commentAuthorAssociationEnum := s.graphQLEnum(
+		"CommentAuthorAssociation",
+		"COLLABORATOR", "CONTRIBUTOR", "FIRST_TIMER", "FIRST_TIME_CONTRIBUTOR",
+		"MANNEQUIN", "MEMBER", "NONE", "OWNER",
+	)
+	s.graphqlTypes.issueComment = graphql.NewObject(graphql.ObjectConfig{
+		Name:       "IssueComment",
+		Interfaces: []*graphql.Interface{s.gqlMinimizableInterface()},
+		Fields: graphql.Fields{
+			"id": &graphql.Field{
+				Type: graphql.NewNonNull(graphql.ID),
+				Resolve: func(p graphql.ResolveParams) (interface{}, error) {
+					c, ok := p.Source.(map[string]interface{})
+					if !ok {
+						return nil, fmt.Errorf("resolve source: unexpected type %T", p.Source)
+					}
+					return c["nodeID"], nil
+				},
+			},
+			"body":      &graphql.Field{Type: graphql.NewNonNull(graphql.String)},
+			"url":       &graphql.Field{Type: graphql.NewNonNull(uri)},
+			"createdAt": &graphql.Field{Type: graphql.NewNonNull(dateTime)},
+			"updatedAt": &graphql.Field{Type: graphql.NewNonNull(dateTime)},
+			"author": &graphql.Field{
+				Type: s.graphqlTypes.actor,
+				Resolve: func(p graphql.ResolveParams) (interface{}, error) {
+					c, ok := p.Source.(map[string]interface{})
+					if !ok {
+						return nil, fmt.Errorf("resolve source: unexpected type %T", p.Source)
+					}
+					return c["author"], nil
+				},
+			},
+			"authorAssociation": &graphql.Field{Type: graphql.NewNonNull(commentAuthorAssociationEnum)},
+			// Fields gh CLI's `gh issue view` queries on IssueComment — defaults
+			// fine for bleephub (we don't model edit history or moderation).
+			"includesCreatedEdit": &graphql.Field{
+				Type: graphql.NewNonNull(graphql.Boolean),
+				Resolve: func(p graphql.ResolveParams) (interface{}, error) {
+					c, ok := p.Source.(map[string]interface{})
+					if !ok {
+						return nil, fmt.Errorf("resolve source: unexpected type %T", p.Source)
+					}
+					return c["includesCreatedEdit"], nil
+				},
+			},
+			"lastEditedAt": &graphql.Field{
+				Type: dateTime,
+				Resolve: func(p graphql.ResolveParams) (interface{}, error) {
+					c, ok := p.Source.(map[string]interface{})
+					if !ok {
+						return nil, fmt.Errorf("resolve source: unexpected type %T", p.Source)
+					}
+					return c["lastEditedAt"], nil
+				},
+			},
+			"editor": &graphql.Field{
+				Type: s.graphqlTypes.actor,
+				Resolve: func(p graphql.ResolveParams) (interface{}, error) {
+					c, ok := p.Source.(map[string]interface{})
+					if !ok {
+						return nil, fmt.Errorf("resolve source: unexpected type %T", p.Source)
+					}
+					return c["editor"], nil
+				},
+			},
+			"isMinimized": &graphql.Field{
+				Type: graphql.NewNonNull(graphql.Boolean),
+				Resolve: func(p graphql.ResolveParams) (interface{}, error) {
+					c, ok := p.Source.(map[string]interface{})
+					if !ok {
+						return nil, fmt.Errorf("resolve source: unexpected type %T", p.Source)
+					}
+					return c["isMinimized"], nil
+				},
+			},
+			"isPinned": &graphql.Field{
+				Type: graphql.Boolean,
+				Resolve: func(p graphql.ResolveParams) (interface{}, error) {
+					c, ok := p.Source.(map[string]interface{})
+					if !ok {
+						return nil, fmt.Errorf("resolve source: unexpected type %T", p.Source)
+					}
+					return c["isPinned"], nil
+				},
+			},
+			"minimizedReason": &graphql.Field{
+				Type: graphql.String,
+				Resolve: func(p graphql.ResolveParams) (interface{}, error) {
+					c, ok := p.Source.(map[string]interface{})
+					if !ok {
+						return nil, fmt.Errorf("resolve source: unexpected type %T", p.Source)
+					}
+					return c["minimizedReason"], nil
+				},
+			},
+			"reactionGroups": &graphql.Field{
+				Type: graphql.NewList(graphql.NewNonNull(s.gqlReactionGroupType())),
+				Resolve: func(p graphql.ResolveParams) (interface{}, error) {
+					c, ok := p.Source.(map[string]interface{})
+					if !ok {
+						return nil, fmt.Errorf("resolve source: unexpected type %T", p.Source)
+					}
+					return c["reactionGroups"], nil
+				},
+			},
+			// gh's shared comments fragment (issue view + pr view) selects
+			// viewerDidAuthor.
+			"viewerDidAuthor": &graphql.Field{
+				Type: graphql.NewNonNull(graphql.Boolean),
+				Resolve: func(p graphql.ResolveParams) (interface{}, error) {
+					c, ok := p.Source.(map[string]interface{})
+					if !ok {
+						return nil, fmt.Errorf("resolve source: unexpected type %T", p.Source)
+					}
+					viewer := ghUserFromContext(p.Context)
+					authorID, _ := c["authorID"].(int)
+					return viewer != nil && authorID == viewer.ID, nil
+				},
+			},
+		},
+	})
+	return s.graphqlTypes.issueComment
+}
+
+// gqlIssueCommentConnectionType returns the shared IssueCommentConnection
+// type (memoized), used by Issue.comments and PullRequest.comments.
+func (s *Server) gqlIssueCommentConnectionType() *graphql.Object {
+	if s.graphqlTypes.issueCommentConnection != nil {
+		return s.graphqlTypes.issueCommentConnection
+	}
+	s.graphqlTypes.issueCommentConnection = graphql.NewObject(graphql.ObjectConfig{
+		Name: "IssueCommentConnection",
+		Fields: graphql.Fields{
+			"nodes":      &graphql.Field{Type: graphql.NewList(s.gqlIssueCommentType())},
+			"totalCount": &graphql.Field{Type: graphql.NewNonNull(graphql.Int)},
+			"pageInfo":   &graphql.Field{Type: graphql.NewNonNull(s.gqlPageInfoType())},
+		},
+	})
+	return s.graphqlTypes.issueCommentConnection
+}
+
+// gqlIssueConnectionType returns the shared IssueConnection type (memoized).
+// Used by Repository.issues and PullRequest.closingIssuesReferences.
+func (s *Server) gqlIssueConnectionType(issueType *graphql.Object) *graphql.Object {
+	if s.graphqlTypes.issueConnection != nil {
+		return s.graphqlTypes.issueConnection
+	}
+	issueEdgeType := graphql.NewObject(graphql.ObjectConfig{
+		Name: "IssueEdge",
+		Fields: graphql.Fields{
+			"node":   &graphql.Field{Type: issueType},
+			"cursor": &graphql.Field{Type: graphql.NewNonNull(graphql.String)},
+		},
+	})
+	s.graphqlTypes.issueConnection = graphql.NewObject(graphql.ObjectConfig{
+		Name: "IssueConnection",
+		Fields: graphql.Fields{
+			"nodes":      &graphql.Field{Type: graphql.NewList(issueType)},
+			"edges":      &graphql.Field{Type: graphql.NewList(issueEdgeType)},
+			"totalCount": &graphql.Field{Type: graphql.NewNonNull(graphql.Int)},
+			"pageInfo":   &graphql.Field{Type: graphql.NewNonNull(s.gqlPageInfoType())},
+		},
+	})
+	return s.graphqlTypes.issueConnection
 }
 
 func (s *Server) graphQLEnum(name string, values ...string) *graphql.Enum {
@@ -1979,27 +2063,6 @@ func labelToGQL(l *IssueLabel) map[string]interface{} {
 		"name":        l.Name,
 		"description": l.Description,
 		"color":       l.Color,
-	}
-}
-
-func relatedIssueToGQLLocked(issue *Issue, st *Store) map[string]interface{} {
-	repo := st.Repos[issue.RepoID]
-	nameWithOwner := ""
-	url := ""
-	if repo != nil {
-		nameWithOwner = repo.FullName
-		url = externalURL("/" + repo.FullName + "/issues/" + strconv.Itoa(issue.Number))
-	}
-	return map[string]interface{}{
-		"id":     issue.NodeID,
-		"nodeID": issue.NodeID,
-		"number": issue.Number,
-		"title":  issue.Title,
-		"url":    url,
-		"state":  issue.State,
-		"repository": map[string]interface{}{
-			"nameWithOwner": nameWithOwner,
-		},
 	}
 }
 
@@ -2363,8 +2426,27 @@ type graphQLTypeRegistry struct {
 	actor                            *graphql.Interface
 	repositoryOwner                  *graphql.Interface
 	issueOrder                       *graphql.InputObject
+	labelType                        *graphql.Object
+	labelConnection                  *graphql.Object
+	userConnection                   *graphql.Object
+	issueConnection                  *graphql.Object
+	issueComment                     *graphql.Object
+	issueCommentConnection           *graphql.Object
+	reactionGroup                    *graphql.Object
+	ref                              *graphql.Object
+	license                          *graphql.Object
+	organization                     *graphql.Object
+	lockable                         *graphql.Interface
+	minimizable                      *graphql.Interface
+	issue                            *graphql.Object
+	pullRequest                      *graphql.Object
+	discussion                       *graphql.Object
+	discussionComment                *graphql.Object
 	projectV2Type                    *graphql.Object
 	projectV2FieldTypeMemo           *graphql.Object
+	projectV2SingleSelectFieldMemo   *graphql.Object
+	projectV2IterationFieldMemo      *graphql.Object
+	projectV2FieldConfigUnionMemo    *graphql.Union
 	projectV2FieldConnectionMemo     *graphql.Object
 	projectV2ViewTypeMemo            *graphql.Object
 	projectV2ViewConnectionMemo      *graphql.Object
@@ -2461,10 +2543,25 @@ func (s *Server) ensureProjectV2ItemsField() {
 	s.graphqlTypes.projectV2ItemsFieldAdded = true
 }
 
+// projectV2FieldConnectionType builds GitHub's typed field-configuration
+// surface: the ProjectV2FieldCommon interface, the ProjectV2Field /
+// ProjectV2SingleSelectField / ProjectV2IterationField concrete types (the
+// three configurations bleephub's store models — official also has
+// ProjectV2MultiSelectField), the ProjectV2FieldConfiguration union, and its
+// connection. Field source maps come from projectV2FieldToGQL, whose
+// "dataType" key drives ResolveType for both the interface and the union.
 func (s *Server) projectV2FieldConnectionType() *graphql.Object {
 	if s.graphqlTypes.projectV2FieldConnectionMemo != nil {
 		return s.graphqlTypes.projectV2FieldConnectionMemo
 	}
+	dateTime := s.graphQLStringScalar("DateTime")
+	date := s.graphQLStringScalar("Date")
+	fieldTypeEnum := s.graphQLEnum(
+		"ProjectV2FieldType",
+		"ASSIGNEES", "DATE", "ITERATION", "LABELS", "LINKED_PULL_REQUESTS",
+		"MILESTONE", "NUMBER", "REPOSITORY", "REVIEWERS", "SINGLE_SELECT",
+		"TEXT", "TITLE", "TRACKED_BY", "TRACKS",
+	)
 	optionType := graphql.NewObject(graphql.ObjectConfig{
 		Name: "ProjectV2SingleSelectFieldOption",
 		Fields: graphql.Fields{
@@ -2477,26 +2574,54 @@ func (s *Server) projectV2FieldConnectionType() *graphql.Object {
 			"description": &graphql.Field{Type: graphql.NewNonNull(graphql.String)},
 		},
 	})
+	// Official ProjectV2Iteration is an INPUT_OBJECT; the object flavor is
+	// ProjectV2IterationFieldIteration.
 	iterationType := graphql.NewObject(graphql.ObjectConfig{
-		Name: "ProjectV2Iteration",
+		Name: "ProjectV2IterationFieldIteration",
 		Fields: graphql.Fields{
 			"id":        &graphql.Field{Type: graphql.NewNonNull(graphql.String)},
 			"title":     &graphql.Field{Type: graphql.NewNonNull(graphql.String)},
-			"startDate": &graphql.Field{Type: graphql.NewNonNull(graphql.String)},
+			"startDate": &graphql.Field{Type: graphql.NewNonNull(date)},
 			"duration":  &graphql.Field{Type: graphql.NewNonNull(graphql.Int)},
 		},
 	})
 	iterationConfigurationType := graphql.NewObject(graphql.ObjectConfig{
-		Name: "ProjectV2IterationConfiguration",
+		Name: "ProjectV2IterationFieldConfiguration",
 		Fields: graphql.Fields{
-			"startDate":  &graphql.Field{Type: graphql.String},
-			"duration":   &graphql.Field{Type: graphql.Int},
-			"iterations": &graphql.Field{Type: graphql.NewList(iterationType)},
+			"duration":            &graphql.Field{Type: graphql.NewNonNull(graphql.Int)},
+			"startDay":            &graphql.Field{Type: graphql.NewNonNull(graphql.Int)},
+			"iterations":          &graphql.Field{Type: graphql.NewNonNull(graphql.NewList(graphql.NewNonNull(iterationType)))},
+			"completedIterations": &graphql.Field{Type: graphql.NewNonNull(graphql.NewList(graphql.NewNonNull(iterationType)))},
 		},
 	})
-	s.graphqlTypes.projectV2FieldTypeMemo = graphql.NewObject(graphql.ObjectConfig{
-		Name: "ProjectV2Field",
+	// resolveFieldConfigType maps a field source map to its concrete
+	// configuration type via the dataType discriminator.
+	resolveFieldConfigType := func(value interface{}) *graphql.Object {
+		src, _ := value.(map[string]interface{})
+		switch src["dataType"] {
+		case string(ProjectV2FieldSingleSelect):
+			return s.graphqlTypes.projectV2SingleSelectFieldMemo
+		case string(ProjectV2FieldIteration):
+			return s.graphqlTypes.projectV2IterationFieldMemo
+		default:
+			return s.graphqlTypes.projectV2FieldTypeMemo
+		}
+	}
+	fieldCommonInterface := graphql.NewInterface(graphql.InterfaceConfig{
+		Name: "ProjectV2FieldCommon",
 		Fields: graphql.Fields{
+			"id":        &graphql.Field{Type: graphql.NewNonNull(graphql.ID)},
+			"name":      &graphql.Field{Type: graphql.NewNonNull(graphql.String)},
+			"dataType":  &graphql.Field{Type: graphql.NewNonNull(fieldTypeEnum)},
+			"createdAt": &graphql.Field{Type: graphql.NewNonNull(dateTime)},
+			"updatedAt": &graphql.Field{Type: graphql.NewNonNull(dateTime)},
+		},
+		ResolveType: func(p graphql.ResolveTypeParams) *graphql.Object {
+			return resolveFieldConfigType(p.Value)
+		},
+	})
+	commonFields := func() graphql.Fields {
+		return graphql.Fields{
 			"id": &graphql.Field{
 				Type: graphql.NewNonNull(graphql.ID),
 				Resolve: func(p graphql.ResolveParams) (interface{}, error) {
@@ -2507,29 +2632,77 @@ func (s *Server) projectV2FieldConnectionType() *graphql.Object {
 					return src["nodeID"], nil
 				},
 			},
-			"name": &graphql.Field{Type: graphql.NewNonNull(graphql.String)},
-			"dataType": &graphql.Field{Type: graphql.NewNonNull(s.graphQLEnum(
-				"ProjectV2FieldType",
-				"ASSIGNEES", "DATE", "ITERATION", "LABELS", "LINKED_PULL_REQUESTS",
-				"MILESTONE", "NUMBER", "REPOSITORY", "REVIEWERS", "SINGLE_SELECT",
-				"TEXT", "TITLE", "TRACKED_BY", "TRACKS",
-			))},
-			"options":                &graphql.Field{Type: graphql.NewList(optionType)},
-			"iterationConfiguration": &graphql.Field{Type: iterationConfigurationType},
-			"createdAt":              &graphql.Field{Type: graphql.NewNonNull(s.graphQLStringScalar("DateTime"))},
-			"updatedAt":              &graphql.Field{Type: graphql.NewNonNull(s.graphQLStringScalar("DateTime"))},
+			"name":      &graphql.Field{Type: graphql.NewNonNull(graphql.String)},
+			"dataType":  &graphql.Field{Type: graphql.NewNonNull(fieldTypeEnum)},
+			"createdAt": &graphql.Field{Type: graphql.NewNonNull(dateTime)},
+			"updatedAt": &graphql.Field{Type: graphql.NewNonNull(dateTime)},
+		}
+	}
+	s.graphqlTypes.projectV2FieldTypeMemo = graphql.NewObject(graphql.ObjectConfig{
+		Name:       "ProjectV2Field",
+		Interfaces: []*graphql.Interface{fieldCommonInterface},
+		Fields:     commonFields(),
+	})
+	singleSelectFields := commonFields()
+	singleSelectFields["options"] = &graphql.Field{
+		Type: graphql.NewNonNull(graphql.NewList(graphql.NewNonNull(optionType))),
+		Resolve: func(p graphql.ResolveParams) (interface{}, error) {
+			src, ok := p.Source.(map[string]interface{})
+			if !ok {
+				return nil, fmt.Errorf("resolve source: unexpected type %T", p.Source)
+			}
+			return src["options"], nil
+		},
+	}
+	s.graphqlTypes.projectV2SingleSelectFieldMemo = graphql.NewObject(graphql.ObjectConfig{
+		Name:       "ProjectV2SingleSelectField",
+		Interfaces: []*graphql.Interface{fieldCommonInterface},
+		Fields:     singleSelectFields,
+	})
+	iterationFields := commonFields()
+	iterationFields["configuration"] = &graphql.Field{
+		Type: graphql.NewNonNull(iterationConfigurationType),
+		Resolve: func(p graphql.ResolveParams) (interface{}, error) {
+			src, ok := p.Source.(map[string]interface{})
+			if !ok {
+				return nil, fmt.Errorf("resolve source: unexpected type %T", p.Source)
+			}
+			return src["configuration"], nil
+		},
+	}
+	s.graphqlTypes.projectV2IterationFieldMemo = graphql.NewObject(graphql.ObjectConfig{
+		Name:       "ProjectV2IterationField",
+		Interfaces: []*graphql.Interface{fieldCommonInterface},
+		Fields:     iterationFields,
+	})
+	s.graphqlTypes.projectV2FieldConfigUnionMemo = graphql.NewUnion(graphql.UnionConfig{
+		Name: "ProjectV2FieldConfiguration",
+		Types: []*graphql.Object{
+			s.graphqlTypes.projectV2FieldTypeMemo,
+			s.graphqlTypes.projectV2IterationFieldMemo,
+			s.graphqlTypes.projectV2SingleSelectFieldMemo,
+		},
+		ResolveType: func(p graphql.ResolveTypeParams) *graphql.Object {
+			return resolveFieldConfigType(p.Value)
 		},
 	})
 	s.graphqlTypes.projectV2FieldConnectionMemo = graphql.NewObject(graphql.ObjectConfig{
-		Name: "ProjectV2FieldConnection",
+		Name: "ProjectV2FieldConfigurationConnection",
 		Fields: graphql.Fields{
 			"totalCount": &graphql.Field{Type: graphql.NewNonNull(graphql.Int)},
-			"nodes":      &graphql.Field{Type: graphql.NewList(s.graphqlTypes.projectV2FieldTypeMemo)},
-			"edges":      &graphql.Field{Type: graphql.NewList(graphql.NewObject(graphql.ObjectConfig{Name: "ProjectV2FieldEdge", Fields: graphql.Fields{"node": &graphql.Field{Type: s.graphqlTypes.projectV2FieldTypeMemo}, "cursor": &graphql.Field{Type: graphql.NewNonNull(graphql.String)}}}))},
+			"nodes":      &graphql.Field{Type: graphql.NewList(s.graphqlTypes.projectV2FieldConfigUnionMemo)},
+			"edges":      &graphql.Field{Type: graphql.NewList(graphql.NewObject(graphql.ObjectConfig{Name: "ProjectV2FieldConfigurationEdge", Fields: graphql.Fields{"node": &graphql.Field{Type: s.graphqlTypes.projectV2FieldConfigUnionMemo}, "cursor": &graphql.Field{Type: graphql.NewNonNull(graphql.String)}}}))},
 			"pageInfo":   &graphql.Field{Type: graphql.NewNonNull(s.gqlPageInfoType())},
 		},
 	})
 	return s.graphqlTypes.projectV2FieldConnectionMemo
+}
+
+// projectV2FieldConfigurationUnion returns the ProjectV2FieldConfiguration
+// union, building the field wiring (which owns the memo) on first use.
+func (s *Server) projectV2FieldConfigurationUnion() *graphql.Union {
+	s.projectV2FieldConnectionType()
+	return s.graphqlTypes.projectV2FieldConfigUnionMemo
 }
 
 func (s *Server) projectV2ViewConnectionType() *graphql.Object {
@@ -2569,14 +2742,26 @@ func (s *Server) projectV2ViewConnectionType() *graphql.Object {
 			"filter":    &graphql.Field{Type: graphql.String},
 			"createdAt": &graphql.Field{Type: graphql.NewNonNull(s.graphQLStringScalar("DateTime"))},
 			"updatedAt": &graphql.Field{Type: graphql.NewNonNull(s.graphQLStringScalar("DateTime"))},
-			"visibleFieldIds": &graphql.Field{
-				Type: graphql.NewList(graphql.NewNonNull(graphql.Int)),
+			// GitHub's view field surface: the visible fields resolve as a
+			// ProjectV2FieldConfigurationConnection (the private
+			// visibleFieldIds list only feeds this resolver via the source
+			// map, it is not schema-visible).
+			"fields": &graphql.Field{
+				Type: s.projectV2FieldConnectionType(),
+				Args: relayConnectionArgs(),
 				Resolve: func(p graphql.ResolveParams) (interface{}, error) {
 					src, ok := p.Source.(map[string]interface{})
 					if !ok {
 						return nil, fmt.Errorf("resolve source: unexpected type %T", p.Source)
 					}
-					return src["visibleFieldIds"], nil
+					fieldIDs, _ := src["visibleFieldIds"].([]int)
+					nodes := make([]map[string]interface{}, 0, len(fieldIDs))
+					for _, fieldID := range fieldIDs {
+						if f := s.store.ProjectsV2.GetField(fieldID); f != nil {
+							nodes = append(nodes, projectV2FieldToGQL(f))
+						}
+					}
+					return paginateGQLMaps(nodes, p.Args), nil
 				},
 			},
 		},
@@ -2591,6 +2776,15 @@ func (s *Server) projectV2ViewConnectionType() *graphql.Object {
 		},
 	})
 	return s.graphqlTypes.projectV2ViewConnectionMemo
+}
+
+// projectV2ItemType returns the shared ProjectV2Item object type, building the
+// connection wiring (which owns the memo) on first use. Mutation payloads
+// (addProjectV2ItemById, updateProjectV2ItemFieldValue) reuse this type so
+// their `item` fields match GitHub's ProjectV2Item instead of private forks.
+func (s *Server) projectV2ItemType() *graphql.Object {
+	s.projectV2ItemConnectionType()
+	return s.graphqlTypes.projectV2ItemTypeMemo
 }
 
 func (s *Server) projectV2ItemConnectionType() *graphql.Object {
@@ -2895,29 +3089,45 @@ func projectV2FieldToGQL(f *ProjectV2Field) map[string]interface{} {
 	}
 	var iteration map[string]interface{}
 	if f.Iteration != nil {
-		iterations := make([]map[string]interface{}, 0, len(f.Iteration.Iterations))
+		// GitHub's ProjectV2IterationFieldConfiguration splits past
+		// iterations into completedIterations and reports the configured
+		// start day-of-week (1=Monday … 7=Sunday) rather than a start date.
+		now := time.Now()
+		active := make([]map[string]interface{}, 0, len(f.Iteration.Iterations))
+		completed := make([]map[string]interface{}, 0)
 		for _, it := range f.Iteration.Iterations {
-			iterations = append(iterations, map[string]interface{}{
+			node := map[string]interface{}{
 				"id":        it.ID,
 				"title":     it.Title,
 				"startDate": it.StartDate,
 				"duration":  it.Duration,
-			})
+			}
+			if start, err := time.Parse("2006-01-02", it.StartDate); err == nil &&
+				start.AddDate(0, 0, it.Duration).Before(now) {
+				completed = append(completed, node)
+				continue
+			}
+			active = append(active, node)
+		}
+		startDay := 1
+		if start, err := time.Parse("2006-01-02", f.Iteration.StartDate); err == nil {
+			startDay = (int(start.Weekday())+6)%7 + 1
 		}
 		iteration = map[string]interface{}{
-			"startDate":  f.Iteration.StartDate,
-			"duration":   f.Iteration.Duration,
-			"iterations": iterations,
+			"duration":            f.Iteration.Duration,
+			"startDay":            startDay,
+			"iterations":          active,
+			"completedIterations": completed,
 		}
 	}
 	return map[string]interface{}{
-		"nodeID":                 f.NodeID,
-		"name":                   f.Name,
-		"dataType":               string(f.DataType),
-		"options":                options,
-		"iterationConfiguration": iteration,
-		"createdAt":              f.CreatedAt.UTC().Format(time.RFC3339),
-		"updatedAt":              f.UpdatedAt.UTC().Format(time.RFC3339),
+		"nodeID":        f.NodeID,
+		"name":          f.Name,
+		"dataType":      string(f.DataType),
+		"options":       options,
+		"configuration": iteration,
+		"createdAt":     f.CreatedAt.UTC().Format(time.RFC3339),
+		"updatedAt":     f.UpdatedAt.UTC().Format(time.RFC3339),
 	}
 }
 
