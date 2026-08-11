@@ -10,6 +10,9 @@ import {
   fetchIssueComments,
   createIssue,
   updateIssue,
+  fetchSubIssues,
+  addSubIssue,
+  removeSubIssue,
   isNotFound,
   fetchRepoLabels,
   createRepoLabel,
@@ -268,6 +271,88 @@ function IssueList({ owner, repo }: { owner: string; repo: string }) {
   );
 }
 
+function SubIssuesSection({ owner, repo, number }: { owner: string; repo: string; number: number }) {
+  const qc = useQueryClient();
+  const [childNumber, setChildNumber] = useState("");
+  const listQ = useQuery({
+    queryKey: ["sub-issues", owner, repo, number],
+    queryFn: () => fetchSubIssues(owner, repo, number),
+  });
+  const invalidate = () => {
+    void qc.invalidateQueries({ queryKey: ["sub-issues", owner, repo, number] });
+    void qc.invalidateQueries({ queryKey: ["issue", owner, repo, number] });
+  };
+  const addMut = useMutation({
+    mutationFn: async () => {
+      // The API keys sub-issues by the child's internal id; resolve it from the
+      // number the user typed.
+      const child = await fetchIssueDetail(owner, repo, Number(childNumber.trim()));
+      return addSubIssue(owner, repo, number, child.id);
+    },
+    onSuccess: () => {
+      invalidate();
+      setChildNumber("");
+    },
+  });
+  const removeMut = useMutation({
+    mutationFn: (subIssueId: number) => removeSubIssue(owner, repo, number, subIssueId),
+    onSuccess: invalidate,
+  });
+
+  const subs = listQ.data ?? [];
+  const validNumber = /^\d+$/.test(childNumber.trim());
+  return (
+    <section aria-label="Sub-issues" className="my-4">
+      <h2 style={{ fontSize: "0.9rem", fontWeight: 600, marginBottom: "0.5rem" }}>
+        Sub-issues{subs.length > 0 ? ` (${subs.length})` : ""}
+      </h2>
+      <MutationError of={addMut} />
+      <MutationError of={removeMut} />
+      {subs.length > 0 && (
+        <Box className="mb-2">
+          {subs.map((s, i) => (
+            <div
+              key={s.id}
+              className="flex items-center gap-2"
+              style={{ padding: "0.5rem 0.8rem", borderBottom: i === subs.length - 1 ? "none" : "1px solid var(--color-border)" }}
+            >
+              {s.state === "open" ? <IssueOpenedIcon size={14} /> : <IssueClosedIcon size={14} />}
+              <Link
+                to={`/ui/repos/${owner}/${repo}/issues/${s.number}`}
+                className="min-w-0 flex-1 truncate"
+                style={{ color: "var(--color-fg)", textDecoration: "none" }}
+              >
+                {s.title} <span style={{ color: "var(--color-fg-muted)" }}>#{s.number}</span>
+              </Link>
+              <Button
+                size="sm"
+                variant="ghost"
+                aria-label={`Remove sub-issue #${s.number}`}
+                disabled={removeMut.isPending}
+                onClick={() => removeMut.mutate(s.id)}
+              >
+                Remove
+              </Button>
+            </div>
+          ))}
+        </Box>
+      )}
+      <div className="flex items-center gap-2">
+        <input
+          aria-label="sub-issue number"
+          value={childNumber}
+          onChange={(e) => setChildNumber(e.target.value)}
+          placeholder="Issue number"
+          style={{ maxWidth: "10rem", fontSize: "0.85rem", padding: "0.25rem 0.5rem" }}
+        />
+        <Button size="sm" disabled={!validNumber || addMut.isPending} onClick={() => addMut.mutate()}>
+          {addMut.isPending ? "Adding…" : "Add sub-issue"}
+        </Button>
+      </div>
+    </section>
+  );
+}
+
 function IssueDetail({ owner, repo, number }: { owner: string; repo: string; number: number }) {
   const counts = useOpenCounts(owner, repo);
   const { data: issue, isLoading, isError, error } = useQuery({
@@ -420,6 +505,7 @@ function IssueDetail({ owner, repo, number }: { owner: string; repo: string; num
             remove={(reactionId) => removeIssueReaction(owner, repo, number, reactionId)}
             viewerLogin={viewerLogin}
           />
+          <SubIssuesSection owner={owner} repo={repo} number={number} />
           {commentsError ? (
             <InlineError inline title="Failed to load comments" detail={String(commentsErr)} />
           ) : (

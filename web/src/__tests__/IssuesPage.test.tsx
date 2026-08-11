@@ -99,6 +99,34 @@ describe("IssuesPage detail", () => {
     });
   });
 
+  it("adds a sub-issue by number via POST /issues/{n}/sub_issues", async () => {
+    mockFetch.mockImplementation((url: RequestInfo | URL, init?: RequestInit) => {
+      const u = url.toString();
+      if (u.endsWith("/issues/7/sub_issues") && init?.method === "POST") {
+        return Promise.resolve(jsonResponse(issue(7, "A real issue"), 201));
+      }
+      if (u.endsWith("/issues/7/sub_issues")) return Promise.resolve(jsonResponse([]));
+      if (u.includes("/issues/7/comments")) return Promise.resolve(jsonResponse([]));
+      if (u.includes("/issues/7/reactions")) return Promise.resolve(jsonResponse([]));
+      if (u.endsWith("/api/v3/user")) return Promise.resolve(jsonResponse({ login: "admin" }));
+      if (u.endsWith("/issues/9")) return Promise.resolve(jsonResponse(issue(9, "Child issue")));
+      if (u.includes("/issues/7")) return Promise.resolve(jsonResponse(issue(7, "A real issue")));
+      return Promise.resolve(jsonResponse([]));
+    });
+    renderAt("/ui/repos/admin/test/issues/7");
+
+    fireEvent.change(await screen.findByLabelText("sub-issue number"), { target: { value: "9" } });
+    fireEvent.click(screen.getByRole("button", { name: "Add sub-issue" }));
+
+    await waitFor(() => {
+      const post = mockFetch.mock.calls.find(
+        (c) => c[0].toString().endsWith("/issues/7/sub_issues") && c[1]?.method === "POST",
+      );
+      expect(post).toBeDefined();
+      expect(JSON.parse(String(post![1].body))).toEqual({ sub_issue_id: 9 });
+    });
+  });
+
   it("posts a comment through the composer", async () => {
     mockFetch.mockImplementation((url: RequestInfo | URL, init?: RequestInit) => {
       const u = url.toString();

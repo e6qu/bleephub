@@ -1500,6 +1500,25 @@ export const updateIssue = (
     patch,
   );
 
+export const fetchSubIssues = (owner: string, repo: string, number: number) =>
+  ghFetch<GithubIssue[]>(
+    `/api/v3/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/issues/${number}/sub_issues`,
+  );
+
+// The API keys sub-issues by the child's internal id, not its number.
+export const addSubIssue = (owner: string, repo: string, number: number, subIssueId: number) =>
+  ghPostJSON<GithubIssue>(
+    `/api/v3/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/issues/${number}/sub_issues`,
+    { sub_issue_id: subIssueId },
+  );
+
+export const removeSubIssue = (owner: string, repo: string, number: number, subIssueId: number) =>
+  ghSend(
+    "DELETE",
+    `/api/v3/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/issues/${number}/sub_issue`,
+    { sub_issue_id: subIssueId },
+  );
+
 /** Edit an issue/PR comment body (shared endpoint for both surfaces). */
 export const updateIssueComment = (owner: string, repo: string, commentId: number, body: string) =>
   ghPatchJSON<GithubComment>(
