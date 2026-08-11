@@ -6,6 +6,7 @@ import {
   addTeamMember,
   addTeamRepo,
   createTeam,
+  fetchAuthenticatedUserOrgs,
   deleteTeam,
   fetchChildTeams,
   fetchTeamMembers,
@@ -157,16 +158,23 @@ function TeamsTable() {
 
 function CreateTeamDialog({ onClose }: { onClose: () => void }) {
   const queryClient = useQueryClient();
+  // Teams can only be created in an org the viewer belongs to; a free-text
+  // field just produced a confusing 404/403. Offer the viewer's orgs.
+  const { data: orgs = [] } = useQuery({
+    queryKey: ["viewer-orgs"],
+    queryFn: ({ signal }) => fetchAuthenticatedUserOrgs(signal),
+  });
   const [org, setOrg] = useState("");
   const [name, setName] = useState("");
   const [description, setDescription] = useState("");
   const [privacy, setPrivacy] = useState<"secret" | "closed">("secret");
   const [error, setError] = useState<string | null>(null);
+  const effectiveOrg = org || orgs[0]?.login || "";
 
   const mutation = useMutation({
     mutationFn: () =>
       createTeam({
-        org: org.trim(),
+        org: effectiveOrg.trim(),
         name: name.trim(),
         description: description || undefined,
         privacy,
@@ -180,14 +188,25 @@ function CreateTeamDialog({ onClose }: { onClose: () => void }) {
 
   return (
     <Modal title="Create team" onClose={onClose}>
-      <FormLabel id="team-org">Organization login</FormLabel>
-      <input
-        id="team-org"
-        type="text"
-        value={org}
-        onChange={(e) => setOrg(e.target.value)}
-        className="mb-4 w-full"
-      />
+      <FormLabel id="team-org">Organization</FormLabel>
+      {orgs.length === 0 ? (
+        <p className="mb-4" style={{ fontSize: "0.82rem", color: "var(--color-fg-muted)" }}>
+          You must belong to an organization to create a team.
+        </p>
+      ) : (
+        <select
+          id="team-org"
+          value={effectiveOrg}
+          onChange={(e) => setOrg(e.target.value)}
+          className="mb-4 w-full"
+        >
+          {orgs.map((o) => (
+            <option key={o.login} value={o.login}>
+              {o.login}
+            </option>
+          ))}
+        </select>
+      )}
 
       <FormLabel id="team-name">Name</FormLabel>
       <input
@@ -229,7 +248,7 @@ function CreateTeamDialog({ onClose }: { onClose: () => void }) {
             setError(null);
             mutation.mutate();
           }}
-          disabled={mutation.isPending || !org.trim() || !name.trim()}
+          disabled={mutation.isPending || !effectiveOrg.trim() || !name.trim()}
           variant="primary"
         >
           {mutation.isPending ? "Creating…" : "Create team"}
