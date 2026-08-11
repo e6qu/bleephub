@@ -8,6 +8,14 @@ import {
   fetchRepoDetail,
   fetchRepoBranches,
   fetchRepoCommit,
+  fetchCombinedStatus,
+  createCommitStatus,
+  fetchCommitComments,
+  createCommitComment,
+  fetchCommitCommentReactions,
+  addCommitCommentReaction,
+  removeCommitCommentReaction,
+  fetchAuthenticatedUser,
   fetchRepoCommits,
   fetchRepoComparison,
   fetchRepoContents,
@@ -36,6 +44,7 @@ import type {
   BleephubRepo,
   GithubBranch,
   GithubCommit,
+  GithubCommitStatusState,
   GithubComparison,
   GithubContentFile,
   GithubContentItem,
@@ -48,6 +57,8 @@ import type {
 } from "../types.js";
 import { RepoHeader } from "../components/Shell.js";
 import { Box, Blankslate, Button, CodeBlock, SectionLabel, Modal, DialogActions, FormLabel } from "../components/ui.js";
+import { CommentCard } from "../components/CommentCard.js";
+import { ReactionBar } from "../components/ReactionBar.js";
 import {
   BranchIcon,
   TagIcon,
@@ -1504,7 +1515,156 @@ export function RepoCommitPage() {
           ))}
         </div>
       )}
+      <CommitStatusesSection owner={owner} repo={repo} sha={sha} />
+      <CommitCommentsSection owner={owner} repo={repo} sha={sha} />
     </div>
+  );
+}
+
+const COMMIT_STATUS_STATES: GithubCommitStatusState[] = ["success", "pending", "failure", "error"];
+
+function CommitStatusesSection({ owner, repo, sha }: { owner: string; repo: string; sha: string }) {
+  const qc = useQueryClient();
+  const [state, setState] = useState<GithubCommitStatusState>("success");
+  const [context, setContext] = useState("");
+  const [description, setDescription] = useState("");
+  const statusQ = useQuery({
+    queryKey: ["commit-status", owner, repo, sha],
+    queryFn: () => fetchCombinedStatus(owner, repo, sha),
+    enabled: !!owner && !!repo && !!sha,
+  });
+  const createMut = useMutation({
+    mutationFn: () =>
+      createCommitStatus(owner, repo, sha, {
+        state,
+        ...(context.trim() ? { context: context.trim() } : {}),
+        ...(description.trim() ? { description: description.trim() } : {}),
+      }),
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: ["commit-status", owner, repo, sha] });
+      setContext("");
+      setDescription("");
+    },
+  });
+
+  const statuses = statusQ.data?.statuses ?? [];
+  return (
+    <section aria-label="Commit statuses" className="mt-5">
+      <SectionLabel>Statuses</SectionLabel>
+      {statusQ.data && statuses.length > 0 && (
+        <Box className="mb-3">
+          {statuses.map((s, i) => (
+            <div
+              key={`${s.context}-${i}`}
+              className="flex items-center gap-2"
+              style={{ padding: "0.5rem 0.8rem", borderBottom: i === statuses.length - 1 ? "none" : "1px solid var(--color-border)" }}
+            >
+              <span className="min-w-0 flex-1">
+                <span style={{ fontWeight: 500 }}>{s.context}</span>
+                {s.description && (
+                  <span style={{ color: "var(--color-fg-muted)", fontSize: "0.8rem" }}> — {s.description}</span>
+                )}
+              </span>
+              <span style={{ fontSize: "0.78rem", color: "var(--color-fg-muted)" }}>{s.state}</span>
+            </div>
+          ))}
+        </Box>
+      )}
+      {createMut.error && (
+        <InlineError inline title="Failed to create status" detail={String(createMut.error)} />
+      )}
+      <div className="flex flex-wrap items-end gap-2">
+        <label className="flex flex-col gap-1" style={{ fontSize: "0.78rem" }}>
+          State
+          <select aria-label="status state" value={state} onChange={(e) => setState(e.target.value as GithubCommitStatusState)}>
+            {COMMIT_STATUS_STATES.map((s) => (
+              <option key={s} value={s}>{s}</option>
+            ))}
+          </select>
+        </label>
+        <label className="flex min-w-0 flex-1 flex-col gap-1" style={{ fontSize: "0.78rem" }}>
+          Context
+          <input aria-label="status context" value={context} onChange={(e) => setContext(e.target.value)} placeholder="ci/build" className="w-full" />
+        </label>
+        <label className="flex min-w-0 flex-1 flex-col gap-1" style={{ fontSize: "0.78rem" }}>
+          Description
+          <input aria-label="status description" value={description} onChange={(e) => setDescription(e.target.value)} placeholder="optional" className="w-full" />
+        </label>
+        <Button
+          variant="primary"
+          disabled={createMut.isPending || !context.trim()}
+          onClick={() => createMut.mutate()}
+        >
+          Create status
+        </Button>
+      </div>
+    </section>
+  );
+}
+
+function CommitCommentsSection({ owner, repo, sha }: { owner: string; repo: string; sha: string }) {
+  const qc = useQueryClient();
+  const [body, setBody] = useState("");
+  const listQ = useQuery({
+    queryKey: ["commit-comments", owner, repo, sha],
+    queryFn: () => fetchCommitComments(owner, repo, sha),
+    enabled: !!owner && !!repo && !!sha,
+  });
+  const createMut = useMutation({
+    mutationFn: () => createCommitComment(owner, repo, sha, body.trim()),
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: ["commit-comments", owner, repo, sha] });
+      setBody("");
+    },
+  });
+  const viewerQ = useQuery({ queryKey: ["viewer"], queryFn: fetchAuthenticatedUser });
+  const viewerLogin = typeof viewerQ.data?.login === "string" ? viewerQ.data.login : null;
+
+  const comments = listQ.data ?? [];
+  return (
+    <section aria-label="Commit comments" className="mt-5">
+      <SectionLabel>Comments</SectionLabel>
+      {createMut.error && (
+        <InlineError inline title="Failed to add comment" detail={String(createMut.error)} />
+      )}
+      {comments.map((c) => (
+        <div key={c.id}>
+          <CommentCard login={c.user?.login} body={c.body} date={c.created_at} />
+          <ReactionBar
+            queryKey={["commit-comment-reactions", owner, repo, c.id]}
+            fetchList={() => fetchCommitCommentReactions(owner, repo, c.id)}
+            add={(content) => addCommitCommentReaction(owner, repo, c.id, content)}
+            remove={(reactionId) => removeCommitCommentReaction(owner, repo, c.id, reactionId)}
+            viewerLogin={viewerLogin}
+          />
+        </div>
+      ))}
+      {comments.length === 0 && (
+        <div style={{ padding: "0.25rem 0 0.75rem", color: "var(--color-fg-muted)", fontSize: "0.85rem" }}>
+          No comments yet.
+        </div>
+      )}
+      <div className="flex flex-col gap-2">
+        <textarea
+          aria-label="commit comment"
+          value={body}
+          onChange={(e) => setBody(e.target.value)}
+          placeholder="Leave a comment on this commit"
+          rows={3}
+          className="w-full"
+          style={{ fontSize: "0.88rem", padding: "0.5rem" }}
+        />
+        <div className="flex justify-end">
+          <Button
+            variant="primary"
+            disabled={createMut.isPending || !body.trim()}
+            onClick={() => createMut.mutate()}
+          >
+            Comment
+          </Button>
+        </div>
+      </div>
+    </section>
   );
 }
 

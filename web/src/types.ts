@@ -764,6 +764,7 @@ export interface GithubTeamRepo {
 // Generated from the vendored GitHub OpenAPI description (WEB-013).
 export type GithubDeployKey = components["schemas"]["deploy-key"];
 export type GithubAutolink = components["schemas"]["autolink"];
+export type GithubCommitComment = components["schemas"]["commit-comment"];
 
 export interface BleephubAuditEvent {
   id: number;

@@ -418,6 +418,88 @@ describe("repository detail journeys", () => {
     expect(screen.getByText(/extra detail/)).toBeInTheDocument();
   });
 
+  it("adds a commit comment via POST /commits/{sha}/comments", async () => {
+    mockFetch.mockImplementation((url: RequestInfo | URL, init?: RequestInit) => {
+      const u = url.toString();
+      if (u.endsWith("/commits/abc123/comments") && init?.method === "POST") {
+        return Promise.resolve(
+          jsonResponse({ id: 1, body: "nice", user: { login: "admin" }, created_at: "2026-01-01T00:00:00Z" }, 201),
+        );
+      }
+      return routedFetch(url);
+    });
+    renderPage("/ui/repos/admin/test/commits/abc123");
+
+    fireEvent.change(await screen.findByLabelText("commit comment"), { target: { value: "nice" } });
+    fireEvent.click(screen.getByRole("button", { name: "Comment" }));
+
+    await waitFor(() => {
+      const post = mockFetch.mock.calls.find(
+        (c) => c[0].toString().endsWith("/commits/abc123/comments") && c[1]?.method === "POST",
+      );
+      expect(post).toBeDefined();
+      expect(JSON.parse(String(post![1].body))).toEqual({ body: "nice" });
+    });
+  });
+
+  it("creates a commit status via POST /statuses/{sha}", async () => {
+    mockFetch.mockImplementation((url: RequestInfo | URL, init?: RequestInit) => {
+      const u = url.toString();
+      if (u.endsWith("/statuses/abc123") && init?.method === "POST") {
+        return Promise.resolve(
+          jsonResponse({ context: "ci/build", state: "success", description: null, target_url: null }, 201),
+        );
+      }
+      if (u.endsWith("/commits/abc123/status")) {
+        return Promise.resolve(jsonResponse({ state: "pending", sha: "abc123", total_count: 0, statuses: [] }));
+      }
+      return routedFetch(url);
+    });
+    renderPage("/ui/repos/admin/test/commits/abc123");
+
+    fireEvent.change(await screen.findByLabelText("status context"), { target: { value: "ci/build" } });
+    fireEvent.click(screen.getByRole("button", { name: "Create status" }));
+
+    await waitFor(() => {
+      const post = mockFetch.mock.calls.find(
+        (c) => c[0].toString().endsWith("/statuses/abc123") && c[1]?.method === "POST",
+      );
+      expect(post).toBeDefined();
+      expect(JSON.parse(String(post![1].body))).toEqual({ state: "success", context: "ci/build" });
+    });
+  });
+
+  it("adds a reaction to a commit comment via POST /comments/{id}/reactions", async () => {
+    mockFetch.mockImplementation((url: RequestInfo | URL, init?: RequestInit) => {
+      const u = url.toString();
+      if (u.endsWith("/comments/50/reactions") && init?.method === "POST") {
+        return Promise.resolve(
+          jsonResponse({ id: 9, content: "heart", user: { login: "admin" }, created_at: "2026-01-01T00:00:00Z" }, 201),
+        );
+      }
+      if (u.endsWith("/comments/50/reactions")) return Promise.resolve(jsonResponse([]));
+      if (u.endsWith("/commits/abc123/comments")) {
+        return Promise.resolve(
+          jsonResponse([{ id: 50, body: "hi", user: { login: "bob" }, created_at: "2026-01-01T00:00:00Z" }]),
+        );
+      }
+      if (u.endsWith("/api/v3/user")) return Promise.resolve(jsonResponse({ login: "admin" }));
+      return routedFetch(url);
+    });
+    renderPage("/ui/repos/admin/test/commits/abc123");
+
+    fireEvent.click(await screen.findByRole("button", { name: "add reaction" }));
+    fireEvent.click(screen.getByRole("button", { name: "react with heart" }));
+
+    await waitFor(() => {
+      const post = mockFetch.mock.calls.find(
+        (c) => c[0].toString().endsWith("/comments/50/reactions") && c[1]?.method === "POST",
+      );
+      expect(post).toBeDefined();
+      expect(JSON.parse(String(post![1].body))).toEqual({ content: "heart" });
+    });
+  });
+
   it("renders a repository file at its durable URL", async () => {
     mockFetch.mockImplementation((url: RequestInfo | URL) => routedFetch(url));
     renderPage("/ui/repos/admin/test/blob/main/README.md");

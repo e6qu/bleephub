@@ -21,6 +21,7 @@ import type {
   GithubActor,
   GithubTeamRef,
   GithubCommit,
+  GithubCommitComment,
   GithubComparison,
   GithubWebhook,
   GithubSecret,
@@ -122,6 +123,8 @@ import type {
   GithubPRReviewThread,
   GithubReviewRequest,
   GithubCombinedStatus,
+  GithubCommitStatus,
+  GithubCommitStatusState,
   GithubReaction,
   GithubReactionContent,
   GithubTimelineItem,
@@ -1675,6 +1678,17 @@ export const fetchRepoCommits = (
 export const fetchRepoCommit = (owner: string, repo: string, ref: string) =>
   ghFetch<GithubCommit>(
     `/api/v3/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/commits/${encodeURIComponent(ref)}`,
+  );
+
+export const fetchCommitComments = (owner: string, repo: string, sha: string) =>
+  ghFetch<GithubCommitComment[]>(
+    `/api/v3/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/commits/${encodeURIComponent(sha)}/comments`,
+  );
+
+export const createCommitComment = (owner: string, repo: string, sha: string, body: string) =>
+  ghPostJSON<GithubCommitComment>(
+    `/api/v3/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/commits/${encodeURIComponent(sha)}/comments`,
+    { body },
   );
 
 export const fetchRepoComparison = (owner: string, repo: string, base: string, head: string) =>
@@ -4166,6 +4180,19 @@ export async function fetchCombinedStatus(
   return body;
 }
 
+export const createCommitStatus = (
+  owner: string,
+  repo: string,
+  sha: string,
+  payload: {
+    state: GithubCommitStatusState;
+    context?: string;
+    description?: string;
+    target_url?: string;
+  },
+): Promise<GithubCommitStatus> =>
+  ghPostJSON(`/api/v3/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/statuses/${encodeURIComponent(sha)}`, payload);
+
 export const fetchIssueTimeline = (owner: string, repo: string, number: number) =>
   ghFetch<GithubTimelineItem[]>(`/api/v3/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/issues/${number}/timeline`);
 
@@ -4264,6 +4291,34 @@ export const removePullReviewCommentReaction = (
   ghSend(
     "DELETE",
     `/api/v3/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/pulls/comments/${commentId}/reactions/${reactionId}`,
+  );
+
+// Commit comments use the bare /comments/{id}/reactions endpoint (distinct from
+// the issue-comment /issues/comments/… and PR-review /pulls/comments/… paths).
+export const fetchCommitCommentReactions = (owner: string, repo: string, commentId: number) =>
+  ghFetch<GithubReaction[]>(
+    `/api/v3/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/comments/${commentId}/reactions`,
+  );
+
+export const addCommitCommentReaction = (
+  owner: string,
+  repo: string,
+  commentId: number,
+  content: GithubReactionContent,
+): Promise<GithubReaction> =>
+  ghPostJSON(`/api/v3/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/comments/${commentId}/reactions`, {
+    content,
+  });
+
+export const removeCommitCommentReaction = (
+  owner: string,
+  repo: string,
+  commentId: number,
+  reactionId: number,
+) =>
+  ghSend(
+    "DELETE",
+    `/api/v3/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/comments/${commentId}/reactions/${reactionId}`,
   );
 // ─── Search + repo social + account ─────────────────────────────────────
 
