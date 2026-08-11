@@ -8,6 +8,8 @@ import {
   fetchRepoDetail,
   fetchRepoBranches,
   fetchRepoCommit,
+  fetchCombinedStatus,
+  createCommitStatus,
   fetchCommitComments,
   createCommitComment,
   fetchCommitCommentReactions,
@@ -42,6 +44,7 @@ import type {
   BleephubRepo,
   GithubBranch,
   GithubCommit,
+  GithubCommitStatusState,
   GithubComparison,
   GithubContentFile,
   GithubContentItem,
@@ -1512,8 +1515,90 @@ export function RepoCommitPage() {
           ))}
         </div>
       )}
+      <CommitStatusesSection owner={owner} repo={repo} sha={sha} />
       <CommitCommentsSection owner={owner} repo={repo} sha={sha} />
     </div>
+  );
+}
+
+const COMMIT_STATUS_STATES: GithubCommitStatusState[] = ["success", "pending", "failure", "error"];
+
+function CommitStatusesSection({ owner, repo, sha }: { owner: string; repo: string; sha: string }) {
+  const qc = useQueryClient();
+  const [state, setState] = useState<GithubCommitStatusState>("success");
+  const [context, setContext] = useState("");
+  const [description, setDescription] = useState("");
+  const statusQ = useQuery({
+    queryKey: ["commit-status", owner, repo, sha],
+    queryFn: () => fetchCombinedStatus(owner, repo, sha),
+    enabled: !!owner && !!repo && !!sha,
+  });
+  const createMut = useMutation({
+    mutationFn: () =>
+      createCommitStatus(owner, repo, sha, {
+        state,
+        ...(context.trim() ? { context: context.trim() } : {}),
+        ...(description.trim() ? { description: description.trim() } : {}),
+      }),
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: ["commit-status", owner, repo, sha] });
+      setContext("");
+      setDescription("");
+    },
+  });
+
+  const statuses = statusQ.data?.statuses ?? [];
+  return (
+    <section aria-label="Commit statuses" className="mt-5">
+      <SectionLabel>Statuses</SectionLabel>
+      {statusQ.data && statuses.length > 0 && (
+        <Box className="mb-3">
+          {statuses.map((s, i) => (
+            <div
+              key={`${s.context}-${i}`}
+              className="flex items-center gap-2"
+              style={{ padding: "0.5rem 0.8rem", borderBottom: i === statuses.length - 1 ? "none" : "1px solid var(--color-border)" }}
+            >
+              <span className="min-w-0 flex-1">
+                <span style={{ fontWeight: 500 }}>{s.context}</span>
+                {s.description && (
+                  <span style={{ color: "var(--color-fg-muted)", fontSize: "0.8rem" }}> — {s.description}</span>
+                )}
+              </span>
+              <span style={{ fontSize: "0.78rem", color: "var(--color-fg-muted)" }}>{s.state}</span>
+            </div>
+          ))}
+        </Box>
+      )}
+      {createMut.error && (
+        <InlineError inline title="Failed to create status" detail={String(createMut.error)} />
+      )}
+      <div className="flex flex-wrap items-end gap-2">
+        <label className="flex flex-col gap-1" style={{ fontSize: "0.78rem" }}>
+          State
+          <select aria-label="status state" value={state} onChange={(e) => setState(e.target.value as GithubCommitStatusState)}>
+            {COMMIT_STATUS_STATES.map((s) => (
+              <option key={s} value={s}>{s}</option>
+            ))}
+          </select>
+        </label>
+        <label className="flex min-w-0 flex-1 flex-col gap-1" style={{ fontSize: "0.78rem" }}>
+          Context
+          <input aria-label="status context" value={context} onChange={(e) => setContext(e.target.value)} placeholder="ci/build" className="w-full" />
+        </label>
+        <label className="flex min-w-0 flex-1 flex-col gap-1" style={{ fontSize: "0.78rem" }}>
+          Description
+          <input aria-label="status description" value={description} onChange={(e) => setDescription(e.target.value)} placeholder="optional" className="w-full" />
+        </label>
+        <Button
+          variant="primary"
+          disabled={createMut.isPending || !context.trim()}
+          onClick={() => createMut.mutate()}
+        >
+          Create status
+        </Button>
+      </div>
+    </section>
   );
 }
 

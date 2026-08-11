@@ -442,6 +442,33 @@ describe("repository detail journeys", () => {
     });
   });
 
+  it("creates a commit status via POST /statuses/{sha}", async () => {
+    mockFetch.mockImplementation((url: RequestInfo | URL, init?: RequestInit) => {
+      const u = url.toString();
+      if (u.endsWith("/statuses/abc123") && init?.method === "POST") {
+        return Promise.resolve(
+          jsonResponse({ context: "ci/build", state: "success", description: null, target_url: null }, 201),
+        );
+      }
+      if (u.endsWith("/commits/abc123/status")) {
+        return Promise.resolve(jsonResponse({ state: "pending", sha: "abc123", total_count: 0, statuses: [] }));
+      }
+      return routedFetch(url);
+    });
+    renderPage("/ui/repos/admin/test/commits/abc123");
+
+    fireEvent.change(await screen.findByLabelText("status context"), { target: { value: "ci/build" } });
+    fireEvent.click(screen.getByRole("button", { name: "Create status" }));
+
+    await waitFor(() => {
+      const post = mockFetch.mock.calls.find(
+        (c) => c[0].toString().endsWith("/statuses/abc123") && c[1]?.method === "POST",
+      );
+      expect(post).toBeDefined();
+      expect(JSON.parse(String(post![1].body))).toEqual({ state: "success", context: "ci/build" });
+    });
+  });
+
   it("adds a reaction to a commit comment via POST /comments/{id}/reactions", async () => {
     mockFetch.mockImplementation((url: RequestInfo | URL, init?: RequestInit) => {
       const u = url.toString();

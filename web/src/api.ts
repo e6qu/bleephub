@@ -123,6 +123,8 @@ import type {
   GithubPRReviewThread,
   GithubReviewRequest,
   GithubCombinedStatus,
+  GithubCommitStatus,
+  GithubCommitStatusState,
   GithubReaction,
   GithubReactionContent,
   GithubTimelineItem,
@@ -4177,6 +4179,19 @@ export async function fetchCombinedStatus(
   }
   return body;
 }
+
+export const createCommitStatus = (
+  owner: string,
+  repo: string,
+  sha: string,
+  payload: {
+    state: GithubCommitStatusState;
+    context?: string;
+    description?: string;
+    target_url?: string;
+  },
+): Promise<GithubCommitStatus> =>
+  ghPostJSON(`/api/v3/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/statuses/${encodeURIComponent(sha)}`, payload);
 
 export const fetchIssueTimeline = (owner: string, repo: string, number: number) =>
   ghFetch<GithubTimelineItem[]>(`/api/v3/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/issues/${number}/timeline`);
