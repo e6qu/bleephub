@@ -49,6 +49,14 @@ const TABS: { key: SearchTab; label: string }[] = [
   { key: "topics", label: "Topics" },
 ];
 
+/** True if the query has at least one non-qualifier free-text token. */
+function hasFreeTextTerm(query: string): boolean {
+  return query
+    .trim()
+    .split(/\s+/)
+    .some((token) => token !== "" && !/^-?[A-Za-z_]+:/.test(token));
+}
+
 export function SearchPage() {
   const [params, setParams] = useSearchParams();
   const q = params.get("q") ?? "";
@@ -225,6 +233,15 @@ function SearchResults({
       );
     }
     case "code":
+      // The server (and real GitHub) 422 a code query with no free-text term
+      // (qualifiers only). Guide instead of firing a request that errors.
+      if (!hasFreeTextTerm(q)) {
+        return (
+          <Blankslate title="Enter a search term">
+            Code search needs at least one word to match; qualifiers like <code>language:go</code> only narrow the results.
+          </Blankslate>
+        );
+      }
       return (
         <ResultList
           queryKey={["search", "code", q, page]}

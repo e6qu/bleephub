@@ -48,6 +48,17 @@ describe("SearchPage", () => {
     expect(mockFetch).not.toHaveBeenCalled();
   });
 
+  it("guides instead of 422ing a qualifier-only code search", async () => {
+    const calls: string[] = [];
+    mockFetch.mockImplementation((url: RequestInfo | URL) => {
+      calls.push(url.toString());
+      return Promise.resolve(jsonResponse({ total_count: 0, incomplete_results: false, items: [] }));
+    });
+    renderPage("/ui/search?type=code&q=language%3Ago");
+    expect(await screen.findByText(/Enter a search term/i)).toBeInTheDocument();
+    expect(calls.some((u) => u.includes("/search/code"))).toBe(false);
+  });
+
   it("searches repositories with the q parameter and shows the honest count", async () => {
     mockFetch.mockResolvedValue(
       jsonResponse({ total_count: 1, incomplete_results: false, items: [repoItem] }),

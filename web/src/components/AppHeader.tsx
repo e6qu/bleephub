@@ -394,6 +394,7 @@ export function AppHeader() {
   const isDark = theme === "dark";
   const [drawer, setDrawer] = useState(false);
   const [q, setQ] = useState("");
+  const [scope, setScope] = useState("repositories");
 
   // A throttled 403 is final for the current window: retrying it only deepens
   // the exhaustion (same guard pattern as useMetricsData). Surface it instead
@@ -416,7 +417,8 @@ export function AppHeader() {
   const submitSearch = (e: FormEvent) => {
     e.preventDefault();
     const term = q.trim();
-    navigate(term ? `/ui/search?q=${encodeURIComponent(term)}` : "/ui/search");
+    const typeParam = scope !== "repositories" ? `&type=${scope}` : "";
+    navigate(term ? `/ui/search?q=${encodeURIComponent(term)}${typeParam}` : `/ui/search?type=${scope}`);
   };
 
   const submitLogout = async (event: FormEvent<HTMLFormElement>) => {
@@ -466,6 +468,23 @@ export function AppHeader() {
               }}
             >
               <SearchIcon size={14} style={{ color: "var(--color-fg-muted)" }} />
+              <select
+                aria-label="Search scope"
+                value={scope}
+                onChange={(e) => setScope(e.target.value)}
+                style={{
+                  border: "none",
+                  outline: "none",
+                  background: "transparent",
+                  color: "var(--color-fg-muted)",
+                  fontSize: "0.78rem",
+                }}
+              >
+                <option value="repositories">Repos</option>
+                <option value="code">Code</option>
+                <option value="issues">Issues</option>
+                <option value="users">Users &amp; orgs</option>
+              </select>
               <input
                 type="search"
                 value={q}

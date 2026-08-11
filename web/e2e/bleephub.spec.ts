@@ -117,13 +117,13 @@ test.describe("Root redirect", () => {
   });
 });
 
-// ─── Operations console (/ui/admin) ──────────────────────────────────────────
-// The server-operational "System status" console lives at /ui/admin; the root
+// ─── Operations console (/ui/operations) ──────────────────────────────────────────
+// The server-operational "System status" console lives at /ui/operations; the root
 // /ui/ is the GitHub-style dashboard.
 
 test.describe("Operations console", () => {
   test("renders the System status heading", async ({ page }) => {
-    await page.goto("/ui/admin");
+    await page.goto("/ui/operations");
     // Brand is a link in the header; the page title is the h1.
     await expect(page.getByRole("link", { name: "bleephub" })).toBeVisible();
     await expect(page.getByRole("heading", { level: 1 }).filter({ hasText: "System status" })).toBeVisible();
@@ -131,7 +131,7 @@ test.describe("Operations console", () => {
   });
 
   test("shows metrics cards", async ({ page }) => {
-    await page.goto("/ui/admin");
+    await page.goto("/ui/operations");
     await expect(page.getByText("Active Workflows")).toBeVisible();
     await expect(page.getByText("Connected Runners")).toBeVisible();
     await expect(page.getByText("Workflow submissions", { exact: true })).toBeVisible();
@@ -974,7 +974,7 @@ test.describe("Dark theme", () => {
   });
 
   test("captures key pages in dark mode", async ({ page }) => {
-    await page.goto("/ui/admin");
+    await page.goto("/ui/operations");
     await page.waitForLoadState("networkidle");
     await expect(page.getByRole("heading", { level: 1 }).filter({ hasText: "System status" })).toBeVisible();
     await shot(page, "26-dark-ops-console");
