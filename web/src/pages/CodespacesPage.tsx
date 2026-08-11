@@ -14,6 +14,7 @@ import {
   fetchUserCodespaces,
   startCodespace,
   stopCodespace,
+  updateCodespace,
   isForbidden,
   isRateLimited,
 } from "../api.js";
@@ -242,6 +243,15 @@ function CodespaceDetail({ name }: { name: string }) {
     mutationFn: () => deleteCodespace(name),
     onSuccess: () => navigate("/ui/codespaces"),
   });
+  const [editingMachine, setEditingMachine] = useState(false);
+  const [machine, setMachine] = useState("");
+  const changeMachine = useMutation({
+    mutationFn: () => updateCodespace(name, { machine }),
+    onSuccess: (codespace) => {
+      client.setQueryData(queryKey, codespace);
+      setEditingMachine(false);
+    },
+  });
 
   if (query.isLoading) return <Spinner label={`Loading ${name}`} />;
   if (query.isError || !query.data) {
@@ -284,8 +294,8 @@ function CodespaceDetail({ name }: { name: string }) {
           </>
         }
       />
-      {(start.error || stop.error || remove.error) && (
-        <ErrorBanner>{String(start.error || stop.error || remove.error)}</ErrorBanner>
+      {(start.error || stop.error || remove.error || changeMachine.error) && (
+        <ErrorBanner>{String(start.error || stop.error || remove.error || changeMachine.error)}</ErrorBanner>
       )}
       <Box>
         <dl className="grid gap-4 sm:grid-cols-2" style={{ padding: "1rem" }}>
@@ -302,7 +312,41 @@ function CodespaceDetail({ name }: { name: string }) {
               </Link>
             ) : "Unpublished"}
           </CodespaceFact>
-          <CodespaceFact label="Machine">{cs.machine?.display_name ?? "Not assigned"}</CodespaceFact>
+          <CodespaceFact label="Machine">
+            {editingMachine && cs.repository ? (
+              <div className="flex items-center gap-2">
+                <MachineSelect
+                  owner={cs.repository.full_name.split("/")[0] ?? ""}
+                  repo={cs.repository.full_name.split("/")[1] ?? ""}
+                  value={machine}
+                  onChange={setMachine}
+                />
+                <Button
+                  variant="primary"
+                  disabled={changeMachine.isPending || !machine}
+                  onClick={() => changeMachine.mutate()}
+                >
+                  Save
+                </Button>
+                <Button variant="ghost" onClick={() => setEditingMachine(false)}>Cancel</Button>
+              </div>
+            ) : (
+              <span className="flex items-center gap-2">
+                {cs.machine?.display_name ?? "Not assigned"}
+                {cs.repository && (
+                  <Button
+                    variant="ghost"
+                    onClick={() => {
+                      setMachine(cs.machine?.name ?? "");
+                      setEditingMachine(true);
+                    }}
+                  >
+                    Change
+                  </Button>
+                )}
+              </span>
+            )}
+          </CodespaceFact>
           <CodespaceFact label="Git ref">{cs.git_status.ref || "Default branch"}</CodespaceFact>
           <CodespaceFact label="Created">{new Date(cs.created_at).toLocaleString()}</CodespaceFact>
           <CodespaceFact label="Last used">{new Date(cs.last_used_at).toLocaleString()}</CodespaceFact>

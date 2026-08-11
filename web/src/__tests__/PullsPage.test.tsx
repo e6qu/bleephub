@@ -467,6 +467,44 @@ describe("PullsPage review comment threads", () => {
       in_reply_to: 11,
     });
   });
+
+  it("adds a reaction to a review comment via POST /pulls/comments/{id}/reactions", async () => {
+    mockPRApis((u, init) => {
+      if (u.endsWith("/pulls/9/comments") && init?.method === undefined) {
+        return jsonResponse([reviewComment(11)]);
+      }
+      if (u.endsWith("/pulls/comments/11/reactions") && init?.method === "POST") {
+        return jsonResponse(
+          { id: 8, content: "heart", user: { login: "admin" }, created_at: "2026-01-01T00:00:00Z" },
+          201,
+        );
+      }
+      if (u.endsWith("/pulls/comments/11/reactions") && init?.method === undefined) {
+        return jsonResponse([]);
+      }
+      return undefined;
+    });
+    renderAt("/ui/repos/admin/test/pulls/9");
+
+    // The page has several ReactionBars (PR body + each review comment); the
+    // review comment's is the last to render.
+    expect(await screen.findByText("comment 11")).toBeInTheDocument();
+    // The review comment's ReactionBar renders only after its reactions query
+    // resolves (ReactionBar returns null while loading), so wait for both the
+    // PR-body bar and the review-comment bar, then use the review comment's.
+    await waitFor(() =>
+      expect(screen.getAllByRole("button", { name: "add reaction" }).length).toBeGreaterThanOrEqual(2),
+    );
+    const addButtons = screen.getAllByRole("button", { name: "add reaction" });
+    fireEvent.click(addButtons[addButtons.length - 1]!);
+    fireEvent.click(screen.getByRole("button", { name: "react with heart" }));
+    await waitFor(() => {
+      expect(findCall("/pulls/comments/11/reactions", "POST")).toBeDefined();
+    });
+    expect(JSON.parse(String(findCall("/pulls/comments/11/reactions", "POST")?.body))).toEqual({
+      content: "heart",
+    });
+  });
 });
 
 describe("PullsPage requested reviewers", () => {

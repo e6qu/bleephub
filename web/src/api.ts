@@ -2241,6 +2241,9 @@ export const setRepoInteractionLimit = (owner: string, repo: string, limit: stri
 export const transferRepo = (owner: string, repo: string, newOwner: string) =>
   ghPostJSON<BleephubRepo>(`/api/v3/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/transfer`, { new_owner: newOwner });
 
+export const deleteRepo = (owner: string, repo: string): Promise<void> =>
+  ghDelete(`/api/v3/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}`);
+
 export const renameBranch = (owner: string, repo: string, branch: string, newName: string) =>
   ghPostJSON<{ url: string }>(`/api/v3/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/branches/${encodeURIComponent(branch)}/rename`, { new_name: newName });
 
@@ -2845,6 +2848,11 @@ export const stopCodespace = (name: string) =>
 
 export const deleteCodespace = (name: string) =>
   ghDelete(`/api/v3/user/codespaces/${encodeURIComponent(name)}`);
+
+export const updateCodespace = (
+  name: string,
+  payload: { machine?: string; display_name?: string },
+) => ghPatchJSON<unknown>(`/api/v3/user/codespaces/${encodeURIComponent(name)}`, payload).then(decodeCodespace);
 
 export const fetchCodespaceMachines = (owner: string, repo: string) =>
   ghFetchEnvelope<GithubCodespaceMachine>(
@@ -3687,6 +3695,17 @@ import type {
  * Full environment objects (protection rules + branch-policy config) from
  * the same envelope endpoint fetchEnvironments unwraps into slim rows.
  */
+export const putEnvironment = (
+  owner: string,
+  repo: string,
+  name: string,
+  payload: Record<string, unknown> = {},
+) =>
+  ghPutJSON<GithubEnvironmentDetail>(
+    `/api/v3/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/environments/${encodeURIComponent(name)}`,
+    payload,
+  );
+
 export const fetchEnvironmentsDetail = (owner: string, repo: string) =>
   ghFetch<{ environments: GithubEnvironmentDetail[] }>(
     `/api/v3/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/environments`,
@@ -4145,6 +4164,59 @@ export const removeIssueCommentReaction = (
   ghSend(
     "DELETE",
     `/api/v3/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/issues/comments/${commentId}/reactions/${reactionId}`,
+  );
+
+export const fetchReleaseReactions = (owner: string, repo: string, releaseId: number) =>
+  ghFetch<GithubReaction[]>(
+    `/api/v3/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/releases/${releaseId}/reactions`,
+  );
+
+export const addReleaseReaction = (
+  owner: string,
+  repo: string,
+  releaseId: number,
+  content: GithubReactionContent,
+): Promise<GithubReaction> =>
+  ghPostJSON(`/api/v3/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/releases/${releaseId}/reactions`, {
+    content,
+  });
+
+export const removeReleaseReaction = (
+  owner: string,
+  repo: string,
+  releaseId: number,
+  reactionId: number,
+) =>
+  ghSend(
+    "DELETE",
+    `/api/v3/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/releases/${releaseId}/reactions/${reactionId}`,
+  );
+
+export const fetchPullReviewCommentReactions = (owner: string, repo: string, commentId: number) =>
+  ghFetch<GithubReaction[]>(
+    `/api/v3/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/pulls/comments/${commentId}/reactions`,
+  );
+
+export const addPullReviewCommentReaction = (
+  owner: string,
+  repo: string,
+  commentId: number,
+  content: GithubReactionContent,
+): Promise<GithubReaction> =>
+  ghPostJSON(
+    `/api/v3/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/pulls/comments/${commentId}/reactions`,
+    { content },
+  );
+
+export const removePullReviewCommentReaction = (
+  owner: string,
+  repo: string,
+  commentId: number,
+  reactionId: number,
+) =>
+  ghSend(
+    "DELETE",
+    `/api/v3/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/pulls/comments/${commentId}/reactions/${reactionId}`,
   );
 // ─── Search + repo social + account ─────────────────────────────────────
 

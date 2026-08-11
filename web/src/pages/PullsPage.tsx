@@ -31,6 +31,9 @@ import {
   fetchIssueCommentReactions,
   addIssueCommentReaction,
   removeIssueCommentReaction,
+  fetchPullReviewCommentReactions,
+  addPullReviewCommentReaction,
+  removePullReviewCommentReaction,
 } from "../api.js";
 import { useOpenCounts } from "../hooks/useOpenCounts.js";
 import type {
@@ -464,7 +467,7 @@ function PRDetail({ owner, repo, number }: { owner: string; repo: string; number
               viewerLogin={viewerLogin}
             />
             <ConversationTimeline owner={owner} repo={repo} number={number} viewerLogin={viewerLogin} />
-            <ReviewThreadsSection owner={owner} repo={repo} number={number} />
+            <ReviewThreadsSection owner={owner} repo={repo} number={number} viewerLogin={viewerLogin} />
             <ReviewsSection owner={owner} repo={repo} number={number} />
             <MergeBox owner={owner} repo={repo} number={number} pr={pr} />
             <MutationError of={stateMut} />
@@ -1201,12 +1204,14 @@ function ReviewThreadCard({
   number,
   group,
   threadInfo,
+  viewerLogin,
 }: {
   owner: string;
   repo: string;
   number: number;
   group: ReviewThreadGroup;
   threadInfo: { id: string; isResolved: boolean } | null;
+  viewerLogin: string | null;
 }) {
   const qc = useQueryClient();
   const [replyBody, setReplyBody] = useState("");
@@ -1301,6 +1306,15 @@ function ReviewThreadCard({
             <div style={{ whiteSpace: "pre-wrap", wordBreak: "break-word", color: "var(--color-fg)" }}>
               {c.body}
             </div>
+            <div className="mt-1">
+              <ReactionBar
+                queryKey={["pr-review-comment-reactions", owner, repo, c.id]}
+                fetchList={() => fetchPullReviewCommentReactions(owner, repo, c.id)}
+                add={(content) => addPullReviewCommentReaction(owner, repo, c.id, content)}
+                remove={(reactionId) => removePullReviewCommentReaction(owner, repo, c.id, reactionId)}
+                viewerLogin={viewerLogin}
+              />
+            </div>
           </div>
         ))}
         <div className="flex items-center gap-2" style={{ padding: "0.55rem 1rem" }}>
@@ -1335,10 +1349,12 @@ function ReviewThreadsSection({
   owner,
   repo,
   number,
+  viewerLogin,
 }: {
   owner: string;
   repo: string;
   number: number;
+  viewerLogin: string | null;
 }) {
   const commentsQ = useQuery({
     queryKey: ["pr-review-comments", owner, repo, number],
@@ -1382,6 +1398,7 @@ function ReviewThreadsSection({
           number={number}
           group={g}
           threadInfo={threadInfoByCommentId.get(g.root.id) ?? null}
+          viewerLogin={viewerLogin}
         />
       ))}
     </div>

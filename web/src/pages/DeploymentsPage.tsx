@@ -11,6 +11,7 @@ import {
   fetchEnvironmentsDetail,
   fetchPendingDeployments,
   fetchWorkflowRunsPage,
+  putEnvironment,
   reviewPendingDeployments,
   isForbidden,
   isRateLimited,
@@ -338,31 +339,71 @@ function StatusEntry({ status }: { status: GithubDeploymentStatus }) {
 // ─── Environments + protection rules (read-only) ─────────────────────────
 
 function EnvironmentsTab({ owner, repo }: { owner: string; repo: string }) {
+  const queryClient = useQueryClient();
+  const [newName, setNewName] = useState("");
+  const createMut = useMutation({
+    mutationFn: (name: string) => putEnvironment(owner, repo, name.trim()),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ["environments-detail", owner, repo] });
+      setNewName("");
+    },
+  });
   const envsQ = useQuery({
     queryKey: ["environments-detail", owner, repo],
     queryFn: () => fetchEnvironmentsDetail(owner, repo),
     enabled: !!owner && !!repo,
   });
 
-  if (envsQ.isLoading) return <Spinner label="loading environments" />;
-  if (envsQ.isError)
-    return <InlineError title="Failed to load environments" detail={String(envsQ.error)} />;
+  const createForm = (
+    <Box header={<span style={{ fontWeight: 600 }}>New environment</span>}>
+      <div style={{ padding: "1rem", display: "flex", flexDirection: "column", gap: "0.5rem" }}>
+        {createMut.error && <ErrorBanner>{String(createMut.error)}</ErrorBanner>}
+        <FormLabel id="new-env-name">Name</FormLabel>
+        <div className="flex gap-2">
+          <input
+            id="new-env-name"
+            type="text"
+            value={newName}
+            onChange={(e) => setNewName(e.target.value)}
+            placeholder="production"
+            className="w-full"
+          />
+          <Button
+            variant="primary"
+            disabled={createMut.isPending || !newName.trim()}
+            onClick={() => createMut.mutate(newName)}
+          >
+            Create environment
+          </Button>
+        </div>
+      </div>
+    </Box>
+  );
 
   const envs = envsQ.data ?? [];
-  if (envs.length === 0) return <Blankslate title="No environments" />;
-
   return (
-    <Box>
-      {envs.map((env, i) => (
-        <EnvironmentRow
-          key={env.id}
-          owner={owner}
-          repo={repo}
-          env={env}
-          last={i === envs.length - 1}
-        />
-      ))}
-    </Box>
+    <div style={{ display: "flex", flexDirection: "column", gap: "1rem" }}>
+      {createForm}
+      {envsQ.isLoading ? (
+        <Spinner label="loading environments" />
+      ) : envsQ.isError ? (
+        <InlineError title="Failed to load environments" detail={String(envsQ.error)} />
+      ) : envs.length === 0 ? (
+        <Blankslate title="No environments" />
+      ) : (
+        <Box>
+          {envs.map((env, i) => (
+            <EnvironmentRow
+              key={env.id}
+              owner={owner}
+              repo={repo}
+              env={env}
+              last={i === envs.length - 1}
+            />
+          ))}
+        </Box>
+      )}
+    </div>
   );
 }
 

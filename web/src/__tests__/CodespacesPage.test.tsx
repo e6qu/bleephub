@@ -182,6 +182,36 @@ describe("CodespacesPage", () => {
     expect(screen.getByText("Not assigned")).toBeInTheDocument();
   });
 
+  it("changes the codespace machine via PATCH /user/codespaces/{name}", async () => {
+    const premium = { ...machine, name: "premiumLinux64", display_name: "Premium Linux" };
+    let patched: unknown = null;
+    mockFetch.mockImplementation((input: RequestInfo | URL, init?: RequestInit) => {
+      const url = input.toString();
+      if (url === `/api/v3/user/codespaces/${codespace.name}` && init?.method === "PATCH") {
+        patched = JSON.parse(String(init.body));
+        return Promise.resolve(jsonResponse({ ...codespace, machine: premium }));
+      }
+      if (url === `/api/v3/user/codespaces/${codespace.name}`) {
+        return Promise.resolve(jsonResponse(codespace));
+      }
+      if (url === "/api/v3/repos/admin/test/codespaces/machines") {
+        return Promise.resolve(jsonResponse({ total_count: 2, machines: [machine, premium] }));
+      }
+      return Promise.resolve(jsonResponse({}));
+    });
+    renderPage(`/ui/codespaces/${codespace.name}`);
+
+    await screen.findByRole("heading", { name: "my codespace" });
+    fireEvent.click(screen.getByRole("button", { name: "Change" }));
+    const select = await screen.findByRole("combobox", { name: "Machine type" });
+    fireEvent.change(select, { target: { value: "premiumLinux64" } });
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+
+    await waitFor(() => {
+      expect(patched).toEqual({ machine: "premiumLinux64" });
+    });
+  });
+
   it("treats an empty 202 delete response as success and removes the row", async () => {
     let deleted = false;
     mockFetch.mockImplementation((input: RequestInfo | URL, init?: RequestInit) => {

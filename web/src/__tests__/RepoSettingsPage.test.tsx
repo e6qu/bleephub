@@ -117,4 +117,30 @@ describe("RepoSettingsPage", () => {
       expect(patchCall![1].body).toContain("after");
     });
   });
+
+  it("deletes the repository via DELETE /repos/{owner}/{repo} from the danger zone", async () => {
+    // Route by URL/method so any number of background GETs stay valid; only the
+    // DELETE returns an empty 204.
+    mockFetch.mockImplementation((url: string, opts?: { method?: string }) => {
+      if (opts?.method === "DELETE") return Promise.resolve(new Response(null, { status: 204 }));
+      const u = url.toString();
+      if (u.includes("/issues") || u.includes("/pulls")) return Promise.resolve(jsonResponse([]));
+      return Promise.resolve(jsonResponse(repo));
+    });
+    renderPage();
+    await waitFor(() => screen.getByDisplayValue("before"));
+
+    // Open the Danger zone (Transfer) tab, then trigger the delete card.
+    fireEvent.click(screen.getByRole("button", { name: "Transfer" }));
+    fireEvent.click(screen.getByRole("button", { name: "Delete this repository" }));
+    // Confirm in the confirmAction modal (its confirm button is labelled "Delete").
+    fireEvent.click(await screen.findByRole("button", { name: "Delete" }));
+
+    await waitFor(() => {
+      const del = mockFetch.mock.calls.find(
+        (c) => c[0] === "/api/v3/repos/admin/settings-repo" && c[1]?.method === "DELETE",
+      );
+      expect(del).toBeTruthy();
+    });
+  });
 });
