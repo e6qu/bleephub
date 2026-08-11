@@ -158,6 +158,7 @@ func (s *Server) handleListWorkflowFileRuns(w http.ResponseWriter, r *http.Reque
 	}
 	statusFilter := r.URL.Query().Get("status")
 	branchFilter := r.URL.Query().Get("branch")
+	eventFilter := r.URL.Query().Get("event")
 
 	s.store.mu.RLock()
 	matching := []*Workflow{}
@@ -181,6 +182,9 @@ func (s *Server) handleListWorkflowFileRuns(w http.ResponseWriter, r *http.Reque
 			continue
 		}
 		if branchFilter != "" && headBranchOf(run) != branchFilter {
+			continue
+		}
+		if eventFilter != "" && eventOf(run) != eventFilter {
 			continue
 		}
 		matching = append(matching, run)
