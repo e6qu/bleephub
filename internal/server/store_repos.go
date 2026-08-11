@@ -1020,6 +1020,14 @@ func (st *Store) deleteRepoLocked(owner, name string) (bool, pendingDeletion, er
 	for id, wf := range st.Workflows {
 		if wf.RepoFullName == fullName {
 			delete(st.Workflows, id)
+			st.unindexWorkflowLocked(wf)
+			// Job stubs, plan scopes, log masks and console lines are
+			// replica-local; drop them with the run (LogFiles are handled via
+			// the logIDs collected above).
+			st.dropWorkflowJobStateLocked(wf)
+			for _, attempt := range st.WorkflowAttempts[wf.RunID] {
+				st.dropWorkflowJobStateLocked(attempt)
+			}
 			batch.Delete("workflows", id)
 			delete(st.WorkflowAttempts, wf.RunID)
 			batch.Delete("workflow_attempts", strconv.Itoa(wf.RunID))
@@ -1806,15 +1814,26 @@ func (st *Store) deleteRepoIssueAndPullChildrenLocked(batch *persistBatch, repoI
 		threadIDs = append(threadIDs, notificationThreadID("PullRequest", prID))
 	}
 	st.deleteNotificationThreadStateBatchLocked(batch, threadIDs)
+	// Collect the reaction parents and stage their deletes into the same batch
+	// as the comment rows: a crash mid-cascade must not durably drop reactions
+	// while leaving the repo, issues, and comments intact (STORE-001/002).
+	commentReactionIDs := map[string]map[int]bool{}
 	for id, c := range st.Comments {
 		if (c.ParentType == "issue" && issueIDs[c.IssueID]) || (c.ParentType == "pull_request" && prIDs[c.IssueID]) {
 			delete(st.Comments, id)
 			key := commentCountKey(c.ParentType, c.IssueID)
 			delete(st.CommentCounts, key)
 			delete(st.CommentsByParent, key) // whole parent is being deleted
-			st.Reactions.DeleteParent(c.ParentType+"_comment", id)
+			parentType := c.ParentType + "_comment"
+			if commentReactionIDs[parentType] == nil {
+				commentReactionIDs[parentType] = map[int]bool{}
+			}
+			commentReactionIDs[parentType][id] = true
 			batch.Delete("comments", strconv.Itoa(id))
 		}
+	}
+	for parentType, ids := range commentReactionIDs {
+		st.Reactions.DeleteParentsBatch(parentType, ids, batch)
 	}
 	for id, e := range st.IssueEvents {
 		if e.RepoID == repoID || (e.ParentType == "issue" && issueIDs[e.IssueID]) || (e.ParentType == "pull_request" && prIDs[e.IssueID]) {

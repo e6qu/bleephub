@@ -602,6 +602,11 @@ func agentStatusForRunner(internal string) string {
 func (s *Server) findWorkflowByRunID(runID int) *Workflow {
 	s.store.mu.RLock()
 	defer s.store.mu.RUnlock()
+	if wf := s.store.workflowsByRunID[runID]; wf != nil {
+		return wf
+	}
+	// Fallback scan for directly-seeded stores (tests) only; every engine
+	// insertion path maintains the index.
 	for _, wf := range s.store.Workflows {
 		if wf.RunID == runID {
 			return wf
@@ -1009,6 +1014,7 @@ func (s *Server) rerunWorkflowAsNewAttempt(r *http.Request, old *Workflow, file 
 	s.store.mu.Lock()
 	s.store.WorkflowAttempts[old.RunID] = append(s.store.WorkflowAttempts[old.RunID], old)
 	delete(s.store.Workflows, old.ID)
+	s.store.unindexWorkflowLocked(old)
 	s.store.persistWorkflowAttemptsRecord(old.RunID)
 	s.store.deleteWorkflowRecord(old.ID)
 	s.store.mu.Unlock()
@@ -1153,11 +1159,20 @@ func (s *Server) handleDeleteWorkflowRun(w http.ResponseWriter, r *http.Request)
 		writeGHError(w, http.StatusNotFound, "Not Found")
 		return
 	}
+	deleted := s.store.Workflows[foundKey]
 	delete(s.store.Workflows, foundKey)
+	s.store.unindexWorkflowLocked(deleted)
+	// Eagerly tear down the run's replica-local job runtime state (job stubs,
+	// plan scopes, log masks/lines) rather than waiting for the janitor.
+	planIDs := s.store.dropWorkflowJobStateLocked(deleted)
+	for _, attempt := range s.store.WorkflowAttempts[runID] {
+		planIDs = append(planIDs, s.store.dropWorkflowJobStateLocked(attempt)...)
+	}
 	s.store.deleteWorkflowRecord(foundKey)
 	delete(s.store.WorkflowAttempts, runID)
 	s.store.persistWorkflowAttemptsRecord(runID)
 	s.store.mu.Unlock()
+	s.releaseJobLogFiles(planIDs)
 	w.WriteHeader(http.StatusNoContent)
 }
 

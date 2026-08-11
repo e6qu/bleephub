@@ -190,6 +190,10 @@ type WorkflowEventMeta struct {
 }
 
 func (st *Store) persistWorkflowRecord(wf *Workflow) {
+	// Every engine mutation site already funnels through here under the store
+	// write lock, so this is also where the derived run-id/concurrency-group
+	// indexes are kept in step with the workflow's state.
+	st.syncWorkflowIndexesLocked(wf)
 	if st.persist != nil && wf != nil {
 		st.persist.MustPut("workflows", wf.ID, wf)
 	}
@@ -432,15 +436,16 @@ func (s *Server) submitWorkflow(ctx context.Context, serverURL string, wf *Workf
 	// read-then-write sequence let simultaneous submissions both observe an
 	// empty group and start. GitHub also retains only the newest pending run
 	// for a group, so stale queued runs are cancelled as a new one arrives.
+	// On a shared (multi-replica) database the critical section additionally
+	// runs under the group's database lock, with peer-admitted state refreshed
+	// in, so two replicas cannot both admit (ACT-012).
 	var cancelForConcurrency []*Workflow
 	if workflow.ConcurrencyGroup != "" {
+		releaseGroupLock := s.acquireConcurrencyAdmissionLock(actionsConcurrencyLockName(workflow.ConcurrencyGroup))
 		s.workflowConcurrencyMu.Lock()
 		s.store.mu.Lock()
 		var active bool
-		for _, existing := range s.store.Workflows {
-			if existing.ConcurrencyGroup != workflow.ConcurrencyGroup || existing.Status == WorkflowStatusCompleted {
-				continue
-			}
+		for _, existing := range s.store.workflowConcurrencyPeersLocked(workflow.ConcurrencyGroup) {
 			switch existing.Status {
 			case WorkflowStatusRunning, WorkflowStatusWaiting:
 				active = true
@@ -461,6 +466,7 @@ func (s *Server) submitWorkflow(ctx context.Context, serverURL string, wf *Workf
 		s.store.persistWorkflowRecord(workflow)
 		s.store.mu.Unlock()
 		s.workflowConcurrencyMu.Unlock()
+		releaseGroupLock()
 	} else {
 		s.store.mu.Lock()
 		s.store.Workflows[workflow.ID] = workflow
@@ -528,7 +534,16 @@ func (s *Server) dispatchReadyJobs(ctx context.Context, wf *Workflow, serverURL 
 	ctx, span := otel.Tracer("bleephub").Start(ctx, "dispatchReadyJobs",
 		trace.WithAttributes(attribute.String("workflow.id", wf.ID)))
 	defer span.End()
+	// Job-level concurrency admission must be serialized across replicas on a
+	// shared database (ACT-012). The lock is scoped to one pass of the loop —
+	// acquired before the store lock, released before the recursive dispatch
+	// of affected workflows below (which takes the same lock itself).
+	jobAdmissionNeedsLock := workflowHasJobConcurrency(wf)
 	for {
+		releaseJobAdmission := func() {}
+		if jobAdmissionNeedsLock {
+			releaseJobAdmission = s.acquireJobConcurrencyAdmissionLock(wf)
+		}
 		// Hold write lock while evaluating and updating job statuses
 		s.store.mu.Lock()
 		changed := false
@@ -671,33 +686,21 @@ func (s *Server) dispatchReadyJobs(ctx context.Context, wf *Workflow, serverURL 
 						changed = true
 						continue
 					}
+					// Index immediately: a sibling job in the same group must
+					// see this one within the same lock pass, before the
+					// workflow record is next persisted.
+					s.store.syncJobConcurrencyEntryLocked(wf, wfJob)
 				}
 				blocked := false
-				for _, otherWorkflow := range s.store.Workflows {
-					for _, other := range otherWorkflow.Jobs {
-						if other == wfJob || other.ConcurrencyGroup != wfJob.ConcurrencyGroup {
-							continue
-						}
-						if other.Status == JobStatusPending {
-							currentIsNewer := wf.CreatedAt.After(otherWorkflow.CreatedAt) ||
-								(wf.CreatedAt.Equal(otherWorkflow.CreatedAt) && wf.ID > otherWorkflow.ID)
-							if !currentIsNewer {
-								blocked = true
-								continue
-							}
-							other.Status = JobStatusCompleted
-							other.Result = ResultCancelled
-							other.CompletedAt = s.currentTime()
-							s.queueActionsEvent(evJobCompleted, otherWorkflow, other)
-							affectedWorkflows[otherWorkflow] = true
-							s.store.persistWorkflowRecord(otherWorkflow)
-							changed = true
-							continue
-						}
-						if other.Status != JobStatusQueued && other.Status != JobStatusRunning {
-							continue
-						}
-						if !wfJob.CancelInProgress {
+				for _, peer := range s.store.jobConcurrencyPeersLocked(wfJob.ConcurrencyGroup) {
+					other, otherWorkflow := peer.job, peer.wf
+					if other == wfJob {
+						continue
+					}
+					if other.Status == JobStatusPending {
+						currentIsNewer := wf.CreatedAt.After(otherWorkflow.CreatedAt) ||
+							(wf.CreatedAt.Equal(otherWorkflow.CreatedAt) && wf.ID > otherWorkflow.ID)
+						if !currentIsNewer {
 							blocked = true
 							continue
 						}
@@ -705,11 +708,26 @@ func (s *Server) dispatchReadyJobs(ctx context.Context, wf *Workflow, serverURL 
 						other.Result = ResultCancelled
 						other.CompletedAt = s.currentTime()
 						s.queueActionsEvent(evJobCompleted, otherWorkflow, other)
-						jobsToCancel = append(jobsToCancel, other.JobID)
 						affectedWorkflows[otherWorkflow] = true
 						s.store.persistWorkflowRecord(otherWorkflow)
 						changed = true
+						continue
 					}
+					if other.Status != JobStatusQueued && other.Status != JobStatusRunning {
+						continue
+					}
+					if !wfJob.CancelInProgress {
+						blocked = true
+						continue
+					}
+					other.Status = JobStatusCompleted
+					other.Result = ResultCancelled
+					other.CompletedAt = s.currentTime()
+					s.queueActionsEvent(evJobCompleted, otherWorkflow, other)
+					jobsToCancel = append(jobsToCancel, other.JobID)
+					affectedWorkflows[otherWorkflow] = true
+					s.store.persistWorkflowRecord(otherWorkflow)
+					changed = true
 				}
 				if blocked {
 					continue
@@ -778,6 +796,7 @@ func (s *Server) dispatchReadyJobs(ctx context.Context, wf *Workflow, serverURL 
 			s.store.persistWorkflowRecord(wf)
 		}
 		s.store.mu.Unlock()
+		releaseJobAdmission()
 
 		for _, jobID := range jobsToCancel {
 			s.sendJobCancellation(jobID)
@@ -855,6 +874,7 @@ func (s *Server) dispatchWorkflowJob(ctx context.Context, wf *Workflow, wfJob *W
 
 	s.store.mu.Lock()
 	s.store.Jobs[wfJob.JobID] = job
+	s.store.registerDispatchedJobLocked(job, msg, wf.RepoFullName)
 	s.store.registerJobLogMasksLocked(planID, msg)
 	wfJob.PlanID = planID
 	s.store.persistWorkflowRecord(wf)
@@ -1005,6 +1025,10 @@ func (s *Server) onJobCompleted(ctx context.Context, jobID, result string) {
 		default:
 			foundWf.Result = ResultSuccess
 		}
+		// The run is over: its job messages (GITHUB_TOKEN + every secret
+		// value) are no longer needed for delivery or redelivery. Late runner
+		// calls authenticate through planScopes.
+		s.store.clearRunJobMessagesLocked(foundWf)
 	}
 	concurrencyGroup := foundWf.ConcurrencyGroup
 	s.store.persistWorkflowRecord(foundWf)
@@ -1032,17 +1056,16 @@ func (s *Server) onJobCompleted(ctx context.Context, jobID, result string) {
 }
 
 func (s *Server) startPendingJobConcurrency(ctx context.Context, group string) {
-	s.store.mu.RLock()
+	s.store.mu.Lock()
 	pending := make([]*Workflow, 0)
-	for _, workflow := range s.store.Workflows {
-		for _, job := range workflow.Jobs {
-			if job.Status == JobStatusPending && job.ConcurrencyGroup == group {
-				pending = append(pending, workflow)
-				break
-			}
+	seen := map[*Workflow]bool{}
+	for _, peer := range s.store.jobConcurrencyPeersLocked(group) {
+		if peer.job.Status == JobStatusPending && !seen[peer.wf] {
+			seen[peer.wf] = true
+			pending = append(pending, peer.wf)
 		}
 	}
-	s.store.mu.RUnlock()
+	s.store.mu.Unlock()
 	sort.Slice(pending, func(i, j int) bool {
 		if pending[i].CreatedAt.Equal(pending[j].CreatedAt) {
 			return pending[i].ID > pending[j].ID
@@ -1215,6 +1238,9 @@ func (s *Server) finalizeWorkflowIfDone(wf *Workflow) {
 		default:
 			wf.Result = ResultSuccess
 		}
+		// See onJobCompleted: a finalized run's secret-bearing job messages
+		// are dropped; auth for late runner calls rides planScopes.
+		s.store.clearRunJobMessagesLocked(wf)
 	} else {
 		allDone = false
 	}
@@ -1323,19 +1349,23 @@ func (s *Server) cancelWorkflow(wf *Workflow) {
 }
 
 // startPendingConcurrencyWorkflow finds and starts the next pending-concurrency
-// workflow in the given concurrency group.
+// workflow in the given concurrency group. On a shared (multi-replica)
+// database the promotion runs under the group's database lock so a peer's
+// simultaneous submission or promotion cannot double-admit (ACT-012).
 func (s *Server) startPendingConcurrencyWorkflow(group string) {
+	// The database lock is released as soon as the promotion decision is
+	// committed (before stale-run cancellation, which can recurse into this
+	// function for the same group).
+	releaseGroupLock := s.acquireConcurrencyAdmissionLock(actionsConcurrencyLockName(group))
 	s.workflowConcurrencyMu.Lock()
 	s.store.mu.Lock()
 	var pendingWf *Workflow
 	var stale []*Workflow
-	for _, wf := range s.store.Workflows {
-		if wf.ConcurrencyGroup != group {
-			continue
-		}
+	for _, wf := range s.store.workflowConcurrencyPeersLocked(group) {
 		if wf.Status == WorkflowStatusRunning || wf.Status == WorkflowStatusWaiting {
 			s.store.mu.Unlock()
 			s.workflowConcurrencyMu.Unlock()
+			releaseGroupLock()
 			return
 		}
 		if wf.Status == WorkflowStatusPendingConcurrency {
@@ -1353,6 +1383,7 @@ func (s *Server) startPendingConcurrencyWorkflow(group string) {
 	if pendingWf == nil {
 		s.store.mu.Unlock()
 		s.workflowConcurrencyMu.Unlock()
+		releaseGroupLock()
 		return
 	}
 
@@ -1361,6 +1392,7 @@ func (s *Server) startPendingConcurrencyWorkflow(group string) {
 	s.store.persistWorkflowRecord(pendingWf)
 	s.store.mu.Unlock()
 	s.workflowConcurrencyMu.Unlock()
+	releaseGroupLock()
 
 	for _, wf := range stale {
 		s.cancelWorkflow(wf)
@@ -1485,6 +1517,9 @@ func (s *Server) reclaimExpiredJobLeases(wf *Workflow) {
 			continue
 		}
 		job.Status = "queued"
+		// The runner that held the lease is gone; free its agent record so a
+		// reconnecting (non-ephemeral) runner can take work again.
+		s.store.clearAgentAssignmentLocked(job)
 		job.AgentID = 0
 		wfJob.Status = JobStatusQueued
 		reclaimed = append(reclaimed, wfJob.Key)

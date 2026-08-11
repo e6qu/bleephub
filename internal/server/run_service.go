@@ -75,10 +75,14 @@ func (s *Server) requirePlanJob(next http.HandlerFunc) http.HandlerFunc {
 			http.Error(w, "plan not found", http.StatusNotFound)
 			return
 		}
+		// The plan scope was recorded at dispatch time, so this neither
+		// re-parses the secret-bearing job message on every request nor breaks
+		// when that message has been cleared at run finalization (the fallback
+		// inside planScopeForJobLocked parses the message for directly-seeded
+		// jobs only).
 		s.store.mu.RLock()
-		message := job.Message
+		scopeID := s.store.planScopeForJobLocked(job).ScopeID
 		s.store.mu.RUnlock()
-		scopeID, _ := jobMessageScopeAndRepo(message)
 		if scopeID == "" || scopeID != runnerFromContext(r.Context()).Claims.Sub {
 			writeGHError(w, http.StatusForbidden, "Job token does not cover this plan")
 			return
@@ -185,7 +189,7 @@ func (s *Server) handleCompleteRequest(w http.ResponseWriter, r *http.Request) {
 	}
 
 	s.store.mu.Lock()
-	job.Status = "completed"
+	s.store.markJobCompletedLocked(job)
 	if result != "" {
 		job.Result = result
 	}
@@ -255,7 +259,7 @@ func (s *Server) handleFinishJob(w http.ResponseWriter, r *http.Request) {
 	s.captureResolvedJobOutputs(job.ID, body.Outputs)
 
 	s.store.mu.Lock()
-	job.Status = "completed"
+	s.store.markJobCompletedLocked(job)
 	job.Result = result
 	// Snapshot under the lock: the broker concurrently mutates these
 	// fields (recordJobAgentLocked writes AgentID), so every read after
@@ -355,7 +359,7 @@ func (s *Server) handleJobEvents(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		s.store.mu.Lock()
-		job.Status = "completed"
+		s.store.markJobCompletedLocked(job)
 		job.Result = result
 		jobIDSnap := job.ID
 		s.store.mu.Unlock()

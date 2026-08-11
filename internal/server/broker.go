@@ -239,11 +239,18 @@ func jobMessageRepoName(message string) string {
 }
 
 // requeuePendingMessage puts an undelivered job back at the head of the queue
-// and releases the agent it was tentatively assigned to.
+// and releases the agent it was tentatively assigned to. The runner never
+// received the message, so the assignment is fully undone — including the
+// EverAssigned mark, which must not burn an ephemeral runner's single job on
+// a delivery that failed.
 func (s *Server) requeuePendingMessage(msg *TaskAgentMessage) {
 	s.store.mu.Lock()
 	defer s.store.mu.Unlock()
 	if job := s.store.Jobs[msg.JobID]; job != nil {
+		if agent := s.store.Agents[job.AgentID]; agent != nil && agent.AssignedJobID == job.ID {
+			agent.AssignedJobID = ""
+			agent.EverAssigned = false
+		}
 		job.AgentID = 0
 	}
 	s.store.PendingMessages = append([]*TaskAgentMessage{msg}, s.store.PendingMessages...)
@@ -256,17 +263,21 @@ func (s *Server) requeuePendingMessage(msg *TaskAgentMessage) {
 // not already hold an unfinished one either: real GitHub never assigns a busy
 // runner, and the official runner DROPS job messages received mid-job. An
 // ephemeral runner exists for exactly one job, so a job it has already been
-// assigned disqualifies it even after that job finished. Callers hold the
-// store lock.
+// assigned disqualifies it even after that job finished — and even after the
+// finished job's stub has been garbage-collected, which is exactly what the
+// EverAssigned flag preserves (the disqualification used to rest on the
+// completed job lingering in store.Jobs forever). This is O(1) on every
+// long-poll where it used to scan all of store.Jobs under the write lock.
+// Callers hold the store lock.
 func (s *Server) agentTakesAJobLocked(agent *Agent) bool {
 	if agent == nil || agent.ID == 0 {
 		return false
 	}
-	for _, j := range s.store.Jobs {
-		if j.AgentID != agent.ID {
-			continue
-		}
-		if agent.Ephemeral || j.Status != "completed" {
+	if agent.Ephemeral && agent.EverAssigned {
+		return false
+	}
+	if agent.AssignedJobID != "" {
+		if j := s.store.Jobs[agent.AssignedJobID]; j != nil && j.AgentID == agent.ID && j.Status != "completed" {
 			return false
 		}
 	}
@@ -281,6 +292,8 @@ func (s *Server) recordJobAgentLocked(msg *TaskAgentMessage, session *Session) {
 	}
 	if job := s.store.Jobs[msg.JobID]; job != nil {
 		job.AgentID = session.Agent.ID
+		session.Agent.AssignedJobID = job.ID
+		session.Agent.EverAssigned = true
 	}
 }
 
@@ -457,12 +470,7 @@ func (s *Server) nextLogID() int {
 func (s *Server) lookupJobByRequestID(reqID int64) *Job {
 	s.store.mu.RLock()
 	defer s.store.mu.RUnlock()
-	for _, j := range s.store.Jobs {
-		if j.RequestID == reqID {
-			return j
-		}
-	}
-	return nil
+	return s.store.jobByRequestIDLocked(reqID)
 }
 
 func (s *Server) sessionCount() int {
@@ -474,10 +482,5 @@ func (s *Server) sessionCount() int {
 func (s *Server) lookupJobByPlanID(planID string) *Job {
 	s.store.mu.RLock()
 	defer s.store.mu.RUnlock()
-	for _, j := range s.store.Jobs {
-		if j.PlanID == planID {
-			return j
-		}
-	}
-	return nil
+	return s.store.jobByPlanIDLocked(planID)
 }
