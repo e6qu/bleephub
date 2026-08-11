@@ -2290,6 +2290,36 @@ export async function setRepoFlag(owner: string, repo: string, flag: string, ena
   await ghPatchJSON<void>(base, { [flag]: enabled });
 }
 
+// The three repo security toggles each have a dedicated *status* endpoint. The
+// repo object does not carry a `security_and_analysis` block, so the settings
+// page must read each flag from its own endpoint (mirroring setRepoFlag's
+// dedicated writes) — reading it off the repo detail left every toggle stuck
+// unchecked regardless of the real state.
+
+/** GET automated-security-fixes → { enabled, paused }. */
+export const fetchRepoAutomatedSecurityFixes = (owner: string, repo: string): Promise<boolean> =>
+  ghFetch<{ enabled?: boolean }>(
+    `/api/v3/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/automated-security-fixes`,
+  ).then((r) => Boolean(r.enabled));
+
+/** GET private-vulnerability-reporting → { enabled }. */
+export const fetchRepoPrivateVulnerabilityReporting = (owner: string, repo: string): Promise<boolean> =>
+  ghFetch<{ enabled?: boolean }>(
+    `/api/v3/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/private-vulnerability-reporting`,
+  ).then((r) => Boolean(r.enabled));
+
+/** Whether Dependabot vulnerability alerts are enabled (204 = yes, 404 = no). */
+export const fetchRepoVulnerabilityAlerts = async (owner: string, repo: string): Promise<boolean> => {
+  const res = await apiFetch(
+    `/api/v3/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/vulnerability-alerts`,
+    { headers: authHeaders() },
+  );
+  if (res.status === 204) return true;
+  if (res.status === 404) return false;
+  handleUnauthorized(res);
+  return false;
+};
+
 /**
  * Reads the repo's current interaction limit. The endpoint returns `{}` (no
  * active limit) or an object whose `limit` field matches the values accepted by

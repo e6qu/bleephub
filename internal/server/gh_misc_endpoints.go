@@ -1460,9 +1460,16 @@ func (s *Server) handleOrgAuditLog(w http.ResponseWriter, r *http.Request) {
 	// The audit log exposes secret-name changes, hook-config edits and actor
 	// identities; real GitHub restricts it to org owners (read:audit_log /
 	// admin:org). Anyone else gets 404 (GitHub hides existence from non-admins).
+	//
+	// On GHES a site administrator is the instance operator and can audit any
+	// organization from the stafftools/console surface even without a personal
+	// membership — which is exactly how the /ui audit-log page reaches it (it
+	// lists every org on the instance for the operator). Honour SiteAdmin here
+	// so that operator surface works end-to-end; without it a site admin who
+	// does not own the selected org gets a 404 and the page reads as broken.
 	user := ghUserFromContext(r.Context())
 	org := s.store.GetOrg(orgName)
-	if user == nil || org == nil || !s.viewerCanAdminOrg(r.Context(), org.Login) {
+	if user == nil || org == nil || !(user.SiteAdmin || s.viewerCanAdminOrg(r.Context(), org.Login)) {
 		writeGHError(w, http.StatusNotFound, "Not Found")
 		return
 	}

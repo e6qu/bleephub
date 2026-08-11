@@ -24,6 +24,7 @@ import {
   fetchPRReviewThreads,
   setPRReviewThreadResolved,
   fetchPRRequestedReviewers,
+  fetchAssignableUsers,
   requestPRReviewers,
   removePRRequestedReviewers,
   fetchCombinedStatus,
@@ -963,15 +964,18 @@ function RequestedReviewersSection({
     queryKey: ["pr-requested-reviewers", owner, repo, number],
     queryFn: ({ signal }) => fetchPRRequestedReviewers(owner, repo, number, signal),
   });
-  const [login, setLogin] = useState("");
+  // Reviewers must be repo collaborators; a free-text login just produced a 422
+  // on a typo. Offer the assignable users the same way IssueSidebar offers
+  // assignees.
+  const { data: assignableUsers = [] } = useQuery({
+    queryKey: ["assignable-users", owner, repo],
+    queryFn: () => fetchAssignableUsers(owner, repo),
+  });
   const invalidate = () =>
     qc.invalidateQueries({ queryKey: ["pr-requested-reviewers", owner, repo, number] });
   const add = useMutation({
     mutationFn: (l: string) => requestPRReviewers(owner, repo, number, [l]),
-    onSuccess: () => {
-      setLogin("");
-      invalidate();
-    },
+    onSuccess: invalidate,
   });
   const remove = useMutation({
     mutationFn: (l: string) => removePRRequestedReviewers(owner, repo, number, [l]),
@@ -979,6 +983,9 @@ function RequestedReviewersSection({
   });
 
   if (q.isLoading) return null;
+
+  const requestedLogins = new Set((q.data?.users ?? []).map((u) => u.login));
+  const addableReviewers = assignableUsers.filter((u) => !requestedLogins.has(u.login));
 
   // Rendered inside the sidebar's "Reviewers" section, which supplies the
   // heading — so this body carries none of its own.
@@ -1039,22 +1046,24 @@ function RequestedReviewersSection({
               {t.name}
             </span>
           ))}
-          <span className="inline-flex items-center gap-1.5">
-            <input
+          {addableReviewers.length > 0 && (
+            <select
               aria-label="reviewer login"
-              value={login}
-              onChange={(e) => setLogin(e.target.value)}
-              placeholder="username"
-              style={{ fontSize: "0.8rem", padding: "0.2rem 0.5rem", maxWidth: "11rem" }}
-            />
-            <Button
-              size="sm"
-              disabled={!login.trim() || add.isPending}
-              onClick={() => add.mutate(login.trim())}
+              value=""
+              onChange={(e) => {
+                if (e.target.value) add.mutate(e.target.value);
+              }}
+              disabled={add.isPending}
+              style={{ fontSize: "0.8rem" }}
             >
-              {add.isPending ? "Requesting…" : "Request review"}
-            </Button>
-          </span>
+              <option value="">{add.isPending ? "Requesting…" : "Request review…"}</option>
+              {addableReviewers.map((u) => (
+                <option key={u.login} value={u.login}>
+                  {u.login}
+                </option>
+              ))}
+            </select>
+          )}
         </div>
       )}
       {add.isError && (

@@ -42,6 +42,9 @@ describe("TeamsPage", () => {
       if (url === "/api/v3/user/teams?per_page=100" && !init?.method) {
         return Promise.resolve(jsonResponse([]));
       }
+      if (url === "/api/v3/user/orgs?per_page=100" && !init?.method) {
+        return Promise.resolve(jsonResponse([{ login: "acme", id: 1 }]));
+      }
       if (url === "/api/v3/orgs/acme/teams" && init?.method === "POST") {
         return Promise.resolve(
           jsonResponse(
@@ -69,7 +72,9 @@ describe("TeamsPage", () => {
     const create = screen.getByRole("button", { name: "Create team" });
     expect(create).toBeDisabled();
 
-    await user.type(screen.getByLabelText("Organization login"), "acme");
+    // The org is chosen from the viewer's memberships (dropdown auto-selects
+    // the first — "acme"), so only the name/description need typing.
+    await screen.findByRole("option", { name: "acme" });
     await user.type(screen.getByLabelText("Name"), "Platform");
     await user.type(screen.getByLabelText("Description"), "Build systems");
     await user.selectOptions(screen.getByLabelText("Privacy"), "closed");
@@ -95,6 +100,9 @@ describe("TeamsPage", () => {
       if (String(input) === "/api/v3/user/teams?per_page=100" && !init?.method) {
         return Promise.resolve(jsonResponse([]));
       }
+      if (String(input) === "/api/v3/user/orgs?per_page=100" && !init?.method) {
+        return Promise.resolve(jsonResponse([{ login: "acme", id: 1 }]));
+      }
       return Promise.resolve(jsonResponse({ message: "Name has already been taken" }, 422));
     });
 
@@ -102,7 +110,7 @@ describe("TeamsPage", () => {
     await screen.findByText("No teams yet.");
     const user = userEvent.setup();
     await user.click(screen.getByRole("button", { name: "New team" }));
-    await user.type(screen.getByLabelText("Organization login"), "acme");
+    await screen.findByRole("option", { name: "acme" });
     await user.type(screen.getByLabelText("Name"), "Platform");
     await user.click(screen.getByRole("button", { name: "Create team" }));
 

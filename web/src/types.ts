@@ -130,16 +130,6 @@ export interface BleephubRepo {
   merge_commit_message: string;
   pull_request_creation_policy: string;
   topics?: string[];
-  /**
-   * Security toggles as reported by `GET /repos/{owner}/{repo}`. Present only
-   * when the server surfaces them; each entry's `status` is "enabled"/"disabled".
-   * The nested keys mirror the PATCH shape used by {@link setRepoFlag}.
-   */
-  security_and_analysis?: {
-    automated_security_fixes?: { status: string } | null;
-    advanced_security?: { status: string } | null;
-    secret_scanning_non_provider_patterns?: { status: string } | null;
-  } | null;
 }
 
 /**
@@ -714,7 +704,6 @@ export interface GithubMigration {
   archive_url: string;
   created_at: string;
   updated_at: string;
-  exported_at: string;
 }
 
 export interface BleephubUser {

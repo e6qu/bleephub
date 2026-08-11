@@ -209,8 +209,10 @@ func TestWorkflows_ListRunsForFile(t *testing.T) {
 	// Seed two runs whose internal Workflow.Name matches the file's name.
 	runA, _ := seedRun(t, s, "octo/repo", "completed", "success")
 	runA.Name = "ci"
+	runA.EventName = "push"
 	runB, _ := seedRun(t, s, "octo/repo", "running", "")
 	runB.Name = "ci"
+	runB.EventName = "workflow_dispatch"
 	// Plus one unrelated run with a different name.
 	runC, _ := seedRun(t, s, "octo/repo", "completed", "success")
 	runC.Name = "release"
@@ -226,6 +228,16 @@ func TestWorkflows_ListRunsForFile(t *testing.T) {
 	json.Unmarshal(w.Body.Bytes(), &resp)
 	if resp.TotalCount != 2 {
 		t.Errorf("total_count = %d, want 2 (release run filtered out)", resp.TotalCount)
+	}
+
+	// The event= filter must narrow to the matching run (was silently ignored).
+	we := runRequest(s, "GET", fmt.Sprintf("/api/v3/repos/octo/repo/actions/workflows/%d/runs?event=push", wf.ID))
+	var respE struct {
+		TotalCount int `json:"total_count"`
+	}
+	json.Unmarshal(we.Body.Bytes(), &respE)
+	if respE.TotalCount != 1 {
+		t.Errorf("event=push total_count = %d, want 1", respE.TotalCount)
 	}
 }
 

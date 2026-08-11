@@ -69,20 +69,28 @@ func TestRunnerGroupReadsRequireAdministration(t *testing.T) {
 }
 
 // TestOrgAuditLogRequiresOwner guards the org audit log: it exposes secret
-// and hook changes, so real GitHub restricts it to org owners. Non-owners and
-// anonymous callers get 404 (existence is hidden), owners get 200.
+// and hook changes, so real GitHub restricts it to org owners. Non-owner
+// members and anonymous callers get 404 (existence is hidden), owners get 200.
+// A site administrator (the GHES instance operator) may audit any org even
+// without a personal membership — that is how the /ui operator surface reaches
+// it — so a site admin who does not own the org still gets 200.
 func TestOrgAuditLogRequiresOwner(t *testing.T) {
 	s := newTestServer()
 	s.registerGHMiscEndpoints()
 
 	admin := s.store.LookupUserByLogin("admin")
-	org := s.store.CreateOrg(admin, "audit-org", "Audit Org", "")
+
+	// An org owned by someone who is NOT a site admin, so the seeded site-admin
+	// "admin" is a non-owner of it.
+	orgOwner := seedTestUser(s, "audit-owner")
+	org := s.store.CreateOrg(orgOwner, "audit-org", "Audit Org", "")
 	if org == nil {
 		t.Fatal("CreateOrg nil")
 	}
-	s.recordAuditEvent("test.action", "admin", "audit-org", nil)
+	ownerTok := s.store.CreateToken(orgOwner.ID, "repo, admin:org")
+	s.recordAuditEvent("test.action", "audit-owner", "audit-org", nil)
 
-	// A non-owner user with their own token.
+	// A non-owner, non-site-admin user with their own token.
 	outsider := seedTestUser(s, "audit-outsider")
 	outTok := s.store.CreateToken(outsider.ID, "repo")
 
@@ -90,12 +98,12 @@ func TestOrgAuditLogRequiresOwner(t *testing.T) {
 	if w := tokenRequest(s, "GET", "/api/v3/orgs/audit-org/audit-log", ""); w.Code != http.StatusNotFound {
 		t.Errorf("anon audit-log = %d, want 404", w.Code)
 	}
-	// Non-owner → 404.
+	// Non-owner (not a site admin) → 404.
 	if w := tokenRequest(s, "GET", "/api/v3/orgs/audit-org/audit-log", outTok.Value); w.Code != http.StatusNotFound {
 		t.Errorf("non-owner audit-log = %d, want 404", w.Code)
 	}
-	// Owner (admin PAT) → 200.
-	w := tokenRequest(s, "GET", "/api/v3/orgs/audit-org/audit-log", AdminToken())
+	// Owner (org owner PAT) → 200.
+	w := tokenRequest(s, "GET", "/api/v3/orgs/audit-org/audit-log", ownerTok.Value)
 	if w.Code != http.StatusOK {
 		t.Fatalf("owner audit-log = %d, want 200; body=%s", w.Code, w.Body.String())
 	}
@@ -103,6 +111,13 @@ func TestOrgAuditLogRequiresOwner(t *testing.T) {
 	json.Unmarshal(w.Body.Bytes(), &entries)
 	if len(entries) != 1 {
 		t.Errorf("owner audit-log entries = %d, want 1", len(entries))
+	}
+	if !admin.SiteAdmin {
+		t.Fatal("seeded admin should be a site admin")
+	}
+	// Site admin who is NOT the org owner → 200 (GHES operator surface).
+	if w := tokenRequest(s, "GET", "/api/v3/orgs/audit-org/audit-log", AdminToken()); w.Code != http.StatusOK {
+		t.Fatalf("site-admin non-owner audit-log = %d, want 200; body=%s", w.Code, w.Body.String())
 	}
 }
 
