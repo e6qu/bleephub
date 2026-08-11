@@ -23,6 +23,7 @@ import type {
   GithubCommit,
   GithubCommitComment,
   GithubProjectV2,
+  GithubProjectV2Field,
   GithubProjectV2Item,
   GithubComparison,
   GithubWebhook,
@@ -4362,6 +4363,29 @@ export const addOrgProjectV2Item = (
 
 export const deleteOrgProjectV2Item = (org: string, number: number, itemId: number) =>
   ghDelete(`/api/v3/orgs/${encodeURIComponent(org)}/projectsV2/${number}/items/${itemId}`);
+
+export const fetchOrgProjectV2Fields = (org: string, number: number) =>
+  ghFetch<GithubProjectV2Field[]>(`/api/v3/orgs/${encodeURIComponent(org)}/projectsV2/${number}/fields`);
+
+export const createOrgProjectV2Draft = (
+  org: string,
+  number: number,
+  payload: { title: string; body?: string },
+): Promise<GithubProjectV2Item> =>
+  ghPostJSON(`/api/v3/orgs/${encodeURIComponent(org)}/projectsV2/${number}/drafts`, payload);
+
+// Set an item's field value — e.g. move it to another single-select option
+// (value is the option id string for single-select fields).
+export const setOrgProjectV2ItemField = (
+  org: string,
+  number: number,
+  itemId: number,
+  fieldId: number,
+  value: string | number,
+): Promise<GithubProjectV2Item> =>
+  ghPatchJSON(`/api/v3/orgs/${encodeURIComponent(org)}/projectsV2/${number}/items/${itemId}`, {
+    fields: [{ id: fieldId, value }],
+  });
 
 // ─── Search + repo social + account ─────────────────────────────────────
 

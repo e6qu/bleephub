@@ -773,10 +773,30 @@ export interface GithubProjectV2 {
   short_description: string | null;
 }
 
+export interface GithubProjectV2FieldOption {
+  id: string;
+  name: { raw: string; html: string };
+}
+
+export interface GithubProjectV2Field {
+  id: number;
+  name: string;
+  data_type: string;
+  options?: GithubProjectV2FieldOption[];
+}
+
+export interface GithubProjectV2ItemFieldValue {
+  id: number;
+  name: string;
+  data_type: string;
+  value: unknown;
+}
+
 export interface GithubProjectV2Item {
   id: number;
   content_type: "Issue" | "PullRequest" | "DraftIssue";
   content: { title?: string; number?: number; html_url?: string } | null;
+  fields?: GithubProjectV2ItemFieldValue[];
 }
 
 export interface BleephubAuditEvent {

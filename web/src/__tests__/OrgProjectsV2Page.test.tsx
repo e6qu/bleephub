@@ -43,6 +43,74 @@ describe("OrgProjectsV2Page", () => {
     expect(await screen.findByText("Roadmap")).toBeInTheDocument();
   });
 
+  it("moves an item between board columns via PATCH item field value", async () => {
+    const field = {
+      id: 100,
+      name: "Status",
+      data_type: "single_select",
+      options: [
+        { id: "opt-todo", name: { raw: "To do", html: "To do" } },
+        { id: "opt-done", name: { raw: "Done", html: "Done" } },
+      ],
+    };
+    const item = {
+      id: 10,
+      content_type: "Issue",
+      content: { title: "Fix bug", number: 5 },
+      fields: [{ id: 100, name: "Status", data_type: "single_select", value: { id: "opt-todo", name: "To do" } }],
+    };
+    mockFetch.mockImplementation((url: RequestInfo | URL, init?: RequestInit) => {
+      const u = url.toString();
+      if (u.endsWith("/orgs/acme/projectsV2/3/items/10") && init?.method === "PATCH") {
+        return Promise.resolve(jsonResponse({ ...item, fields: [{ ...item.fields[0], value: { id: "opt-done", name: "Done" } }] }));
+      }
+      if (u.endsWith("/orgs/acme/projectsV2/3/fields")) return Promise.resolve(jsonResponse([field]));
+      if (u.endsWith("/orgs/acme/projectsV2/3/items")) return Promise.resolve(jsonResponse([item]));
+      if (u.endsWith("/orgs/acme/projectsV2/3")) {
+        return Promise.resolve(jsonResponse({ id: 1, number: 3, title: "Roadmap", short_description: null }));
+      }
+      return Promise.resolve(jsonResponse([]));
+    });
+    renderAt("/ui/orgs/acme/projects/3");
+
+    const moveSelect = await screen.findByLabelText("Move item 10");
+    fireEvent.change(moveSelect, { target: { value: "opt-done" } });
+
+    await waitFor(() => {
+      const patch = mockFetch.mock.calls.find(
+        (c) => c[0].toString().endsWith("/orgs/acme/projectsV2/3/items/10") && c[1]?.method === "PATCH",
+      );
+      expect(patch).toBeDefined();
+      expect(JSON.parse(String(patch![1].body))).toEqual({ fields: [{ id: 100, value: "opt-done" }] });
+    });
+  });
+
+  it("creates a draft item via POST .../drafts", async () => {
+    mockFetch.mockImplementation((url: RequestInfo | URL, init?: RequestInit) => {
+      const u = url.toString();
+      if (u.endsWith("/orgs/acme/projectsV2/3/drafts") && init?.method === "POST") {
+        return Promise.resolve(jsonResponse({ id: 20, content_type: "DraftIssue", content: null }, 201));
+      }
+      if (u.endsWith("/orgs/acme/projectsV2/3/items")) return Promise.resolve(jsonResponse([]));
+      if (u.endsWith("/orgs/acme/projectsV2/3")) {
+        return Promise.resolve(jsonResponse({ id: 1, number: 3, title: "Roadmap", short_description: null }));
+      }
+      return Promise.resolve(jsonResponse([]));
+    });
+    renderAt("/ui/orgs/acme/projects/3");
+
+    fireEvent.change(await screen.findByLabelText("draft title"), { target: { value: "Plan the sprint" } });
+    fireEvent.click(screen.getByRole("button", { name: "Add draft" }));
+
+    await waitFor(() => {
+      const post = mockFetch.mock.calls.find(
+        (c) => c[0].toString().endsWith("/orgs/acme/projectsV2/3/drafts") && c[1]?.method === "POST",
+      );
+      expect(post).toBeDefined();
+      expect(JSON.parse(String(post![1].body))).toEqual({ title: "Plan the sprint" });
+    });
+  });
+
   it("adds an item via POST /orgs/{org}/projectsV2/{n}/items", async () => {
     mockFetch.mockImplementation((url: RequestInfo | URL, init?: RequestInit) => {
       const u = url.toString();
