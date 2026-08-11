@@ -60,8 +60,8 @@ test.describe("Error handling / fault injection", () => {
       }),
     );
 
-    // The "System status" console lives at /ui/admin.
-    await page.goto("/ui/admin");
+    // The "System status" console lives at /ui/operations.
+    await page.goto("/ui/operations");
     await page.waitForLoadState("networkidle");
 
     // A failed metrics fetch must degrade to a visible InlineError, never a
@@ -79,7 +79,7 @@ test.describe("Error handling / fault injection", () => {
       }),
     );
 
-    await page.goto("/ui/admin");
+    await page.goto("/ui/operations");
     await page.waitForLoadState("networkidle");
 
     // Only the recent-workflows table depends on the repository list now, so

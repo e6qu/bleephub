@@ -245,17 +245,17 @@ const GITHUB_NAV: DrawerItem[] = [
 // Bleephub service administration surfaces that map to public GitHub or GitHub
 // Enterprise Server routes stay grouped away from the repository/product nav.
 const OPS_NAV: DrawerItem[] = [
-  { label: "System status", to: "/ui/admin", icon: <GraphIcon size={16} />, end: true },
+  { label: "System status", to: "/ui/operations", icon: <GraphIcon size={16} />, end: true },
   { label: "Workflow runs", to: "/ui/workflows", icon: <RepoIcon size={16} /> },
   { label: "Runners", to: "/ui/runners", icon: <ServerIcon size={16} /> },
   { label: "Metrics", to: "/ui/metrics", icon: <GraphIcon size={16} /> },
   { label: "GitHub Apps", to: "/ui/apps", icon: <KeyIcon size={16} /> },
   { label: "OAuth Apps", to: "/ui/oauth", icon: <KeyIcon size={16} /> },
-  { label: "Users", to: "/ui/admin/users", icon: <PeopleIcon size={16} /> },
-  { label: "Organizations", to: "/ui/admin/orgs", icon: <OrganizationIcon size={16} /> },
-  { label: "Teams", to: "/ui/admin/teams", icon: <TeamIcon size={16} /> },
-  { label: "Enterprise", to: "/ui/admin/enterprise", icon: <GlobeIcon size={16} /> },
-  { label: "Audit log", to: "/ui/admin/audit-log", icon: <AuditLogIcon size={16} /> },
+  { label: "Users", to: "/ui/operations/users", icon: <PeopleIcon size={16} /> },
+  { label: "Organizations", to: "/ui/operations/orgs", icon: <OrganizationIcon size={16} /> },
+  { label: "Teams", to: "/ui/operations/teams", icon: <TeamIcon size={16} /> },
+  { label: "Enterprise", to: "/ui/operations/enterprise", icon: <GlobeIcon size={16} /> },
+  { label: "Audit log", to: "/ui/operations/audit-log", icon: <AuditLogIcon size={16} /> },
 ];
 
 function DrawerSection({ title, items, onNavigate }: { title: string; items: DrawerItem[]; onNavigate: () => void }) {
@@ -394,6 +394,7 @@ export function AppHeader() {
   const isDark = theme === "dark";
   const [drawer, setDrawer] = useState(false);
   const [q, setQ] = useState("");
+  const [scope, setScope] = useState("repositories");
 
   // A throttled 403 is final for the current window: retrying it only deepens
   // the exhaustion (same guard pattern as useMetricsData). Surface it instead
@@ -416,7 +417,8 @@ export function AppHeader() {
   const submitSearch = (e: FormEvent) => {
     e.preventDefault();
     const term = q.trim();
-    navigate(term ? `/ui/search?q=${encodeURIComponent(term)}` : "/ui/search");
+    const typeParam = scope !== "repositories" ? `&type=${scope}` : "";
+    navigate(term ? `/ui/search?q=${encodeURIComponent(term)}${typeParam}` : `/ui/search?type=${scope}`);
   };
 
   const submitLogout = async (event: FormEvent<HTMLFormElement>) => {
@@ -466,6 +468,23 @@ export function AppHeader() {
               }}
             >
               <SearchIcon size={14} style={{ color: "var(--color-fg-muted)" }} />
+              <select
+                aria-label="Search scope"
+                value={scope}
+                onChange={(e) => setScope(e.target.value)}
+                style={{
+                  border: "none",
+                  outline: "none",
+                  background: "transparent",
+                  color: "var(--color-fg-muted)",
+                  fontSize: "0.78rem",
+                }}
+              >
+                <option value="repositories">Repos</option>
+                <option value="code">Code</option>
+                <option value="issues">Issues</option>
+                <option value="users">Users &amp; orgs</option>
+              </select>
               <input
                 type="search"
                 value={q}
@@ -491,7 +510,7 @@ export function AppHeader() {
                 <>
                   <MenuLink to="/ui/repos?new=1" icon={<RepoIcon size={16} />} onClick={close}>New repository</MenuLink>
                   <MenuLink to="/ui/gists?new=1" icon={<GistIcon size={16} />} onClick={close}>New gist</MenuLink>
-                  <MenuLink to="/ui/admin/orgs?new=1" icon={<OrganizationIcon size={16} />} onClick={close}>New organization</MenuLink>
+                  <MenuLink to="/ui/operations/orgs?new=1" icon={<OrganizationIcon size={16} />} onClick={close}>New organization</MenuLink>
                 </>
               )}
             </HeaderMenu>
@@ -545,7 +564,7 @@ export function AppHeader() {
                   <MenuLink to="/ui/codespaces" icon={<CodespaceIcon size={16} />} onClick={close}>My codespaces</MenuLink>
                   <MenuSeparator />
                   <MenuLink to="/ui/account" icon={<KeyIcon size={16} />} onClick={close}>Settings</MenuLink>
-                  <MenuLink to="/ui/admin" icon={<GraphIcon size={16} />} onClick={close}>Operations</MenuLink>
+                  <MenuLink to="/ui/operations" icon={<GraphIcon size={16} />} onClick={close}>Operations</MenuLink>
                   <MenuSeparator />
                   <MenuButton icon={isDark ? <SunIcon size={16} /> : <MoonIcon size={16} />} onClick={() => { toggle(); close(); }}>
                     {isDark ? "Light theme" : "Dark theme"}

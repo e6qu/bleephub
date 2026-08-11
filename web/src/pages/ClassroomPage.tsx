@@ -392,7 +392,7 @@ function CreateClassroomOrganization({
       />
       {mutation.error && <ErrorBanner>{String(mutation.error)}</ErrorBanner>}
       <DialogActions>
-        <Link to="/ui/admin/orgs" style={{ color: "var(--color-accent)", marginRight: "auto" }}>
+        <Link to="/ui/operations/orgs" style={{ color: "var(--color-accent)", marginRight: "auto" }}>
           Organization settings
         </Link>
         <Button type="submit" variant="primary" disabled={!login.trim() || mutation.isPending}>

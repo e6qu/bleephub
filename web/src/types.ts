@@ -988,10 +988,9 @@ export type GithubSecretScanningResolution =
 export type GithubCodeScanningAlertState = "open" | "dismissed" | "fixed";
 
 export type GithubCodeScanningDismissedReason =
-  | "false_positive"
-  | "won't_fix"
-  | "used_in_tests"
-  | "ignored";
+  | "false positive"
+  | "won't fix"
+  | "used in tests";
 
 // Generated from the vendored GitHub OpenAPI description (WEB-013). Spec marks
 // location/commit_sha optional; CodeScanningPage optional-chains them.

@@ -113,8 +113,8 @@ const PAGES: Array<{ name: string; routePath: string; entry: string; element: Re
   },
   {
     name: "EnterprisePage",
-    routePath: "/ui/admin/enterprise",
-    entry: "/ui/admin/enterprise",
+    routePath: "/ui/operations/enterprise",
+    entry: "/ui/operations/enterprise",
     element: <EnterprisePage />,
   },
   {
@@ -131,8 +131,8 @@ const PAGES: Array<{ name: string; routePath: string; entry: string; element: Re
   },
   {
     name: "AuditLogPage",
-    routePath: "/ui/admin/audit-log",
-    entry: "/ui/admin/audit-log",
+    routePath: "/ui/operations/audit-log",
+    entry: "/ui/operations/audit-log",
     element: <AuditLogPage />,
   },
   {
@@ -149,8 +149,8 @@ const PAGES: Array<{ name: string; routePath: string; entry: string; element: Re
   },
   {
     name: "OrgsPage",
-    routePath: "/ui/admin/orgs",
-    entry: "/ui/admin/orgs",
+    routePath: "/ui/operations/orgs",
+    entry: "/ui/operations/orgs",
     element: <OrgsPage />,
   },
   {
@@ -179,8 +179,8 @@ const PAGES: Array<{ name: string; routePath: string; entry: string; element: Re
   },
   {
     name: "UsersPage",
-    routePath: "/ui/admin/users",
-    entry: "/ui/admin/users",
+    routePath: "/ui/operations/users",
+    entry: "/ui/operations/users",
     element: <UsersPage />,
   },
 ];

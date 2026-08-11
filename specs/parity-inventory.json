@@ -28138,12 +28138,12 @@
       {
         "line": 126,
         "source": "web/e2e/bleephub.spec.ts",
-        "target": "/ui/admin"
+        "target": "/ui/operations"
       },
       {
         "line": 134,
         "source": "web/e2e/bleephub.spec.ts",
-        "target": "/ui/admin"
+        "target": "/ui/operations"
       },
       {
         "line": 146,
@@ -28373,7 +28373,7 @@
       {
         "line": 977,
         "source": "web/e2e/bleephub.spec.ts",
-        "target": "/ui/admin"
+        "target": "/ui/operations"
       },
       {
         "line": 982,
@@ -28403,12 +28403,12 @@
       {
         "line": 64,
         "source": "web/e2e/errorPaths.spec.ts",
-        "target": "/ui/admin"
+        "target": "/ui/operations"
       },
       {
         "line": 82,
         "source": "web/e2e/errorPaths.spec.ts",
-        "target": "/ui/admin"
+        "target": "/ui/operations"
       }
     ],
     "routes": [
@@ -28465,84 +28465,6 @@
         "source": "web/src/App.tsx",
         "tests": [
           "web/src/__tests__/AccountPage.test.tsx",
-          "web/src/__tests__/pageErrorPaths.test.tsx"
-        ]
-      },
-      {
-        "component": "OverviewPage",
-        "line": 252,
-        "path": "/ui/admin",
-        "rendered_tests": [
-          "web/src/__tests__/OverviewPage.test.tsx"
-        ],
-        "source": "web/src/App.tsx",
-        "tests": [
-          "web/src/__tests__/OverviewPage.test.tsx"
-        ]
-      },
-      {
-        "component": "AuditLogPage",
-        "line": 257,
-        "path": "/ui/admin/audit-log",
-        "rendered_tests": [
-          "web/src/__tests__/AuditLogPage.test.tsx",
-          "web/src/__tests__/pageErrorPaths.test.tsx"
-        ],
-        "source": "web/src/App.tsx",
-        "tests": [
-          "web/src/__tests__/AuditLogPage.test.tsx",
-          "web/src/__tests__/pageErrorPaths.test.tsx"
-        ]
-      },
-      {
-        "component": "EnterprisePage",
-        "line": 256,
-        "path": "/ui/admin/enterprise",
-        "rendered_tests": [
-          "web/src/__tests__/EnterprisePage.test.tsx",
-          "web/src/__tests__/pageErrorPaths.test.tsx"
-        ],
-        "source": "web/src/App.tsx",
-        "tests": [
-          "web/src/__tests__/EnterprisePage.test.tsx",
-          "web/src/__tests__/pageErrorPaths.test.tsx"
-        ]
-      },
-      {
-        "component": "OrgsPage",
-        "line": 254,
-        "path": "/ui/admin/orgs",
-        "rendered_tests": [
-          "web/src/__tests__/UiFidelityJourneys.test.tsx",
-          "web/src/__tests__/pageErrorPaths.test.tsx"
-        ],
-        "source": "web/src/App.tsx",
-        "tests": [
-          "web/src/__tests__/UiFidelityJourneys.test.tsx",
-          "web/src/__tests__/pageErrorPaths.test.tsx"
-        ]
-      },
-      {
-        "component": "TeamsPage",
-        "line": 255,
-        "path": "/ui/admin/teams",
-        "rendered_tests": [
-          "web/src/__tests__/TeamsPage.test.tsx"
-        ],
-        "source": "web/src/App.tsx",
-        "tests": [
-          "web/src/__tests__/TeamsPage.test.tsx"
-        ]
-      },
-      {
-        "component": "UsersPage",
-        "line": 253,
-        "path": "/ui/admin/users",
-        "rendered_tests": [
-          "web/src/__tests__/pageErrorPaths.test.tsx"
-        ],
-        "source": "web/src/App.tsx",
-        "tests": [
           "web/src/__tests__/pageErrorPaths.test.tsx"
         ]
       },
@@ -28747,6 +28669,84 @@
         "source": "web/src/App.tsx",
         "tests": [
           "web/src/__tests__/OAuthPage.test.tsx"
+        ]
+      },
+      {
+        "component": "OverviewPage",
+        "line": 252,
+        "path": "/ui/operations",
+        "rendered_tests": [
+          "web/src/__tests__/OverviewPage.test.tsx"
+        ],
+        "source": "web/src/App.tsx",
+        "tests": [
+          "web/src/__tests__/OverviewPage.test.tsx"
+        ]
+      },
+      {
+        "component": "AuditLogPage",
+        "line": 257,
+        "path": "/ui/operations/audit-log",
+        "rendered_tests": [
+          "web/src/__tests__/AuditLogPage.test.tsx",
+          "web/src/__tests__/pageErrorPaths.test.tsx"
+        ],
+        "source": "web/src/App.tsx",
+        "tests": [
+          "web/src/__tests__/AuditLogPage.test.tsx",
+          "web/src/__tests__/pageErrorPaths.test.tsx"
+        ]
+      },
+      {
+        "component": "EnterprisePage",
+        "line": 256,
+        "path": "/ui/operations/enterprise",
+        "rendered_tests": [
+          "web/src/__tests__/EnterprisePage.test.tsx",
+          "web/src/__tests__/pageErrorPaths.test.tsx"
+        ],
+        "source": "web/src/App.tsx",
+        "tests": [
+          "web/src/__tests__/EnterprisePage.test.tsx",
+          "web/src/__tests__/pageErrorPaths.test.tsx"
+        ]
+      },
+      {
+        "component": "OrgsPage",
+        "line": 254,
+        "path": "/ui/operations/orgs",
+        "rendered_tests": [
+          "web/src/__tests__/UiFidelityJourneys.test.tsx",
+          "web/src/__tests__/pageErrorPaths.test.tsx"
+        ],
+        "source": "web/src/App.tsx",
+        "tests": [
+          "web/src/__tests__/UiFidelityJourneys.test.tsx",
+          "web/src/__tests__/pageErrorPaths.test.tsx"
+        ]
+      },
+      {
+        "component": "TeamsPage",
+        "line": 255,
+        "path": "/ui/operations/teams",
+        "rendered_tests": [
+          "web/src/__tests__/TeamsPage.test.tsx"
+        ],
+        "source": "web/src/App.tsx",
+        "tests": [
+          "web/src/__tests__/TeamsPage.test.tsx"
+        ]
+      },
+      {
+        "component": "UsersPage",
+        "line": 253,
+        "path": "/ui/operations/users",
+        "rendered_tests": [
+          "web/src/__tests__/pageErrorPaths.test.tsx"
+        ],
+        "source": "web/src/App.tsx",
+        "tests": [
+          "web/src/__tests__/pageErrorPaths.test.tsx"
         ]
       },
       {

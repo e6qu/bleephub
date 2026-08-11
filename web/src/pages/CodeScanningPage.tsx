@@ -32,10 +32,9 @@ type FilterState = "all" | "open" | "dismissed" | "fixed";
 type SeverityFilter = "all" | "error" | "warning" | "note" | "none";
 
 const DISMISSED_REASONS: { value: GithubCodeScanningDismissedReason; label: string }[] = [
-  { value: "false_positive", label: "False positive" },
-  { value: "won't_fix", label: "Won't fix" },
-  { value: "used_in_tests", label: "Used in tests" },
-  { value: "ignored", label: "Ignored" },
+  { value: "false positive", label: "False positive" },
+  { value: "won't fix", label: "Won't fix" },
+  { value: "used in tests", label: "Used in tests" },
 ];
 
 export function CodeScanningPage() {
@@ -382,7 +381,7 @@ function AlertDetail({
   onReopen: () => void;
   onFix: () => void;
 }) {
-  const [reason, setReason] = useState<GithubCodeScanningDismissedReason>("false_positive");
+  const [reason, setReason] = useState<GithubCodeScanningDismissedReason>("false positive");
   const [comment, setComment] = useState("");
 
   return (

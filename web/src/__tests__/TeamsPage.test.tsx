@@ -21,9 +21,9 @@ function renderPage() {
   });
   return render(
     <QueryClientProvider client={queryClient}>
-      <MemoryRouter initialEntries={["/ui/admin/teams"]}>
+      <MemoryRouter initialEntries={["/ui/operations/teams"]}>
         <Routes>
-          <Route path="/ui/admin/teams" element={<TeamsPage />} />
+          <Route path="/ui/operations/teams" element={<TeamsPage />} />
         </Routes>
       </MemoryRouter>
     </QueryClientProvider>,

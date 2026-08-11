@@ -117,7 +117,7 @@ export function DashboardPage() {
           <QuickLink to="/ui/gists" icon={<GistIcon size={15} />} label="Gists" />
           <QuickLink to="/ui/packages" icon={<PackageIcon size={15} />} label="Packages" />
           <QuickLink to="/ui/notifications" icon={<NotificationBellIcon size={15} />} label="Notifications" />
-          <QuickLink to="/ui/admin" icon={<ServerIcon size={15} />} label="System status" last />
+          <QuickLink to="/ui/operations" icon={<ServerIcon size={15} />} label="System status" last />
         </Box>
         <div
           className="flex items-start gap-2"
