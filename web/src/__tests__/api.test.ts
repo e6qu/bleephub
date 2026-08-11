@@ -57,6 +57,9 @@ import {
   deleteDiscussion,
   requestCVE,
   setRepoFlag,
+  fetchRepoAutomatedSecurityFixes,
+  fetchRepoPrivateVulnerabilityReporting,
+  fetchRepoVulnerabilityAlerts,
   packageListPath,
   fetchSecurityAdvisory,
   updateSecurityAdvisory,
@@ -1237,5 +1240,29 @@ describe("typed failure fidelity", () => {
     await setRepoFlag("octo", "repo", "vulnerability_alerts", false);
     expect(mockFetch.mock.calls[0]![0]).toBe("/api/v3/repos/octo/repo/vulnerability-alerts");
     expect(mockFetch.mock.calls[0]![1]!.method).toBe("DELETE");
+  });
+
+  it("reads each security toggle from its own status endpoint", async () => {
+    mockFetch.mockImplementation((input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.endsWith("/automated-security-fixes")) {
+        return Promise.resolve(jsonResponse({ enabled: true, paused: false }));
+      }
+      if (url.endsWith("/private-vulnerability-reporting")) {
+        return Promise.resolve(jsonResponse({ enabled: false }));
+      }
+      if (url.endsWith("/vulnerability-alerts")) {
+        // 204 = enabled, 404 = disabled.
+        return Promise.resolve(new Response(null, { status: 204 }));
+      }
+      return Promise.reject(new Error(`unexpected ${url}`));
+    });
+    expect(await fetchRepoAutomatedSecurityFixes("octo", "repo")).toBe(true);
+    expect(await fetchRepoPrivateVulnerabilityReporting("octo", "repo")).toBe(false);
+    expect(await fetchRepoVulnerabilityAlerts("octo", "repo")).toBe(true);
+
+    // A 404 on vulnerability-alerts means disabled, not an error.
+    mockFetch.mockResolvedValue(new Response(null, { status: 404 }));
+    expect(await fetchRepoVulnerabilityAlerts("octo", "repo")).toBe(false);
   });
 });

@@ -17,11 +17,14 @@ import {
   fetchPagesDeploymentStatus,
   fetchPagesHealth,
   fetchPagesSite,
+  fetchRepoAutomatedSecurityFixes,
   fetchRepoBranches,
   fetchRepoCollaborators,
   fetchRepoDeployKeys,
   fetchRepoDetail,
   fetchRepoInteractionLimit,
+  fetchRepoPrivateVulnerabilityReporting,
+  fetchRepoVulnerabilityAlerts,
   fetchRepoInvitations,
   fetchRepoTopics,
   inviteRepoCollaborator,
@@ -733,23 +736,26 @@ function SecurityTab({ owner, repo }: { owner: string; repo: string }) {
     vulnerability_alerts: false,
   });
 
-  // Seed the checkboxes from the repo's real security_and_analysis state. The
-  // nested keys mirror the PATCH shape in setRepoFlag; a status of "enabled"
-  // means the toggle is on. Shares the ["repo", ...] cache with the parent tab.
-  const repoQuery = useQuery({
-    queryKey: ["repo", owner, repo],
-    queryFn: () => fetchRepoDetail(owner, repo),
+  // Seed each checkbox from its own dedicated status endpoint. The repo object
+  // carries no `security_and_analysis` block (the server never emits it), so
+  // reading the flags off the repo detail left every toggle stuck unchecked —
+  // these are the same endpoints setRepoFlag writes to.
+  const securityQuery = useQuery({
+    queryKey: ["repo-security-flags", owner, repo],
+    queryFn: async () => {
+      const [automated_security_fixes, private_vulnerability_reporting, vulnerability_alerts] =
+        await Promise.all([
+          fetchRepoAutomatedSecurityFixes(owner, repo),
+          fetchRepoPrivateVulnerabilityReporting(owner, repo),
+          fetchRepoVulnerabilityAlerts(owner, repo),
+        ]);
+      return { automated_security_fixes, private_vulnerability_reporting, vulnerability_alerts };
+    },
     enabled: !!owner && !!repo,
   });
-  const sa = repoQuery.data?.security_and_analysis;
   useEffect(() => {
-    if (!sa) return;
-    setFlags({
-      automated_security_fixes: sa.automated_security_fixes?.status === "enabled",
-      vulnerability_alerts: sa.advanced_security?.status === "enabled",
-      private_vulnerability_reporting: sa.secret_scanning_non_provider_patterns?.status === "enabled",
-    });
-  }, [sa]);
+    if (securityQuery.data) setFlags(securityQuery.data);
+  }, [securityQuery.data]);
 
   const mutation = useMutation({
     mutationFn: ({ flag, enabled }: { flag: FlagKey; enabled: boolean }) => setRepoFlag(owner, repo, flag, enabled),
@@ -773,7 +779,7 @@ function SecurityTab({ owner, repo }: { owner: string; repo: string }) {
 
   return (
     <Box header={<span style={{ fontWeight: 600 }}>Security settings</span>}>
-      {repoQuery.isLoading ? (
+      {securityQuery.isLoading ? (
         <div style={{ padding: "1rem" }}>
           <Spinner label="loading security settings" />
         </div>
