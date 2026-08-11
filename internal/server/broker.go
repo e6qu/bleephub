@@ -64,9 +64,9 @@ func (s *Server) handleCreateSession(w http.ResponseWriter, r *http.Request) {
 		MsgCh:     make(chan *TaskAgentMessage, 10),
 	}
 
-	s.store.mu.Lock()
+	s.store.Mu.Lock()
 	s.store.Sessions[sessionID] = session
-	s.store.mu.Unlock()
+	s.store.Mu.Unlock()
 
 	if s.metrics != nil {
 		s.metrics.SetActiveSessions(int64(s.sessionCount()))
@@ -86,7 +86,7 @@ func (s *Server) handleDeleteSession(w http.ResponseWriter, r *http.Request) {
 	sessionID := r.PathValue("sessionId")
 	caller, _ := s.callerRunner(r)
 
-	s.store.mu.Lock()
+	s.store.Mu.Lock()
 	session, ok := s.store.Sessions[sessionID]
 	ok = ok && sessionOwnedBy(session, caller)
 	var retiring int
@@ -97,7 +97,7 @@ func (s *Server) handleDeleteSession(w http.ResponseWriter, r *http.Request) {
 			retiring = session.Agent.ID
 		}
 	}
-	s.store.mu.Unlock()
+	s.store.Mu.Unlock()
 
 	// Deleting its session is the last thing a runner does. An ephemeral
 	// runner is deregistered here rather than the moment its job finished,
@@ -137,9 +137,9 @@ func (s *Server) handleGetMessage(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	s.store.mu.RLock()
+	s.store.Mu.RLock()
 	session, ok := s.store.Sessions[sessionID]
-	s.store.mu.RUnlock()
+	s.store.Mu.RUnlock()
 
 	if !ok {
 		http.Error(w, "session not found", http.StatusNotFound)
@@ -205,8 +205,8 @@ func deliverJSON(w http.ResponseWriter, v interface{}) error {
 // jobs (/internal/exec/submit) name no repository and carry no repository,
 // organization or environment secrets, so any registered runner may take one.
 func (s *Server) pullPendingMessage(session *Session, scope runnerScope) *TaskAgentMessage {
-	s.store.mu.Lock()
-	defer s.store.mu.Unlock()
+	s.store.Mu.Lock()
+	defer s.store.Mu.Unlock()
 	if !s.agentTakesAJobLocked(session.Agent) {
 		return nil
 	}
@@ -244,8 +244,8 @@ func jobMessageRepoName(message string) string {
 // EverAssigned mark, which must not burn an ephemeral runner's single job on
 // a delivery that failed.
 func (s *Server) requeuePendingMessage(msg *TaskAgentMessage) {
-	s.store.mu.Lock()
-	defer s.store.mu.Unlock()
+	s.store.Mu.Lock()
+	defer s.store.Mu.Unlock()
 	if job := s.store.Jobs[msg.JobID]; job != nil {
 		if agent := s.store.Agents[job.AgentID]; agent != nil && agent.AssignedJobID == job.ID {
 			agent.AssignedJobID = ""
@@ -311,9 +311,9 @@ func (s *Server) handleDeleteMessage(w http.ResponseWriter, r *http.Request) {
 // free, label-matching runner pulls the next queued message, exactly the
 // hold-until-poll semantics real GitHub's broker has.
 func (s *Server) queueJobMessage(msg *TaskAgentMessage) {
-	s.store.mu.Lock()
+	s.store.Mu.Lock()
 	s.store.PendingMessages = append(s.store.PendingMessages, msg)
-	s.store.mu.Unlock()
+	s.store.Mu.Unlock()
 }
 
 // agentSatisfiesLabels reports whether an agent's registered labels
@@ -360,8 +360,8 @@ func (s *Server) sendAgentRefreshMessage(agentID int, targetVersion string, time
 	if agentID == 0 || targetVersion == "" {
 		return
 	}
-	s.store.mu.Lock()
-	defer s.store.mu.Unlock()
+	s.store.Mu.Lock()
+	defer s.store.Mu.Unlock()
 	body, err := json.Marshal(map[string]interface{}{
 		"agentId":       agentID,
 		"targetVersion": targetVersion,
@@ -395,8 +395,8 @@ func (s *Server) sendAgentRefreshMessage(agentID int, targetVersion string, time
 // during a job precisely to receive these (actions/runner
 // JobCancelMessage — body {jobId, timeout}).
 func (s *Server) sendJobCancellation(jobID string) {
-	s.store.mu.Lock()
-	defer s.store.mu.Unlock()
+	s.store.Mu.Lock()
+	defer s.store.Mu.Unlock()
 	job := s.store.Jobs[jobID]
 	if job == nil || job.AgentID == 0 {
 		return
@@ -434,16 +434,16 @@ func (s *Server) sendJobCancellation(jobID string) {
 }
 
 func (s *Server) nextMessageID() int64 {
-	s.store.mu.Lock()
+	s.store.Mu.Lock()
 	id := s.store.NextMsg
 	s.store.NextMsg++
-	s.store.mu.Unlock()
+	s.store.Mu.Unlock()
 	return id
 }
 
 func (s *Server) nextRequestID() int64 {
-	s.store.mu.Lock()
-	defer s.store.mu.Unlock()
+	s.store.Mu.Lock()
+	defer s.store.Mu.Unlock()
 	if s.store.NextReqID < 1 {
 		s.store.NextReqID = 1
 	}
@@ -468,19 +468,19 @@ func (s *Server) nextLogID() int {
 }
 
 func (s *Server) lookupJobByRequestID(reqID int64) *Job {
-	s.store.mu.RLock()
-	defer s.store.mu.RUnlock()
-	return s.store.jobByRequestIDLocked(reqID)
+	s.store.Mu.RLock()
+	defer s.store.Mu.RUnlock()
+	return s.store.JobByRequestIDLocked(reqID)
 }
 
 func (s *Server) sessionCount() int {
-	s.store.mu.RLock()
-	defer s.store.mu.RUnlock()
+	s.store.Mu.RLock()
+	defer s.store.Mu.RUnlock()
 	return len(s.store.Sessions)
 }
 
 func (s *Server) lookupJobByPlanID(planID string) *Job {
-	s.store.mu.RLock()
-	defer s.store.mu.RUnlock()
-	return s.store.jobByPlanIDLocked(planID)
+	s.store.Mu.RLock()
+	defer s.store.Mu.RUnlock()
+	return s.store.JobByPlanIDLocked(planID)
 }

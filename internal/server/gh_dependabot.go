@@ -246,9 +246,9 @@ func (s *Server) handleListDependabotRepoSecrets(w http.ResponseWriter, r *http.
 		return
 	}
 
-	s.store.mu.RLock()
+	s.store.Mu.RLock()
 	list := sortedDependabotSecretsJSON(s.store.DependabotSecrets[repo.FullName])
-	s.store.mu.RUnlock()
+	s.store.Mu.RUnlock()
 
 	paged := paginateAndLink(w, r, list)
 	writeJSON(w, http.StatusOK, map[string]interface{}{
@@ -277,13 +277,13 @@ func (s *Server) handleGetDependabotRepoSecret(w http.ResponseWriter, r *http.Re
 	}
 	name := strings.ToUpper(r.PathValue("secret_name"))
 
-	s.store.mu.RLock()
+	s.store.Mu.RLock()
 	sec := s.store.DependabotSecrets[repo.FullName][name]
 	var body map[string]interface{}
 	if sec != nil {
 		body = dependabotSecretJSON(sec)
 	}
-	s.store.mu.RUnlock()
+	s.store.Mu.RUnlock()
 
 	if body == nil {
 		writeGHError(w, http.StatusNotFound, "Not Found")
@@ -367,7 +367,7 @@ func (s *Server) handleListDependabotOrgSecrets(w http.ResponseWriter, r *http.R
 	}
 	base := s.baseURL(r)
 
-	s.store.mu.RLock()
+	s.store.Mu.RLock()
 	m := s.store.DependabotOrgSecrets[org.Login]
 	names := make([]string, 0, len(m))
 	for n := range m {
@@ -378,7 +378,7 @@ func (s *Server) handleListDependabotOrgSecrets(w http.ResponseWriter, r *http.R
 	for _, n := range names {
 		list = append(list, dependabotOrgSecretJSON(m[n], org.Login, base))
 	}
-	s.store.mu.RUnlock()
+	s.store.Mu.RUnlock()
 
 	paged := paginateAndLink(w, r, list)
 	writeJSON(w, http.StatusOK, map[string]interface{}{
@@ -402,13 +402,13 @@ func (s *Server) handleGetDependabotOrgSecret(w http.ResponseWriter, r *http.Req
 	name := strings.ToUpper(r.PathValue("secret_name"))
 	base := s.baseURL(r)
 
-	s.store.mu.RLock()
+	s.store.Mu.RLock()
 	sec := s.store.DependabotOrgSecrets[org.Login][name]
 	var body map[string]interface{}
 	if sec != nil {
 		body = dependabotOrgSecretJSON(sec, org.Login, base)
 	}
-	s.store.mu.RUnlock()
+	s.store.Mu.RUnlock()
 
 	if body == nil {
 		writeGHError(w, http.StatusNotFound, "Not Found")
@@ -497,13 +497,13 @@ func (s *Server) handleListDependabotOrgSecretRepos(w http.ResponseWriter, r *ht
 	}
 	name := strings.ToUpper(r.PathValue("secret_name"))
 
-	s.store.mu.RLock()
+	s.store.Mu.RLock()
 	sec := s.store.DependabotOrgSecrets[org.Login][name]
 	var ids []int
 	if sec != nil {
 		ids = append([]int(nil), sec.SelectedRepoIDs...)
 	}
-	s.store.mu.RUnlock()
+	s.store.Mu.RUnlock()
 
 	if sec == nil {
 		writeGHError(w, http.StatusNotFound, "Not Found")
@@ -526,9 +526,9 @@ func (s *Server) handleSetDependabotOrgSecretRepos(w http.ResponseWriter, r *htt
 		return
 	}
 
-	s.store.mu.RLock()
+	s.store.Mu.RLock()
 	sec := s.store.DependabotOrgSecrets[org.Login][name]
-	s.store.mu.RUnlock()
+	s.store.Mu.RUnlock()
 	if sec == nil {
 		writeGHError(w, http.StatusNotFound, "Not Found")
 		return
@@ -595,14 +595,14 @@ func sortedDependabotSecretsJSON(m map[string]*DependabotSecret) []map[string]in
 }
 
 func (s *Server) writeDependabotSelectedReposResponse(w http.ResponseWriter, r *http.Request, ids []int) {
-	s.store.mu.RLock()
+	s.store.Mu.RLock()
 	repos := make([]*Repo, 0, len(ids))
 	for _, id := range ids {
 		if repo := s.store.Repos[id]; repo != nil {
 			repos = append(repos, repo)
 		}
 	}
-	s.store.mu.RUnlock()
+	s.store.Mu.RUnlock()
 	sort.Slice(repos, func(i, j int) bool { return repos[i].ID < repos[j].ID })
 
 	base := s.baseURL(r)
@@ -685,34 +685,7 @@ func (s *Server) handleSetDependabotRepositoryAccessDefaultLevel(w http.Response
 	w.WriteHeader(http.StatusNoContent)
 }
 
-// GetDependabotRepositoryAccessDefaultLevel returns the org's default
-// repository access level for Dependabot updates ("public" until changed).
-func (st *Store) GetDependabotRepositoryAccessDefaultLevel(orgLogin string) string {
-	st.mu.RLock()
-	defer st.mu.RUnlock()
-	if level := st.DependabotRepoAccessDefaultLevel[orgLogin]; level != "" {
-		return level
-	}
-	return "public"
-}
-
-// SetDependabotRepositoryAccessDefaultLevel stores the org's default
-// repository access level for Dependabot updates.
-func (st *Store) SetDependabotRepositoryAccessDefaultLevel(orgLogin, level string) {
-	st.mu.Lock()
-	defer st.mu.Unlock()
-	st.DependabotRepoAccessDefaultLevel[orgLogin] = level
-	if st.persist != nil {
-		st.persist.MustPut("dependabot_repo_access_default_level", orgLogin, level)
-	}
-}
-
 // ─── org Dependabot secret selected-repository add/remove ────────────────
-
-func (sec *DependabotOrgSecret) itemVisibility() string     { return sec.Visibility }
-func (sec *DependabotOrgSecret) selectedIDs() []int         { return sec.SelectedRepoIDs }
-func (sec *DependabotOrgSecret) setSelectedIDs(ids []int)   { sec.SelectedRepoIDs = ids }
-func (sec *DependabotOrgSecret) touchUpdated(now time.Time) { sec.UpdatedAt = now }
 
 // dependabotOrgSecretSelectionChange adapts the shared per-repository
 // selection core to the org Dependabot secrets table.
@@ -730,8 +703,8 @@ func (s *Server) dependabotOrgSecretSelectionChange(w http.ResponseWriter, r *ht
 			return nil
 		},
 		func() {
-			if s.store.persist != nil {
-				s.store.persist.MustPut("dependabot_org_secrets", org.Login, s.store.DependabotOrgSecrets[org.Login])
+			if s.store.Persist != nil {
+				s.store.Persist.MustPut("dependabot_org_secrets", org.Login, s.store.DependabotOrgSecrets[org.Login])
 			}
 		})
 }
@@ -786,14 +759,14 @@ func (s *Server) handleUpdateDependabotRepositoryAccess(w http.ResponseWriter, r
 // dependabotAccessibleRepos returns a sorted array of repository JSON objects
 // for the given repository IDs, omitting IDs that do not resolve.
 func (s *Server) dependabotAccessibleRepos(r *http.Request, ids []int) []map[string]interface{} {
-	s.store.mu.RLock()
+	s.store.Mu.RLock()
 	repos := make([]*Repo, 0, len(ids))
 	for _, id := range ids {
 		if repo := s.store.Repos[id]; repo != nil {
 			repos = append(repos, repo)
 		}
 	}
-	s.store.mu.RUnlock()
+	s.store.Mu.RUnlock()
 	sort.Slice(repos, func(i, j int) bool { return repos[i].ID < repos[j].ID })
 
 	base := s.baseURL(r)

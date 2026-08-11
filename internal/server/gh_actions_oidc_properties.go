@@ -29,9 +29,9 @@ func oidcPropertyInclusionJSON(name string) map[string]any {
 
 func (s *Server) handleListOIDCPropertyInclusions(w http.ResponseWriter, r *http.Request) {
 	org := r.PathValue("org")
-	s.store.mu.RLock()
+	s.store.Mu.RLock()
 	names := append([]string(nil), s.store.OrgOIDCPropertyInclusions[org]...)
-	s.store.mu.RUnlock()
+	s.store.Mu.RUnlock()
 	sort.Strings(names)
 	out := make([]map[string]any, 0, len(names))
 	for _, name := range names {
@@ -52,26 +52,26 @@ func (s *Server) handleCreateOIDCPropertyInclusion(w http.ResponseWriter, r *htt
 		writeGHValidationError(w, "OIDCCustomPropertyInclusion", "custom_property_name", "missing_field")
 		return
 	}
-	s.store.mu.Lock()
+	s.store.Mu.Lock()
 	for _, name := range s.store.OrgOIDCPropertyInclusions[org] {
 		if strings.EqualFold(name, req.CustomPropertyName) {
-			s.store.mu.Unlock()
+			s.store.Mu.Unlock()
 			writeGHValidationError(w, "OIDCCustomPropertyInclusion", "custom_property_name", "already_exists")
 			return
 		}
 	}
 	s.store.OrgOIDCPropertyInclusions[org] = append(s.store.OrgOIDCPropertyInclusions[org], req.CustomPropertyName)
-	if s.store.persist != nil {
-		s.store.persist.MustPut("org_oidc_property_inclusions", org, s.store.OrgOIDCPropertyInclusions[org])
+	if s.store.Persist != nil {
+		s.store.Persist.MustPut("org_oidc_property_inclusions", org, s.store.OrgOIDCPropertyInclusions[org])
 	}
-	s.store.mu.Unlock()
+	s.store.Mu.Unlock()
 	writeJSON(w, http.StatusCreated, oidcPropertyInclusionJSON(req.CustomPropertyName))
 }
 
 func (s *Server) handleDeleteOIDCPropertyInclusion(w http.ResponseWriter, r *http.Request) {
 	org := r.PathValue("org")
 	name := r.PathValue("custom_property_name")
-	s.store.mu.Lock()
+	s.store.Mu.Lock()
 	found := false
 	kept := s.store.OrgOIDCPropertyInclusions[org][:0:0]
 	for _, existing := range s.store.OrgOIDCPropertyInclusions[org] {
@@ -83,11 +83,11 @@ func (s *Server) handleDeleteOIDCPropertyInclusion(w http.ResponseWriter, r *htt
 	}
 	if found {
 		s.store.OrgOIDCPropertyInclusions[org] = kept
-		if s.store.persist != nil {
-			s.store.persist.MustPut("org_oidc_property_inclusions", org, kept)
+		if s.store.Persist != nil {
+			s.store.Persist.MustPut("org_oidc_property_inclusions", org, kept)
 		}
 	}
-	s.store.mu.Unlock()
+	s.store.Mu.Unlock()
 	if !found {
 		writeGHError(w, http.StatusNotFound, "Not Found")
 		return

@@ -34,8 +34,8 @@ func (s *Server) afterCommittedRefUpdate(repo *Repo, sender *User, ref, before, 
 }
 
 func (s *Server) triggerPagesBuildForRef(repo *Repo, sender *User, ref, baseURL string) {
-	s.store.Misc.mu.RLock()
-	site := s.store.Misc.pagesByRepo[repo.ID]
+	s.store.Misc.Mu.RLock()
+	site := s.store.Misc.PagesByRepo[repo.ID]
 	buildType := ""
 	branch := ""
 	if site != nil {
@@ -44,7 +44,7 @@ func (s *Server) triggerPagesBuildForRef(repo *Repo, sender *User, ref, baseURL 
 		}
 		branch, _ = site.Source["branch"].(string)
 	}
-	s.store.Misc.mu.RUnlock()
+	s.store.Misc.Mu.RUnlock()
 	if site == nil || buildType != "legacy" || ref != "refs/heads/"+branch {
 		return
 	}

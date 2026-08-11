@@ -55,14 +55,14 @@ func (s *Server) requireGHESSiteAdmin(next http.HandlerFunc) http.HandlerFunc {
 }
 
 func (s *Server) handleGHESLicense(w http.ResponseWriter, _ *http.Request) {
-	s.store.mu.RLock()
+	s.store.Mu.RLock()
 	used := 0
 	for _, user := range s.store.Users {
 		if user.Type != "Bot" {
 			used++
 		}
 	}
-	s.store.mu.RUnlock()
+	s.store.Mu.RUnlock()
 	// A development GHES appliance has an effectively unmetered local
 	// license. Keep every numeric relationship internally consistent.
 	seats := used
@@ -76,7 +76,7 @@ func (s *Server) handleGHESLicense(w http.ResponseWriter, _ *http.Request) {
 }
 
 func (s *Server) ghesAdminStats() map[string]map[string]interface{} {
-	s.store.mu.RLock()
+	s.store.Mu.RLock()
 	repos := map[string]interface{}{
 		"total_repos": len(s.store.Repos), "root_repos": 0, "fork_repos": 0,
 		"org_repos": 0, "total_pushes": len(s.store.RepoActivities), "total_wikis": 0,
@@ -218,14 +218,14 @@ func (s *Server) ghesAdminStats() map[string]map[string]interface{} {
 		"secret_protection_licenses": 0, "secret_protection_active_committers": 0,
 		"code_security_licenses": 0, "code_security_active_committers": 0,
 	}
-	s.store.mu.RUnlock()
+	s.store.Mu.RUnlock()
 
-	s.store.CommitComments.mu.RLock()
-	comments["total_commit_comments"] = len(s.store.CommitComments.byID)
-	s.store.CommitComments.mu.RUnlock()
-	s.store.Misc.mu.RLock()
-	pages := map[string]interface{}{"total_pages": len(s.store.Misc.pagesByRepo)}
-	s.store.Misc.mu.RUnlock()
+	s.store.CommitComments.Mu.RLock()
+	comments["total_commit_comments"] = len(s.store.CommitComments.ByID)
+	s.store.CommitComments.Mu.RUnlock()
+	s.store.Misc.Mu.RLock()
+	pages := map[string]interface{}{"total_pages": len(s.store.Misc.PagesByRepo)}
+	s.store.Misc.Mu.RUnlock()
 	return map[string]map[string]interface{}{
 		"repos": repos, "hooks": hooks, "pages": pages, "orgs": orgs, "users": users,
 		"pulls": pulls, "issues": issues, "milestones": milestones, "gists": gists,

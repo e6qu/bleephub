@@ -12,38 +12,6 @@ import (
 	"github.com/google/uuid"
 )
 
-// EnterpriseCostCenter is a durable enhanced-billing cost allocation. A
-// resource belongs to at most one active cost center; adding it elsewhere
-// atomically reassigns it, matching GitHub's response contract.
-type EnterpriseCostCenter struct {
-	ID                  string                         `json:"id"`
-	Name                string                         `json:"name"`
-	State               string                         `json:"state"`
-	Resources           []EnterpriseCostCenterResource `json:"resources"`
-	AICreditPoolEnabled bool                           `json:"ai_credit_pool_enabled"`
-	CreatedAt           time.Time                      `json:"created_at"`
-	UpdatedAt           time.Time                      `json:"updated_at"`
-}
-
-type EnterpriseCostCenterResource struct {
-	Type string `json:"type"`
-	Name string `json:"name"`
-}
-
-// EnterpriseBillingReport records one asynchronous usage export request.
-// Pending reports become completed when read, which gives clients a
-// deterministic lifecycle without a wall-clock-dependent background task.
-type EnterpriseBillingReport struct {
-	ID           string    `json:"id"`
-	ReportType   string    `json:"report_type"`
-	StartDate    string    `json:"start_date"`
-	EndDate      string    `json:"end_date"`
-	Status       string    `json:"status"`
-	DownloadURLs []string  `json:"download_urls,omitempty"`
-	CreatedAt    time.Time `json:"created_at"`
-	Actor        string    `json:"actor"`
-}
-
 func (s *Server) registerGHEnterpriseBillingRoutes() {
 	owner := s.requireEnterpriseOwner
 	s.route("GET /api/v3/enterprises/{enterprise}/settings/billing/budgets", owner(s.handleListEnterpriseBudgets))
@@ -89,18 +57,9 @@ var enterpriseBudgetTypes = map[string]bool{
 	"BundlePricing": true, "ProductPricing": true, "SkuPricing": true,
 }
 
-func cloneBudget(b *OrgBudget) *OrgBudget {
-	if b == nil {
-		return nil
-	}
-	copy := *b
-	copy.BudgetAlerting.AlertRecipients = append([]string(nil), b.BudgetAlerting.AlertRecipients...)
-	return &copy
-}
-
 func (s *Server) enterpriseBudgets() []*OrgBudget {
-	s.store.mu.RLock()
-	defer s.store.mu.RUnlock()
+	s.store.Mu.RLock()
+	defer s.store.Mu.RUnlock()
 	out := make([]*OrgBudget, 0, len(s.store.EnterpriseSettings.EnterpriseBudgets))
 	for _, budget := range s.store.EnterpriseSettings.EnterpriseBudgets {
 		out = append(out, cloneBudget(budget))
@@ -219,9 +178,9 @@ func (s *Server) validateEnterpriseBudget(w http.ResponseWriter, budget *OrgBudg
 			return false
 		}
 	case "cost_center", "multi_user_cost_center":
-		s.store.mu.RLock()
+		s.store.Mu.RLock()
 		center := s.store.EnterpriseSettings.EnterpriseCostCenters[budget.BudgetEntityName]
-		s.store.mu.RUnlock()
+		s.store.Mu.RUnlock()
 		if center == nil || center.State != "active" {
 			writeGHValidationError(w, "Budget", "budget_entity_name", "invalid")
 			return false
@@ -254,18 +213,18 @@ func (s *Server) handleCreateEnterpriseBudget(w http.ResponseWriter, r *http.Req
 	if !s.validateEnterpriseBudget(w, budget) {
 		return
 	}
-	s.store.mu.Lock()
+	s.store.Mu.Lock()
 	s.store.EnterpriseSettings.EnterpriseBudgets[budget.ID] = budget
-	s.store.persistEnterpriseSettings()
-	s.store.mu.Unlock()
+	s.store.PersistEnterpriseSettings()
+	s.store.Mu.Unlock()
 	writeJSON(w, http.StatusOK, map[string]interface{}{
 		"message": "Budget successfully created.", "budget": budgetJSON(budget),
 	})
 }
 
 func (s *Server) enterpriseBudget(id string) *OrgBudget {
-	s.store.mu.RLock()
-	defer s.store.mu.RUnlock()
+	s.store.Mu.RLock()
+	defer s.store.Mu.RUnlock()
 	return cloneBudget(s.store.EnterpriseSettings.EnterpriseBudgets[id])
 }
 
@@ -325,10 +284,10 @@ func (s *Server) handleUpdateEnterpriseBudget(w http.ResponseWriter, r *http.Req
 	if !s.validateEnterpriseBudget(w, budget) {
 		return
 	}
-	s.store.mu.Lock()
+	s.store.Mu.Lock()
 	s.store.EnterpriseSettings.EnterpriseBudgets[id] = budget
-	s.store.persistEnterpriseSettings()
-	s.store.mu.Unlock()
+	s.store.PersistEnterpriseSettings()
+	s.store.Mu.Unlock()
 	writeJSON(w, http.StatusOK, map[string]interface{}{
 		"message": "Budget successfully updated.", "budget": budgetJSON(budget),
 	})
@@ -336,15 +295,15 @@ func (s *Server) handleUpdateEnterpriseBudget(w http.ResponseWriter, r *http.Req
 
 func (s *Server) handleDeleteEnterpriseBudget(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("budget_id")
-	s.store.mu.Lock()
+	s.store.Mu.Lock()
 	if s.store.EnterpriseSettings.EnterpriseBudgets[id] == nil {
-		s.store.mu.Unlock()
+		s.store.Mu.Unlock()
 		writeGHError(w, http.StatusNotFound, "Not Found")
 		return
 	}
 	delete(s.store.EnterpriseSettings.EnterpriseBudgets, id)
-	s.store.persistEnterpriseSettings()
-	s.store.mu.Unlock()
+	s.store.PersistEnterpriseSettings()
+	s.store.Mu.Unlock()
 	writeJSON(w, http.StatusOK, map[string]interface{}{
 		"message": "Budget successfully deleted.", "budget_id": id,
 	})
@@ -445,8 +404,8 @@ func costCenterJSON(center *EnterpriseCostCenter) map[string]interface{} {
 }
 
 func (s *Server) enterpriseCostCenter(id string) *EnterpriseCostCenter {
-	s.store.mu.RLock()
-	defer s.store.mu.RUnlock()
+	s.store.Mu.RLock()
+	defer s.store.Mu.RUnlock()
 	return cloneCostCenter(s.store.EnterpriseSettings.EnterpriseCostCenters[id])
 }
 
@@ -456,14 +415,14 @@ func (s *Server) handleListEnterpriseCostCenters(w http.ResponseWriter, r *http.
 		writeGHError(w, http.StatusBadRequest, "Invalid state")
 		return
 	}
-	s.store.mu.RLock()
+	s.store.Mu.RLock()
 	centers := make([]*EnterpriseCostCenter, 0, len(s.store.EnterpriseSettings.EnterpriseCostCenters))
 	for _, center := range s.store.EnterpriseSettings.EnterpriseCostCenters {
 		if state == "" || center.State == state {
 			centers = append(centers, cloneCostCenter(center))
 		}
 	}
-	s.store.mu.RUnlock()
+	s.store.Mu.RUnlock()
 	sort.Slice(centers, func(i, j int) bool { return centers[i].Name < centers[j].Name })
 	rows := make([]map[string]interface{}, len(centers))
 	for i, center := range centers {
@@ -499,15 +458,15 @@ func (s *Server) handleCreateEnterpriseCostCenter(w http.ResponseWriter, r *http
 		ID: uuid.NewString(), Name: req.Name, State: "active", Resources: []EnterpriseCostCenterResource{},
 		AICreditPoolEnabled: req.AICreditPoolEnabled, CreatedAt: now, UpdatedAt: now,
 	}
-	s.store.mu.Lock()
+	s.store.Mu.Lock()
 	if s.costCenterNameConflictLocked(req.Name, "") {
-		s.store.mu.Unlock()
+		s.store.Mu.Unlock()
 		writeGHError(w, http.StatusConflict, "A cost center with this name already exists.")
 		return
 	}
 	s.store.EnterpriseSettings.EnterpriseCostCenters[center.ID] = center
-	s.store.persistEnterpriseSettings()
-	s.store.mu.Unlock()
+	s.store.PersistEnterpriseSettings()
+	s.store.Mu.Unlock()
 	writeJSON(w, http.StatusOK, costCenterJSON(center))
 }
 
@@ -529,22 +488,22 @@ func (s *Server) handleUpdateEnterpriseCostCenter(w http.ResponseWriter, r *http
 		return
 	}
 	id := r.PathValue("cost_center_id")
-	s.store.mu.Lock()
+	s.store.Mu.Lock()
 	center := s.store.EnterpriseSettings.EnterpriseCostCenters[id]
 	if center == nil || center.State == "deleted" {
-		s.store.mu.Unlock()
+		s.store.Mu.Unlock()
 		writeGHError(w, http.StatusNotFound, "Not Found")
 		return
 	}
 	if req.Name != nil {
 		name := strings.TrimSpace(*req.Name)
 		if name == "" || len(name) > 255 {
-			s.store.mu.Unlock()
+			s.store.Mu.Unlock()
 			writeGHValidationError(w, "CostCenter", "name", "invalid")
 			return
 		}
 		if s.costCenterNameConflictLocked(name, id) {
-			s.store.mu.Unlock()
+			s.store.Mu.Unlock()
 			writeGHError(w, http.StatusConflict, "A cost center with this name already exists.")
 			return
 		}
@@ -554,7 +513,7 @@ func (s *Server) handleUpdateEnterpriseCostCenter(w http.ResponseWriter, r *http
 		if *req.AICreditPoolEnabled {
 			for _, resource := range center.Resources {
 				if resource.Type == "Org" || resource.Type == "Repo" {
-					s.store.mu.Unlock()
+					s.store.Mu.Unlock()
 					writeGHValidationError(w, "CostCenter", "ai_credit_pool_enabled", "invalid")
 					return
 				}
@@ -564,17 +523,17 @@ func (s *Server) handleUpdateEnterpriseCostCenter(w http.ResponseWriter, r *http
 	}
 	center.UpdatedAt = s.currentTime()
 	copy := cloneCostCenter(center)
-	s.store.persistEnterpriseSettings()
-	s.store.mu.Unlock()
+	s.store.PersistEnterpriseSettings()
+	s.store.Mu.Unlock()
 	writeJSON(w, http.StatusOK, costCenterJSON(copy))
 }
 
 func (s *Server) handleDeleteEnterpriseCostCenter(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("cost_center_id")
-	s.store.mu.Lock()
+	s.store.Mu.Lock()
 	center := s.store.EnterpriseSettings.EnterpriseCostCenters[id]
 	if center == nil || center.State == "deleted" {
-		s.store.mu.Unlock()
+		s.store.Mu.Unlock()
 		writeGHError(w, http.StatusNotFound, "Not Found")
 		return
 	}
@@ -582,8 +541,8 @@ func (s *Server) handleDeleteEnterpriseCostCenter(w http.ResponseWriter, r *http
 	center.Resources = []EnterpriseCostCenterResource{}
 	center.UpdatedAt = s.currentTime()
 	name := center.Name
-	s.store.persistEnterpriseSettings()
-	s.store.mu.Unlock()
+	s.store.PersistEnterpriseSettings()
+	s.store.Mu.Unlock()
 	writeJSON(w, http.StatusOK, map[string]interface{}{
 		"message": "Cost center successfully deleted.", "id": id, "name": name,
 		"costCenterState": "CostCenterArchived",
@@ -670,17 +629,17 @@ func (s *Server) handleAddEnterpriseCostCenterResources(w http.ResponseWriter, r
 		return
 	}
 	id := r.PathValue("cost_center_id")
-	s.store.mu.Lock()
+	s.store.Mu.Lock()
 	center := s.store.EnterpriseSettings.EnterpriseCostCenters[id]
 	if center == nil || center.State != "active" {
-		s.store.mu.Unlock()
+		s.store.Mu.Unlock()
 		writeGHError(w, http.StatusNotFound, "Not Found")
 		return
 	}
 	if center.AICreditPoolEnabled {
 		for _, resource := range resources {
 			if resource.Type == "Org" || resource.Type == "Repo" {
-				s.store.mu.Unlock()
+				s.store.Mu.Unlock()
 				writeGHError(w, http.StatusBadRequest, "AI credit pool cost centers only accept users and teams.")
 				return
 			}
@@ -711,8 +670,8 @@ func (s *Server) handleAddEnterpriseCostCenterResources(w http.ResponseWriter, r
 		}
 	}
 	center.UpdatedAt = s.currentTime()
-	s.store.persistEnterpriseSettings()
-	s.store.mu.Unlock()
+	s.store.PersistEnterpriseSettings()
+	s.store.Mu.Unlock()
 	writeJSON(w, http.StatusOK, map[string]interface{}{
 		"message": "Resources successfully added to the cost center.", "reassigned_resources": reassigned,
 	})
@@ -728,10 +687,10 @@ func (s *Server) handleRemoveEnterpriseCostCenterResources(w http.ResponseWriter
 		return
 	}
 	id := r.PathValue("cost_center_id")
-	s.store.mu.Lock()
+	s.store.Mu.Lock()
 	center := s.store.EnterpriseSettings.EnterpriseCostCenters[id]
 	if center == nil || center.State != "active" {
-		s.store.mu.Unlock()
+		s.store.Mu.Unlock()
 		writeGHError(w, http.StatusNotFound, "Not Found")
 		return
 	}
@@ -739,8 +698,8 @@ func (s *Server) handleRemoveEnterpriseCostCenterResources(w http.ResponseWriter
 		center.Resources, _ = removeCostCenterResource(center.Resources, resource)
 	}
 	center.UpdatedAt = s.currentTime()
-	s.store.persistEnterpriseSettings()
-	s.store.mu.Unlock()
+	s.store.PersistEnterpriseSettings()
+	s.store.Mu.Unlock()
 	writeJSON(w, http.StatusOK, map[string]interface{}{
 		"message": "Resources successfully removed from the cost center.",
 	})
@@ -749,16 +708,16 @@ func (s *Server) handleRemoveEnterpriseCostCenterResources(w http.ResponseWriter
 func (s *Server) enterpriseActionsUsageLines(year, month, day int) []actionsUsageLine {
 	var lines []actionsUsageLine
 	for _, org := range s.store.ListOrgsAll(0) {
-		lines = append(lines, s.store.orgActionsUsageLines(org.Login, year, month, day)...)
+		lines = append(lines, s.store.OrgActionsUsageLines(org.Login, year, month, day)...)
 	}
 	sort.Slice(lines, func(i, j int) bool {
-		if lines[i].date != lines[j].date {
-			return lines[i].date < lines[j].date
+		if lines[i].Date != lines[j].Date {
+			return lines[i].Date < lines[j].Date
 		}
-		if lines[i].orgName != lines[j].orgName {
-			return lines[i].orgName < lines[j].orgName
+		if lines[i].OrgName != lines[j].OrgName {
+			return lines[i].OrgName < lines[j].OrgName
 		}
-		return lines[i].repoName < lines[j].repoName
+		return lines[i].RepoName < lines[j].RepoName
 	})
 	return lines
 }
@@ -778,8 +737,8 @@ func (s *Server) enterpriseBillingPeriod(w http.ResponseWriter, r *http.Request,
 
 func (s *Server) costCenterForRepo(fullName string) string {
 	owner, _, _ := strings.Cut(fullName, "/")
-	s.store.mu.RLock()
-	defer s.store.mu.RUnlock()
+	s.store.Mu.RLock()
+	defer s.store.Mu.RUnlock()
 	for _, center := range s.store.EnterpriseSettings.EnterpriseCostCenters {
 		if center.State != "active" {
 			continue
@@ -798,15 +757,15 @@ func (s *Server) enterpriseUsageItems(filter billingTimeFilter, costCenterFilter
 	lines := s.enterpriseActionsUsageLines(filter.year, filter.month, filter.day)
 	items := make([]map[string]interface{}, 0, len(lines))
 	for _, line := range lines {
-		fullName, orgName := line.orgName+"/"+line.repoName, line.orgName
+		fullName, orgName := line.OrgName+"/"+line.RepoName, line.OrgName
 		centerID := s.costCenterForRepo(fullName)
 		if costCenterFilter == "none" && centerID != "" || costCenterFilter != "" && costCenterFilter != "none" && centerID != costCenterFilter {
 			continue
 		}
-		gross := float64(line.minutes) * actionsPricePerMinute
+		gross := float64(line.Minutes) * actionsPricePerMinute
 		item := map[string]interface{}{
-			"date": line.date, "product": "Actions", "sku": "Actions Linux",
-			"quantity": line.minutes, "unitType": "minutes", "pricePerUnit": actionsPricePerMinute,
+			"date": line.Date, "product": "Actions", "sku": "Actions Linux",
+			"quantity": line.Minutes, "unitType": "minutes", "pricePerUnit": actionsPricePerMinute,
 			"grossAmount": gross, "discountAmount": 0.0, "netAmount": gross,
 			"organizationName": orgName, "repositoryName": fullName,
 		}
@@ -951,12 +910,12 @@ func billingReportJSON(report *EnterpriseBillingReport) map[string]interface{} {
 }
 
 func (s *Server) handleListEnterpriseBillingReports(w http.ResponseWriter, _ *http.Request) {
-	s.store.mu.RLock()
+	s.store.Mu.RLock()
 	reports := make([]*EnterpriseBillingReport, 0, len(s.store.EnterpriseSettings.EnterpriseBillingReports))
 	for _, report := range s.store.EnterpriseSettings.EnterpriseBillingReports {
 		reports = append(reports, cloneBillingReport(report))
 	}
-	s.store.mu.RUnlock()
+	s.store.Mu.RUnlock()
 	sort.Slice(reports, func(i, j int) bool {
 		if !reports[i].CreatedAt.Equal(reports[j].CreatedAt) {
 			return reports[i].CreatedAt.After(reports[j].CreatedAt)
@@ -1005,19 +964,19 @@ func (s *Server) handleCreateEnterpriseBillingReport(w http.ResponseWriter, r *h
 		ID: uuid.NewString(), ReportType: req.ReportType, StartDate: req.StartDate, EndDate: req.EndDate,
 		Status: "processing", CreatedAt: now, Actor: actor,
 	}
-	s.store.mu.Lock()
+	s.store.Mu.Lock()
 	s.store.EnterpriseSettings.EnterpriseBillingReports[report.ID] = report
-	s.store.persistEnterpriseSettings()
-	s.store.mu.Unlock()
+	s.store.PersistEnterpriseSettings()
+	s.store.Mu.Unlock()
 	writeJSON(w, http.StatusAccepted, billingReportJSON(report))
 }
 
 func (s *Server) handleGetEnterpriseBillingReport(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("report_id")
-	s.store.mu.Lock()
+	s.store.Mu.Lock()
 	report := s.store.EnterpriseSettings.EnterpriseBillingReports[id]
 	if report == nil {
-		s.store.mu.Unlock()
+		s.store.Mu.Unlock()
 		writeGHError(w, http.StatusNotFound, "Not Found")
 		return
 	}
@@ -1026,18 +985,18 @@ func (s *Server) handleGetEnterpriseBillingReport(w http.ResponseWriter, r *http
 		report.DownloadURLs = []string{
 			s.baseURL(r) + "/enterprises/" + s.enterpriseSlug() + "/billing/reports/" + report.ID + "/download",
 		}
-		s.store.persistEnterpriseSettings()
+		s.store.PersistEnterpriseSettings()
 	}
 	copy := cloneBillingReport(report)
-	s.store.mu.Unlock()
+	s.store.Mu.Unlock()
 	writeJSON(w, http.StatusOK, billingReportJSON(copy))
 }
 
 func (s *Server) handleDownloadEnterpriseBillingReport(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("report_id")
-	s.store.mu.RLock()
+	s.store.Mu.RLock()
 	report := cloneBillingReport(s.store.EnterpriseSettings.EnterpriseBillingReports[id])
-	s.store.mu.RUnlock()
+	s.store.Mu.RUnlock()
 	if report == nil || report.Status != "completed" {
 		writeGHError(w, http.StatusNotFound, "Not Found")
 		return

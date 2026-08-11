@@ -99,7 +99,7 @@ func (s *Server) handleListEnterpriseRoleTeams(w http.ResponseWriter, r *http.Re
 	if role == nil {
 		return
 	}
-	s.store.mu.RLock()
+	s.store.Mu.RLock()
 	ids := append([]int(nil), s.store.EnterpriseSettings.EnterpriseRoleTeamAssignments[role.ID]...)
 	teams := make([]*EnterpriseTeam, 0, len(ids))
 	for _, id := range ids {
@@ -107,7 +107,7 @@ func (s *Server) handleListEnterpriseRoleTeams(w http.ResponseWriter, r *http.Re
 			teams = append(teams, team)
 		}
 	}
-	s.store.mu.RUnlock()
+	s.store.Mu.RUnlock()
 	sort.Slice(teams, func(i, j int) bool { return teams[i].ID < teams[j].ID })
 	result := make([]map[string]interface{}, len(teams))
 	for i, team := range teams {
@@ -121,7 +121,7 @@ func (s *Server) handleListEnterpriseRoleUsers(w http.ResponseWriter, r *http.Re
 	if role == nil {
 		return
 	}
-	s.store.mu.RLock()
+	s.store.Mu.RLock()
 	assignments := map[int][]*EnterpriseTeam{}
 	for _, userID := range s.store.EnterpriseSettings.EnterpriseRoleUserAssignments[role.ID] {
 		assignments[userID] = nil
@@ -137,7 +137,7 @@ func (s *Server) handleListEnterpriseRoleUsers(w http.ResponseWriter, r *http.Re
 			}
 		}
 	}
-	s.store.mu.RUnlock()
+	s.store.Mu.RUnlock()
 	ids := make([]int, 0, len(assignments))
 	for id := range assignments {
 		ids = append(ids, id)
@@ -211,7 +211,7 @@ func (s *Server) mutateEnterpriseRoleAssignment(w http.ResponseWriter, r *http.R
 		}
 		roleID = role.ID
 	}
-	s.store.mu.Lock()
+	s.store.Mu.Lock()
 	assignments := s.store.EnterpriseSettings.EnterpriseRoleUserAssignments
 	if kind == "teams" {
 		assignments = s.store.EnterpriseSettings.EnterpriseRoleTeamAssignments
@@ -225,8 +225,8 @@ func (s *Server) mutateEnterpriseRoleAssignment(w http.ResponseWriter, r *http.R
 	} else {
 		assignments[roleID] = appendUniqueInt(assignments[roleID], targetID)
 	}
-	s.store.persistEnterpriseSettings()
-	s.store.mu.Unlock()
+	s.store.PersistEnterpriseSettings()
+	s.store.Mu.Unlock()
 	w.WriteHeader(http.StatusNoContent)
 }
 

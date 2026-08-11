@@ -40,7 +40,7 @@ func jobSecretsEntitled(scope runnerScope, repoFullName string) bool {
 	if repoFullName == "" {
 		return true
 	}
-	return scope.coversRepo(repoFullName)
+	return scope.CoversRepo(repoFullName)
 }
 
 // CollectJobSecretsAndVars resolves the Actions secrets and configuration
@@ -52,8 +52,8 @@ func jobSecretsEntitled(scope runnerScope, repoFullName string) bool {
 // independently. The returned maps are fresh copies safe to hand to the
 // runner-message builder.
 func (s *Server) CollectJobSecretsAndVars(repoFullName, envName string) (secrets map[string]string, vars map[string]string, err error) {
-	s.store.mu.RLock()
-	defer s.store.mu.RUnlock()
+	s.store.Mu.RLock()
+	defer s.store.Mu.RUnlock()
 	return s.collectJobSecretsAndVarsLocked(repoFullName, envName)
 }
 

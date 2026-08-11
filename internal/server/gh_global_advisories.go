@@ -20,25 +20,6 @@ func (s *Server) registerGHGlobalAdvisoriesRoutes() {
 	s.route("GET /api/v3/advisories/{ghsa_id}", s.handleGetGlobalAdvisory)
 }
 
-// listGlobalAdvisories returns every advisory in the global database view,
-// i.e. every repository advisory that has been published.
-func (st *Store) listGlobalAdvisories() []*SecurityAdvisory {
-	st.mu.RLock()
-	defer st.mu.RUnlock()
-	var out []*SecurityAdvisory
-	for _, a := range st.SecurityAdvisories {
-		if a.PublishedAt == nil {
-			continue
-		}
-		if a.State != "published" && a.State != "withdrawn" {
-			continue
-		}
-		out = append(out, a)
-	}
-	sort.Slice(out, func(i, j int) bool { return out[i].ID < out[j].ID })
-	return out
-}
-
 // advisoryDateInRange evaluates GitHub's date-range filter syntax: an exact
 // date ("2023-06-01"), a range ("2023-01-01..2023-06-30"), or an open range
 // (">=2023-01-01", "<=2023-06-30", ">2023-01-01", "<2023-06-30").
@@ -72,7 +53,7 @@ func (s *Server) handleListGlobalAdvisories(w http.ResponseWriter, r *http.Reque
 		typeFilter = "reviewed"
 	}
 
-	advisories := s.store.listGlobalAdvisories()
+	advisories := s.store.ListGlobalAdvisories()
 	filtered := advisories[:0:0]
 	for _, a := range advisories {
 		if typeFilter != "reviewed" {
@@ -202,7 +183,7 @@ func (s *Server) handleListGlobalAdvisories(w http.ResponseWriter, r *http.Reque
 
 func (s *Server) handleGetGlobalAdvisory(w http.ResponseWriter, r *http.Request) {
 	ghsaID := r.PathValue("ghsa_id")
-	for _, a := range s.store.listGlobalAdvisories() {
+	for _, a := range s.store.ListGlobalAdvisories() {
 		if a.GHSAID == ghsaID {
 			writeJSON(w, http.StatusOK, s.globalAdvisoryToJSON(a, s.baseURL(r)))
 			return

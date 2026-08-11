@@ -96,12 +96,12 @@ func TestOrganizationSCIMCannotHijackExistingAccount(t *testing.T) {
 	srv.createOrg(t, "evilcorp")
 
 	// A pre-existing, non-SCIM account.
-	srv.store.mu.Lock()
+	srv.store.Mu.Lock()
 	victim := &User{ID: srv.store.NextUser, Login: "victim", Name: "Victim", Email: "victim@real.test", Type: "User", StarredRepos: map[string]bool{}}
 	srv.store.NextUser++
 	srv.store.Users[victim.ID] = victim
 	srv.store.UsersByLogin["victim"] = victim
-	srv.store.mu.Unlock()
+	srv.store.Mu.Unlock()
 
 	base := "/api/v3/scim/v2/organizations/evilcorp/Users"
 	resp := srv.post(t, base, defaultToken, map[string]interface{}{

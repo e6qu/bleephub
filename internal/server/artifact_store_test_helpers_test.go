@@ -10,30 +10,30 @@ import (
 // restart and object-storage behavior without exposing a production mutator.
 func (s *Server) setArtifactStore(store *ArtifactStore) {
 	s.artifactStore = store
-	s.store.actionsArtifacts = store
+	s.store.ActionsArtifacts = store
 }
 
 // deleteRepositoryActionsData exercises ArtifactStore's standalone durable
 // deletion contract. Repository deletion itself uses the crash-consistent
 // prepare/commit/cleanup coordinator in Store.
 func (s *Server) deleteRepositoryActionsData(ctx context.Context, repoFullName string) error {
-	s.artifactStore.mu.RLock()
+	s.artifactStore.Mu.RLock()
 	artifactIDs := make([]int64, 0)
 	cacheIDs := make([]int64, 0)
-	for id, artifact := range s.artifactStore.artifacts {
+	for id, artifact := range s.artifactStore.Artifacts {
 		if artifact.RepoFullName == repoFullName {
 			artifactIDs = append(artifactIDs, id)
 		}
 	}
-	for id, entry := range s.artifactStore.caches {
+	for id, entry := range s.artifactStore.Caches {
 		if entry.Repo == repoFullName {
 			cacheIDs = append(cacheIDs, id)
 		}
 	}
-	s.artifactStore.mu.RUnlock()
+	s.artifactStore.Mu.RUnlock()
 
 	for _, id := range artifactIDs {
-		if _, err := s.artifactStore.deleteArtifact(ctx, id); err != nil {
+		if _, err := s.artifactStore.DeleteArtifact(ctx, id); err != nil {
 			return fmt.Errorf("delete Actions artifact %d: %w", id, err)
 		}
 	}
@@ -41,13 +41,13 @@ func (s *Server) deleteRepositoryActionsData(ctx context.Context, repoFullName s
 		if err := s.removeCacheBytes(ctx, id); err != nil {
 			return fmt.Errorf("delete Actions cache %d: %w", id, err)
 		}
-		s.artifactStore.mu.Lock()
-		entry := s.artifactStore.caches[id]
+		s.artifactStore.Mu.Lock()
+		entry := s.artifactStore.Caches[id]
 		if entry != nil {
-			delete(s.artifactStore.cacheIndex, cacheLookupKey(entry.Repo, entry.Key, entry.Version))
-			delete(s.artifactStore.caches, id)
+			delete(s.artifactStore.CacheIndex, cacheLookupKey(entry.Repo, entry.Key, entry.Version))
+			delete(s.artifactStore.Caches, id)
 		}
-		s.artifactStore.mu.Unlock()
+		s.artifactStore.Mu.Unlock()
 	}
 	return nil
 }

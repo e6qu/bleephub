@@ -52,8 +52,8 @@ func (s *Server) legacyAuthorizationUser(w http.ResponseWriter, r *http.Request)
 }
 
 func (s *Server) listLegacyAuthorizationRefs(userID int) []legacyAuthorizationRef {
-	s.store.mu.RLock()
-	defer s.store.mu.RUnlock()
+	s.store.Mu.RLock()
+	defer s.store.Mu.RUnlock()
 	refs := make([]legacyAuthorizationRef, 0)
 	user := s.store.Users[userID]
 	for key, token := range s.store.Tokens {
@@ -131,13 +131,13 @@ func (s *Server) handleCreateLegacyAuthorization(w http.ResponseWriter, r *http.
 		return
 	}
 	token := s.store.CreateToken(user.ID, strings.Join(req.Scopes, ", "))
-	s.store.mu.Lock()
+	s.store.Mu.Lock()
 	token.Note = valueOrEmpty(req.Note)
 	token.NoteURL = valueOrEmpty(req.NoteURL)
 	token.Fingerprint = valueOrEmpty(req.Fingerprint)
-	s.store.persistTokenLocked(token)
+	s.store.PersistTokenLocked(token)
 	copy := *token
-	s.store.mu.Unlock()
+	s.store.Mu.Unlock()
 	writeJSON(w, http.StatusCreated, classicAuthorizationJSON(token.Value, &copy, user, true))
 }
 
@@ -191,23 +191,23 @@ func (s *Server) createLegacyOAuthAuthorization(
 		writeGHError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
-	s.store.mu.Lock()
+	s.store.Mu.Lock()
 	stored := s.store.UserToServerTokens[token.Token]
 	if stored == nil {
 		// A concurrent grant revoke removed the freshly minted token; do not
 		// deref it under the lock.
-		s.store.mu.Unlock()
+		s.store.Mu.Unlock()
 		writeGHError(w, http.StatusInternalServerError, "authorization could not be persisted")
 		return
 	}
 	stored.Note = valueOrEmpty(req.Note)
 	stored.NoteURL = valueOrEmpty(req.NoteURL)
 	stored.Fingerprint = fingerprint
-	if s.store.persist != nil {
-		s.store.persist.MustPut("user_to_server_tokens", stored.Token, stored)
+	if s.store.Persist != nil {
+		s.store.Persist.MustPut("user_to_server_tokens", stored.Token, stored)
 	}
 	copy := cloneUserToServerToken(stored)
-	s.store.mu.Unlock()
+	s.store.Mu.Unlock()
 	writeJSON(w, http.StatusCreated, s.legacyAuthorizationJSON(legacyAuthorizationRef{
 		kind: "oauth", mapKey: copy.Token, oauth: copy, user: user, identity: copy.Token,
 	}, true))
@@ -267,7 +267,7 @@ func (s *Server) handleUpdateLegacyAuthorization(w http.ResponseWriter, r *http.
 	if !decodeJSONBody(w, r, &req) {
 		return
 	}
-	s.store.mu.Lock()
+	s.store.Mu.Lock()
 	// The ref was resolved under a separate RLock, so the credential may have
 	// been deleted by a concurrent DELETE in between. A nil deref here would
 	// panic while holding st.mu — which recoverMiddleware cannot release —
@@ -275,28 +275,28 @@ func (s *Server) handleUpdateLegacyAuthorization(w http.ResponseWriter, r *http.
 	if ref.kind == "pat" {
 		stored := s.store.Tokens[ref.mapKey]
 		if stored == nil {
-			s.store.mu.Unlock()
+			s.store.Mu.Unlock()
 			writeGHError(w, http.StatusNotFound, "Not Found")
 			return
 		}
 		applyLegacyAuthorizationUpdate(&stored.Scopes, &stored.Note, &stored.NoteURL, &stored.Fingerprint, req)
-		s.store.persistTokenLocked(stored)
+		s.store.PersistTokenLocked(stored)
 		copy := *stored
 		ref.pat = &copy
 	} else {
 		stored := s.store.UserToServerTokens[ref.mapKey]
 		if stored == nil {
-			s.store.mu.Unlock()
+			s.store.Mu.Unlock()
 			writeGHError(w, http.StatusNotFound, "Not Found")
 			return
 		}
 		applyLegacyAuthorizationUpdate(&stored.Scopes, &stored.Note, &stored.NoteURL, &stored.Fingerprint, req)
-		if s.store.persist != nil {
-			s.store.persist.MustPut("user_to_server_tokens", stored.Token, stored)
+		if s.store.Persist != nil {
+			s.store.Persist.MustPut("user_to_server_tokens", stored.Token, stored)
 		}
 		ref.oauth = cloneUserToServerToken(stored)
 	}
-	s.store.mu.Unlock()
+	s.store.Mu.Unlock()
 	writeJSON(w, http.StatusOK, s.legacyAuthorizationJSON(ref, false))
 }
 
@@ -358,16 +358,16 @@ func (s *Server) handleDeleteLegacyAuthorization(w http.ResponseWriter, r *http.
 		writeGHError(w, http.StatusNotFound, "Not Found")
 		return
 	}
-	s.store.mu.Lock()
+	s.store.Mu.Lock()
 	if ref.kind == "pat" {
-		s.store.deleteTokenMapKeyLocked(ref.mapKey)
+		s.store.DeleteTokenMapKeyLocked(ref.mapKey)
 	} else {
 		delete(s.store.UserToServerTokens, ref.mapKey)
-		if s.store.persist != nil {
-			s.store.persist.MustDelete("user_to_server_tokens", ref.mapKey)
+		if s.store.Persist != nil {
+			s.store.Persist.MustDelete("user_to_server_tokens", ref.mapKey)
 		}
 	}
-	s.store.mu.Unlock()
+	s.store.Mu.Unlock()
 	w.WriteHeader(http.StatusNoContent)
 }
 

@@ -86,11 +86,11 @@ func TestEnterpriseActionsRunnerInventoriesAreScopeSafe(t *testing.T) {
 		{ID: 7102, Name: "org-runner", Enabled: true, Status: "online", Scope: runnerScope{Org: org.Login}},
 		{ID: 7103, Name: "repo-runner", Enabled: true, Status: "online", Scope: runnerScope{Repo: repo.FullName}},
 	}
-	s.store.mu.Lock()
+	s.store.Mu.Lock()
 	for _, agent := range agents {
 		s.store.Agents[agent.ID] = agent
 	}
-	s.store.mu.Unlock()
+	s.store.Mu.Unlock()
 
 	assertNames := func(path string, want ...string) {
 		t.Helper()
@@ -203,7 +203,7 @@ func TestEnterpriseRunnerGroupsAreOwnedAndManageOrganizations(t *testing.T) {
 	admin := s.store.LookupUserByLogin("admin")
 	orgA := s.store.CreateOrg(admin, "enterprise-group-a", "Enterprise Group A", "")
 	orgB := s.store.CreateOrg(admin, "enterprise-group-b", "Enterprise Group B", "")
-	s.store.mu.Lock()
+	s.store.Mu.Lock()
 	s.store.Agents[7201] = &Agent{
 		ID: 7201, Name: "enterprise-group-runner", Status: "online",
 		Scope: runnerScope{Enterprise: "bleephub"},
@@ -212,7 +212,7 @@ func TestEnterpriseRunnerGroupsAreOwnedAndManageOrganizations(t *testing.T) {
 		ID: 7202, Name: "org-group-runner", Status: "online",
 		Scope: runnerScope{Org: orgA.Login},
 	}
-	s.store.mu.Unlock()
+	s.store.Mu.Unlock()
 
 	base := "/api/v3/enterprises/bleephub/actions/runner-groups"
 	rec := enterpriseActionsRequest(t, s, http.MethodPost, base, map[string]interface{}{

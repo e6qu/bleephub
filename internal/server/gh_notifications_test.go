@@ -214,12 +214,12 @@ func TestNotifications_ParticipatingFilter(t *testing.T) {
 	s.registerGHNotificationsRoutes()
 
 	admin := s.store.UsersByLogin["admin"]
-	s.store.mu.Lock()
+	s.store.Mu.Lock()
 	other := &User{ID: s.store.NextUser, Login: "other", Type: "User"}
 	s.store.NextUser++
 	s.store.Users[other.ID] = other
 	s.store.UsersByLogin[other.Login] = other
-	s.store.mu.Unlock()
+	s.store.Mu.Unlock()
 	repo := s.store.CreateRepo(admin, "part-repo", "", false)
 	// Add other as collaborator with pull so they can read.
 	s.store.AddRepoCollaborator(repo.Owner.Login, repo.Name, other.Login, "pull")

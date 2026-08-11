@@ -117,19 +117,19 @@ func TestGraphQLRepositoryConnectionHonorsAffiliationOrderAndBackwardPagination(
 	if admin == nil {
 		t.Fatal("seeded admin is missing")
 	}
-	now := server.store.currentTime()
+	now := server.store.CurrentTime()
 	other := &User{
 		ID: admin.ID + 1, NodeID: "U_kgDOgraphqlother", Login: "other",
 		Name: "Other", Email: "other@example.test", Type: "User",
 		StarredRepos: map[string]bool{}, CreatedAt: now, UpdatedAt: now,
 	}
-	server.store.mu.Lock()
+	server.store.Mu.Lock()
 	server.store.Users[other.ID] = other
 	server.store.UsersByLogin[other.Login] = other
 	if server.store.NextUser <= other.ID {
 		server.store.NextUser = other.ID + 1
 	}
-	server.store.mu.Unlock()
+	server.store.Mu.Unlock()
 
 	if server.store.CreateRepo(admin, "zeta", "", false) == nil ||
 		server.store.CreateRepo(admin, "alpha", "", false) == nil ||

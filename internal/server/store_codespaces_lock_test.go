@@ -23,7 +23,7 @@ func TestCodespaceRuntimeDeletionDoesNotHoldStoreLock(t *testing.T) {
 
 	started := make(chan struct{})
 	release := make(chan struct{})
-	store.codespaceRuntimeDelete = func(*Codespace) error {
+	store.CodespaceRuntimeDelete = func(*Codespace) error {
 		close(started)
 		<-release
 		return nil
@@ -59,7 +59,7 @@ func TestCodespaceRuntimeDeletionFailureRestoresVisibleState(t *testing.T) {
 	codespace := &Codespace{ID: 41, Name: "retryable-delete", State: "Available"}
 	store.Codespaces[codespace.ID] = codespace
 	store.CodespacesByName[codespace.Name] = codespace
-	store.codespaceRuntimeDelete = func(*Codespace) error { return errors.New("runtime unavailable") }
+	store.CodespaceRuntimeDelete = func(*Codespace) error { return errors.New("runtime unavailable") }
 
 	ok, err := store.DeleteCodespace(codespace.ID)
 	if !ok || err == nil {
@@ -81,7 +81,7 @@ func TestCodespaceWorkspacePreparationDoesNotHoldStoreLock(t *testing.T) {
 
 	started := make(chan struct{})
 	release := make(chan struct{})
-	store.codespaceWorkspacePrepare = func(string, *Repo, gitStorage.Storer, string) (string, func(), error) {
+	store.CodespaceWorkspacePrepare = func(string, *Repo, gitStorage.Storer, string) (string, func(), error) {
 		close(started)
 		<-release
 		return "", func() {}, nil
@@ -89,7 +89,7 @@ func TestCodespaceWorkspacePreparationDoesNotHoldStoreLock(t *testing.T) {
 
 	created := make(chan error, 1)
 	go func() {
-		_, _, cleanup, err := store.reserveCodespace(user.Login, repo.FullName, "main", "", codespaceCreateOptions{})
+		_, _, cleanup, err := store.ReserveCodespace(user.Login, repo.FullName, "main", "", codespaceCreateOptions{})
 		if cleanup != nil {
 			cleanup()
 		}

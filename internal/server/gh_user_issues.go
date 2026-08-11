@@ -61,7 +61,7 @@ func (s *Server) handleListGlobalUserIssues(w http.ResponseWriter, r *http.Reque
 		issue *Issue
 		repo  *Repo
 	}
-	s.store.mu.RLock()
+	s.store.Mu.RLock()
 	rows := make([]row, 0)
 	for _, issue := range s.store.Issues {
 		repo := s.store.Repos[issue.RepoID]
@@ -82,7 +82,7 @@ func (s *Server) handleListGlobalUserIssues(w http.ResponseWriter, r *http.Reque
 		}
 		rows = append(rows, row{issue, repo})
 	}
-	s.store.mu.RUnlock()
+	s.store.Mu.RUnlock()
 
 	rows = slices.DeleteFunc(rows, func(candidate row) bool {
 		return !s.viewerCanReadRepo(r.Context(), candidate.repo)

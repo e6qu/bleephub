@@ -109,7 +109,7 @@ func TestSearchIssuesWithDeletedPullRequestAuthorRendersGhost(t *testing.T) {
 
 	// The PR's author account is deleted while the PR survives.
 	var fullName string
-	s.store.mu.Lock()
+	s.store.Mu.Lock()
 	for _, pr := range s.store.PullRequests {
 		pr.AuthorID = 4242
 		if repo := s.store.Repos[pr.RepoID]; repo != nil {
@@ -117,7 +117,7 @@ func TestSearchIssuesWithDeletedPullRequestAuthorRendersGhost(t *testing.T) {
 		}
 	}
 	delete(s.store.Users, 4242)
-	s.store.mu.Unlock()
+	s.store.Mu.Unlock()
 	if fullName == "" {
 		t.Fatal("no pull request seeded")
 	}
@@ -172,9 +172,9 @@ func TestUpdateProjectCardLosingItsColumnIsNotFound(t *testing.T) {
 	w := serveWithConcurrentDelete(s, http.MethodPatch, path,
 		map[string]interface{}{"note": "renamed"},
 		func() {
-			s.store.mu.Lock()
+			s.store.Mu.Lock()
 			delete(s.store.ProjectColumns, col.ID)
-			s.store.mu.Unlock()
+			s.store.Mu.Unlock()
 		})
 	if w.Code != http.StatusNotFound {
 		t.Fatalf("card PATCH racing its column's delete = %d, want 404: %s", w.Code, w.Body.String())
@@ -206,9 +206,9 @@ func TestProjectCardToJSONReportsMissingColumn(t *testing.T) {
 		t.Fatal("card with a live column reported as unrenderable")
 	}
 
-	s.store.mu.Lock()
+	s.store.Mu.Lock()
 	delete(s.store.ProjectColumns, col.ID)
-	s.store.mu.Unlock()
+	s.store.Mu.Unlock()
 
 	item, ok := projectCardToJSON(card, s.store, "http://x")
 	if ok || item != nil {
@@ -443,7 +443,7 @@ func TestSearchUsersPaginationIsTotallyOrdered(t *testing.T) {
 	s := fuzzRoutedServer(t)
 	admin := s.store.UsersByLogin["admin"]
 	total := 0
-	s.store.mu.Lock()
+	s.store.Mu.Lock()
 	for i := 0; i < searchOrderCorpus; i++ {
 		u := &User{
 			ID:           s.store.NextUser,
@@ -457,7 +457,7 @@ func TestSearchUsersPaginationIsTotallyOrdered(t *testing.T) {
 		s.store.UsersByLogin[u.Login] = u
 		total++
 	}
-	s.store.mu.Unlock()
+	s.store.Mu.Unlock()
 	if s.store.CreateOrg(admin, "orderable-org", "", "") == nil {
 		t.Fatal("CreateOrg returned nil")
 	}

@@ -34,7 +34,7 @@ func (s *Server) handleListOrgSecurityAdvisories(w http.ResponseWriter, r *http.
 		advisory *SecurityAdvisory
 		repo     *Repo
 	}
-	s.store.mu.RLock()
+	s.store.Mu.RLock()
 	var rows []advisoryRow
 	for repoKey, byGHSA := range s.store.SecurityAdvisoriesByRepo {
 		repo := s.store.ReposByName[repoKey]
@@ -45,7 +45,7 @@ func (s *Server) handleListOrgSecurityAdvisories(w http.ResponseWriter, r *http.
 			rows = append(rows, advisoryRow{advisory: a, repo: repo})
 		}
 	}
-	s.store.mu.RUnlock()
+	s.store.Mu.RUnlock()
 
 	if state := r.URL.Query().Get("state"); state != "" {
 		kept := rows[:0]

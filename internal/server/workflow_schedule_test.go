@@ -171,8 +171,8 @@ func TestCronMinimumInterval(t *testing.T) {
 // scheduleRunCounter counts schedule-triggered runs for one repo.
 func (s *isolatedServer) scheduleRunCounter(repoKey string) func() int {
 	return func() int {
-		s.store.mu.RLock()
-		defer s.store.mu.RUnlock()
+		s.store.Mu.RLock()
+		defer s.store.Mu.RUnlock()
 		n := 0
 		for _, w := range s.store.Workflows {
 			if w.RepoFullName == repoKey && w.EventName == "schedule" {
@@ -270,8 +270,8 @@ jobs:
 `)
 
 	countRuns := func() int {
-		s.store.mu.RLock()
-		defer s.store.mu.RUnlock()
+		s.store.Mu.RLock()
+		defer s.store.Mu.RUnlock()
 		n := 0
 		for _, w := range s.store.Workflows {
 			if w.RepoFullName == repoKey && w.EventName == "schedule" {
@@ -307,7 +307,7 @@ jobs:
 	}
 
 	// The run carries schedule event metadata.
-	s.store.mu.RLock()
+	s.store.Mu.RLock()
 	var run *Workflow
 	for _, w := range s.store.Workflows {
 		if w.RepoFullName == repoKey && w.EventName == "schedule" {
@@ -315,7 +315,7 @@ jobs:
 			break
 		}
 	}
-	s.store.mu.RUnlock()
+	s.store.Mu.RUnlock()
 	if run == nil {
 		t.Fatal("no schedule run found")
 	}

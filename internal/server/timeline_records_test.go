@@ -28,7 +28,7 @@ func linkJobToPlan(t *testing.T, s *Server, wfJob *WorkflowJob) (planID, timelin
 	t.Helper()
 	planID = uuid.New().String()
 	timelineID = uuid.New().String()
-	s.store.mu.Lock()
+	s.store.Mu.Lock()
 	s.store.Jobs[wfJob.JobID] = &Job{
 		ID:         wfJob.JobID,
 		PlanID:     planID,
@@ -36,7 +36,7 @@ func linkJobToPlan(t *testing.T, s *Server, wfJob *WorkflowJob) (planID, timelin
 		Status:     "running",
 	}
 	wfJob.PlanID = planID
-	s.store.mu.Unlock()
+	s.store.Mu.Unlock()
 	return planID, timelineID
 }
 
@@ -131,8 +131,8 @@ func newTimelineTestServer() *Server {
 }
 
 func storedRecords(s *Server, planID string) []TimelineRecord {
-	s.store.mu.RLock()
-	defer s.store.mu.RUnlock()
+	s.store.Mu.RLock()
+	defer s.store.Mu.RUnlock()
 	out := make([]TimelineRecord, 0, len(s.store.TimelineRecords[planID]))
 	for _, rec := range s.store.TimelineRecords[planID] {
 		out = append(out, *rec)
@@ -382,12 +382,12 @@ func TestJobSteps_NoRecordsMeansEmptyArray(t *testing.T) {
 	_, wfJob := seedRun(t, s, "octo/repo", "completed", "success")
 	// Step definitions exist, but the runner never reported records —
 	// the steps array must be empty, never fabricated from the defs.
-	s.store.mu.Lock()
+	s.store.Mu.Lock()
 	wfJob.Def = &JobDef{Steps: []StepDef{
 		{Name: "Checkout", Uses: "actions/checkout@v4"},
 		{Run: "go test ./..."},
 	}}
-	s.store.mu.Unlock()
+	s.store.Mu.Unlock()
 	linkJobToPlan(t, s, wfJob)
 
 	w := runRequest(s, "GET", fmt.Sprintf("/api/v3/repos/octo/repo/actions/jobs/%d", stableJobID(wfJob.JobID)))
@@ -415,9 +415,9 @@ func TestLogfilesUpload_AppendsBlocks(t *testing.T) {
 	uploadLogBlock(t, s, planID, logID, []byte("hello\n"))
 	uploadLogBlock(t, s, planID, logID, []byte("world\n"))
 
-	s.store.mu.RLock()
+	s.store.Mu.RLock()
 	got := string(s.store.LogFiles[logID])
-	s.store.mu.RUnlock()
+	s.store.Mu.RUnlock()
 	if got != "hello\nworld\n" {
 		t.Errorf("stored log = %q, want blocks appended", got)
 	}
@@ -427,7 +427,7 @@ func TestLogfilesUpload_WritesObjectStore(t *testing.T) {
 	fs := newS3FSForTest(t)
 	objectFS := deriveS3FSForTest(t, fs.Bucket(), "objects")
 	s := newTimelineTestServer()
-	s.setArtifactStore(NewArtifactStoreWithByteStore("", &s3ActionsByteStore{fs: objectFS}))
+	s.setArtifactStore(NewArtifactStoreWithByteStore("", &s3ActionsByteStore{Fs: objectFS}))
 	planID := uuid.New().String()
 	logID := createLogFile(t, s, planID)
 
@@ -443,13 +443,13 @@ func TestLogfilesUpload_ObjectStoreFailurePreservesState(t *testing.T) {
 	newS3FSForTest(t)
 	objectFS := deriveS3FSForTest(t, "missing-bucket", "objects")
 	s := newTimelineTestServer()
-	s.setArtifactStore(NewArtifactStoreWithByteStore("", &s3ActionsByteStore{fs: objectFS}))
+	s.setArtifactStore(NewArtifactStoreWithByteStore("", &s3ActionsByteStore{Fs: objectFS}))
 	planID := uuid.New().String()
 	logID := createLogFile(t, s, planID)
 
-	s.store.mu.Lock()
+	s.store.Mu.Lock()
 	s.store.LogFiles[logID] = []byte("kept\n")
-	s.store.mu.Unlock()
+	s.store.Mu.Unlock()
 
 	req := httptest.NewRequest("POST",
 		fmt.Sprintf("/_apis/v1/Logfiles/%s/build/%s/%d", planID, planID, logID),
@@ -461,9 +461,9 @@ func TestLogfilesUpload_ObjectStoreFailurePreservesState(t *testing.T) {
 		t.Fatalf("status = %d, body = %s", w.Code, w.Body.String())
 	}
 
-	s.store.mu.RLock()
+	s.store.Mu.RLock()
 	got := string(s.store.LogFiles[logID])
-	s.store.mu.RUnlock()
+	s.store.Mu.RUnlock()
 	if got != "kept\n" {
 		t.Fatalf("log state = %q, want previous bytes after object-store failure", got)
 	}
@@ -473,7 +473,7 @@ func TestJobLogs_ReadsUploadedLogFilesFromObjectStore(t *testing.T) {
 	fs := newS3FSForTest(t)
 	objectFS := deriveS3FSForTest(t, fs.Bucket(), "objects")
 	s := newTimelineTestServer()
-	s.setArtifactStore(NewArtifactStoreWithByteStore("", &s3ActionsByteStore{fs: objectFS}))
+	s.setArtifactStore(NewArtifactStoreWithByteStore("", &s3ActionsByteStore{Fs: objectFS}))
 	_, wfJob := seedRun(t, s, "octo/repo", "completed", "success")
 	planID, timelineID := linkJobToPlan(t, s, wfJob)
 
@@ -484,9 +484,9 @@ func TestJobLogs_ReadsUploadedLogFilesFromObjectStore(t *testing.T) {
 			"state": "completed", "result": "succeeded", "log": map[string]any{"id": logID}},
 	})
 
-	s.store.mu.Lock()
+	s.store.Mu.Lock()
 	delete(s.store.LogFiles, logID)
-	s.store.mu.Unlock()
+	s.store.Mu.Unlock()
 
 	w := runRequest(s, "GET", fmt.Sprintf("/api/v3/repos/octo/repo/actions/jobs/%d/logs", stableJobID(wfJob.JobID)))
 	if w.Code != http.StatusOK {
@@ -500,7 +500,7 @@ func TestJobLogs_ReadsUploadedLogFilesFromObjectStore(t *testing.T) {
 func TestJobLogs_SurviveServiceReloadWithObjectStore(t *testing.T) {
 	fs := newS3FSForTest(t)
 	objectFS := deriveS3FSForTest(t, fs.Bucket(), "objects")
-	byteStore := &s3ActionsByteStore{fs: objectFS}
+	byteStore := &s3ActionsByteStore{Fs: objectFS}
 	t.Setenv("BLEEPHUB_PERSIST", "true")
 	t.Setenv("BLEEPHUB_DATA_DIR", t.TempDir())
 
@@ -515,7 +515,7 @@ func TestJobLogs_SurviveServiceReloadWithObjectStore(t *testing.T) {
 	s1.setArtifactStore(NewArtifactStoreWithByteStore("", byteStore))
 	wf, wfJob := seedRun(t, s1, "octo/repo", "completed", "success")
 	planID, timelineID := linkJobToPlan(t, s1, wfJob)
-	s1.store.persistWorkflowRecord(wf)
+	s1.store.PersistWorkflowRecord(wf)
 
 	logID := createLogFile(t, s1, planID)
 	uploadLogBlock(t, s1, planID, logID, []byte("Deploying version 1.2.3\n"))
@@ -553,15 +553,15 @@ func TestRunLogsDelete_ObjectStoreFailurePreservesState(t *testing.T) {
 	objectFS := deriveS3FSForTest(t, "missing-bucket", "objects")
 	s := newTimelineTestServer()
 	s.registerGHActionsPermissionsRoutes()
-	s.setArtifactStore(NewArtifactStoreWithByteStore("", &s3ActionsByteStore{fs: objectFS}))
+	s.setArtifactStore(NewArtifactStoreWithByteStore("", &s3ActionsByteStore{Fs: objectFS}))
 	wf, wfJob := seedRun(t, s, "octo/repo", "completed", "success")
 	planID, timelineID := linkJobToPlan(t, s, wfJob)
 
 	logID := createLogFile(t, s, planID)
-	s.store.mu.Lock()
+	s.store.Mu.Lock()
 	s.store.LogFiles[logID] = []byte("still visible\n")
 	s.store.LogLines[wfJob.JobID] = []string{"console line"}
-	s.store.mu.Unlock()
+	s.store.Mu.Unlock()
 	patchTimelineRecords(t, s, planID, timelineID, true, []map[string]any{
 		{"id": uuid.New().String(), "type": "Task", "name": "object step", "order": 1,
 			"state": "completed", "result": "succeeded", "log": map[string]any{"id": logID}},
@@ -572,11 +572,11 @@ func TestRunLogsDelete_ObjectStoreFailurePreservesState(t *testing.T) {
 		t.Fatalf("status = %d, body = %s", w.Code, w.Body.String())
 	}
 
-	s.store.mu.RLock()
+	s.store.Mu.RLock()
 	_, hasLog := s.store.LogFiles[logID]
 	_, hasTimeline := s.store.TimelineRecords[planID]
 	lines := append([]string(nil), s.store.LogLines[wfJob.JobID]...)
-	s.store.mu.RUnlock()
+	s.store.Mu.RUnlock()
 	if !hasLog || !hasTimeline || len(lines) != 1 || lines[0] != "console line" {
 		t.Fatalf("delete failure changed state: hasLog=%v hasTimeline=%v lines=%v", hasLog, hasTimeline, lines)
 	}
@@ -592,9 +592,9 @@ func TestLogfilesUpload_CapsAtFourMiBWithMarker(t *testing.T) {
 	uploadLogBlock(t, s, planID, logID, block)
 	uploadLogBlock(t, s, planID, logID, bytes.Repeat([]byte{'b'}, 2<<20))
 
-	s.store.mu.RLock()
+	s.store.Mu.RLock()
 	stored := append([]byte(nil), s.store.LogFiles[logID]...)
-	s.store.mu.RUnlock()
+	s.store.Mu.RUnlock()
 
 	if want := (4 << 20) + len(marker); len(stored) != want {
 		t.Fatalf("stored len = %d, want %d (4 MiB + marker)", len(stored), want)
@@ -614,9 +614,9 @@ func TestLogfilesUpload_CapsAtFourMiBWithMarker(t *testing.T) {
 	// Further uploads past the cap are dropped — the marker stays last
 	// and the size doesn't grow.
 	uploadLogBlock(t, s, planID, logID, []byte("more"))
-	s.store.mu.RLock()
+	s.store.Mu.RLock()
 	after := len(s.store.LogFiles[logID])
-	s.store.mu.RUnlock()
+	s.store.Mu.RUnlock()
 	if after != len(stored) {
 		t.Errorf("log grew past the cap: %d → %d", len(stored), after)
 	}
@@ -625,9 +625,9 @@ func TestLogfilesUpload_CapsAtFourMiBWithMarker(t *testing.T) {
 func TestWebConsoleLog_CapsWithMarkerLine(t *testing.T) {
 	s := newTimelineTestServer()
 	_, wfJob := seedRun(t, s, "octo/repo", "running", "")
-	s.store.mu.Lock()
+	s.store.Mu.Lock()
 	s.store.LogLines[wfJob.JobID] = nil
-	s.store.mu.Unlock()
+	s.store.Mu.Unlock()
 	planID, timelineID := linkJobToPlan(t, s, wfJob)
 
 	chunk := make([]string, 6000)
@@ -638,9 +638,9 @@ func TestWebConsoleLog_CapsWithMarkerLine(t *testing.T) {
 	postConsoleLines(t, s, planID, timelineID, chunk)
 
 	marker := "[bleephub] console log truncated at 10000 lines"
-	s.store.mu.RLock()
+	s.store.Mu.RLock()
 	lines := append([]string(nil), s.store.LogLines[wfJob.JobID]...)
-	s.store.mu.RUnlock()
+	s.store.Mu.RUnlock()
 	if len(lines) != 10001 {
 		t.Fatalf("captured lines = %d, want 10000 + marker", len(lines))
 	}
@@ -659,9 +659,9 @@ func TestWebConsoleLog_CapsWithMarkerLine(t *testing.T) {
 
 	// Another chunk past the cap doesn't grow the capture.
 	postConsoleLines(t, s, planID, timelineID, chunk)
-	s.store.mu.RLock()
+	s.store.Mu.RLock()
 	after := len(s.store.LogLines[wfJob.JobID])
-	s.store.mu.RUnlock()
+	s.store.Mu.RUnlock()
 	if after != 10001 {
 		t.Errorf("capture grew past the cap: %d", after)
 	}
@@ -670,9 +670,9 @@ func TestWebConsoleLog_CapsWithMarkerLine(t *testing.T) {
 func TestWebConsoleLog_BareArrayBodyAccepted(t *testing.T) {
 	s := newTimelineTestServer()
 	_, wfJob := seedRun(t, s, "octo/repo", "running", "")
-	s.store.mu.Lock()
+	s.store.Mu.Lock()
 	s.store.LogLines[wfJob.JobID] = nil
-	s.store.mu.Unlock()
+	s.store.Mu.Unlock()
 	planID, timelineID := linkJobToPlan(t, s, wfJob)
 
 	body, _ := json.Marshal([]string{"bare line"})
@@ -687,9 +687,9 @@ func TestWebConsoleLog_BareArrayBodyAccepted(t *testing.T) {
 		t.Fatalf("status = %d, body = %s", w.Code, w.Body.String())
 	}
 
-	s.store.mu.RLock()
+	s.store.Mu.RLock()
 	lines := append([]string(nil), s.store.LogLines[wfJob.JobID]...)
-	s.store.mu.RUnlock()
+	s.store.Mu.RUnlock()
 	if len(lines) != 1 || lines[0] != "bare line" {
 		t.Errorf("captured lines = %v, want the bare-array line", lines)
 	}

@@ -992,15 +992,6 @@ type codespacePatchRequest struct {
 	RetentionPeriodMinutes int    `json:"retention_period_minutes"`
 }
 
-func cloneCodespace(cs *Codespace) *Codespace {
-	if cs == nil {
-		return nil
-	}
-	view := *cs
-	view.LatestExport = clonePointer(cs.LatestExport)
-	return &view
-}
-
 // snapshotCodespace copies a stored codespace under the store lock. Every
 // response is rendered from a copy: a codespace is written by container
 // lifecycle transitions that run concurrently with requests, and a serializer
@@ -1009,8 +1000,8 @@ func (s *Server) snapshotCodespace(cs *Codespace) *Codespace {
 	if cs == nil {
 		return nil
 	}
-	s.store.mu.RLock()
-	defer s.store.mu.RUnlock()
+	s.store.Mu.RLock()
+	defer s.store.Mu.RUnlock()
 	return cloneCodespace(cs)
 }
 
@@ -1018,8 +1009,8 @@ func (s *Server) snapshotCodespace(cs *Codespace) *Codespace {
 // single acquisition of the lock, so the pair a response renders is one
 // consistent instant rather than two.
 func (s *Server) snapshotCodespaceExport(cs *Codespace, export *CodespaceExport) (*Codespace, *CodespaceExport) {
-	s.store.mu.RLock()
-	defer s.store.mu.RUnlock()
+	s.store.Mu.RLock()
+	defer s.store.Mu.RUnlock()
 	return cloneCodespace(cs), clonePointer(export)
 }
 
@@ -1029,8 +1020,8 @@ func (s *Server) snapshotCodespaceSecret(sec *CodespaceSecret) *CodespaceSecret 
 	if sec == nil {
 		return nil
 	}
-	s.store.mu.RLock()
-	defer s.store.mu.RUnlock()
+	s.store.Mu.RLock()
+	defer s.store.Mu.RUnlock()
 	view := *sec
 	view.SelectedRepoIDs = append([]int(nil), sec.SelectedRepoIDs...)
 	return &view
@@ -1130,105 +1121,11 @@ func codespaceSecretsListJSON(secs []*CodespaceSecret, total int, baseURL string
 
 // ─── organization codespaces + access controls ───────────────────────────
 
-// OrgCodespacesAccess records which organization users can create codespaces
-// billed to the organization.
-type OrgCodespacesAccess struct {
-	Visibility        string   `json:"visibility"` // disabled | selected_members | all_members | all_members_and_outside_collaborators
-	SelectedUsernames []string `json:"selected_usernames,omitempty"`
-}
-
 var orgCodespacesAccessVisibilities = map[string]bool{
 	"disabled":                              true,
 	"selected_members":                      true,
 	"all_members":                           true,
 	"all_members_and_outside_collaborators": true,
-}
-
-// SetOrgCodespacesAccess replaces the org's codespaces access settings.
-func (st *Store) SetOrgCodespacesAccess(orgLogin, visibility string, selected []string) {
-	st.mu.Lock()
-	defer st.mu.Unlock()
-	st.OrgCodespacesAccess[orgLogin] = &OrgCodespacesAccess{
-		Visibility:        visibility,
-		SelectedUsernames: selected,
-	}
-	if st.persist != nil {
-		st.persist.MustPut("org_codespaces_access", orgLogin, st.OrgCodespacesAccess[orgLogin])
-	}
-}
-
-// ModifyOrgCodespacesAccessUsers adds or removes usernames from the org's
-// selected-members codespaces access list. Returns false when the org's
-// access visibility is not selected_members.
-func (st *Store) ModifyOrgCodespacesAccessUsers(orgLogin string, add bool, usernames []string) bool {
-	st.mu.Lock()
-	defer st.mu.Unlock()
-	access := st.OrgCodespacesAccess[orgLogin]
-	if access == nil || access.Visibility != "selected_members" {
-		return false
-	}
-	if add {
-		present := map[string]bool{}
-		for _, u := range access.SelectedUsernames {
-			present[strings.ToLower(u)] = true
-		}
-		for _, u := range usernames {
-			if !present[strings.ToLower(u)] {
-				access.SelectedUsernames = append(access.SelectedUsernames, u)
-				present[strings.ToLower(u)] = true
-			}
-		}
-	} else {
-		remove := map[string]bool{}
-		for _, u := range usernames {
-			remove[strings.ToLower(u)] = true
-		}
-		kept := access.SelectedUsernames[:0:0]
-		for _, u := range access.SelectedUsernames {
-			if !remove[strings.ToLower(u)] {
-				kept = append(kept, u)
-			}
-		}
-		access.SelectedUsernames = kept
-	}
-	if st.persist != nil {
-		st.persist.MustPut("org_codespaces_access", orgLogin, access)
-	}
-	return true
-}
-
-// orgCodespacesInvalidUsers returns the usernames that are neither active
-// organization members nor collaborators on any of the org's repositories.
-func (st *Store) orgCodespacesInvalidUsers(org *Org, usernames []string) []string {
-	st.mu.RLock()
-	defer st.mu.RUnlock()
-
-	collaborators := map[string]bool{}
-	for repoKey, byLogin := range st.RepoCollaborators {
-		repo := st.ReposByName[repoKey]
-		if repo == nil || repo.OwnerType != "Organization" || repo.OwnerID != org.ID {
-			continue
-		}
-		for login := range byLogin {
-			collaborators[strings.ToLower(login)] = true
-		}
-	}
-
-	var invalid []string
-	for _, username := range usernames {
-		u := st.UsersByLogin[username]
-		if u != nil {
-			m := st.Memberships[membershipKey(org.Login, u.ID)]
-			if m != nil && m.State == MembershipStateActive {
-				continue
-			}
-		}
-		if collaborators[strings.ToLower(username)] {
-			continue
-		}
-		invalid = append(invalid, username)
-	}
-	return invalid
 }
 
 func (s *Server) handleListOrgCodespaces(w http.ResponseWriter, r *http.Request) {
@@ -1240,7 +1137,7 @@ func (s *Server) handleListOrgCodespaces(w http.ResponseWriter, r *http.Request)
 
 	// Gather the org members' codespaces under the read lock; render
 	// outside it (codespaceToJSON takes store locks itself).
-	s.store.mu.RLock()
+	s.store.Mu.RLock()
 	memberLogins := map[string]bool{}
 	for _, m := range s.store.Memberships {
 		if m.OrgID == org.ID && m.State == MembershipStateActive {
@@ -1255,7 +1152,7 @@ func (s *Server) handleListOrgCodespaces(w http.ResponseWriter, r *http.Request)
 			list = append(list, cs)
 		}
 	}
-	s.store.mu.RUnlock()
+	s.store.Mu.RUnlock()
 	sort.Slice(list, func(i, j int) bool { return list[i].ID < list[j].ID })
 
 	base := s.baseURL(r)
@@ -1292,7 +1189,7 @@ func (s *Server) handleSetOrgCodespacesAccess(w http.ResponseWriter, r *http.Req
 		writeGHValidationError(w, "OrgCodespacesAccess", "selected_usernames", "invalid")
 		return
 	}
-	if invalid := s.store.orgCodespacesInvalidUsers(org, req.SelectedUsernames); len(invalid) > 0 {
+	if invalid := s.store.OrgCodespacesInvalidUsers(org, req.SelectedUsernames); len(invalid) > 0 {
 		writeGHError(w, http.StatusBadRequest, "Users are neither members nor collaborators of this organization.")
 		return
 	}
@@ -1316,7 +1213,7 @@ func (s *Server) modifyOrgCodespacesAccessUsers(w http.ResponseWriter, r *http.R
 		writeGHValidationError(w, "OrgCodespacesAccess", "selected_usernames", "invalid")
 		return
 	}
-	if invalid := s.store.orgCodespacesInvalidUsers(org, req.SelectedUsernames); len(invalid) > 0 {
+	if invalid := s.store.OrgCodespacesInvalidUsers(org, req.SelectedUsernames); len(invalid) > 0 {
 		writeGHError(w, http.StatusBadRequest, "Users are neither members nor collaborators of this organization.")
 		return
 	}
@@ -1337,16 +1234,6 @@ func (s *Server) handleRemoveOrgCodespacesAccessUsers(w http.ResponseWriter, r *
 
 // ─── org codespaces secret selected-repository add/remove ────────────────
 
-func (sec *CodespaceSecret) itemVisibility() string {
-	if sec.Visibility == "" {
-		return "all"
-	}
-	return sec.Visibility
-}
-func (sec *CodespaceSecret) selectedIDs() []int         { return sec.SelectedRepoIDs }
-func (sec *CodespaceSecret) setSelectedIDs(ids []int)   { sec.SelectedRepoIDs = ids }
-func (sec *CodespaceSecret) touchUpdated(now time.Time) { sec.UpdatedAt = now }
-
 // orgCodespaceSecretSelectionChange adapts the shared per-repository
 // selection core to the org codespaces secrets table.
 func (s *Server) orgCodespaceSecretSelectionChange(w http.ResponseWriter, r *http.Request, add bool) {
@@ -1359,7 +1246,7 @@ func (s *Server) orgCodespaceSecretSelectionChange(w http.ResponseWriter, r *htt
 			}
 			return nil
 		},
-		func() { s.store.persistCodespaceSecretScopeLocked(scope) })
+		func() { s.store.PersistCodespaceSecretScopeLocked(scope) })
 }
 
 func (s *Server) handleAddOrgCodespaceSecretRepo(w http.ResponseWriter, r *http.Request) {

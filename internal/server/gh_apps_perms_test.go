@@ -47,9 +47,9 @@ func TestRequirePerm_GhsToken_PermsGate(t *testing.T) {
 	// Upgrade installation to issues:write; the ghs_ token's snapshot still
 	// has the OLD perms (real GH behaviour — minted tokens are immutable).
 	// Verify by minting a fresh ghs_ token after the upgrade.
-	s.store.mu.Lock()
+	s.store.Mu.Lock()
 	inst.Permissions["issues"] = "write"
-	s.store.mu.Unlock()
+	s.store.Mu.Unlock()
 	fresh := s.store.CreateInstallationToken(inst.ID, app.ID, inst.Permissions, nil)
 
 	req = httptest.NewRequest("POST", "/api/v3/repos/admin/perms-target/issues", bytes.NewReader(body))

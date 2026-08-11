@@ -17,33 +17,6 @@ import (
 	"time"
 )
 
-// GitHub Pages deployments + the Pages health check.
-// Endpoints:
-//
-//	POST /repos/{o}/{r}/pages/deployments
-//	GET  /repos/{o}/{r}/pages/deployments/{pages_deployment_id}
-//	GET  /repos/{o}/{r}/pages/deployments/{pages_deployment_id}/status
-//	POST /repos/{o}/{r}/pages/deployments/{pages_deployment_id}/cancel
-//	GET  /repos/{o}/{r}/pages/health
-//
-// A deployment publishes an Actions artifact to the repo's Pages site. The
-// publish is synchronous (there is no CDN tier to wait on), so a stored
-// deployment is already terminal: "succeed" — the same value real GitHub
-// reports once its pipeline finishes. Cancelling is therefore only possible
-// for a non-terminal deployment, which cannot be observed in-process.
-type PagesDeploymentRecord struct {
-	ID           int       `json:"id"`
-	RepoID       int       `json:"repo_id"`
-	Status       string    `json:"status"`
-	Environment  string    `json:"environment"`
-	BuildVersion string    `json:"pages_build_version"`
-	ArtifactSize int64     `json:"artifact_size"`
-	ArtifactSHA  string    `json:"artifact_sha256"`
-	ArtifactKey  string    `json:"artifact_object_key"`
-	CreatedAt    time.Time `json:"created_at"`
-	UpdatedAt    time.Time `json:"updated_at"`
-}
-
 func (s *Server) registerGHPagesDeploymentRoutes() {
 	s.route("POST /api/v3/repos/{owner}/{repo}/pages/deployments",
 		s.requirePerm(scopePages, permWrite, s.handlePagesDeploymentCreate))
@@ -57,9 +30,9 @@ func (s *Server) requirePagesRead(next http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		repo := s.lookupRepoFromPath(r)
 		if repo != nil {
-			s.store.Misc.mu.RLock()
-			site := s.store.Misc.pagesByRepo[repo.ID]
-			s.store.Misc.mu.RUnlock()
+			s.store.Misc.Mu.RLock()
+			site := s.store.Misc.PagesByRepo[repo.ID]
+			s.store.Misc.Mu.RUnlock()
 			if !repo.Private && (site == nil || site.Public) {
 				next(w, r)
 				return
@@ -71,80 +44,6 @@ func (s *Server) requirePagesRead(next http.HandlerFunc) http.HandlerFunc {
 
 // --- Store ---
 
-// CreatePagesDeployment records a Pages deployment for a repository.
-func (st *Store) CreatePagesDeployment(repoID int, environment, buildVersion, status string, artifactSize int64, artifactSHA, artifactKey string) *PagesDeploymentRecord {
-	st.mu.Lock()
-	defer st.mu.Unlock()
-	now := time.Now().UTC()
-	d := &PagesDeploymentRecord{
-		ID:           st.NextPagesDeploymentID,
-		RepoID:       repoID,
-		Status:       status,
-		Environment:  environment,
-		BuildVersion: buildVersion,
-		ArtifactSize: artifactSize,
-		ArtifactSHA:  artifactSHA,
-		ArtifactKey:  artifactKey,
-		CreatedAt:    now,
-		UpdatedAt:    now,
-	}
-	st.NextPagesDeploymentID++
-	if st.PagesDeployments[repoID] == nil {
-		st.PagesDeployments[repoID] = map[int]*PagesDeploymentRecord{}
-	}
-	st.PagesDeployments[repoID][d.ID] = d
-	if st.persist != nil {
-		st.persist.MustPut("pages_deployments", strconv.Itoa(repoID), st.PagesDeployments[repoID])
-	}
-	return d
-}
-
-// GetPagesDeployment returns a Pages deployment by repo and ID, or nil.
-func (st *Store) GetPagesDeployment(repoID, id int) *PagesDeploymentRecord {
-	st.mu.RLock()
-	defer st.mu.RUnlock()
-	return st.PagesDeployments[repoID][id]
-}
-
-// GetPagesDeploymentByIdentifier returns a Pages deployment by its internal
-// numeric record ID or by GitHub's public pages_build_version identifier.
-func (st *Store) GetPagesDeploymentByIdentifier(repoID int, ident string) *PagesDeploymentRecord {
-	st.mu.RLock()
-	defer st.mu.RUnlock()
-	byID := st.PagesDeployments[repoID]
-	if byID == nil {
-		return nil
-	}
-	if id, err := strconv.Atoi(ident); err == nil {
-		if d := byID[id]; d != nil {
-			return d
-		}
-	}
-	for _, d := range byID {
-		if d.BuildVersion == ident {
-			return d
-		}
-	}
-	return nil
-}
-
-// SetPagesDeploymentStatus transitions a Pages deployment's status.
-// Returns false if the deployment does not exist.
-func (st *Store) SetPagesDeploymentStatus(repoID, id int, status string) bool {
-	st.mu.Lock()
-	defer st.mu.Unlock()
-	d := st.PagesDeployments[repoID][id]
-	if d == nil {
-		return false
-	}
-	d.Status = status
-	d.UpdatedAt = time.Now().UTC()
-	if st.persist != nil {
-		st.persist.MustPut("pages_deployments", strconv.Itoa(repoID), st.PagesDeployments[repoID])
-	}
-	return true
-}
-
 // --- Handlers ---
 
 func (s *Server) handlePagesDeploymentCreate(w http.ResponseWriter, r *http.Request) {
@@ -153,9 +52,9 @@ func (s *Server) handlePagesDeploymentCreate(w http.ResponseWriter, r *http.Requ
 		writeGHError(w, http.StatusNotFound, "Not Found")
 		return
 	}
-	s.store.Misc.mu.RLock()
-	site := s.store.Misc.pagesByRepo[repo.ID]
-	s.store.Misc.mu.RUnlock()
+	s.store.Misc.Mu.RLock()
+	site := s.store.Misc.PagesByRepo[repo.ID]
+	s.store.Misc.Mu.RUnlock()
 	if site == nil {
 		writeGHError(w, http.StatusNotFound, "Not Found")
 		return
@@ -214,12 +113,12 @@ func (s *Server) handlePagesDeploymentCreate(w http.ResponseWriter, r *http.Requ
 	// The publish happens here, synchronously: the site's content becomes
 	// the artifact and its status flips to built. The stored deployment is
 	// therefore already terminal.
-	s.store.Misc.mu.Lock()
+	s.store.Misc.Mu.Lock()
 	site.Status = "built"
-	if s.store.Misc.persist != nil {
-		s.store.Misc.persist.MustPut("pages_sites", strconv.Itoa(repo.ID), site)
+	if s.store.Misc.Persist != nil {
+		s.store.Misc.Persist.MustPut("pages_sites", strconv.Itoa(repo.ID), site)
 	}
-	s.store.Misc.mu.Unlock()
+	s.store.Misc.Mu.Unlock()
 
 	user := ghUserFromContext(r.Context())
 	if user != nil {
@@ -321,17 +220,17 @@ func (s *Server) verifyPagesOIDCToken(r *http.Request, token string, repo *Repo,
 
 func (s *Server) readPagesDeploymentArtifact(ctx context.Context, repoFullName string, artifactID *int64, artifactURL string) ([]byte, error) {
 	if artifactID != nil {
-		art, ok := s.artifactStore.artifactByID(*artifactID)
+		art, ok := s.artifactStore.ArtifactByID(*artifactID)
 		if !ok || !s.artifactBelongsToRepo(art, repoFullName) {
 			return nil, fmt.Errorf("pages deployment artifact %d was not found for repository %s", *artifactID, repoFullName)
 		}
 		data := append([]byte(nil), art.Data...)
 		if len(data) == 0 && art.Size > 0 {
-			if s.artifactStore.byteStore == nil {
+			if s.artifactStore.ByteStore == nil {
 				return nil, fmt.Errorf("pages deployment artifact %d bytes require configured object storage", art.ID)
 			}
 			var err error
-			data, err = s.artifactStore.byteStore.Get(ctx, artifactDataKey(art.ID))
+			data, err = s.artifactStore.ByteStore.Get(ctx, artifactDataKey(art.ID))
 			if err != nil {
 				return nil, fmt.Errorf("read Pages deployment artifact %d: %w", art.ID, err)
 			}
@@ -413,9 +312,9 @@ func pagesDeploymentTerminal(status string) bool {
 // repoOwnsFinalizedArtifact reports whether the repository owns a finalized
 // Actions artifact with the given ID.
 func (s *Server) repoOwnsFinalizedArtifact(repoFullName string, artifactID int64) bool {
-	s.artifactStore.mu.RLock()
-	defer s.artifactStore.mu.RUnlock()
-	for _, art := range s.artifactStore.artifacts {
+	s.artifactStore.Mu.RLock()
+	defer s.artifactStore.Mu.RUnlock()
+	for _, art := range s.artifactStore.Artifacts {
 		if art.ID == artifactID && art.RepoFullName == repoFullName && art.Finalized {
 			return true
 		}
@@ -431,15 +330,15 @@ func (s *Server) handlePagesHealthCheck(w http.ResponseWriter, r *http.Request) 
 		writeGHError(w, http.StatusNotFound, "Not Found")
 		return
 	}
-	s.store.Misc.mu.RLock()
-	site := s.store.Misc.pagesByRepo[repo.ID]
+	s.store.Misc.Mu.RLock()
+	site := s.store.Misc.PagesByRepo[repo.ID]
 	var cname string
 	var httpsEnforced bool
 	if site != nil {
 		cname = site.CNAME
 		httpsEnforced = site.HTTPSEnforced
 	}
-	s.store.Misc.mu.RUnlock()
+	s.store.Misc.Mu.RUnlock()
 	if site == nil {
 		writeGHError(w, http.StatusNotFound, "Not Found")
 		return

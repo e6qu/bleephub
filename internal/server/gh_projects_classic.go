@@ -655,11 +655,11 @@ func (s *Server) resolveProjectCard(w http.ResponseWriter, r *http.Request) (*Pr
 
 func projectClassicToJSON(p *ProjectClassic, st *Store, baseURL, repoFullName string) map[string]interface{} {
 	var creator map[string]interface{}
-	st.mu.RLock()
+	st.Mu.RLock()
 	if u := st.Users[p.CreatorID]; u != nil {
 		creator = userToJSON(u)
 	}
-	st.mu.RUnlock()
+	st.Mu.RUnlock()
 
 	api := baseURL + "/api/v3/projects/" + strconv.Itoa(p.ID)
 	return map[string]interface{}{
@@ -704,7 +704,7 @@ func projectColumnURL(c *ProjectColumn, baseURL string) string {
 func projectCardToJSON(c *ProjectCard, st *Store, baseURL string) (map[string]interface{}, bool) {
 	var creator map[string]interface{}
 	var contentURL interface{}
-	st.mu.RLock()
+	st.Mu.RLock()
 	if u := st.Users[c.CreatorID]; u != nil {
 		creator = userToJSON(u)
 	}
@@ -718,7 +718,7 @@ func projectCardToJSON(c *ProjectCard, st *Store, baseURL string) (map[string]in
 			contentURL = baseURL + "/api/v3/repos/" + proj.RepoKey + "/issues/" + strconv.Itoa(issue.Number)
 		}
 	}
-	st.mu.RUnlock()
+	st.Mu.RUnlock()
 
 	if col == nil {
 		return nil, false
@@ -748,10 +748,4 @@ func nullIfEmpty(s string) interface{} {
 		return nil
 	}
 	return s
-}
-
-func (st *Store) GetRepoByName(fullName string) *Repo {
-	st.mu.RLock()
-	defer st.mu.RUnlock()
-	return st.ReposByName[fullName]
 }

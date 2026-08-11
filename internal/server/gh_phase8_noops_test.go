@@ -46,10 +46,10 @@ func TestSecretScanning_OrgAlertFilters(t *testing.T) {
 		t.Fatal("create org repo failed")
 	}
 
-	s.store.mu.Lock()
-	_ = s.store.createSecretScanningAlertLocked(repo1.FullName, "github_personal_access_token", nil)
-	a2 := s.store.createSecretScanningAlertLocked(repo2.FullName, "aws_access_key_id", nil)
-	s.store.mu.Unlock()
+	s.store.Mu.Lock()
+	_ = s.store.CreateSecretScanningAlertLocked(repo1.FullName, "github_personal_access_token", nil)
+	a2 := s.store.CreateSecretScanningAlertLocked(repo2.FullName, "aws_access_key_id", nil)
+	s.store.Mu.Unlock()
 
 	token := adminTokenFor(s)
 	base := "/api/v3/orgs/ss-filter-org/secret-scanning/alerts"
@@ -118,10 +118,10 @@ func TestDependabot_OrgAlertFilters(t *testing.T) {
 		t.Fatal("create repo failed")
 	}
 
-	s.store.mu.Lock()
-	a1 := s.store.createDependabotAlertLocked(repo1.FullName, "pkg-a", "npm", "package-lock.json", "GHSA-a", "", "high", "open", "vuln a", "desc", "<4.17.21", "4.17.21")
-	a2 := s.store.createDependabotAlertLocked(repo1.FullName, "pkg-b", "npm", "package-lock.json", "GHSA-b", "", "high", "dismissed", "vuln b", "desc", "<4.17.21", "4.17.21")
-	s.store.mu.Unlock()
+	s.store.Mu.Lock()
+	a1 := s.store.CreateDependabotAlertLocked(repo1.FullName, "pkg-a", "npm", "package-lock.json", "GHSA-a", "", "high", "open", "vuln a", "desc", "<4.17.21", "4.17.21")
+	a2 := s.store.CreateDependabotAlertLocked(repo1.FullName, "pkg-b", "npm", "package-lock.json", "GHSA-b", "", "high", "dismissed", "vuln b", "desc", "<4.17.21", "4.17.21")
+	s.store.Mu.Unlock()
 
 	token := adminTokenFor(s)
 	base := "/api/v3/orgs/db-filter-org/dependabot/alerts"

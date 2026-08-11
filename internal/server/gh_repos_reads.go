@@ -218,7 +218,7 @@ func detectLicenseKey(content string) string {
 	bestKey := ""
 	bestScore := 0.0
 	for key, tmpl := range licenseTemplates {
-		tmplTokens := licenseTokenSet(tmpl.body)
+		tmplTokens := licenseTokenSet(tmpl.Body)
 		if len(tmplTokens) == 0 {
 			continue
 		}
@@ -262,10 +262,10 @@ func (s *Server) licenseSimpleJSON(key, base string) map[string]interface{} {
 	if tmpl, ok := licenseTemplates[key]; ok {
 		return map[string]interface{}{
 			"key":     key,
-			"name":    tmpl.name,
-			"spdx_id": tmpl.spdxID,
+			"name":    tmpl.Name,
+			"spdx_id": tmpl.SpdxID,
 			"url":     base + "/api/v3/licenses/" + key,
-			"node_id": tmpl.nodeID,
+			"node_id": tmpl.NodeID,
 		}
 	}
 	return map[string]interface{}{

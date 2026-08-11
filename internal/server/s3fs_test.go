@@ -149,7 +149,7 @@ func newObjectByteStoreForTest(t *testing.T) (*s3FS, actionsByteStore) {
 	t.Helper()
 	fs := newS3FSForTest(t)
 	objectFS := deriveS3FSForTest(t, fs.Bucket(), "objects")
-	return objectFS, &s3ActionsByteStore{fs: objectFS}
+	return objectFS, &s3ActionsByteStore{Fs: objectFS}
 }
 
 // deriveS3FSForTest builds a sibling S3FS handle on the shared MinIO server.

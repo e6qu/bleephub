@@ -16,9 +16,9 @@ func TestReadinessChecksPersistence(t *testing.T) {
 		t.Fatalf("in-memory readiness = %d: %s", healthy.Code, healthy.Body.String())
 	}
 
-	server.store.mu.Lock()
-	server.store.persistenceRecoveryRequired = true
-	server.store.mu.Unlock()
+	server.store.Mu.Lock()
+	server.store.PersistenceRecoveryRequired = true
+	server.store.Mu.Unlock()
 	unavailable := httptest.NewRecorder()
 	server.handleReady(unavailable, request)
 	if unavailable.Code != http.StatusServiceUnavailable {

@@ -538,9 +538,9 @@ func TestShauthCallbackRejectsOIDCArtifactFromAnotherIssuer(t *testing.T) {
 	if response.Code != http.StatusUnauthorized {
 		t.Fatalf("foreign-issuer callback = %d, want 401: %s", response.Code, response.Body.String())
 	}
-	s.store.mu.RLock()
+	s.store.Mu.RLock()
 	sessions := len(s.store.LoginSessions)
-	s.store.mu.RUnlock()
+	s.store.Mu.RUnlock()
 	if sessions != 0 {
 		t.Fatalf("foreign-issuer callback created %d browser sessions", sessions)
 	}

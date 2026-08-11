@@ -341,12 +341,12 @@ func TestRepoHookRoutesRefuseAnUnresolvedRepository(t *testing.T) {
 	s := newIsolatedServer(t)
 	store := s.store
 	now := fixedTestTime
-	store.mu.Lock()
+	store.Mu.Lock()
 	stranger := &User{ID: store.NextUser, Login: "ssrf-stranger", Type: "User", CreatedAt: now, UpdatedAt: now}
 	store.Users[stranger.ID] = stranger
 	store.UsersByLogin[stranger.Login] = stranger
 	store.NextUser++
-	store.mu.Unlock()
+	store.Mu.Unlock()
 	token := store.CreateToken(stranger.ID, "repo, workflow, read:org, admin:org, gist")
 	if token == nil {
 		t.Fatal("could not mint a token for the unrelated user")
@@ -382,12 +382,12 @@ func TestDependabotSecretsRefuseAnUnresolvedRepository(t *testing.T) {
 	s := newIsolatedServer(t)
 	store := s.store
 	now := fixedTestTime
-	store.mu.Lock()
+	store.Mu.Lock()
 	stranger := &User{ID: store.NextUser, Login: "ssrf-dependabot-stranger", Type: "User", CreatedAt: now, UpdatedAt: now}
 	store.Users[stranger.ID] = stranger
 	store.UsersByLogin[stranger.Login] = stranger
 	store.NextUser++
-	store.mu.Unlock()
+	store.Mu.Unlock()
 	token := store.CreateToken(stranger.ID, "repo, workflow, read:org, admin:org, gist")
 	if token == nil {
 		t.Fatal("could not mint a token for the unrelated user")

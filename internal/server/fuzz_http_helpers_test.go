@@ -85,9 +85,9 @@ func newFuzzFixture(t *testing.T) *fuzzFixture {
 	// A scoped (non-admin) token so the fuzzer can drive authz-sensitive paths
 	// with a credential that is valid but limited.
 	scoped := "fuzz-scoped-token-000000000000000000000000"
-	s.store.mu.Lock()
+	s.store.Mu.Lock()
 	s.store.Tokens[scoped] = &Token{Value: scoped, UserID: admin.ID, Scopes: "public_repo", CreatedAt: fixedTestTime.UTC()}
-	s.store.mu.Unlock()
+	s.store.Mu.Unlock()
 
 	handler := s.requestHandler()
 

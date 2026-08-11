@@ -21,12 +21,12 @@ type ghesGlobalHookRequest struct {
 }
 
 func (s *Server) handleListGHESGlobalHooks(w http.ResponseWriter, r *http.Request) {
-	s.store.mu.RLock()
+	s.store.Mu.RLock()
 	hooks := make([]*Webhook, 0, len(s.store.EnterpriseSettings.GHESGlobalHooks))
 	for _, hook := range s.store.EnterpriseSettings.GHESGlobalHooks {
 		hooks = append(hooks, cloneWebhook(hook))
 	}
-	s.store.mu.RUnlock()
+	s.store.Mu.RUnlock()
 	sort.Slice(hooks, func(i, j int) bool { return hooks[i].ID < hooks[j].ID })
 	out := make([]map[string]interface{}, 0, len(hooks))
 	for _, hook := range hooks {
@@ -60,7 +60,7 @@ func (s *Server) handleCreateGHESGlobalHook(w http.ResponseWriter, r *http.Reque
 		active = bool(*req.Active)
 	}
 	now := s.currentTime()
-	s.store.mu.Lock()
+	s.store.Mu.Lock()
 	hook := &Webhook{
 		ID: s.store.NextHookID, URL: req.Config.URL, Secret: req.Config.Secret,
 		ContentType: req.Config.ContentType, InsecureSSL: normalizeInsecureSSL(req.Config.InsecureSSL),
@@ -75,9 +75,9 @@ func (s *Server) handleCreateGHESGlobalHook(w http.ResponseWriter, r *http.Reque
 	}
 	s.store.NextHookID++
 	s.store.EnterpriseSettings.GHESGlobalHooks = append(s.store.EnterpriseSettings.GHESGlobalHooks, hook)
-	s.store.persistEnterpriseSettings()
+	s.store.PersistEnterpriseSettings()
 	rendered := cloneWebhook(hook)
-	s.store.mu.Unlock()
+	s.store.Mu.Unlock()
 	if rendered.Active {
 		s.enqueueWebhookDelivery(rendered, "ping", "", mustMarshal(map[string]interface{}{
 			"zen": "Keep it logically awesome.", "hook_id": rendered.ID,
@@ -92,8 +92,8 @@ func (s *Server) ghesGlobalHookFromRequest(w http.ResponseWriter, r *http.Reques
 		writeGHError(w, http.StatusNotFound, "Not Found")
 		return nil, -1
 	}
-	s.store.mu.RLock()
-	defer s.store.mu.RUnlock()
+	s.store.Mu.RLock()
+	defer s.store.Mu.RUnlock()
 	for index, hook := range s.store.EnterpriseSettings.GHESGlobalHooks {
 		if hook.ID == id {
 			return cloneWebhook(hook), index
@@ -141,16 +141,16 @@ func (s *Server) handleUpdateGHESGlobalHook(w http.ResponseWriter, r *http.Reque
 		current.Active = bool(*req.Active)
 	}
 	current.UpdatedAt = s.currentTime()
-	s.store.mu.Lock()
+	s.store.Mu.Lock()
 	if index >= len(s.store.EnterpriseSettings.GHESGlobalHooks) ||
 		s.store.EnterpriseSettings.GHESGlobalHooks[index].ID != current.ID {
-		s.store.mu.Unlock()
+		s.store.Mu.Unlock()
 		writeGHError(w, http.StatusConflict, "Hook changed concurrently")
 		return
 	}
 	s.store.EnterpriseSettings.GHESGlobalHooks[index] = current
-	s.store.persistEnterpriseSettings()
-	s.store.mu.Unlock()
+	s.store.PersistEnterpriseSettings()
+	s.store.Mu.Unlock()
 	writeJSON(w, http.StatusOK, s.ghesGlobalHookJSON(current, r))
 }
 
@@ -159,10 +159,10 @@ func (s *Server) handleDeleteGHESGlobalHook(w http.ResponseWriter, r *http.Reque
 	if hook == nil {
 		return
 	}
-	s.store.mu.Lock()
+	s.store.Mu.Lock()
 	if index >= len(s.store.EnterpriseSettings.GHESGlobalHooks) ||
 		s.store.EnterpriseSettings.GHESGlobalHooks[index].ID != hook.ID {
-		s.store.mu.Unlock()
+		s.store.Mu.Unlock()
 		writeGHError(w, http.StatusConflict, "Hook changed concurrently")
 		return
 	}
@@ -171,8 +171,8 @@ func (s *Server) handleDeleteGHESGlobalHook(w http.ResponseWriter, r *http.Reque
 		s.store.EnterpriseSettings.GHESGlobalHooks[index+1:]...,
 	)
 	delete(s.store.HookDeliveries, hook.ID)
-	s.store.persistEnterpriseSettings()
-	s.store.mu.Unlock()
+	s.store.PersistEnterpriseSettings()
+	s.store.Mu.Unlock()
 	w.WriteHeader(http.StatusNoContent)
 }
 
@@ -211,13 +211,13 @@ func (s *Server) ghesGlobalHookJSON(hook *Webhook, r *http.Request) map[string]i
 
 func (s *Server) handleListGHESPublicKeys(w http.ResponseWriter, r *http.Request) {
 	base := s.baseURL(r)
-	s.store.Misc.mu.RLock()
-	keys := make([]*UserKey, 0, len(s.store.Misc.userKeys))
-	for _, key := range s.store.Misc.userKeys {
+	s.store.Misc.Mu.RLock()
+	keys := make([]*UserKey, 0, len(s.store.Misc.UserKeys))
+	for _, key := range s.store.Misc.UserKeys {
 		copy := *key
 		keys = append(keys, &copy)
 	}
-	s.store.Misc.mu.RUnlock()
+	s.store.Misc.Mu.RUnlock()
 	sort.Slice(keys, func(i, j int) bool { return keys[i].ID < keys[j].ID })
 	out := make([]map[string]interface{}, 0, len(keys))
 	for _, key := range keys {
@@ -243,27 +243,27 @@ func (s *Server) handleDeleteGHESPublicKeys(w http.ResponseWriter, r *http.Reque
 		}
 		ids[id] = true
 	}
-	s.store.Misc.mu.Lock()
+	s.store.Misc.Mu.Lock()
 	for id := range ids {
-		key := s.store.Misc.userKeys[id]
+		key := s.store.Misc.UserKeys[id]
 		if key == nil {
-			s.store.Misc.mu.Unlock()
+			s.store.Misc.Mu.Unlock()
 			writeGHError(w, http.StatusNotFound, "Not Found")
 			return
 		}
-		delete(s.store.Misc.userKeys, id)
-		filtered := s.store.Misc.keysByUser[key.UserID][:0:0]
-		for _, candidate := range s.store.Misc.keysByUser[key.UserID] {
+		delete(s.store.Misc.UserKeys, id)
+		filtered := s.store.Misc.KeysByUser[key.UserID][:0:0]
+		for _, candidate := range s.store.Misc.KeysByUser[key.UserID] {
 			if candidate.ID != id {
 				filtered = append(filtered, candidate)
 			}
 		}
-		s.store.Misc.keysByUser[key.UserID] = filtered
-		if s.store.Misc.persist != nil {
-			s.store.Misc.persist.MustDelete("user_keys", strconv.Itoa(id))
+		s.store.Misc.KeysByUser[key.UserID] = filtered
+		if s.store.Misc.Persist != nil {
+			s.store.Misc.Persist.MustDelete("user_keys", strconv.Itoa(id))
 		}
 	}
-	s.store.Misc.mu.Unlock()
+	s.store.Misc.Mu.Unlock()
 	w.WriteHeader(http.StatusNoContent)
 }
 
@@ -273,7 +273,7 @@ func (s *Server) handleListGHESPersonalAccessTokens(w http.ResponseWriter, r *ht
 		token Token
 		user  *User
 	}
-	s.store.mu.RLock()
+	s.store.Mu.RLock()
 	rows := make([]row, 0, len(s.store.Tokens))
 	for key, token := range s.store.Tokens {
 		copy := *token
@@ -282,7 +282,7 @@ func (s *Server) handleListGHESPersonalAccessTokens(w http.ResponseWriter, r *ht
 			rows = append(rows, row{key: key, token: copy, user: &userCopy})
 		}
 	}
-	s.store.mu.RUnlock()
+	s.store.Mu.RUnlock()
 	sort.Slice(rows, func(i, j int) bool {
 		return authorizationID(tokenIdentity(rows[i].key, &rows[i].token)) <
 			authorizationID(tokenIdentity(rows[j].key, &rows[j].token))
@@ -300,16 +300,16 @@ func (s *Server) handleDeleteGHESPersonalAccessToken(w http.ResponseWriter, r *h
 		writeGHError(w, http.StatusNotFound, "Not Found")
 		return
 	}
-	s.store.mu.Lock()
+	s.store.Mu.Lock()
 	for key, token := range s.store.Tokens {
 		if authorizationID(tokenIdentity(key, token)) == id {
-			s.store.deleteTokenMapKeyLocked(key)
-			s.store.mu.Unlock()
+			s.store.DeleteTokenMapKeyLocked(key)
+			s.store.Mu.Unlock()
 			w.WriteHeader(http.StatusNoContent)
 			return
 		}
 	}
-	s.store.mu.Unlock()
+	s.store.Mu.Unlock()
 	writeGHError(w, http.StatusNotFound, "Not Found")
 }
 
@@ -325,20 +325,20 @@ func (s *Server) handleCreateGHESImpersonationToken(w http.ResponseWriter, r *ht
 	if !decodeJSONBody(w, r, &req) {
 		return
 	}
-	s.store.mu.Lock()
+	s.store.Mu.Lock()
 	for key, token := range s.store.Tokens {
 		if token.UserID == user.ID && token.Impersonation {
 			out := classicAuthorizationJSON(key, token, user, false)
-			s.store.mu.Unlock()
+			s.store.Mu.Unlock()
 			writeJSON(w, http.StatusOK, out)
 			return
 		}
 	}
-	token := s.store.createTokenLocked(user.ID, strings.Join(req.Scopes, ", "))
+	token := s.store.CreateTokenLocked(user.ID, strings.Join(req.Scopes, ", "))
 	token.Impersonation = true
-	s.store.persistTokenLocked(token)
+	s.store.PersistTokenLocked(token)
 	out := classicAuthorizationJSON(token.Value, token, user, true)
-	s.store.mu.Unlock()
+	s.store.Mu.Unlock()
 	writeJSON(w, http.StatusCreated, out)
 }
 
@@ -348,15 +348,15 @@ func (s *Server) handleDeleteGHESImpersonationToken(w http.ResponseWriter, r *ht
 		writeGHError(w, http.StatusNotFound, "Not Found")
 		return
 	}
-	s.store.mu.Lock()
+	s.store.Mu.Lock()
 	found := false
 	for key, token := range s.store.Tokens {
 		if token.UserID == user.ID && token.Impersonation {
-			s.store.deleteTokenMapKeyLocked(key)
+			s.store.DeleteTokenMapKeyLocked(key)
 			found = true
 		}
 	}
-	s.store.mu.Unlock()
+	s.store.Mu.Unlock()
 	if !found {
 		writeGHError(w, http.StatusNotFound, "Not Found")
 		return

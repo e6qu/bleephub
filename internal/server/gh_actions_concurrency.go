@@ -42,8 +42,8 @@ func (m concurrencyGroupMember) status() string {
 // groups: group name → ordered members (holder first, then pending runs
 // by submission time).
 func (s *Server) concurrencyGroupsForRepo(repo string) map[string][]concurrencyGroupMember {
-	s.store.mu.RLock()
-	defer s.store.mu.RUnlock()
+	s.store.Mu.RLock()
+	defer s.store.Mu.RUnlock()
 	holders := map[string][]*Workflow{}
 	pending := map[string][]*Workflow{}
 	for _, wf := range s.store.Workflows {
@@ -151,13 +151,13 @@ func (s *Server) handleListConcurrencyGroups(w http.ResponseWriter, r *http.Requ
 	out := make([]map[string]any, 0, len(page))
 	for _, name := range page {
 		var lastAcquired any
-		s.store.mu.RLock()
+		s.store.Mu.RLock()
 		for _, m := range groups[name] {
 			if m.position == 0 && !m.wf.ConcurrencyAcquiredAt.IsZero() {
 				lastAcquired = m.wf.ConcurrencyAcquiredAt.UTC().Format(time.RFC3339)
 			}
 		}
-		s.store.mu.RUnlock()
+		s.store.Mu.RUnlock()
 		out = append(out, map[string]any{
 			"group_name":       name,
 			"group_url":        concurrencyGroupURL(base, repo, name),
@@ -222,11 +222,11 @@ func (s *Server) handleGetConcurrencyGroup(w http.ResponseWriter, r *http.Reques
 
 	base := s.baseURL(r)
 	out := make([]map[string]any, 0, len(members))
-	s.store.mu.RLock()
+	s.store.Mu.RLock()
 	for _, m := range members {
 		out = append(out, runMemberJSON(m, base, repo))
 	}
-	s.store.mu.RUnlock()
+	s.store.Mu.RUnlock()
 	writeJSON(w, http.StatusOK, map[string]any{
 		"group_name":    name,
 		"group_url":     concurrencyGroupURL(base, repo, name),
@@ -257,10 +257,10 @@ func (s *Server) handleRunConcurrencyGroups(w http.ResponseWriter, r *http.Reque
 	repo := repoFullName(r)
 	base := s.baseURL(r)
 
-	s.store.mu.RLock()
+	s.store.Mu.RLock()
 	group := wf.ConcurrencyGroup
 	wfRepo := wf.RepoFullName
-	s.store.mu.RUnlock()
+	s.store.Mu.RUnlock()
 	if wfRepo == "" {
 		wfRepo = repo
 	}
@@ -273,9 +273,9 @@ func (s *Server) handleRunConcurrencyGroups(w http.ResponseWriter, r *http.Reque
 			if m.wf.RunID != wf.RunID {
 				continue
 			}
-			s.store.mu.RLock()
+			s.store.Mu.RLock()
 			entry := runMemberJSON(m, base, wfRepo)
-			s.store.mu.RUnlock()
+			s.store.Mu.RUnlock()
 			entry["position"] = m.position
 			entry["position_url"] = groupURL + "?ahead_of_run=" + strconv.Itoa(wf.RunID)
 			memberOut = append(memberOut, entry)

@@ -40,7 +40,7 @@ func (s *isolatedServer) ensureTestOrgRepo(t *testing.T, repo string) {
 func (s *isolatedServer) seedGatedRun(t *testing.T, repo string) *Workflow {
 	t.Helper()
 	s.ensureTestOrgRepo(t, repo)
-	s.store.mu.Lock()
+	s.store.Mu.Lock()
 	runID := s.store.NextRunID
 	s.store.NextRunID++
 	wf := &Workflow{
@@ -66,7 +66,7 @@ func (s *isolatedServer) seedGatedRun(t *testing.T, repo string) *Workflow {
 		Def:         &JobDef{RunsOn: "ubuntu-latest", Steps: []StepDef{{Run: "echo hi"}}},
 	}
 	s.store.Workflows[wf.ID] = wf
-	s.store.mu.Unlock()
+	s.store.Mu.Unlock()
 	return wf
 }
 
@@ -203,7 +203,7 @@ func TestRerunWorkflowJob_NewAttemptCarriesOtherJobs(t *testing.T) {
 	s.store.RegisterWorkflowFile(repo, ".github/workflows/jobrr.yml", "jobrr", yaml, "submitted")
 
 	// Seed the completed first attempt with both jobs succeeded.
-	s.store.mu.Lock()
+	s.store.Mu.Lock()
 	runID := s.store.NextRunID
 	s.store.NextRunID++
 	wf := &Workflow{
@@ -230,7 +230,7 @@ func TestRerunWorkflowJob_NewAttemptCarriesOtherJobs(t *testing.T) {
 	}
 	wf.Jobs["b"].Needs = []string{"a"}
 	s.store.Workflows[wf.ID] = wf
-	s.store.mu.Unlock()
+	s.store.Mu.Unlock()
 
 	targetID := stableJobID(wf.Jobs["b"].JobID)
 	base := fmt.Sprintf("/api/v3/repos/%s/actions", repo)
@@ -271,9 +271,9 @@ func TestRerunWorkflowJob_NewAttemptCarriesOtherJobs(t *testing.T) {
 	// round-trip cannot represent the 63-bit id exactly).
 	newWf := s.findWorkflowByRunID(runID)
 	s.assertWorkflowJobsUseHostMode(t, newWf, "b")
-	s.store.mu.RLock()
+	s.store.Mu.RLock()
 	newTargetID := stableJobID(newWf.Jobs["b"].JobID)
-	s.store.mu.RUnlock()
+	s.store.Mu.RUnlock()
 	resp := s.post(t, fmt.Sprintf("%s/jobs/%d/rerun", base, newTargetID), defaultToken, nil)
 	resp.Body.Close()
 	if resp.StatusCode != 403 {
@@ -301,7 +301,7 @@ func TestReviewCustomDeploymentProtectionRule(t *testing.T) {
 	env := s.store.Deployments.UpsertEnvironment(repoID, "production")
 
 	// Seed a run waiting on the environment's protection rule.
-	s.store.mu.Lock()
+	s.store.Mu.Lock()
 	runID := s.store.NextRunID
 	s.store.NextRunID++
 	wf := &Workflow{
@@ -331,7 +331,7 @@ func TestReviewCustomDeploymentProtectionRule(t *testing.T) {
 		},
 	}
 	s.store.Workflows[wf.ID] = wf
-	s.store.mu.Unlock()
+	s.store.Mu.Unlock()
 
 	base := fmt.Sprintf("/api/v3/repos/%s/actions/runs/%d", repoKey, runID)
 
@@ -439,10 +439,10 @@ func TestWorkflowFileTiming_ComputedFromRunHistory(t *testing.T) {
 	s.store.RegisterWorkflowFile(repo, ".github/workflows/ci.yml", "ci", yaml, "submitted")
 
 	wf, job := seedRun(t, s.Server, repo, "completed", "success")
-	s.store.mu.Lock()
+	s.store.Mu.Lock()
 	job.StartedAt = fixedTestTime.Add(-3 * time.Second)
 	job.CompletedAt = fixedTestTime
-	s.store.mu.Unlock()
+	s.store.Mu.Unlock()
 	_ = wf
 
 	data := decodeJSONWithStatus(t, s.get(t, "/api/v3/repos/"+repo+"/actions/workflows/ci.yml/timing", defaultToken), 200)

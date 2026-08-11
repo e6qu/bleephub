@@ -507,49 +507,6 @@ func runnerMAC(data string) []byte {
 	return mac.Sum(nil)
 }
 
-// runnerScope names the repository, organization, or enterprise a runner
-// credential acts for. Exactly one field is set.
-type runnerScope struct {
-	Repo       string `json:"repo,omitempty"` // owner/repo
-	Org        string `json:"org,omitempty"`
-	Enterprise string `json:"enterprise,omitempty"`
-}
-
-func (sc runnerScope) String() string {
-	switch {
-	case sc.Repo != "":
-		return "repo:" + sc.Repo
-	case sc.Org != "":
-		return "org:" + sc.Org
-	case sc.Enterprise != "":
-		return "enterprise:" + sc.Enterprise
-	}
-	return "unscoped"
-}
-
-func (sc runnerScope) empty() bool {
-	return sc.Repo == "" && sc.Org == "" && sc.Enterprise == ""
-}
-
-// coversRepo reports whether the scope entitles its holder to act for
-// repoFullName. Repository names are case-insensitive on GitHub.
-func (sc runnerScope) coversRepo(repoFullName string) bool {
-	if repoFullName == "" {
-		return false
-	}
-	if sc.Repo != "" {
-		return strings.EqualFold(sc.Repo, repoFullName)
-	}
-	if sc.Org != "" {
-		owner, _, ok := strings.Cut(repoFullName, "/")
-		return ok && strings.EqualFold(sc.Org, owner)
-	}
-	if sc.Enterprise != "" {
-		return true
-	}
-	return false
-}
-
 // runnerScopeFromRequest reads the scope a registration/JIT request acts for
 // off its path parameters: {owner}/{repo} for the repository surface, {org}
 // for the organization surface, or {enterprise} for the enterprise surface.
@@ -630,7 +587,7 @@ type runnerRegistrationClaims struct {
 }
 
 func newRunnerRegistrationToken(scope runnerScope, purpose string) (string, error) {
-	if scope.empty() {
+	if scope.Empty() {
 		return "", fmt.Errorf("runner registration token needs a repository, organization, or enterprise scope")
 	}
 	nonce, err := randomRunnerToken()
@@ -656,7 +613,7 @@ func parseRunnerRegistrationToken(token string, purposes []string) (runnerRegist
 	if !slices.Contains(purposes, claims.Purpose) {
 		return runnerRegistrationClaims{}, fmt.Errorf("runner token purpose %q is not one of %v", claims.Purpose, purposes)
 	}
-	if claims.Scope.empty() {
+	if claims.Scope.Empty() {
 		return runnerRegistrationClaims{}, fmt.Errorf("runner registration token carries no scope")
 	}
 	if time.Now().After(time.Unix(claims.Exp, 0).Add(runnerClockSkew)) {
@@ -678,7 +635,7 @@ func parseRunnerRegistrationToken(token string, purposes []string) (runnerRegist
 // authenticates is the RSA signature over the assertion, which an attacker
 // cannot produce without the runner's private key.
 func newAgentClientID(scope runnerScope) (string, error) {
-	if scope.empty() {
+	if scope.Empty() {
 		return "", fmt.Errorf("agent clientId needs a repository, organization, or enterprise scope")
 	}
 	return uuid.New().String(), nil
@@ -894,7 +851,7 @@ func (s *Server) runnerPrincipalForToken(token string) (*runnerPrincipal, error)
 		if agent == nil {
 			return nil, fmt.Errorf("no agent registered with clientId %q", claims.Sub)
 		}
-		if agent.Scope.empty() {
+		if agent.Scope.Empty() {
 			return nil, fmt.Errorf("agent %d carries no scope", agent.ID)
 		}
 		return &runnerPrincipal{Claims: claims, Agent: agent, Scope: agent.Scope}, nil

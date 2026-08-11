@@ -157,12 +157,12 @@ func TestListArtifactsScopedToRun(t *testing.T) {
 	seedRunJobToken(t, s, "octo/repo", "run-B")
 
 	add := func(id int64, name, backendID string) {
-		s.artifactStore.mu.Lock()
-		s.artifactStore.artifacts[id] = &Artifact{
+		s.artifactStore.Mu.Lock()
+		s.artifactStore.Artifacts[id] = &Artifact{
 			ID: id, Name: name, Finalized: true,
 			WorkflowRunBackendID: backendID, CreatedAt: fixedTestTime,
 		}
-		s.artifactStore.mu.Unlock()
+		s.artifactStore.Mu.Unlock()
 	}
 	add(1, "calc", "run-A")
 	add(2, "other", "run-B")

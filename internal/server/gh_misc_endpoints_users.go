@@ -58,23 +58,23 @@ func (s *Server) handleAdminCreateUser(w http.ResponseWriter, r *http.Request) {
 		writeGHValidationError(w, "User", "login", "missing_field")
 		return
 	}
-	s.store.mu.Lock()
+	s.store.Mu.Lock()
 	if _, exists := s.store.UsersByLogin[login]; exists {
-		s.store.mu.Unlock()
+		s.store.Mu.Unlock()
 		writeGHValidationError(w, "User", "login", "already_exists")
 		return
 	}
 	if req.Email != "" {
 		for _, existing := range s.store.Users {
 			if strings.EqualFold(existing.Email, req.Email) {
-				s.store.mu.Unlock()
+				s.store.Mu.Unlock()
 				writeGHValidationError(w, "User", "email", "already_exists")
 				return
 			}
 		}
 	}
 	now := time.Now().UTC()
-	userID := s.store.reserveGlobalID("next_user", &s.store.NextUser)
+	userID := s.store.ReserveGlobalID("next_user", &s.store.NextUser)
 	u := &User{
 		ID:           userID,
 		NodeID:       fmt.Sprintf("U_kgDO%08d", userID),
@@ -90,10 +90,10 @@ func (s *Server) handleAdminCreateUser(w http.ResponseWriter, r *http.Request) {
 	}
 	s.store.Users[u.ID] = u
 	s.store.UsersByLogin[u.Login] = u
-	if s.store.persist != nil {
-		s.store.persist.MustPut("users", strconv.Itoa(u.ID), u)
+	if s.store.Persist != nil {
+		s.store.Persist.MustPut("users", strconv.Itoa(u.ID), u)
 	}
-	s.store.mu.Unlock()
+	s.store.Mu.Unlock()
 	newUserJSON := userToJSON(u)
 	writeJSONCreated(w, jsonStringField(newUserJSON, "url"), newUserJSON)
 }
@@ -114,15 +114,15 @@ func (s *Server) handleAdminRenameUser(w http.ResponseWriter, r *http.Request) {
 		writeGHValidationError(w, "User", "login", "missing_field")
 		return
 	}
-	s.store.mu.Lock()
+	s.store.Mu.Lock()
 	u := s.store.UsersByLogin[username]
 	if u == nil {
-		s.store.mu.Unlock()
+		s.store.Mu.Unlock()
 		writeGHError(w, http.StatusNotFound, "Not Found")
 		return
 	}
 	if existing := s.store.UsersByLogin[nextLogin]; existing != nil && existing.ID != u.ID {
-		s.store.mu.Unlock()
+		s.store.Mu.Unlock()
 		writeGHValidationError(w, "User", "login", "already_exists")
 		return
 	}
@@ -130,10 +130,10 @@ func (s *Server) handleAdminRenameUser(w http.ResponseWriter, r *http.Request) {
 	u.Login = nextLogin
 	u.UpdatedAt = time.Now().UTC()
 	s.store.UsersByLogin[u.Login] = u
-	if s.store.persist != nil {
-		s.store.persist.MustPut("users", strconv.Itoa(u.ID), u)
+	if s.store.Persist != nil {
+		s.store.Persist.MustPut("users", strconv.Itoa(u.ID), u)
 	}
-	s.store.mu.Unlock()
+	s.store.Mu.Unlock()
 	writeJSON(w, http.StatusAccepted, map[string]string{
 		"message": "Job queued to rename user. It may take a few minutes to complete.",
 		"url":     fmt.Sprintf("/user/%d", u.ID),
@@ -146,56 +146,56 @@ func (s *Server) handleAdminDeleteUser(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	username := r.PathValue("username")
-	s.store.mu.Lock()
+	s.store.Mu.Lock()
 	u := s.store.UsersByLogin[username]
 	if u == nil {
-		s.store.mu.Unlock()
+		s.store.Mu.Unlock()
 		writeGHError(w, http.StatusNotFound, "Not Found")
 		return
 	}
 	if u.ID == admin.ID {
-		s.store.mu.Unlock()
+		s.store.Mu.Unlock()
 		writeGHError(w, http.StatusForbidden, "You cannot delete your own account.")
 		return
 	}
 	// Cascade the resources the account owns before removing the row, so a
 	// deleted user leaves no orphaned repositories, package rows/bytes or live
 	// Marketplace purchases (STORE-028).
-	repoIntents, userIntent, err := s.store.deleteUserOwnedResourcesLocked(u)
+	repoIntents, userIntent, err := s.store.DeleteUserOwnedResourcesLocked(u)
 	if err != nil {
-		s.store.mu.Unlock()
+		s.store.Mu.Unlock()
 		s.logger.Error().Err(err).Msg("cascade user-owned resources")
 		writeGHError(w, http.StatusServiceUnavailable, "user resources could not be removed")
 		return
 	}
 	delete(s.store.Users, u.ID)
 	delete(s.store.UsersByLogin, u.Login)
-	s.store.forgetExternalIdentitiesLocked(u)
+	s.store.ForgetExternalIdentitiesLocked(u)
 	for val, t := range s.store.Tokens {
 		if t.UserID == u.ID {
-			s.store.deleteTokenMapKeyLocked(val)
+			s.store.DeleteTokenMapKeyLocked(val)
 		}
 	}
-	if s.store.persist != nil {
-		s.store.persist.MustDelete("users", strconv.Itoa(u.ID))
+	if s.store.Persist != nil {
+		s.store.Persist.MustDelete("users", strconv.Itoa(u.ID))
 	}
-	s.store.mu.Unlock()
+	s.store.Mu.Unlock()
 
 	// Reclaim external bytes outside the lock, mirroring the org cascade.
 	for _, intent := range repoIntents {
-		if err := s.store.purgeDeletedRepoBytes(intent.Name, intent); err != nil {
+		if err := s.store.PurgeDeletedRepoBytes(intent.Name, intent); err != nil {
 			s.logger.Error().Err(err).Msg("reclaim deleted user's repository bytes")
 			writeGHError(w, http.StatusServiceUnavailable, "user resources could not be removed")
 			return
 		}
 	}
-	if err := s.store.cleanupDeletedRepo(userIntent); err != nil {
+	if err := s.store.CleanupDeletedRepo(userIntent); err != nil {
 		s.logger.Error().Err(err).Msg("reclaim deleted user's package bytes")
 		writeGHError(w, http.StatusServiceUnavailable, "user resources could not be removed")
 		return
 	}
-	if s.store.persist != nil {
-		s.store.persist.MustDelete(pendingDeletionsBucket, pendingUserDeletionKey(u.Login))
+	if s.store.Persist != nil {
+		s.store.Persist.MustDelete(pendingDeletionsBucket, pendingUserDeletionKey(u.Login))
 	}
 
 	if err := s.store.DeleteLoginSessionsForUser(u.ID); err != nil {
@@ -251,10 +251,10 @@ func (s *Server) handleAdminSetUserFlags(w http.ResponseWriter, r *http.Request,
 }
 
 func (s *Server) setUserFlags(w http.ResponseWriter, username string, update adminUserFlagUpdate) {
-	s.store.mu.Lock()
+	s.store.Mu.Lock()
 	u := s.store.UsersByLogin[username]
 	if u == nil {
-		s.store.mu.Unlock()
+		s.store.Mu.Unlock()
 		writeGHError(w, http.StatusNotFound, "Not Found")
 		return
 	}
@@ -265,10 +265,10 @@ func (s *Server) setUserFlags(w http.ResponseWriter, username string, update adm
 		u.Suspended = *update.suspended
 	}
 	u.UpdatedAt = time.Now().UTC()
-	if s.store.persist != nil {
-		s.store.persist.MustPut("users", strconv.Itoa(u.ID), u)
+	if s.store.Persist != nil {
+		s.store.Persist.MustPut("users", strconv.Itoa(u.ID), u)
 	}
-	s.store.mu.Unlock()
+	s.store.Mu.Unlock()
 	w.WriteHeader(http.StatusNoContent)
 }
 
@@ -350,14 +350,14 @@ func (s *Server) handleListUserReceivedEvents(w http.ResponseWriter, r *http.Req
 	}
 	// Received events are other users' activity on the user's own public
 	// repositories.
-	s.store.mu.RLock()
+	s.store.Mu.RLock()
 	repos := map[int]*Repo{}
 	for _, repo := range s.store.Repos {
 		if repo.OwnerType == "User" && repo.OwnerID == user.ID && !repo.Private {
 			repos[repo.ID] = repo
 		}
 	}
-	s.store.mu.RUnlock()
+	s.store.Mu.RUnlock()
 	events := s.deriveActivityEvents(s.baseURL(r), repos, nil)
 	received := events[:0]
 	for _, ev := range events {
@@ -383,9 +383,9 @@ func (s *Server) handleCheckUserFollowing(w http.ResponseWriter, r *http.Request
 		return
 	}
 	target := r.PathValue("target_user")
-	s.store.Misc.mu.RLock()
-	following := s.store.Misc.follows[user.Login] != nil && s.store.Misc.follows[user.Login][target]
-	s.store.Misc.mu.RUnlock()
+	s.store.Misc.Mu.RLock()
+	following := s.store.Misc.Follows[user.Login] != nil && s.store.Misc.Follows[user.Login][target]
+	s.store.Misc.Mu.RUnlock()
 	if following {
 		w.WriteHeader(http.StatusNoContent)
 		return
@@ -497,9 +497,9 @@ func (s *Server) handleCheckMyFollowing(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 	target := r.PathValue("username")
-	s.store.Misc.mu.RLock()
-	following := s.store.Misc.follows[user.Login] != nil && s.store.Misc.follows[user.Login][target]
-	s.store.Misc.mu.RUnlock()
+	s.store.Misc.Mu.RLock()
+	following := s.store.Misc.Follows[user.Login] != nil && s.store.Misc.Follows[user.Login][target]
+	s.store.Misc.Mu.RUnlock()
 	if following {
 		w.WriteHeader(http.StatusNoContent)
 		return

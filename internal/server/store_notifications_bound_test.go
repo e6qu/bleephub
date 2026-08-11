@@ -21,12 +21,12 @@ func TestMarkThreadReadBoundsReadMarkers(t *testing.T) {
 		st.MarkThreadRead(userID, fmt.Sprintf("thread-%d", i), base.Add(time.Duration(i)*time.Second))
 	}
 
-	st.mu.RLock()
+	st.Mu.RLock()
 	state := st.NotificationsState[userID]
 	n := len(state.ReadThreadIDs)
 	_, oldestPresent := state.ReadThreadIDs["thread-0"]
 	_, newestPresent := state.ReadThreadIDs[fmt.Sprintf("thread-%d", total-1)]
-	st.mu.RUnlock()
+	st.Mu.RUnlock()
 
 	if n > maxReadThreadIDs+pruneReadThreadSlack {
 		t.Fatalf("ReadThreadIDs grew unbounded: %d markers, cap+slack is %d", n, maxReadThreadIDs+pruneReadThreadSlack)

@@ -45,7 +45,7 @@ func TestMarketplaceStatePersistsAcrossRestart(t *testing.T) {
 		PendingChange: &MarketplacePendingChange{EffectiveDate: nextBilling, Cancellation: true, ActorID: admin.ID},
 	}
 	installation, created, err := store.CreateMarketplacePurchase(listing,
-		marketplaceBuyerAccount{id: admin.ID, login: admin.Login, accountType: "User"}, purchase)
+		marketplaceBuyerAccount{Id: admin.ID, Login: admin.Login, AccountType: "User"}, purchase)
 	if err != nil || !created || installation == nil {
 		t.Fatalf("create persisted Marketplace purchase: installation=%#v created=%v err=%v", installation, created, err)
 	}
@@ -106,7 +106,7 @@ func TestMarketplacePurchaseStorageFailureLeavesNoInstallationOrPurchase(t *test
 	}
 
 	purchase := &MarketplacePurchase{ListingSlug: listing.Slug, AccountID: admin.ID, AccountType: "User", BillingCycle: "monthly", PlanID: plan.ID, PlanName: plan.Name, UpdatedAt: &now}
-	if _, _, err := store.CreateMarketplacePurchase(listing, marketplaceBuyerAccount{id: admin.ID, login: admin.Login, accountType: "User"}, purchase); err == nil {
+	if _, _, err := store.CreateMarketplacePurchase(listing, marketplaceBuyerAccount{Id: admin.ID, Login: admin.Login, AccountType: "User"}, purchase); err == nil {
 		t.Fatal("Marketplace purchase unexpectedly succeeded after durable storage closed")
 	}
 	if store.GetMarketplacePurchase(listing.Slug, "User", admin.ID) != nil {

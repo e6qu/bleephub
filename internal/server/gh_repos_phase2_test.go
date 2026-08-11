@@ -117,14 +117,14 @@ func TestRepoTopicsREST_PrivateRequiresRead(t *testing.T) {
 		"private": true,
 	})
 
-	s.store.mu.Lock()
+	s.store.Mu.Lock()
 	other := &User{ID: s.store.NextUser, Login: "other", Type: "User"}
 	s.store.NextUser++
 	s.store.Users[other.ID] = other
 	s.store.UsersByLogin[other.Login] = other
 	otherTok := &Token{Value: "ghp_otherusertoken000000000000000000000000", UserID: other.ID, Scopes: "repo"}
 	s.store.Tokens[otherTok.Value] = otherTok
-	s.store.mu.Unlock()
+	s.store.Mu.Unlock()
 
 	resp := s.get(t, "/api/v3/repos/admin/topics-private/topics", otherTok.Value)
 	defer resp.Body.Close()
@@ -239,14 +239,14 @@ func TestDeleteContentsFile_RequiresPush(t *testing.T) {
 		"name": "delete-perms",
 	})
 
-	s.store.mu.Lock()
+	s.store.Mu.Lock()
 	other := &User{ID: s.store.NextUser, Login: "other", Type: "User"}
 	s.store.NextUser++
 	s.store.Users[other.ID] = other
 	s.store.UsersByLogin[other.Login] = other
 	otherTok := &Token{Value: "ghp_otherusertoken000000000000000000000000", UserID: other.ID, Scopes: "repo"}
 	s.store.Tokens[otherTok.Value] = otherTok
-	s.store.mu.Unlock()
+	s.store.Mu.Unlock()
 
 	delResp := s.do(t, "DELETE", "/api/v3/repos/admin/delete-perms/contents/x.txt", otherTok.Value, map[string]interface{}{
 		"message": "remove file",
@@ -370,14 +370,14 @@ func TestRepoStargazersPagination(t *testing.T) {
 	})
 
 	st := s.store
-	st.mu.Lock()
+	st.Mu.Lock()
 	other := &User{ID: st.NextUser, Login: "stargazer-user", Type: "User", StarredRepos: map[string]bool{}}
 	st.NextUser++
 	st.Users[other.ID] = other
 	st.UsersByLogin[other.Login] = other
 	otherTok := &Token{Value: "ghp_stargazerusertoken00000000000000000", UserID: other.ID, Scopes: "repo"}
 	st.Tokens[otherTok.Value] = otherTok
-	st.mu.Unlock()
+	st.Mu.Unlock()
 
 	for _, tok := range []string{defaultToken, otherTok.Value} {
 		w := pagedJSONRequest(t, s, http.MethodPut, "/api/v3/user/starred/admin/stargazers-pg", tok, nil)
@@ -426,14 +426,14 @@ func TestRepoCollaboratorsREST(t *testing.T) {
 	})
 
 	// Create another user.
-	s.store.mu.Lock()
+	s.store.Mu.Lock()
 	other := &User{ID: s.store.NextUser, Login: "collab-user", Type: "User", StarredRepos: map[string]bool{}}
 	s.store.NextUser++
 	s.store.Users[other.ID] = other
 	s.store.UsersByLogin[other.Login] = other
 	otherTok := &Token{Value: "ghp_collabusertoken000000000000000000000", UserID: other.ID, Scopes: "repo"}
 	s.store.Tokens[otherTok.Value] = otherTok
-	s.store.mu.Unlock()
+	s.store.Mu.Unlock()
 
 	// Inviting a new collaborator answers 201 with a pending repository
 	// invitation carrying the invitee, inviter, and requested role.
@@ -545,14 +545,14 @@ func TestRepoCollaboratorsPagination(t *testing.T) {
 	})
 
 	st := s.store
-	st.mu.Lock()
+	st.Mu.Lock()
 	other := &User{ID: st.NextUser, Login: "collab-pg-user", Type: "User", StarredRepos: map[string]bool{}}
 	st.NextUser++
 	st.Users[other.ID] = other
 	st.UsersByLogin[other.Login] = other
 	otherTok := &Token{Value: "ghp_collabpgusertoken000000000000000000", UserID: other.ID, Scopes: "repo"}
 	st.Tokens[otherTok.Value] = otherTok
-	st.mu.Unlock()
+	st.Mu.Unlock()
 
 	addResp := pagedJSONRequest(t, s, http.MethodPut, "/api/v3/repos/admin/collab-pg/collaborators/collab-pg-user", defaultToken, map[string]interface{}{
 		"permission": "push",
@@ -749,14 +749,14 @@ func TestRepoForksREST(t *testing.T) {
 	}
 
 	// Create a second user to fork into.
-	s.store.mu.Lock()
+	s.store.Mu.Lock()
 	forker := &User{ID: s.store.NextUser, Login: "forker", Type: "User", CreatedAt: fixedTestTime, UpdatedAt: fixedTestTime}
 	s.store.NextUser++
 	s.store.Users[forker.ID] = forker
 	s.store.UsersByLogin[forker.Login] = forker
 	tok := &Token{Value: "forker-token", UserID: forker.ID, Scopes: "repo", CreatedAt: fixedTestTime}
 	s.store.Tokens[tok.Value] = tok
-	s.store.mu.Unlock()
+	s.store.Mu.Unlock()
 
 	resp := s.post(t, "/api/v3/repos/admin/fork-source/forks", "forker-token", map[string]interface{}{})
 	defer resp.Body.Close()

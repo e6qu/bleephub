@@ -1,9 +1,7 @@
 package bleephub
 
 import (
-	"fmt"
 	"net/http"
-	"sort"
 	"strconv"
 	"time"
 )
@@ -134,71 +132,4 @@ func autolinkJSON(a *RepoAutolink) map[string]interface{} {
 		"is_alphanumeric": a.IsAlphanumeric,
 		"created_at":      a.CreatedAt.Format(time.RFC3339),
 	}
-}
-
-// CreateRepoAutolink creates a new autolink reference on the repository.
-func (st *Store) CreateRepoAutolink(repoKey, keyPrefix, urlTemplate string, isAlphanumeric bool) *RepoAutolink {
-	st.mu.Lock()
-	defer st.mu.Unlock()
-
-	autolink := &RepoAutolink{
-		ID:             st.NextAutolinkID,
-		NodeID:         fmt.Sprintf("AL_kgDO%08d", st.NextAutolinkID),
-		RepoKey:        repoKey,
-		KeyPrefix:      keyPrefix,
-		URLTemplate:    urlTemplate,
-		IsAlphanumeric: isAlphanumeric,
-		CreatedAt:      time.Now().UTC(),
-	}
-	st.NextAutolinkID++
-	if st.RepoAutolinks[repoKey] == nil {
-		st.RepoAutolinks[repoKey] = map[int]*RepoAutolink{}
-	}
-	st.RepoAutolinks[repoKey][autolink.ID] = autolink
-	if st.persist != nil {
-		st.persist.MustPut("repo_autolinks", repoKey, st.RepoAutolinks[repoKey])
-	}
-	return autolink
-}
-
-// ListRepoAutolinks returns all autolinks for a repository, sorted by ID.
-func (st *Store) ListRepoAutolinks(repoKey string) []*RepoAutolink {
-	st.mu.RLock()
-	defer st.mu.RUnlock()
-
-	m := st.RepoAutolinks[repoKey]
-	out := make([]*RepoAutolink, 0, len(m))
-	for _, a := range m {
-		out = append(out, a)
-	}
-	sort.Slice(out, func(i, j int) bool { return out[i].ID < out[j].ID })
-	return snapshotSlice(out)
-}
-
-// GetRepoAutolink returns an autolink by ID, or nil.
-func (st *Store) GetRepoAutolink(repoKey string, id int) *RepoAutolink {
-	st.mu.RLock()
-	defer st.mu.RUnlock()
-	if st.RepoAutolinks[repoKey] == nil {
-		return nil
-	}
-	return st.RepoAutolinks[repoKey][id]
-}
-
-// DeleteRepoAutolink removes an autolink by ID. Returns true if it existed.
-func (st *Store) DeleteRepoAutolink(repoKey string, id int) bool {
-	st.mu.Lock()
-	defer st.mu.Unlock()
-
-	if st.RepoAutolinks[repoKey] == nil {
-		return false
-	}
-	if _, ok := st.RepoAutolinks[repoKey][id]; !ok {
-		return false
-	}
-	delete(st.RepoAutolinks[repoKey], id)
-	if st.persist != nil {
-		st.persist.MustPut("repo_autolinks", repoKey, st.RepoAutolinks[repoKey])
-	}
-	return true
 }

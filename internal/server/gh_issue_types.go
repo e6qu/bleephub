@@ -4,28 +4,13 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
-	"sort"
 	"strconv"
-	"strings"
 	"time"
 )
 
 // GitHub organization issue types: named, colored classifications (Bug, Epic,
 // Task, ...) an organization defines once and assigns to issues in any of its
 // repositories.
-
-// IssueType is an organization-level issue type definition.
-type IssueType struct {
-	ID          int       `json:"id"`
-	NodeID      string    `json:"node_id"`
-	OrgLogin    string    `json:"org_login"`
-	Name        string    `json:"name"`
-	Description *string   `json:"description"`
-	Color       *string   `json:"color"`
-	IsEnabled   bool      `json:"is_enabled"`
-	CreatedAt   time.Time `json:"created_at"`
-	UpdatedAt   time.Time `json:"updated_at"`
-}
 
 func (s *Server) registerGHIssueTypeRoutes() {
 	s.route("GET /api/v3/repos/{owner}/{repo}/issue-types",
@@ -189,70 +174,12 @@ func issueTypeJSON(it *IssueType) map[string]interface{} {
 
 // --- store ---
 
-func orgLoginForIssueTypeRepo(repo *Repo) string {
-	if repo == nil || repo.OwnerType != "Organization" {
-		return ""
-	}
-	owner, _, ok := strings.Cut(repo.FullName, "/")
-	if !ok {
-		return ""
-	}
-	return owner
-}
-
-// ListIssueTypes returns the org's issue types sorted by ID.
-func (st *Store) ListIssueTypes(orgLogin string) []*IssueType {
-	st.mu.RLock()
-	defer st.mu.RUnlock()
-	m := st.OrgIssueTypes[orgLogin]
-	out := make([]*IssueType, 0, len(m))
-	for _, it := range m {
-		out = append(out, it)
-	}
-	sort.Slice(out, func(i, j int) bool { return out[i].ID < out[j].ID })
-	return snapshotIssueTypes(out)
-}
-
-// GetAssignableIssueTypeForRepo returns an enabled issue type owned by the
-// repository's organization. User-owned repositories do not have issue types.
-func (st *Store) GetAssignableIssueTypeForRepo(repo *Repo, id int) *IssueType {
-	if id <= 0 {
-		return nil
-	}
-	orgLogin := orgLoginForIssueTypeRepo(repo)
-	if orgLogin == "" {
-		return nil
-	}
-	st.mu.RLock()
-	defer st.mu.RUnlock()
-	it := st.OrgIssueTypes[orgLogin][id]
-	if it == nil || !it.IsEnabled {
-		return nil
-	}
-	return it
-}
-
-// issueTypeForIssueLocked resolves the issue's assigned type while st.mu is
-// held. It returns nil when the repo no longer resolves, the repo is not owned
-// by an organization, or the assigned definition was removed.
-func (st *Store) issueTypeForIssueLocked(issue *Issue) *IssueType {
-	if issue == nil || issue.IssueTypeID == 0 {
-		return nil
-	}
-	repo := st.Repos[issue.RepoID]
-	orgLogin := orgLoginForIssueTypeRepo(repo)
-	if orgLogin == "" {
-		return nil
-	}
-	return st.OrgIssueTypes[orgLogin][issue.IssueTypeID]
-}
-
 func findIssueTypeByNodeID(st *Store, nodeID string) *IssueType {
 	if nodeID == "" {
 		return nil
 	}
-	st.mu.RLock()
-	defer st.mu.RUnlock()
+	st.Mu.RLock()
+	defer st.Mu.RUnlock()
 	// O(1) fast path: the node ID embeds the globally-unique database id, so
 	// parse it and look the type up directly instead of walking every org's map
 	// under the lock (GQL-024). The NodeID equality guard rejects a decoded id
@@ -271,67 +198,4 @@ func findIssueTypeByNodeID(st *Store, nodeID string) *IssueType {
 		}
 	}
 	return nil
-}
-
-// CreateIssueType creates a new organization issue type.
-func (st *Store) CreateIssueType(orgLogin, name string, description, color *string, isEnabled bool) *IssueType {
-	st.mu.Lock()
-	defer st.mu.Unlock()
-	now := time.Now().UTC()
-	it := &IssueType{
-		ID:          st.NextIssueTypeID,
-		NodeID:      fmt.Sprintf("IT_kwDO%08d", st.NextIssueTypeID),
-		OrgLogin:    orgLogin,
-		Name:        name,
-		Description: description,
-		Color:       color,
-		IsEnabled:   isEnabled,
-		CreatedAt:   now,
-		UpdatedAt:   now,
-	}
-	st.NextIssueTypeID++
-	if st.OrgIssueTypes[orgLogin] == nil {
-		st.OrgIssueTypes[orgLogin] = map[int]*IssueType{}
-	}
-	st.OrgIssueTypes[orgLogin][it.ID] = it
-	st.IssueTypesByID[it.ID] = it
-	if st.persist != nil {
-		st.persist.MustPut("org_issue_types", orgLogin, st.OrgIssueTypes[orgLogin])
-	}
-	return it
-}
-
-// UpdateIssueType replaces the mutable fields of an issue type.
-// Returns nil when the issue type does not exist in the org.
-func (st *Store) UpdateIssueType(orgLogin string, id int, name string, description, color *string, isEnabled bool) *IssueType {
-	st.mu.Lock()
-	defer st.mu.Unlock()
-	it := st.OrgIssueTypes[orgLogin][id]
-	if it == nil {
-		return nil
-	}
-	it.Name = name
-	it.Description = description
-	it.Color = color
-	it.IsEnabled = isEnabled
-	it.UpdatedAt = time.Now().UTC()
-	if st.persist != nil {
-		st.persist.MustPut("org_issue_types", orgLogin, st.OrgIssueTypes[orgLogin])
-	}
-	return it
-}
-
-// DeleteIssueType removes an issue type. Returns true when it existed.
-func (st *Store) DeleteIssueType(orgLogin string, id int) bool {
-	st.mu.Lock()
-	defer st.mu.Unlock()
-	if st.OrgIssueTypes[orgLogin][id] == nil {
-		return false
-	}
-	delete(st.OrgIssueTypes[orgLogin], id)
-	delete(st.IssueTypesByID, id)
-	if st.persist != nil {
-		st.persist.MustPut("org_issue_types", orgLogin, st.OrgIssueTypes[orgLogin])
-	}
-	return true
 }

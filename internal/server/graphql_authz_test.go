@@ -50,8 +50,8 @@ func newGQLAuthzFixture(t *testing.T, srv *Server, tag string, private bool) *gq
 	now := fixedTestTime.UTC()
 
 	mkUser := func(login string) *User {
-		st.mu.Lock()
-		defer st.mu.Unlock()
+		st.Mu.Lock()
+		defer st.Mu.Unlock()
 		u := &User{
 			ID:        st.NextUser,
 			NodeID:    fmt.Sprintf("U_authz%08d", st.NextUser),
@@ -765,8 +765,8 @@ func (s *isolatedServer) newGQLProjectAuthzFixture(t *testing.T, tag string) *gq
 	now := fixedTestTime.UTC()
 
 	mkUser := func(login string) *User {
-		st.mu.Lock()
-		defer st.mu.Unlock()
+		st.Mu.Lock()
+		defer st.Mu.Unlock()
 		u := &User{
 			ID:        st.NextUser,
 			NodeID:    fmt.Sprintf("U_pauthz%08d", st.NextUser),

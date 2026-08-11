@@ -18,9 +18,9 @@ func TestCopilotSeatReadsAreNonMutating(t *testing.T) {
 	st.AddCopilotSeats(org.Login, []int{admin.ID}, "")
 
 	// Force the seat past its cancellation date.
-	st.mu.Lock()
+	st.Mu.Lock()
 	st.CopilotSeats[org.Login][admin.ID].PendingCancellationDate = "2000-01-01"
-	st.mu.Unlock()
+	st.Mu.Unlock()
 
 	// A read reports it absent but must NOT delete it (idempotent read).
 	if seat := st.GetCopilotSeat(org.Login, admin.ID); seat != nil {
@@ -29,18 +29,18 @@ func TestCopilotSeatReadsAreNonMutating(t *testing.T) {
 	if seats := st.ListCopilotSeats(org.Login); len(seats) != 0 {
 		t.Fatalf("expired seat listed: %d seats", len(seats))
 	}
-	st.mu.RLock()
+	st.Mu.RLock()
 	_, stillPresent := st.CopilotSeats[org.Login][admin.ID]
-	st.mu.RUnlock()
+	st.Mu.RUnlock()
 	if !stillPresent {
 		t.Fatal("STORE-034: a copilot seat read physically deleted the seat")
 	}
 
 	// A write path prunes the expired seat durably.
 	st.AddCopilotSeats(org.Login, nil, "")
-	st.mu.RLock()
+	st.Mu.RLock()
 	_, prunedAway := st.CopilotSeats[org.Login][admin.ID]
-	st.mu.RUnlock()
+	st.Mu.RUnlock()
 	if prunedAway {
 		t.Fatal("the seat write path did not prune the expired seat")
 	}
@@ -66,10 +66,10 @@ func TestRepoDeletePurgesSoftDeletedPackages(t *testing.T) {
 	if !st.DeletePackage(repo.FullName, "container", "app") {
 		t.Fatal("soft-delete failed")
 	}
-	st.mu.RLock()
+	st.Mu.RLock()
 	_, inPrimary := st.Packages[pkg.ID]
 	_, inIndex := st.PackagesByOwnerKey[repo.FullName][packageKey("container", "app")]
-	st.mu.RUnlock()
+	st.Mu.RUnlock()
 	if !inPrimary || inIndex {
 		t.Fatalf("soft-delete precondition wrong: primary=%v index=%v", inPrimary, inIndex)
 	}
@@ -78,9 +78,9 @@ func TestRepoDeletePurgesSoftDeletedPackages(t *testing.T) {
 		t.Fatalf("delete repo: ok=%v err=%v", ok, err)
 	}
 
-	st.mu.RLock()
+	st.Mu.RLock()
 	_, stillOrphaned := st.Packages[pkg.ID]
-	st.mu.RUnlock()
+	st.Mu.RUnlock()
 	if stillOrphaned {
 		t.Fatal("STORE-028: a soft-deleted package survived repo deletion as an owner-less row")
 	}

@@ -474,8 +474,8 @@ func resolveProjectOwner(st *Store, nodeID string) (int, string, bool) {
 	if nodeID == "" {
 		return 0, "", false
 	}
-	st.mu.RLock()
-	defer st.mu.RUnlock()
+	st.Mu.RLock()
+	defer st.Mu.RUnlock()
 	for _, u := range st.Users {
 		if u.NodeID == nodeID {
 			return u.ID, "User", true

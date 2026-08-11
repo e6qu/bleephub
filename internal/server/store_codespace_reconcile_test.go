@@ -27,8 +27,8 @@ func TestInterruptedCodespaceProvisioningReconcilesOnLoad(t *testing.T) {
 	// Simulate the crash: the durable record exists in "Provisioning" (as
 	// reserveCodespace leaves it) but no container/process survives. A settled
 	// codespace is written alongside to prove only the interrupted one is touched.
-	st1.persist.MustPut("codespaces", "1", &Codespace{ID: 1, Name: "orphan-cs", State: "Provisioning"})
-	st1.persist.MustPut("codespaces", "2", &Codespace{ID: 2, Name: "healthy-cs", State: "Available"})
+	st1.Persist.MustPut("codespaces", "1", &Codespace{ID: 1, Name: "orphan-cs", State: "Provisioning"})
+	st1.Persist.MustPut("codespaces", "2", &Codespace{ID: 2, Name: "healthy-cs", State: "Available"})
 	if err := p1.Close(); err != nil {
 		t.Fatalf("close persistence: %v", err)
 	}
@@ -61,7 +61,7 @@ func TestInterruptedCodespaceProvisioningReconcilesOnLoad(t *testing.T) {
 
 	// The heal is durable: reopening the same data dir still sees "Shutdown",
 	// proving the reconciled state was committed, not just fixed in memory.
-	raw, err := st2.persist.Get("codespaces", strconv.Itoa(1))
+	raw, err := st2.Persist.Get("codespaces", strconv.Itoa(1))
 	if err != nil || raw == nil {
 		t.Fatalf("reconciled codespace row unreadable: %v", err)
 	}

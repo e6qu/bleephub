@@ -55,9 +55,9 @@ func TestDeleteRepoExternalCleanupDoesNotHoldStoreLock(t *testing.T) {
 	}
 	bytes := &blockingDeleteByteStore{started: make(chan string, 1), release: make(chan struct{})}
 	st.ObjectByteStore = bytes
-	st.mu.Lock()
+	st.Mu.Lock()
 	st.Attestations[1] = &Attestation{ID: 1, RepoID: repo.ID, StoragePath: "attestations/cleanup-lock"}
-	st.mu.Unlock()
+	st.Mu.Unlock()
 
 	deleted := make(chan error, 1)
 	go func() {
@@ -137,16 +137,16 @@ func TestDeleteRepoAtomicallyIncludesActionsArtifactsAndCaches(t *testing.T) {
 		t.Fatal("create repository")
 	}
 	bytes := &recordingDeleteByteStore{deleted: map[string]bool{}}
-	s.artifactStore.byteStore = bytes
-	s.artifactStore.mu.Lock()
-	s.artifactStore.artifacts[41] = &Artifact{
+	s.artifactStore.ByteStore = bytes
+	s.artifactStore.Mu.Lock()
+	s.artifactStore.Artifacts[41] = &Artifact{
 		ID: 41, Name: "build", Finalized: true, RepoFullName: repo.FullName,
 	}
-	s.artifactStore.caches[42] = &CacheEntry{
+	s.artifactStore.Caches[42] = &CacheEntry{
 		ID: 42, Repo: repo.FullName, Key: "deps", Version: "v1", Finalized: true,
 	}
-	s.artifactStore.cacheIndex[cacheLookupKey(repo.FullName, "deps", "v1")] = 42
-	s.artifactStore.mu.Unlock()
+	s.artifactStore.CacheIndex[cacheLookupKey(repo.FullName, "deps", "v1")] = 42
+	s.artifactStore.Mu.Unlock()
 
 	deleted, err := s.store.DeleteRepo("admin", repo.Name)
 	if err != nil || !deleted {
@@ -155,11 +155,11 @@ func TestDeleteRepoAtomicallyIncludesActionsArtifactsAndCaches(t *testing.T) {
 	if !bytes.deleted[artifactDataKey(41)] || !bytes.deleted[cacheDataKey(42)] {
 		t.Fatalf("Actions bytes not deleted: %#v", bytes.deleted)
 	}
-	s.artifactStore.mu.RLock()
-	artifact := s.artifactStore.artifacts[41]
-	cache := s.artifactStore.caches[42]
-	_, indexed := s.artifactStore.cacheIndex[cacheLookupKey(repo.FullName, "deps", "v1")]
-	s.artifactStore.mu.RUnlock()
+	s.artifactStore.Mu.RLock()
+	artifact := s.artifactStore.Artifacts[41]
+	cache := s.artifactStore.Caches[42]
+	_, indexed := s.artifactStore.CacheIndex[cacheLookupKey(repo.FullName, "deps", "v1")]
+	s.artifactStore.Mu.RUnlock()
 	if artifact != nil || cache != nil || indexed {
 		t.Fatalf("Actions metadata survived: artifact=%#v cache=%#v indexed=%v", artifact, cache, indexed)
 	}

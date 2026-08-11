@@ -16,10 +16,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
-	"sync"
 	"time"
-
-	"golang.org/x/crypto/ssh"
 )
 
 // long-tail GitHub API surfaces gh CLI / octokit / probot hit.// Users API extras (keys, gpg_keys, emails, followers, following)
@@ -150,258 +147,6 @@ func (s *Server) handleMeta(w http.ResponseWriter, r *http.Request) {
 
 // --- Store ---
 
-// Responses go through userKeyToJSON; the json tags here shape the
-// persisted row, which must round-trip UserID to rebuild keysByUser.
-type UserKey struct {
-	ID        int       `json:"id"`
-	Key       string    `json:"key"`
-	Title     string    `json:"title"`
-	Verified  bool      `json:"verified"`
-	UserID    int       `json:"user_id"`
-	CreatedAt time.Time `json:"created_at"`
-	// parsed caches the parsed public key so SSH Git authentication compares
-	// wire encodings without re-parsing the authorized-key text on every
-	// attempt. Not persisted; rebuilt when the row is loaded.
-	parsed ssh.PublicKey
-}
-
-// cacheParsedKey parses a user key's authorized-key text once, at
-// registration or load, so the SSH auth path never re-parses it. An
-// unparseable key stays registered — it is listed and deleted like any
-// other — but with no parsed form it can never authenticate.
-func cacheParsedKey(k *UserKey) error {
-	parsed, _, _, _, err := ssh.ParseAuthorizedKey([]byte(k.Key))
-	if err != nil {
-		return fmt.Errorf("user key %d: %w", k.ID, err)
-	}
-	k.parsed = parsed
-	return nil
-}
-
-type PagesSite struct {
-	CNAME                string                 `json:"cname"`
-	URL                  string                 `json:"url"`
-	HTMLURL              string                 `json:"html_url"`
-	Status               string                 `json:"status"`
-	Source               map[string]interface{} `json:"source"`
-	Public               bool                   `json:"public"`
-	Custom404            bool                   `json:"custom_404"`
-	ProtectedDomainState *string                `json:"protected_domain_state"`
-	BuildType            *string                `json:"build_type"`
-	HTTPSCertificate     *PagesHTTPSCertificate `json:"https_certificate,omitempty"`
-	HTTPSEnforced        bool                   `json:"https_enforced"`
-}
-
-type PagesHTTPSCertificate struct {
-	State       string   `json:"state"`
-	Description string   `json:"description"`
-	Domains     []string `json:"domains"`
-	ExpiresAt   *string  `json:"expires_at"`
-}
-
-type GPGKey struct {
-	ID                int           `json:"id"`
-	KeyID             string        `json:"key_id"`
-	PublicKey         string        `json:"public_key"`
-	Name              string        `json:"name,omitempty"`
-	Emails            []GPGKeyEmail `json:"emails"`
-	CanSign           bool          `json:"can_sign"`
-	CanEncryptCommits bool          `json:"can_encrypt_commits"`
-	CanCertify        bool          `json:"can_certify"`
-	CreatedAt         time.Time     `json:"created_at"`
-	ExpiresAt         *time.Time    `json:"expires_at,omitempty"`
-	UserID            int           `json:"-"`
-}
-
-type GPGKeyEmail struct {
-	Email    string `json:"email"`
-	Verified bool   `json:"verified"`
-	Primary  bool   `json:"primary"`
-}
-
-type PagesBuild struct {
-	// ID is the numeric build identifier used for path-based routing
-	// (GET .../pages/builds/{build_id}). GitHub's build object carries no
-	// top-level `id`; it is addressed via the trailing segment of `url`, so
-	// the field is not serialized.
-	ID        int64          `json:"-"`
-	URL       string         `json:"url"`
-	Status    string         `json:"status"`
-	Pusher    *PagesPusher   `json:"pusher"`
-	Commit    string         `json:"commit"`
-	CreatedAt time.Time      `json:"created_at"`
-	UpdatedAt time.Time      `json:"updated_at"`
-	Duration  int            `json:"duration"`
-	Error     *PagesBuildErr `json:"error"`
-}
-
-type PagesPusher struct {
-	Login string `json:"login"`
-	ID    int    `json:"id"`
-	Type  string `json:"type"`
-}
-
-type PagesBuildErr struct {
-	Message *string `json:"message"`
-}
-
-func pagesBuildIDFromURL(url string) int64 {
-	idx := strings.LastIndex(url, "/")
-	if idx < 0 || idx == len(url)-1 {
-		return 0
-	}
-	id, err := strconv.ParseInt(url[idx+1:], 10, 64)
-	if err != nil {
-		return 0
-	}
-	return id
-}
-
-type AuditEntry struct {
-	ID        int64                  `json:"_document_id"`
-	Timestamp string                 `json:"@timestamp"`
-	Action    string                 `json:"action"`
-	Actor     string                 `json:"actor"`
-	Org       string                 `json:"org,omitempty"`
-	Data      map[string]interface{} `json:"data,omitempty"`
-	Version   string                 `json:"version"`
-}
-
-type AuditLogEvent struct {
-	ID         int64                  `json:"id"`
-	Timestamp  string                 `json:"timestamp"`
-	Actor      string                 `json:"actor"`
-	Action     string                 `json:"action"`
-	TargetType string                 `json:"target_type"`
-	TargetID   string                 `json:"target_id"`
-	Org        string                 `json:"org,omitempty"`
-	Details    map[string]interface{} `json:"details,omitempty"`
-	createdAt  time.Time              `json:"-"`
-}
-
-type MarketplacePlan struct {
-	ID                  int      `json:"id"`
-	ListingSlug         string   `json:"listing_slug"`
-	Number              int      `json:"number"`
-	Name                string   `json:"name"`
-	Description         string   `json:"description"`
-	MonthlyPriceInCents int      `json:"monthly_price_in_cents"`
-	YearlyPriceInCents  int      `json:"yearly_price_in_cents"`
-	PriceModel          string   `json:"price_model"`
-	HasFreeTrial        bool     `json:"has_free_trial"`
-	UnitName            string   `json:"unit_name"`
-	State               string   `json:"state"`
-	Bullets             []string `json:"bullets"`
-}
-
-type MarketplaceListing struct {
-	Slug               string    `json:"slug"`
-	Name               string    `json:"name"`
-	Description        string    `json:"description"`
-	FullDescription    string    `json:"full_description"`
-	SetupURL           string    `json:"setup_url,omitempty"`
-	InstallationURL    string    `json:"installation_url,omitempty"`
-	GitHubAppID        int       `json:"github_app_id,omitempty"`
-	OAuthAppClientID   string    `json:"oauth_app_client_id,omitempty"`
-	WebhookURL         string    `json:"webhook_url,omitempty"`
-	WebhookSecret      string    `json:"webhook_secret,omitempty"`
-	WebhookContentType string    `json:"webhook_content_type,omitempty"`
-	WebhookActive      bool      `json:"webhook_active"`
-	WebhookID          int       `json:"webhook_id,omitempty"`
-	Published          bool      `json:"published"`
-	CreatedAt          time.Time `json:"created_at"`
-	UpdatedAt          time.Time `json:"updated_at"`
-}
-
-type MarketplacePendingChange struct {
-	PlanID        int       `json:"plan_id,omitempty"`
-	BillingCycle  string    `json:"billing_cycle,omitempty"`
-	UnitCount     *int      `json:"unit_count,omitempty"`
-	EffectiveDate time.Time `json:"effective_date"`
-	Cancellation  bool      `json:"cancellation,omitempty"`
-	ActorID       int       `json:"actor_id"`
-}
-
-type MarketplacePurchase struct {
-	ListingSlug   string     `json:"listing_slug"`
-	AccountID     int        `json:"account_id"`
-	AccountType   string     `json:"account_type"`
-	BillingCycle  string     `json:"billing_cycle"`
-	PlanID        int        `json:"plan_id"`
-	PlanName      string     `json:"plan_name"`
-	OnFreeTrial   bool       `json:"on_free_trial"`
-	FreeTrialEnds *time.Time `json:"free_trial_ends_on,omitempty"`
-	// user-marketplace-purchase members surfaced by GET /user/marketplace_purchases.
-	UnitCount       *int                      `json:"unit_count,omitempty"`
-	NextBillingDate *time.Time                `json:"next_billing_date,omitempty"`
-	UpdatedAt       *time.Time                `json:"updated_at,omitempty"`
-	InstallationID  *int                      `json:"installation_id,omitempty"`
-	PendingChange   *MarketplacePendingChange `json:"pending_change,omitempty"`
-}
-
-type MiscStore struct {
-	mu                        sync.RWMutex
-	userKeys                  map[int]*UserKey
-	keysByUser                map[int][]*UserKey
-	gpgKeys                   map[int]*GPGKey
-	gpgKeysByUser             map[int][]*GPGKey
-	follows                   map[string]map[string]bool
-	pagesByRepo               map[int]*PagesSite
-	pagesBuilds               map[string][]*PagesBuild
-	branchProtection          map[string]*BranchProtection
-	auditLog                  []*AuditEntry
-	auditLogEvents            []*AuditLogEvent
-	marketplaceListings       map[string]*MarketplaceListing
-	marketplacePlans          map[int]*MarketplacePlan
-	marketplacePurchases      map[string]*MarketplacePurchase
-	marketplaceDeliveries     map[string][]*WebhookDelivery
-	nextMarketplaceDeliveryID int
-	nextMarketplacePlanID     int
-	// oidcClaimKeys maps an OIDC-subject-customization scope ("repo:owner/name"
-	// or "org:login") to its include_claim_keys. A single shared slice let one
-	// repository's admin clobber every tenant's configuration and be read by an
-	// anonymous caller.
-	oidcClaimKeys       map[string][]string
-	nextKeyID           int
-	nextGPGKeyID        int
-	nextPagesBuildID    int64
-	nextAuditID         int64
-	nextAdminAuditID    int64
-	oidcKey             *rsa.PrivateKey
-	persist             *Persistence
-	blockedUsers        map[int]map[int]bool // userID -> targetID -> blocked
-	socialAccounts      map[int][]map[string]interface{}
-	sshSigningKeys      map[int][]map[string]interface{}
-	nextSSHSigningKeyID int
-}
-
-func newMiscStore() *MiscStore {
-	return &MiscStore{
-		userKeys:                  map[int]*UserKey{},
-		keysByUser:                map[int][]*UserKey{},
-		gpgKeys:                   map[int]*GPGKey{},
-		gpgKeysByUser:             map[int][]*GPGKey{},
-		follows:                   map[string]map[string]bool{},
-		pagesByRepo:               map[int]*PagesSite{},
-		pagesBuilds:               map[string][]*PagesBuild{},
-		branchProtection:          map[string]*BranchProtection{},
-		marketplaceListings:       map[string]*MarketplaceListing{},
-		marketplacePlans:          map[int]*MarketplacePlan{},
-		marketplacePurchases:      map[string]*MarketplacePurchase{},
-		marketplaceDeliveries:     map[string][]*WebhookDelivery{},
-		nextMarketplaceDeliveryID: 1,
-		nextMarketplacePlanID:     1,
-		auditLogEvents:            []*AuditLogEvent{},
-		nextKeyID:                 1,
-		nextGPGKeyID:              1,
-		nextPagesBuildID:          1,
-		blockedUsers:              map[int]map[int]bool{},
-		socialAccounts:            map[int][]map[string]interface{}{},
-		sshSigningKeys:            map[int][]map[string]interface{}{},
-		nextSSHSigningKeyID:       1,
-	}
-}
-
 // --- User keys ---
 
 func (s *Server) handleListUserKeys(w http.ResponseWriter, r *http.Request) {
@@ -410,10 +155,10 @@ func (s *Server) handleListUserKeys(w http.ResponseWriter, r *http.Request) {
 		writeGHError(w, http.StatusUnauthorized, "Bad credentials")
 		return
 	}
-	s.store.Misc.mu.RLock()
-	defer s.store.Misc.mu.RUnlock()
-	out := make([]map[string]interface{}, 0, len(s.store.Misc.keysByUser[user.ID]))
-	for _, k := range s.store.Misc.keysByUser[user.ID] {
+	s.store.Misc.Mu.RLock()
+	defer s.store.Misc.Mu.RUnlock()
+	out := make([]map[string]interface{}, 0, len(s.store.Misc.KeysByUser[user.ID]))
+	for _, k := range s.store.Misc.KeysByUser[user.ID] {
 		out = append(out, userKeyToJSON(k, s.baseURL(r)))
 	}
 	writeJSON(w, http.StatusOK, paginateAndLink(w, r, out))
@@ -433,17 +178,17 @@ func (s *Server) handleCreateUserKey(w http.ResponseWriter, r *http.Request) {
 		writeGHValidationError(w, "Key", "key", "missing_field")
 		return
 	}
-	s.store.Misc.mu.Lock()
-	id := s.store.Misc.nextKeyID
-	s.store.Misc.nextKeyID++
+	s.store.Misc.Mu.Lock()
+	id := s.store.Misc.NextKeyID
+	s.store.Misc.NextKeyID++
 	k := &UserKey{ID: id, Title: req.Title, Key: req.Key, Verified: true, UserID: user.ID, CreatedAt: time.Now().UTC()}
 	parseErr := cacheParsedKey(k)
-	s.store.Misc.userKeys[id] = k
-	s.store.Misc.keysByUser[user.ID] = append(s.store.Misc.keysByUser[user.ID], k)
-	if s.store.Misc.persist != nil {
-		s.store.Misc.persist.MustPut("user_keys", strconv.Itoa(id), k)
+	s.store.Misc.UserKeys[id] = k
+	s.store.Misc.KeysByUser[user.ID] = append(s.store.Misc.KeysByUser[user.ID], k)
+	if s.store.Misc.Persist != nil {
+		s.store.Misc.Persist.MustPut("user_keys", strconv.Itoa(id), k)
 	}
-	s.store.Misc.mu.Unlock()
+	s.store.Misc.Mu.Unlock()
 	if parseErr != nil {
 		s.logger.Warn().Err(parseErr).Str("user", user.Login).
 			Msg("registered SSH key does not parse; it will never authenticate")
@@ -467,9 +212,9 @@ func (s *Server) handleGetUserKey(w http.ResponseWriter, r *http.Request) {
 		writeGHError(w, http.StatusNotFound, "Not Found")
 		return
 	}
-	s.store.Misc.mu.RLock()
-	k := s.store.Misc.userKeys[id]
-	s.store.Misc.mu.RUnlock()
+	s.store.Misc.Mu.RLock()
+	k := s.store.Misc.UserKeys[id]
+	s.store.Misc.Mu.RUnlock()
 	if k == nil || k.UserID != user.ID {
 		writeGHError(w, http.StatusNotFound, "Not Found")
 		return
@@ -488,28 +233,28 @@ func (s *Server) handleDeleteUserKey(w http.ResponseWriter, r *http.Request) {
 		writeGHError(w, http.StatusNotFound, "Not Found")
 		return
 	}
-	s.store.Misc.mu.Lock()
-	k := s.store.Misc.userKeys[id]
+	s.store.Misc.Mu.Lock()
+	k := s.store.Misc.UserKeys[id]
 	// A key that is not the caller's is 404 — the same answer as a nonexistent
 	// one — so this endpoint cannot revoke another account's SSH access or probe
 	// which key ids exist.
 	if k == nil || k.UserID != user.ID {
-		s.store.Misc.mu.Unlock()
+		s.store.Misc.Mu.Unlock()
 		writeGHError(w, http.StatusNotFound, "Not Found")
 		return
 	}
-	delete(s.store.Misc.userKeys, id)
-	src := s.store.Misc.keysByUser[k.UserID]
+	delete(s.store.Misc.UserKeys, id)
+	src := s.store.Misc.KeysByUser[k.UserID]
 	for i, x := range src {
 		if x.ID == id {
-			s.store.Misc.keysByUser[k.UserID] = append(src[:i], src[i+1:]...)
+			s.store.Misc.KeysByUser[k.UserID] = append(src[:i], src[i+1:]...)
 			break
 		}
 	}
-	if s.store.Misc.persist != nil {
-		s.store.Misc.persist.MustDelete("user_keys", strconv.Itoa(id))
+	if s.store.Misc.Persist != nil {
+		s.store.Misc.Persist.MustDelete("user_keys", strconv.Itoa(id))
 	}
-	s.store.Misc.mu.Unlock()
+	s.store.Misc.Mu.Unlock()
 	s.recordAuditEvent("ssh_key.delete", user.Login, "", map[string]interface{}{"key_id": id})
 	w.WriteHeader(http.StatusNoContent)
 }
@@ -520,12 +265,12 @@ func (s *Server) handleListGPGKeys(w http.ResponseWriter, r *http.Request) {
 		writeGHError(w, http.StatusUnauthorized, "Bad credentials")
 		return
 	}
-	s.store.Misc.mu.RLock()
-	out := make([]map[string]interface{}, 0, len(s.store.Misc.gpgKeysByUser[user.ID]))
-	for _, k := range s.store.Misc.gpgKeysByUser[user.ID] {
+	s.store.Misc.Mu.RLock()
+	out := make([]map[string]interface{}, 0, len(s.store.Misc.GpgKeysByUser[user.ID]))
+	for _, k := range s.store.Misc.GpgKeysByUser[user.ID] {
 		out = append(out, gpgKeyToJSON(k))
 	}
-	s.store.Misc.mu.RUnlock()
+	s.store.Misc.Mu.RUnlock()
 	writeJSON(w, http.StatusOK, paginateAndLink(w, r, out))
 }
 
@@ -543,9 +288,9 @@ func (s *Server) handleCreateGPGKey(w http.ResponseWriter, r *http.Request) {
 		writeGHValidationError(w, "ArmoredPublicKey", "armored_public_key", "missing_field")
 		return
 	}
-	s.store.Misc.mu.Lock()
-	id := s.store.Misc.nextGPGKeyID
-	s.store.Misc.nextGPGKeyID++
+	s.store.Misc.Mu.Lock()
+	id := s.store.Misc.NextGPGKeyID
+	s.store.Misc.NextGPGKeyID++
 	email := ""
 	if user.Email != "" {
 		email = user.Email
@@ -555,12 +300,12 @@ func (s *Server) handleCreateGPGKey(w http.ResponseWriter, r *http.Request) {
 		CreatedAt: time.Now(), CanSign: true, CanEncryptCommits: true, CanCertify: true,
 		Emails: []GPGKeyEmail{{Email: email, Verified: true, Primary: true}},
 	}
-	s.store.Misc.gpgKeys[id] = k
-	s.store.Misc.gpgKeysByUser[user.ID] = append(s.store.Misc.gpgKeysByUser[user.ID], k)
-	if s.store.Misc.persist != nil {
-		s.store.Misc.persist.MustPut("gpg_keys", strconv.Itoa(id), k)
+	s.store.Misc.GpgKeys[id] = k
+	s.store.Misc.GpgKeysByUser[user.ID] = append(s.store.Misc.GpgKeysByUser[user.ID], k)
+	if s.store.Misc.Persist != nil {
+		s.store.Misc.Persist.MustPut("gpg_keys", strconv.Itoa(id), k)
 	}
-	s.store.Misc.mu.Unlock()
+	s.store.Misc.Mu.Unlock()
 	s.recordAuditEvent("gpg_key.create", user.Login, "", map[string]interface{}{"gpg_key_id": id})
 	writeJSON(w, http.StatusCreated, gpgKeyToJSON(k))
 }
@@ -571,9 +316,9 @@ func (s *Server) handleGetGPGKey(w http.ResponseWriter, r *http.Request) {
 		writeGHError(w, http.StatusNotFound, "Not Found")
 		return
 	}
-	s.store.Misc.mu.RLock()
-	k := s.store.Misc.gpgKeys[id]
-	s.store.Misc.mu.RUnlock()
+	s.store.Misc.Mu.RLock()
+	k := s.store.Misc.GpgKeys[id]
+	s.store.Misc.Mu.RUnlock()
 	if k == nil {
 		writeGHError(w, http.StatusNotFound, "Not Found")
 		return
@@ -592,25 +337,25 @@ func (s *Server) handleDeleteGPGKey(w http.ResponseWriter, r *http.Request) {
 		writeGHError(w, http.StatusNotFound, "Not Found")
 		return
 	}
-	s.store.Misc.mu.Lock()
-	k := s.store.Misc.gpgKeys[id]
+	s.store.Misc.Mu.Lock()
+	k := s.store.Misc.GpgKeys[id]
 	if k == nil || k.UserID != user.ID {
-		s.store.Misc.mu.Unlock()
+		s.store.Misc.Mu.Unlock()
 		writeGHError(w, http.StatusNotFound, "Not Found")
 		return
 	}
-	delete(s.store.Misc.gpgKeys, id)
-	src := s.store.Misc.gpgKeysByUser[user.ID]
+	delete(s.store.Misc.GpgKeys, id)
+	src := s.store.Misc.GpgKeysByUser[user.ID]
 	for i, x := range src {
 		if x.ID == id {
-			s.store.Misc.gpgKeysByUser[user.ID] = append(src[:i], src[i+1:]...)
+			s.store.Misc.GpgKeysByUser[user.ID] = append(src[:i], src[i+1:]...)
 			break
 		}
 	}
-	if s.store.Misc.persist != nil {
-		_ = s.store.Misc.persist.Delete("gpg_keys", strconv.Itoa(id))
+	if s.store.Misc.Persist != nil {
+		_ = s.store.Misc.Persist.Delete("gpg_keys", strconv.Itoa(id))
 	}
-	s.store.Misc.mu.Unlock()
+	s.store.Misc.Mu.Unlock()
 	s.recordAuditEvent("gpg_key.delete", user.Login, "", map[string]interface{}{"gpg_key_id": id})
 	w.WriteHeader(http.StatusNoContent)
 }
@@ -621,12 +366,12 @@ func (s *Server) handleListGPGKeysByLogin(w http.ResponseWriter, r *http.Request
 		writeGHError(w, http.StatusNotFound, "Not Found")
 		return
 	}
-	s.store.Misc.mu.RLock()
-	out := make([]map[string]interface{}, 0, len(s.store.Misc.gpgKeysByUser[user.ID]))
-	for _, k := range s.store.Misc.gpgKeysByUser[user.ID] {
+	s.store.Misc.Mu.RLock()
+	out := make([]map[string]interface{}, 0, len(s.store.Misc.GpgKeysByUser[user.ID]))
+	for _, k := range s.store.Misc.GpgKeysByUser[user.ID] {
 		out = append(out, gpgKeyToJSON(k))
 	}
-	s.store.Misc.mu.RUnlock()
+	s.store.Misc.Mu.RUnlock()
 	writeJSON(w, http.StatusOK, paginateAndLink(w, r, out))
 }
 
@@ -668,10 +413,10 @@ func (s *Server) handleListUserKeysByLogin(w http.ResponseWriter, r *http.Reques
 		writeGHError(w, http.StatusNotFound, "Not Found")
 		return
 	}
-	s.store.Misc.mu.RLock()
-	defer s.store.Misc.mu.RUnlock()
-	out := make([]map[string]interface{}, 0, len(s.store.Misc.keysByUser[user.ID]))
-	for _, k := range s.store.Misc.keysByUser[user.ID] {
+	s.store.Misc.Mu.RLock()
+	defer s.store.Misc.Mu.RUnlock()
+	out := make([]map[string]interface{}, 0, len(s.store.Misc.KeysByUser[user.ID]))
+	for _, k := range s.store.Misc.KeysByUser[user.ID] {
 		out = append(out, map[string]interface{}{"id": k.ID, "key": k.Key})
 	}
 	writeJSON(w, http.StatusOK, paginateAndLink(w, r, out))
@@ -694,10 +439,10 @@ func (s *Server) resolveLoginsJSON(logins []string) []map[string]interface{} {
 // followerLogins returns the logins that follow target. Gathered under
 // Misc.mu; the caller resolves logins to users after release.
 func (s *Server) followerLogins(target string) []string {
-	s.store.Misc.mu.RLock()
-	defer s.store.Misc.mu.RUnlock()
+	s.store.Misc.Mu.RLock()
+	defer s.store.Misc.Mu.RUnlock()
 	var logins []string
-	for user, follows := range s.store.Misc.follows {
+	for user, follows := range s.store.Misc.Follows {
 		if follows[target] {
 			logins = append(logins, user)
 		}
@@ -709,10 +454,10 @@ func (s *Server) followerLogins(target string) []string {
 // followingLogins returns the logins that login follows. Gathered under
 // Misc.mu; the caller resolves logins to users after release.
 func (s *Server) followingLogins(login string) []string {
-	s.store.Misc.mu.RLock()
-	defer s.store.Misc.mu.RUnlock()
+	s.store.Misc.Mu.RLock()
+	defer s.store.Misc.Mu.RUnlock()
 	var logins []string
-	for target := range s.store.Misc.follows[login] {
+	for target := range s.store.Misc.Follows[login] {
 		logins = append(logins, target)
 	}
 	sort.Strings(logins)
@@ -749,15 +494,15 @@ func (s *Server) handleFollowUser(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	target := r.PathValue("username")
-	s.store.Misc.mu.Lock()
-	if s.store.Misc.follows[user.Login] == nil {
-		s.store.Misc.follows[user.Login] = map[string]bool{}
+	s.store.Misc.Mu.Lock()
+	if s.store.Misc.Follows[user.Login] == nil {
+		s.store.Misc.Follows[user.Login] = map[string]bool{}
 	}
-	s.store.Misc.follows[user.Login][target] = true
-	if s.store.Misc.persist != nil {
-		s.store.Misc.persist.MustPut("misc", "follows", s.store.Misc.follows)
+	s.store.Misc.Follows[user.Login][target] = true
+	if s.store.Misc.Persist != nil {
+		s.store.Misc.Persist.MustPut("misc", "follows", s.store.Misc.Follows)
 	}
-	s.store.Misc.mu.Unlock()
+	s.store.Misc.Mu.Unlock()
 	w.WriteHeader(http.StatusNoContent)
 }
 
@@ -768,14 +513,14 @@ func (s *Server) handleUnfollowUser(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	target := r.PathValue("username")
-	s.store.Misc.mu.Lock()
-	if s.store.Misc.follows[user.Login] != nil {
-		delete(s.store.Misc.follows[user.Login], target)
+	s.store.Misc.Mu.Lock()
+	if s.store.Misc.Follows[user.Login] != nil {
+		delete(s.store.Misc.Follows[user.Login], target)
 	}
-	if s.store.Misc.persist != nil {
-		s.store.Misc.persist.MustPut("misc", "follows", s.store.Misc.follows)
+	if s.store.Misc.Persist != nil {
+		s.store.Misc.Persist.MustPut("misc", "follows", s.store.Misc.Follows)
 	}
-	s.store.Misc.mu.Unlock()
+	s.store.Misc.Mu.Unlock()
 	w.WriteHeader(http.StatusNoContent)
 }
 
@@ -864,9 +609,9 @@ func (s *Server) handleOIDCCustomSubGet(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 	scope := oidcCustomSubScopeKey(r)
-	s.store.Misc.mu.RLock()
-	keys := append([]string(nil), s.store.Misc.oidcClaimKeys[scope]...)
-	s.store.Misc.mu.RUnlock()
+	s.store.Misc.Mu.RLock()
+	keys := append([]string(nil), s.store.Misc.OidcClaimKeys[scope]...)
+	s.store.Misc.Mu.RUnlock()
 	writeJSON(w, http.StatusOK, map[string]interface{}{"include_claim_keys": keys})
 }
 
@@ -883,29 +628,29 @@ func (s *Server) handleOIDCCustomSubPut(w http.ResponseWriter, r *http.Request) 
 		writeGHError(w, http.StatusBadRequest, "Problems parsing JSON")
 		return
 	}
-	s.store.Misc.mu.Lock()
-	if s.store.Misc.oidcClaimKeys == nil {
-		s.store.Misc.oidcClaimKeys = map[string][]string{}
+	s.store.Misc.Mu.Lock()
+	if s.store.Misc.OidcClaimKeys == nil {
+		s.store.Misc.OidcClaimKeys = map[string][]string{}
 	}
-	s.store.Misc.oidcClaimKeys[scope] = req.IncludeClaimKeys
-	if s.store.persist != nil {
-		s.store.persist.MustPut("misc", "oidc_claim_keys", s.store.Misc.oidcClaimKeys)
+	s.store.Misc.OidcClaimKeys[scope] = req.IncludeClaimKeys
+	if s.store.Persist != nil {
+		s.store.Persist.MustPut("misc", "oidc_claim_keys", s.store.Misc.OidcClaimKeys)
 	}
-	s.store.Misc.mu.Unlock()
+	s.store.Misc.Mu.Unlock()
 	writeJSON(w, http.StatusCreated, map[string]interface{}{})
 }
 
 func (s *Server) oidcKeyE() (*rsa.PrivateKey, error) {
-	s.store.Misc.mu.Lock()
-	defer s.store.Misc.mu.Unlock()
-	if s.store.Misc.oidcKey != nil {
-		return s.store.Misc.oidcKey, nil
+	s.store.Misc.Mu.Lock()
+	defer s.store.Misc.Mu.Unlock()
+	if s.store.Misc.OidcKey != nil {
+		return s.store.Misc.OidcKey, nil
 	}
 	k, err := rsa.GenerateKey(rand.Reader, 2048)
 	if err != nil {
 		return nil, fmt.Errorf("generate OpenID Connect signing key: %w", err)
 	}
-	s.store.Misc.oidcKey = k
+	s.store.Misc.OidcKey = k
 	return k, nil
 }
 
@@ -932,7 +677,7 @@ func (s *Server) mintOIDCToken(r *http.Request, audience string) (string, error)
 	if repoFull == "" {
 		return "", fmt.Errorf("oidc: 'repo' (owner/name) is required")
 	}
-	if !principal.Scope.coversRepo(repoFull) {
+	if !principal.Scope.CoversRepo(repoFull) {
 		return "", fmt.Errorf("oidc: job token is not scoped to %q", repoFull)
 	}
 	owner, repoName := splitRepoFull(repoFull)
@@ -1070,9 +815,9 @@ func (s *Server) mintOIDCToken(r *http.Request, audience string) (string, error)
 
 func (s *Server) actionsOIDCIssuer(r *http.Request) string {
 	issuer := s.baseURL(r)
-	s.store.mu.RLock()
+	s.store.Mu.RLock()
 	includeEnterpriseSlug := s.store.EnterpriseSettings.OIDCIncludeEnterpriseSlug
-	s.store.mu.RUnlock()
+	s.store.Mu.RUnlock()
 	if includeEnterpriseSlug {
 		return strings.TrimRight(issuer, "/") + "/" + s.enterpriseSlug()
 	}
@@ -1112,20 +857,14 @@ func (s *Server) handlePagesGet(w http.ResponseWriter, r *http.Request) {
 		writeGHError(w, http.StatusNotFound, "Not Found")
 		return
 	}
-	s.store.Misc.mu.RLock()
-	pages := s.store.Misc.pagesByRepo[repo.ID]
-	s.store.Misc.mu.RUnlock()
+	s.store.Misc.Mu.RLock()
+	pages := s.store.Misc.PagesByRepo[repo.ID]
+	s.store.Misc.Mu.RUnlock()
 	if pages == nil {
 		writeGHError(w, http.StatusNotFound, "Not Found")
 		return
 	}
 	writeJSON(w, http.StatusOK, pages)
-}
-
-func (st *Store) HasPagesSite(repoID int) bool {
-	st.Misc.mu.RLock()
-	defer st.Misc.mu.RUnlock()
-	return st.Misc.pagesByRepo[repoID] != nil
 }
 
 func (s *Server) handlePagesCreate(w http.ResponseWriter, r *http.Request) {
@@ -1170,12 +909,12 @@ func (s *Server) handlePagesCreate(w http.ResponseWriter, r *http.Request) {
 		Custom404: false,
 		BuildType: &buildType,
 	}
-	s.store.Misc.mu.Lock()
-	s.store.Misc.pagesByRepo[repo.ID] = pages
-	if s.store.Misc.persist != nil {
-		s.store.Misc.persist.MustPut("pages_sites", strconv.Itoa(repo.ID), pages)
+	s.store.Misc.Mu.Lock()
+	s.store.Misc.PagesByRepo[repo.ID] = pages
+	if s.store.Misc.Persist != nil {
+		s.store.Misc.Persist.MustPut("pages_sites", strconv.Itoa(repo.ID), pages)
 	}
-	s.store.Misc.mu.Unlock()
+	s.store.Misc.Mu.Unlock()
 	writeJSON(w, http.StatusCreated, pages)
 }
 
@@ -1201,10 +940,10 @@ func (s *Server) handlePagesUpdate(w http.ResponseWriter, r *http.Request) {
 		writeGHError(w, http.StatusBadRequest, "Problems parsing JSON")
 		return
 	}
-	s.store.Misc.mu.Lock()
-	pages := s.store.Misc.pagesByRepo[repo.ID]
+	s.store.Misc.Mu.Lock()
+	pages := s.store.Misc.PagesByRepo[repo.ID]
 	if pages == nil {
-		s.store.Misc.mu.Unlock()
+		s.store.Misc.Mu.Unlock()
 		writeGHError(w, http.StatusNotFound, "Not Found")
 		return
 	}
@@ -1221,15 +960,15 @@ func (s *Server) handlePagesUpdate(w http.ResponseWriter, r *http.Request) {
 		branch = req.Source.Branch
 		sourcePath = req.Source.Path
 	}
-	s.store.Misc.mu.Unlock()
+	s.store.Misc.Mu.Unlock()
 	if err := s.validatePagesConfiguration(repo, buildType, branch, sourcePath); err != nil {
 		writeGHError(w, http.StatusUnprocessableEntity, err.Error())
 		return
 	}
-	s.store.Misc.mu.Lock()
-	pages = s.store.Misc.pagesByRepo[repo.ID]
+	s.store.Misc.Mu.Lock()
+	pages = s.store.Misc.PagesByRepo[repo.ID]
 	if pages == nil {
-		s.store.Misc.mu.Unlock()
+		s.store.Misc.Mu.Unlock()
 		writeGHError(w, http.StatusNotFound, "Not Found")
 		return
 	}
@@ -1257,10 +996,10 @@ func (s *Server) handlePagesUpdate(w http.ResponseWriter, r *http.Request) {
 			pages.Source["path"] = req.Source.Path
 		}
 	}
-	if s.store.Misc.persist != nil {
-		s.store.Misc.persist.MustPut("pages_sites", strconv.Itoa(repo.ID), pages)
+	if s.store.Misc.Persist != nil {
+		s.store.Misc.Persist.MustPut("pages_sites", strconv.Itoa(repo.ID), pages)
 	}
-	s.store.Misc.mu.Unlock()
+	s.store.Misc.Mu.Unlock()
 	w.WriteHeader(http.StatusNoContent)
 }
 
@@ -1291,16 +1030,16 @@ func (s *Server) handlePagesDelete(w http.ResponseWriter, r *http.Request) {
 		writeGHError(w, http.StatusNotFound, "Not Found")
 		return
 	}
-	if err := s.store.deletePagesPublicationData(r.Context(), repo.ID); err != nil {
+	if err := s.store.DeletePagesPublicationData(r.Context(), repo.ID); err != nil {
 		writeGHError(w, http.StatusInternalServerError, "Pages deletion failed: "+err.Error())
 		return
 	}
-	s.store.Misc.mu.Lock()
-	delete(s.store.Misc.pagesByRepo, repo.ID)
-	if s.store.Misc.persist != nil {
-		s.store.Misc.persist.MustDelete("pages_sites", strconv.Itoa(repo.ID))
+	s.store.Misc.Mu.Lock()
+	delete(s.store.Misc.PagesByRepo, repo.ID)
+	if s.store.Misc.Persist != nil {
+		s.store.Misc.Persist.MustDelete("pages_sites", strconv.Itoa(repo.ID))
 	}
-	s.store.Misc.mu.Unlock()
+	s.store.Misc.Mu.Unlock()
 	w.WriteHeader(http.StatusNoContent)
 }
 
@@ -1310,9 +1049,9 @@ func (s *Server) handlePagesListBuilds(w http.ResponseWriter, r *http.Request) {
 		writeGHError(w, http.StatusNotFound, "Not Found")
 		return
 	}
-	s.store.Misc.mu.RLock()
-	builds := s.store.Misc.pagesBuilds[repo.FullName]
-	s.store.Misc.mu.RUnlock()
+	s.store.Misc.Mu.RLock()
+	builds := s.store.Misc.PagesBuilds[repo.FullName]
+	s.store.Misc.Mu.RUnlock()
 	if builds == nil {
 		builds = []*PagesBuild{}
 	}
@@ -1342,14 +1081,14 @@ func (s *Server) handlePagesTriggerBuild(w http.ResponseWriter, r *http.Request)
 
 func (s *Server) runPagesBuild(ctx context.Context, repo *Repo, pusher *PagesPusher, actor, baseURL string) (*PagesBuild, bool) {
 	now := time.Now()
-	s.store.Misc.mu.Lock()
-	pages := s.store.Misc.pagesByRepo[repo.ID]
+	s.store.Misc.Mu.Lock()
+	pages := s.store.Misc.PagesByRepo[repo.ID]
 	if pages == nil {
-		s.store.Misc.mu.Unlock()
+		s.store.Misc.Mu.Unlock()
 		return nil, false
 	}
-	buildID := s.store.Misc.nextPagesBuildID
-	s.store.Misc.nextPagesBuildID++
+	buildID := s.store.Misc.NextPagesBuildID
+	s.store.Misc.NextPagesBuildID++
 	buildURL := baseURL + "/api/v3/repos/" + repo.FullName + "/pages/builds/" + strconv.FormatInt(buildID, 10)
 	build := &PagesBuild{
 		ID:        buildID,
@@ -1360,12 +1099,12 @@ func (s *Server) runPagesBuild(ctx context.Context, repo *Repo, pusher *PagesPus
 		UpdatedAt: now,
 		Error:     &PagesBuildErr{},
 	}
-	s.store.Misc.pagesBuilds[repo.FullName] = append([]*PagesBuild{build}, s.store.Misc.pagesBuilds[repo.FullName]...)
-	if s.store.Misc.persist != nil {
-		s.store.Misc.persist.MustPut("pages_builds", repo.FullName, s.store.Misc.pagesBuilds[repo.FullName])
+	s.store.Misc.PagesBuilds[repo.FullName] = append([]*PagesBuild{build}, s.store.Misc.PagesBuilds[repo.FullName]...)
+	if s.store.Misc.Persist != nil {
+		s.store.Misc.Persist.MustPut("pages_builds", repo.FullName, s.store.Misc.PagesBuilds[repo.FullName])
 	}
 	branch, sourcePath, sourceErr := pagesLegacySource(pages)
-	s.store.Misc.mu.Unlock()
+	s.store.Misc.Mu.Unlock()
 	buildStarted := time.Now()
 	commitSHA := ""
 	custom404 := false
@@ -1374,7 +1113,7 @@ func (s *Server) runPagesBuild(ctx context.Context, repo *Repo, pusher *PagesPus
 		commitSHA, custom404, buildErr = s.buildPagesBranch(ctx, repo, branch, sourcePath)
 	}
 	finishedAt := time.Now()
-	s.store.Misc.mu.Lock()
+	s.store.Misc.Mu.Lock()
 	build.Commit = commitSHA
 	build.UpdatedAt = finishedAt
 	build.Duration = int(finishedAt.Sub(buildStarted).Milliseconds())
@@ -1393,14 +1132,14 @@ func (s *Server) runPagesBuild(ctx context.Context, repo *Repo, pusher *PagesPus
 	// build marked built while the site row still says building, or vice versa
 	// (STORE-001/002). Unlock before any panic so a persist failure can't
 	// deadlock on the held lock.
-	batch := newPersistBatch(s.store.Misc.persist)
-	batch.Put("pages_builds", repo.FullName, s.store.Misc.pagesBuilds[repo.FullName])
+	batch := newPersistBatch(s.store.Misc.Persist)
+	batch.Put("pages_builds", repo.FullName, s.store.Misc.PagesBuilds[repo.FullName])
 	batch.Put("pages_sites", strconv.Itoa(repo.ID), pages)
 	persistErr := batch.Commit()
 	buildStatus, buildCommit, buildDuration := build.Status, build.Commit, build.Duration
-	s.store.Misc.mu.Unlock()
+	s.store.Misc.Mu.Unlock()
 	if persistErr != nil {
-		panic(&persistenceFailure{op: "batch", bucket: "pages_sites", key: strconv.Itoa(repo.ID), err: persistErr})
+		panic(&persistenceFailure{Op: "batch", Bucket: "pages_sites", Key: strconv.Itoa(repo.ID), Err: persistErr})
 	}
 	s.recordAuditEvent("pages.build", actor, "", map[string]interface{}{"repo": repo.FullName, "build_id": buildID})
 	// `page_build` fires when a Pages build finishes, so `on: page_build`
@@ -1423,9 +1162,9 @@ func (s *Server) handlePagesLatestBuild(w http.ResponseWriter, r *http.Request) 
 		writeGHError(w, http.StatusNotFound, "Not Found")
 		return
 	}
-	s.store.Misc.mu.RLock()
-	builds := s.store.Misc.pagesBuilds[repo.FullName]
-	s.store.Misc.mu.RUnlock()
+	s.store.Misc.Mu.RLock()
+	builds := s.store.Misc.PagesBuilds[repo.FullName]
+	s.store.Misc.Mu.RUnlock()
 	if len(builds) == 0 {
 		writeGHError(w, http.StatusNotFound, "Not Found")
 		return
@@ -1440,15 +1179,15 @@ func (s *Server) handlePagesGetBuild(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	buildID, _ := strconv.ParseInt(r.PathValue("build_id"), 10, 64)
-	s.store.Misc.mu.RLock()
-	for _, b := range s.store.Misc.pagesBuilds[repo.FullName] {
+	s.store.Misc.Mu.RLock()
+	for _, b := range s.store.Misc.PagesBuilds[repo.FullName] {
 		if b.ID == buildID {
-			s.store.Misc.mu.RUnlock()
+			s.store.Misc.Mu.RUnlock()
 			writeJSON(w, http.StatusOK, b)
 			return
 		}
 	}
-	s.store.Misc.mu.RUnlock()
+	s.store.Misc.Mu.RUnlock()
 	writeGHError(w, http.StatusNotFound, "Not Found")
 }
 
@@ -1474,15 +1213,15 @@ func (s *Server) handleOrgAuditLog(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	s.store.Misc.mu.RLock()
-	entries := make([]*AuditEntry, 0, len(s.store.Misc.auditLog))
+	s.store.Misc.Mu.RLock()
+	entries := make([]*AuditEntry, 0, len(s.store.Misc.AuditLog))
 	order := r.URL.Query().Get("order")
 	if order != "" && order != "desc" && order != "asc" {
-		s.store.Misc.mu.RUnlock()
+		s.store.Misc.Mu.RUnlock()
 		writeGHValidationError(w, "AuditLog", "order", "invalid")
 		return
 	}
-	for _, e := range s.store.Misc.auditLog {
+	for _, e := range s.store.Misc.AuditLog {
 		if e.Org != "" && e.Org != orgName {
 			continue
 		}
@@ -1498,7 +1237,7 @@ func (s *Server) handleOrgAuditLog(w http.ResponseWriter, r *http.Request) {
 		}
 		entries = append(entries, e)
 	}
-	s.store.Misc.mu.RUnlock()
+	s.store.Misc.Mu.RUnlock()
 	if order == "asc" {
 		for i, j := 0, len(entries)-1; i < j; i, j = i+1, j-1 {
 			entries[i], entries[j] = entries[j], entries[i]
@@ -1527,24 +1266,24 @@ func auditEntryMatchesPhrase(e *AuditEntry, phrase string) bool {
 }
 
 func (s *Server) recordAuditEvent(action, actor, org string, data map[string]interface{}) {
-	s.store.Misc.mu.Lock()
-	defer s.store.Misc.mu.Unlock()
-	s.store.Misc.nextAuditID++
+	s.store.Misc.Mu.Lock()
+	defer s.store.Misc.Mu.Unlock()
+	s.store.Misc.NextAuditID++
 	entry := &AuditEntry{
-		ID:        s.store.Misc.nextAuditID,
-		Timestamp: s.store.currentTime().Format(time.RFC3339Nano),
+		ID:        s.store.Misc.NextAuditID,
+		Timestamp: s.store.CurrentTime().Format(time.RFC3339Nano),
 		Action:    action,
 		Actor:     actor,
 		Org:       org,
 		Data:      data,
 		Version:   "1.1",
 	}
-	s.store.Misc.auditLog = append([]*AuditEntry{entry}, s.store.Misc.auditLog...)
-	if len(s.store.Misc.auditLog) > maxAuditLogEntries {
-		s.store.Misc.auditLog = s.store.Misc.auditLog[:maxAuditLogEntries]
+	s.store.Misc.AuditLog = append([]*AuditEntry{entry}, s.store.Misc.AuditLog...)
+	if len(s.store.Misc.AuditLog) > maxAuditLogEntries {
+		s.store.Misc.AuditLog = s.store.Misc.AuditLog[:maxAuditLogEntries]
 	}
-	if s.store.Misc.persist != nil {
-		s.store.Misc.persist.MustPut("audit_log", fmt.Sprintf("%d", entry.ID), entry)
+	if s.store.Misc.Persist != nil {
+		s.store.Misc.Persist.MustPut("audit_log", fmt.Sprintf("%d", entry.ID), entry)
 	}
 }
 
@@ -1742,8 +1481,4 @@ func userKeyToJSON(k *UserKey, baseURL string) map[string]interface{} {
 		"created_at": k.CreatedAt.UTC().Format(time.RFC3339),
 		"read_only":  false,
 	}
-}
-
-func bpKey(repoID int, branch string) string {
-	return strconv.Itoa(repoID) + ":" + branch
 }

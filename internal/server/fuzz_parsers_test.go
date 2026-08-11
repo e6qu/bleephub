@@ -88,7 +88,7 @@ func FuzzParseAndVerifyAppJWT(f *testing.F) {
 	f.Add("eyJ.eyJ.")
 	f.Fuzz(func(t *testing.T, tok string) {
 		st := NewStore()
-		_, _ = st.parseAndVerifyAppJWT(tok)
+		_, _ = st.ParseAndVerifyAppJWT(tok)
 	})
 }
 

@@ -242,8 +242,8 @@ func TestStressCRUDStorm(t *testing.T) {
 // Next* allocators stayed ahead of every allocated id.
 func assertStoreIndexInvariants(t *testing.T, st *Store) {
 	t.Helper()
-	st.mu.RLock()
-	defer st.mu.RUnlock()
+	st.Mu.RLock()
+	defer st.Mu.RUnlock()
 
 	// Repos ↔ ReposByName.
 	for name, r := range st.ReposByName {

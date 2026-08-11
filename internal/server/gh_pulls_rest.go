@@ -1197,7 +1197,7 @@ func (s *Server) handleListRequestedReviewers(w http.ResponseWriter, r *http.Req
 
 	users := make([]map[string]interface{}, 0)
 	teams := make([]map[string]interface{}, 0)
-	s.store.mu.RLock()
+	s.store.Mu.RLock()
 	for _, id := range pr.RequestedReviewerIDs {
 		if u, ok := s.store.Users[id]; ok {
 			users = append(users, userToJSON(u))
@@ -1209,7 +1209,7 @@ func (s *Server) handleListRequestedReviewers(w http.ResponseWriter, r *http.Req
 			teams = append(teams, requestedTeamJSONLocked(s.store, team, org, s.baseURL(r)))
 		}
 	}
-	s.store.mu.RUnlock()
+	s.store.Mu.RUnlock()
 
 	writeJSON(w, http.StatusOK, map[string]interface{}{
 		"users": users,
@@ -1533,8 +1533,8 @@ func pullRequestHeadRepoID(pr *PullRequest) int {
 }
 
 func pullRequestHeadRepo(st *Store, pr *PullRequest) *Repo {
-	st.mu.RLock()
-	defer st.mu.RUnlock()
+	st.Mu.RLock()
+	defer st.Mu.RUnlock()
 	return pullRequestHeadRepoLocked(st, pr)
 }
 
@@ -1562,8 +1562,8 @@ func resolvePullRequestHead(st *Store, baseRepo *Repo, head string) (*Repo, stri
 		return baseRepo, branch
 	}
 
-	st.mu.RLock()
-	defer st.mu.RUnlock()
+	st.Mu.RLock()
+	defer st.Mu.RUnlock()
 	var matches []*Repo
 	networkSourceID := baseRepo.ID
 	if baseRepo.SourceID != 0 {
@@ -1676,8 +1676,8 @@ func pullRequestHeadSHA(pr *PullRequest, st *Store) string {
 	if pr == nil {
 		return ""
 	}
-	st.mu.RLock()
-	defer st.mu.RUnlock()
+	st.Mu.RLock()
+	defer st.Mu.RUnlock()
 	return pullRequestHeadSHALocked(pr, st)
 }
 
@@ -1709,8 +1709,8 @@ func pullRequestSimpleJSON(pr *PullRequest, st *Store, baseURL, repoFullName str
 	// timestamps under st.mu.Lock, so the live pointer must not be read here.
 	// The snapshot's RLock is released before the map-resolution RLock below —
 	// they are sequential, never nested.
-	pr = st.snapPR(pr)
-	st.mu.RLock()
+	pr = st.SnapPR(pr)
+	st.Mu.RLock()
 
 	// Resolve author
 	var authorJSON map[string]interface{}
@@ -1763,7 +1763,7 @@ func pullRequestSimpleJSON(pr *PullRequest, st *Store, baseURL, repoFullName str
 		headStor = st.GitStorages[headRepo.FullName]
 	}
 
-	st.mu.RUnlock()
+	st.Mu.RUnlock()
 
 	headSHA := resolveBranchSha(headStor, pr.HeadRefName)
 	baseSHA := pr.BaseSHA
@@ -1910,10 +1910,10 @@ func pullRequestToJSON(pr *PullRequest, st *Store, baseURL, repoFullName string)
 	out := pullRequestSimpleJSON(pr, st, baseURL, repoFullName)
 
 	// Snapshot before reading the mutable merge/diff fields off the pointer.
-	pr = st.snapPR(pr)
-	st.mu.RLock()
-	commentCount := st.countCommentsForLocked("pull_request", pr.ID)
-	st.mu.RUnlock()
+	pr = st.SnapPR(pr)
+	st.Mu.RLock()
+	commentCount := st.CountCommentsForLocked("pull_request", pr.ID)
+	st.Mu.RUnlock()
 	reviewCommentCount := len(st.PRReviewComments.ListForPR(pr.ID))
 
 	merged := pr.State == "MERGED"
@@ -1927,11 +1927,11 @@ func pullRequestToJSON(pr *PullRequest, st *Store, baseURL, repoFullName string)
 
 	var mergedByJSON interface{}
 	if pr.MergedByID > 0 {
-		st.mu.RLock()
+		st.Mu.RLock()
 		if u, ok := st.Users[pr.MergedByID]; ok {
 			mergedByJSON = userToJSON(u)
 		}
-		st.mu.RUnlock()
+		st.Mu.RUnlock()
 	}
 
 	out["merged"] = merged
@@ -1964,7 +1964,7 @@ func pullRequestToJSON(pr *PullRequest, st *Store, baseURL, repoFullName string)
 func reviewToJSON(review *PullRequestReview, st *Store, baseURL, repoFullName string, prNumber int) map[string]interface{} {
 	var authorJSON map[string]interface{}
 	var authorAssociation string
-	st.mu.RLock()
+	st.Mu.RLock()
 	if u, ok := st.Users[review.AuthorID]; ok {
 		authorJSON = userToJSON(u)
 	}
@@ -1974,7 +1974,7 @@ func reviewToJSON(review *PullRequestReview, st *Store, baseURL, repoFullName st
 	} else {
 		authorAssociation = "CONTRIBUTOR"
 	}
-	st.mu.RUnlock()
+	st.Mu.RUnlock()
 
 	htmlURL := baseURL + "/" + repoFullName + "/pull/" + strconv.Itoa(prNumber) + "#pullrequestreview-" + strconv.Itoa(review.ID)
 	pullURL := baseURL + "/api/v3/repos/" + repoFullName + "/pulls/" + strconv.Itoa(prNumber)

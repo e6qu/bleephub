@@ -362,8 +362,8 @@ jobs:
 
 func (s *isolatedServer) runsForRepo(t *testing.T, repoKey string) []*Workflow {
 	t.Helper()
-	s.store.mu.RLock()
-	defer s.store.mu.RUnlock()
+	s.store.Mu.RLock()
+	defer s.store.Mu.RUnlock()
 	var out []*Workflow
 	for _, wf := range s.store.Workflows {
 		if wf.RepoFullName == repoKey {
@@ -419,7 +419,7 @@ jobs:
 
 	// A runner takes the message and then disappears: the message leaves the
 	// queue, the job is assigned, and nothing ever renews the lease.
-	s.store.mu.Lock()
+	s.store.Mu.Lock()
 	remaining := s.store.PendingMessages[:0]
 	for _, msg := range s.store.PendingMessages {
 		if msg.JobID != jobID {
@@ -429,21 +429,21 @@ jobs:
 	s.store.PendingMessages = remaining
 	job := s.store.Jobs[jobID]
 	if job == nil {
-		s.store.mu.Unlock()
+		s.store.Mu.Unlock()
 		t.Fatalf("no engine job for %s", jobID)
 	}
 	job.AgentID = 4242
 	job.Status = "running"
 	job.LockedUntil = fixedTestTime.Add(-time.Minute)
-	s.store.mu.Unlock()
+	s.store.Mu.Unlock()
 
 	s.checkJobTimeouts(wf)
 
 	if s.pendingMessageFor(jobID) == nil {
 		t.Fatal("an expired lease left the job with the runner that vanished; it was never requeued")
 	}
-	s.store.mu.RLock()
-	defer s.store.mu.RUnlock()
+	s.store.Mu.RLock()
+	defer s.store.Mu.RUnlock()
 	if job.AgentID != 0 {
 		t.Errorf("reclaimed job is still assigned to agent %d", job.AgentID)
 	}
@@ -487,7 +487,7 @@ jobs:
 	}
 	waitUntil(t, "queued job message", func() bool { return s.pendingMessageFor(jobID) != nil })
 
-	s.store.mu.Lock()
+	s.store.Mu.Lock()
 	remaining := s.store.PendingMessages[:0]
 	for _, msg := range s.store.PendingMessages {
 		if msg.JobID != jobID {
@@ -499,23 +499,23 @@ jobs:
 	job.AgentID = 99
 	job.Status = "running"
 	job.LockedUntil = fixedTestTime.Add(time.Hour)
-	s.store.mu.Unlock()
+	s.store.Mu.Unlock()
 
 	s.checkJobTimeouts(wf)
 
 	if s.pendingMessageFor(jobID) != nil {
 		t.Fatal("a live lease was reclaimed; the job would run twice")
 	}
-	s.store.mu.RLock()
-	defer s.store.mu.RUnlock()
+	s.store.Mu.RLock()
+	defer s.store.Mu.RUnlock()
 	if job.AgentID != 99 {
 		t.Errorf("live job was unassigned from its runner (agent %d)", job.AgentID)
 	}
 }
 
 func (s *isolatedServer) pendingMessageFor(jobID string) *TaskAgentMessage {
-	s.store.mu.RLock()
-	defer s.store.mu.RUnlock()
+	s.store.Mu.RLock()
+	defer s.store.Mu.RUnlock()
 	for _, msg := range s.store.PendingMessages {
 		if msg.JobID == jobID {
 			return msg

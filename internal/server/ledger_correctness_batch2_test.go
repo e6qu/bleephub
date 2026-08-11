@@ -69,10 +69,10 @@ func TestRepoRenameRekeysWorkflowFiles(t *testing.T) {
 	newFull := admin.Login + "/wf-renamed"
 	newID := stableWorkflowFileID(newFull, path)
 
-	s.store.mu.RLock()
+	s.store.Mu.RLock()
 	_, oldExists := s.store.WorkflowFiles[oldID]
 	moved, newExists := s.store.WorkflowFiles[newID]
-	s.store.mu.RUnlock()
+	s.store.Mu.RUnlock()
 
 	if oldExists {
 		t.Fatalf("STORE-029: stale workflow-file row still keyed by the old-name hash %d", oldID)

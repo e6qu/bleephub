@@ -19,48 +19,6 @@ const (
 	scimListSchema  = "urn:ietf:params:scim:api:messages:2.0:ListResponse"
 )
 
-type EnterpriseSCIMName struct {
-	GivenName  string `json:"givenName,omitempty"`
-	FamilyName string `json:"familyName,omitempty"`
-	Formatted  string `json:"formatted,omitempty"`
-}
-
-type EnterpriseSCIMEmail struct {
-	Value   string `json:"value"`
-	Type    string `json:"type,omitempty"`
-	Primary bool   `json:"primary,omitempty"`
-}
-
-type EnterpriseSCIMUser struct {
-	Schemas     []string              `json:"schemas"`
-	ID          string                `json:"id"`
-	ExternalID  string                `json:"externalId,omitempty"`
-	UserName    string                `json:"userName"`
-	Name        EnterpriseSCIMName    `json:"name,omitempty"`
-	DisplayName string                `json:"displayName,omitempty"`
-	Active      bool                  `json:"active"`
-	Emails      []EnterpriseSCIMEmail `json:"emails,omitempty"`
-	UserID      int                   `json:"user_id"`
-	CreatedAt   time.Time             `json:"created_at"`
-	UpdatedAt   time.Time             `json:"updated_at"`
-}
-
-type EnterpriseSCIMMember struct {
-	Value   string `json:"value"`
-	Display string `json:"display,omitempty"`
-}
-
-type EnterpriseSCIMGroup struct {
-	Schemas     []string               `json:"schemas"`
-	ID          string                 `json:"id"`
-	ExternalID  string                 `json:"externalId,omitempty"`
-	DisplayName string                 `json:"displayName"`
-	Members     []EnterpriseSCIMMember `json:"members"`
-	TeamID      int                    `json:"team_id"`
-	CreatedAt   time.Time              `json:"created_at"`
-	UpdatedAt   time.Time              `json:"updated_at"`
-}
-
 func (s *Server) registerGHEnterpriseSCIMRoutes() {
 	s.route("GET /api/v3/scim/v2/enterprises/{enterprise}/Users", s.requireEnterpriseOwner(s.handleListEnterpriseSCIMUsers))
 	s.route("POST /api/v3/scim/v2/enterprises/{enterprise}/Users", s.requireEnterpriseOwner(s.handleCreateEnterpriseSCIMUser))
@@ -163,7 +121,7 @@ func scimFilterValue(raw, field string) (string, bool) {
 
 func (s *Server) handleListEnterpriseSCIMUsers(w http.ResponseWriter, r *http.Request) {
 	filter := r.URL.Query().Get("filter")
-	s.store.mu.RLock()
+	s.store.Mu.RLock()
 	users := make([]*EnterpriseSCIMUser, 0, len(s.store.EnterpriseSettings.SCIMUsers))
 	for _, user := range s.store.EnterpriseSettings.SCIMUsers {
 		if filter != "" {
@@ -172,7 +130,7 @@ func (s *Server) handleListEnterpriseSCIMUsers(w http.ResponseWriter, r *http.Re
 				value, ok = scimFilterValue(filter, "externalId")
 			}
 			if !ok {
-				s.store.mu.RUnlock()
+				s.store.Mu.RUnlock()
 				writeSCIMError(w, http.StatusBadRequest, "Unsupported filter")
 				return
 			}
@@ -183,7 +141,7 @@ func (s *Server) handleListEnterpriseSCIMUsers(w http.ResponseWriter, r *http.Re
 		copy := *user
 		users = append(users, &copy)
 	}
-	s.store.mu.RUnlock()
+	s.store.Mu.RUnlock()
 	sort.Slice(users, func(i, j int) bool { return users[i].ID < users[j].ID })
 	page, start, count, ok := scimListPage(r, users)
 	if !ok {
@@ -222,15 +180,15 @@ func (s *Server) createSCIMBackingUser(w http.ResponseWriter, req *scimUserReque
 			email = candidate.Value
 		}
 	}
-	s.store.mu.Lock()
+	s.store.Mu.Lock()
 	if s.store.UsersByLogin[login] != nil {
-		s.store.mu.Unlock()
+		s.store.Mu.Unlock()
 		writeSCIMError(w, http.StatusConflict, "userName already exists")
 		return nil, false
 	}
-	now := s.store.currentTime()
+	now := s.store.CurrentTime()
 	active := req.Active == nil || *req.Active
-	userID := s.store.reserveGlobalID("next_user", &s.store.NextUser)
+	userID := s.store.ReserveGlobalID("next_user", &s.store.NextUser)
 	user := &User{
 		ID: userID, NodeID: fmt.Sprintf("U_kgDO%08d", userID),
 		Login: login, Name: req.DisplayName, Email: email, Type: "User",
@@ -238,10 +196,10 @@ func (s *Server) createSCIMBackingUser(w http.ResponseWriter, req *scimUserReque
 	}
 	s.store.Users[user.ID] = user
 	s.store.UsersByLogin[user.Login] = user
-	if s.store.persist != nil {
-		s.store.persist.MustPut("users", strconv.Itoa(user.ID), user)
+	if s.store.Persist != nil {
+		s.store.Persist.MustPut("users", strconv.Itoa(user.ID), user)
 	}
-	s.store.mu.Unlock()
+	s.store.Mu.Unlock()
 	return user, true
 }
 
@@ -254,7 +212,7 @@ func (s *Server) handleCreateEnterpriseSCIMUser(w http.ResponseWriter, r *http.R
 	if !ok {
 		return
 	}
-	now := s.store.currentTime()
+	now := s.store.CurrentTime()
 	active := req.Active == nil || *req.Active
 	user := &EnterpriseSCIMUser{
 		Schemas: []string{scimUserSchema}, ID: uuid.NewString(), ExternalID: req.ExternalID,
@@ -262,21 +220,21 @@ func (s *Server) handleCreateEnterpriseSCIMUser(w http.ResponseWriter, r *http.R
 		Active: active, Emails: append([]EnterpriseSCIMEmail(nil), req.Emails...),
 		UserID: backing.ID, CreatedAt: now, UpdatedAt: now,
 	}
-	s.store.mu.Lock()
+	s.store.Mu.Lock()
 	s.store.EnterpriseSettings.SCIMUsers[user.ID] = user
-	s.store.persistEnterpriseSettings()
-	s.store.mu.Unlock()
+	s.store.PersistEnterpriseSettings()
+	s.store.Mu.Unlock()
 	writeSCIM(w, http.StatusCreated, s.scimUserJSON(r, user))
 }
 
 func (s *Server) enterpriseSCIMUser(w http.ResponseWriter, r *http.Request) *EnterpriseSCIMUser {
-	s.store.mu.RLock()
+	s.store.Mu.RLock()
 	user := s.store.EnterpriseSettings.SCIMUsers[r.PathValue("scim_user_id")]
 	if user != nil {
 		copy := *user
 		user = &copy
 	}
-	s.store.mu.RUnlock()
+	s.store.Mu.RUnlock()
 	if user == nil {
 		writeSCIMError(w, http.StatusNotFound, "Resource not found")
 	}
@@ -292,22 +250,22 @@ func (s *Server) handleGetEnterpriseSCIMUser(w http.ResponseWriter, r *http.Requ
 
 func (s *Server) replaceSCIMUser(w http.ResponseWriter, r *http.Request, req *scimUserRequest) *EnterpriseSCIMUser {
 	id := r.PathValue("scim_user_id")
-	s.store.mu.Lock()
+	s.store.Mu.Lock()
 	user := s.store.EnterpriseSettings.SCIMUsers[id]
 	if user == nil {
-		s.store.mu.Unlock()
+		s.store.Mu.Unlock()
 		writeSCIMError(w, http.StatusNotFound, "Resource not found")
 		return nil
 	}
 	backing := s.store.Users[user.UserID]
 	if backing == nil {
-		s.store.mu.Unlock()
+		s.store.Mu.Unlock()
 		writeSCIMError(w, http.StatusInternalServerError, "Backing user is missing")
 		return nil
 	}
 	login := normalizeGitHubLogin(req.UserName)
 	if login == "" || (login != backing.Login && s.store.UsersByLogin[login] != nil) {
-		s.store.mu.Unlock()
+		s.store.Mu.Unlock()
 		writeSCIMError(w, http.StatusConflict, "userName already exists")
 		return nil
 	}
@@ -316,18 +274,18 @@ func (s *Server) replaceSCIMUser(w http.ResponseWriter, r *http.Request, req *sc
 	backing.Name = req.DisplayName
 	backing.Email = primarySCIMEmail(req.Emails)
 	backing.Suspended = req.Active != nil && !*req.Active
-	backing.UpdatedAt = s.store.currentTime()
+	backing.UpdatedAt = s.store.CurrentTime()
 	s.store.UsersByLogin[login] = backing
 	user.ExternalID, user.UserName, user.Name, user.DisplayName = req.ExternalID, login, req.Name, req.DisplayName
 	user.Active = req.Active == nil || *req.Active
 	user.Emails = append([]EnterpriseSCIMEmail(nil), req.Emails...)
 	user.UpdatedAt = backing.UpdatedAt
-	if s.store.persist != nil {
-		s.store.persist.MustPut("users", strconv.Itoa(backing.ID), backing)
+	if s.store.Persist != nil {
+		s.store.Persist.MustPut("users", strconv.Itoa(backing.ID), backing)
 	}
-	s.store.persistEnterpriseSettings()
+	s.store.PersistEnterpriseSettings()
 	copy := *user
-	s.store.mu.Unlock()
+	s.store.Mu.Unlock()
 	return &copy
 }
 
@@ -509,28 +467,28 @@ func (s *Server) handlePatchEnterpriseSCIMUser(w http.ResponseWriter, r *http.Re
 
 func (s *Server) handleDeleteEnterpriseSCIMUser(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("scim_user_id")
-	s.store.mu.Lock()
+	s.store.Mu.Lock()
 	user := s.store.EnterpriseSettings.SCIMUsers[id]
 	if user == nil {
-		s.store.mu.Unlock()
+		s.store.Mu.Unlock()
 		writeSCIMError(w, http.StatusNotFound, "Resource not found")
 		return
 	}
 	if backing := s.store.Users[user.UserID]; backing != nil {
 		backing.Suspended = true
-		backing.UpdatedAt = s.store.currentTime()
-		if s.store.persist != nil {
-			s.store.persist.MustPut("users", strconv.Itoa(backing.ID), backing)
+		backing.UpdatedAt = s.store.CurrentTime()
+		if s.store.Persist != nil {
+			s.store.Persist.MustPut("users", strconv.Itoa(backing.ID), backing)
 		}
 	}
 	delete(s.store.EnterpriseSettings.SCIMUsers, id)
 	for _, group := range s.store.EnterpriseSettings.SCIMGroups {
 		group.Members = removeSCIMMember(group.Members, id)
-		group.UpdatedAt = s.store.currentTime()
+		group.UpdatedAt = s.store.CurrentTime()
 		s.syncSCIMGroupTeamLocked(group)
 	}
-	s.store.persistEnterpriseSettings()
-	s.store.mu.Unlock()
+	s.store.PersistEnterpriseSettings()
+	s.store.Mu.Unlock()
 	w.WriteHeader(http.StatusNoContent)
 }
 
@@ -551,8 +509,8 @@ type scimGroupRequest struct {
 }
 
 func (s *Server) validateSCIMMembers(w http.ResponseWriter, members []EnterpriseSCIMMember) bool {
-	s.store.mu.RLock()
-	defer s.store.mu.RUnlock()
+	s.store.Mu.RLock()
+	defer s.store.Mu.RUnlock()
 	seen := map[string]bool{}
 	for _, member := range members {
 		if s.store.EnterpriseSettings.SCIMUsers[member.Value] == nil || seen[member.Value] {
@@ -583,7 +541,7 @@ func (s *Server) syncSCIMGroupTeamLocked(group *EnterpriseSCIMGroup) {
 		}
 	}
 	team.UpdatedAt = group.UpdatedAt
-	s.store.persistEnterpriseTeam(team)
+	s.store.PersistEnterpriseTeam(team)
 }
 
 func (s *Server) handleCreateEnterpriseSCIMGroup(w http.ResponseWriter, r *http.Request) {
@@ -603,29 +561,29 @@ func (s *Server) handleCreateEnterpriseSCIMGroup(w http.ResponseWriter, r *http.
 		writeSCIMError(w, http.StatusConflict, "displayName already exists")
 		return
 	}
-	now := s.store.currentTime()
+	now := s.store.CurrentTime()
 	group := &EnterpriseSCIMGroup{
 		Schemas: []string{scimGroupSchema}, ID: id, ExternalID: req.ExternalID,
 		DisplayName: req.DisplayName, Members: append([]EnterpriseSCIMMember(nil), req.Members...),
 		TeamID: team.ID, CreatedAt: now, UpdatedAt: now,
 	}
-	s.store.mu.Lock()
+	s.store.Mu.Lock()
 	s.store.EnterpriseSettings.SCIMGroups[id] = group
 	s.syncSCIMGroupTeamLocked(group)
-	s.store.persistEnterpriseSettings()
-	s.store.mu.Unlock()
+	s.store.PersistEnterpriseSettings()
+	s.store.Mu.Unlock()
 	writeSCIM(w, http.StatusCreated, s.scimGroupJSON(r, group))
 }
 
 func (s *Server) enterpriseSCIMGroup(w http.ResponseWriter, r *http.Request) *EnterpriseSCIMGroup {
-	s.store.mu.RLock()
+	s.store.Mu.RLock()
 	group := s.store.EnterpriseSettings.SCIMGroups[r.PathValue("scim_group_id")]
 	if group != nil {
 		copy := *group
 		copy.Members = append([]EnterpriseSCIMMember(nil), group.Members...)
 		group = &copy
 	}
-	s.store.mu.RUnlock()
+	s.store.Mu.RUnlock()
 	if group == nil {
 		writeSCIMError(w, http.StatusNotFound, "Resource not found")
 	}
@@ -649,7 +607,7 @@ func (s *Server) handleListEnterpriseSCIMGroups(w http.ResponseWriter, r *http.R
 			return
 		}
 	}
-	s.store.mu.RLock()
+	s.store.Mu.RLock()
 	groups := make([]*EnterpriseSCIMGroup, 0, len(s.store.EnterpriseSettings.SCIMGroups))
 	for _, group := range s.store.EnterpriseSettings.SCIMGroups {
 		if filter != "" {
@@ -661,7 +619,7 @@ func (s *Server) handleListEnterpriseSCIMGroups(w http.ResponseWriter, r *http.R
 		copy.Members = append([]EnterpriseSCIMMember(nil), group.Members...)
 		groups = append(groups, &copy)
 	}
-	s.store.mu.RUnlock()
+	s.store.Mu.RUnlock()
 	sort.Slice(groups, func(i, j int) bool { return groups[i].ID < groups[j].ID })
 	page, start, count, ok := scimListPage(r, groups)
 	if !ok {
@@ -685,27 +643,27 @@ func (s *Server) replaceSCIMGroup(w http.ResponseWriter, r *http.Request, req *s
 		}
 		return nil
 	}
-	s.store.mu.Lock()
+	s.store.Mu.Lock()
 	group := s.store.EnterpriseSettings.SCIMGroups[r.PathValue("scim_group_id")]
 	if group == nil {
-		s.store.mu.Unlock()
+		s.store.Mu.Unlock()
 		writeSCIMError(w, http.StatusNotFound, "Resource not found")
 		return nil
 	}
 	newSlug := slugify(req.DisplayName)
 	if other := s.store.EnterpriseTeamsBySlug[newSlug]; other != nil && other.ID != group.TeamID {
-		s.store.mu.Unlock()
+		s.store.Mu.Unlock()
 		writeSCIMError(w, http.StatusConflict, "displayName already exists")
 		return nil
 	}
 	group.ExternalID, group.DisplayName = req.ExternalID, req.DisplayName
 	group.Members = append([]EnterpriseSCIMMember(nil), req.Members...)
-	group.UpdatedAt = s.store.currentTime()
+	group.UpdatedAt = s.store.CurrentTime()
 	s.syncSCIMGroupTeamLocked(group)
-	s.store.persistEnterpriseSettings()
+	s.store.PersistEnterpriseSettings()
 	copy := *group
 	copy.Members = append([]EnterpriseSCIMMember(nil), group.Members...)
-	s.store.mu.Unlock()
+	s.store.Mu.Unlock()
 	return &copy
 }
 
@@ -850,10 +808,10 @@ func (s *Server) handlePatchEnterpriseSCIMGroup(w http.ResponseWriter, r *http.R
 
 func (s *Server) handleDeleteEnterpriseSCIMGroup(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("scim_group_id")
-	s.store.mu.Lock()
+	s.store.Mu.Lock()
 	group := s.store.EnterpriseSettings.SCIMGroups[id]
 	if group == nil {
-		s.store.mu.Unlock()
+		s.store.Mu.Unlock()
 		writeSCIMError(w, http.StatusNotFound, "Resource not found")
 		return
 	}
@@ -862,10 +820,10 @@ func (s *Server) handleDeleteEnterpriseSCIMGroup(w http.ResponseWriter, r *http.
 		delete(s.store.EnterpriseTeamsBySlug, team.Slug)
 	}
 	delete(s.store.EnterpriseTeams, group.TeamID)
-	if s.store.persist != nil {
-		s.store.persist.MustDelete("enterprise_teams", strconv.Itoa(group.TeamID))
+	if s.store.Persist != nil {
+		s.store.Persist.MustDelete("enterprise_teams", strconv.Itoa(group.TeamID))
 	}
-	s.store.persistEnterpriseSettings()
-	s.store.mu.Unlock()
+	s.store.PersistEnterpriseSettings()
+	s.store.Mu.Unlock()
 	w.WriteHeader(http.StatusNoContent)
 }

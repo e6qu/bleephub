@@ -1308,3 +1308,13 @@ func (s *Server) servePackageFile(w http.ResponseWriter, r *http.Request, f *Pac
 	w.WriteHeader(http.StatusOK)
 	_, _ = io.Copy(w, body)
 }
+
+// PackageVersionURL returns the public API URL for a package version.
+func (s *Server) packageVersionURL(baseURL, scopePath string, p *Package, v *PackageVersion) string {
+	return baseURL + "/api/v3" + scopePath + "/" + url.PathEscape(p.PackageType) + "/" + url.PathEscape(p.Name) + "/versions/" + strconv.Itoa(v.ID)
+}
+
+// packageURL returns the public API URL for a package.
+func (s *Server) packageURL(baseURL, scopePath string, p *Package) string {
+	return baseURL + "/api/v3" + scopePath + "/" + url.PathEscape(p.PackageType) + "/" + url.PathEscape(p.Name)
+}

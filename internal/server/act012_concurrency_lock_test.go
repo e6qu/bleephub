@@ -51,7 +51,7 @@ func TestConcurrencyAdmissionSerializesAcrossReplicas(t *testing.T) {
 
 	// Shared database: make OwnedExclusively report false (the dqlite dialect
 	// marker is what distinguishes a shared quorum; the SQL is identical).
-	p.dialect.name = "dqlite"
+	p.Dialect.Name = "dqlite"
 
 	if ok, err := p.AcquireLock(lockName, "peer", 30*time.Second); err != nil || !ok {
 		t.Fatalf("peer re-AcquireLock: ok=%v err=%v", ok, err)

@@ -4,11 +4,8 @@ import (
 	"net/http"
 	"net/url"
 	"sort"
-	"strconv"
 	"strings"
 	"time"
-
-	"github.com/google/uuid"
 )
 
 // Dependency graph: dependency submission (snapshots), the SPDX SBOM export,
@@ -25,59 +22,6 @@ import (
 // computed from the submitted snapshot data, never invented. A repo with no
 // snapshots gets an SBOM describing just the repository itself.
 
-// DependencySnapshot is a submitted dependency snapshot. The field names
-// mirror the dependency submission API's snapshot object.
-type DependencySnapshot struct {
-	ID        int                          `json:"id"`
-	RepoID    int                          `json:"repo_id"`
-	Version   int                          `json:"version"`
-	Ref       string                       `json:"ref"`
-	Sha       string                       `json:"sha"`
-	Job       SnapshotJob                  `json:"job"`
-	Detector  SnapshotDetector             `json:"detector"`
-	Scanned   string                       `json:"scanned"`
-	Manifests map[string]*SnapshotManifest `json:"manifests,omitempty"`
-	// Result records the submission outcome (SUCCESS, ACCEPTED, or INVALID).
-	// A malformed (INVALID) snapshot is stored for the submission response
-	// but never contributes to the repository's dependency set.
-	Result    string    `json:"result"`
-	CreatedAt time.Time `json:"created_at"`
-}
-
-type SnapshotJob struct {
-	ID         string `json:"id"`
-	Correlator string `json:"correlator"`
-	HTMLURL    string `json:"html_url,omitempty"`
-}
-
-type SnapshotDetector struct {
-	Name    string `json:"name"`
-	Version string `json:"version"`
-	URL     string `json:"url"`
-}
-
-type SnapshotManifest struct {
-	Name string `json:"name"`
-	File *struct {
-		SourceLocation string `json:"source_location"`
-	} `json:"file,omitempty"`
-	Resolved map[string]*SnapshotDependency `json:"resolved,omitempty"`
-}
-
-type SnapshotDependency struct {
-	PackageURL   string   `json:"package_url"`
-	Relationship string   `json:"relationship,omitempty"`
-	Scope        string   `json:"scope,omitempty"`
-	Dependencies []string `json:"dependencies,omitempty"`
-}
-
-// SBOMExport is a generated SBOM report export addressed by UUID.
-type SBOMExport struct {
-	UUID      string    `json:"uuid"`
-	RepoID    int       `json:"repo_id"`
-	CreatedAt time.Time `json:"created_at"`
-}
-
 func (s *Server) registerGHDependencyGraphRoutes() {
 	s.route("POST /api/v3/repos/{owner}/{repo}/dependency-graph/snapshots",
 		s.requirePerm(scopeContents, permWrite, s.handleCreateDependencySnapshot))
@@ -88,52 +32,6 @@ func (s *Server) registerGHDependencyGraphRoutes() {
 }
 
 // --- Store ---
-
-// AddDependencySnapshot appends a snapshot for the repository.
-func (st *Store) AddDependencySnapshot(snap *DependencySnapshot) *DependencySnapshot {
-	st.mu.Lock()
-	defer st.mu.Unlock()
-	snap.ID = st.NextDependencySnapshotID
-	st.NextDependencySnapshotID++
-	snap.CreatedAt = time.Now().UTC()
-	st.DependencySnapshots[snap.RepoID] = append(st.DependencySnapshots[snap.RepoID], snap)
-	if st.persist != nil {
-		st.persist.MustPut("dependency_snapshots", strconv.Itoa(snap.RepoID), st.DependencySnapshots[snap.RepoID])
-	}
-	return snap
-}
-
-// ListDependencySnapshots returns the repo's snapshots, oldest first.
-func (st *Store) ListDependencySnapshots(repoID int) []*DependencySnapshot {
-	st.mu.RLock()
-	defer st.mu.RUnlock()
-	out := make([]*DependencySnapshot, len(st.DependencySnapshots[repoID]))
-	copy(out, st.DependencySnapshots[repoID])
-	return snapshotDependencySnapshots(out)
-}
-
-// AddSBOMExport records a generated SBOM export.
-func (st *Store) AddSBOMExport(repoID int) *SBOMExport {
-	st.mu.Lock()
-	defer st.mu.Unlock()
-	exp := &SBOMExport{
-		UUID:      uuid.New().String(),
-		RepoID:    repoID,
-		CreatedAt: time.Now().UTC(),
-	}
-	st.SBOMExports[exp.UUID] = exp
-	if st.persist != nil {
-		st.persist.MustPut("sbom_exports", exp.UUID, exp)
-	}
-	return exp
-}
-
-// GetSBOMExport returns an export by UUID, or nil.
-func (st *Store) GetSBOMExport(uuid string) *SBOMExport {
-	st.mu.RLock()
-	defer st.mu.RUnlock()
-	return st.SBOMExports[uuid]
-}
 
 // --- Handlers ---
 

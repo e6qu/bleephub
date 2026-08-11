@@ -207,7 +207,7 @@ func (s *Server) serveOwnerListAttestationsBulk(w http.ResponseWriter, r *http.R
 	for _, digest := range requested {
 		entries := make([]map[string]interface{}, 0)
 		for _, a := range page {
-			if a.hasSubjectDigest(digest) {
+			if a.HasSubjectDigest(digest) {
 				bundle, err := s.store.ReadAttestationBundle(r.Context(), a)
 				if err != nil {
 					writeGHError(w, http.StatusInternalServerError, err.Error())
@@ -222,7 +222,7 @@ func (s *Server) serveOwnerListAttestationsBulk(w http.ResponseWriter, r *http.R
 		if len(entries) == 0 {
 			anyMatch := false
 			for _, a := range matched {
-				if a.hasSubjectDigest(digest) {
+				if a.HasSubjectDigest(digest) {
 					anyMatch = true
 					break
 				}

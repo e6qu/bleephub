@@ -11,12 +11,12 @@ import (
 const enterpriseArtifactAndLogRetentionMaxDays = 365
 
 func (s *Server) handleGetEnterpriseActionsPermissions(w http.ResponseWriter, r *http.Request) {
-	s.store.mu.RLock()
+	s.store.Mu.RLock()
 	settings := s.store.EnterpriseSettings
 	enabledOrganizations := settings.ActionsEnabledOrganizations
 	allowedActions := settings.ActionsAllowedActions
 	shaPinningRequired := settings.ActionsSHAPinningRequired
-	s.store.mu.RUnlock()
+	s.store.Mu.RUnlock()
 
 	base := s.baseURL(r) + "/api/v3/enterprises/" + r.PathValue("enterprise") + "/actions/permissions"
 	out := map[string]interface{}{
@@ -52,7 +52,7 @@ func (s *Server) handleSetEnterpriseActionsPermissions(w http.ResponseWriter, r 
 		return
 	}
 
-	s.store.mu.Lock()
+	s.store.Mu.Lock()
 	settings := s.store.EnterpriseSettings
 	settings.ActionsEnabledOrganizations = req.EnabledOrganizations
 	if req.AllowedActions != "" {
@@ -61,13 +61,13 @@ func (s *Server) handleSetEnterpriseActionsPermissions(w http.ResponseWriter, r 
 	if req.SHAPinningRequired != nil {
 		settings.ActionsSHAPinningRequired = *req.SHAPinningRequired
 	}
-	s.store.persistEnterpriseSettings()
-	s.store.mu.Unlock()
+	s.store.PersistEnterpriseSettings()
+	s.store.Mu.Unlock()
 	w.WriteHeader(http.StatusNoContent)
 }
 
 func (s *Server) handleListEnterpriseActionsOrganizations(w http.ResponseWriter, r *http.Request) {
-	s.store.mu.RLock()
+	s.store.Mu.RLock()
 	ids := append([]int(nil), s.store.EnterpriseSettings.ActionsSelectedOrganizationIDs...)
 	orgs := make([]*Org, 0, len(ids))
 	for _, id := range ids {
@@ -75,7 +75,7 @@ func (s *Server) handleListEnterpriseActionsOrganizations(w http.ResponseWriter,
 			orgs = append(orgs, org)
 		}
 	}
-	s.store.mu.RUnlock()
+	s.store.Mu.RUnlock()
 	sort.Slice(orgs, func(i, j int) bool { return orgs[i].ID < orgs[j].ID })
 
 	page := paginateAndLink(w, r, orgs)
@@ -100,18 +100,18 @@ func (s *Server) handleSetEnterpriseActionsOrganizations(w http.ResponseWriter, 
 		writeGHValidationError(w, "ActionsPermissions", "selected_organization_ids", "missing_field")
 		return
 	}
-	s.store.mu.Lock()
+	s.store.Mu.Lock()
 	for _, id := range *req.SelectedOrganizationIDs {
 		if s.store.Orgs[id] == nil {
-			s.store.mu.Unlock()
+			s.store.Mu.Unlock()
 			writeGHError(w, http.StatusNotFound, "Not Found")
 			return
 		}
 	}
 	s.store.EnterpriseSettings.ActionsSelectedOrganizationIDs =
 		append([]int(nil), (*req.SelectedOrganizationIDs)...)
-	s.store.persistEnterpriseSettings()
-	s.store.mu.Unlock()
+	s.store.PersistEnterpriseSettings()
+	s.store.Mu.Unlock()
 	w.WriteHeader(http.StatusNoContent)
 }
 
@@ -121,9 +121,9 @@ func (s *Server) enterpriseActionsOrganizationID(w http.ResponseWriter, r *http.
 		writeGHError(w, http.StatusNotFound, "Not Found")
 		return 0, false
 	}
-	s.store.mu.RLock()
+	s.store.Mu.RLock()
 	exists := s.store.Orgs[id] != nil
-	s.store.mu.RUnlock()
+	s.store.Mu.RUnlock()
 	if !exists {
 		writeGHError(w, http.StatusNotFound, "Not Found")
 		return 0, false
@@ -136,13 +136,13 @@ func (s *Server) handleAddEnterpriseActionsOrganization(w http.ResponseWriter, r
 	if !ok {
 		return
 	}
-	s.store.mu.Lock()
+	s.store.Mu.Lock()
 	settings := s.store.EnterpriseSettings
 	if !slices.Contains(settings.ActionsSelectedOrganizationIDs, id) {
 		settings.ActionsSelectedOrganizationIDs = append(settings.ActionsSelectedOrganizationIDs, id)
-		s.store.persistEnterpriseSettings()
+		s.store.PersistEnterpriseSettings()
 	}
-	s.store.mu.Unlock()
+	s.store.Mu.Unlock()
 	w.WriteHeader(http.StatusNoContent)
 }
 
@@ -151,26 +151,26 @@ func (s *Server) handleRemoveEnterpriseActionsOrganization(w http.ResponseWriter
 	if !ok {
 		return
 	}
-	s.store.mu.Lock()
+	s.store.Mu.Lock()
 	settings := s.store.EnterpriseSettings
 	settings.ActionsSelectedOrganizationIDs = slices.DeleteFunc(
 		settings.ActionsSelectedOrganizationIDs,
 		func(candidate int) bool { return candidate == id },
 	)
-	s.store.persistEnterpriseSettings()
-	s.store.mu.Unlock()
+	s.store.PersistEnterpriseSettings()
+	s.store.Mu.Unlock()
 	w.WriteHeader(http.StatusNoContent)
 }
 
 func (s *Server) handleGetEnterpriseAllowedActions(w http.ResponseWriter, _ *http.Request) {
-	s.store.mu.RLock()
+	s.store.Mu.RLock()
 	var allowed *ActionsAllowed
 	if current := s.store.EnterpriseSettings.ActionsAllowed; current != nil {
 		copy := *current
 		copy.PatternsAllowed = append([]string(nil), current.PatternsAllowed...)
 		allowed = &copy
 	}
-	s.store.mu.RUnlock()
+	s.store.Mu.RUnlock()
 	writeJSON(w, http.StatusOK, allowedActionsJSON(allowed))
 }
 
@@ -180,22 +180,22 @@ func (s *Server) handleSetEnterpriseAllowedActions(w http.ResponseWriter, r *htt
 		return
 	}
 	req.PatternsAllowed = append([]string(nil), req.PatternsAllowed...)
-	s.store.mu.Lock()
+	s.store.Mu.Lock()
 	s.store.EnterpriseSettings.ActionsAllowed = &req
 	s.store.EnterpriseSettings.ActionsAllowedActions = "selected"
-	s.store.persistEnterpriseSettings()
-	s.store.mu.Unlock()
+	s.store.PersistEnterpriseSettings()
+	s.store.Mu.Unlock()
 	w.WriteHeader(http.StatusNoContent)
 }
 
 func (s *Server) handleGetEnterpriseWorkflowPermissions(w http.ResponseWriter, _ *http.Request) {
-	s.store.mu.RLock()
+	s.store.Mu.RLock()
 	var permissions *WorkflowPermissions
 	if current := s.store.EnterpriseSettings.ActionsWorkflowPermissions; current != nil {
 		copy := *current
 		permissions = &copy
 	}
-	s.store.mu.RUnlock()
+	s.store.Mu.RUnlock()
 	writeJSON(w, http.StatusOK, workflowPermissionsJSON(permissions))
 }
 
@@ -208,17 +208,17 @@ func (s *Server) handleSetEnterpriseWorkflowPermissions(w http.ResponseWriter, r
 		writeGHValidationError(w, "WorkflowPermissions", "default_workflow_permissions", "invalid")
 		return
 	}
-	s.store.mu.Lock()
+	s.store.Mu.Lock()
 	s.store.EnterpriseSettings.ActionsWorkflowPermissions = &req
-	s.store.persistEnterpriseSettings()
-	s.store.mu.Unlock()
+	s.store.PersistEnterpriseSettings()
+	s.store.Mu.Unlock()
 	w.WriteHeader(http.StatusNoContent)
 }
 
 func (s *Server) handleGetEnterpriseArtifactAndLogRetention(w http.ResponseWriter, _ *http.Request) {
-	s.store.mu.RLock()
+	s.store.Mu.RLock()
 	days := s.store.EnterpriseSettings.ActionsArtifactRetentionDays
-	s.store.mu.RUnlock()
+	s.store.Mu.RUnlock()
 	writeJSON(w, http.StatusOK, map[string]interface{}{
 		"days":                 days,
 		"maximum_allowed_days": enterpriseArtifactAndLogRetentionMaxDays,
@@ -236,17 +236,17 @@ func (s *Server) handleSetEnterpriseArtifactAndLogRetention(w http.ResponseWrite
 		writeGHValidationError(w, "ActionsArtifactAndLogRetention", "days", "invalid")
 		return
 	}
-	s.store.mu.Lock()
+	s.store.Mu.Lock()
 	s.store.EnterpriseSettings.ActionsArtifactRetentionDays = *req.Days
-	s.store.persistEnterpriseSettings()
-	s.store.mu.Unlock()
+	s.store.PersistEnterpriseSettings()
+	s.store.Mu.Unlock()
 	w.WriteHeader(http.StatusNoContent)
 }
 
 func (s *Server) handleGetEnterpriseForkPRContributorApproval(w http.ResponseWriter, _ *http.Request) {
-	s.store.mu.RLock()
+	s.store.Mu.RLock()
 	policy := s.store.EnterpriseSettings.ActionsForkPRApprovalPolicy
-	s.store.mu.RUnlock()
+	s.store.Mu.RUnlock()
 	writeJSON(w, http.StatusOK, map[string]interface{}{"approval_policy": policy})
 }
 
@@ -261,17 +261,17 @@ func (s *Server) handleSetEnterpriseForkPRContributorApproval(w http.ResponseWri
 		writeGHValidationError(w, "ActionsForkPRContributorApproval", "approval_policy", "invalid")
 		return
 	}
-	s.store.mu.Lock()
+	s.store.Mu.Lock()
 	s.store.EnterpriseSettings.ActionsForkPRApprovalPolicy = req.ApprovalPolicy
-	s.store.persistEnterpriseSettings()
-	s.store.mu.Unlock()
+	s.store.PersistEnterpriseSettings()
+	s.store.Mu.Unlock()
 	w.WriteHeader(http.StatusNoContent)
 }
 
 func (s *Server) handleGetEnterpriseForkPRWorkflowsPrivateRepos(w http.ResponseWriter, _ *http.Request) {
-	s.store.mu.RLock()
+	s.store.Mu.RLock()
 	settings := *s.store.EnterpriseSettings.ActionsForkPRWorkflowsPrivate
-	s.store.mu.RUnlock()
+	s.store.Mu.RUnlock()
 	writeJSON(w, http.StatusOK, settings)
 }
 
@@ -289,7 +289,7 @@ func (s *Server) handleSetEnterpriseForkPRWorkflowsPrivateRepos(w http.ResponseW
 		writeGHValidationError(w, "ActionsForkPRWorkflowsPrivateRepos", "run_workflows_from_fork_pull_requests", "missing_field")
 		return
 	}
-	s.store.mu.Lock()
+	s.store.Mu.Lock()
 	settings := s.store.EnterpriseSettings.ActionsForkPRWorkflowsPrivate
 	settings.RunWorkflowsFromForkPullRequests = *req.RunWorkflowsFromForkPullRequests
 	if req.SendWriteTokensToWorkflows != nil {
@@ -301,15 +301,15 @@ func (s *Server) handleSetEnterpriseForkPRWorkflowsPrivateRepos(w http.ResponseW
 	if req.RequireApprovalForForkPRWorkflows != nil {
 		settings.RequireApprovalForForkPRWorkflows = *req.RequireApprovalForForkPRWorkflows
 	}
-	s.store.persistEnterpriseSettings()
-	s.store.mu.Unlock()
+	s.store.PersistEnterpriseSettings()
+	s.store.Mu.Unlock()
 	w.WriteHeader(http.StatusNoContent)
 }
 
 func (s *Server) handleGetEnterpriseSelfHostedRunnerPermissions(w http.ResponseWriter, _ *http.Request) {
-	s.store.mu.RLock()
+	s.store.Mu.RLock()
 	disabled := s.store.EnterpriseSettings.ActionsDisableSelfHostedRunners
-	s.store.mu.RUnlock()
+	s.store.Mu.RUnlock()
 	writeJSON(w, http.StatusOK, map[string]interface{}{
 		"disable_self_hosted_runners_for_all_orgs": disabled,
 	})
@@ -326,24 +326,24 @@ func (s *Server) handleSetEnterpriseSelfHostedRunnerPermissions(w http.ResponseW
 		writeGHValidationError(w, "SelfHostedRunnersPermissions", "disable_self_hosted_runners_for_all_orgs", "missing_field")
 		return
 	}
-	s.store.mu.Lock()
+	s.store.Mu.Lock()
 	s.store.EnterpriseSettings.ActionsDisableSelfHostedRunners = *req.Disabled
-	s.store.persistEnterpriseSettings()
-	s.store.mu.Unlock()
+	s.store.PersistEnterpriseSettings()
+	s.store.Mu.Unlock()
 	w.WriteHeader(http.StatusNoContent)
 }
 
 func (s *Server) handleEnterpriseCacheUsage(w http.ResponseWriter, _ *http.Request) {
 	count := 0
 	var bytes int64
-	s.artifactStore.mu.RLock()
-	for _, entry := range s.artifactStore.caches {
+	s.artifactStore.Mu.RLock()
+	for _, entry := range s.artifactStore.Caches {
 		if entry.Finalized {
 			count++
 			bytes += entry.Size
 		}
 	}
-	s.artifactStore.mu.RUnlock()
+	s.artifactStore.Mu.RUnlock()
 	writeJSON(w, http.StatusOK, map[string]interface{}{
 		"total_active_caches_count":         count,
 		"total_active_caches_size_in_bytes": bytes,
@@ -358,9 +358,9 @@ func (s *Server) handleSetEnterpriseOIDCIssuer(w http.ResponseWriter, r *http.Re
 		writeGHError(w, http.StatusBadRequest, "Problems parsing JSON")
 		return
 	}
-	s.store.mu.Lock()
+	s.store.Mu.Lock()
 	s.store.EnterpriseSettings.OIDCIncludeEnterpriseSlug = req.IncludeEnterpriseSlug
-	s.store.persistEnterpriseSettings()
-	s.store.mu.Unlock()
+	s.store.PersistEnterpriseSettings()
+	s.store.Mu.Unlock()
 	w.WriteHeader(http.StatusNoContent)
 }

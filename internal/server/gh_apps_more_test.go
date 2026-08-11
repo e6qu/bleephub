@@ -211,12 +211,12 @@ func TestUserInstallationRepos_MutationBindsOwnerSelectionAndRepository(t *testi
 	s.store.SeedDefaultUser()
 	owner := s.store.UsersByLogin["admin"]
 
-	s.store.mu.Lock()
+	s.store.Mu.Lock()
 	outsider := &User{ID: s.store.NextUser, Login: "installation-outsider", Type: "User"}
 	s.store.NextUser++
 	s.store.Users[outsider.ID] = outsider
 	s.store.UsersByLogin[outsider.Login] = outsider
-	s.store.mu.Unlock()
+	s.store.Mu.Unlock()
 
 	app := s.store.CreateApp(owner.ID, "Bound Repo App", "", nil, nil)
 	inst := s.store.CreateInstallation(app.ID, "User", owner.ID, owner.Login, nil, nil)
@@ -258,12 +258,12 @@ func TestOrganizationInstallationRepoMutationRequiresOwnerAndMatchingAppCredenti
 	org := s.store.CreateOrg(owner, "installation-org", "Installation org", "")
 	repo := s.store.CreateOrgRepo(org, owner, "selected-repo", "", true)
 
-	s.store.mu.Lock()
+	s.store.Mu.Lock()
 	member := &User{ID: s.store.NextUser, Login: "installation-member", Type: "User"}
 	s.store.NextUser++
 	s.store.Users[member.ID] = member
 	s.store.UsersByLogin[member.Login] = member
-	s.store.mu.Unlock()
+	s.store.Mu.Unlock()
 	s.store.SetMembership(org.Login, member.ID, OrgRoleMember, MembershipStateActive)
 
 	app := s.store.CreateApp(owner.ID, "Organization Selection App", "", nil, nil)
@@ -299,10 +299,10 @@ func TestInstallationRepoStoreRejectsInvalidState(t *testing.T) {
 	s.store.SeedDefaultUser()
 	owner := s.store.UsersByLogin["admin"]
 	foreign := &User{ID: 4242, Login: "store-foreign", Type: "User"}
-	s.store.mu.Lock()
+	s.store.Mu.Lock()
 	s.store.Users[foreign.ID] = foreign
 	s.store.UsersByLogin[foreign.Login] = foreign
-	s.store.mu.Unlock()
+	s.store.Mu.Unlock()
 	ownedRepo := s.store.CreateRepo(owner, "store-owned", "", false)
 	foreignRepo := s.store.CreateRepo(foreign, "store-foreign", "", false)
 	app := s.store.CreateApp(owner.ID, "Store Selection App", "", nil, nil)
@@ -324,12 +324,12 @@ func TestListInstallationRepositories_GhsToken(t *testing.T) {
 	user := s.store.UsersByLogin["admin"]
 	app := s.store.CreateApp(user.ID, "Inst Repos App", "", nil, nil)
 
-	s.store.mu.Lock()
+	s.store.Mu.Lock()
 	octo := &User{ID: s.store.NextUser, Login: "octocat", Type: "User"}
 	s.store.NextUser++
 	s.store.Users[octo.ID] = octo
 	s.store.UsersByLogin[octo.Login] = octo
-	s.store.mu.Unlock()
+	s.store.Mu.Unlock()
 	r1 := s.store.CreateRepo(octo, "r1", "", false)
 	s.store.CreateRepo(octo, "r2", "", false)
 

@@ -65,9 +65,9 @@ const actionsJobConcurrencyLockName = "actions/concurrency/job-admission"
 // bounded window the TTL already accepts, and refusing the submission would
 // turn a database hiccup into a lost run.
 func (s *Server) acquireConcurrencyAdmissionLock(name string) (release func()) {
-	s.store.mu.RLock()
-	persist := s.store.persist
-	s.store.mu.RUnlock()
+	s.store.Mu.RLock()
+	persist := s.store.Persist
+	s.store.Mu.RUnlock()
 	if persist == nil || persist.OwnedExclusively() {
 		return func() {}
 	}
@@ -116,21 +116,21 @@ func (s *Server) acquireConcurrencyAdmissionLock(name string) (release func()) {
 // driving wf, so its object identity is restored before the dispatch loop
 // mutates it.
 func (s *Server) acquireJobConcurrencyAdmissionLock(wf *Workflow) (release func()) {
-	s.store.mu.RLock()
-	persist := s.store.persist
-	s.store.mu.RUnlock()
+	s.store.Mu.RLock()
+	persist := s.store.Persist
+	s.store.Mu.RUnlock()
 	if persist == nil || persist.OwnedExclusively() {
 		// Single-writer database: no lock, no refresh, nothing that could have
 		// detached wf — zero cost.
 		return func() {}
 	}
 	release = s.acquireConcurrencyAdmissionLock(actionsJobConcurrencyLockName)
-	s.store.mu.Lock()
+	s.store.Mu.Lock()
 	if s.store.Workflows[wf.ID] != wf {
 		s.store.Workflows[wf.ID] = wf
-		s.store.syncWorkflowIndexesLocked(wf)
+		s.store.SyncWorkflowIndexesLocked(wf)
 	}
-	s.store.mu.Unlock()
+	s.store.Mu.Unlock()
 	return release
 }
 

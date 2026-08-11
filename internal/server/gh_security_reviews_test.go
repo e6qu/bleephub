@@ -60,7 +60,7 @@ func TestDelegatedSecurityReviewJourneys(t *testing.T) {
 			Data: []map[string]interface{}{}, CreatedAt: now, ExpiresAt: now.Add(7 * 24 * time.Hour),
 		}
 	}
-	srv.store.mu.Lock()
+	srv.store.Mu.Lock()
 	for index, kind := range []string{
 		reviewKindPushBypass, reviewKindSecretBypass, reviewKindCodeDismissal, reviewKindSecretDismissal,
 	} {
@@ -69,7 +69,7 @@ func TestDelegatedSecurityReviewJourneys(t *testing.T) {
 			index + 11: request(index+100, index+11, kind),
 		}
 	}
-	srv.store.mu.Unlock()
+	srv.store.Mu.Unlock()
 
 	if got := decodeJSON(t, srv.get(t, base+"/bypass-requests/push-rules/11", defaultToken)); got["number"] != float64(11) {
 		t.Fatalf("push bypass request = %#v", got)

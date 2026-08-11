@@ -272,13 +272,13 @@ func TestOrgBillingUsage_ComputedFromActionsRunHistory(t *testing.T) {
 			"job": {JobID: "billing-usage-job", StartedAt: started, CompletedAt: started.Add(150 * time.Second)},
 		},
 	}
-	srv.store.mu.Lock()
+	srv.store.Mu.Lock()
 	srv.store.Workflows[wf.ID] = wf
-	srv.store.mu.Unlock()
+	srv.store.Mu.Unlock()
 	defer func() {
-		srv.store.mu.Lock()
+		srv.store.Mu.Lock()
 		delete(srv.store.Workflows, wf.ID)
-		srv.store.mu.Unlock()
+		srv.store.Mu.Unlock()
 	}()
 
 	resp = srv.get(t, "/api/v3/organizations/billing-usage-org/settings/billing/usage?year=2026&month=3", defaultToken)

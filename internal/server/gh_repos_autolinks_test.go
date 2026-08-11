@@ -104,12 +104,12 @@ func TestAutolinks_NonAdminCannotCreate(t *testing.T) {
 	s := autolinksTestServer(t)
 	admin := s.store.UsersByLogin["admin"]
 	repo := s.store.CreateRepo(admin, "autolink-priv", "", true)
-	s.store.mu.Lock()
+	s.store.Mu.Lock()
 	other := &User{ID: s.store.NextUser, Login: "other", Type: "User", Email: "other@bleephub.local"}
 	s.store.NextUser++
 	s.store.Users[other.ID] = other
 	s.store.UsersByLogin[other.Login] = other
-	s.store.mu.Unlock()
+	s.store.Mu.Unlock()
 	s.store.AddRepoCollaborator(repo.Owner.Login, repo.Name, other.Login, "push")
 	otherToken := s.store.CreateToken(other.ID, "repo").Value
 

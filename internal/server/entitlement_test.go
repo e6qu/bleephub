@@ -40,7 +40,7 @@ func (s *isolatedServer) newEntitlementFixture(t *testing.T, tag string, private
 
 	owner := st.LookupUserByLogin("entitle-owner-" + tag)
 	if owner == nil {
-		st.mu.Lock()
+		st.Mu.Lock()
 		now := fixedTestTime.UTC()
 		owner = &User{
 			ID:        st.NextUser,
@@ -53,7 +53,7 @@ func (s *isolatedServer) newEntitlementFixture(t *testing.T, tag string, private
 		st.Users[owner.ID] = owner
 		st.UsersByLogin[owner.Login] = owner
 		st.NextUser++
-		st.mu.Unlock()
+		st.Mu.Unlock()
 	}
 
 	repo := st.CreateRepo(owner, "entitle-repo-"+tag, "", private)
@@ -168,7 +168,7 @@ func TestAuthorExemptionDoesNotBypassTheCredential(t *testing.T) {
 
 	f := s.newEntitlementFixture(t, "author", false)
 
-	st.mu.Lock()
+	st.Mu.Lock()
 	now := fixedTestTime.UTC()
 	author := &User{
 		ID:        st.NextUser,
@@ -181,7 +181,7 @@ func TestAuthorExemptionDoesNotBypassTheCredential(t *testing.T) {
 	st.Users[author.ID] = author
 	st.UsersByLogin[author.Login] = author
 	st.NextUser++
-	st.mu.Unlock()
+	st.Mu.Unlock()
 
 	issue := st.CreateIssue(f.repo.ID, author.ID, "authored", "body", nil, nil, 0)
 	if issue == nil {
@@ -279,7 +279,7 @@ func TestOrgMemberListingIntersectsTheCredential(t *testing.T) {
 	st := s.store
 	org := s.seedTestOrg(t, "entitle-members-org")
 
-	st.mu.Lock()
+	st.Mu.Lock()
 	now := fixedTestTime.UTC()
 	member := &User{
 		ID:        st.NextUser,
@@ -292,7 +292,7 @@ func TestOrgMemberListingIntersectsTheCredential(t *testing.T) {
 	st.Users[member.ID] = member
 	st.UsersByLogin[member.Login] = member
 	st.NextUser++
-	st.mu.Unlock()
+	st.Mu.Unlock()
 	st.SetMembership(org.Login, member.ID, OrgRoleMember, MembershipStateActive)
 
 	admin := st.LookupUserByLogin("admin")

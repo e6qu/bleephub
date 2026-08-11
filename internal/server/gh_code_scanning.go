@@ -525,7 +525,7 @@ func (s *Server) handleUpdateCodeScanningDefaultSetup(w http.ResponseWriter, r *
 	if len(req.Languages) > 0 {
 		setup.Languages = req.Languages
 	} else if len(setup.Languages) == 0 {
-		setup.Languages = s.store.detectCodeQLLanguages(repo)
+		setup.Languages = s.store.DetectCodeQLLanguages(repo)
 	}
 	if setup.RunnerType == "labeled" && setup.RunnerLabel == "" {
 		writeGHValidationError(w, "CodeScanningDefaultSetup", "runner_label", "missing_field")

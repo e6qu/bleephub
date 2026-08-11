@@ -58,7 +58,7 @@ func (s *Server) handleListOrganizationSCIMUsers(w http.ResponseWriter, r *http.
 		return
 	}
 	filter := r.URL.Query().Get("filter")
-	s.store.mu.RLock()
+	s.store.Mu.RLock()
 	users := make([]*EnterpriseSCIMUser, 0, len(s.store.OrgSCIMUsers[org.Login]))
 	for _, user := range s.store.OrgSCIMUsers[org.Login] {
 		if filter != "" {
@@ -67,7 +67,7 @@ func (s *Server) handleListOrganizationSCIMUsers(w http.ResponseWriter, r *http.
 				value, ok = scimFilterValue(filter, "externalId")
 			}
 			if !ok {
-				s.store.mu.RUnlock()
+				s.store.Mu.RUnlock()
 				writeSCIMError(w, http.StatusBadRequest, "Unsupported filter")
 				return
 			}
@@ -77,7 +77,7 @@ func (s *Server) handleListOrganizationSCIMUsers(w http.ResponseWriter, r *http.
 		}
 		users = append(users, copySCIMUser(user))
 	}
-	s.store.mu.RUnlock()
+	s.store.Mu.RUnlock()
 	sort.Slice(users, func(i, j int) bool { return users[i].ID < users[j].ID })
 	page, start, count, ok := scimListPage(r, users)
 	if !ok {
@@ -100,23 +100,23 @@ func (s *Server) createOrResolveOrganizationSCIMBackingUser(w http.ResponseWrite
 		writeSCIMError(w, http.StatusBadRequest, "userName is required")
 		return nil, false
 	}
-	s.store.mu.Lock()
+	s.store.Mu.Lock()
 	if existing := s.store.UsersByLogin[login]; existing != nil {
 		// Only reuse an account this same org's SCIM already provisioned.
 		// Adopting any other pre-existing account would let an org owner bind a
 		// SCIM record to a victim's global account, force-enroll them, and then
 		// rewrite their login/email — so refuse with a conflict instead.
 		if existing.SCIMManagedByOrg != org.Login {
-			s.store.mu.Unlock()
+			s.store.Mu.Unlock()
 			writeSCIMError(w, http.StatusConflict, "userName already exists")
 			return nil, false
 		}
 		copy := *existing
-		s.store.mu.Unlock()
+		s.store.Mu.Unlock()
 		return &copy, true
 	}
-	now := s.store.currentTime()
-	userID := s.store.reserveGlobalID("next_user", &s.store.NextUser)
+	now := s.store.CurrentTime()
+	userID := s.store.ReserveGlobalID("next_user", &s.store.NextUser)
 	user := &User{
 		ID: userID, NodeID: fmt.Sprintf("U_kgDO%08d", userID),
 		Login: login, Name: req.DisplayName, Email: primarySCIMEmail(req.Emails), Type: "User",
@@ -125,11 +125,11 @@ func (s *Server) createOrResolveOrganizationSCIMBackingUser(w http.ResponseWrite
 	}
 	s.store.Users[user.ID] = user
 	s.store.UsersByLogin[user.Login] = user
-	if s.store.persist != nil {
-		s.store.persist.MustPut("users", strconv.Itoa(user.ID), user)
+	if s.store.Persist != nil {
+		s.store.Persist.MustPut("users", strconv.Itoa(user.ID), user)
 	}
 	copy := *user
-	s.store.mu.Unlock()
+	s.store.Mu.Unlock()
 	return &copy, true
 }
 
@@ -137,8 +137,8 @@ func (s *Server) setOrganizationSCIMMembershipLocked(org *Org, userID int, activ
 	key := membershipKey(org.Login, userID)
 	if !active {
 		delete(s.store.Memberships, key)
-		if s.store.persist != nil {
-			s.store.persist.MustDelete("memberships", key)
+		if s.store.Persist != nil {
+			s.store.Persist.MustDelete("memberships", key)
 		}
 		return
 	}
@@ -148,8 +148,8 @@ func (s *Server) setOrganizationSCIMMembershipLocked(org *Org, userID int, activ
 		s.store.Memberships[key] = membership
 	}
 	membership.State = MembershipStateActive
-	if s.store.persist != nil {
-		s.store.persist.MustPut("memberships", key, membership)
+	if s.store.Persist != nil {
+		s.store.Persist.MustPut("memberships", key, membership)
 	}
 }
 
@@ -174,32 +174,32 @@ func (s *Server) handleCreateOrganizationSCIMUser(w http.ResponseWriter, r *http
 		Active: active, Emails: append([]EnterpriseSCIMEmail(nil), req.Emails...),
 		UserID: backing.ID, CreatedAt: now, UpdatedAt: now,
 	}
-	s.store.mu.Lock()
+	s.store.Mu.Lock()
 	if s.store.OrgSCIMUsers[org.Login] == nil {
 		s.store.OrgSCIMUsers[org.Login] = map[string]*EnterpriseSCIMUser{}
 	}
 	for _, existing := range s.store.OrgSCIMUsers[org.Login] {
 		if strings.EqualFold(existing.UserName, user.UserName) ||
 			(user.ExternalID != "" && existing.ExternalID == user.ExternalID) {
-			s.store.mu.Unlock()
+			s.store.Mu.Unlock()
 			writeSCIMError(w, http.StatusConflict, "Identity already exists")
 			return
 		}
 	}
 	s.store.OrgSCIMUsers[org.Login][user.ID] = user
 	s.setOrganizationSCIMMembershipLocked(org, user.UserID, active)
-	if s.store.persist != nil {
-		s.store.persist.MustPut("org_scim_users", org.Login, s.store.OrgSCIMUsers[org.Login])
+	if s.store.Persist != nil {
+		s.store.Persist.MustPut("org_scim_users", org.Login, s.store.OrgSCIMUsers[org.Login])
 	}
-	s.store.mu.Unlock()
+	s.store.Mu.Unlock()
 	w.Header().Set("Location", s.organizationSCIMUserJSON(r, org, user)["meta"].(map[string]interface{})["location"].(string))
 	writeSCIM(w, http.StatusCreated, s.organizationSCIMUserJSON(r, org, user))
 }
 
 func (s *Server) organizationSCIMUser(w http.ResponseWriter, r *http.Request, org *Org) *EnterpriseSCIMUser {
-	s.store.mu.RLock()
+	s.store.Mu.RLock()
 	user := copySCIMUser(s.store.OrgSCIMUsers[org.Login][r.PathValue("scim_user_id")])
-	s.store.mu.RUnlock()
+	s.store.Mu.RUnlock()
 	if user == nil {
 		writeSCIMError(w, http.StatusNotFound, "Resource not found")
 	}
@@ -223,24 +223,24 @@ func (s *Server) replaceOrganizationSCIMUser(w http.ResponseWriter, r *http.Requ
 		writeSCIMError(w, http.StatusBadRequest, "userName is required")
 		return nil
 	}
-	s.store.mu.Lock()
+	s.store.Mu.Lock()
 	user := s.store.OrgSCIMUsers[org.Login][id]
 	if user == nil {
-		s.store.mu.Unlock()
+		s.store.Mu.Unlock()
 		writeSCIMError(w, http.StatusNotFound, "Resource not found")
 		return nil
 	}
 	for otherID, existing := range s.store.OrgSCIMUsers[org.Login] {
 		if otherID != id && (strings.EqualFold(existing.UserName, login) ||
 			(req.ExternalID != "" && existing.ExternalID == req.ExternalID)) {
-			s.store.mu.Unlock()
+			s.store.Mu.Unlock()
 			writeSCIMError(w, http.StatusConflict, "Identity already exists")
 			return nil
 		}
 	}
 	backing := s.store.Users[user.UserID]
 	if backing == nil {
-		s.store.mu.Unlock()
+		s.store.Mu.Unlock()
 		writeSCIMError(w, http.StatusInternalServerError, "Backing user is missing")
 		return nil
 	}
@@ -248,12 +248,12 @@ func (s *Server) replaceOrganizationSCIMUser(w http.ResponseWriter, r *http.Requ
 	// own — an org owner must not be able to rename or re-home an arbitrary
 	// account through its SCIM surface.
 	if backing.SCIMManagedByOrg != org.Login {
-		s.store.mu.Unlock()
+		s.store.Mu.Unlock()
 		writeSCIMError(w, http.StatusConflict, "userName is not managed by this organization")
 		return nil
 	}
 	if other := s.store.UsersByLogin[login]; other != nil && other.ID != backing.ID {
-		s.store.mu.Unlock()
+		s.store.Mu.Unlock()
 		writeSCIMError(w, http.StatusConflict, "userName already exists")
 		return nil
 	}
@@ -268,14 +268,14 @@ func (s *Server) replaceOrganizationSCIMUser(w http.ResponseWriter, r *http.Requ
 	// One transaction: the renamed backing account and the org's SCIM-user record
 	// commit together, so a crash cannot leave the global identity and the SCIM
 	// view of it disagreeing (STORE-001/002).
-	batch := newPersistBatch(s.store.persist)
+	batch := newPersistBatch(s.store.Persist)
 	batch.Put("users", strconv.Itoa(backing.ID), backing)
 	batch.Put("org_scim_users", org.Login, s.store.OrgSCIMUsers[org.Login])
 	commitErr := batch.Commit()
 	result := copySCIMUser(user)
-	s.store.mu.Unlock()
+	s.store.Mu.Unlock()
 	if commitErr != nil {
-		panic(&persistenceFailure{op: "batch", bucket: "users", err: commitErr})
+		panic(&persistenceFailure{Op: "batch", Bucket: "users", Err: commitErr})
 	}
 	return result
 }
@@ -343,18 +343,18 @@ func (s *Server) handleDeleteOrganizationSCIMUser(w http.ResponseWriter, r *http
 		return
 	}
 	id := r.PathValue("scim_user_id")
-	s.store.mu.Lock()
+	s.store.Mu.Lock()
 	user := s.store.OrgSCIMUsers[org.Login][id]
 	if user == nil {
-		s.store.mu.Unlock()
+		s.store.Mu.Unlock()
 		writeSCIMError(w, http.StatusNotFound, "Resource not found")
 		return
 	}
 	delete(s.store.OrgSCIMUsers[org.Login], id)
 	s.setOrganizationSCIMMembershipLocked(org, user.UserID, false)
-	if s.store.persist != nil {
-		s.store.persist.MustPut("org_scim_users", org.Login, s.store.OrgSCIMUsers[org.Login])
+	if s.store.Persist != nil {
+		s.store.Persist.MustPut("org_scim_users", org.Login, s.store.OrgSCIMUsers[org.Login])
 	}
-	s.store.mu.Unlock()
+	s.store.Mu.Unlock()
 	w.WriteHeader(http.StatusNoContent)
 }

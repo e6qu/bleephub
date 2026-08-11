@@ -40,9 +40,9 @@ func (s *Server) ghesLDAPTeam(w http.ResponseWriter, r *http.Request) (*Team, *O
 
 func (s *Server) ghesLDAPTeamJSON(team *Team, org *Org, r *http.Request) map[string]interface{} {
 	out := teamSimpleJSON(team, org, s.store, s.baseURL(r))
-	s.store.mu.RLock()
+	s.store.Mu.RLock()
 	out["ldap_dn"] = s.store.EnterpriseSettings.GHESLDAPTeamMappings[team.ID]
-	s.store.mu.RUnlock()
+	s.store.Mu.RUnlock()
 	out["type"] = "organization"
 	out["organization_id"] = org.ID
 	out["enterprise_id"] = 1
@@ -64,10 +64,10 @@ func (s *Server) handleUpdateGHESTeamLDAPMapping(w http.ResponseWriter, r *http.
 		writeGHValidationError(w, "Team", "ldap_dn", "missing_field")
 		return
 	}
-	s.store.mu.Lock()
+	s.store.Mu.Lock()
 	s.store.EnterpriseSettings.GHESLDAPTeamMappings[team.ID] = req.LDAPDN
-	s.store.persistEnterpriseSettings()
-	s.store.mu.Unlock()
+	s.store.PersistEnterpriseSettings()
+	s.store.Mu.Unlock()
 	writeJSON(w, http.StatusOK, s.ghesLDAPTeamJSON(team, org, r))
 }
 
@@ -76,9 +76,9 @@ func (s *Server) handleSyncGHESTeamLDAPMapping(w http.ResponseWriter, r *http.Re
 	if team == nil {
 		return
 	}
-	s.store.mu.RLock()
+	s.store.Mu.RLock()
 	mapped := s.store.EnterpriseSettings.GHESLDAPTeamMappings[team.ID] != ""
-	s.store.mu.RUnlock()
+	s.store.Mu.RUnlock()
 	if !mapped {
 		writeGHError(w, http.StatusConflict, "Team is not mapped to LDAP")
 		return
@@ -96,9 +96,9 @@ func (s *Server) ghesLDAPUser(w http.ResponseWriter, r *http.Request) *User {
 
 func (s *Server) ghesLDAPUserJSON(user *User) map[string]interface{} {
 	out := s.fullUserJSON(user)
-	s.store.mu.RLock()
+	s.store.Mu.RLock()
 	out["ldap_dn"] = s.store.EnterpriseSettings.GHESLDAPUserMappings[user.Login]
-	s.store.mu.RUnlock()
+	s.store.Mu.RUnlock()
 	return out
 }
 
@@ -117,10 +117,10 @@ func (s *Server) handleUpdateGHESUserLDAPMapping(w http.ResponseWriter, r *http.
 		writeGHValidationError(w, "User", "ldap_dn", "missing_field")
 		return
 	}
-	s.store.mu.Lock()
+	s.store.Mu.Lock()
 	s.store.EnterpriseSettings.GHESLDAPUserMappings[user.Login] = req.LDAPDN
-	s.store.persistEnterpriseSettings()
-	s.store.mu.Unlock()
+	s.store.PersistEnterpriseSettings()
+	s.store.Mu.Unlock()
 	writeJSON(w, http.StatusOK, s.ghesLDAPUserJSON(user))
 }
 
@@ -129,9 +129,9 @@ func (s *Server) handleSyncGHESUserLDAPMapping(w http.ResponseWriter, r *http.Re
 	if user == nil {
 		return
 	}
-	s.store.mu.RLock()
+	s.store.Mu.RLock()
 	mapped := s.store.EnterpriseSettings.GHESLDAPUserMappings[user.Login] != ""
-	s.store.mu.RUnlock()
+	s.store.Mu.RUnlock()
 	if !mapped {
 		writeGHError(w, http.StatusConflict, "User is not mapped to LDAP")
 		return
@@ -166,22 +166,22 @@ func (s *Server) handleRenameGHESOrganization(w http.ResponseWriter, r *http.Req
 // reports the operation as accepted. Repository transfer reuses the same
 // exhaustive repo-key migration used by the normal transfer API.
 func (s *Server) renameGHESOrganization(oldLogin, newLogin string) bool {
-	s.store.mu.Lock()
+	s.store.Mu.Lock()
 	org := s.store.OrgsByLogin[oldLogin]
 	if org == nil || s.store.OrgsByLogin[newLogin] != nil || s.store.UsersByLogin[newLogin] != nil {
-		s.store.mu.Unlock()
+		s.store.Mu.Unlock()
 		return false
 	}
 	s.store.OrgsByLogin[newLogin] = org
 	org.Login = newLogin
-	org.UpdatedAt = s.store.currentTime()
+	org.UpdatedAt = s.store.CurrentTime()
 	repoNames := make([]string, 0)
 	for _, repo := range s.store.Repos {
 		if repo.OwnerType == "Organization" && repo.OwnerID == org.ID {
 			repoNames = append(repoNames, repo.Name)
 		}
 	}
-	s.store.mu.Unlock()
+	s.store.Mu.Unlock()
 	sort.Strings(repoNames)
 	for _, name := range repoNames {
 		if !s.store.TransferRepo(oldLogin, name, newLogin) {
@@ -189,12 +189,12 @@ func (s *Server) renameGHESOrganization(oldLogin, newLogin string) bool {
 		}
 	}
 
-	s.store.mu.Lock()
+	s.store.Mu.Lock()
 	// Stage the whole final re-key phase — membership key moves, installation
 	// target updates, the org row and enterprise settings — into one
 	// transaction so a crash can no longer commit some of them and leave the
 	// organization split across its old and new login (STORE-001/002).
-	batch := newPersistBatch(s.store.persist)
+	batch := newPersistBatch(s.store.Persist)
 	delete(s.store.OrgsByLogin, oldLogin)
 	for key, membership := range s.store.Memberships {
 		if membership.OrgID != org.ID {
@@ -223,9 +223,9 @@ func (s *Server) renameGHESOrganization(oldLogin, newLogin string) bool {
 	batch.Put("orgs", strconv.Itoa(org.ID), org)
 	batch.Put("enterprise_settings", "enterprise", s.store.EnterpriseSettings)
 	err := batch.Commit()
-	s.store.mu.Unlock()
+	s.store.Mu.Unlock()
 	if err != nil {
-		panic(&persistenceFailure{op: "batch", bucket: "orgs", key: strconv.Itoa(org.ID), err: err})
+		panic(&persistenceFailure{Op: "batch", Bucket: "orgs", Key: strconv.Itoa(org.ID), Err: err})
 	}
 	return true
 }
@@ -305,12 +305,12 @@ func moveGHESOrgScopedState(st *Store, oldLogin, newLogin string) {
 }
 
 func persistMovedOrgRow[T any](st *Store, bucket, oldKey, newKey string, values map[string]T) {
-	if st.persist == nil {
+	if st.Persist == nil {
 		return
 	}
 	if value, ok := values[newKey]; ok {
-		st.persist.MustPut(bucket, newKey, value)
-		st.persist.MustDelete(bucket, oldKey)
+		st.Persist.MustPut(bucket, newKey, value)
+		st.Persist.MustDelete(bucket, oldKey)
 	}
 }
 

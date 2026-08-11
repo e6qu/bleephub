@@ -230,11 +230,11 @@ func TestRepoGraphQL_RepositoryOwnerOrg(t *testing.T) {
 		t.Fatal("failed to create organization repository")
 	}
 	defer func() {
-		s.store.mu.Lock()
+		s.store.Mu.Lock()
 		delete(s.store.Orgs, org.ID)
 		delete(s.store.OrgsByLogin, orgLogin)
 		delete(s.store.Memberships, membershipKey(orgLogin, s.store.UsersByLogin["admin"].ID))
-		s.store.mu.Unlock()
+		s.store.Mu.Unlock()
 	}()
 
 	query := `query Owner($login: String!) {
@@ -429,14 +429,14 @@ func TestRepoGraphQL_ForkParentAndCount(t *testing.T) {
 	sweep := s.sweepRepo(t, "sweep-fork-graphql")
 	owner, name := sweep.owner, sweep.name
 
-	s.store.mu.Lock()
+	s.store.Mu.Lock()
 	forker := &User{ID: s.store.NextUser, Login: "graphql-forker", Type: "User", CreatedAt: fixedTestTime, UpdatedAt: fixedTestTime}
 	s.store.NextUser++
 	s.store.Users[forker.ID] = forker
 	s.store.UsersByLogin[forker.Login] = forker
 	tok := &Token{Value: "graphql-forker-token", UserID: forker.ID, Scopes: "repo", CreatedAt: fixedTestTime}
 	s.store.Tokens[tok.Value] = tok
-	s.store.mu.Unlock()
+	s.store.Mu.Unlock()
 
 	resp := s.post(t, "/api/v3/repos/"+owner+"/"+name+"/forks", tok.Value, map[string]interface{}{"name": "sweep-fork-child"})
 	defer resp.Body.Close()
@@ -601,9 +601,9 @@ func TestPRGraphQL_ViewDefaultFields(t *testing.T) {
 			},
 		},
 	}
-	s.store.mu.Lock()
+	s.store.Mu.Lock()
 	s.store.Workflows[wf.ID] = wf
-	s.store.mu.Unlock()
+	s.store.Mu.Unlock()
 	s.onActionsRunRequestedSnapshot(wf, cloneWorkflowEventSnapshot(wf))
 	statusResp := s.post(t, "/api/v3/repos/"+owner+"/"+name+"/statuses/"+headSHA, defaultToken,
 		map[string]interface{}{
@@ -1359,14 +1359,14 @@ func TestWebhookTrigger_WorkflowFileResolvable(t *testing.T) {
 
 	// The workflow was submitted synchronously above; find it.
 	var wf *Workflow
-	s.store.mu.RLock()
+	s.store.Mu.RLock()
 	for _, w := range s.store.Workflows {
 		if w.RepoFullName == repoKey {
 			wf = w
 			break
 		}
 	}
-	s.store.mu.RUnlock()
+	s.store.Mu.RUnlock()
 	if wf == nil {
 		t.Fatalf("no workflow stored for %s after push trigger", repoKey)
 	}

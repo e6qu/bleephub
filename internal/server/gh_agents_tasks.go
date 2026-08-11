@@ -2,12 +2,9 @@ package bleephub
 
 import (
 	"net/http"
-	"sort"
 	"strconv"
 	"strings"
 	"time"
-
-	"github.com/google/uuid"
 )
 
 // GitHub Copilot coding agent tasks — the /agents/tasks and
@@ -18,39 +15,6 @@ import (
 // created task stays "queued" (nothing dequeues it), exactly what the
 // store knows to be true.
 
-// AgentTaskSession is one Copilot coding agent session within a task.
-type AgentTaskSession struct {
-	ID        string    `json:"id"`
-	Name      string    `json:"name"`
-	State     string    `json:"state"`
-	Prompt    string    `json:"prompt"`
-	HeadRef   string    `json:"head_ref"`
-	BaseRef   string    `json:"base_ref"`
-	Model     string    `json:"model"`
-	CreatedAt time.Time `json:"created_at"`
-	UpdatedAt time.Time `json:"updated_at"`
-}
-
-// AgentTask is a Copilot coding agent task.
-type AgentTask struct {
-	ID          string             `json:"id"`
-	RepoID      int                `json:"repo_id"`
-	OwnerID     int                `json:"owner_id"`
-	CreatorID   int                `json:"creator_id"`
-	CreatorType string             `json:"creator_type"` // user | organization
-	Name        string             `json:"name"`
-	Prompt      string             `json:"prompt"`
-	Model       string             `json:"model"`
-	CreatePR    bool               `json:"create_pull_request"`
-	BaseRef     string             `json:"base_ref"`
-	HeadRef     string             `json:"head_ref"`
-	State       string             `json:"state"`
-	Sessions    []AgentTaskSession `json:"sessions"`
-	ArchivedAt  *time.Time         `json:"archived_at"`
-	CreatedAt   time.Time          `json:"created_at"`
-	UpdatedAt   time.Time          `json:"updated_at"`
-}
-
 func (s *Server) registerGHAgentsTasksRoutes() {
 	s.route("GET /api/v3/agents/tasks", s.handleListAgentTasks)
 	s.route("GET /api/v3/agents/tasks/{task_id}", s.handleGetAgentTask)
@@ -60,142 +24,6 @@ func (s *Server) registerGHAgentsTasksRoutes() {
 }
 
 // --- store methods ---
-
-// CreateAgentTask stores a new Copilot coding agent task for a repository
-// with its initial session.
-func (st *Store) CreateAgentTask(repo *Repo, creator *User, prompt, model string, createPR bool, baseRef, headRef string) *AgentTask {
-	st.mu.Lock()
-	defer st.mu.Unlock()
-
-	now := time.Now().UTC()
-
-	// The task name is derived from the first line of the prompt.
-	name := prompt
-	if idx := strings.IndexByte(name, '\n'); idx >= 0 {
-		name = name[:idx]
-	}
-	if len(name) > 80 {
-		name = name[:80]
-	}
-
-	task := &AgentTask{
-		ID:          uuid.New().String(),
-		RepoID:      repo.ID,
-		OwnerID:     repo.OwnerID,
-		CreatorID:   creator.ID,
-		CreatorType: "user",
-		Name:        name,
-		Prompt:      prompt,
-		Model:       model,
-		CreatePR:    createPR,
-		BaseRef:     baseRef,
-		HeadRef:     headRef,
-		State:       "queued",
-		Sessions: []AgentTaskSession{{
-			ID:        uuid.New().String(),
-			Name:      name,
-			State:     "queued",
-			Prompt:    prompt,
-			HeadRef:   headRef,
-			BaseRef:   baseRef,
-			Model:     model,
-			CreatedAt: now,
-			UpdatedAt: now,
-		}},
-		CreatedAt: now,
-		UpdatedAt: now,
-	}
-	st.AgentTasks[task.ID] = task
-	if st.persist != nil {
-		st.persist.MustPut("agent_tasks", task.ID, task)
-	}
-	return task
-}
-
-// GetAgentTask returns a task by ID, or nil.
-func (st *Store) GetAgentTask(id string) *AgentTask {
-	st.mu.RLock()
-	defer st.mu.RUnlock()
-	return st.AgentTasks[id]
-}
-
-// agentTaskFilter carries the documented list-tasks query filters.
-type agentTaskFilter struct {
-	repoID     int   // 0 = any repository
-	creatorID  int   // 0 = any creator
-	creatorIDs []int // non-empty = restrict to these creators
-	states     []string
-	isArchived bool
-	since      *time.Time
-	sortField  string // "updated_at" (default) | "created_at"
-	direction  string // "desc" (default) | "asc"
-}
-
-// ListAgentTasks returns the tasks matching the filter, sorted, plus the
-// active/archived totals within the filter's repo/creator scope.
-func (st *Store) ListAgentTasks(f agentTaskFilter) (tasks []*AgentTask, totalActive, totalArchived int) {
-	st.mu.RLock()
-	defer st.mu.RUnlock()
-
-	for _, t := range st.AgentTasks {
-		if f.repoID != 0 && t.RepoID != f.repoID {
-			continue
-		}
-		if f.creatorID != 0 && t.CreatorID != f.creatorID {
-			continue
-		}
-		if len(f.creatorIDs) > 0 {
-			found := false
-			for _, id := range f.creatorIDs {
-				if t.CreatorID == id {
-					found = true
-					break
-				}
-			}
-			if !found {
-				continue
-			}
-		}
-		if t.ArchivedAt != nil {
-			totalArchived++
-		} else {
-			totalActive++
-		}
-		if f.isArchived != (t.ArchivedAt != nil) {
-			continue
-		}
-		if len(f.states) > 0 {
-			found := false
-			for _, s := range f.states {
-				if t.State == s {
-					found = true
-					break
-				}
-			}
-			if !found {
-				continue
-			}
-		}
-		if f.since != nil && t.UpdatedAt.Before(*f.since) {
-			continue
-		}
-		tasks = append(tasks, t)
-	}
-
-	sort.SliceStable(tasks, func(i, j int) bool {
-		var less bool
-		if f.sortField == "created_at" {
-			less = tasks[i].CreatedAt.Before(tasks[j].CreatedAt)
-		} else {
-			less = tasks[i].UpdatedAt.Before(tasks[j].UpdatedAt)
-		}
-		if f.direction == "asc" {
-			return less
-		}
-		return !less
-	})
-	return tasks, totalActive, totalArchived
-}
 
 // --- JSON rendering ---
 
@@ -270,27 +98,27 @@ func (s *Server) agentTaskDetailJSON(t *AgentTask, baseURL string) map[string]in
 func parseAgentTaskFilter(r *http.Request) agentTaskFilter {
 	q := r.URL.Query()
 	f := agentTaskFilter{
-		sortField: q.Get("sort"),
-		direction: q.Get("direction"),
+		SortField: q.Get("sort"),
+		Direction: q.Get("direction"),
 	}
 	if v := q.Get("state"); v != "" {
 		for _, s := range strings.Split(v, ",") {
 			if s = strings.TrimSpace(s); s != "" {
-				f.states = append(f.states, s)
+				f.States = append(f.States, s)
 			}
 		}
 	}
 	if q.Get("is_archived") == "true" {
-		f.isArchived = true
+		f.IsArchived = true
 	}
 	if v := q.Get("since"); v != "" {
 		if ts, err := time.Parse(time.RFC3339, v); err == nil {
-			f.since = &ts
+			f.Since = &ts
 		}
 	}
 	for _, raw := range q["creator_id"] {
 		if id, err := strconv.Atoi(raw); err == nil {
-			f.creatorIDs = append(f.creatorIDs, id)
+			f.CreatorIDs = append(f.CreatorIDs, id)
 		}
 	}
 	return f
@@ -319,7 +147,7 @@ func (s *Server) handleListAgentTasks(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	f := parseAgentTaskFilter(r)
-	f.creatorID = user.ID
+	f.CreatorID = user.ID
 	s.writeAgentTaskList(w, r, f)
 }
 
@@ -354,7 +182,7 @@ func (s *Server) handleListAgentTasksForRepo(w http.ResponseWriter, r *http.Requ
 		return
 	}
 	f := parseAgentTaskFilter(r)
-	f.repoID = repo.ID
+	f.RepoID = repo.ID
 	s.writeAgentTaskList(w, r, f)
 }
 

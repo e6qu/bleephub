@@ -108,13 +108,13 @@ func (s *Server) handleListEnterpriseCodeScanningAlerts(w http.ResponseWriter, r
 }
 
 func (s *Server) handleListEnterprisePushRuleBypassRequests(w http.ResponseWriter, r *http.Request) {
-	s.writeSecurityReviewList(w, r, s.store.listSecurityReviewRequests("", "", reviewKindPushBypass))
+	s.writeSecurityReviewList(w, r, s.store.ListSecurityReviewRequests("", "", reviewKindPushBypass))
 }
 
 func (s *Server) handleListEnterpriseSecretScanningBypassRequests(w http.ResponseWriter, r *http.Request) {
-	s.writeSecurityReviewList(w, r, s.store.listSecurityReviewRequests("", "", reviewKindSecretBypass))
+	s.writeSecurityReviewList(w, r, s.store.ListSecurityReviewRequests("", "", reviewKindSecretBypass))
 }
 
 func (s *Server) handleListEnterpriseSecretScanningDismissalRequests(w http.ResponseWriter, r *http.Request) {
-	s.writeSecurityReviewList(w, r, s.store.listSecurityReviewRequests("", "", reviewKindSecretDismissal))
+	s.writeSecurityReviewList(w, r, s.store.ListSecurityReviewRequests("", "", reviewKindSecretDismissal))
 }

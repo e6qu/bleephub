@@ -1893,8 +1893,8 @@ func closingIssuesForPullRequest(st *Store, repo *Repo, pr *PullRequest) []*Issu
 	if len(refs) == 0 {
 		return nil
 	}
-	st.mu.RLock()
-	defer st.mu.RUnlock()
+	st.Mu.RLock()
+	defer st.Mu.RUnlock()
 
 	issues := make([]*Issue, 0, len(refs))
 	seen := map[int]bool{}
@@ -1959,8 +1959,8 @@ func pullRequestToGQL(pr *PullRequest, st *Store) map[string]interface{} {
 		}
 	}
 
-	st.mu.RLock()
-	defer st.mu.RUnlock()
+	st.Mu.RLock()
+	defer st.Mu.RUnlock()
 
 	// Author
 	var author map[string]interface{}
@@ -2301,9 +2301,9 @@ func (s *Server) resolveReviewThreadGraphQL(p graphql.ResolveParams, resolved bo
 			message: fmt.Sprintf("Could not resolve to a PullRequestReviewThread with the global id of '%s'", threadNodeID),
 		}
 	}
-	s.store.mu.RLock()
+	s.store.Mu.RLock()
 	nodes := reviewThreadsForGraphQL([]*ReviewThread{thread}, s.store)
-	s.store.mu.RUnlock()
+	s.store.Mu.RUnlock()
 	var gqlThread interface{}
 	if len(nodes) == 1 {
 		gqlThread = nodes[0]
@@ -2394,8 +2394,8 @@ func deriveReviewDecisionLocked(st *Store, prID int) string {
 }
 
 func findPullRequestByNodeID(st *Store, nodeID string) *PullRequest {
-	st.mu.RLock()
-	defer st.mu.RUnlock()
+	st.Mu.RLock()
+	defer st.Mu.RUnlock()
 	if id, ok := decodeNodeDBID(nodeID, "PR_kgDO"); ok {
 		if pr := st.PullRequests[id]; pr != nil && pr.NodeID == nodeID {
 			return pr
@@ -2529,8 +2529,8 @@ func commitMessageBody(message string) string {
 
 // prReviewToGQL is the unlocked wrapper around prReviewSourceLocked.
 func prReviewToGQL(r *PullRequestReview, st *Store) map[string]interface{} {
-	st.mu.RLock()
-	defer st.mu.RUnlock()
+	st.Mu.RLock()
+	defer st.Mu.RUnlock()
 	return prReviewSourceLocked(r, st)
 }
 
@@ -2830,7 +2830,7 @@ func (s *Server) searchIssuesAndPRs(query string, viewer *User) []gqlConnItem {
 		return nil
 	}
 
-	s.store.mu.RLock()
+	s.store.Mu.RLock()
 	// Real GitHub search only returns results from repositories the
 	// authenticated viewer can access; a private repo the viewer can't read
 	// must never contribute issues/PRs. Mirror canReadRepoAsUser's logic inline
@@ -3033,7 +3033,7 @@ func (s *Server) searchIssuesAndPRs(query string, viewer *User) []gqlConnItem {
 			matchedPRs = append(matchedPRs, pr)
 		}
 	}
-	s.store.mu.RUnlock()
+	s.store.Mu.RUnlock()
 
 	// Render outside the lock (the toGQL converters take it themselves),
 	// newest-first across both entity kinds.

@@ -48,13 +48,13 @@ func (s *Server) registerGHEnterpriseAdminRoutes() {
 }
 
 func (s *Server) handleGetEnterpriseAnnouncement(w http.ResponseWriter, _ *http.Request) {
-	s.store.mu.RLock()
+	s.store.Mu.RLock()
 	announcement := s.store.EnterpriseSettings.Announcement
 	if announcement == nil {
 		announcement = &EnterpriseAnnouncement{}
 	}
 	result := *announcement
-	s.store.mu.RUnlock()
+	s.store.Mu.RUnlock()
 	writeJSON(w, http.StatusOK, result)
 }
 
@@ -87,26 +87,26 @@ func (s *Server) handleSetEnterpriseAnnouncement(w http.ResponseWriter, r *http.
 	if req.UserDismissible != nil {
 		announcement.UserDismissible = *req.UserDismissible
 	}
-	s.store.mu.Lock()
+	s.store.Mu.Lock()
 	s.store.EnterpriseSettings.Announcement = announcement
-	s.store.persistEnterpriseSettings()
-	s.store.mu.Unlock()
+	s.store.PersistEnterpriseSettings()
+	s.store.Mu.Unlock()
 	writeJSON(w, http.StatusOK, announcement)
 }
 
 func (s *Server) handleDeleteEnterpriseAnnouncement(w http.ResponseWriter, _ *http.Request) {
-	s.store.mu.Lock()
+	s.store.Mu.Lock()
 	s.store.EnterpriseSettings.Announcement = nil
-	s.store.persistEnterpriseSettings()
-	s.store.mu.Unlock()
+	s.store.PersistEnterpriseSettings()
+	s.store.Mu.Unlock()
 	w.WriteHeader(http.StatusNoContent)
 }
 
 func (s *Server) setEnterpriseAccessRestrictions(w http.ResponseWriter, enabled bool) {
-	s.store.mu.Lock()
+	s.store.Mu.Lock()
 	s.store.EnterpriseSettings.AccessRestrictionsEnabled = enabled
-	s.store.persistEnterpriseSettings()
-	s.store.mu.Unlock()
+	s.store.PersistEnterpriseSettings()
+	s.store.Mu.Unlock()
 	w.WriteHeader(http.StatusNoContent)
 }
 
@@ -119,9 +119,9 @@ func (s *Server) handleDisableEnterpriseAccessRestrictions(w http.ResponseWriter
 }
 
 func (s *Server) handleGetEnterpriseCodeSecurityAndAnalysis(w http.ResponseWriter, _ *http.Request) {
-	s.store.mu.RLock()
+	s.store.Mu.RLock()
 	settings := s.store.EnterpriseSettings.CodeSecurityAndAnalysis
-	s.store.mu.RUnlock()
+	s.store.Mu.RUnlock()
 	writeJSON(w, http.StatusOK, settings)
 }
 
@@ -162,10 +162,10 @@ func (s *Server) handleUpdateEnterpriseCodeSecurityAndAnalysis(w http.ResponseWr
 	if !decodeJSONBody(w, r, &req) {
 		return
 	}
-	s.store.mu.Lock()
+	s.store.Mu.Lock()
 	req.apply(&s.store.EnterpriseSettings.CodeSecurityAndAnalysis)
-	s.store.persistEnterpriseSettings()
-	s.store.mu.Unlock()
+	s.store.PersistEnterpriseSettings()
+	s.store.Mu.Unlock()
 	w.WriteHeader(http.StatusNoContent)
 }
 
@@ -175,7 +175,7 @@ func (s *Server) handleSetEnterpriseSecurityFeature(w http.ResponseWriter, r *ht
 		writeGHValidationError(w, "EnterpriseSecurityFeature", "enablement", "invalid")
 		return
 	}
-	s.store.mu.Lock()
+	s.store.Mu.Lock()
 	settings := &s.store.EnterpriseSettings.CodeSecurityAndAnalysis
 	switch r.PathValue("security_product") {
 	case "advanced_security":
@@ -191,12 +191,12 @@ func (s *Server) handleSetEnterpriseSecurityFeature(w http.ResponseWriter, r *ht
 	case "secret_scanning_non_provider_patterns":
 		settings.SecretScanningNonProviderPatternsEnabledForNewRepositories = enabled
 	default:
-		s.store.mu.Unlock()
+		s.store.Mu.Unlock()
 		writeGHValidationError(w, "EnterpriseSecurityFeature", "security_product", "invalid")
 		return
 	}
-	s.store.persistEnterpriseSettings()
-	s.store.mu.Unlock()
+	s.store.PersistEnterpriseSettings()
+	s.store.Mu.Unlock()
 	w.WriteHeader(http.StatusNoContent)
 }
 
@@ -291,15 +291,15 @@ func (s *Server) handleEnterpriseAuditLog(w http.ResponseWriter, r *http.Request
 		writeGHValidationError(w, "AuditLog", "include", "invalid")
 		return
 	}
-	s.store.Misc.mu.RLock()
-	entries := make([]*AuditEntry, 0, len(s.store.Misc.auditLog))
-	for _, entry := range s.store.Misc.auditLog {
+	s.store.Misc.Mu.RLock()
+	entries := make([]*AuditEntry, 0, len(s.store.Misc.AuditLog))
+	for _, entry := range s.store.Misc.AuditLog {
 		if phrase := r.URL.Query().Get("phrase"); phrase != "" && !auditEntryMatchesPhrase(entry, phrase) {
 			continue
 		}
 		entries = append(entries, entry)
 	}
-	s.store.Misc.mu.RUnlock()
+	s.store.Misc.Mu.RUnlock()
 	if order == "asc" {
 		for i, j := 0, len(entries)-1; i < j; i, j = i+1, j-1 {
 			entries[i], entries[j] = entries[j], entries[i]
@@ -325,12 +325,12 @@ func enterpriseAuditLogStreamJSON(stream *EnterpriseAuditLogStream) map[string]i
 }
 
 func (s *Server) handleListEnterpriseAuditLogStreams(w http.ResponseWriter, r *http.Request) {
-	s.store.mu.RLock()
+	s.store.Mu.RLock()
 	out := make([]map[string]interface{}, 0, len(s.store.EnterpriseSettings.AuditLogStreams))
 	for _, stream := range s.store.EnterpriseSettings.AuditLogStreams {
 		out = append(out, enterpriseAuditLogStreamJSON(stream))
 	}
-	s.store.mu.RUnlock()
+	s.store.Mu.RUnlock()
 	writeJSON(w, http.StatusOK, paginateAndLink(w, r, out))
 }
 
@@ -357,15 +357,15 @@ func (s *Server) handleGetEnterpriseAuditLogStream(w http.ResponseWriter, r *htt
 	if !ok {
 		return
 	}
-	s.store.mu.RLock()
+	s.store.Mu.RLock()
 	stream := s.enterpriseAuditLogStreamLocked(id)
 	if stream == nil {
-		s.store.mu.RUnlock()
+		s.store.Mu.RUnlock()
 		writeGHError(w, http.StatusNotFound, "Not Found")
 		return
 	}
 	out := enterpriseAuditLogStreamJSON(stream)
-	s.store.mu.RUnlock()
+	s.store.Mu.RUnlock()
 	writeJSON(w, http.StatusOK, out)
 }
 
@@ -419,7 +419,7 @@ func (s *Server) handleCreateEnterpriseAuditLogStream(w http.ResponseWriter, r *
 	if !ok {
 		return
 	}
-	now := s.store.currentTime()
+	now := s.store.CurrentTime()
 	stream := &EnterpriseAuditLogStream{
 		StreamType: req.StreamType, StreamDetails: enterpriseAuditLogStreamDetails(req.StreamType, req.VendorSpecific),
 		Enabled: *req.Enabled, VendorSpecific: req.VendorSpecific, CreatedAt: now, UpdatedAt: now,
@@ -427,12 +427,12 @@ func (s *Server) handleCreateEnterpriseAuditLogStream(w http.ResponseWriter, r *
 	if !stream.Enabled {
 		stream.PausedAt = &now
 	}
-	s.store.mu.Lock()
+	s.store.Mu.Lock()
 	stream.ID = s.store.EnterpriseSettings.NextAuditLogStreamID
 	s.store.EnterpriseSettings.NextAuditLogStreamID++
 	s.store.EnterpriseSettings.AuditLogStreams = append(s.store.EnterpriseSettings.AuditLogStreams, stream)
-	s.store.persistEnterpriseSettings()
-	s.store.mu.Unlock()
+	s.store.PersistEnterpriseSettings()
+	s.store.Mu.Unlock()
 	writeJSON(w, http.StatusOK, enterpriseAuditLogStreamJSON(stream))
 }
 
@@ -445,11 +445,11 @@ func (s *Server) handleUpdateEnterpriseAuditLogStream(w http.ResponseWriter, r *
 	if !ok {
 		return
 	}
-	now := s.store.currentTime()
-	s.store.mu.Lock()
+	now := s.store.CurrentTime()
+	s.store.Mu.Lock()
 	stream := s.enterpriseAuditLogStreamLocked(id)
 	if stream == nil {
-		s.store.mu.Unlock()
+		s.store.Mu.Unlock()
 		writeGHError(w, http.StatusNotFound, "Not Found")
 		return
 	}
@@ -463,9 +463,9 @@ func (s *Server) handleUpdateEnterpriseAuditLogStream(w http.ResponseWriter, r *
 	} else {
 		stream.PausedAt = &now
 	}
-	s.store.persistEnterpriseSettings()
+	s.store.PersistEnterpriseSettings()
 	out := enterpriseAuditLogStreamJSON(stream)
-	s.store.mu.Unlock()
+	s.store.Mu.Unlock()
 	writeJSON(w, http.StatusOK, out)
 }
 
@@ -474,20 +474,20 @@ func (s *Server) handleDeleteEnterpriseAuditLogStream(w http.ResponseWriter, r *
 	if !ok {
 		return
 	}
-	s.store.mu.Lock()
+	s.store.Mu.Lock()
 	for i, stream := range s.store.EnterpriseSettings.AuditLogStreams {
 		if stream.ID == id {
 			s.store.EnterpriseSettings.AuditLogStreams = append(
 				s.store.EnterpriseSettings.AuditLogStreams[:i],
 				s.store.EnterpriseSettings.AuditLogStreams[i+1:]...,
 			)
-			s.store.persistEnterpriseSettings()
-			s.store.mu.Unlock()
+			s.store.PersistEnterpriseSettings()
+			s.store.Mu.Unlock()
 			w.WriteHeader(http.StatusNoContent)
 			return
 		}
 	}
-	s.store.mu.Unlock()
+	s.store.Mu.Unlock()
 	writeGHError(w, http.StatusNotFound, "Not Found")
 }
 

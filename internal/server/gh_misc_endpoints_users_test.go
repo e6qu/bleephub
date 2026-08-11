@@ -90,9 +90,9 @@ func TestEnterpriseAdminUsersCRUDSiteAdminAndSuspension(t *testing.T) {
 		t.Fatalf("created user %q missing from store", login)
 	}
 	userToken := "tok-" + login
-	s.store.mu.Lock()
+	s.store.Mu.Lock()
 	s.store.Tokens[userToken] = &Token{Value: userToken, UserID: u.ID, Scopes: "repo", CreatedAt: fixedTestTime.UTC()}
-	s.store.mu.Unlock()
+	s.store.Mu.Unlock()
 	asSuspended := s.get(t, "/api/v3/user", userToken)
 	asSuspended.Body.Close()
 	if asSuspended.StatusCode != 403 {

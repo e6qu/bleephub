@@ -445,7 +445,7 @@ func (s *Server) canManageTeam(ctx context.Context, user *User, org *Org, team *
 	if s.viewerCanAdminOrg(ctx, org.Login) {
 		return true
 	}
-	role, isMember := team.roleOf(user.ID)
+	role, isMember := team.RoleOf(user.ID)
 	return isMember && role == TeamRoleMaintainer && !addingMaintainer
 }
 

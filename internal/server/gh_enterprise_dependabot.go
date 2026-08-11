@@ -89,10 +89,10 @@ func (s *Server) handleListEnterpriseDependabotAlerts(w http.ResponseWriter, r *
 }
 
 func (s *Server) handleGetEnterpriseDependabotRepositoryAccess(w http.ResponseWriter, r *http.Request) {
-	s.store.mu.RLock()
+	s.store.Mu.RLock()
 	ids := append([]int(nil), s.store.EnterpriseSettings.DependabotAccessibleRepoIDs...)
 	level := s.store.EnterpriseSettings.DependabotDefaultLevel
-	s.store.mu.RUnlock()
+	s.store.Mu.RUnlock()
 
 	repos := s.dependabotAccessibleRepos(r, ids)
 	// The endpoint paginates the repository list with page/per_page while the
@@ -113,9 +113,9 @@ func (s *Server) handleUpdateEnterpriseDependabotRepositoryAccess(w http.Respons
 		return
 	}
 
-	s.store.mu.RLock()
+	s.store.Mu.RLock()
 	existing := append([]int(nil), s.store.EnterpriseSettings.DependabotAccessibleRepoIDs...)
-	s.store.mu.RUnlock()
+	s.store.Mu.RUnlock()
 
 	set := make(map[int]struct{}, len(existing))
 	for _, id := range existing {

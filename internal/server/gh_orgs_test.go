@@ -609,14 +609,14 @@ func TestAdminCreateOrg_RequiresSiteAdmin(t *testing.T) {
 	}
 
 	// Token for a non-site-admin user → 403.
-	s.store.mu.Lock()
+	s.store.Mu.Lock()
 	regularUser := &User{ID: s.store.NextUser, Login: "regular", Type: "User", SiteAdmin: false}
 	s.store.NextUser++
 	s.store.Users[regularUser.ID] = regularUser
 	s.store.UsersByLogin[regularUser.Login] = regularUser
 	regularTok := &Token{Value: "ghp_regularusertoken0000000000000000000000", UserID: regularUser.ID, Scopes: "repo"}
 	s.store.Tokens[regularTok.Value] = regularTok
-	s.store.mu.Unlock()
+	s.store.Mu.Unlock()
 
 	resp2 := s.post(t, "/api/v3/admin/organizations", regularTok.Value, map[string]interface{}{
 		"login": "org-non-admin",

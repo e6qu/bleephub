@@ -224,15 +224,15 @@ func TestOrgCacheUsage_ComputedFromRealCacheStore(t *testing.T) {
 	// another, plus one for a foreign owner that must not count.
 	as := srv.artifactStore
 	seedCache := func(repo, key string, size int64) {
-		as.mu.Lock()
-		id := as.nextCacheID
-		as.nextCacheID++
-		as.caches[id] = &CacheEntry{
+		as.Mu.Lock()
+		id := as.NextCacheID
+		as.NextCacheID++
+		as.Caches[id] = &CacheEntry{
 			ID: id, Repo: repo, Key: key, Version: "v1",
 			Size: size, Finalized: true, CreatedAt: fixedTestTime,
 		}
-		as.cacheIndex[cacheLookupKey(repo, key, "v1")] = id
-		as.mu.Unlock()
+		as.CacheIndex[cacheLookupKey(repo, key, "v1")] = id
+		as.Mu.Unlock()
 	}
 	seedCache(org+"/repo-a", "npm-cache", 1000)
 	seedCache(org+"/repo-a", "go-cache", 500)
@@ -273,7 +273,7 @@ func TestRunnerLabels_AddAndRemoveSingle(t *testing.T) {
 
 	// Register a runner with a system label through the real agent
 	// registration path.
-	srv.store.mu.Lock()
+	srv.store.Mu.Lock()
 	agent := &Agent{
 		ID:     srv.store.NextAgent,
 		Name:   "labels-test-runner",
@@ -283,7 +283,7 @@ func TestRunnerLabels_AddAndRemoveSingle(t *testing.T) {
 	}
 	srv.store.NextAgent++
 	srv.store.Agents[agent.ID] = agent
-	srv.store.mu.Unlock()
+	srv.store.Mu.Unlock()
 
 	orgPath := fmt.Sprintf("/api/v3/orgs/%s/actions/runners/%d/labels", org, agent.ID)
 	repoPath := fmt.Sprintf("/api/v3/repos/%s/actions/runners/%d/labels", repo, agent.ID)
@@ -336,7 +336,7 @@ func TestRunnerLabels_AddAndRemoveSingle(t *testing.T) {
 	}
 
 	// Cleanup so runner-list tests elsewhere see the shared pool unchanged.
-	srv.store.mu.Lock()
+	srv.store.Mu.Lock()
 	delete(srv.store.Agents, agent.ID)
-	srv.store.mu.Unlock()
+	srv.store.Mu.Unlock()
 }

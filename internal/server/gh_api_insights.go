@@ -20,12 +20,6 @@ import (
 // aggregate those records — when no attributable traffic exists the stats
 // are honestly zero/empty.
 
-// APIInsightsActorType is the credential taxonomy of an observed request's
-// actor; APIInsightsSubjectType is the account it ran on behalf of. Both are
-// produced internally from credential analysis (never unmarshaled from a
-// request), and a typed string marshals to JSON identically to a plain string.
-type APIInsightsActorType string
-
 const (
 	ActorTypeInstallation          APIInsightsActorType = "installation"
 	ActorTypeClassicPAT            APIInsightsActorType = "classic_pat"
@@ -34,41 +28,10 @@ const (
 	ActorTypeGitHubAppUserToServer APIInsightsActorType = "github_app_user_to_server"
 )
 
-type APIInsightsSubjectType string
-
 const (
 	SubjectTypeUser         APIInsightsSubjectType = "user"
 	SubjectTypeInstallation APIInsightsSubjectType = "installation"
 )
-
-// APIRequestRecord is one observed, attributed /api/v3 request.
-type APIRequestRecord struct {
-	ID          int64     `json:"id"`
-	Timestamp   time.Time `json:"timestamp"`
-	Method      string    `json:"method"`
-	Route       string    `json:"route"` // route template relative to /api/v3, e.g. "/repos/{owner}/{repo}"
-	StatusCode  int       `json:"status_code"`
-	RateLimited bool      `json:"rate_limited"`
-	// Actor identifies the credential that made the request, using the
-	// actor taxonomy of GitHub's API insights.
-	ActorType APIInsightsActorType `json:"actor_type"` // installation | classic_pat | fine_grained_pat | oauth_app | github_app_user_to_server
-	ActorID   int64                `json:"actor_id"`
-	ActorName string               `json:"actor_name"`
-	// Subject is the account on whose behalf the request ran.
-	SubjectType APIInsightsSubjectType `json:"subject_type"` // "user" | "installation"
-	SubjectID   int64                  `json:"subject_id"`
-	SubjectName string                 `json:"subject_name"`
-	// UserID is the authenticated user's ID (0 for installation tokens).
-	UserID int `json:"user_id,omitempty"`
-	// IntegrationID / OAuthAppID carry the GitHub App / OAuth app identity
-	// behind app-derived actors, when one exists.
-	IntegrationID *int64 `json:"integration_id,omitempty"`
-	OAuthAppID    *int64 `json:"oauth_application_id,omitempty"`
-	// OrgLogins are the organizations this request was attributed to at
-	// request time (the actor's active memberships, or the installation's
-	// target organization).
-	OrgLogins []string `json:"org_logins,omitempty"`
-}
 
 var apiInsightsActorTypes = map[string]bool{
 	"installation":              true,
@@ -193,7 +156,7 @@ func (s *Server) recordAPIInsightsRequest(r *http.Request, method, route string,
 			}
 		} else {
 			rec.ActorType = ActorTypeOAuthApp
-			s.store.mu.RLock()
+			s.store.Mu.RLock()
 			if app := s.store.AppsByClientID[uts.OAuthAppClientID]; app != nil {
 				rec.ActorID = int64(app.ID)
 				rec.ActorName = app.Slug
@@ -202,7 +165,7 @@ func (s *Server) recordAPIInsightsRequest(r *http.Request, method, route string,
 			} else if oa := s.store.OAuthApps[uts.OAuthAppClientID]; oa != nil {
 				rec.ActorName = oa.Name
 			}
-			s.store.mu.RUnlock()
+			s.store.Mu.RUnlock()
 		}
 		rec.SubjectType = SubjectTypeUser
 		rec.SubjectID = int64(user.ID)
@@ -242,70 +205,6 @@ func (s *Server) recordAPIInsightsRequest(r *http.Request, method, route string,
 	s.store.RecordAPIRequest(rec)
 }
 
-// ActiveOrgLoginsForUser returns the logins of every organization where the
-// user holds an active membership.
-func (st *Store) ActiveOrgLoginsForUser(userID int) []string {
-	st.mu.RLock()
-	defer st.mu.RUnlock()
-	var out []string
-	for _, m := range st.Memberships {
-		if m.UserID != userID || m.State != MembershipStateActive {
-			continue
-		}
-		if org := st.Orgs[m.OrgID]; org != nil {
-			out = append(out, org.Login)
-		}
-	}
-	sort.Strings(out)
-	return out
-}
-
-// PATIdentityByTokenValue resolves a fine-grained personal access token
-// value to its token ID + name via the PAT grant/request tables.
-func (st *Store) PATIdentityByTokenValue(value string) (int, string, bool) {
-	st.mu.RLock()
-	defer st.mu.RUnlock()
-	if token, _ := st.tokenByValueLocked(value); token != nil && token.FineGrained {
-		return token.FineGrainedID, token.Name, true
-	}
-	return 0, "", false
-}
-
-// maxAPIRequestRecords caps the durable in-memory request log; once the cap
-// is reached the oldest records are evicted FIFO so unbounded traffic cannot
-// grow the store without limit.
-const maxAPIRequestRecords = 10000
-
-// RecordAPIRequest appends an attributed request record and persists it.
-// The log is capped at maxAPIRequestRecords with FIFO eviction.
-func (st *Store) RecordAPIRequest(rec *APIRequestRecord) {
-	st.apiInsightsMu.Lock()
-	defer st.apiInsightsMu.Unlock()
-	rec.ID = st.NextAPIRequestID
-	st.NextAPIRequestID++
-	recordCap := st.apiRequestRecordCap
-	if recordCap <= 0 {
-		recordCap = maxAPIRequestRecords
-	}
-	st.APIRequestRecords = append(st.APIRequestRecords, rec)
-	// Commit the new record together with any FIFO evictions in one transaction
-	// so a crash can't apply the insert without the eviction (or vice versa),
-	// leaving the durable bucket over its cap or missing the just-served request
-	// (STORE-001/002; the eviction itself is STORE-024). The defer releases the
-	// lock if the commit panics.
-	batch := newPersistBatch(st.persist)
-	if overflow := len(st.APIRequestRecords) - recordCap; overflow > 0 {
-		for _, evicted := range st.APIRequestRecords[:overflow] {
-			batch.Delete("api_insights_requests", strconv.FormatInt(evicted.ID, 10))
-		}
-		st.APIRequestRecords = append([]*APIRequestRecord(nil), st.APIRequestRecords[overflow:]...)
-	}
-	batch.Put("api_insights_requests", strconv.FormatInt(rec.ID, 10), rec)
-	if err := batch.Commit(); err != nil {
-		panic(&persistenceFailure{op: "batch", bucket: "api_insights_requests", key: strconv.FormatInt(rec.ID, 10), err: err})
-	}
-}
-
 // ─── query plumbing ──────────────────────────────────────────────────────
 
 // apiInsightsWindow parses the min_timestamp (required) and max_timestamp
@@ -331,26 +230,6 @@ func (s *Server) apiInsightsWindow(w http.ResponseWriter, r *http.Request) (minT
 		}
 	}
 	return minT, maxT, true
-}
-
-// apiInsightsRecords returns the org's attributed records inside [minT, maxT],
-// oldest first.
-func (st *Store) apiInsightsRecords(orgLogin string, minT, maxT time.Time) []*APIRequestRecord {
-	st.apiInsightsMu.RLock()
-	defer st.apiInsightsMu.RUnlock()
-	var out []*APIRequestRecord
-	for _, rec := range st.APIRequestRecords {
-		if rec.Timestamp.Before(minT) || rec.Timestamp.After(maxT) {
-			continue
-		}
-		for _, login := range rec.OrgLogins {
-			if login == orgLogin {
-				out = append(out, rec)
-				break
-			}
-		}
-	}
-	return out
 }
 
 func filterRecordsByActor(records []*APIRequestRecord, actorType string, actorID int64) []*APIRequestRecord {
@@ -464,7 +343,7 @@ func (s *Server) handleAPIInsightsRouteStats(w http.ResponseWriter, r *http.Requ
 	if !ok {
 		return
 	}
-	records := filterRecordsByActor(s.store.apiInsightsRecords(r.PathValue("org"), minT, maxT), actorType, actorID)
+	records := filterRecordsByActor(s.store.ApiInsightsRecords(r.PathValue("org"), minT, maxT), actorType, actorID)
 
 	type routeKey struct{ method, route string }
 	groups := map[routeKey]*apiInsightsAggregate{}
@@ -501,7 +380,7 @@ func (s *Server) handleAPIInsightsSubjectStats(w http.ResponseWriter, r *http.Re
 	if !ok {
 		return
 	}
-	records := s.store.apiInsightsRecords(r.PathValue("org"), minT, maxT)
+	records := s.store.ApiInsightsRecords(r.PathValue("org"), minT, maxT)
 
 	type subjectKey struct {
 		subjectType string
@@ -558,7 +437,7 @@ func (s *Server) handleAPIInsightsSummaryStats(w http.ResponseWriter, r *http.Re
 	if !ok {
 		return
 	}
-	writeAPIInsightsSummary(w, s.store.apiInsightsRecords(r.PathValue("org"), minT, maxT))
+	writeAPIInsightsSummary(w, s.store.ApiInsightsRecords(r.PathValue("org"), minT, maxT))
 }
 
 func (s *Server) handleAPIInsightsSummaryStatsByUser(w http.ResponseWriter, r *http.Request) {
@@ -571,7 +450,7 @@ func (s *Server) handleAPIInsightsSummaryStatsByUser(w http.ResponseWriter, r *h
 	if !ok {
 		return
 	}
-	writeAPIInsightsSummary(w, filterRecordsByUser(s.store.apiInsightsRecords(r.PathValue("org"), minT, maxT), userID))
+	writeAPIInsightsSummary(w, filterRecordsByUser(s.store.ApiInsightsRecords(r.PathValue("org"), minT, maxT), userID))
 }
 
 func (s *Server) handleAPIInsightsSummaryStatsByActor(w http.ResponseWriter, r *http.Request) {
@@ -589,7 +468,7 @@ func (s *Server) handleAPIInsightsSummaryStatsByActor(w http.ResponseWriter, r *
 	if !ok {
 		return
 	}
-	writeAPIInsightsSummary(w, filterRecordsByActor(s.store.apiInsightsRecords(r.PathValue("org"), minT, maxT), actorType, actorID))
+	writeAPIInsightsSummary(w, filterRecordsByActor(s.store.ApiInsightsRecords(r.PathValue("org"), minT, maxT), actorType, actorID))
 }
 
 // parseTimestampIncrement parses API insights increments like "5m", "1h",
@@ -661,7 +540,7 @@ func (s *Server) handleAPIInsightsTimeStats(w http.ResponseWriter, r *http.Reque
 	if !ok {
 		return
 	}
-	writeAPIInsightsTimeStats(w, r, s.store.apiInsightsRecords(r.PathValue("org"), minT, maxT), minT, maxT)
+	writeAPIInsightsTimeStats(w, r, s.store.ApiInsightsRecords(r.PathValue("org"), minT, maxT), minT, maxT)
 }
 
 func (s *Server) handleAPIInsightsTimeStatsByUser(w http.ResponseWriter, r *http.Request) {
@@ -674,7 +553,7 @@ func (s *Server) handleAPIInsightsTimeStatsByUser(w http.ResponseWriter, r *http
 	if !ok {
 		return
 	}
-	records := filterRecordsByUser(s.store.apiInsightsRecords(r.PathValue("org"), minT, maxT), userID)
+	records := filterRecordsByUser(s.store.ApiInsightsRecords(r.PathValue("org"), minT, maxT), userID)
 	writeAPIInsightsTimeStats(w, r, records, minT, maxT)
 }
 
@@ -693,7 +572,7 @@ func (s *Server) handleAPIInsightsTimeStatsByActor(w http.ResponseWriter, r *htt
 	if !ok {
 		return
 	}
-	records := filterRecordsByActor(s.store.apiInsightsRecords(r.PathValue("org"), minT, maxT), actorType, actorID)
+	records := filterRecordsByActor(s.store.ApiInsightsRecords(r.PathValue("org"), minT, maxT), actorType, actorID)
 	writeAPIInsightsTimeStats(w, r, records, minT, maxT)
 }
 
@@ -707,7 +586,7 @@ func (s *Server) handleAPIInsightsUserStats(w http.ResponseWriter, r *http.Reque
 	if !ok {
 		return
 	}
-	records := filterRecordsByUser(s.store.apiInsightsRecords(r.PathValue("org"), minT, maxT), userID)
+	records := filterRecordsByUser(s.store.ApiInsightsRecords(r.PathValue("org"), minT, maxT), userID)
 
 	type actorKey struct {
 		actorType string

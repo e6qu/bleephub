@@ -25,62 +25,6 @@ func newInviteCodeE() (string, error) {
 // acceptance writes belong to the authenticated Classroom browser product;
 // the public REST surface remains read-only and organization-admin scoped.
 
-// Classroom is a GitHub Classroom classroom owned by an organization.
-type Classroom struct {
-	ID       int                `json:"id"`
-	Name     string             `json:"name"`
-	Archived bool               `json:"archived"`
-	OrgID    int                `json:"org_id"`
-	Roster   []ClassroomStudent `json:"roster,omitempty"`
-}
-
-// ClassroomAssignment is an assignment within a classroom.
-type ClassroomAssignment struct {
-	ID                          int                        `json:"id"`
-	ClassroomID                 int                        `json:"classroom_id"`
-	Title                       string                     `json:"title"`
-	Type                        string                     `json:"type"` // "individual" or "group"
-	Slug                        string                     `json:"slug"`
-	InviteCode                  string                     `json:"invite_code"`
-	InvitationsEnabled          bool                       `json:"invitations_enabled"`
-	PublicRepo                  bool                       `json:"public_repo"`
-	StudentsAreRepoAdmins       bool                       `json:"students_are_repo_admins"`
-	FeedbackPullRequestsEnabled bool                       `json:"feedback_pull_requests_enabled"`
-	MaxTeams                    *int                       `json:"max_teams"`
-	MaxMembers                  *int                       `json:"max_members"`
-	Editor                      string                     `json:"editor"`
-	Language                    string                     `json:"language"`
-	Deadline                    *time.Time                 `json:"deadline"`
-	StarterCodeRepoID           int                        `json:"starter_code_repo_id"`
-	AutogradingTests            []ClassroomAutogradingTest `json:"autograding_tests,omitempty"`
-}
-
-type ClassroomAutogradingTest struct {
-	Name    string `json:"name"`
-	Command string `json:"command"`
-	Points  int    `json:"points"`
-}
-
-// ClassroomStudent links an accepted assignment to a student user with the
-// classroom roster identifier.
-type ClassroomStudent struct {
-	UserID           int    `json:"user_id"`
-	RosterIdentifier string `json:"roster_identifier"`
-}
-
-// ClassroomAcceptedAssignment records a student's (or team's) acceptance of
-// an assignment, backed by the real repository the acceptance created.
-type ClassroomAcceptedAssignment struct {
-	ID           int                `json:"id"`
-	AssignmentID int                `json:"assignment_id"`
-	Students     []ClassroomStudent `json:"students"`
-	RepoID       int                `json:"repo_id"`
-	GroupName    string             `json:"group_name"`
-	AcceptedAt   time.Time          `json:"accepted_at"`
-	BaselineSHA  string             `json:"baseline_sha"`
-	SubmittedAt  time.Time          `json:"submitted_at,omitempty"` // reloads pre-transition Classroom records
-}
-
 func (s *Server) registerGHClassroomRoutes() {
 	s.route("GET /api/v3/classrooms", s.classroomLocked(s.handleListClassrooms))
 	s.route("GET /api/v3/classrooms/{classroom_id}", s.classroomLocked(s.handleGetClassroom))
@@ -100,157 +44,6 @@ func (s *Server) classroomLocked(next http.HandlerFunc) http.HandlerFunc {
 }
 
 // --- Store operations ---
-
-func (st *Store) CreateClassroom(name string, orgID int, archived bool) *Classroom {
-	st.mu.Lock()
-	defer st.mu.Unlock()
-	c := &Classroom{ID: st.NextClassroomID, Name: name, Archived: archived, OrgID: orgID}
-	st.NextClassroomID++
-	st.Classrooms[c.ID] = c
-	if st.persist != nil {
-		st.persist.MustPut("classrooms", strconv.Itoa(c.ID), c)
-	}
-	return c
-}
-
-func (st *Store) UpdateClassroom(id int, update func(*Classroom)) *Classroom {
-	st.mu.Lock()
-	defer st.mu.Unlock()
-	c := st.Classrooms[id]
-	if c == nil {
-		return nil
-	}
-	update(c)
-	if st.persist != nil {
-		st.persist.MustPut("classrooms", strconv.Itoa(c.ID), c)
-	}
-	return c
-}
-
-// DeleteClassroom removes the Classroom product metadata and its assignments.
-// Assignment repositories remain ordinary organization repositories, matching
-// GitHub Classroom's promise that deleting Classroom data does not delete the
-// repositories students worked in.
-func (st *Store) DeleteClassroom(id int) bool {
-	st.mu.Lock()
-	defer st.mu.Unlock()
-	if st.Classrooms[id] == nil {
-		return false
-	}
-	// One transaction: the classroom and every assignment and accepted-assignment
-	// beneath it are deleted together, so a crash cannot orphan an assignment or
-	// acceptance under a deleted classroom (STORE-001/002).
-	batch := newPersistBatch(st.persist)
-	delete(st.Classrooms, id)
-	batch.Delete("classrooms", strconv.Itoa(id))
-	for assignmentID, assignment := range st.ClassroomAssignments {
-		if assignment.ClassroomID != id {
-			continue
-		}
-		delete(st.ClassroomAssignments, assignmentID)
-		batch.Delete("classroom_assignments", strconv.Itoa(assignmentID))
-		for acceptedID, accepted := range st.ClassroomAcceptedAssignments {
-			if accepted.AssignmentID == assignmentID {
-				delete(st.ClassroomAcceptedAssignments, acceptedID)
-				batch.Delete("classroom_accepted_assignments", strconv.Itoa(acceptedID))
-			}
-		}
-	}
-	if err := batch.Commit(); err != nil {
-		panic(&persistenceFailure{op: "batch", bucket: "classrooms", err: err})
-	}
-	return true
-}
-
-func (st *Store) CreateClassroomAssignment(a *ClassroomAssignment) *ClassroomAssignment {
-	st.mu.Lock()
-	defer st.mu.Unlock()
-	a.ID = st.NextClassroomAssignmentID
-	st.NextClassroomAssignmentID++
-	st.ClassroomAssignments[a.ID] = a
-	if st.persist != nil {
-		st.persist.MustPut("classroom_assignments", strconv.Itoa(a.ID), a)
-	}
-	return a
-}
-
-func (st *Store) UpdateClassroomAssignment(id int, update func(*ClassroomAssignment)) *ClassroomAssignment {
-	st.mu.Lock()
-	defer st.mu.Unlock()
-	a := st.ClassroomAssignments[id]
-	if a == nil {
-		return nil
-	}
-	update(a)
-	if st.persist != nil {
-		st.persist.MustPut("classroom_assignments", strconv.Itoa(a.ID), a)
-	}
-	return a
-}
-
-func (st *Store) DeleteClassroomAssignment(id int) bool {
-	st.mu.Lock()
-	defer st.mu.Unlock()
-	if st.ClassroomAssignments[id] == nil {
-		return false
-	}
-	// One transaction: the assignment and every acceptance of it are deleted
-	// together, so a crash cannot orphan an acceptance (STORE-001/002).
-	batch := newPersistBatch(st.persist)
-	delete(st.ClassroomAssignments, id)
-	batch.Delete("classroom_assignments", strconv.Itoa(id))
-	for acceptedID, accepted := range st.ClassroomAcceptedAssignments {
-		if accepted.AssignmentID == id {
-			delete(st.ClassroomAcceptedAssignments, acceptedID)
-			batch.Delete("classroom_accepted_assignments", strconv.Itoa(acceptedID))
-		}
-	}
-	if err := batch.Commit(); err != nil {
-		panic(&persistenceFailure{op: "batch", bucket: "classroom_assignments", err: err})
-	}
-	return true
-}
-
-func (st *Store) CreateClassroomAcceptedAssignment(a *ClassroomAcceptedAssignment) *ClassroomAcceptedAssignment {
-	st.mu.Lock()
-	defer st.mu.Unlock()
-	a.ID = st.NextClassroomAcceptedID
-	st.NextClassroomAcceptedID++
-	st.ClassroomAcceptedAssignments[a.ID] = a
-	if st.persist != nil {
-		st.persist.MustPut("classroom_accepted_assignments", strconv.Itoa(a.ID), a)
-	}
-	return a
-}
-
-func (st *Store) UpdateClassroomAcceptedAssignment(id int, update func(*ClassroomAcceptedAssignment)) *ClassroomAcceptedAssignment {
-	st.mu.Lock()
-	defer st.mu.Unlock()
-	a := st.ClassroomAcceptedAssignments[id]
-	if a == nil {
-		return nil
-	}
-	update(a)
-	if st.persist != nil {
-		st.persist.MustPut("classroom_accepted_assignments", strconv.Itoa(a.ID), a)
-	}
-	return a
-}
-
-// classroomAcceptedFor returns the accepted assignments for an assignment,
-// oldest first.
-func (st *Store) classroomAcceptedFor(assignmentID int) []*ClassroomAcceptedAssignment {
-	st.mu.RLock()
-	defer st.mu.RUnlock()
-	var out []*ClassroomAcceptedAssignment
-	for _, a := range st.ClassroomAcceptedAssignments {
-		if a.AssignmentID == assignmentID {
-			out = append(out, a)
-		}
-	}
-	sort.Slice(out, func(i, j int) bool { return out[i].ID < out[j].ID })
-	return out
-}
 
 // --- JSON shapes ---
 
@@ -306,8 +99,8 @@ func simpleClassroomRepositoryJSON(repo *Repo, baseURL string) map[string]interf
 // classroomAssignmentCounters derives accepted/submitted/passing from the
 // accepted assignments.
 func (s *Server) classroomAssignmentCounters(assignmentID int) (accepted, submitted, passing int) {
-	a := s.store.getClassroomAssignment(assignmentID)
-	for _, aa := range s.store.classroomAcceptedFor(assignmentID) {
+	a := s.store.GetClassroomAssignment(assignmentID)
+	for _, aa := range s.store.ClassroomAcceptedFor(assignmentID) {
 		accepted++
 		state := s.classroomAcceptedState(a, aa)
 		if state.submitted {
@@ -361,7 +154,7 @@ func (s *Server) classroomAcceptedState(a *ClassroomAssignment, aa *ClassroomAcc
 	state.submitted = a.Deadline != nil && !s.currentTime().Before(*a.Deadline)
 
 	jobResults := map[string]Result{}
-	s.store.mu.RLock()
+	s.store.Mu.RLock()
 	var latest *Workflow
 	for _, workflow := range s.store.Workflows {
 		if workflow.RepoFullName == repo.FullName && workflow.Status == WorkflowStatusCompleted && (latest == nil || workflow.CreatedAt.After(latest.CreatedAt)) {
@@ -375,7 +168,7 @@ func (s *Server) classroomAcceptedState(a *ClassroomAssignment, aa *ClassroomAcc
 			}
 		}
 	}
-	s.store.mu.RUnlock()
+	s.store.Mu.RUnlock()
 	for index, test := range a.AutogradingTests {
 		if jobResults[fmt.Sprintf("autograding-%d", index+1)] == ResultSuccess {
 			state.awarded += test.Points
@@ -409,7 +202,7 @@ func (s *Server) classroomAssignmentJSON(a *ClassroomAssignment, baseURL string,
 	if a.MaxMembers != nil {
 		maxMembers = *a.MaxMembers
 	}
-	classroom := s.store.getClassroom(a.ClassroomID)
+	classroom := s.store.GetClassroom(a.ClassroomID)
 	out := map[string]interface{}{
 		"id":                             a.ID,
 		"public_repo":                    a.PublicRepo,
@@ -438,18 +231,6 @@ func (s *Server) classroomAssignmentJSON(a *ClassroomAssignment, baseURL string,
 	return out
 }
 
-func (st *Store) getClassroom(id int) *Classroom {
-	st.mu.RLock()
-	defer st.mu.RUnlock()
-	return st.Classrooms[id]
-}
-
-func (st *Store) getClassroomAssignment(id int) *ClassroomAssignment {
-	st.mu.RLock()
-	defer st.mu.RUnlock()
-	return st.ClassroomAssignments[id]
-}
-
 // --- Read handlers ---
 
 func (s *Server) handleListClassrooms(w http.ResponseWriter, r *http.Request) {
@@ -458,12 +239,12 @@ func (s *Server) handleListClassrooms(w http.ResponseWriter, r *http.Request) {
 		writeGHError(w, http.StatusUnauthorized, "Requires authentication")
 		return
 	}
-	s.store.mu.RLock()
+	s.store.Mu.RLock()
 	all := make([]*Classroom, 0, len(s.store.Classrooms))
 	for _, c := range s.store.Classrooms {
 		all = append(all, c)
 	}
-	s.store.mu.RUnlock()
+	s.store.Mu.RUnlock()
 	classrooms := make([]*Classroom, 0, len(all))
 	for _, c := range all {
 		org := s.store.GetOrgByID(c.OrgID)
@@ -492,7 +273,7 @@ func (s *Server) classroomForAdmin(w http.ResponseWriter, r *http.Request, id in
 		writeGHError(w, http.StatusUnauthorized, "Requires authentication")
 		return nil
 	}
-	c := s.store.getClassroom(id)
+	c := s.store.GetClassroom(id)
 	if c == nil {
 		writeGHError(w, http.StatusNotFound, "Not Found")
 		return nil
@@ -506,7 +287,7 @@ func (s *Server) classroomForAdmin(w http.ResponseWriter, r *http.Request, id in
 }
 
 func (s *Server) classroomAssignmentForAdmin(w http.ResponseWriter, r *http.Request, id int) *ClassroomAssignment {
-	a := s.store.getClassroomAssignment(id)
+	a := s.store.GetClassroomAssignment(id)
 	if a == nil {
 		writeGHError(w, http.StatusNotFound, "Not Found")
 		return nil
@@ -540,14 +321,14 @@ func (s *Server) handleListClassroomAssignments(w http.ResponseWriter, r *http.R
 	if c == nil {
 		return
 	}
-	s.store.mu.RLock()
+	s.store.Mu.RLock()
 	assignments := make([]*ClassroomAssignment, 0)
 	for _, a := range s.store.ClassroomAssignments {
 		if a.ClassroomID == c.ID {
 			assignments = append(assignments, a)
 		}
 	}
-	s.store.mu.RUnlock()
+	s.store.Mu.RUnlock()
 	sort.Slice(assignments, func(i, j int) bool { return assignments[i].ID < assignments[j].ID })
 
 	page := paginateAndLink(w, r, assignments)
@@ -582,7 +363,7 @@ func (s *Server) handleListClassroomAcceptedAssignments(w http.ResponseWriter, r
 	if a == nil {
 		return
 	}
-	accepted := s.store.classroomAcceptedFor(a.ID)
+	accepted := s.store.ClassroomAcceptedFor(a.ID)
 	page := paginateAndLink(w, r, accepted)
 	base := s.baseURL(r)
 	out := make([]map[string]interface{}, 0, len(page))
@@ -640,7 +421,7 @@ func (s *Server) handleListClassroomAssignmentGrades(w http.ResponseWriter, r *h
 	assignmentURL := base + "/a/" + a.InviteCode
 
 	out := make([]map[string]interface{}, 0)
-	for _, aa := range s.store.classroomAcceptedFor(a.ID) {
+	for _, aa := range s.store.ClassroomAcceptedFor(a.ID) {
 		repo := s.store.GetRepoByID(aa.RepoID)
 		if repo == nil {
 			writeGHError(w, http.StatusInternalServerError, "Classroom acceptance references a missing repository")

@@ -23,7 +23,7 @@ func seedCodespaceRecord(t *testing.T, s *isolatedServer, ownerLogin, repoKey st
 		t.Fatalf("generate codespace name: %v", err)
 	}
 	st := s.store
-	st.mu.Lock()
+	st.Mu.Lock()
 	m := codespaceDefaultMachine()
 	now := fixedTestTime.UTC()
 	cs := &Codespace{
@@ -43,12 +43,12 @@ func seedCodespaceRecord(t *testing.T, s *isolatedServer, ownerLogin, repoKey st
 	st.Codespaces[cs.ID] = cs
 	st.CodespacesByName[cs.Name] = cs
 	st.NextCodespaceID++
-	st.mu.Unlock()
+	st.Mu.Unlock()
 	t.Cleanup(func() {
-		st.mu.Lock()
+		st.Mu.Lock()
 		delete(st.Codespaces, cs.ID)
 		delete(st.CodespacesByName, cs.Name)
-		st.mu.Unlock()
+		st.Mu.Unlock()
 	})
 	return cs
 }

@@ -56,12 +56,12 @@ func TestPersistenceReload_OwnerAndCountersAndState(t *testing.T) {
 	// Misc.persist is wired by SetPersistence; write the two MiscStore
 	// buckets the handlers persist (user_keys, branch_protection) the same
 	// way handleCreateUserKey / handleBranchProtectionPut do.
-	key := &UserKey{ID: st1.Misc.nextKeyID, Title: "laptop", Key: "ssh-ed25519 AAAA", Verified: true, UserID: user.ID}
-	st1.Misc.userKeys[key.ID] = key
-	st1.Misc.keysByUser[user.ID] = append(st1.Misc.keysByUser[user.ID], key)
+	key := &UserKey{ID: st1.Misc.NextKeyID, Title: "laptop", Key: "ssh-ed25519 AAAA", Verified: true, UserID: user.ID}
+	st1.Misc.UserKeys[key.ID] = key
+	st1.Misc.KeysByUser[user.ID] = append(st1.Misc.KeysByUser[user.ID], key)
 	p1.MustPut("user_keys", "1", key)
 	bp := &BranchProtection{}
-	st1.Misc.branchProtection[bpKey(repo.ID, "main")] = bp
+	st1.Misc.BranchProtection[bpKey(repo.ID, "main")] = bp
 	p1.MustPut("branch_protection", bpKey(repo.ID, "main"), bp)
 
 	if err := p1.Close(); err != nil {
@@ -120,10 +120,10 @@ func TestPersistenceReload_OwnerAndCountersAndState(t *testing.T) {
 	}
 
 	// SSH key + branch protection survived.
-	if len(st2.Misc.keysByUser[user.ID]) == 0 {
+	if len(st2.Misc.KeysByUser[user.ID]) == 0 {
 		t.Error("user SSH key did not persist (BUG-1612)")
 	}
-	if _, ok := st2.Misc.branchProtection[bpKey(got.ID, "main")]; !ok {
+	if _, ok := st2.Misc.BranchProtection[bpKey(got.ID, "main")]; !ok {
 		t.Error("branch protection did not persist (BUG-1612)")
 	}
 }
@@ -212,7 +212,7 @@ func reloadWithMutatedPersistedRepo(t *testing.T, mutate func(map[string]interfa
 	if err != nil {
 		t.Fatalf("marshal mutated repo: %v", err)
 	}
-	if _, err := p1.db.Exec(p1.dialect.putSQL, "repos", strconv.Itoa(repo.ID), mutated); err != nil {
+	if _, err := p1.Db.Exec(p1.Dialect.PutSQL, "repos", strconv.Itoa(repo.ID), mutated); err != nil {
 		t.Fatalf("write mutated repo: %v", err)
 	}
 	if err := p1.Close(); err != nil {
@@ -447,7 +447,7 @@ func TestPersistenceReload_DeleteRepoPurgesIssueAndPullChildren(t *testing.T) {
 			t.Fatalf("CreateAttestation: %v", err)
 		}
 
-		st.mu.Lock()
+		st.Mu.Lock()
 		inst := &Installation{
 			ID:                  st.NextInstallationID,
 			AppID:               1,
@@ -470,7 +470,7 @@ func TestPersistenceReload_DeleteRepoPurgesIssueAndPullChildren(t *testing.T) {
 			AppID:          inst.AppID,
 		}
 		st.InstallationTokens[token.Token] = token
-		orgActions := st.getOrgActionsPermissionsLocked(org.Login)
+		orgActions := st.GetOrgActionsPermissionsLocked(org.Login)
 		orgActions.SelectedRepositoryIDs = []int{repo.ID}
 		orgActions.SelfHostedRunnersSelectedRepoIDs = []int{repo.ID}
 		st.RunnerGroups[99] = &RunnerGroup{ID: 99, Name: "cascade", Visibility: "selected", SelectedRepoIDs: []int{repo.ID}, CreatedAt: now}
@@ -501,23 +501,23 @@ func TestPersistenceReload_DeleteRepoPurgesIssueAndPullChildren(t *testing.T) {
 		st.OrgImmutableReleases[org.Login] = &OrgImmutableReleasesSettings{EnforcedRepositories: "selected", SelectedRepositoryIDs: []int{repo.ID}}
 		st.CodeSecurityRepoAttachments[org.Login] = map[int]int{repo.ID: 321}
 		st.EnterpriseCodeSecurityRepoConfigs[repo.ID] = 654
-		if st.persist != nil {
-			st.persist.MustPut("installations", strconv.Itoa(inst.ID), inst)
-			st.persist.MustPut("installation_tokens", token.Token, token)
-			st.persist.MustPut("org_actions_permissions", org.Login, orgActions)
-			st.persist.MustPut("runner_groups", "99", st.RunnerGroups[99])
-			st.persist.MustPut("org_secrets", org.Login, st.OrgSecrets[org.Login])
-			st.persist.MustPut("org_variables", org.Login, st.OrgVariables[org.Login])
-			st.persist.MustPut("agents_org_secrets", org.Login, st.AgentsOrgSecrets[org.Login])
-			st.persist.MustPut("agents_org_variables", org.Login, st.AgentsOrgVariables[org.Login])
-			st.persist.MustPut("dependabot_repo_access", org.Login, st.DependabotRepositoryAccess[org.Login])
-			st.persist.MustPut("dependabot_org_secrets", org.Login, st.DependabotOrgSecrets[org.Login])
-			st.persist.MustPut("codespace_secrets", codespaceScope, st.CodespaceSecrets[codespaceScope])
-			st.persist.MustPut("copilot_coding_agent_permissions", org.Login, st.CopilotCodingAgentPerms[org.Login])
-			st.persistPrivateRegistries(org.Login)
-			st.persist.MustPut("org_immutable_releases", org.Login, st.OrgImmutableReleases[org.Login])
-			st.persist.MustPut("code_security_repo_attachments", org.Login, st.CodeSecurityRepoAttachments[org.Login])
-			st.persist.MustPut("enterprise_code_security_attachments", strconv.Itoa(repo.ID), &EnterpriseCodeSecurityAttachment{RepoID: repo.ID, ConfigID: 654})
+		if st.Persist != nil {
+			st.Persist.MustPut("installations", strconv.Itoa(inst.ID), inst)
+			st.Persist.MustPut("installation_tokens", token.Token, token)
+			st.Persist.MustPut("org_actions_permissions", org.Login, orgActions)
+			st.Persist.MustPut("runner_groups", "99", st.RunnerGroups[99])
+			st.Persist.MustPut("org_secrets", org.Login, st.OrgSecrets[org.Login])
+			st.Persist.MustPut("org_variables", org.Login, st.OrgVariables[org.Login])
+			st.Persist.MustPut("agents_org_secrets", org.Login, st.AgentsOrgSecrets[org.Login])
+			st.Persist.MustPut("agents_org_variables", org.Login, st.AgentsOrgVariables[org.Login])
+			st.Persist.MustPut("dependabot_repo_access", org.Login, st.DependabotRepositoryAccess[org.Login])
+			st.Persist.MustPut("dependabot_org_secrets", org.Login, st.DependabotOrgSecrets[org.Login])
+			st.Persist.MustPut("codespace_secrets", codespaceScope, st.CodespaceSecrets[codespaceScope])
+			st.Persist.MustPut("copilot_coding_agent_permissions", org.Login, st.CopilotCodingAgentPerms[org.Login])
+			st.PersistPrivateRegistries(org.Login)
+			st.Persist.MustPut("org_immutable_releases", org.Login, st.OrgImmutableReleases[org.Login])
+			st.Persist.MustPut("code_security_repo_attachments", org.Login, st.CodeSecurityRepoAttachments[org.Login])
+			st.Persist.MustPut("enterprise_code_security_attachments", strconv.Itoa(repo.ID), &EnterpriseCodeSecurityAttachment{RepoID: repo.ID, ConfigID: 654})
 		}
 		pr := &PullRequest{
 			ID:          st.NextPR,
@@ -539,11 +539,11 @@ func TestPersistenceReload_DeleteRepoPurgesIssueAndPullChildren(t *testing.T) {
 		st.NextPR++
 		repo.NextIssueNumber++
 		st.PullRequests[pr.ID] = pr
-		st.indexPullLocked(pr)
-		if st.persist != nil {
-			st.persist.MustPut("pull_requests", strconv.Itoa(pr.ID), pr)
+		st.IndexPullLocked(pr)
+		if st.Persist != nil {
+			st.Persist.MustPut("pull_requests", strconv.Itoa(pr.ID), pr)
 		}
-		st.mu.Unlock()
+		st.Mu.Unlock()
 		oldPRID = pr.ID
 		prThreadID := notificationThreadID("PullRequest", pr.ID)
 		st.MarkThreadRead(admin.ID, prThreadID, now)
@@ -682,9 +682,9 @@ func assertNotificationStateAbsent(t *testing.T, st *Store, login, repoKey strin
 }
 
 func reactionStoreCount(st *Store) int {
-	st.Reactions.mu.RLock()
-	defer st.Reactions.mu.RUnlock()
-	return len(st.Reactions.byID)
+	st.Reactions.Mu.RLock()
+	defer st.Reactions.Mu.RUnlock()
+	return len(st.Reactions.ByID)
 }
 
 func assertRepoIDAbsentFromCascadeLists(t *testing.T, st *Store, orgLogin string, repoID int) {
@@ -1189,9 +1189,9 @@ func TestPersistenceReload_WorkflowRunsAndAttempts(t *testing.T) {
 		st.Workflows[completed.ID] = completed
 		st.Workflows[running.ID] = running
 		st.WorkflowAttempts[completedRunID] = []*Workflow{&attempt}
-		st.persistWorkflowRecord(completed)
-		st.persistWorkflowRecord(running)
-		st.persistWorkflowAttemptsRecord(completedRunID)
+		st.PersistWorkflowRecord(completed)
+		st.PersistWorkflowRecord(running)
+		st.PersistWorkflowAttemptsRecord(completedRunID)
 	})
 
 	completed := st2.Workflows["completed-run"]
@@ -1240,7 +1240,7 @@ func TestPersistenceReload_WorkflowTimelineMetadataAndLogCounter(t *testing.T) {
 			},
 		}
 		st.Workflows[wf.ID] = wf
-		st.persistWorkflowRecord(wf)
+		st.PersistWorkflowRecord(wf)
 		st.TimelineRecords[planID] = []*TimelineRecord{{
 			ID: "step-deploy", Type: "Task", Name: "deploy", Order: 1,
 			State: "completed", Result: "succeeded", Log: &TimelineLogRef{ID: 41},
@@ -1257,9 +1257,9 @@ func TestPersistenceReload_WorkflowTimelineMetadataAndLogCounter(t *testing.T) {
 		t.Fatalf("reloaded workflow job = %#v, want plan %s", wf, planID)
 	}
 	s := &Server{store: st2}
-	st2.mu.RLock()
+	st2.Mu.RLock()
 	refs := s.jobLogRefsLocked(jobID)
-	st2.mu.RUnlock()
+	st2.Mu.RUnlock()
 	if len(refs) != 1 || refs[0].ID != 41 || refs[0].Name != "deploy" {
 		t.Fatalf("reloaded log references = %#v, want deploy log 41", refs)
 	}
@@ -1442,29 +1442,29 @@ func TestPersistenceReload_AuditLogOrdering(t *testing.T) {
 	st2 := reloadedStore(t, func(p *Persistence, st *Store) {
 		// Mirror recordAuditEvent's mutation + write-through.
 		for i := 0; i < n; i++ {
-			st.Misc.nextAuditID++
+			st.Misc.NextAuditID++
 			entry := &AuditEntry{
-				ID:        st.Misc.nextAuditID,
+				ID:        st.Misc.NextAuditID,
 				Timestamp: fmt.Sprintf("2035-06-15T12:00:%02dZ", i),
 				Action:    "repo.create",
 				Actor:     "admin",
 				Version:   "1.1",
 			}
-			st.Misc.auditLog = append([]*AuditEntry{entry}, st.Misc.auditLog...)
+			st.Misc.AuditLog = append([]*AuditEntry{entry}, st.Misc.AuditLog...)
 			p.MustPut("audit_log", strconv.FormatInt(entry.ID, 10), entry)
 		}
 	})
 
-	if len(st2.Misc.auditLog) != n {
-		t.Fatalf("audit log after reload = %d entries, want %d", len(st2.Misc.auditLog), n)
+	if len(st2.Misc.AuditLog) != n {
+		t.Fatalf("audit log after reload = %d entries, want %d", len(st2.Misc.AuditLog), n)
 	}
-	for i, e := range st2.Misc.auditLog {
+	for i, e := range st2.Misc.AuditLog {
 		if want := int64(n - i); e.ID != want {
 			t.Fatalf("audit log entry %d has ID %d, want %d (must be newest-first)", i, e.ID, want)
 		}
 	}
-	if st2.Misc.nextAuditID != n {
-		t.Errorf("nextAuditID = %d after reload, want %d", st2.Misc.nextAuditID, n)
+	if st2.Misc.NextAuditID != n {
+		t.Errorf("nextAuditID = %d after reload, want %d", st2.Misc.NextAuditID, n)
 	}
 }
 
@@ -1476,20 +1476,20 @@ func TestPersistenceReload_PagesBuildIDSequence(t *testing.T) {
 		if repo == nil {
 			t.Fatal("CreateRepo returned nil")
 		}
-		st.Misc.pagesBuilds[repo.FullName] = []*PagesBuild{
+		st.Misc.PagesBuilds[repo.FullName] = []*PagesBuild{
 			{ID: 41, URL: "http://127.0.0.1/api/v3/repos/admin/pages/pages/builds/41", Status: "built"},
 			{ID: 9, URL: "http://127.0.0.1/api/v3/repos/admin/pages/pages/builds/9", Status: "built"},
 		}
-		p.MustPut("pages_builds", repo.FullName, st.Misc.pagesBuilds[repo.FullName])
-		st.Misc.nextAuditID = 7
+		p.MustPut("pages_builds", repo.FullName, st.Misc.PagesBuilds[repo.FullName])
+		st.Misc.NextAuditID = 7
 		p.MustPut("audit_log", "7", &AuditEntry{ID: 7, Timestamp: "2035-06-15T12:00:00Z", Action: "repo.create", Actor: "admin", Version: "1.1"})
 	})
 
-	if st2.Misc.nextPagesBuildID != 42 {
-		t.Fatalf("nextPagesBuildID = %d, want 42", st2.Misc.nextPagesBuildID)
+	if st2.Misc.NextPagesBuildID != 42 {
+		t.Fatalf("nextPagesBuildID = %d, want 42", st2.Misc.NextPagesBuildID)
 	}
-	if st2.Misc.nextAuditID != 7 {
-		t.Fatalf("nextAuditID = %d, want 7", st2.Misc.nextAuditID)
+	if st2.Misc.NextAuditID != 7 {
+		t.Fatalf("nextAuditID = %d, want 7", st2.Misc.NextAuditID)
 	}
 }
 
@@ -1593,10 +1593,10 @@ func TestPersistenceReload_DeleteRepoLeavesNoResidue(t *testing.T) {
 		st.CodespacesByName[codespace.Name] = codespace
 		p.MustPut("codespaces", strconv.Itoa(codespace.ID), codespace)
 		st.SetCheckSuitePreferences(repoKey, []*CheckSuitePref{{AppID: 1, Setting: true}})
-		st.Misc.branchProtection[bpKey(repo.ID, "main")] = &BranchProtection{}
-		p.MustPut("branch_protection", bpKey(repo.ID, "main"), st.Misc.branchProtection[bpKey(repo.ID, "main")])
-		st.Misc.pagesBuilds[repoKey] = []*PagesBuild{{ID: 1, Status: "built"}}
-		p.MustPut("pages_builds", repoKey, st.Misc.pagesBuilds[repoKey])
+		st.Misc.BranchProtection[bpKey(repo.ID, "main")] = &BranchProtection{}
+		p.MustPut("branch_protection", bpKey(repo.ID, "main"), st.Misc.BranchProtection[bpKey(repo.ID, "main")])
+		st.Misc.PagesBuilds[repoKey] = []*PagesBuild{{ID: 1, Status: "built"}}
+		p.MustPut("pages_builds", repoKey, st.Misc.PagesBuilds[repoKey])
 		dep := st.Deployments.CreateDeployment(repo.ID, user.ID, "main", "abc123", "deploy", "production", "", nil, true, false)
 		st.Deployments.AddStatus(dep.ID, user.ID, "success", "", "", "", "", "production", false)
 		env := st.Deployments.UpsertEnvironment(repo.ID, "production")
@@ -1655,16 +1655,16 @@ func TestPersistenceReload_DeleteRepoLeavesNoResidue(t *testing.T) {
 	if len(st2.CheckSuitePrefs[repoKey]) != 0 {
 		t.Error("check suite prefs survived repo deletion")
 	}
-	if _, ok := st2.Misc.branchProtection[bpKey(oldRepoID, "main")]; ok {
+	if _, ok := st2.Misc.BranchProtection[bpKey(oldRepoID, "main")]; ok {
 		t.Error("branch protection survived repo deletion")
 	}
-	if len(st2.Misc.pagesBuilds[repoKey]) != 0 {
+	if len(st2.Misc.PagesBuilds[repoKey]) != 0 {
 		t.Error("pages builds survived repo deletion")
 	}
 	if len(st2.Deployments.ListDeployments(oldRepoID)) != 0 {
 		t.Error("deployments survived repo deletion")
 	}
-	if len(st2.Deployments.statuses) != 0 {
+	if len(st2.Deployments.Statuses) != 0 {
 		t.Error("deployment statuses survived repo deletion")
 	}
 	if len(st2.Deployments.ListEnvironments(oldRepoID)) != 0 {
@@ -1789,8 +1789,8 @@ func TestPersistenceReload_DeleteDeploymentPurgesStatuses(t *testing.T) {
 	if got := st2.Deployments.GetDeployment(depID); got != nil {
 		t.Fatalf("deployment survived deletion after reload: %+v", got)
 	}
-	if len(st2.Deployments.statuses) != 0 {
-		t.Fatalf("deployment statuses survived deletion after reload: %+v", st2.Deployments.statuses)
+	if len(st2.Deployments.Statuses) != 0 {
+		t.Fatalf("deployment statuses survived deletion after reload: %+v", st2.Deployments.Statuses)
 	}
 }
 
@@ -2053,7 +2053,7 @@ func TestPersistenceReload_ProjectV2OptionSeed(t *testing.T) {
 		t.Fatal("CreateField after reload failed")
 	}
 	seen := map[string]bool{}
-	for _, f := range st2.ProjectsV2.fieldsByProj[projID] {
+	for _, f := range st2.ProjectsV2.FieldsByProj[projID] {
 		for _, opt := range f.Options {
 			if seen[opt.ID] {
 				t.Fatalf("option ID %q collides after reload — nextOptionSeed not restored", opt.ID)
@@ -2135,7 +2135,7 @@ func TestPersistenceReload_OrgProfileMembershipFlagsAndOrgHooks(t *testing.T) {
 	if parent == nil || parent.NotificationSetting != TeamNotificationsDisabled {
 		t.Errorf("team notification setting after reload = %+v", parent)
 	}
-	if role, ok := parent.roleOf(st2.UsersByLogin["admin"].ID); !ok || role != TeamRoleMaintainer {
+	if role, ok := parent.RoleOf(st2.UsersByLogin["admin"].ID); !ok || role != TeamRoleMaintainer {
 		t.Errorf("maintainer role after reload = %v/%v, want maintainer/true", role, ok)
 	}
 	child := st2.GetTeamByID(childID)
@@ -2289,12 +2289,12 @@ func TestPersistedRowKeyIsNotACredential(t *testing.T) {
 		admin := st.UsersByLogin["admin"]
 		tok := st.CreateToken(admin.ID, "repo")
 		tokenValue = tok.Value
-		tokenRowKey = p.storageKey("tokens", tok.Value)
+		tokenRowKey = p.StorageKey("tokens", tok.Value)
 		sessionID = "session-secret-value"
-		if err := st.PutLoginSession(sessionID, &LoginSession{UserID: admin.ID, ExpiresAt: st.currentTime().Add(time.Hour)}); err != nil {
+		if err := st.PutLoginSession(sessionID, &LoginSession{UserID: admin.ID, ExpiresAt: st.CurrentTime().Add(time.Hour)}); err != nil {
 			t.Fatal(err)
 		}
-		sessionRowKey = p.storageKey(loginSessionsBucket, sessionID)
+		sessionRowKey = p.StorageKey(loginSessionsBucket, sessionID)
 	})
 
 	// The real credentials still resolve after reload.
@@ -2324,8 +2324,8 @@ func TestCommentIndexConsistencyAndReload(t *testing.T) {
 	// Cross-check the index against a full scan of st.Comments.
 	scanMatchesIndex := func(t *testing.T, st *Store, parentType string, parentID int) {
 		t.Helper()
-		st.mu.RLock()
-		defer st.mu.RUnlock()
+		st.Mu.RLock()
+		defer st.Mu.RUnlock()
 		want := map[int]bool{}
 		for _, c := range st.Comments {
 			if c.ParentType == parentType && c.IssueID == parentID {

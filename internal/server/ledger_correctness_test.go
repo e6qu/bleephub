@@ -33,11 +33,11 @@ func TestReviewerRequestResolvesPRThroughTheIndex(t *testing.T) {
 	// scan of st.PullRequests would resolve the stale record; the index resolves
 	// the real one. The reviewer path must follow the index.
 	stale := &PullRequest{ID: pr.ID + 100000, RepoID: repo.ID, Number: pr.Number, Title: "stale"}
-	s.store.mu.Lock()
+	s.store.Mu.Lock()
 	delete(s.store.PullRequests, pr.ID)
 	s.store.PullRequests[stale.ID] = stale
-	viaHelper := s.store.findPRByRepoNumberLocked(repo.FullName, pr.Number)
-	s.store.mu.Unlock()
+	viaHelper := s.store.FindPRByRepoNumberLocked(repo.FullName, pr.Number)
+	s.store.Mu.Unlock()
 	if viaHelper == nil || viaHelper.ID != pr.ID {
 		gotID := 0
 		if viaHelper != nil {
@@ -72,9 +72,9 @@ func TestIssueFieldValuesConnectionCountsBeyond100(t *testing.T) {
 	}
 	st.SetIssueFieldValues(issue.ID, values)
 
-	st.mu.RLock()
+	st.Mu.RLock()
 	conn := issueFieldValuesConnectionLocked(st, issue)
-	st.mu.RUnlock()
+	st.Mu.RUnlock()
 
 	// The Issue.issueFieldValues resolver hands the built connection to
 	// repaginateConnection with the client's page args; totalCount must be the

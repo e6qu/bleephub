@@ -14,116 +14,6 @@ import (
 	"github.com/go-git/go-git/v5/plumbing/storer"
 )
 
-// BranchProtection matches the GitHub REST API response shape for
-// GET /repos/{owner}/{repo}/branches/{branch}/protection. All pointer
-// sub-fields are omitempty in JSON so that an unset rule does not appear
-// in the canonical response.
-type BranchProtection struct {
-	RequiredStatusChecks           *BPStatusChecks       `json:"required_status_checks,omitempty"`
-	RequiredPullRequestReviews     *BPPullRequestReviews `json:"required_pull_request_reviews,omitempty"`
-	EnforceAdmins                  *BPEnforceAdmins      `json:"enforce_admins,omitempty"`
-	Restrictions                   *BPRestrictions       `json:"restrictions,omitempty"`
-	RequiredLinearHistory          *BPEnabled            `json:"required_linear_history,omitempty"`
-	AllowForcePushes               *BPEnabled            `json:"allow_force_pushes,omitempty"`
-	AllowDeletions                 *BPEnabled            `json:"allow_deletions,omitempty"`
-	BlockCreations                 *BPEnabled            `json:"block_creations,omitempty"`
-	RequiredConversationResolution *BPEnabled            `json:"required_conversation_resolution,omitempty"`
-	RequiredSignatures             *BPEnabledURL         `json:"required_signatures,omitempty"`
-	URL                            string                `json:"url,omitempty"`
-}
-
-// IsProtected reports whether the branch has any protection rule enabled.
-func (bp *BranchProtection) IsProtected() bool {
-	if bp == nil {
-		return false
-	}
-	return bp.RequiredStatusChecks != nil ||
-		bp.RequiredPullRequestReviews != nil ||
-		bp.EnforceAdmins != nil ||
-		bp.Restrictions != nil ||
-		bp.RequiredLinearHistory != nil ||
-		bp.AllowForcePushes != nil ||
-		bp.AllowDeletions != nil ||
-		bp.BlockCreations != nil ||
-		bp.RequiredConversationResolution != nil ||
-		bp.RequiredSignatures != nil
-}
-
-// BPStatusChecks is the required_status_checks object. contexts and checks
-// are required members of the published status-check-policy shape, so they
-// serialize even when empty (hydrateBranchProtectionURLs normalizes nil
-// slices before responses are written).
-type BPStatusChecks struct {
-	URL              string    `json:"url,omitempty"`
-	EnforcementLevel string    `json:"enforcement_level,omitempty"`
-	Contexts         []string  `json:"contexts"`
-	Checks           []BPCheck `json:"checks"`
-	Strict           bool      `json:"strict"`
-	ContextsURL      string    `json:"contexts_url,omitempty"`
-}
-
-// BPCheck is an entry in required_status_checks.checks. app_id is a
-// required, nullable member — it serializes as null when no app is pinned.
-type BPCheck struct {
-	Context string `json:"context"`
-	AppID   *int64 `json:"app_id"`
-}
-
-// BPPullRequestReviews is the required_pull_request_reviews object.
-type BPPullRequestReviews struct {
-	URL                          string              `json:"url,omitempty"`
-	DismissStaleReviews          bool                `json:"dismiss_stale_reviews"`
-	RequireCodeOwnerReviews      bool                `json:"require_code_owner_reviews"`
-	RequiredApprovingReviewCount int                 `json:"required_approving_review_count"`
-	DismissalRestrictions        *BPRestrictions     `json:"dismissal_restrictions,omitempty"`
-	BypassPullRequestAllowances  *BPBypassAllowances `json:"bypass_pull_request_allowances,omitempty"`
-}
-
-// BPEnforceAdmins is the enforce_admins object.
-type BPEnforceAdmins struct {
-	URL     string `json:"url,omitempty"`
-	Enabled bool   `json:"enabled"`
-}
-
-// BPRestrictions is the restrictions object (push + dismissal). users,
-// teams, and apps are required members of the published
-// branch-restriction-policy shape, so they serialize even when empty.
-type BPRestrictions struct {
-	Users    []BPActor `json:"users"`
-	Teams    []BPActor `json:"teams"`
-	Apps     []BPActor `json:"apps"`
-	URL      string    `json:"url,omitempty"`
-	UsersURL string    `json:"users_url,omitempty"`
-	TeamsURL string    `json:"teams_url,omitempty"`
-	AppsURL  string    `json:"apps_url,omitempty"`
-}
-
-// BPBypassAllowances lists users/teams/apps that can bypass pull-request requirements.
-type BPBypassAllowances struct {
-	Users []BPActor `json:"users,omitempty"`
-	Teams []BPActor `json:"teams,omitempty"`
-	Apps  []BPActor `json:"apps,omitempty"`
-}
-
-// BPActor is a lightweight user/team/app reference used in restrictions.
-type BPActor struct {
-	Login string `json:"login"`
-	ID    int    `json:"id"`
-	Type  string `json:"type"`
-}
-
-// BPEnabled is the shape used by required_linear_history, allow_force_pushes,
-// allow_deletions, block_creations, and required_conversation_resolution.
-type BPEnabled struct {
-	Enabled bool `json:"enabled"`
-}
-
-// BPEnabledURL is the shape used by required_signatures which also carries a URL.
-type BPEnabledURL struct {
-	URL     string `json:"url,omitempty"`
-	Enabled bool   `json:"enabled"`
-}
-
 // bpRequest is the PUT body for the top-level protection endpoint. GitHub
 // accepts a sparse body: missing sub-objects leave existing rules unchanged,
 // while an explicit null disables the corresponding rule.
@@ -270,18 +160,9 @@ func (s *Server) branchProtectionShape(repo *Repo, branch, baseURL string) (bool
 // request-derived URLs into it, and both would otherwise be writing the object
 // every other request reads, without the lock and with this request's host.
 func (s *Server) branchProtectionFor(repoID int, branch string) *BranchProtection {
-	s.store.Misc.mu.RLock()
-	defer s.store.Misc.mu.RUnlock()
-	return cloneBranchProtection(s.store.Misc.branchProtection[bpKey(repoID, branch)])
-}
-
-// clonePointer copies the value behind a pointer field.
-func clonePointer[T any](p *T) *T {
-	if p == nil {
-		return nil
-	}
-	copied := *p
-	return &copied
+	s.store.Misc.Mu.RLock()
+	defer s.store.Misc.Mu.RUnlock()
+	return cloneBranchProtection(s.store.Misc.BranchProtection[bpKey(repoID, branch)])
 }
 
 // cloneBranchProtection deep-copies a protection rule so that no caller holds a
@@ -353,19 +234,19 @@ func (s *Server) getBranchProtection(r *http.Request) (*Repo, string, *BranchPro
 func (s *Server) setBranchProtection(repo *Repo, branch string, bp *BranchProtection) {
 	key := bpKey(repo.ID, branch)
 	stored := cloneBranchProtection(bp)
-	s.store.Misc.mu.Lock()
+	s.store.Misc.Mu.Lock()
 	if stored == nil || !stored.IsProtected() {
-		delete(s.store.Misc.branchProtection, key)
-		if s.store.Misc.persist != nil {
-			s.store.Misc.persist.MustDelete("branch_protection", key)
+		delete(s.store.Misc.BranchProtection, key)
+		if s.store.Misc.Persist != nil {
+			s.store.Misc.Persist.MustDelete("branch_protection", key)
 		}
 	} else {
-		s.store.Misc.branchProtection[key] = stored
-		if s.store.Misc.persist != nil {
-			s.store.Misc.persist.MustPut("branch_protection", key, stored)
+		s.store.Misc.BranchProtection[key] = stored
+		if s.store.Misc.Persist != nil {
+			s.store.Misc.Persist.MustPut("branch_protection", key, stored)
 		}
 	}
-	s.store.Misc.mu.Unlock()
+	s.store.Misc.Mu.Unlock()
 }
 
 func (s *Server) branchProtectionNotFound(w http.ResponseWriter) {
@@ -417,9 +298,9 @@ func (s *Server) handleBranchProtectionPut(w http.ResponseWriter, r *http.Reques
 	}
 
 	key := bpKey(repo.ID, branch)
-	s.store.Misc.mu.Lock()
-	existed := s.store.Misc.branchProtection[key] != nil
-	bp := cloneBranchProtection(s.store.Misc.branchProtection[key])
+	s.store.Misc.Mu.Lock()
+	existed := s.store.Misc.BranchProtection[key] != nil
+	bp := cloneBranchProtection(s.store.Misc.BranchProtection[key])
 	if bp == nil {
 		bp = &BranchProtection{}
 	}
@@ -434,17 +315,17 @@ func (s *Server) handleBranchProtectionPut(w http.ResponseWriter, r *http.Reques
 		}
 	}
 	if bp.IsProtected() {
-		s.store.Misc.branchProtection[key] = cloneBranchProtection(bp)
-		if s.store.Misc.persist != nil {
-			s.store.Misc.persist.MustPut("branch_protection", key, bp)
+		s.store.Misc.BranchProtection[key] = cloneBranchProtection(bp)
+		if s.store.Misc.Persist != nil {
+			s.store.Misc.Persist.MustPut("branch_protection", key, bp)
 		}
 	} else {
-		delete(s.store.Misc.branchProtection, key)
-		if s.store.Misc.persist != nil {
-			s.store.Misc.persist.MustDelete("branch_protection", key)
+		delete(s.store.Misc.BranchProtection, key)
+		if s.store.Misc.Persist != nil {
+			s.store.Misc.Persist.MustDelete("branch_protection", key)
 		}
 	}
-	s.store.Misc.mu.Unlock()
+	s.store.Misc.Mu.Unlock()
 
 	bp = s.hydrateBranchProtectionURLs(bp, repo, branch, s.baseURL(r))
 	// `branch_protection_rule` fires when a rule is established or updated, so
@@ -476,9 +357,9 @@ func (s *Server) handleBranchProtectionDelete(w http.ResponseWriter, r *http.Req
 		return
 	}
 	branch := r.PathValue("branch")
-	s.store.Misc.mu.RLock()
-	existed := s.store.Misc.branchProtection[bpKey(repo.ID, branch)] != nil
-	s.store.Misc.mu.RUnlock()
+	s.store.Misc.Mu.RLock()
+	existed := s.store.Misc.BranchProtection[bpKey(repo.ID, branch)] != nil
+	s.store.Misc.Mu.RUnlock()
 	s.setBranchProtection(repo, branch, nil)
 	if existed {
 		s.emitBranchProtectionRuleEvent(repo, branch, "deleted", r)
@@ -1033,9 +914,9 @@ func (s *Server) decodeBPUserLogins(w http.ResponseWriter, r *http.Request) ([]B
 	}
 	actors := make([]BPActor, 0, len(*req.Users))
 	for _, login := range *req.Users {
-		s.store.mu.RLock()
+		s.store.Mu.RLock()
 		user := s.store.UsersByLogin[login]
-		s.store.mu.RUnlock()
+		s.store.Mu.RUnlock()
 		if user == nil {
 			writeGHError(w, http.StatusUnprocessableEntity, "Could not resolve to a user: "+login)
 			return nil, false
@@ -1048,13 +929,13 @@ func (s *Server) decodeBPUserLogins(w http.ResponseWriter, r *http.Request) ([]B
 func (s *Server) bpRestrictedUsersJSON(actors []BPActor) []map[string]interface{} {
 	out := make([]map[string]interface{}, 0, len(actors))
 	for _, actor := range actors {
-		s.store.mu.RLock()
+		s.store.Mu.RLock()
 		user := s.store.Users[actor.ID]
 		var rendered map[string]interface{}
 		if user != nil {
 			rendered = userToJSON(user)
 		}
-		s.store.mu.RUnlock()
+		s.store.Mu.RUnlock()
 		if rendered != nil {
 			out = append(out, rendered)
 		}
@@ -1215,9 +1096,9 @@ func (s *Server) handleBPRequiredSignaturesDelete(w http.ResponseWriter, r *http
 func (s *Server) bpRestrictedAppsJSON(actors []BPActor) []map[string]interface{} {
 	out := make([]map[string]interface{}, 0, len(actors))
 	for _, actor := range actors {
-		s.store.mu.RLock()
+		s.store.Mu.RLock()
 		app := s.store.AppsBySlug[actor.Login]
-		s.store.mu.RUnlock()
+		s.store.Mu.RUnlock()
 		if app != nil {
 			out = append(out, appToJSON(s.store, app, false))
 		}
@@ -1238,9 +1119,9 @@ func (s *Server) decodeBPAppSlugs(w http.ResponseWriter, r *http.Request) ([]BPA
 	}
 	actors := make([]BPActor, 0, len(req.Apps))
 	for _, slug := range req.Apps {
-		s.store.mu.RLock()
+		s.store.Mu.RLock()
 		app := s.store.AppsBySlug[slug]
-		s.store.mu.RUnlock()
+		s.store.Mu.RUnlock()
 		if app == nil {
 			writeGHError(w, http.StatusUnprocessableEntity, "Could not resolve to a GitHub App: "+slug)
 			return nil, false
@@ -1584,8 +1465,8 @@ func (s *Server) canMergePullRequest(ctx context.Context, repo *Repo, pr *PullRe
 }
 
 func (s *Server) countApprovingReviews(prID int) int {
-	s.store.mu.RLock()
-	defer s.store.mu.RUnlock()
+	s.store.Mu.RLock()
+	defer s.store.Mu.RUnlock()
 	latestByUser := map[int]string{}
 	for _, rev := range s.store.PRReviews {
 		if rev.PRID != prID {
@@ -1603,8 +1484,8 @@ func (s *Server) countApprovingReviews(prID int) int {
 }
 
 func (s *Server) hasRequestedChanges(prID int) bool {
-	s.store.mu.RLock()
-	defer s.store.mu.RUnlock()
+	s.store.Mu.RLock()
+	defer s.store.Mu.RUnlock()
 	latestByUser := map[int]string{}
 	for _, rev := range s.store.PRReviews {
 		if rev.PRID != prID {

@@ -39,8 +39,8 @@ jobs:
 
 	var wf *Workflow
 	waitUntil(t, "run", func() bool {
-		s.store.mu.RLock()
-		defer s.store.mu.RUnlock()
+		s.store.Mu.RLock()
+		defer s.store.Mu.RUnlock()
 		for _, w := range s.store.Workflows {
 			if w.RepoFullName == repoKey {
 				wf = w
@@ -56,12 +56,12 @@ jobs:
 		Agent:     &Agent{ID: 7001, Labels: []Label{{Name: "self-hosted"}}},
 		MsgCh:     make(chan *TaskAgentMessage, 10),
 	}
-	s.store.mu.Lock()
+	s.store.Mu.Lock()
 	s.store.Sessions["cancel-sess"] = sess
-	s.store.mu.Unlock()
+	s.store.Mu.Unlock()
 	// The pending queue is shared across tests — keep only this run's
 	// job so the pull below deterministically takes it.
-	s.store.mu.Lock()
+	s.store.Mu.Lock()
 	slowJobID := wf.Jobs["slow"].JobID
 	kept := s.store.PendingMessages[:0]
 	for _, m := range s.store.PendingMessages {
@@ -70,17 +70,17 @@ jobs:
 		}
 	}
 	s.store.PendingMessages = kept
-	s.store.mu.Unlock()
+	s.store.Mu.Unlock()
 
 	msg := s.pullPendingMessage(sess, runnerScope{Repo: repoKey})
 	if msg == nil || msg.JobID != slowJobID {
 		t.Fatalf("runner did not pull the slow job: %v", msg)
 	}
-	s.store.mu.Lock()
+	s.store.Mu.Lock()
 	slowID := wf.Jobs["slow"].JobID
 	s.store.Jobs[slowID].Status = "running"
 	wf.Jobs["slow"].Status = JobStatusRunning
-	s.store.mu.Unlock()
+	s.store.Mu.Unlock()
 
 	// Cancel via the REST API.
 	resp := s.post(t, fmt.Sprintf("/api/v3/repos/%s/actions/runs/%d/cancel", repoKey, wf.RunID), defaultToken, map[string]interface{}{})
@@ -104,10 +104,10 @@ jobs:
 		t.Fatalf("cancellation body = %s (err %v), want jobId %s", cancelMsg.Body, err, slowID)
 	}
 
-	s.store.mu.RLock()
+	s.store.Mu.RLock()
 	slowStatus := wf.Jobs["slow"].Status
 	cleanupStatus := wf.Jobs["cleanup"].Status
-	s.store.mu.RUnlock()
+	s.store.Mu.RUnlock()
 	if slowStatus != JobStatusRunning {
 		t.Errorf("running job force-completed server-side: %q (the runner reports the cancel)", slowStatus)
 	}
@@ -118,16 +118,16 @@ jobs:
 	// The runner aborts and reports; the always() job then dispatches.
 	s.onJobCompleted(context.Background(), slowID, "Canceled")
 	waitUntil(t, "cleanup dispatched", func() bool {
-		s.store.mu.RLock()
-		defer s.store.mu.RUnlock()
+		s.store.Mu.RLock()
+		defer s.store.Mu.RUnlock()
 		return wf.Jobs["cleanup"].Status == JobStatusQueued
 	})
 
 	// Cleanup completes; run concludes cancelled (not failure).
 	s.onJobCompleted(context.Background(), wf.Jobs["cleanup"].JobID, "Succeeded")
 	waitUntil(t, "run cancelled", func() bool {
-		s.store.mu.RLock()
-		defer s.store.mu.RUnlock()
+		s.store.Mu.RLock()
+		defer s.store.Mu.RUnlock()
 		return wf.Status == WorkflowStatusCompleted && wf.Result == ResultCancelled
 	})
 }
@@ -150,8 +150,8 @@ jobs:
 	s.triggerWorkflowsForEvent(repoKey, "push", "", "refs/heads/main", nil)
 	var wf *Workflow
 	waitUntil(t, "run", func() bool {
-		s.store.mu.RLock()
-		defer s.store.mu.RUnlock()
+		s.store.Mu.RLock()
+		defer s.store.Mu.RUnlock()
 		for _, w := range s.store.Workflows {
 			if w.RepoFullName == repoKey {
 				wf = w
@@ -163,8 +163,8 @@ jobs:
 
 	s.cancelWorkflow(wf)
 
-	s.store.mu.RLock()
-	defer s.store.mu.RUnlock()
+	s.store.Mu.RLock()
+	defer s.store.Mu.RUnlock()
 	for _, msg := range s.store.PendingMessages {
 		if msg.JobID == wf.Jobs["a"].JobID {
 			t.Fatal("cancelled job's message still pending")
@@ -195,8 +195,8 @@ jobs:
 
 	var wf *Workflow
 	waitUntil(t, "startup_failure run", func() bool {
-		s.store.mu.RLock()
-		defer s.store.mu.RUnlock()
+		s.store.Mu.RLock()
+		defer s.store.Mu.RUnlock()
 		for _, w := range s.store.Workflows {
 			if w.RepoFullName == repoKey {
 				wf = w
@@ -241,13 +241,13 @@ func TestRunnerGroupsCRUD(t *testing.T) {
 		map[string]interface{}{"login": "rg-org", "admin": "admin"})
 	resp.Body.Close()
 
-	s.store.mu.Lock()
+	s.store.Mu.Lock()
 	agentID := s.store.NextAgent
 	s.store.NextAgent++
 	s.store.Agents[agentID] = &Agent{
 		ID: agentID, Name: "rg-agent", Status: "online", Scope: runnerScope{Org: "rg-org"},
 	}
-	s.store.mu.Unlock()
+	s.store.Mu.Unlock()
 
 	do := func(method, path string, body interface{}) (int, map[string]interface{}) {
 		var payload []byte

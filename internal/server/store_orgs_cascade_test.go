@@ -18,7 +18,7 @@ func TestDeleteOrgCascadesPackagesAndMarketplace(t *testing.T) {
 
 	// An npm package owned directly by the org (not by a repo), with one version
 	// and one file whose bytes live in the object store.
-	st.mu.Lock()
+	st.Mu.Lock()
 	pkg := &Package{ID: 1, Name: "lib", PackageType: "npm", OwnerType: "Organization", OwnerKey: "acme"}
 	st.Packages[1] = pkg
 	st.PackagesByOwnerKey["acme"] = map[string]*Package{packageKey("npm", "lib"): pkg}
@@ -28,25 +28,25 @@ func TestDeleteOrgCascadesPackagesAndMarketplace(t *testing.T) {
 	file := &PackageFile{ID: 100, VersionID: 10, StoragePath: "objkey-1"}
 	st.PackageFiles[100] = file
 	st.PackageFilesByVersion[10] = map[int]*PackageFile{100: file}
-	st.mu.Unlock()
+	st.Mu.Unlock()
 	bs.blobs["objkey-1"] = []byte("payload")
 
 	// A Marketplace purchase held by the org.
 	mkey := marketplacePurchaseKey("plan-slug", "Organization", org.ID)
-	st.Misc.mu.Lock()
-	st.Misc.marketplacePurchases[mkey] = &MarketplacePurchase{ListingSlug: "plan-slug", AccountType: "Organization", AccountID: org.ID}
-	st.Misc.mu.Unlock()
+	st.Misc.Mu.Lock()
+	st.Misc.MarketplacePurchases[mkey] = &MarketplacePurchase{ListingSlug: "plan-slug", AccountType: "Organization", AccountID: org.ID}
+	st.Misc.Mu.Unlock()
 
 	if !st.DeleteOrg("acme") {
 		t.Fatal("DeleteOrg returned false")
 	}
 
-	st.mu.RLock()
+	st.Mu.RLock()
 	_, pkgAlive := st.Packages[1]
 	ownerIndex := st.PackagesByOwnerKey["acme"]
 	_, verAlive := st.PackageVersions[10]
 	_, fileAlive := st.PackageFiles[100]
-	st.mu.RUnlock()
+	st.Mu.RUnlock()
 	if pkgAlive {
 		t.Error("org-owned package row survived org deletion")
 	}
@@ -63,9 +63,9 @@ func TestDeleteOrgCascadesPackagesAndMarketplace(t *testing.T) {
 		t.Error("package file bytes were not reclaimed from the object store")
 	}
 
-	st.Misc.mu.RLock()
-	_, purchaseAlive := st.Misc.marketplacePurchases[mkey]
-	st.Misc.mu.RUnlock()
+	st.Misc.Mu.RLock()
+	_, purchaseAlive := st.Misc.MarketplacePurchases[mkey]
+	st.Misc.Mu.RUnlock()
 	if purchaseAlive {
 		t.Error("org Marketplace purchase was not cancelled")
 	}
@@ -77,7 +77,7 @@ func TestDeleteUserCascadesOwnedResources(t *testing.T) {
 	st.ObjectByteStore = bs
 
 	user := &User{ID: 2, Login: "bob", Type: "User"}
-	st.mu.Lock()
+	st.Mu.Lock()
 	st.Users[2] = user
 	st.UsersByLogin["bob"] = user
 	// A package owned directly by the user, with a version + file in the store.
@@ -91,28 +91,28 @@ func TestDeleteUserCascadesOwnedResources(t *testing.T) {
 	st.PackageFiles[100] = file
 	st.PackageFilesByVersion[10] = map[int]*PackageFile{100: file}
 	st.Memberships["9:2"] = &Membership{OrgID: 9, UserID: 2, State: MembershipStateActive}
-	st.mu.Unlock()
+	st.Mu.Unlock()
 	bs.blobs["user-objkey"] = []byte("payload")
 	mkey := marketplacePurchaseKey("plan-slug", "User", 2)
-	st.Misc.mu.Lock()
-	st.Misc.marketplacePurchases[mkey] = &MarketplacePurchase{ListingSlug: "plan-slug", AccountType: "User", AccountID: 2}
-	st.Misc.mu.Unlock()
+	st.Misc.Mu.Lock()
+	st.Misc.MarketplacePurchases[mkey] = &MarketplacePurchase{ListingSlug: "plan-slug", AccountType: "User", AccountID: 2}
+	st.Misc.Mu.Unlock()
 
-	st.mu.Lock()
-	_, userIntent, err := st.deleteUserOwnedResourcesLocked(user)
-	st.mu.Unlock()
+	st.Mu.Lock()
+	_, userIntent, err := st.DeleteUserOwnedResourcesLocked(user)
+	st.Mu.Unlock()
 	if err != nil {
 		t.Fatalf("deleteUserOwnedResourcesLocked: %v", err)
 	}
-	if err := st.cleanupDeletedRepo(userIntent); err != nil {
+	if err := st.CleanupDeletedRepo(userIntent); err != nil {
 		t.Fatalf("cleanupDeletedRepo: %v", err)
 	}
 
-	st.mu.RLock()
+	st.Mu.RLock()
 	_, pkgAlive := st.Packages[1]
 	ownerIndex := st.PackagesByOwnerKey["bob"]
 	_, memAlive := st.Memberships["9:2"]
-	st.mu.RUnlock()
+	st.Mu.RUnlock()
 	if pkgAlive {
 		t.Error("user-owned package row survived user deletion")
 	}
@@ -125,9 +125,9 @@ func TestDeleteUserCascadesOwnedResources(t *testing.T) {
 	if _, ok := bs.blobs["user-objkey"]; ok {
 		t.Error("user package bytes were not reclaimed from the object store")
 	}
-	st.Misc.mu.RLock()
-	_, purchaseAlive := st.Misc.marketplacePurchases[mkey]
-	st.Misc.mu.RUnlock()
+	st.Misc.Mu.RLock()
+	_, purchaseAlive := st.Misc.MarketplacePurchases[mkey]
+	st.Misc.Mu.RUnlock()
 	if purchaseAlive {
 		t.Error("user Marketplace purchase was not cancelled")
 	}

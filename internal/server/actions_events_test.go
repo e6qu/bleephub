@@ -127,8 +127,8 @@ jobs:
 
 	var wf *Workflow
 	waitUntil(t, "workflow", func() bool {
-		s.store.mu.RLock()
-		defer s.store.mu.RUnlock()
+		s.store.Mu.RLock()
+		defer s.store.Mu.RUnlock()
 		for _, w := range s.store.Workflows {
 			if w.RepoFullName == repoKey {
 				wf = w
@@ -167,12 +167,12 @@ jobs:
 	// Runner pickup: renew the request → in_progress. The renew route belongs
 	// to the runner the broker dispatched to, so stand one up and assign it.
 	runnerToken, runnerAgent := testAgentSession(t, s.Server, runnerScope{Repo: repoKey})
-	s.store.mu.Lock()
+	s.store.Mu.Lock()
 	job := s.store.Jobs[wf.Jobs["build"].JobID]
 	if job != nil {
 		job.AgentID = runnerAgent.ID
 	}
-	s.store.mu.Unlock()
+	s.store.Mu.Unlock()
 	if job == nil {
 		t.Fatal("engine job missing")
 	}
@@ -227,8 +227,8 @@ jobs:
 
 	var wf *Workflow
 	waitUntil(t, "workflow", func() bool {
-		s.store.mu.RLock()
-		defer s.store.mu.RUnlock()
+		s.store.Mu.RLock()
+		defer s.store.Mu.RUnlock()
 		for _, w := range s.store.Workflows {
 			if w.RepoFullName == repoKey {
 				wf = w
@@ -273,14 +273,14 @@ func TestMergeGatingByRequiredChecks(t *testing.T) {
 	s.store.UpdatePullRequest(pr.ID, func(p *PullRequest) { p.Mergeable = "MERGEABLE" })
 
 	// Protect the base branch with a required status check.
-	s.store.mu.Lock()
-	s.store.Misc.branchProtection[bpKey(repo.ID, "base")] = &BranchProtection{
+	s.store.Mu.Lock()
+	s.store.Misc.BranchProtection[bpKey(repo.ID, "base")] = &BranchProtection{
 		RequiredStatusChecks: &BPStatusChecks{
 			Strict:   false,
 			Contexts: []string{"ci-job"},
 		},
 	}
-	s.store.mu.Unlock()
+	s.store.Mu.Unlock()
 
 	// No check runs yet → blocked + merge rejected.
 	out := pullRequestToJSON(s.store.GetPullRequest(pr.ID), s.store, "http://x", repoKey)

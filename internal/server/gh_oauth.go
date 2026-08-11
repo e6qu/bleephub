@@ -58,19 +58,6 @@ func (s *Server) registerGHOAuthRoutes() {
 	s.route("POST /login/oauth/authorize", s.handleOAuthAuthorizeApprove)
 }
 
-// authCode is a one-time-use OAuth authorization code keyed off a
-// client_id + state pair. Used by the web-flow endpoints below.
-type authCode struct {
-	Code        string
-	ClientID    string
-	RedirectURI string
-	Scopes      string
-	State       string
-	UserID      int
-	CreatedAt   time.Time
-	ExpiresAt   time.Time
-}
-
 // handleLoginPage starts Shauth sign-in when it is configured. The legacy
 // personal-access-token form remains available only when no external identity
 // provider has been configured, so an interactive deployment never asks a
@@ -327,7 +314,7 @@ func (s *Server) handleDeviceCode(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	s.store.mu.Lock()
+	s.store.Mu.Lock()
 	dc := &DeviceCode{
 		Code:          uuid.New().String(),
 		UserCode:      newDeviceUserCode(),
@@ -338,7 +325,7 @@ func (s *Server) handleDeviceCode(w http.ResponseWriter, r *http.Request) {
 		ExpiresAt:     time.Now().Add(15 * time.Minute),
 	}
 	s.store.DeviceCodes[dc.Code] = dc
-	s.store.mu.Unlock()
+	s.store.Mu.Unlock()
 
 	s.logger.Info().Str("user_code", dc.UserCode).Msg("device code issued")
 
@@ -381,34 +368,34 @@ func (s *Server) handleOAuthAccessToken(w http.ResponseWriter, r *http.Request) 
 func (s *Server) handleDeviceTokenForm(w http.ResponseWriter, r *http.Request) {
 	deviceCode := r.FormValue("device_code")
 	clientID := r.FormValue("client_id")
-	s.store.mu.Lock()
+	s.store.Mu.Lock()
 	dc, ok := s.store.DeviceCodes[deviceCode]
 
 	if !ok {
-		s.store.mu.Unlock()
+		s.store.Mu.Unlock()
 		writeOAuthTokenResponse(w, r, map[string]string{"error": "bad_verification_code"})
 		return
 	}
 	if clientID == "" || clientID != dc.ClientID {
-		s.store.mu.Unlock()
+		s.store.Mu.Unlock()
 		writeOAuthTokenResponse(w, r, map[string]string{"error": "incorrect_client_credentials"})
 		return
 	}
 	if time.Now().After(dc.ExpiresAt) {
 		delete(s.store.DeviceCodes, deviceCode)
-		s.store.mu.Unlock()
+		s.store.Mu.Unlock()
 		writeOAuthTokenResponse(w, r, map[string]string{"error": "expired_token"})
 		return
 	}
 	if dc.Token == "" {
-		s.store.mu.Unlock()
+		s.store.Mu.Unlock()
 		writeOAuthTokenResponse(w, r, map[string]string{"error": "authorization_pending"})
 		return
 	}
 	token := dc.Token
 	scopes := dc.Scopes
 	delete(s.store.DeviceCodes, deviceCode)
-	s.store.mu.Unlock()
+	s.store.Mu.Unlock()
 
 	s.logger.Info().Msg("device token granted")
 
@@ -428,12 +415,12 @@ func (s *Server) handleWebFlowTokenForm(w http.ResponseWriter, r *http.Request) 
 	clientSecret := r.FormValue("client_secret")
 	redirectURI := r.FormValue("redirect_uri")
 
-	s.store.mu.Lock()
+	s.store.Mu.Lock()
 	ac, ok := s.store.AuthCodes[code]
 	if ok {
 		delete(s.store.AuthCodes, code)
 	}
-	s.store.mu.Unlock()
+	s.store.Mu.Unlock()
 
 	if !ok || time.Now().After(ac.ExpiresAt) {
 		writeOAuthTokenResponse(w, r, map[string]string{"error": "bad_verification_code"})
@@ -453,20 +440,20 @@ func (s *Server) handleWebFlowTokenForm(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	s.store.mu.Lock()
+	s.store.Mu.Lock()
 	user := s.store.Users[ac.UserID]
 	if user == nil {
-		s.store.mu.Unlock()
+		s.store.Mu.Unlock()
 		writeOAuthTokenResponse(w, r, map[string]string{"error": "server_error"})
 		return
 	}
-	tok, _, err := s.store.createUserToServerTokenLocked(user.ID, appID, oauthClientID, ac.Scopes, 8*time.Hour, false)
+	tok, _, err := s.store.CreateUserToServerTokenLocked(user.ID, appID, oauthClientID, ac.Scopes, 8*time.Hour, false)
 	if err != nil {
-		s.store.mu.Unlock()
+		s.store.Mu.Unlock()
 		writeOAuthTokenResponse(w, r, map[string]string{"error": "server_error"})
 		return
 	}
-	s.store.mu.Unlock()
+	s.store.Mu.Unlock()
 
 	s.logger.Info().Int("user_id", user.ID).Msg("web flow token granted")
 	writeOAuthTokenResponse(w, r, map[string]string{
@@ -513,7 +500,7 @@ func (s *Server) handleDeviceApprove(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	s.store.mu.Lock()
+	s.store.Mu.Lock()
 	var dc *DeviceCode
 	for _, candidate := range s.store.DeviceCodes {
 		if normalizeDeviceUserCode(candidate.UserCode) == userCode {
@@ -522,32 +509,32 @@ func (s *Server) handleDeviceApprove(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	if dc == nil {
-		s.store.mu.Unlock()
+		s.store.Mu.Unlock()
 		writeGHError(w, http.StatusNotFound, "Not Found")
 		return
 	}
 	if time.Now().After(dc.ExpiresAt) {
 		delete(s.store.DeviceCodes, dc.Code)
-		s.store.mu.Unlock()
+		s.store.Mu.Unlock()
 		writeGHError(w, http.StatusGone, "device code expired")
 		return
 	}
 	user := s.store.Users[sess.UserID]
 	if user == nil {
-		s.store.mu.Unlock()
+		s.store.Mu.Unlock()
 		writeGHError(w, http.StatusUnauthorized, "Requires authentication")
 		return
 	}
-	tok, _, err := s.store.createUserToServerTokenLocked(user.ID, dc.AppID, dc.OAuthClientID, dc.Scopes, 8*time.Hour, false)
+	tok, _, err := s.store.CreateUserToServerTokenLocked(user.ID, dc.AppID, dc.OAuthClientID, dc.Scopes, 8*time.Hour, false)
 	if err != nil {
-		s.store.mu.Unlock()
+		s.store.Mu.Unlock()
 		writeGHError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
 	dc.Token = tok.Token
 	dc.UserID = user.ID
 	dc.ApprovedAt = time.Now().UTC()
-	s.store.mu.Unlock()
+	s.store.Mu.Unlock()
 
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	_, _ = w.Write([]byte(`<!DOCTYPE html><html><body><p>Device authorized.</p></body></html>`))
@@ -586,9 +573,9 @@ func (s *Server) handleOAuthAuthorize(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	s.store.mu.RLock()
+	s.store.Mu.RLock()
 	user := s.store.Users[sess.UserID]
-	s.store.mu.RUnlock()
+	s.store.Mu.RUnlock()
 	if user == nil {
 		writeGHError(w, http.StatusUnauthorized, "session user not found")
 		return
@@ -651,9 +638,9 @@ func (s *Server) handleOAuthAuthorizeApprove(w http.ResponseWriter, r *http.Requ
 		writeGHError(w, http.StatusUnprocessableEntity, "Invalid authenticity_token")
 		return
 	}
-	s.store.mu.RLock()
+	s.store.Mu.RLock()
 	user := s.store.Users[sess.UserID]
-	s.store.mu.RUnlock()
+	s.store.Mu.RUnlock()
 	if user == nil {
 		writeGHError(w, http.StatusUnauthorized, "session user not found")
 		return
@@ -743,7 +730,7 @@ func (s *Server) completeAuthorize(w http.ResponseWriter, r *http.Request, user 
 	if !s.requireRegisteredRedirectURI(w, clientID, redirectURI) {
 		return
 	}
-	s.store.mu.Lock()
+	s.store.Mu.Lock()
 	if s.store.AuthCodes == nil {
 		s.store.AuthCodes = map[string]*authCode{}
 	}
@@ -762,7 +749,7 @@ func (s *Server) completeAuthorize(w http.ResponseWriter, r *http.Request, user 
 		CreatedAt:   time.Now(),
 		ExpiresAt:   time.Now().Add(10 * time.Minute),
 	}
-	s.store.mu.Unlock()
+	s.store.Mu.Unlock()
 
 	dest, err := url.Parse(redirectURI)
 	if err != nil {
@@ -790,31 +777,14 @@ func (s *Server) sessionFromRequest(r *http.Request) *LoginSession {
 		s.logger.Error().Err(err).Msg("read browser session")
 		return nil
 	}
-	s.store.mu.RLock()
+	s.store.Mu.RLock()
 	var user *User
 	if sess != nil {
 		user = s.store.Users[sess.UserID]
 	}
-	s.store.mu.RUnlock()
+	s.store.Mu.RUnlock()
 	if sess == nil || user == nil || user.Suspended || time.Now().After(sess.ExpiresAt) {
 		return nil
 	}
 	return sess
-}
-
-// createTokenLocked generates a new token (caller must hold st.mu write lock).
-func (st *Store) createTokenLocked(userID int, scopes string) *Token {
-	value, err := generateTokenValue()
-	if err != nil {
-		panic(err)
-	}
-	t := &Token{
-		Value:     value,
-		UserID:    userID,
-		Scopes:    scopes,
-		CreatedAt: time.Now(),
-	}
-	st.Tokens[st.tokenMapKey(t.Value)] = t
-	st.persistTokenLocked(t)
-	return t
 }

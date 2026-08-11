@@ -3,7 +3,6 @@ package bleephub
 import (
 	"encoding/json"
 	"fmt"
-	"math"
 	"net/http"
 	"sort"
 	"strconv"
@@ -77,7 +76,7 @@ func (s *Server) handleUpdateAuthenticatedUser(w http.ResponseWriter, r *http.Re
 			u.Name = *req.Name
 		}
 		if req.Email != nil && *req.Email != "" {
-			s.store.setPrimaryEmailLocked(u, *req.Email)
+			s.store.SetPrimaryEmailLocked(u, *req.Email)
 		}
 		if req.Blog != nil {
 			u.Blog = *req.Blog
@@ -139,72 +138,6 @@ func (s *Server) privateUserJSON(u *User) map[string]interface{} {
 	out["disk_usage"] = s.store.DiskUsageKBForOwner(u.Login)
 	out["two_factor_authentication"] = false
 	return out
-}
-
-// CountPrivateRepos returns the number of private repositories owned by
-// the given account login.
-func (st *Store) CountPrivateRepos(login string) int {
-	st.mu.RLock()
-	defer st.mu.RUnlock()
-	prefix := login + "/"
-	n := 0
-	for name, r := range st.ReposByName {
-		if strings.HasPrefix(name, prefix) && r.Private {
-			n++
-		}
-	}
-	return n
-}
-
-// CountSecretGists returns the number of secret (non-public) gists the
-// user owns.
-func (st *Store) CountSecretGists(userID int) int {
-	st.mu.RLock()
-	defer st.mu.RUnlock()
-	n := 0
-	for _, g := range st.Gists {
-		if g.OwnerID == userID && !g.Public {
-			n++
-		}
-	}
-	return n
-}
-
-// CountRepoCollaboratorsForOwner returns the number of distinct
-// collaborators across the account's repositories.
-func (st *Store) CountRepoCollaboratorsForOwner(login string) int {
-	st.mu.RLock()
-	defer st.mu.RUnlock()
-	prefix := login + "/"
-	distinct := map[string]bool{}
-	for repoKey, collabs := range st.RepoCollaborators {
-		if !strings.HasPrefix(repoKey, prefix) {
-			continue
-		}
-		for collab := range collabs {
-			distinct[collab] = true
-		}
-	}
-	return len(distinct)
-}
-
-// DiskUsageKBForOwner sums the on-disk size of the account's
-// repositories in kilobytes (memory-backed git storage occupies no disk).
-func (st *Store) DiskUsageKBForOwner(login string) int64 {
-	st.mu.RLock()
-	prefix := login + "/"
-	var names []string
-	for name := range st.ReposByName {
-		if strings.HasPrefix(name, prefix) {
-			names = append(names, name)
-		}
-	}
-	st.mu.RUnlock()
-	var total int64
-	for _, name := range names {
-		total += st.RepoSize(name)
-	}
-	return total
 }
 
 // ─── Email addresses ─────────────────────────────────────────────────────
@@ -340,171 +273,6 @@ func (s *Server) handleSetUserEmailVisibility(w http.ResponseWriter, r *http.Req
 
 // ─── Email store methods ─────────────────────────────────────────────────
 
-// materializeEmailsLocked seeds the multi-email list from the legacy
-// single Email field the first time email state is touched. Caller must
-// hold st.mu.
-func materializeEmailsLocked(u *User) {
-	if len(u.Emails) == 0 && u.Email != "" {
-		u.Emails = []UserEmail{{Email: u.Email, Primary: true, Verified: true, Visibility: "private"}}
-	}
-}
-
-func (st *Store) persistUserLocked(u *User) {
-	if st.persist != nil {
-		st.persist.MustPut("users", strconv.Itoa(u.ID), u)
-	}
-}
-
-// ListUserEmails returns the user's email addresses, primary first.
-func (st *Store) ListUserEmails(userID int) []UserEmail {
-	st.mu.Lock()
-	defer st.mu.Unlock()
-	u := st.Users[userID]
-	if u == nil {
-		return nil
-	}
-	materializeEmailsLocked(u)
-	out := make([]UserEmail, len(u.Emails))
-	copy(out, u.Emails)
-	return out
-}
-
-// AddUserEmails appends new email addresses to the user's account.
-// Returns (nil, false) when any address is already registered, matching
-// real GitHub's 422 on duplicates.
-func (st *Store) AddUserEmails(userID int, emails []string) ([]UserEmail, bool) {
-	st.mu.Lock()
-	defer st.mu.Unlock()
-	u := st.Users[userID]
-	if u == nil {
-		return nil, false
-	}
-	materializeEmailsLocked(u)
-	for _, addr := range emails {
-		for _, existing := range u.Emails {
-			if strings.EqualFold(existing.Email, addr) {
-				return nil, false
-			}
-		}
-	}
-	added := make([]UserEmail, 0, len(emails))
-	for _, addr := range emails {
-		e := UserEmail{Email: addr, Primary: false, Verified: true}
-		u.Emails = append(u.Emails, e)
-		added = append(added, e)
-	}
-	u.UpdatedAt = time.Now().UTC()
-	st.persistUserLocked(u)
-	return added, true
-}
-
-type deleteEmailsResult int
-
-const (
-	deleteEmailsOK deleteEmailsResult = iota
-	deleteEmailsNotFound
-	deleteEmailsPrimary
-)
-
-// DeleteUserEmails removes email addresses from the user's account. The
-// primary address cannot be removed.
-func (st *Store) DeleteUserEmails(userID int, emails []string) deleteEmailsResult {
-	st.mu.Lock()
-	defer st.mu.Unlock()
-	u := st.Users[userID]
-	if u == nil {
-		return deleteEmailsNotFound
-	}
-	materializeEmailsLocked(u)
-	for _, addr := range emails {
-		found := false
-		for _, existing := range u.Emails {
-			if strings.EqualFold(existing.Email, addr) {
-				if existing.Primary {
-					return deleteEmailsPrimary
-				}
-				found = true
-				break
-			}
-		}
-		if !found {
-			return deleteEmailsNotFound
-		}
-	}
-	kept := u.Emails[:0]
-	for _, existing := range u.Emails {
-		remove := false
-		for _, addr := range emails {
-			if strings.EqualFold(existing.Email, addr) {
-				remove = true
-				break
-			}
-		}
-		if !remove {
-			kept = append(kept, existing)
-		}
-	}
-	u.Emails = kept
-	u.UpdatedAt = time.Now().UTC()
-	st.persistUserLocked(u)
-	return deleteEmailsOK
-}
-
-// SetPrimaryEmailVisibility updates the visibility of the primary email
-// address and returns the updated entries, or nil when the user has no
-// primary email.
-func (st *Store) SetPrimaryEmailVisibility(userID int, visibility string) []UserEmail {
-	st.mu.Lock()
-	defer st.mu.Unlock()
-	u := st.Users[userID]
-	if u == nil {
-		return nil
-	}
-	materializeEmailsLocked(u)
-	var updated []UserEmail
-	for i := range u.Emails {
-		if u.Emails[i].Primary {
-			u.Emails[i].Visibility = visibility
-			updated = append(updated, u.Emails[i])
-		}
-	}
-	if updated == nil {
-		return nil
-	}
-	u.UpdatedAt = time.Now().UTC()
-	st.persistUserLocked(u)
-	return updated
-}
-
-// setPrimaryEmailLocked changes the account's primary email address
-// (PATCH /user `email`). Caller must hold st.mu.
-func (st *Store) setPrimaryEmailLocked(u *User, email string) {
-	u.Email = email
-	materializeEmailsLocked(u)
-	for i := range u.Emails {
-		if u.Emails[i].Primary {
-			u.Emails[i].Email = email
-			return
-		}
-	}
-	u.Emails = append(u.Emails, UserEmail{Email: email, Primary: true, Verified: true, Visibility: "private"})
-}
-
-// UpdateUserProfile applies fn to the user under the store lock, bumps
-// UpdatedAt, and persists. Returns nil when the user does not exist.
-func (st *Store) UpdateUserProfile(userID int, fn func(*User)) *User {
-	st.mu.Lock()
-	defer st.mu.Unlock()
-	u := st.Users[userID]
-	if u == nil {
-		return nil
-	}
-	fn(u)
-	u.UpdatedAt = time.Now().UTC()
-	st.persistUserLocked(u)
-	return u
-}
-
 // ─── SSH signing key single read ─────────────────────────────────────────
 
 func (s *Server) handleGetMySSHSigningKey(w http.ResponseWriter, r *http.Request) {
@@ -621,36 +389,6 @@ func (s *Server) handleDeleteUserInteractionLimits(w http.ResponseWriter, r *htt
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)
-}
-
-// SetUserInteractionLimit records (or clears, with limit == "") the
-// account-level interaction limit.
-func (st *Store) SetUserInteractionLimit(userID int, limit string, expiresAt *time.Time) bool {
-	st.mu.Lock()
-	defer st.mu.Unlock()
-	u := st.Users[userID]
-	if u == nil {
-		return false
-	}
-	u.InteractionLimit = limit
-	u.InteractionLimitExpiry = expiresAt
-	st.persistUserLocked(u)
-	return true
-}
-
-// GetUserInteractionLimit returns the active limit and its expiry, or
-// ("", zero) when no unexpired limit is set.
-func (st *Store) GetUserInteractionLimit(userID int) (string, time.Time) {
-	st.mu.RLock()
-	defer st.mu.RUnlock()
-	u := st.Users[userID]
-	if u == nil || u.InteractionLimit == "" || u.InteractionLimitExpiry == nil {
-		return "", time.Time{}
-	}
-	if st.currentTime().After(*u.InteractionLimitExpiry) {
-		return "", time.Time{}
-	}
-	return u.InteractionLimit, *u.InteractionLimitExpiry
 }
 
 // ─── GitHub Marketplace purchases ────────────────────────────────────────
@@ -782,74 +520,6 @@ func (s *Server) handleGetUserHovercard(w http.ResponseWriter, r *http.Request) 
 // user holds an active membership, sorted alphabetically.
 // ─── GET /user/issues ────────────────────────────────────────────────────
 
-type issueWithRepo struct {
-	issue *Issue
-	repo  *Repo
-}
-
-// ListUserFilteredIssues returns issues visible through GET /user/issues
-// for the given filter (assigned, created, mentioned, subscribed, repos,
-// all). Repository read access is checked by the caller.
-func (st *Store) ListUserFilteredIssues(user *User, filter string) []issueWithRepo {
-	st.mu.RLock()
-	defer st.mu.RUnlock()
-
-	subscribed := func(repoID int) bool {
-		sub := st.RepoSubscriptions[repoSubscriptionKey(user.ID, repoID)]
-		return sub != nil && sub.Subscribed
-	}
-	matches := func(issue *Issue, repo *Repo) bool {
-		assigned := false
-		for _, aid := range issue.AssigneeIDs {
-			if aid == user.ID {
-				assigned = true
-				break
-			}
-		}
-		created := issue.AuthorID == user.ID
-		mentioned := strings.Contains(issue.Body, "@"+user.Login)
-		switch filter {
-		case "created":
-			return created
-		case "mentioned":
-			return mentioned
-		case "subscribed":
-			return subscribed(repo.ID)
-		case "repos":
-			return repo.OwnerID == user.ID
-		case "all":
-			return assigned || created || mentioned || subscribed(repo.ID)
-		default: // "assigned"
-			return assigned
-		}
-	}
-
-	var out []issueWithRepo
-	for _, issue := range st.Issues {
-		repo := st.Repos[issue.RepoID]
-		if repo == nil {
-			continue
-		}
-		if matches(issue, repo) {
-			out = append(out, issueWithRepo{issue: issue, repo: repo})
-		}
-	}
-	return out
-}
-
-// CountIssueComments returns the number of conversation comments on an issue.
-func (st *Store) CountIssueComments(issueID int) int {
-	st.mu.RLock()
-	defer st.mu.RUnlock()
-	n := 0
-	for _, c := range st.Comments {
-		if c.ParentType == "issue" && c.IssueID == issueID {
-			n++
-		}
-	}
-	return n
-}
-
 func (s *Server) handleListAuthUserIssues(w http.ResponseWriter, r *http.Request) {
 	user := ghUserFromContext(r.Context())
 	if user == nil {
@@ -875,23 +545,23 @@ func (s *Server) handleListAuthUserIssues(w http.ResponseWriter, r *http.Request
 		labelNames = strings.Split(labelsParam, ",")
 	}
 	for _, p := range pairs {
-		if !s.viewerCanReadRepo(r.Context(), p.repo) {
+		if !s.viewerCanReadRepo(r.Context(), p.Repo) {
 			continue
 		}
 		switch state {
 		case "open":
-			if p.issue.State != "OPEN" {
+			if p.Issue.State != "OPEN" {
 				continue
 			}
 		case "closed":
-			if p.issue.State != "CLOSED" {
+			if p.Issue.State != "CLOSED" {
 				continue
 			}
 		}
-		if !since.IsZero() && p.issue.UpdatedAt.Before(since) {
+		if !since.IsZero() && p.Issue.UpdatedAt.Before(since) {
 			continue
 		}
-		if len(labelNames) > 0 && !issueHasAllLabels(s.store, p.issue, labelNames, p.repo.ID) {
+		if len(labelNames) > 0 && !issueHasAllLabels(s.store, p.Issue, labelNames, p.Repo.ID) {
 			continue
 		}
 		filtered = append(filtered, p)
@@ -900,7 +570,7 @@ func (s *Server) handleListAuthUserIssues(w http.ResponseWriter, r *http.Request
 	sortKey := q.Get("sort")
 	ascending := q.Get("direction") == "asc"
 	sort.Slice(filtered, func(i, j int) bool {
-		a, b := filtered[i].issue, filtered[j].issue
+		a, b := filtered[i].Issue, filtered[j].Issue
 		var less bool
 		switch sortKey {
 		case "updated":
@@ -919,64 +589,14 @@ func (s *Server) handleListAuthUserIssues(w http.ResponseWriter, r *http.Request
 	base := s.baseURL(r)
 	out := make([]map[string]interface{}, 0, len(filtered))
 	for _, p := range filtered {
-		item := issueToJSON(p.issue, s.store, base, p.repo.FullName)
-		item["repository"] = repoToJSON(p.repo, s.store, base)
+		item := issueToJSON(p.Issue, s.store, base, p.Repo.FullName)
+		item["repository"] = repoToJSON(p.Repo, s.store, base)
 		out = append(out, item)
 	}
 	writeJSON(w, http.StatusOK, paginateAndLink(w, r, out))
 }
 
 // ─── Enhanced billing platform usage reports ─────────────────────────────
-
-// billingUsageItem is one metered usage line derived from real run state.
-type billingUsageItem struct {
-	Date         time.Time
-	Product      string
-	SKU          string
-	RepoFullName string
-	Quantity     int
-	UnitType     string
-	PricePerUnit float64
-}
-
-// actionsLinuxPricePerMinute is GitHub's published Linux-runner
-// per-minute price used on billing usage reports.
-const actionsLinuxPricePerMinute = 0.008
-
-// ActionsBillingUsageForOwner derives GitHub Actions usage line items
-// from completed workflow-run jobs in repositories owned by the account.
-// Quantities are per-job minutes rounded up, matching GitHub's metering.
-func (st *Store) ActionsBillingUsageForOwner(ownerLogin string) []billingUsageItem {
-	st.mu.RLock()
-	defer st.mu.RUnlock()
-	prefix := ownerLogin + "/"
-	var out []billingUsageItem
-	for _, wf := range st.Workflows {
-		if !strings.HasPrefix(wf.RepoFullName, prefix) {
-			continue
-		}
-		for _, job := range wf.Jobs {
-			if job.StartedAt.IsZero() || job.CompletedAt.IsZero() || job.CompletedAt.Before(job.StartedAt) {
-				continue
-			}
-			minutes := int(math.Ceil(job.CompletedAt.Sub(job.StartedAt).Minutes()))
-			if minutes < 1 {
-				minutes = 1
-			}
-			out = append(out, billingUsageItem{
-				Date:         job.StartedAt.UTC(),
-				Product:      "Actions",
-				SKU:          "Actions Linux",
-				RepoFullName: wf.RepoFullName,
-				Quantity:     minutes,
-				UnitType:     "minutes",
-				PricePerUnit: actionsLinuxPricePerMinute,
-			})
-		}
-	}
-	sort.Slice(out, func(i, j int) bool { return out[i].Date.Before(out[j].Date) })
-	return out
-}
 
 // billingTimeFilter holds parsed year/month/day query parameters.
 type billingTimeFilter struct {

@@ -245,11 +245,11 @@ func graphQLLicenseJSON(key string) interface{} {
 		return nil
 	}
 	return map[string]interface{}{
-		"body": tmpl.body, "conditions": []interface{}{}, "description": nil,
-		"featured": false, "hidden": false, "id": tmpl.nodeID,
+		"body": tmpl.Body, "conditions": []interface{}{}, "description": nil,
+		"featured": false, "hidden": false, "id": tmpl.NodeID,
 		"implementation": nil, "key": strings.ToLower(key), "limitations": []interface{}{},
-		"name": tmpl.name, "nickname": nil, "permissions": []interface{}{},
-		"pseudoLicense": false, "spdxId": tmpl.spdxID,
+		"name": tmpl.Name, "nickname": nil, "permissions": []interface{}{},
+		"pseudoLicense": false, "spdxId": tmpl.SpdxID,
 		"url": "https://choosealicense.com/licenses/" + strings.ToLower(key) + "/",
 	}
 }

@@ -58,9 +58,9 @@ func TestEnterpriseLegacySecurityPolicyAndAccessRestrictions(t *testing.T) {
 		if rec.Code != http.StatusNoContent {
 			t.Fatalf("POST %s = %d %q", suffix, rec.Code, rec.Body.String())
 		}
-		s.store.mu.RLock()
+		s.store.Mu.RLock()
 		got := s.store.EnterpriseSettings.AccessRestrictionsEnabled
-		s.store.mu.RUnlock()
+		s.store.Mu.RUnlock()
 		if got != want {
 			t.Fatalf("POST %s left access restrictions %v, want %v", suffix, got, want)
 		}

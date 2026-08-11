@@ -671,12 +671,12 @@ func TestEphemeralRunnerTeardownStaysAuthenticated(t *testing.T) {
 		`{"plan":{"scopeIdentifier":%q,"planId":%q},"requestId":%d,`+
 			`"contextData":{"github":{"t":2,"d":[{"k":"repository","v":"admin/handshake-ephemeral"}]}}}`,
 		planID, planID, requestID)
-	s.store.mu.Lock()
+	s.store.Mu.Lock()
 	s.store.Jobs[jobID] = &Job{
 		ID: jobID, RequestID: requestID, PlanID: planID, Status: "queued", Message: message,
 		LockedUntil: fixedTestTime.Add(time.Hour),
 	}
-	s.store.mu.Unlock()
+	s.store.Mu.Unlock()
 	queued := &TaskAgentMessage{
 		MessageID:   s.nextMessageID(),
 		MessageType: "PipelineAgentJobRequest",
@@ -687,9 +687,9 @@ func TestEphemeralRunnerTeardownStaysAuthenticated(t *testing.T) {
 	// This suite intentionally shares one server. Put this test's explicitly
 	// targeted message first so an unrelated test's generic self-hosted job
 	// cannot be claimed and mistaken for this one after shuffled execution.
-	s.store.mu.Lock()
+	s.store.Mu.Lock()
 	s.store.PendingMessages = append([]*TaskAgentMessage{queued}, s.store.PendingMessages...)
-	s.store.mu.Unlock()
+	s.store.Mu.Unlock()
 
 	runner.pollForMessage("PipelineAgentJobRequest", planID)
 
@@ -713,9 +713,9 @@ func TestEphemeralRunnerTeardownStaysAuthenticated(t *testing.T) {
 		"Bearer "+runner.session, "", "", http.StatusOK)
 	runner.deleteSession()
 
-	s.store.mu.RLock()
+	s.store.Mu.RLock()
 	_, stillRegistered := s.store.Agents[runner.agentID]
-	s.store.mu.RUnlock()
+	s.store.Mu.RUnlock()
 	if stillRegistered {
 		t.Fatalf("ephemeral agent %d survived its teardown", runner.agentID)
 	}

@@ -2,9 +2,7 @@ package bleephub
 
 import (
 	"fmt"
-	"math"
 	"net/http"
-	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -17,25 +15,6 @@ import (
 // entities with full CRUD; the usage reports are computed from real stored
 // state — GitHub Actions job run history recorded on the shared store — and
 // are honestly empty when no billable usage exists.
-
-// OrgBudgetAlerting is the alert configuration on a budget.
-type OrgBudgetAlerting struct {
-	WillAlert       bool     `json:"will_alert"`
-	AlertRecipients []string `json:"alert_recipients"`
-}
-
-// OrgBudget is one organization spending budget.
-type OrgBudget struct {
-	ID                  string            `json:"id"`
-	BudgetScope         string            `json:"budget_scope"` // organization | repository | multi_user_customer | user
-	BudgetEntityName    string            `json:"budget_entity_name"`
-	BudgetAmount        int               `json:"budget_amount"`
-	PreventFurtherUsage bool              `json:"prevent_further_usage"`
-	BudgetProductSKU    string            `json:"budget_product_sku"`
-	BudgetType          string            `json:"budget_type"` // ProductPricing | SkuPricing
-	BudgetAlerting      OrgBudgetAlerting `json:"budget_alerting"`
-	CreatedAt           time.Time         `json:"created_at"`
-}
 
 var budgetScopes = map[string]bool{
 	"organization":        true,
@@ -63,78 +42,6 @@ func (s *Server) registerGHOrgBillingRoutes() {
 }
 
 // ─── budget store methods ────────────────────────────────────────────────
-
-func (st *Store) persistOrgBudgetsLocked(orgLogin string) {
-	if st.persist == nil {
-		return
-	}
-	if m := st.OrgBudgets[orgLogin]; len(m) > 0 {
-		st.persist.MustPut("org_budgets", orgLogin, m)
-	} else {
-		st.persist.MustDelete("org_budgets", orgLogin)
-	}
-}
-
-// CreateOrgBudget stores a new budget for the organization.
-func (st *Store) CreateOrgBudget(orgLogin string, b *OrgBudget) {
-	st.mu.Lock()
-	defer st.mu.Unlock()
-	if st.OrgBudgets[orgLogin] == nil {
-		st.OrgBudgets[orgLogin] = map[string]*OrgBudget{}
-	}
-	st.OrgBudgets[orgLogin][b.ID] = b
-	st.persistOrgBudgetsLocked(orgLogin)
-}
-
-// GetOrgBudget returns a budget by ID, or nil.
-func (st *Store) GetOrgBudget(orgLogin, id string) *OrgBudget {
-	st.mu.RLock()
-	defer st.mu.RUnlock()
-	return st.OrgBudgets[orgLogin][id]
-}
-
-// ListOrgBudgets returns the org's budgets ordered by creation time then ID.
-func (st *Store) ListOrgBudgets(orgLogin string) []*OrgBudget {
-	st.mu.RLock()
-	defer st.mu.RUnlock()
-	out := make([]*OrgBudget, 0, len(st.OrgBudgets[orgLogin]))
-	for _, b := range st.OrgBudgets[orgLogin] {
-		out = append(out, b)
-	}
-	sort.Slice(out, func(i, j int) bool {
-		if !out[i].CreatedAt.Equal(out[j].CreatedAt) {
-			return out[i].CreatedAt.Before(out[j].CreatedAt)
-		}
-		return out[i].ID < out[j].ID
-	})
-	return snapshotOrgBudgets(out)
-}
-
-// UpdateOrgBudget applies fn to a budget under the write lock. Returns the
-// updated budget, or nil when it does not exist.
-func (st *Store) UpdateOrgBudget(orgLogin, id string, fn func(*OrgBudget)) *OrgBudget {
-	st.mu.Lock()
-	defer st.mu.Unlock()
-	b := st.OrgBudgets[orgLogin][id]
-	if b == nil {
-		return nil
-	}
-	fn(b)
-	st.persistOrgBudgetsLocked(orgLogin)
-	return b
-}
-
-// DeleteOrgBudget removes a budget. Returns true if it existed.
-func (st *Store) DeleteOrgBudget(orgLogin, id string) bool {
-	st.mu.Lock()
-	defer st.mu.Unlock()
-	if st.OrgBudgets[orgLogin][id] == nil {
-		return false
-	}
-	delete(st.OrgBudgets[orgLogin], id)
-	st.persistOrgBudgetsLocked(orgLogin)
-	return true
-}
 
 // ─── budget handlers ─────────────────────────────────────────────────────
 
@@ -363,80 +270,8 @@ func (s *Server) handleDeleteOrgBudget(w http.ResponseWriter, r *http.Request) {
 
 // ─── usage reports ───────────────────────────────────────────────────────
 
-// actionsUsageLine is one billable Actions usage line item: minutes consumed
-// by workflow jobs of one repository on one date.
-type actionsUsageLine struct {
-	date     string
-	orgName  string
-	repoName string
-	minutes  int
-}
-
 // actionsPricePerMinute mirrors GitHub's Linux runner list price.
 const actionsPricePerMinute = 0.008
-
-// orgActionsUsageLines computes real Actions usage from the recorded
-// workflow run history (current runs plus archived attempts): every
-// completed job is billed per started minute, rounded up, exactly as GitHub
-// meters Actions. Returns lines filtered to the requested year/month/day
-// (zero month/day mean "whole year"/"whole month").
-func (st *Store) orgActionsUsageLines(orgLogin string, year, month, day int) []actionsUsageLine {
-	st.mu.RLock()
-	defer st.mu.RUnlock()
-
-	type key struct {
-		date string
-		repo string
-	}
-	minutes := map[key]int{}
-	prefix := orgLogin + "/"
-	addRun := func(wf *Workflow) {
-		if !strings.HasPrefix(wf.RepoFullName, prefix) {
-			return
-		}
-		repoName := strings.TrimPrefix(wf.RepoFullName, prefix)
-		for _, job := range wf.Jobs {
-			if job.StartedAt.IsZero() || job.CompletedAt.IsZero() || !job.CompletedAt.After(job.StartedAt) {
-				continue
-			}
-			started := job.StartedAt.UTC()
-			if started.Year() != year {
-				continue
-			}
-			if month != 0 && int(started.Month()) != month {
-				continue
-			}
-			if day != 0 && started.Day() != day {
-				continue
-			}
-			mins := int(math.Ceil(job.CompletedAt.Sub(job.StartedAt).Minutes()))
-			if mins < 1 {
-				mins = 1
-			}
-			minutes[key{started.Format("2006-01-02"), repoName}] += mins
-		}
-	}
-	for _, wf := range st.Workflows {
-		addRun(wf)
-	}
-	for _, attempts := range st.WorkflowAttempts {
-		for _, wf := range attempts {
-			addRun(wf)
-		}
-	}
-
-	out := make([]actionsUsageLine, 0, len(minutes))
-	for k, mins := range minutes {
-		out = append(out, actionsUsageLine{date: k.date, orgName: orgLogin, repoName: k.repo, minutes: mins})
-	}
-	sort.Slice(out, func(i, j int) bool {
-		if out[i].date != out[j].date {
-			return out[i].date < out[j].date
-		}
-		return out[i].repoName < out[j].repoName
-	})
-	return out
-}
 
 // billingPeriod parses the year/month/day query parameters. defaultMonth
 // selects the month-defaulting behavior of the summary/premium/AI reports.
@@ -480,22 +315,22 @@ func (s *Server) handleOrgBillingUsage(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	lines := s.store.orgActionsUsageLines(orgLogin, year, month, day)
+	lines := s.store.OrgActionsUsageLines(orgLogin, year, month, day)
 	items := make([]map[string]interface{}, 0, len(lines))
 	for _, line := range lines {
-		gross := float64(line.minutes) * actionsPricePerMinute
+		gross := float64(line.Minutes) * actionsPricePerMinute
 		items = append(items, map[string]interface{}{
-			"date":             line.date,
+			"date":             line.Date,
 			"product":          "actions",
 			"sku":              "actions_linux",
-			"quantity":         line.minutes,
+			"quantity":         line.Minutes,
 			"unitType":         "Minutes",
 			"pricePerUnit":     actionsPricePerMinute,
 			"grossAmount":      gross,
 			"discountAmount":   0.0,
 			"netAmount":        gross,
 			"organizationName": orgLogin,
-			"repositoryName":   line.repoName,
+			"repositoryName":   line.RepoName,
 		})
 	}
 	writeJSON(w, http.StatusOK, map[string]interface{}{"usageItems": items})
@@ -523,14 +358,14 @@ func (s *Server) handleOrgBillingUsageSummary(w http.ResponseWriter, r *http.Req
 	productFilter := q.Get("product")
 	skuFilter := q.Get("sku")
 
-	lines := s.store.orgActionsUsageLines(orgLogin, year, month, day)
+	lines := s.store.OrgActionsUsageLines(orgLogin, year, month, day)
 	var grossQuantity, grossAmount float64
 	for _, line := range lines {
-		if repoFilter != "" && line.repoName != repoFilter {
+		if repoFilter != "" && line.RepoName != repoFilter {
 			continue
 		}
-		grossQuantity += float64(line.minutes)
-		grossAmount += float64(line.minutes) * actionsPricePerMinute
+		grossQuantity += float64(line.Minutes)
+		grossAmount += float64(line.Minutes) * actionsPricePerMinute
 	}
 
 	items := []map[string]interface{}{}

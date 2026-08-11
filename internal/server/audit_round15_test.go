@@ -17,12 +17,12 @@ func tokenRequest(s *Server, method, path, token string) *httptest.ResponseRecor
 
 // seedTestUser inserts a fresh user and returns it.
 func seedTestUser(s *Server, login string) *User {
-	s.store.mu.Lock()
+	s.store.Mu.Lock()
 	u := &User{ID: s.store.NextUser, Login: login, Type: "User"}
 	s.store.NextUser++
 	s.store.Users[u.ID] = u
 	s.store.UsersByLogin[u.Login] = u
-	s.store.mu.Unlock()
+	s.store.Mu.Unlock()
 	return u
 }
 
@@ -174,26 +174,26 @@ func TestOnJobCompletedIdempotent(t *testing.T) {
 
 	// Put the job into a non-terminal state so the first completion is the
 	// real terminal transition.
-	s.store.mu.Lock()
+	s.store.Mu.Lock()
 	job.Status = JobStatusRunning
 	jobID := job.JobID
-	s.store.mu.Unlock()
+	s.store.Mu.Unlock()
 
 	s.onJobCompleted(context.Background(), jobID, "Succeeded")
-	s.store.mu.RLock()
+	s.store.Mu.RLock()
 	firstResult := job.Result
 	firstCompleted := job.CompletedAt
-	s.store.mu.RUnlock()
+	s.store.Mu.RUnlock()
 	if firstResult == "" {
 		t.Fatal("first completion did not set result")
 	}
 
 	// Duplicate completion with a DIFFERENT result must be ignored.
 	s.onJobCompleted(context.Background(), jobID, "Failed")
-	s.store.mu.RLock()
+	s.store.Mu.RLock()
 	secondResult := job.Result
 	secondCompleted := job.CompletedAt
-	s.store.mu.RUnlock()
+	s.store.Mu.RUnlock()
 	if secondResult != firstResult {
 		t.Errorf("duplicate completion flipped result %q -> %q", firstResult, secondResult)
 	}

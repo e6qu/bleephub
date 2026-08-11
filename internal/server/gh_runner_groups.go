@@ -8,27 +8,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
-	"time"
 )
-
-// RunnerGroup models an organization or enterprise runner group. Scope is
-// part of the persisted identity: runner-group ids are globally unique, but a
-// group must never become visible through a different owner merely because
-// both owners share the same backing store.
-type RunnerGroup struct {
-	ID                       int         `json:"id"`
-	Name                     string      `json:"name"`
-	Visibility               string      `json:"visibility"` // all | selected | private
-	Default                  bool        `json:"default"`
-	AllowsPublicRepositories bool        `json:"allows_public_repositories"`
-	SelectedRepoIDs          []int       `json:"selected_repository_ids,omitempty"`
-	SelectedOrgIDs           []int       `json:"selected_organization_ids,omitempty"`
-	RestrictedToWorkflows    bool        `json:"restricted_to_workflows,omitempty"`
-	SelectedWorkflows        []string    `json:"selected_workflows,omitempty"`
-	NetworkConfigurationID   string      `json:"network_configuration_id,omitempty"`
-	Scope                    runnerScope `json:"scope"`
-	CreatedAt                time.Time   `json:"created_at"`
-}
 
 const defaultRunnerGroupID = 1
 
@@ -124,7 +104,7 @@ func (s *Server) ensureDefaultRunnerGroupLocked(target runnerScope) *RunnerGroup
 		Default:                  true,
 		AllowsPublicRepositories: true,
 		Scope:                    target,
-		CreatedAt:                s.store.currentTime(),
+		CreatedAt:                s.store.CurrentTime(),
 	}
 	s.store.RunnerGroups[id] = group
 	s.persistRunnerGroupLocked(group)
@@ -200,7 +180,7 @@ func (s *Server) handleListRunnerGroups(w http.ResponseWriter, r *http.Request) 
 	if !ok {
 		return
 	}
-	s.store.mu.Lock()
+	s.store.Mu.Lock()
 	s.ensureDefaultRunnerGroupLocked(target)
 	groups := make([]*RunnerGroup, 0, len(s.store.RunnerGroups))
 	for _, g := range s.store.RunnerGroups {
@@ -208,7 +188,7 @@ func (s *Server) handleListRunnerGroups(w http.ResponseWriter, r *http.Request) 
 			groups = append(groups, g)
 		}
 	}
-	s.store.mu.Unlock()
+	s.store.Mu.Unlock()
 	sortRunnerGroups(groups)
 
 	page := paginateAndLink(w, r, groups)
@@ -266,25 +246,25 @@ func (s *Server) handleCreateRunnerGroup(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	s.store.mu.Lock()
+	s.store.Mu.Lock()
 	s.ensureDefaultRunnerGroupLocked(target)
 	for _, existing := range s.store.RunnerGroups {
 		if runnerGroupMatchesTarget(existing, target) && strings.EqualFold(existing.Name, req.Name) {
-			s.store.mu.Unlock()
+			s.store.Mu.Unlock()
 			writeGHValidationError(w, "RunnerGroup", "name", "already_exists")
 			return
 		}
 	}
 	for _, repoID := range req.SelectedRepositoryIDs {
 		if target.Org == "" || !repoOwnedByOrg(s.store.Repos[repoID], target.Org) {
-			s.store.mu.Unlock()
+			s.store.Mu.Unlock()
 			writeGHError(w, http.StatusNotFound, "Not Found")
 			return
 		}
 	}
 	for _, orgID := range req.SelectedOrganizationIDs {
 		if target.Enterprise == "" || s.store.Orgs[orgID] == nil {
-			s.store.mu.Unlock()
+			s.store.Mu.Unlock()
 			writeGHError(w, http.StatusNotFound, "Not Found")
 			return
 		}
@@ -292,7 +272,7 @@ func (s *Server) handleCreateRunnerGroup(w http.ResponseWriter, r *http.Request)
 	for _, runnerID := range req.Runners {
 		agent := s.store.Agents[runnerID]
 		if agent == nil || !runnerVisibleAt(agent.Scope, target) {
-			s.store.mu.Unlock()
+			s.store.Mu.Unlock()
 			writeGHError(w, http.StatusNotFound, "Not Found")
 			return
 		}
@@ -313,7 +293,7 @@ func (s *Server) handleCreateRunnerGroup(w http.ResponseWriter, r *http.Request)
 		SelectedWorkflows:        append([]string(nil), req.SelectedWorkflows...),
 		NetworkConfigurationID:   req.NetworkConfigurationID,
 		Scope:                    target,
-		CreatedAt:                s.store.currentTime(),
+		CreatedAt:                s.store.CurrentTime(),
 	}
 	s.store.RunnerGroups[id] = g
 	for _, runnerID := range req.Runners {
@@ -322,14 +302,14 @@ func (s *Server) handleCreateRunnerGroup(w http.ResponseWriter, r *http.Request)
 		}
 	}
 	s.persistRunnerGroupLocked(g)
-	s.store.mu.Unlock()
+	s.store.Mu.Unlock()
 
 	writeJSON(w, http.StatusCreated, runnerGroupJSON(g, s.baseURL(r), target))
 }
 
 func (s *Server) persistRunnerGroupLocked(g *RunnerGroup) {
-	if s.store.persist != nil {
-		s.store.persist.MustPut("runner_groups", strconv.Itoa(g.ID), g)
+	if s.store.Persist != nil {
+		s.store.Persist.MustPut("runner_groups", strconv.Itoa(g.ID), g)
 	}
 }
 
@@ -345,10 +325,10 @@ func (s *Server) lookupRunnerGroup(w http.ResponseWriter, r *http.Request) *Runn
 		writeGHError(w, http.StatusNotFound, "Not Found")
 		return nil
 	}
-	s.store.mu.Lock()
+	s.store.Mu.Lock()
 	s.ensureDefaultRunnerGroupLocked(target)
 	g := s.store.RunnerGroups[id]
-	s.store.mu.Unlock()
+	s.store.Mu.Unlock()
 	if g == nil || !runnerGroupMatchesTarget(g, target) {
 		writeGHError(w, http.StatusNotFound, "Not Found")
 		return nil
@@ -393,12 +373,12 @@ func (s *Server) handleUpdateRunnerGroup(w http.ResponseWriter, r *http.Request)
 			return
 		}
 	}
-	s.store.mu.Lock()
+	s.store.Mu.Lock()
 	if req.Name != nil {
 		for _, existing := range s.store.RunnerGroups {
 			if existing.ID != g.ID && runnerGroupMatchesTarget(existing, g.Scope) &&
 				strings.EqualFold(existing.Name, *req.Name) {
-				s.store.mu.Unlock()
+				s.store.Mu.Unlock()
 				writeGHValidationError(w, "RunnerGroup", "name", "already_exists")
 				return
 			}
@@ -421,7 +401,7 @@ func (s *Server) handleUpdateRunnerGroup(w http.ResponseWriter, r *http.Request)
 		g.NetworkConfigurationID = *req.NetworkConfigurationID
 	}
 	s.persistRunnerGroupLocked(g)
-	s.store.mu.Unlock()
+	s.store.Mu.Unlock()
 	writeJSON(w, http.StatusOK, runnerGroupJSON(g, s.baseURL(r), g.Scope))
 }
 
@@ -435,7 +415,7 @@ func (s *Server) handleDeleteRunnerGroup(w http.ResponseWriter, r *http.Request)
 		writeGHError(w, http.StatusBadRequest, "Cannot delete the default runner group")
 		return
 	}
-	s.store.mu.Lock()
+	s.store.Mu.Lock()
 	delete(s.store.RunnerGroups, g.ID)
 	// Members fall back to the default group, like real GitHub.
 	fallback := s.ensureDefaultRunnerGroupLocked(g.Scope)
@@ -444,10 +424,10 @@ func (s *Server) handleDeleteRunnerGroup(w http.ResponseWriter, r *http.Request)
 			a.RunnerGroupID = fallback.ID
 		}
 	}
-	if s.store.persist != nil {
-		s.store.persist.MustDelete("runner_groups", strconv.Itoa(g.ID))
+	if s.store.Persist != nil {
+		s.store.Persist.MustDelete("runner_groups", strconv.Itoa(g.ID))
 	}
-	s.store.mu.Unlock()
+	s.store.Mu.Unlock()
 	w.WriteHeader(http.StatusNoContent)
 }
 
@@ -456,7 +436,7 @@ func (s *Server) handleListGroupRunners(w http.ResponseWriter, r *http.Request) 
 	if g == nil {
 		return
 	}
-	s.store.mu.RLock()
+	s.store.Mu.RLock()
 	members := make([]*Agent, 0)
 	for _, a := range s.store.Agents {
 		if runnerVisibleAt(a.Scope, g.Scope) &&
@@ -465,7 +445,7 @@ func (s *Server) handleListGroupRunners(w http.ResponseWriter, r *http.Request) 
 		}
 	}
 	busy := s.busyAgentIDsLocked()
-	s.store.mu.RUnlock()
+	s.store.Mu.RUnlock()
 
 	page := paginateAndLink(w, r, members)
 	runners := make([]map[string]any, 0, len(page))
@@ -504,7 +484,7 @@ func (s *Server) handleSetGroupRunners(w http.ResponseWriter, r *http.Request) {
 	for _, id := range req.Runners {
 		want[id] = true
 	}
-	s.store.mu.Lock()
+	s.store.Mu.Lock()
 	fallback := s.ensureDefaultRunnerGroupLocked(g.Scope)
 	for _, a := range s.store.Agents {
 		if !runnerVisibleAt(a.Scope, g.Scope) {
@@ -517,7 +497,7 @@ func (s *Server) handleSetGroupRunners(w http.ResponseWriter, r *http.Request) {
 			a.RunnerGroupID = fallback.ID
 		}
 	}
-	s.store.mu.Unlock()
+	s.store.Mu.Unlock()
 	w.WriteHeader(http.StatusNoContent)
 }
 
@@ -531,14 +511,14 @@ func (s *Server) handleAddGroupRunner(w http.ResponseWriter, r *http.Request) {
 		writeGHError(w, http.StatusNotFound, "Not Found")
 		return
 	}
-	s.store.mu.Lock()
+	s.store.Mu.Lock()
 	a := s.store.Agents[id]
 	if a != nil && runnerVisibleAt(a.Scope, g.Scope) {
 		a.RunnerGroupID = g.ID
 	} else {
 		a = nil
 	}
-	s.store.mu.Unlock()
+	s.store.Mu.Unlock()
 	if a == nil {
 		writeGHError(w, http.StatusNotFound, "Not Found")
 		return
@@ -556,7 +536,7 @@ func (s *Server) handleRemoveGroupRunner(w http.ResponseWriter, r *http.Request)
 		writeGHError(w, http.StatusNotFound, "Not Found")
 		return
 	}
-	s.store.mu.Lock()
+	s.store.Mu.Lock()
 	a := s.store.Agents[id]
 	if a != nil && runnerVisibleAt(a.Scope, g.Scope) &&
 		(a.RunnerGroupID == g.ID || (g.Default && a.RunnerGroupID == 0)) {
@@ -565,7 +545,7 @@ func (s *Server) handleRemoveGroupRunner(w http.ResponseWriter, r *http.Request)
 	} else if a != nil && !runnerVisibleAt(a.Scope, g.Scope) {
 		a = nil
 	}
-	s.store.mu.Unlock()
+	s.store.Mu.Unlock()
 	if a == nil {
 		writeGHError(w, http.StatusNotFound, "Not Found")
 		return
@@ -579,14 +559,14 @@ func (s *Server) handleListGroupRepos(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	base := s.baseURL(r)
-	s.store.mu.RLock()
+	s.store.Mu.RLock()
 	ids := append([]int(nil), g.SelectedRepoIDs...)
-	s.store.mu.RUnlock()
+	s.store.Mu.RUnlock()
 	repos := make([]map[string]any, 0, len(ids))
 	for _, id := range ids {
-		s.store.mu.RLock()
+		s.store.Mu.RLock()
 		repo := s.store.Repos[id]
-		s.store.mu.RUnlock()
+		s.store.Mu.RUnlock()
 		if repoOwnedByOrg(repo, g.Scope.Org) {
 			repos = append(repos, repoToJSON(repo, s.store, base))
 		}
@@ -610,18 +590,18 @@ func (s *Server) handleSetGroupRepos(w http.ResponseWriter, r *http.Request) {
 		writeGHError(w, http.StatusBadRequest, "Problems parsing JSON")
 		return
 	}
-	s.store.mu.Lock()
+	s.store.Mu.Lock()
 	for _, id := range req.SelectedRepositoryIDs {
 		repo := s.store.Repos[id]
 		if !repoOwnedByOrg(repo, g.Scope.Org) {
-			s.store.mu.Unlock()
+			s.store.Mu.Unlock()
 			writeGHError(w, http.StatusNotFound, "Not Found")
 			return
 		}
 	}
 	g.SelectedRepoIDs = req.SelectedRepositoryIDs
 	s.persistRunnerGroupLocked(g)
-	s.store.mu.Unlock()
+	s.store.Mu.Unlock()
 	w.WriteHeader(http.StatusNoContent)
 }
 
@@ -635,7 +615,7 @@ func (s *Server) handleAddGroupRepo(w http.ResponseWriter, r *http.Request) {
 		writeGHError(w, http.StatusNotFound, "Not Found")
 		return
 	}
-	s.store.mu.Lock()
+	s.store.Mu.Lock()
 	repo := s.store.Repos[id]
 	exists := repoOwnedByOrg(repo, g.Scope.Org)
 	if exists {
@@ -651,7 +631,7 @@ func (s *Server) handleAddGroupRepo(w http.ResponseWriter, r *http.Request) {
 			s.persistRunnerGroupLocked(g)
 		}
 	}
-	s.store.mu.Unlock()
+	s.store.Mu.Unlock()
 	if !exists {
 		writeGHError(w, http.StatusNotFound, "Not Found")
 		return
@@ -669,10 +649,10 @@ func (s *Server) handleRemoveGroupRepo(w http.ResponseWriter, r *http.Request) {
 		writeGHError(w, http.StatusNotFound, "Not Found")
 		return
 	}
-	s.store.mu.Lock()
+	s.store.Mu.Lock()
 	repo := s.store.Repos[id]
 	if !repoOwnedByOrg(repo, g.Scope.Org) {
-		s.store.mu.Unlock()
+		s.store.Mu.Unlock()
 		writeGHError(w, http.StatusNotFound, "Not Found")
 		return
 	}
@@ -684,7 +664,7 @@ func (s *Server) handleRemoveGroupRepo(w http.ResponseWriter, r *http.Request) {
 	}
 	g.SelectedRepoIDs = kept
 	s.persistRunnerGroupLocked(g)
-	s.store.mu.Unlock()
+	s.store.Mu.Unlock()
 	w.WriteHeader(http.StatusNoContent)
 }
 
@@ -693,14 +673,14 @@ func (s *Server) handleListGroupOrganizations(w http.ResponseWriter, r *http.Req
 	if g == nil {
 		return
 	}
-	s.store.mu.RLock()
+	s.store.Mu.RLock()
 	orgs := make([]*Org, 0, len(g.SelectedOrgIDs))
 	for _, id := range g.SelectedOrgIDs {
 		if org := s.store.Orgs[id]; org != nil {
 			orgs = append(orgs, org)
 		}
 	}
-	s.store.mu.RUnlock()
+	s.store.Mu.RUnlock()
 	sort.Slice(orgs, func(i, j int) bool { return orgs[i].ID < orgs[j].ID })
 
 	page := paginateAndLink(w, r, orgs)
@@ -726,17 +706,17 @@ func (s *Server) handleSetGroupOrganizations(w http.ResponseWriter, r *http.Requ
 		writeGHError(w, http.StatusBadRequest, "Problems parsing JSON")
 		return
 	}
-	s.store.mu.Lock()
+	s.store.Mu.Lock()
 	for _, id := range req.SelectedOrganizationIDs {
 		if s.store.Orgs[id] == nil {
-			s.store.mu.Unlock()
+			s.store.Mu.Unlock()
 			writeGHError(w, http.StatusNotFound, "Not Found")
 			return
 		}
 	}
 	g.SelectedOrgIDs = append([]int(nil), req.SelectedOrganizationIDs...)
 	s.persistRunnerGroupLocked(g)
-	s.store.mu.Unlock()
+	s.store.Mu.Unlock()
 	w.WriteHeader(http.StatusNoContent)
 }
 
@@ -750,9 +730,9 @@ func (s *Server) handleAddGroupOrganization(w http.ResponseWriter, r *http.Reque
 		writeGHError(w, http.StatusNotFound, "Not Found")
 		return
 	}
-	s.store.mu.Lock()
+	s.store.Mu.Lock()
 	if s.store.Orgs[id] == nil {
-		s.store.mu.Unlock()
+		s.store.Mu.Unlock()
 		writeGHError(w, http.StatusNotFound, "Not Found")
 		return
 	}
@@ -760,7 +740,7 @@ func (s *Server) handleAddGroupOrganization(w http.ResponseWriter, r *http.Reque
 		g.SelectedOrgIDs = append(g.SelectedOrgIDs, id)
 		s.persistRunnerGroupLocked(g)
 	}
-	s.store.mu.Unlock()
+	s.store.Mu.Unlock()
 	w.WriteHeader(http.StatusNoContent)
 }
 
@@ -774,9 +754,9 @@ func (s *Server) handleRemoveGroupOrganization(w http.ResponseWriter, r *http.Re
 		writeGHError(w, http.StatusNotFound, "Not Found")
 		return
 	}
-	s.store.mu.Lock()
+	s.store.Mu.Lock()
 	if s.store.Orgs[id] == nil {
-		s.store.mu.Unlock()
+		s.store.Mu.Unlock()
 		writeGHError(w, http.StatusNotFound, "Not Found")
 		return
 	}
@@ -784,6 +764,6 @@ func (s *Server) handleRemoveGroupOrganization(w http.ResponseWriter, r *http.Re
 		return candidate == id
 	})
 	s.persistRunnerGroupLocked(g)
-	s.store.mu.Unlock()
+	s.store.Mu.Unlock()
 	w.WriteHeader(http.StatusNoContent)
 }

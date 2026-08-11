@@ -37,10 +37,10 @@ func TestGistAndCodespaceResponseSnapshotRace(t *testing.T) {
 			CompletedAt: now,
 		},
 	}
-	s.store.mu.Lock()
+	s.store.Mu.Lock()
 	s.store.Codespaces[codespace.ID] = codespace
 	s.store.CodespacesByName[codespace.Name] = codespace
-	s.store.mu.Unlock()
+	s.store.Mu.Unlock()
 
 	const iterations = 200
 	var wg sync.WaitGroup
@@ -80,8 +80,8 @@ func TestGistAndCodespaceResponseSnapshotRace(t *testing.T) {
 	}
 	wg.Wait()
 
-	s.store.mu.RLock()
-	defer s.store.mu.RUnlock()
+	s.store.Mu.RLock()
+	defer s.store.Mu.RUnlock()
 	stored := s.store.Gists[gist.ID]
 	if stored.URL != "" || stored.HTMLURL != "" || stored.GitPullURL != "" {
 		t.Fatalf("request-derived URLs leaked into stored gist: URL=%q HTMLURL=%q GitPullURL=%q",

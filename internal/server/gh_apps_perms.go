@@ -42,38 +42,6 @@ const (
 	permAdmin
 )
 
-// permScope is a GitHub fine-grained permission name. The values are the
-// exact keys used in an installation token's Permissions map and in the
-// App API, so they must not change — but call sites reference the named
-// constants, making a mistyped scope a compile error rather than a silent
-// always-deny gate.
-type permScope string
-
-const (
-	scopeMetadata          permScope = "metadata"
-	scopeContents          permScope = "contents"
-	scopeIssues            permScope = "issues"
-	scopeDiscussions       permScope = "discussions"
-	scopePullRequests      permScope = "pull_requests"
-	scopeActions           permScope = "actions"
-	scopeChecks            permScope = "checks"
-	scopeSecrets           permScope = "secrets"
-	scopeDeployments       permScope = "deployments"
-	scopeAdministration    permScope = "administration"
-	scopeMembers           permScope = "members"
-	scopeOrgAdministration permScope = "organization_administration"
-	scopeOrganizationHooks permScope = "organization_hooks"
-	scopeSecurityEvents    permScope = "security_events"
-	scopeDependabotSecrets permScope = "dependabot_secrets" // #nosec G101 -- permission name, not a secret
-	scopeCodespaces        permScope = "codespaces"
-	scopeReactions         permScope = "reactions"
-	scopeProjects          permScope = "projects"
-	scopePages             permScope = "pages"
-	scopePATRequests       permScope = "organization_personal_access_token_requests"
-	scopePATs              permScope = "organization_personal_access_tokens"
-	scopeCopilotSpaces     permScope = "copilot_spaces"
-)
-
 // permissionGrant is the typed authorization fact requirePerm passes to the
 // handler after both halves of its decision have succeeded: the credential
 // carries this permission and the credential reaches every named target.
@@ -945,8 +913,8 @@ func (s *Server) fineGrainedPATApproved(token *Token) bool {
 	if s.store.GetOrg(token.ResourceOwner) == nil {
 		return true
 	}
-	s.store.mu.RLock()
-	defer s.store.mu.RUnlock()
+	s.store.Mu.RLock()
+	defer s.store.Mu.RUnlock()
 	for _, grant := range s.store.OrgPATGrants[token.ResourceOwner] {
 		if grant.TokenID == token.FineGrainedID {
 			return true
@@ -1187,8 +1155,8 @@ func userToServerHasPerm(tok *UserToServerToken, scope permScope, level permLeve
 		// already scans every installation this way, and the two must range
 		// over the same set or their intersection is not the one either of
 		// them describes.
-		st.mu.RLock()
-		defer st.mu.RUnlock()
+		st.Mu.RLock()
+		defer st.Mu.RUnlock()
 		if len(tok.InstallationIDs) > 0 {
 			for _, id := range tok.InstallationIDs {
 				if inst := st.Installations[id]; inst != nil && inst.AppID == tok.AppID && hasPerm(inst.Permissions, scope, level) {

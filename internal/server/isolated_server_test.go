@@ -291,14 +291,14 @@ func (s *isolatedServer) sweepPR(t *testing.T, repo repoRef, title string) (int,
 // provision a non-admin principal on its own server.
 func (s *isolatedServer) createEnterpriseTestUser(t *testing.T, login string) string {
 	t.Helper()
-	s.store.mu.Lock()
+	s.store.Mu.Lock()
 	u := &User{ID: s.store.NextUser, Login: login, NodeID: "U_ent" + strconv.Itoa(s.store.NextUser), Type: "User"}
 	s.store.NextUser++
 	s.store.Users[u.ID] = u
 	s.store.UsersByLogin[u.Login] = u
 	tok := &Token{Value: "ghp_" + login + "0000000000000000000000000000", UserID: u.ID, Scopes: "repo"}
 	s.store.Tokens[tok.Value] = tok
-	s.store.mu.Unlock()
+	s.store.Mu.Unlock()
 	return tok.Value
 }
 
@@ -330,8 +330,8 @@ func (s *isolatedServer) activateOrgMember(t *testing.T, orgLogin, login, member
 func (s *isolatedServer) newUser(t *testing.T, login string) (*User, string) {
 	t.Helper()
 	st := s.store
-	st.mu.Lock()
-	defer st.mu.Unlock()
+	st.Mu.Lock()
+	defer st.Mu.Unlock()
 	if existing := st.UsersByLogin[login]; existing != nil {
 		t.Fatalf("user %q already exists", login)
 	}
@@ -913,9 +913,9 @@ func (s *isolatedServer) userSurfaceUser(t *testing.T, login string) (*User, str
 	t.Helper()
 	u := s.createTestUser(t, login)
 	tok := "ghp_" + login + "0000000000token"
-	s.store.mu.Lock()
+	s.store.Mu.Lock()
 	s.store.Tokens[tok] = &Token{Value: tok, UserID: u.ID, Scopes: "repo, workflow, read:org, admin:org, gist, user", CreatedAt: fixedTestTime}
-	s.store.mu.Unlock()
+	s.store.Mu.Unlock()
 	return u, tok
 }
 
@@ -1087,14 +1087,14 @@ func (s *isolatedServer) createTestPRRepo(t *testing.T, name string) {
 func (s *isolatedServer) cancelRepoRunsCleanup(t *testing.T, repoKey string) {
 	t.Helper()
 	t.Cleanup(func() {
-		s.store.mu.RLock()
+		s.store.Mu.RLock()
 		var runs []*Workflow
 		for _, w := range s.store.Workflows {
 			if w.RepoFullName == repoKey && w.Status != WorkflowStatusCompleted {
 				runs = append(runs, w)
 			}
 		}
-		s.store.mu.RUnlock()
+		s.store.Mu.RUnlock()
 		for _, w := range runs {
 			s.cancelWorkflow(w)
 		}
@@ -1116,9 +1116,9 @@ func (s *isolatedServer) assertWorkflowJobsUseHostMode(t *testing.T, wf *Workflo
 		if job == nil {
 			t.Fatalf("workflow job %q not found", key)
 		}
-		s.store.mu.RLock()
+		s.store.Mu.RLock()
 		queued := s.store.Jobs[job.JobID]
-		s.store.mu.RUnlock()
+		s.store.Mu.RUnlock()
 		if queued == nil {
 			t.Fatalf("workflow job %q has no stored runner job %q", key, job.JobID)
 		}

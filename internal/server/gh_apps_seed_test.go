@@ -64,7 +64,7 @@ func TestSeedPreRegisteredApp(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := srv.store.parseAndVerifyAppJWT(jwt); err != nil {
+	if _, err := srv.store.ParseAndVerifyAppJWT(jwt); err != nil {
 		t.Fatalf("seeded key does not verify the app JWT: %v", err)
 	}
 	bearer := func(method, path string) *http.Response {

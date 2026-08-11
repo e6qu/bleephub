@@ -48,7 +48,7 @@ func TestAPIInsightsDurableBucketStaysBounded(t *testing.T) {
 	}
 	t.Cleanup(func() { _ = p2.Close() })
 	st2 := NewStore()
-	st2.apiRequestRecordCap = 3
+	st2.ApiRequestRecordCap = 3
 	if err := st2.SetPersistence(p2); err != nil {
 		t.Fatalf("reload: %v", err)
 	}

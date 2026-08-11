@@ -20,8 +20,8 @@ func TestPersistenceRevisionAdvancesOncePerTransaction(t *testing.T) {
 		t.Fatal(err)
 	}
 	if err := p.PutBatch(
-		persistencePut{bucket: "replica_test", key: "one", value: map[string]int{"value": 1}},
-		persistencePut{bucket: "replica_test", key: "two", value: map[string]int{"value": 2}},
+		persistencePut{Bucket: "replica_test", Key: "one", Value: map[string]int{"value": 1}},
+		persistencePut{Bucket: "replica_test", Key: "two", Value: map[string]int{"value": 2}},
 	); err != nil {
 		t.Fatal(err)
 	}
@@ -33,8 +33,8 @@ func TestPersistenceRevisionAdvancesOncePerTransaction(t *testing.T) {
 		t.Fatalf("batch revision = %d, want %d", afterBatch, before+1)
 	}
 	if err := p.DeleteBatch(
-		persistencePut{bucket: "replica_test", key: "one"},
-		persistencePut{bucket: "replica_test", key: "two"},
+		persistencePut{Bucket: "replica_test", Key: "one"},
+		persistencePut{Bucket: "replica_test", Key: "two"},
 	); err != nil {
 		t.Fatal(err)
 	}
@@ -135,7 +135,7 @@ func TestStoreRefreshPropagatesPeerWritesAndPreservesRuntimeState(t *testing.T) 
 		t.Fatal(err)
 	}
 	defer firstPersistence.Close()
-	firstPersistence.dialect.name = "dqlite"
+	firstPersistence.Dialect.Name = "dqlite"
 	first := NewStore()
 	if err := first.SetPersistence(firstPersistence); err != nil {
 		t.Fatal(err)
@@ -147,7 +147,7 @@ func TestStoreRefreshPropagatesPeerWritesAndPreservesRuntimeState(t *testing.T) 
 		t.Fatal(err)
 	}
 	defer secondPersistence.Close()
-	secondPersistence.dialect.name = "dqlite"
+	secondPersistence.Dialect.Name = "dqlite"
 	second := NewStore()
 	if err := second.SetPersistence(secondPersistence); err != nil {
 		t.Fatal(err)
@@ -182,7 +182,7 @@ func TestArtifactStoreRefreshPropagatesPeerMetadataAndPreservesUploads(t *testin
 		t.Fatal(err)
 	}
 	defer firstPersistence.Close()
-	firstPersistence.dialect.name = "dqlite"
+	firstPersistence.Dialect.Name = "dqlite"
 	first := NewArtifactStoreWithByteStore("", nil)
 	if err := first.SetPersistence(firstPersistence); err != nil {
 		t.Fatal(err)
@@ -193,12 +193,12 @@ func TestArtifactStoreRefreshPropagatesPeerMetadataAndPreservesUploads(t *testin
 		t.Fatal(err)
 	}
 	defer secondPersistence.Close()
-	secondPersistence.dialect.name = "dqlite"
+	secondPersistence.Dialect.Name = "dqlite"
 	second := NewArtifactStoreWithByteStore("", nil)
 	if err := second.SetPersistence(secondPersistence); err != nil {
 		t.Fatal(err)
 	}
-	second.artifacts[99] = &Artifact{ID: 99, Name: "uploading", Finalized: false}
+	second.Artifacts[99] = &Artifact{ID: 99, Name: "uploading", Finalized: false}
 
 	peer := &Artifact{
 		ID: 1, Name: "peer", Finalized: true, RepoFullName: "admin/repo",
@@ -207,18 +207,18 @@ func TestArtifactStoreRefreshPropagatesPeerMetadataAndPreservesUploads(t *testin
 	if err := firstPersistence.Put(actionsArtifactsBucket, "1", peer); err != nil {
 		t.Fatalf("persist peer artifact: %v", err)
 	}
-	if _, ok := second.artifactByID(peer.ID); ok {
+	if _, ok := second.ArtifactByID(peer.ID); ok {
 		t.Fatal("second replica observed peer artifact before refreshing")
 	}
 	if err := second.RefreshFromPersistenceIfStale(); err != nil {
 		t.Fatal(err)
 	}
-	if got, ok := second.artifactByID(peer.ID); !ok || got.Name != peer.Name {
+	if got, ok := second.ArtifactByID(peer.ID); !ok || got.Name != peer.Name {
 		t.Fatalf("peer artifact did not propagate: %#v, %v", got, ok)
 	}
-	second.mu.RLock()
-	inFlight := second.artifacts[99]
-	second.mu.RUnlock()
+	second.Mu.RLock()
+	inFlight := second.Artifacts[99]
+	second.Mu.RUnlock()
 	if inFlight == nil || inFlight.Finalized {
 		t.Fatalf("replica refresh discarded in-flight upload: %#v", inFlight)
 	}
@@ -238,9 +238,9 @@ func TestStoreReloadRollsBackUnpersistedMemoryMutation(t *testing.T) {
 	}
 	store.SeedDefaultUser()
 	store.Agents[91] = &Agent{ID: 91, Name: "must-survive"}
-	store.mu.Lock()
+	store.Mu.Lock()
 	store.UsersByLogin["admin"].Name = "half-applied mutation"
-	store.mu.Unlock()
+	store.Mu.Unlock()
 
 	if err := store.ReloadFromPersistence(); err != nil {
 		t.Fatal(err)
@@ -261,7 +261,7 @@ func TestStoreRefreshCannotOverwriteCommitBetweenSnapshotAndApply(t *testing.T) 
 		t.Fatal(err)
 	}
 	defer firstPersistence.Close()
-	firstPersistence.dialect.name = "dqlite"
+	firstPersistence.Dialect.Name = "dqlite"
 	first := NewStore()
 	if err := first.SetPersistence(firstPersistence); err != nil {
 		t.Fatal(err)
@@ -273,7 +273,7 @@ func TestStoreRefreshCannotOverwriteCommitBetweenSnapshotAndApply(t *testing.T) 
 		t.Fatal(err)
 	}
 	defer secondPersistence.Close()
-	secondPersistence.dialect.name = "dqlite"
+	secondPersistence.Dialect.Name = "dqlite"
 	second := NewStore()
 	if err := second.SetPersistence(secondPersistence); err != nil {
 		t.Fatal(err)
@@ -286,15 +286,15 @@ func TestStoreRefreshCannotOverwriteCommitBetweenSnapshotAndApply(t *testing.T) 
 	observedBeforeRefresh := secondPersistence.LocalRevision()
 	first.CreateOrg(first.LookupUserByLogin("admin"), "peer-before-refresh", "", "")
 	var once sync.Once
-	err = second.refreshFromPersistenceBeforeApply(false, func() {
+	err = second.RefreshFromPersistenceBeforeApply(false, func() {
 		once.Do(func() {
 			if got := secondPersistence.LocalRevision(); got != observedBeforeRefresh {
 				t.Errorf("candidate snapshot advanced live local revision to %d, want %d", got, observedBeforeRefresh)
 			}
-			second.mu.Lock()
+			second.Mu.Lock()
 			admin.Name = "local transaction during refresh"
-			second.persist.MustPut("users", "1", admin)
-			second.mu.Unlock()
+			second.Persist.MustPut("users", "1", admin)
+			second.Mu.Unlock()
 		})
 	})
 	if err != nil {
@@ -320,18 +320,18 @@ func TestFailedRollbackPoisonsRequestsUntilPersistenceRecovers(t *testing.T) {
 		t.Fatal(err)
 	}
 	store.SeedDefaultUser()
-	store.mu.Lock()
+	store.Mu.Lock()
 	store.UsersByLogin["admin"].Name = "uncommitted mutation"
-	store.mu.Unlock()
+	store.Mu.Unlock()
 	if err := persistence.Close(); err != nil {
 		t.Fatal(err)
 	}
 	if err := store.ReloadFromPersistence(); err == nil {
 		t.Fatal("reload with a closed database unexpectedly succeeded")
 	}
-	store.mu.RLock()
-	recoveryRequired := store.persistenceRecoveryRequired
-	store.mu.RUnlock()
+	store.Mu.RLock()
+	recoveryRequired := store.PersistenceRecoveryRequired
+	store.Mu.RUnlock()
 	if !recoveryRequired {
 		t.Fatal("failed rollback did not mark the live store as requiring recovery")
 	}

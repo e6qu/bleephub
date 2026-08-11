@@ -147,8 +147,8 @@ func (s *Server) handleIssuesDeleteDispatch(w http.ResponseWriter, r *http.Reque
 // or 0 when neither parent can be found (caller renders an URL without the
 // number segment).
 func commentParentNumber(st *Store, c *Comment) int {
-	st.mu.RLock()
-	defer st.mu.RUnlock()
+	st.Mu.RLock()
+	defer st.Mu.RUnlock()
 	switch c.ParentType {
 	case "issue":
 		if i, ok := st.Issues[c.IssueID]; ok {

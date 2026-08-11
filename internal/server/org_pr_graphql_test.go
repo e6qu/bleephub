@@ -14,11 +14,11 @@ func TestPRGraphQL_OrgOwnedHeadRepositoryOwner(t *testing.T) {
 		t.Fatal("failed to create org")
 	}
 	defer func() {
-		s.store.mu.Lock()
+		s.store.Mu.Lock()
 		delete(s.store.Orgs, org.ID)
 		delete(s.store.OrgsByLogin, orgLogin)
 		delete(s.store.Memberships, membershipKey(orgLogin, admin.ID))
-		s.store.mu.Unlock()
+		s.store.Mu.Unlock()
 	}()
 
 	repo := s.store.CreateOrgRepo(org, admin, "sweep-org-repo", "", false)

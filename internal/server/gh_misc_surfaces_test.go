@@ -221,13 +221,13 @@ func TestGPGKeyDeleteOwnership(t *testing.T) {
 	s := newTestServer()
 	s.registerGHMiscEndpoints()
 
-	s.store.mu.Lock()
+	s.store.Mu.Lock()
 	other := &User{ID: s.store.NextUser, Login: "other-user", Type: "User", SiteAdmin: false}
 	s.store.NextUser++
 	s.store.Users[other.ID] = other
 	s.store.UsersByLogin[other.Login] = other
 	s.store.Tokens["ghp_other"] = &Token{Value: "ghp_other", UserID: other.ID}
-	s.store.mu.Unlock()
+	s.store.Mu.Unlock()
 
 	w := doMiscReq(s, "POST", "/api/v3/user/gpg_keys", `{
 		"armored_public_key": "-----BEGIN PGP PUBLIC KEY BLOCK-----\ntest\n-----END PGP PUBLIC KEY BLOCK-----"
@@ -256,13 +256,13 @@ func TestUserSSHKeyIsOwnerScoped(t *testing.T) {
 	s := newTestServer()
 	s.registerGHMiscEndpoints()
 
-	s.store.mu.Lock()
+	s.store.Mu.Lock()
 	other := &User{ID: s.store.NextUser, Login: "other-user", Type: "User"}
 	s.store.NextUser++
 	s.store.Users[other.ID] = other
 	s.store.UsersByLogin[other.Login] = other
 	s.store.Tokens["ghp_other"] = &Token{Value: "ghp_other", UserID: other.ID}
-	s.store.mu.Unlock()
+	s.store.Mu.Unlock()
 
 	// admin creates a key.
 	w := doMiscReq(s, "POST", "/api/v3/user/keys", `{"title":"laptop","key":"ssh-ed25519 AAAAKEYADMIN admin@host"}`)
@@ -299,9 +299,9 @@ func TestUserSSHKeyIsOwnerScoped(t *testing.T) {
 	if delRec.Code != 404 {
 		t.Fatalf("stranger DELETE key = %d, want 404", delRec.Code)
 	}
-	s.store.Misc.mu.RLock()
-	stillThere := s.store.Misc.userKeys[int(created["id"].(float64))] != nil
-	s.store.Misc.mu.RUnlock()
+	s.store.Misc.Mu.RLock()
+	stillThere := s.store.Misc.UserKeys[int(created["id"].(float64))] != nil
+	s.store.Misc.Mu.RUnlock()
 	if !stillThere {
 		t.Fatal("stranger DELETE revoked the owner's key")
 	}
@@ -314,7 +314,7 @@ func TestPagesBuildsCRUD(t *testing.T) {
 	s.registerGHGitDataRoutes()
 	fs := newS3FSForTest(t)
 	objectFS := deriveS3FSForTest(t, fs.Bucket(), "pages-build-objects")
-	s.store.ObjectByteStore = &s3ActionsByteStore{fs: objectFS}
+	s.store.ObjectByteStore = &s3ActionsByteStore{Fs: objectFS}
 	admin := s.store.UsersByLogin["admin"]
 	repo := s.store.CreateRepo(admin, "pages-build-test", "", false)
 	commitHash, err := initRepoWithFiles(s.store.GetGitStorage("admin", "pages-build-test"), repo.DefaultBranch, "init", map[string]string{
@@ -407,7 +407,7 @@ func TestPagesBuildsCRUD(t *testing.T) {
 	if contentW.Code != 200 || contentW.Body.String() != "hello from docs" {
 		t.Fatalf("published Pages content = %d %q", contentW.Code, contentW.Body.String())
 	}
-	if !s.store.Misc.pagesByRepo[repo.ID].Custom404 {
+	if !s.store.Misc.PagesByRepo[repo.ID].Custom404 {
 		t.Fatal("Pages site did not detect custom 404.html")
 	}
 
@@ -442,9 +442,9 @@ func TestPagesBuildsCRUD(t *testing.T) {
 		t.Fatalf("commit Pages source through Contents API = %d: %s", w.Code, w.Body.String())
 	}
 	waitUntil(t, "automatic Pages build from Contents API", func() bool {
-		s.store.Misc.mu.RLock()
-		defer s.store.Misc.mu.RUnlock()
-		return len(s.store.Misc.pagesBuilds[repo.FullName]) == 3 && s.store.Misc.pagesBuilds[repo.FullName][0].Status == "built"
+		s.store.Misc.Mu.RLock()
+		defer s.store.Misc.Mu.RUnlock()
+		return len(s.store.Misc.PagesBuilds[repo.FullName]) == 3 && s.store.Misc.PagesBuilds[repo.FullName][0].Status == "built"
 	})
 	automaticReq := httptest.NewRequest("GET", "/pages/admin/pages-build-test/automatic.html", nil)
 	automaticReq.SetPathValue("owner", "admin")
@@ -474,9 +474,9 @@ func TestPagesBuildsCRUD(t *testing.T) {
 		t.Fatalf("update Pages source through Git Database API = %d: %s", w.Code, w.Body.String())
 	}
 	waitUntil(t, "automatic Pages build from Git Database API", func() bool {
-		s.store.Misc.mu.RLock()
-		defer s.store.Misc.mu.RUnlock()
-		return len(s.store.Misc.pagesBuilds[repo.FullName]) == 4 && s.store.Misc.pagesBuilds[repo.FullName][0].Status == "built"
+		s.store.Misc.Mu.RLock()
+		defer s.store.Misc.Mu.RUnlock()
+		return len(s.store.Misc.PagesBuilds[repo.FullName]) == 4 && s.store.Misc.PagesBuilds[repo.FullName][0].Status == "built"
 	})
 	databaseReq := httptest.NewRequest("GET", "/pages/admin/pages-build-test/database.html", nil)
 	databaseReq.SetPathValue("owner", "admin")
@@ -500,7 +500,7 @@ func TestPagesJekyllBuildPublishesGeneratedSite(t *testing.T) {
 	s.pagesJekyllExecutable = realPagesJekyllExecutable(t)
 	fs := newS3FSForTest(t)
 	objectFS := deriveS3FSForTest(t, fs.Bucket(), "pages-jekyll-objects")
-	s.store.ObjectByteStore = &s3ActionsByteStore{fs: objectFS}
+	s.store.ObjectByteStore = &s3ActionsByteStore{Fs: objectFS}
 	admin := s.store.UsersByLogin["admin"]
 	repo := s.store.CreateRepo(admin, "pages-jekyll-test", "", false)
 	commitHash, err := initRepoWithFiles(s.store.GetGitStorage("admin", repo.Name), repo.DefaultBranch, "Jekyll source", map[string]string{
@@ -538,7 +538,7 @@ func TestPagesJekyllBuildPublishesGeneratedSite(t *testing.T) {
 	if contentW.Code != 200 || !strings.Contains(contentW.Body.String(), `<h1 id="real-pages">Real Pages</h1>`) {
 		t.Fatalf("generated Jekyll Pages content = %d %q", contentW.Code, contentW.Body.String())
 	}
-	if !s.store.Misc.pagesByRepo[repo.ID].Custom404 {
+	if !s.store.Misc.PagesByRepo[repo.ID].Custom404 {
 		t.Fatal("generated Jekyll Pages site did not detect custom 404.html")
 	}
 
@@ -567,7 +567,7 @@ func TestPagesJekyllBuildPublishesGeneratedSite(t *testing.T) {
 	if w.Code != 200 || failed["status"] != "errored" || !strings.Contains(errorMessage, "Jekyll build failed") {
 		t.Fatalf("failed Jekyll Pages build = %d %v", w.Code, failed)
 	}
-	if deployment := s.store.latestPublishedPagesDeployment(broken.ID); deployment != nil {
+	if deployment := s.store.LatestPublishedPagesDeployment(broken.ID); deployment != nil {
 		t.Fatalf("broken Jekyll Pages build published deployment %+v", deployment)
 	}
 }
@@ -800,12 +800,12 @@ func TestPagesListBuildsPagination(t *testing.T) {
 	s.registerGHMiscEndpoints()
 	admin := s.store.UsersByLogin["admin"]
 	repo := s.store.CreateRepo(admin, "pages-build-pagination", "", false)
-	s.store.Misc.mu.Lock()
-	s.store.Misc.pagesBuilds[repo.FullName] = []*PagesBuild{
+	s.store.Misc.Mu.Lock()
+	s.store.Misc.PagesBuilds[repo.FullName] = []*PagesBuild{
 		{ID: 2, URL: "http://127.0.0.1/api/v3/repos/" + repo.FullName + "/pages/builds/2", Status: "built"},
 		{ID: 1, URL: "http://127.0.0.1/api/v3/repos/" + repo.FullName + "/pages/builds/1", Status: "built"},
 	}
-	s.store.Misc.mu.Unlock()
+	s.store.Misc.Mu.Unlock()
 
 	path := "/api/v3/repos/" + repo.FullName + "/pages/builds"
 	w := doMiscReq(s, "GET", path+"?per_page=1", "")

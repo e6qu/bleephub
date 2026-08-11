@@ -43,7 +43,7 @@ func sortedEnterpriseProperties(properties map[string]*CustomProperty) []*Custom
 }
 
 func (s *Server) listEnterpriseProperties(w http.ResponseWriter, r *http.Request, family string, organization bool) {
-	s.store.mu.RLock()
+	s.store.Mu.RLock()
 	properties := s.store.EnterpriseSettings.RepositoryCustomProperties
 	if organization {
 		properties = s.store.EnterpriseSettings.OrganizationCustomProperties
@@ -53,7 +53,7 @@ func (s *Server) listEnterpriseProperties(w http.ResponseWriter, r *http.Request
 	for _, property := range sorted {
 		out = append(out, enterprisePropertyJSON(property, s.baseURL(r), s.enterpriseSlug(), family))
 	}
-	s.store.mu.RUnlock()
+	s.store.Mu.RUnlock()
 	writeJSON(w, http.StatusOK, out)
 }
 
@@ -67,19 +67,19 @@ func (s *Server) handleListEnterpriseOrganizationProperties(w http.ResponseWrite
 
 func (s *Server) getEnterpriseProperty(w http.ResponseWriter, r *http.Request, family string, organization bool) {
 	name := r.PathValue("custom_property_name")
-	s.store.mu.RLock()
+	s.store.Mu.RLock()
 	properties := s.store.EnterpriseSettings.RepositoryCustomProperties
 	if organization {
 		properties = s.store.EnterpriseSettings.OrganizationCustomProperties
 	}
 	property := properties[name]
 	if property == nil {
-		s.store.mu.RUnlock()
+		s.store.Mu.RUnlock()
 		writeGHError(w, http.StatusNotFound, "Not Found")
 		return
 	}
 	out := enterprisePropertyJSON(property, s.baseURL(r), s.enterpriseSlug(), family)
-	s.store.mu.RUnlock()
+	s.store.Mu.RUnlock()
 	writeJSON(w, http.StatusOK, out)
 }
 
@@ -107,14 +107,14 @@ func (s *Server) upsertEnterpriseProperty(w http.ResponseWriter, r *http.Request
 	if property == nil {
 		return
 	}
-	s.store.mu.Lock()
+	s.store.Mu.Lock()
 	properties := s.store.EnterpriseSettings.RepositoryCustomProperties
 	if organization {
 		properties = s.store.EnterpriseSettings.OrganizationCustomProperties
 	}
 	properties[property.PropertyName] = property
-	s.store.persistEnterpriseSettings()
-	s.store.mu.Unlock()
+	s.store.PersistEnterpriseSettings()
+	s.store.Mu.Unlock()
 	writeJSON(w, http.StatusOK, enterprisePropertyJSON(property, s.baseURL(r), s.enterpriseSlug(), family))
 }
 
@@ -145,7 +145,7 @@ func (s *Server) batchUpsertEnterpriseProperties(w http.ResponseWriter, r *http.
 		}
 		definitions = append(definitions, definition)
 	}
-	s.store.mu.Lock()
+	s.store.Mu.Lock()
 	properties := s.store.EnterpriseSettings.RepositoryCustomProperties
 	if organization {
 		properties = s.store.EnterpriseSettings.OrganizationCustomProperties
@@ -153,8 +153,8 @@ func (s *Server) batchUpsertEnterpriseProperties(w http.ResponseWriter, r *http.
 	for _, definition := range definitions {
 		properties[definition.PropertyName] = definition
 	}
-	s.store.persistEnterpriseSettings()
-	s.store.mu.Unlock()
+	s.store.PersistEnterpriseSettings()
+	s.store.Mu.Unlock()
 	out := make([]map[string]interface{}, 0, len(definitions))
 	for _, definition := range definitions {
 		out = append(out, enterprisePropertyJSON(definition, s.baseURL(r), s.enterpriseSlug(), family))
@@ -172,13 +172,13 @@ func (s *Server) handleBatchUpsertEnterpriseOrganizationProperties(w http.Respon
 
 func (s *Server) deleteEnterpriseProperty(w http.ResponseWriter, r *http.Request, organization bool) {
 	name := r.PathValue("custom_property_name")
-	s.store.mu.Lock()
+	s.store.Mu.Lock()
 	properties := s.store.EnterpriseSettings.RepositoryCustomProperties
 	if organization {
 		properties = s.store.EnterpriseSettings.OrganizationCustomProperties
 	}
 	if properties[name] == nil {
-		s.store.mu.Unlock()
+		s.store.Mu.Unlock()
 		writeGHError(w, http.StatusNotFound, "Not Found")
 		return
 	}
@@ -188,8 +188,8 @@ func (s *Server) deleteEnterpriseProperty(w http.ResponseWriter, r *http.Request
 			delete(values, name)
 		}
 	}
-	s.store.persistEnterpriseSettings()
-	s.store.mu.Unlock()
+	s.store.PersistEnterpriseSettings()
+	s.store.Mu.Unlock()
 	w.WriteHeader(http.StatusNoContent)
 }
 
@@ -215,16 +215,16 @@ func (s *Server) handlePromoteOrganizationRepositoryProperty(w http.ResponseWrit
 	}
 	copy := *property
 	copy.AllowedValues = append([]string(nil), property.AllowedValues...)
-	s.store.mu.Lock()
+	s.store.Mu.Lock()
 	s.store.EnterpriseSettings.RepositoryCustomProperties[name] = &copy
-	s.store.persistEnterpriseSettings()
-	s.store.mu.Unlock()
+	s.store.PersistEnterpriseSettings()
+	s.store.Mu.Unlock()
 	writeJSON(w, http.StatusOK, enterprisePropertyJSON(&copy, s.baseURL(r), s.enterpriseSlug(), "properties"))
 }
 
 func (s *Server) handleListEnterpriseOrganizationPropertyValues(w http.ResponseWriter, r *http.Request) {
 	orgs := s.store.ListOrgsAll(0)
-	s.store.mu.RLock()
+	s.store.Mu.RLock()
 	out := make([]map[string]interface{}, 0, len(orgs))
 	for _, org := range orgs {
 		values := s.store.EnterpriseSettings.OrganizationPropertyValues[org.Login]
@@ -241,7 +241,7 @@ func (s *Server) handleListEnterpriseOrganizationPropertyValues(w http.ResponseW
 			"organization_id": org.ID, "organization_login": org.Login, "properties": properties,
 		})
 	}
-	s.store.mu.RUnlock()
+	s.store.Mu.RUnlock()
 	writeJSON(w, http.StatusOK, paginateAndLink(w, r, out))
 }
 
@@ -261,10 +261,10 @@ func (s *Server) handleSetEnterpriseOrganizationPropertyValues(w http.ResponseWr
 		writeGHValidationError(w, "CustomPropertyValues", "properties", "missing_field")
 		return
 	}
-	s.store.mu.RLock()
+	s.store.Mu.RLock()
 	for _, login := range req.OrganizationLogins {
 		if s.store.OrgsByLogin[login] == nil {
-			s.store.mu.RUnlock()
+			s.store.Mu.RUnlock()
 			writeGHValidationError(w, "CustomPropertyValues", "organization_logins", "invalid")
 			return
 		}
@@ -272,13 +272,13 @@ func (s *Server) handleSetEnterpriseOrganizationPropertyValues(w http.ResponseWr
 	for _, value := range req.Properties {
 		definition := s.store.EnterpriseSettings.OrganizationCustomProperties[value.PropertyName]
 		if definition == nil || validateCustomPropertyValue(definition, value.Value) != nil {
-			s.store.mu.RUnlock()
+			s.store.Mu.RUnlock()
 			writeGHValidationError(w, "CustomPropertyValues", "properties", "invalid")
 			return
 		}
 	}
-	s.store.mu.RUnlock()
-	s.store.mu.Lock()
+	s.store.Mu.RUnlock()
+	s.store.Mu.Lock()
 	for _, login := range req.OrganizationLogins {
 		values := s.store.EnterpriseSettings.OrganizationPropertyValues[login]
 		if values == nil {
@@ -293,7 +293,7 @@ func (s *Server) handleSetEnterpriseOrganizationPropertyValues(w http.ResponseWr
 			}
 		}
 	}
-	s.store.persistEnterpriseSettings()
-	s.store.mu.Unlock()
+	s.store.PersistEnterpriseSettings()
+	s.store.Mu.Unlock()
 	w.WriteHeader(http.StatusNoContent)
 }

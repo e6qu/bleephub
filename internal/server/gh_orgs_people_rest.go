@@ -677,9 +677,9 @@ func (s *Server) resolveOrgRoleID(w http.ResponseWriter, r *http.Request, orgLog
 			return predefinedOrgRoleView(role, org)
 		}
 	}
-	s.store.mu.RLock()
+	s.store.Mu.RLock()
 	role := customOrgRoleView(s.store.OrgCustomRoles[orgLogin][id])
-	s.store.mu.RUnlock()
+	s.store.Mu.RUnlock()
 	if role != nil {
 		return role
 	}
@@ -696,14 +696,14 @@ func (s *Server) handleListOrganizationRoles(w http.ResponseWriter, r *http.Requ
 	for i := range predefinedOrgRoles {
 		roles = append(roles, orgRoleJSON(predefinedOrgRoleView(&predefinedOrgRoles[i], org), org, s.baseURL(r)))
 	}
-	s.store.mu.RLock()
+	s.store.Mu.RLock()
 	custom := make([]*OrgCustomOrganizationRole, 0, len(s.store.OrgCustomRoles[org.Login]))
 	for _, role := range s.store.OrgCustomRoles[org.Login] {
 		copyRole := *role
 		copyRole.Permissions = append([]string(nil), role.Permissions...)
 		custom = append(custom, &copyRole)
 	}
-	s.store.mu.RUnlock()
+	s.store.Mu.RUnlock()
 	sort.Slice(custom, func(i, j int) bool { return custom[i].ID < custom[j].ID })
 	for _, role := range custom {
 		roles = append(roles, orgRoleJSON(customOrgRoleView(role), org, s.baseURL(r)))

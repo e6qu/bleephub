@@ -11,80 +11,6 @@ import (
 	gitStorage "github.com/go-git/go-git/v5/storage"
 )
 
-// snapRepo / snapIssue / snapPR / snapUser return shallow value copies of a
-// shared store entity taken under the store read lock. Webhook payload
-// builders read mutable scalar fields (title, body, state, description,
-// timestamps) off these entities; a concurrent Update* writer mutates the
-// same fields under st.mu.Lock, so the builders must read a private copy
-// rather than the live pointer. Each snapshot takes and releases the read
-// lock independently — they are never nested, so a queued writer cannot
-// deadlock them (sync.RWMutex read locks are not reentrant).
-func (st *Store) snapRepo(r *Repo) *Repo {
-	if r == nil {
-		return nil
-	}
-	st.mu.RLock()
-	defer st.mu.RUnlock()
-	cp := *r
-	return &cp
-}
-
-func (st *Store) snapIssue(i *Issue) *Issue {
-	if i == nil {
-		return nil
-	}
-	st.mu.RLock()
-	defer st.mu.RUnlock()
-	cp := *i
-	cp.AssigneeIDs = append([]int(nil), i.AssigneeIDs...)
-	cp.LabelIDs = append([]int(nil), i.LabelIDs...)
-	return &cp
-}
-
-func (st *Store) snapPR(pr *PullRequest) *PullRequest {
-	if pr == nil {
-		return nil
-	}
-	st.mu.RLock()
-	defer st.mu.RUnlock()
-	cp := *pr
-	cp.AssigneeIDs = append([]int(nil), pr.AssigneeIDs...)
-	cp.LabelIDs = append([]int(nil), pr.LabelIDs...)
-	cp.RequestedReviewerIDs = append([]int(nil), pr.RequestedReviewerIDs...)
-	cp.RequestedTeamIDs = append([]int(nil), pr.RequestedTeamIDs...)
-	return &cp
-}
-
-func (st *Store) snapComment(comment *Comment) *Comment {
-	if comment == nil {
-		return nil
-	}
-	st.mu.RLock()
-	defer st.mu.RUnlock()
-	cp := *comment
-	return &cp
-}
-
-func (st *Store) snapPullRequestReview(review *PullRequestReview) *PullRequestReview {
-	if review == nil {
-		return nil
-	}
-	st.mu.RLock()
-	defer st.mu.RUnlock()
-	cp := *review
-	return &cp
-}
-
-func (st *Store) snapUser(u *User) *User {
-	if u == nil {
-		return nil
-	}
-	st.mu.RLock()
-	defer st.mu.RUnlock()
-	cp := *u
-	return &cp
-}
-
 // attachInstallationBlock injects `installation: {id, node_id}` at the top
 // level of every event payload, mirroring what real GH does for events
 // delivered through an App installation.
@@ -145,8 +71,8 @@ func buildInstallationRepositoriesEventPayload(app *App, action string, inst *In
 }
 
 func buildPushPayload(st *Store, repo *Repo, sender *User, ref, before, after string) map[string]interface{} {
-	repo = st.snapRepo(repo)
-	sender = st.snapUser(sender)
+	repo = st.SnapRepo(repo)
+	sender = st.SnapUser(sender)
 	payload := buildPushPayloadWithInstallation(repo, sender, ref, before, after, nil)
 	stor, _ := st.GitStorageForRepoID(repo.ID)
 	oldHash := plumbing.NewHash(before)
@@ -248,10 +174,10 @@ func coalesceUserEmail(user *User) string {
 func buildPullRequestPayload(st *Store, repo *Repo, pr *PullRequest, sender *User, action string) map[string]interface{} {
 	// Snapshot the shared entities before reading their mutable fields.
 	headRepo := pullRequestHeadRepo(st, pr)
-	repo = st.snapRepo(repo)
-	headRepo = st.snapRepo(headRepo)
-	pr = st.snapPR(pr)
-	sender = st.snapUser(sender)
+	repo = st.SnapRepo(repo)
+	headRepo = st.SnapRepo(headRepo)
+	pr = st.SnapPR(pr)
+	sender = st.SnapUser(sender)
 	state := "open"
 	if pr.State == "CLOSED" || pr.State == "MERGED" {
 		state = "closed"
@@ -305,9 +231,9 @@ func buildPullRequestPayloadInner(action string, pr *PullRequest, prJSON map[str
 
 func buildIssuesPayload(st *Store, repo *Repo, issue *Issue, sender *User, action string) map[string]interface{} {
 	// Snapshot the shared entities before reading their mutable fields.
-	repo = st.snapRepo(repo)
-	issue = st.snapIssue(issue)
-	sender = st.snapUser(sender)
+	repo = st.SnapRepo(repo)
+	issue = st.SnapIssue(issue)
+	sender = st.SnapUser(sender)
 	state := "open"
 	if issue.State == "CLOSED" {
 		state = "closed"
@@ -342,18 +268,18 @@ func buildIssueCommentPayload(
 	action, baseURL string,
 	parentNumber int,
 ) map[string]interface{} {
-	repo = st.snapRepo(repo)
-	comment = st.snapComment(comment)
-	sender = st.snapUser(sender)
+	repo = st.SnapRepo(repo)
+	comment = st.SnapComment(comment)
+	sender = st.SnapUser(sender)
 	var issueJSON map[string]interface{}
 	switch comment.ParentType {
 	case "pull_request":
 		if pr := st.GetPullRequest(comment.IssueID); pr != nil {
-			issueJSON = issueToJSONForPR(st.snapPR(pr), st, baseURL, repo.FullName)
+			issueJSON = issueToJSONForPR(st.SnapPR(pr), st, baseURL, repo.FullName)
 		}
 	default:
 		if issue := st.GetIssue(comment.IssueID); issue != nil {
-			issueJSON = issueToJSON(st.snapIssue(issue), st, baseURL, repo.FullName)
+			issueJSON = issueToJSON(st.SnapIssue(issue), st, baseURL, repo.FullName)
 		}
 	}
 	return attachInstallationBlock(map[string]interface{}{
@@ -373,10 +299,10 @@ func buildPullRequestReviewPayload(
 	sender *User,
 	action, baseURL string,
 ) map[string]interface{} {
-	repo = st.snapRepo(repo)
-	pr = st.snapPR(pr)
-	review = st.snapPullRequestReview(review)
-	sender = st.snapUser(sender)
+	repo = st.SnapRepo(repo)
+	pr = st.SnapPR(pr)
+	review = st.SnapPullRequestReview(review)
+	sender = st.SnapUser(sender)
 	payload := buildPullRequestPayload(st, repo, pr, sender, action)
 	payload["review"] = reviewToJSON(review, st, baseURL, repo.FullName, pr.Number)
 	return payload

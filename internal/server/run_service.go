@@ -50,9 +50,9 @@ func (s *Server) requireAssignedAgent(next http.HandlerFunc) http.HandlerFunc {
 			http.Error(w, "request not found", http.StatusNotFound)
 			return
 		}
-		s.store.mu.RLock()
+		s.store.Mu.RLock()
 		assigned := job.AgentID
-		s.store.mu.RUnlock()
+		s.store.Mu.RUnlock()
 		if assigned == 0 || assigned != runnerFromContext(r.Context()).Agent.ID {
 			writeGHError(w, http.StatusForbidden, "This job request belongs to another runner")
 			return
@@ -80,9 +80,9 @@ func (s *Server) requirePlanJob(next http.HandlerFunc) http.HandlerFunc {
 		// when that message has been cleared at run finalization (the fallback
 		// inside planScopeForJobLocked parses the message for directly-seeded
 		// jobs only).
-		s.store.mu.RLock()
-		scopeID := s.store.planScopeForJobLocked(job).ScopeID
-		s.store.mu.RUnlock()
+		s.store.Mu.RLock()
+		scopeID := s.store.PlanScopeForJobLocked(job).ScopeID
+		s.store.Mu.RUnlock()
 		if scopeID == "" || scopeID != runnerFromContext(r.Context()).Claims.Sub {
 			writeGHError(w, http.StatusForbidden, "Job token does not cover this plan")
 			return
@@ -129,7 +129,7 @@ func (s *Server) handleRenewRequest(w http.ResponseWriter, r *http.Request) {
 	// them today; drain explicitly so it's obvious there's no decode.
 	_, _ = io.Copy(io.Discard, r.Body)
 
-	s.store.mu.Lock()
+	s.store.Mu.Lock()
 	startedRunning := false
 	if job.Status == "queued" {
 		job.Status = "running"
@@ -144,7 +144,7 @@ func (s *Server) handleRenewRequest(w http.ResponseWriter, r *http.Request) {
 				if wfJob.Status == JobStatusQueued {
 					wfJob.Status = JobStatusRunning
 					wfJob.StartedAt = time.Now()
-					s.store.persistWorkflowRecord(wf)
+					s.store.PersistWorkflowRecord(wf)
 					s.queueActionsEvent(evJobInProgress, wf, wfJob)
 				}
 				break
@@ -157,7 +157,7 @@ func (s *Server) handleRenewRequest(w http.ResponseWriter, r *http.Request) {
 	lockedUntilSnap := job.LockedUntil
 	jobPlanID := job.PlanID
 	jobIDSnap := job.ID
-	s.store.mu.Unlock()
+	s.store.Mu.Unlock()
 
 	s.logger.Info().
 		Str("method", r.Method).
@@ -188,8 +188,8 @@ func (s *Server) handleCompleteRequest(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	s.store.mu.Lock()
-	s.store.markJobCompletedLocked(job)
+	s.store.Mu.Lock()
+	s.store.MarkJobCompletedLocked(job)
 	if result != "" {
 		job.Result = result
 	}
@@ -198,7 +198,7 @@ func (s *Server) handleCompleteRequest(w http.ResponseWriter, r *http.Request) {
 	// unlock must use locals, not the shared *Job.
 	jobIDSnap := job.ID
 	jobResultSnap := job.Result
-	s.store.mu.Unlock()
+	s.store.Mu.Unlock()
 
 	s.logger.Info().
 		Int64("requestId", reqID).
@@ -258,15 +258,15 @@ func (s *Server) handleFinishJob(w http.ResponseWriter, r *http.Request) {
 	// job whose needs context must already contain these values.
 	s.captureResolvedJobOutputs(job.ID, body.Outputs)
 
-	s.store.mu.Lock()
-	s.store.markJobCompletedLocked(job)
+	s.store.Mu.Lock()
+	s.store.MarkJobCompletedLocked(job)
 	job.Result = result
 	// Snapshot under the lock: the broker concurrently mutates these
 	// fields (recordJobAgentLocked writes AgentID), so every read after
 	// the unlock must come from a local, not the shared *Job.
 	jobIDSnap := job.ID
 	jobResultSnap := job.Result
-	s.store.mu.Unlock()
+	s.store.Mu.Unlock()
 	s.logger.Info().Str("jobId", jobIDSnap).Str("result", jobResultSnap).Msg("job status updated")
 
 	// Notify workflow engine of job completion
@@ -289,7 +289,7 @@ func (s *Server) captureResolvedJobOutputs(jobID string, outputs map[string]runn
 		resolved[name] = output.Value
 	}
 
-	s.store.mu.Lock()
+	s.store.Mu.Lock()
 	var wfJob *WorkflowJob
 	var workflow *Workflow
 	for _, wf := range s.store.Workflows {
@@ -306,9 +306,9 @@ func (s *Server) captureResolvedJobOutputs(jobID string, outputs map[string]runn
 		for name, value := range resolved {
 			wfJob.Outputs[name] = value
 		}
-		s.store.persistWorkflowRecord(workflow)
+		s.store.PersistWorkflowRecord(workflow)
 	}
-	s.store.mu.Unlock()
+	s.store.Mu.Unlock()
 
 	if wfJob != nil {
 		s.logger.Info().
@@ -358,11 +358,11 @@ func (s *Server) handleJobEvents(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, err.Error(), http.StatusBadRequest)
 			return
 		}
-		s.store.mu.Lock()
-		s.store.markJobCompletedLocked(job)
+		s.store.Mu.Lock()
+		s.store.MarkJobCompletedLocked(job)
 		job.Result = result
 		jobIDSnap := job.ID
-		s.store.mu.Unlock()
+		s.store.Mu.Unlock()
 		s.onJobCompleted(r.Context(), jobIDSnap, result)
 	}
 

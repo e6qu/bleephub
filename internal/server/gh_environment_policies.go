@@ -1,7 +1,6 @@
 package bleephub
 
 import (
-	"fmt"
 	"net/http"
 	"sort"
 	"strconv"
@@ -22,33 +21,10 @@ import (
 //	GET    /repos/{o}/{r}/environments/{env}/deployment_protection_rules/{protection_rule_id}
 //	DELETE /repos/{o}/{r}/environments/{env}/deployment_protection_rules/{protection_rule_id}
 
-// DeploymentBranchPolicyType is the kind of a deployment branch/tag policy
-// rule. GitHub accepts only these two. A typed string marshals to JSON
-// identically to a plain string.
-type DeploymentBranchPolicyType string
-
 const (
 	BranchPolicyBranch DeploymentBranchPolicyType = "branch"
 	BranchPolicyTag    DeploymentBranchPolicyType = "tag"
 )
-
-// DeploymentBranchPolicyRule is one branch/tag name pattern allowed to
-// deploy to an environment.
-type DeploymentBranchPolicyRule struct {
-	ID     int                        `json:"id"`
-	NodeID string                     `json:"node_id"`
-	Name   string                     `json:"name"`
-	Type   DeploymentBranchPolicyType `json:"type"`
-}
-
-// EnvCustomProtectionRule is a custom deployment protection rule enabled on
-// an environment, backed by a GitHub App integration.
-type EnvCustomProtectionRule struct {
-	ID      int    `json:"id"`
-	NodeID  string `json:"node_id"`
-	Enabled bool   `json:"enabled"`
-	AppID   int    `json:"app_id"`
-}
 
 func (s *Server) registerGHEnvironmentPolicyRoutes() {
 	s.route("GET /api/v3/repos/{owner}/{repo}/environments/{env_name}/deployment-branch-policies", s.handleListDeploymentBranchPolicies)
@@ -87,178 +63,7 @@ func (s *Server) environmentFromPath(w http.ResponseWriter, r *http.Request) (*R
 
 // --- Store: deployment branch policies ---
 
-// CreateEnvBranchPolicy appends a branch/tag policy to an environment.
-// Returns (nil, existing) when a policy with the same name+type already
-// exists (the API answers 303 See Other pointing at it).
-func (st *Store) CreateEnvBranchPolicy(envID int, name, policyType string) (created, existing *DeploymentBranchPolicyRule) {
-	st.mu.Lock()
-	defer st.mu.Unlock()
-	for _, p := range st.EnvBranchPolicies[envID] {
-		if p.Name == name && p.Type == DeploymentBranchPolicyType(policyType) {
-			return nil, p
-		}
-	}
-	p := &DeploymentBranchPolicyRule{
-		ID:     st.NextEnvBranchPolicyID,
-		NodeID: fmt.Sprintf("DBP_kwDO%08d", st.NextEnvBranchPolicyID),
-		Name:   name,
-		Type:   DeploymentBranchPolicyType(policyType),
-	}
-	st.NextEnvBranchPolicyID++
-	st.EnvBranchPolicies[envID] = append(st.EnvBranchPolicies[envID], p)
-	if st.persist != nil {
-		st.persist.MustPut("env_branch_policies", strconv.Itoa(envID), st.EnvBranchPolicies[envID])
-	}
-	return p, nil
-}
-
-// ListEnvBranchPolicies returns an environment's branch/tag policies in
-// creation order.
-func (st *Store) ListEnvBranchPolicies(envID int) []*DeploymentBranchPolicyRule {
-	st.mu.RLock()
-	defer st.mu.RUnlock()
-	out := make([]*DeploymentBranchPolicyRule, len(st.EnvBranchPolicies[envID]))
-	copy(out, st.EnvBranchPolicies[envID])
-	return snapshotSlice(out)
-}
-
-// GetEnvBranchPolicy returns one policy by ID, or nil.
-func (st *Store) GetEnvBranchPolicy(envID, policyID int) *DeploymentBranchPolicyRule {
-	st.mu.RLock()
-	defer st.mu.RUnlock()
-	for _, p := range st.EnvBranchPolicies[envID] {
-		if p.ID == policyID {
-			// Detach: DeploymentBranchPolicyRule is all-value (STORE-021).
-			clone := *p
-			return &clone
-		}
-	}
-	return nil
-}
-
-// UpdateEnvBranchPolicy renames a policy's pattern. Returns the updated
-// policy, or nil when not found.
-func (st *Store) UpdateEnvBranchPolicy(envID, policyID int, name string) *DeploymentBranchPolicyRule {
-	st.mu.Lock()
-	defer st.mu.Unlock()
-	for _, p := range st.EnvBranchPolicies[envID] {
-		if p.ID == policyID {
-			p.Name = name
-			if st.persist != nil {
-				st.persist.MustPut("env_branch_policies", strconv.Itoa(envID), st.EnvBranchPolicies[envID])
-			}
-			return p
-		}
-	}
-	return nil
-}
-
-// DeleteEnvBranchPolicy removes a policy. Returns true if it existed.
-func (st *Store) DeleteEnvBranchPolicy(envID, policyID int) bool {
-	st.mu.Lock()
-	defer st.mu.Unlock()
-	policies := st.EnvBranchPolicies[envID]
-	for i, p := range policies {
-		if p.ID == policyID {
-			st.EnvBranchPolicies[envID] = append(policies[:i], policies[i+1:]...)
-			if st.persist != nil {
-				st.persist.MustPut("env_branch_policies", strconv.Itoa(envID), st.EnvBranchPolicies[envID])
-			}
-			return true
-		}
-	}
-	return false
-}
-
 // --- Store: custom deployment protection rules ---
-
-// CreateEnvProtectionRule enables a custom protection rule (a GitHub App
-// integration) on an environment. Returns nil when the app already has an
-// enabled rule on the environment.
-func (st *Store) CreateEnvProtectionRule(envID, appID int) *EnvCustomProtectionRule {
-	st.mu.Lock()
-	defer st.mu.Unlock()
-	for _, rule := range st.EnvProtectionRules[envID] {
-		if rule.AppID == appID {
-			return nil
-		}
-	}
-	rule := &EnvCustomProtectionRule{
-		ID:      st.NextEnvProtectionRuleID,
-		NodeID:  fmt.Sprintf("GA_kwDP%08d", st.NextEnvProtectionRuleID),
-		Enabled: true,
-		AppID:   appID,
-	}
-	st.NextEnvProtectionRuleID++
-	st.EnvProtectionRules[envID] = append(st.EnvProtectionRules[envID], rule)
-	if st.persist != nil {
-		st.persist.MustPut("env_protection_rules", strconv.Itoa(envID), st.EnvProtectionRules[envID])
-	}
-	return rule
-}
-
-// ListEnvProtectionRules returns an environment's enabled custom protection
-// rules in creation order.
-func (st *Store) ListEnvProtectionRules(envID int) []*EnvCustomProtectionRule {
-	st.mu.RLock()
-	defer st.mu.RUnlock()
-	out := make([]*EnvCustomProtectionRule, len(st.EnvProtectionRules[envID]))
-	copy(out, st.EnvProtectionRules[envID])
-	return snapshotSlice(out)
-}
-
-// GetEnvProtectionRule returns one rule by ID, or nil.
-func (st *Store) GetEnvProtectionRule(envID, ruleID int) *EnvCustomProtectionRule {
-	st.mu.RLock()
-	defer st.mu.RUnlock()
-	for _, rule := range st.EnvProtectionRules[envID] {
-		if rule.ID == ruleID {
-			// Detach: EnvCustomProtectionRule is all-value (STORE-021).
-			clone := *rule
-			return &clone
-		}
-	}
-	return nil
-}
-
-// DeleteEnvProtectionRule disables (removes) a rule. Returns true if it existed.
-func (st *Store) DeleteEnvProtectionRule(envID, ruleID int) bool {
-	st.mu.Lock()
-	defer st.mu.Unlock()
-	rules := st.EnvProtectionRules[envID]
-	for i, rule := range rules {
-		if rule.ID == ruleID {
-			st.EnvProtectionRules[envID] = append(rules[:i], rules[i+1:]...)
-			if st.persist != nil {
-				st.persist.MustPut("env_protection_rules", strconv.Itoa(envID), st.EnvProtectionRules[envID])
-			}
-			return true
-		}
-	}
-	return false
-}
-
-// PruneEnvironmentPolicies drops all policies and protection rules for a
-// deleted environment.
-func (st *Store) PruneEnvironmentPolicies(envID int) {
-	st.mu.Lock()
-	defer st.mu.Unlock()
-	// One transaction: an environment's branch policies and protection rules are
-	// pruned together, so a crash cannot leave half an environment's policy set
-	// behind after it is gone (STORE-001/002).
-	batch := newPersistBatch(st.persist)
-	if _, ok := st.EnvBranchPolicies[envID]; ok {
-		delete(st.EnvBranchPolicies, envID)
-		batch.Delete("env_branch_policies", strconv.Itoa(envID))
-	}
-	if _, ok := st.EnvProtectionRules[envID]; ok {
-		delete(st.EnvProtectionRules, envID)
-		batch.Delete("env_protection_rules", strconv.Itoa(envID))
-	}
-	if err := batch.Commit(); err != nil {
-		panic(&persistenceFailure{op: "batch", bucket: "env_branch_policies", err: err})
-	}
-}
 
 // --- Handlers: deployment branch policies ---
 
@@ -390,9 +195,9 @@ func (s *Server) handleDeleteDeploymentBranchPolicy(w http.ResponseWriter, r *ht
 // --- Handlers: custom deployment protection rules ---
 
 func (s *Server) envProtectionRuleJSON(rule *EnvCustomProtectionRule, baseURL string) map[string]interface{} {
-	s.store.mu.RLock()
+	s.store.Mu.RLock()
 	app := s.store.Apps[rule.AppID]
-	s.store.mu.RUnlock()
+	s.store.Mu.RUnlock()
 	var appJSON map[string]interface{}
 	if app != nil {
 		appJSON = customDeploymentRuleAppJSON(app, baseURL)
@@ -446,9 +251,9 @@ func (s *Server) handleCreateEnvProtectionRule(w http.ResponseWriter, r *http.Re
 		writeGHValidationError(w, "DeploymentProtectionRule", "integration_id", "missing_field")
 		return
 	}
-	s.store.mu.RLock()
+	s.store.Mu.RLock()
 	app := s.store.Apps[*req.IntegrationID]
-	s.store.mu.RUnlock()
+	s.store.Mu.RUnlock()
 	if app == nil {
 		writeGHValidationError(w, "DeploymentProtectionRule", "integration_id", "invalid")
 		return
@@ -470,7 +275,7 @@ func (s *Server) handleListEnvProtectionRuleApps(w http.ResponseWriter, r *http.
 		return
 	}
 	ownerLogin, _, _ := splitRepoFullName(repo.FullName)
-	s.store.mu.RLock()
+	s.store.Mu.RLock()
 	appIDs := map[int]bool{}
 	for _, inst := range s.store.Installations {
 		if inst.TargetLogin == ownerLogin {
@@ -483,7 +288,7 @@ func (s *Server) handleListEnvProtectionRuleApps(w http.ResponseWriter, r *http.
 			apps = append(apps, app)
 		}
 	}
-	s.store.mu.RUnlock()
+	s.store.Mu.RUnlock()
 	sort.Slice(apps, func(i, j int) bool { return apps[i].ID < apps[j].ID })
 
 	base := s.baseURL(r)

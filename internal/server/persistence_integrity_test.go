@@ -720,7 +720,7 @@ func stampSchemaVersion(t *testing.T, dataDir string, version int) {
 	if _, err := db.Exec(schemaMetaDDL); err != nil {
 		t.Fatalf("create schema metadata: %v", err)
 	}
-	if _, err := db.Exec(sqliteDialect.writeVersion, strconv.Itoa(version)); err != nil {
+	if _, err := db.Exec(sqliteDialect.WriteVersion, strconv.Itoa(version)); err != nil {
 		t.Fatalf("stamp schema version: %v", err)
 	}
 }
@@ -730,7 +730,7 @@ func readSchemaVersion(t *testing.T, dataDir string) int {
 	db := openRawTestDatabase(t, dataDir)
 	defer func() { _ = db.Close() }()
 	var raw string
-	if err := db.QueryRow(sqliteDialect.readVersion).Scan(&raw); err != nil {
+	if err := db.QueryRow(sqliteDialect.ReadVersion).Scan(&raw); err != nil {
 		t.Fatalf("read schema version: %v", err)
 	}
 	version, err := strconv.Atoi(raw)

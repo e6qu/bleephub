@@ -9,36 +9,6 @@ import (
 	"time"
 )
 
-type GHESPreReceiveDownload struct {
-	State        string     `json:"state"`
-	DownloadedAt *time.Time `json:"downloaded_at,omitempty"`
-	Message      *string    `json:"message,omitempty"`
-}
-
-type GHESPreReceiveEnvironment struct {
-	ID                 int                     `json:"id"`
-	Name               string                  `json:"name"`
-	ImageURL           string                  `json:"image_url"`
-	DefaultEnvironment bool                    `json:"default_environment"`
-	CreatedAt          time.Time               `json:"created_at"`
-	Download           *GHESPreReceiveDownload `json:"download,omitempty"`
-}
-
-type GHESPreReceiveHook struct {
-	ID                           int    `json:"id"`
-	Name                         string `json:"name"`
-	Script                       string `json:"script"`
-	ScriptRepositoryID           int    `json:"script_repository_id"`
-	EnvironmentID                int    `json:"environment_id"`
-	Enforcement                  string `json:"enforcement"`
-	AllowDownstreamConfiguration bool   `json:"allow_downstream_configuration"`
-}
-
-type GHESPreReceiveOverride struct {
-	Enforcement                  string `json:"enforcement"`
-	AllowDownstreamConfiguration bool   `json:"allow_downstream_configuration"`
-}
-
 func (s *Server) registerGHESPreReceiveRoutes(admin func(http.HandlerFunc) http.HandlerFunc) {
 	s.route("GET /api/v3/admin/pre-receive-environments", admin(s.handleListGHESPreReceiveEnvironments))
 	s.route("POST /api/v3/admin/pre-receive-environments", admin(s.handleCreateGHESPreReceiveEnvironment))
@@ -105,8 +75,8 @@ func (s *Server) preReceiveDownloadJSON(env *GHESPreReceiveEnvironment, r *http.
 }
 
 func (s *Server) snapshotPreReceiveEnvironment(id int) (*GHESPreReceiveEnvironment, int) {
-	s.store.mu.RLock()
-	defer s.store.mu.RUnlock()
+	s.store.Mu.RLock()
+	defer s.store.Mu.RUnlock()
 	env := s.store.EnterpriseSettings.GHESPreReceiveEnvironments[id]
 	if env == nil {
 		return nil, 0
@@ -139,12 +109,12 @@ func (s *Server) requirePreReceiveEnvironment(w http.ResponseWriter, r *http.Req
 }
 
 func (s *Server) handleListGHESPreReceiveEnvironments(w http.ResponseWriter, r *http.Request) {
-	s.store.mu.RLock()
+	s.store.Mu.RLock()
 	ids := make([]int, 0, len(s.store.EnterpriseSettings.GHESPreReceiveEnvironments))
 	for id := range s.store.EnterpriseSettings.GHESPreReceiveEnvironments {
 		ids = append(ids, id)
 	}
-	s.store.mu.RUnlock()
+	s.store.Mu.RUnlock()
 	sort.Ints(ids)
 	out := make([]map[string]interface{}, 0, len(ids))
 	for _, id := range ids {
@@ -166,10 +136,10 @@ func (s *Server) handleCreateGHESPreReceiveEnvironment(w http.ResponseWriter, r 
 		writeGHValidationError(w, "PreReceiveEnvironment", "name", "missing_field")
 		return
 	}
-	s.store.mu.Lock()
+	s.store.Mu.Lock()
 	for _, env := range s.store.EnterpriseSettings.GHESPreReceiveEnvironments {
 		if strings.EqualFold(env.Name, req.Name) {
-			s.store.mu.Unlock()
+			s.store.Mu.Unlock()
 			writeGHValidationError(w, "PreReceiveEnvironment", "name", "already_exists")
 			return
 		}
@@ -181,9 +151,9 @@ func (s *Server) handleCreateGHESPreReceiveEnvironment(w http.ResponseWriter, r 
 	}
 	s.store.EnterpriseSettings.NextGHESPreReceiveEnvironmentID++
 	s.store.EnterpriseSettings.GHESPreReceiveEnvironments[env.ID] = env
-	s.store.persistEnterpriseSettings()
+	s.store.PersistEnterpriseSettings()
 	copy := *env
-	s.store.mu.Unlock()
+	s.store.Mu.Unlock()
 	writeJSON(w, http.StatusCreated, s.preReceiveEnvironmentJSON(&copy, r, 0))
 }
 
@@ -210,12 +180,12 @@ func (s *Server) handleUpdateGHESPreReceiveEnvironment(w http.ResponseWriter, r 
 		writeGHValidationError(w, "PreReceiveEnvironment", "name", "invalid")
 		return
 	}
-	s.store.mu.Lock()
+	s.store.Mu.Lock()
 	stored := s.store.EnterpriseSettings.GHESPreReceiveEnvironments[env.ID]
 	if req.Name != nil {
 		for id, candidate := range s.store.EnterpriseSettings.GHESPreReceiveEnvironments {
 			if id != env.ID && strings.EqualFold(candidate.Name, *req.Name) {
-				s.store.mu.Unlock()
+				s.store.Mu.Unlock()
 				writeGHValidationError(w, "PreReceiveEnvironment", "name", "already_exists")
 				return
 			}
@@ -226,8 +196,8 @@ func (s *Server) handleUpdateGHESPreReceiveEnvironment(w http.ResponseWriter, r 
 		stored.ImageURL = *req.ImageURL
 		stored.Download = &GHESPreReceiveDownload{State: "not_started"}
 	}
-	s.store.persistEnterpriseSettings()
-	s.store.mu.Unlock()
+	s.store.PersistEnterpriseSettings()
+	s.store.Mu.Unlock()
 	updated, count := s.snapshotPreReceiveEnvironment(env.ID)
 	writeJSON(w, http.StatusOK, s.preReceiveEnvironmentJSON(updated, r, count))
 }
@@ -241,10 +211,10 @@ func (s *Server) handleDeleteGHESPreReceiveEnvironment(w http.ResponseWriter, r 
 		writeGHValidationError(w, "PreReceiveEnvironment", "id", "unprocessable")
 		return
 	}
-	s.store.mu.Lock()
+	s.store.Mu.Lock()
 	delete(s.store.EnterpriseSettings.GHESPreReceiveEnvironments, env.ID)
-	s.store.persistEnterpriseSettings()
-	s.store.mu.Unlock()
+	s.store.PersistEnterpriseSettings()
+	s.store.Mu.Unlock()
 	w.WriteHeader(http.StatusNoContent)
 }
 
@@ -254,11 +224,11 @@ func (s *Server) handleStartGHESPreReceiveEnvironmentDownload(w http.ResponseWri
 		return
 	}
 	now := s.currentTime()
-	s.store.mu.Lock()
+	s.store.Mu.Lock()
 	stored := s.store.EnterpriseSettings.GHESPreReceiveEnvironments[env.ID]
 	stored.Download = &GHESPreReceiveDownload{State: "success", DownloadedAt: &now}
-	s.store.persistEnterpriseSettings()
-	s.store.mu.Unlock()
+	s.store.PersistEnterpriseSettings()
+	s.store.Mu.Unlock()
 	updated, _ := s.snapshotPreReceiveEnvironment(env.ID)
 	writeJSON(w, http.StatusAccepted, s.preReceiveDownloadJSON(updated, r))
 }
@@ -327,8 +297,8 @@ func (s *Server) preReceiveHookJSON(hook *GHESPreReceiveHook, r *http.Request) m
 }
 
 func (s *Server) snapshotPreReceiveHook(id int) *GHESPreReceiveHook {
-	s.store.mu.RLock()
-	defer s.store.mu.RUnlock()
+	s.store.Mu.RLock()
+	defer s.store.Mu.RUnlock()
 	hook := s.store.EnterpriseSettings.GHESPreReceiveHooks[id]
 	if hook == nil {
 		return nil
@@ -351,12 +321,12 @@ func (s *Server) requirePreReceiveHook(w http.ResponseWriter, r *http.Request) *
 }
 
 func (s *Server) handleListGHESPreReceiveHooks(w http.ResponseWriter, r *http.Request) {
-	s.store.mu.RLock()
+	s.store.Mu.RLock()
 	ids := make([]int, 0, len(s.store.EnterpriseSettings.GHESPreReceiveHooks))
 	for id := range s.store.EnterpriseSettings.GHESPreReceiveHooks {
 		ids = append(ids, id)
 	}
-	s.store.mu.RUnlock()
+	s.store.Mu.RUnlock()
 	sort.Ints(ids)
 	out := make([]map[string]interface{}, 0, len(ids))
 	for _, id := range ids {
@@ -393,7 +363,7 @@ func (s *Server) handleCreateGHESPreReceiveHook(w http.ResponseWriter, r *http.R
 	if req.AllowDownstreamConfiguration != nil {
 		allow = *req.AllowDownstreamConfiguration
 	}
-	s.store.mu.Lock()
+	s.store.Mu.Lock()
 	hook := &GHESPreReceiveHook{
 		ID: s.store.EnterpriseSettings.NextGHESPreReceiveHookID, Name: *req.Name,
 		Script: *req.Script, ScriptRepositoryID: repo.ID, EnvironmentID: env.ID,
@@ -401,9 +371,9 @@ func (s *Server) handleCreateGHESPreReceiveHook(w http.ResponseWriter, r *http.R
 	}
 	s.store.EnterpriseSettings.NextGHESPreReceiveHookID++
 	s.store.EnterpriseSettings.GHESPreReceiveHooks[hook.ID] = hook
-	s.store.persistEnterpriseSettings()
+	s.store.PersistEnterpriseSettings()
 	copy := *hook
-	s.store.mu.Unlock()
+	s.store.Mu.Unlock()
 	writeJSON(w, http.StatusCreated, s.preReceiveHookJSON(&copy, r))
 }
 
@@ -443,7 +413,7 @@ func (s *Server) handleUpdateGHESPreReceiveHook(w http.ResponseWriter, r *http.R
 			return
 		}
 	}
-	s.store.mu.Lock()
+	s.store.Mu.Lock()
 	stored := s.store.EnterpriseSettings.GHESPreReceiveHooks[hook.ID]
 	if req.Name != nil {
 		stored.Name = *req.Name
@@ -463,9 +433,9 @@ func (s *Server) handleUpdateGHESPreReceiveHook(w http.ResponseWriter, r *http.R
 	if req.AllowDownstreamConfiguration != nil {
 		stored.AllowDownstreamConfiguration = *req.AllowDownstreamConfiguration
 	}
-	s.store.persistEnterpriseSettings()
+	s.store.PersistEnterpriseSettings()
 	copy := *stored
-	s.store.mu.Unlock()
+	s.store.Mu.Unlock()
 	writeJSON(w, http.StatusOK, s.preReceiveHookJSON(&copy, r))
 }
 
@@ -474,7 +444,7 @@ func (s *Server) handleDeleteGHESPreReceiveHook(w http.ResponseWriter, r *http.R
 	if hook == nil {
 		return
 	}
-	s.store.mu.Lock()
+	s.store.Mu.Lock()
 	delete(s.store.EnterpriseSettings.GHESPreReceiveHooks, hook.ID)
 	for _, overrides := range s.store.EnterpriseSettings.GHESOrgPreReceiveOverrides {
 		delete(overrides, hook.ID)
@@ -482,8 +452,8 @@ func (s *Server) handleDeleteGHESPreReceiveHook(w http.ResponseWriter, r *http.R
 	for _, overrides := range s.store.EnterpriseSettings.GHESRepoPreReceiveOverrides {
 		delete(overrides, hook.ID)
 	}
-	s.store.persistEnterpriseSettings()
-	s.store.mu.Unlock()
+	s.store.PersistEnterpriseSettings()
+	s.store.Mu.Unlock()
 	w.WriteHeader(http.StatusNoContent)
 }
 
@@ -509,11 +479,11 @@ func (s *Server) effectiveOrgPreReceive(hook *GHESPreReceiveHook, org string) GH
 	result := GHESPreReceiveOverride{
 		Enforcement: hook.Enforcement, AllowDownstreamConfiguration: hook.AllowDownstreamConfiguration,
 	}
-	s.store.mu.RLock()
+	s.store.Mu.RLock()
 	if override := s.store.EnterpriseSettings.GHESOrgPreReceiveOverrides[org][hook.ID]; override != nil {
 		result = *override
 	}
-	s.store.mu.RUnlock()
+	s.store.Mu.RUnlock()
 	return result
 }
 
@@ -531,12 +501,12 @@ func (s *Server) handleListGHESOrgPreReceiveHooks(w http.ResponseWriter, r *http
 	if org == nil {
 		return
 	}
-	s.store.mu.RLock()
+	s.store.Mu.RLock()
 	ids := make([]int, 0, len(s.store.EnterpriseSettings.GHESPreReceiveHooks))
 	for id := range s.store.EnterpriseSettings.GHESPreReceiveHooks {
 		ids = append(ids, id)
 	}
-	s.store.mu.RUnlock()
+	s.store.Mu.RUnlock()
 	sort.Ints(ids)
 	out := make([]map[string]interface{}, 0, len(ids))
 	for _, id := range ids {
@@ -584,15 +554,15 @@ func (s *Server) handleUpdateGHESOrgPreReceiveHook(w http.ResponseWriter, r *htt
 	if req.AllowDownstreamConfiguration != nil {
 		allow = *req.AllowDownstreamConfiguration
 	}
-	s.store.mu.Lock()
+	s.store.Mu.Lock()
 	if s.store.EnterpriseSettings.GHESOrgPreReceiveOverrides[org.Login] == nil {
 		s.store.EnterpriseSettings.GHESOrgPreReceiveOverrides[org.Login] = map[int]*GHESPreReceiveOverride{}
 	}
 	s.store.EnterpriseSettings.GHESOrgPreReceiveOverrides[org.Login][hook.ID] = &GHESPreReceiveOverride{
 		Enforcement: req.Enforcement, AllowDownstreamConfiguration: allow,
 	}
-	s.store.persistEnterpriseSettings()
-	s.store.mu.Unlock()
+	s.store.PersistEnterpriseSettings()
+	s.store.Mu.Unlock()
 	writeJSON(w, http.StatusOK, s.orgPreReceiveJSON(hook, org.Login, r))
 }
 
@@ -605,10 +575,10 @@ func (s *Server) handleDeleteGHESOrgPreReceiveHook(w http.ResponseWriter, r *htt
 	if hook == nil {
 		return
 	}
-	s.store.mu.Lock()
+	s.store.Mu.Lock()
 	delete(s.store.EnterpriseSettings.GHESOrgPreReceiveOverrides[org.Login], hook.ID)
-	s.store.persistEnterpriseSettings()
-	s.store.mu.Unlock()
+	s.store.PersistEnterpriseSettings()
+	s.store.Mu.Unlock()
 	writeJSON(w, http.StatusOK, s.orgPreReceiveJSON(hook, org.Login, r))
 }
 
@@ -620,11 +590,11 @@ func (s *Server) effectiveRepoPreReceive(hook *GHESPreReceiveHook, repo *Repo) G
 		orgLogin, _, _ := strings.Cut(repo.FullName, "/")
 		parent = s.effectiveOrgPreReceive(hook, orgLogin)
 	}
-	s.store.mu.RLock()
+	s.store.Mu.RLock()
 	if override := s.store.EnterpriseSettings.GHESRepoPreReceiveOverrides[repo.FullName][hook.ID]; override != nil {
 		parent.Enforcement = override.Enforcement
 	}
-	s.store.mu.RUnlock()
+	s.store.Mu.RUnlock()
 	return parent
 }
 
@@ -642,12 +612,12 @@ func (s *Server) handleListGHESRepoPreReceiveHooks(w http.ResponseWriter, r *htt
 	if repo == nil {
 		return
 	}
-	s.store.mu.RLock()
+	s.store.Mu.RLock()
 	ids := make([]int, 0, len(s.store.EnterpriseSettings.GHESPreReceiveHooks))
 	for id := range s.store.EnterpriseSettings.GHESPreReceiveHooks {
 		ids = append(ids, id)
 	}
-	s.store.mu.RUnlock()
+	s.store.Mu.RUnlock()
 	sort.Ints(ids)
 	out := make([]map[string]interface{}, 0, len(ids))
 	for _, id := range ids {
@@ -697,14 +667,14 @@ func (s *Server) handleUpdateGHESRepoPreReceiveHook(w http.ResponseWriter, r *ht
 		writeGHValidationError(w, "PreReceiveHook", "enforcement", "invalid")
 		return
 	}
-	s.store.mu.Lock()
+	s.store.Mu.Lock()
 	if s.store.EnterpriseSettings.GHESRepoPreReceiveOverrides[repo.FullName] == nil {
 		s.store.EnterpriseSettings.GHESRepoPreReceiveOverrides[repo.FullName] = map[int]*GHESPreReceiveOverride{}
 	}
 	s.store.EnterpriseSettings.GHESRepoPreReceiveOverrides[repo.FullName][hook.ID] =
 		&GHESPreReceiveOverride{Enforcement: req.Enforcement}
-	s.store.persistEnterpriseSettings()
-	s.store.mu.Unlock()
+	s.store.PersistEnterpriseSettings()
+	s.store.Mu.Unlock()
 	writeJSON(w, http.StatusOK, s.repoPreReceiveJSON(hook, repo, r))
 }
 
@@ -717,9 +687,9 @@ func (s *Server) handleDeleteGHESRepoPreReceiveHook(w http.ResponseWriter, r *ht
 	if hook == nil {
 		return
 	}
-	s.store.mu.Lock()
+	s.store.Mu.Lock()
 	delete(s.store.EnterpriseSettings.GHESRepoPreReceiveOverrides[repo.FullName], hook.ID)
-	s.store.persistEnterpriseSettings()
-	s.store.mu.Unlock()
+	s.store.PersistEnterpriseSettings()
+	s.store.Mu.Unlock()
 	writeJSON(w, http.StatusOK, s.repoPreReceiveJSON(hook, repo, r))
 }

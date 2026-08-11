@@ -12,9 +12,9 @@ import (
 func newReplicaStore(t *testing.T, dataDir string) (*Store, *Persistence) {
 	t.Helper()
 	persistence := openTestPersistence(t, dataDir)
-	persistence.dialect.name = "dqlite"
+	persistence.Dialect.Name = "dqlite"
 	store := NewStore()
-	store.replaceClockNow(func() time.Time { return fixedTestTime })
+	replaceStoreClockNow(store, func() time.Time { return fixedTestTime })
 	if err := store.SetPersistence(persistence); err != nil {
 		t.Fatalf("set persistence: %v", err)
 	}

@@ -22,8 +22,8 @@ func TestStoreErrorsLogThroughStructuredLogger(t *testing.T) {
 	st.UsersByLogin[admin.Login] = admin
 
 	var buf bytes.Buffer
-	st.logger = zerolog.New(&buf)
-	st.repoStorageOpen = func(context.Context, string) (gitStorage.Storer, error) {
+	st.Logger = zerolog.New(&buf)
+	st.RepoStorageOpen = func(context.Context, string) (gitStorage.Storer, error) {
 		return nil, errors.New("disk on fire")
 	}
 
@@ -49,7 +49,7 @@ func TestStoreErrorsLogThroughStructuredLogger(t *testing.T) {
 // configured one.
 func TestNewStoreLoggerIsNopByDefault(t *testing.T) {
 	st := NewStore()
-	if st.logger.GetLevel() != zerolog.Disabled {
-		t.Fatalf("NewStore logger level = %v, want Disabled (nop)", st.logger.GetLevel())
+	if st.Logger.GetLevel() != zerolog.Disabled {
+		t.Fatalf("NewStore logger level = %v, want Disabled (nop)", st.Logger.GetLevel())
 	}
 }

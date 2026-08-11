@@ -162,7 +162,7 @@ func (s *Server) handleGenerateJITConfig(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	s.store.mu.Lock()
+	s.store.Mu.Lock()
 	agent.ID = s.store.NextAgent
 	s.store.NextAgent++
 	agent.Enabled = true
@@ -175,7 +175,7 @@ func (s *Server) handleGenerateJITConfig(w http.ResponseWriter, r *http.Request)
 		PublicKey:        publicKey,
 	}
 	s.store.Agents[agent.ID] = &agent
-	s.store.mu.Unlock()
+	s.store.Mu.Unlock()
 
 	// encoded_jit_config: the base64 of the JSON config blob the runner's JIT
 	// listener reads. It carries the agent identity + server URL + auth so the
@@ -224,12 +224,12 @@ func (s *Server) repositoryRunnerRegistrationAllowed(scope runnerScope) bool {
 	if repo == nil || repo.OwnerType != "Organization" {
 		return true
 	}
-	s.store.mu.RLock()
-	defer s.store.mu.RUnlock()
+	s.store.Mu.RLock()
+	defer s.store.Mu.RUnlock()
 	if s.store.EnterpriseSettings.ActionsDisableSelfHostedRunners {
 		return false
 	}
-	policy := s.store.lookupOrgActionsPermissionsLocked(owner)
+	policy := s.store.LookupOrgActionsPermissionsLocked(owner)
 	if policy == nil {
 		return true
 	}
@@ -396,7 +396,7 @@ func (s *Server) handleRegisterAgent(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	s.store.mu.Lock()
+	s.store.Mu.Lock()
 	agent.ID = s.store.NextAgent
 	s.store.NextAgent++
 	agent.Enabled = true
@@ -411,34 +411,17 @@ func (s *Server) handleRegisterAgent(w http.ResponseWriter, r *http.Request) {
 	agent.Authorization.ClientID = clientID
 
 	s.store.Agents[agent.ID] = &agent
-	s.store.mu.Unlock()
+	s.store.Mu.Unlock()
 
 	s.logger.Info().Int("id", agent.ID).Str("name", agent.Name).Str("scope", scope.String()).Msg("agent registered")
 	writeJSON(w, http.StatusOK, &agent)
-}
-
-// LookupAgentByClientID returns the agent whose Authorization.ClientID matches,
-// or nil if no agent has registered with that ClientID. Agent count is bounded
-// by the number of registered runners, so the linear scan is fine.
-func (st *Store) LookupAgentByClientID(clientID string) *Agent {
-	if clientID == "" {
-		return nil
-	}
-	st.mu.RLock()
-	defer st.mu.RUnlock()
-	for _, a := range st.Agents {
-		if a.Authorization != nil && a.Authorization.ClientID == clientID {
-			return a
-		}
-	}
-	return nil
 }
 
 func (s *Server) handleListAgents(w http.ResponseWriter, r *http.Request) {
 	nameFilter := r.URL.Query().Get("agentName")
 	caller, _ := s.callerRunner(r)
 
-	s.store.mu.RLock()
+	s.store.Mu.RLock()
 	agents := make([]*Agent, 0)
 	for _, a := range s.store.Agents {
 		if nameFilter != "" && !strings.EqualFold(a.Name, nameFilter) {
@@ -449,7 +432,7 @@ func (s *Server) handleListAgents(w http.ResponseWriter, r *http.Request) {
 		}
 		agents = append(agents, a)
 	}
-	s.store.mu.RUnlock()
+	s.store.Mu.RUnlock()
 
 	writeJSON(w, http.StatusOK, map[string]interface{}{
 		"count": len(agents),
@@ -476,7 +459,7 @@ func callerSeesAgent(caller *runnerPrincipal, agent *Agent) bool {
 	if caller.Agent != nil && caller.Agent.ID == agent.ID {
 		return true
 	}
-	if agent.Scope.empty() {
+	if agent.Scope.Empty() {
 		return false
 	}
 	return agent.Scope == caller.Scope
@@ -490,9 +473,9 @@ func (s *Server) handleGetAgent(w http.ResponseWriter, r *http.Request) {
 	}
 	caller, _ := s.callerRunner(r)
 
-	s.store.mu.RLock()
+	s.store.Mu.RLock()
 	agent, ok := s.store.Agents[agentID]
-	s.store.mu.RUnlock()
+	s.store.Mu.RUnlock()
 
 	if !ok || !callerSeesAgent(caller, agent) {
 		http.Error(w, "agent not found", http.StatusNotFound)
@@ -514,10 +497,10 @@ func (s *Server) handleUpdateAgent(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	s.store.mu.Lock()
+	s.store.Mu.Lock()
 	agent, ok := s.store.Agents[agentID]
 	if !ok || !callerSeesAgent(caller, agent) {
-		s.store.mu.Unlock()
+		s.store.Mu.Unlock()
 		http.Error(w, "agent not found", http.StatusNotFound)
 		return
 	}
@@ -536,7 +519,7 @@ func (s *Server) handleUpdateAgent(w http.ResponseWriter, r *http.Request) {
 	update.Authorization = &authorization
 	update.CreatedOn = agent.CreatedOn
 	s.store.Agents[agentID] = &update
-	s.store.mu.Unlock()
+	s.store.Mu.Unlock()
 
 	writeJSON(w, http.StatusOK, &update)
 }
@@ -550,13 +533,13 @@ func (s *Server) handleDeleteAgent(w http.ResponseWriter, r *http.Request) {
 
 	caller, _ := s.callerRunner(r)
 
-	s.store.mu.Lock()
+	s.store.Mu.Lock()
 	agent, ok := s.store.Agents[agentID]
 	ok = ok && callerSeesAgent(caller, agent)
 	if ok {
 		delete(s.store.Agents, agentID)
 	}
-	s.store.mu.Unlock()
+	s.store.Mu.Unlock()
 
 	if !ok {
 		http.Error(w, "agent not found", http.StatusNotFound)
@@ -574,13 +557,13 @@ func (s *Server) removeEphemeralAgent(agentID int) {
 	if agentID == 0 {
 		return
 	}
-	s.store.mu.Lock()
+	s.store.Mu.Lock()
 	agent, ok := s.store.Agents[agentID]
 	if !ok || !agent.Ephemeral {
-		s.store.mu.Unlock()
+		s.store.Mu.Unlock()
 		return
 	}
 	delete(s.store.Agents, agentID)
-	s.store.mu.Unlock()
+	s.store.Mu.Unlock()
 	s.logger.Info().Int("id", agentID).Str("name", agent.Name).Msg("ephemeral agent deregistered after job completion")
 }

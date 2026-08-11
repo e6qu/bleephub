@@ -498,22 +498,16 @@ func (s *Server) handleGetMarketplaceBrowser(w http.ResponseWriter, r *http.Requ
 	writeJSON(w, http.StatusOK, marketplaceListingJSON(listing, s.store.ListMarketplacePlans(listing.Slug, true), s.baseURL(r)))
 }
 
-type marketplaceBuyerAccount struct {
-	id          int
-	login       string
-	accountType string
-}
-
 func (s *Server) marketplaceBuyerAccount(ctx context.Context, w http.ResponseWriter, user *User, login string) (marketplaceBuyerAccount, bool) {
 	if login == "" || strings.EqualFold(login, user.Login) {
-		return marketplaceBuyerAccount{id: user.ID, login: user.Login, accountType: "User"}, true
+		return marketplaceBuyerAccount{Id: user.ID, Login: user.Login, AccountType: "User"}, true
 	}
 	org := s.store.GetOrg(login)
 	if org == nil || !s.viewerCanAdminOrg(ctx, org.Login) {
 		writeGHError(w, http.StatusNotFound, "Not Found")
 		return marketplaceBuyerAccount{}, false
 	}
-	return marketplaceBuyerAccount{id: org.ID, login: org.Login, accountType: "Organization"}, true
+	return marketplaceBuyerAccount{Id: org.ID, Login: org.Login, AccountType: "Organization"}, true
 }
 
 func marketplaceBillingDate(now time.Time, cycle string) time.Time {
@@ -556,7 +550,7 @@ func (s *Server) handlePurchaseMarketplaceBrowser(w http.ResponseWriter, r *http
 	if !ok {
 		return
 	}
-	if s.store.GetMarketplacePurchase(listing.Slug, account.accountType, account.id) != nil {
+	if s.store.GetMarketplacePurchase(listing.Slug, account.AccountType, account.Id) != nil {
 		writeGHValidationError(w, "MarketplacePurchase", "account", "already_exists")
 		return
 	}
@@ -573,7 +567,7 @@ func (s *Server) handlePurchaseMarketplaceBrowser(w http.ResponseWriter, r *http
 	}
 	nextBilling := marketplaceBillingDate(now, req.BillingCycle)
 	purchase := &MarketplacePurchase{
-		ListingSlug: listing.Slug, AccountID: account.id, AccountType: account.accountType,
+		ListingSlug: listing.Slug, AccountID: account.Id, AccountType: account.AccountType,
 		BillingCycle: req.BillingCycle, PlanID: plan.ID, PlanName: plan.Name, OnFreeTrial: req.FreeTrial,
 		UnitCount: &unitCount, NextBillingDate: &nextBilling, UpdatedAt: &now,
 	}
@@ -594,7 +588,7 @@ func (s *Server) handlePurchaseMarketplaceBrowser(w http.ResponseWriter, r *http
 		}
 	}
 	s.emitMarketplacePurchase(listing, "purchased", purchase, nil, user)
-	writeJSON(w, http.StatusCreated, s.marketplaceBrowserSubscriptionJSON(purchase, plan, listing, account.login, s.baseURL(r)))
+	writeJSON(w, http.StatusCreated, s.marketplaceBrowserSubscriptionJSON(purchase, plan, listing, account.Login, s.baseURL(r)))
 }
 
 func (s *Server) marketplaceBrowserSubscriptionJSON(purchase *MarketplacePurchase, plan *MarketplacePlan, listing *MarketplaceListing, accountLogin, baseURL string) map[string]interface{} {
@@ -680,7 +674,7 @@ func (s *Server) handleChangeMarketplaceSubscriptionBrowser(w http.ResponseWrite
 	if !ok {
 		return
 	}
-	purchase := s.store.GetMarketplacePurchase(listing.Slug, account.accountType, account.id)
+	purchase := s.store.GetMarketplacePurchase(listing.Slug, account.AccountType, account.Id)
 	newPlan := s.store.GetMarketplacePlanForListing(listing.Slug, req.PlanID)
 	if purchase == nil || newPlan == nil || newPlan.State != "published" || (req.BillingCycle != "monthly" && req.BillingCycle != "yearly") ||
 		(newPlan.PriceModel == "PER_UNIT" && req.UnitCount <= 0) {
@@ -726,7 +720,7 @@ func (s *Server) handleChangeMarketplaceSubscriptionBrowser(w http.ResponseWrite
 	if immediate {
 		s.emitMarketplacePurchase(listing, "changed", purchase, previous, user)
 	}
-	writeJSON(w, http.StatusOK, s.marketplaceBrowserSubscriptionJSON(purchase, s.store.GetMarketplacePlanForListing(listing.Slug, purchase.PlanID), listing, account.login, s.baseURL(r)))
+	writeJSON(w, http.StatusOK, s.marketplaceBrowserSubscriptionJSON(purchase, s.store.GetMarketplacePlanForListing(listing.Slug, purchase.PlanID), listing, account.Login, s.baseURL(r)))
 }
 
 func (s *Server) handleCancelMarketplaceSubscriptionBrowser(w http.ResponseWriter, r *http.Request) {
@@ -746,7 +740,7 @@ func (s *Server) handleCancelMarketplaceSubscriptionBrowser(w http.ResponseWrite
 	if !ok {
 		return
 	}
-	purchase := s.store.GetMarketplacePurchase(listing.Slug, account.accountType, account.id)
+	purchase := s.store.GetMarketplacePurchase(listing.Slug, account.AccountType, account.Id)
 	if purchase == nil {
 		writeGHError(w, http.StatusNotFound, "Not Found")
 		return
@@ -758,7 +752,7 @@ func (s *Server) handleCancelMarketplaceSubscriptionBrowser(w http.ResponseWrite
 	}
 	now := time.Now().UTC()
 	if purchase.OnFreeTrial || plan.PriceModel == "FREE" {
-		if err := s.store.DeleteMarketplacePurchase(listing.Slug, account.accountType, account.id); err != nil {
+		if err := s.store.DeleteMarketplacePurchase(listing.Slug, account.AccountType, account.Id); err != nil {
 			writeGHError(w, http.StatusInternalServerError, err.Error())
 			return
 		}
@@ -776,7 +770,7 @@ func (s *Server) handleCancelMarketplaceSubscriptionBrowser(w http.ResponseWrite
 		writeGHError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
-	writeJSON(w, http.StatusAccepted, s.marketplaceBrowserSubscriptionJSON(purchase, plan, listing, account.login, s.baseURL(r)))
+	writeJSON(w, http.StatusAccepted, s.marketplaceBrowserSubscriptionJSON(purchase, plan, listing, account.Login, s.baseURL(r)))
 }
 
 func marketplaceAccountWebhookJSON(purchase *MarketplacePurchase, login string) map[string]interface{} {
