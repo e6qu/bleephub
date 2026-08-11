@@ -8,7 +8,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/gliderlabs/ssh"
+	"golang.org/x/crypto/ssh"
 )
 
 // Responses go through userKeyToJSON; the json tags here shape the

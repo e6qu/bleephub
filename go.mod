@@ -10,9 +10,7 @@ require (
 	github.com/aws/smithy-go v1.27.7
 	github.com/canonical/go-dqlite/v3 v3.0.4
 	github.com/coreos/go-oidc/v3 v3.20.0
-	github.com/gliderlabs/ssh v0.3.8
 	github.com/go-git/go-billy/v5 v5.9.1
-	github.com/go-git/go-git v4.7.0+incompatible
 	github.com/go-git/go-git/v5 v5.19.2
 	github.com/go-jose/go-jose/v4 v4.1.4
 	github.com/graphql-go/graphql v0.8.1
@@ -45,7 +43,6 @@ require (
 	github.com/Microsoft/go-winio v0.6.2 // indirect
 	github.com/ProtonMail/go-crypto v1.4.1 // indirect
 	github.com/Rican7/retry v0.3.1 // indirect
-	github.com/anmitsu/go-shlex v0.0.0-20200514113438-38f4b401e2be // indirect
 	github.com/aws/aws-sdk-go-v2/aws/protocol/eventstream v1.7.16 // indirect
 	github.com/aws/aws-sdk-go-v2/feature/ec2/imds v1.18.35 // indirect
 	github.com/aws/aws-sdk-go-v2/internal/configsources v1.4.35 // indirect
