@@ -3037,6 +3037,21 @@ async function ghGraphQL<T>(query: string, variables?: Record<string, unknown>, 
   return json.data;
 }
 
+// ─── Pull request draft state (GraphQL) ─────────────────────────────────
+export async function markPullRequestReadyForReview(pullRequestId: string): Promise<void> {
+  await ghGraphQL(
+    `mutation($input: MarkPullRequestReadyForReviewInput!) { markPullRequestReadyForReview(input: $input) { clientMutationId } }`,
+    { input: { pullRequestId } },
+  );
+}
+
+export async function convertPullRequestToDraft(pullRequestId: string): Promise<void> {
+  await ghGraphQL(
+    `mutation($input: ConvertPullRequestToDraftInput!) { convertPullRequestToDraft(input: $input) { clientMutationId } }`,
+    { input: { pullRequestId } },
+  );
+}
+
 // ─── GitHub Discussions GraphQL ─────────────────────────────────────────
 
 const DISCUSSION_LIST_FRAGMENT = `

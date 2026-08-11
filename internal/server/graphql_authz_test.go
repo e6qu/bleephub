@@ -297,6 +297,20 @@ var gqlMutationCases = []gqlMutationCase{
 		},
 	},
 	{
+		name: "markPullRequestReadyForReview",
+		doc:  `mutation($input:MarkPullRequestReadyForReviewInput!){markPullRequestReadyForReview(input:$input){pullRequest{isDraft}}}`,
+		input: func(f *gqlAuthzFixture) map[string]interface{} {
+			return map[string]interface{}{"pullRequestId": f.pr.NodeID}
+		},
+	},
+	{
+		name: "convertPullRequestToDraft",
+		doc:  `mutation($input:ConvertPullRequestToDraftInput!){convertPullRequestToDraft(input:$input){pullRequest{isDraft}}}`,
+		input: func(f *gqlAuthzFixture) map[string]interface{} {
+			return map[string]interface{}{"pullRequestId": f.pr.NodeID}
+		},
+	},
+	{
 		name: "mergePullRequest",
 		doc:  `mutation($input:MergePullRequestInput!){mergePullRequest(input:$input){clientMutationId}}`,
 		input: func(f *gqlAuthzFixture) map[string]interface{} {

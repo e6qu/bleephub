@@ -1572,6 +1572,84 @@ func (s *Server) addPullRequestFieldsToSchema(userType, issueType, milestoneType
 		},
 	})
 
+	readyForReviewInputType := graphql.NewInputObject(graphql.InputObjectConfig{
+		Name: "MarkPullRequestReadyForReviewInput",
+		Fields: graphql.InputObjectConfigFieldMap{
+			"pullRequestId":    &graphql.InputObjectFieldConfig{Type: graphql.NewNonNull(graphql.ID)},
+			"clientMutationId": &graphql.InputObjectFieldConfig{Type: graphql.String},
+		},
+	})
+	readyForReviewPayloadType := graphql.NewObject(graphql.ObjectConfig{
+		Name: "MarkPullRequestReadyForReviewPayload",
+		Fields: graphql.Fields{
+			"pullRequest":      &graphql.Field{Type: pullRequestType},
+			"clientMutationId": &graphql.Field{Type: graphql.String},
+		},
+	})
+	s.registerMutation(mutationType, "markPullRequestReadyForReview", &graphql.Field{
+		Type: readyForReviewPayloadType,
+		Args: graphql.FieldConfigArgument{
+			"input": &graphql.ArgumentConfig{Type: graphql.NewNonNull(readyForReviewInputType)},
+		},
+		Resolve: func(p graphql.ResolveParams) (interface{}, error) {
+			user := ghUserFromContext(p.Context)
+			input, _ := p.Args["input"].(map[string]interface{})
+			prNodeID, _ := input["pullRequestId"].(string)
+			pr := findPullRequestByNodeID(s.store, prNodeID)
+			if pr == nil {
+				return nil, fmt.Errorf("could not resolve to a PullRequest")
+			}
+			wasDraft := pr.IsDraft
+			s.store.UpdatePullRequest(pr.ID, func(p *PullRequest) { p.IsDraft = false })
+			if wasDraft && user != nil {
+				s.store.RecordPullRequestEvent(pr.RepoID, pr.ID, user.ID, "ready_for_review", "", 0)
+			}
+			return map[string]interface{}{
+				"pullRequest":      pullRequestToGQL(s.store.GetPullRequest(pr.ID), s.store),
+				"clientMutationId": input["clientMutationId"],
+			}, nil
+		},
+	})
+
+	convertToDraftInputType := graphql.NewInputObject(graphql.InputObjectConfig{
+		Name: "ConvertPullRequestToDraftInput",
+		Fields: graphql.InputObjectConfigFieldMap{
+			"pullRequestId":    &graphql.InputObjectFieldConfig{Type: graphql.NewNonNull(graphql.ID)},
+			"clientMutationId": &graphql.InputObjectFieldConfig{Type: graphql.String},
+		},
+	})
+	convertToDraftPayloadType := graphql.NewObject(graphql.ObjectConfig{
+		Name: "ConvertPullRequestToDraftPayload",
+		Fields: graphql.Fields{
+			"pullRequest":      &graphql.Field{Type: pullRequestType},
+			"clientMutationId": &graphql.Field{Type: graphql.String},
+		},
+	})
+	s.registerMutation(mutationType, "convertPullRequestToDraft", &graphql.Field{
+		Type: convertToDraftPayloadType,
+		Args: graphql.FieldConfigArgument{
+			"input": &graphql.ArgumentConfig{Type: graphql.NewNonNull(convertToDraftInputType)},
+		},
+		Resolve: func(p graphql.ResolveParams) (interface{}, error) {
+			user := ghUserFromContext(p.Context)
+			input, _ := p.Args["input"].(map[string]interface{})
+			prNodeID, _ := input["pullRequestId"].(string)
+			pr := findPullRequestByNodeID(s.store, prNodeID)
+			if pr == nil {
+				return nil, fmt.Errorf("could not resolve to a PullRequest")
+			}
+			wasReady := !pr.IsDraft
+			s.store.UpdatePullRequest(pr.ID, func(p *PullRequest) { p.IsDraft = true })
+			if wasReady && user != nil {
+				s.store.RecordPullRequestEvent(pr.RepoID, pr.ID, user.ID, "convert_to_draft", "", 0)
+			}
+			return map[string]interface{}{
+				"pullRequest":      pullRequestToGQL(s.store.GetPullRequest(pr.ID), s.store),
+				"clientMutationId": input["clientMutationId"],
+			}, nil
+		},
+	})
+
 	reopenPRInputType := graphql.NewInputObject(graphql.InputObjectConfig{
 		Name: "ReopenPullRequestInput",
 		Fields: graphql.InputObjectConfigFieldMap{

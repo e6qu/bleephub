@@ -317,6 +317,7 @@ export type GithubIssue = components["schemas"]["issue"];
 /** GitHub Pull Request. */
 export interface GithubPR {
   id: number;
+  node_id: string;
   number: number;
   title: string;
   body: string;
