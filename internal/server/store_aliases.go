@@ -384,9 +384,6 @@ var (
 	cacheDataKey                            = store.CacheDataKey
 	cacheLookupKey                          = store.CacheLookupKey
 	cacheParsedKey                          = store.CacheParsedKey
-	canAdminRepo                            = store.CanAdminRepo
-	canPushRepo                             = store.CanPushRepo
-	canReadRepoAsUser                       = store.CanReadRepoAsUser
 	cloneBudget                             = store.CloneBudget
 	cloneCodespace                          = store.CloneCodespace
 	cloneCustomPropertyValue                = store.CloneCustomPropertyValue
@@ -559,6 +556,7 @@ var (
 	releaseAssetDataKey                   = store.ReleaseAssetDataKey
 	replicaInfrastructureStoreFields      = store.ReplicaInfrastructureStoreFields
 	replicaLocalStoreFields               = store.ReplicaLocalStoreFields
+	replicaServerAccessStoreFields        = store.ReplicaServerAccessStoreFields
 	runDockerCLI                          = store.RunDockerCLI
 	sqliteDialect                         = store.SqliteDialect
 	validReactionContent                  = store.ValidReactionContent

@@ -14,8 +14,8 @@ import (
 
 // TestHandlersNeverReadRepositoryIndexWithoutStoreLock is a mechanical
 // ratchet around the process-fatal map race. Store methods may read their own
-// index under st.mu; request and workflow code must either use
-// GetRepoByFullName or visibly hold s.store.mu in the same function.
+// index under st.Mu; request and workflow code must either use
+// GetRepoByFullName or visibly hold s.store.Mu in the same function.
 func TestHandlersNeverReadRepositoryIndexWithoutStoreLock(t *testing.T) {
 	fset := token.NewFileSet()
 	entries, err := os.ReadDir(".")
@@ -50,7 +50,7 @@ func TestHandlersNeverReadRepositoryIndexWithoutStoreLock(t *testing.T) {
 						return true
 					}
 					path := selectorPath(selector)
-					holdsStoreLock = holdsStoreLock || path == "s.store.mu.RLock" || path == "s.store.mu.Lock"
+					holdsStoreLock = holdsStoreLock || path == "s.store.Mu.RLock" || path == "s.store.Mu.Lock"
 				}
 				return true
 			})

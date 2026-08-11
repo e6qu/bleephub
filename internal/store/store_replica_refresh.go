@@ -31,6 +31,35 @@ var ReplicaInfrastructureStoreFields = map[string]struct{}{
 	"PackageDataDir":  {},
 }
 
+// ReplicaServerAccessStoreFields are Store fields the ARCH-001 extraction
+// exported only so the server package can keep touching them across the new
+// package boundary: locks, clock overrides, injected callbacks, derived
+// runtime indexes and process-local caches. Before the extraction they were
+// unexported, which made the snapshot reconciler skip them; copying them now
+// would replace a locked mutex, drop a test clock, or hand this process
+// another replica's runtime indexes. They keep exactly their pre-extraction
+// semantics: never copied from a snapshot.
+var ReplicaServerAccessStoreFields = map[string]struct{}{
+	"ActionsArtifacts":            {},
+	"ApiRequestRecordCap":         {},
+	"ClockMu":                     {},
+	"ClockNow":                    {},
+	"CodespaceRuntimeDelete":      {},
+	"CodespaceWorkspacePrepare":   {},
+	"JobsByPlanID":                {},
+	"Logger":                      {},
+	"Mu":                          {},
+	"PendingRepoCreations":        {},
+	"Persist":                     {},
+	"PersistenceRecoveryRequired": {},
+	"PlanIDByScope":               {},
+	"PlanScopes":                  {},
+	"RepoPrefixCopy":              {},
+	"RepoPrefixDelete":            {},
+	"RepoStorageOpen":             {},
+	"WorkflowsByRunID":            {},
+}
+
 // RefreshFromPersistenceIfStale propagates writes made through another
 // dqlite connection. Local SQLite is exclusively owned, so it has no peer to
 // refresh from and avoids the revision query entirely.
@@ -158,6 +187,9 @@ func (st *Store) RefreshFromPersistenceBeforeApply(force bool, beforeApply func(
 				continue
 			}
 			if _, infrastructure := ReplicaInfrastructureStoreFields[field.Name]; infrastructure {
+				continue
+			}
+			if _, serverAccess := ReplicaServerAccessStoreFields[field.Name]; serverAccess {
 				continue
 			}
 			destination.Field(index).Set(source.Field(index))

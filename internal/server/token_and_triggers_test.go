@@ -6,6 +6,7 @@ import (
 	"go/parser"
 	"go/token"
 	"net/http"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"testing"
@@ -172,9 +173,11 @@ func TestClassicScopeGrantsCoverEveryPermission(t *testing.T) {
 	t.Parallel()
 	declared := map[string]bool{}
 	fset := token.NewFileSet()
-	file, err := parser.ParseFile(fset, "gh_apps_perms.go", nil, 0)
+	// ARCH-001 moved the permScope constants to internal/store/apps_perms.go
+	// (exported as PermScope); the loudness guard follows them.
+	file, err := parser.ParseFile(fset, filepath.Join("..", "store", "apps_perms.go"), nil, 0)
 	if err != nil {
-		t.Fatalf("parsing gh_apps_perms.go: %v", err)
+		t.Fatalf("parsing internal/store/apps_perms.go: %v", err)
 	}
 	ast.Inspect(file, func(node ast.Node) bool {
 		spec, ok := node.(*ast.ValueSpec)
@@ -182,7 +185,7 @@ func TestClassicScopeGrantsCoverEveryPermission(t *testing.T) {
 			return true
 		}
 		ident, ok := spec.Type.(*ast.Ident)
-		if !ok || ident.Name != "permScope" {
+		if !ok || ident.Name != "PermScope" {
 			return true
 		}
 		for _, name := range spec.Names {

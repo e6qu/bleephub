@@ -345,6 +345,7 @@ func TestReplicaRefreshFieldClassificationsAreValid(t *testing.T) {
 	for category, fields := range map[string]map[string]struct{}{
 		"local":          replicaLocalStoreFields,
 		"infrastructure": replicaInfrastructureStoreFields,
+		"server-access":  replicaServerAccessStoreFields,
 	} {
 		for name := range fields {
 			field, ok := storeType.FieldByName(name)

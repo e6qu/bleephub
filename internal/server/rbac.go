@@ -3,6 +3,8 @@ package bleephub
 import (
 	"context"
 	"net/http"
+
+	"github.com/e6qu/bleephub/internal/store"
 )
 
 // requireRepoOwns binds a sub-resource addressed by its own id — a check run, a
@@ -71,4 +73,20 @@ func (s *Server) visibleRepos(ctx context.Context, repos []*Repo) []*Repo {
 		out = append(out, repo)
 	}
 	return out
+}
+
+// ARCH-001: the user-scoped RBAC predicates moved to internal/store with the
+// data layer. These forwarders keep the declarations inside the RBAC layer so
+// the authz chokepoint ratchet (authz_chokepoint_test.go) still guards every
+// other call site; nothing outside rbac.go / gh_apps_perms.go may call them.
+func canAdminRepo(st *Store, user *User, repo *Repo) bool {
+	return store.CanAdminRepo(st, user, repo)
+}
+
+func canPushRepo(st *Store, user *User, repo *Repo) bool {
+	return store.CanPushRepo(st, user, repo)
+}
+
+func canReadRepoAsUser(st *Store, user *User, repo *Repo) bool {
+	return store.CanReadRepoAsUser(st, user, repo)
 }
