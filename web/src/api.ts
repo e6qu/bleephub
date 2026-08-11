@@ -4277,6 +4277,34 @@ export const removePullReviewCommentReaction = (
     "DELETE",
     `/api/v3/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/pulls/comments/${commentId}/reactions/${reactionId}`,
   );
+
+// Commit comments use the bare /comments/{id}/reactions endpoint (distinct from
+// the issue-comment /issues/comments/… and PR-review /pulls/comments/… paths).
+export const fetchCommitCommentReactions = (owner: string, repo: string, commentId: number) =>
+  ghFetch<GithubReaction[]>(
+    `/api/v3/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/comments/${commentId}/reactions`,
+  );
+
+export const addCommitCommentReaction = (
+  owner: string,
+  repo: string,
+  commentId: number,
+  content: GithubReactionContent,
+): Promise<GithubReaction> =>
+  ghPostJSON(`/api/v3/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/comments/${commentId}/reactions`, {
+    content,
+  });
+
+export const removeCommitCommentReaction = (
+  owner: string,
+  repo: string,
+  commentId: number,
+  reactionId: number,
+) =>
+  ghSend(
+    "DELETE",
+    `/api/v3/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/comments/${commentId}/reactions/${reactionId}`,
+  );
 // ─── Search + repo social + account ─────────────────────────────────────
 
 /** One page of a /search/* envelope ({total_count, incomplete_results, items}). */

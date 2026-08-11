@@ -442,6 +442,37 @@ describe("repository detail journeys", () => {
     });
   });
 
+  it("adds a reaction to a commit comment via POST /comments/{id}/reactions", async () => {
+    mockFetch.mockImplementation((url: RequestInfo | URL, init?: RequestInit) => {
+      const u = url.toString();
+      if (u.endsWith("/comments/50/reactions") && init?.method === "POST") {
+        return Promise.resolve(
+          jsonResponse({ id: 9, content: "heart", user: { login: "admin" }, created_at: "2026-01-01T00:00:00Z" }, 201),
+        );
+      }
+      if (u.endsWith("/comments/50/reactions")) return Promise.resolve(jsonResponse([]));
+      if (u.endsWith("/commits/abc123/comments")) {
+        return Promise.resolve(
+          jsonResponse([{ id: 50, body: "hi", user: { login: "bob" }, created_at: "2026-01-01T00:00:00Z" }]),
+        );
+      }
+      if (u.endsWith("/api/v3/user")) return Promise.resolve(jsonResponse({ login: "admin" }));
+      return routedFetch(url);
+    });
+    renderPage("/ui/repos/admin/test/commits/abc123");
+
+    fireEvent.click(await screen.findByRole("button", { name: "add reaction" }));
+    fireEvent.click(screen.getByRole("button", { name: "react with heart" }));
+
+    await waitFor(() => {
+      const post = mockFetch.mock.calls.find(
+        (c) => c[0].toString().endsWith("/comments/50/reactions") && c[1]?.method === "POST",
+      );
+      expect(post).toBeDefined();
+      expect(JSON.parse(String(post![1].body))).toEqual({ content: "heart" });
+    });
+  });
+
   it("renders a repository file at its durable URL", async () => {
     mockFetch.mockImplementation((url: RequestInfo | URL) => routedFetch(url));
     renderPage("/ui/repos/admin/test/blob/main/README.md");

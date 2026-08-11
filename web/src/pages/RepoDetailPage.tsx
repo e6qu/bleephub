@@ -10,6 +10,10 @@ import {
   fetchRepoCommit,
   fetchCommitComments,
   createCommitComment,
+  fetchCommitCommentReactions,
+  addCommitCommentReaction,
+  removeCommitCommentReaction,
+  fetchAuthenticatedUser,
   fetchRepoCommits,
   fetchRepoComparison,
   fetchRepoContents,
@@ -51,6 +55,7 @@ import type {
 import { RepoHeader } from "../components/Shell.js";
 import { Box, Blankslate, Button, CodeBlock, SectionLabel, Modal, DialogActions, FormLabel } from "../components/ui.js";
 import { CommentCard } from "../components/CommentCard.js";
+import { ReactionBar } from "../components/ReactionBar.js";
 import {
   BranchIcon,
   TagIcon,
@@ -1527,6 +1532,8 @@ function CommitCommentsSection({ owner, repo, sha }: { owner: string; repo: stri
       setBody("");
     },
   });
+  const viewerQ = useQuery({ queryKey: ["viewer"], queryFn: fetchAuthenticatedUser });
+  const viewerLogin = typeof viewerQ.data?.login === "string" ? viewerQ.data.login : null;
 
   const comments = listQ.data ?? [];
   return (
@@ -1536,7 +1543,16 @@ function CommitCommentsSection({ owner, repo, sha }: { owner: string; repo: stri
         <InlineError inline title="Failed to add comment" detail={String(createMut.error)} />
       )}
       {comments.map((c) => (
-        <CommentCard key={c.id} login={c.user?.login} body={c.body} date={c.created_at} />
+        <div key={c.id}>
+          <CommentCard login={c.user?.login} body={c.body} date={c.created_at} />
+          <ReactionBar
+            queryKey={["commit-comment-reactions", owner, repo, c.id]}
+            fetchList={() => fetchCommitCommentReactions(owner, repo, c.id)}
+            add={(content) => addCommitCommentReaction(owner, repo, c.id, content)}
+            remove={(reactionId) => removeCommitCommentReaction(owner, repo, c.id, reactionId)}
+            viewerLogin={viewerLogin}
+          />
+        </div>
       ))}
       {comments.length === 0 && (
         <div style={{ padding: "0.25rem 0 0.75rem", color: "var(--color-fg-muted)", fontSize: "0.85rem" }}>
