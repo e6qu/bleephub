@@ -1,4 +1,4 @@
-package bleephub
+package graphqlapi
 
 import (
 	"fmt"
@@ -11,7 +11,7 @@ import (
 // issue/PR locking GraphQL mutations against the shared mutationType.
 // Mirrors real GitHub's mutation surface: minimizeComment /
 // unminimizeComment / lockLockable / unlockLockable.
-func (s *Server) addModerationMutationsToSchema(mutationType *graphql.Object) {
+func (s *Resolver) addModerationMutationsToSchema(mutationType *graphql.Object) {
 	// --- minimizeComment / unminimizeComment ---
 
 	classifierEnum := graphql.NewEnum(graphql.EnumConfig{
@@ -64,7 +64,7 @@ func (s *Server) addModerationMutationsToSchema(mutationType *graphql.Object) {
 			"input": &graphql.ArgumentConfig{Type: graphql.NewNonNull(minimizeInputType)},
 		},
 		Resolve: func(p graphql.ResolveParams) (interface{}, error) {
-			user := ghUserFromContext(p.Context)
+			user := s.ghUserFromContext(p.Context)
 			input, _ := p.Args["input"].(map[string]interface{})
 			nodeID, _ := input["subjectId"].(string)
 			classifier, _ := input["classifier"].(string)
@@ -88,7 +88,7 @@ func (s *Server) addModerationMutationsToSchema(mutationType *graphql.Object) {
 			"input": &graphql.ArgumentConfig{Type: graphql.NewNonNull(unminimizeInputType)},
 		},
 		Resolve: func(p graphql.ResolveParams) (interface{}, error) {
-			user := ghUserFromContext(p.Context)
+			user := s.ghUserFromContext(p.Context)
 			input, _ := p.Args["input"].(map[string]interface{})
 			nodeID, _ := input["subjectId"].(string)
 			c := s.store.LookupCommentByNodeID(nodeID)
@@ -197,7 +197,7 @@ func graphqlToRESTLockReason(enum string) string {
 // Lockable interface (the concrete Issue/PullRequest type resolves any
 // selection, and activeLockReason serializes through the LockReason enum).
 // The bool indicates whether a target was found.
-func (s *Server) lockByNodeID(nodeID string, locked bool, reason string) (map[string]interface{}, bool) {
+func (s *Resolver) lockByNodeID(nodeID string, locked bool, reason string) (map[string]interface{}, bool) {
 	if issue := findIssueByNodeID(s.store, nodeID); issue != nil {
 		s.store.SetIssueOrPRLock(issue.RepoID, issue.Number, locked, reason)
 		refreshed := s.store.GetIssue(issue.ID)
@@ -222,7 +222,7 @@ func (s *Server) lockByNodeID(nodeID string, locked bool, reason string) (map[st
 // field set. Issue, PullRequest, and Discussion implement it. ResolveType
 // discriminates on the source map's node id prefix — the registry entries
 // are populated by the time any query executes.
-func (s *Server) gqlLockableInterface() *graphql.Interface {
+func (s *Resolver) gqlLockableInterface() *graphql.Interface {
 	if s.graphqlTypes.lockable != nil {
 		return s.graphqlTypes.lockable
 	}
@@ -251,7 +251,7 @@ func (s *Server) gqlLockableInterface() *graphql.Interface {
 // gqlMinimizableInterface returns GitHub's Minimizable interface (memoized)
 // with the subset of official fields bleephub models (isMinimized,
 // minimizedReason). IssueComment and DiscussionComment implement it.
-func (s *Server) gqlMinimizableInterface() *graphql.Interface {
+func (s *Resolver) gqlMinimizableInterface() *graphql.Interface {
 	if s.graphqlTypes.minimizable != nil {
 		return s.graphqlTypes.minimizable
 	}

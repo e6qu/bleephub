@@ -1,4 +1,4 @@
-package bleephub
+package graphqlapi
 
 import (
 	"fmt"
@@ -9,7 +9,7 @@ import (
 )
 
 // addOrgFieldsToSchema adds Organization types, queries, and viewer.organizations to the schema.
-func (s *Server) addOrgFieldsToSchema(userType, queryType *graphql.Object, nodeInterface *graphql.Interface) *graphql.Object {
+func (s *Resolver) addOrgFieldsToSchema(userType, queryType *graphql.Object, nodeInterface *graphql.Interface) *graphql.Object {
 	dateTime := s.graphQLStringScalar("DateTime")
 	uri := s.graphQLStringScalar("URI")
 	orgType := graphql.NewObject(graphql.ObjectConfig{

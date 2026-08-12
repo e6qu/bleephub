@@ -21,7 +21,6 @@ import (
 	"sync"
 	"time"
 
-	"github.com/graphql-go/graphql"
 	"github.com/rs/zerolog"
 	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
 	"go.opentelemetry.io/otel/codes"
@@ -29,6 +28,7 @@ import (
 	"go.opentelemetry.io/otel/trace"
 
 	"github.com/e6qu/bleephub/internal/actions"
+	"github.com/e6qu/bleephub/internal/graphqlapi"
 )
 
 // Server is the bleephub HTTP server implementing the GitHub Actions
@@ -38,8 +38,7 @@ type Server struct {
 	mux                    *http.ServeMux
 	logger                 zerolog.Logger
 	store                  *Store
-	graphqlSchema          graphql.Schema
-	graphqlTypes           graphQLTypeRegistry
+	graphql                *graphqlapi.Resolver
 	actionCache            *ActionCache
 	artifactStore          *ArtifactStore
 	metrics                *Metrics
@@ -453,7 +452,7 @@ func NewServer(addr string, logger zerolog.Logger, options ...ServerOption) *Ser
 	if err := s.seedConfiguredApps(); err != nil {
 		logger.Fatal().Err(err).Msg("failed to seed configured GitHub Apps")
 	}
-	s.initGraphQLSchema()
+	s.graphql = s.newGraphQLResolver()
 	s.registerRoutes()
 	return s
 }

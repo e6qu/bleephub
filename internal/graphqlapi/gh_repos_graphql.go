@@ -1,4 +1,4 @@
-package bleephub
+package graphqlapi
 
 import (
 	"encoding/base64"
@@ -16,7 +16,7 @@ import (
 
 // addRepoFieldsToSchema adds repository types, queries, and mutations to the schema.
 // Called from initGraphQLSchema after userType and queryType are created.
-func (s *Server) addRepoFieldsToSchema(
+func (s *Resolver) addRepoFieldsToSchema(
 	userType, queryType *graphql.Object,
 	nodeInterface *graphql.Interface,
 ) (*graphql.Object, *graphql.Object, *graphql.Field, *graphql.Field) {
@@ -740,7 +740,7 @@ func (s *Server) addRepoFieldsToSchema(
 			// Drop what the viewer cannot see, before any other filter.
 			repos = s.visibleRepos(p.Context, repos)
 			if affiliations := graphQLRepositoryAffiliations(p.Args["affiliations"]); len(affiliations) != 0 {
-				viewer := ghUserFromContext(p.Context)
+				viewer := s.ghUserFromContext(p.Context)
 				if viewer == nil {
 					repos = nil
 				} else {
@@ -968,7 +968,7 @@ func (s *Server) addRepoFieldsToSchema(
 			"input": &graphql.ArgumentConfig{Type: graphql.NewNonNull(createRepoInputType)},
 		},
 		Resolve: func(p graphql.ResolveParams) (interface{}, error) {
-			user := ghUserFromContext(p.Context)
+			user := s.ghUserFromContext(p.Context)
 
 			input, _ := p.Args["input"].(map[string]interface{})
 			name, _ := input["name"].(string)
@@ -1084,7 +1084,7 @@ type mutationRule interface {
 	// being assembled, so a row missing its lookup is a build failure rather
 	// than a mutation that quietly authorizes nothing.
 	check() error
-	authorize(s *Server, p graphql.ResolveParams, input map[string]interface{}) error
+	authorize(s *Resolver, p graphql.ResolveParams, input map[string]interface{}) error
 }
 
 // mutationLevel is the entitlement a mutation demands on the repository its
@@ -1120,7 +1120,7 @@ type repoCreationRule struct{}
 
 func (repoCreationRule) check() error { return nil }
 
-func (repoCreationRule) authorize(s *Server, p graphql.ResolveParams, input map[string]interface{}) error {
+func (repoCreationRule) authorize(s *Resolver, p graphql.ResolveParams, input map[string]interface{}) error {
 	kind, login, err := s.createRepositoryOwner(p, input)
 	if err != nil {
 		return err
@@ -1137,8 +1137,8 @@ func (repoCreationRule) authorize(s *Server, p graphql.ResolveParams, input map[
 // createRepositoryOwner resolves the account a createRepository input names. The
 // policy row and the resolver both call it, so the owner the entitlement is
 // checked against is by construction the owner the repository is created under.
-func (s *Server) createRepositoryOwner(p graphql.ResolveParams, input map[string]interface{}) (accountKind, string, error) {
-	user := ghUserFromContext(p.Context)
+func (s *Resolver) createRepositoryOwner(p graphql.ResolveParams, input map[string]interface{}) (accountKind, string, error) {
+	user := s.ghUserFromContext(p.Context)
 	ownerID, _ := input["ownerId"].(string)
 	if ownerID == "" || ownerID == user.NodeID {
 		return anyAccount, user.Login, nil
@@ -1166,7 +1166,7 @@ type repoRule struct {
 	// repository access: editing your own issue or hiding your own comment
 	// never required push.
 	authorMayAct bool
-	target       func(s *Server, input map[string]interface{}) mutationTarget
+	target       func(s *Resolver, input map[string]interface{}) mutationTarget
 }
 
 func (r repoRule) check() error {
@@ -1179,7 +1179,7 @@ func (r repoRule) check() error {
 	return nil
 }
 
-func (r repoRule) authorize(s *Server, p graphql.ResolveParams, input map[string]interface{}) error {
+func (r repoRule) authorize(s *Resolver, p graphql.ResolveParams, input map[string]interface{}) error {
 	target := r.target(s, input)
 	if target.repo == nil || !s.viewerCanReadRepo(p.Context, target.repo) {
 		return target.missing
@@ -1194,7 +1194,7 @@ func (r repoRule) authorize(s *Server, p graphql.ResolveParams, input map[string
 	if !s.credentialGrantsRepo(p.Context, target.repo, r.scope, permWrite) {
 		return fmt.Errorf("resource not accessible by integration")
 	}
-	user := ghUserFromContext(p.Context)
+	user := s.ghUserFromContext(p.Context)
 	if r.authorMayAct && target.authorID != 0 && target.authorID == user.ID {
 		return nil
 	}
@@ -1283,7 +1283,7 @@ var guardedMutations = struct {
 // registerMutation installs a mutation behind the entitlement its policy row
 // declares. It is the only way a mutation should reach the schema;
 // assertMutationsAuthorized is the backstop for one that arrives another way.
-func (s *Server) registerMutation(mutationType *graphql.Object, name string, field *graphql.Field) {
+func (s *Resolver) registerMutation(mutationType *graphql.Object, name string, field *graphql.Field) {
 	rule, ok := graphqlMutationAuthz[name]
 	if !ok {
 		panic(fmt.Sprintf("graphql mutation %q has no row in graphqlMutationAuthz", name))
@@ -1310,7 +1310,7 @@ func (s *Server) registerMutation(mutationType *graphql.Object, name string, fie
 	field.Resolve = func(p graphql.ResolveParams) (interface{}, error) {
 		// Authentication is common to every rule and is asked here so no rule
 		// can forget it; resolvers may then assume a non-nil viewer.
-		if ghUserFromContext(p.Context) == nil {
+		if s.ghUserFromContext(p.Context) == nil {
 			return nil, fmt.Errorf("authentication required")
 		}
 		input, _ := p.Args["input"].(map[string]interface{})
@@ -1396,8 +1396,8 @@ func gqlMissingNode(typeName, nodeID string) error {
 	}
 }
 
-func mutationTargetRepo(key string) func(*Server, map[string]interface{}) mutationTarget {
-	return func(s *Server, input map[string]interface{}) mutationTarget {
+func mutationTargetRepo(key string) func(*Resolver, map[string]interface{}) mutationTarget {
+	return func(s *Resolver, input map[string]interface{}) mutationTarget {
 		nodeID, _ := input[key].(string)
 		return mutationTarget{
 			repo:    findRepoByNodeID(s.store, nodeID),
@@ -1406,8 +1406,8 @@ func mutationTargetRepo(key string) func(*Server, map[string]interface{}) mutati
 	}
 }
 
-func mutationTargetIssue(key string) func(*Server, map[string]interface{}) mutationTarget {
-	return func(s *Server, input map[string]interface{}) mutationTarget {
+func mutationTargetIssue(key string) func(*Resolver, map[string]interface{}) mutationTarget {
+	return func(s *Resolver, input map[string]interface{}) mutationTarget {
 		nodeID, _ := input[key].(string)
 		target := mutationTarget{missing: gqlMissingNode("Issue", nodeID)}
 		if issue := findIssueByNodeID(s.store, nodeID); issue != nil {
@@ -1418,8 +1418,8 @@ func mutationTargetIssue(key string) func(*Server, map[string]interface{}) mutat
 	}
 }
 
-func mutationTargetPullRequest(key string) func(*Server, map[string]interface{}) mutationTarget {
-	return func(s *Server, input map[string]interface{}) mutationTarget {
+func mutationTargetPullRequest(key string) func(*Resolver, map[string]interface{}) mutationTarget {
+	return func(s *Resolver, input map[string]interface{}) mutationTarget {
 		nodeID, _ := input[key].(string)
 		target := mutationTarget{missing: gqlMissingNode("PullRequest", nodeID)}
 		if pr := findPullRequestByNodeID(s.store, nodeID); pr != nil {
@@ -1433,8 +1433,8 @@ func mutationTargetPullRequest(key string) func(*Server, map[string]interface{})
 // mutationTargetIssueOrPullRequest covers the mutations whose subject is either
 // — GitHub stores pull requests as issues, so addComment and the lock
 // mutations take both node kinds.
-func mutationTargetIssueOrPullRequest(key string) func(*Server, map[string]interface{}) mutationTarget {
-	return func(s *Server, input map[string]interface{}) mutationTarget {
+func mutationTargetIssueOrPullRequest(key string) func(*Resolver, map[string]interface{}) mutationTarget {
+	return func(s *Resolver, input map[string]interface{}) mutationTarget {
 		nodeID, _ := input[key].(string)
 		target := mutationTarget{missing: gqlMissingNode("node", nodeID)}
 		if issue := findIssueByNodeID(s.store, nodeID); issue != nil {
@@ -1450,8 +1450,8 @@ func mutationTargetIssueOrPullRequest(key string) func(*Server, map[string]inter
 	}
 }
 
-func mutationTargetIssueComment(key string) func(*Server, map[string]interface{}) mutationTarget {
-	return func(s *Server, input map[string]interface{}) mutationTarget {
+func mutationTargetIssueComment(key string) func(*Resolver, map[string]interface{}) mutationTarget {
+	return func(s *Resolver, input map[string]interface{}) mutationTarget {
 		nodeID, _ := input[key].(string)
 		target := mutationTarget{missing: gqlMissingNode("node", nodeID)}
 		c := s.store.LookupCommentByNodeID(nodeID)
@@ -1472,8 +1472,8 @@ func mutationTargetIssueComment(key string) func(*Server, map[string]interface{}
 	}
 }
 
-func mutationTargetDiscussion(key string) func(*Server, map[string]interface{}) mutationTarget {
-	return func(s *Server, input map[string]interface{}) mutationTarget {
+func mutationTargetDiscussion(key string) func(*Resolver, map[string]interface{}) mutationTarget {
+	return func(s *Resolver, input map[string]interface{}) mutationTarget {
 		nodeID, _ := input[key].(string)
 		target := mutationTarget{missing: gqlMissingNode("Discussion", nodeID)}
 		if d := findDiscussionByNodeID(s.store, nodeID); d != nil {
@@ -1484,8 +1484,8 @@ func mutationTargetDiscussion(key string) func(*Server, map[string]interface{}) 
 	}
 }
 
-func mutationTargetDiscussionComment(key string) func(*Server, map[string]interface{}) mutationTarget {
-	return func(s *Server, input map[string]interface{}) mutationTarget {
+func mutationTargetDiscussionComment(key string) func(*Resolver, map[string]interface{}) mutationTarget {
+	return func(s *Resolver, input map[string]interface{}) mutationTarget {
 		nodeID, _ := input[key].(string)
 		target := mutationTarget{missing: gqlMissingNode("DiscussionComment", nodeID)}
 		c := findDiscussionCommentByNodeID(s.store, nodeID)
@@ -1503,8 +1503,8 @@ func mutationTargetDiscussionComment(key string) func(*Server, map[string]interf
 // mutationTargetAnsweredDiscussion addresses a comment but hands back the
 // discussion's author: marking an answer is the asker's call, not the
 // answerer's.
-func mutationTargetAnsweredDiscussion(key string) func(*Server, map[string]interface{}) mutationTarget {
-	return func(s *Server, input map[string]interface{}) mutationTarget {
+func mutationTargetAnsweredDiscussion(key string) func(*Resolver, map[string]interface{}) mutationTarget {
+	return func(s *Resolver, input map[string]interface{}) mutationTarget {
 		nodeID, _ := input[key].(string)
 		target := mutationTarget{missing: gqlMissingNode("DiscussionComment", nodeID)}
 		c := findDiscussionCommentByNodeID(s.store, nodeID)
@@ -1519,8 +1519,8 @@ func mutationTargetAnsweredDiscussion(key string) func(*Server, map[string]inter
 	}
 }
 
-func mutationTargetReviewThread(key string) func(*Server, map[string]interface{}) mutationTarget {
-	return func(s *Server, input map[string]interface{}) mutationTarget {
+func mutationTargetReviewThread(key string) func(*Resolver, map[string]interface{}) mutationTarget {
+	return func(s *Resolver, input map[string]interface{}) mutationTarget {
 		nodeID, _ := input[key].(string)
 		target := mutationTarget{missing: gqlMissingNode("PullRequestReviewThread", nodeID)}
 		threadID, ok := parsePRReviewThreadNodeID(nodeID)
@@ -1645,51 +1645,6 @@ func repoOwnerGraphQLLocked(repo *Repo, st *Store) map[string]interface{} {
 	return nil
 }
 
-// repoOwnerREST returns a simple-user-shaped map for the owner of repo,
-// using snake_case keys. For org-owned repos it resolves the organization
-// from the repo's full name rather than the creating user.
-func repoOwnerREST(repo *Repo, st *Store, baseURL string) map[string]interface{} {
-	if repo == nil {
-		return nil
-	}
-	ownerLogin, _, _ := strings.Cut(repo.FullName, "/")
-	st.Mu.RLock()
-	org := st.OrgsByLogin[ownerLogin]
-	st.Mu.RUnlock()
-	if org != nil {
-		api := baseURL + "/api/v3/orgs/" + org.Login
-		return map[string]interface{}{
-			"login":               org.Login,
-			"id":                  org.ID,
-			"node_id":             org.NodeID,
-			"avatar_url":          org.AvatarURL,
-			"gravatar_id":         "",
-			"url":                 api,
-			"html_url":            baseURL + "/" + org.Login,
-			"followers_url":       api + "/followers",
-			"following_url":       api + "/following{/other_user}",
-			"gists_url":           api + "/gists{/gist_id}",
-			"starred_url":         api + "/starred{/owner}{/repo}",
-			"subscriptions_url":   api + "/subscriptions",
-			"organizations_url":   api + "/orgs",
-			"repos_url":           api + "/repos",
-			"events_url":          api + "/events{/privacy}",
-			"received_events_url": api + "/received_events",
-			"type":                org.Type,
-			"site_admin":          false,
-			"name":                org.Name,
-			"email":               org.Email,
-			"user_view_type":      "public",
-		}
-	}
-	st.Mu.RLock()
-	defer st.Mu.RUnlock()
-	if repo.Owner != nil {
-		return userToJSON(repo.Owner)
-	}
-	return nil
-}
-
 // releaseToGQL renders a stored Release as the GraphQL source map for the
 // Release type. latestID is the id of the repo's latest published release
 // (0 when none) so isLatest reflects the same derivation REST uses.
@@ -1718,7 +1673,7 @@ func releaseToGQL(rel *Release, latestID int, repoFullName string, immutable boo
 	}
 }
 
-func (s *Server) repoImmutableReleasesEnabled(repoID int) bool {
+func (s *Resolver) repoImmutableReleasesEnabled(repoID int) bool {
 	repo := s.store.GetRepoByID(repoID)
 	if repo == nil {
 		return false
@@ -1729,7 +1684,7 @@ func (s *Server) repoImmutableReleasesEnabled(repoID int) bool {
 
 // repoHasNoCommits reports whether the repo's git storage lacks a resolvable
 // HEAD commit — GitHub's "empty repository" condition.
-func (s *Server) repoHasNoCommits(owner, name string) bool {
+func (s *Resolver) repoHasNoCommits(owner, name string) bool {
 	stor := s.store.GetGitStorage(owner, name)
 	if stor == nil {
 		return true
@@ -1815,7 +1770,7 @@ func decodeCursorStrict(s string) (int, error) {
 // "branchProtectionRule" key of the source map when the producer embeds one
 // (the PR baseRef path does); sources without the key resolve null, the value
 // real GitHub returns for an unprotected ref.
-func (s *Server) gqlRefType() *graphql.Object {
+func (s *Resolver) gqlRefType() *graphql.Object {
 	if s.graphqlTypes.ref != nil {
 		return s.graphqlTypes.ref
 	}

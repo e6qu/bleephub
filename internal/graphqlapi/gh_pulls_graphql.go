@@ -1,4 +1,4 @@
-package bleephub
+package graphqlapi
 
 import (
 	"errors"
@@ -16,7 +16,7 @@ import (
 )
 
 // addPullRequestFieldsToSchema adds PR types, queries, and mutations to the schema.
-func (s *Server) addPullRequestFieldsToSchema(userType, issueType, milestoneType, repoType, mutationType, queryType *graphql.Object, nodeInterface *graphql.Interface) *graphql.Object {
+func (s *Resolver) addPullRequestFieldsToSchema(userType, issueType, milestoneType, repoType, mutationType, queryType *graphql.Object, nodeInterface *graphql.Interface) *graphql.Object {
 	dateTime := s.graphQLStringScalar("DateTime")
 	uri := s.graphQLStringScalar("URI")
 	gitObjectID := s.graphQLStringScalar("GitObjectID")
@@ -871,7 +871,7 @@ func (s *Server) addPullRequestFieldsToSchema(userType, issueType, milestoneType
 					if err != nil {
 						return nil, err
 					}
-					files, err := pullRequestChangedFiles(s.store, repo, pr, "")
+					files, err := s.pullRequestChangedFiles(repo, pr, "")
 					if err != nil {
 						return nil, err
 					}
@@ -1248,7 +1248,7 @@ func (s *Server) addPullRequestFieldsToSchema(userType, issueType, milestoneType
 				return paginateGQLMaps(nil, p.Args), nil
 			}
 
-			items := s.searchIssuesAndPRs(q, ghUserFromContext(p.Context))
+			items := s.searchIssuesAndPRs(q, s.ghUserFromContext(p.Context))
 			return paginateGQLItems(items, p.Args), nil
 		},
 	})
@@ -1281,7 +1281,7 @@ func (s *Server) addPullRequestFieldsToSchema(userType, issueType, milestoneType
 			"input": &graphql.ArgumentConfig{Type: graphql.NewNonNull(createPRInputType)},
 		},
 		Resolve: func(p graphql.ResolveParams) (interface{}, error) {
-			user := ghUserFromContext(p.Context)
+			user := s.ghUserFromContext(p.Context)
 
 			input, _ := p.Args["input"].(map[string]interface{})
 			repoNodeID, _ := input["repositoryId"].(string)
@@ -1338,7 +1338,7 @@ func (s *Server) addPullRequestFieldsToSchema(userType, issueType, milestoneType
 			"input": &graphql.ArgumentConfig{Type: graphql.NewNonNull(closePRInputType)},
 		},
 		Resolve: func(p graphql.ResolveParams) (interface{}, error) {
-			user := ghUserFromContext(p.Context)
+			user := s.ghUserFromContext(p.Context)
 
 			input, _ := p.Args["input"].(map[string]interface{})
 			prNodeID, _ := input["pullRequestId"].(string)
@@ -1385,7 +1385,7 @@ func (s *Server) addPullRequestFieldsToSchema(userType, issueType, milestoneType
 			"input": &graphql.ArgumentConfig{Type: graphql.NewNonNull(readyForReviewInputType)},
 		},
 		Resolve: func(p graphql.ResolveParams) (interface{}, error) {
-			user := ghUserFromContext(p.Context)
+			user := s.ghUserFromContext(p.Context)
 			input, _ := p.Args["input"].(map[string]interface{})
 			prNodeID, _ := input["pullRequestId"].(string)
 			pr := findPullRequestByNodeID(s.store, prNodeID)
@@ -1424,7 +1424,7 @@ func (s *Server) addPullRequestFieldsToSchema(userType, issueType, milestoneType
 			"input": &graphql.ArgumentConfig{Type: graphql.NewNonNull(convertToDraftInputType)},
 		},
 		Resolve: func(p graphql.ResolveParams) (interface{}, error) {
-			user := ghUserFromContext(p.Context)
+			user := s.ghUserFromContext(p.Context)
 			input, _ := p.Args["input"].(map[string]interface{})
 			prNodeID, _ := input["pullRequestId"].(string)
 			pr := findPullRequestByNodeID(s.store, prNodeID)
@@ -1463,7 +1463,7 @@ func (s *Server) addPullRequestFieldsToSchema(userType, issueType, milestoneType
 			"input": &graphql.ArgumentConfig{Type: graphql.NewNonNull(reopenPRInputType)},
 		},
 		Resolve: func(p graphql.ResolveParams) (interface{}, error) {
-			user := ghUserFromContext(p.Context)
+			user := s.ghUserFromContext(p.Context)
 
 			input, _ := p.Args["input"].(map[string]interface{})
 			prNodeID, _ := input["pullRequestId"].(string)
@@ -1532,7 +1532,7 @@ func (s *Server) addPullRequestFieldsToSchema(userType, issueType, milestoneType
 			"input": &graphql.ArgumentConfig{Type: graphql.NewNonNull(mergePRInputType)},
 		},
 		Resolve: func(p graphql.ResolveParams) (interface{}, error) {
-			user := ghUserFromContext(p.Context)
+			user := s.ghUserFromContext(p.Context)
 
 			input, _ := p.Args["input"].(map[string]interface{})
 			prNodeID, _ := input["pullRequestId"].(string)
@@ -1571,9 +1571,9 @@ func (s *Server) addPullRequestFieldsToSchema(userType, issueType, milestoneType
 			// that REST refuses. Both gates run before the single call into
 			// completePullRequestMerge below; there is no other path to it.
 			if headSha := s.prHeadSha(repo, pr); headSha != "" {
-				if st := s.evaluateChecksForMerge(repo, pr.BaseRefName, headSha); len(st.MissingRequired) > 0 {
+				if missing := s.missingRequiredChecks(repo, pr.BaseRefName, headSha); len(missing) > 0 {
 					//lint:ignore ST1005 GitHub GraphQL parity requires this exact upstream message.
-					return nil, fmt.Errorf("Required status check %q is expected.", st.MissingRequired[0])
+					return nil, fmt.Errorf("Required status check %q is expected.", missing[0])
 				}
 			}
 
@@ -1600,7 +1600,7 @@ func (s *Server) addPullRequestFieldsToSchema(userType, issueType, milestoneType
 			}
 
 			updated := s.store.GetPullRequest(pr.ID)
-			mergedPayload := buildPullRequestPayload(s.store, repo, updated, user, "closed")
+			mergedPayload := s.buildPullRequestPayload(repo, updated, user, "closed")
 			s.emitWebhookEvent(repo.FullName, "pull_request", "closed", mergedPayload)
 
 			var clientMutationID interface{}
@@ -1663,7 +1663,7 @@ func (s *Server) addPullRequestFieldsToSchema(userType, issueType, milestoneType
 			"input": &graphql.ArgumentConfig{Type: graphql.NewNonNull(addPRReviewInputType)},
 		},
 		Resolve: func(p graphql.ResolveParams) (interface{}, error) {
-			user := ghUserFromContext(p.Context)
+			user := s.ghUserFromContext(p.Context)
 
 			input, _ := p.Args["input"].(map[string]interface{})
 			prNodeID, _ := input["pullRequestId"].(string)
@@ -2277,7 +2277,7 @@ func reviewThreadsForGraphQL(threads []*ReviewThread, st *Store) []map[string]in
 	return out
 }
 
-func (s *Server) resolveReviewThreadGraphQL(p graphql.ResolveParams, resolved bool) (interface{}, error) {
+func (s *Resolver) resolveReviewThreadGraphQL(p graphql.ResolveParams, resolved bool) (interface{}, error) {
 	input, _ := p.Args["input"].(map[string]interface{})
 	threadNodeID, _ := input["threadId"].(string)
 	threadID, ok := parsePRReviewThreadNodeID(threadNodeID)
@@ -2287,7 +2287,7 @@ func (s *Server) resolveReviewThreadGraphQL(p graphql.ResolveParams, resolved bo
 		}
 	}
 	resolverID := 0
-	if actor := ghUserFromContext(p.Context); actor != nil {
+	if actor := s.ghUserFromContext(p.Context); actor != nil {
 		resolverID = actor.ID
 	}
 	if !s.store.PRReviewComments.ResolveThread(threadID, resolved, resolverID) {
@@ -2727,7 +2727,7 @@ func checkSuiteWorkflowRunSourceLocked(st *Store, suite *CheckSuite) map[string]
 // graph. A qualifier bleephub cannot evaluate at all yields honest empty
 // results (never an over-matching ignore). Bare keywords match title/body
 // substrings.
-func (s *Server) searchIssuesAndPRs(query string, viewer *User) []gqlConnItem {
+func (s *Resolver) searchIssuesAndPRs(query string, viewer *User) []gqlConnItem {
 	type searchSpec struct {
 		repos      []string // repo full names; empty = all
 		states     []string // OPEN / CLOSED / MERGED; empty = all

@@ -433,6 +433,8 @@ var (
 	licenseJSON                             = store.LicenseJSON
 	licenseTemplates                        = store.LicenseTemplates
 	logDataKey                              = store.LogDataKey
+	issueHasAllLabels                       = store.IssueHasAllLabels
+	labelIDsCoverNames                      = store.LabelIDsCoverNames
 	membershipKey                           = store.MembershipKey
 	newActionsByteStoreFromEnv              = store.NewActionsByteStoreFromEnv
 	newPersistBatch                         = store.NewPersistBatch

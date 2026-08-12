@@ -10,6 +10,8 @@ import (
 	"strings"
 
 	"github.com/microcosm-cc/bluemonday"
+
+	"github.com/e6qu/bleephub/internal/store"
 	"github.com/yuin/goldmark"
 	"github.com/yuin/goldmark/extension"
 	ghtml "github.com/yuin/goldmark/renderer/html"
@@ -27,11 +29,10 @@ import (
 // `context` repository — GitHub only links references that resolve.
 
 var (
-	// markdownModeRenderer matches GitHub's `markdown` mode: GFM syntax
-	// extensions minus task lists and hard line breaks.
-	markdownModeRenderer = goldmark.New(
-		goldmark.WithExtensions(extension.Table, extension.Strikethrough, extension.Linkify),
-	)
+	// markdownModeRenderer (= store.MarkdownModeRenderer — ARCH-003) matches
+	// GitHub's `markdown` mode; the renderer itself lives in internal/store so
+	// the GraphQL resolver layer renders discussion bodies identically.
+	markdownModeRenderer = store.MarkdownModeRenderer
 	// gfmModeRenderer matches GitHub's `gfm` mode: full GFM plus hard wraps.
 	gfmModeRenderer = goldmark.New(
 		goldmark.WithExtensions(extension.GFM),

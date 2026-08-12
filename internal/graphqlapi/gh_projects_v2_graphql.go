@@ -1,4 +1,4 @@
-package bleephub
+package graphqlapi
 
 import (
 	"context"
@@ -30,7 +30,7 @@ type projectMutationTarget struct {
 // There is no level: Projects v2 has one write capability, held by the owning
 // user or by any active member of the owning organization.
 type projectRule struct {
-	target func(s *Server, input map[string]interface{}) projectMutationTarget
+	target func(s *Resolver, input map[string]interface{}) projectMutationTarget
 }
 
 func (r projectRule) check() error {
@@ -40,12 +40,12 @@ func (r projectRule) check() error {
 	return nil
 }
 
-func (r projectRule) authorize(s *Server, p graphql.ResolveParams, input map[string]interface{}) error {
+func (r projectRule) authorize(s *Resolver, p graphql.ResolveParams, input map[string]interface{}) error {
 	target := r.target(s, input)
 	if target.owner == nil {
 		return target.missing
 	}
-	user := ghUserFromContext(p.Context)
+	user := s.ghUserFromContext(p.Context)
 	if target.project != nil && !s.canReadProjectV2(p.Context, user, target.owner, target.project) {
 		return target.missing
 	}
@@ -59,8 +59,8 @@ func (r projectRule) authorize(s *Server, p graphql.ResolveParams, input map[str
 // has no project yet, so the entitlement is over the account the project would
 // belong to — without this, any signed-in account created projects under any
 // user or organization on the instance.
-func projectTargetOwner(key string) func(*Server, map[string]interface{}) projectMutationTarget {
-	return func(s *Server, input map[string]interface{}) projectMutationTarget {
+func projectTargetOwner(key string) func(*Resolver, map[string]interface{}) projectMutationTarget {
+	return func(s *Resolver, input map[string]interface{}) projectMutationTarget {
 		nodeID, _ := input[key].(string)
 		target := projectMutationTarget{missing: &ghNotFoundError{
 			message: fmt.Sprintf("Could not resolve to an owner with the global id of '%s'.", nodeID),
@@ -76,8 +76,8 @@ func projectTargetOwner(key string) func(*Server, map[string]interface{}) projec
 
 // projectTargetProject resolves the project the input names and the account
 // behind it.
-func projectTargetProject(key string) func(*Server, map[string]interface{}) projectMutationTarget {
-	return func(s *Server, input map[string]interface{}) projectMutationTarget {
+func projectTargetProject(key string) func(*Resolver, map[string]interface{}) projectMutationTarget {
+	return func(s *Resolver, input map[string]interface{}) projectMutationTarget {
 		nodeID, _ := input[key].(string)
 		target := projectMutationTarget{missing: &ghNotFoundError{
 			message: fmt.Sprintf("Could not resolve to a project with the global id of '%s'.", nodeID),
@@ -96,7 +96,7 @@ func projectTargetProject(key string) func(*Server, map[string]interface{}) proj
 // project's stored owner, which is how the GraphQL lane reaches them: there is
 // no request path to parse. An owner that no longer resolves yields nil and the
 // caller denies, rather than an owner record nobody controls.
-func (s *Server) projectV2OwnerByID(ownerID int, ownerType string) *projectV2Owner {
+func (s *Resolver) projectV2OwnerByID(ownerID int, ownerType string) *projectV2Owner {
 	if ownerType == "Organization" {
 		org := s.store.GetOrgByID(ownerID)
 		if org == nil {
@@ -115,7 +115,7 @@ func (s *Server) projectV2OwnerByID(ownerID int, ownerType string) *projectV2Own
 // pull request a project item would point at. Adding content to a project
 // republishes its title and state to everyone who can see the project, so a
 // caller who cannot read the content cannot pull it in either.
-func (s *Server) viewerCanReadProjectContent(ctx context.Context, contentType string, contentID int) bool {
+func (s *Resolver) viewerCanReadProjectContent(ctx context.Context, contentType string, contentID int) bool {
 	repoID := 0
 	switch contentType {
 	case "Issue":
@@ -137,7 +137,7 @@ func (s *Server) viewerCanReadProjectContent(ctx context.Context, contentType st
 //   - addProjectV2ItemById(input{projectId, contentId}) → ProjectV2Item
 //   - createProjectV2Field(input{projectId, dataType, name}) → ProjectV2FieldConfiguration
 //   - updateProjectV2ItemFieldValue(input{projectId,itemId,fieldId,value}) → ProjectV2Item
-func (s *Server) addProjectV2MutationsToSchema(mutationType *graphql.Object) {
+func (s *Resolver) addProjectV2MutationsToSchema(mutationType *graphql.Object) {
 	projectV2Type := s.projectV2GraphQLTypes()
 
 	// createProjectV2
@@ -161,7 +161,7 @@ func (s *Server) addProjectV2MutationsToSchema(mutationType *graphql.Object) {
 			"input": &graphql.ArgumentConfig{Type: graphql.NewNonNull(createProjectInputType)},
 		},
 		Resolve: func(p graphql.ResolveParams) (interface{}, error) {
-			user := ghUserFromContext(p.Context)
+			user := s.ghUserFromContext(p.Context)
 			input, _ := p.Args["input"].(map[string]interface{})
 			ownerNodeID, _ := input["ownerId"].(string)
 			title, _ := input["title"].(string)
@@ -200,7 +200,7 @@ func (s *Server) addProjectV2MutationsToSchema(mutationType *graphql.Object) {
 			"input": &graphql.ArgumentConfig{Type: graphql.NewNonNull(addItemInputType)},
 		},
 		Resolve: func(p graphql.ResolveParams) (interface{}, error) {
-			user := ghUserFromContext(p.Context)
+			user := s.ghUserFromContext(p.Context)
 			input, _ := p.Args["input"].(map[string]interface{})
 			projectNodeID, _ := input["projectId"].(string)
 			contentNodeID, _ := input["contentId"].(string)

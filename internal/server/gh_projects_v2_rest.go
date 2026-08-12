@@ -1,6 +1,8 @@
 package bleephub
 
 import (
+	"github.com/e6qu/bleephub/internal/graphqlapi"
+
 	"context"
 	"fmt"
 	"net/http"
@@ -183,7 +185,7 @@ func cursorPaginate[T any](r *http.Request, items []T, idOf func(T) int) ([]T, c
 	var start, end int
 	switch {
 	case after != "":
-		id := decodeCursor(after)
+		id := graphqlapi.DecodeCursor(after)
 		start = len(items)
 		for i, it := range items {
 			if idOf(it) > id {
@@ -193,7 +195,7 @@ func cursorPaginate[T any](r *http.Request, items []T, idOf func(T) int) ([]T, c
 		}
 		end = start + perPage
 	case before != "":
-		id := decodeCursor(before)
+		id := graphqlapi.DecodeCursor(before)
 		end = 0
 		for i := len(items) - 1; i >= 0; i-- {
 			if idOf(items[i]) < id {
@@ -218,8 +220,8 @@ func cursorPaginate[T any](r *http.Request, items []T, idOf func(T) int) ([]T, c
 
 	pi := cursorPageInfo{HasPrev: start > 0, HasNext: end < len(items)}
 	if len(page) > 0 {
-		pi.Next = encodeCursor(idOf(page[len(page)-1]))
-		pi.Prev = encodeCursor(idOf(page[0]))
+		pi.Next = graphqlapi.EncodeCursor(idOf(page[len(page)-1]))
+		pi.Prev = graphqlapi.EncodeCursor(idOf(page[0]))
 	}
 	return page, pi
 }
@@ -974,7 +976,7 @@ func (s *Server) serveProjectV2AddItem(w http.ResponseWriter, r *http.Request, o
 	// Write on the project is not read on what goes into it. Adding content
 	// republishes its title and state to everyone who can see the project, so
 	// the same gate the GraphQL twin applies runs here.
-	if !s.viewerCanReadProjectContent(r.Context(), req.Type, contentID) {
+	if !s.graphql.ViewerCanReadProjectContent(r.Context(), req.Type, contentID) {
 		writeGHValidationError(w, "ProjectV2Item", "id", "invalid")
 		return
 	}

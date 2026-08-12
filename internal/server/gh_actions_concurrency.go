@@ -10,6 +10,8 @@ package bleephub
 // workflow-level concurrency; job-level leases don't exist.
 
 import (
+	"github.com/e6qu/bleephub/internal/graphqlapi"
+
 	"fmt"
 	"net/http"
 	"net/url"
@@ -127,7 +129,7 @@ func (s *Server) handleListConcurrencyGroups(w http.ResponseWriter, r *http.Requ
 	}
 	start := 0
 	if after := r.URL.Query().Get("after"); after != "" {
-		start = decodeCursor(after) + 1
+		start = graphqlapi.DecodeCursor(after) + 1
 		if start < 0 {
 			start = 0
 		}
@@ -142,7 +144,7 @@ func (s *Server) handleListConcurrencyGroups(w http.ResponseWriter, r *http.Requ
 	page := names[start:end]
 	if end < len(names) {
 		q := r.URL.Query()
-		q.Set("after", encodeCursor(end-1))
+		q.Set("after", graphqlapi.EncodeCursor(end-1))
 		q.Set("per_page", strconv.Itoa(perPage))
 		w.Header().Set("Link", fmt.Sprintf(`<%s?%s>; rel="next"`, r.URL.Path, q.Encode()))
 	}
