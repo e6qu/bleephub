@@ -139,10 +139,26 @@ func NewEngine(cfg Config) *Engine {
 
 // Start launches the engine's background loops — the minute-aligned
 // schedule dispatcher and the retired-job janitor — for the server's
-// lifetime; ctx cancellation stops both at shutdown.
+// lifetime; ctx cancellation stops both at shutdown. It also installs the
+// stop watcher for the checks/webhook event drain: the drain itself stays
+// lazily started by the first QueueEvent (many callers never Start the
+// engine), but once ctx is cancelled the watcher flags the loop stopped and
+// wakes it, so the drain flushes every queued event and exits instead of
+// leaking past background.Wait (ACT-100).
 func (s *Engine) Start(ctx context.Context) {
 	s.startScheduleDispatcher(ctx)
 	s.startActionsJanitor(ctx)
+	s.goBackground(func() {
+		<-ctx.Done()
+		s.actionsEvents.mu.Lock()
+		s.actionsEvents.stopped = true
+		// cond is created by QueueEvent's once.Do before the drain starts;
+		// it is nil only if no event was ever queued (nothing to wake).
+		if s.actionsEvents.cond != nil {
+			s.actionsEvents.cond.Broadcast()
+		}
+		s.actionsEvents.mu.Unlock()
+	})
 }
 
 // currentTime is the engine's fixture-aware clock.

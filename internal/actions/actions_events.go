@@ -47,6 +47,11 @@ type actionsEventLoop struct {
 	// Lock order is always store.mu before snapshotMu.
 	snapshotMu sync.RWMutex
 	queue      []actionsEvent
+	// stopped (guarded by mu) tells the drain goroutine to exit once the
+	// queue is empty. Engine.Start's shutdown watcher sets it on ctx
+	// cancellation; the drain flushes every already-queued event first so
+	// shutdown never drops a tail of pending check/webhook events (ACT-100).
+	stopped bool
 }
 
 func CloneWorkflowEventSnapshot(wf *Workflow) *Workflow {
@@ -123,7 +128,7 @@ func (s *Engine) QueueEvent(kind EventKind, wf *Workflow, job *WorkflowJob) {
 	}
 	s.actionsEvents.once.Do(func() {
 		s.actionsEvents.cond = sync.NewCond(&s.actionsEvents.mu)
-		go s.drainActionsEvents()
+		s.goBackground(s.drainActionsEvents)
 	})
 	s.actionsEvents.snapshotMu.RLock()
 	event := actionsEvent{
@@ -144,8 +149,13 @@ func (s *Engine) drainActionsEvents() {
 	runInProgress := map[string]bool{} // workflow UUID → workflow_run in_progress emitted
 	for {
 		s.actionsEvents.mu.Lock()
-		for len(s.actionsEvents.queue) == 0 {
+		for len(s.actionsEvents.queue) == 0 && !s.actionsEvents.stopped {
 			s.actionsEvents.cond.Wait()
+		}
+		if len(s.actionsEvents.queue) == 0 && s.actionsEvents.stopped {
+			// Shutdown: every already-queued event has been processed.
+			s.actionsEvents.mu.Unlock()
+			return
 		}
 		ev := s.actionsEvents.queue[0]
 		s.actionsEvents.queue[0] = actionsEvent{}
