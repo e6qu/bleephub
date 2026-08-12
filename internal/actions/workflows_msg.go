@@ -213,7 +213,9 @@ func (s *Engine) BuildJobMessageFromDef(serverURL string, wf *Workflow, wfJob *W
 		"DistributedTask.EnableCompositeActions": varVal("true"),
 	}
 	varsPairs := make([]string, 0)
-	if s != nil && s.store != nil && repoFullName != "" {
+	// The receiver is dereferenced unconditionally above (mintJobToken), so a
+	// nil-receiver guard here would be dead code that only misleads analysis.
+	if s.store != nil && repoFullName != "" {
 		secretsMap, varsMap, err := s.CollectJobSecretsAndVars(repoFullName, jd.EnvironmentName())
 		if err != nil {
 			return nil, err
