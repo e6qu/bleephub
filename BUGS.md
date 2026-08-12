@@ -1,6 +1,6 @@
 # Bleephub bug ledger
 
-685 findings from the continuing full-surface audit: 165 blockers, 373 major, 147 minor. Every
+686 findings from the continuing full-surface audit: 165 blockers, 374 major, 147 minor. Every
 entry carries a location and a one-sentence claim. Severity is `B` blocker, `M` major, `m` minor.
 Status begins with one of `open`, `partial`, `fixed`, or `deferred`; the generated parity
 inventory records the exact counts and fails CI when this summary or a row drifts.
@@ -749,6 +749,7 @@ source or comments. The reasoning behind a fix belongs in its commit message.
 | ID | S | Location | Finding | Status |
 |---|---|---|---|---|
 | ARCH-001 | M | internal/server | A single flat package of 406 files and 181k lines. Splitting it is a real improvement but would conflict with every other change here and is an architectural decision to take on its own | fixed — taken on its own once every other change had merged, as the owner-chosen coarse modular monolith that still assembles into the one fat binary. The data layer is now its own compiler-enforced module: `internal/store` (137 files, ~41k lines — Store and every sub-store, all entity types previously scattered beside their handlers, Persistence/PersistBatch, replica refresh, object byte store) sitting on `internal/gitstore` (git object storage + s3fs), with `internal/server` (~213k lines — Server, REST, GraphQL, Actions engine, identity, webhooks, and all contract gates) importing store and never the reverse. Type-alias compatibility files keep the 2,600+ Server methods and the whole test estate compiling unchanged; every newly exported store field carries json:"-" so wire and persisted shapes are byte-identical; the replica reflect-copy gained an access-field skip set so exporting the lock/persist fields could not change refresh semantics. Verified as a pure refactor: full suite green except the documented MinIO host-OOM cluster, shape ratchet zero-new, deadcode/dupl/clock gates green, and a runtime smoke across REST, git contents, GraphQL, UI and a push-triggered Actions run. Further de-methodizing of the engine slices (actions, graphql, identity) out of internal/server remains available as future work but is not this row's defect: the load-bearing split — data layer vs application — is done and the compiler now enforces it |
+| ARCH-002 | M | internal/server | After the ARCH-001 data-layer split the Actions engine (~5,900 lines of run lifecycle, dispatch, broker queueing, concurrency admission, scheduling, expressions and event snapshotting) still lives inside the application package as ~65 Server methods, invisible as a boundary and free to grow entangled | open |
 
 ## Refuted
 
