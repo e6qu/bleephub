@@ -100,8 +100,27 @@ type Engine struct {
 	workflowTimeoutMu     sync.Mutex        // serializes timeout watcher replacement and cancellation
 }
 
-// NewEngine builds an engine from its wired dependencies.
+// NewEngine builds an engine from its wired dependencies. It panics when a
+// required seam is nil: each of these is dereferenced without a nil guard on
+// a runtime path (event fan-out, job-token minting at lease time, schedule
+// firing, goroutine spawning), so a missing seam would otherwise surface as
+// an arbitrary panic mid-dispatch instead of at wiring time. Seams with a
+// safe nil zero value stay optional: Metrics and Now are nil-guarded at
+// every use, OnScheduleTick is a range-able slice, and CompletedJobRetention
+// zero simply retires jobs immediately.
 func NewEngine(cfg Config) *Engine {
+	if cfg.Events == nil {
+		panic("actions.NewEngine: Config.Events is nil — the engine emits every run/job/check lifecycle transition through it; wire the server's event sink or a no-op stub")
+	}
+	if cfg.MintJobToken == nil {
+		panic("actions.NewEngine: Config.MintJobToken is nil — every dispatched job's GITHUB_TOKEN is minted through it at lease time; wire the server's minter or a stub")
+	}
+	if cfg.Go == nil {
+		panic("actions.NewEngine: Config.Go is nil — every engine background goroutine is spawned through it; wire the server's tracked spawner or func(fn func()) { go fn() }")
+	}
+	if cfg.RepoEventPayload == nil {
+		panic("actions.NewEngine: Config.RepoEventPayload is nil — the schedule trigger renders github.event.repository through it when a cron fires; wire the server's repo payload builder or a stub")
+	}
 	return &Engine{
 		store:                 cfg.Store,
 		artifactStore:         cfg.Artifacts,

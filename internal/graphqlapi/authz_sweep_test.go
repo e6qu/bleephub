@@ -53,7 +53,7 @@ func TestGraphQLMutationSweepRejectsAnUnguardedMutation(t *testing.T) {
 // shipping open.
 func TestMutationAuthzTableMatchesSchema(t *testing.T) {
 	t.Parallel()
-	r := NewResolver(Config{Store: newSeededTestStore()})
+	r := newStubbedResolver()
 	schema := r.Schema()
 	mutation := schema.MutationType()
 	if mutation == nil {

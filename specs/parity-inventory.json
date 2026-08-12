@@ -6515,6 +6515,24 @@
         "status_kind": "fixed"
       },
       {
+        "category": "ARCH",
+        "finding": "The replica field-classification test validates only the fields the skip sets already list, so the next exported runtime-state Store field (a mutex, callback or cache) is silently reflect-copied by the snapshot reconciler \u2014 recreating the copied-locked-mutex crash class the ARCH-001 extraction already hit once",
+        "id": "ARCH-004",
+        "location": "store_replica_refresh_test.go:343",
+        "severity": "M",
+        "status": "fixed \u2014 a sibling test now enumerates every exported store.Store field by reflection and fails on any unclassified field of a kind the reconciler must never copy (mutexes directly or inside by-value containers, funcs, channels, the Persistence handle), with a message naming the field and the classification set to put it in; pointer sub-stores stay wholesale-swappable by design. Proven by a dummy exported mutex field tripping the ratchet with the actionable message",
+        "status_kind": "fixed"
+      },
+      {
+        "category": "ARCH",
+        "finding": "NewResolver and NewEngine accept nil seams (Authz/Events/Pulls; Go/MintJobToken/Events) and fail per-request deep inside resolvers or the engine instead of failing closed at construction like the mutation-policy sweep does",
+        "id": "ARCH-005",
+        "location": "resolver.go:118, engine.go",
+        "severity": "m",
+        "status": "fixed \u2014 both constructors now panic at construction with a named-field message for every seam the code dereferences unguarded: the resolver requires Authz, Events, Pulls, UserFromContext and APIRate; the engine requires Events, MintJobToken, Go and RepoEventPayload (verified against the actual dereference sites; genuinely optional seams with safe nil behavior stay optional). Test packages gained shared no-op stubs",
+        "status_kind": "fixed"
+      },
+      {
         "category": "ACT",
         "finding": "When a test injects a byte store, NewServer replaces s.artifactStore and re-points the Actions engine, but store.ActionsArtifacts still references the discarded ArtifactStore \u2014 a stale pointer that diverges the two access paths",
         "id": "ACT-099",
@@ -6534,9 +6552,9 @@
         },
         "ARCH": {
           "status": {
-            "fixed": 3
+            "fixed": 5
           },
-          "total": 3
+          "total": 5
         },
         "AUTH": {
           "status": {
@@ -6597,14 +6615,14 @@
       },
       "severity": {
         "blocker": 165,
-        "major": 375,
-        "minor": 148
+        "major": 376,
+        "minor": 149
       },
       "status": {
         "deferred": 3,
-        "fixed": 685
+        "fixed": 687
       },
-      "total": 688
+      "total": 690
     }
   },
   "rest": {
